@@ -40,7 +40,7 @@ class N6705CUI(QWidget):
         
         # 设置通道切换信号连接
         for i, channel in enumerate(self.channels):
-            channel['toggle'].toggled.connect(lambda checked, ch=i+1: self._on_channel_toggle(checked, ch))
+            channel['on_button'].clicked.connect(lambda checked, ch=i+1: self._on_channel_toggle(checked, ch))
         
 
         
@@ -269,8 +269,8 @@ class N6705CUI(QWidget):
 
 
         # set mode button
-        channel_toggle = QPushButton("SET")
-        channel_toggle.setStyleSheet("""
+        set_button = QPushButton("SET")
+        set_button.setStyleSheet("""
             QPushButton {
                 background-color: #00a859;
                 color: white;
@@ -285,50 +285,23 @@ class N6705CUI(QWidget):
             }
         """)
         # 连接ON按钮的点击事件
-        channel_toggle.clicked.connect(self._set_mode)
-        setting_header.addWidget(channel_toggle)
+        set_button.clicked.connect(self._set_mode)
+        setting_header.addWidget(set_button)
 
 
         setting_header.addStretch()
-        # ON 按钮（只负责打开通道）
-        channel_toggle = QPushButton("ON")
-        channel_toggle.setStyleSheet("""
-            QPushButton {
-                background-color: #00a859;
-                color: white;
-                border: none;
-                border-radius: 12px;
-                padding: 4px 12px;
-                min-width: 60px;
-                font-size: 11px;
-            }
-            QPushButton:hover {
-                background-color: #00b869;
-            }
-        """)
-        # 连接ON按钮的点击事件
-        channel_toggle.clicked.connect(self._on_channel_toggle)
-        setting_header.addWidget(channel_toggle)
+        # ON 按钮
+        on_button = QPushButton("⏻ On")
+        on_button.setStyleSheet(self._neon_on_button_style())
+        setting_header.addWidget(on_button)
+
         
         # OFF按钮
-        off_button = QPushButton("OFF")
-        off_button.setStyleSheet("""
-            QPushButton {
-                background-color: #e53935;
-                color: white;
-                border: none;
-                border-radius: 12px;
-                padding: 4px 12px;
-                min-width: 60px;
-                font-size: 11px;
-                margin-left: 5px;
-            }
-            QPushButton:hover {
-                background-color: #f54945;
-            }
-        """)
+        off_button = QPushButton("▢ Off")
+        off_button.setStyleSheet(self._neon_off_button_style())
         off_button.clicked.connect(self._on_off_button_clicked)
         setting_header.addWidget(off_button)
+
         setting_header.setContentsMargins(0, 0, 0, 0)
         setting_layout.addLayout(setting_header)
         
@@ -707,7 +680,8 @@ class N6705CUI(QWidget):
         setting_layout.addWidget(tools_container)
         
         channel_data = {
-            'toggle': channel_toggle,
+            'set_button': set_button,
+            'on_button': on_button,
             'off_button': off_button,
             'voltage_value': voltage_value,
             'current_value': current_value,
@@ -720,6 +694,64 @@ class N6705CUI(QWidget):
         
         return setting_frame
     
+    def _neon_on_button_style(self):
+        return """
+        QPushButton {
+            background-color: #062b2b;
+            color: #00f5c4;
+            border: 1px solid #00cfa6;
+            border-radius: 8px;
+            padding: 8px 18px;
+            min-width: 88px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        QPushButton:hover {
+            background-color: #0a3a3a;
+            border: 1px solid #00f5c4;
+            color: #3fffd7;
+        }
+        QPushButton:pressed {
+            background-color: #041f1f;
+            border: 1px solid #00b894;
+        }
+        QPushButton:disabled {
+            background-color: #1b1f24;
+            color: #4d6b66;
+            border: 1px solid #2d4a45;
+        }
+        """
+
+    def _neon_off_button_style(self):
+        return """
+        QPushButton {
+            background-color: #2a0a1c;
+            color: #ff4fa3;
+            border: 1px solid #d63384;
+            border-radius: 8px;
+            padding: 8px 18px;
+            min-width: 88px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        QPushButton:hover {
+            background-color: #3a1028;
+            border: 1px solid #ff4fa3;
+            color: #ff7dbd;
+        }
+        QPushButton:pressed {
+            background-color: #210817;
+            border: 1px solid #b82b70;
+        }
+        QPushButton:disabled {
+            background-color: #1b1f24;
+            color: #6d4d5c;
+            border: 1px solid #4a2d39;
+        }
+        """
+
+
+
     def _init_ui_elements(self):
         """初始化UI元素"""
         # 初始化通道设置的默认值
