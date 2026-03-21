@@ -7,14 +7,16 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, 
     QPushButton, QComboBox, QLabel, QLineEdit, QGridLayout, 
-    QTabWidget, QStatusBar, QCheckBox, QSplitter, QFrame
+    QTabWidget, QStatusBar, QCheckBox, QSplitter, QFrame, QButtonGroup
 )
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPalette, QColor, QFont
 from ui.plot_widget import PlotWidget
 from ui.mso64b_ui import MSO64BUI
 from ui.n6705c_ui import N6705CUI
 from ui.pmu_test_ui import PMUTestUI
+from ui.sidebar_nav_button import SidebarNavButton
 from core.test_manager import TestManager
 from instruments.visa_instrument import VisaInstrument
 from instruments.ch341t import CH341T
@@ -179,135 +181,122 @@ class MainWindow(QMainWindow):
     
     def _create_main_content(self):
         """创建主内容区域"""
-        # 创建主水平分割器（左侧导航 + 右侧内容）
         main_splitter = QSplitter(Qt.Horizontal)
-        
         # 左侧导航栏
-        left_nav = QFrame()
-        left_nav.setFixedWidth(200)
-        left_nav_layout = QVBoxLayout(left_nav)
-        
-        # Logo/标题
-        logo_label = QLabel("<b>LabControl Pro</b>")
-        logo_label.setAlignment(Qt.AlignCenter)
-        logo_label.setStyleSheet("color: #2a82da; font-size: 14px; padding: 10px;")
+        self.left_nav = QFrame()
+        self.left_nav.setFixedWidth(280)
+        self.left_nav.setObjectName("leftNav")
+        self.left_nav.setStyleSheet("""
+            QFrame#leftNav {
+                background-color: #0b1020;
+                border: none;
+                border-radius: 0px;
+            }
+        """)
+        left_nav_layout = QVBoxLayout(self.left_nav)
+        left_nav_layout.setContentsMargins(14, 18, 14, 18)
+        left_nav_layout.setSpacing(10)
+        # 顶部标题
+        logo_label = QLabel("LabControl Pro")
+        logo_label.setStyleSheet("""
+            QLabel {
+                color: #7ea1ff;
+                font-size: 18px;
+                font-weight: 700;
+                padding: 6px 4px 12px 4px;
+                border: none;
+                background: transparent;
+            }
+        """)
         left_nav_layout.addWidget(logo_label)
-        
-        # 仪器列表
+        # 分组标题：INSTRUMENTS
         instruments_title = QLabel("INSTRUMENTS")
-        instruments_title.setStyleSheet("color: #888; font-size: 11px; padding: 10px 0 5px 10px;")
+        instruments_title.setStyleSheet("""
+            QLabel {
+                color: #5f78a8;
+                font-size: 12px;
+                font-weight: 700;
+                letter-spacing: 1px;
+                padding: 10px 6px 4px 6px;
+                border: none;
+                background: transparent;
+            }
+        """)
         left_nav_layout.addWidget(instruments_title)
-        
-        # N6705C Power Analyzer
-        self.power_analyzer_btn = QPushButton("N6705C Power Analyzer")
-        self.power_analyzer_btn.setCheckable(True)
+        # 导航按钮
+        self.power_analyzer_btn = SidebarNavButton(
+            "N6705C Power\nAnalyzer",
+            "",
+            "⚡"
+        )
         self.power_analyzer_btn.setChecked(True)
-        self.power_analyzer_btn.setStyleSheet("""
-            QPushButton {
-                text-align: left;
-                padding: 8px 15px;
-                border: none;
-                background-color: transparent;
-                color: #c8c8c8;
-                border-radius: 0;
-            }
-            QPushButton:hover {
-                background-color: #2a2d32;
-            }
-            QPushButton:checked {
-                background-color: #2a82da;
-                color: white;
-            }
-        """)
+        self.oscilloscope_btn = SidebarNavButton(
+            "MSO64B Oscilloscope",
+            "",
+            "∿"
+        )
         left_nav_layout.addWidget(self.power_analyzer_btn)
-        
-        # MSO64B Oscilloscope
-        self.oscilloscope_btn = QPushButton("MSO64B Oscilloscope")
-        self.oscilloscope_btn.setCheckable(True)
-        self.oscilloscope_btn.setStyleSheet("""
-            QPushButton {
-                text-align: left;
-                padding: 8px 15px;
-                border: none;
-                background-color: transparent;
-                color: #c8c8c8;
-                border-radius: 0;
-            }
-            QPushButton:hover {
-                background-color: #2a2d32;
-            }
-            QPushButton:checked {
-                background-color: #2a82da;
-                color: white;
-            }
-        """)
         left_nav_layout.addWidget(self.oscilloscope_btn)
-        
-        # 自动化部分
+        # 分组标题：AUTOMATION
         automation_title = QLabel("AUTOMATION")
-        automation_title.setStyleSheet("color: #888; font-size: 11px; padding: 15px 0 5px 10px;")
-        left_nav_layout.addWidget(automation_title)
-        
-        # PMU Auto Test
-        self.pmu_auto_test_btn = QPushButton("PMU Auto Test")
-        self.pmu_auto_test_btn.setCheckable(True)
-        self.pmu_auto_test_btn.setStyleSheet("""
-            QPushButton {
-                text-align: left;
-                padding: 8px 15px;
+        automation_title.setStyleSheet("""
+            QLabel {
+                color: #5f78a8;
+                font-size: 12px;
+                font-weight: 700;
+                letter-spacing: 1px;
+                padding: 18px 6px 4px 6px;
                 border: none;
-                background-color: transparent;
-                color: #c8c8c8;
-                border-radius: 0;
-            }
-            QPushButton:hover {
-                background-color: #2a2d32;
-            }
-            QPushButton:checked {
-                background-color: #2a82da;
-                color: white;
+                background: transparent;
             }
         """)
+        left_nav_layout.addWidget(automation_title)
+        self.pmu_auto_test_btn = SidebarNavButton(
+            "PMU Auto Test",
+            "",
+            "⚙"
+        )
         left_nav_layout.addWidget(self.pmu_auto_test_btn)
-        
-        # 下载按钮
+        # 单选组
+        self.nav_button_group = QButtonGroup(self)
+        self.nav_button_group.setExclusive(True)
+        self.nav_button_group.addButton(self.power_analyzer_btn)
+        self.nav_button_group.addButton(self.oscilloscope_btn)
+        self.nav_button_group.addButton(self.pmu_auto_test_btn)
         left_nav_layout.addStretch()
+        # 底部按钮
         self.download_btn = QPushButton("Download Python Code")
+        self.download_btn.setCursor(Qt.PointingHandCursor)
         self.download_btn.setStyleSheet("""
             QPushButton {
-                margin: 10px;
-                padding: 8px;
-                background-color: #2a82da;
-                color: white;
-                border: none;
-                border-radius: 4px;
+                margin-top: 10px;
+                min-height: 42px;
+                background-color: #1d2740;
+                color: #dbe6ff;
+                border: 1px solid #2c3a5e;
+                border-radius: 12px;
+                font-weight: 600;
             }
             QPushButton:hover {
-                background-color: #3a92ea;
+                background-color: #24314f;
+            }
+            QPushButton:pressed {
+                background-color: #1a243a;
             }
         """)
         left_nav_layout.addWidget(self.download_btn)
-        
-        main_splitter.addWidget(left_nav)
-        
+        main_splitter.addWidget(self.left_nav)
         # 右侧主内容区域
         self.right_content = QWidget()
         self.right_content_layout = QVBoxLayout(self.right_content)
-        
-        # 仪器UI容器
+        self.right_content_layout.setContentsMargins(0, 0, 0, 0)
         self.instrument_ui_container = QWidget()
         self.instrument_ui_container_layout = QVBoxLayout(self.instrument_ui_container)
-        
-        # 初始显示电源分析仪UI
+        self.instrument_ui_container_layout.setContentsMargins(0, 0, 0, 0)
         self._create_power_analyzer_ui()
-        
         self.right_content_layout.addWidget(self.instrument_ui_container)
-        
         main_splitter.addWidget(self.right_content)
-        
-        # 设置分割器比例
-        main_splitter.setSizes([200, 1000])
-        
+        main_splitter.setSizes([280, 920])
         self.main_layout.addWidget(main_splitter)
     
     def _create_power_analyzer_ui(self):
@@ -398,21 +387,15 @@ class MainWindow(QMainWindow):
     
     def _on_nav_button_clicked(self):
         """导航按钮点击事件"""
-        # 只允许一个导航按钮被选中
         sender = self.sender()
+
         if sender == self.power_analyzer_btn:
-            self.oscilloscope_btn.setChecked(False)
-            self.pmu_auto_test_btn.setChecked(False)
             self._create_power_analyzer_ui()
         elif sender == self.oscilloscope_btn:
-            self.power_analyzer_btn.setChecked(False)
-            self.pmu_auto_test_btn.setChecked(False)
             self._create_oscilloscope_ui()
         elif sender == self.pmu_auto_test_btn:
-            self.power_analyzer_btn.setChecked(False)
-            self.oscilloscope_btn.setChecked(False)
             self._create_pmu_test_ui()
-    
+        
     def _on_channel_toggle(self):
         """ON按钮点击事件"""
         # 获取当前选择的通道号

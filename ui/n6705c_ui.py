@@ -50,53 +50,120 @@ class N6705CUI(QWidget):
         self.search_timer.setSingleShot(True)
         
     def _create_top_bar(self):
-        """创建顶部仪器信息栏，参照pmu_oscp_ui的风格"""
-        top_group = QGroupBox("PMU System")
-        top_layout = QGridLayout()
-        top_layout.setSpacing(8)
-
+        """创建顶部仪器信息栏，自定义标题栏风格"""
+        top_frame = QFrame()
+        top_frame.setStyleSheet("""
+            QFrame {
+                background-color: #0f1318;
+                border: 1px solid #242a31;
+                border-radius: 10px;
+            }
+        """)
+        outer_layout = QVBoxLayout(top_frame)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+        # ===== 自定义标题栏 =====
+        header_widget = QWidget()
+        header_widget.setStyleSheet("""
+            QWidget {
+                background-color: #070b10;
+                border: none;
+                border-top-left-radius: 10px;
+                border-top-right-radius: 10px;
+            }
+        """)
+        header_widget.setFixedHeight(54)
+        header_layout = QHBoxLayout(header_widget)
+        header_layout.setContentsMargins(16, 0, 16, 0)
+        header_layout.setSpacing(10)
+        # 左侧闪电图标
+        icon_label = QLabel("⚡")
+        icon_label.setStyleSheet("""
+            QLabel {
+                color: #00f5c4;
+                font-size: 24px;
+                font-weight: bold;
+                border: none;
+            }
+        """)
+        header_layout.addWidget(icon_label)
+        # 标题文字
+        title_label = QLabel("Keysight N6705C DC Power Analyzer")
+        title_label.setStyleSheet("""
+            QLabel {
+                color: #f5f7fa;
+                font-size: 18px;
+                font-weight: 800;
+                border: none;
+            }
+        """)
+        header_layout.addWidget(title_label)
+        header_layout.addStretch()
+        outer_layout.addWidget(header_widget)
+        # ===== 内容区域 =====
+        content_widget = QWidget()
+        content_widget.setStyleSheet("""
+            QWidget {
+                background-color: #13161a;
+                border: none;
+                border-bottom-left-radius: 10px;
+                border-bottom-right-radius: 10px;
+            }
+            QLabel {
+                color: #c8c8c8;
+                font-size: 12px;
+            }
+            QComboBox, QLineEdit {
+                background-color: #2a2f36;
+                color: #d0d0d0;
+                border: 1px solid #444;
+                border-radius: 4px;
+                padding: 4px 6px;
+            }
+            QPushButton {
+                background-color: #2a2f36;
+                color: #d0d0d0;
+                border: 1px solid #3a3f45;
+                border-radius: 4px;
+                padding: 6px 14px;
+            }
+            QPushButton:hover {
+                background-color: #3a3f45;
+            }
+        """)
+        top_layout = QGridLayout(content_widget)
+        top_layout.setContentsMargins(16, 12, 16, 14)
+        top_layout.setHorizontalSpacing(10)
+        top_layout.setVerticalSpacing(8)
         # 状态指示
         self.connection_status = QLabel("● 就绪")
         self.connection_status.setStyleSheet("color:#00a859; font-weight:bold;")
 
-        # 设备信息
-        self.instrument_name = QLabel("N6705C + MSO64B")
-
         # 设备选择下拉菜单（VISA资源）
         self.device_combo = QComboBox()
-        self.device_combo.setMinimumWidth(250)
-        # 初始化下拉菜单（设置默认设备）
+        self.device_combo.setMinimumWidth(280)
         self.device_combo.addItem("TCPIP0::K-N6705C-06098.local::hislip0::INSTR")
         self.device_combo.setToolTip("选择要连接的设备")
-
         # 控制按钮
         self.search_btn = QPushButton("搜索")
         self.connect_btn = QPushButton("连接")
         self.disconnect_btn = QPushButton("断开")
-        self.disconnect_btn.setEnabled(False)  # 初始状态为禁用
-
-
+        self.disconnect_btn.setEnabled(False)
         # 布局设置
         top_layout.addWidget(QLabel("状态"), 0, 0)
         top_layout.addWidget(self.connection_status, 0, 1)
 
-        top_layout.addWidget(QLabel("设备"), 0, 2)
-        top_layout.addWidget(self.instrument_name, 0, 3, 1, 3)
-
         top_layout.addWidget(QLabel("资源"), 1, 0)
         top_layout.addWidget(self.device_combo, 1, 1, 1, 3)
-
         top_layout.addWidget(self.search_btn, 1, 4)
         top_layout.addWidget(self.connect_btn, 1, 5)
         top_layout.addWidget(self.disconnect_btn, 1, 6)
-
         # 连接按钮点击事件
         self.search_btn.clicked.connect(self._on_search)
         self.connect_btn.clicked.connect(self._on_connect)
         self.disconnect_btn.clicked.connect(self._on_disconnect)
-
-        top_group.setLayout(top_layout)
-        return top_group
+        outer_layout.addWidget(content_widget)
+        return top_frame
 
     def _setup_style(self):
         """设置界面样式，与pmu_oscp_ui保持一致"""
