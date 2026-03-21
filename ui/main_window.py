@@ -263,28 +263,88 @@ class MainWindow(QMainWindow):
         self.nav_button_group.addButton(self.power_analyzer_btn)
         self.nav_button_group.addButton(self.oscilloscope_btn)
         self.nav_button_group.addButton(self.pmu_auto_test_btn)
+
+
+
         left_nav_layout.addStretch()
-        # 底部按钮
-        self.download_btn = QPushButton("Download Python Code")
+        # 底部容器
+        bottom_widget = QWidget()
+        bottom_widget.setStyleSheet("""
+            QWidget {
+                background: transparent;
+                border: none;
+            }
+        """)
+        bottom_layout = QVBoxLayout(bottom_widget)
+        bottom_layout.setContentsMargins(0, 0, 0, 0)
+        bottom_layout.setSpacing(12)
+        # 顶部分隔线（可选）
+        divider = QFrame()
+        divider.setFixedHeight(1)
+        divider.setStyleSheet("""
+            QFrame {
+                background-color: #1a2238;
+                border: none;
+            }
+        """)
+        bottom_layout.addWidget(divider)
+        # 下载按钮
+        self.download_btn = QPushButton("〉_ Download Python Code")
         self.download_btn.setCursor(Qt.PointingHandCursor)
         self.download_btn.setStyleSheet("""
             QPushButton {
-                margin-top: 10px;
                 min-height: 42px;
-                background-color: #1d2740;
-                color: #dbe6ff;
-                border: 1px solid #2c3a5e;
-                border-radius: 12px;
+                background-color: #4f3df0;
+                color: white;
+                border: none;
+                border-radius: 10px;
                 font-weight: 600;
+                text-align: center;
+                padding: 0 12px;
             }
             QPushButton:hover {
-                background-color: #24314f;
+                background-color: #5b49ff;
             }
             QPushButton:pressed {
-                background-color: #1a243a;
+                background-color: #4534dd;
             }
         """)
-        left_nav_layout.addWidget(self.download_btn)
+        bottom_layout.addWidget(self.download_btn)
+        # VISA 状态行
+        visa_status_widget = QWidget()
+        visa_status_widget.setStyleSheet("""
+            QWidget {
+                background: transparent;
+                border: none;
+            }
+        """)
+        visa_status_layout = QHBoxLayout(visa_status_widget)
+        visa_status_layout.setContentsMargins(0, 0, 0, 0)
+        visa_status_layout.setSpacing(8)
+        self.visa_status_dot = QLabel("●")
+        self.visa_status_dot.setStyleSheet("""
+            QLabel {
+                color: #00d38a;
+                font-size: 16px;
+                border: none;
+                background: transparent;
+            }
+        """)
+        self.visa_status_label = QLabel("VISA Server Connected")
+        self.visa_status_label.setStyleSheet("""
+            QLabel {
+                color: #9fd3c7;
+                font-size: 12px;
+                border: none;
+                background: transparent;
+            }
+        """)
+        visa_status_layout.addWidget(self.visa_status_dot)
+        visa_status_layout.addWidget(self.visa_status_label)
+        visa_status_layout.addStretch()
+        bottom_layout.addWidget(visa_status_widget)
+        left_nav_layout.addWidget(bottom_widget)
+        
         main_splitter.addWidget(self.left_nav)
         # 右侧主内容区域
         self.right_content = QWidget()
@@ -315,6 +375,47 @@ class MainWindow(QMainWindow):
         # 保存通道引用
         self.channels = self.n6705c_ui.channels if hasattr(self.n6705c_ui, 'channels') else []
     
+    def _update_sidebar_visa_status(self, connected: bool, text: str = None):
+        """更新侧栏底部 VISA 状态显示"""
+        if not hasattr(self, "visa_status_dot") or not hasattr(self, "visa_status_label"):
+            return
+        if connected:
+            self.visa_status_dot.setStyleSheet("""
+                QLabel {
+                    color: #00d38a;
+                    font-size: 16px;
+                    border: none;
+                    background: transparent;
+                }
+            """)
+            self.visa_status_label.setStyleSheet("""
+                QLabel {
+                    color: #9fd3c7;
+                    font-size: 12px;
+                    border: none;
+                    background: transparent;
+                }
+            """)
+            self.visa_status_label.setText(text or "VISA Server Connected")
+        else:
+            self.visa_status_dot.setStyleSheet("""
+                QLabel {
+                    color: #6b7280;
+                    font-size: 16px;
+                    border: none;
+                    background: transparent;
+                }
+            """)
+            self.visa_status_label.setStyleSheet("""
+                QLabel {
+                    color: #7b8597;
+                    font-size: 12px;
+                    border: none;
+                    background: transparent;
+                }
+            """)
+            self.visa_status_label.setText(text or "VISA Server Disconnected")
+
     def _create_oscilloscope_ui(self):
         """创建示波器UI"""
         # 清空容器
