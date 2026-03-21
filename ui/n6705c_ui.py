@@ -2,27 +2,23 @@
 # -*- coding: utf-8 -*-
 """
 N6705C电源分析仪UI组件
-方案A：基于原代码最小改动修复
-- 修复 toggle 未定义问题
-- 修复通道切换逻辑
-- 增加顶部 Channel 1~4 选项卡
-- 根据通道切换主题色：
-    CH1 = Yellow
-    CH2 = Emerald
-    CH3 = Blue
-    CH4 = Rose
+方案A修正版：
+1. 底色统一
+2. 删除 Channel 标题的外框感
+3. 删除 SET MODE 按钮
+4. 主按钮移动到 Voltage/Current 输入框下方
+5. 保留仪器连接/测量/设置逻辑
 """
 
 import sys
 import os
 
-# 将项目根目录添加到Python路径中
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
-    QPushButton, QComboBox, QLabel, QLineEdit, QGridLayout,
-    QFrame, QApplication
+    QWidget, QVBoxLayout, QHBoxLayout,
+    QPushButton, QComboBox, QLabel, QLineEdit,
+    QGridLayout, QFrame, QApplication
 )
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont
@@ -32,59 +28,45 @@ from instruments.n6705c import N6705C
 
 
 class N6705CUI(QWidget):
-    """N6705C电源分析仪UI组件"""
-
     connection_status_changed = Signal(bool)
 
     def __init__(self):
         super().__init__()
 
-        # 仪器状态
         self.rm = None
         self.instrument = None
         self.n6705c = None
         self.is_connected = False
         self.available_devices = []
-
-        # 当前通道
         self.current_channel = 1
 
-        # 通道主题色
         self.channel_themes = {
             1: {
-                "name": "Yellow",
                 "accent": "#d4a514",
                 "accent_hover": "#e3b729",
-                "accent_soft": "#3a2d08",
+                "accent_soft": "#342808",
                 "accent_border": "#7a5e12",
-                "dot": "#f2c94c",
                 "text_dim": "#c9b06a"
             },
             2: {
-                "name": "Emerald",
                 "accent": "#18b67a",
                 "accent_hover": "#21c487",
-                "accent_soft": "#0b2f24",
+                "accent_soft": "#0a2a20",
                 "accent_border": "#14694b",
-                "dot": "#36d399",
                 "text_dim": "#7bc7a8"
             },
             3: {
-                "name": "Blue",
                 "accent": "#2f6fed",
                 "accent_hover": "#4680f0",
-                "accent_soft": "#0d214d",
+                "accent_soft": "#0c2048",
                 "accent_border": "#264d9b",
-                "dot": "#60a5fa",
                 "text_dim": "#8db4ff"
             },
             4: {
-                "name": "Rose",
                 "accent": "#d14b72",
                 "accent_hover": "#df5f85",
-                "accent_soft": "#3a1220",
+                "accent_soft": "#34111d",
                 "accent_border": "#7e2f47",
-                "dot": "#f472b6",
                 "text_dim": "#d79ab1"
             }
         }
@@ -93,22 +75,65 @@ class N6705CUI(QWidget):
         self._create_layout()
         self._init_ui_elements()
 
-        # 初始化设备搜索定时器
         self.search_timer = QTimer(self)
         self.search_timer.timeout.connect(self._search_devices)
         self.search_timer.setSingleShot(True)
 
-        # 应用默认通道主题
         self._apply_channel_theme(self.current_channel)
 
-    # ========== 顶部栏 ==========
+    # =========================
+    # 全局样式
+    # =========================
+    def _setup_style(self):
+        self.setFont(QFont("Segoe UI", 9))
+        self.setObjectName("RootWidget")
+
+        self.setStyleSheet("""
+        QWidget#RootWidget {
+            background-color: #07111f;
+        }
+
+        QWidget {
+            background-color: #07111f;
+            color: #d6e2ff;
+        }
+
+        QLabel {
+            color: #c8d6f0;
+            background: transparent;
+            border: none;
+        }
+
+        QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+            background-color: #091426;
+            border: 1px solid #17345f;
+            border-radius: 6px;
+            padding: 4px 6px;
+            color: #d7e3ff;
+        }
+
+        QPushButton {
+            background-color: #0b1730;
+            border: 1px solid #23417a;
+            border-radius: 6px;
+            padding: 6px 14px;
+            color: #dbe6ff;
+        }
+
+        QPushButton:hover {
+            background-color: #10203e;
+        }
+        """)
+
+    # =========================
+    # 顶部栏
+    # =========================
     def _create_top_bar(self):
-        """创建顶部仪器信息栏，自定义标题栏风格"""
         top_frame = QFrame()
         top_frame.setStyleSheet("""
             QFrame {
-                background-color: #071022;
-                border: 1px solid #16233f;
+                background-color: #07111f;
+                border: 1px solid #132849;
                 border-radius: 12px;
             }
         """)
@@ -116,17 +141,14 @@ class N6705CUI(QWidget):
         outer_layout.setContentsMargins(0, 0, 0, 0)
         outer_layout.setSpacing(0)
 
-        # ===== 标题栏 =====
         header_widget = QWidget()
         header_widget.setStyleSheet("""
             QWidget {
-                background-color: #030814;
+                background-color: #07111f;
                 border: none;
-                border-top-left-radius: 12px;
-                border-top-right-radius: 12px;
             }
         """)
-        header_widget.setFixedHeight(56)
+        header_widget.setFixedHeight(54)
         header_layout = QHBoxLayout(header_widget)
         header_layout.setContentsMargins(16, 0, 16, 0)
         header_layout.setSpacing(10)
@@ -137,7 +159,6 @@ class N6705CUI(QWidget):
                 color: #00f5c4;
                 font-size: 24px;
                 font-weight: bold;
-                border: none;
             }
         """)
         header_layout.addWidget(icon_label)
@@ -145,10 +166,9 @@ class N6705CUI(QWidget):
         title_label = QLabel("Keysight N6705C DC Power Analyzer")
         title_label.setStyleSheet("""
             QLabel {
-                color: #f5f7fa;
+                color: #ffffff;
                 font-size: 18px;
                 font-weight: 800;
-                border: none;
             }
         """)
         header_layout.addWidget(title_label)
@@ -165,39 +185,36 @@ class N6705CUI(QWidget):
 
         outer_layout.addWidget(header_widget)
 
-        # ===== 内容区域 =====
         content_widget = QWidget()
         content_widget.setStyleSheet("""
             QWidget {
-                background-color: #071022;
+                background-color: #07111f;
                 border: none;
-                border-bottom-left-radius: 12px;
-                border-bottom-right-radius: 12px;
             }
             QLabel {
                 color: #c8d1e6;
                 font-size: 12px;
             }
             QComboBox, QLineEdit {
-                background-color: #09152d;
+                background-color: #091426;
                 color: #d0d8ea;
-                border: 1px solid #1b315f;
+                border: 1px solid #17345f;
                 border-radius: 8px;
                 padding: 6px 10px;
             }
             QPushButton {
-                background-color: #0c1a35;
+                background-color: #0b1730;
                 color: #d0d0d0;
                 border: 1px solid #23417a;
                 border-radius: 8px;
                 padding: 6px 14px;
             }
             QPushButton:hover {
-                background-color: #122445;
+                background-color: #10203e;
             }
         """)
         top_layout = QGridLayout(content_widget)
-        top_layout.setContentsMargins(16, 12, 16, 14)
+        top_layout.setContentsMargins(16, 8, 16, 14)
         top_layout.setHorizontalSpacing(10)
         top_layout.setVerticalSpacing(8)
 
@@ -226,69 +243,19 @@ class N6705CUI(QWidget):
         self.search_btn.clicked.connect(self._on_search)
         self.connect_btn.clicked.connect(self._on_connect)
         self.disconnect_btn.clicked.connect(self._on_disconnect)
-
         self.all_on_btn.clicked.connect(self._on_all_on_clicked)
         self.all_off_btn.clicked.connect(self._on_all_off_clicked)
 
         outer_layout.addWidget(content_widget)
         return top_frame
 
-    # ========== 全局样式 ==========
-    def _setup_style(self):
-        """设置界面样式"""
-        font = QFont("Segoe UI", 9)
-        self.setFont(font)
-
-        self.setStyleSheet("""
-        QWidget {
-            background-color: #020817;
-            color: #d0d8ea;
-        }
-
-        QGroupBox {
-            border: 1px solid #223150;
-            border-radius: 6px;
-            margin-top: 8px;
-            background-color: #0a1326;
-            padding: 8px;
-        }
-
-        QGroupBox::title {
-            subcontrol-origin: margin;
-            left: 10px;
-            padding: 0 4px;
-            color: #9aaed6;
-        }
-
-        QPushButton {
-            background-color: #0c1a35;
-            border: 1px solid #23417a;
-            border-radius: 6px;
-            padding: 6px 14px;
-        }
-
-        QPushButton:hover {
-            background-color: #11254a;
-        }
-
-        QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
-            background-color: #09152d;
-            border: 1px solid #1b315f;
-            border-radius: 6px;
-            padding: 4px 6px;
-            color: #d7e3ff;
-        }
-
-        QLabel {
-            color: #c8d1e6;
-        }
-        """)
-
-    # ========== 创建布局 ==========
+    # =========================
+    # 主布局
+    # =========================
     def _create_layout(self):
         main_layout = QVBoxLayout(self)
-        main_layout.setSpacing(14)
-        main_layout.setContentsMargins(16, 16, 16, 16)
+        main_layout.setSpacing(12)
+        main_layout.setContentsMargins(8, 8, 8, 8)
 
         self.top_bar = self._create_top_bar()
         main_layout.addWidget(self.top_bar)
@@ -296,26 +263,25 @@ class N6705CUI(QWidget):
         self.channel_tabs = self._create_channel_tabs()
         main_layout.addWidget(self.channel_tabs)
 
-        channels_widget = QWidget()
-        channels_layout = QGridLayout(channels_widget)
-        channels_layout.setSpacing(10)
-        channels_layout.setContentsMargins(0, 0, 0, 0)
-
         self.channels = []
-        setting_widget = self._create_setting_widget()
-        channels_layout.addWidget(setting_widget, 0, 0)
-
-        main_layout.addWidget(channels_widget, 1)
+        self.setting_widget = self._create_setting_widget()
+        main_layout.addWidget(self.setting_widget, 1)
 
     def _create_channel_tabs(self):
-        """创建顶部通道切换标签"""
         tab_wrap = QWidget()
+        tab_wrap.setAttribute(Qt.WA_StyledBackground, True)
+        tab_wrap.setStyleSheet("""
+            QWidget {
+                background-color: #07111f;
+                border: none;
+            }
+        """)
+
         layout = QHBoxLayout(tab_wrap)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
         self.channel_tab_buttons = []
-
         for i in range(1, 5):
             btn = QPushButton(f"• Channel {i}")
             btn.setCheckable(True)
@@ -325,34 +291,43 @@ class N6705CUI(QWidget):
             layout.addWidget(btn)
 
         layout.addStretch()
+
         self.channel_tab_buttons[0].setChecked(True)
         self._refresh_channel_tab_styles()
         return tab_wrap
 
     def _create_setting_widget(self):
-        """创建设置控件"""
         self.setting_frame = QFrame()
         self.setting_frame.setStyleSheet("""
             QFrame {
-                background-color: #081632;
+                background-color: #0a1930;
                 border: 1px solid #14305e;
-                border-radius: 16px;
-                padding: 0px;
+                border-radius: 14px;
             }
         """)
 
         setting_layout = QVBoxLayout(self.setting_frame)
         setting_layout.setAlignment(Qt.AlignTop)
-        setting_layout.setContentsMargins(18, 18, 18, 18)
-        setting_layout.setSpacing(14)
+        setting_layout.setContentsMargins(12, 12, 12, 12)
+        setting_layout.setSpacing(12)
 
-        # ===== 通道标题栏 =====
+        # ===== 顶部标题行：只保留纯标题，不要外框感 =====
         setting_header = QHBoxLayout()
         setting_header.setContentsMargins(0, 0, 0, 0)
-        setting_header.setSpacing(8)
+        setting_header.setSpacing(12)
 
-        self.channel_title_label = QLabel("● Channel 1")
-        self.channel_title_label.setStyleSheet("font-weight: 800; font-size: 16px; color: #ffffff;")
+        self.channel_title_label = QLabel("Channel 1")
+        self.channel_title_label.setStyleSheet("""
+            QLabel {
+                font-size: 16px;
+                font-weight: 800;
+                color: #ffffff;
+                padding: 0px;
+                margin: 0px;
+                border: none;
+                background: transparent;
+            }
+        """)
         setting_header.addWidget(self.channel_title_label)
 
         self.cv_btn = QPushButton("CV")
@@ -368,14 +343,13 @@ class N6705CUI(QWidget):
 
         self.cv_btn.setChecked(True)
 
-        mode_wrap = QWidget()
-        mode_layout = QHBoxLayout(mode_wrap)
+        mode_layout = QHBoxLayout()
         mode_layout.setContentsMargins(0, 0, 0, 0)
         mode_layout.setSpacing(0)
         for btn in self.mode_buttons:
             mode_layout.addWidget(btn)
 
-        setting_header.addWidget(mode_wrap)
+        setting_header.addLayout(mode_layout)
         setting_header.addStretch()
 
         self.output_toggle = QPushButton()
@@ -386,134 +360,165 @@ class N6705CUI(QWidget):
 
         setting_layout.addLayout(setting_header)
 
-        # ===== 参数显示区域 =====
+        # ===== 参数区 =====
         params_container = QFrame()
         params_container.setStyleSheet("""
             QFrame {
-                background-color: #0a1020;
-                border: 1px solid #12284e;
-                border-radius: 14px;
-                padding: 10px;
+                background-color: #0a1930;
+                border: 1px solid #132849;
+                border-radius: 12px;
             }
         """)
         params_grid = QGridLayout(params_container)
-        params_grid.setSpacing(18)
+        params_grid.setContentsMargins(8, 8, 8, 8)
+        params_grid.setSpacing(12)
 
-        # 电压区
+        # Voltage
         voltage_frame = QFrame()
         voltage_frame.setStyleSheet("""
             QFrame {
-                background-color: #030c1f;
-                border: 1px solid #0f2346;
-                border-radius: 14px;
-                padding: 12px;
+                background-color: #0b1b34;
+                border: 1px solid #102746;
+                border-radius: 12px;
             }
         """)
         voltage_layout = QVBoxLayout(voltage_frame)
+        voltage_layout.setContentsMargins(14, 14, 14, 14)
         voltage_layout.setSpacing(8)
 
         voltage_label = QLabel("Voltage (V)")
-        voltage_label.setStyleSheet("font-size: 15px; color: #97aed9;")
+        voltage_label.setStyleSheet("font-size: 14px; color: #97aed9;")
         voltage_layout.addWidget(voltage_label)
 
         self.voltage_value = QLineEdit("0.0000")
         self.voltage_value.setStyleSheet("""
             QLineEdit {
-                font-size: 30px;
+                font-size: 22px;
                 font-weight: bold;
-                color: #5f739e;
+                color: #6d83b3;
                 background-color: transparent;
                 border: none;
                 padding: 0px;
             }
         """)
-        self.voltage_value.setFixedHeight(56)
+        self.voltage_value.setFixedHeight(40)
         voltage_layout.addWidget(self.voltage_value)
 
         voltage_input_row = QHBoxLayout()
+        voltage_input_row.setSpacing(8)
+
         voltage_set_label = QLabel("SET")
-        voltage_set_label.setStyleSheet("font-size: 12px; color: #7392cb; min-width: 30px;")
+        voltage_set_label.setStyleSheet("font-size: 12px; color: #7392cb; min-width: 28px;")
         voltage_input_row.addWidget(voltage_set_label)
 
         self.voltage_set_input = QLineEdit("5")
-        self.voltage_set_input.setFixedHeight(38)
+        self.voltage_set_input.setFixedHeight(34)
         voltage_input_row.addWidget(self.voltage_set_input)
 
         voltage_unit = QLabel("V")
-        voltage_unit.setStyleSheet("font-size: 18px; color: #7fa1d9;")
+        voltage_unit.setStyleSheet("font-size: 18px; color: #7fa1d9; min-width: 16px;")
         voltage_input_row.addWidget(voltage_unit)
 
         voltage_layout.addLayout(voltage_input_row)
         params_grid.addWidget(voltage_frame, 0, 0)
 
-        # 电流区
+        # Current
         current_frame = QFrame()
         current_frame.setStyleSheet("""
             QFrame {
-                background-color: #030c1f;
-                border: 1px solid #0f2346;
-                border-radius: 14px;
-                padding: 12px;
+                background-color: #0b1b34;
+                border: 1px solid #102746;
+                border-radius: 12px;
             }
         """)
         current_layout = QVBoxLayout(current_frame)
+        current_layout.setContentsMargins(14, 14, 14, 14)
         current_layout.setSpacing(8)
 
         current_label = QLabel("Current (A)")
-        current_label.setStyleSheet("font-size: 15px; color: #97aed9;")
+        current_label.setStyleSheet("font-size: 14px; color: #97aed9;")
         current_layout.addWidget(current_label)
 
         self.current_value = QLineEdit("0.0000")
         self.current_value.setStyleSheet("""
             QLineEdit {
-                font-size: 30px;
+                font-size: 22px;
                 font-weight: bold;
-                color: #5f739e;
+                color: #6d83b3;
                 background-color: transparent;
                 border: none;
                 padding: 0px;
             }
         """)
-        self.current_value.setFixedHeight(56)
+        self.current_value.setFixedHeight(40)
         current_layout.addWidget(self.current_value)
 
         current_input_row = QHBoxLayout()
+        current_input_row.setSpacing(8)
+
         current_set_label = QLabel("LIM")
-        current_set_label.setStyleSheet("font-size: 12px; color: #7392cb; min-width: 30px;")
+        current_set_label.setStyleSheet("font-size: 12px; color: #7392cb; min-width: 28px;")
         current_input_row.addWidget(current_set_label)
 
         self.limit_current_value = QLineEdit("1")
-        self.limit_current_value.setFixedHeight(38)
+        self.limit_current_value.setFixedHeight(34)
         current_input_row.addWidget(self.limit_current_value)
 
         current_unit = QLabel("A")
-        current_unit.setStyleSheet("font-size: 18px; color: #7fa1d9;")
+        current_unit.setStyleSheet("font-size: 18px; color: #7fa1d9; min-width: 16px;")
         current_input_row.addWidget(current_unit)
 
         current_layout.addLayout(current_input_row)
         params_grid.addWidget(current_frame, 0, 1)
 
+        # 按钮区：位于输入框下面
+        action_row = QHBoxLayout()
+        action_row.setContentsMargins(0, 0, 0, 0)
+        action_row.setSpacing(10)
+
+        self.on_button = QPushButton("⏻ On")
+        self.on_button.setStyleSheet(self._neon_on_button_style())
+        self.on_button.clicked.connect(lambda checked=False: self._on_channel_toggle(checked, self.current_channel))
+
+        self.off_button = QPushButton("▢ Off")
+        self.off_button.setStyleSheet(self._neon_off_button_style())
+        self.off_button.clicked.connect(self._on_off_button_clicked)
+
+        self.measure_btn = QPushButton("MEASURE")
+        self.measure_btn.setStyleSheet(self._primary_action_button_style())
+        self.measure_btn.clicked.connect(self._on_measure_button_clicked)
+
+        self.set_btn = QPushButton("SET")
+        self.set_btn.setStyleSheet(self._primary_action_button_style())
+        self.set_btn.clicked.connect(self._on_set_button_clicked)
+
+        action_row.addWidget(self.on_button)
+        action_row.addWidget(self.off_button)
+        action_row.addStretch()
+        action_row.addWidget(self.measure_btn)
+        action_row.addWidget(self.set_btn)
+
+        params_grid.addLayout(action_row, 1, 0, 1, 2)
+
         setting_layout.addWidget(params_container)
 
-        # ===== 工具容器 =====
+        # ===== 一键调整 =====
         tools_container = QFrame()
         tools_container.setStyleSheet("""
             QFrame {
-                background-color: #081226;
-                border: 1px solid #12284e;
-                border-radius: 14px;
-                padding: 10px;
-                margin-top: 6px;
+                background-color: #0a1930;
+                border: 1px solid #132849;
+                border-radius: 12px;
             }
         """)
         tools_layout = QVBoxLayout(tools_container)
+        tools_layout.setContentsMargins(12, 12, 12, 12)
         tools_layout.setSpacing(10)
 
         tools_title = QLabel("一键调整")
-        tools_title.setStyleSheet("font-weight: bold; font-size: 12px; margin-bottom: 5px;")
+        tools_title.setStyleSheet("font-weight: bold; font-size: 12px;")
         tools_layout.addWidget(tools_title)
 
-        # 通道选择
         channel_select_layout = QHBoxLayout()
         channel_select_layout.setSpacing(10)
 
@@ -534,7 +539,6 @@ class N6705CUI(QWidget):
         channel_select_layout.addStretch()
         tools_layout.addLayout(channel_select_layout)
 
-        # 电压设置
         voltage_set_layout = QHBoxLayout()
         voltage_set_layout.setSpacing(10)
 
@@ -543,8 +547,7 @@ class N6705CUI(QWidget):
         voltage_set_layout.addWidget(voltage_set_label)
 
         self.voltage_inputs = []
-        default_voltages = [3.8, 0.8, 1.2, 1.8]
-        for voltage in default_voltages:
+        for voltage in [3.8, 0.8, 1.2, 1.8]:
             input_box = QLineEdit(f"{voltage:.4f}")
             input_box.setFixedWidth(92)
             self.voltage_inputs.append(input_box)
@@ -553,7 +556,6 @@ class N6705CUI(QWidget):
         voltage_set_layout.addStretch()
         tools_layout.addLayout(voltage_set_layout)
 
-        # 限流设置
         current_limit_layout = QHBoxLayout()
         current_limit_layout.setSpacing(10)
 
@@ -562,8 +564,7 @@ class N6705CUI(QWidget):
         current_limit_layout.addWidget(current_limit_label)
 
         self.current_limit_inputs = []
-        default_currents = [0.2, 0.02, 0.02, 0.02]
-        for current in default_currents:
+        for current in [0.2, 0.02, 0.02, 0.02]:
             input_box = QLineEdit(f"{current:.4f}")
             input_box.setFixedWidth(92)
             self.current_limit_inputs.append(input_box)
@@ -572,7 +573,6 @@ class N6705CUI(QWidget):
         current_limit_layout.addStretch()
         tools_layout.addLayout(current_limit_layout)
 
-        # 底部按钮
         buttons_layout = QHBoxLayout()
         buttons_layout.setSpacing(10)
 
@@ -581,24 +581,7 @@ class N6705CUI(QWidget):
         auto_btn = QPushButton("Auto")
 
         for btn in [measure_all_btn, set_all_btn, auto_btn]:
-            btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #2a64c8;
-                    color: white;
-                    border: none;
-                    border-radius: 6px;
-                    padding: 8px 16px;
-                    font-size: 11px;
-                    min-width: 80px;
-                }
-                QPushButton:hover {
-                    background-color: #3672dc;
-                }
-                QPushButton:disabled {
-                    background-color: #555;
-                    color: #999;
-                }
-            """)
+            btn.setStyleSheet(self._primary_action_button_style())
             buttons_layout.addWidget(btn)
 
         measure_all_btn.clicked.connect(self._on_measure_all_clicked)
@@ -610,36 +593,7 @@ class N6705CUI(QWidget):
 
         setting_layout.addWidget(tools_container)
 
-        # 当前通道主操作按钮
-        action_row = QHBoxLayout()
-        action_row.setSpacing(10)
-
-        self.set_mode_button = QPushButton("SET MODE")
-        self.set_mode_button.clicked.connect(self._set_mode)
-
-        self.on_button = QPushButton("⏻ On")
-        self.on_button.setStyleSheet(self._neon_on_button_style())
-        self.on_button.clicked.connect(lambda checked=False: self._on_channel_toggle(checked, self.current_channel))
-
-        self.off_button = QPushButton("▢ Off")
-        self.off_button.setStyleSheet(self._neon_off_button_style())
-        self.off_button.clicked.connect(self._on_off_button_clicked)
-
-        self.measure_btn = QPushButton("MEASURE")
-        self.measure_btn.clicked.connect(self._on_measure_button_clicked)
-
-        self.set_btn = QPushButton("SET")
-        self.set_btn.clicked.connect(self._on_set_button_clicked)
-
-        for btn in [self.set_mode_button, self.on_button, self.off_button, self.measure_btn, self.set_btn]:
-            action_row.addWidget(btn)
-
-        action_row.addStretch()
-        setting_layout.addLayout(action_row)
-
-        # 兼容原数据结构
         channel_data = {
-            'set_button': self.set_mode_button,
             'on_button': self.on_button,
             'off_button': self.off_button,
             'voltage_value': self.voltage_value,
@@ -653,7 +607,9 @@ class N6705CUI(QWidget):
 
         return self.setting_frame
 
-    # ========== 样式辅助 ==========
+    # =========================
+    # 样式工具
+    # =========================
     def _neon_on_button_style(self):
         return """
         QPushButton {
@@ -670,15 +626,6 @@ class N6705CUI(QWidget):
             background-color: #0a3a3a;
             border: 1px solid #00f5c4;
             color: #3fffd7;
-        }
-        QPushButton:pressed {
-            background-color: #041f1f;
-            border: 1px solid #00b894;
-        }
-        QPushButton:disabled {
-            background-color: #1b1f24;
-            color: #4d6b66;
-            border: 1px solid #2d4a45;
         }
         """
 
@@ -699,14 +646,22 @@ class N6705CUI(QWidget):
             border: 1px solid #ff4fa3;
             color: #ff7dbd;
         }
-        QPushButton:pressed {
-            background-color: #210817;
-            border: 1px solid #b82b70;
+        """
+
+    def _primary_action_button_style(self):
+        return """
+        QPushButton {
+            background-color: #2a64c8;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 8px 16px;
+            font-size: 11px;
+            min-width: 88px;
+            font-weight: 600;
         }
-        QPushButton:disabled {
-            background-color: #1b1f24;
-            color: #6d4d5c;
-            border: 1px solid #4a2d39;
+        QPushButton:hover {
+            background-color: #3672dc;
         }
         """
 
@@ -728,9 +683,6 @@ class N6705CUI(QWidget):
             QPushButton:hover {
                 background-color: #31405f;
             }
-            QPushButton:checked:hover {
-                background-color: #3a77e0;
-            }
         """
 
     def _build_channel_tab_style(self, ch, checked=False):
@@ -738,7 +690,7 @@ class N6705CUI(QWidget):
         if checked:
             return f"""
             QPushButton {{
-                background-color: #0a1430;
+                background-color: #0b1730;
                 color: #ffffff;
                 border: 1px solid {theme['accent_border']};
                 border-bottom: 2px solid {theme['accent']};
@@ -748,9 +700,6 @@ class N6705CUI(QWidget):
                 font-size: 14px;
                 font-weight: 700;
                 text-align: left;
-            }}
-            QPushButton:hover {{
-                background-color: #0d1838;
             }}
             """
         else:
@@ -787,14 +736,11 @@ class N6705CUI(QWidget):
                 font-weight: 700;
                 border-radius: 0px;
             }}
-            QPushButton:hover {{
-                background-color: {theme['accent_hover']};
-            }}
             """
         else:
             return """
             QPushButton {
-                background-color: #060b18;
+                background-color: #08111f;
                 color: #7c8aac;
                 border: 1px solid #1b2842;
                 padding: 5px 14px;
@@ -802,15 +748,14 @@ class N6705CUI(QWidget):
                 border-radius: 0px;
             }
             QPushButton:hover {
-                background-color: #0a1224;
+                background-color: #0c1628;
                 color: #dbe6ff;
             }
             """
 
     def _apply_mode_button_styles(self):
-        for i, btn in enumerate(self.mode_buttons):
+        for btn in self.mode_buttons:
             btn.setStyleSheet(self._build_mode_button_style(btn.isChecked()))
-        # 圆角只在最左最右保留
         if self.mode_buttons:
             self.mode_buttons[0].setStyleSheet(
                 self.mode_buttons[0].styleSheet() + "QPushButton {border-top-left-radius: 8px; border-bottom-left-radius: 8px;}"
@@ -825,20 +770,15 @@ class N6705CUI(QWidget):
             btn.setChecked(i == self.current_channel)
 
     def _apply_channel_theme(self, channel_num):
-        """应用当前通道主题色"""
         theme = self.channel_themes[channel_num]
 
-        self.channel_title_label.setText(f"● Channel {channel_num}")
-        self.channel_title_label.setStyleSheet(
-            f"font-weight: 800; font-size: 16px; color: #ffffff;"
-        )
+        self.channel_title_label.setText(f"Channel {channel_num}")
 
         self.setting_frame.setStyleSheet(f"""
             QFrame {{
-                background-color: #081632;
+                background-color: #0a1930;
                 border: 1px solid {theme['accent_border']};
-                border-radius: 16px;
-                padding: 0px;
+                border-radius: 14px;
             }}
         """)
 
@@ -858,15 +798,17 @@ class N6705CUI(QWidget):
         self._refresh_channel_tab_styles()
         self._apply_mode_button_styles()
 
-    # ========== 初始化 ==========
+    # =========================
+    # 初始化
+    # =========================
     def _init_ui_elements(self):
-        for _i, _channel in enumerate(self.channels):
-            pass
+        pass
 
-    # ========== 通道/模式切换 ==========
+    # =========================
+    # 通道/模式
+    # =========================
     def _switch_channel(self, channel_num):
         self.current_channel = channel_num
-        self.channel_combo = None  # 防兼容调用误用
         self._apply_channel_theme(channel_num)
 
     def _on_mode_button_clicked(self, clicked_button):
@@ -894,7 +836,9 @@ class N6705CUI(QWidget):
         }
         return mapping.get(ui_mode, "PS2Q")
 
-    # ========== 数据接口 ==========
+    # =========================
+    # 数据接口
+    # =========================
     def get_channel_settings(self, channel_num):
         if 1 <= channel_num <= 4 and self.channels:
             channel = self.channels[0]
@@ -922,7 +866,9 @@ class N6705CUI(QWidget):
         for channel in self.channels:
             channel['toggle'].setChecked(enabled)
 
-    # ========== 顶部连接逻辑 ==========
+    # =========================
+    # 连接逻辑
+    # =========================
     def _on_search(self):
         self.connection_status.setText("搜索中...")
         self.connection_status.setStyleSheet("color: #ff9800; padding: 10px; font-weight: bold;")
@@ -1039,20 +985,10 @@ class N6705CUI(QWidget):
             self.connection_status.setStyleSheet("color: #e53935; padding: 10px; font-weight: bold;")
             self.disconnect_btn.setEnabled(True)
 
-    # ========== 单通道操作 ==========
-    def _set_mode(self, unused_checked=False):
-        if self.is_connected and self.n6705c:
-            try:
-                channel_num = self.current_channel
-                ui_mode = self._get_current_mode_text()
-                mode = self._map_ui_mode_to_instrument_mode(ui_mode)
-                self.n6705c.set_mode(channel_num, mode)
-                print(f"通道{channel_num}已设置为{mode}模式")
-            except Exception as e:
-                print(f"设置通道{channel_num}模式失败: {str(e)}")
-
+    # =========================
+    # 单通道操作
+    # =========================
     def _on_channel_toggle(self, unused_checked=False, channel_num=None):
-        """ON按钮点击事件，只负责打开通道"""
         if channel_num is None:
             channel_num = self.current_channel
 
@@ -1067,7 +1003,6 @@ class N6705CUI(QWidget):
             self.output_toggle.setChecked(True)
 
     def _on_off_button_clicked(self):
-        """OFF按钮点击事件，关闭当前选择的通道"""
         channel_num = self.current_channel
         if self.is_connected and self.n6705c:
             try:
@@ -1086,42 +1021,42 @@ class N6705CUI(QWidget):
             self._on_off_button_clicked()
 
     def _on_set_button_clicked(self):
-        """SET按钮点击事件，将电压和电流限制值发送到仪器"""
         if not self.is_connected or not self.n6705c:
             return
-
         try:
             channel_num = self.current_channel
             voltage_set = float(self.voltage_set_input.text())
             current_set = float(self.current_value.text())
             limit_current_set = float(self.limit_current_value.text())
 
+            ui_mode = self._get_current_mode_text()
+            inst_mode = self._map_ui_mode_to_instrument_mode(ui_mode)
+            self.n6705c.set_mode(channel_num, inst_mode)
+
             self.n6705c.set_voltage(channel_num, voltage_set)
             self.n6705c.set_current(channel_num, current_set)
             self.n6705c.set_current_limit(channel_num, limit_current_set)
 
-            print(f"通道{channel_num}设置已发送 - 电压: {voltage_set}V, 电流: {current_set}A, 电流限制: {limit_current_set}A")
+            print(f"通道{channel_num}设置已发送 - 模式: {inst_mode}, 电压: {voltage_set}V, 电流: {current_set}A, 电流限制: {limit_current_set}A")
         except Exception as e:
             print(f"设置发送失败: {str(e)}")
 
     def _on_measure_button_clicked(self):
-        """MEASURE按钮点击事件，获取当前电压和电流"""
         if not self.is_connected or not self.n6705c:
             return
-
         try:
             channel_num = self.current_channel
             voltage = float(self.n6705c.measure_voltage(channel_num))
             current = float(self.n6705c.measure_current(channel_num))
             limit_current = float(self.n6705c.get_current_limit(channel_num))
-
             self.update_channel_values(channel_num, voltage, current, limit_current)
-
             print(f"通道{channel_num}测量值 - 电压: {voltage:.4f}V, 电流: {current:.4f}A, 电流限制: {limit_current:.4f}A")
         except Exception as e:
             print(f"测量失败: {str(e)}")
 
-    # ========== 全通道操作 ==========
+    # =========================
+    # 全通道操作
+    # =========================
     def _on_all_on_clicked(self):
         if not self.is_connected or not self.n6705c:
             return
@@ -1144,49 +1079,34 @@ class N6705CUI(QWidget):
         except Exception as e:
             print(f"All Off 失败: {str(e)}")
 
-    # ========== 批量操作 ==========
+    # =========================
+    # 批量操作
+    # =========================
     def _on_measure_all_clicked(self):
-        """Measure按钮点击事件，将选择的通道设置为电压表模式"""
         if not self.is_connected or not self.n6705c:
             return
-
         try:
-            selected_channels = []
-            for i, checkbox in enumerate(self.channel_checkboxes):
-                if checkbox.isChecked():
-                    selected_channels.append(i + 1)
-
+            selected_channels = [i + 1 for i, checkbox in enumerate(self.channel_checkboxes) if checkbox.isChecked()]
             if not selected_channels:
                 print("未选择任何通道")
                 return
-
             for channel_num in selected_channels:
                 self.n6705c.set_mode(channel_num, "VMETer")
                 print(f"通道{channel_num}已设置为电压表模式")
-
         except Exception as e:
             print(f"设置电压表模式失败: {str(e)}")
 
     def _on_set_all_clicked(self):
-        """Set按钮点击事件，将输入的参数设置到勾选的通道里面"""
         if not self.is_connected or not self.n6705c:
             return
-
         try:
-            selected_channels = []
-            for i, checkbox in enumerate(self.channel_checkboxes):
-                if checkbox.isChecked():
-                    selected_channels.append(i + 1)
-
+            selected_channels = [i + 1 for i, checkbox in enumerate(self.channel_checkboxes) if checkbox.isChecked()]
             if not selected_channels:
                 print("未选择任何通道")
                 return
 
-            voltages = []
-            current_limits = []
-            for i in range(4):
-                voltages.append(float(self.voltage_inputs[i].text()))
-                current_limits.append(float(self.current_limit_inputs[i].text()))
+            voltages = [float(self.voltage_inputs[i].text()) for i in range(4)]
+            current_limits = [float(self.current_limit_inputs[i].text()) for i in range(4)]
 
             for channel_num in selected_channels:
                 idx = channel_num - 1
@@ -1196,23 +1116,15 @@ class N6705CUI(QWidget):
                 self.n6705c.set_voltage(channel_num, voltage)
                 self.n6705c.set_current_limit(channel_num, current_limit)
                 self.n6705c.channel_on(channel_num)
-
                 print(f"通道{channel_num}设置已发送 - 电压: {voltage}V, 电流限制: {current_limit}A")
-
         except Exception as e:
             print(f"设置发送失败: {str(e)}")
 
     def _on_auto_clicked(self):
-        """Auto按钮点击事件"""
         if not self.is_connected or not self.n6705c:
             return
-
         try:
-            selected_channels = []
-            for i, checkbox in enumerate(self.channel_checkboxes):
-                if checkbox.isChecked():
-                    selected_channels.append(i + 1)
-
+            selected_channels = [i + 1 for i, checkbox in enumerate(self.channel_checkboxes) if checkbox.isChecked()]
             if not selected_channels:
                 print("未选择任何通道")
                 return
@@ -1226,26 +1138,20 @@ class N6705CUI(QWidget):
                 print(f"通道{channel_num}新电压: {new_voltage:.4f}V")
 
                 self.n6705c.set_mode(channel_num, "PS2Q")
-                print(f"通道{channel_num}已设置为PS2Q模式")
-
                 self.n6705c.set_voltage(channel_num, new_voltage)
-                print(f"通道{channel_num}电压已设置为: {new_voltage:.4f}V")
-
                 self.n6705c.channel_on(channel_num)
                 print(f"通道{channel_num}已打开")
-
         except Exception as e:
             print(f"Auto操作失败: {str(e)}")
 
 
-# Demo显示函数
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
-    n6705c_ui_test = N6705CUI()
-    n6705c_ui_test.setWindowTitle("N6705C测试系统")
-    n6705c_ui_test.setGeometry(100, 100, 1200, 820)
-    n6705c_ui_test.show()
+    win = N6705CUI()
+    win.setWindowTitle("N6705C测试系统")
+    win.setGeometry(100, 100, 1200, 820)
+    win.show()
 
     sys.exit(app.exec())
