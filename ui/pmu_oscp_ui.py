@@ -162,6 +162,7 @@ class PMUOSCPUI(QWidget):
             font-size: 10pt;
         }
 
+
         QGroupBox {
             background-color: #0d1833;
             border: 1px solid #1a2a52;
@@ -169,6 +170,34 @@ class PMUOSCPUI(QWidget):
             margin-top: 12px;
             padding: 16px;
             font-weight: 600;
+        }
+
+        QGroupBox#oscpConfigGroup {
+            padding: 12px;
+        }
+        QGroupBox#oscpConfigGroup QLabel {
+            border: none;
+            background: transparent;
+            padding: 0px;
+            margin: 0px 0px 1px 0px;
+            min-height: 0px;
+        }
+        QGroupBox#oscpConfigGroup QLineEdit,
+        QGroupBox#oscpConfigGroup QComboBox,
+        QGroupBox#oscpConfigGroup QSpinBox,
+        QGroupBox#oscpConfigGroup QDoubleSpinBox {
+            padding: 4px 8px;
+            min-height: 18px;
+        }
+
+        QGroupBox#oscpConfigGroup QLabel {
+            border: none;
+            background: transparent;
+            padding: 0px;
+            margin: 0px 0px 1px 0px;
+            min-height: 0px;
+            color: #8fa7d6;
+            font-size: 9pt;
         }
 
         QGroupBox::title {
@@ -183,6 +212,13 @@ class PMUOSCPUI(QWidget):
         QLabel {
             color: #aebcdf;
             background: transparent;
+        }
+
+        QGroupBox#oscpConfigGroup QLabel {
+            border: none;
+            background: transparent;
+            padding: 0px;
+            margin: 0px;
         }
 
         QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
@@ -357,9 +393,11 @@ class PMUOSCPUI(QWidget):
 
         # -------- Config --------
         config_group = QGroupBox("OSCP Configuration")
+        config_group.setObjectName("oscpConfigGroup")
+        
         config_layout = QGridLayout()
         config_layout.setHorizontalSpacing(12)
-        config_layout.setVerticalSpacing(10)
+        config_layout.setVerticalSpacing(4)
 
         self.test_type_combo = QComboBox()
         self.test_type_combo.addItems(["OCP", "SCP", "OVP", "UVP"])
