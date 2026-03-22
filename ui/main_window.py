@@ -5,11 +5,13 @@
 """
 
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QStatusBar, QSplitter, QFrame, QButtonGroup,
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
+    QPushButton, QComboBox, QLabel, QLineEdit, QGridLayout,
+    QTabWidget, QStatusBar, QCheckBox, QSplitter, QFrame, QButtonGroup,
     QGraphicsDropShadowEffect
 )
-from PySide6.QtCore import Qt, QEvent, QPoint, QTimer, Signal
+
+from PySide6.QtCore import Qt, Signal, QEvent, QPoint, QTimer
 from PySide6.QtGui import QPalette, QColor, QFont
 from ui.plot_widget import PlotWidget
 from ui.mso64b_ui import MSO64BUI
@@ -23,61 +25,73 @@ from instruments.mso64b import MSO64B
 
 
 class PMUSubMenuItem(QPushButton):
-    """PMU 二级菜单按钮"""
+    """PMU二级菜单项"""
 
-    def __init__(self, text, key, parent=None):
+    def __init__(self, text, key, position="middle", parent=None):
         super().__init__(text, parent)
         self.key = key
+        self.position = position
         self.selected = False
         self.setCursor(Qt.PointingHandCursor)
-        self.setMinimumHeight(46)
-        self.setStyleSheet(self._build_style())
+        self.setMinimumHeight(44)
+        self._apply_style()
 
     def set_selected(self, selected: bool):
         self.selected = selected
-        self.setStyleSheet(self._build_style())
+        self._apply_style()
 
-    def _build_style(self):
+    def _apply_style(self):
+        radius_top = "12px" if self.position == "top" else "0px"
+        radius_bottom = "12px" if self.position == "bottom" else "0px"
+
         if self.selected:
-            return """
-                QPushButton {
+            self.setStyleSheet(f"""
+                QPushButton {{
                     border: none;
                     background-color: #3f3a8a;
-                    color: #a9b4ff;
+                    color: #9cabff;
                     text-align: left;
                     padding: 0 18px;
                     font-size: 14px;
-                    border-radius: 0px;
-                }
-                QPushButton:hover {
-                    background-color: #48429d;
+                    border-top-left-radius: {radius_top};
+                    border-top-right-radius: {radius_top};
+                    border-bottom-left-radius: {radius_bottom};
+                    border-bottom-right-radius: {radius_bottom};
+                }}
+                QPushButton:hover {{
+                    background-color: #4942a0;
                     color: #ffffff;
-                }
-            """
-        return """
-            QPushButton {
-                border: none;
-                background-color: transparent;
-                color: #d8ddea;
-                text-align: left;
-                padding: 0 18px;
-                font-size: 14px;
-                border-radius: 0px;
-            }
-            QPushButton:hover {
-                background-color: #24314a;
-                color: #ffffff;
-            }
-        """
+                }}
+            """)
+        else:
+            self.setStyleSheet(f"""
+                QPushButton {{
+                    border: none;
+                    background-color: transparent;
+                    color: #d5d9e3;
+                    text-align: left;
+                    padding: 0 18px;
+                    font-size: 14px;
+                    border-top-left-radius: {radius_top};
+                    border-top-right-radius: {radius_top};
+                    border-bottom-left-radius: {radius_bottom};
+                    border-bottom-right-radius: {radius_bottom};
+                }}
+                QPushButton:hover {{
+                    background-color: #24314a;
+                    color: #ffffff;
+                }}
+            """)
 
 
 class PMUSubMenu(QWidget):
-    """PMU Auto Test 右侧圆角悬浮二级菜单"""
+    """PMU Auto Test 右侧悬浮二级菜单"""
 
     item_clicked = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent, Qt.FramelessWindowHint | Qt.Tool)
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setMouseTracking(True)
 
@@ -85,26 +99,24 @@ class PMUSubMenu(QWidget):
         self.current_key = None
         self.buttons = {}
 
-        # 外层用于留阴影空间
         self.outer_layout = QVBoxLayout(self)
         self.outer_layout.setContentsMargins(10, 10, 10, 10)
         self.outer_layout.setSpacing(0)
 
-        # 真正内容面板
-        self.panel = QFrame()
+        self.panel = QFrame(self)
         self.panel.setObjectName("pmuSubMenuPanel")
         self.panel.setStyleSheet("""
             QFrame#pmuSubMenuPanel {
-                background-color: #1a2233;
+                background-color: #1b2233;
                 border: none;
-                border-radius: 14px;
+                border-radius: 12px;
             }
         """)
 
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(28)
         shadow.setOffset(0, 8)
-        shadow.setColor(QColor(0, 0, 0, 120))
+        shadow.setColor(QColor(0, 0, 0, 110))
         self.panel.setGraphicsEffect(shadow)
 
         self.outer_layout.addWidget(self.panel)
@@ -120,25 +132,16 @@ class PMUSubMenu(QWidget):
             ("oscp", "OSCP"),
         ]
 
-        for idx, (key, text) in enumerate(self.menu_items):
-            btn = PMUSubMenuItem(text, key, self.panel)
+        total = len(self.menu_items)
+        for i, (key, text) in enumerate(self.menu_items):
+            if i == 0:
+                position = "top"
+            elif i == total - 1:
+                position = "bottom"
+            else:
+                position = "middle"
 
-            # 首尾圆角通过单独样式处理
-            if idx == 0:
-                btn.setStyleSheet(btn.styleSheet() + """
-                    QPushButton {
-                        border-top-left-radius: 14px;
-                        border-top-right-radius: 14px;
-                    }
-                """)
-            elif idx == len(self.menu_items) - 1:
-                btn.setStyleSheet(btn.styleSheet() + """
-                    QPushButton {
-                        border-bottom-left-radius: 14px;
-                        border-bottom-right-radius: 14px;
-                    }
-                """)
-
+            btn = PMUSubMenuItem(text, key, position=position, parent=self.panel)
             btn.clicked.connect(lambda checked=False, k=key: self.item_clicked.emit(k))
             self.layout.addWidget(btn)
             self.buttons[key] = btn
@@ -170,31 +173,51 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("功耗测试工具")
         self.setGeometry(100, 100, 1200, 800)
 
+        # 初始化测试管理器
         self.test_manager = TestManager()
+
+        # 初始化仪器
         self.visa_instrument = VisaInstrument()
         self.ch341t = CH341T()
         self.mso64b_instrument = None
 
+        # 初始化UI组件
         self.n6705c_ui = None
         self.mso64b_ui = None
         self.pmu_test_ui = None
         self.current_instrument_ui = None
         self.channels = []
 
+        # PMU菜单状态
         self.pmu_submenu = None
         self._pmu_btn_hovered = False
         self.current_pmu_test_key = None
+        self.pmu_test_tab_map = {
+            "dcdc_efficiency": 0,
+            "output_voltage": 1,
+            "threshold": 2,
+            "oscp": 3,
+        }
 
+        # 设置样式
         self._setup_style()
 
+        # 创建主布局
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
 
+        # 创建顶部状态栏
         self._create_status_bar()
+
+        # 创建主内容区域
         self._create_main_content()
+
+        # 创建PMU二级菜单
         self._create_pmu_submenu()
+
+        # 连接信号槽
         self._connect_signals()
 
     def _setup_style(self):
@@ -223,18 +246,17 @@ class MainWindow(QMainWindow):
             QMainWindow {
                 background-color: #16181c;
             }
-            QLabel {
-                color: #c8c8c8;
-            }
-            QStatusBar {
-                background-color: #16181c;
-                color: #c8c8c8;
-                border-top: 1px solid #333;
-            }
-            QFrame {
+            QGroupBox {
                 border: 1px solid #333;
-                border-radius: 4px;
+                border-radius: 6px;
+                margin-top: 6px;
                 background-color: #202328;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 3px 0 3px;
+                color: #c8c8c8;
             }
             QPushButton {
                 border: 1px solid #555;
@@ -245,6 +267,58 @@ class MainWindow(QMainWindow):
             }
             QPushButton:hover {
                 background-color: #3a3d43;
+            }
+            QPushButton:pressed {
+                background-color: #2a2d32;
+            }
+            QPushButton:disabled {
+                background-color: #2a2d32;
+                color: #666;
+            }
+            QComboBox {
+                border: 1px solid #555;
+                border-radius: 4px;
+                padding: 4px 20px 4px 8px;
+                background-color: #32353a;
+                color: #c8c8c8;
+            }
+            QLineEdit {
+                border: 1px solid #555;
+                border-radius: 4px;
+                padding: 4px 8px;
+                background-color: #32353a;
+                color: #c8c8c8;
+            }
+            QLabel {
+                color: #c8c8c8;
+            }
+            QCheckBox {
+                color: #c8c8c8;
+            }
+            QStatusBar {
+                background-color: #16181c;
+                color: #c8c8c8;
+                border-top: 1px solid #333;
+            }
+            QTabWidget::pane {
+                border: 1px solid #333;
+                background-color: #202328;
+            }
+            QTabBar::tab {
+                background-color: #2a2d32;
+                color: #c8c8c8;
+                padding: 6px 12px;
+                border: 1px solid #333;
+                border-bottom: none;
+            }
+            QTabBar::tab:selected {
+                background-color: #32353a;
+                border-top: 2px solid #2a82da;
+            }
+            QFrame {
+                border: 1px solid #333;
+                border-radius: 4px;
+                background-color: #202328;
             }
         """)
 
@@ -263,6 +337,7 @@ class MainWindow(QMainWindow):
         """创建主内容区域"""
         main_splitter = QSplitter(Qt.Horizontal)
 
+        # 左侧导航栏
         self.left_nav = QFrame()
         self.left_nav.setFixedWidth(280)
         self.left_nav.setObjectName("leftNav")
@@ -278,6 +353,7 @@ class MainWindow(QMainWindow):
         left_nav_layout.setContentsMargins(14, 18, 14, 18)
         left_nav_layout.setSpacing(10)
 
+        # 顶部标题
         logo_label = QLabel("LabControl Pro")
         logo_label.setStyleSheet("""
             QLabel {
@@ -291,6 +367,7 @@ class MainWindow(QMainWindow):
         """)
         left_nav_layout.addWidget(logo_label)
 
+        # 分组标题：INSTRUMENTS
         instruments_title = QLabel("INSTRUMENTS")
         instruments_title.setStyleSheet("""
             QLabel {
@@ -305,15 +382,24 @@ class MainWindow(QMainWindow):
         """)
         left_nav_layout.addWidget(instruments_title)
 
-        self.power_analyzer_btn = SidebarNavButton("N6705C Power\nAnalyzer", "", "⚡")
+        # 导航按钮
+        self.power_analyzer_btn = SidebarNavButton(
+            "N6705C Power\nAnalyzer",
+            "",
+            "⚡"
+        )
         self.power_analyzer_btn.setChecked(True)
 
-        self.oscilloscope_btn = SidebarNavButton("MSO64B Oscilloscope", "", "∿")
-        self.pmu_auto_test_btn = SidebarNavButton("PMU Auto Test", "", "⚙")
+        self.oscilloscope_btn = SidebarNavButton(
+            "MSO64B Oscilloscope",
+            "",
+            "∿"
+        )
 
         left_nav_layout.addWidget(self.power_analyzer_btn)
         left_nav_layout.addWidget(self.oscilloscope_btn)
 
+        # 分组标题：AUTOMATION
         automation_title = QLabel("AUTOMATION")
         automation_title.setStyleSheet("""
             QLabel {
@@ -327,8 +413,15 @@ class MainWindow(QMainWindow):
             }
         """)
         left_nav_layout.addWidget(automation_title)
+
+        self.pmu_auto_test_btn = SidebarNavButton(
+            "PMU Auto Test",
+            "",
+            "⚙"
+        )
         left_nav_layout.addWidget(self.pmu_auto_test_btn)
 
+        # 单选组
         self.nav_button_group = QButtonGroup(self)
         self.nav_button_group.setExclusive(True)
         self.nav_button_group.addButton(self.power_analyzer_btn)
@@ -337,6 +430,7 @@ class MainWindow(QMainWindow):
 
         left_nav_layout.addStretch()
 
+        # 底部容器
         bottom_widget = QWidget()
         bottom_widget.setStyleSheet("""
             QWidget {
@@ -415,10 +509,11 @@ class MainWindow(QMainWindow):
         visa_status_layout.addWidget(self.visa_status_label)
         visa_status_layout.addStretch()
         bottom_layout.addWidget(visa_status_widget)
-
         left_nav_layout.addWidget(bottom_widget)
+
         main_splitter.addWidget(self.left_nav)
 
+        # 右侧主内容区域
         self.right_content = QWidget()
         self.right_content_layout = QVBoxLayout(self.right_content)
         self.right_content_layout.setContentsMargins(0, 0, 0, 0)
@@ -436,7 +531,7 @@ class MainWindow(QMainWindow):
         self.main_layout.addWidget(main_splitter)
 
     def _create_pmu_submenu(self):
-        """创建 PMU 二级菜单"""
+        """创建PMU二级菜单"""
         self.pmu_submenu = PMUSubMenu(self)
         self.pmu_submenu.item_clicked.connect(self._on_pmu_submenu_clicked)
 
@@ -444,11 +539,12 @@ class MainWindow(QMainWindow):
         self.pmu_submenu.installEventFilter(self)
 
     def _show_pmu_submenu(self):
+        """显示PMU二级菜单"""
         if not self.pmu_submenu:
             return
 
         btn_global_pos = self.pmu_auto_test_btn.mapToGlobal(QPoint(0, 0))
-        x = btn_global_pos.x() + self.pmu_auto_test_btn.width() + 10
+        x = btn_global_pos.x() + self.pmu_auto_test_btn.width() + 8
         y = btn_global_pos.y()
 
         self.pmu_submenu.set_current_item(self.current_pmu_test_key)
@@ -457,6 +553,7 @@ class MainWindow(QMainWindow):
         self.pmu_submenu.raise_()
 
     def _hide_pmu_submenu_if_needed(self):
+        """按需隐藏PMU二级菜单"""
         if self._pmu_btn_hovered:
             return
         if self.pmu_submenu and self.pmu_submenu.is_hovered():
@@ -465,6 +562,7 @@ class MainWindow(QMainWindow):
             self.pmu_submenu.hide()
 
     def eventFilter(self, obj, event):
+        """处理PMU按钮和菜单悬停事件"""
         if obj == self.pmu_auto_test_btn:
             if event.type() == QEvent.Enter:
                 self._pmu_btn_hovered = True
@@ -481,61 +579,58 @@ class MainWindow(QMainWindow):
 
         return super().eventFilter(obj, event)
 
-    def _clear_instrument_ui_container(self):
-        while self.instrument_ui_container_layout.count() > 0:
-            item = self.instrument_ui_container_layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.hide()
-                widget.deleteLater()
-
     def _create_power_analyzer_ui(self):
+        """创建电源分析仪UI"""
         self._clear_instrument_ui_container()
+
         self.n6705c_ui = N6705CUI()
         self.instrument_ui_container_layout.addWidget(self.n6705c_ui)
         self.current_instrument_ui = "power_analyzer"
+
         self.channels = self.n6705c_ui.channels if hasattr(self.n6705c_ui, 'channels') else []
 
     def _create_oscilloscope_ui(self):
+        """创建示波器UI"""
         self._clear_instrument_ui_container()
+
         self.mso64b_ui = MSO64BUI()
         self.mso64b_ui.connect_btn.clicked.connect(self._connect_mso64b)
         self.mso64b_ui.disconnect_btn.clicked.connect(self._disconnect_mso64b)
         self.mso64b_ui.measure_btn.clicked.connect(self._measure_mso64b)
+
         self.instrument_ui_container_layout.addWidget(self.mso64b_ui)
         self.current_instrument_ui = "oscilloscope"
 
     def _create_pmu_test_ui(self, selected_test=None):
-        """
-        创建 PMU 测试 UI
-        注意：
-        如果 PMUTestUI 内部有切页控件，必须实现 set_current_test(test_key)
-        """
-        need_new = self.pmu_test_ui is None or self.current_instrument_ui != "pmu_test"
-
-        if need_new:
+        """创建PMU测试UI，并切换到指定测试页"""
+        if self.current_instrument_ui != "pmu_test" or self.pmu_test_ui is None:
             self._clear_instrument_ui_container()
             self.pmu_test_ui = PMUTestUI()
             self.instrument_ui_container_layout.addWidget(self.pmu_test_ui)
-
-        self.current_instrument_ui = "pmu_test"
-
-        if selected_test:
+            self.current_instrument_ui = "pmu_test"
+        if selected_test in self.pmu_test_tab_map:
             self.current_pmu_test_key = selected_test
             if hasattr(self.pmu_test_ui, "set_current_test"):
                 self.pmu_test_ui.set_current_test(selected_test)
-            else:
-                print(f"PMUTestUI 未实现 set_current_test('{selected_test}')，因此无法真正切换测试项。")
 
     def _on_pmu_submenu_clicked(self, test_key):
-        """PMU 二级菜单点击"""
+        """点击PMU二级菜单项"""
         self.current_pmu_test_key = test_key
         self.pmu_submenu.set_current_item(test_key)
         self.pmu_auto_test_btn.setChecked(True)
         self._create_pmu_test_ui(selected_test=test_key)
         self.pmu_submenu.hide()
 
+    def _clear_instrument_ui_container(self):
+        """清空仪器UI容器"""
+        while self.instrument_ui_container_layout.count() > 0:
+            widget = self.instrument_ui_container_layout.takeAt(0).widget()
+            if widget:
+                widget.hide()
+                widget.deleteLater()
+
     def _connect_signals(self):
+        """连接信号槽"""
         self.power_analyzer_btn.clicked.connect(self._on_nav_button_clicked)
         self.oscilloscope_btn.clicked.connect(self._on_nav_button_clicked)
         self.pmu_auto_test_btn.clicked.connect(self._on_nav_button_clicked)
@@ -544,6 +639,7 @@ class MainWindow(QMainWindow):
         self.test_manager.data_updated.connect(self._update_data)
 
     def _on_nav_button_clicked(self):
+        """导航按钮点击事件"""
         sender = self.sender()
 
         if sender == self.power_analyzer_btn:
@@ -561,9 +657,11 @@ class MainWindow(QMainWindow):
             self._show_pmu_submenu()
 
     def _on_download_code(self):
+        """下载代码按钮点击事件"""
         print("Download Python Code clicked")
 
     def _connect_mso64b(self):
+        """连接MSO64B示波器"""
         if not self.mso64b_ui:
             return
 
@@ -581,6 +679,7 @@ class MainWindow(QMainWindow):
             self.visa_status.setText("示波器: 连接失败")
 
     def _disconnect_mso64b(self):
+        """断开MSO64B示波器"""
         if self.mso64b_instrument:
             self.mso64b_instrument.disconnect()
             self.mso64b_instrument = None
@@ -591,6 +690,7 @@ class MainWindow(QMainWindow):
         self.visa_status.setText("示波器: 未连接")
 
     def _measure_mso64b(self):
+        """执行MSO64B测量"""
         if not self.mso64b_instrument or not self.mso64b_ui:
             return
 
@@ -610,7 +710,87 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"测量失败: {str(e)}")
 
+    def _scan_visa(self):
+        """扫描 VISA 设备"""
+        devices = self.visa_instrument.scan_devices()
+        self.visa_combo.clear()
+        self.visa_combo.addItems(devices)
+
+    def _connect_visa(self):
+        """连接 VISA 设备"""
+        device = self.visa_combo.currentText()
+        if device:
+            success = self.visa_instrument.connect(device)
+            if success:
+                self.visa_status.setText(f"VISA: 已连接 - {device}")
+                self.connect_visa_btn.setText("断开")
+            else:
+                self.visa_status.setText("VISA: 连接失败")
+        else:
+            if self.visa_instrument.is_connected():
+                self.visa_instrument.disconnect()
+                self.visa_status.setText("VISA: 未连接")
+                self.connect_visa_btn.setText("连接")
+
+    def _scan_ch341t(self):
+        """扫描 CH341T 端口"""
+        ports = self.ch341t.scan_ports()
+        self.ch341t_combo.clear()
+        self.ch341t_combo.addItems(ports)
+
+    def _connect_ch341t(self):
+        """连接 CH341T"""
+        port = self.ch341t_combo.currentText()
+        if port:
+            success = self.ch341t.connect(port)
+            if success:
+                self.ch341t_status.setText(f"CH341T: 已连接 - {port}")
+                self.connect_ch341t_btn.setText("断开")
+            else:
+                self.ch341t_status.setText("CH341T: 连接失败")
+        else:
+            if self.ch341t.is_connected():
+                self.ch341t.disconnect()
+                self.ch341t_status.setText("CH341T: 未连接")
+                self.connect_ch341t_btn.setText("连接")
+
+    def _start_test(self):
+        """开始测试"""
+        channel = int(self.channel_combo.currentText())
+        voltage = float(self.voltage_edit.text())
+        current_limit = float(self.current_limit_edit.text())
+        sampling_rate = int(self.sampling_rate_edit.text())
+
+        self.visa_instrument.set_channel(channel)
+        self.visa_instrument.set_voltage(voltage)
+        self.visa_instrument.set_current_limit(current_limit)
+
+        self.test_manager.start_test(
+            visa_instrument=self.visa_instrument,
+            sampling_rate=sampling_rate
+        )
+
+        self.start_test_btn.setEnabled(False)
+        self.stop_test_btn.setEnabled(True)
+
+    def _stop_test(self):
+        """停止测试"""
+        self.test_manager.stop_test()
+        self.start_test_btn.setEnabled(True)
+        self.stop_test_btn.setEnabled(False)
+
+    def _send_iic_command(self):
+        """发送 IIC 指令"""
+        command = self.iic_command_edit.text()
+        if self.ch341t.is_connected():
+            self.ch341t.send_command(command)
+
+    def _export_data(self):
+        """导出数据"""
+        self.test_manager.export_data()
+
     def _update_data(self, data):
+        """更新数据"""
         if self.current_instrument_ui == "power_analyzer" and self.n6705c_ui:
             if data and isinstance(data, list) and len(data) == 4:
                 for i, channel_data in enumerate(data):
@@ -626,7 +806,7 @@ class MainWindow(QMainWindow):
             if data and isinstance(data, dict):
                 test_type = data.get('test_type')
                 result = data.get('result', {})
-                if test_type and hasattr(self.pmu_test_ui, "update_test_result"):
+                if test_type:
                     self.pmu_test_ui.update_test_result(test_type, result)
 
         else:
@@ -643,4 +823,3 @@ class MainWindow(QMainWindow):
                     voltage = data['voltage'][-1] if data['voltage'] else 0.0
                     self.channels[0]['voltage_value'].setText(f"{voltage:.4f}")
                     self.channels[0]['current_value'].setText(f"{current:.4f}")
-                    
