@@ -18,6 +18,7 @@ from PySide6.QtGui import QFont
 import pyvisa
 
 from instruments.n6705c import N6705C
+from ui.n6705c_ui import SlideToggle
 
 
 class _ConsumptionTestWorker(QObject):
@@ -370,6 +371,17 @@ class N6705CDoubleUI(QWidget):
     # 通道设置区（共用）
     # =========================
     def _create_setting_widget(self):
+        setting_wrapper = QWidget()
+        setting_wrapper.setStyleSheet("QWidget { background: transparent; border: none; }")
+        wrapper_layout = QVBoxLayout(setting_wrapper)
+        wrapper_layout.setContentsMargins(0, 0, 0, 0)
+        wrapper_layout.setSpacing(0)
+
+        self.accent_top_line = QFrame()
+        self.accent_top_line.setFixedHeight(3)
+        self.accent_top_line.setStyleSheet("QFrame { background-color: transparent; border: none; border-radius: 0px; }")
+        wrapper_layout.addWidget(self.accent_top_line)
+
         self.setting_frame = QFrame()
         self.setting_frame.setStyleSheet("""
             QFrame { background-color: #0a1930; border: 1px solid #14305e; border-radius: 14px; }
@@ -413,9 +425,7 @@ class N6705CDoubleUI(QWidget):
         setting_header.addLayout(mode_layout)
         setting_header.addStretch()
 
-        self.output_toggle = QPushButton()
-        self.output_toggle.setCheckable(True)
-        self.output_toggle.setFixedSize(46, 26)
+        self.output_toggle = SlideToggle()
         self.output_toggle.clicked.connect(self._on_output_toggle_clicked)
         setting_header.addWidget(self.output_toggle)
 
@@ -485,33 +495,6 @@ class N6705CDoubleUI(QWidget):
         current_layout.addLayout(c_input_row)
         params_grid.addWidget(current_frame, 0, 1)
 
-        action_row = QHBoxLayout()
-        action_row.setContentsMargins(0, 0, 0, 0)
-        action_row.setSpacing(10)
-
-        self.on_button = QPushButton("⏻ On")
-        self.on_button.setStyleSheet(_neon_on_button_style())
-        self.on_button.clicked.connect(self._on_channel_on)
-
-        self.off_button = QPushButton("▢ Off")
-        self.off_button.setStyleSheet(_neon_off_button_style())
-        self.off_button.clicked.connect(self._on_channel_off)
-
-        self.measure_btn = QPushButton("MEASURE")
-        self.measure_btn.setStyleSheet(_primary_action_button_style())
-        self.measure_btn.clicked.connect(self._on_measure_clicked)
-
-        self.set_btn = QPushButton("SET")
-        self.set_btn.setStyleSheet(_primary_action_button_style())
-        self.set_btn.clicked.connect(self._on_set_clicked)
-
-        action_row.addWidget(self.on_button)
-        action_row.addWidget(self.off_button)
-        action_row.addStretch()
-        action_row.addWidget(self.measure_btn)
-        action_row.addWidget(self.set_btn)
-
-        params_grid.addLayout(action_row, 1, 0, 1, 2)
         setting_layout.addWidget(params_container)
 
         # ===== 一键调整 (8通道) =====
@@ -616,7 +599,8 @@ class N6705CDoubleUI(QWidget):
 
         setting_layout.addWidget(tools_container)
 
-        return self.setting_frame
+        wrapper_layout.addWidget(self.setting_frame)
+        return setting_wrapper
 
     # =========================
     # Consumption Test (8通道)
@@ -861,12 +845,10 @@ class N6705CDoubleUI(QWidget):
         self.setting_frame.setStyleSheet(f"""
             QFrame {{ background-color: #0a1930; border: 1px solid {theme['accent_border']}; border-radius: 14px; }}
         """)
-        self.output_toggle.setStyleSheet(f"""
-            QPushButton {{ background-color: #25314a; border: none; border-radius: 13px; }}
-            QPushButton:checked {{ background-color: {theme['accent']}; border: none; border-radius: 13px; }}
-        """)
+        self.output_toggle.setAccentColor(theme['accent'])
         self._refresh_channel_tab_styles()
         self._apply_mode_button_styles()
+        self._update_output_visual_state()
 
     # =========================
     # 通道/模式
@@ -875,6 +857,41 @@ class N6705CDoubleUI(QWidget):
         self.current_device = dev_label
         self.current_channel = channel_num
         self._apply_channel_theme(dev_label, channel_num)
+        self._sync_channel_output_state()
+
+    def _sync_channel_output_state(self):
+        n6705c = self._get_current_n6705c()
+        if n6705c:
+            try:
+                is_on = n6705c.get_channel_state(self.current_channel)
+                self.output_toggle.setChecked(is_on)
+            except Exception as e:
+                print(f"[{self.current_device}] 获取通道{self.current_channel}状态失败: {e}")
+        self._update_output_visual_state()
+
+    def _update_output_visual_state(self):
+        is_on = self.output_toggle.isChecked()
+        theme = CHANNEL_THEMES[self.current_channel]
+        accent = theme['accent']
+
+        if is_on:
+            self.accent_top_line.setStyleSheet(
+                f"QFrame {{ background-color: {accent}; border: none; border-radius: 0px; }}"
+            )
+            value_color = accent
+        else:
+            self.accent_top_line.setStyleSheet(
+                "QFrame { background-color: transparent; border: none; border-radius: 0px; }"
+            )
+            value_color = "#6d83b3"
+
+        self.voltage_value.setStyleSheet(f"""
+            QLineEdit {{ font-size: 22px; font-weight: bold; color: {value_color}; background: transparent; border: none; }}
+            QLineEdit:focus {{ border: none; background: transparent; }}
+        """)
+        self.current_value.setStyleSheet(f"""
+            QLineEdit {{ font-size: 22px; font-weight: bold; color: {value_color}; background-color: transparent; border: none; }}
+        """)
 
     def _get_current_n6705c(self):
         dev = self.devices[self.current_device]
@@ -974,6 +991,8 @@ class N6705CDoubleUI(QWidget):
                 w["status"].setText("已连接")
                 w["status"].setStyleSheet("color: #00a859; font-weight:bold;")
                 w["disconnect_btn"].setEnabled(True)
+                if label == self.current_device:
+                    self._sync_channel_output_state()
             else:
                 w["status"].setText("设备不匹配")
                 w["status"].setStyleSheet("color: #e53935; font-weight:bold;")
@@ -1030,6 +1049,7 @@ class N6705CDoubleUI(QWidget):
             self._on_channel_on()
         else:
             self._on_channel_off()
+        self._update_output_visual_state()
 
     def _on_set_clicked(self):
         n6705c = self._get_current_n6705c()
@@ -1075,6 +1095,7 @@ class N6705CDoubleUI(QWidget):
                 except Exception as e:
                     print(f"[{label}] All On 失败: {e}")
         self.output_toggle.setChecked(True)
+        self._update_output_visual_state()
 
     def _on_all_off_clicked(self):
         for label, dev in self.devices.items():
@@ -1085,6 +1106,7 @@ class N6705CDoubleUI(QWidget):
                 except Exception as e:
                     print(f"[{label}] All Off 失败: {e}")
         self.output_toggle.setChecked(False)
+        self._update_output_visual_state()
 
     # =========================
     # 批量操作

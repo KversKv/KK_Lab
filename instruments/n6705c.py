@@ -58,6 +58,10 @@ class N6705C:
         # 关闭通道
         self.instr.write(f"OUTP OFF, (@{channel})")
 
+    def get_channel_state(self, channel):
+        result = self.instr.query(f"OUTP? (@{channel})").strip()
+        return result == "1" or result.upper() == "ON"
+
     def set_voltagemode(self, channel):
         # 打开通道
         self.instr.write(f"EMULation VMETer,(@{channel})")
