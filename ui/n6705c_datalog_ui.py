@@ -2039,9 +2039,11 @@ class N6705CDatalogUI(QWidget):
         self.ch_checkboxes_a = []
         self.ch_voltage_cbs_a = []
         self.ch_current_cbs_a = []
+        self.ch_power_cbs_a = []
         self.ch_checkboxes_b = []
         self.ch_voltage_cbs_b = []
         self.ch_current_cbs_b = []
+        self.ch_power_cbs_b = []
         self.unit_a_ch_label = QLabel()
         self.unit_a_ch_label.hide()
         self.unit_b_ch_label = QLabel()
@@ -2075,9 +2077,11 @@ class N6705CDatalogUI(QWidget):
         self.ch_checkboxes_a = []
         self.ch_voltage_cbs_a = []
         self.ch_current_cbs_a = []
+        self.ch_power_cbs_a = []
         self.ch_checkboxes_b = []
         self.ch_voltage_cbs_b = []
         self.ch_current_cbs_b = []
+        self.ch_power_cbs_b = []
 
         if not connected_slots:
             self.no_instrument_label.show()
@@ -2212,10 +2216,12 @@ class N6705CDatalogUI(QWidget):
                 self.ch_checkboxes_a = current_cbs
                 self.ch_voltage_cbs_a = voltage_cbs
                 self.ch_current_cbs_a = current_cbs
+                self.ch_power_cbs_a = power_cbs
             elif slot_char == "B":
                 self.ch_checkboxes_b = current_cbs
                 self.ch_voltage_cbs_b = voltage_cbs
                 self.ch_current_cbs_b = current_cbs
+                self.ch_power_cbs_b = power_cbs
 
             inner_layout.addWidget(slot_frame)
 
@@ -2254,11 +2260,15 @@ class N6705CDatalogUI(QWidget):
         if slot_char == "A":
             if prefix == "V":
                 all_cbs = getattr(self, 'ch_voltage_cbs_a', [])
+            elif prefix == "P":
+                all_cbs = getattr(self, 'ch_power_cbs_a', [])
             else:
                 all_cbs = getattr(self, 'ch_current_cbs_a', [])
         else:
             if prefix == "V":
                 all_cbs = getattr(self, 'ch_voltage_cbs_b', [])
+            elif prefix == "P":
+                all_cbs = getattr(self, 'ch_power_cbs_b', [])
             else:
                 all_cbs = getattr(self, 'ch_current_cbs_b', [])
 
@@ -2289,11 +2299,15 @@ class N6705CDatalogUI(QWidget):
         if slot_char == "A":
             if prefix == "V":
                 all_cbs = getattr(self, 'ch_voltage_cbs_a', [])
+            elif prefix == "P":
+                all_cbs = getattr(self, 'ch_power_cbs_a', [])
             else:
                 all_cbs = getattr(self, 'ch_current_cbs_a', [])
         else:
             if prefix == "V":
                 all_cbs = getattr(self, 'ch_voltage_cbs_b', [])
+            elif prefix == "P":
+                all_cbs = getattr(self, 'ch_power_cbs_b', [])
             else:
                 all_cbs = getattr(self, 'ch_current_cbs_b', [])
 
@@ -2318,8 +2332,10 @@ class N6705CDatalogUI(QWidget):
         all_btn_lists = [
             getattr(self, 'ch_voltage_cbs_a', []),
             getattr(self, 'ch_current_cbs_a', []),
+            getattr(self, 'ch_power_cbs_a', []),
             getattr(self, 'ch_voltage_cbs_b', []),
             getattr(self, 'ch_current_cbs_b', []),
+            getattr(self, 'ch_power_cbs_b', []),
         ]
         for btn_list in all_btn_lists:
             for btn in btn_list:
@@ -2640,11 +2656,20 @@ class N6705CDatalogUI(QWidget):
                     k = key.strip()
                     if k.endswith(f"CH{ch} V") and "B" in k:
                         visible_keys.add(key)
-        for key in self.datalog_data:
-            k = key.strip()
-            ch_num, mtype, _ = _parse_ch_label(k)
-            if mtype == "P" and ch_num is not None:
-                visible_keys.add(key)
+        for i, cb in enumerate(getattr(self, 'ch_power_cbs_a', [])):
+            if cb.isChecked():
+                ch = i + 1
+                for key in self.datalog_data:
+                    k = key.strip()
+                    if (k.endswith(f"CH{ch} P") or k == f"CH{ch} P") and "B" not in k:
+                        visible_keys.add(key)
+        for i, cb in enumerate(getattr(self, 'ch_power_cbs_b', [])):
+            if cb.isChecked():
+                ch = i + 1
+                for key in self.datalog_data:
+                    k = key.strip()
+                    if k.endswith(f"CH{ch} P") and "B" in k:
+                        visible_keys.add(key)
         return visible_keys
 
     def _on_channel_visibility_changed(self):
@@ -2720,8 +2745,10 @@ class N6705CDatalogUI(QWidget):
         all_cbs = (
             list(self.ch_current_cbs_a) +
             list(self.ch_voltage_cbs_a) +
+            list(getattr(self, 'ch_power_cbs_a', [])) +
             list(getattr(self, 'ch_current_cbs_b', [])) +
-            list(getattr(self, 'ch_voltage_cbs_b', []))
+            list(getattr(self, 'ch_voltage_cbs_b', [])) +
+            list(getattr(self, 'ch_power_cbs_b', []))
         )
         for cb in all_cbs:
             cb.blockSignals(True)
@@ -2733,7 +2760,7 @@ class N6705CDatalogUI(QWidget):
 
         for key, ch_data in self.datalog_data.items():
             k = key.strip()
-            m = re.search(r'CH(\d+)\s+(I|V)', k)
+            m = re.search(r'CH(\d+)\s+(I|V|P)', k)
             if not m:
                 continue
             ch_num = int(m.group(1))
@@ -2745,9 +2772,19 @@ class N6705CDatalogUI(QWidget):
 
             idx = ch_num - 1
             if is_b:
-                cbs = getattr(self, 'ch_current_cbs_b', []) if mtype == "I" else getattr(self, 'ch_voltage_cbs_b', [])
+                if mtype == "I":
+                    cbs = getattr(self, 'ch_current_cbs_b', [])
+                elif mtype == "V":
+                    cbs = getattr(self, 'ch_voltage_cbs_b', [])
+                else:
+                    cbs = getattr(self, 'ch_power_cbs_b', [])
             else:
-                cbs = self.ch_current_cbs_a if mtype == "I" else self.ch_voltage_cbs_a
+                if mtype == "I":
+                    cbs = self.ch_current_cbs_a
+                elif mtype == "V":
+                    cbs = self.ch_voltage_cbs_a
+                else:
+                    cbs = getattr(self, 'ch_power_cbs_a', [])
 
             if idx < len(cbs):
                 btn = cbs[idx]
@@ -2768,7 +2805,7 @@ class N6705CDatalogUI(QWidget):
                     scale_val = v_range
                     offset_val = (v_max + v_min) / 2.0
 
-                    unit = "mA" if mtype == "I" else "mV"
+                    unit = "mA" if mtype == "I" else ("mW" if mtype == "P" else "mV")
                     scale_str = _auto_format(scale_val, unit)
                     offset_str = _auto_format(offset_val, unit)
 
@@ -2874,6 +2911,14 @@ class N6705CDatalogUI(QWidget):
         if self.is_connected_a and self.n6705c_a:
             active_a = [i + 1 for i, cb in enumerate(self.ch_current_cbs_a) if cb.isChecked()]
             voltage_a = [i + 1 for i, cb in enumerate(self.ch_voltage_cbs_a) if cb.isChecked()]
+            power_a = [i + 1 for i, cb in enumerate(getattr(self, 'ch_power_cbs_a', [])) if cb.isChecked()]
+            for ch in power_a:
+                if ch not in voltage_a:
+                    voltage_a.append(ch)
+                if ch not in active_a:
+                    active_a.append(ch)
+            voltage_a.sort()
+            active_a.sort()
             if active_a or voltage_a:
                 n6705c_list.append(self.n6705c_a)
                 channels_per_unit.append(active_a)
@@ -2883,6 +2928,14 @@ class N6705CDatalogUI(QWidget):
         if self.is_connected_b and self.n6705c_b:
             active_b = [i + 1 for i, cb in enumerate(self.ch_current_cbs_b) if cb.isChecked()]
             voltage_b = [i + 1 for i, cb in enumerate(self.ch_voltage_cbs_b) if cb.isChecked()]
+            power_b = [i + 1 for i, cb in enumerate(getattr(self, 'ch_power_cbs_b', [])) if cb.isChecked()]
+            for ch in power_b:
+                if ch not in voltage_b:
+                    voltage_b.append(ch)
+                if ch not in active_b:
+                    active_b.append(ch)
+            voltage_b.sort()
+            active_b.sort()
             if active_b or voltage_b:
                 n6705c_list.append(self.n6705c_b)
                 channels_per_unit.append(active_b)
@@ -2945,10 +2998,35 @@ class N6705CDatalogUI(QWidget):
         self._update_recording_button_state(False)
 
     def _on_data_ready(self, data):
+        self._compute_power_channels(data)
         self.datalog_data = data
         self._clear_analysis_card_cache()
         self._sync_checkboxes_to_data()
         self._refresh_plot()
+
+    def _compute_power_channels(self, all_data):
+        power_chs_a = getattr(self, 'ch_power_cbs_a', [])
+        power_chs_b = getattr(self, 'ch_power_cbs_b', [])
+        for i, cb in enumerate(power_chs_a):
+            if cb.isChecked():
+                ch = i + 1
+                self._calc_power_for_ch(all_data, ch, "")
+        for i, cb in enumerate(power_chs_b):
+            if cb.isChecked():
+                ch = i + 1
+                self._calc_power_for_ch(all_data, ch, "B")
+
+    def _calc_power_for_ch(self, all_data, ch, unit_prefix):
+        prefix = f"{unit_prefix} " if unit_prefix else ""
+        v_label = f"{prefix}CH{ch} V".strip()
+        i_label = f"{prefix}CH{ch} I".strip()
+        p_label = f"{prefix}CH{ch} P".strip()
+        if v_label in all_data and i_label in all_data:
+            v_vals = all_data[v_label]["values"]
+            i_vals = all_data[i_label]["values"]
+            t = all_data[v_label]["time"]
+            p_vals = [v * i / 1000.0 for v, i in zip(v_vals, i_vals)]
+            all_data[p_label] = {"time": t, "values": p_vals}
 
     def _on_dlog_raw_ready(self, dlog_list):
         self._raw_dlog_list = dlog_list
@@ -3353,7 +3431,8 @@ class N6705CDatalogUI(QWidget):
 
             ch_num, mtype, _ = _parse_ch_label(label)
             ch_is_current = (mtype == "I") if mtype else is_current
-            val_unit = "mA" if ch_is_current else "mV"
+            ch_is_power = (mtype == "P") if mtype else False
+            val_unit = "mW" if ch_is_power else ("mA" if ch_is_current else "mV")
 
             times = ch_data["time"]
             values = ch_data["values"]
@@ -3392,10 +3471,10 @@ class N6705CDatalogUI(QWidget):
                     val_str = _auto_format(seg_max - seg_min, val_unit)
                 elif metric_key == "charge_ah":
                     c = seg_avg * dt / 3600.0
-                    val_str = _auto_format(c, "mAh" if ch_is_current else "mWh")
+                    val_str = _auto_format(c, "mWh" if ch_is_power else ("mAh" if ch_is_current else "mWh"))
                 elif metric_key == "charge_c":
                     c = seg_avg * dt / 1000.0
-                    val_str = _auto_format(c, "C" if ch_is_current else "J")
+                    val_str = _auto_format(c, "J" if ch_is_power else ("C" if ch_is_current else "J"))
                 else:
                     val_str = ""
                 self._set_meas_cell(row, col, val_str, color_hex, bg=row_bg, bold=(metric_key == "avg"))
@@ -3849,6 +3928,16 @@ class N6705CDatalogUI(QWidget):
             if values:
                 t = [i * sample_period_s for i in range(len(values))]
                 all_data[label] = {"time": t, "values": values}
+
+        for ch_id in sorted(set(c for _, c in dlog_col_order)):
+            v_label = f"CH{ch_id} V"
+            i_label = f"CH{ch_id} I"
+            if v_label in all_data and i_label in all_data:
+                v_vals = all_data[v_label]["values"]
+                i_vals = all_data[i_label]["values"]
+                t = all_data[v_label]["time"]
+                p_vals = [v * i / 1000.0 for v, i in zip(v_vals, i_vals)]
+                all_data[f"CH{ch_id} P"] = {"time": t, "values": p_vals}
 
         if not all_data:
             return
