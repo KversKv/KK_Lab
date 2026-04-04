@@ -1,0 +1,6 @@
+# 项目依赖
+PySide6==6.6.0
+pyqtgraph==0.13.3
+pyvisa==1.13.0
+pyvisa-py==0.7.0
+openpyxl
