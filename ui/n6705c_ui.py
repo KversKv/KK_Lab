@@ -379,9 +379,17 @@ class N6705CUI(QWidget):
         self.device_combo.setToolTip("选择要连接的设备")
 
         self.search_btn = QPushButton("搜索")
-        self.connect_btn = QPushButton("连接")
-        self.disconnect_btn = QPushButton("断开")
-        self.disconnect_btn.setEnabled(False)
+        self.toggle_conn_btn = QPushButton("🔗 连接")
+        self.toggle_conn_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #0a3d28; color: #00f5c4;
+                border: 1px solid #00cfa6; border-radius: 8px;
+                padding: 6px 18px; font-size: 12px; font-weight: 700;
+                min-width: 90px;
+            }
+            QPushButton:hover { background-color: #0e5535; border: 1px solid #00f5c4; color: #3fffd7; }
+            QPushButton:disabled { background-color: #0b1730; color: #5a6b8e; border: 1px solid #1b2847; }
+        """)
 
         top_layout.addWidget(QLabel("状态"), 0, 0)
         top_layout.addWidget(self.connection_status, 0, 1)
@@ -389,12 +397,10 @@ class N6705CUI(QWidget):
         top_layout.addWidget(QLabel("资源"), 1, 0)
         top_layout.addWidget(self.device_combo, 1, 1, 1, 3)
         top_layout.addWidget(self.search_btn, 1, 4)
-        top_layout.addWidget(self.connect_btn, 1, 5)
-        top_layout.addWidget(self.disconnect_btn, 1, 6)
+        top_layout.addWidget(self.toggle_conn_btn, 1, 5)
 
         self.search_btn.clicked.connect(self._on_search)
-        self.connect_btn.clicked.connect(self._on_connect)
-        self.disconnect_btn.clicked.connect(self._on_disconnect)
+        self.toggle_conn_btn.clicked.connect(self._on_toggle_connection)
         self.all_on_btn.clicked.connect(self._on_all_on_clicked)
         self.all_off_btn.clicked.connect(self._on_all_off_clicked)
 
@@ -1333,7 +1339,7 @@ class N6705CUI(QWidget):
     # 初始化
     # =========================
     def _init_ui_elements(self):
-        pass
+        self._update_ui_connection_state(False)
 
     # =========================
     # 通道/模式
@@ -1557,7 +1563,7 @@ class N6705CUI(QWidget):
 
                 self.connection_status.setText(f"找到 {len(n6705c_devices)} 个N6705C设备")
                 self.connection_status.setStyleSheet("color: #00a859; padding: 10px; font-weight: bold;")
-                self.connect_btn.setEnabled(True)
+                self.toggle_conn_btn.setEnabled(True)
 
                 default_device = "TCPIP0::K-N6705C-06098.local::hislip0::INSTR"
                 if default_device in n6705c_devices:
@@ -1569,20 +1575,87 @@ class N6705CUI(QWidget):
                 self.device_combo.setEnabled(False)
                 self.connection_status.setText("未找到N6705C设备")
                 self.connection_status.setStyleSheet("color: #e53935; padding: 10px; font-weight: bold;")
-                self.connect_btn.setEnabled(False)
+                self.toggle_conn_btn.setEnabled(False)
 
         except Exception as e:
             print(f"搜索过程中发生错误: {str(e)}")
             self.connection_status.setText(f"搜索失败: {str(e)}")
             self.connection_status.setStyleSheet("color: #e53935; padding: 10px; font-weight: bold;")
-            self.connect_btn.setEnabled(False)
+            self.toggle_conn_btn.setEnabled(False)
         finally:
             self.search_btn.setEnabled(True)
 
+    def _on_toggle_connection(self):
+        """切换连接/断开状态"""
+        if self.is_connected:
+            self._on_disconnect()
+        else:
+            self._on_connect()
+
+    def _update_ui_connection_state(self, connected):
+        """根据连接状态更新UI区域的可交互性和视觉样式"""
+        disabled_btn_style = """
+            QPushButton {
+                background-color: #0b1730; color: #3a4a6a;
+                border: 1px solid #1b2847; border-radius: 8px;
+                padding: 6px 18px; font-size: 12px; font-weight: 700;
+            }
+        """
+
+        # All On / All Off 按钮
+        self.all_on_btn.setEnabled(connected)
+        self.all_off_btn.setEnabled(connected)
+        if connected:
+            self.all_on_btn.setStyleSheet(self._neon_on_button_style())
+            self.all_off_btn.setStyleSheet(self._neon_off_button_style())
+        else:
+            self.all_on_btn.setStyleSheet(disabled_btn_style)
+            self.all_off_btn.setStyleSheet(disabled_btn_style)
+
+        # 通道标签按钮
+        for btn in self.channel_tab_buttons:
+            btn.setEnabled(connected)
+
+        # 设置区域
+        self.setting_frame.setEnabled(connected)
+        if not connected:
+            self.setting_frame.setStyleSheet("""
+                QFrame { background-color: #070f1e; border: 1px solid #0d1a30; border-radius: 14px; }
+            """)
+        else:
+            theme = self.channel_themes[self.current_channel]
+            self.setting_frame.setStyleSheet(f"""
+                QFrame {{ background-color: #0a1930; border: 1px solid {theme['accent_border']}; border-radius: 14px; }}
+            """)
+
+        # 批量工具面板
+        if hasattr(self, 'batch_tools_panel'):
+            self.batch_tools_panel.setEnabled(connected)
+            if connected:
+                self.batch_tools_panel.setStyleSheet("""
+                    QFrame { background-color: #0a1930; border: 1px solid #132849; border-radius: 12px; }
+                """)
+            else:
+                self.batch_tools_panel.setStyleSheet("""
+                    QFrame { background-color: #070f1e; border: 1px solid #0d1a30; border-radius: 12px; }
+                """)
+
+        # 功耗测试面板
+        if hasattr(self, 'consumption_test_panel'):
+            self.consumption_test_panel.setEnabled(connected)
+            if connected:
+                self.consumption_test_panel.setStyleSheet("""
+                    QFrame { background-color: #0a1930; border: 1px solid #132849; border-radius: 12px; }
+                """)
+            else:
+                self.consumption_test_panel.setStyleSheet("""
+                    QFrame { background-color: #070f1e; border: 1px solid #0d1a30; border-radius: 12px; }
+                """)
+
     def _on_connect(self):
         self.connection_status.setText("连接中...")
-        self.connection_status.setStyleSheet("color: #ff9800; padding: 10px; font-weight: bold;")
-        self.connect_btn.setEnabled(False)
+        self.connection_status.setStyleSheet("color: #ff9800; font-weight:bold;")
+        self.toggle_conn_btn.setEnabled(False)
 
         try:
             device_address = self.device_combo.currentText()
@@ -1591,47 +1664,71 @@ class N6705CUI(QWidget):
             idn = self.n6705c.instr.query("*IDN?")
             if "N6705C" in idn:
                 self.is_connected = True
-                self.connection_status.setText("已连接")
-                self.connection_status.setStyleSheet("color: #00a859; padding: 10px; font-weight: bold;")
-                self.disconnect_btn.setEnabled(True)
+                self.connection_status.setText("● 已连接")
+                self.connection_status.setStyleSheet("color: #00a859; font-weight:bold;")
+                self.toggle_conn_btn.setEnabled(True)
+                # 切换为红色断开按钮
+                self.toggle_conn_btn.setText("🔌 断开")
+                self.toggle_conn_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #3d1a1a; color: #ff6b6b;
+                        border: 1px solid #ff4444; border-radius: 8px;
+                        padding: 6px 18px; font-size: 12px; font-weight: 700;
+                        min-width: 90px;
+                    }
+                    QPushButton:hover { background-color: #552222; border: 1px solid #ff6b6b; color: #ff9999; }
+                    QPushButton:disabled { background-color: #0b1730; color: #5a6b8e; border: 1px solid #1b2847; }
+                """)
+                self._update_ui_connection_state(True)
                 self.connection_status_changed.emit(True)
                 self._sync_channel_output_state(self.current_channel)
                 self._sync_channel_mode(self.current_channel)
                 self._on_measure_button_clicked()
             else:
                 self.connection_status.setText("设备不匹配")
-                self.connection_status.setStyleSheet("color: #e53935; padding: 10px; font-weight: bold;")
-                self.connect_btn.setEnabled(True)
+                self.connection_status.setStyleSheet("color: #e53935; font-weight:bold;")
+                self.toggle_conn_btn.setEnabled(True)
 
         except Exception as e:
             self.connection_status.setText(f"连接失败: {str(e)}")
-            self.connection_status.setStyleSheet("color: #e53935; padding: 10px; font-weight: bold;")
-            self.connect_btn.setEnabled(True)
+            self.connection_status.setStyleSheet("color: #e53935; font-weight:bold;")
+            self.toggle_conn_btn.setEnabled(True)
 
     def _on_disconnect(self):
         self.connection_status.setText("断开中...")
-        self.connection_status.setStyleSheet("color: #ff9800; padding: 10px; font-weight: bold;")
-        self.disconnect_btn.setEnabled(False)
+        self.connection_status.setStyleSheet("color: #ff9800; font-weight:bold;")
+        self.toggle_conn_btn.setEnabled(False)
 
         try:
-            if hasattr(self.n6705c, 'instr') and self.n6705c and self.n6705c.instr:
-                self.n6705c.instr.close()
-            if hasattr(self.n6705c, 'rm') and self.n6705c and self.n6705c.rm:
-                self.n6705c.rm.close()
+            if self.n6705c:
+                self.n6705c.disconnect()
 
             self.instrument = None
             self.n6705c = None
             self.is_connected = False
 
-            self.connection_status.setText("未连接")
-            self.connection_status.setStyleSheet("color: #e53935; padding: 10px; font-weight: bold;")
-            self.connect_btn.setEnabled(True)
+            self.connection_status.setText("● 未连接")
+            self.connection_status.setStyleSheet("color: #7fa1d9; font-weight:bold;")
+            self.toggle_conn_btn.setEnabled(True)
+            # 切换为绿色连接按钮
+            self.toggle_conn_btn.setText("🔗 连接")
+            self.toggle_conn_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #0a3d28; color: #00f5c4;
+                    border: 1px solid #00cfa6; border-radius: 8px;
+                    padding: 6px 18px; font-size: 12px; font-weight: 700;
+                    min-width: 90px;
+                }
+                QPushButton:hover { background-color: #0e5535; border: 1px solid #00f5c4; color: #3fffd7; }
+                QPushButton:disabled { background-color: #0b1730; color: #5a6b8e; border: 1px solid #1b2847; }
+            """)
+            self._update_ui_connection_state(False)
             self.connection_status_changed.emit(False)
 
         except Exception as e:
             self.connection_status.setText(f"断开失败: {str(e)}")
-            self.connection_status.setStyleSheet("color: #e53935; padding: 10px; font-weight: bold;")
-            self.disconnect_btn.setEnabled(True)
+            self.connection_status.setStyleSheet("color: #e53935; font-weight:bold;")
+            self.toggle_conn_btn.setEnabled(True)
 
     # =========================
     # 单通道操作
