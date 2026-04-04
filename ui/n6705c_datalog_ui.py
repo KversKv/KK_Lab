@@ -98,10 +98,21 @@ VOLTAGE_COLORS = [
     "#6e9c3a",
 ]
 
+POWER_COLORS = [
+    "#b05ce6",
+    "#e6a33c",
+    "#3cb0e6",
+    "#e63c6e",
+    "#6ee63c",
+    "#e6ce3c",
+    "#3c6ee6",
+    "#e63cb0",
+]
+
 
 def _parse_ch_label(label):
     import re
-    m = re.search(r'CH(\d+)\s*(I|V)', label.strip())
+    m = re.search(r'CH(\d+)\s*(I|V|P)', label.strip())
     if m:
         ch_num = int(m.group(1))
         mtype = m.group(2)
@@ -117,6 +128,8 @@ def _color_for_label(label):
     base_idx = (ch_num - 1) + (4 if is_b else 0)
     if mtype == "V":
         return VOLTAGE_COLORS[base_idx % len(VOLTAGE_COLORS)]
+    if mtype == "P":
+        return POWER_COLORS[base_idx % len(POWER_COLORS)]
     return CHANNEL_COLORS[base_idx % len(CHANNEL_COLORS)]
 
 
@@ -124,7 +137,7 @@ def _sort_key_for_label(label):
     ch_num, mtype, is_b = _parse_ch_label(label)
     unit_order = 1 if is_b else 0
     ch_order = ch_num if ch_num else 0
-    type_order = 0 if mtype == "V" else 1
+    type_order = {"V": 0, "I": 1, "P": 2}.get(mtype, 3)
     return (unit_order, ch_order, type_order)
 
 
@@ -152,6 +165,8 @@ def _unit_for_label(label):
     _, mtype, _ = _parse_ch_label(label)
     if mtype == "V":
         return "mV"
+    if mtype == "P":
+        return "mW"
     return "mA"
 
 
@@ -171,6 +186,7 @@ def _auto_format(value, base_unit):
     UNIT_MAP = {
         "mA": ("\u00B5A", "mA", "A"),
         "mV": ("\u00B5V", "mV", "V"),
+        "mW": ("\u00B5W", "mW", "W"),
         "mAh": ("\u00B5Ah", "mAh", "Ah"),
         "mWh": ("\u00B5Wh", "mWh", "Wh"),
         "C": ("mC", "C", "kC"),
@@ -2624,6 +2640,11 @@ class N6705CDatalogUI(QWidget):
                     k = key.strip()
                     if k.endswith(f"CH{ch} V") and "B" in k:
                         visible_keys.add(key)
+        for key in self.datalog_data:
+            k = key.strip()
+            ch_num, mtype, _ = _parse_ch_label(k)
+            if mtype == "P" and ch_num is not None:
+                visible_keys.add(key)
         return visible_keys
 
     def _on_channel_visibility_changed(self):
@@ -3064,15 +3085,15 @@ class N6705CDatalogUI(QWidget):
             self.plot_widget.setYRange(-0.02, 1.02)
             return
 
-        self._on_channel_visibility_changed()
+        if self.box_zoom_enabled:
+            self.box_zoom_enabled = False
+            self.box_zoom_btn.setText("\u2316 Box Zoom: OFF")
 
-        all_times = []
-        for ch_data in self.datalog_data.values():
-            all_times.extend(ch_data["time"])
+        vb = self.plot_widget.getPlotItem().getViewBox()
+        vb.setMouseMode(vb.PanMode)
+        self.plot_widget.setMouseEnabled(x=True, y=False)
 
-        if all_times:
-            self.plot_widget.setXRange(min(all_times), max(all_times))
-        self.plot_widget.setYRange(-0.02, 1.02)
+        self._refresh_plot()
 
     def _toggle_box_zoom(self):
         self.box_zoom_enabled = not self.box_zoom_enabled
@@ -3085,6 +3106,8 @@ class N6705CDatalogUI(QWidget):
             self.box_zoom_btn.setText("\u2316 Box Zoom: OFF")
             vb = self.plot_widget.getPlotItem().getViewBox()
             vb.setMouseMode(vb.PanMode)
+            self.plot_widget.setMouseEnabled(x=True, y=False)
+            self.plot_widget.setYRange(-0.02, 1.02)
 
     def _set_marker_mode(self, marker):
         self._pending_marker = marker
@@ -3610,13 +3633,15 @@ class N6705CDatalogUI(QWidget):
     def _on_import(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "Import Datalog", "",
-            "Datalog Files (*.csv *.dlog);;CSV Files (*.csv);;Dlog Files (*.dlog);;All Files (*)"
+            "Datalog Files (*.csv *.dlog *.edlg);;CSV Files (*.csv);;Dlog Files (*.dlog);;EDLG Files (*.edlg);;All Files (*)"
         )
         if not path:
             return
 
         try:
-            if path.lower().endswith(".dlog"):
+            if path.lower().endswith(".edlg"):
+                self._import_edlg(path)
+            elif path.lower().endswith(".dlog"):
                 self._import_dlog(path)
             else:
                 self._import_csv(path)
@@ -3672,6 +3697,106 @@ class N6705CDatalogUI(QWidget):
         self._sync_checkboxes_to_data()
         self._refresh_plot()
 
+    def _import_edlg(self, path):
+        import zipfile, struct, re
+        from xml.etree import ElementTree
+
+        with zipfile.ZipFile(path, 'r') as zf:
+            mdlg_name = None
+            dlog_name = None
+            for name in zf.namelist():
+                if name.endswith('.mdlg'):
+                    mdlg_name = name
+                elif name.endswith('.dlog'):
+                    dlog_name = name
+
+            if not dlog_name:
+                return
+
+            trace_names = []
+            if mdlg_name:
+                mdlg_xml = zf.read(mdlg_name).decode('utf-8', errors='replace')
+                root = ElementTree.fromstring(mdlg_xml)
+                for trace_el in root.findall('.//TraceSettings/Frames/Frame/Trace'):
+                    name_el = trace_el.find('Name')
+                    if name_el is not None and name_el.text:
+                        trace_names.append(name_el.text.strip())
+
+            raw_data = zf.read(dlog_name)
+
+        xml_header = raw_data[:min(len(raw_data), 8192)].decode('ascii', errors='replace')
+
+        sample_period_s = 0.001
+        tint_match = re.search(r'<tint>([\d.eE+\-]+)</tint>', xml_header)
+        if tint_match:
+            sample_period_s = float(tint_match.group(1))
+
+        dlog_col_order = []
+        for m in re.finditer(r'<channel id="(\d+)">(.*?)</channel>', xml_header, re.DOTALL):
+            ch_id = int(m.group(1))
+            ch_xml = m.group(2)
+            sc = re.search(r'<sense_curr>(\d+)</sense_curr>', ch_xml)
+            sv = re.search(r'<sense_volt>(\d+)</sense_volt>', ch_xml)
+            if sv and sv.group(1) == '1':
+                dlog_col_order.append(("volt", ch_id))
+            if sc and sc.group(1) == '1':
+                dlog_col_order.append(("curr", ch_id))
+
+        num_traces = len(dlog_col_order)
+        if num_traces == 0:
+            return
+
+        close_tag = b'</dlog>'
+        tag_pos = raw_data.find(close_tag)
+        if tag_pos < 0:
+            return
+
+        data_start = tag_pos + len(close_tag)
+        while data_start < len(raw_data) and raw_data[data_start:data_start+1] in (b'\r', b'\n'):
+            data_start += 1
+        data_start += 8
+
+        if data_start + num_traces * 4 > len(raw_data):
+            return
+
+        data_section = raw_data[data_start:]
+        float_count = len(data_section) // 4
+        num_samples = float_count // num_traces
+
+        values_all = struct.unpack_from(f'>{float_count}f', data_section, 0)
+
+        has_power = any(n.endswith('-P1') or n.endswith('-P2') or n.endswith('-P3') or n.endswith('-P4')
+                        for n in trace_names)
+
+        all_data = {}
+        for col_idx, (meas_type, ch) in enumerate(dlog_col_order):
+            values = [values_all[i * num_traces + col_idx] * 1000.0
+                      for i in range(num_samples)]
+            suffix = "I" if meas_type == "curr" else "V"
+            label = f"CH{ch} {suffix}"
+            if values:
+                t = [i * sample_period_s for i in range(len(values))]
+                all_data[label] = {"time": t, "values": values}
+
+        if has_power:
+            for ch_id in sorted(set(c for _, c in dlog_col_order)):
+                v_label = f"CH{ch_id} V"
+                i_label = f"CH{ch_id} I"
+                if v_label in all_data and i_label in all_data:
+                    v_vals = all_data[v_label]["values"]
+                    i_vals = all_data[i_label]["values"]
+                    t = all_data[v_label]["time"]
+                    p_vals = [v * i / 1000.0 for v, i in zip(v_vals, i_vals)]
+                    all_data[f"CH{ch_id} P"] = {"time": t, "values": p_vals}
+
+        if not all_data:
+            return
+
+        self._raw_dlog_list = [raw_data]
+        self.datalog_data = all_data
+        self._sync_checkboxes_to_data()
+        self._refresh_plot()
+
     def _import_dlog(self, path):
         import struct, re
 
@@ -3691,10 +3816,10 @@ class N6705CDatalogUI(QWidget):
             ch_xml = m.group(2)
             sc = re.search(r'<sense_curr>(\d+)</sense_curr>', ch_xml)
             sv = re.search(r'<sense_volt>(\d+)</sense_volt>', ch_xml)
-            if sc and sc.group(1) == '1':
-                dlog_col_order.append(("curr", ch_id))
             if sv and sv.group(1) == '1':
                 dlog_col_order.append(("volt", ch_id))
+            if sc and sc.group(1) == '1':
+                dlog_col_order.append(("curr", ch_id))
 
         num_traces = len(dlog_col_order)
         if num_traces == 0:
