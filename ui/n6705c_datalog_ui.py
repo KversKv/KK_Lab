@@ -3548,7 +3548,7 @@ class N6705CDatalogUI(QWidget):
     def _refresh_label_ch_combo(self):
         current = self.label_ch_combo.currentText()
         self.label_ch_combo.clear()
-        for label in self.datalog_data.keys():
+        for label in sorted(self.datalog_data.keys(), key=_sort_key_for_label):
             self.label_ch_combo.addItem(label.strip())
         idx = self.label_ch_combo.findText(current)
         if idx >= 0:
