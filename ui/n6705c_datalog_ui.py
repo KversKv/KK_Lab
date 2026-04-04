@@ -232,6 +232,8 @@ class ToggleLabel(QLabel):
         self.toggled.emit(checked)
 
     def mousePressEvent(self, event):
+        if not self.isEnabled():
+            return
         self._checked = not self._checked
         self.toggled.emit(self._checked)
         super().mousePressEvent(event)
@@ -1458,7 +1460,7 @@ class N6705CDatalogUI(QWidget):
         self.box_zoom_btn.setObjectName("chartToolBtn")
         chart_header.addWidget(self.box_zoom_btn)
 
-        self.reset_view_btn = QPushButton("\u2316 Reset View")
+        self.reset_view_btn = QPushButton("\u2316 Auto")
         self.reset_view_btn.setObjectName("chartToolBtn")
         chart_header.addWidget(self.reset_view_btn)
 
@@ -2177,6 +2179,229 @@ class N6705CDatalogUI(QWidget):
                     offset_edit.setAlignment(Qt.AlignCenter)
                     offset_edit.setStyleSheet(edit_style)
                     offset_edit.setProperty("ch_idx", ch)
+                    offset_edit.setProperty("meas_type", prefix)
+                    offset_edit.setProperty("field", "offset")
+
+                    row_layout = QHBoxLayout()
+                    row_layout.setContentsMargins(0, 0, 0, 0)
+                    row_layout.setSpacing(1)
+                    row_layout.addWidget(btn)
+                    row_layout.addWidget(scale_edit)
+                    row_layout.addWidget(sep)
+                    row_layout.addWidget(offset_edit)
+
+                    container = QWidget()
+                    container.setStyleSheet("border: none;")
+                    container.setLayout(row_layout)
+                    out_vbox.addWidget(container)
+
+                    scale_edit.returnPressed.connect(
+                        lambda se=scale_edit: self._on_scale_offset_edited(se))
+                    offset_edit.returnPressed.connect(
+                        lambda oe=offset_edit: self._on_scale_offset_edited(oe))
+
+                    btn.setProperty("scale_edit", scale_edit)
+                    btn.setProperty("offset_edit", offset_edit)
+                    btn.setProperty("slot_char", slot_char)
+                    btn.setProperty("user_edited", False)
+
+                    if prefix == "V":
+                        voltage_cbs.append(btn)
+                    elif prefix == "I":
+                        current_cbs.append(btn)
+                    else:
+                        power_cbs.append(btn)
+
+                outputs_row.addWidget(out_frame)
+
+            if slot_char == "A":
+                self.ch_checkboxes_a = current_cbs
+                self.ch_voltage_cbs_a = voltage_cbs
+                self.ch_current_cbs_a = current_cbs
+                self.ch_power_cbs_a = power_cbs
+            elif slot_char == "B":
+                self.ch_checkboxes_b = current_cbs
+                self.ch_voltage_cbs_b = voltage_cbs
+                self.ch_current_cbs_b = current_cbs
+                self.ch_power_cbs_b = power_cbs
+
+            inner_layout.addWidget(slot_frame)
+
+        inner_layout.addStretch()
+        self.channel_config_layout.insertWidget(0, self.channel_config_inner)
+
+    def _build_imported_channel_config(self):
+        import re
+
+        groups = {}
+        for key in self.datalog_data:
+            ch_num, mtype, is_b = _parse_ch_label(key)
+            if ch_num is None:
+                continue
+            slot = "B" if is_b else "A"
+            groups.setdefault(slot, {})
+            groups[slot].setdefault(ch_num, set())
+            groups[slot][ch_num].add(mtype)
+
+        if not groups:
+            return
+
+        old_inner = self.channel_config_inner
+        self.channel_config_layout.removeWidget(old_inner)
+        old_inner.deleteLater()
+
+        self.channel_config_inner = QWidget()
+        self.channel_config_inner.setStyleSheet("background: transparent;")
+        inner_layout = QHBoxLayout(self.channel_config_inner)
+        inner_layout.setContentsMargins(0, 0, 0, 0)
+        inner_layout.setSpacing(16)
+        self.channel_config_inner_layout = inner_layout
+
+        self.ch_checkboxes_a = []
+        self.ch_voltage_cbs_a = []
+        self.ch_current_cbs_a = []
+        self.ch_power_cbs_a = []
+        self.ch_checkboxes_b = []
+        self.ch_voltage_cbs_b = []
+        self.ch_current_cbs_b = []
+        self.ch_power_cbs_b = []
+
+        self.no_instrument_label.hide()
+
+        edit_style = (
+            "QLineEdit { background: #0c1a35; color: #8eb0e3; font-size: 10px; "
+            "border: 1px solid #1e3460; border-radius: 2px; }"
+            "QLineEdit:focus { border-color: #3a6aad; }"
+        )
+
+        for slot_char in sorted(groups.keys()):
+            ch_map = groups[slot_char]
+            max_ch = max(ch_map.keys())
+
+            slot_frame = QFrame()
+            slot_frame.setStyleSheet(
+                "QFrame { background-color: #070f24; border: 1px solid #1a2b52; border-radius: 6px; }"
+            )
+            slot_layout = QVBoxLayout(slot_frame)
+            slot_layout.setContentsMargins(6, 4, 6, 4)
+            slot_layout.setSpacing(0)
+
+            slot_title = QLabel(f"Imported  ─  Slot {slot_char}")
+            slot_title.setStyleSheet(
+                "color: #556a8c; font-size: 10px; border: none; padding-bottom: 2px;"
+            )
+            slot_layout.addWidget(slot_title)
+
+            outputs_row = QHBoxLayout()
+            outputs_row.setContentsMargins(0, 0, 0, 0)
+            outputs_row.setSpacing(4)
+            slot_layout.addLayout(outputs_row)
+
+            voltage_cbs = []
+            current_cbs = []
+            power_cbs = []
+
+            for ch in range(1, max_ch + 1):
+                ch_color = CHANNEL_COLORS[(ch - 1) % len(CHANNEL_COLORS)]
+                available_types = ch_map.get(ch, set())
+
+                out_frame = QFrame()
+                out_frame.setStyleSheet(
+                    "QFrame { background-color: #0a1430; border: 1px solid #152040; border-radius: 4px; }"
+                )
+                out_vbox = QVBoxLayout(out_frame)
+                out_vbox.setContentsMargins(4, 2, 4, 3)
+                out_vbox.setSpacing(1)
+
+                title_lbl = QLabel(f"OUTPUT {ch}")
+                title_lbl.setAlignment(Qt.AlignCenter)
+                title_lbl.setStyleSheet(
+                    f"color: {ch_color}; font-size: 10px; font-weight: 700; "
+                    f"border: none; padding: 1px 0;"
+                )
+                out_vbox.addWidget(title_lbl)
+
+                for prefix, default_scale, default_offset, unit in [
+                    ("V", "1V", "0V", "V"),
+                    ("I", "1mA", "0mA", "mA"),
+                    ("P", "1W", "0W", "W"),
+                ]:
+                    if prefix not in available_types:
+                        dummy = ToggleLabel(f"{prefix}{ch}")
+                        dummy.setFixedWidth(30)
+                        dummy.setProperty("ch_color", ch_color)
+                        dummy.setProperty("ch_idx", ch - 1)
+                        dummy.setProperty("meas_type", prefix)
+                        dummy.setStyleSheet(self._ch_toggle_style(ch_color, False))
+                        dummy.setEnabled(False)
+                        dummy.setStyleSheet(
+                            "background-color: #0a1020; color: #2a3a55; "
+                            "font-size: 10px; font-weight: 700; "
+                            "border: 1px solid #121e38; border-radius: 2px;"
+                        )
+                        dummy_scale = QLineEdit(default_scale)
+                        dummy_scale.setMinimumWidth(38)
+                        dummy_scale.setAlignment(Qt.AlignCenter)
+                        dummy_scale.setStyleSheet(edit_style)
+                        dummy_scale.setEnabled(False)
+                        dummy_sep = QLabel("/")
+                        dummy_sep.setFixedWidth(8)
+                        dummy_sep.setAlignment(Qt.AlignCenter)
+                        dummy_sep.setStyleSheet("color: #3a5070; font-size: 10px; border: none;")
+                        dummy_offset = QLineEdit(default_offset)
+                        dummy_offset.setMinimumWidth(38)
+                        dummy_offset.setAlignment(Qt.AlignCenter)
+                        dummy_offset.setStyleSheet(edit_style)
+                        dummy_offset.setEnabled(False)
+                        row_layout = QHBoxLayout()
+                        row_layout.setContentsMargins(0, 0, 0, 0)
+                        row_layout.setSpacing(1)
+                        row_layout.addWidget(dummy)
+                        row_layout.addWidget(dummy_scale)
+                        row_layout.addWidget(dummy_sep)
+                        row_layout.addWidget(dummy_offset)
+                        container = QWidget()
+                        container.setStyleSheet("border: none;")
+                        container.setLayout(row_layout)
+                        out_vbox.addWidget(container)
+                        if prefix == "V":
+                            voltage_cbs.append(dummy)
+                        elif prefix == "I":
+                            current_cbs.append(dummy)
+                        else:
+                            power_cbs.append(dummy)
+                        dummy.setProperty("scale_edit", dummy_scale)
+                        dummy.setProperty("offset_edit", dummy_offset)
+                        dummy.setProperty("slot_char", slot_char)
+                        dummy.setProperty("user_edited", False)
+                        continue
+
+                    btn = ToggleLabel(f"{prefix}{ch}")
+                    btn.setFixedWidth(30)
+                    btn.setProperty("ch_color", ch_color)
+                    btn.setProperty("ch_idx", ch - 1)
+                    btn.setProperty("meas_type", prefix)
+                    btn.setStyleSheet(self._ch_toggle_style(ch_color, False))
+                    btn.toggled.connect(lambda checked, b=btn: self._on_ch_toggle(b, checked))
+
+                    scale_edit = QLineEdit(default_scale)
+                    scale_edit.setMinimumWidth(38)
+                    scale_edit.setAlignment(Qt.AlignCenter)
+                    scale_edit.setStyleSheet(edit_style)
+                    scale_edit.setProperty("ch_idx", ch - 1)
+                    scale_edit.setProperty("meas_type", prefix)
+                    scale_edit.setProperty("field", "scale")
+
+                    sep = QLabel("/")
+                    sep.setFixedWidth(8)
+                    sep.setAlignment(Qt.AlignCenter)
+                    sep.setStyleSheet("color: #3a5070; font-size: 10px; border: none;")
+
+                    offset_edit = QLineEdit(default_offset)
+                    offset_edit.setMinimumWidth(38)
+                    offset_edit.setAlignment(Qt.AlignCenter)
+                    offset_edit.setStyleSheet(edit_style)
+                    offset_edit.setProperty("ch_idx", ch - 1)
                     offset_edit.setProperty("meas_type", prefix)
                     offset_edit.setProperty("field", "offset")
 
@@ -3171,7 +3396,20 @@ class N6705CDatalogUI(QWidget):
         vb.setMouseMode(vb.PanMode)
         self.plot_widget.setMouseEnabled(x=True, y=False)
 
-        self._refresh_plot()
+        visible_keys = self._get_visible_keys()
+        if not visible_keys:
+            visible_keys = set(self.datalog_data.keys())
+
+        all_times = []
+        for key in visible_keys:
+            ch_data = self.datalog_data.get(key)
+            if ch_data and ch_data["time"]:
+                all_times.extend(ch_data["time"])
+
+        if all_times:
+            self.plot_widget.setXRange(min(all_times), max(all_times))
+
+        self._on_channel_visibility_changed()
 
     def _toggle_box_zoom(self):
         self.box_zoom_enabled = not self.box_zoom_enabled
@@ -3773,6 +4011,7 @@ class N6705CDatalogUI(QWidget):
             return
 
         self.datalog_data = all_data
+        self._build_imported_channel_config()
         self._sync_checkboxes_to_data()
         self._refresh_plot()
 
@@ -3873,6 +4112,7 @@ class N6705CDatalogUI(QWidget):
 
         self._raw_dlog_list = [raw_data]
         self.datalog_data = all_data
+        self._build_imported_channel_config()
         self._sync_checkboxes_to_data()
         self._refresh_plot()
 
@@ -3944,6 +4184,7 @@ class N6705CDatalogUI(QWidget):
 
         self._raw_dlog_list = [raw_data]
         self.datalog_data = all_data
+        self._build_imported_channel_config()
         self._sync_checkboxes_to_data()
         self._refresh_plot()
 
