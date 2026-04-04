@@ -880,6 +880,7 @@ class N6705CDatalogUI(QWidget):
         self.datalog_data = {}
         self._raw_dlog_list = []
         self._band_info = {}
+        self._sep_lines = []
         self.marker_a_pos = None
         self.marker_b_pos = None
         self.marker_a_line = None
@@ -2750,10 +2751,16 @@ class N6705CDatalogUI(QWidget):
             self.tooltip_text.setVisible(False)
             return
 
+        visible_keys = self._get_visible_keys()
+        if not visible_keys:
+            visible_keys = set(self.datalog_data.keys())
+
         lines = [f"Time: {x:.2f} s"]
 
         sorted_keys = sorted(self.datalog_data.keys(), key=_sort_key_for_label)
         for idx, label in enumerate(sorted_keys):
+            if label not in visible_keys:
+                continue
             ch_data = self.datalog_data[label]
             times = ch_data["time"]
             values = ch_data["values"]
@@ -2909,6 +2916,12 @@ class N6705CDatalogUI(QWidget):
         for key, curve in self.plot_curves.items():
             curve.setVisible(key in visible_keys)
 
+        for sl in self._sep_lines:
+            self.plot_widget.removeItem(sl)
+        self._sep_lines.clear()
+
+        self._band_info = {}
+
         if n == 0:
             for item in self._ch_label_items:
                 item.setVisible(False)
@@ -2953,6 +2966,14 @@ class N6705CDatalogUI(QWidget):
             if curve:
                 times = ch_data["time"]
                 curve.setData(times, norm_vals)
+
+            if idx > 0:
+                sep_line = pg.InfiniteLine(
+                    pos=band_top, angle=0, movable=False,
+                    pen=pg.mkPen(color="#1e3460", width=1, style=Qt.DashLine)
+                )
+                self.plot_widget.addItem(sep_line, ignoreBounds=True)
+                self._sep_lines.append(sep_line)
 
             raw_center = (raw_min + raw_max) / 2
             raw_div = raw_range / 5
@@ -3272,6 +3293,7 @@ class N6705CDatalogUI(QWidget):
         self.marker_b_line = None
         self.marker_region = None
         self._band_info = {}
+        self._sep_lines = []
 
         self.crosshair_v = pg.InfiniteLine(
             angle=90, movable=False,
@@ -3357,6 +3379,7 @@ class N6705CDatalogUI(QWidget):
                     pen=pg.mkPen(color="#1e3460", width=1, style=Qt.DashLine)
                 )
                 self.plot_widget.addItem(sep_line, ignoreBounds=True)
+                self._sep_lines.append(sep_line)
 
             panel_entries.append((label, color))
 
@@ -3623,7 +3646,10 @@ class N6705CDatalogUI(QWidget):
 
         from bisect import bisect_left, bisect_right
 
-        ch_list = [(k, self.datalog_data[k]) for k in sorted(self.datalog_data.keys(), key=_sort_key_for_label)]
+        visible_keys = self._get_visible_keys()
+        if not visible_keys:
+            visible_keys = set(self.datalog_data.keys())
+        ch_list = [(k, self.datalog_data[k]) for k in sorted(self.datalog_data.keys(), key=_sort_key_for_label) if k in visible_keys]
         num_rows = 1 + len(ch_list)
         num_cols = len(headers)
 
