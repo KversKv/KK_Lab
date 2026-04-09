@@ -19,6 +19,7 @@ from ui.pages.power.n6705c_ui import N6705CUI
 from ui.pages.power.n6705c_double_ui import N6705CDoubleUI
 from ui.pages.power.n6705c_datalog_ui import N6705CDatalogUI
 from ui.pages.power.n6705c_top import N6705CTop
+from ui.pages.oscilloscope.mso64b_top import MSO64BTop
 from ui.pages.pmu.pmu_test_ui import PMUTestUI
 from ui.pages.chamber.vt6002_chamber_ui import VT6002ChamberUI
 from ui.widgets.sidebar_nav_button import SidebarNavButton
@@ -276,6 +277,7 @@ class MainWindow(QMainWindow):
         self.vt6002_chamber = None
 
         self.n6705c_top = N6705CTop(self)
+        self.mso64b_top = MSO64BTop(self)
 
         self.n6705c_ui = None
         self.n6705c_double_ui = None
@@ -863,7 +865,7 @@ class MainWindow(QMainWindow):
     def _create_pmu_test_ui(self, selected_test=None):
         self._hide_all_instrument_uis()
         if self.pmu_test_ui is None:
-            self.pmu_test_ui = PMUTestUI(n6705c_top=self.n6705c_top)
+            self.pmu_test_ui = PMUTestUI(n6705c_top=self.n6705c_top, mso64b_top=self.mso64b_top)
             self.instrument_ui_container_layout.addWidget(self.pmu_test_ui)
         else:
             self.pmu_test_ui._sync_from_top()
@@ -985,6 +987,9 @@ class MainWindow(QMainWindow):
             self.oscilloscope_ui.set_title(instrument_info.split(",")[1].strip() if "," in instrument_info else instrument_info)
             self.oscilloscope_ui.set_invert_enabled(isinstance(self.oscilloscope_instrument, DSOX4034A))
             self.visa_status.setText(f"示波器: 已连接 - {resource}")
+
+            if isinstance(self.oscilloscope_instrument, MSO64B):
+                self.mso64b_top.connect(resource, self.oscilloscope_instrument)
         except Exception as e:
             print(f"连接示波器失败: {str(e)}")
             self.oscilloscope_ui.update_connection_status(False)
@@ -1004,8 +1009,14 @@ class MainWindow(QMainWindow):
 
         try:
             if self.oscilloscope_instrument:
+                is_mso64b = isinstance(self.oscilloscope_instrument, MSO64B)
                 self.oscilloscope_instrument.disconnect()
                 self.oscilloscope_instrument = None
+                if is_mso64b:
+                    self.mso64b_top.mso64b = None
+                    self.mso64b_top.is_connected = False
+                    self.mso64b_top.visa_resource = ""
+                    self.mso64b_top.connection_changed.emit()
 
             self.oscilloscope_ui.update_connection_status(False)
             self.oscilloscope_ui.set_invert_enabled(True)
@@ -1236,6 +1247,9 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         if self.n6705c_top:
             self.n6705c_top.disconnect_all()
+
+        if self.mso64b_top and self.mso64b_top.is_connected:
+            self.mso64b_top.disconnect()
 
         if self.oscilloscope_instrument:
             try:

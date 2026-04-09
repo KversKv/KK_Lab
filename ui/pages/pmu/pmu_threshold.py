@@ -62,10 +62,11 @@ class PMUThresholdUI(QWidget):
 
     connection_status_changed = Signal(bool)
 
-    def __init__(self, n6705c_top=None):
+    def __init__(self, n6705c_top=None, mso64b_top=None):
         super().__init__()
 
         self._n6705c_top = n6705c_top
+        self._mso64b_top = mso64b_top
         self.rm = None
         self.n6705c = None
         self.available_devices = []
@@ -736,18 +737,26 @@ class PMUThresholdUI(QWidget):
         button.update()
 
     def _sync_from_top(self):
-        if not self._n6705c_top:
-            return
-        if self._n6705c_top.is_connected_a and self._n6705c_top.n6705c_a:
-            self.n6705c = self._n6705c_top.n6705c_a
-            self.is_connected = True
-            self._update_connect_button_state(self.connect_btn, True)
-            self.search_btn.setEnabled(False)
-            if self._n6705c_top.visa_resource_a:
-                self.visa_resource_combo.clear()
-                self.visa_resource_combo.addItem(self._n6705c_top.visa_resource_a)
-        elif not self.is_connected:
-            self._update_connect_button_state(self.connect_btn, False)
+        if self._n6705c_top:
+            if self._n6705c_top.is_connected_a and self._n6705c_top.n6705c_a:
+                self.n6705c = self._n6705c_top.n6705c_a
+                self.is_connected = True
+                self._update_connect_button_state(self.connect_btn, True)
+                self.search_btn.setEnabled(False)
+                if self._n6705c_top.visa_resource_a:
+                    self.visa_resource_combo.clear()
+                    self.visa_resource_combo.addItem(self._n6705c_top.visa_resource_a)
+            elif not self.is_connected:
+                self._update_connect_button_state(self.connect_btn, False)
+
+        if self._mso64b_top:
+            if self._mso64b_top.is_connected and self._mso64b_top.mso64b:
+                self.scope_resource = self._mso64b_top.visa_resource
+                self.scope_connected = True
+                self.scope_resource_edit.setText(self._mso64b_top.visa_resource)
+                self._update_connect_button_state(self.scope_connect_btn, True)
+            elif not self.scope_connected:
+                self._update_connect_button_state(self.scope_connect_btn, False)
 
     def _update_test_button_state(self, running: bool):
         self.is_test_running = running
@@ -1035,6 +1044,9 @@ class PMUThresholdUI(QWidget):
                 self._update_connect_button_state(self.scope_connect_btn, True)
                 self.append_log("[SYSTEM] MSO64B connected.")
                 self.set_system_status("MSO64B connected")
+
+                if self._mso64b_top:
+                    self._mso64b_top.connect(resource)
             else:
                 self.set_system_status("Invalid scope resource", is_error=True)
                 self.append_log("[ERROR] Invalid scope resource.")
@@ -1051,6 +1063,9 @@ class PMUThresholdUI(QWidget):
         self.scope_connect_btn.setEnabled(False)
 
         try:
+            if self._mso64b_top and self._mso64b_top.is_connected:
+                self._mso64b_top.disconnect()
+
             self.scope_resource = None
             self.scope_connected = False
             self._update_connect_button_state(self.scope_connect_btn, False)

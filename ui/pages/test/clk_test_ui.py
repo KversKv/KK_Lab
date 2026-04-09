@@ -961,8 +961,9 @@ class CLKTestUI(QWidget):
     TEST_TEMP_FREQ = "temp_freq"
     TEST_CLK_PERF = "clk_perf"
 
-    def __init__(self, parent=None):
+    def __init__(self, mso64b_top=None, parent=None):
         super().__init__(parent)
+        self._mso64b_top = mso64b_top
         self.current_test_item = self.TEST_CAP_FREQ
 
         # 仪器实例
@@ -988,6 +989,7 @@ class CLKTestUI(QWidget):
         self._setup_style()
         self._create_layout()
         self._init_ui_elements()
+        self._sync_from_top()
 
     # -------------------------------------------------------
     # 样式
@@ -1986,8 +1988,25 @@ class CLKTestUI(QWidget):
 
     # -------------------------------------------------------
     # 搜索仪器
+    def _sync_from_top(self):
+        if not self._mso64b_top:
+            return
+        if self._mso64b_top.is_connected and self._mso64b_top.mso64b:
+            self.mso64b = self._mso64b_top.mso64b
+            self.is_mso64b_connected = True
+            self._set_status_label(self.mso64b_status, "Connected", "ok")
+            self._set_btn_connected(self.mso64b_connect_btn)
+            self.mso64b_search_btn.setEnabled(False)
+            if self._mso64b_top.visa_resource:
+                self.mso64b_combo.clear()
+                self.mso64b_combo.addItem(self._mso64b_top.visa_resource)
+        elif not self.is_mso64b_connected:
+            self._set_btn_disconnected(self.mso64b_connect_btn)
+
     # -------------------------------------------------------
     def _search_mso64b(self):
+        if self._mso64b_top and self._mso64b_top.is_connected:
+            return
         if MOCK_DEBUG_MODE:
             self.mso64b_combo.clear()
             self.mso64b_combo.addItem("[MOCK] TCPIP0::192.168.3.27::inst0::INSTR")
@@ -2145,6 +2164,9 @@ class CLKTestUI(QWidget):
             self._set_btn_connected(self.mso64b_connect_btn)
             self.mso64b_search_btn.setEnabled(False)
             self._append_log(f"[INFO] MSO64B connected: {idn}")
+
+            if self._mso64b_top:
+                self._mso64b_top.connect(addr, self.mso64b)
         except Exception as e:
             self._append_log(f"[ERROR] MSO64B connection failed: {e}")
             self._set_status_label(self.mso64b_status, f"Error: {e}", "err")
@@ -2152,9 +2174,13 @@ class CLKTestUI(QWidget):
 
     def _disconnect_mso64b(self):
         try:
-            if self.mso64b:
-                self.mso64b.disconnect()
+            if self._mso64b_top:
+                self._mso64b_top.disconnect()
                 self.mso64b = None
+            else:
+                if self.mso64b:
+                    self.mso64b.disconnect()
+                    self.mso64b = None
         except Exception:
             pass
         self.is_mso64b_connected = False

@@ -523,10 +523,11 @@ class PMUIsGainUI(QWidget):
 
     connection_status_changed = Signal(bool)
 
-    def __init__(self, n6705c_top=None):
+    def __init__(self, n6705c_top=None, mso64b_top=None):
         super().__init__()
 
         self._n6705c_top = n6705c_top
+        self._mso64b_top = mso64b_top
         self.rm = None
         self.n6705c = None
         self.available_devices = []
@@ -1207,18 +1208,31 @@ class PMUIsGainUI(QWidget):
         button.update()
 
     def _sync_from_top(self):
-        if not self._n6705c_top:
-            return
-        if self._n6705c_top.is_connected_a and self._n6705c_top.n6705c_a:
-            self.n6705c = self._n6705c_top.n6705c_a
-            self.is_connected = True
-            self._update_connect_button_state(self.connect_btn, True)
-            self.search_btn.setEnabled(False)
-            if self._n6705c_top.visa_resource_a:
-                self.visa_resource_combo.clear()
-                self.visa_resource_combo.addItem(self._n6705c_top.visa_resource_a)
-        elif not self.is_connected:
-            self._update_connect_button_state(self.connect_btn, False)
+        if self._n6705c_top:
+            if self._n6705c_top.is_connected_a and self._n6705c_top.n6705c_a:
+                self.n6705c = self._n6705c_top.n6705c_a
+                self.is_connected = True
+                self._update_connect_button_state(self.connect_btn, True)
+                self.search_btn.setEnabled(False)
+                if self._n6705c_top.visa_resource_a:
+                    self.visa_resource_combo.clear()
+                    self.visa_resource_combo.addItem(self._n6705c_top.visa_resource_a)
+            elif not self.is_connected:
+                self._update_connect_button_state(self.connect_btn, False)
+
+        if self._mso64b_top:
+            if self._mso64b_top.is_connected and self._mso64b_top.mso64b:
+                self.Osc_ins = self._mso64b_top.mso64b
+                self.scope_resource = self._mso64b_top.visa_resource
+                self.scope_connected = True
+                self._update_connect_button_state(self.scope_connect_btn, True)
+                self.scope_type_combo.setEnabled(False)
+                self.scope_search_btn.setEnabled(False)
+                if self._mso64b_top.visa_resource:
+                    self.scope_resource_combo.clear()
+                    self.scope_resource_combo.addItem(self._mso64b_top.visa_resource)
+            elif not self.scope_connected:
+                self._update_connect_button_state(self.scope_connect_btn, False)
 
     def _update_test_button_state(self, running: bool):
         self.is_test_running = running
@@ -1959,6 +1973,8 @@ class PMUIsGainUI(QWidget):
             self.append_log("[SYSTEM] No compatible N6705C instrument found.")
 
     def _on_scope_search(self):
+        if self._mso64b_top and self._mso64b_top.is_connected:
+            return
         self.set_system_status("Searching scope resources...")
         self.append_log("[SYSTEM] Scanning for oscilloscope resources (LAN & USB)...")
         self.scope_search_btn.setEnabled(False)
@@ -2147,18 +2163,27 @@ class PMUIsGainUI(QWidget):
         self.append_log(f"[IDN] {result['idn']}")
         self.set_system_status(f"{scope_type} connected")
 
+        if scope_type == "MSO64B" and self._mso64b_top:
+            self._mso64b_top.connect(result["resource"], self.Osc_ins)
+
     def _on_disconnect_scope(self):
         scope_type = self.scope_type_combo.currentText()
         self.set_system_status(f"Disconnecting {scope_type}...")
         self.append_log(f"[SYSTEM] Disconnecting {scope_type}...")
         self.scope_connect_btn.setEnabled(False)
-        osc_ref = self.Osc_ins
-        self.Osc_ins = None
-        self._run_instrument_task(
-            self._disconnect_scope_task,
-            self._on_disconnect_scope_finished,
-            kwargs={"osc_ref": osc_ref, "scope_type": scope_type},
-        )
+
+        if scope_type == "MSO64B" and self._mso64b_top and self._mso64b_top.is_connected:
+            self._mso64b_top.disconnect()
+            self.Osc_ins = None
+            self._on_disconnect_scope_finished({"scope_type": scope_type})
+        else:
+            osc_ref = self.Osc_ins
+            self.Osc_ins = None
+            self._run_instrument_task(
+                self._disconnect_scope_task,
+                self._on_disconnect_scope_finished,
+                kwargs={"osc_ref": osc_ref, "scope_type": scope_type},
+            )
 
     def _disconnect_scope_task(self, osc_ref, scope_type):
         if osc_ref is not None:

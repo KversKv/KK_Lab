@@ -32,9 +32,10 @@ class PMUTestUI(QWidget):
         "clk_test": 6,
     }
 
-    def __init__(self, n6705c_top=None):
+    def __init__(self, n6705c_top=None, mso64b_top=None):
         super().__init__()
         self._n6705c_top = n6705c_top
+        self._mso64b_top = mso64b_top
         self._setup_style()
         self._create_layout()
         self._init_ui_elements()
@@ -136,10 +137,10 @@ class PMUTestUI(QWidget):
         self.output_voltage_ui = PMUOutputVoltageUI(n6705c_top=self._n6705c_top)
         self.tab_widget.addTab(self.output_voltage_ui, "Output Voltage")
 
-        self.threshold_ui = PMUThresholdUI(n6705c_top=self._n6705c_top)
+        self.threshold_ui = PMUThresholdUI(n6705c_top=self._n6705c_top, mso64b_top=self._mso64b_top)
         self.tab_widget.addTab(self.threshold_ui, "Threshold")
 
-        self.is_gain_ui = PMUIsGainUI(n6705c_top=self._n6705c_top)
+        self.is_gain_ui = PMUIsGainUI(n6705c_top=self._n6705c_top, mso64b_top=self._mso64b_top)
         self.tab_widget.addTab(self.is_gain_ui, "Is_gain")
 
         self.oscp_ui = PMUOSCPUI(n6705c_top=self._n6705c_top)
@@ -148,8 +149,7 @@ class PMUTestUI(QWidget):
         self.gpadc_test_ui = GPADCTestUI(n6705c_top=self._n6705c_top)
         self.tab_widget.addTab(self.gpadc_test_ui, "GPADC Test")
 
-        # 创建CLK测试页面
-        self.clk_test_ui = CLKTestUI()
+        self.clk_test_ui = CLKTestUI(mso64b_top=self._mso64b_top)
         self.tab_widget.addTab(self.clk_test_ui, "CLK Test")
 
         main_layout.addWidget(self.tab_widget)
@@ -204,7 +204,7 @@ class PMUTestUI(QWidget):
         for sub_ui in [
             self.dcdc_efficiency_ui, self.output_voltage_ui,
             self.threshold_ui, self.is_gain_ui, self.oscp_ui,
-            self.gpadc_test_ui,
+            self.gpadc_test_ui, self.clk_test_ui,
         ]:
             if hasattr(sub_ui, '_sync_from_top'):
                 sub_ui._sync_from_top()
