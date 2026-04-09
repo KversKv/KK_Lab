@@ -272,6 +272,7 @@ class MainWindow(QMainWindow):
         # 初始化仪器
         self.visa_instrument = VisaInstrument()
         self.oscilloscope_instrument = None
+        self.oscilloscope_info = ""
         self.vt6002_chamber = None
 
         self.n6705c_top = N6705CTop(self)
@@ -603,41 +604,19 @@ class MainWindow(QMainWindow):
         """)
         bottom_layout.addWidget(self.download_btn)
 
-        visa_status_widget = QWidget()
-        visa_status_widget.setStyleSheet("""
+        self.instrument_status_container = QWidget()
+        self.instrument_status_container.setStyleSheet("""
             QWidget {
                 background: transparent;
                 border: none;
             }
         """)
-        visa_status_layout = QHBoxLayout(visa_status_widget)
-        visa_status_layout.setContentsMargins(0, 0, 0, 0)
-        visa_status_layout.setSpacing(8)
+        self.instrument_status_layout = QVBoxLayout(self.instrument_status_container)
+        self.instrument_status_layout.setContentsMargins(0, 0, 0, 0)
+        self.instrument_status_layout.setSpacing(4)
+        self.instrument_status_items = {}
+        bottom_layout.addWidget(self.instrument_status_container)
 
-        self.visa_status_dot = QLabel("●")
-        self.visa_status_dot.setStyleSheet("""
-            QLabel {
-                color: #00d38a;
-                font-size: 16px;
-                border: none;
-                background: transparent;
-            }
-        """)
-
-        self.visa_status_label = QLabel("VISA Server Connected")
-        self.visa_status_label.setStyleSheet("""
-            QLabel {
-                color: #9fd3c7;
-                font-size: 12px;
-                border: none;
-                background: transparent;
-            }
-        """)
-
-        visa_status_layout.addWidget(self.visa_status_dot)
-        visa_status_layout.addWidget(self.visa_status_label)
-        visa_status_layout.addStretch()
-        bottom_layout.addWidget(visa_status_widget)
         left_nav_layout.addWidget(bottom_widget)
 
         main_splitter.addWidget(self.left_nav)
@@ -836,6 +815,7 @@ class MainWindow(QMainWindow):
         self._hide_all_instrument_uis()
         if self.vt6002_chamber_ui is None:
             self.vt6002_chamber_ui = VT6002ChamberUI()
+            self.vt6002_chamber_ui.connection_changed.connect(self._update_instrument_status)
             self.instrument_ui_container_layout.addWidget(self.vt6002_chamber_ui)
         else:
             self.vt6002_chamber_ui.show()
@@ -884,6 +864,90 @@ class MainWindow(QMainWindow):
 
         self.download_btn.clicked.connect(self._on_download_code)
         self.test_manager.data_updated.connect(self._update_data)
+
+        self.n6705c_top.connection_changed.connect(self._update_instrument_status)
+        self.mso64b_top.connection_changed.connect(self._update_instrument_status)
+
+    def _add_instrument_status(self, key: str, text: str):
+        if key in self.instrument_status_items:
+            return
+        widget = QWidget()
+        widget.setStyleSheet("""
+            QWidget {
+                background: transparent;
+                border: none;
+            }
+        """)
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        dot = QLabel("●")
+        dot.setStyleSheet("""
+            QLabel {
+                color: #00d38a;
+                font-size: 12px;
+                border: none;
+                background: transparent;
+            }
+        """)
+
+        label = QLabel(text)
+        label.setStyleSheet("""
+            QLabel {
+                color: #9fd3c7;
+                font-size: 11px;
+                border: none;
+                background: transparent;
+            }
+        """)
+
+        layout.addWidget(dot)
+        layout.addWidget(label)
+        layout.addStretch()
+
+        self.instrument_status_layout.addWidget(widget)
+        self.instrument_status_items[key] = widget
+
+    def _remove_instrument_status(self, key: str):
+        widget = self.instrument_status_items.pop(key, None)
+        if widget is not None:
+            self.instrument_status_layout.removeWidget(widget)
+            widget.deleteLater()
+
+    def _update_instrument_status(self):
+        if self.n6705c_top.is_connected_a:
+            name = f"N6705C-A  {self.n6705c_top.serial_a}" if self.n6705c_top.serial_a else "N6705C-A Connected"
+            self._remove_instrument_status("n6705c_a")
+            self._add_instrument_status("n6705c_a", name)
+        else:
+            self._remove_instrument_status("n6705c_a")
+
+        if self.n6705c_top.is_connected_b:
+            name = f"N6705C-B  {self.n6705c_top.serial_b}" if self.n6705c_top.serial_b else "N6705C-B Connected"
+            self._remove_instrument_status("n6705c_b")
+            self._add_instrument_status("n6705c_b", name)
+        else:
+            self._remove_instrument_status("n6705c_b")
+
+        if self.oscilloscope_instrument is not None and self.oscilloscope_info:
+            parts = [p.strip() for p in self.oscilloscope_info.split(",")]
+            if len(parts) >= 3:
+                name = f"{parts[1]}  {parts[2]}"
+            elif len(parts) >= 2:
+                name = parts[1]
+            else:
+                name = self.oscilloscope_info
+            self._remove_instrument_status("oscilloscope")
+            self._add_instrument_status("oscilloscope", name)
+        else:
+            self._remove_instrument_status("oscilloscope")
+
+        if self.vt6002_chamber_ui is not None and self.vt6002_chamber_ui.vt6002 is not None:
+            self._remove_instrument_status("vt6002")
+            self._add_instrument_status("vt6002", "VT6002 Chamber Connected")
+        else:
+            self._remove_instrument_status("vt6002")
 
     def _on_nav_button_clicked(self):
         sender = self.sender()
@@ -962,17 +1026,20 @@ class MainWindow(QMainWindow):
                 self.oscilloscope_instrument = MSO64B(resource)
 
             instrument_info = self.oscilloscope_instrument.identify_instrument()
+            self.oscilloscope_info = instrument_info
             self.oscilloscope_ui.update_connection_status(True, instrument_info)
             self.oscilloscope_ui.set_title(instrument_info.split(",")[1].strip() if "," in instrument_info else instrument_info)
             self.oscilloscope_ui.set_invert_enabled(isinstance(self.oscilloscope_instrument, DSOX4034A))
 
             if isinstance(self.oscilloscope_instrument, MSO64B):
-                self.mso64b_top.connect(resource, self.oscilloscope_instrument)
+                self.mso64b_top.connect_instrument(resource, self.oscilloscope_instrument)
+            self._update_instrument_status()
         except Exception as e:
             print(f"连接示波器失败: {str(e)}")
             self.oscilloscope_ui.update_connection_status(False)
             self.oscilloscope_ui.set_system_status("● Connection failed", is_error=True)
             self.oscilloscope_ui.append_log(f"[ERROR] Connection failed: {e}")
+            self._update_instrument_status()
         finally:
             self.oscilloscope_ui.connect_btn.setEnabled(True)
 
@@ -989,6 +1056,7 @@ class MainWindow(QMainWindow):
                 is_mso64b = isinstance(self.oscilloscope_instrument, MSO64B)
                 self.oscilloscope_instrument.disconnect()
                 self.oscilloscope_instrument = None
+                self.oscilloscope_info = ""
                 if is_mso64b:
                     self.mso64b_top.mso64b = None
                     self.mso64b_top.is_connected = False
@@ -997,9 +1065,11 @@ class MainWindow(QMainWindow):
 
             self.oscilloscope_ui.update_connection_status(False)
             self.oscilloscope_ui.set_invert_enabled(True)
+            self._update_instrument_status()
         except Exception as e:
             self.oscilloscope_ui.set_system_status("● Disconnect failed", is_error=True)
             self.oscilloscope_ui.append_log(f"[ERROR] Disconnect failed: {str(e)}")
+            self._update_instrument_status()
         finally:
             self.oscilloscope_ui.connect_btn.setEnabled(True)
 

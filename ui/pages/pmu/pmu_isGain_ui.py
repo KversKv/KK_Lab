@@ -2164,7 +2164,7 @@ class PMUIsGainUI(QWidget):
         self.set_system_status(f"{scope_type} connected")
 
         if scope_type == "MSO64B" and self._mso64b_top:
-            self._mso64b_top.connect(result["resource"], self.Osc_ins)
+            self._mso64b_top.connect_instrument(result["resource"], self.Osc_ins)
 
     def _on_disconnect_scope(self):
         scope_type = self.scope_type_combo.currentText()

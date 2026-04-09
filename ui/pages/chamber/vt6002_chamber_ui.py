@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QFrame, QGraphicsDropShadowEffect,
     QSizePolicy
 )
-from PySide6.QtCore import Qt, QTimer, QRectF, QSize
+from PySide6.QtCore import Qt, QTimer, QRectF, QSize, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QFont
 from instruments.chambers.vt6002_chamber import VT6002, serial
 
@@ -79,6 +79,8 @@ class TemperatureGauge(QWidget):
 
 class VT6002ChamberUI(QWidget):
     """VT6002 温箱控制界面"""
+
+    connection_changed = Signal()
 
     def __init__(self):
         super().__init__()
@@ -704,6 +706,7 @@ class VT6002ChamberUI(QWidget):
                 self._set_connection_ui(False)
                 self._set_controls_enabled(False)
                 self._set_power_ui(False)
+                self.connection_changed.emit()
             except Exception as e:
                 print(f"断开连接错误: {e}")
         else:
@@ -719,6 +722,7 @@ class VT6002ChamberUI(QWidget):
                 self._set_connection_ui(True)
                 self._set_controls_enabled(True)
                 self._set_power_ui(False)
+                self.connection_changed.emit()
             except Exception as e:
                 print(f"连接设备错误: {e}")
                 self.vt6002 = None

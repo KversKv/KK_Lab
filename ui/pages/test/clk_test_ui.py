@@ -2166,7 +2166,7 @@ class CLKTestUI(QWidget):
             self._append_log(f"[INFO] MSO64B connected: {idn}")
 
             if self._mso64b_top:
-                self._mso64b_top.connect(addr, self.mso64b)
+                self._mso64b_top.connect_instrument(addr, self.mso64b)
         except Exception as e:
             self._append_log(f"[ERROR] MSO64B connection failed: {e}")
             self._set_status_label(self.mso64b_status, f"Error: {e}", "err")

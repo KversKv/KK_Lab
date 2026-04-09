@@ -13,7 +13,7 @@ class MSO64BTop(QObject):
         self.is_connected = False
         self.visa_resource = ""
 
-    def connect(self, visa_resource, mso64b_instance=None):
+    def connect_instrument(self, visa_resource, mso64b_instance=None):
         if mso64b_instance is not None:
             self.mso64b = mso64b_instance
         else:

@@ -1046,7 +1046,7 @@ class PMUThresholdUI(QWidget):
                 self.set_system_status("MSO64B connected")
 
                 if self._mso64b_top:
-                    self._mso64b_top.connect(resource)
+                    self._mso64b_top.connect_instrument(resource)
             else:
                 self.set_system_status("Invalid scope resource", is_error=True)
                 self.append_log("[ERROR] Invalid scope resource.")
