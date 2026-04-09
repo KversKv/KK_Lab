@@ -1132,7 +1132,7 @@ class MainWindow(QMainWindow):
         self.oscilloscope_ui.append_log("[INFO] Applying settings to instrument...")
         try:
             try:
-                timebase_val = float(self.oscilloscope_ui.timebase_edit.text())
+                timebase_val = self.oscilloscope_ui.timebase_edit.value_in_seconds()
                 self.oscilloscope_instrument.set_timebase_scale(timebase_val)
                 self.oscilloscope_ui.append_log(f"[SETTING] Timebase: {timebase_val} s/div")
             except (ValueError, Exception) as e:

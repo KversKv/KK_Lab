@@ -3,10 +3,10 @@
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QLabel, QLineEdit, QFrame, QSizePolicy, QSlider,
+    QLabel, QLineEdit, QFrame, QSizePolicy,
     QStackedWidget, QApplication, QTextEdit, QMenu, QFileDialog
 )
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QPixmap, QImage
 from ui.widgets.dark_combobox import DarkComboBox
 
@@ -19,15 +19,126 @@ from ui.widgets.dark_combobox import DarkComboBox
 DEBUG_MSO64B_FLAG = False
 DEBUG_DSOX4034A_FLAG = False
 
+
+# ---------------------------------------------------------------------------
+# TimeScale 序列输入框：支持鼠标滚轮按 1-2-4-10 序列在 ns/us/ms/s 单位间切换
+# ---------------------------------------------------------------------------
+class TimeScaleEdit(QLineEdit):
+    """A QLineEdit that supports mouse wheel to cycle through a
+    predefined time-scale sequence (1-2-4-10 pattern across ns/us/ms/s),
+    while also allowing arbitrary text input.
+
+    When Enter is pressed, the *returnPressed* signal fires so the
+    parent UI can apply the value to the instrument.
+    """
+
+    # 完整的时间刻度序列（以秒为单位）
+    SCALE_SEQUENCE = [
+        1e-9, 2e-9, 4e-9, 10e-9, 20e-9, 40e-9, 100e-9, 200e-9, 400e-9,
+        1e-6, 2e-6, 4e-6, 10e-6, 20e-6, 40e-6, 100e-6, 200e-6, 400e-6,
+        1e-3, 2e-3, 4e-3, 10e-3, 20e-3, 40e-3, 100e-3, 200e-3, 400e-3,
+        1.0, 2.0, 4.0, 10.0,
+    ]
+
+    # 单位后缀 -> 乘数
+    _UNIT_MAP = {
+        'ns': 1e-9,
+        'us': 1e-6,
+        'ms': 1e-3,
+        's':  1.0,
+    }
+
+    def __init__(self, default_text="1us", parent=None):
+        super().__init__(default_text, parent)
+        self._current_index = self._find_nearest_index(self.parse_to_seconds(default_text))
+
+    # -- 公开 API --------------------------------------------------------------
+
+    def value_in_seconds(self) -> float:
+        """解析当前文本并返回以秒为单位的浮点数。"""
+        return self.parse_to_seconds(self.text())
+
+    @classmethod
+    def parse_to_seconds(cls, text: str) -> float:
+        """将带单位的字符串解析为秒值。
+        支持格式： '1us', '400ns', '10ms', '2s', 或纯数字（默认单位为秒）。
+        """
+        t = text.strip().lower()
+        for suffix, mult in sorted(cls._UNIT_MAP.items(), key=lambda x: -len(x[0])):
+            if t.endswith(suffix):
+                num_str = t[:-len(suffix)].strip()
+                try:
+                    return float(num_str) * mult
+                except ValueError:
+                    return 1e-6  # 解析失败时的默认值
+        # 没有单位后缀，尝试作为纯数字（秒）
+        try:
+            return float(t)
+        except ValueError:
+            return 1e-6
+
+    @classmethod
+    def seconds_to_display(cls, seconds: float) -> str:
+        """将秒值转换为可读的带单位字符串。"""
+        abs_val = abs(seconds)
+        if abs_val < 1e-6:
+            val = seconds / 1e-9
+            unit = 'ns'
+        elif abs_val < 1e-3:
+            val = seconds / 1e-6
+            unit = 'us'
+        elif abs_val < 1.0:
+            val = seconds / 1e-3
+            unit = 'ms'
+        else:
+            val = seconds
+            unit = 's'
+        # 如果是整数就不显示小数点
+        if val == int(val):
+            return f"{int(val)}{unit}"
+        return f"{val:g}{unit}"
+
+    # -- 内部方法 --------------------------------------------------------------
+
+    def _find_nearest_index(self, seconds: float) -> int:
+        """找到序列中最接近 seconds 的索引。"""
+        best = 0
+        best_diff = abs(self.SCALE_SEQUENCE[0] - seconds)
+        for i, v in enumerate(self.SCALE_SEQUENCE):
+            diff = abs(v - seconds)
+            if diff < best_diff:
+                best = i
+                best_diff = diff
+        return best
+
+    def wheelEvent(self, event):
+        """鼠标滚轮滚动时按序列切换时间刻度值。"""
+        delta = event.angleDelta().y()
+        if delta == 0:
+            return
+
+        # 先根据当前文本重新定位索引
+        current_seconds = self.parse_to_seconds(self.text())
+        self._current_index = self._find_nearest_index(current_seconds)
+
+        if delta > 0:
+            # 滚轮向上 -> 增大时间刻度
+            self._current_index = min(self._current_index + 1, len(self.SCALE_SEQUENCE) - 1)
+        else:
+            # 滚轮向下 -> 减小时间刻度
+            self._current_index = max(self._current_index - 1, 0)
+
+        new_val = self.SCALE_SEQUENCE[self._current_index]
+        self.setText(self.seconds_to_display(new_val))
+        event.accept()
+
+
 class OscilloscopeBaseUI(QWidget):
 
     INSTRUMENT_TITLE = "Oscilloscope"
     NUM_CHANNELS = 4
     RESOURCE_PLACEHOLDER = "VISA Resource / IP Address"
-    TIMEBASE_UNIT = "ms"
-    TIMEBASE_RANGE = (1, 100)
-    TIMEBASE_DEFAULT = 1
-    TIMEBASE_EDIT_DEFAULT = "0.001"
+    TIMESCALE_DEFAULT = "1us"
     TRIGGER_LEVEL_DEFAULT = "1.25"
     CHANNEL_SCALE_DEFAULT = "1"
     CHANNEL_OFFSET_DEFAULT = "0"
@@ -619,7 +730,7 @@ class OscilloscopeBaseUI(QWidget):
         layout.setContentsMargins(18, 16, 18, 18)
         layout.setSpacing(18)
 
-        title = QLabel("☰ Oscilloscope Settings")
+        title = QLabel("\u2630 Oscilloscope Settings")
         title.setObjectName("sectionTitle")
         layout.addWidget(title)
 
@@ -627,25 +738,15 @@ class OscilloscopeBaseUI(QWidget):
         h_box = QVBoxLayout()
         h_box.setSpacing(8)
 
-        h_label_row = QHBoxLayout()
-        h_title = QLabel(f"Timebase ({self.TIMEBASE_UNIT}/div)")
+        h_title = QLabel("TimeScale (s/div)")
         h_title.setStyleSheet("font-weight: 600; color:#B8C7EA;")
-        h_label_row.addWidget(h_title)
-        h_label_row.addStretch()
+        h_box.addWidget(h_title)
 
-        self.timebase_value_label = QLabel(f"{self.TIMEBASE_DEFAULT} {self.TIMEBASE_UNIT}")
-        self.timebase_value_label.setStyleSheet("color:#DDE6FF; font-weight:700;")
-        h_label_row.addWidget(self.timebase_value_label)
-        h_box.addLayout(h_label_row)
+        self.timebase_edit = TimeScaleEdit(self.TIMESCALE_DEFAULT)
+        self.timebase_edit.setPlaceholderText("\u4f8b\u5982: 1us, 400ns, 10ms ...")
+        self.timebase_edit.setToolTip("\u6eda\u8f6e\u8c03\u6574\u65f6\u95f4\u523b\u5ea6\uff0c\u6216\u76f4\u63a5\u8f93\u5165\u540e\u6309 Enter \u5e94\u7528")
+        h_box.addWidget(self.timebase_edit)
 
-        self.timebase_slider = QSlider(Qt.Horizontal)
-        self.timebase_slider.setRange(*self.TIMEBASE_RANGE)
-        self.timebase_slider.setValue(self.TIMEBASE_DEFAULT)
-        self.timebase_slider.valueChanged.connect(self._on_timebase_slider_changed)
-        h_box.addWidget(self.timebase_slider)
-
-        self.timebase_edit = QLineEdit(self.TIMEBASE_EDIT_DEFAULT)
-        self.timebase_edit.hide()
         layout.addLayout(h_box)
 
         layout.addWidget(self._create_small_section_title("VERTICAL"))
@@ -695,17 +796,13 @@ class OscilloscopeBaseUI(QWidget):
         layout.addSpacing(6)
         layout.addWidget(self.apply_btn)
 
+        # TimeScale 输入框敲击回车时，触发 Apply 按钮点击
+        self.timebase_edit.returnPressed.connect(self.apply_btn.click)
+
         self.channel_tab_buttons[0].setChecked(True)
         self._switch_channel_card(0)
 
         return card
-
-    def _on_timebase_slider_changed(self, v):
-        self.timebase_value_label.setText(f"{v} {self.TIMEBASE_UNIT}")
-        self._update_timebase_edit(v)
-
-    def _update_timebase_edit(self, slider_value):
-        self.timebase_edit.setText(str(slider_value / 1000.0))
 
     def _create_small_section_title(self, text):
         label = QLabel(text)
