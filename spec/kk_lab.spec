@@ -53,7 +53,6 @@ a = Analysis(
         'instruments.chambers',
         'instruments.chambers.vt6002_chamber',
         'instruments.adapters',
-        'instruments.adapters.ch341t',
         'instruments.factory',
         'core',
         'core.test_manager',

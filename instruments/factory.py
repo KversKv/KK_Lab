@@ -2,7 +2,6 @@ from instruments.scopes.keysight.dsox4034a import DSOX4034A
 from instruments.scopes.tektronix.mso64b import MSO64B
 from instruments.power.keysight.n6705c import N6705C
 from instruments.chambers.vt6002_chamber import VT6002
-from instruments.adapters.ch341t import CH341T
 from instruments.base.visa_instrument import VisaInstrument
 
 

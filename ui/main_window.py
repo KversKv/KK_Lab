@@ -7,7 +7,7 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
     QPushButton, QComboBox, QLabel, QLineEdit, QGridLayout,
-    QTabWidget, QStatusBar, QCheckBox, QSplitter, QFrame, QButtonGroup,
+    QTabWidget, QCheckBox, QSplitter, QFrame, QButtonGroup,
     QGraphicsDropShadowEffect
 )
 
@@ -26,7 +26,6 @@ from ui.widgets.sidebar_nav_button import SidebarNavButton
 from ui.pages.test.consumption_test import ConsumptionTestUI
 from core.test_manager import TestManager
 from instruments.base.visa_instrument import VisaInstrument
-from instruments.adapters.ch341t import CH341T
 from instruments.scopes.tektronix.mso64b import MSO64B
 from instruments.scopes.keysight.dsox4034a import DSOX4034A
 from instruments.chambers.vt6002_chamber import VT6002
@@ -272,7 +271,6 @@ class MainWindow(QMainWindow):
 
         # 初始化仪器
         self.visa_instrument = VisaInstrument()
-        self.ch341t = CH341T()
         self.oscilloscope_instrument = None
         self.vt6002_chamber = None
 
@@ -316,9 +314,6 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
-
-        # 创建顶部状态栏
-        self._create_status_bar()
 
         # 创建主内容区域
         self._create_main_content()
@@ -426,11 +421,6 @@ class MainWindow(QMainWindow):
             QCheckBox {
                 color: #c8c8c8;
             }
-            QStatusBar {
-                background-color: #16181c;
-                color: #c8c8c8;
-                border-top: 1px solid #333;
-            }
             QTabWidget::pane {
                 border: 1px solid #333;
                 background-color: #020618;
@@ -452,17 +442,6 @@ class MainWindow(QMainWindow):
                 background-color: #020618;
             }
         """)
-
-    def _create_status_bar(self):
-        """创建状态栏"""
-        self.status_bar = QStatusBar()
-        self.setStatusBar(self.status_bar)
-
-        self.visa_status = QLabel("VISA: 未连接")
-        self.ch341t_status = QLabel("CH341T: 未连接")
-
-        self.status_bar.addWidget(self.visa_status)
-        self.status_bar.addWidget(self.ch341t_status)
 
     def _create_main_content(self):
         """创建主内容区域"""
@@ -986,7 +965,6 @@ class MainWindow(QMainWindow):
             self.oscilloscope_ui.update_connection_status(True, instrument_info)
             self.oscilloscope_ui.set_title(instrument_info.split(",")[1].strip() if "," in instrument_info else instrument_info)
             self.oscilloscope_ui.set_invert_enabled(isinstance(self.oscilloscope_instrument, DSOX4034A))
-            self.visa_status.setText(f"示波器: 已连接 - {resource}")
 
             if isinstance(self.oscilloscope_instrument, MSO64B):
                 self.mso64b_top.connect(resource, self.oscilloscope_instrument)
@@ -995,7 +973,6 @@ class MainWindow(QMainWindow):
             self.oscilloscope_ui.update_connection_status(False)
             self.oscilloscope_ui.set_system_status("● Connection failed", is_error=True)
             self.oscilloscope_ui.append_log(f"[ERROR] Connection failed: {e}")
-            self.visa_status.setText("示波器: 连接失败")
         finally:
             self.oscilloscope_ui.connect_btn.setEnabled(True)
 
@@ -1020,7 +997,6 @@ class MainWindow(QMainWindow):
 
             self.oscilloscope_ui.update_connection_status(False)
             self.oscilloscope_ui.set_invert_enabled(True)
-            self.visa_status.setText("示波器: 未连接")
         except Exception as e:
             self.oscilloscope_ui.set_system_status("● Disconnect failed", is_error=True)
             self.oscilloscope_ui.append_log(f"[ERROR] Disconnect failed: {str(e)}")
@@ -1142,37 +1118,11 @@ class MainWindow(QMainWindow):
         if device:
             success = self.visa_instrument.connect(device)
             if success:
-                self.visa_status.setText(f"VISA: 已连接 - {device}")
                 self.connect_visa_btn.setText("断开")
-            else:
-                self.visa_status.setText("VISA: 连接失败")
         else:
             if self.visa_instrument.is_connected():
                 self.visa_instrument.disconnect()
-                self.visa_status.setText("VISA: 未连接")
                 self.connect_visa_btn.setText("连接")
-
-    def _scan_ch341t(self):
-        """扫描 CH341T 端口"""
-        ports = self.ch341t.scan_ports()
-        self.ch341t_combo.clear()
-        self.ch341t_combo.addItems(ports)
-
-    def _connect_ch341t(self):
-        """连接 CH341T"""
-        port = self.ch341t_combo.currentText()
-        if port:
-            success = self.ch341t.connect(port)
-            if success:
-                self.ch341t_status.setText(f"CH341T: 已连接 - {port}")
-                self.connect_ch341t_btn.setText("断开")
-            else:
-                self.ch341t_status.setText("CH341T: 连接失败")
-        else:
-            if self.ch341t.is_connected():
-                self.ch341t.disconnect()
-                self.ch341t_status.setText("CH341T: 未连接")
-                self.connect_ch341t_btn.setText("连接")
 
     def _start_test(self):
         """开始测试"""
@@ -1198,12 +1148,6 @@ class MainWindow(QMainWindow):
         self.test_manager.stop_test()
         self.start_test_btn.setEnabled(True)
         self.stop_test_btn.setEnabled(False)
-
-    def _send_iic_command(self):
-        """发送 IIC 指令"""
-        command = self.iic_command_edit.text()
-        if self.ch341t.is_connected():
-            self.ch341t.send_command(command)
 
     def _export_data(self):
         """导出数据"""
