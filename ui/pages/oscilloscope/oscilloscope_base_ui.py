@@ -13,11 +13,11 @@ from ui.widgets.dark_combobox import DarkComboBox
 # DEBUG_MSO64B_FLAG = False
 # DEBUG_DSOX4034A_FLAG = True
 
-# DEBUG_MSO64B_FLAG = True
-# DEBUG_DSOX4034A_FLAG = False
-
-DEBUG_MSO64B_FLAG = False
+DEBUG_MSO64B_FLAG = True
 DEBUG_DSOX4034A_FLAG = False
+
+# DEBUG_MSO64B_FLAG = False
+# DEBUG_DSOX4034A_FLAG = False
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +134,8 @@ class TimeScaleEdit(QLineEdit):
 
 
 class OscilloscopeBaseUI(QWidget):
+
+    timebase_apply_requested = Signal()
 
     INSTRUMENT_TITLE = "Oscilloscope"
     NUM_CHANNELS = 4
@@ -796,8 +798,7 @@ class OscilloscopeBaseUI(QWidget):
         layout.addSpacing(6)
         layout.addWidget(self.apply_btn)
 
-        # TimeScale 输入框敲击回车时，触发 Apply 按钮点击
-        self.timebase_edit.returnPressed.connect(self.apply_btn.click)
+        self.timebase_edit.returnPressed.connect(self.timebase_apply_requested.emit)
 
         self.channel_tab_buttons[0].setChecked(True)
         self._switch_channel_card(0)

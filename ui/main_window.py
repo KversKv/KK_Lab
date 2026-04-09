@@ -806,6 +806,7 @@ class MainWindow(QMainWindow):
             self.oscilloscope_ui.measure_btn.clicked.connect(self._measure_oscilloscope)
             self.oscilloscope_ui.capture_btn.clicked.connect(self._capture_oscilloscope)
             self.oscilloscope_ui.apply_btn.clicked.connect(self._apply_oscilloscope_settings)
+            self.oscilloscope_ui.timebase_apply_requested.connect(self._apply_oscilloscope_timebase_only)
             self.instrument_ui_container_layout.addWidget(self.oscilloscope_ui)
         else:
             self.oscilloscope_ui.show()
@@ -1175,6 +1176,19 @@ class MainWindow(QMainWindow):
             self.oscilloscope_ui.append_log("[INFO] All settings applied successfully.")
         except Exception as e:
             self.oscilloscope_ui.append_log(f"[ERROR] Apply settings failed: {e}")
+
+    def _apply_oscilloscope_timebase_only(self):
+        if not self.oscilloscope_instrument or not self.oscilloscope_ui:
+            if self.oscilloscope_ui:
+                self.oscilloscope_ui.append_log("[WARN] Instrument not connected.")
+            return
+
+        try:
+            timebase_val = self.oscilloscope_ui.timebase_edit.value_in_seconds()
+            self.oscilloscope_instrument.set_timebase_scale(timebase_val)
+            self.oscilloscope_ui.append_log(f"[SETTING] Timebase: {timebase_val} s/div")
+        except (ValueError, Exception) as e:
+            self.oscilloscope_ui.append_log(f"[ERROR] Timebase setting failed: {e}")
 
     def _scan_visa(self):
         """扫描 VISA 设备"""
