@@ -17,7 +17,6 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QThread, QObject, QTimer, QMargins
 from PySide6.QtGui import QFont
 import time
-import math
 import pyvisa
 
 from instruments.power.keysight.n6705c import N6705C
@@ -34,17 +33,7 @@ except Exception:
     HAS_QTCHARTS = False
 
 
-def _fmt_val(value, min_decimals=4, sig_digits=4):
-    if value == 0:
-        return f"{value:.{min_decimals}f}"
-    abs_val = abs(value)
-    magnitude = -int(math.floor(math.log10(abs_val)))
-    decimals = max(min_decimals, magnitude + sig_digits - 1)
-    decimals = min(decimals, 10)
-    return f"{value:.{decimals}f}"
-
-
-class _ConfigTraverseWorker(QObject):
+class _RegulationVoltageWorker(QObject):
     log_message = Signal(str)
     progress = Signal(int)
     chart_point = Signal(float, float)
@@ -70,17 +59,15 @@ class _ConfigTraverseWorker(QObject):
             min_code = self._cfg["min_code"]
             max_code = self._cfg["max_code"]
             iic_width = self._cfg["iic_width"]
-            test_mode = self._cfg["test_mode"]
             meter_ch = int(self._cfg["vmeter_channel"].replace("CH ", ""))
-
-            is_voltage = (test_mode == "Voltage")
-            unit = "V" if is_voltage else "A"
-            mode_str = "VMETer" if is_voltage else "AMETer"
+            tolerance_pct = self._cfg.get("tolerance_pct", 5.0)
+            base_voltage = self._cfg.get("base_voltage", 4.2)
+            step_mv = self._cfg.get("step_mv", 16.0)
 
             i2c = I2CInterface()
             self._i2c = i2c
 
-            self._n6705c.set_mode(meter_ch, mode_str)
+            self._n6705c.set_mode(meter_ch, "VMETer")
 
             bit_count = msb - lsb + 1
             mask = (1 << bit_count) - 1
@@ -99,28 +86,29 @@ class _ConfigTraverseWorker(QObject):
 
             self.log_message.emit(
                 f"[TEST] Device=0x{device_addr:02X}, Reg=0x{reg_addr:02X}, "
-                f"MSB={msb}, LSB={lsb}, Mode={test_mode}"
+                f"MSB={msb}, LSB={lsb}"
             )
             self.log_message.emit(
                 f"[TEST] Code range: 0x{min_code:X} ~ 0x{max_code:X} ({total_points} points)"
+            )
+            self.log_message.emit(
+                f"[TEST] Base voltage={base_voltage}V, Step={step_mv}mV, Tolerance={tolerance_pct}%"
             )
 
             hex_width = len(f"{max_code:X}")
 
             self.chart_clear.emit()
 
-            if is_voltage:
-                default_measured = self._n6705c.measure_voltage(meter_ch)
-            else:
-                default_measured = float(self._n6705c.measure_current(meter_ch))
-
+            default_measured = self._n6705c.measure_voltage(meter_ch)
             default_code = (default_reg >> lsb) & mask
             self.log_message.emit(
-                f"[TEST] Default value: {default_measured:.6f}{unit} (0x{default_code:X})"
+                f"[TEST] Default value: {default_measured:.4f}V (0x{default_code:X})"
             )
 
             measurements = []
             codes = []
+            pass_count = 0
+            fail_count = 0
 
             settle_start = time.time()
             write_reg = data_base | (min_code << lsb)
@@ -135,10 +123,7 @@ class _ConfigTraverseWorker(QObject):
                     self.log_message.emit("[TEST] Stopped by user during stabilization.")
                     self.test_finished.emit(False)
                     return
-                if is_voltage:
-                    v = self._n6705c.measure_voltage(meter_ch)
-                else:
-                    v = float(self._n6705c.measure_current(meter_ch))
+                v = self._n6705c.measure_voltage(meter_ch)
                 recent_values.append(v)
                 if len(recent_values) >= 3:
                     last3 = recent_values[-3:]
@@ -162,106 +147,69 @@ class _ConfigTraverseWorker(QObject):
                 i2c.write(device_addr, reg_addr, write_reg, iic_width)
                 time.sleep(0.05)
 
-                if is_voltage:
-                    measured = self._n6705c.measure_voltage(meter_ch)
-                else:
-                    measured = float(self._n6705c.measure_current(meter_ch))
+                measured = self._n6705c.measure_voltage(meter_ch)
 
                 measurements.append(measured)
                 codes.append(code)
 
+                expected_v = base_voltage + (code - min_code) * step_mv / 1000.0
+                error_pct = abs(measured - expected_v) / expected_v * 100.0 if expected_v != 0 else 0.0
+                result = "PASS" if error_pct <= tolerance_pct else "FAIL"
+
+                if result == "PASS":
+                    pass_count += 1
+                else:
+                    fail_count += 1
+
                 self.chart_point.emit(float(code), measured)
 
                 self.log_message.emit(
-                    f"[MEAS] Code=0x{code:0{hex_width}X}  Measured={measured:>12.6f}{unit}"
+                    f"[MEAS] Code=0x{code:0{hex_width}X}  Expected={expected_v:>8.4f}V  "
+                    f"Measured={measured:>8.4f}V  Error={error_pct:.2f}%  [{result}]"
                 )
 
                 idx = code - min_code
                 pct = int((idx + 1) / total_points * 100)
 
-                sat_threshold = 0.001
-
-                low_valid = 0
-                for k in range(1, len(measurements)):
-                    if abs(measurements[k] - measurements[k - 1]) > sat_threshold:
-                        low_valid = k
-                        break
-                else:
-                    low_valid = len(measurements) - 1
-
-                high_valid = len(measurements) - 1
-                for k in range(len(measurements) - 1, 0, -1):
-                    if abs(measurements[k] - measurements[k - 1]) > sat_threshold:
-                        high_valid = k - 1
-                        break
-                else:
-                    high_valid = 0
-
-                if high_valid <= low_valid:
-                    high_valid = len(measurements) - 1
-                    low_valid = 0
-
-                valid_measurements = measurements[low_valid:high_valid + 1]
-                valid_codes = codes[low_valid:high_valid + 1]
-
-                result = {
+                result_dict = {
                     "progress": pct,
                     "default_value": default_measured,
                     "default_code": default_code,
-                    "unit": unit,
+                    "total": len(measurements),
+                    "pass_count": pass_count,
+                    "fail_count": fail_count,
                 }
-                if len(valid_measurements) >= 1:
-                    result["min_value"] = min(valid_measurements)
-                    result["max_value"] = max(valid_measurements)
-                    result["valid_min_code"] = valid_codes[0]
-                    result["valid_max_code"] = valid_codes[-1]
-                if len(valid_measurements) >= 2:
-                    avg_step = (valid_measurements[-1] - valid_measurements[0]) / (len(valid_measurements) - 1) * 1000.0
-                    result["step_value"] = avg_step
+                if len(measurements) >= 1:
+                    result_dict["min_value"] = min(measurements)
+                    result_dict["max_value"] = max(measurements)
+                if len(measurements) >= 2:
+                    avg_step = (measurements[-1] - measurements[0]) / (len(measurements) - 1) * 1000.0
+                    result_dict["step_value"] = avg_step
 
-                    full_scale = valid_measurements[-1] - valid_measurements[0]
+                    full_scale = measurements[-1] - measurements[0]
                     if abs(full_scale) > 1e-9:
-                        n = len(valid_measurements)
+                        n = len(measurements)
                         ideal_step = full_scale / (n - 1)
                         max_dev = 0.0
                         for j in range(n):
-                            ideal_v = valid_measurements[0] + ideal_step * j
-                            dev = abs(valid_measurements[j] - ideal_v)
+                            ideal_v = measurements[0] + ideal_step * j
+                            dev = abs(measurements[j] - ideal_v)
                             if dev > max_dev:
                                 max_dev = dev
-                        result["linearity"] = max_dev / abs(full_scale) * 100.0
+                        result_dict["linearity"] = max_dev / abs(full_scale) * 100.0
                     else:
-                        result["linearity"] = 0.0
+                        result_dict["linearity"] = 0.0
 
-                self.result_update.emit(result)
+                self.result_update.emit(result_dict)
                 code += 1
-
-            if len(measurements) >= 2 and not self._stop_flag:
-                sat_threshold = 0.001
-
-                low_valid = 0
-                for k in range(1, len(measurements)):
-                    if abs(measurements[k] - measurements[k - 1]) > sat_threshold:
-                        low_valid = k
-                        break
-
-                high_valid = len(measurements) - 1
-                for k in range(len(measurements) - 1, 0, -1):
-                    if abs(measurements[k] - measurements[k - 1]) > sat_threshold:
-                        high_valid = k - 1
-                        break
-
-                if high_valid > low_valid:
-                    self.log_message.emit(
-                        f"[TEST] Valid code range: 0x{codes[low_valid]:0{hex_width}X} ~ "
-                        f"0x{codes[high_valid]:0{hex_width}X} "
-                        f"({codes[high_valid] - codes[low_valid] + 1} effective points out of {len(measurements)} total)"
-                    )
 
             i2c.write(device_addr, reg_addr, default_reg, iic_width)
             self.log_message.emit("[TEST] Register restored to default value.")
 
-            self.log_message.emit(f"[TEST] Register 0x{reg_addr:02X} traverse complete.")
+            self.log_message.emit(
+                f"[TEST] Regulation Voltage test complete. "
+                f"PASS={pass_count}, FAIL={fail_count}, Total={len(measurements)}"
+            )
             self.test_finished.emit(True)
         except Exception as e:
             self.log_message.emit(f"[ERROR] {e}")
@@ -284,7 +232,7 @@ class CardFrame(QFrame):
             self.title_label = None
 
 
-class ConfigTraverseTestUI(QWidget):
+class RegulationVoltageTestUI(QWidget):
     connection_status_changed = Signal(bool)
 
     def __init__(self, n6705c_top=None):
@@ -539,10 +487,10 @@ class ConfigTraverseTestUI(QWidget):
         header_layout = QVBoxLayout()
         header_layout.setSpacing(2)
 
-        self.page_title = QLabel("⚙ Config Traverse Test")
+        self.page_title = QLabel("\u26a1 Regulation Voltage Test")
         self.page_title.setObjectName("pageTitle")
 
-        self.page_subtitle = QLabel("Traverse DUT register values via IIC and measure voltage/current for each code.")
+        self.page_subtitle = QLabel("Traverse charger regulation voltage register codes and verify output voltage accuracy.")
         self.page_subtitle.setObjectName("pageSubtitle")
 
         header_layout.addWidget(self.page_title)
@@ -561,25 +509,29 @@ class ConfigTraverseTestUI(QWidget):
         left_layout.setContentsMargins(18, 18, 18, 18)
         left_layout.setSpacing(16)
 
-        self.connection_card = CardFrame("⚡ N6705C CONNECTION")
+        self.connection_card = CardFrame("\u26a1 N6705C CONNECTION")
         self._build_connection_card()
         left_layout.addWidget(self.connection_card)
 
-        self.channel_config_card = CardFrame("☷ TEST CHANNEL CONFIG")
+        self.channel_config_card = CardFrame("\u2637 TEST CHANNEL CONFIG")
         self._build_channel_config_card()
         left_layout.addWidget(self.channel_config_card)
 
-        self.config_card = CardFrame("⇄ REGISTER RANGE")
+        self.config_card = CardFrame("\u21c4 REGISTER RANGE")
         self._build_config_card()
         left_layout.addWidget(self.config_card)
 
+        self.voltage_param_card = CardFrame("\u2699 VOLTAGE PARAMETERS")
+        self._build_voltage_param_card()
+        left_layout.addWidget(self.voltage_param_card)
+
         left_layout.addStretch()
 
-        self.start_test_btn = QPushButton("▶ START TRAVERSE")
+        self.start_test_btn = QPushButton("\u25b6 START TEST")
         self.start_test_btn.setObjectName("primaryStartBtn")
         left_layout.addWidget(self.start_test_btn)
 
-        self.stop_test_btn = QPushButton("■ STOP")
+        self.stop_test_btn = QPushButton("\u25a0 STOP")
         self.stop_test_btn.setObjectName("stopBtn")
         self.stop_test_btn.hide()
 
@@ -596,12 +548,12 @@ class ConfigTraverseTestUI(QWidget):
         chart_outer_layout.setSpacing(10)
 
         chart_header_layout = QHBoxLayout()
-        self.chart_title = QLabel("∿ Config Traverse Linearity")
+        self.chart_title = QLabel("\u223f Regulation Voltage Linearity")
         self.chart_title.setObjectName("sectionTitle")
         chart_header_layout.addWidget(self.chart_title)
         chart_header_layout.addStretch()
 
-        self.export_result_btn = QPushButton("⇩ Export CSV")
+        self.export_result_btn = QPushButton("\u21e9 Export CSV")
         self.export_result_btn.setObjectName("exportBtn")
         chart_header_layout.addWidget(self.export_result_btn)
 
@@ -618,12 +570,16 @@ class ConfigTraverseTestUI(QWidget):
         self.max_value_card = self._create_mini_stat("Max", "---")
         self.step_value_card = self._create_mini_stat("Step", "---")
         self.linearity_card = self._create_mini_stat("Linearity", "---")
+        self.pass_card = self._create_mini_stat("PASS", "0")
+        self.fail_card = self._create_mini_stat("FAIL", "0")
 
         stat_layout.addWidget(self.default_value_card["frame"])
         stat_layout.addWidget(self.min_value_card["frame"])
         stat_layout.addWidget(self.max_value_card["frame"])
         stat_layout.addWidget(self.step_value_card["frame"])
         stat_layout.addWidget(self.linearity_card["frame"])
+        stat_layout.addWidget(self.pass_card["frame"])
+        stat_layout.addWidget(self.fail_card["frame"])
 
         chart_outer_layout.addLayout(stat_layout)
         right_layout.addWidget(self.chart_frame, 4)
@@ -635,7 +591,7 @@ class ConfigTraverseTestUI(QWidget):
         log_layout.setSpacing(10)
 
         log_header = QHBoxLayout()
-        self.log_title = QLabel("⊙ Execution Logs")
+        self.log_title = QLabel("\u2299 Execution Logs")
         self.log_title.setObjectName("sectionTitle")
         log_header.addWidget(self.log_title)
         log_header.addStretch()
@@ -668,7 +624,7 @@ class ConfigTraverseTestUI(QWidget):
     def _build_connection_card(self):
         layout = self.connection_card.main_layout
 
-        self.system_status_label = QLabel("● Ready")
+        self.system_status_label = QLabel("\u25cf Ready")
         self.system_status_label.setObjectName("statusOk")
         layout.addWidget(self.system_status_label)
 
@@ -690,7 +646,7 @@ class ConfigTraverseTestUI(QWidget):
 
         layout.addLayout(search_row)
 
-        self.connect_btn = QPushButton("🔗  Connect")
+        self.connect_btn = QPushButton("\U0001f517  Connect")
         self.connect_btn.setObjectName("dynamicConnectBtn")
         self.connect_btn.setProperty("connected", "false")
         layout.addWidget(self.connect_btn)
@@ -707,17 +663,8 @@ class ConfigTraverseTestUI(QWidget):
         self.vmeter_channel_combo = DarkComboBox()
         self.vmeter_channel_combo.addItems(["CH 1", "CH 2", "CH 3", "CH 4"])
 
-        test_mode_label = QLabel("Test Mode")
-        test_mode_label.setObjectName("fieldLabel")
-
-        self.test_mode_combo = DarkComboBox()
-        self.test_mode_combo.addItems(["Voltage", "Current"])
-        self.test_mode_combo.setCurrentIndex(1)
-
         grid.addWidget(vmeter_label, 0, 0)
         grid.addWidget(self.vmeter_channel_combo, 0, 1)
-        grid.addWidget(test_mode_label, 1, 0)
-        grid.addWidget(self.test_mode_combo, 1, 1)
 
         layout.addLayout(grid)
 
@@ -742,15 +689,15 @@ class ConfigTraverseTestUI(QWidget):
 
         lbl_reg_addr = QLabel("Reg Addr (Hex)")
         lbl_reg_addr.setObjectName("fieldLabel")
-        self.reg_addr_edit = QLineEdit("0x0009")
+        self.reg_addr_edit = QLineEdit("0x0004")
 
         lbl_msb = QLabel("MSB")
         lbl_msb.setObjectName("fieldLabel")
-        self.msb_edit = QLineEdit("9")
+        self.msb_edit = QLineEdit("7")
 
         lbl_lsb = QLabel("LSB")
         lbl_lsb.setObjectName("fieldLabel")
-        self.lsb_edit = QLineEdit("5")
+        self.lsb_edit = QLineEdit("2")
 
         lbl_min_code = QLabel("Min Code")
         lbl_min_code.setObjectName("fieldLabel")
@@ -758,7 +705,7 @@ class ConfigTraverseTestUI(QWidget):
 
         lbl_max_code = QLabel("Max Code")
         lbl_max_code.setObjectName("fieldLabel")
-        self.max_code_edit = QLineEdit("0xFF")
+        self.max_code_edit = QLineEdit("0x3F")
 
         grid.addWidget(lbl_width, 0, 0)
         grid.addWidget(self.iic_width_combo, 0, 1)
@@ -774,6 +721,46 @@ class ConfigTraverseTestUI(QWidget):
         grid.addWidget(self.min_code_edit, 5, 1)
         grid.addWidget(lbl_max_code, 6, 0)
         grid.addWidget(self.max_code_edit, 6, 1)
+
+        layout.addLayout(grid)
+
+    def _build_voltage_param_card(self):
+        layout = self.voltage_param_card.main_layout
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(10)
+
+        lbl_base = QLabel("Base Voltage (V)")
+        lbl_base.setObjectName("fieldLabel")
+        self.base_voltage_spin = QDoubleSpinBox()
+        self.base_voltage_spin.setRange(0.0, 20.0)
+        self.base_voltage_spin.setValue(3.504)
+        self.base_voltage_spin.setDecimals(3)
+        self.base_voltage_spin.setSingleStep(0.001)
+
+        lbl_step = QLabel("Step (mV)")
+        lbl_step.setObjectName("fieldLabel")
+        self.step_mv_spin = QDoubleSpinBox()
+        self.step_mv_spin.setRange(0.1, 1000.0)
+        self.step_mv_spin.setValue(16.0)
+        self.step_mv_spin.setDecimals(1)
+        self.step_mv_spin.setSingleStep(1.0)
+
+        lbl_tol = QLabel("Tolerance (%)")
+        lbl_tol.setObjectName("fieldLabel")
+        self.tolerance_spin = QDoubleSpinBox()
+        self.tolerance_spin.setRange(0.1, 50.0)
+        self.tolerance_spin.setValue(5.0)
+        self.tolerance_spin.setDecimals(1)
+        self.tolerance_spin.setSingleStep(0.5)
+
+        grid.addWidget(lbl_base, 0, 0)
+        grid.addWidget(self.base_voltage_spin, 0, 1)
+        grid.addWidget(lbl_step, 1, 0)
+        grid.addWidget(self.step_mv_spin, 1, 1)
+        grid.addWidget(lbl_tol, 2, 0)
+        grid.addWidget(self.tolerance_spin, 2, 1)
 
         layout.addLayout(grid)
 
@@ -793,18 +780,18 @@ class ConfigTraverseTestUI(QWidget):
             chart.setMargins(QMargins(0, 0, 0, 0))
 
             self.axis_x = QValueAxis()
-            self.axis_x.setRange(0, 255)
+            self.axis_x.setRange(0, 63)
             self.axis_x.setTickCount(9)
             self.axis_x.setLabelFormat("%d")
-            self.axis_x.setTitleText("Register Value")
+            self.axis_x.setTitleText("Register Code")
             self.axis_x.setLabelsColor(QColor("#9fc0ef"))
             self.axis_x.setTitleBrush(QColor("#9fc0ef"))
             self.axis_x.setGridLineColor(QColor("#2a3f6a"))
 
             self.axis_y = QValueAxis()
-            self.axis_y.setRange(0.0, 1.0)
+            self.axis_y.setRange(3.0, 5.0)
             self.axis_y.setTickCount(9)
-            self.axis_y.setTitleText("Measured Value")
+            self.axis_y.setTitleText("Regulation Voltage (V)")
             self.axis_y.setLabelsColor(QColor("#9fc0ef"))
             self.axis_y.setTitleBrush(QColor("#9fc0ef"))
             self.axis_y.setGridLineColor(QColor("#2a3f6a"))
@@ -828,7 +815,7 @@ class ConfigTraverseTestUI(QWidget):
             }
         """)
         v = QVBoxLayout(placeholder)
-        label = QLabel("Config Traverse Linearity Chart")
+        label = QLabel("Regulation Voltage Chart")
         label.setAlignment(Qt.AlignCenter)
         label.setStyleSheet("color:#7da2d6; font-size:14px; font-weight:600; background: transparent;")
         v.addWidget(label)
@@ -852,7 +839,7 @@ class ConfigTraverseTestUI(QWidget):
 
     def _init_ui_elements(self):
         self._update_connect_button_state(False)
-        self.append_log("[SYSTEM] Config Traverse Test ready.")
+        self.append_log("[SYSTEM] Regulation Voltage Test ready.")
         self.set_progress(0)
 
     def _bind_signals(self):
@@ -887,7 +874,7 @@ class ConfigTraverseTestUI(QWidget):
     def _update_connect_button_state(self, connected: bool):
         self.is_connected = connected
         self.connect_btn.setProperty("connected", "true" if connected else "false")
-        self.connect_btn.setText("⟲  Disconnect" if connected else "🔗  Connect")
+        self.connect_btn.setText("\u21b2  Disconnect" if connected else "\U0001f517  Connect")
 
         self.connect_btn.style().unpolish(self.connect_btn)
         self.connect_btn.style().polish(self.connect_btn)
@@ -896,7 +883,7 @@ class ConfigTraverseTestUI(QWidget):
     def _on_search(self):
         if self._n6705c_top and self._n6705c_top.is_connected_a:
             return
-        self.set_system_status("● Searching")
+        self.set_system_status("\u25cf Searching")
         self.append_log("[SYSTEM] Scanning VISA resources...")
         self.search_btn.setEnabled(False)
         self.search_timer.start(100)
@@ -935,7 +922,7 @@ class ConfigTraverseTestUI(QWidget):
                     self.visa_resource_combo.addItem(dev)
 
                 count = len(n6705c_devices)
-                self.set_system_status(f"● Found {count} device(s)")
+                self.set_system_status(f"\u25cf Found {count} device(s)")
                 self.append_log(f"[SYSTEM] Found {count} compatible N6705C device(s).")
 
                 default_device = "TCPIP0::K-N6705C-06098.local::hislip0::INSTR"
@@ -946,11 +933,11 @@ class ConfigTraverseTestUI(QWidget):
             else:
                 self.visa_resource_combo.addItem("No N6705C device found")
                 self.visa_resource_combo.setEnabled(False)
-                self.set_system_status("● No device found", is_error=True)
+                self.set_system_status("\u25cf No device found", is_error=True)
                 self.append_log("[SYSTEM] No compatible N6705C instrument found.")
 
         except Exception as e:
-            self.set_system_status("● Search failed", is_error=True)
+            self.set_system_status("\u25cf Search failed", is_error=True)
             self.append_log(f"[ERROR] Search failed: {str(e)}")
         finally:
             self.search_btn.setEnabled(True)
@@ -962,7 +949,7 @@ class ConfigTraverseTestUI(QWidget):
             self._on_connect()
 
     def _on_connect(self):
-        self.set_system_status("● Connecting")
+        self.set_system_status("\u25cf Connecting")
         self.append_log("[SYSTEM] Attempting instrument connection...")
         self.connect_btn.setEnabled(False)
 
@@ -973,7 +960,7 @@ class ConfigTraverseTestUI(QWidget):
             idn = self.n6705c.instr.query("*IDN?")
             if "N6705C" in idn:
                 self._update_connect_button_state(True)
-                self.set_system_status("● Connected")
+                self.set_system_status("\u25cf Connected")
                 self.search_btn.setEnabled(False)
 
                 pretty_name = device_address
@@ -991,16 +978,16 @@ class ConfigTraverseTestUI(QWidget):
 
                 self.connection_status_changed.emit(True)
             else:
-                self.set_system_status("● Device mismatch", is_error=True)
+                self.set_system_status("\u25cf Device mismatch", is_error=True)
                 self.append_log("[ERROR] Connected device is not N6705C.")
         except Exception as e:
-            self.set_system_status("● Connection failed", is_error=True)
+            self.set_system_status("\u25cf Connection failed", is_error=True)
             self.append_log(f"[ERROR] Connection failed: {str(e)}")
         finally:
             self.connect_btn.setEnabled(True)
 
     def _on_disconnect(self):
-        self.set_system_status("● Disconnecting")
+        self.set_system_status("\u25cf Disconnecting")
         self.append_log("[SYSTEM] Disconnecting instrument...")
         self.connect_btn.setEnabled(False)
 
@@ -1018,7 +1005,7 @@ class ConfigTraverseTestUI(QWidget):
 
             self._update_connect_button_state(False)
 
-            self.set_system_status("● Ready")
+            self.set_system_status("\u25cf Ready")
             self.search_btn.setEnabled(True)
             self.instrument_info_label.setText("USB0::0x0957::0x0F07::MY53004321")
             self.append_log("[SYSTEM] Instrument disconnected.")
@@ -1026,7 +1013,7 @@ class ConfigTraverseTestUI(QWidget):
             self.connection_status_changed.emit(False)
 
         except Exception as e:
-            self.set_system_status("● Disconnect failed", is_error=True)
+            self.set_system_status("\u25cf Disconnect failed", is_error=True)
             self.append_log(f"[ERROR] Disconnect failed: {str(e)}")
         finally:
             self.connect_btn.setEnabled(True)
@@ -1054,17 +1041,11 @@ class ConfigTraverseTestUI(QWidget):
 
         iic_width = self.iic_width_combo.currentData()
 
-        test_mode = self.test_mode_combo.currentText()
-        if test_mode == "Voltage":
-            if HAS_QTCHARTS and hasattr(self, 'axis_y'):
-                self.axis_y.setTitleText("Measured Voltage (V)")
-        else:
-            if HAS_QTCHARTS and hasattr(self, 'axis_y'):
-                self.axis_y.setTitleText("Measured Current (A)")
+        if HAS_QTCHARTS and hasattr(self, 'axis_y'):
+            self.axis_y.setTitleText("Regulation Voltage (V)")
 
         config = {
             "vmeter_channel": self.vmeter_channel_combo.currentText(),
-            "test_mode": test_mode,
             "device_addr": device_addr,
             "reg_addr": reg_addr,
             "msb": msb,
@@ -1072,13 +1053,16 @@ class ConfigTraverseTestUI(QWidget):
             "min_code": min_code,
             "max_code": max_code,
             "iic_width": iic_width,
+            "base_voltage": self.base_voltage_spin.value(),
+            "step_mv": self.step_mv_spin.value(),
+            "tolerance_pct": self.tolerance_spin.value(),
         }
 
         self.set_test_running(True)
         self.set_progress(0)
 
         self.test_thread = QThread()
-        self.test_worker = _ConfigTraverseWorker(self.n6705c, config)
+        self.test_worker = _RegulationVoltageWorker(self.n6705c, config)
         self.test_worker.moveToThread(self.test_thread)
 
         self.test_worker.log_message.connect(self.append_log)
@@ -1119,30 +1103,30 @@ class ConfigTraverseTestUI(QWidget):
                 self.axis_y.setRange(min_y - margin_y, max_y + margin_y)
 
     def _on_result_update(self, result):
-        unit = result.get("unit", "V")
-        step_unit = "mV" if unit == "V" else "mA"
         if 'default_value' in result:
             code_str = f"(0x{result['default_code']:X})" if 'default_code' in result else ""
-            self.default_value_card["value"].setText(f"{_fmt_val(result['default_value'])}{unit}{code_str}")
+            self.default_value_card["value"].setText(f"{result['default_value']:.4f}V {code_str}")
         if 'min_value' in result:
-            code_str = f" (0x{result['valid_min_code']:X})" if 'valid_min_code' in result else ""
-            self.min_value_card["value"].setText(f"{_fmt_val(result['min_value'])} {unit}{code_str}")
+            self.min_value_card["value"].setText(f"{result['min_value']:.4f} V")
         if 'max_value' in result:
-            code_str = f" (0x{result['valid_max_code']:X})" if 'valid_max_code' in result else ""
-            self.max_value_card["value"].setText(f"{_fmt_val(result['max_value'])} {unit}{code_str}")
+            self.max_value_card["value"].setText(f"{result['max_value']:.4f} V")
         if 'step_value' in result:
-            self.step_value_card["value"].setText(f"{_fmt_val(result['step_value'])} {step_unit}")
+            self.step_value_card["value"].setText(f"{result['step_value']:.4f} mV")
         if 'linearity' in result:
-            self.linearity_card["value"].setText(f"{_fmt_val(result['linearity'])}%")
+            self.linearity_card["value"].setText(f"{result['linearity']:.4f}%")
+        if 'pass_count' in result:
+            self.pass_card["value"].setText(str(result['pass_count']))
+        if 'fail_count' in result:
+            self.fail_card["value"].setText(str(result['fail_count']))
         if 'progress' in result:
             self.set_progress(result['progress'])
 
     def _on_test_finished(self, success):
         self.set_test_running(False)
         if success:
-            self.append_log("[TEST] Config traverse test completed.")
+            self.append_log("[TEST] Regulation Voltage test completed.")
         else:
-            self.append_log("[TEST] Config traverse test ended with errors.")
+            self.append_log("[TEST] Regulation Voltage test ended with errors.")
         if self.test_thread is not None:
             self.test_thread.quit()
             self.test_thread.wait()
@@ -1161,9 +1145,9 @@ class ConfigTraverseTestUI(QWidget):
             return
         try:
             with open(path, "w", encoding="utf-8") as f:
-                f.write("Code,Measured\n")
+                f.write("Code,Measured_Voltage\n")
                 for code_val, measured_val in self._export_data:
-                    f.write(f"{int(code_val)},{measured_val:.10g}\n")
+                    f.write(f"{int(code_val)},{measured_val:.6f}\n")
             self.append_log(f"[EXPORT] Data exported to {path}")
         except Exception as e:
             self.append_log(f"[ERROR] Export failed: {e}")
@@ -1173,10 +1157,10 @@ class ConfigTraverseTestUI(QWidget):
         self.start_test_btn.setEnabled(True)
         self.stop_test_btn.setEnabled(running)
         if running:
-            self.start_test_btn.setText("■ STOP")
+            self.start_test_btn.setText("\u25a0 STOP")
             self.start_test_btn.setObjectName("stopBtn")
         else:
-            self.start_test_btn.setText("▶ START TRAVERSE")
+            self.start_test_btn.setText("\u25b6 START TEST")
             self.start_test_btn.setObjectName("primaryStartBtn")
         self.start_test_btn.style().unpolish(self.start_test_btn)
         self.start_test_btn.style().polish(self.start_test_btn)
@@ -1189,16 +1173,18 @@ class ConfigTraverseTestUI(QWidget):
         self.max_code_edit.setEnabled(not running)
         self.iic_width_combo.setEnabled(not running)
         self.vmeter_channel_combo.setEnabled(not running)
-        self.test_mode_combo.setEnabled(not running)
+        self.base_voltage_spin.setEnabled(not running)
+        self.step_mv_spin.setEnabled(not running)
+        self.tolerance_spin.setEnabled(not running)
         self.visa_resource_combo.setEnabled(not running)
         self.search_btn.setEnabled(not running)
         self.connect_btn.setEnabled(not running)
 
         if running:
-            self.set_system_status("● Running")
-            self.append_log("[TEST] Starting Config Traverse Test Sequence...")
+            self.set_system_status("\u25cf Running")
+            self.append_log("[TEST] Starting Regulation Voltage Test Sequence...")
         else:
-            self.set_system_status("● Ready" if not self.is_connected else "● Connected")
+            self.set_system_status("\u25cf Ready" if not self.is_connected else "\u25cf Connected")
 
     def set_progress(self, value):
         value = max(0, min(100, int(value)))
@@ -1235,10 +1221,9 @@ class ConfigTraverseTestUI(QWidget):
             msb = 7
             lsb = 0
             min_code = 0
-            max_code = 0xFF
+            max_code = 0x3F
         return {
             "vmeter_channel": self.vmeter_channel_combo.currentText(),
-            "test_mode": self.test_mode_combo.currentText(),
             "device_addr": device_addr,
             "reg_addr": reg_addr,
             "msb": msb,
@@ -1246,6 +1231,9 @@ class ConfigTraverseTestUI(QWidget):
             "min_code": min_code,
             "max_code": max_code,
             "iic_width": self.iic_width_combo.currentData(),
+            "base_voltage": self.base_voltage_spin.value(),
+            "step_mv": self.step_mv_spin.value(),
+            "tolerance_pct": self.tolerance_spin.value(),
         }
 
     def clear_results(self):
@@ -1254,6 +1242,8 @@ class ConfigTraverseTestUI(QWidget):
         self.max_value_card["value"].setText("---")
         self.step_value_card["value"].setText("---")
         self.linearity_card["value"].setText("---")
+        self.pass_card["value"].setText("0")
+        self.fail_card["value"].setText("0")
         self.set_progress(0)
 
     def update_test_result(self, result):
@@ -1276,8 +1266,8 @@ class ConfigTraverseTestUI(QWidget):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-    window = ConfigTraverseTestUI()
-    window.setWindowTitle("Config Traverse Test")
+    window = RegulationVoltageTestUI()
+    window.setWindowTitle("Regulation Voltage Test")
     window.resize(1200, 800)
     window.show()
     sys.exit(app.exec())

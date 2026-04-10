@@ -8,6 +8,7 @@ from PySide6.QtGui import QFont
 from ui.pages.charger.config_traverse_test import ConfigTraverseTestUI
 from ui.pages.charger.status_register_test import StatusRegisterTestUI
 from ui.pages.charger.iterm_test import ItermTestUI
+from ui.pages.charger.regulation_voltage_ui import RegulationVoltageTestUI
 
 
 class ChargerTestUI(QWidget):
@@ -16,6 +17,7 @@ class ChargerTestUI(QWidget):
         "config_traverse": 0,
         "status_register": 1,
         "iterm": 2,
+        "regulation_voltage": 3,
     }
 
     def __init__(self, n6705c_top=None):
@@ -56,6 +58,9 @@ class ChargerTestUI(QWidget):
         self.iterm_ui = ItermTestUI(n6705c_top=self._n6705c_top)
         self.tab_widget.addTab(self.iterm_ui, "Iterm Test")
 
+        self.regulation_voltage_ui = RegulationVoltageTestUI(n6705c_top=self._n6705c_top)
+        self.tab_widget.addTab(self.regulation_voltage_ui, "Regulation Voltage Test")
+
         main_layout.addWidget(self.tab_widget)
 
     def _init_ui_elements(self):
@@ -68,6 +73,7 @@ class ChargerTestUI(QWidget):
     def _sync_from_top(self):
         for sub_ui in [
             self.config_traverse_ui, self.status_register_ui, self.iterm_ui,
+            self.regulation_voltage_ui,
         ]:
             if hasattr(sub_ui, '_sync_from_top'):
                 sub_ui._sync_from_top()
@@ -84,6 +90,8 @@ class ChargerTestUI(QWidget):
             return self.status_register_ui.get_test_config()
         elif test_type == "iterm":
             return self.iterm_ui.get_test_config()
+        elif test_type == "regulation_voltage":
+            return self.regulation_voltage_ui.get_test_config()
         return None
 
     def update_test_result(self, test_type, result):
@@ -93,16 +101,20 @@ class ChargerTestUI(QWidget):
             self.status_register_ui.update_test_result(result)
         elif test_type == "iterm":
             self.iterm_ui.update_test_result(result)
+        elif test_type == "regulation_voltage":
+            self.regulation_voltage_ui.update_test_result(result)
 
     def clear_all_results(self):
         self.config_traverse_ui.clear_results()
         self.status_register_ui.clear_results()
         self.iterm_ui.clear_results()
+        self.regulation_voltage_ui.clear_results()
 
     def set_system_status(self, status, is_error=False):
         self.config_traverse_ui.set_system_status(status, is_error)
         self.status_register_ui.set_system_status(status, is_error)
         self.iterm_ui.set_system_status(status, is_error)
+        self.regulation_voltage_ui.set_system_status(status, is_error)
 
 
 if __name__ == "__main__":

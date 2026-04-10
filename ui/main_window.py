@@ -301,6 +301,7 @@ class ChargerSubMenu(QWidget):
             ("config_traverse", "Config Traverse Test"),
             ("status_register", "Status Register Test"),
             ("iterm", "Iterm Test"),
+            ("regulation_voltage", "Regulation Voltage Test"),
         ]
 
         total = len(self.menu_items)
@@ -392,6 +393,7 @@ class MainWindow(QMainWindow):
             "config_traverse": 0,
             "status_register": 1,
             "iterm": 2,
+            "regulation_voltage": 3,
         }
 
         # 设置样式
