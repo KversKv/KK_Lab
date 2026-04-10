@@ -20,6 +20,15 @@ setup_logging(level=logging.INFO)
 # setup_logging(level=logging.INFO)     # 默认 - 正常运行信息
 # setup_logging(level=logging.WARNING)  # 仅警告和错误
 # setup_logging(level=logging.ERROR)    # 仅错误
+# import logging
+
+# # 创建模块级 logger
+# logger = logging.getLogger(__name__)
+
+# # 使用标准级别（对应你的 1/2/3）
+# logger.error("Failed to download dlog data.")      # 对应你的 level=1
+# logger.info("Step 1: Setting Vbat to 3V...")        # 对应你的 level=2
+# logger.debug(f"Downloaded {size} bytes of dlog.")   # 对应你的 level=3
 
 
 

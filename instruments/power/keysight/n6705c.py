@@ -190,6 +190,19 @@ class N6705C:
         else:
             self.instr.write(f"ARB:TERM:LAST OFF,(@{channel})")
 
+    def clear_arb_all_channels(self, total_channels=4):
+        ch_list = ",".join(str(ch) for ch in range(1, total_channels + 1))
+        try:
+            self.instr.write(f"ABOR:TRAN (@{ch_list})")
+        except Exception:
+            pass
+        for ch in range(1, total_channels + 1):
+            self.instr.write(f"VOLT:MODE FIX,(@{ch})")
+            self.instr.write(f"CURR:MODE FIX,(@{ch})")
+
+    def restore_arb_trigger_source(self):
+        self.instr.write("TRIG:ARB:SOUR IMM")
+
     def arb_run(self):
         self.instr.write("TRIG:ARB:SOUR BUS")
         self.instr.write("*TRG")
