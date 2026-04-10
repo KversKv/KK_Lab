@@ -3,6 +3,7 @@
 
 import sys
 import os
+import math
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "lib", "i2c"))
@@ -12,9 +13,9 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QLineEdit, QGridLayout, QSpinBox, QDoubleSpinBox, QFrame,
     QTextEdit, QProgressBar, QSizePolicy,
-    QApplication
+    QApplication, QFileDialog
 )
-from PySide6.QtCore import Qt, Signal, QThread, QObject, QTimer
+from PySide6.QtCore import Qt, Signal, QThread, QObject, QTimer, QMargins
 from PySide6.QtGui import QFont
 import time
 import pyvisa
@@ -22,6 +23,15 @@ import pyvisa
 from instruments.power.keysight.n6705c import N6705C
 from i2c_interface_x64 import I2CInterface
 from Bes_I2CIO_Interface import I2CSpeedMode, I2CWidthFlag
+
+try:
+    from PySide6.QtCharts import (
+        QChart, QChartView, QLineSeries, QValueAxis, QScatterSeries
+    )
+    from PySide6.QtGui import QPainter, QColor, QPen
+    HAS_QTCHARTS = True
+except Exception:
+    HAS_QTCHARTS = False
 
 ITERM_REGISTER_MAP = {
     0: {"code": 0x00, "current_ma": 60},
@@ -35,11 +45,26 @@ ITERM_REGISTER_MAP = {
 }
 
 
+def _fmt_val(value, min_decimals=4, sig_digits=4):
+    if value == 0:
+        return f"{value:.{min_decimals}f}"
+    abs_val = abs(value)
+    magnitude = -int(math.floor(math.log10(abs_val)))
+    decimals = max(min_decimals, magnitude + sig_digits - 1)
+    decimals = min(decimals, 10)
+    return f"{value:.{decimals}f}"
+
+
 class _ItermTestWorker(QObject):
     log_message = Signal(str)
     progress = Signal(int)
     result_row = Signal(dict)
     test_finished = Signal(bool)
+    chart_clear = Signal()
+    chart_series_data = Signal(list, list, float, float)
+    traverse_chart_point = Signal(float, float)
+    traverse_chart_clear = Signal()
+    traverse_result_update = Signal(dict)
 
     def __init__(self, n6705c, config):
         super().__init__()
@@ -51,75 +76,249 @@ class _ItermTestWorker(QObject):
         self._stop_flag = True
 
     def run(self):
+        test_item = self._cfg.get("test_item", "Single Iterm Test")
+        if test_item == "Single Iterm Test":
+            self._run_single()
+        else:
+            self._run_traverse()
+
+    def _run_single(self):
         try:
-            device_addr = self._cfg["device_addr"]
-            iterm_reg = self._cfg["iterm_reg"]
-            iic_width = self._cfg["iic_width"]
-            measure_channel = self._cfg["measure_channel"]
-            settle_time = self._cfg["settle_time_ms"] / 1000.0
-            iterm_map = self._cfg.get("iterm_map", ITERM_REGISTER_MAP)
+            vbat_channel = self._cfg["vbat_channel"]
+            current_channel = self._cfg["measure_channel"]
+            average_time = self._cfg.get("average_time_ms", 100) / 1000.0
 
-            i2c = I2CInterface()
-            self._i2c = i2c
+            iterm = self.single_iterm_test(vbat_channel, current_channel, average_time)
 
-            total = len(iterm_map)
-
-            self.log_message.emit(
-                f"[TEST] Starting Iterm test on device 0x{device_addr:02X}, "
-                f"reg 0x{iterm_reg:02X}"
-            )
-
-            for idx, (key, entry) in enumerate(iterm_map.items()):
-                if self._stop_flag:
-                    self.log_message.emit("[TEST] Test stopped by user.")
-                    break
-
-                code = entry["code"]
-                expected_ma = entry["current_ma"]
-
-                try:
-                    self._i2c.write(device_addr, iterm_reg, code, iic_width)
-                    time.sleep(settle_time)
-
-                    if self._n6705c is not None:
-                        measured_str = self._n6705c.measure_current(measure_channel)
-                        measured_a = float(measured_str)
-                        measured_ma = abs(measured_a) * 1000.0
-                    else:
-                        measured_ma = 0.0
-
-                    tolerance = self._cfg.get("tolerance_pct", 15.0)
-                    lower = expected_ma * (1 - tolerance / 100.0)
-                    upper = expected_ma * (1 + tolerance / 100.0)
-                    result = "PASS" if lower <= measured_ma <= upper else "FAIL"
-
-                    row = {
-                        "code": f"0x{code:02X}",
-                        "expected_ma": f"{expected_ma}",
-                        "measured_ma": f"{measured_ma:.2f}",
-                        "result": result,
-                    }
-                    self.result_row.emit(row)
-                    self.log_message.emit(
-                        f"[DATA] Code 0x{code:02X}: Expected {expected_ma}mA, "
-                        f"Measured {measured_ma:.2f}mA => {result}"
-                    )
-                except Exception as e:
-                    self.log_message.emit(f"[ERROR] Code 0x{code:02X}: {e}")
-                    self.result_row.emit({
-                        "code": f"0x{code:02X}",
-                        "expected_ma": f"{expected_ma}",
-                        "measured_ma": "ERR",
-                        "result": "ERROR",
-                    })
-
-                pct = int((idx + 1) / total * 100)
-                self.progress.emit(pct)
-
+            if iterm is not None:
+                self.log_message.emit(
+                    f"[RESULT] Iterm = {_fmt_val(iterm * 1000.0)} mA"
+                )
+                self.result_row.emit({
+                    "code": "---",
+                    "expected_ma": "---",
+                    "measured_ma": f"{abs(iterm) * 1000.0:.4f}",
+                    "result": "DONE",
+                })
             self.test_finished.emit(True)
         except Exception as e:
             self.log_message.emit(f"[ERROR] {e}")
             self.test_finished.emit(False)
+
+    def _run_traverse(self):
+        try:
+            device_addr = self._cfg["device_addr"]
+            iterm_reg = self._cfg["iterm_reg"]
+            iic_width = self._cfg["iic_width"]
+            vbat_channel = self._cfg["vbat_channel"]
+            current_channel = self._cfg["measure_channel"]
+            average_time = self._cfg.get("average_time_ms", 100) / 1000.0
+            msb = self._cfg["msb"]
+            lsb = self._cfg["lsb"]
+            min_code = self._cfg["min_code"]
+            max_code = self._cfg["max_code"]
+
+            self.traverse_iterm_test(
+                device_addr, iterm_reg, iic_width,
+                vbat_channel, current_channel, average_time,
+                msb, lsb, min_code, max_code,
+            )
+            self.test_finished.emit(True)
+        except Exception as e:
+            self.log_message.emit(f"[ERROR] {e}")
+            self.test_finished.emit(False)
+
+    def single_iterm_test(self, vbat_channel, current_channel, average_time):
+        v_start = self._cfg.get("v_start", 3.7)
+        v_end = self._cfg.get("v_end", 4.6)
+        v_step = self._cfg.get("v_step", 0.01)
+        step_dwell = self._cfg.get("step_dwell_ms", 200) / 1000.0
+
+        steps = int((v_end - v_start) / v_step) + 1
+        if steps <= 0:
+            self.log_message.emit("[ERROR] Invalid voltage scan range.")
+            return None
+
+        self.log_message.emit(
+            f"[TEST] Single Iterm Test: VBAT CH{vbat_channel}, "
+            f"Current CH{current_channel}, Avg={average_time*1000:.0f}ms"
+        )
+        self.log_message.emit(
+            f"[TEST] Voltage scan: {v_start:.3f}V -> {v_end:.3f}V, "
+            f"step={v_step*1000:.1f}mV, dwell={step_dwell*1000:.0f}ms"
+        )
+
+        self._n6705c.set_voltage(vbat_channel, v_start)
+        self._n6705c.channel_on(vbat_channel)
+        time.sleep(0.5)
+
+        voltages = []
+        currents = []
+        timestamps = []
+        t0 = time.time()
+
+        self.chart_clear.emit()
+
+        for i in range(steps):
+            if self._stop_flag:
+                self.log_message.emit("[TEST] Stopped by user.")
+                return None
+
+            v_set = v_start + i * v_step
+            self._n6705c.set_voltage(vbat_channel, v_set)
+            time.sleep(step_dwell)
+
+            v_meas = self._n6705c.measure_voltage(vbat_channel)
+            i_meas = float(self._n6705c.measure_current(current_channel))
+
+            t_now = time.time() - t0
+            voltages.append(v_meas)
+            currents.append(i_meas)
+            timestamps.append(t_now)
+
+            self.log_message.emit(
+                f"[MEAS] V={v_meas:.4f}V  I={i_meas:.6f}A  t={t_now:.2f}s"
+            )
+
+            pct = int((i + 1) / steps * 100)
+            self.progress.emit(pct)
+
+        if len(currents) < 3:
+            self.log_message.emit("[ERROR] Not enough data points to analyse.")
+            return None
+
+        t_term_idx = self._find_termination_index(currents)
+        if t_term_idx is None:
+            self.log_message.emit("[WARN] No termination point found in current curve.")
+            self.chart_series_data.emit(timestamps, currents, -1.0, 0.0)
+            return None
+
+        t_term = timestamps[t_term_idx]
+        self.log_message.emit(
+            f"[TEST] Termination point found at index {t_term_idx}, "
+            f"t={t_term:.2f}s, V={voltages[t_term_idx]:.4f}V, "
+            f"I={currents[t_term_idx]:.6f}A"
+        )
+
+        avg_start_time = t_term - average_time
+        avg_indices = [
+            j for j, t in enumerate(timestamps)
+            if avg_start_time <= t <= t_term
+        ]
+        if not avg_indices:
+            avg_indices = [t_term_idx]
+
+        iterm_values = [currents[j] for j in avg_indices]
+        iterm = sum(iterm_values) / len(iterm_values)
+
+        self.log_message.emit(
+            f"[TEST] Iterm calculated from {len(avg_indices)} points "
+            f"in [{avg_start_time:.2f}s, {t_term:.2f}s]: "
+            f"{_fmt_val(iterm * 1000.0)} mA"
+        )
+
+        self.chart_series_data.emit(timestamps, currents, t_term, iterm)
+
+        return iterm
+
+    def _find_termination_index(self, currents):
+        abs_currents = [abs(c) for c in currents]
+        for i in range(1, len(abs_currents)):
+            prev = abs_currents[i - 1]
+            curr = abs_currents[i]
+            if prev > 0.5e-3 and curr < prev * 0.3:
+                return i
+        return None
+
+    def traverse_iterm_test(
+        self, device_addr, iterm_reg, iic_width,
+        vbat_channel, current_channel, average_time,
+        msb, lsb, min_code, max_code,
+    ):
+        i2c = I2CInterface()
+        self._i2c = i2c
+
+        bit_count = msb - lsb + 1
+        mask = (1 << bit_count) - 1
+        max_code = min(max_code, mask)
+        min_code = max(min_code, 0)
+
+        default_reg = i2c.read(device_addr, iterm_reg, iic_width)
+        data_base = default_reg & (~(mask << lsb))
+
+        total_points = max_code - min_code + 1
+        if total_points <= 0:
+            self.log_message.emit("[ERROR] Invalid code range.")
+            return
+
+        self.log_message.emit(
+            f"[TEST] Traverse Iterm Test: Device=0x{device_addr:02X}, "
+            f"Reg=0x{iterm_reg:02X}, MSB={msb}, LSB={lsb}"
+        )
+        self.log_message.emit(
+            f"[TEST] Code range: 0x{min_code:X} ~ 0x{max_code:X} ({total_points} points)"
+        )
+
+        hex_width = len(f"{max_code:X}")
+
+        self.traverse_chart_clear.emit()
+
+        codes = []
+        iterms = []
+
+        for idx, code in enumerate(range(min_code, max_code + 1)):
+            if self._stop_flag:
+                self.log_message.emit("[TEST] Stopped by user.")
+                break
+
+            write_reg = data_base | (code << lsb)
+            i2c.write(device_addr, iterm_reg, write_reg, iic_width)
+            self.log_message.emit(
+                f"[TEST] Code=0x{code:0{hex_width}X}, writing reg=0x{write_reg:04X}"
+            )
+            time.sleep(0.2)
+
+            iterm = self.single_iterm_test(vbat_channel, current_channel, average_time)
+
+            if iterm is not None:
+                iterm_ma = abs(iterm) * 1000.0
+                codes.append(code)
+                iterms.append(iterm_ma)
+
+                self.traverse_chart_point.emit(float(code), iterm_ma)
+
+                self.result_row.emit({
+                    "code": f"0x{code:0{hex_width}X}",
+                    "expected_ma": "---",
+                    "measured_ma": f"{iterm_ma:.4f}",
+                    "result": "DONE",
+                })
+
+                self.log_message.emit(
+                    f"[DATA] Code=0x{code:0{hex_width}X}: Iterm={iterm_ma:.4f}mA"
+                )
+            else:
+                self.log_message.emit(
+                    f"[WARN] Code=0x{code:0{hex_width}X}: Iterm measurement failed."
+                )
+
+            result = {"progress": int((idx + 1) / total_points * 100)}
+            if len(iterms) >= 1:
+                result["min_value"] = min(iterms)
+                result["max_value"] = max(iterms)
+                result["valid_min_code"] = codes[0]
+                result["valid_max_code"] = codes[-1]
+            if len(iterms) >= 2:
+                avg_step = (iterms[-1] - iterms[0]) / (len(iterms) - 1)
+                result["step_value"] = avg_step
+            result["unit"] = "mA"
+            self.traverse_result_update.emit(result)
+
+            pct = int((idx + 1) / total_points * 100)
+            self.progress.emit(pct)
+
+        i2c.write(device_addr, iterm_reg, default_reg, iic_width)
+        self.log_message.emit("[TEST] Register restored to default value.")
 
 
 
@@ -335,6 +534,13 @@ class ItermTestUI(QWidget):
                 border: 1px solid #f0287b;
                 color: #ffd0e2;
             }
+            QPushButton#exportBtn {
+                min-height: 28px;
+                padding: 4px 12px;
+                border-radius: 8px;
+                background-color: #16284f;
+                color: #dfe8ff;
+            }
             QFrame#chartContainer, QFrame#logContainer {
                 background-color: #09142e;
                 border: 1px solid #1a2d57;
@@ -419,9 +625,9 @@ class ItermTestUI(QWidget):
         self._build_test_item_card()
         left_layout.addWidget(self.test_item_card)
 
-        self.channel_config_card = CardFrame("\u2637 TEST CHANNEL CONFIG")
-        self._build_channel_config_card()
-        left_layout.addWidget(self.channel_config_card)
+        self.test_config_card = CardFrame("\u2637 TEST CONFIG")
+        self._build_test_config_card()
+        left_layout.addWidget(self.test_config_card)
 
         self.param_card = CardFrame("\u21c4 REGISTER RANGE")
         self._build_param_card()
@@ -443,35 +649,49 @@ class ItermTestUI(QWidget):
         right_layout.setSpacing(14)
         content_layout.addLayout(right_layout, 1)
 
-        result_frame = QFrame()
-        result_frame.setObjectName("chartContainer")
-        result_outer = QVBoxLayout(result_frame)
-        result_outer.setContentsMargins(16, 16, 16, 16)
-        result_outer.setSpacing(10)
+        self.chart_frame = QFrame()
+        self.chart_frame.setObjectName("chartContainer")
+        chart_outer_layout = QVBoxLayout(self.chart_frame)
+        chart_outer_layout.setContentsMargins(16, 16, 16, 16)
+        chart_outer_layout.setSpacing(10)
 
-        result_header = QHBoxLayout()
-        result_title = QLabel("\U0001f4ca Iterm Test Results")
-        result_title.setObjectName("sectionTitle")
-        result_header.addWidget(result_title)
-        result_header.addStretch()
+        chart_header_layout = QHBoxLayout()
+        self.chart_title = QLabel("\u2248 Current vs Time")
+        self.chart_title.setObjectName("sectionTitle")
+        chart_header_layout.addWidget(self.chart_title)
+        chart_header_layout.addStretch()
 
-        result_outer.addLayout(result_header)
+        self.export_result_btn = QPushButton("\u21e9 Export CSV")
+        self.export_result_btn.setObjectName("exportBtn")
+        chart_header_layout.addWidget(self.export_result_btn)
 
-        mini_stat_layout = QHBoxLayout()
+        chart_outer_layout.addLayout(chart_header_layout)
+
+        self.chart_widget = self._create_chart_widget()
+        chart_outer_layout.addWidget(self.chart_widget, 1)
+
+        stat_layout = QHBoxLayout()
+        stat_layout.setSpacing(10)
+
         self.total_card = self._create_mini_stat("Total", "0")
         self.pass_card = self._create_mini_stat("PASS", "0")
         self.fail_card = self._create_mini_stat("FAIL", "0")
-        mini_stat_layout.addWidget(self.total_card["frame"])
-        mini_stat_layout.addWidget(self.pass_card["frame"])
-        mini_stat_layout.addWidget(self.fail_card["frame"])
-        result_outer.addLayout(mini_stat_layout)
+        self.iterm_card = self._create_mini_stat("Iterm", "---")
+
+        stat_layout.addWidget(self.total_card["frame"])
+        stat_layout.addWidget(self.pass_card["frame"])
+        stat_layout.addWidget(self.fail_card["frame"])
+        stat_layout.addWidget(self.iterm_card["frame"])
+
+        chart_outer_layout.addLayout(stat_layout)
 
         self.result_log = QTextEdit()
         self.result_log.setObjectName("logEdit")
         self.result_log.setReadOnly(True)
-        result_outer.addWidget(self.result_log, 1)
+        self.result_log.setMaximumHeight(100)
+        chart_outer_layout.addWidget(self.result_log)
 
-        right_layout.addWidget(result_frame, 4)
+        right_layout.addWidget(self.chart_frame, 4)
 
         self.log_frame = QFrame()
         self.log_frame.setObjectName("logContainer")
@@ -557,8 +777,81 @@ class ItermTestUI(QWidget):
 
         layout.addLayout(grid)
 
-    def _build_channel_config_card(self):
-        layout = self.channel_config_card.main_layout
+    def _create_chart_widget(self):
+        if HAS_QTCHARTS:
+            self.current_series = QLineSeries()
+            pen = QPen(QColor("#00d6a2"))
+            pen.setWidth(2)
+            self.current_series.setPen(pen)
+
+            self.term_marker_series = QScatterSeries()
+            self.term_marker_series.setMarkerSize(10)
+            self.term_marker_series.setColor(QColor("#ff5e7a"))
+            self.term_marker_series.setBorderColor(QColor("#ff5e7a"))
+
+            self.traverse_series = QLineSeries()
+            traverse_pen = QPen(QColor("#5b5cf6"))
+            traverse_pen.setWidth(2)
+            self.traverse_series.setPen(traverse_pen)
+
+            chart = QChart()
+            chart.setBackgroundVisible(False)
+            chart.setPlotAreaBackgroundVisible(True)
+            chart.setPlotAreaBackgroundBrush(QColor("#09142e"))
+            chart.legend().hide()
+            chart.addSeries(self.current_series)
+            chart.addSeries(self.term_marker_series)
+            chart.addSeries(self.traverse_series)
+            chart.setMargins(QMargins(0, 0, 0, 0))
+
+            self.axis_x = QValueAxis()
+            self.axis_x.setRange(0, 10)
+            self.axis_x.setTickCount(9)
+            self.axis_x.setLabelFormat("%.1f")
+            self.axis_x.setTitleText("Time (s)")
+            self.axis_x.setLabelsColor(QColor("#9fc0ef"))
+            self.axis_x.setTitleBrush(QColor("#9fc0ef"))
+            self.axis_x.setGridLineColor(QColor("#2a3f6a"))
+
+            self.axis_y = QValueAxis()
+            self.axis_y.setRange(0.0, 0.01)
+            self.axis_y.setTickCount(9)
+            self.axis_y.setTitleText("Current (A)")
+            self.axis_y.setLabelsColor(QColor("#9fc0ef"))
+            self.axis_y.setTitleBrush(QColor("#9fc0ef"))
+            self.axis_y.setGridLineColor(QColor("#2a3f6a"))
+
+            chart.addAxis(self.axis_x, Qt.AlignBottom)
+            chart.addAxis(self.axis_y, Qt.AlignLeft)
+            self.current_series.attachAxis(self.axis_x)
+            self.current_series.attachAxis(self.axis_y)
+            self.term_marker_series.attachAxis(self.axis_x)
+            self.term_marker_series.attachAxis(self.axis_y)
+            self.traverse_series.attachAxis(self.axis_x)
+            self.traverse_series.attachAxis(self.axis_y)
+
+            chart_view = QChartView(chart)
+            chart_view.setRenderHint(QPainter.Antialiasing)
+            chart_view.setStyleSheet("background: transparent; border: none;")
+            return chart_view
+
+        placeholder = QFrame()
+        placeholder.setStyleSheet("""
+            QFrame {
+                background-color: #09142e;
+                border: 1px solid #1b315f;
+                border-radius: 10px;
+            }
+        """)
+        v = QVBoxLayout(placeholder)
+        label = QLabel("Iterm Test Chart")
+        label.setAlignment(Qt.AlignCenter)
+        label.setStyleSheet("color:#7da2d6; font-size:14px; font-weight:600; background: transparent;")
+        v.addWidget(label)
+        return placeholder
+
+    def _build_test_config_card(self):
+        layout = self.test_config_card.main_layout
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(10)
@@ -583,12 +876,23 @@ class ItermTestUI(QWidget):
         self.avg_time_spin.setValue(100)
         self.avg_time_spin.setSingleStep(10)
 
+        voreg_label = QLabel("Voreg (V)")
+        voreg_label.setObjectName("fieldLabel")
+
+        self.voreg_spin = QDoubleSpinBox()
+        self.voreg_spin.setRange(0.0, 20.0)
+        self.voreg_spin.setValue(4.2)
+        self.voreg_spin.setSingleStep(0.1)
+        self.voreg_spin.setDecimals(2)
+
         grid.addWidget(vbat_ch_label, 0, 0)
         grid.addWidget(self.vbat_channel_combo, 0, 1)
         grid.addWidget(charge_ch_label, 1, 0)
         grid.addWidget(self.measure_channel_combo, 1, 1)
         grid.addWidget(avg_time_label, 2, 0)
         grid.addWidget(self.avg_time_spin, 2, 1)
+        grid.addWidget(voreg_label, 3, 0)
+        grid.addWidget(self.voreg_spin, 3, 1)
 
         layout.addLayout(grid)
 
@@ -673,6 +977,7 @@ class ItermTestUI(QWidget):
         self.start_test_btn.clicked.connect(self._on_start_or_stop)
         self.stop_test_btn.clicked.connect(self._on_stop_test)
         self.clear_log_btn.clicked.connect(self._on_clear_log)
+        self.export_result_btn.clicked.connect(self._on_export_csv)
 
     def _on_start_or_stop(self):
         if self.is_test_running:
@@ -865,12 +1170,29 @@ class ItermTestUI(QWidget):
             return
 
         iic_width = self.iic_width_combo.currentData()
+        test_item = self.test_item_combo.currentText()
+
+        if test_item == "Single Iterm Test":
+            if HAS_QTCHARTS and hasattr(self, 'axis_x'):
+                self.axis_x.setTitleText("Time (s)")
+                self.axis_x.setLabelFormat("%.1f")
+                self.axis_y.setTitleText("Current (A)")
+                self.chart_title.setText("\u2248 Current vs Time")
+        else:
+            if HAS_QTCHARTS and hasattr(self, 'axis_x'):
+                self.axis_x.setTitleText("Register Code")
+                self.axis_x.setLabelFormat("%d")
+                self.axis_y.setTitleText("Iterm (mA)")
+                self.chart_title.setText("\u2248 Iterm vs Register Code")
 
         config = {
+            "test_item": test_item,
             "device_addr": device_addr,
             "iterm_reg": reg_addr,
             "iic_width": iic_width,
+            "vbat_channel": int(self.vbat_channel_combo.currentText().replace("CH ", "")),
             "measure_channel": int(self.measure_channel_combo.currentText().replace("CH ", "")),
+            "average_time_ms": self.avg_time_spin.value(),
             "msb": msb,
             "lsb": lsb,
             "min_code": min_code,
@@ -888,6 +1210,11 @@ class ItermTestUI(QWidget):
         self.test_worker.progress.connect(self.set_progress)
         self.test_worker.result_row.connect(self._on_result_row)
         self.test_worker.test_finished.connect(self._on_test_finished)
+        self.test_worker.chart_clear.connect(self._on_chart_clear)
+        self.test_worker.chart_series_data.connect(self._on_chart_series_data)
+        self.test_worker.traverse_chart_point.connect(self._on_traverse_chart_point)
+        self.test_worker.traverse_chart_clear.connect(self._on_traverse_chart_clear)
+        self.test_worker.traverse_result_update.connect(self._on_traverse_result_update)
         self.test_thread.started.connect(self.test_worker.run)
 
         self.test_thread.start()
@@ -928,6 +1255,103 @@ class ItermTestUI(QWidget):
 
     def _on_clear_log(self):
         self.log_edit.clear()
+
+    def _on_chart_clear(self):
+        if HAS_QTCHARTS and hasattr(self, 'current_series'):
+            self.current_series.clear()
+            self.term_marker_series.clear()
+
+    def _on_chart_series_data(self, timestamps, currents, t_term, iterm):
+        if not HAS_QTCHARTS or not hasattr(self, 'current_series'):
+            return
+
+        self.current_series.clear()
+        self.term_marker_series.clear()
+
+        for t, i in zip(timestamps, currents):
+            self.current_series.append(t, i)
+            self._export_data.append((t, i))
+
+        if t_term >= 0:
+            t_idx = None
+            for j, t in enumerate(timestamps):
+                if abs(t - t_term) < 0.001:
+                    t_idx = j
+                    break
+            if t_idx is not None:
+                self.term_marker_series.append(t_term, currents[t_idx])
+
+        if timestamps:
+            min_x = min(timestamps)
+            max_x = max(timestamps)
+            margin_x = max((max_x - min_x) * 0.05, 0.1)
+            self.axis_x.setRange(min_x - margin_x, max_x + margin_x)
+
+        if currents:
+            min_y = min(currents)
+            max_y = max(currents)
+            margin_y = max((max_y - min_y) * 0.05, 0.001)
+            self.axis_y.setRange(min_y - margin_y, max_y + margin_y)
+
+        if iterm != 0.0:
+            self.iterm_card["value"].setText(f"{_fmt_val(abs(iterm) * 1000.0)} mA")
+
+    def _on_traverse_chart_clear(self):
+        if HAS_QTCHARTS and hasattr(self, 'traverse_series'):
+            self.traverse_series.clear()
+            self.current_series.clear()
+            self.term_marker_series.clear()
+
+    def _on_traverse_chart_point(self, code, iterm_ma):
+        if not HAS_QTCHARTS or not hasattr(self, 'traverse_series'):
+            return
+
+        self.traverse_series.append(code, iterm_ma)
+        self._export_data.append((code, iterm_ma))
+
+        pts = self.traverse_series.points()
+        if pts and hasattr(self, 'axis_x'):
+            min_x = int(min(p.x() for p in pts))
+            max_x = int(max(p.x() for p in pts))
+            margin_x = max(int((max_x - min_x) * 0.05), 1)
+            self.axis_x.setRange(max(0, min_x - margin_x), max_x + margin_x)
+
+        if pts and hasattr(self, 'axis_y'):
+            min_y = min(p.y() for p in pts)
+            max_y = max(p.y() for p in pts)
+            margin_y = max((max_y - min_y) * 0.05, 0.01)
+            self.axis_y.setRange(min_y - margin_y, max_y + margin_y)
+
+    def _on_traverse_result_update(self, result):
+        if 'min_value' in result:
+            code_str = f" (0x{result['valid_min_code']:X})" if 'valid_min_code' in result else ""
+            self.pass_card["value"].setText(f"{_fmt_val(result['min_value'])} mA{code_str}")
+            self.pass_card["label"].setText("Min Iterm")
+        if 'max_value' in result:
+            code_str = f" (0x{result['valid_max_code']:X})" if 'valid_max_code' in result else ""
+            self.fail_card["value"].setText(f"{_fmt_val(result['max_value'])} mA{code_str}")
+            self.fail_card["label"].setText("Max Iterm")
+        if 'step_value' in result:
+            self.iterm_card["value"].setText(f"{_fmt_val(result['step_value'])} mA/code")
+            self.iterm_card["label"].setText("Step")
+        if 'progress' in result:
+            self.set_progress(result['progress'])
+
+    def _on_export_csv(self):
+        if not self._export_data:
+            self.append_log("[EXPORT] No data to export.")
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Export CSV", "", "CSV Files (*.csv)")
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("X,Y\n")
+                for x_val, y_val in self._export_data:
+                    f.write(f"{x_val:.10g},{y_val:.10g}\n")
+            self.append_log(f"[EXPORT] Data exported to {path}")
+        except Exception as e:
+            self.append_log(f"[ERROR] Export failed: {e}")
 
     def set_test_running(self, running):
         self.is_test_running = running
@@ -1016,8 +1440,19 @@ class ItermTestUI(QWidget):
         self._total_count = 0
         self.total_card["value"].setText("0")
         self.pass_card["value"].setText("0")
+        self.pass_card["label"].setText("PASS")
         self.fail_card["value"].setText("0")
+        self.fail_card["label"].setText("FAIL")
+        self.iterm_card["value"].setText("---")
+        self.iterm_card["label"].setText("Iterm")
         self.result_log.clear()
+        if HAS_QTCHARTS:
+            if hasattr(self, 'current_series'):
+                self.current_series.clear()
+            if hasattr(self, 'term_marker_series'):
+                self.term_marker_series.clear()
+            if hasattr(self, 'traverse_series'):
+                self.traverse_series.clear()
 
     def update_test_result(self, result):
         if "total" in result:
