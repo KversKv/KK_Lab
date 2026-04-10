@@ -47,10 +47,10 @@ class ChargerTestUI(QWidget):
         self.tab_widget = QTabWidget()
         self.tab_widget.tabBar().hide()
 
-        self.config_traverse_ui = ConfigTraverseTestUI()
+        self.config_traverse_ui = ConfigTraverseTestUI(n6705c_top=self._n6705c_top)
         self.tab_widget.addTab(self.config_traverse_ui, "Config Traverse Test")
 
-        self.status_register_ui = StatusRegisterTestUI()
+        self.status_register_ui = StatusRegisterTestUI(n6705c_top=self._n6705c_top)
         self.tab_widget.addTab(self.status_register_ui, "Status Register Test")
 
         self.iterm_ui = ItermTestUI(n6705c_top=self._n6705c_top)

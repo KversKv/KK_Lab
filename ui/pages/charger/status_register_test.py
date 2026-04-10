@@ -5,6 +5,7 @@ import sys
 import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "lib", "i2c"))
 
 from ui.widgets.dark_combobox import DarkComboBox
 from PySide6.QtWidgets import (
@@ -15,12 +16,10 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal, QThread, QObject, QTimer
 from PySide6.QtGui import QFont
-from pathlib import Path
 import time
+import pyvisa
 
-i2c_lib_path = Path(__file__).parent.parent.parent.parent / "lib" / "i2c"
-sys.path.insert(0, str(i2c_lib_path))
-
+from instruments.power.keysight.n6705c import N6705C
 from i2c_interface_x64 import I2CInterface
 from Bes_I2CIO_Interface import I2CSpeedMode, I2CWidthFlag
 
@@ -44,9 +43,8 @@ class _StatusPollWorker(QObject):
     poll_done = Signal()
     error = Signal(str)
 
-    def __init__(self, i2c, config, register_map):
+    def __init__(self, config, register_map):
         super().__init__()
-        self._i2c = i2c
         self._cfg = config
         self._register_map = register_map
         self._stop_flag = False
@@ -60,6 +58,9 @@ class _StatusPollWorker(QObject):
         try:
             device_addr = self._cfg["device_addr"]
             iic_width = self._cfg["iic_width"]
+
+            i2c = I2CInterface()
+            self._i2c = i2c
 
             while not self._stop_flag:
                 results = {}
@@ -122,18 +123,29 @@ class CardFrame(QFrame):
 class StatusRegisterTestUI(QWidget):
     connection_status_changed = Signal(bool)
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.i2c = None
+    def __init__(self, n6705c_top=None):
+        super().__init__()
+
+        self._n6705c_top = n6705c_top
+        self.rm = None
+        self.n6705c = None
+        self.is_connected = False
+        self.available_devices = []
+
         self.is_test_running = False
         self.test_thread = None
         self.test_worker = None
         self.status_labels = {}
 
+        self.search_timer = QTimer(self)
+        self.search_timer.timeout.connect(self._search_devices)
+        self.search_timer.setSingleShot(True)
+
         self._setup_style()
         self._create_layout()
         self._init_ui_elements()
         self._bind_signals()
+        self._sync_from_top()
 
     def _setup_style(self):
         font = QFont("Segoe UI", 9)
@@ -272,6 +284,38 @@ class StatusRegisterTestUI(QWidget):
                 background-color: #13254b;
                 color: #dce7ff;
             }
+            QPushButton#dynamicConnectBtn {
+                min-height: 34px;
+                border-radius: 10px;
+                padding: 6px 14px;
+                font-weight: 700;
+            }
+            QPushButton#dynamicConnectBtn[connected="false"] {
+                background-color: #053b38;
+                border: 1px solid #08c9a5;
+                color: #10e7bc;
+            }
+            QPushButton#dynamicConnectBtn[connected="false"]:hover {
+                background-color: #064744;
+                border: 1px solid #19f0c5;
+                color: #43f3d0;
+            }
+            QPushButton#dynamicConnectBtn[connected="false"]:pressed {
+                background-color: #042f2d;
+            }
+            QPushButton#dynamicConnectBtn[connected="true"] {
+                background-color: #3a0828;
+                border: 1px solid #d61b67;
+                color: #ffb7d3;
+            }
+            QPushButton#dynamicConnectBtn[connected="true"]:hover {
+                background-color: #4a0b31;
+                border: 1px solid #f0287b;
+                color: #ffd0e2;
+            }
+            QPushButton#dynamicConnectBtn[connected="true"]:pressed {
+                background-color: #330722;
+            }
             QFrame#chartContainer, QFrame#logContainer {
                 background-color: #09142e;
                 border: 1px solid #1a2d57;
@@ -367,9 +411,9 @@ class StatusRegisterTestUI(QWidget):
         left_layout.setContentsMargins(18, 18, 18, 18)
         left_layout.setSpacing(16)
 
-        self.i2c_card = CardFrame("🔌 I2C CONNECTION")
-        self._build_i2c_card()
-        left_layout.addWidget(self.i2c_card)
+        self.connection_card = CardFrame("⚡ N6705C CONNECTION")
+        self._build_connection_card()
+        left_layout.addWidget(self.connection_card)
 
         self.poll_card = CardFrame("⏱ POLL SETTINGS")
         self._build_poll_card()
@@ -405,9 +449,6 @@ class StatusRegisterTestUI(QWidget):
         reg_header.addWidget(reg_title)
         reg_header.addStretch()
 
-        self.system_status_label = QLabel("● Ready")
-        self.system_status_label.setObjectName("statusOk")
-        reg_header.addWidget(self.system_status_label)
         reg_outer.addLayout(reg_header)
 
         reg_grid = QGridLayout()
@@ -455,8 +496,38 @@ class StatusRegisterTestUI(QWidget):
 
         right_layout.addWidget(self.log_frame, 1)
 
-    def _build_i2c_card(self):
-        layout = self.i2c_card.main_layout
+    def _build_connection_card(self):
+        layout = self.connection_card.main_layout
+
+        self.system_status_label = QLabel("● Ready")
+        self.system_status_label.setObjectName("statusOk")
+        layout.addWidget(self.system_status_label)
+
+        self.instrument_info_label = QLabel("USB0::0x0957::0x0F07::MY53004321")
+        self.instrument_info_label.setObjectName("fieldLabel")
+        self.instrument_info_label.setWordWrap(True)
+        layout.addWidget(self.instrument_info_label)
+
+        self.visa_resource_combo = DarkComboBox()
+        self.visa_resource_combo.addItem("TCPIP0::K-N6705C-06098.local::hislip0::INSTR")
+        layout.addWidget(self.visa_resource_combo)
+
+        search_row = QHBoxLayout()
+        search_row.setSpacing(8)
+
+        self.search_btn = QPushButton("Search")
+        self.search_btn.setObjectName("smallActionBtn")
+        search_row.addWidget(self.search_btn)
+
+        layout.addLayout(search_row)
+
+        self.connect_btn = QPushButton("🔗  Connect")
+        self.connect_btn.setObjectName("dynamicConnectBtn")
+        self.connect_btn.setProperty("connected", "false")
+        layout.addWidget(self.connect_btn)
+
+    def _build_poll_card(self):
+        layout = self.poll_card.main_layout
 
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
@@ -471,31 +542,8 @@ class StatusRegisterTestUI(QWidget):
         self.iic_width_combo = DarkComboBox()
         self.iic_width_combo.addItems(["8bit", "16bit"])
 
-        grid.addWidget(lbl_dev, 0, 0)
-        grid.addWidget(self.device_addr_edit, 0, 1)
-        grid.addWidget(lbl_width, 1, 0)
-        grid.addWidget(self.iic_width_combo, 1, 1)
-
-        layout.addLayout(grid)
-
-        self.i2c_connect_btn = QPushButton("Connect I2C")
-        self.i2c_connect_btn.setObjectName("primaryStartBtn")
-        layout.addWidget(self.i2c_connect_btn)
-
-        self.i2c_status_label = QLabel("● Disconnected")
-        self.i2c_status_label.setObjectName("statusErr")
-        layout.addWidget(self.i2c_status_label)
-
-    def _build_poll_card(self):
-        layout = self.poll_card.main_layout
-
         self.continuous_check = QCheckBox("Continuous Polling")
         self.continuous_check.setChecked(True)
-        layout.addWidget(self.continuous_check)
-
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(10)
 
         lbl_interval = QLabel("Poll Interval (ms)")
         lbl_interval.setObjectName("fieldLabel")
@@ -504,10 +552,15 @@ class StatusRegisterTestUI(QWidget):
         self.poll_interval_spin.setValue(500)
         self.poll_interval_spin.setSingleStep(100)
 
-        grid.addWidget(lbl_interval, 0, 0)
-        grid.addWidget(self.poll_interval_spin, 0, 1)
+        grid.addWidget(lbl_dev, 0, 0)
+        grid.addWidget(self.device_addr_edit, 0, 1)
+        grid.addWidget(lbl_width, 1, 0)
+        grid.addWidget(self.iic_width_combo, 1, 1)
+        grid.addWidget(lbl_interval, 2, 0)
+        grid.addWidget(self.poll_interval_spin, 2, 1)
 
         layout.addLayout(grid)
+        layout.addWidget(self.continuous_check)
 
     def _create_reg_card(self, name, info):
         frame = QFrame()
@@ -533,39 +586,166 @@ class StatusRegisterTestUI(QWidget):
         return {"frame": frame, "name_label": name_label, "value_label": value_label, "desc_label": desc_label}
 
     def _init_ui_elements(self):
+        self._update_connect_button_state(False)
         self.append_log("[SYSTEM] Status Register Test ready.")
 
     def _bind_signals(self):
-        self.i2c_connect_btn.clicked.connect(self._on_i2c_connect)
+        self.search_btn.clicked.connect(self._on_search)
+        self.connect_btn.clicked.connect(self._on_connect_or_disconnect)
         self.start_test_btn.clicked.connect(self._on_start_test)
         self.stop_test_btn.clicked.connect(self._on_stop_test)
         self.clear_log_btn.clicked.connect(self._on_clear_log)
 
-    def _on_i2c_connect(self):
-        if self.i2c is not None:
-            self.i2c = None
-            self.i2c_status_label.setText("● Disconnected")
-            self.i2c_status_label.setObjectName("statusErr")
-            self.i2c_status_label.style().unpolish(self.i2c_status_label)
-            self.i2c_status_label.style().polish(self.i2c_status_label)
-            self.i2c_connect_btn.setText("Connect I2C")
-            self.append_log("[I2C] Disconnected.")
+    def _update_connect_button_state(self, connected: bool):
+        self.is_connected = connected
+        self.connect_btn.setProperty("connected", "true" if connected else "false")
+        self.connect_btn.setText("⟲  Disconnect" if connected else "🔗  Connect")
+
+        self.connect_btn.style().unpolish(self.connect_btn)
+        self.connect_btn.style().polish(self.connect_btn)
+        self.connect_btn.update()
+
+    def _on_search(self):
+        if self._n6705c_top and self._n6705c_top.is_connected_a:
             return
+        self.set_system_status("● Searching")
+        self.append_log("[SYSTEM] Scanning VISA resources...")
+        self.search_btn.setEnabled(False)
+        self.search_timer.start(100)
+
+    def _search_devices(self):
+        try:
+            if self.rm is None:
+                try:
+                    self.rm = pyvisa.ResourceManager()
+                except Exception:
+                    self.rm = pyvisa.ResourceManager('@ni')
+
+            self.available_devices = list(self.rm.list_resources()) or []
+
+            compatible_devices = []
+            if self.available_devices:
+                compatible_devices = self.available_devices.copy()
+
+            n6705c_devices = []
+            for dev in compatible_devices:
+                try:
+                    instr = self.rm.open_resource(dev, timeout=1000)
+                    idn = instr.query('*IDN?').strip()
+                    instr.close()
+
+                    if "N6705C" in idn:
+                        n6705c_devices.append(dev)
+                except Exception:
+                    pass
+
+            self.visa_resource_combo.setEnabled(True)
+            self.visa_resource_combo.clear()
+
+            if n6705c_devices:
+                for dev in n6705c_devices:
+                    self.visa_resource_combo.addItem(dev)
+
+                count = len(n6705c_devices)
+                self.set_system_status(f"● Found {count} device(s)")
+                self.append_log(f"[SYSTEM] Found {count} compatible N6705C device(s).")
+
+                default_device = "TCPIP0::K-N6705C-06098.local::hislip0::INSTR"
+                if default_device in n6705c_devices:
+                    self.visa_resource_combo.setCurrentText(default_device)
+                else:
+                    self.visa_resource_combo.setCurrentIndex(0)
+            else:
+                self.visa_resource_combo.addItem("No N6705C device found")
+                self.visa_resource_combo.setEnabled(False)
+                self.set_system_status("● No device found", is_error=True)
+                self.append_log("[SYSTEM] No compatible N6705C instrument found.")
+
+        except Exception as e:
+            self.set_system_status("● Search failed", is_error=True)
+            self.append_log(f"[ERROR] Search failed: {str(e)}")
+        finally:
+            self.search_btn.setEnabled(True)
+
+    def _on_connect_or_disconnect(self):
+        if self.is_connected:
+            self._on_disconnect()
+        else:
+            self._on_connect()
+
+    def _on_connect(self):
+        self.set_system_status("● Connecting")
+        self.append_log("[SYSTEM] Attempting instrument connection...")
+        self.connect_btn.setEnabled(False)
 
         try:
-            self.i2c = I2CInterface()
-            self.i2c_status_label.setText("● Connected")
-            self.i2c_status_label.setObjectName("statusOk")
-            self.i2c_status_label.style().unpolish(self.i2c_status_label)
-            self.i2c_status_label.style().polish(self.i2c_status_label)
-            self.i2c_connect_btn.setText("Disconnect I2C")
-            self.append_log("[I2C] Connected successfully.")
+            device_address = self.visa_resource_combo.currentText()
+            self.n6705c = N6705C(device_address)
+
+            idn = self.n6705c.instr.query("*IDN?")
+            if "N6705C" in idn:
+                self._update_connect_button_state(True)
+                self.set_system_status("● Connected")
+                self.search_btn.setEnabled(False)
+
+                pretty_name = device_address
+                try:
+                    pretty_name = device_address.split("::")[1]
+                except Exception:
+                    pass
+
+                self.instrument_info_label.setText(pretty_name)
+                self.append_log("[SYSTEM] N6705C connected successfully.")
+                self.append_log(f"[IDN] {idn.strip()}")
+
+                if self._n6705c_top:
+                    self._n6705c_top.connect_a(device_address, self.n6705c)
+
+                self.connection_status_changed.emit(True)
+            else:
+                self.set_system_status("● Device mismatch", is_error=True)
+                self.append_log("[ERROR] Connected device is not N6705C.")
         except Exception as e:
-            self.append_log(f"[ERROR] I2C connect failed: {e}")
+            self.set_system_status("● Connection failed", is_error=True)
+            self.append_log(f"[ERROR] Connection failed: {str(e)}")
+        finally:
+            self.connect_btn.setEnabled(True)
+
+    def _on_disconnect(self):
+        self.set_system_status("● Disconnecting")
+        self.append_log("[SYSTEM] Disconnecting instrument...")
+        self.connect_btn.setEnabled(False)
+
+        try:
+            if self._n6705c_top:
+                self._n6705c_top.disconnect_a()
+                self.n6705c = None
+            else:
+                if self.n6705c is not None:
+                    if hasattr(self.n6705c, 'instr') and self.n6705c.instr:
+                        self.n6705c.instr.close()
+                    if hasattr(self.n6705c, 'rm') and self.n6705c.rm:
+                        self.n6705c.rm.close()
+                self.n6705c = None
+
+            self._update_connect_button_state(False)
+
+            self.set_system_status("● Ready")
+            self.search_btn.setEnabled(True)
+            self.instrument_info_label.setText("USB0::0x0957::0x0F07::MY53004321")
+            self.append_log("[SYSTEM] Instrument disconnected.")
+
+            self.connection_status_changed.emit(False)
+
+        except Exception as e:
+            self.set_system_status("● Disconnect failed", is_error=True)
+            self.append_log(f"[ERROR] Disconnect failed: {str(e)}")
+        finally:
+            self.connect_btn.setEnabled(True)
 
     def _on_start_test(self):
-        if self.i2c is None:
-            self.append_log("[ERROR] I2C not connected.")
+        if not self.is_connected or self.n6705c is None:
+            self.append_log("[ERROR] Not connected to N6705C instrument.")
             return
         if self.is_test_running:
             return
@@ -589,7 +769,7 @@ class StatusRegisterTestUI(QWidget):
         self.set_test_running(True)
 
         self.test_thread = QThread()
-        self.test_worker = _StatusPollWorker(self.i2c, config, STATUS_REGISTER_MAP)
+        self.test_worker = _StatusPollWorker(config, STATUS_REGISTER_MAP)
         self.test_worker.moveToThread(self.test_thread)
 
         self.test_worker.log_message.connect(self.append_log)
@@ -640,20 +820,22 @@ class StatusRegisterTestUI(QWidget):
         self.stop_test_btn.setEnabled(running)
         self.device_addr_edit.setEnabled(not running)
         self.iic_width_combo.setEnabled(not running)
-        self.i2c_connect_btn.setEnabled(not running)
+        self.visa_resource_combo.setEnabled(not running)
+        self.search_btn.setEnabled(not running)
+        self.connect_btn.setEnabled(not running)
         self.continuous_check.setEnabled(not running)
         self.poll_interval_spin.setEnabled(not running)
 
         if running:
             self.set_system_status("● Polling")
         else:
-            self.set_system_status("● Ready")
+            self.set_system_status("● Ready" if not self.is_connected else "● Connected")
 
     def set_system_status(self, status, is_error=False):
         self.system_status_label.setText(status)
         if is_error:
             self.system_status_label.setObjectName("statusErr")
-        elif "Polling" in status or "Running" in status:
+        elif "Polling" in status or "Running" in status or "Searching" in status or "Connecting" in status or "Disconnecting" in status:
             self.system_status_label.setObjectName("statusWarn")
         else:
             self.system_status_label.setObjectName("statusOk")
@@ -686,7 +868,17 @@ class StatusRegisterTestUI(QWidget):
         self._on_status_update(result)
 
     def _sync_from_top(self):
-        pass
+        if not self._n6705c_top:
+            return
+        if self._n6705c_top.is_connected_a and self._n6705c_top.n6705c_a:
+            self.n6705c = self._n6705c_top.n6705c_a
+            self._update_connect_button_state(True)
+            self.search_btn.setEnabled(False)
+            if self._n6705c_top.visa_resource_a:
+                self.visa_resource_combo.clear()
+                self.visa_resource_combo.addItem(self._n6705c_top.visa_resource_a)
+        elif not self.is_connected:
+            self._update_connect_button_state(False)
 
 
 if __name__ == "__main__":
