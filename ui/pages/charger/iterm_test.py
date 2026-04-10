@@ -77,6 +77,8 @@ class _ItermTestWorker(QObject):
         self._n6705c = n6705c
         self._cfg = config
         self._stop_flag = False
+        self._suppress_inner_progress = False
+        self._suppress_inner_chart = False
 
     def request_stop(self):
         self._stop_flag = True
@@ -141,6 +143,9 @@ class _ItermTestWorker(QObject):
             logger.error(f"{e}")
             self.log_message.emit(f"[ERROR] {e}")
             self.test_finished.emit(False)
+        finally:
+            self._suppress_inner_progress = False
+            self._suppress_inner_chart = False
 
     def single_iterm_test(self, vbat_channel, current_channel, voreg, average_time):
         from instruments.power.keysight.n6705c_datalog_process import parse_dlog_binary
@@ -221,12 +226,14 @@ class _ItermTestWorker(QObject):
                 return None
             elapsed = time.time() - (wait_end - arb_total_time - 5)
             pct = min(int(elapsed / arb_total_time * 90), 90)
-            self.progress.emit(pct)
+            if not self._suppress_inner_progress:
+                self.progress.emit(pct)
             time.sleep(0.5)
 
         msg = "Step 7: Downloading Datalog data (dlog)..."
         logger.debug(msg)
-        self.progress.emit(92)
+        if not self._suppress_inner_progress:
+            self.progress.emit(92)
 
         raw_dlog = self._n6705c.read_mmem_data(dlog_file)
 
@@ -289,22 +296,26 @@ class _ItermTestWorker(QObject):
             f"duration={timestamps[-1]:.2f}s"
         )
 
-        self.chart_clear.emit()
-        self.progress.emit(95)
+        if not self._suppress_inner_chart:
+            self.chart_clear.emit()
+        if not self._suppress_inner_progress:
+            self.progress.emit(95)
 
         msg = "Step 9: Analyzing current curve to find termination current..."
         logger.debug(msg)
 
         iterm = self._analyze_iterm_from_curve(timestamps, currents, voltages, voreg, average_time)
 
-        self.progress.emit(100)
+        if not self._suppress_inner_progress:
+            self.progress.emit(100)
         return iterm
 
     def _analyze_iterm_from_curve(self, timestamps, currents, voltages, voreg, average_time):
         if len(currents) < 10:
             logger.error("Not enough data points to analyse.")
             self.log_message.emit("[ERROR] Not enough data points to analyse.")
-            self.chart_series_data.emit(timestamps, currents, -1.0, 0.0, 0.0)
+            if not self._suppress_inner_chart:
+                self.chart_series_data.emit(timestamps, currents, -1.0, 0.0, 0.0)
             return None
 
         total = len(currents)
@@ -326,7 +337,8 @@ class _ItermTestWorker(QObject):
         if post_term_block is None:
             logger.info("No post-termination region found.")
             self.log_message.emit("[WARN] No post-termination region found.")
-            self.chart_series_data.emit(timestamps, currents, -1.0, 0.0, 0.0)
+            if not self._suppress_inner_chart:
+                self.chart_series_data.emit(timestamps, currents, -1.0, 0.0, 0.0)
             return None
 
         plateau_blocks = block_avgs[post_term_block:post_term_block + 10]
@@ -347,7 +359,8 @@ class _ItermTestWorker(QObject):
         if t_term_idx is None:
             logger.info("No termination point found in current curve.")
             self.log_message.emit("[WARN] No termination point found in current curve.")
-            self.chart_series_data.emit(timestamps, currents, -1.0, 0.0, 0.0)
+            if not self._suppress_inner_chart:
+                self.chart_series_data.emit(timestamps, currents, -1.0, 0.0, 0.0)
             return None
 
         t_term = timestamps[t_term_idx]
@@ -370,7 +383,8 @@ class _ItermTestWorker(QObject):
             f"{_fmt_val(iterm * 1000.0)} mA"
         )
 
-        self.chart_series_data.emit(timestamps, currents, t_term, iterm, v_term)
+        if not self._suppress_inner_chart:
+            self.chart_series_data.emit(timestamps, currents, t_term, iterm, v_term)
 
         return iterm
 
@@ -413,6 +427,8 @@ class _ItermTestWorker(QObject):
         iterms = []
         default_iterm = None
 
+        self._suppress_inner_progress = True
+        self._suppress_inner_chart = True
         default_iterm_val = self.single_iterm_test(vbat_channel, current_channel, voreg, average_time)
         if default_iterm_val is not None:
             default_iterm = abs(default_iterm_val) * 1000.0
