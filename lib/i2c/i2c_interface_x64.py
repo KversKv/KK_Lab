@@ -71,6 +71,18 @@ class I2CInterface:
             print(f"I2C接口初始化失败: {e}")
             self.initialized = False
             return False
+
+    @staticmethod
+    def _normalize_width_flag(width_flag):
+        if isinstance(width_flag, I2CWidthFlag):
+            return width_flag
+        _INT_TO_FLAG = {8: I2CWidthFlag.BIT_8, 10: I2CWidthFlag.BIT_10, 32: I2CWidthFlag.BIT_32}
+        if width_flag in _INT_TO_FLAG:
+            return _INT_TO_FLAG[width_flag]
+        try:
+            return I2CWidthFlag(width_flag)
+        except ValueError:
+            raise ValueError(f"Invalid width_flag: {width_flag}")
     
     def read(self, device_addr, reg_addr, width_flag):
         """
@@ -89,13 +101,7 @@ class I2CInterface:
                 raise Exception("I2C接口未初始化成功")
         
         try:
-            if width_flag == 8:
-                width_flag = I2CWidthFlag.BIT_8
-            elif width_flag == 10:
-                width_flag = I2CWidthFlag.BIT_10
-            elif width_flag == 32:
-                width_flag = I2CWidthFlag.BIT_32
-            
+            width_flag = self._normalize_width_flag(width_flag)
             return self.i2c.read(
                 self.speed_mode,
                 device_addr,
@@ -120,12 +126,7 @@ class I2CInterface:
                 raise Exception("I2C接口未初始化成功")
         
         try:
-            if width_flag == 8:
-                width_flag = I2CWidthFlag.BIT_8
-            elif width_flag == 10:
-                width_flag = I2CWidthFlag.BIT_10
-            elif width_flag == 32:
-                width_flag = I2CWidthFlag.BIT_32
+            width_flag = self._normalize_width_flag(width_flag)
             self.i2c.write(
                 self.speed_mode,
                 device_addr,

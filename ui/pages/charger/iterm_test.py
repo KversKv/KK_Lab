@@ -547,7 +547,9 @@ class ItermTestUI(QWidget):
         lbl_width = QLabel("IIC Width")
         lbl_width.setObjectName("fieldLabel")
         self.iic_width_combo = DarkComboBox()
-        self.iic_width_combo.addItems(["8bit", "16bit"])
+        self.iic_width_combo.addItem("8BIT", I2CWidthFlag.BIT_8)
+        self.iic_width_combo.addItem("10BIT", I2CWidthFlag.BIT_10)
+        self.iic_width_combo.addItem("32BIT", I2CWidthFlag.BIT_32)
 
         lbl_ch = QLabel("Measure Channel")
         lbl_ch.setObjectName("fieldLabel")
@@ -793,11 +795,7 @@ class ItermTestUI(QWidget):
             self.append_log("[ERROR] Invalid hex address.")
             return
 
-        width_text = self.iic_width_combo.currentText()
-        iic_width = (
-            I2CWidthFlag.IIC_8BIT if width_text == "8bit"
-            else I2CWidthFlag.IIC_16BIT
-        )
+        iic_width = self.iic_width_combo.currentData()
 
         config = {
             "device_addr": device_addr,
@@ -911,7 +909,7 @@ class ItermTestUI(QWidget):
         return {
             "device_addr": device_addr,
             "iterm_reg": iterm_reg,
-            "iic_width": self.iic_width_combo.currentText(),
+            "iic_width": self.iic_width_combo.currentData(),
             "measure_channel": int(self.measure_channel_combo.currentText()),
             "settle_time_ms": self.settle_time_spin.value(),
             "tolerance_pct": self.tolerance_spin.value(),

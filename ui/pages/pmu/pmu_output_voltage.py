@@ -814,9 +814,9 @@ class PMUOutputVoltageUI(QWidget):
         lbl_width = QLabel("Width Flag")
         lbl_width.setObjectName("fieldLabel")
         self.iic_width_flag_combo = DarkComboBox()
-        self.iic_width_flag_combo.addItem("BIT_8  (8-bit addr, 16-bit data)", 8)
-        self.iic_width_flag_combo.addItem("BIT_10 (10-bit addr, 16-bit data)", 10)
-        self.iic_width_flag_combo.addItem("BIT_32 (32-bit addr, 32-bit data)", 32)
+        self.iic_width_flag_combo.addItem("8BIT", 0)
+        self.iic_width_flag_combo.addItem("10BIT", 1)
+        self.iic_width_flag_combo.addItem("32BIT", 2)
         self.iic_width_flag_combo.setCurrentIndex(1)
 
         lbl_min = QLabel("Min Code (Hex)")

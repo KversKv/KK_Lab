@@ -540,7 +540,9 @@ class StatusRegisterTestUI(QWidget):
         lbl_width = QLabel("IIC Width")
         lbl_width.setObjectName("fieldLabel")
         self.iic_width_combo = DarkComboBox()
-        self.iic_width_combo.addItems(["8bit", "16bit"])
+        self.iic_width_combo.addItem("8BIT", I2CWidthFlag.BIT_8)
+        self.iic_width_combo.addItem("10BIT", I2CWidthFlag.BIT_10)
+        self.iic_width_combo.addItem("32BIT", I2CWidthFlag.BIT_32)
 
         self.continuous_check = QCheckBox("Continuous Polling")
         self.continuous_check.setChecked(True)
@@ -756,8 +758,7 @@ class StatusRegisterTestUI(QWidget):
             self.append_log("[ERROR] Invalid device address.")
             return
 
-        width_text = self.iic_width_combo.currentText()
-        iic_width = I2CWidthFlag.IIC_8BIT if width_text == "8bit" else I2CWidthFlag.IIC_16BIT
+        iic_width = self.iic_width_combo.currentData()
 
         config = {
             "device_addr": device_addr,
@@ -854,7 +855,7 @@ class StatusRegisterTestUI(QWidget):
             device_addr = 0
         return {
             "device_addr": device_addr,
-            "iic_width": self.iic_width_combo.currentText(),
+            "iic_width": self.iic_width_combo.currentData(),
             "continuous": self.continuous_check.isChecked(),
             "poll_interval_ms": self.poll_interval_spin.value(),
         }
