@@ -9,8 +9,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QPixmap, QImage
 from ui.widgets.dark_combobox import DarkComboBox
-from instruments.scopes.keysight.dsox4034a import DSOX4034A
-from instruments.scopes.tektronix.mso64b import MSO64B
+from instruments.scopes.base import OscilloscopeController
 
 # DEBUG_MSO64B_FLAG = False
 # DEBUG_DSOX4034A_FLAG = True
@@ -169,12 +168,10 @@ class OscilloscopeBaseUI(QWidget):
         self.channel_cards = []
         self.channel_tab_buttons = []
         self.is_connected = False
-        self.rm = None
-        self.available_devices = []
 
         self.mso64b_top = mso64b_top
-        self.instrument = None
-        self.instrument_info = ""
+        self.controller = OscilloscopeController()
+        self.controller.set_log_callback(self.append_log)
 
         self.search_timer = QTimer(self)
         self.search_timer.timeout.connect(self._search_devices)
@@ -1158,25 +1155,7 @@ class OscilloscopeBaseUI(QWidget):
 
     def _search_devices(self):
         try:
-            import pyvisa
-            if self.rm is None:
-                try:
-                    self.rm = pyvisa.ResourceManager()
-                except Exception:
-                    self.rm = pyvisa.ResourceManager('@ni')
-
-            self.available_devices = list(self.rm.list_resources()) or []
-
-            scope_devices = []
-            for dev in self.available_devices:
-                try:
-                    instr = self.rm.open_resource(dev, timeout=2000)
-                    idn = instr.query('*IDN?').strip()
-                    instr.close()
-                    scope_devices.append(dev)
-                    self.append_log(f"[SCAN] {dev} → {idn}")
-                except Exception:
-                    pass
+            scope_devices = self.controller.search_visa_devices()
 
             self.visa_resource_combo.setEnabled(True)
             self.visa_resource_combo.clear()
@@ -1186,13 +1165,11 @@ class OscilloscopeBaseUI(QWidget):
                     self.visa_resource_combo.addItem(dev)
                 count = len(scope_devices)
                 self.set_system_status(f"● Found {count} device(s)")
-                self.append_log(f"[SYSTEM] Found {count} VISA device(s).")
                 self.visa_resource_combo.setCurrentIndex(0)
             else:
                 self.visa_resource_combo.addItem("No device found")
                 self.visa_resource_combo.setEnabled(False)
                 self.set_system_status("● No device found", is_error=True)
-                self.append_log("[SYSTEM] No VISA instrument found.")
         except Exception as e:
             self.set_system_status("● Search failed", is_error=True)
             self.append_log(f"[ERROR] Search failed: {str(e)}")
@@ -1203,7 +1180,7 @@ class OscilloscopeBaseUI(QWidget):
         self.title_label.setText(title)
 
     # ------------------------------------------------------------------
-    # Instrument control logic
+    # UI Event Handlers → delegate to OscilloscopeController
     # ------------------------------------------------------------------
 
     def _on_connect_toggle(self):
@@ -1220,29 +1197,19 @@ class OscilloscopeBaseUI(QWidget):
             return
 
         self.set_system_status("● Connecting")
-        self.append_log(f"[SYSTEM] Connecting to {resource}...")
         self.connect_btn.setEnabled(False)
 
         try:
-            is_visa = resource.upper().startswith("USB") or resource.upper().startswith("GPIB") or resource.upper().startswith("TCPIP")
-            if is_visa:
-                self.instrument = DSOX4034A(resource)
-            else:
-                self.instrument = MSO64B(resource)
+            result = self.controller.connect_instrument(resource)
+            self.update_connection_status(True, result["info"])
+            self.set_title(result["title"])
+            self.set_invert_enabled(result["is_dsox"])
 
-            instrument_info = self.instrument.identify_instrument()
-            self.instrument_info = instrument_info
-            self.update_connection_status(True, instrument_info)
-            self.set_title(instrument_info.split(",")[1].strip() if "," in instrument_info else instrument_info)
-            self.set_invert_enabled(isinstance(self.instrument, DSOX4034A))
-
-            if isinstance(self.instrument, MSO64B) and self.mso64b_top is not None:
-                self.mso64b_top.connect_instrument(resource, self.instrument)
+            if result["is_mso64b"] and self.mso64b_top is not None:
+                self.mso64b_top.connect_instrument(resource, self.controller.instrument)
             self.connection_changed.emit()
         except Exception as e:
             print(f"连接示波器失败: {str(e)}")
-            self.instrument = None
-            self.instrument_info = ""
             self.update_connection_status(False)
             self.set_system_status("● Connection failed", is_error=True)
             self.append_log(f"[ERROR] Connection failed: {e}")
@@ -1252,20 +1219,16 @@ class OscilloscopeBaseUI(QWidget):
 
     def _disconnect_instrument(self):
         self.set_system_status("● Disconnecting")
-        self.append_log("[SYSTEM] Disconnecting instrument...")
         self.connect_btn.setEnabled(False)
 
         try:
-            if self.instrument:
-                is_mso64b = isinstance(self.instrument, MSO64B)
-                self.instrument.disconnect()
-                self.instrument = None
-                self.instrument_info = ""
-                if is_mso64b and self.mso64b_top is not None:
-                    self.mso64b_top.mso64b = None
-                    self.mso64b_top.is_connected = False
-                    self.mso64b_top.visa_resource = ""
-                    self.mso64b_top.connection_changed.emit()
+            result = self.controller.disconnect_instrument()
+
+            if result["is_mso64b"] and self.mso64b_top is not None:
+                self.mso64b_top.mso64b = None
+                self.mso64b_top.is_connected = False
+                self.mso64b_top.visa_resource = ""
+                self.mso64b_top.connection_changed.emit()
 
             self.update_connection_status(False)
             self.set_invert_enabled(True)
@@ -1278,10 +1241,9 @@ class OscilloscopeBaseUI(QWidget):
             self.connect_btn.setEnabled(True)
 
     def _on_measure(self):
-        if not self.instrument:
+        if not self.controller.is_connected:
             return
 
-        self.append_log("[INFO] Starting measurements...")
         try:
             active_ch = 1
             for i, btn in enumerate(self.channel_tab_buttons):
@@ -1289,103 +1251,55 @@ class OscilloscopeBaseUI(QWidget):
                     active_ch = i + 1
                     break
 
-            measure_types = [
-                ('PK2PK', self.instrument.get_channel_pk2pk),
-                ('FREQUENCY', self.instrument.get_channel_frequency),
-                ('VMAX', self.instrument.get_channel_max),
-                ('VMIN', self.instrument.get_channel_min),
-            ]
-
-            for mtype, func in measure_types:
-                try:
-                    result = func(active_ch)
-                    self.update_measure_result(mtype, result)
-                    self.append_log(f"[MEASURE] CH{active_ch} {mtype}: {result}")
-                except Exception as e:
-                    self.append_log(f"[ERROR] CH{active_ch} {mtype} failed: {e}")
-
-            self.append_log("[INFO] Measurements complete.")
+            results = self.controller.measure_channel(active_ch)
+            for mtype, value in results.items():
+                self.update_measure_result(mtype, value)
         except Exception as e:
             self.append_log(f"[ERROR] Measurement failed: {e}")
 
     def _on_capture(self):
-        if not self.instrument:
+        if not self.controller.is_connected:
             self.append_log("[WARN] Instrument not connected.")
             return
 
         try:
             invert_checked = self.invert_btn.isChecked()
-            mode_text = "inverted background" if invert_checked else "original color"
-            self.append_log(f"[INFO] Capturing screenshot ({mode_text})...")
-            png_data = self.instrument.capture_screen_png(invert=invert_checked)
+            png_data = self.controller.capture_screen(invert=invert_checked)
 
             if png_data:
                 self.update_display_image(png_data)
-            else:
-                self.append_log("[WARN] No image data received.")
         except Exception as e:
             self.append_log(f"[ERROR] Screenshot capture failed: {e}")
 
     def _on_apply_settings(self):
-        if not self.instrument:
-            self.append_log("[WARN] Instrument not connected.")
-            return
-
-        self.append_log("[INFO] Applying settings to instrument...")
-        try:
-            try:
-                timebase_val = self.timebase_edit.value_in_seconds()
-                self.instrument.set_timebase_scale(timebase_val)
-                self.append_log(f"[SETTING] Timebase: {timebase_val} s/div")
-            except (ValueError, Exception) as e:
-                self.append_log(f"[ERROR] Timebase setting failed: {e}")
-
-            for ch_num in range(1, self.NUM_CHANNELS + 1):
-                try:
-                    settings = self.get_channel_settings(ch_num)
-                    if settings is None:
-                        continue
-
-                    self.instrument.set_channel_display(ch_num, settings['enabled'])
-
-                    if settings['enabled']:
-                        self.instrument.set_channel_scale(ch_num, settings['scale'])
-                        self.instrument.set_channel_offset(ch_num, settings['offset'])
-
-                    self.append_log(
-                        f"[SETTING] CH{ch_num}: {'ON' if settings['enabled'] else 'OFF'}, "
-                        f"Scale={settings['scale']} V/div, Offset={settings['offset']} V"
-                    )
-                except (ValueError, Exception) as e:
-                    self.append_log(f"[ERROR] CH{ch_num} setting failed: {e}")
-
-            try:
-                trigger = self.get_trigger_settings()
-                source_text = trigger['source']
-                trigger_level = trigger['level']
-                slope = trigger['slope']
-
-                if source_text.startswith("CH"):
-                    trigger_ch = int(source_text[2:])
-                    self.instrument.set_trigger_edge(trigger_ch, trigger_level, slope)
-                    self.append_log(
-                        f"[SETTING] Trigger: CH{trigger_ch}, Level={trigger_level} V, Slope={slope}"
-                    )
-            except (ValueError, Exception) as e:
-                self.append_log(f"[ERROR] Trigger setting failed: {e}")
-
-            self.append_log("[INFO] All settings applied successfully.")
-        except Exception as e:
-            self.append_log(f"[ERROR] Apply settings failed: {e}")
-
-    def _on_apply_timebase_only(self):
-        if not self.instrument:
+        if not self.controller.is_connected:
             self.append_log("[WARN] Instrument not connected.")
             return
 
         try:
             timebase_val = self.timebase_edit.value_in_seconds()
-            self.instrument.set_timebase_scale(timebase_val)
-            self.append_log(f"[SETTING] Timebase: {timebase_val} s/div")
+            channel_settings = [
+                self.get_channel_settings(ch_num)
+                for ch_num in range(1, self.NUM_CHANNELS + 1)
+            ]
+            trigger_settings = self.get_trigger_settings()
+
+            self.controller.apply_settings(
+                timebase_seconds=timebase_val,
+                channel_settings=channel_settings,
+                trigger_settings=trigger_settings,
+                num_channels=self.NUM_CHANNELS,
+            )
+        except Exception as e:
+            self.append_log(f"[ERROR] Apply settings failed: {e}")
+
+    def _on_apply_timebase_only(self):
+        if not self.controller.is_connected:
+            self.append_log("[WARN] Instrument not connected.")
+            return
+
+        try:
+            timebase_val = self.timebase_edit.value_in_seconds()
+            self.controller.apply_timebase_only(timebase_val)
         except (ValueError, Exception) as e:
             self.append_log(f"[ERROR] Timebase setting failed: {e}")

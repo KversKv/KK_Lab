@@ -923,14 +923,14 @@ class MainWindow(QMainWindow):
         else:
             self._remove_instrument_status("n6705c_b")
 
-        if self.oscilloscope_ui is not None and self.oscilloscope_ui.instrument is not None and self.oscilloscope_ui.instrument_info:
-            parts = [p.strip() for p in self.oscilloscope_ui.instrument_info.split(",")]
+        if self.oscilloscope_ui is not None and self.oscilloscope_ui.controller.is_connected and self.oscilloscope_ui.controller.instrument_info:
+            parts = [p.strip() for p in self.oscilloscope_ui.controller.instrument_info.split(",")]
             if len(parts) >= 3:
                 name = f"{parts[1]}  {parts[2]}"
             elif len(parts) >= 2:
                 name = parts[1]
             else:
-                name = self.oscilloscope_ui.instrument_info
+                name = self.oscilloscope_ui.controller.instrument_info
             self._remove_instrument_status("oscilloscope")
             self._add_instrument_status("oscilloscope", name)
         else:
@@ -1078,12 +1078,11 @@ class MainWindow(QMainWindow):
         if self.mso64b_top and self.mso64b_top.is_connected:
             self.mso64b_top.disconnect()
 
-        if self.oscilloscope_ui and self.oscilloscope_ui.instrument:
+        if self.oscilloscope_ui and self.oscilloscope_ui.controller.is_connected:
             try:
-                self.oscilloscope_ui.instrument.disconnect()
+                self.oscilloscope_ui.controller.disconnect_instrument()
             except Exception:
                 pass
-            self.oscilloscope_ui.instrument = None
 
         if self.visa_instrument:
             try:
