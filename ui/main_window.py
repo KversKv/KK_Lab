@@ -1260,58 +1260,107 @@ class MainWindow(QMainWindow):
                     self.channels[0]['voltage_value'].setText(f"{voltage:.4f}")
                     self.channels[0]['current_value'].setText(f"{current:.4f}")
 
+    def _cleanup_sub_ui(self, sub_ui, name):
+        try:
+            if hasattr(sub_ui, 'test_worker') and sub_ui.test_worker is not None:
+                logger.info(f"[CloseEvent] Stopping test worker: {name}")
+                if hasattr(sub_ui.test_worker, 'request_stop'):
+                    sub_ui.test_worker.request_stop()
+                elif hasattr(sub_ui.test_worker, 'stop'):
+                    sub_ui.test_worker.stop()
+            if hasattr(sub_ui, '_test_worker') and sub_ui._test_worker is not None:
+                logger.info(f"[CloseEvent] Stopping test worker: {name}")
+                if hasattr(sub_ui._test_worker, 'request_stop'):
+                    sub_ui._test_worker.request_stop()
+                elif hasattr(sub_ui._test_worker, 'stop'):
+                    sub_ui._test_worker.stop()
+            if hasattr(sub_ui, 'test_thread') and sub_ui.test_thread is not None:
+                logger.info(f"[CloseEvent] Waiting for test thread to finish: {name}")
+                sub_ui.test_thread.quit()
+                sub_ui.test_thread.wait(3000)
+                sub_ui.test_thread = None
+        except Exception as e:
+            logger.warning(f"[CloseEvent] Error stopping test thread for {name}: {e}")
+
+        try:
+            if hasattr(sub_ui, 'n6705c') and sub_ui.n6705c is not None:
+                logger.info(f"[CloseEvent] Disconnecting N6705C instrument: {name}")
+                if hasattr(sub_ui.n6705c, 'instr') and sub_ui.n6705c.instr:
+                    sub_ui.n6705c.instr.close()
+                sub_ui.n6705c = None
+        except Exception as e:
+            logger.warning(f"[CloseEvent] Error disconnecting N6705C for {name}: {e}")
+
+        try:
+            if hasattr(sub_ui, 'rm') and sub_ui.rm is not None:
+                logger.info(f"[CloseEvent] Closing VISA ResourceManager: {name}")
+                sub_ui.rm.close()
+                sub_ui.rm = None
+        except Exception as e:
+            logger.warning(f"[CloseEvent] Error closing ResourceManager for {name}: {e}")
+
     def closeEvent(self, event):
+        logger.info("[CloseEvent] Window close requested, disconnecting all instruments...")
+
         if self.n6705c_top:
-            self.n6705c_top.disconnect_all()
+            logger.info("[CloseEvent] Disconnecting N6705C Top (all channels)...")
+            try:
+                self.n6705c_top.disconnect_all()
+            except Exception as e:
+                logger.warning(f"[CloseEvent] Error disconnecting N6705C Top: {e}")
 
         if self.mso64b_top and self.mso64b_top.is_connected:
-            self.mso64b_top.disconnect()
+            logger.info("[CloseEvent] Disconnecting MSO64B oscilloscope...")
+            try:
+                self.mso64b_top.disconnect()
+            except Exception as e:
+                logger.warning(f"[CloseEvent] Error disconnecting MSO64B: {e}")
 
         if self.oscilloscope_ui and self.oscilloscope_ui.controller.is_connected:
+            logger.info("[CloseEvent] Disconnecting oscilloscope controller...")
             try:
                 self.oscilloscope_ui.controller.disconnect_instrument()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"[CloseEvent] Error disconnecting oscilloscope controller: {e}")
 
         if self.visa_instrument:
+            logger.info("[CloseEvent] Disconnecting VISA instrument...")
             try:
                 self.visa_instrument.disconnect()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"[CloseEvent] Error disconnecting VISA instrument: {e}")
 
         if self.vt6002_chamber:
+            logger.info("[CloseEvent] Closing VT6002 chamber...")
             try:
                 self.vt6002_chamber.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"[CloseEvent] Error closing VT6002 chamber: {e}")
             self.vt6002_chamber = None
 
         if self.vt6002_chamber_ui is not None:
             try:
                 if self.vt6002_chamber_ui.vt6002 is not None:
+                    logger.info("[CloseEvent] Closing VT6002 chamber UI instrument...")
                     self.vt6002_chamber_ui.vt6002.close()
                     self.vt6002_chamber_ui.vt6002 = None
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"[CloseEvent] Error closing VT6002 chamber UI: {e}")
 
         if self.consumption_test_ui is not None:
-            try:
-                if self.consumption_test_ui.n6705c is not None:
-                    if hasattr(self.consumption_test_ui.n6705c, 'instr') and self.consumption_test_ui.n6705c.instr:
-                        self.consumption_test_ui.n6705c.instr.close()
-                    self.consumption_test_ui.n6705c = None
-            except Exception:
-                pass
+            self._cleanup_sub_ui(self.consumption_test_ui, "ConsumptionTestUI")
 
-        for ui_widget in [
-            self.n6705c_ui, self.n6705c_double_ui,
-            self.n6705c_datalog_ui, self.consumption_test_ui,
+        for ui_name, ui_widget in [
+            ("N6705CUI", self.n6705c_ui),
+            ("N6705CDoubleUI", self.n6705c_double_ui),
+            ("N6705CDatalogUI", self.n6705c_datalog_ui),
         ]:
             if ui_widget is not None and hasattr(ui_widget, 'rm') and ui_widget.rm is not None:
+                logger.info(f"[CloseEvent] Closing VISA ResourceManager: {ui_name}")
                 try:
                     ui_widget.rm.close()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"[CloseEvent] Error closing ResourceManager for {ui_name}: {e}")
                 ui_widget.rm = None
 
         if self.pmu_test_ui is not None:
@@ -1320,11 +1369,17 @@ class MainWindow(QMainWindow):
                 'is_gain_ui', 'oscp_ui', 'gpadc_test_ui', 'clk_test_ui',
             ]:
                 sub_ui = getattr(self.pmu_test_ui, attr, None)
-                if sub_ui is not None and hasattr(sub_ui, 'rm') and sub_ui.rm is not None:
-                    try:
-                        sub_ui.rm.close()
-                    except Exception:
-                        pass
-                    sub_ui.rm = None
+                if sub_ui is not None:
+                    self._cleanup_sub_ui(sub_ui, f"PMU.{attr}")
 
+        if self.charger_test_ui is not None:
+            for attr in [
+                'config_traverse_ui', 'status_register_ui',
+                'iterm_ui', 'regulation_voltage_ui',
+            ]:
+                sub_ui = getattr(self.charger_test_ui, attr, None)
+                if sub_ui is not None:
+                    self._cleanup_sub_ui(sub_ui, f"Charger.{attr}")
+
+        logger.info("[CloseEvent] All instruments disconnected, closing window.")
         super().closeEvent(event)

@@ -389,6 +389,7 @@ class _ItermTestWorker(QObject):
 
         default_reg = i2c.read(device_addr, iterm_reg, iic_width)
         data_base = default_reg & (~(mask << lsb))
+        default_code = (default_reg >> lsb) & mask
 
         total_points = max_code - min_code + 1
         if total_points <= 0:
@@ -410,6 +411,12 @@ class _ItermTestWorker(QObject):
 
         codes = []
         iterms = []
+        default_iterm = None
+
+        default_iterm_val = self.single_iterm_test(vbat_channel, current_channel, voreg, average_time)
+        if default_iterm_val is not None:
+            default_iterm = abs(default_iterm_val) * 1000.0
+            self.log_message.emit(f"[TEST] Default Iterm: {default_iterm:.4f} mA (code=0x{default_code:X})")
 
         for idx, code in enumerate(range(min_code, max_code + 1)):
             if self._stop_flag:
@@ -446,6 +453,9 @@ class _ItermTestWorker(QObject):
                 self.log_message.emit(f"[WARN] {msg}")
 
             result = {"progress": int((idx + 1) / total_points * 100)}
+            if default_iterm is not None:
+                result["default_value"] = default_iterm
+                result["default_code"] = default_code
             if len(iterms) >= 1:
                 result["min_value"] = min(iterms)
                 result["max_value"] = max(iterms)
@@ -454,6 +464,47 @@ class _ItermTestWorker(QObject):
             if len(iterms) >= 2:
                 avg_step = (iterms[-1] - iterms[0]) / (len(iterms) - 1)
                 result["step_value"] = avg_step
+
+                full_scale = iterms[-1] - iterms[0]
+                if abs(full_scale) > 1e-9:
+                    n = len(iterms)
+                    ideal_step = full_scale / (n - 1)
+                    max_dev = 0.0
+                    for j in range(n):
+                        ideal_v = iterms[0] + ideal_step * j
+                        dev = abs(iterms[j] - ideal_v)
+                        if dev > max_dev:
+                            max_dev = dev
+                    result["linearity"] = max_dev / abs(full_scale) * 100.0
+
+                    sum_x = 0.0
+                    sum_y = 0.0
+                    sum_xy = 0.0
+                    sum_x2 = 0.0
+                    for j in range(n):
+                        x = float(codes[j])
+                        y = iterms[j]
+                        sum_x += x
+                        sum_y += y
+                        sum_xy += x * y
+                        sum_x2 += x * x
+                    denom = n * sum_x2 - sum_x * sum_x
+                    if abs(denom) > 1e-15:
+                        slope = (n * sum_xy - sum_x * sum_y) / denom
+                        intercept = (sum_y - slope * sum_x) / n
+                        max_line_dev = 0.0
+                        for j in range(n):
+                            fitted = slope * codes[j] + intercept
+                            line_dev = abs(iterms[j] - fitted)
+                            if line_dev > max_line_dev:
+                                max_line_dev = line_dev
+                        result["line_value"] = max_line_dev / abs(full_scale) * 100.0
+                    else:
+                        result["line_value"] = 0.0
+                else:
+                    result["linearity"] = 0.0
+                    result["line_value"] = 0.0
+
             result["unit"] = "mA"
             self.traverse_result_update.emit(result)
 
@@ -814,16 +865,43 @@ class ItermTestUI(QWidget):
         self.chart_widget = self._create_chart_widget()
         chart_outer_layout.addWidget(self.chart_widget, 1)
 
-        stat_layout = QHBoxLayout()
-        stat_layout.setSpacing(10)
+        self.single_stat_layout = QHBoxLayout()
+        self.single_stat_layout.setSpacing(10)
 
         self.iterm_card = self._create_mini_stat("Iterm", "---")
         self.voreg_card = self._create_mini_stat("Voreg", "---")
 
-        stat_layout.addWidget(self.iterm_card["frame"])
-        stat_layout.addWidget(self.voreg_card["frame"])
+        self.single_stat_layout.addWidget(self.iterm_card["frame"])
+        self.single_stat_layout.addWidget(self.voreg_card["frame"])
 
-        chart_outer_layout.addLayout(stat_layout)
+        self.traverse_stat_layout = QHBoxLayout()
+        self.traverse_stat_layout.setSpacing(10)
+
+        self.default_iterm_card = self._create_mini_stat("默认值", "---")
+        self.min_iterm_card = self._create_mini_stat("最小值", "---")
+        self.max_iterm_card = self._create_mini_stat("最大值", "---")
+        self.step_iterm_card = self._create_mini_stat("步进", "---")
+        self.line_iterm_card = self._create_mini_stat("直线度", "---")
+        self.linearity_iterm_card = self._create_mini_stat("线性度", "---")
+
+        self.traverse_stat_layout.addWidget(self.default_iterm_card["frame"])
+        self.traverse_stat_layout.addWidget(self.min_iterm_card["frame"])
+        self.traverse_stat_layout.addWidget(self.max_iterm_card["frame"])
+        self.traverse_stat_layout.addWidget(self.step_iterm_card["frame"])
+        self.traverse_stat_layout.addWidget(self.line_iterm_card["frame"])
+        self.traverse_stat_layout.addWidget(self.linearity_iterm_card["frame"])
+
+        self.stat_container = QWidget()
+        self.stat_container.setStyleSheet("background: transparent;")
+        self.stat_container_layout = QVBoxLayout(self.stat_container)
+        self.stat_container_layout.setContentsMargins(0, 0, 0, 0)
+        self.stat_container_layout.setSpacing(0)
+        self.stat_container_layout.addLayout(self.single_stat_layout)
+        self.stat_container_layout.addLayout(self.traverse_stat_layout)
+
+        self._set_traverse_stat_visible(False)
+
+        chart_outer_layout.addWidget(self.stat_container)
 
         right_layout.addWidget(self.chart_frame, 4)
 
@@ -1102,6 +1180,13 @@ class ItermTestUI(QWidget):
         lay.addWidget(val)
         return {"frame": frame, "label": lbl, "value": val}
 
+    def _set_traverse_stat_visible(self, traverse):
+        for card in [self.default_iterm_card, self.min_iterm_card, self.max_iterm_card,
+                     self.step_iterm_card, self.line_iterm_card, self.linearity_iterm_card]:
+            card["frame"].setVisible(traverse)
+        for card in [self.iterm_card, self.voreg_card]:
+            card["frame"].setVisible(not traverse)
+
     def _init_ui_elements(self):
         self._update_connect_button_state(False)
         logger.info("Iterm Test ready.")
@@ -1116,7 +1201,23 @@ class ItermTestUI(QWidget):
         self.export_result_btn.clicked.connect(self._on_export_csv)
         self.msb_edit.textChanged.connect(self._update_code_range)
         self.lsb_edit.textChanged.connect(self._update_code_range)
+        self.test_item_combo.currentTextChanged.connect(self._on_test_item_changed)
         self._update_code_range()
+
+    def _on_test_item_changed(self, text):
+        is_traverse = text != "Single Iterm Test"
+        self._set_traverse_stat_visible(is_traverse)
+        if HAS_QTCHARTS and hasattr(self, 'axis_x'):
+            if is_traverse:
+                self.axis_x.setTitleText("Register Code")
+                self.axis_x.setLabelFormat("%d")
+                self.axis_y.setTitleText("Iterm (mA)")
+                self.chart_title.setText("\u2248 Iterm vs Register Code")
+            else:
+                self.axis_x.setTitleText("Time (s)")
+                self.axis_x.setLabelFormat("%.1f")
+                self.axis_y.setTitleText("Current (A)")
+                self.chart_title.setText("\u2248 Current vs Time")
 
     def _update_code_range(self):
         try:
@@ -1338,12 +1439,14 @@ class ItermTestUI(QWidget):
         test_item = self.test_item_combo.currentText()
 
         if test_item == "Single Iterm Test":
+            self._set_traverse_stat_visible(False)
             if HAS_QTCHARTS and hasattr(self, 'axis_x'):
                 self.axis_x.setTitleText("Time (s)")
                 self.axis_x.setLabelFormat("%.1f")
                 self.axis_y.setTitleText("Current (A)")
                 self.chart_title.setText("\u2248 Current vs Time")
         else:
+            self._set_traverse_stat_visible(True)
             if HAS_QTCHARTS and hasattr(self, 'axis_x'):
                 self.axis_x.setTitleText("Register Code")
                 self.axis_x.setLabelFormat("%d")
@@ -1498,9 +1601,21 @@ class ItermTestUI(QWidget):
             self.axis_y.setRange(min_y - margin_y, max_y + margin_y)
 
     def _on_traverse_result_update(self, result):
+        if 'default_value' in result:
+            code_str = f"(0x{result['default_code']:X})" if 'default_code' in result else ""
+            self.default_iterm_card["value"].setText(f"{result['default_value']:.4f} mA{code_str}")
+        if 'min_value' in result:
+            code_str = f" (0x{result['valid_min_code']:X})" if 'valid_min_code' in result else ""
+            self.min_iterm_card["value"].setText(f"{result['min_value']:.4f} mA{code_str}")
+        if 'max_value' in result:
+            code_str = f" (0x{result['valid_max_code']:X})" if 'valid_max_code' in result else ""
+            self.max_iterm_card["value"].setText(f"{result['max_value']:.4f} mA{code_str}")
         if 'step_value' in result:
-            self.iterm_card["value"].setText(f"{_fmt_val(result['step_value'])} mA/code")
-            self.iterm_card["label"].setText("Step")
+            self.step_iterm_card["value"].setText(f"{result['step_value']:.4f} mA/code")
+        if 'line_value' in result:
+            self.line_iterm_card["value"].setText(f"{result['line_value']:.4f}%")
+        if 'linearity' in result:
+            self.linearity_iterm_card["value"].setText(f"{result['linearity']:.4f}%")
         if 'progress' in result:
             self.set_progress(result['progress'])
 
@@ -1612,6 +1727,12 @@ class ItermTestUI(QWidget):
         self.iterm_card["label"].setText("Iterm")
         self.voreg_card["value"].setText("---")
         self.voreg_card["label"].setText("Voreg")
+        self.default_iterm_card["value"].setText("---")
+        self.min_iterm_card["value"].setText("---")
+        self.max_iterm_card["value"].setText("---")
+        self.step_iterm_card["value"].setText("---")
+        self.line_iterm_card["value"].setText("---")
+        self.linearity_iterm_card["value"].setText("---")
         if HAS_QTCHARTS:
             if hasattr(self, 'current_series'):
                 self.current_series.clear()
@@ -1625,6 +1746,21 @@ class ItermTestUI(QWidget):
             self.iterm_card["value"].setText(str(result["iterm"]))
         if "voreg" in result:
             self.voreg_card["value"].setText(str(result["voreg"]))
+        if "default_value" in result:
+            code_str = f"(0x{result['default_code']:X})" if 'default_code' in result else ""
+            self.default_iterm_card["value"].setText(f"{result['default_value']:.4f} mA{code_str}")
+        if "min_value" in result:
+            code_str = f" (0x{result['valid_min_code']:X})" if 'valid_min_code' in result else ""
+            self.min_iterm_card["value"].setText(f"{result['min_value']:.4f} mA{code_str}")
+        if "max_value" in result:
+            code_str = f" (0x{result['valid_max_code']:X})" if 'valid_max_code' in result else ""
+            self.max_iterm_card["value"].setText(f"{result['max_value']:.4f} mA{code_str}")
+        if "step_value" in result:
+            self.step_iterm_card["value"].setText(f"{result['step_value']:.4f} mA/code")
+        if "line_value" in result:
+            self.line_iterm_card["value"].setText(f"{result['line_value']:.4f}%")
+        if "linearity" in result:
+            self.linearity_iterm_card["value"].setText(f"{result['linearity']:.4f}%")
 
 
 if __name__ == "__main__":
