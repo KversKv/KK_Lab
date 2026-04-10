@@ -415,7 +415,15 @@ class ItermTestUI(QWidget):
         self._build_connection_card()
         left_layout.addWidget(self.connection_card)
 
-        self.param_card = CardFrame("\u21c4 TEST PARAMETERS")
+        self.test_item_card = CardFrame("\u2630 TEST ITEM")
+        self._build_test_item_card()
+        left_layout.addWidget(self.test_item_card)
+
+        self.channel_config_card = CardFrame("\u2637 TEST CHANNEL CONFIG")
+        self._build_channel_config_card()
+        left_layout.addWidget(self.channel_config_card)
+
+        self.param_card = CardFrame("\u21c4 REGISTER RANGE")
         self._build_param_card()
         left_layout.addWidget(self.param_card)
 
@@ -532,15 +540,64 @@ class ItermTestUI(QWidget):
         self.connect_btn.setProperty("connected", "false")
         layout.addWidget(self.connect_btn)
 
-    def _build_param_card(self):
-        layout = self.param_card.main_layout
+    def _build_test_item_card(self):
+        layout = self.test_item_card.main_layout
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(10)
 
-        lbl_dev = QLabel("Device Addr (hex)")
-        lbl_dev.setObjectName("fieldLabel")
-        self.device_addr_edit = QLineEdit("0x6A")
+        test_item_label = QLabel("Test Item")
+        test_item_label.setObjectName("fieldLabel")
+
+        self.test_item_combo = DarkComboBox()
+        self.test_item_combo.addItems(["Single Iterm Test", "Traverse Iterm Test"])
+
+        grid.addWidget(test_item_label, 0, 0)
+        grid.addWidget(self.test_item_combo, 0, 1)
+
+        layout.addLayout(grid)
+
+    def _build_channel_config_card(self):
+        layout = self.channel_config_card.main_layout
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(10)
+
+        vbat_ch_label = QLabel("Vbat Channel")
+        vbat_ch_label.setObjectName("fieldLabel")
+
+        self.vbat_channel_combo = DarkComboBox()
+        self.vbat_channel_combo.addItems(["CH 1", "CH 2", "CH 3", "CH 4"])
+
+        charge_ch_label = QLabel("Current Channel")
+        charge_ch_label.setObjectName("fieldLabel")
+
+        self.measure_channel_combo = DarkComboBox()
+        self.measure_channel_combo.addItems(["CH 1", "CH 2", "CH 3", "CH 4"])
+
+        avg_time_label = QLabel("Average Time (ms)")
+        avg_time_label.setObjectName("fieldLabel")
+
+        self.avg_time_spin = QSpinBox()
+        self.avg_time_spin.setRange(1, 60000)
+        self.avg_time_spin.setValue(100)
+        self.avg_time_spin.setSingleStep(10)
+
+        grid.addWidget(vbat_ch_label, 0, 0)
+        grid.addWidget(self.vbat_channel_combo, 0, 1)
+        grid.addWidget(charge_ch_label, 1, 0)
+        grid.addWidget(self.measure_channel_combo, 1, 1)
+        grid.addWidget(avg_time_label, 2, 0)
+        grid.addWidget(self.avg_time_spin, 2, 1)
+
+        layout.addLayout(grid)
+
+    def _build_param_card(self):
+        layout = self.param_card.main_layout
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(10)
 
         lbl_width = QLabel("IIC Width")
         lbl_width.setObjectName("fieldLabel")
@@ -548,43 +605,47 @@ class ItermTestUI(QWidget):
         self.iic_width_combo.addItem("8 BIT", I2CWidthFlag.BIT_8)
         self.iic_width_combo.addItem("10 BIT", I2CWidthFlag.BIT_10)
         self.iic_width_combo.addItem("32 BIT", I2CWidthFlag.BIT_32)
+        self.iic_width_combo.setCurrentIndex(1)
 
-        lbl_ch = QLabel("Measure Channel")
-        lbl_ch.setObjectName("fieldLabel")
-        self.measure_channel_combo = DarkComboBox()
-        self.measure_channel_combo.addItems(["1", "2", "3", "4"])
+        lbl_dev = QLabel("Device Addr (Hex)")
+        lbl_dev.setObjectName("fieldLabel")
+        self.device_addr_edit = QLineEdit("0x1A")
 
-        lbl_reg = QLabel("Iterm Reg (hex)")
-        lbl_reg.setObjectName("fieldLabel")
-        self.iterm_reg_edit = QLineEdit("0x03")
+        lbl_reg_addr = QLabel("Reg Addr (Hex)")
+        lbl_reg_addr.setObjectName("fieldLabel")
+        self.reg_addr_edit = QLineEdit("0x0009")
 
-        lbl_settle = QLabel("Settle Time (ms)")
-        lbl_settle.setObjectName("fieldLabel")
-        self.settle_time_spin = QSpinBox()
-        self.settle_time_spin.setRange(50, 10000)
-        self.settle_time_spin.setValue(500)
-        self.settle_time_spin.setSingleStep(50)
+        lbl_msb = QLabel("MSB")
+        lbl_msb.setObjectName("fieldLabel")
+        self.msb_edit = QLineEdit("9")
 
-        lbl_tol = QLabel("Tolerance (%)")
-        lbl_tol.setObjectName("fieldLabel")
-        self.tolerance_spin = QDoubleSpinBox()
-        self.tolerance_spin.setRange(1.0, 50.0)
-        self.tolerance_spin.setValue(15.0)
-        self.tolerance_spin.setDecimals(1)
-        self.tolerance_spin.setSingleStep(1.0)
+        lbl_lsb = QLabel("LSB")
+        lbl_lsb.setObjectName("fieldLabel")
+        self.lsb_edit = QLineEdit("5")
 
-        grid.addWidget(lbl_dev, 0, 0)
-        grid.addWidget(self.device_addr_edit, 0, 1)
-        grid.addWidget(lbl_width, 1, 0)
-        grid.addWidget(self.iic_width_combo, 1, 1)
-        grid.addWidget(lbl_ch, 2, 0)
-        grid.addWidget(self.measure_channel_combo, 2, 1)
-        grid.addWidget(lbl_reg, 3, 0)
-        grid.addWidget(self.iterm_reg_edit, 3, 1)
-        grid.addWidget(lbl_settle, 4, 0)
-        grid.addWidget(self.settle_time_spin, 4, 1)
-        grid.addWidget(lbl_tol, 5, 0)
-        grid.addWidget(self.tolerance_spin, 5, 1)
+        lbl_min_code = QLabel("Min Code")
+        lbl_min_code.setObjectName("fieldLabel")
+        self.min_code_edit = QLineEdit("0x00")
+
+        lbl_max_code = QLabel("Max Code")
+        lbl_max_code.setObjectName("fieldLabel")
+        self.max_code_edit = QLineEdit("0xFF")
+
+        grid.addWidget(lbl_width, 0, 0)
+        grid.addWidget(self.iic_width_combo, 0, 1)
+        grid.addWidget(lbl_dev, 1, 0)
+        grid.addWidget(self.device_addr_edit, 1, 1)
+        grid.addWidget(lbl_reg_addr, 2, 0)
+        grid.addWidget(self.reg_addr_edit, 2, 1)
+        grid.addWidget(lbl_msb, 3, 0)
+        grid.addWidget(self.msb_edit, 3, 1)
+        grid.addWidget(lbl_lsb, 4, 0)
+        grid.addWidget(self.lsb_edit, 4, 1)
+        grid.addWidget(lbl_min_code, 5, 0)
+        grid.addWidget(self.min_code_edit, 5, 1)
+        grid.addWidget(lbl_max_code, 6, 0)
+        grid.addWidget(self.max_code_edit, 6, 1)
+
         layout.addLayout(grid)
 
     def _create_mini_stat(self, label_text, value_text):
@@ -794,20 +855,26 @@ class ItermTestUI(QWidget):
 
         try:
             device_addr = int(self.device_addr_edit.text(), 16)
-            iterm_reg = int(self.iterm_reg_edit.text(), 16)
+            reg_addr = int(self.reg_addr_edit.text(), 16)
+            msb = int(self.msb_edit.text())
+            lsb = int(self.lsb_edit.text())
+            min_code = int(self.min_code_edit.text(), 16)
+            max_code = int(self.max_code_edit.text(), 16)
         except ValueError:
-            self.append_log("[ERROR] Invalid hex address.")
+            self.append_log("[ERROR] Invalid hex address or parameter.")
             return
 
         iic_width = self.iic_width_combo.currentData()
 
         config = {
             "device_addr": device_addr,
-            "iterm_reg": iterm_reg,
+            "iterm_reg": reg_addr,
             "iic_width": iic_width,
-            "measure_channel": int(self.measure_channel_combo.currentText()),
-            "settle_time_ms": self.settle_time_spin.value(),
-            "tolerance_pct": self.tolerance_spin.value(),
+            "measure_channel": int(self.measure_channel_combo.currentText().replace("CH ", "")),
+            "msb": msb,
+            "lsb": lsb,
+            "min_code": min_code,
+            "max_code": max_code,
         }
 
         self.set_test_running(True)
@@ -876,11 +943,16 @@ class ItermTestUI(QWidget):
         self.start_test_btn.style().polish(self.start_test_btn)
         self.start_test_btn.update()
         self.device_addr_edit.setEnabled(not running)
-        self.iterm_reg_edit.setEnabled(not running)
+        self.reg_addr_edit.setEnabled(not running)
+        self.msb_edit.setEnabled(not running)
+        self.lsb_edit.setEnabled(not running)
+        self.min_code_edit.setEnabled(not running)
+        self.max_code_edit.setEnabled(not running)
         self.iic_width_combo.setEnabled(not running)
         self.measure_channel_combo.setEnabled(not running)
-        self.settle_time_spin.setEnabled(not running)
-        self.tolerance_spin.setEnabled(not running)
+        self.vbat_channel_combo.setEnabled(not running)
+        self.test_item_combo.setEnabled(not running)
+        self.avg_time_spin.setEnabled(not running)
         self.visa_resource_combo.setEnabled(not running)
         self.search_btn.setEnabled(not running)
         self.connect_btn.setEnabled(not running)
@@ -915,17 +987,27 @@ class ItermTestUI(QWidget):
     def get_test_config(self):
         try:
             device_addr = int(self.device_addr_edit.text(), 16)
-            iterm_reg = int(self.iterm_reg_edit.text(), 16)
+            reg_addr = int(self.reg_addr_edit.text(), 16)
+            msb = int(self.msb_edit.text())
+            lsb = int(self.lsb_edit.text())
+            min_code = int(self.min_code_edit.text(), 16)
+            max_code = int(self.max_code_edit.text(), 16)
         except ValueError:
             device_addr = 0
-            iterm_reg = 0
+            reg_addr = 0
+            msb = 9
+            lsb = 5
+            min_code = 0
+            max_code = 0xFF
         return {
             "device_addr": device_addr,
-            "iterm_reg": iterm_reg,
+            "reg_addr": reg_addr,
             "iic_width": self.iic_width_combo.currentData(),
-            "measure_channel": int(self.measure_channel_combo.currentText()),
-            "settle_time_ms": self.settle_time_spin.value(),
-            "tolerance_pct": self.tolerance_spin.value(),
+            "measure_channel": int(self.measure_channel_combo.currentText().replace("CH ", "")),
+            "msb": msb,
+            "lsb": lsb,
+            "min_code": min_code,
+            "max_code": max_code,
         }
 
     def clear_results(self):
