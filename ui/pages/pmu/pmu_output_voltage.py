@@ -1404,11 +1404,14 @@ class PMUOutputVoltageUI(QWidget):
 if __name__ == "__main__":
     from PySide6.QtWidgets import QApplication
     from PySide6.QtCore import qInstallMessageHandler, QtMsgType
+    from log_config import setup_logging, get_logger
+    setup_logging()
+    _logger = get_logger(__name__)
 
     def custom_message_handler(msg_type, context, message):
         if msg_type == QtMsgType.QtWarningMsg and "QPainter::end" in message:
             return
-        print(f"{context.file}:{context.line} - {message}")
+        _logger.debug("%s:%s - %s", context.file, context.line, message)
 
     qInstallMessageHandler(custom_message_handler)
 

@@ -1,6 +1,9 @@
 # ------------------------------------------------------------------------------
 # 在 I2C Tool 中执行 eFuse 脚本
 # ------------------------------------------------------------------------------
+import logging
+_logger = logging.getLogger(__name__)
+
 i2c_interface = globals().get('i2c_interface')
 I2CSpeedMode = globals().get('I2CSpeedMode')
 I2CWidthFlag = globals().get('I2CWidthFlag')
@@ -142,16 +145,16 @@ def read_efuse(reg_offset: int) -> int:
         i2c_speed = I2CSpeedMode.SPEED_100K
         ui_data_width = I2CWidthFlag.BIT_8 # BIT_8 : 8bit, BIT_10 : 16bit, BIT_32 : 32bit
         efuse_data = i2c_interface.read(i2c_speed, UI_DEV_ADDR, UI_REG_ADDR, ui_data_width)
-        print(f"读取位宽：{UI_DATA_WIDTH}")
-        print(f"读取0x{UI_REG_ADDR:02X} = 0x{efuse_data:02X}")
+        _logger.info("读取位宽：%s", UI_DATA_WIDTH)
+        _logger.info("读取0x%02X = 0x%02X", UI_REG_ADDR, efuse_data)
         return efuse_data
         
     except I2CError as e:
-        print(f"I2C通信错误: {e}")
-        return -1  # 返回错误码
+        _logger.error("I2C通信错误: %s", e)
+        return -1
     except Exception as e:
-        print(f"意外错误: {type(e).__name__} - {e}")
-        return -1  # 返回错误码
+        _logger.error("意外错误: %s - %s", type(e).__name__, e)
+        return -1
     
 
 
@@ -174,7 +177,7 @@ def write_efuse(reg_offset: int, data: int) -> bool:
 
         reg_158_addr = 0x158
         reg_158_data = i2c_interface.read(i2c_speed, UI_DEV_ADDR, reg_158_addr, ui_data_width)
-        print(f"读取0x158 = 0x{reg_158_data:02X}")
+        _logger.info("读取0x158 = 0x%02X", reg_158_data)
         if reg_158_data != 0:
             return False
         
@@ -186,13 +189,13 @@ def write_efuse(reg_offset: int, data: int) -> bool:
         reg_b7_addr = 0xb7
         reg_b7_data = 0x0009
         i2c_interface.write(i2c_speed, UI_DEV_ADDR, reg_b7_addr, reg_b7_data, ui_data_width)
-        print(f"写入0xb7 = 0x{reg_b7_data:02X}")
+        _logger.debug("写入0xb7 = 0x%02X", reg_b7_data)
 
         #打开function turn on write addr=(10'hb7)Write data=16'h 0019?
         reg_b7_addr = 0xb7
         reg_b7_data = 0x0019
         i2c_interface.write(i2c_speed, UI_DEV_ADDR, reg_b7_addr, reg_b7_data, ui_data_width)
-        print(f"写入0xb7 = 0x{reg_b7_data:02X}")
+        _logger.debug("写入0xb7 = 0x%02X", reg_b7_data)
 
         group_page_size = 32 / 8
         first_in_group = reg_offset * group_page_size
@@ -210,61 +213,61 @@ def write_efuse(reg_offset: int, data: int) -> bool:
             reg_b7_addr = 0xb7
             reg_b7_data = (0x0019 |( efuse_addr<<6))
             i2c_interface.write(i2c_speed, UI_DEV_ADDR, reg_b7_addr, reg_b7_data, ui_data_width)
-            print(f"写入0xb7 = 0x{reg_b7_data:02X}")
+            _logger.debug("写入0xb7 = 0x%02X", reg_b7_data)
 
             #Write data= {efuse_sel,bits[4:0],address[3:0],6'b11_1001})   //单次write trigger
             reg_b7_addr = 0xb7
             reg_b7_data = (0x0039 |( efuse_addr<<6))
             i2c_interface.write(i2c_speed, UI_DEV_ADDR, reg_b7_addr, reg_b7_data, ui_data_width)
-            print(f"写入0xb7 = 0x{reg_b7_data:02X}")
+            _logger.debug("写入0xb7 = 0x%02X", reg_b7_data)
 
             reg_b7_addr = 0xb7
             reg_b7_data = (0x0019 |( efuse_addr<<6))
             i2c_interface.write(i2c_speed, UI_DEV_ADDR, reg_b7_addr, reg_b7_data, ui_data_width)
-            print(f"写入0xb7 = 0x{reg_b7_data:02X}")
+            _logger.debug("写入0xb7 = 0x%02X", reg_b7_data)
 
             #Write data= {efuse_sel, bits[4:0],address[3:0],6'b01_1001}) //单次write trigger关闭
             efuse_addr = efuse_addr + 2
             reg_b7_addr = 0xb7
             reg_b7_data = (0x0019 |( efuse_addr<<6))
             i2c_interface.write(i2c_speed, UI_DEV_ADDR, reg_b7_addr, reg_b7_data, ui_data_width)
-            print(f"写入0xb7 = 0x{reg_b7_data:02X}")
+            _logger.debug("写入0xb7 = 0x%02X", reg_b7_data)
 
             #Write data= {bits[2:0],address[6:0],6'b01_1001})
             reg_b7_addr = 0xb7
             reg_b7_data = (0x0039 |( efuse_addr<<6))
             i2c_interface.write(i2c_speed, UI_DEV_ADDR, reg_b7_addr, reg_b7_data, ui_data_width)
-            print(f"写入0xb7 = 0x{reg_b7_data:02X}")
+            _logger.debug("写入0xb7 = 0x%02X", reg_b7_data)
             
             #Write data= {efuse_sel, bits[4:0],address[3:0],6'b11_1001})   //单次write trigger
             reg_b7_addr = 0xb7
             reg_b7_data = (0x0019 |( efuse_addr<<6))
             i2c_interface.write(i2c_speed, UI_DEV_ADDR, reg_b7_addr, reg_b7_data, ui_data_width)
-            print(f"写入0xb7 = 0x{reg_b7_data:02X}")
+            _logger.debug("写入0xb7 = 0x%02X", reg_b7_data)
 
         #关闭efuse
         reg_b7_addr = 0xb7
         reg_b7_data = 0x0009
         i2c_interface.write(i2c_speed, UI_DEV_ADDR, reg_b7_addr, reg_b7_data, ui_data_width)
-        print(f"写入0xb7 = 0x{reg_b7_data:02X}")
+        _logger.debug("写入0xb7 = 0x%02X", reg_b7_data)
 
         #
         reg_b7_addr = 0xb7
         reg_b7_data = 0x0000
         i2c_interface.write(i2c_speed, UI_DEV_ADDR, reg_b7_addr, reg_b7_data, ui_data_width)
-        print(f"写入0xb7 = 0x{reg_b7_data:02X}")
+        _logger.debug("写入0xb7 = 0x%02X", reg_b7_data)
 
         #切换efuse时钟为32k write addr=(10'h159)Write data=16'h0000
         reg_159_addr = 0x159
         reg_159_data = 0x0000
         i2c_interface.write(i2c_speed, UI_DEV_ADDR, reg_159_addr, reg_159_data, ui_data_width)
-        print(f"写入0x159 = 0x{reg_159_data:02X}")
+        _logger.debug("写入0x159 = 0x%02X", reg_159_data)
 
         return True
         
     except I2CError as e:
-        print(f"I2C通信错误: {e}")
+        _logger.error("I2C通信错误: %s", e)
         return False
     except Exception as e:
-        print(f"意外错误: {type(e).__name__} - {e}")
+        _logger.error("意外错误: %s - %s", type(e).__name__, e)
         return False

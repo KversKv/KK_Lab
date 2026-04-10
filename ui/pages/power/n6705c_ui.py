@@ -27,6 +27,9 @@ from PySide6.QtGui import QFont, QPainter, QColor, QPen
 import pyvisa
 
 from instruments.power.keysight.n6705c import N6705C
+from log_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class SlideToggle(QWidget):
@@ -1216,7 +1219,7 @@ class N6705CUI(QWidget):
                 label.setText("- - -")
 
     def _ct_on_error(self, err_msg):
-        print(f"Consumption test error: {err_msg}")
+        logger.error("Consumption test error: %s", err_msg)
 
     def _ct_on_finished(self):
         self.is_testing = False
@@ -1240,7 +1243,7 @@ class N6705CUI(QWidget):
             "CSV Files (*.csv);;All Files (*)"
         )
         if file_path:
-            print(f"Saving datalog to: {file_path}")
+            logger.info("Saving datalog to: %s", file_path)
 
     # =========================
     # 样式工具
@@ -1469,7 +1472,7 @@ class N6705CUI(QWidget):
             self._apply_mode_button_styles()
             self._update_labels_for_mode(ui_mode)
         except Exception as e:
-            print(f"获取通道{channel_num}模式失败: {str(e)}")
+            logger.error("获取通道%d模式失败: %s", channel_num, e)
 
     def _map_instrument_mode_to_ui_mode(self, inst_mode):
         mapping = {
@@ -1509,7 +1512,7 @@ class N6705CUI(QWidget):
                 is_on = self.n6705c.get_channel_state(channel_num)
                 self.output_toggle.setChecked(is_on)
             except Exception as e:
-                print(f"获取通道{channel_num}状态失败: {str(e)}")
+                logger.error("获取通道%d状态失败: %s", channel_num, e)
         self._update_output_visual_state()
 
     def _update_output_visual_state(self):
@@ -1569,10 +1572,10 @@ class N6705CUI(QWidget):
                 channel_num = self.current_channel
                 inst_mode = self._map_ui_mode_to_instrument_mode(ui_mode)
                 self.n6705c.set_mode(channel_num, inst_mode)
-                print(f"通道{channel_num}模式已设置为: {inst_mode}")
+                logger.info("通道%d模式已设置为: %s", channel_num, inst_mode)
                 self._start_channel_sync(channel_num)
             except Exception as e:
-                print(f"设置模式失败: {str(e)}")
+                logger.error("设置模式失败: %s", e)
 
     def _get_current_mode_text(self):
         if self.cv_btn.isChecked():
@@ -1643,9 +1646,9 @@ class N6705CUI(QWidget):
 
             self.available_devices = list(self.rm.list_resources()) or []
 
-            print(f"找到 {len(self.available_devices)} 个设备")
+            logger.info("找到 %d 个设备", len(self.available_devices))
             for dev in self.available_devices:
-                print(f"设备地址: {dev}")
+                logger.debug("设备地址: %s", dev)
 
             compatible_devices = self.available_devices.copy() if self.available_devices else []
             seen = {}
@@ -1655,7 +1658,7 @@ class N6705CUI(QWidget):
                     instr = self.rm.open_resource(dev, timeout=1000)
                     idn = instr.query('*IDN?').strip()
                     instr.close()
-                    print(f"设备 {dev} 的IDN: {idn}")
+                    logger.info("设备 %s 的IDN: %s", dev, idn)
                     if "N6705C" in idn:
                         parts = idn.split(",")
                         serial = parts[2].strip() if len(parts) > 2 else dev
@@ -1665,7 +1668,7 @@ class N6705CUI(QWidget):
                         else:
                             seen[serial] = dev
                 except Exception as e:
-                    print(f"查询设备 {dev} 失败: {str(e)}")
+                    logger.error("查询设备 %s 失败: %s", dev, e)
 
             n6705c_devices = list(seen.values())
 
@@ -1693,7 +1696,7 @@ class N6705CUI(QWidget):
                 self.toggle_conn_btn.setEnabled(False)
 
         except Exception as e:
-            print(f"搜索过程中发生错误: {str(e)}")
+            logger.error("搜索过程中发生错误: %s", e)
             self.connection_status.setText(f"搜索失败: {str(e)}")
             self.connection_status.setStyleSheet("color: #e53935; padding: 10px; font-weight: bold;")
             self.toggle_conn_btn.setEnabled(False)
@@ -1859,9 +1862,9 @@ class N6705CUI(QWidget):
             try:
                 self.n6705c.channel_on(channel_num)
                 self.output_toggle.setChecked(True)
-                print(f"通道{channel_num}已打开")
+                logger.info("通道%d已打开", channel_num)
             except Exception as e:
-                print(f"打开通道{channel_num}失败: {str(e)}")
+                logger.error("打开通道%d失败: %s", channel_num, e)
         else:
             self.output_toggle.setChecked(True)
 
@@ -1870,9 +1873,9 @@ class N6705CUI(QWidget):
         if self.is_connected and self.n6705c:
             try:
                 self.n6705c.channel_off(channel_num)
-                print(f"通道{channel_num}已关闭")
+                logger.info("通道%d已关闭", channel_num)
             except Exception as e:
-                print(f"关闭通道{channel_num}失败: {str(e)}")
+                logger.error("关闭通道%d失败: %s", channel_num, e)
 
         self.output_toggle.setChecked(False)
 
@@ -1893,12 +1896,12 @@ class N6705CUI(QWidget):
             value = float(self.voltage_set_input.text())
             if ui_mode == "PS2Q":
                 self.n6705c.set_voltage(channel_num, value)
-                print(f"通道{channel_num}电压已设置: {value}V")
+                logger.info("通道%d电压已设置: %sV", channel_num, value)
             elif ui_mode == "CC":
                 self.n6705c.set_voltage_limit(channel_num, value)
-                print(f"通道{channel_num}电压限制已设置: {value}V")
+                logger.info("通道%d电压限制已设置: %sV", channel_num, value)
         except Exception as e:
-            print(f"电压设置失败: {str(e)}")
+            logger.error("电压设置失败: %s", e)
 
     def _on_current_input_enter(self):
         if not self.is_connected or not self.n6705c:
@@ -1909,14 +1912,14 @@ class N6705CUI(QWidget):
             value = float(self.limit_current_value.text())
             if ui_mode == "PS2Q":
                 self.n6705c.set_current_limit(channel_num, value)
-                print(f"通道{channel_num}电流限制已设置: {value}A")
+                logger.info("通道%d电流限制已设置: %sA", channel_num, value)
             elif ui_mode == "CC":
                 value = -abs(value)
                 self.limit_current_value.setText(f"{value:.4f}")
                 self.n6705c.set_current(channel_num, value)
-                print(f"通道{channel_num}电流已设置: {value}A")
+                logger.info("通道%d电流已设置: %sA", channel_num, value)
         except Exception as e:
-            print(f"电流设置失败: {str(e)}")
+            logger.error("电流设置失败: %s", e)
 
     def _on_set_button_clicked(self):
         if not self.is_connected or not self.n6705c:
@@ -1932,18 +1935,18 @@ class N6705CUI(QWidget):
                 current_limit = float(self.limit_current_value.text())
                 self.n6705c.set_voltage(channel_num, voltage_set)
                 self.n6705c.set_current_limit(channel_num, current_limit)
-                print(f"通道{channel_num}设置已发送 - 模式: {inst_mode}, 电压: {voltage_set}V, 电流限制: {current_limit}A")
+                logger.info("通道%d设置已发送 - 模式: %s, 电压: %sV, 电流限制: %sA", channel_num, inst_mode, voltage_set, current_limit)
             elif ui_mode == "CC":
                 voltage_limit = float(self.voltage_set_input.text())
                 current_set = -abs(float(self.limit_current_value.text()))
                 self.limit_current_value.setText(f"{current_set:.4f}")
                 self.n6705c.set_voltage_limit(channel_num, voltage_limit)
                 self.n6705c.set_current(channel_num, current_set)
-                print(f"通道{channel_num}设置已发送 - 模式: {inst_mode}, 电压限制: {voltage_limit}V, 电流: {current_set}A")
+                logger.info("通道%d设置已发送 - 模式: %s, 电压限制: %sV, 电流: %sA", channel_num, inst_mode, voltage_limit, current_set)
             else:
-                print(f"通道{channel_num}模式: {inst_mode}, 无需设置电压/电流参数")
+                logger.info("通道%d模式: %s, 无需设置电压/电流参数", channel_num, inst_mode)
         except Exception as e:
-            print(f"设置发送失败: {str(e)}")
+            logger.error("设置发送失败: %s", e)
 
     def _on_measure_button_clicked(self):
         if not self.is_connected or not self.n6705c:
@@ -1961,9 +1964,9 @@ class N6705CUI(QWidget):
                 self.n6705c.channel_on(ch)
             self.output_toggle.setChecked(True)
             self._update_output_visual_state()
-            print("所有通道已打开")
+            logger.info("所有通道已打开")
         except Exception as e:
-            print(f"All On 失败: {str(e)}")
+            logger.error("All On 失败: %s", e)
 
     def _on_all_off_clicked(self):
         if not self.is_connected or not self.n6705c:
@@ -1973,9 +1976,9 @@ class N6705CUI(QWidget):
                 self.n6705c.channel_off(ch)
             self.output_toggle.setChecked(False)
             self._update_output_visual_state()
-            print("所有通道已关闭")
+            logger.info("所有通道已关闭")
         except Exception as e:
-            print(f"All Off 失败: {str(e)}")
+            logger.error("All Off 失败: %s", e)
 
     # =========================
     # 批量操作
@@ -1986,14 +1989,14 @@ class N6705CUI(QWidget):
         try:
             selected_channels = [i + 1 for i, checkbox in enumerate(self.channel_checkboxes) if checkbox.isChecked()]
             if not selected_channels:
-                print("未选择任何通道")
+                logger.warning("未选择任何通道")
                 return
             for channel_num in selected_channels:
                 self.n6705c.set_mode(channel_num, "VMETer")
                 self.n6705c.channel_on(channel_num)
-                print(f"通道{channel_num}已设置为电压表模式")
+                logger.info("通道%d已设置为电压表模式", channel_num)
         except Exception as e:
-            print(f"设置电压表模式失败: {str(e)}")
+            logger.error("设置电压表模式失败: %s", e)
 
     def _on_set_all_clicked(self):
         if not self.is_connected or not self.n6705c:
@@ -2001,7 +2004,7 @@ class N6705CUI(QWidget):
         try:
             selected_channels = [i + 1 for i, checkbox in enumerate(self.channel_checkboxes) if checkbox.isChecked()]
             if not selected_channels:
-                print("未选择任何通道")
+                logger.warning("未选择任何通道")
                 return
 
             voltages = [float(self.voltage_inputs[i].text()) for i in range(4)]
@@ -2015,9 +2018,9 @@ class N6705CUI(QWidget):
                 self.n6705c.set_voltage(channel_num, voltage)
                 self.n6705c.set_current_limit(channel_num, current_limit)
                 self.n6705c.channel_on(channel_num)
-                print(f"通道{channel_num}设置已发送 - 电压: {voltage}V, 电流限制: {current_limit}A")
+                logger.info("通道%d设置已发送 - 电压: %sV, 电流限制: %sA", channel_num, voltage, current_limit)
         except Exception as e:
-            print(f"设置发送失败: {str(e)}")
+            logger.error("设置发送失败: %s", e)
 
     def _on_auto_clicked(self):
         if not self.is_connected or not self.n6705c:
@@ -2025,23 +2028,23 @@ class N6705CUI(QWidget):
         try:
             selected_channels = [i + 1 for i, checkbox in enumerate(self.channel_checkboxes) if checkbox.isChecked()]
             if not selected_channels:
-                print("未选择任何通道")
+                logger.warning("未选择任何通道")
                 return
 
             for channel_num in selected_channels:
                 self.n6705c.set_mode(channel_num, "VMETer")
                 measured_voltage = float(self.n6705c.measure_voltage(channel_num))
-                print(f"通道{channel_num}测量电压: {measured_voltage:.4f}V")
+                logger.info("通道%d测量电压: %.4fV", channel_num, measured_voltage)
 
                 new_voltage = measured_voltage + 0.03
-                print(f"通道{channel_num}新电压: {new_voltage:.4f}V")
+                logger.info("通道%d新电压: %.4fV", channel_num, new_voltage)
 
                 self.n6705c.set_mode(channel_num, "PS2Q")
                 self.n6705c.set_voltage(channel_num, new_voltage)
                 self.n6705c.channel_on(channel_num)
-                print(f"通道{channel_num}已打开")
+                logger.info("通道%d已打开", channel_num)
         except Exception as e:
-            print(f"Auto操作失败: {str(e)}")
+            logger.error("Auto操作失败: %s", e)
 
 
 if __name__ == "__main__":

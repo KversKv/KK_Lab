@@ -1,5 +1,9 @@
 import time
 import pyvisa
+from log_config import get_logger
+
+logger = get_logger(__name__)
+
 
 class N6705C:
     def __init__(self, resource):
@@ -194,24 +198,24 @@ class N6705C:
         self.instr.write("ABOR:TRAN")
 
     def test_arb_staircase(self, channel, v0=3, v1=4.3, t0=1, t1=10, t2=1, steps=500):
-        print(f"[测试] set_arb_staircase on channel {channel}")
-        print(f"  参数: v0={v0}, v1={v1}, t0={t0}, t1={t1}, t2={t2}, steps={steps}")
+        logger.info("[测试] set_arb_staircase on channel %s", channel)
+        logger.info("  参数: v0=%s, v1=%s, t0=%s, t1=%s, t2=%s, steps=%s", v0, v1, t0, t1, t2, steps)
 
         self.set_arb_staircase(channel, v0=v0, v1=v1, t0=t0, t1=t1, t2=t2, steps=steps)
         self.set_arb_continuous(channel, flag=False)
         self.arb_on(channel)
         self.channel_on(channel)
-        print("  ARB配置完成, 正在触发...")
+        logger.info("  ARB配置完成, 正在触发...")
 
         self.arb_run()
-        print("  ARB已触发, 等待执行...")
+        logger.info("  ARB已触发, 等待执行...")
 
         total_time = t0 + t1 * (steps - 2) + t2
         time.sleep(total_time + 2)
 
         voltage = self.measure_voltage(channel)
-        print(f"  当前电压: {voltage:.4f} V")
-        print("[测试] 完成")
+        logger.info("  当前电压: %.4f V", voltage)
+        logger.info("[测试] 完成")
 
     def read_mmem_data(self, filepath):
         import struct
@@ -477,7 +481,7 @@ class N6705C:
             return result
 
         except Exception as e:
-            print(f"Error in fetch_current_by_datalog: {e}")
+            logger.error("Error in fetch_current_by_datalog: %s", e)
             return {ch: self.fetch_current(ch) for ch in channels}
 
 
@@ -488,9 +492,9 @@ if __name__ == "__main__":
     n6705c = N6705C(IP)
     try:
         idn = n6705c.instr.query("*IDN?").strip()
-        print(f"已连接: {idn}")
+        logger.info("已连接: %s", idn)
         n6705c.test_arb_staircase(CHANNEL)
     finally:
         n6705c.disconnect()
-        print("已断开连接")
+        logger.info("已断开连接")
 

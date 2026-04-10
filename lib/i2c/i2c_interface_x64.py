@@ -21,6 +21,9 @@ sys.path.insert(0, str(script_dir))
 # 导入I2C接口
 from Bes_I2CIO_Interface import BESI2CIO, I2CSpeedMode, I2CWidthFlag
 
+import logging
+logger = logging.getLogger(__name__)
+
 
 class I2CInterface:
     """I2C接口封装类，提供简洁的I2C操作API"""
@@ -68,7 +71,7 @@ class I2CInterface:
             self.initialized = True
             return True
         except Exception as e:
-            print(f"I2C接口初始化失败: {e}")
+            logger.error("I2C接口初始化失败: %s", e)
             self.initialized = False
             return False
 
@@ -142,8 +145,9 @@ class I2CInterface:
 # 示例用法
 if __name__ == "__main__":
     """示例用法演示"""
-    print("I2C接口封装类示例")
-    print("=" * 50)
+    logging.basicConfig(level=logging.DEBUG, format="[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s")
+    logger.info("I2C接口封装类示例")
+    logger.info("=" * 50)
     
     # 创建I2C接口实例
     i2c = I2CInterface()
@@ -158,32 +162,30 @@ if __name__ == "__main__":
     try:
         # 1. 读取操作：器件地址0x17，寄存器地址0x0000
         reg_addr_read = 0x0000
-        print(f"\n1. 读取操作：")
-        print(f"   设备地址: 0x{device_addr:02X}")
-        print(f"   寄存器地址: 0x{reg_addr_read:04X}")
-        print(f"   位宽模式: {width_flag.name}")
+        logger.info("1. 读取操作：")
+        logger.info("   设备地址: 0x%02X", device_addr)
+        logger.info("   寄存器地址: 0x%04X", reg_addr_read)
+        logger.info("   位宽模式: %s", width_flag.name)
         
         read_data = i2c.read(device_addr, reg_addr_read, width_flag)
-        print(f"   读取结果: 0x{read_data:04X}")
+        logger.info("   读取结果: 0x%04X", read_data)
         
-        # 2. 写入操作：器件地址0x17，寄存器地址0x1e7，数据0x20AA
         reg_addr_write = 0x1e7
         write_data = 0x20AA
-        print(f"\n2. 写入操作：")
-        print(f"   设备地址: 0x{device_addr:02X}")
-        print(f"   寄存器地址: 0x{reg_addr_write:04X}")
-        print(f"   写入数据: 0x{write_data:04X}")
-        print(f"   位宽模式: {width_flag.name}")
+        logger.info("2. 写入操作：")
+        logger.info("   设备地址: 0x%02X", device_addr)
+        logger.info("   寄存器地址: 0x%04X", reg_addr_write)
+        logger.info("   写入数据: 0x%04X", write_data)
+        logger.info("   位宽模式: %s", width_flag.name)
         
         i2c.write(device_addr, reg_addr_write, write_data, width_flag)
-        print(f"   写入成功")
+        logger.info("   写入成功")
         
-        # 3. 验证写入结果
         time.sleep(0.1)
         verify_data = i2c.read(device_addr, reg_addr_write, width_flag)
-        print(f"\n3. 验证写入结果：")
-        print(f"   寄存器地址0x{reg_addr_write:04X}的当前值: 0x{verify_data:04X}")
-        print(f"   验证{'成功' if verify_data == write_data else '失败'}")
+        logger.info("3. 验证写入结果：")
+        logger.info("   寄存器地址0x%04X的当前值: 0x%04X", reg_addr_write, verify_data)
+        logger.info("   验证%s", '成功' if verify_data == write_data else '失败')
         
     except Exception as e:
-        print(f"I2C操作失败: {e}")
+        logger.error("I2C操作失败: %s", e)

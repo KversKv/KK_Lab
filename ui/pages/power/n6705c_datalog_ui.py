@@ -40,6 +40,9 @@ from instruments.power.keysight.n6705c_datalog_process import (
     calc_power_for_ch, import_csv_file, import_edlg_file, import_dlog_file,
 )
 from ui.widgets.dark_combobox import DarkComboBox
+from log_config import get_logger
+
+logger = get_logger(__name__)
 
 DEBUG_FLAG = False
 DEBUG_N6705C_FLAG = False
@@ -506,7 +509,7 @@ class _DatalogWorker(QObject):
                     barrier.wait()
 
                     n6705c.instr.write(f'INIT:DLOG "{dlog_file}"')
-                    print(f"[Datalog] Unit {unit_idx} INIT:DLOG sent at {time.time():.6f}")
+                    logger.debug("[Datalog] Unit %d INIT:DLOG sent at %.6f", unit_idx, time.time())
                 except Exception as e:
                     init_errors[idx] = e
 
@@ -527,11 +530,11 @@ class _DatalogWorker(QObject):
             all_data = {}
             raw_dlog_list = []
 
-            print(f"[Datalog] Waiting {self.monitoring_time_s + 5}s for capture...")
+            logger.info("[Datalog] Waiting %ds for capture...", self.monitoring_time_s + 5)
             wait_end = time.time() + self.monitoring_time_s + 5
             while time.time() < wait_end:
                 if self._is_stopped:
-                    print("[Datalog] Stopped by user during capture wait")
+                    logger.info("[Datalog] Stopped by user during capture wait")
                     self.finished.emit()
                     return
                 time.sleep(0.2)
@@ -553,7 +556,7 @@ class _DatalogWorker(QObject):
                     raw_dlog = n6705c.read_mmem_data(dlog_file)
                     t1 = time.time()
                     if isinstance(raw_dlog, bytes):
-                        print(f"[Datalog] dlog downloaded: {len(raw_dlog)} bytes in {t1-t0:.1f}s")
+                        logger.info("[Datalog] dlog downloaded: %d bytes in %.1fs", len(raw_dlog), t1-t0)
                         raw_dlog_list.append(raw_dlog)
 
                         unit_data = parse_dlog_binary(
@@ -561,10 +564,10 @@ class _DatalogWorker(QObject):
                             ulabel, sample_period_s
                         )
                 except Exception as e:
-                    print(f"[Datalog] dlog download/parse failed: {e}")
+                    logger.error("[Datalog] dlog download/parse failed: %s", e)
 
                 if not unit_data:
-                    print(f"[Datalog] Falling back to CSV export...")
+                    logger.info("[Datalog] Falling back to CSV export...")
                     csv_file = f"internal:\\datalog_cap_{unit_idx}.csv"
                     n6705c.instr.write(f'MMEM:EXP:DLOG "{csv_file}"')
                     for _ in range(15):
@@ -579,7 +582,7 @@ class _DatalogWorker(QObject):
                         csv_text = raw_csv.decode('ascii', errors='replace')
                     else:
                         csv_text = raw_csv
-                    print(f"[Datalog] CSV download: {len(csv_text)} chars in {t1-t0:.1f}s")
+                    logger.info("[Datalog] CSV download: %d chars in %.1fs", len(csv_text), t1-t0)
 
                     unit_data = parse_csv_text(
                         csv_text, curr_channels, volt_channels,
@@ -589,14 +592,12 @@ class _DatalogWorker(QObject):
                 if unit_data:
                     all_data.update(unit_data)
 
-            print(f"[Datalog] Total channels with data: {len(all_data)}")
+            logger.info("[Datalog] Total channels with data: %d", len(all_data))
             self.dlog_raw_ready.emit(raw_dlog_list)
             self.data_ready.emit(all_data)
             self.finished.emit()
         except Exception as e:
-            print(f"[Datalog] ERROR: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error("[Datalog] ERROR: %s", e, exc_info=True)
             self.error.emit(str(e))
             self.finished.emit()
 
@@ -3597,7 +3598,7 @@ class N6705CDatalogUI(QWidget):
         self._record_thread = None
 
     def _on_recording_error(self, msg):
-        print(f"[Datalog] Recording error: {msg}")
+        logger.error("[Datalog] Recording error: %s", msg)
         self._update_recording_button_state(False)
 
     def _refresh_plot(self):

@@ -18,6 +18,9 @@ import sys
 import time
 from pathlib import Path
 from instruments.power.keysight.n6705c import N6705C
+from log_config import get_logger
+
+logger = get_logger(__name__)
 
 # 添加I2C相关模块路径
 i2c_lib_path = Path(__file__).parent.parent.parent.parent / "lib" / "i2c"
@@ -98,7 +101,7 @@ class TestThread(QThread):
             QThread.msleep(500)
 
             self.status_update.emit("执行OVP测试...", False)
-            print(f"OVP测试: 起始电压={start_voltage:.3f} V, 结束电压={end_voltage:.3f} V, 步进电压={step_voltage:.3f} V")
+            logger.info("OVP测试: 起始电压=%.3f V, 结束电压=%.3f V, 步进电压=%.3f V", start_voltage, end_voltage, step_voltage)
 
             cnt_voltage = start_voltage
             while cnt_voltage <= end_voltage + 0.001 and self.is_running:
@@ -107,17 +110,17 @@ class TestThread(QThread):
                 QThread.msleep(500)
                 current_after = float(self.n6705c.measure_current(vbat_channel))
 
-                print(f"Test voltage: {cnt_voltage:.3f} V, current_before: {current_before * 1000:.4f} mA, current_after: {current_after * 1000:.4f} mA")
+                logger.debug("Test voltage: %.3f V, current_before: %.4f mA, current_after: %.4f mA", cnt_voltage, current_before * 1000, current_after * 1000)
 
                 if current_after < current_before - 0.00001:
-                    print(f"OVP触发，电压: {cnt_voltage:.3f} V, 电流: {current_after * 1000:.4f} mA")
+                    logger.info("OVP触发，电压: %.3f V, 电流: %.4f mA", cnt_voltage, current_after * 1000)
                     self.result_update.emit("保护电压", cnt_voltage)
                     break
 
                 cnt_voltage += step_voltage
         except Exception as e:
             self.status_update.emit(f"OVP测试执行错误: {str(e)}", True)
-            print(f"OVP测试执行错误: {str(e)}")
+            logger.error("OVP测试执行错误: %s", e)
 
     def thread_uvp_test(self, vbat_channel=1, vol_channel=2, start_voltage=0.7, end_voltage=1.5, step_voltage=0.1):
         try:
@@ -127,7 +130,7 @@ class TestThread(QThread):
             QThread.msleep(500)
 
             self.status_update.emit("执行UVP测试...", False)
-            print(f"UVP测试: 起始电压={start_voltage:.3f} V, 结束电压={end_voltage:.3f} V, 步进电压={step_voltage:.3f} V")
+            logger.info("UVP测试: 起始电压=%.3f V, 结束电压=%.3f V, 步进电压=%.3f V", start_voltage, end_voltage, step_voltage)
 
             cnt_voltage = end_voltage
             while cnt_voltage >= start_voltage - 0.05 and self.is_running:
@@ -136,17 +139,17 @@ class TestThread(QThread):
                 QThread.msleep(100)
                 current_after = float(self.n6705c.measure_current(vbat_channel))
 
-                print(f"Test voltage: {cnt_voltage:.3f} V, current_before: {current_before * 1000:.4f} mA, current_after: {current_after * 1000:.4f} mA")
+                logger.debug("Test voltage: %.3f V, current_before: %.4f mA, current_after: %.4f mA", cnt_voltage, current_before * 1000, current_after * 1000)
 
                 if current_after < current_before - 0.01:
-                    print(f"UVP触发，电压: {cnt_voltage:.3f} V, 电流: {current_after * 1000:.4f} mA")
+                    logger.info("UVP触发，电压: %.3f V, 电流: %.4f mA", cnt_voltage, current_after * 1000)
                     self.result_update.emit("保护电压", cnt_voltage)
                     break
 
                 cnt_voltage -= step_voltage
         except Exception as e:
             self.status_update.emit(f"UVP测试执行错误: {str(e)}", True)
-            print(f"UVP测试执行错误: {str(e)}")
+            logger.error("UVP测试执行错误: %s", e)
 
 
 class PMUOSCPUI(QWidget):
@@ -827,7 +830,7 @@ class PMUOSCPUI(QWidget):
         self.test_thread.test_finished.connect(self._on_test_finished)
         self.test_thread.start()
 
-        print("执行单次测试，配置:", config)
+        logger.info("执行单次测试，配置: %s", config)
 
     def _on_stop_test(self):
         if self.is_test_running and self.test_thread:
@@ -839,7 +842,7 @@ class PMUOSCPUI(QWidget):
     def _on_iteration_test(self):
         self.set_system_status("执行遍历测试...")
         config = self.get_test_config()
-        print("执行遍历测试，配置:", config)
+        logger.info("执行遍历测试，配置: %s", config)
 
     def _on_test_result(self, result_type, value):
         if result_type == "保护电压":
@@ -944,7 +947,7 @@ class PMUOSCPUI(QWidget):
                 self.connect_btn.setEnabled(False)
 
         except Exception as e:
-            print(f"搜索过程中发生错误: {str(e)}")
+            logger.error("搜索过程中发生错误: %s", e)
             self.set_system_status(f"搜索失败: {str(e)}", True)
             self.connect_btn.setEnabled(False)
         finally:
@@ -1061,7 +1064,7 @@ class PMUOSCPUI(QWidget):
         time.sleep(0.5)
 
         self.set_system_status("执行OVP测试...")
-        print(f"OVP测试: 起始电压={start_voltage:.3f} V, 结束电压={end_voltage:.3f} V, 步进电压={step_voltage:.3f} V")
+        logger.info("OVP测试: 起始电压=%.3f V, 结束电压=%.3f V, 步进电压=%.3f V", start_voltage, end_voltage, step_voltage)
 
         cnt_voltage = start_voltage
         while cnt_voltage <= end_voltage + 0.001:
@@ -1070,10 +1073,10 @@ class PMUOSCPUI(QWidget):
             time.sleep(0.5)
             current_after = float(self.n6705c.measure_current(vbat_channel))
 
-            print(f"Test voltage: {cnt_voltage:.3f} V, current_before: {current_before * 1000:.4f} mA, current_after: {current_after * 1000:.4f} mA")
+            logger.debug("Test voltage: %.3f V, current_before: %.4f mA, current_after: %.4f mA", cnt_voltage, current_before * 1000, current_after * 1000)
 
             if current_after < current_before - 0.00001:
-                print(f"OVP触发，电压: {cnt_voltage:.3f} V, 电流: {current_after * 1000:.4f} mA")
+                logger.info("OVP触发，电压: %.3f V, 电流: %.4f mA", cnt_voltage, current_after * 1000)
                 self.protection_current_label.setText(f"{cnt_voltage:.3f} V")
                 break
 
@@ -1086,7 +1089,7 @@ class PMUOSCPUI(QWidget):
         time.sleep(0.5)
 
         self.set_system_status("执行UVP测试...")
-        print(f"UVP测试: 起始电压={start_voltage:.3f} V, 结束电压={end_voltage:.3f} V, 步进电压={step_voltage:.3f} V")
+        logger.info("UVP测试: 起始电压=%.3f V, 结束电压=%.3f V, 步进电压=%.3f V", start_voltage, end_voltage, step_voltage)
 
         cnt_voltage = end_voltage
         while cnt_voltage >= start_voltage - 0.05:
@@ -1095,10 +1098,10 @@ class PMUOSCPUI(QWidget):
             time.sleep(0.1)
             current_after = float(self.n6705c.measure_current(vbat_channel))
 
-            print(f"Test voltage: {cnt_voltage:.3f} V, current_before: {current_before * 1000:.4f} mA, current_after: {current_after * 1000:.4f} mA")
+            logger.debug("Test voltage: %.3f V, current_before: %.4f mA, current_after: %.4f mA", cnt_voltage, current_before * 1000, current_after * 1000)
 
             if current_after < current_before - 0.01:
-                print(f"UVP触发，电压: {cnt_voltage:.3f} V, 电流: {current_after * 1000:.4f} mA")
+                logger.info("UVP触发，电压: %.3f V, 电流: %.4f mA", cnt_voltage, current_after * 1000)
                 self.protection_current_label.setText(f"{cnt_voltage:.3f} V")
                 break
 
@@ -1115,32 +1118,32 @@ class PMUOSCPUI(QWidget):
             width_flag = I2CWidthFlag.BIT_10
 
             reg_addr_read = 0x0000
-            print(f"\n1. 读取操作：")
-            print(f"   设备地址: 0x{device_addr:02X}")
-            print(f"   寄存器地址: 0x{reg_addr_read:04X}")
-            print(f"   位宽模式: {width_flag.name}")
+            logger.info("1. 读取操作：")
+            logger.info("   设备地址: 0x%02X", device_addr)
+            logger.info("   寄存器地址: 0x%04X", reg_addr_read)
+            logger.info("   位宽模式: %s", width_flag.name)
 
             read_data = i2c.read(device_addr, reg_addr_read, width_flag)
-            print(f"   读取结果: 0x{read_data:04X}")
+            logger.info("   读取结果: 0x%04X", read_data)
             self.set_system_status(f"I2C读取成功: 0x{read_data:04X}")
 
             reg_addr_write = 0x1e7
             write_data = 0x20AA
-            print(f"\n2. 写入操作：")
-            print(f"   设备地址: 0x{device_addr:02X}")
-            print(f"   寄存器地址: 0x{reg_addr_write:04X}")
-            print(f"   写入数据: 0x{write_data:04X}")
-            print(f"   位宽模式: {width_flag.name}")
+            logger.info("2. 写入操作：")
+            logger.info("   设备地址: 0x%02X", device_addr)
+            logger.info("   寄存器地址: 0x%04X", reg_addr_write)
+            logger.info("   写入数据: 0x%04X", write_data)
+            logger.info("   位宽模式: %s", width_flag.name)
 
             i2c.write(device_addr, reg_addr_write, write_data, width_flag)
-            print("   写入成功")
+            logger.info("   写入成功")
             self.set_system_status("I2C写入成功")
 
             time.sleep(0.1)
-            print(f"\n3. 验证写入结果：")
+            logger.info("3. 验证写入结果：")
             verify_data = i2c.read(device_addr, reg_addr_write, width_flag)
-            print(f"   寄存器地址0x{reg_addr_write:04X}的当前值: 0x{verify_data:04X}")
-            print(f"   验证{'成功' if verify_data == write_data else '失败'}")
+            logger.info("   寄存器地址0x%04X的当前值: 0x%04X", reg_addr_write, verify_data)
+            logger.info("   验证%s", '成功' if verify_data == write_data else '失败')
 
             if verify_data == write_data:
                 self.set_system_status("I2C测试完成，验证成功")
@@ -1151,7 +1154,7 @@ class PMUOSCPUI(QWidget):
 
         except Exception as e:
             error_msg = f"I2C测试操作失败: {e}"
-            print(error_msg)
+            logger.error(error_msg)
             self.set_system_status(error_msg, True)
             return False
 

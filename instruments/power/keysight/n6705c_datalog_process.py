@@ -1,5 +1,8 @@
 import struct
 import re
+from log_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def parse_csv_text(csv_text, curr_channels, volt_channels, ulabel, sample_period_s):
@@ -10,10 +13,10 @@ def parse_csv_text(csv_text, curr_channels, volt_channels, ulabel, sample_period
 
     if actual_interval is not None:
         sample_period_s = actual_interval
-        print(f"[Datalog] Using sample interval from CSV: {sample_period_s}")
+        logger.info("[Datalog] Using sample interval from CSV: %s", sample_period_s)
 
     lines = csv_text.splitlines()
-    print(f"[Datalog] Total CSV lines: {len(lines)}")
+    logger.info("[Datalog] Total CSV lines: %d", len(lines))
 
     ordered_cols = []
     all_chs = sorted(set(curr_channels) | set(volt_channels))
@@ -44,7 +47,7 @@ def parse_csv_text(csv_text, curr_channels, volt_channels, ulabel, sample_period
         suffix = "I" if meas_type == "curr" else "V"
         label = f"{ulabel} CH{ch} {suffix}".strip()
         values = col_data[col_idx]
-        print(f"[Datalog] {label}: {len(values)} points")
+        logger.info("[Datalog] %s: %d points", label, len(values))
         if values:
             values = [v * 1000.0 for v in values]
             t = [i * sample_period_s for i in range(len(values))]
@@ -61,7 +64,7 @@ def parse_dlog_binary(raw_data, curr_channels, volt_channels, ulabel, sample_per
         tint_match = re.search(r'<tint>([\d.eE+\-]+)</tint>', xml_header)
         if tint_match:
             sample_period_s = float(tint_match.group(1))
-            print(f"[Datalog] dlog tint (sample interval): {sample_period_s}")
+            logger.debug("[Datalog] dlog tint (sample interval): %s", sample_period_s)
 
         dlog_curr_chs = []
         dlog_volt_chs = []
@@ -85,28 +88,28 @@ def parse_dlog_binary(raw_data, curr_channels, volt_channels, ulabel, sample_per
 
         num_traces = len(dlog_col_order)
         if num_traces == 0:
-            print("[Datalog] No active traces found in dlog XML header")
+            logger.warning("[Datalog] No active traces found in dlog XML header")
             return None
 
         close_tag = b'</dlog>'
         tag_pos = raw_data.find(close_tag)
         if tag_pos < 0:
-            print("[Datalog] Could not find </dlog> tag in dlog file")
+            logger.warning("[Datalog] Could not find </dlog> tag in dlog file")
             return None
 
         data_offset = tag_pos + len(close_tag) + 9
 
         if data_offset + num_traces * 4 > len(raw_data):
-            print(f"[Datalog] dlog file too small for data at offset {data_offset}")
+            logger.warning("[Datalog] dlog file too small for data at offset %d", data_offset)
             return None
 
-        print(f"[Datalog] dlog data_offset: {data_offset}, traces: {num_traces}")
+        logger.debug("[Datalog] dlog data_offset: %d, traces: %d", data_offset, num_traces)
 
         data_section = raw_data[data_offset:]
         float_count = len(data_section) // 4
         num_samples = float_count // num_traces
 
-        print(f"[Datalog] dlog: {float_count} floats, {num_samples} samples, {num_traces} traces")
+        logger.debug("[Datalog] dlog: %d floats, %d samples, %d traces", float_count, num_samples, num_traces)
 
         values_all = struct.unpack_from(f'>{float_count}f', data_section, 0)
 
@@ -129,16 +132,16 @@ def parse_dlog_binary(raw_data, curr_channels, volt_channels, ulabel, sample_per
 
             suffix = "I" if meas_type == "curr" else "V"
             label = f"{ulabel} CH{ch} {suffix}".strip()
-            print(f"[Datalog] {label}: {len(values)} points (from dlog)")
+            logger.info("[Datalog] %s: %d points (from dlog)", label, len(values))
             if values:
                 t = [i * sample_period_s for i in range(len(values))]
                 all_data[label] = {"time": t, "values": values}
 
         return all_data
     except Exception as e:
-        print(f"[Datalog] dlog parse error: {e}")
+        logger.error("[Datalog] dlog parse error: %s", e)
         import traceback
-        traceback.print_exc()
+        logger.debug(traceback.format_exc())
         return None
 
 

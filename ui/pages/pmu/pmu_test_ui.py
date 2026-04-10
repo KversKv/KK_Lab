@@ -13,6 +13,9 @@ from PySide6.QtGui import QFont
 from ui.pages.pmu.pmu_dcdc_efficiency import PMUDCDCEfficiencyUI
 from ui.pages.pmu.pmu_output_voltage import PMUOutputVoltageUI
 from ui.pages.pmu.pmu_threshold import PMUThresholdUI
+from log_config import get_logger
+
+logger = get_logger(__name__)
 from ui.pages.pmu.pmu_isGain_ui import PMUIsGainUI
 from ui.pages.pmu.pmu_oscp_ui import PMUOSCPUI
 from ui.pages.test.gpadc_test_ui import GPADCTestUI
@@ -240,7 +243,7 @@ class PMUTestUI(QWidget):
             self.gpadc_test_ui.set_system_status("测试进行中")
 
         config = self.get_test_config(test_type)
-        print(f"开始{test_type}测试，配置: {config}")
+        logger.info("开始%s测试，配置: %s", test_type, config)
 
     def _on_test_stopped(self, test_type):
         """处理测试停止事件"""
@@ -257,7 +260,7 @@ class PMUTestUI(QWidget):
         elif test_type == "gpadc_test":
             self.gpadc_test_ui.set_system_status("就绪")
 
-        print(f"停止{test_type}测试")
+        logger.info("停止%s测试", test_type)
 
     def get_test_config(self, test_type):
         """获取指定测试类型的配置"""

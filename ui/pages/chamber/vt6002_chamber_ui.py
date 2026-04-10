@@ -688,7 +688,7 @@ class VT6002ChamberUI(QWidget):
             else:
                 self.port_combo.addItem("No Serial Ports Found")
         except Exception as e:
-            print(f"扫描端口错误: {e}")
+            logger.error("扫描端口错误: %s", e)
             self.port_combo.clear()
             self.port_combo.addItem("Scan Failed")
 
@@ -708,7 +708,7 @@ class VT6002ChamberUI(QWidget):
                 self._set_power_ui(False)
                 self.connection_changed.emit()
             except Exception as e:
-                print(f"断开连接错误: {e}")
+                logger.error("断开连接错误: %s", e)
         else:
             current_text = self.port_combo.currentText().strip()
             if not current_text or current_text in ("No Serial Ports Found", "Scan Failed"):
@@ -724,7 +724,7 @@ class VT6002ChamberUI(QWidget):
                 self._set_power_ui(False)
                 self.connection_changed.emit()
             except Exception as e:
-                print(f"连接设备错误: {e}")
+                logger.error("连接设备错误: %s", e)
                 self.vt6002 = None
                 self.current_port = None
                 self._set_connection_ui(False)
@@ -741,14 +741,14 @@ class VT6002ChamberUI(QWidget):
                 self.is_chamber_on = False
                 self._set_power_ui(False)
             except Exception as e:
-                print(f"关闭温箱错误: {e}")
+                logger.error("关闭温箱错误: %s", e)
         else:
             try:
                 self.vt6002.start()
                 self.is_chamber_on = True
                 self._set_power_ui(True)
             except Exception as e:
-                print(f"打开温箱错误: {e}")
+                logger.error("打开温箱错误: %s", e)
 
     def _set_temperature(self):
         """设置温度"""
@@ -760,9 +760,9 @@ class VT6002ChamberUI(QWidget):
             self.vt6002.set_temperature(temp)
             self.set_temp_value.setText(f"{temp:.1f} °C")
         except ValueError:
-            print("设置温度错误: 输入不是有效数字")
+            logger.warning("设置温度错误: 输入不是有效数字")
         except Exception as e:
-            print(f"设置温度错误: {e}")
+            logger.error("设置温度错误: %s", e)
 
     def _set_preset_temp(self, temp_str):
         """设置预设温度"""
@@ -775,9 +775,9 @@ class VT6002ChamberUI(QWidget):
             self.vt6002.set_temperature(temp)
             self.set_temp_value.setText(f"{temp:.1f} °C")
         except ValueError:
-            print("设置预设温度错误: 输入不是有效数字")
+            logger.warning("设置预设温度错误: 输入不是有效数字")
         except Exception as e:
-            print(f"设置预设温度错误: {e}")
+            logger.error("设置预设温度错误: %s", e)
 
     def _update_temperatures(self):
         """更新温度显示"""
@@ -793,7 +793,7 @@ class VT6002ChamberUI(QWidget):
                 if set_temp is not None:
                     self.set_temp_value.setText(f"{set_temp:.1f} °C")
             except Exception as e:
-                print(f"更新温度错误: {e}")
+                logger.error("更新温度错误: %s", e)
         else:
             self.temp_gauge.set_temperature(None)
 
@@ -806,7 +806,7 @@ if __name__ == "__main__":
     def custom_message_handler(msg_type, context, message):
         if msg_type == QtMsgType.QtWarningMsg and "QPainter::end" in message:
             return
-        print(f"{context.file}:{context.line} - {message}")
+        logger.debug("%s:%s - %s", context.file, context.line, message)
 
     qInstallMessageHandler(custom_message_handler)
 

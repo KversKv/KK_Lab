@@ -5,6 +5,9 @@ VISA 仪器控制
 """
 
 import pyvisa as visa
+from log_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class VisaInstrument:
@@ -27,7 +30,7 @@ class VisaInstrument:
             devices = self.rm.list_resources()
             return devices
         except Exception as e:
-            print(f"扫描设备错误: {e}")
+            logger.error("扫描设备错误: %s", e)
             return []
     
     def connect(self, device_address):
@@ -41,11 +44,11 @@ class VisaInstrument:
             
             # 验证连接
             idn = self.instrument.query('*IDN?')
-            print(f"已连接到: {idn}")
+            logger.info("已连接到: %s", idn)
             
             return True
         except Exception as e:
-            print(f"连接设备错误: {e}")
+            logger.error("连接设备错误: %s", e)
             return False
     
     def disconnect(self):
@@ -60,7 +63,7 @@ class VisaInstrument:
             self.rm = None
             return True
         except Exception as e:
-            print(f"断开连接错误: {e}")
+            logger.error("断开连接错误: %s", e)
             return False
     
     def is_connected(self):
@@ -81,7 +84,7 @@ class VisaInstrument:
                 return True
             return False
         except Exception as e:
-            print(f"设置电压错误: {e}")
+            logger.error("设置电压错误: %s", e)
             return False
     
     def set_current_limit(self, current_limit):
@@ -93,7 +96,7 @@ class VisaInstrument:
                 return True
             return False
         except Exception as e:
-            print(f"设置限流错误: {e}")
+            logger.error("设置限流错误: %s", e)
             return False
     
     def get_current(self):
@@ -105,7 +108,7 @@ class VisaInstrument:
                 return current
             return 0.0
         except Exception as e:
-            print(f"获取电流错误: {e}")
+            logger.error("获取电流错误: %s", e)
             return 0.0
     
     def get_voltage(self):
@@ -117,7 +120,7 @@ class VisaInstrument:
                 return voltage
             return 0.0
         except Exception as e:
-            print(f"获取电压错误: {e}")
+            logger.error("获取电压错误: %s", e)
             return 0.0
     
     def set_output(self, enabled):
@@ -130,5 +133,5 @@ class VisaInstrument:
                 return True
             return False
         except Exception as e:
-            print(f"设置输出状态错误: {e}")
+            logger.error("设置输出状态错误: %s", e)
             return False

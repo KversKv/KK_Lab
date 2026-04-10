@@ -6,6 +6,9 @@
 
 import time
 from PySide6.QtCore import QObject, Signal, QTimer
+from log_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class DataCollector(QObject):
@@ -55,4 +58,4 @@ class DataCollector(QObject):
             # 发送数据信号
             self.data_collected.emit(current_time, current, voltage)
         except Exception as e:
-            print(f"数据采集错误: {e}")
+            logger.error("数据采集错误: %s", e)

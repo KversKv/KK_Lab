@@ -9,6 +9,9 @@ import csv
 import os
 from PySide6.QtCore import QObject, QThread, Signal
 from core.data_collector import DataCollector
+from log_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class TestManager(QObject):
@@ -96,4 +99,4 @@ class TestManager(QObject):
                 power = current * voltage
                 writer.writerow([t, current, voltage, power])
         
-        print(f"数据已导出到: {filename}")
+        logger.info("数据已导出到: %s", filename)

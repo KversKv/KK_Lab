@@ -28,6 +28,9 @@ from ui.pages.charger.charger_test_ui import ChargerTestUI
 from core.test_manager import TestManager
 from instruments.base.visa_instrument import VisaInstrument
 from instruments.chambers.vt6002_chamber import VT6002
+from log_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class PMUSubMenuItem(QPushButton):
@@ -1173,7 +1176,7 @@ class MainWindow(QMainWindow):
 
     def _on_download_code(self):
         """下载代码按钮点击事件"""
-        print("Download Python Code clicked")
+        logger.debug("Download Python Code clicked")
 
     def _scan_visa(self):
         """扫描 VISA 设备"""

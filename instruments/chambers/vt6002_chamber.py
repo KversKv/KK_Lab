@@ -1,6 +1,9 @@
 import time
 import serial
 import struct
+from log_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def crc16(data: bytes):
@@ -84,7 +87,7 @@ class VT6002:
             else:
                 return value
         else:
-            print(f"错误: 地址 {address_hex} 响应不完整")
+            logger.warning("错误: 地址 %s 响应不完整", address_hex)
             return None
 
     def write_value(self, address_hex, value_to_be_write):
@@ -100,7 +103,7 @@ class VT6002:
             else:
                 return value
         else:
-            print(f"错误: 地址 {address_hex} 响应不完整")
+            logger.warning("错误: 地址 %s 响应不完整", address_hex)
             return None
 
     def set_temperature(self, temp_celsius):
@@ -117,9 +120,9 @@ class VT6002:
         self.ser.write(values)
         response = self.ser.read(8)
         if response == values:
-            print(f"Temperature set to {temp_celsius}°C successfully.")
+            logger.info("Temperature set to %s°C successfully.", temp_celsius)
         else:
-            print("Error: Failed to set temperature.")
+            logger.error("Error: Failed to set temperature.")
 
     def get_current_temp(self):
         """读取温度PV值"""
@@ -185,9 +188,9 @@ class VT6002:
         self.ser.write(start_constant_temp_reg2)
         response = self.ser.read(8)
         if response == start_constant_temp_reg2:
-            print(f"Constant temp start successfully.")
+            logger.info("Constant temp start successfully.")
         else:
-            print("Error: Failed to set temperature.")
+            logger.error("Error: Failed to set temperature.")
 
     def stop(self):
         start_constant_temp_reg1 = bytes([0x01, 0x05, 0x00, 0xd5, 0xff, 0x00])
@@ -199,9 +202,9 @@ class VT6002:
         self.ser.write(start_constant_temp_reg2)
         response = self.ser.read(8)
         if response == start_constant_temp_reg2:
-            print(f"Constant temp close successfully.")
+            logger.info("Constant temp close successfully.")
         else:
-            print("Error: Failed to set temperature.")
+            logger.error("Error: Failed to set temperature.")
 
     def close(self):
         """关闭串口连接"""
@@ -225,8 +228,8 @@ if __name__ == "__main__":
         # print("地址站号:", vt6002.read_address())
         # print("超时时间:", vt6002.read_timeout())
         vt6002.set_temperature(25)
-        print("温度PV值:", vt6002.get_current_temp())
-        print("温度设定值:", vt6002.get_set_temp())
+        logger.info("温度PV值: %s", vt6002.get_current_temp())
+        logger.info("温度设定值: %s", vt6002.get_set_temp())
         vt6002.start()
         time.sleep(5)
         vt6002.stop()

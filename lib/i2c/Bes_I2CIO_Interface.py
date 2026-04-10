@@ -471,6 +471,9 @@ class BESI2CIO(II2CIO):
 
 # 示例用法
 if __name__ == "__main__":
+    import logging
+    logging.basicConfig(level=logging.DEBUG, format="[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s")
+    _logger = logging.getLogger(__name__)
     try:
         #创建当前脚本所在目录
         from utils.g_vars import HOME_DIR
@@ -489,7 +492,7 @@ if __name__ == "__main__":
             reg_addr,
             I2CWidthFlag.BIT_8       # 使用8位寄存器地址、16位数据
         )
-        print(f"读取数据: 0x{data:04X}")
+        _logger.info("读取数据: 0x%04X", data)
         
         # 写入示例
         i2c.write(
@@ -499,13 +502,13 @@ if __name__ == "__main__":
             0x1234,                  # 写入数据
             I2CWidthFlag.BIT_8       # 使用8位寄存器地址、16位数据
         )
-        print("数据写入成功")
+        _logger.info("数据写入成功")
         
     except I2CDeviceError as e:
-        print(f"设备错误: {e}")
+        _logger.error("设备错误: %s", e)
     except I2COperationError as e:
-        print(f"操作错误: {e}")
+        _logger.error("操作错误: %s", e)
     except I2CParameterError as e:
-        print(f"参数错误: {e}")
+        _logger.error("参数错误: %s", e)
     except Exception as e:
-        print(f"未知错误: {e}")
+        _logger.error("未知错误: %s", e)

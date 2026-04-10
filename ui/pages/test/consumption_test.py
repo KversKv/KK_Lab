@@ -22,6 +22,9 @@ from PySide6.QtGui import QFont
 import pyvisa
 
 from instruments.power.keysight.n6705c import N6705C
+from log_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class _ConsumptionTestWorker(QObject):
@@ -742,7 +745,7 @@ class ConsumptionTestUI(QWidget):
         self.search_btn.setEnabled(True)
 
     def _on_search_error(self, err):
-        print(f"Search error: {err}")
+        logger.error("Search error: %s", err)
         self._set_status(f"Search Error: {err}", "err")
         self.search_btn.setEnabled(True)
 
@@ -786,7 +789,7 @@ class ConsumptionTestUI(QWidget):
                 self._set_status("Device Mismatch", "err")
                 self.connect_btn.setEnabled(True)
         except Exception as e:
-            print(f"Connect error: {e}")
+            logger.error(f"Connect error: {e}")
             self._set_status(f"Error: {e}", "err")
             self.connect_btn.setEnabled(True)
 
@@ -824,7 +827,7 @@ class ConsumptionTestUI(QWidget):
             self.connect_btn.setEnabled(True)
             self.connection_status_changed.emit(False)
         except Exception as e:
-            print(f"Disconnect error: {e}")
+            logger.error("Disconnect error: %s", e)
             self._set_status(f"Error: {e}", "err")
             self.connect_btn.setEnabled(True)
 
@@ -889,15 +892,15 @@ class ConsumptionTestUI(QWidget):
 
     def _download_to_dut(self):
         if not self.firmware_path:
-            print("No firmware file selected")
+            logger.warning("No firmware file selected")
             return
-        print(f"Downloading firmware to DUT: {self.firmware_path}")
+        logger.info("Downloading firmware to DUT: %s", self.firmware_path)
 
     def _import_configuration(self):
         if not self.config_path:
-            print("No config file selected")
+            logger.warning("No config file selected")
             return
-        print(f"Importing configuration: {self.config_path}")
+        logger.info("Importing configuration: %s", self.config_path)
 
     def _on_start_or_stop(self):
         if self.is_testing:
@@ -992,7 +995,7 @@ class ConsumptionTestUI(QWidget):
             "CSV Files (*.csv);;All Files (*)"
         )
         if file_path:
-            print(f"Saving datalog to: {file_path}")
+            logger.info("Saving datalog to: %s", file_path)
 
     @staticmethod
     def _format_current(current_A):

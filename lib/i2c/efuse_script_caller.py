@@ -20,6 +20,9 @@ from typing import Optional, Tuple, Any
 # 导入I2C接口
 from Bes_I2CIO_Interface import BESI2CIO, I2CSpeedMode, I2CWidthFlag, I2CError
 
+import logging
+logger = logging.getLogger(__name__)
+
 
 class EFuseScriptCaller:
     """EFuse脚本调用器类
@@ -44,7 +47,7 @@ class EFuseScriptCaller:
         else:
             self.efuse_scripts_dir = efuse_scripts_dir
             
-        print(f"EFuse脚本目录: {self.efuse_scripts_dir}")
+        logger.info("EFuse脚本目录: %s", self.efuse_scripts_dir)
     
     def call_efuse_script_function(self, 
                                  script_filename: str,
@@ -79,7 +82,7 @@ class EFuseScriptCaller:
         # 检查脚本文件是否存在
         if not script_path.exists() or not script_path.is_file():
             error_msg = f"脚本文件不存在: {script_path}"
-            print(f"{log_prefix}: {error_msg}")
+            logger.error("%s: %s", log_prefix, error_msg)
             return False, None
         
         success_flag = False
@@ -125,32 +128,30 @@ class EFuseScriptCaller:
             # 检查目标函数是否存在
             if hasattr(efuse_module, function_name):
                 target_function = getattr(efuse_module, function_name)
-                print(f"{log_prefix}: 正在调用函数 '{function_name}'")
+                logger.info("%s: 正在调用函数 '%s'", log_prefix, function_name)
                 
-                # 调用目标函数
                 return_value = target_function(*args)
                 success_flag = True
-                print(f"{log_prefix}: 函数 '{function_name}' 执行完成，返回值: 0x{return_value:02X}")
+                logger.info("%s: 函数 '%s' 执行完成，返回值: 0x%02X", log_prefix, function_name, return_value)
                 
             else:
                 error_msg = f"在脚本 '{script_filename}' 中未找到函数 '{function_name}'"
-                print(f"{log_prefix}: {error_msg}")
+                logger.error("%s: %s", log_prefix, error_msg)
                 
         except ImportError as e:
             error_msg = f"导入脚本模块失败: {e}"
-            print(f"{log_prefix}: {error_msg}")
+            logger.error("%s: %s", log_prefix, error_msg)
             
         except I2CError as e:
             error_msg = f"I2C通信错误: {e}"
-            print(f"{log_prefix}: {error_msg}")
+            logger.error("%s: %s", log_prefix, error_msg)
             
         except Exception as e:
             error_msg = f"脚本执行异常: {e}"
-            print(f"{log_prefix}: {error_msg}")
-            # 输出完整的异常信息
-            print("--- 脚本执行异常详情 ---")
-            traceback.print_exc()
-            print("--- 异常结束 ---")
+            logger.error("%s: %s", log_prefix, error_msg)
+            logger.debug("--- 脚本执行异常详情 ---")
+            logger.debug(traceback.format_exc())
+            logger.debug("--- 异常结束 ---")
             
         finally:
             # 清理动态导入的模块

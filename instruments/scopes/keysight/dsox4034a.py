@@ -3,6 +3,9 @@ from typing import Optional, Tuple, Dict, Any
 
 import pyvisa
 from pyvisa import VisaIOError
+from log_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class ScopeError(Exception):
@@ -130,7 +133,7 @@ class DSOX4034A:
 
     def _log(self, msg: str):
         if self.debug:
-            print(f'[DSOX4034A] {msg}')
+            logger.debug('[DSOX4034A] %s', msg)
 
     def _ensure_connected(self):
         if self.instrument is None:
@@ -426,7 +429,7 @@ class DSOX4034A:
         time.sleep(0.1)
 
         mean_vol = self.get_channel_mean(channel)
-        print(f'Channel {channel} Mean: {mean_vol:.6f} V')
+        logger.debug('Channel %d Mean: %.6f V', channel, mean_vol)
 
         # 3. 先切目标 scale
         self.set_channel_scale(channel, 0.02)
@@ -484,7 +487,7 @@ def main():
     output_dir = os.path.join(os.path.dirname(__file__), 'screenshot_test')
     os.makedirs(output_dir, exist_ok=True)
 
-    print('========== DSOX4034A Screenshot Invert Test ==========')
+    logger.info('========== DSOX4034A Screenshot Invert Test ==========')
     try:
         with DSOX4034A(
             resource=resource_addr,
@@ -493,33 +496,33 @@ def main():
             open_timeout_ms=5000,
             debug=True
         ) as scope:
-            print(f'Connected: {scope.identify_instrument()}')
+            logger.info('Connected: %s', scope.identify_instrument())
 
-            print('\n--- Test 1: invert=False (COLor mode) ---')
+            logger.info('--- Test 1: invert=False (COLor mode) ---')
             png_color = scope.capture_screen_png(invert=False)
             path_color = os.path.join(output_dir, 'test_invert_false_COLor.png')
             with open(path_color, 'wb') as f:
                 f.write(png_color)
-            print(f'  Saved: {path_color} ({len(png_color)} bytes)')
+            logger.info('  Saved: %s (%d bytes)', path_color, len(png_color))
 
-            print('\n--- Test 2: invert=True (INVert mode) ---')
+            logger.info('--- Test 2: invert=True (INVert mode) ---')
             png_invert = scope.capture_screen_png(invert=True)
             path_invert = os.path.join(output_dir, 'test_invert_true_INVert.png')
             with open(path_invert, 'wb') as f:
                 f.write(png_invert)
-            print(f'  Saved: {path_invert} ({len(png_invert)} bytes)')
+            logger.info('  Saved: %s (%d bytes)', path_invert, len(png_invert))
 
-            print('\n========== Results ==========')
-            print(f'  COLor (invert=False): {path_color}')
-            print(f'  INVert (invert=True): {path_invert}')
-            print('  Please open both files and verify:')
-            print('    - invert=False should be the original screen colors (dark background)')
-            print('    - invert=True  should be inverted colors (white background)')
+            logger.info('========== Results ==========')
+            logger.info('  COLor (invert=False): %s', path_color)
+            logger.info('  INVert (invert=True): %s', path_invert)
+            logger.info('  Please open both files and verify:')
+            logger.info('    - invert=False should be the original screen colors (dark background)')
+            logger.info('    - invert=True  should be inverted colors (white background)')
 
     except InstrumentConnectionError as e:
-        print(f'Connection failed: {e}')
+        logger.error('Connection failed: %s', e)
     except Exception as e:
-        print(f'Error: {e}')
+        logger.error('Error: %s', e)
 
 
 if __name__ == '__main__':

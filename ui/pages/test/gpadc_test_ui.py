@@ -26,6 +26,10 @@ sys.path.insert(0, str(i2c_lib_path))
 from i2c_interface_x64 import I2CInterface
 from Bes_I2CIO_Interface import I2CSpeedMode, I2CWidthFlag
 
+from log_config import get_logger
+
+logger = get_logger(__name__)
+
 DEBUG_FLAG = False
 DEBUG_N6705C_FLAG = True
 
@@ -2211,8 +2215,7 @@ class GPADCTestUI(QWidget):
 
         except Exception as e:
             self._test_worker.log.emit(f"[ERROR] {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error("测试执行错误: %s", e, exc_info=True)
             self.set_system_status(f"错误: {e}", is_error=True)
             return None
     
@@ -2631,8 +2634,7 @@ class GPADCTestUI(QWidget):
 
         except Exception as e:
             self._append_log(f"[ERROR] Error plotting voltage-ADC curve: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error("Error plotting voltage-ADC curve: %s", e, exc_info=True)
 
     def _plot_temp_consistency_curves(self, result):
         try:
@@ -2746,8 +2748,7 @@ class GPADCTestUI(QWidget):
 
         except Exception as e:
             self._append_log(f"[ERROR] Error plotting temp consistency curves: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error("Error plotting temp consistency curves: %s", e, exc_info=True)
 
     def _plot_temperature_adc_curve(self, temp_data, adc_data):
         """绘制温度-ADC曲线到UI"""
@@ -2830,8 +2831,7 @@ Temperature (°C) | ADC Value
             
         except Exception as e:
             self._append_log(f"[ERROR] Error plotting temperature-ADC curve: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error("Error plotting temperature-ADC curve: %s", e, exc_info=True)
             
             # 如果绘图失败，显示错误信息
             error_label = QLabel(f"绘图失败: {str(e)}")
@@ -2847,7 +2847,10 @@ Temperature (°C) | ADC Value
 
 if __name__ == "__main__":
     import sys
+    import logging
     from PySide6.QtCore import qInstallMessageHandler, QtMsgType
+    from log_config import setup_logging
+    setup_logging()
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
@@ -2855,7 +2858,7 @@ if __name__ == "__main__":
     def custom_message_handler(msg_type, context, message):
         if msg_type == QtMsgType.QtWarningMsg and "QPainter::end" in message:
             return
-        print(f"{context.file}:{context.line} - {message}")
+        logging.getLogger(__name__).debug("%s:%s - %s", context.file, context.line, message)
     qInstallMessageHandler(custom_message_handler)
 
     gpadc_test_ui = GPADCTestUI()

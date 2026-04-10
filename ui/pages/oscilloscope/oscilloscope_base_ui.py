@@ -10,6 +10,9 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QPixmap, QImage
 from ui.widgets.dark_combobox import DarkComboBox
 from instruments.scopes.base import OscilloscopeController
+from log_config import get_logger
+
+logger = get_logger(__name__)
 
 # DEBUG_MSO64B_FLAG = False
 # DEBUG_DSOX4034A_FLAG = True
@@ -1330,7 +1333,7 @@ class OscilloscopeBaseUI(QWidget):
                 self.mso64b_top.connect_instrument(resource, self.controller.instrument)
             self.connection_changed.emit()
         except Exception as e:
-            print(f"连接示波器失败: {str(e)}")
+            logger.error("连接示波器失败: %s", e)
             self.update_connection_status(False)
             self.set_system_status("● Connection failed", is_error=True)
             self.append_log(f"[ERROR] Connection failed: {e}")

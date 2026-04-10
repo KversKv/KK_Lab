@@ -1,5 +1,8 @@
 import time
 import pyvisa
+from log_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class MSO64B:
@@ -265,15 +268,15 @@ if __name__ == '__main__':
     mso64b = MSO64B(ip_address)
 
     try:
-        print(mso64b.identify_instrument())
-        print(f'CH2 Mean: {mso64b.get_channel_mean(2):.6f}')
-        print(f'CH2 Peak-to-Peak: {mso64b.get_channel_pk2pk(2):.6f}')
-        print(f'CH2 Frequency: {mso64b.get_channel_frequency(2):.6f}')
+        logger.info(mso64b.identify_instrument())
+        logger.info('CH2 Mean: %.6f', mso64b.get_channel_mean(2))
+        logger.info('CH2 Peak-to-Peak: %.6f', mso64b.get_channel_pk2pk(2))
+        logger.info('CH2 Frequency: %.6f', mso64b.get_channel_frequency(2))
 
-        print(f'DVM Trigger Counter Enabled (before): {mso64b.get_dvm_trigger_frequency_counter_enabled()}')
+        logger.info('DVM Trigger Counter Enabled (before): %s', mso64b.get_dvm_trigger_frequency_counter_enabled())
         mso64b.set_dvm_trigger_frequency_counter_enabled(True)
-        print(f'DVM Trigger Counter Enabled (after): {mso64b.get_dvm_trigger_frequency_counter_enabled()}')
-        print(f'DVM Frequency: {mso64b.get_dvm_frequency():.9f}')
+        logger.info('DVM Trigger Counter Enabled (after): %s', mso64b.get_dvm_trigger_frequency_counter_enabled())
+        logger.info('DVM Frequency: %.9f', mso64b.get_dvm_frequency())
 
     finally:
         mso64b.disconnect()
