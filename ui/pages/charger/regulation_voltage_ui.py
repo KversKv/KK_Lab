@@ -521,10 +521,6 @@ class RegulationVoltageTestUI(QWidget):
         self._build_config_card()
         left_layout.addWidget(self.config_card)
 
-        self.voltage_param_card = CardFrame("\u2699 VOLTAGE PARAMETERS")
-        self._build_voltage_param_card()
-        left_layout.addWidget(self.voltage_param_card)
-
         left_layout.addStretch()
 
         self.start_test_btn = QPushButton("\u25b6 START TEST")
@@ -657,14 +653,22 @@ class RegulationVoltageTestUI(QWidget):
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(10)
 
-        vmeter_label = QLabel("Test Channel")
+        vmeter_label = QLabel("Vbat Channel")
         vmeter_label.setObjectName("fieldLabel")
 
         self.vmeter_channel_combo = DarkComboBox()
         self.vmeter_channel_combo.addItems(["CH 1", "CH 2", "CH 3", "CH 4"])
 
+        acin_label = QLabel("AC_IN Channel")
+        acin_label.setObjectName("fieldLabel")
+
+        self.acin_channel_combo = DarkComboBox()
+        self.acin_channel_combo.addItems(["CH 1", "CH 2", "CH 3", "CH 4"])
+
         grid.addWidget(vmeter_label, 0, 0)
         grid.addWidget(self.vmeter_channel_combo, 0, 1)
+        grid.addWidget(acin_label, 1, 0)
+        grid.addWidget(self.acin_channel_combo, 1, 1)
 
         layout.addLayout(grid)
 
@@ -721,46 +725,6 @@ class RegulationVoltageTestUI(QWidget):
         grid.addWidget(self.min_code_edit, 5, 1)
         grid.addWidget(lbl_max_code, 6, 0)
         grid.addWidget(self.max_code_edit, 6, 1)
-
-        layout.addLayout(grid)
-
-    def _build_voltage_param_card(self):
-        layout = self.voltage_param_card.main_layout
-
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(10)
-
-        lbl_base = QLabel("Base Voltage (V)")
-        lbl_base.setObjectName("fieldLabel")
-        self.base_voltage_spin = QDoubleSpinBox()
-        self.base_voltage_spin.setRange(0.0, 20.0)
-        self.base_voltage_spin.setValue(3.504)
-        self.base_voltage_spin.setDecimals(3)
-        self.base_voltage_spin.setSingleStep(0.001)
-
-        lbl_step = QLabel("Step (mV)")
-        lbl_step.setObjectName("fieldLabel")
-        self.step_mv_spin = QDoubleSpinBox()
-        self.step_mv_spin.setRange(0.1, 1000.0)
-        self.step_mv_spin.setValue(16.0)
-        self.step_mv_spin.setDecimals(1)
-        self.step_mv_spin.setSingleStep(1.0)
-
-        lbl_tol = QLabel("Tolerance (%)")
-        lbl_tol.setObjectName("fieldLabel")
-        self.tolerance_spin = QDoubleSpinBox()
-        self.tolerance_spin.setRange(0.1, 50.0)
-        self.tolerance_spin.setValue(5.0)
-        self.tolerance_spin.setDecimals(1)
-        self.tolerance_spin.setSingleStep(0.5)
-
-        grid.addWidget(lbl_base, 0, 0)
-        grid.addWidget(self.base_voltage_spin, 0, 1)
-        grid.addWidget(lbl_step, 1, 0)
-        grid.addWidget(self.step_mv_spin, 1, 1)
-        grid.addWidget(lbl_tol, 2, 0)
-        grid.addWidget(self.tolerance_spin, 2, 1)
 
         layout.addLayout(grid)
 
@@ -1053,9 +1017,6 @@ class RegulationVoltageTestUI(QWidget):
             "min_code": min_code,
             "max_code": max_code,
             "iic_width": iic_width,
-            "base_voltage": self.base_voltage_spin.value(),
-            "step_mv": self.step_mv_spin.value(),
-            "tolerance_pct": self.tolerance_spin.value(),
         }
 
         self.set_test_running(True)
@@ -1173,9 +1134,7 @@ class RegulationVoltageTestUI(QWidget):
         self.max_code_edit.setEnabled(not running)
         self.iic_width_combo.setEnabled(not running)
         self.vmeter_channel_combo.setEnabled(not running)
-        self.base_voltage_spin.setEnabled(not running)
-        self.step_mv_spin.setEnabled(not running)
-        self.tolerance_spin.setEnabled(not running)
+        self.acin_channel_combo.setEnabled(not running)
         self.visa_resource_combo.setEnabled(not running)
         self.search_btn.setEnabled(not running)
         self.connect_btn.setEnabled(not running)
@@ -1231,9 +1190,6 @@ class RegulationVoltageTestUI(QWidget):
             "min_code": min_code,
             "max_code": max_code,
             "iic_width": self.iic_width_combo.currentData(),
-            "base_voltage": self.base_voltage_spin.value(),
-            "step_mv": self.step_mv_spin.value(),
-            "tolerance_pct": self.tolerance_spin.value(),
         }
 
     def clear_results(self):

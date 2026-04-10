@@ -114,6 +114,44 @@ class N6705C:
     def trg(self):
         return self.instr.write(f"*TRG")
 
+    def read_mmem_data(self, filepath):
+        import struct
+        old_timeout = self.instr.timeout
+        old_chunk = getattr(self.instr, 'chunk_size', 20480)
+        self.instr.timeout = 300000
+        self.instr.chunk_size = 1024 * 1024
+
+        try:
+            self.instr.write(f'MMEM:DATA? "{filepath}"')
+
+            hash_char = self.instr.read_bytes(1)
+            if hash_char != b'#':
+                rest = self.instr.read_raw()
+                return (hash_char + rest).decode('ascii', errors='replace')
+
+            digit_count_byte = self.instr.read_bytes(1)
+            digit_count = int(digit_count_byte.decode('ascii'))
+            data_len_bytes = self.instr.read_bytes(digit_count)
+            data_len = int(data_len_bytes.decode('ascii'))
+
+            raw_data = b""
+            remaining = data_len
+            while remaining > 0:
+                read_size = min(remaining, 1024 * 1024)
+                chunk = self.instr.read_bytes(read_size)
+                raw_data += chunk
+                remaining -= len(chunk)
+
+            try:
+                self.instr.read_bytes(1)
+            except Exception:
+                pass
+
+            return raw_data
+        finally:
+            self.instr.timeout = old_timeout
+            self.instr.chunk_size = old_chunk
+
     def disconnect(self):
         """
         断开与仪器的连接
