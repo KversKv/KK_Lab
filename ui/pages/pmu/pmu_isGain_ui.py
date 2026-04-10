@@ -23,6 +23,7 @@ import pyvisa
 from instruments.power.keysight.n6705c import N6705C
 from instruments.scopes.tektronix.mso64b import MSO64B
 from instruments.scopes.keysight.dsox4034a import DSOX4034A
+from ui.widgets.dark_combobox import DarkComboBox
 
 
 class _InstrumentWorker(QObject):
@@ -495,25 +496,15 @@ class CardFrame(QFrame):
             self.main_layout.addWidget(self.title_label)
 
 
-class FixedPopupComboBox(QComboBox):
+class FixedPopupComboBox(DarkComboBox):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.view().window().setStyleSheet(
-            "background-color: #0a1733; border: 1px solid #27406f;"
-        )
-        self.view().setStyleSheet(
-            "background-color: #0a1733; color: #eaf2ff; "
-            "selection-background-color: #334a7d; outline: 0px;"
-        )
 
     def showPopup(self):
         super().showPopup()
         view = self.view()
         if view and view.window():
             popup = view.window()
-            popup.setStyleSheet(
-                "background-color: #0a1733; border: 1px solid #27406f;"
-            )
             global_pos = self.mapToGlobal(self.rect().bottomLeft())
             popup.move(global_pos.x(), global_pos.y())
 

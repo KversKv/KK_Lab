@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+##!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 PMU Threshold & Is_gain测试UI组件
@@ -16,6 +16,7 @@ import os
 import pyvisa
 
 from instruments.power.keysight.n6705c import N6705C
+from ui.widgets.dark_combobox import DarkComboBox
 
 
 class CardFrame(QFrame):
@@ -33,26 +34,16 @@ class CardFrame(QFrame):
             self.main_layout.addWidget(self.title_label)
 
 
-class FixedPopupComboBox(QComboBox):
+class FixedPopupComboBox(DarkComboBox):
     """下拉框：确保弹出列表从控件下方开始"""
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.view().window().setStyleSheet(
-            "background-color: #0a1733; border: 1px solid #27406f;"
-        )
-        self.view().setStyleSheet(
-            "background-color: #0a1733; color: #eaf2ff; "
-            "selection-background-color: #334a7d; outline: 0px;"
-        )
 
     def showPopup(self):
         super().showPopup()
         view = self.view()
         if view and view.window():
             popup = view.window()
-            popup.setStyleSheet(
-                "background-color: #0a1733; border: 1px solid #27406f;"
-            )
             global_pos = self.mapToGlobal(self.rect().bottomLeft())
             popup.move(global_pos.x(), global_pos.y())
 

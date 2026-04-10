@@ -1,11 +1,14 @@
-from PySide6.QtWidgets import QComboBox
+from PySide6.QtWidgets import QComboBox, QStyle, QStyleOptionComboBox
+from PySide6.QtCore import Qt, QRect
+from PySide6.QtGui import QPainter, QPen, QColor
 
 
 class DarkComboBox(QComboBox):
-    def __init__(self, *args, bg="#0a1733", border="#27406f", **kwargs):
+    def __init__(self, *args, bg="#0a1733", border="#27406f", arrow_color="#7B8CB7", **kwargs):
         super().__init__(*args, **kwargs)
         self._popup_bg = bg
         self._popup_border = border
+        self._arrow_color = arrow_color
         self.setStyleSheet(f"""
             QComboBox {{
                 background-color: {bg};
@@ -18,6 +21,11 @@ class DarkComboBox(QComboBox):
             QComboBox::drop-down {{
                 border: none;
                 width: 22px;
+            }}
+            QComboBox::down-arrow {{
+                image: none;
+                width: 0px;
+                height: 0px;
             }}
             QComboBox QAbstractItemView {{
                 background-color: {bg};
@@ -39,6 +47,36 @@ class DarkComboBox(QComboBox):
             }}
         """)
         self.setMaxVisibleItems(30)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+
+        opt = QStyleOptionComboBox()
+        self.initStyleOption(opt)
+        arrow_rect: QRect = self.style().subControlRect(
+            QStyle.CC_ComboBox, opt, QStyle.SC_ComboBoxArrow, self
+        )
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        color = QColor(self._arrow_color)
+        if not self.isEnabled():
+            color = QColor("#3A4563")
+        pen = QPen(color, 1.6)
+        pen.setCapStyle(Qt.RoundCap)
+        pen.setJoinStyle(Qt.RoundJoin)
+        painter.setPen(pen)
+
+        cx = arrow_rect.center().x()
+        cy = arrow_rect.center().y()
+        half_w = 4
+        half_h = 3
+
+        painter.drawLine(cx - half_w, cy - half_h, cx, cy + half_h)
+        painter.drawLine(cx, cy + half_h, cx + half_w, cy - half_h)
+
+        painter.end()
 
     def showPopup(self):
         super().showPopup()

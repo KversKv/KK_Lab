@@ -15,7 +15,7 @@ from instruments.scopes.base import OscilloscopeController
 # DEBUG_DSOX4034A_FLAG = True
 
 DEBUG_MSO64B_FLAG = True
-DEBUG_DSOX4034A_FLAG = False
+DEBUG_DSOX4034A_FLAG = True
 
 # DEBUG_MSO64B_FLAG = False
 # DEBUG_DSOX4034A_FLAG = False
@@ -614,7 +614,7 @@ class OscilloscopeBaseUI(QWidget):
         self.visa_resource_combo.setEditable(True)
         if DEBUG_MSO64B_FLAG:
             self.visa_resource_combo.addItem("192.168.3.27")
-        elif DEBUG_DSOX4034A_FLAG:
+        if DEBUG_DSOX4034A_FLAG:
             self.visa_resource_combo.addItem("USB0::0x0957::0x17A4::MY61500152::INSTR")
         control_row.addWidget(self.visa_resource_combo, 1)
 
