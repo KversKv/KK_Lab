@@ -423,13 +423,11 @@ class StatusRegisterTestUI(QWidget):
 
         self.start_test_btn = QPushButton("▶ START POLL")
         self.start_test_btn.setObjectName("primaryStartBtn")
+        left_layout.addWidget(self.start_test_btn)
 
         self.stop_test_btn = QPushButton("■ STOP")
         self.stop_test_btn.setObjectName("stopBtn")
-        self.stop_test_btn.setEnabled(False)
-
-        left_layout.addWidget(self.start_test_btn)
-        left_layout.addWidget(self.stop_test_btn)
+        self.stop_test_btn.hide()
 
         content_layout.addWidget(self.left_panel)
 
@@ -540,9 +538,9 @@ class StatusRegisterTestUI(QWidget):
         lbl_width = QLabel("IIC Width")
         lbl_width.setObjectName("fieldLabel")
         self.iic_width_combo = DarkComboBox()
-        self.iic_width_combo.addItem("8BIT", I2CWidthFlag.BIT_8)
-        self.iic_width_combo.addItem("10BIT", I2CWidthFlag.BIT_10)
-        self.iic_width_combo.addItem("32BIT", I2CWidthFlag.BIT_32)
+        self.iic_width_combo.addItem("8 BIT", I2CWidthFlag.BIT_8)
+        self.iic_width_combo.addItem("10 BIT", I2CWidthFlag.BIT_10)
+        self.iic_width_combo.addItem("32 BIT", I2CWidthFlag.BIT_32)
 
         self.continuous_check = QCheckBox("Continuous Polling")
         self.continuous_check.setChecked(True)
@@ -594,9 +592,15 @@ class StatusRegisterTestUI(QWidget):
     def _bind_signals(self):
         self.search_btn.clicked.connect(self._on_search)
         self.connect_btn.clicked.connect(self._on_connect_or_disconnect)
-        self.start_test_btn.clicked.connect(self._on_start_test)
+        self.start_test_btn.clicked.connect(self._on_start_or_stop)
         self.stop_test_btn.clicked.connect(self._on_stop_test)
         self.clear_log_btn.clicked.connect(self._on_clear_log)
+
+    def _on_start_or_stop(self):
+        if self.is_test_running:
+            self._on_stop_test()
+        else:
+            self._on_start_test()
 
     def _update_connect_button_state(self, connected: bool):
         self.is_connected = connected
@@ -817,8 +821,17 @@ class StatusRegisterTestUI(QWidget):
 
     def set_test_running(self, running):
         self.is_test_running = running
-        self.start_test_btn.setEnabled(not running)
+        self.start_test_btn.setEnabled(True)
         self.stop_test_btn.setEnabled(running)
+        if running:
+            self.start_test_btn.setText("■ STOP")
+            self.start_test_btn.setObjectName("stopBtn")
+        else:
+            self.start_test_btn.setText("▶ START POLL")
+            self.start_test_btn.setObjectName("primaryStartBtn")
+        self.start_test_btn.style().unpolish(self.start_test_btn)
+        self.start_test_btn.style().polish(self.start_test_btn)
+        self.start_test_btn.update()
         self.device_addr_edit.setEnabled(not running)
         self.iic_width_combo.setEnabled(not running)
         self.visa_resource_combo.setEnabled(not running)

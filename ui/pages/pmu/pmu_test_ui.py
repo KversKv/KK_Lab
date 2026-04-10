@@ -162,39 +162,48 @@ class PMUTestUI(QWidget):
     def _connect_child_signals(self):
         """连接子页面的信号"""
         self.dcdc_efficiency_ui.start_test_btn.clicked.connect(
-            lambda: self._on_test_started("dcdc_efficiency"))
+            lambda: self._on_test_btn_clicked("dcdc_efficiency", self.dcdc_efficiency_ui))
         self.dcdc_efficiency_ui.stop_test_btn.clicked.connect(
             lambda: self._on_test_stopped("dcdc_efficiency"))
 
         self.output_voltage_ui.start_test_btn.clicked.connect(
-            lambda: self._on_test_started("output_voltage"))
+            lambda: self._on_test_btn_clicked("output_voltage", self.output_voltage_ui))
         self.output_voltage_ui.stop_test_btn.clicked.connect(
             lambda: self._on_test_stopped("output_voltage"))
 
         self.threshold_ui.start_test_btn.clicked.connect(
-            lambda: self._on_test_started("threshold"))
+            lambda: self._on_test_btn_clicked("threshold", self.threshold_ui))
         self.threshold_ui.stop_test_btn.clicked.connect(
             lambda: self._on_test_stopped("threshold"))
 
         self.is_gain_ui.start_test_btn.clicked.connect(
-            lambda: self._on_test_started("is_gain"))
+            lambda: self._on_test_btn_clicked("is_gain", self.is_gain_ui))
         self.is_gain_ui.stop_test_btn.clicked.connect(
             lambda: self._on_test_stopped("is_gain"))
 
         self.oscp_ui.start_test_btn.clicked.connect(
-            lambda: self._on_test_started("oscp"))
+            lambda: self._on_test_btn_clicked("oscp", self.oscp_ui))
         self.oscp_ui.stop_test_btn.clicked.connect(
             lambda: self._on_test_stopped("oscp"))
         
         self.gpadc_test_ui.start_test_btn.clicked.connect(
-            lambda: self._on_test_started("gpadc_test"))
+            lambda: self._on_test_btn_clicked("gpadc_test", self.gpadc_test_ui))
         self.gpadc_test_ui.stop_test_btn.clicked.connect(
             lambda: self._on_test_stopped("gpadc_test"))
 
         self.clk_test_ui.start_test_btn.clicked.connect(
-            lambda: self._on_test_started("clk_test"))
+            lambda: self._on_test_btn_clicked("clk_test", self.clk_test_ui))
         self.clk_test_ui.stop_test_btn.clicked.connect(
             lambda: self._on_test_stopped("clk_test"))
+
+    def _on_test_btn_clicked(self, test_type, ui):
+        is_running = getattr(ui, 'is_test_running', None)
+        if is_running is None:
+            is_running = getattr(ui, '_test_thread', None) is not None
+        if not is_running:
+            self._on_test_started(test_type)
+        else:
+            self._on_test_stopped(test_type)
 
     def set_current_test(self, test_key):
         index = self.TEST_TAB_MAP.get(test_key, 0)

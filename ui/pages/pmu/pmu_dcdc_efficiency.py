@@ -942,13 +942,11 @@ class PMUDCDCEfficiencyUI(QWidget):
 
         self.start_test_btn = QPushButton("▶ START SEQUENCE")
         self.start_test_btn.setObjectName("primaryStartBtn")
+        left_layout.addWidget(self.start_test_btn)
 
         self.stop_test_btn = QPushButton("■ STOP")
         self.stop_test_btn.setObjectName("stopBtn")
-        self.stop_test_btn.setEnabled(False)
-
-        left_layout.addWidget(self.start_test_btn)
-        left_layout.addWidget(self.stop_test_btn)
+        self.stop_test_btn.hide()
 
         content_layout.addWidget(self.left_panel)
 
@@ -1332,7 +1330,7 @@ class PMUDCDCEfficiencyUI(QWidget):
     def _bind_signals(self):
         self.search_btn.clicked.connect(self._on_search)
         self.connect_btn.clicked.connect(self._on_connect_or_disconnect)
-        self.start_test_btn.clicked.connect(self._on_start_test)
+        self.start_test_btn.clicked.connect(self._on_start_or_stop)
         self.stop_test_btn.clicked.connect(self._on_stop_test)
         self.export_result_btn.clicked.connect(self._on_export_csv)
         self.import_result_btn.clicked.connect(self._on_import_csv)
@@ -1343,6 +1341,12 @@ class PMUDCDCEfficiencyUI(QWidget):
         self.chart_zoom_out_btn.clicked.connect(self._on_chart_zoom_out)
         self.chart_auto_btn.clicked.connect(self._on_chart_auto_fit)
         self.chart_marker_btn.toggled.connect(self._on_chart_marker_toggled)
+
+    def _on_start_or_stop(self):
+        if self.is_test_running:
+            self._on_stop_test()
+        else:
+            self._on_start_test()
 
     def _update_connect_button_state(self, connected: bool):
         self.is_connected = connected
@@ -1597,8 +1601,17 @@ class PMUDCDCEfficiencyUI(QWidget):
     def set_test_running(self, running):
         self.is_test_running = running
 
-        self.start_test_btn.setEnabled(not running)
+        self.start_test_btn.setEnabled(True)
         self.stop_test_btn.setEnabled(running)
+        if running:
+            self.start_test_btn.setText("■ STOP")
+            self.start_test_btn.setObjectName("stopBtn")
+        else:
+            self.start_test_btn.setText("▶ START SEQUENCE")
+            self.start_test_btn.setObjectName("primaryStartBtn")
+        self.start_test_btn.style().unpolish(self.start_test_btn)
+        self.start_test_btn.style().polish(self.start_test_btn)
+        self.start_test_btn.update()
 
         widgets = [
             self.vin_channel_combo,

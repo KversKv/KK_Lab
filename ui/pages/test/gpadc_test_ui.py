@@ -176,6 +176,7 @@ class GPADCTestUI(QWidget):
         self.available_dut_ports = []
 
         self.is_test_running = False
+        self._start_btn_text = "▶ START TEST"
         self.test_thread = None
         self._test_worker = None
         self._search_thread = None
@@ -880,9 +881,9 @@ class GPADCTestUI(QWidget):
         self.stop_test_btn = QPushButton("■")
         self.stop_test_btn.setObjectName("stop_test_btn")
         self.stop_test_btn.setEnabled(False)
+        self.stop_test_btn.hide()
 
         action_layout.addWidget(self.start_test_btn, 1)
-        action_layout.addWidget(self.stop_test_btn)
         left_col.addWidget(action_panel)
         left_col.addStretch()
 
@@ -1073,7 +1074,7 @@ class GPADCTestUI(QWidget):
 
         self.dut_search_btn.clicked.connect(self._search_dut_ports)
 
-        self.start_test_btn.clicked.connect(self._start_test)
+        self.start_test_btn.clicked.connect(self._on_start_or_stop)
         self.stop_test_btn.clicked.connect(self._stop_test)
         self.export_result_btn.clicked.connect(self.export_result)
         self.clear_log_btn.clicked.connect(self.log_text.clear)
@@ -1134,18 +1135,21 @@ class GPADCTestUI(QWidget):
             self.temp_params_frame.hide()
             self.temp_hint_label.hide()
             self.start_test_btn.setText("▶ START 1000CNT TEST")
+            self._start_btn_text = "▶ START 1000CNT TEST"
         elif test_item == self.TEST_FORCE_VOLTAGE:
             self.params_mode_label.setText("VOLTAGE SWEEP")
             self.voltage_params_frame.show()
             self.temp_params_frame.hide()
             self.temp_hint_label.hide()
             self.start_test_btn.setText("▶ START VOLT TEST")
+            self._start_btn_text = "▶ START VOLT TEST"
         elif test_item == self.TEST_HIGH_LOW_TEMP:
             self.params_mode_label.setText("TEMPERATURE SWEEP")
             self.voltage_params_frame.hide()
             self.temp_params_frame.show()
             self.temp_hint_label.show()
             self.start_test_btn.setText("▶ START TEMP TEST")
+            self._start_btn_text = "▶ START TEMP TEST"
             # 在温度扫描测试中重置avg、min、max参数显示
             self.avg_value.setText("---")
             self.min_value.setText("---")
@@ -1156,6 +1160,7 @@ class GPADCTestUI(QWidget):
             self.temp_params_frame.show()
             self.temp_hint_label.show()
             self.start_test_btn.setText("▶ START CONSISTENCY TEST")
+            self._start_btn_text = "▶ START CONSISTENCY TEST"
             # 在一致性测试中也重置avg、min、max参数显示
             self.avg_value.setText("---")
             self.min_value.setText("---")
@@ -1401,13 +1406,20 @@ class GPADCTestUI(QWidget):
         else:
             self.dut_combo.addItem("No serial ports found")
 
+    def _on_start_or_stop(self):
+        if self.is_test_running:
+            self._stop_test()
+        else:
+            self._start_test()
+
     def _start_test(self):
         if self.is_test_running:
             return
 
         self.is_test_running = True
-        self.start_test_btn.setEnabled(False)
+        self.start_test_btn.setEnabled(True)
         self.stop_test_btn.setEnabled(True)
+        self._update_test_button_state(True)
         self._set_ui_enabled(False)
         self._append_log(f"[INFO] Starting GPADC test... mode={self.current_test_item}")
 
@@ -1598,7 +1610,19 @@ class GPADCTestUI(QWidget):
         self.is_test_running = False
         self.start_test_btn.setEnabled(True)
         self.stop_test_btn.setEnabled(False)
+        self._update_test_button_state(False)
         self._set_ui_enabled(True)
+
+    def _update_test_button_state(self, running):
+        if running:
+            self.start_test_btn.setText("■ STOP")
+            self.start_test_btn.setObjectName("stop_test_btn")
+        else:
+            self.start_test_btn.setText(self._start_btn_text)
+            self.start_test_btn.setObjectName("start_test_btn")
+        self.start_test_btn.style().unpolish(self.start_test_btn)
+        self.start_test_btn.style().polish(self.start_test_btn)
+        self.start_test_btn.update()
 
     def _stop_test(self):
         if self._test_worker is not None:

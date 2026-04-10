@@ -541,6 +541,7 @@ class PMUOSCPUI(QWidget):
         self.stop_test_btn = QPushButton("■ STOP")
         self.stop_test_btn.setObjectName("stop_test_btn")
         self.stop_test_btn.setMinimumHeight(40)
+        self.stop_test_btn.hide()
 
         self.single_test_btn = QPushButton("SINGLE")
         self.iteration_test_btn = QPushButton("LOOP")
@@ -577,8 +578,7 @@ class PMUOSCPUI(QWidget):
             }
         """)
 
-        control_layout.addWidget(self.start_test_btn, 0, 0)
-        control_layout.addWidget(self.stop_test_btn, 0, 1)
+        control_layout.addWidget(self.start_test_btn, 0, 0, 1, 2)
         control_layout.addWidget(self.single_test_btn, 1, 0)
         control_layout.addWidget(self.iteration_test_btn, 1, 1)
         control_layout.addWidget(self.test_btn, 2, 0)
@@ -666,7 +666,7 @@ class PMUOSCPUI(QWidget):
         self.connect_btn.clicked.connect(self._on_connect)
         self.disconnect_btn.clicked.connect(self._on_disconnect)
 
-        self.start_test_btn.clicked.connect(self._on_single_test)
+        self.start_test_btn.clicked.connect(self._on_start_or_stop)
         self.stop_test_btn.clicked.connect(self._on_stop_test)
 
         self.single_test_btn.clicked.connect(self._on_single_test)
@@ -674,6 +674,12 @@ class PMUOSCPUI(QWidget):
         self.test_btn.clicked.connect(self.debug_test)
 
         self._update_test_config()
+
+    def _on_start_or_stop(self):
+        if self.is_test_running:
+            self._on_stop_test()
+        else:
+            self._on_single_test()
 
     def _update_test_config(self, index=None):
         test_type = self.test_type_combo.currentText()
@@ -758,8 +764,17 @@ class PMUOSCPUI(QWidget):
         return config
 
     def set_test_running(self, running):
-        self.start_test_btn.setEnabled(not running)
+        self.start_test_btn.setEnabled(True)
         self.stop_test_btn.setEnabled(running)
+        if running:
+            self.start_test_btn.setText("■ STOP")
+            self.start_test_btn.setObjectName("stop_test_btn")
+        else:
+            self.start_test_btn.setText("▶ START")
+            self.start_test_btn.setObjectName("start_test_btn")
+        self.start_test_btn.style().unpolish(self.start_test_btn)
+        self.start_test_btn.style().polish(self.start_test_btn)
+        self.start_test_btn.update()
 
         widgets = [
             self.test_type_combo,

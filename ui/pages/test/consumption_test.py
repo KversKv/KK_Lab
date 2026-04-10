@@ -548,7 +548,7 @@ class ConsumptionTestUI(QWidget):
 
         self.start_test_btn = QPushButton("▶ START TEST")
         self.start_test_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.start_test_btn.setStyleSheet("""
+        self._start_btn_style = """
             QPushButton {
                 background-color: #0d6b4f;
                 color: #ffffff;
@@ -564,12 +564,8 @@ class ConsumptionTestUI(QWidget):
                 color: #5a6b8e;
                 border: 1px solid #1b2847;
             }
-        """)
-
-        self.stop_test_btn = QPushButton("🟥 STOP")
-        self.stop_test_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.stop_test_btn.setEnabled(False)
-        self.stop_test_btn.setStyleSheet("""
+        """
+        self._stop_btn_style = """
             QPushButton {
                 background-color: rgba(255, 90, 122, 0.12);
                 color: #ff7593;
@@ -587,10 +583,16 @@ class ConsumptionTestUI(QWidget):
                 color: #5a6b8e;
                 border: 1px solid #1b2847;
             }
-        """)
+        """
+        self.start_test_btn.setStyleSheet(self._start_btn_style)
+
+        self.stop_test_btn = QPushButton("🟥 STOP")
+        self.stop_test_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.stop_test_btn.setEnabled(False)
+        self.stop_test_btn.setStyleSheet(self._stop_btn_style)
+        self.stop_test_btn.hide()
 
         btn_row.addWidget(self.start_test_btn, 1)
-        btn_row.addWidget(self.stop_test_btn, 1)
         layout.addLayout(btn_row)
 
         channels_row = QHBoxLayout()
@@ -603,7 +605,7 @@ class ConsumptionTestUI(QWidget):
 
         layout.addLayout(channels_row, 1)
 
-        self.start_test_btn.clicked.connect(self._start_test)
+        self.start_test_btn.clicked.connect(self._on_start_or_stop)
         self.stop_test_btn.clicked.connect(self._stop_test)
         self.save_datalog_btn.clicked.connect(self._save_datalog)
 
@@ -897,6 +899,20 @@ class ConsumptionTestUI(QWidget):
             return
         print(f"Importing configuration: {self.config_path}")
 
+    def _on_start_or_stop(self):
+        if self.is_testing:
+            self._stop_test()
+        else:
+            self._start_test()
+
+    def _update_test_button_state(self, running):
+        if running:
+            self.start_test_btn.setText("🟥 STOP")
+            self.start_test_btn.setStyleSheet(self._stop_btn_style)
+        else:
+            self.start_test_btn.setText("▶ START TEST")
+            self.start_test_btn.setStyleSheet(self._start_btn_style)
+
     def _start_test(self):
         if self.is_testing:
             return
@@ -920,8 +936,9 @@ class ConsumptionTestUI(QWidget):
             return
 
         self.is_testing = True
-        self.start_test_btn.setEnabled(False)
+        self.start_test_btn.setEnabled(True)
         self.stop_test_btn.setEnabled(True)
+        self._update_test_button_state(True)
 
         for ch in range(1, 5):
             self.channel_cards[ch]["value_label"].setText("- - -")
@@ -955,6 +972,7 @@ class ConsumptionTestUI(QWidget):
         self.is_testing = False
         self.start_test_btn.setEnabled(True)
         self.stop_test_btn.setEnabled(False)
+        self._update_test_button_state(False)
 
     def _on_test_thread_cleaned(self):
         self._test_worker = None
@@ -966,6 +984,7 @@ class ConsumptionTestUI(QWidget):
         self.is_testing = False
         self.start_test_btn.setEnabled(True)
         self.stop_test_btn.setEnabled(False)
+        self._update_test_button_state(False)
 
     def _save_datalog(self):
         file_path, _ = QFileDialog.getSaveFileName(

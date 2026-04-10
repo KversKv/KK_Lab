@@ -649,13 +649,11 @@ class PMUOutputVoltageUI(QWidget):
 
         self.start_test_btn = QPushButton("▷ Start Sequence")
         self.start_test_btn.setObjectName("primaryStartBtn")
+        left_layout.addWidget(self.start_test_btn)
 
         self.stop_test_btn = QPushButton("■ Stop")
         self.stop_test_btn.setObjectName("stopBtn")
-        self.stop_test_btn.setEnabled(False)
-
-        left_layout.addWidget(self.start_test_btn)
-        left_layout.addWidget(self.stop_test_btn)
+        self.stop_test_btn.hide()
 
         content_layout.addWidget(self.left_panel)
 
@@ -814,9 +812,9 @@ class PMUOutputVoltageUI(QWidget):
         lbl_width = QLabel("Width Flag")
         lbl_width.setObjectName("fieldLabel")
         self.iic_width_flag_combo = DarkComboBox()
-        self.iic_width_flag_combo.addItem("8BIT", 0)
-        self.iic_width_flag_combo.addItem("10BIT", 1)
-        self.iic_width_flag_combo.addItem("32BIT", 2)
+        self.iic_width_flag_combo.addItem("8 BIT", 0)
+        self.iic_width_flag_combo.addItem("10 BIT", 1)
+        self.iic_width_flag_combo.addItem("32 BIT", 2)
         self.iic_width_flag_combo.setCurrentIndex(1)
 
         lbl_min = QLabel("Min Code (Hex)")
@@ -1021,10 +1019,16 @@ class PMUOutputVoltageUI(QWidget):
     def _bind_signals(self):
         self.search_btn.clicked.connect(self._on_search)
         self.connect_btn.clicked.connect(self._on_connect_or_disconnect)
-        self.start_test_btn.clicked.connect(self._on_start_test)
+        self.start_test_btn.clicked.connect(self._on_start_or_stop)
         self.stop_test_btn.clicked.connect(self._on_stop_test)
         self.msb_spin.valueChanged.connect(self._update_code_range)
         self.lsb_spin.valueChanged.connect(self._update_code_range)
+
+    def _on_start_or_stop(self):
+        if self.is_test_running:
+            self._on_stop_test()
+        else:
+            self._on_start_test()
 
     def _update_code_range(self):
         msb = self.msb_spin.value()
@@ -1093,8 +1097,17 @@ class PMUOutputVoltageUI(QWidget):
         """设置测试运行状态"""
         self.is_test_running = running
 
-        self.start_test_btn.setEnabled(not running)
+        self.start_test_btn.setEnabled(True)
         self.stop_test_btn.setEnabled(running)
+        if running:
+            self.start_test_btn.setText("■ Stop")
+            self.start_test_btn.setObjectName("stopBtn")
+        else:
+            self.start_test_btn.setText("▷ Start Sequence")
+            self.start_test_btn.setObjectName("primaryStartBtn")
+        self.start_test_btn.style().unpolish(self.start_test_btn)
+        self.start_test_btn.style().polish(self.start_test_btn)
+        self.start_test_btn.update()
 
         widgets = [
             self.vmeter_channel_combo,

@@ -975,6 +975,7 @@ class CLKTestUI(QWidget):
         # 工作线程属性
         self._test_thread = None
         self._test_worker = None
+        self._start_btn_text = "▶ START TEST"
         self._mso64b_search_thread = None
         self._mso64b_search_worker = None
         self._vt6002_search_thread = None
@@ -1729,9 +1730,9 @@ class CLKTestUI(QWidget):
         self.stop_test_btn = QPushButton("■")
         self.stop_test_btn.setObjectName("stop_test_btn")
         self.stop_test_btn.setEnabled(False)
+        self.stop_test_btn.hide()
 
         action_layout.addWidget(self.start_test_btn, 1)
-        action_layout.addWidget(self.stop_test_btn)
         left_col.addWidget(action_panel)
         left_col.addStretch()
 
@@ -1877,7 +1878,7 @@ class CLKTestUI(QWidget):
         self.vt6002_search_btn.clicked.connect(self._search_vt6002)
         self.vt6002_connect_btn.clicked.connect(self._toggle_vt6002)
 
-        self.start_test_btn.clicked.connect(self._start_test)
+        self.start_test_btn.clicked.connect(self._on_start_or_stop)
         self.stop_test_btn.clicked.connect(self._stop_test)
         self.export_result_btn.clicked.connect(self.export_result)
         self.clear_log_btn.clicked.connect(self.log_text.clear)
@@ -1925,6 +1926,7 @@ class CLKTestUI(QWidget):
             self.clk_data_source_panel.hide()
             self.freq_instr_frame.show()
             self.start_test_btn.setText("▶ START CAP-FREQ TEST")
+            self._start_btn_text = "▶ START CAP-FREQ TEST"
             self.chart_title.setText("补偿电容和频率关系结果")
             self._update_chart_labels("Register Value / Cap Code", "Frequency (Hz)")
             self.required_instr_label.setText(
@@ -1943,6 +1945,7 @@ class CLKTestUI(QWidget):
             self.clk_data_source_panel.hide()
             self.freq_instr_frame.show()
             self.start_test_btn.setText("▶ START TEMP OFFSET TEST")
+            self._start_btn_text = "▶ START TEMP OFFSET TEST"
             self.chart_title.setText("高低温频偏测试结果")
             self._update_chart_labels("Temperature (°C)", "Frequency (Hz)")
             self.required_instr_label.setText(
@@ -1961,6 +1964,7 @@ class CLKTestUI(QWidget):
             self.clk_data_source_panel.show()
             self.freq_instr_frame.hide()
             self.start_test_btn.setText("▶ START CLK PERFORMANCE TEST")
+            self._start_btn_text = "▶ START CLK PERFORMANCE TEST"
             self.chart_title.setText("时钟性能分析结果")
             self._update_chart_labels("Time (s)", "Frequency (Hz)")
             self.required_instr_label.setText(
@@ -2415,6 +2419,12 @@ class CLKTestUI(QWidget):
     # -------------------------------------------------------
     # 测试控制
     # -------------------------------------------------------
+    def _on_start_or_stop(self):
+        if self._test_thread is not None:
+            self._stop_test()
+        else:
+            self._start_test()
+
     def _start_test(self):
         if self._test_thread is not None:
             QMessageBox.information(self, "Info", "测试正在进行中")
@@ -2455,8 +2465,9 @@ class CLKTestUI(QWidget):
         self._launch_test_worker(config)
 
     def _launch_test_worker(self, config):
-        self.start_test_btn.setEnabled(False)
+        self.start_test_btn.setEnabled(True)
         self.stop_test_btn.setEnabled(True)
+        self._update_test_button_state(True)
 
         self._append_log(f"[INFO] Starting {self.current_test_item} test...")
 
@@ -2487,6 +2498,7 @@ class CLKTestUI(QWidget):
             self._append_log("[INFO] Stop requested...")
         self.start_test_btn.setEnabled(True)
         self.stop_test_btn.setEnabled(False)
+        self._update_test_button_state(False)
 
     def _cleanup_test_thread(self):
         if self._test_worker is not None:
@@ -2497,6 +2509,18 @@ class CLKTestUI(QWidget):
         self._test_thread = None
         self.start_test_btn.setEnabled(True)
         self.stop_test_btn.setEnabled(False)
+        self._update_test_button_state(False)
+
+    def _update_test_button_state(self, running):
+        if running:
+            self.start_test_btn.setText("■ STOP")
+            self.start_test_btn.setObjectName("stop_test_btn")
+        else:
+            self.start_test_btn.setText(self._start_btn_text)
+            self.start_test_btn.setObjectName("start_test_btn")
+        self.start_test_btn.style().unpolish(self.start_test_btn)
+        self.start_test_btn.style().polish(self.start_test_btn)
+        self.start_test_btn.update()
 
     def _on_test_progress(self, info):
         mode = info.get("mode")

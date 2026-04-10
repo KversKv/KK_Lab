@@ -1207,7 +1207,7 @@ class MainWindow(QMainWindow):
             sampling_rate=sampling_rate
         )
 
-        self.start_test_btn.setEnabled(False)
+        self.start_test_btn.setEnabled(True)
         self.stop_test_btn.setEnabled(True)
 
     def _stop_test(self):
