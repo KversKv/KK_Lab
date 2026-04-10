@@ -108,7 +108,6 @@ class _ItermTestWorker(QObject):
                 self.log_message.emit(msg)
                 self.result_row.emit({
                     "code": "---",
-                    "expected_ma": "---",
                     "measured_ma": f"{abs(iterm) * 1000.0:.4f}",
                     "result": "DONE",
                 })
@@ -1117,6 +1116,7 @@ class ItermTestUI(QWidget):
         self.export_result_btn.clicked.connect(self._on_export_csv)
         self.msb_edit.textChanged.connect(self._update_code_range)
         self.lsb_edit.textChanged.connect(self._update_code_range)
+        self._update_code_range()
 
     def _update_code_range(self):
         try:
@@ -1398,7 +1398,7 @@ class ItermTestUI(QWidget):
         else:
             self._fail_count += 1
 
-        msg = (f"Code {row['code']}: Expected {row['expected_ma']}mA, "
+        msg = (f"Code {row['code']}: "
                f"Measured {row['measured_ma']}mA  [{row['result']}]")
         logger.warning(msg)
         self._append_to_log(msg)
