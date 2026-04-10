@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QTextEdit, QProgressBar, QSizePolicy,
     QApplication, QFileDialog
 )
-from PySide6.QtCore import Qt, Signal, QThread, QObject, QTimer, QMargins
+from PySide6.QtCore import Qt, Signal, QThread, QObject, QTimer, QMargins, QPointF
 from PySide6.QtGui import QFont
 import time
 import pyvisa
@@ -37,7 +37,7 @@ except Exception:
 
 logger = get_logger(__name__)
 
-SAVE_DEBUG_DLOG_FLAG = True
+SAVE_DEBUG_DLOG_FLAG = False
 
 ITERM_REGISTER_MAP = {
     0: {"code": 0x00, "current_ma": 60},
@@ -433,7 +433,9 @@ class _ItermTestWorker(QObject):
         if default_iterm_val is not None:
             default_iterm = abs(default_iterm_val) * 1000.0
             self.log_message.emit(f"[TEST] Default Iterm: {default_iterm:.4f} mA (code=0x{default_code:X})")
-
+        write_reg = data_base | (min_code << lsb)
+        i2c.write(device_addr, iterm_reg, min_code, iic_width)
+        time.sleep(1)
         for idx, code in enumerate(range(min_code, max_code + 1)):
             if self._stop_flag:
                 logger.warning("Stopped by user.")
@@ -492,34 +494,8 @@ class _ItermTestWorker(QObject):
                         if dev > max_dev:
                             max_dev = dev
                     result["linearity"] = max_dev / abs(full_scale) * 100.0
-
-                    sum_x = 0.0
-                    sum_y = 0.0
-                    sum_xy = 0.0
-                    sum_x2 = 0.0
-                    for j in range(n):
-                        x = float(codes[j])
-                        y = iterms[j]
-                        sum_x += x
-                        sum_y += y
-                        sum_xy += x * y
-                        sum_x2 += x * x
-                    denom = n * sum_x2 - sum_x * sum_x
-                    if abs(denom) > 1e-15:
-                        slope = (n * sum_xy - sum_x * sum_y) / denom
-                        intercept = (sum_y - slope * sum_x) / n
-                        max_line_dev = 0.0
-                        for j in range(n):
-                            fitted = slope * codes[j] + intercept
-                            line_dev = abs(iterms[j] - fitted)
-                            if line_dev > max_line_dev:
-                                max_line_dev = line_dev
-                        result["line_value"] = max_line_dev / abs(full_scale) * 100.0
-                    else:
-                        result["line_value"] = 0.0
                 else:
                     result["linearity"] = 0.0
-                    result["line_value"] = 0.0
 
             result["unit"] = "mA"
             self.traverse_result_update.emit(result)
@@ -531,6 +507,24 @@ class _ItermTestWorker(QObject):
         logger.info("Register restored to default value.")
         self.log_message.emit("[TEST] Register restored to default value.")
 
+
+
+class _BackgroundTaskWorker(QObject):
+    finished = Signal(object)
+    error = Signal(str)
+
+    def __init__(self, func, *args, **kwargs):
+        super().__init__()
+        self._func = func
+        self._args = args
+        self._kwargs = kwargs
+
+    def run(self):
+        try:
+            result = self._func(*self._args, **self._kwargs)
+            self.finished.emit(result)
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 class CardFrame(QFrame):
@@ -564,14 +558,16 @@ class ItermTestUI(QWidget):
         self.is_test_running = False
         self.test_thread = None
         self.test_worker = None
+        self._bg_thread = None
+        self._bg_worker = None
         self._export_data = []
         self._pass_count = 0
         self._fail_count = 0
         self._total_count = 0
-
-        self.search_timer = QTimer(self)
-        self.search_timer.timeout.connect(self._search_devices)
-        self.search_timer.setSingleShot(True)
+        self._traverse_min_x = float('inf')
+        self._traverse_max_x = float('-inf')
+        self._traverse_min_y = float('inf')
+        self._traverse_max_y = float('-inf')
 
         self._setup_style()
         self._create_layout()
@@ -897,14 +893,12 @@ class ItermTestUI(QWidget):
         self.min_iterm_card = self._create_mini_stat("最小值", "---")
         self.max_iterm_card = self._create_mini_stat("最大值", "---")
         self.step_iterm_card = self._create_mini_stat("步进", "---")
-        self.line_iterm_card = self._create_mini_stat("直线度", "---")
         self.linearity_iterm_card = self._create_mini_stat("线性度", "---")
 
         self.traverse_stat_layout.addWidget(self.default_iterm_card["frame"])
         self.traverse_stat_layout.addWidget(self.min_iterm_card["frame"])
         self.traverse_stat_layout.addWidget(self.max_iterm_card["frame"])
         self.traverse_stat_layout.addWidget(self.step_iterm_card["frame"])
-        self.traverse_stat_layout.addWidget(self.line_iterm_card["frame"])
         self.traverse_stat_layout.addWidget(self.linearity_iterm_card["frame"])
 
         self.stat_container = QWidget()
@@ -1198,7 +1192,7 @@ class ItermTestUI(QWidget):
 
     def _set_traverse_stat_visible(self, traverse):
         for card in [self.default_iterm_card, self.min_iterm_card, self.max_iterm_card,
-                     self.step_iterm_card, self.line_iterm_card, self.linearity_iterm_card]:
+                     self.step_iterm_card, self.linearity_iterm_card]:
             card["frame"].setVisible(traverse)
         for card in [self.iterm_card, self.voreg_card]:
             card["frame"].setVisible(not traverse)
@@ -1276,6 +1270,29 @@ class ItermTestUI(QWidget):
         elif not self.is_connected:
             self._update_connect_button_state(False)
 
+    def _run_in_background(self, func, on_finished, on_error=None):
+        if self._bg_thread is not None:
+            self._bg_thread.quit()
+            self._bg_thread.wait()
+
+        self._bg_thread = QThread()
+        self._bg_worker = _BackgroundTaskWorker(func)
+        self._bg_worker.moveToThread(self._bg_thread)
+        self._bg_worker.finished.connect(on_finished)
+        if on_error:
+            self._bg_worker.error.connect(on_error)
+        self._bg_worker.finished.connect(self._cleanup_bg_thread)
+        self._bg_worker.error.connect(self._cleanup_bg_thread)
+        self._bg_thread.started.connect(self._bg_worker.run)
+        self._bg_thread.start()
+
+    def _cleanup_bg_thread(self):
+        if self._bg_thread is not None:
+            self._bg_thread.quit()
+            self._bg_thread.wait()
+            self._bg_thread = None
+            self._bg_worker = None
+
     def _on_search(self):
         if self._n6705c_top and self._n6705c_top.is_connected_a:
             return
@@ -1283,64 +1300,67 @@ class ItermTestUI(QWidget):
         logger.info("Scanning VISA resources...")
         self._append_to_log("[SYSTEM] Scanning VISA resources...")
         self.search_btn.setEnabled(False)
-        self.search_timer.start(100)
+        self.connect_btn.setEnabled(False)
+        self._run_in_background(self._search_devices_bg, self._on_search_finished, self._on_search_error)
 
-    def _search_devices(self):
-        try:
-            if self.rm is None:
-                try:
-                    self.rm = pyvisa.ResourceManager()
-                except Exception:
-                    self.rm = pyvisa.ResourceManager('@ni')
+    def _search_devices_bg(self):
+        rm = self.rm
+        if rm is None:
+            try:
+                rm = pyvisa.ResourceManager()
+            except Exception:
+                rm = pyvisa.ResourceManager('@ni')
+            self.rm = rm
 
-            self.available_devices = list(self.rm.list_resources()) or []
+        all_devices = list(rm.list_resources()) or []
+        self.available_devices = all_devices
 
-            compatible_devices = []
-            if self.available_devices:
-                compatible_devices = self.available_devices.copy()
+        n6705c_devices = []
+        for dev in all_devices:
+            try:
+                instr = rm.open_resource(dev, timeout=1000)
+                idn = instr.query('*IDN?').strip()
+                instr.close()
+                if "N6705C" in idn:
+                    n6705c_devices.append(dev)
+            except Exception:
+                pass
+        return n6705c_devices
 
-            n6705c_devices = []
-            for dev in compatible_devices:
-                try:
-                    instr = self.rm.open_resource(dev, timeout=1000)
-                    idn = instr.query('*IDN?').strip()
-                    instr.close()
+    def _on_search_finished(self, n6705c_devices):
+        self.visa_resource_combo.setEnabled(True)
+        self.visa_resource_combo.clear()
 
-                    if "N6705C" in idn:
-                        n6705c_devices.append(dev)
-                except Exception:
-                    pass
+        if n6705c_devices:
+            for dev in n6705c_devices:
+                self.visa_resource_combo.addItem(dev)
 
-            self.visa_resource_combo.setEnabled(True)
-            self.visa_resource_combo.clear()
+            count = len(n6705c_devices)
+            self.set_system_status(f"\u25cf Found {count} device(s)")
+            logger.info(f"Found {count} compatible N6705C device(s).")
+            self._append_to_log(f"[SYSTEM] Found {count} compatible N6705C device(s).")
 
-            if n6705c_devices:
-                for dev in n6705c_devices:
-                    self.visa_resource_combo.addItem(dev)
-
-                count = len(n6705c_devices)
-                self.set_system_status(f"\u25cf Found {count} device(s)")
-                logger.info(f"Found {count} compatible N6705C device(s).")
-                self._append_to_log(f"[SYSTEM] Found {count} compatible N6705C device(s).")
-
-                default_device = "TCPIP0::K-N6705C-06098.local::hislip0::INSTR"
-                if default_device in n6705c_devices:
-                    self.visa_resource_combo.setCurrentText(default_device)
-                else:
-                    self.visa_resource_combo.setCurrentIndex(0)
+            default_device = "TCPIP0::K-N6705C-06098.local::hislip0::INSTR"
+            if default_device in n6705c_devices:
+                self.visa_resource_combo.setCurrentText(default_device)
             else:
-                self.visa_resource_combo.addItem("No N6705C device found")
-                self.visa_resource_combo.setEnabled(False)
-                self.set_system_status("\u25cf No device found", is_error=True)
-                logger.info("No compatible N6705C instrument found.")
-                self._append_to_log("[SYSTEM] No compatible N6705C instrument found.")
+                self.visa_resource_combo.setCurrentIndex(0)
+        else:
+            self.visa_resource_combo.addItem("No N6705C device found")
+            self.visa_resource_combo.setEnabled(False)
+            self.set_system_status("\u25cf No device found", is_error=True)
+            logger.info("No compatible N6705C instrument found.")
+            self._append_to_log("[SYSTEM] No compatible N6705C instrument found.")
 
-        except Exception as e:
-            self.set_system_status("\u25cf Search failed", is_error=True)
-            logger.error(f"Search failed: {str(e)}")
-            self._append_to_log(f"[ERROR] Search failed: {str(e)}")
-        finally:
-            self.search_btn.setEnabled(True)
+        self.search_btn.setEnabled(True)
+        self.connect_btn.setEnabled(True)
+
+    def _on_search_error(self, err_msg):
+        self.set_system_status("\u25cf Search failed", is_error=True)
+        logger.error(f"Search failed: {err_msg}")
+        self._append_to_log(f"[ERROR] Search failed: {err_msg}")
+        self.search_btn.setEnabled(True)
+        self.connect_btn.setEnabled(True)
 
     def _on_connect_or_disconnect(self):
         if self.is_connected:
@@ -1353,77 +1373,98 @@ class ItermTestUI(QWidget):
         logger.info("Attempting instrument connection...")
         self._append_to_log("[SYSTEM] Attempting instrument connection...")
         self.connect_btn.setEnabled(False)
+        self.search_btn.setEnabled(False)
 
-        try:
-            device_address = self.visa_resource_combo.currentText()
-            self.n6705c = N6705C(device_address)
+        device_address = self.visa_resource_combo.currentText()
+        self._pending_device_address = device_address
 
-            idn = self.n6705c.instr.query("*IDN?")
-            if "N6705C" in idn:
-                self._update_connect_button_state(True)
-                self.set_system_status("\u25cf Connected")
-                self.search_btn.setEnabled(False)
+        def _connect_bg():
+            n6705c = N6705C(device_address)
+            idn = n6705c.instr.query("*IDN?")
+            return {"n6705c": n6705c, "idn": idn, "address": device_address}
 
-                pretty_name = device_address
-                try:
-                    pretty_name = device_address.split("::")[1]
-                except Exception:
-                    pass
+        self._run_in_background(_connect_bg, self._on_connect_finished, self._on_connect_error)
 
-                self.instrument_info_label.setText(pretty_name)
-                logger.info("N6705C connected successfully.")
-                self._append_to_log("[SYSTEM] N6705C connected successfully.")
-                logger.debug(f"IDN: {idn.strip()}")
+    def _on_connect_finished(self, result):
+        n6705c = result["n6705c"]
+        idn = result["idn"]
+        device_address = result["address"]
 
-                if self._n6705c_top:
-                    self._n6705c_top.connect_a(device_address, self.n6705c)
+        if "N6705C" in idn:
+            self.n6705c = n6705c
+            self._update_connect_button_state(True)
+            self.set_system_status("\u25cf Connected")
+            self.search_btn.setEnabled(False)
 
-                self.connection_status_changed.emit(True)
-            else:
-                self.set_system_status("\u25cf Device mismatch", is_error=True)
-                logger.error("Connected device is not N6705C.")
-                self._append_to_log("[ERROR] Connected device is not N6705C.")
-        except Exception as e:
-            self.set_system_status("\u25cf Connection failed", is_error=True)
-            logger.error(f"Connection failed: {str(e)}")
-            self._append_to_log(f"[ERROR] Connection failed: {str(e)}")
-        finally:
-            self.connect_btn.setEnabled(True)
+            pretty_name = device_address
+            try:
+                pretty_name = device_address.split("::")[1]
+            except Exception:
+                pass
+
+            self.instrument_info_label.setText(pretty_name)
+            logger.info("N6705C connected successfully.")
+            self._append_to_log("[SYSTEM] N6705C connected successfully.")
+            logger.debug(f"IDN: {idn.strip()}")
+
+            if self._n6705c_top:
+                self._n6705c_top.connect_a(device_address, n6705c)
+
+            self.connection_status_changed.emit(True)
+        else:
+            self.set_system_status("\u25cf Device mismatch", is_error=True)
+            logger.error("Connected device is not N6705C.")
+            self._append_to_log("[ERROR] Connected device is not N6705C.")
+
+        self.connect_btn.setEnabled(True)
+
+    def _on_connect_error(self, err_msg):
+        self.set_system_status("\u25cf Connection failed", is_error=True)
+        logger.error(f"Connection failed: {err_msg}")
+        self._append_to_log(f"[ERROR] Connection failed: {err_msg}")
+        self.connect_btn.setEnabled(True)
+        self.search_btn.setEnabled(True)
 
     def _on_disconnect(self):
         self.set_system_status("\u25cf Disconnecting")
         logger.info("Disconnecting instrument...")
         self._append_to_log("[SYSTEM] Disconnecting instrument...")
         self.connect_btn.setEnabled(False)
+        self.search_btn.setEnabled(False)
 
-        try:
-            if self._n6705c_top:
-                self._n6705c_top.disconnect_a()
-                self.n6705c = None
+        n6705c_top = self._n6705c_top
+        n6705c = self.n6705c
+
+        def _disconnect_bg():
+            if n6705c_top:
+                n6705c_top.disconnect_a()
             else:
-                if self.n6705c is not None:
-                    if hasattr(self.n6705c, 'instr') and self.n6705c.instr:
-                        self.n6705c.instr.close()
-                    if hasattr(self.n6705c, 'rm') and self.n6705c.rm:
-                        self.n6705c.rm.close()
-                self.n6705c = None
+                if n6705c is not None:
+                    if hasattr(n6705c, 'instr') and n6705c.instr:
+                        n6705c.instr.close()
+                    if hasattr(n6705c, 'rm') and n6705c.rm:
+                        n6705c.rm.close()
+            return True
 
-            self._update_connect_button_state(False)
+        self._run_in_background(_disconnect_bg, self._on_disconnect_finished, self._on_disconnect_error)
 
-            self.set_system_status("\u25cf Ready")
-            self.search_btn.setEnabled(True)
-            self.instrument_info_label.setText("USB0::0x0957::0x0F07::MY53004321")
-            logger.info("Instrument disconnected.")
-            self._append_to_log("[SYSTEM] Instrument disconnected.")
+    def _on_disconnect_finished(self, _result):
+        self.n6705c = None
+        self._update_connect_button_state(False)
+        self.set_system_status("\u25cf Ready")
+        self.search_btn.setEnabled(True)
+        self.instrument_info_label.setText("USB0::0x0957::0x0F07::MY53004321")
+        logger.info("Instrument disconnected.")
+        self._append_to_log("[SYSTEM] Instrument disconnected.")
+        self.connection_status_changed.emit(False)
+        self.connect_btn.setEnabled(True)
 
-            self.connection_status_changed.emit(False)
-
-        except Exception as e:
-            self.set_system_status("\u25cf Disconnect failed", is_error=True)
-            logger.error(f"Disconnect failed: {str(e)}")
-            self._append_to_log(f"[ERROR] Disconnect failed: {str(e)}")
-        finally:
-            self.connect_btn.setEnabled(True)
+    def _on_disconnect_error(self, err_msg):
+        self.set_system_status("\u25cf Disconnect failed", is_error=True)
+        logger.error(f"Disconnect failed: {err_msg}")
+        self._append_to_log(f"[ERROR] Disconnect failed: {err_msg}")
+        self.connect_btn.setEnabled(True)
+        self.search_btn.setEnabled(True)
 
     def _on_start_test(self):
         if not self.is_connected or self.n6705c is None:
@@ -1436,7 +1477,6 @@ class ItermTestUI(QWidget):
         self._pass_count = 0
         self._fail_count = 0
         self._total_count = 0
-        self.log_edit.clear()
         self._export_data = []
 
         try:
@@ -1517,10 +1557,6 @@ class ItermTestUI(QWidget):
         else:
             self._fail_count += 1
 
-        msg = (f"Code {row['code']}: "
-               f"Measured {row['measured_ma']}mA  [{row['result']}]")
-        logger.warning(msg)
-        self._append_to_log(msg)
         self._export_data.append(row)
 
     def _on_test_finished(self, success):
@@ -1558,11 +1594,10 @@ class ItermTestUI(QWidget):
         max_chart_points = 5000
         if total > max_chart_points:
             step = total // max_chart_points
-            for idx in range(0, total, step):
-                self.current_series.append(timestamps[idx], currents[idx])
+            points = [QPointF(timestamps[idx], currents[idx]) for idx in range(0, total, step)]
         else:
-            for t, i in zip(timestamps, currents):
-                self.current_series.append(t, i)
+            points = [QPointF(t, i) for t, i in zip(timestamps, currents)]
+        self.current_series.replace(points)
 
         if t_term >= 0:
             t_idx = None
@@ -1595,6 +1630,10 @@ class ItermTestUI(QWidget):
             self.traverse_series.clear()
             self.current_series.clear()
             self.term_marker_series.clear()
+        self._traverse_min_x = float('inf')
+        self._traverse_max_x = float('-inf')
+        self._traverse_min_y = float('inf')
+        self._traverse_max_y = float('-inf')
 
     def _on_traverse_chart_point(self, code, iterm_ma):
         if not HAS_QTCHARTS or not hasattr(self, 'traverse_series'):
@@ -1603,18 +1642,21 @@ class ItermTestUI(QWidget):
         self.traverse_series.append(code, iterm_ma)
         self._export_data.append((code, iterm_ma))
 
-        pts = self.traverse_series.points()
-        if pts and hasattr(self, 'axis_x'):
-            min_x = int(min(p.x() for p in pts))
-            max_x = int(max(p.x() for p in pts))
-            margin_x = max(int((max_x - min_x) * 0.05), 1)
-            self.axis_x.setRange(max(0, min_x - margin_x), max_x + margin_x)
+        self._traverse_min_x = min(self._traverse_min_x, code)
+        self._traverse_max_x = max(self._traverse_max_x, code)
+        self._traverse_min_y = min(self._traverse_min_y, iterm_ma)
+        self._traverse_max_y = max(self._traverse_max_y, iterm_ma)
 
-        if pts and hasattr(self, 'axis_y'):
-            min_y = min(p.y() for p in pts)
-            max_y = max(p.y() for p in pts)
-            margin_y = max((max_y - min_y) * 0.05, 0.01)
-            self.axis_y.setRange(min_y - margin_y, max_y + margin_y)
+        if hasattr(self, 'axis_x'):
+            margin_x = max(int((self._traverse_max_x - self._traverse_min_x) * 0.05), 1)
+            self.axis_x.setRange(
+                max(0, int(self._traverse_min_x) - margin_x),
+                int(self._traverse_max_x) + margin_x
+            )
+
+        if hasattr(self, 'axis_y'):
+            margin_y = max((self._traverse_max_y - self._traverse_min_y) * 0.05, 0.01)
+            self.axis_y.setRange(self._traverse_min_y - margin_y, self._traverse_max_y + margin_y)
 
     def _on_traverse_result_update(self, result):
         if 'default_value' in result:
@@ -1627,9 +1669,7 @@ class ItermTestUI(QWidget):
             code_str = f" (0x{result['valid_max_code']:X})" if 'valid_max_code' in result else ""
             self.max_iterm_card["value"].setText(f"{result['max_value']:.4f} mA{code_str}")
         if 'step_value' in result:
-            self.step_iterm_card["value"].setText(f"{result['step_value']:.4f} mA/code")
-        if 'line_value' in result:
-            self.line_iterm_card["value"].setText(f"{result['line_value']:.4f}%")
+            self.step_iterm_card["value"].setText(f"{result['step_value']:.4f} mA")
         if 'linearity' in result:
             self.linearity_iterm_card["value"].setText(f"{result['linearity']:.4f}%")
         if 'progress' in result:
@@ -1747,7 +1787,6 @@ class ItermTestUI(QWidget):
         self.min_iterm_card["value"].setText("---")
         self.max_iterm_card["value"].setText("---")
         self.step_iterm_card["value"].setText("---")
-        self.line_iterm_card["value"].setText("---")
         self.linearity_iterm_card["value"].setText("---")
         if HAS_QTCHARTS:
             if hasattr(self, 'current_series'):
@@ -1773,8 +1812,6 @@ class ItermTestUI(QWidget):
             self.max_iterm_card["value"].setText(f"{result['max_value']:.4f} mA{code_str}")
         if "step_value" in result:
             self.step_iterm_card["value"].setText(f"{result['step_value']:.4f} mA/code")
-        if "line_value" in result:
-            self.line_iterm_card["value"].setText(f"{result['line_value']:.4f}%")
         if "linearity" in result:
             self.linearity_iterm_card["value"].setText(f"{result['linearity']:.4f}%")
 
