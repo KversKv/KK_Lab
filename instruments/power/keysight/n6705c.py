@@ -101,11 +101,9 @@ class N6705C:
         return float(self.instr.query(f"FETC:CURR? (@{channel})"))
 
     def arb_on(self, channel):
-        # 测量电压
         return self.instr.write(f"INIT:TRAN (@{channel})")
 
     def arb_off(self, channel):
-        # 测量电压
         return self.instr.write(f"ABOR:TRAN? (@{channel})")
 
     def arb_status(self, channel):
@@ -113,6 +111,107 @@ class N6705C:
 
     def trg(self):
         return self.instr.write(f"*TRG")
+
+    def set_arb_type(self, channel, arb_type="VOLT"):
+        self.instr.write(f"ARB:FUNC:TYPE {arb_type},(@{channel})")
+
+    def set_arb_step(self, channel, v0, v1, t0, t1):
+        """
+        配置ARB阶跃波形 (Step Shape)
+
+        参数:
+            channel (int): 通道号
+            v0 (float): 起始电压(V)
+            v1 (float): 终止电压(V)
+            t0 (float): 起始电压保持时间(s)
+            t1 (float): 终止电压保持时间(s)
+        """
+        self.instr.write(f"ARB:FUNC:TYPE VOLT,(@{channel})")
+        self.instr.write(f"ARB:FUNC:SHAP STEP,(@{channel})")
+        self.instr.write(f"ARB:VOLT:STEP:STAR {v0},(@{channel})")
+        self.instr.write(f"ARB:VOLT:STEP:END {v1},(@{channel})")
+        self.instr.write(f"ARB:VOLT:STEP:STAR:TIM {t0},(@{channel})")
+        self.instr.write(f"ARB:VOLT:STEP:END:TIM {t1},(@{channel})")
+        self.instr.write(f"VOLT:MODE ARB,(@{channel})")
+
+    def set_arb_staircase(self, channel, v0, v1, t0, t1, t2, steps):
+        """
+        配置ARB阶梯波形 (Staircase Shape)
+
+        参数:
+            channel (int): 通道号
+            v0 (float): 起始电压(V)
+            v1 (float): 终止电压(V)
+            t0 (float): 阶梯之前的保持时间(s)
+            t1 (float): 每级驻留时间(s)
+            t2 (float): 阶梯之后的保持时间(s)
+            steps (int): 阶梯数量
+        """
+        self.instr.write(f"ARB:FUNC:TYPE VOLT,(@{channel})")
+        self.instr.write(f"ARB:FUNC:SHAP STA,(@{channel})")
+        self.instr.write(f"ARB:VOLT:STA:STAR {v0},(@{channel})")
+        self.instr.write(f"ARB:VOLT:STA:END {v1},(@{channel})")
+        self.instr.write(f"ARB:VOLT:STA:STAR:TIM {t0},(@{channel})")
+        self.instr.write(f"ARB:VOLT:STA:TIM {t1},(@{channel})")
+        self.instr.write(f"ARB:VOLT:STA:END:TIM {t2},(@{channel})")
+        self.instr.write(f"ARB:VOLT:STA:NST {steps},(@{channel})")
+        self.instr.write(f"VOLT:MODE ARB,(@{channel})")
+
+    def set_arb_pulse(self, channel, v0, v1, t0, t1, t2, frequency):
+        """
+        配置ARB脉冲波形 (Pulse Shape)
+
+        参数:
+            channel (int): 通道号
+            v0 (float): 基准电压(V)
+            v1 (float): 脉冲顶部电压(V)
+            t0 (float): 起始保持时间(s)
+            t1 (float): 终止保持时间(s)
+            t2 (float): 脉冲顶部持续时间(s)
+            frequency (float): 脉冲频率(Hz)
+        """
+        self.instr.write(f"ARB:FUNC:TYPE VOLT,(@{channel})")
+        self.instr.write(f"ARB:FUNC:SHAP PULS,(@{channel})")
+        self.instr.write(f"ARB:VOLT:PULS:STAR {v0},(@{channel})")
+        self.instr.write(f"ARB:VOLT:PULS:TOP {v1},(@{channel})")
+        self.instr.write(f"ARB:VOLT:PULS:STAR:TIM {t0},(@{channel})")
+        self.instr.write(f"ARB:VOLT:PULS:END:TIM {t1},(@{channel})")
+        self.instr.write(f"ARB:VOLT:PULS:TOP:TIM {t2},(@{channel})")
+        self.instr.write(f"ARB:VOLT:PULS:FREQ {frequency},(@{channel})")
+        self.instr.write(f"VOLT:MODE ARB,(@{channel})")
+
+    def set_arb_continuous(self, channel, flag=False):
+        if flag:
+            self.instr.write(f"ARB:TERM:LAST ON,(@{channel})")
+        else:
+            self.instr.write(f"ARB:TERM:LAST OFF,(@{channel})")
+
+    def arb_run(self):
+        self.instr.write("TRIG:ARB:SOUR BUS")
+        self.instr.write("*TRG")
+
+    def arb_stop(self):
+        self.instr.write("ABOR:TRAN")
+
+    def test_arb_staircase(self, channel, v0=3, v1=4.3, t0=1, t1=10, t2=1, steps=500):
+        print(f"[测试] set_arb_staircase on channel {channel}")
+        print(f"  参数: v0={v0}, v1={v1}, t0={t0}, t1={t1}, t2={t2}, steps={steps}")
+
+        self.set_arb_staircase(channel, v0=v0, v1=v1, t0=t0, t1=t1, t2=t2, steps=steps)
+        self.set_arb_continuous(channel, flag=False)
+        self.arb_on(channel)
+        self.channel_on(channel)
+        print("  ARB配置完成, 正在触发...")
+
+        self.arb_run()
+        print("  ARB已触发, 等待执行...")
+
+        total_time = t0 + t1 * (steps - 2) + t2
+        time.sleep(total_time + 2)
+
+        voltage = self.measure_voltage(channel)
+        print(f"  当前电压: {voltage:.4f} V")
+        print("[测试] 完成")
 
     def read_mmem_data(self, filepath):
         import struct
@@ -380,4 +479,18 @@ class N6705C:
         except Exception as e:
             print(f"Error in fetch_current_by_datalog: {e}")
             return {ch: self.fetch_current(ch) for ch in channels}
+
+
+if __name__ == "__main__":
+    IP = "192.168.3.99"
+    CHANNEL = 1
+
+    n6705c = N6705C(IP)
+    try:
+        idn = n6705c.instr.query("*IDN?").strip()
+        print(f"已连接: {idn}")
+        n6705c.test_arb_staircase(CHANNEL)
+    finally:
+        n6705c.disconnect()
+        print("已断开连接")
 
