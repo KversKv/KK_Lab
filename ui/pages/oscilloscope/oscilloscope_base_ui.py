@@ -155,12 +155,28 @@ class OscilloscopeBaseUI(QWidget):
         ("CH2 Vmin", "– –"),
     ]
 
-    CHANNEL_COLORS = {
+    CHANNEL_COLORS_DEFAULT = {
+        1: "#7B8CB7",
+        2: "#7B8CB7",
+        3: "#7B8CB7",
+        4: "#7B8CB7",
+    }
+
+    CHANNEL_COLORS_TEKTRONIX = {
         1: "#F0B400",
         2: "#4C8DFF",
-        3: "#00C896",
-        4: "#9E7BFF",
+        3: "#FF4444",
+        4: "#00C896",
     }
+
+    CHANNEL_COLORS_KEYSIGHT = {
+        1: "#F0B400",
+        2: "#00C896",
+        3: "#4C8DFF",
+        4: "#FF4444",
+    }
+
+    CHANNEL_COLORS = CHANNEL_COLORS_DEFAULT
 
     def __init__(self, mso64b_top=None, parent=None):
         super().__init__(parent)
@@ -261,6 +277,12 @@ class OscilloscopeBaseUI(QWidget):
 
             QLineEdit:focus, QComboBox:focus {
                 border: 1px solid #4C6FFF;
+            }
+
+            QLineEdit:disabled, QComboBox:disabled {
+                background-color: #070F28;
+                border: 1px solid #131D3A;
+                color: #3A4563;
             }
 
             QPushButton {
@@ -378,6 +400,12 @@ class OscilloscopeBaseUI(QWidget):
                 background-color: #162040;
             }
 
+            QPushButton#ghostBtn:disabled {
+                background-color: #0E1628;
+                border: 1px solid #151E35;
+                color: #3A4563;
+            }
+
             QPushButton#primaryBtn {
                 background-color: #3D33A6;
                 border: none;
@@ -389,6 +417,11 @@ class OscilloscopeBaseUI(QWidget):
 
             QPushButton#primaryBtn:hover {
                 background-color: #4B40BF;
+            }
+
+            QPushButton#primaryBtn:disabled {
+                background-color: #1A1540;
+                color: #3A4563;
             }
 
             QPushButton#channelTab {
@@ -405,6 +438,16 @@ class OscilloscopeBaseUI(QWidget):
                 color: #081126;
             }
 
+            QPushButton#channelTab:disabled {
+                background-color: transparent;
+                color: #3A4563;
+            }
+
+            QPushButton#channelTab:checked:disabled {
+                background-color: #1A2240;
+                color: #3A4563;
+            }
+
             QPushButton#segBtn {
                 background-color: transparent;
                 border: none;
@@ -417,6 +460,16 @@ class OscilloscopeBaseUI(QWidget):
             QPushButton#segBtn:checked {
                 background-color: #243760;
                 color: #DDE6FF;
+            }
+
+            QPushButton#segBtn:disabled {
+                background-color: transparent;
+                color: #3A4563;
+            }
+
+            QPushButton#segBtn:checked:disabled {
+                background-color: #131D3A;
+                color: #3A4563;
             }
 
             QSlider::groove:horizontal {
@@ -890,6 +943,7 @@ class OscilloscopeBaseUI(QWidget):
 
         channel_data = {
             'toggle': toggle_wrap["button"],
+            'channel_label': channel_label,
             'coupling_combo': None,
             'coupling_dc': coupling_dc,
             'coupling_ac': coupling_ac,
@@ -928,6 +982,9 @@ class OscilloscopeBaseUI(QWidget):
             QPushButton:!checked {
                 background-color: #33415F;
             }
+            QPushButton:disabled {
+                background-color: #1A2030;
+            }
         """)
         layout.addWidget(btn)
 
@@ -965,6 +1022,7 @@ class OscilloscopeBaseUI(QWidget):
         self.apply_btn.clicked.connect(self._on_apply_settings)
         self.timebase_apply_requested.connect(self._on_apply_timebase_only)
 
+        self._set_interactive_enabled(False)
         self.append_log("[SYSTEM] Ready. Waiting for instrument connection.")
 
     def _create_log_card(self):
@@ -1070,6 +1128,7 @@ class OscilloscopeBaseUI(QWidget):
 
     def update_connection_status(self, connected, instrument_info=None):
         self._update_connect_button_state(connected)
+        self._set_interactive_enabled(connected)
         if connected:
             self.search_btn.setEnabled(False)
             text = instrument_info if instrument_info else "Connected"
@@ -1080,6 +1139,7 @@ class OscilloscopeBaseUI(QWidget):
             self.search_btn.setEnabled(True)
             self.instrument_info_label.setText("")
             self.set_system_status("● Ready")
+            self._update_channel_colors(self.CHANNEL_COLORS_DEFAULT)
             self.append_log("[SYSTEM] Disconnected.")
 
     def update_display_image(self, png_bytes: bytes):
@@ -1147,6 +1207,62 @@ class OscilloscopeBaseUI(QWidget):
         self.system_status_label.style().polish(self.system_status_label)
         self.system_status_label.update()
 
+    def _set_interactive_enabled(self, enabled: bool):
+        self.capture_btn.setEnabled(enabled)
+        self.invert_btn.setEnabled(enabled)
+        self.measure_btn.setEnabled(enabled)
+        self.apply_btn.setEnabled(enabled)
+        self.timebase_edit.setEnabled(enabled)
+        self.trigger_source_combo.setEnabled(enabled)
+        self.trigger_level_edit.setEnabled(enabled)
+        self.trigger_slope_combo.setEnabled(enabled)
+
+        for btn in self.channel_tab_buttons:
+            btn.setEnabled(enabled)
+
+        for channel in self.channels:
+            channel['toggle'].setEnabled(enabled)
+            channel['scale_edit'].setEnabled(enabled)
+            channel['offset_edit'].setEnabled(enabled)
+            channel['coupling_dc'].setEnabled(enabled)
+            channel['coupling_ac'].setEnabled(enabled)
+
+    def _update_channel_colors(self, color_map: dict):
+        self.CHANNEL_COLORS = color_map
+
+        for i, btn in enumerate(self.channel_tab_buttons):
+            ch_num = i + 1
+            color = color_map.get(ch_num, "#5F77AE")
+            btn.setStyleSheet(f"""
+                QPushButton#channelTab {{
+                    background-color: transparent;
+                    border: none;
+                    border-radius: 6px;
+                    padding: 6px 8px;
+                    color: {color};
+                    font-weight: 700;
+                }}
+                QPushButton#channelTab:checked {{
+                    background-color: {color};
+                    color: #081126;
+                }}
+                QPushButton#channelTab:disabled {{
+                    background-color: transparent;
+                    color: #3A4563;
+                }}
+                QPushButton#channelTab:checked:disabled {{
+                    background-color: #1A2240;
+                    color: #3A4563;
+                }}
+            """)
+
+        for i, channel_data in enumerate(self.channels):
+            ch_num = i + 1
+            color = color_map.get(ch_num, "#DDE6FF")
+            channel_data['channel_label'].setStyleSheet(
+                f"font-weight: 800; font-size: 12pt; color: {color};"
+            )
+
     def _on_search(self):
         self.set_system_status("● Searching")
         self.append_log("[SYSTEM] Scanning VISA / network resources...")
@@ -1204,6 +1320,11 @@ class OscilloscopeBaseUI(QWidget):
             self.update_connection_status(True, result["info"])
             self.set_title(result["title"])
             self.set_invert_enabled(result["is_dsox"])
+
+            if result["is_dsox"]:
+                self._update_channel_colors(self.CHANNEL_COLORS_KEYSIGHT)
+            elif result["is_mso64b"]:
+                self._update_channel_colors(self.CHANNEL_COLORS_TEKTRONIX)
 
             if result["is_mso64b"] and self.mso64b_top is not None:
                 self.mso64b_top.connect_instrument(resource, self.controller.instrument)
