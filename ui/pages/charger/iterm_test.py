@@ -33,6 +33,24 @@ try:
 except Exception:
     HAS_QTCHARTS = False
 
+# 是否在每次测试后将原始 dlog 数据保存到本地文件 (Results/iterm_test/ 目录下)
+# True  = 保存, 方便事后离线分析和问题排查
+# False = 不保存, 节省磁盘空间
+SAVE_DEBUG_DLOG_FLAG = True
+
+# 日志输出级别, 控制 LOG 窗口显示的信息详细程度
+# 0 = 静默模式, 完全不输出任何 LOG
+# 1 = 仅结果:   只输出 [RESULT] / [ERROR] / [DATA] 等关键结果
+# 2 = 测试流程: 在 1 的基础上增加 [SYSTEM] / [TEST] Step / [WARN] / [EXPORT] 等流程信息
+# 3 = 完整调试: 在 2 的基础上增加 ARB 参数、dlog 下载字节数、解析细节、分析阈值、
+#               终止点定位、Iterm 计算过程、寄存器写入值、[IDN] 等全部调试信息
+#
+# 用法:
+#   Worker 中调用:  self._log("message", level)   — level 为 1/2/3, 对应上述级别
+#   UI 中直接调用:  self.append_log("message", level)
+#   只有 level <= LOG_LEVEL 的消息才会显示; LOG_LEVEL=0 时全部静默
+LOG_LEVEL = 2
+
 ITERM_REGISTER_MAP = {
     0: {"code": 0x00, "current_ma": 60},
     1: {"code": 0x01, "current_ma": 120},
@@ -56,12 +74,12 @@ def _fmt_val(value, min_decimals=4, sig_digits=4):
 
 
 class _ItermTestWorker(QObject):
-    log_message = Signal(str)
+    log_message = Signal(str, int)
     progress = Signal(int)
     result_row = Signal(dict)
     test_finished = Signal(bool)
     chart_clear = Signal()
-    chart_series_data = Signal(list, list, float, float)
+    chart_series_data = Signal(list, list, float, float, float)
     traverse_chart_point = Signal(float, float)
     traverse_chart_clear = Signal()
     traverse_result_update = Signal(dict)
@@ -71,6 +89,9 @@ class _ItermTestWorker(QObject):
         self._n6705c = n6705c
         self._cfg = config
         self._stop_flag = False
+
+    def _log(self, msg, level=2):
+        self.log_message.emit(msg, level)
 
     def request_stop(self):
         self._stop_flag = True
@@ -86,13 +107,14 @@ class _ItermTestWorker(QObject):
         try:
             vbat_channel = self._cfg["vbat_channel"]
             current_channel = self._cfg["measure_channel"]
+            voreg = self._cfg.get("voreg", 4.2)
             average_time = self._cfg.get("average_time_ms", 100) / 1000.0
 
-            iterm = self.single_iterm_test(vbat_channel, current_channel, average_time)
+            iterm = self.single_iterm_test(vbat_channel, current_channel, voreg, average_time)
 
             if iterm is not None:
-                self.log_message.emit(
-                    f"[RESULT] Iterm = {_fmt_val(iterm * 1000.0)} mA"
+                self._log(
+                    f"[RESULT] Iterm = {_fmt_val(iterm * 1000.0)} mA", 1
                 )
                 self.result_row.emit({
                     "code": "---",
@@ -102,7 +124,7 @@ class _ItermTestWorker(QObject):
                 })
             self.test_finished.emit(True)
         except Exception as e:
-            self.log_message.emit(f"[ERROR] {e}")
+            self._log(f"[ERROR] {e}", 1)
             self.test_finished.emit(False)
 
     def _run_traverse(self):
@@ -112,6 +134,7 @@ class _ItermTestWorker(QObject):
             iic_width = self._cfg["iic_width"]
             vbat_channel = self._cfg["vbat_channel"]
             current_channel = self._cfg["measure_channel"]
+            voreg = self._cfg.get("voreg", 4.2)
             average_time = self._cfg.get("average_time_ms", 100) / 1000.0
             msb = self._cfg["msb"]
             lsb = self._cfg["lsb"]
@@ -120,119 +143,233 @@ class _ItermTestWorker(QObject):
 
             self.traverse_iterm_test(
                 device_addr, iterm_reg, iic_width,
-                vbat_channel, current_channel, average_time,
+                vbat_channel, current_channel, voreg, average_time,
                 msb, lsb, min_code, max_code,
             )
             self.test_finished.emit(True)
         except Exception as e:
-            self.log_message.emit(f"[ERROR] {e}")
+            self._log(f"[ERROR] {e}", 1)
             self.test_finished.emit(False)
 
-    def single_iterm_test(self, vbat_channel, current_channel, average_time):
-        v_start = self._cfg.get("v_start", 3.7)
-        v_end = self._cfg.get("v_end", 4.6)
-        v_step = self._cfg.get("v_step", 0.01)
-        step_dwell = self._cfg.get("step_dwell_ms", 200) / 1000.0
+    def single_iterm_test(self, vbat_channel, current_channel, voreg, average_time):
+        from instruments.power.keysight.n6705c_datalog_process import parse_dlog_binary
 
-        steps = int((v_end - v_start) / v_step) + 1
-        if steps <= 0:
-            self.log_message.emit("[ERROR] Invalid voltage scan range.")
+        arb_v0 = voreg - 0.2
+        arb_v1 = voreg + 0.1
+        arb_t0 = 0
+        arb_t1 = 5
+        arb_t2 = 0
+        arb_steps = 500
+        arb_total_time = arb_t0 + arb_t1 + arb_t2
+        sample_period_s = 0.00004
+
+        self._log(
+            f"[TEST] Single Iterm Test: VBAT CH{vbat_channel}, "
+            f"Current CH{current_channel}, Voreg={voreg:.2f}V", 2
+        )
+        self._log(
+            f"[TEST] ARB Staircase: V0={arb_v0:.3f}V -> V1={arb_v1:.3f}V, "
+            f"steps={arb_steps}, total_time={arb_total_time:.1f}s", 3
+        )
+
+        self._log("[TEST] Step 1: Setting Vbat to 3V to ensure DUT enters charging state...", 2)
+        self._n6705c.set_voltage(vbat_channel, 3.0)
+        self._n6705c.channel_on(vbat_channel)
+        time.sleep(0.1)
+
+        if self._stop_flag:
+            self._log("[TEST] Stopped by user.", 1)
             return None
 
-        self.log_message.emit(
-            f"[TEST] Single Iterm Test: VBAT CH{vbat_channel}, "
-            f"Current CH{current_channel}, Avg={average_time*1000:.0f}ms"
+        self._log("[TEST] Step 2: Configuring ARB staircase waveform...", 2)
+        self._n6705c.set_arb_staircase(
+            vbat_channel,
+            v0=arb_v0, v1=arb_v1,
+            t0=arb_t0, t1=arb_t1, t2=arb_t2,
+            steps=arb_steps
         )
-        self.log_message.emit(
-            f"[TEST] Voltage scan: {v_start:.3f}V -> {v_end:.3f}V, "
-            f"step={v_step*1000:.1f}mV, dwell={step_dwell*1000:.0f}ms"
+        self._n6705c.set_arb_continuous(vbat_channel, flag=False)
+        self._n6705c.arb_on(vbat_channel)
+
+        self._log("[TEST] Step 3: Configuring Datalog for highest precision recording...", 2)
+        self._n6705c.instr.write("*CLS")
+        try:
+            self._n6705c.instr.write("ABOR:DLOG")
+        except Exception:
+            pass
+
+        for ch in range(1, 5):
+            self._n6705c.instr.write(f"SENS:DLOG:FUNC:CURR OFF,(@{ch})")
+            self._n6705c.instr.write(f"SENS:DLOG:FUNC:VOLT OFF,(@{ch})")
+
+        self._n6705c.instr.write(f"SENS:DLOG:FUNC:VOLT ON,(@{vbat_channel})")
+        self._n6705c.instr.write(f"SENS:DLOG:FUNC:CURR ON,(@{current_channel})")
+        self._n6705c.instr.write(f"SENS:DLOG:CURR:RANG:AUTO ON,(@{current_channel})")
+
+        self._n6705c.instr.write(f"SENS:DLOG:TIME {arb_total_time}")
+        self._n6705c.instr.write(f"SENS:DLOG:PER {sample_period_s}")
+        self._n6705c.instr.write("TRIG:DLOG:SOUR IMM")
+
+        dlog_file = "internal:\\iterm_test.dlog"
+
+        self._log("[TEST] Step 4: Starting ARB and Datalog simultaneously...", 2)
+        self._n6705c.instr.write(f'INIT:DLOG "{dlog_file}"')
+        self._n6705c.arb_run()
+
+        self._log(
+            f"[TEST] Step 5: Waiting for ARB and Datalog to complete ({arb_total_time:.1f}s)...", 2
+        )
+        wait_end = time.time() + arb_total_time + 5
+        while time.time() < wait_end:
+            if self._stop_flag:
+                self._log("[TEST] Stopped by user.", 1)
+                return None
+            elapsed = time.time() - (wait_end - arb_total_time - 5)
+            pct = min(int(elapsed / arb_total_time * 90), 90)
+            self.progress.emit(pct)
+            time.sleep(0.5)
+
+        self._log("[TEST] Step 6: Downloading Datalog data (dlog)...", 2)
+        self.progress.emit(92)
+
+        raw_dlog = self._n6705c.read_mmem_data(dlog_file)
+
+        if not isinstance(raw_dlog, bytes) or len(raw_dlog) == 0:
+            self._log("[ERROR] Failed to download dlog data.", 1)
+            return None
+
+        self._log(f"[TEST] Downloaded {len(raw_dlog)} bytes of dlog data.", 3)
+
+        if SAVE_DEBUG_DLOG_FLAG:
+            try:
+                from datetime import datetime
+                base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+                results_dir = os.path.join(base_dir, "Results", "iterm_test")
+                os.makedirs(results_dir, exist_ok=True)
+                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                dlog_path = os.path.join(results_dir, f"iterm_{ts}.dlog")
+                with open(dlog_path, "wb") as f:
+                    f.write(raw_dlog)
+                self._log(f"[TEST] Dlog saved to {dlog_path}", 3)
+            except Exception as e:
+                self._log(f"[WARN] Failed to save dlog: {e}", 2)
+
+        volt_channels = [vbat_channel]
+        curr_channels = [current_channel]
+        all_data = parse_dlog_binary(
+            raw_dlog, curr_channels, volt_channels,
+            "", sample_period_s
         )
 
-        self._n6705c.set_voltage(vbat_channel, v_start)
-        self._n6705c.channel_on(vbat_channel)
-        time.sleep(0.5)
+        if not all_data:
+            self._log("[ERROR] Failed to parse dlog data.", 1)
+            return None
 
-        voltages = []
-        currents = []
-        timestamps = []
-        t0 = time.time()
+        v_label = f"CH{vbat_channel} V"
+        i_label = f"CH{current_channel} I"
+
+        if i_label not in all_data:
+            self._log(f"[ERROR] Current data for CH{current_channel} not found in dlog.", 1)
+            return None
+
+        timestamps = all_data[i_label]["time"]
+        currents_mA = all_data[i_label]["values"]
+        currents = [c / 1000.0 for c in currents_mA]
+
+        voltages = None
+        if v_label in all_data:
+            voltages_mV = all_data[v_label]["values"]
+            voltages = [v / 1000.0 for v in voltages_mV]
+
+        self._log(
+            f"[TEST] Datalog parsed: {len(timestamps)} points, "
+            f"duration={timestamps[-1]:.2f}s", 3
+        )
 
         self.chart_clear.emit()
+        self.progress.emit(95)
 
-        for i in range(steps):
-            if self._stop_flag:
-                self.log_message.emit("[TEST] Stopped by user.")
-                return None
+        self._log("[TEST] Step 7: Analyzing current curve to find termination current...", 2)
 
-            v_set = v_start + i * v_step
-            self._n6705c.set_voltage(vbat_channel, v_set)
-            time.sleep(step_dwell)
+        iterm = self._analyze_iterm_from_curve(timestamps, currents, voltages, voreg, average_time)
 
-            v_meas = self._n6705c.measure_voltage(vbat_channel)
-            i_meas = float(self._n6705c.measure_current(current_channel))
+        self.progress.emit(100)
+        return iterm
 
-            t_now = time.time() - t0
-            voltages.append(v_meas)
-            currents.append(i_meas)
-            timestamps.append(t_now)
-
-            self.log_message.emit(
-                f"[MEAS] V={v_meas:.4f}V  I={i_meas:.6f}A  t={t_now:.2f}s"
-            )
-
-            pct = int((i + 1) / steps * 100)
-            self.progress.emit(pct)
-
-        if len(currents) < 3:
-            self.log_message.emit("[ERROR] Not enough data points to analyse.")
+    def _analyze_iterm_from_curve(self, timestamps, currents, voltages, voreg, average_time):
+        if len(currents) < 10:
+            self._log("[ERROR] Not enough data points to analyse.", 1)
+            self.chart_series_data.emit(timestamps, currents, -1.0, 0.0, 0.0)
             return None
 
-        t_term_idx = self._find_termination_index(currents)
+        total = len(currents)
+        abs_currents = [abs(c) for c in currents]
+
+        block_size = 500
+        n_blocks = total // block_size
+        block_avgs = []
+        for b in range(n_blocks):
+            s = b * block_size
+            block_avgs.append(sum(abs_currents[s:s + block_size]) / block_size)
+
+        post_term_block = None
+        for b in range(n_blocks):
+            if block_avgs[b] < 1e-3:
+                post_term_block = b
+                break
+
+        if post_term_block is None:
+            self._log("[WARN] No post-termination region found.", 2)
+            self.chart_series_data.emit(timestamps, currents, -1.0, 0.0, 0.0)
+            return None
+
+        plateau_blocks = block_avgs[post_term_block:post_term_block + 10]
+        plateau_level = sum(plateau_blocks) / len(plateau_blocks)
+        active_threshold = plateau_level * 10
+
+        self._log(
+            f"[TEST] Post-term plateau: {plateau_level * 1000:.4f} mA, "
+            f"active threshold: {active_threshold * 1000:.4f} mA", 3
+        )
+
+        t_term_idx = None
+        for i in range(total - 1, 0, -1):
+            if abs_currents[i] > active_threshold:
+                t_term_idx = i
+                break
+
         if t_term_idx is None:
-            self.log_message.emit("[WARN] No termination point found in current curve.")
-            self.chart_series_data.emit(timestamps, currents, -1.0, 0.0)
+            self._log("[WARN] No termination point found in current curve.", 2)
+            self.chart_series_data.emit(timestamps, currents, -1.0, 0.0, 0.0)
             return None
 
         t_term = timestamps[t_term_idx]
-        self.log_message.emit(
+        v_term = voltages[t_term_idx] if voltages and t_term_idx < len(voltages) else 0.0
+        self._log(
             f"[TEST] Termination point found at index {t_term_idx}, "
-            f"t={t_term:.2f}s, V={voltages[t_term_idx]:.4f}V, "
-            f"I={currents[t_term_idx]:.6f}A"
+            f"t={t_term:.6f}s, I={currents[t_term_idx]:.6f}A, V={v_term:.4f}V", 3
         )
 
-        avg_start_time = t_term - average_time
-        avg_indices = [
-            j for j, t in enumerate(timestamps)
-            if avg_start_time <= t <= t_term
-        ]
-        if not avg_indices:
-            avg_indices = [t_term_idx]
+        dt = timestamps[1] - timestamps[0] if total > 1 else 1.0
+        iterm_points = max(1, int(average_time / dt))
+        iterm_start = max(0, t_term_idx - iterm_points)
+        iterm_vals = currents[iterm_start:t_term_idx + 1]
+        iterm = sum(iterm_vals) / len(iterm_vals) if iterm_vals else 0.0
 
-        iterm_values = [currents[j] for j in avg_indices]
-        iterm = sum(iterm_values) / len(iterm_values)
-
-        self.log_message.emit(
-            f"[TEST] Iterm calculated from {len(avg_indices)} points "
-            f"in [{avg_start_time:.2f}s, {t_term:.2f}s]: "
-            f"{_fmt_val(iterm * 1000.0)} mA"
+        self._log(
+            f"[TEST] Iterm calculated from {len(iterm_vals)} points "
+            f"in [{timestamps[iterm_start]:.6f}s, {t_term:.6f}s] "
+            f"(avg window: {average_time*1000:.1f}ms): "
+            f"{_fmt_val(iterm * 1000.0)} mA", 3
         )
 
-        self.chart_series_data.emit(timestamps, currents, t_term, iterm)
+        self.chart_series_data.emit(timestamps, currents, t_term, iterm, v_term)
 
         return iterm
 
-    def _find_termination_index(self, currents):
-        abs_currents = [abs(c) for c in currents]
-        for i in range(1, len(abs_currents)):
-            prev = abs_currents[i - 1]
-            curr = abs_currents[i]
-            if prev > 0.5e-3 and curr < prev * 0.3:
-                return i
-        return None
-
     def traverse_iterm_test(
         self, device_addr, iterm_reg, iic_width,
-        vbat_channel, current_channel, average_time,
+        vbat_channel, current_channel, voreg, average_time,
         msb, lsb, min_code, max_code,
     ):
         i2c = I2CInterface()
@@ -248,15 +385,15 @@ class _ItermTestWorker(QObject):
 
         total_points = max_code - min_code + 1
         if total_points <= 0:
-            self.log_message.emit("[ERROR] Invalid code range.")
+            self._log("[ERROR] Invalid code range.", 1)
             return
 
-        self.log_message.emit(
+        self._log(
             f"[TEST] Traverse Iterm Test: Device=0x{device_addr:02X}, "
-            f"Reg=0x{iterm_reg:02X}, MSB={msb}, LSB={lsb}"
+            f"Reg=0x{iterm_reg:02X}, MSB={msb}, LSB={lsb}", 2
         )
-        self.log_message.emit(
-            f"[TEST] Code range: 0x{min_code:X} ~ 0x{max_code:X} ({total_points} points)"
+        self._log(
+            f"[TEST] Code range: 0x{min_code:X} ~ 0x{max_code:X} ({total_points} points)", 2
         )
 
         hex_width = len(f"{max_code:X}")
@@ -268,17 +405,17 @@ class _ItermTestWorker(QObject):
 
         for idx, code in enumerate(range(min_code, max_code + 1)):
             if self._stop_flag:
-                self.log_message.emit("[TEST] Stopped by user.")
+                self._log("[TEST] Stopped by user.", 1)
                 break
 
             write_reg = data_base | (code << lsb)
             i2c.write(device_addr, iterm_reg, write_reg, iic_width)
-            self.log_message.emit(
-                f"[TEST] Code=0x{code:0{hex_width}X}, writing reg=0x{write_reg:04X}"
+            self._log(
+                f"[TEST] Code=0x{code:0{hex_width}X}, writing reg=0x{write_reg:04X}", 3
             )
             time.sleep(0.2)
 
-            iterm = self.single_iterm_test(vbat_channel, current_channel, average_time)
+            iterm = self.single_iterm_test(vbat_channel, current_channel, voreg, average_time)
 
             if iterm is not None:
                 iterm_ma = abs(iterm) * 1000.0
@@ -294,12 +431,12 @@ class _ItermTestWorker(QObject):
                     "result": "DONE",
                 })
 
-                self.log_message.emit(
-                    f"[DATA] Code=0x{code:0{hex_width}X}: Iterm={iterm_ma:.4f}mA"
+                self._log(
+                    f"[DATA] Code=0x{code:0{hex_width}X}: Iterm={iterm_ma:.4f}mA", 1
                 )
             else:
-                self.log_message.emit(
-                    f"[WARN] Code=0x{code:0{hex_width}X}: Iterm measurement failed."
+                self._log(
+                    f"[WARN] Code=0x{code:0{hex_width}X}: Iterm measurement failed.", 2
                 )
 
             result = {"progress": int((idx + 1) / total_points * 100)}
@@ -318,7 +455,7 @@ class _ItermTestWorker(QObject):
             self.progress.emit(pct)
 
         i2c.write(device_addr, iterm_reg, default_reg, iic_width)
-        self.log_message.emit("[TEST] Register restored to default value.")
+        self._log("[TEST] Register restored to default value.", 2)
 
 
 
@@ -673,23 +810,13 @@ class ItermTestUI(QWidget):
         stat_layout = QHBoxLayout()
         stat_layout.setSpacing(10)
 
-        self.total_card = self._create_mini_stat("Total", "0")
-        self.pass_card = self._create_mini_stat("PASS", "0")
-        self.fail_card = self._create_mini_stat("FAIL", "0")
         self.iterm_card = self._create_mini_stat("Iterm", "---")
+        self.voreg_card = self._create_mini_stat("Voreg", "---")
 
-        stat_layout.addWidget(self.total_card["frame"])
-        stat_layout.addWidget(self.pass_card["frame"])
-        stat_layout.addWidget(self.fail_card["frame"])
         stat_layout.addWidget(self.iterm_card["frame"])
+        stat_layout.addWidget(self.voreg_card["frame"])
 
         chart_outer_layout.addLayout(stat_layout)
-
-        self.result_log = QTextEdit()
-        self.result_log.setObjectName("logEdit")
-        self.result_log.setReadOnly(True)
-        self.result_log.setMaximumHeight(100)
-        chart_outer_layout.addWidget(self.result_log)
 
         right_layout.addWidget(self.chart_frame, 4)
 
@@ -700,9 +827,9 @@ class ItermTestUI(QWidget):
         log_layout.setSpacing(10)
 
         log_header = QHBoxLayout()
-        self.log_title = QLabel("\u2299 Execution Logs")
-        self.log_title.setObjectName("sectionTitle")
-        log_header.addWidget(self.log_title)
+        log_title = QLabel("\u2299 Execution Logs")
+        log_title.setObjectName("sectionTitle")
+        log_header.addWidget(log_title)
         log_header.addStretch()
 
         self.progress_text_label = QLabel("0% Complete")
@@ -867,14 +994,15 @@ class ItermTestUI(QWidget):
 
         self.measure_channel_combo = DarkComboBox()
         self.measure_channel_combo.addItems(["CH 1", "CH 2", "CH 3", "CH 4"])
+        self.measure_channel_combo.setCurrentIndex(2)
 
         avg_time_label = QLabel("Average Time (ms)")
         avg_time_label.setObjectName("fieldLabel")
 
         self.avg_time_spin = QSpinBox()
         self.avg_time_spin.setRange(1, 60000)
-        self.avg_time_spin.setValue(100)
-        self.avg_time_spin.setSingleStep(10)
+        self.avg_time_spin.setValue(10)
+        self.avg_time_spin.setSingleStep(1)
 
         voreg_label = QLabel("Voreg (V)")
         voreg_label.setObjectName("fieldLabel")
@@ -917,15 +1045,15 @@ class ItermTestUI(QWidget):
 
         lbl_reg_addr = QLabel("Reg Addr (Hex)")
         lbl_reg_addr.setObjectName("fieldLabel")
-        self.reg_addr_edit = QLineEdit("0x0009")
+        self.reg_addr_edit = QLineEdit("0x0005")
 
         lbl_msb = QLabel("MSB")
         lbl_msb.setObjectName("fieldLabel")
-        self.msb_edit = QLineEdit("9")
+        self.msb_edit = QLineEdit("3")
 
         lbl_lsb = QLabel("LSB")
         lbl_lsb.setObjectName("fieldLabel")
-        self.lsb_edit = QLineEdit("5")
+        self.lsb_edit = QLineEdit("2")
 
         lbl_min_code = QLabel("Min Code")
         lbl_min_code.setObjectName("fieldLabel")
@@ -969,7 +1097,7 @@ class ItermTestUI(QWidget):
 
     def _init_ui_elements(self):
         self._update_connect_button_state(False)
-        self.append_log("[SYSTEM] Iterm Test ready.")
+        self.append_log("[SYSTEM] Iterm Test ready.", 2)
 
     def _bind_signals(self):
         self.search_btn.clicked.connect(self._on_search)
@@ -978,6 +1106,21 @@ class ItermTestUI(QWidget):
         self.stop_test_btn.clicked.connect(self._on_stop_test)
         self.clear_log_btn.clicked.connect(self._on_clear_log)
         self.export_result_btn.clicked.connect(self._on_export_csv)
+        self.msb_edit.textChanged.connect(self._update_code_range)
+        self.lsb_edit.textChanged.connect(self._update_code_range)
+
+    def _update_code_range(self):
+        try:
+            msb = int(self.msb_edit.text())
+            lsb = int(self.lsb_edit.text())
+        except ValueError:
+            return
+        if msb < lsb:
+            return
+        bit_count = msb - lsb + 1
+        max_val = (1 << bit_count) - 1
+        self.min_code_edit.setText("0x0")
+        self.max_code_edit.setText(f"0x{max_val:X}")
 
     def _on_start_or_stop(self):
         if self.is_test_running:
@@ -1011,7 +1154,7 @@ class ItermTestUI(QWidget):
         if self._n6705c_top and self._n6705c_top.is_connected_a:
             return
         self.set_system_status("\u25cf Searching")
-        self.append_log("[SYSTEM] Scanning VISA resources...")
+        self.append_log("[SYSTEM] Scanning VISA resources...", 2)
         self.search_btn.setEnabled(False)
         self.search_timer.start(100)
 
@@ -1050,7 +1193,7 @@ class ItermTestUI(QWidget):
 
                 count = len(n6705c_devices)
                 self.set_system_status(f"\u25cf Found {count} device(s)")
-                self.append_log(f"[SYSTEM] Found {count} compatible N6705C device(s).")
+                self.append_log(f"[SYSTEM] Found {count} compatible N6705C device(s).", 2)
 
                 default_device = "TCPIP0::K-N6705C-06098.local::hislip0::INSTR"
                 if default_device in n6705c_devices:
@@ -1061,11 +1204,11 @@ class ItermTestUI(QWidget):
                 self.visa_resource_combo.addItem("No N6705C device found")
                 self.visa_resource_combo.setEnabled(False)
                 self.set_system_status("\u25cf No device found", is_error=True)
-                self.append_log("[SYSTEM] No compatible N6705C instrument found.")
+                self.append_log("[SYSTEM] No compatible N6705C instrument found.", 2)
 
         except Exception as e:
             self.set_system_status("\u25cf Search failed", is_error=True)
-            self.append_log(f"[ERROR] Search failed: {str(e)}")
+            self.append_log(f"[ERROR] Search failed: {str(e)}", 1)
         finally:
             self.search_btn.setEnabled(True)
 
@@ -1077,7 +1220,7 @@ class ItermTestUI(QWidget):
 
     def _on_connect(self):
         self.set_system_status("\u25cf Connecting")
-        self.append_log("[SYSTEM] Attempting instrument connection...")
+        self.append_log("[SYSTEM] Attempting instrument connection...", 2)
         self.connect_btn.setEnabled(False)
 
         try:
@@ -1097,8 +1240,8 @@ class ItermTestUI(QWidget):
                     pass
 
                 self.instrument_info_label.setText(pretty_name)
-                self.append_log("[SYSTEM] N6705C connected successfully.")
-                self.append_log(f"[IDN] {idn.strip()}")
+                self.append_log("[SYSTEM] N6705C connected successfully.", 2)
+                self.append_log(f"[IDN] {idn.strip()}", 3)
 
                 if self._n6705c_top:
                     self._n6705c_top.connect_a(device_address, self.n6705c)
@@ -1106,16 +1249,16 @@ class ItermTestUI(QWidget):
                 self.connection_status_changed.emit(True)
             else:
                 self.set_system_status("\u25cf Device mismatch", is_error=True)
-                self.append_log("[ERROR] Connected device is not N6705C.")
+                self.append_log("[ERROR] Connected device is not N6705C.", 1)
         except Exception as e:
             self.set_system_status("\u25cf Connection failed", is_error=True)
-            self.append_log(f"[ERROR] Connection failed: {str(e)}")
+            self.append_log(f"[ERROR] Connection failed: {str(e)}", 1)
         finally:
             self.connect_btn.setEnabled(True)
 
     def _on_disconnect(self):
         self.set_system_status("\u25cf Disconnecting")
-        self.append_log("[SYSTEM] Disconnecting instrument...")
+        self.append_log("[SYSTEM] Disconnecting instrument...", 2)
         self.connect_btn.setEnabled(False)
 
         try:
@@ -1135,19 +1278,19 @@ class ItermTestUI(QWidget):
             self.set_system_status("\u25cf Ready")
             self.search_btn.setEnabled(True)
             self.instrument_info_label.setText("USB0::0x0957::0x0F07::MY53004321")
-            self.append_log("[SYSTEM] Instrument disconnected.")
+            self.append_log("[SYSTEM] Instrument disconnected.", 2)
 
             self.connection_status_changed.emit(False)
 
         except Exception as e:
             self.set_system_status("\u25cf Disconnect failed", is_error=True)
-            self.append_log(f"[ERROR] Disconnect failed: {str(e)}")
+            self.append_log(f"[ERROR] Disconnect failed: {str(e)}", 1)
         finally:
             self.connect_btn.setEnabled(True)
 
     def _on_start_test(self):
         if not self.is_connected or self.n6705c is None:
-            self.append_log("[ERROR] Not connected to N6705C instrument.")
+            self.append_log("[ERROR] Not connected to N6705C instrument.", 1)
             return
         if self.is_test_running:
             return
@@ -1155,7 +1298,7 @@ class ItermTestUI(QWidget):
         self._pass_count = 0
         self._fail_count = 0
         self._total_count = 0
-        self.result_log.clear()
+        self.log_edit.clear()
         self._export_data = []
 
         try:
@@ -1166,7 +1309,7 @@ class ItermTestUI(QWidget):
             min_code = int(self.min_code_edit.text(), 16)
             max_code = int(self.max_code_edit.text(), 16)
         except ValueError:
-            self.append_log("[ERROR] Invalid hex address or parameter.")
+            self.append_log("[ERROR] Invalid hex address or parameter.", 1)
             return
 
         iic_width = self.iic_width_combo.currentData()
@@ -1193,6 +1336,7 @@ class ItermTestUI(QWidget):
             "vbat_channel": int(self.vbat_channel_combo.currentText().replace("CH ", "")),
             "measure_channel": int(self.measure_channel_combo.currentText().replace("CH ", "")),
             "average_time_ms": self.avg_time_spin.value(),
+            "voreg": self.voreg_spin.value(),
             "msb": msb,
             "lsb": lsb,
             "min_code": min_code,
@@ -1222,7 +1366,7 @@ class ItermTestUI(QWidget):
     def _on_stop_test(self):
         if self.test_worker is not None:
             self.test_worker.request_stop()
-        self.append_log("[TEST] Stop requested...")
+        self.append_log("[TEST] Stop requested...", 2)
 
     def _on_result_row(self, row):
         self._total_count += 1
@@ -1231,22 +1375,18 @@ class ItermTestUI(QWidget):
         else:
             self._fail_count += 1
 
-        self.result_log.append(
+        self.append_log(
             f"Code {row['code']}: Expected {row['expected_ma']}mA, "
-            f"Measured {row['measured_ma']}mA  [{row['result']}]"
+            f"Measured {row['measured_ma']}mA  [{row['result']}]", 1
         )
         self._export_data.append(row)
-
-        self.total_card["value"].setText(str(self._total_count))
-        self.pass_card["value"].setText(str(self._pass_count))
-        self.fail_card["value"].setText(str(self._fail_count))
 
     def _on_test_finished(self, success):
         self.set_test_running(False)
         if success:
-            self.append_log("[TEST] Iterm test completed.")
+            self.append_log("[TEST] Iterm test completed.", 2)
         else:
-            self.append_log("[TEST] Iterm test ended with errors.")
+            self.append_log("[TEST] Iterm test ended with errors.", 1)
         if self.test_thread is not None:
             self.test_thread.quit()
             self.test_thread.wait()
@@ -1261,16 +1401,24 @@ class ItermTestUI(QWidget):
             self.current_series.clear()
             self.term_marker_series.clear()
 
-    def _on_chart_series_data(self, timestamps, currents, t_term, iterm):
+    def _on_chart_series_data(self, timestamps, currents, t_term, iterm, v_term):
         if not HAS_QTCHARTS or not hasattr(self, 'current_series'):
             return
 
         self.current_series.clear()
         self.term_marker_series.clear()
 
-        for t, i in zip(timestamps, currents):
-            self.current_series.append(t, i)
-            self._export_data.append((t, i))
+        self._export_data.extend(zip(timestamps, currents))
+
+        total = len(timestamps)
+        max_chart_points = 5000
+        if total > max_chart_points:
+            step = total // max_chart_points
+            for idx in range(0, total, step):
+                self.current_series.append(timestamps[idx], currents[idx])
+        else:
+            for t, i in zip(timestamps, currents):
+                self.current_series.append(t, i)
 
         if t_term >= 0:
             t_idx = None
@@ -1295,6 +1443,8 @@ class ItermTestUI(QWidget):
 
         if iterm != 0.0:
             self.iterm_card["value"].setText(f"{_fmt_val(abs(iterm) * 1000.0)} mA")
+        if v_term > 0.0:
+            self.voreg_card["value"].setText(f"{v_term:.4f} V")
 
     def _on_traverse_chart_clear(self):
         if HAS_QTCHARTS and hasattr(self, 'traverse_series'):
@@ -1323,14 +1473,6 @@ class ItermTestUI(QWidget):
             self.axis_y.setRange(min_y - margin_y, max_y + margin_y)
 
     def _on_traverse_result_update(self, result):
-        if 'min_value' in result:
-            code_str = f" (0x{result['valid_min_code']:X})" if 'valid_min_code' in result else ""
-            self.pass_card["value"].setText(f"{_fmt_val(result['min_value'])} mA{code_str}")
-            self.pass_card["label"].setText("Min Iterm")
-        if 'max_value' in result:
-            code_str = f" (0x{result['valid_max_code']:X})" if 'valid_max_code' in result else ""
-            self.fail_card["value"].setText(f"{_fmt_val(result['max_value'])} mA{code_str}")
-            self.fail_card["label"].setText("Max Iterm")
         if 'step_value' in result:
             self.iterm_card["value"].setText(f"{_fmt_val(result['step_value'])} mA/code")
             self.iterm_card["label"].setText("Step")
@@ -1339,7 +1481,7 @@ class ItermTestUI(QWidget):
 
     def _on_export_csv(self):
         if not self._export_data:
-            self.append_log("[EXPORT] No data to export.")
+            self.append_log("[EXPORT] No data to export.", 2)
             return
         path, _ = QFileDialog.getSaveFileName(self, "Export CSV", "", "CSV Files (*.csv)")
         if not path:
@@ -1349,9 +1491,9 @@ class ItermTestUI(QWidget):
                 f.write("X,Y\n")
                 for x_val, y_val in self._export_data:
                     f.write(f"{x_val:.10g},{y_val:.10g}\n")
-            self.append_log(f"[EXPORT] Data exported to {path}")
+            self.append_log(f"[EXPORT] Data exported to {path}", 2)
         except Exception as e:
-            self.append_log(f"[ERROR] Export failed: {e}")
+            self.append_log(f"[ERROR] Export failed: {e}", 1)
 
     def set_test_running(self, running):
         self.is_test_running = running
@@ -1402,7 +1544,11 @@ class ItermTestUI(QWidget):
         self.system_status_label.style().polish(self.system_status_label)
         self.system_status_label.update()
 
-    def append_log(self, msg):
+    def append_log(self, msg, level=2):
+        if LOG_LEVEL == 0:
+            return
+        if level > LOG_LEVEL:
+            return
         self.log_edit.append(msg)
         self.log_edit.verticalScrollBar().setValue(
             self.log_edit.verticalScrollBar().maximum()
@@ -1438,14 +1584,10 @@ class ItermTestUI(QWidget):
         self._pass_count = 0
         self._fail_count = 0
         self._total_count = 0
-        self.total_card["value"].setText("0")
-        self.pass_card["value"].setText("0")
-        self.pass_card["label"].setText("PASS")
-        self.fail_card["value"].setText("0")
-        self.fail_card["label"].setText("FAIL")
         self.iterm_card["value"].setText("---")
         self.iterm_card["label"].setText("Iterm")
-        self.result_log.clear()
+        self.voreg_card["value"].setText("---")
+        self.voreg_card["label"].setText("Voreg")
         if HAS_QTCHARTS:
             if hasattr(self, 'current_series'):
                 self.current_series.clear()
@@ -1455,12 +1597,10 @@ class ItermTestUI(QWidget):
                 self.traverse_series.clear()
 
     def update_test_result(self, result):
-        if "total" in result:
-            self.total_card["value"].setText(str(result["total"]))
-        if "pass" in result:
-            self.pass_card["value"].setText(str(result["pass"]))
-        if "fail" in result:
-            self.fail_card["value"].setText(str(result["fail"]))
+        if "iterm" in result:
+            self.iterm_card["value"].setText(str(result["iterm"]))
+        if "voreg" in result:
+            self.voreg_card["value"].setText(str(result["voreg"]))
 
 
 if __name__ == "__main__":

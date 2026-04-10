@@ -143,7 +143,7 @@ class N6705C:
             v0 (float): 起始电压(V)
             v1 (float): 终止电压(V)
             t0 (float): 阶梯之前的保持时间(s)
-            t1 (float): 每级驻留时间(s)
+            t1 (float): 阶梯变化持续时间(s)
             t2 (float): 阶梯之后的保持时间(s)
             steps (int): 阶梯数量
         """
