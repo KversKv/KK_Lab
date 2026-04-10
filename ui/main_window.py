@@ -26,8 +26,6 @@ from ui.widgets.sidebar_nav_button import SidebarNavButton
 from ui.pages.test.consumption_test import ConsumptionTestUI
 from core.test_manager import TestManager
 from instruments.base.visa_instrument import VisaInstrument
-from instruments.scopes.tektronix.mso64b import MSO64B
-from instruments.scopes.keysight.dsox4034a import DSOX4034A
 from instruments.chambers.vt6002_chamber import VT6002
 
 
@@ -271,8 +269,6 @@ class MainWindow(QMainWindow):
 
         # 初始化仪器
         self.visa_instrument = VisaInstrument()
-        self.oscilloscope_instrument = None
-        self.oscilloscope_info = ""
         self.vt6002_chamber = None
 
         self.n6705c_top = N6705CTop(self)
@@ -801,12 +797,8 @@ class MainWindow(QMainWindow):
     def _create_oscilloscope_ui(self):
         self._hide_all_instrument_uis()
         if self.oscilloscope_ui is None:
-            self.oscilloscope_ui = OscilloscopeBaseUI()
-            self.oscilloscope_ui.connect_btn.clicked.connect(self._on_oscilloscope_connect_toggle)
-            self.oscilloscope_ui.measure_btn.clicked.connect(self._measure_oscilloscope)
-            self.oscilloscope_ui.capture_btn.clicked.connect(self._capture_oscilloscope)
-            self.oscilloscope_ui.apply_btn.clicked.connect(self._apply_oscilloscope_settings)
-            self.oscilloscope_ui.timebase_apply_requested.connect(self._apply_oscilloscope_timebase_only)
+            self.oscilloscope_ui = OscilloscopeBaseUI(mso64b_top=self.mso64b_top)
+            self.oscilloscope_ui.connection_changed.connect(self._update_instrument_status)
             self.instrument_ui_container_layout.addWidget(self.oscilloscope_ui)
         else:
             self.oscilloscope_ui.show()
@@ -931,14 +923,14 @@ class MainWindow(QMainWindow):
         else:
             self._remove_instrument_status("n6705c_b")
 
-        if self.oscilloscope_instrument is not None and self.oscilloscope_info:
-            parts = [p.strip() for p in self.oscilloscope_info.split(",")]
+        if self.oscilloscope_ui is not None and self.oscilloscope_ui.instrument is not None and self.oscilloscope_ui.instrument_info:
+            parts = [p.strip() for p in self.oscilloscope_ui.instrument_info.split(",")]
             if len(parts) >= 3:
                 name = f"{parts[1]}  {parts[2]}"
             elif len(parts) >= 2:
                 name = parts[1]
             else:
-                name = self.oscilloscope_info
+                name = self.oscilloscope_ui.instrument_info
             self._remove_instrument_status("oscilloscope")
             self._add_instrument_status("oscilloscope", name)
         else:
@@ -996,199 +988,6 @@ class MainWindow(QMainWindow):
     def _on_download_code(self):
         """下载代码按钮点击事件"""
         print("Download Python Code clicked")
-
-    def _on_oscilloscope_connect_toggle(self):
-        if not self.oscilloscope_ui:
-            return
-        if self.oscilloscope_ui.is_connected:
-            self._disconnect_oscilloscope()
-        else:
-            self._connect_oscilloscope()
-
-    def _connect_oscilloscope(self):
-        if not self.oscilloscope_ui:
-            return
-
-        resource = self.oscilloscope_ui.visa_resource_combo.currentText().strip()
-        if not resource or resource == "No device found":
-            self.oscilloscope_ui.append_log("[ERROR] Please enter a VISA resource or IP address.")
-            self.oscilloscope_ui.set_system_status("● No resource", is_error=True)
-            return
-
-        self.oscilloscope_ui.set_system_status("● Connecting")
-        self.oscilloscope_ui.append_log(f"[SYSTEM] Connecting to {resource}...")
-        self.oscilloscope_ui.connect_btn.setEnabled(False)
-
-        try:
-            is_visa = resource.upper().startswith("USB") or resource.upper().startswith("GPIB") or resource.upper().startswith("TCPIP")
-            if is_visa:
-                self.oscilloscope_instrument = DSOX4034A(resource)
-            else:
-                self.oscilloscope_instrument = MSO64B(resource)
-
-            instrument_info = self.oscilloscope_instrument.identify_instrument()
-            self.oscilloscope_info = instrument_info
-            self.oscilloscope_ui.update_connection_status(True, instrument_info)
-            self.oscilloscope_ui.set_title(instrument_info.split(",")[1].strip() if "," in instrument_info else instrument_info)
-            self.oscilloscope_ui.set_invert_enabled(isinstance(self.oscilloscope_instrument, DSOX4034A))
-
-            if isinstance(self.oscilloscope_instrument, MSO64B):
-                self.mso64b_top.connect_instrument(resource, self.oscilloscope_instrument)
-            self._update_instrument_status()
-        except Exception as e:
-            print(f"连接示波器失败: {str(e)}")
-            self.oscilloscope_ui.update_connection_status(False)
-            self.oscilloscope_ui.set_system_status("● Connection failed", is_error=True)
-            self.oscilloscope_ui.append_log(f"[ERROR] Connection failed: {e}")
-            self._update_instrument_status()
-        finally:
-            self.oscilloscope_ui.connect_btn.setEnabled(True)
-
-    def _disconnect_oscilloscope(self):
-        if not self.oscilloscope_ui:
-            return
-
-        self.oscilloscope_ui.set_system_status("● Disconnecting")
-        self.oscilloscope_ui.append_log("[SYSTEM] Disconnecting instrument...")
-        self.oscilloscope_ui.connect_btn.setEnabled(False)
-
-        try:
-            if self.oscilloscope_instrument:
-                is_mso64b = isinstance(self.oscilloscope_instrument, MSO64B)
-                self.oscilloscope_instrument.disconnect()
-                self.oscilloscope_instrument = None
-                self.oscilloscope_info = ""
-                if is_mso64b:
-                    self.mso64b_top.mso64b = None
-                    self.mso64b_top.is_connected = False
-                    self.mso64b_top.visa_resource = ""
-                    self.mso64b_top.connection_changed.emit()
-
-            self.oscilloscope_ui.update_connection_status(False)
-            self.oscilloscope_ui.set_invert_enabled(True)
-            self._update_instrument_status()
-        except Exception as e:
-            self.oscilloscope_ui.set_system_status("● Disconnect failed", is_error=True)
-            self.oscilloscope_ui.append_log(f"[ERROR] Disconnect failed: {str(e)}")
-            self._update_instrument_status()
-        finally:
-            self.oscilloscope_ui.connect_btn.setEnabled(True)
-
-    def _measure_oscilloscope(self):
-        if not self.oscilloscope_instrument or not self.oscilloscope_ui:
-            return
-
-        self.oscilloscope_ui.append_log("[INFO] Starting measurements...")
-        try:
-            active_ch = 1
-            for i, btn in enumerate(self.oscilloscope_ui.channel_tab_buttons):
-                if btn.isChecked():
-                    active_ch = i + 1
-                    break
-
-            measure_types = [
-                ('PK2PK', self.oscilloscope_instrument.get_channel_pk2pk),
-                ('FREQUENCY', self.oscilloscope_instrument.get_channel_frequency),
-                ('VMAX', self.oscilloscope_instrument.get_channel_max),
-                ('VMIN', self.oscilloscope_instrument.get_channel_min),
-            ]
-
-            for mtype, func in measure_types:
-                try:
-                    result = func(active_ch)
-                    self.oscilloscope_ui.update_measure_result(mtype, result)
-                    self.oscilloscope_ui.append_log(f"[MEASURE] CH{active_ch} {mtype}: {result}")
-                except Exception as e:
-                    self.oscilloscope_ui.append_log(f"[ERROR] CH{active_ch} {mtype} failed: {e}")
-
-            self.oscilloscope_ui.append_log("[INFO] Measurements complete.")
-        except Exception as e:
-            self.oscilloscope_ui.append_log(f"[ERROR] Measurement failed: {e}")
-
-    def _capture_oscilloscope(self):
-        if not self.oscilloscope_instrument or not self.oscilloscope_ui:
-            if self.oscilloscope_ui:
-                self.oscilloscope_ui.append_log("[WARN] Instrument not connected.")
-            return
-
-        try:
-            invert_checked = self.oscilloscope_ui.invert_btn.isChecked()
-            mode_text = "inverted background" if invert_checked else "original color"
-            self.oscilloscope_ui.append_log(f"[INFO] Capturing screenshot ({mode_text})...")
-            png_data = self.oscilloscope_instrument.capture_screen_png(invert=invert_checked)
-
-            if png_data:
-                self.oscilloscope_ui.update_display_image(png_data)
-            else:
-                self.oscilloscope_ui.append_log("[WARN] No image data received.")
-        except Exception as e:
-            self.oscilloscope_ui.append_log(f"[ERROR] Screenshot capture failed: {e}")
-
-    def _apply_oscilloscope_settings(self):
-        if not self.oscilloscope_instrument or not self.oscilloscope_ui:
-            if self.oscilloscope_ui:
-                self.oscilloscope_ui.append_log("[WARN] Instrument not connected.")
-            return
-
-        self.oscilloscope_ui.append_log("[INFO] Applying settings to instrument...")
-        try:
-            try:
-                timebase_val = self.oscilloscope_ui.timebase_edit.value_in_seconds()
-                self.oscilloscope_instrument.set_timebase_scale(timebase_val)
-                self.oscilloscope_ui.append_log(f"[SETTING] Timebase: {timebase_val} s/div")
-            except (ValueError, Exception) as e:
-                self.oscilloscope_ui.append_log(f"[ERROR] Timebase setting failed: {e}")
-
-            for ch_num in range(1, self.oscilloscope_ui.NUM_CHANNELS + 1):
-                try:
-                    settings = self.oscilloscope_ui.get_channel_settings(ch_num)
-                    if settings is None:
-                        continue
-
-                    self.oscilloscope_instrument.set_channel_display(ch_num, settings['enabled'])
-
-                    if settings['enabled']:
-                        self.oscilloscope_instrument.set_channel_scale(ch_num, settings['scale'])
-                        self.oscilloscope_instrument.set_channel_offset(ch_num, settings['offset'])
-
-                    self.oscilloscope_ui.append_log(
-                        f"[SETTING] CH{ch_num}: {'ON' if settings['enabled'] else 'OFF'}, "
-                        f"Scale={settings['scale']} V/div, Offset={settings['offset']} V"
-                    )
-                except (ValueError, Exception) as e:
-                    self.oscilloscope_ui.append_log(f"[ERROR] CH{ch_num} setting failed: {e}")
-
-            try:
-                trigger = self.oscilloscope_ui.get_trigger_settings()
-                source_text = trigger['source']
-                trigger_level = trigger['level']
-                slope = trigger['slope']
-
-                if source_text.startswith("CH"):
-                    trigger_ch = int(source_text[2:])
-                    self.oscilloscope_instrument.set_trigger_edge(trigger_ch, trigger_level, slope)
-                    self.oscilloscope_ui.append_log(
-                        f"[SETTING] Trigger: CH{trigger_ch}, Level={trigger_level} V, Slope={slope}"
-                    )
-            except (ValueError, Exception) as e:
-                self.oscilloscope_ui.append_log(f"[ERROR] Trigger setting failed: {e}")
-
-            self.oscilloscope_ui.append_log("[INFO] All settings applied successfully.")
-        except Exception as e:
-            self.oscilloscope_ui.append_log(f"[ERROR] Apply settings failed: {e}")
-
-    def _apply_oscilloscope_timebase_only(self):
-        if not self.oscilloscope_instrument or not self.oscilloscope_ui:
-            if self.oscilloscope_ui:
-                self.oscilloscope_ui.append_log("[WARN] Instrument not connected.")
-            return
-
-        try:
-            timebase_val = self.oscilloscope_ui.timebase_edit.value_in_seconds()
-            self.oscilloscope_instrument.set_timebase_scale(timebase_val)
-            self.oscilloscope_ui.append_log(f"[SETTING] Timebase: {timebase_val} s/div")
-        except (ValueError, Exception) as e:
-            self.oscilloscope_ui.append_log(f"[ERROR] Timebase setting failed: {e}")
 
     def _scan_visa(self):
         """扫描 VISA 设备"""
@@ -1279,12 +1078,12 @@ class MainWindow(QMainWindow):
         if self.mso64b_top and self.mso64b_top.is_connected:
             self.mso64b_top.disconnect()
 
-        if self.oscilloscope_instrument:
+        if self.oscilloscope_ui and self.oscilloscope_ui.instrument:
             try:
-                self.oscilloscope_instrument.disconnect()
+                self.oscilloscope_ui.instrument.disconnect()
             except Exception:
                 pass
-            self.oscilloscope_instrument = None
+            self.oscilloscope_ui.instrument = None
 
         if self.visa_instrument:
             try:
