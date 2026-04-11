@@ -155,6 +155,7 @@ def _neon_on_button_style():
         padding: 8px 18px; min-width: 88px; font-size: 12px; font-weight: 600;
     }
     QPushButton:hover { background-color: #0a3a3a; border: 1px solid #00f5c4; color: #3fffd7; }
+    QPushButton:disabled { background-color: #0b1730; color: #3a4a6a; border: 1px solid #1b2847; }
     """
 
 
@@ -166,6 +167,7 @@ def _neon_off_button_style():
         padding: 8px 18px; min-width: 88px; font-size: 12px; font-weight: 600;
     }
     QPushButton:hover { background-color: #3a1028; border: 1px solid #ff4fa3; color: #ff7dbd; }
+    QPushButton:disabled { background-color: #0b1730; color: #3a4a6a; border: 1px solid #1b2847; }
     """
 
 
@@ -176,6 +178,7 @@ def _primary_action_button_style():
         padding: 8px 16px; font-size: 11px; min-width: 88px; font-weight: 600;
     }
     QPushButton:hover { background-color: #3672dc; }
+    QPushButton:disabled { background-color: #0D1734; color: #3A4563; border: 1px solid #18264A; }
     """
 
 
@@ -188,6 +191,7 @@ def _batch_channel_button_style():
         }
         QPushButton:checked { background-color: #2a64c8; color: white; }
         QPushButton:hover { background-color: #31405f; }
+        QPushButton:disabled { background-color: #0b1730; color: #3a4a6a; border: 1px solid #1b2847; }
     """
 
 
@@ -313,11 +317,18 @@ class N6705CDoubleUI(QWidget):
             background-color: #091426; border: 1px solid #17345f;
             border-radius: 6px; padding: 4px 6px; color: #d7e3ff;
         }
+        QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled {
+            background-color: #070F28; border: 1px solid #131D3A; color: #3A4563;
+        }
         QPushButton {
             background-color: #0b1730; border: 1px solid #23417a;
             border-radius: 6px; padding: 6px 14px; color: #dbe6ff;
         }
         QPushButton:hover { background-color: #10203e; }
+        QPushButton:disabled {
+            background-color: #0b1730; color: #3a4a6a; border: 1px solid #1b2847;
+        }
+        QCheckBox:disabled { color: #3A4563; }
         """)
 
     def _create_layout(self):
@@ -956,6 +967,14 @@ class N6705CDoubleUI(QWidget):
     def _build_channel_tab_style(self, dev_label, ch, checked=False):
         theme = CHANNEL_THEMES[ch]
         dev_color = "#00f5c4" if dev_label == "A" else "#f2994a"
+        disabled_part = """
+            QPushButton:disabled {
+                background-color: #08132b; color: #3A4563;
+                border: 1px solid #0d1a30; border-bottom: 2px solid transparent;
+                border-top-left-radius: 10px; border-top-right-radius: 10px;
+                padding: 6px 10px; font-size: 12px; font-weight: 700;
+            }
+        """
         if checked:
             return f"""
             QPushButton {{
@@ -965,6 +984,7 @@ class N6705CDoubleUI(QWidget):
                 border-top-left-radius: 10px; border-top-right-radius: 10px;
                 padding: 6px 10px; font-size: 12px; font-weight: 700;
             }}
+            {disabled_part}
             """
         else:
             return f"""
@@ -978,10 +998,18 @@ class N6705CDoubleUI(QWidget):
                 background-color: {theme['accent_soft']}; color: #ffffff;
                 border: 1px solid {theme['accent_border']};
             }}
+            {disabled_part}
             """
 
     def _build_mode_button_style(self, active=False):
         theme = CHANNEL_THEMES[self.current_channel]
+        disabled_part = """
+            QPushButton:disabled {
+                background-color: #08111f; color: #3A4563;
+                border: 1px solid #131D3A;
+                padding: 5px 14px; font-size: 12px; border-radius: 0px;
+            }
+        """
         if active:
             return f"""
             QPushButton {{
@@ -989,15 +1017,17 @@ class N6705CDoubleUI(QWidget):
                 border: 1px solid {theme['accent_hover']};
                 padding: 5px 14px; font-size: 12px; font-weight: 700; border-radius: 0px;
             }}
+            {disabled_part}
             """
         else:
-            return """
-            QPushButton {
+            return f"""
+            QPushButton {{
                 background-color: #08111f; color: #7c8aac;
                 border: 1px solid #1b2842;
                 padding: 5px 14px; font-size: 12px; border-radius: 0px;
-            }
-            QPushButton:hover { background-color: #0c1628; color: #dbe6ff; }
+            }}
+            QPushButton:hover {{ background-color: #0c1628; color: #dbe6ff; }}
+            {disabled_part}
             """
 
     def _apply_mode_button_styles(self):
@@ -1025,6 +1055,11 @@ class N6705CDoubleUI(QWidget):
         }}
         QPushButton:hover {{
             background-color: {accent_hover};
+        }}
+        QPushButton:disabled {{
+            background-color: #0D1734;
+            color: #3A4563;
+            border: 1px solid #18264A;
         }}
         """
 
@@ -1348,15 +1383,8 @@ class N6705CDoubleUI(QWidget):
             w["toggle_conn_btn"].setEnabled(True)
 
     def _update_ui_connection_state(self, label, connected):
-        """根据设备连接状态更新UI区域的可交互性和视觉样式"""
-        # 检查是否任意一个设备已连接
         any_connected = any(d["is_connected"] for d in self.devices.values())
 
-        # 暗色/不可交互样式 overlay
-        disabled_opacity_style = "color: #3a4a6a;"
-        enabled_opacity_style = ""
-
-        # All On / All Off 按钮
         self.all_on_btn.setEnabled(any_connected)
         self.all_off_btn.setEnabled(any_connected)
         if any_connected:
@@ -1373,13 +1401,11 @@ class N6705CDoubleUI(QWidget):
             self.all_on_btn.setStyleSheet(disabled_btn_style)
             self.all_off_btn.setStyleSheet(disabled_btn_style)
 
-        # 通道标签按钮
         for idx, btn in enumerate(self.channel_tab_buttons):
             dev_label = "A" if idx < 4 else "B"
             dev_connected = self.devices[dev_label]["is_connected"]
             btn.setEnabled(dev_connected)
 
-        # 设置区域 - 仅当当前设备已连接时可用
         current_dev_connected = self.devices[self.current_device]["is_connected"]
         self.setting_frame.setEnabled(current_dev_connected)
         if not current_dev_connected:
@@ -1392,7 +1418,16 @@ class N6705CDoubleUI(QWidget):
                 QFrame {{ background-color: #0a1930; border: 1px solid {theme['accent_border']}; border-radius: 14px; }}
             """)
 
-        # 批量工具面板
+        for btn in self.mode_buttons:
+            btn.setEnabled(current_dev_connected)
+        self.output_toggle.setEnabled(current_dev_connected)
+        self.measure_btn.setEnabled(current_dev_connected)
+        self.set_btn.setEnabled(current_dev_connected)
+        self.voltage_set_input.setEnabled(current_dev_connected)
+        self.limit_current_value.setEnabled(current_dev_connected)
+        self.voltage_value.setEnabled(current_dev_connected)
+        self.current_value.setEnabled(current_dev_connected)
+
         if hasattr(self, 'batch_tools_panel'):
             self.batch_tools_panel.setEnabled(any_connected)
             if any_connected:
@@ -1404,7 +1439,6 @@ class N6705CDoubleUI(QWidget):
                     QFrame { background-color: #070f1e; border: 1px solid #0d1a30; border-radius: 12px; }
                 """)
 
-        # 功耗测试面板
         if hasattr(self, 'consumption_test_panel'):
             self.consumption_test_panel.setEnabled(any_connected)
             if any_connected:
