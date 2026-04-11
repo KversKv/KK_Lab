@@ -10,9 +10,9 @@ sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.
 from ui.widgets.dark_combobox import DarkComboBox
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-    QLineEdit, QGridLayout, QSpinBox, QFrame,
+    QLineEdit, QGridLayout, QFrame, QDoubleSpinBox, QSpinBox,
     QTextEdit, QProgressBar, QSizePolicy,
-    QApplication, QCheckBox
+    QApplication
 )
 from PySide6.QtCore import Qt, Signal, QThread, QObject, QTimer
 from PySide6.QtGui import QFont
@@ -40,68 +40,164 @@ STATUS_REGISTER_MAP = {
 class _StatusPollWorker(QObject):
     log_message = Signal(str)
     status_update = Signal(dict)
-    poll_done = Signal()
+    progress = Signal(int)
+    test_finished = Signal(bool)
     error = Signal(str)
 
-    def __init__(self, config, register_map):
+    def __init__(self, n6705c, config):
         super().__init__()
+        self._n6705c = n6705c
         self._cfg = config
-        self._register_map = register_map
         self._stop_flag = False
-        self._continuous = config.get("continuous", False)
-        self._poll_interval = config.get("poll_interval_ms", 500)
 
     def request_stop(self):
         self._stop_flag = True
+
+    def _read_reg_value(self, i2c, device_addr, reg_addr, iic_width, bits_str):
+        raw = i2c.read(device_addr, reg_addr, iic_width)
+        if ":" in bits_str:
+            hi, lo = [int(x) for x in bits_str.split(":")]
+            mask = ((1 << (hi - lo + 1)) - 1) << lo
+            val = (raw & mask) >> lo
+        else:
+            bit_pos = int(bits_str)
+            val = (raw >> bit_pos) & 1
+        return raw, val
 
     def run(self):
         try:
             device_addr = self._cfg["device_addr"]
             iic_width = self._cfg["iic_width"]
+            reg_addr = self._cfg["reg_addr"]
+            bits_str = self._cfg["reg_bit"]
+            test_channel = self._cfg["test_channel"]
+            test_item = self._cfg["test_item"]
 
             i2c = I2CInterface()
             self._i2c = i2c
 
-            while not self._stop_flag:
-                results = {}
-                for name, reg_info in self._register_map.items():
-                    if self._stop_flag:
-                        break
-                    try:
-                        raw = self._i2c.read(device_addr, reg_info["addr"], iic_width)
-                        bits_str = reg_info["bits"]
-                        if ":" in bits_str:
-                            hi, lo = [int(x) for x in bits_str.split(":")]
-                            mask = ((1 << (hi - lo + 1)) - 1) << lo
-                            val = (raw & mask) >> lo
-                        else:
-                            bit_pos = int(bits_str)
-                            val = (raw >> bit_pos) & 1
-                        results[name] = {
-                            "raw": raw,
-                            "value": val,
-                            "desc": reg_info["desc"],
-                            "addr": reg_info["addr"],
-                            "bits": bits_str,
-                        }
-                    except Exception as e:
-                        self.log_message.emit(f"[ERROR] Read {name}: {e}")
-                        results[name] = {"raw": 0, "value": -1, "desc": reg_info["desc"], "addr": reg_info["addr"], "bits": bits_str}
+            raw_init, val_init = self._read_reg_value(i2c, device_addr, reg_addr, iic_width, bits_str)
+            self.log_message.emit(
+                f"[TEST] Initial register 0x{reg_addr:02X} bits[{bits_str}] = "
+                f"0x{val_init:02X} ({val_init})  (raw=0x{raw_init:04X})"
+            )
+            self.status_update.emit({
+                "INIT": {
+                    "raw": raw_init, "value": val_init,
+                    "desc": "Initial Value", "addr": reg_addr, "bits": bits_str,
+                }
+            })
 
-                self.status_update.emit(results)
-                self.poll_done.emit()
+            if test_item == "Voltage":
+                start = self._cfg["start_voltage"]
+                end = self._cfg["end_voltage"]
+                step = self._cfg["step_voltage"]
+                unit = "V"
+            else:
+                start = self._cfg["start_current"]
+                end = self._cfg["end_current"]
+                step = self._cfg["step_current"]
+                unit = "mA"
 
-                if not self._continuous:
+            if step <= 0:
+                self.log_message.emit("[ERROR] Step must be > 0.")
+                self.test_finished.emit(False)
+                return
+
+            step_delay_s = self._cfg.get("step_delay_ms", 10) / 1000.0
+
+            ascending = end >= start
+            if not ascending:
+                step = -abs(step)
+
+            levels = []
+            current_level = start
+            if ascending:
+                while current_level <= end + step * 0.01:
+                    levels.append(round(current_level, 6))
+                    current_level += abs(step)
+            else:
+                while current_level >= end + step * 0.01:
+                    levels.append(round(current_level, 6))
+                    current_level -= abs(step)
+
+            total_steps = len(levels)
+            if total_steps == 0:
+                self.log_message.emit("[ERROR] No sweep steps generated.")
+                self.test_finished.emit(False)
+                return
+
+            self.log_message.emit(
+                f"[TEST] Sweep {test_item}: {start} {unit} -> {end} {unit}, "
+                f"step={abs(step)} {unit}, total {total_steps} steps"
+            )
+
+            self._n6705c.channel_on(test_channel)
+            time.sleep(0.2)
+
+            threshold_value = None
+
+            for idx, level in enumerate(levels):
+                if self._stop_flag:
+                    self.log_message.emit("[TEST] Stopped by user.")
                     break
 
-                for _ in range(self._poll_interval // 50):
-                    if self._stop_flag:
-                        break
-                    time.sleep(0.05)
+                if test_item == "Voltage":
+                    self._n6705c.set_voltage(test_channel, level)
+                else:
+                    self._n6705c.set_current(test_channel, level / 1000.0)
 
-            self.log_message.emit("[TEST] Status register polling stopped.")
+                time.sleep(step_delay_s)
+
+                try:
+                    raw_now, val_now = self._read_reg_value(
+                        i2c, device_addr, reg_addr, iic_width, bits_str
+                    )
+                except Exception as e:
+                    self.log_message.emit(f"[ERROR] Read register failed at {level}{unit}: {e}")
+                    pct = int((idx + 1) / total_steps * 100)
+                    self.progress.emit(pct)
+                    continue
+
+                self.status_update.emit({
+                    "SWEEP": {
+                        "raw": raw_now, "value": val_now,
+                        "desc": f"@ {level:.4g} {unit}", "addr": reg_addr, "bits": bits_str,
+                    }
+                })
+
+                self.log_message.emit(
+                    f"[DATA] {level:.4g} {unit} -> reg=0x{raw_now:04X}, "
+                    f"bits[{bits_str}]=0x{val_now:02X} ({val_now})"
+                )
+
+                if val_now != val_init:
+                    threshold_value = level
+                    self.log_message.emit(
+                        f"[RESULT] Register flipped at {level:.4g} {unit}! "
+                        f"Value changed: 0x{val_init:02X} -> 0x{val_now:02X}"
+                    )
+                    self.progress.emit(100)
+                    break
+
+                pct = int((idx + 1) / total_steps * 100)
+                self.progress.emit(pct)
+
+            if threshold_value is not None:
+                self.log_message.emit(
+                    f"[RESULT] Threshold {test_item} = {threshold_value:.4g} {unit}"
+                )
+            elif not self._stop_flag:
+                self.log_message.emit(
+                    f"[WARN] Register did not flip during sweep "
+                    f"({start} {unit} -> {end} {unit})."
+                )
+
+            self.test_finished.emit(threshold_value is not None)
         except Exception as e:
+            self.log_message.emit(f"[ERROR] {e}")
             self.error.emit(str(e))
+            self.test_finished.emit(False)
 
 
 class CardFrame(QFrame):
@@ -215,7 +311,7 @@ class StatusRegisterTestUI(QWidget):
                 font-weight: 600;
                 background-color: transparent;
             }
-            QComboBox, QSpinBox, QDoubleSpinBox, QLineEdit, QTextEdit {
+            QComboBox, QDoubleSpinBox, QSpinBox, QLineEdit, QTextEdit {
                 background-color: #0a1733;
                 color: #eaf2ff;
                 border: 1px solid #27406f;
@@ -223,7 +319,7 @@ class StatusRegisterTestUI(QWidget):
                 padding: 6px 10px;
                 selection-background-color: #4f46e5;
             }
-            QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QLineEdit:focus, QTextEdit:focus {
+            QComboBox:focus, QDoubleSpinBox:focus, QSpinBox:focus, QLineEdit:focus, QTextEdit:focus {
                 border: 1px solid #4cc9f0;
             }
             QComboBox { padding-right: 24px; }
@@ -364,21 +460,6 @@ class StatusRegisterTestUI(QWidget):
                 border: 1px solid #1b315f;
                 border-radius: 10px;
             }
-            QCheckBox {
-                color: #dbe7ff;
-                spacing: 6px;
-            }
-            QCheckBox::indicator {
-                width: 16px;
-                height: 16px;
-                border: 1px solid #27406f;
-                border-radius: 4px;
-                background-color: #0a1733;
-            }
-            QCheckBox::indicator:checked {
-                background-color: #5b5cf6;
-                border: 1px solid #7872ff;
-            }
         """)
 
     def _create_layout(self):
@@ -415,9 +496,13 @@ class StatusRegisterTestUI(QWidget):
         self._build_connection_card()
         left_layout.addWidget(self.connection_card)
 
-        self.poll_card = CardFrame("⏱ POLL SETTINGS")
-        self._build_poll_card()
-        left_layout.addWidget(self.poll_card)
+        self.test_config_card = CardFrame("☷ TEST CONFIG")
+        self._build_test_config_card()
+        left_layout.addWidget(self.test_config_card)
+
+        self.register_config_card = CardFrame("↔ REGISTER CONFIG")
+        self._build_register_config_card()
+        left_layout.addWidget(self.register_config_card)
 
         left_layout.addStretch()
 
@@ -524,16 +609,144 @@ class StatusRegisterTestUI(QWidget):
         self.connect_btn.setProperty("connected", "false")
         layout.addWidget(self.connect_btn)
 
-    def _build_poll_card(self):
-        layout = self.poll_card.main_layout
-
+    def _build_test_config_card(self):
+        layout = self.test_config_card.main_layout
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(10)
 
-        lbl_dev = QLabel("Device Addr (hex)")
-        lbl_dev.setObjectName("fieldLabel")
-        self.device_addr_edit = QLineEdit("0x6A")
+        test_ch_label = QLabel("Test Channel")
+        test_ch_label.setObjectName("fieldLabel")
+
+        self.test_channel_combo = DarkComboBox()
+        self.test_channel_combo.addItems(["CH 1", "CH 2", "CH 3", "CH 4"])
+
+        test_item_label = QLabel("Test Item")
+        test_item_label.setObjectName("fieldLabel")
+
+        self.test_item_combo = DarkComboBox()
+        self.test_item_combo.addItems(["Voltage", "Current"])
+
+        grid.addWidget(test_ch_label, 0, 0)
+        grid.addWidget(self.test_channel_combo, 0, 1)
+        grid.addWidget(test_item_label, 1, 0)
+        grid.addWidget(self.test_item_combo, 1, 1)
+
+        layout.addLayout(grid)
+
+        self.voltage_param_widget = QWidget()
+        self.voltage_param_widget.setStyleSheet("background: transparent;")
+        v_grid = QGridLayout(self.voltage_param_widget)
+        v_grid.setContentsMargins(0, 0, 0, 0)
+        v_grid.setHorizontalSpacing(10)
+        v_grid.setVerticalSpacing(10)
+
+        lbl_start_v = QLabel("Start Voltage (V)")
+        lbl_start_v.setObjectName("fieldLabel")
+        self.start_voltage_spin = QDoubleSpinBox()
+        self.start_voltage_spin.setRange(0.0, 20.0)
+        self.start_voltage_spin.setValue(3.0)
+        self.start_voltage_spin.setSingleStep(0.1)
+        self.start_voltage_spin.setDecimals(2)
+
+        lbl_end_v = QLabel("End Voltage (V)")
+        lbl_end_v.setObjectName("fieldLabel")
+        self.end_voltage_spin = QDoubleSpinBox()
+        self.end_voltage_spin.setRange(0.0, 20.0)
+        self.end_voltage_spin.setValue(5.0)
+        self.end_voltage_spin.setSingleStep(0.1)
+        self.end_voltage_spin.setDecimals(2)
+
+        lbl_step_v = QLabel("Step Voltage (V)")
+        lbl_step_v.setObjectName("fieldLabel")
+        self.step_voltage_spin = QDoubleSpinBox()
+        self.step_voltage_spin.setRange(0.001, 10.0)
+        self.step_voltage_spin.setValue(0.1)
+        self.step_voltage_spin.setSingleStep(0.01)
+        self.step_voltage_spin.setDecimals(3)
+
+        lbl_delay_v = QLabel("Step Delay (ms)")
+        lbl_delay_v.setObjectName("fieldLabel")
+        self.step_delay_v_spin = QSpinBox()
+        self.step_delay_v_spin.setRange(1, 60000)
+        self.step_delay_v_spin.setValue(10)
+        self.step_delay_v_spin.setSingleStep(10)
+
+        v_grid.addWidget(lbl_start_v, 0, 0)
+        v_grid.addWidget(self.start_voltage_spin, 0, 1)
+        v_grid.addWidget(lbl_end_v, 1, 0)
+        v_grid.addWidget(self.end_voltage_spin, 1, 1)
+        v_grid.addWidget(lbl_step_v, 2, 0)
+        v_grid.addWidget(self.step_voltage_spin, 2, 1)
+        v_grid.addWidget(lbl_delay_v, 3, 0)
+        v_grid.addWidget(self.step_delay_v_spin, 3, 1)
+
+        layout.addWidget(self.voltage_param_widget)
+
+        self.current_param_widget = QWidget()
+        self.current_param_widget.setStyleSheet("background: transparent;")
+        c_grid = QGridLayout(self.current_param_widget)
+        c_grid.setContentsMargins(0, 0, 0, 0)
+        c_grid.setHorizontalSpacing(10)
+        c_grid.setVerticalSpacing(10)
+
+        lbl_start_c = QLabel("Start Current (mA)")
+        lbl_start_c.setObjectName("fieldLabel")
+        self.start_current_spin = QDoubleSpinBox()
+        self.start_current_spin.setRange(0.0, 10000.0)
+        self.start_current_spin.setValue(100.0)
+        self.start_current_spin.setSingleStep(10.0)
+        self.start_current_spin.setDecimals(1)
+
+        lbl_end_c = QLabel("End Current (mA)")
+        lbl_end_c.setObjectName("fieldLabel")
+        self.end_current_spin = QDoubleSpinBox()
+        self.end_current_spin.setRange(0.0, 10000.0)
+        self.end_current_spin.setValue(1000.0)
+        self.end_current_spin.setSingleStep(10.0)
+        self.end_current_spin.setDecimals(1)
+
+        lbl_step_c = QLabel("Step Current (mA)")
+        lbl_step_c.setObjectName("fieldLabel")
+        self.step_current_spin = QDoubleSpinBox()
+        self.step_current_spin.setRange(0.1, 5000.0)
+        self.step_current_spin.setValue(50.0)
+        self.step_current_spin.setSingleStep(1.0)
+        self.step_current_spin.setDecimals(1)
+
+        lbl_delay_c = QLabel("Step Delay (ms)")
+        lbl_delay_c.setObjectName("fieldLabel")
+        self.step_delay_c_spin = QSpinBox()
+        self.step_delay_c_spin.setRange(1, 60000)
+        self.step_delay_c_spin.setValue(10)
+        self.step_delay_c_spin.setSingleStep(10)
+
+        c_grid.addWidget(lbl_start_c, 0, 0)
+        c_grid.addWidget(self.start_current_spin, 0, 1)
+        c_grid.addWidget(lbl_end_c, 1, 0)
+        c_grid.addWidget(self.end_current_spin, 1, 1)
+        c_grid.addWidget(lbl_step_c, 2, 0)
+        c_grid.addWidget(self.step_current_spin, 2, 1)
+        c_grid.addWidget(lbl_delay_c, 3, 0)
+        c_grid.addWidget(self.step_delay_c_spin, 3, 1)
+
+        layout.addWidget(self.current_param_widget)
+
+        self.current_param_widget.setVisible(False)
+
+        self.test_item_combo.currentTextChanged.connect(self._on_test_item_changed)
+
+    def _on_test_item_changed(self, text):
+        is_voltage = text == "Voltage"
+        self.voltage_param_widget.setVisible(is_voltage)
+        self.current_param_widget.setVisible(not is_voltage)
+
+    def _build_register_config_card(self):
+        layout = self.register_config_card.main_layout
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(10)
 
         lbl_width = QLabel("IIC Width")
         lbl_width.setObjectName("fieldLabel")
@@ -541,26 +754,30 @@ class StatusRegisterTestUI(QWidget):
         self.iic_width_combo.addItem("8 BIT", I2CWidthFlag.BIT_8)
         self.iic_width_combo.addItem("10 BIT", I2CWidthFlag.BIT_10)
         self.iic_width_combo.addItem("32 BIT", I2CWidthFlag.BIT_32)
+        self.iic_width_combo.setCurrentIndex(1)
 
-        self.continuous_check = QCheckBox("Continuous Polling")
-        self.continuous_check.setChecked(True)
+        lbl_dev = QLabel("Device Addr (Hex)")
+        lbl_dev.setObjectName("fieldLabel")
+        self.device_addr_edit = QLineEdit("0x6A")
 
-        lbl_interval = QLabel("Poll Interval (ms)")
-        lbl_interval.setObjectName("fieldLabel")
-        self.poll_interval_spin = QSpinBox()
-        self.poll_interval_spin.setRange(100, 10000)
-        self.poll_interval_spin.setValue(500)
-        self.poll_interval_spin.setSingleStep(100)
+        lbl_reg_addr = QLabel("Reg Addr (Hex)")
+        lbl_reg_addr.setObjectName("fieldLabel")
+        self.reg_addr_edit = QLineEdit("0x0B")
 
-        grid.addWidget(lbl_dev, 0, 0)
-        grid.addWidget(self.device_addr_edit, 0, 1)
-        grid.addWidget(lbl_width, 1, 0)
-        grid.addWidget(self.iic_width_combo, 1, 1)
-        grid.addWidget(lbl_interval, 2, 0)
-        grid.addWidget(self.poll_interval_spin, 2, 1)
+        lbl_reg_bit = QLabel("Reg Bit")
+        lbl_reg_bit.setObjectName("fieldLabel")
+        self.reg_bit_edit = QLineEdit("6")
+
+        grid.addWidget(lbl_width, 0, 0)
+        grid.addWidget(self.iic_width_combo, 0, 1)
+        grid.addWidget(lbl_dev, 1, 0)
+        grid.addWidget(self.device_addr_edit, 1, 1)
+        grid.addWidget(lbl_reg_addr, 2, 0)
+        grid.addWidget(self.reg_addr_edit, 2, 1)
+        grid.addWidget(lbl_reg_bit, 3, 0)
+        grid.addWidget(self.reg_bit_edit, 3, 1)
 
         layout.addLayout(grid)
-        layout.addWidget(self.continuous_check)
 
     def _create_reg_card(self, name, info):
         frame = QFrame()
@@ -762,29 +979,50 @@ class StatusRegisterTestUI(QWidget):
             self.append_log("[ERROR] Invalid device address.")
             return
 
+        try:
+            reg_addr = int(self.reg_addr_edit.text(), 16)
+        except ValueError:
+            self.append_log("[ERROR] Invalid register address.")
+            return
+
         iic_width = self.iic_width_combo.currentData()
+        test_item = self.test_item_combo.currentText()
 
         config = {
             "device_addr": device_addr,
             "iic_width": iic_width,
-            "continuous": self.continuous_check.isChecked(),
-            "poll_interval_ms": self.poll_interval_spin.value(),
+            "reg_addr": reg_addr,
+            "reg_bit": self.reg_bit_edit.text(),
+            "test_channel": int(self.test_channel_combo.currentText().replace("CH ", "")),
+            "test_item": test_item,
         }
+
+        if test_item == "Voltage":
+            config["start_voltage"] = self.start_voltage_spin.value()
+            config["end_voltage"] = self.end_voltage_spin.value()
+            config["step_voltage"] = self.step_voltage_spin.value()
+            config["step_delay_ms"] = self.step_delay_v_spin.value()
+        else:
+            config["start_current"] = self.start_current_spin.value()
+            config["end_current"] = self.end_current_spin.value()
+            config["step_current"] = self.step_current_spin.value()
+            config["step_delay_ms"] = self.step_delay_c_spin.value()
 
         self.set_test_running(True)
 
         self.test_thread = QThread()
-        self.test_worker = _StatusPollWorker(config, STATUS_REGISTER_MAP)
+        self.test_worker = _StatusPollWorker(self.n6705c, config)
         self.test_worker.moveToThread(self.test_thread)
 
         self.test_worker.log_message.connect(self.append_log)
         self.test_worker.status_update.connect(self._on_status_update)
-        self.test_worker.poll_done.connect(self._on_poll_done)
+        self.test_worker.progress.connect(self._on_progress)
+        self.test_worker.test_finished.connect(self._on_test_finished)
         self.test_worker.error.connect(lambda e: self.append_log(f"[ERROR] {e}"))
         self.test_thread.started.connect(self.test_worker.run)
 
         self.test_thread.start()
-        self.append_log("[TEST] Status register polling started.")
+        self.append_log(f"[TEST] Status register sweep test started ({test_item}).")
 
     def _on_stop_test(self):
         if self.test_worker is not None:
@@ -811,10 +1049,15 @@ class StatusRegisterTestUI(QWidget):
                     self.status_labels[name]["value_label"].setText(f"0x{val:02X} ({val})")
                     self.status_labels[name]["value_label"].setStyleSheet("color: #15d1a3; font-size: 13px; font-weight: 700; background-color: transparent; border: none;")
 
-    def _on_poll_done(self):
-        if not self.continuous_check.isChecked():
-            self._cleanup_thread()
-            self.append_log("[TEST] Single poll completed.")
+    def _on_progress(self, value):
+        self.append_log(f"[PROGRESS] {value}%")
+
+    def _on_test_finished(self, success):
+        self._cleanup_thread()
+        if success:
+            self.append_log("[TEST] Sweep test completed successfully.")
+        else:
+            self.append_log("[TEST] Sweep test finished (no flip detected or error).")
 
     def _on_clear_log(self):
         self.log_edit.clear()
@@ -832,13 +1075,23 @@ class StatusRegisterTestUI(QWidget):
         self.start_test_btn.style().unpolish(self.start_test_btn)
         self.start_test_btn.style().polish(self.start_test_btn)
         self.start_test_btn.update()
+        self.test_channel_combo.setEnabled(not running)
+        self.test_item_combo.setEnabled(not running)
+        self.start_voltage_spin.setEnabled(not running)
+        self.end_voltage_spin.setEnabled(not running)
+        self.step_voltage_spin.setEnabled(not running)
+        self.step_delay_v_spin.setEnabled(not running)
+        self.start_current_spin.setEnabled(not running)
+        self.end_current_spin.setEnabled(not running)
+        self.step_current_spin.setEnabled(not running)
+        self.step_delay_c_spin.setEnabled(not running)
         self.device_addr_edit.setEnabled(not running)
         self.iic_width_combo.setEnabled(not running)
+        self.reg_addr_edit.setEnabled(not running)
+        self.reg_bit_edit.setEnabled(not running)
         self.visa_resource_combo.setEnabled(not running)
         self.search_btn.setEnabled(not running)
         self.connect_btn.setEnabled(not running)
-        self.continuous_check.setEnabled(not running)
-        self.poll_interval_spin.setEnabled(not running)
 
         if running:
             self.set_system_status("● Polling")
@@ -866,12 +1119,29 @@ class StatusRegisterTestUI(QWidget):
             device_addr = int(self.device_addr_edit.text(), 16)
         except ValueError:
             device_addr = 0
-        return {
+        try:
+            reg_addr = int(self.reg_addr_edit.text(), 16)
+        except ValueError:
+            reg_addr = 0x0B
+        config = {
+            "test_channel": int(self.test_channel_combo.currentText().replace("CH ", "")),
+            "test_item": self.test_item_combo.currentText(),
             "device_addr": device_addr,
             "iic_width": self.iic_width_combo.currentData(),
-            "continuous": self.continuous_check.isChecked(),
-            "poll_interval_ms": self.poll_interval_spin.value(),
+            "reg_addr": reg_addr,
+            "reg_bit": self.reg_bit_edit.text(),
         }
+        if config["test_item"] == "Voltage":
+            config["start_voltage"] = self.start_voltage_spin.value()
+            config["end_voltage"] = self.end_voltage_spin.value()
+            config["step_voltage"] = self.step_voltage_spin.value()
+            config["step_delay_ms"] = self.step_delay_v_spin.value()
+        else:
+            config["start_current"] = self.start_current_spin.value()
+            config["end_current"] = self.end_current_spin.value()
+            config["step_current"] = self.step_current_spin.value()
+            config["step_delay_ms"] = self.step_delay_c_spin.value()
+        return config
 
     def clear_results(self):
         for name in self.status_labels:
