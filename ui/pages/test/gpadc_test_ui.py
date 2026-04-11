@@ -1165,21 +1165,25 @@ class GPADCTestUI(QWidget):
         self._set_status_label(self.n6705c_status, "Connecting...", "warn")
         self.n6705c_connect_btn.setEnabled(False)
         try:
-            from instruments.power.keysight.n6705c import N6705C
             device_address = self.n6705c_combo.currentText()
-            self.n6705c = N6705C(device_address)
-            idn = self.n6705c.instr.query("*IDN?")
-            if "N6705C" in idn:
-                self.is_n6705c_connected = True
-                self._set_status_label(self.n6705c_status, "Connected", "ok")
-                self._set_btn_connected(self.n6705c_connect_btn)
-                self.n6705c_search_btn.setEnabled(False)
-
-                if self._n6705c_top:
-                    self._n6705c_top.connect_a(device_address, self.n6705c)
+            if DEBUG_MOCK:
+                self.n6705c = MockN6705C()
             else:
-                self._set_status_label(self.n6705c_status, "Device Mismatch", "err")
-                self._set_btn_disconnected(self.n6705c_connect_btn)
+                from instruments.power.keysight.n6705c import N6705C
+                self.n6705c = N6705C(device_address)
+                idn = self.n6705c.instr.query("*IDN?")
+                if "N6705C" not in idn:
+                    self._set_status_label(self.n6705c_status, "Device Mismatch", "err")
+                    self._set_btn_disconnected(self.n6705c_connect_btn)
+                    return
+
+            self.is_n6705c_connected = True
+            self._set_status_label(self.n6705c_status, "Connected", "ok")
+            self._set_btn_connected(self.n6705c_connect_btn)
+            self.n6705c_search_btn.setEnabled(False)
+
+            if self._n6705c_top:
+                self._n6705c_top.connect_a(device_address, self.n6705c)
         except Exception as e:
             self._append_log(f"[ERROR] Connect N6705C error: {e}")
             self._set_status_label(self.n6705c_status, f"Error: {e}", "err")
@@ -1270,13 +1274,15 @@ class GPADCTestUI(QWidget):
         self._set_status_label(self.vt6002_status, "Connecting...", "warn")
         self.vt6002_connect_btn.setEnabled(False)
         try:
-            from instruments.chambers.vt6002_chamber import VT6002
-            port_str = self.vt6002_combo.currentText()
-            device_port = port_str.split()[0]
+            if DEBUG_MOCK:
+                self.vt6002 = MockVT6002()
+            else:
+                from instruments.chambers.vt6002_chamber import VT6002
+                port_str = self.vt6002_combo.currentText()
+                device_port = port_str.split()[0]
+                self.vt6002 = VT6002(device_port)
 
-            self.vt6002 = VT6002(device_port)
             self.is_vt6002_connected = True
-
             self._set_status_label(self.vt6002_status, "Connected", "ok")
             self._set_btn_connected(self.vt6002_connect_btn)
             self.vt6002_search_btn.setEnabled(False)

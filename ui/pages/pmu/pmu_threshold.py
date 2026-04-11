@@ -16,6 +16,8 @@ import os
 import pyvisa
 
 from instruments.power.keysight.n6705c import N6705C
+from debug_config import DEBUG_MOCK
+from instruments.mock.mock_instruments import MockN6705C
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLLBAR_STYLE
 
@@ -968,10 +970,15 @@ class PMUThresholdUI(QWidget):
 
         try:
             device_address = self.visa_resource_combo.currentText()
-            self.n6705c = N6705C(device_address)
-            idn = self.n6705c.instr.query("*IDN?")
+            if DEBUG_MOCK:
+                self.n6705c = MockN6705C()
+                idn_match = True
+            else:
+                self.n6705c = N6705C(device_address)
+                idn = self.n6705c.instr.query("*IDN?")
+                idn_match = "N6705C" in idn
 
-            if "N6705C" in idn:
+            if idn_match:
                 self.is_connected = True
                 self._update_connect_button_state(self.connect_btn, True)
                 self.search_btn.setEnabled(False)

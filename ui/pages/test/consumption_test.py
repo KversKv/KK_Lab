@@ -23,6 +23,8 @@ import pyvisa
 
 from instruments.power.keysight.n6705c import N6705C
 from log_config import get_logger
+from debug_config import DEBUG_MOCK
+from instruments.mock.mock_instruments import MockN6705C
 
 logger = get_logger(__name__)
 
@@ -760,9 +762,15 @@ class ConsumptionTestUI(QWidget):
         self.connect_btn.setEnabled(False)
         try:
             device_address = self.device_combo.currentText()
-            self.n6705c = N6705C(device_address)
-            idn = self.n6705c.instr.query("*IDN?")
-            if "N6705C" in idn:
+            if DEBUG_MOCK:
+                self.n6705c = MockN6705C()
+                idn_match = True
+            else:
+                self.n6705c = N6705C(device_address)
+                idn = self.n6705c.instr.query("*IDN?")
+                idn_match = "N6705C" in idn
+
+            if idn_match:
                 self.is_connected = True
                 self._set_status("Connected", "ok")
                 self.instrument_status.setText(f"N6705C DC Power Analyzer")

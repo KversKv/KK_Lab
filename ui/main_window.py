@@ -30,6 +30,7 @@ from instruments.base.visa_instrument import VisaInstrument
 from instruments.chambers.vt6002_chamber import VT6002
 from ui.styles import SCROLLBAR_STYLE
 from log_config import get_logger
+from debug_config import DEBUG_MOCK
 
 logger = get_logger(__name__)
 
@@ -358,6 +359,13 @@ class MainWindow(QMainWindow):
 
         self.n6705c_top = N6705CTop(self)
         self.mso64b_top = MSO64BTop(self)
+
+        if DEBUG_MOCK:
+            from instruments.mock.mock_instruments import MockN6705C, MockMSO64B
+            logger.info("[MOCK] Auto-connecting mock instruments...")
+            self.n6705c_top.connect_a("MOCK::N6705C::A", MockN6705C(), "MOCK-A")
+            self.n6705c_top.connect_b("MOCK::N6705C::B", MockN6705C(), "MOCK-B")
+            self.mso64b_top.connect_instrument("MOCK::MSO64B", MockMSO64B(), "MSO64B")
 
         self.n6705c_ui = None
         self.n6705c_double_ui = None

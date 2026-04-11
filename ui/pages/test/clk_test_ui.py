@@ -21,6 +21,7 @@ from PySide6.QtGui import QFont
 import pyqtgraph as pg
 from ui.styles import SCROLL_AREA_STYLE
 from debug_config import DEBUG_MOCK
+from instruments.mock.mock_instruments import MockMSO64B, MockVT6002
 
 
 class DarkComboBox(QComboBox):
@@ -2129,7 +2130,7 @@ class CLKTestUI(QWidget):
         self._set_status_label(self.mso64b_status, "Connecting...", "warn")
         self.mso64b_connect_btn.setEnabled(False)
         if DEBUG_MOCK:
-            self.mso64b = None
+            self.mso64b = MockMSO64B()
             self.is_mso64b_connected = True
             self._set_status_label(self.mso64b_status, "Connected: [MOCK] MSO64B", "ok")
             self._set_btn_connected(self.mso64b_connect_btn)
@@ -2211,7 +2212,7 @@ class CLKTestUI(QWidget):
         self._set_status_label(self.vt6002_status, "Connecting...", "warn")
         self.vt6002_connect_btn.setEnabled(False)
         if DEBUG_MOCK:
-            self.vt6002 = None
+            self.vt6002 = MockVT6002()
             self.is_vt6002_connected = True
             self._set_status_label(self.vt6002_status, "Connected: [MOCK] VT6002", "ok")
             self._set_btn_connected(self.vt6002_connect_btn)

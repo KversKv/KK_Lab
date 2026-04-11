@@ -24,6 +24,8 @@ import time
 import pyvisa
 
 from instruments.power.keysight.n6705c import N6705C
+from debug_config import DEBUG_MOCK
+from instruments.mock.mock_instruments import MockN6705C
 from i2c_interface_x64 import I2CInterface
 from Bes_I2CIO_Interface import I2CSpeedMode, I2CWidthFlag
 
@@ -1378,6 +1380,19 @@ class ItermTestUI(QWidget):
 
         device_address = self.visa_resource_combo.currentText()
         self._pending_device_address = device_address
+
+        if DEBUG_MOCK:
+            self.n6705c = MockN6705C()
+            self._update_connect_button_state(True)
+            self.set_system_status("\u25cf Connected (Mock)")
+            self.search_btn.setEnabled(False)
+            self.instrument_info_label.setText("Mock N6705C (DEBUG)")
+            self._append_to_log("[DEBUG] Mock N6705C connected.")
+            if self._n6705c_top:
+                self._n6705c_top.connect_a(device_address, self.n6705c)
+            self.connection_status_changed.emit(True)
+            self.connect_btn.setEnabled(True)
+            return
 
         def _connect_bg():
             n6705c = N6705C(device_address)

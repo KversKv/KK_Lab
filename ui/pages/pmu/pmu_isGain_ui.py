@@ -21,6 +21,8 @@ from datetime import datetime
 import pyvisa
 
 from instruments.power.keysight.n6705c import N6705C
+from debug_config import DEBUG_MOCK
+from instruments.mock.mock_instruments import MockN6705C, MockMSO64B
 from instruments.scopes.tektronix.mso64b import MSO64B
 from instruments.scopes.keysight.dsox4034a import DSOX4034A
 from ui.widgets.dark_combobox import DarkComboBox
@@ -2071,6 +2073,21 @@ class PMUIsGainUI(QWidget):
         self.set_system_status("Connecting N6705C...")
         self.append_log("[SYSTEM] Attempting N6705C connection...")
         self.connect_btn.setEnabled(False)
+
+        if DEBUG_MOCK:
+            self.n6705c = MockN6705C()
+            self.is_connected = True
+            self._update_connect_button_state(self.connect_btn, True)
+            self.search_btn.setEnabled(False)
+            self.append_log("[DEBUG] Mock N6705C connected.")
+            self.set_system_status("N6705C connected (Mock)")
+            device_address = self.visa_resource_combo.currentText()
+            if self._n6705c_top:
+                self._n6705c_top.connect_a(device_address, self.n6705c)
+            self.connection_status_changed.emit(True)
+            self.connect_btn.setEnabled(True)
+            return
+
         device_address = self.visa_resource_combo.currentText()
         self._run_instrument_task(
             self._connect_n6705c_task,
@@ -2154,6 +2171,18 @@ class PMUIsGainUI(QWidget):
         if not resource:
             self.set_system_status("Invalid scope resource", is_error=True)
             self.append_log("[ERROR] Invalid scope resource.")
+            return
+
+        if DEBUG_MOCK:
+            self.Osc_ins = MockMSO64B()
+            self.is_scope_connected = True
+            self._update_connect_button_state(self.scope_connect_btn, True)
+            self.scope_search_btn.setEnabled(False)
+            self.append_log("[DEBUG] Mock scope connected.")
+            self.set_system_status("Scope connected (Mock)")
+            if self._mso64b_top:
+                self._mso64b_top.connect_instrument(resource, self.Osc_ins, scope_type="MSO64B")
+            self.scope_connection_changed.emit(True)
             return
 
         self.set_system_status(f"Connecting {scope_type}...")

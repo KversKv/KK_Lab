@@ -19,6 +19,8 @@ import sys
 import time
 from pathlib import Path
 from instruments.power.keysight.n6705c import N6705C
+from debug_config import DEBUG_MOCK
+from instruments.mock.mock_instruments import MockN6705C
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -964,10 +966,15 @@ class PMUOSCPUI(QWidget):
         self.connect_btn.setEnabled(False)
 
         try:
-            self.n6705c = N6705C(device_address)
-            idn = self.n6705c.instr.query("*IDN?").strip()
+            if DEBUG_MOCK:
+                self.n6705c = MockN6705C()
+                idn_match = True
+            else:
+                self.n6705c = N6705C(device_address)
+                idn = self.n6705c.instr.query("*IDN?").strip()
+                idn_match = "N6705C" in idn
 
-            if "N6705C" in idn:
+            if idn_match:
                 self.is_connected = True
                 self.set_system_status("已连接")
 
@@ -1052,7 +1059,10 @@ class PMUOSCPUI(QWidget):
         self.set_system_status("执行Debug测试...")
         try:
             if self.n6705c is None:
-                self.n6705c = N6705C("TCPIP0::K-N6705C-06098.local::hislip0::INSTR")
+                if DEBUG_MOCK:
+                    self.n6705c = MockN6705C()
+                else:
+                    self.n6705c = N6705C("TCPIP0::K-N6705C-06098.local::hislip0::INSTR")
             self.ovp_test(1, 2, 1.33, 1.5, 0.001)
             # self.uvp_test(1, 2, 0.5, 0.55, 0.001)
         except Exception as e:

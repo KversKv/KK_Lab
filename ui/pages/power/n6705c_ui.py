@@ -19,6 +19,8 @@ import pyvisa
 
 from instruments.power.keysight.n6705c import N6705C
 from log_config import get_logger
+from debug_config import DEBUG_MOCK
+from instruments.mock.mock_instruments import MockN6705C
 
 logger = get_logger(__name__)
 
@@ -1659,6 +1661,15 @@ class N6705CUI(QWidget):
         self.search_timer.start(100)
 
     def _search_devices(self):
+        if DEBUG_MOCK:
+            self.device_combo.clear()
+            self.device_combo.setEnabled(True)
+            self.device_combo.addItem("MOCK::N6705C")
+            self.connection_status.setText("Found Mock N6705C")
+            self.connection_status.setStyleSheet("color: #00a859; padding: 10px; font-weight: bold;")
+            self.toggle_conn_btn.setEnabled(True)
+            self.search_btn.setEnabled(True)
+            return
         try:
             if self.rm is None:
                 try:
@@ -1794,13 +1805,19 @@ class N6705CUI(QWidget):
 
         try:
             device_address = self.device_combo.currentText()
-            self.n6705c = N6705C(device_address)
-
-            idn = self.n6705c.instr.query("*IDN?")
-            if "N6705C" in idn:
-                self.is_connected = True
-                idn_parts = idn.strip().split(",")
+            if DEBUG_MOCK:
+                self.n6705c = MockN6705C()
+                serial = "MOCK-A"
+                idn_match = True
+            else:
+                self.n6705c = N6705C(device_address)
+                idn = self.n6705c.instr.query("*IDN?")
+                idn_match = "N6705C" in idn
+                idn_parts = idn.strip().split(",") if idn_match else []
                 serial = idn_parts[2].strip() if len(idn_parts) >= 3 else ""
+
+            if idn_match:
+                self.is_connected = True
                 if self._top:
                     self._top.connect_a(device_address, n6705c_instance=self.n6705c, serial=serial)
                 self.connection_status.setText("● Connected")

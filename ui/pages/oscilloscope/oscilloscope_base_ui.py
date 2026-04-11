@@ -1793,7 +1793,20 @@ class OscilloscopeBaseUI(QWidget):
         self.connect_btn.setEnabled(False)
 
         try:
-            result = self.controller.connect_instrument(resource)
+            if DEBUG_MOCK:
+                from instruments.mock.mock_instruments import MockMSO64B
+                mock = MockMSO64B()
+                self.controller._instrument = mock
+                self.controller._instrument_info = "MOCK,MSO64B,MOCK000,FW1.0"
+                info = self.controller._instrument_info
+                result = {
+                    "info": info,
+                    "title": "MSO64B (Mock)",
+                    "is_dsox": False,
+                    "is_mso64b": True,
+                }
+            else:
+                result = self.controller.connect_instrument(resource)
             self.update_connection_status(True, result["info"])
             self.set_title(result["title"])
             self.set_invert_enabled(result["is_dsox"])

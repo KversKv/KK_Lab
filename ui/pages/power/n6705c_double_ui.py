@@ -18,6 +18,8 @@ from PySide6.QtGui import QFont
 import pyvisa
 
 from instruments.power.keysight.n6705c import N6705C
+from debug_config import DEBUG_MOCK
+from instruments.mock.mock_instruments import MockN6705C
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -1445,15 +1447,22 @@ class N6705CDoubleUI(QWidget):
 
         try:
             address = w["combo"].currentText()
-            n6705c = N6705C(address)
-            idn = n6705c.instr.query("*IDN?")
-            if "N6705C" in idn:
+            if DEBUG_MOCK:
+                n6705c = MockN6705C()
+                idn_match = True
+                serial = "MOCK-" + label
+            else:
+                n6705c = N6705C(address)
+                idn = n6705c.instr.query("*IDN?")
+                idn_match = "N6705C" in idn
+                idn_parts = idn.strip().split(",") if idn_match else []
+                serial = idn_parts[2].strip() if len(idn_parts) >= 3 else ""
+
+            if idn_match:
                 self.devices[label]["n6705c"] = n6705c
                 self.devices[label]["is_connected"] = True
 
                 if self._top:
-                    idn_parts = idn.strip().split(",")
-                    serial = idn_parts[2].strip() if len(idn_parts) >= 3 else ""
                     connect_fn = getattr(self._top, f"connect_{label.lower()}", None)
                     if connect_fn:
                         connect_fn(address, n6705c_instance=n6705c, serial=serial)

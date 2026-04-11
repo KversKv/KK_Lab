@@ -19,6 +19,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer, QRectF, QSize, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QFont
 from instruments.chambers.vt6002_chamber import VT6002, serial
+from debug_config import DEBUG_MOCK
+from instruments.mock.mock_instruments import MockVT6002
 
 
 class TemperatureGauge(QWidget):
@@ -675,7 +677,10 @@ class VT6002ChamberUI(QWidget):
             """)
 
     def _scan_ports(self):
-        """扫描可用串口"""
+        if DEBUG_MOCK:
+            self.port_combo.clear()
+            self.port_combo.addItem("MOCK (Mock VT6002)")
+            return
         try:
             from serial.tools.list_ports import comports
             ports = []
@@ -693,8 +698,10 @@ class VT6002ChamberUI(QWidget):
             self.port_combo.addItem("Scan Failed")
 
     def _toggle_connection(self):
-        """切换连接状态"""
-        is_connected = self.vt6002 is not None and self.vt6002.ser.is_open
+        is_connected = self.vt6002 is not None and (
+            (isinstance(self.vt6002, MockVT6002) and self.vt6002.ser.is_open)
+            or (hasattr(self.vt6002, 'ser') and self.vt6002.ser.is_open)
+        )
 
         if is_connected:
             try:
@@ -715,9 +722,13 @@ class VT6002ChamberUI(QWidget):
                 return
 
             try:
-                device_port = current_text.split()[0]
-                self.vt6002 = VT6002(device_port)
-                self.current_port = device_port
+                if DEBUG_MOCK:
+                    self.vt6002 = MockVT6002()
+                    self.current_port = "MOCK"
+                else:
+                    device_port = current_text.split()[0]
+                    self.vt6002 = VT6002(device_port)
+                    self.current_port = device_port
 
                 self._set_connection_ui(True)
                 self._set_controls_enabled(True)
@@ -780,8 +791,7 @@ class VT6002ChamberUI(QWidget):
             logger.error("设置预设温度错误: %s", e)
 
     def _update_temperatures(self):
-        """更新温度显示"""
-        is_connected = self.vt6002 is not None and self.vt6002.ser.is_open
+        is_connected = self.vt6002 is not None and hasattr(self.vt6002, 'ser') and self.vt6002.ser.is_open
 
         if is_connected:
             try:
