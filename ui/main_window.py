@@ -1095,6 +1095,7 @@ class MainWindow(QMainWindow):
         else:
             self._remove_instrument_status("n6705c_b")
 
+        scope_shown = False
         if self.oscilloscope_ui is not None and self.oscilloscope_ui.controller.is_connected and self.oscilloscope_ui.controller.instrument_info:
             parts = [p.strip() for p in self.oscilloscope_ui.controller.instrument_info.split(",")]
             if len(parts) >= 3:
@@ -1105,7 +1106,25 @@ class MainWindow(QMainWindow):
                 name = self.oscilloscope_ui.controller.instrument_info
             self._remove_instrument_status("oscilloscope")
             self._add_instrument_status("oscilloscope", name)
-        else:
+            scope_shown = True
+        elif self.mso64b_top and self.mso64b_top.is_connected and self.mso64b_top.mso64b:
+            scope_type = getattr(self.mso64b_top, 'scope_type', '') or 'Oscilloscope'
+            try:
+                idn = self.mso64b_top.mso64b.identify_instrument()
+                parts = [p.strip() for p in idn.split(",")]
+                if len(parts) >= 3:
+                    name = f"{parts[1]}  {parts[2]}"
+                elif len(parts) >= 2:
+                    name = parts[1]
+                else:
+                    name = idn
+            except Exception:
+                name = f"{scope_type} Connected"
+            self._remove_instrument_status("oscilloscope")
+            self._add_instrument_status("oscilloscope", name)
+            scope_shown = True
+
+        if not scope_shown:
             self._remove_instrument_status("oscilloscope")
 
         if self.vt6002_chamber_ui is not None and self.vt6002_chamber_ui.vt6002 is not None:
@@ -1293,6 +1312,19 @@ class MainWindow(QMainWindow):
             logger.warning(f"[CloseEvent] Error disconnecting N6705C for {name}: {e}")
 
         try:
+            if hasattr(sub_ui, 'Osc_ins') and sub_ui.Osc_ins is not None:
+                logger.info(f"[CloseEvent] Disconnecting oscilloscope instrument: {name}")
+                osc = sub_ui.Osc_ins
+                sub_ui.Osc_ins = None
+                sub_ui.scope_connected = False
+                if hasattr(osc, 'disconnect'):
+                    osc.disconnect()
+                elif hasattr(osc, 'instrument') and osc.instrument:
+                    osc.instrument.close()
+        except Exception as e:
+            logger.warning(f"[CloseEvent] Error disconnecting oscilloscope for {name}: {e}")
+
+        try:
             if hasattr(sub_ui, 'rm') and sub_ui.rm is not None:
                 logger.info(f"[CloseEvent] Closing VISA ResourceManager: {name}")
                 sub_ui.rm.close()
@@ -1311,11 +1343,12 @@ class MainWindow(QMainWindow):
                 logger.warning(f"[CloseEvent] Error disconnecting N6705C Top: {e}")
 
         if self.mso64b_top and self.mso64b_top.is_connected:
-            logger.info("[CloseEvent] Disconnecting MSO64B oscilloscope...")
+            scope_type = getattr(self.mso64b_top, 'scope_type', 'MSO64B') or 'oscilloscope'
+            logger.info(f"[CloseEvent] Disconnecting {scope_type} oscilloscope...")
             try:
                 self.mso64b_top.disconnect()
             except Exception as e:
-                logger.warning(f"[CloseEvent] Error disconnecting MSO64B: {e}")
+                logger.warning(f"[CloseEvent] Error disconnecting {scope_type}: {e}")
 
         if self.oscilloscope_ui and self.oscilloscope_ui.controller.is_connected:
             logger.info("[CloseEvent] Disconnecting oscilloscope controller...")

@@ -12,8 +12,9 @@ class MSO64BTop(QObject):
         self.mso64b = None
         self.is_connected = False
         self.visa_resource = ""
+        self.scope_type = ""
 
-    def connect_instrument(self, visa_resource, mso64b_instance=None):
+    def connect_instrument(self, visa_resource, mso64b_instance=None, scope_type="MSO64B"):
         if mso64b_instance is not None:
             self.mso64b = mso64b_instance
         else:
@@ -21,6 +22,7 @@ class MSO64BTop(QObject):
             self.mso64b = MSO64B(visa_resource)
         self.is_connected = True
         self.visa_resource = visa_resource
+        self.scope_type = scope_type
         self.connection_changed.emit()
 
     def disconnect(self):
@@ -32,4 +34,5 @@ class MSO64BTop(QObject):
         self.mso64b = None
         self.is_connected = False
         self.visa_resource = ""
+        self.scope_type = ""
         self.connection_changed.emit()

@@ -543,6 +543,9 @@ class PMUIsGainUI(QWidget):
         self._bind_signals()
         self._sync_from_top()
 
+        if self._mso64b_top is not None:
+            self._mso64b_top.connection_changed.connect(self._on_mso64b_top_changed)
+
     @staticmethod
     def _get_checkmark_path(accent_color):
         safe_name = accent_color.replace("#", "").replace(" ", "")
@@ -1219,13 +1222,50 @@ class PMUIsGainUI(QWidget):
                 self.scope_resource = self._mso64b_top.visa_resource
                 self.scope_connected = True
                 self._update_connect_button_state(self.scope_connect_btn, True)
-                self.scope_type_combo.setEnabled(False)
                 self.scope_search_btn.setEnabled(False)
+                scope_type = getattr(self._mso64b_top, 'scope_type', 'MSO64B') or 'MSO64B'
+                idx = self.scope_type_combo.findText(scope_type)
+                if idx >= 0:
+                    self.scope_type_combo.setCurrentIndex(idx)
+                self.scope_type_combo.setEnabled(False)
                 if self._mso64b_top.visa_resource:
                     self.scope_resource_combo.clear()
                     self.scope_resource_combo.addItem(self._mso64b_top.visa_resource)
             elif not self.scope_connected:
                 self._update_connect_button_state(self.scope_connect_btn, False)
+
+    def _on_mso64b_top_changed(self):
+        if self._mso64b_top is None:
+            return
+        if self.is_test_running:
+            return
+        if self._mso64b_top.is_connected and self._mso64b_top.mso64b:
+            if self.Osc_ins is self._mso64b_top.mso64b and self.scope_connected:
+                return
+            self.Osc_ins = self._mso64b_top.mso64b
+            self.scope_resource = self._mso64b_top.visa_resource
+            self.scope_connected = True
+            self._update_connect_button_state(self.scope_connect_btn, True)
+            self.scope_search_btn.setEnabled(False)
+            scope_type = getattr(self._mso64b_top, 'scope_type', 'MSO64B') or 'MSO64B'
+            idx = self.scope_type_combo.findText(scope_type)
+            if idx >= 0:
+                self.scope_type_combo.setCurrentIndex(idx)
+            self.scope_type_combo.setEnabled(False)
+            if self._mso64b_top.visa_resource:
+                self.scope_resource_combo.clear()
+                self.scope_resource_combo.addItem(self._mso64b_top.visa_resource)
+            self.append_log(f"[SYSTEM] {scope_type} synced from external connection.")
+        else:
+            if not self.scope_connected:
+                return
+            self.Osc_ins = None
+            self.scope_resource = None
+            self.scope_connected = False
+            self._update_connect_button_state(self.scope_connect_btn, False)
+            self.scope_type_combo.setEnabled(True)
+            self.scope_search_btn.setEnabled(True)
+            self.append_log("[SYSTEM] Oscilloscope disconnected externally.")
 
     def _update_test_button_state(self, running: bool):
         self.is_test_running = running
@@ -2156,8 +2196,8 @@ class PMUIsGainUI(QWidget):
         self.append_log(f"[IDN] {result['idn']}")
         self.set_system_status(f"{scope_type} connected")
 
-        if scope_type == "MSO64B" and self._mso64b_top:
-            self._mso64b_top.connect_instrument(result["resource"], self.Osc_ins)
+        if self._mso64b_top:
+            self._mso64b_top.connect_instrument(result["resource"], self.Osc_ins, scope_type=scope_type)
 
     def _on_disconnect_scope(self):
         scope_type = self.scope_type_combo.currentText()
@@ -2165,7 +2205,7 @@ class PMUIsGainUI(QWidget):
         self.append_log(f"[SYSTEM] Disconnecting {scope_type}...")
         self.scope_connect_btn.setEnabled(False)
 
-        if scope_type == "MSO64B" and self._mso64b_top and self._mso64b_top.is_connected:
+        if self._mso64b_top and self._mso64b_top.is_connected:
             self._mso64b_top.disconnect()
             self.Osc_ins = None
             self._on_disconnect_scope_finished({"scope_type": scope_type})

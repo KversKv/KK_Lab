@@ -385,6 +385,9 @@ class OscilloscopeBaseUI(QWidget):
         self._init_ui_elements()
         self._connect_dirty_tracking()
 
+        if self.mso64b_top is not None:
+            self.mso64b_top.connection_changed.connect(self._on_mso64b_top_changed)
+
     def _setup_fonts(self):
         self.base_font = QFont("Segoe UI", 10)
         self.title_font = QFont("Segoe UI", 18, QFont.Bold)
@@ -777,16 +780,6 @@ class OscilloscopeBaseUI(QWidget):
                 background-color: #1C2D55;
                 color: #A8BBDB;
             }
-
-            QSplitter::handle {
-                background-color: #16254A;
-                height: 4px;
-                border-radius: 2px;
-            }
-
-            QSplitter::handle:hover {
-                background-color: #4C6FFF;
-            }
         """ + SCROLL_AREA_STYLE)
 
     def _init_layout(self):
@@ -806,8 +799,14 @@ class OscilloscopeBaseUI(QWidget):
         left_splitter = QSplitter(Qt.Vertical)
         left_splitter.setChildrenCollapsible(True)
         left_splitter.setHandleWidth(6)
+        left_splitter.setStyleSheet("""
+            QSplitter { background: transparent; border: none; }
+            QSplitter::handle { background-color: #16254A; height: 4px; border-radius: 2px; }
+            QSplitter::handle:hover { background-color: #4C6FFF; }
+        """)
 
         left_upper_widget = QWidget()
+        left_upper_widget.setStyleSheet("QWidget { background: transparent; border: none; }")
         left_upper = QVBoxLayout(left_upper_widget)
         left_upper.setContentsMargins(0, 0, 0, 0)
         left_upper.setSpacing(16)
@@ -1812,8 +1811,11 @@ class OscilloscopeBaseUI(QWidget):
             elif result["is_mso64b"]:
                 self._update_channel_colors(self.CHANNEL_COLORS_TEKTRONIX)
 
-            if result["is_mso64b"] and self.mso64b_top is not None:
-                self.mso64b_top.connect_instrument(resource, self.controller.instrument)
+            if self.mso64b_top is not None:
+                if result["is_mso64b"]:
+                    self.mso64b_top.connect_instrument(resource, self.controller.instrument, scope_type="MSO64B")
+                elif result["is_dsox"]:
+                    self.mso64b_top.connect_instrument(resource, self.controller.instrument, scope_type="DSOX4034A")
             self.connection_changed.emit()
         except Exception as e:
             logger.error("Connect oscilloscope failed: %s", e)
@@ -1831,10 +1833,11 @@ class OscilloscopeBaseUI(QWidget):
         try:
             result = self.controller.disconnect_instrument()
 
-            if result["is_mso64b"] and self.mso64b_top is not None:
+            if self.mso64b_top is not None and self.mso64b_top.is_connected:
                 self.mso64b_top.mso64b = None
                 self.mso64b_top.is_connected = False
                 self.mso64b_top.visa_resource = ""
+                self.mso64b_top.scope_type = ""
                 self.mso64b_top.connection_changed.emit()
 
             self.update_connection_status(False)
@@ -1846,6 +1849,66 @@ class OscilloscopeBaseUI(QWidget):
             self.connection_changed.emit()
         finally:
             self.connect_btn.setEnabled(True)
+
+    def _on_mso64b_top_changed(self):
+        if self.mso64b_top is None:
+            return
+        if self.mso64b_top.is_connected and self.mso64b_top.mso64b:
+            if self.controller.is_connected and self.controller.instrument is self.mso64b_top.mso64b:
+                return
+            self._sync_from_top()
+        else:
+            if not self.controller.is_connected:
+                return
+            self.controller._instrument = None
+            self.controller._instrument_info = ""
+            self.update_connection_status(False)
+            self.set_invert_enabled(True)
+            self.connection_changed.emit()
+
+    def _sync_from_top(self):
+        if self.mso64b_top is None:
+            return
+        if not self.mso64b_top.is_connected or self.mso64b_top.mso64b is None:
+            return
+        if self.controller.is_connected:
+            return
+
+        from instruments.scopes.keysight.dsox4034a import DSOX4034A
+        from instruments.scopes.tektronix.mso64b import MSO64B
+
+        instrument = self.mso64b_top.mso64b
+        resource = self.mso64b_top.visa_resource
+        scope_type = getattr(self.mso64b_top, 'scope_type', '') or ''
+
+        self.controller._instrument = instrument
+        try:
+            info = instrument.identify_instrument()
+            self.controller._instrument_info = info
+        except Exception:
+            info = f"{scope_type} Connected"
+            self.controller._instrument_info = info
+
+        is_dsox = isinstance(instrument, DSOX4034A)
+        is_mso64b = isinstance(instrument, MSO64B)
+
+        self.update_connection_status(True, info)
+        title = info.split(",")[1].strip() if "," in info else info
+        self.set_title(title)
+        self.set_invert_enabled(is_dsox)
+
+        if is_dsox:
+            self._update_channel_colors(self.CHANNEL_COLORS_KEYSIGHT)
+        elif is_mso64b:
+            self._update_channel_colors(self.CHANNEL_COLORS_TEKTRONIX)
+
+        idx = self.visa_resource_combo.findText(resource)
+        if idx >= 0:
+            self.visa_resource_combo.setCurrentIndex(idx)
+        else:
+            self.visa_resource_combo.setEditText(resource)
+
+        self.connection_changed.emit()
 
     def _on_add_measurement(self):
         logger.debug("[MEAS] _on_add_measurement called")
