@@ -5,10 +5,14 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QLineEdit, QFrame, QSizePolicy,
     QStackedWidget, QApplication, QTextEdit, QMenu, QFileDialog,
-    QScrollArea, QGridLayout
+    QScrollArea, QGridLayout, QSplitter, QGraphicsOpacityEffect
 )
-from PySide6.QtCore import Qt, QTimer, Signal, QThread, QObject
-from PySide6.QtGui import QFont, QPixmap, QImage
+from PySide6.QtCore import (
+    Qt, QTimer, Signal, QThread, QObject,
+    QPropertyAnimation, QEasingCurve, QSequentialAnimationGroup,
+    QSize
+)
+from PySide6.QtGui import QFont, QPixmap, QImage, QPainter, QColor, QPen
 from ui.widgets.dark_combobox import DarkComboBox
 from instruments.scopes.base import OscilloscopeController
 from log_config import get_logger
@@ -24,6 +28,87 @@ DEBUG_DSOX4034A_FLAG = True
 # DEBUG_MSO64B_FLAG = False
 # DEBUG_DSOX4034A_FLAG = False
 
+CHANNEL_TEXT_COLORS = {
+    "#F0B400": "#1A1400",
+    "#00C896": "#001A12",
+    "#4C8DFF": "#FFFFFF",
+    "#FF4444": "#FFFFFF",
+    "#7B8CB7": "#081126",
+}
+
+
+class CaptureLoadingOverlay(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+        self.setStyleSheet("background: transparent;")
+        self._angle = 0
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._rotate)
+        self._timer.setInterval(30)
+
+    def start(self):
+        self._angle = 0
+        self.show()
+        self.raise_()
+        self._timer.start()
+
+    def stop(self):
+        self._timer.stop()
+        self.hide()
+
+    def _rotate(self):
+        self._angle = (self._angle + 8) % 360
+        self.update()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.fillRect(self.rect(), QColor(0, 0, 0, 140))
+
+        cx, cy = self.width() / 2, self.height() / 2
+        radius = min(self.width(), self.height()) / 6
+        pen = QPen(QColor("#7B7DFF"), 3.5)
+        pen.setCapStyle(Qt.RoundCap)
+        p.setPen(pen)
+        p.translate(cx, cy)
+        p.rotate(self._angle)
+        p.drawArc(int(-radius), int(-radius), int(radius * 2), int(radius * 2), 0, 270 * 16)
+        p.resetTransform()
+
+        p.setPen(QColor("#A8BBDB"))
+        f = p.font()
+        f.setPointSize(10)
+        f.setWeight(QFont.DemiBold)
+        p.setFont(f)
+        p.drawText(self.rect().adjusted(0, int(radius + cy / 2 + 10), 0, 0), Qt.AlignHCenter | Qt.AlignTop, "Capturing...")
+        p.end()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+
+
+class TruncatedComboBox(DarkComboBox):
+    MAX_DISPLAY_LEN = 32
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setMinimumWidth(100)
+
+    def addItem(self, text, userData=None):
+        super().addItem(text, userData)
+        idx = self.count() - 1
+        self.setItemData(idx, text, Qt.ToolTipRole)
+
+    def paintEvent(self, event):
+        current = self.currentText()
+        if len(current) > self.MAX_DISPLAY_LEN:
+            prefix_len = 14
+            suffix_len = 14
+            display = current[:prefix_len] + "..." + current[-suffix_len:]
+            self.lineEdit().setToolTip(current) if self.isEditable() and self.lineEdit() else None
+        super().paintEvent(event)
+
 
 # ---------------------------------------------------------------------------
 # TimeScale 序列输入框：支持鼠标滚轮按 1-2-4-10 序列在 ns/us/ms/s 单位间切换
@@ -37,7 +122,6 @@ class TimeScaleEdit(QLineEdit):
     parent UI can apply the value to the instrument.
     """
 
-    # 完整的时间刻度序列（以秒为单位）
     SCALE_SEQUENCE = [
         1e-9, 2e-9, 4e-9, 10e-9, 20e-9, 40e-9, 100e-9, 200e-9, 400e-9,
         1e-6, 2e-6, 4e-6, 10e-6, 20e-6, 40e-6, 100e-6, 200e-6, 400e-6,
@@ -45,7 +129,6 @@ class TimeScaleEdit(QLineEdit):
         1.0, 2.0, 4.0, 10.0,
     ]
 
-    # 单位后缀 -> 乘数
     _UNIT_MAP = {
         'ns': 1e-9,
         'us': 1e-6,
@@ -57,17 +140,11 @@ class TimeScaleEdit(QLineEdit):
         super().__init__(default_text, parent)
         self._current_index = self._find_nearest_index(self.parse_to_seconds(default_text))
 
-    # -- 公开 API --------------------------------------------------------------
-
     def value_in_seconds(self) -> float:
-        """解析当前文本并返回以秒为单位的浮点数。"""
         return self.parse_to_seconds(self.text())
 
     @classmethod
     def parse_to_seconds(cls, text: str) -> float:
-        """将带单位的字符串解析为秒值。
-        支持格式： '1us', '400ns', '10ms', '2s', 或纯数字（默认单位为秒）。
-        """
         t = text.strip().lower()
         for suffix, mult in sorted(cls._UNIT_MAP.items(), key=lambda x: -len(x[0])):
             if t.endswith(suffix):
@@ -75,8 +152,7 @@ class TimeScaleEdit(QLineEdit):
                 try:
                     return float(num_str) * mult
                 except ValueError:
-                    return 1e-6  # 解析失败时的默认值
-        # 没有单位后缀，尝试作为纯数字（秒）
+                    return 1e-6
         try:
             return float(t)
         except ValueError:
@@ -84,7 +160,6 @@ class TimeScaleEdit(QLineEdit):
 
     @classmethod
     def seconds_to_display(cls, seconds: float) -> str:
-        """将秒值转换为可读的带单位字符串。"""
         abs_val = abs(seconds)
         if abs_val < 1e-6:
             val = seconds / 1e-9
@@ -98,15 +173,11 @@ class TimeScaleEdit(QLineEdit):
         else:
             val = seconds
             unit = 's'
-        # 如果是整数就不显示小数点
         if val == int(val):
             return f"{int(val)}{unit}"
         return f"{val:g}{unit}"
 
-    # -- 内部方法 --------------------------------------------------------------
-
     def _find_nearest_index(self, seconds: float) -> int:
-        """找到序列中最接近 seconds 的索引。"""
         best = 0
         best_diff = abs(self.SCALE_SEQUENCE[0] - seconds)
         for i, v in enumerate(self.SCALE_SEQUENCE):
@@ -117,20 +188,16 @@ class TimeScaleEdit(QLineEdit):
         return best
 
     def wheelEvent(self, event):
-        """鼠标滚轮滚动时按序列切换时间刻度值。"""
         delta = event.angleDelta().y()
         if delta == 0:
             return
 
-        # 先根据当前文本重新定位索引
         current_seconds = self.parse_to_seconds(self.text())
         self._current_index = self._find_nearest_index(current_seconds)
 
         if delta > 0:
-            # 滚轮向上 -> 增大时间刻度
             self._current_index = min(self._current_index + 1, len(self.SCALE_SEQUENCE) - 1)
         else:
-            # 滚轮向下 -> 减小时间刻度
             self._current_index = max(self._current_index - 1, 0)
 
         new_val = self.SCALE_SEQUENCE[self._current_index]
@@ -250,6 +317,44 @@ class OscilloscopeBaseUI(QWidget):
 
     CHANNEL_COLORS = CHANNEL_COLORS_DEFAULT
 
+    _APPLY_BTN_DEFAULT_STYLE = """
+        QPushButton#primaryBtn {
+            background-color: #3D33A6;
+            border: none;
+            color: #E8E9FF;
+            padding: 10px 18px;
+            font-weight: 700;
+            border-radius: 10px;
+        }
+        QPushButton#primaryBtn:hover {
+            background-color: #4B40BF;
+        }
+        QPushButton#primaryBtn:disabled {
+            background-color: #1A1540;
+            color: #3A4563;
+        }
+    """
+
+    _APPLY_BTN_DIRTY_STYLE = """
+        QPushButton#primaryBtn {
+            background-color: #6B30DD;
+            border: 2px solid #A06EFF;
+            color: #FFFFFF;
+            padding: 10px 18px;
+            font-weight: 700;
+            border-radius: 10px;
+        }
+        QPushButton#primaryBtn:hover {
+            background-color: #7B40EE;
+            border: 2px solid #B88AFF;
+        }
+        QPushButton#primaryBtn:disabled {
+            background-color: #1A1540;
+            color: #3A4563;
+            border: none;
+        }
+    """
+
     def __init__(self, mso64b_top=None, parent=None):
         super().__init__(parent)
         self.channels = []
@@ -266,6 +371,9 @@ class OscilloscopeBaseUI(QWidget):
         self._polling_thread = None
         self._polling_worker = None
 
+        self._settings_dirty = False
+        self._apply_pulse_timer = None
+
         self.search_timer = QTimer(self)
         self.search_timer.timeout.connect(self._search_devices)
         self.search_timer.setSingleShot(True)
@@ -274,6 +382,7 @@ class OscilloscopeBaseUI(QWidget):
         self._setup_style()
         self._init_layout()
         self._init_ui_elements()
+        self._connect_dirty_tracking()
 
     def _setup_fonts(self):
         self.base_font = QFont("Segoe UI", 10)
@@ -424,7 +533,7 @@ class OscilloscopeBaseUI(QWidget):
             }
 
             QPushButton#searchBtn {
-                padding: 4px 10px;
+                padding: 4px 14px;
                 border-radius: 8px;
                 background-color: #13254b;
                 border: 1px solid #22376A;
@@ -434,6 +543,7 @@ class OscilloscopeBaseUI(QWidget):
 
             QPushButton#searchBtn:hover {
                 background-color: #1C2D55;
+                border: 1px solid #3A5A9F;
             }
 
             QPushButton#searchBtn:disabled {
@@ -465,6 +575,7 @@ class OscilloscopeBaseUI(QWidget):
                 border: 1px solid #22376A;
                 color: #7F96C7;
                 padding: 7px 14px;
+                border-radius: 8px;
             }
 
             QPushButton#ghostBtn:hover {
@@ -576,15 +687,21 @@ class OscilloscopeBaseUI(QWidget):
             }
 
             QLabel#metricTitle {
-                color: #90A7D8;
-                font-size: 9pt;
-                font-weight: 700;
+                color: #7F96C7;
+                font-size: 8pt;
+                font-weight: 600;
             }
 
             QLabel#metricValue {
                 color: #F3F6FF;
-                font-size: 12pt;
+                font-size: 16pt;
                 font-weight: 700;
+            }
+
+            QLabel#metricUnit {
+                color: #90A7D8;
+                font-size: 9pt;
+                font-weight: 600;
             }
 
             QFrame#toggleTrack {
@@ -630,6 +747,45 @@ class OscilloscopeBaseUI(QWidget):
             QPushButton#smallActionBtn:hover {
                 background-color: #1C2D55;
             }
+
+            QPushButton#deleteCardBtn {
+                background-color: transparent;
+                border: none;
+                color: #5E6E8F;
+                font-size: 12pt;
+                padding: 2px 6px;
+                border-radius: 4px;
+            }
+
+            QPushButton#deleteCardBtn:hover {
+                background-color: #3A0820;
+                color: #FF6B8A;
+            }
+
+            QPushButton#logToggleBtn {
+                background-color: transparent;
+                border: 1px solid #22376A;
+                border-radius: 6px;
+                color: #7F96C7;
+                padding: 4px 10px;
+                font-size: 9pt;
+                font-weight: 600;
+            }
+
+            QPushButton#logToggleBtn:hover {
+                background-color: #1C2D55;
+                color: #A8BBDB;
+            }
+
+            QSplitter::handle {
+                background-color: #16254A;
+                height: 4px;
+                border-radius: 2px;
+            }
+
+            QSplitter::handle:hover {
+                background-color: #4C6FFF;
+            }
         """)
 
     def _init_layout(self):
@@ -646,18 +802,30 @@ class OscilloscopeBaseUI(QWidget):
 
         self._create_control_row(content_grid)
 
-        left_upper = QVBoxLayout()
+        left_splitter = QSplitter(Qt.Vertical)
+        left_splitter.setChildrenCollapsible(True)
+        left_splitter.setHandleWidth(6)
+
+        left_upper_widget = QWidget()
+        left_upper = QVBoxLayout(left_upper_widget)
+        left_upper.setContentsMargins(0, 0, 0, 0)
         left_upper.setSpacing(16)
         left_upper.addWidget(self._create_display_card(), 3)
         left_upper.addWidget(self._create_measurements_card(), 1)
-        content_grid.addLayout(left_upper, 1, 0)
+
+        left_splitter.addWidget(left_upper_widget)
+        left_splitter.addWidget(self._create_log_card())
+        left_splitter.setStretchFactor(0, 4)
+        left_splitter.setStretchFactor(1, 1)
+        left_splitter.setSizes([600, 120])
+
+        content_grid.addWidget(left_splitter, 1, 0, 2, 1)
 
         right_upper = QVBoxLayout()
         right_upper.setSpacing(16)
         right_upper.addWidget(self._create_settings_card())
         content_grid.addLayout(right_upper, 1, 1)
 
-        content_grid.addWidget(self._create_log_card(), 2, 0)
         content_grid.addWidget(self._create_quick_function_card(), 2, 1, Qt.AlignTop)
 
         root_layout.addLayout(content_grid)
@@ -692,19 +860,24 @@ class OscilloscopeBaseUI(QWidget):
         return layout
 
     def _create_control_row(self, grid):
-        self.visa_resource_combo = DarkComboBox(bg="#091735", border="#1A2D57")
+        self.visa_resource_combo = TruncatedComboBox(bg="#091735", border="#1A2D57")
         self.visa_resource_combo.setFixedHeight(36)
         self.visa_resource_combo.setEditable(True)
         if DEBUG_MSO64B_FLAG:
             self.visa_resource_combo.addItem("192.168.3.27")
         if DEBUG_DSOX4034A_FLAG:
             self.visa_resource_combo.addItem("USB0::0x0957::0x17A4::MY61500152::INSTR")
+        if self.visa_resource_combo.isEditable() and self.visa_resource_combo.lineEdit():
+            self.visa_resource_combo.lineEdit().setToolTip(self.visa_resource_combo.currentText())
+            self.visa_resource_combo.currentTextChanged.connect(
+                lambda text: self.visa_resource_combo.lineEdit().setToolTip(text) if self.visa_resource_combo.lineEdit() else None
+            )
         grid.addWidget(self.visa_resource_combo, 0, 0)
 
         btn_row = QHBoxLayout()
         btn_row.setSpacing(10)
 
-        self.search_btn = QPushButton("Search")
+        self.search_btn = QPushButton("🔍  Search")
         self.search_btn.setObjectName("searchBtn")
         self.search_btn.setFixedHeight(36)
         self.search_btn.clicked.connect(self._on_search)
@@ -726,20 +899,44 @@ class OscilloscopeBaseUI(QWidget):
         layout.setSpacing(14)
 
         header = QHBoxLayout()
-        title = QLabel("📷 Display Capture")
+        title = QLabel("📷  Display Capture")
         title.setObjectName("sectionTitle")
         header.addWidget(title)
         header.addStretch()
 
-        self.capture_btn = QPushButton("⇩ 获取截图")
-        self.capture_btn.setObjectName("ghostBtn")
+        self.capture_btn = QPushButton("📷  Capture")
+        self.capture_btn.setObjectName("dynamicConnectBtn")
+        self.capture_btn.setProperty("connected", "false")
+        self.capture_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #053b38;
+                border: 1px solid #08c9a5;
+                color: #10e7bc;
+                padding: 7px 16px;
+                border-radius: 8px;
+                font-weight: 700;
+            }
+            QPushButton:hover {
+                background-color: #064744;
+                border: 1px solid #19f0c5;
+                color: #43f3d0;
+            }
+            QPushButton:pressed {
+                background-color: #042f2d;
+            }
+            QPushButton:disabled {
+                background-color: #0E1628;
+                border: 1px solid #151E35;
+                color: #3A4563;
+            }
+        """)
         header.addWidget(self.capture_btn)
 
-        self.invert_btn = QPushButton("◑ 反相")
+        self.invert_btn = QPushButton("◑  Invert")
         self.invert_btn.setCheckable(True)
         self.invert_btn.setChecked(False)
         self.invert_btn.setObjectName("ghostBtn")
-        self.invert_btn.setToolTip("勾选后截图反转背景色（白底黑字）")
+        self.invert_btn.setToolTip("Invert screenshot background (white background, black text)")
         self.invert_btn.setStyleSheet("""
             QPushButton {
                 background-color: #1A2750;
@@ -806,6 +1003,9 @@ class OscilloscopeBaseUI(QWidget):
 
         capture_layout.addWidget(self.capture_placeholder_widget)
 
+        self._capture_overlay = CaptureLoadingOverlay(self.display_placeholder)
+        self._capture_overlay.hide()
+
         self.display_placeholder.setMinimumHeight(220)
         layout.addWidget(self.display_placeholder)
 
@@ -819,7 +1019,7 @@ class OscilloscopeBaseUI(QWidget):
         layout.setSpacing(14)
 
         header = QHBoxLayout()
-        title = QLabel("∿ Measurements")
+        title = QLabel("∿  Measurements")
         title.setObjectName("sectionTitle")
         header.addWidget(title)
         header.addStretch()
@@ -851,7 +1051,7 @@ class OscilloscopeBaseUI(QWidget):
         self.add_meas_btn.clicked.connect(self._on_add_measurement)
         add_row.addWidget(self.add_meas_btn)
 
-        self.clear_meas_btn = QPushButton("✕ Clear All")
+        self.clear_meas_btn = QPushButton("✕  Clear All")
         self.clear_meas_btn.setObjectName("ghostBtn")
         self.clear_meas_btn.clicked.connect(self._on_clear_measurements)
         add_row.addWidget(self.clear_meas_btn)
@@ -875,30 +1075,48 @@ class OscilloscopeBaseUI(QWidget):
 
         return card
 
-    def _create_metric_card(self, title_text, value_text):
+    def _create_metric_card(self, title_text, value_text, unit_text=""):
         logger.debug("[MEAS] _create_metric_card('%s', '%s') enter", title_text, value_text)
         card = QFrame()
         card.setObjectName("metricCard")
-        card.setMinimumHeight(64)
+        card.setMinimumHeight(80)
+        card.setMinimumWidth(140)
         logger.debug("[MEAS] QFrame created: %s", card)
 
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(6)
+        layout.setContentsMargins(14, 10, 10, 12)
+        layout.setSpacing(4)
+
+        top_row = QHBoxLayout()
+        top_row.setSpacing(0)
 
         title = QLabel(title_text)
         title.setObjectName("metricTitle")
-        title.setAlignment(Qt.AlignCenter)
+        title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        top_row.addWidget(title, 1)
+
+        delete_btn = QPushButton("🗑")
+        delete_btn.setObjectName("deleteCardBtn")
+        delete_btn.setFixedSize(24, 24)
+        delete_btn.setCursor(Qt.PointingHandCursor)
+        delete_btn.setToolTip("Remove this measurement")
+        top_row.addWidget(delete_btn, 0, Qt.AlignRight | Qt.AlignTop)
+        layout.addLayout(top_row)
 
         value = QLabel(value_text)
         value.setObjectName("metricValue")
-        value.setAlignment(Qt.AlignCenter)
-
-        layout.addWidget(title)
+        value.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         layout.addWidget(value)
+
+        unit = QLabel(unit_text)
+        unit.setObjectName("metricUnit")
+        unit.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        layout.addWidget(unit)
 
         card.title_label = title
         card.value_label = value
+        card.unit_label = unit
+        card.delete_btn = delete_btn
         logger.debug("[MEAS] _create_metric_card done: %s", card)
         return card
 
@@ -909,7 +1127,7 @@ class OscilloscopeBaseUI(QWidget):
         layout.setContentsMargins(18, 16, 18, 18)
         layout.setSpacing(18)
 
-        title = QLabel("\u2630 Oscilloscope Settings")
+        title = QLabel("\u2630  Oscilloscope Settings")
         title.setObjectName("sectionTitle")
         layout.addWidget(title)
 
@@ -922,8 +1140,8 @@ class OscilloscopeBaseUI(QWidget):
         h_box.addWidget(h_title)
 
         self.timebase_edit = TimeScaleEdit(self.TIMESCALE_DEFAULT)
-        self.timebase_edit.setPlaceholderText("\u4f8b\u5982: 1us, 400ns, 10ms ...")
-        self.timebase_edit.setToolTip("\u6eda\u8f6e\u8c03\u6574\u65f6\u95f4\u523b\u5ea6\uff0c\u6216\u76f4\u63a5\u8f93\u5165\u540e\u6309 Enter \u5e94\u7528")
+        self.timebase_edit.setPlaceholderText("e.g. 1us, 400ns, 10ms ...")
+        self.timebase_edit.setToolTip("Scroll to adjust timescale, or type value and press Enter")
         h_box.addWidget(self.timebase_edit)
 
         layout.addLayout(h_box)
@@ -975,6 +1193,10 @@ class OscilloscopeBaseUI(QWidget):
         layout.addSpacing(6)
         layout.addWidget(self.apply_btn)
 
+        self._apply_opacity_effect = QGraphicsOpacityEffect(self.apply_btn)
+        self._apply_opacity_effect.setOpacity(1.0)
+        self.apply_btn.setGraphicsEffect(self._apply_opacity_effect)
+
         self.timebase_edit.returnPressed.connect(self.timebase_apply_requested.emit)
 
         self.channel_tab_buttons[0].setChecked(True)
@@ -989,7 +1211,7 @@ class OscilloscopeBaseUI(QWidget):
         layout.setContentsMargins(18, 16, 18, 18)
         layout.setSpacing(12)
 
-        title = QLabel("⚡ Quick Function")
+        title = QLabel("⚡  Quick Function")
         title.setObjectName("sectionTitle")
         layout.addWidget(title)
 
@@ -1229,14 +1451,16 @@ class OscilloscopeBaseUI(QWidget):
         card = QFrame()
         card.setObjectName("logContainer")
         log_layout = QVBoxLayout(card)
-        log_layout.setContentsMargins(18, 16, 18, 18)
-        log_layout.setSpacing(10)
+        log_layout.setContentsMargins(18, 12, 18, 12)
+        log_layout.setSpacing(8)
 
         log_header = QHBoxLayout()
 
-        log_title = QLabel("⊙ Execution Logs")
-        log_title.setObjectName("sectionTitle")
-        log_header.addWidget(log_title)
+        self.log_toggle_btn = QPushButton("▾  Execution Logs")
+        self.log_toggle_btn.setObjectName("logToggleBtn")
+        self.log_toggle_btn.setCursor(Qt.PointingHandCursor)
+        self.log_toggle_btn.clicked.connect(self._toggle_log_panel)
+        log_header.addWidget(self.log_toggle_btn)
         log_header.addStretch()
 
         self.clear_log_btn = QPushButton("Clear")
@@ -1249,16 +1473,81 @@ class OscilloscopeBaseUI(QWidget):
         self.log_edit = QTextEdit()
         self.log_edit.setObjectName("logEdit")
         self.log_edit.setReadOnly(True)
-        self.log_edit.setMinimumHeight(120)
+        self.log_edit.setMinimumHeight(60)
+        self.log_edit.setMaximumHeight(300)
+        self._log_expanded = True
         log_layout.addWidget(self.log_edit)
 
         return card
+
+    def _toggle_log_panel(self):
+        if self._log_expanded:
+            self.log_edit.hide()
+            self.clear_log_btn.hide()
+            self.log_toggle_btn.setText("▸  Execution Logs")
+            self._log_expanded = False
+        else:
+            self.log_edit.show()
+            self.clear_log_btn.show()
+            self.log_toggle_btn.setText("▾  Execution Logs")
+            self._log_expanded = True
 
     def append_log(self, message):
         self.log_edit.append(message)
 
     def _on_clear_log(self):
         self.log_edit.clear()
+
+    # ------------------------------------------------------------------
+    # Smart Apply: dirty tracking
+    # ------------------------------------------------------------------
+
+    def _connect_dirty_tracking(self):
+        self.timebase_edit.textChanged.connect(self._mark_settings_dirty)
+        self.trigger_level_edit.textChanged.connect(self._mark_settings_dirty)
+        self.trigger_source_combo.currentIndexChanged.connect(self._mark_settings_dirty)
+        self.trigger_slope_combo.currentIndexChanged.connect(self._mark_settings_dirty)
+
+        for ch in self.channels:
+            ch['scale_edit'].textChanged.connect(self._mark_settings_dirty)
+            ch['offset_edit'].textChanged.connect(self._mark_settings_dirty)
+            ch['toggle'].clicked.connect(self._mark_settings_dirty)
+            ch['coupling_dc'].clicked.connect(self._mark_settings_dirty)
+            ch['coupling_ac'].clicked.connect(self._mark_settings_dirty)
+
+    def _mark_settings_dirty(self):
+        if not self._settings_dirty and self.is_connected:
+            self._settings_dirty = True
+            self.apply_btn.setStyleSheet(self._APPLY_BTN_DIRTY_STYLE)
+            self._start_apply_pulse()
+
+    def _clear_settings_dirty(self):
+        self._settings_dirty = False
+        self.apply_btn.setStyleSheet(self._APPLY_BTN_DEFAULT_STYLE)
+        self._stop_apply_pulse()
+
+    def _start_apply_pulse(self):
+        if self._apply_pulse_timer is not None:
+            return
+        self._apply_pulse_timer = QTimer(self)
+        self._apply_pulse_dir = -1
+        self._apply_pulse_val = 1.0
+        self._apply_pulse_timer.timeout.connect(self._apply_pulse_step)
+        self._apply_pulse_timer.start(50)
+
+    def _stop_apply_pulse(self):
+        if self._apply_pulse_timer is not None:
+            self._apply_pulse_timer.stop()
+            self._apply_pulse_timer = None
+        self._apply_opacity_effect.setOpacity(1.0)
+
+    def _apply_pulse_step(self):
+        self._apply_pulse_val += self._apply_pulse_dir * 0.02
+        if self._apply_pulse_val <= 0.55:
+            self._apply_pulse_dir = 1
+        elif self._apply_pulse_val >= 1.0:
+            self._apply_pulse_dir = -1
+        self._apply_opacity_effect.setOpacity(self._apply_pulse_val)
 
     # ------------------------------------------------------------------
     # Public API
@@ -1304,9 +1593,12 @@ class OscilloscopeBaseUI(QWidget):
         for card_info in self._measurement_result_cards:
             if card_info["type"] == measure_type and card_info["channel"] == channel:
                 if value is not None:
-                    card_info["card"].value_label.setText(self._format_measurement_value(measure_type, value))
+                    val_str, unit_str = self._format_measurement_value_split(measure_type, value)
+                    card_info["card"].value_label.setText(val_str)
+                    card_info["card"].unit_label.setText(unit_str)
                 else:
                     card_info["card"].value_label.setText("ERR")
+                    card_info["card"].unit_label.setText("")
                 return
 
     def update_connection_status(self, connected, instrument_info=None):
@@ -1352,8 +1644,8 @@ class OscilloscopeBaseUI(QWidget):
         if self._current_pixmap is None:
             return
         menu = QMenu(self)
-        copy_action = menu.addAction("📋 复制到剪贴板")
-        save_action = menu.addAction("💾 另存为图片...")
+        copy_action = menu.addAction("📋  Copy to Clipboard")
+        save_action = menu.addAction("💾  Save As...")
         action = menu.exec(self.capture_image_label.mapToGlobal(pos))
         if action == copy_action:
             clipboard = QApplication.clipboard()
@@ -1361,7 +1653,7 @@ class OscilloscopeBaseUI(QWidget):
             self.append_log("[INFO] Screenshot copied to clipboard.")
         elif action == save_action:
             file_path, _ = QFileDialog.getSaveFileName(
-                self, "保存截图", "screenshot.png",
+                self, "Save Screenshot", "screenshot.png",
                 "PNG Files (*.png);;JPEG Files (*.jpg);;All Files (*)"
             )
             if file_path:
@@ -1425,6 +1717,7 @@ class OscilloscopeBaseUI(QWidget):
         for i, btn in enumerate(self.channel_tab_buttons):
             ch_num = i + 1
             color = color_map.get(ch_num, "#5F77AE")
+            text_color = CHANNEL_TEXT_COLORS.get(color, "#081126")
             btn.setStyleSheet(f"""
                 QPushButton#channelTab {{
                     background-color: transparent;
@@ -1436,7 +1729,7 @@ class OscilloscopeBaseUI(QWidget):
                 }}
                 QPushButton#channelTab:checked {{
                     background-color: {color};
-                    color: #081126;
+                    color: {text_color};
                 }}
                 QPushButton#channelTab:disabled {{
                     background-color: transparent;
@@ -1522,7 +1815,7 @@ class OscilloscopeBaseUI(QWidget):
                 self.mso64b_top.connect_instrument(resource, self.controller.instrument)
             self.connection_changed.emit()
         except Exception as e:
-            logger.error("连接示波器失败: %s", e)
+            logger.error("Connect oscilloscope failed: %s", e)
             self.update_connection_status(False)
             self.set_system_status("● Connection failed", is_error=True)
             self.append_log(f"[ERROR] Connection failed: {e}")
@@ -1569,10 +1862,12 @@ class OscilloscopeBaseUI(QWidget):
         self._measurement_items.append(item)
         logger.debug("[MEAS] items count after append: %d", len(self._measurement_items))
 
-        title_text = f"CH{channel} {mtype}"
+        title_text = f"CH{channel}  {mtype}"
         logger.debug("[MEAS] creating metric card: %s", title_text)
-        mc = self._create_metric_card(title_text, "– –")
+        mc = self._create_metric_card(title_text, "– –", "")
         logger.debug("[MEAS] metric card created: %s", mc)
+
+        mc.delete_btn.clicked.connect(lambda checked=False, mt=mtype, ch=channel: self._on_delete_single_measurement(mt, ch))
 
         idx = len(self._measurement_result_cards)
         cols = 4
@@ -1594,6 +1889,43 @@ class OscilloscopeBaseUI(QWidget):
             self._sync_polling_items()
 
         logger.debug("[MEAS] _on_add_measurement finished")
+
+    def _on_delete_single_measurement(self, mtype, channel):
+        logger.debug("[MEAS] _on_delete_single_measurement type=%s ch=%d", mtype, channel)
+        target_idx = None
+        for i, card_info in enumerate(self._measurement_result_cards):
+            if card_info["type"] == mtype and card_info["channel"] == channel:
+                target_idx = i
+                break
+        if target_idx is None:
+            return
+
+        card_info = self._measurement_result_cards.pop(target_idx)
+        w = card_info["card"]
+        self._results_grid.removeWidget(w)
+        w.setParent(None)
+        w.deleteLater()
+
+        self._measurement_items = [
+            it for it in self._measurement_items
+            if not (it["type"] == mtype and it["channel"] == channel)
+        ]
+
+        self._rebuild_measurement_grid()
+
+        if self._polling_worker is not None:
+            self._polling_worker.update_items(self._measurement_items)
+
+        self.append_log(f"[MEASURE] Removed: CH{channel} {mtype}")
+
+    def _rebuild_measurement_grid(self):
+        cols = 4
+        for i, card_info in enumerate(self._measurement_result_cards):
+            w = card_info["card"]
+            self._results_grid.removeWidget(w)
+        for i, card_info in enumerate(self._measurement_result_cards):
+            row, col = i // cols, i % cols
+            self._results_grid.addWidget(card_info["card"], row, col)
 
     def _on_clear_measurements(self):
         logger.debug("[MEAS] _on_clear_measurements called")
@@ -1676,10 +2008,24 @@ class OscilloscopeBaseUI(QWidget):
             return f"{value:.2f} Hz"
         return f"{value:.6f} V"
 
+    @staticmethod
+    def _format_measurement_value_split(mtype, value):
+        if mtype == "FREQUENCY":
+            if abs(value) >= 1e6:
+                return f"{value / 1e6:.4f}", "MHz"
+            elif abs(value) >= 1e3:
+                return f"{value / 1e3:.4f}", "kHz"
+            return f"{value:.2f}", "Hz"
+        return f"{value:.6f}", "V"
+
     def _on_capture(self):
         if not self.controller.is_connected:
             self.append_log("[WARN] Instrument not connected.")
             return
+
+        self.capture_btn.setEnabled(False)
+        self._capture_overlay.resize(self.display_placeholder.size())
+        self._capture_overlay.start()
 
         try:
             invert_checked = self.invert_btn.isChecked()
@@ -1689,6 +2035,9 @@ class OscilloscopeBaseUI(QWidget):
                 self.update_display_image(png_data)
         except Exception as e:
             self.append_log(f"[ERROR] Screenshot capture failed: {e}")
+        finally:
+            self._capture_overlay.stop()
+            self.capture_btn.setEnabled(True)
 
     def _on_apply_settings(self):
         if not self.controller.is_connected:
@@ -1709,6 +2058,7 @@ class OscilloscopeBaseUI(QWidget):
                 trigger_settings=trigger_settings,
                 num_channels=self.NUM_CHANNELS,
             )
+            self._clear_settings_dirty()
         except Exception as e:
             self.append_log(f"[ERROR] Apply settings failed: {e}")
 
@@ -1720,5 +2070,11 @@ class OscilloscopeBaseUI(QWidget):
         try:
             timebase_val = self.timebase_edit.value_in_seconds()
             self.controller.apply_timebase_only(timebase_val)
+            self._clear_settings_dirty()
         except (ValueError, Exception) as e:
             self.append_log(f"[ERROR] Timebase setting failed: {e}")
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, '_capture_overlay') and self._capture_overlay.isVisible():
+            self._capture_overlay.resize(self.display_placeholder.size())
