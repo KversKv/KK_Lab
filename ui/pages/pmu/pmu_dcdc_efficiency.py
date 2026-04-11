@@ -723,9 +723,9 @@ class PMUDCDCEfficiencyUI(QWidget):
             }
 
             QPushButton#smallActionBtn {
-                min-height: 28px;
-                padding: 4px 10px;
-                border-radius: 8px;
+                min-height: 34px;
+                padding: 6px 10px;
+                border-radius: 10px;
                 background-color: #13254b;
                 color: #dce7ff;
             }
@@ -832,18 +832,31 @@ class PMUDCDCEfficiencyUI(QWidget):
                 color: white;
             }
 
-            QPushButton#segmentedButton {
-                min-height: 26px;
-                padding: 2px 12px;
-                border-radius: 8px;
+            QFrame#segmentedContainer {
                 background-color: #0e1d3d;
                 border: 1px solid #28406b;
+                border-radius: 10px;
+                padding: 2px;
+            }
+
+            QPushButton#segmentedButton {
+                min-height: 24px;
+                padding: 2px 14px;
+                border-radius: 8px;
+                background-color: transparent;
+                border: none;
                 color: #9fb6df;
+                font-weight: 600;
+                font-size: 11px;
+            }
+
+            QPushButton#segmentedButton:hover {
+                color: #dfeaff;
             }
 
             QPushButton#segmentedButton:checked {
                 background-color: #4f46e5;
-                border: 1px solid #7872ff;
+                border: none;
                 color: white;
             }
 
@@ -1128,6 +1141,12 @@ class PMUDCDCEfficiencyUI(QWidget):
         mode_row = QHBoxLayout()
         mode_row.addStretch()
 
+        self.seg_container = QFrame()
+        self.seg_container.setObjectName("segmentedContainer")
+        seg_layout = QHBoxLayout(self.seg_container)
+        seg_layout.setContentsMargins(2, 2, 2, 2)
+        seg_layout.setSpacing(0)
+
         self.linear_mode_btn = SegmentedButton("Linear")
         self.log_mode_btn = SegmentedButton("Log")
         self.linear_mode_btn.setChecked(True)
@@ -1137,8 +1156,10 @@ class PMUDCDCEfficiencyUI(QWidget):
         self.sweep_mode_group.addButton(self.linear_mode_btn)
         self.sweep_mode_group.addButton(self.log_mode_btn)
 
-        mode_row.addWidget(self.linear_mode_btn)
-        mode_row.addWidget(self.log_mode_btn)
+        seg_layout.addWidget(self.linear_mode_btn)
+        seg_layout.addWidget(self.log_mode_btn)
+
+        mode_row.addWidget(self.seg_container)
         layout.addLayout(mode_row)
 
         grid = QGridLayout()
