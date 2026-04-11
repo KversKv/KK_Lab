@@ -155,7 +155,7 @@ def _neon_on_button_style():
         padding: 8px 18px; min-width: 88px; font-size: 12px; font-weight: 600;
     }
     QPushButton:hover { background-color: #0a3a3a; border: 1px solid #00f5c4; color: #3fffd7; }
-    QPushButton:disabled { background-color: #0b1730; color: #3a4a6a; border: 1px solid #1b2847; }
+    QPushButton:disabled { background-color: #0b1730; color: #4a5a7a; border: 1px solid #1b2847; }
     """
 
 
@@ -167,18 +167,19 @@ def _neon_off_button_style():
         padding: 8px 18px; min-width: 88px; font-size: 12px; font-weight: 600;
     }
     QPushButton:hover { background-color: #3a1028; border: 1px solid #ff4fa3; color: #ff7dbd; }
-    QPushButton:disabled { background-color: #0b1730; color: #3a4a6a; border: 1px solid #1b2847; }
+    QPushButton:disabled { background-color: #0b1730; color: #4a5a7a; border: 1px solid #1b2847; }
     """
 
 
-def _primary_action_button_style():
+def _outline_action_button_style():
     return """
     QPushButton {
-        background-color: #2a64c8; color: white; border: none; border-radius: 6px;
-        padding: 8px 16px; font-size: 11px; min-width: 88px; font-weight: 600;
+        background-color: #0c1a38; color: #8eb4e8;
+        border: 1px solid #23417a; border-radius: 6px;
+        padding: 8px 16px; font-size: 11px; min-width: 88px; font-weight: 700;
     }
-    QPushButton:hover { background-color: #3672dc; }
-    QPushButton:disabled { background-color: #0D1734; color: #3A4563; border: 1px solid #18264A; }
+    QPushButton:hover { background-color: #122448; color: #b8d4ff; border: 1px solid #3a6cc8; }
+    QPushButton:disabled { background-color: #0D1734; color: #3a4a6a; border: 1px solid #18264A; }
     """
 
 
@@ -191,7 +192,33 @@ def _batch_channel_button_style():
         }
         QPushButton:checked { background-color: #2a64c8; color: white; }
         QPushButton:hover { background-color: #31405f; }
-        QPushButton:disabled { background-color: #0b1730; color: #3a4a6a; border: 1px solid #1b2847; }
+        QPushButton:disabled { background-color: #0b1730; color: #4a5a7a; border: 1px solid #1b2847; }
+    """
+
+
+def _connect_button_style():
+    return """
+        QPushButton {
+            background-color: #0a3d28; color: #00f5c4;
+            border: 1px solid #00cfa6; border-radius: 8px;
+            padding: 6px 18px; font-size: 12px; font-weight: 700;
+            min-width: 90px;
+        }
+        QPushButton:hover { background-color: #0e5535; border: 1px solid #00f5c4; color: #3fffd7; }
+        QPushButton:disabled { background-color: #0b1730; color: #4a5a7a; border: 1px solid #1b2847; }
+    """
+
+
+def _disconnect_button_style():
+    return """
+        QPushButton {
+            background-color: #3d1a1a; color: #ff6b6b;
+            border: 1px solid #ff4444; border-radius: 8px;
+            padding: 6px 18px; font-size: 12px; font-weight: 700;
+            min-width: 90px;
+        }
+        QPushButton:hover { background-color: #552222; border: 1px solid #ff6b6b; color: #ff9999; }
+        QPushButton:disabled { background-color: #0b1730; color: #4a5a7a; border: 1px solid #1b2847; }
     """
 
 
@@ -214,6 +241,8 @@ class N6705CDoubleUI(QWidget):
         self._test_workers = {}
         self._sync_thread = None
         self._sync_worker = None
+        self._dirty_voltage = False
+        self._dirty_current = False
 
         self._setup_style()
         self._create_layout()
@@ -244,22 +273,13 @@ class N6705CDoubleUI(QWidget):
                 self.devices[label]["n6705c"] = n6705c
                 self.devices[label]["is_connected"] = True
                 w = self.conn_widgets[label]
-                w["status"].setText("● 已连接")
+                w["status"].setText("● Connected")
                 w["status"].setStyleSheet("color: #00a859; font-weight:bold;")
                 if visa_res:
                     w["combo"].clear()
                     w["combo"].addItem(visa_res)
-                w["toggle_conn_btn"].setText("🔌 断开")
-                w["toggle_conn_btn"].setStyleSheet("""
-                    QPushButton {
-                        background-color: #3d1a1a; color: #ff6b6b;
-                        border: 1px solid #ff4444; border-radius: 8px;
-                        padding: 6px 18px; font-size: 12px; font-weight: 700;
-                        min-width: 90px;
-                    }
-                    QPushButton:hover { background-color: #552222; border: 1px solid #ff6b6b; color: #ff9999; }
-                    QPushButton:disabled { background-color: #0b1730; color: #5a6b8e; border: 1px solid #1b2847; }
-                """)
+                w["toggle_conn_btn"].setText("Disconnect")
+                w["toggle_conn_btn"].setStyleSheet(_disconnect_button_style())
                 self._update_ui_connection_state(label, True)
         if self.devices[self.current_device]["is_connected"]:
             self._start_channel_sync()
@@ -302,6 +322,10 @@ class N6705CDoubleUI(QWidget):
         if voltage is not None and current is not None and limit_current is not None:
             self.update_channel_values(self.current_device, self.current_channel, voltage, current, limit_current)
 
+        self._dirty_voltage = False
+        self._dirty_current = False
+        self._update_set_button_dirty_state()
+
     def _on_channel_sync_done(self):
         self._sync_thread = None
         self._sync_worker = None
@@ -318,7 +342,7 @@ class N6705CDoubleUI(QWidget):
             border-radius: 6px; padding: 4px 6px; color: #d7e3ff;
         }
         QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled {
-            background-color: #070F28; border: 1px solid #131D3A; color: #3A4563;
+            background-color: #070F28; border: 1px solid #131D3A; color: #4a5a7a;
         }
         QPushButton {
             background-color: #0b1730; border: 1px solid #23417a;
@@ -326,9 +350,9 @@ class N6705CDoubleUI(QWidget):
         }
         QPushButton:hover { background-color: #10203e; }
         QPushButton:disabled {
-            background-color: #0b1730; color: #3a4a6a; border: 1px solid #1b2847;
+            background-color: #0b1730; color: #4a5a7a; border: 1px solid #1b2847;
         }
-        QCheckBox:disabled { color: #3A4563; }
+        QCheckBox:disabled { color: #4a5a7a; }
         """)
 
     def _create_layout(self):
@@ -340,21 +364,19 @@ class N6705CDoubleUI(QWidget):
         main_layout.addWidget(self.top_bar)
         main_layout.addSpacing(8)
 
+        self.batch_tools_panel = self._create_batch_tools_panel()
+        main_layout.addWidget(self.batch_tools_panel)
+        main_layout.addSpacing(8)
+
         self.channel_tabs = self._create_channel_tabs()
         main_layout.addWidget(self.channel_tabs)
 
         self.setting_widget = self._create_setting_widget()
         main_layout.addWidget(self.setting_widget, 1)
 
-        self.batch_tools_panel = self._create_batch_tools_panel()
-        main_layout.addWidget(self.batch_tools_panel)
-
         self.consumption_test_panel = self._create_consumption_test_panel()
         main_layout.addWidget(self.consumption_test_panel)
 
-    # =========================
-    # 顶部栏 (A & B 连接)
-    # =========================
     def _create_top_bar(self):
         top_frame = QFrame()
         top_frame.setStyleSheet("""
@@ -406,12 +428,8 @@ class N6705CDoubleUI(QWidget):
             QComboBox QAbstractItemView::item {
                 background-color: #091426; color: #d0d8ea; padding: 4px 8px;
             }
-            QComboBox QAbstractItemView::item:hover {
-                background-color: #1a3260;
-            }
-            QComboBox QFrame {
-                background-color: #091426; border: 1px solid #17345f;
-            }
+            QComboBox QAbstractItemView::item:hover { background-color: #1a3260; }
+            QComboBox QFrame { background-color: #091426; border: 1px solid #17345f; }
             QPushButton {
                 background-color: #0b1730; color: #d0d0d0;
                 border: 1px solid #23417a; border-radius: 8px; padding: 6px 14px;
@@ -434,27 +452,17 @@ class N6705CDoubleUI(QWidget):
             tag.setStyleSheet(f"color: {color}; font-weight: 900; font-size: 14px; min-width: 24px;")
             tag.setAlignment(Qt.AlignCenter)
 
-            status = QLabel("● 未连接")
-            status.setStyleSheet("color:#7fa1d9; font-weight:bold;")
+            status = QLabel("● Disconnected")
+            status.setStyleSheet("color:#8ea6cf; font-weight:bold;")
 
             combo = DarkComboBox(bg="#091426", border="#17345f")
             combo.setMinimumWidth(300)
             combo.addItem(default_addresses[label])
 
-            search_btn = QPushButton("搜索")
+            search_btn = QPushButton("Search")
 
-            # 合并连接/断开为一个toggle按钮
-            toggle_conn_btn = QPushButton("🔗 连接")
-            toggle_conn_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #0a3d28; color: #00f5c4;
-                    border: 1px solid #00cfa6; border-radius: 8px;
-                    padding: 6px 18px; font-size: 12px; font-weight: 700;
-                    min-width: 90px;
-                }
-                QPushButton:hover { background-color: #0e5535; border: 1px solid #00f5c4; color: #3fffd7; }
-                QPushButton:disabled { background-color: #0b1730; color: #5a6b8e; border: 1px solid #1b2847; }
-            """)
+            toggle_conn_btn = QPushButton("Connect")
+            toggle_conn_btn.setStyleSheet(_connect_button_style())
             toggle_conn_btn.clicked.connect(lambda _checked=False, lb=label: self._on_toggle_connection(lb))
 
             search_btn.clicked.connect(lambda _checked=False, lb=label: self._on_search(lb))
@@ -473,24 +481,22 @@ class N6705CDoubleUI(QWidget):
         outer_layout.addWidget(content_widget)
         return top_frame
 
-    # =========================
-    # Channel Tabs: A-CH1~4 + B-CH1~4
-    # =========================
     def _create_channel_tabs(self):
         tab_wrap = QWidget()
         tab_wrap.setAttribute(Qt.WA_StyledBackground, True)
         tab_wrap.setStyleSheet("QWidget { background-color: #07111f; border: none; }")
 
         layout = QHBoxLayout(tab_wrap)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(6)
 
         self.channel_tab_buttons = []
         for dev_label in ["A", "B"]:
             for ch in range(1, 5):
-                btn = QPushButton(f"{dev_label}-CH{ch}")
+                btn = QPushButton(f"● {dev_label}-CH{ch}")
                 btn.setCheckable(True)
-                btn.setMinimumSize(90, 38)
+                btn.setMinimumSize(90, 34)
+                btn.setCursor(Qt.PointingHandCursor)
                 btn.clicked.connect(
                     lambda checked=False, d=dev_label, c=ch: self._switch_channel(d, c)
                 )
@@ -499,6 +505,7 @@ class N6705CDoubleUI(QWidget):
             if dev_label == "A":
                 sep = QFrame()
                 sep.setFixedWidth(2)
+                sep.setFixedHeight(24)
                 sep.setStyleSheet("QFrame { background: #1b2847; border: none; }")
                 layout.addWidget(sep)
 
@@ -507,9 +514,46 @@ class N6705CDoubleUI(QWidget):
         self._refresh_channel_tab_styles()
         return tab_wrap
 
-    # =========================
-    # 通道设置区（共用）
-    # =========================
+    def _create_unified_input(self, prefix_text, default_value, unit_text):
+        container = QFrame()
+        container.setStyleSheet("""
+            QFrame {
+                background-color: #091426;
+                border: 1px solid #17345f;
+                border-radius: 8px;
+            }
+        """)
+        container.setFixedHeight(36)
+
+        h_layout = QHBoxLayout(container)
+        h_layout.setContentsMargins(10, 0, 10, 0)
+        h_layout.setSpacing(6)
+
+        prefix = QLabel(prefix_text)
+        prefix.setStyleSheet("color: #5a7aa8; font-size: 12px; font-weight: 600; border: none; background: transparent;")
+        prefix.setFixedWidth(28)
+        h_layout.addWidget(prefix)
+
+        input_field = QLineEdit(default_value)
+        input_field.setFrame(False)
+        input_field.setStyleSheet("""
+            QLineEdit {
+                background: transparent; border: none;
+                color: #ffffff; font-size: 14px; font-weight: 600; padding: 0px;
+            }
+            QLineEdit:disabled {
+                color: #4a5a7a; background: transparent; border: none;
+            }
+        """)
+        h_layout.addWidget(input_field, 1)
+
+        unit = QLabel(unit_text)
+        unit.setStyleSheet("color: #4a6490; font-size: 13px; font-weight: 500; border: none; background: transparent;")
+        unit.setFixedWidth(16)
+        h_layout.addWidget(unit)
+
+        return container, prefix, input_field, unit
+
     def _create_setting_widget(self):
         setting_wrapper = QWidget()
         setting_wrapper.setStyleSheet("QWidget { background: transparent; border: none; }")
@@ -551,18 +595,27 @@ class N6705CDoubleUI(QWidget):
 
         for btn in self.mode_buttons:
             btn.setCheckable(True)
-            btn.setMinimumHeight(28)
+            btn.setMinimumHeight(30)
+            btn.setMinimumWidth(70)
             btn.clicked.connect(lambda checked=False, b=btn: self._on_mode_button_clicked(b))
 
         self.cv_btn.setChecked(True)
 
-        mode_layout = QHBoxLayout()
-        mode_layout.setContentsMargins(0, 0, 0, 0)
-        mode_layout.setSpacing(0)
+        mode_container = QFrame()
+        mode_container.setStyleSheet("""
+            QFrame {
+                background-color: #0c1628;
+                border: 1px solid #1b2842;
+                border-radius: 8px;
+            }
+        """)
+        mode_layout = QHBoxLayout(mode_container)
+        mode_layout.setContentsMargins(2, 2, 2, 2)
+        mode_layout.setSpacing(2)
         for btn in self.mode_buttons:
             mode_layout.addWidget(btn)
 
-        setting_header.addLayout(mode_layout)
+        setting_header.addWidget(mode_container)
         setting_header.addStretch()
 
         self.output_toggle = SlideToggle()
@@ -591,39 +644,18 @@ class N6705CDoubleUI(QWidget):
 
         self.voltage_value = QLineEdit("0.0000")
         self.voltage_value.setFrame(False)
+        self.voltage_value.setReadOnly(True)
         self.voltage_value.setStyleSheet("""
             QLineEdit { font-size: 22px; font-weight: bold; color: #6d83b3; background: transparent; border: none; }
-            QLineEdit:focus { border: none; background: transparent; }
         """)
         self.voltage_value.setFixedHeight(40)
         voltage_layout.addWidget(self.voltage_value)
 
-        v_input_row = QHBoxLayout()
-        v_input_row.setSpacing(8)
-        self.voltage_set_label = QLabel("SET")
-        self.voltage_set_label.setStyleSheet("font-size: 12px; color: #7392cb; min-width: 28px; border: none;")
-        v_input_row.addWidget(self.voltage_set_label)
-        self.voltage_set_input = QLineEdit("5")
-        self.voltage_set_input.setFixedHeight(34)
-        self.voltage_set_input.setStyleSheet("""
-            QLineEdit {
-                background-color: #091426;
-                border: 1px solid #17345f;
-                border-radius: 6px;
-                padding: 4px 8px;
-                color: #d7e3ff;
-                font-size: 14px;
-            }
-            QLineEdit:focus {
-                border: 1px solid #2a64c8;
-            }
-        """)
+        (self.voltage_input_container, self.voltage_set_label,
+         self.voltage_set_input, self._voltage_unit_label) = self._create_unified_input("Set", "5", "V")
         self.voltage_set_input.returnPressed.connect(self._on_voltage_input_enter)
-        v_input_row.addWidget(self.voltage_set_input)
-        v_unit = QLabel("V")
-        v_unit.setStyleSheet("font-size: 18px; color: #7fa1d9; min-width: 16px; border: none;")
-        v_input_row.addWidget(v_unit)
-        voltage_layout.addLayout(v_input_row)
+        self.voltage_set_input.textChanged.connect(self._on_voltage_text_changed)
+        voltage_layout.addWidget(self.voltage_input_container)
         params_grid.addWidget(voltage_frame, 0, 0)
 
         current_frame = QFrame()
@@ -637,38 +669,18 @@ class N6705CDoubleUI(QWidget):
         current_layout.addWidget(current_label)
 
         self.current_value = QLineEdit("0.0000")
+        self.current_value.setReadOnly(True)
         self.current_value.setStyleSheet("""
             QLineEdit { font-size: 22px; font-weight: bold; color: #6d83b3; background-color: transparent; border: none; }
         """)
         self.current_value.setFixedHeight(40)
         current_layout.addWidget(self.current_value)
 
-        c_input_row = QHBoxLayout()
-        c_input_row.setSpacing(8)
-        self.current_set_label = QLabel("LIM")
-        self.current_set_label.setStyleSheet("font-size: 12px; color: #7392cb; min-width: 28px; border: none;")
-        c_input_row.addWidget(self.current_set_label)
-        self.limit_current_value = QLineEdit("1")
-        self.limit_current_value.setFixedHeight(34)
-        self.limit_current_value.setStyleSheet("""
-            QLineEdit {
-                background-color: #091426;
-                border: 1px solid #17345f;
-                border-radius: 6px;
-                padding: 4px 8px;
-                color: #d7e3ff;
-                font-size: 14px;
-            }
-            QLineEdit:focus {
-                border: 1px solid #2a64c8;
-            }
-        """)
+        (self.current_input_container, self.current_set_label,
+         self.limit_current_value, self._current_unit_label) = self._create_unified_input("Lim", "1", "A")
         self.limit_current_value.returnPressed.connect(self._on_current_input_enter)
-        c_input_row.addWidget(self.limit_current_value)
-        c_unit = QLabel("A")
-        c_unit.setStyleSheet("font-size: 18px; color: #7fa1d9; min-width: 16px; border: none;")
-        c_input_row.addWidget(c_unit)
-        current_layout.addLayout(c_input_row)
+        self.limit_current_value.textChanged.connect(self._on_current_text_changed)
+        current_layout.addWidget(self.current_input_container)
         params_grid.addWidget(current_frame, 0, 1)
 
         action_row = QHBoxLayout()
@@ -676,11 +688,11 @@ class N6705CDoubleUI(QWidget):
         action_row.setSpacing(10)
 
         self.measure_btn = QPushButton("MEASURE")
-        self.measure_btn.setStyleSheet(_primary_action_button_style())
+        self.measure_btn.setStyleSheet(_outline_action_button_style())
         self.measure_btn.clicked.connect(self._on_measure_clicked)
 
         self.set_btn = QPushButton("SET")
-        self.set_btn.setStyleSheet(_primary_action_button_style())
+        self.set_btn.setStyleSheet(_outline_action_button_style())
         self.set_btn.clicked.connect(self._on_set_clicked)
 
         action_row.addWidget(self.measure_btn)
@@ -695,84 +707,112 @@ class N6705CDoubleUI(QWidget):
         return setting_wrapper
 
     def _create_batch_tools_panel(self):
-        tools_container = QFrame()
-        tools_container.setStyleSheet("""
-            QFrame { background-color: #0a1930; border: 1px solid #132849; border-radius: 12px; }
-        """)
-        tools_layout = QVBoxLayout(tools_container)
-        tools_layout.setContentsMargins(12, 12, 12, 12)
-        tools_layout.setSpacing(10)
+        self.batch_collapsed = True
 
-        tools_title = QLabel("一键调整")
-        tools_title.setStyleSheet("font-weight: bold; font-size: 12px; border: none;")
-        tools_layout.addWidget(tools_title)
+        outer = QWidget()
+        outer.setStyleSheet("QWidget { background: transparent; border: none; }")
+        outer_layout = QVBoxLayout(outer)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+
+        self.batch_toggle_btn = QPushButton("▶  Quick Setup")
+        self.batch_toggle_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #0a1930; color: #8ea6cf;
+                border: 1px solid #132849; border-radius: 8px;
+                padding: 8px 16px; font-size: 12px; font-weight: 700;
+                text-align: left;
+            }
+            QPushButton:hover { background-color: #0e1f3d; color: #b8d0f0; }
+        """)
+        self.batch_toggle_btn.clicked.connect(self._toggle_batch_panel)
+        outer_layout.addWidget(self.batch_toggle_btn)
+
+        self.batch_content = QFrame()
+        self.batch_content.setStyleSheet("""
+            QFrame {
+                background-color: #0a1930;
+                border: 1px solid #132849;
+                border-top: none;
+                border-bottom-left-radius: 12px;
+                border-bottom-right-radius: 12px;
+            }
+        """)
+        self.batch_content.setVisible(False)
+
+        tools_layout = QVBoxLayout(self.batch_content)
+        tools_layout.setContentsMargins(12, 10, 12, 12)
+        tools_layout.setSpacing(10)
 
         ab_columns_layout = QHBoxLayout()
         ab_columns_layout.setSpacing(12)
 
         self.batch_channel_buttons = []
-        self.batch_voltage_inputs = []
-        self.batch_current_inputs = []
+        self.batch_voltage_inputs = {}
+        self.batch_current_inputs = {}
 
-        default_voltages = [3.8, 0.8, 1.2, 1.8, 3.8, 0.8, 1.2, 1.8]
-        default_currents = [0.2, 0.02, 0.02, 0.02, 0.2, 0.02, 0.02, 0.02]
-
-        for dev_idx, (dev_label, dev_color) in enumerate([("A", "#00f5c4"), ("B", "#f2994a")]):
-            dev_frame = QFrame()
-            dev_frame.setStyleSheet(f"""
-                QFrame {{ background-color: #0b1b34; border: 1px solid #102746; border-radius: 10px; }}
+        for dev_label, dev_color in [("A", "#00f5c4"), ("B", "#f2994a")]:
+            col_frame = QFrame()
+            col_frame.setStyleSheet(f"""
+                QFrame {{
+                    background-color: #0b1b34;
+                    border: 1px solid #102746;
+                    border-radius: 10px;
+                }}
             """)
-            dev_layout = QVBoxLayout(dev_frame)
-            dev_layout.setContentsMargins(10, 8, 10, 8)
-            dev_layout.setSpacing(6)
+            col_layout = QVBoxLayout(col_frame)
+            col_layout.setContentsMargins(10, 8, 10, 8)
+            col_layout.setSpacing(8)
 
-            dev_title = QLabel(f"N6705C - {dev_label}")
-            dev_title.setStyleSheet(f"color: {dev_color}; font-size: 12px; font-weight: 700; border: none;")
-            dev_layout.addWidget(dev_title)
+            col_title = QLabel(f"Device {dev_label}")
+            col_title.setStyleSheet(f"color: {dev_color}; font-weight: 800; font-size: 13px; border: none;")
+            col_layout.addWidget(col_title)
 
-            ch_select_row = QHBoxLayout()
-            ch_select_row.setSpacing(6)
-            ch_label = QLabel("通道:")
+            ch_row = QHBoxLayout()
+            ch_row.setSpacing(6)
+            ch_label = QLabel("Channels:")
             ch_label.setStyleSheet("font-size: 11px; color: #8ea6cf; border: none;")
-            ch_select_row.addWidget(ch_label)
-            for i in range(1, 5):
-                btn = QPushButton(f"{dev_label}-{i}")
-                btn.setCheckable(True)
-                btn.setChecked(True)
-                btn.setStyleSheet(_batch_channel_button_style())
-                self.batch_channel_buttons.append(btn)
-                ch_select_row.addWidget(btn)
-            ch_select_row.addStretch()
-            dev_layout.addLayout(ch_select_row)
+            ch_row.addWidget(ch_label)
+            for ch in range(1, 5):
+                cb = QPushButton(f"CH {ch}")
+                cb.setCheckable(True)
+                if ch in [2, 3, 4]:
+                    cb.setChecked(True)
+                cb.setStyleSheet(_batch_channel_button_style())
+                self.batch_channel_buttons.append((dev_label, ch, cb))
+                ch_row.addWidget(cb)
+            ch_row.addStretch()
+            col_layout.addLayout(ch_row)
 
             v_row = QHBoxLayout()
             v_row.setSpacing(6)
-            v_label = QLabel("电压(V):")
-            v_label.setStyleSheet("font-size: 11px; color: #8ea6cf; border: none;")
-            v_row.addWidget(v_label)
-            offset = dev_idx * 4
-            for i in range(4):
-                inp = QLineEdit(f"{default_voltages[offset + i]:.4f}")
-                inp.setFixedWidth(72)
-                self.batch_voltage_inputs.append(inp)
+            v_lbl = QLabel("Voltage (V):")
+            v_lbl.setStyleSheet("font-size: 11px; color: #8ea6cf; border: none;")
+            v_row.addWidget(v_lbl)
+            self.batch_voltage_inputs[dev_label] = []
+            for v in [3.8, 0.8, 1.2, 1.8]:
+                inp = QLineEdit(f"{v:.4f}")
+                inp.setFixedWidth(80)
+                self.batch_voltage_inputs[dev_label].append(inp)
                 v_row.addWidget(inp)
             v_row.addStretch()
-            dev_layout.addLayout(v_row)
+            col_layout.addLayout(v_row)
 
             c_row = QHBoxLayout()
             c_row.setSpacing(6)
-            c_label = QLabel("限流(A):")
-            c_label.setStyleSheet("font-size: 11px; color: #8ea6cf; border: none;")
-            c_row.addWidget(c_label)
-            for i in range(4):
-                inp = QLineEdit(f"{default_currents[offset + i]:.4f}")
-                inp.setFixedWidth(72)
-                self.batch_current_inputs.append(inp)
+            c_lbl = QLabel("Current Limit (A):")
+            c_lbl.setStyleSheet("font-size: 11px; color: #8ea6cf; border: none;")
+            c_row.addWidget(c_lbl)
+            self.batch_current_inputs[dev_label] = []
+            for c in [0.2, 0.02, 0.02, 0.02]:
+                inp = QLineEdit(f"{c:.4f}")
+                inp.setFixedWidth(80)
+                self.batch_current_inputs[dev_label].append(inp)
                 c_row.addWidget(inp)
             c_row.addStretch()
-            dev_layout.addLayout(c_row)
+            col_layout.addLayout(c_row)
 
-            ab_columns_layout.addWidget(dev_frame, 1)
+            ab_columns_layout.addWidget(col_frame, 1)
 
         tools_layout.addLayout(ab_columns_layout)
 
@@ -784,7 +824,7 @@ class N6705CDoubleUI(QWidget):
         auto_btn = QPushButton("Auto")
 
         for btn in [measure_all_btn, set_all_btn, auto_btn]:
-            btn.setStyleSheet(_primary_action_button_style())
+            btn.setStyleSheet(_outline_action_button_style())
             buttons_layout.addWidget(btn)
 
         measure_all_btn.clicked.connect(self._on_batch_measure)
@@ -794,11 +834,35 @@ class N6705CDoubleUI(QWidget):
         buttons_layout.addStretch()
         tools_layout.addLayout(buttons_layout)
 
-        return tools_container
+        outer_layout.addWidget(self.batch_content)
+        return outer
 
-    # =========================
-    # Consumption Test (8通道)
-    # =========================
+    def _toggle_batch_panel(self):
+        self.batch_collapsed = not self.batch_collapsed
+        self.batch_content.setVisible(not self.batch_collapsed)
+        if self.batch_collapsed:
+            self.batch_toggle_btn.setText("▶  Quick Setup")
+            self.batch_toggle_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #0a1930; color: #8ea6cf;
+                    border: 1px solid #132849; border-radius: 8px;
+                    padding: 8px 16px; font-size: 12px; font-weight: 700; text-align: left;
+                }
+                QPushButton:hover { background-color: #0e1f3d; color: #b8d0f0; }
+            """)
+        else:
+            self.batch_toggle_btn.setText("▼  Quick Setup")
+            self.batch_toggle_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #0a1930; color: #b8d0f0;
+                    border: 1px solid #132849; border-bottom: none;
+                    border-top-left-radius: 8px; border-top-right-radius: 8px;
+                    border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;
+                    padding: 8px 16px; font-size: 12px; font-weight: 700; text-align: left;
+                }
+                QPushButton:hover { background-color: #0e1f3d; color: #d0e4ff; }
+            """)
+
     def _create_consumption_test_panel(self):
         panel = QFrame()
         panel.setStyleSheet("""
@@ -832,16 +896,19 @@ class N6705CDoubleUI(QWidget):
 
         params_row = QHBoxLayout()
         params_row.setSpacing(12)
+
         time_label = QLabel("Test Time (s):")
         time_label.setStyleSheet("font-size: 11px; color: #8ea6cf; border: none;")
         self.ct_test_time_input = QLineEdit("10")
         self.ct_test_time_input.setFixedWidth(80)
         self.ct_test_time_input.setAlignment(Qt.AlignCenter)
+
         period_label = QLabel("Sample Period (s):")
         period_label.setStyleSheet("font-size: 11px; color: #8ea6cf; border: none;")
         self.ct_sample_period_input = QLineEdit("0.001")
         self.ct_sample_period_input.setFixedWidth(80)
         self.ct_sample_period_input.setAlignment(Qt.AlignCenter)
+
         params_row.addWidget(time_label)
         params_row.addWidget(self.ct_test_time_input)
         params_row.addSpacing(8)
@@ -852,7 +919,8 @@ class N6705CDoubleUI(QWidget):
 
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
-        self.ct_start_btn = QPushButton("▶ START TEST")
+
+        self.ct_start_btn = QPushButton("▶  START TEST")
         self.ct_start_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.ct_start_btn.setStyleSheet("""
             QPushButton {
@@ -861,9 +929,10 @@ class N6705CDoubleUI(QWidget):
                 font-weight: 700; font-size: 13px; min-height: 38px;
             }
             QPushButton:hover { background-color: #0a3a3a; }
-            QPushButton:disabled { background-color: #0b1730; color: #5a6b8e; border: 1px solid #1b2847; }
+            QPushButton:disabled { background-color: #0b1730; color: #4a5a7a; border: 1px solid #1b2847; }
         """)
-        self.ct_stop_btn = QPushButton("🟥 STOP")
+
+        self.ct_stop_btn = QPushButton("■  STOP")
         self.ct_stop_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.ct_stop_btn.setEnabled(False)
         self.ct_stop_btn.setStyleSheet("""
@@ -873,35 +942,40 @@ class N6705CDoubleUI(QWidget):
                 font-weight: 700; font-size: 13px; min-height: 38px;
             }
             QPushButton:hover { background-color: #3a1028; }
-            QPushButton:disabled { background-color: #0b1730; color: #5a6b8e; border: 1px solid #1b2847; }
+            QPushButton:disabled { background-color: #0b1730; color: #4a5a7a; border: 1px solid #1b2847; }
         """)
+
         btn_row.addWidget(self.ct_start_btn, 1)
         btn_row.addWidget(self.ct_stop_btn, 1)
         layout.addLayout(btn_row)
 
+        devices_row = QHBoxLayout()
+        devices_row.setSpacing(12)
+
         self.ct_channel_cards = {}
+        for dev_label, dev_color in [("A", "#00f5c4"), ("B", "#f2994a")]:
+            dev_frame = QFrame()
+            dev_frame.setStyleSheet(f"""
+                QFrame {{ background-color: #0b1b34; border: 1px solid #102746; border-radius: 10px; }}
+            """)
+            dev_layout = QVBoxLayout(dev_frame)
+            dev_layout.setContentsMargins(10, 8, 10, 8)
+            dev_layout.setSpacing(6)
 
-        a_group_label = QLabel("N6705C - A")
-        a_group_label.setStyleSheet("color: #00f5c4; font-size: 12px; font-weight: 700;")
-        layout.addWidget(a_group_label)
+            dev_title = QLabel(f"Device {dev_label}")
+            dev_title.setStyleSheet(f"color: {dev_color}; font-weight: 700; font-size: 12px; border: none;")
+            dev_layout.addWidget(dev_title)
 
-        a_row = QHBoxLayout()
-        a_row.setSpacing(8)
-        for ch in range(1, 5):
-            card = self._create_ct_channel_card("A", ch)
-            a_row.addWidget(card, 1)
-        layout.addLayout(a_row)
+            ch_row = QHBoxLayout()
+            ch_row.setSpacing(6)
+            for ch in range(1, 5):
+                card = self._create_ct_channel_card(dev_label, ch)
+                ch_row.addWidget(card, 1)
+            dev_layout.addLayout(ch_row)
 
-        b_group_label = QLabel("N6705C - B")
-        b_group_label.setStyleSheet("color: #f2994a; font-size: 12px; font-weight: 700;")
-        layout.addWidget(b_group_label)
+            devices_row.addWidget(dev_frame, 1)
 
-        b_row = QHBoxLayout()
-        b_row.setSpacing(8)
-        for ch in range(1, 5):
-            card = self._create_ct_channel_card("B", ch)
-            b_row.addWidget(card, 1)
-        layout.addLayout(b_row)
+        layout.addLayout(devices_row, 1)
 
         self.ct_start_btn.clicked.connect(self._ct_start_test)
         self.ct_stop_btn.clicked.connect(self._ct_stop_test)
@@ -911,11 +985,9 @@ class N6705CDoubleUI(QWidget):
 
     def _create_ct_channel_card(self, dev_label, ch_num):
         colors = CHANNEL_COLORS[ch_num]
-        key = (dev_label, ch_num)
-
         card = QFrame()
         card.setStyleSheet(f"""
-            QFrame {{ background-color: {colors['bg']}; border: 1px solid {colors['border']}; border-radius: 10px; }}
+            QFrame {{ background-color: {colors['bg']}; border: 1px solid {colors['border']}; border-radius: 8px; }}
         """)
         card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         card.setMinimumHeight(90)
@@ -924,78 +996,97 @@ class N6705CDoubleUI(QWidget):
         layout.setContentsMargins(10, 8, 10, 10)
         layout.setSpacing(6)
 
-        top_row = QHBoxLayout()
-        top_row.setSpacing(6)
-
-        checkbox = QCheckBox(f"{dev_label}-CH{ch_num}")
-        checkbox.setChecked(False)
         icons = _get_checkmark_path(colors['accent'])
+        checkbox = QCheckBox(f"CH {ch_num}")
+        checkbox.setChecked(False)
         checkbox.setStyleSheet(f"""
-            QCheckBox {{ color: #ffffff; font-size: 12px; font-weight: 700; background: transparent; spacing: 6px; }}
+            QCheckBox {{ color: #ffffff; font-size: 12px; font-weight: 700; background: transparent; spacing: 5px; }}
             QCheckBox::indicator {{ width: 16px; height: 16px; image: url("{icons['unchecked']}"); }}
             QCheckBox::indicator:checked {{ image: url("{icons['checked']}"); }}
         """)
-
-        top_row.addWidget(checkbox)
-        top_row.addStretch()
-        layout.addLayout(top_row)
-
+        layout.addWidget(checkbox)
         layout.addStretch()
 
         avg_label = QLabel("AVG CURRENT")
         avg_label.setAlignment(Qt.AlignCenter)
-        avg_label.setStyleSheet("color: #8ea6cf; font-size: 10px; font-weight: 600;border: none;")
+        avg_label.setStyleSheet("color: #8ea6cf; font-size: 10px; font-weight: 600; border: none;")
         layout.addWidget(avg_label)
 
         value_label = QLabel("- - -")
         value_label.setAlignment(Qt.AlignCenter)
-        value_label.setStyleSheet(f"""
-            QLabel {{ color: {colors['accent']}; font-size: 16px; font-weight: 700; letter-spacing: 3px; }}
-        """)
+        value_label.setStyleSheet(f"color: {colors['accent']}; font-size: 16px; font-weight: 700; letter-spacing: 3px;")
         layout.addWidget(value_label)
 
         layout.addStretch()
 
+        key = (dev_label, ch_num)
         self.ct_channel_cards[key] = {
             "card": card, "checkbox": checkbox, "value_label": value_label,
         }
         return card
 
-    # =========================
-    # 样式工具
-    # =========================
+    def _channel_action_button_style(self, accent, accent_hover):
+        return f"""
+        QPushButton {{
+            background-color: #0c1a38; color: {accent};
+            border: 1px solid {accent}; border-radius: 6px;
+            padding: 8px 16px; font-size: 11px; min-width: 88px; font-weight: 700;
+        }}
+        QPushButton:hover {{ background-color: #12213f; color: {accent_hover}; border: 1px solid {accent_hover}; }}
+        QPushButton:disabled {{ background-color: #0D1734; color: #3a4a6a; border: 1px solid #18264A; }}
+        """
+
+    def _dirty_set_button_style(self, accent):
+        return f"""
+        QPushButton {{
+            background-color: {accent}; color: #111111; border: none;
+            border-radius: 6px; padding: 8px 16px; font-size: 11px;
+            min-width: 88px; font-weight: 700;
+        }}
+        QPushButton:hover {{ background-color: {accent}; }}
+        QPushButton:disabled {{ background-color: #0D1734; color: #3a4a6a; border: 1px solid #18264A; }}
+        """
+
     def _build_channel_tab_style(self, dev_label, ch, checked=False):
         theme = CHANNEL_THEMES[ch]
-        dev_color = "#00f5c4" if dev_label == "A" else "#f2994a"
-        disabled_part = """
-            QPushButton:disabled {
-                background-color: #08132b; color: #3A4563;
-                border: 1px solid #0d1a30; border-bottom: 2px solid transparent;
-                border-top-left-radius: 10px; border-top-right-radius: 10px;
-                padding: 6px 10px; font-size: 12px; font-weight: 700;
-            }
+        disabled_part = f"""
+            QPushButton:disabled {{
+                background-color: #0a1224;
+                color: #3a4a6a;
+                border: 1px solid #151f36;
+                border-radius: 17px;
+                padding: 5px 12px;
+                font-size: 11px;
+                font-weight: 700;
+            }}
         """
         if checked:
             return f"""
             QPushButton {{
-                background-color: #0b1730; color: #ffffff;
+                background-color: {theme['accent_soft']};
+                color: {theme['accent']};
                 border: 1px solid {theme['accent_border']};
-                border-bottom: 2px solid {dev_color};
-                border-top-left-radius: 10px; border-top-right-radius: 10px;
-                padding: 6px 10px; font-size: 12px; font-weight: 700;
+                border-radius: 17px;
+                padding: 5px 12px;
+                font-size: 11px;
+                font-weight: 700;
             }}
             {disabled_part}
             """
         else:
             return f"""
             QPushButton {{
-                background-color: #08132b; color: {theme['text_dim']};
-                border: 1px solid #12284e; border-bottom: 2px solid transparent;
-                border-top-left-radius: 10px; border-top-right-radius: 10px;
-                padding: 6px 10px; font-size: 12px; font-weight: 700;
+                background-color: #0b1730;
+                color: {theme['text_dim']};
+                border: 1px solid #1b2847;
+                border-radius: 17px;
+                padding: 5px 12px;
+                font-size: 11px;
+                font-weight: 700;
             }}
             QPushButton:hover {{
-                background-color: {theme['accent_soft']}; color: #ffffff;
+                background-color: #0f1f3a;
+                color: #ffffff;
                 border: 1px solid {theme['accent_border']};
             }}
             {disabled_part}
@@ -1005,81 +1096,52 @@ class N6705CDoubleUI(QWidget):
         theme = CHANNEL_THEMES[self.current_channel]
         disabled_part = """
             QPushButton:disabled {
-                background-color: #08111f; color: #3A4563;
-                border: 1px solid #131D3A;
-                padding: 5px 14px; font-size: 12px; border-radius: 0px;
+                background-color: transparent; color: #3a4a6a;
+                border: none; padding: 6px 14px; font-size: 12px; border-radius: 6px;
             }
         """
         if active:
             return f"""
             QPushButton {{
                 background-color: {theme['accent']}; color: #111111;
-                border: 1px solid {theme['accent_hover']};
-                padding: 5px 14px; font-size: 12px; font-weight: 700; border-radius: 0px;
+                border: none; padding: 6px 14px; font-size: 12px;
+                font-weight: 700; border-radius: 6px;
             }}
             {disabled_part}
             """
         else:
             return f"""
             QPushButton {{
-                background-color: #08111f; color: #7c8aac;
-                border: 1px solid #1b2842;
-                padding: 5px 14px; font-size: 12px; border-radius: 0px;
+                background-color: transparent; color: #7c8aac;
+                border: none; padding: 6px 14px; font-size: 12px; border-radius: 6px;
             }}
-            QPushButton:hover {{ background-color: #0c1628; color: #dbe6ff; }}
+            QPushButton:hover {{ background-color: #0f1d35; color: #dbe6ff; }}
             {disabled_part}
             """
 
     def _apply_mode_button_styles(self):
         for btn in self.mode_buttons:
             btn.setStyleSheet(self._build_mode_button_style(btn.isChecked()))
-        if self.mode_buttons:
-            self.mode_buttons[0].setStyleSheet(
-                self.mode_buttons[0].styleSheet() + "QPushButton {border-top-left-radius: 8px; border-bottom-left-radius: 8px;}"
-            )
-            self.mode_buttons[-1].setStyleSheet(
-                self.mode_buttons[-1].styleSheet() + "QPushButton {border-top-right-radius: 8px; border-bottom-right-radius: 8px;}"
-            )
-
-    def _channel_action_button_style(self, accent, accent_hover):
-        return f"""
-        QPushButton {{
-            background-color: {accent};
-            color: #111111;
-            border: none;
-            border-radius: 6px;
-            padding: 8px 16px;
-            font-size: 11px;
-            min-width: 88px;
-            font-weight: 600;
-        }}
-        QPushButton:hover {{
-            background-color: {accent_hover};
-        }}
-        QPushButton:disabled {{
-            background-color: #0D1734;
-            color: #3A4563;
-            border: 1px solid #18264A;
-        }}
-        """
 
     def _refresh_channel_tab_styles(self):
         idx = 0
         for dev_label in ["A", "B"]:
             for ch in range(1, 5):
-                is_current = (dev_label == self.current_device and ch == self.current_channel)
+                is_active = (dev_label == self.current_device and ch == self.current_channel)
                 self.channel_tab_buttons[idx].setStyleSheet(
-                    self._build_channel_tab_style(dev_label, ch, is_current)
+                    self._build_channel_tab_style(dev_label, ch, is_active)
                 )
-                self.channel_tab_buttons[idx].setChecked(is_current)
+                self.channel_tab_buttons[idx].setChecked(is_active)
                 idx += 1
 
     def _apply_channel_theme(self, dev_label, channel_num):
         theme = CHANNEL_THEMES[channel_num]
         self.channel_title_label.setText(f"{dev_label} - Channel {channel_num}")
+
         self.setting_frame.setStyleSheet(f"""
             QFrame {{ background-color: #0a1930; border: 1px solid {theme['accent_border']}; border-radius: 14px; }}
         """)
+
         self.output_toggle.setAccentColor(theme['accent'])
 
         btn_style = self._channel_action_button_style(theme['accent'], theme['accent_hover'])
@@ -1089,86 +1151,23 @@ class N6705CDoubleUI(QWidget):
         self._refresh_channel_tab_styles()
         self._apply_mode_button_styles()
         self._update_output_visual_state()
+        self._update_set_button_dirty_state()
 
-    # =========================
-    # 通道/模式
-    # =========================
-    def _switch_channel(self, dev_label, channel_num):
-        self.current_device = dev_label
-        self.current_channel = channel_num
-        self._apply_channel_theme(dev_label, channel_num)
-        self._start_channel_sync()
+    def _on_voltage_text_changed(self, text):
+        self._dirty_voltage = True
+        self._update_set_button_dirty_state()
 
-    def _sync_channel_output_state(self):
-        n6705c = self._get_current_n6705c()
-        if n6705c:
-            try:
-                is_on = n6705c.get_channel_state(self.current_channel)
-                self.output_toggle.setChecked(is_on)
-            except Exception as e:
-                logger.error("[%s] 获取通道%d状态失败: %s", self.current_device, self.current_channel, e)
-        self._update_output_visual_state()
+    def _on_current_text_changed(self, text):
+        self._dirty_current = True
+        self._update_set_button_dirty_state()
 
-    def _sync_channel_mode(self):
-        n6705c = self._get_current_n6705c()
-        if not n6705c:
-            return
-        try:
-            inst_mode = n6705c.get_mode(self.current_channel)
-            ui_mode = self._map_instrument_mode_to_ui_mode(inst_mode)
-            for btn in self.mode_buttons:
-                btn.setChecked(btn.text() == ui_mode)
-            self._apply_mode_button_styles()
-            self._update_labels_for_mode(ui_mode)
-        except Exception as e:
-            logger.error("[%s] 获取通道%d模式失败: %s", self.current_device, self.current_channel, e)
-
-    def _map_instrument_mode_to_ui_mode(self, inst_mode):
-        mapping = {
-            "PS2Q": "PS2Q",
-            "CCL": "CC",
-            "CCLOAD": "CC",
-            "CCLoad": "CC",
-            "VMET": "VMETer",
-            "VMETER": "VMETer",
-            "VMETer": "VMETer",
-            "AMET": "AMETer",
-            "AMETER": "AMETer",
-            "AMETer": "AMETer",
-        }
-        return mapping.get(inst_mode, inst_mode)
-
-    def _update_labels_for_mode(self, ui_mode):
-        if ui_mode == "PS2Q":
-            self.voltage_set_label.setText("SET")
-            self.current_set_label.setText("LIM")
-            self.voltage_set_input.setEnabled(True)
-            self.limit_current_value.setEnabled(True)
-        elif ui_mode == "CC":
-            self.voltage_set_label.setText("LIM")
-            self.current_set_label.setText("SET")
-            self.voltage_set_input.setEnabled(True)
-            self.limit_current_value.setEnabled(True)
+    def _update_set_button_dirty_state(self):
+        if (self._dirty_voltage or self._dirty_current) and self.set_btn.isEnabled():
+            theme = CHANNEL_THEMES[self.current_channel]
+            self.set_btn.setStyleSheet(self._dirty_set_button_style(theme['accent']))
         else:
-            self.voltage_set_label.setText("---")
-            self.current_set_label.setText("---")
-            self.voltage_set_input.setEnabled(False)
-            self.limit_current_value.setEnabled(False)
-
-    def _fetch_channel_values(self):
-        n6705c = self._get_current_n6705c()
-        if not n6705c:
-            return
-        try:
-            ch = self.current_channel
-            voltage = float(n6705c.fetch_voltage(ch))
-            current = float(n6705c.fetch_current(ch))
-            limit_current = float(n6705c.get_current_limit(ch))
-            self.voltage_value.setText(f"{voltage:.4f}")
-            self.current_value.setText(f"{current:.4f}")
-            self.limit_current_value.setText(f"{limit_current:.4f}")
-        except Exception as e:
-            logger.error("[%s] 读取失败: %s", self.current_device, e)
+            theme = CHANNEL_THEMES[self.current_channel]
+            self.set_btn.setStyleSheet(self._channel_action_button_style(theme['accent'], theme['accent_hover']))
 
     def _update_output_visual_state(self):
         is_on = self.output_toggle.isChecked()
@@ -1188,17 +1187,75 @@ class N6705CDoubleUI(QWidget):
 
         self.voltage_value.setStyleSheet(f"""
             QLineEdit {{ font-size: 22px; font-weight: bold; color: {value_color}; background: transparent; border: none; }}
-            QLineEdit:focus {{ border: none; background: transparent; }}
         """)
         self.current_value.setStyleSheet(f"""
             QLineEdit {{ font-size: 22px; font-weight: bold; color: {value_color}; background-color: transparent; border: none; }}
         """)
 
-    def _get_current_n6705c(self):
-        dev = self.devices[self.current_device]
-        if dev["is_connected"] and dev["n6705c"]:
-            return dev["n6705c"]
-        return None
+    def _switch_channel(self, dev_label, ch):
+        self.current_device = dev_label
+        self.current_channel = ch
+        self._dirty_voltage = False
+        self._dirty_current = False
+        self._apply_channel_theme(dev_label, ch)
+        self._start_channel_sync()
+
+    def _map_instrument_mode_to_ui_mode(self, inst_mode):
+        mapping = {
+            "PS2Q": "PS2Q", "CCL": "CC", "CCLOAD": "CC", "CCLoad": "CC",
+            "VMET": "VMETer", "VMETER": "VMETer", "VMETer": "VMETer",
+            "AMET": "AMETer", "AMETER": "AMETer", "AMETer": "AMETer",
+        }
+        return mapping.get(inst_mode, inst_mode)
+
+    def _map_ui_mode_to_instrument_mode(self, ui_mode):
+        return {"PS2Q": "PS2Q", "CC": "CCLoad", "VMETer": "VMETer", "AMETer": "AMETer"}.get(ui_mode, "PS2Q")
+
+    def _get_current_mode_text(self):
+        if self.cv_btn.isChecked():
+            return "PS2Q"
+        if self.cc_btn.isChecked():
+            return "CC"
+        if self.cr_btn.isChecked():
+            return "VMETer"
+        if self.cp_btn.isChecked():
+            return "AMETer"
+        return "PS2Q"
+
+    def _update_labels_for_mode(self, ui_mode):
+        if ui_mode == "PS2Q":
+            self.voltage_set_label.setText("Set")
+            self.current_set_label.setText("Lim")
+            self.voltage_set_input.setEnabled(True)
+            self.limit_current_value.setEnabled(True)
+            self.voltage_input_container.setStyleSheet("""
+                QFrame { background-color: #091426; border: 1px solid #17345f; border-radius: 8px; }
+            """)
+            self.current_input_container.setStyleSheet("""
+                QFrame { background-color: #091426; border: 1px solid #17345f; border-radius: 8px; }
+            """)
+        elif ui_mode == "CC":
+            self.voltage_set_label.setText("Lim")
+            self.current_set_label.setText("Set")
+            self.voltage_set_input.setEnabled(True)
+            self.limit_current_value.setEnabled(True)
+            self.voltage_input_container.setStyleSheet("""
+                QFrame { background-color: #091426; border: 1px solid #17345f; border-radius: 8px; }
+            """)
+            self.current_input_container.setStyleSheet("""
+                QFrame { background-color: #091426; border: 1px solid #17345f; border-radius: 8px; }
+            """)
+        else:
+            self.voltage_set_label.setText("---")
+            self.current_set_label.setText("---")
+            self.voltage_set_input.setEnabled(False)
+            self.limit_current_value.setEnabled(False)
+            self.voltage_input_container.setStyleSheet("""
+                QFrame { background-color: #070F28; border: 1px solid #131D3A; border-radius: 8px; }
+            """)
+            self.current_input_container.setStyleSheet("""
+                QFrame { background-color: #070F28; border: 1px solid #131D3A; border-radius: 8px; }
+            """)
 
     def _on_mode_button_clicked(self, clicked_button):
         for btn in self.mode_buttons:
@@ -1208,31 +1265,121 @@ class N6705CDoubleUI(QWidget):
         ui_mode = self._get_current_mode_text()
         self._update_labels_for_mode(ui_mode)
 
-        n6705c = self._get_current_n6705c()
-        if n6705c:
+        dev = self.devices[self.current_device]
+        if dev["is_connected"] and dev["n6705c"]:
             try:
                 inst_mode = self._map_ui_mode_to_instrument_mode(ui_mode)
-                n6705c.set_mode(self.current_channel, inst_mode)
+                dev["n6705c"].set_mode(self.current_channel, inst_mode)
+                logger.info("[%s] Channel %d mode set to: %s", self.current_device, self.current_channel, inst_mode)
                 self._start_channel_sync()
             except Exception as e:
-                logger.error("[%s] 设置模式失败: %s", self.current_device, e)
+                logger.error("Failed to set mode: %s", e)
 
-    def _get_current_mode_text(self):
-        if self.cv_btn.isChecked(): return "PS2Q"
-        if self.cc_btn.isChecked(): return "CC"
-        if self.cr_btn.isChecked(): return "VMETer"
-        if self.cp_btn.isChecked(): return "AMETer"
-        return "PS2Q"
+    def _on_output_toggle_clicked(self, checked):
+        dev = self.devices[self.current_device]
+        if dev["is_connected"] and dev["n6705c"]:
+            try:
+                if checked:
+                    dev["n6705c"].channel_on(self.current_channel)
+                else:
+                    dev["n6705c"].channel_off(self.current_channel)
+            except Exception as e:
+                logger.error("Toggle failed: %s", e)
+        self._update_output_visual_state()
 
-    def _map_ui_mode_to_instrument_mode(self, ui_mode):
-        return {"PS2Q": "PS2Q", "CC": "CCLoad", "VMETer": "VMETer", "AMETer": "AMETer"}.get(ui_mode, "PS2Q")
+    def _on_voltage_input_enter(self):
+        dev = self.devices[self.current_device]
+        if not dev["is_connected"] or not dev["n6705c"]:
+            return
+        try:
+            value = float(self.voltage_set_input.text())
+            ui_mode = self._get_current_mode_text()
+            if ui_mode == "PS2Q":
+                dev["n6705c"].set_voltage(self.current_channel, value)
+            elif ui_mode == "CC":
+                dev["n6705c"].set_voltage_limit(self.current_channel, value)
+        except Exception as e:
+            logger.error("Voltage set failed: %s", e)
 
-    # =========================
-    # 连接逻辑
-    # =========================
+    def _on_current_input_enter(self):
+        dev = self.devices[self.current_device]
+        if not dev["is_connected"] or not dev["n6705c"]:
+            return
+        try:
+            value = float(self.limit_current_value.text())
+            ui_mode = self._get_current_mode_text()
+            if ui_mode == "PS2Q":
+                dev["n6705c"].set_current_limit(self.current_channel, value)
+            elif ui_mode == "CC":
+                value = -abs(value)
+                self.limit_current_value.setText(f"{value:.4f}")
+                dev["n6705c"].set_current(self.current_channel, value)
+        except Exception as e:
+            logger.error("Current set failed: %s", e)
+
+    def _on_measure_clicked(self):
+        self._start_channel_sync()
+
+    def _on_set_clicked(self):
+        dev = self.devices[self.current_device]
+        if not dev["is_connected"] or not dev["n6705c"]:
+            return
+        try:
+            n6705c = dev["n6705c"]
+            ch = self.current_channel
+            ui_mode = self._get_current_mode_text()
+            inst_mode = self._map_ui_mode_to_instrument_mode(ui_mode)
+            n6705c.set_mode(ch, inst_mode)
+
+            if ui_mode == "PS2Q":
+                n6705c.set_voltage(ch, float(self.voltage_set_input.text()))
+                n6705c.set_current_limit(ch, float(self.limit_current_value.text()))
+            elif ui_mode == "CC":
+                n6705c.set_voltage_limit(ch, float(self.voltage_set_input.text()))
+                cur = -abs(float(self.limit_current_value.text()))
+                self.limit_current_value.setText(f"{cur:.4f}")
+                n6705c.set_current(ch, cur)
+
+            self._dirty_voltage = False
+            self._dirty_current = False
+            self._update_set_button_dirty_state()
+            logger.info("[%s] Channel %d settings applied", self.current_device, ch)
+        except Exception as e:
+            logger.error("Set failed: %s", e)
+
+    def update_channel_values(self, dev_label, channel_num, voltage, current, limit_current):
+        if dev_label == self.current_device and channel_num == self.current_channel:
+            self.voltage_value.setText(f"{voltage:.4f}")
+            self.current_value.setText(f"{current:.4f}")
+            self.limit_current_value.setText(f"{limit_current:.4f}")
+
+    def _on_all_on_clicked(self):
+        for label, dev in self.devices.items():
+            if dev["is_connected"] and dev["n6705c"]:
+                try:
+                    for ch in range(1, 5):
+                        dev["n6705c"].channel_on(ch)
+                    logger.info("[%s] All channels on", label)
+                except Exception as e:
+                    logger.error("[%s] All On failed: %s", label, e)
+        self.output_toggle.setChecked(True)
+        self._update_output_visual_state()
+
+    def _on_all_off_clicked(self):
+        for label, dev in self.devices.items():
+            if dev["is_connected"] and dev["n6705c"]:
+                try:
+                    for ch in range(1, 5):
+                        dev["n6705c"].channel_off(ch)
+                    logger.info("[%s] All channels off", label)
+                except Exception as e:
+                    logger.error("[%s] All Off failed: %s", label, e)
+        self.output_toggle.setChecked(False)
+        self._update_output_visual_state()
+
     def _on_search(self, label):
         w = self.conn_widgets[label]
-        w["status"].setText("搜索中...")
+        w["status"].setText("Searching...")
         w["status"].setStyleSheet("color: #ff9800; font-weight:bold;")
         w["search_btn"].setEnabled(False)
         timer = self.search_timer_a if label == "A" else self.search_timer_b
@@ -1250,165 +1397,128 @@ class N6705CDoubleUI(QWidget):
 
             resources = list(dev["rm"].list_resources()) or []
             seen = {}
-            for r in resources:
+            for res in resources:
                 try:
-                    instr = dev["rm"].open_resource(r, timeout=1000)
+                    instr = dev["rm"].open_resource(res, timeout=1000)
                     idn = instr.query('*IDN?').strip()
                     instr.close()
                     if "N6705C" in idn:
                         parts = idn.split(",")
-                        serial = parts[2].strip() if len(parts) > 2 else r
+                        serial = parts[2].strip() if len(parts) > 2 else res
                         if serial in seen:
-                            if "hislip" in r and "hislip" not in seen[serial]:
-                                seen[serial] = r
+                            if "hislip" in res and "hislip" not in seen[serial]:
+                                seen[serial] = res
                         else:
-                            seen[serial] = r
+                            seen[serial] = res
                 except Exception:
                     pass
 
-            n6705c_devices = list(seen.values())
-
+            found = list(seen.values())
             w["combo"].clear()
-            w["combo"].setEnabled(True)
-            if n6705c_devices:
-                for d in n6705c_devices:
+            if found:
+                for d in found:
                     w["combo"].addItem(d)
-                w["status"].setText(f"找到 {len(n6705c_devices)} 个N6705C")
+                w["status"].setText(f"Found {len(found)} N6705C")
                 w["status"].setStyleSheet("color: #00a859; font-weight:bold;")
-                w["toggle_conn_btn"].setEnabled(True)
-                w["combo"].setCurrentIndex(0)
             else:
-                w["combo"].addItem("未找到N6705C设备")
-                w["combo"].setEnabled(False)
-                w["status"].setText("未找到N6705C")
+                w["combo"].addItem("No N6705C found")
+                w["status"].setText("No N6705C found")
                 w["status"].setStyleSheet("color: #e53935; font-weight:bold;")
-                w["toggle_conn_btn"].setEnabled(True)
         except Exception as e:
-            w["status"].setText(f"搜索失败: {e}")
+            w["status"].setText(f"Search failed")
             w["status"].setStyleSheet("color: #e53935; font-weight:bold;")
-            w["toggle_conn_btn"].setEnabled(True)
+            logger.error("[%s] Search error: %s", label, e)
         finally:
             w["search_btn"].setEnabled(True)
 
     def _on_toggle_connection(self, label):
-        """切换连接/断开状态"""
-        dev = self.devices[label]
-        if dev["is_connected"]:
-            self._on_disconnect(label)
+        if self.devices[label]["is_connected"]:
+            self._disconnect(label)
         else:
-            self._on_connect(label)
+            self._connect(label)
 
-    def _on_connect(self, label):
+    def _connect(self, label):
         w = self.conn_widgets[label]
-        dev = self.devices[label]
-        w["status"].setText("连接中...")
+        w["status"].setText("Connecting...")
         w["status"].setStyleSheet("color: #ff9800; font-weight:bold;")
         w["toggle_conn_btn"].setEnabled(False)
+
         try:
             address = w["combo"].currentText()
-            dev["n6705c"] = N6705C(address)
-            idn = dev["n6705c"].instr.query("*IDN?")
+            n6705c = N6705C(address)
+            idn = n6705c.instr.query("*IDN?")
             if "N6705C" in idn:
-                dev["is_connected"] = True
-                idn_parts = idn.strip().split(",")
-                serial = idn_parts[2].strip() if len(idn_parts) >= 3 else ""
+                self.devices[label]["n6705c"] = n6705c
+                self.devices[label]["is_connected"] = True
+
                 if self._top:
-                    if label == "A":
-                        self._top.connect_a(address, n6705c_instance=dev["n6705c"], serial=serial)
-                    elif label == "B":
-                        self._top.connect_b(address, n6705c_instance=dev["n6705c"], serial=serial)
-                w["status"].setText("● 已连接")
+                    idn_parts = idn.strip().split(",")
+                    serial = idn_parts[2].strip() if len(idn_parts) >= 3 else ""
+                    connect_fn = getattr(self._top, f"connect_{label.lower()}", None)
+                    if connect_fn:
+                        connect_fn(address, n6705c_instance=n6705c, serial=serial)
+
+                w["status"].setText("● Connected")
                 w["status"].setStyleSheet("color: #00a859; font-weight:bold;")
-                w["toggle_conn_btn"].setEnabled(True)
-                # 切换为红色断开按钮
-                w["toggle_conn_btn"].setText("🔌 断开")
-                w["toggle_conn_btn"].setStyleSheet("""
-                    QPushButton {
-                        background-color: #3d1a1a; color: #ff6b6b;
-                        border: 1px solid #ff4444; border-radius: 8px;
-                        padding: 6px 18px; font-size: 12px; font-weight: 700;
-                        min-width: 90px;
-                    }
-                    QPushButton:hover { background-color: #552222; border: 1px solid #ff6b6b; color: #ff9999; }
-                    QPushButton:disabled { background-color: #0b1730; color: #5a6b8e; border: 1px solid #1b2847; }
-                """)
+                w["toggle_conn_btn"].setText("Disconnect")
+                w["toggle_conn_btn"].setStyleSheet(_disconnect_button_style())
                 self._update_ui_connection_state(label, True)
+                self.connection_status_changed.emit(True)
+
                 if label == self.current_device:
                     self._start_channel_sync()
             else:
-                w["status"].setText("设备不匹配")
+                w["status"].setText("Device mismatch")
                 w["status"].setStyleSheet("color: #e53935; font-weight:bold;")
-                w["toggle_conn_btn"].setEnabled(True)
         except Exception as e:
-            w["status"].setText(f"连接失败: {e}")
+            w["status"].setText("Connection failed")
             w["status"].setStyleSheet("color: #e53935; font-weight:bold;")
+            logger.error("[%s] Connect error: %s", label, e)
+        finally:
             w["toggle_conn_btn"].setEnabled(True)
 
-    def _on_disconnect(self, label):
+    def _disconnect(self, label):
         w = self.conn_widgets[label]
-        dev = self.devices[label]
-        w["status"].setText("断开中...")
-        w["status"].setStyleSheet("color: #ff9800; font-weight:bold;")
-        w["toggle_conn_btn"].setEnabled(False)
         try:
             if self._top:
-                if label == "A":
-                    self._top.disconnect_a()
-                elif label == "B":
-                    self._top.disconnect_b()
+                disconnect_fn = getattr(self._top, f"disconnect_{label.lower()}", None)
+                if disconnect_fn:
+                    disconnect_fn()
             else:
-                if dev["n6705c"]:
-                    dev["n6705c"].disconnect()
-            dev["n6705c"] = None
-            dev["is_connected"] = False
-            w["status"].setText("● 未连接")
-            w["status"].setStyleSheet("color: #7fa1d9; font-weight:bold;")
-            w["toggle_conn_btn"].setEnabled(True)
-            # 切换为绿色连接按钮
-            w["toggle_conn_btn"].setText("🔗 连接")
-            w["toggle_conn_btn"].setStyleSheet("""
-                QPushButton {
-                    background-color: #0a3d28; color: #00f5c4;
-                    border: 1px solid #00cfa6; border-radius: 8px;
-                    padding: 6px 18px; font-size: 12px; font-weight: 700;
-                    min-width: 90px;
-                }
-                QPushButton:hover { background-color: #0e5535; border: 1px solid #00f5c4; color: #3fffd7; }
-                QPushButton:disabled { background-color: #0b1730; color: #5a6b8e; border: 1px solid #1b2847; }
-            """)
+                n6705c = self.devices[label]["n6705c"]
+                if n6705c:
+                    n6705c.disconnect()
+
+            self.devices[label]["n6705c"] = None
+            self.devices[label]["is_connected"] = False
+
+            w["status"].setText("● Disconnected")
+            w["status"].setStyleSheet("color: #8ea6cf; font-weight:bold;")
+            w["toggle_conn_btn"].setText("Connect")
+            w["toggle_conn_btn"].setStyleSheet(_connect_button_style())
             self._update_ui_connection_state(label, False)
+            self.connection_status_changed.emit(False)
         except Exception as e:
-            w["status"].setText(f"断开失败: {e}")
+            w["status"].setText("Disconnect failed")
             w["status"].setStyleSheet("color: #e53935; font-weight:bold;")
-            w["toggle_conn_btn"].setEnabled(True)
+            logger.error("[%s] Disconnect error: %s", label, e)
 
     def _update_ui_connection_state(self, label, connected):
         any_connected = any(d["is_connected"] for d in self.devices.values())
 
         self.all_on_btn.setEnabled(any_connected)
         self.all_off_btn.setEnabled(any_connected)
-        if any_connected:
-            self.all_on_btn.setStyleSheet(_neon_on_button_style())
-            self.all_off_btn.setStyleSheet(_neon_off_button_style())
-        else:
-            disabled_btn_style = """
-                QPushButton {
-                    background-color: #0b1730; color: #3a4a6a;
-                    border: 1px solid #1b2847; border-radius: 8px;
-                    padding: 6px 18px; font-size: 12px; font-weight: 700;
-                }
-            """
-            self.all_on_btn.setStyleSheet(disabled_btn_style)
-            self.all_off_btn.setStyleSheet(disabled_btn_style)
+        disabled_btn = "QPushButton { background-color: #0b1730; color: #4a5a7a; border: 1px solid #1b2847; border-radius: 8px; }"
+        self.all_on_btn.setStyleSheet(_neon_on_button_style() if any_connected else disabled_btn)
+        self.all_off_btn.setStyleSheet(_neon_off_button_style() if any_connected else disabled_btn)
 
-        for idx, btn in enumerate(self.channel_tab_buttons):
-            dev_label = "A" if idx < 4 else "B"
-            dev_connected = self.devices[dev_label]["is_connected"]
-            btn.setEnabled(dev_connected)
+        active_dev_connected = self.devices[self.current_device]["is_connected"]
 
-        current_dev_connected = self.devices[self.current_device]["is_connected"]
-        self.setting_frame.setEnabled(current_dev_connected)
-        if not current_dev_connected:
+        for btn in self.channel_tab_buttons:
+            btn.setEnabled(any_connected)
+
+        self.setting_frame.setEnabled(active_dev_connected)
+        if not active_dev_connected:
             self.setting_frame.setStyleSheet("""
                 QFrame { background-color: #070f1e; border: 1px solid #0d1a30; border-radius: 14px; }
             """)
@@ -1419,25 +1529,14 @@ class N6705CDoubleUI(QWidget):
             """)
 
         for btn in self.mode_buttons:
-            btn.setEnabled(current_dev_connected)
-        self.output_toggle.setEnabled(current_dev_connected)
-        self.measure_btn.setEnabled(current_dev_connected)
-        self.set_btn.setEnabled(current_dev_connected)
-        self.voltage_set_input.setEnabled(current_dev_connected)
-        self.limit_current_value.setEnabled(current_dev_connected)
-        self.voltage_value.setEnabled(current_dev_connected)
-        self.current_value.setEnabled(current_dev_connected)
-
-        if hasattr(self, 'batch_tools_panel'):
-            self.batch_tools_panel.setEnabled(any_connected)
-            if any_connected:
-                self.batch_tools_panel.setStyleSheet("""
-                    QFrame { background-color: #0a1930; border: 1px solid #132849; border-radius: 12px; }
-                """)
-            else:
-                self.batch_tools_panel.setStyleSheet("""
-                    QFrame { background-color: #070f1e; border: 1px solid #0d1a30; border-radius: 12px; }
-                """)
+            btn.setEnabled(active_dev_connected)
+        self.output_toggle.setEnabled(active_dev_connected)
+        self.measure_btn.setEnabled(active_dev_connected)
+        self.set_btn.setEnabled(active_dev_connected)
+        self.voltage_set_input.setEnabled(active_dev_connected)
+        self.limit_current_value.setEnabled(active_dev_connected)
+        self.voltage_value.setEnabled(active_dev_connected)
+        self.current_value.setEnabled(active_dev_connected)
 
         if hasattr(self, 'consumption_test_panel'):
             self.consumption_test_panel.setEnabled(any_connected)
@@ -1450,195 +1549,60 @@ class N6705CDoubleUI(QWidget):
                     QFrame { background-color: #070f1e; border: 1px solid #0d1a30; border-radius: 12px; }
                 """)
 
-    # =========================
-    # 单通道操作
-    # =========================
-    def _on_channel_on(self):
-        n6705c = self._get_current_n6705c()
-        if n6705c:
-            try:
-                n6705c.channel_on(self.current_channel)
-                self.output_toggle.setChecked(True)
-            except Exception as e:
-                logger.error("[%s] 打开通道%d失败: %s", self.current_device, self.current_channel, e)
-        else:
-            self.output_toggle.setChecked(True)
-
-    def _on_channel_off(self):
-        n6705c = self._get_current_n6705c()
-        if n6705c:
-            try:
-                n6705c.channel_off(self.current_channel)
-            except Exception as e:
-                logger.error("[%s] 关闭通道%d失败: %s", self.current_device, self.current_channel, e)
-        self.output_toggle.setChecked(False)
-
-    def _on_output_toggle_clicked(self, checked):
-        if checked:
-            self._on_channel_on()
-        else:
-            self._on_channel_off()
-        self._update_output_visual_state()
-
-    def _on_voltage_input_enter(self):
-        n6705c = self._get_current_n6705c()
-        if not n6705c:
-            return
-        try:
-            ch = self.current_channel
-            ui_mode = self._get_current_mode_text()
-            value = float(self.voltage_set_input.text())
-            if ui_mode == "PS2Q":
-                n6705c.set_voltage(ch, value)
-                logger.info("[%s] 通道%d电压已设置: %sV", self.current_device, ch, value)
-            elif ui_mode == "CC":
-                n6705c.set_voltage_limit(ch, value)
-                logger.info("[%s] 通道%d电压限制已设置: %sV", self.current_device, ch, value)
-        except Exception as e:
-            logger.error("[%s] 电压设置失败: %s", self.current_device, e)
-
-    def _on_current_input_enter(self):
-        n6705c = self._get_current_n6705c()
-        if not n6705c:
-            return
-        try:
-            ch = self.current_channel
-            ui_mode = self._get_current_mode_text()
-            value = float(self.limit_current_value.text())
-            if ui_mode == "PS2Q":
-                n6705c.set_current_limit(ch, value)
-                logger.info("[%s] 通道%d电流限制已设置: %sA", self.current_device, ch, value)
-            elif ui_mode == "CC":
-                value = -abs(value)
-                self.limit_current_value.setText(f"{value:.4f}")
-                n6705c.set_current(ch, value)
-                logger.info("[%s] 通道%d电流已设置: %sA", self.current_device, ch, value)
-        except Exception as e:
-            logger.error("[%s] 电流设置失败: %s", self.current_device, e)
-
-    def _on_set_clicked(self):
-        n6705c = self._get_current_n6705c()
-        if not n6705c:
-            return
-        try:
-            ch = self.current_channel
-            ui_mode = self._get_current_mode_text()
-            inst_mode = self._map_ui_mode_to_instrument_mode(ui_mode)
-            n6705c.set_mode(ch, inst_mode)
-
-            if ui_mode == "PS2Q":
-                voltage_set = float(self.voltage_set_input.text())
-                current_limit = float(self.limit_current_value.text())
-                n6705c.set_voltage(ch, voltage_set)
-                n6705c.set_current_limit(ch, current_limit)
-            elif ui_mode == "CC":
-                voltage_limit = float(self.voltage_set_input.text())
-                current_set = -abs(float(self.limit_current_value.text()))
-                self.limit_current_value.setText(f"{current_set:.4f}")
-                n6705c.set_voltage_limit(ch, voltage_limit)
-                n6705c.set_current(ch, current_set)
-            else:
-                logger.info("[%s] 通道%d模式: %s, 无需设置参数", self.current_device, ch, inst_mode)
-        except Exception as e:
-            logger.error("[%s] 设置发送失败: %s", self.current_device, e)
-
-    def _on_measure_clicked(self):
-        n6705c = self._get_current_n6705c()
-        if not n6705c:
-            return
-        self._start_channel_sync()
-
-    # =========================
-    # 全通道操作
-    # =========================
-    def _on_all_on_clicked(self):
-        for label, dev in self.devices.items():
-            if dev["is_connected"] and dev["n6705c"]:
-                try:
-                    for ch in range(1, 5):
-                        dev["n6705c"].channel_on(ch)
-                except Exception as e:
-                    logger.error("[%s] All On 失败: %s", label, e)
-        self.output_toggle.setChecked(True)
-        self._update_output_visual_state()
-
-    def _on_all_off_clicked(self):
-        for label, dev in self.devices.items():
-            if dev["is_connected"] and dev["n6705c"]:
-                try:
-                    for ch in range(1, 5):
-                        dev["n6705c"].channel_off(ch)
-                except Exception as e:
-                    logger.error("[%s] All Off 失败: %s", label, e)
-        self.output_toggle.setChecked(False)
-        self._update_output_visual_state()
-
-    # =========================
-    # 批量操作
-    # =========================
-    def _get_selected_batch_channels(self):
-        result = {"A": [], "B": []}
-        for idx, btn in enumerate(self.batch_channel_buttons):
-            if btn.isChecked():
-                dev_label = "A" if idx < 4 else "B"
-                ch = (idx % 4) + 1
-                result[dev_label].append(ch)
-        return result
+    def _get_selected_batch_channels(self, dev_label):
+        return [ch for dl, ch, cb in self.batch_channel_buttons if dl == dev_label and cb.isChecked()]
 
     def _on_batch_measure(self):
-        selected = self._get_selected_batch_channels()
-        for label, channels in selected.items():
-            dev = self.devices[label]
-            if not dev["is_connected"] or not dev["n6705c"] or not channels:
+        for label, dev in self.devices.items():
+            if not dev["is_connected"] or not dev["n6705c"]:
                 continue
-            try:
-                for ch in channels:
+            channels = self._get_selected_batch_channels(label)
+            for ch in channels:
+                try:
                     dev["n6705c"].set_mode(ch, "VMETer")
                     dev["n6705c"].channel_on(ch)
-            except Exception as e:
-                logger.error("[%s] 设置电压表模式失败: %s", label, e)
+                except Exception as e:
+                    logger.error("[%s] CH%d VMeter failed: %s", label, ch, e)
 
     def _on_batch_set(self):
-        selected = self._get_selected_batch_channels()
-        for label, channels in selected.items():
-            dev = self.devices[label]
-            if not dev["is_connected"] or not dev["n6705c"] or not channels:
+        for label, dev in self.devices.items():
+            if not dev["is_connected"] or not dev["n6705c"]:
                 continue
-            try:
-                offset = 0 if label == "A" else 4
-                for ch in channels:
-                    idx = offset + ch - 1
-                    voltage = float(self.batch_voltage_inputs[idx].text())
-                    current_limit = float(self.batch_current_inputs[idx].text())
+            channels = self._get_selected_batch_channels(label)
+            voltages = [float(inp.text()) for inp in self.batch_voltage_inputs[label]]
+            currents = [float(inp.text()) for inp in self.batch_current_inputs[label]]
+            for ch in channels:
+                try:
+                    idx = ch - 1
                     dev["n6705c"].set_mode(ch, "PS2Q")
-                    dev["n6705c"].set_voltage(ch, voltage)
-                    dev["n6705c"].set_current_limit(ch, current_limit)
+                    dev["n6705c"].set_voltage(ch, voltages[idx])
+                    dev["n6705c"].set_current_limit(ch, currents[idx])
                     dev["n6705c"].channel_on(ch)
-            except Exception as e:
-                logger.error("[%s] 设置发送失败: %s", label, e)
+                except Exception as e:
+                    logger.error("[%s] CH%d Set failed: %s", label, ch, e)
 
     def _on_batch_auto(self):
-        selected = self._get_selected_batch_channels()
-        for label, channels in selected.items():
-            dev = self.devices[label]
-            if not dev["is_connected"] or not dev["n6705c"] or not channels:
+        for label, dev in self.devices.items():
+            if not dev["is_connected"] or not dev["n6705c"]:
                 continue
-            try:
-                for ch in channels:
+            channels = self._get_selected_batch_channels(label)
+            for ch in channels:
+                try:
                     dev["n6705c"].set_mode(ch, "VMETer")
-                    measured_voltage = float(dev["n6705c"].measure_voltage(ch))
-                    new_voltage = measured_voltage + 0.01
+                    v = float(dev["n6705c"].measure_voltage(ch))
+                    new_v = v + 0.03
                     dev["n6705c"].set_mode(ch, "PS2Q")
-                    dev["n6705c"].set_voltage(ch, new_voltage)
+                    dev["n6705c"].set_voltage(ch, new_v)
                     dev["n6705c"].channel_on(ch)
-            except Exception as e:
-                logger.error("[%s] Auto操作失败: %s", label, e)
+                except Exception as e:
+                    logger.error("[%s] CH%d Auto failed: %s", label, ch, e)
 
-    # =========================
-    # Consumption Test 逻辑
-    # =========================
     def _ct_start_test(self):
         if self.is_testing:
+            return
+
+        any_connected = any(d["is_connected"] for d in self.devices.values())
+        if not any_connected:
             return
 
         try:
@@ -1647,76 +1611,61 @@ class N6705CDoubleUI(QWidget):
         except ValueError:
             return
 
-        tasks = {}
-        for dev_label in ["A", "B"]:
-            dev = self.devices[dev_label]
-            if not dev["is_connected"] or not dev["n6705c"]:
-                continue
-            selected = [
-                ch for ch in range(1, 5)
-                if self.ct_channel_cards[(dev_label, ch)]["checkbox"].isChecked()
-            ]
-            if selected:
-                tasks[dev_label] = selected
-
-        if not tasks:
-            return
-
         self.is_testing = True
         self.ct_start_btn.setEnabled(False)
         self.ct_stop_btn.setEnabled(True)
-        self._pending_tests = set(tasks.keys())
 
-        for dev_label in ["A", "B"]:
-            for ch in range(1, 5):
-                self.ct_channel_cards[(dev_label, ch)]["value_label"].setText("- - -")
+        for key in self.ct_channel_cards:
+            self.ct_channel_cards[key]["value_label"].setText("- - -")
 
-        for dev_label, channels in tasks.items():
-            worker = _ConsumptionTestWorker(
-                self.devices[dev_label]["n6705c"], dev_label, channels, test_time, sample_period
-            )
+        self._test_finished_count = 0
+        self._test_expected_count = 0
+
+        for label, dev in self.devices.items():
+            if not dev["is_connected"] or not dev["n6705c"]:
+                continue
+            channels = [ch for (dl, ch), card_data in self.ct_channel_cards.items()
+                        if dl == label and card_data["checkbox"].isChecked()]
+            if not channels:
+                continue
+
+            self._test_expected_count += 1
+            worker = _ConsumptionTestWorker(dev["n6705c"], label, channels, test_time, sample_period)
             thread = QThread()
             worker.moveToThread(thread)
-
             thread.started.connect(worker.run)
             worker.channel_result.connect(self._ct_on_channel_result)
             worker.error.connect(self._ct_on_error)
-            worker.finished.connect(self._ct_on_ui_update)
             worker.finished.connect(thread.quit)
-            thread.finished.connect(lambda lb=dev_label: self._ct_on_thread_cleaned(lb))
+            worker.finished.connect(self._ct_on_one_finished)
             thread.finished.connect(worker.deleteLater)
             thread.finished.connect(thread.deleteLater)
 
-            self._test_threads[dev_label] = thread
-            self._test_workers[dev_label] = worker
+            self._test_threads[label] = thread
+            self._test_workers[label] = worker
             thread.start()
 
-    def _ct_on_channel_result(self, dev_label, channel, avg_current):
-        key = (dev_label, channel)
+        if self._test_expected_count == 0:
+            self.is_testing = False
+            self.ct_start_btn.setEnabled(True)
+            self.ct_stop_btn.setEnabled(False)
+
+    def _ct_on_channel_result(self, dev_label, ch, avg_current):
+        key = (dev_label, ch)
         if key in self.ct_channel_cards:
-            label = self.ct_channel_cards[key]["value_label"]
-            if avg_current is not None:
-                label.setText(_format_current(avg_current))
-            else:
-                label.setText("- - -")
+            self.ct_channel_cards[key]["value_label"].setText(_format_current(avg_current))
 
     def _ct_on_error(self, err_msg):
         logger.error("Consumption test error: %s", err_msg)
 
-    def _ct_on_ui_update(self):
-        if not self._pending_tests:
+    def _ct_on_one_finished(self):
+        self._test_finished_count += 1
+        if self._test_finished_count >= self._test_expected_count:
             self.is_testing = False
             self.ct_start_btn.setEnabled(True)
             self.ct_stop_btn.setEnabled(False)
-
-    def _ct_on_thread_cleaned(self, dev_label):
-        self._test_workers.pop(dev_label, None)
-        self._test_threads.pop(dev_label, None)
-        self._pending_tests.discard(dev_label)
-        if not self._pending_tests:
-            self.is_testing = False
-            self.ct_start_btn.setEnabled(True)
-            self.ct_stop_btn.setEnabled(False)
+            self._test_threads.clear()
+            self._test_workers.clear()
 
     def _ct_stop_test(self):
         for worker in self._test_workers.values():
@@ -1727,8 +1676,7 @@ class N6705CDoubleUI(QWidget):
 
     def _ct_save_datalog(self):
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "Save DataLog", "",
-            "CSV Files (*.csv);;All Files (*)"
+            self, "Save DataLog", "", "CSV Files (*.csv);;All Files (*)"
         )
         if file_path:
             logger.info("Saving datalog to: %s", file_path)
@@ -1740,7 +1688,7 @@ if __name__ == "__main__":
 
     win = N6705CDoubleUI()
     win.setWindowTitle("N6705C × 2 DC Power Analyzer")
-    win.setGeometry(50, 50, 1400, 950)
+    win.setGeometry(100, 100, 1400, 900)
     win.show()
 
     sys.exit(app.exec())
