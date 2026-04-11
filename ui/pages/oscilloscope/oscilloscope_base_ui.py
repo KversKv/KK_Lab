@@ -4,9 +4,10 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QLineEdit, QFrame, QSizePolicy,
-    QStackedWidget, QApplication, QTextEdit, QMenu, QFileDialog
+    QStackedWidget, QApplication, QTextEdit, QMenu, QFileDialog,
+    QScrollArea, QGridLayout
 )
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, Signal, QThread, QObject
 from PySide6.QtGui import QFont, QPixmap, QImage
 from ui.widgets.dark_combobox import DarkComboBox
 from instruments.scopes.base import OscilloscopeController
@@ -137,6 +138,77 @@ class TimeScaleEdit(QLineEdit):
         event.accept()
 
 
+class MeasurementPollingWorker(QObject):
+    results_ready = Signal(list)
+    finished = Signal()
+
+    def __init__(self, controller, interval_s=0.5):
+        super().__init__()
+        self._controller = controller
+        self._measurement_items = []
+        self._interval_s = interval_s
+        self._running = False
+        import threading
+        self._lock = threading.Lock()
+
+    def update_items(self, items):
+        with self._lock:
+            self._measurement_items = list(items)
+
+    def set_interval(self, interval_s):
+        self._interval_s = interval_s
+
+    def start_polling(self):
+        self._running = True
+        while self._running:
+            with self._lock:
+                snapshot = list(self._measurement_items)
+            if not snapshot:
+                QThread.msleep(int(self._interval_s * 1000))
+                continue
+            results = []
+            for item in snapshot:
+                if not self._running:
+                    break
+                mtype = item["type"]
+                channel = item["channel"]
+                try:
+                    value = self._query_measurement(channel, mtype)
+                    results.append({"type": mtype, "channel": channel, "value": value, "error": None})
+                except Exception as e:
+                    results.append({"type": mtype, "channel": channel, "value": None, "error": str(e)})
+            if self._running and results:
+                self.results_ready.emit(results)
+            if not self._running:
+                break
+            QThread.msleep(int(self._interval_s * 1000))
+        self.finished.emit()
+
+    def stop(self):
+        self._running = False
+
+    @property
+    def is_running(self):
+        return self._running
+
+    def _query_measurement(self, channel, mtype):
+        inst = self._controller.instrument
+        if inst is None:
+            raise RuntimeError("Instrument not connected")
+        func_map = {
+            "PK2PK": inst.get_channel_pk2pk,
+            "FREQUENCY": inst.get_channel_frequency,
+            "MEAN": inst.get_channel_mean,
+            "VMAX": inst.get_channel_max,
+            "VMIN": inst.get_channel_min,
+            "RMS": inst.get_channel_rms,
+        }
+        func = func_map.get(mtype)
+        if func is None:
+            raise ValueError(f"Unknown measurement type: {mtype}")
+        return func(channel)
+
+
 class OscilloscopeBaseUI(QWidget):
 
     timebase_apply_requested = Signal()
@@ -151,12 +223,9 @@ class OscilloscopeBaseUI(QWidget):
     CHANNEL_OFFSET_DEFAULT = "0"
     CHANNEL_OFFSET_LABEL = "Offset (V)"
     TRIGGER_SLOPE_OPTIONS = ["POS", "NEG", "EITH"]
-    METRIC_DEFAULTS = [
-        ("CH1 Vpp", "– –"),
-        ("CH1 Freq", "– –"),
-        ("CH2 Vmax", "– –"),
-        ("CH2 Vmin", "– –"),
-    ]
+
+    MEASUREMENT_TYPES = ["PK2PK", "FREQUENCY", "MEAN", "VMAX", "VMIN", "RMS"]
+    MEASUREMENT_POLL_INTERVAL_S = 0.5
 
     CHANNEL_COLORS_DEFAULT = {
         1: "#7B8CB7",
@@ -191,6 +260,11 @@ class OscilloscopeBaseUI(QWidget):
         self.mso64b_top = mso64b_top
         self.controller = OscilloscopeController()
         self.controller.set_log_callback(self.append_log)
+
+        self._measurement_items = []
+        self._measurement_result_cards = []
+        self._polling_thread = None
+        self._polling_worker = None
 
         self.search_timer = QTimer(self)
         self.search_timer.timeout.connect(self._search_devices)
@@ -565,21 +639,28 @@ class OscilloscopeBaseUI(QWidget):
 
         root_layout.addLayout(self._create_top_bar())
 
-        content_layout = QHBoxLayout()
-        content_layout.setSpacing(16)
+        content_grid = QGridLayout()
+        content_grid.setSpacing(16)
+        content_grid.setColumnStretch(0, 75)
+        content_grid.setColumnStretch(1, 25)
 
-        left_layout = QVBoxLayout()
-        left_layout.setSpacing(16)
-        left_layout.addWidget(self._create_display_card(), 3)
-        left_layout.addWidget(self._create_measurements_card(), 1)
-        left_layout.addWidget(self._create_log_card(), 1)
+        self._create_control_row(content_grid)
 
-        right_panel = self._create_settings_card()
+        left_upper = QVBoxLayout()
+        left_upper.setSpacing(16)
+        left_upper.addWidget(self._create_display_card(), 3)
+        left_upper.addWidget(self._create_measurements_card(), 1)
+        content_grid.addLayout(left_upper, 1, 0)
 
-        content_layout.addLayout(left_layout, 75)
-        content_layout.addWidget(right_panel, 25)
+        right_upper = QVBoxLayout()
+        right_upper.setSpacing(16)
+        right_upper.addWidget(self._create_settings_card())
+        content_grid.addLayout(right_upper, 1, 1)
 
-        root_layout.addLayout(content_layout)
+        content_grid.addWidget(self._create_log_card(), 2, 0)
+        content_grid.addWidget(self._create_quick_function_card(), 2, 1)
+
+        root_layout.addLayout(content_grid)
 
     def _create_top_bar(self):
         layout = QVBoxLayout()
@@ -608,35 +689,34 @@ class OscilloscopeBaseUI(QWidget):
         self.instrument_info_label.setWordWrap(True)
         layout.addWidget(self.instrument_info_label)
 
-        control_row = QHBoxLayout()
-        control_row.setSpacing(10)
+        return layout
 
+    def _create_control_row(self, grid):
         self.visa_resource_combo = DarkComboBox(bg="#091735", border="#1A2D57")
-        self.visa_resource_combo.setMinimumWidth(380)
         self.visa_resource_combo.setFixedHeight(36)
         self.visa_resource_combo.setEditable(True)
         if DEBUG_MSO64B_FLAG:
             self.visa_resource_combo.addItem("192.168.3.27")
         if DEBUG_DSOX4034A_FLAG:
             self.visa_resource_combo.addItem("USB0::0x0957::0x17A4::MY61500152::INSTR")
-        control_row.addWidget(self.visa_resource_combo, 1)
+        grid.addWidget(self.visa_resource_combo, 0, 0)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(10)
 
         self.search_btn = QPushButton("Search")
         self.search_btn.setObjectName("searchBtn")
         self.search_btn.setFixedHeight(36)
         self.search_btn.clicked.connect(self._on_search)
-        control_row.addWidget(self.search_btn, 0)
+        btn_row.addWidget(self.search_btn)
 
         self.connect_btn = QPushButton("🔗  Connect")
         self.connect_btn.setObjectName("dynamicConnectBtn")
         self.connect_btn.setProperty("connected", "false")
-        self.connect_btn.setFixedSize(140, 36)
-        control_row.addWidget(self.connect_btn, 0)
+        self.connect_btn.setFixedHeight(36)
+        btn_row.addWidget(self.connect_btn)
 
-        control_row.addStretch()
-
-        layout.addLayout(control_row)
-        return layout
+        grid.addLayout(btn_row, 0, 1)
 
     def _create_display_card(self):
         card = QFrame()
@@ -743,28 +823,64 @@ class OscilloscopeBaseUI(QWidget):
         title.setObjectName("sectionTitle")
         header.addWidget(title)
         header.addStretch()
-
-        self.measure_btn = QPushButton("↻ 刷新测量结果")
-        self.measure_btn.setObjectName("ghostBtn")
-        header.addWidget(self.measure_btn)
         layout.addLayout(header)
 
-        metrics_layout = QHBoxLayout()
-        metrics_layout.setSpacing(12)
+        add_row = QHBoxLayout()
+        add_row.setSpacing(8)
 
-        self.metric_cards = []
-        for title_text, value_text in self.METRIC_DEFAULTS:
-            mc = self._create_metric_card(title_text, value_text)
-            self.metric_cards.append(mc)
-            metrics_layout.addWidget(mc)
+        type_label = QLabel("Type")
+        type_label.setStyleSheet("color:#AFC0E8; font-weight:600;")
+        add_row.addWidget(type_label)
 
-        layout.addLayout(metrics_layout)
+        self.meas_type_combo = DarkComboBox(bg="#091735", border="#1A2D57")
+        self.meas_type_combo.addItems(self.MEASUREMENT_TYPES)
+        self.meas_type_combo.setFixedWidth(140)
+        add_row.addWidget(self.meas_type_combo)
+
+        src_label = QLabel("Source")
+        src_label.setStyleSheet("color:#AFC0E8; font-weight:600;")
+        add_row.addWidget(src_label)
+
+        self.meas_source_combo = DarkComboBox(bg="#091735", border="#1A2D57")
+        self.meas_source_combo.addItems([f"CH{i+1}" for i in range(self.NUM_CHANNELS)])
+        self.meas_source_combo.setFixedWidth(90)
+        add_row.addWidget(self.meas_source_combo)
+
+        self.add_meas_btn = QPushButton("+ Add")
+        self.add_meas_btn.setObjectName("ghostBtn")
+        self.add_meas_btn.clicked.connect(self._on_add_measurement)
+        add_row.addWidget(self.add_meas_btn)
+
+        self.clear_meas_btn = QPushButton("✕ Clear All")
+        self.clear_meas_btn.setObjectName("ghostBtn")
+        self.clear_meas_btn.clicked.connect(self._on_clear_measurements)
+        add_row.addWidget(self.clear_meas_btn)
+
+        add_row.addStretch()
+        layout.addLayout(add_row)
+
+        self._results_scroll = QScrollArea()
+        self._results_scroll.setWidgetResizable(True)
+        self._results_scroll.setFrameShape(QFrame.NoFrame)
+        self._results_scroll.setStyleSheet("background: transparent; border: none;")
+
+        self._results_container = QWidget()
+        self._results_container.setStyleSheet("background: transparent;")
+        self._results_grid = QGridLayout(self._results_container)
+        self._results_grid.setContentsMargins(0, 0, 0, 0)
+        self._results_grid.setSpacing(10)
+
+        self._results_scroll.setWidget(self._results_container)
+        layout.addWidget(self._results_scroll)
+
         return card
 
     def _create_metric_card(self, title_text, value_text):
+        logger.debug("[MEAS] _create_metric_card('%s', '%s') enter", title_text, value_text)
         card = QFrame()
         card.setObjectName("metricCard")
         card.setMinimumHeight(64)
+        logger.debug("[MEAS] QFrame created: %s", card)
 
         layout = QVBoxLayout(card)
         layout.setContentsMargins(12, 10, 12, 10)
@@ -783,6 +899,7 @@ class OscilloscopeBaseUI(QWidget):
 
         card.title_label = title
         card.value_label = value
+        logger.debug("[MEAS] _create_metric_card done: %s", card)
         return card
 
     def _create_settings_card(self):
@@ -864,6 +981,89 @@ class OscilloscopeBaseUI(QWidget):
         self._switch_channel_card(0)
 
         return card
+
+    def _create_quick_function_card(self):
+        card = QFrame()
+        card.setObjectName("card")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(18, 16, 18, 18)
+        layout.setSpacing(12)
+
+        title = QLabel("⚡ Quick Function")
+        title.setObjectName("sectionTitle")
+        layout.addWidget(title)
+
+        self.all_ch_default_btn = QPushButton("All Channel Set Default")
+        self.all_ch_default_btn.setObjectName("ghostBtn")
+        self.all_ch_default_btn.clicked.connect(self._on_all_channel_set_default)
+        layout.addWidget(self.all_ch_default_btn)
+
+        ripple_row = QHBoxLayout()
+        ripple_row.setSpacing(8)
+
+        self.quick_channel_combo = DarkComboBox(bg="#091735", border="#1A2D57")
+        self.quick_channel_combo.addItems([f"CH{i+1}" for i in range(self.NUM_CHANNELS)])
+        self.quick_channel_combo.setFixedWidth(80)
+        ripple_row.addWidget(self.quick_channel_combo)
+
+        self.ripple_set_btn = QPushButton("RippleSet")
+        self.ripple_set_btn.setObjectName("ghostBtn")
+        self.ripple_set_btn.clicked.connect(self._on_ripple_set)
+        ripple_row.addWidget(self.ripple_set_btn)
+
+        ripple_row.addStretch()
+        layout.addLayout(ripple_row)
+
+        return card
+
+    def _on_all_channel_set_default(self):
+        if not self.controller.is_connected:
+            self.append_log("[WARN] Instrument not connected.")
+            return
+
+        inst = self.controller.instrument
+        try:
+            from instruments.scopes.tektronix.mso64b import MSO64B
+            if not isinstance(inst, MSO64B):
+                self.append_log("[WARN] This function is only available for Tektronix MSO64B.")
+                return
+
+            self.append_log("[QUICK] Setting all channels to default ripple config...")
+            for ch in range(1, self.NUM_CHANNELS + 1):
+                inst.set_channel_bandwidth(ch, '20E+6')
+                inst.set_channel_scale(ch, 0.5)
+                inst.set_channel_offset(ch, 1.8)
+            inst.set_timebase_scale(0.001)
+            inst.set_timebase_position(50)
+
+            for i, channel_data in enumerate(self.channels):
+                channel_data['scale_edit'].setText("0.5")
+                channel_data['offset_edit'].setText("1.8")
+            self.timebase_edit.setText("1ms")
+
+            self.append_log("[QUICK] All channels set: BW=20MHz, Scale=500mV/div, Offset=1.8V; TimeScale=1ms/div")
+        except Exception as e:
+            self.append_log(f"[ERROR] All Channel Set Default failed: {e}")
+
+    def _on_ripple_set(self):
+        if not self.controller.is_connected:
+            self.append_log("[WARN] Instrument not connected.")
+            return
+
+        inst = self.controller.instrument
+        try:
+            from instruments.scopes.tektronix.mso64b import MSO64B
+            if not isinstance(inst, MSO64B):
+                self.append_log("[WARN] This function is only available for Tektronix MSO64B.")
+                return
+
+            ch_text = self.quick_channel_combo.currentText()
+            channel = int(ch_text.replace("CH", ""))
+            self.append_log(f"[QUICK] Running RippleSet on {ch_text}...")
+            inst.set_AutoRipple_test(channel)
+            self.append_log(f"[QUICK] RippleSet on {ch_text} completed.")
+        except Exception as e:
+            self.append_log(f"[ERROR] RippleSet failed: {e}")
 
     def _create_small_section_title(self, text):
         label = QLabel(text)
@@ -1020,7 +1220,6 @@ class OscilloscopeBaseUI(QWidget):
             channel['offset_edit'].setText(self.CHANNEL_OFFSET_DEFAULT)
 
         self.connect_btn.clicked.connect(self._on_connect_toggle)
-        self.measure_btn.clicked.connect(self._on_measure)
         self.capture_btn.clicked.connect(self._on_capture)
         self.apply_btn.clicked.connect(self._on_apply_settings)
         self.timebase_apply_requested.connect(self._on_apply_timebase_only)
@@ -1100,34 +1299,17 @@ class OscilloscopeBaseUI(QWidget):
 
     def get_measure_settings(self):
         return {
-            'channel': 1,
-            'type': 'PK2PK'
+            'items': list(self._measurement_items),
         }
 
-    def update_measure_result(self, measure_type, value):
-        if len(self.metric_cards) < 4:
-            return
-        if measure_type == 'PK2PK':
-            self.metric_cards[0].title_label.setText("Vpp")
-            self.metric_cards[0].value_label.setText(f"{value:.6f} V")
-        elif measure_type == 'FREQUENCY':
-            self.metric_cards[1].title_label.setText("Freq")
-            self.metric_cards[1].value_label.setText(f"{value:.2f} Hz")
-        elif measure_type == 'VMAX':
-            self.metric_cards[2].title_label.setText("Vmax")
-            self.metric_cards[2].value_label.setText(f"{value:.6f} V")
-        elif measure_type == 'VMIN':
-            self.metric_cards[3].title_label.setText("Vmin")
-            self.metric_cards[3].value_label.setText(f"{value:.6f} V")
-        elif measure_type == 'MEAN':
-            self.metric_cards[0].title_label.setText("Mean")
-            self.metric_cards[0].value_label.setText(f"{value:.6f} V")
-        elif measure_type == 'RMS':
-            self.metric_cards[3].title_label.setText("RMS")
-            self.metric_cards[3].value_label.setText(f"{value:.6f} V")
-        elif measure_type == 'AMPLITUDE':
-            self.metric_cards[2].title_label.setText("Amplitude")
-            self.metric_cards[2].value_label.setText(f"{value:.6f} V")
+    def update_measure_result(self, measure_type, channel, value):
+        for card_info in self._measurement_result_cards:
+            if card_info["type"] == measure_type and card_info["channel"] == channel:
+                if value is not None:
+                    card_info["card"].value_label.setText(self._format_measurement_value(measure_type, value))
+                else:
+                    card_info["card"].value_label.setText("ERR")
+                return
 
     def update_connection_status(self, connected, instrument_info=None):
         self._update_connect_button_state(connected)
@@ -1138,7 +1320,10 @@ class OscilloscopeBaseUI(QWidget):
             self.instrument_info_label.setText(text)
             self.set_system_status("● Connected")
             self.append_log(f"[SYSTEM] Connected: {text}")
+            if self._measurement_items:
+                self._start_polling()
         else:
+            self._stop_polling()
             self.search_btn.setEnabled(True)
             self.instrument_info_label.setText("")
             self.set_system_status("● Ready")
@@ -1213,12 +1398,18 @@ class OscilloscopeBaseUI(QWidget):
     def _set_interactive_enabled(self, enabled: bool):
         self.capture_btn.setEnabled(enabled)
         self.invert_btn.setEnabled(enabled)
-        self.measure_btn.setEnabled(enabled)
+        self.add_meas_btn.setEnabled(enabled)
+        self.clear_meas_btn.setEnabled(enabled)
+        self.meas_type_combo.setEnabled(enabled)
+        self.meas_source_combo.setEnabled(enabled)
         self.apply_btn.setEnabled(enabled)
         self.timebase_edit.setEnabled(enabled)
         self.trigger_source_combo.setEnabled(enabled)
         self.trigger_level_edit.setEnabled(enabled)
         self.trigger_slope_combo.setEnabled(enabled)
+        self.all_ch_default_btn.setEnabled(enabled)
+        self.ripple_set_btn.setEnabled(enabled)
+        self.quick_channel_combo.setEnabled(enabled)
 
         for btn in self.channel_tab_buttons:
             btn.setEnabled(enabled)
@@ -1364,22 +1555,128 @@ class OscilloscopeBaseUI(QWidget):
         finally:
             self.connect_btn.setEnabled(True)
 
-    def _on_measure(self):
-        if not self.controller.is_connected:
+    def _on_add_measurement(self):
+        logger.debug("[MEAS] _on_add_measurement called")
+        mtype = self.meas_type_combo.currentText()
+        source_text = self.meas_source_combo.currentText()
+        logger.debug("[MEAS] selected type=%s, source=%s", mtype, source_text)
+        channel = int(source_text.replace("CH", ""))
+
+        for item in self._measurement_items:
+            if item["type"] == mtype and item["channel"] == channel:
+                self.append_log(f"[WARN] {source_text} {mtype} already added.")
+                return
+
+        item = {"type": mtype, "channel": channel}
+        self._measurement_items.append(item)
+        logger.debug("[MEAS] items count after append: %d", len(self._measurement_items))
+
+        title_text = f"CH{channel} {mtype}"
+        logger.debug("[MEAS] creating metric card: %s", title_text)
+        mc = self._create_metric_card(title_text, "– –")
+        logger.debug("[MEAS] metric card created: %s", mc)
+
+        idx = len(self._measurement_result_cards)
+        cols = 4
+        row, col = idx // cols, idx % cols
+        logger.debug("[MEAS] adding to grid at row=%d col=%d, grid.count=%d", row, col, self._results_grid.count())
+        self._results_grid.addWidget(mc, row, col)
+        logger.debug("[MEAS] grid.addWidget done, grid.count=%d", self._results_grid.count())
+
+        self._measurement_result_cards.append({
+            "type": mtype,
+            "channel": channel,
+            "card": mc,
+        })
+        logger.debug("[MEAS] result_cards count: %d", len(self._measurement_result_cards))
+
+        self.append_log(f"[MEASURE] Added: {source_text} {mtype}")
+
+        if self.is_connected:
+            self._sync_polling_items()
+
+        logger.debug("[MEAS] _on_add_measurement finished")
+
+    def _on_clear_measurements(self):
+        logger.debug("[MEAS] _on_clear_measurements called")
+        self._measurement_items.clear()
+        self._clear_result_cards()
+        if self._polling_worker is not None:
+            self._polling_worker.update_items([])
+        self.append_log("[MEASURE] All measurements cleared.")
+        logger.debug("[MEAS] _on_clear_measurements finished")
+
+    def _clear_result_cards(self):
+        logger.debug("[MEAS] _clear_result_cards called, count=%d", len(self._measurement_result_cards))
+        for i, card_info in enumerate(self._measurement_result_cards):
+            w = card_info["card"]
+            logger.debug("[MEAS] removing card %d: %s", i, w)
+            self._results_grid.removeWidget(w)
+            w.setParent(None)
+            w.deleteLater()
+        self._measurement_result_cards.clear()
+        logger.debug("[MEAS] _clear_result_cards finished")
+
+    def _start_polling(self):
+        if not self.is_connected or not self._measurement_items:
+            return
+        if self._polling_thread is not None and self._polling_thread.isRunning():
             return
 
-        try:
-            active_ch = 1
-            for i, btn in enumerate(self.channel_tab_buttons):
-                if btn.isChecked():
-                    active_ch = i + 1
-                    break
+        logger.debug("[MEAS] _start_polling: creating worker and thread")
+        self._polling_worker = MeasurementPollingWorker(
+            self.controller, self.MEASUREMENT_POLL_INTERVAL_S
+        )
+        self._polling_worker.update_items(self._measurement_items)
+        self._polling_thread = QThread()
+        self._polling_worker.moveToThread(self._polling_thread)
+        self._polling_thread.started.connect(self._polling_worker.start_polling)
+        self._polling_worker.results_ready.connect(self._on_polling_results)
+        self._polling_worker.finished.connect(self._polling_thread.quit)
+        self._polling_thread.finished.connect(self._polling_worker.deleteLater)
+        self._polling_thread.finished.connect(self._polling_thread.deleteLater)
+        self._polling_thread.finished.connect(self._on_polling_done)
+        self._polling_thread.start()
+        logger.debug("[MEAS] _start_polling: thread started")
 
-            results = self.controller.measure_channel(active_ch)
-            for mtype, value in results.items():
-                self.update_measure_result(mtype, value)
-        except Exception as e:
-            self.append_log(f"[ERROR] Measurement failed: {e}")
+    def _stop_polling(self):
+        logger.debug("[MEAS] _stop_polling called")
+        if self._polling_worker is not None:
+            self._polling_worker.stop()
+        if self._polling_thread is not None and self._polling_thread.isRunning():
+            logger.debug("[MEAS] _stop_polling: waiting for thread...")
+            self._polling_thread.quit()
+            self._polling_thread.wait()
+            logger.debug("[MEAS] _stop_polling: thread finished")
+        self._polling_worker = None
+        self._polling_thread = None
+
+    def _sync_polling_items(self):
+        logger.debug("[MEAS] _sync_polling_items: items=%d", len(self._measurement_items))
+        if self._polling_worker is not None and self._polling_thread is not None and self._polling_thread.isRunning():
+            self._polling_worker.update_items(self._measurement_items)
+            logger.debug("[MEAS] _sync_polling_items: updated existing worker")
+        elif self._measurement_items:
+            self._start_polling()
+
+    def _on_polling_done(self):
+        logger.debug("[MEAS] _on_polling_done called")
+        self._polling_worker = None
+        self._polling_thread = None
+
+    def _on_polling_results(self, results):
+        for r in results:
+            self.update_measure_result(r["type"], r["channel"], r["value"])
+
+    @staticmethod
+    def _format_measurement_value(mtype, value):
+        if mtype == "FREQUENCY":
+            if abs(value) >= 1e6:
+                return f"{value / 1e6:.4f} MHz"
+            elif abs(value) >= 1e3:
+                return f"{value / 1e3:.4f} kHz"
+            return f"{value:.2f} Hz"
+        return f"{value:.6f} V"
 
     def _on_capture(self):
         if not self.controller.is_connected:

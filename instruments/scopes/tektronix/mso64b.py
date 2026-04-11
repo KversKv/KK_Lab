@@ -170,6 +170,9 @@ class MSO64B:
         value = 'ON' if on else 'OFF'
         self.instrument.write(f'DISPlay:GLObal:CH{channel}:STATE {value}')
 
+    def set_channel_bandwidth(self, channel, bandwidth='FULl'):
+        self.instrument.write(f'CH{channel}:BANdwidth {bandwidth}')
+
     def set_channel_scale(self, channel, volts_per_div):
         self.instrument.write(f'CH{channel}:SCAle {volts_per_div}')
 
