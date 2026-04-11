@@ -658,7 +658,7 @@ class OscilloscopeBaseUI(QWidget):
         content_grid.addLayout(right_upper, 1, 1)
 
         content_grid.addWidget(self._create_log_card(), 2, 0)
-        content_grid.addWidget(self._create_quick_function_card(), 2, 1)
+        content_grid.addWidget(self._create_quick_function_card(), 2, 1, Qt.AlignTop)
 
         root_layout.addLayout(content_grid)
 
@@ -1003,15 +1003,13 @@ class OscilloscopeBaseUI(QWidget):
 
         self.quick_channel_combo = DarkComboBox(bg="#091735", border="#1A2D57")
         self.quick_channel_combo.addItems([f"CH{i+1}" for i in range(self.NUM_CHANNELS)])
-        self.quick_channel_combo.setFixedWidth(80)
-        ripple_row.addWidget(self.quick_channel_combo)
+        ripple_row.addWidget(self.quick_channel_combo, 1)
 
         self.ripple_set_btn = QPushButton("RippleSet")
         self.ripple_set_btn.setObjectName("ghostBtn")
         self.ripple_set_btn.clicked.connect(self._on_ripple_set)
-        ripple_row.addWidget(self.ripple_set_btn)
+        ripple_row.addWidget(self.ripple_set_btn, 1)
 
-        ripple_row.addStretch()
         layout.addLayout(ripple_row)
 
         return card
