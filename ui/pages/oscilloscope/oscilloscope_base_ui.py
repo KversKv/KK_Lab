@@ -17,17 +17,9 @@ from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLL_AREA_STYLE
 from instruments.scopes.base import OscilloscopeController
 from log_config import get_logger
+from debug_config import DEBUG_MOCK
 
 logger = get_logger(__name__)
-
-# DEBUG_MSO64B_FLAG = False
-# DEBUG_DSOX4034A_FLAG = True
-
-DEBUG_MSO64B_FLAG = True
-DEBUG_DSOX4034A_FLAG = True
-
-# DEBUG_MSO64B_FLAG = False
-# DEBUG_DSOX4034A_FLAG = False
 
 CHANNEL_TEXT_COLORS = {
     "#F0B400": "#1A1400",
@@ -863,9 +855,9 @@ class OscilloscopeBaseUI(QWidget):
         self.visa_resource_combo = TruncatedComboBox(bg="#091735", border="#1A2D57")
         self.visa_resource_combo.setFixedHeight(36)
         self.visa_resource_combo.setEditable(True)
-        if DEBUG_MSO64B_FLAG:
+        if DEBUG_MOCK:
             self.visa_resource_combo.addItem("192.168.3.27")
-        if DEBUG_DSOX4034A_FLAG:
+        if DEBUG_MOCK:
             self.visa_resource_combo.addItem("USB0::0x0957::0x17A4::MY61500152::INSTR")
         if self.visa_resource_combo.isEditable() and self.visa_resource_combo.lineEdit():
             self.visa_resource_combo.lineEdit().setToolTip(self.visa_resource_combo.currentText())

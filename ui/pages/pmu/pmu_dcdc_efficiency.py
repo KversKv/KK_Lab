@@ -24,8 +24,8 @@ import time
 
 from instruments.power.keysight.n6705c import N6705C
 from ui.styles import SCROLLBAR_STYLE
-
-DEBUG_FLAG = False
+from debug_config import DEBUG_MOCK
+from instruments.mock.mock_instruments import MockN6705C
 
 SMOOTH_WINDOW = 5   # 平滑窗口大小（越大越平滑，建议奇数：3/5/7/9）
 SMOOTH_POLY_ORDER = 2   # 多项式阶数（2=二次拟合，保留曲率；1=等效加权移动平均）
@@ -78,61 +78,7 @@ def _polyfit(xs, ys, order):
     return rhs
 
 
-class _MockN6705C:
-    """Mock N6705C，模拟典型 DCDC 效率曲线供 DEBUG 使用"""
 
-    def __init__(self):
-        import random
-        self._rng = random.Random(0)
-        self._vin = 3.8
-        self._vout = 1.8
-        self._iload = 0.0
-        self._vin_ch = 1
-        self._iload_ch = 3
-
-    def set_channel_range(self, channel):
-        pass
-
-    def channel_on(self, channel):
-        pass
-
-    def channel_off(self, channel):
-        pass
-
-    def set_current(self, channel, current):
-        self._iload = abs(current)
-        self._iload_ch = channel
-
-    def set_current_limit(self, channel, current_limit):
-        pass
-
-    def set_mode(self, channel, mode):
-        pass
-
-    def set_voltage(self, channel, voltage):
-        pass
-
-    def _sim_eff(self):
-        import math
-        eff = 0.75 + 0.15 * (1 - math.exp(-self._iload / 0.3)) + self._rng.gauss(0, 0.005)
-        return max(0.6, min(0.95, eff))
-
-    def measure_voltage(self, channel):
-        noise = self._rng.gauss(0, 0.002)
-        return self._vin + noise if channel == self._vin_ch else self._vout + noise
-
-    def measure_current(self, channel):
-        if channel == self._iload_ch:
-            val = -(self._iload + self._rng.gauss(0, 0.0002))
-        else:
-            if self._iload <= 0:
-                val = 0.00001
-            else:
-                val = (self._vout * self._iload) / (self._vin * self._sim_eff())
-        return f"{val:.6f}"
-
-
-# 可选图表支持
 try:
     from PySide6.QtCharts import (
         QChart, QChartView, QLineSeries, QValueAxis, QLogValueAxis
@@ -400,7 +346,7 @@ class DCDCEfficiencyTestThread(QThread):
             self.log_message.emit(f"[TEST] VIN ch={vin_ch}, VOUT ch={vout_ch}, ILOAD ch={iload_ch}")
 
             n = self._n6705c
-            if self._debug and isinstance(n, _MockN6705C):
+            if self._debug and isinstance(n, MockN6705C):
                 n._vin_ch = vin_ch
                 n._iload_ch = iload_ch
 
@@ -1413,7 +1359,7 @@ class PMUDCDCEfficiencyUI(QWidget):
         self.set_test_running(True)
         self.set_progress(0)
         cfg = self.get_test_config()
-        self.test_thread = DCDCEfficiencyTestThread(self.n6705c, cfg, DEBUG_FLAG)
+        self.test_thread = DCDCEfficiencyTestThread(self.n6705c, cfg, DEBUG_MOCK)
         self.test_thread.log_message.connect(self.append_log)
         self.test_thread.progress.connect(self.set_progress)
         self.test_thread.chart_point.connect(self._update_chart_point)
@@ -1700,7 +1646,7 @@ class PMUDCDCEfficiencyUI(QWidget):
     def _on_search(self):
         if self._n6705c_top and self._n6705c_top.is_connected_a:
             return
-        if DEBUG_FLAG:
+        if DEBUG_MOCK:
             self.visa_resource_combo.clear()
             self.visa_resource_combo.addItem("DEBUG::MOCK::N6705C")
             self.set_system_status("● Mock device ready")
@@ -1773,8 +1719,8 @@ class PMUDCDCEfficiencyUI(QWidget):
             self._on_connect()
 
     def _on_connect(self):
-        if DEBUG_FLAG:
-            self.n6705c = _MockN6705C()
+        if DEBUG_MOCK:
+            self.n6705c = MockN6705C()
             self._update_connect_button_state(True)
             self.set_system_status("● Connected (Mock)")
             self.search_btn.setEnabled(False)

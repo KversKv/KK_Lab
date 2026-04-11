@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import qInstallMessageHandler, QtMsgType
 from PySide6.QtGui import QIcon
 from log_config import setup_logging, get_logger
+from debug_config import DEBUG_MOCK
 from ui.main_window import MainWindow
 
 setup_logging(level=logging.INFO)

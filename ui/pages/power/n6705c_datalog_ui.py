@@ -42,48 +42,10 @@ from instruments.power.keysight.n6705c_datalog_process import (
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLL_AREA_STYLE
 from log_config import get_logger
+from debug_config import DEBUG_MOCK
+from instruments.mock.mock_instruments import MockN6705C
 
 logger = get_logger(__name__)
-
-DEBUG_FLAG = False
-DEBUG_N6705C_FLAG = False
-
-
-class _MockInstr:
-    def write(self, cmd):
-        pass
-
-    def query(self, cmd):
-        return ""
-
-
-class _MockN6705C:
-    def __init__(self):
-        self.instr = _MockInstr()
-
-    def disconnect(self):
-        pass
-
-    def channel_on(self, channel):
-        pass
-
-    def channel_off(self, channel):
-        pass
-
-    def set_voltage(self, channel, voltage):
-        pass
-
-    def set_current(self, channel, current):
-        pass
-
-    def set_current_limit(self, channel, current_limit):
-        pass
-
-    def measure_voltage(self, channel):
-        return 0.0
-
-    def measure_current(self, channel):
-        return 0.0
 
 
 CHANNEL_COLORS = [
@@ -422,7 +384,7 @@ class _ConnectWorker(QObject):
     def run(self):
         try:
             if self._debug:
-                n6705c = _MockN6705C()
+                n6705c = MockN6705C()
             else:
                 n6705c = N6705C(self._visa_resource)
             self.success.emit(n6705c, self._serial, self._visa_resource)
@@ -804,7 +766,7 @@ class N6705CDatalogUI(QWidget):
         self._init_ui_elements()
         self._bind_signals()
 
-        if DEBUG_N6705C_FLAG:
+        if DEBUG_MOCK:
             self._add_default_debug_device()
             self._sync_device_card_states()
 
@@ -1632,7 +1594,7 @@ class N6705CDatalogUI(QWidget):
             card.deleteLater()
         self.device_cards.clear()
 
-        if DEBUG_N6705C_FLAG:
+        if DEBUG_MOCK:
             self._add_default_debug_device()
 
         self.refresh_search_btn.setEnabled(False)
@@ -1709,7 +1671,7 @@ class N6705CDatalogUI(QWidget):
                 break
 
         self._connect_thread = QThread()
-        self._connect_worker = _ConnectWorker(visa_resource, serial, DEBUG_FLAG)
+        self._connect_worker = _ConnectWorker(visa_resource, serial, DEBUG_MOCK)
         self._connect_worker.moveToThread(self._connect_thread)
 
         self._connect_worker.success.connect(
@@ -3534,7 +3496,7 @@ class N6705CDatalogUI(QWidget):
         self._record_worker = _DatalogWorker(
             n6705c_list, channels_per_unit, unit_labels,
             record_type, sample_period, monitor_time,
-            debug=DEBUG_FLAG,
+            debug=DEBUG_MOCK,
             voltage_channels_per_unit=voltage_channels_per_unit
         )
         self._record_worker.moveToThread(self._record_thread)

@@ -28,59 +28,10 @@ from i2c_interface_x64 import I2CInterface
 from Bes_I2CIO_Interface import I2CSpeedMode, I2CWidthFlag
 
 from log_config import get_logger
+from debug_config import DEBUG_MOCK
+from instruments.mock.mock_instruments import MockI2C, MockN6705C, MockVT6002
 
 logger = get_logger(__name__)
-
-DEBUG_FLAG = False
-DEBUG_N6705C_FLAG = True
-
-
-class _MockI2C:
-    """Mock I2C 接口，模拟 ADC 读值（带噪声的线性特性）"""
-    def __init__(self):
-        self._voltage = 0.9
-        import random
-        self._rng = random.Random(42)
-
-    def set_mock_voltage(self, voltage):
-        self._voltage = voltage
-
-    def read(self, device_addr, reg_addr, iic_weight):
-        ideal = self._voltage * 3276.8
-        noise = self._rng.gauss(0, 2.0)
-        return max(0, int(ideal + noise))
-
-
-class _MockN6705C:
-    """Mock N6705C 电源，记录当前设置电压供 MockI2C 使用"""
-    def __init__(self, mock_i2c: _MockI2C):
-        self._mock_i2c = mock_i2c
-        self._voltage = 0.0
-
-    def set_voltage(self, channel, voltage):
-        self._voltage = voltage
-        self._mock_i2c.set_mock_voltage(voltage)
-
-    def channel_on(self, channel):
-        pass
-
-    def channel_off(self, channel):
-        pass
-
-
-class _MockVT6002:
-    """Mock VT6002 温箱，温度立即到达目标值"""
-    def __init__(self):
-        self._target_temp = 25.0
-
-    def set_temperature(self, temp):
-        self._target_temp = temp
-
-    def get_current_temp(self):
-        return self._target_temp
-
-    def close(self):
-        pass
 
 
 class _SearchN6705CWorker(QObject):
@@ -1166,17 +1117,17 @@ class GPADCTestUI(QWidget):
         if n6705c_devices:
             for dev in n6705c_devices:
                 self.n6705c_combo.addItem(dev)
-            if DEBUG_N6705C_FLAG and default_device not in n6705c_devices:
+            if DEBUG_MOCK and default_device not in n6705c_devices:
                 self.n6705c_combo.addItem(default_device)
             self._set_status_label(self.n6705c_status, "Available", "ok")
         else:
-            if DEBUG_N6705C_FLAG:
+            if DEBUG_MOCK:
                 self.n6705c_combo.addItem(default_device)
                 self._set_status_label(self.n6705c_status, "Default Device Available", "ok")
             else:
                 self._set_status_label(self.n6705c_status, "No Device Found", "err")
         self.n6705c_search_btn.setEnabled(True)
-        self.n6705c_connect_btn.setEnabled(DEBUG_N6705C_FLAG or self.n6705c_combo.count() > 0)
+        self.n6705c_connect_btn.setEnabled(DEBUG_MOCK or self.n6705c_combo.count() > 0)
 
     def _on_n6705c_search_error(self, err):
         self._append_log(f"[WARN] Search N6705C error: {err}")
@@ -1908,9 +1859,9 @@ class GPADCTestUI(QWidget):
         return_raw=False,
         stop_check=None,
     ):
-        if DEBUG_FLAG:
+        if DEBUG_MOCK:
             if not hasattr(self, "_mock_i2c"):
-                self._mock_i2c = _MockI2C()
+                self._mock_i2c = MockI2C()
             deviceI2C = self._mock_i2c
         else:
             if not hasattr(self, "deviceI2C"):
@@ -1959,10 +1910,11 @@ class GPADCTestUI(QWidget):
     ):
         self._test_worker.log.emit(f"[INFO] Running FORCE VOLTAGE TEST with I2C address: 0x{device_addr:x}, Register: 0x{reg_addr:x}")
 
-        if DEBUG_FLAG:
+        if DEBUG_MOCK:
             if not hasattr(self, "_mock_i2c"):
-                self._mock_i2c = _MockI2C()
-            vol_source = _MockN6705C(self._mock_i2c)
+                self._mock_i2c = MockI2C()
+            vol_source = MockN6705C()
+            vol_source._mock_i2c = self._mock_i2c
         else:
             vol_source = n6705c if n6705c is not None else self.n6705c
             if vol_source is None or not self.is_n6705c_connected:
@@ -1970,8 +1922,8 @@ class GPADCTestUI(QWidget):
                 self.set_system_status("错误: N6705C未连接", is_error=True)
                 return None
 
-        settle_time = 0.0 if DEBUG_FLAG else 0.5
-        step_time   = 0.0 if DEBUG_FLAG else 0.2
+        settle_time = 0.0 if DEBUG_MOCK else 0.5
+        step_time   = 0.0 if DEBUG_MOCK else 0.2
 
         voltage_data = []
         adc_mean = []
@@ -2069,10 +2021,10 @@ class GPADCTestUI(QWidget):
         stop_check=None,
     ):
         try:
-            if DEBUG_FLAG:
+            if DEBUG_MOCK:
                 if not hasattr(self, "_mock_i2c"):
-                    self._mock_i2c = _MockI2C()
-                chamber = _MockVT6002()
+                    self._mock_i2c = MockI2C()
+                chamber = MockVT6002()
                 deviceI2C = self._mock_i2c
             else:
                 if not hasattr(self, 'vt6002') or not self.is_vt6002_connected:
@@ -2104,7 +2056,7 @@ class GPADCTestUI(QWidget):
                 chamber.set_temperature(current_temp)
                 self.set_system_status(f"设置温箱温度到 {current_temp:.1f}°C")
 
-                if DEBUG_FLAG:
+                if DEBUG_MOCK:
                     self._test_worker.log.emit(f"[DEBUG] Temp set to {current_temp:.1f}°C (instant)")
                 else:
                     history = []
@@ -2145,7 +2097,7 @@ class GPADCTestUI(QWidget):
                         self._test_worker.log.emit("[INFO] High/Low temp test stopped by user.")
                         break
 
-                if DEBUG_FLAG:
+                if DEBUG_MOCK:
                     self._mock_i2c.set_mock_voltage(current_temp / 100.0)
 
                 avg, max_val, min_val, raw_data = self.gpadc_reg_read_by_cnts(
@@ -2202,11 +2154,12 @@ class GPADCTestUI(QWidget):
     ):
         self._test_worker.log.emit(f"[INFO] Running TEMP CONSISTENCY TEST with I2C address: 0x{device_addr:x}, Register: 0x{reg_addr:x}")
 
-        if DEBUG_FLAG:
+        if DEBUG_MOCK:
             if not hasattr(self, "_mock_i2c"):
-                self._mock_i2c = _MockI2C()
-            chamber = _MockVT6002()
-            vol_source = _MockN6705C(self._mock_i2c)
+                self._mock_i2c = MockI2C()
+            chamber = MockVT6002()
+            vol_source = MockN6705C()
+            vol_source._mock_i2c = self._mock_i2c
         else:
             if not hasattr(self, 'vt6002') or not self.is_vt6002_connected:
                 self._test_worker.log.emit("[ERROR] VT6002 chamber not connected")
@@ -2222,8 +2175,8 @@ class GPADCTestUI(QWidget):
             chamber = self.vt6002
             vol_source = self.n6705c
 
-        settle_time = 0.0 if DEBUG_FLAG else 0.5
-        step_time   = 0.0 if DEBUG_FLAG else 0.2
+        settle_time = 0.0 if DEBUG_MOCK else 0.5
+        step_time   = 0.0 if DEBUG_MOCK else 0.2
 
         voltage_points = []
         v = voltage_min
@@ -2245,7 +2198,7 @@ class GPADCTestUI(QWidget):
             chamber.set_temperature(current_temp)
             self.set_system_status(f"设置温箱温度到 {current_temp:.1f}°C")
 
-            if DEBUG_FLAG:
+            if DEBUG_MOCK:
                 self._test_worker.log.emit(f"[DEBUG] Temp set to {current_temp:.1f}°C (instant)")
             else:
                 history = []

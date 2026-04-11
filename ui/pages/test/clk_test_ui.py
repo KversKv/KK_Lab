@@ -20,12 +20,7 @@ from PySide6.QtCore import Qt, Signal, QThread, QObject
 from PySide6.QtGui import QFont
 import pyqtgraph as pg
 from ui.styles import SCROLL_AREA_STYLE
-
-# ---- 调试开关 ----
-# MOCK模式：跳过真实仪器连接，使用模拟数据快速调试UI和流程
-MOCK_DEBUG_MODE = False
-DEBUG_MSO64B_FLAG = False
-
+from debug_config import DEBUG_MOCK
 
 
 class DarkComboBox(QComboBox):
@@ -1280,7 +1275,7 @@ class CLKTestUI(QWidget):
         header_layout.setSpacing(2)
 
         title_text = "⏱ CLK Test"
-        if MOCK_DEBUG_MODE:
+        if DEBUG_MOCK:
             title_text += "  🟡 MOCK MODE"
         title_label = QLabel(title_text)
         title_label.setObjectName("title_label")
@@ -1883,7 +1878,7 @@ class CLKTestUI(QWidget):
         self._search_dmm()
         self._search_vt6002()
 
-        if MOCK_DEBUG_MODE:
+        if DEBUG_MOCK:
             self._append_log("[MOCK] ========== MOCK DEBUG MODE ACTIVE ==========")
             self._append_log("[MOCK] All instruments use simulated data, no real hardware required.")
 
@@ -1997,7 +1992,7 @@ class CLKTestUI(QWidget):
     def _search_mso64b(self):
         if self._mso64b_top and self._mso64b_top.is_connected:
             return
-        if MOCK_DEBUG_MODE:
+        if DEBUG_MOCK:
             self.mso64b_combo.clear()
             self.mso64b_combo.addItem("[MOCK] TCPIP0::192.168.3.27::inst0::INSTR")
             self._set_status_label(self.mso64b_status, "Available (Mock)", "ok")
@@ -2036,11 +2031,11 @@ class CLKTestUI(QWidget):
         if devices:
             for d in devices:
                 self.mso64b_combo.addItem(d)
-            if DEBUG_MSO64B_FLAG and default_addr not in devices:
+            if DEBUG_MOCK and default_addr not in devices:
                 self.mso64b_combo.addItem(default_addr)
             self._set_status_label(self.mso64b_status, "Available", "ok")
         else:
-            if DEBUG_MSO64B_FLAG:
+            if DEBUG_MOCK:
                 self.mso64b_combo.addItem(default_addr)
                 self._set_status_label(self.mso64b_status, "Default Device Available (Debug)", "ok")
             else:
@@ -2048,7 +2043,7 @@ class CLKTestUI(QWidget):
         self.mso64b_search_btn.setEnabled(True)
 
     def _search_counter(self):
-        if MOCK_DEBUG_MODE:
+        if DEBUG_MOCK:
             self.counter_combo.clear()
             self.counter_combo.addItem("[MOCK] TCPIP0::53230A::inst0::INSTR")
             self._set_status_label(self.counter_status, "Available (Mock)", "ok")
@@ -2058,7 +2053,7 @@ class CLKTestUI(QWidget):
         self._set_status_label(self.counter_status, "Available", "ok")
 
     def _search_dmm(self):
-        if MOCK_DEBUG_MODE:
+        if DEBUG_MOCK:
             self.dmm_combo.clear()
             self.dmm_combo.addItem("[MOCK] USB0::DMM::INSTR")
             self._set_status_label(self.dmm_status, "Available (Mock)", "ok")
@@ -2068,7 +2063,7 @@ class CLKTestUI(QWidget):
         self._set_status_label(self.dmm_status, "Available", "ok")
 
     def _search_vt6002(self):
-        if MOCK_DEBUG_MODE:
+        if DEBUG_MOCK:
             self.vt6002_combo.clear()
             self.vt6002_combo.addItem("[MOCK] COM3 - VT6002 Chamber")
             self._set_status_label(self.vt6002_status, "Available (Mock)", "ok")
@@ -2133,7 +2128,7 @@ class CLKTestUI(QWidget):
     def _connect_mso64b(self):
         self._set_status_label(self.mso64b_status, "Connecting...", "warn")
         self.mso64b_connect_btn.setEnabled(False)
-        if MOCK_DEBUG_MODE:
+        if DEBUG_MOCK:
             self.mso64b = None
             self.is_mso64b_connected = True
             self._set_status_label(self.mso64b_status, "Connected: [MOCK] MSO64B", "ok")
@@ -2215,7 +2210,7 @@ class CLKTestUI(QWidget):
     def _connect_vt6002(self):
         self._set_status_label(self.vt6002_status, "Connecting...", "warn")
         self.vt6002_connect_btn.setEnabled(False)
-        if MOCK_DEBUG_MODE:
+        if DEBUG_MOCK:
             self.vt6002 = None
             self.is_vt6002_connected = True
             self._set_status_label(self.vt6002_status, "Connected: [MOCK] VT6002", "ok")
@@ -2330,7 +2325,7 @@ class CLKTestUI(QWidget):
             self.reg_max.setValue(max_code)
 
     def _validate_before_test(self):
-        if MOCK_DEBUG_MODE:
+        if DEBUG_MOCK:
             self._append_log("[MOCK] Skipping instrument validation (mock mode)")
             return
 
@@ -2462,7 +2457,7 @@ class CLKTestUI(QWidget):
             self.current_test_item, config,
             mso64b=self.mso64b,
             vt6002=self.vt6002,
-            mock_mode=MOCK_DEBUG_MODE,
+            mock_mode=DEBUG_MOCK,
         )
         self._test_worker.moveToThread(self._test_thread)
 

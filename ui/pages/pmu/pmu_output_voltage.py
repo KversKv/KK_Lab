@@ -25,37 +25,9 @@ import pyvisa
 from instruments.power.keysight.n6705c import N6705C
 from i2c_interface_x64 import I2CInterface
 from ui.styles import SCROLLBAR_STYLE
+from debug_config import DEBUG_MOCK
+from instruments.mock.mock_instruments import MockN6705C, MockI2C
 
-DEBUG_FLAG = False
-
-
-class _MockN6705C:
-
-    def __init__(self):
-        import random
-        self._rng = random.Random(42)
-
-    def set_mode(self, channel, mode):
-        pass
-
-    def measure_voltage(self, channel):
-        noise = self._rng.gauss(0, 0.003)
-        base = getattr(self, '_last_expected_v', 1.0)
-        return base + noise
-
-
-class _MockI2C:
-
-    def __init__(self):
-        self._regs = {}
-
-    def read(self, device_addr, reg_addr, width_flag):
-        return self._regs.get((device_addr, reg_addr), 0x0000)
-
-    def write(self, device_addr, reg_addr, write_data, width_flag):
-        self._regs[(device_addr, reg_addr)] = write_data
-
-# 可选图表支持
 try:
     from PySide6.QtCharts import (
         QChart, QChartView, QLineSeries, QValueAxis
@@ -95,7 +67,7 @@ class OutputVoltageTestThread(QThread):
             vmeter_ch = int(self._cfg["vmeter_channel"].replace("CH ", ""))
 
             if self._debug:
-                i2c = _MockI2C()
+                i2c = MockI2C()
                 self.log_message.emit("[DEBUG] Using Mock I2C interface.")
             else:
                 i2c = I2CInterface()
@@ -166,7 +138,7 @@ class OutputVoltageTestThread(QThread):
                 i2c.write(device_addr, reg_addr, write_reg, width_flag)
                 time.sleep(sleep_time)
 
-                if self._debug and isinstance(self._n6705c, _MockN6705C):
+                if self._debug and isinstance(self._n6705c, MockN6705C):
                     self._n6705c._last_expected_v = 1.0
 
                 measured_v = self._n6705c.measure_voltage(vmeter_ch)
@@ -1182,7 +1154,7 @@ class PMUOutputVoltageUI(QWidget):
     def _on_search(self):
         if self._n6705c_top and self._n6705c_top.is_connected_a:
             return
-        if DEBUG_FLAG:
+        if DEBUG_MOCK:
             self.visa_resource_combo.clear()
             self.visa_resource_combo.addItem("DEBUG::MOCK::N6705C")
             self.set_system_status("● Mock device ready")
@@ -1257,8 +1229,8 @@ class PMUOutputVoltageUI(QWidget):
 
     def _on_connect(self):
         """连接N6705C设备"""
-        if DEBUG_FLAG:
-            self.n6705c = _MockN6705C()
+        if DEBUG_MOCK:
+            self.n6705c = MockN6705C()
             self._update_connect_button_state(True)
             self.set_system_status("● Connected (Mock)")
             self.search_btn.setEnabled(False)
@@ -1364,7 +1336,7 @@ class PMUOutputVoltageUI(QWidget):
             "max_code": self.max_code_edit.text().strip(),
         }
 
-        self.test_thread = OutputVoltageTestThread(self.n6705c, config, DEBUG_FLAG)
+        self.test_thread = OutputVoltageTestThread(self.n6705c, config, DEBUG_MOCK)
         self.test_thread.log_message.connect(self.append_log)
         self.test_thread.chart_point.connect(self._update_chart_point)
         self.test_thread.chart_clear.connect(self._on_chart_clear)
