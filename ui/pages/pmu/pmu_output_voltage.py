@@ -24,6 +24,7 @@ import pyvisa
 
 from instruments.power.keysight.n6705c import N6705C
 from i2c_interface_x64 import I2CInterface
+from ui.styles import SCROLLBAR_STYLE
 
 DEBUG_FLAG = False
 
@@ -598,7 +599,7 @@ class PMUOutputVoltageUI(QWidget):
                 background-color: #5b5cf6;
                 border-radius: 4px;
             }
-        """)
+        """ + SCROLLBAR_STYLE)
 
     def _create_layout(self):
         root_layout = QVBoxLayout(self)

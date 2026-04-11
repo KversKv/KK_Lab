@@ -28,6 +28,7 @@ from ui.pages.charger.charger_test_ui import ChargerTestUI
 from core.test_manager import TestManager
 from instruments.base.visa_instrument import VisaInstrument
 from instruments.chambers.vt6002_chamber import VT6002
+from ui.styles import SCROLLBAR_STYLE
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -536,7 +537,7 @@ class MainWindow(QMainWindow):
                 border-radius: 4px;
                 background-color: #020618;
             }
-        """)
+        """ + SCROLLBAR_STYLE)
 
     def _create_main_content(self):
         """创建主内容区域"""

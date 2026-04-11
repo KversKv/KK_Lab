@@ -23,6 +23,7 @@ import math
 import time
 
 from instruments.power.keysight.n6705c import N6705C
+from ui.styles import SCROLLBAR_STYLE
 
 DEBUG_FLAG = False
 
@@ -894,7 +895,7 @@ class PMUDCDCEfficiencyUI(QWidget):
                 border: 1px solid #1b315f;
                 border-radius: 10px;
             }
-        """)
+        """ + SCROLLBAR_STYLE)
 
     def _create_layout(self):
         root_layout = QVBoxLayout(self)

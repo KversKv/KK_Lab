@@ -40,6 +40,7 @@ from instruments.power.keysight.n6705c_datalog_process import (
     calc_power_for_ch, import_csv_file, import_edlg_file, import_dlog_file,
 )
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.styles import SCROLL_AREA_STYLE
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -863,7 +864,7 @@ class N6705CDatalogUI(QWidget):
         self.setFont(font)
 
         _cb_icons = self._get_checkmark_path("4f46e5")
-        self.setStyleSheet("""
+        full_style = ("""
             QWidget {
                 background-color: #020817;
                 color: #dbe7ff;
@@ -1190,29 +1191,8 @@ class N6705CDatalogUI(QWidget):
             QCheckBox::indicator:checked {
                 image: url("__CHECKED__");
             }
-
-            QScrollArea {
-                background: transparent;
-                border: none;
-            }
-
-            QScrollBar:vertical {
-                background: #0a1733;
-                width: 6px;
-                border-radius: 3px;
-            }
-
-            QScrollBar::handle:vertical {
-                background: #27406f;
-                border-radius: 3px;
-                min-height: 20px;
-            }
-
-            QScrollBar::add-line:vertical,
-            QScrollBar::sub-line:vertical {
-                height: 0px;
-            }
-        """.replace("__UNCHECKED__", _cb_icons['unchecked']).replace("__CHECKED__", _cb_icons['checked']))
+        """ + SCROLL_AREA_STYLE).replace("__UNCHECKED__", _cb_icons['unchecked']).replace("__CHECKED__", _cb_icons['checked'])
+        self.setStyleSheet(full_style)
 
     def _create_layout(self):
         root_layout = QVBoxLayout(self)
@@ -1318,7 +1298,7 @@ class N6705CDatalogUI(QWidget):
         self.device_list_scroll.setWidgetResizable(True)
         self.device_list_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.device_list_scroll.setStyleSheet(
-            "QScrollArea { background: transparent; border: none; }"
+            "QScrollArea { background: transparent; border: none; }" + SCROLL_AREA_STYLE
         )
         self.device_list_container = QWidget()
         self.device_list_container.setStyleSheet("background: transparent;")
@@ -1991,7 +1971,7 @@ class N6705CDatalogUI(QWidget):
         self.labels_list_scroll.setWidgetResizable(True)
         self.labels_list_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.labels_list_scroll.setStyleSheet(
-            "QScrollArea { background: transparent; border: none; }"
+            "QScrollArea { background: transparent; border: none; }" + SCROLL_AREA_STYLE
         )
         self.labels_list_container = QWidget()
         self.labels_list_container.setStyleSheet("background: transparent;")

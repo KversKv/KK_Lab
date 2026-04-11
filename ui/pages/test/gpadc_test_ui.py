@@ -7,6 +7,7 @@ GPADC测试UI组件
 
 
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.styles import SCROLL_AREA_STYLE
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QLineEdit, QGridLayout, QSpinBox, QDoubleSpinBox, QFrame, QRadioButton,
@@ -235,40 +236,6 @@ class GPADCTestUI(QWidget):
                 border: none;
             }
 
-            QScrollArea {
-                background: transparent;
-                border: none;
-            }
-
-            QScrollBar:vertical {
-                background: #081022;
-                width: 10px;
-                margin: 0px;
-                border-radius: 5px;
-            }
-
-            QScrollBar::handle:vertical {
-                background: #22345f;
-                min-height: 30px;
-                border-radius: 5px;
-            }
-
-            QScrollBar::handle:vertical:hover {
-                background: #30497f;
-            }
-
-            QScrollBar::add-line:vertical,
-            QScrollBar::sub-line:vertical {
-                height: 0px;
-                background: none;
-                border: none;
-            }
-
-            QScrollBar::add-page:vertical,
-            QScrollBar::sub-page:vertical {
-                background: transparent;
-            }
-
             QPushButton#test_item_btn {
                 text-align: left;
                 min-height: 52px;
@@ -479,7 +446,7 @@ class GPADCTestUI(QWidget):
                 font-family: 'Consolas', monospace;
                 padding: 6px;
             }
-        """)
+        """ + SCROLL_AREA_STYLE)
 
     def _create_metric_card(self, title, value="---", value_object_name="metric_value_green"):
         card = QFrame()
@@ -2815,7 +2782,7 @@ Temperature (°C) | ADC Value
             scroll_area = QScrollArea()
             scroll_area.setWidget(data_label)
             scroll_area.setWidgetResizable(True)
-            scroll_area.setStyleSheet("background: transparent; border: none;")
+            scroll_area.setStyleSheet("background: transparent; border: none;" + SCROLL_AREA_STYLE)
             
             # 添加到布局
             chart_placeholder_layout.addWidget(scroll_area, 1)

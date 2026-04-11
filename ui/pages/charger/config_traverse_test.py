@@ -8,6 +8,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "lib", "i2c"))
 
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.styles import SCROLLBAR_STYLE
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QLineEdit, QGridLayout, QSpinBox, QDoubleSpinBox, QFrame,
@@ -529,7 +530,7 @@ class ConfigTraverseTestUI(QWidget):
                 border: 1px solid #1b315f;
                 border-radius: 10px;
             }
-        """)
+        """ + SCROLLBAR_STYLE)
 
     def _create_layout(self):
         root_layout = QVBoxLayout(self)

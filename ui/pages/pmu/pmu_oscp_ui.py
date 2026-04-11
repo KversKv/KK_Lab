@@ -6,6 +6,7 @@ PMU OSCP测试UI组件
 """
 
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.styles import SCROLLBAR_STYLE
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
     QPushButton, QLabel, QGridLayout,
@@ -388,7 +389,7 @@ class PMUOSCPUI(QWidget):
             border: 1px solid #1a2d57;
             border-radius: 10px;
         }
-        """)
+        """ + SCROLLBAR_STYLE)
 
     def _create_layout(self):
         main_layout = QVBoxLayout(self)

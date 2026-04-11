@@ -17,6 +17,7 @@ import pyvisa
 
 from instruments.power.keysight.n6705c import N6705C
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.styles import SCROLLBAR_STYLE
 
 
 class CardFrame(QFrame):
@@ -96,7 +97,7 @@ class PMUThresholdUI(QWidget):
         self.setFont(font)
 
         _cb_icons = self._get_checkmark_path("4f46e5")
-        self.setStyleSheet("""
+        full_style = ("""
             QWidget {
                 background-color: #020817;
                 color: #dbe7ff;
@@ -393,7 +394,8 @@ class PMUThresholdUI(QWidget):
             QCheckBox::indicator:checked {
                 image: url("__CHECKED__");
             }
-        """.replace("__UNCHECKED__", _cb_icons['unchecked']).replace("__CHECKED__", _cb_icons['checked']))
+        """ + SCROLLBAR_STYLE).replace("__UNCHECKED__", _cb_icons['unchecked']).replace("__CHECKED__", _cb_icons['checked'])
+        self.setStyleSheet(full_style)
 
     def _create_layout(self):
         root_layout = QVBoxLayout(self)

@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QThread, QObject
 from PySide6.QtGui import QFont
 import pyqtgraph as pg
+from ui.styles import SCROLL_AREA_STYLE
 
 # ---- 调试开关 ----
 # MOCK模式：跳过真实仪器连接，使用模拟数据快速调试UI和流程
@@ -1133,21 +1134,6 @@ class CLKTestUI(QWidget):
                 color: #8abaff;
             }
 
-            QScrollArea {
-                background-color: transparent;
-                border: none;
-            }
-            QScrollBar:vertical {
-                background: #0a1020;
-                width: 5px;
-                border-radius: 3px;
-            }
-            QScrollBar::handle:vertical {
-                background: #1e3060;
-                border-radius: 3px;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
-
             QDoubleSpinBox, QSpinBox {
                 background-color: #0b1630;
                 border: 1.5px solid #1e3060;
@@ -1186,7 +1172,7 @@ class CLKTestUI(QWidget):
                 background-color: transparent;
                 border: none;
             }
-        """)
+        """ + SCROLL_AREA_STYLE)
 
     # -------------------------------------------------------
     # 辅助组件

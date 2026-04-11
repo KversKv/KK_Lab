@@ -14,6 +14,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QFont, QPixmap, QImage, QPainter, QColor, QPen
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.styles import SCROLL_AREA_STYLE
 from instruments.scopes.base import OscilloscopeController
 from log_config import get_logger
 
@@ -786,7 +787,7 @@ class OscilloscopeBaseUI(QWidget):
             QSplitter::handle:hover {
                 background-color: #4C6FFF;
             }
-        """)
+        """ + SCROLL_AREA_STYLE)
 
     def _init_layout(self):
         root_layout = QVBoxLayout(self)
@@ -1062,7 +1063,7 @@ class OscilloscopeBaseUI(QWidget):
         self._results_scroll = QScrollArea()
         self._results_scroll.setWidgetResizable(True)
         self._results_scroll.setFrameShape(QFrame.NoFrame)
-        self._results_scroll.setStyleSheet("background: transparent; border: none;")
+        self._results_scroll.setStyleSheet("background: transparent; border: none;" + SCROLL_AREA_STYLE)
 
         self._results_container = QWidget()
         self._results_container.setStyleSheet("background: transparent;")
