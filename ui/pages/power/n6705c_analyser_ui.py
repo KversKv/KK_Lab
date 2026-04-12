@@ -490,15 +490,31 @@ class N6705CAnalyserUI(QWidget):
         main_layout.addWidget(self.top_bar)
         main_layout.addSpacing(8)
 
+        self.channel_interaction_frame = QFrame()
+        self.channel_interaction_frame.setStyleSheet("""
+            QFrame#ChannelInteractionFrame {
+                background-color: #0a1930;
+                border: 1px solid #14305e;
+                border-radius: 14px;
+            }
+        """)
+        self.channel_interaction_frame.setObjectName("ChannelInteractionFrame")
+        ci_layout = QVBoxLayout(self.channel_interaction_frame)
+        ci_layout.setContentsMargins(0, 0, 0, 0)
+        ci_layout.setSpacing(0)
+
+        self.channel_tabs = self._create_channel_tabs()
+        ci_layout.addWidget(self.channel_tabs)
+
+        self.setting_widget = self._create_setting_widget()
+        ci_layout.addWidget(self.setting_widget, 1)
+
+        main_layout.addWidget(self.channel_interaction_frame, 1)
+        main_layout.addSpacing(8)
+
         self.batch_tools_panel = self._create_batch_tools_panel()
         main_layout.addWidget(self.batch_tools_panel)
         main_layout.addSpacing(8)
-
-        self.channel_tabs = self._create_channel_tabs()
-        main_layout.addWidget(self.channel_tabs)
-
-        self.setting_widget = self._create_setting_widget()
-        main_layout.addWidget(self.setting_widget, 1)
 
         self.consumption_test_panel = self._create_consumption_test_panel()
         main_layout.addWidget(self.consumption_test_panel)
@@ -610,10 +626,19 @@ class N6705CAnalyserUI(QWidget):
     def _create_channel_tabs(self):
         tab_wrap = QWidget()
         tab_wrap.setAttribute(Qt.WA_StyledBackground, True)
-        tab_wrap.setStyleSheet("QWidget { background-color: #07111f; border: none; }")
+        tab_wrap.setStyleSheet("""
+            QWidget {
+                background-color: #0c1628;
+                border: none;
+                border-top-left-radius: 14px;
+                border-top-right-radius: 14px;
+                border-bottom-left-radius: 0px;
+                border-bottom-right-radius: 0px;
+            }
+        """)
 
         self._channel_tabs_layout = QHBoxLayout(tab_wrap)
-        self._channel_tabs_layout.setContentsMargins(4, 4, 4, 4)
+        self._channel_tabs_layout.setContentsMargins(8, 6, 8, 6)
         self._channel_tabs_layout.setSpacing(6)
 
         self.channel_tab_buttons = []
@@ -737,7 +762,14 @@ class N6705CAnalyserUI(QWidget):
 
         self.setting_frame = QFrame()
         self.setting_frame.setStyleSheet("""
-            QFrame { background-color: #0a1930; border: 1px solid #14305e; border-radius: 14px; }
+            QFrame {
+                background-color: #0a1930;
+                border: none;
+                border-bottom-left-radius: 14px;
+                border-bottom-right-radius: 14px;
+                border-top-left-radius: 0px;
+                border-top-right-radius: 0px;
+            }
         """)
 
         setting_layout = QVBoxLayout(self.setting_frame)
@@ -1064,22 +1096,45 @@ class N6705CAnalyserUI(QWidget):
             """)
 
     def _create_consumption_test_panel(self):
-        panel = QFrame()
-        panel.setStyleSheet("""
-            QFrame { background-color: #0a1930; border: 1px solid #132849; border-radius: 12px; }
+        self.ct_collapsed = True
+
+        outer = QWidget()
+        outer.setStyleSheet("QWidget { background: transparent; border: none; }")
+        outer_layout = QVBoxLayout(outer)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+
+        self.ct_toggle_btn = QPushButton("\u25b6  Current Consumption Test")
+        self.ct_toggle_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #0a1930; color: #8ea6cf;
+                border: 1px solid #132849; border-radius: 8px;
+                padding: 8px 16px; font-size: 12px; font-weight: 700;
+                text-align: left;
+            }
+            QPushButton:hover { background-color: #0e1f3d; color: #b8d0f0; }
         """)
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(16, 14, 16, 14)
+        self.ct_toggle_btn.clicked.connect(self._toggle_ct_panel)
+        outer_layout.addWidget(self.ct_toggle_btn)
+
+        self.ct_content = QFrame()
+        self.ct_content.setStyleSheet("""
+            QFrame {
+                background-color: #0a1930;
+                border: 1px solid #132849;
+                border-top: none;
+                border-bottom-left-radius: 12px;
+                border-bottom-right-radius: 12px;
+            }
+        """)
+        self.ct_content.setVisible(False)
+
+        layout = QVBoxLayout(self.ct_content)
+        layout.setContentsMargins(16, 10, 16, 14)
         layout.setSpacing(10)
 
         header_row = QHBoxLayout()
         header_row.setSpacing(8)
-        icon = QLabel("\u26a1")
-        icon.setStyleSheet("font-size: 16px; color: #f2c94c; border: none;")
-        title = QLabel("Current Consumption Test")
-        title.setStyleSheet("font-size: 14px; font-weight: 700; color: #ffffff; border: none;")
-        header_row.addWidget(icon)
-        header_row.addWidget(title)
         header_row.addStretch()
 
         self.ct_save_btn = QPushButton("\U0001f4be Save DataLog")
@@ -1162,7 +1217,34 @@ class N6705CAnalyserUI(QWidget):
         self.ct_stop_btn.clicked.connect(self._ct_stop_test)
         self.ct_save_btn.clicked.connect(self._ct_save_datalog)
 
-        return panel
+        outer_layout.addWidget(self.ct_content)
+        return outer
+
+    def _toggle_ct_panel(self):
+        self.ct_collapsed = not self.ct_collapsed
+        self.ct_content.setVisible(not self.ct_collapsed)
+        if self.ct_collapsed:
+            self.ct_toggle_btn.setText("\u25b6  Current Consumption Test")
+            self.ct_toggle_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #0a1930; color: #8ea6cf;
+                    border: 1px solid #132849; border-radius: 8px;
+                    padding: 8px 16px; font-size: 12px; font-weight: 700; text-align: left;
+                }
+                QPushButton:hover { background-color: #0e1f3d; color: #b8d0f0; }
+            """)
+        else:
+            self.ct_toggle_btn.setText("\u25bc  Current Consumption Test")
+            self.ct_toggle_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #0a1930; color: #b8d0f0;
+                    border: 1px solid #132849; border-bottom: none;
+                    border-top-left-radius: 8px; border-top-right-radius: 8px;
+                    border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;
+                    padding: 8px 16px; font-size: 12px; font-weight: 700; text-align: left;
+                }
+                QPushButton:hover { background-color: #0e1f3d; color: #d0e4ff; }
+            """)
 
     def _build_ct_cards(self):
         for i in reversed(range(self._ct_cards_layout.count())):
@@ -1383,7 +1465,22 @@ class N6705CAnalyserUI(QWidget):
             self.channel_title_label.setText(f"Channel {channel_num}")
 
         self.setting_frame.setStyleSheet(f"""
-            QFrame {{ background-color: #0a1930; border: 1px solid {theme['accent_border']}; border-radius: 14px; }}
+            QFrame {{
+                background-color: #0a1930;
+                border: none;
+                border-bottom-left-radius: 14px;
+                border-bottom-right-radius: 14px;
+                border-top-left-radius: 0px;
+                border-top-right-radius: 0px;
+            }}
+        """)
+
+        self.channel_interaction_frame.setStyleSheet(f"""
+            QFrame#ChannelInteractionFrame {{
+                background-color: #0a1930;
+                border: 1px solid {theme['accent_border']};
+                border-radius: 14px;
+            }}
         """)
 
         self.output_toggle.setAccentColor(theme['accent'])
@@ -1795,12 +1892,40 @@ class N6705CAnalyserUI(QWidget):
         self.setting_frame.setEnabled(active_dev_connected)
         if not active_dev_connected:
             self.setting_frame.setStyleSheet("""
-                QFrame { background-color: #070f1e; border: 1px solid #0d1a30; border-radius: 14px; }
+                QFrame {
+                    background-color: #070f1e;
+                    border: none;
+                    border-bottom-left-radius: 14px;
+                    border-bottom-right-radius: 14px;
+                    border-top-left-radius: 0px;
+                    border-top-right-radius: 0px;
+                }
+            """)
+            self.channel_interaction_frame.setStyleSheet("""
+                QFrame#ChannelInteractionFrame {
+                    background-color: #070f1e;
+                    border: 1px solid #0d1a30;
+                    border-radius: 14px;
+                }
             """)
         else:
             theme = CHANNEL_THEMES[self.current_channel]
             self.setting_frame.setStyleSheet(f"""
-                QFrame {{ background-color: #0a1930; border: 1px solid {theme['accent_border']}; border-radius: 14px; }}
+                QFrame {{
+                    background-color: #0a1930;
+                    border: none;
+                    border-bottom-left-radius: 14px;
+                    border-bottom-right-radius: 14px;
+                    border-top-left-radius: 0px;
+                    border-top-right-radius: 0px;
+                }}
+            """)
+            self.channel_interaction_frame.setStyleSheet(f"""
+                QFrame#ChannelInteractionFrame {{
+                    background-color: #0a1930;
+                    border: 1px solid {theme['accent_border']};
+                    border-radius: 14px;
+                }}
             """)
 
         for btn in self.mode_buttons:
@@ -1817,14 +1942,27 @@ class N6705CAnalyserUI(QWidget):
             self.batch_content.setEnabled(any_connected)
 
         if hasattr(self, 'consumption_test_panel'):
-            self.consumption_test_panel.setEnabled(any_connected)
+            self.ct_content.setEnabled(any_connected)
+            self.ct_toggle_btn.setEnabled(any_connected)
             if any_connected:
-                self.consumption_test_panel.setStyleSheet("""
-                    QFrame { background-color: #0a1930; border: 1px solid #132849; border-radius: 12px; }
+                self.ct_content.setStyleSheet("""
+                    QFrame {
+                        background-color: #0a1930;
+                        border: 1px solid #132849;
+                        border-top: none;
+                        border-bottom-left-radius: 12px;
+                        border-bottom-right-radius: 12px;
+                    }
                 """)
             else:
-                self.consumption_test_panel.setStyleSheet("""
-                    QFrame { background-color: #070f1e; border: 1px solid #0d1a30; border-radius: 12px; }
+                self.ct_content.setStyleSheet("""
+                    QFrame {
+                        background-color: #070f1e;
+                        border: 1px solid #0d1a30;
+                        border-top: none;
+                        border-bottom-left-radius: 12px;
+                        border-bottom-right-radius: 12px;
+                    }
                 """)
 
     def _get_selected_batch_channels(self, dev_label):
