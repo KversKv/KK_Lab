@@ -638,8 +638,8 @@ class N6705CAnalyserUI(QWidget):
         """)
 
         self._channel_tabs_layout = QHBoxLayout(tab_wrap)
-        self._channel_tabs_layout.setContentsMargins(8, 6, 8, 6)
-        self._channel_tabs_layout.setSpacing(6)
+        self._channel_tabs_layout.setContentsMargins(0, 0, 0, 0)
+        self._channel_tabs_layout.setSpacing(0)
 
         self.channel_tab_buttons = []
         self._channel_tab_separator = None
@@ -1365,16 +1365,22 @@ class N6705CAnalyserUI(QWidget):
         QPushButton:disabled {{ background-color: #0D1734; color: #3a4a6a; border: 1px solid #18264A; }}
         """
 
-    def _build_channel_tab_style(self, dev_label, ch, checked=False):
+    def _build_channel_tab_style(self, dev_label, ch, checked=False, position="middle"):
         theme = CHANNEL_THEMES[ch]
         dual = self._is_dual_mode()
-        radius = "17px" if dual else "18px"
         padding = "5px 12px" if dual else "6px 16px"
         font_size = "11px" if dual else "12px"
+        corner = "12px"
+        if position == "first":
+            radius_str = f"border-top-left-radius: {corner}; border-top-right-radius: 0px; border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;"
+        elif position == "last":
+            radius_str = f"border-top-left-radius: 0px; border-top-right-radius: {corner}; border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;"
+        else:
+            radius_str = "border-radius: 0px;"
         disabled_part = f"""
             QPushButton:disabled {{
                 background-color: #0a1224; color: #3a4a6a;
-                border: 1px solid #151f36; border-radius: {radius};
+                border: 1px solid #151f36; {radius_str}
                 padding: {padding}; font-size: {font_size}; font-weight: 700;
             }}
         """
@@ -1382,7 +1388,7 @@ class N6705CAnalyserUI(QWidget):
             return f"""
             QPushButton {{
                 background-color: {theme['accent_soft']}; color: {theme['accent']};
-                border: 1px solid {theme['accent_border']}; border-radius: {radius};
+                border: 1px solid {theme['accent_border']}; {radius_str}
                 padding: {padding}; font-size: {font_size}; font-weight: 700;
             }}
             {disabled_part}
@@ -1391,7 +1397,7 @@ class N6705CAnalyserUI(QWidget):
             return f"""
             QPushButton {{
                 background-color: #0b1730; color: {theme['text_dim']};
-                border: 1px solid #1b2847; border-radius: {radius};
+                border: 1px solid #1b2847; {radius_str}
                 padding: {padding}; font-size: {font_size}; font-weight: 700;
             }}
             QPushButton:hover {{
@@ -1434,24 +1440,37 @@ class N6705CAnalyserUI(QWidget):
 
     def _refresh_channel_tab_styles(self):
         dual = self._is_dual_mode()
+        total = len(self.channel_tab_buttons)
         idx = 0
         if dual:
             for dev_label in ["A", "B"]:
                 for ch in range(1, 5):
-                    if idx < len(self.channel_tab_buttons):
+                    if idx < total:
                         is_active = (dev_label == self.current_device and ch == self.current_channel)
+                        if idx == 0:
+                            pos = "first"
+                        elif idx == total - 1:
+                            pos = "last"
+                        else:
+                            pos = "middle"
                         self.channel_tab_buttons[idx].setStyleSheet(
-                            self._build_channel_tab_style(dev_label, ch, is_active)
+                            self._build_channel_tab_style(dev_label, ch, is_active, pos)
                         )
                         self.channel_tab_buttons[idx].setChecked(is_active)
                         idx += 1
         else:
             single_label = self._get_single_device_label()
             for ch in range(1, 5):
-                if idx < len(self.channel_tab_buttons):
+                if idx < total:
                     is_active = (ch == self.current_channel)
+                    if idx == 0:
+                        pos = "first"
+                    elif idx == total - 1:
+                        pos = "last"
+                    else:
+                        pos = "middle"
                     self.channel_tab_buttons[idx].setStyleSheet(
-                        self._build_channel_tab_style(single_label, ch, is_active)
+                        self._build_channel_tab_style(single_label, ch, is_active, pos)
                     )
                     self.channel_tab_buttons[idx].setChecked(is_active)
                     idx += 1
