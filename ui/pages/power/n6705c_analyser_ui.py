@@ -217,12 +217,12 @@ def _outline_action_button_style():
 def _batch_channel_button_style():
     return """
         QPushButton {
-            background-color: #25314a; color: #91a7d1;
-            border: 1px solid #31476f; border-radius: 6px;
-            padding: 6px 10px; font-size: 11px; min-width: 60px;
+            background-color: #111d36; color: #7a8fb5;
+            border: 1px solid #1e3050; border-radius: 6px;
+            padding: 7px 0px; font-size: 12px; font-weight: 600;
         }
-        QPushButton:checked { background-color: #2a64c8; color: white; }
-        QPushButton:hover { background-color: #31405f; }
+        QPushButton:checked { background-color: #1a2a50; color: #c0d0f0; border: 1px solid #3a5a90; }
+        QPushButton:hover { background-color: #182844; }
         QPushButton:disabled { background-color: #0b1730; color: #4a5a7a; border: 1px solid #1b2847; }
     """
 
@@ -949,125 +949,76 @@ class N6705CAnalyserUI(QWidget):
         """)
         self.batch_content.setVisible(False)
 
-        self._batch_content_layout = QVBoxLayout(self.batch_content)
-        self._batch_content_layout.setContentsMargins(12, 10, 12, 12)
-        self._batch_content_layout.setSpacing(10)
+        content_layout = QVBoxLayout(self.batch_content)
+        content_layout.setContentsMargins(16, 10, 16, 14)
+        content_layout.setSpacing(12)
 
         self.batch_channel_buttons = []
         self.batch_voltage_inputs = {}
         self.batch_current_inputs = {}
 
-        self._batch_columns_widget = QWidget()
-        self._batch_columns_widget.setStyleSheet("QWidget { background: transparent; border: none; }")
-        self._batch_columns_layout = QHBoxLayout(self._batch_columns_widget)
-        self._batch_columns_layout.setContentsMargins(0, 0, 0, 0)
-        self._batch_columns_layout.setSpacing(12)
-        self._batch_content_layout.addWidget(self._batch_columns_widget)
+        self._batch_grid_widget = QWidget()
+        self._batch_grid_widget.setStyleSheet("QWidget { background: transparent; border: none; }")
+        self._batch_grid_layout = QGridLayout(self._batch_grid_widget)
+        self._batch_grid_layout.setContentsMargins(0, 0, 0, 0)
+        self._batch_grid_layout.setHorizontalSpacing(8)
+        self._batch_grid_layout.setVerticalSpacing(8)
+        content_layout.addWidget(self._batch_grid_widget)
 
         self._build_batch_columns()
+
+        sep = QFrame()
+        sep.setFixedHeight(1)
+        sep.setStyleSheet("background-color: #132849; border: none;")
+        content_layout.addWidget(sep)
 
         buttons_layout = QHBoxLayout()
         buttons_layout.setSpacing(10)
 
-        self._batch_measure_btn = QPushButton("Measure")
-        self._batch_set_btn = QPushButton("Set")
-        self._batch_auto_btn = QPushButton("Auto")
+        self._batch_measure_btn = QPushButton("⚡ Measure")
+        self._batch_set_btn = QPushButton("⚙ Set")
+        self._batch_auto_btn = QPushButton("▷ Auto Execute")
 
-        for btn in [self._batch_measure_btn, self._batch_set_btn, self._batch_auto_btn]:
-            btn.setStyleSheet(_outline_action_button_style())
-            buttons_layout.addWidget(btn)
+        _batch_btn_base = """
+            QPushButton {{
+                background-color: {bg}; color: {fg};
+                border: 1px solid {border}; border-radius: 8px;
+                padding: 9px 18px; font-size: 12px; font-weight: 700;
+            }}
+            QPushButton:hover {{ background-color: {hover_bg}; color: {hover_fg}; border: 1px solid {hover_border}; }}
+            QPushButton:disabled {{ background-color: #0D1734; color: #3a4a6a; border: 1px solid #18264A; }}
+        """
+
+        self._batch_measure_btn.setStyleSheet(_batch_btn_base.format(
+            bg="#0c1a38", fg="#8eb4e8", border="#23417a",
+            hover_bg="#122448", hover_fg="#b8d4ff", hover_border="#3a6cc8"
+        ))
+        self._batch_set_btn.setStyleSheet(_batch_btn_base.format(
+            bg="#0c1a38", fg="#8eb4e8", border="#23417a",
+            hover_bg="#122448", hover_fg="#b8d4ff", hover_border="#3a6cc8"
+        ))
+        self._batch_auto_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4318d9; color: #ffffff;
+                border: 1px solid #5a2ef0; border-radius: 8px;
+                padding: 9px 24px; font-size: 12px; font-weight: 700;
+            }
+            QPushButton:hover { background-color: #5628f0; color: #ffffff; border: 1px solid #7040ff; }
+            QPushButton:disabled { background-color: #1a1040; color: #4a3a7a; border: 1px solid #2a1860; }
+        """)
+
+        buttons_layout.addWidget(self._batch_measure_btn, 1)
+        buttons_layout.addWidget(self._batch_set_btn, 1)
+        buttons_layout.addWidget(self._batch_auto_btn, 1)
 
         self._batch_measure_btn.clicked.connect(self._on_batch_measure)
         self._batch_set_btn.clicked.connect(self._on_batch_set)
         self._batch_auto_btn.clicked.connect(self._on_batch_auto)
 
-        buttons_layout.addStretch()
-        self._batch_content_layout.addLayout(buttons_layout)
+        content_layout.addLayout(buttons_layout)
 
         outer_layout.addWidget(self.batch_content)
         return outer
-
-    def _build_batch_columns(self):
-        for i in reversed(range(self._batch_columns_layout.count())):
-            item = self._batch_columns_layout.takeAt(i)
-            w = item.widget()
-            if w:
-                w.deleteLater()
-
-        self.batch_channel_buttons.clear()
-        self.batch_voltage_inputs.clear()
-        self.batch_current_inputs.clear()
-
-        dual = self._is_dual_mode()
-        if dual:
-            device_list = [("A", "#00f5c4"), ("B", "#f2994a")]
-        else:
-            single_label = self._get_single_device_label()
-            device_list = [(single_label, "#00f5c4")]
-
-        for dev_label, dev_color in device_list:
-            col_frame = QFrame()
-            col_frame.setStyleSheet("""
-                QFrame {
-                    background-color: #0b1b34;
-                    border: 1px solid #102746;
-                    border-radius: 10px;
-                }
-            """)
-            col_layout = QVBoxLayout(col_frame)
-            col_layout.setContentsMargins(10, 8, 10, 8)
-            col_layout.setSpacing(8)
-
-            if dual:
-                col_title = QLabel(f"Device {dev_label}")
-                col_title.setStyleSheet(f"color: {dev_color}; font-weight: 800; font-size: 13px; border: none;")
-                col_layout.addWidget(col_title)
-
-            ch_row = QHBoxLayout()
-            ch_row.setSpacing(6)
-            ch_label = QLabel("Channels:")
-            ch_label.setStyleSheet("font-size: 11px; color: #8ea6cf; border: none;")
-            ch_row.addWidget(ch_label)
-            for ch_idx in range(1, 5):
-                cb = QPushButton(f"CH {ch_idx}")
-                cb.setCheckable(True)
-                if ch_idx in [2, 3, 4]:
-                    cb.setChecked(True)
-                cb.setStyleSheet(_batch_channel_button_style())
-                self.batch_channel_buttons.append((dev_label, ch_idx, cb))
-                ch_row.addWidget(cb)
-            ch_row.addStretch()
-            col_layout.addLayout(ch_row)
-
-            v_row = QHBoxLayout()
-            v_row.setSpacing(6)
-            v_lbl = QLabel("Voltage (V):")
-            v_lbl.setStyleSheet("font-size: 11px; color: #8ea6cf; border: none;")
-            v_row.addWidget(v_lbl)
-            self.batch_voltage_inputs[dev_label] = []
-            for v in [3.8, 0.8, 1.2, 1.8]:
-                inp = QLineEdit(f"{v:.4f}")
-                inp.setFixedWidth(80)
-                self.batch_voltage_inputs[dev_label].append(inp)
-                v_row.addWidget(inp)
-            v_row.addStretch()
-            col_layout.addLayout(v_row)
-
-            c_row = QHBoxLayout()
-            c_row.setSpacing(6)
-            c_lbl = QLabel("Current Limit (A):")
-            c_lbl.setStyleSheet("font-size: 11px; color: #8ea6cf; border: none;")
-            c_row.addWidget(c_lbl)
-            self.batch_current_inputs[dev_label] = []
-            for c in [0.2, 0.02, 0.02, 0.02]:
-                inp = QLineEdit(f"{c:.4f}")
-                inp.setFixedWidth(80)
-                self.batch_current_inputs[dev_label].append(inp)
-                c_row.addWidget(inp)
-            c_row.addStretch()
-            col_layout.addLayout(c_row)
-
-            self._batch_columns_layout.addWidget(col_frame, 1)
 
     def _toggle_batch_panel(self):
         self.batch_collapsed = not self.batch_collapsed
@@ -1094,6 +1045,87 @@ class N6705CAnalyserUI(QWidget):
                 }
                 QPushButton:hover { background-color: #0e1f3d; color: #d0e4ff; }
             """)
+
+    def _build_batch_columns(self):
+        for i in reversed(range(self._batch_grid_layout.count())):
+            item = self._batch_grid_layout.takeAt(i)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+
+        self.batch_channel_buttons.clear()
+        self.batch_voltage_inputs.clear()
+        self.batch_current_inputs.clear()
+
+        _label_style = "font-size: 12px; color: #6680aa; font-weight: 600; border: none; background: transparent;"
+        _input_style = """
+            QLineEdit {
+                background-color: #111d36; color: #8899bb;
+                border: 1px solid #1e3050; border-radius: 6px;
+                padding: 7px 10px; font-size: 12px; font-weight: 600;
+                text-align: center;
+            }
+            QLineEdit:focus { border: 1px solid #3a5a90; color: #b0c0e0; }
+            QLineEdit:disabled { background-color: #0b1730; color: #4a5a7a; border: 1px solid #1b2847; }
+        """
+
+        dual = self._is_dual_mode()
+        if dual:
+            device_list = [("A", "#00f5c4"), ("B", "#f2994a")]
+        else:
+            single_label = self._get_single_device_label()
+            device_list = [(single_label, "#00f5c4")]
+
+        row_offset = 0
+        for dev_idx, (dev_label, dev_color) in enumerate(device_list):
+            if dual:
+                col_title = QLabel(f"Device {dev_label}")
+                col_title.setStyleSheet(f"color: {dev_color}; font-weight: 800; font-size: 13px; border: none; background: transparent;")
+                self._batch_grid_layout.addWidget(col_title, row_offset, 0, 1, 5)
+                row_offset += 1
+
+            ch_label = QLabel("通道选择")
+            ch_label.setStyleSheet(_label_style)
+            ch_label.setFixedWidth(70)
+            self._batch_grid_layout.addWidget(ch_label, row_offset, 0)
+            for col_idx, ch_idx in enumerate(range(1, 5)):
+                cb = QPushButton(f"CH {ch_idx}")
+                cb.setCheckable(True)
+                if ch_idx in [2, 3, 4]:
+                    cb.setChecked(True)
+                cb.setStyleSheet(_batch_channel_button_style())
+                self.batch_channel_buttons.append((dev_label, ch_idx, cb))
+                self._batch_grid_layout.addWidget(cb, row_offset, col_idx + 1)
+            row_offset += 1
+
+            v_label = QLabel("电压 (V)")
+            v_label.setStyleSheet(_label_style)
+            v_label.setFixedWidth(70)
+            self._batch_grid_layout.addWidget(v_label, row_offset, 0)
+            self.batch_voltage_inputs[dev_label] = []
+            for col_idx, v in enumerate([3.8, 0.8, 1.2, 1.8]):
+                inp = QLineEdit(f"{v:.4f}")
+                inp.setAlignment(Qt.AlignCenter)
+                inp.setStyleSheet(_input_style)
+                self.batch_voltage_inputs[dev_label].append(inp)
+                self._batch_grid_layout.addWidget(inp, row_offset, col_idx + 1)
+            row_offset += 1
+
+            c_label = QLabel("限流 (A)")
+            c_label.setStyleSheet(_label_style)
+            c_label.setFixedWidth(70)
+            self._batch_grid_layout.addWidget(c_label, row_offset, 0)
+            self.batch_current_inputs[dev_label] = []
+            for col_idx, c in enumerate([0.2, 0.02, 0.02, 0.02]):
+                inp = QLineEdit(f"{c:.4f}")
+                inp.setAlignment(Qt.AlignCenter)
+                inp.setStyleSheet(_input_style)
+                self.batch_current_inputs[dev_label].append(inp)
+                self._batch_grid_layout.addWidget(inp, row_offset, col_idx + 1)
+            row_offset += 1
+
+        for col in range(1, 5):
+            self._batch_grid_layout.setColumnStretch(col, 1)
 
     def _create_consumption_test_panel(self):
         self.ct_collapsed = True
@@ -1957,8 +1989,29 @@ class N6705CAnalyserUI(QWidget):
         self.voltage_value.setEnabled(active_dev_connected)
         self.current_value.setEnabled(active_dev_connected)
 
-        if hasattr(self, 'batch_content'):
+        if hasattr(self, 'batch_tools_panel'):
             self.batch_content.setEnabled(any_connected)
+            self.batch_toggle_btn.setEnabled(any_connected)
+            if any_connected:
+                self.batch_content.setStyleSheet("""
+                    QFrame {
+                        background-color: #0a1930;
+                        border: 1px solid #132849;
+                        border-top: none;
+                        border-bottom-left-radius: 12px;
+                        border-bottom-right-radius: 12px;
+                    }
+                """)
+            else:
+                self.batch_content.setStyleSheet("""
+                    QFrame {
+                        background-color: #070f1e;
+                        border: 1px solid #0d1a30;
+                        border-top: none;
+                        border-bottom-left-radius: 12px;
+                        border-bottom-right-radius: 12px;
+                    }
+                """)
 
         if hasattr(self, 'consumption_test_panel'):
             self.ct_content.setEnabled(any_connected)
