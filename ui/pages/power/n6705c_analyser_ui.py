@@ -686,9 +686,9 @@ class N6705CAnalyserUI(QWidget):
                     self._channel_tabs_layout.addWidget(sep)
         else:
             for ch in range(1, 5):
-                btn = QPushButton(f"\u25cf Channel {ch}")
+                btn = QPushButton(f"\u25cf CH{ch}")
                 btn.setCheckable(True)
-                btn.setMinimumSize(120, 36)
+                btn.setMinimumSize(90, 34)
                 btn.setCursor(Qt.PointingHandCursor)
                 btn.clicked.connect(
                     lambda checked=False, c=ch: self._switch_channel(self._get_single_device_label(), c)
@@ -957,13 +957,12 @@ class N6705CAnalyserUI(QWidget):
         self.batch_voltage_inputs = {}
         self.batch_current_inputs = {}
 
-        self._batch_grid_widget = QWidget()
-        self._batch_grid_widget.setStyleSheet("QWidget { background: transparent; border: none; }")
-        self._batch_grid_layout = QGridLayout(self._batch_grid_widget)
-        self._batch_grid_layout.setContentsMargins(0, 0, 0, 0)
-        self._batch_grid_layout.setHorizontalSpacing(8)
-        self._batch_grid_layout.setVerticalSpacing(8)
-        content_layout.addWidget(self._batch_grid_widget)
+        self._batch_columns_widget = QWidget()
+        self._batch_columns_widget.setStyleSheet("QWidget { background: transparent; border: none; }")
+        self._batch_columns_layout = QHBoxLayout(self._batch_columns_widget)
+        self._batch_columns_layout.setContentsMargins(0, 0, 0, 0)
+        self._batch_columns_layout.setSpacing(12)
+        content_layout.addWidget(self._batch_columns_widget)
 
         self._build_batch_columns()
 
@@ -1047,8 +1046,8 @@ class N6705CAnalyserUI(QWidget):
             """)
 
     def _build_batch_columns(self):
-        for i in reversed(range(self._batch_grid_layout.count())):
-            item = self._batch_grid_layout.takeAt(i)
+        for i in reversed(range(self._batch_columns_layout.count())):
+            item = self._batch_columns_layout.takeAt(i)
             w = item.widget()
             if w:
                 w.deleteLater()
@@ -1076,18 +1075,31 @@ class N6705CAnalyserUI(QWidget):
             single_label = self._get_single_device_label()
             device_list = [(single_label, "#00f5c4")]
 
-        row_offset = 0
-        for dev_idx, (dev_label, dev_color) in enumerate(device_list):
+        for dev_label, dev_color in device_list:
+            dev_frame = QFrame()
+            dev_frame.setStyleSheet("""
+                QFrame {
+                    background-color: #0b1b34;
+                    border: 1px solid #102746;
+                    border-radius: 10px;
+                }
+            """)
+            grid = QGridLayout(dev_frame)
+            grid.setContentsMargins(10, 8, 10, 8)
+            grid.setHorizontalSpacing(8)
+            grid.setVerticalSpacing(8)
+
+            row = 0
             if dual:
                 col_title = QLabel(f"Device {dev_label}")
                 col_title.setStyleSheet(f"color: {dev_color}; font-weight: 800; font-size: 13px; border: none; background: transparent;")
-                self._batch_grid_layout.addWidget(col_title, row_offset, 0, 1, 5)
-                row_offset += 1
+                grid.addWidget(col_title, row, 0, 1, 5)
+                row += 1
 
             ch_label = QLabel("通道选择")
             ch_label.setStyleSheet(_label_style)
             ch_label.setFixedWidth(70)
-            self._batch_grid_layout.addWidget(ch_label, row_offset, 0)
+            grid.addWidget(ch_label, row, 0)
             for col_idx, ch_idx in enumerate(range(1, 5)):
                 cb = QPushButton(f"CH {ch_idx}")
                 cb.setCheckable(True)
@@ -1095,37 +1107,38 @@ class N6705CAnalyserUI(QWidget):
                     cb.setChecked(True)
                 cb.setStyleSheet(_batch_channel_button_style())
                 self.batch_channel_buttons.append((dev_label, ch_idx, cb))
-                self._batch_grid_layout.addWidget(cb, row_offset, col_idx + 1)
-            row_offset += 1
+                grid.addWidget(cb, row, col_idx + 1)
+            row += 1
 
             v_label = QLabel("电压 (V)")
             v_label.setStyleSheet(_label_style)
             v_label.setFixedWidth(70)
-            self._batch_grid_layout.addWidget(v_label, row_offset, 0)
+            grid.addWidget(v_label, row, 0)
             self.batch_voltage_inputs[dev_label] = []
             for col_idx, v in enumerate([3.8, 0.8, 1.2, 1.8]):
                 inp = QLineEdit(f"{v:.4f}")
                 inp.setAlignment(Qt.AlignCenter)
                 inp.setStyleSheet(_input_style)
                 self.batch_voltage_inputs[dev_label].append(inp)
-                self._batch_grid_layout.addWidget(inp, row_offset, col_idx + 1)
-            row_offset += 1
+                grid.addWidget(inp, row, col_idx + 1)
+            row += 1
 
             c_label = QLabel("限流 (A)")
             c_label.setStyleSheet(_label_style)
             c_label.setFixedWidth(70)
-            self._batch_grid_layout.addWidget(c_label, row_offset, 0)
+            grid.addWidget(c_label, row, 0)
             self.batch_current_inputs[dev_label] = []
             for col_idx, c in enumerate([0.2, 0.02, 0.02, 0.02]):
                 inp = QLineEdit(f"{c:.4f}")
                 inp.setAlignment(Qt.AlignCenter)
                 inp.setStyleSheet(_input_style)
                 self.batch_current_inputs[dev_label].append(inp)
-                self._batch_grid_layout.addWidget(inp, row_offset, col_idx + 1)
-            row_offset += 1
+                grid.addWidget(inp, row, col_idx + 1)
 
-        for col in range(1, 5):
-            self._batch_grid_layout.setColumnStretch(col, 1)
+            for col in range(1, 5):
+                grid.setColumnStretch(col, 1)
+
+            self._batch_columns_layout.addWidget(dev_frame, 1)
 
     def _create_consumption_test_panel(self):
         self.ct_collapsed = True
