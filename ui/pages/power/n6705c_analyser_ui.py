@@ -178,30 +178,6 @@ def _format_current(current_A):
         return f"{current_A:.3e} A"
 
 
-def _neon_on_button_style():
-    return """
-    QPushButton {
-        background-color: #062b2b; color: #00f5c4;
-        border: 1px solid #00cfa6; border-radius: 8px;
-        padding: 8px 18px; min-width: 88px; font-size: 12px; font-weight: 600;
-    }
-    QPushButton:hover { background-color: #0a3a3a; border: 1px solid #00f5c4; color: #3fffd7; }
-    QPushButton:disabled { background-color: #0b1730; color: #4a5a7a; border: 1px solid #1b2847; }
-    """
-
-
-def _neon_off_button_style():
-    return """
-    QPushButton {
-        background-color: #2a0a1c; color: #ff4fa3;
-        border: 1px solid #d63384; border-radius: 8px;
-        padding: 8px 18px; min-width: 88px; font-size: 12px; font-weight: 600;
-    }
-    QPushButton:hover { background-color: #3a1028; border: 1px solid #ff4fa3; color: #ff7dbd; }
-    QPushButton:disabled { background-color: #0b1730; color: #4a5a7a; border: 1px solid #1b2847; }
-    """
-
-
 def _outline_action_button_style():
     return """
     QPushButton {
@@ -543,16 +519,6 @@ class N6705CAnalyserUI(QWidget):
         title_label.setStyleSheet("QLabel { color: #ffffff; font-size: 18px; font-weight: 800; }")
         header_layout.addWidget(title_label)
         header_layout.addStretch()
-
-        self.all_on_btn = QPushButton("\u23fb All On")
-        self.all_on_btn.setStyleSheet(_neon_on_button_style())
-        self.all_off_btn = QPushButton("\u25a2 All Off")
-        self.all_off_btn.setStyleSheet(_neon_off_button_style())
-        self.all_on_btn.clicked.connect(self._on_all_on_clicked)
-        self.all_off_btn.clicked.connect(self._on_all_off_clicked)
-
-        header_layout.addWidget(self.all_on_btn)
-        header_layout.addWidget(self.all_off_btn)
         outer_layout.addWidget(header_widget)
 
         content_widget = QWidget()
@@ -1775,30 +1741,6 @@ class N6705CAnalyserUI(QWidget):
         for channel in self.channels:
             channel['toggle'].setChecked(enabled)
 
-    def _on_all_on_clicked(self):
-        for label, dev in self.devices.items():
-            if dev["is_connected"] and dev["n6705c"]:
-                try:
-                    for ch in range(1, 5):
-                        dev["n6705c"].channel_on(ch)
-                    logger.info("[%s] All channels on", label)
-                except Exception as e:
-                    logger.error("[%s] All On failed: %s", label, e)
-        self.output_toggle.setChecked(True)
-        self._update_output_visual_state()
-
-    def _on_all_off_clicked(self):
-        for label, dev in self.devices.items():
-            if dev["is_connected"] and dev["n6705c"]:
-                try:
-                    for ch in range(1, 5):
-                        dev["n6705c"].channel_off(ch)
-                    logger.info("[%s] All channels off", label)
-                except Exception as e:
-                    logger.error("[%s] All Off failed: %s", label, e)
-        self.output_toggle.setChecked(False)
-        self._update_output_visual_state()
-
     def _on_search(self, label):
         w = self.conn_widgets[label]
         w["status"].setText("Searching...")
@@ -1943,12 +1885,6 @@ class N6705CAnalyserUI(QWidget):
 
     def _update_ui_connection_state(self, label, connected):
         any_connected = any(d["is_connected"] for d in self.devices.values())
-
-        self.all_on_btn.setEnabled(any_connected)
-        self.all_off_btn.setEnabled(any_connected)
-        disabled_btn = "QPushButton { background-color: #0b1730; color: #4a5a7a; border: 1px solid #1b2847; border-radius: 8px; }"
-        self.all_on_btn.setStyleSheet(_neon_on_button_style() if any_connected else disabled_btn)
-        self.all_off_btn.setStyleSheet(_neon_off_button_style() if any_connected else disabled_btn)
 
         active_dev_connected = self.devices[self.current_device]["is_connected"]
 
