@@ -916,7 +916,7 @@ class N6705CAnalyserUI(QWidget):
         return setting_wrapper
 
     def _create_batch_tools_panel(self):
-        self.batch_collapsed = True
+        self.batch_collapsed = False
 
         outer = QWidget()
         outer.setStyleSheet("QWidget { background: transparent; border: none; }")
@@ -924,15 +924,17 @@ class N6705CAnalyserUI(QWidget):
         outer_layout.setContentsMargins(0, 0, 0, 0)
         outer_layout.setSpacing(0)
 
-        self.batch_toggle_btn = QPushButton("\u25b6  Quick Setup")
+        self.batch_toggle_btn = QPushButton("\u25bc  Quick Setup")
         self.batch_toggle_btn.setStyleSheet("""
             QPushButton {
-                background-color: #0a1930; color: #8ea6cf;
-                border: 1px solid #132849; border-radius: 8px;
+                background-color: #0a1930; color: #b8d0f0;
+                border: 1px solid #132849; border-bottom: none;
+                border-top-left-radius: 8px; border-top-right-radius: 8px;
+                border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;
                 padding: 8px 16px; font-size: 12px; font-weight: 700;
                 text-align: left;
             }
-            QPushButton:hover { background-color: #0e1f3d; color: #b8d0f0; }
+            QPushButton:hover { background-color: #0e1f3d; color: #d0e4ff; }
         """)
         self.batch_toggle_btn.clicked.connect(self._toggle_batch_panel)
         outer_layout.addWidget(self.batch_toggle_btn)
@@ -947,7 +949,7 @@ class N6705CAnalyserUI(QWidget):
                 border-bottom-right-radius: 12px;
             }
         """)
-        self.batch_content.setVisible(False)
+        self.batch_content.setVisible(True)
 
         content_layout = QVBoxLayout(self.batch_content)
         content_layout.setContentsMargins(16, 10, 16, 14)
