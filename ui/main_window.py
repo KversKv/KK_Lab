@@ -15,8 +15,7 @@ from PySide6.QtCore import Qt, Signal, QEvent, QPoint, QTimer
 from PySide6.QtGui import QPalette, QColor, QFont
 from ui.widgets.plot_widget import PlotWidget
 from ui.pages.oscilloscope.oscilloscope_base_ui import OscilloscopeBaseUI
-from ui.pages.power.n6705c_ui import N6705CUI
-from ui.pages.power.n6705c_double_ui import N6705CDoubleUI
+from ui.pages.power.n6705c_analyser_ui import N6705CAnalyserUI
 from ui.pages.power.n6705c_datalog_ui import N6705CDatalogUI
 from ui.pages.power.n6705c_top import N6705CTop
 from ui.pages.oscilloscope.mso64b_top import MSO64BTop
@@ -224,8 +223,7 @@ class PowerAnalyzerSubMenu(QWidget):
         self.layout.setSpacing(0)
 
         self.menu_items = [
-            ("single", "Single N6705C"),
-            ("double", "Double N6705C (A+B)"),
+            ("analyser", "N6705C Analyser"),
             ("datalog", "N6705C Datalog"),
         ]
 
@@ -367,8 +365,7 @@ class MainWindow(QMainWindow):
             self.n6705c_top.connect_b("MOCK::N6705C::B", MockN6705C(), "MOCK-B")
             self.mso64b_top.connect_instrument("MOCK::MSO64B", MockMSO64B(), "MSO64B")
 
-        self.n6705c_ui = None
-        self.n6705c_double_ui = None
+        self.n6705c_analyser_ui = None
         self.n6705c_datalog_ui = None
         self.oscilloscope_ui = None
         self.pmu_test_ui = None
@@ -385,7 +382,7 @@ class MainWindow(QMainWindow):
 
         self.pa_submenu = None
         self._pa_btn_hovered = False
-        self.current_pa_mode = "single"
+        self.current_pa_mode = "analyser"
 
         self.charger_submenu = None
         self._charger_btn_hovered = False
@@ -741,7 +738,7 @@ class MainWindow(QMainWindow):
         self.instrument_ui_container_layout = QVBoxLayout(self.instrument_ui_container)
         self.instrument_ui_container_layout.setContentsMargins(0, 0, 0, 0)
 
-        self._create_power_analyzer_ui()
+        self._create_power_analyser_ui()
         self.right_content_layout.addWidget(self.instrument_ui_container)
 
         main_splitter.addWidget(self.right_content)
@@ -815,10 +812,8 @@ class MainWindow(QMainWindow):
         self.pa_submenu.set_current_item(mode_key)
         self.power_analyzer_btn.setChecked(True)
         self._refresh_nav_arrow_state()
-        if mode_key == "single":
-            self._create_power_analyzer_ui()
-        elif mode_key == "double":
-            self._create_power_analyzer_double_ui()
+        if mode_key == "analyser":
+            self._create_power_analyser_ui()
         elif mode_key == "datalog":
             self._create_datalog_ui()
         self.pa_submenu.hide()
@@ -928,26 +923,16 @@ class MainWindow(QMainWindow):
 
         return super().eventFilter(obj, event)
 
-    def _create_power_analyzer_ui(self):
+    def _create_power_analyser_ui(self):
         self._hide_all_instrument_uis()
-        if self.n6705c_ui is None:
-            self.n6705c_ui = N6705CUI(n6705c_top=self.n6705c_top)
-            self.instrument_ui_container_layout.addWidget(self.n6705c_ui)
+        if self.n6705c_analyser_ui is None:
+            self.n6705c_analyser_ui = N6705CAnalyserUI(n6705c_top=self.n6705c_top)
+            self.instrument_ui_container_layout.addWidget(self.n6705c_analyser_ui)
         else:
-            self.n6705c_ui._sync_from_top()
-            self.n6705c_ui.show()
-        self.current_instrument_ui = "power_analyzer"
-        self.channels = self.n6705c_ui.channels if hasattr(self.n6705c_ui, 'channels') else []
-
-    def _create_power_analyzer_double_ui(self):
-        self._hide_all_instrument_uis()
-        if self.n6705c_double_ui is None:
-            self.n6705c_double_ui = N6705CDoubleUI(n6705c_top=self.n6705c_top)
-            self.instrument_ui_container_layout.addWidget(self.n6705c_double_ui)
-        else:
-            self.n6705c_double_ui._sync_from_top()
-            self.n6705c_double_ui.show()
-        self.current_instrument_ui = "power_analyzer_double"
+            self.n6705c_analyser_ui._sync_from_top()
+            self.n6705c_analyser_ui.show()
+        self.current_instrument_ui = "power_analyser"
+        self.channels = self.n6705c_analyser_ui.channels if hasattr(self.n6705c_analyser_ui, 'channels') else []
 
     def _create_datalog_ui(self):
         self._hide_all_instrument_uis()
@@ -1019,7 +1004,7 @@ class MainWindow(QMainWindow):
 
     def _hide_all_instrument_uis(self):
         for widget in [
-            self.n6705c_ui, self.n6705c_double_ui, self.n6705c_datalog_ui,
+            self.n6705c_analyser_ui, self.n6705c_datalog_ui,
             self.oscilloscope_ui, self.pmu_test_ui, self.vt6002_chamber_ui,
             self.consumption_test_ui, self.charger_test_ui,
         ]:
@@ -1150,12 +1135,12 @@ class MainWindow(QMainWindow):
             if self.charger_submenu:
                 self.charger_submenu.hide()
             self._show_pa_submenu()
-            if self.current_pa_mode == "double":
-                self._create_power_analyzer_double_ui()
+            if self.current_pa_mode == "analyser":
+                self._create_power_analyser_ui()
             elif self.current_pa_mode == "datalog":
                 self._create_datalog_ui()
             else:
-                self._create_power_analyzer_ui()
+                self._create_power_analyser_ui()
 
         elif sender == self.oscilloscope_btn:
             if self.pmu_submenu:
@@ -1254,17 +1239,18 @@ class MainWindow(QMainWindow):
         self.test_manager.export_data()
 
     def _update_data(self, data):
-        """更新数据"""
-        if self.current_instrument_ui == "power_analyzer" and self.n6705c_ui:
+        if self.current_instrument_ui == "power_analyser" and self.n6705c_analyser_ui:
             if data and isinstance(data, list) and len(data) == 4:
+                dev_label = self.n6705c_analyser_ui.current_device
                 for i, channel_data in enumerate(data):
                     voltage = channel_data.get('voltage', 0.0)
                     current = channel_data.get('current', 0.0)
-                    self.n6705c_ui.update_channel_values(i + 1, voltage, current)
+                    self.n6705c_analyser_ui.update_channel_values(dev_label, i + 1, voltage, current)
             elif data and 'current' in data:
+                dev_label = self.n6705c_analyser_ui.current_device
                 current = data['current'][-1] if data['current'] else 0.0
                 voltage = data['voltage'][-1] if data['voltage'] else 0.0
-                self.n6705c_ui.update_channel_values(1, voltage, current)
+                self.n6705c_analyser_ui.update_channel_values(dev_label, 1, voltage, current)
 
         elif self.current_instrument_ui == "pmu_test" and self.pmu_test_ui:
             if data and isinstance(data, dict):
@@ -1393,8 +1379,7 @@ class MainWindow(QMainWindow):
             self._cleanup_sub_ui(self.consumption_test_ui, "ConsumptionTestUI")
 
         for ui_name, ui_widget in [
-            ("N6705CUI", self.n6705c_ui),
-            ("N6705CDoubleUI", self.n6705c_double_ui),
+            ("N6705CAnalyserUI", self.n6705c_analyser_ui),
             ("N6705CDatalogUI", self.n6705c_datalog_ui),
         ]:
             if ui_widget is not None and hasattr(ui_widget, 'rm') and ui_widget.rm is not None:

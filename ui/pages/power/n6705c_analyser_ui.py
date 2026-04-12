@@ -13,8 +13,8 @@ from PySide6.QtWidgets import (
     QGridLayout, QFrame, QApplication, QCheckBox,
     QSizePolicy, QFileDialog
 )
-from PySide6.QtCore import Qt, QTimer, Signal, QThread, QObject
-from PySide6.QtGui import QFont
+from PySide6.QtCore import Qt, QTimer, Signal, QThread, QObject, QPropertyAnimation, Property, QRectF, QEasingCurve
+from PySide6.QtGui import QFont, QPainter, QColor, QPen
 import pyvisa
 
 from instruments.power.keysight.n6705c import N6705C
@@ -23,77 +23,106 @@ from instruments.mock.mock_instruments import MockN6705C
 from log_config import get_logger
 
 logger = get_logger(__name__)
-from ui.pages.power.n6705c_ui import SlideToggle
 
 
-class _ConsumptionTestWorker(QObject):
-    channel_result = Signal(str, int, float)
-    finished = Signal()
-    error = Signal(str)
+class SlideToggle(QWidget):
+    clicked = Signal(bool)
 
-    def __init__(self, n6705c, device_label, channels, test_time, sample_period):
-        super().__init__()
-        self.n6705c = n6705c
-        self.device_label = device_label
-        self.channels = channels
-        self.test_time = test_time
-        self.sample_period = sample_period
-        self._is_stopped = False
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._checked = False
+        self._knob_x = 3.0
+        self._accent_color = QColor("#d4a514")
+        self._off_bg = QColor("#25314a")
+        self._off_border = QColor("#3a4f75")
+        self._knob_color = QColor("#ffffff")
+        self.setFixedSize(64, 28)
+        self.setCursor(Qt.PointingHandCursor)
 
-    def stop(self):
-        self._is_stopped = True
+        self._animation = QPropertyAnimation(self, b"knob_x", self)
+        self._animation.setDuration(180)
+        self._animation.setEasingCurve(QEasingCurve.InOutCubic)
 
-    def run(self):
-        try:
-            if self._is_stopped:
-                self.finished.emit()
-                return
-            result = self.n6705c.fetch_current_by_datalog(
-                self.channels, self.test_time, self.sample_period
-            )
-            for ch, avg_current in result.items():
-                if self._is_stopped:
-                    break
-                self.channel_result.emit(self.device_label, ch, float(avg_current))
-            self.finished.emit()
-        except Exception as e:
-            self.error.emit(f"[{self.device_label}] {e}")
-            self.finished.emit()
+    def _get_knob_x(self):
+        return self._knob_x
 
+    def _set_knob_x(self, val):
+        self._knob_x = val
+        self.update()
 
-class _DoubleChannelSyncWorker(QObject):
-    result = Signal(dict)
-    finished = Signal()
+    knob_x = Property(float, _get_knob_x, _set_knob_x)
 
-    def __init__(self, n6705c, channel_num):
-        super().__init__()
-        self.n6705c = n6705c
-        self.channel_num = channel_num
+    def isChecked(self):
+        return self._checked
 
-    def run(self):
-        data = {}
-        try:
-            data["channel_state"] = self.n6705c.get_channel_state(self.channel_num)
-        except Exception:
-            data["channel_state"] = None
-        try:
-            data["mode"] = self.n6705c.get_mode(self.channel_num)
-        except Exception:
-            data["mode"] = None
-        try:
-            data["voltage"] = float(self.n6705c.fetch_voltage(self.channel_num))
-        except Exception:
-            data["voltage"] = None
-        try:
-            data["current"] = float(self.n6705c.fetch_current(self.channel_num))
-        except Exception:
-            data["current"] = None
-        try:
-            data["limit_current"] = float(self.n6705c.get_current_limit(self.channel_num))
-        except Exception:
-            data["limit_current"] = None
-        self.result.emit(data)
-        self.finished.emit()
+    def setChecked(self, checked):
+        if self._checked == checked:
+            return
+        self._checked = checked
+        end = self.width() - self.height() + 3.0 if checked else 3.0
+        self._animation.stop()
+        self._animation.setStartValue(self._knob_x)
+        self._animation.setEndValue(end)
+        self._animation.start()
+
+    def setAccentColor(self, color_str):
+        self._accent_color = QColor(color_str)
+        self.update()
+
+    def mousePressEvent(self, event):
+        if not self.isEnabled():
+            return
+        if event.button() == Qt.LeftButton:
+            self.setChecked(not self._checked)
+            self.clicked.emit(self._checked)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+
+        w, h = self.width(), self.height()
+        radius = h / 2.0
+        knob_d = h - 6.0
+
+        disabled = not self.isEnabled()
+
+        if disabled:
+            bg = QColor("#161e30")
+            border = QColor("#1b2847")
+            knob_color = QColor("#3a4a6a")
+        elif self._checked:
+            bg = self._accent_color
+            border = self._accent_color.lighter(120)
+            knob_color = self._knob_color
+        else:
+            bg = self._off_bg
+            border = self._off_border
+            knob_color = self._knob_color
+
+        p.setPen(QPen(border, 1.0))
+        p.setBrush(bg)
+        p.drawRoundedRect(QRectF(0.5, 0.5, w - 1, h - 1), radius, radius)
+
+        font = p.font()
+        font.setPixelSize(10)
+        font.setWeight(QFont.Bold)
+        p.setFont(font)
+
+        if disabled:
+            p.setPen(QColor("#3a4a6a"))
+            p.drawText(QRectF(knob_d + 6, 0, w - knob_d - 16, h), Qt.AlignVCenter | Qt.AlignRight, "OFF")
+        elif self._checked:
+            p.setPen(QColor("#111111"))
+            p.drawText(QRectF(8, 0, w - knob_d - 10, h), Qt.AlignVCenter | Qt.AlignLeft, "ON")
+        else:
+            p.setPen(QColor("#8ea6cf"))
+            p.drawText(QRectF(knob_d + 6, 0, w - knob_d - 16, h), Qt.AlignVCenter | Qt.AlignRight, "OFF")
+
+        p.setPen(Qt.NoPen)
+        p.setBrush(knob_color)
+        p.drawEllipse(QRectF(self._knob_x, 3.0, knob_d, knob_d))
+
+        p.end()
 
 
 CHANNEL_COLORS = {
@@ -142,7 +171,7 @@ def _format_current(current_A):
     elif abs_i >= 1e-3:
         return f"{current_A*1e3:.3f} mA"
     elif abs_i >= 1e-6:
-        return f"{current_A*1e6:.3f} µA"
+        return f"{current_A*1e6:.3f} \u00b5A"
     elif abs_i >= 1e-9:
         return f"{current_A*1e9:.3f} nA"
     else:
@@ -224,7 +253,77 @@ def _disconnect_button_style():
     """
 
 
-class N6705CDoubleUI(QWidget):
+class _ChannelSyncWorker(QObject):
+    result = Signal(dict)
+    finished = Signal()
+
+    def __init__(self, n6705c, channel_num):
+        super().__init__()
+        self.n6705c = n6705c
+        self.channel_num = channel_num
+
+    def run(self):
+        data = {}
+        try:
+            data["channel_state"] = self.n6705c.get_channel_state(self.channel_num)
+        except Exception:
+            data["channel_state"] = None
+        try:
+            data["mode"] = self.n6705c.get_mode(self.channel_num)
+        except Exception:
+            data["mode"] = None
+        try:
+            data["voltage"] = float(self.n6705c.measure_voltage(self.channel_num))
+        except Exception:
+            data["voltage"] = None
+        try:
+            data["current"] = float(self.n6705c.measure_current(self.channel_num))
+        except Exception:
+            data["current"] = None
+        try:
+            data["limit_current"] = float(self.n6705c.get_current_limit(self.channel_num))
+        except Exception:
+            data["limit_current"] = None
+        self.result.emit(data)
+        self.finished.emit()
+
+
+class _ConsumptionTestWorker(QObject):
+    channel_result = Signal(str, int, float)
+    finished = Signal()
+    error = Signal(str)
+
+    def __init__(self, n6705c, device_label, channels, test_time, sample_period):
+        super().__init__()
+        self.n6705c = n6705c
+        self.device_label = device_label
+        self.channels = channels
+        self.test_time = test_time
+        self.sample_period = sample_period
+        self._is_stopped = False
+
+    def stop(self):
+        self._is_stopped = True
+
+    def run(self):
+        try:
+            if self._is_stopped:
+                self.finished.emit()
+                return
+            result = self.n6705c.fetch_current_by_datalog(
+                self.channels, self.test_time, self.sample_period
+            )
+            for ch, avg_current in result.items():
+                if self._is_stopped:
+                    break
+                self.channel_result.emit(self.device_label, ch, float(avg_current))
+            self.finished.emit()
+        except Exception as e:
+            self.error.emit(f"[{self.device_label}] {e}")
+            self.finished.emit()
+
+
+class N6705CAnalyserUI(QWidget):
     connection_status_changed = Signal(bool)
 
     def __init__(self, n6705c_top=None):
@@ -245,6 +344,8 @@ class N6705CDoubleUI(QWidget):
         self._sync_worker = None
         self._dirty_voltage = False
         self._dirty_current = False
+        self.channels = []
+        self._prev_dual_mode = None
 
         self._setup_style()
         self._create_layout()
@@ -258,11 +359,33 @@ class N6705CDoubleUI(QWidget):
         self.search_timer_b.setSingleShot(True)
 
         self._apply_channel_theme(self.current_device, self.current_channel)
-
         self._update_ui_connection_state("A", False)
+        self._rebuild_dynamic_sections()
 
         if self._top:
             self._sync_from_top()
+
+    def _connected_device_labels(self):
+        return [label for label, dev in self.devices.items() if dev["is_connected"]]
+
+    def _is_dual_mode(self):
+        return len(self._connected_device_labels()) >= 2
+
+    def _rebuild_dynamic_sections(self):
+        dual = self._is_dual_mode()
+        if dual == self._prev_dual_mode:
+            return
+        self._prev_dual_mode = dual
+
+        connected = self._connected_device_labels()
+        if connected and self.current_device not in connected:
+            self.current_device = connected[0]
+            self.current_channel = 1
+
+        self._build_channel_tab_buttons()
+        self._build_batch_columns()
+        self._build_ct_cards()
+        self._apply_channel_theme(self.current_device, self.current_channel)
 
     def _sync_from_top(self):
         if not self._top:
@@ -275,7 +398,7 @@ class N6705CDoubleUI(QWidget):
                 self.devices[label]["n6705c"] = n6705c
                 self.devices[label]["is_connected"] = True
                 w = self.conn_widgets[label]
-                w["status"].setText("● Connected")
+                w["status"].setText("\u25cf Connected")
                 w["status"].setStyleSheet("color: #00a859; font-weight:bold;")
                 if visa_res:
                     w["combo"].clear()
@@ -283,6 +406,7 @@ class N6705CDoubleUI(QWidget):
                 w["toggle_conn_btn"].setText("Disconnect")
                 w["toggle_conn_btn"].setStyleSheet(_disconnect_button_style())
                 self._update_ui_connection_state(label, True)
+        self._rebuild_dynamic_sections()
         if self.devices[self.current_device]["is_connected"]:
             self._start_channel_sync()
 
@@ -292,7 +416,7 @@ class N6705CDoubleUI(QWidget):
             return
         if self._sync_thread is not None and self._sync_thread.isRunning():
             return
-        worker = _DoubleChannelSyncWorker(dev["n6705c"], self.current_channel)
+        worker = _ChannelSyncWorker(dev["n6705c"], self.current_channel)
         thread = QThread()
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
@@ -395,18 +519,18 @@ class N6705CDoubleUI(QWidget):
         header_layout.setContentsMargins(16, 0, 16, 0)
         header_layout.setSpacing(10)
 
-        icon_label = QLabel("⚡")
+        icon_label = QLabel("\u26a1")
         icon_label.setStyleSheet("QLabel { color: #00f5c4; font-size: 24px; font-weight: bold; }")
         header_layout.addWidget(icon_label)
 
-        title_label = QLabel("Keysight N6705C × 2  DC Power Analyzer")
+        title_label = QLabel("Keysight N6705C DC Power Analyzer")
         title_label.setStyleSheet("QLabel { color: #ffffff; font-size: 18px; font-weight: 800; }")
         header_layout.addWidget(title_label)
         header_layout.addStretch()
 
-        self.all_on_btn = QPushButton("⏻ All On")
+        self.all_on_btn = QPushButton("\u23fb All On")
         self.all_on_btn.setStyleSheet(_neon_on_button_style())
-        self.all_off_btn = QPushButton("▢ All Off")
+        self.all_off_btn = QPushButton("\u25a2 All Off")
         self.all_off_btn.setStyleSheet(_neon_off_button_style())
         self.all_on_btn.clicked.connect(self._on_all_on_clicked)
         self.all_off_btn.clicked.connect(self._on_all_off_clicked)
@@ -454,7 +578,7 @@ class N6705CDoubleUI(QWidget):
             tag.setStyleSheet(f"color: {color}; font-weight: 900; font-size: 14px; min-width: 24px;")
             tag.setAlignment(Qt.AlignCenter)
 
-            status = QLabel("● Disconnected")
+            status = QLabel("\u25cf Disconnected")
             status.setStyleSheet("color:#8ea6cf; font-weight:bold;")
 
             combo = DarkComboBox(bg="#091426", border="#17345f")
@@ -488,33 +612,76 @@ class N6705CDoubleUI(QWidget):
         tab_wrap.setAttribute(Qt.WA_StyledBackground, True)
         tab_wrap.setStyleSheet("QWidget { background-color: #07111f; border: none; }")
 
-        layout = QHBoxLayout(tab_wrap)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(6)
+        self._channel_tabs_layout = QHBoxLayout(tab_wrap)
+        self._channel_tabs_layout.setContentsMargins(4, 4, 4, 4)
+        self._channel_tabs_layout.setSpacing(6)
 
         self.channel_tab_buttons = []
-        for dev_label in ["A", "B"]:
+        self._channel_tab_separator = None
+        self._build_channel_tab_buttons()
+
+        return tab_wrap
+
+    def _build_channel_tab_buttons(self):
+        for btn in self.channel_tab_buttons:
+            self._channel_tabs_layout.removeWidget(btn)
+            btn.deleteLater()
+        self.channel_tab_buttons.clear()
+
+        if self._channel_tab_separator is not None:
+            self._channel_tabs_layout.removeWidget(self._channel_tab_separator)
+            self._channel_tab_separator.deleteLater()
+            self._channel_tab_separator = None
+
+        while self._channel_tabs_layout.count():
+            item = self._channel_tabs_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+
+        dual = self._is_dual_mode()
+        if dual:
+            for dev_label in ["A", "B"]:
+                for ch in range(1, 5):
+                    btn = QPushButton(f"\u25cf {dev_label}-CH{ch}")
+                    btn.setCheckable(True)
+                    btn.setMinimumSize(90, 34)
+                    btn.setCursor(Qt.PointingHandCursor)
+                    btn.clicked.connect(
+                        lambda checked=False, d=dev_label, c=ch: self._switch_channel(d, c)
+                    )
+                    self.channel_tab_buttons.append(btn)
+                    self._channel_tabs_layout.addWidget(btn)
+                if dev_label == "A":
+                    sep = QFrame()
+                    sep.setFixedWidth(2)
+                    sep.setFixedHeight(24)
+                    sep.setStyleSheet("QFrame { background: #1b2847; border: none; }")
+                    self._channel_tab_separator = sep
+                    self._channel_tabs_layout.addWidget(sep)
+        else:
             for ch in range(1, 5):
-                btn = QPushButton(f"● {dev_label}-CH{ch}")
+                btn = QPushButton(f"\u25cf Channel {ch}")
                 btn.setCheckable(True)
-                btn.setMinimumSize(90, 34)
+                btn.setMinimumSize(120, 36)
                 btn.setCursor(Qt.PointingHandCursor)
                 btn.clicked.connect(
-                    lambda checked=False, d=dev_label, c=ch: self._switch_channel(d, c)
+                    lambda checked=False, c=ch: self._switch_channel(self._get_single_device_label(), c)
                 )
                 self.channel_tab_buttons.append(btn)
-                layout.addWidget(btn)
-            if dev_label == "A":
-                sep = QFrame()
-                sep.setFixedWidth(2)
-                sep.setFixedHeight(24)
-                sep.setStyleSheet("QFrame { background: #1b2847; border: none; }")
-                layout.addWidget(sep)
+                self._channel_tabs_layout.addWidget(btn)
 
-        layout.addStretch()
-        self.channel_tab_buttons[0].setChecked(True)
+        self._channel_tabs_layout.addStretch()
+
+        if self.channel_tab_buttons:
+            self.channel_tab_buttons[0].setChecked(True)
         self._refresh_channel_tab_styles()
-        return tab_wrap
+
+    def _get_single_device_label(self):
+        connected = self._connected_device_labels()
+        if connected:
+            return connected[0]
+        return "A"
 
     def _create_unified_input(self, prefix_text, default_value, unit_text):
         container = QFrame()
@@ -582,7 +749,7 @@ class N6705CDoubleUI(QWidget):
         setting_header.setContentsMargins(0, 0, 0, 0)
         setting_header.setSpacing(12)
 
-        self.channel_title_label = QLabel("A - Channel 1")
+        self.channel_title_label = QLabel("Channel 1")
         self.channel_title_label.setStyleSheet("""
             QLabel { font-size: 16px; font-weight: 800; color: #ffffff;
                      padding: 0px; margin: 0px; border: none; background: transparent; }
@@ -702,8 +869,16 @@ class N6705CDoubleUI(QWidget):
         action_row.addStretch()
 
         params_grid.addLayout(action_row, 1, 0, 1, 2)
-
         setting_layout.addWidget(params_container)
+
+        channel_data = {
+            'voltage_value': self.voltage_value,
+            'current_value': self.current_value,
+            'limit_current_value': self.limit_current_value,
+            'voltage_set_input': self.voltage_set_input,
+            'toggle': self.output_toggle
+        }
+        self.channels.append(channel_data)
 
         wrapper_layout.addWidget(self.setting_frame)
         return setting_wrapper
@@ -717,7 +892,7 @@ class N6705CDoubleUI(QWidget):
         outer_layout.setContentsMargins(0, 0, 0, 0)
         outer_layout.setSpacing(0)
 
-        self.batch_toggle_btn = QPushButton("▶  Quick Setup")
+        self.batch_toggle_btn = QPushButton("\u25b6  Quick Setup")
         self.batch_toggle_btn.setStyleSheet("""
             QPushButton {
                 background-color: #0a1930; color: #8ea6cf;
@@ -742,46 +917,92 @@ class N6705CDoubleUI(QWidget):
         """)
         self.batch_content.setVisible(False)
 
-        tools_layout = QVBoxLayout(self.batch_content)
-        tools_layout.setContentsMargins(12, 10, 12, 12)
-        tools_layout.setSpacing(10)
-
-        ab_columns_layout = QHBoxLayout()
-        ab_columns_layout.setSpacing(12)
+        self._batch_content_layout = QVBoxLayout(self.batch_content)
+        self._batch_content_layout.setContentsMargins(12, 10, 12, 12)
+        self._batch_content_layout.setSpacing(10)
 
         self.batch_channel_buttons = []
         self.batch_voltage_inputs = {}
         self.batch_current_inputs = {}
 
-        for dev_label, dev_color in [("A", "#00f5c4"), ("B", "#f2994a")]:
+        self._batch_columns_widget = QWidget()
+        self._batch_columns_widget.setStyleSheet("QWidget { background: transparent; border: none; }")
+        self._batch_columns_layout = QHBoxLayout(self._batch_columns_widget)
+        self._batch_columns_layout.setContentsMargins(0, 0, 0, 0)
+        self._batch_columns_layout.setSpacing(12)
+        self._batch_content_layout.addWidget(self._batch_columns_widget)
+
+        self._build_batch_columns()
+
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setSpacing(10)
+
+        self._batch_measure_btn = QPushButton("Measure")
+        self._batch_set_btn = QPushButton("Set")
+        self._batch_auto_btn = QPushButton("Auto")
+
+        for btn in [self._batch_measure_btn, self._batch_set_btn, self._batch_auto_btn]:
+            btn.setStyleSheet(_outline_action_button_style())
+            buttons_layout.addWidget(btn)
+
+        self._batch_measure_btn.clicked.connect(self._on_batch_measure)
+        self._batch_set_btn.clicked.connect(self._on_batch_set)
+        self._batch_auto_btn.clicked.connect(self._on_batch_auto)
+
+        buttons_layout.addStretch()
+        self._batch_content_layout.addLayout(buttons_layout)
+
+        outer_layout.addWidget(self.batch_content)
+        return outer
+
+    def _build_batch_columns(self):
+        for i in reversed(range(self._batch_columns_layout.count())):
+            item = self._batch_columns_layout.takeAt(i)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+
+        self.batch_channel_buttons.clear()
+        self.batch_voltage_inputs.clear()
+        self.batch_current_inputs.clear()
+
+        dual = self._is_dual_mode()
+        if dual:
+            device_list = [("A", "#00f5c4"), ("B", "#f2994a")]
+        else:
+            single_label = self._get_single_device_label()
+            device_list = [(single_label, "#00f5c4")]
+
+        for dev_label, dev_color in device_list:
             col_frame = QFrame()
-            col_frame.setStyleSheet(f"""
-                QFrame {{
+            col_frame.setStyleSheet("""
+                QFrame {
                     background-color: #0b1b34;
                     border: 1px solid #102746;
                     border-radius: 10px;
-                }}
+                }
             """)
             col_layout = QVBoxLayout(col_frame)
             col_layout.setContentsMargins(10, 8, 10, 8)
             col_layout.setSpacing(8)
 
-            col_title = QLabel(f"Device {dev_label}")
-            col_title.setStyleSheet(f"color: {dev_color}; font-weight: 800; font-size: 13px; border: none;")
-            col_layout.addWidget(col_title)
+            if dual:
+                col_title = QLabel(f"Device {dev_label}")
+                col_title.setStyleSheet(f"color: {dev_color}; font-weight: 800; font-size: 13px; border: none;")
+                col_layout.addWidget(col_title)
 
             ch_row = QHBoxLayout()
             ch_row.setSpacing(6)
             ch_label = QLabel("Channels:")
             ch_label.setStyleSheet("font-size: 11px; color: #8ea6cf; border: none;")
             ch_row.addWidget(ch_label)
-            for ch in range(1, 5):
-                cb = QPushButton(f"CH {ch}")
+            for ch_idx in range(1, 5):
+                cb = QPushButton(f"CH {ch_idx}")
                 cb.setCheckable(True)
-                if ch in [2, 3, 4]:
+                if ch_idx in [2, 3, 4]:
                     cb.setChecked(True)
                 cb.setStyleSheet(_batch_channel_button_style())
-                self.batch_channel_buttons.append((dev_label, ch, cb))
+                self.batch_channel_buttons.append((dev_label, ch_idx, cb))
                 ch_row.addWidget(cb)
             ch_row.addStretch()
             col_layout.addLayout(ch_row)
@@ -814,36 +1035,13 @@ class N6705CDoubleUI(QWidget):
             c_row.addStretch()
             col_layout.addLayout(c_row)
 
-            ab_columns_layout.addWidget(col_frame, 1)
-
-        tools_layout.addLayout(ab_columns_layout)
-
-        buttons_layout = QHBoxLayout()
-        buttons_layout.setSpacing(10)
-
-        measure_all_btn = QPushButton("Measure")
-        set_all_btn = QPushButton("Set")
-        auto_btn = QPushButton("Auto")
-
-        for btn in [measure_all_btn, set_all_btn, auto_btn]:
-            btn.setStyleSheet(_outline_action_button_style())
-            buttons_layout.addWidget(btn)
-
-        measure_all_btn.clicked.connect(self._on_batch_measure)
-        set_all_btn.clicked.connect(self._on_batch_set)
-        auto_btn.clicked.connect(self._on_batch_auto)
-
-        buttons_layout.addStretch()
-        tools_layout.addLayout(buttons_layout)
-
-        outer_layout.addWidget(self.batch_content)
-        return outer
+            self._batch_columns_layout.addWidget(col_frame, 1)
 
     def _toggle_batch_panel(self):
         self.batch_collapsed = not self.batch_collapsed
         self.batch_content.setVisible(not self.batch_collapsed)
         if self.batch_collapsed:
-            self.batch_toggle_btn.setText("▶  Quick Setup")
+            self.batch_toggle_btn.setText("\u25b6  Quick Setup")
             self.batch_toggle_btn.setStyleSheet("""
                 QPushButton {
                     background-color: #0a1930; color: #8ea6cf;
@@ -853,7 +1051,7 @@ class N6705CDoubleUI(QWidget):
                 QPushButton:hover { background-color: #0e1f3d; color: #b8d0f0; }
             """)
         else:
-            self.batch_toggle_btn.setText("▼  Quick Setup")
+            self.batch_toggle_btn.setText("\u25bc  Quick Setup")
             self.batch_toggle_btn.setStyleSheet("""
                 QPushButton {
                     background-color: #0a1930; color: #b8d0f0;
@@ -876,7 +1074,7 @@ class N6705CDoubleUI(QWidget):
 
         header_row = QHBoxLayout()
         header_row.setSpacing(8)
-        icon = QLabel("⚡")
+        icon = QLabel("\u26a1")
         icon.setStyleSheet("font-size: 16px; color: #f2c94c; border: none;")
         title = QLabel("Current Consumption Test")
         title.setStyleSheet("font-size: 14px; font-weight: 700; color: #ffffff; border: none;")
@@ -884,7 +1082,7 @@ class N6705CDoubleUI(QWidget):
         header_row.addWidget(title)
         header_row.addStretch()
 
-        self.ct_save_btn = QPushButton("💾 Save DataLog")
+        self.ct_save_btn = QPushButton("\U0001f4be Save DataLog")
         self.ct_save_btn.setStyleSheet("""
             QPushButton {
                 background-color: #0b1730; color: #dbe6ff;
@@ -922,7 +1120,7 @@ class N6705CDoubleUI(QWidget):
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
 
-        self.ct_start_btn = QPushButton("▶  START TEST")
+        self.ct_start_btn = QPushButton("\u25b6  START TEST")
         self.ct_start_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.ct_start_btn.setStyleSheet("""
             QPushButton {
@@ -934,7 +1132,7 @@ class N6705CDoubleUI(QWidget):
             QPushButton:disabled { background-color: #0b1730; color: #4a5a7a; border: 1px solid #1b2847; }
         """)
 
-        self.ct_stop_btn = QPushButton("■  STOP")
+        self.ct_stop_btn = QPushButton("\u25a0  STOP")
         self.ct_stop_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.ct_stop_btn.setEnabled(False)
         self.ct_stop_btn.setStyleSheet("""
@@ -951,33 +1149,14 @@ class N6705CDoubleUI(QWidget):
         btn_row.addWidget(self.ct_stop_btn, 1)
         layout.addLayout(btn_row)
 
-        devices_row = QHBoxLayout()
-        devices_row.setSpacing(12)
-
+        self._ct_cards_widget = QWidget()
+        self._ct_cards_widget.setStyleSheet("QWidget { background: transparent; border: none; }")
+        self._ct_cards_layout = QHBoxLayout(self._ct_cards_widget)
+        self._ct_cards_layout.setContentsMargins(0, 0, 0, 0)
+        self._ct_cards_layout.setSpacing(12)
         self.ct_channel_cards = {}
-        for dev_label, dev_color in [("A", "#00f5c4"), ("B", "#f2994a")]:
-            dev_frame = QFrame()
-            dev_frame.setStyleSheet(f"""
-                QFrame {{ background-color: #0b1b34; border: 1px solid #102746; border-radius: 10px; }}
-            """)
-            dev_layout = QVBoxLayout(dev_frame)
-            dev_layout.setContentsMargins(10, 8, 10, 8)
-            dev_layout.setSpacing(6)
-
-            dev_title = QLabel(f"Device {dev_label}")
-            dev_title.setStyleSheet(f"color: {dev_color}; font-weight: 700; font-size: 12px; border: none;")
-            dev_layout.addWidget(dev_title)
-
-            ch_row = QHBoxLayout()
-            ch_row.setSpacing(6)
-            for ch in range(1, 5):
-                card = self._create_ct_channel_card(dev_label, ch)
-                ch_row.addWidget(card, 1)
-            dev_layout.addLayout(ch_row)
-
-            devices_row.addWidget(dev_frame, 1)
-
-        layout.addLayout(devices_row, 1)
+        self._build_ct_cards()
+        layout.addWidget(self._ct_cards_widget, 1)
 
         self.ct_start_btn.clicked.connect(self._ct_start_test)
         self.ct_stop_btn.clicked.connect(self._ct_stop_test)
@@ -985,40 +1164,95 @@ class N6705CDoubleUI(QWidget):
 
         return panel
 
+    def _build_ct_cards(self):
+        for i in reversed(range(self._ct_cards_layout.count())):
+            item = self._ct_cards_layout.takeAt(i)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+        self.ct_channel_cards.clear()
+
+        dual = self._is_dual_mode()
+        if dual:
+            for dev_label, dev_color in [("A", "#00f5c4"), ("B", "#f2994a")]:
+                dev_frame = QFrame()
+                dev_frame.setStyleSheet("""
+                    QFrame { background-color: #0b1b34; border: 1px solid #102746; border-radius: 10px; }
+                """)
+                dev_layout = QVBoxLayout(dev_frame)
+                dev_layout.setContentsMargins(10, 8, 10, 8)
+                dev_layout.setSpacing(6)
+
+                dev_title = QLabel(f"Device {dev_label}")
+                dev_title.setStyleSheet(f"color: {dev_color}; font-weight: 700; font-size: 12px; border: none;")
+                dev_layout.addWidget(dev_title)
+
+                ch_row = QHBoxLayout()
+                ch_row.setSpacing(6)
+                for ch in range(1, 5):
+                    card = self._create_ct_channel_card(dev_label, ch)
+                    ch_row.addWidget(card, 1)
+                dev_layout.addLayout(ch_row)
+
+                self._ct_cards_layout.addWidget(dev_frame, 1)
+        else:
+            single_label = self._get_single_device_label()
+            channels_row = QHBoxLayout()
+            channels_row.setSpacing(10)
+            ch_container = QWidget()
+            ch_container.setStyleSheet("QWidget { background: transparent; border: none; }")
+            ch_container_layout = QHBoxLayout(ch_container)
+            ch_container_layout.setContentsMargins(0, 0, 0, 0)
+            ch_container_layout.setSpacing(10)
+            for ch in range(1, 5):
+                card = self._create_ct_channel_card(single_label, ch)
+                ch_container_layout.addWidget(card, 1)
+            self._ct_cards_layout.addWidget(ch_container, 1)
+
     def _create_ct_channel_card(self, dev_label, ch_num):
         colors = CHANNEL_COLORS[ch_num]
         card = QFrame()
         card.setStyleSheet(f"""
-            QFrame {{ background-color: {colors['bg']}; border: 1px solid {colors['border']}; border-radius: 8px; }}
+            QFrame {{ background-color: {colors['bg']}; border: 1px solid {colors['border']}; border-radius: 10px; }}
         """)
         card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        card.setMinimumHeight(90)
+        card.setMinimumHeight(100)
 
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(10, 8, 10, 10)
-        layout.setSpacing(6)
+        layout.setContentsMargins(14, 10, 14, 14)
+        layout.setSpacing(8)
+
+        top_row = QHBoxLayout()
+        top_row.setSpacing(6)
 
         icons = _get_checkmark_path(colors['accent'])
         checkbox = QCheckBox(f"CH {ch_num}")
         checkbox.setChecked(False)
         checkbox.setStyleSheet(f"""
-            QCheckBox {{ color: #ffffff; font-size: 12px; font-weight: 700; background: transparent; spacing: 5px; }}
-            QCheckBox::indicator {{ width: 16px; height: 16px; image: url("{icons['unchecked']}"); }}
+            QCheckBox {{ color: #ffffff; font-size: 13px; font-weight: 700; background: transparent; spacing: 6px; }}
+            QCheckBox::indicator {{ width: 18px; height: 18px; image: url("{icons['unchecked']}"); }}
             QCheckBox::indicator:checked {{ image: url("{icons['checked']}"); }}
         """)
-        layout.addWidget(checkbox)
+
+        top_row.addWidget(checkbox)
+        top_row.addStretch()
+        layout.addLayout(top_row)
         layout.addStretch()
 
         avg_label = QLabel("AVG CURRENT")
         avg_label.setAlignment(Qt.AlignCenter)
-        avg_label.setStyleSheet("color: #8ea6cf; font-size: 10px; font-weight: 600; border: none;")
+        avg_label.setStyleSheet("color: #8ea6cf; font-size: 11px; font-weight: 600; border: none;")
         layout.addWidget(avg_label)
 
         value_label = QLabel("- - -")
         value_label.setAlignment(Qt.AlignCenter)
-        value_label.setStyleSheet(f"color: {colors['accent']}; font-size: 16px; font-weight: 700; letter-spacing: 3px;")
+        value_label.setStyleSheet(f"""
+            QLabel {{
+                color: {colors['accent']}; font-size: 18px;
+                font-weight: 700; letter-spacing: 4px;
+            }}
+        """)
         layout.addWidget(value_label)
-
         layout.addStretch()
 
         key = (dev_label, ch_num)
@@ -1051,44 +1285,35 @@ class N6705CDoubleUI(QWidget):
 
     def _build_channel_tab_style(self, dev_label, ch, checked=False):
         theme = CHANNEL_THEMES[ch]
+        dual = self._is_dual_mode()
+        radius = "17px" if dual else "18px"
+        padding = "5px 12px" if dual else "6px 16px"
+        font_size = "11px" if dual else "12px"
         disabled_part = f"""
             QPushButton:disabled {{
-                background-color: #0a1224;
-                color: #3a4a6a;
-                border: 1px solid #151f36;
-                border-radius: 17px;
-                padding: 5px 12px;
-                font-size: 11px;
-                font-weight: 700;
+                background-color: #0a1224; color: #3a4a6a;
+                border: 1px solid #151f36; border-radius: {radius};
+                padding: {padding}; font-size: {font_size}; font-weight: 700;
             }}
         """
         if checked:
             return f"""
             QPushButton {{
-                background-color: {theme['accent_soft']};
-                color: {theme['accent']};
-                border: 1px solid {theme['accent_border']};
-                border-radius: 17px;
-                padding: 5px 12px;
-                font-size: 11px;
-                font-weight: 700;
+                background-color: {theme['accent_soft']}; color: {theme['accent']};
+                border: 1px solid {theme['accent_border']}; border-radius: {radius};
+                padding: {padding}; font-size: {font_size}; font-weight: 700;
             }}
             {disabled_part}
             """
         else:
             return f"""
             QPushButton {{
-                background-color: #0b1730;
-                color: {theme['text_dim']};
-                border: 1px solid #1b2847;
-                border-radius: 17px;
-                padding: 5px 12px;
-                font-size: 11px;
-                font-weight: 700;
+                background-color: #0b1730; color: {theme['text_dim']};
+                border: 1px solid #1b2847; border-radius: {radius};
+                padding: {padding}; font-size: {font_size}; font-weight: 700;
             }}
             QPushButton:hover {{
-                background-color: #0f1f3a;
-                color: #ffffff;
+                background-color: #0f1f3a; color: #ffffff;
                 border: 1px solid {theme['accent_border']};
             }}
             {disabled_part}
@@ -1126,19 +1351,36 @@ class N6705CDoubleUI(QWidget):
             btn.setStyleSheet(self._build_mode_button_style(btn.isChecked()))
 
     def _refresh_channel_tab_styles(self):
+        dual = self._is_dual_mode()
         idx = 0
-        for dev_label in ["A", "B"]:
+        if dual:
+            for dev_label in ["A", "B"]:
+                for ch in range(1, 5):
+                    if idx < len(self.channel_tab_buttons):
+                        is_active = (dev_label == self.current_device and ch == self.current_channel)
+                        self.channel_tab_buttons[idx].setStyleSheet(
+                            self._build_channel_tab_style(dev_label, ch, is_active)
+                        )
+                        self.channel_tab_buttons[idx].setChecked(is_active)
+                        idx += 1
+        else:
+            single_label = self._get_single_device_label()
             for ch in range(1, 5):
-                is_active = (dev_label == self.current_device and ch == self.current_channel)
-                self.channel_tab_buttons[idx].setStyleSheet(
-                    self._build_channel_tab_style(dev_label, ch, is_active)
-                )
-                self.channel_tab_buttons[idx].setChecked(is_active)
-                idx += 1
+                if idx < len(self.channel_tab_buttons):
+                    is_active = (ch == self.current_channel)
+                    self.channel_tab_buttons[idx].setStyleSheet(
+                        self._build_channel_tab_style(single_label, ch, is_active)
+                    )
+                    self.channel_tab_buttons[idx].setChecked(is_active)
+                    idx += 1
 
     def _apply_channel_theme(self, dev_label, channel_num):
         theme = CHANNEL_THEMES[channel_num]
-        self.channel_title_label.setText(f"{dev_label} - Channel {channel_num}")
+        dual = self._is_dual_mode()
+        if dual:
+            self.channel_title_label.setText(f"{dev_label} - Channel {channel_num}")
+        else:
+            self.channel_title_label.setText(f"Channel {channel_num}")
 
         self.setting_frame.setStyleSheet(f"""
             QFrame {{ background-color: #0a1930; border: 1px solid {theme['accent_border']}; border-radius: 14px; }}
@@ -1230,34 +1472,28 @@ class N6705CDoubleUI(QWidget):
             self.current_set_label.setText("Lim")
             self.voltage_set_input.setEnabled(True)
             self.limit_current_value.setEnabled(True)
-            self.voltage_input_container.setStyleSheet("""
-                QFrame { background-color: #091426; border: 1px solid #17345f; border-radius: 8px; }
-            """)
-            self.current_input_container.setStyleSheet("""
-                QFrame { background-color: #091426; border: 1px solid #17345f; border-radius: 8px; }
-            """)
+            self.voltage_input_container.setStyleSheet(
+                "QFrame { background-color: #091426; border: 1px solid #17345f; border-radius: 8px; }")
+            self.current_input_container.setStyleSheet(
+                "QFrame { background-color: #091426; border: 1px solid #17345f; border-radius: 8px; }")
         elif ui_mode == "CC":
             self.voltage_set_label.setText("Lim")
             self.current_set_label.setText("Set")
             self.voltage_set_input.setEnabled(True)
             self.limit_current_value.setEnabled(True)
-            self.voltage_input_container.setStyleSheet("""
-                QFrame { background-color: #091426; border: 1px solid #17345f; border-radius: 8px; }
-            """)
-            self.current_input_container.setStyleSheet("""
-                QFrame { background-color: #091426; border: 1px solid #17345f; border-radius: 8px; }
-            """)
+            self.voltage_input_container.setStyleSheet(
+                "QFrame { background-color: #091426; border: 1px solid #17345f; border-radius: 8px; }")
+            self.current_input_container.setStyleSheet(
+                "QFrame { background-color: #091426; border: 1px solid #17345f; border-radius: 8px; }")
         else:
             self.voltage_set_label.setText("---")
             self.current_set_label.setText("---")
             self.voltage_set_input.setEnabled(False)
             self.limit_current_value.setEnabled(False)
-            self.voltage_input_container.setStyleSheet("""
-                QFrame { background-color: #070F28; border: 1px solid #131D3A; border-radius: 8px; }
-            """)
-            self.current_input_container.setStyleSheet("""
-                QFrame { background-color: #070F28; border: 1px solid #131D3A; border-radius: 8px; }
-            """)
+            self.voltage_input_container.setStyleSheet(
+                "QFrame { background-color: #070F28; border: 1px solid #131D3A; border-radius: 8px; }")
+            self.current_input_container.setStyleSheet(
+                "QFrame { background-color: #070F28; border: 1px solid #131D3A; border-radius: 8px; }")
 
     def _on_mode_button_clicked(self, clicked_button):
         for btn in self.mode_buttons:
@@ -1349,11 +1585,32 @@ class N6705CDoubleUI(QWidget):
         except Exception as e:
             logger.error("Set failed: %s", e)
 
-    def update_channel_values(self, dev_label, channel_num, voltage, current, limit_current):
+    def update_channel_values(self, dev_label, channel_num, voltage, current, limit_current=None):
         if dev_label == self.current_device and channel_num == self.current_channel:
             self.voltage_value.setText(f"{voltage:.4f}")
             self.current_value.setText(f"{current:.4f}")
-            self.limit_current_value.setText(f"{limit_current:.4f}")
+            if limit_current is not None:
+                self.limit_current_value.setText(f"{limit_current:.4f}")
+
+    def get_channel_settings(self, channel_num):
+        if 1 <= channel_num <= 4 and self.channels:
+            channel = self.channels[0]
+            return {
+                'enabled': channel['toggle'].isChecked(),
+                'voltage_set': float(channel['voltage_set_input'].text()),
+                'current_set': float(channel['current_value'].text()),
+                'current_limit': float(channel['limit_current_value'].text())
+            }
+        return None
+
+    def get_channel_toggle(self, channel_num):
+        if 1 <= channel_num <= 4 and self.channels:
+            return self.channels[0]['toggle']
+        return None
+
+    def set_all_channels_enabled(self, enabled):
+        for channel in self.channels:
+            channel['toggle'].setChecked(enabled)
 
     def _on_all_on_clicked(self):
         for label, dev in self.devices.items():
@@ -1390,6 +1647,13 @@ class N6705CDoubleUI(QWidget):
     def _search_devices(self, label):
         w = self.conn_widgets[label]
         dev = self.devices[label]
+        if DEBUG_MOCK:
+            w["combo"].clear()
+            w["combo"].addItem("MOCK::N6705C")
+            w["status"].setText("Found Mock N6705C")
+            w["status"].setStyleSheet("color: #00a859; font-weight:bold;")
+            w["search_btn"].setEnabled(True)
+            return
         try:
             if dev["rm"] is None:
                 try:
@@ -1427,7 +1691,7 @@ class N6705CDoubleUI(QWidget):
                 w["status"].setText("No N6705C found")
                 w["status"].setStyleSheet("color: #e53935; font-weight:bold;")
         except Exception as e:
-            w["status"].setText(f"Search failed")
+            w["status"].setText("Search failed")
             w["status"].setStyleSheet("color: #e53935; font-weight:bold;")
             logger.error("[%s] Search error: %s", label, e)
         finally:
@@ -1467,11 +1731,12 @@ class N6705CDoubleUI(QWidget):
                     if connect_fn:
                         connect_fn(address, n6705c_instance=n6705c, serial=serial)
 
-                w["status"].setText("● Connected")
+                w["status"].setText("\u25cf Connected")
                 w["status"].setStyleSheet("color: #00a859; font-weight:bold;")
                 w["toggle_conn_btn"].setText("Disconnect")
                 w["toggle_conn_btn"].setStyleSheet(_disconnect_button_style())
                 self._update_ui_connection_state(label, True)
+                self._rebuild_dynamic_sections()
                 self.connection_status_changed.emit(True)
 
                 if label == self.current_device:
@@ -1501,11 +1766,12 @@ class N6705CDoubleUI(QWidget):
             self.devices[label]["n6705c"] = None
             self.devices[label]["is_connected"] = False
 
-            w["status"].setText("● Disconnected")
+            w["status"].setText("\u25cf Disconnected")
             w["status"].setStyleSheet("color: #8ea6cf; font-weight:bold;")
             w["toggle_conn_btn"].setText("Connect")
             w["toggle_conn_btn"].setStyleSheet(_connect_button_style())
             self._update_ui_connection_state(label, False)
+            self._rebuild_dynamic_sections()
             self.connection_status_changed.emit(False)
         except Exception as e:
             w["status"].setText("Disconnect failed")
@@ -1547,6 +1813,9 @@ class N6705CDoubleUI(QWidget):
         self.voltage_value.setEnabled(active_dev_connected)
         self.current_value.setEnabled(active_dev_connected)
 
+        if hasattr(self, 'batch_content'):
+            self.batch_content.setEnabled(any_connected)
+
         if hasattr(self, 'consumption_test_panel'):
             self.consumption_test_panel.setEnabled(any_connected)
             if any_connected:
@@ -1578,6 +1847,8 @@ class N6705CDoubleUI(QWidget):
             if not dev["is_connected"] or not dev["n6705c"]:
                 continue
             channels = self._get_selected_batch_channels(label)
+            if label not in self.batch_voltage_inputs:
+                continue
             voltages = [float(inp.text()) for inp in self.batch_voltage_inputs[label]]
             currents = [float(inp.text()) for inp in self.batch_current_inputs[label]]
             for ch in channels:
@@ -1695,8 +1966,8 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
-    win = N6705CDoubleUI()
-    win.setWindowTitle("N6705C × 2 DC Power Analyzer")
+    win = N6705CAnalyserUI()
+    win.setWindowTitle("N6705C DC Power Analyzer")
     win.setGeometry(100, 100, 1400, 900)
     win.show()
 
