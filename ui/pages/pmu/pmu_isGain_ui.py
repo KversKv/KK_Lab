@@ -873,10 +873,10 @@ class PMUIsGainUI(QWidget):
         title_layout = QVBoxLayout()
         title_layout.setSpacing(2)
 
-        self.page_title = QLabel("⚙ Is_gain Test")
+        self.page_title = QLabel("Load Capability and Output Ripple Test")
         self.page_title.setObjectName("pageTitle")
 
-        self.page_subtitle = QLabel("Configure and execute automated is_gain validation sequences.")
+        self.page_subtitle = QLabel("Configure and execute load capability and output ripple test sequences.")
         self.page_subtitle.setObjectName("pageSubtitle")
 
         title_layout.addWidget(self.page_title)
