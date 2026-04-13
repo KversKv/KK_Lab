@@ -200,9 +200,14 @@ class OscilloscopeController:
                     self._instrument.set_channel_scale(ch_num, settings['scale'])
                     self._instrument.set_channel_offset(ch_num, settings['offset'])
 
+                    coupling = settings.get('coupling')
+                    if coupling and hasattr(self._instrument, 'set_channel_coupling'):
+                        self._instrument.set_channel_coupling(ch_num, coupling)
+
                 self._log(
                     f"[SETTING] CH{ch_num}: {'ON' if settings['enabled'] else 'OFF'}, "
                     f"Scale={settings['scale']} V/div, Offset={settings['offset']} V"
+                    f"{', Coupling=' + settings.get('coupling', '') if settings.get('coupling') else ''}"
                 )
             except Exception as e:
                 self._log(f"[ERROR] CH{ch_num} setting failed: {e}")

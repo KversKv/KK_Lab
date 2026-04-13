@@ -174,6 +174,15 @@ class MSO64B:
         result = self.instrument.query(f'DISPlay:GLObal:CH{channel}:STATE?').strip().upper()
         return result in ('1', 'ON')
 
+    def set_channel_coupling(self, channel, coupling='DC'):
+        coupling = coupling.upper()
+        if coupling not in ('AC', 'DC'):
+            raise ValueError(f'coupling must be AC / DC, got: {coupling}')
+        self.instrument.write(f'CH{channel}:COUPling {coupling}')
+
+    def get_channel_coupling(self, channel):
+        return self.instrument.query(f'CH{channel}:COUPling?').strip()
+
     def set_channel_bandwidth(self, channel, bandwidth='FULl'):
         self.instrument.write(f'CH{channel}:BANdwidth {bandwidth}')
 

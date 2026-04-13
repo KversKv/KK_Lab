@@ -1318,48 +1318,6 @@ class OscilloscopeBaseUI(QWidget):
 
         layout.addWidget(tab_bar)
 
-        self._channel_select_bar = QFrame()
-        self._channel_select_bar.setStyleSheet(
-            "QFrame { background: transparent; border: none; }"
-        )
-        select_layout = QHBoxLayout(self._channel_select_bar)
-        select_layout.setContentsMargins(0, 0, 0, 0)
-        select_layout.setSpacing(4)
-        self._channel_select_buttons = []
-        for i in range(self.NUM_CHANNELS):
-            sbtn = QPushButton(f"CH{i+1}")
-            sbtn.setCheckable(True)
-            sbtn.setAutoExclusive(True)
-            sbtn.setFixedHeight(24)
-            sbtn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            sbtn.setStyleSheet("""
-                QPushButton {
-                    background: transparent;
-                    border: none;
-                    border-bottom: 2px solid transparent;
-                    color: #5F77AE;
-                    font-size: 8pt;
-                    font-weight: 600;
-                    padding: 2px 4px;
-                    border-radius: 0px;
-                }
-                QPushButton:checked {
-                    color: #DDE6FF;
-                    border-bottom: 2px solid #7B7DFF;
-                }
-                QPushButton:hover:!checked {
-                    color: #8FA4D4;
-                }
-                QPushButton:disabled {
-                    color: #3A4563;
-                    border-bottom: 2px solid transparent;
-                }
-            """)
-            sbtn.clicked.connect(lambda checked=False, idx=i: self._switch_channel_card(idx))
-            self._channel_select_buttons.append(sbtn)
-            select_layout.addWidget(sbtn)
-        layout.addWidget(self._channel_select_bar)
-
         self.channel_stack = QStackedWidget()
         for i in range(self.NUM_CHANNELS):
             page = self._create_channel_card(i + 1)
@@ -1396,7 +1354,6 @@ class OscilloscopeBaseUI(QWidget):
 
         for btn in self.channel_tab_buttons:
             btn.setChecked(False)
-        self._channel_select_buttons[0].setChecked(True)
         self._selected_channel_index = 0
         self._switch_channel_card(0)
 
@@ -1442,24 +1399,30 @@ class OscilloscopeBaseUI(QWidget):
         inst = self.controller.instrument
         try:
             from instruments.scopes.tektronix.mso64b import MSO64B
-            if not isinstance(inst, MSO64B):
-                self.append_log("[WARN] This function is only available for Tektronix MSO64B.")
+            from instruments.scopes.keysight.dsox4034a import DSOX4034A
+
+            if not isinstance(inst, (MSO64B, DSOX4034A)):
+                self.append_log("[WARN] This function is only available for Tektronix MSO64B / Keysight DSO-X 4034A.")
                 return
 
             self.append_log("[QUICK] Setting all channels to default ripple config...")
             for ch in range(1, self.NUM_CHANNELS + 1):
-                inst.set_channel_bandwidth(ch, '20E+6')
+                inst.set_channel_display(ch, True)
+                if hasattr(inst, 'set_channel_bandwidth'):
+                    inst.set_channel_bandwidth(ch, '20E+6')
                 inst.set_channel_scale(ch, 0.5)
                 inst.set_channel_offset(ch, 1.8)
             inst.set_timebase_scale(0.001)
-            inst.set_timebase_position(50)
+            if hasattr(inst, 'set_timebase_position'):
+                inst.set_timebase_position(50 if isinstance(inst, MSO64B) else 0.0)
 
             for i, channel_data in enumerate(self.channels):
+                self.channel_tab_buttons[i].setChecked(True)
                 channel_data['scale_edit'].setText("0.5")
                 channel_data['offset_edit'].setText("1.8")
             self.timebase_edit.setText("1ms")
 
-            self.append_log("[QUICK] All channels set: BW=20MHz, Scale=500mV/div, Offset=1.8V; TimeScale=1ms/div")
+            self.append_log("[QUICK] All channels set: ON, BW=20MHz, Scale=500mV/div, Offset=1.8V; TimeScale=1ms/div")
         except Exception as e:
             self.append_log(f"[ERROR] All Channel Set Default failed: {e}")
 
@@ -1471,8 +1434,10 @@ class OscilloscopeBaseUI(QWidget):
         inst = self.controller.instrument
         try:
             from instruments.scopes.tektronix.mso64b import MSO64B
-            if not isinstance(inst, MSO64B):
-                self.append_log("[WARN] This function is only available for Tektronix MSO64B.")
+            from instruments.scopes.keysight.dsox4034a import DSOX4034A
+
+            if not isinstance(inst, (MSO64B, DSOX4034A)):
+                self.append_log("[WARN] This function is only available for Tektronix MSO64B / Keysight DSO-X 4034A.")
                 return
 
             ch_text = self.quick_channel_combo.currentText()
@@ -1571,15 +1536,23 @@ class OscilloscopeBaseUI(QWidget):
 
     def _switch_channel_card(self, index):
         self._selected_channel_index = index
-        for i, btn in enumerate(self._channel_select_buttons):
-            btn.setChecked(i == index)
         self.channel_stack.setCurrentIndex(index)
 
     def _on_channel_tab_clicked(self, index):
         btn = self.channel_tab_buttons[index]
-        is_enabled = btn.isChecked()
-        if self.is_connected:
-            self._apply_channel_display(index + 1, is_enabled)
+        was_selected = (self._selected_channel_index == index)
+
+        if btn.isChecked():
+            self._switch_channel_card(index)
+            if self.is_connected:
+                self._apply_channel_display(index + 1, True)
+        else:
+            if not was_selected:
+                btn.setChecked(True)
+                self._switch_channel_card(index)
+            else:
+                if self.is_connected:
+                    self._apply_channel_display(index + 1, False)
 
     def _init_ui_elements(self):
         for channel in self.channels:
@@ -1867,9 +1840,6 @@ class OscilloscopeBaseUI(QWidget):
         self.quick_channel_combo.setEnabled(enabled)
 
         for btn in self.channel_tab_buttons:
-            btn.setEnabled(enabled)
-
-        for btn in self._channel_select_buttons:
             btn.setEnabled(enabled)
 
         for channel in self.channels:

@@ -242,6 +242,25 @@ class DSOX4034A:
         self._validate_channel(channel)
         return self._safe_float(self.query(f':CHANnel{channel}:OFFSet?'))
 
+    def set_channel_coupling(self, channel: int, coupling: str):
+        self._validate_channel(channel)
+        coupling = coupling.upper()
+        if coupling not in ('AC', 'DC'):
+            raise ValueError(f'coupling 必须是 AC / DC, 收到: {coupling}')
+        self.write(f':CHANnel{channel}:COUPling {coupling}')
+
+    def get_channel_coupling(self, channel: int) -> str:
+        self._validate_channel(channel)
+        return self.query(f':CHANnel{channel}:COUPling?').strip()
+
+    def set_channel_bandwidth(self, channel: int, bandwidth: str = 'FULl'):
+        self._validate_channel(channel)
+        self.write(f':CHANnel{channel}:BWLimit {bandwidth}')
+
+    def get_channel_bandwidth(self, channel: int) -> str:
+        self._validate_channel(channel)
+        return self.query(f':CHANnel{channel}:BWLimit?').strip()
+
     # =========================
     # 时基
     # =========================
