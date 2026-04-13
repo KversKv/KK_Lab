@@ -11,6 +11,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.styles.button import update_connect_button_state
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QPushButton,
     QLabel, QLineEdit, QFrame, QGraphicsDropShadowEffect,
@@ -182,8 +183,8 @@ class VT6002ChamberUI(QWidget):
         status_text_layout.addWidget(self.status_title)
         status_text_layout.addWidget(self.status_detail)
 
-        self.connect_btn = QPushButton("🔗  Connect")
-        self.connect_btn.setObjectName("connectButton")
+        self.connect_btn = QPushButton()
+        update_connect_button_state(self.connect_btn, connected=False)
         self.connect_btn.setFixedHeight(36)
 
         status_layout.addWidget(self.status_dot)
@@ -465,23 +466,6 @@ class VT6002ChamberUI(QWidget):
             color: #7e95bf;
         }
 
-        #connectButton {
-            background-color: transparent;
-            color: #14e6a2;
-            border: 1px solid #1b3f4f;
-            border-radius: 8px;
-            padding: 8px 16px;
-            font-weight: 700;
-        }
-
-        #connectButton:hover {
-            background-color: rgba(20, 230, 162, 0.08);
-        }
-
-        #connectButton:pressed {
-            background-color: rgba(20, 230, 162, 0.14);
-        }
-
         #miniInfoBox {
             background-color: #040d28;
             border: 1px solid #17305f;
@@ -600,33 +584,11 @@ class VT6002ChamberUI(QWidget):
             btn.setEnabled(enabled)
 
     def _set_connection_ui(self, connected: bool):
-        """更新连接状态界面"""
+        update_connect_button_state(self.connect_btn, connected)
         if connected:
-            # 连接状态：按钮显示为断开连接
-            self.connect_btn.setText("⚠  Disconnect")
-            self.connect_btn.setStyleSheet("""
-                background-color: rgba(255, 76, 106, 0.1);
-                color: #ff4c6a;
-                border: 1px solid #3d1e2a;
-                border-radius: 8px;
-                padding: 8px 16px;
-                font-weight: 700;
-            """)
-            # 更新状态显示
             self.status_detail.setText("Connected & Ready")
             self.status_dot.setStyleSheet("color: #15e6a3; font-size: 16px;border: none")
         else:
-            # 断开状态：按钮显示为连接
-            self.connect_btn.setText("🔗  Connect")
-            self.connect_btn.setStyleSheet("""
-                background-color: transparent;
-                color: #14e6a2;
-                border: 1px solid #1b3f4f;
-                border-radius: 8px;
-                padding: 8px 16px;
-                font-weight: 700;
-            """)
-            # 更新状态显示
             self.status_detail.setText("Disconnected")
             self.status_dot.setStyleSheet("color: #5d78a7; font-size: 16px;border: none")
 

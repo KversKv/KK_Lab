@@ -35,6 +35,7 @@ import pyvisa
 import os
 
 from instruments.power.keysight.n6705c import N6705C
+from ui.styles.button import SpinningSearchButton, update_connect_button_state
 from instruments.power.keysight.n6705c_datalog_process import (
     parse_csv_text, parse_dlog_binary, compute_power_channels,
     calc_power_for_ch, import_csv_file, import_edlg_file, import_dlog_file,
@@ -1006,53 +1007,6 @@ class N6705CDatalogUI(QWidget):
                 border: 1px solid #3c5fa1;
             }
 
-            QPushButton#searchBtn {
-                min-height: 30px;
-                max-width: 34px;
-                min-width: 34px;
-                padding: 0;
-                border-radius: 8px;
-                background-color: #13254b;
-                color: #dce7ff;
-                font-size: 13px;
-            }
-
-            QPushButton#searchBtn:hover {
-                background-color: #1a3260;
-            }
-
-            QPushButton#dynamicConnectBtn {
-                min-height: 30px;
-                min-width: 110px;
-                border-radius: 8px;
-                padding: 4px 12px;
-                font-weight: 700;
-            }
-
-            QPushButton#dynamicConnectBtn[connected="false"] {
-                background-color: #053b38;
-                border: 1px solid #08c9a5;
-                color: #10e7bc;
-            }
-
-            QPushButton#dynamicConnectBtn[connected="false"]:hover {
-                background-color: #064744;
-                border: 1px solid #19f0c5;
-                color: #43f3d0;
-            }
-
-            QPushButton#dynamicConnectBtn[connected="true"] {
-                background-color: #3a0828;
-                border: 1px solid #d61b67;
-                color: #ffb7d3;
-            }
-
-            QPushButton#dynamicConnectBtn[connected="true"]:hover {
-                background-color: #4a0b31;
-                border: 1px solid #f0287b;
-                color: #ffd0e2;
-            }
-
             QPushButton#primaryActionBtn {
                 min-height: 40px;
                 border-radius: 10px;
@@ -1568,15 +1522,13 @@ class N6705CDatalogUI(QWidget):
         info_layout.addWidget(ip_label)
         card_layout.addLayout(info_layout, 1)
 
-        connect_btn = QPushButton("\U0001F517  Connect")
-        connect_btn.setObjectName("dynamicConnectBtn")
-        connect_btn.setProperty("connected", "false")
+        connect_btn = QPushButton()
+        update_connect_button_state(connect_btn, connected=False)
         connect_btn.clicked.connect(lambda: self._on_device_connect(visa_resource, serial))
         card_layout.addWidget(connect_btn)
 
-        disconnect_btn = QPushButton("\u21BA  Disconnect")
-        disconnect_btn.setObjectName("dynamicConnectBtn")
-        disconnect_btn.setProperty("connected", "true")
+        disconnect_btn = QPushButton()
+        update_connect_button_state(disconnect_btn, connected=True)
         disconnect_btn.clicked.connect(lambda: self._on_device_disconnect(serial))
         disconnect_btn.hide()
         card_layout.addWidget(disconnect_btn)
@@ -3111,11 +3063,7 @@ class N6705CDatalogUI(QWidget):
         return self.is_connected_b
 
     def _update_connect_btn(self, btn, connected):
-        btn.setProperty("connected", "true" if connected else "false")
-        btn.setText("\u21BA  Disconnect" if connected else "\U0001F517  Connect")
-        btn.style().unpolish(btn)
-        btn.style().polish(btn)
-        btn.update()
+        update_connect_button_state(btn, connected)
 
     def _update_recording_button_state(self, recording):
         self.is_recording = recording

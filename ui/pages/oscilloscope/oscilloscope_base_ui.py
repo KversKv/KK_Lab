@@ -15,6 +15,7 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QFont, QPixmap, QImage, QPainter, QColor, QPen
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLL_AREA_STYLE
+from ui.styles.button import SpinningSearchButton, update_connect_button_state
 from instruments.scopes.base import OscilloscopeController
 from log_config import get_logger
 from debug_config import DEBUG_MOCK
@@ -33,6 +34,21 @@ CHANNEL_TEXT_COLORS = {
     "#FF4444": "#FFFFFF",
     "#7B8CB7": "#081126",
 }
+
+
+class _OscSearchThread(QThread):
+    search_result = Signal(list)
+
+    def __init__(self, controller, parent=None):
+        super().__init__(parent)
+        self._controller = controller
+
+    def run(self):
+        try:
+            found = self._controller.search_visa_devices()
+        except Exception:
+            found = []
+        self.search_result.emit(found)
 
 
 class CaptureLoadingOverlay(QWidget):
@@ -526,9 +542,7 @@ class OscilloscopeBaseUI(QWidget):
         self._settings_dirty = False
         self._apply_pulse_timer = None
 
-        self.search_timer = QTimer(self)
-        self.search_timer.timeout.connect(self._search_devices)
-        self.search_timer.setSingleShot(True)
+        self._osc_search_thread = None
 
         self._setup_fonts()
         self._setup_style()
@@ -647,64 +661,6 @@ class OscilloscopeBaseUI(QWidget):
                 background-color: #0D1734;
                 color: #5C6B95;
                 border: 1px solid #18264A;
-            }
-
-            QPushButton#dynamicConnectBtn {
-                border-radius: 8px;
-                padding: 4px 14px;
-                font-weight: 700;
-            }
-
-            QPushButton#dynamicConnectBtn[connected="false"] {
-                background-color: #053b38;
-                border: 1px solid #08c9a5;
-                color: #10e7bc;
-            }
-
-            QPushButton#dynamicConnectBtn[connected="false"]:hover {
-                background-color: #064744;
-                border: 1px solid #19f0c5;
-                color: #43f3d0;
-            }
-
-            QPushButton#dynamicConnectBtn[connected="false"]:pressed {
-                background-color: #042f2d;
-            }
-
-            QPushButton#dynamicConnectBtn[connected="true"] {
-                background-color: #3a0828;
-                border: 1px solid #d61b67;
-                color: #ffb7d3;
-            }
-
-            QPushButton#dynamicConnectBtn[connected="true"]:hover {
-                background-color: #4a0b31;
-                border: 1px solid #f0287b;
-                color: #ffd0e2;
-            }
-
-            QPushButton#dynamicConnectBtn[connected="true"]:pressed {
-                background-color: #330722;
-            }
-
-            QPushButton#searchBtn {
-                padding: 4px 14px;
-                border-radius: 8px;
-                background-color: #13254b;
-                border: 1px solid #22376A;
-                color: #dce7ff;
-                font-weight: 600;
-            }
-
-            QPushButton#searchBtn:hover {
-                background-color: #1C2D55;
-                border: 1px solid #3A5A9F;
-            }
-
-            QPushButton#searchBtn:disabled {
-                background-color: #0b1430;
-                color: #5c7096;
-                border: 1px solid #1a2850;
             }
 
             QLabel#statusOk {
@@ -1030,15 +986,13 @@ class OscilloscopeBaseUI(QWidget):
         btn_row = QHBoxLayout()
         btn_row.setSpacing(10)
 
-        self.search_btn = QPushButton("🔍  Search")
-        self.search_btn.setObjectName("searchBtn")
+        self.search_btn = SpinningSearchButton()
         self.search_btn.setFixedHeight(36)
         self.search_btn.clicked.connect(self._on_search)
         btn_row.addWidget(self.search_btn)
 
-        self.connect_btn = QPushButton("🔗  Connect")
-        self.connect_btn.setObjectName("dynamicConnectBtn")
-        self.connect_btn.setProperty("connected", "false")
+        self.connect_btn = QPushButton()
+        update_connect_button_state(self.connect_btn, connected=False)
         self.connect_btn.setFixedHeight(36)
         btn_row.addWidget(self.connect_btn)
 
@@ -1811,11 +1765,7 @@ class OscilloscopeBaseUI(QWidget):
 
     def _update_connect_button_state(self, connected: bool):
         self.is_connected = connected
-        self.connect_btn.setProperty("connected", "true" if connected else "false")
-        self.connect_btn.setText("⟲  Disconnect" if connected else "🔗  Connect")
-        self.connect_btn.style().unpolish(self.connect_btn)
-        self.connect_btn.style().polish(self.connect_btn)
-        self.connect_btn.update()
+        update_connect_button_state(self.connect_btn, connected)
 
     def set_system_status(self, status, is_error=False):
         self.system_status_label.setText(status)
@@ -1891,33 +1841,34 @@ class OscilloscopeBaseUI(QWidget):
             )
 
     def _on_search(self):
+        if self._osc_search_thread is not None and self._osc_search_thread.isRunning():
+            return
         self.set_system_status("● Searching")
         self.append_log("[SYSTEM] Scanning VISA / network resources...")
         self.search_btn.setEnabled(False)
-        self.search_timer.start(100)
+        self.search_btn.start_spinning()
 
-    def _search_devices(self):
-        try:
-            scope_devices = self.controller.search_visa_devices()
+        thread = _OscSearchThread(self.controller, self)
+        thread.search_result.connect(self._on_search_finished)
+        thread.finished.connect(lambda: setattr(self, '_osc_search_thread', None))
+        self._osc_search_thread = thread
+        thread.start()
 
-            self.visa_resource_combo.setEnabled(True)
-            self.visa_resource_combo.clear()
-
-            if scope_devices:
-                for dev in scope_devices:
-                    self.visa_resource_combo.addItem(dev)
-                count = len(scope_devices)
-                self.set_system_status(f"● Found {count} device(s)")
-                self.visa_resource_combo.setCurrentIndex(0)
-            else:
-                self.visa_resource_combo.addItem("No device found")
-                self.visa_resource_combo.setEnabled(False)
-                self.set_system_status("● No device found", is_error=True)
-        except Exception as e:
-            self.set_system_status("● Search failed", is_error=True)
-            self.append_log(f"[ERROR] Search failed: {str(e)}")
-        finally:
-            self.search_btn.setEnabled(True)
+    def _on_search_finished(self, scope_devices):
+        self.visa_resource_combo.setEnabled(True)
+        self.visa_resource_combo.clear()
+        if scope_devices:
+            for dev in scope_devices:
+                self.visa_resource_combo.addItem(dev)
+            count = len(scope_devices)
+            self.set_system_status(f"● Found {count} device(s)")
+            self.visa_resource_combo.setCurrentIndex(0)
+        else:
+            self.visa_resource_combo.addItem("No device found")
+            self.visa_resource_combo.setEnabled(False)
+            self.set_system_status("● No device found", is_error=True)
+        self.search_btn.stop_spinning()
+        self.search_btn.setEnabled(True)
 
     def set_title(self, title):
         self.title_label.setText(title)

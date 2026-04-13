@@ -7,6 +7,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.styles.button import SpinningSearchButton, update_connect_button_state
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit,
@@ -203,30 +204,49 @@ def _batch_channel_button_style():
     """
 
 
-def _connect_button_style():
-    return """
-        QPushButton {
-            background-color: #0a3d28; color: #00f5c4;
-            border: 1px solid #00cfa6; border-radius: 8px;
-            padding: 6px 18px; font-size: 12px; font-weight: 700;
-            min-width: 90px;
-        }
-        QPushButton:hover { background-color: #0e5535; border: 1px solid #00f5c4; color: #3fffd7; }
-        QPushButton:disabled { background-color: #0b1730; color: #4a5a7a; border: 1px solid #1b2847; }
-    """
 
+class _SearchThread(QThread):
+    search_result = Signal(str, list)
 
-def _disconnect_button_style():
-    return """
-        QPushButton {
-            background-color: #3d1a1a; color: #ff6b6b;
-            border: 1px solid #ff4444; border-radius: 8px;
-            padding: 6px 18px; font-size: 12px; font-weight: 700;
-            min-width: 90px;
-        }
-        QPushButton:hover { background-color: #552222; border: 1px solid #ff6b6b; color: #ff9999; }
-        QPushButton:disabled { background-color: #0b1730; color: #4a5a7a; border: 1px solid #1b2847; }
-    """
+    def __init__(self, label, parent=None):
+        super().__init__(parent)
+        self._label = label
+
+    def run(self):
+        found = []
+        rm = None
+        try:
+            try:
+                rm = pyvisa.ResourceManager()
+            except Exception:
+                rm = pyvisa.ResourceManager('@ni')
+            resources = list(rm.list_resources()) or []
+            seen = {}
+            for res in resources:
+                try:
+                    instr = rm.open_resource(res, timeout=1000)
+                    idn = instr.query('*IDN?').strip()
+                    instr.close()
+                    if "N6705C" in idn:
+                        parts = idn.split(",")
+                        serial = parts[2].strip() if len(parts) > 2 else res
+                        if serial in seen:
+                            if "hislip" in res and "hislip" not in seen[serial]:
+                                seen[serial] = res
+                        else:
+                            seen[serial] = res
+                except Exception:
+                    pass
+            found = list(seen.values())
+        except Exception:
+            pass
+        finally:
+            if rm is not None:
+                try:
+                    rm.close()
+                except Exception:
+                    pass
+        self.search_result.emit(self._label, found)
 
 
 class _ChannelSyncWorker(QObject):
@@ -326,13 +346,7 @@ class N6705CAnalyserUI(QWidget):
         self._setup_style()
         self._create_layout()
 
-        self.search_timer_a = QTimer(self)
-        self.search_timer_a.timeout.connect(lambda: self._search_devices("A"))
-        self.search_timer_a.setSingleShot(True)
-
-        self.search_timer_b = QTimer(self)
-        self.search_timer_b.timeout.connect(lambda: self._search_devices("B"))
-        self.search_timer_b.setSingleShot(True)
+        self._search_threads = {}
 
         self._apply_channel_theme(self.current_device, self.current_channel)
         self._update_ui_connection_state("A", False)
@@ -379,8 +393,7 @@ class N6705CAnalyserUI(QWidget):
                 if visa_res:
                     w["combo"].clear()
                     w["combo"].addItem(visa_res)
-                w["toggle_conn_btn"].setText("Disconnect")
-                w["toggle_conn_btn"].setStyleSheet(_disconnect_button_style())
+                update_connect_button_state(w["toggle_conn_btn"], connected=True)
                 self._update_ui_connection_state(label, True)
         self._rebuild_dynamic_sections()
         if self.devices[self.current_device]["is_connected"]:
@@ -483,9 +496,9 @@ class N6705CAnalyserUI(QWidget):
         ci_layout.addWidget(self.channel_tabs)
 
         self.setting_widget = self._create_setting_widget()
-        ci_layout.addWidget(self.setting_widget, 1)
+        ci_layout.addWidget(self.setting_widget)
 
-        main_layout.addWidget(self.channel_interaction_frame, 1)
+        main_layout.addWidget(self.channel_interaction_frame)
         main_layout.addSpacing(8)
 
         self.batch_tools_panel = self._create_batch_tools_panel()
@@ -494,6 +507,8 @@ class N6705CAnalyserUI(QWidget):
 
         self.consumption_test_panel = self._create_consumption_test_panel()
         main_layout.addWidget(self.consumption_test_panel)
+
+        main_layout.addStretch()
 
     def _create_top_bar(self):
         top_frame = QFrame()
@@ -567,10 +582,10 @@ class N6705CAnalyserUI(QWidget):
             combo.setMinimumWidth(300)
             combo.addItem(default_addresses[label])
 
-            search_btn = QPushButton("Search")
+            search_btn = SpinningSearchButton()
 
-            toggle_conn_btn = QPushButton("Connect")
-            toggle_conn_btn.setStyleSheet(_connect_button_style())
+            toggle_conn_btn = QPushButton()
+            update_connect_button_state(toggle_conn_btn, connected=False)
             toggle_conn_btn.clicked.connect(lambda _checked=False, lb=label: self._on_toggle_connection(lb))
 
             search_btn.clicked.connect(lambda _checked=False, lb=label: self._on_search(lb))
@@ -1747,65 +1762,38 @@ class N6705CAnalyserUI(QWidget):
             channel['toggle'].setChecked(enabled)
 
     def _on_search(self, label):
+        if label in self._search_threads and self._search_threads[label].isRunning():
+            return
         w = self.conn_widgets[label]
         w["status"].setText("Searching...")
         w["status"].setStyleSheet("color: #ff9800; font-weight:bold;")
         w["search_btn"].setEnabled(False)
-        timer = self.search_timer_a if label == "A" else self.search_timer_b
-        timer.start(100)
+        w["search_btn"].start_spinning()
 
-    def _search_devices(self, label):
-        w = self.conn_widgets[label]
-        dev = self.devices[label]
         if DEBUG_MOCK:
-            w["combo"].clear()
-            w["combo"].addItem("MOCK::N6705C")
-            w["status"].setText("Found Mock N6705C")
-            w["status"].setStyleSheet("color: #00a859; font-weight:bold;")
-            w["search_btn"].setEnabled(True)
+            QTimer.singleShot(600, lambda: self._on_search_finished(label, ["MOCK::N6705C"]))
             return
-        try:
-            if dev["rm"] is None:
-                try:
-                    dev["rm"] = pyvisa.ResourceManager()
-                except Exception:
-                    dev["rm"] = pyvisa.ResourceManager('@ni')
 
-            resources = list(dev["rm"].list_resources()) or []
-            seen = {}
-            for res in resources:
-                try:
-                    instr = dev["rm"].open_resource(res, timeout=1000)
-                    idn = instr.query('*IDN?').strip()
-                    instr.close()
-                    if "N6705C" in idn:
-                        parts = idn.split(",")
-                        serial = parts[2].strip() if len(parts) > 2 else res
-                        if serial in seen:
-                            if "hislip" in res and "hislip" not in seen[serial]:
-                                seen[serial] = res
-                        else:
-                            seen[serial] = res
-                except Exception:
-                    pass
+        thread = _SearchThread(label, self)
+        thread.search_result.connect(self._on_search_finished)
+        thread.finished.connect(lambda: self._search_threads.pop(label, None))
+        self._search_threads[label] = thread
+        thread.start()
 
-            found = list(seen.values())
-            w["combo"].clear()
-            if found:
-                for d in found:
-                    w["combo"].addItem(d)
-                w["status"].setText(f"Found {len(found)} N6705C")
-                w["status"].setStyleSheet("color: #00a859; font-weight:bold;")
-            else:
-                w["combo"].addItem("No N6705C found")
-                w["status"].setText("No N6705C found")
-                w["status"].setStyleSheet("color: #e53935; font-weight:bold;")
-        except Exception as e:
-            w["status"].setText("Search failed")
+    def _on_search_finished(self, label, found):
+        w = self.conn_widgets[label]
+        w["combo"].clear()
+        if found:
+            for d in found:
+                w["combo"].addItem(d)
+            w["status"].setText(f"Found {len(found)} N6705C")
+            w["status"].setStyleSheet("color: #00a859; font-weight:bold;")
+        else:
+            w["combo"].addItem("No N6705C found")
+            w["status"].setText("No N6705C found")
             w["status"].setStyleSheet("color: #e53935; font-weight:bold;")
-            logger.error("[%s] Search error: %s", label, e)
-        finally:
-            w["search_btn"].setEnabled(True)
+        w["search_btn"].stop_spinning()
+        w["search_btn"].setEnabled(True)
 
     def _on_toggle_connection(self, label):
         if self.devices[label]["is_connected"]:
@@ -1843,8 +1831,7 @@ class N6705CAnalyserUI(QWidget):
 
                 w["status"].setText("\u25cf Connected")
                 w["status"].setStyleSheet("color: #00a859; font-weight:bold;")
-                w["toggle_conn_btn"].setText("Disconnect")
-                w["toggle_conn_btn"].setStyleSheet(_disconnect_button_style())
+                update_connect_button_state(w["toggle_conn_btn"], connected=True)
                 self._update_ui_connection_state(label, True)
                 self._rebuild_dynamic_sections()
                 self.connection_status_changed.emit(True)
@@ -1878,8 +1865,7 @@ class N6705CAnalyserUI(QWidget):
 
             w["status"].setText("\u25cf Disconnected")
             w["status"].setStyleSheet("color: #8ea6cf; font-weight:bold;")
-            w["toggle_conn_btn"].setText("Connect")
-            w["toggle_conn_btn"].setStyleSheet(_connect_button_style())
+            update_connect_button_state(w["toggle_conn_btn"], connected=False)
             self._update_ui_connection_state(label, False)
             self._rebuild_dynamic_sections()
             self.connection_status_changed.emit(False)
