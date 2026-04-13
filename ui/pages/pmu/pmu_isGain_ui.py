@@ -21,6 +21,7 @@ from datetime import datetime
 import pyvisa
 
 from instruments.power.keysight.n6705c import N6705C
+from ui.styles.button import SpinningSearchButton, update_connect_button_state
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockN6705C, MockMSO64B
 from instruments.scopes.tektronix.mso64b import MSO64B
@@ -726,37 +727,6 @@ class PMUIsGainUI(QWidget):
                 color: #dce7ff;
             }
 
-            QPushButton#dynamicConnectBtn {
-                min-height: 30px;
-                border-radius: 8px;
-                padding: 4px 12px;
-                font-weight: 700;
-            }
-
-            QPushButton#dynamicConnectBtn[connected="false"] {
-                background-color: #053b38;
-                border: 1px solid #08c9a5;
-                color: #10e7bc;
-            }
-
-            QPushButton#dynamicConnectBtn[connected="false"]:hover {
-                background-color: #064744;
-                border: 1px solid #19f0c5;
-                color: #43f3d0;
-            }
-
-            QPushButton#dynamicConnectBtn[connected="true"] {
-                background-color: #3a0828;
-                border: 1px solid #d61b67;
-                color: #ffb7d3;
-            }
-
-            QPushButton#dynamicConnectBtn[connected="true"]:hover {
-                background-color: #4a0b31;
-                border: 1px solid #f0287b;
-                color: #ffd0e2;
-            }
-
             QPushButton#primaryActionBtn {
                 min-height: 36px;
                 border-radius: 10px;
@@ -1008,12 +978,10 @@ class PMUIsGainUI(QWidget):
         n670_row = QHBoxLayout()
         n670_row.setSpacing(8)
 
-        self.search_btn = QPushButton("Search")
-        self.search_btn.setObjectName("smallActionBtn")
+        self.search_btn = SpinningSearchButton()
 
-        self.connect_btn = QPushButton("🔗  Connect")
-        self.connect_btn.setObjectName("dynamicConnectBtn")
-        self.connect_btn.setProperty("connected", "false")
+        self.connect_btn = QPushButton()
+        update_connect_button_state(self.connect_btn, connected=False)
 
         n670_row.addWidget(self.search_btn)
         n670_row.addWidget(self.connect_btn)
@@ -1035,12 +1003,10 @@ class PMUIsGainUI(QWidget):
         scope_row = QHBoxLayout()
         scope_row.setSpacing(8)
 
-        self.scope_search_btn = QPushButton("Search")
-        self.scope_search_btn.setObjectName("smallActionBtn")
+        self.scope_search_btn = SpinningSearchButton()
 
-        self.scope_connect_btn = QPushButton("🔗  Connect")
-        self.scope_connect_btn.setObjectName("dynamicConnectBtn")
-        self.scope_connect_btn.setProperty("connected", "false")
+        self.scope_connect_btn = QPushButton()
+        update_connect_button_state(self.scope_connect_btn, connected=False)
 
         scope_row.addWidget(self.scope_search_btn)
         scope_row.addWidget(self.scope_connect_btn)
@@ -1204,11 +1170,7 @@ class PMUIsGainUI(QWidget):
             w.setVisible(is_traverse)
 
     def _update_connect_button_state(self, button: QPushButton, connected: bool):
-        button.setProperty("connected", "true" if connected else "false")
-        button.setText("⟲  Disconnect" if connected else "🔗  Connect")
-        button.style().unpolish(button)
-        button.style().polish(button)
-        button.update()
+        update_connect_button_state(button, connected)
 
     def _sync_from_top(self):
         if self._n6705c_top:

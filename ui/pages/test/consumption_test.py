@@ -11,6 +11,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.styles.button import SpinningSearchButton, update_connect_button_state
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit,
@@ -290,18 +291,8 @@ class ConsumptionTestUI(QWidget):
         self.device_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.device_combo.addItem("TCPIP0::K-N6705C-06098.local::hislip0::INSTR")
 
-        self.search_btn = QPushButton("🔍")
-        self.search_btn.setFixedWidth(38)
-        self.search_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #162544;
-                border: 1px solid #25355c;
-                border-radius: 6px;
-                font-size: 14px;
-                min-height: 32px;
-            }
-            QPushButton:hover { background-color: #1c315b; }
-        """)
+        self.search_btn = SpinningSearchButton()
+        self.search_btn.setFixedSize(38, 32)
 
         self.instrument_status = QLabel("N6705C DC Power Analyzer")
         self.instrument_status.setStyleSheet("color: #7e96bf; font-size: 12px; font-weight: 600;")
@@ -309,21 +300,9 @@ class ConsumptionTestUI(QWidget):
         self.connection_status_label = QLabel("Disconnected")
         self.connection_status_label.setStyleSheet("color: #ff5a7a; font-size: 11px;")
 
-        self.connect_btn = QPushButton("🔌 Connect")
-        self.connect_btn.setFixedWidth(100)
-        self.connect_btn.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(0, 211, 154, 0.14);
-                color: #00d39a;
-                border: 1px solid rgba(0, 211, 154, 0.25);
-                border-radius: 8px;
-                font-weight: 600;
-                min-height: 34px;
-            }
-            QPushButton:hover {
-                background-color: rgba(0, 211, 154, 0.22);
-            }
-        """)
+        self.connect_btn = QPushButton()
+        update_connect_button_state(self.connect_btn, connected=False)
+        self.connect_btn.setFixedWidth(120)
 
         resource_row.addWidget(self.device_combo, 1)
         resource_row.addWidget(self.search_btn)
@@ -775,18 +754,7 @@ class ConsumptionTestUI(QWidget):
                 self._set_status("Connected", "ok")
                 self.instrument_status.setText(f"N6705C DC Power Analyzer")
                 self.instrument_status.setStyleSheet("color: #00d39a; font-size: 12px; font-weight: 600;")
-                self.connect_btn.setText("Disconnect")
-                self.connect_btn.setStyleSheet("""
-                    QPushButton {
-                        background-color: rgba(255, 90, 122, 0.14);
-                        color: #ff6f8e;
-                        border: 1px solid rgba(255, 90, 122, 0.25);
-                        border-radius: 8px;
-                        font-weight: 600;
-                        min-height: 34px;
-                    }
-                    QPushButton:hover { background-color: rgba(255, 90, 122, 0.22); }
-                """)
+                update_connect_button_state(self.connect_btn, connected=True)
                 self.connect_btn.setEnabled(True)
 
                 if self._n6705c_top:
@@ -820,18 +788,7 @@ class ConsumptionTestUI(QWidget):
             self._set_status("Disconnected", "err")
             self.instrument_status.setText("N6705C DC Power Analyzer")
             self.instrument_status.setStyleSheet("color: #7e96bf; font-size: 12px; font-weight: 600;")
-            self.connect_btn.setText("🔌 Connect")
-            self.connect_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: rgba(0, 211, 154, 0.14);
-                    color: #00d39a;
-                    border: 1px solid rgba(0, 211, 154, 0.25);
-                    border-radius: 8px;
-                    font-weight: 600;
-                    min-height: 34px;
-                }
-                QPushButton:hover { background-color: rgba(0, 211, 154, 0.22); }
-            """)
+            update_connect_button_state(self.connect_btn, connected=False)
             self.connect_btn.setEnabled(True)
             self.connection_status_changed.emit(False)
         except Exception as e:
@@ -848,18 +805,7 @@ class ConsumptionTestUI(QWidget):
             self._set_status("Connected", "ok")
             self.instrument_status.setText("N6705C DC Power Analyzer")
             self.instrument_status.setStyleSheet("color: #00d39a; font-size: 12px; font-weight: 600;")
-            self.connect_btn.setText("Disconnect")
-            self.connect_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: rgba(255, 90, 122, 0.14);
-                    color: #ff6f8e;
-                    border: 1px solid rgba(255, 90, 122, 0.25);
-                    border-radius: 8px;
-                    font-weight: 600;
-                    min-height: 34px;
-                }
-                QPushButton:hover { background-color: rgba(255, 90, 122, 0.22); }
-            """)
+            update_connect_button_state(self.connect_btn, connected=True)
             self.connect_btn.setEnabled(True)
             self.search_btn.setEnabled(False)
             if self._n6705c_top.visa_resource_a:
@@ -867,18 +813,7 @@ class ConsumptionTestUI(QWidget):
                 self.device_combo.addItem(self._n6705c_top.visa_resource_a)
         elif not self.is_connected:
             self._set_status("Disconnected", "err")
-            self.connect_btn.setText("🔌 Connect")
-            self.connect_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: rgba(0, 211, 154, 0.14);
-                    color: #00d39a;
-                    border: 1px solid rgba(0, 211, 154, 0.25);
-                    border-radius: 8px;
-                    font-weight: 600;
-                    min-height: 34px;
-                }
-                QPushButton:hover { background-color: rgba(0, 211, 154, 0.22); }
-            """)
+            update_connect_button_state(self.connect_btn, connected=False)
 
     def _browse_firmware(self):
         file_path, _ = QFileDialog.getOpenFileName(

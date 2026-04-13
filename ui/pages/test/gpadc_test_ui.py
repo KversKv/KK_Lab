@@ -8,6 +8,7 @@ GPADC测试UI组件
 
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLL_AREA_STYLE
+from ui.styles.button import SpinningSearchButton, update_connect_button_state
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QLineEdit, QGridLayout, QSpinBox, QDoubleSpinBox, QFrame, QRadioButton,
@@ -470,9 +471,9 @@ class GPADCTestUI(QWidget):
         status_label.setWordWrap(True)
         setattr(self, status_attr_name, status_label)
 
-        btn_connect = QPushButton("Connect")
-        btn_connect.setObjectName("connect_btn")
-        btn_connect.setFixedWidth(90)
+        btn_connect = QPushButton()
+        update_connect_button_state(btn_connect, connected=False)
+        btn_connect.setFixedWidth(120)
 
         setattr(self, connect_btn_attr_name, btn_connect)
         setattr(self, disconnect_btn_attr_name, btn_connect)
@@ -486,8 +487,7 @@ class GPADCTestUI(QWidget):
         combo = DarkComboBox(bg="#0b1630", border="#24365e")
         combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-        search_btn = QPushButton("⌕")
-        search_btn.setObjectName("tool_btn")
+        search_btn = SpinningSearchButton()
         search_btn.setFixedWidth(34)
 
         setattr(self, combo_attr_name, combo)
@@ -1176,18 +1176,12 @@ class GPADCTestUI(QWidget):
             self._connect_vt6002()
 
     def _set_btn_connected(self, btn):
-        btn.setText("Disconnect")
-        btn.setObjectName("danger_btn")
+        update_connect_button_state(btn, connected=True)
         btn.setEnabled(True)
-        btn.style().unpolish(btn)
-        btn.style().polish(btn)
 
     def _set_btn_disconnected(self, btn):
-        btn.setText("Connect")
-        btn.setObjectName("connect_btn")
+        update_connect_button_state(btn, connected=False)
         btn.setEnabled(True)
-        btn.style().unpolish(btn)
-        btn.style().polish(btn)
 
     def _connect_n6705c(self):
         self._set_status_label(self.n6705c_status, "Connecting...", "warn")

@@ -9,6 +9,7 @@ sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.
 
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLLBAR_STYLE
+from ui.styles.button import SpinningSearchButton, update_connect_button_state
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QLineEdit, QGridLayout, QSpinBox, QDoubleSpinBox, QFrame,
@@ -399,38 +400,6 @@ class RegulationVoltageTestUI(QWidget):
                 background-color: #13254b;
                 color: #dce7ff;
             }
-            QPushButton#dynamicConnectBtn {
-                min-height: 34px;
-                border-radius: 10px;
-                padding: 6px 14px;
-                font-weight: 700;
-            }
-            QPushButton#dynamicConnectBtn[connected="false"] {
-                background-color: #053b38;
-                border: 1px solid #08c9a5;
-                color: #10e7bc;
-            }
-            QPushButton#dynamicConnectBtn[connected="false"]:hover {
-                background-color: #064744;
-                border: 1px solid #19f0c5;
-                color: #43f3d0;
-            }
-            QPushButton#dynamicConnectBtn[connected="false"]:pressed {
-                background-color: #042f2d;
-            }
-            QPushButton#dynamicConnectBtn[connected="true"] {
-                background-color: #3a0828;
-                border: 1px solid #d61b67;
-                color: #ffb7d3;
-            }
-            QPushButton#dynamicConnectBtn[connected="true"]:hover {
-                background-color: #4a0b31;
-                border: 1px solid #f0287b;
-                color: #ffd0e2;
-            }
-            QPushButton#dynamicConnectBtn[connected="true"]:pressed {
-                background-color: #330722;
-            }
             QPushButton#exportBtn {
                 min-height: 28px;
                 padding: 4px 12px;
@@ -639,15 +608,13 @@ class RegulationVoltageTestUI(QWidget):
         search_row = QHBoxLayout()
         search_row.setSpacing(8)
 
-        self.search_btn = QPushButton("Search")
-        self.search_btn.setObjectName("smallActionBtn")
+        self.search_btn = SpinningSearchButton()
         search_row.addWidget(self.search_btn)
 
         layout.addLayout(search_row)
 
-        self.connect_btn = QPushButton("\U0001f517  Connect")
-        self.connect_btn.setObjectName("dynamicConnectBtn")
-        self.connect_btn.setProperty("connected", "false")
+        self.connect_btn = QPushButton()
+        update_connect_button_state(self.connect_btn, connected=False)
         layout.addWidget(self.connect_btn)
 
     def _build_channel_config_card(self):
@@ -840,12 +807,7 @@ class RegulationVoltageTestUI(QWidget):
 
     def _update_connect_button_state(self, connected: bool):
         self.is_connected = connected
-        self.connect_btn.setProperty("connected", "true" if connected else "false")
-        self.connect_btn.setText("\u21b2  Disconnect" if connected else "\U0001f517  Connect")
-
-        self.connect_btn.style().unpolish(self.connect_btn)
-        self.connect_btn.style().polish(self.connect_btn)
-        self.connect_btn.update()
+        update_connect_button_state(self.connect_btn, connected)
 
     def _on_search(self):
         if self._n6705c_top and self._n6705c_top.is_connected_a:

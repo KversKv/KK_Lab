@@ -7,6 +7,7 @@ PMU OSCP测试UI组件
 
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLLBAR_STYLE
+from ui.styles.button import SpinningSearchButton, update_connect_button_state
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
     QPushButton, QLabel, QGridLayout,
@@ -425,7 +426,7 @@ class PMUOSCPUI(QWidget):
         # ⌕
         self.visa_resource_combo = DarkComboBox(bg="#02091d", border="#20335f")
         self.visa_resource_combo.addItems(["TCPIP0::K-N6705C-06098.local::hislip0::INSTR"])
-        self.search_btn = QPushButton("⌕")
+        self.search_btn = SpinningSearchButton()
         self.search_btn.setFixedWidth(44)
 
         self.instrument_info_label = QLabel("● N6705C")
@@ -434,9 +435,12 @@ class PMUOSCPUI(QWidget):
         self.connection_status_label = QLabel("Disconnected")
         self.connection_status_label.setStyleSheet("color:#7e8fb8;border: none;")
 
-        self.connect_btn = QPushButton("Connect")
-        self.disconnect_btn = QPushButton("Disconnect")
-        self.disconnect_btn.setProperty("role", "outline")
+        self.connect_btn = QPushButton()
+        update_connect_button_state(self.connect_btn, connected=False)
+        self.connect_btn.setFixedWidth(100)
+        self.disconnect_btn = QPushButton()
+        update_connect_button_state(self.disconnect_btn, connected=True)
+        self.disconnect_btn.setFixedWidth(100)
 
         top_layout.addWidget(self.resource_label, 0, 0)
         top_layout.addWidget(self.visa_resource_combo, 1, 0, 1, 6)

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QSizePolicy, QProgressBar
 )
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.styles.button import SpinningSearchButton, update_connect_button_state
 from PySide6.QtCore import Qt, QThread, QTimer, Signal, QMargins
 from PySide6.QtGui import QFont
 import pyvisa
@@ -444,45 +445,6 @@ class PMUOutputVoltageUI(QWidget):
                 color: #dce7ff;
             }
 
-            QPushButton#dynamicConnectBtn {
-                min-height: 34px;
-                border-radius: 10px;
-                padding: 6px 14px;
-                font-weight: 700;
-            }
-
-            QPushButton#dynamicConnectBtn[connected="false"] {
-                background-color: #053b38;
-                border: 1px solid #08c9a5;
-                color: #10e7bc;
-            }
-
-            QPushButton#dynamicConnectBtn[connected="false"]:hover {
-                background-color: #064744;
-                border: 1px solid #19f0c5;
-                color: #43f3d0;
-            }
-
-            QPushButton#dynamicConnectBtn[connected="false"]:pressed {
-                background-color: #042f2d;
-            }
-
-            QPushButton#dynamicConnectBtn[connected="true"] {
-                background-color: #3a0828;
-                border: 1px solid #d61b67;
-                color: #ffb7d3;
-            }
-
-            QPushButton#dynamicConnectBtn[connected="true"]:hover {
-                background-color: #4a0b31;
-                border: 1px solid #f0287b;
-                color: #ffd0e2;
-            }
-
-            QPushButton#dynamicConnectBtn[connected="true"]:pressed {
-                background-color: #330722;
-            }
-
             QPushButton#primaryStartBtn {
                 min-height: 36px;
                 border-radius: 12px;
@@ -732,15 +694,13 @@ class PMUOutputVoltageUI(QWidget):
         search_row = QHBoxLayout()
         search_row.setSpacing(8)
 
-        self.search_btn = QPushButton("Search")
-        self.search_btn.setObjectName("smallActionBtn")
+        self.search_btn = SpinningSearchButton()
         search_row.addWidget(self.search_btn)
 
         layout.addLayout(search_row)
 
-        self.connect_btn = QPushButton("🔗  Connect")
-        self.connect_btn.setObjectName("dynamicConnectBtn")
-        self.connect_btn.setProperty("connected", "false")
+        self.connect_btn = QPushButton()
+        update_connect_button_state(self.connect_btn, connected=False)
         layout.addWidget(self.connect_btn)
 
     def _build_vmeter_card(self):
@@ -1020,12 +980,7 @@ class PMUOutputVoltageUI(QWidget):
 
     def _update_connect_button_state(self, connected: bool):
         self.is_connected = connected
-        self.connect_btn.setProperty("connected", "true" if connected else "false")
-        self.connect_btn.setText("⟲  Disconnect" if connected else "🔗  Connect")
-
-        self.connect_btn.style().unpolish(self.connect_btn)
-        self.connect_btn.style().polish(self.connect_btn)
-        self.connect_btn.update()
+        update_connect_button_state(self.connect_btn, connected)
 
     def _sync_from_top(self):
         if not self._n6705c_top:

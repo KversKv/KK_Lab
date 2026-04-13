@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal, QThread, QObject
 from PySide6.QtGui import QFont
+from ui.styles.button import SpinningSearchButton, update_connect_button_state
 import pyqtgraph as pg
 from ui.styles import SCROLL_AREA_STYLE
 from debug_config import DEBUG_MOCK
@@ -1248,9 +1249,9 @@ class CLKTestUI(QWidget):
         status_lbl.setWordWrap(True)
         setattr(self, status_attr, status_lbl)
 
-        btn_connect = QPushButton("Connect")
-        btn_connect.setObjectName("connect_btn")
-        btn_connect.setFixedWidth(90)
+        btn_connect = QPushButton()
+        update_connect_button_state(btn_connect, connected=False)
+        btn_connect.setFixedWidth(120)
         setattr(self, connect_btn_attr, btn_connect)
         setattr(self, disconnect_btn_attr, btn_connect)
 
@@ -1263,9 +1264,8 @@ class CLKTestUI(QWidget):
         combo = DarkComboBox(bg="#0b1630", border="#24365e")
         combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-        search_btn = QPushButton("Search")
-        search_btn.setObjectName("tool_btn")
-        search_btn.setFixedWidth(70)
+        search_btn = SpinningSearchButton()
+        search_btn.setFixedWidth(44)
         setattr(self, combo_attr, combo)
         setattr(self, search_btn_attr, search_btn)
 
@@ -2313,36 +2313,11 @@ class CLKTestUI(QWidget):
         label.setStyleSheet(f"color: {color}; font-size: 11px;")
 
     def _set_btn_connected(self, btn):
-        btn.setText("Disconnect")
-        btn.setStyleSheet("""
-            QPushButton {
-                background-color: #1a3a2a;
-                border: 1px solid #18a067;
-                border-radius: 4px;
-                color: #18a067;
-                padding: 4px 10px;
-            }
-            QPushButton:hover { background-color: #1e4a34; }
-        """)
+        update_connect_button_state(btn, connected=True)
         btn.setEnabled(True)
 
     def _set_btn_disconnected(self, btn):
-        btn.setText("Connect")
-        btn.setStyleSheet("""
-            QPushButton {
-                background-color: #1a3060;
-                color: #4a9fff;
-                border: 1px solid #2a4a90;
-                border-radius: 6px;
-                font-size: 12px;
-                font-weight: 600;
-                min-height: 28px;
-                padding: 0 10px;
-            }
-            QPushButton:hover {
-                background-color: #1e3a80;
-            }
-        """)
+        update_connect_button_state(btn, connected=False)
         btn.setEnabled(True)
 
     def _append_log(self, text):
