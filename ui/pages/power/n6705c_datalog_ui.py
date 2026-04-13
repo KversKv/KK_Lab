@@ -1160,8 +1160,8 @@ class N6705CDatalogUI(QWidget):
 
         search_row = QHBoxLayout()
         search_row.setSpacing(6)
-        self.refresh_search_btn = QPushButton("\U0001F50D  Refresh Search")
-        self.refresh_search_btn.setObjectName("chartToolBtn")
+        self.refresh_search_btn = SpinningSearchButton()
+        self.refresh_search_btn.setFixedSize(34, 30)
         self.refresh_search_btn.clicked.connect(self._on_refresh_search)
         search_row.addWidget(self.refresh_search_btn)
         search_row.addStretch()
@@ -1524,11 +1524,13 @@ class N6705CDatalogUI(QWidget):
 
         connect_btn = QPushButton()
         update_connect_button_state(connect_btn, connected=False)
+        connect_btn.setFixedWidth(120)
         connect_btn.clicked.connect(lambda: self._on_device_connect(visa_resource, serial))
         card_layout.addWidget(connect_btn)
 
         disconnect_btn = QPushButton()
         update_connect_button_state(disconnect_btn, connected=True)
+        disconnect_btn.setFixedWidth(120)
         disconnect_btn.clicked.connect(lambda: self._on_device_disconnect(serial))
         disconnect_btn.hide()
         card_layout.addWidget(disconnect_btn)
@@ -1550,7 +1552,7 @@ class N6705CDatalogUI(QWidget):
             self._add_default_debug_device()
 
         self.refresh_search_btn.setEnabled(False)
-        self.refresh_search_btn.setText("Scanning...")
+        self.refresh_search_btn.start_spinning()
 
         self._scan_thread = QThread()
         self._scan_worker = _ScanWorker(self.rm)
@@ -1573,8 +1575,8 @@ class N6705CDatalogUI(QWidget):
     def _on_scan_finished(self):
         if hasattr(self, '_scan_worker') and self._scan_worker:
             self.rm = self._scan_worker.rm
+        self.refresh_search_btn.stop_spinning()
         self.refresh_search_btn.setEnabled(True)
-        self.refresh_search_btn.setText("\U0001F50D  Refresh Search")
         if hasattr(self, '_scan_thread'):
             self._scan_thread.quit()
             self._scan_thread.wait()
