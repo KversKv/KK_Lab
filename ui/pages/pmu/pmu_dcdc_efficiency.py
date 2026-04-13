@@ -318,6 +318,7 @@ class DCDCEfficiencyTestThread(QThread):
             vin_ch = int(cfg["vin_channel"].replace("CH ", ""))
             vout_ch = int(cfg["vout_channel"].replace("CH ", ""))
             iload_ch = int(cfg["cc_load_channel"].replace("CH ", ""))
+            average_cnt = max(1, int(cfg.get("average_cnt", 1)))
 
             if sweep_mode == "Log":
                 points_per_dec = cfg["points_per_dec"]
@@ -343,7 +344,7 @@ class DCDCEfficiencyTestThread(QThread):
 
             current_points_neg = [-abs(c) for c in current_points]
 
-            self.log_message.emit(f"[TEST] Mode: {sweep_mode}, Points: {len(current_points)}")
+            self.log_message.emit(f"[TEST] Mode: {sweep_mode}, Points: {len(current_points)}, Average_CNT: {average_cnt}")
             self.log_message.emit(f"[TEST] VIN ch={vin_ch}, VOUT ch={vout_ch}, ILOAD ch={iload_ch}")
 
             n = self._n6705c
@@ -368,13 +369,35 @@ class DCDCEfficiencyTestThread(QThread):
             n.channel_off(iload_ch)
             QThread.msleep(int(sleep_settle * 1000))
 
-            i_base = float(n.measure_current(iload_ch).strip())
-            vin_base = float(n.measure_voltage(vin_ch))
-            vout_base = float(n.measure_voltage(vout_ch))
-            iin_base = float(n.measure_current(vin_ch).strip())
+            BASELINE_SAMPLES = 5
+            i_base_samples = []
+            iin_base_samples = []
+            vin_base_samples = []
+            vout_base_samples = []
+            for _bsi in range(BASELINE_SAMPLES):
+                i_base_samples.append(float(n.measure_current(iload_ch).strip()))
+                iin_base_samples.append(float(n.measure_current(vin_ch).strip()))
+                vin_base_samples.append(float(n.measure_voltage(vin_ch)))
+                vout_base_samples.append(float(n.measure_voltage(vout_ch)))
+                QThread.msleep(int(sleep_measure * 1000))
+
+            def _trimmed_mean(samples):
+                s = sorted(samples)
+                return sum(s[1:-1]) / (len(s) - 2)
+
+            i_base = _trimmed_mean(i_base_samples)
+            iin_base = _trimmed_mean(iin_base_samples)
+            vin_base = _trimmed_mean(vin_base_samples)
+            vout_base = _trimmed_mean(vout_base_samples)
+
             self.log_message.emit(
-                f"[TEST] Baseline Vin={vin_base:.3f}V  Vout={vout_base:.3f}V  "
+                f"[TEST] Baseline ({BASELINE_SAMPLES}x trimmed-mean)  "
+                f"Vin={vin_base:.3f}V  Vout={vout_base:.3f}V  "
                 f"Iin={iin_base:.6f}A  Iload_base={i_base:.6f}A"
+            )
+            self.log_message.emit(
+                f"[TEST] Iin current samcples: "
+                f"{[f'{v:.6f}' for v in iin_base_samples]}"
             )
             self.baseline_row.emit({
                 "cc_load": 0.0,
@@ -417,10 +440,25 @@ class DCDCEfficiencyTestThread(QThread):
                 n.set_current(iload_ch, current_points_neg[idx])
                 QThread.msleep(int(sleep_measure * 1000))
 
-                vbat = float(n.measure_voltage(vin_ch))
-                vout = float(n.measure_voltage(vout_ch))
-                i_in = float(n.measure_current(vin_ch).strip())
-                i_out = float(n.measure_current(iload_ch).strip())
+                if average_cnt <= 1:
+                    vbat = float(n.measure_voltage(vin_ch))
+                    vout = float(n.measure_voltage(vout_ch))
+                    i_in = float(n.measure_current(vin_ch).strip())
+                    i_out = float(n.measure_current(iload_ch).strip())
+                else:
+                    vbat_acc = 0.0
+                    vout_acc = 0.0
+                    i_in_acc = 0.0
+                    i_out_acc = 0.0
+                    for _ai in range(average_cnt):
+                        vbat_acc += float(n.measure_voltage(vin_ch))
+                        vout_acc += float(n.measure_voltage(vout_ch))
+                        i_in_acc += float(n.measure_current(vin_ch).strip())
+                        i_out_acc += float(n.measure_current(iload_ch).strip())
+                    vbat = vbat_acc / average_cnt
+                    vout = vout_acc / average_cnt
+                    i_in = i_in_acc / average_cnt
+                    i_out = i_out_acc / average_cnt
 
                 i_load_actual = max(i_base - i_out, 1e-9)
                 denom = vbat * max(i_in - iin_base, 1e-9)
@@ -1114,6 +1152,20 @@ class PMUDCDCEfficiencyUI(QWidget):
         grid.addWidget(self.lbl_points, 2, 0, 1, 2)
         grid.addWidget(self.points_per_dec_spin, 3, 0, 1, 2)
 
+        self.lbl_avg_cnt = QLabel("Average CNT")
+        self.lbl_avg_cnt.setObjectName("fieldLabel")
+        self.average_cnt_spin = QSpinBox()
+        self.average_cnt_spin.setRange(1, 100)
+        self.average_cnt_spin.setValue(1)
+        self.average_cnt_spin.setToolTip(
+            "Number of measurements to average per point.\n"
+            "1 = single measurement (fastest),\n"
+            "N = average of N measurements (more accurate)."
+        )
+
+        grid.addWidget(self.lbl_avg_cnt, 4, 0, 1, 2)
+        grid.addWidget(self.average_cnt_spin, 5, 0, 1, 2)
+
         layout.addLayout(grid)
 
         self._on_sweep_mode_changed()
@@ -1518,7 +1570,8 @@ class PMUDCDCEfficiencyUI(QWidget):
             "start_current_a": self.load_current_start_spin.value(),
             "end_current_a": self.load_current_end_spin.value(),
             "step_current_a": self.step_current_spin.value(),
-            "points_per_dec": self.points_per_dec_spin.value()
+            "points_per_dec": self.points_per_dec_spin.value(),
+            "average_cnt": self.average_cnt_spin.value(),
         }
 
     def set_test_running(self, running):
@@ -1546,6 +1599,7 @@ class PMUDCDCEfficiencyUI(QWidget):
             self.load_current_end_spin,
             self.step_current_spin,
             self.points_per_dec_spin,
+            self.average_cnt_spin,
             self.visa_resource_combo,
             self.search_btn,
             self.connect_btn

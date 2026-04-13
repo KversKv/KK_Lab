@@ -1340,12 +1340,37 @@ class PMUIsGainUI(QWidget):
 
     def _on_test_result_row(self, row_data):
         self._test_result_data.append(row_data)
+
+        step = row_data.get("step", "")
+        load_current = row_data.get("load_current", 0)
+        voltage = row_data.get("voltage")
+        ripple = row_data.get("ripple")
+        v_drop = row_data.get("v_drop")
+        reg_value = row_data.get("reg_value")
+
+        voltage_str = f"{voltage:.6f}" if voltage is not None else "N/A"
+        ripple_mv = ripple * 1000 if ripple is not None else None
+        ripple_str = f"{ripple_mv:.3f}" if ripple_mv is not None else "N/A"
+        v_drop_mv = v_drop * 1000 if v_drop is not None else None
+        v_drop_str = f"{v_drop_mv:.3f}" if v_drop_mv is not None else "N/A"
+
+        if reg_value is not None:
+            self.append_log(
+                f"[DATA] Step={step}\tReg={reg_value}\tLoad={load_current:.3f}A\t"
+                f"V={voltage_str}V\tRipple={ripple_str}mV\tVdrop={v_drop_str}mV"
+            )
+        else:
+            self.append_log(
+                f"[DATA] Step={step}\tLoad={load_current:.3f}A\t"
+                f"V={voltage_str}V\tRipple={ripple_str}mV\tVdrop={v_drop_str}mV"
+            )
+
         self.add_result_row(
-            row_data.get("step", ""),
-            row_data.get("load_current", 0),
-            row_data.get("voltage"),
-            row_data.get("ripple"),
-            row_data.get("v_drop"),
+            step,
+            load_current,
+            voltage,
+            ripple,
+            v_drop,
             row_data.get("screenshot_b64") is not None,
             row_data.get("remark", ""),
         )
