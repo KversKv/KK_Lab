@@ -944,7 +944,8 @@ class N6705CAnalyserUI(QWidget):
 
         self._batch_measure_btn = QPushButton("⚡ Measure")
         self._batch_set_btn = QPushButton("⚙ Set")
-        self._batch_auto_btn = QPushButton("▷ Auto Execute")
+        self._batch_auto_btn = QPushButton("▷ Auto Set")
+        self._batch_auto_20mv_btn = QPushButton("▷ Auto Set(+20mV)")
 
         _batch_btn_base = """
             QPushButton {{
@@ -964,7 +965,7 @@ class N6705CAnalyserUI(QWidget):
             bg="#0c1a38", fg="#8eb4e8", border="#23417a",
             hover_bg="#122448", hover_fg="#b8d4ff", hover_border="#3a6cc8"
         ))
-        self._batch_auto_btn.setStyleSheet("""
+        _batch_auto_style = """
             QPushButton {
                 background-color: #4318d9; color: #ffffff;
                 border: 1px solid #5a2ef0; border-radius: 8px;
@@ -972,15 +973,19 @@ class N6705CAnalyserUI(QWidget):
             }
             QPushButton:hover { background-color: #5628f0; color: #ffffff; border: 1px solid #7040ff; }
             QPushButton:disabled { background-color: #1a1040; color: #4a3a7a; border: 1px solid #2a1860; }
-        """)
+        """
+        self._batch_auto_btn.setStyleSheet(_batch_auto_style)
+        self._batch_auto_20mv_btn.setStyleSheet(_batch_auto_style)
 
         buttons_layout.addWidget(self._batch_measure_btn, 1)
         buttons_layout.addWidget(self._batch_set_btn, 1)
         buttons_layout.addWidget(self._batch_auto_btn, 1)
+        buttons_layout.addWidget(self._batch_auto_20mv_btn, 1)
 
         self._batch_measure_btn.clicked.connect(self._on_batch_measure)
         self._batch_set_btn.clicked.connect(self._on_batch_set)
-        self._batch_auto_btn.clicked.connect(self._on_batch_auto)
+        self._batch_auto_btn.clicked.connect(self._on_batch_auto_set)
+        self._batch_auto_20mv_btn.clicked.connect(self._on_batch_auto_20mv)
 
         content_layout.addLayout(buttons_layout)
 
@@ -2022,7 +2027,26 @@ class N6705CAnalyserUI(QWidget):
                 except Exception as e:
                     logger.error("[%s] CH%d Set failed: %s", label, ch, e)
 
-    def _on_batch_auto(self):
+    def _on_batch_auto_20mv(self):
+        self._on_batch_auto_with_offset(0.02)
+
+    _AUTO_SET_SPECIAL_VOLTAGES = [0.625, 0.67, 0.725, 0.78]
+
+    @staticmethod
+    def _align_voltage(v, special_values=None):
+        if special_values is None:
+            special_values = N6705CAnalyserUI._AUTO_SET_SPECIAL_VOLTAGES
+        grid_v = round(round(v / 0.05) * 0.05, 4)
+        best = grid_v
+        best_dist = abs(v - grid_v)
+        for sv in special_values:
+            dist = abs(v - sv)
+            if dist < best_dist:
+                best = sv
+                best_dist = dist
+        return best
+
+    def _on_batch_auto_set(self):
         for label, dev in self.devices.items():
             if not dev["is_connected"] or not dev["n6705c"]:
                 continue
@@ -2031,7 +2055,23 @@ class N6705CAnalyserUI(QWidget):
                 try:
                     dev["n6705c"].set_mode(ch, "VMETer")
                     v = float(dev["n6705c"].measure_voltage(ch))
-                    new_v = v + 0.03
+                    new_v = self._align_voltage(v)
+                    dev["n6705c"].set_mode(ch, "PS2Q")
+                    dev["n6705c"].set_voltage(ch, new_v)
+                    dev["n6705c"].channel_on(ch)
+                except Exception as e:
+                    logger.error("[%s] CH%d Auto Set failed: %s", label, ch, e)
+
+    def _on_batch_auto_with_offset(self, offset):
+        for label, dev in self.devices.items():
+            if not dev["is_connected"] or not dev["n6705c"]:
+                continue
+            channels = self._get_selected_batch_channels(label)
+            for ch in channels:
+                try:
+                    dev["n6705c"].set_mode(ch, "VMETer")
+                    v = float(dev["n6705c"].measure_voltage(ch))
+                    new_v = v + offset
                     dev["n6705c"].set_mode(ch, "PS2Q")
                     dev["n6705c"].set_voltage(ch, new_v)
                     dev["n6705c"].channel_on(ch)
