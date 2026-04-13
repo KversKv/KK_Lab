@@ -17,16 +17,17 @@ from PySide6.QtWidgets import (
 )
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles.button import SpinningSearchButton, update_connect_button_state
-from PySide6.QtCore import Qt, QThread, QTimer, Signal, QMargins, QPointF
+from PySide6.QtCore import Qt, QThread, QTimer, Signal, QMargins, QPointF, QObject
 from PySide6.QtGui import QFont, QCursor
 import pyvisa
 import math
 import time
+import serial.tools.list_ports
 
 from instruments.power.keysight.n6705c import N6705C
 from ui.styles import SCROLLBAR_STYLE
 from debug_config import DEBUG_MOCK
-from instruments.mock.mock_instruments import MockN6705C
+from instruments.mock.mock_instruments import MockN6705C, MockVT6002
 
 SMOOTH_WINDOW = 5   # 平滑窗口大小（越大越平滑，建议奇数：3/5/7/9）
 SMOOTH_POLY_ORDER = 2   # 多项式阶数（2=二次拟合，保留曲率；1=等效加权移动平均）
@@ -288,6 +289,96 @@ class SegmentedButton(QPushButton):
         self.setObjectName("segmentedButton")
 
 
+class _SearchSerialWorker(QObject):
+    finished = Signal(list)
+    error = Signal(str)
+
+    def run(self):
+        try:
+            ports = serial.tools.list_ports.comports()
+            result = [f"{p.device} - {p.description}" for p in ports]
+            self.finished.emit(result)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+def _generate_current_points(cfg):
+    start_a = abs(cfg["start_current_a"])
+    end_a = abs(cfg["end_current_a"])
+    sweep_mode = cfg["sweep_mode"]
+
+    if sweep_mode == "Log":
+        points_per_dec = cfg["points_per_dec"]
+        log_start = math.log10(start_a)
+        log_end = math.log10(end_a)
+        dec_start = math.floor(log_start)
+        dec_end = math.ceil(log_end)
+        current_points = []
+        for d in range(dec_start, dec_end):
+            for k in range(points_per_dec):
+                val = 10 ** (d + k / points_per_dec)
+                if start_a <= val <= end_a:
+                    current_points.append(val)
+        val_end = 10 ** dec_end
+        if start_a <= val_end <= end_a and (not current_points or abs(current_points[-1] - val_end) > 1e-12):
+            current_points.append(val_end)
+        if not current_points:
+            current_points = [start_a, end_a]
+    else:
+        step_a = abs(cfg["step_current_a"])
+        total_points = max(2, int(round(abs(end_a - start_a) / step_a)) + 1)
+        current_points = [start_a + i * step_a for i in range(total_points) if start_a + i * step_a <= end_a + step_a * 0.001]
+
+    return current_points
+
+
+def _measure_point_instant(n, vin_ch, vout_ch, iload_ch, average_cnt):
+    if average_cnt <= 1:
+        vbat = float(n.measure_voltage(vin_ch))
+        vout = float(n.measure_voltage(vout_ch))
+        i_in = float(n.measure_current(vin_ch).strip())
+        i_out = float(n.measure_current(iload_ch).strip())
+    else:
+        vbat_acc = 0.0
+        vout_acc = 0.0
+        i_in_acc = 0.0
+        i_out_acc = 0.0
+        for _ai in range(average_cnt):
+            vbat_acc += float(n.measure_voltage(vin_ch))
+            vout_acc += float(n.measure_voltage(vout_ch))
+            i_in_acc += float(n.measure_current(vin_ch).strip())
+            i_out_acc += float(n.measure_current(iload_ch).strip())
+        vbat = vbat_acc / average_cnt
+        vout = vout_acc / average_cnt
+        i_in = i_in_acc / average_cnt
+        i_out = i_out_acc / average_cnt
+    return vbat, vout, i_in, i_out
+
+
+def _measure_point_datalog(n, vin_ch, vout_ch, iload_ch, dlog_duration, debug):
+    if debug and isinstance(n, MockN6705C):
+        vbat = float(n.measure_voltage(vin_ch))
+        vout = float(n.measure_voltage(vout_ch))
+        i_in = float(n.measure_current(vin_ch).strip())
+        i_out = float(n.measure_current(iload_ch).strip())
+        return vbat, vout, i_in, i_out
+
+    sample_period = 0.001
+    iin_result = n.fetch_current_by_datalog(
+        [vin_ch], dlog_duration, sample_period,
+        marker1_percent=10, marker2_percent=90
+    )
+    iout_result = n.fetch_current_by_datalog(
+        [iload_ch], dlog_duration, sample_period,
+        marker1_percent=10, marker2_percent=90
+    )
+    vbat = float(n.measure_voltage(vin_ch))
+    vout = float(n.measure_voltage(vout_ch))
+    i_in = iin_result.get(vin_ch, 0.0)
+    i_out = iout_result.get(iload_ch, 0.0)
+    return vbat, vout, i_in, i_out
+
+
 class DCDCEfficiencyTestThread(QThread):
     log_message = Signal(str)
     progress = Signal(int)
@@ -309,51 +400,37 @@ class DCDCEfficiencyTestThread(QThread):
         self._stop_flag = True
 
     def run(self):
+        cfg = self._cfg
+        vin_ch = int(cfg["vin_channel"].replace("CH ", ""))
+        vout_ch = int(cfg["vout_channel"].replace("CH ", ""))
+        iload_ch = int(cfg["cc_load_channel"].replace("CH ", ""))
+        n = self._n6705c
+
         try:
-            cfg = self._cfg
             start_a = abs(cfg["start_current_a"])
             end_a = abs(cfg["end_current_a"])
             sweep_mode = cfg["sweep_mode"]
-
-            vin_ch = int(cfg["vin_channel"].replace("CH ", ""))
-            vout_ch = int(cfg["vout_channel"].replace("CH ", ""))
-            iload_ch = int(cfg["cc_load_channel"].replace("CH ", ""))
             average_cnt = max(1, int(cfg.get("average_cnt", 1)))
+            settle_ms = int(cfg.get("settle_time_ms", 3))
+            sampling_method = cfg.get("sampling_method", "Instant MEAS")
+            dlog_duration = float(cfg.get("dlog_duration_s", 1.0))
 
-            if sweep_mode == "Log":
-                points_per_dec = cfg["points_per_dec"]
-                log_start = math.log10(start_a)
-                log_end = math.log10(end_a)
-                dec_start = math.floor(log_start)
-                dec_end = math.ceil(log_end)
-                current_points = []
-                for d in range(dec_start, dec_end):
-                    for k in range(points_per_dec):
-                        val = 10 ** (d + k / points_per_dec)
-                        if start_a <= val <= end_a:
-                            current_points.append(val)
-                val_end = 10 ** dec_end
-                if start_a <= val_end <= end_a and (not current_points or abs(current_points[-1] - val_end) > 1e-12):
-                    current_points.append(val_end)
-                if not current_points:
-                    current_points = [start_a, end_a]
-            else:
-                step_a = abs(cfg["step_current_a"])
-                total_points = max(2, int(round(abs(end_a - start_a) / step_a)) + 1)
-                current_points = [start_a + i * step_a for i in range(total_points) if start_a + i * step_a <= end_a + step_a * 0.001]
-
+            current_points = _generate_current_points(cfg)
             current_points_neg = [-abs(c) for c in current_points]
 
-            self.log_message.emit(f"[TEST] Mode: {sweep_mode}, Points: {len(current_points)}, Average_CNT: {average_cnt}")
+            self.log_message.emit(
+                f"[TEST] Mode: {sweep_mode}, Points: {len(current_points)}, "
+                f"Average_CNT: {average_cnt}, Settle: {settle_ms}ms, "
+                f"Sampling: {sampling_method}"
+            )
             self.log_message.emit(f"[TEST] VIN ch={vin_ch}, VOUT ch={vout_ch}, ILOAD ch={iload_ch}")
 
-            n = self._n6705c
             if self._debug and isinstance(n, MockN6705C):
                 n._vin_ch = vin_ch
                 n._iload_ch = iload_ch
 
             sleep_settle = 0.0 if self._debug else 2
-            sleep_measure = 0.0 if self._debug else 0.003
+            sleep_measure = 0.0 if self._debug else settle_ms
 
             n.set_mode(vin_ch, "PS2Q")
             n.set_mode(vout_ch, "VMETer")
@@ -379,7 +456,7 @@ class DCDCEfficiencyTestThread(QThread):
                 iin_base_samples.append(float(n.measure_current(vin_ch).strip()))
                 vin_base_samples.append(float(n.measure_voltage(vin_ch)))
                 vout_base_samples.append(float(n.measure_voltage(vout_ch)))
-                QThread.msleep(int(sleep_measure * 1000))
+                QThread.msleep(int(sleep_measure))
 
             def _trimmed_mean(samples):
                 s = sorted(samples)
@@ -396,7 +473,7 @@ class DCDCEfficiencyTestThread(QThread):
                 f"Iin={iin_base:.6f}A  Iload_base={i_base:.6f}A"
             )
             self.log_message.emit(
-                f"[TEST] Iin current samcples: "
+                f"[TEST] Iin current samples: "
                 f"{[f'{v:.6f}' for v in iin_base_samples]}"
             )
             self.baseline_row.emit({
@@ -438,27 +515,16 @@ class DCDCEfficiencyTestThread(QThread):
                     break
 
                 n.set_current(iload_ch, current_points_neg[idx])
-                QThread.msleep(int(sleep_measure * 1000))
+                QThread.msleep(int(sleep_measure))
 
-                if average_cnt <= 1:
-                    vbat = float(n.measure_voltage(vin_ch))
-                    vout = float(n.measure_voltage(vout_ch))
-                    i_in = float(n.measure_current(vin_ch).strip())
-                    i_out = float(n.measure_current(iload_ch).strip())
+                if sampling_method == "DataLogger":
+                    vbat, vout, i_in, i_out = _measure_point_datalog(
+                        n, vin_ch, vout_ch, iload_ch, dlog_duration, self._debug
+                    )
                 else:
-                    vbat_acc = 0.0
-                    vout_acc = 0.0
-                    i_in_acc = 0.0
-                    i_out_acc = 0.0
-                    for _ai in range(average_cnt):
-                        vbat_acc += float(n.measure_voltage(vin_ch))
-                        vout_acc += float(n.measure_voltage(vout_ch))
-                        i_in_acc += float(n.measure_current(vin_ch).strip())
-                        i_out_acc += float(n.measure_current(iload_ch).strip())
-                    vbat = vbat_acc / average_cnt
-                    vout = vout_acc / average_cnt
-                    i_in = i_in_acc / average_cnt
-                    i_out = i_out_acc / average_cnt
+                    vbat, vout, i_in, i_out = _measure_point_instant(
+                        n, vin_ch, vout_ch, iload_ch, average_cnt
+                    )
 
                 i_load_actual = max(i_base - i_out, 1e-9)
                 denom = vbat * max(i_in - iin_base, 1e-9)
@@ -516,12 +582,409 @@ class DCDCEfficiencyTestThread(QThread):
             else:
                 self.log_message.emit(f"[TIME] Total: {int(minutes)}m {seconds:.1f}s")
 
-            n.set_current(iload_ch, -0.001)
-            n.channel_off(iload_ch)
-
         except Exception as e:
             self.log_message.emit(f"[ERROR] Test failed: {e}")
         finally:
+            try:
+                n.set_current(iload_ch, 0)
+                n.channel_off(iload_ch)
+            except Exception:
+                pass
+            self.test_finished.emit()
+
+
+class DCDCVinSweepTestThread(QThread):
+    log_message = Signal(str)
+    progress = Signal(int)
+    chart_point = Signal(float, float)
+    chart_clear = Signal()
+    result_update = Signal(dict)
+    baseline_row = Signal(dict)
+    data_row = Signal(dict)
+    test_finished = Signal()
+
+    def __init__(self, n6705c, config, debug_flag=False):
+        super().__init__()
+        self._n6705c = n6705c
+        self._cfg = config
+        self._debug = debug_flag
+        self._stop_flag = False
+
+    def request_stop(self):
+        self._stop_flag = True
+
+    def run(self):
+        cfg = self._cfg
+        vin_ch = int(cfg["vin_channel"].replace("CH ", ""))
+        vout_ch = int(cfg["vout_channel"].replace("CH ", ""))
+        iload_ch = int(cfg["cc_load_channel"].replace("CH ", ""))
+        n = self._n6705c
+
+        try:
+            vin_start = float(cfg.get("vin_start", 3.0))
+            vin_end = float(cfg.get("vin_end", 4.2))
+            vin_step = float(cfg.get("vin_step", 0.1))
+            fixed_load_a = abs(float(cfg.get("fixed_load_a", 0.1)))
+            average_cnt = max(1, int(cfg.get("average_cnt", 1)))
+            settle_ms = int(cfg.get("settle_time_ms", 3))
+            sampling_method = cfg.get("sampling_method", "Instant MEAS")
+            dlog_duration = float(cfg.get("dlog_duration_s", 1.0))
+
+            if self._debug and isinstance(n, MockN6705C):
+                n._vin_ch = vin_ch
+                n._iload_ch = iload_ch
+
+            vin_points = []
+            v = vin_start
+            while v <= vin_end + vin_step * 0.001:
+                vin_points.append(round(v, 4))
+                v += vin_step
+            if not vin_points:
+                vin_points = [vin_start, vin_end]
+
+            sleep_settle = 0.0 if self._debug else 2
+            sleep_measure = 0.0 if self._debug else settle_ms
+
+            self.log_message.emit(
+                f"[VIN-SWEEP] Vin: {vin_start}V → {vin_end}V, Step: {vin_step}V, "
+                f"Points: {len(vin_points)}, Fixed Load: {fixed_load_a*1000:.1f}mA"
+            )
+
+            n.set_mode(vin_ch, "PS2Q")
+            n.set_mode(vout_ch, "VMETer")
+            n.set_mode(iload_ch, "CCLoad")
+
+            n.set_current_limit(vin_ch, 0.5)
+            for ch in (vin_ch, vout_ch, iload_ch):
+                n.set_channel_range(ch)
+
+            n.set_current(iload_ch, -fixed_load_a)
+            n.channel_on(iload_ch)
+            QThread.msleep(int(sleep_settle * 1000))
+
+            self.chart_clear.emit()
+            self.progress.emit(0)
+
+            output = []
+            max_eff = 0.0
+            max_eff_vin = 0.0
+            sum_eff = 0.0
+            total_count = len(vin_points)
+
+            hdr = (f"{'#':>4s}  {'Vin_set(V)':>10s}  {'Vin(V)':>8s}  "
+                   f"{'Vout(V)':>8s}  {'Iin(A)':>10s}  {'Iout(A)':>10s}  "
+                   f"{'Eff(%)':>7s}")
+            self.log_message.emit(hdr)
+            self.log_message.emit("-" * len(hdr))
+
+            t_start = time.time()
+
+            for idx, vin_set in enumerate(vin_points):
+                if self._stop_flag:
+                    self.log_message.emit("[VIN-SWEEP] Stopped by user.")
+                    break
+
+                n.set_voltage(vin_ch, vin_set)
+                QThread.msleep(int(sleep_measure))
+
+                if sampling_method == "DataLogger":
+                    vbat, vout, i_in, i_out = _measure_point_datalog(
+                        n, vin_ch, vout_ch, iload_ch, dlog_duration, self._debug
+                    )
+                else:
+                    vbat, vout, i_in, i_out = _measure_point_instant(
+                        n, vin_ch, vout_ch, iload_ch, average_cnt
+                    )
+
+                i_load_actual = abs(i_out)
+                p_in = vbat * abs(i_in)
+                p_out = vout * i_load_actual
+                eff = p_out / max(p_in, 1e-12)
+                eff = max(min(eff, 1.2), 0.0)
+                eff_pct = eff * 100
+
+                self.log_message.emit(
+                    f"{idx+1:4d}  {vin_set:10.3f}  {vbat:8.4f}  "
+                    f"{vout:8.4f}  {i_in:10.6f}  {i_out:10.6f}  "
+                    f"{eff_pct:7.2f}"
+                )
+
+                output.append((vbat, eff_pct))
+                sum_eff += eff_pct
+                if eff_pct > max_eff:
+                    max_eff = eff_pct
+                    max_eff_vin = vbat
+
+                self.chart_point.emit(vbat, eff_pct)
+
+                self.data_row.emit({
+                    "cc_load": -fixed_load_a,
+                    "efficiency": eff_pct,
+                    "vin": vbat,
+                    "iin": i_in,
+                    "vout": vout,
+                    "iout": i_load_actual,
+                })
+
+                n_pts = len(output)
+                self.result_update.emit({
+                    "vin": vbat,
+                    "vout": vout,
+                    "efficiency": sum_eff / n_pts,
+                    "max_efficiency": max_eff,
+                    "max_eff_load": max_eff_vin,
+                })
+
+                self.progress.emit(int((idx + 1) * 100 / total_count))
+
+            elapsed = time.time() - t_start
+            minutes, seconds = divmod(elapsed, 60)
+            completed = len(output)
+            if completed > 0:
+                avg = elapsed / completed
+                self.log_message.emit(
+                    f"[TIME] Total: {int(minutes)}m {seconds:.1f}s | "
+                    f"Points: {completed} | Avg: {avg:.2f}s/point"
+                )
+            else:
+                self.log_message.emit(f"[TIME] Total: {int(minutes)}m {seconds:.1f}s")
+
+        except Exception as e:
+            self.log_message.emit(f"[ERROR] VIN Sweep failed: {e}")
+        finally:
+            try:
+                n.set_current(iload_ch, 0)
+                n.channel_off(iload_ch)
+            except Exception:
+                pass
+            self.test_finished.emit()
+
+
+class DCDCTempSweepTestThread(QThread):
+    log_message = Signal(str)
+    progress = Signal(int)
+    chart_point = Signal(float, float)
+    chart_clear = Signal()
+    result_update = Signal(dict)
+    baseline_row = Signal(dict)
+    data_row = Signal(dict)
+    test_finished = Signal()
+
+    def __init__(self, n6705c, config, debug_flag=False, vt6002=None):
+        super().__init__()
+        self._n6705c = n6705c
+        self._cfg = config
+        self._debug = debug_flag
+        self._vt6002 = vt6002
+        self._stop_flag = False
+
+    def request_stop(self):
+        self._stop_flag = True
+
+    def run(self):
+        cfg = self._cfg
+        vin_ch = int(cfg["vin_channel"].replace("CH ", ""))
+        vout_ch = int(cfg["vout_channel"].replace("CH ", ""))
+        iload_ch = int(cfg["cc_load_channel"].replace("CH ", ""))
+        n = self._n6705c
+        vt = self._vt6002
+
+        try:
+            temp_start = float(cfg.get("temp_start", -40))
+            temp_end = float(cfg.get("temp_end", 85))
+            temp_step = float(cfg.get("temp_step", 25))
+            fixed_load_a = abs(float(cfg.get("fixed_load_a", 0.1)))
+            average_cnt = max(1, int(cfg.get("average_cnt", 1)))
+            settle_ms = int(cfg.get("settle_time_ms", 3))
+            sampling_method = cfg.get("sampling_method", "Instant MEAS")
+            dlog_duration = float(cfg.get("dlog_duration_s", 1.0))
+
+            if self._debug and isinstance(n, MockN6705C):
+                n._vin_ch = vin_ch
+                n._iload_ch = iload_ch
+
+            temp_points = []
+            t = temp_start
+            while t <= temp_end + temp_step * 0.001:
+                temp_points.append(round(t, 1))
+                t += temp_step
+            if not temp_points:
+                temp_points = [temp_start, temp_end]
+
+            sleep_settle = 0.0 if self._debug else 2
+            sleep_measure = 0.0 if self._debug else settle_ms
+
+            self.log_message.emit(
+                f"[TEMP-SWEEP] Temp: {temp_start}°C → {temp_end}°C, Step: {temp_step}°C, "
+                f"Points: {len(temp_points)}, Fixed Load: {fixed_load_a*1000:.1f}mA"
+            )
+
+            if vt is not None:
+                self.log_message.emit("[TEMP-SWEEP] VT6002 connected — automatic temperature control enabled.")
+                try:
+                    vt.start()
+                    self.log_message.emit("[TEMP-SWEEP] Chamber power ON.")
+                except Exception as e:
+                    self.log_message.emit(f"[TEMP-SWEEP] Chamber start warning: {e}")
+            else:
+                self.log_message.emit(
+                    "[TEMP-SWEEP] No VT6002 connected. "
+                    "Temperature must be set manually for each point."
+                )
+
+            n.set_mode(vin_ch, "PS2Q")
+            n.set_mode(vout_ch, "VMETer")
+            n.set_mode(iload_ch, "CCLoad")
+
+            n.set_current_limit(vin_ch, 0.5)
+            for ch in (vin_ch, vout_ch, iload_ch):
+                n.set_channel_range(ch)
+
+            n.set_current(iload_ch, -fixed_load_a)
+            n.channel_on(iload_ch)
+            QThread.msleep(int(sleep_settle * 1000))
+
+            self.chart_clear.emit()
+            self.progress.emit(0)
+
+            output = []
+            max_eff = 0.0
+            max_eff_temp = 0.0
+            sum_eff = 0.0
+            total_count = len(temp_points)
+
+            hdr = (f"{'#':>4s}  {'Temp(°C)':>10s}  {'Vin(V)':>8s}  "
+                   f"{'Vout(V)':>8s}  {'Iin(A)':>10s}  {'Iout(A)':>10s}  "
+                   f"{'Eff(%)':>7s}")
+            self.log_message.emit(hdr)
+            self.log_message.emit("-" * len(hdr))
+
+            TEMP_TOLERANCE = 1.0
+            TEMP_SETTLE_POLL_S = 2.0
+            TEMP_SETTLE_TIMEOUT_S = 600
+
+            t_start = time.time()
+
+            for idx, temp_set in enumerate(temp_points):
+                if self._stop_flag:
+                    self.log_message.emit("[TEMP-SWEEP] Stopped by user.")
+                    break
+
+                if vt is not None:
+                    self.log_message.emit(f"[TEMP-SWEEP] Setting chamber to {temp_set}°C ...")
+                    try:
+                        vt.set_temperature(temp_set)
+                    except Exception as e:
+                        self.log_message.emit(f"[TEMP-SWEEP] Set temp error: {e}")
+
+                    settle_start = time.time()
+                    settled = False
+                    while not settled:
+                        if self._stop_flag:
+                            break
+                        try:
+                            actual = vt.get_current_temp()
+                        except Exception:
+                            actual = None
+
+                        if actual is not None and abs(actual - temp_set) <= TEMP_TOLERANCE:
+                            self.log_message.emit(
+                                f"[TEMP-SWEEP] Chamber stable at {actual:.1f}°C (target {temp_set}°C)."
+                            )
+                            settled = True
+                        else:
+                            elapsed_settle = time.time() - settle_start
+                            if elapsed_settle > TEMP_SETTLE_TIMEOUT_S:
+                                self.log_message.emit(
+                                    f"[TEMP-SWEEP] Timeout waiting for {temp_set}°C "
+                                    f"(current: {actual}°C). Measuring anyway."
+                                )
+                                settled = True
+                            else:
+                                actual_str = f"{actual:.1f}" if actual is not None else "N/A"
+                                self.log_message.emit(
+                                    f"[TEMP-SWEEP] Waiting... current={actual_str}°C, "
+                                    f"target={temp_set}°C, elapsed={elapsed_settle:.0f}s"
+                                )
+                                QThread.msleep(int(TEMP_SETTLE_POLL_S * 1000))
+
+                    if self._stop_flag:
+                        break
+                    QThread.msleep(int(sleep_settle * 1000))
+                else:
+                    self.log_message.emit(f"[TEMP-SWEEP] Measuring at {temp_set}°C (manual) ...")
+                    QThread.msleep(int(sleep_settle * 1000))
+
+                if sampling_method == "DataLogger":
+                    vbat, vout, i_in, i_out = _measure_point_datalog(
+                        n, vin_ch, vout_ch, iload_ch, dlog_duration, self._debug
+                    )
+                else:
+                    vbat, vout, i_in, i_out = _measure_point_instant(
+                        n, vin_ch, vout_ch, iload_ch, average_cnt
+                    )
+
+                i_load_actual = abs(i_out)
+                p_in = vbat * abs(i_in)
+                p_out = vout * i_load_actual
+                eff = p_out / max(p_in, 1e-12)
+                eff = max(min(eff, 1.2), 0.0)
+                eff_pct = eff * 100
+
+                self.log_message.emit(
+                    f"{idx+1:4d}  {temp_set:10.1f}  {vbat:8.4f}  "
+                    f"{vout:8.4f}  {i_in:10.6f}  {i_out:10.6f}  "
+                    f"{eff_pct:7.2f}"
+                )
+
+                output.append((temp_set, eff_pct))
+                sum_eff += eff_pct
+                if eff_pct > max_eff:
+                    max_eff = eff_pct
+                    max_eff_temp = temp_set
+
+                self.chart_point.emit(temp_set, eff_pct)
+
+                self.data_row.emit({
+                    "cc_load": -fixed_load_a,
+                    "efficiency": eff_pct,
+                    "vin": vbat,
+                    "iin": i_in,
+                    "vout": vout,
+                    "iout": i_load_actual,
+                })
+
+                n_pts = len(output)
+                self.result_update.emit({
+                    "vin": vbat,
+                    "vout": vout,
+                    "efficiency": sum_eff / n_pts,
+                    "max_efficiency": max_eff,
+                    "max_eff_load": max_eff_temp,
+                })
+
+                self.progress.emit(int((idx + 1) * 100 / total_count))
+
+            elapsed = time.time() - t_start
+            minutes, seconds = divmod(elapsed, 60)
+            completed = len(output)
+            if completed > 0:
+                avg = elapsed / completed
+                self.log_message.emit(
+                    f"[TIME] Total: {int(minutes)}m {seconds:.1f}s | "
+                    f"Points: {completed} | Avg: {avg:.2f}s/point"
+                )
+            else:
+                self.log_message.emit(f"[TIME] Total: {int(minutes)}m {seconds:.1f}s")
+
+        except Exception as e:
+            self.log_message.emit(f"[ERROR] Temp Sweep failed: {e}")
+        finally:
+            try:
+                n.set_current(iload_ch, 0)
+                n.channel_off(iload_ch)
+            except Exception:
+                pass
             self.test_finished.emit()
 
 
@@ -530,14 +993,21 @@ class PMUDCDCEfficiencyUI(QWidget):
 
     connection_status_changed = Signal(bool)
 
-    def __init__(self, n6705c_top=None):
+    def __init__(self, n6705c_top=None, vt6002_chamber_ui=None):
         super().__init__()
 
         self._n6705c_top = n6705c_top
+        self._vt6002_chamber_ui = vt6002_chamber_ui
         self.rm = None
         self.n6705c = None
         self.is_connected = False
         self.available_devices = []
+
+        self.vt6002 = None
+        self.is_vt6002_connected = False
+        self._vt6002_syncing = False
+        self._vt6002_search_thread = None
+        self._vt6002_search_worker = None
 
         self.is_test_running = False
         self.test_thread = None
@@ -886,17 +1356,29 @@ class PMUDCDCEfficiencyUI(QWidget):
         left_layout.setContentsMargins(18, 18, 18, 18)
         left_layout.setSpacing(16)
 
+        self.test_item_card = CardFrame("◉ TEST ITEM")
+        self._build_test_item_card()
+        left_layout.addWidget(self.test_item_card)
+
         self.connection_card = CardFrame("⚡ N6705C CONNECTION")
         self._build_connection_card()
         left_layout.addWidget(self.connection_card)
+
+        self.vt6002_card = CardFrame("🌡 VT6002 CHAMBER")
+        self._build_vt6002_card()
+        left_layout.addWidget(self.vt6002_card)
+
+        self.test_config_card = CardFrame("⚙ TEST CONFIG")
+        self._build_test_config_card()
+        left_layout.addWidget(self.test_config_card)
 
         self.channel_card = CardFrame("⇄ CHANNEL SELECTION")
         self._build_channel_card()
         left_layout.addWidget(self.channel_card)
 
-        self.sweep_card = CardFrame("∿ SWEEP\nPARAMETERS")
-        self._build_sweep_card()
-        left_layout.addWidget(self.sweep_card)
+        self.measurement_card = CardFrame("⊕ MEASUREMENT\nSETTINGS")
+        self._build_measurement_card()
+        left_layout.addWidget(self.measurement_card)
 
         left_layout.addStretch()
 
@@ -1045,42 +1527,31 @@ class PMUDCDCEfficiencyUI(QWidget):
         btn_row.addWidget(self.connect_btn)
         layout.addLayout(btn_row)
 
-    def _build_channel_card(self):
-        layout = self.channel_card.main_layout
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(10)
+    def _build_test_item_card(self):
+        layout = self.test_item_card.main_layout
 
-        self.vin_channel_label = QLabel("VIN Channel")
-        self.vin_channel_label.setObjectName("fieldLabel")
-        self.vin_channel_combo = DarkComboBox()
-        self.vin_channel_combo.addItems(["CH 1", "CH 2", "CH 3", "CH 4"])
+        self.test_item_combo = DarkComboBox()
+        self.test_item_combo.addItems([
+            "Efficiency Curve",
+            "VIN Sweep",
+            "Temperature Sweep",
+        ])
+        layout.addWidget(self.test_item_combo)
 
-        self.vout_channel_label = QLabel("VOUT Channel")
-        self.vout_channel_label.setObjectName("fieldLabel")
-        self.vout_channel_combo = DarkComboBox()
-        self.vout_channel_combo.addItems(["CH 1", "CH 2", "CH 3", "CH 4"])
-        self.vout_channel_combo.setCurrentIndex(1)
+    def _on_test_item_changed(self):
+        item = self.test_item_combo.currentText()
+        is_vin = (item == "VIN Sweep")
+        is_temp = (item == "Temperature Sweep")
 
-        self.cc_load_channel_label = QLabel("CC Load Channel")
-        self.cc_load_channel_label.setObjectName("fieldLabel")
-        self.cc_load_channel_combo = DarkComboBox()
-        self.cc_load_channel_combo.addItems(["CH 1", "CH 2", "CH 3", "CH 4"])
-        self.cc_load_channel_combo.setCurrentIndex(2)
+        if hasattr(self, 'vt6002_card'):
+            self.vt6002_card.setVisible(is_temp)
+        if hasattr(self, 'vin_sweep_container'):
+            self.vin_sweep_container.setVisible(is_vin)
+        if hasattr(self, 'temp_sweep_container'):
+            self.temp_sweep_container.setVisible(is_temp)
 
-        grid.addWidget(self.vin_channel_label, 0, 0)
-        grid.addWidget(self.vin_channel_combo, 0, 1)
-
-        grid.addWidget(self.vout_channel_label, 1, 0)
-        grid.addWidget(self.vout_channel_combo, 1, 1)
-
-        grid.addWidget(self.cc_load_channel_label, 2, 0)
-        grid.addWidget(self.cc_load_channel_combo, 2, 1)
-
-        layout.addLayout(grid)
-
-    def _build_sweep_card(self):
-        layout = self.sweep_card.main_layout
+    def _build_test_config_card(self):
+        layout = self.test_config_card.main_layout
 
         mode_row = QHBoxLayout()
         mode_row.addStretch()
@@ -1169,6 +1640,357 @@ class PMUDCDCEfficiencyUI(QWidget):
         layout.addLayout(grid)
 
         self._on_sweep_mode_changed()
+
+        self.vin_sweep_container = QFrame()
+        self.vin_sweep_container.setStyleSheet("QFrame { background: transparent; border: none; }")
+        vin_grid = QGridLayout(self.vin_sweep_container)
+        vin_grid.setContentsMargins(0, 0, 0, 0)
+        vin_grid.setHorizontalSpacing(10)
+        vin_grid.setVerticalSpacing(8)
+
+        self.lbl_vin_start = QLabel("VIN Start (V)")
+        self.lbl_vin_start.setObjectName("fieldLabel")
+        self.vin_start_spin = QDoubleSpinBox()
+        self.vin_start_spin.setRange(0.0, 60.0)
+        self.vin_start_spin.setDecimals(2)
+        self.vin_start_spin.setSingleStep(0.1)
+        self.vin_start_spin.setValue(3.0)
+
+        self.lbl_vin_end = QLabel("VIN End (V)")
+        self.lbl_vin_end.setObjectName("fieldLabel")
+        self.vin_end_spin = QDoubleSpinBox()
+        self.vin_end_spin.setRange(0.0, 60.0)
+        self.vin_end_spin.setDecimals(2)
+        self.vin_end_spin.setSingleStep(0.1)
+        self.vin_end_spin.setValue(4.2)
+
+        self.lbl_vin_step = QLabel("VIN Step (V)")
+        self.lbl_vin_step.setObjectName("fieldLabel")
+        self.vin_step_spin = QDoubleSpinBox()
+        self.vin_step_spin.setRange(0.01, 10.0)
+        self.vin_step_spin.setDecimals(2)
+        self.vin_step_spin.setSingleStep(0.1)
+        self.vin_step_spin.setValue(0.1)
+
+        self.lbl_fixed_load = QLabel("Fixed Load (A)")
+        self.lbl_fixed_load.setObjectName("fieldLabel")
+        self.fixed_load_spin = QDoubleSpinBox()
+        self.fixed_load_spin.setRange(0.0, 10.0)
+        self.fixed_load_spin.setDecimals(3)
+        self.fixed_load_spin.setSingleStep(0.01)
+        self.fixed_load_spin.setValue(0.1)
+
+        vin_grid.addWidget(self.lbl_vin_start, 0, 0)
+        vin_grid.addWidget(self.vin_start_spin, 1, 0)
+        vin_grid.addWidget(self.lbl_vin_end, 0, 1)
+        vin_grid.addWidget(self.vin_end_spin, 1, 1)
+        vin_grid.addWidget(self.lbl_vin_step, 2, 0)
+        vin_grid.addWidget(self.vin_step_spin, 3, 0)
+        vin_grid.addWidget(self.lbl_fixed_load, 2, 1)
+        vin_grid.addWidget(self.fixed_load_spin, 3, 1)
+
+        layout.addWidget(self.vin_sweep_container)
+
+        self.temp_sweep_container = QFrame()
+        self.temp_sweep_container.setStyleSheet("QFrame { background: transparent; border: none; }")
+        temp_grid = QGridLayout(self.temp_sweep_container)
+        temp_grid.setContentsMargins(0, 0, 0, 0)
+        temp_grid.setHorizontalSpacing(10)
+        temp_grid.setVerticalSpacing(8)
+
+        self.lbl_temp_start = QLabel("Temp Start (°C)")
+        self.lbl_temp_start.setObjectName("fieldLabel")
+        self.temp_start_spin = QDoubleSpinBox()
+        self.temp_start_spin.setRange(-55.0, 200.0)
+        self.temp_start_spin.setDecimals(1)
+        self.temp_start_spin.setSingleStep(5)
+        self.temp_start_spin.setValue(-40.0)
+
+        self.lbl_temp_end = QLabel("Temp End (°C)")
+        self.lbl_temp_end.setObjectName("fieldLabel")
+        self.temp_end_spin = QDoubleSpinBox()
+        self.temp_end_spin.setRange(-55.0, 200.0)
+        self.temp_end_spin.setDecimals(1)
+        self.temp_end_spin.setSingleStep(5)
+        self.temp_end_spin.setValue(85.0)
+
+        self.lbl_temp_step = QLabel("Temp Step (°C)")
+        self.lbl_temp_step.setObjectName("fieldLabel")
+        self.temp_step_spin = QDoubleSpinBox()
+        self.temp_step_spin.setRange(1.0, 100.0)
+        self.temp_step_spin.setDecimals(1)
+        self.temp_step_spin.setSingleStep(5)
+        self.temp_step_spin.setValue(25.0)
+
+        self.lbl_temp_fixed_load = QLabel("Fixed Load (A)")
+        self.lbl_temp_fixed_load.setObjectName("fieldLabel")
+        self.temp_fixed_load_spin = QDoubleSpinBox()
+        self.temp_fixed_load_spin.setRange(0.0, 10.0)
+        self.temp_fixed_load_spin.setDecimals(3)
+        self.temp_fixed_load_spin.setSingleStep(0.01)
+        self.temp_fixed_load_spin.setValue(0.1)
+
+        temp_grid.addWidget(self.lbl_temp_start, 0, 0)
+        temp_grid.addWidget(self.temp_start_spin, 1, 0)
+        temp_grid.addWidget(self.lbl_temp_end, 0, 1)
+        temp_grid.addWidget(self.temp_end_spin, 1, 1)
+        temp_grid.addWidget(self.lbl_temp_step, 2, 0)
+        temp_grid.addWidget(self.temp_step_spin, 3, 0)
+        temp_grid.addWidget(self.lbl_temp_fixed_load, 2, 1)
+        temp_grid.addWidget(self.temp_fixed_load_spin, 3, 1)
+
+        layout.addWidget(self.temp_sweep_container)
+
+    def _build_measurement_card(self):
+        layout = self.measurement_card.main_layout
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(8)
+
+        self.lbl_settle_time = QLabel("Settle Time (ms)")
+        self.lbl_settle_time.setObjectName("fieldLabel")
+        self.settle_time_spin = QSpinBox()
+        self.settle_time_spin.setRange(0, 10000)
+        self.settle_time_spin.setValue(3)
+        self.settle_time_spin.setSingleStep(10)
+        self.settle_time_spin.setToolTip(
+            "Wait time after setting load current before measurement.\n"
+            "0~3ms = fastest (original), 50~200ms = recommended for accuracy."
+        )
+
+        self.lbl_sampling = QLabel("Sampling Method")
+        self.lbl_sampling.setObjectName("fieldLabel")
+        self.sampling_method_combo = DarkComboBox()
+        self.sampling_method_combo.addItems(["Instant MEAS", "DataLogger"])
+
+        self.lbl_dlog_duration = QLabel("DataLog Duration (s)")
+        self.lbl_dlog_duration.setObjectName("fieldLabel")
+        self.dlog_duration_spin = QDoubleSpinBox()
+        self.dlog_duration_spin.setRange(0.1, 30.0)
+        self.dlog_duration_spin.setDecimals(1)
+        self.dlog_duration_spin.setSingleStep(0.5)
+        self.dlog_duration_spin.setValue(1.0)
+        self.dlog_duration_spin.setToolTip(
+            "Duration for DataLogger sampling per point.\n"
+            "Longer = more accurate average, slower test."
+        )
+
+        grid.addWidget(self.lbl_settle_time, 0, 0)
+        grid.addWidget(self.settle_time_spin, 1, 0)
+        grid.addWidget(self.lbl_sampling, 0, 1)
+        grid.addWidget(self.sampling_method_combo, 1, 1)
+        grid.addWidget(self.lbl_dlog_duration, 2, 0, 1, 2)
+        grid.addWidget(self.dlog_duration_spin, 3, 0, 1, 2)
+
+        layout.addLayout(grid)
+
+    def _on_sampling_method_changed(self):
+        is_dlog = (self.sampling_method_combo.currentText() == "DataLogger")
+        self.lbl_dlog_duration.setVisible(is_dlog)
+        self.dlog_duration_spin.setVisible(is_dlog)
+
+    def _build_vt6002_card(self):
+        layout = self.vt6002_card.main_layout
+
+        status_row = QHBoxLayout()
+        status_row.setSpacing(8)
+        self.vt6002_indicator = QLabel("○")
+        self.vt6002_indicator.setFixedWidth(14)
+        self.vt6002_indicator.setStyleSheet("color: #ff5a7a; font-size: 14px; background: transparent;")
+        self.vt6002_status_label = QLabel("Not Connected")
+        self.vt6002_status_label.setStyleSheet("color: #ff5a7a; font-weight: 600; font-size: 11px;")
+        status_row.addWidget(self.vt6002_indicator)
+        status_row.addWidget(self.vt6002_status_label, 1)
+        layout.addLayout(status_row)
+
+        select_row = QHBoxLayout()
+        select_row.setSpacing(6)
+        self.vt6002_combo = DarkComboBox()
+        self.vt6002_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.vt6002_search_btn = SpinningSearchButton()
+        self.vt6002_search_btn.setFixedWidth(36)
+        select_row.addWidget(self.vt6002_combo, 1)
+        select_row.addWidget(self.vt6002_search_btn)
+        layout.addLayout(select_row)
+
+        btn_row = QHBoxLayout()
+        self.vt6002_connect_btn = QPushButton("Connect")
+        update_connect_button_state(self.vt6002_connect_btn, connected=False)
+        btn_row.addWidget(self.vt6002_connect_btn)
+        layout.addLayout(btn_row)
+
+    def _on_vt6002_connection_changed(self):
+        if self._vt6002_syncing:
+            return
+        if self._vt6002_chamber_ui is None:
+            return
+        vt = self._vt6002_chamber_ui.vt6002
+        if vt is not None:
+            is_open = isinstance(vt, MockVT6002) or (hasattr(vt, 'ser') and vt.ser.is_open)
+            if is_open:
+                self.vt6002 = vt
+                self.is_vt6002_connected = True
+                port = getattr(self._vt6002_chamber_ui, 'current_port', 'Unknown')
+                self._update_vt6002_ui(True, f"Connected: {port}")
+                self.append_log(f"[VT6002] Synced: {port}")
+                return
+        self.vt6002 = None
+        self.is_vt6002_connected = False
+        self._update_vt6002_ui(False, "Not Connected")
+        self.append_log("[VT6002] Disconnected (synced).")
+
+    def _search_vt6002(self):
+        if DEBUG_MOCK:
+            self.vt6002_combo.clear()
+            self.vt6002_combo.addItem("[MOCK] COM3 - VT6002 Chamber")
+            return
+
+        if self._vt6002_search_thread is not None and self._vt6002_search_thread.isRunning():
+            return
+
+        self.vt6002_search_btn.setEnabled(False)
+        self.vt6002_connect_btn.setEnabled(False)
+
+        worker = _SearchSerialWorker()
+        thread = QThread()
+        worker.moveToThread(thread)
+
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._on_vt6002_search_done)
+        worker.error.connect(self._on_vt6002_search_error)
+        worker.finished.connect(thread.quit)
+        worker.error.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda: self._on_vt6002_thread_cleanup())
+
+        self._vt6002_search_thread = thread
+        self._vt6002_search_worker = worker
+        thread.start()
+
+    def _on_vt6002_thread_cleanup(self):
+        self._vt6002_search_thread = None
+        self._vt6002_search_worker = None
+
+    def _on_vt6002_search_done(self, ports):
+        self.vt6002_combo.clear()
+        if ports:
+            for port in ports:
+                self.vt6002_combo.addItem(port)
+            self.vt6002_connect_btn.setEnabled(True)
+        else:
+            self.vt6002_combo.addItem("No serial ports found")
+            self.vt6002_connect_btn.setEnabled(False)
+        self.vt6002_search_btn.setEnabled(True)
+
+    def _on_vt6002_search_error(self, err):
+        self.append_log(f"[VT6002] Search error: {err}")
+        self.vt6002_search_btn.setEnabled(True)
+        self.vt6002_connect_btn.setEnabled(False)
+
+    def _toggle_vt6002(self):
+        if self.is_vt6002_connected:
+            self._disconnect_vt6002()
+        else:
+            self._connect_vt6002()
+
+    def _connect_vt6002(self):
+        self.vt6002_connect_btn.setEnabled(False)
+        if DEBUG_MOCK:
+            vt = MockVT6002()
+            port = "MOCK"
+        else:
+            try:
+                from instruments.chambers.vt6002_chamber import VT6002
+                port_str = self.vt6002_combo.currentText()
+                port = port_str.split()[0]
+                vt = VT6002(port)
+            except Exception as e:
+                self.append_log(f"[VT6002] Connection failed: {e}")
+                self._update_vt6002_ui(False, f"Error")
+                return
+
+        self.vt6002 = vt
+        self.is_vt6002_connected = True
+        self._update_vt6002_ui(True, f"Connected: {port}")
+        self.append_log(f"[VT6002] Connected: {port}")
+
+        if self._vt6002_chamber_ui is not None:
+            self._vt6002_syncing = True
+            self._vt6002_chamber_ui.vt6002 = vt
+            self._vt6002_chamber_ui.current_port = port
+            self._vt6002_chamber_ui._set_connection_ui(True)
+            self._vt6002_chamber_ui._set_controls_enabled(True)
+            self._vt6002_chamber_ui.connection_changed.emit()
+            self._vt6002_syncing = False
+
+    def _disconnect_vt6002(self):
+        self.vt6002_connect_btn.setEnabled(False)
+        try:
+            if self.vt6002 is not None:
+                self.vt6002.close()
+        except Exception as e:
+            self.append_log(f"[VT6002] Close error: {e}")
+
+        self.vt6002 = None
+        self.is_vt6002_connected = False
+        self._update_vt6002_ui(False, "Disconnected")
+        self.append_log("[VT6002] Disconnected.")
+
+        if self._vt6002_chamber_ui is not None:
+            self._vt6002_syncing = True
+            self._vt6002_chamber_ui.vt6002 = None
+            self._vt6002_chamber_ui.current_port = None
+            self._vt6002_chamber_ui.is_chamber_on = False
+            self._vt6002_chamber_ui._set_connection_ui(False)
+            self._vt6002_chamber_ui._set_controls_enabled(False)
+            self._vt6002_chamber_ui._set_power_ui(False)
+            self._vt6002_chamber_ui.connection_changed.emit()
+            self._vt6002_syncing = False
+
+    def _update_vt6002_ui(self, connected, status_text):
+        color = "#18a067" if connected else "#ff5a7a"
+        self.vt6002_indicator.setText("●" if connected else "○")
+        self.vt6002_indicator.setStyleSheet(f"color: {color}; font-size: 14px; background: transparent;")
+        self.vt6002_status_label.setText(status_text)
+        self.vt6002_status_label.setStyleSheet(f"color: {color}; font-weight: 600; font-size: 11px;")
+        update_connect_button_state(self.vt6002_connect_btn, connected)
+        self.vt6002_search_btn.setEnabled(not connected)
+        self.vt6002_combo.setEnabled(not connected)
+
+    def _build_channel_card(self):
+        layout = self.channel_card.main_layout
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(10)
+
+        self.vin_channel_label = QLabel("VIN Channel")
+        self.vin_channel_label.setObjectName("fieldLabel")
+        self.vin_channel_combo = DarkComboBox()
+        self.vin_channel_combo.addItems(["CH 1", "CH 2", "CH 3", "CH 4"])
+
+        self.vout_channel_label = QLabel("VOUT Channel")
+        self.vout_channel_label.setObjectName("fieldLabel")
+        self.vout_channel_combo = DarkComboBox()
+        self.vout_channel_combo.addItems(["CH 1", "CH 2", "CH 3", "CH 4"])
+        self.vout_channel_combo.setCurrentIndex(1)
+
+        self.cc_load_channel_label = QLabel("CC Load Channel")
+        self.cc_load_channel_label.setObjectName("fieldLabel")
+        self.cc_load_channel_combo = DarkComboBox()
+        self.cc_load_channel_combo.addItems(["CH 1", "CH 2", "CH 3", "CH 4"])
+        self.cc_load_channel_combo.setCurrentIndex(2)
+
+        grid.addWidget(self.vin_channel_label, 0, 0)
+        grid.addWidget(self.vin_channel_combo, 0, 1)
+
+        grid.addWidget(self.vout_channel_label, 1, 0)
+        grid.addWidget(self.vout_channel_combo, 1, 1)
+
+        grid.addWidget(self.cc_load_channel_label, 2, 0)
+        grid.addWidget(self.cc_load_channel_combo, 2, 1)
+
+        layout.addLayout(grid)
 
     def _on_sweep_mode_changed(self):
         is_log = self.log_mode_btn.isChecked()
@@ -1306,6 +2128,9 @@ class PMUDCDCEfficiencyUI(QWidget):
         self.append_log("[SYSTEM] Ready. Waiting for instrument connection.")
         self.append_log("[TEST] UI initialized successfully.")
         self.set_progress(0)
+        self._on_test_item_changed()
+        self._on_sampling_method_changed()
+        self._on_vt6002_connection_changed()
 
     def _bind_signals(self):
         self.search_btn.clicked.connect(self._on_search)
@@ -1321,6 +2146,12 @@ class PMUDCDCEfficiencyUI(QWidget):
         self.chart_zoom_out_btn.clicked.connect(self._on_chart_zoom_out)
         self.chart_auto_btn.clicked.connect(self._on_chart_auto_fit)
         self.chart_marker_btn.toggled.connect(self._on_chart_marker_toggled)
+        self.test_item_combo.currentTextChanged.connect(self._on_test_item_changed)
+        self.sampling_method_combo.currentTextChanged.connect(self._on_sampling_method_changed)
+        self.vt6002_search_btn.clicked.connect(self._search_vt6002)
+        self.vt6002_connect_btn.clicked.connect(self._toggle_vt6002)
+        if self._vt6002_chamber_ui is not None:
+            self._vt6002_chamber_ui.connection_changed.connect(self._on_vt6002_connection_changed)
 
     def _on_start_or_stop(self):
         if self.is_test_running:
@@ -1366,7 +2197,21 @@ class PMUDCDCEfficiencyUI(QWidget):
         self.set_test_running(True)
         self.set_progress(0)
         cfg = self.get_test_config()
-        self.test_thread = DCDCEfficiencyTestThread(self.n6705c, cfg, DEBUG_MOCK)
+        test_item = cfg.get("test_item", "Efficiency Curve")
+
+        if test_item == "VIN Sweep":
+            self.test_thread = DCDCVinSweepTestThread(self.n6705c, cfg, DEBUG_MOCK)
+        elif test_item == "Temperature Sweep":
+            if not self.is_vt6002_connected or self.vt6002 is None:
+                self.append_log("[ERROR] VT6002 not connected. Please connect chamber first.")
+                self.set_test_running(False)
+                return
+            self.test_thread = DCDCTempSweepTestThread(
+                self.n6705c, cfg, DEBUG_MOCK, vt6002=self.vt6002
+            )
+        else:
+            self.test_thread = DCDCEfficiencyTestThread(self.n6705c, cfg, DEBUG_MOCK)
+
         self.test_thread.log_message.connect(self.append_log)
         self.test_thread.progress.connect(self.set_progress)
         self.test_thread.chart_point.connect(self._update_chart_point)
@@ -1562,7 +2407,8 @@ class PMUDCDCEfficiencyUI(QWidget):
                 self.axis_y.setRange(min_y, max_y)
 
     def get_test_config(self):
-        return {
+        base = {
+            "test_item": self.test_item_combo.currentText(),
             "vin_channel": self.vin_channel_combo.currentText(),
             "vout_channel": self.vout_channel_combo.currentText(),
             "cc_load_channel": self.cc_load_channel_combo.currentText(),
@@ -1572,7 +2418,20 @@ class PMUDCDCEfficiencyUI(QWidget):
             "step_current_a": self.step_current_spin.value(),
             "points_per_dec": self.points_per_dec_spin.value(),
             "average_cnt": self.average_cnt_spin.value(),
+            "settle_time_ms": self.settle_time_spin.value(),
+            "sampling_method": self.sampling_method_combo.currentText(),
+            "dlog_duration_s": self.dlog_duration_spin.value(),
+            "vin_start": self.vin_start_spin.value(),
+            "vin_end": self.vin_end_spin.value(),
+            "vin_step": self.vin_step_spin.value(),
+            "fixed_load_a": self.fixed_load_spin.value(),
+            "temp_start": self.temp_start_spin.value(),
+            "temp_end": self.temp_end_spin.value(),
+            "temp_step": self.temp_step_spin.value(),
         }
+        if self.test_item_combo.currentText() == "Temperature Sweep":
+            base["fixed_load_a"] = self.temp_fixed_load_spin.value()
+        return base
 
     def set_test_running(self, running):
         self.is_test_running = running
@@ -1602,7 +2461,22 @@ class PMUDCDCEfficiencyUI(QWidget):
             self.average_cnt_spin,
             self.visa_resource_combo,
             self.search_btn,
-            self.connect_btn
+            self.connect_btn,
+            self.test_item_combo,
+            self.settle_time_spin,
+            self.sampling_method_combo,
+            self.dlog_duration_spin,
+            self.vin_start_spin,
+            self.vin_end_spin,
+            self.vin_step_spin,
+            self.fixed_load_spin,
+            self.temp_start_spin,
+            self.temp_end_spin,
+            self.temp_step_spin,
+            self.temp_fixed_load_spin,
+            self.vt6002_search_btn,
+            self.vt6002_connect_btn,
+            self.vt6002_combo,
         ]
 
         for widget in widgets:

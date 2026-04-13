@@ -965,7 +965,11 @@ class MainWindow(QMainWindow):
     def _create_pmu_test_ui(self, selected_test=None):
         self._hide_all_instrument_uis()
         if self.pmu_test_ui is None:
-            self.pmu_test_ui = PMUTestUI(n6705c_top=self.n6705c_top, mso64b_top=self.mso64b_top)
+            self.pmu_test_ui = PMUTestUI(
+                n6705c_top=self.n6705c_top,
+                mso64b_top=self.mso64b_top,
+                vt6002_chamber_ui=self.vt6002_chamber_ui,
+            )
             self.instrument_ui_container_layout.addWidget(self.pmu_test_ui)
         else:
             self.pmu_test_ui._sync_from_top()

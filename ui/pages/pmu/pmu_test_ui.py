@@ -33,10 +33,11 @@ class PMUTestUI(QWidget):
         "clk_test": 5,
     }
 
-    def __init__(self, n6705c_top=None, mso64b_top=None):
+    def __init__(self, n6705c_top=None, mso64b_top=None, vt6002_chamber_ui=None):
         super().__init__()
         self._n6705c_top = n6705c_top
         self._mso64b_top = mso64b_top
+        self._vt6002_chamber_ui = vt6002_chamber_ui
         self._setup_style()
         self._create_layout()
         self._init_ui_elements()
@@ -132,7 +133,10 @@ class PMUTestUI(QWidget):
         self.tab_widget.tabBar().hide()
 
         # 创建DCDC Efficiency页面
-        self.dcdc_efficiency_ui = PMUDCDCEfficiencyUI(n6705c_top=self._n6705c_top)
+        self.dcdc_efficiency_ui = PMUDCDCEfficiencyUI(
+            n6705c_top=self._n6705c_top,
+            vt6002_chamber_ui=self._vt6002_chamber_ui,
+        )
         self.tab_widget.addTab(self.dcdc_efficiency_ui, "DCDC Efficiency")
 
         self.output_voltage_ui = PMUOutputVoltageUI(n6705c_top=self._n6705c_top)
