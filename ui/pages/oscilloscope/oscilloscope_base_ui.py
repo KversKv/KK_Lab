@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import (
     Qt, QTimer, Signal, QThread, QObject,
     QPropertyAnimation, QEasingCurve, QSequentialAnimationGroup,
-    QSize
+    QSize, QRect, QPoint, Property
 )
 from PySide6.QtGui import QFont, QPixmap, QImage, QPainter, QColor, QPen
 from ui.widgets.dark_combobox import DarkComboBox
@@ -111,6 +111,102 @@ class TruncatedComboBox(DarkComboBox):
 # ---------------------------------------------------------------------------
 # TimeScale 序列输入框：支持鼠标滚轮按 1-2-4-10 序列在 ns/us/ms/s 单位间切换
 # ---------------------------------------------------------------------------
+class CouplingToggle(QWidget):
+    toggled = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(32)
+        self._value = "DC"
+        self._anim_progress = 0.0
+
+        self._bg_off = QColor("#1A2750")
+        self._bg_on = QColor("#1A2750")
+        self._knob_color = QColor("#DDE6FF")
+        self._text_active = QColor("#F3F6FF")
+        self._text_inactive = QColor("#5F77AE")
+        self._border_color = QColor("#22376A")
+
+        self._anim = QPropertyAnimation(self, b"animProgress")
+        self._anim.setDuration(180)
+        self._anim.setEasingCurve(QEasingCurve.InOutCubic)
+
+        self.setCursor(Qt.PointingHandCursor)
+
+    def _get_anim_progress(self):
+        return self._anim_progress
+
+    def _set_anim_progress(self, val):
+        self._anim_progress = val
+        self.update()
+
+    animProgress = Property(float, _get_anim_progress, _set_anim_progress)
+
+    def value(self):
+        return self._value
+
+    def setValue(self, val):
+        val = val.upper()
+        if val not in ("DC", "AC"):
+            return
+        if val == self._value:
+            return
+        self._value = val
+        target = 0.0 if val == "DC" else 1.0
+        self._anim.stop()
+        self._anim.setStartValue(self._anim_progress)
+        self._anim.setEndValue(target)
+        self._anim.start()
+        self.toggled.emit(self._value)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            new_val = "AC" if self._value == "DC" else "DC"
+            self.setValue(new_val)
+        super().mousePressEvent(event)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+
+        w, h = self.width(), self.height()
+        radius = h / 2
+
+        p.setPen(QPen(self._border_color, 1))
+        p.setBrush(self._bg_off)
+        p.drawRoundedRect(QRect(0, 0, w, h), radius, radius)
+
+        knob_margin = 3
+        knob_h = h - knob_margin * 2
+        knob_w = w / 2 - knob_margin
+        knob_x = knob_margin + self._anim_progress * (w / 2)
+        knob_y = knob_margin
+
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor("#243760"))
+        p.drawRoundedRect(QRect(int(knob_x), int(knob_y), int(knob_w), int(knob_h)),
+                          knob_h / 2, knob_h / 2)
+
+        font = p.font()
+        font.setWeight(QFont.Bold)
+        font.setPointSize(9)
+        p.setFont(font)
+
+        left_rect = QRect(0, 0, w // 2, h)
+        right_rect = QRect(w // 2, 0, w // 2, h)
+
+        p.setPen(self._text_active if self._anim_progress < 0.5 else self._text_inactive)
+        p.drawText(left_rect, Qt.AlignCenter, "DC")
+
+        p.setPen(self._text_active if self._anim_progress >= 0.5 else self._text_inactive)
+        p.drawText(right_rect, Qt.AlignCenter, "AC")
+
+        p.end()
+
+    def sizeHint(self):
+        return QSize(100, 32)
+
+
 class TimeScaleEdit(QLineEdit):
     """A QLineEdit that supports mouse wheel to cycle through a
     predefined time-scale sequence (1-2-4-10 pattern across ns/us/ms/s),
@@ -134,15 +230,61 @@ class TimeScaleEdit(QLineEdit):
         's':  1.0,
     }
 
+    _UNIT_SHORT_MAP = {
+        'n': 1e-9,
+        'u': 1e-6,
+        'm': 1e-3,
+    }
+
+    _MULT_TO_UNIT = {
+        1e-9: 'ns',
+        1e-6: 'us',
+        1e-3: 'ms',
+        1.0:  's',
+    }
+
     def __init__(self, default_text="1us", parent=None):
         super().__init__(default_text, parent)
+        self._last_unit_mult = 1e-6
+        parsed_mult = self._extract_unit_mult(default_text)
+        if parsed_mult is not None:
+            self._last_unit_mult = parsed_mult
         self._current_index = self._find_nearest_index(self.parse_to_seconds(default_text))
 
+    def _extract_unit_mult(self, text: str):
+        t = text.strip().lower()
+        for suffix, mult in sorted(self._UNIT_MAP.items(), key=lambda x: -len(x[0])):
+            if t.endswith(suffix):
+                num_str = t[:-len(suffix)].strip()
+                try:
+                    float(num_str)
+                    return mult
+                except ValueError:
+                    return None
+        for suffix, mult in sorted(self._UNIT_SHORT_MAP.items(), key=lambda x: -len(x[0])):
+            if t.endswith(suffix):
+                num_str = t[:-len(suffix)].strip()
+                try:
+                    float(num_str)
+                    return mult
+                except ValueError:
+                    return None
+        return None
+
     def value_in_seconds(self) -> float:
-        return self.parse_to_seconds(self.text())
+        text = self.text()
+        unit_mult = self._extract_unit_mult(text)
+        if unit_mult is not None:
+            self._last_unit_mult = unit_mult
+        seconds = self.parse_to_seconds(text, fallback_mult=self._last_unit_mult)
+        display = self.seconds_to_display(seconds)
+        self.blockSignals(True)
+        self.setText(display)
+        self.blockSignals(False)
+        return seconds
 
     @classmethod
-    def parse_to_seconds(cls, text: str) -> float:
+    def parse_to_seconds(cls, text: str, fallback_mult: float = 1e-6) -> float:
         t = text.strip().lower()
         for suffix, mult in sorted(cls._UNIT_MAP.items(), key=lambda x: -len(x[0])):
             if t.endswith(suffix):
@@ -151,8 +293,15 @@ class TimeScaleEdit(QLineEdit):
                     return float(num_str) * mult
                 except ValueError:
                     return 1e-6
+        for suffix, mult in sorted(cls._UNIT_SHORT_MAP.items(), key=lambda x: -len(x[0])):
+            if t.endswith(suffix):
+                num_str = t[:-len(suffix)].strip()
+                try:
+                    return float(num_str) * mult
+                except ValueError:
+                    return 1e-6
         try:
-            return float(t)
+            return float(t) * fallback_mult
         except ValueError:
             return 1e-6
 
@@ -190,7 +339,7 @@ class TimeScaleEdit(QLineEdit):
         if delta == 0:
             return
 
-        current_seconds = self.parse_to_seconds(self.text())
+        current_seconds = self.parse_to_seconds(self.text(), fallback_mult=self._last_unit_mult)
         self._current_index = self._find_nearest_index(current_seconds)
 
         if delta > 0:
@@ -199,7 +348,11 @@ class TimeScaleEdit(QLineEdit):
             self._current_index = max(self._current_index - 1, 0)
 
         new_val = self.SCALE_SEQUENCE[self._current_index]
-        self.setText(self.seconds_to_display(new_val))
+        display = self.seconds_to_display(new_val)
+        self.setText(display)
+        unit_mult = self._extract_unit_mult(display)
+        if unit_mult is not None:
+            self._last_unit_mult = unit_mult
         event.accept()
 
 
@@ -358,6 +511,7 @@ class OscilloscopeBaseUI(QWidget):
         self.channels = []
         self.channel_cards = []
         self.channel_tab_buttons = []
+        self._selected_channel_index = 0
         self.is_connected = False
 
         self.mso64b_top = mso64b_top
@@ -1157,12 +1311,54 @@ class OscilloscopeBaseUI(QWidget):
             btn = QPushButton(f"CH{i+1}")
             btn.setObjectName("channelTab")
             btn.setCheckable(True)
-            btn.clicked.connect(lambda checked, idx=i: self._switch_channel_card(idx))
+            btn.clicked.connect(lambda checked=False, idx=i: self._on_channel_tab_clicked(idx))
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             self.channel_tab_buttons.append(btn)
             tab_layout.addWidget(btn)
 
         layout.addWidget(tab_bar)
+
+        self._channel_select_bar = QFrame()
+        self._channel_select_bar.setStyleSheet(
+            "QFrame { background: transparent; border: none; }"
+        )
+        select_layout = QHBoxLayout(self._channel_select_bar)
+        select_layout.setContentsMargins(0, 0, 0, 0)
+        select_layout.setSpacing(4)
+        self._channel_select_buttons = []
+        for i in range(self.NUM_CHANNELS):
+            sbtn = QPushButton(f"CH{i+1}")
+            sbtn.setCheckable(True)
+            sbtn.setAutoExclusive(True)
+            sbtn.setFixedHeight(24)
+            sbtn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            sbtn.setStyleSheet("""
+                QPushButton {
+                    background: transparent;
+                    border: none;
+                    border-bottom: 2px solid transparent;
+                    color: #5F77AE;
+                    font-size: 8pt;
+                    font-weight: 600;
+                    padding: 2px 4px;
+                    border-radius: 0px;
+                }
+                QPushButton:checked {
+                    color: #DDE6FF;
+                    border-bottom: 2px solid #7B7DFF;
+                }
+                QPushButton:hover:!checked {
+                    color: #8FA4D4;
+                }
+                QPushButton:disabled {
+                    color: #3A4563;
+                    border-bottom: 2px solid transparent;
+                }
+            """)
+            sbtn.clicked.connect(lambda checked=False, idx=i: self._switch_channel_card(idx))
+            self._channel_select_buttons.append(sbtn)
+            select_layout.addWidget(sbtn)
+        layout.addWidget(self._channel_select_bar)
 
         self.channel_stack = QStackedWidget()
         for i in range(self.NUM_CHANNELS):
@@ -1198,7 +1394,10 @@ class OscilloscopeBaseUI(QWidget):
 
         self.timebase_edit.returnPressed.connect(self.timebase_apply_requested.emit)
 
-        self.channel_tab_buttons[0].setChecked(True)
+        for btn in self.channel_tab_buttons:
+            btn.setChecked(False)
+        self._channel_select_buttons[0].setChecked(True)
+        self._selected_channel_index = 0
         self._switch_channel_card(0)
 
         return card
@@ -1327,49 +1526,18 @@ class OscilloscopeBaseUI(QWidget):
         header.addWidget(channel_label)
         header.addStretch()
 
-        toggle_wrap = self._create_fake_toggle()
-        header.addWidget(toggle_wrap["widget"])
-
         layout.addLayout(header)
 
         coupling_title = QLabel("Coupling")
         coupling_title.setStyleSheet("color:#AFC0E8; font-weight:600;")
         layout.addWidget(coupling_title)
 
-        coupling_bar = QFrame()
-        coupling_bar.setObjectName("innerCard")
-        coupling_layout = QHBoxLayout(coupling_bar)
-        coupling_layout.setContentsMargins(4, 4, 4, 4)
-        coupling_layout.setSpacing(4)
-
-        coupling_dc = QPushButton("DC")
-        coupling_dc.setObjectName("segBtn")
-        coupling_dc.setCheckable(True)
-        coupling_dc.setChecked(True)
-
-        coupling_ac = QPushButton("AC")
-        coupling_ac.setObjectName("segBtn")
-        coupling_ac.setCheckable(True)
-
-        coupling_gnd = QPushButton("GND")
-        coupling_gnd.setObjectName("segBtn")
-        coupling_gnd.setCheckable(True)
-        coupling_gnd.setEnabled(False)
-
-        for btn in (coupling_dc, coupling_ac, coupling_gnd):
-            btn.setAutoExclusive(True)
-            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            coupling_layout.addWidget(btn)
-
-        layout.addWidget(coupling_bar)
+        coupling_toggle = CouplingToggle()
+        layout.addWidget(coupling_toggle)
 
         channel_data = {
-            'toggle': toggle_wrap["button"],
             'channel_label': channel_label,
-            'coupling_combo': None,
-            'coupling_dc': coupling_dc,
-            'coupling_ac': coupling_ac,
-            'coupling_gnd': coupling_gnd,
+            'coupling_toggle': coupling_toggle,
         }
 
         scale_widget = self._labeled_line_edit("Scale (V/div)", self.CHANNEL_SCALE_DEFAULT)
@@ -1384,33 +1552,6 @@ class OscilloscopeBaseUI(QWidget):
         self.channels.append(channel_data)
         self.channel_cards.append(frame)
         return frame
-
-    def _create_fake_toggle(self):
-        container = QWidget()
-        layout = QHBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-
-        btn = QPushButton()
-        btn.setCheckable(True)
-        btn.setChecked(True)
-        btn.setFixedSize(30, 18)
-        btn.setStyleSheet("""
-            QPushButton {
-                background-color: #8A6A12;
-                border: none;
-                border-radius: 9px;
-            }
-            QPushButton:!checked {
-                background-color: #33415F;
-            }
-            QPushButton:disabled {
-                background-color: #1A2030;
-            }
-        """)
-        layout.addWidget(btn)
-
-        return {"widget": container, "button": btn}
 
     def _labeled_line_edit(self, label_text, default_text):
         wrapper = QWidget()
@@ -1429,9 +1570,16 @@ class OscilloscopeBaseUI(QWidget):
         return {"widget": wrapper, "edit": edit}
 
     def _switch_channel_card(self, index):
-        for i, btn in enumerate(self.channel_tab_buttons):
+        self._selected_channel_index = index
+        for i, btn in enumerate(self._channel_select_buttons):
             btn.setChecked(i == index)
         self.channel_stack.setCurrentIndex(index)
+
+    def _on_channel_tab_clicked(self, index):
+        btn = self.channel_tab_buttons[index]
+        is_enabled = btn.isChecked()
+        if self.is_connected:
+            self._apply_channel_display(index + 1, is_enabled)
 
     def _init_ui_elements(self):
         for channel in self.channels:
@@ -1442,6 +1590,26 @@ class OscilloscopeBaseUI(QWidget):
         self.capture_btn.clicked.connect(self._on_capture)
         self.apply_btn.clicked.connect(self._on_apply_settings)
         self.timebase_apply_requested.connect(self._on_apply_timebase_only)
+
+        for i, ch in enumerate(self.channels):
+            ch_num = i + 1
+            ch['scale_edit'].returnPressed.connect(
+                lambda n=ch_num: self._apply_channel_scale_offset(n)
+            )
+            ch['offset_edit'].returnPressed.connect(
+                lambda n=ch_num: self._apply_channel_scale_offset(n)
+            )
+            ch['coupling_toggle'].toggled.connect(
+                lambda val, n=ch_num: self._apply_channel_coupling(n, val)
+            )
+
+        self.trigger_level_edit.returnPressed.connect(self._apply_trigger_immediate)
+        self.trigger_source_combo.currentIndexChanged.connect(
+            lambda: self._apply_trigger_immediate()
+        )
+        self.trigger_slope_combo.currentIndexChanged.connect(
+            lambda: self._apply_trigger_immediate()
+        )
 
         self._set_interactive_enabled(False)
         self.append_log("[SYSTEM] Ready. Waiting for instrument connection.")
@@ -1510,9 +1678,7 @@ class OscilloscopeBaseUI(QWidget):
         for ch in self.channels:
             ch['scale_edit'].textChanged.connect(self._mark_settings_dirty)
             ch['offset_edit'].textChanged.connect(self._mark_settings_dirty)
-            ch['toggle'].clicked.connect(self._mark_settings_dirty)
-            ch['coupling_dc'].clicked.connect(self._mark_settings_dirty)
-            ch['coupling_ac'].clicked.connect(self._mark_settings_dirty)
+            ch['coupling_toggle'].toggled.connect(lambda _: self._mark_settings_dirty())
 
     def _mark_settings_dirty(self):
         if not self._settings_dirty and self.is_connected:
@@ -1560,14 +1726,11 @@ class OscilloscopeBaseUI(QWidget):
     def get_channel_settings(self, channel_num):
         if 1 <= channel_num <= self.NUM_CHANNELS:
             channel = self.channels[channel_num - 1]
-            coupling = "DC"
-            if channel.get("coupling_ac") and channel["coupling_ac"].isChecked():
-                coupling = "AC"
-            elif channel.get("coupling_gnd") and channel["coupling_gnd"].isChecked():
-                coupling = "GND"
+            coupling = channel['coupling_toggle'].value()
 
+            btn = self.channel_tab_buttons[channel_num - 1]
             result = {
-                'enabled': channel['toggle'].isChecked(),
+                'enabled': btn.isChecked(),
                 'scale': float(channel['scale_edit'].text()),
                 'offset': float(channel['offset_edit'].text()),
                 'coupling': coupling,
@@ -1609,6 +1772,7 @@ class OscilloscopeBaseUI(QWidget):
             self.instrument_info_label.setText(text)
             self.set_system_status("● Connected")
             self.append_log(f"[SYSTEM] Connected: {text}")
+            self._sync_channel_states_from_instrument()
             if self._measurement_items:
                 self._start_polling()
         else:
@@ -1617,6 +1781,8 @@ class OscilloscopeBaseUI(QWidget):
             self.instrument_info_label.setText("")
             self.set_system_status("● Ready")
             self._update_channel_colors(self.CHANNEL_COLORS_DEFAULT)
+            for btn in self.channel_tab_buttons:
+                btn.setChecked(False)
             self.append_log("[SYSTEM] Disconnected.")
 
     def update_display_image(self, png_bytes: bytes):
@@ -1703,12 +1869,13 @@ class OscilloscopeBaseUI(QWidget):
         for btn in self.channel_tab_buttons:
             btn.setEnabled(enabled)
 
+        for btn in self._channel_select_buttons:
+            btn.setEnabled(enabled)
+
         for channel in self.channels:
-            channel['toggle'].setEnabled(enabled)
             channel['scale_edit'].setEnabled(enabled)
             channel['offset_edit'].setEnabled(enabled)
-            channel['coupling_dc'].setEnabled(enabled)
-            channel['coupling_ac'].setEnabled(enabled)
+            channel['coupling_toggle'].setEnabled(enabled)
 
     def _update_channel_colors(self, color_map: dict):
         self.CHANNEL_COLORS = color_map
@@ -2149,6 +2316,85 @@ class OscilloscopeBaseUI(QWidget):
             self._clear_settings_dirty()
         except (ValueError, Exception) as e:
             self.append_log(f"[ERROR] Timebase setting failed: {e}")
+
+    def _apply_channel_scale_offset(self, channel_num):
+        if not self.controller.is_connected:
+            return
+        inst = self.controller.instrument
+        ch = self.channels[channel_num - 1]
+        try:
+            scale = float(ch['scale_edit'].text())
+            offset = float(ch['offset_edit'].text())
+            inst.set_channel_scale(channel_num, scale)
+            inst.set_channel_offset(channel_num, offset)
+            self.append_log(
+                f"[SETTING] CH{channel_num}: Scale={scale} V/div, Offset={offset} V"
+            )
+            self._clear_settings_dirty()
+        except Exception as e:
+            self.append_log(f"[ERROR] CH{channel_num} setting failed: {e}")
+
+    def _apply_channel_coupling(self, channel_num, coupling_value):
+        if not self.controller.is_connected:
+            return
+        inst = self.controller.instrument
+        try:
+            if hasattr(inst, 'set_channel_coupling'):
+                inst.set_channel_coupling(channel_num, coupling_value)
+                self.append_log(f"[SETTING] CH{channel_num}: Coupling={coupling_value}")
+            else:
+                self.append_log(f"[SETTING] CH{channel_num}: Coupling={coupling_value} (not supported by this instrument)")
+            self._clear_settings_dirty()
+        except Exception as e:
+            self.append_log(f"[ERROR] CH{channel_num} coupling failed: {e}")
+
+    def _apply_channel_display(self, channel_num, enabled):
+        if not self.controller.is_connected:
+            return
+        inst = self.controller.instrument
+        try:
+            inst.set_channel_display(channel_num, enabled)
+            self.append_log(
+                f"[SETTING] CH{channel_num}: {'ON' if enabled else 'OFF'}"
+            )
+        except Exception as e:
+            self.append_log(f"[ERROR] CH{channel_num} display toggle failed: {e}")
+
+    def _apply_trigger_immediate(self):
+        if not self.controller.is_connected:
+            return
+        try:
+            trigger_settings = self.get_trigger_settings()
+            source_text = trigger_settings['source']
+            trigger_level = trigger_settings['level']
+            slope = trigger_settings['slope']
+
+            if source_text.startswith("CH"):
+                trigger_ch = int(source_text[2:])
+                self.controller.instrument.set_trigger_edge(trigger_ch, trigger_level, slope)
+                self.append_log(
+                    f"[SETTING] Trigger: {source_text}, Level={trigger_level} V, Slope={slope}"
+                )
+            self._clear_settings_dirty()
+        except Exception as e:
+            self.append_log(f"[ERROR] Trigger setting failed: {e}")
+
+    def _sync_channel_states_from_instrument(self):
+        if not self.controller.is_connected:
+            return
+        inst = self.controller.instrument
+        for i in range(self.NUM_CHANNELS):
+            ch_num = i + 1
+            try:
+                if hasattr(inst, 'is_channel_displayed'):
+                    on = inst.is_channel_displayed(ch_num)
+                elif hasattr(inst, 'get_channel_display'):
+                    on = inst.get_channel_display(ch_num)
+                else:
+                    on = True
+                self.channel_tab_buttons[i].setChecked(on)
+            except Exception:
+                self.channel_tab_buttons[i].setChecked(True)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

@@ -266,6 +266,7 @@ class MockMSO64B:
 
     def __init__(self):
         self.instrument = MockInstr()
+        self._channel_display = {1: True, 2: True, 3: True, 4: True}
 
     def identify_instrument(self):
         return "TEKTRONIX,MSO64B,MOCK000,FW1.0"
@@ -295,4 +296,58 @@ class MockMSO64B:
         return ""
 
     def delete_remote_file(self, path):
+        pass
+
+    def set_channel_display(self, channel, on=True):
+        self._channel_display[channel] = on
+
+    def is_channel_displayed(self, channel):
+        return self._channel_display.get(channel, True)
+
+    def set_channel_scale(self, channel, volts_per_div):
+        pass
+
+    def set_channel_offset(self, channel, offset):
+        pass
+
+    def get_channel_scale(self, channel):
+        return 1.0
+
+    def get_channel_offset(self, channel):
+        return 0.0
+
+    def set_timebase_scale(self, seconds_per_div):
+        pass
+
+    def set_trigger_edge(self, source_channel, level, slope='POS'):
+        pass
+
+    def capture_screen_png(self, **kwargs):
+        return None
+
+    def get_channel_mean(self, channel):
+        return 1.0 + random.gauss(0, 0.01)
+
+    def get_channel_pk2pk(self, channel):
+        return 0.1 + random.gauss(0, 0.005)
+
+    def get_channel_frequency(self, channel):
+        return 1000.0 + random.gauss(0, 1.0)
+
+    def get_channel_max(self, channel):
+        return 1.05 + random.gauss(0, 0.01)
+
+    def get_channel_min(self, channel):
+        return 0.95 + random.gauss(0, 0.01)
+
+    def get_channel_rms(self, channel):
+        return 0.05 + random.gauss(0, 0.005)
+
+    def set_channel_bandwidth(self, channel, bandwidth='FULl'):
+        pass
+
+    def set_timebase_position(self, position_pct):
+        pass
+
+    def set_AutoRipple_test(self, channel):
         pass
