@@ -551,7 +551,7 @@ class N6705CAnalyserUI(QWidget):
 
         default_addresses = {
             "A": "TCPIP0::K-N6705C-06098.local::hislip0::INSTR",
-            "B": "TCPIP::K-N6705C-03845.local::hislip0::INSTR",
+            "B": "TCPIP0::K-N6705C-03845.local::hislip0::INSTR",
         }
 
         self.conn_widgets = {}

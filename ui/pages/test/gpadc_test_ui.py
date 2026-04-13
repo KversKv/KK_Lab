@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QLineEdit, QGridLayout, QSpinBox, QDoubleSpinBox, QFrame, QRadioButton,
     QButtonGroup, QApplication, QSizePolicy, QStackedWidget, QScrollArea,
-    QTextEdit, QSplitter
+    QTextEdit, QSplitter, QProgressBar
 )
 from PySide6.QtCore import Qt, Signal, QThread, QObject
 from PySide6.QtGui import QFont
@@ -83,6 +83,7 @@ class _TestWorker(QObject):
     finished = Signal(object)
     error = Signal(str)
     log = Signal(str)
+    progress = Signal(int)
 
     def __init__(self, fn, kwargs):
         super().__init__()
@@ -396,6 +397,21 @@ class GPADCTestUI(QWidget):
                 font-size: 11px;
                 font-family: 'Consolas', monospace;
                 padding: 6px;
+            }
+
+            QProgressBar {
+                background-color: #152749;
+                border: none;
+                border-radius: 4px;
+                text-align: center;
+                color: #b7c8ea;
+                min-height: 8px;
+                max-height: 8px;
+            }
+
+            QProgressBar::chunk {
+                background-color: #5d45ff;
+                border-radius: 4px;
             }
         """ + SCROLL_AREA_STYLE)
 
@@ -927,6 +943,18 @@ class GPADCTestUI(QWidget):
         self.clear_log_btn.setFixedWidth(60)
         log_title_row.addWidget(log_title)
         log_title_row.addStretch()
+
+        self.progress_text_label = QLabel("0% Complete")
+        self.progress_text_label.setObjectName("muted_label")
+        log_title_row.addWidget(self.progress_text_label)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setFixedWidth(120)
+        log_title_row.addWidget(self.progress_bar)
+
         log_title_row.addWidget(self.clear_log_btn)
         log_layout.addLayout(log_title_row)
 
@@ -1349,6 +1377,7 @@ class GPADCTestUI(QWidget):
         self.stop_test_btn.setEnabled(True)
         self._update_test_button_state(True)
         self._set_ui_enabled(False)
+        self.set_progress(0)
         self._append_log(f"[INFO] Starting GPADC test... mode={self.current_test_item}")
 
         test_item = self.current_test_item
@@ -1406,6 +1435,7 @@ class GPADCTestUI(QWidget):
         worker.finished.connect(self._on_test_done)
         worker.error.connect(self._on_test_error)
         worker.log.connect(self._append_log)
+        worker.progress.connect(self.set_progress)
         worker.finished.connect(thread.quit)
         worker.error.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
@@ -1423,6 +1453,7 @@ class GPADCTestUI(QWidget):
             iic_weight=10,
             get_reg_cnt=1000,
             stop_check=stop_check,
+            progress_callback=lambda v: self._test_worker.progress.emit(v),
         )
         return ('1000cnt', {'avg': avg, 'max': max_val, 'min': min_val})
 
@@ -1438,6 +1469,7 @@ class GPADCTestUI(QWidget):
             voltage_step=voltage_step,
             voltage_channel=voltage_channel,
             stop_check=stop_check,
+            progress_callback=lambda v: self._test_worker.progress.emit(v),
         )
         return ('force_voltage', result)
 
@@ -1453,6 +1485,7 @@ class GPADCTestUI(QWidget):
             temp_step=temp_step,
             voltage_channel=voltage_channel,
             stop_check=stop_check,
+            progress_callback=lambda v: self._test_worker.progress.emit(v),
         )
         return ('high_low_temp', result)
 
@@ -1472,6 +1505,7 @@ class GPADCTestUI(QWidget):
             voltage_step=voltage_step,
             voltage_channel=voltage_channel,
             stop_check=stop_check,
+            progress_callback=lambda v: self._test_worker.progress.emit(v),
         )
         return ('temp_consistency', result)
 
@@ -1840,6 +1874,11 @@ class GPADCTestUI(QWidget):
     def _append_log(self, text):
         self.log_text.append(text)
 
+    def set_progress(self, value: int):
+        value = max(0, min(100, int(value)))
+        self.progress_bar.setValue(value)
+        self.progress_text_label.setText(f"{value}% Complete")
+
     def update_instrument_info(self, instrument_info):
         pass
 
@@ -1864,6 +1903,7 @@ class GPADCTestUI(QWidget):
         get_reg_cnt=1000,
         return_raw=False,
         stop_check=None,
+        progress_callback=None,
     ):
         if DEBUG_MOCK:
             if not hasattr(self, "_mock_i2c"):
@@ -1877,11 +1917,13 @@ class GPADCTestUI(QWidget):
 
         raw_data = []
 
-        for _ in range(get_reg_cnt):
+        for i in range(get_reg_cnt):
             if stop_check and stop_check():
                 break
             temp = deviceI2C.read(device_addr, reg_addr, iic_weight)
             raw_data.append(temp)
+            if progress_callback:
+                progress_callback(int((i + 1) * 100 / get_reg_cnt))
 
         # 排序用于统计
         sorted_data = sorted(raw_data)
@@ -1913,6 +1955,7 @@ class GPADCTestUI(QWidget):
         voltage_step=0.05,
         voltage_channel=1,
         stop_check=None,
+        progress_callback=None,
     ):
         self._test_worker.log.emit(f"[INFO] Running FORCE VOLTAGE TEST with I2C address: 0x{device_addr:x}, Register: 0x{reg_addr:x}")
 
@@ -1940,6 +1983,8 @@ class GPADCTestUI(QWidget):
         time.sleep(settle_time)
 
         current_voltage = voltage_min
+        total_points = max(1, int(round((voltage_max - voltage_min) / voltage_step)) + 1)
+        point_idx = 0
 
         while current_voltage <= voltage_max + voltage_step * 0.001:
             if stop_check and stop_check():
@@ -1963,6 +2008,9 @@ class GPADCTestUI(QWidget):
             adc_max.append(max_val)
 
             current_voltage = round(current_voltage + voltage_step, 6)
+            point_idx += 1
+            if progress_callback:
+                progress_callback(int(point_idx * 100 / total_points))
 
         self._test_worker.log.emit("===== FORCE VOLTAGE TEST 结果 =====")
 
@@ -2025,6 +2073,7 @@ class GPADCTestUI(QWidget):
         temp_step=1,
         voltage_channel=100,
         stop_check=None,
+        progress_callback=None,
     ):
         try:
             if DEBUG_MOCK:
@@ -2053,6 +2102,8 @@ class GPADCTestUI(QWidget):
             adc_raw_all = []
 
             current_temp = temp_min
+            total_points = max(1, int(round((temp_max - temp_min) / temp_step)) + 1)
+            point_idx = 0
 
             while current_temp <= temp_max + 0.001:
                 if stop_check and stop_check():
@@ -2124,6 +2175,9 @@ class GPADCTestUI(QWidget):
                 self._test_worker.log.emit(f"[INFO] T={current_temp:.1f}°C, avg={avg:.3f}, min={min_val}, max={max_val}")
 
                 current_temp += temp_step
+                point_idx += 1
+                if progress_callback:
+                    progress_callback(int(point_idx * 100 / total_points))
                 time.sleep(1)
             chamber.set_temperature(25.0)
             self._test_worker.log.emit("===== HIGH/LOW TEMP TEST 结果 =====")
@@ -2157,6 +2211,7 @@ class GPADCTestUI(QWidget):
         voltage_step=0.05,
         voltage_channel=1,
         stop_check=None,
+        progress_callback=None,
     ):
         self._test_worker.log.emit(f"[INFO] Running TEMP CONSISTENCY TEST with I2C address: 0x{device_addr:x}, Register: 0x{reg_addr:x}")
 
@@ -2194,6 +2249,11 @@ class GPADCTestUI(QWidget):
         mean_matrix = []
         min_matrix  = []
         max_matrix  = []
+
+        total_temp_points = max(1, int(round((temp_max - temp_min) / temp_step)) + 1)
+        total_voltage_points = len(voltage_points)
+        total_steps = total_temp_points * total_voltage_points
+        completed_steps = 0
 
         current_temp = temp_min
         while current_temp <= temp_max + 0.001:
@@ -2264,6 +2324,9 @@ class GPADCTestUI(QWidget):
                 mean_row.append(avg)
                 min_row.append(min_val)
                 max_row.append(max_val)
+                completed_steps += 1
+                if progress_callback:
+                    progress_callback(int(completed_steps * 100 / total_steps))
 
             if stop_check and stop_check():
                 break

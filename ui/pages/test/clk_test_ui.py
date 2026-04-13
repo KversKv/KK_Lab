@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QLineEdit, QGridLayout, QFrame, QScrollArea,
     QSizePolicy, QSpinBox, QDoubleSpinBox, QComboBox,
-    QTextEdit, QFileDialog, QMessageBox
+    QTextEdit, QFileDialog, QMessageBox, QProgressBar
 )
 from PySide6.QtCore import Qt, Signal, QThread, QObject
 from PySide6.QtGui import QFont
@@ -127,6 +127,7 @@ class _CLKTestWorker(QObject):
     log = Signal(str)
     finished = Signal(dict)
     progress = Signal(dict)
+    progress_int = Signal(int)
     error = Signal(str)
 
     def __init__(self, test_item, config, mso64b=None, vt6002=None, mock_mode=False, parent=None):
@@ -206,7 +207,8 @@ class _CLKTestWorker(QObject):
             default_code = (orig_val & bit_mask) >> lsb
             self.log.emit(f"[MOCK] 寄存器模拟原始值 = 0x{orig_val:04X}, 保留位值 = 0x{base_val:04X}, Default Code = {default_code}")
 
-        for code in codes:
+        total_codes = len(codes)
+        for idx, code in enumerate(codes):
             if self._stop_flag:
                 self.log.emit("[WARN] 测试被停止")
                 break
@@ -226,6 +228,7 @@ class _CLKTestWorker(QObject):
 
             values.append({"x": code, "freq": freq})
             self.progress.emit({"mode": "cap_freq", "current": code, "freq": freq})
+            self.progress_int.emit(int((idx + 1) * 100 / total_codes))
             self.log.emit(f"[DATA] Code={code:>4d}  |  RegVal=0x{write_val:04X}  |  Freq={freq:>18.6f} Hz")
             time.sleep(0.03)
         iic.write(device_addr, reg_addr, orig_val, width_flag)
@@ -267,7 +270,8 @@ class _CLKTestWorker(QObject):
         if self.mock_mode:
             self.log.emit("[MOCK] 使用模拟温箱和频率数据")
             mock_nominal = 32768.0
-            for t in temps:
+            total_temps = len(temps)
+            for idx, t in enumerate(temps):
                 if self._stop_flag:
                     self.log.emit("[WARN] 测试被停止")
                     break
@@ -275,6 +279,7 @@ class _CLKTestWorker(QObject):
                 freq = mock_nominal * (1.0 + delta_ppm / 1_000_000.0)
                 values.append({"x": t, "freq": freq})
                 self.progress.emit({"mode": "temp_freq", "current": t, "freq": freq})
+                self.progress_int.emit(int((idx + 1) * 100 / total_temps))
                 self.log.emit(f"[DATA] Temp={t:>7.1f} °C  |  Freq={freq:>18.6f} Hz")
                 time.sleep(0.05)
             return {"mode": "temp_freq", "data": values}
@@ -286,6 +291,7 @@ class _CLKTestWorker(QObject):
         self.mso64b.instrument.write(f'DVM:SOURCE CH{mso_channel}')
         self.log.emit(f"[INFO] MSO64B DVM Source set to CH{mso_channel}")
 
+        total_temps = len(temps)
         for idx, t in enumerate(temps):
             if self._stop_flag:
                 self.log.emit("[WARN] 测试被停止")
@@ -342,6 +348,7 @@ class _CLKTestWorker(QObject):
             actual_temp = chamber.get_current_temp()
             values.append({"x": actual_temp, "freq": freq})
             self.progress.emit({"mode": "temp_freq", "current": actual_temp, "freq": freq})
+            self.progress_int.emit(int((idx + 1) * 100 / total_temps))
             self.log.emit(f"[DATA] Temp={actual_temp:>7.2f} °C  |  Freq={freq:>18.6f} Hz")
 
         chamber.set_temperature(25.0)
@@ -370,6 +377,8 @@ class _CLKTestWorker(QObject):
         self.log.emit("[INFO] 开始测试：时钟性能测试")
         self.log.emit(f"[INFO] 数据源          = {source}")
 
+        self.progress_int.emit(0)
+
         if source == "Import CSV":
             samples = self._clk_perf_from_csv()
         elif source == "MSO64B":
@@ -379,7 +388,13 @@ class _CLKTestWorker(QObject):
         else:
             raise ValueError(f"未知数据源: {source}")
 
-        return self._analyze_clk_perf(samples)
+        self.progress_int.emit(50)
+
+        result = self._analyze_clk_perf(samples)
+
+        self.progress_int.emit(100)
+
+        return result
 
     def _clk_perf_from_csv(self):
         csv_path = self.config.get("csv_path", "")
@@ -552,6 +567,8 @@ class _CLKTestWorker(QObject):
                 jitter = math.sin(i / 35.0) * nominal_period * 0.003 + (math.cos(i / 13.0) * nominal_period * 0.001)
                 period = nominal_period + jitter
                 samples.append((t, period))
+                if (i + 1) % max(1, count // 50) == 0:
+                    self.progress_int.emit(int((i + 1) * 50 / count))
             self.log.emit(f"[MOCK] MSO64B 在线采样点数 = {len(samples)}")
         else:
             scope = self.mso64b
@@ -560,12 +577,14 @@ class _CLKTestWorker(QObject):
             self.log.emit("[INFO] 配置MSO64B水平参数...")
             scope.configure_horizontal(duration, sample_rate_mhz)
             self.log.emit(f"[INFO] Horizontal Scale = {duration / 10:.4f} s/div, Duration = {duration} s")
+            self.progress_int.emit(5)
 
             if self._stop_flag:
                 return samples
 
             self.log.emit(f"[INFO] 配置Edge Search: CH{mso_channel}, BOTH edges")
             scope.setup_edge_search(mso_channel, slope='BOTH')
+            self.progress_int.emit(10)
 
             if self._stop_flag:
                 return samples
@@ -574,6 +593,7 @@ class _CLKTestWorker(QObject):
             self.log.emit(f"[INFO] 启动单次采集 (超时 {acq_timeout:.0f}s)...")
             scope.single_acquisition(timeout_s=acq_timeout)
             self.log.emit("[INFO] 采集完成")
+            self.progress_int.emit(30)
 
             if self._stop_flag:
                 return samples
@@ -588,6 +608,7 @@ class _CLKTestWorker(QObject):
             self.log.emit(f"[INFO] 导出Search Table -> {remote_csv}")
             scope.export_search_table_csv(remote_csv)
             time.sleep(1.0)
+            self.progress_int.emit(35)
 
             if self._stop_flag:
                 return samples
@@ -595,6 +616,7 @@ class _CLKTestWorker(QObject):
             self.log.emit("[INFO] 从MSO64B读取CSV文件...")
             csv_content = scope.read_remote_file(remote_csv)
             scope.delete_remote_file(remote_csv)
+            self.progress_int.emit(40)
 
             raw_lines = csv_content.splitlines(keepends=True)
             if not raw_lines:
@@ -628,6 +650,8 @@ class _CLKTestWorker(QObject):
                 jitter = math.sin(i / 28.0) * nominal_period * 0.004 + (math.cos(i / 11.0) * nominal_period * 0.0015)
                 period = nominal_period + jitter
                 samples.append((t, period))
+                if (i + 1) % max(1, count // 50) == 0:
+                    self.progress_int.emit(int((i + 1) * 50 / count))
             self.log.emit(f"[MOCK] DSLogic 在线采样点数 = {len(samples)}")
         else:
             sample_rate_hz = int(sample_rate_mhz * 1e6)
@@ -703,6 +727,7 @@ class _CLKTestWorker(QObject):
                     if int(elapsed) % 5 == 0 and elapsed > 1:
                         pct = min(elapsed / duration * 100, 99)
                         self.log.emit(f"[INFO] 采集中... {elapsed:.0f}s / {duration}s ({pct:.0f}%)")
+                        self.progress_int.emit(int(min(pct * 0.45, 45)))
                     time.sleep(0.5)
 
                 stdout_data = proc.stdout.read().decode("utf-8", errors="replace")
@@ -1784,6 +1809,33 @@ class CLKTestUI(QWidget):
         self.clear_log_btn.setFixedWidth(60)
         log_title_row.addWidget(log_title)
         log_title_row.addStretch()
+
+        self.progress_text_label = QLabel("0% Complete")
+        self.progress_text_label.setObjectName("muted_label")
+        log_title_row.addWidget(self.progress_text_label)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setFixedWidth(120)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                background-color: #152749;
+                border: none;
+                border-radius: 4px;
+                text-align: center;
+                color: #b7c8ea;
+                min-height: 8px;
+                max-height: 8px;
+            }
+            QProgressBar::chunk {
+                background-color: #3060d0;
+                border-radius: 4px;
+            }
+        """)
+        log_title_row.addWidget(self.progress_bar)
+
         log_title_row.addWidget(self.clear_log_btn)
         log_layout.addLayout(log_title_row)
 
@@ -2296,6 +2348,11 @@ class CLKTestUI(QWidget):
     def _append_log(self, text):
         self.log_text.append(text)
 
+    def set_progress(self, value: int):
+        value = max(0, min(100, int(value)))
+        self.progress_bar.setValue(value)
+        self.progress_text_label.setText(f"{value}% Complete")
+
     def _format_freq(self, value):
         if value is None:
             return "--- Hz"
@@ -2450,6 +2507,7 @@ class CLKTestUI(QWidget):
         self.start_test_btn.setEnabled(True)
         self.stop_test_btn.setEnabled(True)
         self._update_test_button_state(True)
+        self.set_progress(0)
 
         self._append_log(f"[INFO] Starting {self.current_test_item} test...")
 
@@ -2465,6 +2523,7 @@ class CLKTestUI(QWidget):
         self._test_thread.started.connect(self._test_worker.run)
         self._test_worker.log.connect(self._append_log)
         self._test_worker.progress.connect(self._on_test_progress)
+        self._test_worker.progress_int.connect(self.set_progress)
         self._test_worker.finished.connect(self._on_test_finished)
         self._test_worker.error.connect(self._on_test_error)
 

@@ -79,7 +79,6 @@ a = Analysis(
         'ui.pages.pmu.pmu_test_ui',
         'ui.pages.pmu.pmu_dcdc_efficiency',
         'ui.pages.pmu.pmu_output_voltage',
-        'ui.pages.pmu.pmu_threshold',
         'ui.pages.pmu.pmu_isGain_ui',
         'ui.pages.pmu.pmu_oscp_ui',
         'ui.pages.chamber',

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-PMU测试主UI组件 - 整合DCDC Efficiency、Output Voltage、Threshold、OSCP子页面
+PMU测试主UI组件 - 整合DCDC Efficiency、Output Voltage、OSCP子页面
 """
 
 from PySide6.QtWidgets import (
@@ -12,7 +12,6 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from ui.pages.pmu.pmu_dcdc_efficiency import PMUDCDCEfficiencyUI
 from ui.pages.pmu.pmu_output_voltage import PMUOutputVoltageUI
-from ui.pages.pmu.pmu_threshold import PMUThresholdUI
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -28,11 +27,10 @@ class PMUTestUI(QWidget):
     TEST_TAB_MAP = {
         "dcdc_efficiency": 0,
         "output_voltage": 1,
-        "threshold": 2,
-        "is_gain": 3,
-        "oscp": 4,
-        "gpadc_test": 5,
-        "clk_test": 6,
+        "is_gain": 2,
+        "oscp": 3,
+        "gpadc_test": 4,
+        "clk_test": 5,
     }
 
     def __init__(self, n6705c_top=None, mso64b_top=None):
@@ -140,9 +138,6 @@ class PMUTestUI(QWidget):
         self.output_voltage_ui = PMUOutputVoltageUI(n6705c_top=self._n6705c_top)
         self.tab_widget.addTab(self.output_voltage_ui, "Output Voltage")
 
-        self.threshold_ui = PMUThresholdUI(n6705c_top=self._n6705c_top, mso64b_top=self._mso64b_top)
-        self.tab_widget.addTab(self.threshold_ui, "Threshold")
-
         self.is_gain_ui = PMUIsGainUI(n6705c_top=self._n6705c_top, mso64b_top=self._mso64b_top)
         self.tab_widget.addTab(self.is_gain_ui, "Is_gain")
 
@@ -173,11 +168,6 @@ class PMUTestUI(QWidget):
             lambda: self._on_test_btn_clicked("output_voltage", self.output_voltage_ui))
         self.output_voltage_ui.stop_test_btn.clicked.connect(
             lambda: self._on_test_stopped("output_voltage"))
-
-        self.threshold_ui.start_test_btn.clicked.connect(
-            lambda: self._on_test_btn_clicked("threshold", self.threshold_ui))
-        self.threshold_ui.stop_test_btn.clicked.connect(
-            lambda: self._on_test_stopped("threshold"))
 
         self.is_gain_ui.start_test_btn.clicked.connect(
             lambda: self._on_test_btn_clicked("is_gain", self.is_gain_ui))
@@ -215,7 +205,7 @@ class PMUTestUI(QWidget):
     def _sync_from_top(self):
         for sub_ui in [
             self.dcdc_efficiency_ui, self.output_voltage_ui,
-            self.threshold_ui, self.is_gain_ui, self.oscp_ui,
+            self.is_gain_ui, self.oscp_ui,
             self.gpadc_test_ui, self.clk_test_ui,
         ]:
             if hasattr(sub_ui, '_sync_from_top'):
@@ -233,8 +223,6 @@ class PMUTestUI(QWidget):
             self.dcdc_efficiency_ui.set_system_status("测试进行中")
         elif test_type == "output_voltage":
             self.output_voltage_ui.set_system_status("测试进行中")
-        elif test_type == "threshold":
-            self.threshold_ui.set_system_status("测试进行中")
         elif test_type == "is_gain":
             self.is_gain_ui.set_system_status("测试进行中")
         elif test_type == "oscp":
@@ -251,8 +239,6 @@ class PMUTestUI(QWidget):
             self.dcdc_efficiency_ui.set_system_status("就绪")
         elif test_type == "output_voltage":
             self.output_voltage_ui.set_system_status("就绪")
-        elif test_type == "threshold":
-            self.threshold_ui.set_system_status("就绪")
         elif test_type == "is_gain":
             self.is_gain_ui.set_system_status("就绪")
         elif test_type == "oscp":
@@ -268,8 +254,6 @@ class PMUTestUI(QWidget):
             return self.dcdc_efficiency_ui.get_test_config()
         elif test_type == "output_voltage":
             return self.output_voltage_ui.get_test_config()
-        elif test_type == "threshold":
-            return self.threshold_ui.get_test_config()
         elif test_type == "is_gain":
             return self.is_gain_ui.get_test_config()
         elif test_type == "oscp":
@@ -284,8 +268,6 @@ class PMUTestUI(QWidget):
             self.dcdc_efficiency_ui.update_test_result(result)
         elif test_type == "output_voltage":
             self.output_voltage_ui.update_test_result(result)
-        elif test_type == "threshold":
-            self.threshold_ui.update_test_result(result)
         elif test_type == "is_gain":
             self.is_gain_ui.update_test_result(result)
         elif test_type == "oscp":
@@ -297,7 +279,6 @@ class PMUTestUI(QWidget):
         """清空所有测试结果"""
         self.dcdc_efficiency_ui.clear_results()
         self.output_voltage_ui.clear_results()
-        self.threshold_ui.clear_results()
         self.is_gain_ui.clear_results()
         self.oscp_ui.clear_results()
         self.gpadc_test_ui.clear_results()
@@ -306,7 +287,6 @@ class PMUTestUI(QWidget):
         """设置所有子UI的系统状态"""
         self.dcdc_efficiency_ui.set_system_status(status, is_error)
         self.output_voltage_ui.set_system_status(status, is_error)
-        self.threshold_ui.set_system_status(status, is_error)
         self.is_gain_ui.set_system_status(status, is_error)
         self.oscp_ui.set_system_status(status, is_error)
         self.gpadc_test_ui.set_system_status(status, is_error)
@@ -315,7 +295,6 @@ class PMUTestUI(QWidget):
         """更新所有子UI的仪器信息"""
         self.dcdc_efficiency_ui.update_instrument_info(instrument_info)
         self.output_voltage_ui.update_instrument_info(instrument_info)
-        self.threshold_ui.update_instrument_info(instrument_info)
         self.is_gain_ui.update_instrument_info(instrument_info)
         self.oscp_ui.update_instrument_info(instrument_info)
         self.gpadc_test_ui.update_instrument_info(instrument_info)
@@ -331,7 +310,6 @@ class PMUTestUI(QWidget):
         """设置所有子UI的测试模式"""
         self.dcdc_efficiency_ui.set_test_mode(mode)
         self.output_voltage_ui.set_test_mode(mode)
-        self.threshold_ui.set_test_mode(mode)
         self.is_gain_ui.set_test_mode(mode)
         self.oscp_ui.set_test_mode(mode)
         self.gpadc_test_ui.set_test_mode(mode)
@@ -347,7 +325,6 @@ class PMUTestUI(QWidget):
         """设置所有子UI的测试编号"""
         self.dcdc_efficiency_ui.set_test_id(test_id)
         self.output_voltage_ui.set_test_id(test_id)
-        self.threshold_ui.set_test_id(test_id)
         self.is_gain_ui.set_test_id(test_id)
         self.oscp_ui.set_test_id(test_id)
         self.gpadc_test_ui.set_test_id(test_id)

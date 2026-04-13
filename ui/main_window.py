@@ -142,7 +142,6 @@ class PMUSubMenu(QWidget):
         self.menu_items = [
             ("dcdc_efficiency", "DCDC Efficiency"),
             ("output_voltage", "Output Voltage"),
-            ("threshold", "Threshold"),
             ("is_gain", "Is_gain"),
             ("oscp", "OSCP"),
             ("gpadc_test", "GPADC Test"),
@@ -391,11 +390,10 @@ class MainWindow(QMainWindow):
         self.pmu_test_tab_map = {
             "dcdc_efficiency": 0,
             "output_voltage": 1,
-            "threshold": 2,
-            "is_gain": 3,
-            "oscp": 4,
-            "gpadc_test": 5,
-            "clk_test": 6,
+            "is_gain": 2,
+            "oscp": 3,
+            "gpadc_test": 4,
+            "clk_test": 5,
         }
 
         self.charger_test_tab_map = {
@@ -1392,7 +1390,7 @@ class MainWindow(QMainWindow):
 
         if self.pmu_test_ui is not None:
             for attr in [
-                'dcdc_efficiency_ui', 'output_voltage_ui', 'threshold_ui',
+                'dcdc_efficiency_ui', 'output_voltage_ui',
                 'is_gain_ui', 'oscp_ui', 'gpadc_test_ui', 'clk_test_ui',
             ]:
                 sub_ui = getattr(self.pmu_test_ui, attr, None)

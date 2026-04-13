@@ -19,6 +19,11 @@ from instruments.scopes.base import OscilloscopeController
 from log_config import get_logger
 from debug_config import DEBUG_MOCK
 
+DEBUG_MSO64B_FLAG = True
+DEBUG_DSOX4034A_FLAG = True
+
+
+
 logger = get_logger(__name__)
 
 CHANNEL_TEXT_COLORS = {
@@ -857,7 +862,9 @@ class OscilloscopeBaseUI(QWidget):
         self.visa_resource_combo.setEditable(True)
         if DEBUG_MOCK:
             self.visa_resource_combo.addItem("192.168.3.27")
-        if DEBUG_MOCK:
+        if DEBUG_MSO64B_FLAG:
+            self.visa_resource_combo.addItem("192.168.3.27")
+        if DEBUG_DSOX4034A_FLAG:
             self.visa_resource_combo.addItem("USB0::0x0957::0x17A4::MY61500152::INSTR")
         if self.visa_resource_combo.isEditable() and self.visa_resource_combo.lineEdit():
             self.visa_resource_combo.lineEdit().setToolTip(self.visa_resource_combo.currentText())

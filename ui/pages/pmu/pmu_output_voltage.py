@@ -699,6 +699,10 @@ class PMUOutputVoltageUI(QWidget):
         self.progress_bar.setFixedWidth(96)
         log_header_layout.addWidget(self.progress_bar)
 
+        self.clear_log_btn = QPushButton("Clear")
+        self.clear_log_btn.setObjectName("smallActionBtn")
+        log_header_layout.addWidget(self.clear_log_btn)
+
         log_layout.addLayout(log_header_layout)
 
         self.log_edit = QTextEdit()
@@ -994,6 +998,7 @@ class PMUOutputVoltageUI(QWidget):
         self.connect_btn.clicked.connect(self._on_connect_or_disconnect)
         self.start_test_btn.clicked.connect(self._on_start_or_stop)
         self.stop_test_btn.clicked.connect(self._on_stop_test)
+        self.clear_log_btn.clicked.connect(self._on_clear_log)
         self.msb_spin.valueChanged.connect(self._update_code_range)
         self.lsb_spin.valueChanged.connect(self._update_code_range)
 
@@ -1037,6 +1042,9 @@ class PMUOutputVoltageUI(QWidget):
 
     def append_log(self, message):
         self.log_edit.append(message)
+
+    def _on_clear_log(self):
+        self.log_edit.clear()
 
     def set_progress(self, value: int):
         value = max(0, min(100, int(value)))
