@@ -1319,8 +1319,14 @@ class OscilloscopeBaseUI(QWidget):
         layout.addWidget(tab_bar)
 
         self.channel_stack = QStackedWidget()
+        self.channel_stack.setFrameShape(QFrame.NoFrame)
+        self.channel_stack.setStyleSheet("QStackedWidget { background: transparent; border: none; }")
         for i in range(self.NUM_CHANNELS):
             page = self._create_channel_card(i + 1)
+            pal = page.palette()
+            pal.setColor(page.backgroundRole(), QColor("#0B1638"))
+            page.setPalette(pal)
+            page.setAutoFillBackground(True)
             self.channel_stack.addWidget(page)
         layout.addWidget(self.channel_stack)
 
