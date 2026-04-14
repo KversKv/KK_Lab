@@ -8,6 +8,8 @@ import sys
 import os
 import logging
 import warnings
+import faulthandler
+faulthandler.enable()
 import pyvisa
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import qInstallMessageHandler, QtMsgType

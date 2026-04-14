@@ -156,11 +156,11 @@ def compute_power_channels(all_data, power_chs_a, power_chs_b):
             calc_power_for_ch(all_data, ch, "B")
 
 
-def calc_power_for_ch(all_data, ch, unit_prefix):
+def calc_power_for_ch(all_data, ch, unit_prefix, key_prefix=""):
     prefix = f"{unit_prefix} " if unit_prefix else ""
-    v_label = f"{prefix}CH{ch} V".strip()
-    i_label = f"{prefix}CH{ch} I".strip()
-    p_label = f"{prefix}CH{ch} P".strip()
+    v_label = f"{key_prefix}{prefix}CH{ch} V".strip()
+    i_label = f"{key_prefix}{prefix}CH{ch} I".strip()
+    p_label = f"{key_prefix}{prefix}CH{ch} P".strip()
     if v_label in all_data and i_label in all_data:
         v_vals = all_data[v_label]["values"]
         i_vals = all_data[i_label]["values"]

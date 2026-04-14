@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QRadioButton, QButtonGroup, QSizePolicy, QFileDialog,
     QScrollArea, QGraphicsRectItem,
     QTableWidget, QTableWidgetItem, QHeaderView, QMenu,
-    QToolButton, QDialog
+    QToolButton, QDialog, QTabWidget, QTabBar
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QThread, QObject
 from PySide6.QtGui import QFont, QColor, QBrush, QPen, QPainter, QPixmap
@@ -96,13 +96,36 @@ POWER_COLORS = [
 
 def _parse_ch_label(label):
     import re
-    m = re.search(r'CH(\d+)\s*(I|V|P)', label.strip())
+    raw = label.strip()
+    file_prefix = ""
+    fm = re.match(r'^(F\d+)-(.*)', raw)
+    if fm:
+        file_prefix = fm.group(1)
+        raw = fm.group(2).strip()
+    m = re.search(r'CH(\d+)\s*(I|V|P)', raw)
     if m:
         ch_num = int(m.group(1))
         mtype = m.group(2)
-        is_b = label.strip().startswith("B ")
+        is_b = raw.startswith("B ") or raw.startswith("B_")
         return ch_num, mtype, is_b
     return None, None, False
+
+
+def _display_label(key):
+    import re
+    raw = key.strip()
+    file_prefix = ""
+    fm = re.match(r'^(F\d+)-(.*)', raw)
+    if fm:
+        file_prefix = fm.group(1)
+        raw = fm.group(2).strip()
+    ch_num, mtype, is_b = _parse_ch_label(raw)
+    if ch_num is None:
+        return raw
+    slot = "B" if is_b else "A"
+    if file_prefix:
+        return f"{file_prefix}-{slot}-{mtype}{ch_num}"
+    return f"{slot}-{mtype}{ch_num}"
 
 
 def _color_for_label(label):
@@ -118,11 +141,17 @@ def _color_for_label(label):
 
 
 def _sort_key_for_label(label):
+    import re
+    raw = label.strip()
+    file_order = 0
+    fm = re.match(r'^F(\d+)-(.*)', raw)
+    if fm:
+        file_order = int(fm.group(1))
     ch_num, mtype, is_b = _parse_ch_label(label)
     unit_order = 1 if is_b else 0
     ch_order = ch_num if ch_num else 0
     type_order = {"V": 0, "I": 1, "P": 2}.get(mtype, 3)
-    return (unit_order, ch_order, type_order)
+    return (file_order, unit_order, ch_order, type_order)
 
 
 def _parse_value_with_unit(text, base_unit=None):
@@ -723,6 +752,8 @@ class N6705CDatalogUI(QWidget):
 
         self.datalog_data = {}
         self._raw_dlog_list = []
+        self._imported_tab_configs = []
+        self._import_counter = 0
         self._band_info = {}
         self._sep_lines = []
         self._selected_ch_key = None
@@ -736,6 +767,8 @@ class N6705CDatalogUI(QWidget):
         self.marker_region = None
         self.box_zoom_enabled = False
         self._pending_marker = None
+        self._marker_drag_target = None
+        self._marker_snap_px = 10
         self.custom_labels = []
         self.custom_label_lines = []
 
@@ -1429,7 +1462,7 @@ class N6705CDatalogUI(QWidget):
         layout.addWidget(self.meas_table)
 
         self.analysis_hint_label = QLabel(
-            "Set both Marker A and Marker B on the chart to see measurements."
+            "Load data to see measurements."
         )
         self.analysis_hint_label.setObjectName("hintLabel")
         self.analysis_hint_label.setAlignment(Qt.AlignCenter)
@@ -1905,12 +1938,62 @@ class N6705CDatalogUI(QWidget):
 
     def _build_channel_config_card(self):
         self.channel_config_layout = self.channel_config_card.main_layout
+
+        self.channel_config_tab = QTabWidget()
+        self.channel_config_tab.setDocumentMode(True)
+        self.channel_config_tab.tabBar().setDrawBase(False)
+        self.channel_config_tab.setStyleSheet("""
+            QTabWidget::pane {
+                border-top: 1px solid #1a2b52;
+                background-color: transparent;
+                margin-top: -1px;
+            }
+            QTabBar {
+                background: transparent;
+            }
+            QTabBar::tab {
+                background-color: #0b1630;
+                color: #4a6a96;
+                border: 1px solid #1a2b52;
+                border-bottom: 1px solid #1a2b52;
+                border-top-left-radius: 5px;
+                border-top-right-radius: 5px;
+                padding: 5px 14px;
+                margin-right: 1px;
+                font-size: 11px;
+                font-weight: 600;
+                min-width: 60px;
+            }
+            QTabBar::tab:selected {
+                background-color: #071127;
+                color: #dce7ff;
+                border: 1px solid #1a2b52;
+                border-bottom: 1px solid #071127;
+            }
+            QTabBar::tab:hover:!selected {
+                background-color: #0e1d40;
+                color: #8eb0e3;
+            }
+            QTabBar::tab:!selected {
+                margin-top: 2px;
+            }
+        """)
+        self.channel_config_layout.addWidget(self.channel_config_tab)
+
+        self._instruments_tab = QWidget()
+        self._instruments_tab.setStyleSheet("background: transparent;")
+        self._instruments_tab_layout = QVBoxLayout(self._instruments_tab)
+        self._instruments_tab_layout.setContentsMargins(0, 6, 0, 0)
+        self._instruments_tab_layout.setSpacing(4)
+        self.channel_config_tab.addTab(self._instruments_tab, "\u26A1 Active")
+        self.channel_config_tab.setTabsClosable(False)
+
         self.channel_config_inner = QWidget()
         self.channel_config_inner.setStyleSheet("background: transparent;")
         self.channel_config_inner_layout = QHBoxLayout(self.channel_config_inner)
         self.channel_config_inner_layout.setContentsMargins(0, 0, 0, 0)
         self.channel_config_inner_layout.setSpacing(20)
-        self.channel_config_layout.addWidget(self.channel_config_inner)
+        self._instruments_tab_layout.addWidget(self.channel_config_inner)
 
         self.ch_checkboxes_a = []
         self.ch_voltage_cbs_a = []
@@ -1930,7 +2013,7 @@ class N6705CDatalogUI(QWidget):
         self.no_instrument_label = QLabel("No instruments connected. Open Instrument Connection panel to connect.")
         self.no_instrument_label.setObjectName("hintLabel")
         self.no_instrument_label.setAlignment(Qt.AlignCenter)
-        self.channel_config_layout.addWidget(self.no_instrument_label)
+        self._instruments_tab_layout.addWidget(self.no_instrument_label)
 
     def _refresh_channel_config(self):
         connected_slots = []
@@ -1940,7 +2023,7 @@ class N6705CDatalogUI(QWidget):
                 connected_slots.append(label_char)
 
         old_inner = self.channel_config_inner
-        self.channel_config_layout.removeWidget(old_inner)
+        self._instruments_tab_layout.removeWidget(old_inner)
         old_inner.deleteLater()
 
         self.channel_config_inner = QWidget()
@@ -1961,7 +2044,7 @@ class N6705CDatalogUI(QWidget):
 
         if not connected_slots:
             self.no_instrument_label.show()
-            self.channel_config_layout.insertWidget(0, self.channel_config_inner)
+            self._instruments_tab_layout.insertWidget(0, self.channel_config_inner)
             return
 
         self.no_instrument_label.hide()
@@ -2110,13 +2193,16 @@ class N6705CDatalogUI(QWidget):
             inner_layout.addWidget(slot_frame)
 
         inner_layout.addStretch()
-        self.channel_config_layout.insertWidget(0, self.channel_config_inner)
+        self._instruments_tab_layout.insertWidget(0, self.channel_config_inner)
 
-    def _build_imported_channel_config(self):
+    def _build_imported_channel_config(self, tab_name=None, data_keys=None):
         import re
 
+        if data_keys is None:
+            data_keys = set(self.datalog_data.keys())
+
         groups = {}
-        for key in self.datalog_data:
+        for key in data_keys:
             ch_num, mtype, is_b = _parse_ch_label(key)
             if ch_num is None:
                 continue
@@ -2128,27 +2214,32 @@ class N6705CDatalogUI(QWidget):
         if not groups:
             return
 
-        old_inner = self.channel_config_inner
-        self.channel_config_layout.removeWidget(old_inner)
-        old_inner.deleteLater()
+        if tab_name is None:
+            tab_name = "Imported"
 
-        self.channel_config_inner = QWidget()
-        self.channel_config_inner.setStyleSheet("background: transparent;")
-        inner_layout = QHBoxLayout(self.channel_config_inner)
+        tab_widget = QWidget()
+        tab_widget.setStyleSheet("background: transparent;")
+        tab_layout = QVBoxLayout(tab_widget)
+        tab_layout.setContentsMargins(0, 6, 0, 0)
+        tab_layout.setSpacing(4)
+
+        inner = QWidget()
+        inner.setStyleSheet("background: transparent;")
+        inner_layout = QHBoxLayout(inner)
         inner_layout.setContentsMargins(0, 0, 0, 0)
         inner_layout.setSpacing(16)
-        self.channel_config_inner_layout = inner_layout
 
-        self.ch_checkboxes_a = []
-        self.ch_voltage_cbs_a = []
-        self.ch_current_cbs_a = []
-        self.ch_power_cbs_a = []
-        self.ch_checkboxes_b = []
-        self.ch_voltage_cbs_b = []
-        self.ch_current_cbs_b = []
-        self.ch_power_cbs_b = []
-
-        self.no_instrument_label.hide()
+        tab_config = {
+            "tab_name": tab_name,
+            "tab_widget": tab_widget,
+            "data_keys": set(data_keys),
+            "voltage_cbs_a": [],
+            "current_cbs_a": [],
+            "power_cbs_a": [],
+            "voltage_cbs_b": [],
+            "current_cbs_b": [],
+            "power_cbs_b": [],
+        }
 
         edit_style = (
             "QLineEdit { background: #0c1a35; color: #8eb0e3; font-size: 10px; "
@@ -2168,7 +2259,7 @@ class N6705CDatalogUI(QWidget):
             slot_layout.setContentsMargins(6, 4, 6, 4)
             slot_layout.setSpacing(0)
 
-            slot_title = QLabel(f"Imported  ─  Slot {slot_char}")
+            slot_title = QLabel(f"{tab_name}  ─  Slot {slot_char}")
             slot_title.setStyleSheet(
                 "color: #556a8c; font-size: 10px; border: none; padding-bottom: 2px;"
             )
@@ -2328,20 +2419,59 @@ class N6705CDatalogUI(QWidget):
                 outputs_row.addWidget(out_frame)
 
             if slot_char == "A":
-                self.ch_checkboxes_a = current_cbs
-                self.ch_voltage_cbs_a = voltage_cbs
-                self.ch_current_cbs_a = current_cbs
-                self.ch_power_cbs_a = power_cbs
+                tab_config["voltage_cbs_a"] = voltage_cbs
+                tab_config["current_cbs_a"] = current_cbs
+                tab_config["power_cbs_a"] = power_cbs
             elif slot_char == "B":
-                self.ch_checkboxes_b = current_cbs
-                self.ch_voltage_cbs_b = voltage_cbs
-                self.ch_current_cbs_b = current_cbs
-                self.ch_power_cbs_b = power_cbs
+                tab_config["voltage_cbs_b"] = voltage_cbs
+                tab_config["current_cbs_b"] = current_cbs
+                tab_config["power_cbs_b"] = power_cbs
 
             inner_layout.addWidget(slot_frame)
 
         inner_layout.addStretch()
-        self.channel_config_layout.insertWidget(0, self.channel_config_inner)
+        tab_layout.addWidget(inner)
+        tab_layout.addStretch()
+
+        self._imported_tab_configs.append(tab_config)
+        tab_idx = self.channel_config_tab.addTab(tab_widget, f"\U0001F4C4 {tab_name}")
+        close_btn = QPushButton("✕")
+        close_btn.setFixedSize(18, 18)
+        close_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #4a6a96; font-size: 11px; "
+            "border: none; border-radius: 3px; padding: 0; margin: 0; min-height: 0; }"
+            "QPushButton:hover { background: #2a1525; color: #ff6b6b; }"
+        )
+        close_btn.clicked.connect(lambda _checked=False, w=tab_widget: self._on_config_tab_close(
+            self.channel_config_tab.indexOf(w)))
+        self.channel_config_tab.tabBar().setTabButton(tab_idx, QTabBar.RightSide, close_btn)
+        tab_config["close_btn"] = close_btn
+        self.channel_config_tab.setCurrentIndex(tab_idx)
+
+    def _on_config_tab_close(self, index):
+        if index <= 0:
+            return
+        widget = self.channel_config_tab.widget(index)
+        if widget is None:
+            return
+        tc_to_remove = None
+        for tc in self._imported_tab_configs:
+            if tc.get("tab_widget") is widget:
+                tc_to_remove = tc
+                break
+        if tc_to_remove:
+            removed_keys = tc_to_remove.get("data_keys", set())
+            self._imported_tab_configs.remove(tc_to_remove)
+            still_used = set()
+            for tc in self._imported_tab_configs:
+                still_used |= tc.get("data_keys", set())
+            for k in removed_keys:
+                if k not in still_used:
+                    self.datalog_data.pop(k, None)
+        self.channel_config_tab.removeTab(index)
+        if widget:
+            widget.deleteLater()
+        self._refresh_plot()
 
     def _ch_toggle_style(self, color, active):
         if active:
@@ -2366,49 +2496,93 @@ class N6705CDatalogUI(QWidget):
             ch_idx = btn.property("ch_idx")
             ch = ch_idx + 1
             slot_char = btn.property("slot_char") or "A"
-            for unit_prefix in [slot_char, ""]:
-                prefix = f"{unit_prefix} " if unit_prefix else ""
-                p_label = f"{prefix}CH{ch} P".strip()
-                v_label = f"{prefix}CH{ch} V".strip()
-                if v_label in self.datalog_data:
-                    if p_label not in self.datalog_data:
-                        calc_power_for_ch(self.datalog_data, ch, unit_prefix)
-                    if p_label in self.datalog_data:
-                        self._refresh_plot()
-                        return
-                    break
+            is_b_target = (slot_char == "B")
+            matched = False
+            for key in list(self.datalog_data.keys()):
+                c_num, c_type, c_is_b = _parse_ch_label(key)
+                if c_num == ch and c_type == "V" and c_is_b == is_b_target:
+                    import re
+                    pfx_m = re.match(r'^(F\d+-)?', key.strip())
+                    pfx = pfx_m.group(1) if pfx_m and pfx_m.group(1) else ""
+                    raw_part = key.strip()[len(pfx):]
+                    p_key = f"{pfx}{raw_part.replace(' V', ' P')}"
+                    if p_key not in self.datalog_data:
+                        calc_power_for_ch(self.datalog_data, ch,
+                                          raw_part.split("CH")[0].strip() if "CH" in raw_part else "",
+                                          key_prefix=pfx)
+                    if p_key in self.datalog_data:
+                        matched = True
+            if matched:
+                self._refresh_plot()
+                return
 
         self._on_channel_visibility_changed()
 
-    def _get_ch_scale_offset(self, data_key):
+    def _find_all_cbs_for_key(self, data_key):
         ch_num, mtype, is_b = _parse_ch_label(data_key)
         if ch_num is None:
-            return None, None, False
-
+            return []
         slot_char = "B" if is_b else "A"
         prefix = mtype if mtype else "I"
+        idx = ch_num - 1
 
-        all_cbs = []
+        imported_keys = set()
+        for tc in self._imported_tab_configs:
+            imported_keys |= tc.get("data_keys", set())
+
+        results = []
+
+        if data_key not in imported_keys:
+            src = {
+                "voltage_a": getattr(self, 'ch_voltage_cbs_a', []),
+                "current_a": getattr(self, 'ch_current_cbs_a', []),
+                "power_a": getattr(self, 'ch_power_cbs_a', []),
+                "voltage_b": getattr(self, 'ch_voltage_cbs_b', []),
+                "current_b": getattr(self, 'ch_current_cbs_b', []),
+                "power_b": getattr(self, 'ch_power_cbs_b', []),
+            }
+            cbs = self._pick_cbs_from_src(src, slot_char, prefix)
+            if 0 <= idx < len(cbs):
+                results.append(cbs[idx])
+
+        for tc in self._imported_tab_configs:
+            if data_key in tc.get("data_keys", set()):
+                src = {
+                    "voltage_a": tc.get("voltage_cbs_a", []),
+                    "current_a": tc.get("current_cbs_a", []),
+                    "power_a": tc.get("power_cbs_a", []),
+                    "voltage_b": tc.get("voltage_cbs_b", []),
+                    "current_b": tc.get("current_cbs_b", []),
+                    "power_b": tc.get("power_cbs_b", []),
+                }
+                cbs = self._pick_cbs_from_src(src, slot_char, prefix)
+                if 0 <= idx < len(cbs):
+                    results.append(cbs[idx])
+        return results
+
+    @staticmethod
+    def _pick_cbs_from_src(src, slot_char, prefix):
         if slot_char == "A":
             if prefix == "V":
-                all_cbs = getattr(self, 'ch_voltage_cbs_a', [])
+                return src["voltage_a"]
             elif prefix == "P":
-                all_cbs = getattr(self, 'ch_power_cbs_a', [])
+                return src["power_a"]
             else:
-                all_cbs = getattr(self, 'ch_current_cbs_a', [])
+                return src["current_a"]
         else:
             if prefix == "V":
-                all_cbs = getattr(self, 'ch_voltage_cbs_b', [])
+                return src["voltage_b"]
             elif prefix == "P":
-                all_cbs = getattr(self, 'ch_power_cbs_b', [])
+                return src["power_b"]
             else:
-                all_cbs = getattr(self, 'ch_current_cbs_b', [])
+                return src["current_b"]
 
-        idx = ch_num - 1
-        if idx < 0 or idx >= len(all_cbs):
+    def _get_ch_scale_offset(self, data_key):
+        btns = self._find_all_cbs_for_key(data_key)
+        if not btns:
             return None, None, False
 
-        btn = all_cbs[idx]
+        btn = btns[0]
         user_edited = btn.property("user_edited") or False
         scale_edit = btn.property("scale_edit")
         offset_edit = btn.property("offset_edit")
@@ -2420,41 +2594,15 @@ class N6705CDatalogUI(QWidget):
         return scale_val, offset_val, user_edited
 
     def _set_ch_scale_offset_text(self, data_key, scale_text, offset_text):
-        ch_num, mtype, is_b = _parse_ch_label(data_key)
-        if ch_num is None:
-            return
-
-        slot_char = "B" if is_b else "A"
-        prefix = mtype if mtype else "I"
-
-        all_cbs = []
-        if slot_char == "A":
-            if prefix == "V":
-                all_cbs = getattr(self, 'ch_voltage_cbs_a', [])
-            elif prefix == "P":
-                all_cbs = getattr(self, 'ch_power_cbs_a', [])
-            else:
-                all_cbs = getattr(self, 'ch_current_cbs_a', [])
-        else:
-            if prefix == "V":
-                all_cbs = getattr(self, 'ch_voltage_cbs_b', [])
-            elif prefix == "P":
-                all_cbs = getattr(self, 'ch_power_cbs_b', [])
-            else:
-                all_cbs = getattr(self, 'ch_current_cbs_b', [])
-
-        idx = ch_num - 1
-        if idx < 0 or idx >= len(all_cbs):
-            return
-
-        btn = all_cbs[idx]
-        scale_edit = btn.property("scale_edit")
-        offset_edit = btn.property("offset_edit")
-        if scale_edit:
-            scale_edit.setText(scale_text)
-        if offset_edit:
-            offset_edit.setText(offset_text)
-        btn.setProperty("user_edited", False)
+        btns = self._find_all_cbs_for_key(data_key)
+        for btn in btns:
+            scale_edit = btn.property("scale_edit")
+            offset_edit = btn.property("offset_edit")
+            if scale_edit:
+                scale_edit.setText(scale_text)
+            if offset_edit:
+                offset_edit.setText(offset_text)
+            btn.setProperty("user_edited", False)
 
     def _on_scale_offset_edited(self, edit_widget):
         ch_idx = edit_widget.property("ch_idx")
@@ -2469,6 +2617,10 @@ class N6705CDatalogUI(QWidget):
             getattr(self, 'ch_current_cbs_b', []),
             getattr(self, 'ch_power_cbs_b', []),
         ]
+        for tc in self._imported_tab_configs:
+            for suffix in ["voltage_cbs_a", "current_cbs_a", "power_cbs_a",
+                           "voltage_cbs_b", "current_cbs_b", "power_cbs_b"]:
+                all_btn_lists.append(tc.get(suffix, []))
         for btn_list in all_btn_lists:
             for btn in btn_list:
                 if btn.property("ch_idx") == ch_idx and btn.property("meas_type") == meas_type:
@@ -2789,6 +2941,25 @@ class N6705CDatalogUI(QWidget):
         vb = self.plot_widget.getPlotItem().getViewBox()
         vb.installEventFilter(self)
 
+    def _find_nearest_marker_at_scene(self, scene_pos):
+        vb = self.plot_widget.getPlotItem().getViewBox()
+        snap_px = self._marker_snap_px
+        best = None
+        best_dist = snap_px + 1
+
+        for tag, line, pos in [
+            ("A", self.marker_a_line, self.marker_a_pos),
+            ("B", self.marker_b_line, self.marker_b_pos),
+        ]:
+            if line is None or pos is None:
+                continue
+            line_scene_x = vb.mapViewToScene(pg.Point(pos, 0)).x()
+            dist = abs(scene_pos.x() - line_scene_x)
+            if dist < best_dist:
+                best_dist = dist
+                best = tag
+        return best
+
     def eventFilter(self, obj, event):
         from PySide6.QtCore import QEvent
         vb = self.plot_widget.getPlotItem().getViewBox()
@@ -2803,6 +2974,11 @@ class N6705CDatalogUI(QWidget):
         if event.type() == QEvent.GraphicsSceneMousePress:
             if event.button() == Qt.LeftButton and self._pending_marker is None and not self.box_zoom_enabled:
                 scene_pos = event.scenePos()
+                snap_marker = self._find_nearest_marker_at_scene(scene_pos)
+                if snap_marker:
+                    self._marker_drag_target = snap_marker
+                    return True
+
                 mouse_point = vb.mapSceneToView(scene_pos)
                 y = mouse_point.y()
                 clicked_key = self._find_band_at_y(y)
@@ -2815,18 +2991,41 @@ class N6705CDatalogUI(QWidget):
                     self._deselect_channel()
 
         if event.type() == QEvent.GraphicsSceneMouseMove:
+            scene_pos = event.scenePos()
+
+            if self._marker_drag_target:
+                mouse_point = vb.mapSceneToView(scene_pos)
+                x_val = mouse_point.x()
+                if self._marker_drag_target == "A":
+                    self._place_marker_a(x_val)
+                else:
+                    self._place_marker_b(x_val)
+                self._update_marker_region()
+                self._update_marker_analysis()
+                return True
+
             if self._ch_drag_active and self._selected_ch_key:
-                scene_pos = event.scenePos()
                 mouse_point = vb.mapSceneToView(scene_pos)
                 y = mouse_point.y()
                 self._drag_offset_channel(y)
                 return True
 
+            snap_marker = self._find_nearest_marker_at_scene(scene_pos)
+            widget = self.plot_widget.viewport() if hasattr(self.plot_widget, 'viewport') else self.plot_widget
+            if snap_marker:
+                widget.setCursor(Qt.SizeHorCursor)
+            else:
+                widget.unsetCursor()
+
         if event.type() == QEvent.GraphicsSceneMouseRelease:
-            if event.button() == Qt.LeftButton and self._ch_drag_active:
-                self._ch_drag_active = False
-                self._ch_drag_last_y = None
-                return True
+            if event.button() == Qt.LeftButton:
+                if self._marker_drag_target:
+                    self._marker_drag_target = None
+                    return True
+                if self._ch_drag_active:
+                    self._ch_drag_active = False
+                    self._ch_drag_last_y = None
+                    return True
 
         return super().eventFilter(obj, event)
 
@@ -3003,7 +3202,7 @@ class N6705CDatalogUI(QWidget):
                 val = values[i]
                 color = _color_for_label(label)
                 ch_unit = _unit_for_label(label)
-                lines.append(f"<span style='color:{color}'>{label.strip()} : {_auto_format(val, ch_unit)}</span>")
+                lines.append(f"<span style='color:{color}'>{_display_label(label)} : {_auto_format(val, ch_unit)}</span>")
 
                 band = self._band_info.get(label)
                 if band:
@@ -3086,50 +3285,80 @@ class N6705CDatalogUI(QWidget):
         self._update_marker_analysis()
 
     def _get_visible_keys(self):
+        imported_keys = set()
+        for tc in self._imported_tab_configs:
+            imported_keys |= tc.get("data_keys", set())
+        active_data = {k: v for k, v in self.datalog_data.items() if k not in imported_keys}
+
         visible_keys = set()
-        for i, cb in enumerate(self.ch_current_cbs_a):
+        self._collect_visible_keys_from_cbs(
+            visible_keys,
+            self.ch_current_cbs_a, self.ch_voltage_cbs_a,
+            getattr(self, 'ch_power_cbs_a', []),
+            getattr(self, 'ch_current_cbs_b', []),
+            getattr(self, 'ch_voltage_cbs_b', []),
+            getattr(self, 'ch_power_cbs_b', []),
+            active_data,
+        )
+        for tc in self._imported_tab_configs:
+            tc_keys = tc.get("data_keys", set())
+            sub_data = {k: v for k, v in self.datalog_data.items() if k in tc_keys}
+            self._collect_visible_keys_from_cbs(
+                visible_keys,
+                tc.get("current_cbs_a", []), tc.get("voltage_cbs_a", []),
+                tc.get("power_cbs_a", []),
+                tc.get("current_cbs_b", []), tc.get("voltage_cbs_b", []),
+                tc.get("power_cbs_b", []),
+                sub_data,
+            )
+        return visible_keys
+
+    def _collect_visible_keys_from_cbs(self, visible_keys,
+                                        current_a, voltage_a, power_a,
+                                        current_b, voltage_b, power_b,
+                                        data_dict):
+        for i, cb in enumerate(current_a):
             if cb.isChecked():
                 ch = i + 1
-                for key in self.datalog_data:
+                for key in data_dict:
                     k = key.strip()
                     if k.endswith(f"CH{ch} I") or k == f"CH{ch} I":
                         visible_keys.add(key)
-        for i, cb in enumerate(self.ch_voltage_cbs_a):
+        for i, cb in enumerate(voltage_a):
             if cb.isChecked():
                 ch = i + 1
-                for key in self.datalog_data:
+                for key in data_dict:
                     k = key.strip()
                     if k.endswith(f"CH{ch} V") or k == f"CH{ch} V":
                         visible_keys.add(key)
-        for i, cb in enumerate(getattr(self, 'ch_current_cbs_b', [])):
+        for i, cb in enumerate(current_b):
             if cb.isChecked():
                 ch = i + 1
-                for key in self.datalog_data:
+                for key in data_dict:
                     k = key.strip()
                     if k.endswith(f"CH{ch} I") and "B" in k:
                         visible_keys.add(key)
-        for i, cb in enumerate(getattr(self, 'ch_voltage_cbs_b', [])):
+        for i, cb in enumerate(voltage_b):
             if cb.isChecked():
                 ch = i + 1
-                for key in self.datalog_data:
+                for key in data_dict:
                     k = key.strip()
                     if k.endswith(f"CH{ch} V") and "B" in k:
                         visible_keys.add(key)
-        for i, cb in enumerate(getattr(self, 'ch_power_cbs_a', [])):
+        for i, cb in enumerate(power_a):
             if cb.isChecked():
                 ch = i + 1
-                for key in self.datalog_data:
+                for key in data_dict:
                     k = key.strip()
                     if (k.endswith(f"CH{ch} P") or k == f"CH{ch} P") and "B" not in k:
                         visible_keys.add(key)
-        for i, cb in enumerate(getattr(self, 'ch_power_cbs_b', [])):
+        for i, cb in enumerate(power_b):
             if cb.isChecked():
                 ch = i + 1
-                for key in self.datalog_data:
+                for key in data_dict:
                     k = key.strip()
                     if k.endswith(f"CH{ch} P") and "B" in k:
                         visible_keys.add(key)
-        return visible_keys
 
     def _on_channel_visibility_changed(self):
         if not self.datalog_data:
@@ -3225,6 +3454,11 @@ class N6705CDatalogUI(QWidget):
             list(getattr(self, 'ch_voltage_cbs_b', [])) +
             list(getattr(self, 'ch_power_cbs_b', []))
         )
+        for tc in self._imported_tab_configs:
+            for suffix in ["current_cbs_a", "voltage_cbs_a", "power_cbs_a",
+                           "current_cbs_b", "voltage_cbs_b", "power_cbs_b"]:
+                all_cbs += list(tc.get(suffix, []))
+
         for cb in all_cbs:
             cb.blockSignals(True)
             cb.setChecked(False)
@@ -3233,7 +3467,35 @@ class N6705CDatalogUI(QWidget):
                 cb.setStyleSheet(self._ch_toggle_style(ch_color, False))
             cb.blockSignals(False)
 
-        for key, ch_data in self.datalog_data.items():
+        imported_keys = set()
+        for tc in self._imported_tab_configs:
+            imported_keys |= tc.get("data_keys", set())
+        active_data = {k: v for k, v in self.datalog_data.items() if k not in imported_keys}
+
+        self._sync_cbs_for_data(
+            active_data,
+            self.ch_current_cbs_a, self.ch_voltage_cbs_a,
+            getattr(self, 'ch_power_cbs_a', []),
+            getattr(self, 'ch_current_cbs_b', []),
+            getattr(self, 'ch_voltage_cbs_b', []),
+            getattr(self, 'ch_power_cbs_b', []),
+        )
+
+        for tc in self._imported_tab_configs:
+            tc_keys = tc.get("data_keys", set())
+            sub_data = {k: v for k, v in self.datalog_data.items() if k in tc_keys}
+            self._sync_cbs_for_data(
+                sub_data,
+                tc.get("current_cbs_a", []), tc.get("voltage_cbs_a", []),
+                tc.get("power_cbs_a", []),
+                tc.get("current_cbs_b", []), tc.get("voltage_cbs_b", []),
+                tc.get("power_cbs_b", []),
+            )
+
+    def _sync_cbs_for_data(self, data_dict, current_a, voltage_a, power_a,
+                           current_b, voltage_b, power_b):
+        import re
+        for key, ch_data in data_dict.items():
             k = key.strip()
             m = re.search(r'CH(\d+)\s+(I|V|P)', k)
             if not m:
@@ -3248,18 +3510,18 @@ class N6705CDatalogUI(QWidget):
             idx = ch_num - 1
             if is_b:
                 if mtype == "I":
-                    cbs = getattr(self, 'ch_current_cbs_b', [])
+                    cbs = current_b
                 elif mtype == "V":
-                    cbs = getattr(self, 'ch_voltage_cbs_b', [])
+                    cbs = voltage_b
                 else:
-                    cbs = getattr(self, 'ch_power_cbs_b', [])
+                    cbs = power_b
             else:
                 if mtype == "I":
-                    cbs = self.ch_current_cbs_a
+                    cbs = current_a
                 elif mtype == "V":
-                    cbs = self.ch_voltage_cbs_a
+                    cbs = voltage_a
                 else:
-                    cbs = getattr(self, 'ch_power_cbs_a', [])
+                    cbs = power_a
 
             if idx < len(cbs):
                 btn = cbs[idx]
@@ -3476,7 +3738,7 @@ class N6705CDatalogUI(QWidget):
         power_chs_a = [cb.isChecked() for cb in getattr(self, 'ch_power_cbs_a', [])]
         power_chs_b = [cb.isChecked() for cb in getattr(self, 'ch_power_cbs_b', [])]
         compute_power_channels(data, power_chs_a, power_chs_b)
-        self.datalog_data = data
+        self.datalog_data.update(data)
         self._clear_analysis_card_cache()
         self._sync_checkboxes_to_data()
         self._refresh_plot()
@@ -3505,6 +3767,7 @@ class N6705CDatalogUI(QWidget):
         self._selected_highlight = None
         self._ch_drag_active = False
         self._ch_drag_last_y = None
+        self._marker_drag_target = None
 
         self.crosshair_v = pg.InfiniteLine(
             angle=90, movable=False,
@@ -3739,6 +4002,7 @@ class N6705CDatalogUI(QWidget):
             self.marker_region.setZValue(-10)
 
     def _clear_markers(self):
+        self._marker_drag_target = None
         if self.marker_a_line:
             self.plot_widget.removeItem(self.marker_a_line)
             self.marker_a_line = None
@@ -3775,7 +4039,7 @@ class N6705CDatalogUI(QWidget):
         left_axis.setWidth(65)
 
         for key, color in entries:
-            display = self.ch_name_renames.get(key, key.strip())
+            display = self.ch_name_renames.get(key, _display_label(key))
             band = self._band_info.get(key)
             if band:
                 y_center = (band["plot_top"] + band["plot_bottom"]) / 2
@@ -3822,7 +4086,10 @@ class N6705CDatalogUI(QWidget):
         self._update_marker_region()
 
     def _update_marker_analysis(self):
-        if self.marker_a_pos is None or self.marker_b_pos is None:
+        has_both_markers = self.marker_a_pos is not None and self.marker_b_pos is not None
+        has_data = bool(self.datalog_data)
+
+        if not has_both_markers and not has_data:
             self.analysis_hint_label.setVisible(True)
             self.meas_table.setVisible(False)
             return
@@ -3830,14 +4097,70 @@ class N6705CDatalogUI(QWidget):
         self.analysis_hint_label.setVisible(False)
         self.meas_table.setVisible(True)
 
+        is_current = self.type_current.isChecked()
+
+        visible_keys = self._get_visible_keys()
+        if not visible_keys:
+            visible_keys = set(self.datalog_data.keys())
+        ch_list = [(k, self.datalog_data[k]) for k in sorted(self.datalog_data.keys(), key=_sort_key_for_label) if k in visible_keys]
+
+        if has_both_markers:
+            self._update_marker_analysis_with_markers(ch_list, is_current)
+        else:
+            self._update_marker_analysis_full_wave(ch_list, is_current)
+
+    def _update_marker_analysis_full_wave(self, ch_list, is_current):
+        headers = ["", "Avg"]
+        num_rows = len(ch_list)
+        num_cols = len(headers)
+
+        self.meas_table.blockSignals(True)
+        self.meas_table.clearSpans()
+        self.meas_table.setRowCount(num_rows)
+        self.meas_table.setColumnCount(num_cols)
+        self.meas_table.setHorizontalHeaderLabels(headers)
+
+        hi = self.meas_table.horizontalHeaderItem(1)
+        if hi:
+            f = hi.font()
+            f.setBold(True)
+            hi.setFont(f)
+
+        ROW_BG = ["#080f22", "#0a1530"]
+
+        for ch_idx, (label, ch_data) in enumerate(ch_list):
+            color_hex = _color_for_label(label)
+            row_bg = ROW_BG[ch_idx % 2]
+
+            ch_num, mtype, _ = _parse_ch_label(label)
+            ch_is_current = (mtype == "I") if mtype else is_current
+            ch_is_power = (mtype == "P") if mtype else False
+            val_unit = "mW" if ch_is_power else ("mA" if ch_is_current else "mV")
+
+            values = ch_data["values"]
+            if values:
+                seg_avg = sum(values) / len(values)
+            else:
+                seg_avg = 0.0
+
+            self._set_meas_cell(ch_idx, 0, _display_label(label), color_hex, bg=row_bg)
+            self._set_meas_cell(ch_idx, 1, _auto_format(seg_avg, val_unit), color_hex, bg=row_bg, bold=True)
+
+        row_h = 24
+        total_h = (num_rows + 1) * row_h + 4
+        self.meas_table.setFixedHeight(min(total_h, 200))
+        for r in range(num_rows):
+            self.meas_table.setRowHeight(r, row_h)
+
+        self.meas_table.blockSignals(False)
+
+    def _update_marker_analysis_with_markers(self, ch_list, is_current):
         t_a = self.marker_a_pos
         t_b = self.marker_b_pos
         t1 = min(t_a, t_b)
         t2 = max(t_a, t_b)
         delta = t2 - t1
         freq = 1.0 / delta if delta > 0 else 0.0
-
-        is_current = self.type_current.isChecked()
 
         METRIC_DEFS = [
             ("min", self.meas_minimum_cb, "Min"),
@@ -3857,14 +4180,11 @@ class N6705CDatalogUI(QWidget):
 
         from bisect import bisect_left, bisect_right
 
-        visible_keys = self._get_visible_keys()
-        if not visible_keys:
-            visible_keys = set(self.datalog_data.keys())
-        ch_list = [(k, self.datalog_data[k]) for k in sorted(self.datalog_data.keys(), key=_sort_key_for_label) if k in visible_keys]
         num_rows = 1 + len(ch_list)
         num_cols = len(headers)
 
         self.meas_table.blockSignals(True)
+        self.meas_table.clearSpans()
         self.meas_table.setRowCount(num_rows)
         self.meas_table.setColumnCount(num_cols)
         self.meas_table.setHorizontalHeaderLabels(headers)
@@ -3931,7 +4251,7 @@ class N6705CDatalogUI(QWidget):
                 dt = delta
                 seg_min = seg_max = seg_avg = 0.0
 
-            self._set_meas_cell(row, 0, label.strip(), color_hex, bg=row_bg)
+            self._set_meas_cell(row, 0, _display_label(label), color_hex, bg=row_bg)
             self._set_meas_cell(row, 1, _auto_format(val_a, val_unit), color_hex, bg=row_bg)
 
             col = 2
@@ -4024,7 +4344,7 @@ class N6705CDatalogUI(QWidget):
         current = self.label_ch_combo.currentText()
         self.label_ch_combo.clear()
         for label in sorted(self.datalog_data.keys(), key=_sort_key_for_label):
-            self.label_ch_combo.addItem(label.strip())
+            self.label_ch_combo.addItem(_display_label(label), label)
         idx = self.label_ch_combo.findText(current)
         if idx >= 0:
             self.label_ch_combo.setCurrentIndex(idx)
@@ -4032,7 +4352,10 @@ class N6705CDatalogUI(QWidget):
             self.label_ch_combo.setCurrentIndex(0)
 
     def _add_custom_label(self):
-        ch_name = self.label_ch_combo.currentText().strip()
+        idx = self.label_ch_combo.currentIndex()
+        if idx < 0:
+            return
+        ch_name = self.label_ch_combo.itemData(idx) or self.label_ch_combo.currentText().strip()
         time_str = self.label_time_edit.text().strip()
         text = self.label_text_edit.text().strip()
         if not time_str or not text or not ch_name:
@@ -4199,16 +4522,22 @@ class N6705CDatalogUI(QWidget):
                 self._import_dlog(path)
             else:
                 self._import_csv(path)
-        except Exception:
-            pass
+        except Exception as e:
+            import traceback
+            logger.error(f"Import failed: {e}\n{traceback.format_exc()}")
 
     def _import_csv(self, path):
         all_data = import_csv_file(path)
         if not all_data:
             return
 
-        self.datalog_data = all_data
-        self._build_imported_channel_config()
+        self._import_counter += 1
+        prefix = f"F{self._import_counter}-"
+        prefixed = {f"{prefix}{k}": v for k, v in all_data.items()}
+        new_keys = set(prefixed.keys())
+        self.datalog_data.update(prefixed)
+        tab_name = os.path.basename(path)
+        self._build_imported_channel_config(tab_name=tab_name, data_keys=new_keys)
         self._sync_checkboxes_to_data()
         self._refresh_plot()
 
@@ -4218,9 +4547,14 @@ class N6705CDatalogUI(QWidget):
             return
 
         all_data, raw_data = result
-        self._raw_dlog_list = [raw_data]
-        self.datalog_data = all_data
-        self._build_imported_channel_config()
+        self._raw_dlog_list.append(raw_data)
+        self._import_counter += 1
+        prefix = f"F{self._import_counter}-"
+        prefixed = {f"{prefix}{k}": v for k, v in all_data.items()}
+        new_keys = set(prefixed.keys())
+        self.datalog_data.update(prefixed)
+        tab_name = os.path.basename(path)
+        self._build_imported_channel_config(tab_name=tab_name, data_keys=new_keys)
         self._sync_checkboxes_to_data()
         self._refresh_plot()
 
@@ -4230,9 +4564,14 @@ class N6705CDatalogUI(QWidget):
             return
 
         all_data, raw_data = result
-        self._raw_dlog_list = [raw_data]
-        self.datalog_data = all_data
-        self._build_imported_channel_config()
+        self._raw_dlog_list.append(raw_data)
+        self._import_counter += 1
+        prefix = f"F{self._import_counter}-"
+        prefixed = {f"{prefix}{k}": v for k, v in all_data.items()}
+        new_keys = set(prefixed.keys())
+        self.datalog_data.update(prefixed)
+        tab_name = os.path.basename(path)
+        self._build_imported_channel_config(tab_name=tab_name, data_keys=new_keys)
         self._sync_checkboxes_to_data()
         self._refresh_plot()
 
@@ -4263,7 +4602,7 @@ class N6705CDatalogUI(QWidget):
                 labels = list(self.datalog_data.keys())
 
                 with open(path, "w", newline="") as f:
-                    header = "Time(s)," + ",".join(labels)
+                    header = "Time(s)," + ",".join(_display_label(l) for l in labels)
                     f.write(header + "\n")
 
                     for i in range(max_len):
