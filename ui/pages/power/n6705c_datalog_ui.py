@@ -25,7 +25,8 @@ from PySide6.QtWidgets import (
     QRadioButton, QButtonGroup, QSizePolicy, QFileDialog,
     QScrollArea, QGraphicsRectItem,
     QTableWidget, QTableWidgetItem, QHeaderView, QMenu,
-    QToolButton, QDialog, QTabWidget, QTabBar
+    QToolButton, QDialog, QTabWidget, QTabBar,
+    QProgressBar,
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QThread, QObject
 from PySide6.QtGui import QFont, QColor, QBrush, QPen, QPainter, QPixmap
@@ -429,6 +430,7 @@ class _DatalogWorker(QObject):
     dlog_raw_ready = Signal(list)
     finished = Signal()
     error = Signal(str)
+    progress_update = Signal(int, str)
 
     def __init__(self, n6705c_list, channels_per_unit, unit_labels,
                  record_type, sample_period_us, monitoring_time_s,
@@ -450,10 +452,16 @@ class _DatalogWorker(QObject):
     def run(self):
         import time
         try:
+            run_start = time.time()
             sample_period_s = self.sample_period_us / 1_000_000.0
 
             if self.debug:
+                self.progress_update.emit(5, "Generating mock data...")
+                logger.debug("[Datalog][Progress] Mock mode start at %.3fs", time.time() - run_start)
+                mock_start = time.time()
                 all_data = self._generate_mock_data(sample_period_s)
+                logger.debug("[Datalog][Progress] Mock data generated in %.3fs", time.time() - mock_start)
+                self.progress_update.emit(100, "Done")
                 self.data_ready.emit(all_data)
                 self.finished.emit()
                 return
@@ -470,6 +478,10 @@ class _DatalogWorker(QObject):
             if not active_units:
                 self.finished.emit()
                 return
+
+            self.progress_update.emit(2, "Configuring instruments...")
+            logger.debug("[Datalog][Progress] Configure start at %.3fs", time.time() - run_start)
+            config_start = time.time()
 
             barrier = threading.Barrier(len(active_units), timeout=30)
             init_errors = [None] * len(active_units)
@@ -520,17 +532,32 @@ class _DatalogWorker(QObject):
             for t in threads:
                 t.join(timeout=60)
 
+            logger.debug("[Datalog][Progress] Configure done in %.3fs", time.time() - config_start)
+            self.progress_update.emit(2, "Capturing data...")
+            logger.debug("[Datalog][Progress] Capture wait start at %.3fs", time.time() - run_start)
+
             all_data = {}
             raw_dlog_list = []
 
             logger.info("[Datalog] Waiting %ds for capture...", self.monitoring_time_s + 5)
             wait_end = time.time() + self.monitoring_time_s + 5
+            capture_start = time.time()
+            capture_total = self.monitoring_time_s + 5
             while time.time() < wait_end:
                 if self._is_stopped:
                     logger.info("[Datalog] Stopped by user during capture wait")
                     self.finished.emit()
                     return
-                time.sleep(0.2)
+                elapsed = time.time() - capture_start
+                capture_pct = min(elapsed / capture_total, 1.0)
+                overall_pct = int(2 + capture_pct * 91)
+                self.progress_update.emit(overall_pct, "Capturing data...")
+                time.sleep(0.5)
+
+            logger.debug("[Datalog][Progress] Capture wait done in %.3fs", time.time() - capture_start)
+            self.progress_update.emit(93, "Downloading data...")
+            logger.debug("[Datalog][Progress] Download start at %.3fs", time.time() - run_start)
+            download_start = time.time()
 
             for unit_idx, n6705c in enumerate(self.n6705c_list):
                 if self._is_stopped:
@@ -585,9 +612,14 @@ class _DatalogWorker(QObject):
                 if unit_data:
                     all_data.update(unit_data)
 
+            logger.debug("[Datalog][Progress] Download done in %.3fs", time.time() - download_start)
+            self.progress_update.emit(98, "Processing results...")
+            logger.debug("[Datalog][Progress] Emitting results at %.3fs", time.time() - run_start)
             logger.info("[Datalog] Total channels with data: %d", len(all_data))
             self.dlog_raw_ready.emit(raw_dlog_list)
             self.data_ready.emit(all_data)
+            self.progress_update.emit(100, "Done")
+            logger.debug("[Datalog][Progress] Total run time: %.3fs", time.time() - run_start)
             self.finished.emit()
         except Exception as e:
             logger.error("[Datalog] ERROR: %s", e, exc_info=True)
@@ -766,6 +798,10 @@ class N6705CDatalogUI(QWidget):
         self.marker_b_line = None
         self.marker_region = None
         self.box_zoom_enabled = False
+        self._box_zoom_auto_off_timer = QTimer(self)
+        self._box_zoom_auto_off_timer.setSingleShot(True)
+        self._box_zoom_auto_off_timer.setInterval(4000)
+        self._box_zoom_auto_off_timer.timeout.connect(self._auto_off_box_zoom)
         self._pending_marker = None
         self._marker_drag_target = None
         self._marker_snap_px = 10
@@ -1194,29 +1230,53 @@ class N6705CDatalogUI(QWidget):
         search_row = QHBoxLayout()
         search_row.setSpacing(6)
         self.refresh_search_btn = SpinningSearchButton()
-        self.refresh_search_btn.setFixedSize(34, 30)
+        self.refresh_search_btn.setFixedSize(40, 40)
+        self.refresh_search_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #13254b;
+                border: 1px solid #22376A;
+                border-radius: 8px;
+                color: #dce7ff;
+                font-weight: 600;
+                min-height: 0px;
+                max-height: 40px;
+                min-width: 0px;
+                max-width: 40px;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                background-color: #1C2D55;
+                border: 1px solid #3A5A9F;
+            }
+            QPushButton:pressed {
+                background-color: #102040;
+            }
+        """)
         self.refresh_search_btn.clicked.connect(self._on_refresh_search)
         search_row.addWidget(self.refresh_search_btn)
         search_row.addStretch()
 
         self.instr_more_btn = QToolButton()
         self.instr_more_btn.setText("⋯")
+        self.instr_more_btn.setFixedSize(40, 40)
         self.instr_more_btn.setPopupMode(QToolButton.InstantPopup)
         self.instr_more_btn.setStyleSheet("""
             QToolButton {
-                background-color: transparent;
+                background-color: #13254b;
                 color: #8eb0e3;
                 font-size: 18px;
                 font-weight: bold;
-                border: 1px solid #1e3460;
-                border-radius: 6px;
-                padding: 2px 8px;
-                min-width: 28px;
-                min-height: 24px;
+                border: 1px solid #22376A;
+                border-radius: 8px;
+                padding: 0px;
+                min-height: 0px;
+                max-height: 40px;
+                min-width: 0px;
+                max-width: 40px;
             }
             QToolButton:hover {
-                background-color: #162d55;
-                border-color: #3a6fd4;
+                background-color: #1C2D55;
+                border: 1px solid #3A5A9F;
             }
             QToolButton::menu-indicator { image: none; }
         """)
@@ -1383,6 +1443,52 @@ class N6705CDatalogUI(QWidget):
 
         chart_outer.addWidget(self.plot_widget, 1)
 
+        self._progress_overlay = QFrame(self.chart_frame)
+        self._progress_overlay.setStyleSheet(
+            "QFrame { background-color: rgba(2, 8, 23, 180); border: none; border-radius: 14px; }"
+        )
+        self._progress_overlay.hide()
+        overlay_layout = QVBoxLayout(self._progress_overlay)
+        overlay_layout.setAlignment(Qt.AlignCenter)
+        overlay_layout.setSpacing(12)
+
+        self._progress_stage_label = QLabel("Preparing...")
+        self._progress_stage_label.setAlignment(Qt.AlignCenter)
+        self._progress_stage_label.setStyleSheet(
+            "color: #c8daf5; font-size: 13px; font-weight: 600; background: transparent;"
+        )
+        overlay_layout.addWidget(self._progress_stage_label)
+
+        self._progress_bar = QProgressBar()
+        self._progress_bar.setRange(0, 100)
+        self._progress_bar.setValue(0)
+        self._progress_bar.setTextVisible(True)
+        self._progress_bar.setFixedWidth(320)
+        self._progress_bar.setFixedHeight(18)
+        self._progress_bar.setStyleSheet("""
+            QProgressBar {
+                background-color: #152749;
+                border: 1px solid #27406f;
+                border-radius: 9px;
+                text-align: center;
+                color: #b7c8ea;
+                font-size: 11px;
+            }
+            QProgressBar::chunk {
+                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #4f46e5, stop:1 #7c3aed);
+                border-radius: 8px;
+            }
+        """)
+        overlay_layout.addWidget(self._progress_bar, 0, Qt.AlignCenter)
+
+        self._progress_time_label = QLabel("")
+        self._progress_time_label.setAlignment(Qt.AlignCenter)
+        self._progress_time_label.setStyleSheet(
+            "color: #5c7a9e; font-size: 11px; background: transparent;"
+        )
+        overlay_layout.addWidget(self._progress_time_label)
+
         chart_and_labels.addWidget(self.chart_frame, 1)
 
         self.label_card = CardFrame("CUSTOM LABELS", "\u2756")
@@ -1399,9 +1505,60 @@ class N6705CDatalogUI(QWidget):
         mid_layout.addLayout(center_right_layout, 1)
         main_area.addLayout(mid_layout, 1)
 
-        self.channel_config_card = CardFrame("CHANNEL CONFIG", "\u2699")
+        self.channel_config_collapsed = False
+
+        self.channel_config_outer = QWidget()
+        self.channel_config_outer.setStyleSheet("QWidget { background: transparent; border: none; }")
+        ch_outer_layout = QVBoxLayout(self.channel_config_outer)
+        ch_outer_layout.setContentsMargins(0, 0, 0, 0)
+        ch_outer_layout.setSpacing(0)
+
+        self.channel_config_toggle_btn = QPushButton("\u25bc  \u2699 Channel Config")
+        self.channel_config_toggle_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #0a1930; color: #b8d0f0;
+                border: 1px solid #132849; border-bottom: none;
+                border-top-left-radius: 8px; border-top-right-radius: 8px;
+                border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;
+                padding: 4px 16px; font-size: 12px; font-weight: 700;
+                text-align: left;
+            }
+            QPushButton:hover { background-color: #0e1f3d; color: #d0e4ff; }
+        """)
+        self.channel_config_toggle_btn.clicked.connect(self._toggle_channel_config_panel)
+        ch_outer_layout.addWidget(self.channel_config_toggle_btn)
+
+        self.channel_config_card = CardFrame("", "")
+        self.channel_config_card.setStyleSheet("""
+            #cardFrame {
+                background-color: #0a1930;
+                border: 1px solid #132849;
+                border-top: none;
+                border-top-left-radius: 0px;
+                border-top-right-radius: 0px;
+                border-bottom-left-radius: 12px;
+                border-bottom-right-radius: 12px;
+            }
+        """)
         self._build_channel_config_card()
-        main_area.addWidget(self.channel_config_card)
+        self.channel_config_card.setVisible(True)
+        ch_outer_layout.addWidget(self.channel_config_card)
+
+        main_area.addWidget(self.channel_config_outer)
+
+        self._channel_config_overlay = QFrame(self.channel_config_card)
+        self._channel_config_overlay.setStyleSheet(
+            "QFrame { background-color: rgba(2, 8, 23, 160); border: none; border-radius: 14px; }"
+        )
+        self._channel_config_overlay.hide()
+        ch_overlay_layout = QVBoxLayout(self._channel_config_overlay)
+        ch_overlay_layout.setAlignment(Qt.AlignCenter)
+        ch_lock_label = QLabel("\U0001F512  Recording in progress...")
+        ch_lock_label.setAlignment(Qt.AlignCenter)
+        ch_lock_label.setStyleSheet(
+            "color: #5c7a9e; font-size: 12px; font-weight: 600; background: transparent;"
+        )
+        ch_overlay_layout.addWidget(ch_lock_label)
 
     def _build_measurement_card(self):
         layout = self.measurement_card.main_layout
@@ -1981,18 +2138,19 @@ class N6705CDatalogUI(QWidget):
         self.channel_config_layout.addWidget(self.channel_config_tab)
 
         self._instruments_tab = QWidget()
-        self._instruments_tab.setStyleSheet("background: transparent;")
+        self._instruments_tab.setStyleSheet("background: #071127;")
+        self._instruments_tab.setMinimumHeight(140)
         self._instruments_tab_layout = QVBoxLayout(self._instruments_tab)
         self._instruments_tab_layout.setContentsMargins(0, 6, 0, 0)
-        self._instruments_tab_layout.setSpacing(4)
+        self._instruments_tab_layout.setSpacing(0)
         self.channel_config_tab.addTab(self._instruments_tab, "\u26A1 Active")
         self.channel_config_tab.setTabsClosable(False)
 
         self.channel_config_inner = QWidget()
-        self.channel_config_inner.setStyleSheet("background: transparent;")
+        self.channel_config_inner.setStyleSheet("background: #071127;")
         self.channel_config_inner_layout = QHBoxLayout(self.channel_config_inner)
         self.channel_config_inner_layout.setContentsMargins(0, 0, 0, 0)
-        self.channel_config_inner_layout.setSpacing(20)
+        self.channel_config_inner_layout.setSpacing(0)
         self._instruments_tab_layout.addWidget(self.channel_config_inner)
 
         self.ch_checkboxes_a = []
@@ -2015,6 +2173,32 @@ class N6705CDatalogUI(QWidget):
         self.no_instrument_label.setAlignment(Qt.AlignCenter)
         self._instruments_tab_layout.addWidget(self.no_instrument_label)
 
+    def _toggle_channel_config_panel(self):
+        self.channel_config_collapsed = not self.channel_config_collapsed
+        self.channel_config_card.setVisible(not self.channel_config_collapsed)
+        if self.channel_config_collapsed:
+            self.channel_config_toggle_btn.setText("\u25b6  \u2699 Channel Config")
+            self.channel_config_toggle_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #0a1930; color: #8ea6cf;
+                    border: 1px solid #132849; border-radius: 8px;
+                    padding: 4px 16px; font-size: 12px; font-weight: 700; text-align: left;
+                }
+                QPushButton:hover { background-color: #0e1f3d; color: #b8d0f0; }
+            """)
+        else:
+            self.channel_config_toggle_btn.setText("\u25bc  \u2699 Channel Config")
+            self.channel_config_toggle_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #0a1930; color: #b8d0f0;
+                    border: 1px solid #132849; border-bottom: none;
+                    border-top-left-radius: 8px; border-top-right-radius: 8px;
+                    border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;
+                    padding: 4px 16px; font-size: 12px; font-weight: 700; text-align: left;
+                }
+                QPushButton:hover { background-color: #0e1f3d; color: #d0e4ff; }
+            """)
+
     def _refresh_channel_config(self):
         connected_slots = []
         for label_char in ["A", "B", "C", "D"]:
@@ -2027,10 +2211,10 @@ class N6705CDatalogUI(QWidget):
         old_inner.deleteLater()
 
         self.channel_config_inner = QWidget()
-        self.channel_config_inner.setStyleSheet("background: transparent;")
+        self.channel_config_inner.setStyleSheet("background: #071127;")
         inner_layout = QHBoxLayout(self.channel_config_inner)
         inner_layout.setContentsMargins(0, 0, 0, 0)
-        inner_layout.setSpacing(16)
+        inner_layout.setSpacing(0)
         self.channel_config_inner_layout = inner_layout
 
         self.ch_checkboxes_a = []
@@ -2056,9 +2240,8 @@ class N6705CDatalogUI(QWidget):
             slot_frame = QFrame()
             slot_frame.setStyleSheet("""
                 QFrame {
-                    background-color: #070f24;
-                    border: 1px solid #1a2b52;
-                    border-radius: 6px;
+                    background-color: #071127;
+                    border: none;
                 }
             """)
             slot_layout = QVBoxLayout(slot_frame)
@@ -2090,6 +2273,7 @@ class N6705CDatalogUI(QWidget):
                 ch_color = CHANNEL_COLORS[ch % len(CHANNEL_COLORS)]
 
                 out_frame = QFrame()
+                out_frame.setMaximumWidth(260)
                 out_frame.setStyleSheet(
                     "QFrame { background-color: #0a1430; border: 1px solid #152040; border-radius: 4px; }"
                 )
@@ -2179,6 +2363,8 @@ class N6705CDatalogUI(QWidget):
 
                 outputs_row.addWidget(out_frame)
 
+            outputs_row.addStretch()
+
             if slot_char == "A":
                 self.ch_checkboxes_a = current_cbs
                 self.ch_voltage_cbs_a = voltage_cbs
@@ -2192,7 +2378,6 @@ class N6705CDatalogUI(QWidget):
 
             inner_layout.addWidget(slot_frame)
 
-        inner_layout.addStretch()
         self._instruments_tab_layout.insertWidget(0, self.channel_config_inner)
 
     def _build_imported_channel_config(self, tab_name=None, data_keys=None):
@@ -2218,16 +2403,16 @@ class N6705CDatalogUI(QWidget):
             tab_name = "Imported"
 
         tab_widget = QWidget()
-        tab_widget.setStyleSheet("background: transparent;")
+        tab_widget.setStyleSheet("background: #071127;")
         tab_layout = QVBoxLayout(tab_widget)
         tab_layout.setContentsMargins(0, 6, 0, 0)
-        tab_layout.setSpacing(4)
+        tab_layout.setSpacing(0)
 
         inner = QWidget()
-        inner.setStyleSheet("background: transparent;")
+        inner.setStyleSheet("background: #071127;")
         inner_layout = QHBoxLayout(inner)
         inner_layout.setContentsMargins(0, 0, 0, 0)
-        inner_layout.setSpacing(16)
+        inner_layout.setSpacing(0)
 
         tab_config = {
             "tab_name": tab_name,
@@ -2253,7 +2438,7 @@ class N6705CDatalogUI(QWidget):
 
             slot_frame = QFrame()
             slot_frame.setStyleSheet(
-                "QFrame { background-color: #070f24; border: 1px solid #1a2b52; border-radius: 6px; }"
+                "QFrame { background-color: #071127; border: none; }"
             )
             slot_layout = QVBoxLayout(slot_frame)
             slot_layout.setContentsMargins(6, 4, 6, 4)
@@ -2279,6 +2464,7 @@ class N6705CDatalogUI(QWidget):
                 available_types = ch_map.get(ch, set())
 
                 out_frame = QFrame()
+                out_frame.setMaximumWidth(260)
                 out_frame.setStyleSheet(
                     "QFrame { background-color: #0a1430; border: 1px solid #152040; border-radius: 4px; }"
                 )
@@ -2418,6 +2604,8 @@ class N6705CDatalogUI(QWidget):
 
                 outputs_row.addWidget(out_frame)
 
+            outputs_row.addStretch()
+
             if slot_char == "A":
                 tab_config["voltage_cbs_a"] = voltage_cbs
                 tab_config["current_cbs_a"] = current_cbs
@@ -2429,7 +2617,6 @@ class N6705CDatalogUI(QWidget):
 
             inner_layout.addWidget(slot_frame)
 
-        inner_layout.addStretch()
         tab_layout.addWidget(inner)
         tab_layout.addStretch()
 
@@ -3276,6 +3463,71 @@ class N6705CDatalogUI(QWidget):
         self.start_btn.style().polish(self.start_btn)
         self.start_btn.update()
 
+    def _show_progress_overlay(self, total_seconds):
+        import time as _time
+        self._progress_bar.setValue(0)
+        self._progress_stage_label.setText("Preparing...")
+        self._progress_time_label.setText(f"Estimated total: {total_seconds:.0f}s")
+        self._progress_total_s = total_seconds
+        self._progress_start_time = _time.time()
+        self._progress_overlay.setGeometry(self.chart_frame.rect())
+        self._progress_overlay.raise_()
+        self._progress_overlay.show()
+
+        self.plot_widget.setEnabled(False)
+        self.channel_config_toggle_btn.setEnabled(False)
+        self.channel_config_card.setEnabled(False)
+        self._channel_config_overlay.setGeometry(self.channel_config_card.rect())
+        self._channel_config_overlay.raise_()
+        self._channel_config_overlay.show()
+
+        self._progress_timer = QTimer(self)
+        self._progress_timer.setInterval(500)
+        self._progress_timer.timeout.connect(self._update_progress_elapsed)
+        self._progress_timer.start()
+
+    def _update_progress_elapsed(self):
+        import time as _time
+        elapsed = _time.time() - self._progress_start_time
+        remaining = max(0, self._progress_total_s - elapsed)
+        if remaining > 0:
+            self._progress_time_label.setText(
+                f"Elapsed: {elapsed:.0f}s / ~{self._progress_total_s:.0f}s  |  Remaining: ~{remaining:.0f}s"
+            )
+        else:
+            self._progress_time_label.setText(
+                f"Elapsed: {elapsed:.0f}s / ~{self._progress_total_s:.0f}s  |  Finishing..."
+            )
+
+    def _hide_progress_overlay(self):
+        if hasattr(self, '_progress_timer') and self._progress_timer:
+            self._progress_timer.stop()
+            self._progress_timer = None
+        self._progress_overlay.hide()
+        self._channel_config_overlay.hide()
+        self.plot_widget.setEnabled(True)
+        self.channel_config_toggle_btn.setEnabled(True)
+        self.channel_config_card.setEnabled(True)
+
+    def _on_worker_progress(self, pct, stage):
+        self._progress_bar.setValue(pct)
+        self._progress_stage_label.setText(stage)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, '_progress_overlay') and self._progress_overlay.isVisible():
+            self._progress_overlay.setGeometry(self.chart_frame.rect())
+        if hasattr(self, '_channel_config_overlay') and self._channel_config_overlay.isVisible():
+            self._channel_config_overlay.setGeometry(self.channel_config_card.rect())
+
+    def event(self, ev):
+        if ev.type() == ev.Type.LayoutRequest:
+            if hasattr(self, '_progress_overlay') and self._progress_overlay.isVisible():
+                QTimer.singleShot(0, lambda: self._progress_overlay.setGeometry(self.chart_frame.rect()))
+            if hasattr(self, '_channel_config_overlay') and self._channel_config_overlay.isVisible():
+                QTimer.singleShot(0, lambda: self._channel_config_overlay.setGeometry(self.channel_config_card.rect()))
+        return super().event(ev)
+
     def _on_record_type_changed(self):
         if self.type_current.isChecked():
             self.plot_widget.setLabel("left", "", color="#8eb0e3")
@@ -3704,6 +3956,12 @@ class N6705CDatalogUI(QWidget):
 
         self._update_recording_button_state(True)
 
+        estimated_export_time = monitor_time * 0.06 + 0.3
+        total_estimated = monitor_time + 5 + estimated_export_time
+        logger.debug("[Datalog][Progress] Estimated total time: %.1fs (monitoring=%.1fs + wait=5s + export=%.1fs)",
+                    total_estimated, monitor_time, estimated_export_time)
+        self._show_progress_overlay(total_estimated)
+
         self._record_thread = QThread()
         self._record_worker = _DatalogWorker(
             n6705c_list, channels_per_unit, unit_labels,
@@ -3716,6 +3974,7 @@ class N6705CDatalogUI(QWidget):
         self._record_thread.started.connect(self._record_worker.run)
         self._record_worker.data_ready.connect(self._on_data_ready)
         self._record_worker.dlog_raw_ready.connect(self._on_dlog_raw_ready)
+        self._record_worker.progress_update.connect(self._on_worker_progress)
         self._record_worker.finished.connect(self._record_thread.quit)
         self._record_worker.error.connect(self._on_recording_error)
         self._record_thread.finished.connect(self._on_recording_finished)
@@ -3733,6 +3992,7 @@ class N6705CDatalogUI(QWidget):
         self._record_worker = None
         self._record_thread = None
         self._update_recording_button_state(False)
+        self._hide_progress_overlay()
 
     def _on_data_ready(self, data):
         power_chs_a = [cb.isChecked() for cb in getattr(self, 'ch_power_cbs_a', [])]
@@ -3748,12 +4008,14 @@ class N6705CDatalogUI(QWidget):
 
     def _on_recording_finished(self):
         self._update_recording_button_state(False)
+        self._hide_progress_overlay()
         self._record_worker = None
         self._record_thread = None
 
     def _on_recording_error(self, msg):
         logger.error("[Datalog] Recording error: %s", msg)
         self._update_recording_button_state(False)
+        self._hide_progress_overlay()
 
     def _refresh_plot(self):
         self.plot_widget.clear()
@@ -3887,6 +4149,7 @@ class N6705CDatalogUI(QWidget):
 
         if self.box_zoom_enabled:
             self.box_zoom_enabled = False
+            self._box_zoom_auto_off_timer.stop()
             self.box_zoom_btn.setText("\u2316 Box Zoom: OFF")
 
         vb = self.plot_widget.getPlotItem().getViewBox()
@@ -3915,7 +4178,18 @@ class N6705CDatalogUI(QWidget):
             self.plot_widget.setMouseEnabled(x=True, y=True)
             vb = self.plot_widget.getPlotItem().getViewBox()
             vb.setMouseMode(vb.RectMode)
+            self._box_zoom_auto_off_timer.start()
         else:
+            self._box_zoom_auto_off_timer.stop()
+            self.box_zoom_btn.setText("\u2316 Box Zoom: OFF")
+            vb = self.plot_widget.getPlotItem().getViewBox()
+            vb.setMouseMode(vb.PanMode)
+            self.plot_widget.setMouseEnabled(x=True, y=False)
+            self.plot_widget.setYRange(-0.02, 1.02)
+
+    def _auto_off_box_zoom(self):
+        if self.box_zoom_enabled:
+            self.box_zoom_enabled = False
             self.box_zoom_btn.setText("\u2316 Box Zoom: OFF")
             vb = self.plot_widget.getPlotItem().getViewBox()
             vb.setMouseMode(vb.PanMode)
@@ -4310,6 +4584,8 @@ class N6705CDatalogUI(QWidget):
     def _on_range_changed(self):
         self._update_ch_label_positions()
         self._update_scale_offset_from_view()
+        if self.box_zoom_enabled and self._box_zoom_auto_off_timer.isActive():
+            self._box_zoom_auto_off_timer.start()
 
     def _update_scale_offset_from_view(self):
         if not self.datalog_data or not self._band_info:
