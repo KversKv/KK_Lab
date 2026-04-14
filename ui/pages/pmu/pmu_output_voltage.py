@@ -728,7 +728,7 @@ class PMUOutputVoltageUI(QWidget):
         layout = self.test_param_card.main_layout
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(10)
+        grid.setVerticalSpacing(6)
 
         lbl_dev = QLabel("Device Addr")
         lbl_dev.setObjectName("fieldLabel")

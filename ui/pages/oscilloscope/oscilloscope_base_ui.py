@@ -1240,7 +1240,7 @@ class OscilloscopeBaseUI(QWidget):
 
         layout.addWidget(self._create_small_section_title("HORIZONTAL"))
         h_box = QVBoxLayout()
-        h_box.setSpacing(8)
+        h_box.setSpacing(6)
 
         h_title = QLabel("TimeScale (s/div)")
         h_title.setStyleSheet("font-weight: 600; color:#B8C7EA;")

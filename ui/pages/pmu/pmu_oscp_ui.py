@@ -420,7 +420,7 @@ class PMUOSCPUI(QWidget):
         top_group = QGroupBox("PMU System")
         top_layout = QGridLayout()
         top_layout.setHorizontalSpacing(12)
-        top_layout.setVerticalSpacing(10)
+        top_layout.setVerticalSpacing(6)
         
         self.resource_label = QLabel("Resource")
         self.resource_label.setStyleSheet("font-size: 11px; color: #8fa7d6;border: none;")
@@ -467,7 +467,7 @@ class PMUOSCPUI(QWidget):
         
         config_layout = QGridLayout()
         config_layout.setHorizontalSpacing(12)
-        config_layout.setVerticalSpacing(4)
+        config_layout.setVerticalSpacing(6)
 
         self.test_type_combo = DarkComboBox(bg="#02091d", border="#20335f")
         self.test_type_combo.addItems(["OCP", "SCP", "OVP", "UVP"])

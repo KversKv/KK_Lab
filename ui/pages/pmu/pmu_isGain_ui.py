@@ -1065,7 +1065,7 @@ class PMUIsGainUI(QWidget):
 
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(10)
+        grid.setVerticalSpacing(6)
 
         self.lbl_dev = QLabel("Device Addr")
         self.lbl_dev.setObjectName("fieldLabel")

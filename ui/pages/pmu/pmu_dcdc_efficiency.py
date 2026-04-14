@@ -270,16 +270,22 @@ class CardFrame(QFrame):
     def __init__(self, title="", parent=None):
         super().__init__(parent)
         self.setObjectName("cardFrame")
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(10, 8, 10, 8)
         self.main_layout.setSpacing(8)
 
         if title:
+            self.title_row = QHBoxLayout()
+            self.title_row.setSpacing(8)
             self.title_label = QLabel(title)
             self.title_label.setObjectName("cardTitle")
-            self.main_layout.addWidget(self.title_label)
+            self.title_row.addWidget(self.title_label)
+            self.title_row.addStretch()
+            self.main_layout.addLayout(self.title_row)
         else:
             self.title_label = None
+            self.title_row = None
 
 
 class SegmentedButton(QPushButton):
@@ -1382,30 +1388,31 @@ class PMUDCDCEfficiencyUI(QWidget):
         left_layout.setContentsMargins(10, 10, 10, 10)
         left_layout.setSpacing(10)
 
-        self.test_item_card = CardFrame("◉ TEST ITEM")
-        self.test_item_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.test_item_card = CardFrame("◉ Test Item")
         self._build_test_item_card()
         left_layout.addWidget(self.test_item_card)
 
-        self.connection_card = CardFrame("⚡ N6705C CONNECTION")
+        self.connection_card = CardFrame("⚡ N6705C Connection")
         self._build_connection_card()
         left_layout.addWidget(self.connection_card)
 
-        self.vt6002_card = CardFrame("🌡 VT6002 CHAMBER")
+        self.vt6002_card = CardFrame("🌡 VT6002 Chamber")
         self._build_vt6002_card()
         left_layout.addWidget(self.vt6002_card)
 
-        self.test_config_card = CardFrame("⚙ TEST CONFIG")
+        self.test_config_card = CardFrame("⚙ Test Config")
         self._build_test_config_card()
         left_layout.addWidget(self.test_config_card)
 
-        self.channel_card = CardFrame("⇄ CHANNEL SELECTION")
+        self.channel_card = CardFrame("⇄ Channel Selection")
         self._build_channel_card()
         left_layout.addWidget(self.channel_card)
 
-        self.measurement_card = CardFrame("⊕ MEASUREMENT\nSETTINGS")
+        self.measurement_card = CardFrame("⊕ Measurement Settings")
         self._build_measurement_card()
         left_layout.addWidget(self.measurement_card)
+
+        left_layout.addStretch()
 
         self.left_scroll.setWidget(self.left_panel)
         left_wrapper.addWidget(self.left_scroll, 1)
@@ -1534,11 +1541,6 @@ class PMUDCDCEfficiencyUI(QWidget):
         self.system_status_label.setObjectName("statusOk")
         layout.addWidget(self.system_status_label)
 
-        self.instrument_info_label = QLabel("USB0::0x0957::0x0F07::MY53004321")
-        self.instrument_info_label.setObjectName("fieldLabel")
-        self.instrument_info_label.setWordWrap(True)
-        layout.addWidget(self.instrument_info_label)
-
         self.visa_resource_combo = DarkComboBox()
         self.visa_resource_combo.setSizeAdjustPolicy(
             DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
@@ -1586,9 +1588,6 @@ class PMUDCDCEfficiencyUI(QWidget):
     def _build_test_config_card(self):
         layout = self.test_config_card.main_layout
 
-        mode_row = QHBoxLayout()
-        mode_row.addStretch()
-
         self.seg_container = QFrame()
         self.seg_container.setObjectName("segmentedContainer")
         seg_layout = QHBoxLayout(self.seg_container)
@@ -1607,12 +1606,11 @@ class PMUDCDCEfficiencyUI(QWidget):
         seg_layout.addWidget(self.linear_mode_btn)
         seg_layout.addWidget(self.log_mode_btn)
 
-        mode_row.addWidget(self.seg_container)
-        layout.addLayout(mode_row)
+        self.test_config_card.title_row.addWidget(self.seg_container)
 
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(10)
+        grid.setVerticalSpacing(6)
 
         self.lbl_start = QLabel("Start Current (A)")
         self.lbl_start.setObjectName("fieldLabel")
@@ -1679,7 +1677,7 @@ class PMUDCDCEfficiencyUI(QWidget):
         vin_grid = QGridLayout(self.vin_sweep_container)
         vin_grid.setContentsMargins(0, 0, 0, 0)
         vin_grid.setHorizontalSpacing(10)
-        vin_grid.setVerticalSpacing(8)
+        vin_grid.setVerticalSpacing(6)
 
         self.lbl_vin_start = QLabel("VIN Start (V)")
         self.lbl_vin_start.setObjectName("fieldLabel")
@@ -1729,7 +1727,7 @@ class PMUDCDCEfficiencyUI(QWidget):
         temp_grid = QGridLayout(self.temp_sweep_container)
         temp_grid.setContentsMargins(0, 0, 0, 0)
         temp_grid.setHorizontalSpacing(10)
-        temp_grid.setVerticalSpacing(8)
+        temp_grid.setVerticalSpacing(6)
 
         self.lbl_temp_start = QLabel("Temp Start (°C)")
         self.lbl_temp_start.setObjectName("fieldLabel")
@@ -1778,7 +1776,7 @@ class PMUDCDCEfficiencyUI(QWidget):
         layout = self.measurement_card.main_layout
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(8)
+        grid.setVerticalSpacing(6)
 
         self.lbl_settle_time = QLabel("Settle Time (ms)")
         self.lbl_settle_time.setObjectName("fieldLabel")
@@ -1825,30 +1823,27 @@ class PMUDCDCEfficiencyUI(QWidget):
     def _build_vt6002_card(self):
         layout = self.vt6002_card.main_layout
 
-        status_row = QHBoxLayout()
-        status_row.setSpacing(8)
-        self.vt6002_indicator = QLabel("○")
-        self.vt6002_indicator.setFixedWidth(14)
-        self.vt6002_indicator.setStyleSheet("color: #ff5a7a; font-size: 14px; background: transparent;")
-        self.vt6002_status_label = QLabel("Not Connected")
-        self.vt6002_status_label.setStyleSheet("color: #ff5a7a; font-weight: 600; font-size: 11px;")
-        status_row.addWidget(self.vt6002_indicator)
-        status_row.addWidget(self.vt6002_status_label, 1)
-        layout.addLayout(status_row)
+        self.vt6002_status_label = QLabel("● Not Connected")
+        self.vt6002_status_label.setObjectName("statusErr")
+        layout.addWidget(self.vt6002_status_label)
 
-        select_row = QHBoxLayout()
-        select_row.setSpacing(6)
         self.vt6002_combo = DarkComboBox()
-        self.vt6002_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.vt6002_search_btn = SpinningSearchButton()
-        self.vt6002_search_btn.setFixedWidth(36)
-        select_row.addWidget(self.vt6002_combo, 1)
-        select_row.addWidget(self.vt6002_search_btn)
-        layout.addLayout(select_row)
+        self.vt6002_combo.setSizeAdjustPolicy(
+            DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.vt6002_combo.setMinimumContentsLength(10)
+        self.vt6002_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        layout.addWidget(self.vt6002_combo)
 
         btn_row = QHBoxLayout()
-        self.vt6002_connect_btn = QPushButton("Connect")
+        btn_row.setSpacing(8)
+
+        self.vt6002_search_btn = SpinningSearchButton()
+
+        self.vt6002_connect_btn = QPushButton()
         update_connect_button_state(self.vt6002_connect_btn, connected=False)
+
+        btn_row.addWidget(self.vt6002_search_btn)
         btn_row.addWidget(self.vt6002_connect_btn)
         layout.addLayout(btn_row)
 
@@ -1864,7 +1859,7 @@ class PMUDCDCEfficiencyUI(QWidget):
                 self.vt6002 = vt
                 self.is_vt6002_connected = True
                 port = getattr(self._vt6002_chamber_ui, 'current_port', 'Unknown')
-                self._update_vt6002_ui(True, f"Connected: {port}")
+                self._update_vt6002_ui(True, port)
                 self.append_log(f"[VT6002] Synced: {port}")
                 return
         self.vt6002 = None
@@ -1945,7 +1940,7 @@ class PMUDCDCEfficiencyUI(QWidget):
 
         self.vt6002 = vt
         self.is_vt6002_connected = True
-        self._update_vt6002_ui(True, f"Connected: {port}")
+        self._update_vt6002_ui(True, port)
         self.append_log(f"[VT6002] Connected: {port}")
 
         if self._vt6002_chamber_ui is not None:
@@ -1982,11 +1977,15 @@ class PMUDCDCEfficiencyUI(QWidget):
             self._vt6002_syncing = False
 
     def _update_vt6002_ui(self, connected, status_text):
-        color = "#18a067" if connected else "#ff5a7a"
-        self.vt6002_indicator.setText("●" if connected else "○")
-        self.vt6002_indicator.setStyleSheet(f"color: {color}; font-size: 14px; background: transparent;")
-        self.vt6002_status_label.setText(status_text)
-        self.vt6002_status_label.setStyleSheet(f"color: {color}; font-weight: 600; font-size: 11px;")
+        if connected:
+            self.vt6002_status_label.setText(f"● Connected to: {status_text}")
+            self.vt6002_status_label.setObjectName("statusOk")
+        else:
+            self.vt6002_status_label.setText(f"● {status_text}")
+            self.vt6002_status_label.setObjectName("statusErr")
+        self.vt6002_status_label.style().unpolish(self.vt6002_status_label)
+        self.vt6002_status_label.style().polish(self.vt6002_status_label)
+        self.vt6002_status_label.update()
         update_connect_button_state(self.vt6002_connect_btn, connected)
         self.vt6002_search_btn.setEnabled(not connected)
         self.vt6002_combo.setEnabled(not connected)
@@ -2547,7 +2546,7 @@ class PMUDCDCEfficiencyUI(QWidget):
 
         if is_error:
             self.system_status_label.setObjectName("statusErr")
-        elif "Running" in status or "Searching" in status or "Connecting" in status or "Disconnecting" in status:
+        elif "Running" in status or "Searching" in status or status == "● Connecting" or status == "● Disconnecting":
             self.system_status_label.setObjectName("statusWarn")
         else:
             self.system_status_label.setObjectName("statusOk")
@@ -2557,7 +2556,8 @@ class PMUDCDCEfficiencyUI(QWidget):
         self.system_status_label.update()
 
     def update_instrument_info(self, instrument_info):
-        self.instrument_info_label.setText(instrument_info)
+        if self.is_connected:
+            self.set_system_status(f"● Connected to: {instrument_info}")
 
     def _on_search(self):
         if self._n6705c_top and self._n6705c_top.is_connected_a:
@@ -2638,9 +2638,8 @@ class PMUDCDCEfficiencyUI(QWidget):
         if DEBUG_MOCK:
             self.n6705c = MockN6705C()
             self._update_connect_button_state(True)
-            self.set_system_status("● Connected (Mock)")
+            self.set_system_status("● Connected to: Mock N6705C (DEBUG)")
             self.search_btn.setEnabled(False)
-            self.instrument_info_label.setText("Mock N6705C (DEBUG)")
             self.append_log("[DEBUG] Mock N6705C connected.")
             self.connection_status_changed.emit(True)
             return
@@ -2655,7 +2654,6 @@ class PMUDCDCEfficiencyUI(QWidget):
             idn = self.n6705c.instr.query("*IDN?")
             if "N6705C" in idn:
                 self._update_connect_button_state(True)
-                self.set_system_status("● Connected")
                 self.search_btn.setEnabled(False)
 
                 pretty_name = device_address
@@ -2664,7 +2662,7 @@ class PMUDCDCEfficiencyUI(QWidget):
                 except Exception:
                     pass
 
-                self.instrument_info_label.setText(pretty_name)
+                self.set_system_status(f"● Connected to: {pretty_name}")
                 self.append_log("[SYSTEM] N6705C connected successfully.")
                 self.append_log(f"[IDN] {idn.strip()}")
 
@@ -2702,7 +2700,6 @@ class PMUDCDCEfficiencyUI(QWidget):
 
             self.set_system_status("● Ready")
             self.search_btn.setEnabled(True)
-            self.instrument_info_label.setText("USB0::0x0957::0x0F07::MY53004321")
             self.append_log("[SYSTEM] Instrument disconnected.")
 
             self.connection_status_changed.emit(False)
