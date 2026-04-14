@@ -188,6 +188,19 @@ class MockN6705C:
             channels = [channels]
         return {ch: 0.001 for ch in channels}
 
+    def fetch_by_datalog(self, curr_channels, volt_channels, test_time, sample_period):
+        if curr_channels is None:
+            curr_channels = []
+        if volt_channels is None:
+            volt_channels = []
+        if isinstance(curr_channels, int):
+            curr_channels = [curr_channels]
+        if isinstance(volt_channels, int):
+            volt_channels = [volt_channels]
+        curr_result = {ch: float(self.measure_current(ch)) for ch in curr_channels}
+        volt_result = {ch: float(self.measure_voltage(ch)) for ch in volt_channels}
+        return curr_result, volt_result
+
 
 class MockI2C:
 

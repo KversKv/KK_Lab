@@ -497,6 +497,87 @@ class N6705C:
             logger.error("Error in fetch_current_by_datalog: %s", e)
             return {ch: self.fetch_current(ch) for ch in channels}
 
+    def fetch_by_datalog(self, curr_channels, volt_channels, test_time, sample_period):
+        """
+        使用单次Datalog同时采集多个通道的电流和电压平均值
+
+        参数:
+            curr_channels (list[int]): 需要记录电流的通道列表
+            volt_channels (list[int]): 需要记录电压的通道列表
+            test_time (float): 测试时间(s)
+            sample_period (float): 采样周期(s)
+
+        返回:
+            (dict[int, float], dict[int, float]):
+                (电流结果 {通道号: 平均电流}, 电压结果 {通道号: 平均电压})
+        """
+        curr_channels = self._normalize_channels(curr_channels) if curr_channels else []
+        volt_channels = self._normalize_channels(volt_channels) if volt_channels else []
+        all_channels = sorted(set(curr_channels) | set(volt_channels))
+
+        try:
+            self.instr.write("*CLS")
+
+            for ch in range(1, 5):
+                self.instr.write(f"SENS:DLOG:FUNC:CURR OFF,(@{ch})")
+                self.instr.write(f"SENS:DLOG:FUNC:VOLT OFF,(@{ch})")
+
+            for ch in curr_channels:
+                self.instr.write(f"SENS:DLOG:FUNC:CURR ON,(@{ch})")
+                self.instr.write(f"SENS:DLOG:CURR:RANG:AUTO ON,(@{ch})")
+
+            for ch in volt_channels:
+                self.instr.write(f"SENS:DLOG:FUNC:VOLT ON,(@{ch})")
+
+            self.instr.write(f"SENS:DLOG:TIME {test_time}")
+            self.instr.write(f"SENS:DLOG:PER {sample_period}")
+
+            self.instr.write("TRIG:DLOG:SOUR IMM")
+
+            for ch in all_channels:
+                self.channel_on(ch)
+
+            dlog_file = "internal:\\temp_fetch.dlog"
+            self.instr.write(f'INIT:DLOG "{dlog_file}"')
+
+            time.sleep(test_time + 1)
+
+            marker1_point = 1
+            marker2_point = test_time - 1
+            self.instr.write(f"SENS:DLOG:MARK1:POIN {marker1_point}")
+            self.instr.write(f"SENS:DLOG:MARK2:POIN {marker2_point}")
+            time.sleep(2)
+
+            curr_result = {}
+            for ch in curr_channels:
+                curr_result[ch] = float(
+                    self.instr.query(f"FETC:DLOG:CURR? (@{ch})")
+                )
+
+            volt_result = {}
+            for ch in volt_channels:
+                volt_result[ch] = float(
+                    self.instr.query(f"FETC:DLOG:VOLT? (@{ch})")
+                )
+
+            return curr_result, volt_result
+
+        except Exception as e:
+            logger.error("Error in fetch_by_datalog: %s", e)
+            curr_result = {}
+            for ch in curr_channels:
+                try:
+                    curr_result[ch] = self.fetch_current(ch)
+                except Exception:
+                    curr_result[ch] = 0.0
+            volt_result = {}
+            for ch in volt_channels:
+                try:
+                    volt_result[ch] = float(self.measure_voltage(ch))
+                except Exception:
+                    volt_result[ch] = 0.0
+            return curr_result, volt_result
+
 
 if __name__ == "__main__":
     IP = "192.168.3.99"

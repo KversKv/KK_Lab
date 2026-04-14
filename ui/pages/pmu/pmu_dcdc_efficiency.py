@@ -154,15 +154,18 @@ if HAS_QTCHARTS:
 
         def auto_fit(self):
             ch = self.chart()
-            if not self._series_ref:
+            all_x = []
+            all_y = []
+            for s in ch.series():
+                if not s.isVisible():
+                    continue
+                for p in s.points():
+                    all_x.append(p.x())
+                    all_y.append(p.y())
+            if not all_x or not all_y:
                 return
-            pts = self._series_ref.points()
-            if not pts:
-                return
-            x_vals = [p.x() for p in pts]
-            y_vals = [p.y() for p in pts]
-            min_x, max_x = min(x_vals), max(x_vals)
-            min_y, max_y = min(y_vals), max(y_vals)
+            min_x, max_x = min(all_x), max(all_x)
+            min_y, max_y = min(all_y), max(all_y)
 
             for axis in ch.axes(Qt.Horizontal):
                 if isinstance(axis, QLogValueAxis):
@@ -370,20 +373,169 @@ def _measure_point_datalog(n, vin_ch, vout_ch, iload_ch, dlog_duration, debug):
         i_out = float(n.measure_current(iload_ch).strip())
         return vbat, vout, i_in, i_out
 
-    sample_period = 0.001
-    iin_result = n.fetch_current_by_datalog(
-        [vin_ch], dlog_duration, sample_period,
-        marker1_percent=10, marker2_percent=90
-    )
-    iout_result = n.fetch_current_by_datalog(
-        [iload_ch], dlog_duration, sample_period,
-        marker1_percent=10, marker2_percent=90
+    sample_period = 0.000060
+    curr_channels = [vin_ch, iload_ch]
+    volt_channels = [vout_ch]
+    curr_result, volt_result = n.fetch_by_datalog(
+        curr_channels, volt_channels, dlog_duration, sample_period
     )
     vbat = float(n.measure_voltage(vin_ch))
-    vout = float(n.measure_voltage(vout_ch))
-    i_in = iin_result.get(vin_ch, 0.0)
-    i_out = iout_result.get(iload_ch, 0.0)
+    vout = volt_result.get(vout_ch, float(n.measure_voltage(vout_ch)))
+    i_in = curr_result.get(vin_ch, 0.0)
+    i_out = curr_result.get(iload_ch, 0.0)
     return vbat, vout, i_in, i_out
+
+
+def _trimmed_mean(samples):
+    s = sorted(samples)
+    return sum(s[1:-1]) / (len(s) - 2)
+
+
+def _run_efficiency_curve(n, cfg, debug, stop_flag_fn,
+                          log_fn, chart_point_fn, data_row_fn,
+                          baseline_row_fn=None,
+                          progress_fn=None, result_update_fn=None,
+                          progress_offset=0, progress_total=None,
+                          tag="TEST"):
+    vin_ch = int(cfg["vin_channel"].replace("CH ", ""))
+    vout_ch = int(cfg["vout_channel"].replace("CH ", ""))
+    iload_ch = int(cfg["cc_load_channel"].replace("CH ", ""))
+
+    average_cnt = max(1, int(cfg.get("average_cnt", 1)))
+    settle_ms = int(cfg.get("settle_time_ms", 3))
+    sampling_method = cfg.get("sampling_method", "Instant MEAS")
+    dlog_duration = float(cfg.get("dlog_duration_s", 1.0))
+
+    current_points = _generate_current_points(cfg)
+    current_points_neg = [-abs(c) for c in current_points]
+
+    sleep_settle = 0.0 if debug else 2
+    sleep_measure = 0.0 if debug else settle_ms
+
+    n.set_current(iload_ch, 0)
+    n.channel_off(iload_ch)
+    QThread.msleep(int(sleep_settle * 1000))
+
+    BASELINE_SAMPLES = 5
+    i_base_samples = []
+    iin_base_samples = []
+    vin_base_samples = []
+    vout_base_samples = []
+    for _bsi in range(BASELINE_SAMPLES):
+        i_base_samples.append(float(n.measure_current(iload_ch).strip()))
+        iin_base_samples.append(float(n.measure_current(vin_ch).strip()))
+        vin_base_samples.append(float(n.measure_voltage(vin_ch)))
+        vout_base_samples.append(float(n.measure_voltage(vout_ch)))
+        QThread.msleep(int(sleep_measure))
+
+    i_base = _trimmed_mean(i_base_samples)
+    iin_base = _trimmed_mean(iin_base_samples)
+    vin_base = _trimmed_mean(vin_base_samples)
+    vout_base = _trimmed_mean(vout_base_samples)
+
+    log_fn(
+        f"[{tag}] Baseline ({BASELINE_SAMPLES}x trimmed-mean)  "
+        f"Vin={vin_base:.3f}V  Vout={vout_base:.3f}V  "
+        f"Iin={iin_base:.6f}A  Iload_base={i_base:.6f}A"
+    )
+    log_fn(
+        f"[{tag}] Iin current samples: "
+        f"{[f'{v:.6f}' for v in iin_base_samples]}"
+    )
+    if baseline_row_fn is not None:
+        baseline_row_fn({
+            "cc_load": 0.0,
+            "efficiency": 0.0,
+            "vin": vin_base,
+            "iin": iin_base,
+            "vout": vout_base,
+            "iout": 0.0,
+        })
+
+    n.set_current(iload_ch, current_points_neg[0])
+    n.channel_on(iload_ch)
+    QThread.msleep(int(sleep_settle * 1000))
+
+    output = []
+    max_eff = 0.0
+    max_eff_iout = 0.0
+    sum_eff = 0.0
+    sum_vin = 0.0
+    sum_vout = 0.0
+    total_count = progress_total if progress_total is not None else len(current_points)
+
+    hdr = (f"{'#':>4s}  {'Iset(mA)':>10s}  {'Vin(V)':>8s}  "
+           f"{'Vout(V)':>8s}  {'Iin(A)':>10s}  {'Iout(A)':>10s}  "
+           f"{'Iload(A)':>10s}  {'Eff(%)':>7s}")
+    log_fn(hdr)
+    log_fn("-" * len(hdr))
+
+    for idx, i_set in enumerate(current_points):
+        if stop_flag_fn():
+            log_fn(f"[{tag}] Stopped by user.")
+            break
+
+        n.set_current(iload_ch, current_points_neg[idx])
+        QThread.msleep(int(sleep_measure))
+
+        if sampling_method == "DataLogger":
+            vbat, vout, i_in, i_out = _measure_point_datalog(
+                n, vin_ch, vout_ch, iload_ch, dlog_duration, debug
+            )
+        else:
+            vbat, vout, i_in, i_out = _measure_point_instant(
+                n, vin_ch, vout_ch, iload_ch, average_cnt
+            )
+
+        i_load_actual = max(i_base - i_out, 1e-9)
+        denom = vbat * max(i_in - iin_base, 1e-9)
+        eff = (vout * i_load_actual) / denom
+        eff = max(min(eff, 1.2), 0.0)
+        eff_pct = eff * 100
+
+        log_fn(
+            f"{idx+1:4d}  {current_points_neg[idx]*1000:10.3f}  {vbat:8.4f}  "
+            f"{vout:8.4f}  {i_in:10.6f}  {i_out:10.6f}  "
+            f"{i_load_actual:10.6f}  {eff_pct:7.2f}"
+        )
+
+        abs_iout = abs(i_out)
+        output.append((abs_iout, eff_pct))
+        sum_eff += eff_pct
+        sum_vin += vbat
+        sum_vout += vout
+        if eff_pct > max_eff:
+            max_eff = eff_pct
+            max_eff_iout = abs_iout
+
+        chart_point_fn(abs_iout, eff_pct)
+
+        data_row_fn({
+            "cc_load": current_points_neg[idx],
+            "efficiency": eff_pct,
+            "vin": vbat,
+            "iin": i_in,
+            "vout": vout,
+            "iout": abs_iout,
+        })
+
+        if result_update_fn is not None:
+            n_pts = len(output)
+            result_update_fn({
+                "vin": sum_vin / n_pts,
+                "vout": sum_vout / n_pts,
+                "efficiency": sum_eff / n_pts,
+                "max_efficiency": max_eff,
+                "max_eff_load": max_eff_iout,
+            })
+
+        if progress_fn is not None:
+            progress_fn(int((progress_offset + idx + 1) * 100 / total_count))
+
+    n.set_current(iload_ch, 0)
+    n.channel_off(iload_ch)
+
+    return output, max_eff, max_eff_iout, sum_eff, sum_vin, sum_vout
 
 
 class DCDCEfficiencyTestThread(QThread):
@@ -414,16 +566,11 @@ class DCDCEfficiencyTestThread(QThread):
         n = self._n6705c
 
         try:
-            start_a = abs(cfg["start_current_a"])
-            end_a = abs(cfg["end_current_a"])
             sweep_mode = cfg["sweep_mode"]
             average_cnt = max(1, int(cfg.get("average_cnt", 1)))
             settle_ms = int(cfg.get("settle_time_ms", 3))
             sampling_method = cfg.get("sampling_method", "Instant MEAS")
-            dlog_duration = float(cfg.get("dlog_duration_s", 1.0))
-
             current_points = _generate_current_points(cfg)
-            current_points_neg = [-abs(c) for c in current_points]
 
             self.log_message.emit(
                 f"[TEST] Mode: {sweep_mode}, Points: {len(current_points)}, "
@@ -436,146 +583,31 @@ class DCDCEfficiencyTestThread(QThread):
                 n._vin_ch = vin_ch
                 n._iload_ch = iload_ch
 
-            sleep_settle = 0.0 if self._debug else 2
-            sleep_measure = 0.0 if self._debug else settle_ms
-
             n.set_mode(vin_ch, "PS2Q")
             n.set_mode(vout_ch, "VMETer")
             n.set_mode(iload_ch, "CCLoad")
             self.log_message.emit(f"[TEST] CH{vin_ch}=PS2Q, CH{vout_ch}=VMETer, CH{iload_ch}=CCLoad")
 
             n.set_current_limit(vin_ch, 0.5)
-
             for ch in (vin_ch, vout_ch, iload_ch):
                 n.set_channel_range(ch)
-
-            n.set_current(iload_ch, 0)
-            n.channel_off(iload_ch)
-            QThread.msleep(int(sleep_settle * 1000))
-
-            BASELINE_SAMPLES = 5
-            i_base_samples = []
-            iin_base_samples = []
-            vin_base_samples = []
-            vout_base_samples = []
-            for _bsi in range(BASELINE_SAMPLES):
-                i_base_samples.append(float(n.measure_current(iload_ch).strip()))
-                iin_base_samples.append(float(n.measure_current(vin_ch).strip()))
-                vin_base_samples.append(float(n.measure_voltage(vin_ch)))
-                vout_base_samples.append(float(n.measure_voltage(vout_ch)))
-                QThread.msleep(int(sleep_measure))
-
-            def _trimmed_mean(samples):
-                s = sorted(samples)
-                return sum(s[1:-1]) / (len(s) - 2)
-
-            i_base = _trimmed_mean(i_base_samples)
-            iin_base = _trimmed_mean(iin_base_samples)
-            vin_base = _trimmed_mean(vin_base_samples)
-            vout_base = _trimmed_mean(vout_base_samples)
-
-            self.log_message.emit(
-                f"[TEST] Baseline ({BASELINE_SAMPLES}x trimmed-mean)  "
-                f"Vin={vin_base:.3f}V  Vout={vout_base:.3f}V  "
-                f"Iin={iin_base:.6f}A  Iload_base={i_base:.6f}A"
-            )
-            self.log_message.emit(
-                f"[TEST] Iin current samples: "
-                f"{[f'{v:.6f}' for v in iin_base_samples]}"
-            )
-            self.baseline_row.emit({
-                "cc_load": 0.0,
-                "efficiency": 0.0,
-                "vin": vin_base,
-                "iin": iin_base,
-                "vout": vout_base,
-                "iout": 0.0,
-            })
-
-            n.set_current(iload_ch, current_points_neg[0])
-            n.channel_on(iload_ch)
-
-            QThread.msleep(int(sleep_settle * 1000))
 
             self.chart_clear.emit()
             self.progress.emit(0)
 
-            output = []
-            max_eff = 0.0
-            max_eff_iout = 0.0
-            sum_eff = 0.0
-            sum_vin = 0.0
-            sum_vout = 0.0
-            total_count = len(current_points)
-
-            hdr = (f"{'#':>4s}  {'Iset(mA)':>10s}  {'Vin(V)':>8s}  "
-                   f"{'Vout(V)':>8s}  {'Iin(A)':>10s}  {'Iout(A)':>10s}  "
-                   f"{'Iload(A)':>10s}  {'Eff(%)':>7s}")
-            self.log_message.emit(hdr)
-            self.log_message.emit("-" * len(hdr))
-
             t_start = time.time()
 
-            for idx, i_set in enumerate(current_points):
-                if self._stop_flag:
-                    self.log_message.emit("[TEST] Stopped by user.")
-                    break
-
-                n.set_current(iload_ch, current_points_neg[idx])
-                QThread.msleep(int(sleep_measure))
-
-                if sampling_method == "DataLogger":
-                    vbat, vout, i_in, i_out = _measure_point_datalog(
-                        n, vin_ch, vout_ch, iload_ch, dlog_duration, self._debug
-                    )
-                else:
-                    vbat, vout, i_in, i_out = _measure_point_instant(
-                        n, vin_ch, vout_ch, iload_ch, average_cnt
-                    )
-
-                i_load_actual = max(i_base - i_out, 1e-9)
-                denom = vbat * max(i_in - iin_base, 1e-9)
-                eff = (vout * i_load_actual) / denom
-                eff = max(min(eff, 1.2), 0.0)
-                eff_pct = eff * 100
-
-                self.log_message.emit(
-                    f"{idx+1:4d}  {current_points_neg[idx]*1000:10.3f}  {vbat:8.4f}  "
-                    f"{vout:8.4f}  {i_in:10.6f}  {i_out:10.6f}  "
-                    f"{i_load_actual:10.6f}  {eff_pct:7.2f}"
-                )
-
-                abs_iout = abs(i_out)
-                output.append((abs_iout, eff_pct))
-                sum_eff += eff_pct
-                sum_vin += vbat
-                sum_vout += vout
-                if eff_pct > max_eff:
-                    max_eff = eff_pct
-                    max_eff_iout = abs_iout
-
-                self.chart_point.emit(abs_iout, eff_pct)
-
-                self.data_row.emit({
-                    "cc_load": current_points_neg[idx],
-                    "efficiency": eff_pct,
-                    "vin": vbat,
-                    "iin": i_in,
-                    "vout": vout,
-                    "iout": abs_iout,
-                })
-
-                n_pts = len(output)
-                result = {
-                    "vin": sum_vin / n_pts,
-                    "vout": sum_vout / n_pts,
-                    "efficiency": sum_eff / n_pts,
-                    "max_efficiency": max_eff,
-                    "max_eff_load": max_eff_iout,
-                }
-                self.result_update.emit(result)
-
-                self.progress.emit(int((idx + 1) * 100 / total_count))
+            output, max_eff, max_eff_iout, sum_eff, sum_vin, sum_vout = _run_efficiency_curve(
+                n, cfg, self._debug,
+                stop_flag_fn=lambda: self._stop_flag,
+                log_fn=self.log_message.emit,
+                chart_point_fn=self.chart_point.emit,
+                data_row_fn=self.data_row.emit,
+                baseline_row_fn=self.baseline_row.emit,
+                progress_fn=self.progress.emit,
+                result_update_fn=self.result_update.emit,
+                tag="TEST",
+            )
 
             elapsed = time.time() - t_start
             minutes, seconds = divmod(elapsed, 60)
@@ -605,6 +637,7 @@ class DCDCVinSweepTestThread(QThread):
     progress = Signal(int)
     chart_point = Signal(float, float)
     chart_clear = Signal()
+    chart_new_series = Signal(str)
     result_update = Signal(dict)
     baseline_row = Signal(dict)
     data_row = Signal(dict)
@@ -631,11 +664,8 @@ class DCDCVinSweepTestThread(QThread):
             vin_start = float(cfg.get("vin_start", 3.0))
             vin_end = float(cfg.get("vin_end", 4.2))
             vin_step = float(cfg.get("vin_step", 0.1))
-            fixed_load_a = abs(float(cfg.get("fixed_load_a", 0.1)))
-            average_cnt = max(1, int(cfg.get("average_cnt", 1)))
-            settle_ms = int(cfg.get("settle_time_ms", 3))
-            sampling_method = cfg.get("sampling_method", "Instant MEAS")
-            dlog_duration = float(cfg.get("dlog_duration_s", 1.0))
+
+            current_points = _generate_current_points(cfg)
 
             if self._debug and isinstance(n, MockN6705C):
                 n._vin_ch = vin_ch
@@ -649,12 +679,11 @@ class DCDCVinSweepTestThread(QThread):
             if not vin_points:
                 vin_points = [vin_start, vin_end]
 
-            sleep_settle = 0.0 if self._debug else 2
-            sleep_measure = 0.0 if self._debug else settle_ms
-
+            total_count = len(vin_points) * len(current_points)
             self.log_message.emit(
                 f"[VIN-SWEEP] Vin: {vin_start}V → {vin_end}V, Step: {vin_step}V, "
-                f"Points: {len(vin_points)}, Fixed Load: {fixed_load_a*1000:.1f}mA"
+                f"VIN Points: {len(vin_points)}, Load Points: {len(current_points)}, "
+                f"Total: {total_count}"
             )
 
             n.set_mode(vin_ch, "PS2Q")
@@ -665,88 +694,55 @@ class DCDCVinSweepTestThread(QThread):
             for ch in (vin_ch, vout_ch, iload_ch):
                 n.set_channel_range(ch)
 
-            n.set_current(iload_ch, -fixed_load_a)
-            n.channel_on(iload_ch)
-            QThread.msleep(int(sleep_settle * 1000))
-
             self.chart_clear.emit()
             self.progress.emit(0)
 
-            output = []
+            all_output = []
             max_eff = 0.0
-            max_eff_vin = 0.0
+            max_eff_iout = 0.0
             sum_eff = 0.0
-            total_count = len(vin_points)
-
-            hdr = (f"{'#':>4s}  {'Vin_set(V)':>10s}  {'Vin(V)':>8s}  "
-                   f"{'Vout(V)':>8s}  {'Iin(A)':>10s}  {'Iout(A)':>10s}  "
-                   f"{'Eff(%)':>7s}")
-            self.log_message.emit(hdr)
-            self.log_message.emit("-" * len(hdr))
+            done_count = 0
 
             t_start = time.time()
 
-            for idx, vin_set in enumerate(vin_points):
+            for vin_idx, vin_set in enumerate(vin_points):
                 if self._stop_flag:
                     self.log_message.emit("[VIN-SWEEP] Stopped by user.")
                     break
 
+                vin_label = f"VIN={vin_set:.2f}V"
+                self.chart_new_series.emit(vin_label)
+                self.log_message.emit(f"\n[VIN-SWEEP] ── {vin_label} ──")
+
                 n.set_voltage(vin_ch, vin_set)
-                QThread.msleep(int(sleep_measure))
 
-                if sampling_method == "DataLogger":
-                    vbat, vout, i_in, i_out = _measure_point_datalog(
-                        n, vin_ch, vout_ch, iload_ch, dlog_duration, self._debug
-                    )
-                else:
-                    vbat, vout, i_in, i_out = _measure_point_instant(
-                        n, vin_ch, vout_ch, iload_ch, average_cnt
-                    )
-
-                i_load_actual = abs(i_out)
-                p_in = vbat * abs(i_in)
-                p_out = vout * i_load_actual
-                eff = p_out / max(p_in, 1e-12)
-                eff = max(min(eff, 1.2), 0.0)
-                eff_pct = eff * 100
-
-                self.log_message.emit(
-                    f"{idx+1:4d}  {vin_set:10.3f}  {vbat:8.4f}  "
-                    f"{vout:8.4f}  {i_in:10.6f}  {i_out:10.6f}  "
-                    f"{eff_pct:7.2f}"
+                output, cur_max_eff, cur_max_eff_iout, cur_sum_eff, _, _ = _run_efficiency_curve(
+                    n, cfg, self._debug,
+                    stop_flag_fn=lambda: self._stop_flag,
+                    log_fn=self.log_message.emit,
+                    chart_point_fn=self.chart_point.emit,
+                    data_row_fn=self.data_row.emit,
+                    baseline_row_fn=None,
+                    progress_fn=self.progress.emit,
+                    result_update_fn=self.result_update.emit,
+                    progress_offset=done_count,
+                    progress_total=total_count,
+                    tag="VIN-SWEEP",
                 )
 
-                output.append((vbat, eff_pct))
-                sum_eff += eff_pct
-                if eff_pct > max_eff:
-                    max_eff = eff_pct
-                    max_eff_vin = vbat
+                all_output.extend(output)
+                sum_eff += cur_sum_eff
+                done_count += len(output)
+                if cur_max_eff > max_eff:
+                    max_eff = cur_max_eff
+                    max_eff_iout = cur_max_eff_iout
 
-                self.chart_point.emit(vbat, eff_pct)
-
-                self.data_row.emit({
-                    "cc_load": -fixed_load_a,
-                    "efficiency": eff_pct,
-                    "vin": vbat,
-                    "iin": i_in,
-                    "vout": vout,
-                    "iout": i_load_actual,
-                })
-
-                n_pts = len(output)
-                self.result_update.emit({
-                    "vin": vbat,
-                    "vout": vout,
-                    "efficiency": sum_eff / n_pts,
-                    "max_efficiency": max_eff,
-                    "max_eff_load": max_eff_vin,
-                })
-
-                self.progress.emit(int((idx + 1) * 100 / total_count))
+                if self._stop_flag:
+                    break
 
             elapsed = time.time() - t_start
             minutes, seconds = divmod(elapsed, 60)
-            completed = len(output)
+            completed = len(all_output)
             if completed > 0:
                 avg = elapsed / completed
                 self.log_message.emit(
@@ -1478,7 +1474,10 @@ class PMUDCDCEfficiencyUI(QWidget):
         self.chart_widget = self._create_chart_widget()
         chart_outer_layout.addWidget(self.chart_widget, 1)
 
-        stat_layout = QHBoxLayout()
+        self.stat_container = QFrame()
+        self.stat_container.setStyleSheet("QFrame { background: transparent; border: none; }")
+        stat_layout = QHBoxLayout(self.stat_container)
+        stat_layout.setContentsMargins(0, 0, 0, 0)
         stat_layout.setSpacing(10)
 
         self.vin_card = self._create_mini_stat("Vin", "---")
@@ -1493,7 +1492,7 @@ class PMUDCDCEfficiencyUI(QWidget):
         stat_layout.addWidget(self.max_efficiency_card["frame"])
         stat_layout.addWidget(self.max_eff_load_card["frame"])
 
-        chart_outer_layout.addLayout(stat_layout)
+        chart_outer_layout.addWidget(self.stat_container)
         right_layout.addWidget(self.chart_frame, 4)
 
         self.log_frame = QFrame()
@@ -1577,6 +1576,7 @@ class PMUDCDCEfficiencyUI(QWidget):
         item = self.test_item_combo.currentText()
         is_vin = (item == "VIN Sweep")
         is_temp = (item == "Temperature Sweep")
+        is_eff = (item == "Efficiency Curve")
 
         if hasattr(self, 'vt6002_card'):
             self.vt6002_card.setVisible(is_temp)
@@ -1584,6 +1584,8 @@ class PMUDCDCEfficiencyUI(QWidget):
             self.vin_sweep_container.setVisible(is_vin)
         if hasattr(self, 'temp_sweep_container'):
             self.temp_sweep_container.setVisible(is_temp)
+        if hasattr(self, 'stat_container'):
+            self.stat_container.setVisible(is_eff)
 
     def _build_test_config_card(self):
         layout = self.test_config_card.main_layout
@@ -1703,22 +1705,12 @@ class PMUDCDCEfficiencyUI(QWidget):
         self.vin_step_spin.setSingleStep(0.1)
         self.vin_step_spin.setValue(0.1)
 
-        self.lbl_fixed_load = QLabel("Fixed Load (A)")
-        self.lbl_fixed_load.setObjectName("fieldLabel")
-        self.fixed_load_spin = QDoubleSpinBox()
-        self.fixed_load_spin.setRange(0.0, 10.0)
-        self.fixed_load_spin.setDecimals(3)
-        self.fixed_load_spin.setSingleStep(0.01)
-        self.fixed_load_spin.setValue(0.1)
-
         vin_grid.addWidget(self.lbl_vin_start, 0, 0)
         vin_grid.addWidget(self.vin_start_spin, 1, 0)
         vin_grid.addWidget(self.lbl_vin_end, 0, 1)
         vin_grid.addWidget(self.vin_end_spin, 1, 1)
         vin_grid.addWidget(self.lbl_vin_step, 2, 0)
         vin_grid.addWidget(self.vin_step_spin, 3, 0)
-        vin_grid.addWidget(self.lbl_fixed_load, 2, 1)
-        vin_grid.addWidget(self.fixed_load_spin, 3, 1)
 
         layout.addWidget(self.vin_sweep_container)
 
@@ -2246,7 +2238,11 @@ class PMUDCDCEfficiencyUI(QWidget):
 
         self.test_thread.log_message.connect(self.append_log)
         self.test_thread.progress.connect(self.set_progress)
-        self.test_thread.chart_point.connect(self._update_chart_point)
+        if test_item == "VIN Sweep":
+            self.test_thread.chart_point.connect(self._update_vin_sweep_chart_point)
+            self.test_thread.chart_new_series.connect(self._on_vin_sweep_new_series)
+        else:
+            self.test_thread.chart_point.connect(self._update_chart_point)
         self.test_thread.chart_clear.connect(self._on_chart_clear)
         self.test_thread.result_update.connect(self.update_test_result)
         self.test_thread.baseline_row.connect(self._on_baseline_row)
@@ -2266,6 +2262,16 @@ class PMUDCDCEfficiencyUI(QWidget):
             self.smooth_series.clear()
         if hasattr(self, '_raw_points'):
             self._raw_points = []
+        if HAS_QTCHARTS and hasattr(self, '_vin_sweep_series_list'):
+            for s in self._vin_sweep_series_list:
+                self.chart.removeSeries(s)
+            self._vin_sweep_series_list = []
+            self._vin_sweep_current_series = None
+            self._vin_sweep_current_raw = []
+            self._vin_sweep_all_points = []
+            self.chart.legend().hide()
+            self.series.setVisible(True)
+            self.smooth_series.setVisible(True)
 
     def _on_chart_zoom_in(self):
         if HAS_QTCHARTS and hasattr(self, 'chart'):
@@ -2282,6 +2288,92 @@ class PMUDCDCEfficiencyUI(QWidget):
     def _on_chart_marker_toggled(self, checked):
         if HAS_QTCHARTS and hasattr(self, 'chart_view'):
             self.chart_view.set_marker_enabled(checked)
+
+    VIN_SWEEP_COLORS = [
+        "#00d6a2", "#ff6b6b", "#4ecdc4", "#ffe66d", "#a29bfe",
+        "#fd79a8", "#74b9ff", "#ffeaa7", "#55efc4", "#fab1a0",
+        "#81ecec", "#dfe6e9", "#e17055", "#00cec9", "#6c5ce7",
+    ]
+
+    def _on_vin_sweep_new_series(self, label):
+        if not HAS_QTCHARTS or not hasattr(self, 'chart'):
+            return
+        if not hasattr(self, '_vin_sweep_series_list'):
+            self._vin_sweep_series_list = []
+            self._vin_sweep_current_series = None
+            self._vin_sweep_current_raw = []
+            self._vin_sweep_all_points = []
+
+        self.series.setVisible(False)
+        self.smooth_series.setVisible(False)
+
+        color_idx = len(self._vin_sweep_series_list) % len(self.VIN_SWEEP_COLORS)
+        color = QColor(self.VIN_SWEEP_COLORS[color_idx])
+
+        new_series = QLineSeries()
+        new_series.setName(label)
+        pen = QPen(color)
+        pen.setWidth(2)
+        new_series.setPen(pen)
+
+        self.chart.addSeries(new_series)
+        new_series.attachAxis(self.axis_x)
+        new_series.attachAxis(self.axis_y)
+
+        self._vin_sweep_series_list.append(new_series)
+        self._vin_sweep_current_series = new_series
+        self._vin_sweep_current_raw = []
+
+        self.chart.legend().setVisible(True)
+        self.chart.legend().setAlignment(Qt.AlignRight)
+        self.chart.legend().setLabelColor(QColor("#9fc0ef"))
+        self.chart.legend().setBackgroundVisible(False)
+
+    def _update_vin_sweep_chart_point(self, i_out_a, eff_pct):
+        if not HAS_QTCHARTS or not hasattr(self, '_vin_sweep_current_series'):
+            return
+        if self._vin_sweep_current_series is None:
+            return
+
+        i_out_ma = i_out_a * 1000
+        self._vin_sweep_current_raw.append((i_out_ma, eff_pct))
+        self._vin_sweep_all_points.append((i_out_ma, eff_pct))
+
+        x_list = [p[0] for p in self._vin_sweep_current_raw]
+        y_list = [p[1] for p in self._vin_sweep_current_raw]
+        y_smooth = _savgol_smooth(y_list)
+
+        self._vin_sweep_current_series.clear()
+        for x, ys in zip(x_list, y_smooth):
+            self._vin_sweep_current_series.append(x, ys)
+
+        all_x = [p[0] for p in self._vin_sweep_all_points]
+        all_y = [p[1] for p in self._vin_sweep_all_points]
+
+        if self.axis_x is not None and all_x:
+            min_x = min(all_x)
+            max_x = max(all_x)
+            is_log = isinstance(self.axis_x, QLogValueAxis)
+            if is_log:
+                if min_x > 0 and max_x > 0:
+                    if min_x == max_x:
+                        self.axis_x.setRange(min_x * 0.5, max_x * 2.0)
+                    else:
+                        self.axis_x.setRange(min_x * 0.8, max_x * 1.2)
+            else:
+                if min_x == max_x:
+                    margin = max(min_x * 0.5, 1.0)
+                else:
+                    margin = max((max_x - min_x) * 0.1, 0.5)
+                self.axis_x.setRange(max(0, min_x - margin), max_x + margin)
+
+        if self.axis_y is not None and all_y:
+            min_y = max(0, min(all_y) - 5)
+            max_y = min(120, max(all_y) + 5)
+            if min_y == max_y:
+                min_y = max(0, min_y - 10)
+                max_y = min(120, max_y + 10)
+            self.axis_y.setRange(min_y, max_y)
 
     def _on_test_finished(self):
         self.set_test_running(False)
@@ -2456,7 +2548,6 @@ class PMUDCDCEfficiencyUI(QWidget):
             "vin_start": self.vin_start_spin.value(),
             "vin_end": self.vin_end_spin.value(),
             "vin_step": self.vin_step_spin.value(),
-            "fixed_load_a": self.fixed_load_spin.value(),
             "temp_start": self.temp_start_spin.value(),
             "temp_end": self.temp_end_spin.value(),
             "temp_step": self.temp_step_spin.value(),
@@ -2501,7 +2592,6 @@ class PMUDCDCEfficiencyUI(QWidget):
             self.vin_start_spin,
             self.vin_end_spin,
             self.vin_step_spin,
-            self.fixed_load_spin,
             self.temp_start_spin,
             self.temp_end_spin,
             self.temp_step_spin,
