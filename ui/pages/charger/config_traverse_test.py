@@ -391,6 +391,10 @@ class ConfigTraverseTestUI(QWidget):
                 padding: 6px 10px;
                 selection-background-color: #4f46e5;
             }
+            QSpinBox::up-button, QSpinBox::down-button,
+            QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
+                width: 0px; height: 0px; border: none;
+            }
             QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QLineEdit:focus, QTextEdit:focus {
                 border: 1px solid #4cc9f0;
             }

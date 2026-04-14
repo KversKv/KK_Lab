@@ -540,6 +540,19 @@ class MainWindow(QMainWindow):
                 border-radius: 4px;
                 background-color: #020618;
             }
+            QSpinBox, QDoubleSpinBox {
+                border: 1px solid #555;
+                border-radius: 4px;
+                padding: 4px 8px;
+                background-color: #32353a;
+                color: #c8c8c8;
+            }
+            QSpinBox::up-button, QSpinBox::down-button,
+            QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
+                width: 0px;
+                height: 0px;
+                border: none;
+            }
         """ + SCROLLBAR_STYLE)
 
     def _create_main_content(self):

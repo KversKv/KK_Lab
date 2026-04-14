@@ -263,6 +263,10 @@ class PMUOSCPUI(QWidget):
             color: #eef4ff;
             selection-background-color: #1fa3ff;
         }
+        QSpinBox::up-button, QSpinBox::down-button,
+        QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
+            width: 0px; height: 0px; border: none;
+        }
 
         QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {
             border: 1px solid #2dd4ff;

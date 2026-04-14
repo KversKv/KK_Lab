@@ -1164,6 +1164,10 @@ class CLKTestUI(QWidget):
                 color: #c8d8f8;
                 font-size: 12px;
             }
+            QSpinBox::up-button, QSpinBox::down-button,
+            QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
+                width: 0px; height: 0px; border: none;
+            }
 
             QLineEdit {
                 background-color: #0b1630;

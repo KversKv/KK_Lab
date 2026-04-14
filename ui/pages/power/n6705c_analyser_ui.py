@@ -456,6 +456,10 @@ class N6705CAnalyserUI(QWidget):
             background-color: #091426; border: 1px solid #17345f;
             border-radius: 6px; padding: 4px 6px; color: #d7e3ff;
         }
+        QSpinBox::up-button, QSpinBox::down-button,
+        QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
+            width: 0px; height: 0px; border: none;
+        }
         QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled {
             background-color: #070F28; border: 1px solid #131D3A; color: #4a5a7a;
         }
