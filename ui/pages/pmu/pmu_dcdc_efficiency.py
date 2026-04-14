@@ -271,8 +271,8 @@ class CardFrame(QFrame):
         super().__init__(parent)
         self.setObjectName("cardFrame")
         self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(14, 14, 14, 14)
-        self.main_layout.setSpacing(12)
+        self.main_layout.setContentsMargins(10, 8, 10, 8)
+        self.main_layout.setSpacing(8)
 
         if title:
             self.title_label = QLabel(title)
@@ -1365,7 +1365,7 @@ class PMUDCDCEfficiencyUI(QWidget):
         self.left_scroll.setWidgetResizable(True)
         self.left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.left_scroll.setFixedWidth(275)
+        self.left_scroll.setFixedWidth(300)
         self.left_scroll.setObjectName("leftScrollArea")
         self.left_scroll.setStyleSheet("""
             QScrollArea#leftScrollArea {
@@ -1377,14 +1377,13 @@ class PMUDCDCEfficiencyUI(QWidget):
 
         self.left_panel = QWidget()
         self.left_panel.setObjectName("leftPanelInner")
-        self.left_panel.setMinimumWidth(253)
-        self.left_panel.setMaximumWidth(253)
 
         left_layout = QVBoxLayout(self.left_panel)
-        left_layout.setContentsMargins(18, 18, 18, 18)
-        left_layout.setSpacing(16)
+        left_layout.setContentsMargins(10, 10, 10, 10)
+        left_layout.setSpacing(10)
 
         self.test_item_card = CardFrame("◉ TEST ITEM")
+        self.test_item_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._build_test_item_card()
         left_layout.addWidget(self.test_item_card)
 
@@ -1541,6 +1540,11 @@ class PMUDCDCEfficiencyUI(QWidget):
         layout.addWidget(self.instrument_info_label)
 
         self.visa_resource_combo = DarkComboBox()
+        self.visa_resource_combo.setSizeAdjustPolicy(
+            DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.visa_resource_combo.setMinimumContentsLength(10)
+        self.visa_resource_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         self.visa_resource_combo.addItem("TCPIP0::K-N6705C-06098.local::hislip0::INSTR")
         layout.addWidget(self.visa_resource_combo)
 

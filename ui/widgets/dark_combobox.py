@@ -79,8 +79,16 @@ class DarkComboBox(QComboBox):
         painter.end()
 
     def showPopup(self):
+        view = self.view()
+        fm = self.fontMetrics()
+        max_w = self.width()
+        for i in range(self.count()):
+            w = fm.horizontalAdvance(self.itemText(i)) + 40
+            if w > max_w:
+                max_w = w
+        view.setMinimumWidth(max_w)
         super().showPopup()
-        popup = self.view().window()
+        popup = view.window()
         if popup:
             popup.setStyleSheet(
                 f"background-color: {self._popup_bg}; "
