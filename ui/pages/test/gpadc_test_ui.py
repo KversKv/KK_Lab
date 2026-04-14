@@ -265,7 +265,7 @@ class GPADCTestUI(QWidget):
                 border: 1px solid #24365e;
                 border-radius: 6px;
                 padding: 4px 8px;
-                background-color: #020816;
+                background-color: #0a1733;
                 color: #dbe7ff;
                 selection-background-color: #4c6fff;
             }
@@ -722,7 +722,7 @@ class GPADCTestUI(QWidget):
         params_layout.addWidget(self.params_mode_label)
 
         self.voltage_params_frame = QFrame()
-        self.voltage_params_frame.setStyleSheet("background: transparent; border: none;")
+        self.voltage_params_frame.setStyleSheet("QFrame { background: transparent; border: none; }")
         voltage_layout = QGridLayout(self.voltage_params_frame)
         voltage_layout.setContentsMargins(0, 0, 0, 0)
         voltage_layout.setHorizontalSpacing(6)
@@ -755,7 +755,7 @@ class GPADCTestUI(QWidget):
         voltage_layout.addWidget(self.voltage_step, 1, 2)
 
         self.temp_params_frame = QFrame()
-        self.temp_params_frame.setStyleSheet("background: transparent; border: none;")
+        self.temp_params_frame.setStyleSheet("QFrame { background: transparent; border: none; }")
         temp_layout = QGridLayout(self.temp_params_frame)
         temp_layout.setContentsMargins(0, 0, 0, 0)
         temp_layout.setHorizontalSpacing(6)
@@ -796,9 +796,10 @@ class GPADCTestUI(QWidget):
         self.voltage_channel_label.setObjectName("muted_label")
         params_layout.addWidget(self.voltage_channel_label)
 
-        self.voltage_channel = QSpinBox()
-        self.voltage_channel.setRange(1, 4)
-        self.voltage_channel.setValue(4)
+        self.voltage_channel = DarkComboBox(bg="#0a1733", border="#24365e")
+        for ch in range(1, 5):
+            self.voltage_channel.addItem(f"Channel {ch}", ch)
+        self.voltage_channel.setCurrentIndex(3)
         params_layout.addWidget(self.voltage_channel)
 
         self.temp_hint_label = QLabel("Connect VT6002 to enable temperature testing.")
@@ -1396,7 +1397,7 @@ class GPADCTestUI(QWidget):
                 voltage_min=self.voltage_min.value(),
                 voltage_max=self.voltage_max.value(),
                 voltage_step=self.voltage_step.value(),
-                voltage_channel=self.voltage_channel.value(),
+                voltage_channel=self.voltage_channel.currentData(),
             )
         elif test_item == self.TEST_HIGH_LOW_TEMP:
             fn = self._run_high_low_temp_test
@@ -1406,7 +1407,7 @@ class GPADCTestUI(QWidget):
                 temp_min=self.temp_min.value(),
                 temp_max=self.temp_max.value(),
                 temp_step=self.temp_step.value(),
-                voltage_channel=self.voltage_channel.value(),
+                voltage_channel=self.voltage_channel.currentData(),
             )
         elif test_item == self.TEST_TEMP_CONSISTENCY:
             fn = self._run_temp_consistency_test
@@ -1419,7 +1420,7 @@ class GPADCTestUI(QWidget):
                 voltage_min=self.voltage_min.value(),
                 voltage_max=self.voltage_max.value(),
                 voltage_step=self.voltage_step.value(),
-                voltage_channel=self.voltage_channel.value(),
+                voltage_channel=self.voltage_channel.currentData(),
             )
         else:
             self._stop_test()
@@ -1823,7 +1824,7 @@ class GPADCTestUI(QWidget):
             'iic_data_address': self.iic_data_address.text(),
             'dut_port': dut_port,
             'uart_keyword': self.uart_keyword.text(),
-            'voltage_channel': self.voltage_channel.value(),
+            'voltage_channel': self.voltage_channel.currentData(),
             'voltage_min': self.voltage_min.value(),
             'voltage_max': self.voltage_max.value(),
             'voltage_step': self.voltage_step.value(),

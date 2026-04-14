@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QComboBox,
     QLabel, QLineEdit, QSpinBox, QDoubleSpinBox, QFrame, QTextEdit,
     QProgressBar, QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
-    QFileDialog, QDialog, QRadioButton, QButtonGroup
+    QFileDialog, QDialog, QRadioButton, QButtonGroup, QSizePolicy, QScrollArea
 )
 from PySide6.QtCore import Qt, Signal, QThread, QObject
 from PySide6.QtGui import QFont, QColor
@@ -503,6 +503,11 @@ class CardFrame(QFrame):
 class FixedPopupComboBox(DarkComboBox):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.setSizeAdjustPolicy(
+            DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.setMinimumContentsLength(10)
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
 
     def showPopup(self):
         super().showPopup()
@@ -642,7 +647,7 @@ class PMUIsGainUI(QWidget):
                 border-radius: 16px;
             }
 
-            QLineEdit, QComboBox, QSpinBox, QTextEdit, QTableWidget {
+            QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QTextEdit, QTableWidget {
                 background-color: #0a1733;
                 color: #eaf2ff;
                 border: 1px solid #27406f;
@@ -655,7 +660,7 @@ class PMUIsGainUI(QWidget):
                 width: 0px; height: 0px; border: none;
             }
 
-            QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QTextEdit:focus, QTableWidget:focus {
+            QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QTextEdit:focus, QTableWidget:focus {
                 border: 1px solid #4cc9f0;
             }
 
@@ -861,13 +866,30 @@ class PMUIsGainUI(QWidget):
         content_layout.setSpacing(10)
         root_layout.addLayout(content_layout, 1)
 
-        self.left_panel = QFrame()
-        self.left_panel.setObjectName("panelFrame")
-        self.left_panel.setFixedWidth(500)
+        left_wrapper = QVBoxLayout()
+        left_wrapper.setContentsMargins(0, 0, 0, 0)
+        left_wrapper.setSpacing(8)
+
+        self.left_scroll = QScrollArea()
+        self.left_scroll.setWidgetResizable(True)
+        self.left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.left_scroll.setFixedWidth(340)
+        self.left_scroll.setObjectName("leftScrollArea")
+        self.left_scroll.setStyleSheet("""
+            QScrollArea#leftScrollArea {
+                background-color: #08132d;
+                border: 1px solid #16274d;
+                border-radius: 18px;
+            }
+        """ + SCROLLBAR_STYLE)
+
+        self.left_panel = QWidget()
+        self.left_panel.setObjectName("leftPanelInner")
 
         left_layout = QVBoxLayout(self.left_panel)
-        left_layout.setContentsMargins(14, 14, 14, 14)
-        left_layout.setSpacing(14)
+        left_layout.setContentsMargins(10, 10, 10, 10)
+        left_layout.setSpacing(10)
 
         self.connection_card = CardFrame("⚡ INSTRUMENTS CONNECTION")
         self._build_connection_card()
@@ -883,15 +905,18 @@ class PMUIsGainUI(QWidget):
 
         left_layout.addStretch()
 
+        self.left_scroll.setWidget(self.left_panel)
+        left_wrapper.addWidget(self.left_scroll, 1)
+
         self.start_test_btn = QPushButton("▷  Start Sequence")
         self.start_test_btn.setObjectName("primaryActionBtn")
         self.start_test_btn.setProperty("running", "false")
-        left_layout.addWidget(self.start_test_btn)
+        left_wrapper.addWidget(self.start_test_btn)
 
         self.stop_test_btn = QPushButton("Abort Test")
         self.stop_test_btn.hide()
 
-        content_layout.addWidget(self.left_panel)
+        content_layout.addLayout(left_wrapper)
 
         right_layout = QVBoxLayout()
         right_layout.setSpacing(10)
