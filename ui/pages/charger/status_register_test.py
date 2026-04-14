@@ -1360,8 +1360,8 @@ class StatusRegisterTestUI(QWidget):
 
     def _sync_from_top(self):
         if self._n6705c_top and self._n6705c_top.is_connected_a:
-            self.n6705c = self._n6705c_top.instrument_a
-            addr = self._n6705c_top.address_a or ""
+            self.n6705c = self._n6705c_top.n6705c_a
+            addr = self._n6705c_top.visa_resource_a or ""
             self._update_connect_button_state(True)
             self.set_system_status("\u25cf Connected (shared)")
             self.instrument_info_label.setText(addr)

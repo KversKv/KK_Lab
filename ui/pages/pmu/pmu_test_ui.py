@@ -17,8 +17,8 @@ from log_config import get_logger
 logger = get_logger(__name__)
 from ui.pages.pmu.pmu_isGain_ui import PMUIsGainUI
 from ui.pages.pmu.pmu_oscp_ui import PMUOSCPUI
-from ui.pages.test.gpadc_test_ui import GPADCTestUI
-from ui.pages.test.clk_test_ui import CLKTestUI
+from ui.pages.pmu.gpadc_test_ui import GPADCTestUI
+from ui.pages.pmu.clk_test_ui import CLKTestUI
 
 
 class PMUTestUI(QWidget):
