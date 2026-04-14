@@ -1206,7 +1206,7 @@ class N6705CDatalogUI(QWidget):
         root_layout.addLayout(title_layout)
 
         content_layout = QHBoxLayout()
-        content_layout.setSpacing(0)
+        content_layout.setSpacing(6)
         root_layout.addLayout(content_layout, 1)
 
         instr_sidebar = QWidget()
@@ -1360,8 +1360,8 @@ class N6705CDatalogUI(QWidget):
         left_container = QWidget()
         left_container.setStyleSheet("background: transparent;")
         self.left_layout = QVBoxLayout(left_container)
-        self.left_layout.setContentsMargins(0, 0, 4, 0)
-        self.left_layout.setSpacing(10)
+        self.left_layout.setContentsMargins(0, 6, 4, 0)
+        self.left_layout.setSpacing(14)
 
         self.config_card = CardFrame("DATALOG CONFIG", "\u2699")
         self._build_config_card()
