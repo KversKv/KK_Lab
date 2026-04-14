@@ -13,7 +13,8 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton,
     QLabel, QSpinBox, QDoubleSpinBox, QFrame, QTextEdit,
     QSizePolicy, QButtonGroup, QFileDialog, QProgressBar,
-    QGraphicsEllipseItem, QGraphicsLineItem, QGraphicsSimpleTextItem
+    QGraphicsEllipseItem, QGraphicsLineItem, QGraphicsSimpleTextItem,
+    QScrollArea
 )
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles.button import SpinningSearchButton, update_connect_button_state
@@ -1033,6 +1034,10 @@ class PMUDCDCEfficiencyUI(QWidget):
                 color: #dbe7ff;
             }
 
+            QWidget#leftPanelInner {
+                background-color: transparent;
+            }
+
             QLabel {
                 background-color: transparent;
                 color: #dbe7ff;
@@ -1348,9 +1353,28 @@ class PMUDCDCEfficiencyUI(QWidget):
         content_layout.setSpacing(14)
         root_layout.addLayout(content_layout, 1)
 
-        self.left_panel = QFrame()
-        self.left_panel.setObjectName("panelFrame")
-        self.left_panel.setFixedWidth(275)
+        left_wrapper = QVBoxLayout()
+        left_wrapper.setContentsMargins(0, 0, 0, 0)
+        left_wrapper.setSpacing(8)
+
+        self.left_scroll = QScrollArea()
+        self.left_scroll.setWidgetResizable(True)
+        self.left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.left_scroll.setFixedWidth(275)
+        self.left_scroll.setObjectName("leftScrollArea")
+        self.left_scroll.setStyleSheet("""
+            QScrollArea#leftScrollArea {
+                background-color: #08132d;
+                border: 1px solid #16274d;
+                border-radius: 18px;
+            }
+        """ + SCROLLBAR_STYLE)
+
+        self.left_panel = QWidget()
+        self.left_panel.setObjectName("leftPanelInner")
+        self.left_panel.setMinimumWidth(253)
+        self.left_panel.setMaximumWidth(253)
 
         left_layout = QVBoxLayout(self.left_panel)
         left_layout.setContentsMargins(18, 18, 18, 18)
@@ -1380,17 +1404,18 @@ class PMUDCDCEfficiencyUI(QWidget):
         self._build_measurement_card()
         left_layout.addWidget(self.measurement_card)
 
-        left_layout.addStretch()
+        self.left_scroll.setWidget(self.left_panel)
+        left_wrapper.addWidget(self.left_scroll, 1)
 
         self.start_test_btn = QPushButton("▶ START SEQUENCE")
         self.start_test_btn.setObjectName("primaryStartBtn")
-        left_layout.addWidget(self.start_test_btn)
+        left_wrapper.addWidget(self.start_test_btn)
 
         self.stop_test_btn = QPushButton("■ STOP")
         self.stop_test_btn.setObjectName("stopBtn")
         self.stop_test_btn.hide()
 
-        content_layout.addWidget(self.left_panel)
+        content_layout.addLayout(left_wrapper)
 
         right_layout = QVBoxLayout()
         right_layout.setSpacing(14)
