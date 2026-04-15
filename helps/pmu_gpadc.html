@@ -1,0 +1,19 @@
+<h2>PMU — GPADC Test（通用 ADC 测试）</h2>
+<h3>页面介绍</h3>
+<p>GPADC Test 页面用于测试 PMU 内置 GPADC（General Purpose ADC）的采样精度和线性度，验证 ADC 读数与实际输入电压的对应关系。</p>
+
+<h3>测试项</h3>
+<ul>
+  <li><b>ADC 精度测试</b> — 在不同输入电压下测量 ADC 读数的误差</li>
+  <li><b>线性度测试</b> — 验证 ADC 在全量程范围内的线性度</li>
+  <li><b>多模式测试</b> — 支持不同 GPADC 工作模式的切换测试</li>
+</ul>
+
+<h3>测试方法</h3>
+<ol>
+  <li>连接 N6705C 电源作为精确电压源</li>
+  <li>通过 I2C 连接到 DUT 并配置 GPADC 模式</li>
+  <li>设置输入电压扫描范围</li>
+  <li>点击开始测试，系统自动设置电压并读取 ADC 值</li>
+  <li>查看测试结果，分析 ADC 精度和线性度</li>
+</ol>

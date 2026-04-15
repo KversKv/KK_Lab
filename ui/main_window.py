@@ -4,11 +4,13 @@
 主窗口界面
 """
 
+import os
+
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
     QPushButton, QComboBox, QLabel, QLineEdit, QGridLayout,
     QTabWidget, QCheckBox, QSplitter, QFrame, QButtonGroup,
-    QGraphicsDropShadowEffect
+    QGraphicsDropShadowEffect, QDialog, QTextBrowser
 )
 
 from PySide6.QtCore import Qt, Signal, QEvent, QPoint, QTimer
@@ -701,9 +703,9 @@ class MainWindow(QMainWindow):
         """)
         bottom_layout.addWidget(divider)
 
-        self.download_btn = QPushButton("〉_ Download Python Code")
-        self.download_btn.setCursor(Qt.PointingHandCursor)
-        self.download_btn.setStyleSheet("""
+        self.help_btn = QPushButton("？ Help")
+        self.help_btn.setCursor(Qt.PointingHandCursor)
+        self.help_btn.setStyleSheet("""
             QPushButton {
                 min-height: 42px;
                 background-color: #4f3df0;
@@ -721,7 +723,7 @@ class MainWindow(QMainWindow):
                 background-color: #4534dd;
             }
         """)
-        bottom_layout.addWidget(self.download_btn)
+        bottom_layout.addWidget(self.help_btn)
 
         self.instrument_status_container = QWidget()
         self.instrument_status_container.setStyleSheet("""
@@ -1035,7 +1037,7 @@ class MainWindow(QMainWindow):
         self.charger_test_btn.clicked.connect(self._on_nav_button_clicked)
         self.consumption_test_btn.clicked.connect(self._on_nav_button_clicked)
 
-        self.download_btn.clicked.connect(self._on_download_code)
+        self.help_btn.clicked.connect(self._on_help)
         self.test_manager.data_updated.connect(self._update_data)
 
         self.n6705c_top.connection_changed.connect(self._update_instrument_status)
@@ -1202,9 +1204,92 @@ class MainWindow(QMainWindow):
 
         self._refresh_nav_arrow_state()
 
-    def _on_download_code(self):
-        """下载代码按钮点击事件"""
-        logger.debug("Download Python Code clicked")
+    def _get_current_help_key(self):
+        if self.current_instrument_ui == "pmu_test":
+            key_map = {
+                "dcdc_efficiency": "pmu_dcdc_efficiency",
+                "output_voltage": "pmu_output_voltage",
+                "is_gain": "pmu_is_gain",
+                "oscp": "pmu_oscp",
+                "gpadc_test": "pmu_gpadc",
+                "clk_test": "pmu_clk",
+            }
+            return key_map.get(self.current_pmu_test_key, "pmu_dcdc_efficiency")
+        elif self.current_instrument_ui == "charger_test":
+            key_map = {
+                "config_traverse": "charger_config_traverse",
+                "status_register": "charger_status_register",
+                "iterm": "charger_iterm",
+                "regulation_voltage": "charger_regulation_voltage",
+            }
+            return key_map.get(self.current_charger_test_key, "charger_config_traverse")
+        elif self.current_instrument_ui == "power_analyser":
+            if self.current_pa_mode == "datalog":
+                return "datalog"
+            return "power_analyser"
+        elif self.current_instrument_ui == "datalog":
+            return "datalog"
+        elif self.current_instrument_ui:
+            return self.current_instrument_ui
+        return "power_analyser"
+
+    def _on_help(self):
+        help_key = self._get_current_help_key()
+        helps_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "helps")
+        help_file = os.path.join(helps_dir, f"{help_key}.html")
+
+        if os.path.exists(help_file):
+            with open(help_file, "r", encoding="utf-8") as f:
+                content = f.read()
+        else:
+            content = "<h2>帮助</h2><p>当前页面暂无帮助文档。</p>"
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("帮助")
+        dialog.setMinimumSize(560, 480)
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: #0e1525;
+            }
+            QTextBrowser {
+                background-color: #0e1525;
+                color: #d0d0d0;
+                border: none;
+                font-size: 14px;
+                padding: 16px;
+            }
+            QPushButton {
+                min-height: 36px;
+                min-width: 80px;
+                background-color: #4f3df0;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-weight: 600;
+                padding: 0 16px;
+            }
+            QPushButton:hover {
+                background-color: #5b49ff;
+            }
+        """)
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(0, 0, 0, 8)
+
+        browser = QTextBrowser()
+        browser.setOpenExternalLinks(True)
+        browser.setHtml(content)
+        layout.addWidget(browser)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        close_btn = QPushButton("关闭")
+        close_btn.clicked.connect(dialog.accept)
+        btn_layout.addWidget(close_btn)
+        btn_layout.setContentsMargins(0, 0, 12, 0)
+        layout.addLayout(btn_layout)
+
+        dialog.exec()
 
     def _scan_visa(self):
         """扫描 VISA 设备"""
