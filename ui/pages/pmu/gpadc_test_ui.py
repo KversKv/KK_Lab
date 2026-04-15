@@ -9,6 +9,7 @@ GPADC测试UI组件
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLL_AREA_STYLE, START_BTN_STYLE, update_start_btn_state
 from ui.styles.button import SpinningSearchButton, update_connect_button_state
+from ui.styles.n6705c_connection_frame import N6705CConnectionMixin
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QLineEdit, QGridLayout, QSpinBox, QDoubleSpinBox, QFrame, QRadioButton,
@@ -33,43 +34,6 @@ from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockI2C, MockN6705C, MockVT6002
 
 logger = get_logger(__name__)
-
-
-class _SearchN6705CWorker(QObject):
-    finished = Signal(list)
-    error = Signal(str)
-
-    def run(self):
-        rm = None
-        try:
-            import pyvisa
-            rm = pyvisa.ResourceManager()
-            resources = list(rm.list_resources()) or []
-            n6705c_devices = []
-            for dev in resources:
-                instr = None
-                try:
-                    instr = rm.open_resource(dev, timeout=1000)
-                    idn = instr.query('*IDN?').strip()
-                    if "N6705C" in idn:
-                        n6705c_devices.append(dev)
-                except Exception:
-                    pass
-                finally:
-                    if instr is not None:
-                        try:
-                            instr.close()
-                        except Exception:
-                            pass
-            self.finished.emit(n6705c_devices)
-        except Exception as e:
-            self.error.emit(str(e))
-        finally:
-            if rm is not None:
-                try:
-                    rm.close()
-                except Exception:
-                    pass
 
 
 class _SearchSerialWorker(QObject):
@@ -112,7 +76,7 @@ class _TestWorker(QObject):
             self.error.emit(str(e))
 
 
-class GPADCTestUI(QWidget):
+class GPADCTestUI(N6705CConnectionMixin, QWidget):
     """GPADC测试UI组件"""
 
     connection_status_changed = Signal(bool)
@@ -125,11 +89,7 @@ class GPADCTestUI(QWidget):
     def __init__(self, n6705c_top=None):
         super().__init__()
 
-        self._n6705c_top = n6705c_top
-        self.rm = None
-        self.n6705c = None
-        self.is_n6705c_connected = False
-        self.available_n6705c_devices = []
+        self.init_n6705c_connection(n6705c_top)
 
         self.vt6002 = None
         self.is_vt6002_connected = False
@@ -151,7 +111,7 @@ class GPADCTestUI(QWidget):
         self._setup_style()
         self._create_layout()
         self._init_ui_elements()
-        self._sync_from_top()
+        self.sync_n6705c_from_top()
 
     def _setup_style(self):
         font = QFont("Segoe UI", 9)
@@ -581,32 +541,13 @@ class GPADCTestUI(QWidget):
         n6705c_title.setStyleSheet("font-size: 11px; font-weight: 700; color: #ffffff; border: none;")
         n6705c_layout.addWidget(n6705c_title)
 
-        self.n6705c_status = QLabel("● Ready")
-        self.n6705c_status.setObjectName("statusOk")
-        self.n6705c_status.setStyleSheet("color: #00d39a; font-weight: 600; border: none;")
-        n6705c_layout.addWidget(self.n6705c_status)
+        self.build_n6705c_connection_widgets(n6705c_layout)
 
-        self.n6705c_combo = DarkComboBox(bg="#0a1733", border="#24365e")
-        self.n6705c_combo.setSizeAdjustPolicy(
-            DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
-        )
-        self.n6705c_combo.setMinimumContentsLength(10)
-        self.n6705c_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
-        self.n6705c_combo.addItem("TCPIP0::K-N6705C-06098.local::hislip0::INSTR")
-        n6705c_layout.addWidget(self.n6705c_combo)
-
-        n6705c_btn_row = QHBoxLayout()
-        n6705c_btn_row.setSpacing(8)
-
-        self.n6705c_search_btn = SpinningSearchButton()
-
-        self.n6705c_connect_btn = QPushButton()
-        update_connect_button_state(self.n6705c_connect_btn, connected=False)
-        self.n6705c_disconnect_btn = self.n6705c_connect_btn
-
-        n6705c_btn_row.addWidget(self.n6705c_search_btn)
-        n6705c_btn_row.addWidget(self.n6705c_connect_btn)
-        n6705c_layout.addLayout(n6705c_btn_row)
+        self.n6705c_status = self.system_status_label
+        self.n6705c_combo = self.visa_resource_combo
+        self.n6705c_search_btn = self.search_btn
+        self.n6705c_connect_btn = self.connect_btn
+        self.n6705c_disconnect_btn = self.connect_btn
 
         instruments_layout.addWidget(n6705c_card)
         instruments_layout.addWidget(self._create_instrument_card(
@@ -1041,8 +982,7 @@ class GPADCTestUI(QWidget):
             lambda: self._set_test_item(self.TEST_TEMP_CONSISTENCY)
         )
 
-        self.n6705c_search_btn.clicked.connect(self._search_n6705c)
-        self.n6705c_connect_btn.clicked.connect(self._toggle_n6705c)
+        self.bind_n6705c_signals()
 
         self.vt6002_search_btn.clicked.connect(self._search_vt6002)
         self.vt6002_connect_btn.clicked.connect(self._toggle_vt6002)
@@ -1059,7 +999,6 @@ class GPADCTestUI(QWidget):
 
         self._search_vt6002()
         self._search_dut_ports()
-        self._search_n6705c()
 
     def _set_status_label(self, label, text, status_type="err"):
         if status_type == "ok":
@@ -1141,60 +1080,6 @@ class GPADCTestUI(QWidget):
             self.min_value.setText("---")
             self.max_value.setText("---")
 
-    def _search_n6705c(self):
-        if self._n6705c_top and self._n6705c_top.is_connected_a:
-            return
-        self._set_status_label(self.n6705c_status, "● Searching...", "warn")
-        self.n6705c_search_btn.setEnabled(False)
-        self.n6705c_connect_btn.setEnabled(False)
-
-        worker = _SearchN6705CWorker()
-        thread = QThread()
-        worker.moveToThread(thread)
-
-        thread.started.connect(worker.run)
-        worker.finished.connect(self._on_n6705c_search_done)
-        worker.error.connect(self._on_n6705c_search_error)
-        worker.finished.connect(thread.quit)
-        worker.error.connect(thread.quit)
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda: setattr(self, '_n6705c_search_thread', None))
-
-        self._n6705c_search_thread = thread
-        self._n6705c_search_worker = worker
-        thread.start()
-
-    def _on_n6705c_search_done(self, n6705c_devices):
-        default_device = "TCPIP0::K-N6705C-06098.local::hislip0::INSTR"
-        self.n6705c_combo.clear()
-        if n6705c_devices:
-            for dev in n6705c_devices:
-                self.n6705c_combo.addItem(dev)
-            if DEBUG_MOCK and default_device not in n6705c_devices:
-                self.n6705c_combo.addItem(default_device)
-            self._set_status_label(self.n6705c_status, "● Ready", "ok")
-        else:
-            if DEBUG_MOCK:
-                self.n6705c_combo.addItem(default_device)
-                self._set_status_label(self.n6705c_status, "● Ready", "ok")
-            else:
-                self._set_status_label(self.n6705c_status, "● No device found", "err")
-        self.n6705c_search_btn.setEnabled(True)
-        self.n6705c_connect_btn.setEnabled(DEBUG_MOCK or self.n6705c_combo.count() > 0)
-
-    def _on_n6705c_search_error(self, err):
-        self._append_log(f"[WARN] Search N6705C error: {err}")
-        self._set_status_label(self.n6705c_status, f"● Search failed", "err")
-        self.n6705c_search_btn.setEnabled(True)
-        self.n6705c_connect_btn.setEnabled(False)
-
-    def _toggle_n6705c(self):
-        if self.is_n6705c_connected:
-            self._disconnect_n6705c()
-        else:
-            self._connect_n6705c()
-
     def _toggle_vt6002(self):
         if self.is_vt6002_connected:
             self._disconnect_vt6002()
@@ -1208,89 +1093,6 @@ class GPADCTestUI(QWidget):
     def _set_btn_disconnected(self, btn):
         update_connect_button_state(btn, connected=False)
         btn.setEnabled(True)
-
-    def _connect_n6705c(self):
-        self._set_status_label(self.n6705c_status, "● Connecting...", "warn")
-        self.n6705c_connect_btn.setEnabled(False)
-        try:
-            device_address = self.n6705c_combo.currentText()
-            if DEBUG_MOCK:
-                self.n6705c = MockN6705C()
-            else:
-                from instruments.power.keysight.n6705c import N6705C
-                self.n6705c = N6705C(device_address)
-                idn = self.n6705c.instr.query("*IDN?")
-                if "N6705C" not in idn:
-                    self._set_status_label(self.n6705c_status, "● Device mismatch", "err")
-                    self._set_btn_disconnected(self.n6705c_connect_btn)
-                    return
-
-            self.is_n6705c_connected = True
-            pretty_name = device_address
-            try:
-                pretty_name = device_address.split("::")[1]
-            except Exception:
-                pass
-            if DEBUG_MOCK:
-                self._set_status_label(self.n6705c_status, "● Connected to: Mock N6705C (DEBUG)", "ok")
-            else:
-                self._set_status_label(self.n6705c_status, f"● Connected to: {pretty_name}", "ok")
-            self._set_btn_connected(self.n6705c_connect_btn)
-            self.n6705c_search_btn.setEnabled(False)
-
-            if self._n6705c_top:
-                self._n6705c_top.connect_a(device_address, self.n6705c)
-        except Exception as e:
-            self._append_log(f"[ERROR] Connect N6705C error: {e}")
-            self._set_status_label(self.n6705c_status, f"● Connection failed", "err")
-            self._set_btn_disconnected(self.n6705c_connect_btn)
-
-    def _disconnect_n6705c(self):
-        self._set_status_label(self.n6705c_status, "● Disconnecting...", "warn")
-        self.n6705c_connect_btn.setEnabled(False)
-        try:
-            if self._n6705c_top:
-                self._n6705c_top.disconnect_a()
-                self.n6705c = None
-            else:
-                if self.n6705c:
-                    if hasattr(self.n6705c, 'instr') and self.n6705c.instr:
-                        self.n6705c.instr.close()
-                    if hasattr(self.n6705c, 'rm') and self.n6705c.rm:
-                        self.n6705c.rm.close()
-                    self.n6705c = None
-
-            self.is_n6705c_connected = False
-            self._set_status_label(self.n6705c_status, "● Ready", "ok")
-            self._set_btn_disconnected(self.n6705c_connect_btn)
-            self.n6705c_search_btn.setEnabled(True)
-        except Exception as e:
-            self._append_log(f"[ERROR] Disconnect N6705C error: {e}")
-            self._set_status_label(self.n6705c_status, f"● Disconnect failed", "err")
-            self._set_btn_connected(self.n6705c_connect_btn)
-
-    def _sync_from_top(self):
-        if not self._n6705c_top:
-            return
-        if self._n6705c_top.is_connected_a and self._n6705c_top.n6705c_a:
-            self.n6705c = self._n6705c_top.n6705c_a
-            self.is_n6705c_connected = True
-            self._set_btn_connected(self.n6705c_connect_btn)
-            self.n6705c_search_btn.setEnabled(False)
-            if self._n6705c_top.visa_resource_a:
-                self.n6705c_combo.clear()
-                self.n6705c_combo.addItem(self._n6705c_top.visa_resource_a)
-                pretty_name = self._n6705c_top.visa_resource_a
-                try:
-                    pretty_name = self._n6705c_top.visa_resource_a.split("::")[1]
-                except Exception:
-                    pass
-                self._set_status_label(self.n6705c_status, f"● Connected to: {pretty_name}", "ok")
-            else:
-                self._set_status_label(self.n6705c_status, "● Connected", "ok")
-        elif not self.is_n6705c_connected:
-            self._set_status_label(self.n6705c_status, "● Ready", "ok")
-            self._set_btn_disconnected(self.n6705c_connect_btn)
 
     def _search_vt6002(self):
         self._set_status_label(self.vt6002_status, "Searching...", "warn")
@@ -1848,7 +1650,7 @@ class GPADCTestUI(QWidget):
             dut_port = self.dut_combo.currentText().split()[0]
 
         return {
-            'n6705c_connected': self.is_n6705c_connected,
+            'n6705c_connected': self.is_connected,
             'vt6002_connected': self.is_vt6002_connected,
             'test_item': self.current_test_item,
             'data_acquisition_mode': acquisition_mode,
@@ -1919,11 +1721,11 @@ class GPADCTestUI(QWidget):
             self.test_thread.wait(3000)
         self.test_thread = None
 
-    def set_system_status(self, status, is_error=False):
-        pass
-
     def _append_log(self, text):
         self.log_text.append(text)
+
+    def append_log(self, message):
+        self._append_log(message)
 
     def set_progress(self, value: int):
         value = max(0, min(100, int(value)))
@@ -1931,8 +1733,8 @@ class GPADCTestUI(QWidget):
         self.progress_text_label.setText(f"{value}% Complete")
 
     def update_instrument_info(self, instrument_info):
-        if self.is_n6705c_connected:
-            self._set_status_label(self.n6705c_status, f"● Connected to: {instrument_info}", "ok")
+        if self.is_connected:
+            self.set_system_status(f"● Connected to: {instrument_info}")
 
     def get_test_mode(self):
         return "GPADC Test"
@@ -2018,7 +1820,7 @@ class GPADCTestUI(QWidget):
             vol_source._mock_i2c = self._mock_i2c
         else:
             vol_source = n6705c if n6705c is not None else self.n6705c
-            if vol_source is None or not self.is_n6705c_connected:
+            if vol_source is None or not self.is_connected:
                 self._test_worker.log.emit("[ERROR] N6705C not connected")
                 self.set_system_status("错误: N6705C未连接", is_error=True)
                 return None
@@ -2278,7 +2080,7 @@ class GPADCTestUI(QWidget):
                 self._test_worker.log.emit("[ERROR] VT6002 chamber not connected")
                 self.set_system_status("错误: VT6002温箱未连接", is_error=True)
                 return None
-            if self.n6705c is None or not self.is_n6705c_connected:
+            if self.n6705c is None or not self.is_connected:
                 self._test_worker.log.emit("[ERROR] N6705C not connected")
                 self.set_system_status("错误: N6705C未连接", is_error=True)
                 return None

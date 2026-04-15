@@ -75,7 +75,9 @@ class ChargerTestUI(QWidget):
             self.config_traverse_ui, self.status_register_ui, self.iterm_ui,
             self.regulation_voltage_ui,
         ]:
-            if hasattr(sub_ui, '_sync_from_top'):
+            if hasattr(sub_ui, 'sync_n6705c_from_top'):
+                sub_ui.sync_n6705c_from_top()
+            elif hasattr(sub_ui, '_sync_from_top'):
                 sub_ui._sync_from_top()
 
     def get_current_test(self):

@@ -1,15 +1,190 @@
+import os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QFrame, QSizePolicy
 )
-from PySide6.QtCore import Qt, QTimer, Signal, QThread, QObject
+from PySide6.QtCore import Qt, QTimer, Signal, QThread, QObject, QRectF
+from PySide6.QtGui import QIcon, QPainter
+from PySide6.QtSvg import QSvgRenderer
 import pyvisa
 
 from instruments.power.keysight.n6705c import N6705C
 from ui.widgets.dark_combobox import DarkComboBox
-from ui.styles.button import SpinningSearchButton, update_connect_button_state
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockN6705C
+
+
+_ICONS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "resources", "icons"
+)
+_SEARCH_ICON_PATH = os.path.join(_ICONS_DIR, "search.svg")
+_LINK_ICON_PATH = os.path.join(_ICONS_DIR, "link.svg")
+_UNLINK_ICON_PATH = os.path.join(_ICONS_DIR, "unlink.svg")
+
+DEFAULT_VISA_RESOURCE = "TCPIP0::K-N6705C-06098.local::hislip0::INSTR"
+
+N6705C_BTN_HEIGHT = 24
+N6705C_BTN_ICON_SIZE = 14
+N6705C_BTN_RADIUS = 6
+
+
+def _n6705c_search_style(h=N6705C_BTN_HEIGHT, r=N6705C_BTN_RADIUS):
+    return f"""
+        QPushButton {{
+            background-color: #13254b;
+            border: 1px solid #22376A;
+            border-radius: {r}px;
+            color: #dce7ff;
+            font-weight: 600;
+            min-height: {h}px;
+        }}
+        QPushButton:hover {{
+            background-color: #1C2D55;
+            border: 1px solid #3A5A9F;
+        }}
+        QPushButton:pressed {{
+            background-color: #102040;
+        }}
+        QPushButton:disabled {{
+            background-color: #0b1430;
+            color: #5c7096;
+            border: 1px solid #1a2850;
+        }}
+    """
+
+
+def _n6705c_connect_style(h=N6705C_BTN_HEIGHT, r=N6705C_BTN_RADIUS):
+    return f"""
+        QPushButton {{
+            background-color: #053b38;
+            border: 1px solid #08c9a5;
+            border-radius: {r}px;
+            color: #10e7bc;
+            font-weight: 700;
+            min-height: {h}px;
+        }}
+        QPushButton:hover {{
+            background-color: #064744;
+            border: 1px solid #19f0c5;
+            color: #43f3d0;
+        }}
+        QPushButton:pressed {{
+            background-color: #042f2d;
+        }}
+        QPushButton:disabled {{
+            background-color: #0D1734;
+            color: #3a4a6a;
+            border: 1px solid #18264A;
+        }}
+    """
+
+
+def _n6705c_disconnect_style(h=N6705C_BTN_HEIGHT, r=N6705C_BTN_RADIUS):
+    return f"""
+        QPushButton {{
+            background-color: #3a0828;
+            border: 1px solid #d61b67;
+            border-radius: {r}px;
+            color: #ffb7d3;
+            font-weight: 700;
+            min-height: {h}px;
+        }}
+        QPushButton:hover {{
+            background-color: #4a0b31;
+            border: 1px solid #f0287b;
+            color: #ffd0e2;
+        }}
+        QPushButton:pressed {{
+            background-color: #330722;
+        }}
+        QPushButton:disabled {{
+            background-color: #0D1734;
+            color: #3a4a6a;
+            border: 1px solid #18264A;
+        }}
+    """
+
+
+class _N6705CSearchButton(QPushButton):
+    def __init__(self, parent=None, icon_size=N6705C_BTN_ICON_SIZE,
+                 btn_height=N6705C_BTN_HEIGHT, btn_radius=N6705C_BTN_RADIUS):
+        super().__init__(parent)
+        self._icon_size = icon_size
+        self._angle = 0.0
+        self._spinning = False
+        self._svg_renderer = None
+
+        if os.path.isfile(_SEARCH_ICON_PATH):
+            self._svg_renderer = QSvgRenderer(_SEARCH_ICON_PATH)
+
+        self._timer = QTimer(self)
+        self._timer.setInterval(30)
+        self._timer.timeout.connect(self._on_tick)
+
+        self.setText("")
+        self.setStyleSheet(_n6705c_search_style(h=btn_height, r=btn_radius))
+
+    def start_spinning(self):
+        if self._spinning:
+            return
+        self._spinning = True
+        self._angle = 0.0
+        self._timer.start()
+        self.update()
+
+    def stop_spinning(self):
+        if not self._spinning:
+            return
+        self._spinning = False
+        self._timer.stop()
+        self._angle = 0.0
+        self.update()
+
+    def _on_tick(self):
+        self._angle = (self._angle + 10.0) % 360.0
+        self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if not self._svg_renderer:
+            return
+
+        s = self._icon_size
+        cx = self.width() / 2.0
+        cy = self.height() / 2.0
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+
+        painter.translate(cx, cy)
+        if self._spinning:
+            painter.rotate(self._angle)
+        painter.translate(-s / 2.0, -s / 2.0)
+
+        self._svg_renderer.render(painter, QRectF(0, 0, s, s))
+        painter.end()
+
+
+def _update_n6705c_btn_state(btn, connected,
+                             h=N6705C_BTN_HEIGHT, r=N6705C_BTN_RADIUS,
+                             icon_size=N6705C_BTN_ICON_SIZE):
+    from PySide6.QtCore import QSize as _QSize
+    if connected:
+        btn.setText("Disconnect")
+        btn.setStyleSheet(_n6705c_disconnect_style(h=h, r=r))
+        if os.path.isfile(_UNLINK_ICON_PATH):
+            btn.setIcon(QIcon(_UNLINK_ICON_PATH))
+            btn.setIconSize(_QSize(icon_size, icon_size))
+    else:
+        btn.setText("Connect")
+        btn.setStyleSheet(_n6705c_connect_style(h=h, r=r))
+        if os.path.isfile(_LINK_ICON_PATH):
+            btn.setIcon(QIcon(_LINK_ICON_PATH))
+            btn.setIconSize(_QSize(icon_size, icon_size))
+        else:
+            btn.setIcon(QIcon())
 
 
 class _SearchN6705CWorker(QObject):
@@ -48,9 +223,6 @@ class _SearchN6705CWorker(QObject):
                     pass
 
 
-DEFAULT_VISA_RESOURCE = "TCPIP0::K-N6705C-06098.local::hislip0::INSTR"
-
-
 class N6705CConnectionMixin:
     connection_status_changed = Signal(bool)
 
@@ -62,8 +234,21 @@ class N6705CConnectionMixin:
         self.available_devices = []
         self._n6705c_search_thread = None
         self._n6705c_search_worker = None
+        self._n6705c_btn_height = N6705C_BTN_HEIGHT
+        self._n6705c_btn_radius = N6705C_BTN_RADIUS
+        self._n6705c_btn_icon_size = N6705C_BTN_ICON_SIZE
 
-    def build_n6705c_connection_widgets(self, layout):
+        if self._n6705c_top is not None and hasattr(self._n6705c_top, 'connection_changed'):
+            self._n6705c_top.connection_changed.connect(self.sync_n6705c_from_top)
+
+    def build_n6705c_connection_widgets(self, layout,
+                                        btn_height=N6705C_BTN_HEIGHT,
+                                        btn_radius=N6705C_BTN_RADIUS,
+                                        btn_icon_size=N6705C_BTN_ICON_SIZE):
+        self._n6705c_btn_height = btn_height
+        self._n6705c_btn_radius = btn_radius
+        self._n6705c_btn_icon_size = btn_icon_size
+
         self.system_status_label = QLabel("● Ready")
         self.system_status_label.setObjectName("statusOk")
         layout.addWidget(self.system_status_label)
@@ -80,10 +265,17 @@ class N6705CConnectionMixin:
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
 
-        self.search_btn = SpinningSearchButton()
+        self.search_btn = _N6705CSearchButton(
+            icon_size=btn_icon_size,
+            btn_height=btn_height,
+            btn_radius=btn_radius,
+        )
 
         self.connect_btn = QPushButton()
-        update_connect_button_state(self.connect_btn, connected=False)
+        _update_n6705c_btn_state(
+            self.connect_btn, connected=False,
+            h=btn_height, r=btn_radius, icon_size=btn_icon_size,
+        )
 
         btn_row.addWidget(self.search_btn)
         btn_row.addWidget(self.connect_btn)
@@ -95,7 +287,12 @@ class N6705CConnectionMixin:
 
     def _update_n6705c_connect_button_state(self, connected: bool):
         self.is_connected = connected
-        update_connect_button_state(self.connect_btn, connected)
+        _update_n6705c_btn_state(
+            self.connect_btn, connected,
+            h=self._n6705c_btn_height,
+            r=self._n6705c_btn_radius,
+            icon_size=self._n6705c_btn_icon_size,
+        )
 
     def sync_n6705c_from_top(self):
         if not self._n6705c_top:
@@ -113,8 +310,12 @@ class N6705CConnectionMixin:
                 except Exception:
                     pass
                 self.set_system_status(f"● Connected to: {pretty_name}")
-        elif not self.is_connected:
+        else:
+            self.n6705c = None
             self._update_n6705c_connect_button_state(False)
+            self.search_btn.setEnabled(True)
+            self.visa_resource_combo.setEnabled(True)
+            self.set_system_status("● Ready")
 
     def set_system_status(self, status, is_error=False):
         self.system_status_label.setText(status)

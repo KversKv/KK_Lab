@@ -212,7 +212,9 @@ class PMUTestUI(QWidget):
             self.is_gain_ui, self.oscp_ui,
             self.gpadc_test_ui, self.clk_test_ui,
         ]:
-            if hasattr(sub_ui, '_sync_from_top'):
+            if hasattr(sub_ui, 'sync_n6705c_from_top'):
+                sub_ui.sync_n6705c_from_top()
+            elif hasattr(sub_ui, '_sync_from_top'):
                 sub_ui._sync_from_top()
 
     def get_current_test(self):

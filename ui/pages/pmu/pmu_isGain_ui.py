@@ -22,6 +22,7 @@ import pyvisa
 
 from instruments.power.keysight.n6705c import N6705C
 from ui.styles.button import SpinningSearchButton, update_connect_button_state
+from ui.styles.n6705c_connection_frame import N6705CConnectionMixin
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockN6705C, MockMSO64B
 from instruments.scopes.tektronix.mso64b import MSO64B
@@ -518,7 +519,7 @@ class FixedPopupComboBox(DarkComboBox):
             popup.move(global_pos.x(), global_pos.y())
 
 
-class PMUIsGainUI(QWidget):
+class PMUIsGainUI(N6705CConnectionMixin, QWidget):
     """PMU Is_gain测试UI组件"""
 
     connection_status_changed = Signal(bool)
@@ -526,12 +527,8 @@ class PMUIsGainUI(QWidget):
     def __init__(self, n6705c_top=None, mso64b_top=None):
         super().__init__()
 
-        self._n6705c_top = n6705c_top
+        self.init_n6705c_connection(n6705c_top)
         self._mso64b_top = mso64b_top
-        self.rm = None
-        self.n6705c = None
-        self.available_devices = []
-        self.is_connected = False
 
         self.scope_connected = False
         self.scope_resource = None
@@ -549,7 +546,8 @@ class PMUIsGainUI(QWidget):
         self._create_layout()
         self._init_ui_elements()
         self._bind_signals()
-        self._sync_from_top()
+        self.sync_n6705c_from_top()
+        self._sync_scope_from_top()
 
         if self._mso64b_top is not None:
             self._mso64b_top.connection_changed.connect(self._on_mso64b_top_changed)
@@ -969,25 +967,7 @@ class PMUIsGainUI(QWidget):
         n6705c_label.setObjectName("fieldLabel")
         layout.addWidget(n6705c_label)
 
-        self.system_status_label = QLabel("● Ready")
-        self.system_status_label.setObjectName("statusOk")
-        layout.addWidget(self.system_status_label)
-
-        self.visa_resource_combo = FixedPopupComboBox()
-        self.visa_resource_combo.addItem("TCPIP0::K-N6705C-06098.local::hislip0::INSTR")
-        layout.addWidget(self.visa_resource_combo)
-
-        n670_row = QHBoxLayout()
-        n670_row.setSpacing(8)
-
-        self.search_btn = SpinningSearchButton()
-
-        self.connect_btn = QPushButton()
-        update_connect_button_state(self.connect_btn, connected=False)
-
-        n670_row.addWidget(self.search_btn)
-        n670_row.addWidget(self.connect_btn)
-        layout.addLayout(n670_row)
+        self.build_n6705c_connection_widgets(layout)
 
         scope_label = QLabel("Oscilloscope")
         scope_label.setObjectName("fieldLabel")
@@ -1141,7 +1121,7 @@ class PMUIsGainUI(QWidget):
         layout.addLayout(grid)
 
     def _init_ui_elements(self):
-        self._update_connect_button_state(self.connect_btn, False)
+        self._update_n6705c_connect_button_state(False)
         self._update_connect_button_state(self.scope_connect_btn, False)
         self._update_test_button_state(False)
         self._on_test_selection_changed()
@@ -1150,8 +1130,7 @@ class PMUIsGainUI(QWidget):
         self.stop_test_btn.setEnabled(False)
 
     def _bind_signals(self):
-        self.search_btn.clicked.connect(self._on_search)
-        self.connect_btn.clicked.connect(self._on_connect_or_disconnect_n6705c)
+        self.bind_n6705c_signals()
         self.scope_search_btn.clicked.connect(self._on_scope_search)
         self.scope_connect_btn.clicked.connect(self._on_connect_or_disconnect_scope)
         self.test_selection_combo.currentIndexChanged.connect(self._on_test_selection_changed)
@@ -1174,26 +1153,7 @@ class PMUIsGainUI(QWidget):
     def _update_connect_button_state(self, button: QPushButton, connected: bool):
         update_connect_button_state(button, connected)
 
-    def _sync_from_top(self):
-        if self._n6705c_top:
-            if self._n6705c_top.is_connected_a and self._n6705c_top.n6705c_a:
-                self.n6705c = self._n6705c_top.n6705c_a
-                self.is_connected = True
-                self._update_connect_button_state(self.connect_btn, True)
-                self.search_btn.setEnabled(False)
-                if self._n6705c_top.visa_resource_a:
-                    self.visa_resource_combo.clear()
-                    self.visa_resource_combo.addItem(self._n6705c_top.visa_resource_a)
-                    pretty_name = self._n6705c_top.visa_resource_a
-                    try:
-                        pretty_name = self._n6705c_top.visa_resource_a.split("::")[1]
-                    except Exception:
-                        pass
-                    self._update_n6705c_status(f"● Connected to: {pretty_name}")
-            elif not self.is_connected:
-                self._update_connect_button_state(self.connect_btn, False)
-                self._update_n6705c_status("● Ready")
-
+    def _sync_scope_from_top(self):
         if self._mso64b_top:
             if self._mso64b_top.is_connected and self._mso64b_top.mso64b:
                 self.Osc_ins = self._mso64b_top.mso64b
@@ -1402,7 +1362,7 @@ class PMUIsGainUI(QWidget):
 
     def _on_export(self):
         if not self._test_result_data:
-            self.set_system_status("No data to export", is_error=True)
+            self.set_page_status("No data to export", is_error=True)
             return
 
         dialog = QDialog(self)
@@ -1611,10 +1571,10 @@ class PMUIsGainUI(QWidget):
             else:
                 self._export_csv(file_path, export_info)
             self.append_log(f"[EXPORT] Results saved to: {file_path}")
-            self.set_system_status(f"Exported to {os.path.basename(file_path)}")
+            self.set_page_status(f"Exported to {os.path.basename(file_path)}")
         except Exception as e:
             self.append_log(f"[ERROR] Export failed: {e}")
-            self.set_system_status("Export failed", is_error=True)
+            self.set_page_status("Export failed", is_error=True)
 
     def _export_csv(self, file_path, export_info=None):
         with open(file_path, "w", newline="", encoding="utf-8-sig") as f:
@@ -1900,11 +1860,11 @@ class PMUIsGainUI(QWidget):
 
     def _on_test_error(self, err_msg):
         self.append_log(f"[ERROR] {err_msg}")
-        self.set_system_status(f"Test error: {err_msg}", is_error=True)
+        self.set_page_status(f"Test error: {err_msg}", is_error=True)
 
     def _on_test_finished(self):
         self.set_test_running(False)
-        self.set_system_status("Test completed")
+        self.set_page_status("Test completed")
 
     def _cleanup_test_thread(self):
         if self.test_thread is not None:
@@ -1915,7 +1875,7 @@ class PMUIsGainUI(QWidget):
             self._test_worker.deleteLater()
             self._test_worker = None
 
-    def set_system_status(self, status, is_error=False):
+    def set_page_status(self, status, is_error=False):
         self.page_subtitle.setText(status)
         if is_error:
             self.page_subtitle.setObjectName("statusErr")
@@ -1928,21 +1888,9 @@ class PMUIsGainUI(QWidget):
         self.page_subtitle.style().polish(self.page_subtitle)
         self.page_subtitle.update()
 
-    def _update_n6705c_status(self, text, is_error=False):
-        self.system_status_label.setText(text)
-        if is_error:
-            self.system_status_label.setObjectName("statusErr")
-        elif "Connecting" in text or "Searching" in text:
-            self.system_status_label.setObjectName("statusWarn")
-        else:
-            self.system_status_label.setObjectName("statusOk")
-        self.system_status_label.style().unpolish(self.system_status_label)
-        self.system_status_label.style().polish(self.system_status_label)
-        self.system_status_label.update()
-
     def update_instrument_info(self, instrument_info):
         if self.is_connected:
-            self._update_n6705c_status(f"● Connected to: {instrument_info}")
+            self.set_system_status(f"● Connected to: {instrument_info}")
 
     def _run_instrument_task(self, task_func, on_finished, kwargs=None):
         if self._instr_thread is not None and self._instr_thread.isRunning():
@@ -1970,62 +1918,10 @@ class PMUIsGainUI(QWidget):
             self._instr_worker.deleteLater()
             self._instr_worker = None
 
-    def _on_search(self):
-        if self._n6705c_top and self._n6705c_top.is_connected_a:
-            return
-        self.set_system_status("Searching VISA resources...")
-        self.append_log("[SYSTEM] Scanning VISA resources...")
-        self.search_btn.setEnabled(False)
-        self._run_instrument_task(self._search_devices_task, self._on_search_finished)
-
-    def _search_devices_task(self):
-        if self.rm is None:
-            try:
-                self.rm = pyvisa.ResourceManager()
-            except Exception:
-                self.rm = pyvisa.ResourceManager('@ni')
-
-        self.available_devices = list(self.rm.list_resources()) or []
-        n6705c_devices = []
-
-        for dev in self.available_devices:
-            try:
-                instr = self.rm.open_resource(dev, timeout=1000)
-                idn = instr.query('*IDN?').strip()
-                instr.close()
-                if "N6705C" in idn:
-                    n6705c_devices.append(dev)
-            except Exception:
-                pass
-
-        return {"devices": n6705c_devices}
-
-    def _on_search_finished(self, result):
-        self.search_btn.setEnabled(True)
-        if "error" in result:
-            self.set_system_status("Search failed", is_error=True)
-            self.append_log(f"[ERROR] Search failed: {result['error']}")
-            return
-
-        n6705c_devices = result.get("devices", [])
-        self.visa_resource_combo.setEnabled(True)
-        self.visa_resource_combo.clear()
-
-        if n6705c_devices:
-            for dev in n6705c_devices:
-                self.visa_resource_combo.addItem(dev)
-            self.append_log(f"[SYSTEM] Found {len(n6705c_devices)} compatible N6705C device(s).")
-            self.set_system_status(f"Found {len(n6705c_devices)} device(s)")
-        else:
-            self.visa_resource_combo.addItem("No N6705C device found")
-            self.visa_resource_combo.setEnabled(False)
-            self.set_system_status("No N6705C device found", is_error=True)
-            self.append_log("[SYSTEM] No compatible N6705C instrument found.")
-
     def _on_scope_search(self):
         if self._mso64b_top and self._mso64b_top.is_connected:
             return
-        self.set_system_status("Searching scope resources...")
+        self.set_page_status("Searching scope resources...")
         self.append_log("[SYSTEM] Scanning for oscilloscope resources (LAN & USB)...")
         self.scope_search_btn.setEnabled(False)
         self._run_instrument_task(self._search_scope_task, self._on_scope_search_finished)
@@ -2055,7 +1951,7 @@ class PMUIsGainUI(QWidget):
     def _on_scope_search_finished(self, result):
         self.scope_search_btn.setEnabled(True)
         if "error" in result:
-            self.set_system_status("Scope search failed", is_error=True)
+            self.set_page_status("Scope search failed", is_error=True)
             self.append_log(f"[ERROR] Scope search failed: {result['error']}")
             return
 
@@ -2066,17 +1962,11 @@ class PMUIsGainUI(QWidget):
             for dev in scope_devices:
                 self.scope_resource_combo.addItem(dev)
             self.append_log(f"[SYSTEM] Found {len(scope_devices)} oscilloscope(s).")
-            self.set_system_status(f"Found {len(scope_devices)} scope(s)")
+            self.set_page_status(f"Found {len(scope_devices)} scope(s)")
         else:
             self.scope_resource_combo.addItem("USB0::0x0957::0x17A4::MY61500152::INSTR")
-            self.set_system_status("No oscilloscope found", is_error=True)
+            self.set_page_status("No oscilloscope found", is_error=True)
             self.append_log("[SYSTEM] No oscilloscope found. Default resource restored.")
-
-    def _on_connect_or_disconnect_n6705c(self):
-        if self.is_connected:
-            self._on_disconnect_n6705c()
-        else:
-            self._on_connect_n6705c()
 
     def _on_connect_or_disconnect_scope(self):
         if self.scope_connected:
@@ -2084,120 +1974,11 @@ class PMUIsGainUI(QWidget):
         else:
             self._on_connect_scope()
 
-    def _on_connect_n6705c(self):
-        self.set_system_status("Connecting N6705C...")
-        self._update_n6705c_status("● Connecting...")
-        self.append_log("[SYSTEM] Attempting N6705C connection...")
-        self.connect_btn.setEnabled(False)
-
-        if DEBUG_MOCK:
-            self.n6705c = MockN6705C()
-            self.is_connected = True
-            self._update_connect_button_state(self.connect_btn, True)
-            self.search_btn.setEnabled(False)
-            self.append_log("[DEBUG] Mock N6705C connected.")
-            self.set_system_status("N6705C connected (Mock)")
-            self._update_n6705c_status("● Connected to: Mock N6705C (DEBUG)")
-            device_address = self.visa_resource_combo.currentText()
-            if self._n6705c_top:
-                self._n6705c_top.connect_a(device_address, self.n6705c)
-            self.connection_status_changed.emit(True)
-            self.connect_btn.setEnabled(True)
-            return
-
-        device_address = self.visa_resource_combo.currentText()
-        self._run_instrument_task(
-            self._connect_n6705c_task,
-            self._on_connect_n6705c_finished,
-            kwargs={"device_address": device_address},
-        )
-
-    def _connect_n6705c_task(self, device_address):
-        n6705c = N6705C(device_address)
-        idn = n6705c.instr.query("*IDN?").strip()
-        return {"n6705c": n6705c, "idn": idn}
-
-    def _on_connect_n6705c_finished(self, result):
-        self.connect_btn.setEnabled(True)
-        if "error" in result:
-            self.set_system_status("N6705C connection failed", is_error=True)
-            self._update_n6705c_status("● Connection failed", is_error=True)
-            self.append_log(f"[ERROR] N6705C connection failed: {result['error']}")
-            return
-
-        idn = result.get("idn", "")
-        if "N6705C" in idn:
-            self.n6705c = result["n6705c"]
-            self.is_connected = True
-            self._update_connect_button_state(self.connect_btn, True)
-            self.search_btn.setEnabled(False)
-            self.append_log("[SYSTEM] N6705C connected.")
-            self.append_log(f"[IDN] {idn}")
-            self.set_system_status("N6705C connected")
-
-            device_address = self.visa_resource_combo.currentText()
-            pretty_name = device_address
-            try:
-                pretty_name = device_address.split("::")[1]
-            except Exception:
-                pass
-            self._update_n6705c_status(f"● Connected to: {pretty_name}")
-
-            if self._n6705c_top:
-                self._n6705c_top.connect_a(device_address, self.n6705c)
-
-            self.connection_status_changed.emit(True)
-        else:
-            self.set_system_status("Device mismatch", is_error=True)
-            self._update_n6705c_status("● Device mismatch", is_error=True)
-            self.append_log("[ERROR] Connected device is not N6705C.")
-
-    def _on_disconnect_n6705c(self):
-        self.set_system_status("Disconnecting N6705C...")
-        self.append_log("[SYSTEM] Disconnecting N6705C...")
-        self.connect_btn.setEnabled(False)
-        if self._n6705c_top:
-            self._n6705c_top.disconnect_a()
-            self.n6705c = None
-            self._on_disconnect_n6705c_finished({})
-        else:
-            n6705c_ref = self.n6705c
-            self.n6705c = None
-            self._run_instrument_task(
-                self._disconnect_n6705c_task,
-                self._on_disconnect_n6705c_finished,
-                kwargs={"n6705c_ref": n6705c_ref},
-            )
-
-    def _disconnect_n6705c_task(self, n6705c_ref):
-        if n6705c_ref is not None:
-            if hasattr(n6705c_ref, 'instr') and n6705c_ref.instr:
-                n6705c_ref.instr.close()
-            if hasattr(n6705c_ref, 'rm') and n6705c_ref.rm:
-                n6705c_ref.rm.close()
-        return {}
-
-    def _on_disconnect_n6705c_finished(self, result):
-        self.connect_btn.setEnabled(True)
-        if "error" in result:
-            self.set_system_status("N6705C disconnect failed", is_error=True)
-            self._update_n6705c_status("● Disconnect failed", is_error=True)
-            self.append_log(f"[ERROR] N6705C disconnect failed: {result['error']}")
-            return
-
-        self.is_connected = False
-        self._update_connect_button_state(self.connect_btn, False)
-        self.search_btn.setEnabled(True)
-        self.append_log("[SYSTEM] N6705C disconnected.")
-        self.set_system_status("N6705C disconnected")
-        self._update_n6705c_status("● Ready")
-        self.connection_status_changed.emit(False)
-
     def _on_connect_scope(self):
         scope_type = self.scope_type_combo.currentText()
         resource = self.scope_resource_combo.currentText().strip()
         if not resource:
-            self.set_system_status("Invalid scope resource", is_error=True)
+            self.set_page_status("Invalid scope resource", is_error=True)
             self.append_log("[ERROR] Invalid scope resource.")
             return
 
@@ -2207,13 +1988,13 @@ class PMUIsGainUI(QWidget):
             self._update_connect_button_state(self.scope_connect_btn, True)
             self.scope_search_btn.setEnabled(False)
             self.append_log("[DEBUG] Mock scope connected.")
-            self.set_system_status("Scope connected (Mock)")
+            self.set_page_status("Scope connected (Mock)")
             if self._mso64b_top:
                 self._mso64b_top.connect_instrument(resource, self.Osc_ins, scope_type="MSO64B")
             self.scope_connection_changed.emit(True)
             return
 
-        self.set_system_status(f"Connecting {scope_type}...")
+        self.set_page_status(f"Connecting {scope_type}...")
         self.append_log(f"[SYSTEM] Attempting {scope_type} connection...")
         self.scope_connect_btn.setEnabled(False)
         self._run_instrument_task(
@@ -2238,7 +2019,7 @@ class PMUIsGainUI(QWidget):
         if "error" in result:
             scope_type = result.get("scope_type", self.scope_type_combo.currentText())
             self.Osc_ins = None
-            self.set_system_status(f"{scope_type} connection failed", is_error=True)
+            self.set_page_status(f"{scope_type} connection failed", is_error=True)
             self.append_log(f"[ERROR] {scope_type} connection failed: {result['error']}")
             return
 
@@ -2251,14 +2032,14 @@ class PMUIsGainUI(QWidget):
         self.scope_search_btn.setEnabled(False)
         self.append_log(f"[SYSTEM] {scope_type} connected.")
         self.append_log(f"[IDN] {result['idn']}")
-        self.set_system_status(f"{scope_type} connected")
+        self.set_page_status(f"{scope_type} connected")
 
         if self._mso64b_top:
             self._mso64b_top.connect_instrument(result["resource"], self.Osc_ins, scope_type=scope_type)
 
     def _on_disconnect_scope(self):
         scope_type = self.scope_type_combo.currentText()
-        self.set_system_status(f"Disconnecting {scope_type}...")
+        self.set_page_status(f"Disconnecting {scope_type}...")
         self.append_log(f"[SYSTEM] Disconnecting {scope_type}...")
         self.scope_connect_btn.setEnabled(False)
 
@@ -2287,7 +2068,7 @@ class PMUIsGainUI(QWidget):
         self.scope_connect_btn.setEnabled(True)
         scope_type = result.get("scope_type", self.scope_type_combo.currentText())
         if "error" in result:
-            self.set_system_status(f"{scope_type} disconnect failed", is_error=True)
+            self.set_page_status(f"{scope_type} disconnect failed", is_error=True)
             self.append_log(f"[ERROR] {scope_type} disconnect failed: {result['error']}")
             return
 
@@ -2297,7 +2078,7 @@ class PMUIsGainUI(QWidget):
         self.scope_type_combo.setEnabled(True)
         self.scope_search_btn.setEnabled(True)
         self.append_log(f"[SYSTEM] {scope_type} disconnected.")
-        self.set_system_status(f"{scope_type} disconnected")
+        self.set_page_status(f"{scope_type} disconnected")
 
     def _on_start_or_abort_clicked(self):
         if self.is_test_running:
@@ -2307,19 +2088,19 @@ class PMUIsGainUI(QWidget):
             return
 
         if not self.is_connected or self.n6705c is None:
-            self.set_system_status("Please connect N6705C first", is_error=True)
+            self.set_page_status("Please connect N6705C first", is_error=True)
             self.append_log("[ERROR] N6705C not connected.")
             return
 
         if not self.scope_connected or self.Osc_ins is None:
-            self.set_system_status("Please connect Oscilloscope first", is_error=True)
+            self.set_page_status("Please connect Oscilloscope first", is_error=True)
             self.append_log("[ERROR] Oscilloscope not connected.")
             return
 
         config = self.get_test_config()
 
         if abs(config["is_gain_step_current"]) < 1e-9:
-            self.set_system_status("Step Current must be > 0", is_error=True)
+            self.set_page_status("Step Current must be > 0", is_error=True)
             self.append_log("[ERROR] Step Current must be greater than 0.")
             return
 
@@ -2339,7 +2120,7 @@ class PMUIsGainUI(QWidget):
     def _launch_test_thread(self, config, test_mode, status_msg):
         self.clear_results()
         self.set_test_running(True)
-        self.set_system_status(status_msg)
+        self.set_page_status(status_msg)
 
         self._test_worker = _IsGainTestWorker(self.n6705c, self.Osc_ins, config, test_mode=test_mode)
         self.test_thread = QThread()
@@ -2356,12 +2137,6 @@ class PMUIsGainUI(QWidget):
         self.test_thread.finished.connect(self._cleanup_test_thread)
 
         self.test_thread.start()
-
-    def get_n6705c_instance(self):
-        return self.n6705c
-
-    def is_n6705c_connected(self):
-        return self.is_connected
 
     def get_scope_instance(self):
         return self.Osc_ins

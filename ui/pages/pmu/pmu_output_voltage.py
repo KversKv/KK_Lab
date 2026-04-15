@@ -18,7 +18,6 @@ from PySide6.QtWidgets import (
     QSizePolicy, QProgressBar, QScrollArea
 )
 from ui.widgets.dark_combobox import DarkComboBox
-from ui.styles.button import SpinningSearchButton, update_connect_button_state
 from PySide6.QtCore import Qt, QThread, QTimer, Signal, QMargins
 from PySide6.QtGui import QFont
 import pyvisa
