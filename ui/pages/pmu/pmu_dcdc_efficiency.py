@@ -1384,27 +1384,27 @@ class PMUDCDCEfficiencyUI(QWidget):
         left_layout.setContentsMargins(10, 10, 10, 10)
         left_layout.setSpacing(10)
 
-        self.test_item_card = CardFrame("◉ Test Item")
+        self.test_item_card = CardFrame("Test Item")
         self._build_test_item_card()
         left_layout.addWidget(self.test_item_card)
 
-        self.connection_card = CardFrame("⚡ N6705C Connection")
+        self.connection_card = CardFrame("N6705C Connection")
         self._build_connection_card()
         left_layout.addWidget(self.connection_card)
 
-        self.vt6002_card = CardFrame("🌡 VT6002 Chamber")
+        self.vt6002_card = CardFrame("VT6002 Chamber")
         self._build_vt6002_card()
         left_layout.addWidget(self.vt6002_card)
 
-        self.test_config_card = CardFrame("⚙ Test Config")
+        self.test_config_card = CardFrame("Test Config")
         self._build_test_config_card()
         left_layout.addWidget(self.test_config_card)
 
-        self.channel_card = CardFrame("⇄ Channel Selection")
+        self.channel_card = CardFrame("Channel Selection")
         self._build_channel_card()
         left_layout.addWidget(self.channel_card)
 
-        self.measurement_card = CardFrame("⊕ Measurement Settings")
+        self.measurement_card = CardFrame("Measurement Settings")
         self._build_measurement_card()
         left_layout.addWidget(self.measurement_card)
 

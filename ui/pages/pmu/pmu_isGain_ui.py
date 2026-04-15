@@ -897,15 +897,15 @@ class PMUIsGainUI(QWidget):
         left_layout.setContentsMargins(10, 10, 10, 10)
         left_layout.setSpacing(10)
 
-        self.connection_card = CardFrame("⚡ INSTRUMENTS CONNECTION")
+        self.connection_card = CardFrame("Instruments Connection")
         self._build_connection_card()
         left_layout.addWidget(self.connection_card)
 
-        self.channel_card = CardFrame("☷ CHANNEL SELECTION")
+        self.channel_card = CardFrame("Channel Selection")
         self._build_channel_card()
         left_layout.addWidget(self.channel_card)
 
-        self.is_gain_card = CardFrame("◉ IS_GAIN CONFIG")
+        self.is_gain_card = CardFrame("IS_GAIN Config")
         self._build_is_gain_card()
         left_layout.addWidget(self.is_gain_card)
 

@@ -290,14 +290,14 @@ class GPADCTestUI(QWidget):
             }
 
             QComboBox QAbstractItemView {
-                background-color: #0b1630;
+                background-color: #0a1733;
                 color: #dbe7ff;
                 border: 1px solid #24365e;
                 selection-background-color: #253a70;
             }
 
             QComboBox QAbstractItemView::item {
-                background-color: #0b1630;
+                background-color: #0a1733;
                 color: #dbe7ff;
                 padding: 4px 8px;
             }
@@ -311,7 +311,7 @@ class GPADCTestUI(QWidget):
             }
 
             QComboBox QFrame {
-                background-color: #0b1630;
+                background-color: #0a1733;
                 border: 1px solid #24365e;
             }
 
@@ -494,7 +494,7 @@ class GPADCTestUI(QWidget):
         select_row = QHBoxLayout()
         select_row.setSpacing(6)
 
-        combo = DarkComboBox(bg="#0b1630", border="#24365e")
+        combo = DarkComboBox(bg="#0a1733", border="#24365e")
         combo.setSizeAdjustPolicy(
             DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
@@ -580,7 +580,7 @@ class GPADCTestUI(QWidget):
         instruments_layout.setContentsMargins(12, 12, 12, 12)
         instruments_layout.setSpacing(10)
 
-        instruments_title = QLabel("🔗 INSTRUMENTS")
+        instruments_title = QLabel("Instruments")
         instruments_title.setObjectName("section_title")
         instruments_title.setStyleSheet("border: none")
         instruments_layout.addWidget(instruments_title)
@@ -592,7 +592,7 @@ class GPADCTestUI(QWidget):
         n6705c_layout.setContentsMargins(12, 12, 12, 12)
         n6705c_layout.setSpacing(8)
 
-        n6705c_title = QLabel("⚡ N6705C Connection")
+        n6705c_title = QLabel("N6705C Connection")
         n6705c_title.setStyleSheet("font-size: 11px; font-weight: 700; color: #ffffff; border: none;")
         n6705c_layout.addWidget(n6705c_title)
 
@@ -601,7 +601,7 @@ class GPADCTestUI(QWidget):
         self.n6705c_status.setStyleSheet("color: #00d39a; font-weight: 600; border: none;")
         n6705c_layout.addWidget(self.n6705c_status)
 
-        self.n6705c_combo = DarkComboBox(bg="#0b1630", border="#24365e")
+        self.n6705c_combo = DarkComboBox(bg="#0a1733", border="#24365e")
         self.n6705c_combo.setSizeAdjustPolicy(
             DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
@@ -643,7 +643,7 @@ class GPADCTestUI(QWidget):
         data_layout.setContentsMargins(12, 12, 12, 12)
         data_layout.setSpacing(10)
 
-        data_title = QLabel("⇄ DATA ACQUISITION")
+        data_title = QLabel("Data Acquisition")
         data_title.setObjectName("section_title")
         data_layout.addWidget(data_title)
 
@@ -689,7 +689,7 @@ class GPADCTestUI(QWidget):
         uart_layout.setVerticalSpacing(6)
 
         uart_layout.addWidget(QLabel("DUT Serial Port"), 0, 0, 1, 2)
-        self.dut_combo = DarkComboBox(bg="#0b1630", border="#24365e")
+        self.dut_combo = DarkComboBox(bg="#0a1733", border="#24365e")
         self.dut_combo.setSizeAdjustPolicy(
             DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
@@ -720,7 +720,7 @@ class GPADCTestUI(QWidget):
         test_item_layout.setContentsMargins(12, 12, 12, 12)
         test_item_layout.setSpacing(10)
 
-        test_item_title = QLabel("✦ TEST ITEM")
+        test_item_title = QLabel("Test Item")
         test_item_title.setObjectName("section_title")
         test_item_title.setStyleSheet("border: none")
         test_item_layout.addWidget(test_item_title)
@@ -756,7 +756,7 @@ class GPADCTestUI(QWidget):
         params_layout.setContentsMargins(12, 12, 12, 12)
         params_layout.setSpacing(8)
 
-        self.params_title = QLabel("☷ TEST PARAMETERS")
+        self.params_title = QLabel("Test Parameters")
         self.params_title.setObjectName("section_title")
         self.params_title.setStyleSheet("border: none;")
         params_layout.addWidget(self.params_title)

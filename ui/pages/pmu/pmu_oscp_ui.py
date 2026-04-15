@@ -285,7 +285,7 @@ class PMUOSCPUI(QWidget):
         }
 
         QComboBox, QSpinBox, QDoubleSpinBox {
-            background-color: #02091d;
+            background-color: #0a1733;
             color: #eef4ff;
             border: 1px solid #20335f;
             border-radius: 8px;
@@ -312,7 +312,7 @@ class PMUOSCPUI(QWidget):
         }
 
         QComboBox QAbstractItemView {
-            background-color: #02091d;
+            background-color: #0a1733;
             color: #eef4ff;
             border: 1px solid #20335f;
             selection-background-color: #1a3260;
@@ -320,7 +320,7 @@ class PMUOSCPUI(QWidget):
         }
 
         QComboBox QAbstractItemView::item {
-            background-color: #02091d;
+            background-color: #0a1733;
             color: #eef4ff;
             padding: 4px 8px;
         }
@@ -330,7 +330,7 @@ class PMUOSCPUI(QWidget):
         }
 
         QComboBox QFrame {
-            background-color: #02091d;
+            background-color: #0a1733;
             border: 1px solid #20335f;
         }
 
@@ -501,15 +501,15 @@ class PMUOSCPUI(QWidget):
         left_layout.setContentsMargins(10, 10, 10, 10)
         left_layout.setSpacing(10)
 
-        self.connection_card = CardFrame("⚡ N6705C Connection")
+        self.connection_card = CardFrame("N6705C Connection")
         self._build_connection_card()
         left_layout.addWidget(self.connection_card)
 
-        self.config_card = CardFrame("⚙ OSCP Configuration")
+        self.config_card = CardFrame("OSCP Configuration")
         self._build_config_card()
         left_layout.addWidget(self.config_card)
 
-        self.control_card = CardFrame("▶ Control")
+        self.control_card = CardFrame("Control")
         self._build_control_card()
         left_layout.addWidget(self.control_card)
 
@@ -654,7 +654,7 @@ class PMUOSCPUI(QWidget):
 
         self.type_label = QLabel("Type")
         self.type_label.setObjectName("fieldLabel")
-        self.test_type_combo = DarkComboBox(bg="#02091d", border="#20335f")
+        self.test_type_combo = DarkComboBox(bg="#0a1733", border="#20335f")
         self.test_type_combo.addItems(["OCP", "SCP", "OVP", "UVP"])
 
         self.dev_addr_label = QLabel("Dev Addr")
@@ -669,12 +669,12 @@ class PMUOSCPUI(QWidget):
 
         self.power_ch_label = QLabel("Power CH")
         self.power_ch_label.setObjectName("fieldLabel")
-        self.power_channel_combo = DarkComboBox(bg="#02091d", border="#20335f")
+        self.power_channel_combo = DarkComboBox(bg="#0a1733", border="#20335f")
         self.power_channel_combo.addItems(["1", "2", "3", "4"])
 
         self.test_ch_label = QLabel("Test CH")
         self.test_ch_label.setObjectName("fieldLabel")
-        self.test_channel_combo = DarkComboBox(bg="#02091d", border="#20335f")
+        self.test_channel_combo = DarkComboBox(bg="#0a1733", border="#20335f")
         self.test_channel_combo.addItems(["1", "2", "3", "4"])
         self.test_channel_combo.setCurrentIndex(1)
 

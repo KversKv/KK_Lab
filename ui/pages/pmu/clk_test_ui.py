@@ -127,9 +127,9 @@ class _CLKTestWorker(QObject):
         values = []
         codes = list(range(start_code, end_code + 1, step))
         if not codes:
-            raise ValueError("补偿码范围无效")
+            raise ValueError("Invalid compensation code range")
 
-        self.log.emit("[INFO] 开始测试：补偿电容和频率关系")
+        self.log.emit("[INFO] Starting test: Compensation Capacitance vs Frequency")
         self.log.emit(f"[INFO] IIC Device Addr = 0x{device_addr:02X}, REG Addr = 0x{reg_addr:04X}")
         self.log.emit(f"[INFO] Width Flag = {width_flag}, MSB = {msb}, LSB = {lsb}")
         self.log.emit(f"[INFO] MSO64B Channel = CH{mso_channel}")
@@ -140,29 +140,29 @@ class _CLKTestWorker(QObject):
             from lib.i2c.i2c_interface_x64 import I2CInterface
             iic = I2CInterface()
             if not iic.initialize():
-                raise RuntimeError("I2C接口初始化失败")
-            self.log.emit("[INFO] I2C接口初始化成功")
+                raise RuntimeError("I2C interface initialization failed")
+            self.log.emit("[INFO] I2C interface initialized successfully")
             self.mso64b.instrument.write(f'DVM:SOURCE CH{mso_channel}')
             self.log.emit(f"[INFO] MSO64B DVM Source set to CH{mso_channel}")
 
             orig_val = iic.read(device_addr, reg_addr, width_flag)
-            self.log.emit(f"[INFO] 寄存器原始值 = 0x{orig_val:04X}, bit_mask = 0x{bit_mask:04X}")
+            self.log.emit(f"[INFO] Register original value = 0x{orig_val:04X}, bit_mask = 0x{bit_mask:04X}")
             base_val = orig_val & ~bit_mask
             default_code = (orig_val & bit_mask) >> lsb
             iic.write(device_addr, reg_addr, base_val, width_flag)
             time.sleep(0.5)
-            self.log.emit(f"[INFO] 保留位值 (other bits) = 0x{base_val:04X}")
+            self.log.emit(f"[INFO] Reserved bits (other bits) = 0x{base_val:04X}")
             self.log.emit(f"[INFO] Default Code = {default_code}")
         else:
             orig_val = 0x1120
             base_val = orig_val & ~bit_mask
             default_code = (orig_val & bit_mask) >> lsb
-            self.log.emit(f"[MOCK] 寄存器模拟原始值 = 0x{orig_val:04X}, 保留位值 = 0x{base_val:04X}, Default Code = {default_code}")
+            self.log.emit(f"[MOCK] Register mock original value = 0x{orig_val:04X}, Reserved bits = 0x{base_val:04X}, Default Code = {default_code}")
 
         total_codes = len(codes)
         for idx, code in enumerate(codes):
             if self._stop_flag:
-                self.log.emit("[WARN] 测试被停止")
+                self.log.emit("[WARN] Test stopped")
                 break
 
             write_val = base_val | ((code << lsb) & bit_mask)
@@ -212,20 +212,20 @@ class _CLKTestWorker(QObject):
 
         temps = self._float_range(temp_start, temp_end, temp_step)
         if not temps:
-            raise ValueError("温度范围无效")
+            raise ValueError("Invalid temperature range")
 
         values = []
-        self.log.emit("[INFO] 开始测试：高低温频偏测试")
-        self.log.emit(f"[INFO] 温度范围        = {temp_start} °C -> {temp_end} °C, step={temp_step} °C")
+        self.log.emit("[INFO] Starting test: Temperature-Dependent Frequency Deviation")
+        self.log.emit(f"[INFO] Temperature Range = {temp_start} °C -> {temp_end} °C, step={temp_step} °C")
         self.log.emit(f"[INFO] Soak Time       = {soak_time} s, Tolerance = {tolerance} °C")
 
         if self.mock_mode:
-            self.log.emit("[MOCK] 使用模拟温箱和频率数据")
+            self.log.emit("[MOCK] Using simulated chamber and frequency data")
             mock_nominal = 32768.0
             total_temps = len(temps)
             for idx, t in enumerate(temps):
                 if self._stop_flag:
-                    self.log.emit("[WARN] 测试被停止")
+                    self.log.emit("[WARN] Test stopped")
                     break
                 delta_ppm = (t - 25.0) * 0.8 + math.sin(t / 15.0) * 0.6
                 freq = mock_nominal * (1.0 + delta_ppm / 1_000_000.0)
@@ -238,7 +238,7 @@ class _CLKTestWorker(QObject):
 
         chamber = self.vt6002
         if not chamber:
-            raise RuntimeError("VT6002温箱未连接")
+            raise RuntimeError("VT6002 chamber not connected")
 
         self.mso64b.instrument.write(f'DVM:SOURCE CH{mso_channel}')
         self.log.emit(f"[INFO] MSO64B DVM Source set to CH{mso_channel}")
@@ -246,11 +246,11 @@ class _CLKTestWorker(QObject):
         total_temps = len(temps)
         for idx, t in enumerate(temps):
             if self._stop_flag:
-                self.log.emit("[WARN] 测试被停止")
+                self.log.emit("[WARN] Test stopped")
                 break
 
             chamber.set_temperature(t)
-            self.log.emit(f"[INFO] [{idx + 1}/{len(temps)}] 温箱设定温度: {t:.1f} °C, 等待温度稳定...")
+            self.log.emit(f"[INFO] [{idx + 1}/{len(temps)}] Chamber set temperature: {t:.1f} °C, waiting for stabilization...")
 
             history = []
             stable_count = 0
@@ -276,24 +276,24 @@ class _CLKTestWorker(QObject):
             wait_elapsed = time.time() - wait_t0
 
             if self._stop_flag:
-                self.log.emit("[WARN] 测试被停止")
+                self.log.emit("[WARN] Test stopped")
                 break
 
             actual_temp = chamber.get_current_temp()
             self.log.emit(
-                f"[INFO] [{idx + 1}/{len(temps)}] 温度已稳定: "
+                f"[INFO] [{idx + 1}/{len(temps)}] Temperature stabilized: "
                 f"target={t:.1f} °C, actual={actual_temp:.2f} °C, "
-                f"轮询 {poll_count} 次, 等待 {wait_elapsed:.0f}s"
+                f"polled {poll_count} times, waited {wait_elapsed:.0f}s"
             )
 
-            self.log.emit(f"[INFO] DUT温度均衡中 ({soak_time}s)...")
+            self.log.emit(f"[INFO] DUT thermal soak in progress ({soak_time}s)...")
             for i in range(soak_time):
                 if self._stop_flag:
                     break
                 time.sleep(1)
 
             if self._stop_flag:
-                self.log.emit("[WARN] 测试被停止")
+                self.log.emit("[WARN] Test stopped")
                 break
 
             freq = self.mso64b.get_dvm_frequency(enable_counter=True, wait_time=0.3)
@@ -304,14 +304,14 @@ class _CLKTestWorker(QObject):
             self.log.emit(f"[DATA] Temp={actual_temp:>7.2f} °C  |  Freq={freq:>18.6f} Hz")
 
         chamber.set_temperature(25.0)
-        self.log.emit("[INFO] 温箱已恢复至 25.0 °C")
+        self.log.emit("[INFO] Chamber restored to 25.0 °C")
 
         if values:
             self.log.emit("")
             self.log.emit("=" * 60)
-            self.log.emit("  高低温频偏测试结果汇总")
+            self.log.emit("  Temperature Frequency Deviation Test Summary")
             self.log.emit("=" * 60)
-            self.log.emit(f"  {'#':>3}  {'温度 (°C)':>10}  {'频率 (Hz)':>18}  {'偏移 (ppm)':>12}")
+            self.log.emit(f"  {'#':>3}  {'Temp (°C)':>10}  {'Freq (Hz)':>18}  {'Offset (ppm)':>12}")
             self.log.emit("-" * 60)
             ref_freq = values[0]["freq"] if values else 0
             for i, v in enumerate(values):
@@ -326,8 +326,8 @@ class _CLKTestWorker(QObject):
 
     def _run_clk_perf(self):
         source = self.config["clk_source"]
-        self.log.emit("[INFO] 开始测试：时钟性能测试")
-        self.log.emit(f"[INFO] 数据源          = {source}")
+        self.log.emit("[INFO] Starting test: Clock Performance Analysis")
+        self.log.emit(f"[INFO] Data Source      = {source}")
 
         self.progress_int.emit(0)
 
@@ -338,7 +338,7 @@ class _CLKTestWorker(QObject):
         elif source == "DSLogic":
             samples = self._clk_perf_from_dslogic()
         else:
-            raise ValueError(f"未知数据源: {source}")
+            raise ValueError(f"Unknown data source: {source}")
 
         self.progress_int.emit(50)
 
@@ -351,30 +351,30 @@ class _CLKTestWorker(QObject):
     def _clk_perf_from_csv(self):
         csv_path = self.config.get("csv_path", "")
         if not csv_path:
-            raise ValueError("未选择CSV文件")
+            raise ValueError("No CSV file selected")
 
         with open(csv_path, "r", encoding="utf-8-sig", newline="") as f:
             raw_lines = f.readlines()
 
         if not raw_lines:
-            raise ValueError("CSV文件为空")
+            raise ValueError("CSV file is empty")
 
         first_lines = "".join(raw_lines[:10]).lower()
 
         if "tekscope" in first_lines or "name,type,src" in first_lines:
             samples = self._parse_tek_csv(raw_lines)
-            self.log.emit(f"[INFO] 检测到MSO64B (TekScope) CSV格式")
+            self.log.emit(f"[INFO] Detected MSO64B (TekScope) CSV format")
         elif "libsigrok" in first_lines or "dslogic" in first_lines or "sample rate" in first_lines:
             samples = self._parse_dslogic_csv(raw_lines)
-            self.log.emit(f"[INFO] 检测到DSLogic CSV格式")
+            self.log.emit(f"[INFO] Detected DSLogic CSV format")
         else:
             samples = self._parse_generic_csv(raw_lines)
-            self.log.emit(f"[INFO] 使用通用CSV解析")
+            self.log.emit(f"[INFO] Using generic CSV parser")
 
         if not samples:
-            raise ValueError("CSV中未解析到有效周期数据")
+            raise ValueError("No valid period data found in CSV")
 
-        self.log.emit(f"[INFO] CSV解析完成, 共 {len(samples)} 个周期数据点")
+        self.log.emit(f"[INFO] CSV parsing complete, {len(samples)} period data points")
         return samples
 
     def _parse_tek_csv(self, lines):
@@ -399,7 +399,7 @@ class _CLKTestWorker(QObject):
                     continue
 
         if len(data_rows) < 3:
-            raise ValueError("TekScope CSV数据行不足")
+            raise ValueError("Insufficient data rows in TekScope CSV")
 
         samples = []
         i = 1
@@ -467,7 +467,7 @@ class _CLKTestWorker(QObject):
                     rising_times.append(edges[i][0])
 
         if len(rising_times) < 2:
-            raise ValueError("DSLogic CSV中上升沿数据不足")
+            raise ValueError("Insufficient rising edge data in DSLogic CSV")
 
         samples = []
         for i in range(1, len(rising_times)):
@@ -503,7 +503,7 @@ class _CLKTestWorker(QObject):
         duration = self.config["clk_duration"]
         sample_rate_mhz = self.config.get("clk_sample_rate", 100.0)
         mso_channel = self.config.get("mso_channel", 2)
-        self.log.emit(f"[INFO] MSO64B 采样率 = {sample_rate_mhz} MHz, 测试时间 = {duration} s")
+        self.log.emit(f"[INFO] MSO64B Sample Rate = {sample_rate_mhz} MHz, Duration = {duration} s")
         self.log.emit(f"[INFO] MSO64B Channel = CH{mso_channel}")
 
         samples = []
@@ -513,7 +513,7 @@ class _CLKTestWorker(QObject):
             count = max(100, int(duration * 1000))
             for i in range(count):
                 if self._stop_flag:
-                    self.log.emit("[WARN] 测试被停止")
+                    self.log.emit("[WARN] Test stopped")
                     break
                 t = i * 0.001
                 jitter = math.sin(i / 35.0) * nominal_period * 0.003 + (math.cos(i / 13.0) * nominal_period * 0.001)
@@ -521,12 +521,12 @@ class _CLKTestWorker(QObject):
                 samples.append((t, period))
                 if (i + 1) % max(1, count // 50) == 0:
                     self.progress_int.emit(int((i + 1) * 50 / count))
-            self.log.emit(f"[MOCK] MSO64B 在线采样点数 = {len(samples)}")
+            self.log.emit(f"[MOCK] MSO64B online sample count = {len(samples)}")
         else:
             scope = self.mso64b
             remote_csv = 'C:/Temp/clk_edge_search.csv'
 
-            self.log.emit("[INFO] 配置MSO64B水平参数...")
+            self.log.emit("[INFO] Configuring MSO64B horizontal parameters...")
             scope.configure_horizontal(duration, sample_rate_mhz)
             self.log.emit(f"[INFO] Horizontal Scale = {duration / 10:.4f} s/div, Duration = {duration} s")
             self.progress_int.emit(5)
@@ -534,7 +534,7 @@ class _CLKTestWorker(QObject):
             if self._stop_flag:
                 return samples
 
-            self.log.emit(f"[INFO] 配置Edge Search: CH{mso_channel}, BOTH edges")
+            self.log.emit(f"[INFO] Configuring Edge Search: CH{mso_channel}, BOTH edges")
             scope.setup_edge_search(mso_channel, slope='BOTH')
             self.progress_int.emit(10)
 
@@ -542,9 +542,9 @@ class _CLKTestWorker(QObject):
                 return samples
 
             acq_timeout = max(duration * 3, 30)
-            self.log.emit(f"[INFO] 启动单次采集 (超时 {acq_timeout:.0f}s)...")
+            self.log.emit(f"[INFO] Starting single acquisition (timeout {acq_timeout:.0f}s)...")
             scope.single_acquisition(timeout_s=acq_timeout)
-            self.log.emit("[INFO] 采集完成")
+            self.log.emit("[INFO] Acquisition complete")
             self.progress_int.emit(30)
 
             if self._stop_flag:
@@ -552,12 +552,12 @@ class _CLKTestWorker(QObject):
 
             time.sleep(1.0)
             total_marks = scope.get_search_total()
-            self.log.emit(f"[INFO] Edge Search 结果: {total_marks} 个标记点")
+            self.log.emit(f"[INFO] Edge Search result: {total_marks} marks found")
 
             if total_marks < 3:
-                raise ValueError(f"Edge Search仅找到 {total_marks} 个边沿, 数据不足")
+                raise ValueError(f"Edge Search found only {total_marks} edges, insufficient data")
 
-            self.log.emit(f"[INFO] 导出Search Table -> {remote_csv}")
+            self.log.emit(f"[INFO] Exporting Search Table -> {remote_csv}")
             scope.export_search_table_csv(remote_csv)
             time.sleep(1.0)
             self.progress_int.emit(35)
@@ -565,29 +565,29 @@ class _CLKTestWorker(QObject):
             if self._stop_flag:
                 return samples
 
-            self.log.emit("[INFO] 从MSO64B读取CSV文件...")
+            self.log.emit("[INFO] Reading CSV file from MSO64B...")
             csv_content = scope.read_remote_file(remote_csv)
             scope.delete_remote_file(remote_csv)
             self.progress_int.emit(40)
 
             raw_lines = csv_content.splitlines(keepends=True)
             if not raw_lines:
-                raise ValueError("从MSO64B读取的CSV为空")
+                raise ValueError("CSV retrieved from MSO64B is empty")
 
-            self.log.emit(f"[INFO] CSV内容 {len(raw_lines)} 行, 开始解析...")
+            self.log.emit(f"[INFO] CSV content {len(raw_lines)} lines, parsing...")
             samples = self._parse_tek_csv(raw_lines)
 
             if not samples:
-                raise ValueError("未能从MSO64B导出的CSV中解析到有效周期数据")
+                raise ValueError("No valid period data parsed from MSO64B exported CSV")
 
-            self.log.emit(f"[INFO] MSO64B在线采集解析完成, 共 {len(samples)} 个周期数据点")
+            self.log.emit(f"[INFO] MSO64B online acquisition parsed, {len(samples)} period data points")
 
         return samples
 
     def _clk_perf_from_dslogic(self):
         duration = self.config["clk_duration"]
         sample_rate_mhz = self.config.get("clk_sample_rate", 100.0)
-        self.log.emit(f"[INFO] DSLogic 采样率 = {sample_rate_mhz} MHz, 测试时间 = {duration} s")
+        self.log.emit(f"[INFO] DSLogic Sample Rate = {sample_rate_mhz} MHz, Duration = {duration} s")
 
         samples = []
         if self.mock_mode:
@@ -596,7 +596,7 @@ class _CLKTestWorker(QObject):
             count = max(100, int(duration * 1000))
             for i in range(count):
                 if self._stop_flag:
-                    self.log.emit("[WARN] 测试被停止")
+                    self.log.emit("[WARN] Test stopped")
                     break
                 t = i * 0.001
                 jitter = math.sin(i / 28.0) * nominal_period * 0.004 + (math.cos(i / 11.0) * nominal_period * 0.0015)
@@ -604,24 +604,24 @@ class _CLKTestWorker(QObject):
                 samples.append((t, period))
                 if (i + 1) % max(1, count // 50) == 0:
                     self.progress_int.emit(int((i + 1) * 50 / count))
-            self.log.emit(f"[MOCK] DSLogic 在线采样点数 = {len(samples)}")
+            self.log.emit(f"[MOCK] DSLogic online sample count = {len(samples)}")
         else:
             sample_rate_hz = int(sample_rate_mhz * 1e6)
             total_samples = int(sample_rate_hz * duration)
-            self.log.emit(f"[INFO] 总采样点数 = {total_samples:,}")
+            self.log.emit(f"[INFO] Total samples = {total_samples:,}")
 
             sigrok_cli = self._find_sigrok_cli()
             if not sigrok_cli:
                 raise FileNotFoundError(
-                    "未找到 sigrok-cli，请安装 sigrok 套件并确保 sigrok-cli 在 PATH 中, "
-                    "或将 sigrok-cli.exe 所在路径添加到系统环境变量"
+                    "sigrok-cli not found. Please install the sigrok suite and ensure sigrok-cli is in PATH, "
+                    "or add the sigrok-cli.exe directory to the system environment variable"
                 )
-            self.log.emit(f"[INFO] sigrok-cli 路径: {sigrok_cli}")
+            self.log.emit(f"[INFO] sigrok-cli path: {sigrok_cli}")
 
             if self._stop_flag:
                 return samples
 
-            self.log.emit("[INFO] 扫描 DSLogic 设备...")
+            self.log.emit("[INFO] Scanning DSLogic devices...")
             scan_cmd = [sigrok_cli, "--driver", "dreamsourcelab-dslogic", "--scan"]
             try:
                 scan_result = subprocess.run(
@@ -629,13 +629,13 @@ class _CLKTestWorker(QObject):
                 )
                 if scan_result.returncode != 0:
                     err_msg = scan_result.stderr.strip() or scan_result.stdout.strip()
-                    raise ConnectionError(f"DSLogic 设备扫描失败: {err_msg}")
+                    raise ConnectionError(f"DSLogic device scan failed: {err_msg}")
                 scan_output = scan_result.stdout.strip()
                 if not scan_output:
-                    raise ConnectionError("未检测到 DSLogic 设备，请检查 USB 连接和驱动")
-                self.log.emit(f"[INFO] 检测到设备: {scan_output}")
+                    raise ConnectionError("No DSLogic device detected, please check USB connection and driver")
+                self.log.emit(f"[INFO] Device detected: {scan_output}")
             except subprocess.TimeoutExpired:
-                raise ConnectionError("DSLogic 设备扫描超时")
+                raise ConnectionError("DSLogic device scan timed out")
 
             if self._stop_flag:
                 return samples
@@ -656,7 +656,7 @@ class _CLKTestWorker(QObject):
                 "--output-format", "csv:dedup",
                 "--output-file", csv_path,
             ]
-            self.log.emit(f"[INFO] 启动采集 (dedup模式): samplerate={sample_rate_hz}, samples={total_samples}")
+            self.log.emit(f"[INFO] Starting capture (dedup mode): samplerate={sample_rate_hz}, samples={total_samples}")
             self.log.emit(f"[CMD] {' '.join(capture_cmd)}")
 
             capture_timeout = max(duration * 3 + 30, 60)
@@ -669,16 +669,16 @@ class _CLKTestWorker(QObject):
                     if self._stop_flag:
                         proc.terminate()
                         proc.wait(timeout=5)
-                        self.log.emit("[WARN] 用户中止采集")
+                        self.log.emit("[WARN] User aborted capture")
                         return samples
                     elapsed = time.time() - t0
                     if elapsed > capture_timeout:
                         proc.terminate()
                         proc.wait(timeout=5)
-                        raise TimeoutError(f"DSLogic 采集超时 ({capture_timeout:.0f}s)")
+                        raise TimeoutError(f"DSLogic capture timed out ({capture_timeout:.0f}s)")
                     if int(elapsed) % 5 == 0 and elapsed > 1:
                         pct = min(elapsed / duration * 100, 99)
-                        self.log.emit(f"[INFO] 采集中... {elapsed:.0f}s / {duration}s ({pct:.0f}%)")
+                        self.log.emit(f"[INFO] Capturing... {elapsed:.0f}s / {duration}s ({pct:.0f}%)")
                         self.progress_int.emit(int(min(pct * 0.45, 45)))
                     time.sleep(0.5)
 
@@ -686,32 +686,32 @@ class _CLKTestWorker(QObject):
                 stderr_data = proc.stderr.read().decode("utf-8", errors="replace")
 
                 if proc.returncode != 0:
-                    raise RuntimeError(f"sigrok-cli 采集失败 (code={proc.returncode}): {stderr_data.strip()}")
+                    raise RuntimeError(f"sigrok-cli capture failed (code={proc.returncode}): {stderr_data.strip()}")
 
-                self.log.emit("[INFO] 采集完成")
+                self.log.emit("[INFO] Capture complete")
             except FileNotFoundError:
-                raise FileNotFoundError(f"无法执行: {sigrok_cli}")
+                raise FileNotFoundError(f"Unable to execute: {sigrok_cli}")
 
             if not os.path.exists(csv_path):
-                raise FileNotFoundError(f"采集输出文件不存在: {csv_path}")
+                raise FileNotFoundError(f"Capture output file not found: {csv_path}")
 
             file_size = os.path.getsize(csv_path)
-            self.log.emit(f"[INFO] CSV 文件大小 (dedup): {file_size / 1024:.1f} KB")
+            self.log.emit(f"[INFO] CSV file size (dedup): {file_size / 1024:.1f} KB")
 
             if self._stop_flag:
                 return samples
 
-            self.log.emit("[INFO] 解析采集数据...")
+            self.log.emit("[INFO] Parsing capture data...")
             with open(csv_path, "r", encoding="utf-8") as f:
                 raw_lines = f.readlines()
 
-            self.log.emit(f"[INFO] 读取 {len(raw_lines)} 行数据")
+            self.log.emit(f"[INFO] Read {len(raw_lines)} lines of data")
             samples = self._parse_dslogic_csv(raw_lines)
 
             if not samples:
-                raise ValueError("未能从 DSLogic 采集数据中解析到有效周期数据")
+                raise ValueError("No valid period data parsed from DSLogic capture")
 
-            self.log.emit(f"[INFO] DSLogic 在线采集解析完成, 共 {len(samples)} 个周期数据点")
+            self.log.emit(f"[INFO] DSLogic online acquisition parsed, {len(samples)} period data points")
 
         return samples
 
@@ -733,11 +733,11 @@ class _CLKTestWorker(QObject):
 
     def _analyze_clk_perf(self, samples):
         if not samples:
-            raise ValueError("无有效采样数据")
+            raise ValueError("No valid sample data")
 
         periods = [p for _, p in samples if p > 0]
         if not periods:
-            raise ValueError("无有效周期数据")
+            raise ValueError("No valid period data")
 
         n = len(periods)
         avg_period = statistics.mean(periods)
@@ -807,9 +807,9 @@ class _CLKTestWorker(QObject):
             self.log.emit("=" * 60)
             self.log.emit("[BLE] ===== Bluetooth Clock Suitability Analysis =====")
             self.log.emit("[BLE] (Ref: Bluetooth Core Spec Vol 6, Part B, 4.2.2)")
-            self.log.emit("[BLE] SCA = 时钟自身稳定性 (以自身均值为基准)")
+            self.log.emit("[BLE] SCA = Clock intrinsic stability (relative to its own average)")
             self.log.emit("=" * 60)
-            self.log.emit(f"[BLE] Measured Avg Freq     = {avg_freq:.6f} Hz (作为基准)")
+            self.log.emit(f"[BLE] Measured Avg Freq     = {avg_freq:.6f} Hz (as reference)")
             self.log.emit(f"[BLE] Total Measure Time   = {total_time:.3f} s")
             self.log.emit(f"[BLE] Freq Drift           = {freq_drift_ppm:+.3f} ppm")
             self.log.emit("-" * 60)
@@ -817,7 +817,7 @@ class _CLKTestWorker(QObject):
             ble_windows = [0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 4.0]
             worst_stability_ppm = abs(freq_drift_ppm)
 
-            self.log.emit("[BLE] Window Stability Analysis (相对自身均值):")
+            self.log.emit("[BLE] Window Stability Analysis (relative to own average):")
             for win in ble_windows:
                 n_per_win = int(round(win / avg_period))
                 if n_per_win < 1 or n_per_win >= n:
@@ -867,15 +867,15 @@ class _CLKTestWorker(QObject):
                 self.log.emit(f"[BLE] SCA Field Value      = N/A (exceeds ±500 ppm, not BLE compliant)")
 
             self.log.emit("-" * 60)
-            self.log.emit("[BLE] SCA 等级参考表 (Bluetooth Core Spec):")
-            self.log.emit("[BLE]   SCA=7: 0-20 ppm    (最佳, 最小窗口加宽)")
+            self.log.emit("[BLE] SCA Level Reference Table (Bluetooth Core Spec):")
+            self.log.emit("[BLE]   SCA=7: 0-20 ppm    (Best, minimum window widening)")
             self.log.emit("[BLE]   SCA=6: 21-30 ppm")
-            self.log.emit("[BLE]   SCA=5: 31-50 ppm   (推荐 Master/Central)")
+            self.log.emit("[BLE]   SCA=5: 31-50 ppm   (Recommended for Master/Central)")
             self.log.emit("[BLE]   SCA=4: 51-75 ppm")
             self.log.emit("[BLE]   SCA=3: 76-100 ppm")
             self.log.emit("[BLE]   SCA=2: 101-150 ppm")
             self.log.emit("[BLE]   SCA=1: 151-250 ppm")
-            self.log.emit("[BLE]   SCA=0: 251-500 ppm (最低, 最大窗口加宽)")
+            self.log.emit("[BLE]   SCA=0: 251-500 ppm (Worst, maximum window widening)")
             self.log.emit("-" * 60)
 
             if matched_sca:
@@ -885,14 +885,14 @@ class _CLKTestWorker(QObject):
                 own_sca_ppm = worst_stability_ppm
                 combined_sca = own_sca_ppm + peer_sca_ppm
                 window_widening_us = combined_sca * conn_interval_s * 2
-                self.log.emit(f"[BLE] 窗口加宽估算 (Connection Interval = {conn_interval_s*1000:.0f}ms, Peer SCA = ±{peer_sca_ppm:.0f} ppm):")
+                self.log.emit(f"[BLE] Window Widening Estimate (Connection Interval = {conn_interval_s*1000:.0f}ms, Peer SCA = ±{peer_sca_ppm:.0f} ppm):")
                 self.log.emit(f"[BLE]   Combined SCA        = ±{combined_sca:.1f} ppm")
                 self.log.emit(f"[BLE]   Window Widening     = {window_widening_us:.1f} us")
-                self.log.emit(f"[BLE]   (公式: widening = (masterSCA + slaveSCA) × timeSinceLastAnchor × 2)")
+                self.log.emit(f"[BLE]   (Formula: widening = (masterSCA + slaveSCA) × timeSinceLastAnchor × 2)")
 
             self.log.emit("=" * 60)
         else:
-            self.log.emit(f"[INFO] 数据时长 {total_time:.2f}s < {ble_min_time:.1f}s, 跳过蓝牙适用性分析 (需要 ≥ {ble_min_time:.1f}s)")
+            self.log.emit(f"[INFO] Data duration {total_time:.2f}s < {ble_min_time:.1f}s, skipping Bluetooth suitability analysis (requires >= {ble_min_time:.1f}s)")
 
         points = []
         for t, p in samples:
@@ -924,11 +924,11 @@ class _CLKTestWorker(QObject):
 
 class CLKTestUI(QWidget):
     """
-    CLK Test 主 UI 组件
-    测试项目：
-      1. cap_freq  — 补偿电容和频率关系
-      2. temp_freq — 高低温频偏测试
-      3. clk_perf  — 时钟性能测试（支持CSV导入）
+    CLK Test Main UI Component
+    Test Items:
+      1. cap_freq  — Compensation Capacitance vs Frequency
+      2. temp_freq — Temperature-Dependent Frequency Deviation
+      3. clk_perf  — Clock Performance Analysis (CSV import supported)
     """
 
     TEST_CAP_FREQ = "cap_freq"
@@ -940,22 +940,22 @@ class CLKTestUI(QWidget):
         self._mso64b_top = mso64b_top
         self.current_test_item = self.TEST_CAP_FREQ
 
-        # 仪器实例
+        # Instrument instances
         self.mso64b = None
         self.vt6002 = None
         self.is_mso64b_connected = False
         self.is_vt6002_connected = False
 
-        # 工作线程属性
+        # Worker thread attributes
         self._test_thread = None
         self._test_worker = None
-        self._start_btn_text = "▶ START TEST"
+        self._start_btn_text = "▷ Start Sequence"
         self._mso64b_search_thread = None
         self._mso64b_search_worker = None
         self._vt6002_search_thread = None
         self._vt6002_search_worker = None
 
-        # 结果数据
+        # Result data
         self.result_data = []
         self.result_mode = None
         self.result_summary = {}
@@ -967,7 +967,7 @@ class CLKTestUI(QWidget):
         self._sync_from_top()
 
     # -------------------------------------------------------
-    # 样式
+    # Styles
     # -------------------------------------------------------
     def _setup_style(self):
         font = QFont("Segoe UI", 9)
@@ -1039,41 +1039,46 @@ class CLKTestUI(QWidget):
                 color: #b48aff;
             }
 
-            QPushButton#start_test_btn {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #1e3fa0, stop:1 #3060d0);
-                color: #ffffff;
-                border: none;
-                border-radius: 8px;
-                font-size: 13px;
-                font-weight: 700;
+            QPushButton#primaryStartBtn {
+                background-color: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #5b5cf6,
+                    stop:1 #6a38ff
+                );
+                color: white;
+                border: 1px solid #645bff;
+                border-radius: 12px;
+                font-size: 15px;
+                font-weight: 800;
                 min-height: 36px;
                 padding: 0 12px;
             }
-            QPushButton#start_test_btn:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #2850c0, stop:1 #4070e8);
+            QPushButton#primaryStartBtn:hover {
+                background-color: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #6b6cff,
+                    stop:1 #7d4cff
+                );
             }
-            QPushButton#start_test_btn:disabled {
+            QPushButton#primaryStartBtn:disabled {
                 background-color: #1a2040;
                 color: #4a5a80;
             }
 
-            QPushButton#stop_test_btn {
-                background-color: #2a1a1a;
-                color: #ff5a7a;
-                border: 1px solid #6a2030;
-                border-radius: 8px;
+            QPushButton#stopBtn {
+                background-color: #4a1020;
+                color: #ffd5db;
+                border: 1px solid #d9485f;
+                border-radius: 12px;
                 font-size: 15px;
-                font-weight: 700;
+                font-weight: 800;
                 min-height: 36px;
-                min-width: 36px;
-                padding: 0 10px;
+                padding: 0 12px;
             }
-            QPushButton#stop_test_btn:hover {
-                background-color: #3a1a1a;
+            QPushButton#stopBtn:hover {
+                background-color: #5a1326;
             }
-            QPushButton#stop_test_btn:disabled {
+            QPushButton#stopBtn:disabled {
                 background-color: #1a1a22;
                 color: #4a3040;
                 border-color: #2a1a28;
@@ -1108,7 +1113,7 @@ class CLKTestUI(QWidget):
             }
 
             QDoubleSpinBox, QSpinBox {
-                background-color: #0b1630;
+                background-color: #0a1733;
                 border: 1.5px solid #1e3060;
                 border-radius: 5px;
                 padding: 3px 6px;
@@ -1121,7 +1126,7 @@ class CLKTestUI(QWidget):
             }
 
             QLineEdit {
-                background-color: #0b1630;
+                background-color: #0a1733;
                 border: 1.5px solid #1e3060;
                 border-radius: 5px;
                 padding: 3px 8px;
@@ -1152,7 +1157,7 @@ class CLKTestUI(QWidget):
         """ + SCROLL_AREA_STYLE)
 
     # -------------------------------------------------------
-    # 辅助组件
+    # Helper components
     # -------------------------------------------------------
     def _create_metric_card(self, title, default_value, value_obj_name="metric_value_green"):
         card = QFrame()
@@ -1216,7 +1221,7 @@ class CLKTestUI(QWidget):
         select_row = QHBoxLayout()
         select_row.setSpacing(6)
 
-        combo = DarkComboBox(bg="#0b1630", border="#24365e")
+        combo = DarkComboBox(bg="#0a1733", border="#24365e")
         combo.setSizeAdjustPolicy(
             DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
@@ -1243,7 +1248,7 @@ class CLKTestUI(QWidget):
         return line
 
     # -------------------------------------------------------
-    # 布局
+    # Layout
     # -------------------------------------------------------
     def _create_layout(self):
         root_layout = QVBoxLayout(self)
@@ -1277,7 +1282,7 @@ class CLKTestUI(QWidget):
         body_layout = QHBoxLayout()
         body_layout.setSpacing(12)
 
-        # ---- 左侧滚动区 ----
+        # ---- Left scroll area ----
         self.left_scroll = QScrollArea()
         self.left_scroll.setWidgetResizable(True)
         self.left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -1303,36 +1308,32 @@ class CLKTestUI(QWidget):
         test_select_layout.setContentsMargins(12, 12, 12, 12)
         test_select_layout.setSpacing(8)
 
-        test_select_title = QLabel("✦ TEST ITEM")
+        test_select_title = QLabel("Test Item")
         test_select_title.setObjectName("section_title")
         test_select_layout.addWidget(test_select_title)
 
         self.test_item_combo = DarkComboBox()
-        self.test_item_combo.addItem("测试项1: 补偿电容和频率的关系", self.TEST_CAP_FREQ)
-        self.test_item_combo.addItem("测试项2: 高低温频偏测试", self.TEST_TEMP_FREQ)
-        self.test_item_combo.addItem("测试项3: 时钟性能测试", self.TEST_CLK_PERF)
+        self.test_item_combo.addItem("Compensation Capacitance vs Frequency", self.TEST_CAP_FREQ)
+        self.test_item_combo.addItem("Temperature-Dependent Frequency Deviation", self.TEST_TEMP_FREQ)
+        self.test_item_combo.addItem("Clock Performance Analysis", self.TEST_CLK_PERF)
         test_select_layout.addWidget(self.test_item_combo)
 
-        self.test_item_desc = QLabel("")
-        self.test_item_desc.setStyleSheet("color: #7e96bf; font-size: 11px;")
-        self.test_item_desc.setWordWrap(True)
-        test_select_layout.addWidget(self.test_item_desc)
         left_col.addWidget(test_select_panel)
 
-        # ---- DATA SOURCE (测试项3专用) ----
+        # ---- DATA SOURCE (Test Item 3 only) ----
         self.clk_data_source_panel = QFrame()
         self.clk_data_source_panel.setObjectName("panel")
         ds_layout = QVBoxLayout(self.clk_data_source_panel)
         ds_layout.setContentsMargins(12, 10, 12, 10)
         ds_layout.setSpacing(6)
 
-        ds_title = QLabel("📡 DATA SOURCE")
+        ds_title = QLabel("Data Source")
         ds_title.setObjectName("section_title")
         ds_layout.addWidget(ds_title)
 
         ds_row = QHBoxLayout()
         ds_row.addWidget(QLabel("Data Source"))
-        self.clk_source_combo = DarkComboBox(bg="#0b1630", border="#24365e")
+        self.clk_source_combo = DarkComboBox(bg="#0a1733", border="#24365e")
         self.clk_source_combo.addItems(["MSO64B", "DSLogic", "Import CSV"])
         ds_row.addWidget(self.clk_source_combo, 1)
         ds_layout.addLayout(ds_row)
@@ -1347,11 +1348,11 @@ class CLKTestUI(QWidget):
         instruments_layout.setContentsMargins(12, 12, 12, 12)
         instruments_layout.setSpacing(10)
 
-        instruments_title = QLabel("🔌 INSTRUMENT CONNECTION")
+        instruments_title = QLabel("Instrument Connection")
         instruments_title.setObjectName("section_title")
         instruments_layout.addWidget(instruments_title)
 
-        # 频率仪器选择
+        # Frequency instrument selection
         self.freq_instr_frame = QFrame()
         self.freq_instr_frame.setObjectName("config_inner_panel")
         freq_instr_layout = QVBoxLayout(self.freq_instr_frame)
@@ -1359,22 +1360,17 @@ class CLKTestUI(QWidget):
         freq_instr_layout.setSpacing(6)
 
         freq_type_row = QHBoxLayout()
-        freq_type_row.addWidget(QLabel("频率测试仪器"))
+        freq_type_row.addWidget(QLabel("Frequency Instrument"))
         self.freq_instr_type_combo = DarkComboBox()
         self.freq_instr_type_combo.addItems(["MSO64B", "53230A", "DigitMultimeter"])
         freq_type_row.addWidget(self.freq_instr_type_combo, 1)
         freq_instr_layout.addLayout(freq_type_row)
-
-        self.freq_instr_tip = QLabel("根据测试项选择并连接频率测试仪器。")
-        self.freq_instr_tip.setStyleSheet("color: #4a6a98; font-size: 11px;")
-        self.freq_instr_tip.setWordWrap(True)
-        freq_instr_layout.addWidget(self.freq_instr_tip)
         instruments_layout.addWidget(self.freq_instr_frame)
 
         # MSO64B
         self.mso64b_card = self._create_instrument_card(
             "MSO64B Oscilloscope",
-            "频率测量 / 逻辑分析输入",
+            "Frequency Measurement / Logic Analyzer Input",
             "mso64b_combo",
             "mso64b_search_btn",
             "mso64b_connect_btn",
@@ -1386,7 +1382,7 @@ class CLKTestUI(QWidget):
         mso64b_card_layout = self.mso64b_card.layout()
         mso_ch_row = QHBoxLayout()
         mso_ch_row.setSpacing(6)
-        mso_ch_label = QLabel("测量通道")
+        mso_ch_label = QLabel("Measurement Channel")
         mso_ch_label.setStyleSheet("color: #8faad8; font-size: 12px; border: none;")
         self.mso64b_channel_combo = DarkComboBox()
         self.mso64b_channel_combo.addItems(["CH1", "CH2", "CH3", "CH4"])
@@ -1398,7 +1394,7 @@ class CLKTestUI(QWidget):
         # 53230A
         self.counter_card = self._create_instrument_card(
             "53230A Counter",
-            "高精度频率计数器",
+            "High-Precision Frequency Counter",
             "counter_combo",
             "counter_search_btn",
             "counter_connect_btn",
@@ -1410,7 +1406,7 @@ class CLKTestUI(QWidget):
         # DigitMultimeter
         self.dmm_card = self._create_instrument_card(
             "DigitMultimeter",
-            "数字万用表（如支持频率测量）",
+            "Digital Multimeter (Frequency Capable)",
             "dmm_combo",
             "dmm_search_btn",
             "dmm_connect_btn",
@@ -1419,10 +1415,10 @@ class CLKTestUI(QWidget):
         )
         instruments_layout.addWidget(self.dmm_card)
 
-        # 温箱
+        # Temperature chamber
         self.vt6002_card = self._create_instrument_card(
             "VT6002 Chamber",
-            "高低温测试温箱",
+            "Temperature Test Chamber",
             "vt6002_combo",
             "vt6002_search_btn",
             "vt6002_connect_btn",
@@ -1440,7 +1436,7 @@ class CLKTestUI(QWidget):
         params_layout.setContentsMargins(12, 12, 12, 12)
         params_layout.setSpacing(8)
 
-        self.params_title = QLabel("☷ PARAMETERS")
+        self.params_title = QLabel("Parameters")
         self.params_title.setObjectName("section_title")
         params_layout.addWidget(self.params_title)
 
@@ -1448,7 +1444,7 @@ class CLKTestUI(QWidget):
         self.params_mode_label.setStyleSheet("color: #7e96bf; font-size: 11px; font-weight: 700;")
         params_layout.addWidget(self.params_mode_label)
 
-        # -- 测试项1参数 --
+        # -- Test Item 1 parameters --
         self.cap_params_frame = QFrame()
         self.cap_params_frame.setStyleSheet("QFrame { background: transparent; border: none; }")
         cap_layout = QGridLayout(self.cap_params_frame)
@@ -1514,7 +1510,7 @@ class CLKTestUI(QWidget):
         self.iic_msb.valueChanged.connect(self._update_reg_range)
         self.iic_lsb.valueChanged.connect(self._update_reg_range)
 
-        # -- 测试项2参数 --
+        # -- Test Item 2 parameters --
         self.temp_params_frame = QFrame()
         self.temp_params_frame.setStyleSheet("QFrame { background: transparent; border: none; }")
         temp_layout = QGridLayout(self.temp_params_frame)
@@ -1562,7 +1558,7 @@ class CLKTestUI(QWidget):
         temp_layout.addWidget(self.temp_soak_time, 3, 0)
         temp_layout.addWidget(self.temp_stable_tolerance, 3, 1)
 
-        # -- 测试项3参数 --
+        # -- Test Item 3 parameters --
         self.clk_params_frame = QFrame()
         self.clk_params_frame.setStyleSheet("QFrame { background: transparent; border: none; }")
         clk_layout = QVBoxLayout(self.clk_params_frame)
@@ -1618,7 +1614,7 @@ class CLKTestUI(QWidget):
 
         chart_type_row = QHBoxLayout()
         chart_type_row.addWidget(QLabel("Chart Type"))
-        self.clk_chart_type_combo = DarkComboBox(bg="#0b1630", border="#24365e")
+        self.clk_chart_type_combo = DarkComboBox(bg="#0a1733", border="#24365e")
         self.clk_chart_type_combo.addItem("Frequency vs Time", "freq_vs_time")
         self.clk_chart_type_combo.addItem("Period vs Time", "period_vs_time")
         self.clk_chart_type_combo.addItem("Period Histogram", "period_histogram")
@@ -1675,11 +1671,6 @@ class CLKTestUI(QWidget):
         params_layout.addWidget(self.temp_params_frame)
         params_layout.addWidget(self.clk_params_frame)
 
-        self.required_instr_label = QLabel("")
-        self.required_instr_label.setStyleSheet("color: #ffb84d; font-size: 11px;")
-        self.required_instr_label.setWordWrap(True)
-        params_layout.addWidget(self.required_instr_label)
-
         left_col.addWidget(params_panel)
 
         # ---- ACTION ----
@@ -1689,12 +1680,12 @@ class CLKTestUI(QWidget):
         action_layout.setContentsMargins(12, 12, 12, 12)
         action_layout.setSpacing(8)
 
-        self.start_test_btn = QPushButton("▶ START TEST")
-        self.start_test_btn.setObjectName("start_test_btn")
+        self.start_test_btn = QPushButton("▷ Start Sequence")
+        self.start_test_btn.setObjectName("primaryStartBtn")
         self.start_test_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-        self.stop_test_btn = QPushButton("■")
-        self.stop_test_btn.setObjectName("stop_test_btn")
+        self.stop_test_btn = QPushButton("■ Stop")
+        self.stop_test_btn.setObjectName("stopBtn")
         self.stop_test_btn.setEnabled(False)
         self.stop_test_btn.hide()
 
@@ -1704,7 +1695,7 @@ class CLKTestUI(QWidget):
 
         self.left_scroll.setWidget(left_content)
 
-        # ---- 右侧结果区 ----
+        # ---- Right result area ----
         right_col = QVBoxLayout()
         right_col.setSpacing(10)
 
@@ -1812,7 +1803,7 @@ class CLKTestUI(QWidget):
         root_layout.addWidget(self.page, 1)
 
     # -------------------------------------------------------
-    # 图表设置
+    # Chart setup
     # -------------------------------------------------------
     def _setup_chart_plot(self):
         self.plot_widget.setBackground("#071127")
@@ -1854,7 +1845,7 @@ class CLKTestUI(QWidget):
         self.plot_widget.setLabel("left", y_label, color=text_color)
 
     # -------------------------------------------------------
-    # 初始化
+    # Initialization
     # -------------------------------------------------------
     def _init_ui_elements(self):
         self.test_item_combo.currentIndexChanged.connect(self._on_test_item_combo_changed)
@@ -1895,7 +1886,7 @@ class CLKTestUI(QWidget):
             self._append_log("[MOCK] All instruments use simulated data, no real hardware required.")
 
     # -------------------------------------------------------
-    # 测试项切换
+    # Test item switching
     # -------------------------------------------------------
     def _on_test_item_combo_changed(self, index):
         test_item = self.test_item_combo.currentData()
@@ -1909,60 +1900,42 @@ class CLKTestUI(QWidget):
             self.test_item_combo.setCurrentIndex(idx)
 
         if test_item == self.TEST_CAP_FREQ:
-            self.test_item_desc.setText(
-                "测试项1：遍历寄存器最小值到最大值，测试补偿电容设置与频率的关系。"
-            )
             self.params_mode_label.setText("CAPACITOR CODE / REGISTER SWEEP")
             self.cap_params_frame.show()
             self.temp_params_frame.hide()
             self.clk_params_frame.hide()
             self.clk_data_source_panel.hide()
             self.freq_instr_frame.show()
-            self.start_test_btn.setText("▶ START CAP-FREQ TEST")
-            self._start_btn_text = "▶ START CAP-FREQ TEST"
-            self.chart_title.setText("补偿电容和频率关系结果")
+            self.start_test_btn.setText("▷ Start Sequence")
+            self._start_btn_text = "▷ Start Sequence"
+            self.chart_title.setText("Capacitance vs Frequency Result")
             self._update_chart_labels("Register Value / Cap Code", "Frequency (Hz)")
-            self.required_instr_label.setText(
-                "需要仪器：MSO64B（DVM频率测量） + I2C接口（USB-I2C适配器）"
-            )
             self._update_top_card_titles("DEFAULT FREQ", "MIN FREQ", "MAX FREQ", "STEP FREQ", "LINEARITY")
 
         elif test_item == self.TEST_TEMP_FREQ:
-            self.test_item_desc.setText(
-                "测试项2：遍历温度范围，测试不同温度下的时钟频率和频偏。"
-            )
             self.params_mode_label.setText("TEMPERATURE SWEEP")
             self.cap_params_frame.hide()
             self.temp_params_frame.show()
             self.clk_params_frame.hide()
             self.clk_data_source_panel.hide()
             self.freq_instr_frame.show()
-            self.start_test_btn.setText("▶ START TEMP OFFSET TEST")
-            self._start_btn_text = "▶ START TEMP OFFSET TEST"
-            self.chart_title.setText("高低温频偏测试结果")
+            self.start_test_btn.setText("▷ Start Sequence")
+            self._start_btn_text = "▷ Start Sequence"
+            self.chart_title.setText("Temperature-Dependent Frequency Deviation Result")
             self._update_chart_labels("Temperature (°C)", "Frequency (Hz)")
-            self.required_instr_label.setText(
-                "需要仪器：温箱 + 频率测试仪器（MSO64B / 53230A / DigitMultimeter）"
-            )
             self._update_top_card_titles("25℃ FREQ", "MIN FREQ", "MAX FREQ", "PER ℃ FREQ", "LINEARITY")
 
         elif test_item == self.TEST_CLK_PERF:
-            self.test_item_desc.setText(
-                "测试项3：连接逻辑分析仪在线采样，或者导入CSV，对时钟进行抖动、频偏等性能分析。"
-            )
             self.params_mode_label.setText("CLOCK PERFORMANCE ANALYSIS")
             self.cap_params_frame.hide()
             self.temp_params_frame.hide()
             self.clk_params_frame.show()
             self.clk_data_source_panel.show()
             self.freq_instr_frame.hide()
-            self.start_test_btn.setText("▶ START CLK PERFORMANCE TEST")
-            self._start_btn_text = "▶ START CLK PERFORMANCE TEST"
-            self.chart_title.setText("时钟性能分析结果")
+            self.start_test_btn.setText("▷ Start Sequence")
+            self._start_btn_text = "▷ Start Sequence"
+            self.chart_title.setText("Clock Performance Analysis Result")
             self._update_chart_labels("Time (s)", "Frequency (Hz)")
-            self.required_instr_label.setText(
-                "需要仪器：逻辑分析仪（可使用MSO64B）或导入CSV文件"
-            )
             self._update_top_card_titles("AVG FREQ (PERIOD)", "MIN PERIOD", "MAX PERIOD", "PERIOD JITTER (P-P)", "FREQ DRIFT")
 
         self._update_instrument_visibility()
@@ -1984,7 +1957,7 @@ class CLKTestUI(QWidget):
             self.vt6002_card.hide()
 
     # -------------------------------------------------------
-    # 搜索仪器
+    # Instrument search
     def _sync_from_top(self):
         if not self._mso64b_top:
             return
@@ -2129,7 +2102,7 @@ class CLKTestUI(QWidget):
         self.vt6002_connect_btn.setEnabled(False)
 
     # -------------------------------------------------------
-    # 连接 / 断开
+    # Connect / Disconnect
     # -------------------------------------------------------
     def _toggle_mso64b(self):
         if self.is_mso64b_connected:
@@ -2152,7 +2125,7 @@ class CLKTestUI(QWidget):
             from instruments.scopes.tektronix.mso64b import MSO64B
             addr = self.mso64b_combo.currentText().strip()
             if not addr:
-                raise ValueError("未选择MSO64B仪器地址，请先搜索或手动输入")
+                raise ValueError("MSO64B instrument address not selected, please search or enter manually")
             self._append_log(f"[INFO] Connecting to MSO64B: {addr}")
             self.mso64b = MSO64B(addr)
             idn = self.mso64b.identify_instrument()
@@ -2263,7 +2236,7 @@ class CLKTestUI(QWidget):
             self._set_btn_connected(self.vt6002_connect_btn)
 
     # -------------------------------------------------------
-    # 辅助方法
+    # Helper methods
     # -------------------------------------------------------
     def _set_status_label(self, label, text, state):
         label.setText(text)
@@ -2323,28 +2296,28 @@ class CLKTestUI(QWidget):
 
         if self.current_test_item == self.TEST_CAP_FREQ:
             if not self.is_mso64b_connected:
-                raise ValueError("测试项1需要先连接MSO64B用于频率测量")
+                raise ValueError("Test Item 1 requires MSO64B connection for frequency measurement")
             if self.reg_min.value() > self.reg_max.value():
-                raise ValueError("Register Min 不能大于 Register Max")
+                raise ValueError("Register Min must not exceed Register Max")
 
         elif self.current_test_item == self.TEST_TEMP_FREQ:
             if not self.is_vt6002_connected:
-                raise ValueError("测试项2需要先连接VT6002温箱")
+                raise ValueError("Test Item 2 requires VT6002 chamber connection")
             if not self.is_mso64b_connected:
-                raise ValueError("测试项2需要先连接MSO64B用于频率测量")
+                raise ValueError("Test Item 2 requires MSO64B connection for frequency measurement")
             if self.temp_step.value() <= 0:
-                raise ValueError("步进温度必须大于0")
+                raise ValueError("Temperature step must be greater than 0")
 
         elif self.current_test_item == self.TEST_CLK_PERF:
             clk_source = self.clk_source_combo.currentText()
             if clk_source == "MSO64B":
                 if not self.is_mso64b_connected:
-                    raise ValueError("MSO64B模式需要先连接MSO64B")
+                    raise ValueError("MSO64B mode requires MSO64B connection")
             elif clk_source == "DSLogic":
                 pass
             elif clk_source == "Import CSV":
                 if not self.csv_file_path:
-                    raise ValueError("请选择CSV文件")
+                    raise ValueError("Please select a CSV file")
 
     def _build_test_config(self):
         mso_ch_text = self.mso64b_channel_combo.currentText()
@@ -2390,7 +2363,7 @@ class CLKTestUI(QWidget):
         self._reset_metrics()
 
     # -------------------------------------------------------
-    # 测试控制
+    # Test control
     # -------------------------------------------------------
     def _on_start_or_stop(self):
         if self._test_thread is not None:
@@ -2400,7 +2373,7 @@ class CLKTestUI(QWidget):
 
     def _start_test(self):
         if self._test_thread is not None:
-            QMessageBox.information(self, "Info", "测试正在进行中")
+            QMessageBox.information(self, "Info", "Test is already in progress")
             return
 
         try:
@@ -2488,11 +2461,11 @@ class CLKTestUI(QWidget):
 
     def _update_test_button_state(self, running):
         if running:
-            self.start_test_btn.setText("■ STOP")
-            self.start_test_btn.setObjectName("stop_test_btn")
+            self.start_test_btn.setText("■ Stop")
+            self.start_test_btn.setObjectName("stopBtn")
         else:
             self.start_test_btn.setText(self._start_btn_text)
-            self.start_test_btn.setObjectName("start_test_btn")
+            self.start_test_btn.setObjectName("primaryStartBtn")
         self.start_test_btn.style().unpolish(self.start_test_btn)
         self.start_test_btn.style().polish(self.start_test_btn)
         self.start_test_btn.update()
@@ -2539,7 +2512,7 @@ class CLKTestUI(QWidget):
         self._append_log(f"[ERROR] {err}")
 
     # -------------------------------------------------------
-    # 结果显示
+    # Result display
     # -------------------------------------------------------
     def _show_sweep_result(self, mode, data, default_code=None):
         if not data:
@@ -2914,7 +2887,7 @@ class CLKTestUI(QWidget):
         self.plot_widget.addItem(zero_line)
 
     # -------------------------------------------------------
-    # 导出 / 导入
+    # Export / Import
     # -------------------------------------------------------
     def export_result(self):
         path, _ = QFileDialog.getSaveFileName(self, "Export Result", "", "CSV Files (*.csv)")

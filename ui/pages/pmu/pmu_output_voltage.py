@@ -572,15 +572,15 @@ class PMUOutputVoltageUI(QWidget):
         left_layout.setContentsMargins(18, 18, 18, 18)
         left_layout.setSpacing(16)
 
-        self.connection_card = CardFrame("⚡ N6705C CONNECTION")
+        self.connection_card = CardFrame("N6705C Connection")
         self._build_connection_card()
         left_layout.addWidget(self.connection_card)
 
-        self.vmeter_card = CardFrame("☷ VMETER CHANNEL SELECTION")
+        self.vmeter_card = CardFrame("VMeter Channel Selection")
         self._build_vmeter_card()
         left_layout.addWidget(self.vmeter_card)
 
-        self.test_param_card = CardFrame("⚙ TEST PARAMETERS")
+        self.test_param_card = CardFrame("Test Parameters")
         self._build_test_param_card()
         left_layout.addWidget(self.test_param_card)
 
