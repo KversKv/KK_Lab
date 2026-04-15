@@ -18,34 +18,15 @@ import time
 import base64
 import csv
 from datetime import datetime
-import pyvisa
 
 from instruments.power.keysight.n6705c import N6705C
 from ui.styles.button import SpinningSearchButton, update_connect_button_state
 from ui.styles.n6705c_connection_frame import N6705CConnectionMixin
+from ui.styles.oscilloscope_module_frame import OscilloscopeConnectionMixin
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockN6705C, MockMSO64B
-from instruments.scopes.tektronix.mso64b import MSO64B
-from instruments.scopes.keysight.dsox4034a import DSOX4034A
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLLBAR_STYLE, START_BTN_STYLE, update_start_btn_state
-
-
-class _InstrumentWorker(QObject):
-    log = Signal(str)
-    finished = Signal(dict)
-
-    def __init__(self, task, kwargs=None):
-        super().__init__()
-        self._task = task
-        self._kwargs = kwargs or {}
-
-    def run(self):
-        try:
-            result = self._task(**self._kwargs)
-            self.finished.emit(result if isinstance(result, dict) else {})
-        except Exception as e:
-            self.finished.emit({"error": str(e)})
 
 
 class _IsGainTestWorker(QObject):
@@ -519,7 +500,7 @@ class FixedPopupComboBox(DarkComboBox):
             popup.move(global_pos.x(), global_pos.y())
 
 
-class PMUIsGainUI(N6705CConnectionMixin, QWidget):
+class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
     """PMU Is_gain测试UI组件"""
 
     connection_status_changed = Signal(bool)
@@ -528,29 +509,19 @@ class PMUIsGainUI(N6705CConnectionMixin, QWidget):
         super().__init__()
 
         self.init_n6705c_connection(n6705c_top)
-        self._mso64b_top = mso64b_top
-
-        self.scope_connected = False
-        self.scope_resource = None
-        self.Osc_ins = None
+        self.init_oscilloscope_connection(mso64b_top)
 
         self.is_test_running = False
         self.test_thread = None
         self._test_worker = None
         self._test_result_data = []
 
-        self._instr_thread = None
-        self._instr_worker = None
-
         self._setup_style()
         self._create_layout()
         self._init_ui_elements()
         self._bind_signals()
         self.sync_n6705c_from_top()
-        self._sync_scope_from_top()
-
-        if self._mso64b_top is not None:
-            self._mso64b_top.connection_changed.connect(self._on_mso64b_top_changed)
+        self.sync_oscilloscope_from_top()
 
     @staticmethod
     def _get_checkmark_path(accent_color):
@@ -969,30 +940,7 @@ class PMUIsGainUI(N6705CConnectionMixin, QWidget):
 
         self.build_n6705c_connection_widgets(layout)
 
-        scope_label = QLabel("Oscilloscope")
-        scope_label.setObjectName("fieldLabel")
-        layout.addWidget(scope_label)
-
-        self.scope_type_combo = FixedPopupComboBox()
-        self.scope_type_combo.addItems(["DSOX4034A", "MSO64B"])
-        layout.addWidget(self.scope_type_combo)
-
-        self.scope_resource_combo = FixedPopupComboBox()
-        self.scope_resource_combo.setEditable(True)
-        self.scope_resource_combo.addItem("USB0::0x0957::0x17A4::MY61500152::INSTR")
-        layout.addWidget(self.scope_resource_combo)
-
-        scope_row = QHBoxLayout()
-        scope_row.setSpacing(8)
-
-        self.scope_search_btn = SpinningSearchButton()
-
-        self.scope_connect_btn = QPushButton()
-        update_connect_button_state(self.scope_connect_btn, connected=False)
-
-        scope_row.addWidget(self.scope_search_btn)
-        scope_row.addWidget(self.scope_connect_btn)
-        layout.addLayout(scope_row)
+        self.build_oscilloscope_connection_widgets(layout)
 
         test_selection_label = QLabel("Test Selection")
         test_selection_label.setObjectName("fieldLabel")
@@ -1122,7 +1070,7 @@ class PMUIsGainUI(N6705CConnectionMixin, QWidget):
 
     def _init_ui_elements(self):
         self._update_n6705c_connect_button_state(False)
-        self._update_connect_button_state(self.scope_connect_btn, False)
+        update_connect_button_state(self.scope_connect_btn, False)
         self._update_test_button_state(False)
         self._on_test_selection_changed()
         self.append_log("[SYSTEM] Ready. Waiting for instrument connection.")
@@ -1131,8 +1079,7 @@ class PMUIsGainUI(N6705CConnectionMixin, QWidget):
 
     def _bind_signals(self):
         self.bind_n6705c_signals()
-        self.scope_search_btn.clicked.connect(self._on_scope_search)
-        self.scope_connect_btn.clicked.connect(self._on_connect_or_disconnect_scope)
+        self.bind_oscilloscope_signals()
         self.test_selection_combo.currentIndexChanged.connect(self._on_test_selection_changed)
         self.start_test_btn.clicked.connect(self._on_start_or_abort_clicked)
         self.stop_test_btn.clicked.connect(self._abort_test_from_external)
@@ -1149,61 +1096,6 @@ class PMUIsGainUI(N6705CConnectionMixin, QWidget):
         is_traverse = self.test_selection_combo.currentText() == "遍历 Is_gain 测试"
         for w in self._traverse_only_widgets:
             w.setVisible(is_traverse)
-
-    def _update_connect_button_state(self, button: QPushButton, connected: bool):
-        update_connect_button_state(button, connected)
-
-    def _sync_scope_from_top(self):
-        if self._mso64b_top:
-            if self._mso64b_top.is_connected and self._mso64b_top.mso64b:
-                self.Osc_ins = self._mso64b_top.mso64b
-                self.scope_resource = self._mso64b_top.visa_resource
-                self.scope_connected = True
-                self._update_connect_button_state(self.scope_connect_btn, True)
-                self.scope_search_btn.setEnabled(False)
-                scope_type = getattr(self._mso64b_top, 'scope_type', 'MSO64B') or 'MSO64B'
-                idx = self.scope_type_combo.findText(scope_type)
-                if idx >= 0:
-                    self.scope_type_combo.setCurrentIndex(idx)
-                self.scope_type_combo.setEnabled(False)
-                if self._mso64b_top.visa_resource:
-                    self.scope_resource_combo.clear()
-                    self.scope_resource_combo.addItem(self._mso64b_top.visa_resource)
-            elif not self.scope_connected:
-                self._update_connect_button_state(self.scope_connect_btn, False)
-
-    def _on_mso64b_top_changed(self):
-        if self._mso64b_top is None:
-            return
-        if self.is_test_running:
-            return
-        if self._mso64b_top.is_connected and self._mso64b_top.mso64b:
-            if self.Osc_ins is self._mso64b_top.mso64b and self.scope_connected:
-                return
-            self.Osc_ins = self._mso64b_top.mso64b
-            self.scope_resource = self._mso64b_top.visa_resource
-            self.scope_connected = True
-            self._update_connect_button_state(self.scope_connect_btn, True)
-            self.scope_search_btn.setEnabled(False)
-            scope_type = getattr(self._mso64b_top, 'scope_type', 'MSO64B') or 'MSO64B'
-            idx = self.scope_type_combo.findText(scope_type)
-            if idx >= 0:
-                self.scope_type_combo.setCurrentIndex(idx)
-            self.scope_type_combo.setEnabled(False)
-            if self._mso64b_top.visa_resource:
-                self.scope_resource_combo.clear()
-                self.scope_resource_combo.addItem(self._mso64b_top.visa_resource)
-            self.append_log(f"[SYSTEM] {scope_type} synced from external connection.")
-        else:
-            if not self.scope_connected:
-                return
-            self.Osc_ins = None
-            self.scope_resource = None
-            self.scope_connected = False
-            self._update_connect_button_state(self.scope_connect_btn, False)
-            self.scope_type_combo.setEnabled(True)
-            self.scope_search_btn.setEnabled(True)
-            self.append_log("[SYSTEM] Oscilloscope disconnected externally.")
 
     def _update_test_button_state(self, running: bool):
         self.is_test_running = running
@@ -1892,194 +1784,6 @@ class PMUIsGainUI(N6705CConnectionMixin, QWidget):
         if self.is_connected:
             self.set_system_status(f"● Connected to: {instrument_info}")
 
-    def _run_instrument_task(self, task_func, on_finished, kwargs=None):
-        if self._instr_thread is not None and self._instr_thread.isRunning():
-            self.append_log("[WARN] Another instrument operation is in progress.")
-            return
-
-        self._instr_worker = _InstrumentWorker(task_func, kwargs)
-        self._instr_thread = QThread()
-        self._instr_worker.moveToThread(self._instr_thread)
-
-        self._instr_thread.started.connect(self._instr_worker.run)
-        self._instr_worker.log.connect(self.append_log)
-        self._instr_worker.finished.connect(on_finished)
-        self._instr_worker.finished.connect(self._instr_thread.quit)
-        self._instr_thread.finished.connect(self._cleanup_instr_thread)
-
-        self._instr_thread.start()
-
-    def _cleanup_instr_thread(self):
-        if self._instr_thread is not None:
-            self._instr_thread.wait(5000)
-            self._instr_thread.deleteLater()
-            self._instr_thread = None
-        if self._instr_worker is not None:
-            self._instr_worker.deleteLater()
-            self._instr_worker = None
-
-    def _on_scope_search(self):
-        if self._mso64b_top and self._mso64b_top.is_connected:
-            return
-        self.set_page_status("Searching scope resources...")
-        self.append_log("[SYSTEM] Scanning for oscilloscope resources (LAN & USB)...")
-        self.scope_search_btn.setEnabled(False)
-        self._run_instrument_task(self._search_scope_task, self._on_scope_search_finished)
-
-    def _search_scope_task(self):
-        if self.rm is None:
-            try:
-                self.rm = pyvisa.ResourceManager()
-            except Exception:
-                self.rm = pyvisa.ResourceManager('@ni')
-
-        all_resources = list(self.rm.list_resources()) or []
-        scope_devices = []
-
-        for dev in all_resources:
-            try:
-                instr = self.rm.open_resource(dev, timeout=2000)
-                idn = instr.query('*IDN?').strip()
-                instr.close()
-                if any(kw in idn.upper() for kw in ["MSO", "DSO", "SCOPE", "OSCILLOSCOPE", "DSOX", "MSOX"]):
-                    scope_devices.append(dev)
-            except Exception:
-                pass
-
-        return {"devices": scope_devices}
-
-    def _on_scope_search_finished(self, result):
-        self.scope_search_btn.setEnabled(True)
-        if "error" in result:
-            self.set_page_status("Scope search failed", is_error=True)
-            self.append_log(f"[ERROR] Scope search failed: {result['error']}")
-            return
-
-        scope_devices = result.get("devices", [])
-        self.scope_resource_combo.clear()
-
-        if scope_devices:
-            for dev in scope_devices:
-                self.scope_resource_combo.addItem(dev)
-            self.append_log(f"[SYSTEM] Found {len(scope_devices)} oscilloscope(s).")
-            self.set_page_status(f"Found {len(scope_devices)} scope(s)")
-        else:
-            self.scope_resource_combo.addItem("USB0::0x0957::0x17A4::MY61500152::INSTR")
-            self.set_page_status("No oscilloscope found", is_error=True)
-            self.append_log("[SYSTEM] No oscilloscope found. Default resource restored.")
-
-    def _on_connect_or_disconnect_scope(self):
-        if self.scope_connected:
-            self._on_disconnect_scope()
-        else:
-            self._on_connect_scope()
-
-    def _on_connect_scope(self):
-        scope_type = self.scope_type_combo.currentText()
-        resource = self.scope_resource_combo.currentText().strip()
-        if not resource:
-            self.set_page_status("Invalid scope resource", is_error=True)
-            self.append_log("[ERROR] Invalid scope resource.")
-            return
-
-        if DEBUG_MOCK:
-            self.Osc_ins = MockMSO64B()
-            self.is_scope_connected = True
-            self._update_connect_button_state(self.scope_connect_btn, True)
-            self.scope_search_btn.setEnabled(False)
-            self.append_log("[DEBUG] Mock scope connected.")
-            self.set_page_status("Scope connected (Mock)")
-            if self._mso64b_top:
-                self._mso64b_top.connect_instrument(resource, self.Osc_ins, scope_type="MSO64B")
-            self.scope_connection_changed.emit(True)
-            return
-
-        self.set_page_status(f"Connecting {scope_type}...")
-        self.append_log(f"[SYSTEM] Attempting {scope_type} connection...")
-        self.scope_connect_btn.setEnabled(False)
-        self._run_instrument_task(
-            self._connect_scope_task,
-            self._on_connect_scope_finished,
-            kwargs={"scope_type": scope_type, "resource": resource},
-        )
-
-    def _connect_scope_task(self, scope_type, resource):
-        if scope_type == "MSO64B":
-            osc = MSO64B(resource)
-        elif scope_type == "DSOX4034A":
-            osc = DSOX4034A(resource)
-        else:
-            return {"error": f"Unknown scope type: {scope_type}"}
-
-        idn = osc.identify_instrument()
-        return {"osc": osc, "idn": idn, "resource": resource, "scope_type": scope_type}
-
-    def _on_connect_scope_finished(self, result):
-        self.scope_connect_btn.setEnabled(True)
-        if "error" in result:
-            scope_type = result.get("scope_type", self.scope_type_combo.currentText())
-            self.Osc_ins = None
-            self.set_page_status(f"{scope_type} connection failed", is_error=True)
-            self.append_log(f"[ERROR] {scope_type} connection failed: {result['error']}")
-            return
-
-        scope_type = result["scope_type"]
-        self.Osc_ins = result["osc"]
-        self.scope_resource = result["resource"]
-        self.scope_connected = True
-        self._update_connect_button_state(self.scope_connect_btn, True)
-        self.scope_type_combo.setEnabled(False)
-        self.scope_search_btn.setEnabled(False)
-        self.append_log(f"[SYSTEM] {scope_type} connected.")
-        self.append_log(f"[IDN] {result['idn']}")
-        self.set_page_status(f"{scope_type} connected")
-
-        if self._mso64b_top:
-            self._mso64b_top.connect_instrument(result["resource"], self.Osc_ins, scope_type=scope_type)
-
-    def _on_disconnect_scope(self):
-        scope_type = self.scope_type_combo.currentText()
-        self.set_page_status(f"Disconnecting {scope_type}...")
-        self.append_log(f"[SYSTEM] Disconnecting {scope_type}...")
-        self.scope_connect_btn.setEnabled(False)
-
-        if self._mso64b_top and self._mso64b_top.is_connected:
-            self._mso64b_top.disconnect()
-            self.Osc_ins = None
-            self._on_disconnect_scope_finished({"scope_type": scope_type})
-        else:
-            osc_ref = self.Osc_ins
-            self.Osc_ins = None
-            self._run_instrument_task(
-                self._disconnect_scope_task,
-                self._on_disconnect_scope_finished,
-                kwargs={"osc_ref": osc_ref, "scope_type": scope_type},
-            )
-
-    def _disconnect_scope_task(self, osc_ref, scope_type):
-        if osc_ref is not None:
-            if hasattr(osc_ref, 'disconnect'):
-                osc_ref.disconnect()
-            elif hasattr(osc_ref, 'instrument') and osc_ref.instrument:
-                osc_ref.instrument.close()
-        return {"scope_type": scope_type}
-
-    def _on_disconnect_scope_finished(self, result):
-        self.scope_connect_btn.setEnabled(True)
-        scope_type = result.get("scope_type", self.scope_type_combo.currentText())
-        if "error" in result:
-            self.set_page_status(f"{scope_type} disconnect failed", is_error=True)
-            self.append_log(f"[ERROR] {scope_type} disconnect failed: {result['error']}")
-            return
-
-        self.scope_resource = None
-        self.scope_connected = False
-        self._update_connect_button_state(self.scope_connect_btn, False)
-        self.scope_type_combo.setEnabled(True)
-        self.scope_search_btn.setEnabled(True)
-        self.append_log(f"[SYSTEM] {scope_type} disconnected.")
-        self.set_page_status(f"{scope_type} disconnected")
-
     def _on_start_or_abort_clicked(self):
         if self.is_test_running:
             if self._test_worker is not None:
@@ -2137,9 +1841,3 @@ class PMUIsGainUI(N6705CConnectionMixin, QWidget):
         self.test_thread.finished.connect(self._cleanup_test_thread)
 
         self.test_thread.start()
-
-    def get_scope_instance(self):
-        return self.Osc_ins
-
-    def is_scope_connected(self):
-        return self.scope_connected

@@ -7,8 +7,6 @@ import os
 import statistics
 import subprocess
 import time
-import serial
-import serial.tools.list_ports
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
@@ -22,57 +20,10 @@ from ui.styles.button import SpinningSearchButton, update_connect_button_state
 import pyqtgraph as pg
 from ui.styles import SCROLL_AREA_STYLE, START_BTN_STYLE, update_start_btn_state
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.styles.oscilloscope_module_frame import OscilloscopeConnectionMixin
+from ui.styles.chamber_module_frame import VT6002ConnectionMixin
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockMSO64B, MockVT6002
-
-
-class _SearchMSO64BWorker(QObject):
-    finished = Signal(list)
-    error = Signal(str)
-
-    def run(self):
-        rm = None
-        try:
-            import pyvisa
-            rm = pyvisa.ResourceManager()
-            devices = rm.list_resources()
-            mso_devices = [d for d in devices if 'MSO' in d or 'TCPIP' in d or 'USB' in d]
-            self.finished.emit(list(mso_devices))
-        except Exception as e1:
-            if rm is not None:
-                try:
-                    rm.close()
-                except Exception:
-                    pass
-                rm = None
-            try:
-                import pyvisa
-                rm = pyvisa.ResourceManager('@py')
-                devices = rm.list_resources()
-                mso_devices = [d for d in devices if 'MSO' in d or 'TCPIP' in d or 'USB' in d]
-                self.finished.emit(list(mso_devices))
-            except Exception as e2:
-                self.error.emit(f"NI-VISA: {e1}; pyvisa-py: {e2}")
-                self.finished.emit([])
-        finally:
-            if rm is not None:
-                try:
-                    rm.close()
-                except Exception:
-                    pass
-
-
-class _SearchSerialWorker(QObject):
-    finished = Signal(list)
-    error = Signal(str)
-
-    def run(self):
-        try:
-            ports = serial.tools.list_ports.comports()
-            result = [f"{p.device} - {p.description}" for p in ports]
-            self.finished.emit(result)
-        except Exception as e:
-            self.error.emit(str(e))
 
 
 class _CLKTestWorker(QObject):
@@ -922,7 +873,7 @@ class _CLKTestWorker(QObject):
         }
 
 
-class CLKTestUI(QWidget):
+class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, QWidget):
     """
     CLK Test Main UI Component
     Test Items:
@@ -937,25 +888,14 @@ class CLKTestUI(QWidget):
 
     def __init__(self, mso64b_top=None, parent=None):
         super().__init__(parent)
-        self._mso64b_top = mso64b_top
+        self.init_oscilloscope_connection(mso64b_top)
+        self.init_vt6002_connection()
         self.current_test_item = self.TEST_CAP_FREQ
 
-        # Instrument instances
-        self.mso64b = None
-        self.vt6002 = None
-        self.is_mso64b_connected = False
-        self.is_vt6002_connected = False
-
-        # Worker thread attributes
         self._test_thread = None
         self._test_worker = None
         self._start_btn_text = "▷ Start Sequence"
-        self._mso64b_search_thread = None
-        self._mso64b_search_worker = None
-        self._vt6002_search_thread = None
-        self._vt6002_search_worker = None
 
-        # Result data
         self.result_data = []
         self.result_mode = None
         self.result_summary = {}
@@ -964,7 +904,7 @@ class CLKTestUI(QWidget):
         self._setup_style()
         self._create_layout()
         self._init_ui_elements()
-        self._sync_from_top()
+        self.sync_oscilloscope_from_top()
 
     # -------------------------------------------------------
     # Styles
@@ -1327,18 +1267,21 @@ class CLKTestUI(QWidget):
         instruments_layout.addWidget(self.freq_instr_frame)
 
         # MSO64B
-        self.mso64b_card = self._create_instrument_card(
-            "MSO64B Oscilloscope",
-            "Frequency Measurement / Logic Analyzer Input",
-            "mso64b_combo",
-            "mso64b_search_btn",
-            "mso64b_connect_btn",
-            "mso64b_disconnect_btn",
-            "mso64b_status"
-        )
+        self.mso64b_card = QFrame()
+        self.mso64b_card.setObjectName("config_inner_panel")
+        mso64b_card_layout = QVBoxLayout(self.mso64b_card)
+        mso64b_card_layout.setContentsMargins(10, 10, 10, 10)
+        mso64b_card_layout.setSpacing(6)
+        mso64b_title = QLabel("MSO64B Oscilloscope")
+        mso64b_title.setStyleSheet("color: #c8d8ff; font-size: 11px; font-weight: 600; border: none;")
+        mso64b_desc = QLabel("Frequency Measurement / Logic Analyzer Input")
+        mso64b_desc.setStyleSheet("color: #4a6a98; font-size: 11px; border: none;")
+        mso64b_desc.setWordWrap(True)
+        mso64b_card_layout.addWidget(mso64b_title)
+        mso64b_card_layout.addWidget(mso64b_desc)
+        self.build_oscilloscope_connection_widgets(mso64b_card_layout)
         instruments_layout.addWidget(self.mso64b_card)
 
-        mso64b_card_layout = self.mso64b_card.layout()
         mso_ch_row = QHBoxLayout()
         mso_ch_row.setSpacing(6)
         mso_ch_label = QLabel("Measurement Channel")
@@ -1375,15 +1318,19 @@ class CLKTestUI(QWidget):
         instruments_layout.addWidget(self.dmm_card)
 
         # Temperature chamber
-        self.vt6002_card = self._create_instrument_card(
-            "VT6002 Chamber",
-            "Temperature Test Chamber",
-            "vt6002_combo",
-            "vt6002_search_btn",
-            "vt6002_connect_btn",
-            "vt6002_disconnect_btn",
-            "vt6002_status"
-        )
+        self.vt6002_card = QFrame()
+        self.vt6002_card.setObjectName("config_inner_panel")
+        vt6002_card_layout = QVBoxLayout(self.vt6002_card)
+        vt6002_card_layout.setContentsMargins(10, 10, 10, 10)
+        vt6002_card_layout.setSpacing(6)
+        vt6002_title = QLabel("VT6002 Chamber")
+        vt6002_title.setStyleSheet("color: #c8d8ff; font-size: 11px; font-weight: 600; border: none;")
+        vt6002_desc = QLabel("Temperature Test Chamber")
+        vt6002_desc.setStyleSheet("color: #4a6a98; font-size: 11px; border: none;")
+        vt6002_desc.setWordWrap(True)
+        vt6002_card_layout.addWidget(vt6002_title)
+        vt6002_card_layout.addWidget(vt6002_desc)
+        self.build_vt6002_connection_widgets(vt6002_card_layout)
         instruments_layout.addWidget(self.vt6002_card)
 
         left_col.addWidget(instruments_panel)
@@ -1801,17 +1748,14 @@ class CLKTestUI(QWidget):
     def _init_ui_elements(self):
         self.test_item_combo.currentIndexChanged.connect(self._on_test_item_combo_changed)
 
-        self.mso64b_search_btn.clicked.connect(self._search_mso64b)
-        self.mso64b_connect_btn.clicked.connect(self._toggle_mso64b)
+        self.bind_oscilloscope_signals()
+        self.bind_vt6002_signals()
 
         self.counter_search_btn.clicked.connect(self._search_counter)
         self.counter_connect_btn.clicked.connect(self._toggle_counter)
 
         self.dmm_search_btn.clicked.connect(self._search_dmm)
         self.dmm_connect_btn.clicked.connect(self._toggle_dmm)
-
-        self.vt6002_search_btn.clicked.connect(self._search_vt6002)
-        self.vt6002_connect_btn.clicked.connect(self._toggle_vt6002)
 
         self.start_test_btn.clicked.connect(self._on_start_or_stop)
         self.stop_test_btn.clicked.connect(self._stop_test)
@@ -1827,10 +1771,8 @@ class CLKTestUI(QWidget):
 
         self._set_test_item(self.TEST_CAP_FREQ)
         self._on_clk_source_changed(self.clk_source_combo.currentIndex())
-        self._search_mso64b()
         self._search_counter()
         self._search_dmm()
-        self._search_vt6002()
 
         if DEBUG_MOCK:
             self._append_log("[MOCK] ========== MOCK DEBUG MODE ACTIVE ==========")
@@ -1909,75 +1851,6 @@ class CLKTestUI(QWidget):
 
     # -------------------------------------------------------
     # Instrument search
-    def _sync_from_top(self):
-        if not self._mso64b_top:
-            return
-        if self._mso64b_top.is_connected and self._mso64b_top.mso64b:
-            self.mso64b = self._mso64b_top.mso64b
-            self.is_mso64b_connected = True
-            self._set_status_label(self.mso64b_status, "Connected", "ok")
-            self._set_btn_connected(self.mso64b_connect_btn)
-            self.mso64b_search_btn.setEnabled(False)
-            if self._mso64b_top.visa_resource:
-                self.mso64b_combo.clear()
-                self.mso64b_combo.addItem(self._mso64b_top.visa_resource)
-        elif not self.is_mso64b_connected:
-            self._set_btn_disconnected(self.mso64b_connect_btn)
-
-    # -------------------------------------------------------
-    def _search_mso64b(self):
-        if self._mso64b_top and self._mso64b_top.is_connected:
-            return
-        if DEBUG_MOCK:
-            self.mso64b_combo.clear()
-            self.mso64b_combo.addItem("[MOCK] TCPIP0::192.168.3.27::inst0::INSTR")
-            self._set_status_label(self.mso64b_status, "Available (Mock)", "ok")
-            return
-
-        if self._mso64b_search_thread is not None and self._mso64b_search_thread.isRunning():
-            return
-
-        self._set_status_label(self.mso64b_status, "Searching...", "warn")
-        self.mso64b_search_btn.setEnabled(False)
-
-        worker = _SearchMSO64BWorker()
-        thread = QThread()
-        worker.moveToThread(thread)
-
-        thread.started.connect(worker.run)
-        worker.finished.connect(self._on_mso64b_search_done)
-        worker.error.connect(lambda e: self._append_log(f"[WARN] MSO64B search: {e}"))
-        worker.finished.connect(thread.quit)
-        worker.error.connect(thread.quit)
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda: self._on_mso64b_thread_finished())
-
-        self._mso64b_search_thread = thread
-        self._mso64b_search_worker = worker
-        thread.start()
-
-    def _on_mso64b_thread_finished(self):
-        self._mso64b_search_thread = None
-        self._mso64b_search_worker = None
-
-    def _on_mso64b_search_done(self, devices):
-        self.mso64b_combo.clear()
-        default_addr = "TCPIP0::192.168.3.27::inst0::INSTR"
-        if devices:
-            for d in devices:
-                self.mso64b_combo.addItem(d)
-            if DEBUG_MOCK and default_addr not in devices:
-                self.mso64b_combo.addItem(default_addr)
-            self._set_status_label(self.mso64b_status, "Available", "ok")
-        else:
-            if DEBUG_MOCK:
-                self.mso64b_combo.addItem(default_addr)
-                self._set_status_label(self.mso64b_status, "Default Device Available (Debug)", "ok")
-            else:
-                self._set_status_label(self.mso64b_status, "No Device Found", "err")
-        self.mso64b_search_btn.setEnabled(True)
-
     def _search_counter(self):
         if DEBUG_MOCK:
             self.counter_combo.clear()
@@ -1997,117 +1870,6 @@ class CLKTestUI(QWidget):
         self.dmm_combo.clear()
         self.dmm_combo.addItem("USB0::DMM::INSTR")
         self._set_status_label(self.dmm_status, "Available", "ok")
-
-    def _search_vt6002(self):
-        if DEBUG_MOCK:
-            self.vt6002_combo.clear()
-            self.vt6002_combo.addItem("[MOCK] COM3 - VT6002 Chamber")
-            self._set_status_label(self.vt6002_status, "Available (Mock)", "ok")
-            return
-
-        if self._vt6002_search_thread is not None and self._vt6002_search_thread.isRunning():
-            return
-
-        self._set_status_label(self.vt6002_status, "Searching...", "warn")
-        self.vt6002_search_btn.setEnabled(False)
-        self.vt6002_connect_btn.setEnabled(False)
-
-        worker = _SearchSerialWorker()
-        thread = QThread()
-        worker.moveToThread(thread)
-
-        thread.started.connect(worker.run)
-        worker.finished.connect(self._on_vt6002_search_done)
-        worker.error.connect(self._on_vt6002_search_error)
-        worker.finished.connect(thread.quit)
-        worker.error.connect(thread.quit)
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda: self._on_vt6002_thread_finished())
-
-        self._vt6002_search_thread = thread
-        self._vt6002_search_worker = worker
-        thread.start()
-
-    def _on_vt6002_thread_finished(self):
-        self._vt6002_search_thread = None
-        self._vt6002_search_worker = None
-
-    def _on_vt6002_search_done(self, ports):
-        self.vt6002_combo.clear()
-        if ports:
-            for port in ports:
-                self.vt6002_combo.addItem(port)
-            self._set_status_label(self.vt6002_status, "Available", "ok")
-            self.vt6002_connect_btn.setEnabled(True)
-        else:
-            self.vt6002_combo.addItem("No serial ports found")
-            self._set_status_label(self.vt6002_status, "Not Available", "err")
-            self.vt6002_connect_btn.setEnabled(False)
-        self.vt6002_search_btn.setEnabled(True)
-
-    def _on_vt6002_search_error(self, err):
-        self._append_log(f"[WARN] VT6002 search error: {err}")
-        self._set_status_label(self.vt6002_status, f"Error: {err}", "err")
-        self.vt6002_search_btn.setEnabled(True)
-        self.vt6002_connect_btn.setEnabled(False)
-
-    # -------------------------------------------------------
-    # Connect / Disconnect
-    # -------------------------------------------------------
-    def _toggle_mso64b(self):
-        if self.is_mso64b_connected:
-            self._disconnect_mso64b()
-        else:
-            self._connect_mso64b()
-
-    def _connect_mso64b(self):
-        self._set_status_label(self.mso64b_status, "Connecting...", "warn")
-        self.mso64b_connect_btn.setEnabled(False)
-        if DEBUG_MOCK:
-            self.mso64b = MockMSO64B()
-            self.is_mso64b_connected = True
-            self._set_status_label(self.mso64b_status, "Connected: [MOCK] MSO64B", "ok")
-            self._set_btn_connected(self.mso64b_connect_btn)
-            self.mso64b_search_btn.setEnabled(False)
-            self._append_log("[MOCK] MSO64B connected (mock mode)")
-            return
-        try:
-            from instruments.scopes.tektronix.mso64b import MSO64B
-            addr = self.mso64b_combo.currentText().strip()
-            if not addr:
-                raise ValueError("MSO64B instrument address not selected, please search or enter manually")
-            self._append_log(f"[INFO] Connecting to MSO64B: {addr}")
-            self.mso64b = MSO64B(addr)
-            idn = self.mso64b.identify_instrument()
-            self.is_mso64b_connected = True
-            self._set_status_label(self.mso64b_status, f"Connected: {idn[:30]}", "ok")
-            self._set_btn_connected(self.mso64b_connect_btn)
-            self.mso64b_search_btn.setEnabled(False)
-            self._append_log(f"[INFO] MSO64B connected: {idn}")
-
-            if self._mso64b_top:
-                self._mso64b_top.connect_instrument(addr, self.mso64b)
-        except Exception as e:
-            self._append_log(f"[ERROR] MSO64B connection failed: {e}")
-            self._set_status_label(self.mso64b_status, f"Error: {e}", "err")
-            self._set_btn_disconnected(self.mso64b_connect_btn)
-
-    def _disconnect_mso64b(self):
-        try:
-            if self._mso64b_top:
-                self._mso64b_top.disconnect()
-                self.mso64b = None
-            else:
-                if self.mso64b:
-                    self.mso64b.disconnect()
-                    self.mso64b = None
-        except Exception:
-            pass
-        self.is_mso64b_connected = False
-        self._set_status_label(self.mso64b_status, "Disconnected", "err")
-        self._set_btn_disconnected(self.mso64b_connect_btn)
-        self.mso64b_search_btn.setEnabled(True)
 
     def _toggle_counter(self):
         if self.counter_connect_btn.text() == "Disconnect":
@@ -2137,58 +1899,6 @@ class CLKTestUI(QWidget):
         self._set_status_label(self.dmm_status, "Disconnected", "err")
         self._set_btn_disconnected(self.dmm_connect_btn)
 
-    def _toggle_vt6002(self):
-        if self.is_vt6002_connected:
-            self._disconnect_vt6002()
-        else:
-            self._connect_vt6002()
-
-    def _connect_vt6002(self):
-        self._set_status_label(self.vt6002_status, "Connecting...", "warn")
-        self.vt6002_connect_btn.setEnabled(False)
-        if DEBUG_MOCK:
-            self.vt6002 = MockVT6002()
-            self.is_vt6002_connected = True
-            self._set_status_label(self.vt6002_status, "Connected: [MOCK] VT6002", "ok")
-            self._set_btn_connected(self.vt6002_connect_btn)
-            self.vt6002_search_btn.setEnabled(False)
-            self._append_log("[MOCK] VT6002 connected (mock mode)")
-            return
-        try:
-            from instruments.chambers.vt6002_chamber import VT6002
-            port_str = self.vt6002_combo.currentText()
-            device_port = port_str.split()[0]
-            self._append_log(f"[INFO] Connecting to VT6002: {device_port}")
-            self.vt6002 = VT6002(device_port)
-            self.is_vt6002_connected = True
-            self._set_status_label(self.vt6002_status, "Connected", "ok")
-            self._set_btn_connected(self.vt6002_connect_btn)
-            self.vt6002_search_btn.setEnabled(False)
-            self._append_log(f"[INFO] VT6002 connected: {device_port}")
-        except Exception as e:
-            self._append_log(f"[ERROR] VT6002 connection failed: {e}")
-            self._set_status_label(self.vt6002_status, f"Error: {e}", "err")
-            self._set_btn_disconnected(self.vt6002_connect_btn)
-
-    def _disconnect_vt6002(self):
-        self._set_status_label(self.vt6002_status, "Disconnecting...", "warn")
-        self.vt6002_connect_btn.setEnabled(False)
-        try:
-            if self.vt6002:
-                self.vt6002.close()
-                self.vt6002 = None
-            self.is_vt6002_connected = False
-            self._set_status_label(self.vt6002_status, "Disconnected", "err")
-            self._set_btn_disconnected(self.vt6002_connect_btn)
-            self.vt6002_search_btn.setEnabled(True)
-        except Exception as e:
-            self._append_log(f"[ERROR] VT6002 disconnect failed: {e}")
-            self._set_status_label(self.vt6002_status, f"Error: {e}", "err")
-            self._set_btn_connected(self.vt6002_connect_btn)
-
-    # -------------------------------------------------------
-    # Helper methods
-    # -------------------------------------------------------
     def _set_status_label(self, label, text, state):
         label.setText(text)
         color_map = {"ok": "#18a067", "warn": "#d4a514", "err": "#d14b72"}
@@ -2204,6 +1914,9 @@ class CLKTestUI(QWidget):
         btn.setEnabled(True)
 
     def _append_log(self, text):
+        self.log_text.append(text)
+
+    def append_log(self, text):
         self.log_text.append(text)
 
     def set_progress(self, value: int):
@@ -2246,7 +1959,7 @@ class CLKTestUI(QWidget):
             return
 
         if self.current_test_item == self.TEST_CAP_FREQ:
-            if not self.is_mso64b_connected:
+            if not self.scope_connected:
                 raise ValueError("Test Item 1 requires MSO64B connection for frequency measurement")
             if self.reg_min.value() > self.reg_max.value():
                 raise ValueError("Register Min must not exceed Register Max")
@@ -2254,7 +1967,7 @@ class CLKTestUI(QWidget):
         elif self.current_test_item == self.TEST_TEMP_FREQ:
             if not self.is_vt6002_connected:
                 raise ValueError("Test Item 2 requires VT6002 chamber connection")
-            if not self.is_mso64b_connected:
+            if not self.scope_connected:
                 raise ValueError("Test Item 2 requires MSO64B connection for frequency measurement")
             if self.temp_step.value() <= 0:
                 raise ValueError("Temperature step must be greater than 0")
@@ -2262,7 +1975,7 @@ class CLKTestUI(QWidget):
         elif self.current_test_item == self.TEST_CLK_PERF:
             clk_source = self.clk_source_combo.currentText()
             if clk_source == "MSO64B":
-                if not self.is_mso64b_connected:
+                if not self.scope_connected:
                     raise ValueError("MSO64B mode requires MSO64B connection")
             elif clk_source == "DSLogic":
                 pass
@@ -2372,7 +2085,7 @@ class CLKTestUI(QWidget):
         self._test_thread = QThread()
         self._test_worker = _CLKTestWorker(
             self.current_test_item, config,
-            mso64b=self.mso64b,
+            mso64b=self.Osc_ins,
             vt6002=self.vt6002,
             mock_mode=DEBUG_MOCK,
         )

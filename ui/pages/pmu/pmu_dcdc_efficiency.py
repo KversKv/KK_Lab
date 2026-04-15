@@ -20,14 +20,13 @@ from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles.button import SpinningSearchButton, update_connect_button_state
 from PySide6.QtCore import Qt, QThread, QTimer, Signal, QMargins, QPointF, QObject
 from PySide6.QtGui import QFont, QCursor
-import pyvisa
 import math
 import time
-import serial.tools.list_ports
 
 from instruments.power.keysight.n6705c import N6705C
 from ui.styles import SCROLLBAR_STYLE, START_BTN_STYLE, update_start_btn_state
 from ui.styles.n6705c_connection_frame import N6705CConnectionMixin
+from ui.styles.chamber_module_frame import VT6002ConnectionMixin
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockN6705C, MockVT6002
 
@@ -298,19 +297,6 @@ class SegmentedButton(QPushButton):
         super().__init__(text, parent)
         self.setCheckable(True)
         self.setObjectName("segmentedButton")
-
-
-class _SearchSerialWorker(QObject):
-    finished = Signal(list)
-    error = Signal(str)
-
-    def run(self):
-        try:
-            ports = serial.tools.list_ports.comports()
-            result = [f"{p.device} - {p.description}" for p in ports]
-            self.finished.emit(result)
-        except Exception as e:
-            self.error.emit(str(e))
 
 
 def _generate_current_points(cfg):
@@ -992,7 +978,7 @@ class DCDCTempSweepTestThread(QThread):
             self.test_finished.emit()
 
 
-class PMUDCDCEfficiencyUI(N6705CConnectionMixin, QWidget):
+class PMUDCDCEfficiencyUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
     """PMU DCDC Efficiency测试UI组件"""
 
     connection_status_changed = Signal(bool)
@@ -1001,13 +987,7 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, QWidget):
         super().__init__()
 
         self.init_n6705c_connection(n6705c_top)
-        self._vt6002_chamber_ui = vt6002_chamber_ui
-
-        self.vt6002 = None
-        self.is_vt6002_connected = False
-        self._vt6002_syncing = False
-        self._vt6002_search_thread = None
-        self._vt6002_search_worker = None
+        self.init_vt6002_connection(vt6002_chamber_ui)
 
         self.is_test_running = False
         self.test_thread = None
@@ -1750,173 +1730,7 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, QWidget):
 
     def _build_vt6002_card(self):
         layout = self.vt6002_card.main_layout
-
-        self.vt6002_status_label = QLabel("● Not Connected")
-        self.vt6002_status_label.setObjectName("statusErr")
-        layout.addWidget(self.vt6002_status_label)
-
-        self.vt6002_combo = DarkComboBox()
-        self.vt6002_combo.setSizeAdjustPolicy(
-            DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
-        )
-        self.vt6002_combo.setMinimumContentsLength(10)
-        self.vt6002_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
-        layout.addWidget(self.vt6002_combo)
-
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(8)
-
-        self.vt6002_search_btn = SpinningSearchButton()
-
-        self.vt6002_connect_btn = QPushButton()
-        update_connect_button_state(self.vt6002_connect_btn, connected=False)
-
-        btn_row.addWidget(self.vt6002_search_btn)
-        btn_row.addWidget(self.vt6002_connect_btn)
-        layout.addLayout(btn_row)
-
-    def _on_vt6002_connection_changed(self):
-        if self._vt6002_syncing:
-            return
-        if self._vt6002_chamber_ui is None:
-            return
-        vt = self._vt6002_chamber_ui.vt6002
-        if vt is not None:
-            is_open = isinstance(vt, MockVT6002) or (hasattr(vt, 'ser') and vt.ser.is_open)
-            if is_open:
-                self.vt6002 = vt
-                self.is_vt6002_connected = True
-                port = getattr(self._vt6002_chamber_ui, 'current_port', 'Unknown')
-                self._update_vt6002_ui(True, port)
-                self.append_log(f"[VT6002] Synced: {port}")
-                return
-        self.vt6002 = None
-        self.is_vt6002_connected = False
-        self._update_vt6002_ui(False, "Not Connected")
-        self.append_log("[VT6002] Disconnected (synced).")
-
-    def _search_vt6002(self):
-        if DEBUG_MOCK:
-            self.vt6002_combo.clear()
-            self.vt6002_combo.addItem("[MOCK] COM3 - VT6002 Chamber")
-            return
-
-        if self._vt6002_search_thread is not None and self._vt6002_search_thread.isRunning():
-            return
-
-        self.vt6002_search_btn.setEnabled(False)
-        self.vt6002_connect_btn.setEnabled(False)
-
-        worker = _SearchSerialWorker()
-        thread = QThread()
-        worker.moveToThread(thread)
-
-        thread.started.connect(worker.run)
-        worker.finished.connect(self._on_vt6002_search_done)
-        worker.error.connect(self._on_vt6002_search_error)
-        worker.finished.connect(thread.quit)
-        worker.error.connect(thread.quit)
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda: self._on_vt6002_thread_cleanup())
-
-        self._vt6002_search_thread = thread
-        self._vt6002_search_worker = worker
-        thread.start()
-
-    def _on_vt6002_thread_cleanup(self):
-        self._vt6002_search_thread = None
-        self._vt6002_search_worker = None
-
-    def _on_vt6002_search_done(self, ports):
-        self.vt6002_combo.clear()
-        if ports:
-            for port in ports:
-                self.vt6002_combo.addItem(port)
-            self.vt6002_connect_btn.setEnabled(True)
-        else:
-            self.vt6002_combo.addItem("No serial ports found")
-            self.vt6002_connect_btn.setEnabled(False)
-        self.vt6002_search_btn.setEnabled(True)
-
-    def _on_vt6002_search_error(self, err):
-        self.append_log(f"[VT6002] Search error: {err}")
-        self.vt6002_search_btn.setEnabled(True)
-        self.vt6002_connect_btn.setEnabled(False)
-
-    def _toggle_vt6002(self):
-        if self.is_vt6002_connected:
-            self._disconnect_vt6002()
-        else:
-            self._connect_vt6002()
-
-    def _connect_vt6002(self):
-        self.vt6002_connect_btn.setEnabled(False)
-        if DEBUG_MOCK:
-            vt = MockVT6002()
-            port = "MOCK"
-        else:
-            try:
-                from instruments.chambers.vt6002_chamber import VT6002
-                port_str = self.vt6002_combo.currentText()
-                port = port_str.split()[0]
-                vt = VT6002(port)
-            except Exception as e:
-                self.append_log(f"[VT6002] Connection failed: {e}")
-                self._update_vt6002_ui(False, f"Error")
-                return
-
-        self.vt6002 = vt
-        self.is_vt6002_connected = True
-        self._update_vt6002_ui(True, port)
-        self.append_log(f"[VT6002] Connected: {port}")
-
-        if self._vt6002_chamber_ui is not None:
-            self._vt6002_syncing = True
-            self._vt6002_chamber_ui.vt6002 = vt
-            self._vt6002_chamber_ui.current_port = port
-            self._vt6002_chamber_ui._set_connection_ui(True)
-            self._vt6002_chamber_ui._set_controls_enabled(True)
-            self._vt6002_chamber_ui.connection_changed.emit()
-            self._vt6002_syncing = False
-
-    def _disconnect_vt6002(self):
-        self.vt6002_connect_btn.setEnabled(False)
-        try:
-            if self.vt6002 is not None:
-                self.vt6002.close()
-        except Exception as e:
-            self.append_log(f"[VT6002] Close error: {e}")
-
-        self.vt6002 = None
-        self.is_vt6002_connected = False
-        self._update_vt6002_ui(False, "Disconnected")
-        self.append_log("[VT6002] Disconnected.")
-
-        if self._vt6002_chamber_ui is not None:
-            self._vt6002_syncing = True
-            self._vt6002_chamber_ui.vt6002 = None
-            self._vt6002_chamber_ui.current_port = None
-            self._vt6002_chamber_ui.is_chamber_on = False
-            self._vt6002_chamber_ui._set_connection_ui(False)
-            self._vt6002_chamber_ui._set_controls_enabled(False)
-            self._vt6002_chamber_ui._set_power_ui(False)
-            self._vt6002_chamber_ui.connection_changed.emit()
-            self._vt6002_syncing = False
-
-    def _update_vt6002_ui(self, connected, status_text):
-        if connected:
-            self.vt6002_status_label.setText(f"● Connected to: {status_text}")
-            self.vt6002_status_label.setObjectName("statusOk")
-        else:
-            self.vt6002_status_label.setText(f"● {status_text}")
-            self.vt6002_status_label.setObjectName("statusErr")
-        self.vt6002_status_label.style().unpolish(self.vt6002_status_label)
-        self.vt6002_status_label.style().polish(self.vt6002_status_label)
-        self.vt6002_status_label.update()
-        update_connect_button_state(self.vt6002_connect_btn, connected)
-        self.vt6002_search_btn.setEnabled(not connected)
-        self.vt6002_combo.setEnabled(not connected)
+        self.build_vt6002_connection_widgets(layout)
 
     def _build_channel_card(self):
         layout = self.channel_card.main_layout
@@ -2090,10 +1904,10 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, QWidget):
         self.set_progress(0)
         self._on_test_item_changed()
         self._on_sampling_method_changed()
-        self._on_vt6002_connection_changed()
 
     def _bind_signals(self):
         self.bind_n6705c_signals()
+        self.bind_vt6002_signals()
         self.start_test_btn.clicked.connect(self._on_start_or_stop)
         self.stop_test_btn.clicked.connect(self._on_stop_test)
         self.export_result_btn.clicked.connect(self._on_export_csv)
@@ -2107,10 +1921,6 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, QWidget):
         self.chart_marker_btn.toggled.connect(self._on_chart_marker_toggled)
         self.test_item_combo.currentTextChanged.connect(self._on_test_item_changed)
         self.sampling_method_combo.currentTextChanged.connect(self._on_sampling_method_changed)
-        self.vt6002_search_btn.clicked.connect(self._search_vt6002)
-        self.vt6002_connect_btn.clicked.connect(self._toggle_vt6002)
-        if self._vt6002_chamber_ui is not None:
-            self._vt6002_chamber_ui.connection_changed.connect(self._on_vt6002_connection_changed)
 
     def _on_start_or_stop(self):
         if self.is_test_running:

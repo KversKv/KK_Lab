@@ -10,6 +10,7 @@ from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLL_AREA_STYLE, START_BTN_STYLE, update_start_btn_state
 from ui.styles.button import SpinningSearchButton, update_connect_button_state
 from ui.styles.n6705c_connection_frame import N6705CConnectionMixin
+from ui.styles.chamber_module_frame import VT6002ConnectionMixin, _SearchSerialWorker
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QLineEdit, QGridLayout, QSpinBox, QDoubleSpinBox, QFrame, QRadioButton,
@@ -34,20 +35,6 @@ from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockI2C, MockN6705C, MockVT6002
 
 logger = get_logger(__name__)
-
-
-class _SearchSerialWorker(QObject):
-    finished = Signal(list)
-    error = Signal(str)
-
-    def run(self):
-        try:
-            import serial.tools.list_ports
-            ports = serial.tools.list_ports.comports()
-            result = [f"{p.device} ({p.description})" for p in ports]
-            self.finished.emit(result)
-        except Exception as e:
-            self.error.emit(str(e))
 
 
 class _TestWorker(QObject):
@@ -76,7 +63,7 @@ class _TestWorker(QObject):
             self.error.emit(str(e))
 
 
-class GPADCTestUI(N6705CConnectionMixin, QWidget):
+class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
     """GPADC测试UI组件"""
 
     connection_status_changed = Signal(bool)
@@ -90,10 +77,7 @@ class GPADCTestUI(N6705CConnectionMixin, QWidget):
         super().__init__()
 
         self.init_n6705c_connection(n6705c_top)
-
-        self.vt6002 = None
-        self.is_vt6002_connected = False
-        self.available_vt6002_ports = []
+        self.init_vt6002_connection()
 
         self.dut_serial = None
         self.is_dut_connected = False
@@ -550,15 +534,21 @@ class GPADCTestUI(N6705CConnectionMixin, QWidget):
         self.n6705c_disconnect_btn = self.connect_btn
 
         instruments_layout.addWidget(n6705c_card)
-        instruments_layout.addWidget(self._create_instrument_card(
-            "VT6002 Chamber",
-            "Thermal Control",
-            "vt6002_combo",
-            "vt6002_search_btn",
-            "vt6002_connect_btn",
-            "vt6002_disconnect_btn",
-            "vt6002_status"
-        ))
+
+        vt6002_card = QFrame()
+        vt6002_card.setObjectName("config_inner_panel")
+        vt6002_card_layout = QVBoxLayout(vt6002_card)
+        vt6002_card_layout.setContentsMargins(10, 10, 10, 10)
+        vt6002_card_layout.setSpacing(6)
+        vt6002_title = QLabel("VT6002 Chamber")
+        vt6002_title.setStyleSheet("color: #c8d8ff; font-size: 11px; font-weight: 600; border: none;")
+        vt6002_desc = QLabel("Thermal Control")
+        vt6002_desc.setStyleSheet("color: #4a6a98; font-size: 11px; border: none;")
+        vt6002_desc.setWordWrap(True)
+        vt6002_card_layout.addWidget(vt6002_title)
+        vt6002_card_layout.addWidget(vt6002_desc)
+        self.build_vt6002_connection_widgets(vt6002_card_layout)
+        instruments_layout.addWidget(vt6002_card)
         left_col.addWidget(instruments_panel)
 
         # Data Acquisition
@@ -983,9 +973,7 @@ class GPADCTestUI(N6705CConnectionMixin, QWidget):
         )
 
         self.bind_n6705c_signals()
-
-        self.vt6002_search_btn.clicked.connect(self._search_vt6002)
-        self.vt6002_connect_btn.clicked.connect(self._toggle_vt6002)
+        self.bind_vt6002_signals()
 
         self.dut_search_btn.clicked.connect(self._search_dut_ports)
 
@@ -997,7 +985,6 @@ class GPADCTestUI(N6705CConnectionMixin, QWidget):
         self._update_data_acquisition_ui()
         self._set_test_item(self.TEST_1000CNT)
 
-        self._search_vt6002()
         self._search_dut_ports()
 
     def _set_status_label(self, label, text, status_type="err"):
@@ -1080,12 +1067,6 @@ class GPADCTestUI(N6705CConnectionMixin, QWidget):
             self.min_value.setText("---")
             self.max_value.setText("---")
 
-    def _toggle_vt6002(self):
-        if self.is_vt6002_connected:
-            self._disconnect_vt6002()
-        else:
-            self._connect_vt6002()
-
     def _set_btn_connected(self, btn):
         update_connect_button_state(btn, connected=True)
         btn.setEnabled(True)
@@ -1093,86 +1074,6 @@ class GPADCTestUI(N6705CConnectionMixin, QWidget):
     def _set_btn_disconnected(self, btn):
         update_connect_button_state(btn, connected=False)
         btn.setEnabled(True)
-
-    def _search_vt6002(self):
-        self._set_status_label(self.vt6002_status, "Searching...", "warn")
-        self.vt6002_search_btn.setEnabled(False)
-        self.vt6002_connect_btn.setEnabled(False)
-
-        worker = _SearchSerialWorker()
-        thread = QThread()
-        worker.moveToThread(thread)
-
-        thread.started.connect(worker.run)
-        worker.finished.connect(self._on_vt6002_search_done)
-        worker.error.connect(self._on_vt6002_search_error)
-        worker.finished.connect(thread.quit)
-        worker.error.connect(thread.quit)
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda: setattr(self, '_vt6002_search_thread', None))
-
-        self._vt6002_search_thread = thread
-        self._vt6002_search_worker = worker
-        thread.start()
-
-    def _on_vt6002_search_done(self, ports):
-        self.available_vt6002_ports = ports
-        self.vt6002_combo.clear()
-        if ports:
-            for port in ports:
-                self.vt6002_combo.addItem(port)
-            self._set_status_label(self.vt6002_status, "Available", "ok")
-            self.vt6002_connect_btn.setEnabled(True)
-        else:
-            self.vt6002_combo.addItem("No serial ports found")
-            self._set_status_label(self.vt6002_status, "Not Available", "err")
-            self.vt6002_connect_btn.setEnabled(False)
-        self.vt6002_search_btn.setEnabled(True)
-
-    def _on_vt6002_search_error(self, err):
-        self._append_log(f"[WARN] Search VT6002 error: {err}")
-        self._set_status_label(self.vt6002_status, f"Error: {err}", "err")
-        self.vt6002_search_btn.setEnabled(True)
-        self.vt6002_connect_btn.setEnabled(False)
-
-    def _connect_vt6002(self):
-        self._set_status_label(self.vt6002_status, "Connecting...", "warn")
-        self.vt6002_connect_btn.setEnabled(False)
-        try:
-            if DEBUG_MOCK:
-                self.vt6002 = MockVT6002()
-            else:
-                from instruments.chambers.vt6002_chamber import VT6002
-                port_str = self.vt6002_combo.currentText()
-                device_port = port_str.split()[0]
-                self.vt6002 = VT6002(device_port)
-
-            self.is_vt6002_connected = True
-            self._set_status_label(self.vt6002_status, "Connected", "ok")
-            self._set_btn_connected(self.vt6002_connect_btn)
-            self.vt6002_search_btn.setEnabled(False)
-        except Exception as e:
-            self._append_log(f"[ERROR] Connect VT6002 error: {e}")
-            self._set_status_label(self.vt6002_status, f"Error: {e}", "err")
-            self._set_btn_disconnected(self.vt6002_connect_btn)
-
-    def _disconnect_vt6002(self):
-        self._set_status_label(self.vt6002_status, "Disconnecting...", "warn")
-        self.vt6002_connect_btn.setEnabled(False)
-        try:
-            if self.vt6002:
-                self.vt6002.close()
-                self.vt6002 = None
-
-            self.is_vt6002_connected = False
-            self._set_status_label(self.vt6002_status, "Disconnected", "err")
-            self._set_btn_disconnected(self.vt6002_connect_btn)
-            self.vt6002_search_btn.setEnabled(True)
-        except Exception as e:
-            self._append_log(f"[ERROR] Disconnect VT6002 error: {e}")
-            self._set_status_label(self.vt6002_status, f"Error: {e}", "err")
-            self._set_btn_connected(self.vt6002_connect_btn)
 
     def _search_dut_ports(self):
         worker = _SearchSerialWorker()
