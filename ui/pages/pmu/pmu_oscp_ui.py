@@ -621,21 +621,17 @@ class PMUOSCPUI(QWidget):
     def _build_connection_card(self):
         layout = self.connection_card.main_layout
 
-        self.connection_status_label = QLabel("● Disconnected")
-        self.connection_status_label.setObjectName("statusErr")
-        layout.addWidget(self.connection_status_label)
+        self.system_status_label = QLabel("● Ready")
+        self.system_status_label.setObjectName("statusOk")
+        layout.addWidget(self.system_status_label)
 
-        self.instrument_info_label = QLabel("N6705C")
-        self.instrument_info_label.setObjectName("fieldLabel")
-        layout.addWidget(self.instrument_info_label)
-
-        self.visa_resource_combo = DarkComboBox(bg="#02091d", border="#20335f")
+        self.visa_resource_combo = DarkComboBox()
         self.visa_resource_combo.setSizeAdjustPolicy(
             DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
         self.visa_resource_combo.setMinimumContentsLength(10)
         self.visa_resource_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
-        self.visa_resource_combo.addItems(["TCPIP0::K-N6705C-06098.local::hislip0::INSTR"])
+        self.visa_resource_combo.addItem("TCPIP0::K-N6705C-06098.local::hislip0::INSTR")
         layout.addWidget(self.visa_resource_combo)
 
         btn_row = QHBoxLayout()
@@ -646,12 +642,8 @@ class PMUOSCPUI(QWidget):
         self.connect_btn = QPushButton()
         update_connect_button_state(self.connect_btn, connected=False)
 
-        self.disconnect_btn = QPushButton()
-        update_connect_button_state(self.disconnect_btn, connected=True)
-
         btn_row.addWidget(self.search_btn)
         btn_row.addWidget(self.connect_btn)
-        btn_row.addWidget(self.disconnect_btn)
         layout.addLayout(btn_row)
 
     def _build_config_card(self):
@@ -781,14 +773,13 @@ class PMUOSCPUI(QWidget):
         layout.addLayout(grid)
 
     def _init_ui_elements(self):
-        self.disconnect_btn.setEnabled(False)
+        self._update_connect_button_state(False)
         self.stop_test_btn.setEnabled(False)
 
         self.test_type_combo.currentIndexChanged.connect(self._update_test_config)
 
         self.search_btn.clicked.connect(self._on_search)
-        self.connect_btn.clicked.connect(self._on_connect)
-        self.disconnect_btn.clicked.connect(self._on_disconnect)
+        self.connect_btn.clicked.connect(self._on_connect_or_disconnect)
 
         self.start_test_btn.clicked.connect(self._on_start_or_stop)
         self.stop_test_btn.clicked.connect(self._on_stop_test)
@@ -919,7 +910,6 @@ class PMUOSCPUI(QWidget):
             self.load_btn,
             self.search_btn,
             self.connect_btn,
-            self.disconnect_btn,
         ]
 
         for widget in widgets:
@@ -1002,26 +992,30 @@ class PMUOSCPUI(QWidget):
         self.recovery_time_label.setText("---")
 
     def set_system_status(self, status, is_error=False):
-        self.connection_status_label.setText(status)
+        self.system_status_label.setText(status)
         if is_error:
-            self.connection_status_label.setObjectName("statusErr")
-        elif status in ["测试进行中", "搜索中...", "连接中...", "断开中..."]:
-            self.connection_status_label.setObjectName("statusWarn")
-        elif status in ["已连接", "测试完成"]:
-            self.connection_status_label.setObjectName("statusOk")
+            self.system_status_label.setObjectName("statusErr")
+        elif "Running" in status or "Searching" in status or "Connecting" in status or "Disconnecting" in status:
+            self.system_status_label.setObjectName("statusWarn")
         else:
-            self.connection_status_label.setObjectName("statusErr")
-        self.connection_status_label.style().unpolish(self.connection_status_label)
-        self.connection_status_label.style().polish(self.connection_status_label)
-        self.connection_status_label.update()
+            self.system_status_label.setObjectName("statusOk")
+        self.system_status_label.style().unpolish(self.system_status_label)
+        self.system_status_label.style().polish(self.system_status_label)
+        self.system_status_label.update()
 
     def update_instrument_info(self, instrument_info):
-        self.instrument_info_label.setText(instrument_info)
+        if self.is_connected:
+            self.set_system_status(f"● Connected to: {instrument_info}")
 
     def _on_search(self):
         if self._n6705c_top and self._n6705c_top.is_connected_a:
             return
-        self.set_system_status("搜索中...")
+        if DEBUG_MOCK:
+            self.visa_resource_combo.clear()
+            self.visa_resource_combo.addItem("DEBUG::MOCK::N6705C")
+            self.set_system_status("● Mock device ready")
+            return
+        self.set_system_status("● Searching")
         self.search_btn.setEnabled(False)
         self.search_timer.start(100)
 
@@ -1035,9 +1029,11 @@ class PMUOSCPUI(QWidget):
 
             self.available_devices = list(self.rm.list_resources()) or []
 
-            compatible_devices = self.available_devices.copy()
-            n6705c_devices = []
+            compatible_devices = []
+            if self.available_devices:
+                compatible_devices = self.available_devices.copy()
 
+            n6705c_devices = []
             for dev in compatible_devices:
                 try:
                     instr = self.rm.open_resource(dev, timeout=1000)
@@ -1049,15 +1045,15 @@ class PMUOSCPUI(QWidget):
                 except Exception:
                     pass
 
+            self.visa_resource_combo.setEnabled(True)
             self.visa_resource_combo.clear()
 
             if n6705c_devices:
                 for dev in n6705c_devices:
                     self.visa_resource_combo.addItem(dev)
 
-                self.set_system_status(f"找到 {len(n6705c_devices)} 个N6705C设备")
-                self.connect_btn.setEnabled(True)
-                self.visa_resource_combo.setEnabled(True)
+                count = len(n6705c_devices)
+                self.set_system_status(f"● Found {count} device(s)")
 
                 default_device = "TCPIP0::K-N6705C-06098.local::hislip0::INSTR"
                 if default_device in n6705c_devices:
@@ -1065,70 +1061,68 @@ class PMUOSCPUI(QWidget):
                 else:
                     self.visa_resource_combo.setCurrentIndex(0)
             else:
-                self.visa_resource_combo.addItem("未找到N6705C设备")
+                self.visa_resource_combo.addItem("No N6705C device found")
                 self.visa_resource_combo.setEnabled(False)
-                self.set_system_status("未找到N6705C设备", True)
-                self.connect_btn.setEnabled(False)
+                self.set_system_status("● No device found", is_error=True)
 
         except Exception as e:
-            logger.error("搜索过程中发生错误: %s", e)
-            self.set_system_status(f"搜索失败: {str(e)}", True)
-            self.connect_btn.setEnabled(False)
+            logger.error("Search failed: %s", e)
+            self.set_system_status(f"● Search failed: {str(e)}", is_error=True)
         finally:
             self.search_btn.setEnabled(True)
 
-    def _on_connect(self):
-        device_address = self.visa_resource_combo.currentText()
-        if not device_address or "未找到" in device_address:
-            self.set_system_status("无可连接设备", True)
-            return
+    def _update_connect_button_state(self, connected: bool):
+        self.is_connected = connected
+        update_connect_button_state(self.connect_btn, connected)
 
-        self.set_system_status("连接中...")
+    def _on_connect_or_disconnect(self):
+        if self.is_connected:
+            self._on_disconnect()
+        else:
+            self._on_connect()
+
+    def _on_connect(self):
+        if DEBUG_MOCK:
+            self.n6705c = MockN6705C()
+            self._update_connect_button_state(True)
+            self.set_system_status("● Connected to: Mock N6705C (DEBUG)")
+            self.search_btn.setEnabled(False)
+            self.connection_status_changed.emit(True)
+            return
+        self.set_system_status("● Connecting")
         self.connect_btn.setEnabled(False)
 
         try:
-            if DEBUG_MOCK:
-                self.n6705c = MockN6705C()
-                idn_match = True
-            else:
-                self.n6705c = N6705C(device_address)
-                idn = self.n6705c.instr.query("*IDN?").strip()
-                idn_match = "N6705C" in idn
+            device_address = self.visa_resource_combo.currentText()
+            self.n6705c = N6705C(device_address)
 
-            if idn_match:
-                self.is_connected = True
-                self.set_system_status("已连接")
-                self.connection_status_label.setObjectName("statusOk")
-                self.connection_status_label.style().unpolish(self.connection_status_label)
-                self.connection_status_label.style().polish(self.connection_status_label)
-                self.connection_status_label.update()
-
-                self.disconnect_btn.setEnabled(True)
+            idn = self.n6705c.instr.query("*IDN?")
+            if "N6705C" in idn:
+                self._update_connect_button_state(True)
                 self.search_btn.setEnabled(False)
-                self.visa_resource_combo.setEnabled(False)
 
+                pretty_name = device_address
                 try:
-                    device_name = device_address.split("::")[1]
+                    pretty_name = device_address.split("::")[1]
                 except Exception:
-                    device_name = device_address
+                    pass
 
-                self.instrument_info_label.setText(f"● N6705C ({device_name}) + MSO64B")
+                self.set_system_status(f"● Connected to: {pretty_name}")
 
                 if self._n6705c_top:
                     self._n6705c_top.connect_a(device_address, self.n6705c)
 
                 self.connection_status_changed.emit(True)
             else:
-                self.set_system_status("设备不匹配", True)
-                self.connect_btn.setEnabled(True)
-
+                self.set_system_status("● Device mismatch", is_error=True)
         except Exception as e:
-            self.set_system_status(f"连接失败: {str(e)}", True)
+            self.set_system_status(f"● Connection failed: {str(e)}", is_error=True)
+        finally:
             self.connect_btn.setEnabled(True)
 
     def _on_disconnect(self):
-        self.set_system_status("断开中...")
-        self.disconnect_btn.setEnabled(False)
+        self.set_system_status("● Disconnecting")
+        self.connect_btn.setEnabled(False)
 
         try:
             if self._n6705c_top:
@@ -1142,37 +1136,37 @@ class PMUOSCPUI(QWidget):
                         self.n6705c.rm.close()
                 self.n6705c = None
 
-            self.is_connected = False
+            self._update_connect_button_state(False)
 
-            self.set_system_status("Disconnected")
-            self.connect_btn.setEnabled(True)
+            self.set_system_status("● Ready")
             self.search_btn.setEnabled(True)
-            self.visa_resource_combo.setEnabled(True)
 
-            self.instrument_info_label.setText("● N6705C + MSO64B")
             self.connection_status_changed.emit(False)
 
         except Exception as e:
-            self.set_system_status(f"断开失败: {str(e)}", True)
-            self.disconnect_btn.setEnabled(True)
+            self.set_system_status(f"● Disconnect failed: {str(e)}", is_error=True)
+        finally:
+            self.connect_btn.setEnabled(True)
 
     def _sync_from_top(self):
         if not self._n6705c_top:
             return
         if self._n6705c_top.is_connected_a and self._n6705c_top.n6705c_a:
             self.n6705c = self._n6705c_top.n6705c_a
-            self.is_connected = True
-            self.set_system_status("已连接")
-            self.disconnect_btn.setEnabled(True)
-            self.connect_btn.setEnabled(False)
+            self._update_connect_button_state(True)
             self.search_btn.setEnabled(False)
-            self.visa_resource_combo.setEnabled(False)
             if self._n6705c_top.visa_resource_a:
                 self.visa_resource_combo.clear()
                 self.visa_resource_combo.addItem(self._n6705c_top.visa_resource_a)
+                pretty_name = self._n6705c_top.visa_resource_a
+                try:
+                    pretty_name = self._n6705c_top.visa_resource_a.split("::")[1]
+                except Exception:
+                    pass
+                self.set_system_status(f"● Connected to: {pretty_name}")
         elif not self.is_connected:
-            self.connect_btn.setEnabled(True)
-            self.disconnect_btn.setEnabled(False)
+            self._update_connect_button_state(False)
+            self.set_system_status("● Ready")
 
     def get_n6705c_instance(self):
         return self.n6705c

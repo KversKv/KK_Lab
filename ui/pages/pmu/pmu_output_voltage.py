@@ -686,11 +686,6 @@ class PMUOutputVoltageUI(QWidget):
         self.system_status_label.setObjectName("statusOk")
         layout.addWidget(self.system_status_label)
 
-        self.instrument_info_label = QLabel("USB0::0x0957::0x0F07::MY53004321")
-        self.instrument_info_label.setObjectName("fieldLabel")
-        self.instrument_info_label.setWordWrap(True)
-        layout.addWidget(self.instrument_info_label)
-
         self.visa_resource_combo = DarkComboBox()
         self.visa_resource_combo.setSizeAdjustPolicy(
             DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
@@ -700,17 +695,17 @@ class PMUOutputVoltageUI(QWidget):
         self.visa_resource_combo.addItem("TCPIP0::K-N6705C-06098.local::hislip0::INSTR")
         layout.addWidget(self.visa_resource_combo)
 
-        search_row = QHBoxLayout()
-        search_row.setSpacing(8)
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
 
         self.search_btn = SpinningSearchButton()
-        search_row.addWidget(self.search_btn)
-
-        layout.addLayout(search_row)
 
         self.connect_btn = QPushButton()
         update_connect_button_state(self.connect_btn, connected=False)
-        layout.addWidget(self.connect_btn)
+
+        btn_row.addWidget(self.search_btn)
+        btn_row.addWidget(self.connect_btn)
+        layout.addLayout(btn_row)
 
     def _build_vmeter_card(self):
         layout = self.vmeter_card.main_layout
@@ -1001,8 +996,15 @@ class PMUOutputVoltageUI(QWidget):
             if self._n6705c_top.visa_resource_a:
                 self.visa_resource_combo.clear()
                 self.visa_resource_combo.addItem(self._n6705c_top.visa_resource_a)
+                pretty_name = self._n6705c_top.visa_resource_a
+                try:
+                    pretty_name = self._n6705c_top.visa_resource_a.split("::")[1]
+                except Exception:
+                    pass
+                self.set_system_status(f"● Connected to: {pretty_name}")
         elif not self.is_connected:
             self._update_connect_button_state(False)
+            self.set_system_status("● Ready")
 
     def append_log(self, message):
         self.log_edit.append(message)
@@ -1120,8 +1122,8 @@ class PMUOutputVoltageUI(QWidget):
         self.system_status_label.update()
 
     def update_instrument_info(self, instrument_info):
-        """更新连接的仪器信息"""
-        self.instrument_info_label.setText(instrument_info)
+        if self.is_connected:
+            self.set_system_status(f"● Connected to: {instrument_info}")
 
     def _on_search(self):
         if self._n6705c_top and self._n6705c_top.is_connected_a:
@@ -1200,13 +1202,11 @@ class PMUOutputVoltageUI(QWidget):
             self._on_connect()
 
     def _on_connect(self):
-        """连接N6705C设备"""
         if DEBUG_MOCK:
             self.n6705c = MockN6705C()
             self._update_connect_button_state(True)
-            self.set_system_status("● Connected (Mock)")
+            self.set_system_status("● Connected to: Mock N6705C (DEBUG)")
             self.search_btn.setEnabled(False)
-            self.instrument_info_label.setText("Mock N6705C (DEBUG)")
             self.append_log("[DEBUG] Mock N6705C connected.")
             self.connection_status_changed.emit(True)
             return
@@ -1221,7 +1221,6 @@ class PMUOutputVoltageUI(QWidget):
             idn = self.n6705c.instr.query("*IDN?")
             if "N6705C" in idn:
                 self._update_connect_button_state(True)
-                self.set_system_status("● Connected")
                 self.search_btn.setEnabled(False)
 
                 pretty_name = device_address
@@ -1230,7 +1229,7 @@ class PMUOutputVoltageUI(QWidget):
                 except Exception:
                     pass
 
-                self.instrument_info_label.setText(pretty_name)
+                self.set_system_status(f"● Connected to: {pretty_name}")
                 self.append_log("[SYSTEM] N6705C connected successfully.")
                 self.append_log(f"[IDN] {idn.strip()}")
 
@@ -1268,7 +1267,6 @@ class PMUOutputVoltageUI(QWidget):
 
             self.set_system_status("● Ready")
             self.search_btn.setEnabled(True)
-            self.instrument_info_label.setText("USB0::0x0957::0x0F07::MY53004321")
             self.append_log("[SYSTEM] Instrument disconnected.")
 
             self.connection_status_changed.emit(False)

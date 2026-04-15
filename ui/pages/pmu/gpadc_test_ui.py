@@ -579,15 +579,45 @@ class GPADCTestUI(QWidget):
         instruments_title.setStyleSheet("border: none")
         instruments_layout.addWidget(instruments_title)
 
-        instruments_layout.addWidget(self._create_instrument_card(
-            "N6705C Power Analyzer",
-            "Voltage Source",
-            "n6705c_combo",
-            "n6705c_search_btn",
-            "n6705c_connect_btn",
-            "n6705c_disconnect_btn",
-            "n6705c_status"
-        ))
+        n6705c_card = QFrame()
+        n6705c_card.setObjectName("instrument_inner")
+        n6705c_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        n6705c_layout = QVBoxLayout(n6705c_card)
+        n6705c_layout.setContentsMargins(12, 12, 12, 12)
+        n6705c_layout.setSpacing(8)
+
+        n6705c_title = QLabel("⚡ N6705C Connection")
+        n6705c_title.setStyleSheet("font-size: 11px; font-weight: 700; color: #ffffff; border: none;")
+        n6705c_layout.addWidget(n6705c_title)
+
+        self.n6705c_status = QLabel("● Ready")
+        self.n6705c_status.setObjectName("statusOk")
+        self.n6705c_status.setStyleSheet("color: #00d39a; font-weight: 600; border: none;")
+        n6705c_layout.addWidget(self.n6705c_status)
+
+        self.n6705c_combo = DarkComboBox(bg="#0b1630", border="#24365e")
+        self.n6705c_combo.setSizeAdjustPolicy(
+            DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.n6705c_combo.setMinimumContentsLength(10)
+        self.n6705c_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self.n6705c_combo.addItem("TCPIP0::K-N6705C-06098.local::hislip0::INSTR")
+        n6705c_layout.addWidget(self.n6705c_combo)
+
+        n6705c_btn_row = QHBoxLayout()
+        n6705c_btn_row.setSpacing(8)
+
+        self.n6705c_search_btn = SpinningSearchButton()
+
+        self.n6705c_connect_btn = QPushButton()
+        update_connect_button_state(self.n6705c_connect_btn, connected=False)
+        self.n6705c_disconnect_btn = self.n6705c_connect_btn
+
+        n6705c_btn_row.addWidget(self.n6705c_search_btn)
+        n6705c_btn_row.addWidget(self.n6705c_connect_btn)
+        n6705c_layout.addLayout(n6705c_btn_row)
+
+        instruments_layout.addWidget(n6705c_card)
         instruments_layout.addWidget(self._create_instrument_card(
             "VT6002 Chamber",
             "Thermal Control",
@@ -1132,7 +1162,7 @@ class GPADCTestUI(QWidget):
     def _search_n6705c(self):
         if self._n6705c_top and self._n6705c_top.is_connected_a:
             return
-        self._set_status_label(self.n6705c_status, "Searching...", "warn")
+        self._set_status_label(self.n6705c_status, "● Searching...", "warn")
         self.n6705c_search_btn.setEnabled(False)
         self.n6705c_connect_btn.setEnabled(False)
 
@@ -1160,19 +1190,19 @@ class GPADCTestUI(QWidget):
                 self.n6705c_combo.addItem(dev)
             if DEBUG_MOCK and default_device not in n6705c_devices:
                 self.n6705c_combo.addItem(default_device)
-            self._set_status_label(self.n6705c_status, "Available", "ok")
+            self._set_status_label(self.n6705c_status, "● Ready", "ok")
         else:
             if DEBUG_MOCK:
                 self.n6705c_combo.addItem(default_device)
-                self._set_status_label(self.n6705c_status, "Default Device Available", "ok")
+                self._set_status_label(self.n6705c_status, "● Ready", "ok")
             else:
-                self._set_status_label(self.n6705c_status, "No Device Found", "err")
+                self._set_status_label(self.n6705c_status, "● No device found", "err")
         self.n6705c_search_btn.setEnabled(True)
         self.n6705c_connect_btn.setEnabled(DEBUG_MOCK or self.n6705c_combo.count() > 0)
 
     def _on_n6705c_search_error(self, err):
         self._append_log(f"[WARN] Search N6705C error: {err}")
-        self._set_status_label(self.n6705c_status, f"Error: {err}", "err")
+        self._set_status_label(self.n6705c_status, f"● Search failed", "err")
         self.n6705c_search_btn.setEnabled(True)
         self.n6705c_connect_btn.setEnabled(False)
 
@@ -1197,7 +1227,7 @@ class GPADCTestUI(QWidget):
         btn.setEnabled(True)
 
     def _connect_n6705c(self):
-        self._set_status_label(self.n6705c_status, "Connecting...", "warn")
+        self._set_status_label(self.n6705c_status, "● Connecting...", "warn")
         self.n6705c_connect_btn.setEnabled(False)
         try:
             device_address = self.n6705c_combo.currentText()
@@ -1208,12 +1238,20 @@ class GPADCTestUI(QWidget):
                 self.n6705c = N6705C(device_address)
                 idn = self.n6705c.instr.query("*IDN?")
                 if "N6705C" not in idn:
-                    self._set_status_label(self.n6705c_status, "Device Mismatch", "err")
+                    self._set_status_label(self.n6705c_status, "● Device mismatch", "err")
                     self._set_btn_disconnected(self.n6705c_connect_btn)
                     return
 
             self.is_n6705c_connected = True
-            self._set_status_label(self.n6705c_status, "Connected", "ok")
+            pretty_name = device_address
+            try:
+                pretty_name = device_address.split("::")[1]
+            except Exception:
+                pass
+            if DEBUG_MOCK:
+                self._set_status_label(self.n6705c_status, "● Connected to: Mock N6705C (DEBUG)", "ok")
+            else:
+                self._set_status_label(self.n6705c_status, f"● Connected to: {pretty_name}", "ok")
             self._set_btn_connected(self.n6705c_connect_btn)
             self.n6705c_search_btn.setEnabled(False)
 
@@ -1221,11 +1259,11 @@ class GPADCTestUI(QWidget):
                 self._n6705c_top.connect_a(device_address, self.n6705c)
         except Exception as e:
             self._append_log(f"[ERROR] Connect N6705C error: {e}")
-            self._set_status_label(self.n6705c_status, f"Error: {e}", "err")
+            self._set_status_label(self.n6705c_status, f"● Connection failed", "err")
             self._set_btn_disconnected(self.n6705c_connect_btn)
 
     def _disconnect_n6705c(self):
-        self._set_status_label(self.n6705c_status, "Disconnecting...", "warn")
+        self._set_status_label(self.n6705c_status, "● Disconnecting...", "warn")
         self.n6705c_connect_btn.setEnabled(False)
         try:
             if self._n6705c_top:
@@ -1240,12 +1278,12 @@ class GPADCTestUI(QWidget):
                     self.n6705c = None
 
             self.is_n6705c_connected = False
-            self._set_status_label(self.n6705c_status, "Disconnected", "err")
+            self._set_status_label(self.n6705c_status, "● Ready", "ok")
             self._set_btn_disconnected(self.n6705c_connect_btn)
             self.n6705c_search_btn.setEnabled(True)
         except Exception as e:
             self._append_log(f"[ERROR] Disconnect N6705C error: {e}")
-            self._set_status_label(self.n6705c_status, f"Error: {e}", "err")
+            self._set_status_label(self.n6705c_status, f"● Disconnect failed", "err")
             self._set_btn_connected(self.n6705c_connect_btn)
 
     def _sync_from_top(self):
@@ -1254,14 +1292,21 @@ class GPADCTestUI(QWidget):
         if self._n6705c_top.is_connected_a and self._n6705c_top.n6705c_a:
             self.n6705c = self._n6705c_top.n6705c_a
             self.is_n6705c_connected = True
-            self._set_status_label(self.n6705c_status, "Connected", "ok")
             self._set_btn_connected(self.n6705c_connect_btn)
             self.n6705c_search_btn.setEnabled(False)
             if self._n6705c_top.visa_resource_a:
                 self.n6705c_combo.clear()
                 self.n6705c_combo.addItem(self._n6705c_top.visa_resource_a)
+                pretty_name = self._n6705c_top.visa_resource_a
+                try:
+                    pretty_name = self._n6705c_top.visa_resource_a.split("::")[1]
+                except Exception:
+                    pass
+                self._set_status_label(self.n6705c_status, f"● Connected to: {pretty_name}", "ok")
+            else:
+                self._set_status_label(self.n6705c_status, "● Connected", "ok")
         elif not self.is_n6705c_connected:
-            self._set_status_label(self.n6705c_status, "Disconnected", "err")
+            self._set_status_label(self.n6705c_status, "● Ready", "ok")
             self._set_btn_disconnected(self.n6705c_connect_btn)
 
     def _search_vt6002(self):
@@ -1887,7 +1932,8 @@ class GPADCTestUI(QWidget):
         self.progress_text_label.setText(f"{value}% Complete")
 
     def update_instrument_info(self, instrument_info):
-        pass
+        if self.is_n6705c_connected:
+            self._set_status_label(self.n6705c_status, f"● Connected to: {instrument_info}", "ok")
 
     def get_test_mode(self):
         return "GPADC Test"

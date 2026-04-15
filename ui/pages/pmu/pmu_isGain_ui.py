@@ -623,6 +623,12 @@ class PMUIsGainUI(QWidget):
                 background-color: transparent;
             }
 
+            QLabel#statusOk {
+                color: #00d39a;
+                font-weight: 600;
+                background-color: transparent;
+            }
+
             QLabel#statusWarn {
                 color: #ffb84d;
                 font-weight: 600;
@@ -1000,6 +1006,10 @@ class PMUIsGainUI(QWidget):
         n6705c_label.setObjectName("fieldLabel")
         layout.addWidget(n6705c_label)
 
+        self.system_status_label = QLabel("● Ready")
+        self.system_status_label.setObjectName("statusOk")
+        layout.addWidget(self.system_status_label)
+
         self.visa_resource_combo = FixedPopupComboBox()
         self.visa_resource_combo.addItem("TCPIP0::K-N6705C-06098.local::hislip0::INSTR")
         layout.addWidget(self.visa_resource_combo)
@@ -1211,8 +1221,15 @@ class PMUIsGainUI(QWidget):
                 if self._n6705c_top.visa_resource_a:
                     self.visa_resource_combo.clear()
                     self.visa_resource_combo.addItem(self._n6705c_top.visa_resource_a)
+                    pretty_name = self._n6705c_top.visa_resource_a
+                    try:
+                        pretty_name = self._n6705c_top.visa_resource_a.split("::")[1]
+                    except Exception:
+                        pass
+                    self._update_n6705c_status(f"● Connected to: {pretty_name}")
             elif not self.is_connected:
                 self._update_connect_button_state(self.connect_btn, False)
+                self._update_n6705c_status("● Ready")
 
         if self._mso64b_top:
             if self._mso64b_top.is_connected and self._mso64b_top.mso64b:
@@ -1950,8 +1967,21 @@ class PMUIsGainUI(QWidget):
         self.page_subtitle.style().polish(self.page_subtitle)
         self.page_subtitle.update()
 
+    def _update_n6705c_status(self, text, is_error=False):
+        self.system_status_label.setText(text)
+        if is_error:
+            self.system_status_label.setObjectName("statusErr")
+        elif "Connecting" in text or "Searching" in text:
+            self.system_status_label.setObjectName("statusWarn")
+        else:
+            self.system_status_label.setObjectName("statusOk")
+        self.system_status_label.style().unpolish(self.system_status_label)
+        self.system_status_label.style().polish(self.system_status_label)
+        self.system_status_label.update()
+
     def update_instrument_info(self, instrument_info):
-        pass
+        if self.is_connected:
+            self._update_n6705c_status(f"● Connected to: {instrument_info}")
 
     def _run_instrument_task(self, task_func, on_finished, kwargs=None):
         if self._instr_thread is not None and self._instr_thread.isRunning():
@@ -2095,6 +2125,7 @@ class PMUIsGainUI(QWidget):
 
     def _on_connect_n6705c(self):
         self.set_system_status("Connecting N6705C...")
+        self._update_n6705c_status("● Connecting...")
         self.append_log("[SYSTEM] Attempting N6705C connection...")
         self.connect_btn.setEnabled(False)
 
@@ -2105,6 +2136,7 @@ class PMUIsGainUI(QWidget):
             self.search_btn.setEnabled(False)
             self.append_log("[DEBUG] Mock N6705C connected.")
             self.set_system_status("N6705C connected (Mock)")
+            self._update_n6705c_status("● Connected to: Mock N6705C (DEBUG)")
             device_address = self.visa_resource_combo.currentText()
             if self._n6705c_top:
                 self._n6705c_top.connect_a(device_address, self.n6705c)
@@ -2128,6 +2160,7 @@ class PMUIsGainUI(QWidget):
         self.connect_btn.setEnabled(True)
         if "error" in result:
             self.set_system_status("N6705C connection failed", is_error=True)
+            self._update_n6705c_status("● Connection failed", is_error=True)
             self.append_log(f"[ERROR] N6705C connection failed: {result['error']}")
             return
 
@@ -2141,13 +2174,21 @@ class PMUIsGainUI(QWidget):
             self.append_log(f"[IDN] {idn}")
             self.set_system_status("N6705C connected")
 
+            device_address = self.visa_resource_combo.currentText()
+            pretty_name = device_address
+            try:
+                pretty_name = device_address.split("::")[1]
+            except Exception:
+                pass
+            self._update_n6705c_status(f"● Connected to: {pretty_name}")
+
             if self._n6705c_top:
-                device_address = self.visa_resource_combo.currentText()
                 self._n6705c_top.connect_a(device_address, self.n6705c)
 
             self.connection_status_changed.emit(True)
         else:
             self.set_system_status("Device mismatch", is_error=True)
+            self._update_n6705c_status("● Device mismatch", is_error=True)
             self.append_log("[ERROR] Connected device is not N6705C.")
 
     def _on_disconnect_n6705c(self):
@@ -2179,6 +2220,7 @@ class PMUIsGainUI(QWidget):
         self.connect_btn.setEnabled(True)
         if "error" in result:
             self.set_system_status("N6705C disconnect failed", is_error=True)
+            self._update_n6705c_status("● Disconnect failed", is_error=True)
             self.append_log(f"[ERROR] N6705C disconnect failed: {result['error']}")
             return
 
@@ -2187,6 +2229,7 @@ class PMUIsGainUI(QWidget):
         self.search_btn.setEnabled(True)
         self.append_log("[SYSTEM] N6705C disconnected.")
         self.set_system_status("N6705C disconnected")
+        self._update_n6705c_status("● Ready")
         self.connection_status_changed.emit(False)
 
     def _on_connect_scope(self):
