@@ -25,6 +25,7 @@ import serial.tools.list_ports
 from instruments.power.keysight.n6705c import N6705C
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockN6705C, MockVT6002
+from ui.styles.n6705c_connection_frame import N6705CConnectionMixin
 from i2c_interface_x64 import I2CInterface
 from Bes_I2CIO_Interface import I2CSpeedMode, I2CWidthFlag
 
@@ -422,17 +423,13 @@ class CardFrame(QFrame):
 
 
 
-class StatusRegisterTestUI(QWidget):
+class StatusRegisterTestUI(N6705CConnectionMixin, QWidget):
     connection_status_changed = Signal(bool)
 
     def __init__(self, n6705c_top=None, vt6002_chamber_ui=None):
         super().__init__()
-        self._n6705c_top = n6705c_top
+        self.init_n6705c_connection(n6705c_top)
         self._vt6002_chamber_ui = vt6002_chamber_ui
-        self.rm = None
-        self.n6705c = None
-        self.is_connected = False
-        self.available_devices = []
         self.vt6002 = None
         self.is_vt6002_connected = False
         self._vt6002_syncing = False
@@ -442,14 +439,11 @@ class StatusRegisterTestUI(QWidget):
         self.test_thread = None
         self.test_worker = None
         self.status_labels = {}
-        self.search_timer = QTimer(self)
-        self.search_timer.timeout.connect(self._search_devices)
-        self.search_timer.setSingleShot(True)
         self._setup_style()
         self._create_layout()
         self._init_ui_elements()
         self._bind_signals()
-        self._sync_from_top()
+        self.sync_n6705c_from_top()
 
     def _setup_style(self):
         font = QFont("Segoe UI", 9)
@@ -633,24 +627,11 @@ class StatusRegisterTestUI(QWidget):
 
     def _build_connection_card(self):
         layout = self.connection_card.main_layout
-        self.system_status_label = QLabel("\u25cf Ready")
-        self.system_status_label.setObjectName("statusOk")
-        layout.addWidget(self.system_status_label)
+        self.build_n6705c_connection_widgets(layout)
         self.instrument_info_label = QLabel("USB0::0x0957::0x0F07::MY53004321")
         self.instrument_info_label.setObjectName("fieldLabel")
         self.instrument_info_label.setWordWrap(True)
         layout.addWidget(self.instrument_info_label)
-        self.visa_resource_combo = DarkComboBox()
-        self.visa_resource_combo.addItem("TCPIP0::K-N6705C-06098.local::hislip0::INSTR")
-        layout.addWidget(self.visa_resource_combo)
-        search_row = QHBoxLayout()
-        search_row.setSpacing(8)
-        self.search_btn = SpinningSearchButton()
-        search_row.addWidget(self.search_btn)
-        layout.addLayout(search_row)
-        self.connect_btn = QPushButton()
-        update_connect_button_state(self.connect_btn, connected=False)
-        layout.addWidget(self.connect_btn)
 
     def _build_vt6002_card(self):
         layout = self.vt6002_card.main_layout
@@ -913,14 +894,13 @@ class StatusRegisterTestUI(QWidget):
         return {"frame": frame, "name_label": name_label, "value_label": value_label, "desc_label": desc_label}
 
     def _init_ui_elements(self):
-        self._update_connect_button_state(False)
+        self._update_n6705c_connect_button_state(False)
         self.append_log("[SYSTEM] Status Register Test ready.")
         self._on_test_item_changed()
         self._on_vt6002_connection_changed()
 
     def _bind_signals(self):
-        self.search_btn.clicked.connect(self._on_search)
-        self.connect_btn.clicked.connect(self._on_connect_or_disconnect)
+        self.bind_n6705c_signals()
         self.start_test_btn.clicked.connect(self._on_start_or_stop)
         self.stop_test_btn.clicked.connect(self._on_stop_test)
         self.clear_log_btn.clicked.connect(self._on_clear_log)
@@ -935,134 +915,6 @@ class StatusRegisterTestUI(QWidget):
             self._on_stop_test()
         else:
             self._on_start_test()
-
-    def _update_connect_button_state(self, connected: bool):
-        self.is_connected = connected
-        update_connect_button_state(self.connect_btn, connected)
-
-    def _on_search(self):
-        if self._n6705c_top and self._n6705c_top.is_connected_a:
-            return
-        self.set_system_status("\u25cf Searching")
-        self.append_log("[SYSTEM] Scanning VISA resources...")
-        self.search_btn.setEnabled(False)
-        self.search_timer.start(100)
-
-    def _search_devices(self):
-        try:
-            if self.rm is None:
-                try:
-                    self.rm = pyvisa.ResourceManager()
-                except Exception:
-                    self.rm = pyvisa.ResourceManager('@ni')
-            self.available_devices = list(self.rm.list_resources()) or []
-            compatible_devices = []
-            if self.available_devices:
-                compatible_devices = self.available_devices.copy()
-            n6705c_devices = []
-            for dev in compatible_devices:
-                try:
-                    instr = self.rm.open_resource(dev, timeout=1000)
-                    idn = instr.query('*IDN?').strip()
-                    instr.close()
-                    if "N6705C" in idn:
-                        n6705c_devices.append(dev)
-                except Exception:
-                    pass
-            self.visa_resource_combo.setEnabled(True)
-            self.visa_resource_combo.clear()
-            if n6705c_devices:
-                for dev in n6705c_devices:
-                    self.visa_resource_combo.addItem(dev)
-                count = len(n6705c_devices)
-                self.set_system_status(f"\u25cf Found {count} device(s)")
-                self.append_log(f"[SYSTEM] Found {count} compatible N6705C device(s).")
-                default_device = "TCPIP0::K-N6705C-06098.local::hislip0::INSTR"
-                if default_device in n6705c_devices:
-                    self.visa_resource_combo.setCurrentText(default_device)
-                else:
-                    self.visa_resource_combo.setCurrentIndex(0)
-            else:
-                self.visa_resource_combo.addItem("No N6705C device found")
-                self.visa_resource_combo.setEnabled(False)
-                self.set_system_status("\u25cf No device found", is_error=True)
-                self.append_log("[SYSTEM] No compatible N6705C instrument found.")
-        except Exception as e:
-            self.set_system_status("\u25cf Search failed", is_error=True)
-            self.append_log(f"[ERROR] Search failed: {str(e)}")
-        finally:
-            self.search_btn.setEnabled(True)
-
-    def _on_connect_or_disconnect(self):
-        if self.is_connected:
-            self._on_disconnect()
-        else:
-            self._on_connect()
-
-    def _on_connect(self):
-        self.set_system_status("\u25cf Connecting")
-        self.append_log("[SYSTEM] Attempting instrument connection...")
-        self.connect_btn.setEnabled(False)
-        try:
-            device_address = self.visa_resource_combo.currentText()
-            if DEBUG_MOCK:
-                self.n6705c = MockN6705C()
-                idn_match = True
-            else:
-                self.n6705c = N6705C(device_address)
-                idn = self.n6705c.instr.query("*IDN?")
-                idn_match = "N6705C" in idn
-            if idn_match:
-                self._update_connect_button_state(True)
-                self.set_system_status("\u25cf Connected")
-                self.search_btn.setEnabled(False)
-                pretty_name = device_address
-                try:
-                    pretty_name = device_address.split("::")[1]
-                except Exception:
-                    pass
-                self.instrument_info_label.setText(pretty_name)
-                self.append_log("[SYSTEM] N6705C connected successfully.")
-                if not DEBUG_MOCK:
-                    self.append_log(f"[IDN] {idn.strip()}")
-                if self._n6705c_top:
-                    self._n6705c_top.connect_a(device_address, self.n6705c)
-                self.connection_status_changed.emit(True)
-            else:
-                self.set_system_status("\u25cf Device mismatch", is_error=True)
-                self.append_log("[ERROR] Connected device is not N6705C.")
-        except Exception as e:
-            self.set_system_status("\u25cf Connection failed", is_error=True)
-            self.append_log(f"[ERROR] Connection failed: {str(e)}")
-        finally:
-            self.connect_btn.setEnabled(True)
-
-    def _on_disconnect(self):
-        self.set_system_status("\u25cf Disconnecting")
-        self.append_log("[SYSTEM] Disconnecting instrument...")
-        self.connect_btn.setEnabled(False)
-        try:
-            if self._n6705c_top:
-                self._n6705c_top.disconnect_a()
-                self.n6705c = None
-            else:
-                if self.n6705c is not None:
-                    if hasattr(self.n6705c, 'instr') and self.n6705c.instr:
-                        self.n6705c.instr.close()
-                    if hasattr(self.n6705c, 'rm') and self.n6705c.rm:
-                        self.n6705c.rm.close()
-                self.n6705c = None
-            self._update_connect_button_state(False)
-            self.set_system_status("\u25cf Ready")
-            self.search_btn.setEnabled(True)
-            self.instrument_info_label.setText("USB0::0x0957::0x0F07::MY53004321")
-            self.append_log("[SYSTEM] Instrument disconnected.")
-            self.connection_status_changed.emit(False)
-        except Exception as e:
-            self.set_system_status("\u25cf Disconnect failed", is_error=True)
-            self.append_log(f"[ERROR] Disconnect failed: {str(e)}")
-        finally:
-            self.connect_btn.setEnabled(True)
 
     def _on_vt6002_connection_changed(self):
         if self._vt6002_syncing:
@@ -1331,14 +1183,6 @@ class StatusRegisterTestUI(QWidget):
         self.log_edit.clear()
         self.append_log("[SYSTEM] Log cleared.")
 
-    def set_system_status(self, text, is_error=False):
-        self.system_status_label.setText(text)
-        if is_error:
-            self.system_status_label.setObjectName("statusErr")
-        else:
-            self.system_status_label.setObjectName("statusOk")
-        self.system_status_label.setStyle(self.system_status_label.style())
-
     def append_log(self, message):
         self.log_edit.append(message)
         self.log_edit.verticalScrollBar().setValue(
@@ -1352,14 +1196,3 @@ class StatusRegisterTestUI(QWidget):
     def update_test_result(self, result):
         if isinstance(result, dict):
             self._on_status_update(result)
-
-    def _sync_from_top(self):
-        if self._n6705c_top and self._n6705c_top.is_connected_a:
-            self.n6705c = self._n6705c_top.n6705c_a
-            addr = self._n6705c_top.visa_resource_a or ""
-            self._update_connect_button_state(True)
-            self.set_system_status("\u25cf Connected (shared)")
-            self.instrument_info_label.setText(addr)
-            self.search_btn.setEnabled(False)
-            self.visa_resource_combo.setCurrentText(addr)
-            self.append_log(f"[SYSTEM] Synced N6705C from main page: {addr}")
