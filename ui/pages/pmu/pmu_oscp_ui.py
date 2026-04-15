@@ -9,9 +9,10 @@ from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLLBAR_STYLE
 from ui.styles.button import SpinningSearchButton, update_connect_button_state
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
+    QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QGridLayout,
-    QSpinBox, QDoubleSpinBox, QFrame, QApplication
+    QSpinBox, QDoubleSpinBox, QFrame, QApplication,
+    QSizePolicy, QScrollArea
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QThread
 from PySide6.QtGui import QFont
@@ -156,6 +157,28 @@ class TestThread(QThread):
             logger.error("UVP测试执行错误: %s", e)
 
 
+class CardFrame(QFrame):
+    def __init__(self, title="", parent=None):
+        super().__init__(parent)
+        self.setObjectName("cardFrame")
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.main_layout = QVBoxLayout(self)
+        self.main_layout.setContentsMargins(10, 8, 10, 8)
+        self.main_layout.setSpacing(8)
+
+        if title:
+            self.title_row = QHBoxLayout()
+            self.title_row.setSpacing(8)
+            self.title_label = QLabel(title)
+            self.title_label.setObjectName("cardTitle")
+            self.title_row.addWidget(self.title_label)
+            self.title_row.addStretch()
+            self.main_layout.addLayout(self.title_row)
+        else:
+            self.title_label = None
+            self.title_row = None
+
+
 class PMUOSCPUI(QWidget):
     """PMU OSCP测试UI组件"""
 
@@ -184,83 +207,89 @@ class PMUOSCPUI(QWidget):
         self._sync_from_top()
 
     def _setup_style(self):
-        font = QFont("Segoe UI", 10)
+        font = QFont("Segoe UI", 9)
         self.setFont(font)
 
         self.setStyleSheet("""
         QWidget {
             background-color: #050b1a;
             color: #e8eefc;
-            font-family: "Segoe UI";
-            font-size: 10pt;
         }
 
-
-        QGroupBox {
-            background-color: #0d1833;
-            border: 1px solid #1a2a52;
-            border-radius: 14px;
-            margin-top: 12px;
-            padding: 16px;
-            font-weight: 600;
-        }
-
-        QGroupBox#oscpConfigGroup {
-            padding: 12px;
-        }
-        QGroupBox#oscpConfigGroup QLabel {
-            border: none;
-            background: transparent;
-            padding: 0px;
-            margin: 0px 0px 1px 0px;
-            min-height: 0px;
-        }
-        QGroupBox#oscpConfigGroup QLineEdit,
-        QGroupBox#oscpConfigGroup QComboBox,
-        QGroupBox#oscpConfigGroup QSpinBox,
-        QGroupBox#oscpConfigGroup QDoubleSpinBox {
-            padding: 4px 8px;
-            min-height: 18px;
-        }
-
-        QGroupBox#oscpConfigGroup QLabel {
-            border: none;
-            background: transparent;
-            padding: 0px;
-            margin: 0px 0px 1px 0px;
-            min-height: 0px;
-            color: #8fa7d6;
-            font-size: 9pt;
-        }
-
-        QGroupBox::title {
-            subcontrol-origin: margin;
-            left: 14px;
-            top: -2px;
-            padding: 0 6px;
-            color: #f3f7ff;
-            background: transparent;
+        QWidget#leftPanelInner {
+            background-color: transparent;
         }
 
         QLabel {
-            color: #aebcdf;
-            background: transparent;
-        }
-
-        QGroupBox#oscpConfigGroup QLabel {
+            background-color: transparent;
+            color: #dbe7ff;
             border: none;
-            background: transparent;
-            padding: 0px;
-            margin: 0px;
         }
 
-        QLineEdit, QSpinBox, QDoubleSpinBox {
+        QLabel#pageTitle {
+            font-size: 18px;
+            font-weight: 700;
+            color: #f8fbff;
+            background-color: transparent;
+        }
+
+        QLabel#pageSubtitle {
+            font-size: 12px;
+            color: #7da2d6;
+            background-color: transparent;
+        }
+
+        QFrame#cardFrame {
+            background-color: #0d1833;
+            border: 1px solid #1a2a52;
+            border-radius: 14px;
+        }
+
+        QLabel#cardTitle {
+            font-size: 11px;
+            font-weight: 700;
+            color: #f4f7ff;
+            letter-spacing: 0.5px;
+            background-color: transparent;
+        }
+
+        QLabel#sectionTitle {
+            font-size: 12px;
+            font-weight: 700;
+            color: #f4f7ff;
+            background-color: transparent;
+        }
+
+        QLabel#fieldLabel {
+            color: #8fa7d6;
+            font-size: 11px;
+            background-color: transparent;
+        }
+
+        QLabel#statusOk {
+            color: #15d1a3;
+            font-weight: 600;
+            background-color: transparent;
+        }
+
+        QLabel#statusWarn {
+            color: #ffb84d;
+            font-weight: 600;
+            background-color: transparent;
+        }
+
+        QLabel#statusErr {
+            color: #ff5e7a;
+            font-weight: 600;
+            background-color: transparent;
+        }
+
+        QComboBox, QSpinBox, QDoubleSpinBox {
             background-color: #02091d;
+            color: #eef4ff;
             border: 1px solid #20335f;
             border-radius: 8px;
-            padding: 8px 10px;
-            min-height: 22px;
-            color: #eef4ff;
+            padding: 6px 10px;
             selection-background-color: #1fa3ff;
         }
         QSpinBox::up-button, QSpinBox::down-button,
@@ -268,13 +297,17 @@ class PMUOSCPUI(QWidget):
             width: 0px; height: 0px; border: none;
         }
 
-        QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {
+        QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {
             border: 1px solid #2dd4ff;
+        }
+
+        QComboBox {
+            padding-right: 24px;
         }
 
         QComboBox::drop-down {
             border: none;
-            width: 24px;
+            width: 22px;
             background: transparent;
         }
 
@@ -302,12 +335,12 @@ class PMUOSCPUI(QWidget):
         }
 
         QPushButton {
+            min-height: 34px;
+            border-radius: 9px;
+            padding: 6px 14px;
+            border: 1px solid #273a66;
             background-color: #1a2748;
             color: #dce8ff;
-            border: 1px solid #273a66;
-            border-radius: 10px;
-            padding: 10px 16px;
-            min-height: 22px;
             font-weight: 600;
         }
 
@@ -326,39 +359,38 @@ class PMUOSCPUI(QWidget):
             border: 1px solid #1c2742;
         }
 
-        QPushButton#start_test_btn {
-            background-color: #10b981;
+        QPushButton#primaryStartBtn {
+            min-height: 36px;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: 800;
             color: white;
             border: 1px solid #19d39a;
-            border-radius: 10px;
-            font-weight: 700;
+            background-color: #10b981;
         }
 
-        QPushButton#start_test_btn:hover {
+        QPushButton#primaryStartBtn:hover {
             background-color: #12c48a;
             border: 1px solid #33e6af;
         }
 
-        QPushButton#start_test_btn:pressed {
-            background-color: #0d9b6c;
-        }
-
-        QPushButton#stop_test_btn {
+        QPushButton#stopBtn {
             background-color: #5a1531;
-            color: #ff7f9c;
             border: 1px solid #8c234b;
-            border-radius: 10px;
-            font-weight: 700;
+            color: #ff7f9c;
         }
 
-        QPushButton#stop_test_btn:hover {
+        QPushButton#stopBtn:hover {
             background-color: #6f1a3c;
             border: 1px solid #b62f61;
-            color: #ff9cb2;
         }
 
-        QPushButton#stop_test_btn:pressed {
-            background-color: #4c1229;
+        QPushButton#smallActionBtn {
+            min-height: 34px;
+            padding: 6px 10px;
+            border-radius: 10px;
+            background-color: #1d2a49;
+            color: #c8d7f5;
         }
 
         QPushButton[role="secondary"] {
@@ -385,10 +417,34 @@ class PMUOSCPUI(QWidget):
             border: 1px solid #3b5b98;
         }
 
-        QFrame#chartFrame {
+        QPushButton#abortBtn {
+            background-color: #3d1830;
+            color: #ff6f96;
+            border: 1px solid #5f2748;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+
+        QPushButton#abortBtn:hover {
+            background-color: #51203e;
+        }
+
+        QPushButton#abortBtn:disabled {
+            background-color: #251421;
+            color: #805469;
+            border: 1px solid #3b2130;
+        }
+
+        QFrame#chartContainer {
             background-color: #02060f;
             border: 1px solid #1a2a52;
-            border-radius: 10px;
+            border-radius: 16px;
+        }
+
+        QFrame#resultContainer {
+            background-color: #09142e;
+            border: 1px solid #1a2d57;
+            border-radius: 16px;
         }
 
         QFrame[role="resultBox"] {
@@ -399,229 +455,111 @@ class PMUOSCPUI(QWidget):
         """ + SCROLLBAR_STYLE)
 
     def _create_layout(self):
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(8, 8, 8, 8)
-        main_layout.setSpacing(14)
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(12, 12, 12, 12)
+        root_layout.setSpacing(12)
 
-        # ================== Header ==================
         header_layout = QVBoxLayout()
         header_layout.setSpacing(2)
 
-        title = QLabel("OSCP Automated Test")
-        title.setStyleSheet("font-size: 24px; font-weight: 700; color: #f5f7ff;border: none;")
-        subtitle = QLabel("Configure and execute OSCP validation sequences.")
-        subtitle.setStyleSheet("font-size: 11px; color: #8fa7d6;border: none;")
+        self.page_title = QLabel("⚙ OSCP Automated Test")
+        self.page_title.setObjectName("pageTitle")
 
-        header_layout.addWidget(title)
-        header_layout.addWidget(subtitle)
-        main_layout.addLayout(header_layout)
+        self.page_subtitle = QLabel("Configure and execute OSCP validation sequences.")
+        self.page_subtitle.setObjectName("pageSubtitle")
 
-        # ================== PMU System ==================
-        top_group = QGroupBox("PMU System")
-        top_layout = QGridLayout()
-        top_layout.setHorizontalSpacing(12)
-        top_layout.setVerticalSpacing(6)
-        
-        self.resource_label = QLabel("Resource")
-        self.resource_label.setStyleSheet("font-size: 11px; color: #8fa7d6;border: none;")
+        header_layout.addWidget(self.page_title)
+        header_layout.addWidget(self.page_subtitle)
+        root_layout.addLayout(header_layout)
 
+        content_layout = QHBoxLayout()
+        content_layout.setSpacing(14)
+        root_layout.addLayout(content_layout, 1)
 
+        left_wrapper = QVBoxLayout()
+        left_wrapper.setContentsMargins(0, 0, 0, 0)
+        left_wrapper.setSpacing(8)
 
-        # ⌕
-        self.visa_resource_combo = DarkComboBox(bg="#02091d", border="#20335f")
-        self.visa_resource_combo.addItems(["TCPIP0::K-N6705C-06098.local::hislip0::INSTR"])
-        self.search_btn = SpinningSearchButton()
-        self.search_btn.setFixedWidth(44)
+        self.left_scroll = QScrollArea()
+        self.left_scroll.setWidgetResizable(True)
+        self.left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.left_scroll.setFixedWidth(300)
+        self.left_scroll.setObjectName("leftScrollArea")
+        self.left_scroll.setStyleSheet("""
+            QScrollArea#leftScrollArea {
+                background-color: #0d1833;
+                border: 1px solid #1a2a52;
+                border-radius: 18px;
+            }
+        """ + SCROLLBAR_STYLE)
 
-        self.instrument_info_label = QLabel("● N6705C")
-        self.instrument_info_label.setStyleSheet("color:#d7e3ff; font-weight:600;border: none;")
+        self.left_panel = QWidget()
+        self.left_panel.setObjectName("leftPanelInner")
 
-        self.connection_status_label = QLabel("Disconnected")
-        self.connection_status_label.setStyleSheet("color:#7e8fb8;border: none;")
+        left_layout = QVBoxLayout(self.left_panel)
+        left_layout.setContentsMargins(10, 10, 10, 10)
+        left_layout.setSpacing(10)
 
-        self.connect_btn = QPushButton()
-        update_connect_button_state(self.connect_btn, connected=False)
-        self.connect_btn.setFixedWidth(100)
-        self.disconnect_btn = QPushButton()
-        update_connect_button_state(self.disconnect_btn, connected=True)
-        self.disconnect_btn.setFixedWidth(100)
+        self.connection_card = CardFrame("⚡ N6705C Connection")
+        self._build_connection_card()
+        left_layout.addWidget(self.connection_card)
 
-        top_layout.addWidget(self.resource_label, 0, 0)
-        top_layout.addWidget(self.visa_resource_combo, 1, 0, 1, 6)
-        top_layout.addWidget(self.search_btn, 1, 6)
-        top_layout.addWidget(self.instrument_info_label, 1, 7)
-        top_layout.addWidget(self.connection_status_label, 1, 8)
-        top_layout.addWidget(self.connect_btn, 1, 9)
-        top_layout.addWidget(self.disconnect_btn, 1, 10)
+        self.config_card = CardFrame("⚙ OSCP Configuration")
+        self._build_config_card()
+        left_layout.addWidget(self.config_card)
 
-        top_group.setLayout(top_layout)
-        main_layout.addWidget(top_group)
+        self.control_card = CardFrame("▶ Control")
+        self._build_control_card()
+        left_layout.addWidget(self.control_card)
 
-        # ================== Middle ==================
-        mid_layout = QHBoxLayout()
-        mid_layout.setSpacing(14)
+        left_layout.addStretch()
 
-        # -------- Config --------
-        config_group = QGroupBox("OSCP Configuration")
-        config_group.setObjectName("oscpConfigGroup")
-        
-        config_layout = QGridLayout()
-        config_layout.setHorizontalSpacing(12)
-        config_layout.setVerticalSpacing(6)
-
-        self.test_type_combo = DarkComboBox(bg="#02091d", border="#20335f")
-        self.test_type_combo.addItems(["OCP", "SCP", "OVP", "UVP"])
-
-        self.device_addr_spin = QSpinBox()
-        self.device_addr_spin.setRange(0, 0x3FF)
-
-        self.reg_addr_spin = QSpinBox()
-        self.reg_addr_spin.setRange(0, 0xFFFF)
-
-        self.power_channel_combo = DarkComboBox(bg="#02091d", border="#20335f")
-        self.power_channel_combo.addItems(["1", "2", "3", "4"])
-
-        self.test_channel_combo = DarkComboBox(bg="#02091d", border="#20335f")
-        self.test_channel_combo.addItems(["1", "2", "3", "4"])
-        self.test_channel_combo.setCurrentIndex(1)
-
-        self.msb_spin = QSpinBox()
-        self.msb_spin.setRange(0, 0xFF)
-
-        self.lsb_spin = QSpinBox()
-        self.lsb_spin.setRange(0, 0xFF)
-
-        self.start_spin = QDoubleSpinBox()
-        self.end_spin = QDoubleSpinBox()
-        self.step_spin = QDoubleSpinBox()
-        self.protection_spin = QDoubleSpinBox()
-
-        for spin in [self.start_spin, self.end_spin, self.step_spin, self.protection_spin]:
-            spin.setDecimals(3)
-            spin.setRange(0.0, 9999.0)
-            spin.setSingleStep(0.01)
-
-        self.start_spin.setValue(0.0)
-        self.end_spin.setValue(0.0)
-        self.step_spin.setValue(0.0)
-        self.protection_spin.setValue(0.0)
-
-        self.type_label = QLabel("Type")
-        self.dev_addr_label = QLabel("Dev Addr")
-        self.reg_addr_label = QLabel("Reg Addr")
-        self.power_ch_label = QLabel("Power CH")
-        self.test_ch_label = QLabel("Test CH")
-        self.msb_label = QLabel("MSB")
-        self.lsb_label = QLabel("LSB")
-        self.start_label = QLabel("Start (A)")
-        self.end_label = QLabel("End (A)")
-        self.step_label = QLabel("Step (A)")
-        self.protection_label = QLabel("OCP (A)")
-
-        fields = [
-            (self.type_label, self.test_type_combo),
-            (self.dev_addr_label, self.device_addr_spin),
-            (self.reg_addr_label, self.reg_addr_spin),
-            (self.power_ch_label, self.power_channel_combo),
-            (self.test_ch_label, self.test_channel_combo),
-            (self.msb_label, self.msb_spin),
-            (self.lsb_label, self.lsb_spin),
-            (self.start_label, self.start_spin),
-            (self.end_label, self.end_spin),
-            (self.step_label, self.step_spin),
-            (self.protection_label, self.protection_spin),
-        ]
-
-        row, col = 0, 0
-        for text_label, widget in fields:
-            config_layout.addWidget(text_label, row, col)
-            config_layout.addWidget(widget, row + 1, col)
-            col += 1
-            if col >= 6:
-                col = 0
-                row += 2
-
-        config_group.setLayout(config_layout)
-
-        # -------- Control --------
-        control_group = QGroupBox("Control")
-        control_layout = QGridLayout()
-        control_layout.setSpacing(10)
+        self.left_scroll.setWidget(self.left_panel)
+        left_wrapper.addWidget(self.left_scroll, 1)
 
         self.start_test_btn = QPushButton("▶ START")
-        self.start_test_btn.setObjectName("start_test_btn")
-        self.start_test_btn.setMinimumHeight(40)
+        self.start_test_btn.setObjectName("primaryStartBtn")
+        left_wrapper.addWidget(self.start_test_btn)
 
         self.stop_test_btn = QPushButton("■ STOP")
-        self.stop_test_btn.setObjectName("stop_test_btn")
-        self.stop_test_btn.setMinimumHeight(40)
+        self.stop_test_btn.setObjectName("stopBtn")
         self.stop_test_btn.hide()
 
-        self.single_test_btn = QPushButton("SINGLE")
-        self.iteration_test_btn = QPushButton("LOOP")
-        self.test_btn = QPushButton("DEBUG")
-        self.load_btn = QPushButton("Load")
-        self.save_btn = QPushButton("Calibrate")
-        self.reset_btn = QPushButton("Reset")
-        self.abort_btn = QPushButton("⏻ Abort All")
+        content_layout.addLayout(left_wrapper)
 
-        for btn in [self.single_test_btn, self.iteration_test_btn, self.test_btn, self.load_btn]:
-            btn.setProperty("role", "secondary")
-            btn.style().polish(btn)
+        right_layout = QVBoxLayout()
+        right_layout.setSpacing(14)
+        content_layout.addLayout(right_layout, 1)
 
-        for btn in [self.save_btn, self.reset_btn]:
-            btn.setProperty("role", "outline")
-            btn.style().polish(btn)
+        self.chart_frame = QFrame()
+        self.chart_frame.setObjectName("chartContainer")
+        chart_outer_layout = QVBoxLayout(self.chart_frame)
+        chart_outer_layout.setContentsMargins(16, 16, 16, 16)
+        chart_outer_layout.setSpacing(10)
 
-        self.abort_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #3d1830;
-                color: #ff6f96;
-                border: 1px solid #5f2748;
-                border-radius: 8px;
-                padding: 8px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #51203e;
-            }
-            QPushButton:disabled {
-                background-color: #251421;
-                color: #805469;
-                border: 1px solid #3b2130;
-            }
-        """)
+        chart_header_layout = QHBoxLayout()
+        self.chart_title = QLabel("∿ OSCP Curve")
+        self.chart_title.setObjectName("sectionTitle")
+        chart_header_layout.addWidget(self.chart_title)
+        chart_header_layout.addStretch()
 
-        control_layout.addWidget(self.start_test_btn, 0, 0, 1, 2)
-        control_layout.addWidget(self.single_test_btn, 1, 0)
-        control_layout.addWidget(self.iteration_test_btn, 1, 1)
-        control_layout.addWidget(self.test_btn, 2, 0)
-        control_layout.addWidget(self.load_btn, 2, 1)
-        control_layout.addWidget(self.save_btn, 3, 0)
-        control_layout.addWidget(self.reset_btn, 3, 1)
-        control_layout.addWidget(self.abort_btn, 4, 0, 1, 2)
-
-        control_group.setLayout(control_layout)
-
-        mid_layout.addWidget(config_group, 4)
-        mid_layout.addWidget(control_group, 1)
-
-        main_layout.addLayout(mid_layout)
-
-        # ================== Curve & Results ==================
-        curve_group = QGroupBox("OSCP Curve & Results")
-        curve_layout = QVBoxLayout()
-        curve_layout.setSpacing(12)
-
-        top_bar = QHBoxLayout()
-        top_bar.addStretch()
         self.export_btn = QPushButton("Export")
+        self.export_btn.setObjectName("smallActionBtn")
         self.export_btn.setFixedWidth(90)
-        top_bar.addWidget(self.export_btn)
+        chart_header_layout.addWidget(self.export_btn)
+
+        chart_outer_layout.addLayout(chart_header_layout)
 
         self.chart_placeholder = QFrame()
         self.chart_placeholder.setObjectName("chartFrame")
-        self.chart_placeholder.setMinimumHeight(320)
+        self.chart_placeholder.setStyleSheet("""
+            QFrame#chartFrame {
+                background-color: #02060f;
+                border: 1px solid #1a2a52;
+                border-radius: 10px;
+            }
+        """)
 
         chart_inner_layout = QVBoxLayout(self.chart_placeholder)
         chart_inner_layout.setContentsMargins(0, 0, 0, 0)
@@ -630,6 +568,20 @@ class PMUOSCPUI(QWidget):
         waiting_label.setAlignment(Qt.AlignCenter)
         waiting_label.setStyleSheet("color:#536b9d; font-family:Consolas;")
         chart_inner_layout.addWidget(waiting_label)
+
+        chart_outer_layout.addWidget(self.chart_placeholder, 1)
+
+        right_layout.addWidget(self.chart_frame, 4)
+
+        self.result_frame = QFrame()
+        self.result_frame.setObjectName("resultContainer")
+        result_outer_layout = QVBoxLayout(self.result_frame)
+        result_outer_layout.setContentsMargins(16, 12, 16, 12)
+        result_outer_layout.setSpacing(10)
+
+        result_title = QLabel("⊙ Results")
+        result_title.setObjectName("sectionTitle")
+        result_outer_layout.addWidget(result_title)
 
         result_row = QHBoxLayout()
         result_row.setSpacing(12)
@@ -663,12 +615,170 @@ class PMUOSCPUI(QWidget):
         self.trigger_time_label = self.result_boxes[2]
         self.recovery_time_label = self.result_boxes[3]
 
-        curve_layout.addLayout(top_bar)
-        curve_layout.addWidget(self.chart_placeholder)
-        curve_layout.addLayout(result_row)
+        result_outer_layout.addLayout(result_row)
+        right_layout.addWidget(self.result_frame, 1)
 
-        curve_group.setLayout(curve_layout)
-        main_layout.addWidget(curve_group, 1)
+    def _build_connection_card(self):
+        layout = self.connection_card.main_layout
+
+        self.connection_status_label = QLabel("● Disconnected")
+        self.connection_status_label.setObjectName("statusErr")
+        layout.addWidget(self.connection_status_label)
+
+        self.instrument_info_label = QLabel("N6705C")
+        self.instrument_info_label.setObjectName("fieldLabel")
+        layout.addWidget(self.instrument_info_label)
+
+        self.visa_resource_combo = DarkComboBox(bg="#02091d", border="#20335f")
+        self.visa_resource_combo.setSizeAdjustPolicy(
+            DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.visa_resource_combo.setMinimumContentsLength(10)
+        self.visa_resource_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self.visa_resource_combo.addItems(["TCPIP0::K-N6705C-06098.local::hislip0::INSTR"])
+        layout.addWidget(self.visa_resource_combo)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+
+        self.search_btn = SpinningSearchButton()
+
+        self.connect_btn = QPushButton()
+        update_connect_button_state(self.connect_btn, connected=False)
+
+        self.disconnect_btn = QPushButton()
+        update_connect_button_state(self.disconnect_btn, connected=True)
+
+        btn_row.addWidget(self.search_btn)
+        btn_row.addWidget(self.connect_btn)
+        btn_row.addWidget(self.disconnect_btn)
+        layout.addLayout(btn_row)
+
+    def _build_config_card(self):
+        layout = self.config_card.main_layout
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(6)
+
+        self.type_label = QLabel("Type")
+        self.type_label.setObjectName("fieldLabel")
+        self.test_type_combo = DarkComboBox(bg="#02091d", border="#20335f")
+        self.test_type_combo.addItems(["OCP", "SCP", "OVP", "UVP"])
+
+        self.dev_addr_label = QLabel("Dev Addr")
+        self.dev_addr_label.setObjectName("fieldLabel")
+        self.device_addr_spin = QSpinBox()
+        self.device_addr_spin.setRange(0, 0x3FF)
+
+        self.reg_addr_label = QLabel("Reg Addr")
+        self.reg_addr_label.setObjectName("fieldLabel")
+        self.reg_addr_spin = QSpinBox()
+        self.reg_addr_spin.setRange(0, 0xFFFF)
+
+        self.power_ch_label = QLabel("Power CH")
+        self.power_ch_label.setObjectName("fieldLabel")
+        self.power_channel_combo = DarkComboBox(bg="#02091d", border="#20335f")
+        self.power_channel_combo.addItems(["1", "2", "3", "4"])
+
+        self.test_ch_label = QLabel("Test CH")
+        self.test_ch_label.setObjectName("fieldLabel")
+        self.test_channel_combo = DarkComboBox(bg="#02091d", border="#20335f")
+        self.test_channel_combo.addItems(["1", "2", "3", "4"])
+        self.test_channel_combo.setCurrentIndex(1)
+
+        self.msb_label = QLabel("MSB")
+        self.msb_label.setObjectName("fieldLabel")
+        self.msb_spin = QSpinBox()
+        self.msb_spin.setRange(0, 0xFF)
+
+        self.lsb_label = QLabel("LSB")
+        self.lsb_label.setObjectName("fieldLabel")
+        self.lsb_spin = QSpinBox()
+        self.lsb_spin.setRange(0, 0xFF)
+
+        self.start_label = QLabel("Start (A)")
+        self.start_label.setObjectName("fieldLabel")
+        self.start_spin = QDoubleSpinBox()
+
+        self.end_label = QLabel("End (A)")
+        self.end_label.setObjectName("fieldLabel")
+        self.end_spin = QDoubleSpinBox()
+
+        self.step_label = QLabel("Step (A)")
+        self.step_label.setObjectName("fieldLabel")
+        self.step_spin = QDoubleSpinBox()
+
+        self.protection_label = QLabel("OCP (A)")
+        self.protection_label.setObjectName("fieldLabel")
+        self.protection_spin = QDoubleSpinBox()
+
+        for spin in [self.start_spin, self.end_spin, self.step_spin, self.protection_spin]:
+            spin.setDecimals(3)
+            spin.setRange(0.0, 9999.0)
+            spin.setSingleStep(0.01)
+
+        self.start_spin.setValue(0.0)
+        self.end_spin.setValue(0.0)
+        self.step_spin.setValue(0.0)
+        self.protection_spin.setValue(0.0)
+
+        fields = [
+            (self.type_label, self.test_type_combo),
+            (self.dev_addr_label, self.device_addr_spin),
+            (self.reg_addr_label, self.reg_addr_spin),
+            (self.power_ch_label, self.power_channel_combo),
+            (self.test_ch_label, self.test_channel_combo),
+            (self.msb_label, self.msb_spin),
+            (self.lsb_label, self.lsb_spin),
+            (self.start_label, self.start_spin),
+            (self.end_label, self.end_spin),
+            (self.step_label, self.step_spin),
+            (self.protection_label, self.protection_spin),
+        ]
+
+        row, col = 0, 0
+        for text_label, widget in fields:
+            grid.addWidget(text_label, row, col)
+            grid.addWidget(widget, row + 1, col)
+            col += 1
+            if col >= 2:
+                col = 0
+                row += 2
+
+        layout.addLayout(grid)
+
+    def _build_control_card(self):
+        layout = self.control_card.main_layout
+        grid = QGridLayout()
+        grid.setSpacing(8)
+
+        self.single_test_btn = QPushButton("SINGLE")
+        self.iteration_test_btn = QPushButton("LOOP")
+        self.test_btn = QPushButton("DEBUG")
+        self.load_btn = QPushButton("Load")
+        self.save_btn = QPushButton("Calibrate")
+        self.reset_btn = QPushButton("Reset")
+        self.abort_btn = QPushButton("⏻ Abort All")
+
+        for btn in [self.single_test_btn, self.iteration_test_btn, self.test_btn, self.load_btn]:
+            btn.setProperty("role", "secondary")
+            btn.style().polish(btn)
+
+        for btn in [self.save_btn, self.reset_btn]:
+            btn.setProperty("role", "outline")
+            btn.style().polish(btn)
+
+        self.abort_btn.setObjectName("abortBtn")
+
+        grid.addWidget(self.single_test_btn, 0, 0)
+        grid.addWidget(self.iteration_test_btn, 0, 1)
+        grid.addWidget(self.test_btn, 1, 0)
+        grid.addWidget(self.load_btn, 1, 1)
+        grid.addWidget(self.save_btn, 2, 0)
+        grid.addWidget(self.reset_btn, 2, 1)
+        grid.addWidget(self.abort_btn, 3, 0, 1, 2)
+
+        layout.addLayout(grid)
 
     def _init_ui_elements(self):
         self.disconnect_btn.setEnabled(False)
@@ -782,10 +892,10 @@ class PMUOSCPUI(QWidget):
         self.stop_test_btn.setEnabled(running)
         if running:
             self.start_test_btn.setText("■ STOP")
-            self.start_test_btn.setObjectName("stop_test_btn")
+            self.start_test_btn.setObjectName("stopBtn")
         else:
             self.start_test_btn.setText("▶ START")
-            self.start_test_btn.setObjectName("start_test_btn")
+            self.start_test_btn.setObjectName("primaryStartBtn")
         self.start_test_btn.style().unpolish(self.start_test_btn)
         self.start_test_btn.style().polish(self.start_test_btn)
         self.start_test_btn.update()
@@ -894,13 +1004,16 @@ class PMUOSCPUI(QWidget):
     def set_system_status(self, status, is_error=False):
         self.connection_status_label.setText(status)
         if is_error:
-            self.connection_status_label.setStyleSheet("color: #ff7f9c; font-weight: 600;")
-        elif status == "测试进行中":
-            self.connection_status_label.setStyleSheet("color: #f7c948; font-weight: 600;")
+            self.connection_status_label.setObjectName("statusErr")
+        elif status in ["测试进行中", "搜索中...", "连接中...", "断开中..."]:
+            self.connection_status_label.setObjectName("statusWarn")
         elif status in ["已连接", "测试完成"]:
-            self.connection_status_label.setStyleSheet("color: #10b981; font-weight: 600;")
+            self.connection_status_label.setObjectName("statusOk")
         else:
-            self.connection_status_label.setStyleSheet("color: #aebcdf; font-weight: 600;")
+            self.connection_status_label.setObjectName("statusErr")
+        self.connection_status_label.style().unpolish(self.connection_status_label)
+        self.connection_status_label.style().polish(self.connection_status_label)
+        self.connection_status_label.update()
 
     def update_instrument_info(self, instrument_info):
         self.instrument_info_label.setText(instrument_info)
@@ -985,6 +1098,10 @@ class PMUOSCPUI(QWidget):
             if idn_match:
                 self.is_connected = True
                 self.set_system_status("已连接")
+                self.connection_status_label.setObjectName("statusOk")
+                self.connection_status_label.style().unpolish(self.connection_status_label)
+                self.connection_status_label.style().polish(self.connection_status_label)
+                self.connection_status_label.update()
 
                 self.disconnect_btn.setEnabled(True)
                 self.search_btn.setEnabled(False)
