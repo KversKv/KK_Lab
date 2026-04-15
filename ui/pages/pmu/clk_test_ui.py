@@ -21,58 +21,9 @@ from PySide6.QtGui import QFont
 from ui.styles.button import SpinningSearchButton, update_connect_button_state
 import pyqtgraph as pg
 from ui.styles import SCROLL_AREA_STYLE
+from ui.widgets.dark_combobox import DarkComboBox
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockMSO64B, MockVT6002
-
-
-class DarkComboBox(QComboBox):
-    def __init__(self, bg="#0b1630", border="#24365e", parent=None):
-        super().__init__(parent)
-        self._popup_bg = "#111c38"
-        self._border = border
-        self.setStyleSheet(f"""
-            QComboBox {{
-                background-color: {bg};
-                border: 1.5px solid {border};
-                border-radius: 6px;
-                padding: 4px 28px 4px 10px;
-                color: #c8d8f8;
-                font-size: 13px;
-            }}
-            QComboBox::drop-down {{
-                border: none;
-                width: 22px;
-            }}
-            QComboBox QAbstractItemView {{
-                background-color: #111c38;
-                color: #c8d8f8;
-                border: 1px solid {border};
-                selection-background-color: #1e3870;
-                outline: 0;
-                padding: 0px;
-                margin: 0px;
-            }}
-            QComboBox QAbstractItemView::item {{
-                background-color: #111c38;
-                color: #c8d8f8;
-                padding: 4px 10px;
-                border: none;
-            }}
-            QComboBox QAbstractItemView::item:hover {{
-                background-color: #1e3870;
-            }}
-        """)
-        self.setMaxVisibleItems(30)
-
-    def showPopup(self):
-        super().showPopup()
-        popup = self.view().window()
-        if popup:
-            popup.setStyleSheet(
-                f"background-color: {self._popup_bg}; "
-                f"border: 1px solid {self._border}; "
-                f"padding: 0px; margin: 0px;"
-            )
 
 
 class _SearchMSO64BWorker(QObject):
@@ -1046,7 +997,7 @@ class CLKTestUI(QWidget):
 
             QLabel#section_title {
                 color: #8faad8;
-                font-size: 11px;
+                font-size: 12px;
                 font-weight: 700;
                 letter-spacing: 1.5px;
             }
@@ -1240,7 +1191,7 @@ class CLKTestUI(QWidget):
         title_box.setSpacing(0)
 
         name_lbl = QLabel(name)
-        name_lbl.setStyleSheet("color: #c8d8ff; font-size: 13px; font-weight: 600; border: none;")
+        name_lbl.setStyleSheet("color: #c8d8ff; font-size: 11px; font-weight: 600; border: none;")
         desc_lbl = QLabel(desc)
         desc_lbl.setStyleSheet("color: #4a6a98; font-size: 11px; border: none;")
         desc_lbl.setWordWrap(True)
@@ -1266,7 +1217,11 @@ class CLKTestUI(QWidget):
         select_row.setSpacing(6)
 
         combo = DarkComboBox(bg="#0b1630", border="#24365e")
-        combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        combo.setSizeAdjustPolicy(
+            DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        combo.setMinimumContentsLength(10)
+        combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
 
         search_btn = SpinningSearchButton()
         search_btn.setFixedWidth(44)
@@ -1328,13 +1283,13 @@ class CLKTestUI(QWidget):
         self.left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.left_scroll.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
-        self.left_scroll.setMinimumWidth(390)
-        self.left_scroll.setMaximumWidth(390)
+        self.left_scroll.setMinimumWidth(320)
+        self.left_scroll.setMaximumWidth(320)
 
         left_content = QFrame()
         left_content.setObjectName("left_scroll_content")
-        left_content.setMinimumWidth(368)
-        left_content.setMaximumWidth(368)
+        left_content.setMinimumWidth(298)
+        left_content.setMaximumWidth(298)
         left_content.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
 
         left_col = QVBoxLayout(left_content)

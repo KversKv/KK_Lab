@@ -566,7 +566,7 @@ class PMUOutputVoltageUI(QWidget):
         # 左侧
         self.left_panel = QFrame()
         self.left_panel.setObjectName("panelFrame")
-        self.left_panel.setFixedWidth(270)
+        self.left_panel.setFixedWidth(320)
 
         left_layout = QVBoxLayout(self.left_panel)
         left_layout.setContentsMargins(18, 18, 18, 18)
@@ -692,6 +692,11 @@ class PMUOutputVoltageUI(QWidget):
         layout.addWidget(self.instrument_info_label)
 
         self.visa_resource_combo = DarkComboBox()
+        self.visa_resource_combo.setSizeAdjustPolicy(
+            DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.visa_resource_combo.setMinimumContentsLength(10)
+        self.visa_resource_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         self.visa_resource_combo.addItem("TCPIP0::K-N6705C-06098.local::hislip0::INSTR")
         layout.addWidget(self.visa_resource_combo)
 

@@ -226,7 +226,7 @@ class GPADCTestUI(QWidget):
             }
 
             QLabel#section_title {
-                font-size: 13px;
+                font-size: 12px;
                 font-weight: 700;
                 color: #ffffff;
             }
@@ -459,7 +459,7 @@ class GPADCTestUI(QWidget):
         title_box.setSpacing(2)
 
         name_label = QLabel(title)
-        name_label.setStyleSheet("font-size: 13px; font-weight: 700; color: #ffffff; border: none;")    
+        name_label.setStyleSheet("font-size: 11px; font-weight: 700; color: #ffffff; border: none;")    
         name_label.setWordWrap(True)
 
         desc_label = QLabel(subtitle)
@@ -489,7 +489,11 @@ class GPADCTestUI(QWidget):
         select_row.setSpacing(6)
 
         combo = DarkComboBox(bg="#0b1630", border="#24365e")
-        combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        combo.setSizeAdjustPolicy(
+            DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        combo.setMinimumContentsLength(10)
+        combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
 
         search_btn = SpinningSearchButton()
         search_btn.setFixedWidth(34)
@@ -650,7 +654,11 @@ class GPADCTestUI(QWidget):
 
         uart_layout.addWidget(QLabel("DUT Serial Port"), 0, 0, 1, 2)
         self.dut_combo = DarkComboBox(bg="#0b1630", border="#24365e")
-        self.dut_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.dut_combo.setSizeAdjustPolicy(
+            DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.dut_combo.setMinimumContentsLength(10)
+        self.dut_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
 
         self.dut_search_btn = QPushButton("⌕")
         self.dut_search_btn.setObjectName("tool_btn")
