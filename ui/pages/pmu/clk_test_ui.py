@@ -20,7 +20,7 @@ from PySide6.QtCore import Qt, Signal, QThread, QObject
 from PySide6.QtGui import QFont
 from ui.styles.button import SpinningSearchButton, update_connect_button_state
 import pyqtgraph as pg
-from ui.styles import SCROLL_AREA_STYLE
+from ui.styles import SCROLL_AREA_STYLE, START_BTN_STYLE, update_start_btn_state
 from ui.widgets.dark_combobox import DarkComboBox
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockMSO64B, MockVT6002
@@ -983,7 +983,7 @@ class CLKTestUI(QWidget):
                 background-color: #020618;
             }
 
-            QFrame#panel, QFrame#action_panel, QFrame#chart_panel {
+            QFrame#panel, QFrame#chart_panel {
                 background-color: #0a1428;
                 border: 1.5px solid #162040;
                 border-radius: 10px;
@@ -1038,52 +1038,7 @@ class CLKTestUI(QWidget):
                 font-weight: 700;
                 color: #b48aff;
             }
-
-            QPushButton#primaryStartBtn {
-                background-color: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #5b5cf6,
-                    stop:1 #6a38ff
-                );
-                color: white;
-                border: 1px solid #645bff;
-                border-radius: 12px;
-                font-size: 15px;
-                font-weight: 800;
-                min-height: 36px;
-                padding: 0 12px;
-            }
-            QPushButton#primaryStartBtn:hover {
-                background-color: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #6b6cff,
-                    stop:1 #7d4cff
-                );
-            }
-            QPushButton#primaryStartBtn:disabled {
-                background-color: #1a2040;
-                color: #4a5a80;
-            }
-
-            QPushButton#stopBtn {
-                background-color: #4a1020;
-                color: #ffd5db;
-                border: 1px solid #d9485f;
-                border-radius: 12px;
-                font-size: 15px;
-                font-weight: 800;
-                min-height: 36px;
-                padding: 0 12px;
-            }
-            QPushButton#stopBtn:hover {
-                background-color: #5a1326;
-            }
-            QPushButton#stopBtn:disabled {
-                background-color: #1a1a22;
-                color: #4a3040;
-                border-color: #2a1a28;
-            }
-
+""" + START_BTN_STYLE + """
             QPushButton#connect_btn {
                 background-color: #1a3060;
                 color: #4a9fff;
@@ -1281,6 +1236,10 @@ class CLKTestUI(QWidget):
 
         body_layout = QHBoxLayout()
         body_layout.setSpacing(12)
+
+        left_wrapper = QVBoxLayout()
+        left_wrapper.setContentsMargins(0, 0, 0, 0)
+        left_wrapper.setSpacing(8)
 
         # ---- Left scroll area ----
         self.left_scroll = QScrollArea()
@@ -1673,27 +1632,19 @@ class CLKTestUI(QWidget):
 
         left_col.addWidget(params_panel)
 
-        # ---- ACTION ----
-        action_panel = QFrame()
-        action_panel.setObjectName("action_panel")
-        action_layout = QHBoxLayout(action_panel)
-        action_layout.setContentsMargins(12, 12, 12, 12)
-        action_layout.setSpacing(8)
+        left_col.addStretch()
+
+        self.left_scroll.setWidget(left_content)
+        left_wrapper.addWidget(self.left_scroll, 1)
 
         self.start_test_btn = QPushButton("▷ Start Sequence")
         self.start_test_btn.setObjectName("primaryStartBtn")
-        self.start_test_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        left_wrapper.addWidget(self.start_test_btn)
 
         self.stop_test_btn = QPushButton("■ Stop")
         self.stop_test_btn.setObjectName("stopBtn")
         self.stop_test_btn.setEnabled(False)
         self.stop_test_btn.hide()
-
-        action_layout.addWidget(self.start_test_btn, 1)
-        left_col.addWidget(action_panel)
-        left_col.addStretch()
-
-        self.left_scroll.setWidget(left_content)
 
         # ---- Right result area ----
         right_col = QVBoxLayout()
@@ -1796,7 +1747,7 @@ class CLKTestUI(QWidget):
         right_col.addWidget(chart_panel, 3)
         right_col.addWidget(log_panel, 2)
 
-        body_layout.addWidget(self.left_scroll, 0)
+        body_layout.addLayout(left_wrapper, 0)
         body_layout.addLayout(right_col, 1)
 
         page_layout.addLayout(body_layout, 1)
@@ -2460,15 +2411,9 @@ class CLKTestUI(QWidget):
         self._update_test_button_state(False)
 
     def _update_test_button_state(self, running):
-        if running:
-            self.start_test_btn.setText("■ Stop")
-            self.start_test_btn.setObjectName("stopBtn")
-        else:
-            self.start_test_btn.setText(self._start_btn_text)
-            self.start_test_btn.setObjectName("primaryStartBtn")
-        self.start_test_btn.style().unpolish(self.start_test_btn)
-        self.start_test_btn.style().polish(self.start_test_btn)
-        self.start_test_btn.update()
+        update_start_btn_state(self.start_test_btn, running,
+                               start_text=self._start_btn_text,
+                               stop_text="■ Stop")
 
     def _on_test_progress(self, info):
         mode = info.get("mode")

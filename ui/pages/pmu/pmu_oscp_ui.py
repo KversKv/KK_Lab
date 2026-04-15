@@ -6,7 +6,7 @@ PMU OSCP测试UI组件
 """
 
 from ui.widgets.dark_combobox import DarkComboBox
-from ui.styles import SCROLLBAR_STYLE
+from ui.styles import SCROLLBAR_STYLE, START_BTN_STYLE, update_start_btn_state
 from ui.styles.button import SpinningSearchButton, update_connect_button_state
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
@@ -358,33 +358,7 @@ class PMUOSCPUI(QWidget):
             color: #5f6d8f;
             border: 1px solid #1c2742;
         }
-
-        QPushButton#primaryStartBtn {
-            min-height: 36px;
-            border-radius: 12px;
-            font-size: 15px;
-            font-weight: 800;
-            color: white;
-            border: 1px solid #19d39a;
-            background-color: #10b981;
-        }
-
-        QPushButton#primaryStartBtn:hover {
-            background-color: #12c48a;
-            border: 1px solid #33e6af;
-        }
-
-        QPushButton#stopBtn {
-            background-color: #5a1531;
-            border: 1px solid #8c234b;
-            color: #ff7f9c;
-        }
-
-        QPushButton#stopBtn:hover {
-            background-color: #6f1a3c;
-            border: 1px solid #b62f61;
-        }
-
+""" + START_BTN_STYLE + """
         QPushButton#smallActionBtn {
             min-height: 34px;
             padding: 6px 10px;
@@ -879,17 +853,10 @@ class PMUOSCPUI(QWidget):
         return config
 
     def set_test_running(self, running):
-        self.start_test_btn.setEnabled(True)
+        update_start_btn_state(self.start_test_btn, running,
+                               start_text="▶ START",
+                               stop_text="■ STOP")
         self.stop_test_btn.setEnabled(running)
-        if running:
-            self.start_test_btn.setText("■ STOP")
-            self.start_test_btn.setObjectName("stopBtn")
-        else:
-            self.start_test_btn.setText("▶ START")
-            self.start_test_btn.setObjectName("primaryStartBtn")
-        self.start_test_btn.style().unpolish(self.start_test_btn)
-        self.start_test_btn.style().polish(self.start_test_btn)
-        self.start_test_btn.update()
 
         widgets = [
             self.test_type_combo,

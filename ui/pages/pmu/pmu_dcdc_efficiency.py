@@ -26,7 +26,7 @@ import time
 import serial.tools.list_ports
 
 from instruments.power.keysight.n6705c import N6705C
-from ui.styles import SCROLLBAR_STYLE
+from ui.styles import SCROLLBAR_STYLE, START_BTN_STYLE, update_start_btn_state
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockN6705C, MockVT6002
 
@@ -1195,39 +1195,7 @@ class PMUDCDCEfficiencyUI(QWidget):
                 background-color: #13254b;
                 color: #dce7ff;
             }
-
-            QPushButton#primaryStartBtn {
-                min-height: 36px;
-                border-radius: 12px;
-                font-size: 15px;
-                font-weight: 800;
-                color: white;
-                border: 1px solid #645bff;
-                background-color: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #5b5cf6,
-                    stop:1 #6a38ff
-                );
-            }
-
-            QPushButton#primaryStartBtn:hover {
-                background-color: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #6b6cff,
-                    stop:1 #7d4cff
-                );
-            }
-
-            QPushButton#stopBtn {
-                background-color: #4a1020;
-                border: 1px solid #d9485f;
-                color: #ffd5db;
-            }
-
-            QPushButton#stopBtn:hover {
-                background-color: #5a1326;
-            }
-
+""" + START_BTN_STYLE + """
             QPushButton#exportBtn {
                 min-height: 28px;
                 padding: 4px 12px;
@@ -2559,17 +2527,10 @@ class PMUDCDCEfficiencyUI(QWidget):
     def set_test_running(self, running):
         self.is_test_running = running
 
-        self.start_test_btn.setEnabled(True)
+        update_start_btn_state(self.start_test_btn, running,
+                               start_text="▶ START SEQUENCE",
+                               stop_text="■ STOP")
         self.stop_test_btn.setEnabled(running)
-        if running:
-            self.start_test_btn.setText("■ STOP")
-            self.start_test_btn.setObjectName("stopBtn")
-        else:
-            self.start_test_btn.setText("▶ START SEQUENCE")
-            self.start_test_btn.setObjectName("primaryStartBtn")
-        self.start_test_btn.style().unpolish(self.start_test_btn)
-        self.start_test_btn.style().polish(self.start_test_btn)
-        self.start_test_btn.update()
 
         widgets = [
             self.vin_channel_combo,

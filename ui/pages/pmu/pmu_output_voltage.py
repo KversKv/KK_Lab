@@ -15,7 +15,7 @@ sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton,
     QLabel, QLineEdit, QSpinBox, QDoubleSpinBox, QFrame, QTextEdit,
-    QSizePolicy, QProgressBar
+    QSizePolicy, QProgressBar, QScrollArea
 )
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles.button import SpinningSearchButton, update_connect_button_state
@@ -25,7 +25,7 @@ import pyvisa
 
 from instruments.power.keysight.n6705c import N6705C
 from i2c_interface_x64 import I2CInterface
-from ui.styles import SCROLLBAR_STYLE
+from ui.styles import SCROLLBAR_STYLE, START_BTN_STYLE, update_start_btn_state
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockN6705C, MockI2C
 
@@ -448,39 +448,7 @@ class PMUOutputVoltageUI(QWidget):
                 background-color: #13254b;
                 color: #dce7ff;
             }
-
-            QPushButton#primaryStartBtn {
-                min-height: 36px;
-                border-radius: 12px;
-                font-size: 15px;
-                font-weight: 800;
-                color: white;
-                border: 1px solid #645bff;
-                background-color: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #5b5cf6,
-                    stop:1 #6a38ff
-                );
-            }
-
-            QPushButton#primaryStartBtn:hover {
-                background-color: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #6b6cff,
-                    stop:1 #7d4cff
-                );
-            }
-
-            QPushButton#stopBtn {
-                background-color: #4a1020;
-                border: 1px solid #d9485f;
-                color: #ffd5db;
-            }
-
-            QPushButton#stopBtn:hover {
-                background-color: #5a1326;
-            }
-
+""" + START_BTN_STYLE + """
             QPushButton#exportBtn {
                 min-height: 28px;
                 padding: 4px 12px;
@@ -564,13 +532,30 @@ class PMUOutputVoltageUI(QWidget):
         root_layout.addLayout(content_layout, 1)
 
         # 左侧
-        self.left_panel = QFrame()
-        self.left_panel.setObjectName("panelFrame")
-        self.left_panel.setFixedWidth(320)
+        left_wrapper = QVBoxLayout()
+        left_wrapper.setContentsMargins(0, 0, 0, 0)
+        left_wrapper.setSpacing(8)
+
+        self.left_scroll = QScrollArea()
+        self.left_scroll.setWidgetResizable(True)
+        self.left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.left_scroll.setFixedWidth(320)
+        self.left_scroll.setObjectName("leftScrollArea")
+        self.left_scroll.setStyleSheet("""
+            QScrollArea#leftScrollArea {
+                background-color: #08132d;
+                border: 1px solid #16274d;
+                border-radius: 18px;
+            }
+        """ + SCROLLBAR_STYLE)
+
+        self.left_panel = QWidget()
+        self.left_panel.setObjectName("leftPanelInner")
 
         left_layout = QVBoxLayout(self.left_panel)
-        left_layout.setContentsMargins(18, 18, 18, 18)
-        left_layout.setSpacing(16)
+        left_layout.setContentsMargins(10, 10, 10, 10)
+        left_layout.setSpacing(10)
 
         self.connection_card = CardFrame("N6705C Connection")
         self._build_connection_card()
@@ -586,15 +571,18 @@ class PMUOutputVoltageUI(QWidget):
 
         left_layout.addStretch()
 
+        self.left_scroll.setWidget(self.left_panel)
+        left_wrapper.addWidget(self.left_scroll, 1)
+
         self.start_test_btn = QPushButton("▷ Start Sequence")
         self.start_test_btn.setObjectName("primaryStartBtn")
-        left_layout.addWidget(self.start_test_btn)
+        left_wrapper.addWidget(self.start_test_btn)
 
         self.stop_test_btn = QPushButton("■ Stop")
         self.stop_test_btn.setObjectName("stopBtn")
         self.stop_test_btn.hide()
 
-        content_layout.addWidget(self.left_panel)
+        content_layout.addLayout(left_wrapper)
 
         # 右侧
         right_layout = QVBoxLayout()
@@ -1044,17 +1032,10 @@ class PMUOutputVoltageUI(QWidget):
         """设置测试运行状态"""
         self.is_test_running = running
 
-        self.start_test_btn.setEnabled(True)
+        update_start_btn_state(self.start_test_btn, running,
+                               start_text="▷ Start Sequence",
+                               stop_text="■ Stop")
         self.stop_test_btn.setEnabled(running)
-        if running:
-            self.start_test_btn.setText("■ Stop")
-            self.start_test_btn.setObjectName("stopBtn")
-        else:
-            self.start_test_btn.setText("▷ Start Sequence")
-            self.start_test_btn.setObjectName("primaryStartBtn")
-        self.start_test_btn.style().unpolish(self.start_test_btn)
-        self.start_test_btn.style().polish(self.start_test_btn)
-        self.start_test_btn.update()
 
         widgets = [
             self.vmeter_channel_combo,

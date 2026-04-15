@@ -7,7 +7,7 @@ GPADC测试UI组件
 
 
 from ui.widgets.dark_combobox import DarkComboBox
-from ui.styles import SCROLL_AREA_STYLE
+from ui.styles import SCROLL_AREA_STYLE, START_BTN_STYLE, update_start_btn_state
 from ui.styles.button import SpinningSearchButton, update_connect_button_state
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
@@ -177,8 +177,7 @@ class GPADCTestUI(QWidget):
             QFrame#panel,
             QFrame#chart_panel,
             QFrame#metric_card,
-            QFrame#config_inner_panel,
-            QFrame#action_panel {
+            QFrame#config_inner_panel {
                 background-color: #0b1630;
                 border: 1px solid #18284d;
                 border-radius: 12px;
@@ -351,25 +350,7 @@ class GPADCTestUI(QWidget):
                 border: 1px solid rgba(255, 90, 122, 0.25);
                 font-weight: 600;
             }
-
-            QPushButton#start_test_btn {
-                background-color: #5d45ff;
-                color: white;
-                border: 1px solid #6d59ff;
-                font-weight: 700;
-                min-height: 38px;
-            }
-
-            QPushButton#stop_test_btn {
-                background-color: rgba(255, 90, 122, 0.12);
-                color: #ff7593;
-                border: 1px solid rgba(255, 90, 122, 0.28);
-                min-height: 38px;
-                min-width: 42px;
-                max-width: 42px;
-                font-weight: 700;
-            }
-
+""" + START_BTN_STYLE + """
             QPushButton#tool_btn {
                 min-height: 28px;
                 border-radius: 6px;
@@ -554,6 +535,10 @@ class GPADCTestUI(QWidget):
         body_layout.setSpacing(12)
 
         # 左侧滚动区
+        left_wrapper = QVBoxLayout()
+        left_wrapper.setContentsMargins(0, 0, 0, 0)
+        left_wrapper.setSpacing(8)
+
         self.left_scroll = QScrollArea()
         self.left_scroll.setWidgetResizable(True)
         self.left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -853,28 +838,19 @@ class GPADCTestUI(QWidget):
 
         left_col.addWidget(params_panel)
 
-        # Action
-        action_panel = QFrame()
-        action_panel.setObjectName("action_panel")
-        action_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        action_layout = QHBoxLayout(action_panel)
-        action_layout.setContentsMargins(12, 12, 12, 12)
-        action_layout.setSpacing(8)
-
-        self.start_test_btn = QPushButton("▶ START TEST")
-        self.start_test_btn.setObjectName("start_test_btn")
-        self.start_test_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-
-        self.stop_test_btn = QPushButton("■")
-        self.stop_test_btn.setObjectName("stop_test_btn")
-        self.stop_test_btn.setEnabled(False)
-        self.stop_test_btn.hide()
-
-        action_layout.addWidget(self.start_test_btn, 1)
-        left_col.addWidget(action_panel)
         left_col.addStretch()
 
         self.left_scroll.setWidget(left_content)
+        left_wrapper.addWidget(self.left_scroll, 1)
+
+        self.start_test_btn = QPushButton("▶ START TEST")
+        self.start_test_btn.setObjectName("primaryStartBtn")
+        left_wrapper.addWidget(self.start_test_btn)
+
+        self.stop_test_btn = QPushButton("■")
+        self.stop_test_btn.setObjectName("stopBtn")
+        self.stop_test_btn.setEnabled(False)
+        self.stop_test_btn.hide()
 
         # 右侧
         right_col = QVBoxLayout()
@@ -1040,7 +1016,7 @@ class GPADCTestUI(QWidget):
         self.save_config_btn.hide()
         self.load_config_btn.hide()
 
-        body_layout.addWidget(self.left_scroll, 0)
+        body_layout.addLayout(left_wrapper, 0)
         body_layout.addLayout(right_col, 1)
 
         page_layout.addLayout(body_layout, 1)
@@ -1637,15 +1613,9 @@ class GPADCTestUI(QWidget):
         self._set_ui_enabled(True)
 
     def _update_test_button_state(self, running):
-        if running:
-            self.start_test_btn.setText("■ STOP")
-            self.start_test_btn.setObjectName("stop_test_btn")
-        else:
-            self.start_test_btn.setText(self._start_btn_text)
-            self.start_test_btn.setObjectName("start_test_btn")
-        self.start_test_btn.style().unpolish(self.start_test_btn)
-        self.start_test_btn.style().polish(self.start_test_btn)
-        self.start_test_btn.update()
+        update_start_btn_state(self.start_test_btn, running,
+                               start_text=self._start_btn_text,
+                               stop_text="■ STOP")
 
     def _stop_test(self):
         if self._test_worker is not None:

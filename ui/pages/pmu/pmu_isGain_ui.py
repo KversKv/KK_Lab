@@ -27,7 +27,7 @@ from instruments.mock.mock_instruments import MockN6705C, MockMSO64B
 from instruments.scopes.tektronix.mso64b import MSO64B
 from instruments.scopes.keysight.dsox4034a import DSOX4034A
 from ui.widgets.dark_combobox import DarkComboBox
-from ui.styles import SCROLLBAR_STYLE
+from ui.styles import SCROLLBAR_STYLE, START_BTN_STYLE, update_start_btn_state
 
 
 class _InstrumentWorker(QObject):
@@ -741,43 +741,7 @@ class PMUIsGainUI(QWidget):
                 background-color: #13254b;
                 color: #dce7ff;
             }
-
-            QPushButton#primaryActionBtn {
-                min-height: 36px;
-                border-radius: 10px;
-                font-size: 14px;
-                font-weight: 800;
-                color: white;
-            }
-
-            QPushButton#primaryActionBtn[running="false"] {
-                border: 1px solid #645bff;
-                background-color: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #5b5cf6,
-                    stop:1 #6a38ff
-                );
-            }
-
-            QPushButton#primaryActionBtn[running="false"]:hover {
-                background-color: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #6b6cff,
-                    stop:1 #7d4cff
-                );
-            }
-
-            QPushButton#primaryActionBtn[running="true"] {
-                background-color: #8d0f3e;
-                border: 1px solid #df4a7a;
-                color: #ffd9e6;
-            }
-
-            QPushButton#primaryActionBtn[running="true"]:hover {
-                background-color: #a11247;
-                border: 1px solid #f05a8c;
-            }
-
+""" + START_BTN_STYLE + """
             QPushButton#exportBtn {
                 min-height: 28px;
                 padding: 4px 12px;
@@ -915,8 +879,7 @@ class PMUIsGainUI(QWidget):
         left_wrapper.addWidget(self.left_scroll, 1)
 
         self.start_test_btn = QPushButton("▷  Start Sequence")
-        self.start_test_btn.setObjectName("primaryActionBtn")
-        self.start_test_btn.setProperty("running", "false")
+        self.start_test_btn.setObjectName("primaryStartBtn")
         left_wrapper.addWidget(self.start_test_btn)
 
         self.stop_test_btn = QPushButton("Abort Test")
@@ -1284,11 +1247,9 @@ class PMUIsGainUI(QWidget):
 
     def _update_test_button_state(self, running: bool):
         self.is_test_running = running
-        self.start_test_btn.setProperty("running", "true" if running else "false")
-        self.start_test_btn.setText("□  Abort Test" if running else "▷  Start Sequence")
-        self.start_test_btn.style().unpolish(self.start_test_btn)
-        self.start_test_btn.style().polish(self.start_test_btn)
-        self.start_test_btn.update()
+        update_start_btn_state(self.start_test_btn, running,
+                               start_text="▷  Start Sequence",
+                               stop_text="□  Abort Test")
 
     def append_log(self, message):
         self.log_edit.append(message)

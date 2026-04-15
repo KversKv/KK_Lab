@@ -8,7 +8,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "lib", "i2c"))
 
 from ui.widgets.dark_combobox import DarkComboBox
-from ui.styles import SCROLLBAR_STYLE
+from ui.styles import SCROLLBAR_STYLE, START_BTN_STYLE, update_start_btn_state
 from ui.styles.button import SpinningSearchButton, update_connect_button_state
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
@@ -478,10 +478,7 @@ class StatusRegisterTestUI(QWidget):
             QPushButton:hover { background-color: #162a56; border: 1px solid #3c5fa1; }
             QPushButton:pressed { background-color: #0d1a37; }
             QPushButton:disabled { background-color: #0b1430; color: #5c7096; border: 1px solid #1a2850; }
-            QPushButton#primaryStartBtn { min-height: 36px; border-radius: 12px; font-size: 15px; font-weight: 800; color: white; border: 1px solid #645bff; background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #5b5cf6, stop:1 #6a38ff); }
-            QPushButton#primaryStartBtn:hover { background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #6b6cff, stop:1 #7d4cff); }
-            QPushButton#stopBtn { background-color: #4a1020; border: 1px solid #d9485f; color: #ffd5db; }
-            QPushButton#stopBtn:hover { background-color: #5a1326; }
+""" + START_BTN_STYLE + """
             QPushButton#smallActionBtn { min-height: 28px; padding: 4px 10px; border-radius: 8px; background-color: #13254b; color: #dce7ff; }
             QFrame#chartContainer, QFrame#logContainer { background-color: #09142e; border: 1px solid #1a2d57; border-radius: 16px; }
             QTextEdit#logEdit { background-color: #061022; border: 1px solid #1f315d; border-radius: 8px; color: #7cecc8; font-family: Consolas, "Courier New", monospace; font-size: 11px; }
@@ -524,25 +521,23 @@ class StatusRegisterTestUI(QWidget):
         """ + SCROLLBAR_STYLE)
         self.left_panel = QWidget()
         self.left_panel.setObjectName("leftPanelInner")
-        self.left_panel.setMinimumWidth(253)
-        self.left_panel.setMaximumWidth(253)
         left_layout = QVBoxLayout(self.left_panel)
-        left_layout.setContentsMargins(18, 18, 18, 18)
-        left_layout.setSpacing(16)
+        left_layout.setContentsMargins(10, 10, 10, 10)
+        left_layout.setSpacing(10)
 
-        self.test_item_card = CardFrame("\u25c9 TEST ITEM")
+        self.test_item_card = CardFrame("\u25c9 Test Item")
         self._build_test_item_card()
         left_layout.addWidget(self.test_item_card)
-        self.connection_card = CardFrame("\u26a1 N6705C CONNECTION")
+        self.connection_card = CardFrame("\u26a1 N6705C Connection")
         self._build_connection_card()
         left_layout.addWidget(self.connection_card)
-        self.vt6002_card = CardFrame("\U0001f321 VT6002 CHAMBER")
+        self.vt6002_card = CardFrame("\U0001f321 VT6002 Chamber")
         self._build_vt6002_card()
         left_layout.addWidget(self.vt6002_card)
-        self.test_config_card = CardFrame("\u2637 TEST CONFIG")
+        self.test_config_card = CardFrame("\u2637 Test Config")
         self._build_test_config_card()
         left_layout.addWidget(self.test_config_card)
-        self.register_config_card = CardFrame("\u2194 REGISTER CONFIG")
+        self.register_config_card = CardFrame("\u2194 Register Config")
         self._build_register_config_card()
         left_layout.addWidget(self.register_config_card)
         left_layout.addStretch()

@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import QComboBox, QStyle, QStyleOptionComboBox
 from PySide6.QtCore import Qt, QRect
-from PySide6.QtGui import QPainter, QPen, QColor
+from PySide6.QtGui import QPainter, QPen, QColor, QFontMetrics
 
 
 class DarkComboBox(QComboBox):
@@ -9,6 +9,8 @@ class DarkComboBox(QComboBox):
         self._popup_bg = bg
         self._popup_border = border
         self._arrow_color = arrow_color
+        self.setSizePolicy(self.sizePolicy().horizontalPolicy(), self.sizePolicy().verticalPolicy())
+        self.setMinimumWidth(0)
         self.setStyleSheet(f"""
             QComboBox {{
                 background-color: {bg};
@@ -49,16 +51,26 @@ class DarkComboBox(QComboBox):
         self.setMaxVisibleItems(30)
 
     def paintEvent(self, event):
-        super().paintEvent(event)
-
         opt = QStyleOptionComboBox()
         self.initStyleOption(opt)
-        arrow_rect: QRect = self.style().subControlRect(
-            QStyle.CC_ComboBox, opt, QStyle.SC_ComboBoxArrow, self
-        )
+        opt.currentText = ""
 
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
+
+        self.style().drawComplexControl(QStyle.CC_ComboBox, opt, painter, self)
+
+        text_rect: QRect = self.style().subControlRect(
+            QStyle.CC_ComboBox, opt, QStyle.SC_ComboBoxEditField, self
+        )
+        fm = QFontMetrics(self.font())
+        elided = fm.elidedText(self.currentText(), Qt.ElideMiddle, text_rect.width())
+        painter.setPen(QColor("#c8d8f8") if self.isEnabled() else QColor("#5c7096"))
+        painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, elided)
+
+        arrow_rect: QRect = self.style().subControlRect(
+            QStyle.CC_ComboBox, opt, QStyle.SC_ComboBoxArrow, self
+        )
 
         color = QColor(self._arrow_color)
         if not self.isEnabled():
