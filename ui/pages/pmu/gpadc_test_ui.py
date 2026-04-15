@@ -47,14 +47,20 @@ class _SearchN6705CWorker(QObject):
             resources = list(rm.list_resources()) or []
             n6705c_devices = []
             for dev in resources:
+                instr = None
                 try:
                     instr = rm.open_resource(dev, timeout=1000)
                     idn = instr.query('*IDN?').strip()
-                    instr.close()
                     if "N6705C" in idn:
                         n6705c_devices.append(dev)
                 except Exception:
                     pass
+                finally:
+                    if instr is not None:
+                        try:
+                            instr.close()
+                        except Exception:
+                            pass
             self.finished.emit(n6705c_devices)
         except Exception as e:
             self.error.emit(str(e))
@@ -1177,6 +1183,7 @@ class GPADCTestUI(QWidget):
         worker.error.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda: setattr(self, '_n6705c_search_thread', None))
 
         self._n6705c_search_thread = thread
         self._n6705c_search_worker = worker
@@ -1325,6 +1332,7 @@ class GPADCTestUI(QWidget):
         worker.error.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda: setattr(self, '_vt6002_search_thread', None))
 
         self._vt6002_search_thread = thread
         self._vt6002_search_worker = worker
@@ -1400,6 +1408,7 @@ class GPADCTestUI(QWidget):
         worker.error.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda: setattr(self, '_dut_search_thread', None))
 
         self._dut_search_thread = thread
         self._dut_search_worker = worker
@@ -1919,6 +1928,26 @@ class GPADCTestUI(QWidget):
         self.avg_value.setText("---")
         self.min_value.setText("---")
         self.max_value.setText("---")
+
+    def cleanup_threads(self):
+        try:
+            from shiboken6 import isValid
+        except ImportError:
+            isValid = lambda obj: obj is not None
+
+        for attr in ('_n6705c_search_thread', '_vt6002_search_thread', '_dut_search_thread'):
+            thread = getattr(self, attr, None)
+            if thread is not None and isValid(thread) and thread.isRunning():
+                thread.quit()
+                thread.wait(3000)
+            setattr(self, attr, None)
+
+        if self._test_worker is not None:
+            self._test_worker.request_stop()
+        if self.test_thread is not None and isValid(self.test_thread) and self.test_thread.isRunning():
+            self.test_thread.quit()
+            self.test_thread.wait(3000)
+        self.test_thread = None
 
     def set_system_status(self, status, is_error=False):
         pass

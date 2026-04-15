@@ -1291,6 +1291,13 @@ class MainWindow(QMainWindow):
 
     def _cleanup_sub_ui(self, sub_ui, name):
         try:
+            if hasattr(sub_ui, 'cleanup_threads') and callable(sub_ui.cleanup_threads):
+                logger.info(f"[CloseEvent] Cleaning up threads: {name}")
+                sub_ui.cleanup_threads()
+        except Exception as e:
+            logger.warning(f"[CloseEvent] Error cleaning up threads for {name}: {e}")
+
+        try:
             if hasattr(sub_ui, 'test_worker') and sub_ui.test_worker is not None:
                 logger.info(f"[CloseEvent] Stopping test worker: {name}")
                 if hasattr(sub_ui.test_worker, 'request_stop'):
