@@ -152,6 +152,55 @@ CHANNEL_THEMES = {
     }
 }
 
+CONTENT_BG = "#0a1930"
+TAB_BAR_BG = "#07111f"
+INACTIVE_TAB_BG = "#0b1222"
+INACTIVE_TAB_HOVER_BG = "#0f1a30"
+
+
+class ChannelTabBar(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._border_color = "#14305e"
+        self._active_tab_rect = None
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setStyleSheet(f"background-color: {TAB_BAR_BG};")
+
+        self._inner_layout = QHBoxLayout(self)
+        self._inner_layout.setContentsMargins(0, 0, 0, 0)
+        self._inner_layout.setSpacing(0)
+
+    def set_border_color(self, color):
+        self._border_color = color
+        self.update()
+
+    def set_active_tab_rect(self, rect):
+        self._active_tab_rect = rect
+        self.update()
+
+    def layout(self):
+        return self._inner_layout
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, False)
+        pen = QPen(QColor(self._border_color), 1)
+        p.setPen(pen)
+
+        y = self.height() - 1
+
+        if self._active_tab_rect:
+            r = self._active_tab_rect
+            if r.left() > 0:
+                p.drawLine(0, y, r.left(), y)
+            if r.right() < self.width():
+                p.drawLine(r.right(), y, self.width(), y)
+        else:
+            p.drawLine(0, y, self.width(), y)
+
+        p.end()
+
 
 def _get_checkmark_path(accent_color):
     safe_name = accent_color.replace("#", "").replace(" ", "")
@@ -486,9 +535,8 @@ class N6705CAnalyserUI(QWidget):
         self.channel_interaction_frame = QFrame()
         self.channel_interaction_frame.setStyleSheet("""
             QFrame#ChannelInteractionFrame {
-                background-color: #0a1930;
-                border: 1px solid #14305e;
-                border-radius: 14px;
+                background-color: transparent;
+                border: none;
             }
         """)
         self.channel_interaction_frame.setObjectName("ChannelInteractionFrame")
@@ -609,28 +657,15 @@ class N6705CAnalyserUI(QWidget):
         return top_frame
 
     def _create_channel_tabs(self):
-        tab_wrap = QWidget()
-        tab_wrap.setAttribute(Qt.WA_StyledBackground, True)
-        tab_wrap.setStyleSheet("""
-            QWidget {
-                background-color: #0c1628;
-                border: none;
-                border-top-left-radius: 14px;
-                border-top-right-radius: 14px;
-                border-bottom-left-radius: 0px;
-                border-bottom-right-radius: 0px;
-            }
-        """)
+        self._tab_bar = ChannelTabBar()
 
-        self._channel_tabs_layout = QHBoxLayout(tab_wrap)
-        self._channel_tabs_layout.setContentsMargins(0, 0, 0, 0)
-        self._channel_tabs_layout.setSpacing(0)
+        self._channel_tabs_layout = self._tab_bar.layout()
 
         self.channel_tab_buttons = []
         self._channel_tab_separator = None
         self._build_channel_tab_buttons()
 
-        return tab_wrap
+        return self._tab_bar
 
     def _build_channel_tab_buttons(self):
         for btn in self.channel_tab_buttons:
@@ -649,13 +684,16 @@ class N6705CAnalyserUI(QWidget):
             if w:
                 w.deleteLater()
 
+        self._channel_tabs_layout.setContentsMargins(0, 4, 0, 0)
+        self._channel_tabs_layout.setSpacing(2)
+
         dual = self._is_dual_mode()
         if dual:
             for dev_label in ["A", "B"]:
                 for ch in range(1, 5):
                     btn = QPushButton(f"\u25cf {dev_label}-CH{ch}")
                     btn.setCheckable(True)
-                    btn.setMinimumSize(90, 34)
+                    btn.setMinimumSize(90, 36)
                     btn.setCursor(Qt.PointingHandCursor)
                     btn.clicked.connect(
                         lambda checked=False, d=dev_label, c=ch: self._switch_channel(d, c)
@@ -673,7 +711,7 @@ class N6705CAnalyserUI(QWidget):
             for ch in range(1, 5):
                 btn = QPushButton(f"\u25cf CH{ch}")
                 btn.setCheckable(True)
-                btn.setMinimumSize(90, 34)
+                btn.setMinimumSize(90, 36)
                 btn.setCursor(Qt.PointingHandCursor)
                 btn.clicked.connect(
                     lambda checked=False, c=ch: self._switch_channel(self._get_single_device_label(), c)
@@ -682,6 +720,10 @@ class N6705CAnalyserUI(QWidget):
                 self._channel_tabs_layout.addWidget(btn)
 
         self._channel_tabs_layout.addStretch()
+
+        any_connected = any(d["is_connected"] for d in self.devices.values())
+        for btn in self.channel_tab_buttons:
+            btn.setEnabled(any_connected)
 
         if self.channel_tab_buttons:
             self.channel_tab_buttons[0].setChecked(True)
@@ -740,27 +782,31 @@ class N6705CAnalyserUI(QWidget):
         wrapper_layout.setContentsMargins(0, 0, 0, 0)
         wrapper_layout.setSpacing(0)
 
-        self.accent_top_line = QFrame()
-        self.accent_top_line.setFixedHeight(3)
-        self.accent_top_line.setStyleSheet("QFrame { background-color: transparent; border: none; border-radius: 0px; }")
-        wrapper_layout.addWidget(self.accent_top_line)
-
         self.setting_frame = QFrame()
-        self.setting_frame.setStyleSheet("""
-            QFrame {
-                background-color: #0a1930;
-                border: none;
+        self.setting_frame.setObjectName("SettingContentFrame")
+        self.setting_frame.setStyleSheet(f"""
+            QFrame#SettingContentFrame {{
+                background-color: {CONTENT_BG};
+                border: 1px solid #14305e;
+                border-top: none;
                 border-bottom-left-radius: 14px;
                 border-bottom-right-radius: 14px;
                 border-top-left-radius: 0px;
                 border-top-right-radius: 0px;
-            }
+            }}
         """)
 
         setting_layout = QVBoxLayout(self.setting_frame)
         setting_layout.setAlignment(Qt.AlignTop)
-        setting_layout.setContentsMargins(12, 12, 12, 12)
-        setting_layout.setSpacing(12)
+        setting_layout.setContentsMargins(12, 0, 12, 12)
+        setting_layout.setSpacing(0)
+
+        self.accent_top_line = QFrame()
+        self.accent_top_line.setFixedHeight(3)
+        self.accent_top_line.setStyleSheet("QFrame { background-color: transparent; border: none; border-radius: 0px; }")
+        setting_layout.addWidget(self.accent_top_line)
+
+        setting_layout.addSpacing(12)
 
         setting_header = QHBoxLayout()
         setting_header.setContentsMargins(0, 0, 0, 0)
@@ -809,6 +855,8 @@ class N6705CAnalyserUI(QWidget):
         setting_header.addWidget(self.output_toggle)
 
         setting_layout.addLayout(setting_header)
+
+        setting_layout.addSpacing(12)
 
         params_container = QFrame()
         params_container.setStyleSheet("""
@@ -1402,47 +1450,61 @@ class N6705CAnalyserUI(QWidget):
         QPushButton:disabled {{ background-color: #0D1734; color: #3a4a6a; border: 1px solid #18264A; }}
         """
 
-    def _build_channel_tab_style(self, dev_label, ch, checked=False, position="middle"):
+    def _build_channel_tab_style(self, dev_label, ch, checked=False):
         theme = CHANNEL_THEMES[ch]
+        border_color = theme['accent_border'] if checked else "#14305e"
         dual = self._is_dual_mode()
-        padding = "5px 12px" if dual else "6px 16px"
+        padding = "6px 12px" if dual else "7px 18px"
         font_size = "11px" if dual else "12px"
-        corner = "12px"
-        if position == "first":
-            radius_str = f"border-top-left-radius: {corner}; border-top-right-radius: 0px; border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;"
-        elif position == "last":
-            radius_str = f"border-top-left-radius: 0px; border-top-right-radius: {corner}; border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;"
-        else:
-            radius_str = "border-radius: 0px;"
+        corner = "8px"
+
+        top_radius = f"border-top-left-radius: {corner}; border-top-right-radius: {corner};"
+        bottom_radius = "border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;"
+        radius_str = f"{top_radius} {bottom_radius}"
+
         disabled_part = f"""
             QPushButton:disabled {{
                 background-color: #0a1224; color: #3a4a6a;
-                border: 1px solid #151f36; {radius_str}
+                border: 1px solid #151f36;
+                border-bottom: 1px solid #151f36;
+                {radius_str}
                 padding: {padding}; font-size: {font_size}; font-weight: 700;
+                margin-top: 3px;
             }}
         """
         if checked:
             return f"""
             QPushButton {{
-                background-color: {theme['accent_soft']}; color: {theme['accent']};
-                border: 1px solid {theme['accent_border']}; {radius_str}
+                background-color: {CONTENT_BG}; color: {theme['accent']};
+                border: 1px solid {border_color};
+                border-bottom: none;
+                {radius_str}
                 padding: {padding}; font-size: {font_size}; font-weight: 700;
+                margin-bottom: 0px;
             }}
             {disabled_part}
             """
         else:
             return f"""
             QPushButton {{
-                background-color: #0b1730; color: {theme['text_dim']};
-                border: 1px solid #1b2847; {radius_str}
+                background-color: {INACTIVE_TAB_BG}; color: {theme['text_dim']};
+                border: 1px solid #1b2847;
+                border-bottom: 1px solid {self._get_current_border_color()};
+                {radius_str}
                 padding: {padding}; font-size: {font_size}; font-weight: 700;
+                margin-top: 3px;
             }}
             QPushButton:hover {{
-                background-color: #0f1f3a; color: #ffffff;
+                background-color: {INACTIVE_TAB_HOVER_BG}; color: #ffffff;
                 border: 1px solid {theme['accent_border']};
+                border-bottom: 1px solid {self._get_current_border_color()};
             }}
             {disabled_part}
             """
+
+    def _get_current_border_color(self):
+        theme = CHANNEL_THEMES.get(self.current_channel, CHANNEL_THEMES[1])
+        return theme['accent_border']
 
     def _build_mode_button_style(self, active=False):
         theme = CHANNEL_THEMES[self.current_channel]
@@ -1479,38 +1541,40 @@ class N6705CAnalyserUI(QWidget):
         dual = self._is_dual_mode()
         total = len(self.channel_tab_buttons)
         idx = 0
+        active_btn = None
         if dual:
             for dev_label in ["A", "B"]:
                 for ch in range(1, 5):
                     if idx < total:
                         is_active = (dev_label == self.current_device and ch == self.current_channel)
-                        if idx == 0:
-                            pos = "first"
-                        elif idx == total - 1:
-                            pos = "last"
-                        else:
-                            pos = "middle"
                         self.channel_tab_buttons[idx].setStyleSheet(
-                            self._build_channel_tab_style(dev_label, ch, is_active, pos)
+                            self._build_channel_tab_style(dev_label, ch, is_active)
                         )
                         self.channel_tab_buttons[idx].setChecked(is_active)
+                        if is_active:
+                            active_btn = self.channel_tab_buttons[idx]
                         idx += 1
         else:
             single_label = self._get_single_device_label()
             for ch in range(1, 5):
                 if idx < total:
                     is_active = (ch == self.current_channel)
-                    if idx == 0:
-                        pos = "first"
-                    elif idx == total - 1:
-                        pos = "last"
-                    else:
-                        pos = "middle"
                     self.channel_tab_buttons[idx].setStyleSheet(
-                        self._build_channel_tab_style(single_label, ch, is_active, pos)
+                        self._build_channel_tab_style(single_label, ch, is_active)
                     )
                     self.channel_tab_buttons[idx].setChecked(is_active)
+                    if is_active:
+                        active_btn = self.channel_tab_buttons[idx]
                     idx += 1
+
+        QTimer.singleShot(0, lambda: self._update_tab_bar_active_rect(active_btn))
+
+    def _update_tab_bar_active_rect(self, active_btn):
+        if active_btn and hasattr(self, '_tab_bar'):
+            rect = active_btn.geometry()
+            self._tab_bar.set_active_tab_rect(rect)
+        elif hasattr(self, '_tab_bar'):
+            self._tab_bar.set_active_tab_rect(None)
 
     def _apply_channel_theme(self, dev_label, channel_num):
         theme = CHANNEL_THEMES[channel_num]
@@ -1520,10 +1584,13 @@ class N6705CAnalyserUI(QWidget):
         else:
             self.channel_title_label.setText(f"Channel {channel_num}")
 
+        border_color = theme['accent_border']
+
         self.setting_frame.setStyleSheet(f"""
-            QFrame {{
-                background-color: #0a1930;
-                border: none;
+            QFrame#SettingContentFrame {{
+                background-color: {CONTENT_BG};
+                border: 1px solid {border_color};
+                border-top: none;
                 border-bottom-left-radius: 14px;
                 border-bottom-right-radius: 14px;
                 border-top-left-radius: 0px;
@@ -1533,11 +1600,13 @@ class N6705CAnalyserUI(QWidget):
 
         self.channel_interaction_frame.setStyleSheet(f"""
             QFrame#ChannelInteractionFrame {{
-                background-color: #0a1930;
-                border: 1px solid {theme['accent_border']};
-                border-radius: 14px;
+                background-color: transparent;
+                border: none;
             }}
         """)
+
+        if hasattr(self, '_tab_bar'):
+            self._tab_bar.set_border_color(border_color)
 
         self.output_toggle.setAccentColor(theme['accent'])
 
@@ -1887,43 +1956,54 @@ class N6705CAnalyserUI(QWidget):
             btn.setEnabled(any_connected)
 
         self.setting_frame.setEnabled(active_dev_connected)
+
+        disabled_border = "#0d1a30"
+        disabled_bg = "#070f1e"
+
         if not active_dev_connected:
-            self.setting_frame.setStyleSheet("""
-                QFrame {
-                    background-color: #070f1e;
-                    border: none;
+            self.setting_frame.setStyleSheet(f"""
+                QFrame#SettingContentFrame {{
+                    background-color: {disabled_bg};
+                    border: 1px solid {disabled_border};
+                    border-top: none;
                     border-bottom-left-radius: 14px;
                     border-bottom-right-radius: 14px;
                     border-top-left-radius: 0px;
                     border-top-right-radius: 0px;
-                }
+                }}
             """)
             self.channel_interaction_frame.setStyleSheet("""
                 QFrame#ChannelInteractionFrame {
-                    background-color: #070f1e;
-                    border: 1px solid #0d1a30;
-                    border-radius: 14px;
+                    background-color: transparent;
+                    border: none;
                 }
             """)
+            if hasattr(self, '_tab_bar'):
+                self._tab_bar.set_border_color(disabled_border)
         else:
             theme = CHANNEL_THEMES[self.current_channel]
+            border_color = theme['accent_border']
             self.setting_frame.setStyleSheet(f"""
-                QFrame {{
-                    background-color: #0a1930;
-                    border: none;
+                QFrame#SettingContentFrame {{
+                    background-color: {CONTENT_BG};
+                    border: 1px solid {border_color};
+                    border-top: none;
                     border-bottom-left-radius: 14px;
                     border-bottom-right-radius: 14px;
                     border-top-left-radius: 0px;
                     border-top-right-radius: 0px;
                 }}
             """)
-            self.channel_interaction_frame.setStyleSheet(f"""
-                QFrame#ChannelInteractionFrame {{
-                    background-color: #0a1930;
-                    border: 1px solid {theme['accent_border']};
-                    border-radius: 14px;
-                }}
+            self.channel_interaction_frame.setStyleSheet("""
+                QFrame#ChannelInteractionFrame {
+                    background-color: transparent;
+                    border: none;
+                }
             """)
+            if hasattr(self, '_tab_bar'):
+                self._tab_bar.set_border_color(border_color)
+
+        self._refresh_channel_tab_styles()
 
         for btn in self.mode_buttons:
             btn.setEnabled(active_dev_connected)
