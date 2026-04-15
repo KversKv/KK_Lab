@@ -508,7 +508,7 @@ class StatusRegisterTestUI(N6705CConnectionMixin, QWidget):
         self.left_scroll.setWidgetResizable(True)
         self.left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.left_scroll.setFixedWidth(275)
+        self.left_scroll.setFixedWidth(320)
         self.left_scroll.setObjectName("leftScrollArea")
         self.left_scroll.setStyleSheet("""
             QScrollArea#leftScrollArea { background-color: #08132d; border: 1px solid #16274d; border-radius: 18px; }

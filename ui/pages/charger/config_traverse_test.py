@@ -506,7 +506,7 @@ class ConfigTraverseTestUI(N6705CConnectionMixin, QWidget):
         self.left_scroll.setWidgetResizable(True)
         self.left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.left_scroll.setFixedWidth(275)
+        self.left_scroll.setFixedWidth(320)
         self.left_scroll.setObjectName("leftScrollArea")
         self.left_scroll.setStyleSheet("""
             QScrollArea#leftScrollArea {
