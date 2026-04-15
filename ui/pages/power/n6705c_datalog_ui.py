@@ -10,6 +10,11 @@ import os
 import math
 import random
 
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w")
+
 def _get_base_path():
     """Get project root path, compatible with PyInstaller bundled and dev environment."""
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):

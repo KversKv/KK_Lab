@@ -1,4 +1,5 @@
 import logging
+import os
 import sys
 
 
@@ -10,7 +11,8 @@ def setup_logging(level=logging.DEBUG):
     root.setLevel(level)
 
     if not root.handlers:
-        handler = logging.StreamHandler(sys.stdout)
+        stream = sys.stdout if sys.stdout is not None else open(os.devnull, "w")
+        handler = logging.StreamHandler(stream)
         handler.setLevel(level)
         handler.setFormatter(logging.Formatter(fmt, datefmt=datefmt))
         root.addHandler(handler)

@@ -9,6 +9,12 @@ import os
 import logging
 import warnings
 import faulthandler
+
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w")
+
 faulthandler.enable()
 import pyvisa
 from PySide6.QtWidgets import QApplication
