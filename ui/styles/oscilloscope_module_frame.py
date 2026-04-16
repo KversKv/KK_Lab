@@ -275,6 +275,10 @@ class OscilloscopeConnectionMixin:
         self.scope_resource_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         self.scope_resource_combo.setEditable(True)
         self.scope_resource_combo.addItem("USB0::0x0957::0x17A4::MY61500152::INSTR")
+        self.scope_resource_combo.lineEdit().setCursorPosition(0)
+        self.scope_resource_combo.currentIndexChanged.connect(
+            lambda: QTimer.singleShot(0, lambda: self.scope_resource_combo.lineEdit().setCursorPosition(0))
+        )
         layout.addWidget(self.scope_resource_combo)
 
         scope_row = QHBoxLayout()
