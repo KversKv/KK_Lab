@@ -4,7 +4,7 @@
 
 KK_Lab 是一个基于 PySide6 (Qt) 的芯片功耗测试与调试桌面工具，通过 VISA/串口
 协议控制多种实验室仪器（电源分析仪、示波器、温箱等），实现自动化数据采集、
-PMU 测试、功耗分析和波形展示等功能。
+PMU 测试、Charger 测试、功耗分析和波形展示等功能。
 
 ================================================================================
   顶层目录
@@ -13,6 +13,8 @@ PMU 测试、功耗分析和波形展示等功能。
 KK_Lab/
 │
 ├── main.py                  # 应用程序主入口，初始化 QApplication 并启动主窗口
+├── log_config.py            # 日志配置模块，提供 setup_logging() 和 get_logger()
+├── debug_config.py          # 调试配置，DEBUG_MOCK 开关控制是否使用模拟仪器
 ├── requirements.txt         # Python 依赖包清单 (PySide6, pyqtgraph, pyvisa 等)
 ├── .gitignore               # Git 忽略规则
 ├── DIRECTORY_STRUCTURE.txt  # 本文件 - 工程目录结构说明
@@ -22,6 +24,8 @@ KK_Lab/
 ├── ui/                      # 用户界面层 (按功能分包: widgets/pages/dialogs/styles)
 ├── lib/                     # 第三方库与底层接口封装
 ├── resources/               # 静态资源文件
+├── helps/                   # HTML 帮助文档 (各功能页面的操作说明)
+├── hooks/                   # PyInstaller 自定义 hook
 ├── spec/                    # PyInstaller 打包配置
 └── Results/                 # 测试结果输出目录 (运行时生成，Git 不跟踪)
 
@@ -59,15 +63,19 @@ instruments/
 │
 ├── power/                   # 电源分析仪驱动
 │   └── keysight/
-│       └── n6705c.py        # N6705C 直流电源分析仪驱动
-│                            # (电压/电流设置、通道控制、Datalog 采集等)
+│       ├── n6705c.py              # N6705C 直流电源分析仪驱动
+│       │                          # (电压/电流设置、通道控制、Datalog 采集等)
+│       └── n6705c_datalog_process.py  # Datalog CSV 数据解析与处理模块
 │
 ├── chambers/                # 环境试验箱驱动
 │   └── vt6002_chamber.py    # VT6002 高低温试验箱驱动
 │                            # (Modbus 串口协议，温度设置与读取)
 │
-├── adapters/                # 通信适配器驱动
-│   └── ch341t.py            # CH341T USB-I2C 适配器驱动 (通过 DLL 调用)
+├── adapters/                # 通信适配器驱动 (预留)
+│
+├── mock/                    # 模拟仪器 (用于离线调试/开发)
+│   └── mock_instruments.py  # 模拟仪器实现，包含 MockN6705C / MockI2C /
+│                            # MockVT6002 / MockMSO64B，由 DEBUG_MOCK 开关启用
 │
 └── factory.py               # 仪器工厂函数，统一创建各类仪器实例
 
@@ -85,34 +93,48 @@ ui/
 │   └── dark_combobox.py         # 暗色主题下拉框组件
 │
 ├── pages/                   # 功能页面 (按仪器/功能分包)
-│   ├── power/               # 电源分析仪相关页面
-│   │   ├── n6705c_top.py        # N6705C 顶部功能汇总入口
-│   │   ├── n6705c_ui.py         # N6705C 单通道控制界面
-│   │   ├── n6705c_double_ui.py  # N6705C 双通道控制界面
-│   │   └── n6705c_datalog_ui.py # N6705C 数据记录界面
+│   ├── n6705c_power_analyzer/   # 电源分析仪相关页面
+│   │   ├── n6705c_top.py            # N6705C 连接状态管理 (支持双台仪器 A/B)
+│   │   ├── n6705c_analyser_ui.py    # N6705C 电源分析仪控制界面
+│   │   └── n6705c_datalog_ui.py     # N6705C 数据记录界面
 │   │
-│   ├── oscilloscope/        # 示波器相关页面
-│   │   └── oscilloscope_base_ui.py  # 示波器统一界面 (自动识别连接的仪器型号,
-│   │                                # 支持截图/反相/测量/触发/通道设置等)
+│   ├── oscilloscope/            # 示波器相关页面
+│   │   ├── mso64b_top.py             # MSO64B 连接状态管理
+│   │   └── oscilloscope_base_ui.py   # 示波器统一界面 (自动识别连接的仪器型号,
+│   │                                 # 支持截图/反相/测量/触发/通道设置等)
 │   │
-│   ├── pmu/                 # PMU 测试相关页面
-│   │   ├── pmu_test_ui.py       # PMU 测试主入口界面
+│   ├── pmu_test/                # PMU 测试相关页面
+│   │   ├── pmu_test_ui.py           # PMU 测试主入口界面 (Tab 页整合各子测试)
 │   │   ├── pmu_dcdc_efficiency.py   # DCDC 效率测试界面
-│   │   ├── pmu_isGain_ui.py     # Is Gain 测试界面
-│   │   ├── pmu_oscp_ui.py       # OSCP (过流保护) 测试界面
+│   │   ├── pmu_isGain_ui.py         # Is Gain 测试界面
+│   │   ├── pmu_oscp_ui.py           # OSCP (过流保护) 测试界面
 │   │   ├── pmu_output_voltage.py    # 输出电压测试界面
-│   │   └── pmu_threshold.py     # 阈值测试界面
+│   │   ├── gpadc_test_ui.py         # GPADC 测试界面
+│   │   └── clk_test_ui.py           # 时钟测试界面
 │   │
-│   ├── chamber/             # 温箱相关页面
-│   │   └── vt6002_chamber_ui.py # VT6002 温箱控制界面
+│   ├── charger_test/            # Charger 充电器测试相关页面
+│   │   ├── charger_test_ui.py       # Charger 测试主入口界面 (Tab 页整合各子测试)
+│   │   ├── config_traverse_test.py  # 充电配置遍历测试界面
+│   │   ├── status_register_test.py  # 状态寄存器测试界面
+│   │   ├── iterm_test.py            # Iterm 终止电流测试界面
+│   │   └── regulation_voltage_ui.py # 调节电压测试界面
 │   │
-│   └── test/                # 独立测试功能页面
-│       ├── consumption_test.py  # 功耗测试界面
-│       ├── gpadc_test_ui.py     # GPADC 测试界面
-│       └── clk_test_ui.py       # 时钟测试界面
+│   ├── chamber/                 # 温箱相关页面
+│   │   └── vt6002_chamber_ui.py     # VT6002 温箱控制界面
+│   │
+│   └── consumption_test/        # 独立测试功能页面
+│       └── consumption_test.py      # 功耗测试界面
 │
 ├── dialogs/                 # 对话框 (预留)
-└── styles/                  # 样式定义 (预留)
+│
+└── styles/                  # 样式与可复用 UI Mixin
+    ├── __init__.py              # 样式包入口，统一导出公共样式常量与工具函数
+    ├── scrollbar.py             # 暗色主题滚动条样式 (SCROLLBAR_STYLE)
+    ├── button.py                # 搜索/连接/断开按钮样式与 SpinningSearchButton 组件
+    ├── start_sequence.py        # 开始按钮样式 (START_BTN_STYLE) 与状态切换工具
+    ├── n6705c_connection_frame.py    # N6705C 连接区域 Mixin (VISA 搜索/连接/断开)
+    ├── oscilloscope_module_frame.py  # 示波器连接区域 Mixin (VISA 搜索/连接/断开)
+    └── chamber_module_frame.py       # VT6002 温箱连接区域 Mixin (串口搜索/连接/断开)
 
 ================================================================================
   lib/ - 第三方库与底层接口封装
@@ -144,8 +166,40 @@ resources/
     ├── kk_lab.svg           # 应用程序图标 (SVG 格式)
     ├── n6705c.ico           # N6705C 独立工具图标
     ├── n6705c_thumb.svg     # N6705C 缩略图标
+    ├── search.svg           # 搜索图标 (用于搜索按钮)
+    ├── link.svg             # 已连接图标 (用于连接状态指示)
+    ├── unlink.svg           # 未连接图标 (用于断开状态指示)
     ├── checked_*.svg        # 各颜色已选中状态图标 (用于侧边栏导航)
     └── unchecked_*.svg      # 各颜色未选中状态图标 (用于侧边栏导航)
+
+================================================================================
+  helps/ - HTML 帮助文档
+================================================================================
+
+helps/
+├── power_analyser.html              # 电源分析仪操作说明
+├── datalog.html                     # Datalog 数据记录操作说明
+├── oscilloscope.html                # 示波器操作说明
+├── consumption_test.html            # 功耗测试操作说明
+├── thermal_chamber.html             # 温箱操作说明
+├── pmu_dcdc_efficiency.html         # DCDC 效率测试操作说明
+├── pmu_output_voltage.html          # PMU 输出电压测试操作说明
+├── pmu_is_gain.html                 # Is Gain 测试操作说明
+├── pmu_oscp.html                    # OSCP 过流保护测试操作说明
+├── pmu_gpadc.html                   # GPADC 测试操作说明
+├── pmu_clk.html                     # 时钟测试操作说明
+├── charger_config_traverse.html     # 充电配置遍历测试操作说明
+├── charger_status_register.html     # 充电状态寄存器测试操作说明
+├── charger_iterm.html               # Iterm 终止电流测试操作说明
+└── charger_regulation_voltage.html  # 调节电压测试操作说明
+
+================================================================================
+  hooks/ - PyInstaller 自定义 Hook
+================================================================================
+
+hooks/
+└── hook-pyqtgraph.py       # pyqtgraph 打包 hook，收集数据文件与隐藏导入，
+                             # 排除不需要的 Qt 绑定和示例模块
 
 ================================================================================
   spec/ - PyInstaller 打包配置

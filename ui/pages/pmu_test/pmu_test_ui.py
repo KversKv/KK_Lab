@@ -10,15 +10,15 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
-from ui.pages.pmu.pmu_dcdc_efficiency import PMUDCDCEfficiencyUI
-from ui.pages.pmu.pmu_output_voltage import PMUOutputVoltageUI
+from ui.pages.pmu_test.pmu_dcdc_efficiency import PMUDCDCEfficiencyUI
+from ui.pages.pmu_test.pmu_output_voltage import PMUOutputVoltageUI
 from log_config import get_logger
 
 logger = get_logger(__name__)
-from ui.pages.pmu.pmu_isGain_ui import PMUIsGainUI
-from ui.pages.pmu.pmu_oscp_ui import PMUOSCPUI
-from ui.pages.pmu.gpadc_test_ui import GPADCTestUI
-from ui.pages.pmu.clk_test_ui import CLKTestUI
+from ui.pages.pmu_test.pmu_isGain_ui import PMUIsGainUI
+from ui.pages.pmu_test.pmu_oscp_ui import PMUOSCPUI
+from ui.pages.pmu_test.gpadc_test_ui import GPADCTestUI
+from ui.pages.pmu_test.clk_test_ui import CLKTestUI
 
 
 class PMUTestUI(QWidget):

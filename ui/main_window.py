@@ -17,15 +17,15 @@ from PySide6.QtCore import Qt, Signal, QEvent, QPoint, QTimer
 from PySide6.QtGui import QPalette, QColor, QFont
 from ui.widgets.plot_widget import PlotWidget
 from ui.pages.oscilloscope.oscilloscope_base_ui import OscilloscopeBaseUI
-from ui.pages.power.n6705c_analyser_ui import N6705CAnalyserUI
-from ui.pages.power.n6705c_datalog_ui import N6705CDatalogUI
-from ui.pages.power.n6705c_top import N6705CTop
+from ui.pages.n6705c_power_analyzer.n6705c_analyser_ui import N6705CAnalyserUI
+from ui.pages.n6705c_power_analyzer.n6705c_datalog_ui import N6705CDatalogUI
+from ui.pages.n6705c_power_analyzer.n6705c_top import N6705CTop
 from ui.pages.oscilloscope.mso64b_top import MSO64BTop
-from ui.pages.pmu.pmu_test_ui import PMUTestUI
+from ui.pages.pmu_test.pmu_test_ui import PMUTestUI
 from ui.pages.chamber.vt6002_chamber_ui import VT6002ChamberUI
 from ui.widgets.sidebar_nav_button import SidebarNavButton
-from ui.pages.test.consumption_test import ConsumptionTestUI
-from ui.pages.charger.charger_test_ui import ChargerTestUI
+from ui.pages.consumption_test.consumption_test import ConsumptionTestUI
+from ui.pages.charger_test.charger_test_ui import ChargerTestUI
 from core.test_manager import TestManager
 from instruments.base.visa_instrument import VisaInstrument
 from instruments.chambers.vt6002_chamber import VT6002
@@ -607,12 +607,12 @@ class MainWindow(QMainWindow):
         left_nav_layout.addWidget(instruments_title)
 
         # 导航按钮
-        self.power_analyzer_btn = SidebarNavButton(
-            "N6705C Power\nAnalyzer",
+        self.n6705c_power_analyzer_btn = SidebarNavButton(
+            "N6705C",
             "",
             "⚡"
         )
-        self.power_analyzer_btn.setChecked(True)
+        self.n6705c_power_analyzer_btn.setChecked(True)
 
         self.oscilloscope_btn = SidebarNavButton(
             "Oscilloscope",
@@ -620,15 +620,15 @@ class MainWindow(QMainWindow):
             "∿"
         )
 
-        self.thermal_chamber_btn = SidebarNavButton(
-            "VT6002 Thermal\nChamber",
+        self.chamber_btn = SidebarNavButton(
+            "Chamber",
             "",
             "🔥"
         )
 
-        left_nav_layout.addWidget(self.power_analyzer_btn)
+        left_nav_layout.addWidget(self.n6705c_power_analyzer_btn)
         left_nav_layout.addWidget(self.oscilloscope_btn)
-        left_nav_layout.addWidget(self.thermal_chamber_btn)
+        left_nav_layout.addWidget(self.chamber_btn)
 
         # 分组标题：AUTOMATION
         automation_title = QLabel("AUTOMATION")
@@ -645,12 +645,12 @@ class MainWindow(QMainWindow):
         """)
         left_nav_layout.addWidget(automation_title)
 
-        self.pmu_auto_test_btn = SidebarNavButton(
-            "PMU Auto Test",
+        self.pmu_test_btn = SidebarNavButton(
+            "PMU Test",
             "",
             "⚙"
         )
-        left_nav_layout.addWidget(self.pmu_auto_test_btn)
+        left_nav_layout.addWidget(self.pmu_test_btn)
 
         self.charger_test_btn = SidebarNavButton(
             "Charger Test",
@@ -669,10 +669,10 @@ class MainWindow(QMainWindow):
         # 单选组
         self.nav_button_group = QButtonGroup(self)
         self.nav_button_group.setExclusive(True)
-        self.nav_button_group.addButton(self.power_analyzer_btn)
+        self.nav_button_group.addButton(self.n6705c_power_analyzer_btn)
         self.nav_button_group.addButton(self.oscilloscope_btn)
-        self.nav_button_group.addButton(self.thermal_chamber_btn)
-        self.nav_button_group.addButton(self.pmu_auto_test_btn)
+        self.nav_button_group.addButton(self.chamber_btn)
+        self.nav_button_group.addButton(self.pmu_test_btn)
         self.nav_button_group.addButton(self.charger_test_btn)
         self.nav_button_group.addButton(self.consumption_test_btn)
 
@@ -762,10 +762,10 @@ class MainWindow(QMainWindow):
     def _refresh_nav_arrow_state(self):
         """刷新左侧导航按钮最右侧箭头显示状态：只有选中项显示"""
         nav_buttons = [
-            self.power_analyzer_btn,
+            self.n6705c_power_analyzer_btn,
             self.oscilloscope_btn,
-            self.thermal_chamber_btn,
-            self.pmu_auto_test_btn,
+            self.chamber_btn,
+            self.pmu_test_btn,
             self.charger_test_btn,
             self.consumption_test_btn
         ]
@@ -782,14 +782,14 @@ class MainWindow(QMainWindow):
         self.pmu_submenu = PMUSubMenu(self)
         self.pmu_submenu.item_clicked.connect(self._on_pmu_submenu_clicked)
 
-        self.pmu_auto_test_btn.installEventFilter(self)
+        self.pmu_test_btn.installEventFilter(self)
         self.pmu_submenu.installEventFilter(self)
 
     def _create_pa_submenu(self):
         self.pa_submenu = PowerAnalyzerSubMenu(self)
         self.pa_submenu.item_clicked.connect(self._on_pa_submenu_clicked)
 
-        self.power_analyzer_btn.installEventFilter(self)
+        self.n6705c_power_analyzer_btn.installEventFilter(self)
         self.pa_submenu.installEventFilter(self)
 
     def _create_charger_submenu(self):
@@ -803,8 +803,8 @@ class MainWindow(QMainWindow):
         if not self.pa_submenu:
             return
 
-        btn_global_pos = self.power_analyzer_btn.mapToGlobal(QPoint(0, 0))
-        x = btn_global_pos.x() + self.power_analyzer_btn.width() + 8
+        btn_global_pos = self.n6705c_power_analyzer_btn.mapToGlobal(QPoint(0, 0))
+        x = btn_global_pos.x() + self.n6705c_power_analyzer_btn.width() + 8
         y = btn_global_pos.y()
 
         self.pa_submenu.set_current_item(self.current_pa_mode)
@@ -823,7 +823,7 @@ class MainWindow(QMainWindow):
     def _on_pa_submenu_clicked(self, mode_key):
         self.current_pa_mode = mode_key
         self.pa_submenu.set_current_item(mode_key)
-        self.power_analyzer_btn.setChecked(True)
+        self.n6705c_power_analyzer_btn.setChecked(True)
         self._refresh_nav_arrow_state()
         if mode_key == "analyser":
             self._create_power_analyser_ui()
@@ -836,8 +836,8 @@ class MainWindow(QMainWindow):
         if not self.pmu_submenu:
             return
 
-        btn_global_pos = self.pmu_auto_test_btn.mapToGlobal(QPoint(0, 0))
-        x = btn_global_pos.x() + self.pmu_auto_test_btn.width() + 8
+        btn_global_pos = self.pmu_test_btn.mapToGlobal(QPoint(0, 0))
+        x = btn_global_pos.x() + self.pmu_test_btn.width() + 8
         y = btn_global_pos.y()
 
         self.pmu_submenu.set_current_item(self.current_pmu_test_key)
@@ -857,7 +857,7 @@ class MainWindow(QMainWindow):
     def _on_pmu_submenu_clicked(self, test_key):
         self.current_pmu_test_key = test_key
         self.pmu_submenu.set_current_item(test_key)
-        self.pmu_auto_test_btn.setChecked(True)
+        self.pmu_test_btn.setChecked(True)
         self._refresh_nav_arrow_state()
         self._create_pmu_test_ui(selected_test=test_key)
         self.pmu_submenu.hide()
@@ -892,7 +892,7 @@ class MainWindow(QMainWindow):
         self.charger_submenu.hide()
 
     def eventFilter(self, obj, event):
-        if obj == self.pmu_auto_test_btn:
+        if obj == self.pmu_test_btn:
             if event.type() == QEvent.Enter:
                 self._pmu_btn_hovered = True
                 self._show_pmu_submenu()
@@ -906,7 +906,7 @@ class MainWindow(QMainWindow):
             elif event.type() == QEvent.Leave:
                 QTimer.singleShot(120, self._hide_pmu_submenu_if_needed)
 
-        elif obj == self.power_analyzer_btn:
+        elif obj == self.n6705c_power_analyzer_btn:
             if event.type() == QEvent.Enter:
                 self._pa_btn_hovered = True
                 self._show_pa_submenu()
@@ -1030,10 +1030,10 @@ class MainWindow(QMainWindow):
 
     def _connect_signals(self):
         """连接信号槽"""
-        self.power_analyzer_btn.clicked.connect(self._on_nav_button_clicked)
+        self.n6705c_power_analyzer_btn.clicked.connect(self._on_nav_button_clicked)
         self.oscilloscope_btn.clicked.connect(self._on_nav_button_clicked)
-        self.thermal_chamber_btn.clicked.connect(self._on_nav_button_clicked)
-        self.pmu_auto_test_btn.clicked.connect(self._on_nav_button_clicked)
+        self.chamber_btn.clicked.connect(self._on_nav_button_clicked)
+        self.pmu_test_btn.clicked.connect(self._on_nav_button_clicked)
         self.charger_test_btn.clicked.connect(self._on_nav_button_clicked)
         self.consumption_test_btn.clicked.connect(self._on_nav_button_clicked)
 
@@ -1146,7 +1146,7 @@ class MainWindow(QMainWindow):
     def _on_nav_button_clicked(self):
         sender = self.sender()
 
-        if sender == self.power_analyzer_btn:
+        if sender == self.n6705c_power_analyzer_btn:
             if self.pmu_submenu:
                 self.pmu_submenu.hide()
             if self.charger_submenu:
@@ -1168,7 +1168,7 @@ class MainWindow(QMainWindow):
                 self.charger_submenu.hide()
             self._create_oscilloscope_ui()
 
-        elif sender == self.thermal_chamber_btn:
+        elif sender == self.chamber_btn:
             if self.pmu_submenu:
                 self.pmu_submenu.hide()
             if self.pa_submenu:
@@ -1177,7 +1177,7 @@ class MainWindow(QMainWindow):
                 self.charger_submenu.hide()
             self._create_thermal_chamber_ui()
 
-        elif sender == self.pmu_auto_test_btn:
+        elif sender == self.pmu_test_btn:
             if self.pa_submenu:
                 self.pa_submenu.hide()
             if self.charger_submenu:

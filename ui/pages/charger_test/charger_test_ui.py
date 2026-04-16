@@ -5,10 +5,10 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QTabWidget
 )
 from PySide6.QtGui import QFont
-from ui.pages.charger.config_traverse_test import ConfigTraverseTestUI
-from ui.pages.charger.status_register_test import StatusRegisterTestUI
-from ui.pages.charger.iterm_test import ItermTestUI
-from ui.pages.charger.regulation_voltage_ui import RegulationVoltageTestUI
+from ui.pages.charger_test.config_traverse_test import ConfigTraverseTestUI
+from ui.pages.charger_test.status_register_test import StatusRegisterTestUI
+from ui.pages.charger_test.iterm_test import ItermTestUI
+from ui.pages.charger_test.regulation_voltage_ui import RegulationVoltageTestUI
 
 
 class ChargerTestUI(QWidget):
