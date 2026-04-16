@@ -12,7 +12,8 @@ from PySide6.QtCore import (
     QPropertyAnimation, QEasingCurve, QSequentialAnimationGroup,
     QSize, QRect, QPoint, Property
 )
-from PySide6.QtGui import QFont, QPixmap, QImage, QPainter, QColor, QPen
+from PySide6.QtGui import QFont, QPixmap, QImage, QPainter, QColor, QPen, QIcon
+from PySide6.QtSvg import QSvgRenderer
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLL_AREA_STYLE
 from ui.styles.button import SpinningSearchButton, update_connect_button_state
@@ -23,15 +24,35 @@ from debug_config import DEBUG_MOCK
 DEBUG_MSO64B_FLAG = True
 DEBUG_DSOX4034A_FLAG = True
 
+import os as _os
+_CAMERA_SVG_PATH = _os.path.join(
+    _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))),
+    "resources", "icons", "camera.svg"
+)
+
+
+def _render_camera_icon(size: int, color: str) -> QPixmap:
+    svg_data = b""
+    if _os.path.isfile(_CAMERA_SVG_PATH):
+        with open(_CAMERA_SVG_PATH, "r", encoding="utf-8") as f:
+            svg_data = f.read().replace('stroke="currentColor"', f'stroke="{color}"').encode("utf-8")
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    if svg_data:
+        renderer = QSvgRenderer(svg_data)
+        painter = QPainter(pixmap)
+        renderer.render(painter)
+        painter.end()
+    return pixmap
 
 
 logger = get_logger(__name__)
 
 CHANNEL_TEXT_COLORS = {
-    "#F0B400": "#1A1400",
-    "#00C896": "#001A12",
-    "#4C8DFF": "#FFFFFF",
-    "#FF4444": "#FFFFFF",
+    "#d4a514": "#1A1400",
+    "#18b67a": "#001A12",
+    "#2f6fed": "#FFFFFF",
+    "#d14b72": "#FFFFFF",
     "#7B8CB7": "#081126",
 }
 
@@ -469,17 +490,17 @@ class OscilloscopeBaseUI(QWidget):
     }
 
     CHANNEL_COLORS_TEKTRONIX = {
-        1: "#F0B400",
-        2: "#4C8DFF",
-        3: "#FF4444",
-        4: "#00C896",
+        1: "#d4a514",
+        2: "#2f6fed",
+        3: "#d14b72",
+        4: "#18b67a",
     }
 
     CHANNEL_COLORS_KEYSIGHT = {
-        1: "#F0B400",
-        2: "#00C896",
-        3: "#4C8DFF",
-        4: "#FF4444",
+        1: "#d4a514",
+        2: "#18b67a",
+        3: "#2f6fed",
+        4: "#d14b72",
     }
 
     CHANNEL_COLORS = CHANNEL_COLORS_DEFAULT
@@ -733,7 +754,7 @@ class OscilloscopeBaseUI(QWidget):
             }
 
             QPushButton#channelTab:checked {
-                background-color: #F0B400;
+                background-color: #d4a514;
                 color: #081126;
             }
 
@@ -792,21 +813,25 @@ class OscilloscopeBaseUI(QWidget):
             }
 
             QFrame#metricCard {
-                background-color: #020C2A;
-                border: 1px solid #16254A;
+                background-color: #070E28;
+                border: 1px solid #263A6A;
                 border-radius: 12px;
             }
 
+            QFrame#metricCard:hover {
+                border: 1px solid #3A5A9F;
+            }
+
             QLabel#metricTitle {
-                color: #7F96C7;
-                font-size: 8pt;
+                color: #8FA4C8;
+                font-size: 10pt;
                 font-weight: 600;
             }
 
             QLabel#metricValue {
-                color: #F3F6FF;
-                font-size: 16pt;
-                font-weight: 700;
+                color: #A0B0CC;
+                font-size: 11pt;
+                font-weight: 600;
             }
 
             QLabel#metricUnit {
@@ -913,8 +938,7 @@ class OscilloscopeBaseUI(QWidget):
         """)
 
         left_upper_widget = QWidget()
-        left_upper_widget.setObjectName("leftUpperContainer")
-        left_upper_widget.setStyleSheet("QWidget#leftUpperContainer { background: transparent; border: none; }")
+        left_upper_widget.setAttribute(Qt.WA_TranslucentBackground, True)
         left_upper = QVBoxLayout(left_upper_widget)
         left_upper.setContentsMargins(0, 0, 0, 0)
         left_upper.setSpacing(16)
@@ -1007,12 +1031,18 @@ class OscilloscopeBaseUI(QWidget):
         layout.setSpacing(14)
 
         header = QHBoxLayout()
-        title = QLabel("📷  Display Capture")
+        _title_cam_icon = QLabel()
+        _title_cam_icon.setPixmap(_render_camera_icon(20, "#F0F4FF"))
+        _title_cam_icon.setFixedSize(20, 20)
+        header.addWidget(_title_cam_icon)
+        title = QLabel("Display Capture")
         title.setObjectName("sectionTitle")
         header.addWidget(title)
         header.addStretch()
 
-        self.capture_btn = QPushButton("📷  Capture")
+        self.capture_btn = QPushButton("  Capture")
+        self.capture_btn.setIcon(QIcon(_render_camera_icon(16, "#10e7bc")))
+        self.capture_btn.setIconSize(QSize(16, 16))
         self.capture_btn.setObjectName("dynamicConnectBtn")
         self.capture_btn.setProperty("connected", "false")
         self.capture_btn.setStyleSheet("""
@@ -1099,10 +1129,11 @@ class OscilloscopeBaseUI(QWidget):
         placeholder_layout.setSpacing(10)
         placeholder_layout.setAlignment(Qt.AlignCenter)
 
-        camera_icon = QLabel("📷")
+        camera_icon = QLabel()
         camera_icon.setAlignment(Qt.AlignCenter)
-        camera_icon.setStyleSheet("font-size: 28px; color: #22355D;")
-        placeholder_layout.addWidget(camera_icon)
+        camera_icon.setPixmap(_render_camera_icon(48, "#22355D"))
+        camera_icon.setFixedSize(48, 48)
+        placeholder_layout.addWidget(camera_icon, 0, Qt.AlignCenter)
 
         self.capture_hint_label = QLabel("No screenshot captured")
         self.capture_hint_label.setAlignment(Qt.AlignCenter)
@@ -1122,6 +1153,60 @@ class OscilloscopeBaseUI(QWidget):
     def _create_measurements_card(self):
         card = QFrame()
         card.setObjectName("card")
+        card.setStyleSheet("""
+            QFrame#card {
+                background-color: #0B1638;
+                border: 1px solid #263A6A;
+                border-radius: 16px;
+            }
+            QScrollArea#measResultsScroll {
+                background: transparent;
+                border: none;
+            }
+            QWidget#measResultsContainer {
+                background: transparent;
+            }
+            QFrame#metricCard {
+                background-color: #070E28;
+                border: 1px solid #263A6A;
+                border-radius: 12px;
+            }
+            QFrame#metricCard:hover {
+                border: 1px solid #3A5A9F;
+            }
+            QLabel#metricTitle {
+                color: #8FA4C8;
+                font-size: 10pt;
+                font-weight: 600;
+            }
+            QLabel#metricValue {
+                color: #A0B0CC;
+                font-size: 11pt;
+                font-weight: 600;
+            }
+            QLabel#metricUnit {
+                color: #90A7D8;
+                font-size: 9pt;
+                font-weight: 600;
+            }
+            QLabel#sectionTitle {
+                color: #F0F4FF;
+                font-size: 12pt;
+                font-weight: 700;
+            }
+            QPushButton#deleteCardBtn {
+                background-color: transparent;
+                border: none;
+                color: #5E6E8F;
+                font-size: 12pt;
+                padding: 2px 6px;
+                border-radius: 4px;
+            }
+            QPushButton#deleteCardBtn:hover {
+                background-color: #3A0820;
+                color: #FF6B8A;
+            }
+        """ + SCROLL_AREA_STYLE)
         layout = QVBoxLayout(card)
         layout.setContentsMargins(18, 16, 18, 18)
         layout.setSpacing(14)
@@ -1213,26 +1298,19 @@ class OscilloscopeBaseUI(QWidget):
         add_row.addStretch()
         layout.addLayout(add_row)
 
-        results_frame = QFrame()
-        results_frame.setObjectName("innerCard")
-        results_frame_layout = QVBoxLayout(results_frame)
-        results_frame_layout.setContentsMargins(8, 8, 8, 8)
-        results_frame_layout.setSpacing(0)
-
         self._results_scroll = QScrollArea()
         self._results_scroll.setWidgetResizable(True)
         self._results_scroll.setFrameShape(QFrame.NoFrame)
-        self._results_scroll.setStyleSheet("background: transparent; border: none;" + SCROLL_AREA_STYLE)
+        self._results_scroll.setObjectName("measResultsScroll")
 
         self._results_container = QWidget()
-        self._results_container.setStyleSheet("background: transparent;")
+        self._results_container.setObjectName("measResultsContainer")
         self._results_grid = QGridLayout(self._results_container)
         self._results_grid.setContentsMargins(0, 0, 0, 0)
         self._results_grid.setSpacing(10)
 
         self._results_scroll.setWidget(self._results_container)
-        results_frame_layout.addWidget(self._results_scroll)
-        layout.addWidget(results_frame)
+        layout.addWidget(self._results_scroll)
 
         return card
 
@@ -1240,44 +1318,69 @@ class OscilloscopeBaseUI(QWidget):
         logger.debug("[MEAS] _create_metric_card('%s', '%s') enter", title_text, value_text)
         card = QFrame()
         card.setObjectName("metricCard")
-        card.setMinimumHeight(80)
-        card.setMinimumWidth(140)
+        card.setMinimumHeight(60)
+        card.setMinimumWidth(130)
         logger.debug("[MEAS] QFrame created: %s", card)
 
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(14, 10, 10, 12)
+        layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(4)
-
-        top_row = QHBoxLayout()
-        top_row.setSpacing(0)
 
         title = QLabel(title_text)
         title.setObjectName("metricTitle")
-        title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        top_row.addWidget(title, 1)
+        title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title)
 
-        delete_btn = QPushButton("✕")
-        delete_btn.setObjectName("deleteCardBtn")
-        delete_btn.setFixedSize(24, 24)
-        delete_btn.setCursor(Qt.PointingHandCursor)
-        delete_btn.setToolTip("Remove this measurement")
-        top_row.addWidget(delete_btn, 0, Qt.AlignRight | Qt.AlignTop)
-        layout.addLayout(top_row)
+        value_row = QHBoxLayout()
+        value_row.setContentsMargins(0, 0, 0, 0)
+        value_row.setSpacing(4)
+        value_row.setAlignment(Qt.AlignCenter)
 
         value = QLabel(value_text)
         value.setObjectName("metricValue")
-        value.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        layout.addWidget(value)
+        value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        value_row.addWidget(value)
 
         unit = QLabel(unit_text)
         unit.setObjectName("metricUnit")
         unit.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        layout.addWidget(unit)
+        unit.setVisible(bool(unit_text))
+        value_row.addWidget(unit)
+
+        layout.addLayout(value_row)
+
+        delete_btn = QPushButton("✕")
+        delete_btn.setObjectName("deleteCardBtn")
+        delete_btn.setFixedSize(20, 20)
+        delete_btn.setCursor(Qt.PointingHandCursor)
+        delete_btn.setToolTip("Remove this measurement")
+        delete_btn.setVisible(False)
+        delete_btn.setParent(card)
+        delete_btn.move(card.width() - 22, 2)
 
         card.title_label = title
         card.value_label = value
         card.unit_label = unit
         card.delete_btn = delete_btn
+        card._delete_btn = delete_btn
+
+        original_enter = card.enterEvent
+        original_leave = card.leaveEvent
+
+        def _enter(event):
+            delete_btn.move(card.width() - 22, 2)
+            delete_btn.setVisible(True)
+            if original_enter:
+                original_enter(event)
+
+        def _leave(event):
+            delete_btn.setVisible(False)
+            if original_leave:
+                original_leave(event)
+
+        card.enterEvent = _enter
+        card.leaveEvent = _leave
+
         logger.debug("[MEAS] _create_metric_card done: %s", card)
         return card
 
@@ -1745,9 +1848,11 @@ class OscilloscopeBaseUI(QWidget):
                     val_str, unit_str = self._format_measurement_value_split(measure_type, value)
                     card_info["card"].value_label.setText(val_str)
                     card_info["card"].unit_label.setText(unit_str)
+                    card_info["card"].unit_label.setVisible(bool(unit_str))
                 else:
                     card_info["card"].value_label.setText("ERR")
                     card_info["card"].unit_label.setText("")
+                    card_info["card"].unit_label.setVisible(False)
                 return
 
     def update_connection_status(self, connected, instrument_info=None):
@@ -2224,23 +2329,31 @@ class OscilloscopeBaseUI(QWidget):
 
     @staticmethod
     def _format_measurement_value(mtype, value):
-        if mtype == "FREQUENCY":
-            if abs(value) >= 1e6:
-                return f"{value / 1e6:.4f} MHz"
-            elif abs(value) >= 1e3:
-                return f"{value / 1e3:.4f} kHz"
-            return f"{value:.2f} Hz"
-        return f"{value:.6f} V"
+        val_str, unit_str = OscilloscopeBaseUI._format_measurement_value_split(mtype, value)
+        return f"{val_str} {unit_str}"
 
     @staticmethod
     def _format_measurement_value_split(mtype, value):
         if mtype == "FREQUENCY":
-            if abs(value) >= 1e6:
+            abs_v = abs(value)
+            if abs_v >= 1e9:
+                return f"{value / 1e9:.4f}", "GHz"
+            elif abs_v >= 1e6:
                 return f"{value / 1e6:.4f}", "MHz"
-            elif abs(value) >= 1e3:
+            elif abs_v >= 1e3:
                 return f"{value / 1e3:.4f}", "kHz"
             return f"{value:.2f}", "Hz"
-        return f"{value:.6f}", "V"
+        abs_v = abs(value)
+        if abs_v >= 1:
+            return f"{value:.4f}", "V"
+        elif abs_v >= 1e-3:
+            return f"{value / 1e-3:.4f}", "mV"
+        elif abs_v >= 1e-6:
+            return f"{value / 1e-6:.4f}", "µV"
+        elif abs_v == 0:
+            return "0.0000", "V"
+        else:
+            return f"{value / 1e-9:.4f}", "nV"
 
     def _on_capture(self):
         if not self.controller.is_connected:
