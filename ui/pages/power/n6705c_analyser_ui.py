@@ -398,8 +398,8 @@ class N6705CAnalyserUI(QWidget):
         self._search_threads = {}
 
         self._apply_channel_theme(self.current_device, self.current_channel)
-        self._update_ui_connection_state("A", False)
         self._rebuild_dynamic_sections()
+        self._update_ui_connection_state("A", False)
 
         if self._top:
             self._sync_from_top()
@@ -798,15 +798,8 @@ class N6705CAnalyserUI(QWidget):
 
         setting_layout = QVBoxLayout(self.setting_frame)
         setting_layout.setAlignment(Qt.AlignTop)
-        setting_layout.setContentsMargins(12, 0, 12, 12)
-        setting_layout.setSpacing(0)
-
-        self.accent_top_line = QFrame()
-        self.accent_top_line.setFixedHeight(3)
-        self.accent_top_line.setStyleSheet("QFrame { background-color: transparent; border: none; border-radius: 0px; }")
-        setting_layout.addWidget(self.accent_top_line)
-
-        setting_layout.addSpacing(12)
+        setting_layout.setContentsMargins(12, 12, 12, 12)
+        setting_layout.setSpacing(12)
 
         setting_header = QHBoxLayout()
         setting_header.setContentsMargins(0, 0, 0, 0)
@@ -855,8 +848,6 @@ class N6705CAnalyserUI(QWidget):
         setting_header.addWidget(self.output_toggle)
 
         setting_layout.addLayout(setting_header)
-
-        setting_layout.addSpacing(12)
 
         params_container = QFrame()
         params_container.setStyleSheet("""
@@ -1641,14 +1632,8 @@ class N6705CAnalyserUI(QWidget):
         accent = theme['accent']
 
         if is_on:
-            self.accent_top_line.setStyleSheet(
-                f"QFrame {{ background-color: {accent}; border: none; border-radius: 0px; }}"
-            )
             value_color = accent
         else:
-            self.accent_top_line.setStyleSheet(
-                "QFrame { background-color: transparent; border: none; border-radius: 0px; }"
-            )
             value_color = "#6d83b3"
 
         self.voltage_value.setStyleSheet(f"""
