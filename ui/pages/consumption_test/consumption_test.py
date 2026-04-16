@@ -11,6 +11,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
 from ui.styles.n6705c_module_frame import N6705CConnectionMixin
+from ui.styles.serialCom_module_frame import SerialComMixin, MODE_SEARCH_SELECT
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit,
@@ -80,8 +81,10 @@ class _ConsumptionTestWorker(QObject):
             self.finished.emit()
 
 
-class ConsumptionTestUI(QWidget, N6705CConnectionMixin):
+class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
     connection_status_changed = Signal(bool)
+    serial_connection_changed = Signal(bool)
+    serial_data_received = Signal(bytes)
 
     CHANNEL_COLORS = {
         1: {"accent": "#d4a514", "bg": "#1a1708", "border": "#3d2e08"},
@@ -94,6 +97,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin):
         super().__init__()
 
         self.init_n6705c_connection(n6705c_top)
+        self.init_serial_connection(mode=MODE_SEARCH_SELECT, prefix="DUT Serial")
 
         self.firmware_path = ""
         self.config_path = ""
@@ -244,18 +248,29 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin):
         main_layout.addWidget(self._create_consumption_test_panel(), 1)
 
     def _create_connection_panel(self):
-        panel = QFrame()
-        panel.setObjectName("connectionPanel")
-        panel.setStyleSheet("""
+        outer = QFrame()
+        outer.setStyleSheet("""
+            QFrame {
+                background-color: transparent;
+                border: none;
+            }
+        """)
+        outer_layout = QHBoxLayout(outer)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(12)
+
+        n6705c_panel = QFrame()
+        n6705c_panel.setObjectName("connectionPanel")
+        n6705c_panel.setStyleSheet("""
             QFrame#connectionPanel {
                 background-color: #0b1630;
                 border: 1px solid #18284d;
                 border-radius: 12px;
             }
         """)
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(16, 14, 16, 14)
-        layout.setSpacing(10)
+        n6705c_layout = QVBoxLayout(n6705c_panel)
+        n6705c_layout.setContentsMargins(16, 14, 16, 14)
+        n6705c_layout.setSpacing(10)
 
         title_row = QHBoxLayout()
         title_row.setSpacing(8)
@@ -266,12 +281,42 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin):
         title_row.addWidget(icon)
         title_row.addWidget(title)
         title_row.addStretch()
-        layout.addLayout(title_row)
+        n6705c_layout.addLayout(title_row)
 
-        self.build_n6705c_connection_widgets(layout)
+        self.build_n6705c_connection_widgets(n6705c_layout)
         self.bind_n6705c_signals()
 
-        return panel
+        serial_panel = QFrame()
+        serial_panel.setObjectName("serialPanel")
+        serial_panel.setStyleSheet("""
+            QFrame#serialPanel {
+                background-color: #0b1630;
+                border: 1px solid #18284d;
+                border-radius: 12px;
+            }
+        """)
+        serial_layout = QVBoxLayout(serial_panel)
+        serial_layout.setContentsMargins(16, 14, 16, 14)
+        serial_layout.setSpacing(10)
+
+        serial_title_row = QHBoxLayout()
+        serial_title_row.setSpacing(8)
+        serial_icon = QLabel("🔌")
+        serial_icon.setStyleSheet("font-size: 16px; color: #5d9cec;")
+        serial_title = QLabel("DUT Serial Port")
+        serial_title.setStyleSheet("font-size: 14px; font-weight: 700; color: #ffffff;")
+        serial_title_row.addWidget(serial_icon)
+        serial_title_row.addWidget(serial_title)
+        serial_title_row.addStretch()
+        serial_layout.addLayout(serial_title_row)
+
+        self.build_serial_connection_widgets(serial_layout)
+        self.bind_serial_signals()
+
+        outer_layout.addWidget(n6705c_panel, 1)
+        outer_layout.addWidget(serial_panel, 1)
+
+        return outer
 
     def _create_firmware_config_panel(self):
         outer = QFrame()

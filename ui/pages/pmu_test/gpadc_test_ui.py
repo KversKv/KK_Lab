@@ -10,7 +10,8 @@ from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLL_AREA_STYLE, START_BTN_STYLE, update_start_btn_state
 from ui.styles.button import SpinningSearchButton, update_connect_button_state
 from ui.styles.n6705c_module_frame import N6705CConnectionMixin
-from ui.styles.chamber_module_frame import VT6002ConnectionMixin, _SearchSerialWorker
+from ui.styles.chamber_module_frame import VT6002ConnectionMixin
+from ui.styles.serialCom_module_frame import SerialComMixin, MODE_FULL
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QLineEdit, QGridLayout, QSpinBox, QDoubleSpinBox, QFrame, QRadioButton,
@@ -63,7 +64,7 @@ class _TestWorker(QObject):
             self.error.emit(str(e))
 
 
-class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
+class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, QWidget):
     """GPADC测试UI组件"""
 
     connection_status_changed = Signal(bool)
@@ -73,11 +74,19 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
     TEST_HIGH_LOW_TEMP = "High-Low Temp Test"
     TEST_TEMP_CONSISTENCY = "Temp Consistency Test"
 
+    INSTRUMENT_MAP = {
+        TEST_1000CNT: [],
+        TEST_FORCE_VOLTAGE: ["n6705c"],
+        TEST_HIGH_LOW_TEMP: ["n6705c", "chamber"],
+        TEST_TEMP_CONSISTENCY: ["n6705c", "chamber"],
+    }
+
     def __init__(self, n6705c_top=None):
         super().__init__()
 
         self.init_n6705c_connection(n6705c_top)
         self.init_vt6002_connection()
+        self.init_serial_connection(mode=MODE_FULL, prefix="DUT")
 
         self.dut_serial = None
         self.is_dut_connected = False
@@ -136,31 +145,6 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
             QFrame#left_scroll_content {
                 background: transparent;
                 border: none;
-            }
-
-            QPushButton#test_item_btn {
-                text-align: left;
-                min-height: 52px;
-                border: 1px solid #1c2a4a;
-                border-radius: 8px;
-                padding: 8px 10px;
-                background-color: #020816;
-                color: #dbe7ff;
-            }
-
-            QPushButton#test_item_btn:hover {
-                background-color: #09132b;
-                border: 1px solid #2a4175;
-            }
-
-            QPushButton#test_item_btn_checked {
-                text-align: left;
-                min-height: 52px;
-                border: 1px solid #6b63ff;
-                border-radius: 8px;
-                padding: 8px 10px;
-                background-color: rgba(98, 77, 255, 0.16);
-                color: #dbe7ff;
             }
 
             QLabel#title_label {
@@ -441,13 +425,6 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
 
         return card
 
-    def _create_test_item_button(self, title, desc):
-        btn = QPushButton(f"●  {title}\n{desc}")
-        btn.setObjectName("test_item_btn")
-        btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        btn.setMinimumHeight(56)
-        return btn
-
     def _create_layout(self):
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(8, 6, 8, 8)
@@ -501,11 +478,32 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         left_col.setContentsMargins(0, 0, 6, 0)
         left_col.setSpacing(12)
 
-        # Instruments
-        instruments_panel = QFrame()
-        instruments_panel.setObjectName("panel")
-        instruments_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        instruments_layout = QVBoxLayout(instruments_panel)
+        # Test Item (下拉菜单)
+        test_item_panel = QFrame()
+        test_item_panel.setObjectName("panel")
+        test_item_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        test_item_layout = QVBoxLayout(test_item_panel)
+        test_item_layout.setContentsMargins(12, 12, 12, 12)
+        test_item_layout.setSpacing(8)
+
+        test_item_title = QLabel("Test Item")
+        test_item_title.setObjectName("section_title")
+        test_item_title.setStyleSheet("border: none")
+        test_item_layout.addWidget(test_item_title)
+
+        self.test_item_combo = DarkComboBox(bg="#0a1733", border="#24365e")
+        self.test_item_combo.addItem(self.TEST_1000CNT, self.TEST_1000CNT)
+        self.test_item_combo.addItem(self.TEST_FORCE_VOLTAGE, self.TEST_FORCE_VOLTAGE)
+        self.test_item_combo.addItem(self.TEST_HIGH_LOW_TEMP, self.TEST_HIGH_LOW_TEMP)
+        self.test_item_combo.addItem(self.TEST_TEMP_CONSISTENCY, self.TEST_TEMP_CONSISTENCY)
+        test_item_layout.addWidget(self.test_item_combo)
+        left_col.addWidget(test_item_panel)
+
+        # Instruments (动态显示)
+        self.instruments_panel = QFrame()
+        self.instruments_panel.setObjectName("panel")
+        self.instruments_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        instruments_layout = QVBoxLayout(self.instruments_panel)
         instruments_layout.setContentsMargins(12, 12, 12, 12)
         instruments_layout.setSpacing(10)
 
@@ -514,10 +512,10 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         instruments_title.setStyleSheet("border: none")
         instruments_layout.addWidget(instruments_title)
 
-        n6705c_card = QFrame()
-        n6705c_card.setObjectName("instrument_inner")
-        n6705c_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        n6705c_layout = QVBoxLayout(n6705c_card)
+        self.n6705c_card = QFrame()
+        self.n6705c_card.setObjectName("instrument_inner")
+        self.n6705c_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        n6705c_layout = QVBoxLayout(self.n6705c_card)
         n6705c_layout.setContentsMargins(12, 12, 12, 12)
         n6705c_layout.setSpacing(8)
 
@@ -533,11 +531,11 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         self.n6705c_connect_btn = self.connect_btn
         self.n6705c_disconnect_btn = self.connect_btn
 
-        instruments_layout.addWidget(n6705c_card)
+        instruments_layout.addWidget(self.n6705c_card)
 
-        vt6002_card = QFrame()
-        vt6002_card.setObjectName("config_inner_panel")
-        vt6002_card_layout = QVBoxLayout(vt6002_card)
+        self.vt6002_card = QFrame()
+        self.vt6002_card.setObjectName("config_inner_panel")
+        vt6002_card_layout = QVBoxLayout(self.vt6002_card)
         vt6002_card_layout.setContentsMargins(10, 10, 10, 10)
         vt6002_card_layout.setSpacing(6)
         vt6002_title = QLabel("VT6002 Chamber")
@@ -548,8 +546,8 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         vt6002_card_layout.addWidget(vt6002_title)
         vt6002_card_layout.addWidget(vt6002_desc)
         self.build_vt6002_connection_widgets(vt6002_card_layout)
-        instruments_layout.addWidget(vt6002_card)
-        left_col.addWidget(instruments_panel)
+        instruments_layout.addWidget(self.vt6002_card)
+        left_col.addWidget(self.instruments_panel)
 
         # Data Acquisition
         data_panel = QFrame()
@@ -599,70 +597,23 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
 
         self.uart_group = QFrame()
         self.uart_group.setObjectName("config_inner_panel")
-        uart_layout = QGridLayout(self.uart_group)
+        uart_layout = QVBoxLayout(self.uart_group)
         uart_layout.setContentsMargins(10, 10, 10, 10)
-        uart_layout.setHorizontalSpacing(6)
-        uart_layout.setVerticalSpacing(6)
+        uart_layout.setSpacing(8)
 
-        uart_layout.addWidget(QLabel("DUT Serial Port"), 0, 0, 1, 2)
-        self.dut_combo = DarkComboBox(bg="#0a1733", border="#24365e")
-        self.dut_combo.setSizeAdjustPolicy(
-            DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
-        )
-        self.dut_combo.setMinimumContentsLength(10)
-        self.dut_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self.build_serial_connection_widgets(uart_layout)
+        self.bind_serial_signals()
 
-        self.dut_search_btn = QPushButton("⌕")
-        self.dut_search_btn.setObjectName("tool_btn")
-        self.dut_search_btn.setFixedWidth(34)
-
-        uart_layout.addWidget(self.dut_combo, 1, 0)
-        uart_layout.addWidget(self.dut_search_btn, 1, 1)
-
-        uart_layout.addWidget(QLabel("Search Keyword"), 2, 0, 1, 2)
+        keyword_label = QLabel("Search Keyword")
+        keyword_label.setStyleSheet("border: none;")
+        uart_layout.addWidget(keyword_label)
         self.uart_keyword = QLineEdit("GPADC RAW")
-        uart_layout.addWidget(self.uart_keyword, 3, 0, 1, 2)
+        uart_layout.addWidget(self.uart_keyword)
 
         self.data_stack.addWidget(self.iic_group)
         self.data_stack.addWidget(self.uart_group)
         data_layout.addWidget(self.data_stack)
         left_col.addWidget(data_panel)
-
-        # Test Item
-        test_item_panel = QFrame()
-        test_item_panel.setObjectName("panel")
-        test_item_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        test_item_layout = QVBoxLayout(test_item_panel)
-        test_item_layout.setContentsMargins(12, 12, 12, 12)
-        test_item_layout.setSpacing(10)
-
-        test_item_title = QLabel("Test Item")
-        test_item_title.setObjectName("section_title")
-        test_item_title.setStyleSheet("border: none")
-        test_item_layout.addWidget(test_item_title)
-
-        self.cnt1000_test_btn = self._create_test_item_button(
-            "1000CNT TEST",
-            "Test 1000 times average, min and max"
-        )
-        self.force_voltage_test_btn = self._create_test_item_button(
-            "Force Voltage Test",
-            "Sweep voltage at current temperature"
-        )
-        self.high_low_temp_test_btn = self._create_test_item_button(
-            "High-Low Temp Test",
-            "Sweep temperature across multiple temperatures"
-        )
-        self.temp_consistency_test_btn = self._create_test_item_button(
-            "Temp Consistency Test",
-            "Evaluate consistency across temperature cycles"
-        )
-
-        test_item_layout.addWidget(self.cnt1000_test_btn)
-        test_item_layout.addWidget(self.force_voltage_test_btn)
-        test_item_layout.addWidget(self.high_low_temp_test_btn)
-        test_item_layout.addWidget(self.temp_consistency_test_btn)
-        left_col.addWidget(test_item_panel)
 
         # Test Parameters
         params_panel = QFrame()
@@ -954,28 +905,15 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         root_layout.addWidget(self.page, 1)
 
     def _init_ui_elements(self):
-        self.current_test_item = self.TEST_FORCE_VOLTAGE
+        self.current_test_item = self.TEST_1000CNT
 
         self.iic_radio.toggled.connect(self._update_data_acquisition_ui)
         self.uart_radio.toggled.connect(self._update_data_acquisition_ui)
 
-        self.cnt1000_test_btn.clicked.connect(
-            lambda: self._set_test_item(self.TEST_1000CNT)
-        )
-        self.force_voltage_test_btn.clicked.connect(
-            lambda: self._set_test_item(self.TEST_FORCE_VOLTAGE)
-        )
-        self.high_low_temp_test_btn.clicked.connect(
-            lambda: self._set_test_item(self.TEST_HIGH_LOW_TEMP)
-        )
-        self.temp_consistency_test_btn.clicked.connect(
-            lambda: self._set_test_item(self.TEST_TEMP_CONSISTENCY)
-        )
+        self.test_item_combo.currentIndexChanged.connect(self._on_test_item_changed)
 
         self.bind_n6705c_signals()
         self.bind_vt6002_signals()
-
-        self.dut_search_btn.clicked.connect(self._search_dut_ports)
 
         self.start_test_btn.clicked.connect(self._on_start_or_stop)
         self.stop_test_btn.clicked.connect(self._stop_test)
@@ -985,7 +923,10 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         self._update_data_acquisition_ui()
         self._set_test_item(self.TEST_1000CNT)
 
-        self._search_dut_ports()
+    def _on_test_item_changed(self, index):
+        test_item = self.test_item_combo.currentData()
+        if test_item:
+            self._set_test_item(test_item)
 
     def _set_status_label(self, label, text, status_type="err"):
         if status_type == "ok":
@@ -1007,34 +948,19 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
     def _set_test_item(self, test_item):
         self.current_test_item = test_item
 
-        self.cnt1000_test_btn.setObjectName(
-            "test_item_btn_checked" if test_item == self.TEST_1000CNT else "test_item_btn"
-        )
-        self.force_voltage_test_btn.setObjectName(
-            "test_item_btn_checked" if test_item == self.TEST_FORCE_VOLTAGE else "test_item_btn"
-        )
-        self.high_low_temp_test_btn.setObjectName(
-            "test_item_btn_checked" if test_item == self.TEST_HIGH_LOW_TEMP else "test_item_btn"
-        )
-        self.temp_consistency_test_btn.setObjectName(
-            "test_item_btn_checked" if test_item == self.TEST_TEMP_CONSISTENCY else "test_item_btn"
-        )
-
-        for btn in (
-            self.cnt1000_test_btn,
-            self.force_voltage_test_btn,
-            self.high_low_temp_test_btn,
-            self.temp_consistency_test_btn
-        ):
-            btn.style().unpolish(btn)
-            btn.style().polish(btn)
-            btn.update()
+        required = self.INSTRUMENT_MAP.get(test_item, [])
+        has_instruments = len(required) > 0
+        self.instruments_panel.setVisible(has_instruments)
+        self.n6705c_card.setVisible("n6705c" in required)
+        self.vt6002_card.setVisible("chamber" in required)
 
         if test_item == self.TEST_1000CNT:
             self.params_mode_label.setText("1000 COUNT TEST")
             self.voltage_params_frame.hide()
             self.temp_params_frame.hide()
             self.temp_hint_label.hide()
+            self.voltage_channel_label.hide()
+            self.voltage_channel.hide()
             self.start_test_btn.setText("▶ START 1000CNT TEST")
             self._start_btn_text = "▶ START 1000CNT TEST"
         elif test_item == self.TEST_FORCE_VOLTAGE:
@@ -1042,6 +968,8 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
             self.voltage_params_frame.show()
             self.temp_params_frame.hide()
             self.temp_hint_label.hide()
+            self.voltage_channel_label.show()
+            self.voltage_channel.show()
             self.start_test_btn.setText("▶ START VOLT TEST")
             self._start_btn_text = "▶ START VOLT TEST"
         elif test_item == self.TEST_HIGH_LOW_TEMP:
@@ -1049,9 +977,10 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
             self.voltage_params_frame.hide()
             self.temp_params_frame.show()
             self.temp_hint_label.show()
+            self.voltage_channel_label.show()
+            self.voltage_channel.show()
             self.start_test_btn.setText("▶ START TEMP TEST")
             self._start_btn_text = "▶ START TEMP TEST"
-            # 在温度扫描测试中重置avg、min、max参数显示
             self.avg_value.setText("---")
             self.min_value.setText("---")
             self.max_value.setText("---")
@@ -1060,9 +989,10 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
             self.voltage_params_frame.show()
             self.temp_params_frame.show()
             self.temp_hint_label.show()
+            self.voltage_channel_label.show()
+            self.voltage_channel.show()
             self.start_test_btn.setText("▶ START CONSISTENCY TEST")
             self._start_btn_text = "▶ START CONSISTENCY TEST"
-            # 在一致性测试中也重置avg、min、max参数显示
             self.avg_value.setText("---")
             self.min_value.setText("---")
             self.max_value.setText("---")
@@ -1074,33 +1004,6 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
     def _set_btn_disconnected(self, btn):
         update_connect_button_state(btn, connected=False)
         btn.setEnabled(True)
-
-    def _search_dut_ports(self):
-        worker = _SearchSerialWorker()
-        thread = QThread()
-        worker.moveToThread(thread)
-
-        thread.started.connect(worker.run)
-        worker.finished.connect(self._on_dut_search_done)
-        worker.error.connect(lambda err: self._append_log(f"[WARN] Search DUT ports error: {err}"))
-        worker.finished.connect(thread.quit)
-        worker.error.connect(thread.quit)
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda: setattr(self, '_dut_search_thread', None))
-
-        self._dut_search_thread = thread
-        self._dut_search_worker = worker
-        thread.start()
-
-    def _on_dut_search_done(self, ports):
-        self.available_dut_ports = ports
-        self.dut_combo.clear()
-        if ports:
-            for port in ports:
-                self.dut_combo.addItem(port)
-        else:
-            self.dut_combo.addItem("No serial ports found")
 
     def _on_start_or_stop(self):
         if self.is_test_running:
@@ -1533,10 +1436,10 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         widgets = [
             self.n6705c_combo, self.n6705c_search_btn, self.n6705c_connect_btn,
             self.vt6002_combo, self.vt6002_search_btn, self.vt6002_connect_btn,
-            self.dut_combo, self.dut_search_btn, self.uart_keyword,
+            self.serial_combo, self.serial_search_btn, self.serial_connect_btn, self.uart_keyword,
             self.iic_radio, self.uart_radio,
             self.iic_device_address, self.iic_data_address,
-            self.cnt1000_test_btn, self.force_voltage_test_btn, self.high_low_temp_test_btn, self.temp_consistency_test_btn,
+            self.test_item_combo,
             self.voltage_channel,
             self.voltage_min, self.voltage_max, self.voltage_step,
             self.temp_min, self.temp_max, self.temp_step
@@ -1546,9 +1449,7 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
 
     def get_test_config(self):
         acquisition_mode = 'IIC' if self.iic_radio.isChecked() else 'UART'
-        dut_port = ""
-        if self.dut_combo.currentText() and self.dut_combo.currentText() != "No serial ports found":
-            dut_port = self.dut_combo.currentText().split()[0]
+        dut_port = self.get_selected_serial_port() or ""
 
         return {
             'n6705c_connected': self.is_connected,
@@ -1608,7 +1509,7 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         except ImportError:
             isValid = lambda obj: obj is not None
 
-        for attr in ('_n6705c_search_thread', '_vt6002_search_thread', '_dut_search_thread'):
+        for attr in ('_n6705c_search_thread', '_vt6002_search_thread', '_serial_search_thread'):
             thread = getattr(self, attr, None)
             if thread is not None and isValid(thread) and thread.isRunning():
                 thread.quit()
