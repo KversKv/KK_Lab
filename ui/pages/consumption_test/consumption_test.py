@@ -588,49 +588,8 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             min-height: 32px;
         }
 
-        QComboBox {
-            background-color: #0a1733;
-            color: #eaf2ff;
-            border: 1px solid #27406f;
-            border-radius: 6px;
-            padding: 6px 10px;
-            padding-right: 24px;
-        }
-
-        QLineEdit:focus, QComboBox:focus {
+        QLineEdit:focus {
             border: 1px solid #5b7cff;
-        }
-
-        QComboBox::drop-down {
-            border: none;
-            width: 22px;
-            background: transparent;
-        }
-
-        QComboBox QAbstractItemView {
-            background-color: #0a1733;
-            color: #eaf2ff;
-            border: 1px solid #27406f;
-            selection-background-color: #334a7d;
-        }
-
-        QComboBox QAbstractItemView::item {
-            background-color: #0a1733;
-            color: #eaf2ff;
-            padding: 4px 8px;
-        }
-
-        QComboBox QAbstractItemView::item:hover {
-            background-color: #1a3260;
-        }
-
-        QComboBox QAbstractItemView::item:selected {
-            background-color: #334a7d;
-        }
-
-        QComboBox QFrame {
-            background-color: #0a1733;
-            border: 1px solid #27406f;
         }
 
         QPushButton {
@@ -867,15 +826,9 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self.chip_combo.setMinimumContentsLength(10)
         self.chip_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.chip_combo.setFixedHeight(22)
-        self.chip_combo.setStyleSheet(self.chip_combo.styleSheet() + """
-            QComboBox {
-                font-size: 11px;
-                padding: 1px 22px 1px 6px;
-                min-height: 18px;
-                max-height: 22px;
-                border-radius: 4px;
-            }
-        """)
+        font = self.chip_combo.font()
+        font.setPixelSize(11)
+        self.chip_combo.setFont(font)
         self.chip_combo.addItem("-- Select Chip --")
         for chip_name in SUPPORTED_CHIPS:
             self.chip_combo.addItem(chip_name)
