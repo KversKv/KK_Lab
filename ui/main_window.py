@@ -28,6 +28,11 @@ from ui.pages.consumption_test.consumption_test import ConsumptionTestUI
 from ui.pages.charger_test.charger_test_ui import ChargerTestUI
 from core.test_manager import TestManager
 from instruments.base.visa_instrument import VisaInstrument
+
+_ICONS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "resources", "icons"
+)
 from instruments.chambers.vt6002_chamber import VT6002
 from ui.styles import SCROLLBAR_STYLE
 from log_config import get_logger
@@ -610,20 +615,20 @@ class MainWindow(QMainWindow):
         self.n6705c_power_analyzer_btn = SidebarNavButton(
             "N6705C",
             "",
-            "⚡"
+            os.path.join(_ICONS_DIR, "zap.svg")
         )
         self.n6705c_power_analyzer_btn.setChecked(True)
 
         self.oscilloscope_btn = SidebarNavButton(
             "Oscilloscope",
             "",
-            "∿"
+            os.path.join(_ICONS_DIR, "activity.svg")
         )
 
         self.chamber_btn = SidebarNavButton(
             "Chamber",
             "",
-            "🔥"
+            os.path.join(_ICONS_DIR, "thermometer.svg")
         )
 
         left_nav_layout.addWidget(self.n6705c_power_analyzer_btn)
@@ -662,7 +667,7 @@ class MainWindow(QMainWindow):
         self.consumption_test_btn = SidebarNavButton(
             "Consumption Test",
             "",
-            "⚡"
+            os.path.join(_ICONS_DIR, "zap.svg")
         )
         left_nav_layout.addWidget(self.consumption_test_btn)
 
@@ -1001,7 +1006,7 @@ class MainWindow(QMainWindow):
             self.consumption_test_ui = ConsumptionTestUI(n6705c_top=self.n6705c_top)
             self.instrument_ui_container_layout.addWidget(self.consumption_test_ui)
         else:
-            self.consumption_test_ui._sync_from_top()
+            self.consumption_test_ui.sync_n6705c_from_top()
             self.consumption_test_ui.show()
         self.current_instrument_ui = "consumption_test"
 
@@ -1271,6 +1276,9 @@ class MainWindow(QMainWindow):
             QPushButton:hover {
                 background-color: #5b49ff;
             }
+            QPushButton:pressed {
+                background-color: #4534dd;
+            }
         """)
 
         layout = QVBoxLayout(dialog)
@@ -1288,7 +1296,6 @@ class MainWindow(QMainWindow):
         btn_layout.addWidget(close_btn)
         btn_layout.setContentsMargins(0, 0, 12, 0)
         layout.addLayout(btn_layout)
-
         dialog.exec()
 
     def _scan_visa(self):

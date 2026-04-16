@@ -1,24 +1,39 @@
+import os
+
 from PySide6.QtWidgets import QPushButton, QLabel, QHBoxLayout, QVBoxLayout, QWidget
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QCursor
+from PySide6.QtCore import Qt, QRectF
+from PySide6.QtGui import QCursor, QPixmap, QPainter, QColor
+from PySide6.QtSvg import QSvgRenderer
 
 
 class SidebarNavButton(QPushButton):
+    _ICON_SIZE = 20
+    _UNCHECKED_ICON_COLOR = "#93a4c3"
+    _CHECKED_ICON_COLOR = "#ffffff"
+
     def __init__(self, title, subtitle="", icon_text="◈", parent=None):
         super().__init__(parent)
         self.setCheckable(True)
         self.setCursor(QCursor(Qt.PointingHandCursor))
         self.setFixedHeight(72)
 
-        # 整体布局
+        self._svg_renderer = None
+        if icon_text and os.path.isfile(icon_text):
+            self._svg_renderer = QSvgRenderer(icon_text)
+
         main_layout = QHBoxLayout(self)
         main_layout.setContentsMargins(16, 10, 16, 10)
         main_layout.setSpacing(12)
 
-        # 左侧图标
-        self.icon_label = QLabel(icon_text)
+        self.icon_label = QLabel()
         self.icon_label.setAlignment(Qt.AlignCenter)
         self.icon_label.setFixedWidth(22)
+        if self._svg_renderer:
+            self.icon_label.setPixmap(
+                self._render_svg_icon(self._UNCHECKED_ICON_COLOR)
+            )
+        else:
+            self.icon_label.setText(icon_text)
         self.icon_label.setStyleSheet("""
             QLabel {
                 color: #93a4c3;
@@ -75,11 +90,22 @@ class SidebarNavButton(QPushButton):
         """)
         main_layout.addWidget(self.arrow_label)
 
-        # 默认样式
         self._update_style(False)
 
-        # 监听选中状态变化
         self.toggled.connect(self._update_style)
+
+    def _render_svg_icon(self, color):
+        size = self._ICON_SIZE
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+        self._svg_renderer.render(painter, QRectF(0, 0, size, size))
+        painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+        painter.fillRect(pixmap.rect(), QColor(color))
+        painter.end()
+        return pixmap
 
     def _update_style(self, checked):
         if checked:
@@ -94,6 +120,10 @@ class SidebarNavButton(QPushButton):
                     background-color: #6548ff;
                 }
             """)
+            if self._svg_renderer:
+                self.icon_label.setPixmap(
+                    self._render_svg_icon(self._CHECKED_ICON_COLOR)
+                )
             self.icon_label.setStyleSheet("""
                 QLabel {
                     color: white;
@@ -139,6 +169,10 @@ class SidebarNavButton(QPushButton):
                     background-color: #171c2b;
                 }
             """)
+            if self._svg_renderer:
+                self.icon_label.setPixmap(
+                    self._render_svg_icon(self._UNCHECKED_ICON_COLOR)
+                )
             self.icon_label.setStyleSheet("""
                 QLabel {
                     color: #93a4c3;

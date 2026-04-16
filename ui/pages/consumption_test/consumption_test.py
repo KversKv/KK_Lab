@@ -10,8 +10,7 @@ import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
-from ui.widgets.dark_combobox import DarkComboBox
-from ui.styles.button import SpinningSearchButton, update_connect_button_state
+from ui.styles.n6705c_module_frame import N6705CConnectionMixin
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit,
@@ -20,12 +19,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QThread, QObject
 from PySide6.QtGui import QFont
-import pyvisa
 
-from instruments.power.keysight.n6705c import N6705C
 from log_config import get_logger
-from debug_config import DEBUG_MOCK
-from instruments.mock.mock_instruments import MockN6705C
 
 logger = get_logger(__name__)
 
@@ -64,37 +59,7 @@ class _ConsumptionTestWorker(QObject):
             self.finished.emit()
 
 
-class _SearchN6705CWorker(QObject):
-    finished = Signal(list)
-    error = Signal(str)
-
-    def run(self):
-        rm = None
-        try:
-            rm = pyvisa.ResourceManager()
-            resources = list(rm.list_resources()) or []
-            n6705c_devices = []
-            for dev in resources:
-                try:
-                    instr = rm.open_resource(dev, timeout=1000)
-                    idn = instr.query('*IDN?').strip()
-                    instr.close()
-                    if "N6705C" in idn:
-                        n6705c_devices.append(dev)
-                except Exception:
-                    pass
-            self.finished.emit(n6705c_devices)
-        except Exception as e:
-            self.error.emit(str(e))
-        finally:
-            if rm is not None:
-                try:
-                    rm.close()
-                except Exception:
-                    pass
-
-
-class ConsumptionTestUI(QWidget):
+class ConsumptionTestUI(QWidget, N6705CConnectionMixin):
     connection_status_changed = Signal(bool)
 
     CHANNEL_COLORS = {
@@ -107,22 +72,18 @@ class ConsumptionTestUI(QWidget):
     def __init__(self, n6705c_top=None):
         super().__init__()
 
-        self._n6705c_top = n6705c_top
-        self.rm = None
-        self.n6705c = None
-        self.is_connected = False
+        self.init_n6705c_connection(n6705c_top)
+
         self.firmware_path = ""
         self.config_path = ""
         self.is_testing = False
 
-        self._search_thread = None
-        self._search_worker = None
         self._test_thread = None
         self._test_worker = None
 
         self._setup_style()
         self._create_layout()
-        self._sync_from_top()
+        self.sync_n6705c_from_top()
 
     def _setup_style(self):
         self.setFont(QFont("Segoe UI", 9))
@@ -280,56 +241,8 @@ class ConsumptionTestUI(QWidget):
         title_row.addStretch()
         layout.addLayout(title_row)
 
-        resource_label = QLabel("Resource")
-        resource_label.setStyleSheet("font-size: 11px; color: #7e96bf;")
-        layout.addWidget(resource_label)
-
-        resource_row = QHBoxLayout()
-        resource_row.setSpacing(8)
-
-        self.device_combo = DarkComboBox(bg="#020816", border="#1c2f54")
-        self.device_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.device_combo.addItem("TCPIP0::K-N6705C-06098.local::hislip0::INSTR")
-
-        self.search_btn = SpinningSearchButton()
-        self.search_btn.setFixedSize(38, 32)
-
-        self.instrument_status = QLabel("N6705C DC Power Analyzer")
-        self.instrument_status.setStyleSheet("color: #7e96bf; font-size: 12px; font-weight: 600;")
-
-        self.connection_status_label = QLabel("Disconnected")
-        self.connection_status_label.setStyleSheet("color: #ff5a7a; font-size: 11px;")
-
-        self.connect_btn = QPushButton()
-        update_connect_button_state(self.connect_btn, connected=False)
-        self.connect_btn.setFixedWidth(120)
-
-        resource_row.addWidget(self.device_combo, 1)
-        resource_row.addWidget(self.search_btn)
-
-        status_block = QVBoxLayout()
-        status_block.setSpacing(2)
-        status_block.addWidget(self.instrument_status)
-        status_block.addWidget(self.connection_status_label)
-
-        info_frame = QFrame()
-        info_frame.setStyleSheet("""
-            QFrame {
-                background-color: #071126;
-                border: 1px solid #152240;
-                border-radius: 8px;
-            }
-        """)
-        info_layout = QHBoxLayout(info_frame)
-        info_layout.setContentsMargins(12, 8, 12, 8)
-        info_layout.addLayout(status_block, 1)
-        info_layout.addWidget(self.connect_btn)
-
-        layout.addLayout(resource_row)
-        layout.addWidget(info_frame)
-
-        self.search_btn.clicked.connect(self._search_devices)
-        self.connect_btn.clicked.connect(self._toggle_connection)
+        self.build_n6705c_connection_widgets(layout)
+        self.bind_n6705c_signals()
 
         return panel
 
@@ -680,141 +593,6 @@ class ConsumptionTestUI(QWidget):
 
         return card
 
-    def _set_status(self, text, status_type="err"):
-        if status_type == "ok":
-            self.connection_status_label.setStyleSheet("color: #00d39a; font-size: 11px; font-weight: 600;")
-        elif status_type == "warn":
-            self.connection_status_label.setStyleSheet("color: #ffb84d; font-size: 11px; font-weight: 600;")
-        else:
-            self.connection_status_label.setStyleSheet("color: #ff5a7a; font-size: 11px; font-weight: 600;")
-        self.connection_status_label.setText(text)
-
-    def _search_devices(self):
-        if self._n6705c_top and self._n6705c_top.is_connected_a:
-            return
-        self._set_status("Searching...", "warn")
-        self.search_btn.setEnabled(False)
-
-        worker = _SearchN6705CWorker()
-        thread = QThread()
-        worker.moveToThread(thread)
-
-        thread.started.connect(worker.run)
-        worker.finished.connect(self._on_search_done)
-        worker.error.connect(self._on_search_error)
-        worker.finished.connect(thread.quit)
-        worker.error.connect(thread.quit)
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-
-        self._search_thread = thread
-        self._search_worker = worker
-        thread.start()
-
-    def _on_search_done(self, devices):
-        default_device = "TCPIP0::K-N6705C-06098.local::hislip0::INSTR"
-        self.device_combo.clear()
-        if devices:
-            for dev in devices:
-                self.device_combo.addItem(dev)
-            if default_device not in devices:
-                self.device_combo.addItem(default_device)
-            self._set_status("Device Available", "ok")
-        else:
-            self.device_combo.addItem(default_device)
-            self._set_status("Using Default Resource", "warn")
-        self.search_btn.setEnabled(True)
-
-    def _on_search_error(self, err):
-        logger.error("Search error: %s", err)
-        self._set_status(f"Search Error: {err}", "err")
-        self.search_btn.setEnabled(True)
-
-    def _toggle_connection(self):
-        if self.is_connected:
-            self._disconnect()
-        else:
-            self._connect()
-
-    def _connect(self):
-        self._set_status("Connecting...", "warn")
-        self.connect_btn.setEnabled(False)
-        try:
-            device_address = self.device_combo.currentText()
-            if DEBUG_MOCK:
-                self.n6705c = MockN6705C()
-                idn_match = True
-            else:
-                self.n6705c = N6705C(device_address)
-                idn = self.n6705c.instr.query("*IDN?")
-                idn_match = "N6705C" in idn
-
-            if idn_match:
-                self.is_connected = True
-                self._set_status("Connected", "ok")
-                self.instrument_status.setText(f"N6705C DC Power Analyzer")
-                self.instrument_status.setStyleSheet("color: #00d39a; font-size: 12px; font-weight: 600;")
-                update_connect_button_state(self.connect_btn, connected=True)
-                self.connect_btn.setEnabled(True)
-
-                if self._n6705c_top:
-                    self._n6705c_top.connect_a(device_address, self.n6705c)
-
-                self.connection_status_changed.emit(True)
-            else:
-                self._set_status("Device Mismatch", "err")
-                self.connect_btn.setEnabled(True)
-        except Exception as e:
-            logger.error(f"Connect error: {e}")
-            self._set_status(f"Error: {e}", "err")
-            self.connect_btn.setEnabled(True)
-
-    def _disconnect(self):
-        self._set_status("Disconnecting...", "warn")
-        self.connect_btn.setEnabled(False)
-        try:
-            if self._n6705c_top:
-                self._n6705c_top.disconnect_a()
-                self.n6705c = None
-            else:
-                if self.n6705c:
-                    if hasattr(self.n6705c, 'instr') and self.n6705c.instr:
-                        self.n6705c.instr.close()
-                    if hasattr(self.n6705c, 'rm') and self.n6705c.rm:
-                        self.n6705c.rm.close()
-                    self.n6705c = None
-
-            self.is_connected = False
-            self._set_status("Disconnected", "err")
-            self.instrument_status.setText("N6705C DC Power Analyzer")
-            self.instrument_status.setStyleSheet("color: #7e96bf; font-size: 12px; font-weight: 600;")
-            update_connect_button_state(self.connect_btn, connected=False)
-            self.connect_btn.setEnabled(True)
-            self.connection_status_changed.emit(False)
-        except Exception as e:
-            logger.error("Disconnect error: %s", e)
-            self._set_status(f"Error: {e}", "err")
-            self.connect_btn.setEnabled(True)
-
-    def _sync_from_top(self):
-        if not self._n6705c_top:
-            return
-        if self._n6705c_top.is_connected_a and self._n6705c_top.n6705c_a:
-            self.n6705c = self._n6705c_top.n6705c_a
-            self.is_connected = True
-            self._set_status("Connected", "ok")
-            self.instrument_status.setText("N6705C DC Power Analyzer")
-            self.instrument_status.setStyleSheet("color: #00d39a; font-size: 12px; font-weight: 600;")
-            update_connect_button_state(self.connect_btn, connected=True)
-            self.connect_btn.setEnabled(True)
-            self.search_btn.setEnabled(False)
-            if self._n6705c_top.visa_resource_a:
-                self.device_combo.clear()
-                self.device_combo.addItem(self._n6705c_top.visa_resource_a)
-        elif not self.is_connected:
-            self._set_status("Disconnected", "err")
-            update_connect_button_state(self.connect_btn, connected=False)
-
     def _browse_firmware(self):
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Select Firmware File", "",
@@ -863,7 +641,7 @@ class ConsumptionTestUI(QWidget):
         if self.is_testing:
             return
         if not self.is_connected or not self.n6705c:
-            self._set_status("Please connect N6705C first", "err")
+            self.set_system_status("Please connect N6705C first", is_error=True)
             return
 
         selected_channels = [
@@ -871,14 +649,14 @@ class ConsumptionTestUI(QWidget):
             if self.channel_cards[ch]["checkbox"].isChecked()
         ]
         if not selected_channels:
-            self._set_status("No channel selected", "warn")
+            self.set_system_status("No channel selected", is_error=True)
             return
 
         try:
             test_time = float(self.test_time_input.text())
             sample_period = float(self.sample_period_input.text())
         except ValueError:
-            self._set_status("Invalid test time or sample period", "err")
+            self.set_system_status("Invalid test time or sample period", is_error=True)
             return
 
         self.is_testing = True
@@ -912,7 +690,7 @@ class ConsumptionTestUI(QWidget):
         self.update_channel_current(channel, avg_current)
 
     def _on_test_error(self, err_msg):
-        self._set_status(err_msg, "err")
+        self.set_system_status(err_msg, is_error=True)
 
     def _on_test_finished(self):
         self.is_testing = False
@@ -967,12 +745,6 @@ class ConsumptionTestUI(QWidget):
             ch for ch in range(1, 5)
             if self.channel_cards[ch]["checkbox"].isChecked()
         ]
-
-    def set_system_status(self, status, is_error=False):
-        pass
-
-    def update_instrument_info(self, instrument_info):
-        pass
 
     def get_test_config(self):
         return {
