@@ -913,7 +913,8 @@ class OscilloscopeBaseUI(QWidget):
         """)
 
         left_upper_widget = QWidget()
-        left_upper_widget.setStyleSheet("QWidget { background: transparent; border: none; }")
+        left_upper_widget.setObjectName("leftUpperContainer")
+        left_upper_widget.setStyleSheet("QWidget#leftUpperContainer { background: transparent; border: none; }")
         left_upper = QVBoxLayout(left_upper_widget)
         left_upper.setContentsMargins(0, 0, 0, 0)
         left_upper.setSpacing(16)
@@ -1150,21 +1151,73 @@ class OscilloscopeBaseUI(QWidget):
 
         self.meas_source_combo = DarkComboBox(bg="#091735", border="#1A2D57")
         self.meas_source_combo.addItems([f"CH{i+1}" for i in range(self.NUM_CHANNELS)])
-        self.meas_source_combo.setFixedWidth(90)
+        self.meas_source_combo.setFixedWidth(110)
         add_row.addWidget(self.meas_source_combo)
 
         self.add_meas_btn = QPushButton("+ Add")
         self.add_meas_btn.setObjectName("ghostBtn")
+        self.add_meas_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #1A2750;
+                border: 1px solid #3A5A9F;
+                color: #7F96C7;
+                padding: 7px 14px;
+                border-radius: 8px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background-color: #243B6E;
+                border: 1px solid #4C6FFF;
+                color: #A8BBDB;
+            }
+            QPushButton:pressed {
+                background-color: #162040;
+            }
+            QPushButton:disabled {
+                background-color: #0E1628;
+                border: 1px solid #151E35;
+                color: #3A4563;
+            }
+        """)
         self.add_meas_btn.clicked.connect(self._on_add_measurement)
         add_row.addWidget(self.add_meas_btn)
 
         self.clear_meas_btn = QPushButton("✕  Clear All")
         self.clear_meas_btn.setObjectName("ghostBtn")
+        self.clear_meas_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #1A2750;
+                border: 1px solid #3A5A9F;
+                color: #7F96C7;
+                padding: 7px 14px;
+                border-radius: 8px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background-color: #243B6E;
+                border: 1px solid #4C6FFF;
+                color: #A8BBDB;
+            }
+            QPushButton:pressed {
+                background-color: #162040;
+            }
+            QPushButton:disabled {
+                background-color: #0E1628;
+                border: 1px solid #151E35;
+                color: #3A4563;
+            }
+        """)
         self.clear_meas_btn.clicked.connect(self._on_clear_measurements)
         add_row.addWidget(self.clear_meas_btn)
 
         add_row.addStretch()
         layout.addLayout(add_row)
+
+        results_frame = QFrame()
+        results_frame.setObjectName("innerCard")
+        results_frame_layout = QVBoxLayout(results_frame)
+        results_frame_layout.setContentsMargins(8, 8, 8, 8)
+        results_frame_layout.setSpacing(0)
 
         self._results_scroll = QScrollArea()
         self._results_scroll.setWidgetResizable(True)
@@ -1178,7 +1231,8 @@ class OscilloscopeBaseUI(QWidget):
         self._results_grid.setSpacing(10)
 
         self._results_scroll.setWidget(self._results_container)
-        layout.addWidget(self._results_scroll)
+        results_frame_layout.addWidget(self._results_scroll)
+        layout.addWidget(results_frame)
 
         return card
 
@@ -1202,7 +1256,7 @@ class OscilloscopeBaseUI(QWidget):
         title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         top_row.addWidget(title, 1)
 
-        delete_btn = QPushButton("🗑")
+        delete_btn = QPushButton("✕")
         delete_btn.setObjectName("deleteCardBtn")
         delete_btn.setFixedSize(24, 24)
         delete_btn.setCursor(Qt.PointingHandCursor)
