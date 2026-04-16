@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QLineEdit, QFrame, QSizePolicy,
     QStackedWidget, QApplication, QTextEdit, QMenu, QFileDialog,
-    QScrollArea, QGridLayout, QSplitter, QGraphicsOpacityEffect
+    QScrollArea, QGridLayout, QSplitter, QGraphicsOpacityEffect, QLayout
 )
 from PySide6.QtCore import (
     Qt, QTimer, Signal, QThread, QObject,
@@ -462,6 +462,78 @@ class MeasurementPollingWorker(QObject):
         if func is None:
             raise ValueError(f"Unknown measurement type: {mtype}")
         return func(channel)
+
+
+class FlowLayout(QLayout):
+    def __init__(self, parent=None, spacing=10):
+        super().__init__(parent)
+        self._items = []
+        self._spacing = spacing
+
+    def addItem(self, item):
+        self._items.append(item)
+
+    def count(self):
+        return len(self._items)
+
+    def itemAt(self, index):
+        if 0 <= index < len(self._items):
+            return self._items[index]
+        return None
+
+    def takeAt(self, index):
+        if 0 <= index < len(self._items):
+            return self._items.pop(index)
+        return None
+
+    def spacing(self):
+        return self._spacing
+
+    def setSpacing(self, spacing):
+        self._spacing = spacing
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self._do_layout(QRect(0, 0, width, 0), test_only=True)
+
+    def setGeometry(self, rect):
+        super().setGeometry(rect)
+        self._do_layout(rect, test_only=False)
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        m = self.contentsMargins()
+        size += QSize(m.left() + m.right(), m.top() + m.bottom())
+        return size
+
+    def _do_layout(self, rect, test_only):
+        m = self.contentsMargins()
+        effective = rect.adjusted(m.left(), m.top(), -m.right(), -m.bottom())
+        x = effective.x()
+        y = effective.y()
+        row_height = 0
+
+        for item in self._items:
+            item_size = item.sizeHint()
+            next_x = x + item_size.width() + self._spacing
+            if next_x - self._spacing > effective.right() + 1 and row_height > 0:
+                x = effective.x()
+                y = y + row_height + self._spacing
+                next_x = x + item_size.width() + self._spacing
+                row_height = 0
+            if not test_only:
+                item.setGeometry(QRect(QPoint(x, y), item_size))
+            x = next_x
+            row_height = max(row_height, item_size.height())
+
+        return y + row_height - rect.y() + m.bottom()
 
 
 class OscilloscopeBaseUI(QWidget):
@@ -1305,9 +1377,8 @@ class OscilloscopeBaseUI(QWidget):
 
         self._results_container = QWidget()
         self._results_container.setObjectName("measResultsContainer")
-        self._results_grid = QGridLayout(self._results_container)
-        self._results_grid.setContentsMargins(0, 0, 0, 0)
-        self._results_grid.setSpacing(10)
+        self._results_flow = FlowLayout(self._results_container, spacing=10)
+        self._results_flow.setContentsMargins(0, 0, 0, 0)
 
         self._results_scroll.setWidget(self._results_container)
         layout.addWidget(self._results_scroll)
@@ -1318,8 +1389,8 @@ class OscilloscopeBaseUI(QWidget):
         logger.debug("[MEAS] _create_metric_card('%s', '%s') enter", title_text, value_text)
         card = QFrame()
         card.setObjectName("metricCard")
+        card.setFixedWidth(170)
         card.setMinimumHeight(60)
-        card.setMinimumWidth(130)
         logger.debug("[MEAS] QFrame created: %s", card)
 
         layout = QVBoxLayout(card)
@@ -2198,12 +2269,9 @@ class OscilloscopeBaseUI(QWidget):
 
         mc.delete_btn.clicked.connect(lambda checked=False, mt=mtype, ch=channel: self._on_delete_single_measurement(mt, ch))
 
-        idx = len(self._measurement_result_cards)
-        cols = 4
-        row, col = idx // cols, idx % cols
-        logger.debug("[MEAS] adding to grid at row=%d col=%d, grid.count=%d", row, col, self._results_grid.count())
-        self._results_grid.addWidget(mc, row, col)
-        logger.debug("[MEAS] grid.addWidget done, grid.count=%d", self._results_grid.count())
+        logger.debug("[MEAS] adding to flow layout, flow.count=%d", self._results_flow.count())
+        self._results_flow.addWidget(mc)
+        logger.debug("[MEAS] flow.addWidget done, flow.count=%d", self._results_flow.count())
 
         self._measurement_result_cards.append({
             "type": mtype,
@@ -2231,7 +2299,7 @@ class OscilloscopeBaseUI(QWidget):
 
         card_info = self._measurement_result_cards.pop(target_idx)
         w = card_info["card"]
-        self._results_grid.removeWidget(w)
+        self._results_flow.removeWidget(w)
         w.setParent(None)
         w.deleteLater()
 
@@ -2248,13 +2316,11 @@ class OscilloscopeBaseUI(QWidget):
         self.append_log(f"[MEASURE] Removed: CH{channel} {mtype}")
 
     def _rebuild_measurement_grid(self):
-        cols = 4
-        for i, card_info in enumerate(self._measurement_result_cards):
+        for card_info in self._measurement_result_cards:
             w = card_info["card"]
-            self._results_grid.removeWidget(w)
-        for i, card_info in enumerate(self._measurement_result_cards):
-            row, col = i // cols, i % cols
-            self._results_grid.addWidget(card_info["card"], row, col)
+            self._results_flow.removeWidget(w)
+        for card_info in self._measurement_result_cards:
+            self._results_flow.addWidget(card_info["card"])
 
     def _on_clear_measurements(self):
         logger.debug("[MEAS] _on_clear_measurements called")
@@ -2270,7 +2336,7 @@ class OscilloscopeBaseUI(QWidget):
         for i, card_info in enumerate(self._measurement_result_cards):
             w = card_info["card"]
             logger.debug("[MEAS] removing card %d: %s", i, w)
-            self._results_grid.removeWidget(w)
+            self._results_flow.removeWidget(w)
             w.setParent(None)
             w.deleteLater()
         self._measurement_result_cards.clear()
