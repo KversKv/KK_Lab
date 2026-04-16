@@ -132,15 +132,23 @@ ui/
     ├── scrollbar.py             # 暗色主题滚动条样式 (SCROLLBAR_STYLE)
     ├── button.py                # 搜索/连接/断开按钮样式与 SpinningSearchButton 组件
     ├── start_sequence.py        # 开始按钮样式 (START_BTN_STYLE) 与状态切换工具
+    ├── execution_logs_module_frame.py  # 执行日志区域 Mixin (日志容器/进度条/清除)
     ├── n6705c_module_frame.py        # N6705C 连接区域 Mixin (VISA 搜索/连接/断开)
     ├── oscilloscope_module_frame.py  # 示波器连接区域 Mixin (VISA 搜索/连接/断开)
-    └── chamber_module_frame.py       # VT6002 温箱连接区域 Mixin (串口搜索/连接/断开)
+    ├── chamber_module_frame.py       # VT6002 温箱连接区域 Mixin (串口搜索/连接/断开)
+    └── serialCom_module_frame.py     # 串口通信连接区域 Mixin (串口搜索/连接/断开)
 
 ================================================================================
   lib/ - 第三方库与底层接口封装
 ================================================================================
 
 lib/
+├── download_tools/          # DUT UART 下载工具
+│   ├── download_script.py   # 下载工具 Python 封装，提供 DldTool 类与 download_bin()
+│   │                        # 接口 (支持 Flash/Ramrun/擦除/eFuse 读写等操作)
+│   ├── dldtool.exe          # BES 芯片 UART 下载命令行工具
+│   └── programmer*.bin      # 各型号芯片对应的 Programmer 固件文件
+│
 └── i2c/                     # I2C 通信相关模块
     ├── Bes_I2CIO_Interface.py   # BES I2C IO 接口封装 (支持 CH341/USBIO 适配器,
     │                            # 含速度模式/位宽/状态码枚举定义)
@@ -169,6 +177,13 @@ resources/
     ├── search.svg           # 搜索图标 (用于搜索按钮)
     ├── link.svg             # 已连接图标 (用于连接状态指示)
     ├── unlink.svg           # 未连接图标 (用于断开状态指示)
+    ├── activity.svg         # 活动/波形图标
+    ├── camera.svg           # 截图图标
+    ├── download.svg         # 下载图标
+    ├── upload.svg           # 上传图标
+    ├── gauge.svg            # 仪表/功率图标
+    ├── thermometer.svg      # 温度计图标
+    ├── zap.svg              # 闪电/电源图标
     ├── checked_*.svg        # 各颜色已选中状态图标 (用于侧边栏导航)
     └── unchecked_*.svg      # 各颜色未选中状态图标 (用于侧边栏导航)
 
