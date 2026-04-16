@@ -47,6 +47,17 @@ class DarkComboBox(QComboBox):
             QComboBox QAbstractItemView::item:hover {{
                 background-color: #334a7d;
             }}
+            QComboBox QLineEdit {{
+                background-color: transparent;
+                border: none;
+                color: #c8d8f8;
+                font-size: 13px;
+                padding: 0px;
+                margin: 0px;
+            }}
+            QComboBox QLineEdit:disabled {{
+                color: #5c7096;
+            }}
         """)
         self.setMaxVisibleItems(30)
 
@@ -60,13 +71,14 @@ class DarkComboBox(QComboBox):
 
         self.style().drawComplexControl(QStyle.CC_ComboBox, opt, painter, self)
 
-        text_rect: QRect = self.style().subControlRect(
-            QStyle.CC_ComboBox, opt, QStyle.SC_ComboBoxEditField, self
-        )
-        fm = QFontMetrics(self.font())
-        elided = fm.elidedText(self.currentText(), Qt.ElideMiddle, text_rect.width())
-        painter.setPen(QColor("#c8d8f8") if self.isEnabled() else QColor("#5c7096"))
-        painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, elided)
+        if not self.isEditable():
+            text_rect: QRect = self.style().subControlRect(
+                QStyle.CC_ComboBox, opt, QStyle.SC_ComboBoxEditField, self
+            )
+            fm = QFontMetrics(self.font())
+            elided = fm.elidedText(self.currentText(), Qt.ElideMiddle, text_rect.width())
+            painter.setPen(QColor("#c8d8f8") if self.isEnabled() else QColor("#5c7096"))
+            painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, elided)
 
         arrow_rect: QRect = self.style().subControlRect(
             QStyle.CC_ComboBox, opt, QStyle.SC_ComboBoxArrow, self
