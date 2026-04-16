@@ -1,0 +1,17 @@
+CHIP_CONFIG = {
+    "chip_name": "bes2007",
+    "main_die": "BES2007",
+    "main_die_iic_weight": "",
+    "main_die_iic_device_addr": "",
+    "pmu": "PMU2007",
+    "pmu_iic_weight": "",
+    "pmu_iic_device_addr": "",
+    "flash1": "",
+    "flash2": "",
+    "flash3": "",
+    "psram1": "",
+    "psram2": "",
+    "apsram1": "",
+    "apsram2": "",
+    "power_distribution": {},
+}

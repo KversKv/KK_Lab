@@ -16,7 +16,7 @@ from ui.styles.serialCom_module_frame import SerialComMixin, MODE_INLINE
 from ui.styles.execution_logs_module_frame import ExecutionLogsFrame
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QLineEdit,
+    QPushButton, QLabel, QLineEdit, QPlainTextEdit,
     QGridLayout, QFrame, QApplication, QFileDialog,
     QCheckBox, QSizePolicy, QToolTip
 )
@@ -32,6 +32,8 @@ from PySide6.QtGui import (
 from PySide6.QtSvg import QSvgRenderer
 
 from lib.download_tools.download_script import download_bin, DownloadMode, DownloadState, DownloadResult, detect_chip_from_bin
+from chips.bes_chip_configs.bes_chip_configs import SUPPORTED_CHIPS, get_chip_config
+from ui.widgets.dark_combobox import DarkComboBox
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -538,7 +540,8 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self.init_serial_connection(mode=MODE_INLINE, prefix="DUT Serial")
 
         self.firmware_path = ""
-        self.config_path = ""
+        self.config_content = ""
+        self.selected_chip_config = None
         self.is_testing = False
 
         self._test_thread = None
@@ -562,16 +565,11 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         QWidget {
             background-color: #050b1a;
             color: #d8e3ff;
-            border: none;
         }
 
         QLabel {
             color: #c8d6f0;
             background: transparent;
-            border: none;
-        }
-
-        QFrame {
             border: none;
         }
 
@@ -581,13 +579,22 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             border-radius: 16px;
         }
 
-        QLineEdit, QComboBox {
+        QLineEdit {
             background-color: #020816;
             border: 1px solid #1c2f54;
             border-radius: 6px;
             padding: 6px 10px;
             color: #d7e3ff;
             min-height: 32px;
+        }
+
+        QComboBox {
+            background-color: #0a1733;
+            color: #eaf2ff;
+            border: 1px solid #27406f;
+            border-radius: 6px;
+            padding: 6px 10px;
+            padding-right: 24px;
         }
 
         QLineEdit:focus, QComboBox:focus {
@@ -597,19 +604,19 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         QComboBox::drop-down {
             border: none;
             width: 22px;
+            background: transparent;
         }
 
         QComboBox QAbstractItemView {
-            background-color: #020816;
-            color: #d7e3ff;
-            border: 1px solid #1c2f54;
-            selection-background-color: #1a3260;
-            outline: 0px;
+            background-color: #0a1733;
+            color: #eaf2ff;
+            border: 1px solid #27406f;
+            selection-background-color: #334a7d;
         }
 
         QComboBox QAbstractItemView::item {
-            background-color: #020816;
-            color: #d7e3ff;
+            background-color: #0a1733;
+            color: #eaf2ff;
             padding: 4px 8px;
         }
 
@@ -617,9 +624,13 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             background-color: #1a3260;
         }
 
+        QComboBox QAbstractItemView::item:selected {
+            background-color: #334a7d;
+        }
+
         QComboBox QFrame {
-            background-color: #020816;
-            border: 1px solid #1c2f54;
+            background-color: #0a1733;
+            border: 1px solid #27406f;
         }
 
         QPushButton {
@@ -700,8 +711,9 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
     def _create_connection_panel(self):
         outer = QFrame()
+        outer.setObjectName("connOuter")
         outer.setStyleSheet("""
-            QFrame {
+            QFrame#connOuter {
                 background-color: transparent;
                 border: none;
             }
@@ -743,8 +755,9 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
     def _create_firmware_config_panel(self):
         outer = QFrame()
+        outer.setObjectName("fwConfigOuter")
         outer.setStyleSheet("""
-            QFrame {
+            QFrame#fwConfigOuter {
                 background-color: transparent;
                 border: none;
             }
@@ -825,34 +838,73 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         config_layout.setContentsMargins(16, 14, 16, 14)
         config_layout.setSpacing(8)
 
-        config_title = QLabel("📁 Configuration Import (YAML)")
+        config_title_row = QHBoxLayout()
+        config_title_row.setSpacing(6)
+        config_icon_label = QLabel()
+        config_icon_label.setPixmap(
+            _tinted_svg_icon(os.path.join(_ICONS_DIR, "file-json.svg"), "#94a3b8", 18).pixmap(18, 18)
+        )
+        config_icon_label.setFixedSize(18, 18)
+        config_title = QLabel("Configuration Import (YAML)")
         config_title.setStyleSheet("font-size: 13px; font-weight: 700; color: #ffffff;")
-        config_layout.addWidget(config_title)
+        config_title_row.addWidget(config_icon_label)
+        config_title_row.addWidget(config_title)
+        config_title_row.addStretch()
+        config_layout.addLayout(config_title_row)
 
-        config_file_label = QLabel("Select Config File")
+        chip_row = QHBoxLayout()
+        chip_row.setSpacing(6)
+        chip_select_label = QLabel("Select Chip")
+        chip_select_label.setStyleSheet(
+            "font-size: 11px; color: #7e96bf; background: transparent; border: none;"
+        )
+        chip_row.addWidget(chip_select_label)
+
+        self.chip_combo = DarkComboBox()
+        self.chip_combo.setSizeAdjustPolicy(
+            DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.chip_combo.setMinimumContentsLength(10)
+        self.chip_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.chip_combo.setFixedHeight(22)
+        self.chip_combo.setStyleSheet(self.chip_combo.styleSheet() + """
+            QComboBox {
+                font-size: 11px;
+                padding: 1px 22px 1px 6px;
+                min-height: 18px;
+                max-height: 22px;
+                border-radius: 4px;
+            }
+        """)
+        self.chip_combo.addItem("-- Select Chip --")
+        for chip_name in SUPPORTED_CHIPS:
+            self.chip_combo.addItem(chip_name)
+        chip_row.addWidget(self.chip_combo, 1)
+        config_layout.addLayout(chip_row)
+
+        config_file_label = QLabel("Paste Configuration Content")
         config_file_label.setStyleSheet("font-size: 11px; color: #7e96bf;")
         config_layout.addWidget(config_file_label)
 
-        config_file_row = QHBoxLayout()
-        config_file_row.setSpacing(6)
-        self.config_file_input = QLineEdit("No file selected...")
-        self.config_file_input.setReadOnly(True)
-        self.config_browse_btn = QPushButton("Browse")
-        self.config_browse_btn.setFixedWidth(72)
-        self.config_browse_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #5d45ff;
-                color: white;
-                border: none;
+        self.config_text_edit = QPlainTextEdit()
+        self.config_text_edit.setPlaceholderText("Paste your YAML configuration here...")
+        self.config_text_edit.setMinimumHeight(80)
+        self.config_text_edit.setMaximumHeight(160)
+        self.config_text_edit.setStyleSheet("""
+            QPlainTextEdit {
+                background-color: #0d1b3e;
+                color: #dbe7ff;
+                border: 1px solid #25355c;
                 border-radius: 6px;
-                font-weight: 600;
-                min-height: 32px;
+                font-family: Consolas, monospace;
+                font-size: 11px;
+                padding: 6px;
             }
-            QPushButton:hover { background-color: #6d55ff; }
+            QPlainTextEdit:focus {
+                border: 1px solid #5d45ff;
+            }
         """)
-        config_file_row.addWidget(self.config_file_input, 1)
-        config_file_row.addWidget(self.config_browse_btn)
-        config_layout.addLayout(config_file_row)
+        config_layout.addWidget(self.config_text_edit)
 
         self.import_config_btn = QPushButton(" Import Configuration")
         self.import_config_btn.setIcon(_tinted_svg_icon(os.path.join(_ICONS_DIR, "upload.svg"), "#dbe7ff"))
@@ -874,9 +926,9 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         outer_layout.addWidget(config_panel, 1)
 
         self.firmware_browse_btn.clicked.connect(self._browse_firmware)
-        self.config_browse_btn.clicked.connect(self._browse_config)
         self.download_btn.clicked.connect(self._download_to_dut)
         self.download_btn.stop_clicked.connect(self._stop_download)
+        self.chip_combo.currentIndexChanged.connect(self._on_chip_selected)
         self.import_config_btn.clicked.connect(self._import_configuration)
 
         return outer
@@ -1108,16 +1160,6 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             self.firmware_file_input.setText(os.path.basename(file_path))
             self.append_log(f"[SYSTEM] Firmware file selected: {os.path.basename(file_path)}")
 
-    def _browse_config(self):
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "Select Config File", "",
-            "YAML Files (*.yaml *.yml);;All Files (*)"
-        )
-        if file_path:
-            self.config_path = file_path
-            self.config_file_input.setText(os.path.basename(file_path))
-            self.append_log(f"[SYSTEM] Config file selected: {os.path.basename(file_path)}")
-
     def _download_to_dut(self):
         if not self.firmware_path:
             logger.warning("No firmware file selected")
@@ -1222,13 +1264,29 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self.append_log("[DOWNLOAD] Download stopped by user.")
         logger.info("Download stopped by user")
 
-    def _import_configuration(self):
-        if not self.config_path:
-            logger.warning("No config file selected")
-            self.append_log("[WARNING] No config file selected.")
+    def _on_chip_selected(self, index):
+        if index <= 0:
+            self.selected_chip_config = None
             return
-        logger.info("Importing configuration: %s", self.config_path)
-        self.append_log(f"[SYSTEM] Importing configuration: {os.path.basename(self.config_path)}")
+        chip_name = self.chip_combo.currentText()
+        cfg = get_chip_config(chip_name)
+        self.selected_chip_config = cfg
+        if cfg:
+            logger.info("Chip selected: %s", chip_name)
+            self.append_log(f"[SYSTEM] Chip selected: {chip_name}")
+        else:
+            logger.warning("No config found for chip: %s", chip_name)
+            self.append_log(f"[WARNING] No config found for chip: {chip_name}")
+
+    def _import_configuration(self):
+        config_text = self.config_text_edit.toPlainText().strip()
+        if not config_text:
+            logger.warning("No configuration content provided")
+            self.append_log("[WARNING] No configuration content provided.")
+            return
+        self.config_content = config_text
+        logger.info("Configuration imported from text input (%d chars)", len(config_text))
+        self.append_log(f"[SYSTEM] Configuration imported from text input ({len(config_text)} chars)")
 
     def _on_start_or_stop(self):
         if self.is_testing:
@@ -1366,7 +1424,8 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         return {
             'n6705c_connected': self.is_connected,
             'firmware_path': self.firmware_path,
-            'config_path': self.config_path,
+            'config_content': self.config_content,
+            'selected_chip': self.selected_chip_config,
             'selected_channels': self.get_selected_channels(),
         }
 
