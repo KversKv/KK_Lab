@@ -250,15 +250,9 @@ class SerialComMixin:
             self.serial_combo.setMinimumContentsLength(10)
             self.serial_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             self.serial_combo.setFixedHeight(_inline_h)
-            self.serial_combo.setStyleSheet(self.serial_combo.styleSheet() + f"""
-                QComboBox {{
-                    font-size: 11px;
-                    padding: 1px 22px 1px 6px;
-                    min-height: {_inline_h - 4}px;
-                    max-height: {_inline_h}px;
-                    border-radius: {_inline_r}px;
-                }}
-            """)
+            _font = self.serial_combo.font()
+            _font.setPixelSize(11)
+            self.serial_combo.setFont(_font)
             row.addWidget(self.serial_combo, 1)
 
             self.serial_search_btn = _SerialSearchButton(

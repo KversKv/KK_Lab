@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit, QPlainTextEdit,
     QGridLayout, QFrame, QApplication, QFileDialog,
-    QCheckBox, QSizePolicy, QToolTip, QListView
+    QCheckBox, QSizePolicy, QToolTip
 )
 from PySide6.QtCore import (
     Qt, QTimer, Signal, QThread, QObject, QSize,
@@ -27,7 +27,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QFont, QIcon, QPixmap, QPainter, QColor, QPen,
-    QFontMetrics, QPainterPath, QCursor, QPalette
+    QFontMetrics, QPainterPath, QCursor
 )
 from PySide6.QtSvg import QSvgRenderer
 
@@ -820,34 +820,6 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         chip_row.addWidget(chip_select_label)
 
         self.chip_combo = DarkComboBox()
-        self.chip_combo.setView(QListView())
-        self.chip_combo.view().setMouseTracking(True)
-        palette = self.chip_combo.view().palette()
-        palette.setColor(QPalette.Highlight, QColor("#5d45ff"))
-        palette.setColor(QPalette.HighlightedText, QColor("#ffffff"))
-        self.chip_combo.view().setPalette(palette)
-        self.chip_combo.view().setStyleSheet("""
-            QListView {
-                background-color: #0a1733;
-                color: #eaf2ff;
-                border: 1px solid #27406f;
-                outline: 0;
-            }
-            QListView::item {
-                padding: 4px 8px;
-                border: none;
-            }
-            QListView::item:hover {
-                background-color: #5d45ff;
-                color: white;
-            }
-            QListView::item:selected {
-                background-color: #5d45ff;
-                color: white;
-                border: none;
-                outline: none;
-            }
-        """)
         self.chip_combo.setSizeAdjustPolicy(
             DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
