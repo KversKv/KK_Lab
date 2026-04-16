@@ -17,12 +17,33 @@ from PySide6.QtWidgets import (
     QGridLayout, QFrame, QApplication, QFileDialog,
     QCheckBox, QSizePolicy
 )
-from PySide6.QtCore import Qt, QTimer, Signal, QThread, QObject
-from PySide6.QtGui import QFont
+from PySide6.QtCore import Qt, QTimer, Signal, QThread, QObject, QSize
+from PySide6.QtGui import QFont, QIcon, QPixmap, QPainter, QColor
+from PySide6.QtSvg import QSvgRenderer
+from PySide6.QtCore import QRectF
 
 from log_config import get_logger
 
 logger = get_logger(__name__)
+
+_ICONS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    "resources", "icons"
+)
+
+
+def _tinted_svg_icon(svg_path, color, size=18):
+    renderer = QSvgRenderer(svg_path)
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setRenderHint(QPainter.SmoothPixmapTransform)
+    renderer.render(painter, QRectF(0, 0, size, size))
+    painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+    painter.fillRect(pixmap.rect(), QColor(color))
+    painter.end()
+    return QIcon(pixmap)
 
 
 class _ConsumptionTestWorker(QObject):
@@ -97,11 +118,16 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin):
         QWidget {
             background-color: #050b1a;
             color: #d8e3ff;
+            border: none;
         }
 
         QLabel {
             color: #c8d6f0;
             background: transparent;
+            border: none;
+        }
+
+        QFrame {
             border: none;
         }
 
@@ -219,8 +245,9 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin):
 
     def _create_connection_panel(self):
         panel = QFrame()
+        panel.setObjectName("connectionPanel")
         panel.setStyleSheet("""
-            QFrame {
+            QFrame#connectionPanel {
                 background-color: #0b1630;
                 border: 1px solid #18284d;
                 border-radius: 12px;
@@ -259,8 +286,9 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin):
         outer_layout.setSpacing(12)
 
         fw_panel = QFrame()
+        fw_panel.setObjectName("fwPanel")
         fw_panel.setStyleSheet("""
-            QFrame {
+            QFrame#fwPanel {
                 background-color: #0b1630;
                 border: 1px solid #18284d;
                 border-radius: 12px;
@@ -299,7 +327,9 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin):
         fw_file_row.addWidget(self.firmware_browse_btn)
         fw_layout.addLayout(fw_file_row)
 
-        self.download_btn = QPushButton("⬇ Download to DUT")
+        self.download_btn = QPushButton(" Download to DUT")
+        self.download_btn.setIcon(_tinted_svg_icon(os.path.join(_ICONS_DIR, "download.svg"), "#dbe7ff"))
+        self.download_btn.setIconSize(QSize(18, 18))
         self.download_btn.setStyleSheet("""
             QPushButton {
                 background-color: #162544;
@@ -314,8 +344,9 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin):
         fw_layout.addWidget(self.download_btn)
 
         config_panel = QFrame()
+        config_panel.setObjectName("configPanel")
         config_panel.setStyleSheet("""
-            QFrame {
+            QFrame#configPanel {
                 background-color: #0b1630;
                 border: 1px solid #18284d;
                 border-radius: 12px;
@@ -354,7 +385,9 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin):
         config_file_row.addWidget(self.config_browse_btn)
         config_layout.addLayout(config_file_row)
 
-        self.import_config_btn = QPushButton("⬇ Import Configuration")
+        self.import_config_btn = QPushButton(" Import Configuration")
+        self.import_config_btn.setIcon(_tinted_svg_icon(os.path.join(_ICONS_DIR, "upload.svg"), "#dbe7ff"))
+        self.import_config_btn.setIconSize(QSize(18, 18))
         self.import_config_btn.setStyleSheet("""
             QPushButton {
                 background-color: #162544;
@@ -380,8 +413,9 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin):
 
     def _create_consumption_test_panel(self):
         panel = QFrame()
+        panel.setObjectName("consumptionPanel")
         panel.setStyleSheet("""
-            QFrame {
+            QFrame#consumptionPanel {
                 background-color: #0b1630;
                 border: 1px solid #18284d;
                 border-radius: 12px;
@@ -523,8 +557,9 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin):
         colors = self.CHANNEL_COLORS[ch_num]
 
         card = QFrame()
+        card.setObjectName(f"channelCard{ch_num}")
         card.setStyleSheet(f"""
-            QFrame {{
+            QFrame#channelCard{ch_num} {{
                 background-color: {colors['bg']};
                 border: 1px solid {colors['border']};
                 border-radius: 10px;

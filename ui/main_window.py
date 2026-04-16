@@ -667,7 +667,7 @@ class MainWindow(QMainWindow):
         self.consumption_test_btn = SidebarNavButton(
             "Consumption Test",
             "",
-            os.path.join(_ICONS_DIR, "zap.svg")
+            os.path.join(_ICONS_DIR, "gauge.svg")
         )
         left_nav_layout.addWidget(self.consumption_test_btn)
 
