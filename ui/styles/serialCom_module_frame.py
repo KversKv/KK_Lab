@@ -4,7 +4,7 @@ import serial.tools.list_ports
 from PySide6.QtWidgets import (
     QHBoxLayout, QPushButton, QLabel, QSizePolicy
 )
-from PySide6.QtCore import Signal, QThread, QObject, QTimer, QRectF
+from PySide6.QtCore import Signal, QThread, QObject, QTimer, QRectF, Qt
 from PySide6.QtGui import QIcon, QPainter
 from PySide6.QtSvg import QSvgRenderer
 
@@ -106,6 +106,7 @@ class _SerialSearchButton(QPushButton):
     def __init__(self, parent=None, icon_size=_SERIAL_BTN_ICON_SIZE,
                  btn_height=_SERIAL_BTN_HEIGHT, btn_radius=_SERIAL_BTN_RADIUS):
         super().__init__(parent)
+        self.setFocusPolicy(Qt.NoFocus)
         self._icon_size = icon_size
         self._angle = 0.0
         self._spinning = False
@@ -198,6 +199,7 @@ class _SearchSerialPortWorker(QObject):
 
 MODE_SEARCH_SELECT = "search_and_select"
 MODE_FULL = "full"
+MODE_INLINE = "inline"
 
 
 class SerialComMixin:
@@ -226,6 +228,61 @@ class SerialComMixin:
         self._serial_btn_height = btn_height
         self._serial_btn_radius = btn_radius
         self._serial_btn_icon_size = btn_icon_size
+
+        if self._serial_mode == MODE_INLINE:
+            _inline_h = 22
+            _inline_icon = 12
+            _inline_r = 4
+
+            row = QHBoxLayout()
+            row.setSpacing(6)
+
+            self.serial_label = QLabel("COM:")
+            self.serial_label.setStyleSheet(
+                "font-size: 11px; color: #7e96bf; background: transparent; border: none;"
+            )
+            row.addWidget(self.serial_label)
+
+            self.serial_combo = DarkComboBox()
+            self.serial_combo.setSizeAdjustPolicy(
+                DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+            )
+            self.serial_combo.setMinimumContentsLength(10)
+            self.serial_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            self.serial_combo.setFixedHeight(_inline_h)
+            self.serial_combo.setStyleSheet(self.serial_combo.styleSheet() + f"""
+                QComboBox {{
+                    font-size: 11px;
+                    padding: 1px 22px 1px 6px;
+                    min-height: {_inline_h - 4}px;
+                    max-height: {_inline_h}px;
+                    border-radius: {_inline_r}px;
+                }}
+            """)
+            row.addWidget(self.serial_combo, 1)
+
+            self.serial_search_btn = _SerialSearchButton(
+                icon_size=_inline_icon,
+                btn_height=_inline_h,
+                btn_radius=_inline_r,
+            )
+            self.serial_search_btn.setFixedSize(_inline_h, _inline_h)
+            self.serial_search_btn.setStyleSheet(
+                self.serial_search_btn.styleSheet() + f"""
+                QPushButton {{
+                    padding: 0px;
+                    margin: 0px;
+                    min-width: {_inline_h}px;
+                    max-width: {_inline_h}px;
+                    min-height: {_inline_h}px;
+                    max-height: {_inline_h}px;
+                }}
+            """
+            )
+            row.addWidget(self.serial_search_btn)
+
+            layout.addLayout(row)
+            return
 
         self.serial_status_label = QLabel("● Not Connected")
         self.serial_status_label.setObjectName("statusErr")
@@ -265,6 +322,8 @@ class SerialComMixin:
             self.serial_connect_btn.clicked.connect(self._on_serial_toggle)
 
     def _set_serial_status(self, text, is_error=False):
+        if not hasattr(self, 'serial_status_label'):
+            return
         self.serial_status_label.setText(text)
         if is_error:
             self.serial_status_label.setObjectName("statusErr")

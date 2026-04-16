@@ -9,6 +9,7 @@ sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.
 
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLLBAR_STYLE, START_BTN_STYLE, update_start_btn_state
+from ui.styles.execution_logs_module_frame import ExecutionLogsFrame
 from ui.styles.button import SpinningSearchButton, update_connect_button_state
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
@@ -558,26 +559,11 @@ class StatusRegisterTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget
         reg_outer.addStretch()
         right_layout.addWidget(reg_frame, 4)
 
-        self.log_frame = QFrame()
-        self.log_frame.setObjectName("logContainer")
-        log_layout = QVBoxLayout(self.log_frame)
-        log_layout.setContentsMargins(16, 16, 16, 16)
-        log_layout.setSpacing(10)
-        log_header = QHBoxLayout()
-        self.log_title = QLabel("\u2299 Execution Logs")
-        self.log_title.setObjectName("sectionTitle")
-        log_header.addWidget(self.log_title)
-        log_header.addStretch()
-        self.clear_log_btn = QPushButton("Clear")
-        self.clear_log_btn.setObjectName("smallActionBtn")
-        log_header.addWidget(self.clear_log_btn)
-        log_layout.addLayout(log_header)
-        self.log_edit = QTextEdit()
-        self.log_edit.setObjectName("logEdit")
-        self.log_edit.setReadOnly(True)
-        self.log_edit.setMinimumHeight(120)
-        log_layout.addWidget(self.log_edit)
-        right_layout.addWidget(self.log_frame, 1)
+        self.execution_logs = ExecutionLogsFrame(show_progress=False)
+        self.log_edit = self.execution_logs.log_edit
+        self.clear_log_btn = self.execution_logs.clear_log_btn
+
+        right_layout.addWidget(self.execution_logs, 1)
 
     def _build_test_item_card(self):
         layout = self.test_item_card.main_layout
@@ -1004,14 +990,11 @@ class StatusRegisterTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget
         pass
 
     def _on_clear_log(self):
-        self.log_edit.clear()
+        self.execution_logs.clear_log()
         self.append_log("[SYSTEM] Log cleared.")
 
     def append_log(self, message):
-        self.log_edit.append(message)
-        self.log_edit.verticalScrollBar().setValue(
-            self.log_edit.verticalScrollBar().maximum()
-        )
+        self.execution_logs.append_log(message)
 
     def clear_results(self):
         for name, card in self.status_labels.items():

@@ -19,6 +19,7 @@ from PySide6.QtGui import QFont
 from ui.styles.button import SpinningSearchButton, update_connect_button_state
 import pyqtgraph as pg
 from ui.styles import SCROLL_AREA_STYLE, START_BTN_STYLE, update_start_btn_state
+from ui.styles.execution_logs_module_frame import ExecutionLogsFrame
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles.oscilloscope_module_frame import OscilloscopeConnectionMixin
 from ui.styles.chamber_module_frame import VT6002ConnectionMixin
@@ -1643,56 +1644,14 @@ class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, QWidget):
         self._setup_chart_plot()
         chart_layout.addWidget(self.plot_widget, 1)
 
-        log_panel = QFrame()
-        log_panel.setObjectName("panel")
-        log_layout = QVBoxLayout(log_panel)
-        log_layout.setContentsMargins(10, 10, 10, 10)
-        log_layout.setSpacing(6)
-
-        log_title_row = QHBoxLayout()
-        log_title = QLabel("TEST LOG")
-        log_title.setObjectName("section_title")
-        self.clear_log_btn = QPushButton("Clear")
-        self.clear_log_btn.setObjectName("tool_btn")
-        self.clear_log_btn.setFixedWidth(60)
-        log_title_row.addWidget(log_title)
-        log_title_row.addStretch()
-
-        self.progress_text_label = QLabel("0% Complete")
-        self.progress_text_label.setObjectName("muted_label")
-        log_title_row.addWidget(self.progress_text_label)
-
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)
-        self.progress_bar.setTextVisible(False)
-        self.progress_bar.setFixedWidth(120)
-        self.progress_bar.setStyleSheet("""
-            QProgressBar {
-                background-color: #152749;
-                border: none;
-                border-radius: 4px;
-                text-align: center;
-                color: #b7c8ea;
-                min-height: 8px;
-                max-height: 8px;
-            }
-            QProgressBar::chunk {
-                background-color: #3060d0;
-                border-radius: 4px;
-            }
-        """)
-        log_title_row.addWidget(self.progress_bar)
-
-        log_title_row.addWidget(self.clear_log_btn)
-        log_layout.addLayout(log_title_row)
-
-        self.log_text = QTextEdit()
-        self.log_text.setReadOnly(True)
-        log_layout.addWidget(self.log_text, 1)
+        self.execution_logs = ExecutionLogsFrame(title="TEST LOG", show_progress=True)
+        self.log_text = self.execution_logs.log_edit
+        self.progress_bar = self.execution_logs.progress_bar
+        self.progress_text_label = self.execution_logs.progress_text_label
+        self.clear_log_btn = self.execution_logs.clear_log_btn
 
         right_col.addWidget(chart_panel, 3)
-        right_col.addWidget(log_panel, 2)
+        right_col.addWidget(self.execution_logs, 2)
 
         body_layout.addLayout(left_wrapper, 0)
         body_layout.addLayout(right_col, 1)
@@ -1760,7 +1719,6 @@ class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, QWidget):
         self.start_test_btn.clicked.connect(self._on_start_or_stop)
         self.stop_test_btn.clicked.connect(self._stop_test)
         self.export_result_btn.clicked.connect(self.export_result)
-        self.clear_log_btn.clicked.connect(self.log_text.clear)
 
         self.import_csv_btn.clicked.connect(self._import_csv)
         self.clk_source_combo.currentIndexChanged.connect(self._on_clk_source_changed)
@@ -1914,15 +1872,13 @@ class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, QWidget):
         btn.setEnabled(True)
 
     def _append_log(self, text):
-        self.log_text.append(text)
+        self.execution_logs.append_log(text)
 
     def append_log(self, text):
-        self.log_text.append(text)
+        self.execution_logs.append_log(text)
 
     def set_progress(self, value: int):
-        value = max(0, min(100, int(value)))
-        self.progress_bar.setValue(value)
-        self.progress_text_label.setText(f"{value}% Complete")
+        self.execution_logs.set_progress(value)
 
     def _format_freq(self, value):
         if value is None:

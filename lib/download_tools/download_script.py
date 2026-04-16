@@ -7,6 +7,25 @@ DUT UART下载工具封装
 支持Flash烧录、Ramrun、擦除扇区、擦除整片、读写eFuse等操作
 """
 
+"""
+from lib.download_tools.download_script import download_bin
+
+# 最简调用 — Flash模式，自动识别programmer
+result = download_bin(com_port=20, bin_file="noapp_test_1307ph_cur_tst.bin")
+
+# 指定programmer
+result = download_bin(com_port=20, bin_file="my_fw.bin", programmer="programmer1307ph.bin")
+
+# Ramrun模式
+result = download_bin(com_port=20, bin_file="my_fw.bin", mode="ramrun")
+
+# 也可以用枚举
+result = download_bin(com_port=20, bin_file="my_fw.bin", mode=DownloadMode.RAMRUN)
+
+"""
+
+
+
 import re
 import subprocess
 import threading
@@ -632,6 +651,58 @@ class DldTool:
             args += ["--addr", address]
         args += ["--direct-write", str(self._resolve_bin_path(mem_file))]
         return self._run(args, timeout=timeout, on_state_change=on_state_change)
+
+
+def download_bin(
+    com_port: Union[int, str],
+    bin_file: Union[str, Path],
+    mode: Union[DownloadMode, str] = DownloadMode.FLASH,
+    programmer: Optional[Union[str, Path]] = None,
+    timeout: Optional[float] = 120,
+    on_state_change: Optional[Callable[[DownloadState], None]] = None,
+) -> DownloadResult:
+    """
+    一键下载接口 —— 整个下载流程只需调用此函数
+
+    参数:
+        com_port:       串口号 (如 20、"COM20"、"usb")
+        bin_file:       待下载的BIN文件路径
+        mode:           下载方式, "flash"(默认) 或 "ramrun"
+        programmer:     Programmer文件路径, 为None时根据BIN文件自动识别
+        timeout:        超时时间(秒), 默认120
+        on_state_change: 下载状态变更回调(可选)
+
+    返回:
+        DownloadResult  包含 success / state / output_lines 等信息
+    """
+    if isinstance(mode, str):
+        mode = DownloadMode(mode.lower())
+
+    programmer_str: Optional[str] = str(programmer) if programmer else None
+
+    dld = DldTool(com_port=com_port, programmer_bin=programmer_str)
+
+    if mode == DownloadMode.FLASH:
+        return dld.flash(
+            flash_files=str(bin_file),
+            timeout=timeout,
+            on_state_change=on_state_change,
+        )
+    elif mode == DownloadMode.RAMRUN:
+        if programmer_str is None:
+            resolved = DldTool._resolve_bin_path(str(bin_file))
+            pgm = auto_detect_programmer(resolved)
+            if pgm is None:
+                raise FileNotFoundError(
+                    f"无法从BIN文件 '{bin_file}' 自动识别对应的programmer"
+                )
+            dld.programmer_bin = pgm
+        return dld.ramrun(
+            timeout=timeout,
+            on_state_change=on_state_change,
+        )
+    else:
+        raise ValueError(f"不支持的下载模式: {mode}")
 
 
 if __name__ == "__main__":

@@ -27,6 +27,7 @@ from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockN6705C, MockMSO64B
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLLBAR_STYLE, START_BTN_STYLE, update_start_btn_state
+from ui.styles.execution_logs_module_frame import ExecutionLogsFrame
 
 
 class _IsGainTestWorker(QObject):
@@ -894,42 +895,13 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
 
         right_layout.addWidget(self.result_frame, 5)
 
-        self.log_frame = QFrame()
-        self.log_frame.setObjectName("logContainer")
-        log_layout = QVBoxLayout(self.log_frame)
-        log_layout.setContentsMargins(12, 12, 12, 12)
-        log_layout.setSpacing(10)
+        self.execution_logs = ExecutionLogsFrame(show_progress=True)
+        self.log_edit = self.execution_logs.log_edit
+        self.progress_bar = self.execution_logs.progress_bar
+        self.progress_text_label = self.execution_logs.progress_text_label
+        self.clear_log_btn = self.execution_logs.clear_log_btn
 
-        log_header = QHBoxLayout()
-        self.log_title = QLabel("›_ EXECUTION LOGS")
-        self.log_title.setObjectName("sectionTitle")
-        log_header.addWidget(self.log_title)
-        log_header.addStretch()
-
-        self.progress_text_label = QLabel("0% Complete")
-        self.progress_text_label.setObjectName("fieldLabel")
-        log_header.addWidget(self.progress_text_label)
-
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)
-        self.progress_bar.setTextVisible(False)
-        self.progress_bar.setFixedWidth(120)
-        log_header.addWidget(self.progress_bar)
-
-        self.clear_log_btn = QPushButton("Clear")
-        self.clear_log_btn.setObjectName("smallActionBtn")
-        log_header.addWidget(self.clear_log_btn)
-
-        log_layout.addLayout(log_header)
-
-        self.log_edit = QTextEdit()
-        self.log_edit.setObjectName("logEdit")
-        self.log_edit.setReadOnly(True)
-        self.log_edit.setMinimumHeight(110)
-        log_layout.addWidget(self.log_edit)
-
-        right_layout.addWidget(self.log_frame, 1)
+        right_layout.addWidget(self.execution_logs, 1)
 
     def _build_connection_card(self):
         layout = self.connection_card.main_layout
@@ -1104,15 +1076,13 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
                                stop_text="□  Abort Test")
 
     def append_log(self, message):
-        self.log_edit.append(message)
+        self.execution_logs.append_log(message)
 
     def _on_clear_log(self):
-        self.log_edit.clear()
+        self.execution_logs.clear_log()
 
     def set_progress(self, value: int):
-        value = max(0, min(100, int(value)))
-        self.progress_bar.setValue(value)
-        self.progress_text_label.setText(f"{value}% Complete")
+        self.execution_logs.set_progress(value)
 
     def get_test_config(self):
         return {

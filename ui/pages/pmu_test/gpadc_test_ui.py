@@ -9,6 +9,7 @@ GPADC测试UI组件
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLL_AREA_STYLE, START_BTN_STYLE, update_start_btn_state
 from ui.styles.button import SpinningSearchButton, update_connect_button_state
+from ui.styles.execution_logs_module_frame import ExecutionLogsFrame
 from ui.styles.n6705c_module_frame import N6705CConnectionMixin
 from ui.styles.chamber_module_frame import VT6002ConnectionMixin
 from ui.styles.serialCom_module_frame import SerialComMixin, MODE_FULL
@@ -836,39 +837,11 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
 
         chart_layout.addWidget(self.chart_placeholder, 1)
 
-        log_panel = QFrame()
-        log_panel.setObjectName("panel")
-        log_layout = QVBoxLayout(log_panel)
-        log_layout.setContentsMargins(10, 10, 10, 10)
-        log_layout.setSpacing(6)
-
-        log_title_row = QHBoxLayout()
-        log_title = QLabel("TEST LOG")
-        log_title.setObjectName("section_title")
-        self.clear_log_btn = QPushButton("Clear")
-        self.clear_log_btn.setObjectName("tool_btn")
-        self.clear_log_btn.setFixedWidth(60)
-        log_title_row.addWidget(log_title)
-        log_title_row.addStretch()
-
-        self.progress_text_label = QLabel("0% Complete")
-        self.progress_text_label.setObjectName("muted_label")
-        log_title_row.addWidget(self.progress_text_label)
-
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)
-        self.progress_bar.setTextVisible(False)
-        self.progress_bar.setFixedWidth(120)
-        log_title_row.addWidget(self.progress_bar)
-
-        log_title_row.addWidget(self.clear_log_btn)
-        log_layout.addLayout(log_title_row)
-
-        self.log_text = QTextEdit()
-        self.log_text.setReadOnly(True)
-        self.log_text.setTabStopDistance(100)
-        log_layout.addWidget(self.log_text, 1)
+        self.execution_logs = ExecutionLogsFrame(title="TEST LOG", show_progress=True)
+        self.log_text = self.execution_logs.log_edit
+        self.progress_bar = self.execution_logs.progress_bar
+        self.progress_text_label = self.execution_logs.progress_text_label
+        self.clear_log_btn = self.execution_logs.clear_log_btn
 
         right_splitter = QSplitter(Qt.Vertical)
         right_splitter.setStyleSheet("""
@@ -882,7 +855,7 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
             }
         """)
         right_splitter.addWidget(chart_panel)
-        right_splitter.addWidget(log_panel)
+        right_splitter.addWidget(self.execution_logs)
         right_splitter.setStretchFactor(0, 3)
         right_splitter.setStretchFactor(1, 2)
         right_splitter.setCollapsible(0, False)
@@ -918,7 +891,6 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
         self.start_test_btn.clicked.connect(self._on_start_or_stop)
         self.stop_test_btn.clicked.connect(self._stop_test)
         self.export_result_btn.clicked.connect(self.export_result)
-        self.clear_log_btn.clicked.connect(self.log_text.clear)
 
         self._update_data_acquisition_ui()
         self._set_test_item(self.TEST_1000CNT)
@@ -1524,15 +1496,13 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
         self.test_thread = None
 
     def _append_log(self, text):
-        self.log_text.append(text)
+        self.execution_logs.append_log(text)
 
     def append_log(self, message):
-        self._append_log(message)
+        self.execution_logs.append_log(message)
 
     def set_progress(self, value: int):
-        value = max(0, min(100, int(value)))
-        self.progress_bar.setValue(value)
-        self.progress_text_label.setText(f"{value}% Complete")
+        self.execution_logs.set_progress(value)
 
     def update_instrument_info(self, instrument_info):
         if self.is_connected:
