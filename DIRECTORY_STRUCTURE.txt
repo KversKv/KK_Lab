@@ -132,7 +132,7 @@ ui/
     ├── scrollbar.py             # 暗色主题滚动条样式 (SCROLLBAR_STYLE)
     ├── button.py                # 搜索/连接/断开按钮样式与 SpinningSearchButton 组件
     ├── start_sequence.py        # 开始按钮样式 (START_BTN_STYLE) 与状态切换工具
-    ├── n6705c_connection_frame.py    # N6705C 连接区域 Mixin (VISA 搜索/连接/断开)
+    ├── n6705c_module_frame.py        # N6705C 连接区域 Mixin (VISA 搜索/连接/断开)
     ├── oscilloscope_module_frame.py  # 示波器连接区域 Mixin (VISA 搜索/连接/断开)
     └── chamber_module_frame.py       # VT6002 温箱连接区域 Mixin (串口搜索/连接/断开)
 

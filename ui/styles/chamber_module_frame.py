@@ -1,14 +1,187 @@
+import os
 import serial
 import serial.tools.list_ports
 from PySide6.QtWidgets import (
     QHBoxLayout, QPushButton, QLabel, QSizePolicy
 )
-from PySide6.QtCore import Signal, QThread, QObject
+from PySide6.QtCore import Signal, QThread, QObject, QTimer, QRectF
+from PySide6.QtGui import QIcon, QPainter
+from PySide6.QtSvg import QSvgRenderer
 
-from ui.styles.button import SpinningSearchButton, update_connect_button_state
 from ui.widgets.dark_combobox import DarkComboBox
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockVT6002
+
+
+_ICONS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "resources", "icons"
+)
+_SEARCH_ICON_PATH = os.path.join(_ICONS_DIR, "search.svg")
+_LINK_ICON_PATH = os.path.join(_ICONS_DIR, "link.svg")
+_UNLINK_ICON_PATH = os.path.join(_ICONS_DIR, "unlink.svg")
+
+_VT6002_BTN_HEIGHT = 24
+_VT6002_BTN_ICON_SIZE = 14
+_VT6002_BTN_RADIUS = 6
+
+
+def _vt6002_search_style(h=_VT6002_BTN_HEIGHT, r=_VT6002_BTN_RADIUS):
+    return f"""
+        QPushButton {{
+            background-color: #13254b;
+            border: 1px solid #22376A;
+            border-radius: {r}px;
+            color: #dce7ff;
+            font-weight: 600;
+            min-height: {h}px;
+        }}
+        QPushButton:hover {{
+            background-color: #1C2D55;
+            border: 1px solid #3A5A9F;
+        }}
+        QPushButton:pressed {{
+            background-color: #102040;
+        }}
+        QPushButton:disabled {{
+            background-color: #0b1430;
+            color: #5c7096;
+            border: 1px solid #1a2850;
+        }}
+    """
+
+
+def _vt6002_connect_style(h=_VT6002_BTN_HEIGHT, r=_VT6002_BTN_RADIUS):
+    return f"""
+        QPushButton {{
+            background-color: #053b38;
+            border: 1px solid #08c9a5;
+            border-radius: {r}px;
+            color: #10e7bc;
+            font-weight: 700;
+            min-height: {h}px;
+        }}
+        QPushButton:hover {{
+            background-color: #064744;
+            border: 1px solid #19f0c5;
+            color: #43f3d0;
+        }}
+        QPushButton:pressed {{
+            background-color: #042f2d;
+        }}
+        QPushButton:disabled {{
+            background-color: #0D1734;
+            color: #3a4a6a;
+            border: 1px solid #18264A;
+        }}
+    """
+
+
+def _vt6002_disconnect_style(h=_VT6002_BTN_HEIGHT, r=_VT6002_BTN_RADIUS):
+    return f"""
+        QPushButton {{
+            background-color: #3a0828;
+            border: 1px solid #d61b67;
+            border-radius: {r}px;
+            color: #ffb7d3;
+            font-weight: 700;
+            min-height: {h}px;
+        }}
+        QPushButton:hover {{
+            background-color: #4a0b31;
+            border: 1px solid #f0287b;
+            color: #ffd0e2;
+        }}
+        QPushButton:pressed {{
+            background-color: #330722;
+        }}
+        QPushButton:disabled {{
+            background-color: #0D1734;
+            color: #3a4a6a;
+            border: 1px solid #18264A;
+        }}
+    """
+
+
+class _VT6002SearchButton(QPushButton):
+    def __init__(self, parent=None, icon_size=_VT6002_BTN_ICON_SIZE,
+                 btn_height=_VT6002_BTN_HEIGHT, btn_radius=_VT6002_BTN_RADIUS):
+        super().__init__(parent)
+        self._icon_size = icon_size
+        self._angle = 0.0
+        self._spinning = False
+        self._svg_renderer = None
+
+        if os.path.isfile(_SEARCH_ICON_PATH):
+            self._svg_renderer = QSvgRenderer(_SEARCH_ICON_PATH)
+
+        self._timer = QTimer(self)
+        self._timer.setInterval(30)
+        self._timer.timeout.connect(self._on_tick)
+
+        self.setText("")
+        self.setStyleSheet(_vt6002_search_style(h=btn_height, r=btn_radius))
+
+    def start_spinning(self):
+        if self._spinning:
+            return
+        self._spinning = True
+        self._angle = 0.0
+        self._timer.start()
+        self.update()
+
+    def stop_spinning(self):
+        if not self._spinning:
+            return
+        self._spinning = False
+        self._timer.stop()
+        self._angle = 0.0
+        self.update()
+
+    def _on_tick(self):
+        self._angle = (self._angle + 10.0) % 360.0
+        self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if not self._svg_renderer:
+            return
+
+        s = self._icon_size
+        cx = self.width() / 2.0
+        cy = self.height() / 2.0
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+
+        painter.translate(cx, cy)
+        if self._spinning:
+            painter.rotate(self._angle)
+        painter.translate(-s / 2.0, -s / 2.0)
+
+        self._svg_renderer.render(painter, QRectF(0, 0, s, s))
+        painter.end()
+
+
+def _update_vt6002_btn_state(btn, connected,
+                             h=_VT6002_BTN_HEIGHT, r=_VT6002_BTN_RADIUS,
+                             icon_size=_VT6002_BTN_ICON_SIZE):
+    from PySide6.QtCore import QSize as _QSize
+    if connected:
+        btn.setText("Disconnect")
+        btn.setStyleSheet(_vt6002_disconnect_style(h=h, r=r))
+        if os.path.isfile(_UNLINK_ICON_PATH):
+            btn.setIcon(QIcon(_UNLINK_ICON_PATH))
+            btn.setIconSize(_QSize(icon_size, icon_size))
+    else:
+        btn.setText("Connect")
+        btn.setStyleSheet(_vt6002_connect_style(h=h, r=r))
+        if os.path.isfile(_LINK_ICON_PATH):
+            btn.setIcon(QIcon(_LINK_ICON_PATH))
+            btn.setIconSize(_QSize(icon_size, icon_size))
+        else:
+            btn.setIcon(QIcon())
 
 
 class _SearchSerialWorker(QObject):
@@ -54,10 +227,10 @@ class VT6002ConnectionMixin:
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
 
-        self.vt6002_search_btn = SpinningSearchButton()
+        self.vt6002_search_btn = _VT6002SearchButton()
 
         self.vt6002_connect_btn = QPushButton()
-        update_connect_button_state(self.vt6002_connect_btn, connected=False)
+        _update_vt6002_btn_state(self.vt6002_connect_btn, connected=False)
 
         btn_row.addWidget(self.vt6002_search_btn)
         btn_row.addWidget(self.vt6002_connect_btn)
@@ -217,7 +390,7 @@ class VT6002ConnectionMixin:
         self.vt6002_status_label.style().unpolish(self.vt6002_status_label)
         self.vt6002_status_label.style().polish(self.vt6002_status_label)
         self.vt6002_status_label.update()
-        update_connect_button_state(self.vt6002_connect_btn, connected)
+        _update_vt6002_btn_state(self.vt6002_connect_btn, connected)
         self.vt6002_search_btn.setEnabled(not connected)
         self.vt6002_combo.setEnabled(not connected)
 

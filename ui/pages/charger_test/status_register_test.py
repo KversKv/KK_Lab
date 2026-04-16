@@ -23,7 +23,7 @@ import time
 from instruments.power.keysight.n6705c import N6705C
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockN6705C, MockVT6002
-from ui.styles.n6705c_connection_frame import N6705CConnectionMixin
+from ui.styles.n6705c_module_frame import N6705CConnectionMixin
 from ui.styles.chamber_module_frame import VT6002ConnectionMixin
 from i2c_interface_x64 import I2CInterface
 from Bes_I2CIO_Interface import I2CSpeedMode, I2CWidthFlag

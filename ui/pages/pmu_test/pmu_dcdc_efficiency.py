@@ -25,7 +25,7 @@ import time
 
 from instruments.power.keysight.n6705c import N6705C
 from ui.styles import SCROLLBAR_STYLE, START_BTN_STYLE, update_start_btn_state
-from ui.styles.n6705c_connection_frame import N6705CConnectionMixin
+from ui.styles.n6705c_module_frame import N6705CConnectionMixin
 from ui.styles.chamber_module_frame import VT6002ConnectionMixin
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockN6705C, MockVT6002

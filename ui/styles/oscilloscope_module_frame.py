@@ -1,13 +1,186 @@
+import os
 import pyvisa
 from PySide6.QtWidgets import (
     QHBoxLayout, QPushButton, QLabel, QSizePolicy
 )
-from PySide6.QtCore import Signal, QThread, QObject
+from PySide6.QtCore import Signal, QThread, QObject, QTimer, QRectF
+from PySide6.QtGui import QIcon, QPainter
+from PySide6.QtSvg import QSvgRenderer
 
-from ui.styles.button import SpinningSearchButton, update_connect_button_state
 from ui.widgets.dark_combobox import DarkComboBox
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockMSO64B
+
+
+_ICONS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "resources", "icons"
+)
+_SEARCH_ICON_PATH = os.path.join(_ICONS_DIR, "search.svg")
+_LINK_ICON_PATH = os.path.join(_ICONS_DIR, "link.svg")
+_UNLINK_ICON_PATH = os.path.join(_ICONS_DIR, "unlink.svg")
+
+_SCOPE_BTN_HEIGHT = 24
+_SCOPE_BTN_ICON_SIZE = 14
+_SCOPE_BTN_RADIUS = 6
+
+
+def _scope_search_style(h=_SCOPE_BTN_HEIGHT, r=_SCOPE_BTN_RADIUS):
+    return f"""
+        QPushButton {{
+            background-color: #13254b;
+            border: 1px solid #22376A;
+            border-radius: {r}px;
+            color: #dce7ff;
+            font-weight: 600;
+            min-height: {h}px;
+        }}
+        QPushButton:hover {{
+            background-color: #1C2D55;
+            border: 1px solid #3A5A9F;
+        }}
+        QPushButton:pressed {{
+            background-color: #102040;
+        }}
+        QPushButton:disabled {{
+            background-color: #0b1430;
+            color: #5c7096;
+            border: 1px solid #1a2850;
+        }}
+    """
+
+
+def _scope_connect_style(h=_SCOPE_BTN_HEIGHT, r=_SCOPE_BTN_RADIUS):
+    return f"""
+        QPushButton {{
+            background-color: #053b38;
+            border: 1px solid #08c9a5;
+            border-radius: {r}px;
+            color: #10e7bc;
+            font-weight: 700;
+            min-height: {h}px;
+        }}
+        QPushButton:hover {{
+            background-color: #064744;
+            border: 1px solid #19f0c5;
+            color: #43f3d0;
+        }}
+        QPushButton:pressed {{
+            background-color: #042f2d;
+        }}
+        QPushButton:disabled {{
+            background-color: #0D1734;
+            color: #3a4a6a;
+            border: 1px solid #18264A;
+        }}
+    """
+
+
+def _scope_disconnect_style(h=_SCOPE_BTN_HEIGHT, r=_SCOPE_BTN_RADIUS):
+    return f"""
+        QPushButton {{
+            background-color: #3a0828;
+            border: 1px solid #d61b67;
+            border-radius: {r}px;
+            color: #ffb7d3;
+            font-weight: 700;
+            min-height: {h}px;
+        }}
+        QPushButton:hover {{
+            background-color: #4a0b31;
+            border: 1px solid #f0287b;
+            color: #ffd0e2;
+        }}
+        QPushButton:pressed {{
+            background-color: #330722;
+        }}
+        QPushButton:disabled {{
+            background-color: #0D1734;
+            color: #3a4a6a;
+            border: 1px solid #18264A;
+        }}
+    """
+
+
+class _ScopeSearchButton(QPushButton):
+    def __init__(self, parent=None, icon_size=_SCOPE_BTN_ICON_SIZE,
+                 btn_height=_SCOPE_BTN_HEIGHT, btn_radius=_SCOPE_BTN_RADIUS):
+        super().__init__(parent)
+        self._icon_size = icon_size
+        self._angle = 0.0
+        self._spinning = False
+        self._svg_renderer = None
+
+        if os.path.isfile(_SEARCH_ICON_PATH):
+            self._svg_renderer = QSvgRenderer(_SEARCH_ICON_PATH)
+
+        self._timer = QTimer(self)
+        self._timer.setInterval(30)
+        self._timer.timeout.connect(self._on_tick)
+
+        self.setText("")
+        self.setStyleSheet(_scope_search_style(h=btn_height, r=btn_radius))
+
+    def start_spinning(self):
+        if self._spinning:
+            return
+        self._spinning = True
+        self._angle = 0.0
+        self._timer.start()
+        self.update()
+
+    def stop_spinning(self):
+        if not self._spinning:
+            return
+        self._spinning = False
+        self._timer.stop()
+        self._angle = 0.0
+        self.update()
+
+    def _on_tick(self):
+        self._angle = (self._angle + 10.0) % 360.0
+        self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if not self._svg_renderer:
+            return
+
+        s = self._icon_size
+        cx = self.width() / 2.0
+        cy = self.height() / 2.0
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+
+        painter.translate(cx, cy)
+        if self._spinning:
+            painter.rotate(self._angle)
+        painter.translate(-s / 2.0, -s / 2.0)
+
+        self._svg_renderer.render(painter, QRectF(0, 0, s, s))
+        painter.end()
+
+
+def _update_scope_btn_state(btn, connected,
+                            h=_SCOPE_BTN_HEIGHT, r=_SCOPE_BTN_RADIUS,
+                            icon_size=_SCOPE_BTN_ICON_SIZE):
+    from PySide6.QtCore import QSize as _QSize
+    if connected:
+        btn.setText("Disconnect")
+        btn.setStyleSheet(_scope_disconnect_style(h=h, r=r))
+        if os.path.isfile(_UNLINK_ICON_PATH):
+            btn.setIcon(QIcon(_UNLINK_ICON_PATH))
+            btn.setIconSize(_QSize(icon_size, icon_size))
+    else:
+        btn.setText("Connect")
+        btn.setStyleSheet(_scope_connect_style(h=h, r=r))
+        if os.path.isfile(_LINK_ICON_PATH):
+            btn.setIcon(QIcon(_LINK_ICON_PATH))
+            btn.setIconSize(_QSize(icon_size, icon_size))
+        else:
+            btn.setIcon(QIcon())
 
 
 class _SearchScopeWorker(QObject):
@@ -107,10 +280,10 @@ class OscilloscopeConnectionMixin:
         scope_row = QHBoxLayout()
         scope_row.setSpacing(8)
 
-        self.scope_search_btn = SpinningSearchButton()
+        self.scope_search_btn = _ScopeSearchButton()
 
         self.scope_connect_btn = QPushButton()
-        update_connect_button_state(self.scope_connect_btn, connected=False)
+        _update_scope_btn_state(self.scope_connect_btn, connected=False)
 
         scope_row.addWidget(self.scope_search_btn)
         scope_row.addWidget(self.scope_connect_btn)
@@ -127,7 +300,7 @@ class OscilloscopeConnectionMixin:
             self.Osc_ins = self._mso64b_top.mso64b
             self.scope_resource = self._mso64b_top.visa_resource
             self.scope_connected = True
-            update_connect_button_state(self.scope_connect_btn, True)
+            _update_scope_btn_state(self.scope_connect_btn, True)
             self.scope_search_btn.setEnabled(False)
             scope_type = getattr(self._mso64b_top, 'scope_type', 'MSO64B') or 'MSO64B'
             idx = self.scope_type_combo.findText(scope_type)
@@ -138,7 +311,7 @@ class OscilloscopeConnectionMixin:
                 self.scope_resource_combo.clear()
                 self.scope_resource_combo.addItem(self._mso64b_top.visa_resource)
         elif not self.scope_connected:
-            update_connect_button_state(self.scope_connect_btn, False)
+            _update_scope_btn_state(self.scope_connect_btn, False)
 
     def _on_mso64b_top_changed(self):
         if self._mso64b_top is None:
@@ -151,7 +324,7 @@ class OscilloscopeConnectionMixin:
             self.Osc_ins = self._mso64b_top.mso64b
             self.scope_resource = self._mso64b_top.visa_resource
             self.scope_connected = True
-            update_connect_button_state(self.scope_connect_btn, True)
+            _update_scope_btn_state(self.scope_connect_btn, True)
             self.scope_search_btn.setEnabled(False)
             scope_type = getattr(self._mso64b_top, 'scope_type', 'MSO64B') or 'MSO64B'
             idx = self.scope_type_combo.findText(scope_type)
@@ -169,7 +342,7 @@ class OscilloscopeConnectionMixin:
             self.Osc_ins = None
             self.scope_resource = None
             self.scope_connected = False
-            update_connect_button_state(self.scope_connect_btn, False)
+            _update_scope_btn_state(self.scope_connect_btn, False)
             self.scope_type_combo.setEnabled(True)
             self.scope_search_btn.setEnabled(True)
             if hasattr(self, 'append_log'):
@@ -247,7 +420,7 @@ class OscilloscopeConnectionMixin:
         if DEBUG_MOCK:
             self.Osc_ins = MockMSO64B()
             self.scope_connected = True
-            update_connect_button_state(self.scope_connect_btn, True)
+            _update_scope_btn_state(self.scope_connect_btn, True)
             self.scope_search_btn.setEnabled(False)
             if hasattr(self, 'append_log'):
                 self.append_log("[DEBUG] Mock scope connected.")
@@ -297,7 +470,7 @@ class OscilloscopeConnectionMixin:
         self.Osc_ins = result["osc"]
         self.scope_resource = result["resource"]
         self.scope_connected = True
-        update_connect_button_state(self.scope_connect_btn, True)
+        _update_scope_btn_state(self.scope_connect_btn, True)
         self.scope_type_combo.setEnabled(False)
         self.scope_search_btn.setEnabled(False)
         if hasattr(self, 'append_log'):
@@ -350,7 +523,7 @@ class OscilloscopeConnectionMixin:
 
         self.scope_resource = None
         self.scope_connected = False
-        update_connect_button_state(self.scope_connect_btn, False)
+        _update_scope_btn_state(self.scope_connect_btn, False)
         self.scope_type_combo.setEnabled(True)
         self.scope_search_btn.setEnabled(True)
         if hasattr(self, 'append_log'):
