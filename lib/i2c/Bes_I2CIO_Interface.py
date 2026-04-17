@@ -1,4 +1,5 @@
 import abc
+import contextlib
 import ctypes
 import enum
 import threading
@@ -186,11 +187,23 @@ class BESI2CIO(II2CIO):
     # 类变量，用于线程安全
     _lock: ClassVar[threading.RLock] = threading.RLock()
     
-    # DLL文件名列表，按优先级排序
     _DLL_NAMES: ClassVar[List[str]] = [
         "BES_USBIO_I2C_X64.dll",  # 64位版本
         "BES_USBIO_I2C.dll",     # 32位版本
     ]
+
+    @staticmethod
+    @contextlib.contextmanager
+    def _suppress_stdout():
+        devnull_fd = os.open(os.devnull, os.O_WRONLY)
+        old_stdout_fd = os.dup(1)
+        try:
+            os.dup2(devnull_fd, 1)
+            yield
+        finally:
+            os.dup2(old_stdout_fd, 1)
+            os.close(old_stdout_fd)
+            os.close(devnull_fd)
     
     @classmethod
     def _find_dll(cls) -> Optional[str]:
@@ -211,16 +224,18 @@ class BESI2CIO(II2CIO):
         
         return None
     
-    def __init__(self, dll_path: Optional[str] = None):
+    def __init__(self, dll_path: Optional[str] = None, verbose: bool = False):
         """
         初始化I2C接口。
         
         Args:
             dll_path: 动态库路径，如果为None，则在当前脚本所在目录下查找
+            verbose: 是否显示DLL内部的调试输出，默认为False（静默）
             
         Raises:
             OSError: 加载动态库失败时
         """
+        self._verbose = verbose
         try:
             # 优先使用传入的DLL路径
             if dll_path is None:
@@ -343,13 +358,15 @@ class BESI2CIO(II2CIO):
         read_data = ctypes.c_uint(0)
         
         with self._lock:
-            status = self._dll.BES_I2C_IO_Read(
-                ctypes.c_uint(speed_mode),
-                ctypes.c_uint(device_address),
-                ctypes.c_uint(register_address),
-                ctypes.byref(read_data),
-                ctypes.c_int(width_flag)
-            )
+            ctx = contextlib.nullcontext() if self._verbose else self._suppress_stdout()
+            with ctx:
+                status = self._dll.BES_I2C_IO_Read(
+                    ctypes.c_uint(speed_mode),
+                    ctypes.c_uint(device_address),
+                    ctypes.c_uint(register_address),
+                    ctypes.byref(read_data),
+                    ctypes.c_int(width_flag)
+                )
             self._handle_status(status)
         
         return read_data.value
@@ -380,15 +397,17 @@ class BESI2CIO(II2CIO):
             I2CParameterError: 参数无效时
         """
         with self._lock:
-            status = self._dll.BES_I2C_IO_Write(
-                ctypes.c_uint(speed_mode),
-                ctypes.c_uint(device_address),
-                ctypes.c_uint(register_address),
-                ctypes.c_uint(write_data),
-                ctypes.c_int(width_flag),
-                ctypes.c_int(high_bit),
-                ctypes.c_int(low_bit)
-            )
+            ctx = contextlib.nullcontext() if self._verbose else self._suppress_stdout()
+            with ctx:
+                status = self._dll.BES_I2C_IO_Write(
+                    ctypes.c_uint(speed_mode),
+                    ctypes.c_uint(device_address),
+                    ctypes.c_uint(register_address),
+                    ctypes.c_uint(write_data),
+                    ctypes.c_int(width_flag),
+                    ctypes.c_int(high_bit),
+                    ctypes.c_int(low_bit)
+                )
             self._handle_status(status)
     
     def read_data(self, 
@@ -418,13 +437,15 @@ class BESI2CIO(II2CIO):
         read_data = ctypes.c_uint(0)
         
         with self._lock:
-            status = self._dll.BES_I2C_IO_ReadData(
-                ctypes.c_uint(speed_mode),
-                ctypes.c_uint(device_address),
-                ctypes.c_uint(register_address),
-                ctypes.byref(read_data),
-                ctypes.c_int(width_flag)
-            )
+            ctx = contextlib.nullcontext() if self._verbose else self._suppress_stdout()
+            with ctx:
+                status = self._dll.BES_I2C_IO_ReadData(
+                    ctypes.c_uint(speed_mode),
+                    ctypes.c_uint(device_address),
+                    ctypes.c_uint(register_address),
+                    ctypes.byref(read_data),
+                    ctypes.c_int(width_flag)
+                )
             self._handle_status(status)
         
         return read_data.value
@@ -457,29 +478,29 @@ class BESI2CIO(II2CIO):
             I2CParameterError: 参数无效时
         """
         with self._lock:
-            status = self._dll.BES_I2C_IO_WriteData(
-                ctypes.c_uint(speed_mode),
-                ctypes.c_uint(device_address),
-                ctypes.c_uint(register_address),
-                ctypes.c_uint(write_data),
-                ctypes.c_int(width_flag),
-                ctypes.c_int(high_bit),
-                ctypes.c_int(low_bit)
-            )
+            ctx = contextlib.nullcontext() if self._verbose else self._suppress_stdout()
+            with ctx:
+                status = self._dll.BES_I2C_IO_WriteData(
+                    ctypes.c_uint(speed_mode),
+                    ctypes.c_uint(device_address),
+                    ctypes.c_uint(register_address),
+                    ctypes.c_uint(write_data),
+                    ctypes.c_int(width_flag),
+                    ctypes.c_int(high_bit),
+                    ctypes.c_int(low_bit)
+                )
             self._handle_status(status)
 
 
 # 示例用法
 if __name__ == "__main__":
     import logging
-    logging.basicConfig(level=logging.DEBUG, format="[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s")
+    logging.basicConfig(level=logging.INFO, format="[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s")
     _logger = logging.getLogger(__name__)
     try:
-        #创建当前脚本所在目录
-        from utils.g_vars import HOME_DIR
-        script_dir = str(HOME_DIR / "config" / "i2c_dll" / "BES_USBIO_I2C_X64.dll")
-        # 创建I2C接口对象，不指定DLL路径，自动在脚本所在目录下查找
-        i2c = BESI2CIO(script_dir)
+        from pathlib import Path
+        dll_path = str(Path(__file__).resolve().parent / "config" / "BES_USBIO_I2C_X64.dll")
+        i2c = BESI2CIO(dll_path)
         
         # 读取示例
         device_addr = 0x50  # 设备地址
