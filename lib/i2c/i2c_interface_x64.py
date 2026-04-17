@@ -187,13 +187,13 @@ class I2CInterface:
         try:
             return self.read(device_addr, reg_addr, width_flag)
         except (I2CError, Exception) as e:
-            logger.debug("读取失败 device=0x%02X reg=0x%08X width=%s: %s",
+            logger.debug("读取失败 device=0x%02X reg=0x%X width=%s: %s",
                          device_addr, reg_addr, width_flag, e)
             return None
 
     @staticmethod
     def _is_valid_i2c_value(val):
-        return val is not None and val != 0xFFFF and val != 0xFFFFFFFF
+        return val is not None and val not in (0x0000, 0xFFFF, 0xFFFFFFFF)
 
     @staticmethod
     def _version_letter(ver_num):
@@ -342,21 +342,21 @@ class I2CInterface:
             main_die = "BES%s" % model
             main_die_version = "ver%s" % self._version_letter(ver_byte)
             main_die_i2c_width = 32
-            main_die_i2c_addr = 0x11
+            main_die_i2c_addr = "0x%02X" % 0x11
 
         if self._is_valid_i2c_value(val_0x27_10bit):
             main_die_pmu_i2c_width = 10
-            main_die_pmu_i2c_addr = 0x27
+            main_die_pmu_i2c_addr = "0x%02X" % 0x27
             main_die_pmu = "BES%X" % val_0x27_10bit
         elif self._is_valid_i2c_value(val_0x27_8bit):
             main_die_pmu_i2c_width = 8
-            main_die_pmu_i2c_addr = 0x27
+            main_die_pmu_i2c_addr = "0x%02X" % 0x27
             main_die_pmu = "BES%X" % val_0x27_8bit
 
         if self._is_valid_i2c_value(val_0x17_10bit):
             has_pmu = True
             pmu_i2c_width = 10
-            pmu_i2c_addr = 0x17
+            pmu_i2c_addr = "0x%02X" % 0x17
             pmu_model, pmu_ver, is_newgen = self._parse_pmu_id(val_0x17_10bit)
             if is_newgen:
                 ext_val = self._safe_read(0x17, 0x0001, I2CWidthFlag.BIT_10)
@@ -370,7 +370,7 @@ class I2CInterface:
         elif self._is_valid_i2c_value(val_0x17_8bit):
             has_pmu = True
             pmu_i2c_width = 8
-            pmu_i2c_addr = 0x17
+            pmu_i2c_addr = "0x%02X" % 0x17
             pmu_model, pmu_ver, is_newgen = self._parse_pmu_id(val_0x17_8bit)
             if is_newgen:
                 ext_val = self._safe_read(0x17, 0x0001, I2CWidthFlag.BIT_8)
@@ -381,6 +381,20 @@ class I2CInterface:
                     pmu_model = self._parse_newgen_pmu_ext(prefix_hex, ext_val)
             pmu = "PMU%s" % pmu_model
             pmu_version = "ver%s" % self._version_letter(pmu_ver)
+
+        all_raw_values = [val_0x27_8bit, val_0x27_10bit, val_0x17_8bit,
+                          val_0x17_10bit, val_0x11_32bit]
+        all_zero = all(v is not None and v == 0 for v in all_raw_values)
+        pmu_readable = (main_die_pmu is not None or has_pmu)
+        main_die_unreadable = (main_die is None)
+
+        warning = None
+        if all_zero:
+            warning = "检测异常: 所有模块读取值为0, 请确认I2C连接和是否打开I2C功能"
+            logger.warning(warning)
+        elif pmu_readable and main_die_unreadable:
+            warning = "Main-die(0x11)无法读取, 请确认芯片已开机并处于非休眠状态"
+            logger.warning(warning)
 
         result = {
             "chip_name": chip_name,
@@ -397,6 +411,7 @@ class I2CInterface:
             "pmu_version": pmu_version,
             "pmu_i2c_width": pmu_i2c_width,
             "pmu_i2c_addr": pmu_i2c_addr,
+            "warning": warning,
         }
 
         logger.debug("bes_chip_check 检测结果:")
@@ -404,19 +419,17 @@ class I2CInterface:
         logger.debug("  main_die: %s", result["main_die"])
         logger.debug("  main_die_version: %s", result["main_die_version"])
         logger.debug("  main_die_i2c_width: %s", result["main_die_i2c_width"])
-        logger.debug("  main_die_i2c_addr: %s",
-                      "0x%02X" % result["main_die_i2c_addr"] if result["main_die_i2c_addr"] is not None else "None")
+        logger.debug("  main_die_i2c_addr: %s", result["main_die_i2c_addr"])
         logger.debug("  main_die_pmu: %s", result["main_die_pmu"])
         logger.debug("  main_die_pmu_version: %s", result["main_die_pmu_version"])
         logger.debug("  main_die_pmu_i2c_width: %s", result["main_die_pmu_i2c_width"])
-        logger.debug("  main_die_pmu_i2c_addr: %s",
-                      "0x%02X" % result["main_die_pmu_i2c_addr"] if result["main_die_pmu_i2c_addr"] is not None else "None")
+        logger.debug("  main_die_pmu_i2c_addr: %s", result["main_die_pmu_i2c_addr"])
         logger.debug("  has_pmu: %s", result["has_pmu"])
         logger.debug("  pmu: %s", result["pmu"])
         logger.debug("  pmu_version: %s", result["pmu_version"])
         logger.debug("  pmu_i2c_width: %s", result["pmu_i2c_width"])
-        logger.debug("  pmu_i2c_addr: %s",
-                      "0x%02X" % result["pmu_i2c_addr"] if result["pmu_i2c_addr"] is not None else "None")
+        logger.debug("  pmu_i2c_addr: %s", result["pmu_i2c_addr"])
+        logger.debug("  warning: %s", result["warning"])
 
         return result
 

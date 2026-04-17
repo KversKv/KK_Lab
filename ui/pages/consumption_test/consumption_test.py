@@ -1328,16 +1328,17 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
     def _on_chip_check_finished(self, chip_info):
         self.chip_check_btn.setEnabled(True)
 
-        def _fmt_addr(v):
-            return "0x%02X" % v if v is not None else "N/A"
-
         self.append_log(
             f"[CHIP_CHECK] chip={chip_info.get('chip_name') or 'N/A'}"
-            f"  main_die={chip_info.get('main_die') or 'N/A'}(addr={_fmt_addr(chip_info.get('main_die_i2c_addr'))}, {chip_info.get('main_die_i2c_width') or 'N/A'}bit)"
-            f"  main_die_pmu={chip_info.get('main_die_pmu') or 'N/A'}(addr={_fmt_addr(chip_info.get('main_die_pmu_i2c_addr'))}, {chip_info.get('main_die_pmu_i2c_width') or 'N/A'}bit)"
+            f"  main_die={chip_info.get('main_die') or 'N/A'}({chip_info.get('main_die_version') or '?'}, addr={chip_info.get('main_die_i2c_addr') or 'N/A'}, {chip_info.get('main_die_i2c_width') or 'N/A'}bit)"
+            f"  main_die_pmu={chip_info.get('main_die_pmu') or 'N/A'}(addr={chip_info.get('main_die_pmu_i2c_addr') or 'N/A'}, {chip_info.get('main_die_pmu_i2c_width') or 'N/A'}bit)"
             f"  has_pmu={chip_info.get('has_pmu', False)}"
-            f"  pmu={chip_info.get('pmu') or 'N/A'}(addr={_fmt_addr(chip_info.get('pmu_i2c_addr'))}, {chip_info.get('pmu_i2c_width') or 'N/A'}bit)"
+            f"  pmu={chip_info.get('pmu') or 'N/A'}({chip_info.get('pmu_version') or '?'}, addr={chip_info.get('pmu_i2c_addr') or 'N/A'}, {chip_info.get('pmu_i2c_width') or 'N/A'}bit)"
         )
+
+        warning = chip_info.get("warning")
+        if warning:
+            self.append_log(f"[CHIP_CHECK] ⚠ {warning}")
 
         detected_name = chip_info.get("chip_name")
         if not detected_name:
@@ -1449,23 +1450,51 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
     def _compare_chip_info(self, detected, config):
         compare_keys = [
-            "chip_name", "main_die", "main_die_i2c_width", "main_die_i2c_addr",
-            "main_die_pmu", "main_die_pmu_i2c_width", "main_die_pmu_i2c_addr",
-            "has_pmu", "pmu", "pmu_i2c_width", "pmu_i2c_addr",
+            "chip_name", "main_die", "main_die_version",
+            "main_die_i2c_width", "main_die_i2c_addr",
+            "main_die_pmu", "main_die_pmu_version",
+            "main_die_pmu_i2c_width", "main_die_pmu_i2c_addr",
+            "has_pmu", "pmu", "pmu_version", "pmu_i2c_width", "pmu_i2c_addr",
         ]
         for key in compare_keys:
             det_val = detected.get(key)
             cfg_val = config.get(key)
             if cfg_val in (None, "", {}):
                 continue
-            if det_val != cfg_val:
-                logger.warning(
-                    "Chip info mismatch [%s]: detected=%s, config=%s",
-                    key, det_val, cfg_val
-                )
-                self.append_log(
-                    f"[WARNING] Chip info mismatch [{key}]: detected={det_val}, config={cfg_val}"
-                )
+            if self._chip_values_equal(det_val, cfg_val):
+                continue
+            logger.warning(
+                "Chip info mismatch [%s]: detected=%s, config=%s",
+                key, det_val, cfg_val
+            )
+            self.append_log(
+                f"[WARNING] Chip info mismatch [{key}]: detected={det_val}, config={cfg_val}"
+            )
+
+    @staticmethod
+    def _chip_values_equal(a, b):
+        if a == b:
+            return True
+        if a is None or b is None:
+            return False
+        str_a = str(a).strip().lower()
+        str_b = str(b).strip().lower()
+        if str_a == str_b:
+            return True
+        try:
+            return int(str_a, 0) == int(str_b, 0)
+        except (ValueError, TypeError):
+            pass
+        if isinstance(a, bool) or isinstance(b, bool):
+            truthy = {"true", "1", "yes"}
+            falsy = {"false", "0", "no", ""}
+            a_bool = str_a in truthy
+            b_bool = str_b in truthy
+            a_is_bool = str_a in truthy or str_a in falsy
+            b_is_bool = str_b in truthy or str_b in falsy
+            if a_is_bool and b_is_bool:
+                return a_bool == b_bool
+        return False
 
     @staticmethod
     def _parse_config_commands(text):
@@ -1543,24 +1572,34 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
         return commands
 
+    @staticmethod
+    def _to_int_addr(addr):
+        if addr is None:
+            return None
+        if isinstance(addr, int):
+            return addr
+        if isinstance(addr, str):
+            return int(addr, 0)
+        return None
+
     def _resolve_device(self, chip_info, target):
         if target == "DUT":
-            addr = chip_info.get("main_die_i2c_addr")
+            addr = self._to_int_addr(chip_info.get("main_die_i2c_addr"))
             width = chip_info.get("main_die_i2c_width")
             return addr, width
         if target == "EXT_PMU":
-            addr = chip_info.get("pmu_i2c_addr")
+            addr = self._to_int_addr(chip_info.get("pmu_i2c_addr"))
             width = chip_info.get("pmu_i2c_width")
             return addr, width
         if target in ("PMU", "MAIN_DIE_PMU"):
-            addr = chip_info.get("main_die_pmu_i2c_addr")
+            addr = self._to_int_addr(chip_info.get("main_die_pmu_i2c_addr"))
             width = chip_info.get("main_die_pmu_i2c_width")
             return addr, width
         if chip_info.get("has_pmu") and chip_info.get("pmu_i2c_addr"):
-            addr = chip_info.get("pmu_i2c_addr")
+            addr = self._to_int_addr(chip_info.get("pmu_i2c_addr"))
             width = chip_info.get("pmu_i2c_width")
         else:
-            addr = chip_info.get("main_die_pmu_i2c_addr")
+            addr = self._to_int_addr(chip_info.get("main_die_pmu_i2c_addr"))
             width = chip_info.get("main_die_pmu_i2c_width")
         return addr, width
 

@@ -41,11 +41,18 @@ SUPPORTED_CHIPS = [
     "bes2300a",
     "bes2300p",
     "bes3601p",
+    "pmu_1806p",
+    "pmu_1810",
+    "pmu_1810p",
+    "pmu_1813",
 ]
 
 
 def get_chip_config(chip_name):
-    module_name = f"chips.bes_chip_configs.{chip_name}"
+    if chip_name.startswith("pmu_"):
+        module_name = f"chips.bes_chip_configs.pmu_chips.{chip_name}"
+    else:
+        module_name = f"chips.bes_chip_configs.main_chips.{chip_name}"
     try:
         mod = importlib.import_module(module_name)
         return mod.CHIP_CONFIG
