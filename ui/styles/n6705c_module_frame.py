@@ -225,8 +225,11 @@ _INLINE_ROW_TAG_COLORS = {
 def build_n6705c_inline_row(label, parent=None,
                            btn_height=N6705C_BTN_HEIGHT,
                            btn_radius=N6705C_BTN_RADIUS,
-                           btn_icon_size=N6705C_BTN_ICON_SIZE):
+                           btn_icon_size=N6705C_BTN_ICON_SIZE,
+                           row_height=None,
+                           default_resource=None):
     tag_color = _INLINE_ROW_TAG_COLORS.get(label, "#00f5c4")
+    h = row_height if row_height is not None else btn_height
 
     row = QHBoxLayout()
     row.setSpacing(10)
@@ -242,6 +245,7 @@ def build_n6705c_inline_row(label, parent=None,
     row.addWidget(tag, 0, Qt.AlignVCenter)
 
     status_label = QLabel("● Disconnected")
+    status_label.setFixedWidth(120)
     status_label.setStyleSheet("color: #8ea6cf; font-weight: bold; background: transparent; border: none;")
     row.addWidget(status_label, 0, Qt.AlignVCenter)
 
@@ -250,13 +254,17 @@ def build_n6705c_inline_row(label, parent=None,
     visa_combo.setSizeAdjustPolicy(DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
     visa_combo.setMinimumContentsLength(10)
     visa_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-    visa_combo.addItem(DEFAULT_VISA_RESOURCE)
+    visa_combo.setFixedHeight(h)
+    visa_combo.addItem(default_resource if default_resource else DEFAULT_VISA_RESOURCE)
     row.addWidget(visa_combo, 1, Qt.AlignVCenter)
 
     search_btn = SpinningSearchButton(parent=parent)
+    search_btn.setFixedHeight(h)
     row.addWidget(search_btn, 0, Qt.AlignVCenter)
 
     connect_btn = QPushButton()
+    connect_btn.setFixedHeight(h)
+    connect_btn.setFixedWidth(110)
     update_connect_button_state(connect_btn, connected=False)
     row.addWidget(connect_btn, 0, Qt.AlignVCenter)
 

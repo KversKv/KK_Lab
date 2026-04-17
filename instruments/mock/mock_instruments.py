@@ -183,9 +183,12 @@ class MockN6705C:
         return {ch: 0.001 for ch in channels}
 
     def fetch_current_by_datalog(self, channels, test_time, sample_period,
-                                 marker1_percent=10, marker2_percent=90):
+                                 marker1_percent=10, marker2_percent=90,
+                                 on_progress=None, stop_check=None):
         if isinstance(channels, int):
             channels = [channels]
+        if on_progress:
+            on_progress(1.0)
         return {ch: 0.001 for ch in channels}
 
     def fetch_by_datalog(self, curr_channels, volt_channels, test_time, sample_period):
@@ -199,6 +202,41 @@ class MockN6705C:
             volt_channels = [volt_channels]
         curr_result = {ch: float(self.measure_current(ch)) for ch in curr_channels}
         volt_result = {ch: float(self.measure_voltage(ch)) for ch in volt_channels}
+        return curr_result, volt_result
+
+    def prepare_force_high(self, channels, voltage_offset, current_limit,
+                           monitor_channels=None):
+        if isinstance(channels, int):
+            channels = [channels]
+        return {ch: float(self.measure_voltage(ch)) for ch in channels}
+
+    def configure_datalog(self, channels, test_time, sample_period):
+        pass
+
+    def start_datalog(self, dlog_file="internal:\\temp_fetch.dlog"):
+        pass
+
+    def fetch_datalog_marker_results(self, channels, test_time):
+        if isinstance(channels, int):
+            channels = [channels]
+        return {ch: abs(float(self.measure_current(ch))) for ch in channels}
+
+    def restore_channels_to_vmeter(self, channels):
+        pass
+
+    def force_high_and_measure(self, channels, voltage_offset, current_limit, test_time, sample_period,
+                               on_progress=None, stop_check=None, monitor_channels=None):
+        if isinstance(channels, int):
+            channels = [channels]
+        if monitor_channels is None:
+            monitor_channels = []
+        elif isinstance(monitor_channels, int):
+            monitor_channels = [monitor_channels]
+        all_ch = list(channels) + [ch for ch in monitor_channels if ch not in channels]
+        if on_progress:
+            on_progress(1.0)
+        curr_result = {ch: abs(float(self.measure_current(ch))) for ch in all_ch}
+        volt_result = {ch: float(self.measure_voltage(ch)) for ch in channels}
         return curr_result, volt_result
 
 

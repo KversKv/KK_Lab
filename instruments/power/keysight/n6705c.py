@@ -310,6 +310,25 @@ class N6705C:
     def _channel_list_str(self, channels):
         return ",".join(str(ch) for ch in channels)
 
+    @staticmethod
+    def _interruptible_sleep(duration, on_progress=None, stop_check=None,
+                             progress_start=0.0, progress_end=1.0):
+        if duration <= 0:
+            if on_progress:
+                on_progress(progress_end)
+            return
+        interval = 0.5
+        elapsed = 0.0
+        while elapsed < duration:
+            if stop_check and stop_check():
+                return
+            step = min(interval, duration - elapsed)
+            time.sleep(step)
+            elapsed += step
+            if on_progress:
+                frac = min(elapsed / duration, 1.0)
+                on_progress(progress_start + frac * (progress_end - progress_start))
+
     def get_average_current(self, channels, duration):
         """
         获取指定通道一段时间内的平均电流（使用Data Logger功能）
@@ -437,7 +456,8 @@ class N6705C:
             return {ch: self.fetch_current(ch) for ch in channels}
 
     def fetch_current_by_datalog(self, channels, test_time, sample_period,
-                             marker1_percent=10, marker2_percent=90):
+                             marker1_percent=10, marker2_percent=90,
+                             on_progress=None, stop_check=None):
         """
         使用N6705C Datalog功能，并直接读取仪器Marker之间的平均电流
 
@@ -447,6 +467,8 @@ class N6705C:
             sample_period (float): 采样周期(s)
             marker1_percent (int): marker1位置(0~100)
             marker2_percent (int): marker2位置(0~100)
+            on_progress (callable|None): 进度回调 on_progress(frac), frac 0.0~1.0
+            stop_check (callable|None): 返回 True 时中止
 
         返回:
             dict[int, float]: {通道号: marker之间平均电流}
@@ -476,13 +498,22 @@ class N6705C:
             dlog_file = "internal:\\temp_fetch.dlog"
             self.instr.write(f'INIT:DLOG "{dlog_file}"')
 
-            time.sleep(test_time + 1)
+            total_wait = test_time + 1
+            dlog_weight = total_wait / (total_wait + 3.0)
+            self._interruptible_sleep(
+                total_wait, on_progress, stop_check,
+                progress_start=0.0, progress_end=dlog_weight
+            )
 
             marker1_point = 1
             marker2_point = test_time - 1
             self.instr.write(f"SENS:DLOG:MARK1:POIN {marker1_point}")
             self.instr.write(f"SENS:DLOG:MARK2:POIN {marker2_point}")
-            time.sleep(2)
+
+            self._interruptible_sleep(
+                2, on_progress, stop_check,
+                progress_start=dlog_weight, progress_end=dlog_weight + 2.0 / (total_wait + 3.0)
+            )
 
             result = {}
             for ch in channels:
@@ -490,6 +521,9 @@ class N6705C:
                     self.instr.query(f"FETC:DLOG:CURR? (@{ch})")
                 )
                 result[ch] = avg_current
+
+            if on_progress:
+                on_progress(1.0)
 
             return result
 
@@ -577,6 +611,153 @@ class N6705C:
                 except Exception:
                     volt_result[ch] = 0.0
             return curr_result, volt_result
+
+    def prepare_force_high(self, channels, voltage_offset, current_limit,
+                           monitor_channels=None):
+        channels = self._normalize_channels(channels)
+        if monitor_channels is None:
+            monitor_channels = []
+        elif isinstance(monitor_channels, int):
+            monitor_channels = [monitor_channels]
+        else:
+            monitor_channels = list(monitor_channels)
+
+        for ch in channels:
+            self.set_mode(ch, "VMETer")
+            self.channel_on(ch)
+
+        time.sleep(0.5)
+
+        measured_voltages = {}
+        for ch in channels:
+            measured_voltages[ch] = float(self.measure_voltage(ch))
+
+        for ch in channels:
+            new_v = measured_voltages[ch] + voltage_offset
+            self.set_mode(ch, "PS2Q")
+            self.set_voltage(ch, new_v)
+            self.set_current_limit(ch, current_limit)
+            self.channel_on(ch)
+
+        time.sleep(0.5)
+        return measured_voltages
+
+    def configure_datalog(self, channels, test_time, sample_period):
+        channels = self._normalize_channels(channels)
+        self.instr.write("*CLS")
+        try:
+            self.instr.write("ABOR:DLOG")
+        except Exception:
+            pass
+        for ch in range(1, 5):
+            self.instr.write(f"SENS:DLOG:FUNC:CURR OFF,(@{ch})")
+        for ch in channels:
+            self.instr.write(f"SENS:DLOG:FUNC:CURR ON,(@{ch})")
+            self.instr.write(f"SENS:DLOG:CURR:RANG:AUTO ON,(@{ch})")
+        self.instr.write(f"SENS:DLOG:TIME {test_time}")
+        self.instr.write(f"SENS:DLOG:PER {sample_period}")
+        self.instr.write("TRIG:DLOG:SOUR IMM")
+        for ch in channels:
+            self.channel_on(ch)
+
+    def start_datalog(self, dlog_file="internal:\\temp_fetch.dlog"):
+        self.instr.write(f'INIT:DLOG "{dlog_file}"')
+
+    def fetch_datalog_marker_results(self, channels, test_time):
+        channels = self._normalize_channels(channels)
+        marker1_point = 1
+        marker2_point = test_time - 1
+        self.instr.write(f"SENS:DLOG:MARK1:POIN {marker1_point}")
+        self.instr.write(f"SENS:DLOG:MARK2:POIN {marker2_point}")
+        time.sleep(2)
+        result = {}
+        for ch in channels:
+            avg_current = float(
+                self.instr.query(f"FETC:DLOG:CURR? (@{ch})")
+            )
+            result[ch] = avg_current
+        return result
+
+    def restore_channels_to_vmeter(self, channels):
+        channels = self._normalize_channels(channels)
+        for ch in channels:
+            try:
+                self.set_mode(ch, "VMETer")
+                self.channel_on(ch)
+            except Exception:
+                pass
+
+    def force_high_and_measure(self, channels, voltage_offset, current_limit, test_time, sample_period,
+                               on_progress=None, stop_check=None, monitor_channels=None):
+        channels = self._normalize_channels(channels)
+        if monitor_channels is None:
+            monitor_channels = []
+        elif isinstance(monitor_channels, int):
+            monitor_channels = [monitor_channels]
+        else:
+            monitor_channels = list(monitor_channels)
+        all_datalog_channels = list(channels) + [ch for ch in monitor_channels if ch not in channels]
+        original_modes = {}
+        original_voltages = {}
+
+        setup_time = 1.0
+        datalog_est = test_time + 4.0
+        total_est = setup_time + datalog_est
+        if total_est <= 0:
+            total_est = 1.0
+
+        def _sub_progress(frac):
+            if on_progress:
+                on_progress((setup_time + frac * datalog_est) / total_est)
+
+        try:
+            for ch in channels:
+                original_modes[ch] = self.get_mode(ch)
+                self.set_mode(ch, "VMETer")
+                self.channel_on(ch)
+
+            self._interruptible_sleep(0.5, on_progress, stop_check,
+                                      progress_start=0.0, progress_end=0.25 * setup_time / total_est)
+
+            measured_voltages = {}
+            for ch in channels:
+                measured_voltages[ch] = float(self.measure_voltage(ch))
+
+            for ch in channels:
+                new_v = measured_voltages[ch] + voltage_offset
+                original_voltages[ch] = new_v
+                self.set_mode(ch, "PS2Q")
+                self.set_voltage(ch, new_v)
+                self.set_current_limit(ch, current_limit)
+                self.channel_on(ch)
+
+            self._interruptible_sleep(0.5, on_progress, stop_check,
+                                      progress_start=0.5 * setup_time / total_est,
+                                      progress_end=setup_time / total_est)
+
+            curr_result = self.fetch_current_by_datalog(
+                all_datalog_channels, test_time, sample_period,
+                on_progress=_sub_progress, stop_check=stop_check,
+            )
+
+            for ch in channels:
+                self.set_mode(ch, "VMETer")
+                self.channel_on(ch)
+
+            if on_progress:
+                on_progress(1.0)
+
+            return curr_result, measured_voltages
+
+        except Exception as e:
+            logger.error("Error in force_high_and_measure: %s", e)
+            for ch in channels:
+                try:
+                    self.set_mode(ch, "VMETer")
+                    self.channel_on(ch)
+                except Exception:
+                    pass
+            raise
 
 
 if __name__ == "__main__":

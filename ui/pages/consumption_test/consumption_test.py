@@ -235,6 +235,302 @@ class _ConsumptionTestWorker(QObject):
             self.finished.emit()
 
 
+class _ConsumptionTestForceHighWorker(QObject):
+    log_message = Signal(str)
+    channel_result = Signal(str, int, float, str)
+    test_summary = Signal(dict)
+    progress = Signal(float)
+    finished = Signal()
+    error = Signal(str)
+
+    def __init__(self, vbat_device_label, vbat_inst, vbat_hw_ch,
+                 force_high_map, test_time, sample_period,
+                 channel_names=None):
+        super().__init__()
+        self.vbat_device_label = vbat_device_label
+        self.vbat_inst = vbat_inst
+        self.vbat_hw_ch = vbat_hw_ch
+        self.force_high_map = force_high_map
+        self.test_time = test_time
+        self.sample_period = sample_period
+        self.channel_names = channel_names or {}
+        self._is_stopped = False
+
+    def stop(self):
+        self._is_stopped = True
+
+    def run(self):
+        try:
+            self._consumption_test_force_high()
+        except Exception as e:
+            self.error.emit(str(e))
+        finally:
+            self.finished.emit()
+
+    @staticmethod
+    def _estimate_datalog_time(test_time):
+        return test_time + 4.0
+
+    @staticmethod
+    def _estimate_force_high_time(test_time):
+        return test_time + 5.0
+
+    def _make_sub_progress(self, base, span, total_est):
+        def _on_progress(frac):
+            self.progress.emit(min((base + frac * span) / total_est, 1.0))
+        return _on_progress
+
+    def _consumption_test_force_high(self):
+        import threading
+
+        vbat_ch = self.vbat_hw_ch
+        vbat_inst = self.vbat_inst
+        vbat_label = self.vbat_device_label
+
+        setup_time = 1.0
+        step1_time = self._estimate_datalog_time(self.test_time)
+        step2_time = self._estimate_force_high_time(self.test_time)
+
+        total_est = setup_time + step1_time + step2_time
+        if total_est <= 0:
+            total_est = 1.0
+
+        cursor = 0.0
+        self.progress.emit(0.0)
+        stop_check = lambda: self._is_stopped
+
+        results = {}
+        vbat_remain = None
+
+        self.log_message.emit("[TEST] Resetting sub-channels to VMeter mode...")
+        for device_label, (n6705c_inst, hw_channels) in self.force_high_map.items():
+            for ch in hw_channels:
+                try:
+                    n6705c_inst.set_mode(ch, "VMETer")
+                    n6705c_inst.channel_on(ch)
+                except Exception as e:
+                    self.log_message.emit(f"[WARNING] Failed to set {device_label}-CH{ch} to VMeter: {e}")
+        cursor = setup_time
+        self.progress.emit(cursor / total_est)
+
+        self.log_message.emit(f"[TEST] Measuring Vbat (CH{vbat_ch}) total current...")
+        vbat_period = self.sample_period
+        vbat_result = vbat_inst.fetch_current_by_datalog(
+            [vbat_ch], self.test_time, vbat_period,
+            on_progress=self._make_sub_progress(cursor, step1_time, total_est),
+            stop_check=stop_check,
+        )
+        cursor += step1_time
+        self.progress.emit(min(cursor / total_est, 1.0))
+        if self._is_stopped:
+            return
+        vbat_current = vbat_result.get(vbat_ch, 0.0)
+        self.channel_result.emit(vbat_label, vbat_ch, float(vbat_current), "vbat")
+        results[(vbat_label, vbat_ch)] = float(vbat_current)
+
+        self.log_message.emit("[TEST] Force high on sub-channels (+20mV) — parallel sync...")
+
+        task_list = []
+        for device_label, (n6705c_inst, hw_channels) in self.force_high_map.items():
+            monitor_chs = []
+            if device_label == vbat_label and vbat_ch not in hw_channels:
+                monitor_chs.append(vbat_ch)
+            all_datalog_chs = list(hw_channels) + [ch for ch in monitor_chs if ch not in hw_channels]
+            num_ch = len(all_datalog_chs)
+            ch_period = self.sample_period * num_ch
+            task_list.append({
+                "device_label": device_label,
+                "inst": n6705c_inst,
+                "force_channels": list(hw_channels),
+                "monitor_channels": monitor_chs,
+                "all_datalog_channels": all_datalog_chs,
+                "sample_period": ch_period,
+                "measured_voltages": None,
+                "curr_result": None,
+                "error": None,
+            })
+
+        if not task_list:
+            self.progress.emit(1.0)
+            self._emit_summary(results, vbat_current, vbat_remain)
+            return
+
+        self.log_message.emit("[TEST] Preparing force high on all instruments...")
+        prepare_errors = [None] * len(task_list)
+
+        def prepare_worker(idx, task):
+            try:
+                mv = task["inst"].prepare_force_high(
+                    task["force_channels"],
+                    voltage_offset=0.02,
+                    current_limit=1.0,
+                    monitor_channels=task["monitor_channels"],
+                )
+                task["measured_voltages"] = mv
+            except Exception as e:
+                prepare_errors[idx] = e
+
+        prepare_threads = []
+        for idx, task in enumerate(task_list):
+            t = threading.Thread(target=prepare_worker, args=(idx, task), daemon=True)
+            prepare_threads.append(t)
+        for t in prepare_threads:
+            t.start()
+        for t in prepare_threads:
+            t.join(timeout=30)
+
+        for idx, err in enumerate(prepare_errors):
+            if err:
+                dl = task_list[idx]["device_label"]
+                self.log_message.emit(f"[ERROR] Prepare force high failed on {dl}: {err}")
+
+        active_tasks = [t for i, t in enumerate(task_list) if prepare_errors[i] is None]
+        if not active_tasks:
+            self.progress.emit(1.0)
+            self._emit_summary(results, vbat_current, vbat_remain)
+            return
+
+        self.log_message.emit("[TEST] Configuring datalog on all instruments...")
+        for task in active_tasks:
+            try:
+                task["inst"].configure_datalog(
+                    task["all_datalog_channels"], self.test_time, task["sample_period"]
+                )
+            except Exception as e:
+                task["error"] = str(e)
+                self.log_message.emit(f"[ERROR] Configure datalog failed on {task['device_label']}: {e}")
+
+        active_tasks = [t for t in active_tasks if t["error"] is None]
+        if not active_tasks:
+            self.progress.emit(1.0)
+            self._emit_summary(results, vbat_current, vbat_remain)
+            return
+
+        barrier = threading.Barrier(len(active_tasks), timeout=30)
+        init_errors = [None] * len(active_tasks)
+
+        def start_datalog_worker(idx, task):
+            try:
+                barrier.wait()
+                task["inst"].start_datalog()
+            except Exception as e:
+                init_errors[idx] = e
+
+        self.log_message.emit(f"[TEST] Sync-starting datalog on {len(active_tasks)} instrument(s)...")
+        start_threads = []
+        for idx, task in enumerate(active_tasks):
+            t = threading.Thread(target=start_datalog_worker, args=(idx, task), daemon=True)
+            start_threads.append(t)
+        for t in start_threads:
+            t.start()
+        for t in start_threads:
+            t.join(timeout=30)
+
+        for idx, err in enumerate(init_errors):
+            if err:
+                dl = active_tasks[idx]["device_label"]
+                self.log_message.emit(f"[ERROR] Start datalog failed on {dl}: {err}")
+
+        import time as _time
+        datalog_wait = self.test_time + 1
+        total_wait_est = datalog_wait + 3.0
+        wait_progress_span = datalog_wait / total_wait_est * step2_time
+        interval = 0.5
+        elapsed = 0.0
+        while elapsed < datalog_wait:
+            if self._is_stopped:
+                return
+            step = min(interval, datalog_wait - elapsed)
+            _time.sleep(step)
+            elapsed += step
+            frac = min(elapsed / datalog_wait, 1.0)
+            self.progress.emit(min((cursor + frac * wait_progress_span) / total_est, 1.0))
+        if self._is_stopped:
+            return
+
+        self.log_message.emit("[TEST] Fetching results from all instruments...")
+        fetch_errors = [None] * len(active_tasks)
+
+        def fetch_worker(idx, task):
+            try:
+                task["curr_result"] = task["inst"].fetch_datalog_marker_results(
+                    task["all_datalog_channels"], self.test_time
+                )
+            except Exception as e:
+                fetch_errors[idx] = e
+
+        fetch_threads = []
+        for idx, task in enumerate(active_tasks):
+            t = threading.Thread(target=fetch_worker, args=(idx, task), daemon=True)
+            fetch_threads.append(t)
+        for t in fetch_threads:
+            t.start()
+        for t in fetch_threads:
+            t.join(timeout=30)
+
+        for task in active_tasks:
+            task["inst"].restore_channels_to_vmeter(task["force_channels"])
+
+        cursor = setup_time + step1_time + step2_time
+        self.progress.emit(min(cursor / total_est, 1.0))
+
+        for idx, task in enumerate(active_tasks):
+            if fetch_errors[idx]:
+                self.log_message.emit(
+                    f"[ERROR] Fetch failed on {task['device_label']}: {fetch_errors[idx]}"
+                )
+                continue
+            cr = task["curr_result"] or {}
+            for ch in task["force_channels"]:
+                avg_i = cr.get(ch, 0.0)
+                self.channel_result.emit(task["device_label"], ch, float(avg_i), "force_high")
+                results[(task["device_label"], ch)] = float(avg_i)
+            if task["device_label"] == vbat_label and vbat_ch in cr:
+                vbat_remain = float(cr[vbat_ch])
+
+        self.progress.emit(1.0)
+        self._emit_summary(results, vbat_current, vbat_remain)
+        self.log_message.emit("[TEST] Force high consumption test completed.")
+
+    def _emit_summary(self, results, vbat_current, vbat_remain):
+        vbat_name = self.channel_names.get(
+            (self.vbat_device_label, self.vbat_hw_ch), "Vbat"
+        )
+        parts = [f"{vbat_name}: {self._format_current_short(vbat_current)}"]
+        ordered_keys = []
+        for device_label, (n6705c_inst, hw_channels) in self.force_high_map.items():
+            for ch in hw_channels:
+                ordered_keys.append((device_label, ch))
+        for key in ordered_keys:
+            name = self.channel_names.get(key, f"{key[0]}-CH{key[1]}")
+            val = results.get(key, 0.0)
+            parts.append(f"{name}: {self._format_current_short(val)}")
+        if vbat_remain is not None:
+            parts.append(f"Vbat_remain: {self._format_current_short(vbat_remain)}")
+
+        summary_line = " | ".join(parts)
+        self.log_message.emit(f"[RESULT] {summary_line}")
+
+        summary = {
+            "vbat": vbat_current,
+            "channels": {k: results[k] for k in ordered_keys if k in results},
+            "vbat_remain": vbat_remain,
+        }
+        self.test_summary.emit(summary)
+
+    @staticmethod
+    def _format_current_short(current_A):
+        abs_i = abs(current_A)
+        if abs_i >= 1:
+            return f"{current_A:.4f}A"
+        elif abs_i >= 1e-3:
+            return f"{current_A*1e3:.4f}mA"
+        elif abs_i >= 1e-6:
+            return f"{current_A*1e6:.4f}uA"
+        else:
+            return f"{current_A*1e9:.4f}nA"
+
+
 class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
     connection_status_changed = Signal(bool)
     serial_connection_changed = Signal(bool)
@@ -250,6 +546,8 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         {"accent": "#f97316", "bg": "#1a1008", "border": "#3d2808"},
         {"accent": "#ec4899", "bg": "#1a0812", "border": "#3d0c28"},
     ]
+
+    NAME_OPTIONS = ["Vbat", "Vcore", "VcoreM", "VcoreL", "VANA", "VHPPA", "Vusb"]
 
     SINGLE_DEVICE_CHANNEL_CONFIGS = [
         {"name": "Vbat", "channel": "A-CH1", "enabled": True},
@@ -442,8 +740,14 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         layout.addLayout(title_row)
 
         self._n6705c_conn_widgets = {}
+        _default_resources = {
+            "B": "TCPIP0::K-N6705C-03845.local::hislip0::INSTR",
+        }
         for label in ("A", "B"):
-            row, widgets = build_n6705c_inline_row(label, parent=panel)
+            row, widgets = build_n6705c_inline_row(
+                label, parent=panel, row_height=32,
+                default_resource=_default_resources.get(label),
+            )
             layout.addLayout(row)
             self._n6705c_conn_widgets[label] = widgets
             widgets["search_btn"].clicked.connect(lambda checked=False, lbl=label: self._on_device_search(lbl))
@@ -463,11 +767,13 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         if DEBUG_MOCK:
             w["combo"].clear()
             w["combo"].addItem(f"DEBUG::MOCK::N6705C::{label}")
-            w["status"].setText("● Mock device ready")
+            w["status"].setText("● Mock Ready")
+            w["status"].setStyleSheet("color: #ff9800; font-weight: bold; background: transparent; border: none;")
             self.append_log(f"[DEBUG] Mock device {label} loaded, skip real VISA scan.")
             return
 
         w["status"].setText("● Searching")
+        w["status"].setStyleSheet("color: #ff9800; font-weight: bold; background: transparent; border: none;")
         w["search_btn"].setEnabled(False)
         w["connect_btn"].setEnabled(False)
         self.append_log(f"[SYSTEM] Scanning VISA resources for N6705C-{label}...")
@@ -495,18 +801,21 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         if devices:
             for dev in devices:
                 w["combo"].addItem(dev)
-            w["status"].setText(f"● Found {len(devices)} device(s)")
+            w["status"].setText(f"● Found {len(devices)}")
+            w["status"].setStyleSheet("color: #00a859; font-weight: bold; background: transparent; border: none;")
             self.append_log(f"[SYSTEM] Found {len(devices)} N6705C device(s) for slot {label}.")
         else:
             w["combo"].addItem("No N6705C device found")
             w["combo"].setEnabled(False)
-            w["status"].setText("● No device found")
+            w["status"].setText("● Not Found")
+            w["status"].setStyleSheet("color: #e53935; font-weight: bold; background: transparent; border: none;")
         w["search_btn"].setEnabled(True)
         w["connect_btn"].setEnabled(True)
 
     def _on_device_search_error(self, label, err):
         w = self._n6705c_conn_widgets[label]
-        w["status"].setText("● Search failed")
+        w["status"].setText("● Failed")
+        w["status"].setStyleSheet("color: #e53935; font-weight: bold; background: transparent; border: none;")
         self.append_log(f"[ERROR] Search failed for N6705C-{label}: {err}")
         w["search_btn"].setEnabled(True)
         w["connect_btn"].setEnabled(True)
@@ -533,7 +842,8 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             setattr(self, f"is_connected_{attr}", True)
             _update_n6705c_btn_state(w["connect_btn"], connected=True)
             w["search_btn"].setEnabled(False)
-            w["status"].setText(f"● Connected: Mock-{label}")
+            w["status"].setText("● Connected")
+            w["status"].setStyleSheet("color: #00a859; font-weight: bold; background: transparent; border: none;")
             self.append_log(f"[DEBUG] Mock N6705C-{label} connected.")
             visa = w["combo"].currentText()
             self._syncing = True
@@ -548,6 +858,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             return
 
         w["status"].setText("● Connecting")
+        w["status"].setStyleSheet("color: #ff9800; font-weight: bold; background: transparent; border: none;")
         w["connect_btn"].setEnabled(False)
         self.append_log(f"[SYSTEM] Connecting N6705C-{label}...")
 
@@ -561,12 +872,8 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
                 setattr(self, f"is_connected_{attr}", True)
                 _update_n6705c_btn_state(w["connect_btn"], connected=True)
                 w["search_btn"].setEnabled(False)
-                pretty = visa
-                try:
-                    pretty = visa.split("::")[1]
-                except Exception:
-                    pass
-                w["status"].setText(f"● Connected: {pretty}")
+                w["status"].setText("● Connected")
+                w["status"].setStyleSheet("color: #00a859; font-weight: bold; background: transparent; border: none;")
                 self.append_log(f"[SYSTEM] N6705C-{label} connected. IDN: {idn.strip()}")
                 self._syncing = True
                 try:
@@ -583,10 +890,12 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
                 self._apply_preset_channels(prev_count, new_count)
                 self._update_available_channels()
             else:
-                w["status"].setText("● Device mismatch")
+                w["status"].setText("● Mismatch")
+                w["status"].setStyleSheet("color: #e53935; font-weight: bold; background: transparent; border: none;")
                 self.append_log(f"[ERROR] Connected device on {label} is not N6705C.")
         except Exception as e:
-            w["status"].setText("● Connection failed")
+            w["status"].setText("● Failed")
+            w["status"].setStyleSheet("color: #e53935; font-weight: bold; background: transparent; border: none;")
             self.append_log(f"[ERROR] Connection failed for N6705C-{label}: {e}")
         finally:
             w["connect_btn"].setEnabled(True)
@@ -619,13 +928,15 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             _update_n6705c_btn_state(w["connect_btn"], connected=False)
             w["search_btn"].setEnabled(True)
             w["combo"].setEnabled(True)
-            w["status"].setText("● Ready")
+            w["status"].setText("● Disconnected")
+            w["status"].setStyleSheet("color: #8ea6cf; font-weight: bold; background: transparent; border: none;")
             self.append_log(f"[SYSTEM] N6705C-{label} disconnected.")
             new_count = self._connected_device_count()
             self._apply_preset_channels(prev_count, new_count)
             self._update_available_channels()
         except Exception as e:
-            w["status"].setText("● Disconnect failed")
+            w["status"].setText("● Failed")
+            w["status"].setStyleSheet("color: #e53935; font-weight: bold; background: transparent; border: none;")
             self.append_log(f"[ERROR] Disconnect failed for N6705C-{label}: {e}")
 
     def _sync_n6705c_dual_from_top(self):
@@ -650,19 +961,16 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
                 if visa_res:
                     w["combo"].clear()
                     w["combo"].addItem(visa_res)
-                pretty = visa_res
-                try:
-                    pretty = visa_res.split("::")[1]
-                except Exception:
-                    pass
-                w["status"].setText(f"● Connected: {pretty}")
+                w["status"].setText("● Connected")
+                w["status"].setStyleSheet("color: #00a859; font-weight: bold; background: transparent; border: none;")
             else:
                 setattr(self, f"n6705c_{attr}", None)
                 setattr(self, f"is_connected_{attr}", False)
                 _update_n6705c_btn_state(w["connect_btn"], connected=False)
                 w["search_btn"].setEnabled(True)
                 w["combo"].setEnabled(True)
-                w["status"].setText("● Ready")
+                w["status"].setText("● Disconnected")
+                w["status"].setStyleSheet("color: #8ea6cf; font-weight: bold; background: transparent; border: none;")
         self.n6705c = self.n6705c_a
         self.is_connected = self.is_connected_a
         new_count = self._connected_device_count()
@@ -679,11 +987,9 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
     def _get_available_channel_options(self):
         options = []
-        for label, attr in [("A", "a"), ("B", "b")]:
-            is_conn = getattr(self, f"is_connected_{attr}", False)
-            status = "Online" if is_conn else "Offline"
+        for label in ["A", "B"]:
             for ch in range(1, 5):
-                options.append(f"{label}-CH{ch} ({status})")
+                options.append(f"{label}-CH{ch}")
         return options
 
     def _connected_device_count(self):
@@ -699,13 +1005,12 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         for wdata in self._channel_config_widgets:
             combo = wdata["channel_combo"]
             current_text = combo.currentText()
-            current_key = current_text.split(" (")[0] if " (" in current_text else current_text
             combo.blockSignals(True)
             combo.clear()
             for opt in options:
                 combo.addItem(opt)
             for i in range(combo.count()):
-                if combo.itemText(i).startswith(current_key + " "):
+                if combo.itemText(i) == current_text:
                     combo.setCurrentIndex(i)
                     break
             combo.blockSignals(False)
@@ -1060,19 +1365,24 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         time_label.setStyleSheet("font-size: 11px; color: #7e96bf;")
         self.test_time_input = QLineEdit("10")
         self.test_time_input.setFixedWidth(80)
+        self.test_time_input.setFixedHeight(28)
         self.test_time_input.setAlignment(Qt.AlignCenter)
-
-        period_label = QLabel("Sample Period (us)")
-        period_label.setStyleSheet("font-size: 11px; color: #7e96bf;")
-        self.sample_period_input = QLineEdit("20")
-        self.sample_period_input.setFixedWidth(80)
-        self.sample_period_input.setAlignment(Qt.AlignCenter)
+        self.test_time_input.setStyleSheet("""
+            QLineEdit {
+                background-color: #020816;
+                border: 1px solid #1c2f54;
+                border-radius: 6px;
+                padding: 4px 8px;
+                color: #d7e3ff;
+                font-size: 12px;
+            }
+            QLineEdit:focus {
+                border: 1px solid #5b7cff;
+            }
+        """)
 
         params_row.addWidget(time_label)
         params_row.addWidget(self.test_time_input)
-        params_row.addSpacing(8)
-        params_row.addWidget(period_label)
-        params_row.addWidget(self.sample_period_input)
         params_row.addStretch()
         layout.addLayout(params_row)
 
@@ -1305,20 +1615,21 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         name_label.setStyleSheet("font-size: 10px; color: #7e96bf;")
         card_layout.addWidget(name_label)
 
-        name_input = QLineEdit(name)
+        name_input = DarkComboBox()
         name_input.setFixedHeight(26)
-        name_input.setStyleSheet("""
-            QLineEdit {
-                background-color: #020816;
-                border: 1px solid #1c2f54;
-                border-radius: 4px;
-                padding: 2px 6px;
-                color: #d7e3ff;
-                font-size: 12px;
-                min-height: 0px;
-            }
-            QLineEdit:focus { border: 1px solid #5b7cff; }
-        """)
+        font = name_input.font()
+        font.setPixelSize(12)
+        name_input.setFont(font)
+        for opt in self.NAME_OPTIONS:
+            name_input.addItem(opt)
+        for i in range(name_input.count()):
+            if name_input.itemText(i) == name:
+                name_input.setCurrentIndex(i)
+                break
+        else:
+            name_input.setEditable(True)
+            name_input.setCurrentText(name)
+            name_input.setEditable(False)
         card_layout.addWidget(name_input)
 
         ch_label = QLabel("Channel (N6705C)")
@@ -1334,7 +1645,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         for opt in options:
             channel_combo.addItem(opt)
         for i in range(channel_combo.count()):
-            if channel_combo.itemText(i).startswith(channel_key + " "):
+            if channel_combo.itemText(i) == channel_key:
                 channel_combo.setCurrentIndex(i)
                 break
         card_layout.addWidget(channel_combo)
@@ -1353,7 +1664,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self._channel_config_widgets.append(wdata)
 
         enable_cb.toggled.connect(lambda checked, i=idx: self._on_config_enable_changed(i, checked))
-        name_input.textChanged.connect(lambda text, i=idx: self._on_config_name_changed(i, text))
+        name_input.currentTextChanged.connect(lambda text, i=idx: self._on_config_name_changed(i, text))
         channel_combo.currentIndexChanged.connect(lambda ci, i=idx: self._on_config_channel_changed(i))
         remove_btn.clicked.connect(lambda checked=False, i=idx: self._remove_channel_config(i))
 
@@ -1373,8 +1684,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         if idx < len(self._channel_configs):
             wdata = self._channel_config_widgets[idx]
             raw = wdata["channel_combo"].currentText()
-            key = raw.split(" (")[0] if " (" in raw else raw
-            self._channel_configs[idx]["channel"] = key
+            self._channel_configs[idx]["channel"] = raw
             self._refresh_result_cards()
 
     def _remove_channel_config(self, idx):
@@ -1390,11 +1700,11 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         for i, w in enumerate(self._channel_config_widgets):
             w["config_index"] = i
             w["enable_cb"].toggled.disconnect()
-            w["name_input"].textChanged.disconnect()
+            w["name_input"].currentTextChanged.disconnect()
             w["channel_combo"].currentIndexChanged.disconnect()
             w["remove_btn"].clicked.disconnect()
             w["enable_cb"].toggled.connect(lambda checked, ci=i: self._on_config_enable_changed(ci, checked))
-            w["name_input"].textChanged.connect(lambda text, ci=i: self._on_config_name_changed(ci, text))
+            w["name_input"].currentTextChanged.connect(lambda text, ci=i: self._on_config_name_changed(ci, text))
             w["channel_combo"].currentIndexChanged.connect(lambda cii, ci=i: self._on_config_channel_changed(ci))
             w["remove_btn"].clicked.connect(lambda checked=False, ci=i: self._remove_channel_config(ci))
 
@@ -1408,13 +1718,26 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
                 w.hide()
                 w.deleteLater()
         self.channel_cards = {}
+        self._vbat_remain_card = None
 
+        vbat_idx = None
+        has_sub_channel = False
         for i, cfg in enumerate(self._channel_configs):
             if not cfg["enabled"]:
                 continue
+            if cfg["name"].lower().startswith("vbat"):
+                vbat_idx = i
+            else:
+                has_sub_channel = True
             colors = self.CHANNEL_COLORS_LIST[i % len(self.CHANNEL_COLORS_LIST)]
             card = self._create_result_card(i, cfg["name"], cfg["channel"], colors)
             self.result_cards_layout.addWidget(card, 1)
+
+        if has_sub_channel and vbat_idx is not None:
+            remain_colors = {"accent": "#a0a0a0", "bg": "#121218", "border": "#2a2a36"}
+            remain_card = self._create_result_card(-1, "Vbat_remain", "", remain_colors)
+            self.result_cards_layout.addWidget(remain_card, 1)
+            self._vbat_remain_card = self.channel_cards.pop(-1)
 
     def _create_result_card(self, idx, name, channel_key, colors):
         card = QFrame()
@@ -2049,9 +2372,33 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             self.append_log("[ERROR] No channel enabled.")
             return
 
-        device_channel_map = {}
-        config_index_map = {}
+        vbat_idx = None
+        vbat_cfg = None
         for i, cfg in enabled_configs:
+            if cfg["name"].lower().startswith("vbat"):
+                vbat_idx = i
+                vbat_cfg = cfg
+                break
+        if vbat_cfg is None:
+            vbat_idx, vbat_cfg = enabled_configs[0]
+
+        vbat_device_label, vbat_hw_ch = self._parse_channel_key(vbat_cfg["channel"])
+        if vbat_device_label is None or vbat_hw_ch is None:
+            self.append_log(f"[ERROR] Invalid Vbat channel key: {vbat_cfg['channel']}")
+            return
+
+        vbat_attr = vbat_device_label.lower()
+        vbat_inst = getattr(self, f"n6705c_{vbat_attr}", None)
+        vbat_conn = getattr(self, f"is_connected_{vbat_attr}", False)
+        if not vbat_conn or not vbat_inst:
+            self.append_log(f"[ERROR] N6705C-{vbat_device_label} is not connected (required by Vbat).")
+            return
+
+        force_high_map = {}
+        config_index_map = {vbat_device_label: {vbat_hw_ch: vbat_idx}}
+
+        sub_configs = [(i, cfg) for i, cfg in enabled_configs if i != vbat_idx]
+        for i, cfg in sub_configs:
             device_label, hw_ch = self._parse_channel_key(cfg["channel"])
             if device_label is None or hw_ch is None:
                 self.append_log(f"[ERROR] Invalid channel key: {cfg['channel']}")
@@ -2062,34 +2409,53 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             if not is_conn or not inst:
                 self.append_log(f"[ERROR] N6705C-{device_label} is not connected (required by {cfg['name']}).")
                 return
-            if device_label not in device_channel_map:
-                device_channel_map[device_label] = (inst, [])
-                config_index_map[device_label] = {}
-            if hw_ch not in device_channel_map[device_label][1]:
-                device_channel_map[device_label][1].append(hw_ch)
+            if device_label not in force_high_map:
+                force_high_map[device_label] = (inst, [])
+            if hw_ch not in force_high_map[device_label][1]:
+                force_high_map[device_label][1].append(hw_ch)
             config_index_map.setdefault(device_label, {})[hw_ch] = i
 
         try:
             test_time = float(self.test_time_input.text())
-            sample_period = float(self.sample_period_input.text()) / 1_000_000
         except ValueError:
-            self.append_log("[ERROR] Invalid test time or sample period.")
+            self.append_log("[ERROR] Invalid test time.")
             return
+        sample_period = 20.0 / 1_000_000
 
         self.is_testing = True
         self._config_index_map = config_index_map
         self.start_test_btn.setStateWaiting()
-        self.append_log(f"[TEST] Starting consumption test: time={test_time}s, period={sample_period}s")
+        self.append_log(
+            f"[TEST] Starting force-high consumption test: "
+            f"Vbat={vbat_cfg['name']}({vbat_cfg['channel']}), "
+            f"time={test_time}s, base_period={sample_period*1e6:.0f}us"
+        )
 
         for idx in self.channel_cards:
             self.channel_cards[idx]["value_label"].setText("- - -")
+        if self._vbat_remain_card is not None:
+            self._vbat_remain_card["value_label"].setText("- - -")
 
-        worker = _ConsumptionTestWorker(device_channel_map, test_time, sample_period)
+        channel_names = {}
+        channel_names[(vbat_device_label, vbat_hw_ch)] = vbat_cfg["name"]
+        for i, cfg in sub_configs:
+            device_label, hw_ch = self._parse_channel_key(cfg["channel"])
+            if device_label is not None and hw_ch is not None:
+                channel_names[(device_label, hw_ch)] = cfg["name"]
+
+        worker = _ConsumptionTestForceHighWorker(
+            vbat_device_label, vbat_inst, vbat_hw_ch,
+            force_high_map, test_time, sample_period,
+            channel_names=channel_names,
+        )
         thread = QThread()
         worker.moveToThread(thread)
 
         thread.started.connect(worker.run)
-        worker.channel_result.connect(self._on_channel_result)
+        worker.log_message.connect(self.append_log)
+        worker.channel_result.connect(self._on_force_high_channel_result)
+        worker.test_summary.connect(self._on_test_summary)
+        worker.progress.connect(self.start_test_btn.setProgress)
         worker.error.connect(self._on_test_error)
         worker.finished.connect(self._on_test_finished)
         worker.finished.connect(thread.quit)
@@ -2100,19 +2466,19 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self._test_thread = thread
         self._test_worker = worker
         self.start_test_btn.setStateProgramming()
+        self.start_test_btn._progress_timer.stop()
         thread.start()
 
-    def _on_channel_result(self, device_label, hw_channel, avg_current):
+    def _on_force_high_channel_result(self, device_label, hw_channel, avg_current, phase):
         cfg_idx = self._config_index_map.get(device_label, {}).get(hw_channel)
         if cfg_idx is not None and cfg_idx in self.channel_cards:
             label = self.channel_cards[cfg_idx]["value_label"]
             label.setText(self._format_current(avg_current))
-        name = f"{device_label}-CH{hw_channel}"
-        for cfg in self._channel_configs:
-            if cfg["channel"] == f"{device_label}-CH{hw_channel}" and cfg["enabled"]:
-                name = cfg["name"]
-                break
-        self.append_log(f"[TEST] {name} ({device_label}-CH{hw_channel}) avg current: {self._format_current(avg_current)}")
+
+    def _on_test_summary(self, summary):
+        vbat_remain = summary.get("vbat_remain")
+        if vbat_remain is not None and self._vbat_remain_card is not None:
+            self._vbat_remain_card["value_label"].setText(self._format_current(vbat_remain))
 
     def _on_test_error(self, err_msg):
         self.append_log(f"[ERROR] {err_msg}")
@@ -2205,6 +2571,8 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
     def clear_results(self):
         for idx in self.channel_cards:
             self.channel_cards[idx]["value_label"].setText("- - -")
+        if self._vbat_remain_card is not None:
+            self._vbat_remain_card["value_label"].setText("- - -")
 
     def get_test_mode(self):
         return "Consumption Test"

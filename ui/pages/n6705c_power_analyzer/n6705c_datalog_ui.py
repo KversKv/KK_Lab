@@ -56,8 +56,8 @@ logger = get_logger(__name__)
 
 
 CHANNEL_COLORS = [
-    "#18b67a",
     "#d4a514",
+    "#18b67a",
     "#2f6fed",
     "#d14b72",
     "#00bcd4",
@@ -67,8 +67,8 @@ CHANNEL_COLORS = [
 ]
 
 CHANNEL_LABEL_COLORS = [
-    "#7fffcf",
     "#ffe566",
+    "#7fffcf",
     "#8cb8ff",
     "#ff9ab8",
     "#7ef5ff",
@@ -78,8 +78,8 @@ CHANNEL_LABEL_COLORS = [
 ]
 
 VOLTAGE_COLORS = [
-    "#10946a",
     "#a88010",
+    "#10946a",
     "#2558ba",
     "#a83a5a",
     "#009aad",
@@ -89,8 +89,8 @@ VOLTAGE_COLORS = [
 ]
 
 POWER_COLORS = [
-    "#b05ce6",
     "#e6a33c",
+    "#b05ce6",
     "#3cb0e6",
     "#e63c6e",
     "#6ee63c",
@@ -803,6 +803,7 @@ class N6705CDatalogUI(QWidget):
         self.marker_b_line = None
         self.marker_region = None
         self.box_zoom_enabled = False
+        self._b_time_offset = 0.0
         self._box_zoom_auto_off_timer = QTimer(self)
         self._box_zoom_auto_off_timer.setSingleShot(True)
         self._box_zoom_auto_off_timer.setInterval(4000)
@@ -1436,6 +1437,10 @@ class N6705CDatalogUI(QWidget):
         self.clear_markers_btn = QPushButton("Clear Markers")
         self.clear_markers_btn.setObjectName("chartToolBtn")
         chart_header.addWidget(self.clear_markers_btn)
+
+        self.time_offset_btn = QPushButton("Time Offset")
+        self.time_offset_btn.setObjectName("chartToolBtn")
+        chart_header.addWidget(self.time_offset_btn)
 
         chart_outer.addLayout(chart_header)
 
@@ -2896,7 +2901,7 @@ class N6705CDatalogUI(QWidget):
 
             curve = self.plot_curves.get(key)
             if curve:
-                times = ch_data["time"]
+                times = self._get_effective_times(key, ch_data["time"])
                 curve.setData(times, norm_vals)
 
         self._update_marker_analysis()
@@ -3313,7 +3318,7 @@ class N6705CDatalogUI(QWidget):
             return
 
         raw_vals = ch_data["values"]
-        times = ch_data["time"]
+        times = self._get_effective_times(key, ch_data["time"])
         raw_min = band["raw_min"]
         raw_range = band["raw_range"]
         plot_bottom = band["plot_bottom"]
@@ -3384,12 +3389,14 @@ class N6705CDatalogUI(QWidget):
             if label not in visible_keys:
                 continue
             ch_data = self.datalog_data[label]
-            times = ch_data["time"]
+            raw_times = ch_data["time"]
+            eff_times = self._get_effective_times(label, raw_times)
             values = ch_data["values"]
-            if not times:
+            if not raw_times:
                 continue
 
-            i = self._find_nearest_index(times, x)
+            lookup_x = self._effective_x_for_lookup(label, x)
+            i = self._find_nearest_index(raw_times, lookup_x)
             if i is not None:
                 val = values[i]
                 color = _color_for_label(label)
@@ -3403,7 +3410,7 @@ class N6705CDatalogUI(QWidget):
                     norm_y = val
 
                 dot = pg.ScatterPlotItem(
-                    [times[i]], [norm_y], size=10,
+                    [eff_times[i]], [norm_y], size=10,
                     pen=pg.mkPen(color=color, width=2),
                     brush=pg.mkBrush(color="#071127"),
                     symbol='o'
@@ -3449,6 +3456,7 @@ class N6705CDatalogUI(QWidget):
         self.marker_a_btn.clicked.connect(lambda: self._set_marker_mode("A"))
         self.marker_b_btn.clicked.connect(lambda: self._set_marker_mode("B"))
         self.clear_markers_btn.clicked.connect(self._clear_markers)
+        self.time_offset_btn.clicked.connect(self._on_time_offset)
 
         self.add_label_btn.clicked.connect(self._add_custom_label)
 
@@ -3679,7 +3687,7 @@ class N6705CDatalogUI(QWidget):
 
             curve = self.plot_curves.get(key)
             if curve:
-                times = ch_data["time"]
+                times = self._get_effective_times(key, ch_data["time"])
                 curve.setData(times, norm_vals)
 
             if idx > 0:
@@ -4072,7 +4080,7 @@ class N6705CDatalogUI(QWidget):
         for idx, label in enumerate(sorted_keys):
             ch_data = self.datalog_data[label]
             color = _color_for_label(label)
-            times = ch_data["time"]
+            times = self._get_effective_times(label, ch_data["time"])
             raw_vals = ch_data["values"]
 
             if not raw_vals:
@@ -4133,8 +4141,8 @@ class N6705CDatalogUI(QWidget):
 
         if self.datalog_data:
             all_times = []
-            for ch_data in self.datalog_data.values():
-                all_times.extend(ch_data["time"])
+            for lbl, ch_data in self.datalog_data.items():
+                all_times.extend(self._get_effective_times(lbl, ch_data["time"]))
             if all_times:
                 self.plot_widget.setXRange(min(all_times), max(all_times))
             self.plot_widget.setYRange(-0.02, 1.02)
@@ -4169,7 +4177,7 @@ class N6705CDatalogUI(QWidget):
         for key in visible_keys:
             ch_data = self.datalog_data.get(key)
             if ch_data and ch_data["time"]:
-                all_times.extend(ch_data["time"])
+                all_times.extend(self._get_effective_times(key, ch_data["time"]))
 
         if all_times:
             self.plot_widget.setXRange(min(all_times), max(all_times))
@@ -4300,6 +4308,186 @@ class N6705CDatalogUI(QWidget):
 
     def _clear_analysis_card_cache(self):
         pass
+
+    def _is_b_label(self, label):
+        _, _, is_b = _parse_ch_label(label)
+        return is_b
+
+    def _get_effective_times(self, label, times):
+        if self._b_time_offset != 0.0 and self._is_b_label(label):
+            return [t + self._b_time_offset for t in times]
+        return times
+
+    def _effective_x_for_lookup(self, label, x):
+        if self._b_time_offset != 0.0 and self._is_b_label(label):
+            return x - self._b_time_offset
+        return x
+
+    def _on_time_offset(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Time Offset for Instrument B")
+        dialog.setFixedWidth(380)
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: #0a1628;
+                color: #c8daf5;
+            }
+            QLabel {
+                color: #8eb0e3;
+                font-size: 12px;
+            }
+            QLineEdit {
+                background-color: #0c1a35;
+                border: 1px solid #1e3460;
+                border-radius: 6px;
+                color: #eaf2ff;
+                padding: 6px 10px;
+                font-size: 12px;
+            }
+            QLineEdit:focus {
+                border-color: #3a6fd4;
+            }
+            QPushButton {
+                background-color: #162d55;
+                border: 1px solid #1e3460;
+                border-radius: 6px;
+                color: #c8daf5;
+                padding: 6px 18px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #1e3460;
+                border-color: #3a6fd4;
+            }
+        """)
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        title = QLabel("\u23F1  Time Offset for Instrument B")
+        title.setStyleSheet("font-size: 14px; font-weight: bold; color: #eaf2ff;")
+        layout.addWidget(title)
+
+        desc = QLabel("Shift all Instrument B waveforms along the time axis.\n"
+                       "Negative value moves B waveforms to the left (earlier),\n"
+                       "positive value moves them to the right (later).")
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
+
+        offset_label = QLabel("Time Offset (ms)")
+        layout.addWidget(offset_label)
+        offset_edit = QLineEdit()
+        offset_edit.setPlaceholderText("e.g. -50 or -200")
+        current_ms = self._b_time_offset * 1000.0
+        display_text = f"{current_ms:.3f}".rstrip('0').rstrip('.')
+        if current_ms == 0.0:
+            display_text = "-0"
+        offset_edit.setText(display_text)
+        layout.addWidget(offset_edit)
+
+        has_both_markers = self.marker_a_pos is not None and self.marker_b_pos is not None
+
+        align_btn = QPushButton("\U0001F4CD  Align From Markers")
+        align_btn.setToolTip("Auto-calculate offset from Marker A and Marker B positions.\n"
+                             "Offset = Marker A - Marker B")
+        align_btn.setEnabled(has_both_markers)
+        if not has_both_markers:
+            align_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #0c1a35;
+                    border: 1px solid #1e3460;
+                    border-radius: 6px;
+                    color: #3a5070;
+                    padding: 6px 18px;
+                    font-size: 12px;
+                }
+            """)
+        else:
+            align_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #1a3a2e;
+                    border: 1px solid #2a8c5a;
+                    border-radius: 6px;
+                    color: #7fffcf;
+                    padding: 6px 18px;
+                    font-size: 12px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #245b3e;
+                    border-color: #3abf7a;
+                }
+            """)
+
+        if has_both_markers:
+            marker_delta_ms = (self.marker_a_pos - self.marker_b_pos) * 1000.0
+            marker_info = QLabel(
+                f"Marker A: {self.marker_a_pos:.6f}s    Marker B: {self.marker_b_pos:.6f}s\n"
+                f"Calculated offset: {marker_delta_ms:+.3f} ms"
+            )
+            marker_info.setStyleSheet("color: #556a8c; font-size: 10px;")
+            layout.addWidget(marker_info)
+        else:
+            marker_info = QLabel("Set both Marker A and Marker B on the chart to enable auto-align.")
+            marker_info.setStyleSheet("color: #3a5070; font-size: 10px;")
+            marker_info.setWordWrap(True)
+            layout.addWidget(marker_info)
+
+        def _on_align_from_markers():
+            delta_s = self.marker_a_pos - self.marker_b_pos
+            self._apply_b_time_offset(self._b_time_offset + delta_s)
+            dialog.done(QDialog.Rejected)
+
+        align_btn.clicked.connect(_on_align_from_markers)
+        layout.addWidget(align_btn)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+
+        reset_btn = QPushButton("Reset to 0")
+        reset_btn.clicked.connect(lambda: offset_edit.setText("0"))
+        btn_layout.addWidget(reset_btn)
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(dialog.reject)
+        btn_layout.addWidget(cancel_btn)
+
+        apply_btn = QPushButton("Apply")
+        apply_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #1a4b8c;
+                border: 1px solid #3a6fd4;
+                border-radius: 6px;
+                color: #eaf2ff;
+                padding: 6px 18px;
+                font-size: 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #245bb5;
+            }
+        """)
+        apply_btn.clicked.connect(dialog.accept)
+        btn_layout.addWidget(apply_btn)
+
+        layout.addLayout(btn_layout)
+
+        if dialog.exec() == QDialog.Accepted:
+            try:
+                new_offset_ms = float(offset_edit.text().strip())
+            except ValueError:
+                return
+            self._apply_b_time_offset(new_offset_ms / 1000.0)
+
+    def _apply_b_time_offset(self, offset_s):
+        self._b_time_offset = offset_s
+        if offset_s != 0.0:
+            offset_ms = offset_s * 1000.0
+            self.time_offset_btn.setText(f"Time Offset: {offset_ms:+.3f}ms")
+        else:
+            self.time_offset_btn.setText("Time Offset")
+        self._on_channel_visibility_changed()
 
     def _rebuild_ch_name_panel(self, entries):
         for item in self._ch_label_items:
@@ -4511,13 +4699,18 @@ class N6705CDatalogUI(QWidget):
             times = ch_data["time"]
             values = ch_data["values"]
 
-            idx_a = self._find_nearest_index(times, t_a)
-            idx_b = self._find_nearest_index(times, t_b)
+            lookup_t_a = self._effective_x_for_lookup(label, t_a)
+            lookup_t_b = self._effective_x_for_lookup(label, t_b)
+            lookup_t1 = min(lookup_t_a, lookup_t_b)
+            lookup_t2 = max(lookup_t_a, lookup_t_b)
+
+            idx_a = self._find_nearest_index(times, lookup_t_a)
+            idx_b = self._find_nearest_index(times, lookup_t_b)
             val_a = values[idx_a] if idx_a is not None else 0.0
             val_b = values[idx_b] if idx_b is not None else 0.0
 
-            i_start = bisect_left(times, t1)
-            i_end = bisect_right(times, t2)
+            i_start = bisect_left(times, lookup_t1)
+            i_end = bisect_right(times, lookup_t2)
             segment = values[i_start:i_end]
 
             if segment:
@@ -4660,7 +4853,8 @@ class N6705CDatalogUI(QWidget):
                 values = ch_data["values"]
                 if not times:
                     return None
-                idx = self._find_nearest_index(times, t)
+                lookup_t = self._effective_x_for_lookup(label, t)
+                idx = self._find_nearest_index(times, lookup_t)
                 if idx is not None:
                     raw_val = values[idx]
                     band = self._band_info.get(label)
@@ -4686,7 +4880,8 @@ class N6705CDatalogUI(QWidget):
                 band = self._band_info.get(label)
                 ch_data = self.datalog_data[label]
                 times = ch_data["time"]
-                idx = self._find_nearest_index(times, t)
+                lookup_t = self._effective_x_for_lookup(label, t)
+                idx = self._find_nearest_index(times, lookup_t)
                 if idx is not None:
                     raw_val = ch_data["values"][idx]
                 break
