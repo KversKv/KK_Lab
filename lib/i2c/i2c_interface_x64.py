@@ -209,15 +209,15 @@ class I2CInterface:
         BES芯片检测函数
 
         地址定义:
-            0x27 — mainDie_internalPMU（Main-die内置PMU）
-            0x17 — PMU（独立PMU芯片）
             0x11 — mainDie（Main-die，32bit模式）
+            0x27 — mainDie_pmu（Main-die内置PMU）
+            0x17 — PMU（独立PMU芯片）
 
         芯片型号解析 (device=0x11, reg=0x40080000, 32bit):
             bit[15:0]  — 芯片序号（如 0x1605 → "1605"）
             bit[23:16] — 后缀字母ASCII码（如 0x50 → 'P'，0x00 → 无后缀）
 
-        Main-die I2C位宽判断 (device=0x27):
+        Main-die内置PMU I2C位宽判断 (device=0x27):
             优先检查10bit，若读取值有效(≠0xFFFF)则为10bit，否则检查8bit
 
         独立PMU检测 (device=0x17):
@@ -228,8 +228,11 @@ class I2CInterface:
         dict: 包含以下字段的字典（与 CHIP_CONFIG 字段名一致）
             - chip_name: 芯片名称，如 "bes1605" (str | None)
             - main_die: Main-die型号，如 "BES1605" (str | None)
-            - main_die_i2c_width: Main-die I2C位宽 (8 | 10 | None)
+            - main_die_i2c_width: Main-die I2C位宽 (32 | None)
             - main_die_i2c_addr: Main-die I2C设备地址 (int | None)
+            - main_die_pmu: Main-die内置PMU型号 (str | None)
+            - main_die_pmu_i2c_width: Main-die内置PMU I2C位宽 (8 | 10 | None)
+            - main_die_pmu_i2c_addr: Main-die内置PMU I2C设备地址 (int | None)
             - has_pmu: 是否有独立PMU芯片 (bool)
             - pmu: PMU型号，如 "PMU1605" (str | None)
             - pmu_i2c_width: PMU I2C位宽 (8 | 10 | None)
@@ -244,23 +247,26 @@ class I2CInterface:
         val_0x11_32bit = self._safe_read(0x11, 0x40080000, I2CWidthFlag.BIT_32)
 
         logger.debug("bes_chip_check 读取结果:")
-        logger.debug("  [mainDie_internalPMU] device=0x27, reg=0x0000, 8bit  => %s",
+        logger.debug("  [mainDie_pmu] device=0x27, reg=0x0000, 8bit  => %s",
                       "0x%04X" % val_0x27_8bit if val_0x27_8bit is not None else "None")
-        logger.debug("  [mainDie_internalPMU] device=0x27, reg=0x0000, 10bit => %s",
+        logger.debug("  [mainDie_pmu] device=0x27, reg=0x0000, 10bit => %s",
                       "0x%04X" % val_0x27_10bit if val_0x27_10bit is not None else "None")
-        logger.debug("  [PMU]                 device=0x17, reg=0x0000, 8bit  => %s",
+        logger.debug("  [PMU]         device=0x17, reg=0x0000, 8bit  => %s",
                       "0x%04X" % val_0x17_8bit if val_0x17_8bit is not None else "None")
-        logger.debug("  [PMU]                 device=0x17, reg=0x0000, 10bit => %s",
+        logger.debug("  [PMU]         device=0x17, reg=0x0000, 10bit => %s",
                       "0x%04X" % val_0x17_10bit if val_0x17_10bit is not None else "None")
-        logger.debug("  [mainDie]             device=0x11, reg=0x40080000, 32bit => %s",
+        logger.debug("  [mainDie]     device=0x11, reg=0x40080000, 32bit => %s",
                       "0x%08X" % val_0x11_32bit if val_0x11_32bit is not None else "None")
 
         chip_name = None
         main_die = None
         main_die_i2c_width = None
         main_die_i2c_addr = None
-        pmu = None
+        main_die_pmu = None
+        main_die_pmu_i2c_width = None
+        main_die_pmu_i2c_addr = None
         has_pmu = False
+        pmu = None
         pmu_i2c_width = None
         pmu_i2c_addr = None
 
@@ -268,18 +274,23 @@ class I2CInterface:
             model = self._parse_chip_model(val_0x11_32bit)
             chip_name = "bes%s" % model.lower()
             main_die = "BES%s" % model
+            main_die_i2c_width = 32
+            main_die_i2c_addr = 0x11
 
         if self._is_valid_i2c_value(val_0x27_10bit):
-            main_die_i2c_width = 10
-            main_die_i2c_addr = 0x27
+            main_die_pmu_i2c_width = 10
+            main_die_pmu_i2c_addr = 0x27
         elif self._is_valid_i2c_value(val_0x27_8bit):
-            main_die_i2c_width = 8
-            main_die_i2c_addr = 0x27
+            main_die_pmu_i2c_width = 8
+            main_die_pmu_i2c_addr = 0x27
+
+        if main_die_pmu_i2c_addr is not None and chip_name:
+            main_die_pmu = "PMU_%s" % main_die
 
         if (self._is_valid_i2c_value(val_0x17_8bit)
                 or self._is_valid_i2c_value(val_0x17_10bit)):
             has_pmu = True
-            pmu_i2c_width = main_die_i2c_width
+            pmu_i2c_width = main_die_pmu_i2c_width
             pmu_i2c_addr = 0x17
             if chip_name:
                 pmu = "PMU%s" % chip_name[3:].upper()
@@ -289,6 +300,9 @@ class I2CInterface:
             "main_die": main_die,
             "main_die_i2c_width": main_die_i2c_width,
             "main_die_i2c_addr": main_die_i2c_addr,
+            "main_die_pmu": main_die_pmu,
+            "main_die_pmu_i2c_width": main_die_pmu_i2c_width,
+            "main_die_pmu_i2c_addr": main_die_pmu_i2c_addr,
             "has_pmu": has_pmu,
             "pmu": pmu,
             "pmu_i2c_width": pmu_i2c_width,
@@ -301,6 +315,10 @@ class I2CInterface:
         logger.debug("  main_die_i2c_width: %s", result["main_die_i2c_width"])
         logger.debug("  main_die_i2c_addr: %s",
                       "0x%02X" % result["main_die_i2c_addr"] if result["main_die_i2c_addr"] is not None else "None")
+        logger.debug("  main_die_pmu: %s", result["main_die_pmu"])
+        logger.debug("  main_die_pmu_i2c_width: %s", result["main_die_pmu_i2c_width"])
+        logger.debug("  main_die_pmu_i2c_addr: %s",
+                      "0x%02X" % result["main_die_pmu_i2c_addr"] if result["main_die_pmu_i2c_addr"] is not None else "None")
         logger.debug("  has_pmu: %s", result["has_pmu"])
         logger.debug("  pmu: %s", result["pmu"])
         logger.debug("  pmu_i2c_width: %s", result["pmu_i2c_width"])

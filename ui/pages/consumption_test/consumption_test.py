@@ -857,6 +857,9 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         """)
         config_layout.addWidget(self.config_text_edit)
 
+        config_btn_row = QHBoxLayout()
+        config_btn_row.setSpacing(8)
+
         self.import_config_btn = QPushButton(" Import Configuration")
         self.import_config_btn.setIcon(_tinted_svg_icon(os.path.join(_ICONS_DIR, "upload.svg"), "#dbe7ff"))
         self.import_config_btn.setIconSize(QSize(18, 18))
@@ -871,7 +874,28 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             }
             QPushButton:hover { background-color: #1c315b; }
         """)
-        config_layout.addWidget(self.import_config_btn)
+        config_btn_row.addWidget(self.import_config_btn, 1)
+
+        self.execute_config_btn = QPushButton("⚙ Execute")
+        self.execute_config_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #5d45ff;
+                color: #ffffff;
+                border: none;
+                border-radius: 8px;
+                font-weight: 600;
+                min-height: 36px;
+            }
+            QPushButton:hover { background-color: #6d55ff; }
+            QPushButton:disabled {
+                background-color: #0f1930;
+                color: #5a6b8e;
+                border: 1px solid #1b2847;
+            }
+        """)
+        config_btn_row.addWidget(self.execute_config_btn, 1)
+
+        config_layout.addLayout(config_btn_row)
 
         outer_layout.addWidget(fw_panel, 1)
         outer_layout.addWidget(config_panel, 1)
@@ -881,6 +905,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self.download_btn.stop_clicked.connect(self._stop_download)
         self.chip_combo.currentIndexChanged.connect(self._on_chip_selected)
         self.import_config_btn.clicked.connect(self._import_configuration)
+        self.execute_config_btn.clicked.connect(self._execute_configuration)
 
         return outer
 
@@ -1238,6 +1263,18 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self.config_content = config_text
         logger.info("Configuration imported from text input (%d chars)", len(config_text))
         self.append_log(f"[SYSTEM] Configuration imported from text input ({len(config_text)} chars)")
+
+    def _execute_configuration(self):
+        if not self.config_content:
+            logger.warning("No configuration to execute, please import first")
+            self.append_log("[WARNING] No configuration to execute. Please import configuration first.")
+            return
+        if self.selected_chip_config is None:
+            logger.warning("No chip selected for configuration execution")
+            self.append_log("[WARNING] No chip selected. Please select a chip first.")
+            return
+        logger.info("Execute configuration for chip: %s", self.chip_combo.currentText())
+        self.append_log(f"[SYSTEM] Executing configuration for chip: {self.chip_combo.currentText()}...")
 
     def _on_start_or_stop(self):
         if self.is_testing:
