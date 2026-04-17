@@ -114,6 +114,12 @@ def _parse_ch_label(label):
         mtype = m.group(2)
         is_b = raw.startswith("B ") or raw.startswith("B_")
         return ch_num, mtype, is_b
+    dm = re.match(r'^([AB])\s*[-_]\s*(I|V|P)(\d+)$', raw)
+    if dm:
+        is_b = dm.group(1) == "B"
+        mtype = dm.group(2)
+        ch_num = int(dm.group(3))
+        return ch_num, mtype, is_b
     return None, None, False
 
 
@@ -2702,12 +2708,35 @@ class N6705CDatalogUI(QWidget):
                     pfx_m = re.match(r'^(F\d+-)?', key.strip())
                     pfx = pfx_m.group(1) if pfx_m and pfx_m.group(1) else ""
                     raw_part = key.strip()[len(pfx):]
-                    p_key = f"{pfx}{raw_part.replace(' V', ' P')}"
-                    if p_key not in self.datalog_data:
-                        calc_power_for_ch(self.datalog_data, ch,
-                                          raw_part.split("CH")[0].strip() if "CH" in raw_part else "",
-                                          key_prefix=pfx)
-                    if p_key in self.datalog_data:
+                    if "CH" in raw_part:
+                        p_key = f"{pfx}{raw_part.replace(' V', ' P')}"
+                        if p_key not in self.datalog_data:
+                            calc_power_for_ch(self.datalog_data, ch,
+                                              raw_part.split("CH")[0].strip(),
+                                              key_prefix=pfx)
+                    else:
+                        dm = re.match(r'^([AB])\s*[-_]\s*V(\d+)$', raw_part)
+                        if dm:
+                            p_key = f"{pfx}{dm.group(1)}-P{dm.group(2)}"
+                            if p_key not in self.datalog_data:
+                                v_key_int = None
+                                i_key_int = None
+                                for dk in self.datalog_data:
+                                    dn, dt, db = _parse_ch_label(dk)
+                                    if dn == ch and db == is_b_target:
+                                        if dt == "V":
+                                            v_key_int = dk
+                                        elif dt == "I":
+                                            i_key_int = dk
+                                if v_key_int and i_key_int:
+                                    v_vals = self.datalog_data[v_key_int]["values"]
+                                    i_vals = self.datalog_data[i_key_int]["values"]
+                                    t = self.datalog_data[v_key_int]["time"]
+                                    p_vals = [v * i / 1000.0 for v, i in zip(v_vals, i_vals)]
+                                    self.datalog_data[p_key] = {"time": t, "values": p_vals}
+                        else:
+                            p_key = None
+                    if p_key and p_key in self.datalog_data:
                         matched = True
             if matched:
                 self._refresh_plot()
@@ -3582,48 +3611,22 @@ class N6705CDatalogUI(QWidget):
                                         current_a, voltage_a, power_a,
                                         current_b, voltage_b, power_b,
                                         data_dict):
-        for i, cb in enumerate(current_a):
-            if cb.isChecked():
-                ch = i + 1
-                for key in data_dict:
-                    k = key.strip()
-                    if k.endswith(f"CH{ch} I") or k == f"CH{ch} I":
-                        visible_keys.add(key)
-        for i, cb in enumerate(voltage_a):
-            if cb.isChecked():
-                ch = i + 1
-                for key in data_dict:
-                    k = key.strip()
-                    if k.endswith(f"CH{ch} V") or k == f"CH{ch} V":
-                        visible_keys.add(key)
-        for i, cb in enumerate(current_b):
-            if cb.isChecked():
-                ch = i + 1
-                for key in data_dict:
-                    k = key.strip()
-                    if k.endswith(f"CH{ch} I") and "B" in k:
-                        visible_keys.add(key)
-        for i, cb in enumerate(voltage_b):
-            if cb.isChecked():
-                ch = i + 1
-                for key in data_dict:
-                    k = key.strip()
-                    if k.endswith(f"CH{ch} V") and "B" in k:
-                        visible_keys.add(key)
-        for i, cb in enumerate(power_a):
-            if cb.isChecked():
-                ch = i + 1
-                for key in data_dict:
-                    k = key.strip()
-                    if (k.endswith(f"CH{ch} P") or k == f"CH{ch} P") and "B" not in k:
-                        visible_keys.add(key)
-        for i, cb in enumerate(power_b):
-            if cb.isChecked():
-                ch = i + 1
-                for key in data_dict:
-                    k = key.strip()
-                    if k.endswith(f"CH{ch} P") and "B" in k:
-                        visible_keys.add(key)
+        cb_groups = [
+            (current_a, "I", False),
+            (voltage_a, "V", False),
+            (power_a, "P", False),
+            (current_b, "I", True),
+            (voltage_b, "V", True),
+            (power_b, "P", True),
+        ]
+        for cbs, target_mtype, target_is_b in cb_groups:
+            for i, cb in enumerate(cbs):
+                if cb.isChecked():
+                    ch = i + 1
+                    for key in data_dict:
+                        ch_num, mtype, is_b = _parse_ch_label(key)
+                        if ch_num == ch and mtype == target_mtype and is_b == target_is_b:
+                            visible_keys.add(key)
 
     def _on_channel_visibility_changed(self):
         if not self.datalog_data:
@@ -3759,15 +3762,10 @@ class N6705CDatalogUI(QWidget):
 
     def _sync_cbs_for_data(self, data_dict, current_a, voltage_a, power_a,
                            current_b, voltage_b, power_b):
-        import re
         for key, ch_data in data_dict.items():
-            k = key.strip()
-            m = re.search(r'CH(\d+)\s+(I|V|P)', k)
-            if not m:
+            ch_num, mtype, is_b = _parse_ch_label(key)
+            if ch_num is None:
                 continue
-            ch_num = int(m.group(1))
-            mtype = m.group(2)
-            is_b = "B " in key or "B_" in key
 
             if ch_num < 1 or ch_num > 4:
                 continue
@@ -4437,6 +4435,13 @@ class N6705CDatalogUI(QWidget):
         def _on_align_from_markers():
             delta_s = self.marker_a_pos - self.marker_b_pos
             self._apply_b_time_offset(self._b_time_offset + delta_s)
+            new_b_pos = self.marker_b_pos + delta_s
+            self.marker_b_pos = new_b_pos
+            if self.marker_b_line:
+                self.marker_b_line.setValue(new_b_pos)
+            self.marker_b_btn.setText(f"Set Marker B ({new_b_pos:.4f}s)")
+            self._update_marker_region()
+            self._update_marker_analysis()
             dialog.done(QDialog.Rejected)
 
         align_btn.clicked.connect(_on_align_from_markers)
@@ -5003,7 +5008,11 @@ class N6705CDatalogUI(QWidget):
             logger.error(f"Import failed: {e}\n{traceback.format_exc()}")
 
     def _import_csv(self, path):
-        all_data = import_csv_file(path)
+        result = import_csv_file(path)
+        if not result:
+            return
+
+        all_data, custom_labels, ch_name_renames = result
         if not all_data:
             return
 
@@ -5015,6 +5024,17 @@ class N6705CDatalogUI(QWidget):
         tab_name = os.path.basename(path)
         self._build_imported_channel_config(tab_name=tab_name, data_keys=new_keys)
         self._sync_checkboxes_to_data()
+
+        if custom_labels:
+            for lbl in custom_labels:
+                lbl["channel"] = f"{prefix}{lbl['channel']}" if lbl.get("channel") else ""
+            self.custom_labels.extend(custom_labels)
+            self._refresh_labels_display()
+
+        if ch_name_renames:
+            for key, display_name in ch_name_renames.items():
+                self.ch_name_renames[f"{prefix}{key}"] = display_name
+
         self._refresh_plot()
 
     def _import_edlg(self, path):
@@ -5074,29 +5094,112 @@ class N6705CDatalogUI(QWidget):
                             with open(f"{base}_unit{idx}{ext}", 'wb') as f:
                                 f.write(self._raw_dlog_list[idx])
             else:
-                max_len = max(len(d["time"]) for d in self.datalog_data.values())
-                labels = list(self.datalog_data.keys())
+                sorted_labels = sorted(self.datalog_data.keys(), key=_sort_key_for_label)
+
+                group_a = []
+                group_b = []
+                for lbl in sorted_labels:
+                    if self._is_b_label(lbl):
+                        group_b.append(lbl)
+                    else:
+                        group_a.append(lbl)
+
+                has_both = bool(group_a) and bool(group_b)
+
+                len_a = max((len(self.datalog_data[l]["time"]) for l in group_a), default=0)
+                len_b = max((len(self.datalog_data[l]["time"]) for l in group_b), default=0)
+                max_len = max(len_a, len_b)
 
                 with open(path, "w", newline="") as f:
-                    header = "Time(s)," + ",".join(_display_label(l) for l in labels)
-                    f.write(header + "\n")
+                    header_parts = []
+                    if has_both:
+                        header_parts.append("Time_A(s)")
+                        for lbl in group_a:
+                            header_parts.append(_display_label(lbl))
+                        header_parts.append("Time_B(s)")
+                        for lbl in group_b:
+                            header_parts.append(_display_label(lbl))
+                    else:
+                        header_parts.append("Time(s)")
+                        for lbl in sorted_labels:
+                            header_parts.append(_display_label(lbl))
+                    f.write(",".join(header_parts) + "\n")
 
                     for i in range(max_len):
                         row_parts = []
-                        first = list(self.datalog_data.values())[0]
-                        if i < len(first["time"]):
-                            row_parts.append(f"{first['time'][i]:.6f}")
-                        else:
-                            row_parts.append("")
-
-                        for lbl in labels:
-                            ch = self.datalog_data[lbl]
-                            if i < len(ch["values"]):
-                                row_parts.append(f"{ch['values'][i]:.9f}")
+                        if has_both:
+                            if group_a and i < len_a:
+                                ref_a = self.datalog_data[group_a[0]]
+                                row_parts.append(f"{ref_a['time'][i]:.6f}")
                             else:
                                 row_parts.append("")
+                            for lbl in group_a:
+                                ch = self.datalog_data[lbl]
+                                if i < len(ch["values"]):
+                                    row_parts.append(f"{ch['values'][i]:.9f}")
+                                else:
+                                    row_parts.append("")
+
+                            if group_b and i < len_b:
+                                ref_b = self.datalog_data[group_b[0]]
+                                t_val = ref_b["time"][i]
+                                if self._b_time_offset != 0.0:
+                                    t_val += self._b_time_offset
+                                row_parts.append(f"{t_val:.6f}")
+                            else:
+                                row_parts.append("")
+                            for lbl in group_b:
+                                ch = self.datalog_data[lbl]
+                                if i < len(ch["values"]):
+                                    row_parts.append(f"{ch['values'][i]:.9f}")
+                                else:
+                                    row_parts.append("")
+                        else:
+                            all_labels = sorted_labels
+                            first = self.datalog_data[all_labels[0]]
+                            if i < len(first["time"]):
+                                t_val = first["time"][i]
+                                if self._b_time_offset != 0.0 and self._is_b_label(all_labels[0]):
+                                    t_val += self._b_time_offset
+                                row_parts.append(f"{t_val:.6f}")
+                            else:
+                                row_parts.append("")
+                            for lbl in all_labels:
+                                ch = self.datalog_data[lbl]
+                                if i < len(ch["values"]):
+                                    row_parts.append(f"{ch['values'][i]:.9f}")
+                                else:
+                                    row_parts.append("")
 
                         f.write(",".join(row_parts) + "\n")
+
+                    if self.custom_labels:
+                        f.write("\n[CUSTOM_LABELS]\n")
+                        f.write("time,text,channel\n")
+                        for lbl in self.custom_labels:
+                            t_str = f"{lbl['time']:.6f}"
+                            ch_raw = lbl.get("channel", "")
+                            ch_display = _display_label(ch_raw) if ch_raw else ""
+                            text_escaped = lbl["text"].replace('"', '""')
+                            ch_escaped = ch_display.replace('"', '""')
+                            if "," in lbl["text"] or '"' in lbl["text"]:
+                                text_escaped = f'"{text_escaped}"'
+                            if "," in ch_display or '"' in ch_display:
+                                ch_escaped = f'"{ch_escaped}"'
+                            f.write(f"{t_str},{text_escaped},{ch_escaped}\n")
+
+                    if self.ch_name_renames:
+                        f.write("\n[CH_NAME_RENAMES]\n")
+                        f.write("key,display_name\n")
+                        for key, display_name in self.ch_name_renames.items():
+                            key_display = _display_label(key)
+                            key_escaped = key_display.replace('"', '""')
+                            name_escaped = display_name.replace('"', '""')
+                            if "," in key_display or '"' in key_display:
+                                key_escaped = f'"{key_escaped}"'
+                            if "," in display_name or '"' in display_name:
+                                name_escaped = f'"{name_escaped}"'
+                            f.write(f"{key_escaped},{name_escaped}\n")
         except Exception:
             pass
 

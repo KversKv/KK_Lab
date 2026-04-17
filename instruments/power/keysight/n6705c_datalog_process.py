@@ -169,9 +169,73 @@ def calc_power_for_ch(all_data, ch, unit_prefix, key_prefix=""):
         all_data[p_label] = {"time": t, "values": p_vals}
 
 
+def _parse_csv_field(field):
+    field = field.strip()
+    if field.startswith('"') and field.endswith('"'):
+        field = field[1:-1].replace('""', '"')
+    return field
+
+
 def import_csv_file(path):
     with open(path, "r", encoding="utf-8") as f:
-        lines = f.readlines()
+        raw_text = f.read()
+
+    section_data = raw_text
+    custom_labels = []
+    ch_name_renames = {}
+
+    cl_marker = "\n[CUSTOM_LABELS]\n"
+    rn_marker = "\n[CH_NAME_RENAMES]\n"
+
+    cl_pos = raw_text.find(cl_marker)
+    rn_pos = raw_text.find(rn_marker)
+
+    meta_start = len(raw_text)
+    if cl_pos >= 0:
+        meta_start = min(meta_start, cl_pos)
+    if rn_pos >= 0:
+        meta_start = min(meta_start, rn_pos)
+    section_data = raw_text[:meta_start]
+
+    if cl_pos >= 0:
+        cl_block_start = cl_pos + len(cl_marker)
+        cl_block_end = rn_pos if rn_pos >= 0 and rn_pos > cl_pos else len(raw_text)
+        cl_block = raw_text[cl_block_start:cl_block_end].strip()
+        cl_lines = cl_block.splitlines()
+        for cl_line in cl_lines[1:]:
+            cl_line = cl_line.strip()
+            if not cl_line:
+                continue
+            import csv
+            import io
+            reader = csv.reader(io.StringIO(cl_line))
+            for row in reader:
+                if len(row) >= 3:
+                    try:
+                        t = float(row[0])
+                    except ValueError:
+                        continue
+                    custom_labels.append({"time": t, "text": row[1], "channel": row[2]})
+                break
+
+    if rn_pos >= 0:
+        rn_block_start = rn_pos + len(rn_marker)
+        rn_block_end = cl_pos if cl_pos >= 0 and cl_pos > rn_pos else len(raw_text)
+        rn_block = raw_text[rn_block_start:rn_block_end].strip()
+        rn_lines = rn_block.splitlines()
+        for rn_line in rn_lines[1:]:
+            rn_line = rn_line.strip()
+            if not rn_line:
+                continue
+            import csv
+            import io
+            reader = csv.reader(io.StringIO(rn_line))
+            for row in reader:
+                if len(row) >= 2:
+                    ch_name_renames[row[0]] = row[1]
+                break
+
+    lines = section_data.splitlines()
 
     if not lines:
         return None
@@ -180,10 +244,26 @@ def import_csv_file(path):
     if len(header) < 2:
         return None
 
-    channel_names = [h.strip() for h in header[1:]]
+    col_headers = [h.strip() for h in header]
+
+    time_col_indices = []
+    channel_col_map = {}
+    current_time_idx = None
+    for col_idx, h in enumerate(col_headers):
+        h_lower = h.lower()
+        if h_lower.startswith("time") and ("(s)" in h_lower or h_lower == "time"):
+            time_col_indices.append(col_idx)
+            current_time_idx = col_idx
+        else:
+            if current_time_idx is None:
+                current_time_idx = 0
+            channel_col_map[col_idx] = (h, current_time_idx)
+
+    if not channel_col_map:
+        return None
 
     all_data = {}
-    for name in channel_names:
+    for col_idx, (name, _) in channel_col_map.items():
         all_data[name] = {"time": [], "values": []}
 
     for line in lines[1:]:
@@ -194,14 +274,26 @@ def import_csv_file(path):
         if len(parts) < 2:
             continue
 
-        try:
-            t = float(parts[0])
-        except ValueError:
-            continue
+        time_values = {}
+        for ti in time_col_indices:
+            if ti < len(parts) and parts[ti].strip():
+                try:
+                    time_values[ti] = float(parts[ti])
+                except ValueError:
+                    pass
 
-        for col_idx, name in enumerate(channel_names):
+        if not time_col_indices:
             try:
-                val = float(parts[1 + col_idx])
+                time_values[0] = float(parts[0])
+            except ValueError:
+                continue
+
+        for col_idx, (name, ti) in channel_col_map.items():
+            t = time_values.get(ti)
+            if t is None:
+                continue
+            try:
+                val = float(parts[col_idx]) if col_idx < len(parts) and parts[col_idx].strip() else 0.0
             except (ValueError, IndexError):
                 val = 0.0
             all_data[name]["time"].append(t)
@@ -214,7 +306,7 @@ def import_csv_file(path):
     if not all_data:
         return None
 
-    return all_data
+    return all_data, custom_labels, ch_name_renames
 
 
 def _parse_dlog_raw(raw_data):
