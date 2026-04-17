@@ -41,7 +41,7 @@ import pyvisa
 import os
 
 from instruments.power.keysight.n6705c import N6705C
-from ui.styles.button import SpinningSearchButton, update_connect_button_state
+from ui.widgets.button import SpinningSearchButton, update_connect_button_state
 from instruments.power.keysight.n6705c_datalog_process import (
     parse_csv_text, parse_dlog_binary, compute_power_channels,
     calc_power_for_ch, import_csv_file, import_edlg_file, import_dlog_file,

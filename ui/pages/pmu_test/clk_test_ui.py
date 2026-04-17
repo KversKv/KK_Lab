@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal, QThread, QObject
 from PySide6.QtGui import QFont
-from ui.styles.button import SpinningSearchButton, update_connect_button_state
+from ui.widgets.button import SpinningSearchButton, update_connect_button_state
 import pyqtgraph as pg
 from ui.styles import SCROLL_AREA_STYLE, START_BTN_STYLE, update_start_btn_state
 from ui.styles.execution_logs_module_frame import ExecutionLogsFrame

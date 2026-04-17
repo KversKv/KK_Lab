@@ -20,7 +20,7 @@ import csv
 from datetime import datetime
 
 from instruments.power.keysight.n6705c import N6705C
-from ui.styles.button import SpinningSearchButton, update_connect_button_state
+from ui.widgets.button import SpinningSearchButton, update_connect_button_state
 from ui.styles.n6705c_module_frame import N6705CConnectionMixin
 from ui.styles.oscilloscope_module_frame import OscilloscopeConnectionMixin
 from debug_config import DEBUG_MOCK

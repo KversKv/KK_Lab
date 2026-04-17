@@ -16,7 +16,7 @@ from PySide6.QtGui import QFont, QPixmap, QImage, QPainter, QColor, QPen, QIcon
 from PySide6.QtSvg import QSvgRenderer
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLL_AREA_STYLE
-from ui.styles.button import SpinningSearchButton, update_connect_button_state
+from ui.widgets.button import SpinningSearchButton, update_connect_button_state
 from instruments.scopes.base import OscilloscopeController
 from log_config import get_logger
 from debug_config import DEBUG_MOCK

@@ -10,7 +10,7 @@ sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLLBAR_STYLE, START_BTN_STYLE, update_start_btn_state
 from ui.styles.execution_logs_module_frame import ExecutionLogsFrame
-from ui.styles.button import SpinningSearchButton, update_connect_button_state
+from ui.widgets.button import SpinningSearchButton, update_connect_button_state
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QLineEdit, QGridLayout, QFrame, QDoubleSpinBox, QSpinBox,
