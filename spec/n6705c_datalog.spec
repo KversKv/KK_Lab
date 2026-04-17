@@ -13,7 +13,7 @@ block_cipher = None
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(SPEC)))
 
 a = Analysis(
-    [os.path.join(PROJECT_ROOT, 'ui', 'pages', 'power', 'n6705c_datalog_ui.py')],
+    [os.path.join(PROJECT_ROOT, 'ui', 'pages', 'n6705c_power_analyzer', 'n6705c_datalog_ui.py')],
     pathex=[PROJECT_ROOT],
     binaries=[],
     datas=[
@@ -34,6 +34,16 @@ a = Analysis(
         'instruments.power',
         'instruments.power.keysight',
         'instruments.power.keysight.n6705c',
+        'instruments.power.keysight.n6705c_datalog_process',
+        'instruments.mock',
+        'instruments.mock.mock_instruments',
+        'ui',
+        'ui.widgets',
+        'ui.widgets.button',
+        'ui.widgets.dark_combobox',
+        'ui.styles',
+        'log_config',
+        'debug_config',
         'openpyxl',
     ],
     hookspath=[os.path.join(PROJECT_ROOT, 'hooks')],

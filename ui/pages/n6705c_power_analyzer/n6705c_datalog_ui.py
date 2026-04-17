@@ -554,11 +554,20 @@ class _DatalogWorker(QObject):
             wait_end = time.time() + self.monitoring_time_s + 5
             capture_start = time.time()
             capture_total = self.monitoring_time_s + 5
+            early_stop = False
             while time.time() < wait_end:
                 if self._is_stopped:
-                    logger.info("[Datalog] Stopped by user during capture wait")
-                    self.finished.emit()
-                    return
+                    logger.info("[Datalog] Stopped by user during capture wait, aborting datalog and fetching data...")
+                    early_stop = True
+                    self.progress_update.emit(90, "Stopping instruments...")
+                    for unit_idx, n6705c, _, _ in active_units:
+                        try:
+                            n6705c.instr.write("ABOR:DLOG")
+                            logger.debug("[Datalog] ABOR:DLOG sent to unit %d", unit_idx)
+                        except Exception as e:
+                            logger.error("[Datalog] Failed to abort dlog on unit %d: %s", unit_idx, e)
+                    time.sleep(1)
+                    break
                 elapsed = time.time() - capture_start
                 capture_pct = min(elapsed / capture_total, 1.0)
                 overall_pct = int(2 + capture_pct * 91)
@@ -571,8 +580,6 @@ class _DatalogWorker(QObject):
             download_start = time.time()
 
             for unit_idx, n6705c in enumerate(self.n6705c_list):
-                if self._is_stopped:
-                    break
                 curr_channels = self.channels_per_unit[unit_idx]
                 volt_channels = self.voltage_channels_per_unit[unit_idx]
                 if not curr_channels and not volt_channels:
@@ -602,8 +609,6 @@ class _DatalogWorker(QObject):
                     csv_file = f"internal:\\datalog_cap_{unit_idx}.csv"
                     n6705c.instr.write(f'MMEM:EXP:DLOG "{csv_file}"')
                     for _ in range(15):
-                        if self._is_stopped:
-                            break
                         time.sleep(0.2)
 
                     t0 = time.time()
@@ -851,6 +856,7 @@ class N6705CDatalogUI(QWidget):
         if DEBUG_MOCK:
             self._add_default_debug_device()
             self._sync_device_card_states()
+            self._update_time_offset_btn_visibility()
 
         if self._top:
             self._sync_from_top()
@@ -875,6 +881,7 @@ class N6705CDatalogUI(QWidget):
                 self._ensure_device_card_exists(display_serial, "N6705C", visa_res)
         self._refresh_channel_config()
         self._sync_device_card_states()
+        self._update_time_offset_btn_visibility()
 
     def _ensure_device_card_exists(self, serial, model, visa_resource):
         existing_serials = {c.property("serial") for c in self.device_cards}
@@ -1460,6 +1467,7 @@ class N6705CDatalogUI(QWidget):
 
         self.time_offset_btn = QPushButton("Time Offset")
         self.time_offset_btn.setObjectName("chartToolBtn")
+        self.time_offset_btn.hide()
         chart_header.addWidget(self.time_offset_btn)
 
         chart_outer.addLayout(chart_header)
@@ -1876,6 +1884,7 @@ class N6705CDatalogUI(QWidget):
         self.connection_status_changed.emit(self.is_connected_a)
         self._refresh_channel_config()
         self._sync_device_card_states()
+        self._update_time_offset_btn_visibility()
 
     def _on_connect_error(self, serial):
         for card in self.device_cards:
@@ -1941,6 +1950,7 @@ class N6705CDatalogUI(QWidget):
         self.connection_status_changed.emit(self.is_connected_a)
         self._refresh_channel_config()
         self._sync_device_card_states()
+        self._update_time_offset_btn_visibility()
 
         if n6705c_to_close and should_close_locally:
             import threading
@@ -3506,6 +3516,12 @@ class N6705CDatalogUI(QWidget):
     def _is_8ch_mode(self):
         return self.is_connected_b
 
+    def _update_time_offset_btn_visibility(self):
+        multi = self.is_connected_a and self.is_connected_b
+        self.time_offset_btn.setVisible(multi)
+        if not multi and self._b_time_offset != 0.0:
+            self._apply_b_time_offset(0.0)
+
     def _update_connect_btn(self, btn, connected):
         update_connect_button_state(btn, connected)
 
@@ -3913,7 +3929,12 @@ class N6705CDatalogUI(QWidget):
 
     def _start_recording(self):
         if self._record_thread and self._record_thread.isRunning():
-            self._stop_recording()
+            if self._record_worker:
+                self._record_worker.stop()
+            self._record_thread.quit()
+            self._record_thread.wait(5000)
+            self._record_worker = None
+            self._record_thread = None
 
         self._validate_sample_period()
 
@@ -4011,13 +4032,7 @@ class N6705CDatalogUI(QWidget):
     def _stop_recording(self):
         if self._record_worker:
             self._record_worker.stop()
-        if self._record_thread and self._record_thread.isRunning():
-            self._record_thread.quit()
-            self._record_thread.wait(5000)
-        self._record_worker = None
-        self._record_thread = None
-        self._update_recording_button_state(False)
-        self._hide_progress_overlay()
+            self.start_btn.setEnabled(False)
 
     def _on_data_ready(self, data):
         power_chs_a = [cb.isChecked() for cb in getattr(self, 'ch_power_cbs_a', [])]
@@ -4032,6 +4047,7 @@ class N6705CDatalogUI(QWidget):
         self._raw_dlog_list = dlog_list
 
     def _on_recording_finished(self):
+        self.start_btn.setEnabled(True)
         self._update_recording_button_state(False)
         self._hide_progress_overlay()
         self._record_worker = None
@@ -4039,6 +4055,7 @@ class N6705CDatalogUI(QWidget):
 
     def _on_recording_error(self, msg):
         logger.error("[Datalog] Recording error: %s", msg)
+        self.start_btn.setEnabled(True)
         self._update_recording_button_state(False)
         self._hide_progress_overlay()
 
