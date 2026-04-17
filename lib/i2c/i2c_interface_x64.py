@@ -196,10 +196,59 @@ class I2CInterface:
         return val is not None and val != 0xFFFF and val != 0xFFFFFFFF
 
     @staticmethod
+    def _version_letter(ver_num):
+        return chr(ord('A') + ver_num) if 0 <= ver_num <= 25 else "?"
+
+    @staticmethod
     def _parse_chip_model(raw_32bit):
         chip_num = raw_32bit & 0xFFFF
         suffix_byte = (raw_32bit >> 16) & 0xFF
+        version_byte = (raw_32bit >> 24) & 0xFF
         model = "%X" % chip_num
+        if 0x20 < suffix_byte < 0x7F:
+            model += chr(suffix_byte)
+        return model, version_byte
+
+    _NEWGEN_PMU_MARKER = 0xF
+
+    @staticmethod
+    def _parse_pmu_id(raw_16bit):
+        """
+        解析PMU 16bit寄存器值
+
+        编码规则 (0xHHNV):
+            HH   — 高字节，型号前缀（十六进制表示）
+            N    — 低字节高4位，型号子序号（hex数字值作十进制）
+                   当 N == 0xF 时，表示新一代PMU，需额外读取扩展寄存器
+            V    — 低字节低4位，版本号（0→A, 1→B, 2→C, ...）
+
+        示例:
+            0x18D0 → PMU1813, verA
+            0x1891 → PMU1809, verB
+            0x18A2 → PMU1810, verC
+            0x18F0 → 新一代PMU标记，需读取扩展寄存器
+        """
+        high_byte = (raw_16bit >> 8) & 0xFF
+        sub_num = (raw_16bit >> 4) & 0xF
+        ver_num = raw_16bit & 0xF
+        model = "%02X%d" % (high_byte, sub_num)
+        return model, ver_num, sub_num == I2CInterface._NEWGEN_PMU_MARKER
+
+    @staticmethod
+    def _parse_newgen_pmu_ext(prefix_hex, raw_ext_16bit):
+        """
+        解析新一代PMU扩展寄存器值 (reg=0x0001)
+
+        编码规则:
+            [15:8] — 型号后两位编码（十六进制表示）
+            [7:0]  — 后缀字母ASCII码（0x00表示无后缀）
+
+        示例:
+            prefix="18", ext=0x0650 → "1806P"
+        """
+        tail_num = (raw_ext_16bit >> 8) & 0xFF
+        suffix_byte = raw_ext_16bit & 0xFF
+        model = "%s%02X" % (prefix_hex, tail_num)
         if 0x20 < suffix_byte < 0x7F:
             model += chr(suffix_byte)
         return model
@@ -216,25 +265,39 @@ class I2CInterface:
         芯片型号解析 (device=0x11, reg=0x40080000, 32bit):
             bit[15:0]  — 芯片序号（如 0x1605 → "1605"）
             bit[23:16] — 后缀字母ASCII码（如 0x50 → 'P'，0x00 → 无后缀）
+            bit[31:24] — 版本号（0→verA, 1→verB, ...）
 
-        Main-die内置PMU I2C位宽判断 (device=0x27):
+        Main-die内置PMU / 独立PMU ID解析 (16bit, 0xHHNV):
+            HH  — 高字节，型号前缀（十进制）
+            N   — 低字节高4位，型号子序号（hex值作十进制）
+            V   — 低字节低4位，版本号（0→verA, 1→verB, 2→verC, ...）
+            示例: 0x18D0 → PMU1813/verA, 0x1891 → PMU1809/verB
+
+        Main-die内置PMU检测 (device=0x27):
             优先检查10bit，若读取值有效(≠0xFFFF)则为10bit，否则检查8bit
+            型号名为 "BES" + 解析后的PMU ID
 
         独立PMU检测 (device=0x17):
-            8bit或10bit任一读取值有效(≠0xFFFF)则PMU存在
-            PMU的I2C通信位宽与Main-die内置PMU(0x27)的位宽一致
+            优先检查10bit，若读取值有效(≠0xFFFF)则为10bit，否则检查8bit
+            型号名为 "PMU" + 解析后的PMU ID
+            当N==0xF（新一代PMU）时，额外读取reg=0x0001:
+                [15:8] — 型号后两位编码, [7:0] — 后缀字母ASCII码
+                示例: 0x0000=0x18F0, 0x0001=0x0650 → PMU1806P
 
         返回:
         dict: 包含以下字段的字典（与 CHIP_CONFIG 字段名一致）
             - chip_name: 芯片名称，如 "bes1605" (str | None)
             - main_die: Main-die型号，如 "BES1605" (str | None)
+            - main_die_version: Main-die版本，如 "verA" (str | None)
             - main_die_i2c_width: Main-die I2C位宽 (32 | None)
             - main_die_i2c_addr: Main-die I2C设备地址 (int | None)
-            - main_die_pmu: Main-die内置PMU型号 (str | None)
+            - main_die_pmu: Main-die内置PMU型号，如 "BES1813" (str | None)
+            - main_die_pmu_version: Main-die内置PMU版本，如 "verA" (str | None)
             - main_die_pmu_i2c_width: Main-die内置PMU I2C位宽 (8 | 10 | None)
             - main_die_pmu_i2c_addr: Main-die内置PMU I2C设备地址 (int | None)
             - has_pmu: 是否有独立PMU芯片 (bool)
-            - pmu: PMU型号，如 "PMU1605" (str | None)
+            - pmu: PMU型号，如 "PMU1813" (str | None)
+            - pmu_version: PMU版本，如 "verA" (str | None)
             - pmu_i2c_width: PMU I2C位宽 (8 | 10 | None)
             - pmu_i2c_addr: PMU I2C设备地址 (int | None)
         """
@@ -260,51 +323,78 @@ class I2CInterface:
 
         chip_name = None
         main_die = None
+        main_die_version = None
         main_die_i2c_width = None
         main_die_i2c_addr = None
         main_die_pmu = None
+        main_die_pmu_version = None
         main_die_pmu_i2c_width = None
         main_die_pmu_i2c_addr = None
         has_pmu = False
         pmu = None
+        pmu_version = None
         pmu_i2c_width = None
         pmu_i2c_addr = None
 
         if self._is_valid_i2c_value(val_0x11_32bit):
-            model = self._parse_chip_model(val_0x11_32bit)
+            model, ver_byte = self._parse_chip_model(val_0x11_32bit)
             chip_name = "bes%s" % model.lower()
             main_die = "BES%s" % model
+            main_die_version = "ver%s" % self._version_letter(ver_byte)
             main_die_i2c_width = 32
             main_die_i2c_addr = 0x11
 
         if self._is_valid_i2c_value(val_0x27_10bit):
             main_die_pmu_i2c_width = 10
             main_die_pmu_i2c_addr = 0x27
+            main_die_pmu = "BES%X" % val_0x27_10bit
         elif self._is_valid_i2c_value(val_0x27_8bit):
             main_die_pmu_i2c_width = 8
             main_die_pmu_i2c_addr = 0x27
+            main_die_pmu = "BES%X" % val_0x27_8bit
 
-        if main_die_pmu_i2c_addr is not None and chip_name:
-            main_die_pmu = "PMU_%s" % main_die
-
-        if (self._is_valid_i2c_value(val_0x17_8bit)
-                or self._is_valid_i2c_value(val_0x17_10bit)):
+        if self._is_valid_i2c_value(val_0x17_10bit):
             has_pmu = True
-            pmu_i2c_width = main_die_pmu_i2c_width
+            pmu_i2c_width = 10
             pmu_i2c_addr = 0x17
-            if chip_name:
-                pmu = "PMU%s" % chip_name[3:].upper()
+            pmu_model, pmu_ver, is_newgen = self._parse_pmu_id(val_0x17_10bit)
+            if is_newgen:
+                ext_val = self._safe_read(0x17, 0x0001, I2CWidthFlag.BIT_10)
+                logger.debug("  [PMU newgen]  device=0x17, reg=0x0001, 10bit => %s",
+                              "0x%04X" % ext_val if ext_val is not None else "None")
+                if ext_val is not None:
+                    prefix_hex = "%02X" % ((val_0x17_10bit >> 8) & 0xFF)
+                    pmu_model = self._parse_newgen_pmu_ext(prefix_hex, ext_val)
+            pmu = "PMU%s" % pmu_model
+            pmu_version = "ver%s" % self._version_letter(pmu_ver)
+        elif self._is_valid_i2c_value(val_0x17_8bit):
+            has_pmu = True
+            pmu_i2c_width = 8
+            pmu_i2c_addr = 0x17
+            pmu_model, pmu_ver, is_newgen = self._parse_pmu_id(val_0x17_8bit)
+            if is_newgen:
+                ext_val = self._safe_read(0x17, 0x0001, I2CWidthFlag.BIT_8)
+                logger.debug("  [PMU newgen]  device=0x17, reg=0x0001, 8bit  => %s",
+                              "0x%04X" % ext_val if ext_val is not None else "None")
+                if ext_val is not None:
+                    prefix_hex = "%02X" % ((val_0x17_8bit >> 8) & 0xFF)
+                    pmu_model = self._parse_newgen_pmu_ext(prefix_hex, ext_val)
+            pmu = "PMU%s" % pmu_model
+            pmu_version = "ver%s" % self._version_letter(pmu_ver)
 
         result = {
             "chip_name": chip_name,
             "main_die": main_die,
+            "main_die_version": main_die_version,
             "main_die_i2c_width": main_die_i2c_width,
             "main_die_i2c_addr": main_die_i2c_addr,
             "main_die_pmu": main_die_pmu,
+            "main_die_pmu_version": main_die_pmu_version,
             "main_die_pmu_i2c_width": main_die_pmu_i2c_width,
             "main_die_pmu_i2c_addr": main_die_pmu_i2c_addr,
             "has_pmu": has_pmu,
             "pmu": pmu,
+            "pmu_version": pmu_version,
             "pmu_i2c_width": pmu_i2c_width,
             "pmu_i2c_addr": pmu_i2c_addr,
         }
@@ -312,15 +402,18 @@ class I2CInterface:
         logger.debug("bes_chip_check 检测结果:")
         logger.debug("  chip_name: %s", result["chip_name"])
         logger.debug("  main_die: %s", result["main_die"])
+        logger.debug("  main_die_version: %s", result["main_die_version"])
         logger.debug("  main_die_i2c_width: %s", result["main_die_i2c_width"])
         logger.debug("  main_die_i2c_addr: %s",
                       "0x%02X" % result["main_die_i2c_addr"] if result["main_die_i2c_addr"] is not None else "None")
         logger.debug("  main_die_pmu: %s", result["main_die_pmu"])
+        logger.debug("  main_die_pmu_version: %s", result["main_die_pmu_version"])
         logger.debug("  main_die_pmu_i2c_width: %s", result["main_die_pmu_i2c_width"])
         logger.debug("  main_die_pmu_i2c_addr: %s",
                       "0x%02X" % result["main_die_pmu_i2c_addr"] if result["main_die_pmu_i2c_addr"] is not None else "None")
         logger.debug("  has_pmu: %s", result["has_pmu"])
         logger.debug("  pmu: %s", result["pmu"])
+        logger.debug("  pmu_version: %s", result["pmu_version"])
         logger.debug("  pmu_i2c_width: %s", result["pmu_i2c_width"])
         logger.debug("  pmu_i2c_addr: %s",
                       "0x%02X" % result["pmu_i2c_addr"] if result["pmu_i2c_addr"] is not None else "None")

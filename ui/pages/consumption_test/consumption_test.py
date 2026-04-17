@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit, QPlainTextEdit,
     QGridLayout, QFrame, QApplication, QFileDialog,
-    QCheckBox, QSizePolicy, QToolTip
+    QCheckBox, QSizePolicy, QToolTip, QMessageBox
 )
 from PySide6.QtCore import (
     Qt, QTimer, Signal, QThread, QObject, QSize,
@@ -485,6 +485,23 @@ class _DownloadWorker(QObject):
             self.error.emit(str(e))
 
 
+class _ChipCheckWorker(QObject):
+    finished = Signal(object)
+    error = Signal(str)
+
+    def run(self):
+        try:
+            from lib.i2c.i2c_interface_x64 import I2CInterface
+            i2c = I2CInterface()
+            if not i2c.initialize():
+                self.error.emit("I2C interface initialization failed.")
+                return
+            chip_info = i2c.bes_chip_check()
+            self.finished.emit(chip_info)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class _ConsumptionTestWorker(QObject):
     channel_result = Signal(int, float)
     finished = Signal()
@@ -546,6 +563,8 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self._test_worker = None
         self._download_thread = None
         self._download_worker = None
+        self._chip_check_thread = None
+        self._chip_check_worker = None
 
         self._setup_style()
         self._create_layout()
@@ -831,6 +850,32 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         for chip_name in SUPPORTED_CHIPS:
             self.chip_combo.addItem(chip_name)
         chip_row.addWidget(self.chip_combo, 1)
+
+        self.chip_check_btn = QPushButton("Check")
+        self.chip_check_btn.setFixedWidth(60)
+        self.chip_check_btn.setFixedHeight(22)
+        font_btn = self.chip_check_btn.font()
+        font_btn.setPixelSize(11)
+        self.chip_check_btn.setFont(font_btn)
+        self.chip_check_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #162544;
+                color: #dbe7ff;
+                border: 1px solid #25355c;
+                border-radius: 6px;
+                font-weight: 600;
+                min-height: 0px;
+                padding: 2px 8px;
+            }
+            QPushButton:hover { background-color: #1c315b; }
+            QPushButton:disabled {
+                background-color: #0f1930;
+                color: #5a6b8e;
+                border: 1px solid #1b2847;
+            }
+        """)
+        chip_row.addWidget(self.chip_check_btn)
+
         config_layout.addLayout(chip_row)
 
         config_file_label = QLabel("Paste Configuration Content")
@@ -904,6 +949,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self.download_btn.clicked.connect(self._download_to_dut)
         self.download_btn.stop_clicked.connect(self._stop_download)
         self.chip_combo.currentIndexChanged.connect(self._on_chip_selected)
+        self.chip_check_btn.clicked.connect(self._on_chip_check)
         self.import_config_btn.clicked.connect(self._import_configuration)
         self.execute_config_btn.clicked.connect(self._execute_configuration)
 
@@ -1254,6 +1300,75 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             logger.warning("No config found for chip: %s", chip_name)
             self.append_log(f"[WARNING] No config found for chip: {chip_name}")
 
+    def _on_chip_check(self):
+        if self._chip_check_thread is not None and self._chip_check_thread.isRunning():
+            self.append_log("[WARNING] Chip check already in progress.")
+            return
+
+        self.chip_check_btn.setEnabled(False)
+        self.append_log("[SYSTEM] Starting chip check via I2C...")
+
+        worker = _ChipCheckWorker()
+        thread = QThread()
+        worker.moveToThread(thread)
+
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._on_chip_check_finished)
+        worker.error.connect(self._on_chip_check_error)
+        worker.finished.connect(thread.quit)
+        worker.error.connect(thread.quit)
+        thread.finished.connect(self._on_chip_check_thread_cleaned)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+
+        self._chip_check_thread = thread
+        self._chip_check_worker = worker
+        thread.start()
+
+    def _on_chip_check_finished(self, chip_info):
+        self.chip_check_btn.setEnabled(True)
+
+        def _fmt_addr(v):
+            return "0x%02X" % v if v is not None else "N/A"
+
+        self.append_log(
+            f"[CHIP_CHECK] chip={chip_info.get('chip_name') or 'N/A'}"
+            f"  main_die={chip_info.get('main_die') or 'N/A'}(addr={_fmt_addr(chip_info.get('main_die_i2c_addr'))}, {chip_info.get('main_die_i2c_width') or 'N/A'}bit)"
+            f"  main_die_pmu={chip_info.get('main_die_pmu') or 'N/A'}(addr={_fmt_addr(chip_info.get('main_die_pmu_i2c_addr'))}, {chip_info.get('main_die_pmu_i2c_width') or 'N/A'}bit)"
+            f"  has_pmu={chip_info.get('has_pmu', False)}"
+            f"  pmu={chip_info.get('pmu') or 'N/A'}(addr={_fmt_addr(chip_info.get('pmu_i2c_addr'))}, {chip_info.get('pmu_i2c_width') or 'N/A'}bit)"
+        )
+
+        detected_name = chip_info.get("chip_name")
+        if not detected_name:
+            self.append_log("[WARNING] Chip check: no chip detected.")
+            return
+
+        exact_idx = self.chip_combo.findText(detected_name, Qt.MatchExactly)
+        if exact_idx >= 0:
+            self.chip_combo.setCurrentIndex(exact_idx)
+            self.append_log(f"[CHIP_CHECK] Chip matched: {detected_name}")
+            return
+
+        prefix_match = detected_name.split("_")[0] if "_" in detected_name else detected_name
+        for i in range(1, self.chip_combo.count()):
+            item = self.chip_combo.itemText(i)
+            if item == prefix_match or item.startswith(detected_name):
+                self.chip_combo.setCurrentIndex(i)
+                self.append_log(f"[CHIP_CHECK] Chip matched (prefix): {item}")
+                return
+
+        self.append_log(f"[WARNING] No matching chip found in list for: {detected_name}")
+
+    def _on_chip_check_error(self, err_msg):
+        self.chip_check_btn.setEnabled(True)
+        logger.error("Chip check error: %s", err_msg)
+        self.append_log(f"[ERROR] Chip check failed: {err_msg}")
+
+    def _on_chip_check_thread_cleaned(self):
+        self._chip_check_worker = None
+        self._chip_check_thread = None
+
     def _import_configuration(self):
         config_text = self.config_text_edit.toPlainText().strip()
         if not config_text:
@@ -1265,16 +1380,287 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self.append_log(f"[SYSTEM] Configuration imported from text input ({len(config_text)} chars)")
 
     def _execute_configuration(self):
-        if not self.config_content:
-            logger.warning("No configuration to execute, please import first")
-            self.append_log("[WARNING] No configuration to execute. Please import configuration first.")
-            return
-        if self.selected_chip_config is None:
+        chip_name = self.chip_combo.currentText()
+        if self.chip_combo.currentIndex() <= 0 or self.selected_chip_config is None:
             logger.warning("No chip selected for configuration execution")
             self.append_log("[WARNING] No chip selected. Please select a chip first.")
             return
-        logger.info("Execute configuration for chip: %s", self.chip_combo.currentText())
-        self.append_log(f"[SYSTEM] Executing configuration for chip: {self.chip_combo.currentText()}...")
+
+        self.append_log(f"[EXECUTE] Starting configuration for chip: {chip_name}")
+
+        try:
+            from lib.i2c.i2c_interface_x64 import I2CInterface
+            i2c = I2CInterface()
+            if not i2c.initialize():
+                self.append_log("[ERROR] I2C interface initialization failed.")
+                return
+            self.append_log("[EXECUTE] I2C interface initialized successfully.")
+        except Exception as e:
+            logger.error("I2C initialization error: %s", e)
+            self.append_log(f"[ERROR] I2C initialization error: {e}")
+            return
+
+        try:
+            chip_info = i2c.bes_chip_check()
+            self.append_log(f"[EXECUTE] Chip detected: {chip_info.get('chip_name', 'N/A')}")
+        except Exception as e:
+            logger.error("bes_chip_check failed: %s", e)
+            self.append_log(f"[ERROR] Chip check failed: {e}")
+            return
+
+        self._compare_chip_info(chip_info, self.selected_chip_config)
+
+        config_text = self.config_text_edit.toPlainText().strip()
+        config_commands = None
+        config_source = None
+
+        if config_text:
+            config_commands = self._parse_config_commands(config_text)
+            config_source = "user_paste"
+            self.append_log(f"[EXECUTE] Using pasted configuration ({len(config_commands)} commands)")
+        else:
+            pd = self.selected_chip_config.get("power_distribution")
+            if pd and isinstance(pd, dict) and len(pd) > 0:
+                raw_lines = []
+                for section, cmds in pd.items():
+                    if isinstance(cmds, list):
+                        raw_lines.extend(cmds)
+                config_commands = self._parse_config_commands("\n".join(raw_lines))
+                config_source = "chip_config"
+                self.append_log(f"[EXECUTE] Using chip config power_distribution ({len(config_commands)} commands)")
+            else:
+                logger.warning("No configuration available: neither pasted text nor chip power_distribution found")
+                self.append_log("[WARNING] No configuration available. Please paste configuration or ensure chip config has power_distribution.")
+                return
+
+        if config_source == "user_paste":
+            reply = QMessageBox.question(
+                self,
+                "Import Configuration",
+                f"Do you want to save the pasted configuration to chip config '{chip_name}'?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply == QMessageBox.Yes:
+                self._update_chip_config_file(chip_name, config_text)
+
+        self._run_config_commands(i2c, chip_info, config_commands)
+        self.append_log("[EXECUTE] Configuration execution completed.")
+
+    def _compare_chip_info(self, detected, config):
+        compare_keys = [
+            "chip_name", "main_die", "main_die_i2c_width", "main_die_i2c_addr",
+            "main_die_pmu", "main_die_pmu_i2c_width", "main_die_pmu_i2c_addr",
+            "has_pmu", "pmu", "pmu_i2c_width", "pmu_i2c_addr",
+        ]
+        for key in compare_keys:
+            det_val = detected.get(key)
+            cfg_val = config.get(key)
+            if cfg_val in (None, "", {}):
+                continue
+            if det_val != cfg_val:
+                logger.warning(
+                    "Chip info mismatch [%s]: detected=%s, config=%s",
+                    key, det_val, cfg_val
+                )
+                self.append_log(
+                    f"[WARNING] Chip info mismatch [{key}]: detected={det_val}, config={cfg_val}"
+                )
+
+    @staticmethod
+    def _parse_config_commands(text):
+        commands = []
+        lines = text.strip().splitlines()
+        for raw_line in lines:
+            line = raw_line.strip()
+            if line.startswith("-"):
+                line = line[1:].strip()
+            if line.startswith("'") or line.startswith('"'):
+                line = line[1:]
+            if line.endswith("'") or line.endswith('"'):
+                line = line[:-1]
+            line = line.strip()
+
+            comment_idx = line.find("//")
+            if comment_idx >= 0:
+                line = line[:comment_idx].strip()
+
+            if not line:
+                continue
+
+            upper = line.upper()
+            if not any(kw in upper for kw in ("WRITE_BITS", "WRITE", "READ")):
+                continue
+
+            target = "DUT"
+            if ":" in line:
+                prefix, rest = line.split(":", 1)
+                prefix_upper = prefix.strip().upper()
+                if prefix_upper in ("DUT", "PMU", "MAIN_DIE_PMU"):
+                    target = prefix_upper
+                    line = rest.strip()
+                elif prefix_upper.endswith("_PMU"):
+                    target = "EXT_PMU"
+                    line = rest.strip()
+                elif prefix_upper.endswith("_DUT") or prefix_upper.endswith("_MAIN"):
+                    target = "DUT"
+                    line = rest.strip()
+
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+
+            op = parts[0].upper()
+            if op == "WRITE_BITS" and len(parts) >= 5:
+                reg_addr = int(parts[1], 0)
+                msb = int(parts[2], 0)
+                lsb = int(parts[3], 0)
+                value = int(parts[4], 0)
+                commands.append({
+                    "op": "WRITE_BITS",
+                    "target": target,
+                    "reg_addr": reg_addr,
+                    "msb": msb,
+                    "lsb": lsb,
+                    "value": value,
+                })
+            elif op == "WRITE" and len(parts) >= 3:
+                reg_addr = int(parts[1], 0)
+                value = int(parts[2], 0)
+                commands.append({
+                    "op": "WRITE",
+                    "target": target,
+                    "reg_addr": reg_addr,
+                    "value": value,
+                })
+            elif op == "READ" and len(parts) >= 2:
+                reg_addr = int(parts[1], 0)
+                commands.append({
+                    "op": "READ",
+                    "target": target,
+                    "reg_addr": reg_addr,
+                })
+
+        return commands
+
+    def _resolve_device(self, chip_info, target):
+        if target == "DUT":
+            addr = chip_info.get("main_die_i2c_addr")
+            width = chip_info.get("main_die_i2c_width")
+            return addr, width
+        if target == "EXT_PMU":
+            addr = chip_info.get("pmu_i2c_addr")
+            width = chip_info.get("pmu_i2c_width")
+            return addr, width
+        if target in ("PMU", "MAIN_DIE_PMU"):
+            addr = chip_info.get("main_die_pmu_i2c_addr")
+            width = chip_info.get("main_die_pmu_i2c_width")
+            return addr, width
+        if chip_info.get("has_pmu") and chip_info.get("pmu_i2c_addr"):
+            addr = chip_info.get("pmu_i2c_addr")
+            width = chip_info.get("pmu_i2c_width")
+        else:
+            addr = chip_info.get("main_die_pmu_i2c_addr")
+            width = chip_info.get("main_die_pmu_i2c_width")
+        return addr, width
+
+    def _run_config_commands(self, i2c, chip_info, commands):
+        for idx, cmd in enumerate(commands):
+            op = cmd["op"]
+            target = cmd.get("target", "DUT")
+            reg_addr = cmd["reg_addr"]
+
+            device_addr, width = self._resolve_device(chip_info, target)
+            if device_addr is None or width is None:
+                self.append_log(
+                    f"[ERROR] Cannot resolve device address for target={target}, skipping command #{idx+1}"
+                )
+                continue
+
+            try:
+                if op == "WRITE_BITS":
+                    msb = cmd["msb"]
+                    lsb = cmd["lsb"]
+                    value = cmd["value"]
+                    current_val = i2c.read(device_addr, reg_addr, width)
+                    bit_mask = ((1 << (msb - lsb + 1)) - 1) << lsb
+                    new_val = (current_val & ~bit_mask) | ((value << lsb) & bit_mask)
+                    i2c.write(device_addr, reg_addr, new_val, width)
+                    self.append_log(
+                        f"[EXECUTE] #{idx+1} WRITE_BITS dev=0x{device_addr:02X} "
+                        f"reg=0x{reg_addr:08X} [{msb}:{lsb}]=0x{value:X} "
+                        f"(0x{current_val:X} -> 0x{new_val:X})"
+                    )
+
+                elif op == "WRITE":
+                    value = cmd["value"]
+                    i2c.write(device_addr, reg_addr, value, width)
+                    self.append_log(
+                        f"[EXECUTE] #{idx+1} WRITE dev=0x{device_addr:02X} "
+                        f"reg=0x{reg_addr:08X} data=0x{value:X}"
+                    )
+
+                elif op == "READ":
+                    read_val = i2c.read(device_addr, reg_addr, width)
+                    self.append_log(
+                        f"[EXECUTE] #{idx+1} READ dev=0x{device_addr:02X} "
+                        f"reg=0x{reg_addr:08X} => 0x{read_val:X}"
+                    )
+
+            except Exception as e:
+                logger.error("Command #%d failed: %s", idx + 1, e)
+                self.append_log(f"[ERROR] Command #{idx+1} failed: {e}")
+
+    def _update_chip_config_file(self, chip_name, config_text):
+        try:
+            config_lines = []
+            for raw_line in config_text.strip().splitlines():
+                line = raw_line.strip()
+                if line:
+                    config_lines.append(line)
+
+            chips_dir = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+                "chips", "bes_chip_configs"
+            )
+            config_file = os.path.join(chips_dir, f"{chip_name}.py")
+
+            if not os.path.exists(config_file):
+                logger.warning("Chip config file not found: %s", config_file)
+                self.append_log(f"[WARNING] Chip config file not found: {config_file}")
+                return
+
+            with open(config_file, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            import ast
+            tree = ast.parse(content)
+            chip_config_dict = None
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Assign):
+                    for t in node.targets:
+                        if isinstance(t, ast.Name) and t.id == "CHIP_CONFIG":
+                            chip_config_dict = ast.literal_eval(content[node.value.col_offset:].split("\n}")[0] + "\n}")
+                            break
+
+            if chip_config_dict is None:
+                chip_config_dict = {}
+
+            chip_config_dict["power_distribution"] = {"user_config": config_lines}
+
+            lines = ["CHIP_CONFIG = {\n"]
+            for key, val in chip_config_dict.items():
+                lines.append(f"    {key!r}: {val!r},\n")
+            lines.append("}\n")
+
+            with open(config_file, "w", encoding="utf-8") as f:
+                f.writelines(lines)
+
+            logger.info("Chip config updated: %s", config_file)
+            self.append_log(f"[SYSTEM] Chip config updated: {chip_name}")
+        except Exception as e:
+            logger.error("Failed to update chip config: %s", e)
+            self.append_log(f"[ERROR] Failed to update chip config: {e}")
 
     def _on_start_or_stop(self):
         if self.is_testing:
