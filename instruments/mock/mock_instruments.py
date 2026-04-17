@@ -210,6 +210,12 @@ class MockN6705C:
             channels = [channels]
         return {ch: float(self.measure_voltage(ch)) for ch in channels}
 
+    def prepare_force_auto(self, channels, current_limit,
+                           monitor_channels=None):
+        if isinstance(channels, int):
+            channels = [channels]
+        return {ch: float(self.measure_voltage(ch)) for ch in channels}
+
     def configure_datalog(self, channels, test_time, sample_period):
         pass
 

@@ -642,6 +642,54 @@ class N6705C:
         time.sleep(0.5)
         return measured_voltages
 
+    _AUTO_SET_SPECIAL_VOLTAGES = [0.625, 0.67, 0.725, 0.78]
+
+    @staticmethod
+    def _align_voltage(v, special_values=None):
+        if special_values is None:
+            special_values = N6705C._AUTO_SET_SPECIAL_VOLTAGES
+        grid_v = round(round(v / 0.05) * 0.05, 4)
+        best = grid_v
+        best_dist = abs(v - grid_v)
+        for sv in special_values:
+            dist = abs(v - sv)
+            if dist < best_dist:
+                best = sv
+                best_dist = dist
+        return best
+
+    def prepare_force_auto(self, channels, current_limit,
+                           monitor_channels=None):
+        channels = self._normalize_channels(channels)
+        if monitor_channels is None:
+            monitor_channels = []
+        elif isinstance(monitor_channels, int):
+            monitor_channels = [monitor_channels]
+        else:
+            monitor_channels = list(monitor_channels)
+
+        for ch in channels:
+            self.set_mode(ch, "VMETer")
+            self.channel_on(ch)
+
+        time.sleep(0.5)
+
+        measured_voltages = {}
+        for ch in channels:
+            measured_voltages[ch] = float(self.measure_voltage(ch))
+
+        for ch in channels:
+            new_v = self._align_voltage(measured_voltages[ch])
+            self.set_mode(ch, "PS2Q")
+            self.set_voltage(ch, new_v)
+            self.set_current_limit(ch, current_limit)
+            self.channel_on(ch)
+            final_limit = 0.07 if new_v < 1.0 else 0.15
+            self.set_current_limit(ch, final_limit)
+
+        time.sleep(0.5)
+        return measured_voltages
+
     def configure_datalog(self, channels, test_time, sample_period):
         channels = self._normalize_channels(channels)
         self.instr.write("*CLS")
