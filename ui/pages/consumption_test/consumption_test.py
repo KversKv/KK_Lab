@@ -1490,23 +1490,6 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         config_header.addWidget(cfg_icon)
         config_header.addWidget(cfg_title)
         config_header.addStretch()
-
-        self.add_channel_btn = QPushButton("+ Add Channel")
-        self.add_channel_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #5d45ff;
-                color: #ffffff;
-                border: none;
-                border-radius: 6px;
-                font-weight: 600;
-                font-size: 11px;
-                padding: 4px 12px;
-                min-height: 26px;
-            }
-            QPushButton:hover { background-color: #6d55ff; }
-        """)
-        self.add_channel_btn.clicked.connect(self._add_channel_config)
-        config_header.addWidget(self.add_channel_btn)
         config_layout.addLayout(config_header)
 
         scroll_area = QScrollArea()
@@ -1549,13 +1532,6 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         config_layout.addWidget(scroll_area)
 
         return config_frame
-
-    def _add_channel_config(self):
-        idx = len(self._channel_configs)
-        default_ch_idx = idx % 8
-        labels = ["A-CH1", "A-CH2", "A-CH3", "A-CH4", "B-CH1", "B-CH2", "B-CH3", "B-CH4"]
-        ch = labels[default_ch_idx] if default_ch_idx < len(labels) else "A-CH1"
-        self._add_channel_config_card(f"CH{idx + 1}", ch, True)
 
     def _add_channel_config_card(self, name, channel_key, enabled):
         idx = len(self._channel_configs)
@@ -1655,10 +1631,13 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
         wdata = {
             "card": card,
+            "card_id": card_id,
             "enable_cb": enable_cb,
             "name_input": name_input,
             "channel_combo": channel_combo,
             "remove_btn": remove_btn,
+            "name_label": name_label,
+            "ch_label": ch_label,
             "config_index": idx,
         }
         self._channel_config_widgets.append(wdata)
@@ -1668,12 +1647,65 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         channel_combo.currentIndexChanged.connect(lambda ci, i=idx: self._on_config_channel_changed(i))
         remove_btn.clicked.connect(lambda checked=False, i=idx: self._remove_channel_config(i))
 
+        self._update_card_disabled_state(wdata, enabled)
         self._refresh_result_cards()
 
     def _on_config_enable_changed(self, idx, checked):
         if idx < len(self._channel_configs):
             self._channel_configs[idx]["enabled"] = checked
+            self._update_card_disabled_state(self._channel_config_widgets[idx], checked)
             self._refresh_result_cards()
+
+    def _update_card_disabled_state(self, wdata, enabled):
+        wdata["name_input"].setEnabled(enabled)
+        wdata["channel_combo"].setEnabled(enabled)
+        wdata["remove_btn"].setEnabled(enabled)
+
+        card = wdata["card"]
+        card_id = wdata["card_id"]
+        if enabled:
+            card.setStyleSheet(f"""
+                QFrame#{card_id} {{
+                    background-color: #0d1b3e;
+                    border: 1px solid #1c2f54;
+                    border-radius: 8px;
+                }}
+            """)
+            wdata["name_label"].setStyleSheet("font-size: 10px; color: #7e96bf;")
+            wdata["ch_label"].setStyleSheet("font-size: 10px; color: #7e96bf;")
+            wdata["remove_btn"].setStyleSheet("""
+                QPushButton {
+                    background: transparent;
+                    color: #5a6b8e;
+                    border: none;
+                    font-size: 13px;
+                    font-weight: 700;
+                    min-height: 0px;
+                    padding: 0px;
+                }
+                QPushButton:hover { color: #ff5a5a; }
+            """)
+        else:
+            card.setStyleSheet(f"""
+                QFrame#{card_id} {{
+                    background-color: #080e1e;
+                    border: 1px solid #131d36;
+                    border-radius: 8px;
+                }}
+            """)
+            wdata["name_label"].setStyleSheet("font-size: 10px; color: #3a4a6a;")
+            wdata["ch_label"].setStyleSheet("font-size: 10px; color: #3a4a6a;")
+            wdata["remove_btn"].setStyleSheet("""
+                QPushButton {
+                    background: transparent;
+                    color: #2a3550;
+                    border: none;
+                    font-size: 13px;
+                    font-weight: 700;
+                    min-height: 0px;
+                    padding: 0px;
+                }
+            """)
 
     def _on_config_name_changed(self, idx, text):
         if idx < len(self._channel_configs):
@@ -2038,6 +2070,10 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             self.append_log("[WARNING] No chip selected. Please select a chip first.")
             return
 
+        refreshed = get_chip_config(chip_name, force_reload=True)
+        if refreshed:
+            self.selected_chip_config = refreshed
+
         self.append_log(f"[EXECUTE] Starting configuration for chip: {chip_name}")
 
         try:
@@ -2172,19 +2208,28 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             if not any(kw in upper for kw in ("WRITE_BITS", "WRITE", "READ")):
                 continue
 
-            target = "DUT"
+            target = "NO_PREFIX"
             if ":" in line:
                 prefix, rest = line.split(":", 1)
                 prefix_upper = prefix.strip().upper()
-                if prefix_upper in ("DUT", "PMU", "MAIN_DIE_PMU"):
-                    target = prefix_upper
-                    line = rest.strip()
-                elif prefix_upper.endswith("_PMU"):
-                    target = "EXT_PMU"
-                    line = rest.strip()
-                elif prefix_upper.endswith("_DUT") or prefix_upper.endswith("_MAIN"):
-                    target = "DUT"
-                    line = rest.strip()
+                rest_upper = rest.strip().upper()
+                has_command = any(kw in rest_upper for kw in ("WRITE_BITS", "WRITE", "READ"))
+                if has_command:
+                    if prefix_upper == "DUT":
+                        target = "DUT"
+                        line = rest.strip()
+                    elif prefix_upper == "PMU":
+                        target = "MAIN_DIE_PMU"
+                        line = rest.strip()
+                    elif prefix_upper == "MAIN_DIE_PMU":
+                        target = "MAIN_DIE_PMU"
+                        line = rest.strip()
+                    elif prefix_upper.endswith("_PMU"):
+                        target = "EXT_PMU"
+                        line = rest.strip()
+                    elif prefix_upper.endswith("_DUT") or prefix_upper.endswith("_MAIN"):
+                        target = "DUT"
+                        line = rest.strip()
 
             parts = line.split()
             if len(parts) < 2:
@@ -2242,7 +2287,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             addr = self._to_int_addr(chip_info.get("pmu_i2c_addr"))
             width = chip_info.get("pmu_i2c_width")
             return addr, width
-        if target in ("PMU", "MAIN_DIE_PMU"):
+        if target == "MAIN_DIE_PMU":
             addr = self._to_int_addr(chip_info.get("main_die_pmu_i2c_addr"))
             width = chip_info.get("main_die_pmu_i2c_width")
             return addr, width
@@ -2257,7 +2302,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
     def _run_config_commands(self, i2c, chip_info, commands):
         for idx, cmd in enumerate(commands):
             op = cmd["op"]
-            target = cmd.get("target", "DUT")
+            target = cmd.get("target", "NO_PREFIX")
             reg_addr = cmd["reg_addr"]
 
             device_addr, width = self._resolve_device(chip_info, target)
@@ -2313,7 +2358,10 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
                 os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
                 "chips", "bes_chip_configs"
             )
-            config_file = os.path.join(chips_dir, f"{chip_name}.py")
+            if chip_name.startswith("pmu_"):
+                config_file = os.path.join(chips_dir, "pmu_chips", f"{chip_name}.py")
+            else:
+                config_file = os.path.join(chips_dir, "main_chips", f"{chip_name}.py")
 
             if not os.path.exists(config_file):
                 logger.warning("Chip config file not found: %s", config_file)
@@ -2348,6 +2396,10 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
             logger.info("Chip config updated: %s", config_file)
             self.append_log(f"[SYSTEM] Chip config updated: {chip_name}")
+
+            refreshed = get_chip_config(chip_name, force_reload=True)
+            if refreshed:
+                self.selected_chip_config = refreshed
         except Exception as e:
             logger.error("Failed to update chip config: %s", e)
             self.append_log(f"[ERROR] Failed to update chip config: {e}")

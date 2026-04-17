@@ -209,6 +209,10 @@ class I2CInterface:
             model += chr(suffix_byte)
         return model, version_byte
 
+    _MAIN_DIE_OVERRIDE = {
+        0x00181307: ("1307PH", 0x00),
+    }
+
     _NEWGEN_PMU_MARKER = 0xF
 
     @staticmethod
@@ -337,7 +341,10 @@ class I2CInterface:
         pmu_i2c_addr = None
 
         if self._is_valid_i2c_value(val_0x11_32bit):
-            model, ver_byte = self._parse_chip_model(val_0x11_32bit)
+            if val_0x11_32bit in self._MAIN_DIE_OVERRIDE:
+                model, ver_byte = self._MAIN_DIE_OVERRIDE[val_0x11_32bit]
+            else:
+                model, ver_byte = self._parse_chip_model(val_0x11_32bit)
             chip_name = "bes%s" % model.lower()
             main_die = "BES%s" % model
             main_die_version = "ver%s" % self._version_letter(ver_byte)

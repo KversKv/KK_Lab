@@ -33,8 +33,8 @@ from PySide6.QtWidgets import (
     QToolButton, QDialog, QTabWidget, QTabBar,
     QProgressBar,
 )
-from PySide6.QtCore import Qt, QTimer, Signal, QThread, QObject
-from PySide6.QtGui import QFont, QColor, QBrush, QPen, QPainter, QPixmap
+from PySide6.QtCore import Qt, QTimer, Signal, QThread, QObject, QByteArray
+from PySide6.QtGui import QFont, QColor, QBrush, QPen, QPainter, QPixmap, QIcon
 from PySide6.QtSvg import QSvgRenderer
 import pyqtgraph as pg
 import pyvisa
@@ -1390,11 +1390,25 @@ class N6705CDatalogUI(QWidget):
         self.start_btn.setProperty("running", "false")
         self.left_layout.addWidget(self.start_btn)
 
-        self.export_btn = QPushButton("\u2913  Export Datalog")
+        def _svg_icon(svg_file, color="#dfe8ff", size=18):
+            svg_path = os.path.join(_get_base_path(), "resources", "icons", svg_file)
+            with open(svg_path, "r", encoding="utf-8") as f:
+                svg_data = f.read().replace("currentColor", color)
+            renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))
+            pixmap = QPixmap(size, size)
+            pixmap.fill(QColor(0, 0, 0, 0))
+            painter = QPainter(pixmap)
+            renderer.render(painter)
+            painter.end()
+            return QIcon(pixmap)
+
+        self.export_btn = QPushButton("Export Datalog")
+        self.export_btn.setIcon(_svg_icon("download.svg"))
         self.export_btn.setObjectName("exportBtn")
         self.left_layout.addWidget(self.export_btn)
 
-        self.import_btn = QPushButton("\u2912  Import Datalog")
+        self.import_btn = QPushButton("Import Datalog")
+        self.import_btn.setIcon(_svg_icon("upload.svg"))
         self.import_btn.setObjectName("exportBtn")
         self.left_layout.addWidget(self.import_btn)
 

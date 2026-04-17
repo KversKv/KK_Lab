@@ -48,13 +48,15 @@ SUPPORTED_CHIPS = [
 ]
 
 
-def get_chip_config(chip_name):
+def get_chip_config(chip_name, force_reload=False):
     if chip_name.startswith("pmu_"):
         module_name = f"chips.bes_chip_configs.pmu_chips.{chip_name}"
     else:
         module_name = f"chips.bes_chip_configs.main_chips.{chip_name}"
     try:
         mod = importlib.import_module(module_name)
+        if force_reload:
+            mod = importlib.reload(mod)
         return mod.CHIP_CONFIG
     except (ModuleNotFoundError, AttributeError):
         return None

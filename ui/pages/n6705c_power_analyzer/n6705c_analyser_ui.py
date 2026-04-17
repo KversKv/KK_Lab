@@ -1144,7 +1144,7 @@ class N6705CAnalyserUI(QWidget):
             for col_idx, ch_idx in enumerate(range(1, 5)):
                 cb = QPushButton(f"CH {ch_idx}")
                 cb.setCheckable(True)
-                if ch_idx in [2, 3, 4]:
+                if dev_label != "B" and ch_idx in [2, 3, 4]:
                     cb.setChecked(True)
                 cb.setStyleSheet(_batch_channel_button_style())
                 self.batch_channel_buttons.append((dev_label, ch_idx, cb))
@@ -2123,7 +2123,10 @@ class N6705CAnalyserUI(QWidget):
                     new_v = self._align_voltage(v)
                     dev["n6705c"].set_mode(ch, "PS2Q")
                     dev["n6705c"].set_voltage(ch, new_v)
+                    dev["n6705c"].set_current_limit(ch, 0.02)
                     dev["n6705c"].channel_on(ch)
+                    final_limit = 0.07 if new_v < 1.0 else 0.15
+                    dev["n6705c"].set_current_limit(ch, final_limit)
                 except Exception as e:
                     logger.error("[%s] CH%d Auto Set failed: %s", label, ch, e)
 
@@ -2139,7 +2142,10 @@ class N6705CAnalyserUI(QWidget):
                     new_v = v + offset
                     dev["n6705c"].set_mode(ch, "PS2Q")
                     dev["n6705c"].set_voltage(ch, new_v)
+                    dev["n6705c"].set_current_limit(ch, 0.02)
                     dev["n6705c"].channel_on(ch)
+                    final_limit = 0.07 if new_v < 1.0 else 0.15
+                    dev["n6705c"].set_current_limit(ch, final_limit)
                 except Exception as e:
                     logger.error("[%s] CH%d Auto failed: %s", label, ch, e)
 
