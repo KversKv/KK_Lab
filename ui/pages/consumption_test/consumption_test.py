@@ -718,53 +718,64 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
 
-        self.start_test_btn = QPushButton("▶ START TEST")
+        start_test_style = {
+            "bg": "#0d6b4f",
+            "border": "#18a87a",
+            "text_color": "#ffffff",
+            "progress_color": (24, 168, 122, 60),
+            "complete_bg": (13, 107, 79, 80),
+            "complete_text_color": "#4ade80",
+            "failed_bg": "#2a0f1a",
+            "failed_border": "#6b2040",
+            "failed_text_color": "#ff7593",
+            "waiting_text_color": "#a0b4d8",
+            "spinner_color": (24, 168, 122, 200),
+            "separator_color": "#18a87a",
+            "stop_color_normal": "#8a9bbe",
+            "stop_color_hover": "#ff5a5a",
+            "min_height": 40,
+        }
+        self.start_test_btn = ProgressButton(
+            idle_text="▶ START TEST",
+            waiting_text="Preparing...",
+            programming_text="Testing",
+            complete_text="✓  Test complete",
+            failed_text="Test failed",
+            icon_path=os.path.join(_ICONS_DIR, "zap.svg"),
+            style_overrides=start_test_style,
+        )
         self.start_test_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self._start_btn_style = """
-            QPushButton {
-                background-color: #0d6b4f;
-                color: #ffffff;
-                border: 1px solid #18a87a;
-                border-radius: 8px;
-                font-weight: 700;
-                font-size: 13px;
-                min-height: 40px;
-            }
-            QPushButton:hover { background-color: #0f7d5c; }
-            QPushButton:disabled {
-                background-color: #0f1930;
-                color: #5a6b8e;
-                border: 1px solid #1b2847;
-            }
-        """
-        self._stop_btn_style = """
-            QPushButton {
-                background-color: rgba(255, 90, 122, 0.12);
-                color: #ff7593;
-                border: 1px solid rgba(255, 90, 122, 0.28);
-                border-radius: 8px;
-                font-weight: 700;
-                font-size: 13px;
-                min-height: 40px;
-            }
-            QPushButton:hover {
-                background-color: rgba(255, 90, 122, 0.20);
-            }
-            QPushButton:disabled {
-                background-color: #0f1930;
-                color: #5a6b8e;
-                border: 1px solid #1b2847;
-            }
-        """
-        self.start_test_btn.setStyleSheet(self._start_btn_style)
 
-        self.stop_test_btn = QPushButton("🟥 STOP")
-        self.stop_test_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.stop_test_btn.setEnabled(False)
-        self.stop_test_btn.setStyleSheet(self._stop_btn_style)
-        self.stop_test_btn.hide()
+        auto_test_style = {
+            "bg": "#162544",
+            "border": "#25355c",
+            "text_color": "#dbe7ff",
+            "progress_color": (93, 69, 255, 60),
+            "complete_bg": (13, 107, 79, 80),
+            "complete_text_color": "#4ade80",
+            "failed_bg": "#2a0f1a",
+            "failed_border": "#6b2040",
+            "failed_text_color": "#ff7593",
+            "waiting_text_color": "#a0b4d8",
+            "spinner_color": (93, 69, 255, 200),
+            "separator_color": "#25355c",
+            "stop_color_normal": "#8a9bbe",
+            "stop_color_hover": "#ff5a5a",
+            "min_height": 40,
+        }
+        self.auto_test_btn = ProgressButton(
+            idle_text="Auto Test",
+            waiting_text="Preparing...",
+            programming_text="Auto Testing",
+            complete_text="✓  Auto test done",
+            failed_text="Auto test failed",
+            icon_path=os.path.join(_ICONS_DIR, "activity.svg"),
+            style_overrides=auto_test_style,
+        )
+        self.auto_test_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         btn_row.addWidget(self.start_test_btn, 1)
+        btn_row.addWidget(self.auto_test_btn, 1)
         layout.addLayout(btn_row)
 
         channels_row = QHBoxLayout()
@@ -777,8 +788,10 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
         layout.addLayout(channels_row, 1)
 
-        self.start_test_btn.clicked.connect(self._on_start_or_stop)
-        self.stop_test_btn.clicked.connect(self._stop_test)
+        self.start_test_btn.clicked.connect(self._on_start_test)
+        self.start_test_btn.stop_clicked.connect(self._stop_test)
+        self.auto_test_btn.clicked.connect(self._on_auto_test)
+        self.auto_test_btn.stop_clicked.connect(self._stop_auto_test)
         self.save_datalog_btn.clicked.connect(self._save_datalog)
 
         return panel
@@ -1398,19 +1411,8 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             logger.error("Failed to update chip config: %s", e)
             self.append_log(f"[ERROR] Failed to update chip config: {e}")
 
-    def _on_start_or_stop(self):
-        if self.is_testing:
-            self._stop_test()
-        else:
-            self._start_test()
-
-    def _update_test_button_state(self, running):
-        if running:
-            self.start_test_btn.setText("🟥 STOP")
-            self.start_test_btn.setStyleSheet(self._stop_btn_style)
-        else:
-            self.start_test_btn.setText("▶ START TEST")
-            self.start_test_btn.setStyleSheet(self._start_btn_style)
+    def _on_start_test(self):
+        self._start_test()
 
     def _start_test(self):
         if self.is_testing:
@@ -1438,9 +1440,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             return
 
         self.is_testing = True
-        self.start_test_btn.setEnabled(True)
-        self.stop_test_btn.setEnabled(True)
-        self._update_test_button_state(True)
+        self.start_test_btn.setStateWaiting()
         self.append_log(f"[TEST] Starting consumption test: channels={selected_channels}, time={test_time}s, period={sample_period}s")
 
         for ch in range(1, 5):
@@ -1463,6 +1463,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
         self._test_thread = thread
         self._test_worker = worker
+        self.start_test_btn.setStateProgramming()
         thread.start()
 
     def _on_channel_result(self, channel, avg_current):
@@ -1475,9 +1476,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
     def _on_test_finished(self):
         self.is_testing = False
-        self.start_test_btn.setEnabled(True)
-        self.stop_test_btn.setEnabled(False)
-        self._update_test_button_state(False)
+        self.start_test_btn.setStateComplete()
         self.append_log("[TEST] Test completed.")
 
     def _on_test_thread_cleaned(self):
@@ -1488,10 +1487,16 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         if self._test_worker:
             self._test_worker.stop()
         self.is_testing = False
-        self.start_test_btn.setEnabled(True)
-        self.stop_test_btn.setEnabled(False)
-        self._update_test_button_state(False)
+        self.start_test_btn.setStateFailed()
         self.append_log("[TEST] Test stopped.")
+
+    def _on_auto_test(self):
+        self.append_log("[AUTO_TEST] Auto test started (not implemented yet).")
+        self.auto_test_btn.setStateWaiting()
+
+    def _stop_auto_test(self):
+        self.append_log("[AUTO_TEST] Auto test stopped.")
+        self.auto_test_btn.setStateFailed()
 
     def _save_datalog(self):
         file_path, _ = QFileDialog.getSaveFileName(
