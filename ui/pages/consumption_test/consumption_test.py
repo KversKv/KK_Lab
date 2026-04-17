@@ -333,9 +333,7 @@ class ProgrammingButton(QWidget):
             p.drawRect(QRectF(0, 0, w, h))
             p.restore()
 
-        font = self.font()
-        if font.family() != "Segoe UI":
-            font = QFont("Segoe UI", 9)
+        font = QFont(self.font())
         font.setWeight(QFont.DemiBold)
         p.setFont(font)
         fm = QFontMetrics(font)
@@ -345,7 +343,7 @@ class ProgrammingButton(QWidget):
         left_margin = 14
 
         if self._state == self.STATE_IDLE:
-            text = "Programming to DUT"
+            text = "Program DUT"
             text_color = QColor("#dbe7ff")
             tw = fm.horizontalAdvance(text)
             total_w = icon_size + icon_text_gap + tw

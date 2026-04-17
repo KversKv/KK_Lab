@@ -1394,11 +1394,11 @@ class N6705CDatalogUI(QWidget):
         left_scroll.setWidget(left_container)
         mid_layout.addWidget(left_scroll)
 
-        center_right_layout = QVBoxLayout()
+        center_right_layout = QHBoxLayout()
         center_right_layout.setSpacing(6)
 
-        chart_and_labels = QHBoxLayout()
-        chart_and_labels.setSpacing(6)
+        chart_and_meas_layout = QVBoxLayout()
+        chart_and_meas_layout.setSpacing(6)
 
         self.chart_frame = QFrame()
         self.chart_frame.setObjectName("chartFrame")
@@ -1494,18 +1494,18 @@ class N6705CDatalogUI(QWidget):
         )
         overlay_layout.addWidget(self._progress_time_label)
 
-        chart_and_labels.addWidget(self.chart_frame, 1)
+        chart_and_meas_layout.addWidget(self.chart_frame, 1)
+
+        self.measurement_card = CardFrame("MEASUREMENT", "\u25CE")
+        self._build_measurement_card()
+        chart_and_meas_layout.addWidget(self.measurement_card)
+
+        center_right_layout.addLayout(chart_and_meas_layout, 1)
 
         self.label_card = CardFrame("CUSTOM LABELS", "\u2756")
         self._build_label_card()
         self.label_card.setFixedWidth(240)
-        chart_and_labels.addWidget(self.label_card)
-
-        center_right_layout.addLayout(chart_and_labels, 1)
-
-        self.measurement_card = CardFrame("MEASUREMENT", "\u25CE")
-        self._build_measurement_card()
-        center_right_layout.addWidget(self.measurement_card)
+        center_right_layout.addWidget(self.label_card)
 
         mid_layout.addLayout(center_right_layout, 1)
         main_area.addLayout(mid_layout, 1)
