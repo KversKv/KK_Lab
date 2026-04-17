@@ -403,6 +403,8 @@ class N6705CAnalyserUI(QWidget):
 
         if self._top:
             self._sync_from_top()
+            if hasattr(self._top, 'connection_changed'):
+                self._top.connection_changed.connect(self._sync_from_top)
 
     def _connected_device_labels(self):
         return [label for label, dev in self.devices.items() if dev["is_connected"]]
@@ -433,10 +435,10 @@ class N6705CAnalyserUI(QWidget):
             n6705c = getattr(self._top, f"n6705c_{attr_suffix}", None)
             is_conn = getattr(self._top, f"is_connected_{attr_suffix}", False)
             visa_res = getattr(self._top, f"visa_resource_{attr_suffix}", "")
+            w = self.conn_widgets[label]
             if is_conn and n6705c:
                 self.devices[label]["n6705c"] = n6705c
                 self.devices[label]["is_connected"] = True
-                w = self.conn_widgets[label]
                 w["status"].setText("\u25cf Connected")
                 w["status"].setStyleSheet("color: #00a859; font-weight:bold;")
                 if visa_res:
@@ -444,6 +446,14 @@ class N6705CAnalyserUI(QWidget):
                     w["combo"].addItem(visa_res)
                 update_connect_button_state(w["toggle_conn_btn"], connected=True)
                 self._update_ui_connection_state(label, True)
+            else:
+                if self.devices[label]["is_connected"]:
+                    self.devices[label]["n6705c"] = None
+                    self.devices[label]["is_connected"] = False
+                    w["status"].setText("\u25cf Disconnected")
+                    w["status"].setStyleSheet("color: #8ea6cf; font-weight:bold;")
+                    update_connect_button_state(w["toggle_conn_btn"], connected=False)
+                    self._update_ui_connection_state(label, False)
         self._rebuild_dynamic_sections()
         if self.devices[self.current_device]["is_connected"]:
             self._start_channel_sync()

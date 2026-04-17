@@ -10,6 +10,7 @@ import pyvisa
 
 from instruments.power.keysight.n6705c import N6705C
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.widgets.button import SpinningSearchButton, update_connect_button_state
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockN6705C
 
@@ -30,6 +31,7 @@ N6705C_BTN_RADIUS = 6
 
 
 def _n6705c_search_style(h=N6705C_BTN_HEIGHT, r=N6705C_BTN_RADIUS):
+    inner = max(h - 2, 0)
     return f"""
         QPushButton {{
             background-color: #13254b;
@@ -37,7 +39,8 @@ def _n6705c_search_style(h=N6705C_BTN_HEIGHT, r=N6705C_BTN_RADIUS):
             border-radius: {r}px;
             color: #dce7ff;
             font-weight: 600;
-            min-height: {h}px;
+            min-height: {inner}px;
+            max-height: {inner}px;
         }}
         QPushButton:hover {{
             background-color: #1C2D55;
@@ -55,6 +58,7 @@ def _n6705c_search_style(h=N6705C_BTN_HEIGHT, r=N6705C_BTN_RADIUS):
 
 
 def _n6705c_connect_style(h=N6705C_BTN_HEIGHT, r=N6705C_BTN_RADIUS):
+    inner = max(h - 2, 0)
     return f"""
         QPushButton {{
             background-color: #053b38;
@@ -62,7 +66,8 @@ def _n6705c_connect_style(h=N6705C_BTN_HEIGHT, r=N6705C_BTN_RADIUS):
             border-radius: {r}px;
             color: #10e7bc;
             font-weight: 700;
-            min-height: {h}px;
+            min-height: {inner}px;
+            max-height: {inner}px;
         }}
         QPushButton:hover {{
             background-color: #064744;
@@ -81,6 +86,7 @@ def _n6705c_connect_style(h=N6705C_BTN_HEIGHT, r=N6705C_BTN_RADIUS):
 
 
 def _n6705c_disconnect_style(h=N6705C_BTN_HEIGHT, r=N6705C_BTN_RADIUS):
+    inner = max(h - 2, 0)
     return f"""
         QPushButton {{
             background-color: #3a0828;
@@ -88,7 +94,8 @@ def _n6705c_disconnect_style(h=N6705C_BTN_HEIGHT, r=N6705C_BTN_RADIUS):
             border-radius: {r}px;
             color: #ffb7d3;
             font-weight: 700;
-            min-height: {h}px;
+            min-height: {inner}px;
+            max-height: {inner}px;
         }}
         QPushButton:hover {{
             background-color: #4a0b31;
@@ -170,21 +177,7 @@ class _N6705CSearchButton(QPushButton):
 def _update_n6705c_btn_state(btn, connected,
                              h=N6705C_BTN_HEIGHT, r=N6705C_BTN_RADIUS,
                              icon_size=N6705C_BTN_ICON_SIZE):
-    from PySide6.QtCore import QSize as _QSize
-    if connected:
-        btn.setText("Disconnect")
-        btn.setStyleSheet(_n6705c_disconnect_style(h=h, r=r))
-        if os.path.isfile(_UNLINK_ICON_PATH):
-            btn.setIcon(QIcon(_UNLINK_ICON_PATH))
-            btn.setIconSize(_QSize(icon_size, icon_size))
-    else:
-        btn.setText("Connect")
-        btn.setStyleSheet(_n6705c_connect_style(h=h, r=r))
-        if os.path.isfile(_LINK_ICON_PATH):
-            btn.setIcon(QIcon(_LINK_ICON_PATH))
-            btn.setIconSize(_QSize(icon_size, icon_size))
-        else:
-            btn.setIcon(QIcon())
+    update_connect_button_state(btn, connected)
 
 
 class _SearchN6705CWorker(QObject):
@@ -221,6 +214,59 @@ class _SearchN6705CWorker(QObject):
                     rm.close()
                 except Exception:
                     pass
+
+
+_INLINE_ROW_TAG_COLORS = {
+    "A": "#00f5c4",
+    "B": "#f2994a",
+}
+
+
+def build_n6705c_inline_row(label, parent=None,
+                           btn_height=N6705C_BTN_HEIGHT,
+                           btn_radius=N6705C_BTN_RADIUS,
+                           btn_icon_size=N6705C_BTN_ICON_SIZE):
+    tag_color = _INLINE_ROW_TAG_COLORS.get(label, "#00f5c4")
+
+    row = QHBoxLayout()
+    row.setSpacing(10)
+    row.setContentsMargins(0, 0, 0, 0)
+    row.setAlignment(Qt.AlignVCenter)
+
+    tag = QLabel(f"  {label}  ")
+    tag.setAlignment(Qt.AlignCenter)
+    tag.setStyleSheet(
+        f"color: {tag_color}; font-weight: 900; font-size: 14px; min-width: 24px;"
+        " background: transparent; border: none;"
+    )
+    row.addWidget(tag, 0, Qt.AlignVCenter)
+
+    status_label = QLabel("● Disconnected")
+    status_label.setStyleSheet("color: #8ea6cf; font-weight: bold; background: transparent; border: none;")
+    row.addWidget(status_label, 0, Qt.AlignVCenter)
+
+    visa_combo = DarkComboBox(bg="#091426", border="#17345f")
+    visa_combo.setMinimumWidth(300)
+    visa_combo.setSizeAdjustPolicy(DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+    visa_combo.setMinimumContentsLength(10)
+    visa_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+    visa_combo.addItem(DEFAULT_VISA_RESOURCE)
+    row.addWidget(visa_combo, 1, Qt.AlignVCenter)
+
+    search_btn = SpinningSearchButton(parent=parent)
+    row.addWidget(search_btn, 0, Qt.AlignVCenter)
+
+    connect_btn = QPushButton()
+    update_connect_button_state(connect_btn, connected=False)
+    row.addWidget(connect_btn, 0, Qt.AlignVCenter)
+
+    return row, {
+        "tag": tag,
+        "status": status_label,
+        "combo": visa_combo,
+        "search_btn": search_btn,
+        "connect_btn": connect_btn,
+    }
 
 
 class N6705CConnectionMixin:

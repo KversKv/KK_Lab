@@ -11,14 +11,14 @@ import re
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
-from ui.styles.n6705c_module_frame import N6705CConnectionMixin
+from ui.styles.n6705c_module_frame import N6705CConnectionMixin, build_n6705c_inline_row
 from ui.styles.serialCom_module_frame import SerialComMixin, MODE_INLINE
 from ui.styles.execution_logs_module_frame import ExecutionLogsFrame
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit, QPlainTextEdit,
     QFrame, QApplication, QFileDialog,
-    QCheckBox, QSizePolicy, QMessageBox
+    QCheckBox, QSizePolicy, QMessageBox, QScrollArea
 )
 from PySide6.QtCore import (
     Qt, QTimer, Signal, QThread, QObject, QSize,
@@ -200,14 +200,13 @@ class _ChipCheckWorker(QObject):
 
 
 class _ConsumptionTestWorker(QObject):
-    channel_result = Signal(int, float)
+    channel_result = Signal(str, int, float)
     finished = Signal()
     error = Signal(str)
 
-    def __init__(self, n6705c, channels, test_time, sample_period):
+    def __init__(self, device_channel_map, test_time, sample_period):
         super().__init__()
-        self.n6705c = n6705c
-        self.channels = channels
+        self.device_channel_map = device_channel_map
         self.test_time = test_time
         self.sample_period = sample_period
         self._is_stopped = False
@@ -220,13 +219,16 @@ class _ConsumptionTestWorker(QObject):
             if self._is_stopped:
                 self.finished.emit()
                 return
-            result = self.n6705c.fetch_current_by_datalog(
-                self.channels, self.test_time, self.sample_period
-            )
-            for ch, avg_current in result.items():
+            for device_label, (n6705c_inst, hw_channels) in self.device_channel_map.items():
                 if self._is_stopped:
                     break
-                self.channel_result.emit(ch, float(avg_current))
+                result = n6705c_inst.fetch_current_by_datalog(
+                    hw_channels, self.test_time, self.sample_period
+                )
+                for ch, avg_current in result.items():
+                    if self._is_stopped:
+                        break
+                    self.channel_result.emit(device_label, ch, float(avg_current))
             self.finished.emit()
         except Exception as e:
             self.error.emit(str(e))
@@ -238,15 +240,43 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
     serial_connection_changed = Signal(bool)
     serial_data_received = Signal(bytes)
 
-    CHANNEL_COLORS = {
-        1: {"accent": "#d4a514", "bg": "#1a1708", "border": "#3d2e08"},
-        2: {"accent": "#18b67a", "bg": "#081a14", "border": "#0a3d28"},
-        3: {"accent": "#2f6fed", "bg": "#081028", "border": "#0c2a5e"},
-        4: {"accent": "#d14b72", "bg": "#1a080e", "border": "#3d0c22"},
-    }
+    CHANNEL_COLORS_LIST = [
+        {"accent": "#d4a514", "bg": "#1a1708", "border": "#3d2e08"},
+        {"accent": "#18b67a", "bg": "#081a14", "border": "#0a3d28"},
+        {"accent": "#2f6fed", "bg": "#081028", "border": "#0c2a5e"},
+        {"accent": "#d14b72", "bg": "#1a080e", "border": "#3d0c22"},
+        {"accent": "#a855f7", "bg": "#150a20", "border": "#3a1a5e"},
+        {"accent": "#06b6d4", "bg": "#081a1e", "border": "#0a3d4a"},
+        {"accent": "#f97316", "bg": "#1a1008", "border": "#3d2808"},
+        {"accent": "#ec4899", "bg": "#1a0812", "border": "#3d0c28"},
+    ]
+
+    SINGLE_DEVICE_CHANNEL_CONFIGS = [
+        {"name": "Vbat", "channel": "A-CH1", "enabled": True},
+        {"name": "Vcore", "channel": "A-CH2", "enabled": True},
+        {"name": "VANA", "channel": "A-CH3", "enabled": True},
+        {"name": "VHPPA", "channel": "A-CH4", "enabled": True},
+    ]
+
+    DUAL_DEVICE_CHANNEL_CONFIGS = [
+        {"name": "Vbat", "channel": "A-CH1", "enabled": True},
+        {"name": "VcoreM", "channel": "A-CH2", "enabled": True},
+        {"name": "VcoreL", "channel": "A-CH3", "enabled": True},
+        {"name": "VANA", "channel": "A-CH4", "enabled": True},
+        {"name": "VHPPA", "channel": "B-CH1", "enabled": True},
+        {"name": "CH6", "channel": "B-CH2", "enabled": False},
+        {"name": "CH7", "channel": "B-CH3", "enabled": False},
+        {"name": "CH8", "channel": "B-CH4", "enabled": False},
+    ]
 
     def __init__(self, n6705c_top=None):
         super().__init__()
+
+        self._n6705c_top = n6705c_top
+        self.n6705c_a = None
+        self.n6705c_b = None
+        self.is_connected_a = False
+        self.is_connected_b = False
 
         self.init_n6705c_connection(n6705c_top)
         self.init_serial_connection(mode=MODE_INLINE, prefix="DUT Serial")
@@ -263,9 +293,13 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self._chip_check_thread = None
         self._chip_check_worker = None
 
+        self._channel_configs = []
+        self._channel_config_widgets = []
+        self._syncing = False
+
         self._setup_style()
         self._create_layout()
-        self.sync_n6705c_from_top()
+        self._sync_n6705c_dual_from_top()
 
     def _setup_style(self):
         self.setFont(QFont("Segoe UI", 9))
@@ -383,30 +417,18 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         main_layout.addWidget(self.execution_logs)
 
     def _create_connection_panel(self):
-        outer = QFrame()
-        outer.setObjectName("connOuter")
-        outer.setStyleSheet("""
-            QFrame#connOuter {
-                background-color: transparent;
-                border: none;
-            }
-        """)
-        outer_layout = QHBoxLayout(outer)
-        outer_layout.setContentsMargins(0, 0, 0, 0)
-        outer_layout.setSpacing(12)
-
-        n6705c_panel = QFrame()
-        n6705c_panel.setObjectName("connectionPanel")
-        n6705c_panel.setStyleSheet("""
+        panel = QFrame()
+        panel.setObjectName("connectionPanel")
+        panel.setStyleSheet("""
             QFrame#connectionPanel {
                 background-color: #0b1630;
                 border: 1px solid #18284d;
                 border-radius: 12px;
             }
         """)
-        n6705c_layout = QVBoxLayout(n6705c_panel)
-        n6705c_layout.setContentsMargins(16, 14, 16, 14)
-        n6705c_layout.setSpacing(10)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(8)
 
         title_row = QHBoxLayout()
         title_row.setSpacing(8)
@@ -417,14 +439,316 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         title_row.addWidget(icon)
         title_row.addWidget(title)
         title_row.addStretch()
-        n6705c_layout.addLayout(title_row)
+        layout.addLayout(title_row)
 
-        self.build_n6705c_connection_widgets(n6705c_layout)
-        self.bind_n6705c_signals()
+        self._n6705c_conn_widgets = {}
+        for label in ("A", "B"):
+            row, widgets = build_n6705c_inline_row(label, parent=panel)
+            layout.addLayout(row)
+            self._n6705c_conn_widgets[label] = widgets
+            widgets["search_btn"].clicked.connect(lambda checked=False, lbl=label: self._on_device_search(lbl))
+            widgets["connect_btn"].clicked.connect(lambda checked=False, lbl=label: self._on_device_connect_or_disconnect(lbl))
 
-        outer_layout.addWidget(n6705c_panel, 1)
+        return panel
 
-        return outer
+    def _on_device_search(self, label):
+        top = self._n6705c_top
+        if top:
+            is_conn = getattr(top, f"is_connected_{label.lower()}", False)
+            if is_conn:
+                return
+
+        from debug_config import DEBUG_MOCK
+        w = self._n6705c_conn_widgets[label]
+        if DEBUG_MOCK:
+            w["combo"].clear()
+            w["combo"].addItem(f"DEBUG::MOCK::N6705C::{label}")
+            w["status"].setText("● Mock device ready")
+            self.append_log(f"[DEBUG] Mock device {label} loaded, skip real VISA scan.")
+            return
+
+        w["status"].setText("● Searching")
+        w["search_btn"].setEnabled(False)
+        w["connect_btn"].setEnabled(False)
+        self.append_log(f"[SYSTEM] Scanning VISA resources for N6705C-{label}...")
+
+        from ui.styles.n6705c_module_frame import _SearchN6705CWorker
+        worker = _SearchN6705CWorker()
+        thread = QThread()
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(lambda devs, lbl=label: self._on_device_search_done(lbl, devs))
+        worker.error.connect(lambda err, lbl=label: self._on_device_search_error(lbl, err))
+        worker.finished.connect(thread.quit)
+        worker.error.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+
+        setattr(self, f"_search_thread_{label}", thread)
+        setattr(self, f"_search_worker_{label}", worker)
+        thread.start()
+
+    def _on_device_search_done(self, label, devices):
+        w = self._n6705c_conn_widgets[label]
+        w["combo"].setEnabled(True)
+        w["combo"].clear()
+        if devices:
+            for dev in devices:
+                w["combo"].addItem(dev)
+            w["status"].setText(f"● Found {len(devices)} device(s)")
+            self.append_log(f"[SYSTEM] Found {len(devices)} N6705C device(s) for slot {label}.")
+        else:
+            w["combo"].addItem("No N6705C device found")
+            w["combo"].setEnabled(False)
+            w["status"].setText("● No device found")
+        w["search_btn"].setEnabled(True)
+        w["connect_btn"].setEnabled(True)
+
+    def _on_device_search_error(self, label, err):
+        w = self._n6705c_conn_widgets[label]
+        w["status"].setText("● Search failed")
+        self.append_log(f"[ERROR] Search failed for N6705C-{label}: {err}")
+        w["search_btn"].setEnabled(True)
+        w["connect_btn"].setEnabled(True)
+
+    def _on_device_connect_or_disconnect(self, label):
+        attr = label.lower()
+        is_conn = getattr(self, f"is_connected_{attr}", False)
+        if is_conn:
+            self._disconnect_device(label)
+        else:
+            self._connect_device(label)
+
+    def _connect_device(self, label):
+        attr = label.lower()
+        w = self._n6705c_conn_widgets[label]
+        from debug_config import DEBUG_MOCK
+        from ui.styles.n6705c_module_frame import _update_n6705c_btn_state
+        prev_count = self._connected_device_count()
+
+        if DEBUG_MOCK:
+            from instruments.mock.mock_instruments import MockN6705C
+            inst = MockN6705C()
+            setattr(self, f"n6705c_{attr}", inst)
+            setattr(self, f"is_connected_{attr}", True)
+            _update_n6705c_btn_state(w["connect_btn"], connected=True)
+            w["search_btn"].setEnabled(False)
+            w["status"].setText(f"● Connected: Mock-{label}")
+            self.append_log(f"[DEBUG] Mock N6705C-{label} connected.")
+            visa = w["combo"].currentText()
+            self._syncing = True
+            try:
+                if self._n6705c_top:
+                    getattr(self._n6705c_top, f"connect_{attr}")(visa, inst, f"MOCK-{label}")
+            finally:
+                self._syncing = False
+            new_count = self._connected_device_count()
+            self._apply_preset_channels(prev_count, new_count)
+            self._update_available_channels()
+            return
+
+        w["status"].setText("● Connecting")
+        w["connect_btn"].setEnabled(False)
+        self.append_log(f"[SYSTEM] Connecting N6705C-{label}...")
+
+        try:
+            from instruments.power.keysight.n6705c import N6705C
+            visa = w["combo"].currentText()
+            inst = N6705C(visa)
+            idn = inst.instr.query("*IDN?")
+            if "N6705C" in idn:
+                setattr(self, f"n6705c_{attr}", inst)
+                setattr(self, f"is_connected_{attr}", True)
+                _update_n6705c_btn_state(w["connect_btn"], connected=True)
+                w["search_btn"].setEnabled(False)
+                pretty = visa
+                try:
+                    pretty = visa.split("::")[1]
+                except Exception:
+                    pass
+                w["status"].setText(f"● Connected: {pretty}")
+                self.append_log(f"[SYSTEM] N6705C-{label} connected. IDN: {idn.strip()}")
+                self._syncing = True
+                try:
+                    if self._n6705c_top:
+                        serial = ""
+                        try:
+                            serial = idn.strip().split(",")[2].strip()
+                        except Exception:
+                            pass
+                        getattr(self._n6705c_top, f"connect_{attr}")(visa, inst, serial)
+                finally:
+                    self._syncing = False
+                new_count = self._connected_device_count()
+                self._apply_preset_channels(prev_count, new_count)
+                self._update_available_channels()
+            else:
+                w["status"].setText("● Device mismatch")
+                self.append_log(f"[ERROR] Connected device on {label} is not N6705C.")
+        except Exception as e:
+            w["status"].setText("● Connection failed")
+            self.append_log(f"[ERROR] Connection failed for N6705C-{label}: {e}")
+        finally:
+            w["connect_btn"].setEnabled(True)
+
+    def _disconnect_device(self, label):
+        attr = label.lower()
+        w = self._n6705c_conn_widgets[label]
+        from ui.styles.n6705c_module_frame import _update_n6705c_btn_state
+        prev_count = self._connected_device_count()
+
+        try:
+            self._syncing = True
+            try:
+                if self._n6705c_top:
+                    getattr(self._n6705c_top, f"disconnect_{attr}")()
+                else:
+                    inst = getattr(self, f"n6705c_{attr}", None)
+                    if inst:
+                        if hasattr(inst, 'disconnect'):
+                            inst.disconnect()
+                        else:
+                            if hasattr(inst, 'instr') and inst.instr:
+                                inst.instr.close()
+                            if hasattr(inst, 'rm') and inst.rm:
+                                inst.rm.close()
+            finally:
+                self._syncing = False
+            setattr(self, f"n6705c_{attr}", None)
+            setattr(self, f"is_connected_{attr}", False)
+            _update_n6705c_btn_state(w["connect_btn"], connected=False)
+            w["search_btn"].setEnabled(True)
+            w["combo"].setEnabled(True)
+            w["status"].setText("● Ready")
+            self.append_log(f"[SYSTEM] N6705C-{label} disconnected.")
+            new_count = self._connected_device_count()
+            self._apply_preset_channels(prev_count, new_count)
+            self._update_available_channels()
+        except Exception as e:
+            w["status"].setText("● Disconnect failed")
+            self.append_log(f"[ERROR] Disconnect failed for N6705C-{label}: {e}")
+
+    def _sync_n6705c_dual_from_top(self):
+        top = self._n6705c_top
+        if not top:
+            self._update_test_panel_state()
+            return
+        from ui.styles.n6705c_module_frame import _update_n6705c_btn_state
+        prev_count = self._connected_device_count()
+        for label, attr in [("A", "a"), ("B", "b")]:
+            n6705c = getattr(top, f"n6705c_{attr}", None)
+            is_conn = getattr(top, f"is_connected_{attr}", False)
+            visa_res = getattr(top, f"visa_resource_{attr}", "")
+            if label not in self._n6705c_conn_widgets:
+                continue
+            w = self._n6705c_conn_widgets[label]
+            if is_conn and n6705c:
+                setattr(self, f"n6705c_{attr}", n6705c)
+                setattr(self, f"is_connected_{attr}", True)
+                _update_n6705c_btn_state(w["connect_btn"], connected=True)
+                w["search_btn"].setEnabled(False)
+                if visa_res:
+                    w["combo"].clear()
+                    w["combo"].addItem(visa_res)
+                pretty = visa_res
+                try:
+                    pretty = visa_res.split("::")[1]
+                except Exception:
+                    pass
+                w["status"].setText(f"● Connected: {pretty}")
+            else:
+                setattr(self, f"n6705c_{attr}", None)
+                setattr(self, f"is_connected_{attr}", False)
+                _update_n6705c_btn_state(w["connect_btn"], connected=False)
+                w["search_btn"].setEnabled(True)
+                w["combo"].setEnabled(True)
+                w["status"].setText("● Ready")
+        self.n6705c = self.n6705c_a
+        self.is_connected = self.is_connected_a
+        new_count = self._connected_device_count()
+        self._apply_preset_channels(prev_count, new_count)
+        self._update_available_channels()
+
+    def sync_n6705c_from_top(self):
+        if self._syncing:
+            return
+        self._sync_n6705c_dual_from_top()
+
+    def set_system_status(self, status, is_error=False):
+        pass
+
+    def _get_available_channel_options(self):
+        options = []
+        for label, attr in [("A", "a"), ("B", "b")]:
+            is_conn = getattr(self, f"is_connected_{attr}", False)
+            status = "Online" if is_conn else "Offline"
+            for ch in range(1, 5):
+                options.append(f"{label}-CH{ch} ({status})")
+        return options
+
+    def _connected_device_count(self):
+        count = 0
+        if self.is_connected_a:
+            count += 1
+        if self.is_connected_b:
+            count += 1
+        return count
+
+    def _update_available_channels(self):
+        options = self._get_available_channel_options()
+        for wdata in self._channel_config_widgets:
+            combo = wdata["channel_combo"]
+            current_text = combo.currentText()
+            current_key = current_text.split(" (")[0] if " (" in current_text else current_text
+            combo.blockSignals(True)
+            combo.clear()
+            for opt in options:
+                combo.addItem(opt)
+            for i in range(combo.count()):
+                if combo.itemText(i).startswith(current_key + " "):
+                    combo.setCurrentIndex(i)
+                    break
+            combo.blockSignals(False)
+        self._refresh_result_cards()
+        self._update_test_panel_state()
+
+    def _apply_preset_channels(self, prev_count, new_count):
+        if prev_count == new_count:
+            return
+
+        if new_count == 0:
+            self._clear_all_channel_configs()
+        elif new_count == 1:
+            self._clear_all_channel_configs()
+            for cfg in self.SINGLE_DEVICE_CHANNEL_CONFIGS:
+                self._add_channel_config_card(cfg["name"], cfg["channel"], cfg["enabled"])
+        elif new_count >= 2 and prev_count < 2:
+            self._clear_all_channel_configs()
+            for cfg in self.DUAL_DEVICE_CHANNEL_CONFIGS:
+                self._add_channel_config_card(cfg["name"], cfg["channel"], cfg["enabled"])
+
+    def _clear_all_channel_configs(self):
+        for wdata in reversed(self._channel_config_widgets):
+            wdata["card"].hide()
+            wdata["card"].deleteLater()
+        self._channel_configs.clear()
+        self._channel_config_widgets.clear()
+        while self.result_cards_layout.count():
+            item = self.result_cards_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.hide()
+                w.deleteLater()
+        self.channel_cards = {}
+
+    def _update_test_panel_state(self):
+        has_device = self._connected_device_count() > 0
+        if hasattr(self, '_disabled_overlay'):
+            if has_device:
+                self._disabled_overlay.hide()
+            else:
+                self._disabled_overlay.show()
+                self._disabled_overlay.raise_()
 
     def _create_firmware_config_panel(self):
         outer = QFrame()
@@ -653,6 +977,12 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         return outer
 
     def _create_consumption_test_panel(self):
+        wrapper = QWidget()
+        wrapper.setStyleSheet("background: transparent; border: none;")
+        wrapper_layout = QVBoxLayout(wrapper)
+        wrapper_layout.setContentsMargins(0, 0, 0, 0)
+        wrapper_layout.setSpacing(0)
+
         panel = QFrame()
         panel.setObjectName("consumptionPanel")
         panel.setStyleSheet("""
@@ -662,6 +992,37 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
                 border-radius: 12px;
             }
         """)
+        self._consumption_panel = panel
+        wrapper_layout.addWidget(panel)
+
+        self._disabled_overlay = QWidget(wrapper)
+        self._disabled_overlay.setStyleSheet("""
+            QWidget {
+                background-color: rgba(5, 11, 26, 180);
+                border-radius: 12px;
+            }
+        """)
+        self._disabled_overlay.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+        overlay_layout = QVBoxLayout(self._disabled_overlay)
+        overlay_layout.setAlignment(Qt.AlignCenter)
+        overlay_hint = QLabel("Please connect N6705C first")
+        overlay_hint.setAlignment(Qt.AlignCenter)
+        overlay_hint.setStyleSheet("""
+            QLabel {
+                color: #5a6b8e;
+                font-size: 13px;
+                font-weight: 600;
+                background: transparent;
+                border: none;
+            }
+        """)
+        overlay_layout.addWidget(overlay_hint)
+        self._disabled_overlay.raise_()
+        self._disabled_overlay.show()
+
+        def _resize_overlay(event):
+            self._disabled_overlay.setGeometry(panel.geometry())
+        wrapper.resizeEvent = _resize_overlay
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(16, 14, 16, 14)
         layout.setSpacing(12)
@@ -701,9 +1062,9 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self.test_time_input.setFixedWidth(80)
         self.test_time_input.setAlignment(Qt.AlignCenter)
 
-        period_label = QLabel("Sample Period (s)")
+        period_label = QLabel("Sample Period (us)")
         period_label.setStyleSheet("font-size: 11px; color: #7e96bf;")
-        self.sample_period_input = QLineEdit("0.001")
+        self.sample_period_input = QLineEdit("20")
         self.sample_period_input.setFixedWidth(80)
         self.sample_period_input.setAlignment(Qt.AlignCenter)
 
@@ -714,6 +1075,8 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         params_row.addWidget(self.sample_period_input)
         params_row.addStretch()
         layout.addLayout(params_row)
+
+        layout.addWidget(self._create_test_config_section())
 
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
@@ -778,15 +1141,13 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         btn_row.addWidget(self.auto_test_btn, 1)
         layout.addLayout(btn_row)
 
-        channels_row = QHBoxLayout()
-        channels_row.setSpacing(10)
-
+        self.result_cards_container = QWidget()
+        self.result_cards_container.setStyleSheet("background: transparent; border: none;")
+        self.result_cards_layout = QHBoxLayout(self.result_cards_container)
+        self.result_cards_layout.setContentsMargins(0, 0, 0, 0)
+        self.result_cards_layout.setSpacing(10)
         self.channel_cards = {}
-        for ch in range(1, 5):
-            card = self._create_channel_card(ch)
-            channels_row.addWidget(card, 1)
-
-        layout.addLayout(channels_row, 1)
+        layout.addWidget(self.result_cards_container, 1)
 
         self.start_test_btn.clicked.connect(self._on_start_test)
         self.start_test_btn.stop_clicked.connect(self._stop_test)
@@ -794,26 +1155,273 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self.auto_test_btn.stop_clicked.connect(self._stop_auto_test)
         self.save_datalog_btn.clicked.connect(self._save_datalog)
 
-        return panel
+        return wrapper
 
-    def _get_checkmark_path(self, accent_color):
-        safe_name = accent_color.replace("#", "").replace(" ", "")
-        icons_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
-            "resources", "icons"
-        )
-        return {
-            "checked": os.path.join(icons_dir, f"checked_{safe_name}.svg").replace("\\", "/"),
-            "unchecked": os.path.join(icons_dir, f"unchecked_{safe_name}.svg").replace("\\", "/"),
-        }
+    def _create_test_config_section(self):
+        config_frame = QFrame()
+        config_frame.setObjectName("testConfigFrame")
+        config_frame.setStyleSheet("""
+            QFrame#testConfigFrame {
+                background-color: #0a1228;
+                border: 1px solid #1a2d57;
+                border-radius: 10px;
+            }
+        """)
+        config_layout = QVBoxLayout(config_frame)
+        config_layout.setContentsMargins(14, 10, 14, 10)
+        config_layout.setSpacing(8)
 
-    def _create_channel_card(self, ch_num):
-        colors = self.CHANNEL_COLORS[ch_num]
+        config_header = QHBoxLayout()
+        config_header.setSpacing(8)
+        cfg_icon = QLabel("⚙")
+        cfg_icon.setStyleSheet("font-size: 14px; color: #c8d6f0;")
+        cfg_title = QLabel("Test Configuration")
+        cfg_title.setStyleSheet("font-size: 13px; font-weight: 700; color: #ffffff;")
+        config_header.addWidget(cfg_icon)
+        config_header.addWidget(cfg_title)
+        config_header.addStretch()
+
+        self.add_channel_btn = QPushButton("+ Add Channel")
+        self.add_channel_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #5d45ff;
+                color: #ffffff;
+                border: none;
+                border-radius: 6px;
+                font-weight: 600;
+                font-size: 11px;
+                padding: 4px 12px;
+                min-height: 26px;
+            }
+            QPushButton:hover { background-color: #6d55ff; }
+        """)
+        self.add_channel_btn.clicked.connect(self._add_channel_config)
+        config_header.addWidget(self.add_channel_btn)
+        config_layout.addLayout(config_header)
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setFixedHeight(140)
+        scroll_area.setStyleSheet("""
+            QScrollArea {
+                background: transparent;
+                border: none;
+            }
+            QWidget#channelConfigContainer {
+                background: transparent;
+            }
+            QScrollBar:horizontal {
+                background: #0a1228;
+                height: 6px;
+                border: none;
+                border-radius: 3px;
+            }
+            QScrollBar::handle:horizontal {
+                background: #2a3f6e;
+                min-width: 30px;
+                border-radius: 3px;
+            }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                width: 0px;
+            }
+        """)
+
+        self._channel_config_container = QWidget()
+        self._channel_config_container.setObjectName("channelConfigContainer")
+        self._channel_config_row = QHBoxLayout(self._channel_config_container)
+        self._channel_config_row.setContentsMargins(0, 0, 0, 0)
+        self._channel_config_row.setSpacing(10)
+        self._channel_config_row.addStretch()
+
+        scroll_area.setWidget(self._channel_config_container)
+        config_layout.addWidget(scroll_area)
+
+        return config_frame
+
+    def _add_channel_config(self):
+        idx = len(self._channel_configs)
+        default_ch_idx = idx % 8
+        labels = ["A-CH1", "A-CH2", "A-CH3", "A-CH4", "B-CH1", "B-CH2", "B-CH3", "B-CH4"]
+        ch = labels[default_ch_idx] if default_ch_idx < len(labels) else "A-CH1"
+        self._add_channel_config_card(f"CH{idx + 1}", ch, True)
+
+    def _add_channel_config_card(self, name, channel_key, enabled):
+        idx = len(self._channel_configs)
+        config = {"name": name, "channel": channel_key, "enabled": enabled}
+        self._channel_configs.append(config)
 
         card = QFrame()
-        card.setObjectName(f"channelCard{ch_num}")
+        card_id = f"cfgCard{idx}"
+        card.setObjectName(card_id)
         card.setStyleSheet(f"""
-            QFrame#channelCard{ch_num} {{
+            QFrame#{card_id} {{
+                background-color: #0d1b3e;
+                border: 1px solid #1c2f54;
+                border-radius: 8px;
+            }}
+        """)
+        card.setFixedWidth(140)
+        card.setMinimumHeight(100)
+
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(10, 8, 10, 8)
+        card_layout.setSpacing(5)
+
+        top_row = QHBoxLayout()
+        top_row.setSpacing(4)
+
+        enable_cb = QCheckBox("Enable")
+        enable_cb.setChecked(enabled)
+        enable_cb.setStyleSheet("""
+            QCheckBox {
+                color: #ffffff;
+                font-size: 11px;
+                font-weight: 600;
+            }
+        """)
+        top_row.addWidget(enable_cb)
+        top_row.addStretch()
+
+        remove_btn = QPushButton("✕")
+        remove_btn.setFixedSize(20, 20)
+        remove_btn.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                color: #5a6b8e;
+                border: none;
+                font-size: 13px;
+                font-weight: 700;
+                min-height: 0px;
+                padding: 0px;
+            }
+            QPushButton:hover { color: #ff5a5a; }
+        """)
+        top_row.addWidget(remove_btn)
+        card_layout.addLayout(top_row)
+
+        name_label = QLabel("Name")
+        name_label.setStyleSheet("font-size: 10px; color: #7e96bf;")
+        card_layout.addWidget(name_label)
+
+        name_input = QLineEdit(name)
+        name_input.setFixedHeight(26)
+        name_input.setStyleSheet("""
+            QLineEdit {
+                background-color: #020816;
+                border: 1px solid #1c2f54;
+                border-radius: 4px;
+                padding: 2px 6px;
+                color: #d7e3ff;
+                font-size: 12px;
+                min-height: 0px;
+            }
+            QLineEdit:focus { border: 1px solid #5b7cff; }
+        """)
+        card_layout.addWidget(name_input)
+
+        ch_label = QLabel("Channel (N6705C)")
+        ch_label.setStyleSheet("font-size: 10px; color: #7e96bf;")
+        card_layout.addWidget(ch_label)
+
+        channel_combo = DarkComboBox()
+        channel_combo.setFixedHeight(26)
+        font = channel_combo.font()
+        font.setPixelSize(11)
+        channel_combo.setFont(font)
+        options = self._get_available_channel_options()
+        for opt in options:
+            channel_combo.addItem(opt)
+        for i in range(channel_combo.count()):
+            if channel_combo.itemText(i).startswith(channel_key + " "):
+                channel_combo.setCurrentIndex(i)
+                break
+        card_layout.addWidget(channel_combo)
+
+        stretch_idx = self._channel_config_row.count() - 1
+        self._channel_config_row.insertWidget(stretch_idx, card)
+
+        wdata = {
+            "card": card,
+            "enable_cb": enable_cb,
+            "name_input": name_input,
+            "channel_combo": channel_combo,
+            "remove_btn": remove_btn,
+            "config_index": idx,
+        }
+        self._channel_config_widgets.append(wdata)
+
+        enable_cb.toggled.connect(lambda checked, i=idx: self._on_config_enable_changed(i, checked))
+        name_input.textChanged.connect(lambda text, i=idx: self._on_config_name_changed(i, text))
+        channel_combo.currentIndexChanged.connect(lambda ci, i=idx: self._on_config_channel_changed(i))
+        remove_btn.clicked.connect(lambda checked=False, i=idx: self._remove_channel_config(i))
+
+        self._refresh_result_cards()
+
+    def _on_config_enable_changed(self, idx, checked):
+        if idx < len(self._channel_configs):
+            self._channel_configs[idx]["enabled"] = checked
+            self._refresh_result_cards()
+
+    def _on_config_name_changed(self, idx, text):
+        if idx < len(self._channel_configs):
+            self._channel_configs[idx]["name"] = text
+            self._refresh_result_cards()
+
+    def _on_config_channel_changed(self, idx):
+        if idx < len(self._channel_configs):
+            wdata = self._channel_config_widgets[idx]
+            raw = wdata["channel_combo"].currentText()
+            key = raw.split(" (")[0] if " (" in raw else raw
+            self._channel_configs[idx]["channel"] = key
+            self._refresh_result_cards()
+
+    def _remove_channel_config(self, idx):
+        if idx >= len(self._channel_configs):
+            return
+        wdata = self._channel_config_widgets[idx]
+        wdata["card"].hide()
+        wdata["card"].deleteLater()
+
+        self._channel_configs.pop(idx)
+        self._channel_config_widgets.pop(idx)
+
+        for i, w in enumerate(self._channel_config_widgets):
+            w["config_index"] = i
+            w["enable_cb"].toggled.disconnect()
+            w["name_input"].textChanged.disconnect()
+            w["channel_combo"].currentIndexChanged.disconnect()
+            w["remove_btn"].clicked.disconnect()
+            w["enable_cb"].toggled.connect(lambda checked, ci=i: self._on_config_enable_changed(ci, checked))
+            w["name_input"].textChanged.connect(lambda text, ci=i: self._on_config_name_changed(ci, text))
+            w["channel_combo"].currentIndexChanged.connect(lambda cii, ci=i: self._on_config_channel_changed(ci))
+            w["remove_btn"].clicked.connect(lambda checked=False, ci=i: self._remove_channel_config(ci))
+
+        self._refresh_result_cards()
+
+    def _refresh_result_cards(self):
+        while self.result_cards_layout.count():
+            item = self.result_cards_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.hide()
+                w.deleteLater()
+        self.channel_cards = {}
+
+        for i, cfg in enumerate(self._channel_configs):
+            if not cfg["enabled"]:
+                continue
+            colors = self.CHANNEL_COLORS_LIST[i % len(self.CHANNEL_COLORS_LIST)]
+            card = self._create_result_card(i, cfg["name"], cfg["channel"], colors)
+            self.result_cards_layout.addWidget(card, 1)
+
+    def _create_result_card(self, idx, name, channel_key, colors):
+        card = QFrame()
+        card_id = f"resultCard{idx}"
+        card.setObjectName(card_id)
+        card.setStyleSheet(f"""
+            QFrame#{card_id} {{
                 background-color: {colors['bg']};
                 border: 1px solid {colors['border']};
                 border-radius: 10px;
@@ -828,29 +1436,27 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         top_row = QHBoxLayout()
         top_row.setSpacing(6)
 
-        checkbox = QCheckBox(f"CH {ch_num}")
-        checkbox.setChecked(False)
-        icons = self._get_checkmark_path(colors['accent'])
-        checkbox.setStyleSheet(f"""
-            QCheckBox {{
-                color: #ffffff;
+        title_label = QLabel(f"{name}")
+        title_label.setStyleSheet(f"""
+            QLabel {{
+                color: {colors['accent']};
                 font-size: 13px;
                 font-weight: 700;
                 background: transparent;
-                spacing: 6px;
-            }}
-            QCheckBox::indicator {{
-                width: 18px;
-                height: 18px;
-                image: url("{icons['unchecked']}");
-            }}
-            QCheckBox::indicator:checked {{
-                image: url("{icons['checked']}");
             }}
         """)
-
-        top_row.addWidget(checkbox)
+        top_row.addWidget(title_label)
         top_row.addStretch()
+
+        ch_tag = QLabel(channel_key)
+        ch_tag.setStyleSheet(f"""
+            QLabel {{
+                color: #7e96bf;
+                font-size: 10px;
+                background: transparent;
+            }}
+        """)
+        top_row.addWidget(ch_tag)
         layout.addLayout(top_row)
 
         layout.addStretch()
@@ -874,13 +1480,25 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
         layout.addStretch()
 
-        self.channel_cards[ch_num] = {
+        self.channel_cards[idx] = {
             "card": card,
-            "checkbox": checkbox,
             "value_label": value_label,
+            "name": name,
+            "channel_key": channel_key,
         }
 
         return card
+
+    def _get_checkmark_path(self, accent_color):
+        safe_name = accent_color.replace("#", "").replace(" ", "")
+        icons_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+            "resources", "icons"
+        )
+        return {
+            "checked": os.path.join(icons_dir, f"checked_{safe_name}.svg").replace("\\", "/"),
+            "unchecked": os.path.join(icons_dir, f"unchecked_{safe_name}.svg").replace("\\", "/"),
+        }
 
     def _browse_firmware(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -1411,44 +2029,62 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             logger.error("Failed to update chip config: %s", e)
             self.append_log(f"[ERROR] Failed to update chip config: {e}")
 
+    def _parse_channel_key(self, channel_key):
+        m = re.match(r'^([AB])-CH(\d+)$', channel_key)
+        if m:
+            return m.group(1), int(m.group(2))
+        return None, None
+
     def _on_start_test(self):
         self._start_test()
 
     def _start_test(self):
         if self.is_testing:
             return
-        if not self.is_connected or not self.n6705c:
-            self.set_system_status("Please connect N6705C first", is_error=True)
-            self.append_log("[ERROR] Please connect N6705C first.")
+
+        enabled_configs = [
+            (i, cfg) for i, cfg in enumerate(self._channel_configs) if cfg["enabled"]
+        ]
+        if not enabled_configs:
+            self.append_log("[ERROR] No channel enabled.")
             return
 
-        selected_channels = [
-            ch for ch in range(1, 5)
-            if self.channel_cards[ch]["checkbox"].isChecked()
-        ]
-        if not selected_channels:
-            self.set_system_status("No channel selected", is_error=True)
-            self.append_log("[ERROR] No channel selected.")
-            return
+        device_channel_map = {}
+        config_index_map = {}
+        for i, cfg in enabled_configs:
+            device_label, hw_ch = self._parse_channel_key(cfg["channel"])
+            if device_label is None or hw_ch is None:
+                self.append_log(f"[ERROR] Invalid channel key: {cfg['channel']}")
+                return
+            attr = device_label.lower()
+            inst = getattr(self, f"n6705c_{attr}", None)
+            is_conn = getattr(self, f"is_connected_{attr}", False)
+            if not is_conn or not inst:
+                self.append_log(f"[ERROR] N6705C-{device_label} is not connected (required by {cfg['name']}).")
+                return
+            if device_label not in device_channel_map:
+                device_channel_map[device_label] = (inst, [])
+                config_index_map[device_label] = {}
+            if hw_ch not in device_channel_map[device_label][1]:
+                device_channel_map[device_label][1].append(hw_ch)
+            config_index_map.setdefault(device_label, {})[hw_ch] = i
 
         try:
             test_time = float(self.test_time_input.text())
-            sample_period = float(self.sample_period_input.text())
+            sample_period = float(self.sample_period_input.text()) / 1_000_000
         except ValueError:
-            self.set_system_status("Invalid test time or sample period", is_error=True)
             self.append_log("[ERROR] Invalid test time or sample period.")
             return
 
         self.is_testing = True
+        self._config_index_map = config_index_map
         self.start_test_btn.setStateWaiting()
-        self.append_log(f"[TEST] Starting consumption test: channels={selected_channels}, time={test_time}s, period={sample_period}s")
+        self.append_log(f"[TEST] Starting consumption test: time={test_time}s, period={sample_period}s")
 
-        for ch in range(1, 5):
-            self.channel_cards[ch]["value_label"].setText("- - -")
+        for idx in self.channel_cards:
+            self.channel_cards[idx]["value_label"].setText("- - -")
 
-        worker = _ConsumptionTestWorker(
-            self.n6705c, selected_channels, test_time, sample_period
-        )
+        worker = _ConsumptionTestWorker(device_channel_map, test_time, sample_period)
         thread = QThread()
         worker.moveToThread(thread)
 
@@ -1466,12 +2102,19 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self.start_test_btn.setStateProgramming()
         thread.start()
 
-    def _on_channel_result(self, channel, avg_current):
-        self.update_channel_current(channel, avg_current)
-        self.append_log(f"[TEST] CH{channel} avg current: {self._format_current(avg_current)}")
+    def _on_channel_result(self, device_label, hw_channel, avg_current):
+        cfg_idx = self._config_index_map.get(device_label, {}).get(hw_channel)
+        if cfg_idx is not None and cfg_idx in self.channel_cards:
+            label = self.channel_cards[cfg_idx]["value_label"]
+            label.setText(self._format_current(avg_current))
+        name = f"{device_label}-CH{hw_channel}"
+        for cfg in self._channel_configs:
+            if cfg["channel"] == f"{device_label}-CH{hw_channel}" and cfg["enabled"]:
+                name = cfg["name"]
+                break
+        self.append_log(f"[TEST] {name} ({device_label}-CH{hw_channel}) avg current: {self._format_current(avg_current)}")
 
     def _on_test_error(self, err_msg):
-        self.set_system_status(err_msg, is_error=True)
         self.append_log(f"[ERROR] {err_msg}")
 
     def _on_test_finished(self):
@@ -1521,9 +2164,9 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         else:
             return f"{current_A:.3e} A"
 
-    def update_channel_current(self, channel_num, avg_current):
-        if channel_num in self.channel_cards:
-            label = self.channel_cards[channel_num]["value_label"]
+    def update_channel_current(self, channel_idx, avg_current):
+        if channel_idx in self.channel_cards:
+            label = self.channel_cards[channel_idx]["value_label"]
             if avg_current is not None:
                 label.setText(self._format_current(avg_current))
             else:
@@ -1531,25 +2174,27 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
     def get_selected_channels(self):
         return [
-            ch for ch in range(1, 5)
-            if self.channel_cards[ch]["checkbox"].isChecked()
+            cfg["channel"] for cfg in self._channel_configs if cfg["enabled"]
         ]
 
     def get_test_config(self):
         return {
-            'n6705c_connected': self.is_connected,
+            'n6705c_a_connected': self.is_connected_a,
+            'n6705c_b_connected': self.is_connected_b,
             'firmware_path': self.firmware_path,
             'config_content': self.config_content,
             'selected_chip': self.selected_chip_config,
-            'selected_channels': self.get_selected_channels(),
+            'channel_configs': self._channel_configs,
         }
 
     def update_test_result(self, result):
         if isinstance(result, dict):
-            for ch in range(1, 5):
-                key = f"ch{ch}_avg_current"
+            for idx, cfg in enumerate(self._channel_configs):
+                if not cfg["enabled"]:
+                    continue
+                key = cfg["channel"]
                 if key in result:
-                    self.update_channel_current(ch, result[key])
+                    self.update_channel_current(idx, result[key])
 
     def append_log(self, message):
         self.execution_logs.append_log(message)
@@ -1558,8 +2203,8 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self.execution_logs.clear_log()
 
     def clear_results(self):
-        for ch in range(1, 5):
-            self.channel_cards[ch]["value_label"].setText("- - -")
+        for idx in self.channel_cards:
+            self.channel_cards[idx]["value_label"].setText("- - -")
 
     def get_test_mode(self):
         return "Consumption Test"
