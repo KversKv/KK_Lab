@@ -1330,7 +1330,7 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget)
         self._build_test_item_card()
         left_layout.addWidget(self.test_item_card)
 
-        self.connection_card = CardFrame("N6705C Connection")
+        self.connection_card = CardFrame("N6705C ")
         self._build_connection_card()
         left_layout.addWidget(self.connection_card)
 

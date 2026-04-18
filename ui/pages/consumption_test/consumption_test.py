@@ -19,7 +19,8 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QLabel, QLineEdit, QPlainTextEdit,
     QFrame, QApplication, QFileDialog,
-    QCheckBox, QSizePolicy, QMessageBox, QScrollArea
+    QCheckBox, QSizePolicy, QMessageBox, QScrollArea,
+    QTableWidget, QTableWidgetItem, QHeaderView
 )
 from PySide6.QtCore import (
     Qt, QTimer, Signal, QThread, QObject, QSize,
@@ -598,6 +599,13 @@ class _ConsumptionTestForceHighWorker(QObject):
         self.channel_result.emit(vbat_label, vbat_ch, float(vbat_current), "vbat")
         results[(vbat_label, vbat_ch)] = float(vbat_current)
 
+        channel_voltages = {}
+        try:
+            vbat_v = float(vbat_inst.measure_voltage(vbat_ch))
+            channel_voltages[(vbat_label, vbat_ch)] = vbat_v
+        except Exception:
+            channel_voltages[(vbat_label, vbat_ch)] = 0.0
+
         self.log_message.emit("[TEST] Force high on sub-channels (+20mV) — parallel sync...")
 
         task_list = []
@@ -622,7 +630,7 @@ class _ConsumptionTestForceHighWorker(QObject):
 
         if not task_list:
             self.progress.emit(1.0)
-            self._emit_summary(results, vbat_current, vbat_remain)
+            self._emit_summary(results, vbat_current, vbat_remain, channel_voltages)
             return
 
         self.log_message.emit("[TEST] Preparing force high on all instruments...")
@@ -655,9 +663,15 @@ class _ConsumptionTestForceHighWorker(QObject):
                 self.log_message.emit(f"[ERROR] Prepare force high failed on {dl}: {err}")
 
         active_tasks = [t for i, t in enumerate(task_list) if prepare_errors[i] is None]
+
+        for task in active_tasks:
+            mv = task.get("measured_voltages") or {}
+            for ch, v in mv.items():
+                channel_voltages[(task["device_label"], ch)] = v
+
         if not active_tasks:
             self.progress.emit(1.0)
-            self._emit_summary(results, vbat_current, vbat_remain)
+            self._emit_summary(results, vbat_current, vbat_remain, channel_voltages)
             return
 
         self.log_message.emit("[TEST] Configuring datalog on all instruments...")
@@ -673,7 +687,7 @@ class _ConsumptionTestForceHighWorker(QObject):
         active_tasks = [t for t in active_tasks if t["error"] is None]
         if not active_tasks:
             self.progress.emit(1.0)
-            self._emit_summary(results, vbat_current, vbat_remain)
+            self._emit_summary(results, vbat_current, vbat_remain, channel_voltages)
             return
 
         barrier = threading.Barrier(len(active_tasks), timeout=30)
@@ -761,10 +775,12 @@ class _ConsumptionTestForceHighWorker(QObject):
                 vbat_remain = float(cr[vbat_ch])
 
         self.progress.emit(1.0)
-        self._emit_summary(results, vbat_current, vbat_remain)
+        self._emit_summary(results, vbat_current, vbat_remain, channel_voltages)
         self.log_message.emit("[TEST] Force high consumption test completed.")
 
-    def _emit_summary(self, results, vbat_current, vbat_remain):
+    def _emit_summary(self, results, vbat_current, vbat_remain, channel_voltages=None):
+        if channel_voltages is None:
+            channel_voltages = {}
         vbat_name = self.channel_names.get(
             (self.vbat_device_label, self.vbat_hw_ch), "Vbat"
         )
@@ -783,10 +799,23 @@ class _ConsumptionTestForceHighWorker(QObject):
         summary_line = " | ".join(parts)
         self.log_message.emit(f"[RESULT] {summary_line}")
 
+        voltage_parts = []
+        vbat_v = channel_voltages.get((self.vbat_device_label, self.vbat_hw_ch))
+        if vbat_v is not None:
+            voltage_parts.append(f"{vbat_name}={vbat_v:.4g}V")
+        for key in ordered_keys:
+            v = channel_voltages.get(key)
+            if v is not None:
+                name = self.channel_names.get(key, f"{key[0]}-CH{key[1]}")
+                voltage_parts.append(f"{name}={v:.4g}V")
+        if voltage_parts:
+            self.log_message.emit(f"[VOLTAGE] {', '.join(voltage_parts)}")
+
         summary = {
             "vbat": vbat_current,
             "channels": {k: results[k] for k in ordered_keys if k in results},
             "vbat_remain": vbat_remain,
+            "channel_voltages": channel_voltages,
         }
         self.test_summary.emit(summary)
 
@@ -896,6 +925,13 @@ class _ConsumptionTestForceWorker(QObject):
         self.channel_result.emit(vbat_label, vbat_ch, float(vbat_current), "vbat")
         results[(vbat_label, vbat_ch)] = float(vbat_current)
 
+        channel_voltages = {}
+        try:
+            vbat_v = float(vbat_inst.measure_voltage(vbat_ch))
+            channel_voltages[(vbat_label, vbat_ch)] = vbat_v
+        except Exception:
+            channel_voltages[(vbat_label, vbat_ch)] = 0.0
+
         self.log_message.emit("[TEST] Force auto on sub-channels (align voltage) — parallel sync...")
 
         task_list = []
@@ -920,7 +956,7 @@ class _ConsumptionTestForceWorker(QObject):
 
         if not task_list:
             self.progress.emit(1.0)
-            self._emit_summary(results, vbat_current, vbat_remain)
+            self._emit_summary(results, vbat_current, vbat_remain, channel_voltages)
             return
 
         self.log_message.emit("[TEST] Preparing force auto on all instruments...")
@@ -952,9 +988,15 @@ class _ConsumptionTestForceWorker(QObject):
                 self.log_message.emit(f"[ERROR] Prepare force auto failed on {dl}: {err}")
 
         active_tasks = [t for i, t in enumerate(task_list) if prepare_errors[i] is None]
+
+        for task in active_tasks:
+            mv = task.get("measured_voltages") or {}
+            for ch, v in mv.items():
+                channel_voltages[(task["device_label"], ch)] = v
+
         if not active_tasks:
             self.progress.emit(1.0)
-            self._emit_summary(results, vbat_current, vbat_remain)
+            self._emit_summary(results, vbat_current, vbat_remain, channel_voltages)
             return
 
         self.log_message.emit("[TEST] Configuring datalog on all instruments...")
@@ -970,7 +1012,7 @@ class _ConsumptionTestForceWorker(QObject):
         active_tasks = [t for t in active_tasks if t["error"] is None]
         if not active_tasks:
             self.progress.emit(1.0)
-            self._emit_summary(results, vbat_current, vbat_remain)
+            self._emit_summary(results, vbat_current, vbat_remain, channel_voltages)
             return
 
         barrier = threading.Barrier(len(active_tasks), timeout=30)
@@ -1056,10 +1098,12 @@ class _ConsumptionTestForceWorker(QObject):
                 vbat_remain = float(cr[vbat_ch])
 
         self.progress.emit(1.0)
-        self._emit_summary(results, vbat_current, vbat_remain)
+        self._emit_summary(results, vbat_current, vbat_remain, channel_voltages)
         self.log_message.emit("[TEST] Force auto consumption test completed.")
 
-    def _emit_summary(self, results, vbat_current, vbat_remain):
+    def _emit_summary(self, results, vbat_current, vbat_remain, channel_voltages=None):
+        if channel_voltages is None:
+            channel_voltages = {}
         vbat_name = self.channel_names.get(
             (self.vbat_device_label, self.vbat_hw_ch), "Vbat"
         )
@@ -1078,10 +1122,23 @@ class _ConsumptionTestForceWorker(QObject):
         summary_line = " | ".join(parts)
         self.log_message.emit(f"[RESULT] {summary_line}")
 
+        voltage_parts = []
+        vbat_v = channel_voltages.get((self.vbat_device_label, self.vbat_hw_ch))
+        if vbat_v is not None:
+            voltage_parts.append(f"{vbat_name}={vbat_v:.4g}V")
+        for key in ordered_keys:
+            v = channel_voltages.get(key)
+            if v is not None:
+                name = self.channel_names.get(key, f"{key[0]}-CH{key[1]}")
+                voltage_parts.append(f"{name}={v:.4g}V")
+        if voltage_parts:
+            self.log_message.emit(f"[VOLTAGE] {', '.join(voltage_parts)}")
+
         summary = {
             "vbat": vbat_current,
             "channels": {k: results[k] for k in ordered_keys if k in results},
             "vbat_remain": vbat_remain,
+            "channel_voltages": channel_voltages,
         }
         self.test_summary.emit(summary)
 
@@ -1616,12 +1673,22 @@ class _AutoTestWorker(QObject):
             for device_label, (n6705c_inst, hw_channels) in self.force_map.items():
                 n6705c_inst.restore_channels_to_vmeter(hw_channels)
 
-            self._emit_summary(results, vbat_current, vbat_remain, bin_name)
+            channel_voltages = {}
+            try:
+                vbat_v = float(self.vbat_inst.measure_voltage(self.vbat_hw_ch))
+            except Exception:
+                vbat_v = 3.8
+            channel_voltages[(self.vbat_device_label, self.vbat_hw_ch)] = vbat_v
+            for key, v in default_voltages.items():
+                channel_voltages[key] = v
+
+            self._emit_summary(results, vbat_current, vbat_remain, bin_name, channel_voltages)
             all_bin_results.append({
                 "bin_name": bin_name,
                 "vbat": vbat_current,
                 "channels": dict(results),
                 "vbat_remain": vbat_remain,
+                "channel_voltages": channel_voltages,
             })
             self.progress.emit(bin_progress_base + bin_progress_span)
             self.log_message.emit(f"[AUTO_TEST] === BIN {bin_idx+1}/{total_bins}: {bin_name} completed ===")
@@ -1685,7 +1752,9 @@ class _AutoTestWorker(QObject):
         except queue.Empty:
             return None
 
-    def _emit_summary(self, results, vbat_current, vbat_remain, bin_name=""):
+    def _emit_summary(self, results, vbat_current, vbat_remain, bin_name="", channel_voltages=None):
+        if channel_voltages is None:
+            channel_voltages = {}
         vbat_name = self.channel_names.get(
             (self.vbat_device_label, self.vbat_hw_ch), "Vbat"
         )
@@ -1705,11 +1774,24 @@ class _AutoTestWorker(QObject):
         summary_line = " | ".join(parts)
         self.log_message.emit(f"[RESULT] {prefix}{summary_line}")
 
+        voltage_parts = []
+        vbat_v = channel_voltages.get((self.vbat_device_label, self.vbat_hw_ch))
+        if vbat_v is not None:
+            voltage_parts.append(f"{vbat_name}={vbat_v:.4g}V")
+        for key in ordered_keys:
+            v = channel_voltages.get(key)
+            if v is not None:
+                name = self.channel_names.get(key, f"{key[0]}-CH{key[1]}")
+                voltage_parts.append(f"{name}={v:.4g}V")
+        if voltage_parts:
+            self.log_message.emit(f"[VOLTAGE] {prefix}{', '.join(voltage_parts)}")
+
         summary = {
             "bin_name": bin_name,
             "vbat": vbat_current,
             "channels": {k: results[k] for k in ordered_keys if k in results},
             "vbat_remain": vbat_remain,
+            "channel_voltages": channel_voltages,
         }
         self.test_summary.emit(summary)
 
@@ -1734,6 +1816,7 @@ class _AutoTestWorker(QObject):
         suffix = cfg["suffix"]
 
         rows = []
+        voltage_rows = []
         for r in all_bin_results:
             bin_name = r["bin_name"]
             channels = r.get("channels", {})
@@ -1745,13 +1828,25 @@ class _AutoTestWorker(QObject):
                 vals.append(f"{vr * scale:.4f}" if vr is not None else "N/A")
             rows.append((bin_name, vals))
 
+            cv = r.get("channel_voltages", {})
+            vbat_v = cv.get((self.vbat_device_label, self.vbat_hw_ch))
+            v_vals = [f"{vbat_v:.4g}" if vbat_v is not None else "N/A"]
+            for key in ordered_keys:
+                kv = cv.get(key)
+                v_vals.append(f"{kv:.4g}" if kv is not None else "N/A")
+            if has_vbat_remain:
+                v_vals.append("")
+            voltage_rows.append((bin_name, v_vals))
+
         bin_col_width = max(len(r[0]) for r in rows)
-        bin_col_width = max(bin_col_width, len("BIN"))
+        bin_col_width = max(bin_col_width, len("BIN"), len("Voltage"))
         val_col_widths = []
         for i, hdr in enumerate(col_headers):
             max_w = len(hdr)
             for _, vals in rows:
                 max_w = max(max_w, len(vals[i]))
+            for _, v_vals in voltage_rows:
+                max_w = max(max_w, len(v_vals[i]))
             val_col_widths.append(max_w)
 
         unit_label = f"(Unit: {suffix})"
@@ -1766,11 +1861,16 @@ class _AutoTestWorker(QObject):
         self.log_message.emit("[SUMMARY] " + sep_line)
         self.log_message.emit(f"[SUMMARY] {header_line}")
         self.log_message.emit("[SUMMARY] " + sep_line)
-        for bin_name, vals in rows:
+        for idx, (bin_name, vals) in enumerate(rows):
             cells = [f"{bin_name:<{bin_col_width}}"]
             for i, v in enumerate(vals):
                 cells.append(f"{v:>{val_col_widths[i]}}")
             self.log_message.emit(f"[SUMMARY] {'  '.join(cells)}")
+            v_bin_name, v_vals = voltage_rows[idx]
+            v_cells = [f"{'Voltage':<{bin_col_width}}"]
+            for i, v in enumerate(v_vals):
+                v_cells.append(f"{v:>{val_col_widths[i]}}")
+            self.log_message.emit(f"[SUMMARY] {'  '.join(v_cells)}")
         self.log_message.emit("[SUMMARY] " + "=" * 60)
 
 
@@ -1836,6 +1936,8 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self._chip_check_worker = None
         self._auto_test_thread = None
         self._auto_test_worker = None
+        self._bin_results_data = []
+        self._current_total_bins = 0
 
         self._channel_configs = []
         self._channel_config_widgets = []
@@ -1968,6 +2070,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         right_column = QVBoxLayout()
         right_column.setSpacing(10)
         right_column.addWidget(self._create_channel_config_section())
+        right_column.addWidget(self._create_test_buttons_row())
         right_column.addWidget(self._create_consumption_test_panel(), 1)
 
         right_widget = QWidget()
@@ -1998,17 +2101,32 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         """)
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(4)
+        layout.setSpacing(6)
 
         self._n6705c_conn_widgets = {}
         _default_resources = {
             "B": "TCPIP0::K-N6705C-03845.local::hislip0::INSTR",
         }
         _tag_colors = {"A": "#00f5c4", "B": "#f2994a"}
+        _border_colors = {"A": "#18284d", "B": "#18284d"}
 
         for label in ("A", "B"):
             tag_color = _tag_colors.get(label, "#00f5c4")
+            border_color = _border_colors.get(label, "#18284d")
             default_res = _default_resources.get(label, "")
+
+            sub_frame = QFrame()
+            sub_frame.setObjectName(f"connSub{label}")
+            sub_frame.setStyleSheet(f"""
+                QFrame#connSub{label} {{
+                    background-color: #0d1a38;
+                    border: 1px solid {border_color};
+                    border-radius: 8px;
+                }}
+            """)
+            sub_layout = QVBoxLayout(sub_frame)
+            sub_layout.setContentsMargins(8, 6, 8, 6)
+            sub_layout.setSpacing(2)
 
             header = QHBoxLayout()
             header.setSpacing(4)
@@ -2026,7 +2144,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             header.addWidget(tag)
             header.addStretch()
             header.addWidget(status_label)
-            layout.addLayout(header)
+            sub_layout.addLayout(header)
 
             visa_combo = DarkComboBox(bg="#091426", border="#17345f")
             visa_combo.setSizeAdjustPolicy(
@@ -2039,18 +2157,24 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             font.setPixelSize(10)
             visa_combo.setFont(font)
             visa_combo.addItem(default_res if default_res else "TCPIP0::K-N6705C-06098.local::hislip0::INSTR")
-            layout.addWidget(visa_combo)
+            sub_layout.addWidget(visa_combo)
 
             btn_row = QHBoxLayout()
             btn_row.setSpacing(4)
-            search_btn = SpinningSearchButton(parent=panel)
-            search_btn.setFixedHeight(24)
+            _btn_h = 24
+            _btn_height_fix = f"QPushButton {{ min-height: {_btn_h}px; max-height: {_btn_h}px; }}"
+            search_btn = SpinningSearchButton(parent=sub_frame)
+            search_btn.setFixedHeight(_btn_h)
+            search_btn.setStyleSheet(search_btn.styleSheet() + _btn_height_fix)
             connect_btn = QPushButton()
-            connect_btn.setFixedHeight(24)
+            connect_btn.setFixedHeight(_btn_h)
             update_connect_button_state(connect_btn, connected=False)
+            connect_btn.setStyleSheet(connect_btn.styleSheet() + _btn_height_fix)
             btn_row.addWidget(search_btn)
             btn_row.addWidget(connect_btn)
-            layout.addLayout(btn_row)
+            sub_layout.addLayout(btn_row)
+
+            layout.addWidget(sub_frame)
 
             widgets = {
                 "tag": tag,
@@ -2648,7 +2772,71 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         layout.setContentsMargins(14, 10, 14, 10)
         layout.setSpacing(10)
 
-        btn_row = QHBoxLayout()
+        self.result_cards_container = QWidget()
+        self.result_cards_container.setStyleSheet("background: transparent; border: none;")
+        self.result_cards_layout = QHBoxLayout(self.result_cards_container)
+        self.result_cards_layout.setContentsMargins(0, 0, 0, 0)
+        self.result_cards_layout.setSpacing(10)
+        self.channel_cards = {}
+        layout.addWidget(self.result_cards_container, 0)
+
+        self.bin_result_table = QTableWidget(0, 0)
+        self.bin_result_table.setObjectName("binResultTable")
+        self.bin_result_table.setStyleSheet("""
+            QTableWidget#binResultTable {
+                background-color: #060e22;
+                border: 1px solid #1a2d57;
+                border-radius: 8px;
+                gridline-color: #15284f;
+                color: #dbe7ff;
+                font-size: 11px;
+            }
+            QTableWidget#binResultTable QHeaderView::section {
+                background-color: #0b1630;
+                color: #8eb0e3;
+                border: none;
+                border-bottom: 1px solid #1a2d57;
+                padding: 5px 8px;
+                font-size: 11px;
+                font-weight: 700;
+            }
+            QTableWidget#binResultTable::item {
+                padding: 4px 8px;
+                border-bottom: 1px solid #102448;
+            }
+        """)
+        self.bin_result_table.horizontalHeader().setDefaultAlignment(Qt.AlignCenter)
+        self.bin_result_table.verticalHeader().setVisible(False)
+        self.bin_result_table.setAlternatingRowColors(False)
+        self.bin_result_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.bin_result_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.bin_result_table.setShowGrid(False)
+        self.bin_result_table.hide()
+        layout.addWidget(self.bin_result_table, 1)
+
+        self.save_datalog_btn = QPushButton("💾 Save DataLog")
+        self.save_datalog_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #162544;
+                color: #dbe7ff;
+                border: 1px solid #25355c;
+                border-radius: 6px;
+                font-size: 11px;
+                padding: 4px 10px;
+                min-height: 28px;
+            }
+            QPushButton:hover { background-color: #1c315b; }
+        """)
+
+        self.save_datalog_btn.clicked.connect(self._save_datalog)
+
+        return wrapper
+
+    def _create_test_buttons_row(self):
+        btn_widget = QWidget()
+        btn_widget.setStyleSheet("background: transparent; border: none;")
+        btn_row = QHBoxLayout(btn_widget)
+        btn_row.setContentsMargins(0, 0, 0, 0)
         btn_row.setSpacing(8)
 
         start_test_style = {
@@ -2709,37 +2897,13 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
         btn_row.addWidget(self.start_test_btn, 1)
         btn_row.addWidget(self.auto_test_btn, 1)
-        layout.addLayout(btn_row)
-
-        self.result_cards_container = QWidget()
-        self.result_cards_container.setStyleSheet("background: transparent; border: none;")
-        self.result_cards_layout = QHBoxLayout(self.result_cards_container)
-        self.result_cards_layout.setContentsMargins(0, 0, 0, 0)
-        self.result_cards_layout.setSpacing(10)
-        self.channel_cards = {}
-        layout.addWidget(self.result_cards_container, 1)
-
-        self.save_datalog_btn = QPushButton("💾 Save DataLog")
-        self.save_datalog_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #162544;
-                color: #dbe7ff;
-                border: 1px solid #25355c;
-                border-radius: 6px;
-                font-size: 11px;
-                padding: 4px 10px;
-                min-height: 28px;
-            }
-            QPushButton:hover { background-color: #1c315b; }
-        """)
 
         self.start_test_btn.clicked.connect(self._on_start_test)
         self.start_test_btn.stop_clicked.connect(self._stop_test)
         self.auto_test_btn.clicked.connect(self._on_auto_test)
         self.auto_test_btn.stop_clicked.connect(self._stop_auto_test)
-        self.save_datalog_btn.clicked.connect(self._save_datalog)
 
-        return wrapper
+        return btn_widget
 
     def _create_test_config_panel(self):
         config_frame = QFrame()
@@ -3872,6 +4036,8 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
         self.is_testing = True
         self._config_index_map = config_index_map
+        self._current_total_bins = 0
+        self.bin_result_table.hide()
         self.start_test_btn.setStateWaiting()
         self.append_log(
             f"[TEST] Starting force-high consumption test: "
@@ -3980,6 +4146,8 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
         self.is_testing = True
         self._config_index_map = config_index_map
+        self._current_total_bins = 0
+        self.bin_result_table.hide()
         self.start_test_btn.setStateWaiting()
         self.append_log(
             f"[TEST] Starting force-auto consumption test: "
@@ -4035,6 +4203,104 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         vbat_remain = summary.get("vbat_remain")
         if vbat_remain is not None and self._vbat_remain_card is not None:
             self._vbat_remain_card["value_label"].setText(self._format_current(vbat_remain))
+
+        if self._current_total_bins > 1:
+            self._bin_results_data.append(summary)
+            self._add_bin_result_row(summary)
+
+    def _setup_bin_result_table(self):
+        self._bin_results_data = []
+        self.bin_result_table.setRowCount(0)
+
+        headers = ["BIN"]
+        for i, cfg in enumerate(self._channel_configs):
+            if cfg["enabled"]:
+                headers.append(cfg["name"])
+        has_sub = any(
+            cfg["enabled"] and not cfg["name"].lower().startswith("vbat")
+            for cfg in self._channel_configs
+        )
+        if has_sub:
+            headers.append("Vbat_remain")
+
+        self.bin_result_table.setColumnCount(len(headers))
+        self.bin_result_table.setHorizontalHeaderLabels(headers)
+        self.bin_result_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.bin_result_table.show()
+
+    def _add_bin_result_row(self, summary):
+        row = self.bin_result_table.rowCount()
+        self.bin_result_table.insertRow(row)
+
+        bin_name = summary.get("bin_name", f"BIN-{row // 2 + 1}")
+        col = 0
+        bin_item = QTableWidgetItem(bin_name)
+        bin_item.setTextAlignment(Qt.AlignCenter)
+        bin_item.setForeground(QColor("#eaf2ff"))
+        self.bin_result_table.setItem(row, col, bin_item)
+        col += 1
+
+        channels = summary.get("channels", {})
+        vbat_current = summary.get("vbat")
+
+        for i, cfg in enumerate(self._channel_configs):
+            if not cfg["enabled"]:
+                continue
+            if cfg["name"].lower().startswith("vbat") and vbat_current is not None:
+                val_text = self._format_current(vbat_current)
+            else:
+                device_label, hw_ch = self._parse_channel_key(cfg["channel"])
+                key = (device_label, hw_ch)
+                val = channels.get(key)
+                val_text = self._format_current(val) if val is not None else "- - -"
+            colors = self.CHANNEL_COLORS_LIST[i % len(self.CHANNEL_COLORS_LIST)]
+            item = QTableWidgetItem(val_text)
+            item.setTextAlignment(Qt.AlignCenter)
+            item.setForeground(QColor(colors["accent"]))
+            self.bin_result_table.setItem(row, col, item)
+            col += 1
+
+        has_sub = any(
+            cfg["enabled"] and not cfg["name"].lower().startswith("vbat")
+            for cfg in self._channel_configs
+        )
+        if has_sub:
+            vbat_remain = summary.get("vbat_remain")
+            remain_text = self._format_current(vbat_remain) if vbat_remain is not None else "- - -"
+            remain_item = QTableWidgetItem(remain_text)
+            remain_item.setTextAlignment(Qt.AlignCenter)
+            remain_item.setForeground(QColor("#a0a0a0"))
+            self.bin_result_table.setItem(row, col, remain_item)
+
+        v_row = self.bin_result_table.rowCount()
+        self.bin_result_table.insertRow(v_row)
+        v_col = 0
+        v_label_item = QTableWidgetItem("Voltage")
+        v_label_item.setTextAlignment(Qt.AlignCenter)
+        v_label_item.setForeground(QColor("#8899bb"))
+        self.bin_result_table.setItem(v_row, v_col, v_label_item)
+        v_col += 1
+
+        channel_voltages = summary.get("channel_voltages", {})
+        for i, cfg in enumerate(self._channel_configs):
+            if not cfg["enabled"]:
+                continue
+            device_label, hw_ch = self._parse_channel_key(cfg["channel"])
+            key = (device_label, hw_ch)
+            v = channel_voltages.get(key)
+            v_text = f"{v:.4g}V" if v is not None else "- - -"
+            v_item = QTableWidgetItem(v_text)
+            v_item.setTextAlignment(Qt.AlignCenter)
+            v_item.setForeground(QColor("#8899bb"))
+            self.bin_result_table.setItem(v_row, v_col, v_item)
+            v_col += 1
+
+        if has_sub:
+            empty_item = QTableWidgetItem("")
+            empty_item.setTextAlignment(Qt.AlignCenter)
+            self.bin_result_table.setItem(v_row, v_col, empty_item)
+
+        self.bin_result_table.scrollToBottom()
 
     def _on_test_error(self, err_msg):
         self.append_log(f"[ERROR] {err_msg}")
@@ -4175,12 +4441,18 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
         self.is_testing = True
         self._config_index_map = config_index_map
+        self._current_total_bins = len(firmware_paths)
         self.auto_test_btn.setStateWaiting()
 
         for idx in self.channel_cards:
             self.channel_cards[idx]["value_label"].setText("- - -")
         if self._vbat_remain_card is not None:
             self._vbat_remain_card["value_label"].setText("- - -")
+
+        if self._current_total_bins > 1:
+            self._setup_bin_result_table()
+        else:
+            self.bin_result_table.hide()
 
         self.append_log(
             f"[AUTO_TEST] Starting auto test: {len(firmware_paths)} BIN(s), "
@@ -4323,6 +4595,10 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             self.channel_cards[idx]["value_label"].setText("- - -")
         if self._vbat_remain_card is not None:
             self._vbat_remain_card["value_label"].setText("- - -")
+        self._bin_results_data = []
+        self._current_total_bins = 0
+        self.bin_result_table.setRowCount(0)
+        self.bin_result_table.hide()
 
     def get_test_mode(self):
         return "Consumption Test"

@@ -1,3 +1,4 @@
+#python -m ui.styles.chamber_module_frame
 import os
 import serial
 import serial.tools.list_ports
@@ -399,3 +400,113 @@ class VT6002ConnectionMixin:
 
     def is_vt6002_connected_status(self):
         return self.is_vt6002_connected
+
+
+if __name__ == "__main__":
+    #python -m ui.styles.chamber_module_frame
+    import sys
+    from PySide6.QtWidgets import (
+        QApplication, QWidget, QVBoxLayout, QFrame, QSizePolicy
+    )
+
+    DARK_CARD_STYLE = """
+        QWidget {
+            background-color: #020817;
+            color: #dbe7ff;
+        }
+        QLabel {
+            background-color: transparent;
+            color: #dbe7ff;
+            border: none;
+        }
+        QLabel#statusOk {
+            color: #15d1a3;
+            font-weight: 600;
+            background-color: transparent;
+        }
+        QLabel#statusWarn {
+            color: #ffb84d;
+            font-weight: 600;
+            background-color: transparent;
+        }
+        QLabel#statusErr {
+            color: #ff5e7a;
+            font-weight: 600;
+            background-color: transparent;
+        }
+        QFrame#cardFrame {
+            background-color: #071127;
+            border: 1px solid #1a2b52;
+            border-radius: 14px;
+        }
+        QComboBox {
+            background-color: #0a1733;
+            color: #eaf2ff;
+            border: 1px solid #27406f;
+            border-radius: 8px;
+            padding: 6px 10px;
+        }
+        QComboBox::drop-down {
+            border: none;
+            width: 22px;
+            background: transparent;
+        }
+        QComboBox QAbstractItemView {
+            background-color: #0a1733;
+            color: #eaf2ff;
+            border: 1px solid #27406f;
+            selection-background-color: #334a7d;
+        }
+    """
+
+    class _CardFrame(QFrame):
+        def __init__(self, title="", parent=None):
+            super().__init__(parent)
+            self.setObjectName("cardFrame")
+            self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            self.main_layout = QVBoxLayout(self)
+            self.main_layout.setContentsMargins(10, 8, 10, 8)
+            self.main_layout.setSpacing(8)
+            if title:
+                self.title_row = QHBoxLayout()
+                self.title_row.setSpacing(8)
+                self.title_label = QLabel(title)
+                self.title_label.setObjectName("cardTitle")
+                self.title_row.addWidget(self.title_label)
+                self.title_row.addStretch()
+                self.main_layout.addLayout(self.title_row)
+            else:
+                self.title_label = None
+                self.title_row = None
+
+    class _DemoVT6002Widget(VT6002ConnectionMixin, QWidget):
+        vt6002_connection_changed = Signal(bool)
+
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            self.init_vt6002_connection()
+            self.setStyleSheet(DARK_CARD_STYLE)
+
+            root = QVBoxLayout(self)
+            root.setContentsMargins(12, 12, 12, 12)
+
+            card = _CardFrame("VT6002 Chamber Connection")
+            self.build_vt6002_connection_widgets(card.main_layout)
+            root.addWidget(card)
+            root.addStretch()
+
+            self.bind_vt6002_signals()
+
+        def append_log(self, msg):
+            print(msg)
+
+    app = QApplication(sys.argv)
+    app.setStyle("Fusion")
+
+    w = _DemoVT6002Widget()
+    w.setWindowTitle("VT6002 Chamber Module Frame Demo")
+    w.setFixedWidth(320)
+    w.show()
+    w.move(100, 200)
+
+    sys.exit(app.exec())

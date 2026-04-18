@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QGraphicsRectItem,
     QTableWidget, QTableWidgetItem, QHeaderView, QMenu,
     QToolButton, QDialog, QTabWidget, QTabBar,
-    QProgressBar,
+    QProgressBar, QStackedWidget,
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QThread, QObject, QByteArray
 from PySide6.QtGui import QFont, QColor, QBrush, QPen, QPainter, QPixmap, QIcon
@@ -689,15 +689,28 @@ class _DatalogWorker(QObject):
 class VerticalTextButton(QWidget):
     clicked = Signal(bool)
 
-    def __init__(self, text="", parent=None):
+    def __init__(self, text="", icon_collapsed="", icon_expanded="", parent=None):
         super().__init__(parent)
         self._text = text
         self._checked = False
         self._hovered = False
+        self._icon_collapsed_svg = ""
+        self._icon_expanded_svg = ""
         self.setFixedWidth(28)
         self.setMinimumHeight(180)
         self.setCursor(Qt.PointingHandCursor)
         self.setAttribute(Qt.WA_Hover)
+
+        if icon_collapsed:
+            self._icon_collapsed_svg = self._load_svg(icon_collapsed)
+        if icon_expanded:
+            self._icon_expanded_svg = self._load_svg(icon_expanded)
+
+    @staticmethod
+    def _load_svg(svg_file):
+        svg_path = os.path.join(_get_base_path(), "resources", "icons", svg_file)
+        with open(svg_path, "r", encoding="utf-8") as f:
+            return f.read()
 
     def isChecked(self):
         return self._checked
@@ -719,6 +732,20 @@ class VerticalTextButton(QWidget):
         self.update()
         self.clicked.emit(self._checked)
 
+    def _render_icon(self, color_hex):
+        svg_raw = self._icon_expanded_svg if self._checked else self._icon_collapsed_svg
+        if not svg_raw:
+            return None
+        svg_data = svg_raw.replace("currentColor", color_hex)
+        renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))
+        icon_size = 16
+        pixmap = QPixmap(icon_size, icon_size)
+        pixmap.fill(QColor(0, 0, 0, 0))
+        painter = QPainter(pixmap)
+        renderer.render(painter)
+        painter.end()
+        return pixmap
+
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
@@ -739,16 +766,27 @@ class VerticalTextButton(QWidget):
         p.drawRoundedRect(0, 0, w - 1, h - 1, 6, 6)
 
         text_color = QColor("#dce7ff") if (self._checked or self._hovered) else QColor("#8eb0e3")
+
+        icon_pixmap = self._render_icon(text_color.name())
+        icon_offset = 0
+        if icon_pixmap:
+            icon_x = (w - icon_pixmap.width()) // 2
+            icon_y = 8
+            p.drawPixmap(icon_x, icon_y, icon_pixmap)
+            icon_offset = icon_pixmap.height() + 4
+
         p.setPen(text_color)
         font = QFont()
         font.setWeight(QFont.DemiBold)
         font.setPixelSize(12)
         p.setFont(font)
 
+        text_area_top = icon_offset
+        text_area_height = h - text_area_top
         p.save()
-        p.translate(w / 2, h / 2)
+        p.translate(w / 2, text_area_top + text_area_height / 2)
         p.rotate(90)
-        p.drawText(-h // 2, -w // 2, h, w, Qt.AlignCenter, self._text)
+        p.drawText(-text_area_height // 2, -w // 2, text_area_height, w, Qt.AlignCenter, self._text)
         p.restore()
 
         p.end()
@@ -1234,7 +1272,11 @@ class N6705CDatalogUI(QWidget):
         instr_sidebar_layout.setContentsMargins(0, 0, 0, 0)
         instr_sidebar_layout.setSpacing(0)
 
-        self.instrument_toggle_btn = VerticalTextButton("Instrument Connection")
+        self.instrument_toggle_btn = VerticalTextButton(
+            "Instrument Connection",
+            icon_collapsed="panel-left.svg",
+            icon_expanded="panel-left-close.svg",
+        )
         self.instrument_toggle_btn.clicked.connect(self._toggle_instrument_panel)
         instr_sidebar_layout.addWidget(self.instrument_toggle_btn, 0, Qt.AlignTop)
 
@@ -1535,10 +1577,27 @@ class N6705CDatalogUI(QWidget):
 
         center_right_layout.addLayout(chart_and_meas_layout, 1)
 
+        label_sidebar = QWidget()
+        label_sidebar.setStyleSheet("QWidget { background: transparent; }")
+        label_sidebar_layout = QHBoxLayout(label_sidebar)
+        label_sidebar_layout.setContentsMargins(0, 0, 0, 0)
+        label_sidebar_layout.setSpacing(0)
+
         self.label_card = CardFrame("CUSTOM LABELS", "\u2756")
-        self._build_label_card()
         self.label_card.setFixedWidth(240)
-        center_right_layout.addWidget(self.label_card)
+        self._build_label_card()
+        self.label_card.hide()
+        label_sidebar_layout.addWidget(self.label_card)
+
+        self.label_toggle_btn = VerticalTextButton(
+            "Custom Labels",
+            icon_collapsed="panel-right.svg",
+            icon_expanded="panel-right-close.svg",
+        )
+        self.label_toggle_btn.clicked.connect(self._toggle_label_card_panel)
+        label_sidebar_layout.addWidget(self.label_toggle_btn, 0, Qt.AlignTop)
+
+        center_right_layout.addWidget(label_sidebar)
 
         mid_layout.addLayout(center_right_layout, 1)
         main_area.addLayout(mid_layout, 1)
@@ -1546,27 +1605,62 @@ class N6705CDatalogUI(QWidget):
         self.channel_config_collapsed = False
 
         self.channel_config_outer = QWidget()
-        self.channel_config_outer.setStyleSheet("QWidget { background: transparent; border: none; }")
+        self.channel_config_outer.setObjectName("chConfigOuter")
+        self.channel_config_outer.setStyleSheet("#chConfigOuter { background: transparent; border: none; }")
         ch_outer_layout = QVBoxLayout(self.channel_config_outer)
         ch_outer_layout.setContentsMargins(0, 0, 0, 0)
         ch_outer_layout.setSpacing(0)
 
-        self.channel_config_toggle_btn = QPushButton("\u25bc  \u2699 Channel Config")
+        self.channel_config_header_row = QWidget()
+        self.channel_config_header_row.setObjectName("chConfigHeaderRow")
+        self.channel_config_header_row.setStyleSheet("#chConfigHeaderRow { background: transparent; border: none; }")
+        self.channel_config_header_row.setFixedHeight(32)
+        ch_header_layout = QHBoxLayout(self.channel_config_header_row)
+        ch_header_layout.setContentsMargins(0, 0, 0, 0)
+        ch_header_layout.setSpacing(0)
+
+        self._ch_config_icon_collapsed = self._make_svg_icon("panel-bottom.svg", "#8ea6cf", 20)
+        self._ch_config_icon_expanded = self._make_svg_icon("panel-bottom-close.svg", "#b8d0f0", 16)
+
+        self.channel_config_toggle_btn = QPushButton("Channel Config")
+        self.channel_config_toggle_btn.setIcon(self._ch_config_icon_expanded)
         self.channel_config_toggle_btn.setStyleSheet("""
             QPushButton {
                 background-color: #0a1930; color: #b8d0f0;
-                border: 1px solid #132849; border-bottom: none;
-                border-top-left-radius: 8px; border-top-right-radius: 8px;
+                border: 1px solid #132849;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 0px;
                 border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;
-                padding: 4px 16px; font-size: 12px; font-weight: 700;
+                padding: 0px 14px; font-size: 11px; font-weight: 700;
                 text-align: left;
             }
             QPushButton:hover { background-color: #0e1f3d; color: #d0e4ff; }
         """)
         self.channel_config_toggle_btn.clicked.connect(self._toggle_channel_config_panel)
-        ch_outer_layout.addWidget(self.channel_config_toggle_btn)
+        ch_header_layout.addWidget(self.channel_config_toggle_btn, 0)
+
+        self.channel_config_tabbar_placeholder = QWidget()
+        self.channel_config_tabbar_placeholder.setObjectName("chConfigTabbarHolder")
+        self.channel_config_tabbar_placeholder.setStyleSheet("""
+            #chConfigTabbarHolder {
+                background-color: #0a1930;
+                border-top: 1px solid #132849;
+                border-right: 1px solid #132849;
+                border-bottom: 1px solid #132849;
+                border-left: none;
+                border-top-right-radius: 8px;
+            }
+        """)
+        ch_tabbar_placeholder_layout = QHBoxLayout(self.channel_config_tabbar_placeholder)
+        ch_tabbar_placeholder_layout.setContentsMargins(4, 0, 0, 0)
+        ch_tabbar_placeholder_layout.setSpacing(0)
+        ch_header_layout.addWidget(self.channel_config_tabbar_placeholder, 1)
+
+        ch_outer_layout.addWidget(self.channel_config_header_row)
 
         self.channel_config_card = CardFrame("", "")
+        self.channel_config_card.main_layout.setContentsMargins(0, 0, 0, 6)
+        self.channel_config_card.main_layout.setSpacing(0)
         self.channel_config_card.setStyleSheet("""
             #cardFrame {
                 background-color: #0a1930;
@@ -2012,6 +2106,7 @@ class N6705CDatalogUI(QWidget):
         self.sample_period_edit.editingFinished.connect(self._validate_sample_period)
 
         self.min_period_cb = QCheckBox("Minimum")
+        self.min_period_cb.setChecked(True)
         self.min_period_cb.setStyleSheet("font-size: 10px; color: #8eb0e3;")
         self.min_period_cb.stateChanged.connect(self._on_min_period_toggled)
 
@@ -2139,27 +2234,24 @@ class N6705CDatalogUI(QWidget):
     def _build_channel_config_card(self):
         self.channel_config_layout = self.channel_config_card.main_layout
 
-        self.channel_config_tab = QTabWidget()
-        self.channel_config_tab.setDocumentMode(True)
-        self.channel_config_tab.tabBar().setDrawBase(False)
-        self.channel_config_tab.setStyleSheet("""
-            QTabWidget::pane {
-                border-top: 1px solid #1a2b52;
-                background-color: transparent;
-                margin-top: -1px;
-            }
+        self.channel_config_tabbar = QTabBar()
+        self.channel_config_tabbar.setDrawBase(False)
+        self.channel_config_tabbar.setExpanding(False)
+        self.channel_config_tabbar.setStyleSheet("""
             QTabBar {
                 background: transparent;
+                border: none;
             }
             QTabBar::tab {
                 background-color: #0b1630;
                 color: #4a6a96;
                 border: 1px solid #1a2b52;
-                border-bottom: 1px solid #1a2b52;
+                border-bottom: none;
                 border-top-left-radius: 5px;
                 border-top-right-radius: 5px;
-                padding: 5px 14px;
+                padding: 4px 14px;
                 margin-right: 1px;
+                margin-bottom: 0px;
                 font-size: 11px;
                 font-weight: 600;
                 min-width: 60px;
@@ -2168,7 +2260,7 @@ class N6705CDatalogUI(QWidget):
                 background-color: #071127;
                 color: #dce7ff;
                 border: 1px solid #1a2b52;
-                border-bottom: 1px solid #071127;
+                border-bottom: none;
             }
             QTabBar::tab:hover:!selected {
                 background-color: #0e1d40;
@@ -2177,17 +2269,28 @@ class N6705CDatalogUI(QWidget):
             QTabBar::tab:!selected {
                 margin-top: 2px;
             }
+            QTabBar::close-button {
+                image: none;
+                border: none;
+                background: transparent;
+            }
         """)
-        self.channel_config_layout.addWidget(self.channel_config_tab)
+        self.channel_config_tabbar_placeholder.layout().addWidget(self.channel_config_tabbar, 1)
+
+        self.channel_config_stack = QStackedWidget()
+        self.channel_config_stack.setStyleSheet("background: transparent;")
+        self.channel_config_layout.addWidget(self.channel_config_stack)
+
+        self.channel_config_tabbar.currentChanged.connect(self.channel_config_stack.setCurrentIndex)
 
         self._instruments_tab = QWidget()
         self._instruments_tab.setStyleSheet("background: #071127;")
-        self._instruments_tab.setMinimumHeight(140)
+        self._instruments_tab.setMinimumHeight(0)
         self._instruments_tab_layout = QVBoxLayout(self._instruments_tab)
         self._instruments_tab_layout.setContentsMargins(0, 6, 0, 0)
         self._instruments_tab_layout.setSpacing(0)
-        self.channel_config_tab.addTab(self._instruments_tab, "\u26A1 Active")
-        self.channel_config_tab.setTabsClosable(False)
+        self.channel_config_tabbar.addTab("\u26A1 Active")
+        self.channel_config_stack.addWidget(self._instruments_tab)
 
         self.channel_config_inner = QWidget()
         self.channel_config_inner.setStyleSheet("background: #071127;")
@@ -2216,31 +2319,49 @@ class N6705CDatalogUI(QWidget):
         self.no_instrument_label.setAlignment(Qt.AlignCenter)
         self._instruments_tab_layout.addWidget(self.no_instrument_label)
 
+    def _make_svg_icon(self, svg_file, color="#dfe8ff", size=18):
+        svg_path = os.path.join(_get_base_path(), "resources", "icons", svg_file)
+        with open(svg_path, "r", encoding="utf-8") as f:
+            svg_data = f.read().replace("currentColor", color)
+        renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))
+        pixmap = QPixmap(size, size)
+        pixmap.fill(QColor(0, 0, 0, 0))
+        painter = QPainter(pixmap)
+        renderer.render(painter)
+        painter.end()
+        return QIcon(pixmap)
+
     def _toggle_channel_config_panel(self):
         self.channel_config_collapsed = not self.channel_config_collapsed
         self.channel_config_card.setVisible(not self.channel_config_collapsed)
+        self.channel_config_tabbar_placeholder.setVisible(not self.channel_config_collapsed)
         if self.channel_config_collapsed:
-            self.channel_config_toggle_btn.setText("\u25b6  \u2699 Channel Config")
+            self.channel_config_toggle_btn.setIcon(self._ch_config_icon_collapsed)
             self.channel_config_toggle_btn.setStyleSheet("""
                 QPushButton {
                     background-color: #0a1930; color: #8ea6cf;
                     border: 1px solid #132849; border-radius: 8px;
-                    padding: 4px 16px; font-size: 12px; font-weight: 700; text-align: left;
+                    padding: 0px 14px; font-size: 11px; font-weight: 700; text-align: left;
                 }
                 QPushButton:hover { background-color: #0e1f3d; color: #b8d0f0; }
             """)
         else:
-            self.channel_config_toggle_btn.setText("\u25bc  \u2699 Channel Config")
+            self.channel_config_toggle_btn.setIcon(self._ch_config_icon_expanded)
             self.channel_config_toggle_btn.setStyleSheet("""
                 QPushButton {
                     background-color: #0a1930; color: #b8d0f0;
-                    border: 1px solid #132849; border-bottom: none;
-                    border-top-left-radius: 8px; border-top-right-radius: 8px;
+                    border: 1px solid #132849;
+                    border-top-left-radius: 8px;
+                    border-top-right-radius: 0px;
                     border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;
-                    padding: 4px 16px; font-size: 12px; font-weight: 700; text-align: left;
+                    padding: 0px 14px; font-size: 11px; font-weight: 700;
+                    text-align: left;
                 }
                 QPushButton:hover { background-color: #0e1f3d; color: #d0e4ff; }
             """)
+
+    def _toggle_label_card_panel(self, checked):
+        self.label_card.setVisible(checked)
 
     def _refresh_channel_config(self):
         connected_slots = []
@@ -2664,7 +2785,8 @@ class N6705CDatalogUI(QWidget):
         tab_layout.addStretch()
 
         self._imported_tab_configs.append(tab_config)
-        tab_idx = self.channel_config_tab.addTab(tab_widget, f"\U0001F4C4 {tab_name}")
+        tab_idx = self.channel_config_tabbar.addTab(f"\U0001F4C4 {tab_name}")
+        self.channel_config_stack.addWidget(tab_widget)
         close_btn = QPushButton("✕")
         close_btn.setFixedSize(18, 18)
         close_btn.setStyleSheet(
@@ -2673,15 +2795,15 @@ class N6705CDatalogUI(QWidget):
             "QPushButton:hover { background: #2a1525; color: #ff6b6b; }"
         )
         close_btn.clicked.connect(lambda _checked=False, w=tab_widget: self._on_config_tab_close(
-            self.channel_config_tab.indexOf(w)))
-        self.channel_config_tab.tabBar().setTabButton(tab_idx, QTabBar.RightSide, close_btn)
+            self.channel_config_stack.indexOf(w)))
+        self.channel_config_tabbar.setTabButton(tab_idx, QTabBar.RightSide, close_btn)
         tab_config["close_btn"] = close_btn
-        self.channel_config_tab.setCurrentIndex(tab_idx)
+        self.channel_config_tabbar.setCurrentIndex(tab_idx)
 
     def _on_config_tab_close(self, index):
         if index <= 0:
             return
-        widget = self.channel_config_tab.widget(index)
+        widget = self.channel_config_stack.widget(index)
         if widget is None:
             return
         tc_to_remove = None
@@ -2695,10 +2817,19 @@ class N6705CDatalogUI(QWidget):
             still_used = set()
             for tc in self._imported_tab_configs:
                 still_used |= tc.get("data_keys", set())
+            actually_removed = set()
             for k in removed_keys:
                 if k not in still_used:
                     self.datalog_data.pop(k, None)
-        self.channel_config_tab.removeTab(index)
+                    self.ch_name_renames.pop(k, None)
+                    actually_removed.add(k)
+            if actually_removed:
+                self.custom_labels = [
+                    lbl for lbl in self.custom_labels
+                    if lbl.get("channel", "") not in actually_removed
+                ]
+        self.channel_config_tabbar.removeTab(index)
+        self.channel_config_stack.removeWidget(widget)
         if widget:
             widget.deleteLater()
         self._refresh_plot()
@@ -3501,6 +3632,11 @@ class N6705CDatalogUI(QWidget):
 
     def _init_ui_elements(self):
         self._update_recording_button_state(False)
+        if self.min_period_cb.isChecked():
+            self.sample_period_edit.setReadOnly(True)
+            self.sample_period_edit.setStyleSheet(
+                "QLineEdit { background: #1a2b52; color: #556a8c; }"
+            )
 
     def _bind_signals(self):
         self.start_btn.clicked.connect(self._on_start_or_stop_recording)
@@ -4098,6 +4234,7 @@ class N6705CDatalogUI(QWidget):
         n = len(self.datalog_data)
         if n == 0:
             self._rebuild_ch_name_panel([])
+            self._update_marker_analysis()
             return
 
         sorted_keys = sorted(self.datalog_data.keys(), key=_sort_key_for_label)

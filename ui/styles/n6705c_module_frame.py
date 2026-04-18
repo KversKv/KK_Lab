@@ -1,3 +1,6 @@
+# N6705C模块框架样式
+#python -m ui.styles.n6705c_module_frame  
+
 import os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
@@ -39,6 +42,8 @@ def _n6705c_search_style(h=N6705C_BTN_HEIGHT, r=N6705C_BTN_RADIUS):
             color: #dce7ff;
             font-weight: 600;
             min-height: {h}px;
+            max-height: {h}px;
+            padding: 2px 8px;
         }}
         QPushButton:hover {{
             background-color: #1C2D55;
@@ -64,6 +69,8 @@ def _n6705c_connect_style(h=N6705C_BTN_HEIGHT, r=N6705C_BTN_RADIUS):
             color: #10e7bc;
             font-weight: 700;
             min-height: {h}px;
+            max-height: {h}px;
+            padding: 2px 8px;
         }}
         QPushButton:hover {{
             background-color: #064744;
@@ -90,6 +97,8 @@ def _n6705c_disconnect_style(h=N6705C_BTN_HEIGHT, r=N6705C_BTN_RADIUS):
             color: #ffb7d3;
             font-weight: 700;
             min-height: {h}px;
+            max-height: {h}px;
+            padding: 2px 8px;
         }}
         QPushButton:hover {{
             background-color: #4a0b31;
@@ -313,8 +322,10 @@ class N6705CConnectionMixin:
         self._n6705c_btn_icon_size = btn_icon_size
 
         left, top, right, bottom = layout.getContentsMargins()
-        layout.setContentsMargins(left, max(top // 2, 0), right, max(bottom // 2, 0))
-        layout.setSpacing(3)
+        half_top = max(top // 2, 0) + 1
+        bottom_margin = max(int(half_top * 4 / 3), half_top + 5)
+        layout.setContentsMargins(left, half_top, right, bottom_margin)
+        layout.setSpacing(4)
 
         self.system_status_label = QLabel("● Ready")
         self.system_status_label.setObjectName("statusOk")
@@ -565,3 +576,169 @@ class N6705CConnectionMixin:
 
     def is_n6705c_connected(self):
         return self.is_connected
+
+
+if __name__ == "__main__":
+    import sys
+    from PySide6.QtWidgets import QApplication
+
+    DARK_CARD_STYLE = """
+        QWidget {
+            background-color: #020817;
+            color: #dbe7ff;
+        }
+        QLabel {
+            background-color: transparent;
+            color: #dbe7ff;
+            border: none;
+        }
+        QLabel#cardTitle {
+            font-size: 11px;
+            font-weight: 700;
+            color: #f4f7ff;
+            letter-spacing: 0.5px;
+            background-color: transparent;
+        }
+        QLabel#statusOk {
+            color: #15d1a3;
+            font-weight: 600;
+            background-color: transparent;
+        }
+        QLabel#statusWarn {
+            color: #ffb84d;
+            font-weight: 600;
+            background-color: transparent;
+        }
+        QLabel#statusErr {
+            color: #ff5e7a;
+            font-weight: 600;
+            background-color: transparent;
+        }
+        QFrame#cardFrame {
+            background-color: #071127;
+            border: 1px solid #1a2b52;
+            border-radius: 14px;
+        }
+        QComboBox {
+            background-color: #0a1733;
+            color: #eaf2ff;
+            border: 1px solid #27406f;
+            border-radius: 8px;
+            padding: 6px 10px;
+        }
+        QComboBox::drop-down {
+            border: none;
+            width: 22px;
+            background: transparent;
+        }
+        QComboBox QAbstractItemView {
+            background-color: #0a1733;
+            color: #eaf2ff;
+            border: 1px solid #27406f;
+            selection-background-color: #334a7d;
+        }
+    """
+
+    DARK_CARD_STYLE_WITH_BTN_OVERRIDE = DARK_CARD_STYLE + """
+        QPushButton {
+            min-height: 34px;
+            border-radius: 9px;
+            padding: 6px 14px;
+            border: 1px solid #2a4272;
+            background-color: #102042;
+            color: #dfeaff;
+            font-weight: 600;
+        }
+    """
+
+    class _CardFrame(QFrame):
+        def __init__(self, title="", parent=None):
+            super().__init__(parent)
+            self.setObjectName("cardFrame")
+            self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            self.main_layout = QVBoxLayout(self)
+            self.main_layout.setContentsMargins(10, 8, 10, 8)
+            self.main_layout.setSpacing(8)
+            if title:
+                self.title_row = QHBoxLayout()
+                self.title_row.setSpacing(8)
+                self.title_label = QLabel(title)
+                self.title_label.setObjectName("cardTitle")
+                self.title_row.addWidget(self.title_label)
+                self.title_row.addStretch()
+                self.main_layout.addLayout(self.title_row)
+            else:
+                self.title_label = None
+                self.title_row = None
+
+    class _DemoMixinWidget(N6705CConnectionMixin, QWidget):
+        connection_status_changed = Signal(bool)
+
+        def __init__(self, use_title_row=True, style=None, parent=None):
+            super().__init__(parent)
+            self.init_n6705c_connection()
+            self.setStyleSheet(style or DARK_CARD_STYLE)
+
+            root = QVBoxLayout(self)
+            root.setContentsMargins(12, 12, 12, 12)
+
+            title = "N6705C"
+            card = _CardFrame(title)
+            if use_title_row:
+                self.build_n6705c_connection_widgets(
+                    card.main_layout, title_row=card.title_row)
+            else:
+                self.build_n6705c_connection_widgets(card.main_layout)
+            root.addWidget(card)
+            root.addStretch()
+
+            self.bind_n6705c_signals()
+
+        def append_log(self, msg):
+            print(msg)
+
+    class _DemoInlineWidget(QWidget):
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            self.setStyleSheet(DARK_CARD_STYLE)
+
+            root = QVBoxLayout(self)
+            root.setContentsMargins(12, 12, 12, 12)
+
+            card = _CardFrame("N6705C Inline Row")
+            row_a, _ = build_n6705c_inline_row("A")
+            card.main_layout.addLayout(row_a)
+            row_b, _ = build_n6705c_inline_row("B")
+            card.main_layout.addLayout(row_b)
+            root.addWidget(card)
+            root.addStretch()
+
+    app = QApplication(sys.argv)
+    app.setStyle("Fusion")
+
+    w1 = _DemoMixinWidget(use_title_row=True)
+    w1.setWindowTitle("Style 1: Mixin Card (with title_row)")
+    w1.setFixedWidth(320)
+    w1.show()
+    w1.move(100, 200)
+
+    w2 = _DemoMixinWidget(use_title_row=False)
+    w2.setWindowTitle("Style 2: Mixin Card (no title_row)")
+    w2.setFixedWidth(320)
+    w2.show()
+    w2.move(450, 200)
+
+    w3 = _DemoInlineWidget()
+    w3.setWindowTitle("Style 3: Inline Row (A/B)")
+    w3.setFixedWidth(700)
+    w3.show()
+    w3.move(800, 200)
+
+    w4 = _DemoMixinWidget(use_title_row=True,
+                           style=DARK_CARD_STYLE_WITH_BTN_OVERRIDE)
+    w4.setWindowTitle("Style 4: with parent QPushButton override")
+    w4.setFixedWidth(320)
+    w4.show()
+    w4.move(100, 500)
+
+    sys.exit(app.exec())

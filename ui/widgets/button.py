@@ -22,6 +22,7 @@ def search_button_style():
             border-radius: 8px;
             color: #dce7ff;
             font-weight: 600;
+            padding: 2px 8px;
         }
         QPushButton:hover {
             background-color: #1C2D55;
@@ -46,6 +47,7 @@ def connect_button_style():
             border-radius: 8px;
             color: #10e7bc;
             font-weight: 700;
+            padding: 2px 8px;
         }
         QPushButton:hover {
             background-color: #064744;
@@ -71,6 +73,7 @@ def disconnect_button_style():
             border-radius: 8px;
             color: #ffb7d3;
             font-weight: 700;
+            padding: 2px 8px;
         }
         QPushButton:hover {
             background-color: #4a0b31;

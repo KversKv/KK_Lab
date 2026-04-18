@@ -1,3 +1,4 @@
+#python -m ui.styles.execution_logs_module_frame
 from PySide6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QTextEdit, QProgressBar,
@@ -111,3 +112,55 @@ class ExecutionLogsFrame(QFrame):
         value = max(0, min(100, int(value)))
         self.progress_bar.setValue(value)
         self.progress_text_label.setText(f"{value}% Complete")
+
+
+if __name__ == "__main__":
+    #python -m ui.styles.execution_logs_module_frame
+    import sys
+    from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout
+
+    DARK_BG_STYLE = """
+        QWidget {
+            background-color: #020817;
+            color: #dbe7ff;
+        }
+    """
+
+    class _DemoWidget(QWidget):
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            self.setStyleSheet(DARK_BG_STYLE)
+
+            root = QVBoxLayout(self)
+            root.setContentsMargins(12, 12, 12, 12)
+            root.setSpacing(12)
+
+            self.logs_with_progress = ExecutionLogsFrame(
+                title="⊙ Execution Logs (with progress)", show_progress=True
+            )
+            root.addWidget(self.logs_with_progress)
+
+            self.logs_no_progress = ExecutionLogsFrame(
+                title="⊙ Execution Logs (no progress)", show_progress=False
+            )
+            root.addWidget(self.logs_no_progress)
+
+            root.addStretch()
+
+            self.logs_with_progress.append_log("[SYSTEM] Application started.")
+            self.logs_with_progress.append_log("[INFO] Ready for testing.")
+            self.logs_with_progress.set_progress(42)
+
+            self.logs_no_progress.append_log("[SYSTEM] No progress bar variant.")
+            self.logs_no_progress.append_log("[INFO] Log only mode.")
+
+    app = QApplication(sys.argv)
+    app.setStyle("Fusion")
+
+    w = _DemoWidget()
+    w.setWindowTitle("Execution Logs Module Frame Demo")
+    w.setFixedSize(600, 500)
+    w.show()
+    w.move(100, 200)
+
+    sys.exit(app.exec())

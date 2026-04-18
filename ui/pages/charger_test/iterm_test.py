@@ -802,7 +802,7 @@ class ItermTestUI(N6705CConnectionMixin, QWidget):
         left_layout.setContentsMargins(10, 10, 10, 10)
         left_layout.setSpacing(10)
 
-        self.connection_card = CardFrame("\u26a1 N6705C Connection")
+        self.connection_card = CardFrame("\u26a1 N6705C ")
         self._build_connection_card()
         left_layout.addWidget(self.connection_card)
 

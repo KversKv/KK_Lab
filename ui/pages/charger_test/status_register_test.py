@@ -509,7 +509,7 @@ class StatusRegisterTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget
         self.test_item_card = CardFrame("\u25c9 Test Item")
         self._build_test_item_card()
         left_layout.addWidget(self.test_item_card)
-        self.connection_card = CardFrame("\u26a1 N6705C Connection")
+        self.connection_card = CardFrame("\u26a1 N6705C ")
         self._build_connection_card()
         left_layout.addWidget(self.connection_card)
         self.vt6002_card = CardFrame("\U0001f321 VT6002 Chamber")

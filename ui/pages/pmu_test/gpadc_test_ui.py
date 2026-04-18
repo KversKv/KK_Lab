@@ -520,7 +520,7 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
         n6705c_layout.setContentsMargins(12, 12, 12, 12)
         n6705c_layout.setSpacing(8)
 
-        n6705c_title = QLabel("N6705C Connection")
+        n6705c_title = QLabel("N6705C ")
         n6705c_title.setStyleSheet("font-size: 11px; font-weight: 700; color: #ffffff; border: none;")
         n6705c_layout.addWidget(n6705c_title)
 
