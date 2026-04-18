@@ -3,6 +3,9 @@
 
 from PySide6.QtCore import QObject, Signal
 from instruments.power.keysight.n6705c import N6705C
+from log_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class N6705CTop(QObject):
@@ -21,6 +24,7 @@ class N6705CTop(QObject):
         self.serial_b = ""
 
     def connect_a(self, visa_resource, n6705c_instance=None, serial=""):
+        logger.debug("N6705CTop connect_a: resource=%s, serial=%s", visa_resource, serial)
         if n6705c_instance is not None:
             self.n6705c_a = n6705c_instance
         else:
@@ -31,6 +35,7 @@ class N6705CTop(QObject):
         self.connection_changed.emit()
 
     def connect_b(self, visa_resource, n6705c_instance=None, serial=""):
+        logger.debug("N6705CTop connect_b: resource=%s, serial=%s", visa_resource, serial)
         if n6705c_instance is not None:
             self.n6705c_b = n6705c_instance
         else:
@@ -41,6 +46,7 @@ class N6705CTop(QObject):
         self.connection_changed.emit()
 
     def disconnect_a(self):
+        logger.debug("N6705CTop disconnect_a")
         if self.n6705c_a:
             try:
                 self.n6705c_a.disconnect()
@@ -53,6 +59,7 @@ class N6705CTop(QObject):
         self.connection_changed.emit()
 
     def disconnect_b(self):
+        logger.debug("N6705CTop disconnect_b")
         if self.n6705c_b:
             try:
                 self.n6705c_b.disconnect()
@@ -65,5 +72,6 @@ class N6705CTop(QObject):
         self.connection_changed.emit()
 
     def disconnect_all(self):
+        logger.debug("N6705CTop disconnect_all")
         self.disconnect_a()
         self.disconnect_b()

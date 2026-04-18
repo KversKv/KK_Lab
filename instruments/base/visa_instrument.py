@@ -22,12 +22,14 @@ class VisaInstrument:
         """扫描可用的 VISA 设备"""
         try:
             if self.rm:
+                logger.debug("Closing existing ResourceManager before scan")
                 try:
                     self.rm.close()
                 except Exception:
                     pass
             self.rm = visa.ResourceManager()
             devices = self.rm.list_resources()
+            logger.debug("VISA scan found %d device(s): %s", len(devices), devices)
             return devices
         except Exception as e:
             logger.error("扫描设备错误: %s", e)
@@ -36,15 +38,16 @@ class VisaInstrument:
     def connect(self, device_address):
         """连接到指定设备"""
         try:
+            logger.debug("Connecting to VISA device: %s", device_address)
             if not self.rm:
                 self.rm = visa.ResourceManager()
             
             self.instrument = self.rm.open_resource(device_address)
-            self.instrument.timeout = 5000  # 设置超时时间
+            self.instrument.timeout = 5000
             
-            # 验证连接
             idn = self.instrument.query('*IDN?')
             logger.info("已连接到: %s", idn)
+            logger.debug("VISA timeout set to %d ms", self.instrument.timeout)
             
             return True
         except Exception as e:
@@ -54,6 +57,7 @@ class VisaInstrument:
     def disconnect(self):
         """断开连接"""
         try:
+            logger.debug("Disconnecting VISA instrument")
             if self.instrument:
                 self.instrument.close()
             if self.rm:
@@ -61,6 +65,7 @@ class VisaInstrument:
             
             self.instrument = None
             self.rm = None
+            logger.debug("VISA instrument disconnected successfully")
             return True
         except Exception as e:
             logger.error("断开连接错误: %s", e)
@@ -78,9 +83,9 @@ class VisaInstrument:
         """设置输出电压"""
         try:
             if self.instrument:
-                # 参考 N6705C 命令格式
                 self.instrument.write(f"INST:SEL CH{self.current_channel}")
                 self.instrument.write(f"VOLT {voltage}")
+                logger.debug("Set voltage CH%d = %s V", self.current_channel, voltage)
                 return True
             return False
         except Exception as e:
@@ -93,6 +98,7 @@ class VisaInstrument:
             if self.instrument:
                 self.instrument.write(f"INST:SEL CH{self.current_channel}")
                 self.instrument.write(f"CURR {current_limit}")
+                logger.debug("Set current limit CH%d = %s A", self.current_channel, current_limit)
                 return True
             return False
         except Exception as e:
@@ -130,6 +136,7 @@ class VisaInstrument:
                 self.instrument.write(f"INST:SEL CH{self.current_channel}")
                 state = "ON" if enabled else "OFF"
                 self.instrument.write(f"OUTP {state}")
+                logger.debug("Set output CH%d = %s", self.current_channel, state)
                 return True
             return False
         except Exception as e:

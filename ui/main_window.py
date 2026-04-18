@@ -826,6 +826,7 @@ class MainWindow(QMainWindow):
             self.pa_submenu.hide()
 
     def _on_pa_submenu_clicked(self, mode_key):
+        logger.debug("PA submenu clicked: %s", mode_key)
         self.current_pa_mode = mode_key
         self.pa_submenu.set_current_item(mode_key)
         self.n6705c_power_analyzer_btn.setChecked(True)
@@ -860,6 +861,7 @@ class MainWindow(QMainWindow):
             self.pmu_submenu.hide()
 
     def _on_pmu_submenu_clicked(self, test_key):
+        logger.debug("PMU submenu clicked: %s", test_key)
         self.current_pmu_test_key = test_key
         self.pmu_submenu.set_current_item(test_key)
         self.pmu_test_btn.setChecked(True)
@@ -889,6 +891,7 @@ class MainWindow(QMainWindow):
             self.charger_submenu.hide()
 
     def _on_charger_submenu_clicked(self, test_key):
+        logger.debug("Charger submenu clicked: %s", test_key)
         self.current_charger_test_key = test_key
         self.charger_submenu.set_current_item(test_key)
         self.charger_test_btn.setChecked(True)
@@ -942,6 +945,7 @@ class MainWindow(QMainWindow):
         return super().eventFilter(obj, event)
 
     def _create_power_analyser_ui(self):
+        logger.debug("Switching to Power Analyser UI")
         self._hide_all_instrument_uis()
         if self.n6705c_analyser_ui is None:
             self.n6705c_analyser_ui = N6705CAnalyserUI(n6705c_top=self.n6705c_top)
@@ -953,6 +957,7 @@ class MainWindow(QMainWindow):
         self.channels = self.n6705c_analyser_ui.channels if hasattr(self.n6705c_analyser_ui, 'channels') else []
 
     def _create_datalog_ui(self):
+        logger.debug("Switching to Datalog UI")
         self._hide_all_instrument_uis()
         if self.n6705c_datalog_ui is None:
             self.n6705c_datalog_ui = N6705CDatalogUI(n6705c_top=self.n6705c_top)
@@ -963,6 +968,7 @@ class MainWindow(QMainWindow):
         self.current_instrument_ui = "datalog"
 
     def _create_oscilloscope_ui(self):
+        logger.debug("Switching to Oscilloscope UI")
         self._hide_all_instrument_uis()
         if self.oscilloscope_ui is None:
             self.oscilloscope_ui = OscilloscopeBaseUI(mso64b_top=self.mso64b_top)
@@ -973,6 +979,7 @@ class MainWindow(QMainWindow):
         self.current_instrument_ui = "oscilloscope"
 
     def _create_thermal_chamber_ui(self):
+        logger.debug("Switching to Thermal Chamber UI")
         self._hide_all_instrument_uis()
         if self.vt6002_chamber_ui is None:
             self.vt6002_chamber_ui = VT6002ChamberUI()
@@ -983,6 +990,7 @@ class MainWindow(QMainWindow):
         self.current_instrument_ui = "thermal_chamber"
 
     def _create_pmu_test_ui(self, selected_test=None):
+        logger.debug("Switching to PMU Test UI: selected_test=%s", selected_test)
         self._hide_all_instrument_uis()
         if self.pmu_test_ui is None:
             self.pmu_test_ui = PMUTestUI(
@@ -1001,6 +1009,7 @@ class MainWindow(QMainWindow):
                 self.pmu_test_ui.set_current_test(selected_test)
 
     def _create_consumption_test_ui(self):
+        logger.debug("Switching to Consumption Test UI")
         self._hide_all_instrument_uis()
         if self.consumption_test_ui is None:
             self.consumption_test_ui = ConsumptionTestUI(n6705c_top=self.n6705c_top)
@@ -1011,6 +1020,7 @@ class MainWindow(QMainWindow):
         self.current_instrument_ui = "consumption_test"
 
     def _create_charger_test_ui(self, selected_test=None):
+        logger.debug("Switching to Charger Test UI: selected_test=%s", selected_test)
         self._hide_all_instrument_uis()
         if self.charger_test_ui is None:
             self.charger_test_ui = ChargerTestUI(n6705c_top=self.n6705c_top)

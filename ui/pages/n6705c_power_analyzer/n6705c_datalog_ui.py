@@ -1840,6 +1840,7 @@ class N6705CDatalogUI(QWidget):
         return None
 
     def _on_device_connect(self, visa_resource, serial):
+        logger.debug("Datalog UI _on_device_connect: resource=%s, serial=%s", visa_resource, serial)
         slot_label = self._find_next_free_slot()
         if slot_label is None:
             return
@@ -1868,6 +1869,7 @@ class N6705CDatalogUI(QWidget):
         self._connect_thread.start()
 
     def _on_connect_success(self, n6705c, serial, visa_resource, slot_label):
+        logger.debug("Datalog UI connect success: slot=%s, serial=%s", slot_label, serial)
         if slot_label == "A":
             self.n6705c_a = n6705c
             self.is_connected_a = True
@@ -1924,6 +1926,7 @@ class N6705CDatalogUI(QWidget):
             self._on_device_disconnect(serial)
 
     def _on_device_disconnect(self, serial):
+        logger.debug("Datalog UI _on_device_disconnect: serial=%s", serial)
         n6705c_to_close = None
         should_close_locally = True
         for label_char in ["A", "B", "C", "D"]:

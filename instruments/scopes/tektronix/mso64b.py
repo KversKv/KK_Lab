@@ -7,6 +7,7 @@ logger = get_logger(__name__)
 
 class MSO64B:
     def __init__(self, resource):
+        logger.debug("MSO64B __init__: resource=%s", resource)
         self.rm = pyvisa.ResourceManager('@py')
         if resource.startswith('TCPIP0::') or resource.startswith('USB0::'):
             self.instrument = self.rm.open_resource(resource)
@@ -17,6 +18,7 @@ class MSO64B:
         self.instrument.encoding = 'utf-8'
         self.instrument.read_termination = '\n'
         self.instrument.write_termination = '\n'
+        logger.debug("MSO64B connected, timeout=%d ms", self.instrument.timeout)
 
     def identify_instrument(self):
         return self.instrument.query('*IDN?').strip()
@@ -28,9 +30,12 @@ class MSO64B:
         return v
 
     def _measure_immediate(self, channel, measure_type):
+        logger.debug("MSO64B _measure_immediate: CH%s type=%s", channel, measure_type)
         self.instrument.write(f'MEASUrement:IMMed:SOURCE1 CH{channel}')
         self.instrument.write(f'MEASUrement:IMMed:TYPE {measure_type}')
-        return self._safe_float(self.instrument.query('MEASUrement:IMMed:VALUE?'))
+        result = self._safe_float(self.instrument.query('MEASUrement:IMMed:VALUE?'))
+        logger.debug("MSO64B _measure_immediate result: CH%s %s = %s", channel, measure_type, result)
+        return result
 
     def get_channel_mean(self, channel):
         return self._measure_immediate(channel, 'MEAN')
@@ -51,6 +56,7 @@ class MSO64B:
         return self._measure_immediate(channel, 'RMS')
 
     def set_trigger_edge(self, source_channel, level, slope='POS'):
+        logger.debug("MSO64B set_trigger_edge: CH%s, level=%s, slope=%s", source_channel, level, slope)
         slope_map = {'POS': 'RISe', 'NEG': 'FALL', 'EITH': 'EITher'}
         tek_slope = slope_map.get(slope.upper(), 'RISe')
         self.instrument.write(f'TRIGger:A:TYPe EDGE')
@@ -109,6 +115,7 @@ class MSO64B:
         return self._safe_float(self.instrument.query('DVM:MEASUREMENT:VALUE?'))
 
     def configure_horizontal(self, duration_s, sample_rate_mhz):
+        logger.debug("MSO64B configure_horizontal: duration=%ss, sample_rate=%s MHz", duration_s, sample_rate_mhz)
         num_divs = 10
         scale = duration_s / num_divs
         record_length = int(duration_s * sample_rate_mhz * 1e6)
@@ -132,6 +139,7 @@ class MSO64B:
         time.sleep(0.5)
 
     def single_acquisition(self, timeout_s=60):
+        logger.debug("MSO64B single_acquisition: timeout=%ss", timeout_s)
         self.instrument.write('ACQuire:STOPAfter SEQuence')
         self.instrument.write('ACQuire:STATE RUN')
         t0 = time.time()
@@ -236,6 +244,7 @@ class MSO64B:
         time.sleep(0.1)
 
     def disconnect(self):
+        logger.debug("MSO64B disconnect called")
         if self.instrument is not None:
             try:
                 self.instrument.close()
@@ -250,6 +259,7 @@ class MSO64B:
             self.rm = None
 
     def capture_screen_png(self, **kwargs) -> bytes:
+        logger.debug("MSO64B capture_screen_png called")
         remote_path = 'C:/Temp/tek_screenshot.png'
         old_timeout = self.instrument.timeout
         self.instrument.timeout = 30000

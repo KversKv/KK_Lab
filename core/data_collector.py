@@ -32,14 +32,16 @@ class DataCollector(QObject):
         """开始数据采集"""
         self.is_collecting = True
         self.start_time = time.time()
-        # 设置定时器间隔
-        interval = int(1000 / self.sampling_rate)  # 转换为毫秒
+        interval = int(1000 / self.sampling_rate)
+        logger.debug("DataCollector start: sampling_rate=%d Hz, interval=%d ms",
+                     self.sampling_rate, interval)
         self.timer.start(interval)
     
     def stop_collection(self):
         """停止数据采集"""
         self.is_collecting = False
         self.timer.stop()
+        logger.debug("DataCollector stopped")
         self.finished.emit()
     
     def _collect_data(self):

@@ -78,6 +78,8 @@ class DSOX4034A:
             else:
                 self.rm = pyvisa.ResourceManager()
 
+            logger.debug('DSOX4034A connect: resource=%s', self.resource)
+
             self._log(f'Using VISA library: {self.rm.visalib}')
             self._log(f'Available resources: {self.rm.list_resources()}')
             self._log(f'Opening resource: {self.resource}')
@@ -106,6 +108,7 @@ class DSOX4034A:
             ) from e
 
     def disconnect(self):
+        logger.debug('DSOX4034A disconnect called')
         if self.instrument is not None:
             try:
                 self.instrument.close()
@@ -283,6 +286,7 @@ class DSOX4034A:
 
     def set_trigger_edge(self, source_channel: int, level: float, slope: str = 'POS'):
         self._validate_channel(source_channel)
+        logger.debug('DSOX4034A set_trigger_edge: CH%d, level=%s, slope=%s', source_channel, level, slope)
         slope = slope.upper()
         if slope not in ('POS', 'NEG', 'EITH'):
             raise ValueError('slope 必须是 POS / NEG / EITH')
@@ -476,6 +480,7 @@ class DSOX4034A:
 
     def capture_screen_png(self, invert: bool = False) -> bytes:
         self._ensure_connected()
+        logger.debug('DSOX4034A capture_screen_png: invert=%s', invert)
         old_timeout = self.instrument.timeout
         old_term = self.instrument.read_termination
         old_chunk = self.instrument.chunk_size

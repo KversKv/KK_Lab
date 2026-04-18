@@ -2073,6 +2073,7 @@ class OscilloscopeBaseUI(QWidget):
     def _on_search(self):
         if self._osc_search_thread is not None and self._osc_search_thread.isRunning():
             return
+        logger.debug("Oscilloscope search started")
         self.set_system_status("● Searching")
         self.append_log("[SYSTEM] Scanning VISA / network resources...")
         self.search_btn.setEnabled(False)
@@ -2085,6 +2086,7 @@ class OscilloscopeBaseUI(QWidget):
         thread.start()
 
     def _on_search_finished(self, scope_devices):
+        logger.debug("Oscilloscope search finished: %s", scope_devices)
         self.visa_resource_combo.setEnabled(True)
         self.visa_resource_combo.clear()
         if scope_devices:
@@ -2115,6 +2117,7 @@ class OscilloscopeBaseUI(QWidget):
 
     def _connect_instrument(self):
         resource = self.visa_resource_combo.currentText().strip()
+        logger.debug("Oscilloscope connecting: resource=%s", resource)
         if not resource or resource == "No device found":
             self.append_log("[ERROR] Please enter a VISA resource or IP address.")
             self.set_system_status("● No resource", is_error=True)
@@ -2163,6 +2166,7 @@ class OscilloscopeBaseUI(QWidget):
             self.connect_btn.setEnabled(True)
 
     def _disconnect_instrument(self):
+        logger.debug("Oscilloscope disconnecting")
         self.set_system_status("● Disconnecting")
         self.connect_btn.setEnabled(False)
 

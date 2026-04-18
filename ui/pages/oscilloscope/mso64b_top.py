@@ -2,6 +2,9 @@
 # -*- coding: utf-8 -*-
 
 from PySide6.QtCore import QObject, Signal
+from log_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class MSO64BTop(QObject):
@@ -15,6 +18,7 @@ class MSO64BTop(QObject):
         self.scope_type = ""
 
     def connect_instrument(self, visa_resource, mso64b_instance=None, scope_type="MSO64B"):
+        logger.debug("MSO64BTop connect_instrument: resource=%s, type=%s", visa_resource, scope_type)
         if mso64b_instance is not None:
             self.mso64b = mso64b_instance
         else:
@@ -26,6 +30,7 @@ class MSO64BTop(QObject):
         self.connection_changed.emit()
 
     def disconnect(self):
+        logger.debug("MSO64BTop disconnect")
         if self.mso64b:
             try:
                 self.mso64b.disconnect()

@@ -406,6 +406,9 @@ class _DownloadWorker(QObject):
 
     def run(self):
         try:
+            logger.debug("DownloadWorker run: port=%s, bin=%s, mode=%s, timeout=%s",
+                         self.com_port, self.bin_file, self.mode, self.timeout)
+
             def _on_state(state: DownloadState):
                 self.state_changed.emit(state.value)
 
@@ -416,6 +419,8 @@ class _DownloadWorker(QObject):
                 timeout=self.timeout,
                 on_state_change=_on_state,
             )
+            logger.debug("DownloadWorker finished: success=%s, state=%s",
+                         result.success, result.state.value)
             self.finished.emit(result)
         except Exception as e:
             self.error.emit(str(e))
@@ -455,6 +460,8 @@ class _ConsumptionTestWorker(QObject):
 
     def run(self):
         try:
+            logger.debug("ConsumptionTestWorker run: test_time=%s, sample_period=%s, devices=%s",
+                         self.test_time, self.sample_period, list(self.device_channel_map.keys()))
             if self._is_stopped:
                 self.finished.emit()
                 return
@@ -467,6 +474,8 @@ class _ConsumptionTestWorker(QObject):
                 for ch, avg_current in result.items():
                     if self._is_stopped:
                         break
+                    logger.debug("ConsumptionTestWorker result: %s CH%s = %.6e A",
+                                 device_label, ch, float(avg_current))
                     self.channel_result.emit(device_label, ch, float(avg_current))
             self.finished.emit()
         except Exception as e:
@@ -522,6 +531,10 @@ class _ConsumptionTestForceHighWorker(QObject):
     def _consumption_test_force_high(self):
         import threading
 
+        logger.debug("ForceHighWorker: vbat=%s CH%s, force_high_devices=%s, test_time=%s, sample_period=%s",
+                     self.vbat_device_label, self.vbat_hw_ch,
+                     list(self.force_high_map.keys()), self.test_time, self.sample_period)
+
         vbat_ch = self.vbat_hw_ch
         vbat_inst = self.vbat_inst
         vbat_label = self.vbat_device_label
@@ -564,6 +577,7 @@ class _ConsumptionTestForceHighWorker(QObject):
         if self._is_stopped:
             return
         vbat_current = vbat_result.get(vbat_ch, 0.0)
+        logger.debug("ForceHighWorker: Vbat total current = %.6e A", vbat_current)
         self.channel_result.emit(vbat_label, vbat_ch, float(vbat_current), "vbat")
         results[(vbat_label, vbat_ch)] = float(vbat_current)
 
@@ -656,6 +670,7 @@ class _ConsumptionTestForceHighWorker(QObject):
                 init_errors[idx] = e
 
         self.log_message.emit(f"[TEST] Sync-starting datalog on {len(active_tasks)} instrument(s)...")
+        logger.debug("ForceHighWorker: sync-starting datalog on %d instruments", len(active_tasks))
         start_threads = []
         for idx, task in enumerate(active_tasks):
             t = threading.Thread(target=start_datalog_worker, args=(idx, task), daemon=True)
@@ -722,6 +737,7 @@ class _ConsumptionTestForceHighWorker(QObject):
             cr = task["curr_result"] or {}
             for ch in task["force_channels"]:
                 avg_i = cr.get(ch, 0.0)
+                logger.debug("ForceHighWorker result: %s CH%s = %.6e A", task["device_label"], ch, avg_i)
                 self.channel_result.emit(task["device_label"], ch, float(avg_i), "force_high")
                 results[(task["device_label"], ch)] = float(avg_i)
             if task["device_label"] == vbat_label and vbat_ch in cr:

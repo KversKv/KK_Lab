@@ -1,5 +1,8 @@
 from instruments.scopes.keysight.dsox4034a import DSOX4034A
 from instruments.scopes.tektronix.mso64b import MSO64B
+from log_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class OscilloscopeController:
@@ -9,14 +12,18 @@ class OscilloscopeController:
         self.osc_type = None
 
     def connect(self, osc_type: str, resource: str):
+        logger.debug("OscilloscopeController connect: type=%s, resource=%s", osc_type, resource)
         self.osc_type = osc_type
         if osc_type == "dsox4034a":
             self.instrument = DSOX4034A(resource)
         else:
             self.instrument = MSO64B(resource)
-        return self.instrument.identify_instrument()
+        idn = self.instrument.identify_instrument()
+        logger.debug("OscilloscopeController connected: %s", idn)
+        return idn
 
     def disconnect(self):
+        logger.debug("OscilloscopeController disconnect")
         if self.instrument is not None:
             self.instrument.disconnect()
             self.instrument = None
@@ -29,6 +36,7 @@ class OscilloscopeController:
         if self.instrument is None:
             return {}
 
+        logger.debug("OscilloscopeController measure: CH%d, osc_type=%s", channel, self.osc_type)
         results = {}
         try:
             results['PK2PK'] = self.instrument.get_channel_pk2pk(channel)
@@ -63,11 +71,14 @@ class OscilloscopeController:
     def capture_screen(self, **kwargs) -> bytes:
         if self.instrument is None:
             return b''
+        logger.debug("OscilloscopeController capture_screen: kwargs=%s", kwargs)
         return self.instrument.capture_screen_png(**kwargs)
 
     def apply_settings(self, settings: dict):
         if self.instrument is None:
             return
+
+        logger.debug("OscilloscopeController apply_settings: %s", settings)
 
         if 'timebase' in settings:
             self.instrument.set_timebase_scale(settings['timebase'])

@@ -20,5 +20,5 @@ CHIP_CONFIG = {
     'psram2': '',
     'apsram1': '',
     'apsram2': '',
-    'power_distribution': {'user_config': ['Voltage_cali_24_48MHz:', '- WRITE_BITS 0x0132 7 0 0x77', '- WRITE_BITS 0x0133 7 0 0x5B', '- WRITE 0x0128 0x35B0', '- WRITE_BITS 0x0135 15 8 0x93', '- WRITE_BITS 0x0136 15 8 0x91']},
+    'power_distribution': {'user_config': ['Voltage_low:', '- WRITE_BITS 0x0132 7 0 0x0F', '- WRITE_BITS 0x0133 7 0 0x0F', '- WRITE 0x0128 0x2108', '- WRITE_BITS 0x0135 15 8 0x0F', '- WRITE_BITS 0x0136 15 8 0x0F']},
 }

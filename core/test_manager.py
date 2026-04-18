@@ -32,7 +32,7 @@ class TestManager(QObject):
     
     def start_test(self, visa_instrument, sampling_rate=100):
         """开始测试"""
-        # 清空之前的数据
+        logger.debug("TestManager start_test: sampling_rate=%d", sampling_rate)
         self.test_data = {
             'time': [],
             'current': [],
@@ -58,32 +58,32 @@ class TestManager(QObject):
     
     def stop_test(self):
         """停止测试"""
+        logger.debug("TestManager stop_test")
         if self.data_collector:
             self.data_collector.stop_collection()
     
     def _on_data_collected(self, time_val, current, voltage):
         """处理采集到的数据"""
-        # 添加数据
         self.test_data['time'].append(time_val)
         self.test_data['current'].append(current)
         self.test_data['voltage'].append(voltage)
         
-        # 发送信号更新 UI
         self.data_updated.emit(self.test_data)
     
     def export_data(self):
         """导出数据"""
         if not self.test_data['time']:
+            logger.debug("TestManager export_data: no data to export")
             return
         
-        # 创建导出目录
         export_dir = os.path.join(os.getcwd(), 'exports')
         if not os.path.exists(export_dir):
             os.makedirs(export_dir)
         
-        # 生成文件名
         timestamp = time.strftime('%Y%m%d_%H%M%S')
         filename = os.path.join(export_dir, f'power_test_{timestamp}.csv')
+        logger.debug("TestManager export_data: exporting %d points to %s",
+                     len(self.test_data['time']), filename)
         
         # 写入 CSV 文件
         with open(filename, 'w', newline='', encoding='utf-8') as f:

@@ -7,6 +7,7 @@ logger = get_logger(__name__)
 
 class N6705C:
     def __init__(self, resource):
+        logger.debug("N6705C __init__: resource=%s", resource)
         self.rm = pyvisa.ResourceManager('@py')
         if resource.startswith('TCPIP0::') or resource.startswith('USB0::'):
             self.instr = self.rm.open_resource(resource)
@@ -14,6 +15,7 @@ class N6705C:
             self.instr = self.rm.open_resource(f'TCPIP0::{resource}::inst0::INSTR')
         self.instr.timeout = 10000
         self.instr.encoding = 'utf-8'
+        logger.debug("N6705C connected, timeout=%d ms", self.instr.timeout)
 
 
     def set_channel_range(self, channel):
@@ -23,27 +25,22 @@ class N6705C:
         self.instr.write(f"SENS:CURR:RANG:AUTO ON, (@{channel})")
 
     def set_voltage(self, channel, voltage):
-        # 设置电压
-        # self.instr.write(f"FUNC VOLT,(@{channel})")
+        logger.debug("N6705C set_voltage: CH%s = %s V", channel, voltage)
         self.instr.write(f"VOLT {voltage}, (@{channel})")
-        # self.channel_on(channel)
 
     def get_mode(self, channel):
         return self.instr.query(f"EMULation? (@{channel})").strip()
 
     def set_mode(self, channel, mode):
-        #设置模式
-        #mode option: PS4Q |PS2Q |PS1Q |BATTery |CHARger |CCLoad |CVLoad |VMETer |AMETer
+        logger.debug("N6705C set_mode: CH%s = %s", channel, mode)
         self.instr.write(f"EMULation {mode},(@{channel})")
-        # self.channel_on(channel)
 
     def set_current(self, channel, current):
-        # 设置电流
-        # self.instr.write(f"FUNC CURR,(@{channel})")
+        logger.debug("N6705C set_current: CH%s = %s A", channel, current)
         self.instr.write(f"CURR {current},(@{channel})")
-        # self.channel_on(channel)
 
     def set_current_limit(self, channel, current_limit):
+        logger.debug("N6705C set_current_limit: CH%s = %s A", channel, current_limit)
         self.instr.write(f"CURR:LIM {current_limit}, (@{channel})")
         self.instr.write(f"SENS:CURR:RANG:AUTO ON, (@{channel})")
 
@@ -60,11 +57,11 @@ class N6705C:
             raise ValueError("Invalid measurement type specified. Use 'voltage' or 'current'.")
 
     def channel_on(self, channel):
-        # 打开通道
+        logger.debug("N6705C channel_on: CH%s", channel)
         self.instr.write(f"OUTP ON, (@{channel})")
 
     def channel_off(self, channel):
-        # 关闭通道
+        logger.debug("N6705C channel_off: CH%s", channel)
         self.instr.write(f"OUTP OFF, (@{channel})")
 
     def get_channel_state(self, channel):
@@ -77,10 +74,9 @@ class N6705C:
 
 
     def measure_voltage(self, channel):
-        # 测量电压
-         return float(self.instr.query(f"MEAS:VOLT? (@{channel})")[:-1])
-
-        # 假设 self.controller.instr 是 pyvisa resource（N6705C）
+        result = float(self.instr.query(f"MEAS:VOLT? (@{channel})")[:-1])
+        logger.debug("N6705C measure_voltage: CH%s = %.6f V", channel, result)
+        return result
 
     def fetch_voltage(self, channel):
         # 测量电压
@@ -92,17 +88,19 @@ class N6705C:
         return float(self.instr.query(f"FETC:VOLT? (@{channel})"))
 
     def measure_current(self, channel):
-        # 测量电流
-        return self.instr.query(f"MEAS:CURR? (@{channel})")
+        result = self.instr.query(f"MEAS:CURR? (@{channel})")
+        logger.debug("N6705C measure_current: CH%s = %s", channel, result.strip())
+        return result
 
     def get_current_limit(self, channel):
         # 获取电流限制
         return self.instr.query(f"CURR:LIM? (@{channel})")
 
     def fetch_current(self, channel):
-        # 测量电流
-        self.instr.write(f"INIT (@{channel})")  # 触发单次测量
-        return float(self.instr.query(f"FETC:CURR? (@{channel})"))
+        self.instr.write(f"INIT (@{channel})")
+        result = float(self.instr.query(f"FETC:CURR? (@{channel})"))
+        logger.debug("N6705C fetch_current: CH%s = %.6e A", channel, result)
+        return result
 
     def arb_on(self, channel):
         return self.instr.write(f"INIT:TRAN (@{channel})")
@@ -232,6 +230,7 @@ class N6705C:
 
     def read_mmem_data(self, filepath):
         import struct
+        logger.debug("N6705C read_mmem_data: filepath=%s", filepath)
         old_timeout = self.instr.timeout
         old_chunk = getattr(self.instr, 'chunk_size', 20480)
         self.instr.timeout = 300000
@@ -272,6 +271,7 @@ class N6705C:
         """
         断开与仪器的连接
         """
+        logger.debug("N6705C disconnect called")
         if self.instr is not None:
             try:
                 self.instr.close()
@@ -474,6 +474,8 @@ class N6705C:
             dict[int, float]: {通道号: marker之间平均电流}
         """
         channels = self._normalize_channels(channels)
+        logger.debug("fetch_current_by_datalog: channels=%s, test_time=%s, sample_period=%s",
+                     channels, test_time, sample_period)
 
         try:
             total_points = int(test_time / sample_period)
@@ -521,6 +523,7 @@ class N6705C:
                     self.instr.query(f"FETC:DLOG:CURR? (@{ch})")
                 )
                 result[ch] = avg_current
+                logger.debug("fetch_current_by_datalog: CH%s avg_current=%.6e A", ch, avg_current)
 
             if on_progress:
                 on_progress(1.0)
@@ -615,6 +618,8 @@ class N6705C:
     def prepare_force_high(self, channels, voltage_offset, current_limit,
                            monitor_channels=None):
         channels = self._normalize_channels(channels)
+        logger.debug("prepare_force_high: channels=%s, voltage_offset=%s, current_limit=%s",
+                     channels, voltage_offset, current_limit)
         if monitor_channels is None:
             monitor_channels = []
         elif isinstance(monitor_channels, int):
@@ -634,6 +639,8 @@ class N6705C:
 
         for ch in channels:
             new_v = measured_voltages[ch] + voltage_offset
+            logger.debug("prepare_force_high: CH%s measured=%.4f V, forcing=%.4f V",
+                         ch, measured_voltages[ch], new_v)
             self.set_mode(ch, "PS2Q")
             self.set_voltage(ch, new_v)
             self.set_current_limit(ch, current_limit)
@@ -661,6 +668,7 @@ class N6705C:
     def prepare_force_auto(self, channels, current_limit,
                            monitor_channels=None):
         channels = self._normalize_channels(channels)
+        logger.debug("prepare_force_auto: channels=%s, current_limit=%s", channels, current_limit)
         if monitor_channels is None:
             monitor_channels = []
         elif isinstance(monitor_channels, int):
@@ -680,6 +688,8 @@ class N6705C:
 
         for ch in channels:
             new_v = self._align_voltage(measured_voltages[ch])
+            logger.debug("prepare_force_auto: CH%s measured=%.4f V, aligned=%.4f V",
+                         ch, measured_voltages[ch], new_v)
             self.set_mode(ch, "PS2Q")
             self.set_voltage(ch, new_v)
             self.set_current_limit(ch, current_limit)
@@ -692,6 +702,8 @@ class N6705C:
 
     def configure_datalog(self, channels, test_time, sample_period):
         channels = self._normalize_channels(channels)
+        logger.debug("configure_datalog: channels=%s, test_time=%s, sample_period=%s",
+                     channels, test_time, sample_period)
         self.instr.write("*CLS")
         try:
             self.instr.write("ABOR:DLOG")
@@ -709,10 +721,12 @@ class N6705C:
             self.channel_on(ch)
 
     def start_datalog(self, dlog_file="internal:\\temp_fetch.dlog"):
+        logger.debug("start_datalog: dlog_file=%s", dlog_file)
         self.instr.write(f'INIT:DLOG "{dlog_file}"')
 
     def fetch_datalog_marker_results(self, channels, test_time):
         channels = self._normalize_channels(channels)
+        logger.debug("fetch_datalog_marker_results: channels=%s, test_time=%s", channels, test_time)
         marker1_point = 1
         marker2_point = test_time - 1
         self.instr.write(f"SENS:DLOG:MARK1:POIN {marker1_point}")
@@ -724,10 +738,12 @@ class N6705C:
                 self.instr.query(f"FETC:DLOG:CURR? (@{ch})")
             )
             result[ch] = avg_current
+            logger.debug("fetch_datalog_marker_results: CH%s avg_current=%.6e A", ch, avg_current)
         return result
 
     def restore_channels_to_vmeter(self, channels):
         channels = self._normalize_channels(channels)
+        logger.debug("restore_channels_to_vmeter: channels=%s", channels)
         for ch in channels:
             try:
                 self.set_mode(ch, "VMETer")
@@ -738,6 +754,8 @@ class N6705C:
     def force_high_and_measure(self, channels, voltage_offset, current_limit, test_time, sample_period,
                                on_progress=None, stop_check=None, monitor_channels=None):
         channels = self._normalize_channels(channels)
+        logger.debug("force_high_and_measure: channels=%s, offset=%s, limit=%s, time=%s",
+                     channels, voltage_offset, current_limit, test_time)
         if monitor_channels is None:
             monitor_channels = []
         elif isinstance(monitor_channels, int):

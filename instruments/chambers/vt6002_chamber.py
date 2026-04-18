@@ -34,6 +34,7 @@ def hex_to_int(hex_num, bit_length=16):
 class VT6002:
     def __init__(self, port, baudrate=9600):
         """初始化串口连接"""
+        logger.debug("VT6002 __init__: port=%s, baudrate=%d", port, baudrate)
         self.ser = serial.Serial(port, baudrate, timeout=1)
         self.parameters = {
             "温度PV值": "0218",
@@ -107,13 +108,9 @@ class VT6002:
             return None
 
     def set_temperature(self, temp_celsius):
+        logger.debug("VT6002 set_temperature: %.1f°C", temp_celsius)
         self.ser.write(self.build_request_set_temp(temp_celsius))
-        # print(self.build_request_set_temp(temp_celsius))
         response = self.ser.read(8)
-        # if response == self.build_request_set_temp(temp_celsius):
-        #     print(f"Temperature set to {temp_celsius}°C successfully.")
-        # else:
-        #     print("Error: Failed to set temperature.")
 
     def set_temperature2(self, temp_celsius):
         values = self.build_request_write([0x07, 0x4E], temp_celsius)
@@ -126,7 +123,9 @@ class VT6002:
 
     def get_current_temp(self):
         """读取温度PV值"""
-        return self.read_value(self.parameters["温度PV值"])
+        temp = self.read_value(self.parameters["温度PV值"])
+        logger.debug("VT6002 get_current_temp: %s°C", temp)
+        return temp
 
     def get_set_temp(self):
         """读取温度PV值"""
@@ -208,6 +207,7 @@ class VT6002:
 
     def close(self):
         """关闭串口连接"""
+        logger.debug("VT6002 close called")
         if self.ser.is_open:
             self.ser.close()
 

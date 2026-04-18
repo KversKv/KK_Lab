@@ -1654,6 +1654,7 @@ class N6705CAnalyserUI(QWidget):
         """)
 
     def _switch_channel(self, dev_label, ch):
+        logger.debug("Switch channel: dev=%s, CH%s", dev_label, ch)
         self.current_device = dev_label
         self.current_channel = ch
         self._dirty_voltage = False
@@ -1832,6 +1833,7 @@ class N6705CAnalyserUI(QWidget):
     def _on_search(self, label):
         if label in self._search_threads and self._search_threads[label].isRunning():
             return
+        logger.debug("N6705C search started: label=%s", label)
         w = self.conn_widgets[label]
         w["status"].setText("Searching...")
         w["status"].setStyleSheet("color: #ff9800; font-weight:bold;")
@@ -1849,6 +1851,7 @@ class N6705CAnalyserUI(QWidget):
         thread.start()
 
     def _on_search_finished(self, label, found):
+        logger.debug("N6705C search finished: label=%s, found=%s", label, found)
         w = self.conn_widgets[label]
         w["combo"].clear()
         if found:
@@ -1870,6 +1873,7 @@ class N6705CAnalyserUI(QWidget):
             self._connect(label)
 
     def _connect(self, label):
+        logger.debug("N6705C connecting: label=%s", label)
         w = self.conn_widgets[label]
         w["status"].setText("Connecting...")
         w["status"].setStyleSheet("color: #ff9800; font-weight:bold;")
@@ -1917,6 +1921,7 @@ class N6705CAnalyserUI(QWidget):
             w["toggle_conn_btn"].setEnabled(True)
 
     def _disconnect(self, label):
+        logger.debug("N6705C disconnecting: label=%s", label)
         w = self.conn_widgets[label]
         try:
             if self._top:
@@ -2163,6 +2168,7 @@ class N6705CAnalyserUI(QWidget):
         except ValueError:
             return
 
+        logger.debug("CT start_test: test_time=%s, sample_period=%s", test_time, sample_period)
         self.is_testing = True
         self.ct_start_btn.setEnabled(False)
         self.ct_stop_btn.setEnabled(True)
@@ -2203,6 +2209,7 @@ class N6705CAnalyserUI(QWidget):
             self.ct_stop_btn.setEnabled(False)
 
     def _ct_on_channel_result(self, dev_label, ch, avg_current):
+        logger.debug("CT channel result: %s CH%s = %.6e A", dev_label, ch, avg_current)
         key = (dev_label, ch)
         if key in self.ct_channel_cards:
             self.ct_channel_cards[key]["value_label"].setText(_format_current(avg_current))
@@ -2212,6 +2219,7 @@ class N6705CAnalyserUI(QWidget):
 
     def _ct_on_one_finished(self):
         self._test_finished_count += 1
+        logger.debug("CT one test finished: %d/%d", self._test_finished_count, self._test_expected_count)
         if self._test_finished_count >= self._test_expected_count:
             self.is_testing = False
             self.ct_start_btn.setEnabled(True)
@@ -2220,6 +2228,7 @@ class N6705CAnalyserUI(QWidget):
             self._test_workers.clear()
 
     def _ct_stop_test(self):
+        logger.debug("CT stop_test called")
         for worker in self._test_workers.values():
             worker.stop()
         self.is_testing = False

@@ -24,7 +24,7 @@ from log_config import setup_logging, get_logger
 from debug_config import DEBUG_MOCK
 from ui.main_window import MainWindow
 
-setup_logging(level=logging.INFO)
+setup_logging(level=logging.DEBUG)
 # setup_logging(level=logging.DEBUG)    # 全部输出
 # setup_logging(level=logging.INFO)     # 默认 - 正常运行信息
 # setup_logging(level=logging.WARNING)  # 仅警告和错误
@@ -64,6 +64,7 @@ def custom_message_handler(msg_type, context, message):
 
 def main():
     """主函数"""
+    logger.debug("Application starting")
     qInstallMessageHandler(custom_message_handler)
     
     app = QApplication(sys.argv)
@@ -73,9 +74,12 @@ def main():
     _icon_path = os.path.join(_base, "resources", "icons", "kk_lab.ico")
     if os.path.exists(_icon_path):
         app.setWindowIcon(QIcon(_icon_path))
+        logger.debug("Application icon loaded: %s", _icon_path)
     
+    logger.debug("DEBUG_MOCK=%s", DEBUG_MOCK)
     main_window = MainWindow()
     main_window.show()
+    logger.debug("MainWindow shown, entering event loop")
     
     sys.exit(app.exec())
 
