@@ -541,11 +541,16 @@ class CardFrame(QFrame):
         self.main_layout.setSpacing(12)
 
         if title:
+            self.title_row = QHBoxLayout()
+            self.title_row.setSpacing(8)
             self.title_label = QLabel(title)
             self.title_label.setObjectName("cardTitle")
-            self.main_layout.addWidget(self.title_label)
+            self.title_row.addWidget(self.title_label)
+            self.title_row.addStretch()
+            self.main_layout.addLayout(self.title_row)
         else:
             self.title_label = None
+            self.title_row = None
 
 
 class ItermTestUI(N6705CConnectionMixin, QWidget):
@@ -902,7 +907,10 @@ class ItermTestUI(N6705CConnectionMixin, QWidget):
     def _build_connection_card(self):
         layout = self.connection_card.main_layout
 
-        self.build_n6705c_connection_widgets(layout)
+        self.build_n6705c_connection_widgets(
+            layout,
+            title_row=self.connection_card.title_row,
+        )
 
         self.instrument_info_label = QLabel("USB0::0x0957::0x0F07::MY53004321")
         self.instrument_info_label.setObjectName("fieldLabel")

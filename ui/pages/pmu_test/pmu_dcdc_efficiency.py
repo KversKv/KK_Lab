@@ -1446,7 +1446,10 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget)
         right_layout.addWidget(self.execution_logs, 1)
 
     def _build_connection_card(self):
-        self.build_n6705c_connection_widgets(self.connection_card.main_layout)
+        self.build_n6705c_connection_widgets(
+            self.connection_card.main_layout,
+            title_row=self.connection_card.title_row,
+        )
 
     def _build_test_item_card(self):
         layout = self.test_item_card.main_layout
@@ -2323,7 +2326,7 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget)
 
     def update_instrument_info(self, instrument_info):
         if self.is_connected:
-            self.set_system_status(f"● Connected to: {instrument_info}")
+            self.set_system_status("● Connected")
 
 
 if __name__ == "__main__":

@@ -11,7 +11,8 @@ import re
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
-from ui.styles.n6705c_module_frame import N6705CConnectionMixin, build_n6705c_inline_row
+from ui.styles.n6705c_module_frame import N6705CConnectionMixin
+from ui.widgets.button import SpinningSearchButton, update_connect_button_state
 from ui.styles.serialCom_module_frame import SerialComMixin, MODE_INLINE
 from ui.styles.execution_logs_module_frame import ExecutionLogsFrame
 from PySide6.QtWidgets import (
@@ -1928,38 +1929,61 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
     def _create_layout(self):
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(24, 16, 24, 16)
-        main_layout.setSpacing(16)
+        main_layout.setContentsMargins(16, 12, 16, 12)
+        main_layout.setSpacing(10)
 
-        header_layout = QVBoxLayout()
-        header_layout.setSpacing(2)
+        body_layout = QHBoxLayout()
+        body_layout.setSpacing(10)
 
-        title_label = QLabel("⚡ Consumption Test")
-        title_label.setStyleSheet("""
-            QLabel {
-                font-size: 20px;
-                font-weight: 800;
-                color: #ffffff;
+        left_column = QVBoxLayout()
+        left_column.setSpacing(10)
+        left_column.addWidget(self._create_connection_panel())
+        fw_panel, config_panel = self._create_firmware_and_config_panels()
+        left_column.addWidget(fw_panel)
+        left_column.addWidget(config_panel)
+        left_column.addWidget(self._create_test_config_panel())
+        left_column.addStretch()
+
+        left_inner = QWidget()
+        left_inner.setStyleSheet("background: transparent; border: none;")
+        left_inner.setLayout(left_column)
+
+        left_scroll = QScrollArea()
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        left_scroll.setFixedWidth(320)
+        left_scroll.setStyleSheet("""
+            QScrollArea { background: transparent; border: none; }
+            QScrollBar:vertical {
+                background: #0a1228; width: 6px; border: none; border-radius: 3px;
             }
-        """)
-        subtitle_label = QLabel("Measure average current consumption and manage DUT firmware/configuration.")
-        subtitle_label.setStyleSheet("""
-            QLabel {
-                font-size: 12px;
-                color: #7e96bf;
+            QScrollBar::handle:vertical {
+                background: #2a3f6e; min-height: 30px; border-radius: 3px;
             }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
         """)
-        header_layout.addWidget(title_label)
-        header_layout.addWidget(subtitle_label)
-        main_layout.addLayout(header_layout)
+        left_scroll.setWidget(left_inner)
 
-        main_layout.addWidget(self._create_connection_panel())
-        main_layout.addWidget(self._create_firmware_config_panel())
-        main_layout.addWidget(self._create_consumption_test_panel(), 1)
+        right_column = QVBoxLayout()
+        right_column.setSpacing(10)
+        right_column.addWidget(self._create_channel_config_section())
+        right_column.addWidget(self._create_consumption_test_panel(), 1)
+
+        right_widget = QWidget()
+        right_widget.setStyleSheet("background: transparent; border: none;")
+        right_widget.setLayout(right_column)
+
+        body_layout.addWidget(left_scroll)
+        body_layout.addWidget(right_widget, 1)
+
+        main_layout.addLayout(body_layout, 1)
 
         self.execution_logs = ExecutionLogsFrame(show_progress=False)
         self.log_edit = self.execution_logs.log_edit
         self.clear_log_btn = self.execution_logs.clear_log_btn
+        self.log_edit.setMinimumHeight(40)
+        self.log_edit.setMaximumHeight(80)
         main_layout.addWidget(self.execution_logs)
 
     def _create_connection_panel(self):
@@ -1973,33 +1997,71 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             }
         """)
         layout = QVBoxLayout(panel)
-        layout.setContentsMargins(16, 12, 16, 12)
-        layout.setSpacing(8)
-
-        title_row = QHBoxLayout()
-        title_row.setSpacing(8)
-        icon = QLabel("⚡")
-        icon.setStyleSheet("font-size: 16px; color: #00f5c4;")
-        title = QLabel("N6705C Connection")
-        title.setStyleSheet("font-size: 14px; font-weight: 700; color: #ffffff;")
-        title_row.addWidget(icon)
-        title_row.addWidget(title)
-        title_row.addStretch()
-        layout.addLayout(title_row)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(4)
 
         self._n6705c_conn_widgets = {}
         _default_resources = {
             "B": "TCPIP0::K-N6705C-03845.local::hislip0::INSTR",
         }
+        _tag_colors = {"A": "#00f5c4", "B": "#f2994a"}
+
         for label in ("A", "B"):
-            row, widgets = build_n6705c_inline_row(
-                label, parent=panel, row_height=32,
-                default_resource=_default_resources.get(label),
+            tag_color = _tag_colors.get(label, "#00f5c4")
+            default_res = _default_resources.get(label, "")
+
+            header = QHBoxLayout()
+            header.setSpacing(4)
+            header.setContentsMargins(0, 2, 0, 0)
+            tag = QLabel(f"N6705C {label}")
+            tag.setStyleSheet(
+                f"color: {tag_color}; font-weight: 700; font-size: 11px;"
+                " background: transparent; border: none;"
             )
-            layout.addLayout(row)
+            status_label = QLabel("● Disconnected")
+            status_label.setStyleSheet(
+                "color: #8ea6cf; font-size: 10px; font-weight: bold;"
+                " background: transparent; border: none;"
+            )
+            header.addWidget(tag)
+            header.addStretch()
+            header.addWidget(status_label)
+            layout.addLayout(header)
+
+            visa_combo = DarkComboBox(bg="#091426", border="#17345f")
+            visa_combo.setSizeAdjustPolicy(
+                DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+            )
+            visa_combo.setMinimumContentsLength(10)
+            visa_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+            visa_combo.setFixedHeight(24)
+            font = visa_combo.font()
+            font.setPixelSize(10)
+            visa_combo.setFont(font)
+            visa_combo.addItem(default_res if default_res else "TCPIP0::K-N6705C-06098.local::hislip0::INSTR")
+            layout.addWidget(visa_combo)
+
+            btn_row = QHBoxLayout()
+            btn_row.setSpacing(4)
+            search_btn = SpinningSearchButton(parent=panel)
+            search_btn.setFixedHeight(24)
+            connect_btn = QPushButton()
+            connect_btn.setFixedHeight(24)
+            update_connect_button_state(connect_btn, connected=False)
+            btn_row.addWidget(search_btn)
+            btn_row.addWidget(connect_btn)
+            layout.addLayout(btn_row)
+
+            widgets = {
+                "tag": tag,
+                "status": status_label,
+                "combo": visa_combo,
+                "search_btn": search_btn,
+                "connect_btn": connect_btn,
+            }
             self._n6705c_conn_widgets[label] = widgets
-            widgets["search_btn"].clicked.connect(lambda checked=False, lbl=label: self._on_device_search(lbl))
-            widgets["connect_btn"].clicked.connect(lambda checked=False, lbl=label: self._on_device_connect_or_disconnect(lbl))
+            search_btn.clicked.connect(lambda checked=False, lbl=label: self._on_device_search(lbl))
+            connect_btn.clicked.connect(lambda checked=False, lbl=label: self._on_device_connect_or_disconnect(lbl))
 
         return panel
 
@@ -2315,19 +2377,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
                 self._disabled_overlay.show()
                 self._disabled_overlay.raise_()
 
-    def _create_firmware_config_panel(self):
-        outer = QFrame()
-        outer.setObjectName("fwConfigOuter")
-        outer.setStyleSheet("""
-            QFrame#fwConfigOuter {
-                background-color: transparent;
-                border: none;
-            }
-        """)
-        outer_layout = QHBoxLayout(outer)
-        outer_layout.setContentsMargins(0, 0, 0, 0)
-        outer_layout.setSpacing(12)
-
+    def _create_firmware_and_config_panels(self):
         fw_panel = QFrame()
         fw_panel.setObjectName("fwPanel")
         fw_panel.setStyleSheet("""
@@ -2338,37 +2388,44 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             }
         """)
         fw_layout = QVBoxLayout(fw_panel)
-        fw_layout.setContentsMargins(16, 14, 16, 14)
-        fw_layout.setSpacing(8)
+        fw_layout.setContentsMargins(12, 10, 12, 10)
+        fw_layout.setSpacing(6)
 
-        fw_title = QLabel("📁 Firmware Download (BIN/HEX)")
-        fw_title.setStyleSheet("font-size: 13px; font-weight: 700; color: #ffffff;")
+        fw_title = QLabel("📁 Firmware Download")
+        fw_title.setStyleSheet("font-size: 12px; font-weight: 700; color: #ffffff;")
         fw_layout.addWidget(fw_title)
 
         self.build_serial_connection_widgets(fw_layout)
         self.bind_serial_signals()
 
         mode_row = QHBoxLayout()
-        mode_row.setSpacing(8)
-        mode_label = QLabel("Download Mode")
+        mode_row.setSpacing(6)
+        mode_label = QLabel("Mode")
         mode_label.setStyleSheet("font-size: 11px; color: #7e96bf;")
         self.download_mode_toggle = DownloadModeToggle()
-        self.download_mode_toggle.setFixedWidth(160)
+        self.download_mode_toggle.setFixedWidth(140)
         mode_row.addWidget(mode_label)
         mode_row.addWidget(self.download_mode_toggle)
         mode_row.addStretch()
         fw_layout.addLayout(mode_row)
 
-        fw_file_label = QLabel("Select Firmware File")
-        fw_file_label.setStyleSheet("font-size: 11px; color: #7e96bf;")
-        fw_layout.addWidget(fw_file_label)
-
         fw_file_row = QHBoxLayout()
-        fw_file_row.setSpacing(6)
+        fw_file_row.setSpacing(4)
         self.firmware_file_input = QLineEdit("No file selected...")
         self.firmware_file_input.setReadOnly(True)
-        self.firmware_browse_btn = QPushButton("Browse")
-        self.firmware_browse_btn.setFixedWidth(72)
+        self.firmware_file_input.setStyleSheet("""
+            QLineEdit {
+                background-color: #020816;
+                border: 1px solid #1c2f54;
+                border-radius: 6px;
+                padding: 4px 6px;
+                color: #d7e3ff;
+                min-height: 28px;
+                font-size: 10px;
+            }
+        """)
+        self.firmware_browse_btn = QPushButton("...")
+        self.firmware_browse_btn.setFixedWidth(36)
         self.firmware_browse_btn.setStyleSheet("""
             QPushButton {
                 background-color: #5d45ff;
@@ -2376,7 +2433,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
                 border: none;
                 border-radius: 6px;
                 font-weight: 600;
-                min-height: 32px;
+                min-height: 28px;
             }
             QPushButton:hover { background-color: #6d55ff; }
         """)
@@ -2397,28 +2454,28 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             }
         """)
         config_layout = QVBoxLayout(config_panel)
-        config_layout.setContentsMargins(16, 14, 16, 14)
-        config_layout.setSpacing(8)
+        config_layout.setContentsMargins(12, 10, 12, 10)
+        config_layout.setSpacing(6)
 
         config_title_row = QHBoxLayout()
-        config_title_row.setSpacing(6)
+        config_title_row.setSpacing(4)
         config_icon_label = QLabel()
         config_icon_label.setPixmap(
-            _tinted_svg_icon(os.path.join(_ICONS_DIR, "file-json.svg"), "#94a3b8", 18).pixmap(18, 18)
+            _tinted_svg_icon(os.path.join(_ICONS_DIR, "file-json.svg"), "#94a3b8", 16).pixmap(16, 16)
         )
-        config_icon_label.setFixedSize(18, 18)
-        config_title = QLabel("Configuration Import (YAML)")
-        config_title.setStyleSheet("font-size: 13px; font-weight: 700; color: #ffffff;")
+        config_icon_label.setFixedSize(16, 16)
+        config_title = QLabel("Config Import")
+        config_title.setStyleSheet("font-size: 12px; font-weight: 700; color: #ffffff;")
         config_title_row.addWidget(config_icon_label)
         config_title_row.addWidget(config_title)
         config_title_row.addStretch()
         config_layout.addLayout(config_title_row)
 
         chip_row = QHBoxLayout()
-        chip_row.setSpacing(6)
-        chip_select_label = QLabel("Select Chip")
+        chip_row.setSpacing(4)
+        chip_select_label = QLabel("Chip")
         chip_select_label.setStyleSheet(
-            "font-size: 11px; color: #7e96bf; background: transparent; border: none;"
+            "font-size: 10px; color: #7e96bf; background: transparent; border: none;"
         )
         chip_row.addWidget(chip_select_label)
 
@@ -2427,7 +2484,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
         self.chip_combo.setMinimumContentsLength(10)
-        self.chip_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.chip_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         self.chip_combo.setFixedHeight(22)
         font = self.chip_combo.font()
         font.setPixelSize(11)
@@ -2464,14 +2521,14 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
         config_layout.addLayout(chip_row)
 
-        config_file_label = QLabel("Paste Configuration Content")
-        config_file_label.setStyleSheet("font-size: 11px; color: #7e96bf;")
+        config_file_label = QLabel("Config Content")
+        config_file_label.setStyleSheet("font-size: 10px; color: #7e96bf;")
         config_layout.addWidget(config_file_label)
 
         self.config_text_edit = QPlainTextEdit()
-        self.config_text_edit.setPlaceholderText("Paste your YAML configuration here...")
-        self.config_text_edit.setMinimumHeight(80)
-        self.config_text_edit.setMaximumHeight(160)
+        self.config_text_edit.setPlaceholderText("Paste YAML config here...")
+        self.config_text_edit.setMinimumHeight(60)
+        self.config_text_edit.setMaximumHeight(120)
         self.config_text_edit.setStyleSheet("""
             QPlainTextEdit {
                 background-color: #0d1b3e;
@@ -2479,8 +2536,8 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
                 border: 1px solid #25355c;
                 border-radius: 6px;
                 font-family: Consolas, monospace;
-                font-size: 11px;
-                padding: 6px;
+                font-size: 10px;
+                padding: 4px;
             }
             QPlainTextEdit:focus {
                 border: 1px solid #5d45ff;
@@ -2489,33 +2546,35 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         config_layout.addWidget(self.config_text_edit)
 
         config_btn_row = QHBoxLayout()
-        config_btn_row.setSpacing(8)
+        config_btn_row.setSpacing(4)
 
-        self.import_config_btn = QPushButton(" Import Configuration")
+        self.import_config_btn = QPushButton("Import")
         self.import_config_btn.setIcon(_tinted_svg_icon(os.path.join(_ICONS_DIR, "upload.svg"), "#dbe7ff"))
-        self.import_config_btn.setIconSize(QSize(18, 18))
+        self.import_config_btn.setIconSize(QSize(14, 14))
         self.import_config_btn.setStyleSheet("""
             QPushButton {
                 background-color: #162544;
                 color: #dbe7ff;
                 border: 1px solid #25355c;
-                border-radius: 8px;
+                border-radius: 6px;
                 font-weight: 600;
-                min-height: 36px;
+                min-height: 30px;
+                font-size: 11px;
             }
             QPushButton:hover { background-color: #1c315b; }
         """)
         config_btn_row.addWidget(self.import_config_btn, 1)
 
-        self.execute_config_btn = QPushButton("⚙ Execute")
+        self.execute_config_btn = QPushButton("⚙ Exec")
         self.execute_config_btn.setStyleSheet("""
             QPushButton {
                 background-color: #5d45ff;
                 color: #ffffff;
                 border: none;
-                border-radius: 8px;
+                border-radius: 6px;
                 font-weight: 600;
-                min-height: 36px;
+                min-height: 30px;
+                font-size: 11px;
             }
             QPushButton:hover { background-color: #6d55ff; }
             QPushButton:disabled {
@@ -2528,9 +2587,6 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
         config_layout.addLayout(config_btn_row)
 
-        outer_layout.addWidget(fw_panel, 1)
-        outer_layout.addWidget(config_panel, 1)
-
         self.firmware_browse_btn.clicked.connect(self._browse_firmware)
         self.download_btn.clicked.connect(self._download_to_dut)
         self.download_btn.stop_clicked.connect(self._stop_download)
@@ -2539,7 +2595,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self.import_config_btn.clicked.connect(self._import_configuration)
         self.execute_config_btn.clicked.connect(self._execute_configuration)
 
-        return outer
+        return fw_panel, config_panel
 
     def _create_consumption_test_panel(self):
         wrapper = QWidget()
@@ -2589,37 +2645,8 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             self._disabled_overlay.setGeometry(panel.geometry())
         wrapper.resizeEvent = _resize_overlay
         layout = QVBoxLayout(panel)
-        layout.setContentsMargins(16, 14, 16, 14)
-        layout.setSpacing(12)
-
-        header_row = QHBoxLayout()
-        header_row.setSpacing(8)
-        icon = QLabel("⚡")
-        icon.setStyleSheet("font-size: 16px; color: #f2c94c;")
-        title = QLabel("Current Consumption Test")
-        title.setStyleSheet("font-size: 14px; font-weight: 700; color: #ffffff;")
-        header_row.addWidget(icon)
-        header_row.addWidget(title)
-        header_row.addStretch()
-
-        self.save_datalog_btn = QPushButton("💾 Save DataLog")
-        self.save_datalog_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #162544;
-                color: #dbe7ff;
-                border: 1px solid #25355c;
-                border-radius: 6px;
-                font-size: 11px;
-                padding: 4px 10px;
-                min-height: 28px;
-            }
-            QPushButton:hover { background-color: #1c315b; }
-        """)
-        header_row.addWidget(self.save_datalog_btn)
-        layout.addLayout(header_row)
-
-        layout.addWidget(self._create_test_config_panel())
-        layout.addWidget(self._create_channel_config_section())
+        layout.setContentsMargins(14, 10, 14, 10)
+        layout.setSpacing(10)
 
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
@@ -2639,7 +2666,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             "separator_color": "#18a87a",
             "stop_color_normal": "#8a9bbe",
             "stop_color_hover": "#ff5a5a",
-            "min_height": 40,
+            "min_height": 36,
         }
         self.start_test_btn = ProgressButton(
             idle_text="▶ START TEST",
@@ -2667,7 +2694,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             "separator_color": "#25355c",
             "stop_color_normal": "#8a9bbe",
             "stop_color_hover": "#ff5a5a",
-            "min_height": 40,
+            "min_height": 36,
         }
         self.auto_test_btn = ProgressButton(
             idle_text="Auto Test",
@@ -2692,6 +2719,20 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self.channel_cards = {}
         layout.addWidget(self.result_cards_container, 1)
 
+        self.save_datalog_btn = QPushButton("💾 Save DataLog")
+        self.save_datalog_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #162544;
+                color: #dbe7ff;
+                border: 1px solid #25355c;
+                border-radius: 6px;
+                font-size: 11px;
+                padding: 4px 10px;
+                min-height: 28px;
+            }
+            QPushButton:hover { background-color: #1c315b; }
+        """)
+
         self.start_test_btn.clicked.connect(self._on_start_test)
         self.start_test_btn.stop_clicked.connect(self._stop_test)
         self.auto_test_btn.clicked.connect(self._on_auto_test)
@@ -2711,28 +2752,26 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             }
         """)
         config_layout = QVBoxLayout(config_frame)
-        config_layout.setContentsMargins(14, 10, 14, 10)
-        config_layout.setSpacing(8)
+        config_layout.setContentsMargins(12, 10, 12, 10)
+        config_layout.setSpacing(6)
 
         config_header = QHBoxLayout()
-        config_header.setSpacing(8)
+        config_header.setSpacing(6)
         cfg_icon = QLabel("🔧")
-        cfg_icon.setStyleSheet("font-size: 14px; color: #c8d6f0;")
+        cfg_icon.setStyleSheet("font-size: 13px; color: #c8d6f0;")
         cfg_title = QLabel("Test Config")
-        cfg_title.setStyleSheet("font-size: 13px; font-weight: 700; color: #ffffff;")
+        cfg_title.setStyleSheet("font-size: 12px; font-weight: 700; color: #ffffff;")
         config_header.addWidget(cfg_icon)
         config_header.addWidget(cfg_title)
         config_header.addStretch()
         config_layout.addLayout(config_header)
 
-        params_row = QHBoxLayout()
-        params_row.setSpacing(12)
-
+        time_row = QHBoxLayout()
+        time_row.setSpacing(6)
         time_label = QLabel("Test Time (s)")
         time_label.setStyleSheet("font-size: 11px; color: #7e96bf;")
         self.test_time_input = QLineEdit("10")
-        self.test_time_input.setFixedWidth(80)
-        self.test_time_input.setFixedHeight(28)
+        self.test_time_input.setFixedHeight(26)
         self.test_time_input.setAlignment(Qt.AlignCenter)
         self.test_time_input.setStyleSheet("""
             QLineEdit {
@@ -2741,44 +2780,37 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
                 border-radius: 6px;
                 padding: 4px 8px;
                 color: #d7e3ff;
-                font-size: 12px;
+                font-size: 11px;
             }
             QLineEdit:focus {
                 border: 1px solid #5b7cff;
             }
         """)
-        params_row.addWidget(time_label)
-        params_row.addWidget(self.test_time_input)
+        time_row.addWidget(time_label)
+        time_row.addWidget(self.test_time_input, 1)
+        config_layout.addLayout(time_row)
 
-        params_row.addSpacing(20)
-
-        method_label = QLabel("Control Method")
+        method_row = QHBoxLayout()
+        method_row.setSpacing(6)
+        method_label = QLabel("Control")
         method_label.setStyleSheet("font-size: 11px; color: #7e96bf;")
         self.control_method_toggle = ControlMethodToggle()
-        self.control_method_toggle.setFixedWidth(160)
-        params_row.addWidget(method_label)
-        params_row.addWidget(self.control_method_toggle)
+        self.control_method_toggle.setFixedWidth(140)
+        method_row.addWidget(method_label)
+        method_row.addWidget(self.control_method_toggle)
+        method_row.addStretch()
+        config_layout.addLayout(method_row)
 
-        params_row.addStretch()
-        config_layout.addLayout(params_row)
+        label_style = "font-size: 10px; color: #7e96bf;"
 
-        channel_grid = QGridLayout()
-        channel_grid.setSpacing(8)
-        channel_grid.setColumnMinimumWidth(0, 110)
-        channel_grid.setColumnMinimumWidth(1, 120)
-        channel_grid.setColumnMinimumWidth(2, 50)
-        channel_grid.setColumnMinimumWidth(3, 64)
-
-        label_style = "font-size: 11px; color: #7e96bf;"
-        polarity_label_style = "font-size: 11px; color: #7e96bf;"
-
-        poweron_label = QLabel("PwrON Channel")
+        poweron_row = QHBoxLayout()
+        poweron_row.setSpacing(4)
+        poweron_label = QLabel("PwrON")
         poweron_label.setStyleSheet(label_style)
         self.poweron_channel_combo = DarkComboBox()
-        self.poweron_channel_combo.setFixedWidth(120)
-        self.poweron_channel_combo.setFixedHeight(28)
+        self.poweron_channel_combo.setFixedHeight(24)
         font = self.poweron_channel_combo.font()
-        font.setPixelSize(12)
+        font.setPixelSize(11)
         self.poweron_channel_combo.setFont(font)
         for opt in self._get_available_channel_options():
             self.poweron_channel_combo.addItem(opt)
@@ -2786,23 +2818,19 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             if self.poweron_channel_combo.itemText(i) == "B-CH1":
                 self.poweron_channel_combo.setCurrentIndex(i)
                 break
-
-        poweron_polarity_label = QLabel("Polarity")
-        poweron_polarity_label.setStyleSheet(polarity_label_style)
         self.poweron_polarity_toggle = PolarityToggle()
+        poweron_row.addWidget(poweron_label)
+        poweron_row.addWidget(self.poweron_channel_combo, 1)
+        poweron_row.addWidget(self.poweron_polarity_toggle)
 
-        channel_grid.addWidget(poweron_label, 0, 0, Qt.AlignVCenter)
-        channel_grid.addWidget(self.poweron_channel_combo, 0, 1, Qt.AlignVCenter)
-        channel_grid.addWidget(poweron_polarity_label, 0, 2, Qt.AlignRight | Qt.AlignVCenter)
-        channel_grid.addWidget(self.poweron_polarity_toggle, 0, 3, Qt.AlignVCenter)
-
-        reset_label = QLabel("Reset Channel")
+        reset_row = QHBoxLayout()
+        reset_row.setSpacing(4)
+        reset_label = QLabel("Reset")
         reset_label.setStyleSheet(label_style)
         self.reset_channel_combo = DarkComboBox()
-        self.reset_channel_combo.setFixedWidth(120)
-        self.reset_channel_combo.setFixedHeight(28)
+        self.reset_channel_combo.setFixedHeight(24)
         font = self.reset_channel_combo.font()
-        font.setPixelSize(12)
+        font.setPixelSize(11)
         self.reset_channel_combo.setFont(font)
         for opt in self._get_available_channel_options():
             self.reset_channel_combo.addItem(opt)
@@ -2810,21 +2838,18 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             if self.reset_channel_combo.itemText(i) == "B-CH2":
                 self.reset_channel_combo.setCurrentIndex(i)
                 break
-
-        reset_polarity_label = QLabel("Polarity")
-        reset_polarity_label.setStyleSheet(polarity_label_style)
         self.reset_polarity_toggle = PolarityToggle()
-
-        channel_grid.addWidget(reset_label, 1, 0, Qt.AlignVCenter)
-        channel_grid.addWidget(self.reset_channel_combo, 1, 1, Qt.AlignVCenter)
-        channel_grid.addWidget(reset_polarity_label, 1, 2, Qt.AlignRight | Qt.AlignVCenter)
-        channel_grid.addWidget(self.reset_polarity_toggle, 1, 3, Qt.AlignVCenter)
-
-        channel_grid.setColumnStretch(4, 1)
+        reset_row.addWidget(reset_label)
+        reset_row.addWidget(self.reset_channel_combo, 1)
+        reset_row.addWidget(self.reset_polarity_toggle)
 
         self._n6705c_channel_widget = QWidget()
         self._n6705c_channel_widget.setStyleSheet("background: transparent; border: none;")
-        self._n6705c_channel_widget.setLayout(channel_grid)
+        ch_layout = QVBoxLayout(self._n6705c_channel_widget)
+        ch_layout.setContentsMargins(0, 0, 0, 0)
+        ch_layout.setSpacing(4)
+        ch_layout.addLayout(poweron_row)
+        ch_layout.addLayout(reset_row)
         config_layout.addWidget(self._n6705c_channel_widget)
 
         self.control_method_toggle.toggled.connect(self._on_control_method_changed)

@@ -585,7 +585,10 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
         right_layout.addWidget(self.result_frame, 1)
 
     def _build_connection_card(self):
-        self.build_n6705c_connection_widgets(self.connection_card.main_layout)
+        self.build_n6705c_connection_widgets(
+            self.connection_card.main_layout,
+            title_row=self.connection_card.title_row,
+        )
 
     def _build_config_card(self):
         layout = self.config_card.main_layout
@@ -926,7 +929,7 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
 
     def update_instrument_info(self, instrument_info):
         if self.is_connected:
-            self.set_system_status(f"● Connected to: {instrument_info}")
+            self.set_system_status("● Connected")
 
     def append_log(self, message):
         pass

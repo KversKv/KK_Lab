@@ -478,9 +478,16 @@ class CardFrame(QFrame):
         self.main_layout.setSpacing(12)
 
         if title:
+            self.title_row = QHBoxLayout()
+            self.title_row.setSpacing(8)
             self.title_label = QLabel(title)
             self.title_label.setObjectName("cardTitle")
-            self.main_layout.addWidget(self.title_label)
+            self.title_row.addWidget(self.title_label)
+            self.title_row.addStretch()
+            self.main_layout.addLayout(self.title_row)
+        else:
+            self.title_label = None
+            self.title_row = None
 
 
 class FixedPopupComboBox(DarkComboBox):
@@ -1752,7 +1759,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
 
     def update_instrument_info(self, instrument_info):
         if self.is_connected:
-            self.set_system_status(f"● Connected to: {instrument_info}")
+            self.set_system_status("● Connected")
 
     def _on_start_or_abort_clicked(self):
         if self.is_test_running:

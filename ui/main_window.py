@@ -1107,14 +1107,14 @@ class MainWindow(QMainWindow):
 
     def _update_instrument_status(self):
         if self.n6705c_top.is_connected_a:
-            name = f"N6705C-A  {self.n6705c_top.serial_a}" if self.n6705c_top.serial_a else "N6705C-A Connected"
+            name = f"N6705C-A Connected to: {self.n6705c_top.serial_a}" if self.n6705c_top.serial_a else "N6705C-A Connected"
             self._remove_instrument_status("n6705c_a")
             self._add_instrument_status("n6705c_a", name)
         else:
             self._remove_instrument_status("n6705c_a")
 
         if self.n6705c_top.is_connected_b:
-            name = f"N6705C-B  {self.n6705c_top.serial_b}" if self.n6705c_top.serial_b else "N6705C-B Connected"
+            name = f"N6705C-B Connected to: {self.n6705c_top.serial_b}" if self.n6705c_top.serial_b else "N6705C-B Connected"
             self._remove_instrument_status("n6705c_b")
             self._add_instrument_status("n6705c_b", name)
         else:

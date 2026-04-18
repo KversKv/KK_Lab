@@ -1506,7 +1506,7 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
 
     def update_instrument_info(self, instrument_info):
         if self.is_connected:
-            self.set_system_status(f"● Connected to: {instrument_info}")
+            self.set_system_status("● Connected")
 
     def get_test_mode(self):
         return "GPADC Test"

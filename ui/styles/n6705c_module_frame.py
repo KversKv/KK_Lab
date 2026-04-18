@@ -31,7 +31,6 @@ N6705C_BTN_RADIUS = 6
 
 
 def _n6705c_search_style(h=N6705C_BTN_HEIGHT, r=N6705C_BTN_RADIUS):
-    inner = max(h - 2, 0)
     return f"""
         QPushButton {{
             background-color: #13254b;
@@ -39,8 +38,7 @@ def _n6705c_search_style(h=N6705C_BTN_HEIGHT, r=N6705C_BTN_RADIUS):
             border-radius: {r}px;
             color: #dce7ff;
             font-weight: 600;
-            min-height: {inner}px;
-            max-height: {inner}px;
+            min-height: {h}px;
         }}
         QPushButton:hover {{
             background-color: #1C2D55;
@@ -58,7 +56,6 @@ def _n6705c_search_style(h=N6705C_BTN_HEIGHT, r=N6705C_BTN_RADIUS):
 
 
 def _n6705c_connect_style(h=N6705C_BTN_HEIGHT, r=N6705C_BTN_RADIUS):
-    inner = max(h - 2, 0)
     return f"""
         QPushButton {{
             background-color: #053b38;
@@ -66,8 +63,7 @@ def _n6705c_connect_style(h=N6705C_BTN_HEIGHT, r=N6705C_BTN_RADIUS):
             border-radius: {r}px;
             color: #10e7bc;
             font-weight: 700;
-            min-height: {inner}px;
-            max-height: {inner}px;
+            min-height: {h}px;
         }}
         QPushButton:hover {{
             background-color: #064744;
@@ -86,7 +82,6 @@ def _n6705c_connect_style(h=N6705C_BTN_HEIGHT, r=N6705C_BTN_RADIUS):
 
 
 def _n6705c_disconnect_style(h=N6705C_BTN_HEIGHT, r=N6705C_BTN_RADIUS):
-    inner = max(h - 2, 0)
     return f"""
         QPushButton {{
             background-color: #3a0828;
@@ -94,8 +89,7 @@ def _n6705c_disconnect_style(h=N6705C_BTN_HEIGHT, r=N6705C_BTN_RADIUS):
             border-radius: {r}px;
             color: #ffb7d3;
             font-weight: 700;
-            min-height: {inner}px;
-            max-height: {inner}px;
+            min-height: {h}px;
         }}
         QPushButton:hover {{
             background-color: #4a0b31;
@@ -177,7 +171,21 @@ class _N6705CSearchButton(QPushButton):
 def _update_n6705c_btn_state(btn, connected,
                              h=N6705C_BTN_HEIGHT, r=N6705C_BTN_RADIUS,
                              icon_size=N6705C_BTN_ICON_SIZE):
-    update_connect_button_state(btn, connected)
+    from PySide6.QtCore import QSize as _QSize
+    if connected:
+        btn.setText("Disconnect")
+        btn.setStyleSheet(_n6705c_disconnect_style(h=h, r=r))
+        if os.path.isfile(_UNLINK_ICON_PATH):
+            btn.setIcon(QIcon(_UNLINK_ICON_PATH))
+            btn.setIconSize(_QSize(icon_size, icon_size))
+    else:
+        btn.setText("Connect")
+        btn.setStyleSheet(_n6705c_connect_style(h=h, r=r))
+        if os.path.isfile(_LINK_ICON_PATH):
+            btn.setIcon(QIcon(_LINK_ICON_PATH))
+            btn.setIconSize(_QSize(icon_size, icon_size))
+        else:
+            btn.setIcon(QIcon())
 
 
 class _SearchN6705CWorker(QObject):
@@ -298,14 +306,22 @@ class N6705CConnectionMixin:
     def build_n6705c_connection_widgets(self, layout,
                                         btn_height=N6705C_BTN_HEIGHT,
                                         btn_radius=N6705C_BTN_RADIUS,
-                                        btn_icon_size=N6705C_BTN_ICON_SIZE):
+                                        btn_icon_size=N6705C_BTN_ICON_SIZE,
+                                        title_row=None):
         self._n6705c_btn_height = btn_height
         self._n6705c_btn_radius = btn_radius
         self._n6705c_btn_icon_size = btn_icon_size
 
+        left, top, right, bottom = layout.getContentsMargins()
+        layout.setContentsMargins(left, max(top // 2, 0), right, max(bottom // 2, 0))
+        layout.setSpacing(3)
+
         self.system_status_label = QLabel("● Ready")
         self.system_status_label.setObjectName("statusOk")
-        layout.addWidget(self.system_status_label)
+        if title_row is not None:
+            title_row.addWidget(self.system_status_label)
+        else:
+            layout.addWidget(self.system_status_label)
 
         self.visa_resource_combo = DarkComboBox()
         self.visa_resource_combo.setSizeAdjustPolicy(
@@ -324,8 +340,10 @@ class N6705CConnectionMixin:
             btn_height=btn_height,
             btn_radius=btn_radius,
         )
+        self.search_btn.setFixedHeight(btn_height)
 
         self.connect_btn = QPushButton()
+        self.connect_btn.setFixedHeight(btn_height)
         _update_n6705c_btn_state(
             self.connect_btn, connected=False,
             h=btn_height, r=btn_radius, icon_size=btn_icon_size,
@@ -358,12 +376,7 @@ class N6705CConnectionMixin:
             if self._n6705c_top.visa_resource_a:
                 self.visa_resource_combo.clear()
                 self.visa_resource_combo.addItem(self._n6705c_top.visa_resource_a)
-                pretty_name = self._n6705c_top.visa_resource_a
-                try:
-                    pretty_name = self._n6705c_top.visa_resource_a.split("::")[1]
-                except Exception:
-                    pass
-                self.set_system_status(f"● Connected to: {pretty_name}")
+            self.set_system_status("● Connected")
         else:
             self.n6705c = None
             self._update_n6705c_connect_button_state(False)
@@ -465,13 +478,13 @@ class N6705CConnectionMixin:
         if DEBUG_MOCK:
             self.n6705c = MockN6705C()
             self._update_n6705c_connect_button_state(True)
-            self.set_system_status("● Connected to: Mock N6705C (DEBUG)")
+            self.set_system_status("● Connected")
             self.search_btn.setEnabled(False)
             if hasattr(self, 'append_log'):
                 self.append_log("[DEBUG] Mock N6705C connected.")
             device_address = self.visa_resource_combo.currentText()
             if self._n6705c_top:
-                self._n6705c_top.connect_a(device_address, self.n6705c)
+                self._n6705c_top.connect_a(device_address, self.n6705c, serial="MOCK")
             self.connection_status_changed.emit(True)
             return
 
@@ -489,19 +502,20 @@ class N6705CConnectionMixin:
                 self._update_n6705c_connect_button_state(True)
                 self.search_btn.setEnabled(False)
 
-                pretty_name = device_address
+                serial = ""
                 try:
-                    pretty_name = device_address.split("::")[1]
+                    idn_parts = idn.strip().split(",")
+                    serial = idn_parts[2].strip() if len(idn_parts) >= 3 else ""
                 except Exception:
                     pass
 
-                self.set_system_status(f"● Connected to: {pretty_name}")
+                self.set_system_status("● Connected")
                 if hasattr(self, 'append_log'):
                     self.append_log("[SYSTEM] N6705C connected successfully.")
                     self.append_log(f"[IDN] {idn.strip()}")
 
                 if self._n6705c_top:
-                    self._n6705c_top.connect_a(device_address, self.n6705c)
+                    self._n6705c_top.connect_a(device_address, self.n6705c, serial=serial)
 
                 self.connection_status_changed.emit(True)
             else:
