@@ -38,6 +38,22 @@ from log_config import get_logger
 
 logger = get_logger(__name__)
 
+CURRENT_UNIT = "uA"
+
+_UNIT_CONFIG = {
+    "A":  {"scale": 1.0,    "suffix": "A"},
+    "mA": {"scale": 1e3,    "suffix": "mA"},
+    "uA": {"scale": 1e6,    "suffix": "uA"},
+}
+
+
+def _format_current_unified(current_A, unit=None):
+    if unit is None:
+        unit = CURRENT_UNIT
+    cfg = _UNIT_CONFIG.get(unit, _UNIT_CONFIG["uA"])
+    return f"{current_A * cfg['scale']:.4f}{cfg['suffix']}"
+
+
 _ICONS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
     "resources", "icons"
@@ -751,7 +767,7 @@ class _ConsumptionTestForceHighWorker(QObject):
         vbat_name = self.channel_names.get(
             (self.vbat_device_label, self.vbat_hw_ch), "Vbat"
         )
-        parts = [f"{vbat_name}: {self._format_current_short(vbat_current)}"]
+        parts = [f"{vbat_name}: {_format_current_unified(vbat_current)}"]
         ordered_keys = []
         for device_label, (n6705c_inst, hw_channels) in self.force_high_map.items():
             for ch in hw_channels:
@@ -759,9 +775,9 @@ class _ConsumptionTestForceHighWorker(QObject):
         for key in ordered_keys:
             name = self.channel_names.get(key, f"{key[0]}-CH{key[1]}")
             val = results.get(key, 0.0)
-            parts.append(f"{name}: {self._format_current_short(val)}")
+            parts.append(f"{name}: {_format_current_unified(val)}")
         if vbat_remain is not None:
-            parts.append(f"Vbat_remain: {self._format_current_short(vbat_remain)}")
+            parts.append(f"Vbat_remain: {_format_current_unified(vbat_remain)}")
 
         summary_line = " | ".join(parts)
         self.log_message.emit(f"[RESULT] {summary_line}")
@@ -1046,7 +1062,7 @@ class _ConsumptionTestForceWorker(QObject):
         vbat_name = self.channel_names.get(
             (self.vbat_device_label, self.vbat_hw_ch), "Vbat"
         )
-        parts = [f"{vbat_name}: {self._format_current_short(vbat_current)}"]
+        parts = [f"{vbat_name}: {_format_current_unified(vbat_current)}"]
         ordered_keys = []
         for device_label, (n6705c_inst, hw_channels) in self.force_map.items():
             for ch in hw_channels:
@@ -1054,9 +1070,9 @@ class _ConsumptionTestForceWorker(QObject):
         for key in ordered_keys:
             name = self.channel_names.get(key, f"{key[0]}-CH{key[1]}")
             val = results.get(key, 0.0)
-            parts.append(f"{name}: {self._format_current_short(val)}")
+            parts.append(f"{name}: {_format_current_unified(val)}")
         if vbat_remain is not None:
-            parts.append(f"Vbat_remain: {self._format_current_short(vbat_remain)}")
+            parts.append(f"Vbat_remain: {_format_current_unified(vbat_remain)}")
 
         summary_line = " | ".join(parts)
         self.log_message.emit(f"[RESULT] {summary_line}")
@@ -1185,6 +1201,8 @@ class _AutoTestWorker(QObject):
             self.error.emit("No firmware files provided.")
             return
 
+        all_bin_results = []
+
         for bin_idx, bin_path in enumerate(self.firmware_paths):
             if self._is_stopped:
                 return
@@ -1217,19 +1235,28 @@ class _AutoTestWorker(QObject):
             if self._is_stopped:
                 return
 
-            self.log_message.emit("[AUTO_TEST] Step 3-4: Triggering RESET then POWERON for download handshake...")
-            self._toggle_signal(self.reset_inst, self.reset_hw_ch, self.reset_polarity)
-            _time.sleep(0.05)
-            self._toggle_signal(self.poweron_inst, self.poweron_hw_ch, self.poweron_polarity)
-
-            self.log_message.emit(f"[AUTO_TEST] Starting download: {bin_name}")
+            self.log_message.emit(f"[AUTO_TEST] Step 3: Starting download listener: {bin_name}")
             chip = detect_chip_from_bin(bin_path)
             detected_chip_name = None
             if chip:
                 self.log_message.emit(f"[AUTO_TEST] Detected chip from BIN: {chip}")
                 detected_chip_name = f"bes{chip.lower()}"
 
-            download_result = self._run_download(bin_path)
+            download_thread, result_queue = self._start_download_async(bin_path)
+            _time.sleep(1.0)
+
+            self.log_message.emit("[AUTO_TEST] Step 4: Triggering RESET then POWERON for download handshake...")
+            self._toggle_signal(self.reset_inst, self.reset_hw_ch, self.reset_polarity)
+            _time.sleep(0.05)
+            self._toggle_signal(self.poweron_inst, self.poweron_hw_ch, self.poweron_polarity)
+
+            self.log_message.emit("[AUTO_TEST] Waiting for download to complete...")
+            download_thread.join(timeout=180)
+            download_result = None
+            try:
+                download_result = result_queue.get_nowait()
+            except Exception:
+                pass
             self.progress.emit(bin_progress_base + 0.30 * bin_progress_span)
 
             if self._is_stopped:
@@ -1274,7 +1301,7 @@ class _AutoTestWorker(QObject):
             )
             self.log_message.emit(
                 f"[AUTO_TEST] Vbat total current: "
-                f"{_ConsumptionTestForceWorker._format_current_short(vbat_current)}"
+                f"{_format_current_unified(vbat_current)}"
             )
             self.progress.emit(bin_progress_base + 0.50 * bin_progress_span)
 
@@ -1435,20 +1462,12 @@ class _AutoTestWorker(QObject):
             if self._is_stopped:
                 return
 
-            self.log_message.emit("[AUTO_TEST] Step 11: Adjusting sub-channels with Auto Set logic...")
+            self.log_message.emit("[AUTO_TEST] Step 11: Adjusting sub-channels with Auto Set logic (using Step 8 voltages)...")
             for device_label, (n6705c_inst, hw_channels) in self.force_map.items():
                 for ch in hw_channels:
                     try:
-                        n6705c_inst.set_mode(ch, "VMETer")
-                        n6705c_inst.channel_on(ch)
-                    except Exception as e:
-                        self.log_message.emit(f"[WARNING] VMeter switch failed {device_label}-CH{ch}: {e}")
-            _time.sleep(0.5)
-            for device_label, (n6705c_inst, hw_channels) in self.force_map.items():
-                for ch in hw_channels:
-                    try:
-                        v = float(n6705c_inst.measure_voltage(ch))
-                        new_v = self._align_voltage(v)
+                        v_default = default_voltages.get((device_label, ch), 0.0)
+                        new_v = self._align_voltage(v_default)
                         n6705c_inst.set_mode(ch, "PS2Q")
                         n6705c_inst.set_voltage(ch, new_v)
                         n6705c_inst.set_current_limit(ch, 0.02)
@@ -1456,7 +1475,7 @@ class _AutoTestWorker(QObject):
                         final_limit = 0.07 if new_v < 1.0 else 0.15
                         n6705c_inst.set_current_limit(ch, final_limit)
                         ch_name = self.channel_names.get((device_label, ch), f"{device_label}-CH{ch}")
-                        self.log_message.emit(f"[AUTO_TEST]   {ch_name}: measured={v:.4f}V -> aligned={new_v:.4f}V")
+                        self.log_message.emit(f"[AUTO_TEST]   {ch_name}: default={v_default:.4f}V -> aligned={new_v:.4f}V")
                     except Exception as e:
                         self.log_message.emit(f"[ERROR] Auto set failed {device_label}-CH{ch}: {e}")
 
@@ -1597,11 +1616,44 @@ class _AutoTestWorker(QObject):
                 n6705c_inst.restore_channels_to_vmeter(hw_channels)
 
             self._emit_summary(results, vbat_current, vbat_remain, bin_name)
+            all_bin_results.append({
+                "bin_name": bin_name,
+                "vbat": vbat_current,
+                "channels": dict(results),
+                "vbat_remain": vbat_remain,
+            })
             self.progress.emit(bin_progress_base + bin_progress_span)
             self.log_message.emit(f"[AUTO_TEST] === BIN {bin_idx+1}/{total_bins}: {bin_name} completed ===")
 
         self.progress.emit(1.0)
+        if len(all_bin_results) > 1:
+            self._emit_final_summary_table(all_bin_results)
         self.log_message.emit("[AUTO_TEST] All auto test completed.")
+
+    def _start_download_async(self, bin_path):
+        import queue
+        import threading
+        result_queue = queue.Queue()
+
+        def _download_thread_fn():
+            try:
+                def _on_state(state):
+                    self.download_state_changed.emit(state.value)
+                result = download_bin(
+                    com_port=self.com_port,
+                    bin_file=bin_path,
+                    mode=self.download_mode,
+                    timeout=120,
+                    on_state_change=_on_state,
+                )
+                result_queue.put(result)
+            except Exception as e:
+                self.download_error.emit(str(e))
+                result_queue.put(None)
+
+        t = threading.Thread(target=_download_thread_fn, daemon=True)
+        t.start()
+        return t, result_queue
 
     def _run_download(self, bin_path):
         import queue
@@ -1636,7 +1688,7 @@ class _AutoTestWorker(QObject):
         vbat_name = self.channel_names.get(
             (self.vbat_device_label, self.vbat_hw_ch), "Vbat"
         )
-        parts = [f"{vbat_name}: {_ConsumptionTestForceWorker._format_current_short(vbat_current)}"]
+        parts = [f"{vbat_name}: {_format_current_unified(vbat_current)}"]
         ordered_keys = []
         for device_label, (n6705c_inst, hw_channels) in self.force_map.items():
             for ch in hw_channels:
@@ -1644,9 +1696,9 @@ class _AutoTestWorker(QObject):
         for key in ordered_keys:
             name = self.channel_names.get(key, f"{key[0]}-CH{key[1]}")
             val = results.get(key, 0.0)
-            parts.append(f"{name}: {_ConsumptionTestForceWorker._format_current_short(val)}")
+            parts.append(f"{name}: {_format_current_unified(val)}")
         if vbat_remain is not None:
-            parts.append(f"Vbat_remain: {_ConsumptionTestForceWorker._format_current_short(vbat_remain)}")
+            parts.append(f"Vbat_remain: {_format_current_unified(vbat_remain)}")
 
         prefix = f"[{bin_name}] " if bin_name else ""
         summary_line = " | ".join(parts)
@@ -1659,6 +1711,66 @@ class _AutoTestWorker(QObject):
             "vbat_remain": vbat_remain,
         }
         self.test_summary.emit(summary)
+
+    def _emit_final_summary_table(self, all_bin_results):
+        vbat_name = self.channel_names.get(
+            (self.vbat_device_label, self.vbat_hw_ch), "Vbat"
+        )
+        ordered_keys = []
+        for device_label, (n6705c_inst, hw_channels) in self.force_map.items():
+            for ch in hw_channels:
+                ordered_keys.append((device_label, ch))
+
+        col_headers = [vbat_name]
+        for key in ordered_keys:
+            col_headers.append(self.channel_names.get(key, f"{key[0]}-CH{key[1]}"))
+        has_vbat_remain = any(r.get("vbat_remain") is not None for r in all_bin_results)
+        if has_vbat_remain:
+            col_headers.append("Vbat_remain")
+
+        cfg = _UNIT_CONFIG.get(CURRENT_UNIT, _UNIT_CONFIG["uA"])
+        scale = cfg["scale"]
+        suffix = cfg["suffix"]
+
+        rows = []
+        for r in all_bin_results:
+            bin_name = r["bin_name"]
+            channels = r.get("channels", {})
+            vals = [f"{r.get('vbat', 0.0) * scale:.4f}"]
+            for key in ordered_keys:
+                vals.append(f"{channels.get(key, 0.0) * scale:.4f}")
+            if has_vbat_remain:
+                vr = r.get("vbat_remain")
+                vals.append(f"{vr * scale:.4f}" if vr is not None else "N/A")
+            rows.append((bin_name, vals))
+
+        bin_col_width = max(len(r[0]) for r in rows)
+        bin_col_width = max(bin_col_width, len("BIN"))
+        val_col_widths = []
+        for i, hdr in enumerate(col_headers):
+            max_w = len(hdr)
+            for _, vals in rows:
+                max_w = max(max_w, len(vals[i]))
+            val_col_widths.append(max_w)
+
+        unit_label = f"(Unit: {suffix})"
+        header_cells = [f"{'BIN':<{bin_col_width}}"]
+        for i, hdr in enumerate(col_headers):
+            header_cells.append(f"{hdr:>{val_col_widths[i]}}")
+        header_line = "  ".join(header_cells)
+        sep_line = "-" * len(header_line)
+
+        self.log_message.emit("[SUMMARY] " + "=" * 60)
+        self.log_message.emit(f"[SUMMARY] Auto Test Results {unit_label}")
+        self.log_message.emit("[SUMMARY] " + sep_line)
+        self.log_message.emit(f"[SUMMARY] {header_line}")
+        self.log_message.emit("[SUMMARY] " + sep_line)
+        for bin_name, vals in rows:
+            cells = [f"{bin_name:<{bin_col_width}}"]
+            for i, v in enumerate(vals):
+                cells.append(f"{v:>{val_col_widths[i]}}")
+            self.log_message.emit(f"[SUMMARY] {'  '.join(cells)}")
+        self.log_message.emit("[SUMMARY] " + "=" * 60)
 
 
 class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
@@ -1688,10 +1800,10 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
     DUAL_DEVICE_CHANNEL_CONFIGS = [
         {"name": "Vbat", "channel": "A-CH1", "enabled": True},
-        {"name": "VcoreM", "channel": "A-CH2", "enabled": True},
-        {"name": "VcoreL", "channel": "A-CH3", "enabled": True},
-        {"name": "VANA", "channel": "A-CH4", "enabled": True},
-        {"name": "VHPPA", "channel": "B-CH1", "enabled": True},
+        {"name": "Vcore", "channel": "A-CH2", "enabled": True},
+        {"name": "VANA", "channel": "A-CH3", "enabled": True},
+        {"name": "VHPPA", "channel": "A-CH4", "enabled": True},
+        {"name": "CH5", "channel": "B-CH1", "enabled": False},
         {"name": "CH6", "channel": "B-CH2", "enabled": False},
         {"name": "CH7", "channel": "B-CH3", "enabled": False},
         {"name": "CH8", "channel": "B-CH4", "enabled": False},
@@ -2660,7 +2772,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         label_style = "font-size: 11px; color: #7e96bf;"
         polarity_label_style = "font-size: 11px; color: #7e96bf;"
 
-        poweron_label = QLabel("PowerON Channel")
+        poweron_label = QLabel("PwrON Channel")
         poweron_label.setStyleSheet(label_style)
         self.poweron_channel_combo = DarkComboBox()
         self.poweron_channel_combo.setFixedWidth(120)
@@ -2670,6 +2782,10 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self.poweron_channel_combo.setFont(font)
         for opt in self._get_available_channel_options():
             self.poweron_channel_combo.addItem(opt)
+        for i in range(self.poweron_channel_combo.count()):
+            if self.poweron_channel_combo.itemText(i) == "B-CH1":
+                self.poweron_channel_combo.setCurrentIndex(i)
+                break
 
         poweron_polarity_label = QLabel("Polarity")
         poweron_polarity_label.setStyleSheet(polarity_label_style)
@@ -2690,6 +2806,10 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self.reset_channel_combo.setFont(font)
         for opt in self._get_available_channel_options():
             self.reset_channel_combo.addItem(opt)
+        for i in range(self.reset_channel_combo.count()):
+            if self.reset_channel_combo.itemText(i) == "B-CH2":
+                self.reset_channel_combo.setCurrentIndex(i)
+                break
 
         reset_polarity_label = QLabel("Polarity")
         reset_polarity_label.setStyleSheet(polarity_label_style)
