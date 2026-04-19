@@ -12,10 +12,12 @@ _LOG_FRAME_STYLE = """
         border-radius: 16px;
     }
     QFrame#logContainer QLabel#sectionTitle {
-        font-size: 12px;
+        font-size: 11px;
         font-weight: 700;
         color: #f4f7ff;
         background-color: transparent;
+        padding: 0px;
+        margin: 0px;
     }
     QFrame#logContainer QLabel#fieldLabel {
         color: #8eb0e3;
@@ -23,11 +25,13 @@ _LOG_FRAME_STYLE = """
         background-color: transparent;
     }
     QFrame#logContainer QPushButton#smallActionBtn {
-        min-height: 34px;
-        padding: 6px 10px;
-        border-radius: 10px;
+        min-height: 0px;
+        max-height: 18px;
+        padding: 2px 8px;
+        border-radius: 6px;
         background-color: #13254b;
         color: #dce7ff;
+        font-size: 10px;
     }
     QFrame#logContainer QTextEdit#logEdit {
         background-color: #061022;
@@ -62,10 +66,12 @@ class ExecutionLogsFrame(QFrame):
         self.setStyleSheet(_LOG_FRAME_STYLE)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(10)
+        layout.setContentsMargins(8, 6, 8, 8)
+        layout.setSpacing(4)
 
         header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(6)
         self.log_title = QLabel(title)
         self.log_title.setObjectName("sectionTitle")
         header.addWidget(self.log_title)
