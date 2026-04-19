@@ -473,6 +473,7 @@ class CardFrame(QFrame):
     def __init__(self, title="", parent=None):
         super().__init__(parent)
         self.setObjectName("cardFrame")
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(14, 14, 14, 14)
         self.main_layout.setSpacing(12)
@@ -554,6 +555,10 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
                 color: #dbe7ff;
             }
 
+            QWidget#leftPanelInner {
+                background-color: transparent;
+            }
+
             QLabel {
                 background-color: transparent;
                 color: #dbe7ff;
@@ -624,7 +629,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
                 border-radius: 14px;
             }
 
-            QFrame#resultContainer, QFrame#logContainer {
+            QFrame#resultContainer {
                 background-color: #09142e;
                 border: 1px solid #1a2d57;
                 border-radius: 16px;
@@ -643,7 +648,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
                 width: 0px; height: 0px; border: none;
             }
 
-            QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QTextEdit:focus, QTableWidget:focus {
+            QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QTextEdit:focus {
                 border: 1px solid #4cc9f0;
             }
 
@@ -718,6 +723,11 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
                 background-color: #13254b;
                 color: #dce7ff;
             }
+
+            QPushButton#smallActionBtn:hover {
+                background-color: #1a3260;
+                border: 1px solid #3c5fa1;
+            }
 """ + START_BTN_STYLE + """
             QPushButton#exportBtn {
                 min-height: 28px;
@@ -725,6 +735,16 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
                 border-radius: 8px;
                 background-color: #16284f;
                 color: #dfe8ff;
+                border: 1px solid #233d6a;
+            }
+
+            QPushButton#exportBtn:hover {
+                background-color: #1d3462;
+                border: 1px solid #3c5fa1;
+            }
+
+            QPushButton#exportBtn:pressed {
+                background-color: #122244;
             }
 
             QTextEdit#logEdit {
@@ -742,6 +762,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
                 border-radius: 8px;
                 gridline-color: #15284f;
                 color: #dbe7ff;
+                alternate-background-color: #071024;
             }
 
             QHeaderView::section {
@@ -749,13 +770,18 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
                 color: #c7d7f6;
                 border: none;
                 border-bottom: 1px solid #16305c;
-                padding: 6px;
+                padding: 6px 8px;
                 font-weight: 700;
+                font-size: 10px;
             }
 
             QTableWidget::item {
                 padding: 6px;
                 border-bottom: 1px solid #102448;
+            }
+
+            QTableWidget::item:selected {
+                background-color: #162a56;
             }
 
             QProgressBar {
@@ -793,8 +819,8 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
 
     def _create_layout(self):
         root_layout = QVBoxLayout(self)
-        root_layout.setContentsMargins(6, 6, 6, 6)
-        root_layout.setSpacing(10)
+        root_layout.setContentsMargins(12, 12, 12, 12)
+        root_layout.setSpacing(12)
 
         title_layout = QVBoxLayout()
         title_layout.setSpacing(2)
@@ -810,7 +836,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         root_layout.addLayout(title_layout)
 
         content_layout = QHBoxLayout()
-        content_layout.setSpacing(10)
+        content_layout.setSpacing(14)
         root_layout.addLayout(content_layout, 1)
 
         left_wrapper = QVBoxLayout()
@@ -865,13 +891,13 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         content_layout.addLayout(left_wrapper)
 
         right_layout = QVBoxLayout()
-        right_layout.setSpacing(10)
+        right_layout.setSpacing(14)
         content_layout.addLayout(right_layout, 1)
 
         self.result_frame = QFrame()
         self.result_frame.setObjectName("resultContainer")
         result_layout = QVBoxLayout(self.result_frame)
-        result_layout.setContentsMargins(12, 12, 12, 12)
+        result_layout.setContentsMargins(16, 12, 16, 12)
         result_layout.setSpacing(10)
 
         result_header = QHBoxLayout()
@@ -894,7 +920,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.result_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.result_table.horizontalHeader().setDefaultAlignment(Qt.AlignCenter)
         self.result_table.verticalHeader().setVisible(False)
-        self.result_table.setAlternatingRowColors(False)
+        self.result_table.setAlternatingRowColors(True)
         self.result_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.result_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.result_table.setShowGrid(False)
@@ -913,11 +939,10 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
     def _build_connection_card(self):
         layout = self.connection_card.main_layout
 
-        n6705c_label = QLabel("N6705C DC Power Analyzer")
-        n6705c_label.setObjectName("fieldLabel")
-        layout.addWidget(n6705c_label)
-
-        self.build_n6705c_connection_widgets(layout)
+        self.build_n6705c_connection_widgets(
+            layout,
+            title_row=self.connection_card.title_row,
+        )
 
         self.build_oscilloscope_connection_widgets(layout)
 
@@ -1257,7 +1282,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
                 font-size: 12px;
             }
             QLineEdit:focus {
-                border-color: #3a6fd4;
+                border-color: #4cc9f0;
             }
             QRadioButton {
                 color: #dbe7ff;
@@ -1290,6 +1315,9 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             QPushButton:hover {
                 background-color: #1e3460;
                 border-color: #3a6fd4;
+            }
+            QPushButton:pressed {
+                background-color: #112445;
             }
             QFrame#exportSeparator {
                 background-color: #1e3460;
@@ -1382,7 +1410,11 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         export_btn = QPushButton("⇩  Export")
         export_btn.setStyleSheet("""
             QPushButton {
-                background-color: #4f46e5;
+                background-color: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #5b5cf6,
+                    stop:1 #6a38ff
+                );
                 border: 1px solid #645bff;
                 border-radius: 6px;
                 color: #ffffff;
@@ -1391,8 +1423,15 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
                 font-weight: bold;
             }
             QPushButton:hover {
-                background-color: #5b5cf6;
+                background-color: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #6b6cff,
+                    stop:1 #7d4cff
+                );
                 border-color: #7b7cff;
+            }
+            QPushButton:pressed {
+                background-color: #4a3dd4;
             }
         """)
         export_btn.clicked.connect(dialog.accept)
