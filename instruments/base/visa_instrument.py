@@ -5,12 +5,13 @@ VISA 仪器控制
 """
 
 import pyvisa as visa
+from instruments.base.instrument_base import InstrumentBase
 from log_config import get_logger
 
 logger = get_logger(__name__)
 
 
-class VisaInstrument:
+class VisaInstrument(InstrumentBase):
     """VISA 仪器控制类"""
     
     def __init__(self):
