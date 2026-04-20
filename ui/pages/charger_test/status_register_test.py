@@ -9,7 +9,7 @@ sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.
 
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLLBAR_STYLE, START_BTN_STYLE, update_start_btn_state
-from ui.styles.execution_logs_module_frame import ExecutionLogsFrame
+from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.widgets.button import SpinningSearchButton, update_connect_button_state
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
@@ -24,8 +24,8 @@ import time
 from instruments.power.keysight.n6705c import N6705C
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockN6705C, MockVT6002
-from ui.styles.n6705c_module_frame import N6705CConnectionMixin
-from ui.styles.chamber_module_frame import VT6002ConnectionMixin
+from ui.modules.n6705c_module_frame import N6705CConnectionMixin
+from ui.modules.chamber_module_frame import VT6002ConnectionMixin
 from i2c_interface_x64 import I2CInterface
 from Bes_I2CIO_Interface import I2CSpeedMode, I2CWidthFlag
 

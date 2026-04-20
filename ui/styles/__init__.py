@@ -12,7 +12,7 @@ from ui.widgets.start_sequence import (
     create_start_btn,
     update_start_btn_state,
 )
-from ui.styles.execution_logs_module_frame import ExecutionLogsFrame
+from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 
 __all__ = [
     "SCROLLBAR_STYLE",

@@ -19,10 +19,10 @@ from PySide6.QtGui import QFont
 from ui.widgets.button import SpinningSearchButton, update_connect_button_state
 import pyqtgraph as pg
 from ui.styles import SCROLL_AREA_STYLE, START_BTN_STYLE, update_start_btn_state
-from ui.styles.execution_logs_module_frame import ExecutionLogsFrame
+from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.widgets.dark_combobox import DarkComboBox
-from ui.styles.oscilloscope_module_frame import OscilloscopeConnectionMixin
-from ui.styles.chamber_module_frame import VT6002ConnectionMixin
+from ui.modules.oscilloscope_module_frame import OscilloscopeConnectionMixin
+from ui.modules.chamber_module_frame import VT6002ConnectionMixin
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockMSO64B, MockVT6002
 

@@ -1,4 +1,4 @@
-#python -m ui.styles.chamber_module_frame
+#python -m ui.modules.chamber_module_frame
 import os
 import serial
 import serial.tools.list_ports
@@ -403,7 +403,7 @@ class VT6002ConnectionMixin:
 
 
 if __name__ == "__main__":
-    #python -m ui.styles.chamber_module_frame
+    #python -m ui.modules.chamber_module_frame
     import sys
     from PySide6.QtWidgets import (
         QApplication, QWidget, QVBoxLayout, QFrame, QSizePolicy

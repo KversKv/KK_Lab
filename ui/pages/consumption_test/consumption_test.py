@@ -11,10 +11,10 @@ import re
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
-from ui.styles.n6705c_module_frame import N6705CConnectionMixin
+from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.widgets.button import SpinningSearchButton, update_connect_button_state
-from ui.styles.serialCom_module_frame import SerialComMixin, MODE_INLINE
-from ui.styles.execution_logs_module_frame import ExecutionLogsFrame
+from ui.modules.serialCom_module_frame import SerialComMixin, MODE_INLINE
+from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QLabel, QLineEdit, QPlainTextEdit,
@@ -2212,7 +2212,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         w["connect_btn"].setEnabled(False)
         self.append_log(f"[SYSTEM] Scanning VISA resources for N6705C-{label}...")
 
-        from ui.styles.n6705c_module_frame import _SearchN6705CWorker
+        from ui.modules.n6705c_module_frame import _SearchN6705CWorker
         worker = _SearchN6705CWorker()
         thread = QThread()
         worker.moveToThread(thread)
@@ -2266,7 +2266,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         attr = label.lower()
         w = self._n6705c_conn_widgets[label]
         from debug_config import DEBUG_MOCK
-        from ui.styles.n6705c_module_frame import _update_n6705c_btn_state
+        from ui.modules.n6705c_module_frame import _update_n6705c_btn_state
         prev_count = self._connected_device_count()
 
         if DEBUG_MOCK:
@@ -2337,7 +2337,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
     def _disconnect_device(self, label):
         attr = label.lower()
         w = self._n6705c_conn_widgets[label]
-        from ui.styles.n6705c_module_frame import _update_n6705c_btn_state
+        from ui.modules.n6705c_module_frame import _update_n6705c_btn_state
         prev_count = self._connected_device_count()
 
         try:
@@ -2378,7 +2378,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         if not top:
             self._update_test_panel_state()
             return
-        from ui.styles.n6705c_module_frame import _update_n6705c_btn_state
+        from ui.modules.n6705c_module_frame import _update_n6705c_btn_state
         prev_count = self._connected_device_count()
         for label, attr in [("A", "a"), ("B", "b")]:
             n6705c = getattr(top, f"n6705c_{attr}", None)

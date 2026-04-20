@@ -1,4 +1,4 @@
-#python -m ui.styles.execution_logs_module_frame
+#python -m ui.modules.execution_logs_module_frame
 from PySide6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QTextEdit, QProgressBar,
@@ -121,7 +121,7 @@ class ExecutionLogsFrame(QFrame):
 
 
 if __name__ == "__main__":
-    #python -m ui.styles.execution_logs_module_frame
+    #python -m ui.modules.execution_logs_module_frame
     import sys
     from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout
 

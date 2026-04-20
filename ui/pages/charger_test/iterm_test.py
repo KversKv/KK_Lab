@@ -12,7 +12,7 @@ from log_config import get_logger
 
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLLBAR_STYLE, START_BTN_STYLE, update_start_btn_state
-from ui.styles.execution_logs_module_frame import ExecutionLogsFrame
+from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QLineEdit, QGridLayout, QSpinBox, QDoubleSpinBox, QFrame,
@@ -27,7 +27,7 @@ import pyvisa
 from instruments.power.keysight.n6705c import N6705C
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockN6705C
-from ui.styles.n6705c_module_frame import N6705CConnectionMixin
+from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from i2c_interface_x64 import I2CInterface
 from Bes_I2CIO_Interface import I2CSpeedMode, I2CWidthFlag
 

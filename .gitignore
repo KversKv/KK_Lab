@@ -9,3 +9,4 @@ build/
 dist/
 Results/*
 !Results/.gitkeep
+.trae/

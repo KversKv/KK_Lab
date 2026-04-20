@@ -1,4 +1,4 @@
-#python -m ui.styles.serialCom_module_frame
+#python -m ui.modules.serialCom_module_frame
 import os
 import serial
 import serial.tools.list_ports
@@ -593,7 +593,7 @@ class _SerialReadWorker(QObject):
 
 
 if __name__ == "__main__":
-    #python -m ui.styles.serialCom_module_frame
+    #python -m ui.modules.serialCom_module_frame
     import sys
     from PySide6.QtWidgets import (
         QApplication, QWidget, QVBoxLayout, QFrame, QSizePolicy

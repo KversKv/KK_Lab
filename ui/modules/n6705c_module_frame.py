@@ -1,5 +1,5 @@
 # N6705C模块框架样式
-#python -m ui.styles.n6705c_module_frame  
+#python -m ui.modules.n6705c_module_frame  
 
 import os
 from PySide6.QtWidgets import (

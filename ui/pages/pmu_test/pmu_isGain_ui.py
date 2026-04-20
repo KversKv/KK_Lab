@@ -21,13 +21,13 @@ from datetime import datetime
 
 from instruments.power.keysight.n6705c import N6705C
 from ui.widgets.button import SpinningSearchButton, update_connect_button_state
-from ui.styles.n6705c_module_frame import N6705CConnectionMixin
-from ui.styles.oscilloscope_module_frame import OscilloscopeConnectionMixin
+from ui.modules.n6705c_module_frame import N6705CConnectionMixin
+from ui.modules.oscilloscope_module_frame import OscilloscopeConnectionMixin
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockN6705C, MockMSO64B
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLLBAR_STYLE, START_BTN_STYLE, update_start_btn_state
-from ui.styles.execution_logs_module_frame import ExecutionLogsFrame
+from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 
 
 class _IsGainTestWorker(QObject):
@@ -475,17 +475,28 @@ class CardFrame(QFrame):
         self.setObjectName("cardFrame")
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(14, 14, 14, 14)
-        self.main_layout.setSpacing(12)
+        self.main_layout.setContentsMargins(14, 12, 14, 14)
+        self.main_layout.setSpacing(10)
 
         if title:
             self.title_row = QHBoxLayout()
             self.title_row.setSpacing(8)
+
+            self.accent_bar = QFrame()
+            self.accent_bar.setFixedSize(3, 14)
+            self.accent_bar.setStyleSheet("background-color: #5b5cf6; border-radius: 1px; border: none;")
+            self.title_row.addWidget(self.accent_bar)
+
             self.title_label = QLabel(title)
             self.title_label.setObjectName("cardTitle")
             self.title_row.addWidget(self.title_label)
             self.title_row.addStretch()
             self.main_layout.addLayout(self.title_row)
+
+            self.title_separator = QFrame()
+            self.title_separator.setFixedHeight(1)
+            self.title_separator.setStyleSheet("background-color: #152240; border: none;")
+            self.main_layout.addWidget(self.title_separator)
         else:
             self.title_label = None
             self.title_row = None
@@ -570,19 +581,22 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
                 font-weight: 700;
                 color: #f8fbff;
                 background-color: transparent;
+                padding-bottom: 0px;
             }
 
             QLabel#pageSubtitle {
                 font-size: 12px;
                 color: #7da2d6;
                 background-color: transparent;
+                padding-top: 0px;
             }
 
             QLabel#cardTitle {
                 font-size: 11px;
                 font-weight: 700;
-                color: #f4f7ff;
-                letter-spacing: 0.5px;
+                color: #e8eeff;
+                letter-spacing: 0.8px;
+                text-transform: uppercase;
                 background-color: transparent;
             }
 
@@ -625,22 +639,26 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
 
             QFrame#cardFrame {
                 background-color: #071127;
-                border: 1px solid #1a2b52;
-                border-radius: 14px;
+                border: 1px solid #172647;
+                border-radius: 12px;
+            }
+
+            QFrame#cardFrame:hover {
+                border: 1px solid #1f3460;
             }
 
             QFrame#resultContainer {
                 background-color: #09142e;
                 border: 1px solid #1a2d57;
-                border-radius: 16px;
+                border-radius: 14px;
             }
 
             QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QTextEdit, QTableWidget {
                 background-color: #0a1733;
                 color: #eaf2ff;
-                border: 1px solid #27406f;
-                border-radius: 8px;
-                padding: 6px 10px;
+                border: 1px solid #1e3358;
+                border-radius: 6px;
+                padding: 5px 10px;
                 selection-background-color: #4f46e5;
             }
             QSpinBox::up-button, QSpinBox::down-button,
@@ -649,7 +667,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             }
 
             QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QTextEdit:focus {
-                border: 1px solid #4cc9f0;
+                border: 1px solid #4f6db8;
             }
 
             QComboBox {
@@ -692,8 +710,8 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             }
 
             QPushButton {
-                min-height: 34px;
-                border-radius: 9px;
+                min-height: 32px;
+                border-radius: 8px;
                 padding: 6px 14px;
                 border: 1px solid #2a4272;
                 background-color: #102042;
@@ -719,7 +737,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             QPushButton#smallActionBtn {
                 min-height: 28px;
                 padding: 4px 10px;
-                border-radius: 8px;
+                border-radius: 7px;
                 background-color: #13254b;
                 color: #dce7ff;
             }
@@ -731,8 +749,8 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
 """ + START_BTN_STYLE + """
             QPushButton#exportBtn {
                 min-height: 28px;
-                padding: 4px 12px;
-                border-radius: 8px;
+                padding: 4px 14px;
+                border-radius: 7px;
                 background-color: #16284f;
                 color: #dfe8ff;
                 border: 1px solid #233d6a;
@@ -757,27 +775,33 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             }
 
             QTableWidget {
-                background-color: #030b1f;
-                border: 1px solid #1f315d;
+                background-color: #040c20;
+                border: 1px solid #17294f;
                 border-radius: 8px;
-                gridline-color: #15284f;
+                gridline-color: #111f3e;
                 color: #dbe7ff;
-                alternate-background-color: #071024;
+                alternate-background-color: #060f28;
             }
 
             QHeaderView::section {
-                background-color: #08142f;
-                color: #c7d7f6;
+                background-color: #0a1735;
+                color: #8ea8d4;
                 border: none;
-                border-bottom: 1px solid #16305c;
-                padding: 6px 8px;
+                border-bottom: 2px solid #1c3362;
+                border-right: 1px solid #111f3e;
+                padding: 8px 8px;
                 font-weight: 700;
                 font-size: 10px;
+                text-transform: uppercase;
+            }
+
+            QHeaderView::section:last {
+                border-right: none;
             }
 
             QTableWidget::item {
-                padding: 6px;
-                border-bottom: 1px solid #102448;
+                padding: 6px 8px;
+                border-bottom: 1px solid #0e1d3c;
             }
 
             QTableWidget::item:selected {
@@ -819,7 +843,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
 
     def _create_layout(self):
         root_layout = QVBoxLayout(self)
-        root_layout.setContentsMargins(12, 12, 12, 12)
+        root_layout.setContentsMargins(16, 14, 16, 14)
         root_layout.setSpacing(12)
 
         title_layout = QVBoxLayout()
@@ -852,8 +876,8 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.left_scroll.setStyleSheet("""
             QScrollArea#leftScrollArea {
                 background-color: #08132d;
-                border: 1px solid #16274d;
-                border-radius: 18px;
+                border: 1px solid #142240;
+                border-radius: 14px;
             }
         """ + SCROLLBAR_STYLE)
 
@@ -861,18 +885,18 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.left_panel.setObjectName("leftPanelInner")
 
         left_layout = QVBoxLayout(self.left_panel)
-        left_layout.setContentsMargins(10, 10, 10, 10)
-        left_layout.setSpacing(10)
+        left_layout.setContentsMargins(8, 8, 8, 8)
+        left_layout.setSpacing(8)
 
-        self.connection_card = CardFrame("Instruments Connection")
+        self.connection_card = CardFrame("Instruments")
         self._build_connection_card()
         left_layout.addWidget(self.connection_card)
 
-        self.channel_card = CardFrame("Channel Selection")
+        self.channel_card = CardFrame("Channels")
         self._build_channel_card()
         left_layout.addWidget(self.channel_card)
 
-        self.is_gain_card = CardFrame("IS_GAIN Config")
+        self.is_gain_card = CardFrame("Test Config")
         self._build_is_gain_card()
         left_layout.addWidget(self.is_gain_card)
 
@@ -891,35 +915,60 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         content_layout.addLayout(left_wrapper)
 
         right_layout = QVBoxLayout()
-        right_layout.setSpacing(14)
+        right_layout.setSpacing(12)
         content_layout.addLayout(right_layout, 1)
 
         self.result_frame = QFrame()
         self.result_frame.setObjectName("resultContainer")
         result_layout = QVBoxLayout(self.result_frame)
-        result_layout.setContentsMargins(16, 12, 16, 12)
-        result_layout.setSpacing(10)
+        result_layout.setContentsMargins(14, 12, 14, 12)
+        result_layout.setSpacing(8)
 
         result_header = QHBoxLayout()
-        self.result_title = QLabel("▦ Test Results")
+        result_header.setSpacing(8)
+
+        result_accent = QFrame()
+        result_accent.setFixedSize(3, 14)
+        result_accent.setStyleSheet("background-color: #5b5cf6; border-radius: 1px; border: none;")
+        result_header.addWidget(result_accent)
+
+        self.result_title = QLabel("Test Results")
         self.result_title.setObjectName("sectionTitle")
         result_header.addWidget(self.result_title)
+
+        self.result_count_label = QLabel("0 rows")
+        self.result_count_label.setObjectName("fieldLabel")
+        self.result_count_label.setStyleSheet("color: #5c7a9e; font-size: 10px; background: transparent; border: none;")
+        result_header.addWidget(self.result_count_label)
+
         result_header.addStretch()
 
-        self.export_result_btn = QPushButton("⇩ Export")
+        self.export_result_btn = QPushButton("Export")
         self.export_result_btn.setObjectName("exportBtn")
         result_header.addWidget(self.export_result_btn)
 
         result_layout.addLayout(result_header)
 
+        result_separator = QFrame()
+        result_separator.setFixedHeight(1)
+        result_separator.setStyleSheet("background-color: #152240; border: none;")
+        result_layout.addWidget(result_separator)
+
         self.result_table = QTableWidget(0, 7)
         self.result_table.setHorizontalHeaderLabels([
-            "STEP", "LOAD CURRENT (A)", "VOLTAGE (V)", "RIPPLE (mV)",
+            "STEP", "LOAD (A)", "VOLTAGE (V)", "RIPPLE (mV)",
             "V_DROP (mV)", "SCREENSHOT", "REMARK"
         ])
-        self.result_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.result_table.horizontalHeader().setDefaultAlignment(Qt.AlignCenter)
+        header = self.result_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Stretch)
+        header.setSectionResizeMode(0, QHeaderView.Fixed)
+        header.setSectionResizeMode(5, QHeaderView.Fixed)
+        self.result_table.setColumnWidth(0, 60)
+        self.result_table.setColumnWidth(5, 80)
+        header.setDefaultAlignment(Qt.AlignCenter)
+        header.setMinimumSectionSize(50)
         self.result_table.verticalHeader().setVisible(False)
+        self.result_table.verticalHeader().setDefaultSectionSize(32)
         self.result_table.setAlternatingRowColors(True)
         self.result_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.result_table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -946,6 +995,11 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
 
         self.build_oscilloscope_connection_widgets(layout)
 
+        conn_separator = QFrame()
+        conn_separator.setFixedHeight(1)
+        conn_separator.setStyleSheet("background-color: #152240; border: none;")
+        layout.addWidget(conn_separator)
+
         test_selection_label = QLabel("Test Selection")
         test_selection_label.setObjectName("fieldLabel")
         layout.addWidget(test_selection_label)
@@ -957,8 +1011,8 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
     def _build_channel_card(self):
         layout = self.channel_card.main_layout
         grid = QGridLayout()
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(10)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(6)
 
         lbl_ripple = QLabel("Ripple Channel (Oscilloscope)")
         lbl_ripple.setObjectName("fieldLabel")
@@ -983,8 +1037,9 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         layout = self.is_gain_card.main_layout
 
         top_row = QHBoxLayout()
+        top_row.setSpacing(8)
 
-        mode_label = QLabel("测试方法")
+        mode_label = QLabel("Method")
         mode_label.setObjectName("fieldLabel")
         self.is_gain_method_combo = FixedPopupComboBox()
         self.is_gain_method_combo.addItems(["CV测试法", "CC测试法"])
@@ -994,7 +1049,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         layout.addLayout(top_row)
 
         grid = QGridLayout()
-        grid.setHorizontalSpacing(10)
+        grid.setHorizontalSpacing(8)
         grid.setVerticalSpacing(6)
 
         self.lbl_dev = QLabel("Device Addr")
@@ -1034,6 +1089,11 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             self.is_gain_msb_spin, self.is_gain_lsb_spin,
         ]
 
+        current_separator = QFrame()
+        current_separator.setFixedHeight(1)
+        current_separator.setStyleSheet("background-color: #152240; border: none;")
+        grid.addWidget(current_separator, 4, 0, 1, 2)
+
         lbl_start_current = QLabel("Start Current (A)")
         lbl_start_current.setObjectName("fieldLabel")
         self.is_gain_start_current_spin = QDoubleSpinBox()
@@ -1058,17 +1118,17 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.is_gain_step_current_spin.setSingleStep(0.001)
         self.is_gain_step_current_spin.setValue(0.01)
 
-        grid.addWidget(lbl_start_current, 4, 0)
-        grid.addWidget(lbl_end_current, 4, 1)
-        grid.addWidget(self.is_gain_start_current_spin, 5, 0)
-        grid.addWidget(self.is_gain_end_current_spin, 5, 1)
+        grid.addWidget(lbl_start_current, 5, 0)
+        grid.addWidget(lbl_end_current, 5, 1)
+        grid.addWidget(self.is_gain_start_current_spin, 6, 0)
+        grid.addWidget(self.is_gain_end_current_spin, 6, 1)
 
-        grid.addWidget(lbl_step_current, 6, 0)
-        grid.addWidget(self.is_gain_step_current_spin, 7, 0)
+        grid.addWidget(lbl_step_current, 7, 0)
+        grid.addWidget(self.is_gain_step_current_spin, 8, 0)
 
         self.save_screenshot_cb = QCheckBox("Save Screenshot")
         self.save_screenshot_cb.setChecked(True)
-        grid.addWidget(self.save_screenshot_cb, 7, 1)
+        grid.addWidget(self.save_screenshot_cb, 8, 1)
 
         layout.addLayout(grid)
 
@@ -1170,6 +1230,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.result_table.setRowCount(0)
         self._test_result_data = []
         self.set_progress(0)
+        self.result_count_label.setText("0 rows")
         self.append_log("[SYSTEM] Results cleared.")
 
     def add_result_row(self, step, load_current, voltage, ripple, v_drop=None, has_screenshot=False, remark=""):
@@ -1181,7 +1242,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         ripple_str = f"{ripple_mv:.3f}" if ripple_mv is not None else "N/A"
         v_drop_mv = v_drop * 1000 if v_drop is not None else None
         v_drop_str = f"{v_drop_mv:.3f}" if v_drop_mv is not None else "N/A"
-        screenshot_str = "✔" if has_screenshot else ""
+        screenshot_str = "✓" if has_screenshot else "—"
 
         items = [
             QTableWidgetItem(str(step)),
@@ -1193,11 +1254,14 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             QTableWidgetItem(remark),
         ]
 
-        colors = ["#eaf2ff", "#5f8cff", "#00d6a2", "#f5a623", "#ff6b6b", "#38bdf8", "#c084fc"]
+        colors = ["#8ea8d4", "#6b9fff", "#00d6a2", "#f0a030", "#ff6b6b", "#4cc9f0", "#9b8ec8"]
         for col, item in enumerate(items):
             item.setTextAlignment(Qt.AlignCenter)
             item.setForeground(QColor(colors[col]))
             self.result_table.setItem(row, col, item)
+
+        total_rows = self.result_table.rowCount()
+        self.result_count_label.setText(f"{total_rows} row{'s' if total_rows != 1 else ''}")
 
     def _on_test_result_row(self, row_data):
         self._test_result_data.append(row_data)
@@ -1275,14 +1339,14 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             }
             QLineEdit {
                 background-color: #0c1a35;
-                border: 1px solid #1e3460;
+                border: 1px solid #1a2d52;
                 border-radius: 6px;
                 color: #eaf2ff;
                 padding: 6px 10px;
                 font-size: 12px;
             }
             QLineEdit:focus {
-                border-color: #4cc9f0;
+                border-color: #4f6db8;
             }
             QRadioButton {
                 color: #dbe7ff;
@@ -1294,7 +1358,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
                 width: 14px;
                 height: 14px;
                 border-radius: 7px;
-                border: 2px solid #3a5a8c;
+                border: 2px solid #2a4272;
                 background-color: #0c1a35;
             }
             QRadioButton::indicator:checked {
@@ -1320,7 +1384,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
                 background-color: #112445;
             }
             QFrame#exportSeparator {
-                background-color: #1e3460;
+                background-color: #152240;
                 max-height: 1px;
                 border: none;
             }
@@ -1330,8 +1394,8 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(14)
 
-        title = QLabel("⇩  Export Test Results")
-        title.setStyleSheet("font-size: 15px; font-weight: bold; color: #f4f7ff;")
+        title = QLabel("Export Test Results")
+        title.setStyleSheet("font-size: 14px; font-weight: bold; color: #f4f7ff;")
         layout.addWidget(title)
 
         sep1 = QFrame()
@@ -1381,7 +1445,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         layout.addWidget(sep2)
 
         fmt_label = QLabel("Export Format")
-        fmt_label.setStyleSheet("font-size: 12px; font-weight: bold; color: #f4f7ff;")
+        fmt_label.setStyleSheet("font-size: 12px; font-weight: 600; color: #c0d0f0;")
         layout.addWidget(fmt_label)
 
         fmt_group = QButtonGroup(dialog)
@@ -1407,7 +1471,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         btn_layout.addStretch()
         cancel_btn = QPushButton("Cancel")
         cancel_btn.clicked.connect(dialog.reject)
-        export_btn = QPushButton("⇩  Export")
+        export_btn = QPushButton("Export")
         export_btn.setStyleSheet("""
             QPushButton {
                 background-color: qlineargradient(
@@ -1415,12 +1479,12 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
                     stop:0 #5b5cf6,
                     stop:1 #6a38ff
                 );
-                border: 1px solid #645bff;
+                border: 1px solid #5b5cf6;
                 border-radius: 6px;
                 color: #ffffff;
                 padding: 7px 24px;
                 font-size: 12px;
-                font-weight: bold;
+                font-weight: 600;
             }
             QPushButton:hover {
                 background-color: qlineargradient(

@@ -1,4 +1,4 @@
-#python -m ui.styles.oscilloscope_module_frame
+#python -m ui.modules.oscilloscope_module_frame
 import os
 import pyvisa
 from PySide6.QtWidgets import (
@@ -570,7 +570,7 @@ class OscilloscopeConnectionMixin:
 
 
 if __name__ == "__main__":
-    #python -m ui.styles.oscilloscope_module_frame
+    #python -m ui.modules.oscilloscope_module_frame
     import sys
     from PySide6.QtWidgets import (
         QApplication, QWidget, QVBoxLayout, QFrame, QSizePolicy

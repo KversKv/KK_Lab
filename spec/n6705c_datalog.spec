@@ -42,6 +42,7 @@ a = Analysis(
         'ui.widgets.button',
         'ui.widgets.dark_combobox',
         'ui.styles',
+        'ui.modules',
         'log_config',
         'debug_config',
         'openpyxl',
