@@ -18,10 +18,17 @@ from PySide6.QtWidgets import (
     QSizePolicy
 )
 from PySide6.QtCore import Qt, QTimer, QRectF, QSize, Signal
-from PySide6.QtGui import QColor, QPainter, QPen, QFont
+from PySide6.QtGui import QColor, QPainter, QPen, QFont, QPixmap
+from PySide6.QtSvg import QSvgRenderer
 from instruments.chambers.vt6002_chamber import VT6002, serial
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockVT6002
+
+_ICONS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    "resources", "icons"
+)
+_THERMOMETER_SVG_PATH = os.path.join(_ICONS_DIR, "thermometer.svg")
 
 
 class TemperatureGauge(QWidget):
@@ -114,15 +121,36 @@ class VT6002ChamberUI(QWidget):
         header_layout = QVBoxLayout()
         header_layout.setSpacing(4)
 
-        title_label = QLabel("🌡  VT6002 Chamber")
+        title_row = QHBoxLayout()
+        title_row.setSpacing(8)
+
+        title_icon = QLabel()
+        title_icon.setFixedSize(24, 24)
+        if os.path.isfile(_THERMOMETER_SVG_PATH):
+            with open(_THERMOMETER_SVG_PATH, "r", encoding="utf-8") as f:
+                svg_data = f.read().replace('stroke="currentColor"', 'stroke="#fb7185"').encode("utf-8")
+            pixmap = QPixmap(24, 24)
+            pixmap.fill(Qt.transparent)
+            renderer = QSvgRenderer(svg_data)
+            painter = QPainter(pixmap)
+            renderer.render(painter)
+            painter.end()
+            title_icon.setPixmap(pixmap)
+        title_icon.setStyleSheet("border: none; background: transparent;")
+        title_row.addWidget(title_icon)
+
+        title_label = QLabel("VT6002 Chamber")
         title_label.setObjectName("titleLabel")
         title_label.setStyleSheet("border: none")
+        title_row.addWidget(title_label)
+        title_row.addStretch()
+
+        header_layout.addLayout(title_row)
 
         subtitle_label = QLabel("Thermal chamber control and monitoring via Serial Port.")
         subtitle_label.setObjectName("subtitleLabel")
         subtitle_label.setStyleSheet("border: none")
 
-        header_layout.addWidget(title_label)
         header_layout.addWidget(subtitle_label)
         main_layout.addLayout(header_layout)
 

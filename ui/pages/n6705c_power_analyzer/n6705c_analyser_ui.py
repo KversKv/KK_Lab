@@ -15,7 +15,8 @@ from PySide6.QtWidgets import (
     QSizePolicy, QFileDialog
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QThread, QObject, QPropertyAnimation, Property, QRectF, QEasingCurve
-from PySide6.QtGui import QFont, QPainter, QColor, QPen
+from PySide6.QtGui import QFont, QPainter, QColor, QPen, QPixmap
+from PySide6.QtSvg import QSvgRenderer
 import pyvisa
 
 from instruments.power.keysight.n6705c import N6705C
@@ -202,12 +203,17 @@ class ChannelTabBar(QWidget):
         p.end()
 
 
+_ICONS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    "resources", "icons"
+)
+
+_ZAP_ICON_PATH = os.path.join(_ICONS_DIR, "zap.svg")
+
+
 def _get_checkmark_path(accent_color):
     safe_name = accent_color.replace("#", "").replace(" ", "")
-    icons_dir = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
-        "resources", "icons"
-    )
+    icons_dir = _ICONS_DIR
     return {
         "checked": os.path.join(icons_dir, f"checked_{safe_name}.svg").replace("\\", "/"),
         "unchecked": os.path.join(icons_dir, f"unchecked_{safe_name}.svg").replace("\\", "/"),
@@ -588,8 +594,21 @@ class N6705CAnalyserUI(QWidget):
         header_layout.setContentsMargins(16, 0, 16, 0)
         header_layout.setSpacing(10)
 
-        icon_label = QLabel("\u26a1")
-        icon_label.setStyleSheet("QLabel { color: #00f5c4; font-size: 24px; font-weight: bold; }")
+        icon_label = QLabel()
+        icon_label.setFixedSize(24, 24)
+        if os.path.isfile(_ZAP_ICON_PATH):
+            renderer = QSvgRenderer(_ZAP_ICON_PATH)
+            pixmap = QPixmap(24, 24)
+            pixmap.fill(Qt.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setRenderHint(QPainter.SmoothPixmapTransform)
+            renderer.render(painter, QRectF(0, 0, 24, 24))
+            painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+            painter.fillRect(pixmap.rect(), QColor("#10b981"))
+            painter.end()
+            icon_label.setPixmap(pixmap)
+        icon_label.setStyleSheet("QLabel { background: transparent; border: none; }")
         header_layout.addWidget(icon_label)
 
         title_label = QLabel("Keysight N6705C DC Power Analyzer")

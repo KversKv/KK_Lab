@@ -25,16 +25,19 @@ DEBUG_MSO64B_FLAG = True
 DEBUG_DSOX4034A_FLAG = True
 
 import os as _os
-_CAMERA_SVG_PATH = _os.path.join(
+_ICONS_DIR = _os.path.join(
     _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))),
-    "resources", "icons", "camera.svg"
+    "resources", "icons"
 )
 
+_CAMERA_SVG_PATH = _os.path.join(_ICONS_DIR, "camera.svg")
+_ACTIVITY_SVG_PATH = _os.path.join(_ICONS_DIR, "activity.svg")
 
-def _render_camera_icon(size: int, color: str) -> QPixmap:
+
+def _render_svg_icon(svg_path: str, size: int, color: str) -> QPixmap:
     svg_data = b""
-    if _os.path.isfile(_CAMERA_SVG_PATH):
-        with open(_CAMERA_SVG_PATH, "r", encoding="utf-8") as f:
+    if _os.path.isfile(svg_path):
+        with open(svg_path, "r", encoding="utf-8") as f:
             svg_data = f.read().replace('stroke="currentColor"', f'stroke="{color}"').encode("utf-8")
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.transparent)
@@ -44,6 +47,10 @@ def _render_camera_icon(size: int, color: str) -> QPixmap:
         renderer.render(painter)
         painter.end()
     return pixmap
+
+
+def _render_camera_icon(size: int, color: str) -> QPixmap:
+    return _render_svg_icon(_CAMERA_SVG_PATH, size, color)
 
 
 logger = get_logger(__name__)
@@ -1041,8 +1048,10 @@ class OscilloscopeBaseUI(QWidget):
         title_row = QHBoxLayout()
         title_row.setSpacing(10)
 
-        icon_label = QLabel("∿")
-        icon_label.setStyleSheet("color:#7B7DFF; font-size:20px; font-weight:700;")
+        icon_label = QLabel()
+        icon_label.setFixedSize(24, 24)
+        icon_label.setPixmap(_render_svg_icon(_ACTIVITY_SVG_PATH, 24, "#06b6d4"))
+        icon_label.setStyleSheet("background: transparent; border: none;")
         title_row.addWidget(icon_label)
 
         self.title_label = QLabel(self.INSTRUMENT_TITLE)

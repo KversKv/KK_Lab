@@ -2027,12 +2027,45 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         QCheckBox::indicator:checked {
             image: url("__CHECKED__");
         }
+
+        QLabel#pageTitle {
+            font-size: 18px;
+            font-weight: 700;
+            color: #f8fbff;
+            background: transparent;
+        }
+
+        QLabel#pageSubtitle {
+            font-size: 12px;
+            color: #7da2d6;
+            background: transparent;
+        }
         """.replace("__UNCHECKED__", _cb_icons['unchecked']).replace("__CHECKED__", _cb_icons['checked']))
 
     def _create_layout(self):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(16, 12, 16, 12)
         main_layout.setSpacing(10)
+
+        header_layout = QHBoxLayout()
+        header_layout.setSpacing(8)
+        icon_label = QLabel()
+        icon_label.setPixmap(
+            _tinted_svg_icon(os.path.join(_ICONS_DIR, "zap.svg"), "#fbbf24", 22).pixmap(22, 22)
+        )
+        icon_label.setFixedSize(22, 22)
+        title_col = QVBoxLayout()
+        title_col.setSpacing(2)
+        self.page_title = QLabel("Consumption Test")
+        self.page_title.setObjectName("pageTitle")
+        self.page_subtitle = QLabel("Measure average current consumption and manage DUT firmware/configuration.")
+        self.page_subtitle.setObjectName("pageSubtitle")
+        title_col.addWidget(self.page_title)
+        title_col.addWidget(self.page_subtitle)
+        header_layout.addWidget(icon_label, 0, Qt.AlignTop)
+        header_layout.addLayout(title_col)
+        header_layout.addStretch()
+        main_layout.addLayout(header_layout)
 
         body_layout = QHBoxLayout()
         body_layout.setSpacing(10)
