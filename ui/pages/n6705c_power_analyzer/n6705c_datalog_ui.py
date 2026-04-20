@@ -3683,7 +3683,7 @@ class N6705CDatalogUI(QWidget):
         if not visible_keys:
             visible_keys = set(self.datalog_data.keys())
 
-        lines = [f"Time: {x:.2f} s"]
+        lines = [f"Time: {x:.4f} s"]
 
         sorted_keys = sorted(self.datalog_data.keys(), key=_sort_key_for_label)
         for idx, label in enumerate(sorted_keys):
@@ -3765,6 +3765,8 @@ class N6705CDatalogUI(QWidget):
         self.time_offset_btn.clicked.connect(self._on_time_offset)
 
         self.add_label_btn.clicked.connect(self._add_custom_label)
+        self.label_time_edit.returnPressed.connect(self._add_custom_label)
+        self.label_text_edit.returnPressed.connect(self._add_custom_label)
 
     def _is_8ch_mode(self):
         return self.is_connected_b
@@ -5190,7 +5192,8 @@ class N6705CDatalogUI(QWidget):
                 break
 
         if band:
-            label_y = band["plot_top"] - 0.01
+            offset = band["plot_range"] * 0.08
+            label_y = y_val + offset
         else:
             label_y = y_val + 0.05
 
