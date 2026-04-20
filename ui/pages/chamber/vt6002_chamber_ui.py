@@ -6,6 +6,8 @@ VT6002 温箱控制界面
 
 import sys
 import os
+import logging
+
 
 # 添加项目根目录到sys.path，解决模块导入问题
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
@@ -23,6 +25,8 @@ from PySide6.QtSvg import QSvgRenderer
 from instruments.chambers.vt6002_chamber import VT6002, serial
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockVT6002
+
+logger = logging.getLogger(__name__)
 
 _ICONS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),

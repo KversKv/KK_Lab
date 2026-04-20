@@ -8,7 +8,7 @@ GPADC测试UI组件
 
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLL_AREA_STYLE, START_BTN_STYLE, update_start_btn_state
-from ui.widgets.button import SpinningSearchButton, update_connect_button_state
+from ui.widgets.button import update_connect_button_state
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.chamber_module_frame import VT6002ConnectionMixin
@@ -135,12 +135,6 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
                 background-color: #0b1630;
                 border: 1px solid #18284d;
                 border-radius: 12px;
-            }
-
-            QFrame#instrument_inner {
-                background-color: #071126;
-                border: 1px solid #152240;
-                border-radius: 10px;
             }
 
             QFrame#left_scroll_content {
@@ -358,73 +352,7 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
         layout.addWidget(value_label)
         return card, value_label
 
-    def _create_instrument_card(self, title, subtitle, combo_attr_name, search_btn_attr_name,
-                                connect_btn_attr_name, disconnect_btn_attr_name, status_attr_name):
-        card = QFrame()
-        card.setObjectName("instrument_inner")
-        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
-
-        top_row = QHBoxLayout()
-        top_row.setSpacing(8)
-
-        title_box = QVBoxLayout()
-        title_box.setSpacing(2)
-
-        name_label = QLabel(title)
-        name_label.setStyleSheet("font-size: 11px; font-weight: 700; color: #ffffff; border: none;")    
-        name_label.setWordWrap(True)
-
-        desc_label = QLabel(subtitle)
-        desc_label.setObjectName("muted_label")
-        desc_label.setStyleSheet("border: none;")
-        desc_label.setWordWrap(True)
-
-        title_box.addWidget(name_label)
-        title_box.addWidget(desc_label)
-
-        status_label = QLabel("Not Connected")
-        status_label.setStyleSheet("color: #ff5a7a; font-weight: 600;")
-        status_label.setWordWrap(True)
-        setattr(self, status_attr_name, status_label)
-
-        btn_connect = QPushButton()
-        update_connect_button_state(btn_connect, connected=False)
-        btn_connect.setFixedWidth(120)
-
-        setattr(self, connect_btn_attr_name, btn_connect)
-        setattr(self, disconnect_btn_attr_name, btn_connect)
-
-        top_row.addLayout(title_box, 1)
-        top_row.addWidget(btn_connect, 0, Qt.AlignTop)
-
-        select_row = QHBoxLayout()
-        select_row.setSpacing(6)
-
-        combo = DarkComboBox(bg="#0a1733", border="#24365e")
-        combo.setSizeAdjustPolicy(
-            DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
-        )
-        combo.setMinimumContentsLength(10)
-        combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
-
-        search_btn = SpinningSearchButton()
-        search_btn.setFixedWidth(34)
-
-        setattr(self, combo_attr_name, combo)
-        setattr(self, search_btn_attr_name, search_btn)
-
-        select_row.addWidget(combo, 1)
-        select_row.addWidget(search_btn)
-
-        layout.addLayout(top_row)
-        layout.addWidget(status_label)
-        layout.addLayout(select_row)
-
-        return card
 
     def _create_layout(self):
         root_layout = QVBoxLayout(self)
@@ -514,17 +442,18 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
         instruments_layout.addWidget(instruments_title)
 
         self.n6705c_card = QFrame()
-        self.n6705c_card.setObjectName("instrument_inner")
-        self.n6705c_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        n6705c_layout = QVBoxLayout(self.n6705c_card)
-        n6705c_layout.setContentsMargins(12, 12, 12, 12)
-        n6705c_layout.setSpacing(8)
-
-        n6705c_title = QLabel("N6705C ")
-        n6705c_title.setStyleSheet("font-size: 11px; font-weight: 700; color: #ffffff; border: none;")
-        n6705c_layout.addWidget(n6705c_title)
-
-        self.build_n6705c_connection_widgets(n6705c_layout)
+        self.n6705c_card.setObjectName("config_inner_panel")
+        n6705c_card_layout = QVBoxLayout(self.n6705c_card)
+        n6705c_card_layout.setContentsMargins(10, 10, 10, 10)
+        n6705c_card_layout.setSpacing(6)
+        n6705c_title_row = QHBoxLayout()
+        n6705c_title_row.setSpacing(6)
+        n6705c_title = QLabel("N6705C")
+        n6705c_title.setStyleSheet("color: #c8d8ff; font-size: 11px; font-weight: 600; border: none;")
+        n6705c_title_row.addWidget(n6705c_title)
+        n6705c_title_row.addStretch()
+        n6705c_card_layout.addLayout(n6705c_title_row)
+        self.build_n6705c_connection_widgets(n6705c_card_layout, title_row=n6705c_title_row)
 
         self.n6705c_status = self.system_status_label
         self.n6705c_combo = self.visa_resource_combo
@@ -539,14 +468,16 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
         vt6002_card_layout = QVBoxLayout(self.vt6002_card)
         vt6002_card_layout.setContentsMargins(10, 10, 10, 10)
         vt6002_card_layout.setSpacing(6)
+        vt6002_title_row = QHBoxLayout()
+        vt6002_title_row.setSpacing(6)
         vt6002_title = QLabel("VT6002 Chamber")
         vt6002_title.setStyleSheet("color: #c8d8ff; font-size: 11px; font-weight: 600; border: none;")
-        vt6002_desc = QLabel("Thermal Control")
-        vt6002_desc.setStyleSheet("color: #4a6a98; font-size: 11px; border: none;")
-        vt6002_desc.setWordWrap(True)
-        vt6002_card_layout.addWidget(vt6002_title)
-        vt6002_card_layout.addWidget(vt6002_desc)
+        vt6002_title_row.addWidget(vt6002_title)
+        vt6002_title_row.addStretch()
+        vt6002_card_layout.addLayout(vt6002_title_row)
         self.build_vt6002_connection_widgets(vt6002_card_layout)
+        vt6002_card_layout.removeWidget(self.vt6002_status_label)
+        vt6002_title_row.addWidget(self.vt6002_status_label)
         instruments_layout.addWidget(self.vt6002_card)
         left_col.addWidget(self.instruments_panel)
 

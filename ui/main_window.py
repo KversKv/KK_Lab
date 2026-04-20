@@ -24,7 +24,7 @@ from ui.pages.oscilloscope.mso64b_top import MSO64BTop
 from ui.pages.pmu_test.pmu_test_ui import PMUTestUI
 from ui.pages.chamber.vt6002_chamber_ui import VT6002ChamberUI
 from ui.widgets.sidebar_nav_button import SidebarNavButton
-from ui.pages.consumption_test.consumption_test import ConsumptionTestUI
+from ui.pages.consumption_test.consumption_test_wrapper import ConsumptionTestWrapper
 from ui.pages.charger_test.charger_test_ui import ChargerTestUI
 from core.test_manager import TestManager
 from instruments.base.visa_instrument import VisaInstrument
@@ -346,6 +346,84 @@ class ChargerSubMenu(QWidget):
         return self._hovered
 
 
+class ConsumptionSubMenu(QWidget):
+
+    item_clicked = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent, Qt.FramelessWindowHint | Qt.Tool)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setMouseTracking(True)
+
+        self._hovered = False
+        self.current_key = None
+        self.buttons = {}
+
+        self.outer_layout = QVBoxLayout(self)
+        self.outer_layout.setContentsMargins(10, 10, 10, 10)
+        self.outer_layout.setSpacing(0)
+
+        self.panel = QFrame(self)
+        self.panel.setObjectName("consumptionSubMenuPanel")
+        self.panel.setStyleSheet("""
+            QFrame#consumptionSubMenuPanel {
+                background-color: #1b2233;
+                border: none;
+                border-radius: 12px;
+            }
+        """)
+
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(28)
+        shadow.setOffset(0, 8)
+        shadow.setColor(QColor(0, 0, 0, 110))
+        self.panel.setGraphicsEffect(shadow)
+
+        self.outer_layout.addWidget(self.panel)
+
+        self.layout = QVBoxLayout(self.panel)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(0)
+
+        self.menu_items = [
+            ("auto_test", "Auto Test"),
+            ("high_low_temp", "High-Low Temperature Test"),
+        ]
+
+        total = len(self.menu_items)
+        for i, (key, text) in enumerate(self.menu_items):
+            if i == 0:
+                position = "top"
+            elif i == total - 1:
+                position = "bottom"
+            else:
+                position = "middle"
+
+            btn = PMUSubMenuItem(text, key, position=position, parent=self.panel)
+            btn.clicked.connect(lambda checked=False, k=key: self.item_clicked.emit(k))
+            self.layout.addWidget(btn)
+            self.buttons[key] = btn
+
+        self.hide()
+
+    def set_current_item(self, key: str):
+        self.current_key = key
+        for item_key, btn in self.buttons.items():
+            btn.set_selected(item_key == key)
+
+    def enterEvent(self, event):
+        self._hovered = True
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hovered = False
+        super().leaveEvent(event)
+
+    def is_hovered(self):
+        return self._hovered
+
+
 class MainWindow(QMainWindow):
     """主窗口类"""
 
@@ -394,6 +472,10 @@ class MainWindow(QMainWindow):
         self._charger_btn_hovered = False
         self.current_charger_test_key = None
 
+        self.consumption_submenu = None
+        self._consumption_btn_hovered = False
+        self.current_consumption_test_key = "auto_test"
+
         self.pmu_test_tab_map = {
             "dcdc_efficiency": 0,
             "output_voltage": 1,
@@ -408,6 +490,11 @@ class MainWindow(QMainWindow):
             "status_register": 1,
             "iterm": 2,
             "regulation_voltage": 3,
+        }
+
+        self.consumption_test_tab_map = {
+            "auto_test": 0,
+            "high_low_temp": 1,
         }
 
         # 设置样式
@@ -428,6 +515,8 @@ class MainWindow(QMainWindow):
         self._create_pa_submenu()
 
         self._create_charger_submenu()
+
+        self._create_consumption_submenu()
 
         self._connect_signals()
 
@@ -804,6 +893,13 @@ class MainWindow(QMainWindow):
         self.charger_test_btn.installEventFilter(self)
         self.charger_submenu.installEventFilter(self)
 
+    def _create_consumption_submenu(self):
+        self.consumption_submenu = ConsumptionSubMenu(self)
+        self.consumption_submenu.item_clicked.connect(self._on_consumption_submenu_clicked)
+
+        self.consumption_test_btn.installEventFilter(self)
+        self.consumption_submenu.installEventFilter(self)
+
     def _show_pa_submenu(self):
         if not self.pa_submenu:
             return
@@ -899,6 +995,36 @@ class MainWindow(QMainWindow):
         self._create_charger_test_ui(selected_test=test_key)
         self.charger_submenu.hide()
 
+    def _show_consumption_submenu(self):
+        if not self.consumption_submenu:
+            return
+
+        btn_global_pos = self.consumption_test_btn.mapToGlobal(QPoint(0, 0))
+        x = btn_global_pos.x() + self.consumption_test_btn.width() + 8
+        y = btn_global_pos.y()
+
+        self.consumption_submenu.set_current_item(self.current_consumption_test_key)
+        self.consumption_submenu.move(x, y)
+        self.consumption_submenu.show()
+        self.consumption_submenu.raise_()
+
+    def _hide_consumption_submenu_if_needed(self):
+        if self._consumption_btn_hovered:
+            return
+        if self.consumption_submenu and self.consumption_submenu.is_hovered():
+            return
+        if self.consumption_submenu:
+            self.consumption_submenu.hide()
+
+    def _on_consumption_submenu_clicked(self, test_key):
+        logger.debug("Consumption submenu clicked: %s", test_key)
+        self.current_consumption_test_key = test_key
+        self.consumption_submenu.set_current_item(test_key)
+        self.consumption_test_btn.setChecked(True)
+        self._refresh_nav_arrow_state()
+        self._create_consumption_test_ui(selected_test=test_key)
+        self.consumption_submenu.hide()
+
     def eventFilter(self, obj, event):
         if obj == self.pmu_test_btn:
             if event.type() == QEvent.Enter:
@@ -941,6 +1067,20 @@ class MainWindow(QMainWindow):
                 self._show_charger_submenu()
             elif event.type() == QEvent.Leave:
                 QTimer.singleShot(120, self._hide_charger_submenu_if_needed)
+
+        elif obj == self.consumption_test_btn:
+            if event.type() == QEvent.Enter:
+                self._consumption_btn_hovered = True
+                self._show_consumption_submenu()
+            elif event.type() == QEvent.Leave:
+                self._consumption_btn_hovered = False
+                QTimer.singleShot(120, self._hide_consumption_submenu_if_needed)
+
+        elif obj == self.consumption_submenu:
+            if event.type() == QEvent.Enter:
+                self._show_consumption_submenu()
+            elif event.type() == QEvent.Leave:
+                QTimer.singleShot(120, self._hide_consumption_submenu_if_needed)
 
         return super().eventFilter(obj, event)
 
@@ -1008,16 +1148,20 @@ class MainWindow(QMainWindow):
             if hasattr(self.pmu_test_ui, "set_current_test"):
                 self.pmu_test_ui.set_current_test(selected_test)
 
-    def _create_consumption_test_ui(self):
-        logger.debug("Switching to Consumption Test UI")
+    def _create_consumption_test_ui(self, selected_test=None):
+        logger.debug("Switching to Consumption Test UI: selected_test=%s", selected_test)
         self._hide_all_instrument_uis()
         if self.consumption_test_ui is None:
-            self.consumption_test_ui = ConsumptionTestUI(n6705c_top=self.n6705c_top)
+            self.consumption_test_ui = ConsumptionTestWrapper(n6705c_top=self.n6705c_top)
             self.instrument_ui_container_layout.addWidget(self.consumption_test_ui)
         else:
             self.consumption_test_ui.sync_n6705c_from_top()
             self.consumption_test_ui.show()
         self.current_instrument_ui = "consumption_test"
+        if selected_test in self.consumption_test_tab_map:
+            self.current_consumption_test_key = selected_test
+            if hasattr(self.consumption_test_ui, "set_current_test"):
+                self.consumption_test_ui.set_current_test(selected_test)
 
     def _create_charger_test_ui(self, selected_test=None):
         logger.debug("Switching to Charger Test UI: selected_test=%s", selected_test)
@@ -1166,6 +1310,8 @@ class MainWindow(QMainWindow):
                 self.pmu_submenu.hide()
             if self.charger_submenu:
                 self.charger_submenu.hide()
+            if self.consumption_submenu:
+                self.consumption_submenu.hide()
             self._show_pa_submenu()
             if self.current_pa_mode == "analyser":
                 self._create_power_analyser_ui()
@@ -1181,6 +1327,8 @@ class MainWindow(QMainWindow):
                 self.pa_submenu.hide()
             if self.charger_submenu:
                 self.charger_submenu.hide()
+            if self.consumption_submenu:
+                self.consumption_submenu.hide()
             self._create_oscilloscope_ui()
 
         elif sender == self.chamber_btn:
@@ -1190,6 +1338,8 @@ class MainWindow(QMainWindow):
                 self.pa_submenu.hide()
             if self.charger_submenu:
                 self.charger_submenu.hide()
+            if self.consumption_submenu:
+                self.consumption_submenu.hide()
             self._create_thermal_chamber_ui()
 
         elif sender == self.pmu_test_btn:
@@ -1197,6 +1347,8 @@ class MainWindow(QMainWindow):
                 self.pa_submenu.hide()
             if self.charger_submenu:
                 self.charger_submenu.hide()
+            if self.consumption_submenu:
+                self.consumption_submenu.hide()
             self._create_pmu_test_ui(selected_test=self.current_pmu_test_key)
             self._show_pmu_submenu()
 
@@ -1205,6 +1357,8 @@ class MainWindow(QMainWindow):
                 self.pmu_submenu.hide()
             if self.pa_submenu:
                 self.pa_submenu.hide()
+            if self.consumption_submenu:
+                self.consumption_submenu.hide()
             self._create_charger_test_ui(selected_test=self.current_charger_test_key)
             self._show_charger_submenu()
 
@@ -1215,7 +1369,8 @@ class MainWindow(QMainWindow):
                 self.pa_submenu.hide()
             if self.charger_submenu:
                 self.charger_submenu.hide()
-            self._create_consumption_test_ui()
+            self._create_consumption_test_ui(selected_test=self.current_consumption_test_key)
+            self._show_consumption_submenu()
 
         self._refresh_nav_arrow_state()
 
@@ -1500,7 +1655,11 @@ class MainWindow(QMainWindow):
                 logger.warning(f"[CloseEvent] Error closing VT6002 chamber UI: {e}")
 
         if self.consumption_test_ui is not None:
-            self._cleanup_sub_ui(self.consumption_test_ui, "ConsumptionTestUI")
+            self._cleanup_sub_ui(self.consumption_test_ui, "ConsumptionTestWrapper")
+            if hasattr(self.consumption_test_ui, 'auto_test_ui'):
+                self._cleanup_sub_ui(self.consumption_test_ui.auto_test_ui, "ConsumptionTestUI")
+            if hasattr(self.consumption_test_ui, 'high_low_temp_ui'):
+                self._cleanup_sub_ui(self.consumption_test_ui.high_low_temp_ui, "HighLowTempConsumptionTestUI")
 
         for ui_name, ui_widget in [
             ("N6705CAnalyserUI", self.n6705c_analyser_ui),

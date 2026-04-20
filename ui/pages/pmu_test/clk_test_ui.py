@@ -1275,11 +1275,8 @@ class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, QWidget):
         mso64b_card_layout.setSpacing(6)
         mso64b_title = QLabel("MSO64B Oscilloscope")
         mso64b_title.setStyleSheet("color: #c8d8ff; font-size: 11px; font-weight: 600; border: none;")
-        mso64b_desc = QLabel("Frequency Measurement / Logic Analyzer Input")
-        mso64b_desc.setStyleSheet("color: #4a6a98; font-size: 11px; border: none;")
-        mso64b_desc.setWordWrap(True)
         mso64b_card_layout.addWidget(mso64b_title)
-        mso64b_card_layout.addWidget(mso64b_desc)
+
         self.build_oscilloscope_connection_widgets(mso64b_card_layout)
         instruments_layout.addWidget(self.mso64b_card)
 
@@ -1326,11 +1323,7 @@ class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, QWidget):
         vt6002_card_layout.setSpacing(6)
         vt6002_title = QLabel("VT6002 Chamber")
         vt6002_title.setStyleSheet("color: #c8d8ff; font-size: 11px; font-weight: 600; border: none;")
-        vt6002_desc = QLabel("Temperature Test Chamber")
-        vt6002_desc.setStyleSheet("color: #4a6a98; font-size: 11px; border: none;")
-        vt6002_desc.setWordWrap(True)
         vt6002_card_layout.addWidget(vt6002_title)
-        vt6002_card_layout.addWidget(vt6002_desc)
         self.build_vt6002_connection_widgets(vt6002_card_layout)
         instruments_layout.addWidget(self.vt6002_card)
 

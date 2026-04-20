@@ -393,6 +393,7 @@ class VT6002ConnectionMixin:
         self.vt6002_status_label.style().polish(self.vt6002_status_label)
         self.vt6002_status_label.update()
         _update_vt6002_btn_state(self.vt6002_connect_btn, connected)
+        self.vt6002_connect_btn.setEnabled(True)
         self.vt6002_search_btn.setEnabled(not connected)
         self.vt6002_combo.setEnabled(not connected)
 

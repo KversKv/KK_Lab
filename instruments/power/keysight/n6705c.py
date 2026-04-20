@@ -22,7 +22,7 @@ class N6705C:
         self.instr.write(f"SENS:CURR:RANG:AUTO ON, (@{channel})")
 
     def set_channel_range_off(self, channel):
-        self.instr.write(f"SENS:CURR:RANG:AUTO ON, (@{channel})")
+        self.instr.write(f"SENS:CURR:RANG:AUTO OFF, (@{channel})")
 
     def set_voltage(self, channel, voltage):
         logger.debug("N6705C set_voltage: CH%s = %s V", channel, voltage)
@@ -233,7 +233,7 @@ class N6705C:
         logger.debug("N6705C read_mmem_data: filepath=%s", filepath)
         old_timeout = self.instr.timeout
         old_chunk = getattr(self.instr, 'chunk_size', 20480)
-        self.instr.timeout = 300000
+        self.instr.timeout = max(old_timeout, 600000)
         self.instr.chunk_size = 1024 * 1024
 
         try:

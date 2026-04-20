@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # run cmd:
-# python d:\CodeProject\TRAE_Projects\KK_Lab\ui\n6705c_datalog_ui.py
+# python ui\pages\n6705c_power_analyzer\n6705c_datalog_ui.py
 
 
 import sys
@@ -555,6 +555,8 @@ class _DatalogWorker(QObject):
             capture_start = time.time()
             capture_total = self.monitoring_time_s + 5
             early_stop = False
+            keepalive_interval = 300
+            last_keepalive = time.time()
             while time.time() < wait_end:
                 if self._is_stopped:
                     logger.info("[Datalog] Stopped by user during capture wait, aborting datalog and fetching data...")
@@ -568,7 +570,16 @@ class _DatalogWorker(QObject):
                             logger.error("[Datalog] Failed to abort dlog on unit %d: %s", unit_idx, e)
                     time.sleep(1)
                     break
-                elapsed = time.time() - capture_start
+                now = time.time()
+                if now - last_keepalive >= keepalive_interval:
+                    for unit_idx, n6705c, _, _ in active_units:
+                        try:
+                            n6705c.instr.query("*IDN?")
+                            logger.debug("[Datalog] Keep-alive query sent to unit %d", unit_idx)
+                        except Exception as e:
+                            logger.warning("[Datalog] Keep-alive failed on unit %d: %s", unit_idx, e)
+                    last_keepalive = now
+                elapsed = now - capture_start
                 capture_pct = min(elapsed / capture_total, 1.0)
                 overall_pct = int(2 + capture_pct * 91)
                 self.progress_update.emit(overall_pct, "Capturing data...")
@@ -898,6 +909,8 @@ class N6705CDatalogUI(QWidget):
 
         if self._top:
             self._sync_from_top()
+            if hasattr(self._top, 'connection_changed'):
+                self._top.connection_changed.connect(self._sync_from_top)
 
     def _sync_from_top(self):
         if not self._top:
@@ -917,6 +930,16 @@ class N6705CDatalogUI(QWidget):
                 display_serial = serial if serial else (visa_res.split("::")[1] if "::" in visa_res else visa_res)
                 self._assign_slot(label, display_serial, "N6705C", visa_res)
                 self._ensure_device_card_exists(display_serial, "N6705C", visa_res)
+            else:
+                if label == "A" and self.is_connected_a:
+                    self.n6705c_a = None
+                    self.is_connected_a = False
+                    self._clear_slot(label)
+                elif label == "B" and self.is_connected_b:
+                    self.n6705c_b = None
+                    self.is_connected_b = False
+                    self._clear_slot(label)
+        self.connection_status_changed.emit(self.is_connected_a)
         self._refresh_channel_config()
         self._sync_device_card_states()
         self._update_time_offset_btn_visibility()
@@ -1922,6 +1945,8 @@ class N6705CDatalogUI(QWidget):
                     disconnect_btn.show()
             else:
                 if connect_btn:
+                    connect_btn.setEnabled(True)
+                    update_connect_button_state(connect_btn, connected=False)
                     connect_btn.show()
                 if disconnect_btn:
                     disconnect_btn.hide()
@@ -3219,6 +3244,7 @@ class N6705CDatalogUI(QWidget):
             }
         """)
         connect_btn.clicked.connect(dialog.accept)
+        connect_btn.setDefault(True)
         btn_layout.addWidget(cancel_btn)
         btn_layout.addWidget(connect_btn)
         form_layout.addLayout(btn_layout)
@@ -4135,9 +4161,16 @@ class N6705CDatalogUI(QWidget):
         except ValueError:
             monitor_time = 5.0
 
-        timeout_ms = int((monitor_time + 120) * 1000)
+        timeout_ms = int((monitor_time + 600) * 1000)
         for n6705c in n6705c_list:
-            n6705c.instr.timeout = max(timeout_ms, 300000)
+            n6705c.instr.timeout = max(timeout_ms, 600000)
+
+        imported_keys = set()
+        for tc in self._imported_tab_configs:
+            imported_keys |= tc.get("data_keys", set())
+        for k in list(self.datalog_data.keys()):
+            if k not in imported_keys:
+                del self.datalog_data[k]
 
         self._update_recording_button_state(True)
 
@@ -4645,6 +4678,7 @@ class N6705CDatalogUI(QWidget):
             }
         """)
         apply_btn.clicked.connect(dialog.accept)
+        apply_btn.setDefault(True)
         btn_layout.addWidget(apply_btn)
 
         layout.addLayout(btn_layout)
