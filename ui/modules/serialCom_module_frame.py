@@ -237,6 +237,7 @@ class SerialComMixin:
 
             row = QHBoxLayout()
             row.setSpacing(6)
+            row.setContentsMargins(0, 0, 0, 0)
 
             self.serial_label = QLabel("COM:")
             self.serial_label.setStyleSheet(
@@ -288,11 +289,12 @@ class SerialComMixin:
             DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
         self.serial_combo.setMinimumContentsLength(10)
-        self.serial_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self.serial_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         layout.addWidget(self.serial_combo)
 
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(8)
+        btn_row.setSpacing(6)
+        btn_row.setContentsMargins(0, 2, 0, 0)
 
         self.serial_search_btn = _SerialSearchButton(
             icon_size=btn_icon_size,
@@ -655,7 +657,7 @@ if __name__ == "__main__":
             self.setObjectName("cardFrame")
             self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             self.main_layout = QVBoxLayout(self)
-            self.main_layout.setContentsMargins(10, 8, 10, 8)
+            self.main_layout.setContentsMargins(12, 10, 12, 12)
             self.main_layout.setSpacing(8)
             if title:
                 self.title_row = QHBoxLayout()

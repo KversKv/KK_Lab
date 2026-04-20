@@ -264,7 +264,7 @@ class OscilloscopeConnectionMixin:
             DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
         self.scope_type_combo.setMinimumContentsLength(10)
-        self.scope_type_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self.scope_type_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.scope_type_combo.addItems(["DSOX4034A", "MSO64B"])
         layout.addWidget(self.scope_type_combo)
 
@@ -273,7 +273,7 @@ class OscilloscopeConnectionMixin:
             DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
         self.scope_resource_combo.setMinimumContentsLength(10)
-        self.scope_resource_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self.scope_resource_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.scope_resource_combo.setEditable(True)
         self.scope_resource_combo.addItem("USB0::0x0957::0x17A4::MY61500152::INSTR")
         self.scope_resource_combo.lineEdit().setCursorPosition(0)
@@ -283,7 +283,8 @@ class OscilloscopeConnectionMixin:
         layout.addWidget(self.scope_resource_combo)
 
         scope_row = QHBoxLayout()
-        scope_row.setSpacing(8)
+        scope_row.setSpacing(6)
+        scope_row.setContentsMargins(0, 2, 0, 0)
 
         self.scope_search_btn = _ScopeSearchButton()
 
@@ -637,7 +638,7 @@ if __name__ == "__main__":
             self.setObjectName("cardFrame")
             self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             self.main_layout = QVBoxLayout(self)
-            self.main_layout.setContentsMargins(10, 8, 10, 8)
+            self.main_layout.setContentsMargins(12, 10, 12, 12)
             self.main_layout.setSpacing(8)
             if title:
                 self.title_row = QHBoxLayout()

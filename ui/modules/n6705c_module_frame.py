@@ -249,8 +249,8 @@ def build_n6705c_inline_row(label, parent=None,
     h = row_height if row_height is not None else btn_height
 
     row = QHBoxLayout()
-    row.setSpacing(10)
-    row.setContentsMargins(0, 0, 0, 0)
+    row.setSpacing(8)
+    row.setContentsMargins(0, 2, 0, 2)
     row.setAlignment(Qt.AlignVCenter)
 
     tag = QLabel(f"  {label}  ")
@@ -267,7 +267,7 @@ def build_n6705c_inline_row(label, parent=None,
     row.addWidget(status_label, 0, Qt.AlignVCenter)
 
     visa_combo = DarkComboBox(bg="#091426", border="#17345f")
-    visa_combo.setMinimumWidth(300)
+    visa_combo.setMinimumWidth(280)
     visa_combo.setSizeAdjustPolicy(DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
     visa_combo.setMinimumContentsLength(10)
     visa_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -321,12 +321,6 @@ class N6705CConnectionMixin:
         self._n6705c_btn_radius = btn_radius
         self._n6705c_btn_icon_size = btn_icon_size
 
-        left, top, right, bottom = layout.getContentsMargins()
-        half_top = max(top // 2, 0) + 1
-        bottom_margin = max(int(half_top * 4 / 3), half_top + 5)
-        layout.setContentsMargins(left, half_top, right, bottom_margin)
-        layout.setSpacing(4)
-
         self.system_status_label = QLabel("● Ready")
         self.system_status_label.setObjectName("statusOk")
         if title_row is not None:
@@ -339,12 +333,13 @@ class N6705CConnectionMixin:
             DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
         self.visa_resource_combo.setMinimumContentsLength(10)
-        self.visa_resource_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self.visa_resource_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.visa_resource_combo.addItem(DEFAULT_VISA_RESOURCE)
         layout.addWidget(self.visa_resource_combo)
 
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(8)
+        btn_row.setSpacing(6)
+        btn_row.setContentsMargins(0, 2, 0, 0)
 
         self.search_btn = _N6705CSearchButton(
             icon_size=btn_icon_size,
@@ -657,7 +652,7 @@ if __name__ == "__main__":
             self.setObjectName("cardFrame")
             self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             self.main_layout = QVBoxLayout(self)
-            self.main_layout.setContentsMargins(10, 8, 10, 8)
+            self.main_layout.setContentsMargins(12, 10, 12, 12)
             self.main_layout.setSpacing(8)
             if title:
                 self.title_row = QHBoxLayout()

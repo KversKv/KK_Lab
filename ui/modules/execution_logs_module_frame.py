@@ -9,7 +9,7 @@ _LOG_FRAME_STYLE = """
     QFrame#logContainer {
         background-color: #09142e;
         border: 1px solid #1a2d57;
-        border-radius: 16px;
+        border-radius: 14px;
     }
     QFrame#logContainer QLabel#sectionTitle {
         font-size: 11px;
@@ -26,12 +26,18 @@ _LOG_FRAME_STYLE = """
     }
     QFrame#logContainer QPushButton#smallActionBtn {
         min-height: 0px;
-        max-height: 18px;
-        padding: 2px 8px;
+        max-height: 20px;
+        padding: 2px 10px;
         border-radius: 6px;
         background-color: #13254b;
         color: #dce7ff;
         font-size: 10px;
+    }
+    QFrame#logContainer QPushButton#smallActionBtn:hover {
+        background-color: #1C2D55;
+    }
+    QFrame#logContainer QPushButton#smallActionBtn:pressed {
+        background-color: #102040;
     }
     QFrame#logContainer QTextEdit#logEdit {
         background-color: #061022;
@@ -40,6 +46,7 @@ _LOG_FRAME_STYLE = """
         color: #7cecc8;
         font-family: Consolas, "Courier New", monospace;
         font-size: 11px;
+        padding: 6px 8px;
     }
     QFrame#logContainer QProgressBar {
         background-color: #152749;
@@ -66,12 +73,12 @@ class ExecutionLogsFrame(QFrame):
         self.setStyleSheet(_LOG_FRAME_STYLE)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 6, 8, 8)
-        layout.setSpacing(4)
+        layout.setContentsMargins(12, 10, 12, 12)
+        layout.setSpacing(8)
 
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
-        header.setSpacing(6)
+        header.setSpacing(8)
         self.log_title = QLabel(title)
         self.log_title.setObjectName("sectionTitle")
         header.addWidget(self.log_title)
@@ -86,7 +93,8 @@ class ExecutionLogsFrame(QFrame):
             self.progress_bar.setRange(0, 100)
             self.progress_bar.setValue(0)
             self.progress_bar.setTextVisible(False)
-            self.progress_bar.setFixedWidth(120)
+            self.progress_bar.setMinimumWidth(80)
+            self.progress_bar.setMaximumWidth(160)
             header.addWidget(self.progress_bar)
 
         self.clear_log_btn = QPushButton("Clear")
