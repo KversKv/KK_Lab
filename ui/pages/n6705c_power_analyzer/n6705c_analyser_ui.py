@@ -89,9 +89,9 @@ class SlideToggle(QWidget):
         disabled = not self.isEnabled()
 
         if disabled:
-            bg = QColor("#161e30")
-            border = QColor("#1b2847")
-            knob_color = QColor("#3a4a6a")
+            bg = QColor("#0d1525")
+            border = QColor("#162038")
+            knob_color = QColor("#2a3a5a")
         elif self._checked:
             bg = self._accent_color
             border = self._accent_color.lighter(120)
@@ -111,7 +111,7 @@ class SlideToggle(QWidget):
         p.setFont(font)
 
         if disabled:
-            p.setPen(QColor("#3a4a6a"))
+            p.setPen(QColor("#2a3a5a"))
             p.drawText(QRectF(knob_d + 6, 0, w - knob_d - 16, h), Qt.AlignVCenter | Qt.AlignRight, "OFF")
         elif self._checked:
             p.setPen(QColor("#111111"))
@@ -157,6 +157,27 @@ CONTENT_BG = "#0a1930"
 TAB_BAR_BG = "#07111f"
 INACTIVE_TAB_BG = "#0b1222"
 INACTIVE_TAB_HOVER_BG = "#0f1a30"
+
+ROOT_BG = "#07111f"
+PANEL_BG = "#0a1930"
+PANEL_BORDER = "#132849"
+CARD_BG = "#0b1b34"
+CARD_BORDER = "#102746"
+INPUT_BG = "#091426"
+INPUT_BORDER = "#17345f"
+DISABLED_BG = "#070f1e"
+DISABLED_BORDER = "#0d1a30"
+DISABLED_TEXT = "#4a5a7a"
+DISABLED_BTN_BG = "#0D1734"
+DISABLED_BTN_BORDER = "#18264A"
+MUTED_TEXT = "#8ea6cf"
+LABEL_DIM = "#7890bb"
+PREFIX_TEXT = "#6a8ab8"
+UNIT_TEXT = "#6a84b0"
+VALUE_OFF_COLOR = "#4a5a7a"
+MODE_INACTIVE_TEXT = "#8a9abb"
+CONTAINER_RADIUS = "12px"
+WIDGET_RADIUS = "8px"
 
 
 class ChannelTabBar(QWidget):
@@ -234,28 +255,16 @@ def _format_current(current_A):
         return f"{current_A:.3e} A"
 
 
-def _outline_action_button_style():
-    return """
-    QPushButton {
-        background-color: #0c1a38; color: #8eb4e8;
-        border: 1px solid #23417a; border-radius: 6px;
-        padding: 8px 16px; font-size: 11px; min-width: 88px; font-weight: 700;
-    }
-    QPushButton:hover { background-color: #122448; color: #b8d4ff; border: 1px solid #3a6cc8; }
-    QPushButton:disabled { background-color: #0D1734; color: #3a4a6a; border: 1px solid #18264A; }
-    """
-
-
 def _batch_channel_button_style():
-    return """
-        QPushButton {
+    return f"""
+        QPushButton {{
             background-color: #111d36; color: #7a8fb5;
-            border: 1px solid #1e3050; border-radius: 6px;
+            border: 1px solid #1e3050; border-radius: {WIDGET_RADIUS};
             padding: 7px 0px; font-size: 12px; font-weight: 600;
-        }
-        QPushButton:checked { background-color: #1a2a50; color: #c0d0f0; border: 1px solid #3a5a90; }
-        QPushButton:hover { background-color: #182844; }
-        QPushButton:disabled { background-color: #0b1730; color: #4a5a7a; border: 1px solid #1b2847; }
+        }}
+        QPushButton:checked {{ background-color: #1a2a50; color: #c0d0f0; border: 1px solid #3a5a90; }}
+        QPushButton:hover {{ background-color: #182844; }}
+        QPushButton:disabled {{ background-color: #0b1730; color: {DISABLED_TEXT}; border: 1px solid {DISABLED_BTN_BORDER}; }}
     """
 
 
@@ -513,36 +522,39 @@ class N6705CAnalyserUI(QWidget):
     def _setup_style(self):
         self.setFont(QFont("Segoe UI", 9))
         self.setObjectName("RootWidget")
-        self.setStyleSheet("""
-        QWidget#RootWidget { background-color: #07111f; }
-        QWidget { background-color: #07111f; color: #d6e2ff; }
-        QLabel { color: #c8d6f0; background: transparent; border: none; }
-        QLineEdit, QSpinBox, QDoubleSpinBox {
-            background-color: #091426; border: 1px solid #17345f;
-            border-radius: 6px; padding: 4px 6px; color: #d7e3ff;
-        }
+        self.setStyleSheet(f"""
+        QWidget#RootWidget {{ background-color: {ROOT_BG}; }}
+        QWidget {{ background-color: {ROOT_BG}; color: #d6e2ff; }}
+        QLabel {{ color: #c8d6f0; background: transparent; border: none; }}
+        QLineEdit, QSpinBox, QDoubleSpinBox {{
+            background-color: {INPUT_BG}; border: 1px solid {INPUT_BORDER};
+            border-radius: {WIDGET_RADIUS}; padding: 4px 6px; color: #d7e3ff;
+        }}
+        QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
+            border: 1px solid #3a6cc8;
+        }}
         QSpinBox::up-button, QSpinBox::down-button,
-        QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
+        QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
             width: 0px; height: 0px; border: none;
-        }
-        QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled {
-            background-color: #070F28; border: 1px solid #131D3A; color: #4a5a7a;
-        }
-        QPushButton {
+        }}
+        QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled {{
+            background-color: #070F28; border: 1px solid #131D3A; color: {DISABLED_TEXT};
+        }}
+        QPushButton {{
             background-color: #0b1730; border: 1px solid #23417a;
-            border-radius: 6px; padding: 6px 14px; color: #dbe6ff;
-        }
-        QPushButton:hover { background-color: #10203e; }
-        QPushButton:disabled {
-            background-color: #0b1730; color: #4a5a7a; border: 1px solid #1b2847;
-        }
-        QCheckBox:disabled { color: #4a5a7a; }
+            border-radius: {WIDGET_RADIUS}; padding: 6px 14px; color: #dbe6ff;
+        }}
+        QPushButton:hover {{ background-color: #10203e; }}
+        QPushButton:disabled {{
+            background-color: #0b1730; color: {DISABLED_TEXT}; border: 1px solid {DISABLED_BTN_BORDER};
+        }}
+        QCheckBox:disabled {{ color: {DISABLED_TEXT}; }}
         """)
 
     def _create_layout(self):
         main_layout = QVBoxLayout(self)
         main_layout.setSpacing(0)
-        main_layout.setContentsMargins(8, 8, 8, 8)
+        main_layout.setContentsMargins(12, 12, 12, 12)
 
         self.top_bar = self._create_top_bar()
         main_layout.addWidget(self.top_bar)
@@ -580,15 +592,21 @@ class N6705CAnalyserUI(QWidget):
 
     def _create_top_bar(self):
         top_frame = QFrame()
-        top_frame.setStyleSheet("""
-            QFrame { background-color: #07111f; border: 1px solid #132849; border-radius: 12px; }
+        top_frame.setStyleSheet(f"""
+            QFrame {{ background-color: {ROOT_BG}; border: 1px solid {PANEL_BORDER}; border-radius: {CONTAINER_RADIUS}; }}
         """)
         outer_layout = QVBoxLayout(top_frame)
         outer_layout.setContentsMargins(0, 0, 0, 0)
         outer_layout.setSpacing(0)
 
         header_widget = QWidget()
-        header_widget.setStyleSheet("QWidget { background-color: #07111f; border: none; }")
+        header_widget.setStyleSheet(f"""
+            QWidget {{
+                background-color: {ROOT_BG}; border: none;
+                border-top-left-radius: {CONTAINER_RADIUS};
+                border-top-right-radius: {CONTAINER_RADIUS};
+            }}
+        """)
         header_widget.setFixedHeight(54)
         header_layout = QHBoxLayout(header_widget)
         header_layout.setContentsMargins(16, 0, 16, 0)
@@ -617,8 +635,19 @@ class N6705CAnalyserUI(QWidget):
         header_layout.addStretch()
         outer_layout.addWidget(header_widget)
 
+        header_sep = QFrame()
+        header_sep.setFixedHeight(1)
+        header_sep.setStyleSheet(f"background-color: {PANEL_BORDER}; border: none;")
+        outer_layout.addWidget(header_sep)
+
         content_widget = QWidget()
-        content_widget.setStyleSheet("QWidget { background-color: #07111f; border: none; }")
+        content_widget.setStyleSheet(f"""
+            QWidget {{
+                background-color: {ROOT_BG}; border: none;
+                border-bottom-left-radius: {CONTAINER_RADIUS};
+                border-bottom-right-radius: {CONTAINER_RADIUS};
+            }}
+        """)
         content_layout = QVBoxLayout(content_widget)
         content_layout.setContentsMargins(16, 4, 16, 10)
         content_layout.setSpacing(2)
@@ -726,12 +755,12 @@ class N6705CAnalyserUI(QWidget):
 
     def _create_unified_input(self, prefix_text, default_value, unit_text):
         container = QFrame()
-        container.setStyleSheet("""
-            QFrame {
-                background-color: #091426;
-                border: 1px solid #17345f;
-                border-radius: 8px;
-            }
+        container.setStyleSheet(f"""
+            QFrame {{
+                background-color: {INPUT_BG};
+                border: 1px solid {INPUT_BORDER};
+                border-radius: {WIDGET_RADIUS};
+            }}
         """)
         container.setFixedHeight(36)
 
@@ -740,8 +769,8 @@ class N6705CAnalyserUI(QWidget):
         h_layout.setSpacing(6)
 
         prefix = QLabel(prefix_text)
-        prefix.setStyleSheet("color: #5a7aa8; font-size: 12px; font-weight: 600; border: none; background: transparent;")
-        prefix.setFixedWidth(28)
+        prefix.setStyleSheet(f"color: {PREFIX_TEXT}; font-size: 11px; font-weight: 700; border: none; background: transparent;")
+        prefix.setFixedWidth(32)
         h_layout.addWidget(prefix)
 
         input_field = QLineEdit(default_value)
@@ -758,7 +787,7 @@ class N6705CAnalyserUI(QWidget):
         h_layout.addWidget(input_field, 1)
 
         unit = QLabel(unit_text)
-        unit.setStyleSheet("color: #4a6490; font-size: 13px; font-weight: 500; border: none; background: transparent;")
+        unit.setStyleSheet(f"color: {UNIT_TEXT}; font-size: 13px; font-weight: 500; border: none; background: transparent;")
         unit.setFixedWidth(16)
         h_layout.addWidget(unit)
 
@@ -778,8 +807,8 @@ class N6705CAnalyserUI(QWidget):
                 background-color: {CONTENT_BG};
                 border: 1px solid #14305e;
                 border-top: none;
-                border-bottom-left-radius: 14px;
-                border-bottom-right-radius: 14px;
+                border-bottom-left-radius: {CONTAINER_RADIUS};
+                border-bottom-right-radius: {CONTAINER_RADIUS};
                 border-top-left-radius: 0px;
                 border-top-right-radius: 0px;
             }}
@@ -816,12 +845,12 @@ class N6705CAnalyserUI(QWidget):
         self.cv_btn.setChecked(True)
 
         mode_container = QFrame()
-        mode_container.setStyleSheet("""
-            QFrame {
+        mode_container.setStyleSheet(f"""
+            QFrame {{
                 background-color: #0c1628;
                 border: 1px solid #1b2842;
-                border-radius: 8px;
-            }
+                border-radius: {WIDGET_RADIUS};
+            }}
         """)
         mode_layout = QHBoxLayout(mode_container)
         mode_layout.setContentsMargins(2, 2, 2, 2)
@@ -839,30 +868,30 @@ class N6705CAnalyserUI(QWidget):
         setting_layout.addLayout(setting_header)
 
         params_container = QFrame()
-        params_container.setStyleSheet("""
-            QFrame { background-color: #0a1930; border: 1px solid #132849; border-radius: 12px; }
+        params_container.setStyleSheet(f"""
+            QFrame {{ background-color: {PANEL_BG}; border: 1px solid {PANEL_BORDER}; border-radius: {CONTAINER_RADIUS}; }}
         """)
         params_grid = QGridLayout(params_container)
         params_grid.setContentsMargins(8, 8, 8, 8)
         params_grid.setSpacing(12)
 
         voltage_frame = QFrame()
-        voltage_frame.setStyleSheet("QFrame { background-color: #0b1b34; border: 1px solid #102746; border-radius: 12px; }")
+        voltage_frame.setStyleSheet(f"QFrame {{ background-color: {CARD_BG}; border: 1px solid {CARD_BORDER}; border-radius: {CONTAINER_RADIUS}; }}")
         voltage_layout = QVBoxLayout(voltage_frame)
         voltage_layout.setContentsMargins(14, 14, 14, 14)
         voltage_layout.setSpacing(8)
 
-        voltage_label = QLabel("Voltage (V)")
-        voltage_label.setStyleSheet("QLabel { font-size: 14px; color: #97aed9; border: none; }")
+        voltage_label = QLabel("VOLTAGE (V)")
+        voltage_label.setStyleSheet("QLabel { font-size: 12px; font-weight: 600; color: #97aed9; letter-spacing: 1px; border: none; }")
         voltage_layout.addWidget(voltage_label)
 
         self.voltage_value = QLineEdit("0.0000")
         self.voltage_value.setFrame(False)
         self.voltage_value.setReadOnly(True)
-        self.voltage_value.setStyleSheet("""
-            QLineEdit { font-size: 22px; font-weight: bold; color: #6d83b3; background: transparent; border: none; }
+        self.voltage_value.setStyleSheet(f"""
+            QLineEdit {{ font-size: 26px; font-weight: bold; color: {VALUE_OFF_COLOR}; background: transparent; border: none; letter-spacing: 1px; }}
         """)
-        self.voltage_value.setFixedHeight(40)
+        self.voltage_value.setFixedHeight(44)
         voltage_layout.addWidget(self.voltage_value)
 
         (self.voltage_input_container, self.voltage_set_label,
@@ -873,21 +902,21 @@ class N6705CAnalyserUI(QWidget):
         params_grid.addWidget(voltage_frame, 0, 0)
 
         current_frame = QFrame()
-        current_frame.setStyleSheet("QFrame { background-color: #0b1b34; border: 1px solid #102746; border-radius: 12px; }")
+        current_frame.setStyleSheet(f"QFrame {{ background-color: {CARD_BG}; border: 1px solid {CARD_BORDER}; border-radius: {CONTAINER_RADIUS}; }}")
         current_layout = QVBoxLayout(current_frame)
         current_layout.setContentsMargins(14, 14, 14, 14)
         current_layout.setSpacing(8)
 
-        current_label = QLabel("Current (A)")
-        current_label.setStyleSheet("QLabel { font-size: 14px; color: #97aed9; border: none; }")
+        current_label = QLabel("CURRENT (A)")
+        current_label.setStyleSheet("QLabel { font-size: 12px; font-weight: 600; color: #97aed9; letter-spacing: 1px; border: none; }")
         current_layout.addWidget(current_label)
 
         self.current_value = QLineEdit("0.0000")
         self.current_value.setReadOnly(True)
-        self.current_value.setStyleSheet("""
-            QLineEdit { font-size: 22px; font-weight: bold; color: #6d83b3; background-color: transparent; border: none; }
+        self.current_value.setStyleSheet(f"""
+            QLineEdit {{ font-size: 26px; font-weight: bold; color: {VALUE_OFF_COLOR}; background-color: transparent; border: none; letter-spacing: 1px; }}
         """)
-        self.current_value.setFixedHeight(40)
+        self.current_value.setFixedHeight(44)
         current_layout.addWidget(self.current_value)
 
         (self.current_input_container, self.current_set_label,
@@ -899,14 +928,12 @@ class N6705CAnalyserUI(QWidget):
 
         action_row = QHBoxLayout()
         action_row.setContentsMargins(0, 0, 0, 0)
-        action_row.setSpacing(10)
+        action_row.setSpacing(8)
 
         self.measure_btn = QPushButton("MEASURE")
-        self.measure_btn.setStyleSheet(_outline_action_button_style())
         self.measure_btn.clicked.connect(self._on_measure_clicked)
 
         self.set_btn = QPushButton("SET")
-        self.set_btn.setStyleSheet(_outline_action_button_style())
         self.set_btn.clicked.connect(self._on_set_clicked)
 
         action_row.addWidget(self.measure_btn)
@@ -938,29 +965,19 @@ class N6705CAnalyserUI(QWidget):
         outer_layout.setSpacing(0)
 
         self.batch_toggle_btn = QPushButton("\u25bc  Quick Setup")
-        self.batch_toggle_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0a1930; color: #b8d0f0;
-                border: 1px solid #132849; border-bottom: none;
-                border-top-left-radius: 8px; border-top-right-radius: 8px;
-                border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;
-                padding: 8px 16px; font-size: 12px; font-weight: 700;
-                text-align: left;
-            }
-            QPushButton:hover { background-color: #0e1f3d; color: #d0e4ff; }
-        """)
+        self.batch_toggle_btn.setStyleSheet(self._collapsible_header_style(False))
         self.batch_toggle_btn.clicked.connect(self._toggle_batch_panel)
         outer_layout.addWidget(self.batch_toggle_btn)
 
         self.batch_content = QFrame()
-        self.batch_content.setStyleSheet("""
-            QFrame {
-                background-color: #0a1930;
-                border: 1px solid #132849;
+        self.batch_content.setStyleSheet(f"""
+            QFrame {{
+                background-color: {PANEL_BG};
+                border: 1px solid {PANEL_BORDER};
                 border-top: none;
-                border-bottom-left-radius: 12px;
-                border-bottom-right-radius: 12px;
-            }
+                border-bottom-left-radius: {CONTAINER_RADIUS};
+                border-bottom-right-radius: {CONTAINER_RADIUS};
+            }}
         """)
         self.batch_content.setVisible(True)
 
@@ -983,25 +1000,25 @@ class N6705CAnalyserUI(QWidget):
 
         sep = QFrame()
         sep.setFixedHeight(1)
-        sep.setStyleSheet("background-color: #132849; border: none;")
+        sep.setStyleSheet(f"background-color: {PANEL_BORDER}; border: none;")
         content_layout.addWidget(sep)
 
         buttons_layout = QHBoxLayout()
-        buttons_layout.setSpacing(10)
+        buttons_layout.setSpacing(8)
 
-        self._batch_measure_btn = QPushButton("⚡ Measure")
-        self._batch_set_btn = QPushButton("⚙ Set")
-        self._batch_auto_btn = QPushButton("▷ Auto Set")
-        self._batch_auto_20mv_btn = QPushButton("▷ Auto Set(+20mV)")
+        self._batch_measure_btn = QPushButton("Measure")
+        self._batch_set_btn = QPushButton("Set")
+        self._batch_auto_btn = QPushButton("Auto Set")
+        self._batch_auto_20mv_btn = QPushButton("Auto Set (+20mV)")
 
-        _batch_btn_base = """
-            QPushButton {{
-                background-color: {bg}; color: {fg};
-                border: 1px solid {border}; border-radius: 8px;
+        _batch_btn_base = f"""
+            QPushButton {{{{
+                background-color: {{bg}}; color: {{fg}};
+                border: 1px solid {{border}}; border-radius: {WIDGET_RADIUS};
                 padding: 9px 18px; font-size: 12px; font-weight: 700;
-            }}
-            QPushButton:hover {{ background-color: {hover_bg}; color: {hover_fg}; border: 1px solid {hover_border}; }}
-            QPushButton:disabled {{ background-color: #0D1734; color: #3a4a6a; border: 1px solid #18264A; }}
+            }}}}
+            QPushButton:hover {{{{ background-color: {{hover_bg}}; color: {{hover_fg}}; border: 1px solid {{hover_border}}; }}}}
+            QPushButton:disabled {{{{ background-color: {DISABLED_BTN_BG}; color: {DISABLED_TEXT}; border: 1px solid {DISABLED_BTN_BORDER}; }}}}
         """
 
         self._batch_measure_btn.setStyleSheet(_batch_btn_base.format(
@@ -1012,14 +1029,14 @@ class N6705CAnalyserUI(QWidget):
             bg="#0c1a38", fg="#8eb4e8", border="#23417a",
             hover_bg="#122448", hover_fg="#b8d4ff", hover_border="#3a6cc8"
         ))
-        _batch_auto_style = """
-            QPushButton {
+        _batch_auto_style = f"""
+            QPushButton {{
                 background-color: #4318d9; color: #ffffff;
-                border: 1px solid #5a2ef0; border-radius: 8px;
+                border: 1px solid #5a2ef0; border-radius: {WIDGET_RADIUS};
                 padding: 9px 24px; font-size: 12px; font-weight: 700;
-            }
-            QPushButton:hover { background-color: #5628f0; color: #ffffff; border: 1px solid #7040ff; }
-            QPushButton:disabled { background-color: #1a1040; color: #4a3a7a; border: 1px solid #2a1860; }
+            }}
+            QPushButton:hover {{ background-color: #5628f0; color: #ffffff; border: 1px solid #7040ff; }}
+            QPushButton:disabled {{ background-color: #1a1040; color: #4a3a7a; border: 1px solid #2a1860; }}
         """
         self._batch_auto_btn.setStyleSheet(_batch_auto_style)
         self._batch_auto_20mv_btn.setStyleSheet(_batch_auto_style)
@@ -1039,31 +1056,36 @@ class N6705CAnalyserUI(QWidget):
         outer_layout.addWidget(self.batch_content)
         return outer
 
+    def _collapsible_header_style(self, collapsed):
+        if collapsed:
+            return f"""
+                QPushButton {{
+                    background-color: {PANEL_BG}; color: {MUTED_TEXT};
+                    border: 1px solid {PANEL_BORDER}; border-radius: {WIDGET_RADIUS};
+                    padding: 8px 16px; font-size: 12px; font-weight: 700; text-align: left;
+                }}
+                QPushButton:hover {{ background-color: #0e1f3d; color: #b8d0f0; }}
+            """
+        else:
+            return f"""
+                QPushButton {{
+                    background-color: {PANEL_BG}; color: #b8d0f0;
+                    border: 1px solid {PANEL_BORDER}; border-bottom: none;
+                    border-top-left-radius: {WIDGET_RADIUS}; border-top-right-radius: {WIDGET_RADIUS};
+                    border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;
+                    padding: 8px 16px; font-size: 12px; font-weight: 700; text-align: left;
+                }}
+                QPushButton:hover {{ background-color: #0e1f3d; color: #d0e4ff; }}
+            """
+
     def _toggle_batch_panel(self):
         self.batch_collapsed = not self.batch_collapsed
         self.batch_content.setVisible(not self.batch_collapsed)
         if self.batch_collapsed:
             self.batch_toggle_btn.setText("\u25b6  Quick Setup")
-            self.batch_toggle_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #0a1930; color: #8ea6cf;
-                    border: 1px solid #132849; border-radius: 8px;
-                    padding: 8px 16px; font-size: 12px; font-weight: 700; text-align: left;
-                }
-                QPushButton:hover { background-color: #0e1f3d; color: #b8d0f0; }
-            """)
         else:
             self.batch_toggle_btn.setText("\u25bc  Quick Setup")
-            self.batch_toggle_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #0a1930; color: #b8d0f0;
-                    border: 1px solid #132849; border-bottom: none;
-                    border-top-left-radius: 8px; border-top-right-radius: 8px;
-                    border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;
-                    padding: 8px 16px; font-size: 12px; font-weight: 700; text-align: left;
-                }
-                QPushButton:hover { background-color: #0e1f3d; color: #d0e4ff; }
-            """)
+        self.batch_toggle_btn.setStyleSheet(self._collapsible_header_style(self.batch_collapsed))
 
     def _build_batch_columns(self):
         for i in reversed(range(self._batch_columns_layout.count())):
@@ -1076,16 +1098,16 @@ class N6705CAnalyserUI(QWidget):
         self.batch_voltage_inputs.clear()
         self.batch_current_inputs.clear()
 
-        _label_style = "font-size: 12px; color: #6680aa; font-weight: 600; border: none; background: transparent;"
-        _input_style = """
-            QLineEdit {
-                background-color: #111d36; color: #8899bb;
-                border: 1px solid #1e3050; border-radius: 6px;
+        _label_style = f"font-size: 12px; color: {LABEL_DIM}; font-weight: 600; border: none; background: transparent;"
+        _input_style = f"""
+            QLineEdit {{
+                background-color: #111d36; color: #99aacc;
+                border: 1px solid #1e3050; border-radius: {WIDGET_RADIUS};
                 padding: 7px 10px; font-size: 12px; font-weight: 600;
                 text-align: center;
-            }
-            QLineEdit:focus { border: 1px solid #3a5a90; color: #b0c0e0; }
-            QLineEdit:disabled { background-color: #0b1730; color: #4a5a7a; border: 1px solid #1b2847; }
+            }}
+            QLineEdit:focus {{ border: 1px solid #3a5a90; color: #b0c0e0; }}
+            QLineEdit:disabled {{ background-color: #0b1730; color: {DISABLED_TEXT}; border: 1px solid {DISABLED_BTN_BORDER}; }}
         """
 
         dual = self._is_dual_mode()
@@ -1097,12 +1119,12 @@ class N6705CAnalyserUI(QWidget):
 
         for dev_label, dev_color in device_list:
             dev_frame = QFrame()
-            dev_frame.setStyleSheet("""
-                QFrame {
-                    background-color: #0b1b34;
-                    border: 1px solid #102746;
-                    border-radius: 10px;
-                }
+            dev_frame.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {CARD_BG};
+                    border: 1px solid {CARD_BORDER};
+                    border-radius: {CONTAINER_RADIUS};
+                }}
             """)
             grid = QGridLayout(dev_frame)
             grid.setContentsMargins(10, 8, 10, 8)
@@ -1170,27 +1192,19 @@ class N6705CAnalyserUI(QWidget):
         outer_layout.setSpacing(0)
 
         self.ct_toggle_btn = QPushButton("\u25b6  Current Consumption Test")
-        self.ct_toggle_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0a1930; color: #8ea6cf;
-                border: 1px solid #132849; border-radius: 8px;
-                padding: 8px 16px; font-size: 12px; font-weight: 700;
-                text-align: left;
-            }
-            QPushButton:hover { background-color: #0e1f3d; color: #b8d0f0; }
-        """)
+        self.ct_toggle_btn.setStyleSheet(self._collapsible_header_style(True))
         self.ct_toggle_btn.clicked.connect(self._toggle_ct_panel)
         outer_layout.addWidget(self.ct_toggle_btn)
 
         self.ct_content = QFrame()
-        self.ct_content.setStyleSheet("""
-            QFrame {
-                background-color: #0a1930;
-                border: 1px solid #132849;
+        self.ct_content.setStyleSheet(f"""
+            QFrame {{
+                background-color: {PANEL_BG};
+                border: 1px solid {PANEL_BORDER};
                 border-top: none;
-                border-bottom-left-radius: 12px;
-                border-bottom-right-radius: 12px;
-            }
+                border-bottom-left-radius: {CONTAINER_RADIUS};
+                border-bottom-right-radius: {CONTAINER_RADIUS};
+            }}
         """)
         self.ct_content.setVisible(False)
 
@@ -1202,14 +1216,14 @@ class N6705CAnalyserUI(QWidget):
         header_row.setSpacing(8)
         header_row.addStretch()
 
-        self.ct_save_btn = QPushButton("\U0001f4be Save DataLog")
-        self.ct_save_btn.setStyleSheet("""
-            QPushButton {
+        self.ct_save_btn = QPushButton("Save DataLog")
+        self.ct_save_btn.setStyleSheet(f"""
+            QPushButton {{
                 background-color: #0b1730; color: #dbe6ff;
-                border: 1px solid #23417a; border-radius: 6px;
+                border: 1px solid #23417a; border-radius: {WIDGET_RADIUS};
                 font-size: 11px; padding: 4px 10px; min-height: 28px;
-            }
-            QPushButton:hover { background-color: #10203e; }
+            }}
+            QPushButton:hover {{ background-color: #10203e; }}
         """)
         header_row.addWidget(self.ct_save_btn)
         layout.addLayout(header_row)
@@ -1218,13 +1232,13 @@ class N6705CAnalyserUI(QWidget):
         params_row.setSpacing(12)
 
         time_label = QLabel("Test Time (s):")
-        time_label.setStyleSheet("font-size: 11px; color: #8ea6cf; border: none;")
+        time_label.setStyleSheet(f"font-size: 11px; color: {MUTED_TEXT}; border: none;")
         self.ct_test_time_input = QLineEdit("10")
         self.ct_test_time_input.setFixedWidth(80)
         self.ct_test_time_input.setAlignment(Qt.AlignCenter)
 
         period_label = QLabel("Sample Period (s):")
-        period_label.setStyleSheet("font-size: 11px; color: #8ea6cf; border: none;")
+        period_label.setStyleSheet(f"font-size: 11px; color: {MUTED_TEXT}; border: none;")
         self.ct_sample_period_input = QLineEdit("0.001")
         self.ct_sample_period_input.setFixedWidth(80)
         self.ct_sample_period_input.setAlignment(Qt.AlignCenter)
@@ -1242,27 +1256,27 @@ class N6705CAnalyserUI(QWidget):
 
         self.ct_start_btn = QPushButton("\u25b6  START TEST")
         self.ct_start_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.ct_start_btn.setStyleSheet("""
-            QPushButton {
+        self.ct_start_btn.setStyleSheet(f"""
+            QPushButton {{
                 background-color: #062b2b; color: #00f5c4;
-                border: 1px solid #00cfa6; border-radius: 8px;
+                border: 1px solid #00cfa6; border-radius: {WIDGET_RADIUS};
                 font-weight: 700; font-size: 13px; min-height: 38px;
-            }
-            QPushButton:hover { background-color: #0a3a3a; }
-            QPushButton:disabled { background-color: #0b1730; color: #4a5a7a; border: 1px solid #1b2847; }
+            }}
+            QPushButton:hover {{ background-color: #0a3a3a; }}
+            QPushButton:disabled {{ background-color: #0b1730; color: {DISABLED_TEXT}; border: 1px solid {DISABLED_BTN_BORDER}; }}
         """)
 
         self.ct_stop_btn = QPushButton("\u25a0  STOP")
         self.ct_stop_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.ct_stop_btn.setEnabled(False)
-        self.ct_stop_btn.setStyleSheet("""
-            QPushButton {
+        self.ct_stop_btn.setStyleSheet(f"""
+            QPushButton {{
                 background-color: #2a0a1c; color: #ff4fa3;
-                border: 1px solid #d63384; border-radius: 8px;
+                border: 1px solid #d63384; border-radius: {WIDGET_RADIUS};
                 font-weight: 700; font-size: 13px; min-height: 38px;
-            }
-            QPushButton:hover { background-color: #3a1028; }
-            QPushButton:disabled { background-color: #0b1730; color: #4a5a7a; border: 1px solid #1b2847; }
+            }}
+            QPushButton:hover {{ background-color: #3a1028; }}
+            QPushButton:disabled {{ background-color: #0b1730; color: {DISABLED_TEXT}; border: 1px solid {DISABLED_BTN_BORDER}; }}
         """)
 
         btn_row.addWidget(self.ct_start_btn, 1)
@@ -1290,26 +1304,9 @@ class N6705CAnalyserUI(QWidget):
         self.ct_content.setVisible(not self.ct_collapsed)
         if self.ct_collapsed:
             self.ct_toggle_btn.setText("\u25b6  Current Consumption Test")
-            self.ct_toggle_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #0a1930; color: #8ea6cf;
-                    border: 1px solid #132849; border-radius: 8px;
-                    padding: 8px 16px; font-size: 12px; font-weight: 700; text-align: left;
-                }
-                QPushButton:hover { background-color: #0e1f3d; color: #b8d0f0; }
-            """)
         else:
             self.ct_toggle_btn.setText("\u25bc  Current Consumption Test")
-            self.ct_toggle_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #0a1930; color: #b8d0f0;
-                    border: 1px solid #132849; border-bottom: none;
-                    border-top-left-radius: 8px; border-top-right-radius: 8px;
-                    border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;
-                    padding: 8px 16px; font-size: 12px; font-weight: 700; text-align: left;
-                }
-                QPushButton:hover { background-color: #0e1f3d; color: #d0e4ff; }
-            """)
+        self.ct_toggle_btn.setStyleSheet(self._collapsible_header_style(self.ct_collapsed))
 
     def _build_ct_cards(self):
         for i in reversed(range(self._ct_cards_layout.count())):
@@ -1323,8 +1320,8 @@ class N6705CAnalyserUI(QWidget):
         if dual:
             for dev_label, dev_color in [("A", "#00f5c4"), ("B", "#f2994a")]:
                 dev_frame = QFrame()
-                dev_frame.setStyleSheet("""
-                    QFrame { background-color: #0b1b34; border: 1px solid #102746; border-radius: 10px; }
+                dev_frame.setStyleSheet(f"""
+                    QFrame {{ background-color: {CARD_BG}; border: 1px solid {CARD_BORDER}; border-radius: {CONTAINER_RADIUS}; }}
                 """)
                 dev_layout = QVBoxLayout(dev_frame)
                 dev_layout.setContentsMargins(10, 8, 10, 8)
@@ -1358,12 +1355,13 @@ class N6705CAnalyserUI(QWidget):
 
     def _create_ct_channel_card(self, dev_label, ch_num):
         colors = CHANNEL_COLORS[ch_num]
+        dual = self._is_dual_mode()
         card = QFrame()
         card.setStyleSheet(f"""
-            QFrame {{ background-color: {colors['bg']}; border: 1px solid {colors['border']}; border-radius: 10px; }}
+            QFrame {{ background-color: {colors['bg']}; border: 1px solid {colors['border']}; border-radius: {CONTAINER_RADIUS}; }}
         """)
         card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        card.setMinimumHeight(100)
+        card.setMinimumHeight(80 if dual else 100)
 
         layout = QVBoxLayout(card)
         layout.setContentsMargins(14, 10, 14, 14)
@@ -1388,7 +1386,7 @@ class N6705CAnalyserUI(QWidget):
 
         avg_label = QLabel("AVG CURRENT")
         avg_label.setAlignment(Qt.AlignCenter)
-        avg_label.setStyleSheet("color: #8ea6cf; font-size: 11px; font-weight: 600; border: none;")
+        avg_label.setStyleSheet("color: #8ea6cf; font-size: 10px; font-weight: 700; letter-spacing: 1.5px; border: none;")
         layout.addWidget(avg_label)
 
         value_label = QLabel("- - -")
@@ -1396,7 +1394,7 @@ class N6705CAnalyserUI(QWidget):
         value_label.setStyleSheet(f"""
             QLabel {{
                 color: {colors['accent']}; font-size: 18px;
-                font-weight: 700; letter-spacing: 4px;
+                font-weight: 700; letter-spacing: 2px;
             }}
         """)
         layout.addWidget(value_label)
@@ -1412,31 +1410,32 @@ class N6705CAnalyserUI(QWidget):
         return f"""
         QPushButton {{
             background-color: #0c1a38; color: {accent};
-            border: 1px solid {accent}; border-radius: 6px;
-            padding: 8px 16px; font-size: 11px; min-width: 88px; font-weight: 700;
+            border: 1px solid {accent}; border-radius: {WIDGET_RADIUS};
+            padding: 9px 18px; font-size: 12px; min-width: 88px; min-height: 36px; font-weight: 700;
         }}
         QPushButton:hover {{ background-color: #12213f; color: {accent_hover}; border: 1px solid {accent_hover}; }}
-        QPushButton:disabled {{ background-color: #0D1734; color: #3a4a6a; border: 1px solid #18264A; }}
+        QPushButton:disabled {{ background-color: {DISABLED_BTN_BG}; color: {DISABLED_TEXT}; border: 1px solid {DISABLED_BTN_BORDER}; }}
         """
 
     def _dirty_set_button_style(self, accent):
+        theme = CHANNEL_THEMES[self.current_channel]
+        hover = theme['accent_hover']
         return f"""
         QPushButton {{
             background-color: {accent}; color: #111111; border: none;
-            border-radius: 6px; padding: 8px 16px; font-size: 11px;
-            min-width: 88px; font-weight: 700;
+            border-radius: {WIDGET_RADIUS}; padding: 9px 18px; font-size: 12px;
+            min-width: 88px; min-height: 36px; font-weight: 700;
         }}
-        QPushButton:hover {{ background-color: {accent}; }}
-        QPushButton:disabled {{ background-color: #0D1734; color: #3a4a6a; border: 1px solid #18264A; }}
+        QPushButton:hover {{ background-color: {hover}; }}
+        QPushButton:disabled {{ background-color: {DISABLED_BTN_BG}; color: {DISABLED_TEXT}; border: 1px solid {DISABLED_BTN_BORDER}; }}
         """
 
     def _build_channel_tab_style(self, dev_label, ch, checked=False):
         theme = CHANNEL_THEMES[ch]
         border_color = theme['accent_border'] if checked else "#14305e"
         dual = self._is_dual_mode()
-        padding = "6px 12px" if dual else "7px 18px"
         font_size = "11px" if dual else "12px"
-        corner = "8px"
+        corner = WIDGET_RADIUS
 
         top_radius = f"border-top-left-radius: {corner}; border-top-right-radius: {corner};"
         bottom_radius = "border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;"
@@ -1448,31 +1447,31 @@ class N6705CAnalyserUI(QWidget):
                 border: 1px solid #151f36;
                 border-bottom: 1px solid #151f36;
                 {radius_str}
-                padding: {padding}; font-size: {font_size}; font-weight: 700;
-                margin-top: 3px;
+                padding: 9px 12px; font-size: {font_size}; font-weight: 700;
             }}
         """
         if checked:
+            active_pad = "6px 12px" if dual else "7px 18px"
             return f"""
             QPushButton {{
                 background-color: {CONTENT_BG}; color: {theme['accent']};
                 border: 1px solid {border_color};
                 border-bottom: none;
                 {radius_str}
-                padding: {padding}; font-size: {font_size}; font-weight: 700;
+                padding: {active_pad}; font-size: {font_size}; font-weight: 700;
                 margin-bottom: 0px;
             }}
             {disabled_part}
             """
         else:
+            inactive_pad = "9px 12px" if dual else "10px 18px"
             return f"""
             QPushButton {{
                 background-color: {INACTIVE_TAB_BG}; color: {theme['text_dim']};
                 border: 1px solid #1b2847;
                 border-bottom: 1px solid {self._get_current_border_color()};
                 {radius_str}
-                padding: {padding}; font-size: {font_size}; font-weight: 700;
-                margin-top: 3px;
+                padding: {inactive_pad}; font-size: {font_size}; font-weight: 700;
             }}
             QPushButton:hover {{
                 background-color: {INACTIVE_TAB_HOVER_BG}; color: #ffffff;
@@ -1488,26 +1487,26 @@ class N6705CAnalyserUI(QWidget):
 
     def _build_mode_button_style(self, active=False):
         theme = CHANNEL_THEMES[self.current_channel]
-        disabled_part = """
-            QPushButton:disabled {
+        disabled_part = f"""
+            QPushButton:disabled {{
                 background-color: transparent; color: #3a4a6a;
-                border: none; padding: 6px 14px; font-size: 12px; border-radius: 6px;
-            }
+                border: none; padding: 6px 14px; font-size: 12px; border-radius: {WIDGET_RADIUS};
+            }}
         """
         if active:
             return f"""
             QPushButton {{
                 background-color: {theme['accent']}; color: #111111;
                 border: none; padding: 6px 14px; font-size: 12px;
-                font-weight: 700; border-radius: 6px;
+                font-weight: 700; border-radius: {WIDGET_RADIUS};
             }}
             {disabled_part}
             """
         else:
             return f"""
             QPushButton {{
-                background-color: transparent; color: #7c8aac;
-                border: none; padding: 6px 14px; font-size: 12px; border-radius: 6px;
+                background-color: transparent; color: {MODE_INACTIVE_TEXT};
+                border: none; padding: 6px 14px; font-size: 12px; border-radius: {WIDGET_RADIUS};
             }}
             QPushButton:hover {{ background-color: #0f1d35; color: #dbe6ff; }}
             {disabled_part}
@@ -1620,16 +1619,13 @@ class N6705CAnalyserUI(QWidget):
         theme = CHANNEL_THEMES[self.current_channel]
         accent = theme['accent']
 
-        if is_on:
-            value_color = accent
-        else:
-            value_color = "#6d83b3"
+        value_color = accent if is_on else VALUE_OFF_COLOR
 
         self.voltage_value.setStyleSheet(f"""
-            QLineEdit {{ font-size: 22px; font-weight: bold; color: {value_color}; background: transparent; border: none; }}
+            QLineEdit {{ font-size: 26px; font-weight: bold; color: {value_color}; background: transparent; border: none; letter-spacing: 1px; }}
         """)
         self.current_value.setStyleSheet(f"""
-            QLineEdit {{ font-size: 22px; font-weight: bold; color: {value_color}; background-color: transparent; border: none; }}
+            QLineEdit {{ font-size: 26px; font-weight: bold; color: {value_color}; background-color: transparent; border: none; letter-spacing: 1px; }}
         """)
 
     def _switch_channel(self, dev_label, ch):
@@ -1670,27 +1666,27 @@ class N6705CAnalyserUI(QWidget):
             self.voltage_set_input.setEnabled(True)
             self.limit_current_value.setEnabled(True)
             self.voltage_input_container.setStyleSheet(
-                "QFrame { background-color: #091426; border: 1px solid #17345f; border-radius: 8px; }")
+                f"QFrame {{ background-color: {INPUT_BG}; border: 1px solid {INPUT_BORDER}; border-radius: {WIDGET_RADIUS}; }}")
             self.current_input_container.setStyleSheet(
-                "QFrame { background-color: #091426; border: 1px solid #17345f; border-radius: 8px; }")
+                f"QFrame {{ background-color: {INPUT_BG}; border: 1px solid {INPUT_BORDER}; border-radius: {WIDGET_RADIUS}; }}")
         elif ui_mode == "CC":
             self.voltage_set_label.setText("Lim")
             self.current_set_label.setText("Set")
             self.voltage_set_input.setEnabled(True)
             self.limit_current_value.setEnabled(True)
             self.voltage_input_container.setStyleSheet(
-                "QFrame { background-color: #091426; border: 1px solid #17345f; border-radius: 8px; }")
+                f"QFrame {{ background-color: {INPUT_BG}; border: 1px solid {INPUT_BORDER}; border-radius: {WIDGET_RADIUS}; }}")
             self.current_input_container.setStyleSheet(
-                "QFrame { background-color: #091426; border: 1px solid #17345f; border-radius: 8px; }")
+                f"QFrame {{ background-color: {INPUT_BG}; border: 1px solid {INPUT_BORDER}; border-radius: {WIDGET_RADIUS}; }}")
         else:
             self.voltage_set_label.setText("---")
             self.current_set_label.setText("---")
             self.voltage_set_input.setEnabled(False)
             self.limit_current_value.setEnabled(False)
             self.voltage_input_container.setStyleSheet(
-                "QFrame { background-color: #070F28; border: 1px solid #131D3A; border-radius: 8px; }")
+                f"QFrame {{ background-color: #070F28; border: 1px solid #131D3A; border-radius: {WIDGET_RADIUS}; }}")
             self.current_input_container.setStyleSheet(
-                "QFrame { background-color: #070F28; border: 1px solid #131D3A; border-radius: 8px; }")
+                f"QFrame {{ background-color: #070F28; border: 1px solid #131D3A; border-radius: {WIDGET_RADIUS}; }}")
 
     def _on_mode_button_clicked(self, clicked_button):
         for btn in self.mode_buttons:
@@ -1936,8 +1932,8 @@ class N6705CAnalyserUI(QWidget):
 
         self.setting_frame.setEnabled(active_dev_connected)
 
-        disabled_border = "#0d1a30"
-        disabled_bg = "#070f1e"
+        disabled_border = DISABLED_BORDER
+        disabled_bg = DISABLED_BG
 
         if not active_dev_connected:
             self.setting_frame.setStyleSheet(f"""
@@ -1945,8 +1941,8 @@ class N6705CAnalyserUI(QWidget):
                     background-color: {disabled_bg};
                     border: 1px solid {disabled_border};
                     border-top: none;
-                    border-bottom-left-radius: 14px;
-                    border-bottom-right-radius: 14px;
+                    border-bottom-left-radius: {CONTAINER_RADIUS};
+                    border-bottom-right-radius: {CONTAINER_RADIUS};
                     border-top-left-radius: 0px;
                     border-top-right-radius: 0px;
                 }}
@@ -1967,8 +1963,8 @@ class N6705CAnalyserUI(QWidget):
                     background-color: {CONTENT_BG};
                     border: 1px solid {border_color};
                     border-top: none;
-                    border-bottom-left-radius: 14px;
-                    border-bottom-right-radius: 14px;
+                    border-bottom-left-radius: {CONTAINER_RADIUS};
+                    border-bottom-right-radius: {CONTAINER_RADIUS};
                     border-top-left-radius: 0px;
                     border-top-right-radius: 0px;
                 }}
@@ -1998,48 +1994,48 @@ class N6705CAnalyserUI(QWidget):
             self.batch_content.setEnabled(any_connected)
             self.batch_toggle_btn.setEnabled(any_connected)
             if any_connected:
-                self.batch_content.setStyleSheet("""
-                    QFrame {
-                        background-color: #0a1930;
-                        border: 1px solid #132849;
+                self.batch_content.setStyleSheet(f"""
+                    QFrame {{
+                        background-color: {PANEL_BG};
+                        border: 1px solid {PANEL_BORDER};
                         border-top: none;
-                        border-bottom-left-radius: 12px;
-                        border-bottom-right-radius: 12px;
-                    }
+                        border-bottom-left-radius: {CONTAINER_RADIUS};
+                        border-bottom-right-radius: {CONTAINER_RADIUS};
+                    }}
                 """)
             else:
-                self.batch_content.setStyleSheet("""
-                    QFrame {
-                        background-color: #070f1e;
-                        border: 1px solid #0d1a30;
+                self.batch_content.setStyleSheet(f"""
+                    QFrame {{
+                        background-color: {DISABLED_BG};
+                        border: 1px solid {DISABLED_BORDER};
                         border-top: none;
-                        border-bottom-left-radius: 12px;
-                        border-bottom-right-radius: 12px;
-                    }
+                        border-bottom-left-radius: {CONTAINER_RADIUS};
+                        border-bottom-right-radius: {CONTAINER_RADIUS};
+                    }}
                 """)
 
         if hasattr(self, 'consumption_test_panel'):
             self.ct_content.setEnabled(any_connected)
             self.ct_toggle_btn.setEnabled(any_connected)
             if any_connected:
-                self.ct_content.setStyleSheet("""
-                    QFrame {
-                        background-color: #0a1930;
-                        border: 1px solid #132849;
+                self.ct_content.setStyleSheet(f"""
+                    QFrame {{
+                        background-color: {PANEL_BG};
+                        border: 1px solid {PANEL_BORDER};
                         border-top: none;
-                        border-bottom-left-radius: 12px;
-                        border-bottom-right-radius: 12px;
-                    }
+                        border-bottom-left-radius: {CONTAINER_RADIUS};
+                        border-bottom-right-radius: {CONTAINER_RADIUS};
+                    }}
                 """)
             else:
-                self.ct_content.setStyleSheet("""
-                    QFrame {
-                        background-color: #070f1e;
-                        border: 1px solid #0d1a30;
+                self.ct_content.setStyleSheet(f"""
+                    QFrame {{
+                        background-color: {DISABLED_BG};
+                        border: 1px solid {DISABLED_BORDER};
                         border-top: none;
-                        border-bottom-left-radius: 12px;
-                        border-bottom-right-radius: 12px;
-                    }
+                        border-bottom-left-radius: {CONTAINER_RADIUS};
+                        border-bottom-right-radius: {CONTAINER_RADIUS};
+                    }}
                 """)
 
     def _get_selected_batch_channels(self, dev_label):
