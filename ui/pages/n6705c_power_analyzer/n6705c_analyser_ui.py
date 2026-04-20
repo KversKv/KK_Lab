@@ -6,8 +6,8 @@ import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
-from ui.widgets.dark_combobox import DarkComboBox
-from ui.widgets.button import SpinningSearchButton, update_connect_button_state
+from ui.widgets.button import update_connect_button_state
+from ui.modules.n6705c_module_frame import build_n6705c_inline_row
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit,
@@ -450,7 +450,7 @@ class N6705CAnalyserUI(QWidget):
                 if visa_res:
                     w["combo"].clear()
                     w["combo"].addItem(visa_res)
-                update_connect_button_state(w["toggle_conn_btn"], connected=True)
+                update_connect_button_state(w["connect_btn"], connected=True)
                 self._update_ui_connection_state(label, True)
             else:
                 if self.devices[label]["is_connected"]:
@@ -458,7 +458,7 @@ class N6705CAnalyserUI(QWidget):
                     self.devices[label]["is_connected"] = False
                     w["status"].setText("\u25cf Disconnected")
                     w["status"].setStyleSheet("color: #8ea6cf; font-weight:bold;")
-                    update_connect_button_state(w["toggle_conn_btn"], connected=False)
+                    update_connect_button_state(w["connect_btn"], connected=False)
                     self._update_ui_connection_state(label, False)
         self._rebuild_dynamic_sections()
         if self.devices[self.current_device]["is_connected"]:
@@ -618,32 +618,10 @@ class N6705CAnalyserUI(QWidget):
         outer_layout.addWidget(header_widget)
 
         content_widget = QWidget()
-        content_widget.setStyleSheet("""
-            QWidget { background-color: #07111f; border: none; }
-            QLabel { color: #c8d1e6; font-size: 12px; }
-            QLineEdit {
-                background-color: #091426; color: #d0d8ea;
-                border: 1px solid #17345f; border-radius: 8px; padding: 6px 10px;
-            }
-            QComboBox QAbstractItemView {
-                background-color: #091426; color: #d0d8ea;
-                border: 1px solid #17345f; selection-background-color: #1a3260; outline: 0px;
-            }
-            QComboBox QAbstractItemView::item {
-                background-color: #091426; color: #d0d8ea; padding: 4px 8px;
-            }
-            QComboBox QAbstractItemView::item:hover { background-color: #1a3260; }
-            QComboBox QFrame { background-color: #091426; border: 1px solid #17345f; }
-            QPushButton {
-                background-color: #0b1730; color: #d0d0d0;
-                border: 1px solid #23417a; border-radius: 8px; padding: 6px 14px;
-            }
-            QPushButton:hover { background-color: #10203e; }
-        """)
-        grid = QGridLayout(content_widget)
-        grid.setContentsMargins(16, 8, 16, 14)
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(8)
+        content_widget.setStyleSheet("QWidget { background-color: #07111f; border: none; }")
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(16, 4, 16, 10)
+        content_layout.setSpacing(2)
 
         default_addresses = {
             "A": "TCPIP0::K-N6705C-06098.local::hislip0::INSTR",
@@ -651,36 +629,18 @@ class N6705CAnalyserUI(QWidget):
         }
 
         self.conn_widgets = {}
-        for row, (label, color) in enumerate([("A", "#00f5c4"), ("B", "#f2994a")]):
-            tag = QLabel(f"  {label}  ")
-            tag.setStyleSheet(f"color: {color}; font-weight: 900; font-size: 14px; min-width: 24px;")
-            tag.setAlignment(Qt.AlignCenter)
-
-            status = QLabel("\u25cf Disconnected")
-            status.setStyleSheet("color:#8ea6cf; font-weight:bold;")
-
-            combo = DarkComboBox(bg="#091426", border="#17345f")
-            combo.setMinimumWidth(300)
-            combo.addItem(default_addresses[label])
-
-            search_btn = SpinningSearchButton()
-
-            toggle_conn_btn = QPushButton()
-            update_connect_button_state(toggle_conn_btn, connected=False)
-            toggle_conn_btn.clicked.connect(lambda _checked=False, lb=label: self._on_toggle_connection(lb))
-
-            search_btn.clicked.connect(lambda _checked=False, lb=label: self._on_search(lb))
-
-            grid.addWidget(tag, row, 0)
-            grid.addWidget(status, row, 1)
-            grid.addWidget(combo, row, 2, 1, 2)
-            grid.addWidget(search_btn, row, 4)
-            grid.addWidget(toggle_conn_btn, row, 5)
-
-            self.conn_widgets[label] = {
-                "status": status, "combo": combo,
-                "search_btn": search_btn, "toggle_conn_btn": toggle_conn_btn,
-            }
+        for label in ["A", "B"]:
+            row_layout, widgets = build_n6705c_inline_row(
+                label, parent=self, default_resource=default_addresses[label]
+            )
+            widgets["connect_btn"].clicked.connect(
+                lambda _checked=False, lb=label: self._on_toggle_connection(lb)
+            )
+            widgets["search_btn"].clicked.connect(
+                lambda _checked=False, lb=label: self._on_search(lb)
+            )
+            content_layout.addLayout(row_layout)
+            self.conn_widgets[label] = widgets
 
         outer_layout.addWidget(content_widget)
         return top_frame
@@ -1896,7 +1856,7 @@ class N6705CAnalyserUI(QWidget):
         w = self.conn_widgets[label]
         w["status"].setText("Connecting...")
         w["status"].setStyleSheet("color: #ff9800; font-weight:bold;")
-        w["toggle_conn_btn"].setEnabled(False)
+        w["connect_btn"].setEnabled(False)
 
         try:
             address = w["combo"].currentText()
@@ -1922,7 +1882,7 @@ class N6705CAnalyserUI(QWidget):
 
                 w["status"].setText("\u25cf Connected")
                 w["status"].setStyleSheet("color: #00a859; font-weight:bold;")
-                update_connect_button_state(w["toggle_conn_btn"], connected=True)
+                update_connect_button_state(w["connect_btn"], connected=True)
                 self._update_ui_connection_state(label, True)
                 self._rebuild_dynamic_sections()
                 self.connection_status_changed.emit(True)
@@ -1937,7 +1897,7 @@ class N6705CAnalyserUI(QWidget):
             w["status"].setStyleSheet("color: #e53935; font-weight:bold;")
             logger.error("[%s] Connect error: %s", label, e)
         finally:
-            w["toggle_conn_btn"].setEnabled(True)
+            w["connect_btn"].setEnabled(True)
 
     def _disconnect(self, label):
         logger.debug("N6705C disconnecting: label=%s", label)
@@ -1957,7 +1917,7 @@ class N6705CAnalyserUI(QWidget):
 
             w["status"].setText("\u25cf Disconnected")
             w["status"].setStyleSheet("color: #8ea6cf; font-weight:bold;")
-            update_connect_button_state(w["toggle_conn_btn"], connected=False)
+            update_connect_button_state(w["connect_btn"], connected=False)
             self._update_ui_connection_state(label, False)
             self._rebuild_dynamic_sections()
             self.connection_status_changed.emit(False)
