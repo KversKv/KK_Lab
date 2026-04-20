@@ -265,6 +265,7 @@ class ToggleLabel(QLabel):
         self._checked = False
         self.setAlignment(Qt.AlignCenter)
         self.setCursor(Qt.PointingHandCursor)
+        self.setMinimumHeight(24)
 
     def isChecked(self):
         return self._checked
@@ -804,7 +805,7 @@ class VerticalTextButton(QWidget):
 
 
 class CardFrame(QFrame):
-    def __init__(self, title="", icon="", parent=None):
+    def __init__(self, title="", icon="", parent=None, svg_icon=None, svg_color="#8eb0e3", svg_size=14):
         super().__init__(parent)
         self.setObjectName("cardFrame")
         self.main_layout = QVBoxLayout(self)
@@ -812,9 +813,33 @@ class CardFrame(QFrame):
         self.main_layout.setSpacing(10)
 
         if title:
-            self.title_label = QLabel(f"{icon}  {title}" if icon else title)
-            self.title_label.setObjectName("cardTitle")
-            self.main_layout.addWidget(self.title_label)
+            if svg_icon:
+                title_row = QHBoxLayout()
+                title_row.setSpacing(6)
+                title_row.setContentsMargins(0, 0, 0, 0)
+                svg_path = os.path.join(_get_base_path(), "resources", "icons", svg_icon)
+                with open(svg_path, "r", encoding="utf-8") as f:
+                    svg_data = f.read().replace("currentColor", svg_color)
+                renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))
+                pixmap = QPixmap(svg_size, svg_size)
+                pixmap.fill(QColor(0, 0, 0, 0))
+                painter = QPainter(pixmap)
+                renderer.render(painter)
+                painter.end()
+                icon_lbl = QLabel()
+                icon_lbl.setPixmap(pixmap)
+                icon_lbl.setFixedSize(svg_size, svg_size)
+                icon_lbl.setStyleSheet("border: none; background: transparent;")
+                title_row.addWidget(icon_lbl)
+                self.title_label = QLabel(title)
+                self.title_label.setObjectName("cardTitle")
+                title_row.addWidget(self.title_label)
+                title_row.addStretch()
+                self.main_layout.addLayout(title_row)
+            else:
+                self.title_label = QLabel(f"{icon}  {title}" if icon else title)
+                self.title_label.setObjectName("cardTitle")
+                self.main_layout.addWidget(self.title_label)
 
 
 class FixedPopupComboBox(DarkComboBox):
@@ -1010,13 +1035,13 @@ class N6705CDatalogUI(QWidget):
             }
 
             QLabel#fieldLabel {
-                color: #8eb0e3;
+                color: #9abee8;
                 font-size: 11px;
                 background-color: transparent;
             }
 
             QLabel#hintLabel {
-                color: #5c7a9e;
+                color: #708fad;
                 font-size: 11px;
                 font-style: italic;
                 background-color: transparent;
@@ -1037,19 +1062,19 @@ class N6705CDatalogUI(QWidget):
             QFrame#cardFrame {
                 background-color: #071127;
                 border: 1px solid #1a2b52;
-                border-radius: 14px;
+                border-radius: 12px;
             }
 
             QFrame#topControlsFrame {
                 background-color: #0a1733;
                 border: 1px solid #1a2b52;
-                border-radius: 16px;
+                border-radius: 12px;
             }
 
             QFrame#chartFrame {
                 background-color: #071127;
                 border: 1px solid #1a2b52;
-                border-radius: 14px;
+                border-radius: 12px;
             }
 
             QFrame#chResultCard {
@@ -1138,7 +1163,7 @@ class N6705CDatalogUI(QWidget):
 
             QPushButton:disabled {
                 background-color: #0b1430;
-                color: #5c7096;
+                color: #6b82a3;
                 border: 1px solid #1a2850;
             }
 
@@ -1154,6 +1179,10 @@ class N6705CDatalogUI(QWidget):
             QPushButton#chartToolBtn:hover {
                 background-color: #1a3260;
                 border: 1px solid #3c5fa1;
+            }
+
+            QPushButton#chartToolBtn:pressed {
+                background-color: #0d1a37;
             }
 
             QPushButton#primaryActionBtn {
@@ -1218,6 +1247,10 @@ class N6705CDatalogUI(QWidget):
                 background-color: #6b6cff;
             }
 
+            QPushButton#addLabelBtn:pressed {
+                background-color: #4a4be0;
+            }
+
             QRadioButton {
                 color: #dbe7ff;
                 background: transparent;
@@ -1259,17 +1292,46 @@ class N6705CDatalogUI(QWidget):
         """ + SCROLL_AREA_STYLE).replace("__UNCHECKED__", _cb_icons['unchecked']).replace("__CHECKED__", _cb_icons['checked'])
         self.setStyleSheet(full_style)
 
+    @staticmethod
+    def _svg_icon_label(svg_file, color="#d4a514", size=20):
+        svg_path = os.path.join(_get_base_path(), "resources", "icons", svg_file)
+        with open(svg_path, "r", encoding="utf-8") as f:
+            svg_data = f.read().replace("currentColor", color)
+        renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))
+        pixmap = QPixmap(size, size)
+        pixmap.fill(QColor(0, 0, 0, 0))
+        painter = QPainter(pixmap)
+        renderer.render(painter)
+        painter.end()
+        lbl = QLabel()
+        lbl.setPixmap(pixmap)
+        lbl.setFixedSize(size, size)
+        lbl.setStyleSheet("border: none; background: transparent;")
+        return lbl
+
+    @staticmethod
+    def _make_svg_icon(svg_file, color="#ffffff", size=16):
+        svg_path = os.path.join(_get_base_path(), "resources", "icons", svg_file)
+        with open(svg_path, "r", encoding="utf-8") as f:
+            svg_data = f.read().replace("currentColor", color)
+        renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))
+        pixmap = QPixmap(size, size)
+        pixmap.fill(QColor(0, 0, 0, 0))
+        painter = QPainter(pixmap)
+        renderer.render(painter)
+        painter.end()
+        return QIcon(pixmap)
+
     def _create_layout(self):
         root_layout = QVBoxLayout(self)
-        root_layout.setContentsMargins(6, 6, 6, 6)
+        root_layout.setContentsMargins(8, 8, 8, 8)
         root_layout.setSpacing(6)
 
         title_layout = QVBoxLayout()
         title_layout.setSpacing(2)
 
         title_row = QHBoxLayout()
-        icon_lbl = QLabel("\u2728")
-        icon_lbl.setStyleSheet("font-size: 20px; color: #d4a514;")
+        icon_lbl = self._svg_icon_label("sparkles.svg", "#d4a514", 20)
         self.page_title = QLabel("Keysight N6705C Datalog Analyzer")
         self.page_title.setObjectName("pageTitle")
         title_row.addWidget(icon_lbl)
@@ -1341,7 +1403,7 @@ class N6705CDatalogUI(QWidget):
         search_row.addStretch()
 
         self.instr_more_btn = QToolButton()
-        self.instr_more_btn.setText("⋯")
+        self.instr_more_btn.setIcon(self._make_svg_icon("more-horizontal.svg", "#8eb0e3", 18))
         self.instr_more_btn.setFixedSize(40, 40)
         self.instr_more_btn.setPopupMode(QToolButton.InstantPopup)
         self.instr_more_btn.setStyleSheet("""
@@ -1380,7 +1442,7 @@ class N6705CDatalogUI(QWidget):
                 background-color: #1e3460;
             }
         """)
-        add_manual_action = instr_more_menu.addAction("\U0001F517  Add Instrument Manually")
+        add_manual_action = instr_more_menu.addAction(self._make_svg_icon("link-connect.svg", "#8eb0e3", 14), "Add Instrument Manually")
         add_manual_action.triggered.connect(self._on_add_instrument_manually)
         self.instr_more_btn.setMenu(instr_more_menu)
         search_row.addWidget(self.instr_more_btn)
@@ -1409,9 +1471,16 @@ class N6705CDatalogUI(QWidget):
         separator.setStyleSheet("background-color: #1b2c4f;")
         instr_inner.addWidget(separator)
 
-        slot_title = QLabel("\u26A1  Available Instruments")
+        slot_title_row = QHBoxLayout()
+        slot_title_row.setSpacing(6)
+        slot_title_row.setContentsMargins(0, 0, 0, 0)
+        slot_title_icon = self._svg_icon_label("zap.svg", "#8eb0e3", 14)
+        slot_title = QLabel("Available Instruments")
         slot_title.setObjectName("cardTitle")
-        instr_inner.addWidget(slot_title)
+        slot_title_row.addWidget(slot_title_icon)
+        slot_title_row.addWidget(slot_title)
+        slot_title_row.addStretch()
+        instr_inner.addLayout(slot_title_row)
 
         slot_grid = QGridLayout()
         slot_grid.setSpacing(6)
@@ -1445,19 +1514,20 @@ class N6705CDatalogUI(QWidget):
         left_container.setStyleSheet("background: transparent;")
         self.left_layout = QVBoxLayout(left_container)
         self.left_layout.setContentsMargins(0, 6, 4, 0)
-        self.left_layout.setSpacing(14)
+        self.left_layout.setSpacing(12)
 
-        self.config_card = CardFrame("DATALOG CONFIG", "\u2699")
+        self.config_card = CardFrame("DATALOG CONFIG", svg_icon="settings.svg", svg_color="#8eb0e3")
         self._build_config_card()
         self.left_layout.addWidget(self.config_card)
 
-        self.meas_settings_card = CardFrame("Measurement Settings", "\u25CE")
+        self.meas_settings_card = CardFrame("Measurement Settings", svg_icon="crosshair.svg", svg_color="#8eb0e3")
         self._build_meas_settings_card()
         self.left_layout.addWidget(self.meas_settings_card)
 
         self.left_layout.addStretch()
 
-        self.start_btn = QPushButton("\u25B7  Start Recording")
+        self.start_btn = QPushButton("Start Recording")
+        self.start_btn.setIcon(self._make_svg_icon("play.svg", "#ffffff", 16))
         self.start_btn.setObjectName("primaryActionBtn")
         self.start_btn.setProperty("running", "false")
         self.left_layout.addWidget(self.start_btn)
@@ -1500,8 +1570,7 @@ class N6705CDatalogUI(QWidget):
         chart_outer.setSpacing(8)
 
         chart_header = QHBoxLayout()
-        chart_icon = QLabel("\u2728")
-        chart_icon.setStyleSheet("font-size: 16px; color: #d4a514;")
+        chart_icon = self._svg_icon_label("sparkles.svg", "#d4a514", 16)
         chart_title = QLabel("Datalog Viewer")
         chart_title.setStyleSheet(
             "font-size: 16px; font-weight: 700; color: #f4f7ff;"
@@ -1548,7 +1617,7 @@ class N6705CDatalogUI(QWidget):
 
         self._progress_overlay = QFrame(self.chart_frame)
         self._progress_overlay.setStyleSheet(
-            "QFrame { background-color: rgba(2, 8, 23, 180); border: none; border-radius: 14px; }"
+            "QFrame { background-color: rgba(2, 8, 23, 200); border: none; border-radius: 12px; }"
         )
         self._progress_overlay.hide()
         overlay_layout = QVBoxLayout(self._progress_overlay)
@@ -1594,7 +1663,7 @@ class N6705CDatalogUI(QWidget):
 
         chart_and_meas_layout.addWidget(self.chart_frame, 1)
 
-        self.measurement_card = CardFrame("MEASUREMENT", "\u25CE")
+        self.measurement_card = CardFrame("MEASUREMENT", svg_icon="crosshair.svg", svg_color="#8eb0e3")
         self._build_measurement_card()
         chart_and_meas_layout.addWidget(self.measurement_card)
 
@@ -1606,7 +1675,7 @@ class N6705CDatalogUI(QWidget):
         label_sidebar_layout.setContentsMargins(0, 0, 0, 0)
         label_sidebar_layout.setSpacing(0)
 
-        self.label_card = CardFrame("CUSTOM LABELS", "\u2756")
+        self.label_card = CardFrame("CUSTOM LABELS", svg_icon="tag.svg", svg_color="#8eb0e3")
         self.label_card.setFixedWidth(240)
         self._build_label_card()
         self.label_card.hide()
@@ -1703,17 +1772,23 @@ class N6705CDatalogUI(QWidget):
 
         self._channel_config_overlay = QFrame(self.channel_config_card)
         self._channel_config_overlay.setStyleSheet(
-            "QFrame { background-color: rgba(2, 8, 23, 160); border: none; border-radius: 14px; }"
+            "QFrame { background-color: rgba(2, 8, 23, 180); border: none; border-radius: 12px; }"
         )
         self._channel_config_overlay.hide()
         ch_overlay_layout = QVBoxLayout(self._channel_config_overlay)
         ch_overlay_layout.setAlignment(Qt.AlignCenter)
-        ch_lock_label = QLabel("\U0001F512  Recording in progress...")
+        ch_lock_row = QHBoxLayout()
+        ch_lock_row.setAlignment(Qt.AlignCenter)
+        ch_lock_row.setSpacing(6)
+        ch_lock_icon = self._svg_icon_label("lock.svg", "#5c7a9e", 14)
+        ch_lock_row.addWidget(ch_lock_icon)
+        ch_lock_label = QLabel("Recording in progress...")
         ch_lock_label.setAlignment(Qt.AlignCenter)
         ch_lock_label.setStyleSheet(
             "color: #5c7a9e; font-size: 12px; font-weight: 600; background: transparent;"
         )
-        ch_overlay_layout.addWidget(ch_lock_label)
+        ch_lock_row.addWidget(ch_lock_label)
+        ch_overlay_layout.addLayout(ch_lock_row)
 
     def _build_measurement_card(self):
         layout = self.measurement_card.main_layout
@@ -1744,7 +1819,7 @@ class N6705CDatalogUI(QWidget):
                 font-family: 'Segoe UI', sans-serif;
                 padding: 3px 8px;
                 border: none;
-                border-bottom: 1px solid #1e3460;
+                border-bottom: 2px solid #1a2b52;
                 border-right: 1px solid #12203a;
             }
             QTableWidget#measTable QHeaderView::section:last {
@@ -1798,7 +1873,7 @@ class N6705CDatalogUI(QWidget):
     def _create_slot_widget(self, label_char):
         frame = QFrame()
         frame.setObjectName("cardFrame")
-        frame.setFixedHeight(60)
+        frame.setFixedHeight(66)
         layout = QHBoxLayout(frame)
         layout.setContentsMargins(10, 6, 10, 6)
         layout.setSpacing(8)
@@ -1813,7 +1888,7 @@ class N6705CDatalogUI(QWidget):
         info_layout = QVBoxLayout()
         info_layout.setSpacing(2)
         name_label = QLabel("Not Supported")
-        name_label.setStyleSheet("font-size: 11px; color: #556a8c; border: none;")
+        name_label.setStyleSheet("font-size: 11px; color: #667ba0; border: none;")
         info_layout.addWidget(name_label)
         layout.addLayout(info_layout, 1)
 
@@ -1839,7 +1914,7 @@ class N6705CDatalogUI(QWidget):
         icon_layout = QVBoxLayout()
         icon_layout.setSpacing(2)
         thumb_label = QLabel()
-        thumb_label.setStyleSheet("border: none;")
+        thumb_label.setStyleSheet("border: none; border-radius: 4px;")
         thumb_label.setFixedSize(64, 38)
         svg_path = os.path.join(_get_base_path(), "resources", "icons", "n6705c_thumb.svg")
         if os.path.exists(svg_path):
@@ -1851,7 +1926,7 @@ class N6705CDatalogUI(QWidget):
             painter.end()
             thumb_label.setPixmap(pixmap)
         serial_label = QLabel(serial)
-        serial_label.setStyleSheet("font-size: 9px; color: #556a8c; border: none;")
+        serial_label.setStyleSheet("font-size: 9px; color: #667ba0; border: none;")
         serial_label.setAlignment(Qt.AlignCenter)
         icon_layout.addWidget(thumb_label)
         icon_layout.addWidget(serial_label)
@@ -2095,7 +2170,7 @@ class N6705CDatalogUI(QWidget):
             QFrame#cardFrame {
                 background-color: #0c2254;
                 border: 1px solid #3a6fd4;
-                border-radius: 14px;
+                border-radius: 12px;
             }
         """)
         name_label = slot.property("name_label")
@@ -2112,7 +2187,7 @@ class N6705CDatalogUI(QWidget):
         slot.setStyleSheet("")
         name_label = slot.property("name_label")
         name_label.setText("Not Supported")
-        name_label.setStyleSheet("font-size: 11px; color: #556a8c; border: none;")
+        name_label.setStyleSheet("font-size: 11px; color: #667ba0; border: none;")
 
         letter = slot.findChildren(QLabel)[0]
         letter.setStyleSheet("font-size: 18px; font-weight: bold; color: #3a6fd4; border: none;")
@@ -2230,7 +2305,8 @@ class N6705CDatalogUI(QWidget):
         desc_row.addWidget(self.label_text_edit, 1)
         form_layout.addLayout(desc_row)
 
-        self.add_label_btn = QPushButton("+")
+        self.add_label_btn = QPushButton()
+        self.add_label_btn.setIcon(self._make_svg_icon("plus.svg", "#ffffff", 14))
         self.add_label_btn.setObjectName("addLabelBtn")
         form_layout.addWidget(self.add_label_btn)
 
@@ -2314,7 +2390,8 @@ class N6705CDatalogUI(QWidget):
         self._instruments_tab_layout = QVBoxLayout(self._instruments_tab)
         self._instruments_tab_layout.setContentsMargins(0, 6, 0, 0)
         self._instruments_tab_layout.setSpacing(0)
-        self.channel_config_tabbar.addTab("\u26A1 Active")
+        active_tab_idx = self.channel_config_tabbar.addTab("Active")
+        self.channel_config_tabbar.setTabIcon(active_tab_idx, self._make_svg_icon("zap.svg", "#8eb0e3", 14))
         self.channel_config_stack.addWidget(self._instruments_tab)
 
         self.channel_config_inner = QWidget()
@@ -2439,7 +2516,7 @@ class N6705CDatalogUI(QWidget):
 
             slot_title = QLabel(f"Slot {slot_char}  ─  {serial}")
             slot_title.setStyleSheet(
-                "color: #556a8c; font-size: 10px; border: none; padding-bottom: 2px;"
+                "color: #667ba0; font-size: 10px; border: none; padding-bottom: 2px;"
             )
             slot_layout.addWidget(slot_title)
 
@@ -2467,8 +2544,8 @@ class N6705CDatalogUI(QWidget):
                     "QFrame { background-color: #0a1430; border: 1px solid #152040; border-radius: 4px; }"
                 )
                 out_vbox = QVBoxLayout(out_frame)
-                out_vbox.setContentsMargins(4, 2, 4, 3)
-                out_vbox.setSpacing(1)
+                out_vbox.setContentsMargins(4, 3, 4, 3)
+                out_vbox.setSpacing(2)
 
                 title_lbl = QLabel(f"OUTPUT {ch + 1}")
                 title_lbl.setAlignment(Qt.AlignCenter)
@@ -2635,7 +2712,7 @@ class N6705CDatalogUI(QWidget):
 
             slot_title = QLabel(f"{tab_name}  ─  Slot {slot_char}")
             slot_title.setStyleSheet(
-                "color: #556a8c; font-size: 10px; border: none; padding-bottom: 2px;"
+                "color: #667ba0; font-size: 10px; border: none; padding-bottom: 2px;"
             )
             slot_layout.addWidget(slot_title)
 
@@ -2658,8 +2735,8 @@ class N6705CDatalogUI(QWidget):
                     "QFrame { background-color: #0a1430; border: 1px solid #152040; border-radius: 4px; }"
                 )
                 out_vbox = QVBoxLayout(out_frame)
-                out_vbox.setContentsMargins(4, 2, 4, 3)
-                out_vbox.setSpacing(1)
+                out_vbox.setContentsMargins(4, 3, 4, 3)
+                out_vbox.setSpacing(2)
 
                 title_lbl = QLabel(f"OUTPUT {ch}")
                 title_lbl.setAlignment(Qt.AlignCenter)
@@ -2810,10 +2887,12 @@ class N6705CDatalogUI(QWidget):
         tab_layout.addStretch()
 
         self._imported_tab_configs.append(tab_config)
-        tab_idx = self.channel_config_tabbar.addTab(f"\U0001F4C4 {tab_name}")
+        tab_idx = self.channel_config_tabbar.addTab(f"{tab_name}")
+        self.channel_config_tabbar.setTabIcon(tab_idx, self._make_svg_icon("file-text.svg", "#8eb0e3", 14))
         self.channel_config_stack.addWidget(tab_widget)
-        close_btn = QPushButton("✕")
-        close_btn.setFixedSize(18, 18)
+        close_btn = QPushButton()
+        close_btn.setIcon(self._make_svg_icon("x-close.svg", "#4a6a96", 12))
+        close_btn.setFixedSize(20, 20)
         close_btn.setStyleSheet(
             "QPushButton { background: transparent; color: #4a6a96; font-size: 11px; "
             "border: none; border-radius: 3px; padding: 0; margin: 0; min-height: 0; }"
@@ -3180,7 +3259,7 @@ class N6705CDatalogUI(QWidget):
         form_layout.setContentsMargins(16, 16, 16, 16)
         form_layout.setSpacing(12)
 
-        title = QLabel("\U0001F517  Add Instrument Manually")
+        title = QLabel("Add Instrument Manually")
         title.setStyleSheet("font-size: 14px; font-weight: bold; color: #eaf2ff;")
         form_layout.addWidget(title)
 
@@ -3225,10 +3304,12 @@ class N6705CDatalogUI(QWidget):
         conn_type_combo.currentIndexChanged.connect(_on_conn_type_changed)
 
         btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(8)
         btn_layout.addStretch()
         cancel_btn = QPushButton("Cancel")
         cancel_btn.clicked.connect(dialog.reject)
-        connect_btn = QPushButton("\U0001F517  Connect")
+        connect_btn = QPushButton("Connect")
+        connect_btn.setIcon(self._make_svg_icon("link-connect.svg", "#ffffff", 14))
         connect_btn.setStyleSheet("""
             QPushButton {
                 background-color: #1a4b8c;
@@ -3350,6 +3431,17 @@ class N6705CDatalogUI(QWidget):
 
         vb = self.plot_widget.getPlotItem().getViewBox()
         vb.installEventFilter(self)
+        self.plot_widget.installEventFilter(self)
+
+    def _hide_crosshair(self):
+        self.crosshair_v.setVisible(False)
+        self.tooltip_text.setVisible(False)
+        for dot in self.crosshair_dots:
+            try:
+                self.plot_widget.removeItem(dot)
+            except Exception:
+                pass
+        self.crosshair_dots.clear()
 
     def _find_nearest_marker_at_scene(self, scene_pos):
         vb = self.plot_widget.getPlotItem().getViewBox()
@@ -3372,6 +3464,9 @@ class N6705CDatalogUI(QWidget):
 
     def eventFilter(self, obj, event):
         from PySide6.QtCore import QEvent
+        if obj is self.plot_widget and event.type() == QEvent.Leave:
+            self._hide_crosshair()
+            return False
         vb = self.plot_widget.getPlotItem().getViewBox()
         if obj is not vb:
             return super().eventFilter(obj, event)
@@ -3564,14 +3659,7 @@ class N6705CDatalogUI(QWidget):
         pos = evt[0]
         vb = self.plot_widget.getPlotItem().getViewBox()
         if not self.plot_widget.sceneBoundingRect().contains(pos):
-            self.crosshair_v.setVisible(False)
-            self.tooltip_text.setVisible(False)
-            for dot in self.crosshair_dots:
-                try:
-                    self.plot_widget.removeItem(dot)
-                except Exception:
-                    pass
-            self.crosshair_dots.clear()
+            self._hide_crosshair()
             return
 
         mouse_point = vb.mapSceneToView(pos)
@@ -3661,7 +3749,7 @@ class N6705CDatalogUI(QWidget):
         if self.min_period_cb.isChecked():
             self.sample_period_edit.setReadOnly(True)
             self.sample_period_edit.setStyleSheet(
-                "QLineEdit { background: #1a2b52; color: #556a8c; }"
+                "QLineEdit { background: #1a2b52; color: #667ba0; }"
             )
 
     def _bind_signals(self):
@@ -3693,9 +3781,12 @@ class N6705CDatalogUI(QWidget):
     def _update_recording_button_state(self, recording):
         self.is_recording = recording
         self.start_btn.setProperty("running", "true" if recording else "false")
-        self.start_btn.setText(
-            "\u25A0  Stop Recording" if recording else "\u25B7  Start Recording"
-        )
+        if recording:
+            self.start_btn.setIcon(self._make_svg_icon("square.svg", "#ffd9e6", 14))
+            self.start_btn.setText("Stop Recording")
+        else:
+            self.start_btn.setIcon(self._make_svg_icon("play.svg", "#ffffff", 16))
+            self.start_btn.setText("Start Recording")
         self.start_btn.style().unpolish(self.start_btn)
         self.start_btn.style().polish(self.start_btn)
         self.start_btn.update()
@@ -4055,7 +4146,7 @@ class N6705CDatalogUI(QWidget):
         is_min = self.min_period_cb.isChecked()
         self.sample_period_edit.setReadOnly(is_min)
         self.sample_period_edit.setStyleSheet(
-            "QLineEdit { background: #1a2b52; color: #556a8c; }" if is_min
+            "QLineEdit { background: #1a2b52; color: #667ba0; }" if is_min
             else ""
         )
         if is_min:
@@ -4567,7 +4658,7 @@ class N6705CDatalogUI(QWidget):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
-        title = QLabel("\u23F1  Time Offset for Instrument B")
+        title = QLabel("Time Offset for Instrument B")
         title.setStyleSheet("font-size: 14px; font-weight: bold; color: #eaf2ff;")
         layout.addWidget(title)
 
@@ -4590,7 +4681,8 @@ class N6705CDatalogUI(QWidget):
 
         has_both_markers = self.marker_a_pos is not None and self.marker_b_pos is not None
 
-        align_btn = QPushButton("\U0001F4CD  Align From Markers")
+        align_btn = QPushButton("Align From Markers")
+        align_btn.setIcon(self._make_svg_icon("map-pin.svg", "#ffffff", 14))
         align_btn.setToolTip("Auto-calculate offset from Marker A and Marker B positions.\n"
                              "Offset = Marker A - Marker B")
         align_btn.setEnabled(has_both_markers)
@@ -4628,7 +4720,7 @@ class N6705CDatalogUI(QWidget):
                 f"Marker A: {self.marker_a_pos:.6f}s    Marker B: {self.marker_b_pos:.6f}s\n"
                 f"Calculated offset: {marker_delta_ms:+.3f} ms"
             )
-            marker_info.setStyleSheet("color: #556a8c; font-size: 10px;")
+            marker_info.setStyleSheet("color: #667ba0; font-size: 10px;")
             layout.addWidget(marker_info)
         else:
             marker_info = QLabel("Set both Marker A and Marker B on the chart to enable auto-align.")
@@ -4652,6 +4744,7 @@ class N6705CDatalogUI(QWidget):
         layout.addWidget(align_btn)
 
         btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(8)
         btn_layout.addStretch()
 
         reset_btn = QPushButton("Reset to 0")
@@ -4725,7 +4818,7 @@ class N6705CDatalogUI(QWidget):
 
             text_item = pg.TextItem(
                 html=f"<div style='background:#071127; padding:1px 6px 1px 2px; border-radius:2px;'>"
-                     f"<span style='color:{color}; font-size:12px; font-weight:800;'>"
+                     f"<span style='color:{color}; font-size:12px; font-weight:700;'>"
                      f"{display}</span></div>",
                 anchor=(0, 0.5),
             )
@@ -4803,7 +4896,7 @@ class N6705CDatalogUI(QWidget):
             f.setBold(True)
             hi.setFont(f)
 
-        ROW_BG = ["#080f22", "#0a1530"]
+        ROW_BG = ["#080f22", "#0c1838"]
 
         for ch_idx, (label, ch_data) in enumerate(ch_list):
             color_hex = _color_for_label(label)
@@ -4823,7 +4916,7 @@ class N6705CDatalogUI(QWidget):
             self._set_meas_cell(ch_idx, 0, _display_label(label), color_hex, bg=row_bg)
             self._set_meas_cell(ch_idx, 1, _auto_format(seg_avg, val_unit), color_hex, bg=row_bg, bold=True)
 
-        row_h = 24
+        row_h = 28
         total_h = (num_rows + 1) * row_h + 4
         self.meas_table.setFixedHeight(min(total_h, 200))
         for r in range(num_rows):
@@ -4894,7 +4987,7 @@ class N6705CDatalogUI(QWidget):
 
         self._set_meas_cell(0, num_cols - 1, _format_time(t_b), "#8eb0e3", bg="#0b1528")
 
-        ROW_BG = ["#080f22", "#0a1530"]
+        ROW_BG = ["#080f22", "#0c1838"]
 
         for ch_idx, (label, ch_data) in enumerate(ch_list):
             row = 1 + ch_idx
@@ -4959,7 +5052,7 @@ class N6705CDatalogUI(QWidget):
 
             self._set_meas_cell(row, num_cols - 1, _auto_format(val_b, val_unit), color_hex, bg=row_bg)
 
-        row_h = 24
+        row_h = 28
         total_h = (num_rows + 1) * row_h + 4
         self.meas_table.setFixedHeight(min(total_h, 200))
         for r in range(num_rows):
@@ -5168,13 +5261,14 @@ class N6705CDatalogUI(QWidget):
             info_layout.addWidget(ch_lbl)
 
             detail_lbl = QLabel(f"{lbl['time']}s  ·  {lbl['text']}")
-            detail_lbl.setStyleSheet("color: #556a8c; font-size: 10px; border: none;")
+            detail_lbl.setStyleSheet("color: #667ba0; font-size: 10px; border: none;")
             info_layout.addWidget(detail_lbl)
 
             row_layout.addLayout(info_layout, 1)
 
-            del_btn = QPushButton("✕")
-            del_btn.setFixedSize(20, 20)
+            del_btn = QPushButton()
+            del_btn.setIcon(self._make_svg_icon("x-close.svg", "#3a5070", 12))
+            del_btn.setFixedSize(22, 22)
             del_btn.setStyleSheet(
                 "QPushButton { background: transparent; color: #3a5070; font-size: 12px; "
                 "border: none; border-radius: 2px; }"
