@@ -18,7 +18,7 @@ class ChamberSetTemp(BaseNode):
     node_type = "ChamberSetTemp"
     display_name = "Chamber Set Temp"
     category = "instrument"
-    icon = "🌡"
+    icon = "◊"
     color = "#e07b39"
 
     PARAM_SCHEMA = [
@@ -66,7 +66,7 @@ class N6705CSetVoltage(BaseNode):
     node_type = "N6705CSetVoltage"
     display_name = "N6705C Set Voltage"
     category = "instrument"
-    icon = "⚡"
+    icon = "⏚"
     color = "#f2994a"
 
     PARAM_SCHEMA = [
@@ -101,7 +101,7 @@ class N6705CMeasure(BaseNode):
     node_type = "N6705CMeasure"
     display_name = "N6705C Measure"
     category = "instrument"
-    icon = "📊"
+    icon = "⊞"
     color = "#f2994a"
 
     PARAM_SCHEMA = [
@@ -146,7 +146,7 @@ class I2CRead(BaseNode):
     node_type = "I2CRead"
     display_name = "I2C Read"
     category = "instrument"
-    icon = "📖"
+    icon = "⇤"
     color = "#38bdf8"
 
     PARAM_SCHEMA = [
@@ -190,7 +190,7 @@ class I2CWrite(BaseNode):
     node_type = "I2CWrite"
     display_name = "I2C Write"
     category = "instrument"
-    icon = "✏️"
+    icon = "⇥"
     color = "#38bdf8"
 
     PARAM_SCHEMA = [
@@ -221,7 +221,7 @@ class I2CTraverse(BaseNode):
     node_type = "I2CTraverse"
     display_name = "I2C Traverse"
     category = "instrument"
-    icon = "🔍"
+    icon = "⋯"
     color = "#38bdf8"
 
     PARAM_SCHEMA = [
@@ -275,7 +275,7 @@ class ScopeMeasureFreq(BaseNode):
     node_type = "ScopeMeasureFreq"
     display_name = "Scope Measure Freq"
     category = "instrument"
-    icon = "📈"
+    icon = "≋"
     color = "#27ae60"
 
     PARAM_SCHEMA = [
@@ -313,7 +313,7 @@ class ScopeMeasure(BaseNode):
     node_type = "ScopeMeasure"
     display_name = "Scope Measure"
     category = "instrument"
-    icon = "📈"
+    icon = "∿"
     color = "#27ae60"
 
     PARAM_SCHEMA = [
@@ -360,7 +360,7 @@ class RFAnalyzerMeasure(BaseNode):
     node_type = "RFAnalyzerMeasure"
     display_name = "RF Analyzer Measure"
     category = "instrument"
-    icon = "📡"
+    icon = "⌁"
     color = "#8e44ad"
 
     PARAM_SCHEMA = [

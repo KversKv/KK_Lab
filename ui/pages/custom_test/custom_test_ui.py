@@ -9,12 +9,14 @@ from typing import Any, Dict, List, Optional
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QFrame,
-    QLabel, QTableWidget, QTableWidgetItem, QTabWidget,
+    QLabel, QTableWidget, QTableWidgetItem, QTabWidget, QStackedLayout,
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QSize, QRectF
+from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor
+from PySide6.QtSvg import QSvgRenderer
 import pyqtgraph as pg
 
-from ui.pages.custom_test.node_palette import NodePalette
+from ui.pages.custom_test.node_palette import NodePalette, CollapsibleSection
 from ui.pages.custom_test.sequence_canvas import SequenceCanvas
 from ui.pages.custom_test.property_panel import PropertyPanel
 from ui.pages.custom_test.nodes.base_node import BaseNode, get_node_class
@@ -23,6 +25,7 @@ from ui.pages.custom_test.executor import ExecutorThread
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.chamber_module_frame import VT6002ConnectionMixin
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
+from ui.widgets.scrollbar import SCROLLBAR_STYLE
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -34,6 +37,46 @@ _ICONS_DIR = os.path.join(
 
 _TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
 
+_CHEVRON_DOWN_PATH = os.path.join(_ICONS_DIR, "chevron-down.svg").replace("\\", "/")
+
+
+def _tinted_svg_icon(svg_path: str, color: str, size: int = 16) -> QIcon:
+    renderer = QSvgRenderer(svg_path)
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setRenderHint(QPainter.SmoothPixmapTransform)
+    renderer.render(painter, QRectF(0, 0, size, size))
+    painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+    painter.fillRect(pixmap.rect(), QColor(color))
+    painter.end()
+    return QIcon(pixmap)
+
+
+_CONTEXT_MENU_STYLE = """
+    QMenu {
+        background-color: #0b1428;
+        color: #dce7ff;
+        border: 1px solid #1a2d57;
+        border-radius: 6px;
+        padding: 4px;
+    }
+    QMenu::item {
+        padding: 8px 20px;
+        border-radius: 4px;
+        font-size: 12px;
+    }
+    QMenu::item:selected {
+        background-color: #1a2d57;
+    }
+    QMenu::separator {
+        height: 1px;
+        background: #1a2d57;
+        margin: 4px 8px;
+    }
+"""
+
 _PAGE_STYLE = """
     QWidget#customTestPage {
         background-color: #020618;
@@ -41,7 +84,8 @@ _PAGE_STYLE = """
     }
     QSplitter::handle {
         background-color: #0b1428;
-        width: 3px;
+        width: 4px;
+        border-radius: 2px;
     }
     QSplitter::handle:hover {
         background-color: #5b5cf6;
@@ -51,8 +95,13 @@ _PAGE_STYLE = """
         border: 1px solid #1a2d57;
         border-radius: 14px;
     }
+    QFrame#innerCard {
+        background-color: #0b1933;
+        border: none;
+        border-radius: 10px;
+    }
     QLabel#sectionTitle {
-        font-size: 11px;
+        font-size: 12px;
         font-weight: 700;
         color: #f4f7ff;
         background-color: transparent;
@@ -66,21 +115,30 @@ _PAGE_STYLE = """
         background-color: transparent;
         border: none;
     }
+    QLabel#placeholderText {
+        color: #3f5070;
+        font-size: 11px;
+        background-color: transparent;
+        border: none;
+    }
     QLabel#statusOk {
         color: #15d1a3;
         font-weight: 600;
+        font-size: 11px;
         background-color: transparent;
         border: none;
     }
     QLabel#statusWarn {
         color: #ffb84d;
         font-weight: 600;
+        font-size: 11px;
         background-color: transparent;
         border: none;
     }
     QLabel#statusErr {
         color: #ff5e7a;
         font-weight: 600;
+        font-size: 11px;
         background-color: transparent;
         border: none;
     }
@@ -95,6 +153,11 @@ _PAGE_STYLE = """
         border: none;
         width: 22px;
         background: transparent;
+    }
+    QComboBox::down-arrow {
+        image: url(""" + _CHEVRON_DOWN_PATH + """);
+        width: 12px;
+        height: 12px;
     }
     QComboBox QAbstractItemView {
         background-color: #0a1733;
@@ -116,6 +179,10 @@ _PAGE_STYLE = """
         border-top-right-radius: 6px;
         font-size: 11px;
         font-weight: 600;
+    }
+    QTabBar::tab:hover {
+        background-color: #0f1c38;
+        color: #8899bb;
     }
     QTabBar::tab:selected {
         background-color: #132040;
@@ -144,7 +211,7 @@ _PAGE_STYLE = """
         font-size: 11px;
         font-weight: 700;
     }
-"""
+""" + SCROLLBAR_STYLE
 
 
 class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
@@ -193,7 +260,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         center_frame = QFrame()
         center_frame.setObjectName("sectionFrame")
         center_layout = QVBoxLayout(center_frame)
-        center_layout.setContentsMargins(10, 8, 10, 10)
+        center_layout.setContentsMargins(12, 10, 12, 12)
         center_layout.setSpacing(6)
         center_title = QLabel("Sequence Canvas")
         center_title.setObjectName("sectionTitle")
@@ -205,7 +272,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         right_frame = QFrame()
         right_frame.setObjectName("sectionFrame")
         right_layout = QVBoxLayout(right_frame)
-        right_layout.setContentsMargins(10, 8, 10, 10)
+        right_layout.setContentsMargins(12, 10, 12, 12)
         right_layout.setSpacing(6)
         right_title = QLabel("Property Panel")
         right_title.setObjectName("sectionTitle")
@@ -227,30 +294,33 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         outer_frame = QFrame()
         outer_frame.setObjectName("sectionFrame")
         outer_layout = QVBoxLayout(outer_frame)
-        outer_layout.setContentsMargins(10, 8, 10, 10)
+        outer_layout.setContentsMargins(12, 10, 12, 12)
         outer_layout.setSpacing(6)
 
         left_title = QLabel("Instruments / Nodes")
         left_title.setObjectName("sectionTitle")
         outer_layout.addWidget(left_title)
 
+        link_svg = os.path.join(_ICONS_DIR, "activity.svg")
+        self._conn_section = CollapsibleSection(
+            "Instrument Connections",
+            icon_svg=link_svg if os.path.isfile(link_svg) else None,
+            expanded=False,
+            parent=self,
+        )
+
         self._instr_conn_frame = QFrame()
-        self._instr_conn_frame.setObjectName("sectionFrame")
+        self._instr_conn_frame.setObjectName("innerCard")
         self._instr_conn_layout = QVBoxLayout(self._instr_conn_frame)
-        self._instr_conn_layout.setContentsMargins(10, 8, 10, 10)
+        self._instr_conn_layout.setContentsMargins(12, 10, 12, 12)
         self._instr_conn_layout.setSpacing(6)
 
-        conn_title = QLabel("Instrument Connections")
-        conn_title.setObjectName("sectionTitle")
-        self._instr_conn_layout.addWidget(conn_title)
-
         self._instr_conn_placeholder = QLabel("No instruments in sequence")
-        self._instr_conn_placeholder.setStyleSheet(
-            "color: #3f5070; font-size: 11px; background: transparent; border: none;"
-        )
+        self._instr_conn_placeholder.setObjectName("placeholderText")
         self._instr_conn_layout.addWidget(self._instr_conn_placeholder)
 
-        outer_layout.addWidget(self._instr_conn_frame)
+        self._conn_section.content_layout.addWidget(self._instr_conn_frame)
+        outer_layout.addWidget(self._conn_section)
 
         self.palette = NodePalette()
         outer_layout.addWidget(self.palette, 1)
@@ -279,8 +349,8 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         return used
 
     def _refresh_instrument_connections(self) -> None:
-        while self._instr_conn_layout.count() > 1:
-            child = self._instr_conn_layout.takeAt(1)
+        while self._instr_conn_layout.count() > 0:
+            child = self._instr_conn_layout.takeAt(0)
             if child.widget():
                 child.widget().deleteLater()
             elif child.layout():
@@ -297,9 +367,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
 
         if not used_ids:
             self._instr_conn_placeholder = QLabel("No instruments in sequence")
-            self._instr_conn_placeholder.setStyleSheet(
-                "color: #3f5070; font-size: 11px; background: transparent; border: none;"
-            )
+            self._instr_conn_placeholder.setObjectName("placeholderText")
             self._instr_conn_layout.addWidget(self._instr_conn_placeholder)
             return
 
@@ -335,7 +403,6 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
             self._scope_status.setObjectName(
                 "statusOk" if self._mso64b_top_ref else "statusErr"
             )
-            self._scope_status.setStyleSheet("background: transparent; border: none;")
             self._instr_conn_layout.addWidget(self._scope_status)
 
         if "cmw270" in used_ids:
@@ -344,7 +411,6 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
             self._instr_conn_layout.addWidget(lbl)
             status = QLabel("● Not implemented")
             status.setObjectName("statusWarn")
-            status.setStyleSheet("background: transparent; border: none;")
             self._instr_conn_layout.addWidget(status)
 
     def _build_bottom_panel(self) -> QWidget:
@@ -357,6 +423,10 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
 
         tabs = QTabWidget()
 
+        log_icon_path = os.path.join(_ICONS_DIR, "clipboard-list.svg")
+        table_icon_path = os.path.join(_ICONS_DIR, "table.svg")
+        chart_icon_path = os.path.join(_ICONS_DIR, "line-chart.svg")
+
         log_tab = QWidget()
         log_layout = QVBoxLayout(log_tab)
         log_layout.setContentsMargins(0, 0, 0, 0)
@@ -364,18 +434,36 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
             title="⊙ Execution Logs", show_progress=True
         )
         log_layout.addWidget(self.logs_frame)
-        tabs.addTab(log_tab, "📋 Logs")
+        tabs.addTab(log_tab, "Logs")
+        if os.path.isfile(log_icon_path):
+            tabs.setTabIcon(0, _tinted_svg_icon(log_icon_path, "#5f78a8"))
+            tabs.setIconSize(QSize(14, 14))
 
         table_tab = QWidget()
-        table_layout = QVBoxLayout(table_tab)
-        table_layout.setContentsMargins(0, 0, 0, 0)
+        table_tab_layout = QVBoxLayout(table_tab)
+        table_tab_layout.setContentsMargins(0, 0, 0, 0)
+
+        self._table_stack = QWidget()
+        stack_layout = QStackedLayout(self._table_stack)
+        stack_layout.setStackingMode(QStackedLayout.StackAll)
+
         self.result_table = QTableWidget()
         self.result_table.setColumnCount(0)
         self.result_table.setRowCount(0)
         self.result_table.horizontalHeader().setStretchLastSection(True)
         self.result_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        table_layout.addWidget(self.result_table)
-        tabs.addTab(table_tab, "📊 Data")
+        stack_layout.addWidget(self.result_table)
+
+        self._table_empty_label = QLabel("No data recorded yet")
+        self._table_empty_label.setAlignment(Qt.AlignCenter)
+        self._table_empty_label.setObjectName("placeholderText")
+        stack_layout.addWidget(self._table_empty_label)
+        stack_layout.setCurrentIndex(1)
+
+        table_tab_layout.addWidget(self._table_stack)
+        tabs.addTab(table_tab, "Data")
+        if os.path.isfile(table_icon_path):
+            tabs.setTabIcon(1, _tinted_svg_icon(table_icon_path, "#5f78a8"))
 
         chart_tab = QWidget()
         chart_layout = QVBoxLayout(chart_tab)
@@ -385,9 +473,16 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         self.plot_widget.showGrid(x=True, y=True, alpha=0.2)
         self.plot_widget.setLabel("bottom", "Index", color="#5f78a8")
         self.plot_widget.setLabel("left", "Value", color="#5f78a8")
+        axis_pen = pg.mkPen(color="#1a2d57", width=1)
+        for axis_name in ("bottom", "left"):
+            ax = self.plot_widget.getAxis(axis_name)
+            ax.setPen(axis_pen)
+            ax.setTextPen(pg.mkPen(color="#5f78a8"))
         self.plot_widget.addLegend(offset=(-10, 10))
         chart_layout.addWidget(self.plot_widget)
-        tabs.addTab(chart_tab, "📈 Chart")
+        tabs.addTab(chart_tab, "Chart")
+        if os.path.isfile(chart_icon_path):
+            tabs.setTabIcon(2, _tinted_svg_icon(chart_icon_path, "#5f78a8"))
 
         layout.addWidget(tabs)
         return widget
@@ -449,28 +544,15 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         from ui.pages.custom_test.node_palette import INSTRUMENT_REGISTRY
 
         menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background-color: #0b1428;
-                color: #dce7ff;
-                border: 1px solid #1a2d57;
-                border-radius: 6px;
-                padding: 4px;
-            }
-            QMenu::item {
-                padding: 6px 16px;
-                border-radius: 4px;
-            }
-            QMenu::item:selected {
-                background-color: #1a2d57;
-            }
-        """)
+        menu.setStyleSheet(_CONTEXT_MENU_STYLE)
 
-        instr_submenu = menu.addMenu("🔬 Instruments")
-        instr_submenu.setStyleSheet(menu.styleSheet())
+        microscope_path = os.path.join(_ICONS_DIR, "microscope.svg")
+        instr_icon = _tinted_svg_icon(microscope_path, "#dce7ff") if os.path.isfile(microscope_path) else QIcon()
+        instr_submenu = menu.addMenu(instr_icon, "Instruments")
+        instr_submenu.setStyleSheet(_CONTEXT_MENU_STYLE)
         for instr in INSTRUMENT_REGISTRY:
             sub = instr_submenu.addMenu(f"{instr['name']}")
-            sub.setStyleSheet(menu.styleSheet())
+            sub.setStyleSheet(_CONTEXT_MENU_STYLE)
             for op in instr["operations"]:
                 cls = get_node_class(op["node_type"])
                 icon_text = cls.icon if cls else "▸"
@@ -508,30 +590,11 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
             return
 
         menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background-color: #0b1428;
-                color: #dce7ff;
-                border: 1px solid #1a2d57;
-                border-radius: 6px;
-                padding: 4px;
-            }
-            QMenu::item {
-                padding: 8px 20px;
-                border-radius: 4px;
-                font-size: 12px;
-            }
-            QMenu::item:selected {
-                background-color: #1a2d57;
-            }
-            QMenu::separator {
-                height: 1px;
-                background: #1a2d57;
-                margin: 4px 8px;
-            }
-        """)
+        menu.setStyleSheet(_CONTEXT_MENU_STYLE)
 
-        title_action = menu.addAction(f"🔬 {instr['name']} — Select Operation")
+        microscope_path = os.path.join(_ICONS_DIR, "microscope.svg")
+        title_icon = _tinted_svg_icon(microscope_path, "#5f78a8") if os.path.isfile(microscope_path) else QIcon()
+        title_action = menu.addAction(title_icon, f"{instr['name']} — Select Operation")
         title_action.setEnabled(False)
         menu.addSeparator()
 
@@ -587,6 +650,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
 
         self.result_table.setRowCount(0)
         self.result_table.setColumnCount(0)
+        self._table_empty_label.setVisible(True)
         self.plot_widget.clear()
         self._plot_curves = {}
         self._plot_data = {}
@@ -613,7 +677,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
             ctx = self._executor_thread.executor.context
             if ctx and ctx.should_pause:
                 ctx.request_resume()
-                self.canvas.pause_btn.setText("⏸ Pause")
+                self.canvas.pause_btn.setText("∥ Pause")
                 self.logs_frame.append_log("[USER] 已恢复执行")
             elif ctx:
                 ctx.request_pause()
@@ -634,6 +698,8 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         """数据记录回调 —— 更新表格和图表"""
         if not row:
             return
+
+        self._table_empty_label.setVisible(False)
 
         keys = list(row.keys())
         if self.result_table.columnCount() == 0:
@@ -669,7 +735,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
     def _on_execution_finished(self, success: bool, message: str) -> None:
         """执行完成回调"""
         self.canvas.set_running_state(False)
-        self.canvas.pause_btn.setText("⏸ Pause")
+        self.canvas.pause_btn.setText("∥ Pause")
 
         if success and self._context and self._context.records:
             self._auto_export_csv()

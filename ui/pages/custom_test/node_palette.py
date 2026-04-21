@@ -6,11 +6,11 @@ import os
 from typing import Dict, List, Optional, Type
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QFrame,
-    QScrollArea, QSizePolicy, QGridLayout,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
+    QScrollArea, QSizePolicy, QGridLayout, QPushButton,
 )
-from PySide6.QtCore import Qt, Signal, QMimeData
-from PySide6.QtGui import QDrag, QPixmap, QImage, QPainter
+from PySide6.QtCore import Qt, Signal, QMimeData, QRectF
+from PySide6.QtGui import QDrag, QPixmap, QImage, QPainter, QColor, QIcon
 from PySide6.QtSvg import QSvgRenderer
 
 from ui.pages.custom_test.nodes.base_node import BaseNode, get_nodes_by_category
@@ -23,6 +23,116 @@ _ICONS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
     "resources", "icons"
 )
+
+
+def _tinted_svg_pixmap(svg_path: str, color: str, size: int = 16) -> QPixmap:
+    renderer = QSvgRenderer(svg_path)
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setRenderHint(QPainter.SmoothPixmapTransform)
+    renderer.render(painter, QRectF(0, 0, size, size))
+    painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+    painter.fillRect(pixmap.rect(), QColor(color))
+    painter.end()
+    return pixmap
+
+
+_COLLAPSE_HEADER_STYLE = """
+    QPushButton#collapseHeader {
+        background-color: transparent;
+        color: #5f78a8;
+        border: none;
+        border-radius: 4px;
+        padding: 6px 4px;
+        font-size: 11px;
+        font-weight: 700;
+        text-align: left;
+    }
+    QPushButton#collapseHeader:hover {
+        background-color: #0e1f3d;
+        color: #8899bb;
+    }
+"""
+
+
+class CollapsibleSection(QWidget):
+
+    def __init__(
+        self,
+        title: str,
+        icon_svg: Optional[str] = None,
+        expanded: bool = True,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self._expanded = expanded
+        self.setStyleSheet("QWidget { background: transparent; border: none; }")
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        self._toggle_btn = QPushButton()
+        self._toggle_btn.setObjectName("collapseHeader")
+        self._toggle_btn.setCursor(Qt.PointingHandCursor)
+        self._toggle_btn.setStyleSheet(_COLLAPSE_HEADER_STYLE)
+        self._toggle_btn.clicked.connect(self.toggle)
+
+        btn_layout = QHBoxLayout(self._toggle_btn)
+        btn_layout.setContentsMargins(4, 0, 4, 0)
+        btn_layout.setSpacing(4)
+
+        self._arrow_label = QLabel()
+        self._arrow_label.setFixedSize(12, 12)
+        self._arrow_label.setStyleSheet("background: transparent; border: none;")
+        btn_layout.addWidget(self._arrow_label)
+
+        if icon_svg and os.path.isfile(icon_svg):
+            cat_icon = QLabel()
+            cat_icon.setPixmap(_tinted_svg_pixmap(icon_svg, "#5f78a8", 12))
+            cat_icon.setFixedSize(14, 14)
+            cat_icon.setStyleSheet("background: transparent; border: none;")
+            btn_layout.addWidget(cat_icon)
+
+        text_label = QLabel(title)
+        text_label.setStyleSheet(
+            "color: #5f78a8; font-size: 11px; font-weight: 700; "
+            "letter-spacing: 1px; padding: 0px; background: transparent; border: none;"
+        )
+        btn_layout.addWidget(text_label)
+        btn_layout.addStretch()
+
+        root.addWidget(self._toggle_btn)
+
+        self._content = QWidget()
+        self._content.setStyleSheet("QWidget { background: transparent; border: none; }")
+        self._content_layout = QVBoxLayout(self._content)
+        self._content_layout.setContentsMargins(0, 2, 0, 0)
+        self._content_layout.setSpacing(4)
+        root.addWidget(self._content)
+
+        self._update_state()
+
+    @property
+    def content_layout(self) -> QVBoxLayout:
+        return self._content_layout
+
+    def toggle(self) -> None:
+        self._expanded = not self._expanded
+        self._update_state()
+
+    def _update_state(self) -> None:
+        self._content.setVisible(self._expanded)
+        chevron_down = os.path.join(_ICONS_DIR, "chevron-down.svg")
+        chevron_right = os.path.join(_ICONS_DIR, "chevron-right.svg")
+        if self._expanded and os.path.isfile(chevron_down):
+            self._arrow_label.setPixmap(_tinted_svg_pixmap(chevron_down, "#5f78a8", 12))
+        elif not self._expanded and os.path.isfile(chevron_right):
+            self._arrow_label.setPixmap(_tinted_svg_pixmap(chevron_right, "#5f78a8", 12))
+        else:
+            self._arrow_label.setText("▾" if self._expanded else "▸")
 
 INSTRUMENT_REGISTRY: List[Dict] = [
     {
@@ -168,7 +278,11 @@ class InstrumentCard(QFrame):
             )
             thumb_label.setPixmap(pixmap)
         else:
-            thumb_label.setText("📦")
+            box_svg = os.path.join(_ICONS_DIR, "box.svg")
+            if os.path.isfile(box_svg):
+                thumb_label.setPixmap(_tinted_svg_pixmap(box_svg, instr_info["color"], 32))
+            else:
+                thumb_label.setText("?")
             thumb_label.setStyleSheet(
                 "background: transparent; border: none; font-size: 24px;"
             )
@@ -295,7 +409,7 @@ class NodePalette(QWidget):
         inner = QWidget()
         inner.setStyleSheet("QWidget { background: transparent; border: none; }")
         self._inner_layout = QVBoxLayout(inner)
-        self._inner_layout.setContentsMargins(8, 4, 8, 8)
+        self._inner_layout.setContentsMargins(0, 4, 0, 8)
         self._inner_layout.setSpacing(4)
 
         self._build_instrument_section()
@@ -306,9 +420,13 @@ class NodePalette(QWidget):
         root_layout.addWidget(scroll)
 
     def _build_instrument_section(self) -> None:
-        title = QLabel("🔬 Instruments")
-        title.setObjectName("categoryTitle")
-        self._inner_layout.addWidget(title)
+        microscope_path = os.path.join(_ICONS_DIR, "microscope.svg")
+        section = CollapsibleSection(
+            "Instruments",
+            icon_svg=microscope_path,
+            expanded=True,
+            parent=self,
+        )
 
         grid = QGridLayout()
         grid.setSpacing(6)
@@ -324,23 +442,34 @@ class NodePalette(QWidget):
         grid_widget = QWidget()
         grid_widget.setStyleSheet("QWidget { background: transparent; border: none; }")
         grid_widget.setLayout(grid)
-        self._inner_layout.addWidget(grid_widget)
+        section.content_layout.addWidget(grid_widget)
+
+        self._inner_layout.addWidget(section)
 
     def _build_category_sections(self) -> None:
-        for cat_key, meta in [("logic", {"title": "🔀 Logic / Flow"}),
-                               ("io", {"title": "💾 Data I/O"})]:
+        _cat_icons = {
+            "logic": ("git-branch.svg", "Logic / Flow"),
+            "io": ("hard-drive.svg", "Data I/O"),
+        }
+        for cat_key, (icon_file, cat_label) in _cat_icons.items():
             nodes = get_nodes_by_category(cat_key)
             if not nodes:
                 continue
 
-            title_label = QLabel(meta["title"])
-            title_label.setObjectName("categoryTitle")
-            self._inner_layout.addWidget(title_label)
+            svg_path = os.path.join(_ICONS_DIR, icon_file)
+            section = CollapsibleSection(
+                cat_label,
+                icon_svg=svg_path if os.path.isfile(svg_path) else None,
+                expanded=False,
+                parent=self,
+            )
 
             for node_cls in nodes:
                 item = PaletteItem(node_cls, self)
                 item.double_clicked.connect(self._on_item_double_clicked)
-                self._inner_layout.addWidget(item)
+                section.content_layout.addWidget(item)
+
+            self._inner_layout.addWidget(section)
 
     def _on_item_double_clicked(self, node_type: str) -> None:
         self.node_requested.emit(node_type)

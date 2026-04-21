@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any, Dict, List, Optional
 
 from PySide6.QtWidgets import (
@@ -10,16 +11,36 @@ from PySide6.QtWidgets import (
     QPushButton, QMenu, QFileDialog, QMessageBox,
     QAbstractItemView, QStyledItemDelegate, QStyleOptionViewItem, QStyle,
 )
-from PySide6.QtCore import Qt, Signal, QPoint, QRect, QModelIndex, QSize
+from PySide6.QtCore import Qt, Signal, QPoint, QRect, QModelIndex, QSize, QRectF
 from PySide6.QtGui import (
-    QColor, QPainter, QPen, QBrush, QFont, QFontMetrics,
+    QColor, QPainter, QPen, QBrush, QFont, QFontMetrics, QPixmap, QIcon,
     QDragEnterEvent, QDragMoveEvent, QDropEvent,
 )
+from PySide6.QtSvg import QSvgRenderer
 
 from ui.pages.custom_test.nodes.base_node import BaseNode, get_node_class
 from log_config import get_logger
 
 logger = get_logger(__name__)
+
+_ICONS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    "resources", "icons"
+)
+
+
+def _tinted_svg_icon(svg_path: str, color: str, size: int = 16) -> QIcon:
+    renderer = QSvgRenderer(svg_path)
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setRenderHint(QPainter.SmoothPixmapTransform)
+    renderer.render(painter, QRectF(0, 0, size, size))
+    painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+    painter.fillRect(pixmap.rect(), QColor(color))
+    painter.end()
+    return QIcon(pixmap)
 
 _DEPTH_COLORS = [
     "#2f80ed",
@@ -505,14 +526,14 @@ class SequenceCanvas(QWidget):
         ))
         exec_bar.addWidget(self.run_btn)
 
-        self.pause_btn = QPushButton("⏸ Pause")
+        self.pause_btn = QPushButton("∥ Pause")
         self.pause_btn.setStyleSheet(_EXEC_BTN_STYLE.format(
             bg="#2d2400", border="#f2b705", fg="#f2d605", hover="#3d3200"
         ))
         self.pause_btn.setEnabled(False)
         exec_bar.addWidget(self.pause_btn)
 
-        self.stop_btn = QPushButton("⏹ Stop")
+        self.stop_btn = QPushButton("■ Stop")
         self.stop_btn.setStyleSheet(_EXEC_BTN_STYLE.format(
             bg="#3a0828", border="#d61b67", fg="#ffb7d3", hover="#4a0b31"
         ))
@@ -562,7 +583,9 @@ class SequenceCanvas(QWidget):
         menu = QMenu(self)
         menu.setStyleSheet(_DROP_MENU_STYLE)
 
-        title_action = menu.addAction(f"🔬 {instr['name']} — Select Operation")
+        microscope_path = os.path.join(_ICONS_DIR, "microscope.svg")
+        title_icon = _tinted_svg_icon(microscope_path, "#5f78a8") if os.path.isfile(microscope_path) else QIcon()
+        title_action = menu.addAction(title_icon, f"{instr['name']} — Select Operation")
         title_action.setEnabled(False)
         menu.addSeparator()
 

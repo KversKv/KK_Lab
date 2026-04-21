@@ -21,7 +21,7 @@ class LoopRange(BaseNode):
     node_type = "LoopRange"
     display_name = "Loop (Range)"
     category = "logic"
-    icon = "🔁"
+    icon = "↻"
     color = "#2f80ed"
 
     PARAM_SCHEMA = [
@@ -78,7 +78,7 @@ class LoopList(BaseNode):
     node_type = "LoopList"
     display_name = "Loop (List)"
     category = "logic"
-    icon = "🔁"
+    icon = "↻"
     color = "#2f80ed"
 
     PARAM_SCHEMA = [
@@ -132,7 +132,7 @@ class IfElse(BaseNode):
     node_type = "IfElse"
     display_name = "If / Else"
     category = "logic"
-    icon = "🔀"
+    icon = "⋔"
     color = "#e74c3c"
 
     PARAM_SCHEMA = [
@@ -164,7 +164,7 @@ class SetVariable(BaseNode):
     node_type = "SetVariable"
     display_name = "Set Variable"
     category = "logic"
-    icon = "📝"
+    icon = "≔"
     color = "#9b59b6"
 
     PARAM_SCHEMA = [
@@ -189,7 +189,7 @@ class Delay(BaseNode):
     node_type = "Delay"
     display_name = "Delay"
     category = "logic"
-    icon = "⏱"
+    icon = "◷"
     color = "#7f8c8d"
 
     PARAM_SCHEMA = [
@@ -213,7 +213,7 @@ class MathExpression(BaseNode):
     node_type = "MathExpression"
     display_name = "Math Expression"
     category = "logic"
-    icon = "🔢"
+    icon = "Σ"
     color = "#16a085"
 
     PARAM_SCHEMA = [
@@ -235,7 +235,7 @@ class BreakNode(BaseNode):
     node_type = "Break"
     display_name = "Break"
     category = "logic"
-    icon = "⏏"
+    icon = "⊘"
     color = "#e74c3c"
 
     PARAM_SCHEMA: List[Dict[str, Any]] = []
@@ -251,7 +251,7 @@ class ContinueNode(BaseNode):
     node_type = "Continue"
     display_name = "Continue"
     category = "logic"
-    icon = "⏭"
+    icon = "⇥"
     color = "#e67e22"
 
     PARAM_SCHEMA: List[Dict[str, Any]] = []
@@ -267,7 +267,7 @@ class WaitUntil(BaseNode):
     node_type = "WaitUntil"
     display_name = "Wait Until"
     category = "logic"
-    icon = "⏳"
+    icon = "◴"
     color = "#7f8c8d"
 
     PARAM_SCHEMA = [
@@ -312,7 +312,7 @@ class IfThenStop(BaseNode):
     node_type = "IfThenStop"
     display_name = "If Then Stop"
     category = "logic"
-    icon = "🛑"
+    icon = "⊗"
     color = "#e74c3c"
 
     PARAM_SCHEMA = [
@@ -338,7 +338,7 @@ class IfThenElse(BaseNode):
     node_type = "IfThenElse"
     display_name = "If / Then / Else"
     category = "logic"
-    icon = "🔀"
+    icon = "⋔"
     color = "#e74c3c"
 
     PARAM_SCHEMA = [
@@ -371,7 +371,7 @@ class PromptUser(BaseNode):
     node_type = "PromptUser"
     display_name = "Prompt / Ask User"
     category = "logic"
-    icon = "💬"
+    icon = "⊙"
     color = "#3498db"
 
     PARAM_SCHEMA = [
@@ -423,7 +423,7 @@ class PassFailTest(BaseNode):
     node_type = "PassFailTest"
     display_name = "Pass/Fail Test"
     category = "logic"
-    icon = "✅"
+    icon = "◈"
     color = "#27ae60"
 
     PARAM_SCHEMA = [
@@ -457,7 +457,7 @@ class Group(BaseNode):
     node_type = "Group"
     display_name = "Group"
     category = "logic"
-    icon = "📦"
+    icon = "▣"
     color = "#8e44ad"
 
     PARAM_SCHEMA = [
@@ -481,7 +481,7 @@ class LoopCount(BaseNode):
     node_type = "LoopCount"
     display_name = "Loop (Count)"
     category = "logic"
-    icon = "🔁"
+    icon = "↻"
     color = "#2f80ed"
 
     PARAM_SCHEMA = [
@@ -518,7 +518,7 @@ class LoopDuration(BaseNode):
     node_type = "LoopDuration"
     display_name = "Loop (Duration)"
     category = "logic"
-    icon = "🔁"
+    icon = "↻"
     color = "#2f80ed"
 
     PARAM_SCHEMA = [
@@ -560,7 +560,7 @@ class WhileLoop(BaseNode):
     node_type = "WhileLoop"
     display_name = "While (Condition)"
     category = "logic"
-    icon = "🔁"
+    icon = "↻"
     color = "#2f80ed"
 
     PARAM_SCHEMA = [
@@ -600,7 +600,7 @@ class RepeatUntil(BaseNode):
     node_type = "RepeatUntil"
     display_name = "Repeat Until"
     category = "logic"
-    icon = "🔁"
+    icon = "↻"
     color = "#2f80ed"
 
     PARAM_SCHEMA = [

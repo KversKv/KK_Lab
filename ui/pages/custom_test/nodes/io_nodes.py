@@ -20,7 +20,7 @@ class RecordDataPoint(BaseNode):
     node_type = "RecordDataPoint"
     display_name = "Record Data"
     category = "io"
-    icon = "💾"
+    icon = "◉"
     color = "#2ecc71"
 
     PARAM_SCHEMA = [
@@ -73,7 +73,7 @@ class ExportResult(BaseNode):
     node_type = "ExportResult"
     display_name = "Export Result"
     category = "io"
-    icon = "📤"
+    icon = "⇧"
     color = "#e67e22"
 
     PARAM_SCHEMA = [
