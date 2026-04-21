@@ -214,6 +214,12 @@ class _HighLowTempTestWorker(QObject):
                 break
 
             chamber.set_temperature(t)
+            if idx == 0:
+                try:
+                    chamber.start()
+                    self.log.emit("[INFO] Chamber start command sent.")
+                except Exception as e:
+                    self.log.emit(f"[WARN] Chamber start command failed: {e}")
             self.log.emit(f"[INFO] [{idx + 1}/{total_temps}] Chamber set temperature: {t:.1f} °C, waiting for stabilization...")
 
             history = []
