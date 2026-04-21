@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 import re
 import operator
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from log_config import get_logger
 
@@ -106,6 +106,27 @@ def _safe_eval_node(node: ast.AST, variables: Dict[str, Any]) -> Any:
 _VAR_PATTERN = re.compile(r"\$\{(\w+)}")
 
 
+class BreakLoop(Exception):
+    pass
+
+
+class ContinueLoop(Exception):
+    pass
+
+
+class StopExecution(Exception):
+    def __init__(self, message: str = ""):
+        self.message = message
+        super().__init__(message)
+
+
+class TestResultException(Exception):
+    def __init__(self, passed: bool, message: str = ""):
+        self.passed = passed
+        self.message = message
+        super().__init__(message)
+
+
 class ExecutionContext:
     """执行上下文：管理变量池、结果集和仪器句柄"""
 
@@ -124,10 +145,22 @@ class ExecutionContext:
         self._pause_requested: bool = False
         self._step_mode: bool = False
         self._step_event_cleared: bool = True
+        self._no_export_vars: Set[str] = set()
+        self._user_response: Optional[str] = None
+        self._user_response_ready = False
+        self._test_passed: Optional[bool] = None
+        self._test_message: str = ""
 
-    def set_variable(self, name: str, value: Any) -> None:
+    def set_variable(self, name: str, value: Any, export: bool = True) -> None:
         """设置变量"""
         self.variables[name] = value
+        if not export:
+            self._no_export_vars.add(name)
+        else:
+            self._no_export_vars.discard(name)
+
+    def is_export_var(self, name: str) -> bool:
+        return name not in self._no_export_vars
 
     def get_variable(self, name: str, default: Any = None) -> Any:
         """获取变量"""
@@ -164,6 +197,35 @@ class ExecutionContext:
         tree = ast.parse(resolved, mode="eval")
         return _safe_eval_node(tree, self.variables)
 
+    def resolve_scalar(self, raw: Any) -> Any:
+        value = self.resolve_value(raw)
+        if isinstance(value, (list, tuple)):
+            if len(value) == 1:
+                return value[0]
+            if len(value) == 0:
+                return None
+        return value
+
+    def evaluate_condition(self, condition_expr: str) -> bool:
+        saved = {}
+        for k, v in self.variables.items():
+            if isinstance(v, (list, tuple)) and len(v) == 1:
+                saved[k] = v
+                self.variables[k] = v[0]
+        try:
+            result = self.evaluate_expression(condition_expr)
+        except Exception as e:
+            logger.error("条件表达式求值失败: %s => %s", condition_expr, e)
+            result = False
+        finally:
+            self.variables.update(saved)
+
+        if isinstance(result, (list, tuple)):
+            if len(result) == 1:
+                return bool(result[0])
+            return len(result) > 0
+        return bool(result)
+
     def record_data(self, row: Dict[str, Any]) -> None:
         """记录一行数据"""
         self.records.append(dict(row))
@@ -195,3 +257,8 @@ class ExecutionContext:
         self._stop_requested = False
         self._pause_requested = False
         self._step_mode = False
+        self._no_export_vars.clear()
+        self._user_response = None
+        self._user_response_ready = False
+        self._test_passed = None
+        self._test_message = ""

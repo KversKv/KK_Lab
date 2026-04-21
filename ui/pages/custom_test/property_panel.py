@@ -106,7 +106,8 @@ class PropertyPanel(QWidget):
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         self._inner = QWidget()
-        self._inner.setStyleSheet("QWidget { background: transparent; border: none; }")
+        self._inner.setObjectName("propInner")
+        self._inner.setStyleSheet("QWidget#propInner { background: transparent; border: none; }")
         self._inner_layout = QVBoxLayout(self._inner)
         self._inner_layout.setContentsMargins(8, 8, 8, 8)
         self._inner_layout.setSpacing(8)
@@ -162,12 +163,17 @@ class PropertyPanel(QWidget):
         sep.setStyleSheet("QFrame { background-color: #1a2d57; border: none; }")
         card_layout.addWidget(sep)
 
+        schema_map = {s["key"]: s for s in node.PARAM_SCHEMA}
+
         for schema in node.PARAM_SCHEMA:
             key = schema["key"]
             label_text = schema.get("label", key)
             param_type = schema.get("type", "str")
             current_val = node.params.get(key, schema.get("default"))
             options = schema.get("options")
+
+            if key == "export_var":
+                continue
 
             field_label = QLabel(label_text)
             field_label.setObjectName("fieldLabel")
@@ -190,10 +196,38 @@ class PropertyPanel(QWidget):
                 self._editors[key] = combo
 
             else:
-                le = QLineEdit(str(current_val) if current_val is not None else "")
-                le.editingFinished.connect(lambda k=key, e=le: self._on_param_changed(k, e.text()))
-                card_layout.addWidget(le)
-                self._editors[key] = le
+                has_export = "export_var" in schema_map
+                show_inline_export = has_export and key in ("result_var", "var_name")
+                if show_inline_export:
+                    export_schema = schema_map["export_var"]
+                    row_layout = QHBoxLayout()
+                    row_layout.setSpacing(6)
+                    row_layout.setContentsMargins(0, 0, 0, 0)
+
+                    le = QLineEdit(str(current_val) if current_val is not None else "")
+                    le.editingFinished.connect(lambda k=key, e=le: self._on_param_changed(k, e.text()))
+                    row_layout.addWidget(le, 1)
+                    self._editors[key] = le
+
+                    export_val = node.params.get("export_var", export_schema.get("default", True))
+                    export_cb = QCheckBox("导出")
+                    export_cb.setChecked(bool(export_val))
+                    export_cb.setToolTip("勾选则该变量参与数据记录导出")
+                    export_cb.setStyleSheet(
+                        "QCheckBox { color: #8eb0e3; font-size: 10px; background: transparent; border: none; }"
+                    )
+                    export_cb.toggled.connect(
+                        lambda checked: self._on_param_changed("export_var", checked)
+                    )
+                    row_layout.addWidget(export_cb)
+                    self._editors["export_var"] = export_cb
+
+                    card_layout.addLayout(row_layout)
+                else:
+                    le = QLineEdit(str(current_val) if current_val is not None else "")
+                    le.editingFinished.connect(lambda k=key, e=le: self._on_param_changed(k, e.text()))
+                    card_layout.addWidget(le)
+                    self._editors[key] = le
 
         self._inner_layout.addWidget(card)
         self._inner_layout.addStretch()

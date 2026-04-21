@@ -9,6 +9,9 @@ from ui.pages.custom_test.nodes.instrument_nodes import (
 )
 from ui.pages.custom_test.nodes.logic_nodes import (
     LoopRange, LoopList, IfElse, SetVariable, Delay, MathExpression,
+    BreakNode, ContinueNode, WaitUntil, IfThenStop, IfThenElse,
+    PromptUser, PassFailTest, Group, LoopCount, LoopDuration,
+    WhileLoop, RepeatUntil,
 )
 from ui.pages.custom_test.nodes.io_nodes import RecordDataPoint, ExportResult
 
@@ -19,5 +22,8 @@ __all__ = [
     "ScopeMeasureFreq", "ScopeMeasure", "RFAnalyzerMeasure",
     "I2CRead", "I2CWrite", "I2CTraverse",
     "LoopRange", "LoopList", "IfElse", "SetVariable", "Delay", "MathExpression",
+    "BreakNode", "ContinueNode", "WaitUntil", "IfThenStop", "IfThenElse",
+    "PromptUser", "PassFailTest", "Group", "LoopCount", "LoopDuration",
+    "WhileLoop", "RepeatUntil",
     "RecordDataPoint", "ExportResult",
 ]

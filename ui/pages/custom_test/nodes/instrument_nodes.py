@@ -110,6 +110,7 @@ class N6705CMeasure(BaseNode):
         {"key": "measure_type", "label": "测量类型", "type": "str", "default": "current",
          "options": ["voltage", "current", "power"]},
         {"key": "result_var", "label": "结果存入变量", "type": "str", "default": "N6705C_result"},
+        {"key": "export_var", "label": "导出变量到记录", "type": "bool", "default": True},
     ]
 
     def execute(self, context: Any) -> None:
@@ -120,6 +121,7 @@ class N6705CMeasure(BaseNode):
         ch = int(context.resolve_value(self.params["channel"]))
         measure_type = str(context.resolve_value(self.params["measure_type"]))
         result_var = str(context.resolve_value(self.params["result_var"]))
+        export_var = bool(context.resolve_value(self.params.get("export_var", True)))
 
         if measure_type == "voltage":
             value = float(n6705c.measure_voltage(ch))
@@ -133,9 +135,9 @@ class N6705CMeasure(BaseNode):
             raise ValueError(f"未知测量类型: {measure_type}")
 
         logger.info("N6705C CH%d %s = %s", ch, measure_type, value)
-        context.set_variable(result_var, value)
+        context.set_variable(result_var, value, export=export_var)
         auto_key = f"N6705C_CH{ch}_{measure_type}"
-        context.set_variable(auto_key, value)
+        context.set_variable(auto_key, value, export=export_var)
 
 
 @register_node
@@ -153,6 +155,7 @@ class I2CRead(BaseNode):
         {"key": "width", "label": "I2C Width", "type": "int", "default": 10,
          "options": [8, 10, 32]},
         {"key": "result_var", "label": "结果存入变量", "type": "str", "default": "i2c_read_val"},
+        {"key": "export_var", "label": "导出变量到记录", "type": "bool", "default": True},
         {"key": "auto_record", "label": "自动记录数据", "type": "bool", "default": True},
     ]
 
@@ -165,10 +168,11 @@ class I2CRead(BaseNode):
         reg = int(str(context.resolve_value(self.params["reg_addr"])).strip(), 16)
         width = int(context.resolve_value(self.params["width"]))
         result_var = str(context.resolve_value(self.params["result_var"]))
+        export_var = bool(context.resolve_value(self.params.get("export_var", True)))
 
         val = i2c.read(dev, reg, width)
         logger.info("I2C Read: dev=0x%02X reg=0x%X width=%d => 0x%X", dev, reg, width, val)
-        context.set_variable(result_var, val)
+        context.set_variable(result_var, val, export=export_var)
 
         auto_record = context.resolve_value(self.params.get("auto_record", True))
         if auto_record:
@@ -278,6 +282,7 @@ class ScopeMeasureFreq(BaseNode):
         {"key": "channel", "label": "通道", "type": "int", "default": 1,
          "options": [1, 2, 3, 4]},
         {"key": "result_var", "label": "结果存入变量", "type": "str", "default": "scope_freq"},
+        {"key": "export_var", "label": "导出变量到记录", "type": "bool", "default": True},
     ]
 
     def execute(self, context: Any) -> None:
@@ -287,6 +292,7 @@ class ScopeMeasureFreq(BaseNode):
 
         ch = int(context.resolve_value(self.params["channel"]))
         result_var = str(context.resolve_value(self.params["result_var"]))
+        export_var = bool(context.resolve_value(self.params.get("export_var", True)))
 
         if hasattr(scope, "get_dvm_frequency"):
             freq = scope.get_dvm_frequency()
@@ -296,8 +302,8 @@ class ScopeMeasureFreq(BaseNode):
             raise RuntimeError("示波器不支持频率测量")
 
         logger.info("Scope CH%d freq = %.4f Hz", ch, freq)
-        context.set_variable(result_var, freq)
-        context.set_variable(f"scope_CH{ch}_freq", freq)
+        context.set_variable(result_var, freq, export=export_var)
+        context.set_variable(f"scope_CH{ch}_freq", freq, export=export_var)
 
 
 @register_node
@@ -316,6 +322,7 @@ class ScopeMeasure(BaseNode):
         {"key": "measure_type", "label": "测量类型", "type": "str", "default": "pk2pk",
          "options": ["pk2pk", "rms", "mean", "max", "min", "frequency"]},
         {"key": "result_var", "label": "结果存入变量", "type": "str", "default": "scope_result"},
+        {"key": "export_var", "label": "导出变量到记录", "type": "bool", "default": True},
     ]
 
     def execute(self, context: Any) -> None:
@@ -326,6 +333,7 @@ class ScopeMeasure(BaseNode):
         ch = int(context.resolve_value(self.params["channel"]))
         mtype = str(context.resolve_value(self.params["measure_type"]))
         result_var = str(context.resolve_value(self.params["result_var"]))
+        export_var = bool(context.resolve_value(self.params.get("export_var", True)))
 
         method_map = {
             "pk2pk": "get_channel_pk2pk",
@@ -341,8 +349,8 @@ class ScopeMeasure(BaseNode):
 
         value = getattr(scope, method_name)(ch)
         logger.info("Scope CH%d %s = %s", ch, mtype, value)
-        context.set_variable(result_var, value)
-        context.set_variable(f"scope_CH{ch}_{mtype}", value)
+        context.set_variable(result_var, value, export=export_var)
+        context.set_variable(f"scope_CH{ch}_{mtype}", value, export=export_var)
 
 
 @register_node
@@ -360,6 +368,7 @@ class RFAnalyzerMeasure(BaseNode):
          "options": ["tx_power", "rx_sensitivity", "evm", "aclr"]},
         {"key": "frequency_mhz", "label": "频率 (MHz)", "type": "float", "default": 2402.0},
         {"key": "result_var", "label": "结果存入变量", "type": "str", "default": "rf_result"},
+        {"key": "export_var", "label": "导出变量到记录", "type": "bool", "default": True},
     ]
 
     def execute(self, context: Any) -> None:
@@ -370,10 +379,11 @@ class RFAnalyzerMeasure(BaseNode):
         mtype = str(context.resolve_value(self.params["measure_type"]))
         freq = float(context.resolve_value(self.params["frequency_mhz"]))
         result_var = str(context.resolve_value(self.params["result_var"]))
+        export_var = bool(context.resolve_value(self.params.get("export_var", True)))
 
         if hasattr(rf, "measure"):
             value = rf.measure(mtype, freq)
         else:
             raise RuntimeError("综测仪驱动未实现 measure() 方法")
 
-        context.set_variable(result_var, value)
+        context.set_variable(result_var, value, export=export_var)

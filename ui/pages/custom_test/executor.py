@@ -10,7 +10,9 @@ from PySide6.QtCore import QObject, QThread, Signal
 
 from log_config import get_logger
 from ui.pages.custom_test.nodes.base_node import BaseNode
-from ui.pages.custom_test.context import ExecutionContext
+from ui.pages.custom_test.context import (
+    ExecutionContext, BreakLoop, ContinueLoop, StopExecution, TestResultException,
+)
 
 logger = get_logger(__name__)
 
@@ -22,7 +24,12 @@ def _execute_children(children: List[BaseNode], context: ExecutionContext) -> No
             return
         while context.should_pause and not context.should_stop:
             time.sleep(0.1)
-        _execute_node(child, context)
+        try:
+            _execute_node(child, context)
+        except ContinueLoop:
+            return
+        except BreakLoop:
+            raise
 
 
 def _execute_node(node: BaseNode, context: ExecutionContext) -> None:
@@ -106,9 +113,26 @@ class CustomTestExecutor(QObject):
             if self._context.should_stop:
                 self.log_message.emit("[STOP] 执行被用户中止")
                 self.finished.emit(False, "用户中止")
+            elif self._context._test_passed is not None:
+                if self._context._test_passed:
+                    self.log_message.emit(f"[PASS] 测试通过 — {self._context._test_message}")
+                    self.finished.emit(True, f"测试通过: {self._context._test_message}")
+                else:
+                    self.log_message.emit(f"[FAIL] 测试失败 — {self._context._test_message}")
+                    self.finished.emit(False, f"测试失败: {self._context._test_message}")
             else:
                 self.log_message.emit(f"[DONE] 执行完成，记录 {len(self._context.records)} 行数据")
                 self.finished.emit(True, "执行完成")
+        except StopExecution as e:
+            self.log_message.emit(f"[STOP] {e.message or '执行已停止'}")
+            self.finished.emit(False, e.message or "执行已停止")
+        except TestResultException as e:
+            if e.passed:
+                self.log_message.emit(f"[PASS] {e.message}")
+                self.finished.emit(True, f"测试通过: {e.message}")
+            else:
+                self.log_message.emit(f"[FAIL] {e.message}")
+                self.finished.emit(False, f"测试失败: {e.message}")
         except Exception as e:
             tb = traceback.format_exc()
             logger.error("执行异常: %s\n%s", e, tb)

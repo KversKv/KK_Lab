@@ -26,10 +26,12 @@ class RecordDataPoint(BaseNode):
     PARAM_SCHEMA = [
         {"key": "fields", "label": "字段映射 (JSON 或 key=value 逗号分隔)", "type": "str",
          "default": "temp=${temp}, voltage=${voltage}, current=${N6705C_CH1_current}"},
+        {"key": "skip_no_export", "label": "跳过未导出的变量", "type": "bool", "default": True},
     ]
 
     def execute(self, context: Any) -> None:
         raw = str(self.params["fields"])
+        skip_no_export = bool(context.resolve_value(self.params.get("skip_no_export", True)))
         row: Dict[str, Any] = {}
 
         if raw.strip().startswith("{"):
@@ -37,16 +39,28 @@ class RecordDataPoint(BaseNode):
             try:
                 template = json.loads(raw)
                 for k, v in template.items():
-                    row[k] = context.resolve_value(v)
+                    resolved = context.resolve_value(v)
+                    if isinstance(resolved, (list, tuple)):
+                        resolved = resolved[-1] if resolved else None
+                    row[k] = resolved
             except Exception:
                 pass
         else:
+            import re
+            var_pat = re.compile(r"^\$\{(\w+)\}$")
             pairs = [p.strip() for p in raw.split(",")]
             for pair in pairs:
                 if "=" not in pair:
                     continue
                 key, val = pair.split("=", 1)
-                row[key.strip()] = context.resolve_value(val.strip())
+                val = val.strip()
+                m = var_pat.match(val)
+                if m and skip_no_export and not context.is_export_var(m.group(1)):
+                    continue
+                resolved = context.resolve_value(val)
+                if isinstance(resolved, (list, tuple)):
+                    resolved = resolved[-1] if resolved else None
+                row[key.strip()] = resolved
 
         context.record_data(row)
         logger.info("RecordDataPoint: %s", row)

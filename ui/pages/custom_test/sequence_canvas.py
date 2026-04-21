@@ -715,23 +715,46 @@ class SequenceCanvas(QWidget):
             if child_uid:
                 self._remove_from_maps(child_uid, child)
 
+    def _take_children(self, item: QTreeWidgetItem) -> List[QTreeWidgetItem]:
+        children = []
+        while item.childCount():
+            children.append(item.takeChild(0))
+        return children
+
+    def _restore_children(self, item: QTreeWidgetItem, children: List[QTreeWidgetItem]) -> None:
+        for child in children:
+            item.addChild(child)
+
+    def _swap_node_in_parent(self, parent_node: Optional[BaseNode],
+                             old_idx: int, new_idx: int) -> None:
+        if parent_node is not None and 0 <= old_idx < len(parent_node.children) \
+                and 0 <= new_idx < len(parent_node.children):
+            parent_node.children.insert(new_idx, parent_node.children.pop(old_idx))
+
     def _on_move_up(self) -> None:
         current = self.tree.currentItem()
         if current is None:
             return
+        saved_children = self._take_children(current)
         parent = current.parent()
         if parent:
             idx = parent.indexOfChild(current)
             if idx <= 0:
+                self._restore_children(current, saved_children)
                 return
             parent.takeChild(idx)
             parent.insertChild(idx - 1, current)
+            parent_uid = parent.data(0, Qt.UserRole)
+            self._swap_node_in_parent(self._node_map.get(parent_uid), idx, idx - 1)
         else:
             idx = self.tree.indexOfTopLevelItem(current)
             if idx <= 0:
+                self._restore_children(current, saved_children)
                 return
             self.tree.takeTopLevelItem(idx)
             self.tree.insertTopLevelItem(idx - 1, current)
+        self._restore_children(current, saved_children)
+        current.setExpanded(True)
         self.tree.setCurrentItem(current)
         self.sequence_changed.emit()
 
@@ -739,19 +762,26 @@ class SequenceCanvas(QWidget):
         current = self.tree.currentItem()
         if current is None:
             return
+        saved_children = self._take_children(current)
         parent = current.parent()
         if parent:
             idx = parent.indexOfChild(current)
             if idx >= parent.childCount() - 1:
+                self._restore_children(current, saved_children)
                 return
             parent.takeChild(idx)
             parent.insertChild(idx + 1, current)
+            parent_uid = parent.data(0, Qt.UserRole)
+            self._swap_node_in_parent(self._node_map.get(parent_uid), idx, idx + 1)
         else:
             idx = self.tree.indexOfTopLevelItem(current)
             if idx >= self.tree.topLevelItemCount() - 1:
+                self._restore_children(current, saved_children)
                 return
             self.tree.takeTopLevelItem(idx)
             self.tree.insertTopLevelItem(idx + 1, current)
+        self._restore_children(current, saved_children)
+        current.setExpanded(True)
         self.tree.setCurrentItem(current)
         self.sequence_changed.emit()
 

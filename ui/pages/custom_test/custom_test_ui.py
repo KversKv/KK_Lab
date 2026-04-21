@@ -9,8 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QFrame,
-    QLabel, QPushButton, QSizePolicy, QFileDialog, QScrollArea,
-    QTableWidget, QTableWidgetItem, QHeaderView, QTabWidget,
+    QLabel, QTableWidget, QTableWidgetItem, QTabWidget,
 )
 from PySide6.QtCore import Qt, Signal
 import pyqtgraph as pg
@@ -24,7 +23,6 @@ from ui.pages.custom_test.executor import ExecutorThread
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.chamber_module_frame import VT6002ConnectionMixin
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
-from debug_config import DEBUG_MOCK
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -168,6 +166,8 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         self.init_n6705c_connection(n6705c_top)
         self.init_vt6002_connection(vt6002_chamber_ui)
 
+        self._n6705c_widgets_built = False
+        self._vt6002_widgets_built = False
         self._i2c_interface = None
 
         self._executor_thread = ExecutorThread(self)
@@ -178,7 +178,6 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         self._sync_instruments()
 
     def _build_ui(self) -> None:
-        """构建三栏布局 + 底部日志/图表"""
         root = QVBoxLayout(self)
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(6)
@@ -186,15 +185,34 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         main_splitter = QSplitter(Qt.Vertical)
 
         top_splitter = QSplitter(Qt.Horizontal)
+        top_splitter.setHandleWidth(6)
 
         left_panel = self._build_left_panel()
         top_splitter.addWidget(left_panel)
 
+        center_frame = QFrame()
+        center_frame.setObjectName("sectionFrame")
+        center_layout = QVBoxLayout(center_frame)
+        center_layout.setContentsMargins(10, 8, 10, 10)
+        center_layout.setSpacing(6)
+        center_title = QLabel("Sequence Canvas")
+        center_title.setObjectName("sectionTitle")
+        center_layout.addWidget(center_title)
         self.canvas = SequenceCanvas()
-        top_splitter.addWidget(self.canvas)
+        center_layout.addWidget(self.canvas, 1)
+        top_splitter.addWidget(center_frame)
 
+        right_frame = QFrame()
+        right_frame.setObjectName("sectionFrame")
+        right_layout = QVBoxLayout(right_frame)
+        right_layout.setContentsMargins(10, 8, 10, 10)
+        right_layout.setSpacing(6)
+        right_title = QLabel("Property Panel")
+        right_title.setObjectName("sectionTitle")
+        right_layout.addWidget(right_title)
         self.property_panel = PropertyPanel()
-        top_splitter.addWidget(self.property_panel)
+        right_layout.addWidget(self.property_panel, 1)
+        top_splitter.addWidget(right_frame)
 
         top_splitter.setSizes([220, 520, 260])
         main_splitter.addWidget(top_splitter)
@@ -206,71 +224,133 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         root.addWidget(main_splitter)
 
     def _build_left_panel(self) -> QWidget:
-        """构建左栏：仪器连接 + 节点面板"""
-        panel = QWidget()
-        panel.setStyleSheet("QWidget { background: transparent; border: none; }")
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        outer_frame = QFrame()
+        outer_frame.setObjectName("sectionFrame")
+        outer_layout = QVBoxLayout(outer_frame)
+        outer_layout.setContentsMargins(10, 8, 10, 10)
+        outer_layout.setSpacing(6)
 
-        instr_frame = QFrame()
-        instr_frame.setObjectName("sectionFrame")
-        instr_layout = QVBoxLayout(instr_frame)
-        instr_layout.setContentsMargins(12, 10, 12, 12)
-        instr_layout.setSpacing(6)
+        left_title = QLabel("Instruments / Nodes")
+        left_title.setObjectName("sectionTitle")
+        outer_layout.addWidget(left_title)
 
-        instr_title = QLabel("⚙ Instrument Connections")
-        instr_title.setObjectName("sectionTitle")
-        instr_layout.addWidget(instr_title)
+        self._instr_conn_frame = QFrame()
+        self._instr_conn_frame.setObjectName("sectionFrame")
+        self._instr_conn_layout = QVBoxLayout(self._instr_conn_frame)
+        self._instr_conn_layout.setContentsMargins(10, 8, 10, 10)
+        self._instr_conn_layout.setSpacing(6)
 
-        n6705c_label = QLabel("N6705C Power Analyzer")
-        n6705c_label.setObjectName("fieldLabel")
-        instr_layout.addWidget(n6705c_label)
-        title_row = QHBoxLayout()
-        title_row.setSpacing(8)
-        self.build_n6705c_connection_widgets(instr_layout, title_row=title_row)
+        conn_title = QLabel("Instrument Connections")
+        conn_title.setObjectName("sectionTitle")
+        self._instr_conn_layout.addWidget(conn_title)
 
-        chamber_label = QLabel("VT6002 Chamber")
-        chamber_label.setObjectName("fieldLabel")
-        instr_layout.addWidget(chamber_label)
-        self.build_vt6002_connection_widgets(instr_layout)
+        self._instr_conn_placeholder = QLabel("No instruments in sequence")
+        self._instr_conn_placeholder.setStyleSheet(
+            "color: #3f5070; font-size: 11px; background: transparent; border: none;"
+        )
+        self._instr_conn_layout.addWidget(self._instr_conn_placeholder)
 
-        scope_label = QLabel("Oscilloscope")
-        scope_label.setObjectName("fieldLabel")
-        instr_layout.addWidget(scope_label)
-        self._scope_status = QLabel("● Synced from main" if self._mso64b_top_ref else "● Not available")
-        self._scope_status.setObjectName("statusOk" if self._mso64b_top_ref else "statusErr")
-        self._scope_status.setStyleSheet("background: transparent; border: none;")
-        instr_layout.addWidget(self._scope_status)
-
-        i2c_label = QLabel("REG Controller (I2C)")
-        i2c_label.setObjectName("fieldLabel")
-        instr_layout.addWidget(i2c_label)
-        i2c_row = QHBoxLayout()
-        i2c_row.setSpacing(6)
-        self._i2c_status = QLabel("● Disconnected")
-        self._i2c_status.setObjectName("statusErr")
-        self._i2c_status.setStyleSheet("background: transparent; border: none;")
-        i2c_row.addWidget(self._i2c_status)
-        i2c_row.addStretch()
-        from ui.widgets.button import update_connect_button_state
-        self._i2c_connect_btn = QPushButton()
-        self._i2c_connect_btn.setFixedHeight(26)
-        update_connect_button_state(self._i2c_connect_btn, False)
-        i2c_row.addWidget(self._i2c_connect_btn)
-        instr_layout.addLayout(i2c_row)
-
-        layout.addWidget(instr_frame)
+        outer_layout.addWidget(self._instr_conn_frame)
 
         self.palette = NodePalette()
-        layout.addWidget(self.palette, 1)
+        outer_layout.addWidget(self.palette, 1)
 
-        return panel
+        return outer_frame
+
+    def _get_used_instrument_ids(self) -> set:
+        from ui.pages.custom_test.node_palette import INSTRUMENT_REGISTRY
+        node_type_to_instr: Dict[str, str] = {}
+        for instr in INSTRUMENT_REGISTRY:
+            for op in instr.get("operations", []):
+                node_type_to_instr[op["node_type"]] = instr["id"]
+
+        used = set()
+
+        def _scan_nodes(nodes):
+            for node in nodes:
+                instr_id = node_type_to_instr.get(node.node_type)
+                if instr_id:
+                    used.add(instr_id)
+                if node.children:
+                    _scan_nodes(node.children)
+
+        sequence = self.canvas.get_sequence()
+        _scan_nodes(sequence)
+        return used
+
+    def _refresh_instrument_connections(self) -> None:
+        while self._instr_conn_layout.count() > 1:
+            child = self._instr_conn_layout.takeAt(1)
+            if child.widget():
+                child.widget().deleteLater()
+            elif child.layout():
+                while child.layout().count():
+                    sub = child.layout().takeAt(0)
+                    if sub.widget():
+                        sub.widget().deleteLater()
+
+        used_ids = self._get_used_instrument_ids()
+        used_ids.discard("i2c")
+
+        self._n6705c_widgets_built = False
+        self._vt6002_widgets_built = False
+
+        if not used_ids:
+            self._instr_conn_placeholder = QLabel("No instruments in sequence")
+            self._instr_conn_placeholder.setStyleSheet(
+                "color: #3f5070; font-size: 11px; background: transparent; border: none;"
+            )
+            self._instr_conn_layout.addWidget(self._instr_conn_placeholder)
+            return
+
+        if "n6705c" in used_ids:
+            lbl = QLabel("N6705C Power Analyzer")
+            lbl.setObjectName("fieldLabel")
+            self._instr_conn_layout.addWidget(lbl)
+            title_row = QHBoxLayout()
+            title_row.setSpacing(8)
+            self.build_n6705c_connection_widgets(self._instr_conn_layout, title_row=title_row)
+            self.bind_n6705c_signals()
+            self._n6705c_widgets_built = True
+            if self._n6705c_top_ref:
+                self.sync_n6705c_from_top()
+
+        if "vt6002" in used_ids:
+            lbl = QLabel("VT6002 Chamber")
+            lbl.setObjectName("fieldLabel")
+            self._instr_conn_layout.addWidget(lbl)
+            self.build_vt6002_connection_widgets(self._instr_conn_layout)
+            self.bind_vt6002_signals()
+            self._vt6002_widgets_built = True
+            if self._vt6002_chamber_ui_ref and self._vt6002_chamber_ui_ref.vt6002:
+                self._on_vt6002_external_changed()
+
+        if "mso64b" in used_ids or "dsox4034a" in used_ids:
+            lbl = QLabel("Oscilloscope")
+            lbl.setObjectName("fieldLabel")
+            self._instr_conn_layout.addWidget(lbl)
+            self._scope_status = QLabel(
+                "● Synced from main" if self._mso64b_top_ref else "● Not available"
+            )
+            self._scope_status.setObjectName(
+                "statusOk" if self._mso64b_top_ref else "statusErr"
+            )
+            self._scope_status.setStyleSheet("background: transparent; border: none;")
+            self._instr_conn_layout.addWidget(self._scope_status)
+
+        if "cmw270" in used_ids:
+            lbl = QLabel("CMW270 RF Analyzer")
+            lbl.setObjectName("fieldLabel")
+            self._instr_conn_layout.addWidget(lbl)
+            status = QLabel("● Not implemented")
+            status.setObjectName("statusWarn")
+            status.setStyleSheet("background: transparent; border: none;")
+            self._instr_conn_layout.addWidget(status)
 
     def _build_bottom_panel(self) -> QWidget:
-        """构建底部面板：日志 + 实时数据表 + 图表"""
         widget = QWidget()
-        widget.setStyleSheet("QWidget { background: transparent; border: none; }")
+        widget.setObjectName("bottomPanel")
+        widget.setStyleSheet("QWidget#bottomPanel { background: transparent; border: none; }")
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
@@ -313,12 +393,6 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         return widget
 
     def _connect_signals(self) -> None:
-        """连接所有信号/槽"""
-        self.bind_n6705c_signals()
-        self.bind_vt6002_signals()
-
-        self._i2c_connect_btn.clicked.connect(self._on_i2c_connect)
-
         self.palette.node_requested.connect(self._on_add_node)
         self.palette.instrument_requested.connect(self._on_instrument_requested)
         self.canvas.add_btn.clicked.connect(self._on_add_btn_clicked)
@@ -326,55 +400,37 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         self.canvas.run_requested.connect(self._on_run)
         self.canvas.stop_requested.connect(self._on_stop)
         self.canvas.pause_requested.connect(self._on_pause)
+        self.canvas.sequence_changed.connect(self._refresh_instrument_connections)
 
         self.property_panel.param_changed.connect(self._on_param_changed)
 
         self._executor_thread.finished.connect(self._on_execution_finished)
 
     def _sync_instruments(self) -> None:
-        """同步仪器状态"""
         if self._n6705c_top_ref:
             self.sync_n6705c_from_top()
         if self._vt6002_chamber_ui_ref and self._vt6002_chamber_ui_ref.vt6002:
             self._on_vt6002_external_changed()
 
-    def _on_i2c_connect(self) -> None:
-        from ui.widgets.button import update_connect_button_state
-
-        if self._i2c_interface is not None:
-            self._i2c_interface.close()
-            self._i2c_interface = None
-            self._i2c_status.setText("● Disconnected")
-            self._i2c_status.setObjectName("statusErr")
-            self._i2c_status.style().unpolish(self._i2c_status)
-            self._i2c_status.style().polish(self._i2c_status)
-            update_connect_button_state(self._i2c_connect_btn, False)
-            logger.info("[I2C] Disconnected.")
+    def _on_vt6002_external_changed(self) -> None:
+        if not self._vt6002_widgets_built:
+            if self._vt6002_chamber_ui_ref and self._vt6002_chamber_ui_ref.vt6002:
+                from instruments.mock.mock_instruments import MockVT6002
+                vt = self._vt6002_chamber_ui_ref.vt6002
+                is_open = isinstance(vt, MockVT6002) or (hasattr(vt, 'ser') and vt.ser.is_open)
+                if is_open:
+                    self.vt6002 = vt
+                    self.is_vt6002_connected = True
             return
-
-        try:
-            from lib.i2c.i2c_interface_x64 import I2CInterface
-            i2c = I2CInterface()
-            if i2c.initialize():
-                self._i2c_interface = i2c
-                self._i2c_status.setText("● Connected")
-                self._i2c_status.setObjectName("statusOk")
-                update_connect_button_state(self._i2c_connect_btn, True)
-                logger.info("[I2C] Connected.")
-            else:
-                self._i2c_status.setText("● Init failed")
-                self._i2c_status.setObjectName("statusErr")
-                logger.error("[I2C] initialize() returned False")
-        except Exception as e:
-            self._i2c_status.setText("● Error")
-            self._i2c_status.setObjectName("statusErr")
-            logger.error("[I2C] Connection error: %s", e)
-
-        self._i2c_status.style().unpolish(self._i2c_status)
-        self._i2c_status.style().polish(self._i2c_status)
+        super()._on_vt6002_external_changed()
 
     def sync_n6705c_from_top(self) -> None:
-        """重载：从 Top 同步 N6705C"""
+        if not self._n6705c_widgets_built:
+            if self._n6705c_top_ref and hasattr(self._n6705c_top_ref, 'is_connected_a'):
+                if self._n6705c_top_ref.is_connected_a and self._n6705c_top_ref.n6705c_a:
+                    self.n6705c = self._n6705c_top_ref.n6705c_a
+                    self.is_connected = True
+            return
         super().sync_n6705c_from_top()
 
     def _on_add_node(self, node_type: str) -> None:
@@ -498,19 +554,36 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         self.canvas.refresh_item(uid)
 
     def _on_run(self) -> None:
-        """开始执行"""
         sequence = self.canvas.get_sequence()
         if not sequence:
             self.logs_frame.append_log("[WARN] 序列为空，请先添加节点")
             return
 
+        used_ids = self._get_used_instrument_ids()
+
         self._context = ExecutionContext()
-        self._context.instruments["n6705c"] = self.n6705c
-        self._context.instruments["chamber"] = self.vt6002
-        if self._mso64b_top_ref and self._mso64b_top_ref.is_connected:
+        if "n6705c" in used_ids:
+            self._context.instruments["n6705c"] = self.n6705c
+        if "vt6002" in used_ids:
+            self._context.instruments["chamber"] = self.vt6002
+        if ("mso64b" in used_ids or "dsox4034a" in used_ids) \
+                and self._mso64b_top_ref and self._mso64b_top_ref.is_connected:
             self._context.instruments["scope"] = self._mso64b_top_ref.mso64b
-        if self._i2c_interface is not None:
-            self._context.instruments["i2c"] = self._i2c_interface
+
+        if "i2c" in used_ids:
+            if self._i2c_interface is None:
+                try:
+                    from lib.i2c.i2c_interface_x64 import I2CInterface
+                    i2c = I2CInterface()
+                    if i2c.initialize():
+                        self._i2c_interface = i2c
+                        logger.info("[I2C] Auto-connected for execution.")
+                    else:
+                        logger.error("[I2C] Auto-init failed")
+                except Exception as e:
+                    logger.error("[I2C] Auto-connect error: %s", e)
+            if self._i2c_interface is not None:
+                self._context.instruments["i2c"] = self._i2c_interface
 
         self.result_table.setRowCount(0)
         self.result_table.setColumnCount(0)
