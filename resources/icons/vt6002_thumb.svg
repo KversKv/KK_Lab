@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 48">
+  <rect x="1" y="1" width="78" height="46" rx="4" fill="#1a1a1a" stroke="#444" stroke-width="1.5"/>
+  <rect x="4" y="4" width="40" height="20" rx="3" fill="#0a2040" stroke="#335" stroke-width="0.8"/>
+  <text x="24" y="12" font-size="5" fill="#e07b39" text-anchor="middle" font-family="monospace">VT6002</text>
+  <text x="24" y="20" font-size="7" fill="#e07b39" text-anchor="middle" font-family="monospace">25.0°C</text>
+  <rect x="48" y="4" width="28" height="20" rx="3" fill="#111" stroke="#335" stroke-width="0.8"/>
+  <rect x="52" y="8" width="8" height="12" rx="1" fill="#0a2040"/>
+  <rect x="52" y="14" width="8" height="6" rx="0" fill="#e07b39" opacity="0.3"/>
+  <line x1="56" y1="9" x2="56" y2="19" stroke="#e07b39" stroke-width="0.8"/>
+  <circle cx="56" cy="18" r="2" fill="#e07b39"/>
+  <circle cx="68" cy="14" r="6" fill="none" stroke="#335" stroke-width="1"/>
+  <line x1="65" y1="14" x2="71" y2="14" stroke="#e07b39" stroke-width="0.8"/>
+  <line x1="68" y1="11" x2="68" y2="17" stroke="#e07b39" stroke-width="0.8"/>
+  <rect x="4" y="28" width="72" height="4" rx="1" fill="#222"/>
+  <rect x="8" y="36" width="16" height="6" rx="2" fill="#222" stroke="#e07b39" stroke-width="0.5"/>
+  <text x="16" y="41" font-size="4" fill="#e07b39" text-anchor="middle" font-family="monospace">HEAT</text>
+  <rect x="28" y="36" width="16" height="6" rx="2" fill="#222" stroke="#3a6fd4" stroke-width="0.5"/>
+  <text x="36" y="41" font-size="4" fill="#3a6fd4" text-anchor="middle" font-family="monospace">COOL</text>
+</svg>

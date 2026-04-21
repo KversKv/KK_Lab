@@ -144,7 +144,7 @@ class CustomTestExecutor(QObject):
 
             new_records = self._context.records[pre_record_count:]
             for rec in new_records:
-                pass
+                self.log_message.emit(f"[DATA] {rec}")
 
     def _count_steps(self, nodes: List[BaseNode]) -> int:
         """统计非容器节点的总步骤数"""

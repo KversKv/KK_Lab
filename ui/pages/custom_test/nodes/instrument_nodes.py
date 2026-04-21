@@ -139,6 +139,132 @@ class N6705CMeasure(BaseNode):
 
 
 @register_node
+class I2CRead(BaseNode):
+
+    node_type = "I2CRead"
+    display_name = "I2C Read"
+    category = "instrument"
+    icon = "📖"
+    color = "#38bdf8"
+
+    PARAM_SCHEMA = [
+        {"key": "device_addr", "label": "Device Addr (hex)", "type": "str", "default": "0x17"},
+        {"key": "reg_addr", "label": "Reg Addr (hex)", "type": "str", "default": "0x0000"},
+        {"key": "width", "label": "I2C Width", "type": "int", "default": 10,
+         "options": [8, 10, 32]},
+        {"key": "result_var", "label": "结果存入变量", "type": "str", "default": "i2c_read_val"},
+        {"key": "auto_record", "label": "自动记录数据", "type": "bool", "default": True},
+    ]
+
+    def execute(self, context: Any) -> None:
+        i2c = context.instruments.get("i2c")
+        if i2c is None:
+            raise RuntimeError("I2C 接口未连接")
+
+        dev = int(str(context.resolve_value(self.params["device_addr"])).strip(), 16)
+        reg = int(str(context.resolve_value(self.params["reg_addr"])).strip(), 16)
+        width = int(context.resolve_value(self.params["width"]))
+        result_var = str(context.resolve_value(self.params["result_var"]))
+
+        val = i2c.read(dev, reg, width)
+        logger.info("I2C Read: dev=0x%02X reg=0x%X width=%d => 0x%X", dev, reg, width, val)
+        context.set_variable(result_var, val)
+
+        auto_record = context.resolve_value(self.params.get("auto_record", True))
+        if auto_record:
+            context.record_data({
+                "device_addr": f"0x{dev:02X}",
+                "reg_addr": f"0x{reg:X}",
+                "width": width,
+                result_var: f"0x{val:X}",
+            })
+
+
+@register_node
+class I2CWrite(BaseNode):
+
+    node_type = "I2CWrite"
+    display_name = "I2C Write"
+    category = "instrument"
+    icon = "✏️"
+    color = "#38bdf8"
+
+    PARAM_SCHEMA = [
+        {"key": "device_addr", "label": "Device Addr (hex)", "type": "str", "default": "0x17"},
+        {"key": "reg_addr", "label": "Reg Addr (hex)", "type": "str", "default": "0x0000"},
+        {"key": "write_data", "label": "Write Data (hex)", "type": "str", "default": "0x0000"},
+        {"key": "width", "label": "I2C Width", "type": "int", "default": 10,
+         "options": [8, 10, 32]},
+    ]
+
+    def execute(self, context: Any) -> None:
+        i2c = context.instruments.get("i2c")
+        if i2c is None:
+            raise RuntimeError("I2C 接口未连接")
+
+        dev = int(str(context.resolve_value(self.params["device_addr"])).strip(), 16)
+        reg = int(str(context.resolve_value(self.params["reg_addr"])).strip(), 16)
+        data = int(str(context.resolve_value(self.params["write_data"])).strip(), 16)
+        width = int(context.resolve_value(self.params["width"]))
+
+        i2c.write(dev, reg, data, width)
+        logger.info("I2C Write: dev=0x%02X reg=0x%X data=0x%X width=%d => OK", dev, reg, data, width)
+
+
+@register_node
+class I2CTraverse(BaseNode):
+
+    node_type = "I2CTraverse"
+    display_name = "I2C Traverse"
+    category = "instrument"
+    icon = "🔍"
+    color = "#38bdf8"
+
+    PARAM_SCHEMA = [
+        {"key": "device_addr", "label": "Device Addr (hex)", "type": "str", "default": "0x17"},
+        {"key": "reg_start", "label": "Start Reg (hex)", "type": "str", "default": "0x0000"},
+        {"key": "reg_end", "label": "End Reg (hex)", "type": "str", "default": "0x00FF"},
+        {"key": "width", "label": "I2C Width", "type": "int", "default": 10,
+         "options": [8, 10, 32]},
+        {"key": "result_var", "label": "结果存入变量(dict)", "type": "str", "default": "i2c_traverse"},
+        {"key": "auto_record", "label": "逐行记录数据", "type": "bool", "default": True},
+    ]
+
+    def execute(self, context: Any) -> None:
+        i2c = context.instruments.get("i2c")
+        if i2c is None:
+            raise RuntimeError("I2C 接口未连接")
+
+        dev = int(str(context.resolve_value(self.params["device_addr"])).strip(), 16)
+        reg_start = int(str(context.resolve_value(self.params["reg_start"])).strip(), 16)
+        reg_end = int(str(context.resolve_value(self.params["reg_end"])).strip(), 16)
+        width = int(context.resolve_value(self.params["width"]))
+        result_var = str(context.resolve_value(self.params["result_var"]))
+        auto_record = context.resolve_value(self.params.get("auto_record", True))
+
+        results = {}
+        for reg in range(reg_start, reg_end + 1):
+            if context.should_stop:
+                break
+            try:
+                val = i2c.read(dev, reg, width)
+                results[reg] = val
+                if auto_record:
+                    context.record_data({
+                        "device_addr": f"0x{dev:02X}",
+                        "reg_addr": f"0x{reg:X}",
+                        "value_hex": f"0x{val:X}",
+                        "value_dec": val,
+                    })
+            except Exception as e:
+                logger.warning("I2C Traverse: dev=0x%02X reg=0x%X => %s", dev, reg, e)
+                results[reg] = None
+
+        logger.info("I2C Traverse: dev=0x%02X reg=0x%X..0x%X => %d regs", dev, reg_start, reg_end, len(results))
+        context.set_variable(result_var, results)
+
+
+@register_node
 class ScopeMeasureFreq(BaseNode):
     """示波器测量频率"""
 

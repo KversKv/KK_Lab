@@ -88,8 +88,8 @@ class N6705C:
         return float(self.instr.query(f"FETC:VOLT? (@{channel})"))
 
     def measure_current(self, channel):
-        result = self.instr.query(f"MEAS:CURR? (@{channel})")
-        logger.debug("N6705C measure_current: CH%s = %s", channel, result.strip())
+        result = float(self.instr.query(f"MEAS:CURR? (@{channel})").strip())
+        logger.debug("N6705C measure_current: CH%s = %.6e A", channel, result)
         return result
 
     def get_current_limit(self, channel):

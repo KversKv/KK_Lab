@@ -50,7 +50,8 @@
             "params": {
               "channel": 2,
               "measure_type": "voltage",
-              "result_var": "gpadc_voltage"
+              "result_var": "gpadc_voltage",
+              "auto_record": false
             }
           },
           {

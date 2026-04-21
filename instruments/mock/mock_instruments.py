@@ -101,10 +101,10 @@ class MockN6705C:
                 val = 0.00001
             else:
                 val = (self._vout * self._iload) / (self._vin * self._sim_eff())
-        return f"{val:.6f}"
+        return val
 
     def fetch_current(self, channel):
-        return float(self.measure_current(channel))
+        return self.measure_current(channel)
 
     def disconnect(self):
         pass

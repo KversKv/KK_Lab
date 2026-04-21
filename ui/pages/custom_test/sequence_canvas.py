@@ -7,16 +7,30 @@ from typing import Any, Dict, List, Optional
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTreeWidget, QTreeWidgetItem,
-    QPushButton, QLabel, QMenu, QFileDialog, QMessageBox, QHeaderView,
-    QAbstractItemView,
+    QPushButton, QMenu, QFileDialog, QMessageBox,
+    QAbstractItemView, QStyledItemDelegate, QStyleOptionViewItem, QStyle,
 )
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QAction
+from PySide6.QtCore import Qt, Signal, QPoint, QRect, QModelIndex, QSize
+from PySide6.QtGui import (
+    QColor, QPainter, QPen, QBrush, QFont, QFontMetrics,
+    QDragEnterEvent, QDragMoveEvent, QDropEvent,
+)
 
 from ui.pages.custom_test.nodes.base_node import BaseNode, get_node_class
 from log_config import get_logger
 
 logger = get_logger(__name__)
+
+_DEPTH_COLORS = [
+    "#2f80ed",
+    "#e74c3c",
+    "#27ae60",
+    "#f2994a",
+    "#9b59b6",
+    "#16a085",
+    "#e84393",
+    "#00cec9",
+]
 
 _CANVAS_STYLE = """
     QTreeWidget {
@@ -29,19 +43,26 @@ _CANVAS_STYLE = """
         padding: 4px;
     }
     QTreeWidget::item {
-        padding: 4px 6px;
-        border-radius: 4px;
-        min-height: 28px;
+        padding: 0px;
+        border: none;
+        min-height: 36px;
     }
     QTreeWidget::item:selected {
-        background-color: #1a2d57;
-        color: #ffffff;
+        background: transparent;
     }
     QTreeWidget::item:hover {
-        background-color: #0f1c38;
+        background: transparent;
     }
     QTreeWidget::branch {
         background: transparent;
+    }
+    QTreeWidget::branch:has-children:!has-siblings:closed,
+    QTreeWidget::branch:closed:has-children:has-siblings {
+        image: none;
+    }
+    QTreeWidget::branch:open:has-children:!has-siblings,
+    QTreeWidget::branch:open:has-children:has-siblings {
+        image: none;
     }
     QHeaderView::section {
         background-color: #0b1428;
@@ -99,6 +120,308 @@ _EXEC_BTN_STYLE = """
     }}
 """
 
+_DROP_MENU_STYLE = """
+    QMenu {
+        background-color: #0b1428;
+        color: #dce7ff;
+        border: 1px solid #1a2d57;
+        border-radius: 6px;
+        padding: 4px;
+    }
+    QMenu::item {
+        padding: 8px 20px;
+        border-radius: 4px;
+        font-size: 12px;
+    }
+    QMenu::item:selected {
+        background-color: #1a2d57;
+    }
+    QMenu::separator {
+        height: 1px;
+        background: #1a2d57;
+        margin: 4px 8px;
+    }
+"""
+
+
+def _get_item_depth(item: QTreeWidgetItem) -> int:
+    depth = 0
+    p = item.parent()
+    while p:
+        depth += 1
+        p = p.parent()
+    return depth
+
+
+def _get_depth_color(depth: int) -> str:
+    return _DEPTH_COLORS[depth % len(_DEPTH_COLORS)]
+
+
+def _is_last_child(item: QTreeWidgetItem) -> bool:
+    parent = item.parent()
+    if parent is None:
+        tree = item.treeWidget()
+        if tree is None:
+            return True
+        return tree.indexOfTopLevelItem(item) == tree.topLevelItemCount() - 1
+    return parent.indexOfChild(item) == parent.childCount() - 1
+
+
+def _build_step_number(item: QTreeWidgetItem) -> str:
+    parts: list[str] = []
+    current = item
+    while current:
+        parent = current.parent()
+        if parent:
+            idx = parent.indexOfChild(current) + 1
+        else:
+            tree = current.treeWidget()
+            idx = tree.indexOfTopLevelItem(current) + 1 if tree else 1
+        parts.append(str(idx))
+        current = parent
+    parts.reverse()
+    return ".".join(parts)
+
+
+class SequenceItemDelegate(QStyledItemDelegate):
+    """自定义绘制代理：为序列节点绘制层级可视化"""
+
+    BAR_WIDTH = 3
+    BAR_GAP = 10
+    DEPTH_INDENT = 13
+    ROW_MARGIN_V = 2
+    CORNER_RADIUS = 6
+
+    def __init__(self, tree: QTreeWidget, node_map: Dict[str, BaseNode],
+                 parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self._tree = tree
+        self._node_map = node_map
+
+    def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QSize:
+        base = super().sizeHint(option, index)
+        return QSize(base.width(), max(36, base.height()))
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing, True)
+
+        item = self._tree.itemFromIndex(index)
+        col = index.column()
+        rect = option.rect
+        is_selected = bool(option.state & QStyle.State_Selected)
+
+        uid = item.data(0, Qt.UserRole) if item else None
+        node = self._node_map.get(uid) if uid else None
+        depth = _get_item_depth(item) if item else 0
+        is_container = node.accepts_children if node else False
+
+        if col == 0:
+            self._draw_depth_bars(painter, rect, item, depth)
+            self._draw_row_background(painter, rect, item, depth, is_selected, is_container)
+            self._draw_step_number(painter, rect, item, depth, is_container)
+        elif col == 1:
+            self._draw_row_background(painter, rect, item, depth, is_selected, is_container)
+            self._draw_type_cell(painter, rect, item, node, is_container)
+        elif col == 2:
+            self._draw_row_background(painter, rect, item, depth, is_selected, is_container)
+            self._draw_summary_cell(painter, rect, item, node)
+
+        painter.restore()
+
+    def _draw_depth_bars(self, painter: QPainter, rect: QRect,
+                         item: QTreeWidgetItem, depth: int) -> None:
+        if depth == 0:
+            return
+        ancestor = item.parent()
+        for d in range(depth, 0, -1):
+            if ancestor is None:
+                break
+            bar_color = QColor(_get_depth_color(d - 1))
+            x = rect.left() + 4 + (d - 1) * self.DEPTH_INDENT
+            is_last = _is_last_child(item) if d == depth else _is_last_child(ancestor)
+
+            bar_color.setAlpha(80)
+            pen = QPen(bar_color, self.BAR_WIDTH, Qt.SolidLine)
+            pen.setCapStyle(Qt.RoundCap)
+            painter.setPen(pen)
+
+            if d == depth:
+                top_y = rect.top()
+                if is_last:
+                    mid_y = rect.top() + rect.height() // 2
+                    painter.drawLine(x, top_y, x, mid_y)
+                    painter.drawLine(x, mid_y, x + 7, mid_y)
+                else:
+                    painter.drawLine(x, top_y, x, rect.bottom())
+                    mid_y = rect.top() + rect.height() // 2
+                    painter.drawLine(x, mid_y, x + 7, mid_y)
+            else:
+                if not is_last:
+                    painter.drawLine(x, rect.top(), x, rect.bottom())
+
+            ancestor = ancestor.parent() if ancestor else None
+
+    def _draw_row_background(self, painter: QPainter, rect: QRect,
+                             item: QTreeWidgetItem, depth: int,
+                             is_selected: bool, is_container: bool) -> None:
+        bg_rect = QRect(rect.left() + 1, rect.top() + self.ROW_MARGIN_V,
+                        rect.width() - 2, rect.height() - 2 * self.ROW_MARGIN_V)
+
+        if is_selected:
+            sel_color = QColor("#1e3a6e")
+            sel_color.setAlpha(180)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QBrush(sel_color))
+            painter.drawRoundedRect(bg_rect, self.CORNER_RADIUS, self.CORNER_RADIUS)
+
+            highlight = QColor("#5b5cf6")
+            highlight.setAlpha(100)
+            painter.setPen(QPen(highlight, 1.5))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRoundedRect(bg_rect, self.CORNER_RADIUS, self.CORNER_RADIUS)
+        elif is_container:
+            container_bg = QColor(_get_depth_color(depth))
+            container_bg.setAlpha(20)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QBrush(container_bg))
+            painter.drawRoundedRect(bg_rect, self.CORNER_RADIUS, self.CORNER_RADIUS)
+
+            border_color = QColor(_get_depth_color(depth))
+            border_color.setAlpha(60)
+            painter.setPen(QPen(border_color, 1))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRoundedRect(bg_rect, self.CORNER_RADIUS, self.CORNER_RADIUS)
+        elif depth > 0:
+            nested_bg = QColor(_get_depth_color(depth - 1))
+            nested_bg.setAlpha(8)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QBrush(nested_bg))
+            painter.drawRoundedRect(bg_rect, self.CORNER_RADIUS, self.CORNER_RADIUS)
+
+    def _draw_step_number(self, painter: QPainter, rect: QRect,
+                          item: QTreeWidgetItem, depth: int,
+                          is_container: bool) -> None:
+        step_str = _build_step_number(item) if item else "?"
+        font = painter.font()
+        font.setPixelSize(10)
+        font.setBold(True)
+        painter.setFont(font)
+
+        text_x = rect.left() + 4 + depth * self.DEPTH_INDENT + 12
+        text_rect = QRect(text_x, rect.top(), rect.right() - text_x, rect.height())
+
+        if is_container:
+            painter.setPen(QColor(_get_depth_color(depth)))
+        else:
+            painter.setPen(QColor("#5f78a8"))
+
+        painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, step_str)
+
+    def _draw_type_cell(self, painter: QPainter, rect: QRect,
+                        item: QTreeWidgetItem, node: Optional[BaseNode],
+                        is_container: bool) -> None:
+        if node is None:
+            return
+
+        icon_str = node.icon
+        name_str = node.display_name
+
+        font = painter.font()
+        font.setPixelSize(12)
+        font.setBold(is_container)
+        painter.setFont(font)
+
+        icon_rect = QRect(rect.left() + 4, rect.top(), 20, rect.height())
+        painter.setPen(QColor("#dce7ff"))
+        painter.drawText(icon_rect, Qt.AlignVCenter | Qt.AlignCenter, icon_str)
+
+        name_rect = QRect(rect.left() + 24, rect.top(), rect.width() - 28, rect.height())
+        node_color = QColor(node.color) if node.color else QColor("#dce7ff")
+        if is_container:
+            node_color.setAlpha(255)
+        painter.setPen(node_color)
+        painter.drawText(name_rect, Qt.AlignVCenter | Qt.AlignLeft, name_str)
+
+        if is_container:
+            child_count = item.childCount() if item else 0
+            badge_text = f"({child_count})"
+            fm = QFontMetrics(font)
+            name_width = fm.horizontalAdvance(name_str)
+            badge_x = rect.left() + 24 + name_width + 6
+
+            badge_font = painter.font()
+            badge_font.setPixelSize(9)
+            badge_font.setBold(False)
+            painter.setFont(badge_font)
+
+            badge_color = QColor(node.color) if node.color else QColor("#5f78a8")
+            badge_color.setAlpha(140)
+            painter.setPen(badge_color)
+            painter.drawText(QRect(badge_x, rect.top(), 60, rect.height()),
+                             Qt.AlignVCenter | Qt.AlignLeft, badge_text)
+
+    def _draw_summary_cell(self, painter: QPainter, rect: QRect,
+                           item: QTreeWidgetItem, node: Optional[BaseNode]) -> None:
+        if node is None:
+            return
+
+        summary_parts = []
+        for k, v in node.params.items():
+            summary_parts.append(f"{k}={v}")
+        text = ", ".join(summary_parts[:3])
+
+        font = painter.font()
+        font.setPixelSize(11)
+        font.setBold(False)
+        painter.setFont(font)
+
+        text_rect = QRect(rect.left() + 4, rect.top(), rect.width() - 8, rect.height())
+        painter.setPen(QColor("#7a90b8"))
+        painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, text)
+
+
+class DropAwareTreeWidget(QTreeWidget):
+    """支持外部拖拽的 QTreeWidget"""
+
+    external_node_dropped = Signal(str)
+    instrument_dropped = Signal(str, QPoint)
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
+        mime = event.mimeData()
+        if mime.hasText() or mime.hasFormat("application/x-instrument-id"):
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:
+        mime = event.mimeData()
+        if mime.hasText() or mime.hasFormat("application/x-instrument-id"):
+            event.acceptProposedAction()
+        else:
+            super().dragMoveEvent(event)
+
+    def dropEvent(self, event: QDropEvent) -> None:
+        mime = event.mimeData()
+        if mime.hasFormat("application/x-instrument-id"):
+            instr_id = bytes(mime.data("application/x-instrument-id")).decode("utf-8")
+            global_pos = self.mapToGlobal(event.position().toPoint())
+            self.instrument_dropped.emit(instr_id, global_pos)
+            event.acceptProposedAction()
+        elif mime.hasText():
+            node_type = mime.text()
+            if get_node_class(node_type) is not None:
+                self.external_node_dropped.emit(node_type)
+                event.acceptProposedAction()
+            else:
+                super().dropEvent(event)
+        else:
+            super().dropEvent(event)
+
 
 class SequenceCanvas(QWidget):
     """序列画布：用 QTreeWidget 可视化节点树"""
@@ -153,20 +476,23 @@ class SequenceCanvas(QWidget):
 
         root_layout.addLayout(toolbar)
 
-        self.tree = QTreeWidget()
+        self.tree = DropAwareTreeWidget()
         self.tree.setHeaderLabels(["Step", "Type", "Summary"])
         self.tree.setColumnCount(3)
-        self.tree.setRootIsDecorated(True)
+        self.tree.setRootIsDecorated(False)
+        self.tree.setIndentation(0)
         self.tree.setAnimated(True)
         self.tree.setDragDropMode(QAbstractItemView.InternalMove)
         self.tree.setSelectionMode(QAbstractItemView.SingleSelection)
         self.tree.setStyleSheet(_CANVAS_STYLE)
-        self.tree.setAcceptDrops(True)
+
+        self._delegate = SequenceItemDelegate(self.tree, self._node_map, self)
+        self.tree.setItemDelegate(self._delegate)
 
         header = self.tree.header()
         header.setStretchLastSection(True)
-        header.resizeSection(0, 40)
-        header.resizeSection(1, 140)
+        header.resizeSection(0, 80)
+        header.resizeSection(1, 180)
 
         root_layout.addWidget(self.tree, 1)
 
@@ -198,6 +524,8 @@ class SequenceCanvas(QWidget):
         root_layout.addLayout(exec_bar)
 
         self.tree.currentItemChanged.connect(self._on_current_changed)
+        self.tree.external_node_dropped.connect(self._on_external_node_dropped)
+        self.tree.instrument_dropped.connect(self._on_instrument_dropped)
         self.remove_btn.clicked.connect(self._on_remove)
         self.move_up_btn.clicked.connect(self._on_move_up)
         self.move_down_btn.clicked.connect(self._on_move_down)
@@ -207,10 +535,52 @@ class SequenceCanvas(QWidget):
         self.save_btn.clicked.connect(self._on_save)
         self.load_btn.clicked.connect(self._on_load)
 
+    def _on_external_node_dropped(self, node_type: str) -> None:
+        cls = get_node_class(node_type)
+        if cls is None:
+            return
+        node = cls()
+        self.add_node(node)
+
+    def _on_instrument_dropped(self, instr_id: str, global_pos: QPoint) -> None:
+        from ui.pages.custom_test.node_palette import get_instrument_by_id
+        instr = get_instrument_by_id(instr_id)
+        if instr is None:
+            return
+
+        operations = instr.get("operations", [])
+        if not operations:
+            return
+
+        if len(operations) == 1:
+            node_type = operations[0]["node_type"]
+            cls = get_node_class(node_type)
+            if cls:
+                self.add_node(cls())
+            return
+
+        menu = QMenu(self)
+        menu.setStyleSheet(_DROP_MENU_STYLE)
+
+        title_action = menu.addAction(f"🔬 {instr['name']} — Select Operation")
+        title_action.setEnabled(False)
+        menu.addSeparator()
+
+        for op in operations:
+            cls = get_node_class(op["node_type"])
+            icon_text = cls.icon if cls else "▸"
+            action = menu.addAction(f"{icon_text}  {op['label']}")
+            action.setData(op["node_type"])
+
+        chosen = menu.exec(global_pos)
+        if chosen and chosen.data():
+            node_type = chosen.data()
+            cls = get_node_class(node_type)
+            if cls:
+                self.add_node(cls())
+
     def add_node(self, node: BaseNode, parent_item: Optional[QTreeWidgetItem] = None) -> QTreeWidgetItem:
-        """添加节点到树"""
         item = QTreeWidgetItem()
-        self._update_item_display(item, node)
         item.setData(0, Qt.UserRole, node.uid)
 
         self._uid_map[node.uid] = item
@@ -249,29 +619,15 @@ class SequenceCanvas(QWidget):
         self.sequence_changed.emit()
         return item
 
-    def _update_item_display(self, item: QTreeWidgetItem, node: BaseNode) -> None:
-        """更新树节点的显示"""
-        item.setText(0, node.icon)
-        item.setText(1, node.display_name)
-        summary_parts = []
-        for k, v in node.params.items():
-            summary_parts.append(f"{k}={v}")
-        item.setText(2, ", ".join(summary_parts[:3]))
-        item.setForeground(1, QColor(node.color))
-
     def refresh_item(self, uid: str) -> None:
-        """刷新指定节点的显示"""
         item = self._uid_map.get(uid)
-        node = self._node_map.get(uid)
-        if item and node:
-            self._update_item_display(item, node)
+        if item:
+            self.tree.viewport().update()
 
     def get_node(self, uid: str) -> Optional[BaseNode]:
-        """根据 uid 获取节点"""
         return self._node_map.get(uid)
 
     def get_sequence(self) -> List[BaseNode]:
-        """获取顶层节点列表（完整树结构）"""
         nodes: List[BaseNode] = []
         for i in range(self.tree.topLevelItemCount()):
             item = self.tree.topLevelItem(i)
@@ -283,7 +639,6 @@ class SequenceCanvas(QWidget):
         return nodes
 
     def _sync_children_from_tree(self, item: QTreeWidgetItem, node: BaseNode) -> None:
-        """从树的 UI 结构同步子节点顺序到 node.children"""
         node.children.clear()
         for i in range(item.childCount()):
             child_item = item.child(i)
@@ -294,21 +649,18 @@ class SequenceCanvas(QWidget):
                 node.children.append(child_node)
 
     def clear_all(self) -> None:
-        """清空所有节点"""
         self.tree.clear()
         self._uid_map.clear()
         self._node_map.clear()
         self.sequence_changed.emit()
 
     def load_from_nodes(self, nodes: List[BaseNode]) -> None:
-        """从节点列表加载序列"""
         self.clear_all()
         for node in nodes:
             self.add_node(node)
         self.tree.expandAll()
 
     def set_running_state(self, running: bool) -> None:
-        """设置运行状态"""
         self._running = running
         self.run_btn.setEnabled(not running)
         self.pause_btn.setEnabled(running)
@@ -320,7 +672,6 @@ class SequenceCanvas(QWidget):
         self.load_btn.setEnabled(not running)
 
     def highlight_step(self, uid: str) -> None:
-        """高亮当前正在执行的步骤"""
         item = self._uid_map.get(uid)
         if item:
             self.tree.setCurrentItem(item)
@@ -356,7 +707,6 @@ class SequenceCanvas(QWidget):
         self.sequence_changed.emit()
 
     def _remove_from_maps(self, uid: str, item: QTreeWidgetItem) -> None:
-        """递归从映射中删除节点"""
         self._uid_map.pop(uid, None)
         self._node_map.pop(uid, None)
         for i in range(item.childCount()):

@@ -334,8 +334,8 @@ def _measure_point_instant(n, vin_ch, vout_ch, iload_ch, average_cnt):
     if average_cnt <= 1:
         vbat = float(n.measure_voltage(vin_ch))
         vout = float(n.measure_voltage(vout_ch))
-        i_in = float(n.measure_current(vin_ch).strip())
-        i_out = float(n.measure_current(iload_ch).strip())
+        i_in = float(n.measure_current(vin_ch))
+        i_out = float(n.measure_current(iload_ch))
     else:
         vbat_acc = 0.0
         vout_acc = 0.0
@@ -344,8 +344,8 @@ def _measure_point_instant(n, vin_ch, vout_ch, iload_ch, average_cnt):
         for _ai in range(average_cnt):
             vbat_acc += float(n.measure_voltage(vin_ch))
             vout_acc += float(n.measure_voltage(vout_ch))
-            i_in_acc += float(n.measure_current(vin_ch).strip())
-            i_out_acc += float(n.measure_current(iload_ch).strip())
+            i_in_acc += float(n.measure_current(vin_ch))
+            i_out_acc += float(n.measure_current(iload_ch))
         vbat = vbat_acc / average_cnt
         vout = vout_acc / average_cnt
         i_in = i_in_acc / average_cnt
@@ -357,8 +357,8 @@ def _measure_point_datalog(n, vin_ch, vout_ch, iload_ch, dlog_duration, debug):
     if debug and isinstance(n, MockN6705C):
         vbat = float(n.measure_voltage(vin_ch))
         vout = float(n.measure_voltage(vout_ch))
-        i_in = float(n.measure_current(vin_ch).strip())
-        i_out = float(n.measure_current(iload_ch).strip())
+        i_in = float(n.measure_current(vin_ch))
+        i_out = float(n.measure_current(iload_ch))
         return vbat, vout, i_in, i_out
 
     sample_period = 0.000060
@@ -410,8 +410,8 @@ def _run_efficiency_curve(n, cfg, debug, stop_flag_fn,
     vin_base_samples = []
     vout_base_samples = []
     for _bsi in range(BASELINE_SAMPLES):
-        i_base_samples.append(float(n.measure_current(iload_ch).strip()))
-        iin_base_samples.append(float(n.measure_current(vin_ch).strip()))
+        i_base_samples.append(float(n.measure_current(iload_ch)))
+        iin_base_samples.append(float(n.measure_current(vin_ch)))
         vin_base_samples.append(float(n.measure_voltage(vin_ch)))
         vout_base_samples.append(float(n.measure_voltage(vout_ch)))
         QThread.msleep(int(sleep_measure))

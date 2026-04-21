@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QFrame,
-    QLabel, QSizePolicy, QFileDialog, QScrollArea,
+    QLabel, QPushButton, QSizePolicy, QFileDialog, QScrollArea,
     QTableWidget, QTableWidgetItem, QHeaderView, QTabWidget,
 )
 from PySide6.QtCore import Qt, Signal
@@ -168,6 +168,8 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         self.init_n6705c_connection(n6705c_top)
         self.init_vt6002_connection(vt6002_chamber_ui)
 
+        self._i2c_interface = None
+
         self._executor_thread = ExecutorThread(self)
         self._context: Optional[ExecutionContext] = None
 
@@ -241,6 +243,23 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         self._scope_status.setStyleSheet("background: transparent; border: none;")
         instr_layout.addWidget(self._scope_status)
 
+        i2c_label = QLabel("REG Controller (I2C)")
+        i2c_label.setObjectName("fieldLabel")
+        instr_layout.addWidget(i2c_label)
+        i2c_row = QHBoxLayout()
+        i2c_row.setSpacing(6)
+        self._i2c_status = QLabel("● Disconnected")
+        self._i2c_status.setObjectName("statusErr")
+        self._i2c_status.setStyleSheet("background: transparent; border: none;")
+        i2c_row.addWidget(self._i2c_status)
+        i2c_row.addStretch()
+        from ui.widgets.button import update_connect_button_state
+        self._i2c_connect_btn = QPushButton()
+        self._i2c_connect_btn.setFixedHeight(26)
+        update_connect_button_state(self._i2c_connect_btn, False)
+        i2c_row.addWidget(self._i2c_connect_btn)
+        instr_layout.addLayout(i2c_row)
+
         layout.addWidget(instr_frame)
 
         self.palette = NodePalette()
@@ -298,7 +317,10 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         self.bind_n6705c_signals()
         self.bind_vt6002_signals()
 
+        self._i2c_connect_btn.clicked.connect(self._on_i2c_connect)
+
         self.palette.node_requested.connect(self._on_add_node)
+        self.palette.instrument_requested.connect(self._on_instrument_requested)
         self.canvas.add_btn.clicked.connect(self._on_add_btn_clicked)
         self.canvas.node_selected.connect(self._on_node_selected)
         self.canvas.run_requested.connect(self._on_run)
@@ -315,6 +337,41 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
             self.sync_n6705c_from_top()
         if self._vt6002_chamber_ui_ref and self._vt6002_chamber_ui_ref.vt6002:
             self._on_vt6002_external_changed()
+
+    def _on_i2c_connect(self) -> None:
+        from ui.widgets.button import update_connect_button_state
+
+        if self._i2c_interface is not None:
+            self._i2c_interface.close()
+            self._i2c_interface = None
+            self._i2c_status.setText("● Disconnected")
+            self._i2c_status.setObjectName("statusErr")
+            self._i2c_status.style().unpolish(self._i2c_status)
+            self._i2c_status.style().polish(self._i2c_status)
+            update_connect_button_state(self._i2c_connect_btn, False)
+            logger.info("[I2C] Disconnected.")
+            return
+
+        try:
+            from lib.i2c.i2c_interface_x64 import I2CInterface
+            i2c = I2CInterface()
+            if i2c.initialize():
+                self._i2c_interface = i2c
+                self._i2c_status.setText("● Connected")
+                self._i2c_status.setObjectName("statusOk")
+                update_connect_button_state(self._i2c_connect_btn, True)
+                logger.info("[I2C] Connected.")
+            else:
+                self._i2c_status.setText("● Init failed")
+                self._i2c_status.setObjectName("statusErr")
+                logger.error("[I2C] initialize() returned False")
+        except Exception as e:
+            self._i2c_status.setText("● Error")
+            self._i2c_status.setObjectName("statusErr")
+            logger.error("[I2C] Connection error: %s", e)
+
+        self._i2c_status.style().unpolish(self._i2c_status)
+        self._i2c_status.style().polish(self._i2c_status)
 
     def sync_n6705c_from_top(self) -> None:
         """重载：从 Top 同步 N6705C"""
@@ -333,6 +390,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         """工具栏 Add 按钮"""
         from PySide6.QtWidgets import QMenu
         from ui.pages.custom_test.nodes.base_node import get_nodes_by_category
+        from ui.pages.custom_test.node_palette import INSTRUMENT_REGISTRY
 
         menu = QMenu(self)
         menu.setStyleSheet("""
@@ -351,7 +409,22 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
                 background-color: #1a2d57;
             }
         """)
-        for cat in ["instrument", "logic", "io"]:
+
+        instr_submenu = menu.addMenu("🔬 Instruments")
+        instr_submenu.setStyleSheet(menu.styleSheet())
+        for instr in INSTRUMENT_REGISTRY:
+            sub = instr_submenu.addMenu(f"{instr['name']}")
+            sub.setStyleSheet(menu.styleSheet())
+            for op in instr["operations"]:
+                cls = get_node_class(op["node_type"])
+                icon_text = cls.icon if cls else "▸"
+                action = sub.addAction(f"{icon_text} {op['label']}")
+                action.triggered.connect(
+                    lambda checked=False, nt=op["node_type"]: self._on_add_node(nt)
+                )
+        menu.addSeparator()
+
+        for cat in ["logic", "io"]:
             nodes = get_nodes_by_category(cat)
             for node_cls in nodes:
                 action = menu.addAction(f"{node_cls.icon} {node_cls.display_name}")
@@ -360,6 +433,61 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
                 )
             menu.addSeparator()
         menu.exec(self.canvas.add_btn.mapToGlobal(self.canvas.add_btn.rect().bottomLeft()))
+
+    def _on_instrument_requested(self, instr_id: str) -> None:
+        """仪器双击回调：弹出操作选择菜单"""
+        from PySide6.QtWidgets import QMenu, QCursor
+        from ui.pages.custom_test.node_palette import get_instrument_by_id
+
+        instr = get_instrument_by_id(instr_id)
+        if instr is None:
+            return
+
+        operations = instr.get("operations", [])
+        if not operations:
+            return
+
+        if len(operations) == 1:
+            self._on_add_node(operations[0]["node_type"])
+            return
+
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #0b1428;
+                color: #dce7ff;
+                border: 1px solid #1a2d57;
+                border-radius: 6px;
+                padding: 4px;
+            }
+            QMenu::item {
+                padding: 8px 20px;
+                border-radius: 4px;
+                font-size: 12px;
+            }
+            QMenu::item:selected {
+                background-color: #1a2d57;
+            }
+            QMenu::separator {
+                height: 1px;
+                background: #1a2d57;
+                margin: 4px 8px;
+            }
+        """)
+
+        title_action = menu.addAction(f"🔬 {instr['name']} — Select Operation")
+        title_action.setEnabled(False)
+        menu.addSeparator()
+
+        for op in operations:
+            cls = get_node_class(op["node_type"])
+            icon_text = cls.icon if cls else "▸"
+            action = menu.addAction(f"{icon_text}  {op['label']}")
+            action.triggered.connect(
+                lambda checked=False, nt=op["node_type"]: self._on_add_node(nt)
+            )
+
+        menu.exec(QCursor.pos())
 
     def _on_node_selected(self, node: Optional[BaseNode]) -> None:
         """节点选中回调"""
@@ -381,6 +509,8 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         self._context.instruments["chamber"] = self.vt6002
         if self._mso64b_top_ref and self._mso64b_top_ref.is_connected:
             self._context.instruments["scope"] = self._mso64b_top_ref.mso64b
+        if self._i2c_interface is not None:
+            self._context.instruments["i2c"] = self._i2c_interface
 
         self.result_table.setRowCount(0)
         self.result_table.setColumnCount(0)
@@ -523,3 +653,6 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
     def cleanup_threads(self) -> None:
         """清理工作线程"""
         self._executor_thread.stop()
+        if self._i2c_interface is not None:
+            self._i2c_interface.close()
+            self._i2c_interface = None

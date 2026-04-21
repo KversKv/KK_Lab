@@ -40,7 +40,8 @@
         "params": {
           "channel": 1,
           "measure_type": "power",
-          "result_var": "dut_power"
+          "result_var": "dut_power",
+          "auto_record": false
         }
       },
       {

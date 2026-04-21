@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import os
 from typing import Dict, List, Optional, Type
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QFrame, QScrollArea, QSizePolicy,
+    QWidget, QVBoxLayout, QLabel, QFrame,
+    QScrollArea, QSizePolicy, QGridLayout,
 )
 from PySide6.QtCore import Qt, Signal, QMimeData
-from PySide6.QtGui import QDrag, QFont
+from PySide6.QtGui import QDrag, QPixmap, QImage, QPainter
+from PySide6.QtSvg import QSvgRenderer
 
 from ui.pages.custom_test.nodes.base_node import BaseNode, get_nodes_by_category
 
@@ -16,11 +19,72 @@ from log_config import get_logger
 
 logger = get_logger(__name__)
 
-_CATEGORY_META = {
-    "instrument": {"title": "📦 Instruments", "order": 0},
-    "logic":      {"title": "🔀 Logic / Flow", "order": 1},
-    "io":         {"title": "💾 Data I/O", "order": 2},
-}
+_ICONS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    "resources", "icons"
+)
+
+INSTRUMENT_REGISTRY: List[Dict] = [
+    {
+        "id": "n6705c",
+        "name": "N6705C",
+        "thumb": "n6705c_thumb.svg",
+        "color": "#f2994a",
+        "operations": [
+            {"node_type": "N6705CSetVoltage", "label": "Set Voltage"},
+            {"node_type": "N6705CMeasure", "label": "Measure V/I/P"},
+        ],
+    },
+    {
+        "id": "mso64b",
+        "name": "MSO64B",
+        "thumb": "mso64b_thumb.svg",
+        "color": "#3ade85",
+        "operations": [
+            {"node_type": "ScopeMeasure", "label": "Measure"},
+            {"node_type": "ScopeMeasureFreq", "label": "Measure Freq"},
+        ],
+    },
+    {
+        "id": "dsox4034a",
+        "name": "DSOX4034A",
+        "thumb": "dsox4034a_thumb.svg",
+        "color": "#f59e0b",
+        "operations": [
+            {"node_type": "ScopeMeasure", "label": "Measure"},
+            {"node_type": "ScopeMeasureFreq", "label": "Measure Freq"},
+        ],
+    },
+    {
+        "id": "vt6002",
+        "name": "VT6002",
+        "thumb": "vt6002_thumb.svg",
+        "color": "#e07b39",
+        "operations": [
+            {"node_type": "ChamberSetTemp", "label": "Set Temperature"},
+        ],
+    },
+    {
+        "id": "cmw270",
+        "name": "CMW270",
+        "thumb": "cmw270_thumb.svg",
+        "color": "#a78bfa",
+        "operations": [
+            {"node_type": "RFAnalyzerMeasure", "label": "RF Measure"},
+        ],
+    },
+    {
+        "id": "i2c",
+        "name": "REG Controller",
+        "thumb": "settings.svg",
+        "color": "#38bdf8",
+        "operations": [
+            {"node_type": "I2CRead", "label": "I2C Read"},
+            {"node_type": "I2CWrite", "label": "I2C Write"},
+            {"node_type": "I2CTraverse", "label": "I2C Traverse"},
+        ],
+    },
+]
 
 _PALETTE_ITEM_STYLE = """
     QFrame#paletteItem {{
@@ -32,6 +96,19 @@ _PALETTE_ITEM_STYLE = """
     QFrame#paletteItem:hover {{
         background-color: {hover_bg};
         border: 1px solid {hover_border};
+    }}
+"""
+
+_INSTR_CARD_STYLE = """
+    QFrame#instrCard {{
+        background-color: #0d1a36;
+        border: 1px solid #1a2d57;
+        border-radius: 10px;
+        padding: 0px;
+    }}
+    QFrame#instrCard:hover {{
+        background-color: #132040;
+        border: 1px solid {color};
     }}
 """
 
@@ -54,6 +131,80 @@ _PALETTE_STYLE = """
         border: none;
     }
 """
+
+
+class InstrumentCard(QFrame):
+    """仪器缩略卡片：SVG 缩略图 + 居中仪器名"""
+
+    double_clicked = Signal(str)
+
+    def __init__(self, instr_info: Dict, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self._instr = instr_info
+        self.setObjectName("instrCard")
+        self.setCursor(Qt.OpenHandCursor)
+        self.setFixedSize(90, 82)
+        self.setStyleSheet(_INSTR_CARD_STYLE.format(color=instr_info["color"]))
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(4, 6, 4, 4)
+        layout.setSpacing(2)
+        layout.setAlignment(Qt.AlignCenter)
+
+        svg_path = os.path.join(_ICONS_DIR, instr_info["thumb"])
+        thumb_label = QLabel()
+        thumb_label.setFixedSize(72, 40)
+        thumb_label.setAlignment(Qt.AlignCenter)
+        thumb_label.setStyleSheet("background: transparent; border: none;")
+        if os.path.isfile(svg_path):
+            renderer = QSvgRenderer(svg_path)
+            image = QImage(144, 80, QImage.Format_ARGB32_Premultiplied)
+            image.fill(Qt.transparent)
+            painter = QPainter(image)
+            renderer.render(painter)
+            painter.end()
+            pixmap = QPixmap.fromImage(image).scaled(
+                72, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
+            thumb_label.setPixmap(pixmap)
+        else:
+            thumb_label.setText("📦")
+            thumb_label.setStyleSheet(
+                "background: transparent; border: none; font-size: 24px;"
+            )
+        layout.addWidget(thumb_label, 0, Qt.AlignCenter)
+
+        name_label = QLabel(instr_info["name"])
+        name_label.setAlignment(Qt.AlignCenter)
+        name_label.setStyleSheet(
+            f"color: {instr_info['color']}; font-size: 10px; font-weight: 700; "
+            "background: transparent; border: none; padding: 0px;"
+        )
+        layout.addWidget(name_label, 0, Qt.AlignCenter)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton:
+            self.setCursor(Qt.ClosedHandCursor)
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        self.setCursor(Qt.OpenHandCursor)
+        super().mouseReleaseEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if event.buttons() & Qt.LeftButton:
+            drag = QDrag(self)
+            mime = QMimeData()
+            mime.setData("application/x-instrument-id", self._instr["id"].encode("utf-8"))
+            pixmap = self.grab()
+            drag.setPixmap(pixmap.scaled(90, 82, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            drag.setMimeData(mime)
+            drag.exec(Qt.CopyAction)
+        super().mouseMoveEvent(event)
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        self.double_clicked.emit(self._instr["id"])
+        super().mouseDoubleClickEvent(event)
 
 
 class PaletteItem(QFrame):
@@ -113,10 +264,18 @@ class PaletteItem(QFrame):
         super().mouseDoubleClickEvent(event)
 
 
+def get_instrument_by_id(instr_id: str) -> Optional[Dict]:
+    for info in INSTRUMENT_REGISTRY:
+        if info["id"] == instr_id:
+            return info
+    return None
+
+
 class NodePalette(QWidget):
-    """左栏节点面板"""
+    """左栏节点面板：仪器区域（缩略图网格）+ 逻辑/IO 区域"""
 
     node_requested = Signal(str)
+    instrument_requested = Signal(str)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -139,8 +298,37 @@ class NodePalette(QWidget):
         self._inner_layout.setContentsMargins(8, 4, 8, 8)
         self._inner_layout.setSpacing(4)
 
-        sorted_cats = sorted(_CATEGORY_META.items(), key=lambda x: x[1]["order"])
-        for cat_key, meta in sorted_cats:
+        self._build_instrument_section()
+        self._build_category_sections()
+
+        self._inner_layout.addStretch()
+        scroll.setWidget(inner)
+        root_layout.addWidget(scroll)
+
+    def _build_instrument_section(self) -> None:
+        title = QLabel("🔬 Instruments")
+        title.setObjectName("categoryTitle")
+        self._inner_layout.addWidget(title)
+
+        grid = QGridLayout()
+        grid.setSpacing(6)
+        grid.setContentsMargins(0, 0, 0, 4)
+
+        for idx, instr in enumerate(INSTRUMENT_REGISTRY):
+            card = InstrumentCard(instr, self)
+            card.double_clicked.connect(self._on_instrument_double_clicked)
+            row = idx // 2
+            col = idx % 2
+            grid.addWidget(card, row, col, Qt.AlignCenter)
+
+        grid_widget = QWidget()
+        grid_widget.setStyleSheet("QWidget { background: transparent; border: none; }")
+        grid_widget.setLayout(grid)
+        self._inner_layout.addWidget(grid_widget)
+
+    def _build_category_sections(self) -> None:
+        for cat_key, meta in [("logic", {"title": "🔀 Logic / Flow"}),
+                               ("io", {"title": "💾 Data I/O"})]:
             nodes = get_nodes_by_category(cat_key)
             if not nodes:
                 continue
@@ -154,9 +342,8 @@ class NodePalette(QWidget):
                 item.double_clicked.connect(self._on_item_double_clicked)
                 self._inner_layout.addWidget(item)
 
-        self._inner_layout.addStretch()
-        scroll.setWidget(inner)
-        root_layout.addWidget(scroll)
-
     def _on_item_double_clicked(self, node_type: str) -> None:
         self.node_requested.emit(node_type)
+
+    def _on_instrument_double_clicked(self, instr_id: str) -> None:
+        self.instrument_requested.emit(instr_id)
