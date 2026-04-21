@@ -1,0 +1,55 @@
+[
+  {
+    "node_type": "LoopRange",
+    "uid": "tpl5-loop-vout",
+    "params": {
+      "var_name": "vout",
+      "start": 1.5,
+      "stop": 3.8,
+      "step": 0.1
+    },
+    "children": [
+      {
+        "node_type": "N6705CSetVoltage",
+        "uid": "tpl5-set-voltage",
+        "params": {
+          "channel": 1,
+          "voltage": "${vout}",
+          "current_limit": "1.0",
+          "output_on": true
+        }
+      },
+      {
+        "node_type": "Delay",
+        "uid": "tpl5-delay",
+        "params": {
+          "seconds": 3.0
+        }
+      },
+      {
+        "node_type": "ScopeMeasureFreq",
+        "uid": "tpl5-measure-freq",
+        "params": {
+          "channel": 1,
+          "result_var": "clk_freq"
+        }
+      },
+      {
+        "node_type": "RecordDataPoint",
+        "uid": "tpl5-record",
+        "params": {
+          "fields": "vout=${vout}, clk_freq=${clk_freq}"
+        }
+      }
+    ]
+  },
+  {
+    "node_type": "ExportResult",
+    "uid": "tpl5-export",
+    "params": {
+      "format": "csv",
+      "filename": "clk_vs_vout",
+      "output_dir": ""
+    }
+  }
+]

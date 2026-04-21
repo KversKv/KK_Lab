@@ -1,0 +1,64 @@
+[
+  {
+    "node_type": "N6705CSetVoltage",
+    "uid": "tpl1-set-voltage",
+    "params": {
+      "channel": 1,
+      "voltage": "3.8",
+      "current_limit": "1.0",
+      "output_on": true
+    }
+  },
+  {
+    "node_type": "LoopList",
+    "uid": "tpl1-loop-temp",
+    "params": {
+      "var_name": "temp",
+      "values": "-20, -10, 0, 10, 25, 40, 60, 85"
+    },
+    "children": [
+      {
+        "node_type": "ChamberSetTemp",
+        "uid": "tpl1-set-temp",
+        "params": {
+          "temperature": "${temp}",
+          "wait_stable": true,
+          "stable_time": 120.0,
+          "tolerance": 1.0
+        }
+      },
+      {
+        "node_type": "Delay",
+        "uid": "tpl1-delay",
+        "params": {
+          "seconds": 5.0
+        }
+      },
+      {
+        "node_type": "N6705CMeasure",
+        "uid": "tpl1-measure",
+        "params": {
+          "channel": 1,
+          "measure_type": "power",
+          "result_var": "dut_power"
+        }
+      },
+      {
+        "node_type": "RecordDataPoint",
+        "uid": "tpl1-record",
+        "params": {
+          "fields": "temp=${temp}, power=${dut_power}, voltage=${N6705C_CH1_voltage}, current=${N6705C_CH1_current}"
+        }
+      }
+    ]
+  },
+  {
+    "node_type": "ExportResult",
+    "uid": "tpl1-export",
+    "params": {
+      "format": "csv",
+      "filename": "power_vs_temp",
+      "output_dir": ""
+    }
+  }
+]

@@ -26,6 +26,7 @@ from ui.pages.chamber.vt6002_chamber_ui import VT6002ChamberUI
 from ui.widgets.sidebar_nav_button import SidebarNavButton
 from ui.pages.consumption_test.consumption_test_wrapper import ConsumptionTestWrapper
 from ui.pages.charger_test.charger_test_ui import ChargerTestUI
+from ui.pages.custom_test.custom_test_ui import CustomTestUI
 from core.test_manager import TestManager
 from instruments.base.visa_instrument import VisaInstrument
 
@@ -456,6 +457,7 @@ class MainWindow(QMainWindow):
         self.vt6002_chamber_ui = None
         self.consumption_test_ui = None
         self.charger_test_ui = None
+        self.custom_test_ui = None
         self.current_instrument_ui = None
         self.channels = []
 
@@ -764,6 +766,13 @@ class MainWindow(QMainWindow):
         )
         left_nav_layout.addWidget(self.consumption_test_btn)
 
+        self.custom_test_btn = SidebarNavButton(
+            "Custom Test",
+            "",
+            os.path.join(_ICONS_DIR, "sparkles.svg")
+        )
+        left_nav_layout.addWidget(self.custom_test_btn)
+
         # 单选组
         self.nav_button_group = QButtonGroup(self)
         self.nav_button_group.setExclusive(True)
@@ -773,6 +782,7 @@ class MainWindow(QMainWindow):
         self.nav_button_group.addButton(self.pmu_test_btn)
         self.nav_button_group.addButton(self.charger_test_btn)
         self.nav_button_group.addButton(self.consumption_test_btn)
+        self.nav_button_group.addButton(self.custom_test_btn)
 
         # 关键：初始化一次箭头显示状态
         self._refresh_nav_arrow_state()
@@ -865,7 +875,8 @@ class MainWindow(QMainWindow):
             self.chamber_btn,
             self.pmu_test_btn,
             self.charger_test_btn,
-            self.consumption_test_btn
+            self.consumption_test_btn,
+            self.custom_test_btn,
         ]
 
         for btn in nav_buttons:
@@ -1182,11 +1193,26 @@ class MainWindow(QMainWindow):
             if hasattr(self.charger_test_ui, "set_current_test"):
                 self.charger_test_ui.set_current_test(selected_test)
 
+    def _create_custom_test_ui(self):
+        logger.debug("Switching to Custom Test UI")
+        self._hide_all_instrument_uis()
+        if self.custom_test_ui is None:
+            self.custom_test_ui = CustomTestUI(
+                n6705c_top=self.n6705c_top,
+                mso64b_top=self.mso64b_top,
+                vt6002_chamber_ui=self.vt6002_chamber_ui,
+            )
+            self.instrument_ui_container_layout.addWidget(self.custom_test_ui)
+        else:
+            self.custom_test_ui.sync_n6705c_from_top()
+            self.custom_test_ui.show()
+        self.current_instrument_ui = "custom_test"
+
     def _hide_all_instrument_uis(self):
         for widget in [
             self.n6705c_analyser_ui, self.n6705c_datalog_ui,
             self.oscilloscope_ui, self.pmu_test_ui, self.vt6002_chamber_ui,
-            self.consumption_test_ui, self.charger_test_ui,
+            self.consumption_test_ui, self.charger_test_ui, self.custom_test_ui,
         ]:
             if widget is not None:
                 widget.hide()
@@ -1199,6 +1225,7 @@ class MainWindow(QMainWindow):
         self.pmu_test_btn.clicked.connect(self._on_nav_button_clicked)
         self.charger_test_btn.clicked.connect(self._on_nav_button_clicked)
         self.consumption_test_btn.clicked.connect(self._on_nav_button_clicked)
+        self.custom_test_btn.clicked.connect(self._on_nav_button_clicked)
 
         self.help_btn.clicked.connect(self._on_help)
         self.test_manager.data_updated.connect(self._update_data)
@@ -1375,6 +1402,17 @@ class MainWindow(QMainWindow):
                 self.charger_submenu.hide()
             self._create_consumption_test_ui(selected_test=self.current_consumption_test_key)
             self._show_consumption_submenu()
+
+        elif sender == self.custom_test_btn:
+            if self.pmu_submenu:
+                self.pmu_submenu.hide()
+            if self.pa_submenu:
+                self.pa_submenu.hide()
+            if self.charger_submenu:
+                self.charger_submenu.hide()
+            if self.consumption_submenu:
+                self.consumption_submenu.hide()
+            self._create_custom_test_ui()
 
         self._refresh_nav_arrow_state()
 
@@ -1694,6 +1732,9 @@ class MainWindow(QMainWindow):
                 sub_ui = getattr(self.charger_test_ui, attr, None)
                 if sub_ui is not None:
                     self._cleanup_sub_ui(sub_ui, f"Charger.{attr}")
+
+        if self.custom_test_ui is not None:
+            self._cleanup_sub_ui(self.custom_test_ui, "CustomTestUI")
 
         logger.info("[CloseEvent] All instruments disconnected, closing window.")
         super().closeEvent(event)

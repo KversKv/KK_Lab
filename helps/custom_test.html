@@ -1,0 +1,66 @@
+<h2>Custom Test - 自定义测试序列编辑器</h2>
+
+<h3>概述</h3>
+<p>Custom Test 是一个可视化自定义测试序列编辑器，类似 Keysight BenchVue 的 Bench 功能。
+您可以通过拖拽方式自由组合仪器控制和逻辑节点，构建完整的自动化测试流程。</p>
+
+<h3>界面布局</h3>
+<ul>
+  <li><b>左栏</b>：仪器连接区 + 节点面板（双击或拖拽添加节点）</li>
+  <li><b>中栏</b>：序列画布（树形结构展示测试流程）</li>
+  <li><b>右栏</b>：属性面板（编辑选中节点的参数）</li>
+  <li><b>底部</b>：执行日志 / 实时数据表 / 图表</li>
+</ul>
+
+<h3>节点类型</h3>
+<h4>仪器节点</h4>
+<ul>
+  <li><b>Chamber Set Temp</b>：设置温箱目标温度，可选等待稳定</li>
+  <li><b>N6705C Set Voltage</b>：设置 N6705C 通道电压和限流</li>
+  <li><b>N6705C Measure</b>：测量电压/电流/功率，结果自动写入变量池</li>
+  <li><b>Scope Measure Freq</b>：示波器频率测量</li>
+  <li><b>Scope Measure</b>：示波器通用测量（Vpp/Vrms/Mean 等）</li>
+  <li><b>RF Analyzer Measure</b>：综测仪测量（预留接口）</li>
+</ul>
+
+<h4>逻辑节点</h4>
+<ul>
+  <li><b>Loop (Range)</b>：范围循环（起始/终止/步进），子节点在循环体内执行</li>
+  <li><b>Loop (List)</b>：列表循环（离散值），支持温度点列表等场景</li>
+  <li><b>If / Else</b>：条件分支，支持表达式判断</li>
+  <li><b>Set Variable</b>：变量赋值</li>
+  <li><b>Delay</b>：延时等待</li>
+  <li><b>Math Expression</b>：数学运算</li>
+</ul>
+
+<h4>数据节点</h4>
+<ul>
+  <li><b>Record Data</b>：记录一行数据到结果集</li>
+  <li><b>Export Result</b>：导出结果为 CSV 或 Excel</li>
+</ul>
+
+<h3>变量系统</h3>
+<p>所有参数支持 <code>${变量名}</code> 占位符语法。循环节点会自动注入迭代变量，测量节点会自动写入结果变量。</p>
+<p>例如：<code>${temp}</code>、<code>${N6705C_CH1_power}</code>、<code>${scope_CH1_freq}</code></p>
+
+<h3>使用步骤</h3>
+<ol>
+  <li>在左栏连接所需仪器</li>
+  <li>从节点面板双击或拖拽节点到序列画布</li>
+  <li>在右栏属性面板中配置参数</li>
+  <li>点击 <b>▶ Run</b> 执行序列</li>
+  <li>在底部查看日志、实时数据和图表</li>
+  <li>执行完成后自动导出 CSV 到 Results/custom_test/ 目录</li>
+</ol>
+
+<h3>模板</h3>
+<p>可通过 Load 按钮加载内置模板：</p>
+<ul>
+  <li>CASE1: 功耗 vs 温度曲线</li>
+  <li>CASE2: GPADC vs 温度+电压多维测试</li>
+  <li>CASE3: 时钟频率 vs 温度</li>
+  <li>CASE5: 时钟频率 vs 电压</li>
+</ul>
+
+<h3>序列保存/加载</h3>
+<p>使用工具栏的 💾 Save / 📂 Load 按钮保存和加载 JSON 格式的序列文件。</p>

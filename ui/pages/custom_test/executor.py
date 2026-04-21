@@ -1,0 +1,213 @@
+"""自定义测试执行引擎"""
+
+from __future__ import annotations
+
+import time
+import traceback
+from typing import Any, Dict, List, Optional
+
+from PySide6.QtCore import QObject, QThread, Signal
+
+from log_config import get_logger
+from ui.pages.custom_test.nodes.base_node import BaseNode
+from ui.pages.custom_test.context import ExecutionContext
+
+logger = get_logger(__name__)
+
+
+def _execute_children(children: List[BaseNode], context: ExecutionContext) -> None:
+    """深度优先执行子节点列表"""
+    for child in children:
+        if context.should_stop:
+            return
+        while context.should_pause and not context.should_stop:
+            time.sleep(0.1)
+        _execute_node(child, context)
+
+
+def _execute_node(node: BaseNode, context: ExecutionContext) -> None:
+    """执行单个节点"""
+    node.execute(context)
+
+
+class CustomTestExecutor(QObject):
+    """自定义测试执行器（在工作线程中运行）"""
+
+    step_started = Signal(str, str)
+    step_finished = Signal(str, str)
+    data_recorded = Signal(dict)
+    progress_updated = Signal(int, int)
+    log_message = Signal(str)
+    finished = Signal(bool, str)
+    error = Signal(str)
+
+    def __init__(self, parent: Optional[QObject] = None) -> None:
+        super().__init__(parent)
+        self._sequence: List[BaseNode] = []
+        self._context: Optional[ExecutionContext] = None
+
+    def set_sequence(self, nodes: List[BaseNode]) -> None:
+        """设置待执行的节点序列"""
+        self._sequence = nodes
+
+    def set_context(self, context: ExecutionContext) -> None:
+        """设置执行上下文"""
+        self._context = context
+
+    @property
+    def context(self) -> Optional[ExecutionContext]:
+        return self._context
+
+    def request_stop(self) -> None:
+        """请求停止"""
+        if self._context:
+            self._context.request_stop()
+
+    def request_pause(self) -> None:
+        """请求暂停"""
+        if self._context:
+            self._context.request_pause()
+
+    def request_resume(self) -> None:
+        """恢复执行"""
+        if self._context:
+            self._context.request_resume()
+
+    def run(self) -> None:
+        """主执行入口"""
+        if not self._context:
+            self.error.emit("执行上下文未初始化")
+            self.finished.emit(False, "执行上下文未初始化")
+            return
+
+        if not self._sequence:
+            self.log_message.emit("[WARN] 序列为空，无需执行")
+            self.finished.emit(True, "序列为空")
+            return
+
+        total_steps = self._count_steps(self._sequence)
+        executed = [0]
+
+        original_record = self._context.record_data
+
+        def _hooked_record(row: Dict[str, Any]) -> None:
+            original_record(row)
+            self.data_recorded.emit(dict(row))
+
+        self._context.record_data = _hooked_record
+
+        original_execute = _execute_node.__wrapped__ if hasattr(_execute_node, '__wrapped__') else None
+
+        self.log_message.emit(f"[START] 开始执行序列，共 {total_steps} 个步骤")
+
+        try:
+            self._run_nodes(self._sequence, total_steps, executed)
+
+            if self._context.should_stop:
+                self.log_message.emit("[STOP] 执行被用户中止")
+                self.finished.emit(False, "用户中止")
+            else:
+                self.log_message.emit(f"[DONE] 执行完成，记录 {len(self._context.records)} 行数据")
+                self.finished.emit(True, "执行完成")
+        except Exception as e:
+            tb = traceback.format_exc()
+            logger.error("执行异常: %s\n%s", e, tb)
+            self.log_message.emit(f"[ERROR] {e}")
+            self.error.emit(str(e))
+            self.finished.emit(False, str(e))
+
+    def _run_nodes(self, nodes: List[BaseNode], total: int, executed: List[int]) -> None:
+        """递归执行节点，发射进度信号"""
+        for node in nodes:
+            if self._context.should_stop:
+                return
+            while self._context.should_pause and not self._context.should_stop:
+                time.sleep(0.1)
+
+            self.step_started.emit(node.uid, node.display_name)
+            self.log_message.emit(f"[STEP] {node.display_name} (uid={node.uid[:8]})")
+
+            pre_record_count = len(self._context.records)
+
+            try:
+                if node.accepts_children:
+                    node.execute(self._context)
+                else:
+                    node.execute(self._context)
+            except Exception as e:
+                self.log_message.emit(f"[ERROR] {node.display_name}: {e}")
+                raise
+
+            executed[0] += 1
+            self.progress_updated.emit(executed[0], total)
+            self.step_finished.emit(node.uid, node.display_name)
+
+            new_records = self._context.records[pre_record_count:]
+            for rec in new_records:
+                pass
+
+    def _count_steps(self, nodes: List[BaseNode]) -> int:
+        """统计非容器节点的总步骤数"""
+        count = 0
+        for node in nodes:
+            count += 1
+            if node.children:
+                count += self._count_steps(node.children)
+        return count
+
+
+class ExecutorThread(QObject):
+    """封装 QThread + Executor 的便捷类"""
+
+    finished = Signal(bool, str)
+
+    def __init__(self, parent: Optional[QObject] = None) -> None:
+        super().__init__(parent)
+        self._thread: Optional[QThread] = None
+        self._executor: Optional[CustomTestExecutor] = None
+
+    @property
+    def executor(self) -> Optional[CustomTestExecutor]:
+        return self._executor
+
+    def start(self, nodes: List[BaseNode], context: ExecutionContext) -> CustomTestExecutor:
+        """启动执行"""
+        self.stop()
+
+        self._executor = CustomTestExecutor()
+        self._executor.set_sequence(nodes)
+        self._executor.set_context(context)
+
+        self._thread = QThread()
+        self._executor.moveToThread(self._thread)
+
+        self._thread.started.connect(self._executor.run)
+        self._executor.finished.connect(self._on_finished)
+        self._executor.finished.connect(self._thread.quit)
+        self._thread.finished.connect(self._cleanup)
+
+        self._thread.start()
+        return self._executor
+
+    def stop(self) -> None:
+        """停止执行"""
+        if self._executor:
+            self._executor.request_stop()
+        if self._thread and self._thread.isRunning():
+            self._thread.quit()
+            self._thread.wait(5000)
+
+    def _on_finished(self, success: bool, message: str) -> None:
+        self.finished.emit(success, message)
+
+    def _cleanup(self) -> None:
+        if self._executor:
+            self._executor.deleteLater()
+            self._executor = None
+        if self._thread:
+            self._thread.deleteLater()
+            self._thread = None
+
+    @property
+    def is_running(self) -> bool:
+        return self._thread is not None and self._thread.isRunning()

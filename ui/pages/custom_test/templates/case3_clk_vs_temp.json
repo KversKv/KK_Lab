@@ -1,0 +1,53 @@
+[
+  {
+    "node_type": "LoopList",
+    "uid": "tpl3-loop-temp",
+    "params": {
+      "var_name": "temp",
+      "values": "-20, -10, 0, 10, 25, 40, 60, 85"
+    },
+    "children": [
+      {
+        "node_type": "ChamberSetTemp",
+        "uid": "tpl3-set-temp",
+        "params": {
+          "temperature": "${temp}",
+          "wait_stable": true,
+          "stable_time": 120.0,
+          "tolerance": 1.0
+        }
+      },
+      {
+        "node_type": "Delay",
+        "uid": "tpl3-delay",
+        "params": {
+          "seconds": 5.0
+        }
+      },
+      {
+        "node_type": "ScopeMeasureFreq",
+        "uid": "tpl3-measure-freq",
+        "params": {
+          "channel": 1,
+          "result_var": "clk_freq"
+        }
+      },
+      {
+        "node_type": "RecordDataPoint",
+        "uid": "tpl3-record",
+        "params": {
+          "fields": "temp=${temp}, clk_freq=${clk_freq}"
+        }
+      }
+    ]
+  },
+  {
+    "node_type": "ExportResult",
+    "uid": "tpl3-export",
+    "params": {
+      "format": "csv",
+      "filename": "clk_vs_temp",
+      "output_dir": ""
+    }
+  }
+]
