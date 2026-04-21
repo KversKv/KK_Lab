@@ -134,6 +134,15 @@ class _HighLowTempTestWorker(QObject):
     def stop(self):
         self._stop_flag = True
 
+    def _interruptible_sleep(self, duration, interval=0.2):
+        elapsed = 0.0
+        while elapsed < duration:
+            if self._stop_flag:
+                return
+            step = min(interval, duration - elapsed)
+            time.sleep(step)
+            elapsed += step
+
     def _float_range(self, start, end, step):
         arr = []
         if step <= 0:
@@ -239,7 +248,7 @@ class _HighLowTempTestWorker(QObject):
                         stable_count = 0
                     if stable_count >= 3:
                         break
-                time.sleep(30)
+                self._interruptible_sleep(30)
 
             if self._stop_flag:
                 self.log.emit("[WARN] Test stopped")
@@ -253,10 +262,7 @@ class _HighLowTempTestWorker(QObject):
             )
 
             self.log.emit(f"[INFO] DUT thermal soak in progress ({soak_time}s)...")
-            for i in range(soak_time):
-                if self._stop_flag:
-                    break
-                time.sleep(1)
+            self._interruptible_sleep(soak_time)
 
             if self._stop_flag:
                 self.log.emit("[WARN] Test stopped")

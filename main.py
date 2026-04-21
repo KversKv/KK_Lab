@@ -17,8 +17,8 @@ if sys.stderr is None:
 
 faulthandler.enable()
 import pyvisa
-from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import qInstallMessageHandler, QtMsgType
+from PySide6.QtWidgets import QApplication, QProxyStyle
+from PySide6.QtCore import qInstallMessageHandler, QtMsgType, Qt
 from PySide6.QtGui import QIcon
 from log_config import setup_logging, get_logger
 from debug_config import DEBUG_MOCK
@@ -56,6 +56,17 @@ def _safe_rm_del(self):
 
 pyvisa.ResourceManager.__del__ = _safe_rm_del
 
+class HoverFixStyle(QProxyStyle):
+    def __init__(self, base_style=None):
+        super().__init__(base_style)
+
+    def polish(self, obj):
+        super().polish(obj)
+        from PySide6.QtWidgets import QWidget
+        if isinstance(obj, QWidget):
+            obj.setAttribute(Qt.WA_Hover, True)
+
+
 def custom_message_handler(msg_type, context, message):
     if msg_type == QtMsgType.QtWarningMsg and "QPainter::end" in message:
         return
@@ -68,7 +79,7 @@ def main():
     qInstallMessageHandler(custom_message_handler)
     
     app = QApplication(sys.argv)
-    app.setStyle("Fusion")
+    app.setStyle(HoverFixStyle("Fusion"))
     
     _base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
     _icon_path = os.path.join(_base, "resources", "icons", "kk_lab.ico")

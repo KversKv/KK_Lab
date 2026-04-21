@@ -570,9 +570,13 @@ class MainWindow(QMainWindow):
                 padding: 6px 12px;
                 background-color: #32353a;
                 color: #c8c8c8;
+                outline: none;
             }
             QPushButton:hover {
                 background-color: #3a3d43;
+            }
+            QPushButton:focus {
+                outline: none;
             }
             QPushButton:pressed {
                 background-color: #2a2d32;
