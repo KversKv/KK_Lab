@@ -295,7 +295,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         outer_frame.setObjectName("sectionFrame")
         outer_layout = QVBoxLayout(outer_frame)
         outer_layout.setContentsMargins(12, 10, 12, 12)
-        outer_layout.setSpacing(6)
+        outer_layout.setSpacing(8)
 
         left_title = QLabel("Instruments / Nodes")
         left_title.setObjectName("sectionTitle")
@@ -309,10 +309,10 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
             parent=self,
         )
 
-        self._instr_conn_frame = QFrame()
-        self._instr_conn_frame.setObjectName("innerCard")
+        self._instr_conn_frame = QWidget()
+        self._instr_conn_frame.setStyleSheet("QWidget { background: transparent; border: none; }")
         self._instr_conn_layout = QVBoxLayout(self._instr_conn_frame)
-        self._instr_conn_layout.setContentsMargins(12, 10, 12, 12)
+        self._instr_conn_layout.setContentsMargins(0, 0, 0, 0)
         self._instr_conn_layout.setSpacing(6)
 
         self._instr_conn_placeholder = QLabel("No instruments in sequence")

@@ -44,7 +44,8 @@ _COLLAPSE_HEADER_STYLE = """
         background-color: transparent;
         color: #5f78a8;
         border: none;
-        border-radius: 4px;
+        border-bottom: 1px solid #111d3a;
+        border-radius: 0px;
         padding: 6px 4px;
         font-size: 11px;
         font-weight: 700;
@@ -53,6 +54,14 @@ _COLLAPSE_HEADER_STYLE = """
     QPushButton#collapseHeader:hover {
         background-color: #0e1f3d;
         color: #8899bb;
+    }
+"""
+
+_SECTION_FRAME_STYLE = """
+    QFrame#collapsibleFrame {
+        background-color: #0a1530;
+        border: 1px solid #12234a;
+        border-radius: 8px;
     }
 """
 
@@ -70,7 +79,16 @@ class CollapsibleSection(QWidget):
         self._expanded = expanded
         self.setStyleSheet("QWidget { background: transparent; border: none; }")
 
-        root = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        self._frame = QFrame()
+        self._frame.setObjectName("collapsibleFrame")
+        self._frame.setStyleSheet(_SECTION_FRAME_STYLE)
+        outer.addWidget(self._frame)
+
+        root = QVBoxLayout(self._frame)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
@@ -81,7 +99,7 @@ class CollapsibleSection(QWidget):
         self._toggle_btn.clicked.connect(self.toggle)
 
         btn_layout = QHBoxLayout(self._toggle_btn)
-        btn_layout.setContentsMargins(4, 0, 4, 0)
+        btn_layout.setContentsMargins(8, 0, 8, 0)
         btn_layout.setSpacing(4)
 
         self._arrow_label = QLabel()
@@ -109,7 +127,7 @@ class CollapsibleSection(QWidget):
         self._content = QWidget()
         self._content.setStyleSheet("QWidget { background: transparent; border: none; }")
         self._content_layout = QVBoxLayout(self._content)
-        self._content_layout.setContentsMargins(0, 2, 0, 0)
+        self._content_layout.setContentsMargins(8, 6, 8, 8)
         self._content_layout.setSpacing(4)
         root.addWidget(self._content)
 
@@ -125,6 +143,15 @@ class CollapsibleSection(QWidget):
 
     def _update_state(self) -> None:
         self._content.setVisible(self._expanded)
+        if self._expanded:
+            self._toggle_btn.setStyleSheet(_COLLAPSE_HEADER_STYLE)
+        else:
+            self._toggle_btn.setStyleSheet(
+                _COLLAPSE_HEADER_STYLE.replace(
+                    "border-bottom: 1px solid #111d3a;",
+                    "border-bottom: none;"
+                )
+            )
         chevron_down = os.path.join(_ICONS_DIR, "chevron-down.svg")
         chevron_right = os.path.join(_ICONS_DIR, "chevron-right.svg")
         if self._expanded and os.path.isfile(chevron_down):
@@ -410,7 +437,7 @@ class NodePalette(QWidget):
         inner.setStyleSheet("QWidget { background: transparent; border: none; }")
         self._inner_layout = QVBoxLayout(inner)
         self._inner_layout.setContentsMargins(0, 4, 0, 8)
-        self._inner_layout.setSpacing(4)
+        self._inner_layout.setSpacing(6)
 
         self._build_instrument_section()
         self._build_category_sections()
