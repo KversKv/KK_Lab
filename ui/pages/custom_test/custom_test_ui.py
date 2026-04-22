@@ -24,6 +24,7 @@ from ui.pages.custom_test.context import ExecutionContext
 from ui.pages.custom_test.executor import ExecutorThread
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.chamber_module_frame import VT6002ConnectionMixin
+from ui.modules.serialCom_module_frame import SerialComMixin, MODE_FULL
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.widgets.scrollbar import SCROLLBAR_STYLE
 from log_config import get_logger
@@ -214,11 +215,13 @@ _PAGE_STYLE = """
 """ + SCROLLBAR_STYLE
 
 
-class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
+class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, QWidget):
     """Custom Test 主界面"""
 
     connection_status_changed = Signal(bool)
     vt6002_connection_changed = Signal(bool)
+    serial_connection_changed = Signal(bool)
+    serial_data_received = Signal(bytes)
 
     def __init__(self, n6705c_top=None, mso64b_top=None,
                  vt6002_chamber_ui=None, parent=None) -> None:
@@ -232,9 +235,11 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
 
         self.init_n6705c_connection(n6705c_top)
         self.init_vt6002_connection(vt6002_chamber_ui)
+        self.init_serial_connection(mode=MODE_FULL, baudrate=115200, prefix="UART")
 
         self._n6705c_widgets_built = False
         self._vt6002_widgets_built = False
+        self._uart_widgets_built = False
         self._i2c_interface = None
 
         self._executor_thread = ExecutorThread(self)
@@ -293,8 +298,9 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
     def _build_left_panel(self) -> QWidget:
         outer_frame = QFrame()
         outer_frame.setObjectName("sectionFrame")
+        outer_frame.setMinimumWidth(220)
         outer_layout = QVBoxLayout(outer_frame)
-        outer_layout.setContentsMargins(12, 10, 12, 12)
+        outer_layout.setContentsMargins(6, 10, 2, 12)
         outer_layout.setSpacing(8)
 
         left_title = QLabel("Instruments / Nodes")
@@ -310,7 +316,29 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         )
 
         self._instr_conn_frame = QWidget()
-        self._instr_conn_frame.setStyleSheet("QWidget { background: transparent; border: none; }")
+        self._instr_conn_frame.setStyleSheet("""
+            QWidget { background: transparent; border: none; }
+            QLabel#fieldLabel {
+                color: #8eb0e3; font-size: 11px;
+                background: transparent; border: none;
+            }
+            QLabel#placeholderText {
+                color: #3f5070; font-size: 11px;
+                background: transparent; border: none;
+            }
+            QLabel#statusOk {
+                color: #15d1a3; font-weight: 600; font-size: 11px;
+                background: transparent; border: none;
+            }
+            QLabel#statusWarn {
+                color: #ffb84d; font-weight: 600; font-size: 11px;
+                background: transparent; border: none;
+            }
+            QLabel#statusErr {
+                color: #ff5e7a; font-weight: 600; font-size: 11px;
+                background: transparent; border: none;
+            }
+        """)
         self._instr_conn_layout = QVBoxLayout(self._instr_conn_frame)
         self._instr_conn_layout.setContentsMargins(0, 0, 0, 0)
         self._instr_conn_layout.setSpacing(6)
@@ -320,9 +348,9 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         self._instr_conn_layout.addWidget(self._instr_conn_placeholder)
 
         self._conn_section.content_layout.addWidget(self._instr_conn_frame)
-        outer_layout.addWidget(self._conn_section)
 
         self.palette = NodePalette()
+        self.palette.insert_top_widget(self._conn_section)
         outer_layout.addWidget(self.palette, 1)
 
         return outer_frame
@@ -360,10 +388,10 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
                         sub.widget().deleteLater()
 
         used_ids = self._get_used_instrument_ids()
-        used_ids.discard("i2c")
 
         self._n6705c_widgets_built = False
         self._vt6002_widgets_built = False
+        self._uart_widgets_built = False
 
         if not used_ids:
             self._instr_conn_placeholder = QLabel("No instruments in sequence")
@@ -412,6 +440,24 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
             status = QLabel("● Not implemented")
             status.setObjectName("statusWarn")
             self._instr_conn_layout.addWidget(status)
+
+        if "i2c" in used_ids:
+            lbl = QLabel("REG Controller (I2C)")
+            lbl.setObjectName("fieldLabel")
+            self._instr_conn_layout.addWidget(lbl)
+            status = QLabel("● Auto-connect on run")
+            status.setObjectName("statusOk")
+            self._instr_conn_layout.addWidget(status)
+
+        if "uart" in used_ids:
+            lbl = QLabel("UART (Serial)")
+            lbl.setObjectName("fieldLabel")
+            self._instr_conn_layout.addWidget(lbl)
+            self.build_serial_connection_widgets(self._instr_conn_layout)
+            self.bind_serial_signals()
+            self._uart_widgets_built = True
+            if self._serial_connected:
+                self._update_serial_connect_ui(True)
 
     def _build_bottom_panel(self) -> QWidget:
         widget = QWidget()
@@ -693,6 +739,9 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
             if self._i2c_interface is not None:
                 self._context.instruments["i2c"] = self._i2c_interface
 
+        if "uart" in used_ids and self._serial_connected:
+            self._context.instruments["uart"] = self
+
         self.result_table.setRowCount(0)
         self.result_table.setColumnCount(0)
         self._table_empty_label.setVisible(True)
@@ -840,3 +889,4 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         if self._i2c_interface is not None:
             self._i2c_interface.close()
             self._i2c_interface = None
+        self.close_serial()

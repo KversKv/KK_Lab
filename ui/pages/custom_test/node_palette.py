@@ -213,12 +213,22 @@ INSTRUMENT_REGISTRY: List[Dict] = [
     {
         "id": "i2c",
         "name": "REG Controller",
-        "thumb": "settings.svg",
-        "color": "#38bdf8",
+        "thumb": "cpu.svg",
+        "color": "#fb923c",
         "operations": [
             {"node_type": "I2CRead", "label": "I2C Read"},
             {"node_type": "I2CWrite", "label": "I2C Write"},
             {"node_type": "I2CTraverse", "label": "I2C Traverse"},
+        ],
+    },
+    {
+        "id": "uart",
+        "name": "UART",
+        "thumb": "terminal.svg",
+        "color": "#94a3b8",
+        "operations": [
+            {"node_type": "UARTSend", "label": "UART Send"},
+            {"node_type": "UARTReceive", "label": "UART Receive"},
         ],
     },
 ]
@@ -280,7 +290,7 @@ class InstrumentCard(QFrame):
         self._instr = instr_info
         self.setObjectName("instrCard")
         self.setCursor(Qt.OpenHandCursor)
-        self.setFixedSize(90, 82)
+        self.setFixedSize(84, 82)
         self.setStyleSheet(_INSTR_CARD_STYLE.format(color=instr_info["color"]))
 
         layout = QVBoxLayout(self)
@@ -290,18 +300,18 @@ class InstrumentCard(QFrame):
 
         svg_path = os.path.join(_ICONS_DIR, instr_info["thumb"])
         thumb_label = QLabel()
-        thumb_label.setFixedSize(72, 40)
+        thumb_label.setFixedSize(66, 40)
         thumb_label.setAlignment(Qt.AlignCenter)
         thumb_label.setStyleSheet("background: transparent; border: none;")
         if os.path.isfile(svg_path):
             renderer = QSvgRenderer(svg_path)
-            image = QImage(144, 80, QImage.Format_ARGB32_Premultiplied)
+            image = QImage(132, 80, QImage.Format_ARGB32_Premultiplied)
             image.fill(Qt.transparent)
             painter = QPainter(image)
             renderer.render(painter)
             painter.end()
             pixmap = QPixmap.fromImage(image).scaled(
-                72, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation
+                66, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation
             )
             thumb_label.setPixmap(pixmap)
         else:
@@ -338,7 +348,7 @@ class InstrumentCard(QFrame):
             mime = QMimeData()
             mime.setData("application/x-instrument-id", self._instr["id"].encode("utf-8"))
             pixmap = self.grab()
-            drag.setPixmap(pixmap.scaled(90, 82, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            drag.setPixmap(pixmap.scaled(84, 82, Qt.KeepAspectRatio, Qt.SmoothTransformation))
             drag.setMimeData(mime)
             drag.exec(Qt.CopyAction)
         super().mouseMoveEvent(event)
@@ -431,12 +441,36 @@ class NodePalette(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        scroll.setStyleSheet("""
+            QScrollArea { background: transparent; border: none; }
+            QScrollBar:vertical {
+                background: transparent;
+                width: 6px;
+                margin: 0px;
+                border-radius: 3px;
+            }
+            QScrollBar::handle:vertical {
+                background: #22345f;
+                min-height: 30px;
+                border-radius: 3px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #30497f;
+            }
+            QScrollBar::sub-line:vertical,
+            QScrollBar::add-line:vertical {
+                height: 0px;
+            }
+            QScrollBar::add-page:vertical,
+            QScrollBar::sub-page:vertical {
+                background: transparent;
+            }
+        """)
 
         inner = QWidget()
         inner.setStyleSheet("QWidget { background: transparent; border: none; }")
         self._inner_layout = QVBoxLayout(inner)
-        self._inner_layout.setContentsMargins(0, 4, 0, 8)
+        self._inner_layout.setContentsMargins(0, 4, 6, 8)
         self._inner_layout.setSpacing(6)
 
         self._build_instrument_section()
@@ -504,6 +538,9 @@ class NodePalette(QWidget):
                 section.content_layout.addWidget(item)
 
             self._inner_layout.addWidget(section)
+
+    def insert_top_widget(self, widget: QWidget) -> None:
+        self._inner_layout.insertWidget(0, widget)
 
     def _on_item_double_clicked(self, node_type: str) -> None:
         self.node_requested.emit(node_type)

@@ -6,6 +6,7 @@ from ui.pages.custom_test.nodes.instrument_nodes import (
     ChamberSetTemp, N6705CSetVoltage, N6705CMeasure,
     ScopeMeasureFreq, ScopeMeasure, RFAnalyzerMeasure,
     I2CRead, I2CWrite, I2CTraverse,
+    UARTSend, UARTReceive,
 )
 from ui.pages.custom_test.nodes.logic_nodes import (
     LoopRange, LoopList, IfElse, SetVariable, Delay, MathExpression,
@@ -25,6 +26,7 @@ __all__ = [
     "ChamberSetTemp", "N6705CSetVoltage", "N6705CMeasure",
     "ScopeMeasureFreq", "ScopeMeasure", "RFAnalyzerMeasure",
     "I2CRead", "I2CWrite", "I2CTraverse",
+    "UARTSend", "UARTReceive",
     "LoopRange", "LoopList", "IfElse", "SetVariable", "Delay", "MathExpression",
     "BreakNode", "ContinueNode", "WaitUntil", "IfThenStop", "IfThenElse",
     "PromptUser", "PassFailTest", "Group", "LoopCount", "LoopDuration",

@@ -141,6 +141,106 @@ class N6705CMeasure(BaseNode):
 
 
 @register_node
+class UARTSend(BaseNode):
+
+    node_type = "UARTSend"
+    display_name = "UART Send"
+    category = "instrument"
+    icon = "📤"
+    color = "#94a3b8"
+
+    PARAM_SCHEMA = [
+        {"key": "data", "label": "发送数据", "type": "str", "default": "AT\\r\\n"},
+        {"key": "hex_mode", "label": "HEX模式", "type": "bool", "default": False},
+    ]
+
+    def execute(self, context: Any) -> None:
+        uart = context.instruments.get("uart")
+        if uart is None:
+            raise RuntimeError("UART 未连接")
+
+        raw = str(context.resolve_value(self.params["data"]))
+        hex_mode = context.resolve_value(self.params.get("hex_mode", False))
+
+        if hex_mode:
+            payload = bytes.fromhex(raw.replace(" ", ""))
+        else:
+            payload = raw.replace("\\r", "\r").replace("\\n", "\n").encode("utf-8")
+
+        if hasattr(uart, "serial_send"):
+            ok = uart.serial_send(payload)
+        elif hasattr(uart, "write"):
+            uart.write(payload)
+            ok = True
+        else:
+            raise RuntimeError("UART 对象不支持发送")
+
+        logger.info("UART Send: %r => %s", payload, "OK" if ok else "FAIL")
+
+
+@register_node
+class UARTReceive(BaseNode):
+
+    node_type = "UARTReceive"
+    display_name = "UART Receive"
+    category = "instrument"
+    icon = "📥"
+    color = "#94a3b8"
+
+    PARAM_SCHEMA = [
+        {"key": "timeout_s", "label": "超时(秒)", "type": "float", "default": 2.0},
+        {"key": "expect", "label": "期望关键词(可空)", "type": "str", "default": ""},
+        {"key": "result_var", "label": "结果存入变量", "type": "str", "default": "uart_rx"},
+        {"key": "auto_record", "label": "自动记录数据", "type": "bool", "default": True},
+    ]
+
+    def execute(self, context: Any) -> None:
+        uart = context.instruments.get("uart")
+        if uart is None:
+            raise RuntimeError("UART 未连接")
+
+        timeout_s = float(context.resolve_value(self.params.get("timeout_s", 2.0)))
+        expect = str(context.resolve_value(self.params.get("expect", "")))
+        result_var = str(context.resolve_value(self.params["result_var"]))
+        auto_record = context.resolve_value(self.params.get("auto_record", True))
+
+        conn = None
+        if hasattr(uart, "get_serial_connection"):
+            conn = uart.get_serial_connection()
+        elif hasattr(uart, "read"):
+            conn = uart
+
+        if conn is None:
+            raise RuntimeError("UART 无法获取串口连接")
+
+        import time
+        buf = b""
+        deadline = time.time() + timeout_s
+        while time.time() < deadline:
+            if context.should_stop:
+                break
+            try:
+                if hasattr(conn, "in_waiting") and conn.in_waiting > 0:
+                    buf += conn.read(conn.in_waiting)
+                else:
+                    time.sleep(0.05)
+            except Exception:
+                break
+            if expect and expect.encode("utf-8") in buf:
+                break
+
+        text = buf.decode("utf-8", errors="replace")
+        logger.info("UART Receive (%d bytes): %s", len(buf), text[:200])
+        context.set_variable(result_var, text)
+
+        if auto_record:
+            context.record_data({
+                "uart_rx_len": len(buf),
+                result_var: text[:500],
+            })
+
+
+@register_node
 class I2CRead(BaseNode):
 
     node_type = "I2CRead"

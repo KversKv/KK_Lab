@@ -140,6 +140,7 @@ class ExecutionContext:
             "freq_counter": None,
             "rf_analyzer": None,
             "i2c": None,
+            "uart": None,
         }
         self._stop_requested: bool = False
         self._pause_requested: bool = False
