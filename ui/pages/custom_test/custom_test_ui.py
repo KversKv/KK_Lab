@@ -563,7 +563,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
                 )
         menu.addSeparator()
 
-        for cat in ["logic", "io"]:
+        for cat in ["value", "logic", "io"]:
             nodes = get_nodes_by_category(cat)
             for node_cls in nodes:
                 action = menu.addAction(f"{node_cls.icon} {node_cls.display_name}")

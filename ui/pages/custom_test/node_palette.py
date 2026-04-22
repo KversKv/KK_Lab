@@ -478,6 +478,7 @@ class NodePalette(QWidget):
             "IfElse", "IfThenElse", "IfBranch", "ElseIfBranch", "ElseBranch",
         }
         _cat_icons = {
+            "value": ("tag.svg", "Value / Variables"),
             "logic": ("git-branch.svg", "Logic / Flow"),
             "io": ("hard-drive.svg", "Data I/O"),
         }

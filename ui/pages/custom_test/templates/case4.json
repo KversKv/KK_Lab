@@ -1,129 +1,73 @@
 [
   {
     "node_type": "LoopRange",
-    "uid": "87f7810a-8f81-43a8-9e18-70da93dba2de",
+    "uid": "6666704e-20cf-404e-a574-fbd70738e771",
     "params": {
       "var_name": "i",
-      "start": 0.0,
-      "stop": 10.0,
-      "step": 1.0
+      "start": 0.1,
+      "stop": 1.3,
+      "step": 0.1
     },
     "children": [
       {
-        "node_type": "ChamberSetTemp",
-        "uid": "c84a1521-cf97-4757-ad9e-d1773b789372",
+        "node_type": "N6705CSetVoltage",
+        "uid": "bd82bcd9-c273-4881-ab37-f497e250cf90",
         "params": {
-          "temperature": 25.0,
-          "wait_stable": true,
-          "stable_time": 60.0,
-          "tolerance": 1.0
+          "channel": 3,
+          "voltage": "i",
+          "current_limit": 1.0,
+          "output_on": true
         }
       },
       {
-        "node_type": "LoopRange",
-        "uid": "6ea34f38-84e1-4c54-bc19-4bfca3b6e9ea",
+        "node_type": "Delay",
+        "uid": "2296ae74-daad-4a29-b104-028dcbd2fdad",
         "params": {
-          "var_name": "j",
-          "start": 0.0,
-          "stop": 10.0,
-          "step": 1.0
-        },
+          "seconds": 0.3
+        }
+      },
+      {
+        "node_type": "N6705CMeasure",
+        "uid": "e55e4ce2-e8fe-4349-957f-706bfbccd844",
+        "params": {
+          "channel": 1,
+          "measure_type": "voltage",
+          "result_var": "N6705C_result",
+          "export_var": true
+        }
+      },
+      {
+        "node_type": "IfBlock",
+        "uid": "46607237-45d7-4479-8f50-06ebb8ecdf4a",
+        "params": {},
         "children": [
           {
-            "node_type": "N6705CSetVoltage",
-            "uid": "f5e03d25-26e2-493f-9104-13e90b4ad467",
+            "node_type": "IfBranch",
+            "uid": "36c98b85-730e-4e9e-8bdc-10f195aa81ea",
             "params": {
-              "channel": 1,
-              "voltage": 3.8,
-              "current_limit": 1.0,
-              "output_on": true
-            }
+              "condition": "${N6705C_result} > 1"
+            },
+            "children": [
+              {
+                "node_type": "Break",
+                "uid": "7385aa34-4392-46bb-a76f-ed95f55b2a10",
+                "params": {}
+              }
+            ]
           },
           {
-            "node_type": "Delay",
-            "uid": "2970d35d-c68f-43f7-90eb-08e6dd425481",
-            "params": {
-              "seconds": 1.0
-            }
-          },
-          {
-            "node_type": "N6705CMeasure",
-            "uid": "3964d080-fb7d-4752-a03a-eae4950030f2",
-            "params": {
-              "channel": 1,
-              "measure_type": "voltage",
-              "result_var": "N6705C_result",
-              "export_var": true
-            }
-          },
-          {
-            "node_type": "IfBlock",
-            "uid": "a045000e-764b-4ff0-a3de-cef25a72fdda",
+            "node_type": "ElseBranch",
+            "uid": "22572cae-2a6c-48c0-9546-931840720f05",
             "params": {},
             "children": [
               {
-                "node_type": "IfBranch",
-                "uid": "b1230001-0001-0001-0001-000000000001",
-                "params": {
-                  "condition": "${N6705C_result} > 1"
-                },
-                "children": [
-                  {
-                    "node_type": "Break",
-                    "uid": "758677f8-e401-4f59-8c31-cfb5e6b4b210",
-                    "params": {}
-                  }
-                ]
-              },
-              {
-                "node_type": "ElseIfBranch",
-                "uid": "b1230001-0001-0001-0001-000000000002",
-                "params": {
-                  "condition": "0.5 < ${N6705C_result} < 1"
-                },
-                "children": [
-                  {
-                    "node_type": "N6705CSetVoltage",
-                    "uid": "18c9f6fa-a50d-4161-86e3-88120c326ebf",
-                    "params": {
-                      "channel": 1,
-                      "voltage": "${N6705C_result} + 0.1",
-                      "current_limit": 1.0,
-                      "output_on": true
-                    }
-                  }
-                ]
-              },
-              {
-                "node_type": "ElseBranch",
-                "uid": "b1230001-0001-0001-0001-000000000003",
-                "params": {},
-                "children": [
-                  {
-                    "node_type": "N6705CSetVoltage",
-                    "uid": "c1230001-0001-0001-0001-000000000001",
-                    "params": {
-                      "channel": 1,
-                      "voltage": "${N6705C_result} + 0.5",
-                      "current_limit": 1.0,
-                      "output_on": true
-                    }
-                  }
-                ]
+                "node_type": "Continue",
+                "uid": "8ea01ef6-33a6-47e5-b473-95dadfbc1b35",
+                "params": {}
               }
             ]
           }
         ]
-      },
-      {
-        "node_type": "ScopeMeasure",
-        "uid": "6626bd32-31ce-4176-a375-63472fc132ee",
-        "params": {
-          "channel": 1,
-          "measure_type": "pk2pk",
-          "result_var": "scope_result",
-          "export_var": true
-        }
       }
     ]
   }
