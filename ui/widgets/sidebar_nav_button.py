@@ -7,7 +7,7 @@ from PySide6.QtSvg import QSvgRenderer
 
 
 class SidebarNavButton(QPushButton):
-    _ICON_SIZE = 20
+    _ICON_SIZE = 16
     _UNCHECKED_ICON_COLOR = "#93a4c3"
     _CHECKED_ICON_COLOR = "#ffffff"
 
@@ -15,19 +15,19 @@ class SidebarNavButton(QPushButton):
         super().__init__(parent)
         self.setCheckable(True)
         self.setCursor(QCursor(Qt.PointingHandCursor))
-        self.setFixedHeight(72)
+        self.setFixedHeight(48)
 
         self._svg_renderer = None
         if icon_text and os.path.isfile(icon_text):
             self._svg_renderer = QSvgRenderer(icon_text)
 
         main_layout = QHBoxLayout(self)
-        main_layout.setContentsMargins(16, 10, 16, 10)
-        main_layout.setSpacing(12)
+        main_layout.setContentsMargins(10, 6, 10, 6)
+        main_layout.setSpacing(8)
 
         self.icon_label = QLabel()
         self.icon_label.setAlignment(Qt.AlignCenter)
-        self.icon_label.setFixedWidth(22)
+        self.icon_label.setFixedWidth(18)
         if self._svg_renderer:
             self.icon_label.setPixmap(
                 self._render_svg_icon(self._UNCHECKED_ICON_COLOR)
@@ -37,7 +37,7 @@ class SidebarNavButton(QPushButton):
         self.icon_label.setStyleSheet("""
             QLabel {
                 color: #93a4c3;
-                font-size: 18px;
+                font-size: 14px;
                 background: transparent;
                 border: none;
             }
@@ -54,7 +54,7 @@ class SidebarNavButton(QPushButton):
         self.title_label.setStyleSheet("""
             QLabel {
                 color: #d7e3ff;
-                font-size: 15px;
+                font-size: 12px;
                 font-weight: 600;
                 background: transparent;
                 border: none;
@@ -66,7 +66,7 @@ class SidebarNavButton(QPushButton):
         self.subtitle_label.setStyleSheet("""
             QLabel {
                 color: #8ea0bf;
-                font-size: 12px;
+                font-size: 10px;
                 background: transparent;
                 border: none;
             }
@@ -79,11 +79,11 @@ class SidebarNavButton(QPushButton):
         # 右侧箭头
         self.arrow_label = QLabel("›")
         self.arrow_label.setAlignment(Qt.AlignCenter)
-        self.arrow_label.setFixedWidth(16)
+        self.arrow_label.setFixedWidth(12)
         self.arrow_label.setStyleSheet("""
             QLabel {
                 color: #7f8fb0;
-                font-size: 18px;
+                font-size: 14px;
                 background: transparent;
                 border: none;
             }
@@ -113,7 +113,7 @@ class SidebarNavButton(QPushButton):
                 QPushButton {
                     background-color: #5b3df5;
                     border: none;
-                    border-radius: 16px;
+                    border-radius: 12px;
                     text-align: left;
                 }
                 QPushButton:hover {
@@ -127,7 +127,7 @@ class SidebarNavButton(QPushButton):
             self.icon_label.setStyleSheet("""
                 QLabel {
                     color: white;
-                    font-size: 18px;
+                    font-size: 14px;
                     background: transparent;
                     border: none;
                 }
@@ -135,7 +135,7 @@ class SidebarNavButton(QPushButton):
             self.title_label.setStyleSheet("""
                 QLabel {
                     color: white;
-                    font-size: 15px;
+                    font-size: 12px;
                     font-weight: 700;
                     background: transparent;
                     border: none;
@@ -144,7 +144,7 @@ class SidebarNavButton(QPushButton):
             self.subtitle_label.setStyleSheet("""
                 QLabel {
                     color: #e4dcff;
-                    font-size: 12px;
+                    font-size: 10px;
                     background: transparent;
                     border: none;
                 }
@@ -152,7 +152,7 @@ class SidebarNavButton(QPushButton):
             self.arrow_label.setStyleSheet("""
                 QLabel {
                     color: #d9d0ff;
-                    font-size: 18px;
+                    font-size: 14px;
                     background: transparent;
                     border: none;
                 }
@@ -162,7 +162,7 @@ class SidebarNavButton(QPushButton):
                 QPushButton {
                     background-color: transparent;
                     border: none;
-                    border-radius: 16px;
+                    border-radius: 12px;
                     text-align: left;
                 }
                 QPushButton:hover {
@@ -176,7 +176,7 @@ class SidebarNavButton(QPushButton):
             self.icon_label.setStyleSheet("""
                 QLabel {
                     color: #93a4c3;
-                    font-size: 18px;
+                    font-size: 14px;
                     background: transparent;
                     border: none;
                 }
@@ -184,7 +184,7 @@ class SidebarNavButton(QPushButton):
             self.title_label.setStyleSheet("""
                 QLabel {
                     color: #c7d3ee;
-                    font-size: 15px;
+                    font-size: 12px;
                     font-weight: 500;
                     background: transparent;
                     border: none;
@@ -193,7 +193,7 @@ class SidebarNavButton(QPushButton):
             self.subtitle_label.setStyleSheet("""
                 QLabel {
                     color: #7f8da9;
-                    font-size: 12px;
+                    font-size: 10px;
                     background: transparent;
                     border: none;
                 }
@@ -201,7 +201,7 @@ class SidebarNavButton(QPushButton):
             self.arrow_label.setStyleSheet("""
                 QLabel {
                     color: #6f7d98;
-                    font-size: 18px;
+                    font-size: 14px;
                     background: transparent;
                     border: none;
                 }

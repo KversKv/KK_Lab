@@ -27,6 +27,7 @@ from ui.widgets.sidebar_nav_button import SidebarNavButton
 from ui.pages.consumption_test.consumption_test_wrapper import ConsumptionTestWrapper
 from ui.pages.charger_test.charger_test_ui import ChargerTestUI
 from ui.pages.custom_test.custom_test_ui import CustomTestUI
+from ui.modules.serialCom_module_frame import SerialComMixin
 from core.test_manager import TestManager
 from instruments.base.visa_instrument import VisaInstrument
 
@@ -425,6 +426,50 @@ class ConsumptionSubMenu(QWidget):
         return self._hovered
 
 
+class _KKSerialsPage(SerialComMixin, QWidget):
+    serial_connection_changed = Signal(bool)
+    serial_data_received = Signal(bytes)
+
+    def __init__(self, parent=None):
+        QWidget.__init__(self, parent)
+        from ui.modules.serialCom_module_frame import MODE_FULL
+        self.init_serial_connection(mode=MODE_FULL, prefix="KKSerials")
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #020817;
+                color: #dbe7ff;
+            }
+            QLabel {
+                background-color: transparent;
+                color: #dbe7ff;
+                border: none;
+            }
+            QLabel#statusOk {
+                color: #15d1a3;
+                font-weight: 600;
+                background-color: transparent;
+            }
+            QLabel#statusWarn {
+                color: #ffb84d;
+                font-weight: 600;
+                background-color: transparent;
+            }
+            QLabel#statusErr {
+                color: #ff5e7a;
+                font-weight: 600;
+                background-color: transparent;
+            }
+        """)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        self.complete_serialComWidget(root)
+        self._sc_on_refresh()
+        self._sc_append_system("[INFO] KK Serials 已初始化")
+
+    def append_log(self, msg):
+        self._sc_append_system(msg)
+
+
 class MainWindow(QMainWindow):
     """主窗口类"""
 
@@ -458,6 +503,7 @@ class MainWindow(QMainWindow):
         self.consumption_test_ui = None
         self.charger_test_ui = None
         self.custom_test_ui = None
+        self.kk_serials_ui = None
         self.current_instrument_ui = None
         self.channels = []
 
@@ -663,7 +709,7 @@ class MainWindow(QMainWindow):
 
         # 左侧导航栏
         self.left_nav = QFrame()
-        self.left_nav.setFixedWidth(280)
+        self.left_nav.setFixedWidth(187)
         self.left_nav.setObjectName("leftNav")
         self.left_nav.setStyleSheet("""
             QFrame#leftNav {
@@ -674,17 +720,16 @@ class MainWindow(QMainWindow):
         """)
 
         left_nav_layout = QVBoxLayout(self.left_nav)
-        left_nav_layout.setContentsMargins(14, 18, 14, 18)
-        left_nav_layout.setSpacing(10)
+        left_nav_layout.setContentsMargins(10, 14, 10, 14)
+        left_nav_layout.setSpacing(6)
 
-        # 顶部标题
         logo_label = QLabel("LabControl Pro")
         logo_label.setStyleSheet("""
             QLabel {
                 color: #7ea1ff;
-                font-size: 18px;
+                font-size: 14px;
                 font-weight: 700;
-                padding: 6px 4px 12px 4px;
+                padding: 4px 4px 8px 4px;
                 border: none;
                 background: transparent;
             }
@@ -696,10 +741,10 @@ class MainWindow(QMainWindow):
         instruments_title.setStyleSheet("""
             QLabel {
                 color: #5f78a8;
-                font-size: 12px;
+                font-size: 10px;
                 font-weight: 700;
                 letter-spacing: 1px;
-                padding: 10px 6px 4px 6px;
+                padding: 6px 4px 2px 4px;
                 border: none;
                 background: transparent;
             }
@@ -735,10 +780,10 @@ class MainWindow(QMainWindow):
         automation_title.setStyleSheet("""
             QLabel {
                 color: #5f78a8;
-                font-size: 12px;
+                font-size: 10px;
                 font-weight: 700;
                 letter-spacing: 1px;
-                padding: 18px 6px 4px 6px;
+                padding: 10px 4px 2px 4px;
                 border: none;
                 background: transparent;
             }
@@ -773,6 +818,27 @@ class MainWindow(QMainWindow):
         )
         left_nav_layout.addWidget(self.custom_test_btn)
 
+        tools_title = QLabel("TOOLS")
+        tools_title.setStyleSheet("""
+            QLabel {
+                color: #5f78a8;
+                font-size: 10px;
+                font-weight: 700;
+                letter-spacing: 1px;
+                padding: 10px 4px 2px 4px;
+                border: none;
+                background: transparent;
+            }
+        """)
+        left_nav_layout.addWidget(tools_title)
+
+        self.kk_serials_btn = SidebarNavButton(
+            "KK Serials",
+            "",
+            os.path.join(_ICONS_DIR, "activity.svg")
+        )
+        left_nav_layout.addWidget(self.kk_serials_btn)
+
         # 单选组
         self.nav_button_group = QButtonGroup(self)
         self.nav_button_group.setExclusive(True)
@@ -783,10 +849,12 @@ class MainWindow(QMainWindow):
         self.nav_button_group.addButton(self.charger_test_btn)
         self.nav_button_group.addButton(self.consumption_test_btn)
         self.nav_button_group.addButton(self.custom_test_btn)
+        self.nav_button_group.addButton(self.kk_serials_btn)
 
         # 关键：初始化一次箭头显示状态
         self._refresh_nav_arrow_state()
 
+        left_nav_layout.addSpacing(20)
         left_nav_layout.addStretch()
 
         # 底部容器
@@ -863,7 +931,7 @@ class MainWindow(QMainWindow):
         self.right_content_layout.addWidget(self.instrument_ui_container)
 
         main_splitter.addWidget(self.right_content)
-        main_splitter.setSizes([280, 920])
+        main_splitter.setSizes([187, 1013])
 
         self.main_layout.addWidget(main_splitter)
 
@@ -877,6 +945,7 @@ class MainWindow(QMainWindow):
             self.charger_test_btn,
             self.consumption_test_btn,
             self.custom_test_btn,
+            self.kk_serials_btn,
         ]
 
         for btn in nav_buttons:
@@ -1208,11 +1277,22 @@ class MainWindow(QMainWindow):
             self.custom_test_ui.show()
         self.current_instrument_ui = "custom_test"
 
+    def _create_kk_serials_ui(self):
+        logger.debug("Switching to KK Serials UI")
+        self._hide_all_instrument_uis()
+        if self.kk_serials_ui is None:
+            self.kk_serials_ui = _KKSerialsPage()
+            self.instrument_ui_container_layout.addWidget(self.kk_serials_ui)
+        else:
+            self.kk_serials_ui.show()
+        self.current_instrument_ui = "kk_serials"
+
     def _hide_all_instrument_uis(self):
         for widget in [
             self.n6705c_analyser_ui, self.n6705c_datalog_ui,
             self.oscilloscope_ui, self.pmu_test_ui, self.vt6002_chamber_ui,
             self.consumption_test_ui, self.charger_test_ui, self.custom_test_ui,
+            self.kk_serials_ui,
         ]:
             if widget is not None:
                 widget.hide()
@@ -1226,6 +1306,7 @@ class MainWindow(QMainWindow):
         self.charger_test_btn.clicked.connect(self._on_nav_button_clicked)
         self.consumption_test_btn.clicked.connect(self._on_nav_button_clicked)
         self.custom_test_btn.clicked.connect(self._on_nav_button_clicked)
+        self.kk_serials_btn.clicked.connect(self._on_nav_button_clicked)
 
         self.help_btn.clicked.connect(self._on_help)
         self.test_manager.data_updated.connect(self._update_data)
@@ -1413,6 +1494,17 @@ class MainWindow(QMainWindow):
             if self.consumption_submenu:
                 self.consumption_submenu.hide()
             self._create_custom_test_ui()
+
+        elif sender == self.kk_serials_btn:
+            if self.pmu_submenu:
+                self.pmu_submenu.hide()
+            if self.pa_submenu:
+                self.pa_submenu.hide()
+            if self.charger_submenu:
+                self.charger_submenu.hide()
+            if self.consumption_submenu:
+                self.consumption_submenu.hide()
+            self._create_kk_serials_ui()
 
         self._refresh_nav_arrow_state()
 
@@ -1735,6 +1827,12 @@ class MainWindow(QMainWindow):
 
         if self.custom_test_ui is not None:
             self._cleanup_sub_ui(self.custom_test_ui, "CustomTestUI")
+
+        if self.kk_serials_ui is not None:
+            try:
+                self.kk_serials_ui.close_serial()
+            except Exception as e:
+                logger.warning(f"[CloseEvent] Error closing KK Serials: {e}")
 
         logger.info("[CloseEvent] All instruments disconnected, closing window.")
         super().closeEvent(event)

@@ -6,6 +6,7 @@ if _PROJECT_ROOT not in _sys.path:
 
 import json
 import os
+import re
 import time
 import serial
 import serial.tools.list_ports
@@ -635,6 +636,8 @@ class SerialComMixin:
         self._sc_sidebar_visible = True
         self._sc_extra_log_panels = []
         self._sc_active_log_panel_index = 0
+        self._sc_filter_dirty = False
+        self._sc_filter_last_count = 0
 
         outer = QVBoxLayout()
         outer.setContentsMargins(0, 0, 0, 0)
@@ -1037,10 +1040,15 @@ class SerialComMixin:
         self._sc_filter_row = QWidget()
         self._sc_filter_row.setVisible(False)
         self._sc_filter_row.setStyleSheet("background: transparent;")
-        fl = QHBoxLayout(self._sc_filter_row)
-        fl.setContentsMargins(8, 0, 8, 4)
+        filter_root = QVBoxLayout(self._sc_filter_row)
+        filter_root.setContentsMargins(8, 0, 8, 4)
+        filter_root.setSpacing(4)
+
+        fl = QHBoxLayout()
+        fl.setContentsMargins(0, 0, 0, 0)
+        fl.setSpacing(4)
         self._sc_filter_input = QLineEdit()
-        self._sc_filter_input.setPlaceholderText("输入关键词过滤日志...")
+        self._sc_filter_input.setPlaceholderText("输入关键词或正则表达式过滤日志...")
         self._sc_filter_input.setStyleSheet("""
             QLineEdit {
                 background-color: #0b1a38; border: 1px solid #1f315d; border-radius: 6px;
@@ -1048,7 +1056,88 @@ class SerialComMixin:
             }
             QLineEdit:focus { border: 1px solid #3b6bcf; }
         """)
-        fl.addWidget(self._sc_filter_input)
+        fl.addWidget(self._sc_filter_input, 1)
+
+        self._sc_filter_match_label = QLabel("")
+        self._sc_filter_match_label.setStyleSheet(
+            "color: #5f78a8; font-size: 9px; background: transparent; min-width: 60px;"
+        )
+        fl.addWidget(self._sc_filter_match_label)
+        filter_root.addLayout(fl)
+
+        opts = QHBoxLayout()
+        opts.setContentsMargins(0, 0, 0, 0)
+        opts.setSpacing(8)
+
+        self._sc_filter_regex_cb = QCheckBox("正则")
+        self._sc_filter_regex_cb.setStyleSheet(self._sc_checkbox_style())
+        self._sc_filter_regex_cb.setToolTip("启用正则表达式匹配")
+        opts.addWidget(self._sc_filter_regex_cb)
+
+        self._sc_filter_case_cb = QCheckBox("区分大小写")
+        self._sc_filter_case_cb.setStyleSheet(self._sc_checkbox_style())
+        opts.addWidget(self._sc_filter_case_cb)
+
+        self._sc_filter_invert_cb = QCheckBox("反向")
+        self._sc_filter_invert_cb.setStyleSheet(self._sc_checkbox_style())
+        self._sc_filter_invert_cb.setToolTip("显示不匹配的行")
+        opts.addWidget(self._sc_filter_invert_cb)
+
+        opts.addSpacing(8)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.VLine)
+        sep.setFixedHeight(14)
+        sep.setStyleSheet("color: #1a2d57; background: transparent;")
+        opts.addWidget(sep)
+
+        opts.addSpacing(4)
+
+        before_lbl = QLabel("前")
+        before_lbl.setStyleSheet("color: #6b83b0; font-size: 10px; background: transparent;")
+        opts.addWidget(before_lbl)
+        self._sc_filter_before_spin = QSpinBox()
+        self._sc_filter_before_spin.setRange(0, 999)
+        self._sc_filter_before_spin.setValue(0)
+        self._sc_filter_before_spin.setFixedSize(52, 18)
+        self._sc_filter_before_spin.setToolTip("显示匹配行前面的N行上下文")
+        self._sc_filter_before_spin.setStyleSheet("""
+            QSpinBox {
+                background-color: #0b1a38; border: 1px solid #1f315d; border-radius: 4px;
+                color: #c8d8f0; font-size: 9px; padding: 0px 2px;
+            }
+            QSpinBox::up-button, QSpinBox::down-button { width: 10px; }
+        """)
+        opts.addWidget(self._sc_filter_before_spin)
+        before_unit = QLabel("行")
+        before_unit.setStyleSheet("color: #6b83b0; font-size: 10px; background: transparent;")
+        opts.addWidget(before_unit)
+
+        opts.addSpacing(4)
+
+        after_lbl = QLabel("后")
+        after_lbl.setStyleSheet("color: #6b83b0; font-size: 10px; background: transparent;")
+        opts.addWidget(after_lbl)
+        self._sc_filter_after_spin = QSpinBox()
+        self._sc_filter_after_spin.setRange(0, 999)
+        self._sc_filter_after_spin.setValue(0)
+        self._sc_filter_after_spin.setFixedSize(52, 18)
+        self._sc_filter_after_spin.setToolTip("显示匹配行后面的N行上下文")
+        self._sc_filter_after_spin.setStyleSheet("""
+            QSpinBox {
+                background-color: #0b1a38; border: 1px solid #1f315d; border-radius: 4px;
+                color: #c8d8f0; font-size: 9px; padding: 0px 2px;
+            }
+            QSpinBox::up-button, QSpinBox::down-button { width: 10px; }
+        """)
+        opts.addWidget(self._sc_filter_after_spin)
+        after_unit = QLabel("行")
+        after_unit.setStyleSheet("color: #6b83b0; font-size: 10px; background: transparent;")
+        opts.addWidget(after_unit)
+
+        opts.addStretch()
+        filter_root.addLayout(opts)
+
         layout.addWidget(self._sc_filter_row)
 
         self._sc_log_edit = QTextEdit()
@@ -1235,6 +1324,11 @@ class SerialComMixin:
 
         self._sc_filter_btn.clicked.connect(self._sc_on_filter_toggle)
         self._sc_filter_input.textChanged.connect(self._sc_apply_filter)
+        self._sc_filter_regex_cb.toggled.connect(lambda: self._sc_apply_filter())
+        self._sc_filter_case_cb.toggled.connect(lambda: self._sc_apply_filter())
+        self._sc_filter_invert_cb.toggled.connect(lambda: self._sc_apply_filter())
+        self._sc_filter_before_spin.valueChanged.connect(lambda: self._sc_apply_filter())
+        self._sc_filter_after_spin.valueChanged.connect(lambda: self._sc_apply_filter())
         self._sc_copy_btn.clicked.connect(self._sc_copy_logs)
         self._sc_export_btn.clicked.connect(self._sc_export_logs)
         self._sc_clear_btn.clicked.connect(self._sc_clear_logs)
@@ -1780,24 +1874,118 @@ class SerialComMixin:
         self._sc_filter_row.setVisible(checked)
         if not checked:
             self._sc_filter_input.clear()
+            self._sc_filter_match_label.setText("")
+            self._sc_filter_dirty = False
+            self._sc_filter_last_count = len(self._sc_all_logs)
+            self._sc_rebuild_log_view()
 
     def _sc_apply_filter(self, _text=None):
-        kw = self._sc_filter_input.text().strip().lower()
+        self._sc_filter_dirty = False
+        pattern = self._sc_filter_input.text().strip()
+        if not pattern:
+            self._sc_filter_last_count = len(self._sc_all_logs)
+            self._sc_rebuild_log_view()
+            self._sc_filter_match_label.setText("")
+            return
+
+        use_regex = self._sc_filter_regex_cb.isChecked()
+        case_sensitive = self._sc_filter_case_cb.isChecked()
+        invert = self._sc_filter_invert_cb.isChecked()
+        before = self._sc_filter_before_spin.value()
+        after = self._sc_filter_after_spin.value()
+
+        matched_indices = self._sc_get_matched_indices(
+            pattern, use_regex, case_sensitive, invert
+        )
+        self._sc_filter_match_label.setText(f"匹配: {len(matched_indices)} 行")
+
+        visible = set()
+        for idx in matched_indices:
+            start = max(0, idx - before)
+            end = min(len(self._sc_all_logs) - 1, idx + after)
+            for i in range(start, end + 1):
+                visible.add(i)
+
         self._sc_log_edit.clear()
-        for raw, html in self._sc_all_logs:
-            if not kw or kw in raw.lower():
-                self._sc_log_edit.append(html)
+        prev_shown = -2
+        for i in sorted(visible):
+            if before > 0 or after > 0:
+                if prev_shown >= 0 and i - prev_shown > 1:
+                    self._sc_log_edit.append(
+                        '<span style="color:#3a4a6a;">  ───</span>'
+                    )
+            self._sc_log_edit.append(self._sc_all_logs[i][1])
+            prev_shown = i
+        self._sc_filter_last_count = len(self._sc_all_logs)
         if self._sc_auto_scroll:
             self._sc_scroll_to_bottom()
+
+    def _sc_rebuild_log_view(self):
+        self._sc_log_edit.clear()
+        cursor = self._sc_log_edit.textCursor()
+        cursor.beginEditBlock()
+        for _raw, html in self._sc_all_logs:
+            self._sc_log_edit.append(html)
+        cursor.endEditBlock()
+        if self._sc_auto_scroll:
+            self._sc_scroll_to_bottom()
+
+    def _sc_is_filter_active(self):
+        return (self._sc_filter_row.isVisible()
+                and bool(self._sc_filter_input.text().strip()))
+
+    def _sc_get_matched_indices(self, pattern, use_regex, case_sensitive, invert):
+        matched = []
+        compiled = None
+        if use_regex:
+            try:
+                flags = 0 if case_sensitive else re.IGNORECASE
+                compiled = re.compile(pattern, flags)
+            except re.error:
+                return matched
+
+        for i, (raw, _html) in enumerate(self._sc_all_logs):
+            if compiled is not None:
+                hit = bool(compiled.search(raw))
+            elif case_sensitive:
+                hit = pattern in raw
+            else:
+                hit = pattern.lower() in raw.lower()
+            if invert:
+                hit = not hit
+            if hit:
+                matched.append(i)
+        return matched
 
     def _sc_copy_logs(self):
         cb = QApplication.clipboard()
         if not cb:
             return
-        kw = self._sc_filter_input.text().strip().lower() if self._sc_filter_row.isVisible() else ""
         lines = []
-        for raw, _html in self._sc_all_logs:
-            if not kw or kw in raw.lower():
+        if self._sc_filter_row.isVisible() and self._sc_filter_input.text().strip():
+            pattern = self._sc_filter_input.text().strip()
+            use_regex = self._sc_filter_regex_cb.isChecked()
+            case_sensitive = self._sc_filter_case_cb.isChecked()
+            invert = self._sc_filter_invert_cb.isChecked()
+            before = self._sc_filter_before_spin.value()
+            after = self._sc_filter_after_spin.value()
+            matched_indices = self._sc_get_matched_indices(
+                pattern, use_regex, case_sensitive, invert
+            )
+            visible = set()
+            for idx in matched_indices:
+                start = max(0, idx - before)
+                end = min(len(self._sc_all_logs) - 1, idx + after)
+                for i in range(start, end + 1):
+                    visible.add(i)
+            prev_shown = -2
+            for i in sorted(visible):
+                if (before > 0 or after > 0) and prev_shown >= 0 and i - prev_shown > 1:
+                    lines.append("  ───")
+                lines.append(self._sc_all_logs[i][0])
+                prev_shown = i
+        else:
+            for raw, _html in self._sc_all_logs:
                 lines.append(raw)
         cb.setText("\n".join(lines))
 
@@ -1818,6 +2006,9 @@ class SerialComMixin:
         self._sc_tx_bytes = 0
         self._sc_status_rx_label.setText("RX: 0 B")
         self._sc_status_tx_label.setText("TX: 0 B")
+        self._sc_filter_last_count = 0
+        self._sc_filter_dirty = False
+        self._sc_filter_match_label.setText("")
 
     def _sc_on_user_scroll(self, value):
         sb = self._sc_log_edit.verticalScrollBar()
@@ -1884,6 +2075,11 @@ class SerialComMixin:
             display = data.hex(' ')
         else:
             display = data.decode("utf-8", errors="replace")
+            display = display.replace("\x00", "")
+            display = "".join(
+                ch if ch == "\n" or ch == "\r" or ch == "\t" or (ord(ch) >= 0x20) else ""
+                for ch in display
+            )
 
         for line in display.splitlines():
             if line.strip():
@@ -2049,14 +2245,22 @@ class SerialComMixin:
         ts_html = f'<span style="color:#4a5e82;">{ts}</span> ' if ts else ""
         html = f'{ts_html}<span style="color:{color};">{escaped}</span>'
         self._sc_all_logs.append((message, html))
-        kw = self._sc_filter_input.text().strip().lower() if self._sc_filter_row.isVisible() else ""
-        if not kw or kw in message.lower():
+        if self._sc_is_filter_active():
+            self._sc_filter_dirty = True
+        else:
             self._sc_pending_html.append(html)
 
     def _sc_flush_pending_logs(self):
-        if not self._sc_pending_html:
-            pass
-        else:
+        if self._sc_is_filter_active():
+            if getattr(self, '_sc_filter_dirty', False):
+                self._sc_filter_dirty = False
+                before = self._sc_filter_before_spin.value()
+                after = self._sc_filter_after_spin.value()
+                if before == 0 and after == 0:
+                    self._sc_flush_filter_incremental()
+                else:
+                    self._sc_apply_filter()
+        elif self._sc_pending_html:
             batch = self._sc_pending_html
             self._sc_pending_html = []
             cursor = self._sc_log_edit.textCursor()
@@ -2067,6 +2271,53 @@ class SerialComMixin:
             if self._sc_auto_scroll:
                 self._sc_scroll_to_bottom()
         self._sc_flush_extra_panels()
+
+    def _sc_flush_filter_incremental(self):
+        pattern = self._sc_filter_input.text().strip()
+        if not pattern:
+            return
+        use_regex = self._sc_filter_regex_cb.isChecked()
+        case_sensitive = self._sc_filter_case_cb.isChecked()
+        invert = self._sc_filter_invert_cb.isChecked()
+
+        compiled = None
+        if use_regex:
+            try:
+                flags = 0 if case_sensitive else re.IGNORECASE
+                compiled = re.compile(pattern, flags)
+            except re.error:
+                return
+
+        start_idx = self._sc_filter_last_count
+        new_html = []
+        total_match = 0
+
+        for i in range(len(self._sc_all_logs)):
+            raw = self._sc_all_logs[i][0]
+            if compiled is not None:
+                hit = bool(compiled.search(raw))
+            elif case_sensitive:
+                hit = pattern in raw
+            else:
+                hit = pattern.lower() in raw.lower()
+            if invert:
+                hit = not hit
+            if hit:
+                total_match += 1
+                if i >= start_idx:
+                    new_html.append(self._sc_all_logs[i][1])
+
+        self._sc_filter_last_count = len(self._sc_all_logs)
+        self._sc_filter_match_label.setText(f"匹配: {total_match} 行")
+
+        if new_html:
+            cursor = self._sc_log_edit.textCursor()
+            cursor.beginEditBlock()
+            for html in new_html:
+                self._sc_log_edit.append(html)
+            cursor.endEditBlock()
+            if self._sc_auto_scroll:
+                self._sc_scroll_to_bottom()
 
     def _sc_append_system(self, message: str):
         color_map = {"INFO": "#60a5fa", "WARN": "#facc15", "ERROR": "#f87171"}
