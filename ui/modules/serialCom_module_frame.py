@@ -1,4 +1,9 @@
-#python -m ui.modules.serialCom_module_frame
+import os as _os
+import sys as _sys
+_PROJECT_ROOT = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+if _PROJECT_ROOT not in _sys.path:
+    _sys.path.insert(0, _PROJECT_ROOT)
+
 import json
 import os
 import time
@@ -148,10 +153,18 @@ class _SerialSearchButton(QPushButton):
         self._icon_size = icon_size
         self._angle = 0.0
         self._spinning = False
-        self._svg_renderer = None
+        self._icon_pixmap = None
 
         if os.path.isfile(_SEARCH_ICON_PATH):
-            self._svg_renderer = QSvgRenderer(_SEARCH_ICON_PATH)
+            renderer = QSvgRenderer(_SEARCH_ICON_PATH)
+            pm = QPixmap(icon_size, icon_size)
+            pm.fill(Qt.transparent)
+            p = QPainter(pm)
+            p.setRenderHint(QPainter.Antialiasing)
+            p.setRenderHint(QPainter.SmoothPixmapTransform)
+            renderer.render(p, QRectF(0, 0, icon_size, icon_size))
+            p.end()
+            self._icon_pixmap = pm
 
         self._timer = QTimer(self)
         self._timer.setInterval(30)
@@ -182,7 +195,7 @@ class _SerialSearchButton(QPushButton):
 
     def paintEvent(self, event):
         super().paintEvent(event)
-        if not self._svg_renderer:
+        if self._icon_pixmap is None:
             return
 
         s = self._icon_size
@@ -196,9 +209,7 @@ class _SerialSearchButton(QPushButton):
         painter.translate(cx, cy)
         if self._spinning:
             painter.rotate(self._angle)
-        painter.translate(-s / 2.0, -s / 2.0)
-
-        self._svg_renderer.render(painter, QRectF(0, 0, s, s))
+        painter.drawPixmap(int(-s / 2.0), int(-s / 2.0), self._icon_pixmap)
         painter.end()
 
 
@@ -622,6 +633,8 @@ class SerialComMixin:
         self._sc_send_history = []
         self._sc_quick_commands = []
         self._sc_sidebar_visible = True
+        self._sc_extra_log_panels = []
+        self._sc_active_log_panel_index = 0
 
         outer = QVBoxLayout()
         outer.setContentsMargins(0, 0, 0, 0)
@@ -645,8 +658,14 @@ class SerialComMixin:
         center_layout.setContentsMargins(0, 0, 0, 0)
         center_layout.setSpacing(0)
 
+        self._sc_log_container = QWidget()
+        self._sc_log_grid = QGridLayout(self._sc_log_container)
+        self._sc_log_grid.setContentsMargins(0, 0, 0, 0)
+        self._sc_log_grid.setSpacing(2)
+
         self._sc_log_area = self._build_sc_log_area()
-        center_layout.addWidget(self._sc_log_area, 1)
+        self._sc_log_grid.addWidget(self._sc_log_area, 0, 0)
+        center_layout.addWidget(self._sc_log_container, 1)
 
         self._sc_send_area = self._build_sc_send_area()
         center_layout.addWidget(self._sc_send_area)
@@ -660,9 +679,6 @@ class SerialComMixin:
         body_splitter.setSizes([220, 600])
 
         outer.addWidget(body_splitter, 1)
-
-        self._sc_status_bar = self._build_sc_status_bar()
-        outer.addWidget(self._sc_status_bar)
 
         parent_layout.addLayout(outer)
 
@@ -713,6 +729,46 @@ class SerialComMixin:
             os.path.join(_SVG_SERIAL_DIR, "refresh.svg"), "刷新"
         )
         layout.addWidget(self._sc_refresh_btn)
+
+        self._sc_add_log_btn = self._make_sc_btn(
+            os.path.join(_SVG_LOGS_DIR, "plus.svg"), ""
+        )
+        self._sc_add_log_btn.setFixedSize(20, 20)
+        self._sc_add_log_btn.setToolTip("新增LOG窗口")
+        self._sc_add_log_btn.setStyleSheet("""
+            QPushButton {
+                min-height: 0px; max-height: 20px; min-width: 20px; max-width: 20px;
+                padding: 0px; border-radius: 6px;
+                background-color: #13254b; color: #dce7ff; border: none;
+            }
+            QPushButton:hover { background-color: #1C2D55; }
+            QPushButton:pressed { background-color: #102040; }
+        """)
+        icon_add = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "plus.svg"), "#4ade80", 12)
+        if not icon_add.isNull():
+            self._sc_add_log_btn.setIcon(icon_add)
+        layout.addWidget(self._sc_add_log_btn)
+
+        self._sc_remove_log_btn = self._make_sc_btn(
+            os.path.join(_SVG_LOGS_DIR, "minus.svg"), ""
+        )
+        self._sc_remove_log_btn.setFixedSize(20, 20)
+        self._sc_remove_log_btn.setToolTip("移除当前LOG窗口")
+        self._sc_remove_log_btn.setStyleSheet("""
+            QPushButton {
+                min-height: 0px; max-height: 20px; min-width: 20px; max-width: 20px;
+                padding: 0px; border-radius: 6px;
+                background-color: #13254b; color: #dce7ff; border: none;
+            }
+            QPushButton:hover { background-color: #1C2D55; }
+            QPushButton:pressed { background-color: #102040; }
+            QPushButton:disabled { background-color: #0b1430; }
+        """)
+        icon_remove = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "minus.svg"), "#ff5e7a", 12)
+        if not icon_remove.isNull():
+            self._sc_remove_log_btn.setIcon(icon_remove)
+        self._sc_remove_log_btn.setEnabled(False)
+        layout.addWidget(self._sc_remove_log_btn)
 
         layout.addSpacing(8)
 
@@ -925,6 +981,7 @@ class SerialComMixin:
                 border-radius: 8px;
             }
         """)
+        frame.setProperty("_is_primary", True)
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -1007,6 +1064,9 @@ class SerialComMixin:
 
         if self._sc_log_edit.verticalScrollBar():
             self._sc_log_edit.verticalScrollBar().valueChanged.connect(self._sc_on_user_scroll)
+
+        self._sc_status_bar = self._build_sc_status_bar()
+        layout.addWidget(self._sc_status_bar)
 
         return frame
 
@@ -1132,6 +1192,8 @@ class SerialComMixin:
             QFrame#scStatusBar {
                 background-color: #070e22;
                 border-top: 1px solid #1a2d57;
+                border-bottom-left-radius: 8px;
+                border-bottom-right-radius: 8px;
             }
             QLabel { font-size: 10px; background: transparent; }
         """)
@@ -1166,6 +1228,8 @@ class SerialComMixin:
         self._sc_pause_btn.clicked.connect(self._sc_on_pause)
         self._sc_stop_btn.clicked.connect(self._sc_on_stop)
         self._sc_refresh_btn.clicked.connect(self._sc_on_refresh)
+        self._sc_add_log_btn.clicked.connect(self._sc_on_add_log_panel)
+        self._sc_remove_log_btn.clicked.connect(self._sc_on_remove_log_panel)
         self._sc_sidebar_toggle_btn.clicked.connect(self._sc_on_sidebar_toggle)
         self._sc_settings_btn.clicked.connect(self._sc_open_settings_dialog)
 
@@ -1308,6 +1372,316 @@ class SerialComMixin:
                 self._sc_append_system("[WARN] 未发现串口")
         except Exception as e:
             self._sc_append_system(f"[ERROR] 刷新失败: {e}")
+
+    def _sc_on_add_log_panel(self):
+        if len(self._sc_extra_log_panels) >= 3:
+            self._sc_append_system("[WARN] 最多支持4个LOG窗口")
+            return
+        dlg = _AddLogPanelDialog(parent=None)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        panel_info = dlg.get_config()
+        panel = self._build_extra_log_panel(panel_info)
+        self._sc_extra_log_panels.append(panel)
+        self._sc_relayout_log_panels()
+        self._sc_remove_log_btn.setEnabled(True)
+        self._sc_append_system(
+            f"[INFO] 新增LOG窗口: {panel_info.get('title', 'Log')} "
+            f"({panel_info.get('port', 'N/A')} @ {panel_info.get('baudrate', 'N/A')})"
+        )
+        if panel_info.get("auto_connect", False):
+            self._sc_extra_panel_connect(panel)
+
+    def _sc_on_remove_log_panel(self):
+        if not self._sc_extra_log_panels:
+            return
+        panel = self._sc_extra_log_panels.pop()
+        self._sc_extra_panel_disconnect(panel)
+        panel["frame"].setParent(None)
+        panel["frame"].deleteLater()
+        self._sc_relayout_log_panels()
+        self._sc_remove_log_btn.setEnabled(len(self._sc_extra_log_panels) > 0)
+        self._sc_append_system("[INFO] 已移除LOG窗口")
+
+    def _sc_relayout_log_panels(self):
+        while self._sc_log_grid.count():
+            item = self._sc_log_grid.takeAt(0)
+            if item and item.widget():
+                item.widget().setParent(None)
+
+        self._sc_log_grid.setRowStretch(0, 0)
+        self._sc_log_grid.setRowStretch(1, 0)
+        self._sc_log_grid.setColumnStretch(0, 0)
+        self._sc_log_grid.setColumnStretch(1, 0)
+
+        total = 1 + len(self._sc_extra_log_panels)
+
+        if total == 1:
+            self._sc_log_grid.addWidget(self._sc_log_area, 0, 0)
+        elif total == 2:
+            self._sc_log_grid.addWidget(self._sc_log_area, 0, 0)
+            self._sc_log_grid.addWidget(self._sc_extra_log_panels[0]["frame"], 0, 1)
+            self._sc_log_grid.setColumnStretch(0, 1)
+            self._sc_log_grid.setColumnStretch(1, 1)
+        elif total == 3:
+            self._sc_log_grid.addWidget(self._sc_log_area, 0, 0)
+            self._sc_log_grid.addWidget(self._sc_extra_log_panels[0]["frame"], 0, 1)
+            self._sc_log_grid.addWidget(self._sc_extra_log_panels[1]["frame"], 1, 0)
+            self._sc_log_grid.setColumnStretch(0, 1)
+            self._sc_log_grid.setColumnStretch(1, 1)
+            self._sc_log_grid.setRowStretch(0, 1)
+            self._sc_log_grid.setRowStretch(1, 1)
+        elif total == 4:
+            self._sc_log_grid.addWidget(self._sc_log_area, 0, 0)
+            self._sc_log_grid.addWidget(self._sc_extra_log_panels[0]["frame"], 0, 1)
+            self._sc_log_grid.addWidget(self._sc_extra_log_panels[1]["frame"], 1, 0)
+            self._sc_log_grid.addWidget(self._sc_extra_log_panels[2]["frame"], 1, 1)
+            self._sc_log_grid.setColumnStretch(0, 1)
+            self._sc_log_grid.setColumnStretch(1, 1)
+            self._sc_log_grid.setRowStretch(0, 1)
+            self._sc_log_grid.setRowStretch(1, 1)
+
+        self._sc_log_area.show()
+        for p in self._sc_extra_log_panels:
+            p["frame"].show()
+
+    def _build_extra_log_panel(self, config):
+        frame = QFrame()
+        frame.setObjectName("scLogFrame")
+        frame.setStyleSheet("""
+            QFrame#scLogFrame {
+                background-color: #09142e;
+                border: 1px solid #1a2d57;
+                border-radius: 8px;
+            }
+        """)
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        toolbar = QHBoxLayout()
+        toolbar.setContentsMargins(8, 6, 8, 4)
+        toolbar.setSpacing(6)
+
+        icon_label = QLabel()
+        icon = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "logs.svg"), "#8eb0e3", 14)
+        if not icon.isNull():
+            icon_label.setPixmap(icon.pixmap(14, 14))
+        icon_label.setFixedSize(16, 16)
+        icon_label.setStyleSheet("background: transparent;")
+        toolbar.addWidget(icon_label)
+
+        title_text = config.get("title", "Serial Log")
+        title = QLabel(title_text)
+        title.setStyleSheet("color: #f4f7ff; font-size: 11px; font-weight: 700; background: transparent;")
+        toolbar.addWidget(title)
+
+        toolbar.addStretch()
+
+        clear_btn = self._make_sc_btn(
+            os.path.join(_SVG_LOGS_DIR, "trash.svg"), "清除"
+        )
+        toolbar.addWidget(clear_btn)
+
+        scroll_btn = self._make_sc_btn(
+            os.path.join(_SVG_LOGS_DIR, "auto-scroll.svg"), "自动滚动"
+        )
+        scroll_btn.setCheckable(True)
+        scroll_btn.setChecked(True)
+        toolbar.addWidget(scroll_btn)
+
+        layout.addLayout(toolbar)
+
+        log_edit = QTextEdit()
+        log_edit.setReadOnly(True)
+        log_edit.setStyleSheet("""
+            QTextEdit {
+                background-color: #061022; border: none; border-top: 1px solid #1f315d;
+                color: #7cecc8; font-family: Consolas, "Courier New", monospace; font-size: 11px;
+                padding: 6px 8px;
+            }
+        """ + SCROLLBAR_STYLE)
+        layout.addWidget(log_edit, 1)
+
+        status_bar = QFrame()
+        status_bar.setObjectName("scStatusBar")
+        status_bar.setFixedHeight(24)
+        status_bar.setStyleSheet("""
+            QFrame#scStatusBar {
+                background-color: #070e22;
+                border-top: 1px solid #1a2d57;
+                border-bottom-left-radius: 8px;
+                border-bottom-right-radius: 8px;
+            }
+            QLabel { font-size: 10px; background: transparent; }
+        """)
+        sb_layout = QHBoxLayout(status_bar)
+        sb_layout.setContentsMargins(10, 0, 10, 0)
+        sb_layout.setSpacing(16)
+
+        port_label = QLabel(f"端口: {config.get('port', '未连接')}")
+        port_label.setStyleSheet("color: #ff5e7a;")
+        sb_layout.addWidget(port_label)
+
+        baud_label = QLabel(f"波特率: {config.get('baudrate', '-')}")
+        baud_label.setStyleSheet("color: #6b83b0;")
+        sb_layout.addWidget(baud_label)
+
+        rx_label = QLabel("RX: 0 B")
+        rx_label.setStyleSheet("color: #4ade80;")
+        sb_layout.addWidget(rx_label)
+
+        tx_label = QLabel("TX: 0 B")
+        tx_label.setStyleSheet("color: #60a5fa;")
+        sb_layout.addWidget(tx_label)
+
+        sb_layout.addStretch()
+        layout.addWidget(status_bar)
+
+        panel = {
+            "frame": frame,
+            "log_edit": log_edit,
+            "clear_btn": clear_btn,
+            "scroll_btn": scroll_btn,
+            "port_label": port_label,
+            "baud_label": baud_label,
+            "rx_label": rx_label,
+            "tx_label": tx_label,
+            "config": config,
+            "conn": None,
+            "read_thread": None,
+            "read_worker": None,
+            "rx_bytes": 0,
+            "tx_bytes": 0,
+            "auto_scroll": True,
+            "all_logs": [],
+            "pending_html": [],
+        }
+
+        clear_btn.clicked.connect(lambda: self._sc_extra_panel_clear(panel))
+        scroll_btn.clicked.connect(lambda c: panel.__setitem__("auto_scroll", c))
+
+        if log_edit.verticalScrollBar():
+            log_edit.verticalScrollBar().valueChanged.connect(
+                lambda val, p=panel: self._sc_extra_panel_on_scroll(p, val)
+            )
+
+        return panel
+
+    def _sc_extra_panel_clear(self, panel):
+        panel["all_logs"].clear()
+        panel["pending_html"].clear()
+        panel["log_edit"].clear()
+        panel["rx_bytes"] = 0
+        panel["tx_bytes"] = 0
+        panel["rx_label"].setText("RX: 0 B")
+        panel["tx_label"].setText("TX: 0 B")
+
+    def _sc_extra_panel_on_scroll(self, panel, value):
+        sb = panel["log_edit"].verticalScrollBar()
+        if sb and sb.maximum() > 0:
+            at_bottom = value >= sb.maximum() - 5
+            if not at_bottom and panel["auto_scroll"]:
+                panel["auto_scroll"] = False
+                panel["scroll_btn"].setChecked(False)
+            elif at_bottom and not panel["auto_scroll"]:
+                panel["auto_scroll"] = True
+                panel["scroll_btn"].setChecked(True)
+
+    def _sc_extra_panel_connect(self, panel):
+        config = panel["config"]
+        port = config.get("port", "")
+        baudrate = config.get("baudrate", 115200)
+
+        if not port:
+            return
+
+        if DEBUG_MOCK:
+            panel["conn"] = None
+            panel["port_label"].setText(f"端口: MOCK")
+            panel["port_label"].setStyleSheet("color: #4ade80; font-size: 10px; background: transparent;")
+            self._sc_extra_panel_append_log(panel, "[INFO] Mock 连接成功", "#60a5fa")
+            return
+
+        try:
+            databit = config.get("databit", 8)
+            stopbit_map = {"1": serial.STOPBITS_ONE, "1.5": serial.STOPBITS_ONE_POINT_FIVE, "2": serial.STOPBITS_TWO}
+            stopbits = stopbit_map.get(config.get("stopbit", "1"), serial.STOPBITS_ONE)
+            parity_map = {"None": serial.PARITY_NONE, "Even": serial.PARITY_EVEN, "Odd": serial.PARITY_ODD,
+                          "Mark": serial.PARITY_MARK, "Space": serial.PARITY_SPACE}
+            parity = parity_map.get(config.get("parity", "None"), serial.PARITY_NONE)
+            flow = config.get("flow", "None")
+
+            conn = serial.Serial(
+                port=port, baudrate=baudrate, bytesize=databit,
+                stopbits=stopbits, parity=parity,
+                xonxoff=(flow == "XON/XOFF"), rtscts=(flow == "RTS/CTS"),
+                timeout=0.1,
+            )
+            panel["conn"] = conn
+            panel["port_label"].setText(f"端口: {port}")
+            panel["port_label"].setStyleSheet("color: #4ade80; font-size: 10px; background: transparent;")
+            self._sc_extra_panel_append_log(panel, f"[INFO] 已连接: {port} @ {baudrate}", "#60a5fa")
+            self._sc_extra_panel_start_read(panel)
+        except Exception as e:
+            self._sc_extra_panel_append_log(panel, f"[ERROR] 连接失败: {e}", "#f87171")
+
+    def _sc_extra_panel_disconnect(self, panel):
+        if panel.get("read_worker"):
+            panel["read_worker"].stop()
+        if panel.get("read_thread") and panel["read_thread"].isRunning():
+            panel["read_thread"].quit()
+            panel["read_thread"].wait(2000)
+        panel["read_thread"] = None
+        panel["read_worker"] = None
+        try:
+            if panel["conn"] and panel["conn"].is_open:
+                panel["conn"].close()
+        except Exception:
+            pass
+        panel["conn"] = None
+
+    def _sc_extra_panel_start_read(self, panel):
+        if panel["conn"] is None or not panel["conn"].is_open:
+            return
+        worker = _SerialReadWorker(panel["conn"])
+        thread = QThread()
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.data_received.connect(lambda data, p=panel: self._sc_extra_panel_on_data(p, data))
+        worker.error.connect(lambda err, p=panel: self._sc_extra_panel_append_log(p, f"[ERROR] {err}", "#f87171"))
+        panel["read_thread"] = thread
+        panel["read_worker"] = worker
+        thread.start()
+
+    def _sc_extra_panel_on_data(self, panel, data: bytes):
+        panel["rx_bytes"] += len(data)
+        panel["rx_label"].setText(self._sc_format_bytes("RX", panel["rx_bytes"]))
+        display = data.decode("utf-8", errors="replace")
+        for line in display.splitlines():
+            if line.strip():
+                self._sc_extra_panel_append_log(panel, f"[RX] {line}", "#4ade80")
+
+    def _sc_extra_panel_append_log(self, panel, message, color="#7cecc8"):
+        ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        escaped = message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        ts_html = f'<span style="color:#4a5e82;">{ts}</span> '
+        html = f'{ts_html}<span style="color:{color};">{escaped}</span>'
+        panel["all_logs"].append((message, html))
+        panel["pending_html"].append(html)
+
+    def _sc_flush_extra_panels(self):
+        for panel in self._sc_extra_log_panels:
+            if not panel["pending_html"]:
+                continue
+            batch = panel["pending_html"]
+            panel["pending_html"] = []
+            for html in batch:
+                panel["log_edit"].append(html)
+            if panel["auto_scroll"]:
+                sb = panel["log_edit"].verticalScrollBar()
+                if sb:
+                    sb.setValue(sb.maximum())
 
     def _sc_on_sidebar_toggle(self, checked):
         self._sc_sidebar_visible = checked
@@ -1681,16 +2055,18 @@ class SerialComMixin:
 
     def _sc_flush_pending_logs(self):
         if not self._sc_pending_html:
-            return
-        batch = self._sc_pending_html
-        self._sc_pending_html = []
-        cursor = self._sc_log_edit.textCursor()
-        cursor.beginEditBlock()
-        for html in batch:
-            self._sc_log_edit.append(html)
-        cursor.endEditBlock()
-        if self._sc_auto_scroll:
-            self._sc_scroll_to_bottom()
+            pass
+        else:
+            batch = self._sc_pending_html
+            self._sc_pending_html = []
+            cursor = self._sc_log_edit.textCursor()
+            cursor.beginEditBlock()
+            for html in batch:
+                self._sc_log_edit.append(html)
+            cursor.endEditBlock()
+            if self._sc_auto_scroll:
+                self._sc_scroll_to_bottom()
+        self._sc_flush_extra_panels()
 
     def _sc_append_system(self, message: str):
         color_map = {"INFO": "#60a5fa", "WARN": "#facc15", "ERROR": "#f87171"}
@@ -2096,6 +2472,135 @@ _DLG_STYLE = """
         border-bottom: 2px solid #5b5cf6;
     }
 """
+
+
+class _AddLogPanelDialog(QDialog):
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("新增 LOG 窗口")
+        self.setFixedWidth(400)
+        self.setStyleSheet(_DLG_STYLE)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(12)
+
+        title = QLabel("新增串口 LOG")
+        title.setObjectName("dlgSectionTitle")
+        root.addWidget(title)
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(8)
+
+        grid.addWidget(QLabel("窗口名称"), 0, 0)
+        self._title_edit = QLineEdit()
+        self._title_edit.setPlaceholderText("例如: LOG-2")
+        self._title_edit.setText("Serial Log 2")
+        self._title_edit.setStyleSheet("""
+            QLineEdit {
+                background-color: #0b1a38; border: 1px solid #1f315d; border-radius: 6px;
+                color: #c8d8f0; font-size: 11px; padding: 6px 10px; min-height: 28px;
+            }
+            QLineEdit:focus { border: 1px solid #3b6bcf; }
+        """)
+        grid.addWidget(self._title_edit, 0, 1)
+
+        grid.addWidget(QLabel("端口"), 1, 0)
+        self._port_combo = DarkComboBox()
+        self._port_combo.setFixedHeight(28)
+        self._port_combo.setEditable(True)
+        try:
+            ports = serial.tools.list_ports.comports()
+            for p in ports:
+                self._port_combo.addItem(f"{p.device} - {p.description}")
+        except Exception:
+            pass
+        if self._port_combo.count() == 0:
+            if DEBUG_MOCK:
+                self._port_combo.addItem("[MOCK] COM99 - Mock Serial Device")
+            else:
+                self._port_combo.addItem("No serial ports found")
+        grid.addWidget(self._port_combo, 1, 1)
+
+        grid.addWidget(QLabel("波特率"), 2, 0)
+        self._baud_combo = DarkComboBox()
+        self._baud_combo.setFixedHeight(28)
+        self._baud_combo.setEditable(True)
+        for br in ["921600", "1152000", "2000000", "3000000", "115200", "9600"]:
+            self._baud_combo.addItem(br)
+        self._baud_combo.setCurrentIndex(0)
+        grid.addWidget(self._baud_combo, 2, 1)
+
+        grid.addWidget(QLabel("数据位"), 3, 0)
+        self._databit_combo = DarkComboBox()
+        self._databit_combo.setFixedHeight(28)
+        for d in ["8", "7", "6", "5"]:
+            self._databit_combo.addItem(d)
+        grid.addWidget(self._databit_combo, 3, 1)
+
+        grid.addWidget(QLabel("停止位"), 4, 0)
+        self._stopbit_combo = DarkComboBox()
+        self._stopbit_combo.setFixedHeight(28)
+        for s in ["1", "1.5", "2"]:
+            self._stopbit_combo.addItem(s)
+        grid.addWidget(self._stopbit_combo, 4, 1)
+
+        grid.addWidget(QLabel("校验位"), 5, 0)
+        self._parity_combo = DarkComboBox()
+        self._parity_combo.setFixedHeight(28)
+        for p in ["None", "Even", "Odd", "Mark", "Space"]:
+            self._parity_combo.addItem(p)
+        grid.addWidget(self._parity_combo, 5, 1)
+
+        grid.addWidget(QLabel("流控"), 6, 0)
+        self._flow_combo = DarkComboBox()
+        self._flow_combo.setFixedHeight(28)
+        for fc in ["None", "RTS/CTS", "XON/XOFF"]:
+            self._flow_combo.addItem(fc)
+        grid.addWidget(self._flow_combo, 6, 1)
+
+        root.addLayout(grid)
+
+        self._auto_connect_cb = QCheckBox("创建后自动连接")
+        self._auto_connect_cb.setChecked(True)
+        root.addWidget(self._auto_connect_cb)
+
+        root.addSpacing(4)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QPushButton("取消")
+        cancel_btn.setObjectName("dlgCancelBtn")
+        cancel_btn.setCursor(Qt.PointingHandCursor)
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+
+        ok_btn = QPushButton("确定")
+        ok_btn.setObjectName("dlgOkBtn")
+        ok_btn.setCursor(Qt.PointingHandCursor)
+        ok_btn.clicked.connect(self.accept)
+        btn_row.addWidget(ok_btn)
+        root.addLayout(btn_row)
+
+    def get_config(self):
+        port_text = self._port_combo.currentText()
+        port = port_text.split()[0] if port_text and not port_text.startswith("No ") else ""
+        try:
+            baudrate = int(self._baud_combo.currentText().strip())
+        except ValueError:
+            baudrate = 115200
+        return {
+            "title": self._title_edit.text().strip() or "Serial Log",
+            "port": port,
+            "baudrate": baudrate,
+            "databit": int(self._databit_combo.currentText()),
+            "stopbit": self._stopbit_combo.currentText(),
+            "parity": self._parity_combo.currentText(),
+            "flow": self._flow_combo.currentText(),
+            "auto_connect": self._auto_connect_cb.isChecked(),
+        }
 
 
 class _QuickCmdDialog(QDialog):
@@ -2694,8 +3199,16 @@ if __name__ == "__main__":
         def append_log(self, msg):
             self._sc_append_system(msg)
 
+    from PySide6.QtCore import QtMsgType, qInstallMessageHandler
+
+    def _custom_message_handler(msg_type, context, message):
+        if msg_type == QtMsgType.QtWarningMsg and "QPainter::end" in message:
+            return
+        print(message)
+
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
+    qInstallMessageHandler(_custom_message_handler)
 
     w4 = _DemoCompleteSerialWidget()
     w4.setWindowTitle("Complete Serial Console")

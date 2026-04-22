@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import QComboBox, QStyle, QStyleOptionComboBox, QListView
-from PySide6.QtCore import Qt, QRect
+from PySide6.QtCore import Qt, QRect, QRectF
 from PySide6.QtGui import QPainter, QPen, QColor, QFontMetrics, QPalette
 
 
@@ -78,14 +78,21 @@ class DarkComboBox(QComboBox):
         self.setView(list_view)
 
     def paintEvent(self, event):
-        opt = QStyleOptionComboBox()
-        self.initStyleOption(opt)
-        opt.currentText = ""
-
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        self.style().drawComplexControl(QStyle.CC_ComboBox, opt, painter, self)
+        r = QRectF(self.rect()).adjusted(0.75, 0.75, -0.75, -0.75)
+        bg = QColor(self._popup_bg)
+        bd = QColor(self._popup_border)
+        if not self.isEnabled():
+            bg = bg.darker(130)
+            bd = bd.darker(130)
+        painter.setPen(QPen(bd, 1.5))
+        painter.setBrush(bg)
+        painter.drawRoundedRect(r, 6, 6)
+
+        opt = QStyleOptionComboBox()
+        self.initStyleOption(opt)
 
         if not self.isEditable():
             text_rect: QRect = self.style().subControlRect(
