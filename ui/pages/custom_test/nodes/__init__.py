@@ -3,8 +3,14 @@ from ui.pages.custom_test.nodes.base_node import (
     get_all_node_types, get_nodes_by_category,
 )
 from ui.pages.custom_test.nodes.instrument_nodes import (
-    ChamberSetTemp, N6705CSetVoltage, N6705CMeasure,
-    ScopeMeasureFreq, ScopeMeasure, RFAnalyzerMeasure,
+    N6705CSetMode, N6705CSetRange, N6705CChannelOn, N6705CChannelOff,
+    N6705CSetVoltage, N6705CSetCurrent, N6705CSetCurrentLimit,
+    N6705CMeasure, N6705CGetMode, N6705CGetChannelState,
+    ScopeSetChannel, ScopeSetScale, ScopeSetTimebase, ScopeSetTrigger,
+    ScopeRunStop, ScopeMeasure, ScopeMeasureFreq, ScopeGetDvmDC,
+    ChamberStartStop, ChamberSetTemp, ChamberGetTemp,
+    ChamberGetSetTemp, ChamberGetHumidity,
+    RFAnalyzerMeasure,
     I2CRead, I2CWrite, I2CTraverse,
     UARTSend, UARTReceive,
 )
@@ -23,8 +29,14 @@ from ui.pages.custom_test.nodes.value_nodes import (
 __all__ = [
     "BaseNode", "register_node", "NODE_REGISTRY", "get_node_class",
     "get_all_node_types", "get_nodes_by_category",
-    "ChamberSetTemp", "N6705CSetVoltage", "N6705CMeasure",
-    "ScopeMeasureFreq", "ScopeMeasure", "RFAnalyzerMeasure",
+    "N6705CSetMode", "N6705CSetRange", "N6705CChannelOn", "N6705CChannelOff",
+    "N6705CSetVoltage", "N6705CSetCurrent", "N6705CSetCurrentLimit",
+    "N6705CMeasure", "N6705CGetMode", "N6705CGetChannelState",
+    "ScopeSetChannel", "ScopeSetScale", "ScopeSetTimebase", "ScopeSetTrigger",
+    "ScopeRunStop", "ScopeMeasure", "ScopeMeasureFreq", "ScopeGetDvmDC",
+    "ChamberStartStop", "ChamberSetTemp", "ChamberGetTemp",
+    "ChamberGetSetTemp", "ChamberGetHumidity",
+    "RFAnalyzerMeasure",
     "I2CRead", "I2CWrite", "I2CTraverse",
     "UARTSend", "UARTReceive",
     "LoopRange", "LoopList", "IfElse", "SetVariable", "Delay", "MathExpression",

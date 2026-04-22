@@ -167,9 +167,23 @@ INSTRUMENT_REGISTRY: List[Dict] = [
         "name": "N6705C",
         "thumb": "n6705c_thumb.svg",
         "color": "#f2994a",
-        "operations": [
-            {"node_type": "N6705CSetVoltage", "label": "Set Voltage"},
-            {"node_type": "N6705CMeasure", "label": "Measure V/I/P"},
+        "categories": [
+            {"name": "Config", "ops": [
+                {"node_type": "N6705CSetMode", "label": "Set Mode"},
+                {"node_type": "N6705CSetRange", "label": "Set Range"},
+                {"node_type": "N6705CChannelOn", "label": "Channel ON"},
+                {"node_type": "N6705CChannelOff", "label": "Channel OFF"},
+            ]},
+            {"name": "Set", "ops": [
+                {"node_type": "N6705CSetVoltage", "label": "Set Voltage"},
+                {"node_type": "N6705CSetCurrent", "label": "Set Current"},
+                {"node_type": "N6705CSetCurrentLimit", "label": "Set I Limit"},
+            ]},
+            {"name": "Get", "ops": [
+                {"node_type": "N6705CMeasure", "label": "Measure V/I/P"},
+                {"node_type": "N6705CGetMode", "label": "Get Mode"},
+                {"node_type": "N6705CGetChannelState", "label": "Get CH State"},
+            ]},
         ],
     },
     {
@@ -177,9 +191,21 @@ INSTRUMENT_REGISTRY: List[Dict] = [
         "name": "MSO64B",
         "thumb": "mso64b_thumb.svg",
         "color": "#3ade85",
-        "operations": [
-            {"node_type": "ScopeMeasure", "label": "Measure"},
-            {"node_type": "ScopeMeasureFreq", "label": "Measure Freq"},
+        "categories": [
+            {"name": "Config", "ops": [
+                {"node_type": "ScopeSetChannel", "label": "Set Channel"},
+                {"node_type": "ScopeSetScale", "label": "Set Scale"},
+                {"node_type": "ScopeSetTimebase", "label": "Set Timebase"},
+                {"node_type": "ScopeSetTrigger", "label": "Set Trigger"},
+            ]},
+            {"name": "Set", "ops": [
+                {"node_type": "ScopeRunStop", "label": "Run / Stop"},
+            ]},
+            {"name": "Get", "ops": [
+                {"node_type": "ScopeMeasure", "label": "Measure"},
+                {"node_type": "ScopeMeasureFreq", "label": "Measure Freq"},
+                {"node_type": "ScopeGetDvmDC", "label": "Get DVM DC"},
+            ]},
         ],
     },
     {
@@ -187,9 +213,20 @@ INSTRUMENT_REGISTRY: List[Dict] = [
         "name": "DSOX4034A",
         "thumb": "dsox4034a_thumb.svg",
         "color": "#f59e0b",
-        "operations": [
-            {"node_type": "ScopeMeasure", "label": "Measure"},
-            {"node_type": "ScopeMeasureFreq", "label": "Measure Freq"},
+        "categories": [
+            {"name": "Config", "ops": [
+                {"node_type": "ScopeSetChannel", "label": "Set Channel"},
+                {"node_type": "ScopeSetScale", "label": "Set Scale"},
+                {"node_type": "ScopeSetTimebase", "label": "Set Timebase"},
+                {"node_type": "ScopeSetTrigger", "label": "Set Trigger"},
+            ]},
+            {"name": "Set", "ops": [
+                {"node_type": "ScopeRunStop", "label": "Run / Stop"},
+            ]},
+            {"name": "Get", "ops": [
+                {"node_type": "ScopeMeasure", "label": "Measure"},
+                {"node_type": "ScopeMeasureFreq", "label": "Measure Freq"},
+            ]},
         ],
     },
     {
@@ -197,8 +234,18 @@ INSTRUMENT_REGISTRY: List[Dict] = [
         "name": "VT6002",
         "thumb": "vt6002_thumb.svg",
         "color": "#e07b39",
-        "operations": [
-            {"node_type": "ChamberSetTemp", "label": "Set Temperature"},
+        "categories": [
+            {"name": "Config", "ops": [
+                {"node_type": "ChamberStartStop", "label": "Start / Stop"},
+            ]},
+            {"name": "Set", "ops": [
+                {"node_type": "ChamberSetTemp", "label": "Set Temperature"},
+            ]},
+            {"name": "Get", "ops": [
+                {"node_type": "ChamberGetTemp", "label": "Get Temperature"},
+                {"node_type": "ChamberGetSetTemp", "label": "Get Set Temp"},
+                {"node_type": "ChamberGetHumidity", "label": "Get Humidity"},
+            ]},
         ],
     },
     {
@@ -206,8 +253,10 @@ INSTRUMENT_REGISTRY: List[Dict] = [
         "name": "CMW270",
         "thumb": "cmw270_thumb.svg",
         "color": "#a78bfa",
-        "operations": [
-            {"node_type": "RFAnalyzerMeasure", "label": "RF Measure"},
+        "categories": [
+            {"name": "Get", "ops": [
+                {"node_type": "RFAnalyzerMeasure", "label": "RF Measure"},
+            ]},
         ],
     },
     {
@@ -215,10 +264,14 @@ INSTRUMENT_REGISTRY: List[Dict] = [
         "name": "REG Ctrl",
         "thumb": "cpu.svg",
         "color": "#fb923c",
-        "operations": [
-            {"node_type": "I2CRead", "label": "I2C Read"},
-            {"node_type": "I2CWrite", "label": "I2C Write"},
-            {"node_type": "I2CTraverse", "label": "I2C Traverse"},
+        "categories": [
+            {"name": "Set", "ops": [
+                {"node_type": "I2CWrite", "label": "I2C Write"},
+            ]},
+            {"name": "Get", "ops": [
+                {"node_type": "I2CRead", "label": "I2C Read"},
+                {"node_type": "I2CTraverse", "label": "I2C Traverse"},
+            ]},
         ],
     },
     {
@@ -226,9 +279,13 @@ INSTRUMENT_REGISTRY: List[Dict] = [
         "name": "UART",
         "thumb": "terminal.svg",
         "color": "#94a3b8",
-        "operations": [
-            {"node_type": "UARTSend", "label": "UART Send"},
-            {"node_type": "UARTReceive", "label": "UART Receive"},
+        "categories": [
+            {"name": "Set", "ops": [
+                {"node_type": "UARTSend", "label": "UART Send"},
+            ]},
+            {"name": "Get", "ops": [
+                {"node_type": "UARTReceive", "label": "UART Receive"},
+            ]},
         ],
     },
 ]

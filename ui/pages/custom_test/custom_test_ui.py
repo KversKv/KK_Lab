@@ -359,8 +359,9 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         from ui.pages.custom_test.node_palette import INSTRUMENT_REGISTRY
         node_type_to_instr: Dict[str, str] = {}
         for instr in INSTRUMENT_REGISTRY:
-            for op in instr.get("operations", []):
-                node_type_to_instr[op["node_type"]] = instr["id"]
+            for cat in instr.get("categories", []):
+                for op in cat.get("ops", []):
+                    node_type_to_instr[op["node_type"]] = instr["id"]
 
         used = set()
 
@@ -597,16 +598,34 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         instr_icon = _tinted_svg_icon(microscope_path, "#dce7ff") if os.path.isfile(microscope_path) else QIcon()
         instr_submenu = menu.addMenu(instr_icon, "Instruments")
         instr_submenu.setStyleSheet(_CONTEXT_MENU_STYLE)
+        _cat_icons_add = {"Config": "⚙", "Set": "✎", "Get": "▤"}
         for instr in INSTRUMENT_REGISTRY:
             sub = instr_submenu.addMenu(f"{instr['name']}")
             sub.setStyleSheet(_CONTEXT_MENU_STYLE)
-            for op in instr["operations"]:
-                cls = get_node_class(op["node_type"])
-                icon_text = cls.icon if cls else "▸"
-                action = sub.addAction(f"{icon_text} {op['label']}")
-                action.triggered.connect(
-                    lambda checked=False, nt=op["node_type"]: self._on_add_node(nt)
-                )
+            for cat in instr.get("categories", []):
+                cat_name = cat["name"]
+                ops = cat.get("ops", [])
+                if not ops:
+                    continue
+                cat_icon_char = _cat_icons_add.get(cat_name, "▸")
+                if len(ops) == 1:
+                    op = ops[0]
+                    cls = get_node_class(op["node_type"])
+                    icon_text = cls.icon if cls else cat_icon_char
+                    action = sub.addAction(f"{icon_text} [{cat_name}] {op['label']}")
+                    action.triggered.connect(
+                        lambda checked=False, nt=op["node_type"]: self._on_add_node(nt)
+                    )
+                else:
+                    cat_sub = sub.addMenu(f"{cat_icon_char} {cat_name}")
+                    cat_sub.setStyleSheet(_CONTEXT_MENU_STYLE)
+                    for op in ops:
+                        cls = get_node_class(op["node_type"])
+                        icon_text = cls.icon if cls else "▸"
+                        action = cat_sub.addAction(f"{icon_text} {op['label']}")
+                        action.triggered.connect(
+                            lambda checked=False, nt=op["node_type"]: self._on_add_node(nt)
+                        )
         menu.addSeparator()
 
         for cat in ["value", "logic", "io"]:
@@ -620,7 +639,6 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         menu.exec(self.canvas.add_btn.mapToGlobal(self.canvas.add_btn.rect().bottomLeft()))
 
     def _on_instrument_requested(self, instr_id: str) -> None:
-        """仪器双击回调：弹出操作选择菜单"""
         from PySide6.QtWidgets import QMenu, QCursor
         from ui.pages.custom_test.node_palette import get_instrument_by_id
 
@@ -628,13 +646,16 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         if instr is None:
             return
 
-        operations = instr.get("operations", [])
-        if not operations:
+        categories = instr.get("categories", [])
+        if not categories:
             return
 
-        if len(operations) == 1:
-            self._on_add_node(operations[0]["node_type"])
+        all_ops = [op for cat in categories for op in cat.get("ops", [])]
+        if len(all_ops) == 1:
+            self._on_add_node(all_ops[0]["node_type"])
             return
+
+        _cat_icons = {"Config": "⚙", "Set": "✎", "Get": "▤"}
 
         menu = QMenu(self)
         menu.setStyleSheet(_CONTEXT_MENU_STYLE)
@@ -645,13 +666,30 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         title_action.setEnabled(False)
         menu.addSeparator()
 
-        for op in operations:
-            cls = get_node_class(op["node_type"])
-            icon_text = cls.icon if cls else "▸"
-            action = menu.addAction(f"{icon_text}  {op['label']}")
-            action.triggered.connect(
-                lambda checked=False, nt=op["node_type"]: self._on_add_node(nt)
-            )
+        for cat in categories:
+            cat_name = cat["name"]
+            ops = cat.get("ops", [])
+            if not ops:
+                continue
+            cat_icon_char = _cat_icons.get(cat_name, "▸")
+            if len(ops) == 1:
+                op = ops[0]
+                cls = get_node_class(op["node_type"])
+                icon_text = cls.icon if cls else cat_icon_char
+                action = menu.addAction(f"{icon_text}  [{cat_name}] {op['label']}")
+                action.triggered.connect(
+                    lambda checked=False, nt=op["node_type"]: self._on_add_node(nt)
+                )
+            else:
+                submenu = menu.addMenu(f"{cat_icon_char}  {cat_name}")
+                submenu.setStyleSheet(_CONTEXT_MENU_STYLE)
+                for op in ops:
+                    cls = get_node_class(op["node_type"])
+                    icon_text = cls.icon if cls else "▸"
+                    action = submenu.addAction(f"{icon_text}  {op['label']}")
+                    action.triggered.connect(
+                        lambda checked=False, nt=op["node_type"]: self._on_add_node(nt)
+                    )
 
         menu.exec(QCursor.pos())
 

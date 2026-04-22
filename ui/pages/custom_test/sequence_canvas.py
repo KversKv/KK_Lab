@@ -624,16 +624,19 @@ class SequenceCanvas(QWidget):
         if instr is None:
             return
 
-        operations = instr.get("operations", [])
-        if not operations:
+        categories = instr.get("categories", [])
+        all_ops = [op for cat in categories for op in cat.get("ops", [])]
+        if not all_ops:
             return
 
-        if len(operations) == 1:
-            node_type = operations[0]["node_type"]
+        if len(all_ops) == 1:
+            node_type = all_ops[0]["node_type"]
             cls = get_node_class(node_type)
             if cls:
                 self.add_node(cls())
             return
+
+        _cat_icons = {"Config": "⚙", "Set": "✎", "Get": "▤"}
 
         menu = QMenu(self)
         menu.setStyleSheet(_DROP_MENU_STYLE)
@@ -644,11 +647,26 @@ class SequenceCanvas(QWidget):
         title_action.setEnabled(False)
         menu.addSeparator()
 
-        for op in operations:
-            cls = get_node_class(op["node_type"])
-            icon_text = cls.icon if cls else "▸"
-            action = menu.addAction(f"{icon_text}  {op['label']}")
-            action.setData(op["node_type"])
+        for cat in categories:
+            cat_name = cat["name"]
+            ops = cat.get("ops", [])
+            if not ops:
+                continue
+            cat_icon_char = _cat_icons.get(cat_name, "▸")
+            if len(ops) == 1:
+                op = ops[0]
+                cls = get_node_class(op["node_type"])
+                icon_text = cls.icon if cls else cat_icon_char
+                action = menu.addAction(f"{icon_text}  [{cat_name}] {op['label']}")
+                action.setData(op["node_type"])
+            else:
+                submenu = menu.addMenu(f"{cat_icon_char}  {cat_name}")
+                submenu.setStyleSheet(_DROP_MENU_STYLE)
+                for op in ops:
+                    cls = get_node_class(op["node_type"])
+                    icon_text = cls.icon if cls else "▸"
+                    action = submenu.addAction(f"{icon_text}  {op['label']}")
+                    action.setData(op["node_type"])
 
         chosen = menu.exec(global_pos)
         if chosen and chosen.data():
