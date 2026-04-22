@@ -265,11 +265,9 @@ INSTRUMENT_REGISTRY: List[Dict] = [
         "thumb": "cpu.svg",
         "color": "#fb923c",
         "categories": [
-            {"name": "Set", "ops": [
-                {"node_type": "I2CWrite", "label": "I2C Write"},
-            ]},
-            {"name": "Get", "ops": [
+            {"name": "Operations", "ops": [
                 {"node_type": "I2CRead", "label": "I2C Read"},
+                {"node_type": "I2CWrite", "label": "I2C Write"},
                 {"node_type": "I2CTraverse", "label": "I2C Traverse"},
             ]},
         ],

@@ -16,6 +16,12 @@ from log_config import get_logger
 
 logger = get_logger(__name__)
 
+import os as _os
+_CHECK_ICON = _os.path.join(
+    _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))),
+    "resources", "icons", "check.svg"
+).replace("\\", "/")
+
 _PANEL_STYLE = """
     QWidget#propertyPanel {
         background-color: transparent;
@@ -66,10 +72,29 @@ _PANEL_STYLE = """
         font-size: 12px;
         background: transparent;
         border: none;
+        spacing: 6px;
     }
     QCheckBox::indicator {
         width: 16px;
         height: 16px;
+        border-style: solid;
+        border-width: 1.5px;
+        border-color: #3a5a9f;
+        border-radius: 4px;
+        background: #061022;
+    }
+    QCheckBox::indicator:hover {
+        border-color: #5b5cf6;
+        background: #0d1a3a;
+    }
+    QCheckBox::indicator:checked {
+        border-color: #5b5cf6;
+        background: #5b5cf6;
+        image: url(""" + _CHECK_ICON + """);
+    }
+    QCheckBox::indicator:checked:hover {
+        background: #7070ff;
+        border-color: #7070ff;
     }
 """
 
@@ -189,10 +214,13 @@ class PropertyPanel(QWidget):
 
             elif options and param_type != "bool":
                 combo = DarkComboBox()
+                combo.setEditable(True)
                 for opt in options:
                     combo.addItem(str(opt))
                 combo.setCurrentText(str(current_val))
                 combo.currentTextChanged.connect(lambda text, k=key: self._on_param_changed(k, text))
+                if combo.lineEdit():
+                    combo.lineEdit().setPlaceholderText("值 或 ${var}")
                 card_layout.addWidget(combo)
                 self._editors[key] = combo
 
@@ -216,6 +244,13 @@ class PropertyPanel(QWidget):
                     export_cb.setToolTip("勾选则该变量参与数据记录导出")
                     export_cb.setStyleSheet(
                         "QCheckBox { color: #8eb0e3; font-size: 10px; background: transparent; border: none; }"
+                        "QCheckBox::indicator { width: 14px; height: 14px;"
+                        "  border-style: solid; border-width: 1.5px; border-color: #3a5a9f;"
+                        "  border-radius: 3px; background: #061022; }"
+                        "QCheckBox::indicator:hover { border-color: #5b5cf6; background: #0d1a3a; }"
+                        "QCheckBox::indicator:checked { border-color: #5b5cf6; background: #5b5cf6;"
+                        "  image: url(" + _CHECK_ICON + "); }"
+                        "QCheckBox::indicator:checked:hover { background: #7070ff; border-color: #7070ff; }"
                     )
                     export_cb.toggled.connect(
                         lambda checked: self._on_param_changed("export_var", checked)
@@ -266,7 +301,6 @@ class PropertyPanel(QWidget):
         self._inner_layout.addStretch()
 
     def _on_param_changed(self, key: str, value: Any) -> None:
-        """参数变更回调"""
         if self._current_node is None:
             return
 
@@ -274,8 +308,13 @@ class PropertyPanel(QWidget):
         schema = schema_map.get(key, {})
         param_type = schema.get("type", "str")
 
+        str_val = str(value) if value is not None else ""
+        is_var_ref = "${" in str_val
+
         try:
-            if param_type == "int":
+            if is_var_ref:
+                value = str_val
+            elif param_type == "int":
                 value = int(value)
             elif param_type == "float":
                 value = float(value)

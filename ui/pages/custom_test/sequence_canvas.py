@@ -8,14 +8,14 @@ from typing import Any, Dict, List, Optional
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTreeWidget, QTreeWidgetItem,
-    QPushButton, QMenu, QFileDialog, QMessageBox,
+    QPushButton, QMenu, QFileDialog, QMessageBox, QLabel,
     QAbstractItemView, QStyledItemDelegate, QStyleOptionViewItem, QStyle,
     QLineEdit,
 )
-from PySide6.QtCore import Qt, Signal, QPoint, QRect, QModelIndex, QSize, QRectF
+from PySide6.QtCore import Qt, Signal, QPoint, QRect, QModelIndex, QSize, QRectF, QMimeData
 from PySide6.QtGui import (
     QColor, QPainter, QPen, QBrush, QFont, QFontMetrics, QPixmap, QIcon,
-    QDragEnterEvent, QDragMoveEvent, QDropEvent,
+    QDragEnterEvent, QDragMoveEvent, QDropEvent, QDrag, QMouseEvent,
 )
 from PySide6.QtSvg import QSvgRenderer
 
@@ -455,33 +455,151 @@ class SequenceItemDelegate(QStyledItemDelegate):
         painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, text)
 
 
+_DELETE_OVERLAY_STYLE = """
+    QLabel {
+        background-color: rgba(180, 30, 50, 60);
+        color: #ff8a9e;
+        font-size: 13px;
+        font-weight: 700;
+        border: 2px dashed #ff5e7a;
+        border-radius: 10px;
+    }
+"""
+
+
 class DropAwareTreeWidget(QTreeWidget):
-    """支持外部拖拽的 QTreeWidget"""
 
     external_node_dropped = Signal(str)
     instrument_dropped = Signal(str, QPoint)
+    item_drag_deleted = Signal(str)
+
+    _DRAG_OUT_THRESHOLD = 60
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setAcceptDrops(True)
+        self._drag_source_item: Optional[QTreeWidgetItem] = None
+        self._delete_overlay: Optional[QLabel] = None
+
+    def _show_delete_overlay(self) -> None:
+        if self._delete_overlay is not None:
+            self._delete_overlay.show()
+            return
+        self._delete_overlay = QLabel("🗑  Release to Delete", self)
+        self._delete_overlay.setAlignment(Qt.AlignCenter)
+        self._delete_overlay.setStyleSheet(_DELETE_OVERLAY_STYLE)
+        self._update_overlay_geometry()
+        self._delete_overlay.show()
+
+    def _hide_delete_overlay(self) -> None:
+        if self._delete_overlay is not None:
+            self._delete_overlay.hide()
+
+    def _update_overlay_geometry(self) -> None:
+        if self._delete_overlay is None:
+            return
+        w = self.width()
+        h = self.height()
+        margin = 20
+        self._delete_overlay.setGeometry(margin, margin, w - 2 * margin, h - 2 * margin)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_overlay_geometry()
+
+    def startDrag(self, supportedActions) -> None:
+        item = self.currentItem()
+        if item is None:
+            super().startDrag(supportedActions)
+            return
+
+        uid = item.data(0, Qt.UserRole)
+        if uid is None:
+            super().startDrag(supportedActions)
+            return
+
+        self._drag_source_item = item
+
+        mime = QMimeData()
+        mime.setData("application/x-sequence-uid", uid.encode("utf-8"))
+
+        drag = QDrag(self)
+        drag.setMimeData(mime)
+
+        text = item.text(1) or item.text(0) or "Node"
+        font = QFont("Segoe UI", 10, QFont.Bold)
+        fm = QFontMetrics(font)
+        text_w = fm.horizontalAdvance(text) + 24
+        text_h = fm.height() + 12
+        pm = QPixmap(text_w, text_h)
+        pm.fill(Qt.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setBrush(QColor(13, 27, 58, 220))
+        p.setPen(QPen(QColor("#3a5a9f"), 1.5))
+        p.drawRoundedRect(QRectF(0.5, 0.5, text_w - 1, text_h - 1), 6, 6)
+        p.setFont(font)
+        p.setPen(QColor("#dce7ff"))
+        p.drawText(QRect(0, 0, text_w, text_h), Qt.AlignCenter, text)
+        p.end()
+
+        drag.setPixmap(pm)
+        drag.setHotSpot(QPoint(text_w // 2, text_h // 2))
+
+        result = drag.exec(Qt.MoveAction | Qt.CopyAction)
+        if result == Qt.IgnoreAction and self._drag_source_item is not None:
+            cursor_pos = self.mapFromGlobal(self.cursor().pos())
+            if cursor_pos.x() > self.width():
+                uid_to_del = self._drag_source_item.data(0, Qt.UserRole)
+                if uid_to_del:
+                    self.item_drag_deleted.emit(uid_to_del)
+
+        self._drag_source_item = None
+        self._hide_delete_overlay()
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         mime = event.mimeData()
-        if mime.hasText() or mime.hasFormat("application/x-instrument-id"):
+        if mime.hasFormat("application/x-sequence-uid"):
+            event.acceptProposedAction()
+        elif mime.hasText() or mime.hasFormat("application/x-instrument-id"):
             event.acceptProposedAction()
         else:
             super().dragEnterEvent(event)
 
     def dragMoveEvent(self, event: QDragMoveEvent) -> None:
         mime = event.mimeData()
-        if mime.hasText() or mime.hasFormat("application/x-instrument-id"):
+        if mime.hasFormat("application/x-sequence-uid"):
+            pos = event.position().toPoint()
+            threshold = self.width() - self._DRAG_OUT_THRESHOLD
+            if pos.x() > threshold:
+                self._show_delete_overlay()
+            else:
+                self._hide_delete_overlay()
+            event.acceptProposedAction()
+        elif mime.hasText() or mime.hasFormat("application/x-instrument-id"):
             event.acceptProposedAction()
         else:
             super().dragMoveEvent(event)
 
+    def dragLeaveEvent(self, event) -> None:
+        if self._drag_source_item is not None:
+            self._show_delete_overlay()
+        super().dragLeaveEvent(event)
+
     def dropEvent(self, event: QDropEvent) -> None:
         mime = event.mimeData()
-        if mime.hasFormat("application/x-instrument-id"):
+        if mime.hasFormat("application/x-sequence-uid"):
+            pos = event.position().toPoint()
+            threshold = self.width() - self._DRAG_OUT_THRESHOLD
+            if pos.x() > threshold:
+                uid = bytes(mime.data("application/x-sequence-uid")).decode("utf-8")
+                self.item_drag_deleted.emit(uid)
+                event.acceptProposedAction()
+            else:
+                event.ignore()
+            self._drag_source_item = None
+            self._hide_delete_overlay()
+        elif mime.hasFormat("application/x-instrument-id"):
             instr_id = bytes(mime.data("application/x-instrument-id")).decode("utf-8")
             global_pos = self.mapToGlobal(event.position().toPoint())
             self.instrument_dropped.emit(instr_id, global_pos)
@@ -602,6 +720,7 @@ class SequenceCanvas(QWidget):
         self.tree.currentItemChanged.connect(self._on_current_changed)
         self.tree.external_node_dropped.connect(self._on_external_node_dropped)
         self.tree.instrument_dropped.connect(self._on_instrument_dropped)
+        self.tree.item_drag_deleted.connect(self._on_drag_delete)
         self.remove_btn.clicked.connect(self._on_remove)
         self.move_up_btn.clicked.connect(self._on_move_up)
         self.move_down_btn.clicked.connect(self._on_move_down)
@@ -647,13 +766,20 @@ class SequenceCanvas(QWidget):
         title_action.setEnabled(False)
         menu.addSeparator()
 
+        flat_mode = len(categories) == 1
         for cat in categories:
             cat_name = cat["name"]
             ops = cat.get("ops", [])
             if not ops:
                 continue
             cat_icon_char = _cat_icons.get(cat_name, "▸")
-            if len(ops) == 1:
+            if flat_mode:
+                for op in ops:
+                    cls = get_node_class(op["node_type"])
+                    icon_text = cls.icon if cls else "▸"
+                    action = menu.addAction(f"{icon_text}  {op['label']}")
+                    action.setData(op["node_type"])
+            elif len(ops) == 1:
                 op = ops[0]
                 cls = get_node_class(op["node_type"])
                 icon_text = cls.icon if cls else cat_icon_char
@@ -813,6 +939,24 @@ class SequenceCanvas(QWidget):
             self.tree.takeTopLevelItem(idx)
 
         self._remove_from_maps(uid, current)
+        self.sequence_changed.emit()
+
+    def _on_drag_delete(self, uid: str) -> None:
+        item = self._uid_map.get(uid)
+        if item is None:
+            return
+        parent = item.parent()
+        if parent:
+            parent_uid = parent.data(0, Qt.UserRole)
+            parent_node = self._node_map.get(parent_uid)
+            idx = parent.indexOfChild(item)
+            parent.takeChild(idx)
+            if parent_node:
+                parent_node.children = [c for c in parent_node.children if c.uid != uid]
+        else:
+            idx = self.tree.indexOfTopLevelItem(item)
+            self.tree.takeTopLevelItem(idx)
+        self._remove_from_maps(uid, item)
         self.sequence_changed.emit()
 
     def _remove_from_maps(self, uid: str, item: QTreeWidgetItem) -> None:

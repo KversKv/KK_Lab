@@ -602,13 +602,23 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         for instr in INSTRUMENT_REGISTRY:
             sub = instr_submenu.addMenu(f"{instr['name']}")
             sub.setStyleSheet(_CONTEXT_MENU_STYLE)
-            for cat in instr.get("categories", []):
+            cats = instr.get("categories", [])
+            flat = len(cats) == 1
+            for cat in cats:
                 cat_name = cat["name"]
                 ops = cat.get("ops", [])
                 if not ops:
                     continue
                 cat_icon_char = _cat_icons_add.get(cat_name, "▸")
-                if len(ops) == 1:
+                if flat:
+                    for op in ops:
+                        cls = get_node_class(op["node_type"])
+                        icon_text = cls.icon if cls else "▸"
+                        action = sub.addAction(f"{icon_text} {op['label']}")
+                        action.triggered.connect(
+                            lambda checked=False, nt=op["node_type"]: self._on_add_node(nt)
+                        )
+                elif len(ops) == 1:
                     op = ops[0]
                     cls = get_node_class(op["node_type"])
                     icon_text = cls.icon if cls else cat_icon_char
@@ -666,13 +676,22 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         title_action.setEnabled(False)
         menu.addSeparator()
 
+        flat_mode = len(categories) == 1
         for cat in categories:
             cat_name = cat["name"]
             ops = cat.get("ops", [])
             if not ops:
                 continue
             cat_icon_char = _cat_icons.get(cat_name, "▸")
-            if len(ops) == 1:
+            if flat_mode:
+                for op in ops:
+                    cls = get_node_class(op["node_type"])
+                    icon_text = cls.icon if cls else "▸"
+                    action = menu.addAction(f"{icon_text}  {op['label']}")
+                    action.triggered.connect(
+                        lambda checked=False, nt=op["node_type"]: self._on_add_node(nt)
+                    )
+            elif len(ops) == 1:
                 op = ops[0]
                 cls = get_node_class(op["node_type"])
                 icon_text = cls.icon if cls else cat_icon_char

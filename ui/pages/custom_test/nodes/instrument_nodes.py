@@ -783,11 +783,18 @@ class I2CTraverse(BaseNode):
         {"key": "reg_end", "label": "End Reg (hex)", "type": "str", "default": "0x00FF"},
         {"key": "width", "label": "I2C Width", "type": "int", "default": 10,
          "options": [8, 10, 32]},
+        {"key": "iter_var", "label": "当前寄存器变量名", "type": "str", "default": "reg"},
+        {"key": "val_var", "label": "当前读取值变量名", "type": "str", "default": "reg_val"},
         {"key": "result_var", "label": "结果存入变量(dict)", "type": "str", "default": "i2c_traverse"},
         {"key": "auto_record", "label": "逐行记录数据", "type": "bool", "default": True},
     ]
 
+    @property
+    def accepts_children(self) -> bool:
+        return True
+
     def execute(self, context: Any) -> None:
+        from ui.pages.custom_test.context import BreakLoop
         i2c = context.instruments.get("i2c")
         if i2c is None:
             raise RuntimeError("I2C 接口未连接")
@@ -795,15 +802,24 @@ class I2CTraverse(BaseNode):
         reg_start = int(str(context.resolve_value(self.params["reg_start"])).strip(), 16)
         reg_end = int(str(context.resolve_value(self.params["reg_end"])).strip(), 16)
         width = int(context.resolve_value(self.params["width"]))
+        iter_var = str(self.params.get("iter_var", "reg"))
+        val_var = str(self.params.get("val_var", "reg_val"))
         result_var = str(self.params["result_var"])
         auto_record = self.params.get("auto_record", True)
         results = {}
-        for reg in range(reg_start, reg_end + 1):
+        total = reg_end - reg_start + 1
+        for idx, reg in enumerate(range(reg_start, reg_end + 1)):
             if context.should_stop:
                 break
             try:
                 val = i2c.read(dev, reg, width)
                 results[reg] = val
+                context.set_variable(iter_var, reg)
+                context.set_variable(f"{iter_var}_hex", f"0x{reg:X}")
+                context.set_variable(val_var, val)
+                context.set_variable(f"{val_var}_hex", f"0x{val:X}")
+                context.set_variable(f"{iter_var}_index", idx)
+                context.set_variable(f"{iter_var}_total", total)
                 if auto_record:
                     context.record_data({
                         "device_addr": f"0x{dev:02X}",
@@ -811,6 +827,12 @@ class I2CTraverse(BaseNode):
                         "value_hex": f"0x{val:X}",
                         "value_dec": val,
                     })
+                if self.children:
+                    from ui.pages.custom_test.executor import _execute_children
+                    _execute_children(self.children, context)
+            except BreakLoop:
+                logger.info("I2C Traverse: break at reg=0x%X", reg)
+                break
             except Exception as e:
                 logger.warning("I2C Traverse: dev=0x%02X reg=0x%X => %s", dev, reg, e)
                 results[reg] = None
