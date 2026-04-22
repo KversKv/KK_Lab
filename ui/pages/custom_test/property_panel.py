@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QCheckBox, QFrame, QScrollArea, QSizePolicy,
+    QCheckBox, QFrame, QScrollArea, QSizePolicy, QPushButton,
 )
 from PySide6.QtCore import Qt, Signal
 
@@ -87,6 +87,7 @@ class PropertyPanel(QWidget):
     """属性面板：根据选中节点动态生成表单"""
 
     param_changed = Signal(str, str, object)
+    add_else_if_requested = Signal(str)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -230,6 +231,38 @@ class PropertyPanel(QWidget):
                     self._editors[key] = le
 
         self._inner_layout.addWidget(card)
+
+        from ui.pages.custom_test.nodes.logic_nodes import IfBlock, IfBranch
+        target_uid = None
+        if isinstance(node, IfBlock):
+            target_uid = node.uid
+        elif isinstance(node, IfBranch):
+            target_uid = node.uid
+
+        if target_uid is not None:
+            btn_frame = QFrame()
+            btn_frame.setObjectName("propCard")
+            btn_layout = QVBoxLayout(btn_frame)
+            btn_layout.setContentsMargins(12, 8, 12, 8)
+            btn_layout.setSpacing(6)
+
+            hint = QLabel("分支管理")
+            hint.setObjectName("fieldLabel")
+            btn_layout.addWidget(hint)
+
+            add_btn = QPushButton("+ Add Else If")
+            add_btn.setCursor(Qt.PointingHandCursor)
+            add_btn.setStyleSheet(
+                "QPushButton { background-color: #132040; color: #8eb0e3; "
+                "border: 1px solid #1a2d57; border-radius: 6px; padding: 6px 12px; "
+                "font-size: 11px; font-weight: 600; }"
+                "QPushButton:hover { background-color: #1a2d57; color: #dce7ff; }"
+            )
+            add_btn.clicked.connect(lambda: self.add_else_if_requested.emit(target_uid))
+            btn_layout.addWidget(add_btn)
+
+            self._inner_layout.addWidget(btn_frame)
+
         self._inner_layout.addStretch()
 
     def _on_param_changed(self, key: str, value: Any) -> None:

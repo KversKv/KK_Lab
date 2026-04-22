@@ -474,12 +474,18 @@ class NodePalette(QWidget):
         self._inner_layout.addWidget(section)
 
     def _build_category_sections(self) -> None:
+        _HIDDEN_NODE_TYPES = {
+            "IfElse", "IfThenElse", "IfBranch", "ElseIfBranch", "ElseBranch",
+        }
         _cat_icons = {
             "logic": ("git-branch.svg", "Logic / Flow"),
             "io": ("hard-drive.svg", "Data I/O"),
         }
         for cat_key, (icon_file, cat_label) in _cat_icons.items():
-            nodes = get_nodes_by_category(cat_key)
+            nodes = [
+                cls for cls in get_nodes_by_category(cat_key)
+                if cls.node_type not in _HIDDEN_NODE_TYPES
+            ]
             if not nodes:
                 continue
 

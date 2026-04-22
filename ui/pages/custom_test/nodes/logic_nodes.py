@@ -126,11 +126,115 @@ class LoopList(BaseNode):
 
 
 @register_node
+class IfBranch(BaseNode):
+
+    node_type = "IfBranch"
+    display_name = "If"
+    category = "logic"
+    icon = "⋔"
+    color = "#e74c3c"
+
+    PARAM_SCHEMA = [
+        {"key": "condition", "label": "条件表达式", "type": "str", "default": "${value} > 0"},
+    ]
+
+    @property
+    def accepts_children(self) -> bool:
+        return True
+
+    def execute(self, context: Any) -> None:
+        pass
+
+
+@register_node
+class ElseIfBranch(BaseNode):
+
+    node_type = "ElseIfBranch"
+    display_name = "Else If"
+    category = "logic"
+    icon = "⋔"
+    color = "#e67e22"
+
+    PARAM_SCHEMA = [
+        {"key": "condition", "label": "条件表达式", "type": "str", "default": "${value} > 0"},
+    ]
+
+    @property
+    def accepts_children(self) -> bool:
+        return True
+
+    def execute(self, context: Any) -> None:
+        pass
+
+
+@register_node
+class ElseBranch(BaseNode):
+
+    node_type = "ElseBranch"
+    display_name = "Else"
+    category = "logic"
+    icon = "⋔"
+    color = "#7f8c8d"
+
+    PARAM_SCHEMA: List[Dict[str, Any]] = []
+
+    @property
+    def accepts_children(self) -> bool:
+        return True
+
+    def execute(self, context: Any) -> None:
+        pass
+
+
+@register_node
+class IfBlock(BaseNode):
+
+    node_type = "IfBlock"
+    display_name = "If / Else"
+    category = "logic"
+    icon = "⋔"
+    color = "#e74c3c"
+
+    PARAM_SCHEMA: List[Dict[str, Any]] = []
+
+    @property
+    def accepts_children(self) -> bool:
+        return True
+
+    def execute(self, context: Any) -> None:
+        from ui.pages.custom_test.executor import _execute_children
+
+        for child in self.children:
+            if isinstance(child, IfBranch) or isinstance(child, ElseIfBranch):
+                condition = str(child.params.get("condition", "True"))
+                result = context.evaluate_condition(condition)
+                logger.info("%s (%s) => %s", child.display_name, condition, result)
+                if result:
+                    _execute_children(child.children, context)
+                    return
+            elif isinstance(child, ElseBranch):
+                logger.info("Else branch triggered")
+                _execute_children(child.children, context)
+                return
+            else:
+                pass
+
+    def ensure_structure(self) -> None:
+        has_if = any(isinstance(c, IfBranch) for c in self.children)
+        has_else = any(isinstance(c, ElseBranch) for c in self.children)
+        if not has_if:
+            self.children.insert(0, IfBranch(uid=None))
+            self.children[0].params["condition"] = "${value} > 0"
+        if not has_else:
+            self.children.append(ElseBranch(uid=None))
+
+
+@register_node
 class IfElse(BaseNode):
-    """条件分支节点"""
+    """条件分支节点 (旧版，兼容已有模板)"""
 
     node_type = "IfElse"
-    display_name = "If / Else"
+    display_name = "If / Else (Legacy)"
     category = "logic"
     icon = "⋔"
     color = "#e74c3c"
@@ -148,14 +252,11 @@ class IfElse(BaseNode):
         result = context.evaluate_condition(condition)
         logger.info("If (%s) => %s", condition, result)
 
+        from ui.pages.custom_test.executor import _execute_children
         if result:
-            true_children = [c for c in self.children if not getattr(c, '_is_else_branch', False)]
-            from ui.pages.custom_test.executor import _execute_children
-            _execute_children(true_children, context)
+            _execute_children(self.children, context)
         else:
-            false_children = [c for c in self.children if getattr(c, '_is_else_branch', False)]
-            from ui.pages.custom_test.executor import _execute_children
-            _execute_children(false_children, context)
+            pass
 
 
 @register_node
@@ -336,7 +437,7 @@ class IfThenStop(BaseNode):
 class IfThenElse(BaseNode):
 
     node_type = "IfThenElse"
-    display_name = "If / Then / Else"
+    display_name = "If / Then / Else (Legacy)"
     category = "logic"
     icon = "⋔"
     color = "#e74c3c"

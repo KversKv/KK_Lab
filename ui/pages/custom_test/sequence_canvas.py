@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTreeWidget, QTreeWidgetItem,
     QPushButton, QMenu, QFileDialog, QMessageBox,
     QAbstractItemView, QStyledItemDelegate, QStyleOptionViewItem, QStyle,
+    QLineEdit,
 )
 from PySide6.QtCore import Qt, Signal, QPoint, QRect, QModelIndex, QSize, QRectF
 from PySide6.QtGui import (
@@ -204,6 +205,20 @@ def _build_step_number(item: QTreeWidgetItem) -> str:
     return ".".join(parts)
 
 
+_STEP_EDITOR_STYLE = """
+    QLineEdit {
+        background-color: #0d1a3a;
+        color: #eaf2ff;
+        border: 1px solid #5b5cf6;
+        border-radius: 4px;
+        padding: 2px 4px;
+        font-size: 10px;
+        font-weight: 700;
+        selection-background-color: #334a7d;
+    }
+"""
+
+
 class SequenceItemDelegate(QStyledItemDelegate):
     """自定义绘制代理：为序列节点绘制层级可视化"""
 
@@ -218,10 +233,48 @@ class SequenceItemDelegate(QStyledItemDelegate):
         super().__init__(parent)
         self._tree = tree
         self._node_map = node_map
+        self._canvas: Optional["SequenceCanvas"] = None
+
+    def set_canvas(self, canvas: "SequenceCanvas") -> None:
+        self._canvas = canvas
 
     def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QSize:
         base = super().sizeHint(option, index)
         return QSize(base.width(), max(36, base.height()))
+
+    def createEditor(self, parent: QWidget, option: QStyleOptionViewItem,
+                     index: QModelIndex) -> Optional[QWidget]:
+        if index.column() != 0:
+            return None
+        editor = QLineEdit(parent)
+        editor.setStyleSheet(_STEP_EDITOR_STYLE)
+        editor.setAlignment(Qt.AlignCenter)
+        editor.setFrame(False)
+        editor.setPlaceholderText("e.g. 3 or 2.1")
+        return editor
+
+    def setEditorData(self, editor: QWidget, index: QModelIndex) -> None:
+        if index.column() != 0:
+            return
+        item = self._tree.itemFromIndex(index)
+        if item:
+            step_str = _build_step_number(item)
+            editor.setText(step_str)
+            editor.selectAll()
+
+    def setModelData(self, editor: QWidget, model, index: QModelIndex) -> None:
+        if index.column() != 0 or self._canvas is None:
+            return
+        item = self._tree.itemFromIndex(index)
+        if item is None:
+            return
+        new_step = editor.text().strip()
+        if not new_step:
+            return
+        current_step = _build_step_number(item)
+        if new_step == current_step:
+            return
+        self._canvas._reorder_by_step(item, new_step)
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
         painter.save()
@@ -508,7 +561,9 @@ class SequenceCanvas(QWidget):
         self.tree.setStyleSheet(_CANVAS_STYLE)
 
         self._delegate = SequenceItemDelegate(self.tree, self._node_map, self)
+        self._delegate.set_canvas(self)
         self.tree.setItemDelegate(self._delegate)
+        self.tree.setEditTriggers(QAbstractItemView.DoubleClicked)
 
         header = self.tree.header()
         header.setStretchLastSection(True)
@@ -602,9 +657,16 @@ class SequenceCanvas(QWidget):
             if cls:
                 self.add_node(cls())
 
-    def add_node(self, node: BaseNode, parent_item: Optional[QTreeWidgetItem] = None) -> QTreeWidgetItem:
+    def add_node(self, node: BaseNode, parent_item: Optional[QTreeWidgetItem] = None,
+                 _batch: bool = False) -> QTreeWidgetItem:
+        from ui.pages.custom_test.nodes.logic_nodes import IfBlock
+
+        if isinstance(node, IfBlock) and not node.children:
+            node.ensure_structure()
+
         item = QTreeWidgetItem()
         item.setData(0, Qt.UserRole, node.uid)
+        item.setFlags(item.flags() | Qt.ItemIsEditable)
 
         self._uid_map[node.uid] = item
         self._node_map[node.uid] = node
@@ -634,12 +696,13 @@ class SequenceCanvas(QWidget):
             else:
                 self.tree.addTopLevelItem(item)
 
-        for child_node in node.children:
-            self.add_node(child_node, item)
+        for child_node in list(node.children):
+            self.add_node(child_node, item, _batch=True)
 
         item.setExpanded(True)
         self.tree.setCurrentItem(item)
-        self.sequence_changed.emit()
+        if not _batch:
+            self.sequence_changed.emit()
         return item
 
     def refresh_item(self, uid: str) -> None:
@@ -680,8 +743,9 @@ class SequenceCanvas(QWidget):
     def load_from_nodes(self, nodes: List[BaseNode]) -> None:
         self.clear_all()
         for node in nodes:
-            self.add_node(node)
+            self.add_node(node, _batch=True)
         self.tree.expandAll()
+        self.sequence_changed.emit()
 
     def set_running_state(self, running: bool) -> None:
         self._running = running
@@ -693,6 +757,10 @@ class SequenceCanvas(QWidget):
         self.move_up_btn.setEnabled(not running)
         self.move_down_btn.setEnabled(not running)
         self.load_btn.setEnabled(not running)
+        if running:
+            self.tree.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        else:
+            self.tree.setEditTriggers(QAbstractItemView.DoubleClicked)
 
     def highlight_step(self, uid: str) -> None:
         item = self._uid_map.get(uid)
@@ -806,6 +874,133 @@ class SequenceCanvas(QWidget):
         self._restore_children(current, saved_children)
         current.setExpanded(True)
         self.tree.setCurrentItem(current)
+        self.sequence_changed.emit()
+
+    def _find_item_by_step(self, step_str: str) -> Optional[QTreeWidgetItem]:
+        parts = step_str.split(".")
+        try:
+            indices = [int(p) - 1 for p in parts]
+        except ValueError:
+            return None
+
+        if not indices or indices[0] < 0:
+            return None
+
+        if indices[0] >= self.tree.topLevelItemCount():
+            return None
+
+        item = self.tree.topLevelItem(indices[0])
+        for level_idx in indices[1:]:
+            if item is None or level_idx < 0 or level_idx >= item.childCount():
+                return None
+            item = item.child(level_idx)
+        return item
+
+    def _resolve_target_parent_and_index(self, step_str: str):
+        parts = step_str.split(".")
+        try:
+            indices = [int(p) - 1 for p in parts]
+        except ValueError:
+            return None, -1
+
+        if not indices or indices[0] < 0:
+            return None, -1
+
+        if len(indices) == 1:
+            target_idx = indices[0]
+            max_idx = self.tree.topLevelItemCount()
+            target_idx = max(0, min(target_idx, max_idx))
+            return None, target_idx
+
+        parent_item = self.tree.topLevelItem(indices[0])
+        if parent_item is None:
+            return None, -1
+
+        resolved_depth = 1
+        for level_idx in indices[1:-1]:
+            if parent_item is None:
+                return None, -1
+            parent_uid = parent_item.data(0, Qt.UserRole)
+            parent_node = self._node_map.get(parent_uid)
+            if parent_node is None or not parent_node.accepts_children:
+                break
+            if level_idx < 0 or level_idx >= parent_item.childCount():
+                break
+            parent_item = parent_item.child(level_idx)
+            resolved_depth += 1
+
+        parent_uid = parent_item.data(0, Qt.UserRole)
+        parent_node = self._node_map.get(parent_uid)
+        if parent_node is None or not parent_node.accepts_children:
+            fallback_parent = parent_item.parent()
+            if fallback_parent is None:
+                target_idx = self.tree.indexOfTopLevelItem(parent_item)
+                target_idx = max(0, min(target_idx, self.tree.topLevelItemCount()))
+                return None, target_idx
+            else:
+                fallback_uid = fallback_parent.data(0, Qt.UserRole)
+                fallback_node = self._node_map.get(fallback_uid)
+                if fallback_node and fallback_node.accepts_children:
+                    target_idx = fallback_parent.indexOfChild(parent_item)
+                    target_idx = max(0, min(target_idx, fallback_parent.childCount()))
+                    return fallback_parent, target_idx
+                return None, -1
+
+        target_idx = indices[resolved_depth] if resolved_depth < len(indices) else indices[-1]
+        max_idx = parent_item.childCount()
+        target_idx = max(0, min(target_idx, max_idx))
+        return parent_item, target_idx
+
+    def _reorder_by_step(self, item: QTreeWidgetItem, new_step: str) -> None:
+        if item is None:
+            return
+
+        uid = item.data(0, Qt.UserRole)
+        node = self._node_map.get(uid)
+        if node is None:
+            return
+
+        saved_children = self._take_children(item)
+
+        old_parent = item.parent()
+        if old_parent:
+            old_idx = old_parent.indexOfChild(item)
+            old_parent.takeChild(old_idx)
+            old_parent_uid = old_parent.data(0, Qt.UserRole)
+            old_parent_node = self._node_map.get(old_parent_uid)
+            if old_parent_node and node in old_parent_node.children:
+                old_parent_node.children.remove(node)
+        else:
+            old_idx = self.tree.indexOfTopLevelItem(item)
+            self.tree.takeTopLevelItem(old_idx)
+
+        target_parent, target_idx = self._resolve_target_parent_and_index(new_step)
+        if target_idx < 0:
+            if old_parent:
+                old_parent.insertChild(old_idx, item)
+                old_parent_uid = old_parent.data(0, Qt.UserRole)
+                old_parent_node = self._node_map.get(old_parent_uid)
+                if old_parent_node:
+                    old_parent_node.children.insert(old_idx, node)
+            else:
+                self.tree.insertTopLevelItem(old_idx, item)
+            self._restore_children(item, saved_children)
+            return
+
+        if target_parent is not None:
+            parent_uid = target_parent.data(0, Qt.UserRole)
+            parent_node = self._node_map.get(parent_uid)
+            target_idx = min(target_idx, target_parent.childCount())
+            target_parent.insertChild(target_idx, item)
+            if parent_node:
+                parent_node.children.insert(target_idx, node)
+        else:
+            target_idx = min(target_idx, self.tree.topLevelItemCount())
+            self.tree.insertTopLevelItem(target_idx, item)
+
+        self._restore_children(item, saved_children)
+        item.setExpanded(True)
+        self.tree.setCurrentItem(item)
         self.sequence_changed.emit()
 
     def _on_save(self) -> None:

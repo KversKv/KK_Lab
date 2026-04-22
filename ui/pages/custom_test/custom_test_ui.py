@@ -498,6 +498,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
         self.canvas.sequence_changed.connect(self._refresh_instrument_connections)
 
         self.property_panel.param_changed.connect(self._on_param_changed)
+        self.property_panel.add_else_if_requested.connect(self._on_add_else_if)
 
         self._executor_thread.finished.connect(self._on_execution_finished)
 
@@ -615,6 +616,50 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
     def _on_param_changed(self, uid: str, key: str, value: Any) -> None:
         """参数变更回调"""
         self.canvas.refresh_item(uid)
+
+    def _on_add_else_if(self, uid: str) -> None:
+        from ui.pages.custom_test.nodes.logic_nodes import (
+            IfBlock, IfBranch, ElseIfBranch, ElseBranch,
+        )
+        node = self.canvas._node_map.get(uid)
+        tree_item = self.canvas._uid_map.get(uid)
+        if node is None or tree_item is None:
+            return
+
+        if isinstance(node, IfBranch):
+            parent_item = tree_item.parent()
+            if parent_item is None:
+                return
+            parent_uid = parent_item.data(0, Qt.UserRole)
+            block_node = self.canvas._node_map.get(parent_uid)
+            if not isinstance(block_node, IfBlock):
+                return
+            block_item = parent_item
+        elif isinstance(node, IfBlock):
+            block_node = node
+            block_item = tree_item
+        else:
+            return
+
+        insert_idx = block_node.children.__len__()
+        for i, child in enumerate(block_node.children):
+            if isinstance(child, ElseBranch):
+                insert_idx = i
+                break
+
+        new_branch = ElseIfBranch(uid=None)
+        new_branch.params["condition"] = "${value} > 0"
+        block_node.children.insert(insert_idx, new_branch)
+        self.canvas.add_node(new_branch, block_item, _batch=True)
+
+        branch_item = self.canvas._uid_map.get(new_branch.uid)
+        if branch_item:
+            block_item.removeChild(branch_item)
+            block_item.insertChild(insert_idx, branch_item)
+
+        block_item.setExpanded(True)
+        self.canvas.tree.setCurrentItem(branch_item or tree_item)
+        self.canvas.sequence_changed.emit()
 
     def _on_run(self) -> None:
         sequence = self.canvas.get_sequence()
