@@ -1,15 +1,28 @@
 #python -m ui.modules.serialCom_module_frame
+import json
 import os
+import time
 import serial
 import serial.tools.list_ports
+from datetime import datetime
+
 from PySide6.QtWidgets import (
-    QHBoxLayout, QPushButton, QLabel, QSizePolicy
+    QHBoxLayout, QVBoxLayout, QPushButton, QLabel, QSizePolicy,
+    QFrame, QWidget, QTextEdit, QLineEdit, QComboBox, QCheckBox,
+    QScrollArea, QSplitter, QApplication, QMenu, QFileDialog, QGridLayout,
+    QSpinBox, QDialog, QDialogButtonBox, QTabWidget, QLayout,
 )
-from PySide6.QtCore import Signal, QThread, QObject, QTimer, QRectF, Qt
-from PySide6.QtGui import QIcon, QPainter
+from PySide6.QtCore import (
+    Signal, QThread, QObject, QTimer, QRectF, Qt, QSize, QRect, QPoint,
+    QPropertyAnimation, QEasingCurve, Property, QMimeData,
+)
+from PySide6.QtGui import (
+    QIcon, QPainter, QPixmap, QColor, QAction, QPen, QFont, QDrag,
+)
 from PySide6.QtSvg import QSvgRenderer
 
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.widgets.scrollbar import SCROLLBAR_STYLE
 from debug_config import DEBUG_MOCK
 
 
@@ -17,9 +30,33 @@ _ICONS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "resources", "icons"
 )
+_SVG_SERIAL_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "resources", "modules", "SVG_Serial",
+)
+_SVG_LOGS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "resources", "modules", "SVG_Logs",
+)
 _SEARCH_ICON_PATH = os.path.join(_ICONS_DIR, "search.svg")
 _LINK_ICON_PATH = os.path.join(_ICONS_DIR, "link.svg")
 _UNLINK_ICON_PATH = os.path.join(_ICONS_DIR, "unlink.svg")
+
+
+def _tinted_svg_icon(svg_path: str, color: str, size: int = 14) -> QIcon:
+    if not os.path.isfile(svg_path):
+        return QIcon()
+    renderer = QSvgRenderer(svg_path)
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setRenderHint(QPainter.SmoothPixmapTransform)
+    renderer.render(painter, QRectF(0, 0, size, size))
+    painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+    painter.fillRect(pixmap.rect(), QColor(color))
+    painter.end()
+    return QIcon(pixmap)
 
 _SERIAL_BTN_HEIGHT = 24
 _SERIAL_BTN_ICON_SIZE = 14
@@ -564,6 +601,1907 @@ class SerialComMixin:
         self._serial_port = None
         self._serial_connected = False
 
+    # ------------------------------------------------------------------
+    #  complete_serialComWidget  —  Full Serial Console Builder
+    # ------------------------------------------------------------------
+
+    def complete_serialComWidget(self, parent_layout):
+        self._sc_rx_bytes = 0
+        self._sc_tx_bytes = 0
+        self._sc_paused = False
+        self._sc_auto_scroll = True
+        self._sc_all_logs = []
+        self._sc_rx_display_hex = False
+        self._sc_tx_display_hex = False
+        self._sc_show_timestamp = True
+        self._sc_auto_resend = False
+        self._sc_resend_interval = 1000
+        self._sc_line_ending = "\r\n"
+        self._sc_show_send = True
+        self._sc_line_by_line = False
+        self._sc_send_history = []
+        self._sc_quick_commands = []
+        self._sc_sidebar_visible = True
+
+        outer = QVBoxLayout()
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        self._sc_toolbar = self._build_sc_toolbar()
+        outer.addWidget(self._sc_toolbar)
+
+        body_splitter = QSplitter(Qt.Horizontal)
+        body_splitter.setHandleWidth(3)
+        body_splitter.setStyleSheet("""
+            QSplitter::handle { background-color: #1a2d57; }
+            QSplitter::handle:hover { background-color: #3b6bcf; }
+        """)
+
+        self._sc_sidebar_widget = self._build_sc_sidebar()
+        body_splitter.addWidget(self._sc_sidebar_widget)
+
+        center_widget = QWidget()
+        center_layout = QVBoxLayout(center_widget)
+        center_layout.setContentsMargins(0, 0, 0, 0)
+        center_layout.setSpacing(0)
+
+        self._sc_log_area = self._build_sc_log_area()
+        center_layout.addWidget(self._sc_log_area, 1)
+
+        self._sc_send_area = self._build_sc_send_area()
+        center_layout.addWidget(self._sc_send_area)
+
+        self._sc_quick_area = self._build_sc_quick_commands()
+        center_layout.addWidget(self._sc_quick_area)
+
+        body_splitter.addWidget(center_widget)
+        body_splitter.setStretchFactor(0, 0)
+        body_splitter.setStretchFactor(1, 1)
+        body_splitter.setSizes([220, 600])
+
+        outer.addWidget(body_splitter, 1)
+
+        self._sc_status_bar = self._build_sc_status_bar()
+        outer.addWidget(self._sc_status_bar)
+
+        parent_layout.addLayout(outer)
+
+        self._bind_sc_signals()
+
+        self._sc_resend_timer = QTimer()
+        self._sc_resend_timer.timeout.connect(self._sc_on_resend_tick)
+
+        self._sc_pending_html = []
+        self._sc_flush_timer = QTimer()
+        self._sc_flush_timer.setInterval(60)
+        self._sc_flush_timer.timeout.connect(self._sc_flush_pending_logs)
+        self._sc_flush_timer.start()
+
+    # --- toolbar ---
+
+    def _build_sc_toolbar(self):
+        frame = QFrame()
+        frame.setObjectName("scToolbar")
+        frame.setFixedHeight(34)
+        frame.setStyleSheet("""
+            QFrame#scToolbar {
+                background-color: #0b1a38;
+                border-bottom: 1px solid #1a2d57;
+            }
+        """)
+        layout = QHBoxLayout(frame)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(4)
+
+        self._sc_connect_btn = self._make_sc_btn(
+            os.path.join(_SVG_SERIAL_DIR, "connect.svg"), "连接"
+        )
+        layout.addWidget(self._sc_connect_btn)
+
+        self._sc_pause_btn = self._make_sc_btn(
+            os.path.join(_SVG_SERIAL_DIR, "pause.svg"), "暂停"
+        )
+        self._sc_pause_btn.setCheckable(True)
+        layout.addWidget(self._sc_pause_btn)
+
+        self._sc_stop_btn = self._make_sc_btn(
+            os.path.join(_SVG_SERIAL_DIR, "stop.svg"), "停止"
+        )
+        layout.addWidget(self._sc_stop_btn)
+
+        self._sc_refresh_btn = self._make_sc_btn(
+            os.path.join(_SVG_SERIAL_DIR, "refresh.svg"), "刷新"
+        )
+        layout.addWidget(self._sc_refresh_btn)
+
+        layout.addSpacing(8)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.VLine)
+        sep.setStyleSheet("color: #1a2d57;")
+        layout.addWidget(sep)
+
+        layout.addSpacing(8)
+
+        self._sc_sidebar_toggle_btn = self._make_sc_btn(
+            os.path.join(_SVG_SERIAL_DIR, "sidebar.svg"), "侧栏"
+        )
+        self._sc_sidebar_toggle_btn.setCheckable(True)
+        self._sc_sidebar_toggle_btn.setChecked(True)
+        layout.addWidget(self._sc_sidebar_toggle_btn)
+
+        self._sc_settings_btn = self._make_sc_btn(
+            os.path.join(_SVG_SERIAL_DIR, "settings.svg"), "设置"
+        )
+        layout.addWidget(self._sc_settings_btn)
+
+        layout.addStretch()
+
+        return frame
+
+    # --- sidebar ---
+
+    def _build_sc_sidebar(self):
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setMinimumWidth(210)
+        scroll.setMaximumWidth(280)
+        scroll.setStyleSheet("""
+            QScrollArea { background-color: #09142e; border: none; border-right: 1px solid #1a2d57; }
+            QScrollArea > QWidget > QWidget { background-color: #09142e; }
+        """ + SCROLLBAR_STYLE)
+
+        container = QWidget()
+        root = QVBoxLayout(container)
+        root.setContentsMargins(10, 10, 10, 10)
+        root.setSpacing(12)
+
+        root.addWidget(self._build_sc_section_port_settings())
+        root.addWidget(self._build_sc_section_rx_settings())
+        root.addWidget(self._build_sc_section_tx_settings())
+        root.addStretch()
+
+        scroll.setWidget(container)
+        return scroll
+
+    def _build_sc_section_port_settings(self):
+        grp = self._make_sc_section("串口设置")
+        layout = grp.property("_inner_layout")
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(6)
+        grid.setVerticalSpacing(4)
+
+        grid.addWidget(self._make_sc_label("端口"), 0, 0)
+        self._sc_port_combo = DarkComboBox()
+        self._sc_port_combo.setFixedHeight(24)
+        self._sc_port_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self._sc_port_combo.setMinimumWidth(60)
+        f = self._sc_port_combo.font()
+        f.setPixelSize(11)
+        self._sc_port_combo.setFont(f)
+        grid.addWidget(self._sc_port_combo, 0, 1)
+
+        grid.addWidget(self._make_sc_label("波特率"), 1, 0)
+        self._sc_baud_combo = DarkComboBox()
+        self._sc_baud_combo.setFixedHeight(24)
+        self._sc_baud_combo.setEditable(True)
+        for br in ["921600", "1152000", "2000000", "3000000", "115200", "9600", "Custom"]:
+            self._sc_baud_combo.addItem(br)
+        self._sc_baud_combo.setCurrentIndex(0)
+        f2 = self._sc_baud_combo.font()
+        f2.setPixelSize(11)
+        self._sc_baud_combo.setFont(f2)
+        grid.addWidget(self._sc_baud_combo, 1, 1)
+
+        grid.addWidget(self._make_sc_label("数据位"), 2, 0)
+        self._sc_databit_combo = DarkComboBox()
+        self._sc_databit_combo.setFixedHeight(24)
+        for d in ["8", "7", "6", "5"]:
+            self._sc_databit_combo.addItem(d)
+        grid.addWidget(self._sc_databit_combo, 2, 1)
+
+        grid.addWidget(self._make_sc_label("流控"), 3, 0)
+        self._sc_flow_combo = DarkComboBox()
+        self._sc_flow_combo.setFixedHeight(24)
+        for fc in ["None", "RTS/CTS", "XON/XOFF"]:
+            self._sc_flow_combo.addItem(fc)
+        grid.addWidget(self._sc_flow_combo, 3, 1)
+
+        grid.addWidget(self._make_sc_label("停止位"), 4, 0)
+        self._sc_stopbit_combo = DarkComboBox()
+        self._sc_stopbit_combo.setFixedHeight(24)
+        for s in ["1", "1.5", "2"]:
+            self._sc_stopbit_combo.addItem(s)
+        grid.addWidget(self._sc_stopbit_combo, 4, 1)
+
+        grid.addWidget(self._make_sc_label("校验位"), 5, 0)
+        self._sc_parity_combo = DarkComboBox()
+        self._sc_parity_combo.setFixedHeight(24)
+        for p in ["None", "Even", "Odd", "Mark", "Space"]:
+            self._sc_parity_combo.addItem(p)
+        grid.addWidget(self._sc_parity_combo, 5, 1)
+
+        layout.addLayout(grid)
+        return grp
+
+    def _build_sc_section_rx_settings(self):
+        grp = self._make_sc_section("接收设置")
+        layout = grp.property("_inner_layout")
+
+        row1 = QHBoxLayout()
+        row1.setSpacing(4)
+        row1.addWidget(self._make_sc_label("编码"))
+        self._sc_rx_toggle = _MiniSlideToggle("ASCII", "HEX")
+        self._sc_rx_toggle.toggled.connect(lambda v: setattr(self, '_sc_rx_display_hex', v == "HEX"))
+        row1.addWidget(self._sc_rx_toggle)
+        row1.addStretch()
+        layout.addLayout(row1)
+
+        self._sc_rx_show_time_cb = QCheckBox("显示时间(ms)")
+        self._sc_rx_show_time_cb.setChecked(True)
+        self._sc_rx_show_time_cb.setStyleSheet(self._sc_checkbox_style())
+        self._sc_rx_show_time_cb.toggled.connect(lambda v: setattr(self, '_sc_show_timestamp', v))
+        layout.addWidget(self._sc_rx_show_time_cb)
+
+        return grp
+
+    def _build_sc_section_tx_settings(self):
+        grp = self._make_sc_section("发送设置")
+        layout = grp.property("_inner_layout")
+
+        row1 = QHBoxLayout()
+        row1.setSpacing(4)
+        row1.addWidget(self._make_sc_label("编码"))
+        self._sc_tx_toggle = _MiniSlideToggle("ASCII", "HEX")
+        self._sc_tx_toggle.toggled.connect(lambda v: setattr(self, '_sc_tx_display_hex', v == "HEX"))
+        row1.addWidget(self._sc_tx_toggle)
+        row1.addStretch()
+        layout.addLayout(row1)
+
+        self._sc_auto_resend_cb = QCheckBox("自动重发")
+        self._sc_auto_resend_cb.setStyleSheet(self._sc_checkbox_style())
+        self._sc_auto_resend_cb.toggled.connect(self._sc_on_auto_resend_toggled)
+        layout.addWidget(self._sc_auto_resend_cb)
+
+        row_interval = QHBoxLayout()
+        row_interval.setSpacing(4)
+        row_interval.addWidget(self._make_sc_label("重发(ms)"))
+        self._sc_resend_spin = QSpinBox()
+        self._sc_resend_spin.setRange(100, 60000)
+        self._sc_resend_spin.setValue(1000)
+        self._sc_resend_spin.setSingleStep(100)
+        self._sc_resend_spin.setFixedHeight(22)
+        self._sc_resend_spin.setStyleSheet("""
+            QSpinBox {
+                background-color: #0b1a38; border: 1px solid #1f315d; border-radius: 4px;
+                color: #c8d8f0; font-size: 10px; padding: 1px 4px;
+            }
+            QSpinBox::up-button, QSpinBox::down-button { width: 12px; }
+        """)
+        row_interval.addWidget(self._sc_resend_spin)
+        layout.addLayout(row_interval)
+
+        row_ending = QHBoxLayout()
+        row_ending.setSpacing(4)
+        row_ending.addWidget(self._make_sc_label("行尾"))
+        self._sc_ending_combo = DarkComboBox()
+        self._sc_ending_combo.setFixedHeight(22)
+        for label, val in [("\\r\\n", "\r\n"), ("\\n", "\n"), ("\\r", "\r"), ("\\n\\r", "\n\r"), ("None", "")]:
+            self._sc_ending_combo.addItem(label, val)
+        self._sc_ending_combo.setCurrentIndex(0)
+        f = self._sc_ending_combo.font()
+        f.setPixelSize(10)
+        self._sc_ending_combo.setFont(f)
+        self._sc_ending_combo.currentIndexChanged.connect(
+            lambda i: setattr(self, '_sc_line_ending', self._sc_ending_combo.itemData(i) or "")
+        )
+        row_ending.addWidget(self._sc_ending_combo)
+        layout.addLayout(row_ending)
+
+        self._sc_show_send_cb = QCheckBox("显示发送")
+        self._sc_show_send_cb.setChecked(True)
+        self._sc_show_send_cb.setStyleSheet(self._sc_checkbox_style())
+        self._sc_show_send_cb.toggled.connect(lambda v: setattr(self, '_sc_show_send', v))
+        layout.addWidget(self._sc_show_send_cb)
+
+        self._sc_line_by_line_cb = QCheckBox("Line by Line")
+        self._sc_line_by_line_cb.setStyleSheet(self._sc_checkbox_style())
+        self._sc_line_by_line_cb.toggled.connect(lambda v: setattr(self, '_sc_line_by_line', v))
+        layout.addWidget(self._sc_line_by_line_cb)
+
+        return grp
+
+    # --- log area ---
+
+    def _build_sc_log_area(self):
+        frame = QFrame()
+        frame.setObjectName("scLogFrame")
+        frame.setStyleSheet("""
+            QFrame#scLogFrame {
+                background-color: #09142e;
+                border: 1px solid #1a2d57;
+                border-radius: 8px;
+            }
+        """)
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        toolbar = QHBoxLayout()
+        toolbar.setContentsMargins(8, 6, 8, 4)
+        toolbar.setSpacing(6)
+
+        icon_label = QLabel()
+        icon = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "logs.svg"), "#8eb0e3", 14)
+        if not icon.isNull():
+            icon_label.setPixmap(icon.pixmap(14, 14))
+        icon_label.setFixedSize(16, 16)
+        icon_label.setStyleSheet("background: transparent;")
+        toolbar.addWidget(icon_label)
+
+        title = QLabel("Serial Log")
+        title.setStyleSheet("color: #f4f7ff; font-size: 11px; font-weight: 700; background: transparent;")
+        toolbar.addWidget(title)
+
+        toolbar.addStretch()
+
+        self._sc_filter_btn = self._make_sc_btn(
+            os.path.join(_SVG_LOGS_DIR, "filter.svg"), "过滤"
+        )
+        self._sc_filter_btn.setCheckable(True)
+        toolbar.addWidget(self._sc_filter_btn)
+
+        self._sc_copy_btn = self._make_sc_btn(
+            os.path.join(_SVG_LOGS_DIR, "copy.svg"), "复制"
+        )
+        toolbar.addWidget(self._sc_copy_btn)
+
+        self._sc_export_btn = self._make_sc_btn(
+            os.path.join(_SVG_LOGS_DIR, "export.svg"), "导出"
+        )
+        toolbar.addWidget(self._sc_export_btn)
+
+        self._sc_clear_btn = self._make_sc_btn(
+            os.path.join(_SVG_LOGS_DIR, "trash.svg"), "清除"
+        )
+        toolbar.addWidget(self._sc_clear_btn)
+
+        self._sc_scroll_lock_btn = self._make_sc_btn(
+            os.path.join(_SVG_LOGS_DIR, "auto-scroll.svg"), "自动滚动"
+        )
+        self._sc_scroll_lock_btn.setCheckable(True)
+        self._sc_scroll_lock_btn.setChecked(True)
+        toolbar.addWidget(self._sc_scroll_lock_btn)
+
+        layout.addLayout(toolbar)
+
+        self._sc_filter_row = QWidget()
+        self._sc_filter_row.setVisible(False)
+        self._sc_filter_row.setStyleSheet("background: transparent;")
+        fl = QHBoxLayout(self._sc_filter_row)
+        fl.setContentsMargins(8, 0, 8, 4)
+        self._sc_filter_input = QLineEdit()
+        self._sc_filter_input.setPlaceholderText("输入关键词过滤日志...")
+        self._sc_filter_input.setStyleSheet("""
+            QLineEdit {
+                background-color: #0b1a38; border: 1px solid #1f315d; border-radius: 6px;
+                color: #c8d8f0; font-size: 10px; padding: 2px 6px; min-height: 18px; max-height: 18px;
+            }
+            QLineEdit:focus { border: 1px solid #3b6bcf; }
+        """)
+        fl.addWidget(self._sc_filter_input)
+        layout.addWidget(self._sc_filter_row)
+
+        self._sc_log_edit = QTextEdit()
+        self._sc_log_edit.setReadOnly(True)
+        self._sc_log_edit.setStyleSheet("""
+            QTextEdit {
+                background-color: #061022; border: none; border-top: 1px solid #1f315d;
+                color: #7cecc8; font-family: Consolas, "Courier New", monospace; font-size: 11px;
+                padding: 6px 8px;
+            }
+        """ + SCROLLBAR_STYLE)
+        layout.addWidget(self._sc_log_edit, 1)
+
+        if self._sc_log_edit.verticalScrollBar():
+            self._sc_log_edit.verticalScrollBar().valueChanged.connect(self._sc_on_user_scroll)
+
+        return frame
+
+    # --- send area ---
+
+    def _build_sc_send_area(self):
+        widget = QWidget()
+        widget.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 4, 0, 0)
+        layout.setSpacing(4)
+
+        send_row = QHBoxLayout()
+        send_row.setSpacing(4)
+
+        self._sc_send_input = QLineEdit()
+        self._sc_send_input.setPlaceholderText("输入发送内容...")
+        self._sc_send_input.setStyleSheet("""
+            QLineEdit {
+                background-color: #0b1a38; border: 1px solid #1f315d; border-radius: 6px;
+                color: #c8d8f0; font-size: 11px; padding: 4px 8px; min-height: 26px;
+            }
+            QLineEdit:focus { border: 1px solid #3b6bcf; }
+        """)
+        send_row.addWidget(self._sc_send_input, 1)
+
+        self._sc_send_btn = QPushButton("发送")
+        self._sc_send_btn.setCursor(Qt.PointingHandCursor)
+        icon = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "send.svg"), "#10e7bc", 12)
+        if not icon.isNull():
+            self._sc_send_btn.setIcon(icon)
+        self._sc_send_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #053b38; border: 1px solid #08c9a5; border-radius: 6px;
+                color: #10e7bc; font-weight: 700; font-size: 11px;
+                padding: 4px 14px; min-height: 26px;
+            }
+            QPushButton:hover { background-color: #064744; }
+            QPushButton:pressed { background-color: #042f2d; }
+        """)
+        send_row.addWidget(self._sc_send_btn)
+
+        layout.addLayout(send_row)
+
+        self._sc_history_combo = DarkComboBox()
+        self._sc_history_combo.setFixedHeight(22)
+        self._sc_history_combo.setPlaceholderText("最近发送的指令...")
+        f = self._sc_history_combo.font()
+        f.setPixelSize(10)
+        self._sc_history_combo.setFont(f)
+        self._sc_history_combo.activated.connect(
+            lambda i: self._sc_send_input.setText(self._sc_history_combo.itemText(i))
+        )
+        layout.addWidget(self._sc_history_combo)
+
+        return widget
+
+    # --- quick commands ---
+
+    def _build_sc_quick_commands(self):
+        frame = QFrame()
+        frame.setObjectName("scQuickFrame")
+        frame.setStyleSheet("""
+            QFrame#scQuickFrame {
+                background-color: #0b1a38; border-top: 1px solid #1a2d57;
+            }
+        """)
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(4)
+
+        header = QHBoxLayout()
+        header.setSpacing(4)
+
+        zap_icon = QLabel()
+        icon = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "zap.svg"), "#facc15", 12)
+        if not icon.isNull():
+            zap_icon.setPixmap(icon.pixmap(12, 12))
+        zap_icon.setFixedSize(14, 14)
+        zap_icon.setStyleSheet("background: transparent;")
+        header.addWidget(zap_icon)
+
+        lbl = QLabel("快捷指令")
+        lbl.setStyleSheet("color: #8eb0e3; font-size: 10px; font-weight: 600; background: transparent;")
+        header.addWidget(lbl)
+
+        header.addStretch()
+
+        self._sc_qc_add_btn = self._make_sc_btn(
+            os.path.join(_SVG_SERIAL_DIR, "plus.svg"), "新增"
+        )
+        header.addWidget(self._sc_qc_add_btn)
+
+        self._sc_qc_import_btn = self._make_sc_btn(
+            os.path.join(_SVG_SERIAL_DIR, "import.svg"), "导入"
+        )
+        header.addWidget(self._sc_qc_import_btn)
+
+        self._sc_qc_export_btn = self._make_sc_btn(
+            os.path.join(_SVG_LOGS_DIR, "export.svg"), "导出"
+        )
+        header.addWidget(self._sc_qc_export_btn)
+
+        layout.addLayout(header)
+
+        self._sc_qc_btn_container = _DropContainer()
+        self._sc_qc_btn_container.setStyleSheet("background: transparent;")
+        self._sc_qc_btn_layout = _FlowLayout(self._sc_qc_btn_container, spacing=4)
+        self._sc_qc_btn_layout.setContentsMargins(0, 0, 0, 0)
+        self._sc_qc_btn_container.set_flow_layout(self._sc_qc_btn_layout)
+        self._sc_qc_btn_container.order_changed.connect(self._sc_on_quick_cmd_reorder)
+        layout.addWidget(self._sc_qc_btn_container)
+
+        return frame
+
+    # --- status bar ---
+
+    def _build_sc_status_bar(self):
+        frame = QFrame()
+        frame.setObjectName("scStatusBar")
+        frame.setFixedHeight(24)
+        frame.setStyleSheet("""
+            QFrame#scStatusBar {
+                background-color: #070e22;
+                border-top: 1px solid #1a2d57;
+            }
+            QLabel { font-size: 10px; background: transparent; }
+        """)
+        layout = QHBoxLayout(frame)
+        layout.setContentsMargins(10, 0, 10, 0)
+        layout.setSpacing(16)
+
+        self._sc_status_port_label = QLabel("端口: 未连接")
+        self._sc_status_port_label.setStyleSheet("color: #ff5e7a;")
+        layout.addWidget(self._sc_status_port_label)
+
+        self._sc_status_baud_label = QLabel("波特率: -")
+        self._sc_status_baud_label.setStyleSheet("color: #6b83b0;")
+        layout.addWidget(self._sc_status_baud_label)
+
+        self._sc_status_rx_label = QLabel("RX: 0 B")
+        self._sc_status_rx_label.setStyleSheet("color: #4ade80;")
+        layout.addWidget(self._sc_status_rx_label)
+
+        self._sc_status_tx_label = QLabel("TX: 0 B")
+        self._sc_status_tx_label.setStyleSheet("color: #60a5fa;")
+        layout.addWidget(self._sc_status_tx_label)
+
+        layout.addStretch()
+
+        return frame
+
+    # --- signal binding ---
+
+    def _bind_sc_signals(self):
+        self._sc_connect_btn.clicked.connect(self._sc_on_connect_toggle)
+        self._sc_pause_btn.clicked.connect(self._sc_on_pause)
+        self._sc_stop_btn.clicked.connect(self._sc_on_stop)
+        self._sc_refresh_btn.clicked.connect(self._sc_on_refresh)
+        self._sc_sidebar_toggle_btn.clicked.connect(self._sc_on_sidebar_toggle)
+        self._sc_settings_btn.clicked.connect(self._sc_open_settings_dialog)
+
+        self._sc_filter_btn.clicked.connect(self._sc_on_filter_toggle)
+        self._sc_filter_input.textChanged.connect(self._sc_apply_filter)
+        self._sc_copy_btn.clicked.connect(self._sc_copy_logs)
+        self._sc_export_btn.clicked.connect(self._sc_export_logs)
+        self._sc_clear_btn.clicked.connect(self._sc_clear_logs)
+        self._sc_scroll_lock_btn.clicked.connect(
+            lambda c: setattr(self, '_sc_auto_scroll', c)
+        )
+
+        self._sc_send_btn.clicked.connect(self._sc_on_send)
+        self._sc_send_input.returnPressed.connect(self._sc_on_send)
+
+        self._sc_qc_add_btn.clicked.connect(self._sc_add_quick_cmd)
+        self._sc_qc_import_btn.clicked.connect(self._sc_import_quick_cmds)
+        self._sc_qc_export_btn.clicked.connect(self._sc_export_quick_cmds)
+
+        self.serial_data_received.connect(self._sc_on_data_received)
+
+    # --- action handlers ---
+
+    def _sc_on_connect_toggle(self):
+        if self._serial_connected:
+            self._sc_do_disconnect()
+        else:
+            self._sc_do_connect()
+
+    def _sc_do_connect(self):
+        port_text = self._sc_port_combo.currentText()
+        if not port_text or port_text.startswith("No "):
+            self._sc_append_system("[ERROR] 未选择有效端口")
+            return
+
+        port = port_text.split()[0]
+
+        baud_text = self._sc_baud_combo.currentText().strip()
+        try:
+            baudrate = int(baud_text)
+        except ValueError:
+            self._sc_append_system(f"[ERROR] 无效波特率: {baud_text}")
+            return
+
+        databit = int(self._sc_databit_combo.currentText())
+        stopbit_map = {"1": serial.STOPBITS_ONE, "1.5": serial.STOPBITS_ONE_POINT_FIVE, "2": serial.STOPBITS_TWO}
+        stopbits = stopbit_map.get(self._sc_stopbit_combo.currentText(), serial.STOPBITS_ONE)
+        parity_map = {"None": serial.PARITY_NONE, "Even": serial.PARITY_EVEN, "Odd": serial.PARITY_ODD,
+                       "Mark": serial.PARITY_MARK, "Space": serial.PARITY_SPACE}
+        parity = parity_map.get(self._sc_parity_combo.currentText(), serial.PARITY_NONE)
+        flow = self._sc_flow_combo.currentText()
+        xonxoff = flow == "XON/XOFF"
+        rtscts = flow == "RTS/CTS"
+
+        if DEBUG_MOCK:
+            self._serial_conn = None
+            self._serial_port = "MOCK"
+            self._serial_baudrate = baudrate
+            self._serial_connected = True
+            self._sc_update_connect_ui(True)
+            self._sc_append_system(f"[INFO] Mock 连接: {port} @ {baudrate}")
+            self.serial_connection_changed.emit(True)
+            return
+
+        try:
+            conn = serial.Serial(
+                port=port, baudrate=baudrate, bytesize=databit,
+                stopbits=stopbits, parity=parity, xonxoff=xonxoff,
+                rtscts=rtscts, timeout=0.1,
+            )
+            self._serial_conn = conn
+            self._serial_port = port
+            self._serial_baudrate = baudrate
+            self._serial_connected = True
+            self._sc_update_connect_ui(True)
+            self._sc_append_system(f"[INFO] 已连接: {port} @ {baudrate}")
+            self.serial_connection_changed.emit(True)
+            self._start_serial_read()
+        except Exception as e:
+            self._sc_append_system(f"[ERROR] 连接失败: {e}")
+
+    def _sc_do_disconnect(self):
+        self._stop_serial_read()
+        try:
+            if self._serial_conn and self._serial_conn.is_open:
+                self._serial_conn.close()
+        except Exception as e:
+            self._sc_append_system(f"[WARN] 关闭异常: {e}")
+        self._serial_conn = None
+        self._serial_port = None
+        self._serial_connected = False
+        self._sc_update_connect_ui(False)
+        self._sc_append_system("[INFO] 已断开连接")
+        self.serial_connection_changed.emit(False)
+
+    def _sc_update_connect_ui(self, connected):
+        if connected:
+            self._sc_connect_btn.setText("断开")
+            icon = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "disconnect.svg"), "#ff5e7a", 12)
+            if not icon.isNull():
+                self._sc_connect_btn.setIcon(icon)
+            self._sc_status_port_label.setText(f"端口: {self._serial_port}")
+            self._sc_status_port_label.setStyleSheet("color: #4ade80; font-size: 10px; background: transparent;")
+            baud = getattr(self, '_serial_baudrate', '-')
+            self._sc_status_baud_label.setText(f"波特率: {baud}")
+        else:
+            self._sc_connect_btn.setText("连接")
+            icon = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "connect.svg"), "#10e7bc", 12)
+            if not icon.isNull():
+                self._sc_connect_btn.setIcon(icon)
+            self._sc_status_port_label.setText("端口: 未连接")
+            self._sc_status_port_label.setStyleSheet("color: #ff5e7a; font-size: 10px; background: transparent;")
+            self._sc_status_baud_label.setText("波特率: -")
+
+        self._sc_port_combo.setEnabled(not connected)
+        self._sc_baud_combo.setEnabled(not connected)
+
+    def _sc_on_pause(self, checked):
+        self._sc_paused = checked
+        self._sc_pause_btn.setText("继续" if checked else "暂停")
+
+    def _sc_on_stop(self):
+        if self._serial_connected:
+            self._sc_do_disconnect()
+
+    def _sc_on_refresh(self):
+        self._sc_port_combo.clear()
+        if DEBUG_MOCK:
+            self._sc_port_combo.addItem("[MOCK] COM99 - Mock Serial Device")
+            self._sc_append_system("[INFO] Mock 端口已刷新")
+            return
+        try:
+            ports = serial.tools.list_ports.comports()
+            if ports:
+                for p in ports:
+                    self._sc_port_combo.addItem(f"{p.device} - {p.description}")
+                self._sc_append_system(f"[INFO] 发现 {len(ports)} 个串口")
+            else:
+                self._sc_port_combo.addItem("No serial ports found")
+                self._sc_append_system("[WARN] 未发现串口")
+        except Exception as e:
+            self._sc_append_system(f"[ERROR] 刷新失败: {e}")
+
+    def _sc_on_sidebar_toggle(self, checked):
+        self._sc_sidebar_visible = checked
+        self._sc_sidebar_widget.setVisible(checked)
+
+    def _sc_open_settings_dialog(self):
+        dlg = _SerialSettingsDialog(self)
+
+        dlg.port_combo.clear()
+        for i in range(self._sc_port_combo.count()):
+            dlg.port_combo.addItem(self._sc_port_combo.itemText(i))
+        dlg.port_combo.setCurrentIndex(self._sc_port_combo.currentIndex())
+
+        dlg.baud_combo.setCurrentText(self._sc_baud_combo.currentText())
+
+        dlg.databit_combo.setCurrentText(self._sc_databit_combo.currentText())
+        dlg.flow_combo.setCurrentText(self._sc_flow_combo.currentText())
+        dlg.stopbit_combo.setCurrentText(self._sc_stopbit_combo.currentText())
+        dlg.parity_combo.setCurrentText(self._sc_parity_combo.currentText())
+
+        dlg.rx_hex_toggle.set_value("HEX" if self._sc_rx_display_hex else "ASCII")
+        dlg.show_time_cb.setChecked(self._sc_show_timestamp)
+        dlg.rx_max_lines_spin.setValue(getattr(self, '_sc_max_log_lines', 10000))
+
+        dlg.tx_hex_toggle.set_value("HEX" if self._sc_tx_display_hex else "ASCII")
+        dlg.auto_resend_cb.setChecked(self._sc_auto_resend)
+        dlg.resend_spin.setValue(self._sc_resend_spin.value())
+        idx = self._sc_ending_combo.currentIndex()
+        if 0 <= idx < dlg.ending_combo.count():
+            dlg.ending_combo.setCurrentIndex(idx)
+        dlg.show_send_cb.setChecked(self._sc_show_send)
+        dlg.line_by_line_cb.setChecked(self._sc_line_by_line)
+
+        dlg.log_auto_save_cb.setChecked(getattr(self, '_sc_log_auto_save', False))
+        dlg.log_save_path_edit.setText(getattr(self, '_sc_log_save_path', ''))
+
+        dlg.display_font_combo.setCurrentText(getattr(self, '_sc_display_font', 'Consolas'))
+        dlg.display_font_size_spin.setValue(getattr(self, '_sc_display_font_size', 11))
+        dlg.display_auto_scroll_cb.setChecked(self._sc_auto_scroll)
+        dlg.display_word_wrap_cb.setChecked(getattr(self, '_sc_word_wrap', True))
+
+        if dlg.exec() == QDialog.Accepted:
+            self._sc_port_combo.setCurrentIndex(dlg.port_combo.currentIndex())
+            self._sc_baud_combo.setCurrentText(dlg.baud_combo.currentText())
+            self._sc_databit_combo.setCurrentText(dlg.databit_combo.currentText())
+            self._sc_flow_combo.setCurrentText(dlg.flow_combo.currentText())
+            self._sc_stopbit_combo.setCurrentText(dlg.stopbit_combo.currentText())
+            self._sc_parity_combo.setCurrentText(dlg.parity_combo.currentText())
+
+            rx_val = dlg.rx_hex_toggle.value()
+            self._sc_rx_display_hex = rx_val == "HEX"
+            self._sc_rx_toggle.set_value(rx_val)
+
+            self._sc_show_timestamp = dlg.show_time_cb.isChecked()
+            self._sc_rx_show_time_cb.setChecked(self._sc_show_timestamp)
+            self._sc_max_log_lines = dlg.rx_max_lines_spin.value()
+
+            tx_val = dlg.tx_hex_toggle.value()
+            self._sc_tx_display_hex = tx_val == "HEX"
+            self._sc_tx_toggle.set_value(tx_val)
+
+            self._sc_auto_resend_cb.setChecked(dlg.auto_resend_cb.isChecked())
+            self._sc_resend_spin.setValue(dlg.resend_spin.value())
+
+            ending_idx = dlg.ending_combo.currentIndex()
+            self._sc_ending_combo.setCurrentIndex(ending_idx)
+
+            self._sc_show_send_cb.setChecked(dlg.show_send_cb.isChecked())
+            self._sc_line_by_line_cb.setChecked(dlg.line_by_line_cb.isChecked())
+
+            self._sc_log_auto_save = dlg.log_auto_save_cb.isChecked()
+            self._sc_log_save_path = dlg.log_save_path_edit.text()
+
+            font_family = dlg.display_font_combo.currentText()
+            font_size = dlg.display_font_size_spin.value()
+            self._sc_display_font = font_family
+            self._sc_display_font_size = font_size
+            self._sc_log_edit.setStyleSheet(f"""
+                QTextEdit {{
+                    background-color: #061022; border: none; border-top: 1px solid #1f315d;
+                    color: #7cecc8; font-family: {font_family}, monospace; font-size: {font_size}px;
+                    padding: 6px 8px;
+                }}
+            """ + SCROLLBAR_STYLE)
+
+            self._sc_auto_scroll = dlg.display_auto_scroll_cb.isChecked()
+            self._sc_scroll_lock_btn.setChecked(self._sc_auto_scroll)
+
+            self._sc_word_wrap = dlg.display_word_wrap_cb.isChecked()
+            from PySide6.QtWidgets import QTextEdit as _QTE
+            self._sc_log_edit.setLineWrapMode(
+                _QTE.WidgetWidth if self._sc_word_wrap else _QTE.NoWrap
+            )
+
+    def _sc_on_filter_toggle(self, checked):
+        self._sc_filter_row.setVisible(checked)
+        if not checked:
+            self._sc_filter_input.clear()
+
+    def _sc_apply_filter(self, _text=None):
+        kw = self._sc_filter_input.text().strip().lower()
+        self._sc_log_edit.clear()
+        for raw, html in self._sc_all_logs:
+            if not kw or kw in raw.lower():
+                self._sc_log_edit.append(html)
+        if self._sc_auto_scroll:
+            self._sc_scroll_to_bottom()
+
+    def _sc_copy_logs(self):
+        cb = QApplication.clipboard()
+        if not cb:
+            return
+        kw = self._sc_filter_input.text().strip().lower() if self._sc_filter_row.isVisible() else ""
+        lines = []
+        for raw, _html in self._sc_all_logs:
+            if not kw or kw in raw.lower():
+                lines.append(raw)
+        cb.setText("\n".join(lines))
+
+    def _sc_export_logs(self):
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path, _ = QFileDialog.getSaveFileName(
+            None, "导出日志", f"serial_log_{ts}.txt", "Text Files (*.txt);;All Files (*)"
+        )
+        if path:
+            with open(path, "w", encoding="utf-8") as f:
+                for raw, _ in self._sc_all_logs:
+                    f.write(raw + "\n")
+
+    def _sc_clear_logs(self):
+        self._sc_all_logs.clear()
+        self._sc_log_edit.clear()
+        self._sc_rx_bytes = 0
+        self._sc_tx_bytes = 0
+        self._sc_status_rx_label.setText("RX: 0 B")
+        self._sc_status_tx_label.setText("TX: 0 B")
+
+    def _sc_on_user_scroll(self, value):
+        sb = self._sc_log_edit.verticalScrollBar()
+        if sb and sb.maximum() > 0:
+            at_bottom = value >= sb.maximum() - 5
+            if not at_bottom and self._sc_auto_scroll:
+                self._sc_auto_scroll = False
+                self._sc_scroll_lock_btn.setChecked(False)
+            elif at_bottom and not self._sc_auto_scroll:
+                self._sc_auto_scroll = True
+                self._sc_scroll_lock_btn.setChecked(True)
+
+    def _sc_scroll_to_bottom(self):
+        sb = self._sc_log_edit.verticalScrollBar()
+        if sb:
+            sb.setValue(sb.maximum())
+
+    def _sc_on_send(self):
+        text = self._sc_send_input.text()
+        if not text:
+            return
+
+        if self._sc_line_by_line:
+            lines = text.split("\\n")
+        else:
+            lines = [text]
+
+        for line in lines:
+            if self._sc_tx_display_hex:
+                try:
+                    data = bytes.fromhex(line.replace(" ", ""))
+                except ValueError:
+                    self._sc_append_system(f"[ERROR] 无效HEX: {line}")
+                    return
+            else:
+                data = (line + self._sc_line_ending).encode("utf-8")
+
+            ok = self.serial_send(data)
+            if ok:
+                self._sc_tx_bytes += len(data)
+                self._sc_status_tx_label.setText(self._sc_format_bytes("TX", self._sc_tx_bytes))
+                if self._sc_show_send:
+                    display = line if not self._sc_tx_display_hex else data.hex(' ')
+                    self._sc_append_log(f"[TX] {display}", "#60a5fa")
+            else:
+                self._sc_append_system("[ERROR] 发送失败，串口未连接")
+
+        if text not in self._sc_send_history:
+            self._sc_send_history.insert(0, text)
+            if len(self._sc_send_history) > 50:
+                self._sc_send_history.pop()
+            self._sc_history_combo.clear()
+            self._sc_history_combo.addItems(self._sc_send_history)
+
+        self._sc_send_input.clear()
+
+    def _sc_on_data_received(self, data: bytes):
+        if self._sc_paused:
+            return
+        self._sc_rx_bytes += len(data)
+        self._sc_status_rx_label.setText(self._sc_format_bytes("RX", self._sc_rx_bytes))
+
+        if self._sc_rx_display_hex:
+            display = data.hex(' ')
+        else:
+            display = data.decode("utf-8", errors="replace")
+
+        for line in display.splitlines():
+            if line.strip():
+                self._sc_append_log(f"[RX] {line}", "#4ade80")
+
+    def _sc_on_auto_resend_toggled(self, checked):
+        self._sc_auto_resend = checked
+        if checked:
+            self._sc_resend_timer.setInterval(self._sc_resend_spin.value())
+            self._sc_resend_timer.start()
+        else:
+            self._sc_resend_timer.stop()
+
+    def _sc_on_resend_tick(self):
+        text = self._sc_send_input.text()
+        if text and self._serial_connected:
+            if self._sc_tx_display_hex:
+                try:
+                    data = bytes.fromhex(text.replace(" ", ""))
+                except ValueError:
+                    return
+            else:
+                data = (text + self._sc_line_ending).encode("utf-8")
+            ok = self.serial_send(data)
+            if ok:
+                self._sc_tx_bytes += len(data)
+                self._sc_status_tx_label.setText(self._sc_format_bytes("TX", self._sc_tx_bytes))
+
+    # --- quick commands ---
+
+    def _sc_add_quick_cmd(self):
+        prefill_cmd = self._sc_send_input.text().strip()
+        dlg = _QuickCmdDialog(name="", cmd=prefill_cmd, parent=None)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        name = dlg.get_name()
+        cmd = dlg.get_cmd()
+        if not cmd:
+            return
+        for item in self._sc_quick_commands:
+            if item["name"] == name and item["cmd"] == cmd:
+                return
+        self._sc_quick_commands.append({"name": name, "cmd": cmd})
+        self._sc_refresh_quick_buttons()
+
+    def _sc_refresh_quick_buttons(self):
+        self._sc_qc_btn_layout.clear()
+        for idx, entry in enumerate(self._sc_quick_commands):
+            name = entry.get("name", "")
+            cmd = entry.get("cmd", "")
+            label = name if name else cmd
+            btn = _DraggableQuickButton(label, idx)
+            btn.setToolTip(f"指令: {cmd}\n(拖拽可排序)")
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #13254b; border: 1px solid #22376A; border-radius: 4px;
+                    color: #dce7ff; font-size: 10px; padding: 2px 8px; min-height: 18px;
+                }
+                QPushButton:hover { background-color: #1C2D55; }
+                QPushButton:pressed { background-color: #102040; }
+                QToolTip {
+                    background-color: #0d1f42; border: 1px solid #1f315d;
+                    color: #dce7ff; font-size: 10px; padding: 4px 8px;
+                }
+            """)
+            btn.setContextMenuPolicy(Qt.CustomContextMenu)
+            btn.customContextMenuRequested.connect(
+                lambda pos, e=entry, b=btn: self._sc_qc_context_menu(e, b, pos)
+            )
+            btn.clicked.connect(lambda checked=False, c=cmd: self._sc_send_quick(c))
+            self._sc_qc_btn_layout.addWidget(btn)
+
+    def _sc_on_quick_cmd_reorder(self):
+        src = self._sc_qc_btn_container.property("_drag_source")
+        dst = self._sc_qc_btn_container.property("_drag_target")
+        if src is None or dst is None:
+            return
+        cmds = self._sc_quick_commands
+        if 0 <= src < len(cmds) and 0 <= dst < len(cmds):
+            item = cmds.pop(src)
+            cmds.insert(dst, item)
+            self._sc_refresh_quick_buttons()
+
+    def _sc_send_quick(self, cmd):
+        if self._sc_tx_display_hex:
+            try:
+                data = bytes.fromhex(cmd.replace(" ", ""))
+            except ValueError:
+                self._sc_append_system(f"[ERROR] 无效HEX: {cmd}")
+                return
+        else:
+            data = (cmd + self._sc_line_ending).encode("utf-8")
+        ok = self.serial_send(data)
+        if ok:
+            self._sc_tx_bytes += len(data)
+            self._sc_status_tx_label.setText(self._sc_format_bytes("TX", self._sc_tx_bytes))
+            if self._sc_show_send:
+                self._sc_append_log(f"[TX] {cmd}", "#60a5fa")
+
+    def _sc_qc_context_menu(self, entry, btn, pos):
+        menu = QMenu()
+        menu.setStyleSheet("""
+            QMenu { background-color: #0d1f42; border: 1px solid #1f315d; border-radius: 6px; color: #c8d8f0; font-size: 10px; }
+            QMenu::item { padding: 4px 16px; }
+            QMenu::item:selected { background-color: #1C2D55; }
+        """)
+        edit_action = menu.addAction("编辑")
+        del_action = menu.addAction("删除")
+        action = menu.exec(btn.mapToGlobal(pos))
+        if action == del_action:
+            if entry in self._sc_quick_commands:
+                self._sc_quick_commands.remove(entry)
+                self._sc_refresh_quick_buttons()
+        elif action == edit_action:
+            dlg = _QuickCmdDialog(
+                name=entry.get("name", ""),
+                cmd=entry.get("cmd", ""),
+                parent=None,
+            )
+            if dlg.exec() == QDialog.Accepted:
+                entry["name"] = dlg.get_name()
+                entry["cmd"] = dlg.get_cmd()
+                self._sc_refresh_quick_buttons()
+
+    def _sc_import_quick_cmds(self):
+        path, _ = QFileDialog.getOpenFileName(
+            None, "导入快捷指令", "", "JSON Files (*.json);;All Files (*)"
+        )
+        if path:
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, list):
+                    cmds = []
+                    for item in data:
+                        if isinstance(item, dict) and "cmd" in item:
+                            cmds.append({"name": item.get("name", ""), "cmd": item["cmd"]})
+                        elif isinstance(item, str):
+                            cmds.append({"name": "", "cmd": item})
+                    self._sc_quick_commands = cmds
+                    self._sc_refresh_quick_buttons()
+                    self._sc_append_system(f"[INFO] 已导入 {len(self._sc_quick_commands)} 条指令")
+            except Exception as e:
+                self._sc_append_system(f"[ERROR] 导入失败: {e}")
+
+    def _sc_export_quick_cmds(self):
+        if not self._sc_quick_commands:
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            None, "导出快捷指令", "quick_commands.json", "JSON Files (*.json);;All Files (*)"
+        )
+        if path:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(self._sc_quick_commands, f, ensure_ascii=False, indent=2)
+            self._sc_append_system(f"[INFO] 已导出 {len(self._sc_quick_commands)} 条指令")
+
+    # --- log helpers ---
+
+    def _sc_append_log(self, message: str, color: str = "#7cecc8"):
+        ts = datetime.now().strftime("%H:%M:%S.%f")[:-3] if self._sc_show_timestamp else ""
+        escaped = message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        ts_html = f'<span style="color:#4a5e82;">{ts}</span> ' if ts else ""
+        html = f'{ts_html}<span style="color:{color};">{escaped}</span>'
+        self._sc_all_logs.append((message, html))
+        kw = self._sc_filter_input.text().strip().lower() if self._sc_filter_row.isVisible() else ""
+        if not kw or kw in message.lower():
+            self._sc_pending_html.append(html)
+
+    def _sc_flush_pending_logs(self):
+        if not self._sc_pending_html:
+            return
+        batch = self._sc_pending_html
+        self._sc_pending_html = []
+        cursor = self._sc_log_edit.textCursor()
+        cursor.beginEditBlock()
+        for html in batch:
+            self._sc_log_edit.append(html)
+        cursor.endEditBlock()
+        if self._sc_auto_scroll:
+            self._sc_scroll_to_bottom()
+
+    def _sc_append_system(self, message: str):
+        color_map = {"INFO": "#60a5fa", "WARN": "#facc15", "ERROR": "#f87171"}
+        tag = ""
+        for t in color_map:
+            if f"[{t}]" in message:
+                tag = t
+                break
+        color = color_map.get(tag, "#6b83b0")
+        self._sc_append_log(message, color)
+
+    @staticmethod
+    def _sc_format_bytes(prefix, n):
+        if n < 1024:
+            return f"{prefix}: {n} B"
+        elif n < 1024 * 1024:
+            return f"{prefix}: {n / 1024:.1f} KB"
+        else:
+            return f"{prefix}: {n / (1024 * 1024):.2f} MB"
+
+    # --- ui helpers ---
+
+    @staticmethod
+    def _make_sc_btn(svg_path, text):
+        btn = QPushButton(text)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setStyleSheet("""
+            QPushButton {
+                min-height: 0px; max-height: 20px; padding: 2px 8px; border-radius: 6px;
+                background-color: #13254b; color: #dce7ff; font-size: 10px; border: none;
+            }
+            QPushButton:hover { background-color: #1C2D55; }
+            QPushButton:pressed { background-color: #102040; }
+            QPushButton:checked { background-color: #1e3a6d; border: 1px solid #3b6bcf; }
+        """)
+        icon = _tinted_svg_icon(svg_path, "#8eb0e3", 12)
+        if not icon.isNull():
+            btn.setIcon(icon)
+        return btn
+
+    @staticmethod
+    def _make_sc_section(title):
+        grp = QFrame()
+        grp.setStyleSheet("""
+            QFrame {
+                background-color: #0c1e3e; border: 1px solid #1a2d57; border-radius: 8px;
+            }
+        """)
+        layout = QVBoxLayout(grp)
+        layout.setContentsMargins(8, 6, 8, 8)
+        layout.setSpacing(4)
+
+        lbl = QLabel(title)
+        lbl.setStyleSheet("color: #8eb0e3; font-size: 10px; font-weight: 700; border: none;")
+        layout.addWidget(lbl)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setFixedHeight(1)
+        sep.setStyleSheet("background-color: #1a2d57; border: none;")
+        layout.addWidget(sep)
+
+        grp.setProperty("_inner_layout", layout)
+        return grp
+
+    @staticmethod
+    def _make_sc_label(text):
+        lbl = QLabel(text)
+        lbl.setStyleSheet("color: #6b83b0; font-size: 10px; background: transparent; border: none;")
+        return lbl
+
+    @staticmethod
+    def _sc_checkbox_style():
+        return """
+            QCheckBox { color: #8eb0e3; font-size: 10px; background: transparent; spacing: 4px; }
+            QCheckBox::indicator {
+                width: 14px; height: 14px;
+                border: 1px solid #1f315d; border-radius: 3px;
+                background-color: #0b1a38;
+            }
+            QCheckBox::indicator:hover {
+                border-color: #3b6bcf;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #5b5cf6; border-color: #5b5cf6;
+                image: url(""" + os.path.join(_SVG_SERIAL_DIR, "checkmark.svg").replace("\\", "/") + """);
+            }
+        """
+
+
+class _DraggableQuickButton(QPushButton):
+
+    _MIME_TYPE = "application/x-quickcmd-index"
+
+    def __init__(self, text, index, parent=None):
+        super().__init__(text, parent)
+        self._drag_index = index
+        self._drag_start_pos = None
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._drag_start_pos = event.position().toPoint()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if not (event.buttons() & Qt.LeftButton) or self._drag_start_pos is None:
+            return
+        if (event.position().toPoint() - self._drag_start_pos).manhattanLength() < 10:
+            return
+
+        drag = QDrag(self)
+        mime = QMimeData()
+        mime.setData(self._MIME_TYPE, str(self._drag_index).encode())
+        drag.setMimeData(mime)
+
+        pixmap = self.grab()
+        drag.setPixmap(pixmap)
+        drag.setHotSpot(event.position().toPoint())
+
+        drag.exec(Qt.MoveAction)
+        self._drag_start_pos = None
+
+    def mouseReleaseEvent(self, event):
+        self._drag_start_pos = None
+        super().mouseReleaseEvent(event)
+
+
+class _DropContainer(QWidget):
+
+    order_changed = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+        self._flow_layout = None
+
+    def set_flow_layout(self, layout):
+        self._flow_layout = layout
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasFormat(_DraggableQuickButton._MIME_TYPE):
+            event.acceptProposedAction()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasFormat(_DraggableQuickButton._MIME_TYPE):
+            event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        if not event.mimeData().hasFormat(_DraggableQuickButton._MIME_TYPE):
+            return
+        source_index = int(event.mimeData().data(_DraggableQuickButton._MIME_TYPE).data().decode())
+        drop_pos = event.position().toPoint()
+        target_index = self._index_at_pos(drop_pos)
+        if target_index < 0:
+            target_index = self._flow_layout.count() - 1 if self._flow_layout else 0
+        if source_index != target_index:
+            event.acceptProposedAction()
+            self.setProperty("_drag_source", source_index)
+            self.setProperty("_drag_target", target_index)
+            self.order_changed.emit()
+
+    def _index_at_pos(self, pos):
+        if not self._flow_layout:
+            return -1
+        for i in range(self._flow_layout.count()):
+            item = self._flow_layout.itemAt(i)
+            if item and item.widget() and item.widget().geometry().contains(pos):
+                return i
+        return -1
+
+
+class _FlowLayout(QLayout):
+
+    def __init__(self, parent=None, spacing=4):
+        super().__init__(parent)
+        self._items = []
+        self._h_spacing = spacing
+        self._v_spacing = spacing
+
+    def addItem(self, item):
+        self._items.append(item)
+
+    def count(self):
+        return len(self._items)
+
+    def itemAt(self, index):
+        if 0 <= index < len(self._items):
+            return self._items[index]
+        return None
+
+    def takeAt(self, index):
+        if 0 <= index < len(self._items):
+            return self._items.pop(index)
+        return None
+
+    def expandingDirections(self):
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self._do_layout(QRect(0, 0, width, 0), test_only=True)
+
+    def setGeometry(self, rect):
+        super().setGeometry(rect)
+        self._do_layout(rect, test_only=False)
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        m = self.contentsMargins()
+        size += QSize(m.left() + m.right(), m.top() + m.bottom())
+        return size
+
+    def _do_layout(self, rect, test_only):
+        m = self.contentsMargins()
+        effective = rect.adjusted(m.left(), m.top(), -m.right(), -m.bottom())
+        x = effective.x()
+        y = effective.y()
+        line_height = 0
+
+        for item in self._items:
+            w = item.sizeHint().width()
+            h = item.sizeHint().height()
+
+            if x + w > effective.right() + 1 and line_height > 0:
+                x = effective.x()
+                y = y + line_height + self._v_spacing
+                line_height = 0
+
+            if not test_only:
+                item.setGeometry(QRect(QPoint(x, y), item.sizeHint()))
+
+            x = x + w + self._h_spacing
+            line_height = max(line_height, h)
+
+        return y + line_height - rect.y() + m.bottom()
+
+    def clear(self):
+        while self._items:
+            item = self._items.pop()
+            w = item.widget()
+            if w:
+                w.setParent(None)
+                w.deleteLater()
+
+
+class _MiniSlideToggle(QWidget):
+    toggled = Signal(str)
+
+    def __init__(self, left="ASCII", right="HEX", parent=None):
+        super().__init__(parent)
+        self._left = left
+        self._right = right
+        self._value = left
+        self._anim_progress = 0.0
+
+        self.setFixedSize(80, 22)
+        self.setCursor(Qt.PointingHandCursor)
+
+        self._anim = QPropertyAnimation(self, b"animProgress")
+        self._anim.setDuration(160)
+        self._anim.setEasingCurve(QEasingCurve.InOutCubic)
+
+    def _get_anim_progress(self):
+        return self._anim_progress
+
+    def _set_anim_progress(self, val):
+        self._anim_progress = val
+        self.update()
+
+    animProgress = Property(float, _get_anim_progress, _set_anim_progress)
+
+    def value(self):
+        return self._value
+
+    def set_value(self, val):
+        if val not in (self._left, self._right):
+            return
+        if val == self._value:
+            return
+        self._value = val
+        target = 1.0 if val == self._right else 0.0
+        self._anim.stop()
+        self._anim.setStartValue(self._anim_progress)
+        self._anim.setEndValue(target)
+        self._anim.start()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            new_val = self._right if self._value == self._left else self._left
+            self._value = new_val
+            target = 1.0 if new_val == self._right else 0.0
+            self._anim.stop()
+            self._anim.setStartValue(self._anim_progress)
+            self._anim.setEndValue(target)
+            self._anim.start()
+            self.toggled.emit(self._value)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        w, h = self.width(), self.height()
+        radius = h / 2
+
+        p.setPen(QPen(QColor("#22376A"), 1))
+        p.setBrush(QColor("#0e1d3d"))
+        p.drawRoundedRect(QRectF(0, 0, w, h), radius, radius)
+
+        knob_margin = 2
+        knob_h = h - knob_margin * 2
+        knob_w = w / 2 - knob_margin
+        knob_x = knob_margin + self._anim_progress * (w / 2)
+
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor("#243760"))
+        p.drawRoundedRect(QRectF(knob_x, knob_margin, knob_w, knob_h),
+                          knob_h / 2, knob_h / 2)
+
+        font = p.font()
+        font.setPixelSize(9)
+        font.setWeight(QFont.Bold)
+        p.setFont(font)
+
+        left_rect = QRectF(0, 0, w / 2, h)
+        right_rect = QRectF(w / 2, 0, w / 2, h)
+
+        p.setPen(QColor("#DDE6FF") if self._anim_progress < 0.5 else QColor("#5F77AE"))
+        p.drawText(left_rect, Qt.AlignCenter, self._left)
+
+        p.setPen(QColor("#DDE6FF") if self._anim_progress >= 0.5 else QColor("#5F77AE"))
+        p.drawText(right_rect, Qt.AlignCenter, self._right)
+
+        p.end()
+
+
+_DLG_STYLE = """
+    QDialog {
+        background-color: #0a1530;
+        color: #dce7ff;
+    }
+    QLabel { color: #8eb0e3; font-size: 11px; background: transparent; }
+    QLabel#dlgSectionTitle {
+        color: #f4f7ff; font-size: 12px; font-weight: 700; background: transparent;
+        padding-bottom: 2px;
+    }
+    QFrame#dlgSep { background-color: #1a2d57; }
+    QCheckBox { color: #8eb0e3; font-size: 11px; background: transparent; spacing: 4px; }
+    QCheckBox::indicator {
+        width: 15px; height: 15px;
+        border: 1px solid #1f315d; border-radius: 3px;
+        background-color: #0b1a38;
+    }
+    QCheckBox::indicator:hover { border-color: #3b6bcf; }
+    QCheckBox::indicator:checked {
+        background-color: #5b5cf6; border-color: #5b5cf6;
+        image: url(""" + os.path.join(_SVG_SERIAL_DIR, "checkmark.svg").replace("\\", "/") + """);
+    }
+    QSpinBox {
+        background-color: #0b1a38; border: 1px solid #1f315d; border-radius: 4px;
+        color: #c8d8f0; font-size: 11px; padding: 2px 6px;
+    }
+    QSpinBox::up-button, QSpinBox::down-button { width: 14px; }
+    QPushButton#dlgOkBtn {
+        background-color: #053b38; border: 1px solid #08c9a5; border-radius: 6px;
+        color: #10e7bc; font-weight: 700; font-size: 11px; padding: 6px 20px;
+    }
+    QPushButton#dlgOkBtn:hover { background-color: #064744; }
+    QPushButton#dlgCancelBtn {
+        background-color: #13254b; border: 1px solid #22376A; border-radius: 6px;
+        color: #dce7ff; font-size: 11px; padding: 6px 20px;
+    }
+    QPushButton#dlgCancelBtn:hover { background-color: #1C2D55; }
+    QTabWidget::pane {
+        background-color: #0c1832;
+        border: 1px solid #1a2d57;
+        border-radius: 6px;
+        padding: 4px;
+    }
+    QTabBar::tab {
+        background-color: #0b1428;
+        color: #5f78a8;
+        padding: 7px 16px;
+        border: none;
+        border-top-left-radius: 6px;
+        border-top-right-radius: 6px;
+        font-size: 11px;
+        font-weight: 600;
+        margin-right: 2px;
+    }
+    QTabBar::tab:hover {
+        background-color: #0f1c38;
+        color: #8899bb;
+    }
+    QTabBar::tab:selected {
+        background-color: #132040;
+        color: #dce7ff;
+        border-bottom: 2px solid #5b5cf6;
+    }
+"""
+
+
+class _QuickCmdDialog(QDialog):
+
+    def __init__(self, name="", cmd="", parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("快捷指令")
+        self.setFixedWidth(360)
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #0a1530;
+                color: #dce7ff;
+            }
+            QLabel {
+                color: #8eb0e3; font-size: 11px; background: transparent;
+            }
+            QLabel#qcTitle {
+                color: #f4f7ff; font-size: 13px; font-weight: 700; background: transparent;
+            }
+            QLineEdit {
+                background-color: #0b1a38; border: 1px solid #1f315d; border-radius: 6px;
+                color: #c8d8f0; font-size: 11px; padding: 6px 10px; min-height: 28px;
+            }
+            QLineEdit:focus { border: 1px solid #3b6bcf; }
+        """)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(12)
+
+        title = QLabel("新增快捷指令" if not name and not cmd else "编辑快捷指令")
+        title.setObjectName("qcTitle")
+        root.addWidget(title)
+
+        root.addWidget(QLabel("指令名称 (按钮显示文字，可为空)"))
+        self._name_edit = QLineEdit()
+        self._name_edit.setPlaceholderText("例如: 复位、查询版本...")
+        self._name_edit.setText(name)
+        root.addWidget(self._name_edit)
+
+        root.addWidget(QLabel("指令内容 (实际发送的数据)"))
+        self._cmd_edit = QLineEdit()
+        self._cmd_edit.setPlaceholderText("例如: AT+RST")
+        self._cmd_edit.setText(cmd)
+        root.addWidget(self._cmd_edit)
+
+        root.addSpacing(4)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QPushButton("取消")
+        cancel_btn.setCursor(Qt.PointingHandCursor)
+        cancel_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #13254b; border: 1px solid #22376A; border-radius: 6px;
+                color: #dce7ff; font-size: 11px; padding: 6px 20px;
+            }
+            QPushButton:hover { background-color: #1C2D55; }
+        """)
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+
+        ok_btn = QPushButton("确定")
+        ok_btn.setCursor(Qt.PointingHandCursor)
+        ok_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #053b38; border: 1px solid #08c9a5; border-radius: 6px;
+                color: #10e7bc; font-weight: 700; font-size: 11px; padding: 6px 20px;
+            }
+            QPushButton:hover { background-color: #064744; }
+        """)
+        ok_btn.clicked.connect(self.accept)
+        btn_row.addWidget(ok_btn)
+        root.addLayout(btn_row)
+
+    def get_name(self):
+        return self._name_edit.text().strip()
+
+    def get_cmd(self):
+        return self._cmd_edit.text().strip()
+
+
+class _SerialSettingsDialog(QDialog):
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("串口详细设置")
+        self.setMinimumSize(480, 420)
+        self.setStyleSheet(_DLG_STYLE)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(10)
+
+        self._tabs = QTabWidget()
+        root.addWidget(self._tabs, 1)
+
+        self._tabs.addTab(self._build_tab_serial(), "串口")
+        self._tabs.addTab(self._build_tab_rx(), "接收")
+        self._tabs.addTab(self._build_tab_tx(), "发送")
+        self._tabs.addTab(self._build_tab_log(), "日志")
+        self._tabs.addTab(self._build_tab_display(), "显示")
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QPushButton("取消")
+        cancel_btn.setObjectName("dlgCancelBtn")
+        cancel_btn.setCursor(Qt.PointingHandCursor)
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+        ok_btn = QPushButton("确定")
+        ok_btn.setObjectName("dlgOkBtn")
+        ok_btn.setCursor(Qt.PointingHandCursor)
+        ok_btn.clicked.connect(self.accept)
+        btn_row.addWidget(ok_btn)
+        root.addLayout(btn_row)
+
+    # ---- tab: 串口 ----
+
+    def _build_tab_serial(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        layout.addWidget(self._section_title("连接参数"))
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(8)
+
+        grid.addWidget(QLabel("端口"), 0, 0)
+        self.port_combo = DarkComboBox()
+        self.port_combo.setFixedHeight(28)
+        grid.addWidget(self.port_combo, 0, 1)
+
+        grid.addWidget(QLabel("波特率"), 1, 0)
+        self.baud_combo = DarkComboBox()
+        self.baud_combo.setFixedHeight(28)
+        self.baud_combo.setEditable(True)
+        for br in ["921600", "1152000", "2000000", "3000000", "115200", "9600", "Custom"]:
+            self.baud_combo.addItem(br)
+        grid.addWidget(self.baud_combo, 1, 1)
+
+        layout.addLayout(grid)
+
+        layout.addWidget(self._separator())
+        layout.addWidget(self._section_title("高级参数"))
+
+        adv_grid = QGridLayout()
+        adv_grid.setHorizontalSpacing(12)
+        adv_grid.setVerticalSpacing(8)
+
+        adv_grid.addWidget(QLabel("数据位"), 0, 0)
+        self.databit_combo = DarkComboBox()
+        self.databit_combo.setFixedHeight(28)
+        for d in ["8", "7", "6", "5"]:
+            self.databit_combo.addItem(d)
+        adv_grid.addWidget(self.databit_combo, 0, 1)
+
+        adv_grid.addWidget(QLabel("停止位"), 0, 2)
+        self.stopbit_combo = DarkComboBox()
+        self.stopbit_combo.setFixedHeight(28)
+        for s in ["1", "1.5", "2"]:
+            self.stopbit_combo.addItem(s)
+        adv_grid.addWidget(self.stopbit_combo, 0, 3)
+
+        adv_grid.addWidget(QLabel("校验位"), 1, 0)
+        self.parity_combo = DarkComboBox()
+        self.parity_combo.setFixedHeight(28)
+        for p in ["None", "Even", "Odd", "Mark", "Space"]:
+            self.parity_combo.addItem(p)
+        adv_grid.addWidget(self.parity_combo, 1, 1)
+
+        adv_grid.addWidget(QLabel("流控"), 1, 2)
+        self.flow_combo = DarkComboBox()
+        self.flow_combo.setFixedHeight(28)
+        for fc in ["None", "RTS/CTS", "XON/XOFF"]:
+            self.flow_combo.addItem(fc)
+        adv_grid.addWidget(self.flow_combo, 1, 3)
+
+        layout.addLayout(adv_grid)
+        layout.addStretch()
+        return page
+
+    # ---- tab: 接收 ----
+
+    def _build_tab_rx(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        layout.addWidget(self._section_title("数据格式"))
+
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        row.addWidget(QLabel("编码模式"))
+        self.rx_hex_toggle = _MiniSlideToggle("ASCII", "HEX")
+        row.addWidget(self.rx_hex_toggle)
+        row.addStretch()
+        layout.addLayout(row)
+
+        layout.addWidget(self._separator())
+        layout.addWidget(self._section_title("时间戳"))
+
+        self.show_time_cb = QCheckBox("显示时间戳 (精确到 ms)")
+        layout.addWidget(self.show_time_cb)
+
+        self.rx_use_ntp_cb = QCheckBox("使用网络时间 (NTP 校准)")
+        layout.addWidget(self.rx_use_ntp_cb)
+
+        layout.addWidget(self._separator())
+        layout.addWidget(self._section_title("缓冲区"))
+
+        buf_row = QHBoxLayout()
+        buf_row.setSpacing(8)
+        buf_row.addWidget(QLabel("最大行数"))
+        self.rx_max_lines_spin = QSpinBox()
+        self.rx_max_lines_spin.setRange(500, 100000)
+        self.rx_max_lines_spin.setValue(10000)
+        self.rx_max_lines_spin.setSingleStep(1000)
+        self.rx_max_lines_spin.setFixedHeight(26)
+        buf_row.addWidget(self.rx_max_lines_spin)
+        buf_row.addStretch()
+        layout.addLayout(buf_row)
+
+        layout.addStretch()
+        return page
+
+    # ---- tab: 发送 ----
+
+    def _build_tab_tx(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        layout.addWidget(self._section_title("数据格式"))
+
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        row.addWidget(QLabel("编码模式"))
+        self.tx_hex_toggle = _MiniSlideToggle("ASCII", "HEX")
+        row.addWidget(self.tx_hex_toggle)
+        row.addStretch()
+        layout.addLayout(row)
+
+        layout.addWidget(self._separator())
+        layout.addWidget(self._section_title("行尾与重发"))
+
+        ending_row = QHBoxLayout()
+        ending_row.setSpacing(8)
+        ending_row.addWidget(QLabel("行尾符"))
+        self.ending_combo = DarkComboBox()
+        self.ending_combo.setFixedHeight(28)
+        for label, val in [("\\r\\n", "\r\n"), ("\\n", "\n"), ("\\r", "\r"), ("\\n\\r", "\n\r"), ("None", "")]:
+            self.ending_combo.addItem(label, val)
+        ending_row.addWidget(self.ending_combo)
+        ending_row.addStretch()
+        layout.addLayout(ending_row)
+
+        self.auto_resend_cb = QCheckBox("启用自动重发")
+        layout.addWidget(self.auto_resend_cb)
+
+        resend_row = QHBoxLayout()
+        resend_row.setSpacing(8)
+        resend_row.addWidget(QLabel("重发间隔 (ms)"))
+        self.resend_spin = QSpinBox()
+        self.resend_spin.setRange(100, 60000)
+        self.resend_spin.setValue(1000)
+        self.resend_spin.setSingleStep(100)
+        self.resend_spin.setFixedHeight(26)
+        resend_row.addWidget(self.resend_spin)
+        resend_row.addStretch()
+        layout.addLayout(resend_row)
+
+        layout.addWidget(self._separator())
+        layout.addWidget(self._section_title("其他"))
+
+        self.show_send_cb = QCheckBox("在日志中显示发送内容")
+        layout.addWidget(self.show_send_cb)
+
+        self.line_by_line_cb = QCheckBox("Line by Line (按 \\n 分割多行发送)")
+        layout.addWidget(self.line_by_line_cb)
+
+        layout.addStretch()
+        return page
+
+    # ---- tab: 日志 ----
+
+    def _build_tab_log(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        layout.addWidget(self._section_title("日志文件"))
+
+        self.log_auto_save_cb = QCheckBox("自动保存日志到文件")
+        layout.addWidget(self.log_auto_save_cb)
+
+        path_row = QHBoxLayout()
+        path_row.setSpacing(6)
+        path_row.addWidget(QLabel("保存路径"))
+        self.log_save_path_edit = QLineEdit()
+        self.log_save_path_edit.setPlaceholderText("选择日志保存目录...")
+        self.log_save_path_edit.setStyleSheet("""
+            QLineEdit {
+                background-color: #0b1a38; border: 1px solid #1f315d; border-radius: 4px;
+                color: #c8d8f0; font-size: 11px; padding: 4px 8px; min-height: 24px;
+            }
+            QLineEdit:focus { border: 1px solid #3b6bcf; }
+        """)
+        path_row.addWidget(self.log_save_path_edit, 1)
+        browse_btn = QPushButton("浏览")
+        browse_btn.setCursor(Qt.PointingHandCursor)
+        browse_btn.setObjectName("dlgCancelBtn")
+        browse_btn.clicked.connect(self._browse_log_path)
+        path_row.addWidget(browse_btn)
+        layout.addLayout(path_row)
+
+        layout.addWidget(self._separator())
+        layout.addWidget(self._section_title("日志级别颜色"))
+
+        color_info = QLabel(
+            "RX → 绿色 (#4ade80)　　TX → 蓝色 (#60a5fa)\n"
+            "INFO → 蓝色　　WARN → 黄色 (#facc15)　　ERROR → 红色 (#f87171)"
+        )
+        color_info.setStyleSheet("color: #5f78a8; font-size: 10px; background: transparent;")
+        color_info.setWordWrap(True)
+        layout.addWidget(color_info)
+
+        layout.addStretch()
+        return page
+
+    # ---- tab: 显示 ----
+
+    def _build_tab_display(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        layout.addWidget(self._section_title("字体"))
+
+        font_row = QHBoxLayout()
+        font_row.setSpacing(8)
+        font_row.addWidget(QLabel("字体族"))
+        self.display_font_combo = DarkComboBox()
+        self.display_font_combo.setFixedHeight(28)
+        for f in ["Consolas", "Courier New", "Fira Code", "JetBrains Mono", "Cascadia Code", "Lucida Console"]:
+            self.display_font_combo.addItem(f)
+        font_row.addWidget(self.display_font_combo)
+        font_row.addStretch()
+        layout.addLayout(font_row)
+
+        size_row = QHBoxLayout()
+        size_row.setSpacing(8)
+        size_row.addWidget(QLabel("字号"))
+        self.display_font_size_spin = QSpinBox()
+        self.display_font_size_spin.setRange(8, 24)
+        self.display_font_size_spin.setValue(11)
+        self.display_font_size_spin.setFixedHeight(26)
+        size_row.addWidget(self.display_font_size_spin)
+        size_row.addStretch()
+        layout.addLayout(size_row)
+
+        layout.addWidget(self._separator())
+        layout.addWidget(self._section_title("行为"))
+
+        self.display_auto_scroll_cb = QCheckBox("默认启用自动滚动")
+        self.display_auto_scroll_cb.setChecked(True)
+        layout.addWidget(self.display_auto_scroll_cb)
+
+        self.display_word_wrap_cb = QCheckBox("自动换行 (Word Wrap)")
+        self.display_word_wrap_cb.setChecked(True)
+        layout.addWidget(self.display_word_wrap_cb)
+
+        self.display_show_line_num_cb = QCheckBox("显示行号")
+        layout.addWidget(self.display_show_line_num_cb)
+
+        layout.addStretch()
+        return page
+
+    # ---- helpers ----
+
+    def _browse_log_path(self):
+        path = QFileDialog.getExistingDirectory(self, "选择日志保存目录")
+        if path:
+            self.log_save_path_edit.setText(path)
+
+    @staticmethod
+    def _section_title(text):
+        lbl = QLabel(text)
+        lbl.setObjectName("dlgSectionTitle")
+        return lbl
+
+    @staticmethod
+    def _separator():
+        sep = QFrame()
+        sep.setObjectName("dlgSep")
+        sep.setFrameShape(QFrame.HLine)
+        sep.setFixedHeight(1)
+        return sep
+
 
 class _SerialReadWorker(QObject):
     data_received = Signal(bytes)
@@ -737,25 +2675,32 @@ if __name__ == "__main__":
         def append_log(self, msg):
             print(msg)
 
+    class _DemoCompleteSerialWidget(SerialComMixin, QWidget):
+        serial_connection_changed = Signal(bool)
+        serial_data_received = Signal(bytes)
+
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            self.init_serial_connection(mode=MODE_FULL, prefix="Complete")
+            self.setStyleSheet(DARK_CARD_STYLE)
+
+            root = QVBoxLayout(self)
+            root.setContentsMargins(0, 0, 0, 0)
+            self.complete_serialComWidget(root)
+
+            self._sc_on_refresh()
+            self._sc_append_system("[INFO] 串口工具已初始化")
+
+        def append_log(self, msg):
+            self._sc_append_system(msg)
+
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
-    w1 = _DemoSerialFullWidget()
-    w1.setWindowTitle("Style 1: Serial Full Mode")
-    w1.setFixedWidth(320)
-    w1.show()
-    w1.move(100, 200)
-
-    w2 = _DemoSerialSearchWidget()
-    w2.setWindowTitle("Style 2: Serial Search & Select Mode")
-    w2.setFixedWidth(320)
-    w2.show()
-    w2.move(450, 200)
-
-    w3 = _DemoSerialInlineWidget()
-    w3.setWindowTitle("Style 3: Serial Inline Mode")
-    w3.setFixedWidth(500)
-    w3.show()
-    w3.move(800, 200)
+    w4 = _DemoCompleteSerialWidget()
+    w4.setWindowTitle("Complete Serial Console")
+    w4.resize(900, 600)
+    w4.show()
+    w4.move(50, 100)
 
     sys.exit(app.exec())
