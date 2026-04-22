@@ -1731,6 +1731,7 @@ class N6705CAnalyserUI(QWidget):
                 dev["n6705c"].set_voltage_limit(self.current_channel, value)
         except Exception as e:
             logger.error("Voltage set failed: %s", e)
+        self.voltage_set_input.selectAll()
 
     def _on_current_input_enter(self):
         dev = self.devices[self.current_device]
@@ -1747,6 +1748,7 @@ class N6705CAnalyserUI(QWidget):
                 dev["n6705c"].set_current(self.current_channel, value)
         except Exception as e:
             logger.error("Current set failed: %s", e)
+        self.limit_current_value.selectAll()
 
     def _on_measure_clicked(self):
         self._start_channel_sync()

@@ -1,71 +1,62 @@
 [
   {
     "node_type": "LoopRange",
-    "uid": "6666704e-20cf-404e-a574-fbd70738e771",
+    "uid": "73fb0b6a-30bf-49e5-959b-06e56cae5da1",
     "params": {
       "var_name": "i",
-      "start": 0.1,
-      "stop": 1.3,
-      "step": 0.1
+      "start": 25.0,
+      "stop": 35.0,
+      "step": 1.0
     },
     "children": [
       {
-        "node_type": "N6705CSetVoltage",
-        "uid": "bd82bcd9-c273-4881-ab37-f497e250cf90",
+        "node_type": "ChamberSetTemp",
+        "uid": "745aeab7-1940-4be5-a291-6629215fe9c2",
         "params": {
-          "channel": 3,
-          "voltage": "i",
-          "current_limit": 1.0,
-          "output_on": true
+          "temperature": "i",
+          "wait_stable": true,
+          "stable_time": 1.0,
+          "tolerance": 1.0
         }
       },
       {
-        "node_type": "Delay",
-        "uid": "2296ae74-daad-4a29-b104-028dcbd2fdad",
+        "node_type": "LoopRange",
+        "uid": "c5f13c40-00c2-45a0-b8e5-78fe2e083e72",
         "params": {
-          "seconds": 0.3
-        }
-      },
-      {
-        "node_type": "N6705CMeasure",
-        "uid": "e55e4ce2-e8fe-4349-957f-706bfbccd844",
-        "params": {
-          "channel": 1,
-          "measure_type": "voltage",
-          "result_var": "N6705C_result",
-          "export_var": true
-        }
-      },
-      {
-        "node_type": "IfBlock",
-        "uid": "46607237-45d7-4479-8f50-06ebb8ecdf4a",
-        "params": {},
+          "var_name": "j",
+          "start": 0.1,
+          "stop": 1.0,
+          "step": 0.1
+        },
         "children": [
           {
-            "node_type": "IfBranch",
-            "uid": "36c98b85-730e-4e9e-8bdc-10f195aa81ea",
+            "node_type": "N6705CSetVoltage",
+            "uid": "784a6b1b-fc4c-4a82-aa22-627049e4fafe",
             "params": {
-              "condition": "${N6705C_result} > 1"
-            },
-            "children": [
-              {
-                "node_type": "Break",
-                "uid": "7385aa34-4392-46bb-a76f-ed95f55b2a10",
-                "params": {}
-              }
-            ]
+              "channel": 2,
+              "voltage": "j",
+              "current_limit": 1.0,
+              "output_on": true
+            }
           },
           {
-            "node_type": "ElseBranch",
-            "uid": "22572cae-2a6c-48c0-9546-931840720f05",
-            "params": {},
-            "children": [
-              {
-                "node_type": "Continue",
-                "uid": "8ea01ef6-33a6-47e5-b473-95dadfbc1b35",
-                "params": {}
-              }
-            ]
+            "node_type": "Delay",
+            "uid": "6a9f3497-d64b-4a57-ac0f-b05b1c416621",
+            "params": {
+              "seconds": 0.1
+            }
+          },
+          {
+            "node_type": "I2CRead",
+            "uid": "4985371d-1d10-4c81-b08b-e4bd9f8225b6",
+            "params": {
+              "device_addr": "0x27",
+              "reg_addr": "57",
+              "width": 10,
+              "result_var": "i2c_read_val",
+              "export_var": true,
+              "auto_record": true
+            }
           }
         ]
       }

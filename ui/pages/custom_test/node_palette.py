@@ -212,7 +212,7 @@ INSTRUMENT_REGISTRY: List[Dict] = [
     },
     {
         "id": "i2c",
-        "name": "REG Controller",
+        "name": "REG Ctrl",
         "thumb": "cpu.svg",
         "color": "#fb923c",
         "operations": [
@@ -299,21 +299,42 @@ class InstrumentCard(QFrame):
         layout.setAlignment(Qt.AlignCenter)
 
         svg_path = os.path.join(_ICONS_DIR, instr_info["thumb"])
+        is_icon = not instr_info["thumb"].endswith("_thumb.svg")
         thumb_label = QLabel()
         thumb_label.setFixedSize(66, 40)
         thumb_label.setAlignment(Qt.AlignCenter)
         thumb_label.setStyleSheet("background: transparent; border: none;")
         if os.path.isfile(svg_path):
-            renderer = QSvgRenderer(svg_path)
-            image = QImage(132, 80, QImage.Format_ARGB32_Premultiplied)
-            image.fill(Qt.transparent)
-            painter = QPainter(image)
-            renderer.render(painter)
-            painter.end()
-            pixmap = QPixmap.fromImage(image).scaled(
-                66, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation
-            )
-            thumb_label.setPixmap(pixmap)
+            if is_icon:
+                icon_size = 22
+                badge_size = 36
+                badge = QPixmap(badge_size * 2, badge_size * 2)
+                badge.fill(Qt.transparent)
+                bp = QPainter(badge)
+                bp.setRenderHint(QPainter.Antialiasing)
+                bg_color = QColor(instr_info["color"])
+                bg_color.setAlpha(38)
+                bp.setBrush(bg_color)
+                bp.setPen(Qt.NoPen)
+                bp.drawEllipse(0, 0, badge_size * 2, badge_size * 2)
+                tinted = _tinted_svg_pixmap(svg_path, instr_info["color"], icon_size * 2)
+                offset = (badge_size * 2 - icon_size * 2) // 2
+                bp.drawPixmap(offset, offset, tinted)
+                bp.end()
+                thumb_label.setPixmap(badge.scaled(
+                    badge_size, badge_size, Qt.KeepAspectRatio, Qt.SmoothTransformation
+                ))
+            else:
+                renderer = QSvgRenderer(svg_path)
+                image = QImage(132, 80, QImage.Format_ARGB32_Premultiplied)
+                image.fill(Qt.transparent)
+                painter = QPainter(image)
+                renderer.render(painter)
+                painter.end()
+                pixmap = QPixmap.fromImage(image).scaled(
+                    66, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation
+                )
+                thumb_label.setPixmap(pixmap)
         else:
             box_svg = os.path.join(_ICONS_DIR, "box.svg")
             if os.path.isfile(box_svg):
