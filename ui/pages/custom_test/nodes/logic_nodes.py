@@ -223,10 +223,11 @@ class IfBlock(BaseNode):
         has_if = any(isinstance(c, IfBranch) for c in self.children)
         has_else = any(isinstance(c, ElseBranch) for c in self.children)
         if not has_if:
-            self.children.insert(0, IfBranch(uid=None))
-            self.children[0].params["condition"] = "${value} > 0"
+            branch = IfBranch()
+            branch.params["condition"] = "${value} > 0"
+            self.children.insert(0, branch)
         if not has_else:
-            self.children.append(ElseBranch(uid=None))
+            self.children.append(ElseBranch())
 
 
 @register_node

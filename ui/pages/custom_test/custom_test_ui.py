@@ -647,7 +647,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
                 insert_idx = i
                 break
 
-        new_branch = ElseIfBranch(uid=None)
+        new_branch = ElseIfBranch()
         new_branch.params["condition"] = "${value} > 0"
         block_node.children.insert(insert_idx, new_branch)
         self.canvas.add_node(new_branch, block_item, _batch=True)
