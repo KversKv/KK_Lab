@@ -33,8 +33,12 @@ def _execute_children(children: List[BaseNode], context: ExecutionContext) -> No
 
 
 def _execute_node(node: BaseNode, context: ExecutionContext) -> None:
-    """执行单个节点"""
+    """执行单个节点，触发上下文回调"""
+    if context.on_step_started:
+        context.on_step_started(node.uid, node.display_name)
     node.execute(context)
+    if context.on_step_finished:
+        context.on_step_finished(node.uid, node.display_name)
 
 
 class CustomTestExecutor(QObject):
@@ -111,7 +115,15 @@ class CustomTestExecutor(QObject):
 
         self._context.log_output = _hooked_log_output
 
-        original_execute = _execute_node.__wrapped__ if hasattr(_execute_node, '__wrapped__') else None
+        def _hooked_step_started(uid: str, name: str) -> None:
+            self.step_started.emit(uid, name)
+            self.log_message.emit(f"[STEP] {name} (uid={uid[:8]})")
+
+        def _hooked_step_finished(uid: str, name: str) -> None:
+            self.step_finished.emit(uid, name)
+
+        self._context.on_step_started = _hooked_step_started
+        self._context.on_step_finished = _hooked_step_finished
 
         self.log_message.emit(f"[START] 开始执行序列，共 {total_steps} 个步骤")
 
@@ -156,23 +168,16 @@ class CustomTestExecutor(QObject):
             while self._context.should_pause and not self._context.should_stop:
                 time.sleep(0.1)
 
-            self.step_started.emit(node.uid, node.display_name)
-            self.log_message.emit(f"[STEP] {node.display_name} (uid={node.uid[:8]})")
-
             pre_record_count = len(self._context.records)
 
             try:
-                if node.accepts_children:
-                    node.execute(self._context)
-                else:
-                    node.execute(self._context)
+                _execute_node(node, self._context)
             except Exception as e:
                 self.log_message.emit(f"[ERROR] {node.display_name}: {e}")
                 raise
 
             executed[0] += 1
             self.progress_updated.emit(executed[0], total)
-            self.step_finished.emit(node.uid, node.display_name)
 
             new_records = self._context.records[pre_record_count:]
             for rec in new_records:

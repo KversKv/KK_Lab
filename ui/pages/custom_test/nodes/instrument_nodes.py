@@ -87,7 +87,7 @@ class N6705CSetVoltage(BaseNode):
         current_limit = float(context.resolve_value(self.params["current_limit"]))
         output_on = context.resolve_value(self.params["output_on"])
 
-        logger.info("N6705C CH%d: 设置电压=%.3fV, 限流=%.3fA", ch, voltage, current_limit)
+        context.log_output(f"N6705C CH{ch}: set_voltage={voltage:.4f}V, current_limit={current_limit:.3f}A")
         n6705c.set_voltage(ch, voltage)
         n6705c.set_current_limit(ch, current_limit)
         if output_on:
@@ -120,8 +120,8 @@ class N6705CMeasure(BaseNode):
 
         ch = int(context.resolve_value(self.params["channel"]))
         measure_type = str(context.resolve_value(self.params["measure_type"]))
-        result_var = str(context.resolve_value(self.params["result_var"]))
-        export_var = bool(context.resolve_value(self.params.get("export_var", True)))
+        result_var = str(self.params["result_var"])
+        export_var = bool(self.params.get("export_var", True))
 
         if measure_type == "voltage":
             value = float(n6705c.measure_voltage(ch))
@@ -135,6 +135,7 @@ class N6705CMeasure(BaseNode):
             raise ValueError(f"未知测量类型: {measure_type}")
 
         logger.info("N6705C CH%d %s = %s", ch, measure_type, value)
+        context.log_output(f"N6705C CH{ch}: {measure_type}={value}")
         context.set_variable(result_var, value, export=export_var)
         auto_key = f"N6705C_CH{ch}_{measure_type}"
         context.set_variable(auto_key, value, export=export_var)
@@ -201,8 +202,8 @@ class UARTReceive(BaseNode):
 
         timeout_s = float(context.resolve_value(self.params.get("timeout_s", 2.0)))
         expect = str(context.resolve_value(self.params.get("expect", "")))
-        result_var = str(context.resolve_value(self.params["result_var"]))
-        auto_record = context.resolve_value(self.params.get("auto_record", True))
+        result_var = str(self.params["result_var"])
+        auto_record = self.params.get("auto_record", True)
 
         conn = None
         if hasattr(uart, "get_serial_connection"):
@@ -267,14 +268,14 @@ class I2CRead(BaseNode):
         dev = int(str(context.resolve_value(self.params["device_addr"])).strip(), 16)
         reg = int(str(context.resolve_value(self.params["reg_addr"])).strip(), 16)
         width = int(context.resolve_value(self.params["width"]))
-        result_var = str(context.resolve_value(self.params["result_var"]))
-        export_var = bool(context.resolve_value(self.params.get("export_var", True)))
+        result_var = str(self.params["result_var"])
+        export_var = bool(self.params.get("export_var", True))
 
         val = i2c.read(dev, reg, width)
         logger.info("I2C Read: dev=0x%02X reg=0x%X width=%d => 0x%X", dev, reg, width, val)
         context.set_variable(result_var, val, export=export_var)
 
-        auto_record = context.resolve_value(self.params.get("auto_record", True))
+        auto_record = self.params.get("auto_record", True)
         if auto_record:
             context.record_data({
                 "device_addr": f"0x{dev:02X}",
@@ -343,8 +344,8 @@ class I2CTraverse(BaseNode):
         reg_start = int(str(context.resolve_value(self.params["reg_start"])).strip(), 16)
         reg_end = int(str(context.resolve_value(self.params["reg_end"])).strip(), 16)
         width = int(context.resolve_value(self.params["width"]))
-        result_var = str(context.resolve_value(self.params["result_var"]))
-        auto_record = context.resolve_value(self.params.get("auto_record", True))
+        result_var = str(self.params["result_var"])
+        auto_record = self.params.get("auto_record", True)
 
         results = {}
         for reg in range(reg_start, reg_end + 1):
@@ -391,8 +392,8 @@ class ScopeMeasureFreq(BaseNode):
             raise RuntimeError("示波器未连接")
 
         ch = int(context.resolve_value(self.params["channel"]))
-        result_var = str(context.resolve_value(self.params["result_var"]))
-        export_var = bool(context.resolve_value(self.params.get("export_var", True)))
+        result_var = str(self.params["result_var"])
+        export_var = bool(self.params.get("export_var", True))
 
         if hasattr(scope, "get_dvm_frequency"):
             freq = scope.get_dvm_frequency()
@@ -432,8 +433,8 @@ class ScopeMeasure(BaseNode):
 
         ch = int(context.resolve_value(self.params["channel"]))
         mtype = str(context.resolve_value(self.params["measure_type"]))
-        result_var = str(context.resolve_value(self.params["result_var"]))
-        export_var = bool(context.resolve_value(self.params.get("export_var", True)))
+        result_var = str(self.params["result_var"])
+        export_var = bool(self.params.get("export_var", True))
 
         method_map = {
             "pk2pk": "get_channel_pk2pk",
@@ -478,8 +479,8 @@ class RFAnalyzerMeasure(BaseNode):
 
         mtype = str(context.resolve_value(self.params["measure_type"]))
         freq = float(context.resolve_value(self.params["frequency_mhz"]))
-        result_var = str(context.resolve_value(self.params["result_var"]))
-        export_var = bool(context.resolve_value(self.params.get("export_var", True)))
+        result_var = str(self.params["result_var"])
+        export_var = bool(self.params.get("export_var", True))
 
         if hasattr(rf, "measure"):
             value = rf.measure(mtype, freq)

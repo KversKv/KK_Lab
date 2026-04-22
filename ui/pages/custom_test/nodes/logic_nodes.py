@@ -36,7 +36,7 @@ class LoopRange(BaseNode):
         return True
 
     def execute(self, context: Any) -> None:
-        var_name = str(context.resolve_value(self.params["var_name"]))
+        var_name = str(self.params["var_name"])
         start = float(context.resolve_value(self.params["start"]))
         stop = float(context.resolve_value(self.params["stop"]))
         step_val = float(context.resolve_value(self.params["step"]))
@@ -92,7 +92,7 @@ class LoopList(BaseNode):
         return True
 
     def execute(self, context: Any) -> None:
-        var_name = str(context.resolve_value(self.params["var_name"]))
+        var_name = str(self.params["var_name"])
         raw_values = context.resolve_value(self.params["values"])
 
         if isinstance(raw_values, (list, tuple)):
@@ -597,7 +597,7 @@ class LoopCount(BaseNode):
 
     def execute(self, context: Any) -> None:
         count = int(context.resolve_value(self.params["count"]))
-        var_name = str(context.resolve_value(self.params["var_name"]))
+        var_name = str(self.params["var_name"])
 
         for idx in range(count):
             if context.should_stop:
@@ -634,7 +634,7 @@ class LoopDuration(BaseNode):
 
     def execute(self, context: Any) -> None:
         duration = float(context.resolve_value(self.params["duration"]))
-        var_name = str(context.resolve_value(self.params["var_name"]))
+        var_name = str(self.params["var_name"])
 
         start_time = time.time()
         iteration = 0

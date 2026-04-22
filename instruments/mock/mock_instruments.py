@@ -68,6 +68,7 @@ class MockN6705C:
     def set_voltage(self, channel, voltage):
         self._voltage = voltage
         self._channel_voltages[channel] = voltage
+        self._last_expected_v = voltage
         if self._mock_i2c is not None:
             self._mock_i2c.set_mock_voltage(voltage)
 
@@ -85,7 +86,7 @@ class MockN6705C:
         noise = self._rng.gauss(0, 0.002)
         if channel == self._vin_ch:
             return self._vin + noise
-        return self._last_expected_v + noise
+        return self._channel_voltages.get(channel, self._last_expected_v) + noise
 
     def fetch_voltage(self, channel):
         return str(self.measure_voltage(channel))

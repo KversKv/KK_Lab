@@ -152,6 +152,9 @@ class ExecutionContext:
         self._test_passed: Optional[bool] = None
         self._test_message: str = ""
 
+        self.on_step_started: Optional[Any] = None
+        self.on_step_finished: Optional[Any] = None
+
     def set_variable(self, name: str, value: Any, export: bool = True) -> None:
         """设置变量"""
         self.variables[name] = value
@@ -267,3 +270,5 @@ class ExecutionContext:
         self._user_response_ready = False
         self._test_passed = None
         self._test_message = ""
+        self.on_step_started = None
+        self.on_step_finished = None
