@@ -13,7 +13,7 @@ from ui.pages.custom_test.nodes.logic_nodes import (
     PromptUser, PassFailTest, Group, LoopCount, LoopDuration,
     WhileLoop, RepeatUntil,
 )
-from ui.pages.custom_test.nodes.io_nodes import RecordDataPoint, ExportResult
+from ui.pages.custom_test.nodes.io_nodes import RecordDataPoint, ExportResult, PrintLog
 from ui.pages.custom_test.nodes.value_nodes import (
     SetConstant, IncrementVariable, DecrementVariable,
     AppendToList, ClearVariable, TypeCast, ClampValue,
@@ -29,7 +29,7 @@ __all__ = [
     "BreakNode", "ContinueNode", "WaitUntil", "IfThenStop", "IfThenElse",
     "PromptUser", "PassFailTest", "Group", "LoopCount", "LoopDuration",
     "WhileLoop", "RepeatUntil",
-    "RecordDataPoint", "ExportResult",
+    "RecordDataPoint", "ExportResult", "PrintLog",
     "SetConstant", "IncrementVariable", "DecrementVariable",
     "AppendToList", "ClearVariable", "TypeCast", "ClampValue",
 ]

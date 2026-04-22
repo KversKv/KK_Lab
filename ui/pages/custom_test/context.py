@@ -226,6 +226,10 @@ class ExecutionContext:
             return len(result) > 0
         return bool(result)
 
+    def log_output(self, message: str) -> None:
+        """输出日志到执行日志面板（可被执行器 hook）"""
+        logger.info("PrintLog: %s", message)
+
     def record_data(self, row: Dict[str, Any]) -> None:
         """记录一行数据"""
         self.records.append(dict(row))

@@ -103,6 +103,14 @@ class CustomTestExecutor(QObject):
 
         self._context.record_data = _hooked_record
 
+        original_log_output = self._context.log_output
+
+        def _hooked_log_output(message: str) -> None:
+            original_log_output(message)
+            self.log_message.emit(message)
+
+        self._context.log_output = _hooked_log_output
+
         original_execute = _execute_node.__wrapped__ if hasattr(_execute_node, '__wrapped__') else None
 
         self.log_message.emit(f"[START] 开始执行序列，共 {total_steps} 个步骤")

@@ -144,3 +144,40 @@ class ExportResult(BaseNode):
 
         context.set_variable("_export_path", filepath)
         context.set_variable("_export_dir", output_dir)
+
+
+@register_node
+class PrintLog(BaseNode):
+
+    node_type = "PrintLog"
+    display_name = "Print Log"
+    category = "io"
+    icon = "✎"
+    color = "#3498db"
+
+    PARAM_SCHEMA = [
+        {"key": "message", "label": "日志消息 (支持 ${var} 表达式)", "type": "str",
+         "default": "当前值: ${value}"},
+        {"key": "level", "label": "日志级别", "type": "str", "default": "INFO",
+         "options": ["INFO", "WARNING", "ERROR"]},
+    ]
+
+    def execute(self, context: Any) -> None:
+        raw_message = str(self.params["message"])
+        level = str(context.resolve_value(self.params.get("level", "INFO"))).upper()
+        message = str(context.resolve_value(raw_message))
+
+        if level not in ("INFO", "WARNING", "ERROR"):
+            level = "INFO"
+
+        tag = {"INFO": "INFO", "WARNING": "WARN", "ERROR": "ERROR"}.get(level, "INFO")
+        formatted = f"[{tag}] {message}"
+
+        if level == "ERROR":
+            logger.error("PrintLog: %s", message)
+        elif level == "WARNING":
+            logger.warning("PrintLog: %s", message)
+        else:
+            logger.info("PrintLog: %s", message)
+
+        context.log_output(formatted)
