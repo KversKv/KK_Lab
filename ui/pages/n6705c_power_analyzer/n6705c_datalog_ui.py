@@ -4086,7 +4086,8 @@ class N6705CDatalogUI(QWidget):
 
         panel_entries = [(k, _color_for_label(k)) for k in visible_sorted]
         self._rebuild_ch_name_panel(panel_entries)
-        self.plot_widget.setYRange(-0.02, 1.02)
+        y_bottom, y_top = self._compute_y_range_with_labels()
+        self.plot_widget.setYRange(y_bottom, y_top)
 
     def _sync_checkboxes_to_data(self):
         import re
@@ -4528,7 +4529,8 @@ class N6705CDatalogUI(QWidget):
                 all_times.extend(self._get_effective_times(lbl, ch_data["time"]))
             if all_times:
                 self.plot_widget.setXRange(min(all_times), max(all_times))
-            self.plot_widget.setYRange(-0.02, 1.02)
+            y_bottom, y_top = self._compute_y_range_with_labels()
+            self.plot_widget.setYRange(y_bottom, y_top)
 
         self._rebuild_ch_name_panel(panel_entries)
 
@@ -4581,7 +4583,8 @@ class N6705CDatalogUI(QWidget):
             vb = self.plot_widget.getPlotItem().getViewBox()
             vb.setMouseMode(vb.PanMode)
             self.plot_widget.setMouseEnabled(x=True, y=False)
-            self.plot_widget.setYRange(-0.02, 1.02)
+            y_bottom, y_top = self._compute_y_range_with_labels()
+            self.plot_widget.setYRange(y_bottom, y_top)
 
     def _auto_off_box_zoom(self):
         if self.box_zoom_enabled:
@@ -4590,7 +4593,8 @@ class N6705CDatalogUI(QWidget):
             vb = self.plot_widget.getPlotItem().getViewBox()
             vb.setMouseMode(vb.PanMode)
             self.plot_widget.setMouseEnabled(x=True, y=False)
-            self.plot_widget.setYRange(-0.02, 1.02)
+            y_bottom, y_top = self._compute_y_range_with_labels()
+            self.plot_widget.setYRange(y_bottom, y_top)
 
     def _set_marker_mode(self, marker):
         self._pending_marker = marker
@@ -5625,6 +5629,7 @@ class N6705CDatalogUI(QWidget):
         self.custom_labels.append({"time": t, "text": text, "channel": ch_name})
         self._refresh_labels_display()
         self._draw_label_item(t, text, ch_name)
+        self._auto_fit_y_axis()
 
         self.label_time_edit.clear()
         self.label_text_edit.clear()
@@ -5650,36 +5655,35 @@ class N6705CDatalogUI(QWidget):
         color = _color_for_label(ch_name)
         return (color, color)
 
-    def _find_local_peak_y(self, t):
+    def _find_local_peak_y(self, t, ch_name):
         vb = self.plot_widget.getPlotItem().getViewBox()
         x_min, x_max = vb.viewRange()[0]
         view_span = x_max - x_min
         half_window = view_span * 0.03
 
-        peak_y = None
         for label, ch_data in self.datalog_data.items():
+            if label.strip() != ch_name:
+                continue
             band = self._band_info.get(label)
             if not band:
-                continue
+                return None
             times = ch_data["time"]
             vals = ch_data["values"]
             if not times:
-                continue
+                return None
             lookup_t = self._effective_x_for_lookup(label, t)
             lo = self._find_nearest_index(times, lookup_t - half_window)
             hi = self._find_nearest_index(times, lookup_t + half_window)
             if lo is None or hi is None:
-                continue
+                return None
             if lo > hi:
                 lo, hi = hi, lo
             segment = vals[lo:hi + 1]
             if not segment:
-                continue
+                return None
             local_max_raw = max(segment)
-            local_max_plot = band["plot_bottom"] + (local_max_raw - band["raw_min"]) / band["raw_range"] * band["plot_range"]
-            if peak_y is None or local_max_plot > peak_y:
-                peak_y = local_max_plot
-        return peak_y
+            return band["plot_bottom"] + (local_max_raw - band["raw_min"]) / band["raw_range"] * band["plot_range"]
+        return None
 
     def _draw_label_item(self, t, text, ch_name):
         color, _ = self._get_channel_color(ch_name)
@@ -5722,7 +5726,7 @@ class N6705CDatalogUI(QWidget):
         y_min, y_max = vb.viewRange()[1]
         view_y_span = y_max - y_min
 
-        peak_y = self._find_local_peak_y(t)
+        peak_y = self._find_local_peak_y(t, ch_name)
         if peak_y is not None:
             label_y = peak_y + view_y_span * 0.03
         else:
@@ -5743,6 +5747,33 @@ class N6705CDatalogUI(QWidget):
                 continue
             label_y = self._compute_custom_label_y(t, ch_name)
             item.setPos(t, label_y)
+
+    def _get_max_custom_label_y(self):
+        max_y = None
+        for lbl in self.custom_labels:
+            t = lbl["time"]
+            ch_name = lbl.get("channel", "")
+            peak_y = self._find_local_peak_y(t, ch_name)
+            if peak_y is not None:
+                label_y = peak_y + 0.06
+            else:
+                y_val = self._get_value_at_time(ch_name, t)
+                label_y = (y_val if y_val is not None else 0.5) + 0.06
+            if max_y is None or label_y > max_y:
+                max_y = label_y
+        return max_y
+
+    def _compute_y_range_with_labels(self):
+        y_bottom = -0.02
+        y_top = 1.02
+        max_label_y = self._get_max_custom_label_y()
+        if max_label_y is not None and max_label_y + 0.04 > y_top:
+            y_top = max_label_y + 0.04
+        return y_bottom, y_top
+
+    def _auto_fit_y_axis(self):
+        y_bottom, y_top = self._compute_y_range_with_labels()
+        self.plot_widget.setYRange(y_bottom, y_top)
 
     def _restore_label_lines(self):
         for item in self.custom_label_lines:
@@ -5820,6 +5851,7 @@ class N6705CDatalogUI(QWidget):
             self.custom_labels.pop(idx)
             self._refresh_labels_display()
             self._restore_label_lines()
+            self._auto_fit_y_axis()
 
     def _on_import(self):
         path, _ = QFileDialog.getOpenFileName(
