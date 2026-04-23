@@ -3183,6 +3183,8 @@ class N6705CDatalogUI(QWidget):
                     "plot_top": plot_top,
                     "plot_bottom": plot_bottom,
                     "plot_range": plot_range,
+                    "init_raw_min": display_min,
+                    "init_raw_range": display_range,
                 }
             else:
                 raw_min = min(raw_vals)
@@ -3202,12 +3204,15 @@ class N6705CDatalogUI(QWidget):
                     "plot_top": plot_top,
                     "plot_bottom": plot_bottom,
                     "plot_range": plot_range,
+                    "init_raw_min": raw_min,
+                    "init_raw_range": raw_range,
                 }
 
             curve = self.plot_curves.get(key)
             if curve:
                 times = self._get_effective_times(key, ch_data["time"])
                 curve.setData(times, norm_vals)
+                curve.resetTransform()
 
         self._update_marker_analysis()
 
@@ -3614,8 +3619,13 @@ class N6705CDatalogUI(QWidget):
             if len(nearby_y) == 0:
                 return key
 
-            y_near_min = min(nearby_y)
-            y_near_max = max(nearby_y)
+            t = curve.transform()
+            sy = t.m22()
+            ty = t.dy()
+            y_near_min = float(min(nearby_y)) * sy + ty
+            y_near_max = float(max(nearby_y)) * sy + ty
+            if y_near_min > y_near_max:
+                y_near_min, y_near_max = y_near_max, y_near_min
 
             if y_near_min - snap_view <= y <= y_near_max + snap_view:
                 return key
@@ -3703,27 +3713,27 @@ class N6705CDatalogUI(QWidget):
     def _redraw_single_channel(self, key):
         band = self._band_info.get(key)
         curve = self.plot_curves.get(key)
-        ch_data = self.datalog_data.get(key)
-        if not band or not curve or not ch_data:
+        if not band or not curve:
             return
 
-        if "_np_values" not in ch_data:
-            ch_data["_np_values"] = np.asarray(ch_data["values"], dtype=np.float64)
-        if "_np_time" not in ch_data:
-            ch_data["_np_time"] = np.asarray(ch_data["time"], dtype=np.float64)
-
-        arr = ch_data["_np_values"]
         raw_min = band["raw_min"]
         raw_range = band["raw_range"]
         plot_bottom = band["plot_bottom"]
         plot_range = band["plot_range"]
+        init_min = band.get("init_raw_min", raw_min)
+        init_range = band.get("init_raw_range", raw_range)
 
         if raw_range == 0:
             raw_range = 1.0
+        if init_range == 0:
+            init_range = 1.0
 
-        norm_vals = plot_bottom + (arr - raw_min) * (plot_range / raw_range)
-        times = self._get_effective_times(key, ch_data["_np_time"])
-        curve.setData(times, norm_vals)
+        sy = init_range / raw_range
+        ty = plot_bottom * (1.0 - sy) + (init_min - raw_min) * plot_range / raw_range
+
+        from PySide6.QtGui import QTransform
+        curve.setTransform(QTransform(1.0, 0.0, 0.0, sy, 0.0, ty))
+        self._update_ch_label_positions()
 
     def _update_ch_scale_offset_display(self, key):
         band = self._band_info.get(key)
@@ -4015,8 +4025,6 @@ class N6705CDatalogUI(QWidget):
         for key, curve in self.plot_curves.items():
             curve.setVisible(key in visible_keys)
 
-        for sl in self._sep_lines:
-            self.plot_widget.removeItem(sl)
         self._sep_lines.clear()
 
         self._band_info = {}
@@ -4056,20 +4064,15 @@ class N6705CDatalogUI(QWidget):
                 "plot_top": plot_top,
                 "plot_bottom": plot_bottom,
                 "plot_range": plot_range,
+                "init_raw_min": raw_min,
+                "init_raw_range": raw_range,
             }
 
             curve = self.plot_curves.get(key)
             if curve:
                 times = self._get_effective_times(key, ch_data["time"])
                 curve.setData(times, norm_vals)
-
-            if idx > 0:
-                sep_line = pg.InfiniteLine(
-                    pos=band_top, angle=0, movable=False,
-                    pen=pg.mkPen(color="#1e3460", width=1, style=Qt.DashLine)
-                )
-                self.plot_widget.addItem(sep_line, ignoreBounds=True)
-                self._sep_lines.append(sep_line)
+                curve.resetTransform()
 
             raw_center = (raw_min + raw_max) / 2
             raw_div = raw_range / 5
@@ -4491,6 +4494,8 @@ class N6705CDatalogUI(QWidget):
                 "plot_top": plot_top,
                 "plot_bottom": plot_bottom,
                 "plot_range": plot_range,
+                "init_raw_min": raw_min,
+                "init_raw_range": raw_range,
             }
 
             pen = pg.mkPen(color=color, width=1.5)
@@ -4501,14 +4506,6 @@ class N6705CDatalogUI(QWidget):
             curve.setClipToView(True)
             curve.setDownsampling(auto=True, method='peak')
             self.plot_curves[label] = curve
-
-            if idx > 0:
-                sep_line = pg.InfiniteLine(
-                    pos=band_top, angle=0, movable=False,
-                    pen=pg.mkPen(color="#1e3460", width=1, style=Qt.DashLine)
-                )
-                self.plot_widget.addItem(sep_line, ignoreBounds=True)
-                self._sep_lines.append(sep_line)
 
             panel_entries.append((label, color))
 
@@ -5289,6 +5286,7 @@ class N6705CDatalogUI(QWidget):
             text_item.setZValue(200)
             self.plot_widget.addItem(text_item, ignoreBounds=True)
             text_item.setProperty("y_center", y_center)
+            text_item.setProperty("ch_key", key)
             self._ch_label_items.append(text_item)
 
         vb = self.plot_widget.getPlotItem().getViewBox()
@@ -5307,6 +5305,12 @@ class N6705CDatalogUI(QWidget):
                 y_center = item.property("y_center")
             except Exception:
                 y_center = 0.5
+            key = item.property("ch_key")
+            if key:
+                curve = self.plot_curves.get(key)
+                if curve:
+                    t = curve.transform()
+                    y_center = t.m22() * y_center + t.dy()
             item.setPos(x_min, y_center)
 
     def _on_ch_name_renamed(self, key, new_name):
