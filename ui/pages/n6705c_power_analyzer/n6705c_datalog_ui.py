@@ -4355,10 +4355,12 @@ class N6705CDatalogUI(QWidget):
 
         self._update_recording_button_state(True)
 
-        estimated_export_time = monitor_time * 0.06 + 0.3
+        sample_period_s = sample_period / 1_000_000.0
+        total_points = monitor_time / sample_period_s if sample_period_s > 0 else 0
+        estimated_export_time = total_points * 1.2e-6 + 0.3
         total_estimated = monitor_time + 5 + estimated_export_time
-        logger.debug("[Datalog][Progress] Estimated total time: %.1fs (monitoring=%.1fs + wait=5s + export=%.1fs)",
-                    total_estimated, monitor_time, estimated_export_time)
+        logger.debug("[Datalog][Progress] Estimated total time: %.1fs (monitoring=%.1fs + wait=5s + export=%.1fs, points=%.0f, interval=%.0fus)",
+                    total_estimated, monitor_time, estimated_export_time, total_points, sample_period)
         self._show_progress_overlay(total_estimated)
 
         self._record_thread = QThread()
