@@ -130,12 +130,37 @@ class PropertyPanel(QWidget):
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll.setStyleSheet("""
+            QScrollArea { background: transparent; border: none; }
+            QScrollBar:vertical {
+                background: transparent;
+                width: 6px;
+                margin: 0px;
+                border-radius: 3px;
+            }
+            QScrollBar::handle:vertical {
+                background: #22345f;
+                min-height: 30px;
+                border-radius: 3px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #30497f;
+            }
+            QScrollBar::sub-line:vertical,
+            QScrollBar::add-line:vertical {
+                height: 0px;
+            }
+            QScrollBar::add-page:vertical,
+            QScrollBar::sub-page:vertical {
+                background: transparent;
+            }
+        """)
 
         self._inner = QWidget()
         self._inner.setObjectName("propInner")
         self._inner.setStyleSheet("QWidget#propInner { background: transparent; border: none; }")
         self._inner_layout = QVBoxLayout(self._inner)
-        self._inner_layout.setContentsMargins(8, 8, 8, 8)
+        self._inner_layout.setContentsMargins(8, 8, 14, 8)
         self._inner_layout.setSpacing(8)
 
         self._empty_label = QLabel("选择一个节点\n查看/编辑参数")

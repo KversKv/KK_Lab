@@ -93,7 +93,7 @@ _PAGE_STYLE = """
     }
     QFrame#sectionFrame {
         background-color: #09142e;
-        border: 1px solid #1a2d57;
+        border: none;
         border-radius: 14px;
     }
     QFrame#innerCard {
@@ -167,9 +167,8 @@ _PAGE_STYLE = """
         selection-background-color: #334a7d;
     }
     QTabWidget::pane {
-        background-color: #060e20;
-        border: 1px solid #1a2d57;
-        border-radius: 6px;
+        background-color: transparent;
+        border: none;
     }
     QTabBar::tab {
         background-color: #0b1428;
@@ -270,29 +269,11 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         left_panel = self._build_left_panel()
         top_splitter.addWidget(left_panel)
 
-        center_frame = QFrame()
-        center_frame.setObjectName("sectionFrame")
-        center_layout = QVBoxLayout(center_frame)
-        center_layout.setContentsMargins(12, 10, 12, 12)
-        center_layout.setSpacing(6)
-        center_title = QLabel("Sequence Canvas")
-        center_title.setObjectName("sectionTitle")
-        center_layout.addWidget(center_title)
         self.canvas = SequenceCanvas()
-        center_layout.addWidget(self.canvas, 1)
-        top_splitter.addWidget(center_frame)
+        top_splitter.addWidget(self.canvas)
 
-        right_frame = QFrame()
-        right_frame.setObjectName("sectionFrame")
-        right_layout = QVBoxLayout(right_frame)
-        right_layout.setContentsMargins(12, 10, 12, 12)
-        right_layout.setSpacing(6)
-        right_title = QLabel("Property Panel")
-        right_title.setObjectName("sectionTitle")
-        right_layout.addWidget(right_title)
         self.property_panel = PropertyPanel()
-        right_layout.addWidget(self.property_panel, 1)
-        top_splitter.addWidget(right_frame)
+        top_splitter.addWidget(self.property_panel)
 
         top_splitter.setSizes([220, 520, 260])
         main_splitter.addWidget(top_splitter)

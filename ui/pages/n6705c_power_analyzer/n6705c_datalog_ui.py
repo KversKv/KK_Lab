@@ -9,6 +9,7 @@ import sys
 import os
 import math
 import random
+import numpy as np
 
 if sys.stdout is None:
     sys.stdout = open(os.devnull, "w")
@@ -98,6 +99,17 @@ POWER_COLORS = [
     "#3c6ee6",
     "#e63cb0",
 ]
+
+EXTRA_MARKER_COLORS = [
+    "#e6553c", "#3ce6b0",
+    "#c73ce6", "#e6c73c",
+    "#3c8be6", "#e63c8b",
+    "#5ce63c", "#e63cd4",
+    "#3ce6e6", "#b03ce6",
+    "#e69a3c", "#3c4ae6",
+]
+
+_BAND_CEILING = 0.88
 
 
 def _parse_ch_label(label):
@@ -887,6 +899,10 @@ class N6705CDatalogUI(QWidget):
         self.marker_a_line = None
         self.marker_b_line = None
         self.marker_region = None
+        self._extra_markers = []
+        self._extra_marker_regions = []
+        self._extra_marker_text_items = []
+        self._marker_ab_text_item = None
         self.box_zoom_enabled = False
         self._b_time_offset = 0.0
         self._box_zoom_auto_off_timer = QTimer(self)
@@ -1594,6 +1610,10 @@ class N6705CDatalogUI(QWidget):
         self.marker_b_btn = QPushButton("Set Marker B")
         self.marker_b_btn.setObjectName("chartToolBtn")
         chart_header.addWidget(self.marker_b_btn)
+
+        self.add_markers_btn = QPushButton("Add Markers")
+        self.add_markers_btn.setObjectName("chartToolBtn")
+        chart_header.addWidget(self.add_markers_btn)
 
         self.clear_markers_btn = QPushButton("Clear Markers")
         self.clear_markers_btn.setObjectName("chartToolBtn")
@@ -3136,8 +3156,8 @@ class N6705CDatalogUI(QWidget):
 
             scale_val, offset_val, user_edited = self._get_ch_scale_offset(key)
 
-            band_top = 1.0 - idx / n
-            band_bottom = 1.0 - (idx + 1) / n
+            band_top = _BAND_CEILING - idx * _BAND_CEILING / n
+            band_bottom = _BAND_CEILING - (idx + 1) * _BAND_CEILING / n
             margin = (band_top - band_bottom) * 0.08
             plot_top = band_top - margin
             plot_bottom = band_bottom + margin
@@ -3152,10 +3172,7 @@ class N6705CDatalogUI(QWidget):
                 if display_range == 0:
                     display_range = 1.0
 
-                norm_vals = [
-                    plot_bottom + (v - display_min) / display_range * plot_range
-                    for v in raw_vals
-                ]
+                norm_vals = plot_bottom + (np.asarray(raw_vals, dtype=np.float64) - display_min) * (plot_range / display_range)
 
                 self._band_info[key] = {
                     "raw_min": display_min,
@@ -3174,10 +3191,7 @@ class N6705CDatalogUI(QWidget):
                 if raw_range == 0:
                     raw_range = 1.0
 
-                norm_vals = [
-                    plot_bottom + (v - raw_min) / raw_range * plot_range
-                    for v in raw_vals
-                ]
+                norm_vals = plot_bottom + (np.asarray(raw_vals, dtype=np.float64) - raw_min) * (plot_range / raw_range)
 
                 self._band_info[key] = {
                     "raw_min": raw_min,
@@ -3398,6 +3412,7 @@ class N6705CDatalogUI(QWidget):
 
         vb = self.plot_widget.getPlotItem().getViewBox()
         vb.setMouseEnabled(x=True, y=False)
+        vb.setMenuEnabled(False)
 
         self.legend = None
 
@@ -3449,10 +3464,15 @@ class N6705CDatalogUI(QWidget):
         best = None
         best_dist = snap_px + 1
 
-        for tag, line, pos in [
+        candidates = [
             ("A", self.marker_a_line, self.marker_a_pos),
             ("B", self.marker_b_line, self.marker_b_pos),
-        ]:
+        ]
+        for i, em in enumerate(self._extra_markers):
+            candidates.append((f"X{i}_1", em["line1"], em["pos1"]))
+            candidates.append((f"X{i}_2", em["line2"], em["pos2"]))
+
+        for tag, line, pos in candidates:
             if line is None or pos is None:
                 continue
             line_scene_x = vb.mapViewToScene(pg.Point(pos, 0)).x()
@@ -3467,6 +3487,16 @@ class N6705CDatalogUI(QWidget):
         if obj is self.plot_widget and event.type() == QEvent.Leave:
             self._hide_crosshair()
             return False
+        if obj is self.plot_widget and event.type() == QEvent.MouseButtonPress:
+            if event.button() == Qt.RightButton:
+                view_pos = event.position().toPoint()
+                scene_pos = self.plot_widget.mapToScene(view_pos)
+                snap_marker = self._find_nearest_marker_at_scene(scene_pos)
+                if snap_marker:
+                    from PySide6.QtCore import QPoint
+                    screen_pos = self.plot_widget.viewport().mapToGlobal(view_pos)
+                    self._show_marker_context_menu_at(snap_marker, screen_pos)
+                    return True
         vb = self.plot_widget.getPlotItem().getViewBox()
         if obj is not vb:
             return super().eventFilter(obj, event)
@@ -3485,8 +3515,9 @@ class N6705CDatalogUI(QWidget):
                     return True
 
                 mouse_point = vb.mapSceneToView(scene_pos)
+                x = mouse_point.x()
                 y = mouse_point.y()
-                clicked_key = self._find_band_at_y(y)
+                clicked_key = self._find_band_at_y(y, x)
                 if clicked_key:
                     self._select_channel(clicked_key)
                     self._ch_drag_active = True
@@ -3503,8 +3534,17 @@ class N6705CDatalogUI(QWidget):
                 x_val = mouse_point.x()
                 if self._marker_drag_target == "A":
                     self._place_marker_a(x_val)
-                else:
+                elif self._marker_drag_target == "B":
                     self._place_marker_b(x_val)
+                elif self._marker_drag_target.startswith("X"):
+                    parts = self._marker_drag_target[1:].split("_")
+                    pi = int(parts[0])
+                    w = parts[1]
+                    if pi < len(self._extra_markers):
+                        em = self._extra_markers[pi]
+                        em[f"pos{w}"] = x_val
+                        if em[f"line{w}"]:
+                            em[f"line{w}"].setValue(x_val)
                 self._update_marker_region()
                 self._update_marker_analysis()
                 return True
@@ -3534,10 +3574,52 @@ class N6705CDatalogUI(QWidget):
 
         return super().eventFilter(obj, event)
 
-    def _find_band_at_y(self, y):
+    def _find_band_at_y(self, y, x=None):
+        from bisect import bisect_left, bisect_right
+        vb = self.plot_widget.getPlotItem().getViewBox()
+        view_height_px = vb.screenGeometry().height() or 1
+        view_width_px = vb.screenGeometry().width() or 1
+        y_min, y_max = vb.viewRange()[1]
+        x_min, x_max = vb.viewRange()[0]
+        y_range = y_max - y_min if y_max > y_min else 1.0
+        x_range = x_max - x_min if x_max > x_min else 1.0
+        px_to_view_y = y_range / view_height_px
+        px_to_view_x = x_range / view_width_px
+        snap_view = px_to_view_y * 20
+        half_px_x = px_to_view_x * 3
+
         for key, band in self._band_info.items():
-            if band["band_bottom"] <= y <= band["band_top"]:
+            if not (band["band_bottom"] <= y <= band["band_top"]):
+                continue
+
+            if x is None:
                 return key
+
+            curve = self.plot_curves.get(key)
+            if curve is None:
+                return key
+
+            xData = curve.xData
+            yData = curve.yData
+            if xData is None or yData is None or len(xData) == 0:
+                return key
+
+            i_lo = bisect_left(xData, x - half_px_x)
+            i_hi = bisect_right(xData, x + half_px_x)
+            if i_hi <= i_lo:
+                idx = bisect_left(xData, x)
+                i_lo = max(0, idx - 1)
+                i_hi = min(len(yData), idx + 2)
+            nearby_y = yData[i_lo:i_hi]
+            if len(nearby_y) == 0:
+                return key
+
+            y_near_min = min(nearby_y)
+            y_near_max = max(nearby_y)
+
+            if y_near_min - snap_view <= y <= y_near_max + snap_view:
+                return key
+
         return None
 
     def _select_channel(self, key):
@@ -3625,8 +3707,12 @@ class N6705CDatalogUI(QWidget):
         if not band or not curve or not ch_data:
             return
 
-        raw_vals = ch_data["values"]
-        times = self._get_effective_times(key, ch_data["time"])
+        if "_np_values" not in ch_data:
+            ch_data["_np_values"] = np.asarray(ch_data["values"], dtype=np.float64)
+        if "_np_time" not in ch_data:
+            ch_data["_np_time"] = np.asarray(ch_data["time"], dtype=np.float64)
+
+        arr = ch_data["_np_values"]
         raw_min = band["raw_min"]
         raw_range = band["raw_range"]
         plot_bottom = band["plot_bottom"]
@@ -3635,10 +3721,8 @@ class N6705CDatalogUI(QWidget):
         if raw_range == 0:
             raw_range = 1.0
 
-        norm_vals = [
-            plot_bottom + (v - raw_min) / raw_range * plot_range
-            for v in raw_vals
-        ]
+        norm_vals = plot_bottom + (arr - raw_min) * (plot_range / raw_range)
+        times = self._get_effective_times(key, ch_data["_np_time"])
         curve.setData(times, norm_vals)
 
     def _update_ch_scale_offset_display(self, key):
@@ -3761,6 +3845,7 @@ class N6705CDatalogUI(QWidget):
         self.reset_view_btn.clicked.connect(self._reset_view)
         self.marker_a_btn.clicked.connect(lambda: self._set_marker_mode("A"))
         self.marker_b_btn.clicked.connect(lambda: self._set_marker_mode("B"))
+        self.add_markers_btn.clicked.connect(self._on_add_markers)
         self.clear_markers_btn.clicked.connect(self._clear_markers)
         self.time_offset_btn.clicked.connect(self._on_time_offset)
 
@@ -3953,17 +4038,14 @@ class N6705CDatalogUI(QWidget):
             if raw_range == 0:
                 raw_range = 1.0
 
-            band_top = 1.0 - idx / n
-            band_bottom = 1.0 - (idx + 1) / n
+            band_top = _BAND_CEILING - idx * _BAND_CEILING / n
+            band_bottom = _BAND_CEILING - (idx + 1) * _BAND_CEILING / n
             margin = (band_top - band_bottom) * 0.08
             plot_top = band_top - margin
             plot_bottom = band_bottom + margin
             plot_range = plot_top - plot_bottom
 
-            norm_vals = [
-                plot_bottom + (v - raw_min) / raw_range * plot_range
-                for v in raw_vals
-            ]
+            norm_vals = plot_bottom + (np.asarray(raw_vals, dtype=np.float64) - raw_min) * (plot_range / raw_range)
 
             self._band_info[key] = {
                 "raw_min": raw_min,
@@ -4330,6 +4412,12 @@ class N6705CDatalogUI(QWidget):
         self.marker_a_line = None
         self.marker_b_line = None
         self.marker_region = None
+        for em in self._extra_markers:
+            em["line1"] = None
+            em["line2"] = None
+        self._extra_marker_regions = []
+        self._extra_marker_text_items = []
+        self._marker_ab_text_item = None
         self._band_info = {}
         self._sep_lines = []
         self._selected_ch_key = None
@@ -4385,17 +4473,14 @@ class N6705CDatalogUI(QWidget):
             raw_max = max(raw_vals)
             raw_range = raw_max - raw_min if raw_max > raw_min else 1.0
 
-            band_top = 1.0 - idx / n
-            band_bottom = 1.0 - (idx + 1) / n
+            band_top = _BAND_CEILING - idx * _BAND_CEILING / n
+            band_bottom = _BAND_CEILING - (idx + 1) * _BAND_CEILING / n
             margin = (band_top - band_bottom) * 0.08
             plot_top = band_top - margin
             plot_bottom = band_bottom + margin
             plot_range = plot_top - plot_bottom
 
-            norm_vals = [
-                plot_bottom + (v - raw_min) / raw_range * plot_range
-                for v in raw_vals
-            ]
+            norm_vals = plot_bottom + (np.asarray(raw_vals, dtype=np.float64) - raw_min) * (plot_range / raw_range)
 
             self._band_info[label] = {
                 "raw_min": raw_min,
@@ -4508,6 +4593,14 @@ class N6705CDatalogUI(QWidget):
         self._pending_marker = marker
 
     def _on_chart_clicked(self, event):
+        if event.button() == Qt.RightButton:
+            scene_pos = event.scenePos()
+            snap_marker = self._find_nearest_marker_at_scene(scene_pos)
+            if snap_marker:
+                self._show_marker_context_menu(snap_marker, event)
+                event.accept()
+            return
+
         if self._pending_marker is None:
             return
 
@@ -4538,6 +4631,9 @@ class N6705CDatalogUI(QWidget):
         self.marker_a_line.sigPositionChanged.connect(
             lambda line: self._on_marker_moved("A", line.value())
         )
+        self.marker_a_line.sigClicked.connect(
+            lambda line, ev: self._on_marker_line_clicked("A", ev)
+        )
         self.plot_widget.addItem(self.marker_a_line)
         self.marker_a_btn.setText(f"Set Marker A ({x:.4f}s)")
 
@@ -4554,6 +4650,9 @@ class N6705CDatalogUI(QWidget):
         self.marker_b_line.sigPositionChanged.connect(
             lambda line: self._on_marker_moved("B", line.value())
         )
+        self.marker_b_line.sigClicked.connect(
+            lambda line, ev: self._on_marker_line_clicked("B", ev)
+        )
         self.plot_widget.addItem(self.marker_b_line)
         self.marker_b_btn.setText(f"Set Marker B ({x:.4f}s)")
 
@@ -4567,10 +4666,18 @@ class N6705CDatalogUI(QWidget):
         self._update_marker_region()
         self._update_marker_analysis()
 
+    def _on_marker_line_clicked(self, marker_tag, event):
+        if event.button() == Qt.RightButton:
+            self._show_marker_context_menu(marker_tag, event)
+
     def _update_marker_region(self):
         if self.marker_region:
             self.plot_widget.removeItem(self.marker_region)
             self.marker_region = None
+
+        if self._marker_ab_text_item:
+            self.plot_widget.removeItem(self._marker_ab_text_item)
+            self._marker_ab_text_item = None
 
         if self.marker_a_pos is not None and self.marker_b_pos is not None:
             t1 = min(self.marker_a_pos, self.marker_b_pos)
@@ -4582,6 +4689,89 @@ class N6705CDatalogUI(QWidget):
             )
             self.plot_widget.addItem(self.marker_region)
             self.marker_region.setZValue(-10)
+            self._marker_ab_text_item = self._create_pair_annotation(t1, t2, "#d4a514")
+            if self._marker_ab_text_item:
+                self.plot_widget.addItem(self._marker_ab_text_item, ignoreBounds=True)
+
+        for region in self._extra_marker_regions:
+            try:
+                self.plot_widget.removeItem(region)
+            except Exception:
+                pass
+        self._extra_marker_regions.clear()
+        for item in self._extra_marker_text_items:
+            try:
+                self.plot_widget.removeItem(item)
+            except Exception:
+                pass
+        self._extra_marker_text_items.clear()
+
+        for em in self._extra_markers:
+            if em["pos1"] is not None and em["pos2"] is not None:
+                t1 = min(em["pos1"], em["pos2"])
+                t2 = max(em["pos1"], em["pos2"])
+                region = pg.LinearRegionItem(
+                    values=[t1, t2], movable=False,
+                    brush=pg.mkBrush(40, 80, 180, 50),
+                    pen=pg.mkPen(None)
+                )
+                self.plot_widget.addItem(region)
+                region.setZValue(-10)
+                self._extra_marker_regions.append(region)
+                text_item = self._create_pair_annotation(t1, t2, em["color1"])
+                if text_item:
+                    self.plot_widget.addItem(text_item, ignoreBounds=True)
+                    self._extra_marker_text_items.append(text_item)
+
+    def _create_pair_annotation(self, t1, t2, color):
+        delta = t2 - t1
+        if delta <= 0:
+            return None
+        delta_str = _format_time(delta)
+        avg_str = self._compute_pair_avg_str(t1, t2)
+        mid_x = (t1 + t2) / 2
+        text_item = pg.TextItem(
+            html=f"<div style='background:#0a1733dd; padding:2px 6px; "
+                 f"border: 1px solid {color}; border-radius:3px; "
+                 f"font-size:10px; font-weight:600; color:{color};'>"
+                 f"\u0394t={delta_str}"
+                 f"{avg_str}</div>",
+            anchor=(0.5, 0),
+        )
+        text_item.setZValue(90)
+        text_item.setPos(mid_x, 1.0)
+        return text_item
+
+    def _compute_pair_avg_str(self, t1, t2):
+        from bisect import bisect_left, bisect_right
+        if not self.datalog_data:
+            return ""
+        is_current = self.type_current.isChecked()
+        visible_keys = self._get_visible_keys()
+        if not visible_keys:
+            visible_keys = set(self.datalog_data.keys())
+        parts = []
+        for key in sorted(self.datalog_data.keys(), key=_sort_key_for_label):
+            if key not in visible_keys:
+                continue
+            ch_data = self.datalog_data[key]
+            times = ch_data["time"]
+            values = ch_data["values"]
+            lookup_t1 = min(self._effective_x_for_lookup(key, t1), self._effective_x_for_lookup(key, t2))
+            lookup_t2 = max(self._effective_x_for_lookup(key, t1), self._effective_x_for_lookup(key, t2))
+            i_start = bisect_left(times, lookup_t1)
+            i_end = bisect_right(times, lookup_t2)
+            segment = values[i_start:i_end]
+            if not segment:
+                continue
+            seg_avg = sum(segment) / len(segment)
+            ch_num, mtype, _ = _parse_ch_label(key)
+            ch_is_current = (mtype == "I") if mtype else is_current
+            ch_is_power = (mtype == "P") if mtype else False
+            val_unit = "mW" if ch_is_power else ("mA" if ch_is_current else "mV")
+            color_hex = _color_for_label(key)
+            parts.append(f"<br><span style='color:{color_hex};'>{_display_label(key)} avg={_auto_format(seg_avg, val_unit)}</span>")
+        return "".join(parts)
 
     def _clear_markers(self):
         self._marker_drag_target = None
@@ -4594,15 +4784,287 @@ class N6705CDatalogUI(QWidget):
         if self.marker_region:
             self.plot_widget.removeItem(self.marker_region)
             self.marker_region = None
+        if self._marker_ab_text_item:
+            self.plot_widget.removeItem(self._marker_ab_text_item)
+            self._marker_ab_text_item = None
         self.marker_a_pos = None
         self.marker_b_pos = None
         self.marker_a_btn.setText("Set Marker A")
         self.marker_b_btn.setText("Set Marker B")
+
+        for em in self._extra_markers:
+            if em["line1"]:
+                try:
+                    self.plot_widget.removeItem(em["line1"])
+                except Exception:
+                    pass
+            if em["line2"]:
+                try:
+                    self.plot_widget.removeItem(em["line2"])
+                except Exception:
+                    pass
+        self._extra_markers.clear()
+        for region in self._extra_marker_regions:
+            try:
+                self.plot_widget.removeItem(region)
+            except Exception:
+                pass
+        self._extra_marker_regions.clear()
+        for item in self._extra_marker_text_items:
+            try:
+                self.plot_widget.removeItem(item)
+            except Exception:
+                pass
+        self._extra_marker_text_items.clear()
+
         self._clear_analysis_card_cache()
         self._update_marker_analysis()
 
     def _clear_analysis_card_cache(self):
         pass
+
+    def _get_next_marker_labels(self):
+        if self.marker_a_pos is None and self.marker_b_pos is None and not self._extra_markers:
+            return "A", "B"
+        used = set()
+        if self.marker_a_pos is not None:
+            used.add("A")
+        if self.marker_b_pos is not None:
+            used.add("B")
+        for em in self._extra_markers:
+            used.add(em["label1"])
+            used.add(em["label2"])
+        all_labels = [chr(c) for c in range(ord("A"), ord("Z") + 1)]
+        available = [l for l in all_labels if l not in used]
+        if len(available) >= 2:
+            return available[0], available[1]
+        return None, None
+
+    def _extra_marker_color(self, pair_index):
+        idx = (pair_index * 2) % len(EXTRA_MARKER_COLORS)
+        return EXTRA_MARKER_COLORS[idx], EXTRA_MARKER_COLORS[(idx + 1) % len(EXTRA_MARKER_COLORS)]
+
+    def _on_add_markers(self):
+        if not self.datalog_data:
+            return
+        label1, label2 = self._get_next_marker_labels()
+        if label1 is None:
+            return
+
+        vb = self.plot_widget.getPlotItem().getViewBox()
+        x_min, x_max = vb.viewRange()[0]
+        x_range = x_max - x_min
+        x1 = x_min + x_range * 0.35
+        x2 = x_min + x_range * 0.65
+
+        if label1 == "A" and label2 == "B":
+            self._place_marker_a(x1)
+            self._place_marker_b(x2)
+            self._update_marker_region()
+            self._update_marker_analysis()
+            return
+
+        pair_index = len(self._extra_markers)
+        color1, color2 = self._extra_marker_color(pair_index)
+
+        em = {
+            "label1": label1,
+            "label2": label2,
+            "pos1": x1,
+            "pos2": x2,
+            "line1": None,
+            "line2": None,
+            "color1": color1,
+            "color2": color2,
+        }
+        self._extra_markers.append(em)
+        self._place_extra_marker_line(em, "1")
+        self._place_extra_marker_line(em, "2")
+        self._update_marker_region()
+        self._update_marker_analysis()
+
+    def _place_extra_marker_line(self, em, which):
+        key = f"pos{which}"
+        line_key = f"line{which}"
+        label_key = f"label{which}"
+        color_key = f"color{which}"
+
+        if em[line_key]:
+            try:
+                self.plot_widget.removeItem(em[line_key])
+            except Exception:
+                pass
+
+        x = em[key]
+        color = em[color_key]
+        label = em[label_key]
+
+        line = pg.InfiniteLine(
+            pos=x, angle=90, movable=True,
+            pen=pg.mkPen(color=color, width=2, style=Qt.DashLine),
+            label=label,
+            labelOpts={"color": color, "position": 0.98}
+        )
+        pair_idx = self._extra_markers.index(em)
+        tag = f"X{pair_idx}_{which}"
+        line.sigPositionChanged.connect(
+            lambda l, pi=pair_idx, w=which: self._on_extra_marker_moved(pi, w, l.value())
+        )
+        line.sigClicked.connect(
+            lambda l, ev, t=tag: self._on_marker_line_clicked(t, ev)
+        )
+        self.plot_widget.addItem(line)
+        em[line_key] = line
+
+    def _on_extra_marker_moved(self, pair_idx, which, value):
+        if pair_idx >= len(self._extra_markers):
+            return
+        em = self._extra_markers[pair_idx]
+        em[f"pos{which}"] = value
+        self._update_marker_region()
+        self._update_marker_analysis()
+
+    def _delete_marker_pair(self, pair_idx):
+        if pair_idx >= len(self._extra_markers):
+            return
+        em = self._extra_markers[pair_idx]
+        if em["line1"]:
+            try:
+                self.plot_widget.removeItem(em["line1"])
+            except Exception:
+                pass
+        if em["line2"]:
+            try:
+                self.plot_widget.removeItem(em["line2"])
+            except Exception:
+                pass
+        self._extra_markers.pop(pair_idx)
+        self._relabel_extra_markers()
+        self._update_marker_region()
+        self._update_marker_analysis()
+
+    def _delete_ab_markers(self):
+        if self.marker_a_line:
+            self.plot_widget.removeItem(self.marker_a_line)
+            self.marker_a_line = None
+        if self.marker_b_line:
+            self.plot_widget.removeItem(self.marker_b_line)
+            self.marker_b_line = None
+        if self.marker_region:
+            self.plot_widget.removeItem(self.marker_region)
+            self.marker_region = None
+        if self._marker_ab_text_item:
+            self.plot_widget.removeItem(self._marker_ab_text_item)
+            self._marker_ab_text_item = None
+        self.marker_a_pos = None
+        self.marker_b_pos = None
+        self.marker_a_btn.setText("Set Marker A")
+        self.marker_b_btn.setText("Set Marker B")
+
+        if self._extra_markers:
+            first = self._extra_markers.pop(0)
+            if first["line1"]:
+                try:
+                    self.plot_widget.removeItem(first["line1"])
+                except Exception:
+                    pass
+            if first["line2"]:
+                try:
+                    self.plot_widget.removeItem(first["line2"])
+                except Exception:
+                    pass
+            self.marker_a_pos = first["pos1"]
+            self.marker_b_pos = first["pos2"]
+            self._place_marker_a(self.marker_a_pos)
+            self._place_marker_b(self.marker_b_pos)
+
+        self._relabel_extra_markers()
+        self._update_marker_region()
+        self._update_marker_analysis()
+
+    def _relabel_extra_markers(self):
+        used = set()
+        if self.marker_a_pos is not None:
+            used.add("A")
+        if self.marker_b_pos is not None:
+            used.add("B")
+        all_labels = [chr(c) for c in range(ord("A"), ord("Z") + 1)]
+        available = [l for l in all_labels if l not in used]
+
+        for i, em in enumerate(self._extra_markers):
+            if i * 2 + 1 >= len(available):
+                break
+            new_label1 = available[i * 2]
+            new_label2 = available[i * 2 + 1]
+            em["label1"] = new_label1
+            em["label2"] = new_label2
+            new_color1, new_color2 = self._extra_marker_color(i)
+            em["color1"] = new_color1
+            em["color2"] = new_color2
+
+            if em["line1"]:
+                try:
+                    self.plot_widget.removeItem(em["line1"])
+                except Exception:
+                    pass
+                em["line1"] = None
+            if em["line2"]:
+                try:
+                    self.plot_widget.removeItem(em["line2"])
+                except Exception:
+                    pass
+                em["line2"] = None
+
+            self._place_extra_marker_line(em, "1")
+            self._place_extra_marker_line(em, "2")
+
+    def _show_marker_context_menu(self, marker_tag, event):
+        from PySide6.QtCore import QPoint
+        screen_pos = event.screenPos()
+        self._show_marker_context_menu_at(marker_tag, QPoint(int(screen_pos.x()), int(screen_pos.y())))
+
+    def _show_marker_context_menu_at(self, marker_tag, screen_pos):
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #0c1a35;
+                border: 1px solid #1e3460;
+                border-radius: 6px;
+                color: #c8daf5;
+                padding: 4px;
+            }
+            QMenu::item {
+                padding: 6px 20px;
+                border-radius: 4px;
+            }
+            QMenu::item:selected {
+                background-color: #1e3460;
+            }
+        """)
+
+        delete_action = None
+        pair_type = None
+        pair_idx = -1
+
+        if marker_tag in ("A", "B"):
+            delete_action = menu.addAction("Delete Marker A && B")
+            pair_type = "AB"
+        elif marker_tag.startswith("X"):
+            parts = marker_tag[1:].split("_")
+            pi = int(parts[0])
+            if pi < len(self._extra_markers):
+                em = self._extra_markers[pi]
+                delete_action = menu.addAction(f"Delete Marker {em['label1']} && {em['label2']}")
+                pair_type = "EXTRA"
+                pair_idx = pi
+
+        chosen = menu.exec(screen_pos)
+
+        if chosen is not None and chosen == delete_action:
+            if pair_type == "AB":
+                self._delete_ab_markers()
+            elif pair_type == "EXTRA" and pair_idx >= 0:
+                self._delete_marker_pair(pair_idx)
 
     def _is_b_label(self, label):
         _, _, is_b = _parse_ch_label(label)
@@ -4610,7 +5072,7 @@ class N6705CDatalogUI(QWidget):
 
     def _get_effective_times(self, label, times):
         if self._b_time_offset != 0.0 and self._is_b_label(label):
-            return [t + self._b_time_offset for t in times]
+            return np.asarray(times, dtype=np.float64) + self._b_time_offset
         return times
 
     def _effective_x_for_lookup(self, label, x):
@@ -4855,6 +5317,11 @@ class N6705CDatalogUI(QWidget):
             self._place_marker_a(self.marker_a_pos)
         if self.marker_b_pos is not None:
             self._place_marker_b(self.marker_b_pos)
+        for em in self._extra_markers:
+            em["line1"] = None
+            em["line2"] = None
+            self._place_extra_marker_line(em, "1")
+            self._place_extra_marker_line(em, "2")
         self._update_marker_region()
 
     def _update_marker_analysis(self):
