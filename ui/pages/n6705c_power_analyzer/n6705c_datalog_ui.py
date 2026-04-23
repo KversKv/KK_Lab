@@ -891,6 +891,7 @@ class N6705CDatalogUI(QWidget):
         self._band_info = {}
         self._sep_lines = []
         self._selected_ch_key = None
+        self._selected_orig_pen = None
         self._selected_highlight = None
         self._ch_drag_active = False
         self._ch_drag_last_y = None
@@ -2406,7 +2407,7 @@ class N6705CDatalogUI(QWidget):
 
         self._instruments_tab = QWidget()
         self._instruments_tab.setStyleSheet("background: #071127;")
-        self._instruments_tab.setMinimumHeight(0)
+        self._instruments_tab.setMinimumHeight(150)
         self._instruments_tab_layout = QVBoxLayout(self._instruments_tab)
         self._instruments_tab_layout.setContentsMargins(0, 6, 0, 0)
         self._instruments_tab_layout.setSpacing(0)
@@ -2439,6 +2440,7 @@ class N6705CDatalogUI(QWidget):
         self.no_instrument_label = QLabel("No instruments connected. Open Instrument Connection panel to connect.")
         self.no_instrument_label.setObjectName("hintLabel")
         self.no_instrument_label.setAlignment(Qt.AlignCenter)
+        self.no_instrument_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._instruments_tab_layout.addWidget(self.no_instrument_label)
 
     def _make_svg_icon(self, svg_file, color="#dfe8ff", size=18):
@@ -3593,21 +3595,23 @@ class N6705CDatalogUI(QWidget):
         snap_view = px_to_view_y * 20
         half_px_x = px_to_view_x * 3
 
+        best_key = None
+        best_dist = snap_view + 1
+
         for key, band in self._band_info.items():
-            if not (band["band_bottom"] <= y <= band["band_top"]):
+            curve = self.plot_curves.get(key)
+            if curve is None or not curve.isVisible():
                 continue
 
             if x is None:
-                return key
-
-            curve = self.plot_curves.get(key)
-            if curve is None:
-                return key
+                if band["band_bottom"] <= y <= band["band_top"]:
+                    return key
+                continue
 
             xData = curve.xData
             yData = curve.yData
             if xData is None or yData is None or len(xData) == 0:
-                return key
+                continue
 
             i_lo = bisect_left(xData, x - half_px_x)
             i_hi = bisect_right(xData, x + half_px_x)
@@ -3617,7 +3621,7 @@ class N6705CDatalogUI(QWidget):
                 i_hi = min(len(yData), idx + 2)
             nearby_y = yData[i_lo:i_hi]
             if len(nearby_y) == 0:
-                return key
+                continue
 
             t = curve.transform()
             sy = t.m22()
@@ -3627,41 +3631,40 @@ class N6705CDatalogUI(QWidget):
             if y_near_min > y_near_max:
                 y_near_min, y_near_max = y_near_max, y_near_min
 
-            if y_near_min - snap_view <= y <= y_near_max + snap_view:
-                return key
+            if y < y_near_min - snap_view or y > y_near_max + snap_view:
+                continue
 
-        return None
+            mid = (y_near_min + y_near_max) / 2.0
+            dist = abs(y - mid)
+            if dist < best_dist:
+                best_dist = dist
+                best_key = key
+
+        return best_key
 
     def _select_channel(self, key):
         if self._selected_ch_key == key:
             return
         self._deselect_channel()
         self._selected_ch_key = key
-        band = self._band_info.get(key)
-        if not band:
+        curve = self.plot_curves.get(key)
+        if not curve:
             return
-        color = _color_for_label(key)
-        region = pg.LinearRegionItem(
-            values=[band["band_bottom"], band["band_top"]],
-            orientation='horizontal',
-            movable=False,
-            brush=pg.mkBrush(color + "18"),
-            pen=pg.mkPen(color, width=1, style=Qt.DashLine),
-        )
-        region.setZValue(-10)
-        self.plot_widget.addItem(region, ignoreBounds=True)
-        self._selected_highlight = region
+        pen = curve.opts.get("pen")
+        if pen:
+            self._selected_orig_pen = pg.mkPen(pen)
+            color = _color_for_label(key)
+            curve.setPen(pg.mkPen(color=color, width=3))
 
     def _deselect_channel(self):
+        if self._selected_ch_key and hasattr(self, '_selected_orig_pen') and self._selected_orig_pen:
+            curve = self.plot_curves.get(self._selected_ch_key)
+            if curve:
+                curve.setPen(self._selected_orig_pen)
         self._selected_ch_key = None
+        self._selected_orig_pen = None
         self._ch_drag_active = False
         self._ch_drag_last_y = None
-        if self._selected_highlight:
-            try:
-                self.plot_widget.removeItem(self._selected_highlight)
-            except Exception:
-                pass
-            self._selected_highlight = None
 
     def _wheel_scale_channel(self, event):
         key = self._selected_ch_key
@@ -4424,6 +4427,7 @@ class N6705CDatalogUI(QWidget):
         self._band_info = {}
         self._sep_lines = []
         self._selected_ch_key = None
+        self._selected_orig_pen = None
         self._selected_highlight = None
         self._ch_drag_active = False
         self._ch_drag_last_y = None
