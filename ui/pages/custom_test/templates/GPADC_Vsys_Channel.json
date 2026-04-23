@@ -17,7 +17,8 @@
         "var_name": "Vbat_voltage",
         "start": 3.0,
         "stop": 4.5,
-        "step": 0.1
+        "step": 0.1,
+        "export_var": true
       },
       "children": [
         {
@@ -60,7 +61,7 @@
           "params": {
             "var_name": "i",
             "start": 0.0,
-            "stop": 10.0,
+            "stop": 1000.0,
             "step": 1.0,
             "export_var": false
           },

@@ -896,10 +896,10 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
 
         executor = self._executor_thread.start(sequence, self._context)
 
-        executor.log_message.connect(self.logs_frame.append_log)
-        executor.progress_updated.connect(self._on_progress)
-        executor.step_started.connect(self._on_step_started)
-        executor.data_recorded.connect(self._on_data_recorded)
+        executor.log_message.connect(self.logs_frame.append_log, Qt.QueuedConnection)
+        executor.progress_updated.connect(self._on_progress, Qt.QueuedConnection)
+        executor.step_started.connect(self._on_step_started, Qt.QueuedConnection)
+        executor.data_recorded.connect(self._on_data_recorded, Qt.QueuedConnection)
 
     def _on_stop(self) -> None:
         """停止执行"""
@@ -1188,7 +1188,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
 
     def cleanup_threads(self) -> None:
         """清理工作线程"""
-        self._executor_thread.stop()
+        self._executor_thread._force_stop()
         if self._i2c_interface is not None:
             self._i2c_interface.close()
             self._i2c_interface = None

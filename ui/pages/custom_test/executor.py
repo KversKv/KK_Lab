@@ -6,7 +6,7 @@ import time
 import traceback
 from typing import Any, Dict, List, Optional
 
-from PySide6.QtCore import QObject, QThread, Signal
+from PySide6.QtCore import QObject, QThread, Signal, Qt
 
 from log_config import get_logger
 from ui.pages.custom_test.nodes.base_node import BaseNode
@@ -15,6 +15,8 @@ from ui.pages.custom_test.context import (
 )
 
 logger = get_logger(__name__)
+
+_UI_THROTTLE_INTERVAL = 0.05
 
 
 def _decimal_places(v: float) -> int:
@@ -124,8 +126,9 @@ class CustomTestExecutor(QObject):
             self.finished.emit(True, "序列为空")
             return
 
-        total_steps = self._count_steps(self._sequence)
+        total_steps = self._estimate_total_steps(self._sequence, self._context)
         executed = [0]
+        last_progress_time = [0.0]
 
         original_record = self._context.record_data
 
@@ -136,28 +139,63 @@ class CustomTestExecutor(QObject):
         self._context.record_data = _hooked_record
 
         original_log_output = self._context.log_output
+        last_log_time = [0.0]
+        pending_log = [None]
 
         def _hooked_log_output(message: str) -> None:
             original_log_output(message)
-            self.log_message.emit(message)
+            now = time.monotonic()
+            if now - last_log_time[0] >= _UI_THROTTLE_INTERVAL:
+                if pending_log[0] is not None:
+                    self.log_message.emit(pending_log[0])
+                    pending_log[0] = None
+                self.log_message.emit(message)
+                last_log_time[0] = now
+            else:
+                pending_log[0] = message
 
         self._context.log_output = _hooked_log_output
 
+        last_step_time = [0.0]
+        pending_step = [None]
+
         def _hooked_step_started(uid: str, name: str) -> None:
-            self.step_started.emit(uid, name)
-            self.log_message.emit(f"[STEP] {name} (uid={uid[:8]})")
+            executed[0] += 1
+            now = time.monotonic()
+            if now - last_step_time[0] >= _UI_THROTTLE_INTERVAL:
+                self.step_started.emit(uid, name)
+                self.log_message.emit(f"[STEP] {name} (uid={uid[:8]})")
+                last_step_time[0] = now
+                pending_step[0] = None
+            else:
+                pending_step[0] = (uid, name)
+            if now - last_progress_time[0] >= _UI_THROTTLE_INTERVAL:
+                self.progress_updated.emit(executed[0], total_steps)
+                last_progress_time[0] = now
 
         def _hooked_step_finished(uid: str, name: str) -> None:
-            self.step_finished.emit(uid, name)
+            pass
 
         self._context.on_step_started = _hooked_step_started
         self._context.on_step_finished = _hooked_step_finished
 
-        self.log_message.emit(f"[START] 开始执行序列，共 {total_steps} 个步骤")
+        def _flush_pending() -> None:
+            if pending_log[0] is not None:
+                self.log_message.emit(pending_log[0])
+                pending_log[0] = None
+            if pending_step[0] is not None:
+                uid, name = pending_step[0]
+                self.step_started.emit(uid, name)
+                self.log_message.emit(f"[STEP] {name} (uid={uid[:8]})")
+                pending_step[0] = None
+            self.progress_updated.emit(executed[0], total_steps)
+
+        self.log_message.emit(f"[START] 开始执行序列，预计 {total_steps} 个步骤")
         col_fmt = _ColumnFormatter()
 
         try:
-            self._run_nodes(self._sequence, total_steps, executed, col_fmt)
+            self._run_nodes(self._sequence, col_fmt)
+            _flush_pending()
 
             if self._context.should_stop:
                 self.log_message.emit("[STOP] 执行被用户中止")
@@ -173,9 +211,11 @@ class CustomTestExecutor(QObject):
                 self.log_message.emit(f"[DONE] 执行完成，记录 {len(self._context.records)} 行数据")
                 self.finished.emit(True, "执行完成")
         except StopExecution as e:
+            _flush_pending()
             self.log_message.emit(f"[STOP] {e.message or '执行已停止'}")
             self.finished.emit(False, e.message or "执行已停止")
         except TestResultException as e:
+            _flush_pending()
             if e.passed:
                 self.log_message.emit(f"[PASS] {e.message}")
                 self.finished.emit(True, f"测试通过: {e.message}")
@@ -183,13 +223,14 @@ class CustomTestExecutor(QObject):
                 self.log_message.emit(f"[FAIL] {e.message}")
                 self.finished.emit(False, f"测试失败: {e.message}")
         except Exception as e:
+            _flush_pending()
             tb = traceback.format_exc()
             logger.error("执行异常: %s\n%s", e, tb)
             self.log_message.emit(f"[ERROR] {e}")
             self.error.emit(str(e))
             self.finished.emit(False, str(e))
 
-    def _run_nodes(self, nodes: List[BaseNode], total: int, executed: List[int], col_fmt: _ColumnFormatter) -> None:
+    def _run_nodes(self, nodes: List[BaseNode], col_fmt: _ColumnFormatter) -> None:
         for node in nodes:
             if self._context.should_stop:
                 return
@@ -204,22 +245,47 @@ class CustomTestExecutor(QObject):
                 self.log_message.emit(f"[ERROR] {node.display_name}: {e}")
                 raise
 
-            executed[0] += 1
-            self.progress_updated.emit(executed[0], total)
-
             new_records = self._context.records[pre_record_count:]
             for rec in new_records:
                 formatted = col_fmt.format_row(rec)
                 self.log_message.emit(f"[DATA] {formatted}")
 
-    def _count_steps(self, nodes: List[BaseNode]) -> int:
-        """统计非容器节点的总步骤数"""
-        count = 0
+    @staticmethod
+    def _estimate_total_steps(nodes: List[BaseNode], context: ExecutionContext) -> int:
+        total = 0
         for node in nodes:
-            count += 1
+            total += 1
             if node.children:
-                count += self._count_steps(node.children)
-        return count
+                iterations = CustomTestExecutor._get_loop_iterations(node, context)
+                child_steps = CustomTestExecutor._estimate_total_steps(node.children, context)
+                total += child_steps * iterations
+        return total
+
+    @staticmethod
+    def _get_loop_iterations(node: BaseNode, context: ExecutionContext) -> int:
+        nt = node.node_type
+        try:
+            if nt == "LoopRange":
+                start = float(context.resolve_value(node.params.get("start", 0)))
+                stop = float(context.resolve_value(node.params.get("stop", 0)))
+                step_val = float(context.resolve_value(node.params.get("step", 1)))
+                if step_val == 0:
+                    return 1
+                if step_val > 0:
+                    return max(1, int((stop - start) / step_val) + 1)
+                else:
+                    return max(1, int((start - stop) / abs(step_val)) + 1)
+            elif nt == "LoopCount":
+                return max(1, int(context.resolve_value(node.params.get("count", 1))))
+            elif nt == "LoopList":
+                raw = node.params.get("values", "")
+                if isinstance(raw, str):
+                    return max(1, len([v for v in raw.split(",") if v.strip()]))
+                elif isinstance(raw, (list, tuple)):
+                    return max(1, len(raw))
+        except Exception:
+            pass
+        return 1
 
 
 class ExecutorThread(QObject):
@@ -238,7 +304,7 @@ class ExecutorThread(QObject):
 
     def start(self, nodes: List[BaseNode], context: ExecutionContext) -> CustomTestExecutor:
         """启动执行"""
-        self.stop()
+        self._force_stop()
 
         self._executor = CustomTestExecutor()
         self._executor.set_sequence(nodes)
@@ -256,7 +322,12 @@ class ExecutorThread(QObject):
         return self._executor
 
     def stop(self) -> None:
-        """停止执行"""
+        """停止执行（非阻塞，不冻结 UI）"""
+        if self._executor:
+            self._executor.request_stop()
+
+    def _force_stop(self) -> None:
+        """强制停止并等待旧线程结束（仅在 start 时调用）"""
         if self._executor:
             self._executor.request_stop()
         if self._thread and self._thread.isRunning():
