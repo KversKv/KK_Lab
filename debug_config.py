@@ -1,1 +1,1 @@
-DEBUG_MOCK = False
+DEBUG_MOCK = True

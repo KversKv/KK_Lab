@@ -615,11 +615,6 @@ class ConfigTraverseTestUI(N6705CConnectionMixin, QWidget):
             title_row=self.connection_card.title_row,
         )
 
-        self.instrument_info_label = QLabel("USB0::0x0957::0x0F07::MY53004321")
-        self.instrument_info_label.setObjectName("fieldLabel")
-        self.instrument_info_label.setWordWrap(True)
-        layout.addWidget(self.instrument_info_label)
-
     def _build_channel_config_card(self):
         layout = self.channel_config_card.main_layout
         grid = QGridLayout()

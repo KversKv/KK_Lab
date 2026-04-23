@@ -603,10 +603,7 @@ class StatusRegisterTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget
             layout,
             title_row=self.connection_card.title_row,
         )
-        self.instrument_info_label = QLabel("USB0::0x0957::0x0F07::MY53004321")
-        self.instrument_info_label.setObjectName("fieldLabel")
-        self.instrument_info_label.setWordWrap(True)
-        layout.addWidget(self.instrument_info_label)
+
 
     def _build_vt6002_card(self):
         layout = self.vt6002_card.main_layout
