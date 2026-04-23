@@ -17,6 +17,34 @@ from ui.pages.custom_test.context import (
 logger = get_logger(__name__)
 
 
+def _decimal_places(v: float) -> int:
+    s = f"{v:.12g}"
+    if "." in s:
+        return len(s.split(".")[1].rstrip("0")) or 0
+    return 0
+
+
+class _ColumnFormatter:
+    __slots__ = ("_col_dp",)
+
+    def __init__(self) -> None:
+        self._col_dp: Dict[str, int] = {}
+
+    def format_row(self, row: dict) -> dict:
+        for k, v in row.items():
+            if isinstance(v, float):
+                dp = max(2, min(_decimal_places(v), 10))
+                if dp > self._col_dp.get(k, 2):
+                    self._col_dp[k] = dp
+        return {
+            k: f"{v:.{self._col_dp.get(k, 2)}f}" if isinstance(v, float) else v
+            for k, v in row.items()
+        }
+
+    def get_dp(self, key: str) -> int:
+        return self._col_dp.get(key, 2)
+
+
 def _execute_children(children: List[BaseNode], context: ExecutionContext) -> None:
     """深度优先执行子节点列表"""
     for child in children:
@@ -126,9 +154,10 @@ class CustomTestExecutor(QObject):
         self._context.on_step_finished = _hooked_step_finished
 
         self.log_message.emit(f"[START] 开始执行序列，共 {total_steps} 个步骤")
+        col_fmt = _ColumnFormatter()
 
         try:
-            self._run_nodes(self._sequence, total_steps, executed)
+            self._run_nodes(self._sequence, total_steps, executed, col_fmt)
 
             if self._context.should_stop:
                 self.log_message.emit("[STOP] 执行被用户中止")
@@ -160,8 +189,7 @@ class CustomTestExecutor(QObject):
             self.error.emit(str(e))
             self.finished.emit(False, str(e))
 
-    def _run_nodes(self, nodes: List[BaseNode], total: int, executed: List[int]) -> None:
-        """递归执行节点，发射进度信号"""
+    def _run_nodes(self, nodes: List[BaseNode], total: int, executed: List[int], col_fmt: _ColumnFormatter) -> None:
         for node in nodes:
             if self._context.should_stop:
                 return
@@ -181,7 +209,8 @@ class CustomTestExecutor(QObject):
 
             new_records = self._context.records[pre_record_count:]
             for rec in new_records:
-                self.log_message.emit(f"[DATA] {rec}")
+                formatted = col_fmt.format_row(rec)
+                self.log_message.emit(f"[DATA] {formatted}")
 
     def _count_steps(self, nodes: List[BaseNode]) -> int:
         """统计非容器节点的总步骤数"""

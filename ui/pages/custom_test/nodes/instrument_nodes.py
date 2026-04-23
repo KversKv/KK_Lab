@@ -701,6 +701,18 @@ class RFAnalyzerMeasure(BaseNode):
 #  REG Controller (I2C)  —  Set / Get
 # ═══════════════════════════════════════════════════════════════
 
+def _resolve_hex(context: Any, raw: Any) -> int:
+    val = context.resolve_value(raw)
+    if isinstance(val, int):
+        return val
+    s = str(val).strip()
+    if s.startswith(("0x", "0X")):
+        return int(s, 16)
+    try:
+        return int(s, 16)
+    except ValueError:
+        return int(s)
+
 @register_node
 class I2CRead(BaseNode):
     node_type = "I2CRead"
@@ -723,8 +735,8 @@ class I2CRead(BaseNode):
         i2c = context.instruments.get("i2c")
         if i2c is None:
             raise RuntimeError("I2C 接口未连接")
-        dev = int(str(context.resolve_value(self.params["device_addr"])).strip(), 16)
-        reg = int(str(context.resolve_value(self.params["reg_addr"])).strip(), 16)
+        dev = _resolve_hex(context, self.params["device_addr"])
+        reg = _resolve_hex(context, self.params["reg_addr"])
         width = int(context.resolve_value(self.params["width"]))
         result_var = str(self.params["result_var"])
         export_var = bool(self.params.get("export_var", True))
@@ -761,9 +773,9 @@ class I2CWrite(BaseNode):
         i2c = context.instruments.get("i2c")
         if i2c is None:
             raise RuntimeError("I2C 接口未连接")
-        dev = int(str(context.resolve_value(self.params["device_addr"])).strip(), 16)
-        reg = int(str(context.resolve_value(self.params["reg_addr"])).strip(), 16)
-        data = int(str(context.resolve_value(self.params["write_data"])).strip(), 16)
+        dev = _resolve_hex(context, self.params["device_addr"])
+        reg = _resolve_hex(context, self.params["reg_addr"])
+        data = _resolve_hex(context, self.params["write_data"])
         width = int(context.resolve_value(self.params["width"]))
         i2c.write(dev, reg, data, width)
         logger.info("I2C Write: dev=0x%02X reg=0x%X data=0x%X width=%d => OK", dev, reg, data, width)
@@ -798,9 +810,9 @@ class I2CTraverse(BaseNode):
         i2c = context.instruments.get("i2c")
         if i2c is None:
             raise RuntimeError("I2C 接口未连接")
-        dev = int(str(context.resolve_value(self.params["device_addr"])).strip(), 16)
-        reg_start = int(str(context.resolve_value(self.params["reg_start"])).strip(), 16)
-        reg_end = int(str(context.resolve_value(self.params["reg_end"])).strip(), 16)
+        dev = _resolve_hex(context, self.params["device_addr"])
+        reg_start = _resolve_hex(context, self.params["reg_start"])
+        reg_end = _resolve_hex(context, self.params["reg_end"])
         width = int(context.resolve_value(self.params["width"]))
         iter_var = str(self.params.get("iter_var", "reg"))
         val_var = str(self.params.get("val_var", "reg_val"))

@@ -23,7 +23,7 @@ from ui.pages.custom_test.nodes.logic_nodes import (
 from ui.pages.custom_test.nodes.io_nodes import RecordDataPoint, ExportResult, PrintLog
 from ui.pages.custom_test.nodes.value_nodes import (
     SetConstant, IncrementVariable, DecrementVariable,
-    AppendToList, ClearVariable, TypeCast, ClampValue,
+    AppendToList, ClearVariable, TypeCast, ClampValue, Aggregate,
 )
 
 __all__ = [
@@ -45,5 +45,5 @@ __all__ = [
     "WhileLoop", "RepeatUntil",
     "RecordDataPoint", "ExportResult", "PrintLog",
     "SetConstant", "IncrementVariable", "DecrementVariable",
-    "AppendToList", "ClearVariable", "TypeCast", "ClampValue",
+    "AppendToList", "ClearVariable", "TypeCast", "ClampValue", "Aggregate",
 ]

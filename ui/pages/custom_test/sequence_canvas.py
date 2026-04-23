@@ -623,6 +623,7 @@ class SequenceCanvas(QWidget):
     run_requested = Signal()
     stop_requested = Signal()
     pause_requested = Signal()
+    metadata_loaded = Signal(dict)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -1167,15 +1168,22 @@ class SequenceCanvas(QWidget):
 
     def _on_save(self) -> None:
         nodes = self.get_sequence()
-        data = [n.to_dict() for n in nodes]
+        save_data = {
+            "version": 1,
+            "sequence": [n.to_dict() for n in nodes],
+            "instruments": self._collect_instrument_meta(),
+        }
         filepath, _ = QFileDialog.getSaveFileName(
             self, "保存序列", "", "JSON Files (*.json)"
         )
         if not filepath:
             return
         with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+            json.dump(save_data, f, ensure_ascii=False, indent=2)
         logger.info("序列已保存: %s", filepath)
+
+    def _collect_instrument_meta(self) -> dict:
+        return {}
 
     def _on_load(self) -> None:
         filepath, _ = QFileDialog.getOpenFileName(
@@ -1186,8 +1194,18 @@ class SequenceCanvas(QWidget):
         try:
             with open(filepath, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            nodes = [BaseNode.from_dict(d) for d in data]
+
+            if isinstance(data, dict) and "sequence" in data:
+                seq_data = data["sequence"]
+                instr_meta = data.get("instruments", {})
+            else:
+                seq_data = data
+                instr_meta = {}
+
+            nodes = [BaseNode.from_dict(d) for d in seq_data]
             self.load_from_nodes(nodes)
+            if instr_meta:
+                self.metadata_loaded.emit(instr_meta)
             logger.info("序列已加载: %s", filepath)
         except Exception as e:
             QMessageBox.warning(self, "加载失败", f"无法加载序列文件:\n{e}")

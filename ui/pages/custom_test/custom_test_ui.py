@@ -460,7 +460,54 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
             if self._serial_connected:
                 self._update_serial_connect_ui(True)
 
+        self._apply_instrument_meta()
+
+    def _collect_instrument_meta(self) -> dict:
+        meta = {}
+        if self._n6705c_widgets_built and hasattr(self, "visa_resource_combo"):
+            meta["n6705c"] = {"visa": self.visa_resource_combo.currentText()}
+        if self._vt6002_widgets_built and hasattr(self, "vt6002_combo"):
+            meta["vt6002"] = {"port": self.vt6002_combo.currentText()}
+        if self._uart_widgets_built and hasattr(self, "_sc_port_combo"):
+            meta["uart"] = {
+                "port": self._sc_port_combo.currentText(),
+                "baud": self._sc_baud_combo.currentText(),
+            }
+        return meta
+
+    def _on_metadata_loaded(self, meta: dict) -> None:
+        self._pending_instr_meta = meta
+        self._apply_instrument_meta()
+
+    def _apply_instrument_meta(self) -> None:
+        meta = getattr(self, "_pending_instr_meta", None)
+        if not meta:
+            return
+        if "n6705c" in meta and self._n6705c_widgets_built:
+            visa = meta["n6705c"].get("visa", "")
+            if visa and hasattr(self, "visa_resource_combo"):
+                if self.visa_resource_combo.findText(visa) < 0:
+                    self.visa_resource_combo.addItem(visa)
+                self.visa_resource_combo.setCurrentText(visa)
+        if "vt6002" in meta and self._vt6002_widgets_built:
+            port = meta["vt6002"].get("port", "")
+            if port and hasattr(self, "vt6002_combo"):
+                if self.vt6002_combo.findText(port) < 0:
+                    self.vt6002_combo.addItem(port)
+                self.vt6002_combo.setCurrentText(port)
+        if "uart" in meta and self._uart_widgets_built:
+            port = meta["uart"].get("port", "")
+            baud = meta["uart"].get("baud", "")
+            if port and hasattr(self, "_sc_port_combo"):
+                if self._sc_port_combo.findText(port) < 0:
+                    self._sc_port_combo.addItem(port)
+                self._sc_port_combo.setCurrentText(port)
+            if baud and hasattr(self, "_sc_baud_combo"):
+                self._sc_baud_combo.setCurrentText(baud)
+        self._pending_instr_meta = None
+
     def _build_bottom_panel(self) -> QWidget:
+
         widget = QWidget()
         widget.setObjectName("bottomPanel")
         widget.setStyleSheet("QWidget#bottomPanel { background: transparent; border: none; }")
@@ -543,6 +590,8 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         self.canvas.stop_requested.connect(self._on_stop)
         self.canvas.pause_requested.connect(self._on_pause)
         self.canvas.sequence_changed.connect(self._refresh_instrument_connections)
+        self.canvas.metadata_loaded.connect(self._on_metadata_loaded)
+        self.canvas._collect_instrument_meta = self._collect_instrument_meta
 
         self.property_panel.param_changed.connect(self._on_param_changed)
         self.property_panel.add_else_if_requested.connect(self._on_add_else_if)
@@ -638,14 +687,31 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
                         )
         menu.addSeparator()
 
-        for cat in ["value", "logic", "io"]:
-            nodes = get_nodes_by_category(cat)
+        _HIDDEN_NODE_TYPES = {
+            "IfElse", "IfThenElse", "IfBranch", "ElseIfBranch", "ElseBranch",
+        }
+        _non_instr_cats = [
+            ("value", "tag.svg", "Value / Variables"),
+            ("logic", "git-branch.svg", "Logic / Flow"),
+            ("io", "hard-drive.svg", "Data I/O"),
+        ]
+        for cat_key, icon_file, cat_label in _non_instr_cats:
+            nodes = [
+                cls for cls in get_nodes_by_category(cat_key)
+                if cls.node_type not in _HIDDEN_NODE_TYPES
+            ]
+            if not nodes:
+                continue
+            svg_path = os.path.join(_ICONS_DIR, icon_file)
+            cat_qicon = _tinted_svg_icon(svg_path, "#dce7ff") if os.path.isfile(svg_path) else QIcon()
+            sub = menu.addMenu(cat_qicon, cat_label)
+            sub.setStyleSheet(_CONTEXT_MENU_STYLE)
             for node_cls in nodes:
-                action = menu.addAction(f"{node_cls.icon} {node_cls.display_name}")
+                action = sub.addAction(f"{node_cls.icon} {node_cls.display_name}")
                 action.triggered.connect(
                     lambda checked=False, nt=node_cls.node_type: self._on_add_node(nt)
                 )
-            menu.addSeparator()
+
         menu.exec(self.canvas.add_btn.mapToGlobal(self.canvas.add_btn.rect().bottomLeft()))
 
     def _on_instrument_requested(self, instr_id: str) -> None:
@@ -805,6 +871,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         self.plot_widget.clear()
         self._plot_curves = {}
         self._plot_data = {}
+        self._col_dp = {}
 
         self.canvas.set_running_state(True)
         self.logs_frame.set_progress(0)
@@ -846,22 +913,56 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         self.canvas.highlight_step(uid)
 
     def _on_data_recorded(self, row: Dict[str, Any]) -> None:
-        """数据记录回调 —— 更新表格和图表"""
         if not row:
             return
 
         self._table_empty_label.setVisible(False)
+
+        if not hasattr(self, "_col_dp"):
+            self._col_dp: Dict[str, int] = {}
 
         keys = list(row.keys())
         if self.result_table.columnCount() == 0:
             self.result_table.setColumnCount(len(keys))
             self.result_table.setHorizontalHeaderLabels(keys)
 
+        changed_cols: list = []
+        for k, v in row.items():
+            if isinstance(v, float):
+                s = f"{v:.12g}"
+                dp = 0
+                if "." in s:
+                    dp = len(s.split(".")[1].rstrip("0")) or 0
+                dp = max(2, min(dp, 10))
+                old_dp = self._col_dp.get(k, 2)
+                if dp > old_dp:
+                    self._col_dp[k] = dp
+                    if k in keys:
+                        changed_cols.append(keys.index(k))
+
+        for col_idx in changed_cols:
+            col_key = keys[col_idx]
+            new_dp = self._col_dp[col_key]
+            for prev_row in range(self.result_table.rowCount()):
+                item = self.result_table.item(prev_row, col_idx)
+                if item:
+                    try:
+                        old_val = float(item.text())
+                        item.setText(f"{old_val:.{new_dp}f}")
+                    except (ValueError, TypeError):
+                        pass
+
         row_idx = self.result_table.rowCount()
         self.result_table.insertRow(row_idx)
+
         for col, key in enumerate(keys):
             val = row.get(key, "")
-            item = QTableWidgetItem(str(val))
+            if isinstance(val, float):
+                dp = self._col_dp.get(key, 2)
+                display = f"{val:.{dp}f}"
+            else:
+                display = str(val)
+            item = QTableWidgetItem(display)
             self.result_table.setItem(row_idx, col, item)
 
         for key, val in row.items():

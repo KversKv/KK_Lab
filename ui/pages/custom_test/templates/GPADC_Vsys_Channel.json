@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "sequence": [
+    {
+      "node_type": "SetConstant",
+      "uid": "0f449593-6ba8-43d1-8ff1-1181a926268a",
+      "params": {
+        "var_name": "Vsys_Channel",
+        "value": "1",
+        "value_type": "int"
+      }
+    },
+    {
+      "node_type": "LoopRange",
+      "uid": "d7748d0b-e833-44d1-b3e2-c13d3ea98152",
+      "params": {
+        "var_name": "Vbat_voltage",
+        "start": 3.0,
+        "stop": 4.5,
+        "step": 0.05
+      },
+      "children": [
+        {
+          "node_type": "N6705CSetVoltage",
+          "uid": "58443374-bc54-4396-ab4d-aa6a0458f7ce",
+          "params": {
+            "channel": "Vsys_Channel",
+            "voltage": "Vbat_voltage",
+            "current_limit": 0.2,
+            "output_on": true
+          }
+        },
+        {
+          "node_type": "Delay",
+          "uid": "057a9a10-25ed-46c9-a60c-bc58ee3c31fb",
+          "params": {
+            "seconds": 0.1
+          }
+        },
+        {
+          "node_type": "ClearVariable",
+          "uid": "a1b2c3d4-0001-0001-0001-000000000001",
+          "params": {
+            "var_name": "samples"
+          }
+        },
+        {
+          "node_type": "LoopRange",
+          "uid": "f5f107f0-f7ee-4845-9cc1-caf82fa28ca2",
+          "params": {
+            "var_name": "i",
+            "start": 0.0,
+            "stop": 10.0,
+            "step": 1.0
+          },
+          "children": [
+            {
+              "node_type": "I2CRead",
+              "uid": "ac4d401e-f4d4-45f0-a177-f6c173286b71",
+              "params": {
+                "device_addr": "0x27",
+                "reg_addr": "0x0057",
+                "width": 10,
+                "result_var": "i2c_read_val",
+                "export_var": false,
+                "auto_record": false
+              }
+            },
+            {
+              "node_type": "AppendToList",
+              "uid": "a1b2c3d4-0002-0002-0002-000000000002",
+              "params": {
+                "var_name": "samples",
+                "value": "${i2c_read_val}"
+              }
+            }
+          ]
+        },
+        {
+          "node_type": "Aggregate",
+          "uid": "a1b2c3d4-0003-0003-0003-000000000003",
+          "params": {
+            "source_list": "samples",
+            "prefix": "gpadc",
+            "calc_avg": true,
+            "calc_min": true,
+            "calc_max": true,
+            "calc_sum": false,
+            "calc_count": false,
+            "precision": -1,
+            "export_var": true
+          }
+        },
+        {
+          "node_type": "RecordDataPoint",
+          "uid": "a1b2c3d4-0004-0004-0004-000000000004",
+          "params": {
+            "fields": "voltage=${Vbat_voltage}, gpadc_avg=${gpadc_avg}, gpadc_min=${gpadc_min}, gpadc_max=${gpadc_max}",
+            "skip_no_export": false
+          }
+        }
+      ]
+    }
+  ],
+  "instruments": {
+    "n6705c": {
+      "visa": "TCPIP0::K-N6705C-06098.local::hislip0::INSTR"
+    }
+  }
+}

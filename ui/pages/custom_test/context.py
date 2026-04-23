@@ -28,6 +28,7 @@ _SAFE_FUNCTIONS = {
     "round": round,
     "min": min,
     "max": max,
+    "sum": sum,
     "int": int,
     "float": float,
     "str": str,

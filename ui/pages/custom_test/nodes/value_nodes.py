@@ -228,3 +228,74 @@ class ClampValue(BaseNode):
         clamped = max(min_val, min(max_val, val))
         context.set_variable(result_var, clamped)
         logger.info("Clamp: %s = clamp(%s, %s, %s) = %s", result_var, raw, min_val, max_val, clamped)
+
+
+@register_node
+class Aggregate(BaseNode):
+
+    node_type = "Aggregate"
+    display_name = "Aggregate (Stat)"
+    category = "value"
+    icon = "Σ"
+    color = "#0ea5e9"
+
+    PARAM_SCHEMA = [
+        {"key": "source_list", "label": "源列表变量名", "type": "str", "default": "samples"},
+        {"key": "prefix", "label": "输出变量前缀", "type": "str", "default": "stat"},
+        {"key": "calc_avg", "label": "计算平均值 (prefix_avg)", "type": "bool", "default": True},
+        {"key": "calc_min", "label": "计算最小值 (prefix_min)", "type": "bool", "default": True},
+        {"key": "calc_max", "label": "计算最大值 (prefix_max)", "type": "bool", "default": True},
+        {"key": "calc_sum", "label": "计算总和 (prefix_sum)", "type": "bool", "default": False},
+        {"key": "calc_count", "label": "计算数量 (prefix_count)", "type": "bool", "default": False},
+        {"key": "precision", "label": "小数位数 (-1=不限)", "type": "int", "default": -1},
+        {"key": "export_var", "label": "导出变量", "type": "bool", "default": True},
+    ]
+
+    def execute(self, context: Any) -> None:
+        source = str(self.params["source_list"])
+        prefix = str(self.params["prefix"])
+        precision = int(self.params.get("precision", -1))
+        export = bool(self.params.get("export_var", True))
+
+        data = context.get_variable(source, None)
+        if data is None or not isinstance(data, (list, tuple)) or len(data) == 0:
+            logger.warning("Aggregate: '%s' is empty or not a list", source)
+            return
+
+        nums = []
+        for v in data:
+            try:
+                nums.append(float(v))
+            except (ValueError, TypeError):
+                pass
+        if not nums:
+            logger.warning("Aggregate: no numeric values in '%s'", source)
+            return
+
+        def _round(val: float) -> Any:
+            if precision < 0:
+                return val
+            return round(val, precision)
+
+        if self.params.get("calc_avg", True):
+            avg = _round(sum(nums) / len(nums))
+            context.set_variable(f"{prefix}_avg", avg, export=export)
+        if self.params.get("calc_min", True):
+            mn = _round(min(nums))
+            context.set_variable(f"{prefix}_min", mn, export=export)
+        if self.params.get("calc_max", True):
+            mx = _round(max(nums))
+            context.set_variable(f"{prefix}_max", mx, export=export)
+        if self.params.get("calc_sum", False):
+            s = _round(sum(nums))
+            context.set_variable(f"{prefix}_sum", s, export=export)
+        if self.params.get("calc_count", False):
+            context.set_variable(f"{prefix}_count", len(nums), export=export)
+
+        logger.info(
+            "Aggregate: %s (n=%d) => avg=%s min=%s max=%s",
+            source, len(nums),
+            context.get_variable(f"{prefix}_avg", "N/A"),
+            context.get_variable(f"{prefix}_min", "N/A"),
+            context.get_variable(f"{prefix}_max", "N/A"),
+        )
