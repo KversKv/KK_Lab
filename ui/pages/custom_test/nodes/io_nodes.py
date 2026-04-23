@@ -24,17 +24,19 @@ class RecordDataPoint(BaseNode):
     color = "#2ecc71"
 
     PARAM_SCHEMA = [
-        {"key": "fields", "label": "字段映射 (JSON 或 key=value 逗号分隔)", "type": "str",
-         "default": "temp=${temp}, voltage=${voltage}, current=${N6705C_CH1_current}"},
+        {"key": "fields", "label": "字段映射 (auto=按导出顺序, 或 key=val)", "type": "str",
+         "default": "auto"},
         {"key": "skip_no_export", "label": "跳过未导出的变量", "type": "bool", "default": True},
     ]
 
     def execute(self, context: Any) -> None:
-        raw = str(self.params["fields"])
+        raw = str(self.params["fields"]).strip()
         skip_no_export = bool(context.resolve_value(self.params.get("skip_no_export", True)))
         row: Dict[str, Any] = {}
 
-        if raw.strip().startswith("{"):
+        if raw.lower() == "auto" or raw == "":
+            row = context.get_export_vars_ordered()
+        elif raw.startswith("{"):
             import json
             try:
                 template = json.loads(raw)

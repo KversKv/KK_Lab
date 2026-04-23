@@ -826,12 +826,12 @@ class I2CTraverse(BaseNode):
             try:
                 val = i2c.read(dev, reg, width)
                 results[reg] = val
-                context.set_variable(iter_var, reg)
-                context.set_variable(f"{iter_var}_hex", f"0x{reg:X}")
-                context.set_variable(val_var, val)
-                context.set_variable(f"{val_var}_hex", f"0x{val:X}")
-                context.set_variable(f"{iter_var}_index", idx)
-                context.set_variable(f"{iter_var}_total", total)
+                context.set_variable(iter_var, reg, export=False)
+                context.set_variable(f"{iter_var}_hex", f"0x{reg:X}", export=False)
+                context.set_variable(val_var, val, export=False)
+                context.set_variable(f"{val_var}_hex", f"0x{val:X}", export=False)
+                context.set_variable(f"{iter_var}_index", idx, export=False)
+                context.set_variable(f"{iter_var}_total", total, export=False)
                 if auto_record:
                     context.record_data({
                         "device_addr": f"0x{dev:02X}",

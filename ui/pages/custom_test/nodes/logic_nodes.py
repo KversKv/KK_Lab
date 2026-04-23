@@ -29,6 +29,7 @@ class LoopRange(BaseNode):
         {"key": "start", "label": "起始值", "type": "float", "default": 0.0},
         {"key": "stop", "label": "终止值", "type": "float", "default": 10.0},
         {"key": "step", "label": "步进", "type": "float", "default": 1.0},
+        {"key": "export_var", "label": "导出循环变量", "type": "bool", "default": True},
     ]
 
     @property
@@ -40,6 +41,7 @@ class LoopRange(BaseNode):
         start = float(context.resolve_value(self.params["start"]))
         stop = float(context.resolve_value(self.params["stop"]))
         step_val = float(context.resolve_value(self.params["step"]))
+        export = bool(self.params.get("export_var", True))
 
         if step_val == 0:
             raise ValueError("步进值不能为 0")
@@ -59,15 +61,15 @@ class LoopRange(BaseNode):
         for idx, val in enumerate(values):
             if context.should_stop:
                 return
-            context.set_variable(var_name, val)
-            context.set_variable(f"{var_name}_index", idx)
-            context.set_variable(f"{var_name}_total", total)
+            context.set_variable(var_name, val, export=export)
+            context.set_variable(f"{var_name}_index", idx, export=False)
+            context.set_variable(f"{var_name}_total", total, export=False)
             logger.info("Loop %s = %s (%d/%d)", var_name, val, idx + 1, total)
             try:
                 from ui.pages.custom_test.executor import _execute_children
                 _execute_children(self.children, context)
             except BreakLoop:
-                logger.info("Loop %s: break at iteration %d", var_name, idx)
+                logger.info("Loop %s: break at index %d", var_name, idx)
                 return
 
 
@@ -85,6 +87,7 @@ class LoopList(BaseNode):
         {"key": "var_name", "label": "循环变量名", "type": "str", "default": "item"},
         {"key": "values", "label": "值列表 (逗号分隔或表达式)", "type": "str",
          "default": "-20, -10, 0, 10, 25, 40, 60, 85"},
+        {"key": "export_var", "label": "导出循环变量", "type": "bool", "default": True},
     ]
 
     @property
@@ -94,6 +97,7 @@ class LoopList(BaseNode):
     def execute(self, context: Any) -> None:
         var_name = str(self.params["var_name"])
         raw_values = context.resolve_value(self.params["values"])
+        export = bool(self.params.get("export_var", True))
 
         if isinstance(raw_values, (list, tuple)):
             values = list(raw_values)
@@ -113,9 +117,9 @@ class LoopList(BaseNode):
         for idx, val in enumerate(values):
             if context.should_stop:
                 return
-            context.set_variable(var_name, val)
-            context.set_variable(f"{var_name}_index", idx)
-            context.set_variable(f"{var_name}_total", total)
+            context.set_variable(var_name, val, export=export)
+            context.set_variable(f"{var_name}_index", idx, export=False)
+            context.set_variable(f"{var_name}_total", total, export=False)
             logger.info("Loop %s = %s (%d/%d)", var_name, val, idx + 1, total)
             try:
                 from ui.pages.custom_test.executor import _execute_children
@@ -603,8 +607,8 @@ class LoopCount(BaseNode):
             if context.should_stop:
                 return
             context.set_variable(var_name, idx)
-            context.set_variable(f"{var_name}_index", idx)
-            context.set_variable(f"{var_name}_total", count)
+            context.set_variable(f"{var_name}_index", idx, export=False)
+            context.set_variable(f"{var_name}_total", count, export=False)
             logger.info("LoopCount %s = %d (%d/%d)", var_name, idx, idx + 1, count)
             try:
                 from ui.pages.custom_test.executor import _execute_children
@@ -643,7 +647,7 @@ class LoopDuration(BaseNode):
             if elapsed >= duration or context.should_stop:
                 break
             context.set_variable(var_name, round(elapsed, 3))
-            context.set_variable(f"{var_name}_iteration", iteration)
+            context.set_variable(f"{var_name}_iteration", iteration, export=False)
             logger.info("LoopDuration %s = %.1fs (iter=%d)", var_name, elapsed, iteration)
             try:
                 from ui.pages.custom_test.executor import _execute_children

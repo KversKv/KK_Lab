@@ -148,6 +148,7 @@ class ExecutionContext:
         self._step_mode: bool = False
         self._step_event_cleared: bool = True
         self._no_export_vars: Set[str] = set()
+        self._export_var_order: List[str] = []
         self._user_response: Optional[str] = None
         self._user_response_ready = False
         self._test_passed: Optional[bool] = None
@@ -157,15 +158,21 @@ class ExecutionContext:
         self.on_step_finished: Optional[Any] = None
 
     def set_variable(self, name: str, value: Any, export: bool = True) -> None:
-        """设置变量"""
         self.variables[name] = value
         if not export:
             self._no_export_vars.add(name)
+            if name in self._export_var_order:
+                self._export_var_order.remove(name)
         else:
             self._no_export_vars.discard(name)
+            if name not in self._export_var_order:
+                self._export_var_order.append(name)
 
     def is_export_var(self, name: str) -> bool:
         return name not in self._no_export_vars
+
+    def get_export_vars_ordered(self) -> Dict[str, Any]:
+        return {k: self.variables[k] for k in self._export_var_order if k in self.variables}
 
     def get_variable(self, name: str, default: Any = None) -> Any:
         """获取变量"""
@@ -267,6 +274,7 @@ class ExecutionContext:
         self._pause_requested = False
         self._step_mode = False
         self._no_export_vars.clear()
+        self._export_var_order.clear()
         self._user_response = None
         self._user_response_ready = False
         self._test_passed = None

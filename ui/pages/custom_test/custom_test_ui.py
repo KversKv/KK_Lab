@@ -208,9 +208,17 @@ _PAGE_STYLE = """
         background-color: #0b1428;
         color: #5f78a8;
         border: none;
+        border-right: 1px solid #1a2d57;
         padding: 4px 6px;
         font-size: 11px;
         font-weight: 700;
+    }
+    QHeaderView::section:hover {
+        background-color: #112040;
+        color: #8eb0e3;
+    }
+    QHeaderView::section:pressed {
+        background-color: #1a2d57;
     }
 """ + SCROLLBAR_STYLE
 
@@ -545,6 +553,15 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         self.result_table.setColumnCount(0)
         self.result_table.setRowCount(0)
         self.result_table.horizontalHeader().setStretchLastSection(True)
+        self.result_table.horizontalHeader().setSectionsMovable(True)
+        self.result_table.horizontalHeader().setDragEnabled(True)
+        self.result_table.horizontalHeader().setDragDropMode(
+            QTableWidget.InternalMove
+        )
+        self.result_table.horizontalHeader().setContextMenuPolicy(Qt.CustomContextMenu)
+        self.result_table.horizontalHeader().customContextMenuRequested.connect(
+            self._on_header_context_menu
+        )
         self.result_table.setEditTriggers(QTableWidget.NoEditTriggers)
         stack_layout.addWidget(self.result_table)
 
@@ -983,6 +1000,134 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
             curve = self._plot_curves[key]
             x_data = list(range(len(self._plot_data[key])))
             curve.setData(x_data, self._plot_data[key])
+
+    def _on_header_context_menu(self, pos) -> None:
+        from PySide6.QtWidgets import QMenu, QInputDialog
+
+        header = self.result_table.horizontalHeader()
+        logical_idx = header.logicalIndexAt(pos)
+        if logical_idx < 0 or logical_idx >= self.result_table.columnCount():
+            return
+
+        col_name = self.result_table.horizontalHeaderItem(logical_idx)
+        col_label = col_name.text() if col_name else f"Column {logical_idx}"
+
+        menu = QMenu(self)
+        menu.setStyleSheet(_CONTEXT_MENU_STYLE)
+
+        title_action = menu.addAction(f"📊  {col_label}")
+        title_action.setEnabled(False)
+        menu.addSeparator()
+
+        rename_action = menu.addAction("✏  重命名列")
+        menu.addSeparator()
+
+        fmt_menu = menu.addMenu("🔢  数值格式")
+        fmt_menu.setStyleSheet(_CONTEXT_MENU_STYLE)
+        fmt_auto = fmt_menu.addAction("自动")
+        fmt_0 = fmt_menu.addAction("整数 (0)")
+        fmt_2 = fmt_menu.addAction("2 位小数 (.00)")
+        fmt_4 = fmt_menu.addAction("4 位小数 (.0000)")
+        fmt_6 = fmt_menu.addAction("6 位小数 (.000000)")
+        fmt_sci = fmt_menu.addAction("科学计数法 (1.23e+4)")
+        fmt_hex = fmt_menu.addAction("十六进制 (0x1F3A)")
+
+        menu.addSeparator()
+
+        sort_asc_action = menu.addAction("⬆  升序排列")
+        sort_desc_action = menu.addAction("⬇  降序排列")
+
+        menu.addSeparator()
+
+        hide_action = menu.addAction("🗑  删除列")
+
+        action = menu.exec(header.mapToGlobal(pos))
+        if action is None:
+            return
+
+        if action == rename_action:
+            new_name, ok = QInputDialog.getText(
+                self, "重命名列", f"列 \"{col_label}\" 的新名称:", text=col_label
+            )
+            if ok and new_name.strip():
+                item = self.result_table.horizontalHeaderItem(logical_idx)
+                if item:
+                    old_name = item.text()
+                    item.setText(new_name.strip())
+                    if old_name in self._col_dp:
+                        self._col_dp[new_name.strip()] = self._col_dp.pop(old_name)
+
+        elif action == hide_action:
+            self.result_table.removeColumn(logical_idx)
+
+        elif action == sort_asc_action:
+            self._sort_column_numeric(logical_idx, ascending=True)
+
+        elif action == sort_desc_action:
+            self._sort_column_numeric(logical_idx, ascending=False)
+
+        elif action in (fmt_auto, fmt_0, fmt_2, fmt_4, fmt_6, fmt_sci, fmt_hex):
+            self._apply_column_format(logical_idx, action, {
+                fmt_auto: "auto", fmt_0: "0", fmt_2: "2", fmt_4: "4",
+                fmt_6: "6", fmt_sci: "sci", fmt_hex: "hex",
+            })
+
+    def _apply_column_format(self, col: int, action, fmt_map: dict) -> None:
+        fmt = fmt_map.get(action, "auto")
+        for row_idx in range(self.result_table.rowCount()):
+            item = self.result_table.item(row_idx, col)
+            if item is None:
+                continue
+            text = item.text()
+            try:
+                if fmt == "hex":
+                    val = float(text)
+                    item.setText(f"0x{int(val):X}")
+                elif fmt == "sci":
+                    val = float(text)
+                    item.setText(f"{val:.6e}")
+                elif fmt == "auto":
+                    val = float(text)
+                    col_name = self.result_table.horizontalHeaderItem(col)
+                    key = col_name.text() if col_name else ""
+                    dp = self._col_dp.get(key, 2)
+                    item.setText(f"{val:.{dp}f}")
+                else:
+                    dp = int(fmt)
+                    val = float(text)
+                    item.setText(f"{val:.{dp}f}")
+            except (ValueError, TypeError):
+                pass
+
+        col_name = self.result_table.horizontalHeaderItem(col)
+        if col_name and fmt not in ("auto", "hex", "sci"):
+            self._col_dp[col_name.text()] = int(fmt)
+
+    def _sort_column_numeric(self, col: int, ascending: bool = True) -> None:
+        table = self.result_table
+        row_count = table.rowCount()
+        col_count = table.columnCount()
+        rows_data = []
+        for r in range(row_count):
+            row_items = []
+            for c in range(col_count):
+                item = table.item(r, c)
+                row_items.append(item.text() if item else "")
+            sort_text = row_items[col] if col < len(row_items) else ""
+            try:
+                sort_key = float(sort_text)
+            except (ValueError, TypeError):
+                sort_key = sort_text
+            rows_data.append((sort_key, row_items))
+
+        rows_data.sort(key=lambda x: (isinstance(x[0], str), x[0]), reverse=not ascending)
+
+        table.setRowCount(0)
+        for _, items in rows_data:
+            row_idx = table.rowCount()
+            table.insertRow(row_idx)
+            for c, text in enumerate(items):
+                table.setItem(row_idx, c, QTableWidgetItem(text))
 
     def _on_execution_finished(self, success: bool, message: str) -> None:
         """执行完成回调"""
