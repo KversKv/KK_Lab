@@ -5563,6 +5563,7 @@ class N6705CDatalogUI(QWidget):
 
     def _on_range_changed(self):
         self._update_ch_label_positions()
+        self._update_custom_label_positions()
         self._update_scale_offset_from_view()
         if self.box_zoom_enabled and self._box_zoom_auto_off_timer.isActive():
             self._box_zoom_auto_off_timer.start()
@@ -5649,14 +5650,42 @@ class N6705CDatalogUI(QWidget):
         color = _color_for_label(ch_name)
         return (color, color)
 
+    def _find_local_peak_y(self, t):
+        vb = self.plot_widget.getPlotItem().getViewBox()
+        x_min, x_max = vb.viewRange()[0]
+        view_span = x_max - x_min
+        half_window = view_span * 0.03
+
+        peak_y = None
+        for label, ch_data in self.datalog_data.items():
+            band = self._band_info.get(label)
+            if not band:
+                continue
+            times = ch_data["time"]
+            vals = ch_data["values"]
+            if not times:
+                continue
+            lookup_t = self._effective_x_for_lookup(label, t)
+            lo = self._find_nearest_index(times, lookup_t - half_window)
+            hi = self._find_nearest_index(times, lookup_t + half_window)
+            if lo is None or hi is None:
+                continue
+            if lo > hi:
+                lo, hi = hi, lo
+            segment = vals[lo:hi + 1]
+            if not segment:
+                continue
+            local_max_raw = max(segment)
+            local_max_plot = band["plot_bottom"] + (local_max_raw - band["raw_min"]) / band["raw_range"] * band["plot_range"]
+            if peak_y is None or local_max_plot > peak_y:
+                peak_y = local_max_plot
+        return peak_y
+
     def _draw_label_item(self, t, text, ch_name):
         color, _ = self._get_channel_color(ch_name)
-        y_val = self._get_value_at_time(ch_name, t)
-        if y_val is None:
-            y_val = 0.5
 
-        band = None
         raw_val = None
+        band = None
         for label in self.datalog_data:
             if label.strip() == ch_name:
                 band = self._band_info.get(label)
@@ -5667,12 +5696,6 @@ class N6705CDatalogUI(QWidget):
                 if idx is not None:
                     raw_val = ch_data["values"][idx]
                 break
-
-        if band:
-            offset = band["plot_range"] * 0.08
-            label_y = y_val + offset
-        else:
-            label_y = y_val + 0.05
 
         ch_unit = _unit_for_label(ch_name)
         val_str = _auto_format(raw_val, ch_unit) if raw_val is not None else "—"
@@ -5685,10 +5708,41 @@ class N6705CDatalogUI(QWidget):
             anchor=(0.5, 1),
         )
         label_item.setZValue(55)
+        label_item.setProperty("label_time", t)
+        label_item.setProperty("label_ch", ch_name)
+
+        label_y = self._compute_custom_label_y(t, ch_name)
         label_item.setPos(t, label_y)
         self.plot_widget.addItem(label_item)
 
         self.custom_label_lines.append({"text_item": label_item})
+
+    def _compute_custom_label_y(self, t, ch_name):
+        vb = self.plot_widget.getPlotItem().getViewBox()
+        y_min, y_max = vb.viewRange()[1]
+        view_y_span = y_max - y_min
+
+        peak_y = self._find_local_peak_y(t)
+        if peak_y is not None:
+            label_y = peak_y + view_y_span * 0.03
+        else:
+            y_val = self._get_value_at_time(ch_name, t)
+            if y_val is None:
+                y_val = 0.5
+            label_y = y_val + view_y_span * 0.05
+        return label_y
+
+    def _update_custom_label_positions(self):
+        for entry in self.custom_label_lines:
+            item = entry.get("text_item") if isinstance(entry, dict) else None
+            if item is None:
+                continue
+            t = item.property("label_time")
+            ch_name = item.property("label_ch")
+            if t is None or ch_name is None:
+                continue
+            label_y = self._compute_custom_label_y(t, ch_name)
+            item.setPos(t, label_y)
 
     def _restore_label_lines(self):
         for item in self.custom_label_lines:
