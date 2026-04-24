@@ -311,6 +311,7 @@ class ExecutionLogsFrame(QFrame):
             )
             self._scroll_lock_btn.setCheckable(True)
             self._scroll_lock_btn.setChecked(True)
+            self._scroll_lock_btn.setVisible(False)
             self._scroll_lock_btn.clicked.connect(self._on_scroll_lock_toggled)
             status_layout.addWidget(self._scroll_lock_btn)
 

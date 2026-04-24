@@ -4088,6 +4088,7 @@ class N6705CDatalogUI(QWidget):
         self._rebuild_ch_name_panel(panel_entries)
         y_bottom, y_top = self._compute_y_range_with_labels()
         self.plot_widget.setYRange(y_bottom, y_top)
+        self._update_marker_analysis()
 
     def _sync_checkboxes_to_data(self):
         import re
@@ -4861,8 +4862,29 @@ class N6705CDatalogUI(QWidget):
         vb = self.plot_widget.getPlotItem().getViewBox()
         x_min, x_max = vb.viewRange()[0]
         x_range = x_max - x_min
-        x1 = x_min + x_range * 0.35
-        x2 = x_min + x_range * 0.65
+
+        last_marker_x = None
+        if self.marker_b_pos is not None:
+            last_marker_x = max(self.marker_a_pos or 0, self.marker_b_pos)
+        elif self.marker_a_pos is not None:
+            last_marker_x = self.marker_a_pos
+        for em in self._extra_markers:
+            if em["pos1"] is not None:
+                last_marker_x = max(last_marker_x or em["pos1"], em["pos1"])
+            if em["pos2"] is not None:
+                last_marker_x = max(last_marker_x or em["pos2"], em["pos2"])
+
+        if last_marker_x is not None:
+            gap = x_range * 0.05
+            span = x_range * 0.15
+            x1 = last_marker_x + gap
+            x2 = x1 + span
+            if x2 > x_max:
+                x1 = x_min + x_range * 0.35
+                x2 = x_min + x_range * 0.65
+        else:
+            x1 = x_min + x_range * 0.35
+            x2 = x_min + x_range * 0.65
 
         if label1 == "A" and label2 == "B":
             self._place_marker_a(x1)
