@@ -161,9 +161,9 @@ _LOG_FRAME_STYLE = """
         border-radius: 6px;
         color: #c8d8f0;
         font-size: 10px;
-        padding: 2px 6px 2px 22px;
-        min-height: 22px;
-        max-height: 22px;
+        padding: 2px 6px 2px 6px;
+        min-height: 20px;
+        max-height: 20px;
     }
     QFrame#logContainer QLineEdit#searchInput:focus {
         border: 1px solid #3b6bcf;
@@ -362,32 +362,19 @@ class ExecutionLogsFrame(QFrame):
 
         toolbar.addSpacing(4)
 
-        search_wrapper = QWidget()
-        search_wrapper.setStyleSheet("background: transparent;")
-        search_wrapper.setFixedHeight(26)
-        search_wrapper.setMinimumWidth(120)
-        search_wrapper.setMaximumWidth(200)
-        search_layout = QHBoxLayout(search_wrapper)
-        search_layout.setContentsMargins(0, 0, 0, 0)
-        search_layout.setSpacing(0)
-
-        self._search_input = QLineEdit(search_wrapper)
+        self._search_input = QLineEdit()
         self._search_input.setObjectName("searchInput")
         self._search_input.setPlaceholderText("Search logs...")
+        self._search_input.setMinimumWidth(120)
+        self._search_input.setMaximumWidth(200)
         self._search_input.textChanged.connect(self._on_keyword_changed)
-        search_layout.addWidget(self._search_input)
 
-        search_icon_label = QLabel(search_wrapper)
         search_svg = os.path.join(_SVG_DIR, "filter.svg")
         search_icon = _tinted_svg_icon(search_svg, "#5a7099", 12)
         if not search_icon.isNull():
-            search_icon_label.setPixmap(search_icon.pixmap(12, 12))
-        search_icon_label.setFixedSize(14, 14)
-        search_icon_label.setStyleSheet("background: transparent;")
-        search_icon_label.move(6, 6)
-        search_icon_label.raise_()
+            self._search_input.addAction(search_icon, QLineEdit.LeadingPosition)
 
-        toolbar.addWidget(search_wrapper)
+        toolbar.addWidget(self._search_input)
 
         toolbar.addStretch()
 
