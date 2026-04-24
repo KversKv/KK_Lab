@@ -364,7 +364,7 @@ class ExecutionLogsFrame(QFrame):
 
         search_wrapper = QWidget()
         search_wrapper.setStyleSheet("background: transparent;")
-        search_wrapper.setFixedHeight(24)
+        search_wrapper.setFixedHeight(26)
         search_wrapper.setMinimumWidth(120)
         search_wrapper.setMaximumWidth(200)
         search_layout = QHBoxLayout(search_wrapper)
@@ -384,7 +384,7 @@ class ExecutionLogsFrame(QFrame):
             search_icon_label.setPixmap(search_icon.pixmap(12, 12))
         search_icon_label.setFixedSize(14, 14)
         search_icon_label.setStyleSheet("background: transparent;")
-        search_icon_label.move(6, 5)
+        search_icon_label.move(6, 6)
         search_icon_label.raise_()
 
         toolbar.addWidget(search_wrapper)
