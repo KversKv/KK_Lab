@@ -1647,14 +1647,14 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         time_label.setStyleSheet(label_style)
         time_label.setFixedWidth(label_width)
         self.test_time_input = QLineEdit("10")
-        self.test_time_input.setFixedHeight(26)
+        self.test_time_input.setFixedHeight(24)
         self.test_time_input.setAlignment(Qt.AlignCenter)
         self.test_time_input.setStyleSheet("""
             QLineEdit {
                 background-color: #020816;
                 border: 1px solid #1c2f54;
                 border-radius: 6px;
-                padding: 4px 8px;
+                padding: 2px 8px;
                 color: #d7e3ff;
                 font-size: 11px;
             }
@@ -1663,7 +1663,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             }
         """)
         grid.addWidget(time_label, 0, 0, Qt.AlignVCenter)
-        grid.addWidget(self.test_time_input, 0, 1)
+        grid.addWidget(self.test_time_input, 0, 1, Qt.AlignVCenter)
 
         method_label = QLabel("Control")
         method_label.setStyleSheet(label_style)
@@ -1677,17 +1677,14 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         grid.addWidget(method_label, 1, 0, Qt.AlignVCenter)
         grid.addLayout(method_ctrl_row, 1, 1)
 
-        config_layout.addLayout(grid)
-
         label_style_sm = "font-size: 10px; color: #7e96bf;"
 
-        poweron_row = QHBoxLayout()
-        poweron_row.setSpacing(4)
         poweron_label = QLabel("PwrON")
         poweron_label.setStyleSheet(label_style_sm)
         poweron_label.setFixedWidth(label_width)
         self.poweron_channel_combo = DarkComboBox()
         self.poweron_channel_combo.setFixedHeight(24)
+        self.poweron_channel_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         font = self.poweron_channel_combo.font()
         font.setPixelSize(11)
         self.poweron_channel_combo.setFont(font)
@@ -1698,17 +1695,18 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
                 self.poweron_channel_combo.setCurrentIndex(i)
                 break
         self.poweron_polarity_toggle = PolarityToggle()
-        poweron_row.addWidget(poweron_label)
+        poweron_row = QHBoxLayout()
+        poweron_row.setContentsMargins(0, 0, 0, 0)
+        poweron_row.setSpacing(4)
         poweron_row.addWidget(self.poweron_channel_combo, 1)
-        poweron_row.addWidget(self.poweron_polarity_toggle)
+        poweron_row.addWidget(self.poweron_polarity_toggle, 0, Qt.AlignVCenter)
 
-        reset_row = QHBoxLayout()
-        reset_row.setSpacing(4)
         reset_label = QLabel("Reset")
         reset_label.setStyleSheet(label_style_sm)
         reset_label.setFixedWidth(label_width)
         self.reset_channel_combo = DarkComboBox()
         self.reset_channel_combo.setFixedHeight(24)
+        self.reset_channel_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         font = self.reset_channel_combo.font()
         font.setPixelSize(11)
         self.reset_channel_combo.setFont(font)
@@ -1719,26 +1717,40 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
                 self.reset_channel_combo.setCurrentIndex(i)
                 break
         self.reset_polarity_toggle = PolarityToggle()
-        reset_row.addWidget(reset_label)
+        reset_row = QHBoxLayout()
+        reset_row.setContentsMargins(0, 0, 0, 0)
+        reset_row.setSpacing(4)
         reset_row.addWidget(self.reset_channel_combo, 1)
-        reset_row.addWidget(self.reset_polarity_toggle)
+        reset_row.addWidget(self.reset_polarity_toggle, 0, Qt.AlignVCenter)
 
-        self._n6705c_channel_widget = QWidget()
-        self._n6705c_channel_widget.setStyleSheet("background: transparent; border: none;")
-        ch_layout = QVBoxLayout(self._n6705c_channel_widget)
-        ch_layout.setContentsMargins(0, 0, 0, 0)
-        ch_layout.setSpacing(4)
-        ch_layout.addLayout(poweron_row)
-        ch_layout.addLayout(reset_row)
-        config_layout.addWidget(self._n6705c_channel_widget)
+        self._n6705c_poweron_label = poweron_label
+        self._n6705c_reset_label = reset_label
+        grid.addWidget(poweron_label, 2, 0, Qt.AlignVCenter)
+        grid.addLayout(poweron_row, 2, 1)
+        grid.addWidget(reset_label, 3, 0, Qt.AlignVCenter)
+        grid.addLayout(reset_row, 3, 1)
+
+        config_layout.addLayout(grid)
+
+        self._n6705c_channel_row_widgets = [
+            self._n6705c_poweron_label,
+            self.poweron_channel_combo,
+            self.poweron_polarity_toggle,
+            self._n6705c_reset_label,
+            self.reset_channel_combo,
+            self.reset_polarity_toggle,
+        ]
 
         self.control_method_toggle.toggled.connect(self._on_control_method_changed)
-        self._n6705c_channel_widget.setVisible(True)
+        self._on_control_method_changed(self.control_method_toggle.value())
 
         return config_frame
 
     def _on_control_method_changed(self, method):
-        self._n6705c_channel_widget.setVisible(method == "N6705C")
+        visible = method == "N6705C"
+        if hasattr(self, "_n6705c_channel_row_widgets"):
+            for w in self._n6705c_channel_row_widgets:
+                w.setVisible(visible)
 
     def _create_channel_config_section(self):
         config_frame = QFrame()
