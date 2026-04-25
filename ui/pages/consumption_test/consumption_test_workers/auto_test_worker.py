@@ -149,6 +149,61 @@ class AutoTestWorker(QObject):
                     self._log(f"[WARNING] Failed to set {device_label}-CH{ch} to VMeter: {e}")
         _time.sleep(0.3)
 
+    def _prepare_channels_high_impedance(self):
+        """Auto Test 入口预处理:对所有参与测试的通道执行:
+            channel_off -> set_mode(PS2Q) -> set_output_off_mode(HIGHZ)
+        这样后续任何 channel_off 操作都不会把输出用 LOWZ 模式拉到 0V,
+        从而避免 DUT 对应电源轨被短路到地导致的异常状态。
+        覆盖范围:force_map 中所有 enabled 子通道 + Vbat + POWERON + RESET。
+        """
+        # 以 (id(inst), ch) 去重,保留 (label, inst, ch) 便于日志
+        seen = set()
+        targets = []
+
+        def _add(label, inst, ch):
+            if inst is None or ch is None:
+                return
+            key = (id(inst), int(ch))
+            if key in seen:
+                return
+            seen.add(key)
+            targets.append((label, inst, int(ch)))
+
+        if self.force_map:
+            for device_label, (n6705c_inst, hw_channels) in self.force_map.items():
+                for ch in hw_channels:
+                    _add(device_label, n6705c_inst, ch)
+        _add(self.vbat_device_label, self.vbat_inst, self.vbat_hw_ch)
+        _add(self.poweron_device_label, self.poweron_inst, self.poweron_hw_ch)
+        _add(self.reset_device_label, self.reset_inst, self.reset_hw_ch)
+
+        if not targets:
+            return
+
+        self._log(
+            "[AUTO_TEST] Pre-config: channels -> OFF + PS2Q + Output-Off-Mode=HIGHZ "
+            f"({len(targets)} channels)"
+        )
+        for label, inst, ch in targets:
+            try:
+                inst.channel_off(ch)
+            except Exception as e:
+                self._log(f"[WARNING] pre-config channel_off {label}-CH{ch} failed: {e}")
+            try:
+                inst.set_mode(ch, "PS2Q")
+            except Exception as e:
+                self._log(f"[WARNING] pre-config set_mode {label}-CH{ch} failed: {e}")
+            try:
+                inst.set_output_off_mode(ch, "HIGHZ")
+            except AttributeError:
+                self._log(
+                    f"[WARNING] {label}-CH{ch}: set_output_off_mode not available on this driver"
+                )
+            except Exception as e:
+                self._log(
+                    f"[WARNING] pre-config set_output_off_mode(HIGHZ) {label}-CH{ch} failed: {e}"
+                )
+
     def _log(self, msg):
         self.log_message.emit(msg)
 
@@ -158,6 +213,11 @@ class AutoTestWorker(QObject):
         if total_bins == 0:
             self.error.emit("No firmware files provided.")
             return
+
+        # 进入测试前,把所有参与测试的通道先置为 OFF + PS2Q + HIGHZ,
+        # 避免 N6705C 默认的 Low Impedance Off 模式在通道关闭瞬间把 DUT
+        # 电源轨短路到地,造成 DUT 进入异常状态。
+        self._prepare_channels_high_impedance()
 
         all_bin_results = []
 

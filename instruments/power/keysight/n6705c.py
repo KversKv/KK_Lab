@@ -85,6 +85,31 @@ class N6705C:
         logger.debug("N6705C channel_off: CH%s", channel)
         self.instr.write(f"OUTP OFF, (@{channel})")
 
+    def set_output_off_mode(self, channel, mode="HIGHZ"):
+        """设置输出关闭模式 (Output Turn-Off Mode).
+
+        N6705C 默认为 LOWZ (Low Impedance),输出 OFF 时会用内部下拉电阻把输出
+        拉到 0 V,这在给 DUT 供电时相当于把 DUT 电源短路到地,可能导致 DUT
+        进入异常状态。设置为 HIGHZ 后,OFF 时内部下拉断开,输出呈高阻。
+
+        参数:
+            channel (int): 通道号
+            mode (str): "HIGHZ" 或 "LOWZ" (大小写不敏感)
+        """
+        mode_str = str(mode).strip().upper()
+        if mode_str not in ("HIGHZ", "LOWZ"):
+            raise ValueError(
+                f"Invalid output off mode '{mode}', expected 'HIGHZ' or 'LOWZ'"
+            )
+        logger.debug("N6705C set_output_off_mode: CH%s = %s", channel, mode_str)
+        self.instr.write(f"OUTP:TMOD {mode_str},(@{channel})")
+
+    def get_output_off_mode(self, channel):
+        """读取当前 Output Turn-Off Mode。返回 'HIGHZ' 或 'LOWZ'。"""
+        result = self.instr.query(f"OUTP:TMOD? (@{channel})").strip().upper()
+        logger.debug("N6705C get_output_off_mode: CH%s = %s", channel, result)
+        return result
+
     def get_channel_state(self, channel):
         result = self.instr.query(f"OUTP? (@{channel})").strip()
         return result == "1" or result.upper() == "ON"

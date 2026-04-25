@@ -42,6 +42,21 @@ class MockN6705C:
     def channel_off(self, channel):
         self._channel_states[channel] = False
 
+    def set_output_off_mode(self, channel, mode="HIGHZ"):
+        mode_str = str(mode).strip().upper()
+        if mode_str not in ("HIGHZ", "LOWZ"):
+            raise ValueError(
+                f"Invalid output off mode '{mode}', expected 'HIGHZ' or 'LOWZ'"
+            )
+        if not hasattr(self, "_channel_off_modes"):
+            self._channel_off_modes = {}
+        self._channel_off_modes[channel] = mode_str
+
+    def get_output_off_mode(self, channel):
+        if not hasattr(self, "_channel_off_modes"):
+            self._channel_off_modes = {}
+        return self._channel_off_modes.get(channel, "LOWZ")
+
     def get_channel_state(self, channel):
         return self._channel_states.get(channel, False)
 
