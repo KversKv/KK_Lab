@@ -6,6 +6,27 @@ logger = get_logger(__name__)
 
 
 class N6705C:
+    DLOG_PERIOD_MIN = 123e-6
+    DLOG_PERIOD_MAX = 60.0
+
+    @staticmethod
+    def _clamp_dlog_period(sample_period, num_channels=1, context=""):
+        required = max(float(sample_period), 20e-6 * max(int(num_channels), 1))
+        if required < N6705C.DLOG_PERIOD_MIN:
+            logger.warning(
+                "DLOG:PER %.6fs below instrument min %.6fs (num_ch=%d%s), clamp to min",
+                required, N6705C.DLOG_PERIOD_MIN, num_channels,
+                f", {context}" if context else "",
+            )
+            return N6705C.DLOG_PERIOD_MIN
+        if required > N6705C.DLOG_PERIOD_MAX:
+            logger.warning(
+                "DLOG:PER %.6fs above instrument max %.6fs, clamp to max",
+                required, N6705C.DLOG_PERIOD_MAX,
+            )
+            return N6705C.DLOG_PERIOD_MAX
+        return required
+
     def __init__(self, resource):
         logger.debug("N6705C __init__: resource=%s", resource)
         self.rm = pyvisa.ResourceManager('@py')
@@ -396,11 +417,22 @@ class N6705C:
         ch_str = self._channel_list_str(channels)
 
         try:
+            sample_period = self._clamp_dlog_period(
+                sample_period, num_channels=len(channels),
+                context="get_current_by_datalog",
+            )
             dlog_file = "internal:\\temp_dlog.dlog"
             csv_file = "internal:\\temp_dlog.csv"
 
+            self.instr.write("*CLS")
+            try:
+                self.instr.write("ABOR:DLOG")
+            except Exception:
+                pass
+
             for ch in range(1, 5):
                 self.instr.write(f"SENS:DLOG:FUNC:CURR OFF,(@{ch})")
+                self.instr.write(f"SENS:DLOG:FUNC:VOLT OFF,(@{ch})")
 
             for ch in channels:
                 self.instr.write(f"SENS:DLOG:FUNC:CURR ON,(@{ch})")
@@ -478,12 +510,21 @@ class N6705C:
                      channels, test_time, sample_period)
 
         try:
+            sample_period = self._clamp_dlog_period(
+                sample_period, num_channels=len(channels),
+                context="fetch_current_by_datalog",
+            )
             total_points = int(test_time / sample_period)
 
             self.instr.write("*CLS")
+            try:
+                self.instr.write("ABOR:DLOG")
+            except Exception:
+                pass
 
             for ch in range(1, 5):
                 self.instr.write(f"SENS:DLOG:FUNC:CURR OFF,(@{ch})")
+                self.instr.write(f"SENS:DLOG:FUNC:VOLT OFF,(@{ch})")
 
             for ch in channels:
                 self.instr.write(f"SENS:DLOG:FUNC:CURR ON,(@{ch})")
@@ -553,7 +594,16 @@ class N6705C:
         all_channels = sorted(set(curr_channels) | set(volt_channels))
 
         try:
+            sample_period = self._clamp_dlog_period(
+                sample_period,
+                num_channels=len(curr_channels) + len(volt_channels),
+                context="fetch_by_datalog",
+            )
             self.instr.write("*CLS")
+            try:
+                self.instr.write("ABOR:DLOG")
+            except Exception:
+                pass
 
             for ch in range(1, 5):
                 self.instr.write(f"SENS:DLOG:FUNC:CURR OFF,(@{ch})")
@@ -704,6 +754,10 @@ class N6705C:
         channels = self._normalize_channels(channels)
         logger.debug("configure_datalog: channels=%s, test_time=%s, sample_period=%s",
                      channels, test_time, sample_period)
+        sample_period = self._clamp_dlog_period(
+            sample_period, num_channels=len(channels),
+            context="configure_datalog",
+        )
         self.instr.write("*CLS")
         try:
             self.instr.write("ABOR:DLOG")
@@ -711,6 +765,7 @@ class N6705C:
             pass
         for ch in range(1, 5):
             self.instr.write(f"SENS:DLOG:FUNC:CURR OFF,(@{ch})")
+            self.instr.write(f"SENS:DLOG:FUNC:VOLT OFF,(@{ch})")
         for ch in channels:
             self.instr.write(f"SENS:DLOG:FUNC:CURR ON,(@{ch})")
             self.instr.write(f"SENS:DLOG:CURR:RANG:AUTO ON,(@{ch})")

@@ -572,6 +572,12 @@ class ExecutionLogsFrame(QFrame):
             .replace("<", "&lt;")
             .replace(">", "&gt;")
         )
+        if "[SUMMARY]" in message:
+            escaped = escaped.replace(" ", "&nbsp;")
+            return (
+                f'<span style="color:#4a5e82;">{ts}</span>&nbsp;&nbsp;'
+                f'<span style="color:{color};font-family:Consolas,\'Courier New\',monospace;white-space:pre;">{escaped}</span>'
+            )
         return (
             f'<span style="color:#4a5e82;">{ts}</span>&nbsp;&nbsp;'
             f'<span style="color:{color};">{escaped}</span>'

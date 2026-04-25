@@ -654,7 +654,7 @@ class _ConsumptionTestForceHighWorker(QObject):
                     mv = task["inst"].prepare_force_high(
                         normal_chs,
                         voltage_offset=0.02,
-                        current_limit=1.0,
+                        current_limit=0.05,
                         monitor_channels=task["monitor_channels"],
                     )
 
@@ -1004,7 +1004,7 @@ class _ConsumptionTestForceWorker(QObject):
                 if normal_chs:
                     mv = task["inst"].prepare_force_auto(
                         normal_chs,
-                        current_limit=1.0,
+                        current_limit=0.05,
                         monitor_channels=task["monitor_channels"],
                     )
 
@@ -1513,10 +1513,8 @@ class _AutoTestWorker(QObject):
                         if fv is not None:
                             n6705c_inst.set_mode(ch, "PS2Q")
                             n6705c_inst.set_voltage(ch, fv)
-                            n6705c_inst.set_current_limit(ch, 0.02)
+                            n6705c_inst.set_current_limit(ch, 1.0)
                             n6705c_inst.channel_on(ch)
-                            final_limit = 0.07 if fv < 1.0 else 0.15
-                            n6705c_inst.set_current_limit(ch, final_limit)
                             ch_name = self.channel_names.get((device_label, ch), f"{device_label}-CH{ch}")
                             self.log_message.emit(f"[AUTO_TEST]   {ch_name}: Force Vol -> {fv:.4f}V (user override)")
                         else:
@@ -1524,14 +1522,14 @@ class _AutoTestWorker(QObject):
                             v_plus20 = v_default + 0.02
                             n6705c_inst.set_mode(ch, "PS2Q")
                             n6705c_inst.set_voltage(ch, v_plus20)
-                            n6705c_inst.set_current_limit(ch, 0.02)
+                            n6705c_inst.set_current_limit(ch, 1.0)
                             n6705c_inst.channel_on(ch)
-                            final_limit = 0.07 if v_plus20 < 1.0 else 0.15
-                            n6705c_inst.set_current_limit(ch, final_limit)
                             ch_name = self.channel_names.get((device_label, ch), f"{device_label}-CH{ch}")
                             self.log_message.emit(f"[AUTO_TEST]   {ch_name}: {v_default:.4f}V -> {v_plus20:.4f}V (+20mV)")
                     except Exception as e:
                         self.log_message.emit(f"[ERROR] Failed to set {device_label}-CH{ch}: {e}")
+
+            _time.sleep(0.5)
 
             self.progress.emit(bin_progress_base + 0.58 * bin_progress_span)
 
@@ -1585,33 +1583,30 @@ class _AutoTestWorker(QObject):
             if self._is_stopped:
                 return
 
-            self.log_message.emit("[AUTO_TEST] Step 11: Adjusting sub-channels with Auto Set logic (using Step 8 voltages)...")
+            self.log_message.emit("[AUTO_TEST] Step 11: Adjusting sub-channels with Auto Set logic (in-place, keep PS2Q alive)...")
             for device_label, (n6705c_inst, hw_channels) in self.force_map.items():
                 for ch in hw_channels:
                     try:
                         fv = self.force_voltages.get((device_label, ch))
                         if fv is not None:
-                            n6705c_inst.set_mode(ch, "PS2Q")
                             n6705c_inst.set_voltage(ch, fv)
-                            n6705c_inst.set_current_limit(ch, 0.02)
-                            n6705c_inst.channel_on(ch)
-                            final_limit = 0.07 if fv < 1.0 else 0.15
-                            n6705c_inst.set_current_limit(ch, final_limit)
                             ch_name = self.channel_names.get((device_label, ch), f"{device_label}-CH{ch}")
                             self.log_message.emit(f"[AUTO_TEST]   {ch_name}: Force Vol -> {fv:.4f}V (user override)")
                         else:
                             v_default = default_voltages.get((device_label, ch), 0.0)
-                            new_v = self._align_voltage(v_default)
-                            n6705c_inst.set_mode(ch, "PS2Q")
+                            aligned_v = self._align_voltage(v_default)
+                            v_plus20 = v_default + 0.02
+                            new_v = max(aligned_v, v_default)
                             n6705c_inst.set_voltage(ch, new_v)
-                            n6705c_inst.set_current_limit(ch, 0.02)
-                            n6705c_inst.channel_on(ch)
-                            final_limit = 0.07 if new_v < 1.0 else 0.15
-                            n6705c_inst.set_current_limit(ch, final_limit)
                             ch_name = self.channel_names.get((device_label, ch), f"{device_label}-CH{ch}")
-                            self.log_message.emit(f"[AUTO_TEST]   {ch_name}: default={v_default:.4f}V -> aligned={new_v:.4f}V")
+                            self.log_message.emit(
+                                f"[AUTO_TEST]   {ch_name}: {v_plus20:.4f}V -> {new_v:.4f}V "
+                                f"(default={v_default:.4f}V, aligned={aligned_v:.4f}V)"
+                            )
                     except Exception as e:
                         self.log_message.emit(f"[ERROR] Auto set failed {device_label}-CH{ch}: {e}")
+
+            _time.sleep(0.5)
 
             self.progress.emit(bin_progress_base + 0.65 * bin_progress_span)
 
@@ -1881,6 +1876,10 @@ class _AutoTestWorker(QObject):
             for ch in hw_channels:
                 ordered_keys.append((device_label, ch))
 
+        voltage_sub_headers = [vbat_name] + [
+            self.channel_names.get(key, f"{key[0]}-CH{key[1]}") for key in ordered_keys
+        ]
+
         col_headers = [vbat_name]
         for key in ordered_keys:
             col_headers.append(self.channel_names.get(key, f"{key[0]}-CH{key[1]}"))
@@ -1911,44 +1910,74 @@ class _AutoTestWorker(QObject):
             for key in ordered_keys:
                 kv = cv.get(key)
                 v_vals.append(f"{kv:.4g}" if kv is not None else "N/A")
-            if has_vbat_remain:
-                v_vals.append("")
             voltage_rows.append((bin_name, v_vals))
 
         bin_col_width = max(len(r[0]) for r in rows)
-        bin_col_width = max(bin_col_width, len("BIN"), len("Voltage"))
+        bin_col_width = max(bin_col_width, len("BIN"))
+
+        voltage_sub_widths = []
+        for i, sub in enumerate(voltage_sub_headers):
+            max_w = len(sub)
+            for _, v_vals in voltage_rows:
+                max_w = max(max_w, len(v_vals[i]))
+            voltage_sub_widths.append(max_w)
+
         val_col_widths = []
         for i, hdr in enumerate(col_headers):
             max_w = len(hdr)
             for _, vals in rows:
                 max_w = max(max_w, len(vals[i]))
-            for _, v_vals in voltage_rows:
-                max_w = max(max_w, len(v_vals[i]))
             val_col_widths.append(max_w)
 
+        voltage_header_str = " | ".join(
+            f"{h:>{voltage_sub_widths[i]}}" for i, h in enumerate(voltage_sub_headers)
+        )
+        voltage_col_width = len(voltage_header_str)
+        voltage_col_header = "Voltage"
+        if len(voltage_col_header) < voltage_col_width:
+            pad_total = voltage_col_width - len(voltage_col_header)
+            left = pad_total // 2
+            right = pad_total - left
+            voltage_col_header_padded = " " * left + voltage_col_header + " " * right
+        else:
+            voltage_col_header_padded = voltage_col_header
+            voltage_col_width = len(voltage_col_header)
+
         unit_label = f"(Unit: {suffix})"
+
+        sep = " | "
         header_cells = [f"{'BIN':<{bin_col_width}}"]
+        header_cells.append(voltage_col_header_padded)
         for i, hdr in enumerate(col_headers):
             header_cells.append(f"{hdr:>{val_col_widths[i]}}")
-        header_line = "  ".join(header_cells)
-        sep_line = "-" * len(header_line)
+        header_line = sep.join(header_cells)
 
-        self.log_message.emit("[SUMMARY] " + "=" * 60)
+        sub_header_cells = [" " * bin_col_width]
+        sub_header_cells.append(voltage_header_str)
+        for i, _ in enumerate(col_headers):
+            sub_header_cells.append(" " * val_col_widths[i])
+        sub_header_line = sep.join(sub_header_cells)
+
+        total_width = len(header_line)
+        sep_line = "-" * total_width
+
+        self.log_message.emit("[SUMMARY] " + "=" * total_width)
         self.log_message.emit(f"[SUMMARY] Auto Test Results {unit_label}")
         self.log_message.emit("[SUMMARY] " + sep_line)
         self.log_message.emit(f"[SUMMARY] {header_line}")
+        self.log_message.emit(f"[SUMMARY] {sub_header_line}")
         self.log_message.emit("[SUMMARY] " + sep_line)
         for idx, (bin_name, vals) in enumerate(rows):
+            _, v_vals = voltage_rows[idx]
+            voltage_cell = " | ".join(
+                f"{v:>{voltage_sub_widths[i]}}" for i, v in enumerate(v_vals)
+            )
             cells = [f"{bin_name:<{bin_col_width}}"]
+            cells.append(f"{voltage_cell:>{voltage_col_width}}")
             for i, v in enumerate(vals):
                 cells.append(f"{v:>{val_col_widths[i]}}")
-            self.log_message.emit(f"[SUMMARY] {'  '.join(cells)}")
-            v_bin_name, v_vals = voltage_rows[idx]
-            v_cells = [f"{'Voltage':<{bin_col_width}}"]
-            for i, v in enumerate(v_vals):
-                v_cells.append(f"{v:>{val_col_widths[i]}}")
-            self.log_message.emit(f"[SUMMARY] {'  '.join(v_cells)}")
-        self.log_message.emit("[SUMMARY] " + "=" * 60)
+            self.log_message.emit(f"[SUMMARY] {sep.join(cells)}")
+        self.log_message.emit("[SUMMARY] " + "=" * total_width)
 
 
 class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
@@ -4432,7 +4461,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self._bin_results_data = []
         self.bin_result_table.setRowCount(0)
 
-        headers = ["BIN"]
+        headers = ["BIN", "Voltage"]
         for i, cfg in enumerate(self._channel_configs):
             if cfg["enabled"]:
                 headers.append(cfg["name"])
@@ -4452,12 +4481,28 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         row = self.bin_result_table.rowCount()
         self.bin_result_table.insertRow(row)
 
-        bin_name = summary.get("bin_name", f"BIN-{row // 2 + 1}")
+        bin_name = summary.get("bin_name", f"BIN-{row + 1}")
         col = 0
         bin_item = QTableWidgetItem(bin_name)
         bin_item.setTextAlignment(Qt.AlignCenter)
         bin_item.setForeground(QColor("#eaf2ff"))
         self.bin_result_table.setItem(row, col, bin_item)
+        col += 1
+
+        channel_voltages = summary.get("channel_voltages", {})
+        v_parts = []
+        for i, cfg in enumerate(self._channel_configs):
+            if not cfg["enabled"]:
+                continue
+            device_label, hw_ch = self._parse_channel_key(cfg["channel"])
+            key = (device_label, hw_ch)
+            v = channel_voltages.get(key)
+            v_parts.append(f"{v:.4g}" if v is not None else "N/A")
+        voltage_text = " | ".join(v_parts) if v_parts else "- - -"
+        voltage_item = QTableWidgetItem(voltage_text)
+        voltage_item.setTextAlignment(Qt.AlignCenter)
+        voltage_item.setForeground(QColor("#8899bb"))
+        self.bin_result_table.setItem(row, col, voltage_item)
         col += 1
 
         channels = summary.get("channels", {})
@@ -4491,34 +4536,6 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             remain_item.setTextAlignment(Qt.AlignCenter)
             remain_item.setForeground(QColor("#a0a0a0"))
             self.bin_result_table.setItem(row, col, remain_item)
-
-        v_row = self.bin_result_table.rowCount()
-        self.bin_result_table.insertRow(v_row)
-        v_col = 0
-        v_label_item = QTableWidgetItem("Voltage")
-        v_label_item.setTextAlignment(Qt.AlignCenter)
-        v_label_item.setForeground(QColor("#8899bb"))
-        self.bin_result_table.setItem(v_row, v_col, v_label_item)
-        v_col += 1
-
-        channel_voltages = summary.get("channel_voltages", {})
-        for i, cfg in enumerate(self._channel_configs):
-            if not cfg["enabled"]:
-                continue
-            device_label, hw_ch = self._parse_channel_key(cfg["channel"])
-            key = (device_label, hw_ch)
-            v = channel_voltages.get(key)
-            v_text = f"{v:.4g}V" if v is not None else "- - -"
-            v_item = QTableWidgetItem(v_text)
-            v_item.setTextAlignment(Qt.AlignCenter)
-            v_item.setForeground(QColor("#8899bb"))
-            self.bin_result_table.setItem(v_row, v_col, v_item)
-            v_col += 1
-
-        if has_sub:
-            empty_item = QTableWidgetItem("")
-            empty_item.setTextAlignment(Qt.AlignCenter)
-            self.bin_result_table.setItem(v_row, v_col, empty_item)
 
         self.bin_result_table.scrollToBottom()
 

@@ -20,5 +20,5 @@ CHIP_CONFIG = {
     'psram2': '',
     'apsram1': '',
     'apsram2': '',
-    'power_distribution': {'user_config': ['voltage_low:', '- WRITE_BITS 0x0130 10 10 0x1', '- WRITE_BITS 0x0140 10 10 0x1', '- WRITE_BITS 0x0150 10 10 0x1', '- WRITE_BITS 0x0142 8 0 0x00f', '- WRITE_BITS 0x0132 8 0 0x00f', '- WRITE_BITS 0x0152 8 0 0x00f', '- WRITE_BITS 0x0141 8 0 0x00f', '- WRITE_BITS 0x0131 8 0 0x00f', '- WRITE_BITS 0x0151 8 0 0x00f']},
+    'power_distribution': {'user_config': ['all_voltage_low:', '- WRITE_BITS 0x0130 10 10 0x1', '- WRITE_BITS 0x0140 10 10 0x1', '- WRITE_BITS 0x0150 10 10 0x1', '- WRITE_BITS 0x0142 8 0 0x00f', '- WRITE_BITS 0x0132 8 0 0x00f', '- WRITE_BITS 0x0152 8 0 0x00f', '- WRITE_BITS 0x0141 8 0 0x00f', '- WRITE_BITS 0x0131 8 0 0x00f', '- WRITE_BITS 0x0151 8 0 0x00f', '- WRITE_BITS 0x011E 13 13 0x1', '- WRITE_BITS 0x011E 5 0 0x3F', '- WRITE_BITS 0x012E 4 3 0x2', '- WRITE_BITS 0x0140 10 10 0x1', '- WRITE_BITS 0x0142 8 0 0x00f', '- WRITE_BITS 0x0141 8 0 0x00f']},
 }
