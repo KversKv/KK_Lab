@@ -104,7 +104,7 @@ _LOG_FRAME_STYLE = """
         background-color: #13254b;
         color: #dce7ff;
         font-size: 10px;
-        border: none;
+        border: 1px solid #1f315d;
     }
     QFrame#logContainer QPushButton#smallActionBtn:hover {
         background-color: #1C2D55;
