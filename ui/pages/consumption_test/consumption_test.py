@@ -8,6 +8,7 @@ Consumption Test UI组件
 import sys
 import os
 import re
+import json
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
@@ -39,22 +40,18 @@ from ui.widgets.dark_combobox import DarkComboBox
 from ui.widgets.progress_button import ProgressButton
 from log_config import get_logger
 
+from ui.pages.consumption_test.consumption_test_workers import (
+    CURRENT_UNIT,
+    _UNIT_CONFIG,
+    _format_current_unified,
+    _DownloadWorker,
+    _ChipCheckWorker,
+    _ConsumptionTestForceHighWorker,
+    _ConsumptionTestForceWorker,
+    _AutoTestWorker,
+)
+
 logger = get_logger(__name__)
-
-CURRENT_UNIT = "uA"
-
-_UNIT_CONFIG = {
-    "A":  {"scale": 1.0,    "suffix": "A"},
-    "mA": {"scale": 1e3,    "suffix": "mA"},
-    "uA": {"scale": 1e6,    "suffix": "uA"},
-}
-
-
-def _format_current_unified(current_A, unit=None):
-    if unit is None:
-        unit = CURRENT_UNIT
-    cfg = _UNIT_CONFIG.get(unit, _UNIT_CONFIG["uA"])
-    return f"{current_A * cfg['scale']:.4f}{cfg['suffix']}"
 
 
 _ICONS_DIR = os.path.join(
@@ -411,1574 +408,6 @@ class PolarityToggle(QWidget):
         return super().event(ev)
 
 
-class _DownloadWorker(QObject):
-    state_changed = Signal(str)
-    finished = Signal(object)
-    error = Signal(str)
-
-    def __init__(self, com_port, bin_file, mode, timeout=120):
-        super().__init__()
-        self.com_port = com_port
-        self.bin_file = bin_file
-        self.mode = mode
-        self.timeout = timeout
-
-    def run(self):
-        try:
-            logger.debug("DownloadWorker run: port=%s, bin=%s, mode=%s, timeout=%s",
-                         self.com_port, self.bin_file, self.mode, self.timeout)
-
-            def _on_state(state: DownloadState):
-                self.state_changed.emit(state.value)
-
-            result = download_bin(
-                com_port=self.com_port,
-                bin_file=self.bin_file,
-                mode=self.mode,
-                timeout=self.timeout,
-                on_state_change=_on_state,
-            )
-            logger.debug("DownloadWorker finished: success=%s, state=%s",
-                         result.success, result.state.value)
-            self.finished.emit(result)
-        except Exception as e:
-            self.error.emit(str(e))
-
-
-class _ChipCheckWorker(QObject):
-    finished = Signal(object)
-    error = Signal(str)
-
-    def run(self):
-        try:
-            from lib.i2c.i2c_interface_x64 import I2CInterface
-            i2c = I2CInterface()
-            if not i2c.initialize():
-                self.error.emit("I2C interface initialization failed.")
-                return
-            chip_info = i2c.bes_chip_check()
-            self.finished.emit(chip_info)
-        except Exception as e:
-            self.error.emit(str(e))
-
-
-class _ConsumptionTestWorker(QObject):
-    channel_result = Signal(str, int, float)
-    finished = Signal()
-    error = Signal(str)
-
-    def __init__(self, device_channel_map, test_time, sample_period):
-        super().__init__()
-        self.device_channel_map = device_channel_map
-        self.test_time = test_time
-        self.sample_period = sample_period
-        self._is_stopped = False
-
-    def stop(self):
-        self._is_stopped = True
-
-    def run(self):
-        try:
-            logger.debug("ConsumptionTestWorker run: test_time=%s, sample_period=%s, devices=%s",
-                         self.test_time, self.sample_period, list(self.device_channel_map.keys()))
-            if self._is_stopped:
-                self.finished.emit()
-                return
-            for device_label, (n6705c_inst, hw_channels) in self.device_channel_map.items():
-                if self._is_stopped:
-                    break
-                result = n6705c_inst.fetch_current_by_datalog(
-                    hw_channels, self.test_time, self.sample_period
-                )
-                for ch, avg_current in result.items():
-                    if self._is_stopped:
-                        break
-                    logger.debug("ConsumptionTestWorker result: %s CH%s = %.6e A",
-                                 device_label, ch, float(avg_current))
-                    self.channel_result.emit(device_label, ch, float(avg_current))
-            self.finished.emit()
-        except Exception as e:
-            self.error.emit(str(e))
-            self.finished.emit()
-
-
-class _ConsumptionTestForceHighWorker(QObject):
-    log_message = Signal(str)
-    channel_result = Signal(str, int, float, str)
-    test_summary = Signal(dict)
-    progress = Signal(float)
-    finished = Signal()
-    error = Signal(str)
-
-    def __init__(self, vbat_device_label, vbat_inst, vbat_hw_ch,
-                 force_high_map, test_time, sample_period,
-                 channel_names=None, force_voltages=None):
-        super().__init__()
-        self.vbat_device_label = vbat_device_label
-        self.vbat_inst = vbat_inst
-        self.vbat_hw_ch = vbat_hw_ch
-        self.force_high_map = force_high_map
-        self.test_time = test_time
-        self.sample_period = sample_period
-        self.channel_names = channel_names or {}
-        self.force_voltages = force_voltages or {}
-        self._is_stopped = False
-
-    def stop(self):
-        self._is_stopped = True
-
-    def run(self):
-        try:
-            self._consumption_test_force_high()
-        except Exception as e:
-            self.error.emit(str(e))
-        finally:
-            self.finished.emit()
-
-    @staticmethod
-    def _estimate_datalog_time(test_time):
-        return test_time + 4.0
-
-    @staticmethod
-    def _estimate_force_high_time(test_time):
-        return test_time + 5.0
-
-    def _make_sub_progress(self, base, span, total_est):
-        def _on_progress(frac):
-            self.progress.emit(min((base + frac * span) / total_est, 1.0))
-        return _on_progress
-
-    def _consumption_test_force_high(self):
-        import threading
-
-        logger.debug("ForceHighWorker: vbat=%s CH%s, force_high_devices=%s, test_time=%s, sample_period=%s",
-                     self.vbat_device_label, self.vbat_hw_ch,
-                     list(self.force_high_map.keys()), self.test_time, self.sample_period)
-
-        vbat_ch = self.vbat_hw_ch
-        vbat_inst = self.vbat_inst
-        vbat_label = self.vbat_device_label
-
-        setup_time = 1.0
-        step1_time = self._estimate_datalog_time(self.test_time)
-        step2_time = self._estimate_force_high_time(self.test_time)
-
-        total_est = setup_time + step1_time + step2_time
-        if total_est <= 0:
-            total_est = 1.0
-
-        cursor = 0.0
-        self.progress.emit(0.0)
-        stop_check = lambda: self._is_stopped
-
-        results = {}
-        vbat_remain = None
-
-        self.log_message.emit("[TEST] Resetting sub-channels to VMeter mode...")
-        for device_label, (n6705c_inst, hw_channels) in self.force_high_map.items():
-            for ch in hw_channels:
-                try:
-                    n6705c_inst.set_mode(ch, "VMETer")
-                    n6705c_inst.channel_on(ch)
-                except Exception as e:
-                    self.log_message.emit(f"[WARNING] Failed to set {device_label}-CH{ch} to VMeter: {e}")
-        cursor = setup_time
-        self.progress.emit(cursor / total_est)
-
-        self.log_message.emit(f"[TEST] Measuring Vbat (CH{vbat_ch}) total current...")
-        vbat_period = self.sample_period
-        vbat_result = vbat_inst.fetch_current_by_datalog(
-            [vbat_ch], self.test_time, vbat_period,
-            on_progress=self._make_sub_progress(cursor, step1_time, total_est),
-            stop_check=stop_check,
-        )
-        cursor += step1_time
-        self.progress.emit(min(cursor / total_est, 1.0))
-        if self._is_stopped:
-            return
-        vbat_current = vbat_result.get(vbat_ch, 0.0)
-        logger.debug("ForceHighWorker: Vbat total current = %.6e A", vbat_current)
-        self.channel_result.emit(vbat_label, vbat_ch, float(vbat_current), "vbat")
-        results[(vbat_label, vbat_ch)] = float(vbat_current)
-
-        channel_voltages = {}
-        try:
-            vbat_v = float(vbat_inst.measure_voltage(vbat_ch))
-            channel_voltages[(vbat_label, vbat_ch)] = vbat_v
-        except Exception:
-            channel_voltages[(vbat_label, vbat_ch)] = 0.0
-
-        self.log_message.emit("[TEST] Force high on sub-channels (+20mV) — parallel sync...")
-
-        task_list = []
-        for device_label, (n6705c_inst, hw_channels) in self.force_high_map.items():
-            monitor_chs = []
-            if device_label == vbat_label and vbat_ch not in hw_channels:
-                monitor_chs.append(vbat_ch)
-            all_datalog_chs = list(hw_channels) + [ch for ch in monitor_chs if ch not in hw_channels]
-            num_ch = len(all_datalog_chs)
-            ch_period = self.sample_period * num_ch
-            task_list.append({
-                "device_label": device_label,
-                "inst": n6705c_inst,
-                "force_channels": list(hw_channels),
-                "monitor_channels": monitor_chs,
-                "all_datalog_channels": all_datalog_chs,
-                "sample_period": ch_period,
-                "measured_voltages": None,
-                "curr_result": None,
-                "error": None,
-            })
-
-        if not task_list:
-            self.progress.emit(1.0)
-            self._emit_summary(results, vbat_current, vbat_remain, channel_voltages)
-            return
-
-        self.log_message.emit("[TEST] Preparing force high on all instruments...")
-        prepare_errors = [None] * len(task_list)
-
-        def prepare_worker(idx, task):
-            try:
-                forced_chs = []
-                normal_chs = []
-                for ch in task["force_channels"]:
-                    fv = self.force_voltages.get((task["device_label"], ch))
-                    if fv is not None:
-                        forced_chs.append((ch, fv))
-                    else:
-                        normal_chs.append(ch)
-
-                mv = {}
-                if normal_chs:
-                    mv = task["inst"].prepare_force_high(
-                        normal_chs,
-                        voltage_offset=0.02,
-                        current_limit=0.05,
-                        monitor_channels=task["monitor_channels"],
-                    )
-
-                import time as _t
-                for ch, fv in forced_chs:
-                    ch_name = self.channel_names.get((task["device_label"], ch), f"{task['device_label']}-CH{ch}")
-                    self.log_message.emit(f"[TEST] Force Vol: {ch_name} -> {fv:.4f}V (user override)")
-                    task["inst"].set_mode(ch, "PS2Q")
-                    task["inst"].set_voltage(ch, fv)
-                    task["inst"].set_current_limit(ch, 1.0)
-                    task["inst"].channel_on(ch)
-                    mv[ch] = fv
-                if forced_chs:
-                    _t.sleep(0.5)
-
-                task["measured_voltages"] = mv
-            except Exception as e:
-                prepare_errors[idx] = e
-
-        prepare_threads = []
-        for idx, task in enumerate(task_list):
-            t = threading.Thread(target=prepare_worker, args=(idx, task), daemon=True)
-            prepare_threads.append(t)
-        for t in prepare_threads:
-            t.start()
-        for t in prepare_threads:
-            t.join(timeout=30)
-
-        for idx, err in enumerate(prepare_errors):
-            if err:
-                dl = task_list[idx]["device_label"]
-                self.log_message.emit(f"[ERROR] Prepare force high failed on {dl}: {err}")
-
-        active_tasks = [t for i, t in enumerate(task_list) if prepare_errors[i] is None]
-
-        for task in active_tasks:
-            mv = task.get("measured_voltages") or {}
-            for ch, v in mv.items():
-                channel_voltages[(task["device_label"], ch)] = v
-
-        if not active_tasks:
-            self.progress.emit(1.0)
-            self._emit_summary(results, vbat_current, vbat_remain, channel_voltages)
-            return
-
-        self.log_message.emit("[TEST] Configuring datalog on all instruments...")
-        for task in active_tasks:
-            try:
-                task["inst"].configure_datalog(
-                    task["all_datalog_channels"], self.test_time, task["sample_period"]
-                )
-            except Exception as e:
-                task["error"] = str(e)
-                self.log_message.emit(f"[ERROR] Configure datalog failed on {task['device_label']}: {e}")
-
-        active_tasks = [t for t in active_tasks if t["error"] is None]
-        if not active_tasks:
-            self.progress.emit(1.0)
-            self._emit_summary(results, vbat_current, vbat_remain, channel_voltages)
-            return
-
-        barrier = threading.Barrier(len(active_tasks), timeout=30)
-        init_errors = [None] * len(active_tasks)
-
-        def start_datalog_worker(idx, task):
-            try:
-                barrier.wait()
-                task["inst"].start_datalog()
-            except Exception as e:
-                init_errors[idx] = e
-
-        self.log_message.emit(f"[TEST] Sync-starting datalog on {len(active_tasks)} instrument(s)...")
-        logger.debug("ForceHighWorker: sync-starting datalog on %d instruments", len(active_tasks))
-        start_threads = []
-        for idx, task in enumerate(active_tasks):
-            t = threading.Thread(target=start_datalog_worker, args=(idx, task), daemon=True)
-            start_threads.append(t)
-        for t in start_threads:
-            t.start()
-        for t in start_threads:
-            t.join(timeout=30)
-
-        for idx, err in enumerate(init_errors):
-            if err:
-                dl = active_tasks[idx]["device_label"]
-                self.log_message.emit(f"[ERROR] Start datalog failed on {dl}: {err}")
-
-        import time as _time
-        datalog_wait = self.test_time + 1
-        total_wait_est = datalog_wait + 3.0
-        wait_progress_span = datalog_wait / total_wait_est * step2_time
-        interval = 0.5
-        elapsed = 0.0
-        while elapsed < datalog_wait:
-            if self._is_stopped:
-                return
-            step = min(interval, datalog_wait - elapsed)
-            _time.sleep(step)
-            elapsed += step
-            frac = min(elapsed / datalog_wait, 1.0)
-            self.progress.emit(min((cursor + frac * wait_progress_span) / total_est, 1.0))
-        if self._is_stopped:
-            return
-
-        self.log_message.emit("[TEST] Fetching results from all instruments...")
-        fetch_errors = [None] * len(active_tasks)
-
-        def fetch_worker(idx, task):
-            try:
-                task["curr_result"] = task["inst"].fetch_datalog_marker_results(
-                    task["all_datalog_channels"], self.test_time
-                )
-            except Exception as e:
-                fetch_errors[idx] = e
-
-        fetch_threads = []
-        for idx, task in enumerate(active_tasks):
-            t = threading.Thread(target=fetch_worker, args=(idx, task), daemon=True)
-            fetch_threads.append(t)
-        for t in fetch_threads:
-            t.start()
-        for t in fetch_threads:
-            t.join(timeout=30)
-
-        for task in active_tasks:
-            task["inst"].restore_channels_to_vmeter(task["force_channels"])
-
-        cursor = setup_time + step1_time + step2_time
-        self.progress.emit(min(cursor / total_est, 1.0))
-
-        for idx, task in enumerate(active_tasks):
-            if fetch_errors[idx]:
-                self.log_message.emit(
-                    f"[ERROR] Fetch failed on {task['device_label']}: {fetch_errors[idx]}"
-                )
-                continue
-            cr = task["curr_result"] or {}
-            for ch in task["force_channels"]:
-                avg_i = cr.get(ch, 0.0)
-                logger.debug("ForceHighWorker result: %s CH%s = %.6e A", task["device_label"], ch, avg_i)
-                self.channel_result.emit(task["device_label"], ch, float(avg_i), "force_high")
-                results[(task["device_label"], ch)] = float(avg_i)
-            if task["device_label"] == vbat_label and vbat_ch in cr:
-                vbat_remain = float(cr[vbat_ch])
-
-        self.progress.emit(1.0)
-        self._emit_summary(results, vbat_current, vbat_remain, channel_voltages)
-        self.log_message.emit("[TEST] Force high consumption test completed.")
-
-    def _emit_summary(self, results, vbat_current, vbat_remain, channel_voltages=None):
-        if channel_voltages is None:
-            channel_voltages = {}
-        vbat_name = self.channel_names.get(
-            (self.vbat_device_label, self.vbat_hw_ch), "Vbat"
-        )
-        parts = [f"{vbat_name}: {_format_current_unified(vbat_current)}"]
-        ordered_keys = []
-        for device_label, (n6705c_inst, hw_channels) in self.force_high_map.items():
-            for ch in hw_channels:
-                ordered_keys.append((device_label, ch))
-        for key in ordered_keys:
-            name = self.channel_names.get(key, f"{key[0]}-CH{key[1]}")
-            val = results.get(key, 0.0)
-            parts.append(f"{name}: {_format_current_unified(val)}")
-        if vbat_remain is not None:
-            parts.append(f"Vbat_remain: {_format_current_unified(vbat_remain)}")
-
-        summary_line = " | ".join(parts)
-        self.log_message.emit(f"[RESULT] {summary_line}")
-
-        voltage_parts = []
-        vbat_v = channel_voltages.get((self.vbat_device_label, self.vbat_hw_ch))
-        if vbat_v is not None:
-            voltage_parts.append(f"{vbat_name}={vbat_v:.4g}V")
-        for key in ordered_keys:
-            v = channel_voltages.get(key)
-            if v is not None:
-                name = self.channel_names.get(key, f"{key[0]}-CH{key[1]}")
-                voltage_parts.append(f"{name}={v:.4g}V")
-        if voltage_parts:
-            self.log_message.emit(f"[VOLTAGE] {', '.join(voltage_parts)}")
-
-        summary = {
-            "vbat": vbat_current,
-            "channels": {k: results[k] for k in ordered_keys if k in results},
-            "vbat_remain": vbat_remain,
-            "channel_voltages": channel_voltages,
-        }
-        self.test_summary.emit(summary)
-
-    @staticmethod
-    def _format_current_short(current_A):
-        abs_i = abs(current_A)
-        if abs_i >= 1:
-            return f"{current_A:.4f}A"
-        elif abs_i >= 1e-3:
-            return f"{current_A*1e3:.4f}mA"
-        elif abs_i >= 1e-6:
-            return f"{current_A*1e6:.4f}uA"
-        else:
-            return f"{current_A*1e9:.4f}nA"
-
-
-class _ConsumptionTestForceWorker(QObject):
-    log_message = Signal(str)
-    channel_result = Signal(str, int, float, str)
-    test_summary = Signal(dict)
-    progress = Signal(float)
-    finished = Signal()
-    error = Signal(str)
-
-    def __init__(self, vbat_device_label, vbat_inst, vbat_hw_ch,
-                 force_map, test_time, sample_period,
-                 channel_names=None, force_voltages=None):
-        super().__init__()
-        self.vbat_device_label = vbat_device_label
-        self.vbat_inst = vbat_inst
-        self.vbat_hw_ch = vbat_hw_ch
-        self.force_map = force_map
-        self.test_time = test_time
-        self.sample_period = sample_period
-        self.channel_names = channel_names or {}
-        self.force_voltages = force_voltages or {}
-        self._is_stopped = False
-
-    def stop(self):
-        self._is_stopped = True
-
-    def run(self):
-        try:
-            self._consumption_test_force()
-        except Exception as e:
-            self.error.emit(str(e))
-        finally:
-            self.finished.emit()
-
-    @staticmethod
-    def _estimate_datalog_time(test_time):
-        return test_time + 4.0
-
-    @staticmethod
-    def _estimate_force_time(test_time):
-        return test_time + 5.0
-
-    def _make_sub_progress(self, base, span, total_est):
-        def _on_progress(frac):
-            self.progress.emit(min((base + frac * span) / total_est, 1.0))
-        return _on_progress
-
-    def _consumption_test_force(self):
-        import threading
-
-        vbat_ch = self.vbat_hw_ch
-        vbat_inst = self.vbat_inst
-        vbat_label = self.vbat_device_label
-
-        setup_time = 1.0
-        step1_time = self._estimate_datalog_time(self.test_time)
-        step2_time = self._estimate_force_time(self.test_time)
-
-        total_est = setup_time + step1_time + step2_time
-        if total_est <= 0:
-            total_est = 1.0
-
-        cursor = 0.0
-        self.progress.emit(0.0)
-        stop_check = lambda: self._is_stopped
-
-        results = {}
-        vbat_remain = None
-
-        self.log_message.emit("[TEST] Resetting sub-channels to VMeter mode...")
-        for device_label, (n6705c_inst, hw_channels) in self.force_map.items():
-            for ch in hw_channels:
-                try:
-                    n6705c_inst.set_mode(ch, "VMETer")
-                    n6705c_inst.channel_on(ch)
-                except Exception as e:
-                    self.log_message.emit(f"[WARNING] Failed to set {device_label}-CH{ch} to VMeter: {e}")
-        cursor = setup_time
-        self.progress.emit(cursor / total_est)
-
-        self.log_message.emit(f"[TEST] Measuring Vbat (CH{vbat_ch}) total current...")
-        vbat_period = self.sample_period
-        vbat_result = vbat_inst.fetch_current_by_datalog(
-            [vbat_ch], self.test_time, vbat_period,
-            on_progress=self._make_sub_progress(cursor, step1_time, total_est),
-            stop_check=stop_check,
-        )
-        cursor += step1_time
-        self.progress.emit(min(cursor / total_est, 1.0))
-        if self._is_stopped:
-            return
-        vbat_current = vbat_result.get(vbat_ch, 0.0)
-        self.channel_result.emit(vbat_label, vbat_ch, float(vbat_current), "vbat")
-        results[(vbat_label, vbat_ch)] = float(vbat_current)
-
-        channel_voltages = {}
-        try:
-            vbat_v = float(vbat_inst.measure_voltage(vbat_ch))
-            channel_voltages[(vbat_label, vbat_ch)] = vbat_v
-        except Exception:
-            channel_voltages[(vbat_label, vbat_ch)] = 0.0
-
-        self.log_message.emit("[TEST] Force auto on sub-channels (align voltage) — parallel sync...")
-
-        task_list = []
-        for device_label, (n6705c_inst, hw_channels) in self.force_map.items():
-            monitor_chs = []
-            if device_label == vbat_label and vbat_ch not in hw_channels:
-                monitor_chs.append(vbat_ch)
-            all_datalog_chs = list(hw_channels) + [ch for ch in monitor_chs if ch not in hw_channels]
-            num_ch = len(all_datalog_chs)
-            ch_period = self.sample_period * num_ch
-            task_list.append({
-                "device_label": device_label,
-                "inst": n6705c_inst,
-                "force_channels": list(hw_channels),
-                "monitor_channels": monitor_chs,
-                "all_datalog_channels": all_datalog_chs,
-                "sample_period": ch_period,
-                "measured_voltages": None,
-                "curr_result": None,
-                "error": None,
-            })
-
-        if not task_list:
-            self.progress.emit(1.0)
-            self._emit_summary(results, vbat_current, vbat_remain, channel_voltages)
-            return
-
-        self.log_message.emit("[TEST] Preparing force auto on all instruments...")
-        prepare_errors = [None] * len(task_list)
-
-        def prepare_worker(idx, task):
-            try:
-                forced_chs = []
-                normal_chs = []
-                for ch in task["force_channels"]:
-                    fv = self.force_voltages.get((task["device_label"], ch))
-                    if fv is not None:
-                        forced_chs.append((ch, fv))
-                    else:
-                        normal_chs.append(ch)
-
-                mv = {}
-                if normal_chs:
-                    mv = task["inst"].prepare_force_auto(
-                        normal_chs,
-                        current_limit=0.05,
-                        monitor_channels=task["monitor_channels"],
-                    )
-
-                import time as _t
-                for ch, fv in forced_chs:
-                    ch_name = self.channel_names.get((task["device_label"], ch), f"{task['device_label']}-CH{ch}")
-                    self.log_message.emit(f"[TEST] Force Vol: {ch_name} -> {fv:.4f}V (user override)")
-                    task["inst"].set_mode(ch, "PS2Q")
-                    task["inst"].set_voltage(ch, fv)
-                    task["inst"].set_current_limit(ch, 1.0)
-                    task["inst"].channel_on(ch)
-                    final_limit = 0.07 if fv < 1.0 else 0.15
-                    task["inst"].set_current_limit(ch, final_limit)
-                    mv[ch] = fv
-                if forced_chs:
-                    _t.sleep(0.5)
-
-                task["measured_voltages"] = mv
-            except Exception as e:
-                prepare_errors[idx] = e
-
-        prepare_threads = []
-        for idx, task in enumerate(task_list):
-            t = threading.Thread(target=prepare_worker, args=(idx, task), daemon=True)
-            prepare_threads.append(t)
-        for t in prepare_threads:
-            t.start()
-        for t in prepare_threads:
-            t.join(timeout=30)
-
-        for idx, err in enumerate(prepare_errors):
-            if err:
-                dl = task_list[idx]["device_label"]
-                self.log_message.emit(f"[ERROR] Prepare force auto failed on {dl}: {err}")
-
-        active_tasks = [t for i, t in enumerate(task_list) if prepare_errors[i] is None]
-
-        for task in active_tasks:
-            mv = task.get("measured_voltages") or {}
-            for ch, v in mv.items():
-                channel_voltages[(task["device_label"], ch)] = v
-
-        if not active_tasks:
-            self.progress.emit(1.0)
-            self._emit_summary(results, vbat_current, vbat_remain, channel_voltages)
-            return
-
-        self.log_message.emit("[TEST] Configuring datalog on all instruments...")
-        for task in active_tasks:
-            try:
-                task["inst"].configure_datalog(
-                    task["all_datalog_channels"], self.test_time, task["sample_period"]
-                )
-            except Exception as e:
-                task["error"] = str(e)
-                self.log_message.emit(f"[ERROR] Configure datalog failed on {task['device_label']}: {e}")
-
-        active_tasks = [t for t in active_tasks if t["error"] is None]
-        if not active_tasks:
-            self.progress.emit(1.0)
-            self._emit_summary(results, vbat_current, vbat_remain, channel_voltages)
-            return
-
-        barrier = threading.Barrier(len(active_tasks), timeout=30)
-        init_errors = [None] * len(active_tasks)
-
-        def start_datalog_worker(idx, task):
-            try:
-                barrier.wait()
-                task["inst"].start_datalog()
-            except Exception as e:
-                init_errors[idx] = e
-
-        self.log_message.emit(f"[TEST] Sync-starting datalog on {len(active_tasks)} instrument(s)...")
-        start_threads = []
-        for idx, task in enumerate(active_tasks):
-            t = threading.Thread(target=start_datalog_worker, args=(idx, task), daemon=True)
-            start_threads.append(t)
-        for t in start_threads:
-            t.start()
-        for t in start_threads:
-            t.join(timeout=30)
-
-        for idx, err in enumerate(init_errors):
-            if err:
-                dl = active_tasks[idx]["device_label"]
-                self.log_message.emit(f"[ERROR] Start datalog failed on {dl}: {err}")
-
-        import time as _time
-        datalog_wait = self.test_time + 1
-        total_wait_est = datalog_wait + 3.0
-        wait_progress_span = datalog_wait / total_wait_est * step2_time
-        interval = 0.5
-        elapsed = 0.0
-        while elapsed < datalog_wait:
-            if self._is_stopped:
-                return
-            step = min(interval, datalog_wait - elapsed)
-            _time.sleep(step)
-            elapsed += step
-            frac = min(elapsed / datalog_wait, 1.0)
-            self.progress.emit(min((cursor + frac * wait_progress_span) / total_est, 1.0))
-        if self._is_stopped:
-            return
-
-        self.log_message.emit("[TEST] Fetching results from all instruments...")
-        fetch_errors = [None] * len(active_tasks)
-
-        def fetch_worker(idx, task):
-            try:
-                task["curr_result"] = task["inst"].fetch_datalog_marker_results(
-                    task["all_datalog_channels"], self.test_time
-                )
-            except Exception as e:
-                fetch_errors[idx] = e
-
-        fetch_threads = []
-        for idx, task in enumerate(active_tasks):
-            t = threading.Thread(target=fetch_worker, args=(idx, task), daemon=True)
-            fetch_threads.append(t)
-        for t in fetch_threads:
-            t.start()
-        for t in fetch_threads:
-            t.join(timeout=30)
-
-        for task in active_tasks:
-            task["inst"].restore_channels_to_vmeter(task["force_channels"])
-
-        cursor = setup_time + step1_time + step2_time
-        self.progress.emit(min(cursor / total_est, 1.0))
-
-        for idx, task in enumerate(active_tasks):
-            if fetch_errors[idx]:
-                self.log_message.emit(
-                    f"[ERROR] Fetch failed on {task['device_label']}: {fetch_errors[idx]}"
-                )
-                continue
-            cr = task["curr_result"] or {}
-            for ch in task["force_channels"]:
-                avg_i = cr.get(ch, 0.0)
-                self.channel_result.emit(task["device_label"], ch, float(avg_i), "force_auto")
-                results[(task["device_label"], ch)] = float(avg_i)
-            if task["device_label"] == vbat_label and vbat_ch in cr:
-                vbat_remain = float(cr[vbat_ch])
-
-        self.progress.emit(1.0)
-        self._emit_summary(results, vbat_current, vbat_remain, channel_voltages)
-        self.log_message.emit("[TEST] Force auto consumption test completed.")
-
-    def _emit_summary(self, results, vbat_current, vbat_remain, channel_voltages=None):
-        if channel_voltages is None:
-            channel_voltages = {}
-        vbat_name = self.channel_names.get(
-            (self.vbat_device_label, self.vbat_hw_ch), "Vbat"
-        )
-        parts = [f"{vbat_name}: {_format_current_unified(vbat_current)}"]
-        ordered_keys = []
-        for device_label, (n6705c_inst, hw_channels) in self.force_map.items():
-            for ch in hw_channels:
-                ordered_keys.append((device_label, ch))
-        for key in ordered_keys:
-            name = self.channel_names.get(key, f"{key[0]}-CH{key[1]}")
-            val = results.get(key, 0.0)
-            parts.append(f"{name}: {_format_current_unified(val)}")
-        if vbat_remain is not None:
-            parts.append(f"Vbat_remain: {_format_current_unified(vbat_remain)}")
-
-        summary_line = " | ".join(parts)
-        self.log_message.emit(f"[RESULT] {summary_line}")
-
-        voltage_parts = []
-        vbat_v = channel_voltages.get((self.vbat_device_label, self.vbat_hw_ch))
-        if vbat_v is not None:
-            voltage_parts.append(f"{vbat_name}={vbat_v:.4g}V")
-        for key in ordered_keys:
-            v = channel_voltages.get(key)
-            if v is not None:
-                name = self.channel_names.get(key, f"{key[0]}-CH{key[1]}")
-                voltage_parts.append(f"{name}={v:.4g}V")
-        if voltage_parts:
-            self.log_message.emit(f"[VOLTAGE] {', '.join(voltage_parts)}")
-
-        summary = {
-            "vbat": vbat_current,
-            "channels": {k: results[k] for k in ordered_keys if k in results},
-            "vbat_remain": vbat_remain,
-            "channel_voltages": channel_voltages,
-        }
-        self.test_summary.emit(summary)
-
-    @staticmethod
-    def _format_current_short(current_A):
-        abs_i = abs(current_A)
-        if abs_i >= 1:
-            return f"{current_A:.4f}A"
-        elif abs_i >= 1e-3:
-            return f"{current_A*1e3:.4f}mA"
-        elif abs_i >= 1e-6:
-            return f"{current_A*1e6:.4f}uA"
-        else:
-            return f"{current_A*1e9:.4f}nA"
-
-
-class _AutoTestWorker(QObject):
-    log_message = Signal(str)
-    channel_result = Signal(str, int, float, str)
-    test_summary = Signal(dict)
-    progress = Signal(float)
-    download_state_changed = Signal(str)
-    download_finished = Signal(object)
-    download_error = Signal(str)
-    finished = Signal()
-    error = Signal(str)
-
-    _AUTO_SET_SPECIAL_VOLTAGES = [0.625, 0.67, 0.725, 0.78]
-
-    def __init__(self, com_port, firmware_paths, download_mode,
-                 poweron_device_label, poweron_inst, poweron_hw_ch, poweron_polarity,
-                 reset_device_label, reset_inst, reset_hw_ch, reset_polarity,
-                 vbat_device_label, vbat_inst, vbat_hw_ch,
-                 force_map, test_time, sample_period,
-                 channel_names=None,
-                 chip_combo_text=None, selected_chip_config=None,
-                 config_text=None, parse_config_commands_fn=None,
-                 resolve_device_fn=None, force_voltages=None):
-        super().__init__()
-        self.com_port = com_port
-        self.firmware_paths = list(firmware_paths)
-        self.download_mode = download_mode
-        self.poweron_device_label = poweron_device_label
-        self.poweron_inst = poweron_inst
-        self.poweron_hw_ch = poweron_hw_ch
-        self.poweron_polarity = poweron_polarity
-        self.reset_device_label = reset_device_label
-        self.reset_inst = reset_inst
-        self.reset_hw_ch = reset_hw_ch
-        self.reset_polarity = reset_polarity
-        self.vbat_device_label = vbat_device_label
-        self.vbat_inst = vbat_inst
-        self.vbat_hw_ch = vbat_hw_ch
-        self.force_map = force_map
-        self.test_time = test_time
-        self.sample_period = sample_period
-        self.channel_names = channel_names or {}
-        self.chip_combo_text = chip_combo_text
-        self.selected_chip_config = selected_chip_config
-        self.config_text = config_text or ""
-        self._parse_config_commands_fn = parse_config_commands_fn
-        self._resolve_device_fn = resolve_device_fn
-        self.force_voltages = force_voltages or {}
-        self._is_stopped = False
-
-    def stop(self):
-        self._is_stopped = True
-
-    def run(self):
-        try:
-            self._auto_test()
-        except Exception as e:
-            self.error.emit(str(e))
-        finally:
-            self.finished.emit()
-
-    @staticmethod
-    def _align_voltage(v, special_values=None):
-        if special_values is None:
-            special_values = _AutoTestWorker._AUTO_SET_SPECIAL_VOLTAGES
-        grid_v = round(round(v / 0.05) * 0.05, 4)
-        best = grid_v
-        best_dist = abs(v - grid_v)
-        for sv in special_values:
-            dist = abs(v - sv)
-            if dist < best_dist:
-                best = sv
-                best_dist = dist
-        return best
-
-    def _toggle_signal(self, inst, hw_ch, polarity):
-        import time as _time
-        if polarity == "rising":
-            active_v = 2.3
-            inactive_v = 0.1
-        else:
-            active_v = 0.1
-            inactive_v = 2.3
-        inst.set_voltage(hw_ch, active_v)
-        _time.sleep(0.1)
-        inst.set_voltage(hw_ch, inactive_v)
-
-    def _setup_control_channel(self, inst, hw_ch, polarity):
-        if polarity == "rising":
-            v = 0.1
-        else:
-            v = 2.3
-        inst.set_mode(hw_ch, "PS2Q")
-        inst.set_voltage(hw_ch, v)
-        inst.set_current_limit(hw_ch, 0.2)
-        inst.channel_on(hw_ch)
-
-    def _auto_test(self):
-        import time as _time
-        import threading
-
-        total_bins = len(self.firmware_paths)
-        if total_bins == 0:
-            self.error.emit("No firmware files provided.")
-            return
-
-        all_bin_results = []
-
-        for bin_idx, bin_path in enumerate(self.firmware_paths):
-            if self._is_stopped:
-                return
-
-            bin_name = os.path.basename(bin_path)
-            bin_progress_base = bin_idx / total_bins
-            bin_progress_span = 1.0 / total_bins
-            self.log_message.emit(f"[AUTO_TEST] === BIN {bin_idx+1}/{total_bins}: {bin_name} ===")
-
-            self.log_message.emit("[AUTO_TEST] Step 1: Configuring PowerON and RESET channels...")
-            self._setup_control_channel(
-                self.poweron_inst, self.poweron_hw_ch, self.poweron_polarity
-            )
-            self._setup_control_channel(
-                self.reset_inst, self.reset_hw_ch, self.reset_polarity
-            )
-            self.progress.emit(bin_progress_base + 0.02 * bin_progress_span)
-
-            if self._is_stopped:
-                return
-
-            self.log_message.emit("[AUTO_TEST] Step 2: Configuring Vbat channel (3.8V, 0.2A)...")
-            self.vbat_inst.set_mode(self.vbat_hw_ch, "PS2Q")
-            self.vbat_inst.set_voltage(self.vbat_hw_ch, 3.8)
-            self.vbat_inst.set_current_limit(self.vbat_hw_ch, 0.2)
-            self.vbat_inst.channel_on(self.vbat_hw_ch)
-            _time.sleep(0.5)
-            self.progress.emit(bin_progress_base + 0.04 * bin_progress_span)
-
-            if self._is_stopped:
-                return
-
-            self.log_message.emit(f"[AUTO_TEST] Step 3: Starting download listener: {bin_name}")
-            chip = detect_chip_from_bin(bin_path)
-            detected_chip_name = None
-            if chip:
-                self.log_message.emit(f"[AUTO_TEST] Detected chip from BIN: {chip}")
-                detected_chip_name = f"bes{chip.lower()}"
-
-            download_thread, result_queue = self._start_download_async(bin_path)
-            _time.sleep(1.0)
-
-            self.log_message.emit("[AUTO_TEST] Step 4: Triggering RESET then POWERON for download handshake...")
-            self._toggle_signal(self.reset_inst, self.reset_hw_ch, self.reset_polarity)
-            _time.sleep(0.05)
-            self._toggle_signal(self.poweron_inst, self.poweron_hw_ch, self.poweron_polarity)
-
-            self.log_message.emit("[AUTO_TEST] Waiting for download to complete...")
-            download_thread.join(timeout=180)
-            download_result = None
-            try:
-                download_result = result_queue.get_nowait()
-            except Exception:
-                pass
-            self.progress.emit(bin_progress_base + 0.30 * bin_progress_span)
-
-            if self._is_stopped:
-                return
-
-            if download_result is None or not download_result.success:
-                err_msg = "Unknown error"
-                if download_result and download_result.error_message:
-                    err_msg = download_result.error_message
-                self.log_message.emit(f"[AUTO_TEST] Download failed: {err_msg}")
-                self.error.emit(f"Download failed for {bin_name}: {err_msg}")
-                return
-
-            self.log_message.emit("[AUTO_TEST] Step 5: Download completed successfully.")
-
-            if self._is_stopped:
-                return
-
-            self.log_message.emit("[AUTO_TEST] Step 6: Sending POWERON then RESET to boot chip...")
-            self._toggle_signal(self.poweron_inst, self.poweron_hw_ch, self.poweron_polarity)
-            _time.sleep(0.05)
-            self._toggle_signal(self.reset_inst, self.reset_hw_ch, self.reset_polarity)
-            self.log_message.emit("[AUTO_TEST] Waiting 2s for chip stabilization...")
-            _time.sleep(2.0)
-            self.progress.emit(bin_progress_base + 0.35 * bin_progress_span)
-
-            if self._is_stopped:
-                return
-
-            self.log_message.emit("[AUTO_TEST] Step 7: Measuring Vbat total current...")
-            vbat_period = self.sample_period
-            stop_check = lambda: self._is_stopped
-            vbat_result = self.vbat_inst.fetch_current_by_datalog(
-                [self.vbat_hw_ch], self.test_time, vbat_period,
-                stop_check=stop_check,
-            )
-            if self._is_stopped:
-                return
-            vbat_current = vbat_result.get(self.vbat_hw_ch, 0.0)
-            self.channel_result.emit(
-                self.vbat_device_label, self.vbat_hw_ch, float(vbat_current), "vbat"
-            )
-            self.log_message.emit(
-                f"[AUTO_TEST] Vbat total current: "
-                f"{_format_current_unified(vbat_current)}"
-            )
-            self.progress.emit(bin_progress_base + 0.50 * bin_progress_span)
-
-            if self._is_stopped:
-                return
-
-            self.log_message.emit("[AUTO_TEST] Step 8: Recording default sub-channel voltages...")
-            default_voltages = {}
-            for device_label, (n6705c_inst, hw_channels) in self.force_map.items():
-                for ch in hw_channels:
-                    try:
-                        n6705c_inst.set_mode(ch, "VMETer")
-                        n6705c_inst.channel_on(ch)
-                    except Exception as e:
-                        self.log_message.emit(f"[WARNING] Failed to set {device_label}-CH{ch} to VMeter: {e}")
-            _time.sleep(0.5)
-            for device_label, (n6705c_inst, hw_channels) in self.force_map.items():
-                for ch in hw_channels:
-                    try:
-                        v = float(n6705c_inst.measure_voltage(ch))
-                        default_voltages[(device_label, ch)] = v
-                        self.log_message.emit(
-                            f"[AUTO_TEST]   {self.channel_names.get((device_label, ch), f'{device_label}-CH{ch}')}: {v:.4f}V"
-                        )
-                    except Exception as e:
-                        self.log_message.emit(f"[WARNING] Failed to measure {device_label}-CH{ch}: {e}")
-                        default_voltages[(device_label, ch)] = 0.0
-
-            original_registers = {}
-            chip_config = self.selected_chip_config
-            if detected_chip_name:
-                refreshed = get_chip_config(detected_chip_name, force_reload=True)
-                if refreshed:
-                    chip_config = refreshed
-                    self.log_message.emit(f"[AUTO_TEST] Using chip config for: {detected_chip_name}")
-
-            config_commands = None
-            if self.config_text:
-                config_commands = self._parse_config_commands_fn(self.config_text)
-                self.log_message.emit(f"[AUTO_TEST] Using pasted configuration ({len(config_commands)} commands)")
-            elif chip_config:
-                pd = chip_config.get("power_distribution")
-                if pd and isinstance(pd, dict) and len(pd) > 0:
-                    raw_lines = []
-                    for section, cmds in pd.items():
-                        if isinstance(cmds, list):
-                            raw_lines.extend(cmds)
-                    config_commands = self._parse_config_commands_fn("\n".join(raw_lines))
-                    self.log_message.emit(
-                        f"[AUTO_TEST] Using chip config power_distribution ({len(config_commands)} commands)"
-                    )
-
-            if config_commands:
-                self.log_message.emit("[AUTO_TEST] Step 8 (cont.): Recording original register values...")
-                try:
-                    from lib.i2c.i2c_interface_x64 import I2CInterface
-                    i2c = I2CInterface()
-                    if not i2c.initialize():
-                        self.log_message.emit("[ERROR] I2C interface initialization failed.")
-                        config_commands = None
-                    else:
-                        chip_info = i2c.bes_chip_check()
-                        self.log_message.emit(f"[AUTO_TEST] Chip detected via I2C: {chip_info.get('chip_name', 'N/A')}")
-                        for cmd in config_commands:
-                            if cmd["op"] in ("WRITE", "WRITE_BITS"):
-                                target = cmd.get("target", "NO_PREFIX")
-                                reg_addr = cmd["reg_addr"]
-                                device_addr, width = self._resolve_device_fn(chip_info, target)
-                                if device_addr is not None and width is not None:
-                                    key = (device_addr, reg_addr, width)
-                                    if key not in original_registers:
-                                        try:
-                                            val = i2c.read(device_addr, reg_addr, width)
-                                            original_registers[key] = val
-                                            self.log_message.emit(
-                                                f"[AUTO_TEST]   Saved reg dev=0x{device_addr:02X} "
-                                                f"addr=0x{reg_addr:08X} = 0x{val:X}"
-                                            )
-                                        except Exception as e:
-                                            self.log_message.emit(
-                                                f"[WARNING] Failed to read reg 0x{reg_addr:08X}: {e}"
-                                            )
-                except Exception as e:
-                    self.log_message.emit(f"[ERROR] I2C setup failed: {e}")
-                    config_commands = None
-
-            self.progress.emit(bin_progress_base + 0.55 * bin_progress_span)
-
-            if self._is_stopped:
-                return
-
-            self.log_message.emit("[AUTO_TEST] Step 9: Setting sub-channels to default voltage + 20mV...")
-            for device_label, (n6705c_inst, hw_channels) in self.force_map.items():
-                for ch in hw_channels:
-                    try:
-                        fv = self.force_voltages.get((device_label, ch))
-                        if fv is not None:
-                            n6705c_inst.set_mode(ch, "PS2Q")
-                            n6705c_inst.set_voltage(ch, fv)
-                            n6705c_inst.set_current_limit(ch, 1.0)
-                            n6705c_inst.channel_on(ch)
-                            ch_name = self.channel_names.get((device_label, ch), f"{device_label}-CH{ch}")
-                            self.log_message.emit(f"[AUTO_TEST]   {ch_name}: Force Vol -> {fv:.4f}V (user override)")
-                        else:
-                            v_default = default_voltages.get((device_label, ch), 0.0)
-                            v_plus20 = v_default + 0.02
-                            n6705c_inst.set_mode(ch, "PS2Q")
-                            n6705c_inst.set_voltage(ch, v_plus20)
-                            n6705c_inst.set_current_limit(ch, 1.0)
-                            n6705c_inst.channel_on(ch)
-                            ch_name = self.channel_names.get((device_label, ch), f"{device_label}-CH{ch}")
-                            self.log_message.emit(f"[AUTO_TEST]   {ch_name}: {v_default:.4f}V -> {v_plus20:.4f}V (+20mV)")
-                    except Exception as e:
-                        self.log_message.emit(f"[ERROR] Failed to set {device_label}-CH{ch}: {e}")
-
-            _time.sleep(0.5)
-
-            self.progress.emit(bin_progress_base + 0.58 * bin_progress_span)
-
-            if self._is_stopped:
-                return
-
-            if config_commands and i2c:
-                self.log_message.emit("[AUTO_TEST] Step 10: Executing configuration commands...")
-                try:
-                    for idx_cmd, cmd in enumerate(config_commands):
-                        op = cmd["op"]
-                        target = cmd.get("target", "NO_PREFIX")
-                        reg_addr = cmd["reg_addr"]
-                        device_addr, width = self._resolve_device_fn(chip_info, target)
-                        if device_addr is None or width is None:
-                            self.log_message.emit(
-                                f"[ERROR] Cannot resolve device for target={target}, skip cmd #{idx_cmd+1}"
-                            )
-                            continue
-                        if op == "WRITE_BITS":
-                            msb = cmd["msb"]
-                            lsb = cmd["lsb"]
-                            value = cmd["value"]
-                            current_val = i2c.read(device_addr, reg_addr, width)
-                            bit_mask = ((1 << (msb - lsb + 1)) - 1) << lsb
-                            new_val = (current_val & ~bit_mask) | ((value << lsb) & bit_mask)
-                            i2c.write(device_addr, reg_addr, new_val, width)
-                            self.log_message.emit(
-                                f"[AUTO_TEST]   #{idx_cmd+1} WRITE_BITS dev=0x{device_addr:02X} "
-                                f"reg=0x{reg_addr:08X} [{msb}:{lsb}]=0x{value:X} "
-                                f"(0x{current_val:X} -> 0x{new_val:X})"
-                            )
-                        elif op == "WRITE":
-                            value = cmd["value"]
-                            i2c.write(device_addr, reg_addr, value, width)
-                            self.log_message.emit(
-                                f"[AUTO_TEST]   #{idx_cmd+1} WRITE dev=0x{device_addr:02X} "
-                                f"reg=0x{reg_addr:08X} data=0x{value:X}"
-                            )
-                        elif op == "READ":
-                            read_val = i2c.read(device_addr, reg_addr, width)
-                            self.log_message.emit(
-                                f"[AUTO_TEST]   #{idx_cmd+1} READ dev=0x{device_addr:02X} "
-                                f"reg=0x{reg_addr:08X} => 0x{read_val:X}"
-                            )
-                except Exception as e:
-                    self.log_message.emit(f"[ERROR] Config execution failed: {e}")
-
-            self.progress.emit(bin_progress_base + 0.62 * bin_progress_span)
-
-            if self._is_stopped:
-                return
-
-            self.log_message.emit("[AUTO_TEST] Step 11: Adjusting sub-channels with Auto Set logic (in-place, keep PS2Q alive)...")
-            for device_label, (n6705c_inst, hw_channels) in self.force_map.items():
-                for ch in hw_channels:
-                    try:
-                        fv = self.force_voltages.get((device_label, ch))
-                        if fv is not None:
-                            n6705c_inst.set_voltage(ch, fv)
-                            ch_name = self.channel_names.get((device_label, ch), f"{device_label}-CH{ch}")
-                            self.log_message.emit(f"[AUTO_TEST]   {ch_name}: Force Vol -> {fv:.4f}V (user override)")
-                        else:
-                            v_default = default_voltages.get((device_label, ch), 0.0)
-                            aligned_v = self._align_voltage(v_default)
-                            v_plus20 = v_default + 0.02
-                            new_v = max(aligned_v, v_default)
-                            n6705c_inst.set_voltage(ch, new_v)
-                            ch_name = self.channel_names.get((device_label, ch), f"{device_label}-CH{ch}")
-                            self.log_message.emit(
-                                f"[AUTO_TEST]   {ch_name}: {v_plus20:.4f}V -> {new_v:.4f}V "
-                                f"(default={v_default:.4f}V, aligned={aligned_v:.4f}V)"
-                            )
-                    except Exception as e:
-                        self.log_message.emit(f"[ERROR] Auto set failed {device_label}-CH{ch}: {e}")
-
-            _time.sleep(0.5)
-
-            self.progress.emit(bin_progress_base + 0.65 * bin_progress_span)
-
-            if self._is_stopped:
-                return
-
-            self.log_message.emit("[AUTO_TEST] Step 12: Running sub-channel consumption test...")
-            results = {(self.vbat_device_label, self.vbat_hw_ch): float(vbat_current)}
-            vbat_remain = None
-
-            task_list = []
-            vbat_label = self.vbat_device_label
-            vbat_ch = self.vbat_hw_ch
-            for device_label, (n6705c_inst, hw_channels) in self.force_map.items():
-                monitor_chs = []
-                if device_label == vbat_label and vbat_ch not in hw_channels:
-                    monitor_chs.append(vbat_ch)
-                all_datalog_chs = list(hw_channels) + [c for c in monitor_chs if c not in hw_channels]
-                num_ch = len(all_datalog_chs)
-                ch_period = self.sample_period * num_ch
-                task_list.append({
-                    "device_label": device_label,
-                    "inst": n6705c_inst,
-                    "force_channels": list(hw_channels),
-                    "monitor_channels": monitor_chs,
-                    "all_datalog_channels": all_datalog_chs,
-                    "sample_period": ch_period,
-                    "curr_result": None,
-                    "error": None,
-                })
-
-            if task_list:
-                self.log_message.emit("[AUTO_TEST] Configuring datalog on instruments...")
-                for task in task_list:
-                    try:
-                        task["inst"].configure_datalog(
-                            task["all_datalog_channels"], self.test_time, task["sample_period"]
-                        )
-                    except Exception as e:
-                        task["error"] = str(e)
-                        self.log_message.emit(f"[ERROR] Configure datalog failed on {task['device_label']}: {e}")
-
-                active_tasks = [t for t in task_list if t["error"] is None]
-
-                if active_tasks:
-                    barrier = threading.Barrier(len(active_tasks), timeout=30)
-                    init_errors = [None] * len(active_tasks)
-
-                    def start_datalog_worker(idx_t, task_t):
-                        try:
-                            barrier.wait()
-                            task_t["inst"].start_datalog()
-                        except Exception as exc:
-                            init_errors[idx_t] = exc
-
-                    start_threads = []
-                    for idx_t, task_t in enumerate(active_tasks):
-                        t = threading.Thread(target=start_datalog_worker, args=(idx_t, task_t), daemon=True)
-                        start_threads.append(t)
-                    for t in start_threads:
-                        t.start()
-                    for t in start_threads:
-                        t.join(timeout=30)
-
-                    datalog_wait = self.test_time + 1
-                    interval = 0.5
-                    elapsed = 0.0
-                    while elapsed < datalog_wait:
-                        if self._is_stopped:
-                            return
-                        step = min(interval, datalog_wait - elapsed)
-                        _time.sleep(step)
-                        elapsed += step
-                        frac = min(elapsed / datalog_wait, 1.0)
-                        self.progress.emit(
-                            bin_progress_base + (0.65 + frac * 0.25) * bin_progress_span
-                        )
-                    if self._is_stopped:
-                        return
-
-                    self.log_message.emit("[AUTO_TEST] Fetching results...")
-                    fetch_errors = [None] * len(active_tasks)
-
-                    def fetch_worker(idx_f, task_f):
-                        try:
-                            task_f["curr_result"] = task_f["inst"].fetch_datalog_marker_results(
-                                task_f["all_datalog_channels"], self.test_time
-                            )
-                        except Exception as exc:
-                            fetch_errors[idx_f] = exc
-
-                    fetch_threads = []
-                    for idx_f, task_f in enumerate(active_tasks):
-                        t = threading.Thread(target=fetch_worker, args=(idx_f, task_f), daemon=True)
-                        fetch_threads.append(t)
-                    for t in fetch_threads:
-                        t.start()
-                    for t in fetch_threads:
-                        t.join(timeout=30)
-
-                    for idx_f, task_f in enumerate(active_tasks):
-                        if fetch_errors[idx_f]:
-                            self.log_message.emit(
-                                f"[ERROR] Fetch failed on {task_f['device_label']}: {fetch_errors[idx_f]}"
-                            )
-                            continue
-                        cr = task_f["curr_result"] or {}
-                        for ch in task_f["force_channels"]:
-                            avg_i = cr.get(ch, 0.0)
-                            self.channel_result.emit(task_f["device_label"], ch, float(avg_i), "force_auto")
-                            results[(task_f["device_label"], ch)] = float(avg_i)
-                        if task_f["device_label"] == vbat_label and vbat_ch in cr:
-                            vbat_remain = float(cr[vbat_ch])
-
-            self.progress.emit(bin_progress_base + 0.92 * bin_progress_span)
-
-            if self._is_stopped:
-                return
-
-            if config_commands and original_registers and i2c:
-                self.log_message.emit("[AUTO_TEST] Step 13: Restoring original register values...")
-                for (device_addr, reg_addr, width), orig_val in original_registers.items():
-                    try:
-                        i2c.write(device_addr, reg_addr, orig_val, width)
-                        self.log_message.emit(
-                            f"[AUTO_TEST]   Restored dev=0x{device_addr:02X} "
-                            f"reg=0x{reg_addr:08X} = 0x{orig_val:X}"
-                        )
-                    except Exception as e:
-                        self.log_message.emit(
-                            f"[WARNING] Failed to restore reg 0x{reg_addr:08X}: {e}"
-                        )
-
-            self.log_message.emit("[AUTO_TEST] Step 14: Restoring sub-channels to VMeter mode...")
-            for device_label, (n6705c_inst, hw_channels) in self.force_map.items():
-                n6705c_inst.restore_channels_to_vmeter(hw_channels)
-
-            channel_voltages = {}
-            try:
-                vbat_v = float(self.vbat_inst.measure_voltage(self.vbat_hw_ch))
-            except Exception:
-                vbat_v = 3.8
-            channel_voltages[(self.vbat_device_label, self.vbat_hw_ch)] = vbat_v
-            for key, v in default_voltages.items():
-                fv = self.force_voltages.get(key)
-                channel_voltages[key] = fv if fv is not None else v
-
-            self._emit_summary(results, vbat_current, vbat_remain, bin_name, channel_voltages)
-            all_bin_results.append({
-                "bin_name": bin_name,
-                "vbat": vbat_current,
-                "channels": dict(results),
-                "vbat_remain": vbat_remain,
-                "channel_voltages": channel_voltages,
-            })
-            self.progress.emit(bin_progress_base + bin_progress_span)
-            self.log_message.emit(f"[AUTO_TEST] === BIN {bin_idx+1}/{total_bins}: {bin_name} completed ===")
-
-        self.progress.emit(1.0)
-        if len(all_bin_results) > 1:
-            self._emit_final_summary_table(all_bin_results)
-        self.log_message.emit("[AUTO_TEST] All auto test completed.")
-
-    def _start_download_async(self, bin_path):
-        import queue
-        import threading
-        result_queue = queue.Queue()
-
-        def _download_thread_fn():
-            try:
-                def _on_state(state):
-                    self.download_state_changed.emit(state.value)
-                result = download_bin(
-                    com_port=self.com_port,
-                    bin_file=bin_path,
-                    mode=self.download_mode,
-                    timeout=120,
-                    on_state_change=_on_state,
-                )
-                result_queue.put(result)
-            except Exception as e:
-                self.download_error.emit(str(e))
-                result_queue.put(None)
-
-        t = threading.Thread(target=_download_thread_fn, daemon=True)
-        t.start()
-        return t, result_queue
-
-    def _run_download(self, bin_path):
-        import queue
-        result_queue = queue.Queue()
-
-        def _download_thread_fn():
-            try:
-                def _on_state(state):
-                    self.download_state_changed.emit(state.value)
-                result = download_bin(
-                    com_port=self.com_port,
-                    bin_file=bin_path,
-                    mode=self.download_mode,
-                    timeout=120,
-                    on_state_change=_on_state,
-                )
-                result_queue.put(result)
-            except Exception as e:
-                self.download_error.emit(str(e))
-                result_queue.put(None)
-
-        import threading
-        t = threading.Thread(target=_download_thread_fn, daemon=True)
-        t.start()
-        t.join(timeout=180)
-        try:
-            return result_queue.get_nowait()
-        except queue.Empty:
-            return None
-
-    def _emit_summary(self, results, vbat_current, vbat_remain, bin_name="", channel_voltages=None):
-        if channel_voltages is None:
-            channel_voltages = {}
-        vbat_name = self.channel_names.get(
-            (self.vbat_device_label, self.vbat_hw_ch), "Vbat"
-        )
-        parts = [f"{vbat_name}: {_format_current_unified(vbat_current)}"]
-        ordered_keys = []
-        for device_label, (n6705c_inst, hw_channels) in self.force_map.items():
-            for ch in hw_channels:
-                ordered_keys.append((device_label, ch))
-        for key in ordered_keys:
-            name = self.channel_names.get(key, f"{key[0]}-CH{key[1]}")
-            val = results.get(key, 0.0)
-            parts.append(f"{name}: {_format_current_unified(val)}")
-        if vbat_remain is not None:
-            parts.append(f"Vbat_remain: {_format_current_unified(vbat_remain)}")
-
-        prefix = f"[{bin_name}] " if bin_name else ""
-        summary_line = " | ".join(parts)
-        self.log_message.emit(f"[RESULT] {prefix}{summary_line}")
-
-        voltage_parts = []
-        vbat_v = channel_voltages.get((self.vbat_device_label, self.vbat_hw_ch))
-        if vbat_v is not None:
-            voltage_parts.append(f"{vbat_name}={vbat_v:.4g}V")
-        for key in ordered_keys:
-            v = channel_voltages.get(key)
-            if v is not None:
-                name = self.channel_names.get(key, f"{key[0]}-CH{key[1]}")
-                voltage_parts.append(f"{name}={v:.4g}V")
-        if voltage_parts:
-            self.log_message.emit(f"[VOLTAGE] {prefix}{', '.join(voltage_parts)}")
-
-        summary = {
-            "bin_name": bin_name,
-            "vbat": vbat_current,
-            "channels": {k: results[k] for k in ordered_keys if k in results},
-            "vbat_remain": vbat_remain,
-            "channel_voltages": channel_voltages,
-        }
-        self.test_summary.emit(summary)
-
-    def _emit_final_summary_table(self, all_bin_results):
-        vbat_name = self.channel_names.get(
-            (self.vbat_device_label, self.vbat_hw_ch), "Vbat"
-        )
-        ordered_keys = []
-        for device_label, (n6705c_inst, hw_channels) in self.force_map.items():
-            for ch in hw_channels:
-                ordered_keys.append((device_label, ch))
-
-        voltage_sub_headers = [vbat_name] + [
-            self.channel_names.get(key, f"{key[0]}-CH{key[1]}") for key in ordered_keys
-        ]
-
-        col_headers = [vbat_name]
-        for key in ordered_keys:
-            col_headers.append(self.channel_names.get(key, f"{key[0]}-CH{key[1]}"))
-        has_vbat_remain = any(r.get("vbat_remain") is not None for r in all_bin_results)
-        if has_vbat_remain:
-            col_headers.append("Vbat_remain")
-
-        cfg = _UNIT_CONFIG.get(CURRENT_UNIT, _UNIT_CONFIG["uA"])
-        scale = cfg["scale"]
-        suffix = cfg["suffix"]
-
-        rows = []
-        voltage_rows = []
-        for r in all_bin_results:
-            bin_name = r["bin_name"]
-            channels = r.get("channels", {})
-            vals = [f"{r.get('vbat', 0.0) * scale:.4f}"]
-            for key in ordered_keys:
-                vals.append(f"{channels.get(key, 0.0) * scale:.4f}")
-            if has_vbat_remain:
-                vr = r.get("vbat_remain")
-                vals.append(f"{vr * scale:.4f}" if vr is not None else "N/A")
-            rows.append((bin_name, vals))
-
-            cv = r.get("channel_voltages", {})
-            vbat_v = cv.get((self.vbat_device_label, self.vbat_hw_ch))
-            v_vals = [f"{vbat_v:.4g}" if vbat_v is not None else "N/A"]
-            for key in ordered_keys:
-                kv = cv.get(key)
-                v_vals.append(f"{kv:.4g}" if kv is not None else "N/A")
-            voltage_rows.append((bin_name, v_vals))
-
-        bin_col_width = max(len(r[0]) for r in rows)
-        bin_col_width = max(bin_col_width, len("BIN"))
-
-        voltage_sub_widths = []
-        for i, sub in enumerate(voltage_sub_headers):
-            max_w = len(sub)
-            for _, v_vals in voltage_rows:
-                max_w = max(max_w, len(v_vals[i]))
-            voltage_sub_widths.append(max_w)
-
-        val_col_widths = []
-        for i, hdr in enumerate(col_headers):
-            max_w = len(hdr)
-            for _, vals in rows:
-                max_w = max(max_w, len(vals[i]))
-            val_col_widths.append(max_w)
-
-        voltage_header_str = " | ".join(
-            f"{h:>{voltage_sub_widths[i]}}" for i, h in enumerate(voltage_sub_headers)
-        )
-        voltage_col_width = len(voltage_header_str)
-        voltage_col_header = "Voltage"
-        if len(voltage_col_header) < voltage_col_width:
-            pad_total = voltage_col_width - len(voltage_col_header)
-            left = pad_total // 2
-            right = pad_total - left
-            voltage_col_header_padded = " " * left + voltage_col_header + " " * right
-        else:
-            voltage_col_header_padded = voltage_col_header
-            voltage_col_width = len(voltage_col_header)
-
-        unit_label = f"(Unit: {suffix})"
-
-        sep = " | "
-        header_cells = [f"{'BIN':<{bin_col_width}}"]
-        header_cells.append(voltage_col_header_padded)
-        for i, hdr in enumerate(col_headers):
-            header_cells.append(f"{hdr:>{val_col_widths[i]}}")
-        header_line = sep.join(header_cells)
-
-        sub_header_cells = [" " * bin_col_width]
-        sub_header_cells.append(voltage_header_str)
-        for i, _ in enumerate(col_headers):
-            sub_header_cells.append(" " * val_col_widths[i])
-        sub_header_line = sep.join(sub_header_cells)
-
-        total_width = len(header_line)
-        sep_line = "-" * total_width
-
-        self.log_message.emit("[SUMMARY] " + "=" * total_width)
-        self.log_message.emit(f"[SUMMARY] Auto Test Results {unit_label}")
-        self.log_message.emit("[SUMMARY] " + sep_line)
-        self.log_message.emit(f"[SUMMARY] {header_line}")
-        self.log_message.emit(f"[SUMMARY] {sub_header_line}")
-        self.log_message.emit("[SUMMARY] " + sep_line)
-        for idx, (bin_name, vals) in enumerate(rows):
-            _, v_vals = voltage_rows[idx]
-            voltage_cell = " | ".join(
-                f"{v:>{voltage_sub_widths[i]}}" for i, v in enumerate(v_vals)
-            )
-            cells = [f"{bin_name:<{bin_col_width}}"]
-            cells.append(f"{voltage_cell:>{voltage_col_width}}")
-            for i, v in enumerate(vals):
-                cells.append(f"{v:>{val_col_widths[i]}}")
-            self.log_message.emit(f"[SUMMARY] {sep.join(cells)}")
-        self.log_message.emit("[SUMMARY] " + "=" * total_width)
-
 
 class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
     connection_status_changed = Signal(bool)
@@ -2048,6 +477,10 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self._channel_configs = []
         self._channel_config_widgets = []
         self._syncing = False
+
+        self._pending_channel_selections = None
+        self._pending_aux_selections = None
+        self._suppress_preset_channels = False
 
         self.poweron_channel_combo = None
         self.reset_channel_combo = None
@@ -2171,6 +604,36 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         header_layout.addWidget(icon_label, 0, Qt.AlignTop)
         header_layout.addLayout(title_col)
         header_layout.addStretch()
+
+        # ---- 导入 / 导出 配置按钮(右上角) ----
+        self.import_config_btn = QPushButton("Import")
+        self.export_config_btn = QPushButton("Export")
+        _io_btn_style = """
+            QPushButton {
+                background-color: #1a2750;
+                color: #c8d8f8;
+                border: 1px solid #22376a;
+                border-radius: 6px;
+                padding: 4px 14px;
+                font-size: 12px;
+                font-weight: 600;
+                min-height: 24px;
+                max-height: 28px;
+            }
+            QPushButton:hover { background-color: #243760; border: 1px solid #2f4a80; }
+            QPushButton:pressed { background-color: #14203f; }
+        """
+        self.import_config_btn.setStyleSheet(_io_btn_style)
+        self.export_config_btn.setStyleSheet(_io_btn_style)
+        self.import_config_btn.setCursor(Qt.PointingHandCursor)
+        self.export_config_btn.setCursor(Qt.PointingHandCursor)
+        self.import_config_btn.setToolTip("Import test configuration from JSON file")
+        self.export_config_btn.setToolTip("Export current test configuration to JSON file")
+        self.import_config_btn.clicked.connect(self._import_config)
+        self.export_config_btn.clicked.connect(self._export_config)
+        header_layout.addWidget(self.import_config_btn, 0, Qt.AlignVCenter)
+        header_layout.addWidget(self.export_config_btn, 0, Qt.AlignVCenter)
+
         main_layout.addLayout(header_layout)
 
         body_layout = QHBoxLayout()
@@ -2596,35 +1059,68 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
     def _update_available_channels(self):
         options = self._get_available_channel_options()
-        for wdata in self._channel_config_widgets:
+        pending_ch = self._pending_channel_selections or {}
+        for i, wdata in enumerate(self._channel_config_widgets):
             combo = wdata["channel_combo"]
-            current_text = combo.currentText()
+            # 目标值:优先使用待恢复的导入值,否则使用 _channel_configs 里记录的通道
+            desired = None
+            if i in pending_ch:
+                desired = pending_ch[i]
+            elif i < len(self._channel_configs):
+                desired = self._channel_configs[i].get("channel", "")
+            if not desired:
+                desired = combo.currentText()
             combo.blockSignals(True)
             combo.clear()
             for opt in options:
                 combo.addItem(opt)
-            for i in range(combo.count()):
-                if combo.itemText(i) == current_text:
-                    combo.setCurrentIndex(i)
+            matched = False
+            for j in range(combo.count()):
+                if combo.itemText(j) == desired:
+                    combo.setCurrentIndex(j)
+                    matched = True
                     break
             combo.blockSignals(False)
-        for extra_combo in [self.poweron_channel_combo, self.reset_channel_combo]:
-            if extra_combo is not None:
-                current_text = extra_combo.currentText()
-                extra_combo.blockSignals(True)
-                extra_combo.clear()
-                for opt in options:
-                    extra_combo.addItem(opt)
-                for i in range(extra_combo.count()):
-                    if extra_combo.itemText(i) == current_text:
-                        extra_combo.setCurrentIndex(i)
-                        break
-                extra_combo.blockSignals(False)
+            # 若期望值在选项里找到了,同步回 _channel_configs,并清理 pending
+            if matched and i < len(self._channel_configs):
+                self._channel_configs[i]["channel"] = desired
+            if i in pending_ch and matched:
+                pending_ch.pop(i, None)
+        if self._pending_channel_selections is not None and not pending_ch:
+            self._pending_channel_selections = None
+
+        pending_aux = self._pending_aux_selections or {}
+        for key, extra_combo in (("poweron", self.poweron_channel_combo),
+                                 ("reset", self.reset_channel_combo)):
+            if extra_combo is None:
+                continue
+            desired = pending_aux.get(key) if pending_aux else None
+            if not desired:
+                desired = extra_combo.currentText()
+            extra_combo.blockSignals(True)
+            extra_combo.clear()
+            for opt in options:
+                extra_combo.addItem(opt)
+            matched = False
+            for j in range(extra_combo.count()):
+                if extra_combo.itemText(j) == desired:
+                    extra_combo.setCurrentIndex(j)
+                    matched = True
+                    break
+            extra_combo.blockSignals(False)
+            if matched and pending_aux:
+                pending_aux.pop(key, None)
+        if self._pending_aux_selections is not None and not pending_aux:
+            self._pending_aux_selections = None
+
         self._refresh_result_cards()
         self._update_test_panel_state()
 
     def _apply_preset_channels(self, prev_count, new_count):
         if prev_count == new_count:
+            return
+        # 导入配置流程中不允许 preset 覆盖导入后的通道配置
+        if getattr(self, "_suppress_preset_channels", False):
             return
 
         if new_count == 0:
@@ -4216,6 +2712,331 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             if device_label is not None and hw_ch is not None:
                 force_voltages[(device_label, hw_ch)] = voltage
         return force_voltages
+
+    # =====================================================================
+    # 导入 / 导出 测试配置
+    # =====================================================================
+    CONFIG_SCHEMA_VERSION = 1
+
+    def _collect_config_snapshot(self):
+        """把当前 UI 上所有测试相关的参数序列化成一个可 JSON 化的 dict。"""
+        # 仪器:N6705C-A / N6705C-B 的 VISA resource 与连接状态
+        n6705c = {}
+        for label in ("A", "B"):
+            attr = label.lower()
+            visa = ""
+            if label in getattr(self, "_n6705c_conn_widgets", {}):
+                visa = self._n6705c_conn_widgets[label]["combo"].currentText()
+            n6705c[label] = {
+                "visa": visa,
+                "connected": bool(getattr(self, f"is_connected_{attr}", False)),
+            }
+
+        # 串口
+        serial_port = ""
+        if hasattr(self, "serial_combo") and self.serial_combo is not None:
+            serial_port = self.serial_combo.currentText() or ""
+
+        # 通道配置(_channel_configs 内容已能描述每个通道)
+        channel_configs = [dict(cfg) for cfg in self._channel_configs]
+
+        # 固件下载相关
+        download = {
+            "mode": self.download_mode_toggle.value() if hasattr(self, "download_mode_toggle") and self.download_mode_toggle else "FLASH",
+            "firmware_path": getattr(self, "firmware_path", "") or "",
+            "firmware_paths": list(getattr(self, "firmware_paths", []) or []),
+        }
+
+        # Chip 与额外 YAML config
+        chip_selected = ""
+        if hasattr(self, "chip_combo") and self.chip_combo is not None:
+            chip_selected = self.chip_combo.currentText()
+        config_text = ""
+        if hasattr(self, "config_text_edit") and self.config_text_edit is not None:
+            config_text = self.config_text_edit.toPlainText()
+
+        # 测试参数
+        try:
+            test_time = float(self.test_time_input.text())
+        except Exception:
+            test_time = 10.0
+        control_method = (
+            self.control_method_toggle.value()
+            if hasattr(self, "control_method_toggle") and self.control_method_toggle
+            else "N6705C"
+        )
+        poweron_ch = (
+            self.poweron_channel_combo.currentText()
+            if getattr(self, "poweron_channel_combo", None) else ""
+        )
+        reset_ch = (
+            self.reset_channel_combo.currentText()
+            if getattr(self, "reset_channel_combo", None) else ""
+        )
+        poweron_pol = (
+            self.poweron_polarity_toggle.value()
+            if getattr(self, "poweron_polarity_toggle", None) else "rising"
+        )
+        reset_pol = (
+            self.reset_polarity_toggle.value()
+            if getattr(self, "reset_polarity_toggle", None) else "rising"
+        )
+
+        return {
+            "schema_version": self.CONFIG_SCHEMA_VERSION,
+            "page": "consumption_test",
+            "n6705c": n6705c,
+            "serial_port": serial_port,
+            "channel_configs": channel_configs,
+            "download": download,
+            "chip_selected": chip_selected,
+            "config_text": config_text,
+            "test": {
+                "test_time": test_time,
+                "control_method": control_method,
+                "poweron_channel": poweron_ch,
+                "poweron_polarity": poweron_pol,
+                "reset_channel": reset_ch,
+                "reset_polarity": reset_pol,
+            },
+        }
+
+    def _export_config(self):
+        """把当前 UI 配置导出到 JSON 文件。"""
+        try:
+            default_dir = os.getcwd()
+            default_name = os.path.join(default_dir, "consumption_test_config.json")
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "Export Consumption Test Config",
+                default_name, "JSON Files (*.json);;All Files (*)"
+            )
+            if not file_path:
+                return
+            snapshot = self._collect_config_snapshot()
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(snapshot, f, indent=2, ensure_ascii=False)
+            self.append_log(f"[CONFIG] Exported to: {file_path}")
+        except Exception as e:
+            self.append_log(f"[ERROR] Export config failed: {e}")
+            QMessageBox.critical(self, "Export Failed", f"Failed to export config:\n{e}")
+
+    def _import_config(self):
+        """从 JSON 文件加载配置,应用到 UI,并尝试自动连接仪器。"""
+        if getattr(self, "is_testing", False):
+            QMessageBox.warning(self, "Cannot Import",
+                                "A test is running. Please stop it before importing config.")
+            return
+        try:
+            file_path, _ = QFileDialog.getOpenFileName(
+                self, "Import Consumption Test Config",
+                os.getcwd(), "JSON Files (*.json);;All Files (*)"
+            )
+            if not file_path:
+                return
+            with open(file_path, "r", encoding="utf-8") as f:
+                snapshot = json.load(f)
+        except Exception as e:
+            self.append_log(f"[ERROR] Import config failed: {e}")
+            QMessageBox.critical(self, "Import Failed", f"Failed to read config:\n{e}")
+            return
+
+        if not isinstance(snapshot, dict):
+            QMessageBox.critical(self, "Import Failed", "Config file format is invalid.")
+            return
+        if snapshot.get("page") and snapshot.get("page") != "consumption_test":
+            ret = QMessageBox.question(
+                self, "Page Mismatch",
+                f"This config was exported from page '{snapshot.get('page')}'.\n"
+                f"Apply it to Consumption Test anyway?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+            )
+            if ret != QMessageBox.Yes:
+                return
+
+        try:
+            self._apply_imported_config(snapshot)
+            self.append_log(f"[CONFIG] Imported from: {file_path}")
+        except Exception as e:
+            # 异常时确保 preset 屏蔽标志被恢复,避免卡在抑制状态
+            self._suppress_preset_channels = False
+            self.append_log(f"[ERROR] Apply imported config failed: {e}")
+            QMessageBox.critical(self, "Import Failed", f"Failed to apply config:\n{e}")
+
+    def _apply_imported_config(self, snapshot):
+        """将 snapshot 中的设置应用到 UI。仪器连接使用 QTimer 异步触发。"""
+        # 整个导入流程中屏蔽 preset 通道覆盖逻辑(仪器连接时会触发)
+        self._suppress_preset_channels = True
+        # ---- 1. N6705C 仪器的 VISA 地址 ----
+        n6705c_cfg = snapshot.get("n6705c", {}) or {}
+        pending_connects = []
+        for label in ("A", "B"):
+            item = n6705c_cfg.get(label, {}) or {}
+            visa = item.get("visa", "") or ""
+            want_connect = bool(item.get("connected"))
+            widgets = getattr(self, "_n6705c_conn_widgets", {}).get(label)
+            if widgets is None:
+                continue
+            combo = widgets["combo"]
+            if visa:
+                # 加入下拉选项(若不存在)并选中
+                found_idx = -1
+                for i in range(combo.count()):
+                    if combo.itemText(i) == visa:
+                        found_idx = i
+                        break
+                if found_idx < 0:
+                    combo.addItem(visa)
+                    found_idx = combo.count() - 1
+                combo.setCurrentIndex(found_idx)
+            # 记录是否需要自动连接
+            if want_connect:
+                pending_connects.append(label)
+
+        # ---- 2. 串口 ----
+        serial_port = snapshot.get("serial_port", "") or ""
+        if serial_port and hasattr(self, "serial_combo") and self.serial_combo is not None:
+            found_idx = -1
+            for i in range(self.serial_combo.count()):
+                if self.serial_combo.itemText(i) == serial_port:
+                    found_idx = i
+                    break
+            if found_idx < 0:
+                self.serial_combo.addItem(serial_port)
+                found_idx = self.serial_combo.count() - 1
+            self.serial_combo.setEnabled(True)
+            self.serial_combo.setCurrentIndex(found_idx)
+
+        # ---- 3. 通道配置(重建所有 channel 卡片) ----
+        channel_configs = snapshot.get("channel_configs", []) or []
+        if channel_configs:
+            self._clear_all_channel_configs()
+            # 预先把通道期望值记到 pending,供后续 _update_available_channels 使用
+            self._pending_channel_selections = {}
+            for i, cfg in enumerate(channel_configs):
+                name = cfg.get("name", "")
+                ch = cfg.get("channel", "")
+                enabled = bool(cfg.get("enabled", False))
+                self._add_channel_config_card(name, ch, enabled)
+                idx = len(self._channel_configs) - 1
+                # 强制把通道值写回(即使当前 combo 选项里没有该项)
+                self._channel_configs[idx]["channel"] = ch
+                if ch:
+                    self._pending_channel_selections[idx] = ch
+                fv_en = bool(cfg.get("force_vol_enabled", False))
+                fv_val = cfg.get("force_vol_value", "") or ""
+                self._channel_configs[idx]["force_vol_enabled"] = fv_en
+                self._channel_configs[idx]["force_vol_value"] = fv_val
+                wdata = self._channel_config_widgets[idx]
+                wdata["force_vol_cb"].setChecked(fv_en)
+                wdata["force_vol_input"].setText(fv_val)
+                wdata["force_vol_input"].setEnabled(enabled and fv_en)
+            # 立即尝试应用一次(若仪器已连接,通道就能匹配;否则等仪器连接后再应用)
+            self._update_available_channels()
+
+        # ---- 4. 固件下载 ----
+        dl = snapshot.get("download", {}) or {}
+        dl_mode = dl.get("mode", "FLASH")
+        if hasattr(self, "download_mode_toggle") and self.download_mode_toggle:
+            self.download_mode_toggle.setValue(dl_mode)
+        fw_paths = dl.get("firmware_paths") or []
+        fw_single = dl.get("firmware_path", "") or ""
+        if fw_paths:
+            self.firmware_paths = list(fw_paths)
+            self.firmware_path = fw_paths[0]
+        elif fw_single:
+            self.firmware_paths = [fw_single]
+            self.firmware_path = fw_single
+        else:
+            self.firmware_paths = []
+            self.firmware_path = ""
+        # 同步显示到 UI 的 QLineEdit(实际控件名是 firmware_file_input)
+        if hasattr(self, "firmware_file_input") and self.firmware_file_input is not None:
+            if self.firmware_paths:
+                names = [os.path.basename(p) for p in self.firmware_paths]
+                self.firmware_file_input.setText("; ".join(names))
+            else:
+                self.firmware_file_input.setText("")
+
+        # ---- 5. Chip 选择与 config_text ----
+        chip_name = snapshot.get("chip_selected", "") or ""
+        if chip_name and hasattr(self, "chip_combo") and self.chip_combo is not None:
+            for i in range(self.chip_combo.count()):
+                if self.chip_combo.itemText(i) == chip_name:
+                    self.chip_combo.setCurrentIndex(i)
+                    break
+        cfg_text = snapshot.get("config_text", "") or ""
+        if hasattr(self, "config_text_edit") and self.config_text_edit is not None:
+            self.config_text_edit.setPlainText(cfg_text)
+
+        # ---- 6. 测试参数 ----
+        test_cfg = snapshot.get("test", {}) or {}
+        if "test_time" in test_cfg and hasattr(self, "test_time_input"):
+            try:
+                self.test_time_input.setText(str(test_cfg["test_time"]))
+            except Exception:
+                pass
+        if hasattr(self, "control_method_toggle") and self.control_method_toggle:
+            cm = test_cfg.get("control_method", "N6705C")
+            if cm in ("N6705C", "MCU"):
+                self.control_method_toggle.setValue(cm)
+
+        def _select_combo_text(combo, text):
+            if combo is None or not text:
+                return False
+            for i in range(combo.count()):
+                if combo.itemText(i) == text:
+                    combo.setCurrentIndex(i)
+                    return True
+            return False
+
+        # poweron / reset 通道:若当前选项还没有,记到 pending,等仪器连接后应用
+        self._pending_aux_selections = {}
+        poweron_txt = test_cfg.get("poweron_channel", "") or ""
+        reset_txt = test_cfg.get("reset_channel", "") or ""
+        if poweron_txt and not _select_combo_text(
+                getattr(self, "poweron_channel_combo", None), poweron_txt):
+            self._pending_aux_selections["poweron"] = poweron_txt
+        if reset_txt and not _select_combo_text(
+                getattr(self, "reset_channel_combo", None), reset_txt):
+            self._pending_aux_selections["reset"] = reset_txt
+        if not self._pending_aux_selections:
+            self._pending_aux_selections = None
+
+        if getattr(self, "poweron_polarity_toggle", None):
+            self.poweron_polarity_toggle.setValue(test_cfg.get("poweron_polarity", "rising"))
+        if getattr(self, "reset_polarity_toggle", None):
+            self.reset_polarity_toggle.setValue(test_cfg.get("reset_polarity", "rising"))
+
+        # ---- 7. 自动连接仪器(延迟到事件循环,避免阻塞 UI) ----
+        if pending_connects:
+            self.append_log(
+                f"[CONFIG] Auto-connecting N6705C: {', '.join(pending_connects)} ..."
+            )
+            QTimer.singleShot(100, lambda labels=list(pending_connects):
+                              self._auto_connect_instruments(labels))
+        else:
+            # 没有需要自动连接的仪器,立即恢复 preset 机制
+            self._suppress_preset_channels = False
+
+    def _auto_connect_instruments(self, labels):
+        """按列表顺序自动连接 N6705C 仪器。已连接的跳过。"""
+        try:
+            for label in labels:
+                attr = label.lower()
+                if getattr(self, f"is_connected_{attr}", False):
+                    continue
+                try:
+                    self._connect_device(label)
+                except Exception as e:
+                    self.append_log(f"[WARNING] Auto-connect N6705C-{label} failed: {e}")
+        finally:
+            # 仪器连接完成后恢复 preset 机制,并再跑一次通道刷新,
+            # 使得此时仪器上线带来的可用通道列表能应用到导入的配置上
+            self._suppress_preset_channels = False
+            try:
+                self._update_available_channels()
+            except Exception as e:
+                self.append_log(f"[WARNING] Post-connect channel refresh failed: {e}")
 
     def _on_start_test(self):
         self._start_test()
