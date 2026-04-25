@@ -83,6 +83,10 @@ _PAGE_STYLE = """
         background-color: #020618;
         border: none;
     }
+    QFrame {
+        border: none;
+        background-color: transparent;
+    }
     QSplitter::handle {
         background-color: #0b1428;
         width: 4px;
@@ -108,6 +112,19 @@ _PAGE_STYLE = """
         background-color: transparent;
         padding: 0px;
         margin: 0px;
+        border: none;
+    }
+    QLabel#pageTitle {
+        font-size: 18px;
+        font-weight: 700;
+        color: #f8fbff;
+        background-color: transparent;
+        border: none;
+    }
+    QLabel#pageSubtitle {
+        font-size: 12px;
+        color: #7da2d6;
+        background-color: transparent;
         border: none;
     }
     QLabel#fieldLabel {
@@ -260,6 +277,16 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         root = QVBoxLayout(self)
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(6)
+
+        header_layout = QVBoxLayout()
+        header_layout.setSpacing(2)
+        self.page_title = QLabel("🧪 Custom Test")
+        self.page_title.setObjectName("pageTitle")
+        self.page_subtitle = QLabel("Build and run custom test sequences with visual node-based editor.")
+        self.page_subtitle.setObjectName("pageSubtitle")
+        header_layout.addWidget(self.page_title)
+        header_layout.addWidget(self.page_subtitle)
+        root.addLayout(header_layout)
 
         main_splitter = QSplitter(Qt.Vertical)
 
