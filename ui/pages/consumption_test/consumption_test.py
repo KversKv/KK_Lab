@@ -1436,6 +1436,55 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self.channel_cards = {}
         layout.addWidget(self.result_cards_container, 0)
 
+        # ---- BIN 结果表头部工具条:左侧标题 + 右侧 Export ----
+        bin_header_row = QHBoxLayout()
+        bin_header_row.setContentsMargins(0, 0, 0, 0)
+        bin_header_row.setSpacing(8)
+
+        self._bin_result_title = QLabel("BIN RESULTS")
+        self._bin_result_title.setStyleSheet("""
+            QLabel {
+                color: #8eb0e3;
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 1px;
+                background: transparent;
+                border: none;
+            }
+        """)
+        bin_header_row.addWidget(self._bin_result_title, 0, Qt.AlignLeft)
+        bin_header_row.addStretch(1)
+
+        self.export_bin_result_btn = QPushButton("⤓ Export")
+        self.export_bin_result_btn.setToolTip("Export current BIN results to an Excel (.xlsx) file")
+        self.export_bin_result_btn.setCursor(Qt.PointingHandCursor)
+        self.export_bin_result_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #162544;
+                color: #dbe7ff;
+                border: 1px solid #25355c;
+                border-radius: 6px;
+                font-size: 11px;
+                padding: 3px 12px;
+                min-height: 24px;
+            }
+            QPushButton:hover { background-color: #1c315b; }
+            QPushButton:disabled {
+                color: #4a5a7a;
+                background-color: #0d1830;
+                border-color: #1a2a48;
+            }
+        """)
+        self.export_bin_result_btn.clicked.connect(self._export_bin_results_to_excel)
+        bin_header_row.addWidget(self.export_bin_result_btn, 0, Qt.AlignRight)
+
+        # 头部工具条作为独立容器,以便与 bin_result_table 一起控制显隐
+        self._bin_result_header = QWidget()
+        self._bin_result_header.setStyleSheet("background: transparent; border: none;")
+        self._bin_result_header.setLayout(bin_header_row)
+        self._bin_result_header.hide()
+        layout.addWidget(self._bin_result_header, 0)
+
         self.bin_result_table = QTableWidget(0, 0)
         self.bin_result_table.setObjectName("binResultTable")
         self.bin_result_table.setStyleSheet("""
@@ -3297,6 +3346,8 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self.bin_result_table.setHorizontalHeaderLabels(headers)
         self.bin_result_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.bin_result_table.show()
+        if hasattr(self, "_bin_result_header"):
+            self._bin_result_header.show()
 
     def _add_bin_result_row(self, summary):
         row = self.bin_result_table.rowCount()
@@ -3597,6 +3648,174 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             logger.info("Saving datalog to: %s", file_path)
             self.append_log(f"[SYSTEM] DataLog saved to: {file_path}")
 
+    def _export_bin_results_to_excel(self):
+        """把 BIN 结果导出为 .xlsx。
+
+        - 电流列(每个 enabled 通道 + Vbat_remain)统一换算为 µA,
+          且单位只写在表头(形如 "Vbat (µA)"),数据单元格里只保留裸数值,
+          方便后续在 Excel 里继续计算 / 画图。
+        - 非电流列(BIN / Voltage)保持原样(Voltage 仍为 "3.800 | 3.800" 这类
+          由 UI 组装好的字符串,与 QTableWidget 一致)。
+        - 数据源优先使用 self._bin_results_data(即测试时原始 summary,含浮点数),
+          因此不受 UI 单位自动换算格式(mA/µA/nA)的影响。
+        """
+        table = getattr(self, "bin_result_table", None)
+        summaries = list(getattr(self, "_bin_results_data", []) or [])
+        if table is None or table.columnCount() == 0 or not summaries:
+            QMessageBox.information(
+                self, "Nothing to Export",
+                "There are no BIN results to export yet.\n"
+                "Run an Auto Test first and try again."
+            )
+            return
+
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+            from openpyxl.utils import get_column_letter
+        except ImportError:
+            QMessageBox.critical(
+                self, "Export Failed",
+                "Python package 'openpyxl' is required to export Excel.\n"
+                "Please install it first:\n\n    pip install openpyxl"
+            )
+            return
+
+        from datetime import datetime
+        default_name = f"consumption_bin_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        default_path = os.path.join(os.getcwd(), default_name)
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Export BIN Results",
+            default_path,
+            "Excel Files (*.xlsx);;All Files (*)"
+        )
+        if not file_path:
+            return
+        if not file_path.lower().endswith(".xlsx"):
+            file_path += ".xlsx"
+
+        try:
+            # ---- 先根据 enabled 通道配置组装列定义 ----
+            # column 元组: (title, kind)
+            #   kind = "bin" | "voltage" | "current" | "vbat_remain"
+            unit_suffix = " (\u00b5A)"  # µA
+            columns = [("BIN", "bin"), ("Voltage", "voltage")]
+            enabled_cfgs = [cfg for cfg in self._channel_configs if cfg["enabled"]]
+            for cfg in enabled_cfgs:
+                columns.append((f"{cfg['name']}{unit_suffix}", "current", cfg))
+            has_sub = any(
+                not cfg["name"].lower().startswith("vbat") for cfg in enabled_cfgs
+            )
+            if has_sub:
+                columns.append((f"Vbat_remain{unit_suffix}", "vbat_remain"))
+
+            def _to_ua(value):
+                """A -> µA;None / 非数值返回空串。"""
+                if value is None:
+                    return ""
+                try:
+                    return round(float(value) * 1e6, 3)
+                except (TypeError, ValueError):
+                    return ""
+
+            def _voltage_text(summary):
+                channel_voltages = summary.get("channel_voltages", {}) or {}
+                parts = []
+                for cfg in enabled_cfgs:
+                    device_label, hw_ch = self._parse_channel_key(cfg["channel"])
+                    v = channel_voltages.get((device_label, hw_ch))
+                    parts.append(f"{v:.4g}" if v is not None else "N/A")
+                return " | ".join(parts) if parts else "- - -"
+
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "BIN Results"
+
+            header_font = Font(bold=True, color="FFFFFF", size=11)
+            header_fill = PatternFill("solid", fgColor="1F3864")
+            header_align = Alignment(horizontal="center", vertical="center")
+            cell_align = Alignment(horizontal="center", vertical="center")
+            thin_side = Side(style="thin", color="B4C7E7")
+            thin_border = Border(
+                left=thin_side, right=thin_side,
+                top=thin_side, bottom=thin_side,
+            )
+            row_fill_even = PatternFill("solid", fgColor="F2F6FC")
+
+            for col_idx, col_def in enumerate(columns, start=1):
+                title = col_def[0]
+                cell = ws.cell(row=1, column=col_idx, value=title)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = header_align
+                cell.border = thin_border
+
+            # ---- 数据行 ----
+            for r, summary in enumerate(summaries):
+                excel_row = r + 2
+                bin_name = summary.get("bin_name", f"BIN-{r + 1}")
+                channels = summary.get("channels", {}) or {}
+                vbat_current = summary.get("vbat")
+                vbat_remain = summary.get("vbat_remain")
+
+                for col_idx, col_def in enumerate(columns, start=1):
+                    kind = col_def[1]
+                    if kind == "bin":
+                        value = bin_name
+                    elif kind == "voltage":
+                        value = _voltage_text(summary)
+                    elif kind == "current":
+                        cfg = col_def[2]
+                        if cfg["name"].lower().startswith("vbat"):
+                            value = _to_ua(vbat_current)
+                        else:
+                            device_label, hw_ch = self._parse_channel_key(cfg["channel"])
+                            value = _to_ua(channels.get((device_label, hw_ch)))
+                    elif kind == "vbat_remain":
+                        value = _to_ua(vbat_remain)
+                    else:
+                        value = ""
+
+                    cell = ws.cell(row=excel_row, column=col_idx, value=value)
+                    cell.alignment = cell_align
+                    cell.border = thin_border
+                    if isinstance(value, (int, float)):
+                        cell.number_format = "0.000"
+                    if r % 2 == 1:
+                        cell.fill = row_fill_even
+
+            # ---- 列宽自适应 ----
+            for col_idx, col_def in enumerate(columns, start=1):
+                title = col_def[0]
+                max_len = len(str(title))
+                for row_cells in ws.iter_rows(
+                    min_row=2, max_row=len(summaries) + 1,
+                    min_col=col_idx, max_col=col_idx,
+                ):
+                    for c in row_cells:
+                        tl = len(str(c.value)) if c.value is not None else 0
+                        if tl > max_len:
+                            max_len = tl
+                ws.column_dimensions[get_column_letter(col_idx)].width = min(
+                    max(max_len + 4, 10), 40
+                )
+            ws.row_dimensions[1].height = 22
+            ws.freeze_panes = "A2"
+
+            wb.save(file_path)
+            self.append_log(f"[EXPORT] BIN results exported to: {file_path}")
+            QMessageBox.information(
+                self, "Export Succeeded",
+                f"BIN results have been exported to:\n{file_path}"
+            )
+        except Exception as e:
+            logger.exception("Export BIN results failed")
+            self.append_log(f"[ERROR] Export BIN results failed: {e}")
+            QMessageBox.critical(
+                self, "Export Failed",
+                f"Failed to export BIN results:\n{e}"
+            )
+
     @staticmethod
     def _format_current(current_A):
         abs_i = abs(current_A)
@@ -3658,6 +3877,8 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self._current_total_bins = 0
         self.bin_result_table.setRowCount(0)
         self.bin_result_table.hide()
+        if hasattr(self, "_bin_result_header"):
+            self._bin_result_header.hide()
 
     def get_test_mode(self):
         return "Consumption Test"
