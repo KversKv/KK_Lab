@@ -312,6 +312,15 @@ class I2CInterface:
         val_0x17_8bit = self._safe_read(0x17, 0x0000, I2CWidthFlag.BIT_8)
         val_0x17_10bit = self._safe_read(0x17, 0x0000, I2CWidthFlag.BIT_10)
         val_0x11_32bit = self._safe_read(0x11, 0x40080000, I2CWidthFlag.BIT_32)
+        main_die_dev_addr = 0x11
+
+        if val_0x11_32bit is not None and val_0x11_32bit == 0xFFFFFFFF:
+            val_0x31_32bit = self._safe_read(0x31, 0x40080000, I2CWidthFlag.BIT_32)
+            logger.debug("  [mainDie]     device=0x31, reg=0x40080000, 32bit => %s",
+                          "0x%08X" % val_0x31_32bit if val_0x31_32bit is not None else "None")
+            if self._is_valid_i2c_value(val_0x31_32bit):
+                val_0x11_32bit = val_0x31_32bit
+                main_die_dev_addr = 0x31
 
         logger.debug("bes_chip_check 读取结果:")
         logger.debug("  [mainDie_pmu] device=0x27, reg=0x0000, 8bit  => %s",
@@ -322,7 +331,8 @@ class I2CInterface:
                       "0x%04X" % val_0x17_8bit if val_0x17_8bit is not None else "None")
         logger.debug("  [PMU]         device=0x17, reg=0x0000, 10bit => %s",
                       "0x%04X" % val_0x17_10bit if val_0x17_10bit is not None else "None")
-        logger.debug("  [mainDie]     device=0x11, reg=0x40080000, 32bit => %s",
+        logger.debug("  [mainDie]     device=0x%02X, reg=0x40080000, 32bit => %s",
+                      main_die_dev_addr,
                       "0x%08X" % val_0x11_32bit if val_0x11_32bit is not None else "None")
 
         chip_name = None
@@ -349,7 +359,7 @@ class I2CInterface:
             main_die = "BES%s" % model
             main_die_version = "ver%s" % self._version_letter(ver_byte)
             main_die_i2c_width = 32
-            main_die_i2c_addr = "0x%02X" % 0x11
+            main_die_i2c_addr = "0x%02X" % main_die_dev_addr
 
         if self._is_valid_i2c_value(val_0x27_10bit):
             main_die_pmu_i2c_width = 10

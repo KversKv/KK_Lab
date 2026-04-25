@@ -1,0 +1,38 @@
+{
+  "version": 1.0,
+  "usb_connect": true,
+  "comm_port": 6,
+  "baudrate": 921600,
+  "erase_chip": false,
+  "programmer": "nand.bin",
+  "mem_type_comment": "refer to extend memory type. 0x00: spi nand, 0x10: sd, 0x20: emmc, 0x30: ufs",
+  "mem_type": "0x20",
+  "norflash_dld_comment": "NOR Flash下载配置项数组，默认为空数组。每个元素包含：addr(地址), magic(魔法值), dual-chip(双芯片模式), file(文件路径)",
+  "norflash_dld": {
+    "items": [      
+    ]
+  },
+  "extend_memory_dld_comment": "扩展内存下载配置项数组,拓展内存类型见 mem_type 配置(必需配置项）。地址为管理的物理地址。每个元素包含：addr(地址), file(文件路径)",
+  "extend_memory_dld": {
+    "items": [
+    ]
+  },
+  "extend_fs_dld_comment": "扩展内存文件系统下载项配置 mem_type 配置(必需配置项）。每个元素包含：file(文件路径)， fs_path(文件系统路径)",
+  "extend_fs_dld": {
+    "items": [
+	  {
+        "file": "E:\\code\\productLine\\dldtool\\2025-12-08\\dldtool\\Debug\\best1700_glass.bin",
+        "fs_path": "/data/emmc0/target_file1.bin"
+      },
+	  {
+        "file": "E:\\code\\productLine\\dldtool\\2025-12-08\\dldtool\\Debug\\best1700_glass.bin",
+        "fs_path": "/data/emmc0/target_file2.bin"
+      }
+    ]
+  },
+  "efuse_comment": "efuse set bit value only",
+  "efuse_dld": {
+    "items": [
+    ]
+  }
+}

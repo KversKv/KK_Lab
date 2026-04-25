@@ -25,6 +25,7 @@ SUPPORTED_CHIPS = [
     "bes1502x_2700ibp",
     "bes1502x_2700L",
     "bes1503",
+    "bes1505",
     "bes1600",
     "bes1603",
     "bes1605",

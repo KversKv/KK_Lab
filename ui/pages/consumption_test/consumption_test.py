@@ -20,7 +20,8 @@ from PySide6.QtWidgets import (
     QPushButton, QLabel, QLineEdit, QPlainTextEdit,
     QFrame, QApplication, QFileDialog,
     QCheckBox, QSizePolicy, QMessageBox, QScrollArea,
-    QTableWidget, QTableWidgetItem, QHeaderView
+    QTableWidget, QTableWidgetItem, QHeaderView,
+    QSplitter
 )
 from PySide6.QtCore import (
     Qt, QTimer, Signal, QThread, QObject, QSize,
@@ -511,7 +512,7 @@ class _ConsumptionTestForceHighWorker(QObject):
 
     def __init__(self, vbat_device_label, vbat_inst, vbat_hw_ch,
                  force_high_map, test_time, sample_period,
-                 channel_names=None):
+                 channel_names=None, force_voltages=None):
         super().__init__()
         self.vbat_device_label = vbat_device_label
         self.vbat_inst = vbat_inst
@@ -520,6 +521,7 @@ class _ConsumptionTestForceHighWorker(QObject):
         self.test_time = test_time
         self.sample_period = sample_period
         self.channel_names = channel_names or {}
+        self.force_voltages = force_voltages or {}
         self._is_stopped = False
 
     def stop(self):
@@ -638,12 +640,36 @@ class _ConsumptionTestForceHighWorker(QObject):
 
         def prepare_worker(idx, task):
             try:
-                mv = task["inst"].prepare_force_high(
-                    task["force_channels"],
-                    voltage_offset=0.02,
-                    current_limit=1.0,
-                    monitor_channels=task["monitor_channels"],
-                )
+                forced_chs = []
+                normal_chs = []
+                for ch in task["force_channels"]:
+                    fv = self.force_voltages.get((task["device_label"], ch))
+                    if fv is not None:
+                        forced_chs.append((ch, fv))
+                    else:
+                        normal_chs.append(ch)
+
+                mv = {}
+                if normal_chs:
+                    mv = task["inst"].prepare_force_high(
+                        normal_chs,
+                        voltage_offset=0.02,
+                        current_limit=1.0,
+                        monitor_channels=task["monitor_channels"],
+                    )
+
+                import time as _t
+                for ch, fv in forced_chs:
+                    ch_name = self.channel_names.get((task["device_label"], ch), f"{task['device_label']}-CH{ch}")
+                    self.log_message.emit(f"[TEST] Force Vol: {ch_name} -> {fv:.4f}V (user override)")
+                    task["inst"].set_mode(ch, "PS2Q")
+                    task["inst"].set_voltage(ch, fv)
+                    task["inst"].set_current_limit(ch, 1.0)
+                    task["inst"].channel_on(ch)
+                    mv[ch] = fv
+                if forced_chs:
+                    _t.sleep(0.5)
+
                 task["measured_voltages"] = mv
             except Exception as e:
                 prepare_errors[idx] = e
@@ -842,7 +868,7 @@ class _ConsumptionTestForceWorker(QObject):
 
     def __init__(self, vbat_device_label, vbat_inst, vbat_hw_ch,
                  force_map, test_time, sample_period,
-                 channel_names=None):
+                 channel_names=None, force_voltages=None):
         super().__init__()
         self.vbat_device_label = vbat_device_label
         self.vbat_inst = vbat_inst
@@ -851,6 +877,7 @@ class _ConsumptionTestForceWorker(QObject):
         self.test_time = test_time
         self.sample_period = sample_period
         self.channel_names = channel_names or {}
+        self.force_voltages = force_voltages or {}
         self._is_stopped = False
 
     def stop(self):
@@ -964,11 +991,37 @@ class _ConsumptionTestForceWorker(QObject):
 
         def prepare_worker(idx, task):
             try:
-                mv = task["inst"].prepare_force_auto(
-                    task["force_channels"],
-                    current_limit=1.0,
-                    monitor_channels=task["monitor_channels"],
-                )
+                forced_chs = []
+                normal_chs = []
+                for ch in task["force_channels"]:
+                    fv = self.force_voltages.get((task["device_label"], ch))
+                    if fv is not None:
+                        forced_chs.append((ch, fv))
+                    else:
+                        normal_chs.append(ch)
+
+                mv = {}
+                if normal_chs:
+                    mv = task["inst"].prepare_force_auto(
+                        normal_chs,
+                        current_limit=1.0,
+                        monitor_channels=task["monitor_channels"],
+                    )
+
+                import time as _t
+                for ch, fv in forced_chs:
+                    ch_name = self.channel_names.get((task["device_label"], ch), f"{task['device_label']}-CH{ch}")
+                    self.log_message.emit(f"[TEST] Force Vol: {ch_name} -> {fv:.4f}V (user override)")
+                    task["inst"].set_mode(ch, "PS2Q")
+                    task["inst"].set_voltage(ch, fv)
+                    task["inst"].set_current_limit(ch, 1.0)
+                    task["inst"].channel_on(ch)
+                    final_limit = 0.07 if fv < 1.0 else 0.15
+                    task["inst"].set_current_limit(ch, final_limit)
+                    mv[ch] = fv
+                if forced_chs:
+                    _t.sleep(0.5)
+
                 task["measured_voltages"] = mv
             except Exception as e:
                 prepare_errors[idx] = e
@@ -1176,7 +1229,7 @@ class _AutoTestWorker(QObject):
                  channel_names=None,
                  chip_combo_text=None, selected_chip_config=None,
                  config_text=None, parse_config_commands_fn=None,
-                 resolve_device_fn=None):
+                 resolve_device_fn=None, force_voltages=None):
         super().__init__()
         self.com_port = com_port
         self.firmware_paths = list(firmware_paths)
@@ -1201,6 +1254,7 @@ class _AutoTestWorker(QObject):
         self.config_text = config_text or ""
         self._parse_config_commands_fn = parse_config_commands_fn
         self._resolve_device_fn = resolve_device_fn
+        self.force_voltages = force_voltages or {}
         self._is_stopped = False
 
     def stop(self):
@@ -1455,16 +1509,27 @@ class _AutoTestWorker(QObject):
             for device_label, (n6705c_inst, hw_channels) in self.force_map.items():
                 for ch in hw_channels:
                     try:
-                        v_default = default_voltages.get((device_label, ch), 0.0)
-                        v_plus20 = v_default + 0.02
-                        n6705c_inst.set_mode(ch, "PS2Q")
-                        n6705c_inst.set_voltage(ch, v_plus20)
-                        n6705c_inst.set_current_limit(ch, 0.02)
-                        n6705c_inst.channel_on(ch)
-                        final_limit = 0.07 if v_plus20 < 1.0 else 0.15
-                        n6705c_inst.set_current_limit(ch, final_limit)
-                        ch_name = self.channel_names.get((device_label, ch), f"{device_label}-CH{ch}")
-                        self.log_message.emit(f"[AUTO_TEST]   {ch_name}: {v_default:.4f}V -> {v_plus20:.4f}V (+20mV)")
+                        fv = self.force_voltages.get((device_label, ch))
+                        if fv is not None:
+                            n6705c_inst.set_mode(ch, "PS2Q")
+                            n6705c_inst.set_voltage(ch, fv)
+                            n6705c_inst.set_current_limit(ch, 0.02)
+                            n6705c_inst.channel_on(ch)
+                            final_limit = 0.07 if fv < 1.0 else 0.15
+                            n6705c_inst.set_current_limit(ch, final_limit)
+                            ch_name = self.channel_names.get((device_label, ch), f"{device_label}-CH{ch}")
+                            self.log_message.emit(f"[AUTO_TEST]   {ch_name}: Force Vol -> {fv:.4f}V (user override)")
+                        else:
+                            v_default = default_voltages.get((device_label, ch), 0.0)
+                            v_plus20 = v_default + 0.02
+                            n6705c_inst.set_mode(ch, "PS2Q")
+                            n6705c_inst.set_voltage(ch, v_plus20)
+                            n6705c_inst.set_current_limit(ch, 0.02)
+                            n6705c_inst.channel_on(ch)
+                            final_limit = 0.07 if v_plus20 < 1.0 else 0.15
+                            n6705c_inst.set_current_limit(ch, final_limit)
+                            ch_name = self.channel_names.get((device_label, ch), f"{device_label}-CH{ch}")
+                            self.log_message.emit(f"[AUTO_TEST]   {ch_name}: {v_default:.4f}V -> {v_plus20:.4f}V (+20mV)")
                     except Exception as e:
                         self.log_message.emit(f"[ERROR] Failed to set {device_label}-CH{ch}: {e}")
 
@@ -1524,16 +1589,27 @@ class _AutoTestWorker(QObject):
             for device_label, (n6705c_inst, hw_channels) in self.force_map.items():
                 for ch in hw_channels:
                     try:
-                        v_default = default_voltages.get((device_label, ch), 0.0)
-                        new_v = self._align_voltage(v_default)
-                        n6705c_inst.set_mode(ch, "PS2Q")
-                        n6705c_inst.set_voltage(ch, new_v)
-                        n6705c_inst.set_current_limit(ch, 0.02)
-                        n6705c_inst.channel_on(ch)
-                        final_limit = 0.07 if new_v < 1.0 else 0.15
-                        n6705c_inst.set_current_limit(ch, final_limit)
-                        ch_name = self.channel_names.get((device_label, ch), f"{device_label}-CH{ch}")
-                        self.log_message.emit(f"[AUTO_TEST]   {ch_name}: default={v_default:.4f}V -> aligned={new_v:.4f}V")
+                        fv = self.force_voltages.get((device_label, ch))
+                        if fv is not None:
+                            n6705c_inst.set_mode(ch, "PS2Q")
+                            n6705c_inst.set_voltage(ch, fv)
+                            n6705c_inst.set_current_limit(ch, 0.02)
+                            n6705c_inst.channel_on(ch)
+                            final_limit = 0.07 if fv < 1.0 else 0.15
+                            n6705c_inst.set_current_limit(ch, final_limit)
+                            ch_name = self.channel_names.get((device_label, ch), f"{device_label}-CH{ch}")
+                            self.log_message.emit(f"[AUTO_TEST]   {ch_name}: Force Vol -> {fv:.4f}V (user override)")
+                        else:
+                            v_default = default_voltages.get((device_label, ch), 0.0)
+                            new_v = self._align_voltage(v_default)
+                            n6705c_inst.set_mode(ch, "PS2Q")
+                            n6705c_inst.set_voltage(ch, new_v)
+                            n6705c_inst.set_current_limit(ch, 0.02)
+                            n6705c_inst.channel_on(ch)
+                            final_limit = 0.07 if new_v < 1.0 else 0.15
+                            n6705c_inst.set_current_limit(ch, final_limit)
+                            ch_name = self.channel_names.get((device_label, ch), f"{device_label}-CH{ch}")
+                            self.log_message.emit(f"[AUTO_TEST]   {ch_name}: default={v_default:.4f}V -> aligned={new_v:.4f}V")
                     except Exception as e:
                         self.log_message.emit(f"[ERROR] Auto set failed {device_label}-CH{ch}: {e}")
 
@@ -1680,7 +1756,8 @@ class _AutoTestWorker(QObject):
                 vbat_v = 3.8
             channel_voltages[(self.vbat_device_label, self.vbat_hw_ch)] = vbat_v
             for key, v in default_voltages.items():
-                channel_voltages[key] = v
+                fv = self.force_voltages.get(key)
+                channel_voltages[key] = fv if fv is not None else v
 
             self._emit_summary(results, vbat_current, vbat_remain, bin_name, channel_voltages)
             all_bin_results.append({
@@ -2113,14 +2190,35 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         body_layout.addWidget(left_scroll)
         body_layout.addWidget(right_widget, 1)
 
-        main_layout.addLayout(body_layout, 1)
+        body_widget = QWidget()
+        body_widget.setStyleSheet("background: transparent; border: none;")
+        body_widget.setLayout(body_layout)
 
         self.execution_logs = ExecutionLogsFrame(show_progress=False)
         self.log_edit = self.execution_logs.log_edit
         self.clear_log_btn = self.execution_logs.clear_log_btn
         self.log_edit.setMinimumHeight(40)
-        self.log_edit.setMaximumHeight(80)
-        main_layout.addWidget(self.execution_logs)
+
+        splitter = QSplitter(Qt.Vertical)
+        splitter.setHandleWidth(6)
+        splitter.setStyleSheet("""
+            QSplitter::handle {
+                background-color: #0a1228;
+            }
+            QSplitter::handle:hover {
+                background-color: #1a2d57;
+            }
+            QSplitter::handle:pressed {
+                background-color: #2a4070;
+            }
+        """)
+        splitter.addWidget(body_widget)
+        splitter.addWidget(self.execution_logs)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 0)
+        splitter.setSizes([600, 120])
+
+        main_layout.addWidget(splitter, 1)
 
     def _create_connection_panel(self):
         panel = QFrame()
@@ -2950,7 +3048,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         """)
         config_layout = QVBoxLayout(config_frame)
         config_layout.setContentsMargins(12, 10, 12, 10)
-        config_layout.setSpacing(6)
+        config_layout.setSpacing(8)
 
         config_header = QHBoxLayout()
         config_header.setSpacing(6)
@@ -2963,10 +3061,17 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         config_header.addStretch()
         config_layout.addLayout(config_header)
 
-        time_row = QHBoxLayout()
-        time_row.setSpacing(6)
+        label_style = "font-size: 11px; color: #7e96bf;"
+        label_width = 72
+
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(6)
+
         time_label = QLabel("Test Time (s)")
-        time_label.setStyleSheet("font-size: 11px; color: #7e96bf;")
+        time_label.setStyleSheet(label_style)
+        time_label.setFixedWidth(label_width)
         self.test_time_input = QLineEdit("10")
         self.test_time_input.setFixedHeight(26)
         self.test_time_input.setAlignment(Qt.AlignCenter)
@@ -2983,27 +3088,30 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
                 border: 1px solid #5b7cff;
             }
         """)
-        time_row.addWidget(time_label)
-        time_row.addWidget(self.test_time_input, 1)
-        config_layout.addLayout(time_row)
+        grid.addWidget(time_label, 0, 0, Qt.AlignVCenter)
+        grid.addWidget(self.test_time_input, 0, 1)
 
-        method_row = QHBoxLayout()
-        method_row.setSpacing(6)
         method_label = QLabel("Control")
-        method_label.setStyleSheet("font-size: 11px; color: #7e96bf;")
+        method_label.setStyleSheet(label_style)
+        method_label.setFixedWidth(label_width)
         self.control_method_toggle = ControlMethodToggle()
         self.control_method_toggle.setFixedWidth(140)
-        method_row.addWidget(method_label)
-        method_row.addWidget(self.control_method_toggle)
-        method_row.addStretch()
-        config_layout.addLayout(method_row)
+        method_ctrl_row = QHBoxLayout()
+        method_ctrl_row.setSpacing(0)
+        method_ctrl_row.addWidget(self.control_method_toggle)
+        method_ctrl_row.addStretch()
+        grid.addWidget(method_label, 1, 0, Qt.AlignVCenter)
+        grid.addLayout(method_ctrl_row, 1, 1)
 
-        label_style = "font-size: 10px; color: #7e96bf;"
+        config_layout.addLayout(grid)
+
+        label_style_sm = "font-size: 10px; color: #7e96bf;"
 
         poweron_row = QHBoxLayout()
         poweron_row.setSpacing(4)
         poweron_label = QLabel("PwrON")
-        poweron_label.setStyleSheet(label_style)
+        poweron_label.setStyleSheet(label_style_sm)
+        poweron_label.setFixedWidth(label_width)
         self.poweron_channel_combo = DarkComboBox()
         self.poweron_channel_combo.setFixedHeight(24)
         font = self.poweron_channel_combo.font()
@@ -3023,7 +3131,8 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         reset_row = QHBoxLayout()
         reset_row.setSpacing(4)
         reset_label = QLabel("Reset")
-        reset_label.setStyleSheet(label_style)
+        reset_label.setStyleSheet(label_style_sm)
+        reset_label.setFixedWidth(label_width)
         self.reset_channel_combo = DarkComboBox()
         self.reset_channel_combo.setFixedHeight(24)
         font = self.reset_channel_combo.font()
@@ -3086,7 +3195,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         scroll_area.setWidgetResizable(True)
         scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll_area.setFixedHeight(140)
+        scroll_area.setFixedHeight(200)
         scroll_area.setStyleSheet("""
             QScrollArea {
                 background: transparent;
@@ -3125,7 +3234,8 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
     def _add_channel_config_card(self, name, channel_key, enabled):
         idx = len(self._channel_configs)
-        config = {"name": name, "channel": channel_key, "enabled": enabled}
+        config = {"name": name, "channel": channel_key, "enabled": enabled,
+                  "force_vol_enabled": False, "force_vol_value": ""}
         self._channel_configs.append(config)
 
         card = QFrame()
@@ -3216,6 +3326,41 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
                 break
         card_layout.addWidget(channel_combo)
 
+        force_vol_cb = QCheckBox("Force Vol")
+        force_vol_cb.setChecked(False)
+        force_vol_cb.setStyleSheet("""
+            QCheckBox {
+                color: #b0c4e8;
+                font-size: 10px;
+                font-weight: 600;
+            }
+        """)
+        card_layout.addWidget(force_vol_cb)
+
+        force_vol_input = QLineEdit()
+        force_vol_input.setPlaceholderText("V")
+        force_vol_input.setEnabled(False)
+        font = force_vol_input.font()
+        font.setPixelSize(11)
+        force_vol_input.setFont(font)
+        force_vol_input.setMaximumHeight(26)
+        force_vol_input.setStyleSheet("""
+            QLineEdit {
+                background-color: #0a1733;
+                color: #c8d8f8;
+                border: 1.5px solid #27406f;
+                border-radius: 6px;
+                padding: 0px 10px;
+                max-height: 18px;
+            }
+            QLineEdit:disabled {
+                background-color: #060d1f;
+                color: #3a4a6a;
+                border: 1.5px solid #1a2a4a;
+            }
+        """)
+        card_layout.addWidget(force_vol_input)
+
         stretch_idx = self._channel_config_row.count() - 1
         self._channel_config_row.insertWidget(stretch_idx, card)
 
@@ -3228,6 +3373,8 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             "remove_btn": remove_btn,
             "name_label": name_label,
             "ch_label": ch_label,
+            "force_vol_cb": force_vol_cb,
+            "force_vol_input": force_vol_input,
             "config_index": idx,
         }
         self._channel_config_widgets.append(wdata)
@@ -3236,6 +3383,8 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         name_input.currentTextChanged.connect(lambda text, i=idx: self._on_config_name_changed(i, text))
         channel_combo.currentIndexChanged.connect(lambda ci, i=idx: self._on_config_channel_changed(i))
         remove_btn.clicked.connect(lambda checked=False, i=idx: self._remove_channel_config(i))
+        force_vol_cb.toggled.connect(lambda checked, i=idx: self._on_force_vol_toggled(i, checked))
+        force_vol_input.textChanged.connect(lambda text, i=idx: self._on_force_vol_changed(i, text))
 
         self._update_card_disabled_state(wdata, enabled)
         self._refresh_result_cards()
@@ -3250,6 +3399,11 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         wdata["name_input"].setEnabled(enabled)
         wdata["channel_combo"].setEnabled(enabled)
         wdata["remove_btn"].setEnabled(enabled)
+        wdata["force_vol_cb"].setEnabled(enabled)
+        if enabled:
+            wdata["force_vol_input"].setEnabled(wdata["force_vol_cb"].isChecked())
+        else:
+            wdata["force_vol_input"].setEnabled(False)
 
         card = wdata["card"]
         card_id = wdata["card_id"]
@@ -3309,6 +3463,16 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             self._channel_configs[idx]["channel"] = raw
             self._refresh_result_cards()
 
+    def _on_force_vol_toggled(self, idx, checked):
+        if idx < len(self._channel_configs):
+            self._channel_configs[idx]["force_vol_enabled"] = checked
+            wdata = self._channel_config_widgets[idx]
+            wdata["force_vol_input"].setEnabled(checked)
+
+    def _on_force_vol_changed(self, idx, text):
+        if idx < len(self._channel_configs):
+            self._channel_configs[idx]["force_vol_value"] = text
+
     def _remove_channel_config(self, idx):
         if idx >= len(self._channel_configs):
             return
@@ -3325,10 +3489,14 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             w["name_input"].currentTextChanged.disconnect()
             w["channel_combo"].currentIndexChanged.disconnect()
             w["remove_btn"].clicked.disconnect()
+            w["force_vol_cb"].toggled.disconnect()
+            w["force_vol_input"].textChanged.disconnect()
             w["enable_cb"].toggled.connect(lambda checked, ci=i: self._on_config_enable_changed(ci, checked))
             w["name_input"].currentTextChanged.connect(lambda text, ci=i: self._on_config_name_changed(ci, text))
             w["channel_combo"].currentIndexChanged.connect(lambda cii, ci=i: self._on_config_channel_changed(ci))
             w["remove_btn"].clicked.connect(lambda checked=False, ci=i: self._remove_channel_config(ci))
+            w["force_vol_cb"].toggled.connect(lambda checked, ci=i: self._on_force_vol_toggled(ci, checked))
+            w["force_vol_input"].textChanged.connect(lambda text, ci=i: self._on_force_vol_changed(ci, text))
 
         self._refresh_result_cards()
 
@@ -4003,6 +4171,23 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             return m.group(1), int(m.group(2))
         return None, None
 
+    def _build_force_voltages(self):
+        force_voltages = {}
+        for cfg in self._channel_configs:
+            if not cfg["enabled"] or not cfg.get("force_vol_enabled"):
+                continue
+            val_text = cfg.get("force_vol_value", "").strip()
+            if not val_text:
+                continue
+            try:
+                voltage = float(val_text)
+            except ValueError:
+                continue
+            device_label, hw_ch = self._parse_channel_key(cfg["channel"])
+            if device_label is not None and hw_ch is not None:
+                force_voltages[(device_label, hw_ch)] = voltage
+        return force_voltages
+
     def _on_start_test(self):
         self._start_test()
 
@@ -4094,6 +4279,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             vbat_device_label, vbat_inst, vbat_hw_ch,
             force_high_map, test_time, sample_period,
             channel_names=channel_names,
+            force_voltages=self._build_force_voltages(),
         )
         thread = QThread()
         worker.moveToThread(thread)
@@ -4204,6 +4390,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             vbat_device_label, vbat_inst, vbat_hw_ch,
             force_map, test_time, sample_period,
             channel_names=channel_names,
+            force_voltages=self._build_force_voltages(),
         )
         thread = QThread()
         worker.moveToThread(thread)
@@ -4518,6 +4705,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             config_text=config_text,
             parse_config_commands_fn=self._parse_config_commands,
             resolve_device_fn=self._resolve_device,
+            force_voltages=self._build_force_voltages(),
         )
         thread = QThread()
         worker.moveToThread(thread)
