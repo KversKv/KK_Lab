@@ -2320,14 +2320,13 @@ class N6705CDatalogUI(QWidget):
     def _build_config_card(self):
         layout = self.config_card.main_layout
 
-        param_grid = QGridLayout()
-        param_grid.setHorizontalSpacing(10)
-        param_grid.setVerticalSpacing(6)
+        from PySide6.QtGui import QIntValidator
 
-        sp_label = QLabel("Sampling\nPeriod (\u00B5s)")
+        sp_label = QLabel("Sampling Period (\u00B5s) :")
         sp_label.setObjectName("fieldLabel")
         self.sample_period_edit = QLineEdit("20")
-        self.sample_period_edit.setFixedWidth(80)
+        self.sample_period_edit.setFixedWidth(56)
+        self.sample_period_edit.setFixedHeight(24)
         self.sample_period_edit.editingFinished.connect(self._validate_sample_period)
 
         self.min_period_cb = QCheckBox("Minimum")
@@ -2335,18 +2334,113 @@ class N6705CDatalogUI(QWidget):
         self.min_period_cb.setStyleSheet("font-size: 10px; color: #8eb0e3;")
         self.min_period_cb.stateChanged.connect(self._on_min_period_toggled)
 
-        mt_label = QLabel("Monitoring\nTime (s)")
+        sp_title_row = QHBoxLayout()
+        sp_title_row.setContentsMargins(0, 0, 0, 0)
+        sp_title_row.addWidget(sp_label)
+        sp_title_row.addStretch(1)
+
+        indent_px = 16
+
+        sp_edit_row = QHBoxLayout()
+        sp_edit_row.setContentsMargins(0, 0, 0, 0)
+        sp_edit_row.setSpacing(8)
+        sp_edit_row.addSpacing(indent_px)
+        sp_edit_row.addWidget(self.sample_period_edit)
+        sp_edit_row.addWidget(self.min_period_cb)
+        sp_edit_row.addStretch(1)
+
+        mt_label = QLabel("Monitoring Time :")
         mt_label.setObjectName("fieldLabel")
-        self.monitor_time_edit = QLineEdit("5")
-        self.monitor_time_edit.setFixedWidth(80)
 
-        param_grid.addWidget(sp_label, 0, 0)
-        param_grid.addWidget(mt_label, 0, 1)
-        param_grid.addWidget(self.sample_period_edit, 1, 0)
-        param_grid.addWidget(self.monitor_time_edit, 1, 1)
-        param_grid.addWidget(self.min_period_cb, 2, 0)
+        time_edit_width = 36
 
-        layout.addLayout(param_grid)
+        time_edit_style = (
+            "QLineEdit { padding: 2px 4px; border-radius: 3px; "
+            "background-color: #0c1a35; border: 1px solid #1e3460; "
+            "color: #eaf2ff; font-size: 11px; }"
+            "QLineEdit:focus { border-color: #3a6fd4; }"
+        )
+
+        def _make_time_edit(default_text):
+            edit = QLineEdit(default_text)
+            edit.setFixedWidth(time_edit_width)
+            edit.setFixedHeight(24)
+            edit.setAlignment(Qt.AlignCenter)
+            edit.setValidator(QIntValidator(0, 999999, self))
+            edit.setStyleSheet(time_edit_style)
+            edit.editingFinished.connect(self._validate_monitor_time)
+            return edit
+
+        self.monitor_time_d_edit = _make_time_edit("0")
+        self.monitor_time_h_edit = _make_time_edit("0")
+        self.monitor_time_m_edit = _make_time_edit("0")
+        self.monitor_time_s_edit = _make_time_edit("5")
+
+        def _make_unit_label(text):
+            lbl = QLabel(text)
+            lbl.setAlignment(Qt.AlignCenter)
+            lbl.setStyleSheet(
+                "color: #8eb0e3; font-size: 10px; padding: 0px; border: none;"
+            )
+            lbl.setFixedWidth(time_edit_width)
+            return lbl
+
+        def _make_colon():
+            lbl = QLabel(":")
+            lbl.setAlignment(Qt.AlignCenter)
+            lbl.setStyleSheet("color: #8eb0e3; font-size: 11px;")
+            lbl.setFixedWidth(6)
+            return lbl
+
+        mt_dd_lbl = _make_unit_label("DD")
+        mt_hh_lbl = _make_unit_label("HH")
+        mt_mm_lbl = _make_unit_label("MM")
+        mt_ss_lbl = _make_unit_label("SS")
+
+        mt_title_row = QHBoxLayout()
+        mt_title_row.setContentsMargins(0, 0, 0, 0)
+        mt_title_row.addWidget(mt_label)
+        mt_title_row.addStretch(1)
+
+        mt_units_row = QHBoxLayout()
+        mt_units_row.setContentsMargins(0, 0, 0, 0)
+        mt_units_row.setSpacing(2)
+        mt_units_row.addSpacing(indent_px)
+        mt_units_row.addWidget(mt_dd_lbl)
+        mt_units_row.addWidget(_make_colon())
+        mt_units_row.addWidget(mt_hh_lbl)
+        mt_units_row.addWidget(_make_colon())
+        mt_units_row.addWidget(mt_mm_lbl)
+        mt_units_row.addWidget(_make_colon())
+        mt_units_row.addWidget(mt_ss_lbl)
+        mt_units_row.addStretch(1)
+
+        mt_edits_row = QHBoxLayout()
+        mt_edits_row.setContentsMargins(0, 0, 0, 0)
+        mt_edits_row.setSpacing(2)
+        mt_edits_row.addSpacing(indent_px)
+        mt_edits_row.addWidget(self.monitor_time_d_edit)
+        mt_edits_row.addWidget(_make_colon())
+        mt_edits_row.addWidget(self.monitor_time_h_edit)
+        mt_edits_row.addWidget(_make_colon())
+        mt_edits_row.addWidget(self.monitor_time_m_edit)
+        mt_edits_row.addWidget(_make_colon())
+        mt_edits_row.addWidget(self.monitor_time_s_edit)
+        mt_edits_row.addStretch(1)
+
+        self.monitor_time_edit = self.monitor_time_s_edit
+
+        params_vbox = QVBoxLayout()
+        params_vbox.setContentsMargins(0, 0, 0, 0)
+        params_vbox.setSpacing(4)
+        params_vbox.addLayout(sp_title_row)
+        params_vbox.addLayout(sp_edit_row)
+        params_vbox.addSpacing(4)
+        params_vbox.addLayout(mt_title_row)
+        params_vbox.addLayout(mt_units_row)
+        params_vbox.addLayout(mt_edits_row)
+
+        layout.addLayout(params_vbox)
 
     def _build_meas_settings_card(self):
         layout = self.meas_settings_card.main_layout
@@ -4373,6 +4467,57 @@ class N6705CDatalogUI(QWidget):
 
         self.sample_period_edit.setText(str(int(val)))
 
+    def _get_monitor_time_seconds(self):
+        def _parse_int(edit, default=0):
+            try:
+                return max(0, int(edit.text().strip() or "0"))
+            except ValueError:
+                return default
+
+        d = _parse_int(self.monitor_time_d_edit)
+        h = _parse_int(self.monitor_time_h_edit)
+        m = _parse_int(self.monitor_time_m_edit)
+        s = _parse_int(self.monitor_time_s_edit)
+        total = d * 86400 + h * 3600 + m * 60 + s
+        if total <= 0:
+            total = 1
+        return float(total)
+
+    def _validate_monitor_time(self):
+        def _parse_int(edit, default=0):
+            try:
+                return max(0, int(edit.text().strip() or "0"))
+            except ValueError:
+                return default
+
+        d = _parse_int(self.monitor_time_d_edit)
+        h = _parse_int(self.monitor_time_h_edit)
+        m = _parse_int(self.monitor_time_m_edit)
+        s = _parse_int(self.monitor_time_s_edit)
+
+        total = d * 86400 + h * 3600 + m * 60 + s
+        if total <= 0:
+            total = 1
+
+        max_total = 99 * 86400 + 23 * 3600 + 59 * 60 + 59
+        if total > max_total:
+            total = max_total
+
+        d_new = total // 86400
+        rem = total % 86400
+        h_new = rem // 3600
+        m_new = (rem % 3600) // 60
+        s_new = rem % 60
+
+        if self.monitor_time_d_edit.text() != str(d_new):
+            self.monitor_time_d_edit.setText(str(d_new))
+        if self.monitor_time_h_edit.text() != str(h_new):
+            self.monitor_time_h_edit.setText(str(h_new))
+        if self.monitor_time_m_edit.text() != str(m_new):
+            self.monitor_time_m_edit.setText(str(m_new))
+        if self.monitor_time_s_edit.text() != str(s_new):
+            self.monitor_time_s_edit.setText(str(s_new))
+
     def _on_start_or_stop_recording(self):
         if self.is_recording:
             self._stop_recording()
@@ -4444,8 +4589,8 @@ class N6705CDatalogUI(QWidget):
             sample_period = 1000.0
 
         try:
-            monitor_time = float(self.monitor_time_edit.text())
-        except ValueError:
+            monitor_time = self._get_monitor_time_seconds()
+        except Exception:
             monitor_time = 5.0
 
         timeout_ms = int((monitor_time + 600) * 1000)
