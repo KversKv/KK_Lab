@@ -90,17 +90,36 @@ _PAGE_STYLE = """
         background-color: transparent;
     }
     QSplitter::handle {
-        background-color: #0b1428;
-        width: 4px;
-        border-radius: 2px;
+        background-color: transparent;
+        width: 3px;
+        height: 3px;
+        border-radius: 0px;
     }
     QSplitter::handle:hover {
-        background-color: #5b5cf6;
+        background-color: transparent;
     }
     QFrame#sectionFrame {
         background-color: #09142e;
         border: none;
         border-radius: 14px;
+    }
+    QFrame#regionFrame {
+        background-color: #08122a;
+        border: 1px solid #1a2d57;
+        border-radius: 12px;
+    }
+    QFrame#regionFrame:hover {
+        border: 1px solid #27406f;
+    }
+    QSplitter#workspaceSplitter::handle {
+        background-color: transparent;
+    }
+    QSplitter#workspaceSplitter::handle:horizontal {
+        width: 4px;
+        background-color: transparent;
+    }
+    QSplitter#workspaceSplitter::handle:horizontal:hover {
+        background-color: transparent;
     }
     QFrame#innerCard {
         background-color: #0b1933;
@@ -287,9 +306,10 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
         root.setContentsMargins(8, 8, 8, 8)
-        root.setSpacing(6)
+        root.setSpacing(10)
 
         header_layout = QVBoxLayout()
+        header_layout.setContentsMargins(4, 0, 4, 0)
         header_layout.setSpacing(2)
         self.page_title = QLabel("🧪 Custom Test")
         self.page_title.setObjectName("pageTitle")
@@ -300,25 +320,46 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         root.addLayout(header_layout)
 
         main_splitter = QSplitter(Qt.Vertical)
+        main_splitter.setHandleWidth(5)
 
         top_splitter = QSplitter(Qt.Horizontal)
-        top_splitter.setHandleWidth(6)
+        top_splitter.setObjectName("workspaceSplitter")
+        top_splitter.setHandleWidth(5)
+        top_splitter.setChildrenCollapsible(False)
 
         left_panel = self._build_left_panel()
         top_splitter.addWidget(left_panel)
 
         self.canvas = SequenceCanvas()
-        top_splitter.addWidget(self.canvas)
+        canvas_region = QFrame()
+        canvas_region.setObjectName("regionFrame")
+        canvas_region_layout = QVBoxLayout(canvas_region)
+        canvas_region_layout.setContentsMargins(6, 6, 6, 6)
+        canvas_region_layout.setSpacing(0)
+        canvas_region_layout.addWidget(self.canvas)
+        top_splitter.addWidget(canvas_region)
 
         self.property_panel = PropertyPanel()
         self.property_panel.set_canvas(self.canvas)
-        top_splitter.addWidget(self.property_panel)
+        property_region = QFrame()
+        property_region.setObjectName("regionFrame")
+        property_region_layout = QVBoxLayout(property_region)
+        property_region_layout.setContentsMargins(6, 6, 6, 6)
+        property_region_layout.setSpacing(0)
+        property_region_layout.addWidget(self.property_panel)
+        top_splitter.addWidget(property_region)
 
         top_splitter.setSizes([220, 520, 260])
         main_splitter.addWidget(top_splitter)
 
+        bottom_region = QFrame()
+        bottom_region.setObjectName("regionFrame")
+        bottom_region_layout = QVBoxLayout(bottom_region)
+        bottom_region_layout.setContentsMargins(8, 8, 8, 8)
+        bottom_region_layout.setSpacing(0)
         bottom_widget = self._build_bottom_panel()
-        main_splitter.addWidget(bottom_widget)
+        bottom_region_layout.addWidget(bottom_widget)
+        main_splitter.addWidget(bottom_region)
 
         main_splitter.setSizes([500, 280])
         root.addWidget(main_splitter)
