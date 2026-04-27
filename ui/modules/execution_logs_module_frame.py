@@ -7,11 +7,10 @@ from PySide6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QTextEdit, QProgressBar, QLineEdit,
     QMenu, QApplication, QFileDialog, QWidget,
-    QSizePolicy, QButtonGroup,
 )
 from PySide6.QtCore import Qt, QTimer, QRectF, Signal, Property, QEasingCurve
 from PySide6.QtGui import (
-    QIcon, QPixmap, QPainter, QColor, QAction, QBrush, QPen,
+    QIcon, QPixmap, QPainter, QColor, QAction, QBrush, QPen, QFont, QFontMetrics,
 )
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtCore import QPropertyAnimation
@@ -26,13 +25,16 @@ _SVG_DIR = os.path.join(
 def _tinted_svg_icon(svg_path: str, color: str, size: int = 14) -> QIcon:
     if not os.path.isfile(svg_path):
         return QIcon()
+    dpr = QApplication.instance().devicePixelRatio() if QApplication.instance() else 1.0
+    px_size = int(size * dpr)
     renderer = QSvgRenderer(svg_path)
-    pixmap = QPixmap(size, size)
+    pixmap = QPixmap(px_size, px_size)
+    pixmap.setDevicePixelRatio(dpr)
     pixmap.fill(Qt.transparent)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.Antialiasing)
     painter.setRenderHint(QPainter.SmoothPixmapTransform)
-    renderer.render(painter, QRectF(0, 0, size, size))
+    renderer.render(painter, QRectF(0, 0, px_size, px_size))
     painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
     painter.fillRect(pixmap.rect(), QColor(color))
     painter.end()
@@ -43,9 +45,9 @@ _LEVEL_COLORS = {
     "START": "#4ade80",
     "DONE":  "#4ade80",
     "PASS":  "#4ade80",
-    "STEP":  "#60a5fa",
-    "INFO":  "#60a5fa",
-    "SYSTEM":"#60a5fa",
+    "STEP":  "#c8d8f0",
+    "INFO":  "#c8d8f0",
+    "SYSTEM":"#c8d8f0",
     "WARN":  "#facc15",
     "WARNING":"#facc15",
     "ERROR": "#f87171",
@@ -56,21 +58,15 @@ _LEVEL_COLORS = {
     "TEMPLATE":"#38bdf8",
 }
 
-_FILTER_PILL_COLORS = {
-    "ALL":     ("#60a5fa", "#0e2a5c"),
-    "WARNING": ("#facc15", "#3d2e08"),
-    "ERROR":   ("#f87171", "#3b1010"),
-}
-
-_DEFAULT_LOG_COLOR = "#7cecc8"
+_DEFAULT_LOG_COLOR = "#c8d8f0"
 
 _COLLAPSED_HEIGHT = 30
 _DEFAULT_HEIGHT = 200
 
 _LOG_FRAME_STYLE = """
     QFrame#logContainer {
-        background-color: #09142e;
-        border: 1px solid #1a2d57;
+        background-color: #0a1628;
+        border: 1px solid #1a2d50;
         border-radius: 14px;
     }
     QFrame#logContainer QLabel#sectionTitle {
@@ -101,16 +97,16 @@ _LOG_FRAME_STYLE = """
         max-height: 22px;
         padding: 2px 8px;
         border-radius: 6px;
-        background-color: #13254b;
+        background-color: #111d35;
         color: #dce7ff;
         font-size: 10px;
         border: 1px solid #1f315d;
     }
     QFrame#logContainer QPushButton#smallActionBtn:hover {
-        background-color: #1C2D55;
+        background-color: #1a2b4d;
     }
     QFrame#logContainer QPushButton#smallActionBtn:pressed {
-        background-color: #102040;
+        background-color: #0c1830;
     }
     QFrame#logContainer QPushButton#smallActionBtn:checked {
         background-color: #1e3a6d;
@@ -123,24 +119,28 @@ _LOG_FRAME_STYLE = """
         max-width: 22px;
         padding: 0px;
         border-radius: 6px;
-        background-color: #13254b;
+        background-color: #111d35;
         border: none;
     }
     QFrame#logContainer QPushButton#iconOnlyBtn:hover {
-        background-color: #1C2D55;
+        background-color: #1a2b4d;
     }
     QFrame#logContainer QPushButton#iconOnlyBtn:pressed {
-        background-color: #102040;
+        background-color: #0c1830;
     }
     QFrame#logContainer QTextEdit#logEdit {
-        background-color: #061022;
+        background-color: #050d1a;
         border: none;
-        border-top: 1px solid #1a2d57;
-        border-radius: 0px 0px 14px 14px;
-        color: #7cecc8;
+        border-top: 1px solid #1a2d50;
+        border-top-left-radius: 0px;
+        border-top-right-radius: 0px;
+        border-bottom-left-radius: 14px;
+        border-bottom-right-radius: 14px;
+        color: #c8d8f0;
         font-family: Consolas, "Courier New", monospace;
-        font-size: 11px;
-        padding: 6px 10px;
+        font-size: 13px;
+        padding: 10px 14px;
+        selection-background-color: #1e3a6d;
     }
     QFrame#logContainer QProgressBar {
         background-color: #152749;
@@ -156,7 +156,7 @@ _LOG_FRAME_STYLE = """
         border-radius: 4px;
     }
     QFrame#logContainer QLineEdit#searchInput {
-        background-color: #0b1a38;
+        background-color: #0c1a32;
         border: 1px solid #1f315d;
         border-radius: 6px;
         color: #c8d8f0;
@@ -181,7 +181,7 @@ _LOG_FRAME_STYLE = """
         border-radius: 4px;
     }
     QFrame#logContainer QMenu::item:selected {
-        background-color: #1C2D55;
+        background-color: #1a2b4d;
     }
     QFrame#logContainer QMenu::separator {
         height: 1px;
@@ -191,21 +191,150 @@ _LOG_FRAME_STYLE = """
 """
 
 
-def _pill_style(text_color: str, bg_color: str, checked: bool) -> str:
-    if checked:
-        return (
-            f"QPushButton {{ background-color: {bg_color}; color: {text_color}; "
-            f"border: 1px solid {text_color}; border-radius: 10px; "
-            f"font-size: 10px; font-weight: 600; padding: 2px 10px; "
-            f"min-height: 20px; max-height: 20px; }}"
-        )
-    return (
-        "QPushButton { background-color: transparent; color: #5a7099; "
-        "border: 1px solid #1f315d; border-radius: 10px; "
-        "font-size: 10px; font-weight: 600; padding: 2px 10px; "
-        "min-height: 20px; max-height: 20px; }"
-        "QPushButton:hover { background-color: #0e1f42; color: #8eb0e3; }"
-    )
+class _PillSwitcher(QWidget):
+
+    changed = Signal(str)
+
+    _ITEMS = [
+        ("ALL", "All Info", "#6366f1"),
+        ("WARNING", "Warning", "#f59e0b"),
+        ("ERROR", "Error", "#ef4444"),
+    ]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._current_index = 0
+        self._anim_x = 3.0
+        self.setCursor(Qt.PointingHandCursor)
+
+        self._item_widths: list[int] = []
+        self._total_width = 0
+        self._h = 28
+        self._pad_x = 10
+        self._dot_r = 6
+        self._spacing = 2
+
+        self._calculate_sizes()
+        self.setFixedSize(self._total_width, self._h)
+
+        self._anim = QPropertyAnimation(self, b"anim_x")
+        self._anim.setDuration(200)
+        self._anim.setEasingCurve(QEasingCurve.InOutCubic)
+
+    def _calculate_sizes(self):
+        font = QFont()
+        font.setPixelSize(11)
+        font.setWeight(QFont.Normal)
+        fm = QFontMetrics(font)
+        max_w = 0
+        for _, label, _ in self._ITEMS:
+            w = self._pad_x * 2 + self._dot_r + 6 + fm.horizontalAdvance(label)
+            if w > max_w:
+                max_w = w
+        self._item_widths = [max_w] * len(self._ITEMS)
+        total = max_w * len(self._ITEMS) + self._spacing * (len(self._ITEMS) - 1)
+        self._total_width = total + 6
+
+    def _get_anim_x(self):
+        return self._anim_x
+
+    def _set_anim_x(self, val):
+        self._anim_x = val
+        self.update()
+
+    anim_x = Property(float, _get_anim_x, _set_anim_x)
+
+    def currentKey(self):
+        return self._ITEMS[self._current_index][0]
+
+    def setCurrentKey(self, key: str):
+        for i, (k, _, _) in enumerate(self._ITEMS):
+            if k == key:
+                if i == self._current_index:
+                    return
+                self._current_index = i
+                target_x = self._item_x(i)
+                self._anim.stop()
+                self._anim.setStartValue(self._anim_x)
+                self._anim.setEndValue(float(target_x))
+                self._anim.start()
+                self.changed.emit(key)
+                return
+
+    def _item_x(self, index: int) -> int:
+        x = 3
+        for i in range(index):
+            x += self._item_widths[i] + self._spacing
+        return x
+
+    def mousePressEvent(self, event):
+        if event.button() != Qt.LeftButton:
+            return
+        x = int(event.position().x())
+        offset = 3
+        for i, w in enumerate(self._item_widths):
+            if offset <= x <= offset + w:
+                if i != self._current_index:
+                    self._current_index = i
+                    target_x = self._item_x(i)
+                    self._anim.stop()
+                    self._anim.setStartValue(self._anim_x)
+                    self._anim.setEndValue(float(target_x))
+                    self._anim.start()
+                    self.changed.emit(self._ITEMS[i][0])
+                return
+            offset += w + self._spacing
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        w, h = self.width(), self.height()
+        border_radius = 8.0
+
+        p.setPen(QPen(QColor("#1f3060"), 1))
+        p.setBrush(QColor("#0c1a32"))
+        p.drawRoundedRect(QRectF(0.5, 0.5, w - 1, h - 1),
+                          border_radius, border_radius)
+
+        knob_w = self._item_widths[self._current_index]
+        knob_h = h - 6
+        knob_radius = 6.0
+        p.setPen(QPen(QColor("#2a4080"), 1))
+        p.setBrush(QColor("#1a2d55"))
+        p.drawRoundedRect(QRectF(self._anim_x, 3, knob_w, knob_h),
+                          knob_radius, knob_radius)
+
+        font = p.font()
+        font.setPixelSize(11)
+        font.setWeight(QFont.Normal)
+        p.setFont(font)
+
+        offset_x = 3
+        for i, (key, label, dot_color) in enumerate(self._ITEMS):
+            iw = self._item_widths[i]
+            cy = h / 2.0
+
+            fm = p.fontMetrics()
+            text_w = fm.horizontalAdvance(label)
+            content_w = self._dot_r + 6 + text_w
+            content_x = offset_x + (iw - content_w) / 2.0
+
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(dot_color))
+            dot_y = cy - self._dot_r / 2.0
+            p.drawEllipse(QRectF(content_x, dot_y, self._dot_r, self._dot_r))
+
+            text_x = content_x + self._dot_r + 6
+            text_rect = QRectF(text_x, 0, text_w, h)
+            if i == self._current_index:
+                p.setPen(QColor("#ffffff"))
+            else:
+                p.setPen(QColor("#8899bb"))
+            p.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, label)
+
+            offset_x += iw + self._spacing
+
+        p.end()
 
 
 def _parse_level(message: str) -> str:
@@ -279,7 +408,7 @@ class ExecutionLogsFrame(QFrame):
 
     log_exported = Signal(str)
 
-    def __init__(self, title="Logs", show_progress=True, parent=None):
+    def __init__(self, title="Execution Logs", show_progress=True, parent=None):
         super().__init__(parent)
         self.setObjectName("logContainer")
         self._show_progress = show_progress
@@ -323,42 +452,9 @@ class ExecutionLogsFrame(QFrame):
 
         toolbar.addSpacing(4)
 
-        self._pill_buttons = {}
-        self._pill_group = QButtonGroup(self)
-        self._pill_group.setExclusive(True)
-        pill_defs = [
-            ("ALL", "All Info", "#60a5fa", "#0e2a5c"),
-            ("WARNING", "Warning", "#facc15", "#3d2e08"),
-            ("ERROR", "Error", "#f87171", "#3b1010"),
-        ]
-        for key, label, text_col, bg_col in pill_defs:
-            dot_color = text_col
-            pill = QPushButton(f"  {label}")
-            pill.setCheckable(True)
-            pill.setCursor(Qt.PointingHandCursor)
-            pill.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-            pill.setStyleSheet(_pill_style(text_col, bg_col, key == "ALL"))
-            pill.setProperty("_pill_text_color", text_col)
-            pill.setProperty("_pill_bg_color", bg_col)
-            pill.setProperty("_pill_key", key)
-
-            dot_icon = QPixmap(8, 8)
-            dot_icon.fill(Qt.transparent)
-            dp = QPainter(dot_icon)
-            dp.setRenderHint(QPainter.Antialiasing)
-            dp.setPen(Qt.NoPen)
-            dp.setBrush(QColor(dot_color))
-            dp.drawEllipse(0, 0, 8, 8)
-            dp.end()
-            pill.setIcon(QIcon(dot_icon))
-
-            if key == "ALL":
-                pill.setChecked(True)
-            self._pill_group.addButton(pill)
-            self._pill_buttons[key] = pill
-            toolbar.addWidget(pill)
-
-        self._pill_group.buttonClicked.connect(self._on_pill_clicked)
+        self._pill_switcher = _PillSwitcher()
+        self._pill_switcher.changed.connect(self._on_pill_changed)
+        toolbar.addWidget(self._pill_switcher)
 
         toolbar.addSpacing(4)
 
@@ -472,22 +568,13 @@ class ExecutionLogsFrame(QFrame):
             btn.setIcon(icon)
         return btn
 
-    def _on_pill_clicked(self, btn: QPushButton):
-        key = btn.property("_pill_key")
+    def _on_pill_changed(self, key: str):
         self._active_level_filter = key
-        for k, pill in self._pill_buttons.items():
-            tc = pill.property("_pill_text_color")
-            bc = pill.property("_pill_bg_color")
-            pill.setStyleSheet(_pill_style(tc, bc, k == key))
         self._apply_filter()
 
     def _set_level_filter(self, level: str):
         self._active_level_filter = level
-        for k, pill in self._pill_buttons.items():
-            tc = pill.property("_pill_text_color")
-            bc = pill.property("_pill_bg_color")
-            pill.setStyleSheet(_pill_style(tc, bc, k == level))
-            pill.setChecked(k == level)
+        self._pill_switcher.setCurrentKey(level)
         self._apply_filter()
 
     def _on_keyword_changed(self, text: str):
@@ -575,11 +662,11 @@ class ExecutionLogsFrame(QFrame):
         if "[SUMMARY]" in message:
             escaped = escaped.replace(" ", "&nbsp;")
             return (
-                f'<span style="color:#4a5e82;">{ts}</span>&nbsp;&nbsp;'
+                f'<span style="color:#5a6a8a;">[{ts}]</span>&nbsp;&nbsp;'
                 f'<span style="color:{color};font-family:Consolas,\'Courier New\',monospace;white-space:pre;">{escaped}</span>'
             )
         return (
-            f'<span style="color:#4a5e82;">{ts}</span>&nbsp;&nbsp;'
+            f'<span style="color:#5a6a8a;">[{ts}]</span>&nbsp;&nbsp;'
             f'<span style="color:{color};">{escaped}</span>'
         )
 
