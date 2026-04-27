@@ -64,6 +64,11 @@ _ICONS_DIR = os.path.join(
     "resources", "icons"
 )
 
+_PAGE_SVGS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    "resources", "pages", "consumption_test_SVGs"
+)
+
 _MAIN_CHIP_CONFIGS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
     "chips", "bes_chip_configs", "main_chip_configs"
@@ -274,8 +279,8 @@ class ControlMethodToggle(QWidget):
 
 
 _POLARITY_OPTIONS = [
-    {"key": "rising", "label": "Rising Edge", "svg": os.path.join(_ICONS_DIR, "polarity_rising.svg")},
-    {"key": "falling", "label": "Falling Edge", "svg": os.path.join(_ICONS_DIR, "polarity_falling.svg")},
+    {"key": "rising", "label": "Rising Edge", "svg": os.path.join(_PAGE_SVGS_DIR, "polarity_rising.svg")},
+    {"key": "falling", "label": "Falling Edge", "svg": os.path.join(_PAGE_SVGS_DIR, "polarity_falling.svg")},
 ]
 
 
@@ -601,7 +606,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         header_layout.setSpacing(8)
         icon_label = QLabel()
         icon_label.setPixmap(
-            _tinted_svg_icon(os.path.join(_ICONS_DIR, "zap.svg"), "#fbbf24", 22).pixmap(22, 22)
+            _tinted_svg_icon(os.path.join(_PAGE_SVGS_DIR, "zap.svg"), "#fbbf24", 22).pixmap(22, 22)
         )
         icon_label.setFixedSize(22, 22)
         title_col = QVBoxLayout()
@@ -1254,7 +1259,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         config_title_row.setSpacing(4)
         config_icon_label = QLabel()
         config_icon_label.setPixmap(
-            _tinted_svg_icon(os.path.join(_ICONS_DIR, "file-json.svg"), "#94a3b8", 16).pixmap(16, 16)
+            _tinted_svg_icon(os.path.join(_PAGE_SVGS_DIR, "file-json.svg"), "#94a3b8", 16).pixmap(16, 16)
         )
         config_icon_label.setFixedSize(16, 16)
         config_title = QLabel("Config Import")
@@ -1375,7 +1380,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         config_btn_row.setSpacing(4)
 
         self.import_config_btn = QPushButton("Import")
-        self.import_config_btn.setIcon(_tinted_svg_icon(os.path.join(_ICONS_DIR, "upload.svg"), "#dbe7ff"))
+        self.import_config_btn.setIcon(_tinted_svg_icon(os.path.join(_PAGE_SVGS_DIR, "upload.svg"), "#dbe7ff"))
         self.import_config_btn.setIconSize(QSize(14, 14))
         self.import_config_btn.setStyleSheet("""
             QPushButton {
@@ -1614,7 +1619,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             programming_text="Testing",
             complete_text="✓  Test complete",
             failed_text="Test failed",
-            icon_path=os.path.join(_ICONS_DIR, "zap.svg"),
+            icon_path=os.path.join(_PAGE_SVGS_DIR, "zap.svg"),
             style_overrides=start_test_style,
         )
         self.start_test_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -1642,7 +1647,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             programming_text="Auto Testing",
             complete_text="✓  Auto test done",
             failed_text="Auto test failed",
-            icon_path=os.path.join(_ICONS_DIR, "activity.svg"),
+            icon_path=os.path.join(_PAGE_SVGS_DIR, "activity.svg"),
             style_overrides=auto_test_style,
         )
         self.auto_test_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)

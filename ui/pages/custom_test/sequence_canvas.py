@@ -29,6 +29,11 @@ _ICONS_DIR = os.path.join(
     "resources", "icons"
 )
 
+_CONSUMPTION_TEST_SVGS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    "resources", "pages", "consumption_test_SVGs"
+)
+
 _TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
 
 
@@ -669,8 +674,12 @@ class SequenceCanvas(QWidget):
             self.save_btn.setIconSize(QSize(16, 16))
         toolbar.addWidget(self.save_btn)
 
-        self.load_btn = QPushButton("📂 Load")
+        self.load_btn = QPushButton("Load")
         self.load_btn.setStyleSheet(_TOOLBAR_BTN_STYLE)
+        _load_icon_path = os.path.join(_CONSUMPTION_TEST_SVGS_DIR, "save.svg")
+        if os.path.isfile(_load_icon_path):
+            self.load_btn.setIcon(_tinted_svg_icon(_load_icon_path, "#dce7ff", 16))
+            self.load_btn.setIconSize(QSize(16, 16))
         toolbar.addWidget(self.load_btn)
 
         root_layout.addLayout(toolbar)
