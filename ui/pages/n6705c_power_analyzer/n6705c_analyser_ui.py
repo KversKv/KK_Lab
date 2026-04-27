@@ -229,7 +229,12 @@ _ICONS_DIR = os.path.join(
     "resources", "icons"
 )
 
-_ZAP_ICON_PATH = os.path.join(_ICONS_DIR, "zap.svg")
+_PAGE_SVGS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    "resources", "pages", "n6705c_power_analyzer_SVGs"
+)
+
+_ZAP_ICON_PATH = os.path.join(_PAGE_SVGS_DIR, "zap.svg")
 
 
 def _get_checkmark_path(accent_color):

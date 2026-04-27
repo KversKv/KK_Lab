@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 48">
+  <rect x="1" y="1" width="78" height="46" rx="4" fill="#1a1a1a" stroke="#444" stroke-width="1.5"/>
+  <rect x="4" y="4" width="72" height="26" rx="3" fill="#0a1830" stroke="#335" stroke-width="0.8"/>
+  <line x1="8" y1="10" x2="72" y2="10" stroke="#1a2d57" stroke-width="0.5"/>
+  <line x1="8" y1="17" x2="72" y2="17" stroke="#1a2d57" stroke-width="0.5"/>
+  <line x1="8" y1="24" x2="72" y2="24" stroke="#1a2d57" stroke-width="0.5"/>
+  <line x1="20" y1="6" x2="20" y2="28" stroke="#1a2d57" stroke-width="0.5"/>
+  <line x1="40" y1="6" x2="40" y2="28" stroke="#1a2d57" stroke-width="0.5"/>
+  <line x1="60" y1="6" x2="60" y2="28" stroke="#1a2d57" stroke-width="0.5"/>
+  <polyline points="8,20 18,12 28,22 38,10 48,18 58,8 68,16 72,14" fill="none" stroke="#f59e0b" stroke-width="1.5" stroke-linejoin="round"/>
+  <text x="40" y="8" font-size="4.5" fill="#5f78a8" text-anchor="middle" font-family="monospace">DSOX4034A</text>
+  <circle cx="12" cy="38" r="3" fill="#f59e0b" opacity="0.9"/>
+  <circle cx="22" cy="38" r="3" fill="#22d3ee" opacity="0.9"/>
+  <circle cx="32" cy="38" r="3" fill="#a78bfa" opacity="0.9"/>
+  <circle cx="42" cy="38" r="3" fill="#f87171" opacity="0.9"/>
+  <rect x="52" y="34" width="22" height="8" rx="2" fill="#222" stroke="#444" stroke-width="0.5"/>
+</svg>

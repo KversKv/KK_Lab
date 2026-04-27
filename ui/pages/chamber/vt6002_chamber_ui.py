@@ -28,11 +28,11 @@ from instruments.mock.mock_instruments import MockVT6002
 
 logger = logging.getLogger(__name__)
 
-_ICONS_DIR = os.path.join(
+_PAGE_SVGS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
-    "resources", "icons"
+    "resources", "pages", "chamber_SVGs"
 )
-_THERMOMETER_SVG_PATH = os.path.join(_ICONS_DIR, "thermometer.svg")
+_THERMOMETER_SVG_PATH = os.path.join(_PAGE_SVGS_DIR, "thermometer.svg")
 
 
 class TemperatureGauge(QWidget):

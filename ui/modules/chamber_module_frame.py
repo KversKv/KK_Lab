@@ -14,13 +14,13 @@ from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockVT6002
 
 
-_ICONS_DIR = os.path.join(
+_SVG_COMMON_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "resources", "icons"
+    "resources", "modules", "SVG_Common"
 )
-_SEARCH_ICON_PATH = os.path.join(_ICONS_DIR, "search.svg")
-_LINK_ICON_PATH = os.path.join(_ICONS_DIR, "link.svg")
-_UNLINK_ICON_PATH = os.path.join(_ICONS_DIR, "unlink.svg")
+_SEARCH_ICON_PATH = os.path.join(_SVG_COMMON_DIR, "search.svg")
+_LINK_ICON_PATH = os.path.join(_SVG_COMMON_DIR, "link.svg")
+_UNLINK_ICON_PATH = os.path.join(_SVG_COMMON_DIR, "unlink.svg")
 
 _VT6002_BTN_HEIGHT = 24
 _VT6002_BTN_ICON_SIZE = 14

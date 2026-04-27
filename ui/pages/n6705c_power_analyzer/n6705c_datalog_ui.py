@@ -836,7 +836,7 @@ class VerticalTextButton(QWidget):
 
     @staticmethod
     def _load_svg(svg_file):
-        svg_path = os.path.join(_get_base_path(), "resources", "icons", svg_file)
+        svg_path = os.path.join(_get_base_path(), "resources", "pages", "n6705c_power_analyzer_SVGs", svg_file)
         with open(svg_path, "r", encoding="utf-8") as f:
             return f.read()
 
@@ -933,7 +933,7 @@ class CardFrame(QFrame):
                 title_row = QHBoxLayout()
                 title_row.setSpacing(6)
                 title_row.setContentsMargins(0, 0, 0, 0)
-                svg_path = os.path.join(_get_base_path(), "resources", "icons", svg_icon)
+                svg_path = os.path.join(_get_base_path(), "resources", "pages", "n6705c_power_analyzer_SVGs", svg_icon)
                 with open(svg_path, "r", encoding="utf-8") as f:
                     svg_data = f.read().replace("currentColor", svg_color)
                 renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))
@@ -1416,7 +1416,7 @@ class N6705CDatalogUI(QWidget):
 
     @staticmethod
     def _svg_icon_label(svg_file, color="#d4a514", size=20):
-        svg_path = os.path.join(_get_base_path(), "resources", "icons", svg_file)
+        svg_path = os.path.join(_get_base_path(), "resources", "pages", "n6705c_power_analyzer_SVGs", svg_file)
         with open(svg_path, "r", encoding="utf-8") as f:
             svg_data = f.read().replace("currentColor", color)
         renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))
@@ -1433,7 +1433,7 @@ class N6705CDatalogUI(QWidget):
 
     @staticmethod
     def _make_svg_icon(svg_file, color="#ffffff", size=16):
-        svg_path = os.path.join(_get_base_path(), "resources", "icons", svg_file)
+        svg_path = os.path.join(_get_base_path(), "resources", "pages", "n6705c_power_analyzer_SVGs", svg_file)
         with open(svg_path, "r", encoding="utf-8") as f:
             svg_data = f.read().replace("currentColor", color)
         renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))
@@ -1655,7 +1655,7 @@ class N6705CDatalogUI(QWidget):
         self.left_layout.addWidget(self.start_btn)
 
         def _svg_icon(svg_file, color="#dfe8ff", size=18):
-            svg_path = os.path.join(_get_base_path(), "resources", "icons", svg_file)
+            svg_path = os.path.join(_get_base_path(), "resources", "pages", "n6705c_power_analyzer_SVGs", svg_file)
             with open(svg_path, "r", encoding="utf-8") as f:
                 svg_data = f.read().replace("currentColor", color)
             renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))
@@ -2042,7 +2042,7 @@ class N6705CDatalogUI(QWidget):
         thumb_label = QLabel()
         thumb_label.setStyleSheet("border: none; border-radius: 4px;")
         thumb_label.setFixedSize(64, 38)
-        svg_path = os.path.join(_get_base_path(), "resources", "icons", "n6705c_thumb.svg")
+        svg_path = os.path.join(_get_base_path(), "resources", "pages", "n6705c_power_analyzer_SVGs", "n6705c_thumb.svg")
         if os.path.exists(svg_path):
             pixmap = QPixmap(64, 38)
             pixmap.fill(QColor(0, 0, 0, 0))
@@ -2643,7 +2643,7 @@ class N6705CDatalogUI(QWidget):
         self._instruments_tab_layout.addWidget(self.no_instrument_label)
 
     def _make_svg_icon(self, svg_file, color="#dfe8ff", size=18):
-        svg_path = os.path.join(_get_base_path(), "resources", "icons", svg_file)
+        svg_path = os.path.join(_get_base_path(), "resources", "pages", "n6705c_power_analyzer_SVGs", svg_file)
         with open(svg_path, "r", encoding="utf-8") as f:
             svg_data = f.read().replace("currentColor", color)
         renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))

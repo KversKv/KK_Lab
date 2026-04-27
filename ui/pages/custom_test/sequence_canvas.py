@@ -24,14 +24,9 @@ from log_config import get_logger
 
 logger = get_logger(__name__)
 
-_ICONS_DIR = os.path.join(
+_PAGE_SVGS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
-    "resources", "icons"
-)
-
-_CONSUMPTION_TEST_SVGS_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
-    "resources", "pages", "consumption_test_SVGs"
+    "resources", "pages", "custom_test_SVGs"
 )
 
 _TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
@@ -668,7 +663,7 @@ class SequenceCanvas(QWidget):
 
         self.save_btn = QPushButton("Save")
         self.save_btn.setStyleSheet(_TOOLBAR_BTN_STYLE)
-        _save_icon_path = os.path.join(_ICONS_DIR, "save.svg")
+        _save_icon_path = os.path.join(_PAGE_SVGS_DIR, "save.svg")
         if os.path.isfile(_save_icon_path):
             self.save_btn.setIcon(_tinted_svg_icon(_save_icon_path, "#dce7ff", 16))
             self.save_btn.setIconSize(QSize(16, 16))
@@ -676,7 +671,7 @@ class SequenceCanvas(QWidget):
 
         self.load_btn = QPushButton("Load")
         self.load_btn.setStyleSheet(_TOOLBAR_BTN_STYLE)
-        _load_icon_path = os.path.join(_CONSUMPTION_TEST_SVGS_DIR, "save.svg")
+        _load_icon_path = os.path.join(_PAGE_SVGS_DIR, "save.svg")
         if os.path.isfile(_load_icon_path):
             self.load_btn.setIcon(_tinted_svg_icon(_load_icon_path, "#dce7ff", 16))
             self.load_btn.setIconSize(QSize(16, 16))
@@ -776,7 +771,7 @@ class SequenceCanvas(QWidget):
         menu = QMenu(self)
         menu.setStyleSheet(_DROP_MENU_STYLE)
 
-        microscope_path = os.path.join(_ICONS_DIR, "microscope.svg")
+        microscope_path = os.path.join(_PAGE_SVGS_DIR, "microscope.svg")
         title_icon = _tinted_svg_icon(microscope_path, "#5f78a8") if os.path.isfile(microscope_path) else QIcon()
         title_action = menu.addAction(title_icon, f"{instr['name']} — Select Operation")
         title_action.setEnabled(False)

@@ -33,14 +33,14 @@ from log_config import get_logger
 
 logger = get_logger(__name__)
 
-_ICONS_DIR = os.path.join(
+_PAGE_SVGS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
-    "resources", "icons"
+    "resources", "pages", "custom_test_SVGs"
 )
 
 _TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
 
-_CHEVRON_DOWN_PATH = os.path.join(_ICONS_DIR, "chevron-down.svg").replace("\\", "/")
+_CHEVRON_DOWN_PATH = os.path.join(_PAGE_SVGS_DIR, "chevron-down.svg").replace("\\", "/")
 
 
 def _tinted_svg_icon(svg_path: str, color: str, size: int = 16) -> QIcon:
@@ -320,7 +320,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         title_icon_label.setFixedSize(22, 22)
         title_icon_label.setAlignment(Qt.AlignCenter)
         title_icon_label.setStyleSheet("background: transparent; border: none;")
-        network_icon_path = os.path.join(_ICONS_DIR, "network.svg")
+        network_icon_path = os.path.join(_PAGE_SVGS_DIR, "network.svg")
         if os.path.isfile(network_icon_path):
             icon_pixmap = QPixmap(22, 22)
             icon_pixmap.fill(Qt.transparent)
@@ -402,7 +402,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         left_title.setObjectName("sectionTitle")
         outer_layout.addWidget(left_title)
 
-        link_svg = os.path.join(_ICONS_DIR, "activity.svg")
+        link_svg = os.path.join(_PAGE_SVGS_DIR, "activity.svg")
         self._conn_section = CollapsibleSection(
             "Instrument Connections",
             icon_svg=link_svg if os.path.isfile(link_svg) else None,
@@ -680,9 +680,9 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         tabs.setCornerWidget(self._export_btn, Qt.TopRightCorner)
         tabs.currentChanged.connect(self._on_bottom_tab_changed)
 
-        log_icon_path = os.path.join(_ICONS_DIR, "clipboard-list.svg")
-        table_icon_path = os.path.join(_ICONS_DIR, "table.svg")
-        chart_icon_path = os.path.join(_ICONS_DIR, "line-chart.svg")
+        log_icon_path = os.path.join(_PAGE_SVGS_DIR, "clipboard-list.svg")
+        table_icon_path = os.path.join(_PAGE_SVGS_DIR, "table.svg")
+        chart_icon_path = os.path.join(_PAGE_SVGS_DIR, "line-chart.svg")
 
         log_tab = QWidget()
         log_layout = QVBoxLayout(log_tab)
@@ -975,7 +975,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         menu = QMenu(self)
         menu.setStyleSheet(_CONTEXT_MENU_STYLE)
 
-        microscope_path = os.path.join(_ICONS_DIR, "microscope.svg")
+        microscope_path = os.path.join(_PAGE_SVGS_DIR, "microscope.svg")
         instr_icon = _tinted_svg_icon(microscope_path, "#dce7ff") if os.path.isfile(microscope_path) else QIcon()
         instr_submenu = menu.addMenu(instr_icon, "Instruments")
         instr_submenu.setStyleSheet(_CONTEXT_MENU_STYLE)
@@ -1034,7 +1034,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
             ]
             if not nodes:
                 continue
-            svg_path = os.path.join(_ICONS_DIR, icon_file)
+            svg_path = os.path.join(_PAGE_SVGS_DIR, icon_file)
             cat_qicon = _tinted_svg_icon(svg_path, "#dce7ff") if os.path.isfile(svg_path) else QIcon()
             sub = menu.addMenu(cat_qicon, cat_label)
             sub.setStyleSheet(_CONTEXT_MENU_STYLE)
@@ -1068,7 +1068,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         menu = QMenu(self)
         menu.setStyleSheet(_CONTEXT_MENU_STYLE)
 
-        microscope_path = os.path.join(_ICONS_DIR, "microscope.svg")
+        microscope_path = os.path.join(_PAGE_SVGS_DIR, "microscope.svg")
         title_icon = _tinted_svg_icon(microscope_path, "#5f78a8") if os.path.isfile(microscope_path) else QIcon()
         title_action = menu.addAction(title_icon, f"{instr['name']} — Select Operation")
         title_action.setEnabled(False)
@@ -1338,10 +1338,10 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         menu.setStyleSheet(_CONTEXT_MENU_STYLE)
 
         _menu_icon_color = "#8eb0e3"
-        _bar_chart_icon = os.path.join(_ICONS_DIR, "bar-chart.svg")
-        _pencil_icon = os.path.join(_ICONS_DIR, "pencil.svg")
-        _hash_icon = os.path.join(_ICONS_DIR, "hash.svg")
-        _trash_icon = os.path.join(_ICONS_DIR, "trash.svg")
+        _bar_chart_icon = os.path.join(_PAGE_SVGS_DIR, "bar-chart.svg")
+        _pencil_icon = os.path.join(_PAGE_SVGS_DIR, "pencil.svg")
+        _hash_icon = os.path.join(_PAGE_SVGS_DIR, "hash.svg")
+        _trash_icon = os.path.join(_PAGE_SVGS_DIR, "trash.svg")
 
         if os.path.isfile(_bar_chart_icon):
             title_action = menu.addAction(

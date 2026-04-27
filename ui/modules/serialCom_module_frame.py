@@ -32,9 +32,9 @@ from ui.widgets.scrollbar import SCROLLBAR_STYLE
 from debug_config import DEBUG_MOCK
 
 
-_ICONS_DIR = os.path.join(
+_SVG_COMMON_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "resources", "icons"
+    "resources", "modules", "SVG_Common"
 )
 _SVG_SERIAL_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
@@ -44,9 +44,9 @@ _SVG_LOGS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "resources", "modules", "SVG_Logs",
 )
-_SEARCH_ICON_PATH = os.path.join(_ICONS_DIR, "search.svg")
-_LINK_ICON_PATH = os.path.join(_ICONS_DIR, "link.svg")
-_UNLINK_ICON_PATH = os.path.join(_ICONS_DIR, "unlink.svg")
+_SEARCH_ICON_PATH = os.path.join(_SVG_COMMON_DIR, "search.svg")
+_LINK_ICON_PATH = os.path.join(_SVG_COMMON_DIR, "link.svg")
+_UNLINK_ICON_PATH = os.path.join(_SVG_COMMON_DIR, "unlink.svg")
 
 
 def _tinted_svg_icon(svg_path: str, color: str, size: int = 14) -> QIcon:

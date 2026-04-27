@@ -19,9 +19,9 @@ from log_config import get_logger
 
 logger = get_logger(__name__)
 
-_ICONS_DIR = os.path.join(
+_PAGE_SVGS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
-    "resources", "icons"
+    "resources", "pages", "custom_test_SVGs"
 )
 
 
@@ -152,8 +152,8 @@ class CollapsibleSection(QWidget):
                     "border-bottom: none;"
                 )
             )
-        chevron_down = os.path.join(_ICONS_DIR, "chevron-down.svg")
-        chevron_right = os.path.join(_ICONS_DIR, "chevron-right.svg")
+        chevron_down = os.path.join(_PAGE_SVGS_DIR, "chevron-down.svg")
+        chevron_right = os.path.join(_PAGE_SVGS_DIR, "chevron-right.svg")
         if self._expanded and os.path.isfile(chevron_down):
             self._arrow_label.setPixmap(_tinted_svg_pixmap(chevron_down, "#5f78a8", 12))
         elif not self._expanded and os.path.isfile(chevron_right):
@@ -353,7 +353,7 @@ class InstrumentCard(QFrame):
         layout.setSpacing(2)
         layout.setAlignment(Qt.AlignCenter)
 
-        svg_path = os.path.join(_ICONS_DIR, instr_info["thumb"])
+        svg_path = os.path.join(_PAGE_SVGS_DIR, instr_info["thumb"])
         is_icon = not instr_info["thumb"].endswith("_thumb.svg")
         thumb_label = QLabel()
         thumb_label.setFixedSize(66, 40)
@@ -391,7 +391,7 @@ class InstrumentCard(QFrame):
                 )
                 thumb_label.setPixmap(pixmap)
         else:
-            box_svg = os.path.join(_ICONS_DIR, "box.svg")
+            box_svg = os.path.join(_PAGE_SVGS_DIR, "box.svg")
             if os.path.isfile(box_svg):
                 thumb_label.setPixmap(_tinted_svg_pixmap(box_svg, instr_info["color"], 32))
             else:
@@ -557,7 +557,7 @@ class NodePalette(QWidget):
         root_layout.addWidget(scroll)
 
     def _build_instrument_section(self) -> None:
-        microscope_path = os.path.join(_ICONS_DIR, "microscope.svg")
+        microscope_path = os.path.join(_PAGE_SVGS_DIR, "microscope.svg")
         section = CollapsibleSection(
             "Instruments",
             icon_svg=microscope_path,
@@ -600,7 +600,7 @@ class NodePalette(QWidget):
             if not nodes:
                 continue
 
-            svg_path = os.path.join(_ICONS_DIR, icon_file)
+            svg_path = os.path.join(_PAGE_SVGS_DIR, icon_file)
             section = CollapsibleSection(
                 cat_label,
                 icon_svg=svg_path if os.path.isfile(svg_path) else None,

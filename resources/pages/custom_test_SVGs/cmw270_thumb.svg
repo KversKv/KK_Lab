@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 48">
+  <rect x="1" y="1" width="78" height="46" rx="4" fill="#1a1a1a" stroke="#444" stroke-width="1.5"/>
+  <rect x="4" y="4" width="48" height="22" rx="3" fill="#0a2040" stroke="#335" stroke-width="0.8"/>
+  <text x="28" y="13" font-size="5" fill="#a78bfa" text-anchor="middle" font-family="monospace">CMW270</text>
+  <rect x="8" y="16" width="40" height="6" rx="1" fill="#111"/>
+  <rect x="9" y="17" width="12" height="4" rx="1" fill="#a78bfa" opacity="0.5"/>
+  <rect x="23" y="17" width="8" height="4" rx="1" fill="#a78bfa" opacity="0.3"/>
+  <rect x="56" y="4" width="20" height="10" rx="2" fill="#111" stroke="#335" stroke-width="0.8"/>
+  <text x="66" y="11" font-size="4" fill="#5f78a8" text-anchor="middle" font-family="monospace">RF</text>
+  <circle cx="60" cy="20" r="3" fill="none" stroke="#a78bfa" stroke-width="1"/>
+  <circle cx="60" cy="20" r="1" fill="#a78bfa"/>
+  <circle cx="72" cy="20" r="3" fill="none" stroke="#a78bfa" stroke-width="1"/>
+  <circle cx="72" cy="20" r="1" fill="#a78bfa"/>
+  <rect x="4" y="30" width="72" height="4" rx="1" fill="#222"/>
+  <circle cx="12" cy="40" r="3" fill="#a78bfa" opacity="0.8"/>
+  <circle cx="24" cy="40" r="3" fill="#a78bfa" opacity="0.5"/>
+  <rect x="52" y="36" width="22" height="8" rx="2" fill="#222" stroke="#444" stroke-width="0.5"/>
+</svg>

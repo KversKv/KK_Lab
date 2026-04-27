@@ -31,9 +31,9 @@ from log_config import get_logger
 
 logger = get_logger(__name__)
 
-_ICONS_DIR = os.path.join(
+_PAGE_SVGS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
-    "resources", "icons"
+    "resources", "pages", "consumption_test_SVGs"
 )
 
 
@@ -432,7 +432,7 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, VT6002ConnectionMixin,
 
         icon_label = QLabel()
         icon_label.setPixmap(
-            _tinted_svg_icon(os.path.join(_ICONS_DIR, "thermometer.svg"), "#4dc9f6", 22).pixmap(22, 22)
+            _tinted_svg_icon(os.path.join(_PAGE_SVGS_DIR, "thermometer.svg"), "#4dc9f6", 22).pixmap(22, 22)
         )
         icon_label.setFixedSize(22, 22)
 

@@ -25,13 +25,13 @@ DEBUG_MSO64B_FLAG = True
 DEBUG_DSOX4034A_FLAG = True
 
 import os as _os
-_ICONS_DIR = _os.path.join(
+_PAGE_SVGS_DIR = _os.path.join(
     _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))),
-    "resources", "icons"
+    "resources", "pages", "oscilloscope_SVGs"
 )
 
-_CAMERA_SVG_PATH = _os.path.join(_ICONS_DIR, "camera.svg")
-_ACTIVITY_SVG_PATH = _os.path.join(_ICONS_DIR, "activity.svg")
+_CAMERA_SVG_PATH = _os.path.join(_PAGE_SVGS_DIR, "camera.svg")
+_ACTIVITY_SVG_PATH = _os.path.join(_PAGE_SVGS_DIR, "activity.svg")
 
 
 def _render_svg_icon(svg_path: str, size: int, color: str) -> QPixmap:

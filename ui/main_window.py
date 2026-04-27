@@ -31,9 +31,9 @@ from ui.modules.serialCom_module_frame import SerialComMixin
 from core.test_manager import TestManager
 from instruments.base.visa_instrument import VisaInstrument
 
-_ICONS_DIR = os.path.join(
+_PAGE_SVGS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "resources", "icons"
+    "resources", "pages", "main_window_SVGs"
 )
 from instruments.chambers.vt6002_chamber import VT6002
 from ui.styles import SCROLLBAR_STYLE
@@ -755,20 +755,20 @@ class MainWindow(QMainWindow):
         self.n6705c_power_analyzer_btn = SidebarNavButton(
             "N6705C",
             "",
-            os.path.join(_ICONS_DIR, "zap.svg")
+            os.path.join(_PAGE_SVGS_DIR, "zap.svg")
         )
         self.n6705c_power_analyzer_btn.setChecked(True)
 
         self.oscilloscope_btn = SidebarNavButton(
             "Oscilloscope",
             "",
-            os.path.join(_ICONS_DIR, "activity.svg")
+            os.path.join(_PAGE_SVGS_DIR, "activity.svg")
         )
 
         self.chamber_btn = SidebarNavButton(
             "Chamber",
             "",
-            os.path.join(_ICONS_DIR, "thermometer.svg")
+            os.path.join(_PAGE_SVGS_DIR, "thermometer.svg")
         )
 
         left_nav_layout.addWidget(self.n6705c_power_analyzer_btn)
@@ -807,14 +807,14 @@ class MainWindow(QMainWindow):
         self.consumption_test_btn = SidebarNavButton(
             "Consumption Test",
             "",
-            os.path.join(_ICONS_DIR, "gauge.svg")
+            os.path.join(_PAGE_SVGS_DIR, "gauge.svg")
         )
         left_nav_layout.addWidget(self.consumption_test_btn)
 
         self.custom_test_btn = SidebarNavButton(
             "Custom Test",
             "",
-            os.path.join(_ICONS_DIR, "network.svg")
+            os.path.join(_PAGE_SVGS_DIR, "network.svg")
         )
         left_nav_layout.addWidget(self.custom_test_btn)
 
@@ -835,7 +835,7 @@ class MainWindow(QMainWindow):
         self.kk_serials_btn = SidebarNavButton(
             "KK Serials",
             "",
-            os.path.join(_ICONS_DIR, "activity.svg")
+            os.path.join(_PAGE_SVGS_DIR, "activity.svg")
         )
         left_nav_layout.addWidget(self.kk_serials_btn)
 

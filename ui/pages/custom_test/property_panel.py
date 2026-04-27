@@ -19,7 +19,7 @@ logger = get_logger(__name__)
 import os as _os
 _CHECK_ICON = _os.path.join(
     _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))),
-    "resources", "icons", "check.svg"
+    "resources", "pages", "custom_test_SVGs", "check.svg"
 ).replace("\\", "/")
 
 _PANEL_STYLE = """
