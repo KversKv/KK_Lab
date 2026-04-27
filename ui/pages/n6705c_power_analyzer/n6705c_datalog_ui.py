@@ -1019,6 +1019,7 @@ class N6705CDatalogUI(QWidget):
         self._marker_snap_px = 10
         self.custom_labels = []
         self.custom_label_lines = []
+        self._label_time_last_unit = "s"
 
         self.crosshair_v = None
         self.crosshair_tooltip = None
@@ -2509,7 +2510,7 @@ class N6705CDatalogUI(QWidget):
         time_label.setObjectName("fieldLabel")
         time_label.setFixedWidth(60)
         self.label_time_edit = QLineEdit()
-        self.label_time_edit.setPlaceholderText("Input label time")
+        self.label_time_edit.setPlaceholderText("e.g. 1.2s, 100ms, 2min")
         time_row.addWidget(time_label)
         time_row.addWidget(self.label_time_edit, 1)
         form_layout.addLayout(time_row)
@@ -4063,6 +4064,7 @@ class N6705CDatalogUI(QWidget):
         self.add_label_btn.clicked.connect(self._add_custom_label)
         self.label_time_edit.returnPressed.connect(self._add_custom_label)
         self.label_text_edit.returnPressed.connect(self._add_custom_label)
+        self.label_time_edit.editingFinished.connect(self._on_label_time_editing_finished)
 
     def _is_8ch_mode(self):
         return self.is_connected_b
@@ -5893,10 +5895,11 @@ class N6705CDatalogUI(QWidget):
         text = self.label_text_edit.text().strip()
         if not time_str or not text or not ch_name:
             return
-        try:
-            t = float(time_str)
-        except ValueError:
+        parsed = self._parse_label_time_input(time_str)
+        if parsed is None:
             return
+        t, unit = parsed
+        self._label_time_last_unit = unit
 
         self.custom_labels.append({"time": t, "text": text, "channel": ch_name})
         self._refresh_labels_display()
@@ -5905,6 +5908,75 @@ class N6705CDatalogUI(QWidget):
 
         self.label_time_edit.clear()
         self.label_text_edit.clear()
+
+    def _parse_label_time_input(self, raw_text):
+        import re
+        s = (raw_text or "").strip().lower().replace("\u00b5", "u")
+        if not s:
+            return None
+        m = re.fullmatch(r"\s*([+-]?\d+(?:\.\d+)?|[+-]?\.\d+)\s*([a-z]*)\s*", s)
+        if not m:
+            return None
+        try:
+            value = float(m.group(1))
+        except ValueError:
+            return None
+        unit_raw = m.group(2).strip()
+        unit_map = {
+            "": None,
+            "s": "s", "sec": "s", "secs": "s", "second": "s", "seconds": "s",
+            "ms": "ms", "msec": "ms", "msecs": "ms", "millisecond": "ms", "milliseconds": "ms",
+            "us": "us", "usec": "us", "usecs": "us", "microsecond": "us", "microseconds": "us",
+            "ns": "ns", "nsec": "ns", "nsecs": "ns", "nanosecond": "ns", "nanoseconds": "ns",
+            "m": "min", "min": "min", "mins": "min", "minute": "min", "minutes": "min",
+            "h": "h", "hr": "h", "hrs": "h", "hour": "h", "hours": "h",
+        }
+        if unit_raw not in unit_map:
+            return None
+        unit = unit_map[unit_raw]
+        if unit is None:
+            unit = self._label_time_last_unit or "s"
+        factor = {
+            "s": 1.0,
+            "ms": 1e-3,
+            "us": 1e-6,
+            "ns": 1e-9,
+            "min": 60.0,
+            "h": 3600.0,
+        }.get(unit, 1.0)
+        return value * factor, unit
+
+    def _format_label_time_display(self, seconds, unit):
+        factor = {
+            "s": 1.0,
+            "ms": 1e-3,
+            "us": 1e-6,
+            "ns": 1e-9,
+            "min": 60.0,
+            "h": 3600.0,
+        }.get(unit, 1.0)
+        display_unit = {"min": "min", "us": "us"}.get(unit, unit)
+        value = seconds / factor
+        if abs(value - round(value)) < 1e-9:
+            txt = f"{int(round(value))}"
+        else:
+            txt = f"{value:g}"
+        return f"{txt} {display_unit}"
+
+    def _on_label_time_editing_finished(self):
+        raw = self.label_time_edit.text().strip()
+        if not raw:
+            return
+        parsed = self._parse_label_time_input(raw)
+        if parsed is None:
+            return
+        seconds, unit = parsed
+        self._label_time_last_unit = unit
+        self.label_time_edit.blockSignals(True)
+        try:
+            self.label_time_edit.setText(self._format_label_time_display(seconds, unit))
+        finally:
+            self.label_time_edit.blockSignals(False)
 
     def _get_value_at_time(self, ch_name, t):
         for label, ch_data in self.datalog_data.items():
