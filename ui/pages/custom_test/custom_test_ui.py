@@ -311,11 +311,37 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         header_layout = QVBoxLayout()
         header_layout.setContentsMargins(4, 0, 4, 0)
         header_layout.setSpacing(2)
-        self.page_title = QLabel("🧪 Custom Test")
+
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(8)
+
+        title_icon_label = QLabel()
+        title_icon_label.setFixedSize(22, 22)
+        title_icon_label.setAlignment(Qt.AlignCenter)
+        title_icon_label.setStyleSheet("background: transparent; border: none;")
+        network_icon_path = os.path.join(_ICONS_DIR, "network.svg")
+        if os.path.isfile(network_icon_path):
+            icon_pixmap = QPixmap(22, 22)
+            icon_pixmap.fill(Qt.transparent)
+            painter = QPainter(icon_pixmap)
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setRenderHint(QPainter.SmoothPixmapTransform)
+            QSvgRenderer(network_icon_path).render(painter, QRectF(0, 0, 22, 22))
+            painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+            painter.fillRect(icon_pixmap.rect(), QColor("#6366f1"))
+            painter.end()
+            title_icon_label.setPixmap(icon_pixmap)
+        title_row.addWidget(title_icon_label)
+
+        self.page_title = QLabel("Custom Test")
         self.page_title.setObjectName("pageTitle")
+        title_row.addWidget(self.page_title)
+        title_row.addStretch(1)
+
         self.page_subtitle = QLabel("Build and run custom test sequences with visual node-based editor.")
         self.page_subtitle.setObjectName("pageSubtitle")
-        header_layout.addWidget(self.page_title)
+        header_layout.addLayout(title_row)
         header_layout.addWidget(self.page_subtitle)
         root.addLayout(header_layout)
 
@@ -662,7 +688,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         log_layout = QVBoxLayout(log_tab)
         log_layout.setContentsMargins(0, 0, 0, 0)
         self.logs_frame = ExecutionLogsFrame(
-            title="⊙ Execution Logs", show_progress=True
+            title="Execution Logs", show_progress=True
         )
         log_layout.addWidget(self.logs_frame)
         tabs.addTab(log_tab, "Logs")
@@ -1311,14 +1337,38 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         menu = QMenu(self)
         menu.setStyleSheet(_CONTEXT_MENU_STYLE)
 
-        title_action = menu.addAction(f"📊  {col_label}")
+        _menu_icon_color = "#8eb0e3"
+        _bar_chart_icon = os.path.join(_ICONS_DIR, "bar-chart.svg")
+        _pencil_icon = os.path.join(_ICONS_DIR, "pencil.svg")
+        _hash_icon = os.path.join(_ICONS_DIR, "hash.svg")
+        _trash_icon = os.path.join(_ICONS_DIR, "trash.svg")
+
+        if os.path.isfile(_bar_chart_icon):
+            title_action = menu.addAction(
+                _tinted_svg_icon(_bar_chart_icon, _menu_icon_color, 16),
+                f"  {col_label}",
+            )
+        else:
+            title_action = menu.addAction(f"  {col_label}")
         title_action.setEnabled(False)
         menu.addSeparator()
 
-        rename_action = menu.addAction("✏  重命名列")
+        if os.path.isfile(_pencil_icon):
+            rename_action = menu.addAction(
+                _tinted_svg_icon(_pencil_icon, _menu_icon_color, 16),
+                "重命名列",
+            )
+        else:
+            rename_action = menu.addAction("重命名列")
         menu.addSeparator()
 
-        fmt_menu = menu.addMenu("🔢  数值格式")
+        if os.path.isfile(_hash_icon):
+            fmt_menu = menu.addMenu(
+                _tinted_svg_icon(_hash_icon, _menu_icon_color, 16),
+                "数值格式",
+            )
+        else:
+            fmt_menu = menu.addMenu("数值格式")
         fmt_menu.setStyleSheet(_CONTEXT_MENU_STYLE)
         fmt_auto = fmt_menu.addAction("自动")
         fmt_0 = fmt_menu.addAction("整数 (0)")
@@ -1335,7 +1385,13 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
 
         menu.addSeparator()
 
-        hide_action = menu.addAction("🗑  删除列")
+        if os.path.isfile(_trash_icon):
+            hide_action = menu.addAction(
+                _tinted_svg_icon(_trash_icon, _menu_icon_color, 16),
+                "删除列",
+            )
+        else:
+            hide_action = menu.addAction("删除列")
 
         action = menu.exec(header.mapToGlobal(pos))
         if action is None:

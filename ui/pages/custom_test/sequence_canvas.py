@@ -661,8 +661,12 @@ class SequenceCanvas(QWidget):
 
         toolbar.addStretch()
 
-        self.save_btn = QPushButton("💾 Save")
+        self.save_btn = QPushButton("Save")
         self.save_btn.setStyleSheet(_TOOLBAR_BTN_STYLE)
+        _save_icon_path = os.path.join(_ICONS_DIR, "save.svg")
+        if os.path.isfile(_save_icon_path):
+            self.save_btn.setIcon(_tinted_svg_icon(_save_icon_path, "#dce7ff", 16))
+            self.save_btn.setIconSize(QSize(16, 16))
         toolbar.addWidget(self.save_btn)
 
         self.load_btn = QPushButton("📂 Load")

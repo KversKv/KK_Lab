@@ -814,7 +814,7 @@ class MainWindow(QMainWindow):
         self.custom_test_btn = SidebarNavButton(
             "Custom Test",
             "",
-            os.path.join(_ICONS_DIR, "sparkles.svg")
+            os.path.join(_ICONS_DIR, "network.svg")
         )
         left_nav_layout.addWidget(self.custom_test_btn)
 
