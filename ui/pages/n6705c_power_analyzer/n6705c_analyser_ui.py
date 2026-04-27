@@ -1212,9 +1212,39 @@ class N6705CAnalyserUI(QWidget):
         layout.setContentsMargins(16, 10, 16, 14)
         layout.setSpacing(10)
 
-        header_row = QHBoxLayout()
-        header_row.setSpacing(8)
-        header_row.addStretch()
+        _ct_input_style = f"""
+            QLineEdit {{
+                background-color: #111d36; color: #dbe6ff;
+                border: 1px solid #1e3050; border-radius: {WIDGET_RADIUS};
+                padding: 4px 8px; font-size: 12px; font-weight: 600;
+            }}
+            QLineEdit:focus {{ border: 1px solid #3a5a90; color: #ffffff; }}
+            QLineEdit:disabled {{ background-color: #0b1730; color: {DISABLED_TEXT}; border: 1px solid {DISABLED_BTN_BORDER}; }}
+        """
+
+        params_row = QHBoxLayout()
+        params_row.setSpacing(12)
+
+        time_label = QLabel("Test Time (s):")
+        time_label.setStyleSheet(f"font-size: 11px; color: {MUTED_TEXT}; border: none;")
+        self.ct_test_time_input = QLineEdit("10")
+        self.ct_test_time_input.setFixedWidth(80)
+        self.ct_test_time_input.setAlignment(Qt.AlignCenter)
+        self.ct_test_time_input.setStyleSheet(_ct_input_style)
+
+        period_label = QLabel("Sample Period (us):")
+        period_label.setStyleSheet(f"font-size: 11px; color: {MUTED_TEXT}; border: none;")
+        self.ct_sample_period_input = QLineEdit("20")
+        self.ct_sample_period_input.setFixedWidth(80)
+        self.ct_sample_period_input.setAlignment(Qt.AlignCenter)
+        self.ct_sample_period_input.setStyleSheet(_ct_input_style)
+
+        params_row.addWidget(time_label)
+        params_row.addWidget(self.ct_test_time_input)
+        params_row.addSpacing(8)
+        params_row.addWidget(period_label)
+        params_row.addWidget(self.ct_sample_period_input)
+        params_row.addStretch()
 
         self.ct_save_btn = QPushButton("Save DataLog")
         self.ct_save_btn.setStyleSheet(f"""
@@ -1225,30 +1255,7 @@ class N6705CAnalyserUI(QWidget):
             }}
             QPushButton:hover {{ background-color: #10203e; }}
         """)
-        header_row.addWidget(self.ct_save_btn)
-        layout.addLayout(header_row)
-
-        params_row = QHBoxLayout()
-        params_row.setSpacing(12)
-
-        time_label = QLabel("Test Time (s):")
-        time_label.setStyleSheet(f"font-size: 11px; color: {MUTED_TEXT}; border: none;")
-        self.ct_test_time_input = QLineEdit("10")
-        self.ct_test_time_input.setFixedWidth(80)
-        self.ct_test_time_input.setAlignment(Qt.AlignCenter)
-
-        period_label = QLabel("Sample Period (s):")
-        period_label.setStyleSheet(f"font-size: 11px; color: {MUTED_TEXT}; border: none;")
-        self.ct_sample_period_input = QLineEdit("0.001")
-        self.ct_sample_period_input.setFixedWidth(80)
-        self.ct_sample_period_input.setAlignment(Qt.AlignCenter)
-
-        params_row.addWidget(time_label)
-        params_row.addWidget(self.ct_test_time_input)
-        params_row.addSpacing(8)
-        params_row.addWidget(period_label)
-        params_row.addWidget(self.ct_sample_period_input)
-        params_row.addStretch()
+        params_row.addWidget(self.ct_save_btn)
         layout.addLayout(params_row)
 
         btn_row = QHBoxLayout()
@@ -2141,7 +2148,7 @@ class N6705CAnalyserUI(QWidget):
 
         try:
             test_time = float(self.ct_test_time_input.text())
-            sample_period = float(self.ct_sample_period_input.text())
+            sample_period = float(self.ct_sample_period_input.text()) / 1_000_000.0
         except ValueError:
             return
 

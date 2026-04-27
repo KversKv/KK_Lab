@@ -596,7 +596,7 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, VT6002ConnectionMixin,
         measure_grid.setVerticalSpacing(6)
 
         measure_grid.addWidget(QLabel("Measure Time (s)"), 0, 0)
-        measure_grid.addWidget(QLabel("Sample Period (s)"), 0, 1)
+        measure_grid.addWidget(QLabel("Sample Period (us)"), 0, 1)
 
         self.test_time = QDoubleSpinBox()
         self.test_time.setRange(0.1, 600.0)
@@ -605,10 +605,10 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, VT6002ConnectionMixin,
         self.test_time.setDecimals(1)
 
         self.sample_period = QDoubleSpinBox()
-        self.sample_period.setRange(0.001, 10.0)
-        self.sample_period.setValue(0.02)
-        self.sample_period.setSingleStep(0.01)
-        self.sample_period.setDecimals(3)
+        self.sample_period.setRange(20.0, 10_000_000.0)
+        self.sample_period.setValue(20.0)
+        self.sample_period.setSingleStep(1000.0)
+        self.sample_period.setDecimals(0)
 
         measure_grid.addWidget(self.test_time, 1, 0)
         measure_grid.addWidget(self.sample_period, 1, 1)
@@ -742,7 +742,7 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, VT6002ConnectionMixin,
             "soak_time": self.soak_time.value(),
             "stable_tolerance": self.stable_tolerance.value(),
             "test_time": self.test_time.value(),
-            "sample_period": self.sample_period.value(),
+            "sample_period": self.sample_period.value() / 1_000_000.0,
             "channels": channels,
         }
 

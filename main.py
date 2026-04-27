@@ -24,7 +24,7 @@ from log_config import setup_logging, get_logger
 from debug_config import DEBUG_MOCK
 from ui.main_window import MainWindow
 
-setup_logging(level=logging.DEBUG)
+setup_logging(level=logging.INFO)
 # setup_logging(level=logging.DEBUG)    # 全部输出
 # setup_logging(level=logging.INFO)     # 默认 - 正常运行信息
 # setup_logging(level=logging.WARNING)  # 仅警告和错误
