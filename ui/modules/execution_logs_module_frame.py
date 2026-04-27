@@ -461,6 +461,7 @@ class ExecutionLogsFrame(QFrame):
         self._search_input = QLineEdit()
         self._search_input.setObjectName("searchInput")
         self._search_input.setPlaceholderText("Search logs...")
+        self._search_input.setFocusPolicy(Qt.ClickFocus)
         self._search_input.setMinimumWidth(120)
         self._search_input.setMaximumWidth(200)
         self._search_input.textChanged.connect(self._on_keyword_changed)
