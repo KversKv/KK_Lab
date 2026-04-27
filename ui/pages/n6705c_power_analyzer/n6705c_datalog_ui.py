@@ -563,14 +563,43 @@ class _DatalogWorker(QObject):
             all_data = {}
             raw_dlog_list = []
 
-            logger.info("[Datalog] Waiting %ds for capture...", self.monitoring_time_s + 5)
-            wait_end = time.time() + self.monitoring_time_s + 5
+            safety_buffer = max(0.5, min(5.0, self.monitoring_time_s * 0.3))
+            capture_total = self.monitoring_time_s + safety_buffer
+            logger.info("[Datalog] Waiting up to %.2fs for capture (monitor=%.2fs + buffer=%.2fs)...",
+                        capture_total, self.monitoring_time_s, safety_buffer)
             capture_start = time.time()
-            capture_total = self.monitoring_time_s + 5
+            hard_deadline = capture_start + self.monitoring_time_s + max(safety_buffer, 5.0)
             early_stop = False
             keepalive_interval = 300
             last_keepalive = time.time()
-            while time.time() < wait_end:
+            poll_sleep = 0.05 if self.monitoring_time_s <= 2.0 else 0.2
+            measuring_bit = 0x1000
+
+            probe_channels = []
+            for unit_idx, n6705c, curr_ch, volt_ch in active_units:
+                any_ch = None
+                if curr_ch:
+                    any_ch = curr_ch[0]
+                elif volt_ch:
+                    any_ch = volt_ch[0]
+                probe_channels.append(any_ch)
+
+            probe_enabled = all(ch is not None for ch in probe_channels)
+            probe_failures = 0
+            probe_max_failures = 2
+
+            def _is_unit_done(n6705c, channel):
+                try:
+                    resp = n6705c.instr.query(f"STAT:OPER:COND? (@{channel})")
+                    cond = int(float(resp.strip()))
+                    return (cond & measuring_bit) == 0
+                except Exception as e:
+                    raise e
+
+            while True:
+                now = time.time()
+                elapsed = now - capture_start
+
                 if self._is_stopped:
                     logger.info("[Datalog] Stopped by user during capture wait, aborting datalog and fetching data...")
                     early_stop = True
@@ -581,9 +610,32 @@ class _DatalogWorker(QObject):
                             logger.debug("[Datalog] ABOR:DLOG sent to unit %d", unit_idx)
                         except Exception as e:
                             logger.error("[Datalog] Failed to abort dlog on unit %d: %s", unit_idx, e)
-                    time.sleep(1)
+                    time.sleep(0.3)
                     break
-                now = time.time()
+
+                if probe_enabled and elapsed >= self.monitoring_time_s:
+                    try:
+                        all_done = True
+                        for (unit_idx, n6705c, _, _), ch in zip(active_units, probe_channels):
+                            if not _is_unit_done(n6705c, ch):
+                                all_done = False
+                                break
+                        if all_done:
+                            logger.debug("[Datalog] All units reported capture complete at %.3fs", elapsed)
+                            break
+                    except Exception as e:
+                        probe_failures += 1
+                        logger.warning("[Datalog] STAT:OPER:COND probe failed (%d/%d): %s",
+                                       probe_failures, probe_max_failures, e)
+                        if probe_failures >= probe_max_failures:
+                            probe_enabled = False
+                            logger.warning("[Datalog] Disabling early-completion probe, falling back to fixed wait")
+
+                if elapsed >= capture_total:
+                    if not probe_enabled or now >= hard_deadline:
+                        logger.debug("[Datalog] Capture wait reached capture_total at %.3fs", elapsed)
+                        break
+
                 if now - last_keepalive >= keepalive_interval:
                     for unit_idx, n6705c, _, _ in active_units:
                         try:
@@ -592,16 +644,41 @@ class _DatalogWorker(QObject):
                         except Exception as e:
                             logger.warning("[Datalog] Keep-alive failed on unit %d: %s", unit_idx, e)
                     last_keepalive = now
-                elapsed = now - capture_start
-                capture_pct = min(elapsed / capture_total, 1.0)
+
+                capture_pct = min(elapsed / capture_total, 1.0) if capture_total > 0 else 1.0
                 overall_pct = int(2 + capture_pct * 91)
                 self.progress_update.emit(overall_pct, "Capturing data...")
-                time.sleep(0.5)
+                time.sleep(poll_sleep)
 
             logger.debug("[Datalog][Progress] Capture wait done in %.3fs", time.time() - capture_start)
             self.progress_update.emit(93, "Downloading data...")
             logger.debug("[Datalog][Progress] Download start at %.3fs", time.time() - run_start)
             download_start = time.time()
+
+            def _wait_flush_ready(n6705c, unit_idx, opc_timeout_ms=4000, settle_s=0.25):
+                saved = None
+                try:
+                    try:
+                        saved = n6705c.instr.timeout
+                        n6705c.instr.timeout = opc_timeout_ms
+                    except Exception:
+                        saved = None
+                    try:
+                        n6705c.instr.write("*CLS")
+                    except Exception:
+                        pass
+                    try:
+                        n6705c.instr.query("*OPC?")
+                        logger.debug("[Datalog] *OPC? returned for unit %d", unit_idx)
+                    except Exception as e:
+                        logger.warning("[Datalog] *OPC? wait failed on unit %d: %s", unit_idx, e)
+                finally:
+                    if saved is not None:
+                        try:
+                            n6705c.instr.timeout = saved
+                        except Exception:
+                            pass
+                time.sleep(settle_s)
 
             for unit_idx, n6705c in enumerate(self.n6705c_list):
                 curr_channels = self.channels_per_unit[unit_idx]
@@ -613,20 +690,47 @@ class _DatalogWorker(QObject):
                 unit_data = None
 
                 dlog_file = f"internal:\\datalog_cap_{unit_idx}.dlog"
-                try:
-                    t0 = time.time()
-                    raw_dlog = n6705c.read_mmem_data(dlog_file)
-                    t1 = time.time()
-                    if isinstance(raw_dlog, bytes):
-                        logger.info("[Datalog] dlog downloaded: %d bytes in %.1fs", len(raw_dlog), t1-t0)
-                        raw_dlog_list.append(raw_dlog)
+                _wait_flush_ready(n6705c, unit_idx)
 
-                        unit_data = parse_dlog_binary(
-                            raw_dlog, curr_channels, volt_channels,
-                            ulabel, sample_period_s
-                        )
-                except Exception as e:
-                    logger.error("[Datalog] dlog download/parse failed: %s", e)
+                raw_dlog = None
+                read_attempts = 4
+                read_timeout_ms = 8000
+                for attempt in range(read_attempts):
+                    saved_to = None
+                    try:
+                        try:
+                            saved_to = n6705c.instr.timeout
+                            n6705c.instr.timeout = read_timeout_ms
+                        except Exception:
+                            saved_to = None
+                        try:
+                            n6705c.instr.write("*CLS")
+                        except Exception:
+                            pass
+                        t0 = time.time()
+                        raw_dlog = n6705c.read_mmem_data(dlog_file)
+                        t1 = time.time()
+                        if isinstance(raw_dlog, bytes) and len(raw_dlog) > 0:
+                            logger.info("[Datalog] dlog downloaded: %d bytes in %.1fs (attempt %d)",
+                                        len(raw_dlog), t1 - t0, attempt + 1)
+                            raw_dlog_list.append(raw_dlog)
+                            unit_data = parse_dlog_binary(
+                                raw_dlog, curr_channels, volt_channels,
+                                ulabel, sample_period_s
+                            )
+                            break
+                        else:
+                            logger.warning("[Datalog] dlog read returned empty on attempt %d", attempt + 1)
+                    except Exception as e:
+                        logger.warning("[Datalog] dlog download failed on attempt %d/%d: %s",
+                                       attempt + 1, read_attempts, e)
+                    finally:
+                        if saved_to is not None:
+                            try:
+                                n6705c.instr.timeout = saved_to
+                            except Exception:
+                                pass
+                    time.sleep(min(0.5 * (attempt + 1), 1.5))
 
                 if not unit_data:
                     logger.info("[Datalog] Falling back to CSV export...")
@@ -4360,9 +4464,10 @@ class N6705CDatalogUI(QWidget):
         sample_period_s = sample_period / 1_000_000.0
         total_points = monitor_time / sample_period_s if sample_period_s > 0 else 0
         estimated_export_time = total_points * 1.2e-6 + 0.3
-        total_estimated = monitor_time + 5 + estimated_export_time
-        logger.debug("[Datalog][Progress] Estimated total time: %.1fs (monitoring=%.1fs + wait=5s + export=%.1fs, points=%.0f, interval=%.0fus)",
-                    total_estimated, monitor_time, estimated_export_time, total_points, sample_period)
+        safety_buffer = max(0.5, min(5.0, monitor_time * 0.3))
+        total_estimated = monitor_time + safety_buffer + estimated_export_time
+        logger.debug("[Datalog][Progress] Estimated total time: %.1fs (monitoring=%.1fs + wait=%.1fs + export=%.1fs, points=%.0f, interval=%.0fus)",
+                    total_estimated, monitor_time, safety_buffer, estimated_export_time, total_points, sample_period)
         self._show_progress_overlay(total_estimated)
 
         self._record_thread = QThread()
