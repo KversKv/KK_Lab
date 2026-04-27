@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "sequence": [
+    {
+      "node_type": "LoopRange",
+      "uid": "ae613f8a-2c9e-4e93-a5e6-1856f5a489ee",
+      "params": {
+        "var_name": "i",
+        "start": 0.6,
+        "stop": 0.9,
+        "step": 0.01,
+        "export_var": true
+      },
+      "children": [
+        {
+          "node_type": "N6705CSetVoltage",
+          "uid": "dbddee4e-38ca-458c-a0c9-633a626a9f8d",
+          "params": {
+            "channel": 2,
+            "voltage": "i",
+            "current_limit": 0.02,
+            "output_on": true
+          }
+        },
+        {
+          "node_type": "N6705CSetVoltage",
+          "uid": "ebadf0af-81cb-426f-a769-2f9ed2e0e141",
+          "params": {
+            "channel": 3,
+            "voltage": "i",
+            "current_limit": 0.02,
+            "output_on": true
+          }
+        },
+        {
+          "node_type": "Delay",
+          "uid": "45dfa92e-ef44-4a88-a1c0-065bb12a0f6e",
+          "params": {
+            "seconds": 0.1
+          }
+        },
+        {
+          "node_type": "N6705CMeasure",
+          "uid": "80551322-0265-489b-9d98-afbbbbf9a283",
+          "params": {
+            "channel": 2,
+            "measure_type": "current",
+            "result_var": "IcoreM",
+            "export_var": true
+          }
+        },
+        {
+          "node_type": "N6705CMeasure",
+          "uid": "d0ac293d-b55d-4b1f-bb51-944b0b4cf6a2",
+          "params": {
+            "channel": 3,
+            "measure_type": "current",
+            "result_var": "IcoreL",
+            "export_var": true
+          }
+        },
+        {
+          "node_type": "RecordDataPoint",
+          "uid": "c1a4f6d2-7b83-4e19-9d52-0f3a1e8b4c27",
+          "params": {
+            "fields": "Vout=${i}, IcoreM=${IcoreM}, IcoreL=${IcoreL}",
+            "skip_no_export": true
+          }
+        }
+      ]
+    }
+  ],
+  "instruments": {
+    "n6705c": {
+      "visa": "TCPIP0::K-N6705C-06098.local::hislip0::INSTR"
+    }
+  }
+}

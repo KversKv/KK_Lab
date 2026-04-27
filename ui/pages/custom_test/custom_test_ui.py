@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import csv
 import json
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -10,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QFrame,
     QLabel, QTableWidget, QTableWidgetItem, QTabWidget, QStackedLayout,
+    QHeaderView, QPushButton, QFileDialog, QMessageBox,
 )
 from PySide6.QtCore import Qt, Signal, QSize, QRectF
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor
@@ -236,6 +238,15 @@ _PAGE_STYLE = """
     QHeaderView::section:pressed {
         background-color: #1a2d57;
     }
+    QTableCornerButton::section {
+        background-color: #0b1428;
+        border: none;
+        border-right: 1px solid #1a2d57;
+        border-bottom: 1px solid #1a2d57;
+    }
+    QTableCornerButton::section:hover {
+        background-color: #112040;
+    }
 """ + SCROLLBAR_STYLE
 
 
@@ -300,6 +311,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         top_splitter.addWidget(self.canvas)
 
         self.property_panel = PropertyPanel()
+        self.property_panel.set_canvas(self.canvas)
         top_splitter.addWidget(self.property_panel)
 
         top_splitter.setSizes([220, 520, 260])
@@ -520,7 +532,57 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
                 self._sc_port_combo.setCurrentText(port)
             if baud and hasattr(self, "_sc_baud_combo"):
                 self._sc_baud_combo.setCurrentText(baud)
+        self._try_auto_connect_instruments(meta)
         self._pending_instr_meta = None
+
+    def _try_auto_connect_instruments(self, meta: dict) -> None:
+        """加载模板后，根据 meta 中已保存的仪器配置尝试自动连接。
+
+        - 仅在 widget 已构建且当前未连接时才会触发；
+        - 所有异常被吞掉并记录日志，不影响模板加载流程。
+        """
+        if not meta:
+            return
+
+        if "n6705c" in meta and self._n6705c_widgets_built:
+            try:
+                already = False
+                if hasattr(self, "is_n6705c_connected"):
+                    try:
+                        already = bool(self.is_n6705c_connected())
+                    except Exception:
+                        already = bool(getattr(self, "is_connected", False))
+                if not already and hasattr(self, "_on_n6705c_connect"):
+                    self.logs_frame.append_log("[AUTO] 尝试连接 N6705C ...")
+                    self._on_n6705c_connect()
+            except Exception as exc:
+                logger.warning("自动连接 N6705C 失败: %s", exc)
+                self.logs_frame.append_log(f"[AUTO] N6705C 自动连接失败: {exc}")
+
+        if "vt6002" in meta and self._vt6002_widgets_built:
+            try:
+                already = False
+                if hasattr(self, "is_vt6002_connected_status"):
+                    try:
+                        already = bool(self.is_vt6002_connected_status())
+                    except Exception:
+                        already = bool(getattr(self, "is_vt6002_connected", False))
+                if not already and hasattr(self, "_on_vt6002_connect"):
+                    self.logs_frame.append_log("[AUTO] 尝试连接 VT6002 Chamber ...")
+                    self._on_vt6002_connect()
+            except Exception as exc:
+                logger.warning("自动连接 VT6002 失败: %s", exc)
+                self.logs_frame.append_log(f"[AUTO] VT6002 自动连接失败: {exc}")
+
+        if "uart" in meta and self._uart_widgets_built:
+            try:
+                if not getattr(self, "_serial_connected", False) \
+                        and hasattr(self, "_on_serial_connect"):
+                    self.logs_frame.append_log("[AUTO] 尝试连接 UART ...")
+                    self._on_serial_connect()
+            except Exception as exc:
+                logger.warning("自动连接 UART 失败: %s", exc)
+                self.logs_frame.append_log(f"[AUTO] UART 自动连接失败: {exc}")
 
     def _build_bottom_panel(self) -> QWidget:
 
@@ -532,6 +594,24 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         layout.setSpacing(6)
 
         tabs = QTabWidget()
+        self._bottom_tabs = tabs
+
+        self._export_btn = QPushButton("Export")
+        self._export_btn.setCursor(Qt.PointingHandCursor)
+        self._export_btn.setToolTip("将当前 Data 表格导出为 Excel / CSV")
+        self._export_btn.setStyleSheet(
+            "QPushButton { background-color: #132040; color: #8eb0e3;"
+            "  border: 1px solid #1a2d57; border-radius: 6px;"
+            "  padding: 4px 12px; font-size: 11px; font-weight: 600; margin: 2px 6px; }"
+            "QPushButton:hover { background-color: #1a2d57; color: #dce7ff; }"
+            "QPushButton:pressed { background-color: #0c1733; }"
+            "QPushButton:disabled { color: #3f5070; background-color: #0b1428;"
+            "  border: 1px solid #132040; }"
+        )
+        self._export_btn.setVisible(False)
+        self._export_btn.clicked.connect(self._on_export_clicked)
+        tabs.setCornerWidget(self._export_btn, Qt.TopRightCorner)
+        tabs.currentChanged.connect(self._on_bottom_tab_changed)
 
         log_icon_path = os.path.join(_ICONS_DIR, "clipboard-list.svg")
         table_icon_path = os.path.join(_ICONS_DIR, "table.svg")
@@ -560,7 +640,12 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         self.result_table = QTableWidget()
         self.result_table.setColumnCount(0)
         self.result_table.setRowCount(0)
-        self.result_table.horizontalHeader().setStretchLastSection(True)
+        self.result_table.horizontalHeader().setStretchLastSection(False)
+        self.result_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.Interactive
+        )
+        self.result_table.horizontalHeader().setDefaultSectionSize(120)
+        self.result_table.horizontalHeader().setMinimumSectionSize(60)
         self.result_table.horizontalHeader().setSectionsMovable(True)
         self.result_table.horizontalHeader().setDragEnabled(True)
         self.result_table.horizontalHeader().setDragDropMode(
@@ -605,6 +690,161 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
 
         layout.addWidget(tabs)
         return widget
+
+    def _on_bottom_tab_changed(self, index: int) -> None:
+        """底部标签切换:Data 页显示 Export 按钮,其它页隐藏。"""
+        if not hasattr(self, "_bottom_tabs") or not hasattr(self, "_export_btn"):
+            return
+        try:
+            tab_text = self._bottom_tabs.tabText(index)
+        except Exception:
+            tab_text = ""
+        self._export_btn.setVisible(tab_text == "Data")
+
+    def _on_export_clicked(self) -> None:
+        """导出 result_table 的全部内容到 Excel 或 CSV。"""
+        table = self.result_table
+        if table.rowCount() == 0 or table.columnCount() == 0:
+            QMessageBox.information(
+                self, "无可导出的数据",
+                "当前 Data 表格为空,请先运行一次测试采集数据。"
+            )
+            return
+
+        default_name = f"custom_test_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        file_path, selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "导出 Data 表格",
+            default_name,
+            "Excel Files (*.xlsx);;CSV Files (*.csv)"
+        )
+        if not file_path:
+            return
+
+        lower = file_path.lower()
+        if lower.endswith(".xlsx"):
+            target = "xlsx"
+        elif lower.endswith(".csv"):
+            target = "csv"
+        else:
+            if "CSV" in (selected_filter or ""):
+                target = "csv"
+                file_path += ".csv"
+            else:
+                target = "xlsx"
+                file_path += ".xlsx"
+
+        try:
+            if target == "xlsx":
+                self._export_table_xlsx(file_path)
+            else:
+                self._export_table_csv(file_path)
+        except Exception as exc:
+            logger.exception("导出 Data 表格失败")
+            self.logs_frame.append_log(f"[EXPORT] 导出失败: {exc}")
+            QMessageBox.critical(
+                self, "导出失败",
+                f"导出 Data 表格失败:\n{exc}"
+            )
+            return
+
+        self.logs_frame.append_log(f"[EXPORT] Data 表格已导出: {file_path}")
+        QMessageBox.information(
+            self, "导出成功",
+            f"Data 表格已成功导出到:\n{file_path}"
+        )
+
+    def _collect_table_rows(self) -> (List[str], List[List[str]]):
+        """读取 result_table 的表头与数据(按用户当前可见顺序)。"""
+        table = self.result_table
+        header = table.horizontalHeader()
+        col_count = table.columnCount()
+        row_count = table.rowCount()
+
+        visual_order = [header.logicalIndex(v) for v in range(col_count)]
+
+        headers: List[str] = []
+        for logical in visual_order:
+            item = table.horizontalHeaderItem(logical)
+            headers.append(item.text() if item else f"Column {logical}")
+
+        rows: List[List[str]] = []
+        for r in range(row_count):
+            row_vals: List[str] = []
+            for logical in visual_order:
+                item = table.item(r, logical)
+                row_vals.append(item.text() if item else "")
+            rows.append(row_vals)
+
+        return headers, rows
+
+    def _export_table_csv(self, file_path: str) -> None:
+        headers, rows = self._collect_table_rows()
+        with open(file_path, "w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.writer(f)
+            writer.writerow(headers)
+            for r in rows:
+                writer.writerow(r)
+
+    def _export_table_xlsx(self, file_path: str) -> None:
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+            from openpyxl.utils import get_column_letter
+        except ImportError:
+            raise RuntimeError(
+                "缺少 openpyxl 依赖。请先安装:\n    pip install openpyxl\n"
+                "或将文件名后缀改为 .csv 以导出为 CSV 格式。"
+            )
+
+        headers, rows = self._collect_table_rows()
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Custom Test Data"
+
+        header_font = Font(bold=True, color="FFFFFF", size=11)
+        header_fill = PatternFill("solid", fgColor="2F4070")
+        header_align = Alignment(horizontal="center", vertical="center")
+        cell_align = Alignment(horizontal="center", vertical="center")
+        thin = Side(style="thin", color="B4C7E7")
+        border = Border(left=thin, right=thin, top=thin, bottom=thin)
+        even_fill = PatternFill("solid", fgColor="F2F6FC")
+
+        for col_idx, h in enumerate(headers, start=1):
+            c = ws.cell(row=1, column=col_idx, value=h)
+            c.font = header_font
+            c.fill = header_fill
+            c.alignment = header_align
+            c.border = border
+
+        for r_idx, row_vals in enumerate(rows, start=2):
+            for col_idx, text in enumerate(row_vals, start=1):
+                try:
+                    value: Any = float(text)
+                except (ValueError, TypeError):
+                    value = text
+                c = ws.cell(row=r_idx, column=col_idx, value=value)
+                c.alignment = cell_align
+                c.border = border
+                if isinstance(value, float):
+                    c.number_format = "0.######"
+                if r_idx % 2 == 0:
+                    c.fill = even_fill
+
+        for col_idx, h in enumerate(headers, start=1):
+            max_len = len(str(h))
+            for row_vals in rows:
+                cell_text = row_vals[col_idx - 1] if col_idx - 1 < len(row_vals) else ""
+                if len(cell_text) > max_len:
+                    max_len = len(cell_text)
+            ws.column_dimensions[get_column_letter(col_idx)].width = min(
+                max(max_len + 4, 10), 40
+            )
+        ws.row_dimensions[1].height = 22
+        ws.freeze_panes = "A2"
+
+        wb.save(file_path)
 
     def _connect_signals(self) -> None:
         self.palette.node_requested.connect(self._on_add_node)
@@ -988,7 +1228,14 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
             else:
                 display = str(val)
             item = QTableWidgetItem(display)
+            item.setTextAlignment(Qt.AlignCenter)
             self.result_table.setItem(row_idx, col, item)
+
+        self.result_table.resizeColumnsToContents()
+        header = self.result_table.horizontalHeader()
+        for c in range(self.result_table.columnCount()):
+            if header.sectionSize(c) < 80:
+                header.resizeSection(c, 80)
 
         for key, val in row.items():
             try:

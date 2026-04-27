@@ -96,6 +96,15 @@ _PANEL_STYLE = """
         background: #7070ff;
         border-color: #7070ff;
     }
+    QToolTip {
+        background-color: #0d1f42;
+        border: 1px solid #2a4684;
+        border-radius: 4px;
+        color: #dce7ff;
+        font-size: 11px;
+        padding: 5px 8px;
+        opacity: 230;
+    }
 """
 
 _EMPTY_HINT_STYLE = """
@@ -122,6 +131,7 @@ class PropertyPanel(QWidget):
 
         self._current_node: Optional[BaseNode] = None
         self._editors: Dict[str, QWidget] = {}
+        self._canvas: Any = None
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(0, 0, 0, 0)
@@ -177,6 +187,10 @@ class PropertyPanel(QWidget):
         self._current_node = node
         self._rebuild_form()
 
+    def set_canvas(self, canvas: Any) -> None:
+        """注入序列画布，用于 RecordDataPoint 自动扫描已有变量"""
+        self._canvas = canvas
+
     def _rebuild_form(self) -> None:
         """根据当前节点的 PARAM_SCHEMA 动态构建表单"""
         self._editors.clear()
@@ -213,6 +227,12 @@ class PropertyPanel(QWidget):
         sep.setFixedHeight(1)
         sep.setStyleSheet("QFrame { background-color: #1a2d57; border: none; }")
         card_layout.addWidget(sep)
+
+        if node.node_type == "RecordDataPoint":
+            self._build_record_data_editor(node, card_layout)
+            self._inner_layout.addWidget(card)
+            self._inner_layout.addStretch()
+            return
 
         schema_map = {s["key"]: s for s in node.PARAM_SCHEMA}
 
@@ -290,6 +310,38 @@ class PropertyPanel(QWidget):
                     card_layout.addWidget(le)
                     self._editors[key] = le
 
+        if hasattr(node, "get_shadow_key"):
+            try:
+                shadow_key = node.get_shadow_key()
+            except Exception as exc:
+                logger.warning("get_shadow_key failed: %s", exc)
+                shadow_key = ""
+            if shadow_key:
+                shadow_sep = QFrame()
+                shadow_sep.setFixedHeight(1)
+                shadow_sep.setStyleSheet("QFrame { background-color: #1a2d57; border: none; }")
+                card_layout.addWidget(shadow_sep)
+
+                shadow_title = QLabel("隐式变量(影子键)")
+                shadow_title.setObjectName("fieldLabel")
+                card_layout.addWidget(shadow_title)
+
+                shadow_label = QLabel(f"💡 {shadow_key}")
+                shadow_label.setObjectName("shadowKeyLabel")
+                shadow_label.setWordWrap(True)
+                shadow_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+                shadow_label.setStyleSheet(
+                    "QLabel#shadowKeyLabel { color: #ffc978; font-size: 11px;"
+                    "  background-color: #0c1733; border: 1px dashed #3a5a9f;"
+                    "  border-radius: 5px; padding: 5px 8px; }"
+                )
+                shadow_label.setToolTip(
+                    "执行时,除了上面的『结果存入变量』,该节点还会额外写入这个隐式变量名。\n"
+                    "通常你不需要使用它;仅在需要按 通道/类型 直接索引结果时引用。"
+                )
+                card_layout.addWidget(shadow_label)
+                self._editors["__shadow_key_label__"] = shadow_label
+
         self._inner_layout.addWidget(card)
 
         from ui.pages.custom_test.nodes.logic_nodes import IfBlock, IfBranch
@@ -325,6 +377,29 @@ class PropertyPanel(QWidget):
 
         self._inner_layout.addStretch()
 
+    def _build_record_data_editor(self, node: BaseNode, card_layout: QVBoxLayout) -> None:
+        """为 RecordDataPoint 节点构建自定义表单：自动扫描变量 + 勾选/编辑/自定义。"""
+        from ui.pages.custom_test.record_data_editor import RecordDataPointEditor
+
+        sequence: List[BaseNode] = []
+        if self._canvas is not None and hasattr(self._canvas, "get_sequence"):
+            try:
+                sequence = self._canvas.get_sequence()
+            except Exception as exc:
+                logger.warning("get_sequence failed: %s", exc)
+
+        editor = RecordDataPointEditor(node, sequence)
+        editor.params_changed.connect(
+            lambda key, value, n=node: self._on_record_param_changed(n, key, value)
+        )
+        card_layout.addWidget(editor)
+        self._editors["__record_editor__"] = editor
+
+    def _on_record_param_changed(self, node: BaseNode, key: str, value: Any) -> None:
+        """RecordDataPoint 专属编辑器的回调。"""
+        node.params[key] = value
+        self.param_changed.emit(node.uid, key, value)
+
     def _on_param_changed(self, key: str, value: Any) -> None:
         if self._current_node is None:
             return
@@ -352,3 +427,21 @@ class PropertyPanel(QWidget):
 
         self._current_node.params[key] = value
         self.param_changed.emit(self._current_node.uid, key, value)
+
+        if key in ("channel", "measure_type"):
+            self._refresh_shadow_key_label()
+
+    def _refresh_shadow_key_label(self) -> None:
+        """channel/measure_type 变化时,刷新隐式变量(影子键)提示文本。"""
+        node = self._current_node
+        if node is None or not hasattr(node, "get_shadow_key"):
+            return
+        label = self._editors.get("__shadow_key_label__")
+        if label is None:
+            return
+        try:
+            shadow_key = node.get_shadow_key()
+        except Exception:
+            return
+        if shadow_key:
+            label.setText(f"💡 {shadow_key}")

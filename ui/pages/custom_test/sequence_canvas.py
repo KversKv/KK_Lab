@@ -29,6 +29,8 @@ _ICONS_DIR = os.path.join(
     "resources", "icons"
 )
 
+_TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
+
 
 def _tinted_svg_icon(svg_path: str, color: str, size: int = 16) -> QIcon:
     renderer = QSvgRenderer(svg_path)
@@ -1174,7 +1176,7 @@ class SequenceCanvas(QWidget):
             "instruments": self._collect_instrument_meta(),
         }
         filepath, _ = QFileDialog.getSaveFileName(
-            self, "保存序列", "", "JSON Files (*.json)"
+            self, "保存序列", _TEMPLATES_DIR, "JSON Files (*.json)"
         )
         if not filepath:
             return
@@ -1186,8 +1188,9 @@ class SequenceCanvas(QWidget):
         return {}
 
     def _on_load(self) -> None:
+        start_dir = _TEMPLATES_DIR if os.path.isdir(_TEMPLATES_DIR) else ""
         filepath, _ = QFileDialog.getOpenFileName(
-            self, "加载序列", "", "JSON Files (*.json)"
+            self, "加载序列", start_dir, "JSON Files (*.json)"
         )
         if not filepath:
             return

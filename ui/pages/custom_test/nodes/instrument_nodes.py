@@ -234,6 +234,12 @@ class N6705CMeasure(BaseNode):
         auto_key = f"N6705C_CH{ch}_{measure_type}"
         context.set_variable(auto_key, value, export=export_var)
 
+    def get_shadow_key(self) -> str:
+        """返回该节点在执行时额外写入的"影子键"名,用于 UI 提示。"""
+        ch = self.params.get("channel", 1)
+        mtype = str(self.params.get("measure_type", "current"))
+        return f"N6705C_CH{ch}_{mtype}"
+
 
 @register_node
 class N6705CGetMode(BaseNode):
@@ -462,6 +468,12 @@ class ScopeMeasure(BaseNode):
         context.set_variable(result_var, value, export=export_var)
         context.set_variable(f"scope_CH{ch}_{mtype}", value, export=export_var)
 
+    def get_shadow_key(self) -> str:
+        """返回该节点在执行时额外写入的"影子键"名,用于 UI 提示。"""
+        ch = self.params.get("channel", 1)
+        mtype = str(self.params.get("measure_type", "pk2pk"))
+        return f"scope_CH{ch}_{mtype}"
+
 
 @register_node
 class ScopeMeasureFreq(BaseNode):
@@ -494,6 +506,11 @@ class ScopeMeasureFreq(BaseNode):
         logger.info("Scope CH%d freq = %.4f Hz", ch, freq)
         context.set_variable(result_var, freq, export=export_var)
         context.set_variable(f"scope_CH{ch}_freq", freq, export=export_var)
+
+    def get_shadow_key(self) -> str:
+        """返回该节点在执行时额外写入的"影子键"名,用于 UI 提示。"""
+        ch = self.params.get("channel", 1)
+        return f"scope_CH{ch}_freq"
 
 
 @register_node
