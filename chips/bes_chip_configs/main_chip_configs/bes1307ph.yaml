@@ -1,0 +1,10 @@
+# bes1307ph power_distribution 配置
+# 由 scripts/_gen_chip_yaml.py 从 bes1307ph.py 自动迁移生成。
+# 顶层 key 即下拉菜单中的 Config 条目。
+
+user_config:
+- WRITE_BITS 0x0132 7 0 0x0F
+- WRITE_BITS 0x0133 7 0 0x0F
+- WRITE 0x0128 0x2108
+- WRITE_BITS 0x0135 15 8 0x0F
+- WRITE_BITS 0x0136 15 8 0x0F

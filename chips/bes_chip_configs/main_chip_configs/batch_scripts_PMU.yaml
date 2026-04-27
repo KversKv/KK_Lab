@@ -1,0 +1,155 @@
+# 批处理脚本配置文件
+# 最后更新: 从 新建 文本文档.txt 导入
+DefaultReadWrite:
+  - // 示例 从地址0x40读取（请替换为PMU模块的实际地址)
+  - READ 0x40
+  - DELAY 100
+  - // 示例 向地址0x41写入0xABCD（请替换地址和数据）
+  - WRITE 0x41 0xABCD
+  - READ 0x41
+
+efuse_page1_write_3:
+  - // reg_efuse_clk_osc_sel
+  - WRITE_BITS 0x00BF 14 14 0x1
+  - // reg_efuse_clk_en
+  - WRITE_BITS 0xB7 3 3 0x1
+  - // reg_efuse_pgm_mode
+  - WRITE_BITS 0xB7 0 0 0x1
+  - // reg_efuse_turn_on
+  - WRITE_BITS 0xB7 4 4 0x1
+  - // page1
+  - WRITE_BITS 0xB7 9 6 0x1
+  - // bit0
+  - WRITE_BITS 0xB7 14 10 0x0
+  - // reg_efuse_strobe_trigger
+  - WRITE_BITS 0xB7 5 5 0x1
+  - // reg_efuse_strobe_trigger
+  - WRITE_BITS 0xB7 5 5 0x0
+  - // h bit0
+  - WRITE_BITS 0xB7 14 10 0x10
+  - // reg_efuse_strobe_trigger
+  - WRITE_BITS 0xB7 5 5 0x1
+  - // reg_efuse_strobe_trigger
+  - WRITE_BITS 0xB7 5 5 0x0
+  - // bit1
+  - WRITE_BITS 0xB7 14 10 0x1
+  - // reg_efuse_strobe_trigger
+  - WRITE_BITS 0xB7 5 5 0x1
+  - // reg_efuse_strobe_trigger
+  - WRITE_BITS 0xB7 5 5 0x0
+  - // bit1
+  - WRITE_BITS 0xB7 14 10 0x11
+  - // reg_efuse_strobe_trigger
+  - WRITE_BITS 0xB7 5 5 0x1
+  - // reg_efuse_strobe_trigger
+  - WRITE_BITS 0xB7 5 5 0x0
+  - // reg_efuse_turn_on
+  - WRITE_BITS 0xB7 4 4 0x0
+  - // reg_efuse_clk_en
+  - WRITE_BITS 0xB7 3 3 0x0
+  - // reg_efuse_pgm_mode
+  - WRITE_BITS 0xB7 1 1 0x0
+
+
+
+res_sel_dr:
+  - WRITE_BITS 0x012A 5 5 0x1
+  - WRITE_BITS 0x0130 10 10 0x1
+  - WRITE_BITS 0x0140 10 10 0x1
+  - WRITE_BITS 0x0150 10 10 0x1
+  - WRITE_BITS 0x0160 10 10 0x1
+  
+voltage_low:
+  - WRITE_BITS 0x0130 10 10 0x1
+  - WRITE_BITS 0x0140 10 10 0x1
+  - WRITE_BITS 0x0150 10 10 0x1
+  - WRITE_BITS 0x0142 8 0 0x00f
+  - WRITE_BITS 0x0132 8 0 0x00f
+  - WRITE_BITS 0x0152 8 0 0x00f
+  - WRITE_BITS 0x0141 8 0 0x00f
+  - WRITE_BITS 0x0131 8 0 0x00f
+  - WRITE_BITS 0x0151 8 0 0x00f
+
+voltage_sleep_cali:
+  - WRITE_BITS 0x0130 10 10 0x1
+  - WRITE_BITS 0x0140 10 10 0x1
+  - WRITE_BITS 0x0150 10 10 0x1
+  - WRITE_BITS 0x0142 8 0 0x0B6
+  - WRITE_BITS 0x0132 8 0 0x09D
+  - WRITE_BITS 0x0152 8 0 0x123
+  
+voltage_normal_cali:
+  - WRITE_BITS 0x0130 10 10 0x1
+  - WRITE_BITS 0x0140 10 10 0x1
+  - WRITE_BITS 0x0150 10 10 0x1
+  - WRITE_BITS 0x0141 8 0 0x105
+  - WRITE_BITS 0x0131 8 0 0x09E
+  - WRITE_BITS 0x0151 8 0 0x123
+  
+  
+
+DCDC_CONFIG:
+- //Vcore/Vana/Vhppa burst enable
+- WRITE_BITS 0x131 12 12 0x1
+- WRITE_BITS 0x141 12 12 0x1
+- WRITE_BITS 0x151 12 12 0x1
+
+- //Vcore/Vana/Vhppa is_gain_sel=0
+- WRITE_BITS 0x13A 15 15 0x0
+- WRITE_BITS 0x14A 15 15 0x0
+- WRITE_BITS 0x15A 15 15 0x0
+
+- //Vcore/Vana/Vhppa reserved[0]=1
+- WRITE_BITS 0x138 8 8 0x1
+- WRITE_BITS 0x148 8 8 0x1
+- WRITE_BITS 0x158 8 8 0x1
+
+- //opt_currentref_aon_b=0
+- WRITE_BITS 0x12F 2 2 0x0
+
+- //dcdc_buck_i_halve=1 
+- WRITE_BITS 0x12F 0 0 0x1
+
+
+
+sleep_config:
+- // DCDC CONFIG 3.1uA
+- // lp_mode rtc 3.3uA
+- WRITE_BITS 0x006A 6 5 0x3
+- // rtc voltage 0.7V  2uA
+- WRITE_BITS 0x012A 5 5 0x1
+- WRITE_BITS 0x012B 7 4 0xA
+- // rtc override   3uA
+- WRITE_BITS 0x00D2 1 1 0x1
+- WRITE_BITS 0x012B 7 4 0x6
+
+all_power_off:
+- WRITE_BITS 0x0140 1 0 0x2
+- WRITE_BITS 0x0130 1 0 0x2
+- WRITE_BITS 0x0150 1 0 0x2
+
+split&pu_ldo_vcorel_low:
+- WRITE_BITS 0x011E 13 13 0x1
+- WRITE_BITS 0x011E 5 0 0x3F
+- WRITE_BITS 0x012E 4 3 0x2
+- WRITE_BITS 0x0140 10 10 0x1
+- WRITE_BITS 0x0142 8 0 0x00f
+- WRITE_BITS 0x0141 8 0 0x00f
+
+  
+all_voltage_low:
+  - WRITE_BITS 0x0130 10 10 0x1
+  - WRITE_BITS 0x0140 10 10 0x1
+  - WRITE_BITS 0x0150 10 10 0x1
+  - WRITE_BITS 0x0142 8 0 0x00f
+  - WRITE_BITS 0x0132 8 0 0x00f
+  - WRITE_BITS 0x0152 8 0 0x00f
+  - WRITE_BITS 0x0141 8 0 0x00f
+  - WRITE_BITS 0x0131 8 0 0x00f
+  - WRITE_BITS 0x0151 8 0 0x00f
+  - WRITE_BITS 0x011E 13 13 0x1
+  - WRITE_BITS 0x011E 5 0 0x3F
+  - WRITE_BITS 0x012E 4 3 0x2
+  - WRITE_BITS 0x0140 10 10 0x1
+  - WRITE_BITS 0x0142 8 0 0x00f
+  - WRITE_BITS 0x0141 8 0 0x00f

@@ -10,6 +10,11 @@ import os
 import re
 import json
 
+try:
+    import yaml
+except ImportError:
+    yaml = None
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
@@ -57,6 +62,11 @@ logger = get_logger(__name__)
 _ICONS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
     "resources", "icons"
+)
+
+_MAIN_CHIP_CONFIGS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    "chips", "bes_chip_configs", "main_chip_configs"
 )
 
 
@@ -587,6 +597,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         main_layout.setSpacing(10)
 
         header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(8)
         icon_label = QLabel()
         icon_label.setPixmap(
@@ -606,8 +617,8 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         header_layout.addStretch()
 
         # ---- 导入 / 导出 配置按钮(右上角) ----
-        self.import_config_btn = QPushButton("Import")
-        self.export_config_btn = QPushButton("Export")
+        self.import_config_btn = QPushButton("Import Config")
+        self.export_config_btn = QPushButton("Export Config")
         _io_btn_style = """
             QPushButton {
                 background-color: #1a2750;
@@ -637,6 +648,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         main_layout.addLayout(header_layout)
 
         body_layout = QHBoxLayout()
+        body_layout.setContentsMargins(0, 0, 0, 0)
         body_layout.setSpacing(10)
 
         left_column = QVBoxLayout()
@@ -670,6 +682,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         left_scroll.setWidget(left_inner)
 
         right_column = QVBoxLayout()
+        right_column.setContentsMargins(0, 0, 0, 0)
         right_column.setSpacing(10)
         right_column.addWidget(self._create_channel_config_section())
         right_column.addWidget(self._create_test_buttons_row())
@@ -1301,6 +1314,39 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
         config_layout.addLayout(chip_row)
 
+        saved_config_row = QHBoxLayout()
+        saved_config_row.setSpacing(4)
+        saved_config_label = QLabel("Config")
+        saved_config_label.setStyleSheet(
+            "font-size: 10px; color: #7e96bf; background: transparent; border: none;"
+        )
+        saved_config_label.setFixedWidth(chip_select_label.sizeHint().width())
+        saved_config_row.addWidget(saved_config_label)
+
+        self.saved_config_combo = DarkComboBox()
+        self.saved_config_combo.setSizeAdjustPolicy(
+            DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.saved_config_combo.setMinimumContentsLength(10)
+        self.saved_config_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self.saved_config_combo.setFixedHeight(22)
+        font_sc = self.saved_config_combo.font()
+        font_sc.setPixelSize(11)
+        self.saved_config_combo.setFont(font_sc)
+        self.saved_config_combo.addItem("-- Select Config --")
+        self.saved_config_combo.setEnabled(False)
+        self.saved_config_combo.setToolTip(
+            "Saved configs for the selected chip "
+            f"(from {os.path.relpath(_MAIN_CHIP_CONFIGS_DIR, os.getcwd()) if os.path.isabs(_MAIN_CHIP_CONFIGS_DIR) else _MAIN_CHIP_CONFIGS_DIR}/<chip>.yaml)"
+        )
+        saved_config_row.addWidget(self.saved_config_combo, 1)
+
+        self._saved_config_current_chip = None
+        self._saved_config_yaml_text = ""
+        self._saved_config_entries = []
+
+        config_layout.addLayout(saved_config_row)
+
         config_file_label = QLabel("Config Content")
         config_file_label.setStyleSheet("font-size: 10px; color: #7e96bf;")
         config_layout.addWidget(config_file_label)
@@ -1374,6 +1420,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self.chip_check_btn.clicked.connect(self._on_chip_check)
         self.import_config_btn.clicked.connect(self._import_configuration)
         self.execute_config_btn.clicked.connect(self._execute_configuration)
+        self.saved_config_combo.currentIndexChanged.connect(self._on_saved_config_selected)
 
         return fw_panel, config_panel
 
@@ -2319,6 +2366,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
     def _on_chip_selected(self, index):
         if index <= 0:
             self.selected_chip_config = None
+            self._refresh_saved_config_combo(None)
             return
         chip_name = self.chip_combo.currentText()
         cfg = get_chip_config(chip_name)
@@ -2329,6 +2377,84 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         else:
             logger.warning("No config found for chip: %s", chip_name)
             self.append_log(f"[WARNING] No config found for chip: {chip_name}")
+        self._refresh_saved_config_combo(chip_name)
+
+    def _refresh_saved_config_combo(self, chip_name):
+        """根据所选芯片,扫描 main_chip_configs/<chip>.yaml 并刷新 Config 下拉。"""
+        combo = getattr(self, "saved_config_combo", None)
+        if combo is None:
+            return
+
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem("-- Select Config --")
+        self._saved_config_current_chip = chip_name
+        self._saved_config_yaml_text = ""
+        self._saved_config_entries = []
+
+        if not chip_name:
+            combo.setEnabled(False)
+            combo.blockSignals(False)
+            return
+
+        yaml_path = os.path.join(_MAIN_CHIP_CONFIGS_DIR, f"{chip_name}.yaml")
+        if not os.path.isfile(yaml_path):
+            combo.addItem("(No saved config)")
+            combo.setEnabled(False)
+            combo.blockSignals(False)
+            return
+
+        if yaml is None:
+            combo.addItem("(PyYAML not installed)")
+            combo.setEnabled(False)
+            combo.blockSignals(False)
+            self.append_log("[WARNING] PyYAML not installed; cannot parse saved configs.")
+            return
+
+        try:
+            with open(yaml_path, "r", encoding="utf-8") as f:
+                yaml_text = f.read()
+            parsed = yaml.safe_load(yaml_text) or {}
+        except Exception as e:
+            combo.addItem("(Parse error)")
+            combo.setEnabled(False)
+            combo.blockSignals(False)
+            logger.warning("Failed to parse saved configs %s: %s", yaml_path, e)
+            self.append_log(f"[WARNING] Failed to parse saved configs for {chip_name}: {e}")
+            return
+
+        self._saved_config_yaml_text = yaml_text
+        if isinstance(parsed, dict) and parsed:
+            for key in parsed.keys():
+                key_str = str(key)
+                self._saved_config_entries.append(key_str)
+                combo.addItem(key_str)
+            combo.setEnabled(True)
+        else:
+            combo.addItem("(Empty)")
+            combo.setEnabled(False)
+
+        combo.blockSignals(False)
+
+    def _on_saved_config_selected(self, index):
+        """选中 Config 下拉项后,将整个 YAML 文件内容填入 Config Content 编辑框。"""
+        if index <= 0:
+            return
+        if not self._saved_config_entries:
+            return
+        entry_index = index - 1
+        if entry_index >= len(self._saved_config_entries):
+            return
+        if not hasattr(self, "config_text_edit") or self.config_text_edit is None:
+            return
+
+        chip_name = self._saved_config_current_chip or ""
+        entry_name = self._saved_config_entries[entry_index]
+
+        self.config_text_edit.setPlainText(self._saved_config_yaml_text)
+        self.append_log(
+            f"[SYSTEM] Loaded saved config '{entry_name}' for {chip_name} into Config Content."
+        )
 
     def _on_chip_check(self):
         if self._chip_check_thread is not None and self._chip_check_thread.isRunning():

@@ -1,0 +1,24 @@
+# bes1600 power_distribution 配置(模板)
+# 源 bes1600.py 中的 power_distribution 为空,下列内容为示例模板。
+# 请按实际寄存器配置修改或删除后再使用。
+
+# 示例配置,供参考。请按实际芯片寄存器需要修改或新增顶层 key。
+# 下拉菜单中的 Config 条目就是本文件顶层 key。
+# 支持的指令:
+#   READ <addr>
+#   WRITE <addr> <value>
+#   WRITE_BITS <addr> <high_bit> <low_bit> <value>
+#   DELAY <ms>
+#   // 以 // 开头的行为注释(随 WRITE_BITS 一起存放)
+
+voltage_low:
+  - // 示例:降低所有电压轨
+  - WRITE_BITS 0x0130 10 10 0x1
+  - WRITE_BITS 0x0140 10 10 0x1
+  - WRITE_BITS 0x0150 10 10 0x1
+
+voltage_default:
+  - // 示例:恢复默认电压
+  - WRITE_BITS 0x0130 10 10 0x0
+  - WRITE_BITS 0x0140 10 10 0x0
+  - WRITE_BITS 0x0150 10 10 0x0
