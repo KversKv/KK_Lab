@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import os
+import sys
 from datetime import datetime
 from typing import Any, Dict, List
 
@@ -92,11 +93,14 @@ class ExportResult(BaseNode):
         output_dir = str(context.resolve_value(self.params["output_dir"])).strip()
 
         if not output_dir:
-            project_root = os.path.dirname(
-                os.path.dirname(os.path.dirname(os.path.dirname(
-                    os.path.dirname(os.path.abspath(__file__))
-                )))
-            )
+            if getattr(sys, 'frozen', False):
+                project_root = os.path.dirname(sys.executable)
+            else:
+                project_root = os.path.dirname(
+                    os.path.dirname(os.path.dirname(os.path.dirname(
+                        os.path.dirname(os.path.abspath(__file__))
+                    )))
+                )
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             output_dir = os.path.join(project_root, "Results", "custom_test", timestamp)
 

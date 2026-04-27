@@ -6,6 +6,7 @@ import math
 import os
 import statistics
 import subprocess
+import sys
 import time
 
 from PySide6.QtWidgets import (
@@ -592,7 +593,10 @@ class _CLKTestWorker(QObject):
             if self._stop_flag:
                 return samples
 
-            results_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "Results")
+            if getattr(sys, 'frozen', False):
+                results_dir = os.path.join(os.path.dirname(sys.executable), "Results")
+            else:
+                results_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "Results")
             os.makedirs(results_dir, exist_ok=True)
             csv_path = os.path.join(results_dir, "dslogic_capture.csv")
 

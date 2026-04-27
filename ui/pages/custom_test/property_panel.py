@@ -17,8 +17,9 @@ from log_config import get_logger
 logger = get_logger(__name__)
 
 import os as _os
+from ui.resource_path import get_resource_base as _get_resource_base
 _CHECK_ICON = _os.path.join(
-    _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))),
+    _get_resource_base(),
     "resources", "pages", "custom_test_SVGs", "check.svg"
 ).replace("\\", "/")
 
@@ -326,7 +327,7 @@ class PropertyPanel(QWidget):
                 shadow_title.setObjectName("fieldLabel")
                 card_layout.addWidget(shadow_title)
 
-                shadow_label = QLabel(f"💡 {shadow_key}")
+                shadow_label = QLabel(f"{shadow_key}")
                 shadow_label.setObjectName("shadowKeyLabel")
                 shadow_label.setWordWrap(True)
                 shadow_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -444,4 +445,4 @@ class PropertyPanel(QWidget):
         except Exception:
             return
         if shadow_key:
-            label.setText(f"💡 {shadow_key}")
+            label.setText(f"{shadow_key}")

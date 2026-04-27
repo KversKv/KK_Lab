@@ -878,7 +878,7 @@ class UARTSend(BaseNode):
     node_type = "UARTSend"
     display_name = "UART Send"
     category = "instrument"
-    icon = "📤"
+    icon = "⇧"
     color = "#94a3b8"
 
     PARAM_SCHEMA = [
@@ -911,7 +911,7 @@ class UARTReceive(BaseNode):
     node_type = "UARTReceive"
     display_name = "UART Receive"
     category = "instrument"
-    icon = "📥"
+    icon = "⇩"
     color = "#94a3b8"
 
     PARAM_SCHEMA = [

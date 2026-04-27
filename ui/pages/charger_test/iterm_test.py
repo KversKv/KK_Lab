@@ -3,10 +3,11 @@
 
 import sys
 import os
+from ui.resource_path import get_resource_base
 import math
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "lib", "i2c"))
+sys.path.append(get_resource_base())
+sys.path.append(os.path.join(get_resource_base(), "lib", "i2c"))
 
 from log_config import get_logger
 
@@ -256,7 +257,7 @@ class _ItermTestWorker(QObject):
         if SAVE_DEBUG_DLOG_FLAG:
             try:
                 from datetime import datetime
-                base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+                base_dir = get_resource_base()
                 results_dir = os.path.join(base_dir, "Results", "iterm_test")
                 os.makedirs(results_dir, exist_ok=True)
                 ts = datetime.now().strftime("%Y%m%d_%H%M%S")

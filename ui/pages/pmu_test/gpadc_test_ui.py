@@ -369,7 +369,7 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
         header_layout.setSpacing(2)
 
 
-        title_label = QLabel("🛢 GPADC Automated Test")
+        title_label = QLabel("GPADC Automated Test")
         title_label.setObjectName("title_label")
         title_label.setStyleSheet("border: none")
 
@@ -711,7 +711,7 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
         chart_title.setObjectName("section_title")
         chart_title.setStyleSheet("border: none;")
 
-        self.export_result_btn = QPushButton("🗎 Export Result")
+        self.export_result_btn = QPushButton("Export Result")
         self.export_result_btn.setObjectName("tool_btn")
 
         chart_top.addWidget(chart_title)

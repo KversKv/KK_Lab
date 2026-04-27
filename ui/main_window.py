@@ -5,6 +5,7 @@
 """
 
 import os
+from ui.resource_path import get_resource_base
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
@@ -32,7 +33,7 @@ from core.test_manager import TestManager
 from instruments.base.visa_instrument import VisaInstrument
 
 _PAGE_SVGS_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    get_resource_base(),
     "resources", "pages", "main_window_SVGs"
 )
 from instruments.chambers.vt6002_chamber import VT6002
@@ -793,14 +794,14 @@ class MainWindow(QMainWindow):
         self.pmu_test_btn = SidebarNavButton(
             "PMU Test",
             "",
-            "⚙"
+            os.path.join(_PAGE_SVGS_DIR, "settings.svg")
         )
         left_nav_layout.addWidget(self.pmu_test_btn)
 
         self.charger_test_btn = SidebarNavButton(
             "Charger Test",
             "",
-            "🔋"
+            os.path.join(_PAGE_SVGS_DIR, "battery.svg")
         )
         left_nav_layout.addWidget(self.charger_test_btn)
 
@@ -1539,7 +1540,7 @@ class MainWindow(QMainWindow):
 
     def _on_help(self):
         help_key = self._get_current_help_key()
-        helps_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "helps")
+        helps_dir = os.path.join(get_resource_base(), "helps")
         help_file = os.path.join(helps_dir, f"{help_key}.html")
 
         if os.path.exists(help_file):

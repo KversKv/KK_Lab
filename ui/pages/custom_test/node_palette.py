@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from ui.resource_path import get_resource_base
 from typing import Dict, List, Optional, Type
 
 from PySide6.QtWidgets import (
@@ -20,7 +21,7 @@ from log_config import get_logger
 logger = get_logger(__name__)
 
 _PAGE_SVGS_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    get_resource_base(),
     "resources", "pages", "custom_test_SVGs"
 )
 

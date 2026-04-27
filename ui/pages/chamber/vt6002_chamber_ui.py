@@ -6,11 +6,12 @@ VT6002 温箱控制界面
 
 import sys
 import os
+from ui.resource_path import get_resource_base
 import logging
 
 
 # 添加项目根目录到sys.path，解决模块导入问题
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+sys.path.append(get_resource_base())
 
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.widgets.button import update_connect_button_state
@@ -29,7 +30,7 @@ from instruments.mock.mock_instruments import MockVT6002
 logger = logging.getLogger(__name__)
 
 _PAGE_SVGS_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    get_resource_base(),
     "resources", "pages", "chamber_SVGs"
 )
 _THERMOMETER_SVG_PATH = os.path.join(_PAGE_SVGS_DIR, "thermometer.svg")
@@ -159,7 +160,7 @@ class VT6002ChamberUI(QWidget):
         main_layout.addLayout(header_layout)
 
         # 串口连接卡片
-        serial_group = QGroupBox("🔗 Serial Connection")
+        serial_group = QGroupBox("Serial Connection")
         serial_group.setObjectName("cardGroup")
         serial_layout = QVBoxLayout(serial_group)
         serial_layout.setContentsMargins(18, 18, 18, 18)
@@ -253,7 +254,7 @@ class VT6002ChamberUI(QWidget):
         set_temp_layout = QHBoxLayout(set_temp_widget)
         set_temp_layout.setContentsMargins(16, 12, 16, 12)
 
-        set_temp_label = QLabel("❄ SET TEMP")
+        set_temp_label = QLabel("SET TEMP")
         set_temp_label.setObjectName("miniInfoLabel")
         set_temp_label.setStyleSheet("border: none")
 
@@ -272,7 +273,7 @@ class VT6002ChamberUI(QWidget):
         content_layout.addWidget(monitor_group, 1)
 
         # 右侧控制卡片
-        control_group = QGroupBox("⚙ Chamber Control")
+        control_group = QGroupBox("Chamber Control")
         control_group.setObjectName("cardGroup")
         control_layout = QVBoxLayout(control_group)
         control_layout.setContentsMargins(18, 18, 18, 18)

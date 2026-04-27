@@ -428,7 +428,7 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
         header_layout = QVBoxLayout()
         header_layout.setSpacing(2)
 
-        self.page_title = QLabel("⚙ OSCP Automated Test")
+        self.page_title = QLabel("OSCP Automated Test")
         self.page_title.setObjectName("pageTitle")
 
         self.page_subtitle = QLabel("Configure and execute OSCP validation sequences.")

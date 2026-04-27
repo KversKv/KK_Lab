@@ -1,6 +1,8 @@
 import os as _os
+from ui.resource_path import get_resource_base as _get_resource_base
+from ui.resource_path import get_resource_base
 import sys as _sys
-_PROJECT_ROOT = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+_PROJECT_ROOT = _get_resource_base()
 if _PROJECT_ROOT not in _sys.path:
     _sys.path.insert(0, _PROJECT_ROOT)
 
@@ -33,15 +35,15 @@ from debug_config import DEBUG_MOCK
 
 
 _SVG_COMMON_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    get_resource_base(),
     "resources", "modules", "SVG_Common"
 )
 _SVG_SERIAL_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    get_resource_base(),
     "resources", "modules", "SVG_Serial",
 )
 _SVG_LOGS_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    get_resource_base(),
     "resources", "modules", "SVG_Logs",
 )
 _SEARCH_ICON_PATH = os.path.join(_SVG_COMMON_DIR, "search.svg")

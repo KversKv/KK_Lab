@@ -1,5 +1,6 @@
 #python -m ui.modules.execution_logs_module_frame
 import os
+from ui.resource_path import get_resource_base
 import time
 from datetime import datetime
 
@@ -17,7 +18,7 @@ from PySide6.QtCore import QPropertyAnimation
 
 
 _SVG_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    get_resource_base(),
     "resources", "modules", "SVG_Logs",
 )
 

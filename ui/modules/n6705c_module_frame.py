@@ -2,6 +2,7 @@
 #python -m ui.modules.n6705c_module_frame  
 
 import os
+from ui.resource_path import get_resource_base
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QFrame, QSizePolicy
@@ -19,7 +20,7 @@ from instruments.mock.mock_instruments import MockN6705C
 
 
 _SVG_COMMON_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    get_resource_base(),
     "resources", "modules", "SVG_Common"
 )
 _SEARCH_ICON_PATH = os.path.join(_SVG_COMMON_DIR, "search.svg")

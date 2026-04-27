@@ -1,5 +1,6 @@
 #python -m ui.modules.oscilloscope_module_frame
 import os
+from ui.resource_path import get_resource_base
 import pyvisa
 from PySide6.QtWidgets import (
     QHBoxLayout, QPushButton, QLabel, QSizePolicy
@@ -14,7 +15,7 @@ from instruments.mock.mock_instruments import MockMSO64B
 
 
 _SVG_COMMON_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    get_resource_base(),
     "resources", "modules", "SVG_Common"
 )
 _SEARCH_ICON_PATH = os.path.join(_SVG_COMMON_DIR, "search.svg")

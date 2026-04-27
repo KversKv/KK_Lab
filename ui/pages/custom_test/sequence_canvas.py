@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from ui.resource_path import get_resource_base
 from typing import Any, Dict, List, Optional
 
 from PySide6.QtWidgets import (
@@ -25,7 +26,7 @@ from log_config import get_logger
 logger = get_logger(__name__)
 
 _PAGE_SVGS_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    get_resource_base(),
     "resources", "pages", "custom_test_SVGs"
 )
 
@@ -487,7 +488,7 @@ class DropAwareTreeWidget(QTreeWidget):
         if self._delete_overlay is not None:
             self._delete_overlay.show()
             return
-        self._delete_overlay = QLabel("🗑  Release to Delete", self)
+        self._delete_overlay = QLabel("Release to Delete", self)
         self._delete_overlay.setAlignment(Qt.AlignCenter)
         self._delete_overlay.setStyleSheet(_DELETE_OVERLAY_STYLE)
         self._update_overlay_geometry()
@@ -766,7 +767,11 @@ class SequenceCanvas(QWidget):
                 self.add_node(cls())
             return
 
-        _cat_icons = {"Config": "⚙", "Set": "✎", "Get": "▤"}
+        _cat_icons = {
+            "Config": _tinted_svg_icon(os.path.join(_PAGE_SVGS_DIR, "settings.svg"), "#8ea8d4") if os.path.isfile(os.path.join(_PAGE_SVGS_DIR, "settings.svg")) else QIcon(),
+            "Set": _tinted_svg_icon(os.path.join(_PAGE_SVGS_DIR, "edit.svg"), "#8ea8d4") if os.path.isfile(os.path.join(_PAGE_SVGS_DIR, "edit.svg")) else QIcon(),
+            "Get": _tinted_svg_icon(os.path.join(_PAGE_SVGS_DIR, "list.svg"), "#8ea8d4") if os.path.isfile(os.path.join(_PAGE_SVGS_DIR, "list.svg")) else QIcon(),
+        }
 
         menu = QMenu(self)
         menu.setStyleSheet(_DROP_MENU_STYLE)
@@ -783,25 +788,25 @@ class SequenceCanvas(QWidget):
             ops = cat.get("ops", [])
             if not ops:
                 continue
-            cat_icon_char = _cat_icons.get(cat_name, "▸")
+            cat_icon = _cat_icons.get(cat_name, QIcon())
             if flat_mode:
                 for op in ops:
                     cls = get_node_class(op["node_type"])
-                    icon_text = cls.icon if cls else "▸"
+                    icon_text = cls.icon if cls else ""
                     action = menu.addAction(f"{icon_text}  {op['label']}")
                     action.setData(op["node_type"])
             elif len(ops) == 1:
                 op = ops[0]
                 cls = get_node_class(op["node_type"])
-                icon_text = cls.icon if cls else cat_icon_char
+                icon_text = cls.icon if cls else ""
                 action = menu.addAction(f"{icon_text}  [{cat_name}] {op['label']}")
                 action.setData(op["node_type"])
             else:
-                submenu = menu.addMenu(f"{cat_icon_char}  {cat_name}")
+                submenu = menu.addMenu(cat_icon, cat_name)
                 submenu.setStyleSheet(_DROP_MENU_STYLE)
                 for op in ops:
                     cls = get_node_class(op["node_type"])
-                    icon_text = cls.icon if cls else "▸"
+                    icon_text = cls.icon if cls else ""
                     action = submenu.addAction(f"{icon_text}  {op['label']}")
                     action.setData(op["node_type"])
 

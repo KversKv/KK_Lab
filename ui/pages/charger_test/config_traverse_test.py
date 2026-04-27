@@ -3,9 +3,10 @@
 
 import sys
 import os
+from ui.resource_path import get_resource_base
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "lib", "i2c"))
+sys.path.append(get_resource_base())
+sys.path.append(os.path.join(get_resource_base(), "lib", "i2c"))
 
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLLBAR_STYLE, START_BTN_STYLE, update_start_btn_state
@@ -490,7 +491,7 @@ class ConfigTraverseTestUI(N6705CConnectionMixin, QWidget):
         header_layout = QVBoxLayout()
         header_layout.setSpacing(2)
 
-        self.page_title = QLabel("⚙ Config Traverse Test")
+        self.page_title = QLabel("Config Traverse Test")
         self.page_title.setObjectName("pageTitle")
 
         self.page_subtitle = QLabel("Traverse DUT register values via IIC and measure voltage/current for each code.")
@@ -529,11 +530,11 @@ class ConfigTraverseTestUI(N6705CConnectionMixin, QWidget):
         left_layout.setContentsMargins(10, 10, 10, 10)
         left_layout.setSpacing(10)
 
-        self.connection_card = CardFrame("⚡ N6705C ")
+        self.connection_card = CardFrame("N6705C")
         self._build_connection_card()
         left_layout.addWidget(self.connection_card)
 
-        self.channel_config_card = CardFrame("☷ Test Config")
+        self.channel_config_card = CardFrame("Test Config")
         self._build_channel_config_card()
         left_layout.addWidget(self.channel_config_card)
 

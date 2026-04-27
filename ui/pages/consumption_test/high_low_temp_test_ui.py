@@ -3,6 +3,7 @@
 
 import math
 import os
+from ui.resource_path import get_resource_base
 import time
 import csv
 
@@ -13,7 +14,7 @@ from PySide6.QtWidgets import (
     QFileDialog
 )
 from PySide6.QtCore import (
-    Qt, Signal, QThread, QObject, QRectF,
+    Qt, Signal, QThread, QObject, QRectF, QSize,
     QPropertyAnimation, Property, QEasingCurve
 )
 from PySide6.QtGui import QFont, QIcon, QPixmap, QPainter, QColor, QPen, QBrush
@@ -32,7 +33,7 @@ from log_config import get_logger
 logger = get_logger(__name__)
 
 _PAGE_SVGS_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    get_resource_base(),
     "resources", "pages", "consumption_test_SVGs"
 )
 
@@ -669,7 +670,11 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, VT6002ConnectionMixin,
         chart_title.setObjectName("section_title")
         chart_header.addWidget(chart_title)
         chart_header.addStretch()
-        self.export_csv_btn = QPushButton("💾 Export CSV")
+        self.export_csv_btn = QPushButton("Export CSV")
+        _export_svg = os.path.join(_PAGE_SVGS_DIR, "save.svg")
+        if os.path.isfile(_export_svg):
+            self.export_csv_btn.setIcon(_tinted_svg_icon(_export_svg, "#dbe7ff", 16))
+            self.export_csv_btn.setIconSize(QSize(16, 16))
         self.export_csv_btn.setStyleSheet("""
             QPushButton {
                 background-color: #162544;

@@ -1,7 +1,8 @@
 import os as _os
+from ui.resource_path import get_resource_base as _get_resource_base
 
 _ICONS_DIR = _os.path.join(
-    _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))),
+    _get_resource_base(),
     "resources", "icons"
 )
 

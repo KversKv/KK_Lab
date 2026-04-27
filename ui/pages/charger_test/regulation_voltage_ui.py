@@ -3,9 +3,10 @@
 
 import sys
 import os
+from ui.resource_path import get_resource_base
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "lib", "i2c"))
+sys.path.append(get_resource_base())
+sys.path.append(os.path.join(get_resource_base(), "lib", "i2c"))
 
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLLBAR_STYLE, START_BTN_STYLE, update_start_btn_state

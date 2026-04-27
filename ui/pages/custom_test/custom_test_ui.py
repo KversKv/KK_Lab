@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from ui.resource_path import get_resource_base
 import csv
 import json
 from datetime import datetime
@@ -34,7 +35,7 @@ from log_config import get_logger
 logger = get_logger(__name__)
 
 _PAGE_SVGS_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    get_resource_base(),
     "resources", "pages", "custom_test_SVGs"
 )
 
@@ -979,7 +980,11 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         instr_icon = _tinted_svg_icon(microscope_path, "#dce7ff") if os.path.isfile(microscope_path) else QIcon()
         instr_submenu = menu.addMenu(instr_icon, "Instruments")
         instr_submenu.setStyleSheet(_CONTEXT_MENU_STYLE)
-        _cat_icons_add = {"Config": "⚙", "Set": "✎", "Get": "▤"}
+        _cat_icons_add = {
+            "Config": _tinted_svg_icon(os.path.join(_PAGE_SVGS_DIR, "settings.svg"), "#8ea8d4") if os.path.isfile(os.path.join(_PAGE_SVGS_DIR, "settings.svg")) else QIcon(),
+            "Set": _tinted_svg_icon(os.path.join(_PAGE_SVGS_DIR, "edit.svg"), "#8ea8d4") if os.path.isfile(os.path.join(_PAGE_SVGS_DIR, "edit.svg")) else QIcon(),
+            "Get": _tinted_svg_icon(os.path.join(_PAGE_SVGS_DIR, "list.svg"), "#8ea8d4") if os.path.isfile(os.path.join(_PAGE_SVGS_DIR, "list.svg")) else QIcon(),
+        }
         for instr in INSTRUMENT_REGISTRY:
             sub = instr_submenu.addMenu(f"{instr['name']}")
             sub.setStyleSheet(_CONTEXT_MENU_STYLE)
@@ -990,11 +995,11 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
                 ops = cat.get("ops", [])
                 if not ops:
                     continue
-                cat_icon_char = _cat_icons_add.get(cat_name, "▸")
+                cat_icon = _cat_icons_add.get(cat_name, QIcon())
                 if flat:
                     for op in ops:
                         cls = get_node_class(op["node_type"])
-                        icon_text = cls.icon if cls else "▸"
+                        icon_text = cls.icon if cls else ""
                         action = sub.addAction(f"{icon_text} {op['label']}")
                         action.triggered.connect(
                             lambda checked=False, nt=op["node_type"]: self._on_add_node(nt)
@@ -1002,17 +1007,17 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
                 elif len(ops) == 1:
                     op = ops[0]
                     cls = get_node_class(op["node_type"])
-                    icon_text = cls.icon if cls else cat_icon_char
+                    icon_text = cls.icon if cls else ""
                     action = sub.addAction(f"{icon_text} [{cat_name}] {op['label']}")
                     action.triggered.connect(
                         lambda checked=False, nt=op["node_type"]: self._on_add_node(nt)
                     )
                 else:
-                    cat_sub = sub.addMenu(f"{cat_icon_char} {cat_name}")
+                    cat_sub = sub.addMenu(cat_icon, cat_name)
                     cat_sub.setStyleSheet(_CONTEXT_MENU_STYLE)
                     for op in ops:
                         cls = get_node_class(op["node_type"])
-                        icon_text = cls.icon if cls else "▸"
+                        icon_text = cls.icon if cls else ""
                         action = cat_sub.addAction(f"{icon_text} {op['label']}")
                         action.triggered.connect(
                             lambda checked=False, nt=op["node_type"]: self._on_add_node(nt)
@@ -1063,7 +1068,11 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
             self._on_add_node(all_ops[0]["node_type"])
             return
 
-        _cat_icons = {"Config": "⚙", "Set": "✎", "Get": "▤"}
+        _cat_icons = {
+            "Config": _tinted_svg_icon(os.path.join(_PAGE_SVGS_DIR, "settings.svg"), "#8ea8d4") if os.path.isfile(os.path.join(_PAGE_SVGS_DIR, "settings.svg")) else QIcon(),
+            "Set": _tinted_svg_icon(os.path.join(_PAGE_SVGS_DIR, "edit.svg"), "#8ea8d4") if os.path.isfile(os.path.join(_PAGE_SVGS_DIR, "edit.svg")) else QIcon(),
+            "Get": _tinted_svg_icon(os.path.join(_PAGE_SVGS_DIR, "list.svg"), "#8ea8d4") if os.path.isfile(os.path.join(_PAGE_SVGS_DIR, "list.svg")) else QIcon(),
+        }
 
         menu = QMenu(self)
         menu.setStyleSheet(_CONTEXT_MENU_STYLE)
@@ -1080,11 +1089,11 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
             ops = cat.get("ops", [])
             if not ops:
                 continue
-            cat_icon_char = _cat_icons.get(cat_name, "▸")
+            cat_icon = _cat_icons.get(cat_name, QIcon())
             if flat_mode:
                 for op in ops:
                     cls = get_node_class(op["node_type"])
-                    icon_text = cls.icon if cls else "▸"
+                    icon_text = cls.icon if cls else ""
                     action = menu.addAction(f"{icon_text}  {op['label']}")
                     action.triggered.connect(
                         lambda checked=False, nt=op["node_type"]: self._on_add_node(nt)
@@ -1092,17 +1101,17 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
             elif len(ops) == 1:
                 op = ops[0]
                 cls = get_node_class(op["node_type"])
-                icon_text = cls.icon if cls else cat_icon_char
+                icon_text = cls.icon if cls else ""
                 action = menu.addAction(f"{icon_text}  [{cat_name}] {op['label']}")
                 action.triggered.connect(
                     lambda checked=False, nt=op["node_type"]: self._on_add_node(nt)
                 )
             else:
-                submenu = menu.addMenu(f"{cat_icon_char}  {cat_name}")
+                submenu = menu.addMenu(cat_icon, cat_name)
                 submenu.setStyleSheet(_CONTEXT_MENU_STYLE)
                 for op in ops:
                     cls = get_node_class(op["node_type"])
-                    icon_text = cls.icon if cls else "▸"
+                    icon_text = cls.icon if cls else ""
                     action = submenu.addAction(f"{icon_text}  {op['label']}")
                     action.triggered.connect(
                         lambda checked=False, nt=op["node_type"]: self._on_add_node(nt)
@@ -1495,7 +1504,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
             return
 
         project_root = os.path.dirname(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            get_resource_base()
         )
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_dir = os.path.join(project_root, "Results", "custom_test", timestamp)

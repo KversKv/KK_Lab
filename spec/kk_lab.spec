@@ -23,6 +23,8 @@ a = Analysis(
     binaries=[],
     datas=[
         (os.path.join(PROJECT_ROOT, 'resources', 'icons'), os.path.join('resources', 'icons')),
+        (os.path.join(PROJECT_ROOT, 'resources', 'pages'), os.path.join('resources', 'pages')),
+        (os.path.join(PROJECT_ROOT, 'resources', 'modules'), os.path.join('resources', 'modules')),
         (os.path.join(PROJECT_ROOT, 'lib', 'i2c'), os.path.join('lib', 'i2c')),
         (os.path.join(PROJECT_ROOT, 'lib', 'download_tools'), os.path.join('lib', 'download_tools')),
         (os.path.join(PROJECT_ROOT, 'chips'), 'chips'),
@@ -78,6 +80,7 @@ a = Analysis(
         'chips.bes_chip_configs.main_chips',
         'chips.bes_chip_configs.pmu_chips',
         'ui',
+        'ui.resource_path',
         'ui.main_window',
         'ui.widgets',
         'ui.widgets.plot_widget',

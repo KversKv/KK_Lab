@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import os as _os
+from ui.resource_path import get_resource_base as _get_resource_base
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -22,7 +23,7 @@ from PySide6.QtWidgets import (
 from ui.pages.custom_test.nodes.base_node import BaseNode
 
 _CHECK_ICON = _os.path.join(
-    _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))),
+    _get_resource_base(),
     "resources", "pages", "custom_test_SVGs", "check.svg"
 ).replace("\\", "/")
 

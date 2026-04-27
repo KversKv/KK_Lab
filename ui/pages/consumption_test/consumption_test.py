@@ -7,6 +7,7 @@ Consumption Test UI组件
 
 import sys
 import os
+from ui.resource_path import get_resource_base
 import re
 import json
 
@@ -15,7 +16,7 @@ try:
 except ImportError:
     yaml = None
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+sys.path.append(get_resource_base())
 
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.widgets.button import SpinningSearchButton, update_connect_button_state
@@ -60,17 +61,17 @@ logger = get_logger(__name__)
 
 
 _ICONS_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    get_resource_base(),
     "resources", "icons"
 )
 
 _PAGE_SVGS_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    get_resource_base(),
     "resources", "pages", "consumption_test_SVGs"
 )
 
 _MAIN_CHIP_CONFIGS_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    get_resource_base(),
     "chips", "bes_chip_configs", "main_chip_configs"
 )
 
@@ -1189,7 +1190,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         fw_layout.setContentsMargins(12, 10, 12, 10)
         fw_layout.setSpacing(6)
 
-        fw_title = QLabel("📁 Firmware Download")
+        fw_title = QLabel("Firmware Download")
         fw_title.setStyleSheet("font-size: 12px; font-weight: 700; color: #ffffff;")
         fw_layout.addWidget(fw_title)
 
@@ -1396,7 +1397,11 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         """)
         config_btn_row.addWidget(self.import_config_btn, 1)
 
-        self.execute_config_btn = QPushButton("⚙ Exec")
+        self.execute_config_btn = QPushButton("Exec")
+        _exec_svg = os.path.join(_PAGE_SVGS_DIR, "settings.svg")
+        if os.path.isfile(_exec_svg):
+            self.execute_config_btn.setIcon(_tinted_svg_icon(_exec_svg, "#ffffff", 14))
+            self.execute_config_btn.setIconSize(QSize(14, 14))
         self.execute_config_btn.setStyleSheet("""
             QPushButton {
                 background-color: #5d45ff;
@@ -1571,7 +1576,11 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self.bin_result_table.hide()
         layout.addWidget(self.bin_result_table, 1)
 
-        self.save_datalog_btn = QPushButton("💾 Save DataLog")
+        self.save_datalog_btn = QPushButton("Save DataLog")
+        _save_svg = os.path.join(_PAGE_SVGS_DIR, "save.svg")
+        if os.path.isfile(_save_svg):
+            self.save_datalog_btn.setIcon(_tinted_svg_icon(_save_svg, "#dbe7ff", 16))
+            self.save_datalog_btn.setIconSize(QSize(16, 16))
         self.save_datalog_btn.setStyleSheet("""
             QPushButton {
                 background-color: #162544;
@@ -1678,8 +1687,12 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
         config_header = QHBoxLayout()
         config_header.setSpacing(6)
-        cfg_icon = QLabel("🔧")
-        cfg_icon.setStyleSheet("font-size: 13px; color: #c8d6f0;")
+        cfg_icon = QLabel()
+        _wrench_svg = os.path.join(_PAGE_SVGS_DIR, "wrench.svg")
+        if os.path.isfile(_wrench_svg):
+            cfg_icon.setPixmap(_tinted_svg_icon(_wrench_svg, "#c8d6f0", 14).pixmap(14, 14))
+        cfg_icon.setFixedSize(16, 16)
+        cfg_icon.setStyleSheet("background: transparent; border: none;")
         cfg_title = QLabel("Test Config")
         cfg_title.setStyleSheet("font-size: 12px; font-weight: 700; color: #ffffff;")
         config_header.addWidget(cfg_icon)
@@ -1820,8 +1833,12 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
         config_header = QHBoxLayout()
         config_header.setSpacing(8)
-        cfg_icon = QLabel("⚙")
-        cfg_icon.setStyleSheet("font-size: 14px; color: #c8d6f0;")
+        cfg_icon = QLabel()
+        _settings_svg = os.path.join(_PAGE_SVGS_DIR, "settings.svg")
+        if os.path.isfile(_settings_svg):
+            cfg_icon.setPixmap(_tinted_svg_icon(_settings_svg, "#c8d6f0", 14).pixmap(14, 14))
+        cfg_icon.setFixedSize(16, 16)
+        cfg_icon.setStyleSheet("background: transparent; border: none;")
         cfg_title = QLabel("Channel Config")
         cfg_title.setStyleSheet("font-size: 13px; font-weight: 700; color: #ffffff;")
         config_header.addWidget(cfg_icon)
@@ -2243,7 +2260,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
     def _get_checkmark_path(self, accent_color):
         safe_name = accent_color.replace("#", "").replace(" ", "")
         icons_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+            get_resource_base(),
             "resources", "icons"
         )
         return {
@@ -2833,7 +2850,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
                     config_lines.append(line)
 
             chips_dir = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+                get_resource_base(),
                 "chips", "bes_chip_configs"
             )
             if chip_name.startswith("pmu_"):

@@ -7,10 +7,11 @@ PMU Output Voltage测试UI组件
 
 import sys
 import os
+from ui.resource_path import get_resource_base
 import time
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "lib", "i2c"))
+sys.path.append(get_resource_base())
+sys.path.append(os.path.join(get_resource_base(), "lib", "i2c"))
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton,
@@ -514,7 +515,7 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
         header_layout = QVBoxLayout()
         header_layout.setSpacing(2)
 
-        self.page_title = QLabel("⚙ Output Voltage Linearity Test")
+        self.page_title = QLabel("Output Voltage Linearity Test")
         self.page_title.setObjectName("pageTitle")
 
         self.page_subtitle = QLabel("Configure and execute automated output voltage linearity validation sequences.")

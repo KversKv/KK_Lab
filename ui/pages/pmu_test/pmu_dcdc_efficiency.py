@@ -7,7 +7,8 @@ PMU DCDC Efficiency测试UI组件
 
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+from ui.resource_path import get_resource_base
+sys.path.append(get_resource_base())
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton,
@@ -1287,7 +1288,7 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget)
         header_layout = QVBoxLayout()
         header_layout.setSpacing(2)
 
-        self.page_title = QLabel("⚙ DCDC Efficiency Test")
+        self.page_title = QLabel("DCDC Efficiency Test")
         self.page_title.setObjectName("pageTitle")
 
         self.page_subtitle = QLabel("Configure and execute automated DCDC efficiency validation sequences.")

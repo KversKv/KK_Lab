@@ -1,5 +1,6 @@
 #python -m ui.modules.chamber_module_frame
 import os
+from ui.resource_path import get_resource_base
 import serial
 import serial.tools.list_ports
 from PySide6.QtWidgets import (
@@ -15,7 +16,7 @@ from instruments.mock.mock_instruments import MockVT6002
 
 
 _SVG_COMMON_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    get_resource_base(),
     "resources", "modules", "SVG_Common"
 )
 _SEARCH_ICON_PATH = os.path.join(_SVG_COMMON_DIR, "search.svg")

@@ -1,4 +1,5 @@
 import os
+from ui.resource_path import get_resource_base
 
 from PySide6.QtWidgets import QWidget, QToolTip
 from PySide6.QtCore import (
@@ -13,7 +14,7 @@ from PySide6.QtGui import (
 from PySide6.QtSvg import QSvgRenderer
 
 _ICONS_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    get_resource_base(),
     "resources", "icons"
 )
 

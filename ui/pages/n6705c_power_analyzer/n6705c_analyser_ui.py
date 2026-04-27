@@ -3,8 +3,9 @@
 
 import sys
 import os
+from ui.resource_path import get_resource_base
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+sys.path.append(get_resource_base())
 
 from ui.widgets.button import update_connect_button_state
 from ui.modules.n6705c_module_frame import build_n6705c_inline_row
@@ -225,12 +226,12 @@ class ChannelTabBar(QWidget):
 
 
 _ICONS_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    get_resource_base(),
     "resources", "icons"
 )
 
 _PAGE_SVGS_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    get_resource_base(),
     "resources", "pages", "n6705c_power_analyzer_SVGs"
 )
 

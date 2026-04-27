@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QThread, QObject
 from PySide6.QtGui import QFont, QColor
 import os
+from ui.resource_path import get_resource_base
 import time
 import base64
 import csv
@@ -547,7 +548,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
     def _get_checkmark_path(accent_color):
         safe_name = accent_color.replace("#", "").replace(" ", "")
         icons_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+            get_resource_base(),
             "resources", "icons"
         )
         return {

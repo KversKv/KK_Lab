@@ -25,8 +25,9 @@ DEBUG_MSO64B_FLAG = True
 DEBUG_DSOX4034A_FLAG = True
 
 import os as _os
+from ui.resource_path import get_resource_base as _get_resource_base
 _PAGE_SVGS_DIR = _os.path.join(
-    _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))),
+    _get_resource_base(),
     "resources", "pages", "oscilloscope_SVGs"
 )
 
@@ -1563,9 +1564,17 @@ class OscilloscopeBaseUI(QWidget):
         layout.setContentsMargins(18, 16, 18, 18)
         layout.setSpacing(12)
 
-        title = QLabel("⚡  Quick Function")
+        _zap_icon_path = _os.path.join(_PAGE_SVGS_DIR, "zap.svg")
+        title_header = QHBoxLayout()
+        _title_zap_icon = QLabel()
+        _title_zap_icon.setPixmap(_render_svg_icon(_zap_icon_path, 20, "#F0F4FF"))
+        _title_zap_icon.setFixedSize(20, 20)
+        title_header.addWidget(_title_zap_icon)
+        title = QLabel("Quick Function")
         title.setObjectName("sectionTitle")
-        layout.addWidget(title)
+        title_header.addWidget(title)
+        title_header.addStretch()
+        layout.addLayout(title_header)
 
         self.all_ch_default_btn = QPushButton("All Channel Set Default")
         self.all_ch_default_btn.setObjectName("ghostBtn")
@@ -1981,8 +1990,14 @@ class OscilloscopeBaseUI(QWidget):
         if self._current_pixmap is None:
             return
         menu = QMenu(self)
-        copy_action = menu.addAction("📋  Copy to Clipboard")
-        save_action = menu.addAction("💾  Save As...")
+        _clipboard_icon = QIcon(QPixmap.fromImage(
+            _render_svg_icon(_os.path.join(_PAGE_SVGS_DIR, "clipboard.svg"), 16, "#dce7ff").toImage()
+        )) if _os.path.isfile(_os.path.join(_PAGE_SVGS_DIR, "clipboard.svg")) else QIcon()
+        _save_icon = QIcon(QPixmap.fromImage(
+            _render_svg_icon(_os.path.join(_PAGE_SVGS_DIR, "save.svg"), 16, "#dce7ff").toImage()
+        )) if _os.path.isfile(_os.path.join(_PAGE_SVGS_DIR, "save.svg")) else QIcon()
+        copy_action = menu.addAction(_clipboard_icon, "Copy to Clipboard")
+        save_action = menu.addAction(_save_icon, "Save As...")
         action = menu.exec(self.capture_image_label.mapToGlobal(pos))
         if action == copy_action:
             clipboard = QApplication.clipboard()
