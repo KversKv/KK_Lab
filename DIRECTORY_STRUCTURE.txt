@@ -2,9 +2,10 @@
                         KK_Lab 工程目录结构说明
 ================================================================================
 
-KK_Lab 是一个基于 PySide6 (Qt) 的芯片功耗测试与调试桌面工具，通过 VISA/串口
-协议控制多种实验室仪器（电源分析仪、示波器、温箱等），实现自动化数据采集、
-PMU 测试、Charger 测试、功耗分析和波形展示等功能。
+KK_Lab 是一个基于 PySide6 (Qt) 的 BES 芯片功耗测试与调试桌面工具，通过
+VISA / 串口 / USB-I2C 协议控制多种实验室仪器（电源分析仪、示波器、温箱等），
+实现自动化数据采集、PMU 测试、Charger 测试、功耗测试、自定义测试序列和
+波形展示等功能。
 
 ================================================================================
   顶层目录
@@ -16,18 +17,48 @@ KK_Lab/
 ├── log_config.py            # 日志配置模块，提供 setup_logging() 和 get_logger()
 ├── debug_config.py          # 调试配置，DEBUG_MOCK 开关控制是否使用模拟仪器
 ├── requirements.txt         # Python 依赖包清单 (PySide6, pyqtgraph, pyvisa 等)
+├── pyproject.toml           # 项目元数据与依赖声明 (PEP 621)
 ├── .gitignore               # Git 忽略规则
 ├── DIRECTORY_STRUCTURE.txt  # 本文件 - 工程目录结构说明
+├── CLAUDE.md                # Claude/TRAE AI 主入口文档 (CRITICAL 规则)
+├── AGENTS.md                # 通用 AI Agent 协作指引 (CLAUDE.md 的镜像入口)
 │
+├── .trae/                   # TRAE IDE 专用配置
+│   └── rules/
+│       └── project-rules.md # 项目级 AI 交互规则
+├── .ai/                     # AI 会话沉淀
+│   └── memory.md            # 长期记忆 / 会话关键上下文
+│
+├── chips/                   # BES 芯片配置与型号注册
 ├── core/                    # 核心业务逻辑层
 ├── instruments/             # 仪器驱动层 (按仪器类型分包)
-├── ui/                      # 用户界面层 (按功能分包: widgets/pages/dialogs/styles)
+├── ui/                      # 用户界面层 (按功能分包: widgets/modules/pages/dialogs/styles)
 ├── lib/                     # 第三方库与底层接口封装
-├── resources/               # 静态资源文件
+├── resources/               # 静态资源文件 (icons/modules/pages)
 ├── helps/                   # HTML 帮助文档 (各功能页面的操作说明)
+├── docs/                    # AI 协作与项目架构文档
 ├── hooks/                   # PyInstaller 自定义 hook
 ├── spec/                    # PyInstaller 打包配置
 └── Results/                 # 测试结果输出目录 (运行时生成，Git 不跟踪)
+
+================================================================================
+  chips/ - BES 芯片配置
+================================================================================
+
+chips/
+└── bes_chip_configs/
+    ├── bes_chip_configs.py  # 芯片配置统一入口，声明 SUPPORTED_CHIPS 列表并
+    │                        # 按型号动态加载 YAML 配置与 Python 模块
+    ├── main_chip_configs/   # 主芯片 YAML 配置（寄存器映射 / 测试参数 / 流程）
+    │                        # 含 bes1000 / bes13xx / bes14xx / bes15xx /
+    │                        # bes16xx / bes17xx / bes20xx / bes23xx /
+    │                        # bes3601p 及 batch_scripts_PMU.yaml 等
+    ├── main_chips/          # 主芯片对应的 Python 驱动模块 (与 YAML 同名)
+    └── pmu_chips/           # 独立 PMU 芯片驱动
+        ├── pmu_1806p.py
+        ├── pmu_1810.py
+        ├── pmu_1810p.py
+        └── pmu_1813.py
 
 ================================================================================
   core/ - 核心业务逻辑
@@ -38,9 +69,7 @@ core/
 │                            # 发出数据更新信号供 UI 层订阅
 ├── data_collector.py        # 数据采集器，基于 QTimer 定时从仪器读取电流/电压
 │                            # 数据，支持可配置采样率
-└── controllers/             # 控制器子包
-    └── oscilloscope_controller.py  # 示波器控制器，封装连接/断开/测量/截图/
-                                    # 设置应用等高层操作
+└── controllers/             # 控制器子包 (预留，后续业务控制器)
 
 ================================================================================
   instruments/ - 仪器驱动层
@@ -86,17 +115,37 @@ instruments/
 ui/
 ├── main_window.py           # 主窗口，包含侧边栏导航、页面切换、仪器连接管理
 │                            # (示波器页面根据资源地址自动识别仪器型号)
+├── resource_path.py         # 资源路径工具：get_resource_base()，兼容源码运行
+│                            # 与 PyInstaller 冻结环境 (sys._MEIPASS)
 │
-├── widgets/                 # 通用 UI 组件
+├── widgets/                 # 通用 UI 组件与可复用样式
 │   ├── sidebar_nav_button.py    # 侧边栏导航按钮组件
 │   ├── plot_widget.py           # 基于 pyqtgraph 的实时数据图表组件
-│   └── dark_combobox.py         # 暗色主题下拉框组件
+│   ├── dark_combobox.py         # 暗色主题下拉框组件
+│   ├── scrollbar.py             # 暗色滚动条样式 (SCROLLBAR_STYLE / SCROLL_AREA_STYLE)
+│   ├── button.py                # 搜索/连接/断开按钮样式与 SpinningSearchButton 组件
+│   ├── start_sequence.py        # 开始按钮样式 (START_BTN_STYLE) 与状态切换工具
+│   └── progress_button.py       # 带进度条的按钮组件
+│
+├── modules/                 # 可复用 UI Mixin (连接区 / 日志区等区域模块)
+│   ├── execution_logs_module_frame.py  # 执行日志区 Mixin (日志容器/进度条/清除)
+│   ├── n6705c_module_frame.py          # N6705C 连接区 Mixin (VISA 搜索/连接/断开)
+│   ├── oscilloscope_module_frame.py    # 示波器连接区 Mixin (VISA 搜索/连接/断开)
+│   ├── chamber_module_frame.py         # VT6002 温箱连接区 Mixin (串口搜索/连接/断开)
+│   └── serialCom_module_frame.py       # 串口通信连接区 Mixin (串口搜索/连接/断开)
+│
+├── styles/                  # 样式聚合入口
+│   └── __init__.py              # 从 ui/widgets 与 ui/modules 重新导出常用样式/组件
+│                                # (SCROLLBAR_STYLE / START_BTN_STYLE /
+│                                #  SpinningSearchButton / ExecutionLogsFrame 等)
 │
 ├── pages/                   # 功能页面 (按仪器/功能分包)
 │   ├── n6705c_power_analyzer/   # 电源分析仪相关页面
-│   │   ├── n6705c_top.py            # N6705C 连接状态管理 (支持双台仪器 A/B)
-│   │   ├── n6705c_analyser_ui.py    # N6705C 电源分析仪控制界面
-│   │   └── n6705c_datalog_ui.py     # N6705C 数据记录界面
+│   │   ├── n6705c_top.py             # N6705C 连接状态管理 (支持双台仪器 A/B)
+│   │   ├── n6705c_analyser_ui.py     # N6705C 电源分析仪控制界面
+│   │   ├── n6705c_datalog_ui.py      # N6705C 数据记录界面
+│   │   ├── n6705c_analyser_ui_updata_log.txt  # 界面迭代日志
+│   │   └── n6705c_datalog_ui_usage.md         # Datalog 功能使用说明
 │   │
 │   ├── oscilloscope/            # 示波器相关页面
 │   │   ├── mso64b_top.py             # MSO64B 连接状态管理
@@ -104,39 +153,60 @@ ui/
 │   │                                 # 支持截图/反相/测量/触发/通道设置等)
 │   │
 │   ├── pmu_test/                # PMU 测试相关页面
-│   │   ├── pmu_test_ui.py           # PMU 测试主入口界面 (Tab 页整合各子测试)
-│   │   ├── pmu_dcdc_efficiency.py   # DCDC 效率测试界面
-│   │   ├── pmu_isGain_ui.py         # Is Gain 测试界面
-│   │   ├── pmu_oscp_ui.py           # OSCP (过流保护) 测试界面
-│   │   ├── pmu_output_voltage.py    # 输出电压测试界面
-│   │   ├── gpadc_test_ui.py         # GPADC 测试界面
-│   │   └── clk_test_ui.py           # 时钟测试界面
+│   │   ├── pmu_test_ui.py            # PMU 测试主入口界面 (Tab 页整合各子测试)
+│   │   ├── pmu_dcdc_efficiency.py    # DCDC 效率测试界面
+│   │   ├── pmu_isGain_ui.py          # Is Gain 测试界面
+│   │   ├── pmu_oscp_ui.py             # OSCP (过流保护) 测试界面
+│   │   ├── pmu_output_voltage.py     # 输出电压测试界面
+│   │   ├── gpadc_test_ui.py          # GPADC 测试界面
+│   │   └── clk_test_ui.py            # 时钟测试界面
 │   │
 │   ├── charger_test/            # Charger 充电器测试相关页面
-│   │   ├── charger_test_ui.py       # Charger 测试主入口界面 (Tab 页整合各子测试)
-│   │   ├── config_traverse_test.py  # 充电配置遍历测试界面
-│   │   ├── status_register_test.py  # 状态寄存器测试界面
-│   │   ├── iterm_test.py            # Iterm 终止电流测试界面
-│   │   └── regulation_voltage_ui.py # 调节电压测试界面
+│   │   ├── charger_test_ui.py        # Charger 测试主入口界面 (Tab 页整合各子测试)
+│   │   ├── config_traverse_test.py   # 充电配置遍历测试界面
+│   │   ├── status_register_test.py   # 状态寄存器测试界面
+│   │   ├── iterm_test.py             # Iterm 终止电流测试界面
+│   │   └── regulation_voltage_ui.py  # 调节电压测试界面
 │   │
 │   ├── chamber/                 # 温箱相关页面
-│   │   └── vt6002_chamber_ui.py     # VT6002 温箱控制界面
+│   │   └── vt6002_chamber_ui.py      # VT6002 温箱控制界面
 │   │
-│   └── consumption_test/        # 独立测试功能页面
-│       └── consumption_test.py      # 功耗测试界面
+│   ├── consumption_test/        # 功耗测试页面
+│   │   ├── consumption_test.py       # 功耗测试主界面
+│   │   ├── consumption_test_wrapper.py # 功耗测试封装层 (对外统一入口)
+│   │   ├── high_low_temp_test_ui.py  # 高低温联动功耗测试界面
+│   │   └── consumption_test_workers/ # 后台 Worker 线程 (QThread)
+│   │       ├── common.py             # Worker 通用工具 / 基类
+│   │       ├── consumption_worker.py # 功耗采集 Worker
+│   │       ├── auto_test_worker.py   # 自动测试 Worker
+│   │       ├── chip_check_worker.py  # 芯片检测 Worker
+│   │       ├── download_worker.py    # 固件下载 Worker
+│   │       └── force_worker.py       # Force (强制写入/激励) Worker
+│   │
+│   └── custom_test/             # 自定义测试序列（节点编辑器）
+│       ├── custom_test_ui.py         # 三栏布局主界面 (节点面板 / 画布 / 属性面板)
+│       ├── node_palette.py           # 左侧节点面板 (可折叠分组)
+│       ├── sequence_canvas.py        # 中间可视化序列画布
+│       ├── property_panel.py         # 右侧属性面板
+│       ├── record_data_editor.py     # 数据记录字段编辑器
+│       ├── executor.py               # 序列执行线程 (ExecutorThread)
+│       ├── context.py                # 执行上下文 (ExecutionContext)
+│       ├── nodes/                    # 节点类型实现
+│       │   ├── base_node.py          # 节点抽象基类 + 节点注册表
+│       │   ├── instrument_nodes.py   # 仪器操作类节点
+│       │   ├── io_nodes.py           # 输入/输出类节点
+│       │   ├── logic_nodes.py        # 流程控制类节点 (循环/条件/分支)
+│       │   └── value_nodes.py        # 数值/变量类节点
+│       └── templates/                # 预置序列模板 (JSON)
+│           ├── GPADC_Vsys_Channel.json
+│           ├── bes1505Icore_test.json
+│           ├── case1_power_vs_temp.json
+│           ├── case2_gpadc_vs_temp_vout.json
+│           ├── case3_clk_vs_temp.json
+│           ├── case4.json
+│           └── case5_clk_vs_vout.json
 │
-├── dialogs/                 # 对话框 (预留)
-│
-└── styles/                  # 样式与可复用 UI Mixin
-    ├── __init__.py              # 样式包入口，统一导出公共样式常量与工具函数
-    ├── scrollbar.py             # 暗色主题滚动条样式 (SCROLLBAR_STYLE)
-    ├── button.py                # 搜索/连接/断开按钮样式与 SpinningSearchButton 组件
-    ├── start_sequence.py        # 开始按钮样式 (START_BTN_STYLE) 与状态切换工具
-    ├── execution_logs_module_frame.py  # 执行日志区域 Mixin (日志容器/进度条/清除)
-    ├── n6705c_module_frame.py        # N6705C 连接区域 Mixin (VISA 搜索/连接/断开)
-    ├── oscilloscope_module_frame.py  # 示波器连接区域 Mixin (VISA 搜索/连接/断开)
-    ├── chamber_module_frame.py       # VT6002 温箱连接区域 Mixin (串口搜索/连接/断开)
-    └── serialCom_module_frame.py     # 串口通信连接区域 Mixin (串口搜索/连接/断开)
+└── dialogs/                 # 对话框 (预留)
 
 ================================================================================
   lib/ - 第三方库与底层接口封装
@@ -147,7 +217,12 @@ lib/
 │   ├── download_script.py   # 下载工具 Python 封装，提供 DldTool 类与 download_bin()
 │   │                        # 接口 (支持 Flash/Ramrun/擦除/eFuse 读写等操作)
 │   ├── dldtool.exe          # BES 芯片 UART 下载命令行工具
-│   └── programmer*.bin      # 各型号芯片对应的 Programmer 固件文件
+│   ├── dld_cfg.json         # 下载工具运行时配置
+│   ├── dld_cfg - demo.json  # 配置示例
+│   ├── dldtool_log.txt      # 下载工具日志
+│   ├── noapp_test_*.bin     # 测试用裸固件
+│   ├── programmer*.bin      # 各型号芯片对应的 Programmer 固件 (bes1000 ~ bes3601p)
+│   └── readme.txt           # 下载工具使用说明
 │
 └── i2c/                     # I2C 通信相关模块
     ├── Bes_I2CIO_Interface.py   # BES I2C IO 接口封装 (支持 CH341/USBIO 适配器,
@@ -155,7 +230,7 @@ lib/
     ├── i2c_interface_x64.py     # I2C 接口高层封装，提供简洁的读写 API
     │                            # (支持 8/10/32 位地址与数据宽度)
     ├── i2c_demo_x64.py          # I2C 接口演示/测试脚本
-    ├── efuse_script_caller.py   # EFuse 脚本动态调用器，支持运行时加载并执行
+    ├── efuse_script_caller.py   # EFuse 脚本动态调用器，运行时加载并执行
     │                            # eFuse 烧录脚本
     │
     └── config/                  # I2C 相关配置与资源
@@ -169,23 +244,31 @@ lib/
 ================================================================================
 
 resources/
-└── icons/                   # 图标资源
-    ├── kk_lab.ico           # 应用程序图标 (ICO 格式，用于任务栏/标题栏)
-    ├── kk_lab.svg           # 应用程序图标 (SVG 格式)
-    ├── n6705c.ico           # N6705C 独立工具图标
-    ├── n6705c_thumb.svg     # N6705C 缩略图标
-    ├── search.svg           # 搜索图标 (用于搜索按钮)
-    ├── link.svg             # 已连接图标 (用于连接状态指示)
-    ├── unlink.svg           # 未连接图标 (用于断开状态指示)
-    ├── activity.svg         # 活动/波形图标
-    ├── camera.svg           # 截图图标
-    ├── download.svg         # 下载图标
-    ├── upload.svg           # 上传图标
-    ├── gauge.svg            # 仪表/功率图标
-    ├── thermometer.svg      # 温度计图标
-    ├── zap.svg              # 闪电/电源图标
-    ├── checked_*.svg        # 各颜色已选中状态图标 (用于侧边栏导航)
-    └── unchecked_*.svg      # 各颜色未选中状态图标 (用于侧边栏导航)
+├── icons/                   # 通用图标 (SVG 为主；仅 .ico 用于窗口/打包图标)
+│   ├── kk_lab.ico / kk_lab.svg       # 应用程序图标
+│   ├── n6705c.ico / n6705c_thumb.svg # N6705C 图标
+│   ├── dsox4034a_thumb.svg / mso64b_thumb.svg / vt6002_thumb.svg / cmw270_thumb.svg
+│   ├── checked_*.svg / unchecked_*.svg # 侧边栏各颜色选中/未选中图标
+│   ├── polarity_*.svg                # 触发极性图标 (rising/falling/both/either)
+│   ├── panel-*.svg / scrollbar-*.svg # 面板控制 / 滚动条箭头
+│   └── activity / camera / download / gauge / link / search / settings / ... 等通用图标
+│
+├── modules/                 # 通用 UI 模块专用图标 (按模块归类)
+│   ├── SVG_Common/             # 连接区通用 (search/link/unlink)
+│   ├── SVG_Logs/               # 执行日志区 (logs/filter/export/copy/auto-scroll 等)
+│   └── SVG_Serial/             # 串口通信区 (connect/disconnect/refresh/send/pause/stop 等)
+│
+└── pages/                   # 页面专属图标 (按页面归类；命名规则: <页面>_SVGs/)
+    ├── main_window_SVGs/              # 主窗口侧边栏导航图标
+    ├── n6705c_power_analyzer_SVGs/    # N6705C 页面专属
+    ├── oscilloscope_SVGs/             # 示波器页面
+    ├── pmu_test_SVGs/                 # PMU 测试页面
+    ├── charger_test_SVGs/             # Charger 测试页面
+    ├── chamber_SVGs/                  # 温箱页面
+    ├── consumption_test_SVGs/         # 功耗测试页面
+    └── custom_test_SVGs/              # 自定义测试（节点编辑器）页面
+
+注：所有新增图标必须使用 SVG；新增子目录需同步到 spec/kk_lab.spec 的 datas 配置。
 
 ================================================================================
   helps/ - HTML 帮助文档
@@ -196,6 +279,7 @@ helps/
 ├── datalog.html                     # Datalog 数据记录操作说明
 ├── oscilloscope.html                # 示波器操作说明
 ├── consumption_test.html            # 功耗测试操作说明
+├── custom_test.html                 # 自定义测试（节点编辑器）操作说明
 ├── thermal_chamber.html             # 温箱操作说明
 ├── pmu_dcdc_efficiency.html         # DCDC 效率测试操作说明
 ├── pmu_output_voltage.html          # PMU 输出电压测试操作说明
@@ -207,6 +291,26 @@ helps/
 ├── charger_status_register.html     # 充电状态寄存器测试操作说明
 ├── charger_iterm.html               # Iterm 终止电流测试操作说明
 └── charger_regulation_voltage.html  # 调节电压测试操作说明
+
+================================================================================
+  docs/ - AI 协作与架构文档
+================================================================================
+
+docs/
+└── ai/
+    ├── 00_OVERVIEW.md           # 项目概述与分层架构
+    ├── 01_CONVENTIONS.md        # 代码规范与风格
+    ├── 02_COMMANDS.md           # 运行/打包/调试命令
+    ├── 03_GOTCHAS.md            # 坑点与重要注意事项 ⭐
+    ├── 04_ARCHITECTURE.md       # 架构细节与分层职责
+    ├── 05_INSTRUMENT_GUIDE.md   # 新增仪器驱动指南
+    ├── 06_PAGE_GUIDE.md         # 新增 UI 页面指南
+    ├── 07_TEST_GUIDE.md         # 新增测试功能指南
+    ├── 08_CHECKLISTS.md         # 新功能开发 Checklist ⭐
+    ├── 09_WORKFLOW.md           # 任务 SOP (调用 / 执行 / 回归)
+    └── decisions/               # ADR 架构决策记录
+        ├── 001-mock-instrument.md
+        └── 002-oscilloscope-auto-detect.md
 
 ================================================================================
   hooks/ - PyInstaller 自定义 Hook
@@ -224,6 +328,7 @@ spec/
 ├── kk_lab.spec              # KK_Lab 主程序打包配置
 │                            # 打包命令: python -m PyInstaller spec/kk_lab.spec --clean --noconfirm
 └── n6705c_datalog.spec      # N6705C Datalog 独立工具打包配置
+                             # 打包命令: python -m PyInstaller spec/n6705c_datalog.spec --clean --noconfirm
 
 ================================================================================
   Results/ - 测试结果输出
@@ -234,36 +339,21 @@ Results/
                              # 运行时测试产生的 CSV/Excel 结果文件保存在此目录
 
 ================================================================================
-
-
-
-================================================================================
-  md架构
+  分层与规则速查
 ================================================================================
 
-推荐的文档架构
+分层调用关系（铁律）：
 
-KK_Lab/
-├── CLAUDE.md                          # 🔴 主入口（TRAE/Claude 会优先读取）
-├── AGENTS.md                          # 软链或副本（兼容其他 AI 工具，可选）
-│
-├── .trae/                             # TRAE IDE 专用（如有规则机制）
-│   └── rules/
-│       └── project-rules.md
-│
-├── docs/ai/                           # AI 协作文档目录
-│   ├── 00_OVERVIEW.md                 # 项目概述与分层架构
-│   ├── 01_CONVENTIONS.md              # 代码规范与风格
-│   ├── 02_COMMANDS.md                 # 运行/打包/调试命令
-│   ├── 03_GOTCHAS.md                  # 坑点与重要注意事项 ⭐
-│   ├── 04_ARCHITECTURE.md             # 架构细节与分层职责
-│   ├── 05_INSTRUMENT_GUIDE.md         # 新增仪器驱动指南
-│   ├── 06_PAGE_GUIDE.md               # 新增 UI 页面指南
-│   ├── 07_TEST_GUIDE.md               # 新增测试功能指南
-│   ├── 08_CHECKLISTS.md               # 新功能开发 Checklist ⭐
-│   └── decisions/                     # ADR 架构决策记录
-│       ├── 001-mock-instrument.md
-│       └── 002-oscilloscope-auto-detect.md
-│
-└── .ai/
-    └── memory.md                      # 会话沉淀的长期记忆
+    main.py → ui/ ←→ core/ → instruments/ → lib/
+                   ↑
+             log_config / debug_config / chips
+
+- ui/          禁止阻塞 IO，必须通过 core/ 或 QThread 调用仪器
+- instruments/ 禁止依赖 PySide6 Qt Widget / UI 模块
+- 日志统一使用 log_config.get_logger(__name__)，禁止 print()
+- 仪器统一通过 instruments/factory.py 创建，禁止直接 new 具体仪器
+- 新仪器必须同时提供 Mock 实现（instruments/mock/mock_instruments.py）
+- 资源路径统一通过 ui/resource_path.py::get_resource_base() 获取，
+  兼容源码运行与 PyInstaller 冻结环境
+
+================================================================================

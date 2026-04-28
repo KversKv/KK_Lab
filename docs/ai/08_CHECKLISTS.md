@@ -17,6 +17,13 @@
 - [ ] 未执行 `git commit`（除非用户要求）。
 - [ ] 手工运行 / Mock 验证通过。
 
+### 工程清单同步（对照 [project-rules.md §8](../../.trae/rules/project-rules.md) 同步矩阵）
+
+- [ ] 新增 / 删除 / 重命名目录或顶层重要文件 → 已同步 [DIRECTORY_STRUCTURE.txt](../../DIRECTORY_STRUCTURE.txt)
+- [ ] 新增运行时资源 / DLL / `resources/` 子目录 → 已同步 [spec/kk_lab.spec](../../spec/kk_lab.spec) 的 `datas`（必要时 `hiddenimports`）
+- [ ] 新增 / 重命名功能页面 → 已同步 [helps/](../../helps/) 对应 HTML
+- [ ] 源码引入新第三方包或版本变动 → 已同步 [requirements.txt](../../requirements.txt)
+
 ## ✅ 新增仪器
 
 - [ ] 驱动文件路径正确：`instruments/<类型>/<厂商?>/<型号>.py`

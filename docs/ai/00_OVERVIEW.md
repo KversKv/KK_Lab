@@ -91,3 +91,4 @@
 - [05_INSTRUMENT_GUIDE.md](./05_INSTRUMENT_GUIDE.md) —— 新增仪器
 - [06_PAGE_GUIDE.md](./06_PAGE_GUIDE.md) —— 新增 UI 页面
 - [07_TEST_GUIDE.md](./07_TEST_GUIDE.md) —— 新增测试功能
+- [09_WORKFLOW.md](./09_WORKFLOW.md) —— 任务 SOP（调用 / 执行 / 回归）

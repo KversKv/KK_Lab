@@ -13,6 +13,7 @@
 - 项目：**KK_Lab** — PySide6 桌面工具，BES 芯片功耗 / PMU / Charger 测试。
 - 平台：Windows 64-bit；Python ≥ 3.10；PowerShell 开发环境。
 - 入口文档：[CLAUDE.md](../CLAUDE.md) → [docs/ai/](../docs/ai/)。
+- 任务 SOP：[docs/ai/09_WORKFLOW.md](../docs/ai/09_WORKFLOW.md)（调用 / 执行 / 回归三阶段）。
 
 ## 必守铁律
 
@@ -24,6 +25,7 @@
 6. 跨线程只用 Signal/Slot。
 7. 结果写 `Results/`，文件名带时间戳。
 8. 未经用户许可不 `git commit`、不主动新建 `*.md`。
+9. 工程清单同步矩阵（[project-rules.md §8](../.trae/rules/project-rules.md)）必遵守：改目录 → `DIRECTORY_STRUCTURE.txt`；改运行时资源 → `spec/kk_lab.spec`；新功能页 → `helps/`；新 import → `requirements.txt`。
 
 ## 打包
 
@@ -49,3 +51,5 @@
 | 日期 | 变更 | 备注 |
 |---|---|---|
 | 2026-04-28 | 建立 AI 协作文档体系（`docs/ai/`、`AGENTS.md`、`.trae/rules/`、`.ai/memory.md`） | 根据用户请求初始化 |
+| 2026-04-28 | 新增 [docs/ai/09_WORKFLOW.md](../docs/ai/09_WORKFLOW.md)，落盘任务 SOP；CLAUDE.md / AGENTS.md / project-rules.md / 00_OVERVIEW.md 已同步引用 | 明确"调用 / 执行 / 回归"三阶段流程 |
+| 2026-04-28 | 增补"工程清单同步矩阵"硬规则至 [project-rules.md §8](../.trae/rules/project-rules.md)、[08_CHECKLISTS.md](../docs/ai/08_CHECKLISTS.md) 通用勾项、[09_WORKFLOW.md §3.5.1](../docs/ai/09_WORKFLOW.md) | 封堵 `DIRECTORY_STRUCTURE.txt` / `requirements.txt` 盲区 |

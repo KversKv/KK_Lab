@@ -9,12 +9,13 @@
 ## 快速阅读清单（Agent 必读）
 
 1. 🔴 [CLAUDE.md](./CLAUDE.md) —— 主入口与 CRITICAL 规则
-2. 🔴 [docs/ai/03_GOTCHAS.md](./docs/ai/03_GOTCHAS.md) —— 必看坑点
-3. 🔴 [docs/ai/08_CHECKLISTS.md](./docs/ai/08_CHECKLISTS.md) —— 开发 Checklist
-4. [docs/ai/00_OVERVIEW.md](./docs/ai/00_OVERVIEW.md) —— 项目概述
-5. [docs/ai/04_ARCHITECTURE.md](./docs/ai/04_ARCHITECTURE.md) —— 架构分层
-6. [.trae/rules/project-rules.md](./.trae/rules/project-rules.md) —— TRAE IDE 规则
-7. [.ai/memory.md](./.ai/memory.md) —— 会话沉淀的长期记忆
+2. 🔴 [docs/ai/09_WORKFLOW.md](./docs/ai/09_WORKFLOW.md) —— 任务 SOP（调用 / 执行 / 回归）
+3. 🔴 [docs/ai/03_GOTCHAS.md](./docs/ai/03_GOTCHAS.md) —— 必看坑点
+4. 🔴 [docs/ai/08_CHECKLISTS.md](./docs/ai/08_CHECKLISTS.md) —— 开发 Checklist
+5. [docs/ai/00_OVERVIEW.md](./docs/ai/00_OVERVIEW.md) —— 项目概述
+6. [docs/ai/04_ARCHITECTURE.md](./docs/ai/04_ARCHITECTURE.md) —— 架构分层
+7. [.trae/rules/project-rules.md](./.trae/rules/project-rules.md) —— TRAE IDE 规则
+8. [.ai/memory.md](./.ai/memory.md) —— 会话沉淀的长期记忆
 
 ---
 
