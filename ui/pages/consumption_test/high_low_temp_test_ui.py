@@ -296,20 +296,20 @@ class _HighLowTempTestWorker(QObject):
 
         if all_results:
             self.log.emit("")
-            self.log.emit("=" * 70)
-            self.log.emit("  High-Low Temperature Consumption Test Summary")
-            self.log.emit("=" * 70)
+            self.log.emit("[SUMMARY] " + "=" * 70)
+            self.log.emit("[SUMMARY]   High-Low Temperature Consumption Test Summary")
+            self.log.emit("[SUMMARY] " + "=" * 70)
             header = f"  {'#':>3}  {'Temp (°C)':>10}"
             for ch in channels:
                 header += f"  {'CH' + str(ch) + ' (mA)':>12}"
-            self.log.emit(header)
-            self.log.emit("-" * 70)
+            self.log.emit(f"[SUMMARY] {header}")
+            self.log.emit("[SUMMARY] " + "-" * 70)
             for i, r in enumerate(all_results):
                 row = f"  {i + 1:>3}  {r['temp']:>10.2f}"
                 for ch in channels:
                     row += f"  {r['currents'].get(ch, 0.0):>12.3f}"
-                self.log.emit(row)
-            self.log.emit("=" * 70)
+                self.log.emit(f"[SUMMARY] {row}")
+            self.log.emit("[SUMMARY] " + "=" * 70)
 
         return {"data": all_results, "channels": channels}
 
