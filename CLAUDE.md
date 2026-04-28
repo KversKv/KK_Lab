@@ -37,13 +37,17 @@
 5. **所有**测试结果文件必须输出到 `Results/` 目录，文件名带时间戳。
 6. **所有**跨线程通信必须用 Qt Signal/Slot，不允许直接操作另一个线程的 Widget。
 7. **所有**异常必须捕获并通过 logger 记录，UI 层需给出用户可读提示。
+8. **所有**新增图标统一使用 **SVG** 格式（`.ico` 仅限窗口/打包图标），并按归属放入 `resources/` 对应子文件夹：通用 → `resources/icons/`；通用模块 → `resources/modules/SVG_<模块名>/`；页面专属 → `resources/pages/<页面>_SVGs/`。
 
 ---
 
 ## 3. 项目分层（严格遵守）
+
+```
 main.py → ui/ ←→ core/ → instruments/ → lib/
-↑
-log_config / debug_config
+                  ↑
+          log_config / debug_config
+```
 
 | 层 | 职责 | 禁止 |
 |---|------|------|
@@ -51,26 +55,44 @@ log_config / debug_config
 | `core/` | 业务流程、数据采集编排 | 禁止引入 Qt Widget |
 | `instruments/` | 仪器通信与协议封装 | 禁止依赖 UI |
 | `lib/` | 第三方/底层封装（I2C、下载器） | 尽量无业务 |
+
 详见 [docs/ai/04_ARCHITECTURE.md](./docs/ai/04_ARCHITECTURE.md)
+
 ---
+
 ## 4. 关键约定速查
+
 ### 日志
+
 ```python
 from log_config import get_logger
 logger = get_logger(__name__)
-logger.info("xxx"); logger.error("xxx", exc_info=True)
+logger.info("xxx")
+logger.error("xxx", exc_info=True)
+```
 
-### Mock调试
+### Mock 调试
+
+```python
 from debug_config import DEBUG_MOCK
 if DEBUG_MOCK:
     # 使用 mock_instruments.py 中的模拟类
+    ...
+```
 
-###仪器创建（统一入口）
+### 仪器创建（统一入口）
+
+```python
 from instruments.factory import create_instrument
 inst = create_instrument("n6705c", resource="USB0::...")
+```
 
-##常用命令
-python main.py                                             # 运行
-python -m PyInstaller spec/kk_lab.spec --clean --noconfirm # 打包主程序
+## 5. 常用命令
+
+```powershell
+python main.py                                                      # 运行
+python -m PyInstaller spec/kk_lab.spec --clean --noconfirm          # 打包主程序
 python -m PyInstaller spec/n6705c_datalog.spec --clean --noconfirm  # 打包子工具
-完整命令见 docs/ai/02_COMMANDS.md
+```
+
+完整命令见 [docs/ai/02_COMMANDS.md](./docs/ai/02_COMMANDS.md)。
