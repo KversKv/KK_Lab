@@ -1338,8 +1338,16 @@ class MainWindow(QMainWindow):
                 background: transparent;
             }
         """)
+        dot.setAlignment(Qt.AlignTop | Qt.AlignLeft)
 
-        label = QLabel(text)
+        if "to:" in text:
+            head, tail = text.split("to:", 1)
+            display_text = f"{head}to:\n    {tail.strip()}"
+        else:
+            display_text = text
+
+        label = QLabel(display_text)
+        label.setWordWrap(True)
         label.setStyleSheet("""
             QLabel {
                 color: #9fd3c7;
@@ -1349,9 +1357,8 @@ class MainWindow(QMainWindow):
             }
         """)
 
-        layout.addWidget(dot)
-        layout.addWidget(label)
-        layout.addStretch()
+        layout.addWidget(dot, 0, Qt.AlignTop)
+        layout.addWidget(label, 1)
 
         self.instrument_status_layout.addWidget(widget)
         self.instrument_status_items[key] = widget
