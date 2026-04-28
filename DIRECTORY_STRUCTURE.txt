@@ -234,3 +234,36 @@ Results/
                              # 运行时测试产生的 CSV/Excel 结果文件保存在此目录
 
 ================================================================================
+
+
+
+================================================================================
+  md架构
+================================================================================
+
+推荐的文档架构
+
+KK_Lab/
+├── CLAUDE.md                          # 🔴 主入口（TRAE/Claude 会优先读取）
+├── AGENTS.md                          # 软链或副本（兼容其他 AI 工具，可选）
+│
+├── .trae/                             # TRAE IDE 专用（如有规则机制）
+│   └── rules/
+│       └── project-rules.md
+│
+├── docs/ai/                           # AI 协作文档目录
+│   ├── 00_OVERVIEW.md                 # 项目概述与分层架构
+│   ├── 01_CONVENTIONS.md              # 代码规范与风格
+│   ├── 02_COMMANDS.md                 # 运行/打包/调试命令
+│   ├── 03_GOTCHAS.md                  # 坑点与重要注意事项 ⭐
+│   ├── 04_ARCHITECTURE.md             # 架构细节与分层职责
+│   ├── 05_INSTRUMENT_GUIDE.md         # 新增仪器驱动指南
+│   ├── 06_PAGE_GUIDE.md               # 新增 UI 页面指南
+│   ├── 07_TEST_GUIDE.md               # 新增测试功能指南
+│   ├── 08_CHECKLISTS.md               # 新功能开发 Checklist ⭐
+│   └── decisions/                     # ADR 架构决策记录
+│       ├── 001-mock-instrument.md
+│       └── 002-oscilloscope-auto-detect.md
+│
+└── .ai/
+    └── memory.md                      # 会话沉淀的长期记忆

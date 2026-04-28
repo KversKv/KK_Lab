@@ -4,8 +4,8 @@ from PySide6.QtGui import QPainter, QPen, QColor, QFontMetrics, QPalette
 
 
 class DarkComboBox(QComboBox):
-    def __init__(self, *args, bg="#0a1733", border="#27406f", arrow_color="#7B8CB7",
-                 hover_color="#5d45ff", **kwargs):
+    def __init__(self, *args, bg="#1e2a3a", border="#3a4a5a", arrow_color="#7b8fa5",
+                 hover_color="#6366f1", **kwargs):
         super().__init__(*args, **kwargs)
         self._popup_bg = bg
         self._popup_border = border
@@ -19,7 +19,7 @@ class DarkComboBox(QComboBox):
                 border: 1.5px solid {border};
                 border-radius: 6px;
                 padding: 4px 28px 4px 10px;
-                color: #c8d8f8;
+                color: #c8d5e2;
                 font-size: 13px;
             }}
             QComboBox::drop-down {{
@@ -34,13 +34,13 @@ class DarkComboBox(QComboBox):
             QComboBox QLineEdit {{
                 background-color: transparent;
                 border: none;
-                color: #c8d8f8;
+                color: #c8d5e2;
                 font-size: 13px;
                 padding: 0px;
                 margin: 0px;
             }}
             QComboBox QLineEdit:disabled {{
-                color: #5c7096;
+                color: #4a5a6a;
             }}
         """)
         self._setup_view(bg, border, hover_color)
@@ -100,7 +100,7 @@ class DarkComboBox(QComboBox):
             )
             fm = QFontMetrics(self.font())
             elided = fm.elidedText(self.currentText(), Qt.ElideMiddle, text_rect.width())
-            painter.setPen(QColor("#c8d8f8") if self.isEnabled() else QColor("#5c7096"))
+            painter.setPen(QColor("#c8d5e2") if self.isEnabled() else QColor("#4a5a6a"))
             painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, elided)
 
         arrow_rect: QRect = self.style().subControlRect(
@@ -109,7 +109,7 @@ class DarkComboBox(QComboBox):
 
         color = QColor(self._arrow_color)
         if not self.isEnabled():
-            color = QColor("#3A4563")
+            color = QColor("#3a4a5a")
         pen = QPen(color, 1.6)
         pen.setCapStyle(Qt.RoundCap)
         pen.setJoinStyle(Qt.RoundJoin)
