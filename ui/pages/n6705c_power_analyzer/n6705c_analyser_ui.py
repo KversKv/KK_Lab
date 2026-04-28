@@ -154,7 +154,7 @@ CHANNEL_THEMES = {
     }
 }
 
-CONTENT_BG = "#0a1930"
+CONTENT_BG = "#0b1020"
 TAB_BAR_BG = "#07111f"
 INACTIVE_TAB_BG = "#0b1222"
 INACTIVE_TAB_HOVER_BG = "#0f1a30"
@@ -965,7 +965,7 @@ class N6705CAnalyserUI(QWidget):
         self.batch_collapsed = False
 
         outer = QWidget()
-        outer.setStyleSheet("QWidget { background: transparent; border: none; }")
+        outer.setStyleSheet("QWidget { background: #0b1020; border: none; }")
         outer_layout = QVBoxLayout(outer)
         outer_layout.setContentsMargins(0, 0, 0, 0)
         outer_layout.setSpacing(0)

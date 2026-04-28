@@ -52,7 +52,8 @@ class AutoTestWorker(QObject):
                  channel_names=None,
                  chip_combo_text=None, selected_chip_config=None,
                  config_text=None, parse_config_commands_fn=None,
-                 resolve_device_fn=None, force_voltages=None):
+                 resolve_device_fn=None, force_voltages=None,
+                 force_config_enabled=False):
         super().__init__()
         self.com_port = com_port
         self.firmware_paths = list(firmware_paths)
@@ -78,7 +79,9 @@ class AutoTestWorker(QObject):
         self._parse_config_commands_fn = parse_config_commands_fn
         self._resolve_device_fn = resolve_device_fn
         self.force_voltages = force_voltages or {}
+        self.force_config_enabled = bool(force_config_enabled)
         self._is_stopped = False
+        self._current_download_state = None
 
     # ---- 生命周期 ----
     def stop(self):
@@ -240,16 +243,41 @@ class AutoTestWorker(QObject):
             if self._is_stopped:
                 return
 
+            # 判定是否需要查找/下发配置:
+            #   1) 勾选"强制配置"时,无论通道数都配置;
+            #   2) 未勾选时,仅当存在 Vbat 之外的子通道才配置,
+            #      若只有 Vbat 一个通道则跳过(节省 I2C/配置查找开销)。
+            only_vbat_channel = not bool(self.force_map)
+            should_config = self.force_config_enabled or (not only_vbat_channel)
+
+            chip_config = None
+            config_commands = None
+            i2c = None
+            chip_info = None
+            original_registers = {}
+
+            if should_config:
+                chip_config, config_commands = self._resolve_config_commands(detected_chip_name)
+                i2c, chip_info, original_registers = self._step_save_original_registers(config_commands)
+                if i2c is None:
+                    config_commands = None  # 保持原行为:I2C 失败则跳过
+
+                # 勾选"强制配置":在 Vbat 测量之前先对 DUT 下发一次配置,
+                # 以便测 Vbat 时 DUT 已处于目标配置状态。
+                if self.force_config_enabled and config_commands and i2c:
+                    self._log("[AUTO_TEST] Force-config: executing config BEFORE Vbat measurement...")
+                    self._step_execute_config_commands(i2c, chip_info, config_commands)
+            else:
+                self._log(
+                    "[AUTO_TEST] Only Vbat channel is enabled and Force-config is OFF: "
+                    "skipping config lookup/execution."
+                )
+
             vbat_current = self._step_measure_vbat_total(base, span)
             if vbat_current is None:
                 return
 
             default_voltages = self._step_record_default_voltages()
-
-            chip_config, config_commands = self._resolve_config_commands(detected_chip_name)
-            i2c, chip_info, original_registers = self._step_save_original_registers(config_commands)
-            if i2c is None:
-                config_commands = None  # 保持原行为:I2C 失败则跳过
 
             self.progress.emit(base + 0.55 * span)
             if self._is_stopped:
@@ -308,9 +336,13 @@ class AutoTestWorker(QObject):
 
     # ---- Step 子方法 ----
     def _prepare_poweron_vbat(self, base, span):
-        self._log("[AUTO_TEST] Step 1: Configuring PowerON and RESET channels...")
-        self._setup_control_channel(self.poweron_inst, self.poweron_hw_ch, self.poweron_polarity)
-        self._setup_control_channel(self.reset_inst, self.reset_hw_ch, self.reset_polarity)
+        if self.reset_inst is not None:
+            self._log("[AUTO_TEST] Step 1: Configuring PowerON and RESET channels...")
+            self._setup_control_channel(self.poweron_inst, self.poweron_hw_ch, self.poweron_polarity)
+            self._setup_control_channel(self.reset_inst, self.reset_hw_ch, self.reset_polarity)
+        else:
+            self._log("[AUTO_TEST] Step 1: Configuring PowerON channel (RESET disabled, skipped)...")
+            self._setup_control_channel(self.poweron_inst, self.poweron_hw_ch, self.poweron_polarity)
         self.progress.emit(base + 0.02 * span)
         if self._is_stopped:
             return False
@@ -337,9 +369,16 @@ class AutoTestWorker(QObject):
         _time.sleep(0.4)
 
         self._log("[AUTO_TEST] Step 4: Triggering RESET then POWERON for download handshake...")
-        self._toggle_signal(self.reset_inst, self.reset_hw_ch, self.reset_polarity)
-        _time.sleep(0.05)
+        if self.reset_inst is not None:
+            self._toggle_signal(self.reset_inst, self.reset_hw_ch, self.reset_polarity)
+            _time.sleep(0.05)
+        else:
+            self._log("[AUTO_TEST] RESET disabled, skipping RESET pulse.")
         self._toggle_signal(self.poweron_inst, self.poweron_hw_ch, self.poweron_polarity)
+
+        # 保护机制:若 1s 后下载仍停留在 preparing / waiting_sync 状态,
+        # 说明握手失败,需要重新初始化 Vbat 并重新发送 POWERON / RESET 脉冲。
+        self._guard_download_handshake(download_thread)
 
         self._log("[AUTO_TEST] Waiting for download to complete...")
         download_thread.join(timeout=180)
@@ -366,12 +405,62 @@ class AutoTestWorker(QObject):
 
         self._log("[AUTO_TEST] Step 6: Sending POWERON then RESET to boot chip...")
         self._toggle_signal(self.poweron_inst, self.poweron_hw_ch, self.poweron_polarity)
-        _time.sleep(0.05)
-        self._toggle_signal(self.reset_inst, self.reset_hw_ch, self.reset_polarity)
+        if self.reset_inst is not None:
+            _time.sleep(0.05)
+            self._toggle_signal(self.reset_inst, self.reset_hw_ch, self.reset_polarity)
+        else:
+            self._log("[AUTO_TEST] RESET disabled, skipping RESET pulse after POWERON.")
         self._log("[AUTO_TEST] Waiting 2s for chip stabilization...")
         _time.sleep(2.0)
         self.progress.emit(base + 0.35 * span)
         return not self._is_stopped
+
+    def _guard_download_handshake(self, download_thread):
+        """POWERON 流程之后的保护机制:
+        若 1s 后下载仍停留在 preparing / waiting_sync,重新初始化 Vbat 通道,
+        并再次发送 POWERON / RESET 脉冲。最多重试 3 次。
+        """
+        STUCK_STATES = {"preparing", "waiting_sync", None}
+        MAX_RETRIES = 3
+        retries = 0
+        while retries < MAX_RETRIES:
+            _time.sleep(1.0)
+            if self._is_stopped:
+                return
+            if not download_thread.is_alive():
+                return
+            state = self._current_download_state
+            if state not in STUCK_STATES:
+                return
+
+            retries += 1
+            self._log(
+                f"[AUTO_TEST] Handshake guard: download stuck at '{state}' "
+                f"after 1s, retry {retries}/{MAX_RETRIES}: "
+                f"re-initializing Vbat and re-pulsing POWERON/RESET..."
+            )
+            try:
+                self._reinit_vbat_and_pulse()
+            except Exception as e:
+                self._log(f"[WARNING] Handshake guard retry failed: {e}")
+
+    def _reinit_vbat_and_pulse(self):
+        """重新对 Vbat 通道上电,并发送 POWERON(+ RESET)脉冲。"""
+        try:
+            self.vbat_inst.channel_off(self.vbat_hw_ch)
+            _time.sleep(0.1)
+            self.vbat_inst.set_mode(self.vbat_hw_ch, "PS2Q")
+            self.vbat_inst.set_voltage(self.vbat_hw_ch, 3.8)
+            self.vbat_inst.set_current_limit(self.vbat_hw_ch, 0.2)
+            self.vbat_inst.channel_on(self.vbat_hw_ch)
+        except Exception as e:
+            self._log(f"[WARNING] Re-init Vbat failed: {e}")
+        _time.sleep(0.3)
+
+        if self.reset_inst is not None:
+            self._toggle_signal(self.reset_inst, self.reset_hw_ch, self.reset_polarity)
+            _time.sleep(0.05)
+        self._toggle_signal(self.poweron_inst, self.poweron_hw_ch, self.poweron_polarity)
 
     def _step_measure_vbat_total(self, base, span):
         self._log("[AUTO_TEST] Step 7: Measuring Vbat total current...")
@@ -668,10 +757,15 @@ class AutoTestWorker(QObject):
     # ---- 下载异步 ----
     def _start_download_async(self, bin_path):
         result_queue = queue.Queue()
+        self._current_download_state = None
 
         def _download_thread_fn():
             try:
                 def _on_state(state):
+                    try:
+                        self._current_download_state = state.value
+                    except Exception:
+                        self._current_download_state = str(state)
                     self.download_state_changed.emit(state.value)
                 result = download_bin(
                     com_port=self.com_port,

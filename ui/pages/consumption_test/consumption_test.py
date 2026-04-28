@@ -355,6 +355,9 @@ class PolarityToggle(QWidget):
                 return
 
     def mousePressEvent(self, event):
+        if not self.isEnabled():
+            super().mousePressEvent(event)
+            return
         if event.button() == Qt.LeftButton:
             seg_w = self.width() / self._n
             clicked_idx = int(event.position().x() / seg_w)
@@ -372,6 +375,8 @@ class PolarityToggle(QWidget):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
+        if not self.isEnabled():
+            p.setOpacity(0.4)
 
         w, h = self.width(), self.height()
         radius = h / 2
@@ -411,6 +416,12 @@ class PolarityToggle(QWidget):
 
     def toolTip(self):
         return self._options[self._index]["label"]
+
+    def changeEvent(self, event):
+        if event.type() == event.Type.EnabledChange:
+            self.setCursor(Qt.PointingHandCursor if self.isEnabled() else Qt.ArrowCursor)
+            self.update()
+        super().changeEvent(event)
 
     def event(self, ev):
         if ev.type() == ev.Type.ToolTip:
@@ -1268,6 +1279,26 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         config_title_row.addWidget(config_icon_label)
         config_title_row.addWidget(config_title)
         config_title_row.addStretch()
+
+        self.force_config_cb = QCheckBox("Force")
+        self.force_config_cb.setChecked(False)
+        self.force_config_cb.setToolTip(
+            "强制配置:\n"
+            "  · 未勾选:仅当存在 Vbat 之外的通道时才下发配置(先用 Config Content,\n"
+            "            为空则用所选 Chip Conf 中的配置);若只有 Vbat 一个通道则跳过配置查找。\n"
+            "  · 勾选:不管通道数量,都进行配置查找和下发,\n"
+            "            并在 Vbat 测试前也对 DUT 执行一次配置。"
+        )
+        self.force_config_cb.setStyleSheet("""
+            QCheckBox {
+                color: #dbe7ff;
+                background: transparent;
+                font-size: 11px;
+                spacing: 4px;
+            }
+        """)
+        config_title_row.addWidget(self.force_config_cb)
+
         config_layout.addLayout(config_title_row)
 
         chip_row = QHBoxLayout()
@@ -1766,9 +1797,27 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         poweron_row.addWidget(self.poweron_channel_combo, 1)
         poweron_row.addWidget(self.poweron_polarity_toggle, 0, Qt.AlignVCenter)
 
+        reset_label_row = QHBoxLayout()
+        reset_label_row.setContentsMargins(0, 0, 0, 0)
+        reset_label_row.setSpacing(4)
         reset_label = QLabel("Reset")
         reset_label.setStyleSheet(label_style_sm)
-        reset_label.setFixedWidth(label_width)
+        self.reset_enable_cb = QCheckBox()
+        self.reset_enable_cb.setChecked(False)
+        self.reset_enable_cb.setToolTip("Enable Reset channel. When unchecked, RESET step is skipped.")
+        self.reset_enable_cb.setStyleSheet("""
+            QCheckBox {
+                spacing: 0px;
+                background: transparent;
+            }
+        """)
+        reset_label_row.addWidget(reset_label)
+        reset_label_row.addWidget(self.reset_enable_cb)
+        reset_label_row.addStretch()
+        reset_label_container = QWidget()
+        reset_label_container.setFixedWidth(label_width)
+        reset_label_container.setLayout(reset_label_row)
+
         self.reset_channel_combo = DarkComboBox()
         self.reset_channel_combo.setFixedHeight(24)
         self.reset_channel_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -1790,10 +1839,14 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
         self._n6705c_poweron_label = poweron_label
         self._n6705c_reset_label = reset_label
+        self._n6705c_reset_label_container = reset_label_container
         grid.addWidget(poweron_label, 2, 0, Qt.AlignVCenter)
         grid.addLayout(poweron_row, 2, 1)
-        grid.addWidget(reset_label, 3, 0, Qt.AlignVCenter)
+        grid.addWidget(reset_label_container, 3, 0, Qt.AlignVCenter)
         grid.addLayout(reset_row, 3, 1)
+
+        self.reset_enable_cb.toggled.connect(self._on_reset_enable_toggled)
+        self._on_reset_enable_toggled(self.reset_enable_cb.isChecked())
 
         config_layout.addLayout(grid)
 
@@ -1801,7 +1854,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             self._n6705c_poweron_label,
             self.poweron_channel_combo,
             self.poweron_polarity_toggle,
-            self._n6705c_reset_label,
+            self._n6705c_reset_label_container,
             self.reset_channel_combo,
             self.reset_polarity_toggle,
         ]
@@ -1816,6 +1869,12 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         if hasattr(self, "_n6705c_channel_row_widgets"):
             for w in self._n6705c_channel_row_widgets:
                 w.setVisible(visible)
+
+    def _on_reset_enable_toggled(self, checked):
+        if hasattr(self, "reset_channel_combo") and self.reset_channel_combo is not None:
+            self.reset_channel_combo.setEnabled(checked)
+        if hasattr(self, "reset_polarity_toggle") and self.reset_polarity_toggle is not None:
+            self.reset_polarity_toggle.setEnabled(checked)
 
     def _create_channel_config_section(self):
         config_frame = QFrame()
@@ -2990,6 +3049,14 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             self.reset_polarity_toggle.value()
             if getattr(self, "reset_polarity_toggle", None) else "rising"
         )
+        reset_enabled = (
+            self.reset_enable_cb.isChecked()
+            if getattr(self, "reset_enable_cb", None) else False
+        )
+        force_config_enabled = (
+            self.force_config_cb.isChecked()
+            if getattr(self, "force_config_cb", None) else False
+        )
 
         return {
             "schema_version": self.CONFIG_SCHEMA_VERSION,
@@ -3000,6 +3067,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             "download": download,
             "chip_selected": chip_selected,
             "config_text": config_text,
+            "force_config_enabled": force_config_enabled,
             "test": {
                 "test_time": test_time,
                 "control_method": control_method,
@@ -3007,6 +3075,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
                 "poweron_polarity": poweron_pol,
                 "reset_channel": reset_ch,
                 "reset_polarity": reset_pol,
+                "reset_enabled": reset_enabled,
             },
         }
 
@@ -3176,6 +3245,11 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         cfg_text = snapshot.get("config_text", "") or ""
         if hasattr(self, "config_text_edit") and self.config_text_edit is not None:
             self.config_text_edit.setPlainText(cfg_text)
+        if getattr(self, "force_config_cb", None) is not None and "force_config_enabled" in snapshot:
+            try:
+                self.force_config_cb.setChecked(bool(snapshot.get("force_config_enabled", False)))
+            except Exception:
+                pass
 
         # ---- 6. 测试参数 ----
         test_cfg = snapshot.get("test", {}) or {}
@@ -3215,6 +3289,11 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             self.poweron_polarity_toggle.setValue(test_cfg.get("poweron_polarity", "rising"))
         if getattr(self, "reset_polarity_toggle", None):
             self.reset_polarity_toggle.setValue(test_cfg.get("reset_polarity", "rising"))
+        if getattr(self, "reset_enable_cb", None) is not None and "reset_enabled" in test_cfg:
+            try:
+                self.reset_enable_cb.setChecked(bool(test_cfg.get("reset_enabled", False)))
+            except Exception:
+                pass
 
         # ---- 7. 自动连接仪器(延迟到事件循环,避免阻塞 UI) ----
         if pending_connects:
@@ -3643,16 +3722,29 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             return
 
         poweron_key = self.poweron_channel_combo.currentText() if self.poweron_channel_combo else ""
+        reset_enabled = (
+            self.reset_enable_cb.isChecked()
+            if getattr(self, "reset_enable_cb", None) is not None else False
+        )
         reset_key = self.reset_channel_combo.currentText() if self.reset_channel_combo else ""
-        if not poweron_key or not reset_key:
-            self.append_log("[ERROR] PowerON or RESET channel not configured.")
+        if not poweron_key:
+            self.append_log("[ERROR] PowerON channel not configured.")
+            return
+        if reset_enabled and not reset_key:
+            self.append_log("[ERROR] RESET channel not configured.")
             return
 
         poweron_dl, poweron_hw = self._parse_channel_key(poweron_key)
-        reset_dl, reset_hw = self._parse_channel_key(reset_key)
-        if poweron_dl is None or reset_dl is None:
-            self.append_log("[ERROR] Invalid PowerON/RESET channel key.")
+        if poweron_dl is None:
+            self.append_log("[ERROR] Invalid PowerON channel key.")
             return
+        if reset_enabled:
+            reset_dl, reset_hw = self._parse_channel_key(reset_key)
+            if reset_dl is None:
+                self.append_log("[ERROR] Invalid RESET channel key.")
+                return
+        else:
+            reset_dl, reset_hw = None, None
 
         poweron_attr = poweron_dl.lower()
         poweron_inst = getattr(self, f"n6705c_{poweron_attr}", None)
@@ -3661,15 +3753,20 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             self.append_log(f"[ERROR] N6705C-{poweron_dl} is not connected (required by PowerON).")
             return
 
-        reset_attr = reset_dl.lower()
-        reset_inst = getattr(self, f"n6705c_{reset_attr}", None)
-        reset_conn = getattr(self, f"is_connected_{reset_attr}", False)
-        if not reset_conn or not reset_inst:
-            self.append_log(f"[ERROR] N6705C-{reset_dl} is not connected (required by RESET).")
-            return
+        if reset_enabled:
+            reset_attr = reset_dl.lower()
+            reset_inst = getattr(self, f"n6705c_{reset_attr}", None)
+            reset_conn = getattr(self, f"is_connected_{reset_attr}", False)
+            if not reset_conn or not reset_inst:
+                self.append_log(f"[ERROR] N6705C-{reset_dl} is not connected (required by RESET).")
+                return
+        else:
+            reset_inst = None
 
         poweron_polarity = self.poweron_polarity_toggle.value()
-        reset_polarity = self.reset_polarity_toggle.value()
+        reset_polarity = (
+            self.reset_polarity_toggle.value() if reset_enabled else "rising"
+        )
 
         force_map = {}
         config_index_map = {vbat_device_label: {vbat_hw_ch: vbat_idx}}
@@ -3723,11 +3820,12 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         else:
             self.bin_result_table.hide()
 
+        reset_desc = f"{reset_key}({reset_polarity})" if reset_enabled else "DISABLED"
         self.append_log(
             f"[AUTO_TEST] Starting auto test: {len(firmware_paths)} BIN(s), "
             f"Vbat={vbat_cfg['name']}({vbat_cfg['channel']}), "
             f"PowerON={poweron_key}({poweron_polarity}), "
-            f"RESET={reset_key}({reset_polarity})"
+            f"RESET={reset_desc}"
         )
 
         worker = _AutoTestWorker(
@@ -3755,6 +3853,10 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             parse_config_commands_fn=self._parse_config_commands,
             resolve_device_fn=self._resolve_device,
             force_voltages=self._build_force_voltages(),
+            force_config_enabled=(
+                self.force_config_cb.isChecked()
+                if getattr(self, "force_config_cb", None) is not None else False
+            ),
         )
         thread = QThread()
         worker.moveToThread(thread)

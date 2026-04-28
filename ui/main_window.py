@@ -1740,6 +1740,15 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logger.warning(f"[CloseEvent] Error closing ResourceManager for {name}: {e}")
 
+        try:
+            if hasattr(sub_ui, 'close_serial') and callable(sub_ui.close_serial):
+                if getattr(sub_ui, '_serial_conn', None) is not None \
+                        or getattr(sub_ui, '_serial_connected', False):
+                    logger.info(f"[CloseEvent] Closing serial connection: {name}")
+                    sub_ui.close_serial()
+        except Exception as e:
+            logger.warning(f"[CloseEvent] Error closing serial connection for {name}: {e}")
+
     def closeEvent(self, event):
         logger.info("[CloseEvent] Window close requested, disconnecting all instruments...")
 
