@@ -1006,6 +1006,8 @@ class N6705CDatalogUI(QWidget):
         self.box_zoom_enabled = False
         self._b_time_offset = 0.0
         self._file_time_offsets = {}
+        self._known_data_keys = set()
+        self._tab_hidden_snapshot = {}
         self._box_zoom_auto_off_timer = QTimer(self)
         self._box_zoom_auto_off_timer.setSingleShot(True)
         self._box_zoom_auto_off_timer.setInterval(4000)
@@ -2599,6 +2601,8 @@ class N6705CDatalogUI(QWidget):
         self.channel_config_layout.addWidget(self.channel_config_stack)
 
         self.channel_config_tabbar.currentChanged.connect(self.channel_config_stack.setCurrentIndex)
+        self.channel_config_tabbar.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.channel_config_tabbar.customContextMenuRequested.connect(self._on_ch_tabbar_context_menu)
 
         self._instruments_tab = QWidget()
         self._instruments_tab.setStyleSheet("background: #071127;")
@@ -2901,29 +2905,6 @@ class N6705CDatalogUI(QWidget):
         tab_layout.setContentsMargins(0, 6, 0, 0)
         tab_layout.setSpacing(0)
 
-        header_bar = QHBoxLayout()
-        header_bar.setContentsMargins(8, 0, 8, 4)
-        header_bar.setSpacing(6)
-
-        file_offset_btn = QPushButton("Time Offset")
-        file_offset_btn.setObjectName("chartToolBtn")
-        file_offset_btn.setCursor(Qt.PointingHandCursor)
-        file_offset_btn.setStyleSheet(
-            "QPushButton#chartToolBtn { background-color: #0c1a35; color: #8eb0e3; "
-            "border: 1px solid #1e3460; border-radius: 4px; padding: 3px 10px; "
-            "font-size: 10px; }"
-            "QPushButton#chartToolBtn:hover { background-color: #162d55; "
-            "border-color: #3a6fd4; color: #eaf2ff; }"
-        )
-        if file_prefix:
-            file_offset_btn.clicked.connect(
-                lambda _checked=False, p=file_prefix: self._on_file_time_offset(p))
-        else:
-            file_offset_btn.setEnabled(False)
-        header_bar.addWidget(file_offset_btn)
-        header_bar.addStretch()
-        tab_layout.addLayout(header_bar)
-
         inner = QWidget()
         inner.setStyleSheet("background: #071127;")
         inner_layout = QHBoxLayout(inner)
@@ -2935,7 +2916,6 @@ class N6705CDatalogUI(QWidget):
             "tab_widget": tab_widget,
             "data_keys": set(data_keys),
             "file_prefix": file_prefix,
-            "file_offset_btn": file_offset_btn,
             "voltage_cbs_a": [],
             "current_cbs_a": [],
             "power_cbs_a": [],
@@ -3177,6 +3157,7 @@ class N6705CDatalogUI(QWidget):
                 )
                 if not still_used_prefix:
                     self._file_time_offsets.pop(removed_prefix, None)
+                    self._tab_hidden_snapshot.pop(f"__file__:{removed_prefix}", None)
             still_used = set()
             for tc in self._imported_tab_configs:
                 still_used |= tc.get("data_keys", set())
@@ -3185,6 +3166,7 @@ class N6705CDatalogUI(QWidget):
                 if k not in still_used:
                     self.datalog_data.pop(k, None)
                     self.ch_name_renames.pop(k, None)
+                    self._known_data_keys.discard(k)
                     actually_removed.add(k)
             if actually_removed:
                 self.custom_labels = [
@@ -3196,6 +3178,234 @@ class N6705CDatalogUI(QWidget):
         if widget:
             widget.deleteLater()
         self._refresh_plot()
+
+    def _get_tab_cbs(self, index):
+        if index <= 0:
+            return (
+                list(self.ch_current_cbs_a)
+                + list(self.ch_voltage_cbs_a)
+                + list(getattr(self, 'ch_power_cbs_a', []))
+                + list(getattr(self, 'ch_current_cbs_b', []))
+                + list(getattr(self, 'ch_voltage_cbs_b', []))
+                + list(getattr(self, 'ch_power_cbs_b', []))
+            )
+        widget = self.channel_config_stack.widget(index)
+        if widget is None:
+            return []
+        for tc in self._imported_tab_configs:
+            if tc.get("tab_widget") is widget:
+                return (
+                    list(tc.get("current_cbs_a", []))
+                    + list(tc.get("voltage_cbs_a", []))
+                    + list(tc.get("power_cbs_a", []))
+                    + list(tc.get("current_cbs_b", []))
+                    + list(tc.get("voltage_cbs_b", []))
+                    + list(tc.get("power_cbs_b", []))
+                )
+        return []
+
+    def _get_tab_file_prefix(self, index):
+        if index <= 0:
+            return ""
+        widget = self.channel_config_stack.widget(index)
+        if widget is None:
+            return ""
+        for tc in self._imported_tab_configs:
+            if tc.get("tab_widget") is widget:
+                return tc.get("file_prefix", "") or ""
+        return ""
+
+    def _get_tab_data_keys(self, index):
+        if index <= 0:
+            imported_keys = set()
+            for tc in self._imported_tab_configs:
+                imported_keys |= tc.get("data_keys", set())
+            return set(self.datalog_data.keys()) - imported_keys
+        widget = self.channel_config_stack.widget(index)
+        if widget is None:
+            return set()
+        for tc in self._imported_tab_configs:
+            if tc.get("tab_widget") is widget:
+                return set(tc.get("data_keys", set())) & set(self.datalog_data.keys())
+        return set()
+
+    def _get_tab_snapshot_key(self, index):
+        if index <= 0:
+            return "__active__"
+        widget = self.channel_config_stack.widget(index)
+        if widget is None:
+            return None
+        for tc in self._imported_tab_configs:
+            if tc.get("tab_widget") is widget:
+                prefix = tc.get("file_prefix") or ""
+                return f"__file__:{prefix}" if prefix else None
+        return None
+
+    def _is_tab_any_channel_visible(self, index):
+        cbs = self._get_tab_cbs(index)
+        for cb in cbs:
+            if cb.isChecked():
+                return True
+        return False
+
+    def _capture_tab_checked_cbs(self, index):
+        cbs = self._get_tab_cbs(index)
+        captured = set()
+        for cb in cbs:
+            if cb.isChecked():
+                ch_idx = cb.property("ch_idx")
+                mtype = cb.property("meas_type")
+                if ch_idx is None or mtype is None:
+                    continue
+                is_b_cb = self._cb_is_b(cb)
+                captured.add((int(ch_idx), str(mtype), bool(is_b_cb)))
+        return captured
+
+    def _cb_is_b(self, cb):
+        if cb in (
+            list(getattr(self, 'ch_current_cbs_b', []))
+            + list(getattr(self, 'ch_voltage_cbs_b', []))
+            + list(getattr(self, 'ch_power_cbs_b', []))
+        ):
+            return True
+        for tc in self._imported_tab_configs:
+            if cb in (
+                list(tc.get("current_cbs_b", []))
+                + list(tc.get("voltage_cbs_b", []))
+                + list(tc.get("power_cbs_b", []))
+            ):
+                return True
+        return False
+
+    def _hide_tab_channels(self, index):
+        cbs = self._get_tab_cbs(index)
+        if not cbs:
+            return
+        snapshot_key = self._get_tab_snapshot_key(index)
+        if snapshot_key:
+            self._tab_hidden_snapshot[snapshot_key] = self._capture_tab_checked_cbs(index)
+        changed = False
+        for cb in cbs:
+            if cb.isChecked():
+                cb.blockSignals(True)
+                cb.setChecked(False)
+                ch_color = cb.property("ch_color")
+                if ch_color:
+                    cb.setStyleSheet(self._ch_toggle_style(ch_color, False))
+                cb.blockSignals(False)
+                changed = True
+        if changed:
+            self._on_channel_visibility_changed()
+
+    def _show_tab_channels(self, index):
+        cbs = self._get_tab_cbs(index)
+        if not cbs:
+            return
+        data_keys = self._get_tab_data_keys(index)
+        active_combos = set()
+        for key in data_keys:
+            ch_num, mtype, is_b = _parse_ch_label(key)
+            if ch_num is None or ch_num < 1 or ch_num > 4:
+                continue
+            active_combos.add((ch_num - 1, mtype, is_b))
+
+        snapshot_key = self._get_tab_snapshot_key(index)
+        snapshot = self._tab_hidden_snapshot.get(snapshot_key) if snapshot_key else None
+        if snapshot:
+            target = snapshot & active_combos
+        else:
+            target = active_combos
+
+        if snapshot_key:
+            self._tab_hidden_snapshot.pop(snapshot_key, None)
+
+        changed = False
+        for cb in cbs:
+            ch_idx = cb.property("ch_idx")
+            mtype = cb.property("meas_type")
+            if ch_idx is None or mtype is None:
+                continue
+            combo = (int(ch_idx), str(mtype), bool(self._cb_is_b(cb)))
+            want = combo in target
+            if cb.isChecked() != want:
+                cb.blockSignals(True)
+                cb.setChecked(want)
+                ch_color = cb.property("ch_color")
+                if ch_color:
+                    cb.setStyleSheet(self._ch_toggle_style(ch_color, want))
+                cb.blockSignals(False)
+                changed = True
+        if changed:
+            self._on_channel_visibility_changed()
+
+    def _on_ch_tabbar_context_menu(self, pos):
+        index = self.channel_config_tabbar.tabAt(pos)
+        if index < 0:
+            return
+
+        data_keys = self._get_tab_data_keys(index)
+        if not data_keys:
+            return
+
+        any_visible = self._is_tab_any_channel_visible(index)
+
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #0c1a35;
+                border: 1px solid #1e3460;
+                color: #c8daf5;
+                font-size: 11px;
+                padding: 4px;
+            }
+            QMenu::item {
+                padding: 6px 18px 6px 24px;
+                border-radius: 3px;
+            }
+            QMenu::item:selected {
+                background-color: #1e3460;
+                color: #eaf2ff;
+            }
+            QMenu::item:disabled {
+                color: #3a5070;
+            }
+            QMenu::separator {
+                height: 1px;
+                background-color: #1e3460;
+                margin: 4px 6px;
+            }
+        """)
+
+        tab_text = self.channel_config_tabbar.tabText(index)
+        title_action = menu.addAction(tab_text or "Tab")
+        title_action.setEnabled(False)
+        menu.addSeparator()
+
+        if any_visible:
+            toggle_action = menu.addAction("Hide Channels")
+        else:
+            toggle_action = menu.addAction("Show Channels")
+
+        offset_action = None
+        file_prefix = self._get_tab_file_prefix(index)
+        if file_prefix:
+            menu.addSeparator()
+            offset_action = menu.addAction("Time Offset...")
+            current_off_s = self._file_time_offsets.get(file_prefix, 0.0)
+            if current_off_s != 0.0:
+                offset_action.setText(f"Time Offset...  ({current_off_s * 1000.0:+.3f} ms)")
+
+        global_pos = self.channel_config_tabbar.mapToGlobal(pos)
+        action = menu.exec(global_pos)
+        if action is None:
+            return
+        if action is toggle_action:
+            if any_visible:
+                self._hide_tab_channels(index)
+            else:
+                self._show_tab_channels(index)
+        elif offset_action is not None and action is offset_action:
+            self._on_file_time_offset(file_prefix)
 
     def _ch_toggle_style(self, color, active):
         if active:
@@ -4343,19 +4553,15 @@ class N6705CDatalogUI(QWidget):
                            "current_cbs_b", "voltage_cbs_b", "power_cbs_b"]:
                 all_cbs += list(tc.get(suffix, []))
 
-        for cb in all_cbs:
-            cb.blockSignals(True)
-            cb.setChecked(False)
-            ch_color = cb.property("ch_color") if hasattr(cb, 'property') else None
-            if ch_color:
-                cb.setStyleSheet(self._ch_toggle_style(ch_color, False))
-            cb.blockSignals(False)
+        current_keys = set(self.datalog_data.keys())
+        new_keys = current_keys - self._known_data_keys
 
         imported_keys = set()
         for tc in self._imported_tab_configs:
             imported_keys |= tc.get("data_keys", set())
         active_data = {k: v for k, v in self.datalog_data.items() if k not in imported_keys}
 
+        active_new_keys = {k for k in active_data.keys() if k in new_keys}
         self._sync_cbs_for_data(
             active_data,
             self.ch_current_cbs_a, self.ch_voltage_cbs_a,
@@ -4363,21 +4569,28 @@ class N6705CDatalogUI(QWidget):
             getattr(self, 'ch_current_cbs_b', []),
             getattr(self, 'ch_voltage_cbs_b', []),
             getattr(self, 'ch_power_cbs_b', []),
+            new_keys=active_new_keys,
         )
 
         for tc in self._imported_tab_configs:
             tc_keys = tc.get("data_keys", set())
             sub_data = {k: v for k, v in self.datalog_data.items() if k in tc_keys}
+            sub_new_keys = {k for k in sub_data.keys() if k in new_keys}
             self._sync_cbs_for_data(
                 sub_data,
                 tc.get("current_cbs_a", []), tc.get("voltage_cbs_a", []),
                 tc.get("power_cbs_a", []),
                 tc.get("current_cbs_b", []), tc.get("voltage_cbs_b", []),
                 tc.get("power_cbs_b", []),
+                new_keys=sub_new_keys,
             )
 
+        self._known_data_keys = current_keys
+
     def _sync_cbs_for_data(self, data_dict, current_a, voltage_a, power_a,
-                           current_b, voltage_b, power_b):
+                           current_b, voltage_b, power_b, new_keys=None):
+        if new_keys is None:
+            new_keys = set(data_dict.keys())
         for key, ch_data in data_dict.items():
             ch_num, mtype, is_b = _parse_ch_label(key)
             if ch_num is None:
@@ -4404,33 +4617,34 @@ class N6705CDatalogUI(QWidget):
 
             if idx < len(cbs):
                 btn = cbs[idx]
-                btn.blockSignals(True)
-                btn.setChecked(True)
-                ch_color = btn.property("ch_color")
-                if ch_color:
-                    btn.setStyleSheet(self._ch_toggle_style(ch_color, True))
-                btn.blockSignals(False)
+                if key in new_keys:
+                    btn.blockSignals(True)
+                    btn.setChecked(True)
+                    ch_color = btn.property("ch_color")
+                    if ch_color:
+                        btn.setStyleSheet(self._ch_toggle_style(ch_color, True))
+                    btn.blockSignals(False)
 
-                values = ch_data.get("values", [])
-                if values:
-                    v_min = min(values)
-                    v_max = max(values)
-                    v_range = v_max - v_min
-                    if v_range < 1e-9:
-                        v_range = abs(v_max) * 0.1 if abs(v_max) > 1e-9 else 1.0
-                    scale_val = v_range
-                    offset_val = (v_max + v_min) / 2.0
+                    values = ch_data.get("values", [])
+                    if values:
+                        v_min = min(values)
+                        v_max = max(values)
+                        v_range = v_max - v_min
+                        if v_range < 1e-9:
+                            v_range = abs(v_max) * 0.1 if abs(v_max) > 1e-9 else 1.0
+                        scale_val = v_range
+                        offset_val = (v_max + v_min) / 2.0
 
-                    unit = "mA" if mtype == "I" else ("mW" if mtype == "P" else "mV")
-                    scale_str = _auto_format(scale_val, unit)
-                    offset_str = _auto_format(offset_val, unit)
+                        unit = "mA" if mtype == "I" else ("mW" if mtype == "P" else "mV")
+                        scale_str = _auto_format(scale_val, unit)
+                        offset_str = _auto_format(offset_val, unit)
 
-                    scale_edit = btn.property("scale_edit")
-                    offset_edit = btn.property("offset_edit")
-                    if scale_edit:
-                        scale_edit.setText(scale_str)
-                    if offset_edit:
-                        offset_edit.setText(offset_str)
+                        scale_edit = btn.property("scale_edit")
+                        offset_edit = btn.property("offset_edit")
+                        if scale_edit:
+                            scale_edit.setText(scale_str)
+                        if offset_edit:
+                            offset_edit.setText(offset_str)
 
     def _get_active_dlog_channel_count(self):
         count_a = 0
@@ -4643,6 +4857,7 @@ class N6705CDatalogUI(QWidget):
         for k in list(self.datalog_data.keys()):
             if k not in imported_keys:
                 del self.datalog_data[k]
+                self._known_data_keys.discard(k)
 
         self._update_recording_button_state(True)
 
@@ -4752,7 +4967,10 @@ class N6705CDatalogUI(QWidget):
             self._update_marker_analysis()
             return
 
-        sorted_keys = sorted(self.datalog_data.keys(), key=_sort_key_for_label)
+        all_sorted_keys = sorted(self.datalog_data.keys(), key=_sort_key_for_label)
+        visible_keys = self._get_visible_keys()
+        sorted_keys = [k for k in all_sorted_keys if k in visible_keys]
+        n = len(sorted_keys)
 
         left_axis = self.plot_widget.getPlotItem().getAxis("left")
         left_axis.setTicks([])
@@ -4760,6 +4978,11 @@ class N6705CDatalogUI(QWidget):
         left_axis.setWidth(0)
 
         panel_entries = []
+
+        if n == 0:
+            self._rebuild_ch_name_panel([])
+            self._update_marker_analysis()
+            return
 
         for idx, label in enumerate(sorted_keys):
             ch_data = self.datalog_data[label]
@@ -5776,15 +5999,6 @@ class N6705CDatalogUI(QWidget):
             self._file_time_offsets.pop(file_prefix, None)
         else:
             self._file_time_offsets[file_prefix] = offset_s
-        for tc in self._imported_tab_configs:
-            if tc.get("file_prefix") == file_prefix:
-                btn = tc.get("file_offset_btn")
-                if btn:
-                    if offset_s != 0.0:
-                        btn.setText(f"Time Offset: {offset_s * 1000.0:+.3f}ms")
-                    else:
-                        btn.setText("Time Offset")
-                break
         self._on_channel_visibility_changed()
 
     def _rebuild_ch_name_panel(self, entries):
