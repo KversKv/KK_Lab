@@ -4,7 +4,7 @@ from PySide6.QtGui import QPainter, QPen, QColor, QFontMetrics, QPalette
 
 
 class DarkComboBox(QComboBox):
-    def __init__(self, *args, bg="#1e2a3a", border="#3a4a5a", arrow_color="#7b8fa5",
+    def __init__(self, *args, bg="#050a1d", border="#1f315d", arrow_color="#7b8fa5",
                  hover_color="#6366f1", **kwargs):
         super().__init__(*args, **kwargs)
         self._popup_bg = bg
@@ -40,7 +40,7 @@ class DarkComboBox(QComboBox):
                 margin: 0px;
             }}
             QComboBox QLineEdit:disabled {{
-                color: #4a5a6a;
+                color: #3a4a6a;
             }}
         """)
         self._setup_view(bg, border, hover_color)
@@ -100,7 +100,7 @@ class DarkComboBox(QComboBox):
             )
             fm = QFontMetrics(self.font())
             elided = fm.elidedText(self.currentText(), Qt.ElideMiddle, text_rect.width())
-            painter.setPen(QColor("#c8d5e2") if self.isEnabled() else QColor("#4a5a6a"))
+            painter.setPen(QColor("#c8d5e2") if self.isEnabled() else QColor("#3a4a6a"))
             painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, elided)
 
         arrow_rect: QRect = self.style().subControlRect(
@@ -109,7 +109,7 @@ class DarkComboBox(QComboBox):
 
         color = QColor(self._arrow_color)
         if not self.isEnabled():
-            color = QColor("#3a4a5a")
+            color = QColor("#1f315d")
         pen = QPen(color, 1.6)
         pen.setCapStyle(Qt.RoundCap)
         pen.setJoinStyle(Qt.RoundJoin)

@@ -81,24 +81,24 @@ _SERIAL_BTN_RADIUS = 6
 def _serial_search_style(h=_SERIAL_BTN_HEIGHT, r=_SERIAL_BTN_RADIUS):
     return f"""
         QPushButton {{
-            background-color: #232f40;
-            border: 1px solid #3a4a5a;
+            background-color: #0e1a35;
+            border: 1px solid #1f315d;
             border-radius: {r}px;
             color: #c8d5e2;
             font-weight: 600;
             min-height: {h}px;
         }}
         QPushButton:hover {{
-            background-color: #2e3c4e;
-            border: 1px solid #4a5a6a;
+            background-color: #152045;
+            border: 1px solid #2a3a6a;
         }}
         QPushButton:pressed {{
-            background-color: #1a2535;
+            background-color: #0a1228;
         }}
         QPushButton:disabled {{
-            background-color: #1a2332;
-            color: #4a5a6a;
-            border: 1px solid #2a3444;
+            background-color: #080e22;
+            color: #3a4a6a;
+            border: 1px solid #1a2d57;
         }}
     """
 
@@ -121,8 +121,8 @@ def _serial_connect_style(h=_SERIAL_BTN_HEIGHT, r=_SERIAL_BTN_RADIUS):
             background-color: #053f30;
         }}
         QPushButton:disabled {{
-            background-color: #1a2332;
-            color: #4a5a6a;
+            background-color: #080e22;
+            color: #3a4a6a;
             border: none;
         }}
     """
@@ -146,8 +146,8 @@ def _serial_disconnect_style(h=_SERIAL_BTN_HEIGHT, r=_SERIAL_BTN_RADIUS):
             background-color: #3b1525;
         }}
         QPushButton:disabled {{
-            background-color: #1a2332;
-            color: #4a5a6a;
+            background-color: #080e22;
+            color: #3a4a6a;
             border: none;
         }}
     """
@@ -656,7 +656,7 @@ class SerialComMixin:
         body_splitter = QSplitter(Qt.Horizontal)
         body_splitter.setHandleWidth(3)
         body_splitter.setStyleSheet("""
-            QSplitter::handle { background-color: #2a3444; }
+            QSplitter::handle { background-color: #1a2d57; }
             QSplitter::handle:hover { background-color: #6366f1; }
         """)
 
@@ -711,8 +711,8 @@ class SerialComMixin:
         frame.setFixedHeight(34)
         frame.setStyleSheet("""
             QFrame#scToolbar {
-                background-color: #1a2332;
-                border-bottom: 1px solid #2a3444;
+                background-color: #080e22;
+                border-bottom: 1px solid #1a2d57;
             }
         """)
         layout = QHBoxLayout(frame)
@@ -728,8 +728,8 @@ class SerialComMixin:
                 background-color: transparent; color: #4ade80; font-size: 10px;
                 border: none;
             }
-            QPushButton:hover { background-color: #1e3a2a; }
-            QPushButton:pressed { background-color: #15301f; }
+            QPushButton:hover { background-color: #0a2818; }
+            QPushButton:pressed { background-color: #071e12; }
         """)
         icon_conn = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "connect.svg"), "#4ade80", 12)
         if not icon_conn.isNull():
@@ -761,10 +761,10 @@ class SerialComMixin:
             QPushButton {
                 min-height: 0px; max-height: 20px; min-width: 20px; max-width: 20px;
                 padding: 0px; border-radius: 6px;
-                background-color: #232f40; color: #c8d5e2; border: none;
+                background-color: #0e1a35; color: #c8d5e2; border: none;
             }
-            QPushButton:hover { background-color: #2e3c4e; }
-            QPushButton:pressed { background-color: #1a2535; }
+            QPushButton:hover { background-color: #152045; }
+            QPushButton:pressed { background-color: #0a1228; }
         """)
         icon_add = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "plus.svg"), "#4ade80", 12)
         if not icon_add.isNull():
@@ -780,11 +780,11 @@ class SerialComMixin:
             QPushButton {
                 min-height: 0px; max-height: 20px; min-width: 20px; max-width: 20px;
                 padding: 0px; border-radius: 6px;
-                background-color: #232f40; color: #c8d5e2; border: none;
+                background-color: #0e1a35; color: #c8d5e2; border: none;
             }
-            QPushButton:hover { background-color: #2e3c4e; }
-            QPushButton:pressed { background-color: #1a2535; }
-            QPushButton:disabled { background-color: #1a2332; }
+            QPushButton:hover { background-color: #152045; }
+            QPushButton:pressed { background-color: #0a1228; }
+            QPushButton:disabled { background-color: #080e22; }
         """)
         icon_remove = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "minus.svg"), "#ff5e7a", 12)
         if not icon_remove.isNull():
@@ -796,7 +796,7 @@ class SerialComMixin:
 
         sep = QFrame()
         sep.setFrameShape(QFrame.VLine)
-        sep.setStyleSheet("color: #2a3444;")
+        sep.setStyleSheet("color: #1a2d57;")
         layout.addWidget(sep)
 
         layout.addSpacing(8)
@@ -826,8 +826,8 @@ class SerialComMixin:
         scroll.setMinimumWidth(210)
         scroll.setMaximumWidth(280)
         scroll.setStyleSheet("""
-            QScrollArea { background-color: #1a2332; border: none; border-right: 1px solid #2a3444; }
-            QScrollArea > QWidget > QWidget { background-color: #1a2332; }
+            QScrollArea { background-color: #050b1e; border: none; border-right: 1px solid #1a2d57; }
+            QScrollArea > QWidget > QWidget { background-color: #050b1e; }
         """ + SCROLLBAR_STYLE)
 
         container = QWidget()
@@ -935,7 +935,7 @@ class SerialComMixin:
         self._sc_rx_auto_flush_spin.setFixedSize(self._SPIN_W, 20)
         self._sc_rx_auto_flush_spin.setStyleSheet("""
             QSpinBox {
-                background-color: #1e2a3a; border: 1px solid #3a4a5a; border-radius: 4px;
+                background-color: #050a1d; border: 1px solid #1f315d; border-radius: 4px;
                 color: #c8d5e2; font-size: 10px; padding: 1px 2px;
             }
             QSpinBox::up-button, QSpinBox::down-button { width: 12px; }
@@ -982,7 +982,7 @@ class SerialComMixin:
         self._sc_resend_spin.setFixedSize(self._SPIN_W, 20)
         self._sc_resend_spin.setStyleSheet("""
             QSpinBox {
-                background-color: #1e2a3a; border: 1px solid #3a4a5a; border-radius: 4px;
+                background-color: #050a1d; border: 1px solid #1f315d; border-radius: 4px;
                 color: #c8d5e2; font-size: 10px; padding: 1px 2px;
             }
             QSpinBox::up-button, QSpinBox::down-button { width: 12px; }
@@ -1033,8 +1033,8 @@ class SerialComMixin:
         frame.setObjectName("scLogFrame")
         frame.setStyleSheet("""
             QFrame#scLogFrame {
-                background-color: #151d2b;
-                border: 1px solid #2a3444;
+                background-color: #091023;
+                border: 1px solid #1a2d57;
                 border-radius: 8px;
             }
         """)
@@ -1105,7 +1105,7 @@ class SerialComMixin:
         self._sc_filter_input.setPlaceholderText("Enter keyword or regex to filter logs...")
         self._sc_filter_input.setStyleSheet("""
             QLineEdit {
-                background-color: #1e2a3a; border: 1px solid #3a4a5a; border-radius: 6px;
+                background-color: #050a1d; border: 1px solid #1f315d; border-radius: 6px;
                 color: #c8d5e2; font-size: 10px; padding: 2px 6px; min-height: 18px; max-height: 18px;
             }
             QLineEdit:focus { border: 1px solid #6366f1; }
@@ -1157,7 +1157,7 @@ class SerialComMixin:
         self._sc_filter_before_spin.setToolTip("Show N lines before matched lines")
         self._sc_filter_before_spin.setStyleSheet("""
             QSpinBox {
-                background-color: #1e2a3a; border: 1px solid #3a4a5a; border-radius: 4px;
+                background-color: #050a1d; border: 1px solid #1f315d; border-radius: 4px;
                 color: #c8d5e2; font-size: 9px; padding: 0px 2px;
             }
             QSpinBox::up-button, QSpinBox::down-button { width: 10px; }
@@ -1179,7 +1179,7 @@ class SerialComMixin:
         self._sc_filter_after_spin.setToolTip("Show N lines after matched lines")
         self._sc_filter_after_spin.setStyleSheet("""
             QSpinBox {
-                background-color: #1e2a3a; border: 1px solid #3a4a5a; border-radius: 4px;
+                background-color: #050a1d; border: 1px solid #1f315d; border-radius: 4px;
                 color: #c8d5e2; font-size: 9px; padding: 0px 2px;
             }
             QSpinBox::up-button, QSpinBox::down-button { width: 10px; }
@@ -1198,7 +1198,7 @@ class SerialComMixin:
         self._sc_log_edit.setReadOnly(True)
         self._sc_log_edit.setStyleSheet("""
             QTextEdit {
-                background-color: #0f1923; border: none; border-top: 1px solid #2a3444;
+                background-color: #020618; border: none; border-top: 1px solid #1a2d57;
                 color: #7cecc8; font-family: Consolas, "Courier New", monospace; font-size: 11px;
                 padding: 6px 8px;
             }
@@ -1229,7 +1229,7 @@ class SerialComMixin:
         self._sc_send_input.setPlaceholderText("Enter text to send...")
         self._sc_send_input.setStyleSheet("""
             QLineEdit {
-                background-color: #1e2a3a; border: 1px solid #3a4a5a; border-radius: 6px;
+                background-color: #050a1d; border: 1px solid #1f315d; border-radius: 6px;
                 color: #c8d5e2; font-size: 11px; padding: 4px 8px; min-height: 26px;
             }
             QLineEdit:focus { border: 1px solid #6366f1; }
@@ -1274,7 +1274,7 @@ class SerialComMixin:
         frame.setObjectName("scQuickFrame")
         frame.setStyleSheet("""
             QFrame#scQuickFrame {
-                background-color: #1a2332; border-top: 1px solid #2a3444;
+                background-color: #0b1227; border-top: 1px solid #1a2d57;
             }
         """)
         layout = QVBoxLayout(frame)
@@ -1333,8 +1333,8 @@ class SerialComMixin:
         frame.setFixedHeight(24)
         frame.setStyleSheet("""
             QFrame#scStatusBar {
-                background-color: #111922;
-                border-top: 1px solid #2a3444;
+                background-color: #050a1d;
+                border-top: 1px solid #1a2d57;
                 border-bottom-left-radius: 8px;
                 border-bottom-right-radius: 8px;
             }
@@ -1482,8 +1482,8 @@ class SerialComMixin:
                     background-color: transparent; color: #f87171; font-size: 10px;
                     border: none;
                 }
-                QPushButton:hover { background-color: #3b1525; }
-                QPushButton:pressed { background-color: #2d101c; }
+                QPushButton:hover { background-color: #2a0f1a; }
+                QPushButton:pressed { background-color: #1e0a12; }
             """)
             icon = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "disconnect.svg"), "#f87171", 12)
             if not icon.isNull():
@@ -1500,8 +1500,8 @@ class SerialComMixin:
                     background-color: transparent; color: #4ade80; font-size: 10px;
                     border: none;
                 }
-                QPushButton:hover { background-color: #1e3a2a; }
-                QPushButton:pressed { background-color: #15301f; }
+                QPushButton:hover { background-color: #0a2818; }
+                QPushButton:pressed { background-color: #071e12; }
             """)
             icon = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "connect.svg"), "#4ade80", 12)
             if not icon.isNull():
@@ -1662,7 +1662,7 @@ class SerialComMixin:
         log_edit.setReadOnly(True)
         log_edit.setStyleSheet("""
             QTextEdit {
-                background-color: #0f1923; border: none; border-top: 1px solid #2a3444;
+                background-color: #020618; border: none; border-top: 1px solid #1a2d57;
                 color: #7cecc8; font-family: Consolas, "Courier New", monospace; font-size: 11px;
                 padding: 6px 8px;
             }
@@ -1674,8 +1674,8 @@ class SerialComMixin:
         status_bar.setFixedHeight(24)
         status_bar.setStyleSheet("""
             QFrame#scStatusBar {
-                background-color: #111922;
-                border-top: 1px solid #2a3444;
+                background-color: #050a1d;
+                border-top: 1px solid #1a2d57;
                 border-bottom-left-radius: 8px;
                 border-bottom-right-radius: 8px;
             }
@@ -1927,7 +1927,7 @@ class SerialComMixin:
             self._sc_display_font_size = font_size
             self._sc_log_edit.setStyleSheet(f"""
                 QTextEdit {{
-                    background-color: #061022; border: none; border-top: 1px solid #2a3444;
+                    background-color: #020618; border: none; border-top: 1px solid #1a2d57;
                     color: #7cecc8; font-family: {font_family}, monospace; font-size: {font_size}px;
                     padding: 6px 8px;
                 }}
@@ -2208,13 +2208,13 @@ class SerialComMixin:
             btn.setCursor(Qt.PointingHandCursor)
             btn.setStyleSheet("""
                 QPushButton {
-                    background-color: #232f40; border: 1px solid #3a4a5a; border-radius: 4px;
+                    background-color: #0e1a35; border: 1px solid #1f315d; border-radius: 4px;
                     color: #c8d5e2; font-size: 10px; padding: 2px 8px; min-height: 18px;
                 }
-                QPushButton:hover { background-color: #2e3c4e; }
-                QPushButton:pressed { background-color: #1a2535; }
+                QPushButton:hover { background-color: #152045; }
+                QPushButton:pressed { background-color: #0a1228; }
                 QToolTip {
-                    background-color: #1e2a3a; border: 1px solid #3a4a5a;
+                    background-color: #091023; border: 1px solid #1f315d;
                     color: #c8d5e2; font-size: 10px; padding: 4px 8px;
                 }
             """)
@@ -2255,9 +2255,9 @@ class SerialComMixin:
     def _sc_qc_context_menu(self, entry, btn, pos):
         menu = QMenu()
         menu.setStyleSheet("""
-            QMenu { background-color: #1e2a3a; border: 1px solid #3a4a5a; border-radius: 6px; color: #c8d5e2; font-size: 10px; }
+            QMenu { background-color: #091023; border: 1px solid #1f315d; border-radius: 6px; color: #c8d5e2; font-size: 10px; }
             QMenu::item { padding: 4px 16px; }
-            QMenu::item:selected { background-color: #2e3c4e; }
+            QMenu::item:selected { background-color: #152045; }
         """)
         edit_action = menu.addAction("Edit")
         del_action = menu.addAction("Delete")
@@ -2419,11 +2419,11 @@ class SerialComMixin:
         btn.setStyleSheet("""
             QPushButton {
                 min-height: 0px; max-height: 20px; padding: 2px 8px; border-radius: 6px;
-                background-color: #232f40; color: #c8d5e2; font-size: 10px; border: none;
+                background-color: #0e1a35; color: #c8d5e2; font-size: 10px; border: none;
             }
-            QPushButton:hover { background-color: #2e3c4e; }
-            QPushButton:pressed { background-color: #1a2535; }
-            QPushButton:checked { background-color: #2e3c4e; border: 1px solid #6366f1; color: #c8d5e2; }
+            QPushButton:hover { background-color: #152045; }
+            QPushButton:pressed { background-color: #0a1228; }
+            QPushButton:checked { background-color: #152045; border: 1px solid #6366f1; color: #c8d5e2; }
         """)
         icon = _tinted_svg_icon(svg_path, "#7b8fa5", 12)
         if not icon.isNull():
@@ -2435,7 +2435,7 @@ class SerialComMixin:
         grp = QFrame()
         grp.setStyleSheet("""
             QFrame {
-                background-color: #1e2a3a; border: 1px solid #2a3444; border-radius: 8px;
+                background-color: #091023; border: 1px solid #1a2d57; border-radius: 8px;
             }
         """)
         layout = QVBoxLayout(grp)
@@ -2449,7 +2449,7 @@ class SerialComMixin:
         sep = QFrame()
         sep.setFrameShape(QFrame.HLine)
         sep.setFixedHeight(1)
-        sep.setStyleSheet("background-color: #2a3444; border: none;")
+        sep.setStyleSheet("background-color: #1a2d57; border: none;")
         layout.addWidget(sep)
 
         grp.setProperty("_inner_layout", layout)
@@ -2467,8 +2467,8 @@ class SerialComMixin:
             QCheckBox { color: #9bafc5; font-size: 10px; background: transparent; spacing: 4px; }
             QCheckBox::indicator {
                 width: 14px; height: 14px;
-                border: 1px solid #3a4a5a; border-radius: 3px;
-                background-color: #1e2a3a;
+                border: 1px solid #1f315d; border-radius: 3px;
+                background-color: #050a1d;
             }
             QCheckBox::indicator:hover {
                 border-color: #6366f1;
@@ -2698,21 +2698,22 @@ class _MiniSlideToggle(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         w, h = self.width(), self.height()
-        radius = h / 2
+        outer_r = 4
 
-        p.setPen(QPen(QColor("#3a4a5a"), 1))
-        p.setBrush(QColor("#1e2a3a"))
-        p.drawRoundedRect(QRectF(0, 0, w, h), radius, radius)
+        p.setPen(QPen(QColor("#1a2d57"), 1))
+        p.setBrush(QColor("#091023"))
+        p.drawRoundedRect(QRectF(0, 0, w, h), outer_r, outer_r)
 
         knob_margin = 2
         knob_h = h - knob_margin * 2
         knob_w = w / 2 - knob_margin
         knob_x = knob_margin + self._anim_progress * (w / 2)
+        knob_r = 3
 
         p.setPen(Qt.NoPen)
         p.setBrush(QColor("#6366f1"))
         p.drawRoundedRect(QRectF(knob_x, knob_margin, knob_w, knob_h),
-                          knob_h / 2, knob_h / 2)
+                          knob_r, knob_r)
 
         font = p.font()
         font.setPixelSize(9)
@@ -2733,7 +2734,7 @@ class _MiniSlideToggle(QWidget):
 
 _DLG_STYLE = """
     QDialog {
-        background-color: #151d2b;
+        background-color: #050b1e;
         color: #c8d5e2;
     }
     QLabel { color: #9bafc5; font-size: 11px; background: transparent; }
@@ -2741,12 +2742,12 @@ _DLG_STYLE = """
         color: #e2e8f0; font-size: 12px; font-weight: 700; background: transparent;
         padding-bottom: 2px;
     }
-    QFrame#dlgSep { background-color: #2a3444; }
+    QFrame#dlgSep { background-color: #1a2d57; }
     QCheckBox { color: #9bafc5; font-size: 11px; background: transparent; spacing: 4px; }
     QCheckBox::indicator {
         width: 15px; height: 15px;
-        border: 1px solid #3a4a5a; border-radius: 3px;
-        background-color: #1e2a3a;
+        border: 1px solid #1f315d; border-radius: 3px;
+        background-color: #050a1d;
     }
     QCheckBox::indicator:hover { border-color: #6366f1; }
     QCheckBox::indicator:checked {
@@ -2754,7 +2755,7 @@ _DLG_STYLE = """
         image: url(""" + os.path.join(_SVG_SERIAL_DIR, "checkmark.svg").replace("\\", "/") + """);
     }
     QSpinBox {
-        background-color: #1e2a3a; border: 1px solid #3a4a5a; border-radius: 4px;
+        background-color: #050a1d; border: 1px solid #1f315d; border-radius: 4px;
         color: #c8d5e2; font-size: 11px; padding: 2px 6px;
     }
     QSpinBox::up-button, QSpinBox::down-button { width: 14px; }
@@ -2764,18 +2765,18 @@ _DLG_STYLE = """
     }
     QPushButton#dlgOkBtn:hover { background-color: #065f46; }
     QPushButton#dlgCancelBtn {
-        background-color: #232f40; border: 1px solid #3a4a5a; border-radius: 6px;
+        background-color: #0e1a35; border: 1px solid #1f315d; border-radius: 6px;
         color: #c8d5e2; font-size: 11px; padding: 6px 20px;
     }
-    QPushButton#dlgCancelBtn:hover { background-color: #2e3c4e; }
+    QPushButton#dlgCancelBtn:hover { background-color: #152045; }
     QTabWidget::pane {
-        background-color: #1a2332;
-        border: 1px solid #2a3444;
+        background-color: #091023;
+        border: 1px solid #1a2d57;
         border-radius: 6px;
         padding: 4px;
     }
     QTabBar::tab {
-        background-color: #151d2b;
+        background-color: #050b1e;
         color: #7b8fa5;
         padding: 7px 16px;
         border: none;
@@ -2786,11 +2787,11 @@ _DLG_STYLE = """
         margin-right: 2px;
     }
     QTabBar::tab:hover {
-        background-color: #1e2a3a;
+        background-color: #091023;
         color: #9bafc5;
     }
     QTabBar::tab:selected {
-        background-color: #1e2a3a;
+        background-color: #091023;
         color: #e2e8f0;
         border-bottom: 2px solid #6366f1;
     }
@@ -2823,7 +2824,7 @@ class _AddLogPanelDialog(QDialog):
         self._title_edit.setText("Serial Log 2")
         self._title_edit.setStyleSheet("""
             QLineEdit {
-                background-color: #1e2a3a; border: 1px solid #3a4a5a; border-radius: 6px;
+                background-color: #050a1d; border: 1px solid #1f315d; border-radius: 6px;
                 color: #c8d5e2; font-size: 11px; padding: 6px 10px; min-height: 28px;
             }
             QLineEdit:focus { border: 1px solid #6366f1; }
@@ -2934,7 +2935,7 @@ class _QuickCmdDialog(QDialog):
         self.setFixedWidth(360)
         self.setStyleSheet("""
             QDialog {
-                background-color: #151d2b;
+                background-color: #050b1e;
                 color: #c8d5e2;
             }
             QLabel {
@@ -2944,7 +2945,7 @@ class _QuickCmdDialog(QDialog):
                 color: #e2e8f0; font-size: 13px; font-weight: 700; background: transparent;
             }
             QLineEdit {
-                background-color: #1e2a3a; border: 1px solid #3a4a5a; border-radius: 6px;
+                background-color: #050a1d; border: 1px solid #1f315d; border-radius: 6px;
                 color: #c8d5e2; font-size: 11px; padding: 6px 10px; min-height: 28px;
             }
             QLineEdit:focus { border: 1px solid #6366f1; }
@@ -2978,10 +2979,10 @@ class _QuickCmdDialog(QDialog):
         cancel_btn.setCursor(Qt.PointingHandCursor)
         cancel_btn.setStyleSheet("""
             QPushButton {
-                background-color: #232f40; border: 1px solid #3a4a5a; border-radius: 6px;
+                background-color: #0e1a35; border: 1px solid #1f315d; border-radius: 6px;
                 color: #c8d5e2; font-size: 11px; padding: 6px 20px;
             }
-            QPushButton:hover { background-color: #2e3c4e; }
+            QPushButton:hover { background-color: #152045; }
         """)
         cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(cancel_btn)
@@ -3233,7 +3234,7 @@ class _SerialSettingsDialog(QDialog):
         self.log_save_path_edit.setPlaceholderText("Select log save directory...")
         self.log_save_path_edit.setStyleSheet("""
             QLineEdit {
-                background-color: #1e2a3a; border: 1px solid #3a4a5a; border-radius: 4px;
+                background-color: #050a1d; border: 1px solid #1f315d; border-radius: 4px;
                 color: #c8d5e2; font-size: 11px; padding: 4px 8px; min-height: 24px;
             }
             QLineEdit:focus { border: 1px solid #6366f1; }
@@ -3369,7 +3370,7 @@ if __name__ == "__main__":
 
     DARK_CARD_STYLE = """
         QWidget {
-            background-color: #111922;
+            background-color: #020618;
             color: #c8d5e2;
         }
         QLabel {
@@ -3393,14 +3394,14 @@ if __name__ == "__main__":
             background-color: transparent;
         }
         QFrame#cardFrame {
-            background-color: #1a2332;
-            border: 1px solid #2a3444;
+            background-color: #050b1e;
+            border: 1px solid #1a2d57;
             border-radius: 14px;
         }
         QComboBox {
-            background-color: #1e2a3a;
+            background-color: #050a1d;
             color: #c8d5e2;
-            border: 1px solid #3a4a5a;
+            border: 1px solid #1f315d;
             border-radius: 8px;
             padding: 6px 10px;
         }
@@ -3410,9 +3411,9 @@ if __name__ == "__main__":
             background: transparent;
         }
         QComboBox QAbstractItemView {
-            background-color: #1e2a3a;
+            background-color: #050a1d;
             color: #c8d5e2;
-            border: 1px solid #3a4a5a;
+            border: 1px solid #1f315d;
             selection-background-color: #6366f1;
         }
     """

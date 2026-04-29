@@ -204,7 +204,7 @@ class _HighLowTempTestWorker(QObject):
                 all_results.append({"temp": t, "currents": ch_results})
                 self.progress.emit({"temp": t, "currents": ch_results})
                 self.progress_int.emit(int((idx + 1) * 100 / total_temps))
-                ch_str = "  ".join([f"CH{ch}={ch_results[ch]:.3f}mA" for ch in channels])
+                ch_str = "  ".join([f"CH{ch}={ch_results[ch]:.6f}mA" for ch in channels])
                 self.log.emit(f"[DATA] Temp={t:>7.1f} °C  |  {ch_str}")
                 time.sleep(0.05)
             return {"data": all_results, "channels": channels}
@@ -288,7 +288,7 @@ class _HighLowTempTestWorker(QObject):
             all_results.append({"temp": actual_temp, "currents": ch_results})
             self.progress.emit({"temp": actual_temp, "currents": ch_results})
             self.progress_int.emit(int((idx + 1) * 100 / total_temps))
-            ch_str = "  ".join([f"CH{ch}={ch_results[ch]:.3f}mA" for ch in channels])
+            ch_str = "  ".join([f"CH{ch}={ch_results[ch]:.6f}mA" for ch in channels])
             self.log.emit(f"[DATA] Temp={actual_temp:>7.2f} °C  |  {ch_str}")
 
         chamber.set_temperature(25.0)
@@ -301,13 +301,13 @@ class _HighLowTempTestWorker(QObject):
             self.log.emit("[SUMMARY] " + "=" * 70)
             header = f"  {'#':>3}  {'Temp (°C)':>10}"
             for ch in channels:
-                header += f"  {'CH' + str(ch) + ' (mA)':>12}"
+                header += f"  {'CH' + str(ch) + ' (mA)':>14}"
             self.log.emit(f"[SUMMARY] {header}")
             self.log.emit("[SUMMARY] " + "-" * 70)
             for i, r in enumerate(all_results):
                 row = f"  {i + 1:>3}  {r['temp']:>10.2f}"
                 for ch in channels:
-                    row += f"  {r['currents'].get(ch, 0.0):>12.3f}"
+                    row += f"  {r['currents'].get(ch, 0.0):>14.6f}"
                 self.log.emit(f"[SUMMARY] {row}")
             self.log.emit("[SUMMARY] " + "=" * 70)
 
@@ -847,7 +847,7 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, VT6002ConnectionMixin,
                 header = ["Temperature (°C)"] + [f"CH{ch} (mA)" for ch in channels]
                 writer.writerow(header)
                 for r in self.result_data:
-                    row = [f"{r['temp']:.2f}"] + [f"{r['currents'].get(ch, 0.0):.4f}" for ch in channels]
+                    row = [f"{r['temp']:.2f}"] + [f"{r['currents'].get(ch, 0.0):.6f}" for ch in channels]
                     writer.writerow(row)
             self.append_log(f"[INFO] Data exported to: {path}")
         except Exception as e:
