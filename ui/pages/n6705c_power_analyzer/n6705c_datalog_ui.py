@@ -1005,6 +1005,7 @@ class N6705CDatalogUI(QWidget):
         self._marker_ab_text_item = None
         self.box_zoom_enabled = False
         self._b_time_offset = 0.0
+        self._file_time_offsets = {}
         self._box_zoom_auto_off_timer = QTimer(self)
         self._box_zoom_auto_off_timer.setSingleShot(True)
         self._box_zoom_auto_off_timer.setInterval(4000)
@@ -2862,7 +2863,7 @@ class N6705CDatalogUI(QWidget):
 
         self._instruments_tab_layout.insertWidget(0, self.channel_config_inner)
 
-    def _build_imported_channel_config(self, tab_name=None, data_keys=None):
+    def _build_imported_channel_config(self, tab_name=None, data_keys=None, file_prefix=None):
         import re
 
         if data_keys is None:
@@ -2884,11 +2885,44 @@ class N6705CDatalogUI(QWidget):
         if tab_name is None:
             tab_name = "Imported"
 
+        if file_prefix is None:
+            for k in data_keys:
+                p = self._get_file_prefix(k)
+                if p:
+                    file_prefix = p
+                    break
+            if file_prefix is None:
+                file_prefix = ""
+        file_prefix = file_prefix.rstrip("-")
+
         tab_widget = QWidget()
         tab_widget.setStyleSheet("background: #071127;")
         tab_layout = QVBoxLayout(tab_widget)
         tab_layout.setContentsMargins(0, 6, 0, 0)
         tab_layout.setSpacing(0)
+
+        header_bar = QHBoxLayout()
+        header_bar.setContentsMargins(8, 0, 8, 4)
+        header_bar.setSpacing(6)
+
+        file_offset_btn = QPushButton("Time Offset")
+        file_offset_btn.setObjectName("chartToolBtn")
+        file_offset_btn.setCursor(Qt.PointingHandCursor)
+        file_offset_btn.setStyleSheet(
+            "QPushButton#chartToolBtn { background-color: #0c1a35; color: #8eb0e3; "
+            "border: 1px solid #1e3460; border-radius: 4px; padding: 3px 10px; "
+            "font-size: 10px; }"
+            "QPushButton#chartToolBtn:hover { background-color: #162d55; "
+            "border-color: #3a6fd4; color: #eaf2ff; }"
+        )
+        if file_prefix:
+            file_offset_btn.clicked.connect(
+                lambda _checked=False, p=file_prefix: self._on_file_time_offset(p))
+        else:
+            file_offset_btn.setEnabled(False)
+        header_bar.addWidget(file_offset_btn)
+        header_bar.addStretch()
+        tab_layout.addLayout(header_bar)
 
         inner = QWidget()
         inner.setStyleSheet("background: #071127;")
@@ -2900,6 +2934,8 @@ class N6705CDatalogUI(QWidget):
             "tab_name": tab_name,
             "tab_widget": tab_widget,
             "data_keys": set(data_keys),
+            "file_prefix": file_prefix,
+            "file_offset_btn": file_offset_btn,
             "voltage_cbs_a": [],
             "current_cbs_a": [],
             "power_cbs_a": [],
@@ -3133,7 +3169,14 @@ class N6705CDatalogUI(QWidget):
                 break
         if tc_to_remove:
             removed_keys = tc_to_remove.get("data_keys", set())
+            removed_prefix = tc_to_remove.get("file_prefix", "")
             self._imported_tab_configs.remove(tc_to_remove)
+            if removed_prefix:
+                still_used_prefix = any(
+                    tc.get("file_prefix") == removed_prefix for tc in self._imported_tab_configs
+                )
+                if not still_used_prefix:
+                    self._file_time_offsets.pop(removed_prefix, None)
             still_used = set()
             for tc in self._imported_tab_configs:
                 still_used |= tc.get("data_keys", set())
@@ -5346,14 +5389,30 @@ class N6705CDatalogUI(QWidget):
         _, _, is_b = _parse_ch_label(label)
         return is_b
 
-    def _get_effective_times(self, label, times):
+    def _get_file_prefix(self, label):
+        import re
+        m = re.match(r'^(F\d+)-', str(label).strip())
+        return m.group(1) if m else ""
+
+    def _get_total_time_offset(self, label):
+        off = 0.0
         if self._b_time_offset != 0.0 and self._is_b_label(label):
-            return np.asarray(times, dtype=np.float64) + self._b_time_offset
+            off += self._b_time_offset
+        prefix = self._get_file_prefix(label)
+        if prefix and self._file_time_offsets.get(prefix):
+            off += self._file_time_offsets[prefix]
+        return off
+
+    def _get_effective_times(self, label, times):
+        off = self._get_total_time_offset(label)
+        if off != 0.0:
+            return np.asarray(times, dtype=np.float64) + off
         return times
 
     def _effective_x_for_lookup(self, label, x):
-        if self._b_time_offset != 0.0 and self._is_b_label(label):
-            return x - self._b_time_offset
+        off = self._get_total_time_offset(label)
+        if off != 0.0:
+            return x - off
         return x
 
     def _on_time_offset(self):
@@ -5530,6 +5589,202 @@ class N6705CDatalogUI(QWidget):
             self.time_offset_btn.setText(f"Time Offset: {offset_ms:+.3f}ms")
         else:
             self.time_offset_btn.setText("Time Offset")
+        self._on_channel_visibility_changed()
+
+    def _on_file_time_offset(self, file_prefix):
+        if not file_prefix:
+            return
+
+        tab_name = file_prefix
+        for tc in self._imported_tab_configs:
+            if tc.get("file_prefix") == file_prefix:
+                tab_name = tc.get("tab_name") or file_prefix
+                break
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Time Offset for {tab_name}")
+        dialog.setFixedWidth(380)
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: #0a1628;
+                color: #c8daf5;
+            }
+            QLabel {
+                color: #8eb0e3;
+                font-size: 12px;
+            }
+            QLineEdit {
+                background-color: #0c1a35;
+                border: 1px solid #1e3460;
+                border-radius: 6px;
+                color: #eaf2ff;
+                padding: 6px 10px;
+                font-size: 12px;
+            }
+            QLineEdit:focus {
+                border-color: #3a6fd4;
+            }
+            QPushButton {
+                background-color: #162d55;
+                border: 1px solid #1e3460;
+                border-radius: 6px;
+                color: #c8daf5;
+                padding: 6px 18px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #1e3460;
+                border-color: #3a6fd4;
+            }
+        """)
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        title = QLabel(f"Time Offset for {tab_name}")
+        title.setStyleSheet("font-size: 14px; font-weight: bold; color: #eaf2ff;")
+        layout.addWidget(title)
+
+        desc = QLabel(f"Shift all waveforms of [{file_prefix}] along the time axis.\n"
+                       "Negative value moves waveforms to the left (earlier),\n"
+                       "positive value moves them to the right (later).")
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
+
+        offset_label = QLabel("Time Offset (ms)")
+        layout.addWidget(offset_label)
+        offset_edit = QLineEdit()
+        offset_edit.setPlaceholderText("e.g. -50 or -200")
+        current_s = self._file_time_offsets.get(file_prefix, 0.0)
+        current_ms = current_s * 1000.0
+        display_text = f"{current_ms:.3f}".rstrip('0').rstrip('.')
+        if current_ms == 0.0:
+            display_text = "-0"
+        offset_edit.setText(display_text)
+        layout.addWidget(offset_edit)
+
+        has_both_markers = self.marker_a_pos is not None and self.marker_b_pos is not None
+
+        align_btn = QPushButton("Align From Markers")
+        align_btn.setIcon(self._make_svg_icon("map-pin.svg", "#ffffff", 14))
+        align_btn.setToolTip("Auto-calculate offset from Marker A and Marker B positions.\n"
+                             "Offset = Marker A - Marker B")
+        align_btn.setEnabled(has_both_markers)
+        if not has_both_markers:
+            align_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #0c1a35;
+                    border: 1px solid #1e3460;
+                    border-radius: 6px;
+                    color: #3a5070;
+                    padding: 6px 18px;
+                    font-size: 12px;
+                }
+            """)
+        else:
+            align_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #1a3a2e;
+                    border: 1px solid #2a8c5a;
+                    border-radius: 6px;
+                    color: #7fffcf;
+                    padding: 6px 18px;
+                    font-size: 12px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #245b3e;
+                    border-color: #3abf7a;
+                }
+            """)
+
+        if has_both_markers:
+            marker_delta_ms = (self.marker_a_pos - self.marker_b_pos) * 1000.0
+            marker_info = QLabel(
+                f"Marker A: {self.marker_a_pos:.6f}s    Marker B: {self.marker_b_pos:.6f}s\n"
+                f"Calculated offset: {marker_delta_ms:+.3f} ms"
+            )
+            marker_info.setStyleSheet("color: #667ba0; font-size: 10px;")
+            layout.addWidget(marker_info)
+        else:
+            marker_info = QLabel("Set both Marker A and Marker B on the chart to enable auto-align.")
+            marker_info.setStyleSheet("color: #3a5070; font-size: 10px;")
+            marker_info.setWordWrap(True)
+            layout.addWidget(marker_info)
+
+        def _on_align_from_markers():
+            delta_s = self.marker_a_pos - self.marker_b_pos
+            new_off = self._file_time_offsets.get(file_prefix, 0.0) + delta_s
+            self._apply_file_time_offset(file_prefix, new_off)
+            new_b_pos = self.marker_b_pos + delta_s
+            self.marker_b_pos = new_b_pos
+            if self.marker_b_line:
+                self.marker_b_line.setValue(new_b_pos)
+            self.marker_b_btn.setText(f"Set Marker B ({new_b_pos:.4f}s)")
+            self._update_marker_region()
+            self._update_marker_analysis()
+            dialog.done(QDialog.Rejected)
+
+        align_btn.clicked.connect(_on_align_from_markers)
+        layout.addWidget(align_btn)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(8)
+        btn_layout.addStretch()
+
+        reset_btn = QPushButton("Reset to 0")
+        reset_btn.clicked.connect(lambda: offset_edit.setText("0"))
+        btn_layout.addWidget(reset_btn)
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(dialog.reject)
+        btn_layout.addWidget(cancel_btn)
+
+        apply_btn = QPushButton("Apply")
+        apply_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #1a4b8c;
+                border: 1px solid #3a6fd4;
+                border-radius: 6px;
+                color: #eaf2ff;
+                padding: 6px 18px;
+                font-size: 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #245bb5;
+            }
+        """)
+        apply_btn.clicked.connect(dialog.accept)
+        apply_btn.setDefault(True)
+        btn_layout.addWidget(apply_btn)
+
+        layout.addLayout(btn_layout)
+
+        if dialog.exec() == QDialog.Accepted:
+            try:
+                new_offset_ms = float(offset_edit.text().strip())
+            except ValueError:
+                return
+            self._apply_file_time_offset(file_prefix, new_offset_ms / 1000.0)
+
+    def _apply_file_time_offset(self, file_prefix, offset_s):
+        if not file_prefix:
+            return
+        if offset_s == 0.0:
+            self._file_time_offsets.pop(file_prefix, None)
+        else:
+            self._file_time_offsets[file_prefix] = offset_s
+        for tc in self._imported_tab_configs:
+            if tc.get("file_prefix") == file_prefix:
+                btn = tc.get("file_offset_btn")
+                if btn:
+                    if offset_s != 0.0:
+                        btn.setText(f"Time Offset: {offset_s * 1000.0:+.3f}ms")
+                    else:
+                        btn.setText("Time Offset")
+                break
         self._on_channel_visibility_changed()
 
     def _rebuild_ch_name_panel(self, entries):
@@ -6226,7 +6481,7 @@ class N6705CDatalogUI(QWidget):
         new_keys = set(prefixed.keys())
         self.datalog_data.update(prefixed)
         tab_name = os.path.basename(path)
-        self._build_imported_channel_config(tab_name=tab_name, data_keys=new_keys)
+        self._build_imported_channel_config(tab_name=tab_name, data_keys=new_keys, file_prefix=prefix.rstrip("-"))
         self._sync_checkboxes_to_data()
 
         if custom_labels:
@@ -6254,7 +6509,7 @@ class N6705CDatalogUI(QWidget):
         new_keys = set(prefixed.keys())
         self.datalog_data.update(prefixed)
         tab_name = os.path.basename(path)
-        self._build_imported_channel_config(tab_name=tab_name, data_keys=new_keys)
+        self._build_imported_channel_config(tab_name=tab_name, data_keys=new_keys, file_prefix=prefix.rstrip("-"))
         self._sync_checkboxes_to_data()
         self._refresh_plot()
 
@@ -6271,7 +6526,7 @@ class N6705CDatalogUI(QWidget):
         new_keys = set(prefixed.keys())
         self.datalog_data.update(prefixed)
         tab_name = os.path.basename(path)
-        self._build_imported_channel_config(tab_name=tab_name, data_keys=new_keys)
+        self._build_imported_channel_config(tab_name=tab_name, data_keys=new_keys, file_prefix=prefix.rstrip("-"))
         self._sync_checkboxes_to_data()
         self._refresh_plot()
 
@@ -6333,8 +6588,10 @@ class N6705CDatalogUI(QWidget):
                         row_parts = []
                         if has_both:
                             if group_a and i < len_a:
-                                ref_a = self.datalog_data[group_a[0]]
-                                row_parts.append(f"{ref_a['time'][i]:.6f}")
+                                ref_a_lbl = group_a[0]
+                                ref_a = self.datalog_data[ref_a_lbl]
+                                t_val = ref_a["time"][i] + self._get_total_time_offset(ref_a_lbl)
+                                row_parts.append(f"{t_val:.6f}")
                             else:
                                 row_parts.append("")
                             for lbl in group_a:
@@ -6345,10 +6602,9 @@ class N6705CDatalogUI(QWidget):
                                     row_parts.append("")
 
                             if group_b and i < len_b:
-                                ref_b = self.datalog_data[group_b[0]]
-                                t_val = ref_b["time"][i]
-                                if self._b_time_offset != 0.0:
-                                    t_val += self._b_time_offset
+                                ref_b_lbl = group_b[0]
+                                ref_b = self.datalog_data[ref_b_lbl]
+                                t_val = ref_b["time"][i] + self._get_total_time_offset(ref_b_lbl)
                                 row_parts.append(f"{t_val:.6f}")
                             else:
                                 row_parts.append("")
@@ -6360,11 +6616,10 @@ class N6705CDatalogUI(QWidget):
                                     row_parts.append("")
                         else:
                             all_labels = sorted_labels
-                            first = self.datalog_data[all_labels[0]]
+                            first_lbl = all_labels[0]
+                            first = self.datalog_data[first_lbl]
                             if i < len(first["time"]):
-                                t_val = first["time"][i]
-                                if self._b_time_offset != 0.0 and self._is_b_label(all_labels[0]):
-                                    t_val += self._b_time_offset
+                                t_val = first["time"][i] + self._get_total_time_offset(first_lbl)
                                 row_parts.append(f"{t_val:.6f}")
                             else:
                                 row_parts.append("")
