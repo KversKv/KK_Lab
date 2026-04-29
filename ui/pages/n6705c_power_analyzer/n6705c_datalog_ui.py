@@ -2693,6 +2693,15 @@ class N6705CDatalogUI(QWidget):
             if slot.property("assigned_serial"):
                 connected_slots.append(label_char)
 
+        signature = tuple(
+            (lc, self.slot_frames[lc].property("assigned_serial") or "")
+            for lc in connected_slots
+        )
+        prev_signature = getattr(self, "_ch_cfg_slots_signature", None)
+        if prev_signature is not None and prev_signature == signature:
+            return
+        self._ch_cfg_slots_signature = signature
+
         old_inner = self.channel_config_inner
         self._instruments_tab_layout.removeWidget(old_inner)
         old_inner.deleteLater()
@@ -3297,6 +3306,37 @@ class N6705CDatalogUI(QWidget):
         if changed:
             self._on_channel_visibility_changed()
 
+    def _hide_other_tab_channels(self, keep_index):
+        total = self.channel_config_tabbar.count()
+        if total <= 1:
+            return
+        changed_any = False
+        for i in range(total):
+            if i == keep_index:
+                continue
+            cbs = self._get_tab_cbs(i)
+            if not cbs:
+                continue
+            snapshot_key = self._get_tab_snapshot_key(i)
+            if snapshot_key:
+                captured = self._capture_tab_checked_cbs(i)
+                if captured:
+                    self._tab_hidden_snapshot[snapshot_key] = captured
+            changed = False
+            for cb in cbs:
+                if cb.isChecked():
+                    cb.blockSignals(True)
+                    cb.setChecked(False)
+                    ch_color = cb.property("ch_color")
+                    if ch_color:
+                        cb.setStyleSheet(self._ch_toggle_style(ch_color, False))
+                    cb.blockSignals(False)
+                    changed = True
+            if changed:
+                changed_any = True
+        if changed_any:
+            self._on_channel_visibility_changed()
+
     def _show_tab_channels(self, index):
         cbs = self._get_tab_cbs(index)
         if not cbs:
@@ -3386,6 +3426,18 @@ class N6705CDatalogUI(QWidget):
         else:
             toggle_action = menu.addAction("Show Channels")
 
+        hide_others_action = None
+        if self.channel_config_tabbar.count() > 1:
+            any_other_visible = False
+            for i in range(self.channel_config_tabbar.count()):
+                if i == index:
+                    continue
+                if self._is_tab_any_channel_visible(i):
+                    any_other_visible = True
+                    break
+            hide_others_action = menu.addAction("Hide Others")
+            hide_others_action.setEnabled(any_other_visible)
+
         offset_action = None
         file_prefix = self._get_tab_file_prefix(index)
         if file_prefix:
@@ -3404,6 +3456,8 @@ class N6705CDatalogUI(QWidget):
                 self._hide_tab_channels(index)
             else:
                 self._show_tab_channels(index)
+        elif hide_others_action is not None and action is hide_others_action:
+            self._hide_other_tab_channels(index)
         elif offset_action is not None and action is offset_action:
             self._on_file_time_offset(file_prefix)
 
