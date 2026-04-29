@@ -97,7 +97,7 @@ class _CLKTestWorker(QObject):
         if not codes:
             raise ValueError("Invalid compensation code range")
 
-        self.log.emit("[INFO] Starting test: Compensation Capacitance vs Frequency")
+        self.log.emit("[INFO] Starting test: Ctrim vs Frequency")
         self.log.emit(f"[INFO] IIC Device Addr = 0x{device_addr:02X}, REG Addr = 0x{reg_addr:04X}")
         self.log.emit(f"[INFO] Width Flag = {width_flag}, MSB = {msb}, LSB = {lsb}")
         self.log.emit(f"[INFO] Frequency Instrument = {freq_instrument}")
@@ -190,7 +190,7 @@ class _CLKTestWorker(QObject):
             raise ValueError("Invalid temperature range")
 
         values = []
-        self.log.emit("[INFO] Starting test: Temperature-Dependent Frequency Deviation")
+        self.log.emit("[INFO] Starting test: Temperature vs Frequency")
         self.log.emit(f"[INFO] Temperature Range = {temp_start} °C -> {temp_end} °C, step={temp_step} °C")
         self.log.emit(f"[INFO] Soak Time       = {soak_time} s, Tolerance = {tolerance} °C")
 
@@ -234,6 +234,13 @@ class _CLKTestWorker(QObject):
 
             chamber.set_temperature(t)
             self.log.emit(f"[INFO] [{idx + 1}/{len(temps)}] Chamber set temperature: {t:.1f} °C, waiting for stabilization...")
+
+            if idx == 0:
+                try:
+                    chamber.start()
+                    self.log.emit("[INFO] Chamber started (constant-temp run command sent)")
+                except Exception as e:
+                    self.log.emit(f"[WARN] Chamber start command failed: {e}")
 
             history = []
             stable_count = 0
@@ -912,8 +919,8 @@ class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, Keysight5323
     """
     CLK Test Main UI Component
     Test Items:
-      1. cap_freq  — Compensation Capacitance vs Frequency
-      2. temp_freq — Temperature-Dependent Frequency Deviation
+      1. cap_freq  — Ctrim vs Frequency
+      2. temp_freq — Temperature vs Frequency
       3. clk_perf  — Clock Performance Analysis (CSV import supported)
     """
 
@@ -1248,8 +1255,8 @@ class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, Keysight5323
         test_select_layout.addWidget(test_select_title)
 
         self.test_item_combo = DarkComboBox()
-        self.test_item_combo.addItem("Compensation Capacitance vs Frequency", self.TEST_CAP_FREQ)
-        self.test_item_combo.addItem("Temperature-Dependent Frequency Deviation", self.TEST_TEMP_FREQ)
+        self.test_item_combo.addItem("Ctrim vs Frequency", self.TEST_CAP_FREQ)
+        self.test_item_combo.addItem("Temperature vs Frequency", self.TEST_TEMP_FREQ)
         self.test_item_combo.addItem("Clock Performance Analysis", self.TEST_CLK_PERF)
         test_select_layout.addWidget(self.test_item_combo)
 
@@ -1802,7 +1809,7 @@ class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, Keysight5323
             self.freq_instr_frame.show()
             self.start_test_btn.setText("▷ Start Sequence")
             self._start_btn_text = "▷ Start Sequence"
-            self.chart_title.setText("Temperature-Dependent Frequency Deviation Result")
+            self.chart_title.setText("Temperature vs Frequency Result")
             self._update_chart_labels("Temperature (°C)", "Frequency (Hz)")
             self._update_top_card_titles("25℃ FREQ", "MIN FREQ", "MAX FREQ", "PER ℃ FREQ", "LINEARITY")
 
