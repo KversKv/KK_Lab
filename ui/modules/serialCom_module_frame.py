@@ -79,30 +79,54 @@ _SERIAL_BTN_RADIUS = 4
 _TERM_FONT = '"JetBrains Mono", "Fira Code", Consolas, "Menlo", "Courier New", monospace'
 _UI_FONT = '"Inter", "PingFang SC", "Microsoft YaHei", "Segoe UI", -apple-system, sans-serif'
 
+# --- Color Palette (Tailwind slate + accent colors) ---
+_CLR_BG_MAIN       = "#050b1e"  # 主背景
+_CLR_BG_PANEL      = "#091023"  # 配置面板/工具栏背景
+_CLR_BG_LOG        = "#020618"  # 日志/输入框背景（凹陷区）
+_CLR_BORDER        = "#1e293b"  # 分隔线与边框 (slate-800)
+_CLR_BORDER_HOVER  = "#334155"  # hover 态边框 (slate-700)
+_CLR_TEXT_TITLE    = "#FFFFFF"  # 最大标题（Serial Log）
+_CLR_TEXT_ACCENT   = "#f59e0b"  # Quick Commands 标题 (amber-500)
+_CLR_TEXT_SUBTITLE = "#94a3b8"  # 次级标题（Serial Config 等）(slate-400)
+_CLR_TEXT_LABEL    = "#94a3b8"  # 表单标签 (slate-400)
+_CLR_TEXT_BTN      = "#94a3b8"  # 工具栏按钮 (slate-400)
+_CLR_TEXT_BTN_LOG  = "#cbd5e1"  # 日志区按钮 (slate-300)
+_CLR_TEXT_BODY     = "#cbd5e1"  # 日志正文 (slate-300)
+_CLR_TEXT_TIME     = "#64748b"  # 日志时间戳 (slate-500)
+_CLR_TEXT_INFO     = "#06b6d4"  # [INFO] 标签 (cyan-500)
+_CLR_CONNECT_FG    = "#34d399"  # Connect (emerald-400)
+_CLR_CONNECT_BG    = "#07202b"  # Connect 背景
+_CLR_SEND_BG       = "#10b981"  # Send (emerald-500)
+_CLR_SEND_HOVER    = "#059669"  # Send hover (emerald-600)
+_CLR_SEND_PRESS    = "#047857"  # Send pressed (emerald-700)
+_CLR_ERROR         = "#f43f5e"  # 断开/错误 (rose-500)
+_CLR_RX            = "#f59e0b"  # RX (amber-500)
+_CLR_TOGGLE_ON     = "#6366f1"  # ASCII/HEX 选中 (indigo-500)
+
 
 def _serial_search_style(h=_SERIAL_BTN_HEIGHT, r=_SERIAL_BTN_RADIUS):
     return f"""
         QPushButton {{
             background-color: transparent;
-            border: 1px solid #2a2a2a;
+            border: 1px solid #1e293b;
             border-radius: {r}px;
-            color: #aaa;
+            color: #94a3b8;
             font-family: {_UI_FONT};
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 500;
             min-height: {h}px;
         }}
         QPushButton:hover {{
-            border: 1px solid #555;
-            color: #ccc;
+            border: 1px solid #334155;
+            color: #cbd5e1;
         }}
         QPushButton:pressed {{
-            background-color: #1a1a1a;
+            background-color: #091023;
         }}
         QPushButton:disabled {{
             background-color: transparent;
-            color: #444;
-            border: 1px solid #222;
+            color: #64748b;
+            border: 1px solid #1e293b;
         }}
     """
 
@@ -110,24 +134,24 @@ def _serial_search_style(h=_SERIAL_BTN_HEIGHT, r=_SERIAL_BTN_RADIUS):
 def _serial_connect_style(h=_SERIAL_BTN_HEIGHT, r=_SERIAL_BTN_RADIUS):
     return f"""
         QPushButton {{
-            background-color: #0d3320;
+            background-color: #07202b;
             border: none;
             border-radius: {r}px;
-            color: #10b981;
+            color: #34d399;
             font-family: {_UI_FONT};
-            font-size: 13px;
-            font-weight: 600;
+            font-size: 12px;
+            font-weight: 700;
             min-height: {h}px;
         }}
         QPushButton:hover {{
-            background-color: #114429;
+            background-color: #0a2d3b;
         }}
         QPushButton:pressed {{
-            background-color: #092819;
+            background-color: #051820;
         }}
         QPushButton:disabled {{
-            background-color: #111;
-            color: #444;
+            background-color: #091023;
+            color: #64748b;
             border: none;
         }}
     """
@@ -136,24 +160,24 @@ def _serial_connect_style(h=_SERIAL_BTN_HEIGHT, r=_SERIAL_BTN_RADIUS):
 def _serial_disconnect_style(h=_SERIAL_BTN_HEIGHT, r=_SERIAL_BTN_RADIUS):
     return f"""
         QPushButton {{
-            background-color: #3a0f14;
+            background-color: #2b0a12;
             border: none;
             border-radius: {r}px;
-            color: #ff4d5e;
+            color: #f43f5e;
             font-family: {_UI_FONT};
-            font-size: 13px;
-            font-weight: 600;
+            font-size: 12px;
+            font-weight: 700;
             min-height: {h}px;
         }}
         QPushButton:hover {{
-            background-color: #4a1520;
+            background-color: #3a0f14;
         }}
         QPushButton:pressed {{
-            background-color: #2a0a0e;
+            background-color: #1f060b;
         }}
         QPushButton:disabled {{
-            background-color: #111;
-            color: #444;
+            background-color: #091023;
+            color: #64748b;
             border: none;
         }}
     """
@@ -303,7 +327,7 @@ class SerialComMixin:
 
             self.serial_label = QLabel("COM:")
             self.serial_label.setStyleSheet(
-                f"font-size: 12px; color: #888; background: transparent; border: none; font-family: {_UI_FONT};"
+                f"font-size: 12px; color: #94a3b8; background: transparent; border: none; font-family: {_UI_FONT};"
             )
             row.addWidget(self.serial_label)
 
@@ -662,8 +686,8 @@ class SerialComMixin:
         body_splitter = QSplitter(Qt.Horizontal)
         body_splitter.setHandleWidth(1)
         body_splitter.setStyleSheet("""
-            QSplitter::handle { background-color: #2a2a2a; }
-            QSplitter::handle:hover { background-color: #555; }
+            QSplitter::handle { background-color: #1e293b; }
+            QSplitter::handle:hover { background-color: #334155; }
         """)
 
         self._sc_sidebar_widget = self._build_sc_sidebar()
@@ -717,8 +741,8 @@ class SerialComMixin:
         frame.setFixedHeight(30)
         frame.setStyleSheet("""
             QFrame#scToolbar {
-                background-color: #0a0a0a;
-                border-bottom: 1px solid #222;
+                background-color: #091023;
+                border-bottom: 1px solid #1e293b;
             }
         """)
         layout = QHBoxLayout(frame)
@@ -731,13 +755,13 @@ class SerialComMixin:
         self._sc_connect_btn.setStyleSheet(f"""
             QPushButton {{
                 min-height: 0px; max-height: 22px; padding: 2px 8px; border-radius: 4px;
-                background-color: transparent; color: #10b981; font-size: 13px;
-                font-family: {_UI_FONT}; font-weight: 500; border: none;
+                background-color: #07202b; color: #34d399; font-size: 12px;
+                font-family: {_UI_FONT}; font-weight: 700; border: none;
             }}
-            QPushButton:hover {{ background-color: #0d3320; }}
-            QPushButton:pressed {{ background-color: #092819; }}
+            QPushButton:hover {{ background-color: #0a2d3b; }}
+            QPushButton:pressed {{ background-color: #051820; }}
         """)
-        icon_conn = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "connect.svg"), "#10b981", 12)
+        icon_conn = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "connect.svg"), "#34d399", 12)
         if not icon_conn.isNull():
             self._sc_connect_btn.setIcon(icon_conn)
         layout.addWidget(self._sc_connect_btn)
@@ -767,12 +791,12 @@ class SerialComMixin:
             QPushButton {
                 min-height: 0px; max-height: 18px; min-width: 18px; max-width: 18px;
                 padding: 0px; border-radius: 4px;
-                background-color: transparent; color: #aaa; border: 1px solid #2a2a2a;
+                background-color: transparent; color: #94a3b8; border: 1px solid #1e293b;
             }
-            QPushButton:hover { border-color: #555; }
-            QPushButton:pressed { background-color: #1a1a1a; }
+            QPushButton:hover { border-color: #334155; }
+            QPushButton:pressed { background-color: #091023; }
         """)
-        icon_add = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "plus.svg"), "#10b981", 10)
+        icon_add = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "plus.svg"), "#34d399", 10)
         if not icon_add.isNull():
             self._sc_add_log_btn.setIcon(icon_add)
         layout.addWidget(self._sc_add_log_btn)
@@ -786,13 +810,13 @@ class SerialComMixin:
             QPushButton {
                 min-height: 0px; max-height: 18px; min-width: 18px; max-width: 18px;
                 padding: 0px; border-radius: 4px;
-                background-color: transparent; color: #aaa; border: 1px solid #2a2a2a;
+                background-color: transparent; color: #94a3b8; border: 1px solid #1e293b;
             }
-            QPushButton:hover { border-color: #555; }
-            QPushButton:pressed { background-color: #1a1a1a; }
-            QPushButton:disabled { background-color: transparent; border-color: #1a1a1a; }
+            QPushButton:hover { border-color: #334155; }
+            QPushButton:pressed { background-color: #091023; }
+            QPushButton:disabled { background-color: transparent; border-color: #1e293b; }
         """)
-        icon_remove = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "minus.svg"), "#ff4d5e", 10)
+        icon_remove = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "minus.svg"), "#f43f5e", 10)
         if not icon_remove.isNull():
             self._sc_remove_log_btn.setIcon(icon_remove)
         self._sc_remove_log_btn.setEnabled(False)
@@ -802,7 +826,7 @@ class SerialComMixin:
 
         sep = QFrame()
         sep.setFrameShape(QFrame.VLine)
-        sep.setStyleSheet("color: #2a2a2a;")
+        sep.setStyleSheet("color: #1e293b;")
         layout.addWidget(sep)
 
         layout.addSpacing(4)
@@ -829,17 +853,57 @@ class SerialComMixin:
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setMinimumWidth(200)
-        scroll.setMaximumWidth(260)
+        scroll.setMinimumWidth(230)
+        scroll.setMaximumWidth(300)
         scroll.setStyleSheet("""
-            QScrollArea { background-color: #0a0a0a; border: none; border-right: 1px solid #222; }
-            QScrollArea > QWidget > QWidget { background-color: #0a0a0a; }
-        """ + SCROLLBAR_STYLE)
+            QScrollArea { background-color: #091023; border: none; border-right: 1px solid #1e293b; }
+            QScrollArea > QWidget > QWidget { background-color: #091023; }
+        """)
+
+        vbar = scroll.verticalScrollBar()
+        vbar.setFixedWidth(4)
+        vbar.setStyleSheet("""
+            QScrollBar:vertical {
+                width: 4px;
+                margin: 0px;
+                background: transparent;
+                border: none;
+                border-radius: 2px;
+            }
+            QScrollBar::handle:vertical {
+                background: #1f315d;
+                min-height: 24px;
+                border-radius: 2px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #2a3a6a;
+            }
+            QScrollBar::sub-line:vertical,
+            QScrollBar::add-line:vertical {
+                height: 0px;
+                width: 0px;
+                background: transparent;
+                border: none;
+                subcontrol-origin: margin;
+            }
+            QScrollBar::up-arrow:vertical,
+            QScrollBar::down-arrow:vertical {
+                image: none;
+                width: 0px;
+                height: 0px;
+                background: transparent;
+                border: none;
+            }
+            QScrollBar::add-page:vertical,
+            QScrollBar::sub-page:vertical {
+                background: transparent;
+            }
+        """)
 
         container = QWidget()
         root = QVBoxLayout(container)
-        root.setContentsMargins(6, 6, 6, 6)
-        root.setSpacing(8)
+        root.setContentsMargins(10, 10, 10, 10)
+        root.setSpacing(12)
 
         root.addWidget(self._build_sc_section_port_settings())
         root.addWidget(self._build_sc_section_rx_settings())
@@ -854,12 +918,12 @@ class SerialComMixin:
         layout = grp.property("_inner_layout")
 
         grid = QGridLayout()
-        grid.setHorizontalSpacing(4)
-        grid.setVerticalSpacing(3)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(10)
 
         grid.addWidget(self._make_sc_label("Port"), 0, 0)
         self._sc_port_combo = DarkComboBox()
-        self._sc_port_combo.setFixedHeight(22)
+        self._sc_port_combo.setFixedHeight(28)
         self._sc_port_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         self._sc_port_combo.setMinimumWidth(60)
         f = self._sc_port_combo.font()
@@ -869,7 +933,7 @@ class SerialComMixin:
 
         grid.addWidget(self._make_sc_label("Baudrate"), 1, 0)
         self._sc_baud_combo = DarkComboBox()
-        self._sc_baud_combo.setFixedHeight(22)
+        self._sc_baud_combo.setFixedHeight(28)
         self._sc_baud_combo.setEditable(True)
         for br in ["921600", "1152000", "2000000", "3000000", "115200", "9600", "Custom"]:
             self._sc_baud_combo.addItem(br)
@@ -881,28 +945,28 @@ class SerialComMixin:
 
         grid.addWidget(self._make_sc_label("Data bits"), 2, 0)
         self._sc_databit_combo = DarkComboBox()
-        self._sc_databit_combo.setFixedHeight(22)
+        self._sc_databit_combo.setFixedHeight(28)
         for d in ["8", "7", "6", "5"]:
             self._sc_databit_combo.addItem(d)
         grid.addWidget(self._sc_databit_combo, 2, 1)
 
         grid.addWidget(self._make_sc_label("Flow ctrl"), 3, 0)
         self._sc_flow_combo = DarkComboBox()
-        self._sc_flow_combo.setFixedHeight(22)
+        self._sc_flow_combo.setFixedHeight(28)
         for fc in ["None", "RTS/CTS", "XON/XOFF"]:
             self._sc_flow_combo.addItem(fc)
         grid.addWidget(self._sc_flow_combo, 3, 1)
 
         grid.addWidget(self._make_sc_label("Stop bits"), 4, 0)
         self._sc_stopbit_combo = DarkComboBox()
-        self._sc_stopbit_combo.setFixedHeight(22)
+        self._sc_stopbit_combo.setFixedHeight(28)
         for s in ["1", "1.5", "2"]:
             self._sc_stopbit_combo.addItem(s)
         grid.addWidget(self._sc_stopbit_combo, 4, 1)
 
         grid.addWidget(self._make_sc_label("Parity"), 5, 0)
         self._sc_parity_combo = DarkComboBox()
-        self._sc_parity_combo.setFixedHeight(22)
+        self._sc_parity_combo.setFixedHeight(28)
         for p in ["None", "Even", "Odd", "Mark", "Space"]:
             self._sc_parity_combo.addItem(p)
         grid.addWidget(self._sc_parity_combo, 5, 1)
@@ -930,7 +994,7 @@ class SerialComMixin:
 
         row_af = QHBoxLayout()
         row_af.setSpacing(4)
-        self._sc_rx_auto_flush_cb = QCheckBox("Auto Fl")
+        self._sc_rx_auto_flush_cb = QCheckBox("Auto FL")
         self._sc_rx_auto_flush_cb.setStyleSheet(self._sc_checkbox_style())
         row_af.addWidget(self._sc_rx_auto_flush_cb)
         row_af.addStretch()
@@ -938,18 +1002,18 @@ class SerialComMixin:
         self._sc_rx_auto_flush_spin.setRange(10, 60000)
         self._sc_rx_auto_flush_spin.setValue(50)
         self._sc_rx_auto_flush_spin.setSingleStep(10)
-        self._sc_rx_auto_flush_spin.setFixedSize(self._SPIN_W, 18)
+        self._sc_rx_auto_flush_spin.setFixedSize(self._SPIN_W, 24)
         self._sc_rx_auto_flush_spin.setStyleSheet(f"""
             QSpinBox {{
-                background-color: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 4px;
-                color: #ccc; font-size: 12px; font-family: {_UI_FONT}; padding: 1px 2px;
+                background-color: #020617; border: 1px solid rgba(51, 65, 85, 0.5); border-radius: 4px;
+                color: #cbd5e1; font-size: 12px; font-family: {_UI_FONT}; padding: 1px 2px;
             }}
             QSpinBox::up-button, QSpinBox::down-button {{ width: 10px; }}
         """)
         row_af.addWidget(self._sc_rx_auto_flush_spin)
         af_unit = QLabel("ms")
         af_unit.setFixedWidth(self._MS_LABEL_W)
-        af_unit.setStyleSheet(f"color: #666; font-size: 11px; font-family: {_TERM_FONT}; background: transparent; border: none;")
+        af_unit.setStyleSheet(f"color: #94a3b8; font-size: 11px; font-family: {_TERM_FONT}; background: transparent; border: none;")
         row_af.addWidget(af_unit)
         layout.addLayout(row_af)
 
@@ -976,7 +1040,7 @@ class SerialComMixin:
 
         row_auto = QHBoxLayout()
         row_auto.setSpacing(4)
-        self._sc_auto_resend_cb = QCheckBox("Auto\nSend")
+        self._sc_auto_resend_cb = QCheckBox("Auto Send")
         self._sc_auto_resend_cb.setStyleSheet(self._sc_checkbox_style())
         self._sc_auto_resend_cb.toggled.connect(self._sc_on_auto_resend_toggled)
         row_auto.addWidget(self._sc_auto_resend_cb)
@@ -985,18 +1049,18 @@ class SerialComMixin:
         self._sc_resend_spin.setRange(100, 60000)
         self._sc_resend_spin.setValue(1000)
         self._sc_resend_spin.setSingleStep(100)
-        self._sc_resend_spin.setFixedSize(self._SPIN_W, 18)
+        self._sc_resend_spin.setFixedSize(self._SPIN_W, 24)
         self._sc_resend_spin.setStyleSheet(f"""
             QSpinBox {{
-                background-color: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 4px;
-                color: #ccc; font-size: 12px; font-family: {_UI_FONT}; padding: 1px 2px;
+                background-color: #020617; border: 1px solid rgba(51, 65, 85, 0.5); border-radius: 4px;
+                color: #cbd5e1; font-size: 12px; font-family: {_UI_FONT}; padding: 1px 2px;
             }}
             QSpinBox::up-button, QSpinBox::down-button {{ width: 10px; }}
         """)
         row_auto.addWidget(self._sc_resend_spin)
         auto_unit = QLabel("ms")
         auto_unit.setFixedWidth(self._MS_LABEL_W)
-        auto_unit.setStyleSheet(f"color: #666; font-size: 11px; font-family: {_TERM_FONT}; background: transparent; border: none;")
+        auto_unit.setStyleSheet(f"color: #94a3b8; font-size: 11px; font-family: {_TERM_FONT}; background: transparent; border: none;")
         row_auto.addWidget(auto_unit)
         layout.addLayout(row_auto)
 
@@ -1005,7 +1069,7 @@ class SerialComMixin:
         row_ending.addWidget(self._make_sc_label("Line End"))
         row_ending.addStretch()
         self._sc_ending_combo = DarkComboBox()
-        self._sc_ending_combo.setFixedHeight(20)
+        self._sc_ending_combo.setFixedHeight(26)
         self._sc_ending_combo.setFixedWidth(self._COMBO_END_W)
         for label, val in [("\\r\\n", "\r\n"), ("\\n", "\n"), ("\\r", "\r"), ("\\n\\r", "\n\r"), ("None", "")]:
             self._sc_ending_combo.addItem(label, val)
@@ -1039,8 +1103,8 @@ class SerialComMixin:
         frame.setObjectName("scLogFrame")
         frame.setStyleSheet("""
             QFrame#scLogFrame {
-                background-color: #111;
-                border: 1px solid #222;
+                background-color: #020618;
+                border: 1px solid #1e293b;
                 border-radius: 4px;
             }
         """)
@@ -1054,7 +1118,7 @@ class SerialComMixin:
         toolbar.setSpacing(4)
 
         icon_label = QLabel()
-        icon = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "logs.svg"), "#666", 12)
+        icon = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "logs.svg"), "#cbd5e1", 12)
         if not icon.isNull():
             icon_label.setPixmap(icon.pixmap(12, 12))
         icon_label.setFixedSize(14, 14)
@@ -1062,34 +1126,34 @@ class SerialComMixin:
         toolbar.addWidget(icon_label)
 
         title = QLabel("Serial Log")
-        title.setStyleSheet(f"color: #ccc; font-size: 14px; font-weight: 600; font-family: {_UI_FONT}; background: transparent;")
+        title.setStyleSheet(f"color: #FFFFFF; font-size: 14px; font-weight: 700; font-family: {_UI_FONT}; background: transparent;")
         toolbar.addWidget(title)
 
         toolbar.addStretch()
 
         self._sc_filter_btn = self._make_sc_btn(
-            os.path.join(_SVG_LOGS_DIR, "filter.svg"), "Filter"
+            os.path.join(_SVG_LOGS_DIR, "filter.svg"), "Filter", tone="log"
         )
         self._sc_filter_btn.setCheckable(True)
         toolbar.addWidget(self._sc_filter_btn)
 
         self._sc_copy_btn = self._make_sc_btn(
-            os.path.join(_SVG_LOGS_DIR, "copy.svg"), "Copy"
+            os.path.join(_SVG_LOGS_DIR, "copy.svg"), "Copy", tone="log"
         )
         toolbar.addWidget(self._sc_copy_btn)
 
         self._sc_export_btn = self._make_sc_btn(
-            os.path.join(_SVG_LOGS_DIR, "export.svg"), "Export"
+            os.path.join(_SVG_LOGS_DIR, "export.svg"), "Export", tone="log"
         )
         toolbar.addWidget(self._sc_export_btn)
 
         self._sc_clear_btn = self._make_sc_btn(
-            os.path.join(_SVG_LOGS_DIR, "trash.svg"), "Clear"
+            os.path.join(_SVG_LOGS_DIR, "trash.svg"), "Clear", tone="log"
         )
         toolbar.addWidget(self._sc_clear_btn)
 
         self._sc_scroll_lock_btn = self._make_sc_btn(
-            os.path.join(_SVG_LOGS_DIR, "auto-scroll.svg"), "Auto-scroll"
+            os.path.join(_SVG_LOGS_DIR, "auto-scroll.svg"), "Auto-scroll", tone="log"
         )
         self._sc_scroll_lock_btn.setCheckable(True)
         self._sc_scroll_lock_btn.setChecked(True)
@@ -1111,16 +1175,16 @@ class SerialComMixin:
         self._sc_filter_input.setPlaceholderText("Enter keyword or regex to filter logs...")
         self._sc_filter_input.setStyleSheet(f"""
             QLineEdit {{
-                background-color: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 4px;
-                color: #ccc; font-size: 12px; font-family: {_UI_FONT}; padding: 2px 6px; min-height: 18px; max-height: 18px;
+                background-color: #020617; border: 1px solid rgba(51, 65, 85, 0.5); border-radius: 4px;
+                color: #cbd5e1; font-size: 12px; font-family: {_UI_FONT}; padding: 2px 6px; min-height: 18px; max-height: 18px;
             }}
-            QLineEdit:focus {{ border: 1px solid #555; }}
+            QLineEdit:focus {{ border: 1px solid #334155; }}
         """)
         fl.addWidget(self._sc_filter_input, 1)
 
         self._sc_filter_match_label = QLabel("")
         self._sc_filter_match_label.setStyleSheet(
-            f"color: #666; font-size: 11px; font-family: {_UI_FONT}; background: transparent; min-width: 60px;"
+            f"color: #94a3b8; font-size: 11px; font-family: {_UI_FONT}; background: transparent; min-width: 60px;"
         )
         fl.addWidget(self._sc_filter_match_label)
         filter_root.addLayout(fl)
@@ -1148,13 +1212,13 @@ class SerialComMixin:
         sep = QFrame()
         sep.setFrameShape(QFrame.VLine)
         sep.setFixedHeight(14)
-        sep.setStyleSheet("color: #2a2a2a; background: transparent;")
+        sep.setStyleSheet("color: #1e293b; background: transparent;")
         opts.addWidget(sep)
 
         opts.addSpacing(4)
 
         before_lbl = QLabel("Before")
-        before_lbl.setStyleSheet(f"color: #666; font-size: 12px; font-family: {_UI_FONT}; background: transparent;")
+        before_lbl.setStyleSheet(f"color: #94a3b8; font-size: 12px; font-family: {_UI_FONT}; background: transparent;")
         opts.addWidget(before_lbl)
         self._sc_filter_before_spin = QSpinBox()
         self._sc_filter_before_spin.setRange(0, 999)
@@ -1163,20 +1227,20 @@ class SerialComMixin:
         self._sc_filter_before_spin.setToolTip("Show N lines before matched lines")
         self._sc_filter_before_spin.setStyleSheet(f"""
             QSpinBox {{
-                background-color: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 4px;
-                color: #ccc; font-size: 12px; font-family: {_UI_FONT}; padding: 0px 2px;
+                background-color: #020617; border: 1px solid rgba(51, 65, 85, 0.5); border-radius: 4px;
+                color: #cbd5e1; font-size: 12px; font-family: {_UI_FONT}; padding: 0px 2px;
             }}
             QSpinBox::up-button, QSpinBox::down-button {{ width: 10px; }}
         """)
         opts.addWidget(self._sc_filter_before_spin)
         before_unit = QLabel("lines")
-        before_unit.setStyleSheet(f"color: #666; font-size: 11px; font-family: {_UI_FONT}; background: transparent;")
+        before_unit.setStyleSheet(f"color: #94a3b8; font-size: 11px; font-family: {_UI_FONT}; background: transparent;")
         opts.addWidget(before_unit)
 
         opts.addSpacing(4)
 
         after_lbl = QLabel("After")
-        after_lbl.setStyleSheet(f"color: #666; font-size: 12px; font-family: {_UI_FONT}; background: transparent;")
+        after_lbl.setStyleSheet(f"color: #94a3b8; font-size: 12px; font-family: {_UI_FONT}; background: transparent;")
         opts.addWidget(after_lbl)
         self._sc_filter_after_spin = QSpinBox()
         self._sc_filter_after_spin.setRange(0, 999)
@@ -1185,14 +1249,14 @@ class SerialComMixin:
         self._sc_filter_after_spin.setToolTip("Show N lines after matched lines")
         self._sc_filter_after_spin.setStyleSheet(f"""
             QSpinBox {{
-                background-color: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 4px;
-                color: #ccc; font-size: 12px; font-family: {_UI_FONT}; padding: 0px 2px;
+                background-color: #020617; border: 1px solid rgba(51, 65, 85, 0.5); border-radius: 4px;
+                color: #cbd5e1; font-size: 12px; font-family: {_UI_FONT}; padding: 0px 2px;
             }}
             QSpinBox::up-button, QSpinBox::down-button {{ width: 10px; }}
         """)
         opts.addWidget(self._sc_filter_after_spin)
         after_unit = QLabel("lines")
-        after_unit.setStyleSheet(f"color: #666; font-size: 11px; font-family: {_UI_FONT}; background: transparent;")
+        after_unit.setStyleSheet(f"color: #94a3b8; font-size: 11px; font-family: {_UI_FONT}; background: transparent;")
         opts.addWidget(after_unit)
 
         opts.addStretch()
@@ -1204,11 +1268,14 @@ class SerialComMixin:
         self._sc_log_edit.setReadOnly(True)
         self._sc_log_edit.setStyleSheet(f"""
             QTextEdit {{
-                background-color: #0a0a0a; border: none; border-top: 1px solid #222;
-                color: #e0e0e0; font-family: {_TERM_FONT}; font-size: 12px; font-weight: 400;
-                padding: 4px 6px; line-height: 1.5;
+                background-color: #020617; border: none; border-top: 1px solid #1e293b;
+                color: #cbd5e1; font-family: {_TERM_FONT}; font-size: 14px; font-weight: 400;
+                padding: 6px 8px;
             }}
         """ + SCROLLBAR_STYLE)
+        self._sc_log_edit.document().setDefaultStyleSheet(
+            "p, div { line-height: 150%; margin: 0; padding: 0; }"
+        )
         layout.addWidget(self._sc_log_edit, 1)
 
         if self._sc_log_edit.verticalScrollBar():
@@ -1233,28 +1300,30 @@ class SerialComMixin:
 
         self._sc_send_input = QLineEdit()
         self._sc_send_input.setPlaceholderText("Enter text to send...")
+        self._sc_send_input.setFixedHeight(30)
         self._sc_send_input.setStyleSheet(f"""
             QLineEdit {{
-                background-color: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 4px;
-                color: #ccc; font-size: 13px; font-family: {_UI_FONT}; padding: 3px 6px; min-height: 22px;
+                background-color: #020617; border: 1px solid rgba(51, 65, 85, 0.5); border-radius: 4px;
+                color: #cbd5e1; font-size: 14px; font-family: {_UI_FONT}; padding: 3px 8px;
             }}
-            QLineEdit:focus {{ border: 1px solid #555; }}
+            QLineEdit:focus {{ border: 1px solid #475569; }}
         """)
         send_row.addWidget(self._sc_send_input, 1)
 
         self._sc_send_btn = QPushButton("Send")
         self._sc_send_btn.setCursor(Qt.PointingHandCursor)
+        self._sc_send_btn.setFixedHeight(30)
         icon = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "send.svg"), "#ffffff", 11)
         if not icon.isNull():
             self._sc_send_btn.setIcon(icon)
         self._sc_send_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: #10b981; border: none; border-radius: 4px;
-                color: #fff; font-weight: 600; font-size: 13px;
-                font-family: {_UI_FONT}; padding: 3px 12px; min-height: 22px;
+                background-color: #059669; border: none; border-radius: 6px;
+                color: #FFFFFF; font-weight: 700; font-size: 14px;
+                font-family: {_UI_FONT}; padding: 3px 18px;
             }}
-            QPushButton:hover {{ background-color: #0d9668; }}
-            QPushButton:pressed {{ background-color: #0a7a55; }}
+            QPushButton:hover {{ background-color: #10b981; }}
+            QPushButton:pressed {{ background-color: #047857; }}
         """)
         send_row.addWidget(self._sc_send_btn)
 
@@ -1280,7 +1349,7 @@ class SerialComMixin:
         frame.setObjectName("scQuickFrame")
         frame.setStyleSheet("""
             QFrame#scQuickFrame {
-                background-color: #0a0a0a; border-top: 1px solid #222;
+                background-color: #091023; border-top: 1px solid #1e293b;
             }
         """)
         layout = QVBoxLayout(frame)
@@ -1299,7 +1368,7 @@ class SerialComMixin:
         header.addWidget(zap_icon)
 
         lbl = QLabel("Quick Commands")
-        lbl.setStyleSheet(f"color: #ccc; font-size: 14px; font-weight: 600; font-family: {_UI_FONT}; background: transparent;")
+        lbl.setStyleSheet(f"color: #f59e0b; font-size: 12px; font-weight: 700; font-family: {_UI_FONT}; background: transparent;")
         header.addWidget(lbl)
 
         header.addStretch()
@@ -1339,8 +1408,8 @@ class SerialComMixin:
         frame.setFixedHeight(22)
         frame.setStyleSheet(f"""
             QFrame#scStatusBar {{
-                background-color: #0a0a0a;
-                border-top: 1px solid #222;
+                background-color: #091023;
+                border-top: 1px solid #1e293b;
                 border-bottom-left-radius: 4px;
                 border-bottom-right-radius: 4px;
             }}
@@ -1351,19 +1420,19 @@ class SerialComMixin:
         layout.setSpacing(12)
 
         self._sc_status_port_label = QLabel("\u2022 Port: Unconnected")
-        self._sc_status_port_label.setStyleSheet("color: #ff4d5e;")
+        self._sc_status_port_label.setStyleSheet("color: #f43f5e;")
         layout.addWidget(self._sc_status_port_label)
 
         self._sc_status_baud_label = QLabel("Baud rate: -")
-        self._sc_status_baud_label.setStyleSheet("color: #666;")
+        self._sc_status_baud_label.setStyleSheet("color: #94a3b8;")
         layout.addWidget(self._sc_status_baud_label)
 
         self._sc_status_rx_label = QLabel("RX: 0 B")
-        self._sc_status_rx_label.setStyleSheet("color: #10b981;")
+        self._sc_status_rx_label.setStyleSheet("color: #f59e0b;")
         layout.addWidget(self._sc_status_rx_label)
 
         self._sc_status_tx_label = QLabel("TX: 0 B")
-        self._sc_status_tx_label.setStyleSheet("color: #10b981;")
+        self._sc_status_tx_label.setStyleSheet("color: #34d399;")
         layout.addWidget(self._sc_status_tx_label)
 
         layout.addStretch()
@@ -1485,17 +1554,17 @@ class SerialComMixin:
             self._sc_connect_btn.setStyleSheet(f"""
                 QPushButton {{
                     min-height: 0px; max-height: 22px; padding: 2px 8px; border-radius: 4px;
-                    background-color: #3a0f14; color: #ff4d5e; font-size: 13px;
-                    font-family: {_UI_FONT}; font-weight: 500; border: none;
+                    background-color: #2b0a12; color: #f43f5e; font-size: 12px;
+                    font-family: {_UI_FONT}; font-weight: 700; border: none;
                 }}
-                QPushButton:hover {{ background-color: #4a1520; }}
-                QPushButton:pressed {{ background-color: #2a0a0e; }}
+                QPushButton:hover {{ background-color: #3a0f18; }}
+                QPushButton:pressed {{ background-color: #1c050a; }}
             """)
-            icon = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "disconnect.svg"), "#ff4d5e", 12)
+            icon = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "disconnect.svg"), "#f43f5e", 12)
             if not icon.isNull():
                 self._sc_connect_btn.setIcon(icon)
             self._sc_status_port_label.setText(f"\u2022 Port: {self._serial_port}")
-            self._sc_status_port_label.setStyleSheet(f"color: #10b981; font-size: 11px; font-family: {_TERM_FONT}; background: transparent;")
+            self._sc_status_port_label.setStyleSheet(f"color: #34d399; font-size: 11px; font-family: {_TERM_FONT}; background: transparent;")
             baud = getattr(self, '_serial_baudrate', '-')
             self._sc_status_baud_label.setText(f"Baud rate: {baud}")
         else:
@@ -1503,17 +1572,17 @@ class SerialComMixin:
             self._sc_connect_btn.setStyleSheet(f"""
                 QPushButton {{
                     min-height: 0px; max-height: 22px; padding: 2px 8px; border-radius: 4px;
-                    background-color: transparent; color: #10b981; font-size: 13px;
-                    font-family: {_UI_FONT}; font-weight: 500; border: none;
+                    background-color: #07202b; color: #34d399; font-size: 12px;
+                    font-family: {_UI_FONT}; font-weight: 700; border: none;
                 }}
-                QPushButton:hover {{ background-color: #0d3320; }}
-                QPushButton:pressed {{ background-color: #092819; }}
+                QPushButton:hover {{ background-color: #0a2d3b; }}
+                QPushButton:pressed {{ background-color: #051820; }}
             """)
-            icon = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "connect.svg"), "#10b981", 12)
+            icon = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "connect.svg"), "#34d399", 12)
             if not icon.isNull():
                 self._sc_connect_btn.setIcon(icon)
             self._sc_status_port_label.setText("\u2022 Port: Unconnected")
-            self._sc_status_port_label.setStyleSheet(f"color: #ff4d5e; font-size: 11px; font-family: {_TERM_FONT}; background: transparent;")
+            self._sc_status_port_label.setStyleSheet(f"color: #f43f5e; font-size: 11px; font-family: {_TERM_FONT}; background: transparent;")
             self._sc_status_baud_label.setText("Baud rate: -")
 
         self._sc_port_combo.setEnabled(not connected)
@@ -1622,8 +1691,8 @@ class SerialComMixin:
         frame.setObjectName("scLogFrame")
         frame.setStyleSheet("""
             QFrame#scLogFrame {
-                background-color: #111;
-                border: 1px solid #222;
+                background-color: #020618;
+                border: 1px solid #1e293b;
                 border-radius: 4px;
             }
         """)
@@ -1636,7 +1705,7 @@ class SerialComMixin:
         toolbar.setSpacing(4)
 
         icon_label = QLabel()
-        icon = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "logs.svg"), "#666", 12)
+        icon = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "logs.svg"), "#cbd5e1", 12)
         if not icon.isNull():
             icon_label.setPixmap(icon.pixmap(12, 12))
         icon_label.setFixedSize(14, 14)
@@ -1645,18 +1714,18 @@ class SerialComMixin:
 
         title_text = config.get("title", "Serial Log")
         title = QLabel(title_text)
-        title.setStyleSheet(f"color: #ccc; font-size: 14px; font-weight: 600; font-family: {_UI_FONT}; background: transparent;")
+        title.setStyleSheet(f"color: #FFFFFF; font-size: 14px; font-weight: 700; font-family: {_UI_FONT}; background: transparent;")
         toolbar.addWidget(title)
 
         toolbar.addStretch()
 
         clear_btn = self._make_sc_btn(
-            os.path.join(_SVG_LOGS_DIR, "trash.svg"), "Clear"
+            os.path.join(_SVG_LOGS_DIR, "trash.svg"), "Clear", tone="log"
         )
         toolbar.addWidget(clear_btn)
 
         scroll_btn = self._make_sc_btn(
-            os.path.join(_SVG_LOGS_DIR, "auto-scroll.svg"), "Auto-scroll"
+            os.path.join(_SVG_LOGS_DIR, "auto-scroll.svg"), "Auto-scroll", tone="log"
         )
         scroll_btn.setCheckable(True)
         scroll_btn.setChecked(True)
@@ -1668,11 +1737,14 @@ class SerialComMixin:
         log_edit.setReadOnly(True)
         log_edit.setStyleSheet(f"""
             QTextEdit {{
-                background-color: #0a0a0a; border: none; border-top: 1px solid #222;
-                color: #e0e0e0; font-family: {_TERM_FONT}; font-size: 12px; font-weight: 400;
-                padding: 4px 6px; line-height: 1.5;
+                background-color: #020617; border: none; border-top: 1px solid #1e293b;
+                color: #cbd5e1; font-family: {_TERM_FONT}; font-size: 14px; font-weight: 400;
+                padding: 6px 8px;
             }}
         """ + SCROLLBAR_STYLE)
+        log_edit.document().setDefaultStyleSheet(
+            "p, div { line-height: 150%; margin: 0; padding: 0; }"
+        )
         layout.addWidget(log_edit, 1)
 
         status_bar = QFrame()
@@ -1680,8 +1752,8 @@ class SerialComMixin:
         status_bar.setFixedHeight(22)
         status_bar.setStyleSheet(f"""
             QFrame#scStatusBar {{
-                background-color: #0a0a0a;
-                border-top: 1px solid #222;
+                background-color: #091023;
+                border-top: 1px solid #1e293b;
                 border-bottom-left-radius: 4px;
                 border-bottom-right-radius: 4px;
             }}
@@ -1692,19 +1764,19 @@ class SerialComMixin:
         sb_layout.setSpacing(12)
 
         port_label = QLabel(f"Port: {config.get('port', 'Unconnected')}")
-        port_label.setStyleSheet("color: #ff4d5e;")
+        port_label.setStyleSheet("color: #f43f5e;")
         sb_layout.addWidget(port_label)
 
         baud_label = QLabel(f"Baud rate: {config.get('baudrate', '-')}")
-        baud_label.setStyleSheet("color: #666;")
+        baud_label.setStyleSheet("color: #94a3b8;")
         sb_layout.addWidget(baud_label)
 
         rx_label = QLabel("RX: 0 B")
-        rx_label.setStyleSheet("color: #10b981;")
+        rx_label.setStyleSheet("color: #f59e0b;")
         sb_layout.addWidget(rx_label)
 
         tx_label = QLabel("TX: 0 B")
-        tx_label.setStyleSheet("color: #10b981;")
+        tx_label.setStyleSheet("color: #34d399;")
         sb_layout.addWidget(tx_label)
 
         sb_layout.addStretch()
@@ -1771,8 +1843,8 @@ class SerialComMixin:
         if DEBUG_MOCK:
             panel["conn"] = None
             panel["port_label"].setText(f"Port: MOCK")
-            panel["port_label"].setStyleSheet(f"color: #10b981; font-size: 11px; font-family: {_TERM_FONT}; background: transparent;")
-            self._sc_extra_panel_append_log(panel, "[INFO] Mock connected", "#60a5fa")
+            panel["port_label"].setStyleSheet(f"color: #34d399; font-size: 11px; font-family: {_TERM_FONT}; background: transparent;")
+            self._sc_extra_panel_append_log(panel, "[INFO] Mock connected", "#06b6d4")
             return
 
         try:
@@ -1792,11 +1864,11 @@ class SerialComMixin:
             )
             panel["conn"] = conn
             panel["port_label"].setText(f"Port: {port}")
-            panel["port_label"].setStyleSheet(f"color: #10b981; font-size: 11px; font-family: {_TERM_FONT}; background: transparent;")
-            self._sc_extra_panel_append_log(panel, f"[INFO] Connected: {port} @ {baudrate}", "#60a5fa")
+            panel["port_label"].setStyleSheet(f"color: #34d399; font-size: 11px; font-family: {_TERM_FONT}; background: transparent;")
+            self._sc_extra_panel_append_log(panel, f"[INFO] Connected: {port} @ {baudrate}", "#06b6d4")
             self._sc_extra_panel_start_read(panel)
         except Exception as e:
-            self._sc_extra_panel_append_log(panel, f"[ERROR] Connection failed: {e}", "#ff4d5e")
+            self._sc_extra_panel_append_log(panel, f"[ERROR] Connection failed: {e}", "#f43f5e")
 
     def _sc_extra_panel_disconnect(self, panel):
         if panel.get("read_worker"):
@@ -1821,7 +1893,7 @@ class SerialComMixin:
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.data_received.connect(lambda data, p=panel: self._sc_extra_panel_on_data(p, data))
-        worker.error.connect(lambda err, p=panel: self._sc_extra_panel_append_log(p, f"[ERROR] {err}", "#ff4d5e"))
+        worker.error.connect(lambda err, p=panel: self._sc_extra_panel_append_log(p, f"[ERROR] {err}", "#f43f5e"))
         panel["read_thread"] = thread
         panel["read_worker"] = worker
         thread.start()
@@ -1832,12 +1904,12 @@ class SerialComMixin:
         display = data.decode("utf-8", errors="replace")
         for line in display.splitlines():
             if line.strip():
-                self._sc_extra_panel_append_log(panel, f"[RX] {line}", "#10b981")
+                self._sc_extra_panel_append_log(panel, f"[RX] {line}", "#f59e0b")
 
-    def _sc_extra_panel_append_log(self, panel, message, color="#e0e0e0"):
+    def _sc_extra_panel_append_log(self, panel, message, color="#cbd5e1"):
         ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
         escaped = message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        ts_html = f'<span style="color:#555;">{ts}</span> '
+        ts_html = f'<span style="color:#64748b;">{ts}</span> '
         html = f'{ts_html}<span style="color:{color};">{escaped}</span>'
         panel["all_logs"].append((message, html))
         panel["pending_html"].append(html)
@@ -1933,8 +2005,8 @@ class SerialComMixin:
             self._sc_display_font_size = font_size
             self._sc_log_edit.setStyleSheet(f"""
                 QTextEdit {{
-                    background-color: #0a0a0a; border: none; border-top: 1px solid #222;
-                    color: #e0e0e0; font-family: {font_family}, {_TERM_FONT}; font-size: {font_size}px; font-weight: 400;
+                    background-color: #020618; border: none; border-top: 1px solid #1e293b;
+                    color: #cbd5e1; font-family: {font_family}, {_TERM_FONT}; font-size: {font_size}px; font-weight: 400;
                     padding: 4px 6px; line-height: 1.5;
                 }}
             """ + SCROLLBAR_STYLE)
@@ -1990,7 +2062,7 @@ class SerialComMixin:
             if before > 0 or after > 0:
                 if prev_shown >= 0 and i - prev_shown > 1:
                     self._sc_log_edit.append(
-                        '<span style="color:#333;">  ───</span>'
+                        '<span style="color:#1e293b;">  ───</span>'
                     )
             self._sc_log_edit.append(self._sc_all_logs[i][1])
             prev_shown = i
@@ -2161,7 +2233,7 @@ class SerialComMixin:
 
         for line in display.splitlines():
             if line.strip():
-                self._sc_append_log(f"[RX] {line}", "#10b981")
+                self._sc_append_log(f"[RX] {line}", "#f59e0b")
 
     def _sc_on_auto_resend_toggled(self, checked):
         self._sc_auto_resend = checked
@@ -2214,14 +2286,14 @@ class SerialComMixin:
             btn.setCursor(Qt.PointingHandCursor)
             btn.setStyleSheet(f"""
                 QPushButton {{
-                    background-color: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 4px;
-                    color: #ccc; font-size: 12px; font-family: {_TERM_FONT}; padding: 3px 8px; min-height: 18px;
+                    background-color: #020617; border: 1px solid rgba(51, 65, 85, 0.5); border-radius: 4px;
+                    color: #cbd5e1; font-size: 12px; font-weight: 500; font-family: {_UI_FONT}; padding: 3px 8px; min-height: 18px;
                 }}
-                QPushButton:hover {{ border-color: #555; color: #fff; }}
-                QPushButton:pressed {{ background-color: #111; }}
+                QPushButton:hover {{ border-color: #334155; color: #FFFFFF; }}
+                QPushButton:pressed {{ background-color: #091023; }}
                 QToolTip {{
-                    background-color: #1a1a1a; border: 1px solid #2a2a2a;
-                    color: #ccc; font-size: 11px; font-family: {_UI_FONT}; padding: 3px 6px;
+                    background-color: #091023; border: 1px solid #1e293b;
+                    color: #cbd5e1; font-size: 11px; font-family: {_UI_FONT}; padding: 3px 6px;
                 }}
             """)
             btn.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -2261,9 +2333,9 @@ class SerialComMixin:
     def _sc_qc_context_menu(self, entry, btn, pos):
         menu = QMenu()
         menu.setStyleSheet(f"""
-            QMenu {{ background-color: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 4px; color: #ccc; font-size: 12px; font-family: {_UI_FONT}; }}
+            QMenu {{ background-color: #091023; border: 1px solid #1e293b; border-radius: 4px; color: #cbd5e1; font-size: 12px; font-family: {_UI_FONT}; }}
             QMenu::item {{ padding: 3px 12px; }}
-            QMenu::item:selected {{ background-color: #333; }}
+            QMenu::item:selected {{ background-color: #1e293b; }}
         """)
         edit_action = menu.addAction("Edit")
         del_action = menu.addAction("Delete")
@@ -2317,10 +2389,10 @@ class SerialComMixin:
 
     # --- log helpers ---
 
-    def _sc_append_log(self, message: str, color: str = "#e0e0e0"):
+    def _sc_append_log(self, message: str, color: str = "#cbd5e1"):
         ts = datetime.now().strftime("%H:%M:%S.%f")[:-3] if self._sc_show_timestamp else ""
         escaped = message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        ts_html = f'<span style="color:#555;">{ts}</span> ' if ts else ""
+        ts_html = f'<span style="color:#64748b;">{ts}</span> ' if ts else ""
         html = f'{ts_html}<span style="color:{color};">{escaped}</span>'
         self._sc_all_logs.append((message, html))
         if self._sc_is_filter_active():
@@ -2398,13 +2470,13 @@ class SerialComMixin:
                 self._sc_scroll_to_bottom()
 
     def _sc_append_system(self, message: str):
-        color_map = {"INFO": "#7a8fa5", "WARN": "#f59e0b", "ERROR": "#ff4d5e"}
+        color_map = {"INFO": "#06b6d4", "WARN": "#f59e0b", "ERROR": "#f43f5e"}
         tag = ""
         for t in color_map:
             if f"[{t}]" in message:
                 tag = t
                 break
-        color = color_map.get(tag, "#666")
+        color = color_map.get(tag, "#94a3b8")
         self._sc_append_log(message, color)
 
     @staticmethod
@@ -2419,20 +2491,36 @@ class SerialComMixin:
     # --- ui helpers ---
 
     @staticmethod
-    def _make_sc_btn(svg_path, text):
+    def _make_sc_btn(svg_path, text, tone="toolbar"):
         btn = QPushButton(text)
         btn.setCursor(Qt.PointingHandCursor)
-        btn.setStyleSheet(f"""
-            QPushButton {{
-                min-height: 0px; max-height: 22px; padding: 2px 8px; border-radius: 4px;
-                background-color: transparent; color: #aaa; font-size: 13px;
-                font-family: {_UI_FONT}; font-weight: 500; border: none;
-            }}
-            QPushButton:hover {{ border: 1px solid #444; color: #ccc; }}
-            QPushButton:pressed {{ background-color: #1a1a1a; }}
-            QPushButton:checked {{ border: 1px solid #555; color: #ccc; }}
-        """)
-        icon = _tinted_svg_icon(svg_path, "#888", 11)
+        if tone == "log":
+            base_color = "#cbd5e1"
+            icon_color = "#cbd5e1"
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    min-height: 0px; max-height: 24px; padding: 3px 10px; border-radius: 6px;
+                    background-color: rgba(15, 23, 42, 0.6); color: {base_color}; font-size: 12px;
+                    font-family: {_UI_FONT}; font-weight: 500; border: 1px solid #334155;
+                }}
+                QPushButton:hover {{ background-color: #1e293b; color: #FFFFFF; border: 1px solid #475569; }}
+                QPushButton:pressed {{ background-color: #0f172a; }}
+                QPushButton:checked {{ background-color: #1e293b; color: #FFFFFF; border: 1px solid #475569; }}
+            """)
+        else:
+            base_color = "#94a3b8"
+            icon_color = "#94a3b8"
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    min-height: 0px; max-height: 22px; padding: 2px 8px; border-radius: 4px;
+                    background-color: transparent; color: {base_color}; font-size: 12px;
+                    font-family: {_UI_FONT}; font-weight: 500; border: none;
+                }}
+                QPushButton:hover {{ border: 1px solid #334155; color: #FFFFFF; }}
+                QPushButton:pressed {{ background-color: #091023; }}
+                QPushButton:checked {{ border: 1px solid #334155; color: #FFFFFF; }}
+            """)
+        icon = _tinted_svg_icon(svg_path, icon_color, 11)
         if not icon.isNull():
             btn.setIcon(icon)
         return btn
@@ -2440,32 +2528,21 @@ class SerialComMixin:
     @staticmethod
     def _make_sc_section(title):
         grp = QFrame()
+        grp.setObjectName("scSectionCard")
         grp.setStyleSheet("""
-            QFrame {
-                background-color: #111; border: 1px solid #222; border-radius: 4px;
+            QFrame#scSectionCard {
+                background-color: rgba(15, 23, 42, 0.4);
+                border: 1px solid rgba(30, 41, 59, 0.8);
+                border-radius: 8px;
             }
         """)
         layout = QVBoxLayout(grp)
-        layout.setContentsMargins(6, 4, 6, 6)
-        layout.setSpacing(3)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
 
-        title_row = QHBoxLayout()
-        title_row.setSpacing(4)
-        accent = QFrame()
-        accent.setFixedSize(2, 12)
-        accent.setStyleSheet("background-color: #555; border: none; border-radius: 1px;")
-        title_row.addWidget(accent)
         lbl = QLabel(title)
-        lbl.setStyleSheet(f"color: #ccc; font-size: 13px; font-weight: 600; font-family: {_UI_FONT}; border: none;")
-        title_row.addWidget(lbl)
-        title_row.addStretch()
-        layout.addLayout(title_row)
-
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setFixedHeight(1)
-        sep.setStyleSheet("background-color: #222; border: none;")
-        layout.addWidget(sep)
+        lbl.setStyleSheet(f"color: #94a3b8; font-size: 12px; font-weight: 700; font-family: {_UI_FONT}; background: transparent; border: none; margin-bottom: 4px;")
+        layout.addWidget(lbl)
 
         grp.setProperty("_inner_layout", layout)
         return grp
@@ -2473,24 +2550,24 @@ class SerialComMixin:
     @staticmethod
     def _make_sc_label(text):
         lbl = QLabel(text)
-        lbl.setStyleSheet(f"color: #aaa; font-size: 12px; font-family: {_UI_FONT}; background: transparent; border: none;")
+        lbl.setStyleSheet(f"color: #94a3b8; font-size: 12px; font-family: {_UI_FONT}; background: transparent; border: none;")
         return lbl
 
     @staticmethod
     def _sc_checkbox_style():
         _chk_svg = os.path.join(_SVG_SERIAL_DIR, "checkmark.svg").replace("\\", "/")
         return (
-            f"QCheckBox {{ color: #aaa; font-size: 12px; font-family: {_UI_FONT}; background: transparent; spacing: 4px; }}"
+            f"QCheckBox {{ color: #94a3b8; font-size: 12px; font-family: {_UI_FONT}; background: transparent; spacing: 4px; }}"
             f"QCheckBox::indicator {{"
             f"  width: 12px; height: 12px;"
-            f"  border: 1px solid #2a2a2a; border-radius: 2px;"
-            f"  background-color: #1a1a1a;"
+            f"  border: 1px solid #1e293b; border-radius: 2px;"
+            f"  background-color: #020618;"
             f"}}"
             f"QCheckBox::indicator:hover {{"
-            f"  border-color: #555;"
+            f"  border-color: #334155;"
             f"}}"
             f"QCheckBox::indicator:checked {{"
-            f"  background-color: #555; border-color: #555;"
+            f"  background-color: #6366f1; border-color: #6366f1;"
             f"  image: url({_chk_svg});"
             f"}}"
         )
@@ -2716,8 +2793,8 @@ class _MiniSlideToggle(QWidget):
         w, h = self.width(), self.height()
         outer_r = 4
 
-        p.setPen(QPen(QColor("#2a2a2a"), 1))
-        p.setBrush(QColor("#1a1a1a"))
+        p.setPen(QPen(QColor("#1e293b"), 1))
+        p.setBrush(QColor("#020618"))
         p.drawRoundedRect(QRectF(0, 0, w, h), outer_r, outer_r)
 
         knob_margin = 2
@@ -2727,22 +2804,22 @@ class _MiniSlideToggle(QWidget):
         knob_r = 3
 
         p.setPen(Qt.NoPen)
-        p.setBrush(QColor("#555"))
+        p.setBrush(QColor("#6366f1"))
         p.drawRoundedRect(QRectF(knob_x, knob_margin, knob_w, knob_h),
                           knob_r, knob_r)
 
         font = p.font()
-        font.setPixelSize(9)
+        font.setPixelSize(10)
         font.setWeight(QFont.Bold)
         p.setFont(font)
 
         left_rect = QRectF(0, 0, w / 2, h)
         right_rect = QRectF(w / 2, 0, w / 2, h)
 
-        p.setPen(QColor("#fff") if self._anim_progress < 0.5 else QColor("#666"))
+        p.setPen(QColor("#FFFFFF") if self._anim_progress < 0.5 else QColor("#94a3b8"))
         p.drawText(left_rect, Qt.AlignCenter, self._left)
 
-        p.setPen(QColor("#fff") if self._anim_progress >= 0.5 else QColor("#666"))
+        p.setPen(QColor("#FFFFFF") if self._anim_progress >= 0.5 else QColor("#94a3b8"))
         p.drawText(right_rect, Qt.AlignCenter, self._right)
 
         p.end()
@@ -2751,50 +2828,50 @@ class _MiniSlideToggle(QWidget):
 _DLG_CHK_SVG = os.path.join(_SVG_SERIAL_DIR, "checkmark.svg").replace("\\", "/")
 _DLG_STYLE = f"""
     QDialog {{
-        background-color: #0a0a0a;
-        color: #ccc;
+        background-color: #050b1e;
+        color: #cbd5e1;
     }}
-    QLabel {{ color: #aaa; font-size: 12px; font-family: {_UI_FONT}; background: transparent; }}
+    QLabel {{ color: #94a3b8; font-size: 12px; font-family: {_UI_FONT}; background: transparent; }}
     QLabel#dlgSectionTitle {{
-        color: #ccc; font-size: 13px; font-weight: 600; font-family: {_UI_FONT}; background: transparent;
+        color: #94a3b8; font-size: 13px; font-weight: 700; font-family: {_UI_FONT}; background: transparent;
         padding-bottom: 2px;
     }}
-    QFrame#dlgSep {{ background-color: #222; }}
-    QCheckBox {{ color: #aaa; font-size: 12px; font-family: {_UI_FONT}; background: transparent; spacing: 4px; }}
+    QFrame#dlgSep {{ background-color: #1e293b; }}
+    QCheckBox {{ color: #94a3b8; font-size: 12px; font-family: {_UI_FONT}; background: transparent; spacing: 4px; }}
     QCheckBox::indicator {{
         width: 13px; height: 13px;
-        border: 1px solid #2a2a2a; border-radius: 2px;
-        background-color: #1a1a1a;
+        border: 1px solid #1e293b; border-radius: 2px;
+        background-color: #020618;
     }}
-    QCheckBox::indicator:hover {{ border-color: #555; }}
+    QCheckBox::indicator:hover {{ border-color: #334155; }}
     QCheckBox::indicator:checked {{
-        background-color: #555; border-color: #555;
+        background-color: #6366f1; border-color: #6366f1;
         image: url({_DLG_CHK_SVG});
     }}
     QSpinBox {{
-        background-color: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 4px;
-        color: #ccc; font-size: 12px; font-family: {_UI_FONT}; padding: 2px 6px;
+        background-color: #020617; border: 1px solid rgba(51, 65, 85, 0.5); border-radius: 4px;
+        color: #cbd5e1; font-size: 12px; font-family: {_UI_FONT}; padding: 2px 6px;
     }}
     QSpinBox::up-button, QSpinBox::down-button {{ width: 12px; }}
     QPushButton#dlgOkBtn {{
         background-color: #10b981; border: none; border-radius: 4px;
-        color: #fff; font-weight: 600; font-size: 13px; font-family: {_UI_FONT}; padding: 5px 18px;
+        color: #FFFFFF; font-weight: 700; font-size: 13px; font-family: {_UI_FONT}; padding: 5px 18px;
     }}
-    QPushButton#dlgOkBtn:hover {{ background-color: #0d9668; }}
+    QPushButton#dlgOkBtn:hover {{ background-color: #059669; }}
     QPushButton#dlgCancelBtn {{
-        background-color: transparent; border: 1px solid #2a2a2a; border-radius: 4px;
-        color: #aaa; font-size: 13px; font-family: {_UI_FONT}; padding: 5px 18px;
+        background-color: transparent; border: 1px solid #1e293b; border-radius: 4px;
+        color: #94a3b8; font-size: 13px; font-family: {_UI_FONT}; padding: 5px 18px;
     }}
-    QPushButton#dlgCancelBtn:hover {{ border-color: #555; color: #ccc; }}
+    QPushButton#dlgCancelBtn:hover {{ border-color: #334155; color: #FFFFFF; }}
     QTabWidget::pane {{
-        background-color: #111;
-        border: 1px solid #222;
+        background-color: #091023;
+        border: 1px solid #1e293b;
         border-radius: 4px;
         padding: 4px;
     }}
     QTabBar::tab {{
-        background-color: #0a0a0a;
-        color: #666;
+        background-color: #050b1e;
+        color: #94a3b8;
         padding: 5px 14px;
         border: none;
         border-top-left-radius: 4px;
@@ -2805,13 +2882,13 @@ _DLG_STYLE = f"""
         margin-right: 2px;
     }}
     QTabBar::tab:hover {{
-        background-color: #111;
-        color: #999;
+        background-color: #091023;
+        color: #cbd5e1;
     }}
     QTabBar::tab:selected {{
-        background-color: #111;
-        color: #ccc;
-        border-bottom: 2px solid #555;
+        background-color: #091023;
+        color: #FFFFFF;
+        border-bottom: 2px solid #6366f1;
     }}
 """
 
@@ -2842,10 +2919,10 @@ class _AddLogPanelDialog(QDialog):
         self._title_edit.setText("Serial Log 2")
         self._title_edit.setStyleSheet(f"""
             QLineEdit {{
-                background-color: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 4px;
-                color: #ccc; font-size: 13px; font-family: {_UI_FONT}; padding: 5px 8px; min-height: 24px;
+                background-color: #020617; border: 1px solid rgba(51, 65, 85, 0.5); border-radius: 4px;
+                color: #cbd5e1; font-size: 13px; font-family: {_UI_FONT}; padding: 5px 8px; min-height: 24px;
             }}
-            QLineEdit:focus {{ border: 1px solid #555; }}
+            QLineEdit:focus {{ border: 1px solid #334155; }}
         """)
         grid.addWidget(self._title_edit, 0, 1)
 
@@ -2953,20 +3030,20 @@ class _QuickCmdDialog(QDialog):
         self.setFixedWidth(360)
         self.setStyleSheet(f"""
             QDialog {{
-                background-color: #0a0a0a;
-                color: #ccc;
+                background-color: #050b1e;
+                color: #cbd5e1;
             }}
             QLabel {{
-                color: #aaa; font-size: 12px; font-family: {_UI_FONT}; background: transparent;
+                color: #94a3b8; font-size: 12px; font-family: {_UI_FONT}; background: transparent;
             }}
             QLabel#qcTitle {{
-                color: #ccc; font-size: 13px; font-weight: 600; font-family: {_UI_FONT}; background: transparent;
+                color: #94a3b8; font-size: 13px; font-weight: 700; font-family: {_UI_FONT}; background: transparent;
             }}
             QLineEdit {{
-                background-color: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 4px;
-                color: #ccc; font-size: 13px; font-family: {_UI_FONT}; padding: 5px 8px; min-height: 24px;
+                background-color: #020617; border: 1px solid rgba(51, 65, 85, 0.5); border-radius: 4px;
+                color: #cbd5e1; font-size: 13px; font-family: {_UI_FONT}; padding: 5px 8px; min-height: 24px;
             }}
-            QLineEdit:focus {{ border: 1px solid #555; }}
+            QLineEdit:focus {{ border: 1px solid #334155; }}
         """)
 
         root = QVBoxLayout(self)
@@ -2997,10 +3074,10 @@ class _QuickCmdDialog(QDialog):
         cancel_btn.setCursor(Qt.PointingHandCursor)
         cancel_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: transparent; border: 1px solid #2a2a2a; border-radius: 4px;
-                color: #aaa; font-size: 13px; font-family: {_UI_FONT}; padding: 5px 18px;
+                background-color: transparent; border: 1px solid #1e293b; border-radius: 4px;
+                color: #94a3b8; font-size: 13px; font-family: {_UI_FONT}; padding: 5px 18px;
             }}
-            QPushButton:hover {{ border-color: #555; color: #ccc; }}
+            QPushButton:hover {{ border-color: #334155; color: #FFFFFF; }}
         """)
         cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(cancel_btn)
@@ -3010,9 +3087,9 @@ class _QuickCmdDialog(QDialog):
         ok_btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: #10b981; border: none; border-radius: 4px;
-                color: #fff; font-weight: 600; font-size: 13px; font-family: {_UI_FONT}; padding: 5px 18px;
+                color: #FFFFFF; font-weight: 700; font-size: 13px; font-family: {_UI_FONT}; padding: 5px 18px;
             }}
-            QPushButton:hover {{ background-color: #0d9668; }}
+            QPushButton:hover {{ background-color: #059669; }}
         """)
         ok_btn.clicked.connect(self.accept)
         btn_row.addWidget(ok_btn)
@@ -3252,10 +3329,10 @@ class _SerialSettingsDialog(QDialog):
         self.log_save_path_edit.setPlaceholderText("Select log save directory...")
         self.log_save_path_edit.setStyleSheet(f"""
             QLineEdit {{
-                background-color: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 4px;
-                color: #ccc; font-size: 12px; font-family: {_UI_FONT}; padding: 3px 6px; min-height: 22px;
+                background-color: #020617; border: 1px solid rgba(51, 65, 85, 0.5); border-radius: 4px;
+                color: #cbd5e1; font-size: 12px; font-family: {_UI_FONT}; padding: 3px 6px; min-height: 22px;
             }}
-            QLineEdit:focus {{ border: 1px solid #555; }}
+            QLineEdit:focus {{ border: 1px solid #334155; }}
         """)
         path_row.addWidget(self.log_save_path_edit, 1)
         browse_btn = QPushButton("Browse")
@@ -3269,10 +3346,10 @@ class _SerialSettingsDialog(QDialog):
         layout.addWidget(self._section_title("Log Level Colors"))
 
         color_info = QLabel(
-            "RX → Green (#10b981)    TX → Blue (#60a5fa)\n"
-            "INFO → Blue-gray    WARN → Yellow (#f59e0b)    ERROR → Red (#ff4d5e)"
+            "RX → Amber (#f59e0b)    TX → Blue (#60a5fa)\n"
+            "INFO → Cyan (#06b6d4)    WARN → Amber (#f59e0b)    ERROR → Rose (#f43f5e)"
         )
-        color_info.setStyleSheet(f"color: #666; font-size: 11px; font-family: {_UI_FONT}; background: transparent;")
+        color_info.setStyleSheet(f"color: #94a3b8; font-size: 11px; font-family: {_UI_FONT}; background: transparent;")
         color_info.setWordWrap(True)
         layout.addWidget(color_info)
 
@@ -3407,7 +3484,7 @@ if __name__ == "__main__":
             background-color: transparent;
         }}
         QLabel#statusErr {{
-            color: #ff4d5e;
+            color: #f43f5e;
             font-weight: 500;
             background-color: transparent;
         }}

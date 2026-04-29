@@ -661,7 +661,7 @@ class ExecutionLogsFrame(QFrame):
             .replace("<", "&lt;")
             .replace(">", "&gt;")
         )
-        if "[SUMMARY]" in message:
+        if "[SUMMARY]" in message or "[DATA]" in message:
             escaped = escaped.replace(" ", "&nbsp;")
             return (
                 f'<span style="color:#5a6a8a;">[{ts}]</span>&nbsp;&nbsp;'

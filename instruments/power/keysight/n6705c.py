@@ -1,5 +1,16 @@
+import os
+import sys
 import time
+
 import pyvisa
+
+if __name__ == "__main__" and __package__ is None:
+    _PROJECT_ROOT = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..")
+    )
+    if _PROJECT_ROOT not in sys.path:
+        sys.path.insert(0, _PROJECT_ROOT)
+
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -27,13 +38,31 @@ class N6705C:
             return N6705C.DLOG_PERIOD_MAX
         return required
 
-    def __init__(self, resource):
+    def __init__(self, resource, visa_library=None):
         logger.debug("N6705C __init__: resource=%s", resource)
-        self.rm = pyvisa.ResourceManager('@py')
-        if resource.startswith('TCPIP0::') or resource.startswith('USB0::'):
-            self.instr = self.rm.open_resource(resource)
+        try:
+            if visa_library:
+                self.rm = pyvisa.ResourceManager(visa_library)
+            else:
+                self.rm = pyvisa.ResourceManager()
+        except (OSError, ValueError) as e:
+            logger.warning(
+                "N6705C: 系统 VISA 不可用(%s)，回退到 pyvisa-py('@py')", e
+            )
+            self.rm = pyvisa.ResourceManager('@py')
+        logger.debug("N6705C visalib=%s", self.rm.visalib)
+        resource_str = str(resource).strip()
+        upper = resource_str.upper()
+        visa_prefixes = ("TCPIP", "USB", "GPIB", "ASRL", "VXI", "PXI", "HISLIP")
+        is_visa_resource = (
+            "::" in resource_str
+            and (upper.endswith("::INSTR") or upper.endswith("::SOCKET")
+                 or upper.startswith(visa_prefixes))
+        )
+        if is_visa_resource:
+            self.instr = self.rm.open_resource(resource_str)
         else:
-            self.instr = self.rm.open_resource(f'TCPIP0::{resource}::inst0::INSTR')
+            self.instr = self.rm.open_resource(f'TCPIP0::{resource_str}::inst0::INSTR')
         self.instr.timeout = 10000
         self.instr.encoding = 'utf-8'
         logger.debug("N6705C connected, timeout=%d ms", self.instr.timeout)

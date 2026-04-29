@@ -132,3 +132,72 @@ DSOX4034A / MSO64B 的截图 SCPI 指令不同：
 ## 20. `pyvisa_py.tcpip` 警告
 
 `pyvisa-py` 的 TCPIP 模块在 Windows 下会 emit 警告，已过滤（[main.py:L50](file:///d:/CodeProject/TRAE_Projects/KK_Lab/main.py#L50)）。不要删这行 `filterwarnings`。
+
+## 21. VISA 后端选择（禁止硬编码 `'@py'`）
+
+**现象**：USBTMC 仪器（如 Keysight 53230A / N6705C、Tektronix MSO64B）在 NI MAX 能正常通信，但 Python 运行时抛：
+
+```
+File ".../pyvisa_py/protocols/usbtmc.py", line 199, in __init__
+    raise ValueError("No device found.")
+```
+
+**根因**：驱动层写死 `pyvisa.ResourceManager('@py')`，强制使用 `pyvisa-py`。而 Windows 上仪器的 USBTMC 驱动由 NI-VISA / Keysight IO Libraries 接管，走 `pyvisa-py`（依赖 libusb / WinUSB）时无法枚举到设备。
+
+**规则**：
+
+- 驱动层禁止写死 `'@py'`；默认调用 `pyvisa.ResourceManager()`，由系统自动选择 NI-VISA 等后端。
+- 构造函数需提供 `visa_library` 可选参数，允许外部显式指定（`'@ni'` / `'@py'` / `r'C:\Windows\System32\visa64.dll'`）。
+- 打开失败（`OSError` / `ValueError`）时回退到 `'@py'`，并 `logger.warning` 记录。
+- 连接成功后 `logger.debug("<Class> visalib=%s", self.rm.visalib)`，便于日志快速判定后端。
+
+**参考实现**：
+- [keysight_53230A.py:20-38](file:///d:/CodeProject/TRAE_Projects/KK_Lab/instruments/frequencyCounter/keysight_53230A.py#L20-L38)
+- [n6705c.py:41-55](file:///d:/CodeProject/TRAE_Projects/KK_Lab/instruments/power/keysight/n6705c.py#L41-L55)
+- [mso64b.py:8-23](file:///d:/CodeProject/TRAE_Projects/KK_Lab/instruments/scopes/tektronix/mso64b.py#L8-L23)
+- 示波器基类风格见 [dsox4034a.py:70-79](file:///d:/CodeProject/TRAE_Projects/KK_Lab/instruments/scopes/keysight/dsox4034a.py#L70-L79)。
+
+**新增仪器驱动自检**：搜 `ResourceManager\('@py'\)`，凡驱动层命中一律替换为默认 + 回退模式。
+
+## 22. UI 模组文件的"直接运行"入口（`ModuleNotFoundError: No module named 'ui'`）
+
+**现象**：`ui/modules/*_module_frame.py` 顶部 `#python -m ui.modules.xxx` 只说明了"按模块运行"方式。当用户直接：
+
+```powershell
+python ui\modules\keysight_53230a_module_frame.py
+```
+
+启动，Python 把 `sys.path[0]` 设为脚本所在目录 `ui/modules/`，导致顶层包 `ui.resource_path` / `instruments.*` / `debug_config` 全部无法解析：
+
+```
+ModuleNotFoundError: No module named 'ui'
+```
+
+**根因**：`python -m <pkg>` 会把 **CWD** 注入 `sys.path[0]`；而 `python <path>.py` 只会注入 **脚本所在目录**，不是项目根。
+
+**规则**：凡 `ui/modules/*_module_frame.py` 带 `if __name__ == "__main__":` Demo 块、且顶部直接 `from ui.xxx import ...` 的文件，必须在 **最顶部、任何 `from ui.*` / `from instruments.*` 之前** 注入项目根：
+
+```python
+#python -m ui.modules.xxx_module_frame
+import os
+import sys
+
+if __name__ == "__main__" and __package__ in (None, ""):
+    _PROJECT_ROOT = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
+    )
+    if _PROJECT_ROOT not in sys.path:
+        sys.path.insert(0, _PROJECT_ROOT)
+
+from ui.resource_path import get_resource_base
+# ... 其余顶层 import 照常
+```
+
+**要点**：
+- 用 `__name__ == "__main__" and __package__ in (None, "")` 双守卫，仅"脚本模式"触发，不污染正常 `import` 路径。
+- 用 `sys.path.insert(0, ...)` 抢占优先级，避免同名 `ui` 包冲突。
+- 用 `_PROJECT_ROOT not in sys.path` 保证幂等，防止反复运行时堆积路径条目。
+
+**参考实现**：[keysight_53230a_module_frame.py:1-13](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/modules/keysight_53230a_module_frame.py#L1-L13)
+
+**新增 UI 模组自检**：同时支持两种启动方式——`python -m ui.modules.xxx` 与 `python ui\modules\xxx.py`，均应能弹出 Demo 窗口。

@@ -6,9 +6,19 @@ logger = get_logger(__name__)
 
 
 class MSO64B:
-    def __init__(self, resource):
+    def __init__(self, resource, visa_library=None):
         logger.debug("MSO64B __init__: resource=%s", resource)
-        self.rm = pyvisa.ResourceManager('@py')
+        try:
+            if visa_library:
+                self.rm = pyvisa.ResourceManager(visa_library)
+            else:
+                self.rm = pyvisa.ResourceManager()
+        except (OSError, ValueError) as e:
+            logger.warning(
+                "MSO64B: 系统 VISA 不可用(%s)，回退到 pyvisa-py('@py')", e
+            )
+            self.rm = pyvisa.ResourceManager('@py')
+        logger.debug("MSO64B visalib=%s", self.rm.visalib)
         if resource.startswith('TCPIP0::') or resource.startswith('USB0::'):
             self.instrument = self.rm.open_resource(resource)
         else:

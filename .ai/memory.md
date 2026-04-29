@@ -39,6 +39,7 @@
 - `pyvisa.ResourceManager.__del__` 退出崩溃，入口已 patch，勿删。
 - QPainter 警告已过滤。
 - `HoverFixStyle` 用于 Fusion 风格 `:hover` 生效，勿替换。
+- **驱动层严禁硬编码 `pyvisa.ResourceManager('@py')`**，默认走系统 VISA（NI-VISA），可选 `visa_library` 显式指定，失败再回退 `@py`。详见 [03_GOTCHAS.md §21](../docs/ai/03_GOTCHAS.md)。
 
 ## 会话决策 / 偏好
 
@@ -53,3 +54,6 @@
 | 2026-04-28 | 建立 AI 协作文档体系（`docs/ai/`、`AGENTS.md`、`.trae/rules/`、`.ai/memory.md`） | 根据用户请求初始化 |
 | 2026-04-28 | 新增 [docs/ai/09_WORKFLOW.md](../docs/ai/09_WORKFLOW.md)，落盘任务 SOP；CLAUDE.md / AGENTS.md / project-rules.md / 00_OVERVIEW.md 已同步引用 | 明确"调用 / 执行 / 回归"三阶段流程 |
 | 2026-04-28 | 增补"工程清单同步矩阵"硬规则至 [project-rules.md §8](../.trae/rules/project-rules.md)、[08_CHECKLISTS.md](../docs/ai/08_CHECKLISTS.md) 通用勾项、[09_WORKFLOW.md §3.5.1](../docs/ai/09_WORKFLOW.md) | 封堵 `DIRECTORY_STRUCTURE.txt` / `requirements.txt` 盲区 |
+| 2026-04-29 | 去除驱动层硬编码 `ResourceManager('@py')`：[keysight_53230A.py](../instruments/frequencyCounter/keysight_53230A.py)、[n6705c.py](../instruments/power/keysight/n6705c.py)、[mso64b.py](../instruments/scopes/tektronix/mso64b.py) 统一改为"默认系统 VISA + 可选 `visa_library` + 失败回退 `@py`"，并写入 [03_GOTCHAS.md §21](../docs/ai/03_GOTCHAS.md) | 修复 NI MAX 可通但 `pyvisa-py` 抛 `No device found.` |
+| 2026-04-29 | 新增 53230A 频率计驱动 / Mock / 工厂 / UI 模组（[keysight_53230A.py](../instruments/frequencyCounter/keysight_53230A.py)、[mock_instruments.py](../instruments/mock/mock_instruments.py) `MockKeysight53230A`、[factory.py](../instruments/factory.py) `create_frequency_counter`、[keysight_53230a_module_frame.py](../ui/modules/keysight_53230a_module_frame.py)），`DIRECTORY_STRUCTURE.txt` 已同步 | 完整接入 53230A 通用计数器 |
+| 2026-04-29 | 沉淀"UI 模组 Demo 入口需注入 `sys.path` 兼容直接运行"坑点：新增 [03_GOTCHAS.md §22](../docs/ai/03_GOTCHAS.md) 与 [08_CHECKLISTS.md 新增 UI 模组](../docs/ai/08_CHECKLISTS.md) 勾项 | 封堵 `ModuleNotFoundError: No module named 'ui'` 重复指令 |

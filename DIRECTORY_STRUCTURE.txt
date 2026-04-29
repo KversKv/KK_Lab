@@ -100,13 +100,21 @@ instruments/
 │   └── vt6002_chamber.py    # VT6002 高低温试验箱驱动
 │                            # (Modbus 串口协议，温度设置与读取)
 │
+├── frequencyCounter/        # 频率计驱动
+│   └── keysight_53230A.py   # Keysight 53230A 通用计数器/定时器 SCPI 驱动
+│                            # (频率/周期/占空比/脉宽/上升下降时间、INPut
+│                            # 通道配置、SENSe 门限、CONFigure/READ?/FETCh?
+│                            # 流程、CALCulate 统计、ROSCillator 参考时基)
+│
 ├── adapters/                # 通信适配器驱动 (预留)
 │
 ├── mock/                    # 模拟仪器 (用于离线调试/开发)
 │   └── mock_instruments.py  # 模拟仪器实现，包含 MockN6705C / MockI2C /
-│                            # MockVT6002 / MockMSO64B，由 DEBUG_MOCK 开关启用
+│                            # MockVT6002 / MockMSO64B / MockKeysight53230A，
+│                            # 由 DEBUG_MOCK 开关启用
 │
 └── factory.py               # 仪器工厂函数，统一创建各类仪器实例
+                             # (含 create_frequency_counter)
 
 ================================================================================
   ui/ - 用户界面层
@@ -131,6 +139,7 @@ ui/
 │   ├── execution_logs_module_frame.py  # 执行日志区 Mixin (日志容器/进度条/清除)
 │   ├── n6705c_module_frame.py          # N6705C 连接区 Mixin (VISA 搜索/连接/断开)
 │   ├── oscilloscope_module_frame.py    # 示波器连接区 Mixin (VISA 搜索/连接/断开)
+│   ├── keysight_53230a_module_frame.py # 53230A 频率计连接区 Mixin (VISA 搜索/连接/断开)
 │   ├── chamber_module_frame.py         # VT6002 温箱连接区 Mixin (串口搜索/连接/断开)
 │   └── serialCom_module_frame.py       # 串口通信连接区 Mixin (串口搜索/连接/断开)
 │

@@ -24,8 +24,9 @@ from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.modules.oscilloscope_module_frame import OscilloscopeConnectionMixin
 from ui.modules.chamber_module_frame import VT6002ConnectionMixin
+from ui.modules.keysight_53230a_module_frame import Keysight53230AConnectionMixin
 from debug_config import DEBUG_MOCK
-from instruments.mock.mock_instruments import MockMSO64B, MockVT6002
+from instruments.mock.mock_instruments import MockMSO64B, MockVT6002, MockKeysight53230A
 
 
 class _CLKTestWorker(QObject):
@@ -35,17 +36,30 @@ class _CLKTestWorker(QObject):
     progress_int = Signal(int)
     error = Signal(str)
 
-    def __init__(self, test_item, config, mso64b=None, vt6002=None, mock_mode=False, parent=None):
+    def __init__(self, test_item, config, mso64b=None, vt6002=None, counter=None, mock_mode=False, parent=None):
         super().__init__(parent)
         self.test_item = test_item
         self.config = config
         self.mso64b = mso64b
         self.vt6002 = vt6002
+        self.counter = counter
         self.mock_mode = mock_mode
         self._stop_flag = False
 
     def stop(self):
         self._stop_flag = True
+
+    def _read_frequency(self, mso_channel=1, counter_channel=1):
+        freq_instrument = self.config.get("freq_instrument", "MSO64B")
+        if freq_instrument == "53230A":
+            if self.counter is None:
+                raise RuntimeError("53230A frequency counter not connected")
+            return float(self.counter.measure_frequency(channel=counter_channel))
+        if freq_instrument == "DigitMultimeter":
+            raise NotImplementedError("DigitMultimeter frequency read is not implemented yet")
+        if self.mso64b is None:
+            raise RuntimeError("MSO64B oscilloscope not connected")
+        return float(self.mso64b.get_dvm_frequency(enable_counter=True, wait_time=0.3))
 
     def run(self):
         try:
@@ -76,6 +90,7 @@ class _CLKTestWorker(QObject):
         msb = self.config["iic_msb"]
         lsb = self.config["iic_lsb"]
         mso_channel = self.config.get("mso_channel", 2)
+        freq_instrument = self.config.get("freq_instrument", "MSO64B")
 
         values = []
         codes = list(range(start_code, end_code + 1, step))
@@ -85,7 +100,9 @@ class _CLKTestWorker(QObject):
         self.log.emit("[INFO] Starting test: Compensation Capacitance vs Frequency")
         self.log.emit(f"[INFO] IIC Device Addr = 0x{device_addr:02X}, REG Addr = 0x{reg_addr:04X}")
         self.log.emit(f"[INFO] Width Flag = {width_flag}, MSB = {msb}, LSB = {lsb}")
-        self.log.emit(f"[INFO] MSO64B Channel = CH{mso_channel}")
+        self.log.emit(f"[INFO] Frequency Instrument = {freq_instrument}")
+        if freq_instrument == "MSO64B":
+            self.log.emit(f"[INFO] MSO64B Channel = CH{mso_channel}")
 
         bit_mask = ((1 << (msb - lsb + 1)) - 1) << lsb
 
@@ -95,8 +112,13 @@ class _CLKTestWorker(QObject):
             if not iic.initialize():
                 raise RuntimeError("I2C interface initialization failed")
             self.log.emit("[INFO] I2C interface initialized successfully")
-            self.mso64b.instrument.write(f'DVM:SOURCE CH{mso_channel}')
-            self.log.emit(f"[INFO] MSO64B DVM Source set to CH{mso_channel}")
+            if freq_instrument == "MSO64B":
+                if self.mso64b is None:
+                    raise RuntimeError("MSO64B oscilloscope not connected")
+                self.mso64b.instrument.write(f'DVM:SOURCE CH{mso_channel}')
+                self.log.emit(f"[INFO] MSO64B DVM Source set to CH{mso_channel}")
+            elif freq_instrument == "53230A" and self.counter is None:
+                raise RuntimeError("53230A frequency counter not connected")
 
             orig_val = iic.read(device_addr, reg_addr, width_flag)
             self.log.emit(f"[INFO] Register original value = 0x{orig_val:04X}, bit_mask = 0x{bit_mask:04X}")
@@ -129,12 +151,12 @@ class _CLKTestWorker(QObject):
             else:
                 iic.write(device_addr, reg_addr, write_val, width_flag)
                 time.sleep(0.1)
-                freq = self.mso64b.get_dvm_frequency(enable_counter=True, wait_time=0.3)
+                freq = self._read_frequency(mso_channel=mso_channel)
 
             values.append({"x": code, "freq": freq})
             self.progress.emit({"mode": "cap_freq", "current": code, "freq": freq})
             self.progress_int.emit(int((idx + 1) * 100 / total_codes))
-            self.log.emit(f"[DATA] Code={code:>4d}  |  RegVal=0x{write_val:04X}  |  Freq={freq:>18.6f} Hz")
+            self.log.emit(f"[DATA] Code={code:>3d}  |  RegVal=0x{write_val:04X}  |  Freq={freq:>15.6f} Hz")
             time.sleep(0.03)
         iic.write(device_addr, reg_addr, orig_val, width_flag)
         return {"mode": "cap_freq", "data": values, "default_code": default_code}
@@ -185,7 +207,7 @@ class _CLKTestWorker(QObject):
                 values.append({"x": t, "freq": freq})
                 self.progress.emit({"mode": "temp_freq", "current": t, "freq": freq})
                 self.progress_int.emit(int((idx + 1) * 100 / total_temps))
-                self.log.emit(f"[DATA] Temp={t:>7.1f} °C  |  Freq={freq:>18.6f} Hz")
+                self.log.emit(f"[DATA] Temp={t:>7.1f} °C  |  Freq={freq:>15.6f} Hz")
                 time.sleep(0.05)
             return {"mode": "temp_freq", "data": values}
 
@@ -193,8 +215,16 @@ class _CLKTestWorker(QObject):
         if not chamber:
             raise RuntimeError("VT6002 chamber not connected")
 
-        self.mso64b.instrument.write(f'DVM:SOURCE CH{mso_channel}')
-        self.log.emit(f"[INFO] MSO64B DVM Source set to CH{mso_channel}")
+        freq_instrument = self.config.get("freq_instrument", "MSO64B")
+        if freq_instrument == "MSO64B":
+            if self.mso64b is None:
+                raise RuntimeError("MSO64B oscilloscope not connected")
+            self.mso64b.instrument.write(f'DVM:SOURCE CH{mso_channel}')
+            self.log.emit(f"[INFO] MSO64B DVM Source set to CH{mso_channel}")
+        elif freq_instrument == "53230A":
+            if self.counter is None:
+                raise RuntimeError("53230A frequency counter not connected")
+            self.log.emit("[INFO] 53230A frequency counter ready")
 
         total_temps = len(temps)
         for idx, t in enumerate(temps):
@@ -249,12 +279,12 @@ class _CLKTestWorker(QObject):
                 self.log.emit("[WARN] Test stopped")
                 break
 
-            freq = self.mso64b.get_dvm_frequency(enable_counter=True, wait_time=0.3)
+            freq = self._read_frequency(mso_channel=mso_channel)
             actual_temp = chamber.get_current_temp()
             values.append({"x": actual_temp, "freq": freq})
             self.progress.emit({"mode": "temp_freq", "current": actual_temp, "freq": freq})
             self.progress_int.emit(int((idx + 1) * 100 / total_temps))
-            self.log.emit(f"[DATA] Temp={actual_temp:>7.2f} °C  |  Freq={freq:>18.6f} Hz")
+            self.log.emit(f"[DATA] Temp={actual_temp:>7.2f} °C  |  Freq={freq:>15.6f} Hz")
 
         chamber.set_temperature(25.0)
         self.log.emit("[INFO] Chamber restored to 25.0 °C")
@@ -878,7 +908,7 @@ class _CLKTestWorker(QObject):
         }
 
 
-class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, QWidget):
+class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, Keysight53230AConnectionMixin, QWidget):
     """
     CLK Test Main UI Component
     Test Items:
@@ -895,6 +925,7 @@ class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, QWidget):
         super().__init__(parent)
         self.init_oscilloscope_connection(mso64b_top)
         self.init_vt6002_connection()
+        self.init_counter_connection()
         self.current_test_item = self.TEST_CAP_FREQ
 
         self._test_thread = None
@@ -1296,15 +1327,20 @@ class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, QWidget):
         mso64b_card_layout.addLayout(mso_ch_row)
 
         # 53230A
-        self.counter_card = self._create_instrument_card(
-            "53230A Counter",
-            "High-Precision Frequency Counter",
-            "counter_combo",
-            "counter_search_btn",
-            "counter_connect_btn",
-            "counter_disconnect_btn",
-            "counter_status"
-        )
+        self.counter_card = QFrame()
+        self.counter_card.setObjectName("config_inner_panel")
+        counter_card_layout = QVBoxLayout(self.counter_card)
+        counter_card_layout.setContentsMargins(10, 10, 10, 10)
+        counter_card_layout.setSpacing(6)
+        counter_title_row = QHBoxLayout()
+        counter_title_row.setSpacing(8)
+        counter_title_row.setContentsMargins(0, 0, 0, 0)
+        counter_title = QLabel("53230A Counter")
+        counter_title.setStyleSheet("color: #c8d8ff; font-size: 11px; font-weight: 600; border: none;")
+        counter_title_row.addWidget(counter_title, 0, Qt.AlignVCenter)
+        counter_title_row.addStretch(1)
+        counter_card_layout.addLayout(counter_title_row)
+        self.build_counter_connection_widgets(counter_card_layout, title_row=counter_title_row)
         instruments_layout.addWidget(self.counter_card)
 
         # DigitMultimeter
@@ -1706,9 +1742,7 @@ class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, QWidget):
 
         self.bind_oscilloscope_signals()
         self.bind_vt6002_signals()
-
-        self.counter_search_btn.clicked.connect(self._search_counter)
-        self.counter_connect_btn.clicked.connect(self._toggle_counter)
+        self.bind_counter_signals()
 
         self.dmm_search_btn.clicked.connect(self._search_dmm)
         self.dmm_connect_btn.clicked.connect(self._toggle_dmm)
@@ -1726,7 +1760,6 @@ class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, QWidget):
 
         self._set_test_item(self.TEST_CAP_FREQ)
         self._on_clk_source_changed(self.clk_source_combo.currentIndex())
-        self._search_counter()
         self._search_dmm()
 
         if DEBUG_MOCK:
@@ -1806,16 +1839,6 @@ class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, QWidget):
 
     # -------------------------------------------------------
     # Instrument search
-    def _search_counter(self):
-        if DEBUG_MOCK:
-            self.counter_combo.clear()
-            self.counter_combo.addItem("[MOCK] TCPIP0::53230A::inst0::INSTR")
-            self._set_status_label(self.counter_status, "Available (Mock)", "ok")
-            return
-        self.counter_combo.clear()
-        self.counter_combo.addItem("TCPIP0::53230A::inst0::INSTR")
-        self._set_status_label(self.counter_status, "Available", "ok")
-
     def _search_dmm(self):
         if DEBUG_MOCK:
             self.dmm_combo.clear()
@@ -1825,20 +1848,6 @@ class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, QWidget):
         self.dmm_combo.clear()
         self.dmm_combo.addItem("USB0::DMM::INSTR")
         self._set_status_label(self.dmm_status, "Available", "ok")
-
-    def _toggle_counter(self):
-        if self.counter_connect_btn.text() == "Disconnect":
-            self._disconnect_counter()
-        else:
-            self._connect_counter()
-
-    def _connect_counter(self):
-        self._set_status_label(self.counter_status, f"Connected: {self.counter_combo.currentText()}", "ok")
-        self._set_btn_connected(self.counter_connect_btn)
-
-    def _disconnect_counter(self):
-        self._set_status_label(self.counter_status, "Disconnected", "err")
-        self._set_btn_disconnected(self.counter_connect_btn)
 
     def _toggle_dmm(self):
         if self.dmm_connect_btn.text() == "Disconnect":
@@ -1906,22 +1915,33 @@ class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, QWidget):
         if old_max_val >= old_max_range or old_max_val > max_code:
             self.reg_max.setValue(max_code)
 
+    def _validate_freq_instrument(self, test_label):
+        freq_instrument = self._current_freq_instrument()
+        if freq_instrument == "MSO64B":
+            if not self.scope_connected:
+                raise ValueError(f"{test_label} requires MSO64B connection for frequency measurement")
+        elif freq_instrument == "53230A":
+            if not getattr(self, "counter_connected", False):
+                raise ValueError(f"{test_label} requires 53230A frequency counter connection")
+        elif freq_instrument == "DigitMultimeter":
+            raise ValueError("DigitMultimeter frequency measurement is not implemented yet")
+        else:
+            raise ValueError(f"Unsupported frequency instrument: {freq_instrument}")
+
     def _validate_before_test(self):
         if DEBUG_MOCK:
             self._append_log("[MOCK] Skipping instrument validation (mock mode)")
             return
 
         if self.current_test_item == self.TEST_CAP_FREQ:
-            if not self.scope_connected:
-                raise ValueError("Test Item 1 requires MSO64B connection for frequency measurement")
+            self._validate_freq_instrument("Test Item 1")
             if self.reg_min.value() > self.reg_max.value():
                 raise ValueError("Register Min must not exceed Register Max")
 
         elif self.current_test_item == self.TEST_TEMP_FREQ:
             if not self.is_vt6002_connected:
                 raise ValueError("Test Item 2 requires VT6002 chamber connection")
-            if not self.scope_connected:
-                raise ValueError("Test Item 2 requires MSO64B connection for frequency measurement")
+            self._validate_freq_instrument("Test Item 2")
             if self.temp_step.value() <= 0:
                 raise ValueError("Temperature step must be greater than 0")
 
@@ -2040,6 +2060,7 @@ class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, QWidget):
             self.current_test_item, config,
             mso64b=self.Osc_ins,
             vt6002=self.vt6002,
+            counter=self.Counter_ins,
             mock_mode=DEBUG_MOCK,
         )
         self._test_worker.moveToThread(self._test_thread)

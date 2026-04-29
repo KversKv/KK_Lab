@@ -53,6 +53,17 @@
 
 详见：[06_PAGE_GUIDE.md](./06_PAGE_GUIDE.md)
 
+## ✅ 新增 UI 模组（`ui/modules/*_module_frame.py`）
+
+- [ ] 文件放 `ui/modules/`，类名形如 `XxxConnectionMixin`
+- [ ] 复用 `resources/modules/SVG_Common/` 下通用图标（search / link / unlink），不新增位图
+- [ ] 搜索/连接/断开走 `QThread + QObject` 后台 Worker，绝不阻塞 UI
+- [ ] 仪器实例通过 `instruments.factory.create_*` 获取（禁止直接 `new`）
+- [ ] 支持 `DEBUG_MOCK` 分支，使用 `instruments.mock.mock_instruments.Mockxxx`
+- [ ] 顶部 Demo 块注入 `sys.path` 兼容"直接运行"入口（见 [03_GOTCHAS.md §22](./03_GOTCHAS.md)）
+- [ ] 两种启动方式均跑通：`python -m ui.modules.xxx` 与 `python ui\modules\xxx.py`
+- [ ] `DIRECTORY_STRUCTURE.txt` 的 `ui/modules/` 段落同步新增条目
+
 ## ✅ 新增测试流程
 
 - [ ] `core/test_xxx.py` 使用 `QObject + moveToThread`
