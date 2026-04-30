@@ -6802,6 +6802,142 @@ class N6705CDatalogUI(QWidget):
         if not self.datalog_data:
             return
 
+        mode = self._show_export_dialog()
+        if mode is None:
+            return
+        if mode == "combined":
+            self._export_combined_csv()
+        else:
+            self._export_standard()
+
+    def _show_export_dialog(self):
+        visible_keys = self._get_visible_keys()
+        visible_count = len(visible_keys)
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Export Datalog")
+        dialog.setFixedWidth(420)
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: #0a1628;
+                color: #c8daf5;
+            }
+            QLabel {
+                color: #8eb0e3;
+                font-size: 12px;
+            }
+            QRadioButton {
+                color: #c8daf5;
+                font-size: 12px;
+                padding: 4px 0;
+                spacing: 8px;
+            }
+            QRadioButton::indicator {
+                width: 14px;
+                height: 14px;
+            }
+            QRadioButton:disabled {
+                color: #3a5070;
+            }
+            QPushButton {
+                background-color: #162d55;
+                border: 1px solid #1e3460;
+                border-radius: 6px;
+                color: #c8daf5;
+                padding: 6px 18px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #1e3460;
+                border-color: #3a6fd4;
+            }
+            QPushButton:disabled {
+                background-color: #0c1a35;
+                color: #3a5070;
+                border-color: #142542;
+            }
+        """)
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        title = QLabel("Export Datalog")
+        title.setStyleSheet("font-size: 14px; font-weight: bold; color: #eaf2ff;")
+        layout.addWidget(title)
+
+        desc = QLabel("Choose how to export the current dataset.")
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
+
+        group = QButtonGroup(dialog)
+
+        rb_standard = QRadioButton("Standard Export  (Dlog / CSV, all data)")
+        rb_standard.setChecked(True)
+        group.addButton(rb_standard)
+        layout.addWidget(rb_standard)
+
+        std_hint = QLabel("    Exports the full dataset in the original format.\n"
+                          "    Supports .dlog (raw) and .csv (legacy layout).")
+        std_hint.setStyleSheet("color: #667ba0; font-size: 10px;")
+        layout.addWidget(std_hint)
+
+        rb_combined = QRadioButton(
+            f"Combined CSV  (visible channels only: {visible_count})"
+        )
+        group.addButton(rb_combined)
+        layout.addWidget(rb_combined)
+
+        cmb_hint = QLabel("    Merges all currently visible channels from different\n"
+                          "    files into one CSV, sorted automatically. LABELS,\n"
+                          "    rename map, time offsets and source files are kept.")
+        cmb_hint.setStyleSheet("color: #667ba0; font-size: 10px;")
+        layout.addWidget(cmb_hint)
+
+        if visible_count == 0:
+            rb_combined.setEnabled(False)
+            cmb_hint.setText("    (No visible channels — enable at least one in Channel Config)")
+            cmb_hint.setStyleSheet("color: #8a3a3a; font-size: 10px;")
+
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(8)
+        btn_layout.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        ok_btn = QPushButton("Continue")
+        ok_btn.setDefault(True)
+        ok_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #1a3a6e;
+                border: 1px solid #3a6fd4;
+                border-radius: 6px;
+                color: #eaf2ff;
+                padding: 6px 18px;
+                font-size: 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #245b8e;
+                border-color: #5a8fee;
+            }
+        """)
+        btn_layout.addWidget(cancel_btn)
+        btn_layout.addWidget(ok_btn)
+        layout.addLayout(btn_layout)
+
+        result = {"mode": None}
+
+        def _accept():
+            result["mode"] = "combined" if rb_combined.isChecked() else "standard"
+            dialog.accept()
+
+        ok_btn.clicked.connect(_accept)
+        cancel_btn.clicked.connect(dialog.reject)
+
+        if dialog.exec() != QDialog.Accepted:
+            return None
+        return result["mode"]
+
+    def _export_standard(self):
         path, selected_filter = QFileDialog.getSaveFileName(
             self, "Export Datalog", "",
             "Dlog Files (*.dlog);;CSV Files (*.csv);;All Files (*)"
@@ -6929,6 +7065,135 @@ class N6705CDatalogUI(QWidget):
                             f.write(f"{key_escaped},{name_escaped}\n")
         except Exception:
             pass
+
+    def _export_combined_csv(self):
+        visible_keys = self._get_visible_keys()
+        if not visible_keys:
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Combined CSV", "",
+            "CSV Files (*.csv);;All Files (*)"
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".csv"):
+            path = path + ".csv"
+
+        try:
+            sorted_keys = sorted(visible_keys, key=_sort_key_for_label)
+
+            max_len = 0
+            for lbl in sorted_keys:
+                ch = self.datalog_data.get(lbl)
+                if ch is None:
+                    continue
+                max_len = max(max_len, len(ch.get("time", [])), len(ch.get("values", [])))
+
+            display_names = []
+            for lbl in sorted_keys:
+                disp = self.ch_name_renames.get(lbl) or _display_label(lbl)
+                display_names.append(disp)
+
+            def _csv_escape(s):
+                s = str(s)
+                if "," in s or '"' in s or "\n" in s:
+                    return '"' + s.replace('"', '""') + '"'
+                return s
+
+            with open(path, "w", newline="") as f:
+                header_parts = []
+                for disp in display_names:
+                    header_parts.append(_csv_escape(f"Time_{disp}(s)"))
+                    header_parts.append(_csv_escape(disp))
+                f.write(",".join(header_parts) + "\n")
+
+                for i in range(max_len):
+                    row_parts = []
+                    for lbl in sorted_keys:
+                        ch = self.datalog_data.get(lbl, {})
+                        times = ch.get("time", [])
+                        values = ch.get("values", [])
+                        if i < len(times):
+                            t_val = times[i] + self._get_total_time_offset(lbl)
+                            row_parts.append(f"{t_val:.6f}")
+                        else:
+                            row_parts.append("")
+                        if i < len(values):
+                            row_parts.append(f"{values[i]:.9f}")
+                        else:
+                            row_parts.append("")
+                    f.write(",".join(row_parts) + "\n")
+
+                prefixes_in_use = set()
+                for lbl in sorted_keys:
+                    p = self._get_file_prefix(lbl)
+                    if p:
+                        prefixes_in_use.add(p)
+
+                has_b_visible = any(self._is_b_label(lbl) for lbl in sorted_keys)
+                time_offset_rows = []
+                if has_b_visible and self._b_time_offset:
+                    time_offset_rows.append(("B_slot", f"{self._b_time_offset:.9f}"))
+                for prefix in sorted(prefixes_in_use):
+                    off = self._file_time_offsets.get(prefix, 0.0)
+                    if off:
+                        time_offset_rows.append((prefix, f"{off:.9f}"))
+                if time_offset_rows:
+                    f.write("\n[TIME_OFFSETS]\n")
+                    f.write("scope,offset_s\n")
+                    for scope, val in time_offset_rows:
+                        f.write(f"{_csv_escape(scope)},{val}\n")
+
+                source_rows = []
+                for tc in self._imported_tab_configs:
+                    prefix = tc.get("file_prefix", "")
+                    if prefix and prefix in prefixes_in_use:
+                        source_rows.append((prefix, tc.get("tab_name", "")))
+                if source_rows:
+                    f.write("\n[SOURCE_FILES]\n")
+                    f.write("file_prefix,source_name\n")
+                    for prefix, name in source_rows:
+                        f.write(f"{_csv_escape(prefix)},{_csv_escape(name)}\n")
+
+                if self.custom_labels:
+                    label_rows = []
+                    for lbl in self.custom_labels:
+                        ch_raw = lbl.get("channel", "")
+                        if ch_raw and ch_raw not in visible_keys:
+                            continue
+                        t_val = lbl.get("time", 0.0)
+                        if ch_raw:
+                            t_val = t_val + self._get_total_time_offset(ch_raw)
+                        ch_display = _display_label(ch_raw) if ch_raw else ""
+                        label_rows.append((t_val, lbl.get("text", ""), ch_display))
+                    if label_rows:
+                        f.write("\n[CUSTOM_LABELS]\n")
+                        f.write("time,text,channel\n")
+                        for t_val, text, ch_display in label_rows:
+                            f.write(
+                                f"{t_val:.6f},"
+                                f"{_csv_escape(text)},"
+                                f"{_csv_escape(ch_display)}\n"
+                            )
+
+                if self.ch_name_renames:
+                    rename_rows = []
+                    for key, display_name in self.ch_name_renames.items():
+                        if key not in visible_keys:
+                            continue
+                        rename_rows.append((_display_label(key), display_name))
+                    if rename_rows:
+                        f.write("\n[CH_NAME_RENAMES]\n")
+                        f.write("key,display_name\n")
+                        for key_display, display_name in rename_rows:
+                            f.write(
+                                f"{_csv_escape(key_display)},"
+                                f"{_csv_escape(display_name)}\n"
+                            )
+        except Exception:
+            import traceback
+            logger.error("Combined CSV export failed:\n%s", traceback.format_exc())
 
 
 if __name__ == "__main__":
