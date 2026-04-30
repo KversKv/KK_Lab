@@ -43,7 +43,7 @@ class TemperatureStabilizer:
         window_seconds: float = 60.0,
         tolerance: float = 0.2,
         stable_hits: int = 2,
-        max_wait_s: float = 600.0,
+        max_wait_s: float = 1800.0,
         arrive_tolerance: Optional[float] = 1.0,
         log_fn: Optional[Callable[[str], None]] = None,
         stop_check: Optional[Callable[[], bool]] = None,
