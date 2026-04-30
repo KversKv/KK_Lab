@@ -27,6 +27,7 @@ from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.styles import SCROLL_AREA_STYLE, START_BTN_STYLE, update_start_btn_state
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockVT6002
+from instruments.chambers import TemperatureStabilizer
 
 from log_config import get_logger
 
@@ -232,34 +233,23 @@ class _HighLowTempTestWorker(QObject):
                     self.log.emit(f"[WARN] Chamber start command failed: {e}")
             self.log.emit(f"[INFO] [{idx + 1}/{total_temps}] Chamber set temperature: {t:.1f} °C, waiting for stabilization...")
 
-            history = []
-            stable_count = 0
-            wait_t0 = time.time()
-            while True:
-                if self._stop_flag:
-                    break
-                actual_temp = chamber.get_current_temp()
-                history.append(actual_temp)
-                if len(history) > 10:
-                    history.pop(0)
-                if len(history) >= 5:
-                    if max(history) - min(history) < tolerance:
-                        stable_count += 1
-                    else:
-                        stable_count = 0
-                    if stable_count >= 3:
-                        break
-                self._interruptible_sleep(30)
+            stabilizer = TemperatureStabilizer(
+                chamber,
+                tolerance=tolerance,
+                log_fn=self.log.emit,
+                stop_check=lambda: self._stop_flag,
+            )
+            result = stabilizer.wait_for_stable(t)
 
-            if self._stop_flag:
+            if self._stop_flag or result.reason == "stopped":
                 self.log.emit("[WARN] Test stopped")
                 break
 
-            wait_elapsed = time.time() - wait_t0
-            actual_temp = chamber.get_current_temp()
+            actual_temp = result.actual if result.actual is not None else chamber.get_current_temp()
             self.log.emit(
-                f"[INFO] [{idx + 1}/{total_temps}] Temperature stabilized: "
-                f"target={t:.1f} °C, actual={actual_temp:.2f} °C, waited {wait_elapsed:.0f}s"
+                f"[INFO] [{idx + 1}/{total_temps}] Temperature {result.reason}: "
+                f"target={t:.1f} °C, actual={actual_temp:.2f} °C, "
+                f"waited {result.waited_s:.0f}s, polls={result.poll_count}"
             )
 
             self.log.emit(f"[INFO] DUT thermal soak in progress ({soak_time}s)...")

@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QGraphicsRectItem,
     QTableWidget, QTableWidgetItem, QHeaderView, QMenu,
     QToolButton, QDialog, QTabWidget, QTabBar,
-    QProgressBar, QStackedWidget,
+    QProgressBar, QStackedWidget, QMessageBox,
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QThread, QObject, QByteArray
 from PySide6.QtGui import QFont, QColor, QBrush, QPen, QPainter, QPixmap, QIcon
@@ -6732,15 +6732,29 @@ class N6705CDatalogUI(QWidget):
                 self._import_csv(path)
         except Exception as e:
             import traceback
-            logger.error(f"Import failed: {e}\n{traceback.format_exc()}")
+            tb = traceback.format_exc()
+            logger.error(f"Import failed: {e}\n{tb}")
+            QMessageBox.critical(
+                self,
+                "Import Failed",
+                f"{type(e).__name__}: {e}\n\n{tb}"
+            )
 
     def _import_csv(self, path):
         result = import_csv_file(path)
         if not result:
             return
 
-        all_data, custom_labels, ch_name_renames = result
+        if len(result) == 4:
+            all_data, custom_labels, ch_name_renames, combined_meta = result
+        else:
+            all_data, custom_labels, ch_name_renames = result
+            combined_meta = None
         if not all_data:
+            return
+
+        if combined_meta:
+            self._import_combined_csv(path, all_data, custom_labels, ch_name_renames, combined_meta)
             return
 
         self._import_counter += 1
@@ -6761,6 +6775,118 @@ class N6705CDatalogUI(QWidget):
         if ch_name_renames:
             for key, display_name in ch_name_renames.items():
                 self.ch_name_renames[f"{prefix}{key}"] = display_name
+
+        self._refresh_plot()
+
+    def _import_combined_csv(self, path, all_data, custom_labels, ch_name_renames, combined_meta):
+        import re
+        import traceback
+
+        time_offsets = combined_meta.get("time_offsets", {}) or {}
+        source_files = combined_meta.get("source_files", []) or []
+
+        logger.info(
+            "[CombinedImport] path=%s, keys=%d, sources=%d, time_offsets=%d",
+            path, len(all_data), len(source_files), len(time_offsets)
+        )
+
+        source_name_map = {orig_prefix: src_name for orig_prefix, src_name in source_files}
+
+        orig_prefixes_in_data = set()
+        for key in all_data.keys():
+            m = re.match(r'^(F\d+)-', key)
+            if m:
+                orig_prefixes_in_data.add(m.group(1))
+            else:
+                orig_prefixes_in_data.add("")
+
+        logger.info("[CombinedImport] orig_prefixes=%s", sorted(orig_prefixes_in_data))
+
+        prefix_remap = {}
+        for orig_prefix in sorted(orig_prefixes_in_data, key=lambda s: (0, int(s[1:])) if s else (1, 0)):
+            self._import_counter += 1
+            new_prefix = f"F{self._import_counter}"
+            prefix_remap[orig_prefix] = new_prefix
+
+        logger.info("[CombinedImport] prefix_remap=%s", prefix_remap)
+
+        def _remap_key(key):
+            m = re.match(r'^(F\d+)-(.*)', key)
+            if m:
+                orig = m.group(1)
+                rest = m.group(2)
+                new_p = prefix_remap.get(orig, orig)
+                return f"{new_p}-{rest}"
+            new_p = prefix_remap.get("", "")
+            if new_p:
+                return f"{new_p}-{key}"
+            return key
+
+        remapped_data = {_remap_key(k): v for k, v in all_data.items()}
+        self.datalog_data.update(remapped_data)
+
+        logger.info("[CombinedImport] remapped_keys=%s", list(remapped_data.keys()))
+
+        per_group_keys = {}
+        for orig_prefix in orig_prefixes_in_data:
+            new_prefix = prefix_remap[orig_prefix]
+            group_keys = set()
+            for k in remapped_data.keys():
+                km = re.match(r'^(F\d+)-', k)
+                if km and km.group(1) == new_prefix:
+                    group_keys.add(k)
+                elif not km and new_prefix == prefix_remap.get(""):
+                    group_keys.add(k)
+            per_group_keys[orig_prefix] = (new_prefix, group_keys)
+
+        base_name = os.path.basename(path)
+        for orig_prefix, (new_prefix, group_keys) in per_group_keys.items():
+            if not group_keys:
+                logger.warning("[CombinedImport] skip empty group orig=%s new=%s", orig_prefix, new_prefix)
+                continue
+            src_name = source_name_map.get(orig_prefix)
+            if src_name:
+                tab_name = src_name
+            elif len(per_group_keys) == 1:
+                tab_name = base_name
+            else:
+                tab_name = f"{base_name} [{orig_prefix}]" if orig_prefix else base_name
+            logger.info(
+                "[CombinedImport] build tab orig=%s new=%s tab_name=%s keys=%s",
+                orig_prefix, new_prefix, tab_name, sorted(group_keys)
+            )
+            try:
+                self._build_imported_channel_config(
+                    tab_name=tab_name, data_keys=group_keys, file_prefix=new_prefix
+                )
+            except Exception as e:
+                logger.error(
+                    "[CombinedImport] build tab FAILED for %s: %s\n%s",
+                    tab_name, e, traceback.format_exc()
+                )
+
+        for scope, off_val in time_offsets.items():
+            if scope == "B_slot":
+                if not self._b_time_offset:
+                    self._b_time_offset = off_val
+            else:
+                new_prefix = prefix_remap.get(scope)
+                if new_prefix:
+                    self._file_time_offsets[new_prefix] = off_val
+
+        self._sync_checkboxes_to_data()
+
+        if custom_labels:
+            for lbl in custom_labels:
+                ch_raw = lbl.get("channel", "")
+                if ch_raw:
+                    lbl["channel"] = _remap_key(ch_raw)
+            self.custom_labels.extend(custom_labels)
+            self._refresh_labels_display()
+
+        if ch_name_renames:
+            for key, display_name in ch_name_renames.items():
+                self.ch_name_renames[_remap_key(key)] = display_name
 
         self._refresh_plot()
 
@@ -7102,6 +7228,9 @@ class N6705CDatalogUI(QWidget):
                 return s
 
             with open(path, "w", newline="") as f:
+                f.write("[COMBINED_EXPORT]\n")
+                f.write("version,1\n\n")
+
                 header_parts = []
                 for disp in display_names:
                     header_parts.append(_csv_escape(f"Time_{disp}(s)"))

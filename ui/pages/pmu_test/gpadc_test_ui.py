@@ -35,6 +35,7 @@ from Bes_I2CIO_Interface import I2CSpeedMode, I2CWidthFlag
 from log_config import get_logger
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockI2C, MockN6705C, MockVT6002
+from instruments.chambers import TemperatureStabilizer
 
 logger = get_logger(__name__)
 
@@ -630,6 +631,13 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
         temp_layout.addWidget(self.temp_max, 1, 1)
         temp_layout.addWidget(self.temp_step, 1, 2)
 
+        temp_layout.addWidget(QLabel("Soak Time (s)"), 2, 0)
+        self.soak_time = QSpinBox()
+        self.soak_time.setRange(0, 3600)
+        self.soak_time.setValue(180)
+        self.soak_time.setSingleStep(30)
+        temp_layout.addWidget(self.soak_time, 3, 0)
+
         params_layout.addWidget(self.voltage_params_frame)
         params_layout.addWidget(self.temp_params_frame)
 
@@ -955,6 +963,7 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
                 temp_max=self.temp_max.value(),
                 temp_step=self.temp_step.value(),
                 voltage_channel=self.voltage_channel.currentData(),
+                soak_time=self.soak_time.value(),
             )
         elif test_item == self.TEST_TEMP_CONSISTENCY:
             fn = self._run_temp_consistency_test
@@ -968,6 +977,7 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
                 voltage_max=self.voltage_max.value(),
                 voltage_step=self.voltage_step.value(),
                 voltage_channel=self.voltage_channel.currentData(),
+                soak_time=self.soak_time.value(),
             )
         else:
             self._stop_test()
@@ -1020,7 +1030,8 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
         return ('force_voltage', result)
 
     def _run_high_low_temp_test(self, device_addr, reg_addr, temp_min, temp_max,
-                                temp_step, voltage_channel, stop_check=None):
+                                temp_step, voltage_channel, stop_check=None,
+                                soak_time=180):
         self._test_worker.log.emit("[INFO] RUN TEST_HIGH_LOW_TEMP TEST")
         result = self.gpadc_high_low_temp_test(
             device_addr=device_addr,
@@ -1030,6 +1041,7 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
             temp_max=temp_max,
             temp_step=temp_step,
             voltage_channel=voltage_channel,
+            soak_time=soak_time,
             stop_check=stop_check,
             progress_callback=lambda v: self._test_worker.progress.emit(v),
         )
@@ -1037,7 +1049,7 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
 
     def _run_temp_consistency_test(self, device_addr, reg_addr, temp_min, temp_max,
                                    temp_step, voltage_min, voltage_max, voltage_step,
-                                   voltage_channel, stop_check=None):
+                                   voltage_channel, stop_check=None, soak_time=180):
         self._test_worker.log.emit("[INFO] RUN TEST_TEMP_CONSISTENCY TEST")
         result = self.gpadc_temp_consistency_test(
             device_addr=device_addr,
@@ -1050,6 +1062,7 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
             voltage_max=voltage_max,
             voltage_step=voltage_step,
             voltage_channel=voltage_channel,
+            soak_time=soak_time,
             stop_check=stop_check,
             progress_callback=lambda v: self._test_worker.progress.emit(v),
         )
@@ -1345,7 +1358,8 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
             self.test_item_combo,
             self.voltage_channel,
             self.voltage_min, self.voltage_max, self.voltage_step,
-            self.temp_min, self.temp_max, self.temp_step
+            self.temp_min, self.temp_max, self.temp_step,
+            self.soak_time
         ]
         for widget in widgets:
             widget.setEnabled(enabled)
@@ -1369,7 +1383,8 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
             'voltage_step': self.voltage_step.value(),
             'temp_min': self.temp_min.value(),
             'temp_max': self.temp_max.value(),
-            'temp_step': self.temp_step.value()
+            'temp_step': self.temp_step.value(),
+            'soak_time': self.soak_time.value()
         }
 
     def update_test_result(self, result):
@@ -1629,6 +1644,7 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
         temp_max=100,
         temp_step=1,
         voltage_channel=100,
+        soak_time=180,
         stop_check=None,
         progress_callback=None,
     ):
@@ -1673,36 +1689,32 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
                 if DEBUG_MOCK:
                     self._test_worker.log.emit(f"[DEBUG] Temp set to {current_temp:.1f}°C (instant)")
                 else:
-                    history = []
-                    stable_count = 0
+                    if point_idx == 0:
+                        try:
+                            chamber.start()
+                            self._test_worker.log.emit("[INFO] Chamber started (constant-temp run command sent)")
+                        except Exception as e:
+                            self._test_worker.log.emit(f"[WARN] Chamber start command failed: {e}")
 
-                    while True:
-                        if stop_check and stop_check():
-                            break
-                        actual_temp = chamber.get_current_temp()
-                        history.append(actual_temp)
+                    stabilizer = TemperatureStabilizer(
+                        chamber,
+                        log_fn=self._test_worker.log.emit,
+                        stop_check=stop_check,
+                    )
+                    result = stabilizer.wait_for_stable(current_temp)
 
-                        if len(history) > 10:
-                            history.pop(0)
-
-                        if len(history) >= 5:
-                            if max(history) - min(history) < 0.2:
-                                stable_count += 1
-                            else:
-                                stable_count = 0
-
-                            if stable_count >= 3:
-                                break
-
-                        self._test_worker.log.emit(f"[INFO] Temp stabilizing: target={current_temp:.1f}, actual={actual_temp:.2f}")
-                        time.sleep(30)
-
-                    if stop_check and stop_check():
+                    if result.reason == "stopped":
                         self._test_worker.log.emit("[INFO] High/Low temp test stopped by user.")
                         break
 
+                    actual_str = "N/A" if result.actual is None else f"{result.actual:.2f}"
+                    self._test_worker.log.emit(
+                        f"[INFO] Temperature {result.reason}: target={current_temp:.1f}, "
+                        f"actual={actual_str}, waited {result.waited_s:.0f}s, polls={result.poll_count}"
+                    )
+
                     self.set_system_status(f"DUT温度均衡中: {current_temp:.1f}°C")
-                    for _ in range(180):
+                    for _ in range(int(soak_time)):
                         if stop_check and stop_check():
                             break
                         time.sleep(1)
@@ -1767,6 +1779,7 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
         voltage_max=1.8,
         voltage_step=0.05,
         voltage_channel=1,
+        soak_time=180,
         stop_check=None,
         progress_callback=None,
     ):
@@ -1848,7 +1861,7 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
                     break
 
                 self.set_system_status(f"DUT温度均衡中: {current_temp:.1f}°C")
-                for _ in range(180):
+                for _ in range(int(soak_time)):
                     if stop_check and stop_check():
                         break
                     time.sleep(1)

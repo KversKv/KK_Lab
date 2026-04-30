@@ -608,6 +608,74 @@ class ChamberSetTemp(BaseNode):
 
 
 @register_node
+class ChamberWaitStable(BaseNode):
+    node_type = "ChamberWaitStable"
+    display_name = "Chamber Wait Stable"
+    category = "instrument"
+    icon = "◊"
+    color = "#e07b39"
+
+    PARAM_SCHEMA = [
+        {"key": "target", "label": "目标温度 (°C)", "type": "float", "default": 25.0},
+        {"key": "poll_interval", "label": "采样间隔 (s)", "type": "float", "default": 5.0},
+        {"key": "window_seconds", "label": "稳定判据窗口 (s)", "type": "float", "default": 60.0},
+        {"key": "tolerance", "label": "稳定容差 (°C)", "type": "float", "default": 0.2},
+        {"key": "stable_hits", "label": "连续稳定次数", "type": "int", "default": 2},
+        {"key": "arrive_tolerance", "label": "到达容差 (°C)", "type": "float", "default": 1.0},
+        {"key": "max_wait_s", "label": "最大等待 (s, 0=不限)", "type": "float", "default": 600.0},
+        {"key": "result_var", "label": "结果存入变量", "type": "str", "default": "chamber_wait_result"},
+        {"key": "export_var", "label": "导出变量到记录", "type": "bool", "default": False},
+        {"key": "raise_on_timeout", "label": "超时时抛异常", "type": "bool", "default": False},
+    ]
+
+    def execute(self, context: Any) -> None:
+        from instruments.chambers import TemperatureStabilizer
+        chamber = context.instruments.get("chamber")
+        if chamber is None:
+            raise RuntimeError("温箱未连接")
+        target = float(context.resolve_value(self.params["target"]))
+        poll_interval = float(context.resolve_value(self.params.get("poll_interval", 5.0)))
+        window_seconds = float(context.resolve_value(self.params.get("window_seconds", 60.0)))
+        tolerance = float(context.resolve_value(self.params.get("tolerance", 0.2)))
+        stable_hits = int(context.resolve_value(self.params.get("stable_hits", 2)))
+        arrive_tol_raw = context.resolve_value(self.params.get("arrive_tolerance", 1.0))
+        arrive_tolerance = None if arrive_tol_raw in (None, "", "None") else float(arrive_tol_raw)
+        max_wait_s = float(context.resolve_value(self.params.get("max_wait_s", 600.0)))
+        result_var = str(self.params.get("result_var", "chamber_wait_result"))
+        export_var = bool(self.params.get("export_var", False))
+        raise_on_timeout = bool(context.resolve_value(self.params.get("raise_on_timeout", False)))
+
+        stabilizer = TemperatureStabilizer(
+            chamber,
+            poll_interval=poll_interval,
+            window_seconds=window_seconds,
+            tolerance=tolerance,
+            stable_hits=stable_hits,
+            arrive_tolerance=arrive_tolerance,
+            max_wait_s=max_wait_s,
+            log_fn=context.log_output,
+            stop_check=lambda: context.should_stop,
+        )
+        result = stabilizer.wait_for_stable(target)
+        actual_str = "N/A" if result.actual is None else f"{result.actual:.2f}"
+        context.log_output(
+            f"Chamber wait: target={target:.2f} reason={result.reason} "
+            f"actual={actual_str} waited={result.waited_s:.0f}s polls={result.poll_count}"
+        )
+        payload = {
+            "stable": result.stable,
+            "reason": result.reason,
+            "target": result.target,
+            "actual": result.actual,
+            "waited_s": result.waited_s,
+            "poll_count": result.poll_count,
+        }
+        context.set_variable(result_var, payload, export=export_var)
+        if raise_on_timeout and result.reason == "timeout":
+            raise RuntimeError(f"温度等待超时: target={target}, actual={actual_str}")
+
+
+@register_node
 class ChamberGetTemp(BaseNode):
     node_type = "ChamberGetTemp"
     display_name = "Chamber Get Temp"

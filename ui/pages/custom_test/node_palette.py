@@ -241,6 +241,7 @@ INSTRUMENT_REGISTRY: List[Dict] = [
             ]},
             {"name": "Set", "ops": [
                 {"node_type": "ChamberSetTemp", "label": "Set Temperature"},
+                {"node_type": "ChamberWaitStable", "label": "Wait Stable"},
             ]},
             {"name": "Get", "ops": [
                 {"node_type": "ChamberGetTemp", "label": "Get Temperature"},

@@ -25,6 +25,7 @@ import time
 from instruments.power.keysight.n6705c import N6705C
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockN6705C, MockVT6002
+from instruments.chambers import TemperatureStabilizer
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.chamber_module_frame import VT6002ConnectionMixin
 from i2c_interface_x64 import I2CInterface
@@ -240,7 +241,6 @@ class _StatusPollWorker(QObject):
         step_delay_s = self._cfg.get("step_delay_ms", 10) / 1000.0
         levels = self._generate_levels(start, end, step)
         TEMP_TOLERANCE = 1.0
-        TEMP_SETTLE_POLL_S = 2.0
         TEMP_SETTLE_TIMEOUT_S = 600
         try:
             vt.start()
@@ -265,35 +265,30 @@ class _StatusPollWorker(QObject):
                 vt.set_temperature(temp_set)
             except Exception as e:
                 self.log_message.emit(f"[TEMP-SWEEP] Set temp error: {e}")
-            settle_start = time.time()
-            settled = False
-            while not settled:
-                if self._stop_flag:
-                    break
-                try:
-                    actual = vt.get_current_temp()
-                except Exception:
-                    actual = None
-                if actual is not None and abs(actual - temp_set) <= TEMP_TOLERANCE:
-                    self.log_message.emit(
-                        f"[TEMP-SWEEP] Chamber stable at {actual:.1f} C (target {temp_set:.1f} C)."
-                    )
-                    settled = True
-                else:
-                    elapsed_settle = time.time() - settle_start
-                    if elapsed_settle > TEMP_SETTLE_TIMEOUT_S:
-                        self.log_message.emit(
-                            f"[TEMP-SWEEP] Timeout waiting for {temp_set:.1f} C "
-                            f"(current: {actual} C). Measuring anyway."
-                        )
-                        settled = True
-                    else:
-                        actual_str = f"{actual:.1f}" if actual is not None else "N/A"
-                        self.log_message.emit(
-                            f"[TEMP-SWEEP] Waiting... current={actual_str} C, "
-                            f"target={temp_set:.1f} C, elapsed={elapsed_settle:.0f}s"
-                        )
-                        time.sleep(TEMP_SETTLE_POLL_S)
+
+            stabilizer = TemperatureStabilizer(
+                vt,
+                tolerance=0.2,
+                arrive_tolerance=TEMP_TOLERANCE,
+                max_wait_s=TEMP_SETTLE_TIMEOUT_S,
+                log_fn=self.log_message.emit,
+                stop_check=lambda: self._stop_flag,
+            )
+            result = stabilizer.wait_for_stable(temp_set)
+
+            if result.reason == "stopped" or self._stop_flag:
+                break
+            if result.reason == "timeout":
+                self.log_message.emit(
+                    f"[TEMP-SWEEP] Timeout waiting for {temp_set:.1f} C "
+                    f"(current: {result.actual} C). Measuring anyway."
+                )
+            else:
+                actual_str = "N/A" if result.actual is None else f"{result.actual:.1f}"
+                self.log_message.emit(
+                    f"[TEMP-SWEEP] Chamber {result.reason} at {actual_str} C "
+                    f"(target {temp_set:.1f} C, waited {result.waited_s:.0f}s)."
+                )
             if self._stop_flag:
                 break
             time.sleep(step_delay_s)

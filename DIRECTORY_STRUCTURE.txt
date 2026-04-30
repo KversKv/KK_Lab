@@ -97,8 +97,9 @@ instruments/
 │       └── n6705c_datalog_process.py  # Datalog CSV 数据解析与处理模块
 │
 ├── chambers/                # 环境试验箱驱动
-│   └── vt6002_chamber.py    # VT6002 高低温试验箱驱动
-│                            # (Modbus 串口协议，温度设置与读取)
+│   ├── vt6002_chamber.py    # VT6002 高低温试验箱驱动
+│   │                        # (Modbus 串口协议，温度设置与读取)
+│   └── temperature_stabilizer.py  # 温箱温度判稳工具（滑窗 + watchdog，UI 无关）
 │
 ├── frequencyCounter/        # 频率计驱动
 │   └── keysight_53230A.py   # Keysight 53230A 通用计数器/定时器 SCPI 驱动

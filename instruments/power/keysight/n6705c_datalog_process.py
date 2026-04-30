@@ -183,24 +183,55 @@ def import_csv_file(path):
     section_data = raw_text
     custom_labels = []
     ch_name_renames = {}
+    combined_meta = None
+
+    is_combined = raw_text.lstrip().startswith("[COMBINED_EXPORT]")
+    if is_combined:
+        lines_all = raw_text.splitlines()
+        start_idx = 0
+        while start_idx < len(lines_all) and lines_all[start_idx].strip() != "[COMBINED_EXPORT]":
+            start_idx += 1
+        consume_idx = start_idx + 1
+        while consume_idx < len(lines_all):
+            ln = lines_all[consume_idx].strip()
+            if not ln:
+                consume_idx += 1
+                break
+            consume_idx += 1
+        raw_text_effective = "\n".join(lines_all[consume_idx:])
+    else:
+        raw_text_effective = raw_text
 
     cl_marker = "\n[CUSTOM_LABELS]\n"
     rn_marker = "\n[CH_NAME_RENAMES]\n"
+    to_marker = "\n[TIME_OFFSETS]\n"
+    sf_marker = "\n[SOURCE_FILES]\n"
 
-    cl_pos = raw_text.find(cl_marker)
-    rn_pos = raw_text.find(rn_marker)
+    cl_pos = raw_text_effective.find(cl_marker)
+    rn_pos = raw_text_effective.find(rn_marker)
+    to_pos = raw_text_effective.find(to_marker)
+    sf_pos = raw_text_effective.find(sf_marker)
 
-    meta_start = len(raw_text)
+    meta_start = len(raw_text_effective)
+    for p in (cl_pos, rn_pos, to_pos, sf_pos):
+        if p >= 0:
+            meta_start = min(meta_start, p)
+    section_data = raw_text_effective[:meta_start]
+
+    def _slice_block(start_pos, marker_len):
+        if start_pos < 0:
+            return ""
+        block_start = start_pos + marker_len
+        block_end = len(raw_text_effective)
+        for other in (cl_pos, rn_pos, to_pos, sf_pos):
+            if other > start_pos and other < block_end:
+                block_end = other
+        return raw_text_effective[block_start:block_end].strip()
+
+    raw_text = raw_text_effective
+
     if cl_pos >= 0:
-        meta_start = min(meta_start, cl_pos)
-    if rn_pos >= 0:
-        meta_start = min(meta_start, rn_pos)
-    section_data = raw_text[:meta_start]
-
-    if cl_pos >= 0:
-        cl_block_start = cl_pos + len(cl_marker)
-        cl_block_end = rn_pos if rn_pos >= 0 and rn_pos > cl_pos else len(raw_text)
-        cl_block = raw_text[cl_block_start:cl_block_end].strip()
+        cl_block = _slice_block(cl_pos, len(cl_marker))
         cl_lines = cl_block.splitlines()
         for cl_line in cl_lines[1:]:
             cl_line = cl_line.strip()
@@ -219,9 +250,7 @@ def import_csv_file(path):
                 break
 
     if rn_pos >= 0:
-        rn_block_start = rn_pos + len(rn_marker)
-        rn_block_end = cl_pos if cl_pos >= 0 and cl_pos > rn_pos else len(raw_text)
-        rn_block = raw_text[rn_block_start:rn_block_end].strip()
+        rn_block = _slice_block(rn_pos, len(rn_marker))
         rn_lines = rn_block.splitlines()
         for rn_line in rn_lines[1:]:
             rn_line = rn_line.strip()
@@ -234,6 +263,47 @@ def import_csv_file(path):
                 if len(row) >= 2:
                     ch_name_renames[row[0]] = row[1]
                 break
+
+    time_offsets = {}
+    source_files = []
+    if to_pos >= 0:
+        to_block = _slice_block(to_pos, len(to_marker))
+        to_lines = to_block.splitlines()
+        for to_line in to_lines[1:]:
+            to_line = to_line.strip()
+            if not to_line:
+                continue
+            import csv
+            import io
+            reader = csv.reader(io.StringIO(to_line))
+            for row in reader:
+                if len(row) >= 2:
+                    try:
+                        time_offsets[row[0]] = float(row[1])
+                    except ValueError:
+                        pass
+                break
+
+    if sf_pos >= 0:
+        sf_block = _slice_block(sf_pos, len(sf_marker))
+        sf_lines = sf_block.splitlines()
+        for sf_line in sf_lines[1:]:
+            sf_line = sf_line.strip()
+            if not sf_line:
+                continue
+            import csv
+            import io
+            reader = csv.reader(io.StringIO(sf_line))
+            for row in reader:
+                if len(row) >= 2:
+                    source_files.append((row[0], row[1]))
+                break
+
+    if is_combined:
+        combined_meta = {
+            "time_offsets": time_offsets,
+            "source_files": source_files,
+        }
 
     lines = section_data.splitlines()
 
@@ -306,7 +376,7 @@ def import_csv_file(path):
     if not all_data:
         return None
 
-    return all_data, custom_labels, ch_name_renames
+    return all_data, custom_labels, ch_name_renames, combined_meta
 
 
 def _parse_dlog_raw(raw_data):

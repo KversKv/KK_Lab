@@ -27,6 +27,7 @@ from ui.modules.chamber_module_frame import VT6002ConnectionMixin
 from ui.modules.keysight_53230a_module_frame import Keysight53230AConnectionMixin
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockMSO64B, MockVT6002, MockKeysight53230A
+from instruments.chambers import TemperatureStabilizer
 
 
 class _CLKTestWorker(QObject):
@@ -242,38 +243,23 @@ class _CLKTestWorker(QObject):
                 except Exception as e:
                     self.log.emit(f"[WARN] Chamber start command failed: {e}")
 
-            history = []
-            stable_count = 0
-            poll_count = 0
-            wait_t0 = time.time()
-            while True:
-                if self._stop_flag:
-                    break
-                actual_temp = chamber.get_current_temp()
-                history.append(actual_temp)
-                poll_count += 1
-                if len(history) > 10:
-                    history.pop(0)
-                if len(history) >= 5:
-                    if max(history) - min(history) < tolerance:
-                        stable_count += 1
-                    else:
-                        stable_count = 0
-                    if stable_count >= 3:
-                        break
-                time.sleep(30)
+            stabilizer = TemperatureStabilizer(
+                chamber,
+                tolerance=tolerance,
+                log_fn=self.log.emit,
+                stop_check=lambda: self._stop_flag,
+            )
+            result = stabilizer.wait_for_stable(t)
 
-            wait_elapsed = time.time() - wait_t0
-
-            if self._stop_flag:
+            if self._stop_flag or result.reason == "stopped":
                 self.log.emit("[WARN] Test stopped")
                 break
 
-            actual_temp = chamber.get_current_temp()
+            actual_temp = result.actual if result.actual is not None else chamber.get_current_temp()
             self.log.emit(
-                f"[INFO] [{idx + 1}/{len(temps)}] Temperature stabilized: "
+                f"[INFO] [{idx + 1}/{len(temps)}] Temperature {result.reason}: "
                 f"target={t:.1f} °C, actual={actual_temp:.2f} °C, "
-                f"polled {poll_count} times, waited {wait_elapsed:.0f}s"
+                f"polled {result.poll_count} times, waited {result.waited_s:.0f}s"
             )
 
             self.log.emit(f"[INFO] DUT thermal soak in progress ({soak_time}s)...")
