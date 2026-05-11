@@ -93,14 +93,15 @@ _CLR_TEXT_BTN      = "#94a3b8"  # 工具栏按钮 (slate-400)
 _CLR_TEXT_BTN_LOG  = "#cbd5e1"  # 日志区按钮 (slate-300)
 _CLR_TEXT_BODY     = "#cbd5e1"  # 日志正文 (slate-300)
 _CLR_TEXT_TIME     = "#64748b"  # 日志时间戳 (slate-500)
-_CLR_TEXT_INFO     = "#06b6d4"  # [INFO] 标签 (cyan-500)
+_CLR_TEXT_INFO     = "#94a3b8"  # [INFO] 标签 (slate-400)
 _CLR_CONNECT_FG    = "#34d399"  # Connect (emerald-400)
 _CLR_CONNECT_BG    = "#07202b"  # Connect 背景
 _CLR_SEND_BG       = "#10b981"  # Send (emerald-500)
 _CLR_SEND_HOVER    = "#059669"  # Send hover (emerald-600)
 _CLR_SEND_PRESS    = "#047857"  # Send pressed (emerald-700)
 _CLR_ERROR         = "#f43f5e"  # 断开/错误 (rose-500)
-_CLR_RX            = "#f59e0b"  # RX (amber-500)
+_CLR_RX            = "#10b981"  # RX (emerald-500)
+_CLR_TX            = "#60a5fa"  # TX (blue-400)
 _CLR_TOGGLE_ON     = "#6366f1"  # ASCII/HEX 选中 (indigo-500)
 
 
@@ -937,7 +938,7 @@ class SerialComMixin:
         self._sc_baud_combo = DarkComboBox()
         self._sc_baud_combo.setFixedHeight(28)
         self._sc_baud_combo.setEditable(True)
-        for br in ["921600", "1152000", "2000000", "3000000", "115200", "9600", "Custom"]:
+        for br in ["921600", "1152000", "2000000", "3000000", "Custom"]:
             self._sc_baud_combo.addItem(br)
         self._sc_baud_combo.setCurrentIndex(0)
         f2 = self._sc_baud_combo.font()
@@ -1430,11 +1431,11 @@ class SerialComMixin:
         layout.addWidget(self._sc_status_baud_label)
 
         self._sc_status_rx_label = QLabel("RX: 0 B")
-        self._sc_status_rx_label.setStyleSheet("color: #f59e0b;")
+        self._sc_status_rx_label.setStyleSheet(f"color: {_CLR_RX};")
         layout.addWidget(self._sc_status_rx_label)
 
         self._sc_status_tx_label = QLabel("TX: 0 B")
-        self._sc_status_tx_label.setStyleSheet("color: #34d399;")
+        self._sc_status_tx_label.setStyleSheet(f"color: {_CLR_TX};")
         layout.addWidget(self._sc_status_tx_label)
 
         layout.addStretch()
@@ -1473,6 +1474,11 @@ class SerialComMixin:
         self._sc_qc_add_btn.clicked.connect(self._sc_add_quick_cmd)
         self._sc_qc_import_btn.clicked.connect(self._sc_import_quick_cmds)
         self._sc_qc_export_btn.clicked.connect(self._sc_export_quick_cmds)
+
+        self._sc_baud_combo.activated.connect(lambda _idx: self._sc_on_baudrate_changed())
+        _baud_line_edit = self._sc_baud_combo.lineEdit()
+        if _baud_line_edit is not None:
+            _baud_line_edit.editingFinished.connect(self._sc_on_baudrate_changed)
 
         self.serial_data_received.connect(self._sc_on_data_received)
 
@@ -1588,7 +1594,39 @@ class SerialComMixin:
             self._sc_status_baud_label.setText("Baud rate: -")
 
         self._sc_port_combo.setEnabled(not connected)
-        self._sc_baud_combo.setEnabled(not connected)
+        self._sc_baud_combo.setEnabled(True)
+
+    def _sc_on_baudrate_changed(self):
+        baud_text = self._sc_baud_combo.currentText().strip()
+        try:
+            baudrate = int(baud_text)
+        except ValueError:
+            if self._serial_connected:
+                self._sc_append_system(f"[ERROR] Invalid baud rate: {baud_text}")
+            return
+
+        if baudrate == getattr(self, '_serial_baudrate', None):
+            return
+
+        if not self._serial_connected:
+            self._serial_baudrate = baudrate
+            return
+
+        if DEBUG_MOCK or self._serial_conn is None:
+            self._serial_baudrate = baudrate
+            if hasattr(self, '_sc_status_baud_label'):
+                self._sc_status_baud_label.setText(f"Baud rate: {baudrate}")
+            self._sc_append_system(f"[INFO] Baud rate updated: {baudrate}")
+            return
+
+        try:
+            self._serial_conn.baudrate = baudrate
+            self._serial_baudrate = baudrate
+            if hasattr(self, '_sc_status_baud_label'):
+                self._sc_status_baud_label.setText(f"Baud rate: {baudrate}")
+            self._sc_append_system(f"[INFO] Baud rate updated: {baudrate}")
+        except Exception as e:
+            self._sc_append_system(f"[ERROR] Failed to set baud rate: {e}")
 
     def _sc_on_pause(self, checked):
         self._sc_paused = checked
@@ -1774,11 +1812,11 @@ class SerialComMixin:
         sb_layout.addWidget(baud_label)
 
         rx_label = QLabel("RX: 0 B")
-        rx_label.setStyleSheet("color: #f59e0b;")
+        rx_label.setStyleSheet(f"color: {_CLR_RX};")
         sb_layout.addWidget(rx_label)
 
         tx_label = QLabel("TX: 0 B")
-        tx_label.setStyleSheet("color: #34d399;")
+        tx_label.setStyleSheet(f"color: {_CLR_TX};")
         sb_layout.addWidget(tx_label)
 
         sb_layout.addStretch()
@@ -1846,7 +1884,7 @@ class SerialComMixin:
             panel["conn"] = None
             panel["port_label"].setText(f"Port: MOCK")
             panel["port_label"].setStyleSheet(f"color: #34d399; font-size: 11px; font-family: {_TERM_FONT}; background: transparent;")
-            self._sc_extra_panel_append_log(panel, "[INFO] Mock connected", "#06b6d4")
+            self._sc_extra_panel_append_log(panel, "[INFO] Mock connected", _CLR_TEXT_INFO)
             return
 
         try:
@@ -1867,7 +1905,7 @@ class SerialComMixin:
             panel["conn"] = conn
             panel["port_label"].setText(f"Port: {port}")
             panel["port_label"].setStyleSheet(f"color: #34d399; font-size: 11px; font-family: {_TERM_FONT}; background: transparent;")
-            self._sc_extra_panel_append_log(panel, f"[INFO] Connected: {port} @ {baudrate}", "#06b6d4")
+            self._sc_extra_panel_append_log(panel, f"[INFO] Connected: {port} @ {baudrate}", _CLR_TEXT_INFO)
             self._sc_extra_panel_start_read(panel)
         except Exception as e:
             self._sc_extra_panel_append_log(panel, f"[ERROR] Connection failed: {e}", "#f43f5e")
@@ -1906,7 +1944,7 @@ class SerialComMixin:
         display = data.decode("utf-8", errors="replace")
         for line in display.splitlines():
             if line.strip():
-                self._sc_extra_panel_append_log(panel, f"[RX] {line}", "#f59e0b")
+                self._sc_extra_panel_append_log(panel, f"[RX] {line}", _CLR_RX)
 
     def _sc_extra_panel_append_log(self, panel, message, color="#cbd5e1"):
         ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
@@ -2204,7 +2242,7 @@ class SerialComMixin:
                 self._sc_status_tx_label.setText(self._sc_format_bytes("TX", self._sc_tx_bytes))
                 if self._sc_show_send:
                     display = line if not self._sc_tx_display_hex else data.hex(' ')
-                    self._sc_append_log(f"[TX] {display}", "#60a5fa")
+                    self._sc_append_log(f"[TX] {display}", _CLR_TX)
             else:
                 self._sc_append_system("[ERROR] Send failed, serial not connected")
 
@@ -2235,7 +2273,7 @@ class SerialComMixin:
 
         for line in display.splitlines():
             if line.strip():
-                self._sc_append_log(f"[RX] {line}", "#f59e0b")
+                self._sc_append_log(f"[RX] {line}", _CLR_RX)
 
     def _sc_on_auto_resend_toggled(self, checked):
         self._sc_auto_resend = checked
@@ -2330,7 +2368,7 @@ class SerialComMixin:
             self._sc_tx_bytes += len(data)
             self._sc_status_tx_label.setText(self._sc_format_bytes("TX", self._sc_tx_bytes))
             if self._sc_show_send:
-                self._sc_append_log(f"[TX] {cmd}", "#60a5fa")
+                self._sc_append_log(f"[TX] {cmd}", _CLR_TX)
 
     def _sc_qc_context_menu(self, entry, btn, pos):
         menu = QMenu()
@@ -2562,7 +2600,7 @@ class SerialComMixin:
                 self._sc_scroll_to_bottom()
 
     def _sc_append_system(self, message: str):
-        color_map = {"INFO": "#06b6d4", "WARN": "#f59e0b", "ERROR": "#f43f5e"}
+        color_map = {"INFO": _CLR_TEXT_INFO, "WARN": "#f59e0b", "ERROR": "#f43f5e"}
         tag = ""
         for t in color_map:
             if f"[{t}]" in message:
@@ -3039,7 +3077,7 @@ class _AddLogPanelDialog(QDialog):
         self._baud_combo = DarkComboBox()
         self._baud_combo.setFixedHeight(22)
         self._baud_combo.setEditable(True)
-        for br in ["921600", "1152000", "2000000", "3000000", "115200", "9600"]:
+        for br in ["921600", "1152000", "2000000", "3000000"]:
             self._baud_combo.addItem(br)
         self._baud_combo.setCurrentIndex(0)
         grid.addWidget(self._baud_combo, 2, 1)
@@ -3252,7 +3290,7 @@ class _SerialSettingsDialog(QDialog):
         self.baud_combo = DarkComboBox()
         self.baud_combo.setFixedHeight(22)
         self.baud_combo.setEditable(True)
-        for br in ["921600", "1152000", "2000000", "3000000", "115200", "9600", "Custom"]:
+        for br in ["921600", "1152000", "2000000", "3000000", "Custom"]:
             self.baud_combo.addItem(br)
         grid.addWidget(self.baud_combo, 1, 1)
 
@@ -3438,8 +3476,8 @@ class _SerialSettingsDialog(QDialog):
         layout.addWidget(self._section_title("Log Level Colors"))
 
         color_info = QLabel(
-            "RX → Amber (#f59e0b)    TX → Blue (#60a5fa)\n"
-            "INFO → Cyan (#06b6d4)    WARN → Amber (#f59e0b)    ERROR → Rose (#f43f5e)"
+            "RX → Emerald (#10b981)    TX → Blue (#60a5fa)\n"
+            "INFO → Slate (#94a3b8)    WARN → Amber (#f59e0b)    ERROR → Rose (#f43f5e)"
         )
         color_info.setStyleSheet(f"color: #94a3b8; font-size: 11px; font-family: {_UI_FONT}; background: transparent;")
         color_info.setWordWrap(True)
