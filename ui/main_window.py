@@ -836,7 +836,7 @@ class MainWindow(QMainWindow):
         self.kk_serials_btn = SidebarNavButton(
             "KK Serials",
             "",
-            os.path.join(_PAGE_SVGS_DIR, "activity.svg")
+            os.path.join(_PAGE_SVGS_DIR, "terminal.svg")
         )
         left_nav_layout.addWidget(self.kk_serials_btn)
 

@@ -39,6 +39,7 @@ KK_Lab/
 ├── docs/                    # AI 协作与项目架构文档
 ├── hooks/                   # PyInstaller 自定义 hook
 ├── spec/                    # PyInstaller 打包配置
+├── tools/                   # 开发辅助脚本 (SVG→ICO 转换等，不进打包产物)
 └── Results/                 # 测试结果输出目录 (运行时生成，Git 不跟踪)
 
 ================================================================================
@@ -337,8 +338,19 @@ hooks/
 spec/
 ├── kk_lab.spec              # KK_Lab 主程序打包配置
 │                            # 打包命令: python -m PyInstaller spec/kk_lab.spec --clean --noconfirm
-└── n6705c_datalog.spec      # N6705C Datalog 独立工具打包配置
-                             # 打包命令: python -m PyInstaller spec/n6705c_datalog.spec --clean --noconfirm
+├── n6705c_datalog.spec      # N6705C Datalog 独立工具打包配置
+│                            # 打包命令: python -m PyInstaller spec/n6705c_datalog.spec --clean --noconfirm
+└── serialcom_module.spec    # SerialCom 串口模块独立窗口打包配置
+                             # 打包命令: python -m PyInstaller spec/serialcom_module.spec --clean --noconfirm
+
+================================================================================
+  tools/ - 开发辅助脚本
+================================================================================
+
+tools/
+└── svg_to_ico.py            # 通用 SVG → 多分辨率 Windows ICO 转换工具
+                             # 用法: .venv\Scripts\python.exe tools\svg_to_ico.py <in.svg> <out.ico>
+                             # 支持 --sizes / --stroke / --fill / --bg / --padding 参数
 
 ================================================================================
   Results/ - 测试结果输出

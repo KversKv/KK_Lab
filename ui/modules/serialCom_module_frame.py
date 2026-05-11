@@ -3629,8 +3629,16 @@ if __name__ == "__main__":
     app.setStyle("Fusion")
     qInstallMessageHandler(_custom_message_handler)
 
+    _ICON_PATH = os.path.join(
+        get_resource_base(), "resources", "icons", "serialcom_module.ico"
+    )
+    if os.path.isfile(_ICON_PATH):
+        app.setWindowIcon(QIcon(_ICON_PATH))
+
     w4 = _DemoCompleteSerialWidget()
     w4.setWindowTitle("Complete Serial Console")
+    if os.path.isfile(_ICON_PATH):
+        w4.setWindowIcon(QIcon(_ICON_PATH))
     w4.resize(900, 600)
     w4.show()
     w4.move(50, 100)
