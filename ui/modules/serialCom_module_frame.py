@@ -8,7 +8,7 @@ _PROJECT_ROOT = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.absp
 if _PROJECT_ROOT not in _sys.path:
     _sys.path.insert(0, _PROJECT_ROOT)
 from ui.resource_path import get_resource_base as _get_resource_base
-from ui.resource_path import get_resource_base
+from ui.resource_path import get_resource_base, get_user_data_dir
 _PROJECT_ROOT = _get_resource_base()
 if _PROJECT_ROOT not in _sys.path:
     _sys.path.insert(0, _PROJECT_ROOT)
@@ -732,6 +732,8 @@ class SerialComMixin:
         self._sc_flush_timer.setInterval(60)
         self._sc_flush_timer.timeout.connect(self._sc_flush_pending_logs)
         self._sc_flush_timer.start()
+
+        self._sc_load_persisted_state()
 
     # --- toolbar ---
 
@@ -2387,6 +2389,96 @@ class SerialComMixin:
                 json.dump(self._sc_quick_commands, f, ensure_ascii=False, indent=2)
             self._sc_append_system(f"[INFO] Exported {len(self._sc_quick_commands)} command(s)")
 
+    # --- persistence (config + quick commands) ---
+    #
+    # 设计目标:
+    #   - 配置 / 快捷指令必须能在打包后跨次启动持久保存
+    #   - 写入位置: %APPDATA%\KK_Lab\SerialCom\  (开发态: <项目根>/user_data/SerialCom/)
+    #   - 严禁写到 EXE 同目录或 sys._MEIPASS, 兼容 Program Files / onefile 临时目录
+    #   - 当前为铺路骨架: 自动加载 + 应用退出时由调用方触发 _sc_save_persisted_state()
+    #     UI 上后续可再加 "Save / Reset" 按钮调用同两个方法.
+
+    _SC_CONFIG_FILENAME = "config.json"
+    _SC_QUICK_CMDS_FILENAME = "quick_commands.json"
+
+    def _sc_user_config_dir(self) -> str:
+        return get_user_data_dir("SerialCom")
+
+    def _sc_persisted_paths(self):
+        base = self._sc_user_config_dir()
+        return (
+            os.path.join(base, self._SC_CONFIG_FILENAME),
+            os.path.join(base, self._SC_QUICK_CMDS_FILENAME),
+        )
+
+    def _sc_collect_persisted_state(self) -> dict:
+        return {
+            "rx_display_hex": getattr(self, "_sc_rx_display_hex", False),
+            "tx_display_hex": getattr(self, "_sc_tx_display_hex", False),
+            "show_timestamp": getattr(self, "_sc_show_timestamp", True),
+            "auto_resend": getattr(self, "_sc_auto_resend", False),
+            "resend_interval": getattr(self, "_sc_resend_interval", 1000),
+            "line_ending": getattr(self, "_sc_line_ending", "\r\n"),
+            "show_send": getattr(self, "_sc_show_send", True),
+            "line_by_line": getattr(self, "_sc_line_by_line", False),
+            "sidebar_visible": getattr(self, "_sc_sidebar_visible", True),
+            "send_history": list(getattr(self, "_sc_send_history", []))[-50:],
+        }
+
+    def _sc_apply_persisted_state(self, data: dict) -> None:
+        if not isinstance(data, dict):
+            return
+        for key, attr in (
+            ("rx_display_hex", "_sc_rx_display_hex"),
+            ("tx_display_hex", "_sc_tx_display_hex"),
+            ("show_timestamp", "_sc_show_timestamp"),
+            ("auto_resend", "_sc_auto_resend"),
+            ("resend_interval", "_sc_resend_interval"),
+            ("line_ending", "_sc_line_ending"),
+            ("show_send", "_sc_show_send"),
+            ("line_by_line", "_sc_line_by_line"),
+            ("sidebar_visible", "_sc_sidebar_visible"),
+        ):
+            if key in data:
+                setattr(self, attr, data[key])
+        if isinstance(data.get("send_history"), list):
+            self._sc_send_history = [str(x) for x in data["send_history"]]
+
+    def _sc_load_persisted_state(self) -> None:
+        try:
+            cfg_path, quick_path = self._sc_persisted_paths()
+            if os.path.isfile(cfg_path):
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    self._sc_apply_persisted_state(json.load(f))
+            if os.path.isfile(quick_path):
+                with open(quick_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, list):
+                    cmds = []
+                    for item in data:
+                        if isinstance(item, dict) and "cmd" in item:
+                            cmds.append({"name": item.get("name", ""), "cmd": item["cmd"]})
+                        elif isinstance(item, str):
+                            cmds.append({"name": "", "cmd": item})
+                    self._sc_quick_commands = cmds
+                    if hasattr(self, "_sc_refresh_quick_buttons"):
+                        try:
+                            self._sc_refresh_quick_buttons()
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
+    def _sc_save_persisted_state(self) -> None:
+        try:
+            cfg_path, quick_path = self._sc_persisted_paths()
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                json.dump(self._sc_collect_persisted_state(), f, ensure_ascii=False, indent=2)
+            with open(quick_path, "w", encoding="utf-8") as f:
+                json.dump(getattr(self, "_sc_quick_commands", []), f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
     # --- log helpers ---
 
     def _sc_append_log(self, message: str, color: str = "#cbd5e1"):
@@ -3617,6 +3709,13 @@ if __name__ == "__main__":
 
         def append_log(self, msg):
             self._sc_append_system(msg)
+
+        def closeEvent(self, event):
+            try:
+                self._sc_save_persisted_state()
+            except Exception:
+                pass
+            super().closeEvent(event)
 
     from PySide6.QtCore import QtMsgType, qInstallMessageHandler
 

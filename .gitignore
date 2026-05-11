@@ -9,3 +9,5 @@ build/
 dist/
 Results/*
 !Results/.gitkeep
+
+user_data/
