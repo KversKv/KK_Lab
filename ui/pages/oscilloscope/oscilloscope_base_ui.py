@@ -252,6 +252,268 @@ class CouplingToggle(QWidget):
         return QSize(100, 32)
 
 
+class TriggerModeToggle(QWidget):
+    toggled = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(32)
+        self._value = "AUTO"
+        self._anim_progress = 0.0
+
+        self._bg = QColor("#1A2750")
+        self._knob_color = QColor("#243760")
+        self._text_active = QColor("#F3F6FF")
+        self._text_inactive = QColor("#5F77AE")
+        self._border_color = QColor("#22376A")
+
+        self._anim = QPropertyAnimation(self, b"animProgress")
+        self._anim.setDuration(180)
+        self._anim.setEasingCurve(QEasingCurve.InOutCubic)
+
+        self.setCursor(Qt.PointingHandCursor)
+
+    def _get_anim_progress(self):
+        return self._anim_progress
+
+    def _set_anim_progress(self, val):
+        self._anim_progress = val
+        self.update()
+
+    animProgress = Property(float, _get_anim_progress, _set_anim_progress)
+
+    def value(self):
+        return self._value
+
+    def setValue(self, val):
+        val = val.upper()
+        if val not in ("AUTO", "NORMAL"):
+            return
+        if val == self._value:
+            return
+        self._value = val
+        target = 0.0 if val == "AUTO" else 1.0
+        self._anim.stop()
+        self._anim.setStartValue(self._anim_progress)
+        self._anim.setEndValue(target)
+        self._anim.start()
+        self.toggled.emit(self._value)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            new_val = "NORMAL" if self._value == "AUTO" else "AUTO"
+            self.setValue(new_val)
+        super().mousePressEvent(event)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+
+        w, h = self.width(), self.height()
+        radius = h / 2
+
+        p.setPen(QPen(self._border_color, 1))
+        p.setBrush(self._bg)
+        p.drawRoundedRect(QRect(0, 0, w, h), radius, radius)
+
+        knob_margin = 3
+        knob_h = h - knob_margin * 2
+        knob_w = w / 2 - knob_margin
+        knob_x = knob_margin + self._anim_progress * (w / 2)
+        knob_y = knob_margin
+
+        p.setPen(Qt.NoPen)
+        p.setBrush(self._knob_color)
+        p.drawRoundedRect(QRect(int(knob_x), int(knob_y), int(knob_w), int(knob_h)),
+                          knob_h / 2, knob_h / 2)
+
+        font = p.font()
+        font.setWeight(QFont.Bold)
+        font.setPointSize(9)
+        p.setFont(font)
+
+        left_rect = QRect(0, 0, w // 2, h)
+        right_rect = QRect(w // 2, 0, w // 2, h)
+
+        p.setPen(self._text_active if self._anim_progress < 0.5 else self._text_inactive)
+        p.drawText(left_rect, Qt.AlignCenter, "Auto")
+
+        p.setPen(self._text_active if self._anim_progress >= 0.5 else self._text_inactive)
+        p.drawText(right_rect, Qt.AlignCenter, "Normal")
+
+        p.end()
+
+    def sizeHint(self):
+        return QSize(160, 32)
+
+
+class RunStopToggle(QWidget):
+    clicked = Signal()
+
+    COLOR_RUN_ACTIVE = QColor("#10e7bc")
+    COLOR_RUN_ACTIVE_BG = QColor("#053b38")
+    COLOR_RUN_ACTIVE_BORDER = QColor("#08c9a5")
+
+    COLOR_STOP_ACTIVE = QColor("#ff4d6d")
+    COLOR_STOP_ACTIVE_BG = QColor("#3A0820")
+    COLOR_STOP_ACTIVE_BORDER = QColor("#FF6B8A")
+
+    COLOR_DIM_TEXT = QColor("#3A4563")
+    COLOR_DIM_BG = QColor("#0B1638")
+    COLOR_DIM_BORDER = QColor("#16254A")
+
+    COLOR_WAITING_BG = QColor("#101A33")
+    COLOR_WAITING_BORDER = QColor("#2A3A66")
+
+    COLOR_DIVIDER = QColor("#22376A")
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._running = False
+        self._waiting = False
+        self._enabled = True
+        self._pulse_phase = 0
+        self._hover = False
+
+        self.setFixedHeight(40)
+        self.setCursor(Qt.PointingHandCursor)
+
+        self._pulse_timer = QTimer(self)
+        self._pulse_timer.setInterval(550)
+        self._pulse_timer.timeout.connect(self._on_pulse)
+
+    def isRunning(self) -> bool:
+        return self._running
+
+    def isWaiting(self) -> bool:
+        return self._waiting
+
+    def setRunning(self, running: bool):
+        changed = (running != self._running) or self._waiting
+        self._waiting = False
+        if running == self._running and not changed:
+            return
+        self._running = running
+        if running:
+            self._pulse_phase = 0
+            self._pulse_timer.start()
+        else:
+            self._pulse_timer.stop()
+            self._pulse_phase = 0
+        self.update()
+
+    def setWaiting(self, waiting: bool):
+        if waiting == self._waiting:
+            return
+        self._waiting = waiting
+        if waiting:
+            self._pulse_timer.stop()
+            self._pulse_phase = 0
+        elif self._running and self._enabled:
+            self._pulse_timer.start()
+        self.update()
+
+    def setEnabled(self, enabled: bool):
+        self._enabled = enabled
+        self.setCursor(Qt.PointingHandCursor if enabled else Qt.ArrowCursor)
+        if not enabled:
+            self._pulse_timer.stop()
+        elif self._running and not self._waiting:
+            self._pulse_timer.start()
+        super().setEnabled(enabled)
+        self.update()
+
+    def _on_pulse(self):
+        self._pulse_phase = (self._pulse_phase + 1) % 2
+        self.update()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton and self._enabled:
+            self.clicked.emit()
+        super().mousePressEvent(event)
+
+    def enterEvent(self, event):
+        self._hover = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hover = False
+        self.update()
+        super().leaveEvent(event)
+
+    def sizeHint(self):
+        return QSize(110, 40)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+
+        w, h = self.width(), self.height()
+        radius = 7
+
+        if self._running:
+            bg = self.COLOR_RUN_ACTIVE_BG
+            border = self.COLOR_RUN_ACTIVE_BORDER
+        else:
+            bg = self.COLOR_STOP_ACTIVE_BG
+            border = self.COLOR_STOP_ACTIVE_BORDER
+
+        if self._waiting:
+            bg = self.COLOR_WAITING_BG
+            border = self.COLOR_WAITING_BORDER
+
+        if not self._enabled:
+            bg = self.COLOR_DIM_BG
+            border = self.COLOR_DIM_BORDER
+
+        if self._hover and self._enabled:
+            bg = bg.lighter(115)
+
+        p.setPen(QPen(border, 1.2))
+        p.setBrush(bg)
+        p.drawRoundedRect(QRect(0, 0, w - 1, h - 1), radius, radius)
+
+        run_rect = QRect(0, 0, w, h // 2)
+        stop_rect = QRect(0, h // 2, w, h - h // 2)
+
+        font = p.font()
+        font.setPointSize(8)
+        font.setWeight(QFont.Bold)
+        p.setFont(font)
+
+        if not self._enabled:
+            run_color = self.COLOR_DIM_TEXT
+            stop_color = self.COLOR_DIM_TEXT
+        elif self._waiting:
+            run_color = self.COLOR_DIM_TEXT
+            stop_color = self.COLOR_DIM_TEXT
+        elif self._running:
+            run_color = self.COLOR_RUN_ACTIVE
+            if self._pulse_phase == 1:
+                run_color = run_color.lighter(130)
+            stop_color = self.COLOR_DIM_TEXT
+        else:
+            run_color = self.COLOR_DIM_TEXT
+            stop_color = self.COLOR_STOP_ACTIVE
+            if self._pulse_phase == 1:
+                stop_color = stop_color.lighter(130)
+
+        p.setPen(run_color)
+        p.drawText(run_rect, Qt.AlignCenter, "Run")
+
+        p.setPen(stop_color)
+        p.drawText(stop_rect, Qt.AlignCenter, "Stop")
+
+        divider_pen = QPen(self.COLOR_DIVIDER, 1)
+        p.setPen(divider_pen)
+        margin_x = 8
+        y = h // 2
+        p.drawLine(margin_x, y, w - margin_x, y)
+
+        p.end()
+
+
 class TimeScaleEdit(QLineEdit):
     """A QLineEdit that supports mouse wheel to cycle through a
     predefined time-scale sequence (1-2-4-10 pattern across ns/us/ms/s),
@@ -288,6 +550,8 @@ class TimeScaleEdit(QLineEdit):
         1.0:  's',
     }
 
+    unitChanged = Signal(str)
+
     def __init__(self, default_text="1us", parent=None):
         super().__init__(default_text, parent)
         self._last_unit_mult = 1e-6
@@ -295,6 +559,23 @@ class TimeScaleEdit(QLineEdit):
         if parsed_mult is not None:
             self._last_unit_mult = parsed_mult
         self._current_index = self._find_nearest_index(self.parse_to_seconds(default_text))
+        self._last_emitted_unit = self._MULT_TO_UNIT.get(self._last_unit_mult, 'us')
+        self.textChanged.connect(self._maybe_emit_unit_changed)
+
+    def _maybe_emit_unit_changed(self, _text: str = ""):
+        mult = self._extract_unit_mult(self.text())
+        if mult is None:
+            return
+        unit = self._MULT_TO_UNIT.get(mult)
+        if unit and unit != self._last_emitted_unit:
+            self._last_emitted_unit = unit
+            self.unitChanged.emit(unit)
+
+    def current_unit(self) -> str:
+        mult = self._extract_unit_mult(self.text())
+        if mult is None:
+            mult = self._last_unit_mult
+        return self._MULT_TO_UNIT.get(mult, 'us')
 
     def _extract_unit_mult(self, text: str):
         t = text.strip().lower()
@@ -1010,11 +1291,11 @@ class OscilloscopeBaseUI(QWidget):
 
         left_splitter = QSplitter(Qt.Vertical)
         left_splitter.setChildrenCollapsible(True)
-        left_splitter.setHandleWidth(6)
+        left_splitter.setHandleWidth(2)
         left_splitter.setStyleSheet("""
             QSplitter { background: transparent; border: none; }
-            QSplitter::handle { background-color: #16254A; height: 4px; border-radius: 2px; }
-            QSplitter::handle:hover { background-color: #4C6FFF; }
+            QSplitter::handle { background-color: transparent; height: 2px; border: none; }
+            QSplitter::handle:hover { background-color: transparent; }
         """)
 
         left_upper_widget = QWidget()
@@ -1025,16 +1306,22 @@ class OscilloscopeBaseUI(QWidget):
         left_upper.addWidget(self._create_display_card(), 3)
         left_upper.addWidget(self._create_measurements_card(), 1)
 
+        self._left_splitter = left_splitter
+        log_card = self._create_log_card()
+        self._log_card = log_card
+
         left_splitter.addWidget(left_upper_widget)
-        left_splitter.addWidget(self._create_log_card())
+        left_splitter.addWidget(log_card)
         left_splitter.setStretchFactor(0, 4)
         left_splitter.setStretchFactor(1, 1)
         left_splitter.setSizes([600, 120])
+        self._log_expanded_sizes = [600, 120]
 
         content_grid.addWidget(left_splitter, 1, 0, 2, 1)
 
         right_upper = QVBoxLayout()
         right_upper.setSpacing(16)
+        right_upper.addWidget(self._create_trigger_settings_card())
         right_upper.addWidget(self._create_settings_card())
         content_grid.addLayout(right_upper, 1, 1)
 
@@ -1294,32 +1581,29 @@ class OscilloscopeBaseUI(QWidget):
         layout.setSpacing(14)
 
         header = QHBoxLayout()
+        header.setSpacing(10)
         title = QLabel("∿  Measurements")
         title.setObjectName("sectionTitle")
         header.addWidget(title)
-        header.addStretch()
-        layout.addLayout(header)
-
-        add_row = QHBoxLayout()
-        add_row.setSpacing(8)
+        header.addSpacing(12)
 
         type_label = QLabel("Type")
         type_label.setStyleSheet("color:#AFC0E8; font-weight:600;")
-        add_row.addWidget(type_label)
+        header.addWidget(type_label)
 
         self.meas_type_combo = DarkComboBox(bg="#091735", border="#1A2D57")
         self.meas_type_combo.addItems(self.MEASUREMENT_TYPES)
         self.meas_type_combo.setFixedWidth(140)
-        add_row.addWidget(self.meas_type_combo)
+        header.addWidget(self.meas_type_combo)
 
         src_label = QLabel("Source")
         src_label.setStyleSheet("color:#AFC0E8; font-weight:600;")
-        add_row.addWidget(src_label)
+        header.addWidget(src_label)
 
         self.meas_source_combo = DarkComboBox(bg="#091735", border="#1A2D57")
         self.meas_source_combo.addItems([f"CH{i+1}" for i in range(self.NUM_CHANNELS)])
         self.meas_source_combo.setFixedWidth(110)
-        add_row.addWidget(self.meas_source_combo)
+        header.addWidget(self.meas_source_combo)
 
         self.add_meas_btn = QPushButton("+ Add")
         self.add_meas_btn.setObjectName("ghostBtn")
@@ -1347,7 +1631,7 @@ class OscilloscopeBaseUI(QWidget):
             }
         """)
         self.add_meas_btn.clicked.connect(self._on_add_measurement)
-        add_row.addWidget(self.add_meas_btn)
+        header.addWidget(self.add_meas_btn)
 
         self.clear_meas_btn = QPushButton("✕  Clear All")
         self.clear_meas_btn.setObjectName("ghostBtn")
@@ -1375,10 +1659,10 @@ class OscilloscopeBaseUI(QWidget):
             }
         """)
         self.clear_meas_btn.clicked.connect(self._on_clear_measurements)
-        add_row.addWidget(self.clear_meas_btn)
+        header.addWidget(self.clear_meas_btn)
 
-        add_row.addStretch()
-        layout.addLayout(add_row)
+        header.addStretch()
+        layout.addLayout(header)
 
         self._results_scroll = QScrollArea()
         self._results_scroll.setWidgetResizable(True)
@@ -1465,6 +1749,85 @@ class OscilloscopeBaseUI(QWidget):
         logger.debug("[MEAS] _create_metric_card done: %s", card)
         return card
 
+    def _create_trigger_settings_card(self):
+        card = QFrame()
+        card.setObjectName("card")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(18, 16, 18, 18)
+        layout.setSpacing(14)
+
+        title = QLabel("\u26A1  Trigger Settings")
+        title.setObjectName("sectionTitle")
+        layout.addWidget(title)
+
+        action_row = QHBoxLayout()
+        action_row.setSpacing(10)
+
+        self.trigger_run_stop_btn = RunStopToggle()
+        self.trigger_run_stop_btn.setFixedHeight(40)
+        self._trigger_running = False
+        action_row.addWidget(self.trigger_run_stop_btn, 1)
+
+        self.trigger_single_btn = QPushButton("Single")
+        self.trigger_single_btn.setObjectName("triggerSingleBtn")
+        self.trigger_single_btn.setFixedHeight(40)
+        self.trigger_single_btn.setStyleSheet("""
+            QPushButton#triggerSingleBtn {
+                background-color: #1A2750;
+                border: 1px solid #4C6FFF;
+                color: #B7C6FF;
+                padding: 4px 12px;
+                border-radius: 7px;
+                font-weight: 700;
+            }
+            QPushButton#triggerSingleBtn:hover {
+                background-color: #243B6E;
+                border: 1px solid #6E8AFF;
+                color: #DDE6FF;
+            }
+            QPushButton#triggerSingleBtn:pressed {
+                background-color: #162040;
+            }
+            QPushButton#triggerSingleBtn:disabled {
+                background-color: #0E1628;
+                border: 1px solid #151E35;
+                color: #3A4563;
+            }
+        """)
+        action_row.addWidget(self.trigger_single_btn, 1)
+
+        layout.addLayout(action_row)
+
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(8)
+        mode_label = QLabel("Trigger Mode")
+        mode_label.setStyleSheet("color:#AFC0E8; font-weight:600;")
+        mode_label.setMinimumWidth(70)
+        mode_row.addWidget(mode_label)
+        self.trigger_mode_toggle = TriggerModeToggle()
+        mode_row.addWidget(self.trigger_mode_toggle, 1)
+        layout.addLayout(mode_row)
+
+        layout.addSpacing(4)
+
+        trigger_layout = QVBoxLayout()
+        trigger_layout.setSpacing(10)
+
+        trigger_layout.addWidget(self._labeled_widget_h("Source", self._create_trigger_source()))
+        trigger_layout.addWidget(self._labeled_widget_h("Level (V)", self._create_trigger_level()))
+
+        self.trigger_slope_combo = DarkComboBox(bg="#091735", border="#1A2D57")
+        self.trigger_slope_combo.addItems(self.TRIGGER_SLOPE_OPTIONS)
+        trigger_layout.addWidget(self._labeled_widget_h("Slope", self.trigger_slope_combo))
+
+        layout.addLayout(trigger_layout)
+
+        return card
+
+    def _apply_run_stop_style(self, running: bool):
+        self._trigger_running = running
+        self.trigger_run_stop_btn.setRunning(running)
+
     def _create_settings_card(self):
         card = QFrame()
         card.setObjectName("card")
@@ -1477,19 +1840,38 @@ class OscilloscopeBaseUI(QWidget):
         layout.addWidget(title)
 
         layout.addWidget(self._create_small_section_title("HORIZONTAL"))
-        h_box = QVBoxLayout()
-        h_box.setSpacing(6)
-
-        h_title = QLabel("TimeScale (s/div)")
-        h_title.setStyleSheet("font-weight: 600; color:#B8C7EA;")
-        h_box.addWidget(h_title)
 
         self.timebase_edit = TimeScaleEdit(self.TIMESCALE_DEFAULT)
         self.timebase_edit.setPlaceholderText("e.g. 1us, 400ns, 10ms ...")
         self.timebase_edit.setToolTip("Scroll to adjust timescale, or type value and press Enter")
-        h_box.addWidget(self.timebase_edit)
+        _initial_ts_unit = self.timebase_edit.current_unit()
+        self.timebase_label = QLabel(f"TimeScale ({_initial_ts_unit}/div)")
+        self.timebase_label.setStyleSheet("color:#AFC0E8; font-weight:600;")
+        self.timebase_label.setMinimumWidth(120)
+        _ts_wrapper = QWidget()
+        _ts_layout = QHBoxLayout(_ts_wrapper)
+        _ts_layout.setContentsMargins(0, 0, 0, 0)
+        _ts_layout.setSpacing(8)
+        _ts_layout.addWidget(self.timebase_label)
+        _ts_layout.addWidget(self.timebase_edit, 1)
+        layout.addWidget(_ts_wrapper)
+        self.timebase_edit.unitChanged.connect(self._on_timebase_unit_changed)
 
-        layout.addLayout(h_box)
+        self.time_offset_edit = QLineEdit("")
+        self.time_offset_edit.setEnabled(False)
+        self._time_offset_last_mult = 1e-6
+        self.time_offset_label = QLabel("Time Offset")
+        self.time_offset_label.setStyleSheet("color:#AFC0E8; font-weight:600;")
+        self.time_offset_label.setMinimumWidth(120)
+        _offset_wrapper = QWidget()
+        _offset_layout = QHBoxLayout(_offset_wrapper)
+        _offset_layout.setContentsMargins(0, 0, 0, 0)
+        _offset_layout.setSpacing(8)
+        _offset_layout.addWidget(self.time_offset_label)
+        _offset_layout.addWidget(self.time_offset_edit, 1)
+        layout.addWidget(_offset_wrapper)
+        self._time_offset_mode = "none"
+        self._update_time_offset_mode("none")
 
         layout.addWidget(self._create_small_section_title("VERTICAL"))
 
@@ -1523,20 +1905,6 @@ class OscilloscopeBaseUI(QWidget):
         layout.addWidget(self.channel_stack)
 
         layout.addSpacing(6)
-        layout.addWidget(self._create_small_section_title("TRIGGER"))
-
-        trigger_layout = QVBoxLayout()
-        trigger_layout.setSpacing(10)
-
-        trigger_layout.addWidget(self._labeled_widget("Source", self._create_trigger_source()))
-
-        trigger_layout.addWidget(self._labeled_widget("Level (V)", self._create_trigger_level()))
-
-        self.trigger_slope_combo = DarkComboBox(bg="#091735", border="#1A2D57")
-        self.trigger_slope_combo.addItems(self.TRIGGER_SLOPE_OPTIONS)
-        trigger_layout.addWidget(self._labeled_widget("Slope", self.trigger_slope_combo))
-
-        layout.addLayout(trigger_layout)
 
         self.apply_btn = QPushButton("Apply Settings to Instrument")
         self.apply_btn.setObjectName("primaryBtn")
@@ -1681,6 +2049,19 @@ class OscilloscopeBaseUI(QWidget):
         layout.addWidget(widget)
         return wrapper
 
+    def _labeled_widget_h(self, label_text, widget, label_min_width=70):
+        wrapper = QWidget()
+        layout = QHBoxLayout(wrapper)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        label = QLabel(label_text)
+        label.setStyleSheet("color:#AFC0E8; font-weight:600;")
+        label.setMinimumWidth(label_min_width)
+        layout.addWidget(label)
+        layout.addWidget(widget, 1)
+        return wrapper
+
     def _create_channel_card(self, channel_num):
         frame = QFrame()
         frame.setObjectName("innerCard")
@@ -1699,20 +2080,16 @@ class OscilloscopeBaseUI(QWidget):
 
         layout.addLayout(header)
 
-        coupling_title = QLabel("Coupling")
-        coupling_title.setStyleSheet("color:#AFC0E8; font-weight:600;")
-        layout.addWidget(coupling_title)
-
         coupling_toggle = CouplingToggle()
-        layout.addWidget(coupling_toggle)
+        layout.addWidget(self._labeled_widget_h("Coupling", coupling_toggle, label_min_width=110))
 
         channel_data = {
             'channel_label': channel_label,
             'coupling_toggle': coupling_toggle,
         }
 
-        scale_widget = self._labeled_line_edit("Scale (V/div)", self.CHANNEL_SCALE_DEFAULT)
-        offset_widget = self._labeled_line_edit(self.CHANNEL_OFFSET_LABEL, self.CHANNEL_OFFSET_DEFAULT)
+        scale_widget = self._labeled_line_edit("Scale (V/div)", self.CHANNEL_SCALE_DEFAULT, horizontal=True)
+        offset_widget = self._labeled_line_edit(self.CHANNEL_OFFSET_LABEL, self.CHANNEL_OFFSET_DEFAULT, horizontal=True)
 
         layout.addWidget(scale_widget["widget"])
         layout.addWidget(offset_widget["widget"])
@@ -1724,19 +2101,33 @@ class OscilloscopeBaseUI(QWidget):
         self.channel_cards.append(frame)
         return frame
 
-    def _labeled_line_edit(self, label_text, default_text):
+    def _labeled_line_edit(self, label_text, default_text, horizontal=False, label_min_width=110):
         wrapper = QWidget()
-        layout = QVBoxLayout(wrapper)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        if horizontal:
+            layout = QHBoxLayout(wrapper)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(8)
 
-        label = QLabel(label_text)
-        label.setStyleSheet("color:#AFC0E8; font-weight:600;")
+            label = QLabel(label_text)
+            label.setStyleSheet("color:#AFC0E8; font-weight:600;")
+            label.setMinimumWidth(label_min_width)
 
-        edit = QLineEdit(default_text)
+            edit = QLineEdit(default_text)
 
-        layout.addWidget(label)
-        layout.addWidget(edit)
+            layout.addWidget(label)
+            layout.addWidget(edit, 1)
+        else:
+            layout = QVBoxLayout(wrapper)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(6)
+
+            label = QLabel(label_text)
+            label.setStyleSheet("color:#AFC0E8; font-weight:600;")
+
+            edit = QLineEdit(default_text)
+
+            layout.addWidget(label)
+            layout.addWidget(edit)
 
         return {"widget": wrapper, "edit": edit}
 
@@ -1769,6 +2160,7 @@ class OscilloscopeBaseUI(QWidget):
         self.capture_btn.clicked.connect(self._on_capture)
         self.apply_btn.clicked.connect(self._on_apply_settings)
         self.timebase_apply_requested.connect(self._on_apply_timebase_only)
+        self.time_offset_edit.returnPressed.connect(self._apply_time_offset_immediate)
 
         for i, ch in enumerate(self.channels):
             ch_num = i + 1
@@ -1789,6 +2181,10 @@ class OscilloscopeBaseUI(QWidget):
         self.trigger_slope_combo.currentIndexChanged.connect(
             lambda: self._apply_trigger_immediate()
         )
+
+        self.trigger_single_btn.clicked.connect(self._on_trigger_single_clicked)
+        self.trigger_run_stop_btn.clicked.connect(self._on_trigger_run_stop_clicked)
+        self.trigger_mode_toggle.toggled.connect(self._on_trigger_mode_changed)
 
         self._set_interactive_enabled(False)
         self.append_log("[SYSTEM] Ready. Waiting for instrument connection.")
@@ -1828,15 +2224,33 @@ class OscilloscopeBaseUI(QWidget):
 
     def _toggle_log_panel(self):
         if self._log_expanded:
+            current_sizes = self._left_splitter.sizes()
+            if current_sizes and all(s >= 0 for s in current_sizes):
+                self._log_expanded_sizes = list(current_sizes)
+
             self.log_edit.hide()
             self.clear_log_btn.hide()
             self.log_toggle_btn.setText("▸  Execution Logs")
             self._log_expanded = False
+
+            collapsed_h = self._log_card.layout().contentsMargins().top() \
+                + self.log_toggle_btn.sizeHint().height() \
+                + self._log_card.layout().contentsMargins().bottom()
+            self._log_card.setMaximumHeight(collapsed_h)
+            self._log_card.setMinimumHeight(0)
+
+            total = sum(self._log_expanded_sizes) if self._log_expanded_sizes else 720
+            self._left_splitter.setSizes([max(total - collapsed_h, 0), collapsed_h])
         else:
             self.log_edit.show()
             self.clear_log_btn.show()
             self.log_toggle_btn.setText("▾  Execution Logs")
             self._log_expanded = True
+
+            self._log_card.setMaximumHeight(16777215)
+            self._log_card.setMinimumHeight(0)
+            sizes = self._log_expanded_sizes or [600, 120]
+            self._left_splitter.setSizes(sizes)
 
     def append_log(self, message):
         self.log_edit.append(message)
@@ -1850,9 +2264,7 @@ class OscilloscopeBaseUI(QWidget):
 
     def _connect_dirty_tracking(self):
         self.timebase_edit.textChanged.connect(self._mark_settings_dirty)
-        self.trigger_level_edit.textChanged.connect(self._mark_settings_dirty)
-        self.trigger_source_combo.currentIndexChanged.connect(self._mark_settings_dirty)
-        self.trigger_slope_combo.currentIndexChanged.connect(self._mark_settings_dirty)
+        self.time_offset_edit.textChanged.connect(self._mark_settings_dirty)
 
         for ch in self.channels:
             ch['scale_edit'].textChanged.connect(self._mark_settings_dirty)
@@ -2042,9 +2454,18 @@ class OscilloscopeBaseUI(QWidget):
         self.meas_source_combo.setEnabled(enabled)
         self.apply_btn.setEnabled(enabled)
         self.timebase_edit.setEnabled(enabled)
+        if enabled and getattr(self, "_time_offset_mode", "none") != "none":
+            self.time_offset_edit.setEnabled(True)
+        else:
+            self.time_offset_edit.setEnabled(False)
         self.trigger_source_combo.setEnabled(enabled)
         self.trigger_level_edit.setEnabled(enabled)
         self.trigger_slope_combo.setEnabled(enabled)
+        self.trigger_single_btn.setEnabled(enabled)
+        self.trigger_run_stop_btn.setEnabled(enabled)
+        self.trigger_mode_toggle.setEnabled(enabled)
+        if not enabled:
+            self._apply_run_stop_style(False)
         self.all_ch_default_btn.setEnabled(enabled)
         self.ripple_set_btn.setEnabled(enabled)
         self.quick_channel_combo.setEnabled(enabled)
@@ -2174,6 +2595,13 @@ class OscilloscopeBaseUI(QWidget):
             elif result["is_mso64b"]:
                 self._update_channel_colors(self.CHANNEL_COLORS_TEKTRONIX)
 
+            if result["is_dsox"]:
+                self._update_time_offset_mode("seconds")
+            elif result["is_mso64b"]:
+                self._update_time_offset_mode("percent")
+            else:
+                self._update_time_offset_mode("none")
+
             if self.mso64b_top is not None:
                 if result["is_mso64b"]:
                     self.mso64b_top.connect_instrument(resource, self.controller.instrument, scope_type="MSO64B")
@@ -2206,6 +2634,7 @@ class OscilloscopeBaseUI(QWidget):
 
             self.update_connection_status(False)
             self.set_invert_enabled(True)
+            self._update_time_offset_mode("none")
             self.connection_changed.emit()
         except Exception as e:
             self.set_system_status("● Disconnect failed", is_error=True)
@@ -2228,6 +2657,7 @@ class OscilloscopeBaseUI(QWidget):
             self.controller._instrument_info = ""
             self.update_connection_status(False)
             self.set_invert_enabled(True)
+            self._update_time_offset_mode("none")
             self.connection_changed.emit()
 
     def _sync_from_top(self):
@@ -2265,6 +2695,13 @@ class OscilloscopeBaseUI(QWidget):
             self._update_channel_colors(self.CHANNEL_COLORS_KEYSIGHT)
         elif is_mso64b:
             self._update_channel_colors(self.CHANNEL_COLORS_TEKTRONIX)
+
+        if is_dsox:
+            self._update_time_offset_mode("seconds")
+        elif is_mso64b:
+            self._update_time_offset_mode("percent")
+        else:
+            self._update_time_offset_mode("none")
 
         idx = self.visa_resource_combo.findText(resource)
         if idx >= 0:
@@ -2489,6 +2926,21 @@ class OscilloscopeBaseUI(QWidget):
                 trigger_settings=trigger_settings,
                 num_channels=self.NUM_CHANNELS,
             )
+
+            if self._time_offset_mode != "none":
+                inst = self.controller.instrument
+                if inst is not None and hasattr(inst, "set_timebase_position"):
+                    try:
+                        offset_val = self._get_time_offset_value()
+                        if offset_val is not None:
+                            inst.set_timebase_position(offset_val)
+                            if self._time_offset_mode == "seconds":
+                                self.append_log(f"[SETTING] Time Offset: {offset_val} s")
+                            else:
+                                self.append_log(f"[SETTING] Trigger Position: {offset_val} %")
+                    except Exception as e:
+                        self.append_log(f"[ERROR] Time offset setting failed: {e}")
+
             self._clear_settings_dirty()
         except Exception as e:
             self.append_log(f"[ERROR] Apply settings failed: {e}")
@@ -2504,6 +2956,124 @@ class OscilloscopeBaseUI(QWidget):
             self._clear_settings_dirty()
         except (ValueError, Exception) as e:
             self.append_log(f"[ERROR] Timebase setting failed: {e}")
+
+    def _on_timebase_unit_changed(self, unit: str):
+        if hasattr(self, "timebase_label") and self.timebase_label is not None:
+            self.timebase_label.setText(f"TimeScale ({unit}/div)")
+
+    def _update_time_offset_mode(self, mode: str):
+        prev_mode = getattr(self, "_time_offset_mode", "none")
+        self._time_offset_mode = mode
+        if mode == "seconds":
+            if prev_mode != "seconds":
+                self._time_offset_last_mult = 1e-6
+            unit_str = TimeScaleEdit._MULT_TO_UNIT.get(self._time_offset_last_mult, "us")
+            self.time_offset_label.setText(f"Time Offset ({unit_str})")
+            self.time_offset_edit.setPlaceholderText("e.g. 0, 100us, 1ms (no unit = last unit)")
+            self.time_offset_edit.setToolTip(
+                "Horizontal delay from trigger to screen center.\n"
+                "Accepts suffix ns / us / ms / s. If no unit, the last used unit is reused.\n"
+                "The label updates to show the current unit."
+            )
+            self.time_offset_edit.setEnabled(True)
+            if prev_mode != "seconds" or not self.time_offset_edit.text().strip():
+                self.time_offset_edit.blockSignals(True)
+                self.time_offset_edit.setText(f"0{unit_str}")
+                self.time_offset_edit.blockSignals(False)
+        elif mode == "percent":
+            self.time_offset_label.setText("Trigger Position (%)")
+            self.time_offset_edit.setPlaceholderText("0 ~ 100, e.g. 50")
+            self.time_offset_edit.setToolTip(
+                "Trigger point position on screen, 0 ~ 100 (%).\n"
+                "50 = trigger at horizontal center."
+            )
+            self.time_offset_edit.setEnabled(True)
+            if prev_mode != "percent" or not self.time_offset_edit.text().strip():
+                self.time_offset_edit.blockSignals(True)
+                self.time_offset_edit.setText("50")
+                self.time_offset_edit.blockSignals(False)
+        else:
+            self.time_offset_label.setText("Time Offset")
+            self.time_offset_edit.setPlaceholderText("connect to set")
+            self.time_offset_edit.setToolTip("Connect an oscilloscope to enable horizontal offset.")
+            self.time_offset_edit.setEnabled(False)
+            self.time_offset_edit.blockSignals(True)
+            self.time_offset_edit.setText("")
+            self.time_offset_edit.blockSignals(False)
+
+    def _format_seconds_with_mult(self, seconds: float, mult: float) -> str:
+        unit = TimeScaleEdit._MULT_TO_UNIT.get(mult, "s")
+        val = seconds / mult
+        if val == int(val):
+            return f"{int(val)}{unit}"
+        return f"{val:g}{unit}"
+
+    @staticmethod
+    def _extract_time_unit_mult(text: str):
+        t = text.strip().lower()
+        for suffix, mult in sorted(TimeScaleEdit._UNIT_MAP.items(), key=lambda x: -len(x[0])):
+            if t.endswith(suffix):
+                num_str = t[:-len(suffix)].strip()
+                try:
+                    float(num_str)
+                    return mult
+                except ValueError:
+                    return None
+        for suffix, mult in sorted(TimeScaleEdit._UNIT_SHORT_MAP.items(), key=lambda x: -len(x[0])):
+            if t.endswith(suffix):
+                num_str = t[:-len(suffix)].strip()
+                try:
+                    float(num_str)
+                    return mult
+                except ValueError:
+                    return None
+        return None
+
+    def _get_time_offset_value(self):
+        text = self.time_offset_edit.text().strip()
+        if not text:
+            return None
+        if self._time_offset_mode == "seconds":
+            unit_mult = self._extract_time_unit_mult(text)
+            if unit_mult is not None:
+                self._time_offset_last_mult = unit_mult
+            seconds = TimeScaleEdit.parse_to_seconds(text, fallback_mult=self._time_offset_last_mult)
+            unit_str = TimeScaleEdit._MULT_TO_UNIT.get(self._time_offset_last_mult, "s")
+            self.time_offset_label.setText(f"Time Offset ({unit_str})")
+            display = self._format_seconds_with_mult(seconds, self._time_offset_last_mult)
+            self.time_offset_edit.blockSignals(True)
+            self.time_offset_edit.setText(display)
+            self.time_offset_edit.blockSignals(False)
+            return seconds
+        if self._time_offset_mode == "percent":
+            try:
+                v = float(text)
+            except ValueError:
+                raise ValueError(f"Invalid percent value: {text}")
+            return max(0.0, min(100.0, v))
+        return None
+
+    def _apply_time_offset_immediate(self):
+        if not self.controller.is_connected:
+            return
+        if self._time_offset_mode == "none":
+            return
+        inst = self.controller.instrument
+        if not hasattr(inst, "set_timebase_position"):
+            self.append_log("[WARN] This instrument does not support horizontal offset.")
+            return
+        try:
+            value = self._get_time_offset_value()
+            if value is None:
+                return
+            inst.set_timebase_position(value)
+            if self._time_offset_mode == "seconds":
+                self.append_log(f"[SETTING] Time Offset: {value} s")
+            else:
+                self.append_log(f"[SETTING] Trigger Position: {value} %")
+            self._clear_settings_dirty()
+        except Exception as e:
+            self.append_log(f"[ERROR] Time offset setting failed: {e}")
 
     def _apply_channel_scale_offset(self, channel_num):
         if not self.controller.is_connected:
@@ -2566,6 +3136,69 @@ class OscilloscopeBaseUI(QWidget):
             self._clear_settings_dirty()
         except Exception as e:
             self.append_log(f"[ERROR] Trigger setting failed: {e}")
+
+    def _on_trigger_single_clicked(self):
+        if not self.controller.is_connected:
+            self.append_log("[WARN] Instrument not connected.")
+            return
+        inst = self.controller.instrument
+        try:
+            if hasattr(inst, "single"):
+                inst.single()
+            elif hasattr(inst, "instrument") and hasattr(inst.instrument, "write"):
+                inst.instrument.write("ACQuire:STOPAfter SEQuence")
+                inst.instrument.write("ACQuire:STATE RUN")
+            else:
+                self.append_log("[WARN] Single not supported by this instrument.")
+                return
+            self._apply_run_stop_style(False)
+            self.trigger_run_stop_btn.setWaiting(True)
+            self.append_log("[TRIGGER] Single acquisition triggered.")
+        except Exception as e:
+            self.append_log(f"[ERROR] Single trigger failed: {e}")
+
+    def _on_trigger_run_stop_clicked(self):
+        if not self.controller.is_connected:
+            self.append_log("[WARN] Instrument not connected.")
+            self._apply_run_stop_style(False)
+            return
+        inst = self.controller.instrument
+        try:
+            self.trigger_run_stop_btn.setWaiting(False)
+            if self._trigger_running:
+                if hasattr(inst, "stop"):
+                    inst.stop()
+                self._apply_run_stop_style(False)
+                self.append_log("[TRIGGER] Acquisition stopped.")
+            else:
+                if hasattr(inst, "run"):
+                    inst.run()
+                self._apply_run_stop_style(True)
+                self.append_log("[TRIGGER] Acquisition running.")
+        except Exception as e:
+            self.append_log(f"[ERROR] Run/Stop failed: {e}")
+            self._apply_run_stop_style(False)
+
+    def _on_trigger_mode_changed(self, mode: str):
+        if not self.controller.is_connected:
+            return
+        inst = self.controller.instrument
+        try:
+            from instruments.scopes.tektronix.mso64b import MSO64B
+            from instruments.scopes.keysight.dsox4034a import DSOX4034A
+
+            if isinstance(inst, DSOX4034A):
+                value = "AUTO" if mode == "AUTO" else "NORMal"
+                inst.write(f":TRIGger:SWEep {value}")
+            elif isinstance(inst, MSO64B):
+                value = "AUTO" if mode == "AUTO" else "NORMal"
+                inst.instrument.write(f"TRIGger:A:MODe {value}")
+            else:
+                self.append_log("[WARN] Trigger Mode not supported by this instrument.")
+                return
+            self.append_log(f"[TRIGGER] Mode set to {mode}.")
+        except Exception as e:
+            self.append_log(f"[ERROR] Trigger Mode setting failed: {e}")
 
     def _sync_channel_states_from_instrument(self):
         if not self.controller.is_connected:

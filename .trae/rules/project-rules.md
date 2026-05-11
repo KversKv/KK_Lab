@@ -45,6 +45,16 @@
   - 通用模块（串口 / 日志 / Common 等）→ `resources/modules/SVG_<模块名>/`
   - 页面专属图标 → `resources/pages/<页面>_SVGs/`
   - 代码中通过 `get_resource_base()` + `os.path.join("resources", ...)` 加载，兼容 PyInstaller；新增子目录必须同步到 `spec/kk_lab.spec` 的 `datas`。
+- **数值类控件的 QLabel 必须显式标注单位**（强制）：
+  - 凡是 `QLineEdit / QSpinBox / QDoubleSpinBox / QSlider` 等承载**物理量 / 工程量**的输入控件，其配套 QLabel 必须以 `名称 (单位)` 格式呈现，例如 `Voltage (V)`、`Current (mA)`、`Frequency (Hz)`、`Time Offset (us)`、`TimeScale (s/div)`、`Scale (V/div)`、`Offset (V)`、`Level (V)`、`Trigger Position (%)`。
+  - **不带单位**的纯枚举 / 名称类 label（`Source / Coupling / Slope / Trigger Mode / Type` 等）保持原样。
+  - 当输入支持**多种单位后缀**（如 `100us / 0.5ms / 1s`）时：
+    - 必须维护"上次单位"记忆字段（参考 [TimeScaleEdit](../../ui/pages/oscilloscope/oscilloscope_base_ui.py) 的 `_last_unit_mult`）；
+    - 输入无单位的纯数字时，必须复用上次单位倍率，而非默认按基本单位（秒 / 伏）解释；
+    - 解析成功后必须把 label 文本动态更新为当前生效的单位（`Time Offset (us) → Time Offset (ms)`）。
+  - 仪器型号差异导致**单位语义不同**的字段（如 Keysight 用秒、Tektronix 用百分比），label 与占位符必须随连接的仪器**动态切换**，参考 [_update_time_offset_mode](../../ui/pages/oscilloscope/oscilloscope_base_ui.py)。
+  - 测量结果展示卡（含 `value_label` + `unit_label`）必须按数值大小自动选档（V/mV/µV、Hz/kHz/MHz/GHz 等），参考 [_format_measurement_value_split](../../ui/pages/oscilloscope/oscilloscope_base_ui.py)。
+  - 新增 / 修改任何此类控件时，**必须同步更新 label 文本与日志输出格式**，避免 UI 显示与 `[SETTING]` 日志单位不一致。
 
 ## 4. 工具使用偏好
 
