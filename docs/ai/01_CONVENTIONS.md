@@ -62,6 +62,32 @@ except Exception as e:
 - 共用布局用 `ui/modules/` / `ui/styles/*_module_frame.py` 提供的 Mixin。
 - Widgets 构造中不做 IO；IO 放到槽函数 / 控制器。
 
+### 6.1 弹窗 / 对话框 parent（CRITICAL）
+
+- 所有 `QDialog` 子类实例化必须显式传 `self` 作为 parent，**严禁** `parent=None` 或省略。
+- 静态对话框 `QFileDialog.getOpenFileName / getSaveFileName / getExistingDirectory`、`QMessageBox.warning / information / critical / question / about`、`QInputDialog.getText / getInt / getDouble / getItem` 的第一个参数（parent）**必须**传 `self` 或对应顶层 widget；**严禁**传 `None`。
+- 依据：Qt 以 parent 的 top-level window 为锚点自动居中；`parent=None` 退化为主屏中心，多屏 / 窗口移动场景会割裂体验，并产生多余任务栏项、无法随父最小化、生命周期失管等副作用。
+- 参考正例：[_sc_open_settings_dialog](../../ui/modules/serialCom_module_frame.py) 的 `dlg = _SerialSettingsDialog(self)`。
+
+### 6.2 QDialog 回车绑定（CRITICAL）
+
+- **OK / 主操作按钮**：`setDefault(True)` + `setAutoDefault(True)`，使回车键直接提交表单。
+- **Cancel / Browse / 其它副作用按钮**：`setAutoDefault(False)` + `setDefault(False)`，否则 QDialog 会隐式把所有 QPushButton 的 autoDefault 置 True，Tab 过去按回车就误触发。
+- 不要依赖 Qt 的"自动默认按钮推断"；每个按钮的 default / autoDefault 必须**显式二元化**。
+- 参考正例：[_QuickCmdDialog](../../ui/modules/serialCom_module_frame.py) 的 OK / Cancel 按钮配置。
+
+### 6.3 数值控件 QLabel 必须标注单位（CRITICAL）
+
+- 凡 `QLineEdit / QSpinBox / QDoubleSpinBox / QSlider` 等承载**物理量 / 工程量**的控件，其配套 QLabel 必须以 `名称 (单位)` 格式呈现，例如 `Voltage (V)`、`Current (mA)`、`Frequency (Hz)`、`Time Offset (us)`、`TimeScale (s/div)`、`Scale (V/div)`、`Offset (V)`、`Level (V)`、`Trigger Position (%)`。
+- **不带单位**的纯枚举 / 名称类 label（`Source / Coupling / Slope / Trigger Mode / Type` 等）保持原样。
+- 多单位后缀输入（如 `100us / 0.5ms / 1s`）：
+  - 必须维护"上次单位"记忆字段（参考 [TimeScaleEdit](../../ui/pages/oscilloscope/oscilloscope_base_ui.py) 的 `_last_unit_mult`）。
+  - 输入无单位的纯数字时，**复用上次单位倍率**，不得默认按基本单位（秒 / 伏）解释。
+  - 解析成功后必须把 label 文本动态更新为当前生效的单位（`Time Offset (us) → Time Offset (ms)`）。
+- 仪器型号差异导致**单位语义不同**的字段（如 Keysight 用秒、Tektronix 用百分比），label 与占位符必须随连接仪器**动态切换**，参考 [_update_time_offset_mode](../../ui/pages/oscilloscope/oscilloscope_base_ui.py)。
+- 测量结果展示卡（`value_label` + `unit_label`）必须按数值大小自动选档（V/mV/µV、Hz/kHz/MHz/GHz 等），参考 [_format_measurement_value_split](../../ui/pages/oscilloscope/oscilloscope_base_ui.py)。
+- 新增 / 修改任何此类控件时，**必须同步更新 label 文本与日志输出格式**，避免 UI 显示与 `[SETTING]` 日志单位不一致。
+
 ## 7. 仪器层规范
 
 - 所有仪器继承 `instruments/base/instrument_base.py` 的抽象基类，统一暴露：

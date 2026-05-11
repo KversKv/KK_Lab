@@ -17,7 +17,19 @@
 - [ ] 未执行 `git commit`（除非用户要求）。
 - [ ] 手工运行 / Mock 验证通过。
 
-### 工程清单同步（对照 [project-rules.md §8](../../.trae/rules/project-rules.md) 同步矩阵）
+### 工程清单同步（同步矩阵）
+
+凡是改动落到磁盘，必须按下表**同步**对应清单文件；无对应触发条件则无需改。
+
+| 触发条件 | 必须同步 |
+|---|---|
+| 新增 / 删除 / 重命名**目录或顶层重要文件**（含 `.py` / `.md` / 资源子目录） | [DIRECTORY_STRUCTURE.txt](../../DIRECTORY_STRUCTURE.txt) 对应段落 |
+| 新增 `resources/` 子目录 / `lib/` 下新 DLL / `chips/` 子目录 / 任何**运行时**需要进入安装包的资源 | [spec/kk_lab.spec](../../spec/kk_lab.spec) 的 `datas`（必要时补 `hiddenimports`） |
+| 新增 / 重命名**功能页面**或顶层功能入口 | [helps/](../../helps/) 对应 HTML 帮助文件 |
+| 源码 `import` 了**新第三方包**或锁定版本变动 | [requirements.txt](../../requirements.txt) |
+| 仅新增 / 修改 `docs/ai/*.md` / `.ai/memory.md` / `AGENTS.md` / `CLAUDE.md` / `.trae/rules/*` 等**纯文档** | 只需同步 [DIRECTORY_STRUCTURE.txt](../../DIRECTORY_STRUCTURE.txt)；spec / helps / requirements **不改** |
+
+> ⚠️ 盲区提醒：`DIRECTORY_STRUCTURE.txt` 与 `requirements.txt` 历来最易被 AI 遗漏，务必在回归期逐项复查。
 
 - [ ] 新增 / 删除 / 重命名目录或顶层重要文件 → 已同步 [DIRECTORY_STRUCTURE.txt](../../DIRECTORY_STRUCTURE.txt)
 - [ ] 新增运行时资源 / DLL / `resources/` 子目录 → 已同步 [spec/kk_lab.spec](../../spec/kk_lab.spec) 的 `datas`（必要时 `hiddenimports`）

@@ -1681,7 +1681,7 @@ class SerialComMixin:
         if len(self._sc_extra_log_panels) >= 3:
             self._sc_append_system("[WARN] Maximum 4 LOG panels supported")
             return
-        dlg = _AddLogPanelDialog(parent=None)
+        dlg = _AddLogPanelDialog(parent=self)
         if dlg.exec() != QDialog.Accepted:
             return
         panel_info = dlg.get_config()
@@ -2205,7 +2205,7 @@ class SerialComMixin:
     def _sc_export_logs(self):
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         path, _ = QFileDialog.getSaveFileName(
-            None, "Export Logs", f"serial_log_{ts}.txt", "Text Files (*.txt);;All Files (*)"
+            self, "Export Logs", f"serial_log_{ts}.txt", "Text Files (*.txt);;All Files (*)"
         )
         if path:
             with open(path, "w", encoding="utf-8") as f:
@@ -2328,7 +2328,7 @@ class SerialComMixin:
 
     def _sc_add_quick_cmd(self):
         prefill_cmd = self._sc_send_input.text().strip()
-        dlg = _QuickCmdDialog(name="", cmd=prefill_cmd, parent=None)
+        dlg = _QuickCmdDialog(name="", cmd=prefill_cmd, parent=self)
         if dlg.exec() != QDialog.Accepted:
             return
         name = dlg.get_name()
@@ -2414,7 +2414,7 @@ class SerialComMixin:
             dlg = _QuickCmdDialog(
                 name=entry.get("name", ""),
                 cmd=entry.get("cmd", ""),
-                parent=None,
+                parent=self,
             )
             if dlg.exec() == QDialog.Accepted:
                 entry["name"] = dlg.get_name()
@@ -2423,7 +2423,7 @@ class SerialComMixin:
 
     def _sc_import_quick_cmds(self):
         path, _ = QFileDialog.getOpenFileName(
-            None, "Import Quick Commands", "", "JSON Files (*.json);;All Files (*)"
+            self, "Import Quick Commands", "", "JSON Files (*.json);;All Files (*)"
         )
         if path:
             try:
@@ -2446,7 +2446,7 @@ class SerialComMixin:
         if not self._sc_quick_commands:
             return
         path, _ = QFileDialog.getSaveFileName(
-            None, "Export Quick Commands", "quick_commands.json", "JSON Files (*.json);;All Files (*)"
+            self, "Export Quick Commands", "quick_commands.json", "JSON Files (*.json);;All Files (*)"
         )
         if path:
             with open(path, "w", encoding="utf-8") as f:
@@ -3236,12 +3236,16 @@ class _AddLogPanelDialog(QDialog):
         cancel_btn = QPushButton("Cancel")
         cancel_btn.setObjectName("dlgCancelBtn")
         cancel_btn.setCursor(Qt.PointingHandCursor)
+        cancel_btn.setAutoDefault(False)
+        cancel_btn.setDefault(False)
         cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(cancel_btn)
 
         ok_btn = QPushButton("OK")
         ok_btn.setObjectName("dlgOkBtn")
         ok_btn.setCursor(Qt.PointingHandCursor)
+        ok_btn.setAutoDefault(True)
+        ok_btn.setDefault(True)
         ok_btn.clicked.connect(self.accept)
         btn_row.addWidget(ok_btn)
         root.addLayout(btn_row)
@@ -3322,6 +3326,8 @@ class _QuickCmdDialog(QDialog):
             }}
             QPushButton:hover {{ border-color: #334155; color: #FFFFFF; }}
         """)
+        cancel_btn.setAutoDefault(False)
+        cancel_btn.setDefault(False)
         cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(cancel_btn)
 
@@ -3334,6 +3340,8 @@ class _QuickCmdDialog(QDialog):
             }}
             QPushButton:hover {{ background-color: #059669; }}
         """)
+        ok_btn.setAutoDefault(True)
+        ok_btn.setDefault(True)
         ok_btn.clicked.connect(self.accept)
         btn_row.addWidget(ok_btn)
         root.addLayout(btn_row)
@@ -3371,11 +3379,15 @@ class _SerialSettingsDialog(QDialog):
         cancel_btn = QPushButton("Cancel")
         cancel_btn.setObjectName("dlgCancelBtn")
         cancel_btn.setCursor(Qt.PointingHandCursor)
+        cancel_btn.setAutoDefault(False)
+        cancel_btn.setDefault(False)
         cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(cancel_btn)
         ok_btn = QPushButton("OK")
         ok_btn.setObjectName("dlgOkBtn")
         ok_btn.setCursor(Qt.PointingHandCursor)
+        ok_btn.setAutoDefault(True)
+        ok_btn.setDefault(True)
         ok_btn.clicked.connect(self.accept)
         btn_row.addWidget(ok_btn)
         root.addLayout(btn_row)
@@ -3581,6 +3593,8 @@ class _SerialSettingsDialog(QDialog):
         browse_btn = QPushButton("Browse")
         browse_btn.setCursor(Qt.PointingHandCursor)
         browse_btn.setObjectName("dlgCancelBtn")
+        browse_btn.setAutoDefault(False)
+        browse_btn.setDefault(False)
         browse_btn.clicked.connect(self._browse_log_path)
         path_row.addWidget(browse_btn)
         layout.addLayout(path_row)
