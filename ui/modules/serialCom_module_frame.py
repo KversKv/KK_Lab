@@ -143,6 +143,7 @@ def _serial_connect_style(h=_SERIAL_BTN_HEIGHT, r=_SERIAL_BTN_RADIUS):
             font-size: 12px;
             font-weight: 700;
             min-height: {h}px;
+            min-width: 96px;
         }}
         QPushButton:hover {{
             background-color: #0a2d3b;
@@ -169,6 +170,7 @@ def _serial_disconnect_style(h=_SERIAL_BTN_HEIGHT, r=_SERIAL_BTN_RADIUS):
             font-size: 12px;
             font-weight: 700;
             min-height: {h}px;
+            min-width: 96px;
         }}
         QPushButton:hover {{
             background-color: #3a0f14;
@@ -252,10 +254,14 @@ class _SerialSearchButton(QPushButton):
         painter.end()
 
 
+_SERIAL_BTN_FIXED_WIDTH = 104
+
+
 def _update_serial_btn_state(btn, connected,
                              h=_SERIAL_BTN_HEIGHT, r=_SERIAL_BTN_RADIUS,
                              icon_size=_SERIAL_BTN_ICON_SIZE):
     from PySide6.QtCore import QSize as _QSize
+    btn.setFixedWidth(_SERIAL_BTN_FIXED_WIDTH)
     if connected:
         btn.setText("Disconnect")
         btn.setStyleSheet(_serial_disconnect_style(h=h, r=r))
@@ -1417,7 +1423,10 @@ class SerialComMixin:
         layout.addWidget(header_frame)
 
         self._sc_qc_btn_container = _DropContainer()
-        self._sc_qc_btn_container.setStyleSheet("background: transparent;")
+        self._sc_qc_btn_container.setObjectName("scQuickBtnContainer")
+        self._sc_qc_btn_container.setStyleSheet(
+            "QWidget#scQuickBtnContainer { background: transparent; }"
+        )
         self._sc_qc_btn_layout = _FlowLayout(self._sc_qc_btn_container, spacing=4)
         self._sc_qc_btn_layout.setContentsMargins(6, 4, 6, 4)
         self._sc_qc_btn_container.set_flow_layout(self._sc_qc_btn_layout)
@@ -1580,6 +1589,9 @@ class SerialComMixin:
         self.serial_connection_changed.emit(False)
 
     def _sc_update_connect_ui(self, connected):
+        if not hasattr(self, '_sc_connect_btn_fixed_width_applied'):
+            self._sc_connect_btn.setFixedWidth(96)
+            self._sc_connect_btn_fixed_width_applied = True
         if connected:
             self._sc_connect_btn.setText("Disconnect")
             self._sc_connect_btn.setStyleSheet(f"""
@@ -2350,24 +2362,33 @@ class SerialComMixin:
             btn = _DraggableQuickButton(label, idx)
             btn.setToolTip(f"Command: {cmd}\n(Drag to reorder)")
             btn.setCursor(Qt.PointingHandCursor)
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: #202d3f; border: 1px solid #334155; border-radius: 4px;
-                    color: #cbd5e1; font-size: 12px; font-weight: 500; font-family: {_UI_FONT}; padding: 3px 10px; min-height: 18px;
-                }}
-                QPushButton:hover {{ background-color: #314158; border-color: #475569; color: #FFFFFF; }}
-                QPushButton:pressed {{ background-color: #1a2538; }}
-                QToolTip {{
-                    background-color: #050b1e; border: 1px solid #1e293b;
-                    color: #cbd5e1; font-size: 11px; font-family: {_UI_FONT}; padding: 3px 6px;
-                }}
-            """)
             btn.setContextMenuPolicy(Qt.CustomContextMenu)
             btn.customContextMenuRequested.connect(
                 lambda pos, e=entry, b=btn: self._sc_qc_context_menu(e, b, pos)
             )
             btn.clicked.connect(lambda checked=False, c=cmd: self._sc_send_quick(c))
             self._sc_qc_btn_layout.addWidget(btn)
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: #202d3f;
+                    border: 1px solid #334155;
+                    border-radius: 4px;
+                    color: #cbd5e1;
+                    font-size: 12px;
+                    font-weight: 500;
+                    font-family: {_UI_FONT};
+                    padding: 3px 10px;
+                    min-height: 18px;
+                }}
+                QPushButton:hover {{
+                    background-color: #314158;
+                    border: 1px solid #475569;
+                    color: #FFFFFF;
+                }}
+                QPushButton:pressed {{
+                    background-color: #1a2538;
+                }}
+            """)
 
     def _sc_on_quick_cmd_reorder(self):
         src = self._sc_qc_btn_container.property("_drag_source")
@@ -2824,6 +2845,9 @@ class _DraggableQuickButton(QPushButton):
         super().__init__(text, parent)
         self._drag_index = index
         self._drag_start_pos = None
+        self.setAttribute(Qt.WA_Hover, True)
+        self.setMouseTracking(True)
+        self.setFocusPolicy(Qt.NoFocus)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -2847,6 +2871,10 @@ class _DraggableQuickButton(QPushButton):
 
         drag.exec(Qt.MoveAction)
         self._drag_start_pos = None
+        self.setDown(False)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.update()
 
     def mouseReleaseEvent(self, event):
         self._drag_start_pos = None
@@ -2860,6 +2888,8 @@ class _DropContainer(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
+        self.setMouseTracking(True)
+        self.setAttribute(Qt.WA_Hover, True)
         self._flow_layout = None
 
     def set_flow_layout(self, layout):
