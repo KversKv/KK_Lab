@@ -1,26 +1,47 @@
 # -*- mode: python ; coding: utf-8 -*-
 # PyInstaller spec file for SerialCom Module Standalone Window
-
-#run cmd
-#python -m PyInstaller spec/serialcom_module.spec --clean --noconfirm
 #
-# 输出形式: onedir
-#   - 产物目录: dist/SerialCom_Module/
-#   - 启动入口: dist/SerialCom_Module/SerialCom_Module.exe
-#   - 分发方式: 整个 dist/SerialCom_Module/ 打成 zip 或用 Inno Setup 包成安装器
+# ------------------------------------------------------------------
+# 双模式编译 (onedir 默认 / onefile 可选)
+# ------------------------------------------------------------------
 #
-# 设计要点 (面向分发场景):
-#   1) onedir 模式: 启动快, 杀软误报率低, 兼容企业 SRP/AppLocker
-#   2) upx=False : 避免 Windows Defender / 360 / 火绒因加壳而误报
-#   3) 扩展 excludes: 排除 PySide6 中本模块不需要的子模块, 进一步缩小体积
-#   4) 用户配置/快捷指令一律走 %APPDATA%\KK_Lab\... (见 ui/resource_path.get_user_data_dir),
-#      不写入安装目录, 兼容 C:\Program Files\ 受限权限场景
+# 方式 1  onedir  (默认, 推荐用于分发):
+#   python -m PyInstaller spec/serialcom_module.spec --clean --noconfirm
+#   产物: dist/SerialCom_Module/  (目录, 启动快, 杀软兼容好)
+#
+# 方式 2  onefile (单文件, 适合临时拷贝/快速分享):
+#   PowerShell:
+#     $env:KK_BUILD_MODE="onefile"; python -m PyInstaller spec/serialcom_module.spec --clean --noconfirm
+#   CMD:
+#     set KK_BUILD_MODE=onefile && python -m PyInstaller spec/serialcom_module.spec --clean --noconfirm
+#   产物: dist/SerialCom_Module.exe (单 EXE, 启动较慢 3~5s, 杀软误报概率较高)
+#
+# 切换模式前强烈建议先 --clean, 避免 build/ 残留冲突.
+#
+# 设计要点:
+#   1) onedir 是默认: 启动快, 兼容企业 SRP / AppLocker, 杀软友好
+#   2) upx=False    : 避免 Windows Defender / 360 / 火绒因加壳而误报
+#   3) onefile 模式会自动设置 runtime_tmpdir=None (释放到 %TEMP%\_MEIxxxx)
+#      如果担心 %TEMP% 清理策略, 可手动改成 runtime_tmpdir='.' (EXE 同目录)
+#   4) 用户配置/快捷指令一律走 %APPDATA%\KK_Lab\...
+#      (见 ui/resource_path.get_user_data_dir), 不写 EXE 同目录或 sys._MEIPASS,
+#      两种打包模式下持久化行为完全一致.
 
 import os
 
 block_cipher = None
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(SPEC)))
+
+# ------------------------------------------------------------------
+# 编译模式切换 (通过环境变量 KK_BUILD_MODE)
+# ------------------------------------------------------------------
+BUILD_MODE = os.environ.get('KK_BUILD_MODE', 'onedir').strip().lower()
+if BUILD_MODE not in ('onedir', 'onefile'):
+    raise SystemExit(
+        f"[spec] Invalid KK_BUILD_MODE={BUILD_MODE!r}, expected 'onedir' or 'onefile'"
+    )
+print(f"[spec] SerialCom_Module build mode = {BUILD_MODE}")
 
 a = Analysis(
     [os.path.join(PROJECT_ROOT, 'ui', 'modules', 'serialCom_module_frame.py')],
@@ -103,11 +124,7 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
-exe = EXE(
-    pyz,
-    a.scripts,
-    [],
-    exclude_binaries=True,
+_EXE_COMMON_KWARGS = dict(
     name='SerialCom_Module',
     debug=False,
     bootloader_ignore_signals=False,
@@ -122,13 +139,37 @@ exe = EXE(
     icon=os.path.join(PROJECT_ROOT, 'resources', 'icons', 'serialcom_module.ico'),
 )
 
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,
-    upx=False,
-    upx_exclude=[],
-    name='SerialCom_Module',
-)
+if BUILD_MODE == 'onedir':
+    # onedir: EXE 仅含引导 + pyz, 二进制/资源由 COLLECT 放到目录下
+    exe = EXE(
+        pyz,
+        a.scripts,
+        [],
+        exclude_binaries=True,
+        **_EXE_COMMON_KWARGS,
+    )
+
+    coll = COLLECT(
+        exe,
+        a.binaries,
+        a.zipfiles,
+        a.datas,
+        strip=False,
+        upx=False,
+        upx_exclude=[],
+        name='SerialCom_Module',
+    )
+
+else:  # onefile
+    # onefile: 所有内容打进单 EXE; 启动时自解压到 runtime_tmpdir
+    exe = EXE(
+        pyz,
+        a.scripts,
+        a.binaries,
+        a.zipfiles,
+        a.datas,
+        [],
+        exclude_binaries=False,
+        runtime_tmpdir=None,
+        **_EXE_COMMON_KWARGS,
+    )
