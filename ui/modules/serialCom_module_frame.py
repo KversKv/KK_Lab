@@ -8,7 +8,7 @@ _PROJECT_ROOT = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.absp
 if _PROJECT_ROOT not in _sys.path:
     _sys.path.insert(0, _PROJECT_ROOT)
 from ui.resource_path import get_resource_base as _get_resource_base
-from ui.resource_path import get_resource_base, get_user_data_dir
+from ui.resource_path import get_resource_base
 _PROJECT_ROOT = _get_resource_base()
 if _PROJECT_ROOT not in _sys.path:
     _sys.path.insert(0, _PROJECT_ROOT)
@@ -752,7 +752,7 @@ class SerialComMixin:
     def _build_sc_toolbar(self):
         frame = QFrame()
         frame.setObjectName("scToolbar")
-        frame.setFixedHeight(30)
+        frame.setFixedHeight(40)
         frame.setStyleSheet("""
             QFrame#scToolbar {
                 background-color: #050b1e;
@@ -760,22 +760,22 @@ class SerialComMixin:
             }
         """)
         layout = QHBoxLayout(frame)
-        layout.setContentsMargins(6, 2, 6, 2)
-        layout.setSpacing(2)
+        layout.setContentsMargins(10, 5, 10, 5)
+        layout.setSpacing(4)
 
         self._sc_connect_btn = self._make_sc_btn(
             os.path.join(_SVG_SERIAL_DIR, "connect.svg"), "Connect"
         )
         self._sc_connect_btn.setStyleSheet(f"""
             QPushButton {{
-                min-height: 0px; max-height: 22px; padding: 2px 8px; border-radius: 4px;
+                min-height: 0px; max-height: 30px; padding: 4px 14px; border-radius: 5px;
                 background-color: #07202b; color: #34d399; font-size: 12px;
                 font-family: {_UI_FONT}; font-weight: 700; border: none;
             }}
             QPushButton:hover {{ background-color: #0a2d3b; }}
             QPushButton:pressed {{ background-color: #051820; }}
         """)
-        icon_conn = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "connect.svg"), "#34d399", 12)
+        icon_conn = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "connect.svg"), "#34d399", 13)
         if not icon_conn.isNull():
             self._sc_connect_btn.setIcon(icon_conn)
         layout.addWidget(self._sc_connect_btn)
@@ -799,18 +799,18 @@ class SerialComMixin:
         self._sc_add_log_btn = self._make_sc_btn(
             os.path.join(_SVG_LOGS_DIR, "plus.svg"), ""
         )
-        self._sc_add_log_btn.setFixedSize(18, 18)
+        self._sc_add_log_btn.setFixedSize(22, 22)
         self._sc_add_log_btn.setToolTip("Add LOG panel")
         self._sc_add_log_btn.setStyleSheet("""
             QPushButton {
-                min-height: 0px; max-height: 18px; min-width: 18px; max-width: 18px;
-                padding: 0px; border-radius: 4px;
+                min-height: 0px; max-height: 22px; min-width: 22px; max-width: 22px;
+                padding: 0px; border-radius: 5px;
                 background-color: transparent; color: #94a3b8; border: 1px solid #1e293b;
             }
             QPushButton:hover { border-color: #334155; }
             QPushButton:pressed { background-color: #050b1e; }
         """)
-        icon_add = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "plus.svg"), "#34d399", 10)
+        icon_add = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "plus.svg"), "#34d399", 12)
         if not icon_add.isNull():
             self._sc_add_log_btn.setIcon(icon_add)
         layout.addWidget(self._sc_add_log_btn)
@@ -818,32 +818,32 @@ class SerialComMixin:
         self._sc_remove_log_btn = self._make_sc_btn(
             os.path.join(_SVG_LOGS_DIR, "minus.svg"), ""
         )
-        self._sc_remove_log_btn.setFixedSize(18, 18)
+        self._sc_remove_log_btn.setFixedSize(22, 22)
         self._sc_remove_log_btn.setToolTip("Remove current LOG panel")
         self._sc_remove_log_btn.setStyleSheet("""
             QPushButton {
-                min-height: 0px; max-height: 18px; min-width: 18px; max-width: 18px;
-                padding: 0px; border-radius: 4px;
+                min-height: 0px; max-height: 22px; min-width: 22px; max-width: 22px;
+                padding: 0px; border-radius: 5px;
                 background-color: transparent; color: #94a3b8; border: 1px solid #1e293b;
             }
             QPushButton:hover { border-color: #334155; }
             QPushButton:pressed { background-color: #050b1e; }
             QPushButton:disabled { background-color: transparent; border-color: #1e293b; }
         """)
-        icon_remove = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "minus.svg"), "#f43f5e", 10)
+        icon_remove = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "minus.svg"), "#f43f5e", 12)
         if not icon_remove.isNull():
             self._sc_remove_log_btn.setIcon(icon_remove)
         self._sc_remove_log_btn.setEnabled(False)
         layout.addWidget(self._sc_remove_log_btn)
 
-        layout.addSpacing(4)
+        layout.addSpacing(6)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.VLine)
         sep.setStyleSheet("color: #1e293b;")
         layout.addWidget(sep)
 
-        layout.addSpacing(4)
+        layout.addSpacing(6)
 
         self._sc_sidebar_toggle_btn = self._make_sc_btn(
             os.path.join(_SVG_SERIAL_DIR, "sidebar.svg"), "Sidebar"
@@ -2457,16 +2457,35 @@ class SerialComMixin:
     #
     # 设计目标:
     #   - 配置 / 快捷指令必须能在打包后跨次启动持久保存
-    #   - 写入位置: %APPDATA%\KK_Lab\SerialCom\  (开发态: <项目根>/user_data/SerialCom/)
+    #   - 模块可能被**单独编译**分发, 因此用户目录不挂在 KK_Lab 应用名下,
+    #     而是使用独立的 "SerialCom" 命名空间:
+    #       打包态: %APPDATA%\SerialCom\
+    #       开发态: <项目根>/user_data/SerialCom/
     #   - 严禁写到 EXE 同目录或 sys._MEIPASS, 兼容 Program Files / onefile 临时目录
+    #   - 启动时自动加载快捷指令, 优先顺序:
+    #       1) 用户目录 (%APPDATA%\SerialCom\  /  user_data/SerialCom/)
+    #       2) 回退: EXE 同目录 (打包态) / <项目根>/Results/ (开发态)
+    #     回退来源仅做**只读**加载, 不会反写到用户目录, 避免污染系统配置.
     #   - 当前为铺路骨架: 自动加载 + 应用退出时由调用方触发 _sc_save_persisted_state()
     #     UI 上后续可再加 "Save / Reset" 按钮调用同两个方法.
 
     _SC_CONFIG_FILENAME = "config.json"
     _SC_QUICK_CMDS_FILENAME = "quick_commands.json"
+    _SC_APP_NAMESPACE = "SerialCom"
 
     def _sc_user_config_dir(self) -> str:
-        return get_user_data_dir("SerialCom")
+        if getattr(_sys, "frozen", False):
+            base = _os.environ.get("APPDATA")
+            if not base:
+                base = _os.path.join(_os.path.expanduser("~"), "AppData", "Roaming")
+            root = _os.path.join(base, self._SC_APP_NAMESPACE)
+        else:
+            root = _os.path.join(_PROJECT_ROOT, "user_data", self._SC_APP_NAMESPACE)
+        try:
+            _os.makedirs(root, exist_ok=True)
+        except OSError:
+            pass
+        return root
 
     def _sc_persisted_paths(self):
         base = self._sc_user_config_dir()
@@ -2474,6 +2493,29 @@ class SerialComMixin:
             os.path.join(base, self._SC_CONFIG_FILENAME),
             os.path.join(base, self._SC_QUICK_CMDS_FILENAME),
         )
+
+    def _sc_fallback_dir(self) -> str:
+        if getattr(_sys, "frozen", False):
+            return _os.path.dirname(_sys.executable)
+        return _os.path.join(_PROJECT_ROOT, "Results")
+
+    def _sc_fallback_paths(self):
+        base = self._sc_fallback_dir()
+        return (
+            os.path.join(base, self._SC_CONFIG_FILENAME),
+            os.path.join(base, self._SC_QUICK_CMDS_FILENAME),
+        )
+
+    def _sc_parse_quick_cmds_payload(self, data):
+        if not isinstance(data, list):
+            return None
+        cmds = []
+        for item in data:
+            if isinstance(item, dict) and "cmd" in item:
+                cmds.append({"name": item.get("name", ""), "cmd": item["cmd"]})
+            elif isinstance(item, str):
+                cmds.append({"name": "", "cmd": item})
+        return cmds
 
     def _sc_collect_persisted_state(self) -> dict:
         return {
@@ -2517,25 +2559,48 @@ class SerialComMixin:
     def _sc_load_persisted_state(self) -> None:
         try:
             cfg_path, quick_path = self._sc_persisted_paths()
+            fb_cfg_path, fb_quick_path = self._sc_fallback_paths()
+
+            cfg_source = None
             if os.path.isfile(cfg_path):
-                with open(cfg_path, "r", encoding="utf-8") as f:
-                    self._sc_apply_persisted_state(json.load(f))
+                cfg_source = cfg_path
+            elif os.path.isfile(fb_cfg_path) and os.path.abspath(fb_cfg_path) != os.path.abspath(cfg_path):
+                cfg_source = fb_cfg_path
+            if cfg_source:
+                try:
+                    with open(cfg_source, "r", encoding="utf-8") as f:
+                        self._sc_apply_persisted_state(json.load(f))
+                except Exception:
+                    pass
+
+            quick_source = None
             if os.path.isfile(quick_path):
-                with open(quick_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                if isinstance(data, list):
-                    cmds = []
-                    for item in data:
-                        if isinstance(item, dict) and "cmd" in item:
-                            cmds.append({"name": item.get("name", ""), "cmd": item["cmd"]})
-                        elif isinstance(item, str):
-                            cmds.append({"name": "", "cmd": item})
-                    self._sc_quick_commands = cmds
-                    if hasattr(self, "_sc_refresh_quick_buttons"):
-                        try:
-                            self._sc_refresh_quick_buttons()
-                        except Exception:
-                            pass
+                quick_source = quick_path
+            elif os.path.isfile(fb_quick_path) and os.path.abspath(fb_quick_path) != os.path.abspath(quick_path):
+                quick_source = fb_quick_path
+
+            if quick_source:
+                try:
+                    with open(quick_source, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    cmds = self._sc_parse_quick_cmds_payload(data)
+                    if cmds is not None:
+                        self._sc_quick_commands = cmds
+                        if hasattr(self, "_sc_refresh_quick_buttons"):
+                            try:
+                                self._sc_refresh_quick_buttons()
+                            except Exception:
+                                pass
+                        if hasattr(self, "_sc_append_system"):
+                            try:
+                                origin = "user" if quick_source == quick_path else "fallback"
+                                self._sc_append_system(
+                                    f"[INFO] Loaded {len(cmds)} quick command(s) from {origin}: {quick_source}"
+                                )
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -2656,6 +2721,7 @@ class SerialComMixin:
     def _make_sc_btn(svg_path, text, tone="toolbar"):
         btn = QPushButton(text)
         btn.setCursor(Qt.PointingHandCursor)
+        icon_size = 11
         if tone == "log":
             base_color = "#cbd5e1"
             icon_color = "#cbd5e1"
@@ -2686,9 +2752,10 @@ class SerialComMixin:
         else:
             base_color = "#94a3b8"
             icon_color = "#94a3b8"
+            icon_size = 13
             btn.setStyleSheet(f"""
                 QPushButton {{
-                    min-height: 0px; max-height: 22px; padding: 2px 8px; border-radius: 4px;
+                    min-height: 0px; max-height: 30px; padding: 4px 10px; border-radius: 5px;
                     background-color: transparent; color: {base_color}; font-size: 12px;
                     font-family: {_UI_FONT}; font-weight: 500; border: none;
                 }}
@@ -2696,7 +2763,7 @@ class SerialComMixin:
                 QPushButton:pressed {{ background-color: #050b1e; }}
                 QPushButton:checked {{ border: 1px solid #334155; color: #FFFFFF; }}
             """)
-        icon = _tinted_svg_icon(svg_path, icon_color, 11)
+        icon = _tinted_svg_icon(svg_path, icon_color, icon_size)
         if not icon.isNull():
             btn.setIcon(icon)
         return btn
