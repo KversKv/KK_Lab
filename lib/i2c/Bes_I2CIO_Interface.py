@@ -193,6 +193,32 @@ class BESI2CIO(II2CIO):
     ]
 
     @staticmethod
+    def _candidate_dll_dirs() -> List[str]:
+        dirs: List[str] = []
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            dirs.append(os.path.join(meipass, "lib", "i2c", "config"))
+            dirs.append(os.path.join(meipass, "lib", "i2c"))
+
+        module_dir = os.path.dirname(os.path.abspath(__file__))
+        dirs.append(os.path.join(module_dir, "config"))
+        dirs.append(module_dir)
+
+        if getattr(sys, "frozen", False):
+            exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+            dirs.append(os.path.join(exe_dir, "lib", "i2c", "config"))
+            dirs.append(os.path.join(exe_dir, "lib", "i2c"))
+
+        seen = set()
+        unique_dirs: List[str] = []
+        for d in dirs:
+            d_norm = os.path.normpath(d)
+            if d_norm not in seen and os.path.isdir(d_norm):
+                seen.add(d_norm)
+                unique_dirs.append(d_norm)
+        return unique_dirs
+
+    @staticmethod
     @contextlib.contextmanager
     def _suppress_stdout():
         devnull_fd = os.open(os.devnull, os.O_WRONLY)
@@ -207,22 +233,22 @@ class BESI2CIO(II2CIO):
     
     @classmethod
     def _find_dll(cls) -> Optional[str]:
-        """
-        在当前脚本所在目录下查找DLL文件。
-        
-        Returns:
-            找到的DLL文件的完整路径，如果未找到则返回None
-        """
-        # 获取脚本所在目录
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        
-        # 遍历DLL名称列表
-        for dll_name in cls._DLL_NAMES:
-            dll_path = os.path.join(script_dir, dll_name)
-            if os.path.isfile(dll_path):
-                return dll_path
-        
+        for d in cls._candidate_dll_dirs():
+            for dll_name in cls._DLL_NAMES:
+                dll_path = os.path.join(d, dll_name)
+                if os.path.isfile(dll_path):
+                    return dll_path
         return None
+
+    @classmethod
+    def _register_dll_search_dirs(cls) -> None:
+        if os.name != "nt" or not hasattr(os, "add_dll_directory"):
+            return
+        for d in cls._candidate_dll_dirs():
+            try:
+                os.add_dll_directory(d)
+            except (OSError, FileNotFoundError):
+                pass
     
     def __init__(self, dll_path: Optional[str] = None, verbose: bool = False):
         """
@@ -237,22 +263,29 @@ class BESI2CIO(II2CIO):
         """
         self._verbose = verbose
         try:
-            # 优先使用传入的DLL路径
-            if dll_path is None:
-                # 如果没有指定，才尝试自动查找
-                dll_path = self._find_dll()
-                if dll_path is None:
-                    # 如果未找到，抛出异常
-                    script_dir = os.path.dirname(os.path.abspath(__file__))
-                    dll_names_str = ", ".join(self._DLL_NAMES)
-                    raise OSError(f"在目录 {script_dir} 下未找到动态库文件：{dll_names_str}")
-            
-            # 加载DLL
+            self._register_dll_search_dirs()
+
+            if dll_path is None or not os.path.isfile(dll_path):
+                if dll_path is not None and not os.path.isfile(dll_path):
+                    found = self._find_dll()
+                    if found is None:
+                        raise OSError(
+                            f"指定的动态库不存在且回退查找失败: {dll_path}"
+                        )
+                    dll_path = found
+                else:
+                    dll_path = self._find_dll()
+                    if dll_path is None:
+                        searched = ", ".join(self._candidate_dll_dirs()) or "(无)"
+                        dll_names_str = ", ".join(self._DLL_NAMES)
+                        raise OSError(
+                            f"在以下目录均未找到动态库 ({dll_names_str}): {searched}"
+                        )
+
             self._dll = ctypes.CDLL(dll_path)
-            
-            # 配置函数原型
+
             self._configure_function_prototypes()
-            
+
         except OSError as e:
             raise OSError(f"无法加载动态库: {e}")
     

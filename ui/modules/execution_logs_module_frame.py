@@ -35,9 +35,9 @@ def _tinted_svg_icon(svg_path: str, color: str, size: int = 14) -> QIcon:
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.Antialiasing)
     painter.setRenderHint(QPainter.SmoothPixmapTransform)
-    renderer.render(painter, QRectF(0, 0, px_size, px_size))
+    renderer.render(painter, QRectF(0, 0, size, size))
     painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
-    painter.fillRect(pixmap.rect(), QColor(color))
+    painter.fillRect(QRectF(0, 0, size, size), QColor(color))
     painter.end()
     return QIcon(pixmap)
 

@@ -10,6 +10,7 @@ I2C读写接口封装类
 创建时间: 2025
 """
 
+import os
 import sys
 import time
 import threading
@@ -26,6 +27,26 @@ from Bes_I2CIO_Interface import (
 
 import logging
 logger = logging.getLogger(__name__)
+
+
+def _resolve_default_dll_path() -> str | None:
+    dll_name = "BES_USBIO_I2C_X64.dll"
+    candidates = []
+
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(Path(meipass) / "lib" / "i2c" / "config" / dll_name)
+
+    candidates.append(script_dir / "config" / dll_name)
+
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).resolve().parent
+        candidates.append(exe_dir / "lib" / "i2c" / "config" / dll_name)
+
+    for p in candidates:
+        if p.is_file():
+            return str(p)
+    return None
 
 _INT_TO_WIDTH_FLAG = {
     8: I2CWidthFlag.BIT_8,
@@ -53,7 +74,9 @@ class I2CInterface:
         self._verbose = verbose
 
         if dll_path is None:
-            dll_path = str(script_dir / "config" / "BES_USBIO_I2C_X64.dll")
+            dll_path = _resolve_default_dll_path()
+            if dll_path is None:
+                dll_path = str(script_dir / "config" / "BES_USBIO_I2C_X64.dll")
 
         self._dll_path = dll_path
         self._i2c: BESI2CIO | None = None
