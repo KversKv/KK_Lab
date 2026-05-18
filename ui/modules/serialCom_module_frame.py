@@ -25,14 +25,16 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QVBoxLayout, QPushButton, QLabel, QSizePolicy,
     QFrame, QWidget, QTextEdit, QLineEdit, QComboBox, QCheckBox,
     QScrollArea, QSplitter, QApplication, QMenu, QFileDialog, QGridLayout,
-    QSpinBox, QDialog, QDialogButtonBox, QTabWidget, QLayout,
+    QSpinBox, QDialog, QDialogButtonBox, QTabWidget,
+    QInputDialog, QMessageBox, QTabBar,
 )
+import uuid as _uuid
 from PySide6.QtCore import (
     Signal, QThread, QObject, QTimer, QRectF, Qt, QSize, QRect, QPoint,
     QPropertyAnimation, QEasingCurve, Property, QMimeData,
 )
 from PySide6.QtGui import (
-    QIcon, QPainter, QPixmap, QColor, QAction, QPen, QFont, QDrag,
+    QIcon, QPainter, QPixmap, QColor, QAction, QPen, QFont,
     QShortcut, QKeySequence,
 )
 from PySide6.QtSvg import QSvgRenderer
@@ -689,7 +691,8 @@ class SerialComMixin:
         self._sc_show_send = True
         self._sc_line_by_line = False
         self._sc_send_history = []
-        self._sc_quick_commands = []
+        self._sc_quick_commands = []  # 兼容占位，已不再使用
+        self._sc_qc_data = self._sc_qc_default_data()
         self._sc_sidebar_visible = True
         self._sc_extra_log_panels = []
         self._sc_active_log_panel_index = 0
@@ -1393,29 +1396,105 @@ class SerialComMixin:
 
     def _build_sc_quick_commands(self):
         frame = QFrame()
-        frame.setObjectName("scQuickFrame")
-        frame.setStyleSheet("""
-            QFrame#scQuickFrame {
-                background-color: #050b1e;
-                border-top: 1px solid #1e293b;
-                border-bottom-left-radius: 4px;
-                border-bottom-right-radius: 4px;
-            }
-            QFrame#scQuickHeaderFrame {
+        # 双 objectName 不可行：保留 scQuickFrame 给现有内嵌 QSS；面板级 QSS 通过 quickCommandsPanel 选择器命中
+        frame.setObjectName("quickCommandsPanel")
+        frame.setProperty("class", "scQuickFrame")
+        # 外层面板 + 内部分隔条：背景柔和、低对比边框、圆角；不改变布局
+        frame.setStyleSheet(f"""
+            QFrame#quickCommandsPanel {{
+                background-color: #0f172a;
+                border: 1px solid #334155;
+                border-radius: 6px;
+            }}
+            QFrame#scQuickHeaderFrame {{
                 background: transparent;
                 border: none;
                 border-bottom: 1px solid #1e293b;
-            }
+            }}
+            QFrame#scQuickToolbar {{
+                background: transparent;
+                border: none;
+                border-bottom: 1px solid #1e293b;
+            }}
+            /* 标题强调色 */
+            QLabel#quickCommandsTitle {{
+                color: #fbbf24;
+                font-weight: 600;
+                font-size: 13px;
+                font-family: {_UI_FONT};
+                background: transparent;
+            }}
+            /* 普通操作按钮（+ Group / Import / Export 等通过 _make_sc_btn 的 QPushButton） */
+            QFrame#quickCommandsPanel QPushButton {{
+                background-color: #1e293b;
+                color: #e5e7eb;
+                border: 1px solid #334155;
+                border-radius: 5px;
+                padding: 4px 12px;
+                min-height: 24px;
+            }}
+            QFrame#quickCommandsPanel QPushButton:hover {{
+                background-color: #334155;
+                border-color: #475569;
+                color: #ffffff;
+            }}
+            QFrame#quickCommandsPanel QPushButton:pressed {{
+                background-color: #475569;
+                border-color: #64748b;
+            }}
+            QFrame#quickCommandsPanel QPushButton:disabled {{
+                background-color: #111827;
+                color: #64748b;
+                border-color: #1e293b;
+            }}
+            /* 主操作按钮：+ Add */
+            QFrame#quickCommandsPanel QPushButton#primaryButton {{
+                background-color: #1d4ed8;
+                color: #ffffff;
+                border: 1px solid #3b82f6;
+            }}
+            QFrame#quickCommandsPanel QPushButton#primaryButton:hover {{
+                background-color: #2563eb;
+                border-color: #60a5fa;
+            }}
+            QFrame#quickCommandsPanel QPushButton#primaryButton:pressed {{
+                background-color: #1e40af;
+            }}
+            /* 快捷指令按钮 */
+            QFrame#quickCommandsPanel QPushButton#quickCommandButton {{
+                background-color: #172033;
+                color: #e5e7eb;
+                border: 1px solid #334155;
+                border-radius: 6px;
+                padding: 5px 12px;
+                min-height: 24px;
+                min-width: 48px;
+            }}
+            QFrame#quickCommandsPanel QPushButton#quickCommandButton:hover {{
+                background-color: #25344d;
+                border-color: #3b82f6;
+                color: #ffffff;
+            }}
+            QFrame#quickCommandsPanel QPushButton#quickCommandButton:pressed {{
+                background-color: #1d4ed8;
+                border-color: #60a5fa;
+            }}
+            /* QScrollArea 透明背景 */
+            QFrame#quickCommandsPanel QScrollArea {{
+                background: transparent;
+                border: none;
+            }}
         """)
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
+        # --- header: 标题 + 项目 Tab 栏 ---
         header_frame = QFrame()
         header_frame.setObjectName("scQuickHeaderFrame")
         header = QHBoxLayout(header_frame)
-        header.setContentsMargins(6, 4, 6, 4)
-        header.setSpacing(3)
+        header.setContentsMargins(8, 6, 8, 4)
+        header.setSpacing(6)
 
         zap_icon = QLabel()
         icon = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "zap.svg"), "#f59e0b", 11)
@@ -1426,38 +1505,210 @@ class SerialComMixin:
         header.addWidget(zap_icon)
 
         lbl = QLabel("Quick Commands")
-        lbl.setStyleSheet(f"color: #f59e0b; font-size: 12px; font-weight: 700; font-family: {_UI_FONT}; background: transparent;")
+        lbl.setObjectName("quickCommandsTitle")
+        # 颜色 / 字号由面板级 QSS (#quickCommandsTitle) 接管，此处仅设置背景透明以避免被父容器覆盖
+        lbl.setStyleSheet("background: transparent;")
         header.addWidget(lbl)
 
-        header.addStretch()
+        # 项目 Tab 栏（最顶层分组），末尾内置 "+" 加号 tab，右键菜单 + 拖拽排序
+        self._sc_qc_project_tabs = _ProjectTabBar()
+        self._sc_qc_project_tabs.setExpanding(False)
+        # drawBase=True：让 QTabBar 自身画底基线，与未选中 tab 形成"标签栏"贴合效果
+        self._sc_qc_project_tabs.setDrawBase(True)
+        self._sc_qc_project_tabs.setUsesScrollButtons(True)
+        # 标签栏风格：选中 tab 背景 = 下方内容区背景，顶部 2px 蓝色高亮条，
+        # 底边盖住 QTabBar::pane 基线，视觉上与内容区"打通"；未选中 tab 透明融入栏背景。
+        self._sc_qc_project_tabs.setStyleSheet(f"""
+            QTabBar {{
+                background: transparent;
+                /* QTabBar 自身的底基线颜色（drawBase 时生效） */
+                qproperty-drawBase: 1;
+            }}
+            QTabBar::tab {{
+                background-color: transparent;
+                color: #94a3b8;
+                border: 1px solid transparent;
+                border-top: 2px solid transparent;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+                padding: 4px 14px;
+                margin-right: 1px;
+                margin-bottom: -1px;
+                min-height: 22px;
+                font-size: 12px;
+                font-family: {_UI_FONT};
+            }}
+            QTabBar::tab:hover {{
+                background-color: #1e293b;
+                color: #e2e8f0;
+            }}
+            QTabBar::tab:selected {{
+                background-color: #0f172a;
+                color: #f8fafc;
+                border: 1px solid #334155;
+                border-top: 2px solid #3b82f6;
+                /* 用与内容区一致的颜色覆盖下边线，视觉上把选中 tab 与内容区打通 */
+                border-bottom-color: #0f172a;
+            }}
+            QTabBar::tab:selected:hover {{
+                background-color: #0f172a;
+                color: #ffffff;
+            }}
+            QTabBar::tab:!selected {{
+                margin-top: 2px;  /* 未选中 tab 略下沉，让选中 tab 看上去"凸起" */
+            }}
+        """)
+        header.addWidget(self._sc_qc_project_tabs, 1)
+
+        layout.addWidget(header_frame)
+
+        # --- 工具栏:区域/分组下拉 + 操作按钮 ---
+        toolbar_frame = QFrame()
+        toolbar_frame.setObjectName("scQuickToolbar")
+        toolbar = QHBoxLayout(toolbar_frame)
+        toolbar.setContentsMargins(8, 6, 8, 6)
+        toolbar.setSpacing(6)
+
+        _combo_qss = f"""
+            QComboBox {{
+                background-color: #0b1220;
+                color: #e5e7eb;
+                border: 1px solid #334155;
+                border-radius: 5px;
+                padding: 3px 8px;
+                min-height: 24px;
+                font-size: 12px;
+                font-family: {_UI_FONT};
+                min-width: 90px;
+            }}
+            QComboBox:hover {{ border-color: #475569; }}
+            QComboBox:focus {{ border-color: #3b82f6; }}
+            QComboBox::drop-down {{ border: none; width: 20px; }}
+            QComboBox QAbstractItemView {{
+                background-color: #0f172a;
+                color: #e5e7eb;
+                border: 1px solid #334155;
+                selection-background-color: #2563eb;
+                selection-color: #ffffff;
+                outline: 0;
+            }}
+        """
+
+        group_lbl = QLabel("Group:")
+        group_lbl.setStyleSheet(
+            f"color: #cbd5e1; font-size: 12px; font-family: {_UI_FONT}; background: transparent;"
+        )
+        toolbar.addWidget(group_lbl)
+        self._sc_qc_group_combo = QComboBox()
+        self._sc_qc_group_combo.setStyleSheet(_combo_qss)
+        self._sc_qc_group_combo.setContextMenuPolicy(Qt.CustomContextMenu)
+        toolbar.addWidget(self._sc_qc_group_combo)
+
+        self._sc_qc_new_group_btn = self._make_sc_btn(
+            os.path.join(_SVG_SERIAL_DIR, "plus.svg"), "Group", tone="quick"
+        )
+        # 工具栏统一暗色按钮样式：覆盖 _make_sc_btn(quick) 的局部 setStyleSheet
+        _toolbar_btn_qss = f"""
+            QPushButton {{
+                background-color: #1e293b;
+                color: #e5e7eb;
+                border: 1px solid #334155;
+                border-radius: 5px;
+                padding: 4px 12px;
+                min-height: 24px;
+                font-size: 12px;
+                font-family: {_UI_FONT};
+                font-weight: 500;
+            }}
+            QPushButton:hover {{
+                background-color: #334155;
+                border-color: #475569;
+                color: #ffffff;
+            }}
+            QPushButton:pressed {{
+                background-color: #475569;
+                border-color: #64748b;
+            }}
+            QPushButton:disabled {{
+                background-color: #111827;
+                color: #64748b;
+                border-color: #1e293b;
+            }}
+        """
+        self._sc_qc_new_group_btn.setStyleSheet(_toolbar_btn_qss)
+        toolbar.addWidget(self._sc_qc_new_group_btn)
+
+        toolbar.addStretch()
 
         self._sc_qc_add_btn = self._make_sc_btn(
             os.path.join(_SVG_SERIAL_DIR, "plus.svg"), "Add", tone="quick"
         )
-        header.addWidget(self._sc_qc_add_btn)
+        # + Add 作为主操作按钮：蓝色突出
+        self._sc_qc_add_btn.setObjectName("primaryButton")
+        self._sc_qc_add_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #1d4ed8;
+                color: #ffffff;
+                border: 1px solid #3b82f6;
+                border-radius: 5px;
+                padding: 4px 12px;
+                min-height: 24px;
+                font-size: 12px;
+                font-family: {_UI_FONT};
+                font-weight: 600;
+            }}
+            QPushButton:hover {{
+                background-color: #2563eb;
+                border-color: #60a5fa;
+            }}
+            QPushButton:pressed {{
+                background-color: #1e40af;
+                border-color: #3b82f6;
+            }}
+        """)
+        toolbar.addWidget(self._sc_qc_add_btn)
 
         self._sc_qc_import_btn = self._make_sc_btn(
             os.path.join(_SVG_SERIAL_DIR, "import.svg"), "Import", tone="quick"
         )
-        header.addWidget(self._sc_qc_import_btn)
+        self._sc_qc_import_btn.setStyleSheet(_toolbar_btn_qss)
+        toolbar.addWidget(self._sc_qc_import_btn)
 
         self._sc_qc_export_btn = self._make_sc_btn(
             os.path.join(_SVG_LOGS_DIR, "export.svg"), "Export", tone="quick"
         )
-        header.addWidget(self._sc_qc_export_btn)
+        self._sc_qc_export_btn.setStyleSheet(_toolbar_btn_qss)
+        toolbar.addWidget(self._sc_qc_export_btn)
 
-        layout.addWidget(header_frame)
+        layout.addWidget(toolbar_frame)
 
-        self._sc_qc_btn_container = _DropContainer()
+        # --- 按钮区:QScrollArea + QGridLayout ---
+        self._sc_qc_btn_scroll = QScrollArea()
+        self._sc_qc_btn_scroll.setWidgetResizable(True)
+        self._sc_qc_btn_scroll.setFrameShape(QFrame.NoFrame)
+        self._sc_qc_btn_scroll.setStyleSheet(
+            "QScrollArea { background: transparent; border: none; }"
+            f"{SCROLLBAR_STYLE}"
+        )
+        self._sc_qc_btn_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._sc_qc_btn_scroll.setMinimumHeight(56)
+        self._sc_qc_btn_scroll.setMaximumHeight(140)
+
+        self._sc_qc_btn_container = QWidget()
         self._sc_qc_btn_container.setObjectName("scQuickBtnContainer")
         self._sc_qc_btn_container.setStyleSheet(
             "QWidget#scQuickBtnContainer { background: transparent; }"
         )
-        self._sc_qc_btn_layout = _FlowLayout(self._sc_qc_btn_container, spacing=4)
-        self._sc_qc_btn_layout.setContentsMargins(6, 4, 6, 4)
-        self._sc_qc_btn_container.set_flow_layout(self._sc_qc_btn_layout)
-        self._sc_qc_btn_container.order_changed.connect(self._sc_on_quick_cmd_reorder)
-        layout.addWidget(self._sc_qc_btn_container)
+        # 接受拖拽：本控件作为快捷指令按钮的统一 drop 目标，事件经 eventFilter 派发
+        self._sc_qc_btn_container.setAcceptDrops(True)
+        self._sc_qc_btn_container.installEventFilter(self)
+        self._sc_qc_btn_layout = QGridLayout(self._sc_qc_btn_container)
+        self._sc_qc_btn_layout.setContentsMargins(8, 6, 8, 8)
+        self._sc_qc_btn_layout.setHorizontalSpacing(6)
+        self._sc_qc_btn_layout.setVerticalSpacing(6)
+
+        self._sc_qc_btn_scroll.setWidget(self._sc_qc_btn_container)
+        layout.addWidget(self._sc_qc_btn_scroll)
 
         return frame
 
@@ -1533,6 +1784,18 @@ class SerialComMixin:
         self._sc_qc_add_btn.clicked.connect(self._sc_add_quick_cmd)
         self._sc_qc_import_btn.clicked.connect(self._sc_import_quick_cmds)
         self._sc_qc_export_btn.clicked.connect(self._sc_export_quick_cmds)
+        self._sc_qc_new_group_btn.clicked.connect(self._sc_qc_add_group)
+        self._sc_qc_project_tabs.currentChanged.connect(self._sc_qc_on_project_tab_changed)
+        self._sc_qc_project_tabs.customContextMenuRequested.connect(
+            self._sc_qc_on_project_tab_context_menu
+        )
+        self._sc_qc_project_tabs.project_reorder_requested.connect(
+            self._sc_qc_on_project_reorder
+        )
+        self._sc_qc_group_combo.currentIndexChanged.connect(self._sc_qc_on_group_changed)
+        self._sc_qc_group_combo.customContextMenuRequested.connect(
+            self._sc_qc_on_group_combo_context_menu
+        )
 
         self._sc_baud_combo.activated.connect(lambda _idx: self._sc_on_baudrate_changed())
         _baud_line_edit = self._sc_baud_combo.lineEdit()
@@ -2482,143 +2745,832 @@ class SerialComMixin:
                 self._sc_tx_bytes += len(data)
                 self._sc_status_tx_label.setText(self._sc_format_bytes("TX", self._sc_tx_bytes))
 
-    # --- quick commands ---
+    # --- quick commands (项目 -> 分组 -> 指令) ---
 
-    def _sc_add_quick_cmd(self):
-        prefill_cmd = self._sc_send_input.text().strip()
-        dlg = _QuickCmdDialog(name="", cmd=prefill_cmd, parent=self)
-        if dlg.exec() != QDialog.Accepted:
-            return
-        name = dlg.get_name()
-        cmd = dlg.get_cmd()
-        if not cmd:
-            return
-        for item in self._sc_quick_commands:
-            if item["name"] == name and item["cmd"] == cmd:
-                return
-        self._sc_quick_commands.append({"name": name, "cmd": cmd})
+    @staticmethod
+    def _sc_qc_default_data():
+        return {
+            "version": "1.0",
+            "last_project_id": "project_default",
+            "last_group_id": "group_default",
+            "projects": [
+                {
+                    "id": "project_default",
+                    "name": "默认项目",
+                    "groups": [
+                        {
+                            "id": "group_default",
+                            "name": "默认分组",
+                            "commands": [],
+                        }
+                    ],
+                }
+            ],
+        }
+
+    @staticmethod
+    def _sc_qc_gen_id(prefix: str) -> str:
+        return f"{prefix}_{_uuid.uuid4().hex[:8]}"
+
+    def _sc_qc_get_project(self, project_id):
+        if not project_id:
+            return None
+        for p in self._sc_qc_data.get("projects", []):
+            if p.get("id") == project_id:
+                return p
+        return None
+
+    def _sc_qc_get_group(self, project, group_id):
+        if not project or not group_id:
+            return None
+        for g in project.get("groups", []):
+            if g.get("id") == group_id:
+                return g
+        return None
+
+    def _sc_qc_current_project(self):
+        return self._sc_qc_get_project(self._sc_qc_data.get("last_project_id"))
+
+    def _sc_qc_current_group(self):
+        return self._sc_qc_get_group(
+            self._sc_qc_current_project(), self._sc_qc_data.get("last_group_id")
+        )
+
+    def _sc_qc_ensure_selection(self):
+        projects = self._sc_qc_data.get("projects", [])
+        if not projects:
+            self._sc_qc_data = self._sc_qc_default_data()
+            projects = self._sc_qc_data["projects"]
+
+        project = self._sc_qc_current_project()
+        if project is None:
+            project = projects[0]
+            self._sc_qc_data["last_project_id"] = project.get("id", "")
+
+        groups = project.setdefault("groups", [])
+        if not groups:
+            groups.append({
+                "id": self._sc_qc_gen_id("group"),
+                "name": "默认分组",
+                "commands": [],
+            })
+        group = self._sc_qc_get_group(project, self._sc_qc_data.get("last_group_id"))
+        if group is None:
+            group = groups[0]
+            self._sc_qc_data["last_group_id"] = group.get("id", "")
+
+    def _sc_qc_refresh_all(self):
+        self._sc_qc_ensure_selection()
+        self._sc_qc_refresh_project_tabs()
+        self._sc_qc_refresh_group_combo()
         self._sc_refresh_quick_buttons()
 
+    _SC_QC_ADD_TAB_MARK = "__add__"
+
+    def _sc_qc_refresh_project_tabs(self):
+        tabs = self._sc_qc_project_tabs
+        tabs.blockSignals(True)
+        while tabs.count() > 0:
+            tabs.removeTab(0)
+        active_index = 0
+        projects = self._sc_qc_data.get("projects", [])
+        for i, p in enumerate(projects):
+            tabs.addTab(p.get("name", "未命名"))
+            tabs.setTabData(i, p.get("id", ""))
+            if p.get("id") == self._sc_qc_data.get("last_project_id"):
+                active_index = i
+        # 末尾追加 "+" 加号 tab，单击即新增项目
+        plus_index = tabs.addTab("+")
+        tabs.setTabData(plus_index, self._SC_QC_ADD_TAB_MARK)
+        tabs.setTabToolTip(plus_index, "新增项目")
+        if projects:
+            tabs.setCurrentIndex(active_index)
+        tabs.blockSignals(False)
+
+    def _sc_qc_refresh_group_combo(self):
+        combo = self._sc_qc_group_combo
+        combo.blockSignals(True)
+        combo.clear()
+        project = self._sc_qc_current_project()
+        active_index = 0
+        if project:
+            for i, g in enumerate(project.get("groups", [])):
+                combo.addItem(g.get("name", "未命名"), g.get("id", ""))
+                if g.get("id") == self._sc_qc_data.get("last_group_id"):
+                    active_index = i
+        if combo.count() > 0:
+            combo.setCurrentIndex(active_index)
+        combo.blockSignals(False)
+
+    def _sc_qc_clear_button_grid(self):
+        layout = self._sc_qc_btn_layout
+        while layout.count() > 0:
+            item = layout.takeAt(0)
+            if item is None:
+                continue
+            w = item.widget()
+            if w is not None:
+                w.setParent(None)
+                w.deleteLater()
+
     def _sc_refresh_quick_buttons(self):
-        self._sc_qc_btn_layout.clear()
-        for idx, entry in enumerate(self._sc_quick_commands):
-            name = entry.get("name", "")
-            cmd = entry.get("cmd", "")
-            label = name if name else cmd
-            btn = _DraggableQuickButton(label, idx)
-            btn.setToolTip(f"Command: {cmd}\n(Drag to reorder)")
+        self._sc_qc_clear_button_grid()
+        group = self._sc_qc_current_group()
+        if group is None:
+            return
+        commands = group.get("commands", []) or []
+        cols = 6
+        for idx, entry in enumerate(commands):
+            name = entry.get("name", "") or entry.get("content", "")
+            content = entry.get("content", "")
+            btn = _QuickCmdButton(name if name else content)
+            btn.setObjectName("quickCommandButton")
+            btn.set_command_index(idx)
             btn.setCursor(Qt.PointingHandCursor)
+            btn.setFocusPolicy(Qt.NoFocus)
+            btn.setToolTip(
+                f"Name: {name}\nContent: {content}\n"
+                f"Type: {entry.get('send_type', 'text')}  "
+                f"Encoding: {entry.get('encoding', 'ascii')}  "
+                f"LineEnding: {repr(entry.get('line_ending', ''))}"
+            )
+            btn.clicked.connect(
+                lambda checked=False, e=entry: self._sc_send_quick(e)
+            )
+            # 右键菜单：编辑 / 删除
             btn.setContextMenuPolicy(Qt.CustomContextMenu)
             btn.customContextMenuRequested.connect(
-                lambda pos, e=entry, b=btn: self._sc_qc_context_menu(e, b, pos)
+                lambda pos, b=btn, i=idx: self._sc_qc_on_cmd_btn_context_menu(b, pos, i)
             )
-            btn.clicked.connect(lambda checked=False, c=cmd: self._sc_send_quick(c))
-            self._sc_qc_btn_layout.addWidget(btn)
+            # 单按钮覆盖：颜色 / hover / pressed 完全对齐 LOG_FastCommand.md 推荐风格
             btn.setStyleSheet(f"""
                 QPushButton {{
-                    background-color: #202d3f;
+                    background-color: #172033;
+                    color: #e5e7eb;
                     border: 1px solid #334155;
-                    border-radius: 4px;
-                    color: #cbd5e1;
+                    border-radius: 6px;
+                    padding: 5px 12px;
+                    min-height: 24px;
+                    min-width: 48px;
                     font-size: 12px;
                     font-weight: 500;
                     font-family: {_UI_FONT};
-                    padding: 3px 10px;
-                    min-height: 18px;
                 }}
                 QPushButton:hover {{
-                    background-color: #314158;
-                    border: 1px solid #475569;
-                    color: #FFFFFF;
+                    background-color: #25344d;
+                    border-color: #3b82f6;
+                    color: #ffffff;
                 }}
                 QPushButton:pressed {{
-                    background-color: #1a2538;
+                    background-color: #1d4ed8;
+                    border-color: #60a5fa;
                 }}
             """)
+            row, col = divmod(idx, cols)
+            self._sc_qc_btn_layout.addWidget(btn, row, col)
+        self._sc_qc_btn_layout.setRowStretch(
+            (len(commands) // cols) + 1, 1
+        )
+        self._sc_qc_btn_layout.setColumnStretch(cols, 1)
 
-    def _sc_on_quick_cmd_reorder(self):
-        src = self._sc_qc_btn_container.property("_drag_source")
-        dst = self._sc_qc_btn_container.property("_drag_target")
-        if src is None or dst is None:
+    # --- 切换 ---
+
+    def _sc_qc_on_project_tab_changed(self, index):
+        if index < 0 or index >= self._sc_qc_project_tabs.count():
             return
-        cmds = self._sc_quick_commands
-        if 0 <= src < len(cmds) and 0 <= dst < len(cmds):
-            item = cmds.pop(src)
-            cmds.insert(dst, item)
-            self._sc_refresh_quick_buttons()
+        project_id = self._sc_qc_project_tabs.tabData(index)
+        # 命中末尾 "+" 加号 tab：触发新增项目；若用户取消则回切到原项目
+        if project_id == self._SC_QC_ADD_TAB_MARK:
+            prev_id = self._sc_qc_data.get("last_project_id", "")
+            created = self._sc_qc_add_project()
+            if not created:
+                tabs = self._sc_qc_project_tabs
+                tabs.blockSignals(True)
+                restore_index = 0
+                for i in range(tabs.count()):
+                    if tabs.tabData(i) == prev_id:
+                        restore_index = i
+                        break
+                tabs.setCurrentIndex(restore_index)
+                tabs.blockSignals(False)
+            return
+        if not project_id or project_id == self._sc_qc_data.get("last_project_id"):
+            return
+        self._sc_qc_data["last_project_id"] = project_id
+        project = self._sc_qc_get_project(project_id)
+        if project is not None:
+            groups = project.get("groups", [])
+            self._sc_qc_data["last_group_id"] = groups[0].get("id", "") if groups else ""
+        self._sc_qc_ensure_selection()
+        self._sc_qc_refresh_group_combo()
+        self._sc_refresh_quick_buttons()
+        self._sc_qc_save_data()
 
-    def _sc_send_quick(self, cmd):
-        if self._sc_tx_display_hex:
+    def _sc_qc_on_group_changed(self, index):
+        if index < 0:
+            return
+        group_id = self._sc_qc_group_combo.itemData(index)
+        if not group_id or group_id == self._sc_qc_data.get("last_group_id"):
+            return
+        self._sc_qc_data["last_group_id"] = group_id
+        self._sc_refresh_quick_buttons()
+        self._sc_qc_save_data()
+
+    # --- 项目 Tab 右键菜单 / 重命名 / 删除 / 拖拽排序 ---
+
+    def _sc_qc_on_project_tab_context_menu(self, pos):
+        tabs = self._sc_qc_project_tabs
+        index = tabs.tabAt(pos)
+        if index < 0:
+            return
+        project_id = tabs.tabData(index)
+        if not project_id or project_id == self._SC_QC_ADD_TAB_MARK:
+            return
+        project = self._sc_qc_get_project(project_id)
+        if project is None:
+            return
+        menu = QMenu(self)
+        act_rename = menu.addAction("重命名")
+        act_export = menu.addAction("导出")
+        menu.addSeparator()
+        act_delete = menu.addAction("删除")
+        # 仅剩一个项目时禁止删除，防止数据完全清空
+        if len(self._sc_qc_data.get("projects", [])) <= 1:
+            act_delete.setEnabled(False)
+        chosen = menu.exec(tabs.mapToGlobal(pos))
+        if chosen is None:
+            return
+        if chosen is act_rename:
+            self._sc_qc_rename_project(project)
+        elif chosen is act_export:
+            self._sc_qc_export_project(project)
+        elif chosen is act_delete:
+            self._sc_qc_delete_project(project)
+
+    def _sc_qc_rename_project(self, project):
+        if not isinstance(project, dict):
+            return
+        old_name = project.get("name", "")
+        text, ok = QInputDialog.getText(
+            self, "重命名项目", "项目名称:", QLineEdit.Normal, old_name
+        )
+        if not ok:
+            return
+        new_name = text.strip()
+        if not new_name or new_name == old_name:
+            return
+        project["name"] = new_name
+        self._sc_qc_save_data()
+        self._sc_qc_refresh_project_tabs()
+
+    def _sc_qc_delete_project(self, project):
+        if not isinstance(project, dict):
+            return
+        projects = self._sc_qc_data.get("projects", [])
+        if len(projects) <= 1:
+            QMessageBox.warning(self, "提示", "至少需要保留一个项目")
+            return
+        ret = QMessageBox.question(
+            self, "删除项目",
+            f"确定删除项目「{project.get('name', '')}」及其全部分组与指令？",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if ret != QMessageBox.Yes:
+            return
+        try:
+            projects.remove(project)
+        except ValueError:
+            return
+        # 若删的是当前项目，回退到第一个
+        if self._sc_qc_data.get("last_project_id") == project.get("id"):
+            first = projects[0]
+            self._sc_qc_data["last_project_id"] = first.get("id", "")
+            groups = first.get("groups", [])
+            self._sc_qc_data["last_group_id"] = groups[0].get("id", "") if groups else ""
+        self._sc_qc_save_data()
+        self._sc_qc_refresh_all()
+
+    def _sc_qc_on_project_reorder(self, source_index: int, target_index: int):
+        projects = self._sc_qc_data.get("projects", [])
+        n = len(projects)
+        if n <= 1:
+            return
+        if source_index < 0 or source_index >= n:
+            return
+        # 钳制目标到合法范围（拖到 "+" tab 等价于挪到末尾）
+        if target_index < 0:
+            target_index = 0
+        if target_index >= n:
+            target_index = n - 1
+        if source_index == target_index:
+            return
+        item = projects.pop(source_index)
+        projects.insert(target_index, item)
+        self._sc_qc_save_data()
+        self._sc_qc_refresh_project_tabs()
+
+    # --- 新增 ---
+
+    def _sc_qc_prompt_text(self, title: str, label: str) -> str:
+        text, ok = QInputDialog.getText(self, title, label)
+        if not ok:
+            return ""
+        return text.strip()
+
+    def _sc_qc_add_project(self) -> bool:
+        name = self._sc_qc_prompt_text("新增项目", "项目名称:")
+        if not name:
+            return False
+        project = {
+            "id": self._sc_qc_gen_id("project"),
+            "name": name,
+            "groups": [
+                {
+                    "id": self._sc_qc_gen_id("group"),
+                    "name": "默认分组",
+                    "commands": [],
+                }
+            ],
+        }
+        self._sc_qc_data.setdefault("projects", []).append(project)
+        self._sc_qc_data["last_project_id"] = project["id"]
+        self._sc_qc_data["last_group_id"] = project["groups"][0]["id"]
+        self._sc_qc_save_data()
+        self._sc_qc_refresh_all()
+        return True
+
+    def _sc_qc_add_group(self):
+        project = self._sc_qc_current_project()
+        if project is None:
+            QMessageBox.warning(self, "提示", "请先创建项目")
+            return
+        name = self._sc_qc_prompt_text("新增分组", "分组名称:")
+        if not name:
+            return
+        group = {
+            "id": self._sc_qc_gen_id("group"),
+            "name": name,
+            "commands": [],
+        }
+        project.setdefault("groups", []).append(group)
+        self._sc_qc_data["last_group_id"] = group["id"]
+        self._sc_qc_save_data()
+        self._sc_qc_refresh_group_combo()
+        self._sc_refresh_quick_buttons()
+
+    # --- 分组右键菜单 / 重命名 / 删除 ---
+
+    def _sc_qc_on_group_combo_context_menu(self, pos):
+        combo = self._sc_qc_group_combo
+        # 优先取右键位置下的项；取不到时退回当前项
+        index = combo.view().indexAt(combo.view().mapFrom(combo, pos)).row()
+        if index < 0:
+            index = combo.currentIndex()
+        if index < 0:
+            return
+        group_id = combo.itemData(index)
+        if not group_id:
+            return
+        project = self._sc_qc_current_project()
+        group = self._sc_qc_get_group(project, group_id)
+        if group is None:
+            return
+        menu = QMenu(self)
+        act_rename = menu.addAction("重命名")
+        menu.addSeparator()
+        act_delete = menu.addAction("删除")
+        # 仅剩一个分组时禁止删除，防止当前项目分组完全清空
+        if len(project.get("groups", [])) <= 1:
+            act_delete.setEnabled(False)
+        chosen = menu.exec(combo.mapToGlobal(pos))
+        if chosen is None:
+            return
+        if chosen is act_rename:
+            self._sc_qc_rename_group(group)
+        elif chosen is act_delete:
+            self._sc_qc_delete_group(group)
+
+    def _sc_qc_rename_group(self, group):
+        if not isinstance(group, dict):
+            return
+        old_name = group.get("name", "")
+        text, ok = QInputDialog.getText(
+            self, "重命名分组", "分组名称:", QLineEdit.Normal, old_name
+        )
+        if not ok:
+            return
+        new_name = text.strip()
+        if not new_name or new_name == old_name:
+            return
+        group["name"] = new_name
+        self._sc_qc_save_data()
+        self._sc_qc_refresh_group_combo()
+
+    def _sc_qc_delete_group(self, group):
+        if not isinstance(group, dict):
+            return
+        project = self._sc_qc_current_project()
+        if project is None:
+            return
+        groups = project.get("groups", [])
+        if len(groups) <= 1:
+            QMessageBox.warning(self, "提示", "至少需要保留一个分组")
+            return
+        ret = QMessageBox.question(
+            self, "删除分组",
+            f"确定删除分组「{group.get('name', '')}」及其全部指令？",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if ret != QMessageBox.Yes:
+            return
+        try:
+            groups.remove(group)
+        except ValueError:
+            return
+        # 若删的是当前分组，回退到第一个
+        if self._sc_qc_data.get("last_group_id") == group.get("id"):
+            self._sc_qc_data["last_group_id"] = groups[0].get("id", "") if groups else ""
+        self._sc_qc_save_data()
+        self._sc_qc_refresh_group_combo()
+        self._sc_refresh_quick_buttons()
+
+    def _sc_add_quick_cmd(self):
+        group = self._sc_qc_current_group()
+        if group is None:
+            QMessageBox.warning(self, "提示", "请先创建项目和分组")
+            return
+        prefill_cmd = self._sc_send_input.text().strip()
+        dlg = _QuickCmdDialog(parent=self, content=prefill_cmd)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        cmd = dlg.get_command()
+        if not cmd or not cmd.get("content"):
+            return
+        cmd["id"] = self._sc_qc_gen_id("cmd")
+        group.setdefault("commands", []).append(cmd)
+        self._sc_qc_save_data()
+        self._sc_refresh_quick_buttons()
+
+    # --- 快捷指令按钮：右键菜单（编辑 / 删除） ---
+
+    def _sc_qc_on_cmd_btn_context_menu(self, btn, pos, idx):
+        group = self._sc_qc_current_group()
+        if group is None:
+            return
+        commands = group.get("commands", []) or []
+        if not (0 <= idx < len(commands)):
+            return
+        menu = QMenu(self)
+        act_edit = menu.addAction("编辑指令")
+        act_del = menu.addAction("删除指令")
+        act = menu.exec(btn.mapToGlobal(pos))
+        if act is None:
+            return
+        if act == act_edit:
+            self._sc_qc_edit_command(idx)
+        elif act == act_del:
+            self._sc_qc_delete_command(idx)
+
+    def _sc_qc_edit_command(self, idx):
+        group = self._sc_qc_current_group()
+        if group is None:
+            return
+        commands = group.get("commands", []) or []
+        if not (0 <= idx < len(commands)):
+            return
+        entry = commands[idx]
+        dlg = _QuickCmdDialog(
+            parent=self,
+            name=entry.get("name", ""),
+            content=entry.get("content", ""),
+            send_type=entry.get("send_type", "text"),
+            line_ending=entry.get("line_ending", "\r\n"),
+            encoding=entry.get("encoding", "ascii"),
+        )
+        if dlg.exec() != QDialog.Accepted:
+            return
+        new_cmd = dlg.get_command()
+        if not new_cmd or not new_cmd.get("content"):
+            return
+        # 保留原 id，覆盖其它字段
+        new_cmd["id"] = entry.get("id") or self._sc_qc_gen_id("cmd")
+        commands[idx] = new_cmd
+        self._sc_qc_save_data()
+        self._sc_refresh_quick_buttons()
+
+    def _sc_qc_delete_command(self, idx):
+        group = self._sc_qc_current_group()
+        if group is None:
+            return
+        commands = group.get("commands", []) or []
+        if not (0 <= idx < len(commands)):
+            return
+        entry = commands[idx]
+        name = entry.get("name", "") or entry.get("content", "")
+        ret = QMessageBox.question(
+            self,
+            "删除指令",
+            f"确定要删除指令 \"{name}\" 吗？",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if ret != QMessageBox.Yes:
+            return
+        commands.pop(idx)
+        self._sc_qc_save_data()
+        self._sc_refresh_quick_buttons()
+
+    def _sc_qc_reorder_command(self, source_idx, target_idx):
+        group = self._sc_qc_current_group()
+        if group is None:
+            return
+        commands = group.get("commands", []) or []
+        n = len(commands)
+        if not (0 <= source_idx < n):
+            return
+        # 目标越界则视为追加到末尾
+        if target_idx < 0 or target_idx >= n:
+            target_idx = n - 1
+        if source_idx == target_idx:
+            return
+        item = commands.pop(source_idx)
+        commands.insert(target_idx, item)
+        self._sc_qc_save_data()
+        self._sc_refresh_quick_buttons()
+
+    # --- 快捷指令按钮：拖拽排序（容器层 eventFilter） ---
+
+    def eventFilter(self, obj, event):
+        # 仅处理快捷指令容器上的拖拽事件；其它一律放行
+        container = getattr(self, "_sc_qc_btn_container", None)
+        if container is not None and obj is container:
+            etype = event.type()
+            from PySide6.QtCore import QEvent  # 局部引入，避免顶部冗余导入
+            if etype == QEvent.DragEnter:
+                if event.mimeData().hasFormat(_QuickCmdButton._MIME_TYPE):
+                    event.acceptProposedAction()
+                    return True
+            elif etype == QEvent.DragMove:
+                if event.mimeData().hasFormat(_QuickCmdButton._MIME_TYPE):
+                    event.acceptProposedAction()
+                    return True
+            elif etype == QEvent.Drop:
+                if event.mimeData().hasFormat(_QuickCmdButton._MIME_TYPE):
+                    try:
+                        source_idx = int(
+                            bytes(event.mimeData().data(
+                                _QuickCmdButton._MIME_TYPE
+                            )).decode()
+                        )
+                    except (ValueError, UnicodeDecodeError):
+                        return False
+                    # 命中目标按钮：从落点反查最近的 _QuickCmdButton
+                    pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+                    target_idx = self._sc_qc_locate_drop_index(pos, source_idx)
+                    event.acceptProposedAction()
+                    self._sc_qc_reorder_command(source_idx, target_idx)
+                    return True
+        return super().eventFilter(obj, event)
+
+    def _sc_qc_locate_drop_index(self, pos, source_idx):
+        """根据落点定位目标插入索引：命中按钮取其 command_index；
+        否则按 grid 行列估算最近按钮；都不命中则返回末尾。
+        """
+        container = self._sc_qc_btn_container
+        commands = (
+            self._sc_qc_current_group() or {}
+        ).get("commands", []) or []
+        n = len(commands)
+        if n == 0:
+            return 0
+        # 1) 直接命中：containerAt -> 反查 _QuickCmdButton
+        child = container.childAt(pos)
+        while child is not None and not isinstance(child, _QuickCmdButton):
+            child = child.parentWidget()
+            if child is container:
+                child = None
+                break
+        if isinstance(child, _QuickCmdButton):
+            ti = child.command_index()
+            if 0 <= ti < n:
+                return ti
+        # 2) 未命中按钮：按 y 取最近一行的最后一个按钮所在索引
+        layout = self._sc_qc_btn_layout
+        nearest_idx = n - 1
+        nearest_dy = None
+        for i in range(layout.count()):
+            item = layout.itemAt(i)
+            w = item.widget() if item is not None else None
+            if not isinstance(w, _QuickCmdButton):
+                continue
+            geo = w.geometry()
+            if geo.top() <= pos.y() <= geo.bottom():
+                # 同一行：取该行内 x 最接近的按钮
+                if pos.x() <= geo.center().x():
+                    return w.command_index()
+                # 大于中心：插到该按钮之后（下一项的位置）
+                ci = w.command_index()
+                return min(ci + 1 if ci + 1 < n else ci, n - 1)
+            dy = abs(geo.center().y() - pos.y())
+            if nearest_dy is None or dy < nearest_dy:
+                nearest_dy = dy
+                nearest_idx = w.command_index()
+        return nearest_idx
+
+    # --- 发送 ---
+
+    def _sc_send_quick(self, entry):
+        if not isinstance(entry, dict):
+            return
+        content = entry.get("content", "")
+        send_type = entry.get("send_type", "text")
+        line_ending = entry.get("line_ending", "")
+        encoding = entry.get("encoding", "ascii") or "ascii"
+
+        if send_type == "hex":
             try:
-                data = bytes.fromhex(cmd.replace(" ", ""))
+                data = bytes.fromhex(content.replace(" ", ""))
             except ValueError:
-                self._sc_append_system(f"[ERROR] Invalid HEX: {cmd}")
+                self._sc_append_system(f"[ERROR] Invalid HEX: {content}")
                 return
         else:
-            data = (cmd + self._sc_line_ending).encode("utf-8")
+            text = content + (line_ending or "")
+            try:
+                data = text.encode(encoding)
+            except (UnicodeEncodeError, LookupError) as e:
+                self._sc_append_system(f"[ERROR] Encode failed ({encoding}): {e}")
+                return
+
         ok = self.serial_send(data)
         if ok:
             self._sc_tx_bytes += len(data)
             self._sc_status_tx_label.setText(self._sc_format_bytes("TX", self._sc_tx_bytes))
             if self._sc_show_send:
-                self._sc_append_log(f"[TX] {cmd}", _CLR_TX)
+                display = data.hex(' ') if send_type == "hex" else content
+                self._sc_append_log(f"[TX] {display}", _CLR_TX)
+        else:
+            self._sc_append_system("[ERROR] Send failed, serial not connected")
 
-    def _sc_qc_context_menu(self, entry, btn, pos):
-        menu = QMenu()
-        menu.setStyleSheet(f"""
-            QMenu {{ background-color: #050b1e; border: 1px solid #1e293b; border-radius: 4px; color: #cbd5e1; font-size: 12px; font-family: {_UI_FONT}; }}
-            QMenu::item {{ padding: 3px 12px; }}
-            QMenu::item:selected {{ background-color: #1e293b; }}
-        """)
-        edit_action = menu.addAction("Edit")
-        del_action = menu.addAction("Delete")
-        action = menu.exec(btn.mapToGlobal(pos))
-        if action == del_action:
-            if entry in self._sc_quick_commands:
-                self._sc_quick_commands.remove(entry)
-                self._sc_refresh_quick_buttons()
-        elif action == edit_action:
-            dlg = _QuickCmdDialog(
-                name=entry.get("name", ""),
-                cmd=entry.get("cmd", ""),
-                parent=self,
-            )
-            if dlg.exec() == QDialog.Accepted:
-                entry["name"] = dlg.get_name()
-                entry["cmd"] = dlg.get_cmd()
-                self._sc_refresh_quick_buttons()
+    # --- 导入 / 导出 ---
+
+    def _sc_qc_collect_existing_ids(self):
+        ids = set()
+        for p in self._sc_qc_data.get("projects", []):
+            ids.add(p.get("id", ""))
+            for g in p.get("groups", []):
+                ids.add(g.get("id", ""))
+                for c in g.get("commands", []):
+                    ids.add(c.get("id", ""))
+        ids.discard("")
+        return ids
+
+    @staticmethod
+    def _sc_qc_unique_cmd_name(base: str, used_names: set) -> str:
+        if base not in used_names:
+            return base
+        candidate = f"{base}_导入"
+        if candidate not in used_names:
+            return candidate
+        i = 1
+        while True:
+            candidate = f"{base}_导入_{i}"
+            if candidate not in used_names:
+                return candidate
+            i += 1
 
     def _sc_import_quick_cmds(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "Import Quick Commands", "", "JSON Files (*.json);;All Files (*)"
         )
-        if path:
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                if isinstance(data, list):
-                    cmds = []
-                    for item in data:
-                        if isinstance(item, dict) and "cmd" in item:
-                            cmds.append({"name": item.get("name", ""), "cmd": item["cmd"]})
-                        elif isinstance(item, str):
-                            cmds.append({"name": "", "cmd": item})
-                    self._sc_quick_commands = cmds
-                    self._sc_refresh_quick_buttons()
-                    self._sc_append_system(f"[INFO] Imported {len(self._sc_quick_commands)} command(s)")
-            except Exception as e:
-                self._sc_append_system(f"[ERROR] Import failed: {e}")
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            QMessageBox.critical(self, "导入失败", f"无法读取文件:\n{e}")
+            return
+        if not isinstance(data, dict) or "projects" not in data or not isinstance(data["projects"], list):
+            QMessageBox.critical(self, "导入失败", "JSON 格式不符合要求 (需 version + projects)")
+            return
+
+        used_ids = self._sc_qc_collect_existing_ids()
+        stat = {"project": 0, "group": 0, "cmd": 0, "renamed": 0}
+
+        def fix_id(prefix, raw_id):
+            if raw_id and raw_id not in used_ids:
+                used_ids.add(raw_id)
+                return raw_id
+            new_id = self._sc_qc_gen_id(prefix)
+            while new_id in used_ids:
+                new_id = self._sc_qc_gen_id(prefix)
+            used_ids.add(new_id)
+            return new_id
+
+        def iter_groups(ip):
+            # 兼容旧格式：projects[].regions[].groups[] -> 拍平为 groups[]
+            if isinstance(ip.get("regions"), list):
+                for ir in ip.get("regions", []) or []:
+                    if not isinstance(ir, dict):
+                        continue
+                    for ig in ir.get("groups", []) or []:
+                        if isinstance(ig, dict):
+                            yield ig
+            for ig in ip.get("groups", []) or []:
+                if isinstance(ig, dict):
+                    yield ig
+
+        existing_projects = self._sc_qc_data.setdefault("projects", [])
+        for ip in data["projects"]:
+            if not isinstance(ip, dict):
+                continue
+            pname = ip.get("name", "未命名项目")
+            target_p = next((p for p in existing_projects if p.get("name") == pname), None)
+            if target_p is None:
+                target_p = {
+                    "id": fix_id("project", ip.get("id", "")),
+                    "name": pname,
+                    "groups": [],
+                }
+                existing_projects.append(target_p)
+                stat["project"] += 1
+
+            for ig in iter_groups(ip):
+                gname = ig.get("name", "未命名分组")
+                target_g = next(
+                    (g for g in target_p.setdefault("groups", []) if g.get("name") == gname),
+                    None,
+                )
+                if target_g is None:
+                    target_g = {
+                        "id": fix_id("group", ig.get("id", "")),
+                        "name": gname,
+                        "commands": [],
+                    }
+                    target_p["groups"].append(target_g)
+                    stat["group"] += 1
+
+                used_names = {c.get("name", "") for c in target_g.setdefault("commands", [])}
+                for ic in ig.get("commands", []) or []:
+                    if not isinstance(ic, dict):
+                        continue
+                    new_name = self._sc_qc_unique_cmd_name(
+                        ic.get("name", "") or "未命名指令", used_names
+                    )
+                    if new_name != ic.get("name", ""):
+                        stat["renamed"] += 1
+                    new_cmd = {
+                        "id": fix_id("cmd", ic.get("id", "")),
+                        "name": new_name,
+                        "content": ic.get("content", ""),
+                        "send_type": ic.get("send_type", "text"),
+                        "line_ending": ic.get("line_ending", ""),
+                        "encoding": ic.get("encoding", "ascii"),
+                    }
+                    target_g["commands"].append(new_cmd)
+                    used_names.add(new_name)
+                    stat["cmd"] += 1
+
+        self._sc_qc_save_data()
+        self._sc_qc_refresh_all()
+        QMessageBox.information(
+            self, "导入完成",
+            f"导入完成\n新增项目:{stat['project']}\n"
+            f"新增分组:{stat['group']}\n新增指令:{stat['cmd']}\n重命名指令:{stat['renamed']}",
+        )
 
     def _sc_export_quick_cmds(self):
-        if not self._sc_quick_commands:
+        project = self._sc_qc_current_project()
+        if project is None:
+            QMessageBox.warning(self, "提示", "当前没有可导出的项目")
             return
+        self._sc_qc_export_project(project)
+
+    def _sc_qc_export_project(self, project):
+        if not isinstance(project, dict):
+            return
+        default_name = f"{project.get('name', 'project')}_快捷指令.json"
         path, _ = QFileDialog.getSaveFileName(
-            self, "Export Quick Commands", "quick_commands.json", "JSON Files (*.json);;All Files (*)"
+            self, "Export Quick Commands", default_name, "JSON Files (*.json);;All Files (*)"
         )
-        if path:
+        if not path:
+            return
+        payload = {
+            "version": "1.0",
+            "projects": [
+                {
+                    "id": project.get("id", ""),
+                    "name": project.get("name", ""),
+                    "groups": project.get("groups", []),
+                }
+            ],
+        }
+        try:
             with open(path, "w", encoding="utf-8") as f:
-                json.dump(self._sc_quick_commands, f, ensure_ascii=False, indent=2)
-            self._sc_append_system(f"[INFO] Exported {len(self._sc_quick_commands)} command(s)")
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+            self._sc_append_system(f"[INFO] Exported project: {project.get('name', '')}")
+        except Exception as e:
+            QMessageBox.critical(self, "导出失败", f"写入失败:\n{e}")
 
     # --- persistence (config + quick commands) ---
     #
@@ -2674,15 +3626,78 @@ class SerialComMixin:
         )
 
     def _sc_parse_quick_cmds_payload(self, data):
-        if not isinstance(data, list):
+        """校验并标准化快捷指令 JSON; 不符合新格式返回 None."""
+        if not isinstance(data, dict):
             return None
-        cmds = []
-        for item in data:
-            if isinstance(item, dict) and "cmd" in item:
-                cmds.append({"name": item.get("name", ""), "cmd": item["cmd"]})
-            elif isinstance(item, str):
-                cmds.append({"name": "", "cmd": item})
-        return cmds
+        if "projects" not in data or not isinstance(data["projects"], list):
+            return None
+        normalized = {
+            "version": str(data.get("version", "1.0")),
+            "last_project_id": str(data.get("last_project_id", "")),
+            "last_group_id": str(data.get("last_group_id", "")),
+            "projects": [],
+        }
+        for p in data["projects"]:
+            if not isinstance(p, dict):
+                continue
+            np = {
+                "id": str(p.get("id") or self._sc_qc_gen_id("project")),
+                "name": str(p.get("name", "未命名项目")),
+                "groups": [],
+            }
+
+            def _norm_group(g):
+                ng = {
+                    "id": str(g.get("id") or self._sc_qc_gen_id("group")),
+                    "name": str(g.get("name", "未命名分组")),
+                    "commands": [],
+                }
+                for c in g.get("commands", []) or []:
+                    if not isinstance(c, dict):
+                        continue
+                    ng["commands"].append({
+                        "id": str(c.get("id") or self._sc_qc_gen_id("cmd")),
+                        "name": str(c.get("name", "")),
+                        "content": str(c.get("content", "")),
+                        "send_type": str(c.get("send_type", "text")),
+                        "line_ending": str(c.get("line_ending", "")),
+                        "encoding": str(c.get("encoding", "ascii")),
+                    })
+                return ng
+
+            # 兼容旧格式：projects[].regions[].groups[] -> 拍平为 groups[]，分组重名加 _合并 后缀
+            used_names = set()
+
+            def _uniq_name(base):
+                if base not in used_names:
+                    used_names.add(base)
+                    return base
+                cand = f"{base}_合并"
+                idx = 1
+                while cand in used_names:
+                    cand = f"{base}_合并_{idx}"
+                    idx += 1
+                used_names.add(cand)
+                return cand
+
+            if isinstance(p.get("regions"), list):
+                for r in p.get("regions", []) or []:
+                    if not isinstance(r, dict):
+                        continue
+                    for g in r.get("groups", []) or []:
+                        if not isinstance(g, dict):
+                            continue
+                        ng = _norm_group(g)
+                        ng["name"] = _uniq_name(ng["name"])
+                        np["groups"].append(ng)
+            for g in p.get("groups", []) or []:
+                if not isinstance(g, dict):
+                    continue
+                ng = _norm_group(g)
+                ng["name"] = _uniq_name(ng["name"])
+                np["groups"].append(ng)
+            normalized["projects"].append(np)
+        return normalized
 
     def _sc_collect_persisted_state(self) -> dict:
         return {
@@ -2747,27 +3762,60 @@ class SerialComMixin:
                 quick_source = fb_quick_path
 
             if quick_source:
+                parsed = None
+                load_err = None
                 try:
                     with open(quick_source, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                    cmds = self._sc_parse_quick_cmds_payload(data)
-                    if cmds is not None:
-                        self._sc_quick_commands = cmds
-                        if hasattr(self, "_sc_refresh_quick_buttons"):
-                            try:
-                                self._sc_refresh_quick_buttons()
-                            except Exception:
-                                pass
-                        if hasattr(self, "_sc_append_system"):
-                            try:
-                                origin = "user" if quick_source == quick_path else "fallback"
-                                self._sc_append_system(
-                                    f"[INFO] Loaded {len(cmds)} quick command(s) from {origin}: {quick_source}"
-                                )
-                            except Exception:
-                                pass
+                        raw = json.load(f)
+                    parsed = self._sc_parse_quick_cmds_payload(raw)
+                except Exception as e:
+                    load_err = e
+
+                if load_err is not None:
+                    try:
+                        QMessageBox.warning(
+                            self, "快捷指令配置损坏",
+                            f"无法解析 {quick_source}:\n{load_err}\n\n已恢复为默认配置。",
+                        )
+                    except Exception:
+                        pass
+                    self._sc_qc_data = self._sc_qc_default_data()
+                elif parsed is None:
+                    try:
+                        QMessageBox.warning(
+                            self, "快捷指令配置损坏",
+                            f"{quick_source} 不是有效的快捷指令 JSON (需 version + projects)。\n已恢复为默认配置。",
+                        )
+                    except Exception:
+                        pass
+                    self._sc_qc_data = self._sc_qc_default_data()
+                else:
+                    self._sc_qc_data = parsed
+                    if hasattr(self, "_sc_append_system"):
+                        try:
+                            origin = "user" if quick_source == quick_path else "fallback"
+                            total = sum(
+                                len(g.get("commands", []))
+                                for p in self._sc_qc_data.get("projects", [])
+                                for g in p.get("groups", [])
+                            )
+                            self._sc_append_system(
+                                f"[INFO] Loaded {total} quick command(s) from {origin}: {quick_source}"
+                            )
+                        except Exception:
+                            pass
+            else:
+                # 配置文件不存在,创建默认结构并落盘
+                self._sc_qc_data = self._sc_qc_default_data()
+                try:
+                    self._sc_qc_save_data()
                 except Exception:
                     pass
+
+            try:
+                self._sc_qc_refresh_all()
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -2777,9 +3825,27 @@ class SerialComMixin:
             with open(cfg_path, "w", encoding="utf-8") as f:
                 json.dump(self._sc_collect_persisted_state(), f, ensure_ascii=False, indent=2)
             with open(quick_path, "w", encoding="utf-8") as f:
-                json.dump(getattr(self, "_sc_quick_commands", []), f, ensure_ascii=False, indent=2)
+                json.dump(
+                    getattr(self, "_sc_qc_data", self._sc_qc_default_data()),
+                    f, ensure_ascii=False, indent=2,
+                )
         except Exception:
             pass
+
+    def _sc_qc_save_data(self) -> None:
+        """单独保存快捷指令 JSON, 配置区域损坏时也不会影响串口功能."""
+        try:
+            _cfg_path, quick_path = self._sc_persisted_paths()
+            with open(quick_path, "w", encoding="utf-8") as f:
+                json.dump(
+                    getattr(self, "_sc_qc_data", self._sc_qc_default_data()),
+                    f, ensure_ascii=False, indent=2,
+                )
+        except Exception as e:
+            try:
+                QMessageBox.warning(self, "保存失败", f"无法写入快捷指令配置:\n{e}")
+            except Exception:
+                pass
 
     # --- log helpers ---
 
@@ -2986,177 +4052,6 @@ class SerialComMixin:
             f"  image: url({_chk_svg});"
             f"}}"
         )
-
-
-class _DraggableQuickButton(QPushButton):
-
-    _MIME_TYPE = "application/x-quickcmd-index"
-
-    def __init__(self, text, index, parent=None):
-        super().__init__(text, parent)
-        self._drag_index = index
-        self._drag_start_pos = None
-        self.setAttribute(Qt.WA_Hover, True)
-        self.setMouseTracking(True)
-        self.setFocusPolicy(Qt.NoFocus)
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self._drag_start_pos = event.position().toPoint()
-        super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event):
-        if not (event.buttons() & Qt.LeftButton) or self._drag_start_pos is None:
-            return
-        if (event.position().toPoint() - self._drag_start_pos).manhattanLength() < 10:
-            return
-
-        drag = QDrag(self)
-        mime = QMimeData()
-        mime.setData(self._MIME_TYPE, str(self._drag_index).encode())
-        drag.setMimeData(mime)
-
-        pixmap = self.grab()
-        drag.setPixmap(pixmap)
-        drag.setHotSpot(event.position().toPoint())
-
-        drag.exec(Qt.MoveAction)
-        self._drag_start_pos = None
-        self.setDown(False)
-        self.style().unpolish(self)
-        self.style().polish(self)
-        self.update()
-
-    def mouseReleaseEvent(self, event):
-        self._drag_start_pos = None
-        super().mouseReleaseEvent(event)
-
-
-class _DropContainer(QWidget):
-
-    order_changed = Signal()
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setAcceptDrops(True)
-        self.setMouseTracking(True)
-        self.setAttribute(Qt.WA_Hover, True)
-        self._flow_layout = None
-
-    def set_flow_layout(self, layout):
-        self._flow_layout = layout
-
-    def dragEnterEvent(self, event):
-        if event.mimeData().hasFormat(_DraggableQuickButton._MIME_TYPE):
-            event.acceptProposedAction()
-
-    def dragMoveEvent(self, event):
-        if event.mimeData().hasFormat(_DraggableQuickButton._MIME_TYPE):
-            event.acceptProposedAction()
-
-    def dropEvent(self, event):
-        if not event.mimeData().hasFormat(_DraggableQuickButton._MIME_TYPE):
-            return
-        source_index = int(event.mimeData().data(_DraggableQuickButton._MIME_TYPE).data().decode())
-        drop_pos = event.position().toPoint()
-        target_index = self._index_at_pos(drop_pos)
-        if target_index < 0:
-            target_index = self._flow_layout.count() - 1 if self._flow_layout else 0
-        if source_index != target_index:
-            event.acceptProposedAction()
-            self.setProperty("_drag_source", source_index)
-            self.setProperty("_drag_target", target_index)
-            self.order_changed.emit()
-
-    def _index_at_pos(self, pos):
-        if not self._flow_layout:
-            return -1
-        for i in range(self._flow_layout.count()):
-            item = self._flow_layout.itemAt(i)
-            if item and item.widget() and item.widget().geometry().contains(pos):
-                return i
-        return -1
-
-
-class _FlowLayout(QLayout):
-
-    def __init__(self, parent=None, spacing=4):
-        super().__init__(parent)
-        self._items = []
-        self._h_spacing = spacing
-        self._v_spacing = spacing
-
-    def addItem(self, item):
-        self._items.append(item)
-
-    def count(self):
-        return len(self._items)
-
-    def itemAt(self, index):
-        if 0 <= index < len(self._items):
-            return self._items[index]
-        return None
-
-    def takeAt(self, index):
-        if 0 <= index < len(self._items):
-            return self._items.pop(index)
-        return None
-
-    def expandingDirections(self):
-        return Qt.Orientation(0)
-
-    def hasHeightForWidth(self):
-        return True
-
-    def heightForWidth(self, width):
-        return self._do_layout(QRect(0, 0, width, 0), test_only=True)
-
-    def setGeometry(self, rect):
-        super().setGeometry(rect)
-        self._do_layout(rect, test_only=False)
-
-    def sizeHint(self):
-        return self.minimumSize()
-
-    def minimumSize(self):
-        size = QSize()
-        for item in self._items:
-            size = size.expandedTo(item.minimumSize())
-        m = self.contentsMargins()
-        size += QSize(m.left() + m.right(), m.top() + m.bottom())
-        return size
-
-    def _do_layout(self, rect, test_only):
-        m = self.contentsMargins()
-        effective = rect.adjusted(m.left(), m.top(), -m.right(), -m.bottom())
-        x = effective.x()
-        y = effective.y()
-        line_height = 0
-
-        for item in self._items:
-            w = item.sizeHint().width()
-            h = item.sizeHint().height()
-
-            if x + w > effective.right() + 1 and line_height > 0:
-                x = effective.x()
-                y = y + line_height + self._v_spacing
-                line_height = 0
-
-            if not test_only:
-                item.setGeometry(QRect(QPoint(x, y), item.sizeHint()))
-
-            x = x + w + self._h_spacing
-            line_height = max(line_height, h)
-
-        return y + line_height - rect.y() + m.bottom()
-
-    def clear(self):
-        while self._items:
-            item = self._items.pop()
-            w = item.widget()
-            if w:
-                w.setParent(None)
-                w.deleteLater()
 
 
 class _MiniSlideToggle(QWidget):
@@ -3450,12 +4345,179 @@ class _AddLogPanelDialog(QDialog):
         }
 
 
+class _QuickCmdButton(QPushButton):
+    """支持右键菜单 + 拖拽排序的快捷指令按钮。
+
+    - 左键短按 → 触发 ``clicked``（发送指令，逻辑在宿主信号槽里）；
+    - 左键拖动超过阈值 → 启动 ``QDrag``，mime 携带源索引；
+    - 右键 → 通过 ``Qt.CustomContextMenu`` 上抛给宿主弹出 Edit / Delete 菜单。
+
+    数据流：源索引由宿主在创建按钮时通过 ``set_command_index`` 注入。
+    """
+
+    _MIME_TYPE = "application/x-kklab-quickcmd"
+
+    def __init__(self, text: str = "", parent=None):
+        super().__init__(text, parent)
+        self.setAcceptDrops(False)  # 容器统一接收 drop，按钮自身不参与
+        self._press_pos = None
+        self._cmd_index = -1
+        self._dragging = False
+
+    def set_command_index(self, idx: int):
+        self._cmd_index = idx
+
+    def command_index(self) -> int:
+        return self._cmd_index
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._press_pos = event.position().toPoint()
+            self._dragging = False
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if (
+            event.buttons() & Qt.LeftButton
+            and self._press_pos is not None
+            and not self._dragging
+            and self._cmd_index >= 0
+        ):
+            if (
+                event.position().toPoint() - self._press_pos
+            ).manhattanLength() >= QApplication.startDragDistance():
+                self._dragging = True
+                self._start_drag()
+                return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        # 拖拽中按下释放不触发 click（Qt 会自动把 release 派发给 drop 目标）
+        was_dragging = self._dragging
+        self._press_pos = None
+        self._dragging = False
+        if was_dragging:
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def _start_drag(self):
+        from PySide6.QtGui import QDrag  # 局部引入
+        drag = QDrag(self)
+        mime = QMimeData()
+        mime.setData(self._MIME_TYPE, str(self._cmd_index).encode())
+        drag.setMimeData(mime)
+        pixmap = self.grab()
+        if not pixmap.isNull():
+            drag.setPixmap(pixmap)
+            drag.setHotSpot(QPoint(pixmap.width() // 2, pixmap.height() // 2))
+        drag.exec(Qt.MoveAction)
+
+
+class _ProjectTabBar(QTabBar):
+    """支持右键菜单 + 项目 Tab 拖拽排序的 QTabBar 子类。
+
+    - 拖拽：按下左键 + 移动超过阈值则启动；放下时计算源 / 目标 index 并通过
+      ``project_reorder_requested(source, target)`` 发射给宿主，由宿主修改
+      数据模型后重建 Tab。
+    - 拖拽时排除末尾的 "+" 加号 tab（最后一项）。
+    - 右键菜单：通过 ``Qt.CustomContextMenu`` 上抛给宿主统一处理。
+    """
+
+    project_reorder_requested = Signal(int, int)
+    _MIME_TYPE = "application/x-kklab-project-tab"
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+        self.setMovable(False)
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._press_pos = None
+        self._press_index = -1
+
+    def _is_real_tab(self, index: int) -> bool:
+        # 约定：最后一个 tab 为 "+" 加号，不参与拖拽
+        return 0 <= index < self.count() - 1
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            idx = self.tabAt(event.position().toPoint())
+            if self._is_real_tab(idx):
+                self._press_pos = event.position().toPoint()
+                self._press_index = idx
+            else:
+                self._press_pos = None
+                self._press_index = -1
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if (
+            event.buttons() & Qt.LeftButton
+            and self._press_pos is not None
+            and self._press_index >= 0
+        ):
+            if (
+                event.position().toPoint() - self._press_pos
+            ).manhattanLength() >= QApplication.startDragDistance():
+                self._start_drag(self._press_index)
+                return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._press_pos = None
+        self._press_index = -1
+        super().mouseReleaseEvent(event)
+
+    def _start_drag(self, source_index: int):
+        from PySide6.QtGui import QDrag  # 局部引入，避免顶部模块持有未用符号
+        drag = QDrag(self)
+        mime = QMimeData()
+        mime.setData(self._MIME_TYPE, str(source_index).encode())
+        drag.setMimeData(mime)
+        rect = self.tabRect(source_index)
+        if not rect.isEmpty():
+            pixmap = self.grab(rect)
+            drag.setPixmap(pixmap)
+            drag.setHotSpot(QPoint(rect.width() // 2, rect.height() // 2))
+        drag.exec(Qt.MoveAction)
+        self._press_pos = None
+        self._press_index = -1
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasFormat(self._MIME_TYPE):
+            event.acceptProposedAction()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasFormat(self._MIME_TYPE):
+            event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        if not event.mimeData().hasFormat(self._MIME_TYPE):
+            return
+        try:
+            source_index = int(
+                bytes(event.mimeData().data(self._MIME_TYPE)).decode()
+            )
+        except (ValueError, UnicodeDecodeError):
+            return
+        target_index = self.tabAt(event.position().toPoint())
+        # 拖到 "+" tab 或外部 → 视为挪到末尾真实项目
+        last_real = self.count() - 2
+        if not self._is_real_tab(target_index):
+            target_index = last_real if last_real >= 0 else 0
+        if source_index == target_index:
+            return
+        event.acceptProposedAction()
+        self.project_reorder_requested.emit(source_index, target_index)
+
+
 class _QuickCmdDialog(QDialog):
 
-    def __init__(self, name="", cmd="", parent=None):
+    def __init__(self, parent=None, name="", content="", send_type="text",
+                 line_ending="\r\n", encoding="ascii"):
         super().__init__(parent)
         self.setWindowTitle("Quick Command")
-        self.setFixedWidth(360)
+        self.setFixedWidth(380)
         self.setStyleSheet(f"""
             QDialog {{
                 background-color: #050b1e;
@@ -3472,27 +4534,67 @@ class _QuickCmdDialog(QDialog):
                 color: #cbd5e1; font-size: 13px; font-family: {_UI_FONT}; padding: 5px 8px; min-height: 24px;
             }}
             QLineEdit:focus {{ border: 1px solid #334155; }}
+            QComboBox {{
+                background-color: #020618; border: 1px solid rgba(51, 65, 85, 0.5); border-radius: 4px;
+                color: #cbd5e1; font-size: 13px; font-family: {_UI_FONT}; padding: 4px 8px; min-height: 24px;
+            }}
+            QComboBox:hover {{ border-color: #334155; }}
+            QComboBox QAbstractItemView {{
+                background-color: #020618; color: #cbd5e1;
+                border: 1px solid #1e293b; selection-background-color: #1e293b;
+                outline: 0;
+            }}
         """)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 16, 16, 16)
-        root.setSpacing(12)
+        root.setSpacing(10)
 
-        title = QLabel("New Quick Command" if not name and not cmd else "Edit Quick Command")
+        is_edit = bool(name or content)
+        title = QLabel("Edit Quick Command" if is_edit else "New Quick Command")
         title.setObjectName("qcTitle")
         root.addWidget(title)
 
-        root.addWidget(QLabel("Command name (button label, optional)"))
+        root.addWidget(QLabel("指令名称"))
         self._name_edit = QLineEdit()
-        self._name_edit.setPlaceholderText("e.g. Reset, Query Version...")
+        self._name_edit.setPlaceholderText("如:查询版本")
         self._name_edit.setText(name)
         root.addWidget(self._name_edit)
 
-        root.addWidget(QLabel("Command content (data to send)"))
+        root.addWidget(QLabel("指令内容"))
         self._cmd_edit = QLineEdit()
-        self._cmd_edit.setPlaceholderText("e.g. AT+RST")
-        self._cmd_edit.setText(cmd)
+        self._cmd_edit.setPlaceholderText("如:AT+GMR")
+        self._cmd_edit.setText(content)
         root.addWidget(self._cmd_edit)
+
+        root.addWidget(QLabel("发送方式"))
+        self._send_type_combo = QComboBox()
+        # 显示文案大写（TEXT / HEX），userData 保持小写以兼容旧数据
+        self._send_type_combo.addItem("TEXT", "text")
+        self._send_type_combo.addItem("HEX", "hex")
+        idx = self._send_type_combo.findData(send_type)
+        self._send_type_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        root.addWidget(self._send_type_combo)
+
+        root.addWidget(QLabel("结尾符"))
+        self._line_ending_combo = QComboBox()
+        self._line_ending_combo.addItem("无", "")
+        self._line_ending_combo.addItem("\\r", "\r")
+        self._line_ending_combo.addItem("\\n", "\n")
+        self._line_ending_combo.addItem("\\r\\n", "\r\n")
+        idx = self._line_ending_combo.findData(line_ending)
+        self._line_ending_combo.setCurrentIndex(idx if idx >= 0 else 3)
+        root.addWidget(self._line_ending_combo)
+
+        root.addWidget(QLabel("编码"))
+        self._encoding_combo = QComboBox()
+        # 默认 ascii，放在第一位以便 setCurrentIndex(0) 兜底命中
+        # 显示文案大写（ASCII / UTF-8 / GBK），userData 保持小写以兼容旧数据
+        for enc_label, enc_value in (("ASCII", "ascii"), ("UTF-8", "utf-8"), ("GBK", "gbk")):
+            self._encoding_combo.addItem(enc_label, enc_value)
+        idx = self._encoding_combo.findData(encoding)
+        self._encoding_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        root.addWidget(self._encoding_combo)
 
         root.addSpacing(4)
 
@@ -3527,6 +4629,16 @@ class _QuickCmdDialog(QDialog):
         btn_row.addWidget(ok_btn)
         root.addLayout(btn_row)
 
+    def get_command(self) -> dict:
+        return {
+            "name": self._name_edit.text().strip(),
+            "content": self._cmd_edit.text(),
+            "send_type": self._send_type_combo.currentData() or "text",
+            "line_ending": self._line_ending_combo.currentData() or "",
+            "encoding": self._encoding_combo.currentData() or "ascii",
+        }
+
+    # 兼容老调用 (已无人使用)
     def get_name(self):
         return self._name_edit.text().strip()
 
@@ -4081,7 +5193,7 @@ if __name__ == "__main__":
         app.setWindowIcon(QIcon(_ICON_PATH))
 
     w4 = _DemoCompleteSerialWidget()
-    w4.setWindowTitle("Complete Serial Console")
+    w4.setWindowTitle("KK Serial Console")
     if os.path.isfile(_ICON_PATH):
         w4.setWindowIcon(QIcon(_ICON_PATH))
     w4.resize(1125, 750)
