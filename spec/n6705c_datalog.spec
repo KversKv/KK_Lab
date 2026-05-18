@@ -19,6 +19,11 @@ a = Analysis(
     datas=[
         # Include SVG icons
         (os.path.join(PROJECT_ROOT, 'resources', 'icons'), os.path.join('resources', 'icons')),
+        # Include page-specific SVGs used by n6705c_datalog_ui.py (sparkles.svg, n6705c_thumb.svg, etc.)
+        (
+            os.path.join(PROJECT_ROOT, 'resources', 'pages', 'n6705c_power_analyzer_SVGs'),
+            os.path.join('resources', 'pages', 'n6705c_power_analyzer_SVGs'),
+        ),
     ],
     hiddenimports=[
         'pyvisa',

@@ -33,6 +33,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QIcon, QPainter, QPixmap, QColor, QAction, QPen, QFont, QDrag,
+    QShortcut, QKeySequence,
 )
 from PySide6.QtSvg import QSvgRenderer
 
@@ -79,30 +80,42 @@ _SERIAL_BTN_RADIUS = 4
 _TERM_FONT = '"JetBrains Mono", "Fira Code", Consolas, "Menlo", "Courier New", monospace'
 _UI_FONT = '"Inter", "PingFang SC", "Microsoft YaHei", "Segoe UI", -apple-system, sans-serif'
 
-# --- Color Palette (Tailwind slate + accent colors) ---
-_CLR_BG_MAIN       = "#050b1e"  # 主背景
-_CLR_BG_PANEL      = "#050b1e"  # 配置面板/工具栏背景
+# --- Color Palette (Serial Log 配色规范) ---
+_CLR_BG_MAIN       = "#020618"  # 主背景
+_CLR_BG_PANEL      = "#020618"  # 配置面板/工具栏背景
 _CLR_BG_LOG        = "#020618"  # 日志/输入框背景（凹陷区）
-_CLR_BORDER        = "#1e293b"  # 分隔线与边框 (slate-800)
-_CLR_BORDER_HOVER  = "#334155"  # hover 态边框 (slate-700)
-_CLR_TEXT_TITLE    = "#FFFFFF"  # 最大标题（Serial Log）
-_CLR_TEXT_ACCENT   = "#f59e0b"  # Quick Commands 标题 (amber-500)
-_CLR_TEXT_SUBTITLE = "#94a3b8"  # 次级标题（Serial Config 等）(slate-400)
-_CLR_TEXT_LABEL    = "#94a3b8"  # 表单标签 (slate-400)
-_CLR_TEXT_BTN      = "#94a3b8"  # 工具栏按钮 (slate-400)
-_CLR_TEXT_BTN_LOG  = "#cbd5e1"  # 日志区按钮 (slate-300)
-_CLR_TEXT_BODY     = "#cbd5e1"  # 日志正文 (slate-300)
-_CLR_TEXT_TIME     = "#64748b"  # 日志时间戳 (slate-500)
-_CLR_TEXT_INFO     = "#94a3b8"  # [INFO] 标签 (slate-400)
-_CLR_CONNECT_FG    = "#34d399"  # Connect (emerald-400)
+_CLR_BORDER        = "#1E293B"  # 分隔线与边框
+_CLR_BORDER_HOVER  = "#475569"  # hover 态边框 / 滚动条悬停
+_CLR_TEXT_TITLE    = "#F8FAFC"  # 最大标题（Serial Log）
+_CLR_TEXT_ACCENT   = "#FBBF24"  # Quick Commands 标题 / WARNING
+_CLR_TEXT_SUBTITLE = "#93C5FD"  # 次级标题（Serial Config 等）/ INFO
+_CLR_TEXT_LABEL    = "#93C5FD"  # 表单标签 / INFO
+_CLR_TEXT_BTN      = "#93C5FD"  # 工具栏按钮 / INFO
+_CLR_TEXT_BTN_LOG  = "#CBD5E1"  # 日志区按钮 / RX 正文
+_CLR_TEXT_BODY     = "#CBD5E1"  # 日志正文 / RX
+_CLR_TEXT_TIME     = "#64748B"  # 日志时间戳
+_CLR_TEXT_LINENO   = "#475569"  # 行号
+_CLR_TEXT_INFO     = "#93C5FD"  # [INFO] / 串口工具自身信息
+_CLR_INPUT_BG      = "#0F172A"  # 输入框背景
+_CLR_INPUT_TEXT    = "#E2E8F0"  # 输入框文字
+_CLR_CURSOR        = "#38BDF8"  # 光标
+_CLR_SELECTION_BG  = "#1E3A5F"  # 选中背景
+_CLR_SELECTION_TEXT= "#F8FAFC"  # 选中文字
+_CLR_SCROLLBAR     = "#334155"  # 滚动条滑块
+_CLR_SCROLLBAR_HV  = "#475569"  # 滚动条悬停
+_CLR_CONNECT_FG    = "#5EEAD4"  # Connect / TX
 _CLR_CONNECT_BG    = "#07202b"  # Connect 背景
-_CLR_SEND_BG       = "#10b981"  # Send (emerald-500)
-_CLR_SEND_HOVER    = "#059669"  # Send hover (emerald-600)
-_CLR_SEND_PRESS    = "#047857"  # Send pressed (emerald-700)
-_CLR_ERROR         = "#f43f5e"  # 断开/错误 (rose-500)
-_CLR_RX            = "#10b981"  # RX (emerald-500)
-_CLR_TX            = "#60a5fa"  # TX (blue-400)
-_CLR_TOGGLE_ON     = "#6366f1"  # ASCII/HEX 选中 (indigo-500)
+_CLR_SEND_BG       = "#5EEAD4"  # Send / TX
+_CLR_SEND_HOVER    = "#2DD4BF"  # Send hover (teal-400)
+_CLR_SEND_PRESS    = "#14B8A6"  # Send pressed (teal-500)
+_CLR_WARNING       = "#FBBF24"  # WARNING / 警告内容
+_CLR_ERROR         = "#F87171"  # ERROR / 断开/错误
+_CLR_RX            = "#CBD5E1"  # RX / UART 接收正文
+_CLR_TX            = "#5EEAD4"  # TX / 发送给 UART 的内容
+_CLR_FILTER_TEXT   = "#EDE9FE"  # 筛选命中文字
+_CLR_FILTER_BG     = "#312E81"  # 筛选命中背景
+_CLR_FILTER_BORDER = "#818CF8"  # 筛选高亮边框
+_CLR_TOGGLE_ON     = "#818CF8"  # ASCII/HEX 选中 / FILTER 边框
 
 
 def _serial_search_style(h=_SERIAL_BTN_HEIGHT, r=_SERIAL_BTN_RADIUS):
@@ -682,6 +695,12 @@ class SerialComMixin:
         self._sc_active_log_panel_index = 0
         self._sc_filter_dirty = False
         self._sc_filter_last_count = 0
+        self._sc_filter_applied_pattern = ""
+        self._sc_filter_applied_use_regex = False
+        self._sc_filter_applied_case = False
+        self._sc_filter_applied_invert = False
+        self._sc_filter_applied_before = 0
+        self._sc_filter_applied_after = 0
 
         outer = QVBoxLayout()
         outer.setContentsMargins(0, 0, 0, 0)
@@ -1192,19 +1211,20 @@ class SerialComMixin:
         fl.setContentsMargins(0, 0, 0, 0)
         fl.setSpacing(4)
         self._sc_filter_input = QLineEdit()
-        self._sc_filter_input.setPlaceholderText("Enter keyword or regex to filter logs...")
+        self._sc_filter_input.setPlaceholderText("Enter keyword or regex, press Enter to filter...")
         self._sc_filter_input.setStyleSheet(f"""
             QLineEdit {{
-                background-color: #020618; border: 1px solid rgba(51, 65, 85, 0.5); border-radius: 4px;
-                color: #cbd5e1; font-size: 12px; font-family: {_UI_FONT}; padding: 2px 6px; min-height: 18px; max-height: 18px;
+                background-color: {_CLR_INPUT_BG}; border: 1px solid rgba(51, 65, 85, 0.5); border-radius: 4px;
+                color: {_CLR_INPUT_TEXT}; font-size: 12px; font-family: {_UI_FONT}; padding: 2px 6px; min-height: 18px; max-height: 18px;
+                selection-background-color: {_CLR_SELECTION_BG}; selection-color: {_CLR_SELECTION_TEXT};
             }}
-            QLineEdit:focus {{ border: 1px solid #334155; }}
+            QLineEdit:focus {{ border: 1px solid {_CLR_FILTER_BORDER}; }}
         """)
         fl.addWidget(self._sc_filter_input, 1)
 
         self._sc_filter_match_label = QLabel("")
         self._sc_filter_match_label.setStyleSheet(
-            f"color: #94a3b8; font-size: 11px; font-family: {_UI_FONT}; background: transparent; min-width: 60px;"
+            f"color: {_CLR_FILTER_TEXT}; font-size: 11px; font-family: {_UI_FONT}; background: transparent; min-width: 60px;"
         )
         fl.addWidget(self._sc_filter_match_label)
         filter_root.addLayout(fl)
@@ -1288,9 +1308,11 @@ class SerialComMixin:
         self._sc_log_edit.setReadOnly(True)
         self._sc_log_edit.setStyleSheet(f"""
             QTextEdit {{
-                background-color: #020618; border: none; border-top: 1px solid #1e293b;
-                color: #cbd5e1; font-family: {_TERM_FONT}; font-size: 14px; font-weight: 400;
+                background-color: {_CLR_BG_LOG}; border: none; border-top: 1px solid {_CLR_BORDER};
+                color: {_CLR_TEXT_BODY}; font-family: {_TERM_FONT}; font-size: 14px; font-weight: 400;
                 padding: 6px 8px;
+                selection-background-color: {_CLR_SELECTION_BG};
+                selection-color: {_CLR_SELECTION_TEXT};
             }}
         """ + SCROLLBAR_STYLE)
         self._sc_log_edit.document().setDefaultStyleSheet(
@@ -1327,17 +1349,21 @@ class SerialComMixin:
         self._sc_send_input.setClearButtonEnabled(False)
         self._sc_history_combo.setStyleSheet(f"""
             QComboBox {{
-                background-color: #020618; border: 1px solid rgba(51, 65, 85, 0.5); border-radius: 4px;
-                color: #cbd5e1; font-size: 14px; font-family: {_UI_FONT};
+                background-color: {_CLR_INPUT_BG}; border: 1px solid rgba(51, 65, 85, 0.5); border-radius: 4px;
+                color: {_CLR_INPUT_TEXT}; font-size: 14px; font-family: {_UI_FONT};
                 padding: 3px 28px 3px 8px;
+                selection-background-color: {_CLR_SELECTION_BG};
+                selection-color: {_CLR_SELECTION_TEXT};
             }}
-            QComboBox:focus {{ border: 1px solid #475569; }}
+            QComboBox:focus {{ border: 1px solid {_CLR_BORDER_HOVER}; }}
             QComboBox::drop-down {{ border: none; width: 22px; }}
             QComboBox::down-arrow {{ image: none; width: 0px; height: 0px; }}
             QComboBox QLineEdit {{
                 background-color: transparent; border: none;
-                color: #cbd5e1; font-size: 14px; font-family: {_UI_FONT};
+                color: {_CLR_INPUT_TEXT}; font-size: 14px; font-family: {_UI_FONT};
                 padding: 0px; margin: 0px;
+                selection-background-color: {_CLR_SELECTION_BG};
+                selection-color: {_CLR_SELECTION_TEXT};
             }}
         """)
         send_row.addWidget(self._sc_history_combo, 1)
@@ -1345,17 +1371,17 @@ class SerialComMixin:
         self._sc_send_btn = QPushButton("Send")
         self._sc_send_btn.setCursor(Qt.PointingHandCursor)
         self._sc_send_btn.setFixedHeight(30)
-        icon = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "send.svg"), "#ffffff", 11)
+        icon = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "send.svg"), _CLR_BG_MAIN, 11)
         if not icon.isNull():
             self._sc_send_btn.setIcon(icon)
         self._sc_send_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: #059669; border: none; border-radius: 6px;
-                color: #FFFFFF; font-weight: 700; font-size: 14px;
+                background-color: {_CLR_SEND_BG}; border: none; border-radius: 6px;
+                color: {_CLR_BG_MAIN}; font-weight: 700; font-size: 14px;
                 font-family: {_UI_FONT}; padding: 3px 18px;
             }}
-            QPushButton:hover {{ background-color: #10b981; }}
-            QPushButton:pressed {{ background-color: #047857; }}
+            QPushButton:hover {{ background-color: {_CLR_SEND_HOVER}; }}
+            QPushButton:pressed {{ background-color: {_CLR_SEND_PRESS}; }}
         """)
         send_row.addWidget(self._sc_send_btn)
 
@@ -1487,12 +1513,13 @@ class SerialComMixin:
         self._sc_settings_btn.clicked.connect(self._sc_open_settings_dialog)
 
         self._sc_filter_btn.clicked.connect(self._sc_on_filter_toggle)
-        self._sc_filter_input.textChanged.connect(self._sc_apply_filter)
-        self._sc_filter_regex_cb.toggled.connect(lambda: self._sc_apply_filter())
-        self._sc_filter_case_cb.toggled.connect(lambda: self._sc_apply_filter())
-        self._sc_filter_invert_cb.toggled.connect(lambda: self._sc_apply_filter())
-        self._sc_filter_before_spin.valueChanged.connect(lambda: self._sc_apply_filter())
-        self._sc_filter_after_spin.valueChanged.connect(lambda: self._sc_apply_filter())
+        self._sc_filter_input.returnPressed.connect(self._sc_apply_filter)
+        self._sc_filter_input.textChanged.connect(self._sc_on_filter_input_changed)
+        self._sc_filter_regex_cb.toggled.connect(self._sc_on_filter_option_changed)
+        self._sc_filter_case_cb.toggled.connect(self._sc_on_filter_option_changed)
+        self._sc_filter_invert_cb.toggled.connect(self._sc_on_filter_option_changed)
+        self._sc_filter_before_spin.valueChanged.connect(self._sc_on_filter_option_changed)
+        self._sc_filter_after_spin.valueChanged.connect(self._sc_on_filter_option_changed)
         self._sc_copy_btn.clicked.connect(self._sc_copy_logs)
         self._sc_export_btn.clicked.connect(self._sc_export_logs)
         self._sc_clear_btn.clicked.connect(self._sc_clear_logs)
@@ -1513,6 +1540,33 @@ class SerialComMixin:
             _baud_line_edit.editingFinished.connect(self._sc_on_baudrate_changed)
 
         self.serial_data_received.connect(self._sc_on_data_received)
+
+        self._sc_install_filter_shortcut()
+
+    def _sc_install_filter_shortcut(self):
+        host_widgets = []
+        if getattr(self, "_sc_log_area", None) is not None:
+            host_widgets.append(self._sc_log_area)
+        if getattr(self, "_sc_send_input", None) is not None:
+            host_widgets.append(self._sc_send_input)
+
+        self._sc_filter_shortcuts = []
+        for host in host_widgets:
+            sc = QShortcut(QKeySequence("Ctrl+F"), host)
+            sc.setContext(Qt.WidgetWithChildrenShortcut)
+            sc.activated.connect(self._sc_toggle_filter_shortcut)
+            self._sc_filter_shortcuts.append(sc)
+
+    def _sc_toggle_filter_shortcut(self):
+        btn = getattr(self, "_sc_filter_btn", None)
+        if btn is None:
+            return
+        btn.click()
+        if btn.isChecked():
+            input_widget = getattr(self, "_sc_filter_input", None)
+            if input_widget is not None:
+                input_widget.setFocus(Qt.ShortcutFocusReason)
+                input_widget.selectAll()
 
     # --- action handlers ---
 
@@ -1812,9 +1866,11 @@ class SerialComMixin:
         log_edit.setReadOnly(True)
         log_edit.setStyleSheet(f"""
             QTextEdit {{
-                background-color: #020618; border: none; border-top: 1px solid #1e293b;
-                color: #cbd5e1; font-family: {_TERM_FONT}; font-size: 14px; font-weight: 400;
+                background-color: {_CLR_BG_LOG}; border: none; border-top: 1px solid {_CLR_BORDER};
+                color: {_CLR_TEXT_BODY}; font-family: {_TERM_FONT}; font-size: 14px; font-weight: 400;
                 padding: 6px 8px;
+                selection-background-color: {_CLR_SELECTION_BG};
+                selection-color: {_CLR_SELECTION_TEXT};
             }}
         """ + SCROLLBAR_STYLE)
         log_edit.document().setDefaultStyleSheet(
@@ -1968,7 +2024,7 @@ class SerialComMixin:
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.data_received.connect(lambda data, p=panel: self._sc_extra_panel_on_data(p, data))
-        worker.error.connect(lambda err, p=panel: self._sc_extra_panel_append_log(p, f"[ERROR] {err}", "#f43f5e"))
+        worker.error.connect(lambda err, p=panel: self._sc_extra_panel_append_log(p, f"[ERROR] {err}", _CLR_ERROR))
         panel["read_thread"] = thread
         panel["read_worker"] = worker
         thread.start()
@@ -1981,10 +2037,10 @@ class SerialComMixin:
             if line.strip():
                 self._sc_extra_panel_append_log(panel, f"[RX] {line}", _CLR_RX)
 
-    def _sc_extra_panel_append_log(self, panel, message, color="#cbd5e1"):
+    def _sc_extra_panel_append_log(self, panel, message, color=_CLR_TEXT_BODY):
         ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
         escaped = message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        ts_html = f'<span style="color:#64748b;">{ts}</span> '
+        ts_html = f'<span style="color:{_CLR_TEXT_TIME};">{ts}</span> '
         html = f'{ts_html}<span style="color:{color};">{escaped}</span>'
         panel["all_logs"].append((message, html))
         panel["pending_html"].append(html)
@@ -2080,9 +2136,11 @@ class SerialComMixin:
             self._sc_display_font_size = font_size
             self._sc_log_edit.setStyleSheet(f"""
                 QTextEdit {{
-                    background-color: #020618; border: none; border-top: 1px solid #1e293b;
-                    color: #cbd5e1; font-family: {font_family}, {_TERM_FONT}; font-size: {font_size}px; font-weight: 400;
+                    background-color: {_CLR_BG_LOG}; border: none; border-top: 1px solid {_CLR_BORDER};
+                    color: {_CLR_TEXT_BODY}; font-family: {font_family}, {_TERM_FONT}; font-size: {font_size}px; font-weight: 400;
                     padding: 4px 6px; line-height: 1.5;
+                    selection-background-color: {_CLR_SELECTION_BG};
+                    selection-color: {_CLR_SELECTION_TEXT};
                 }}
             """ + SCROLLBAR_STYLE)
 
@@ -2102,28 +2160,68 @@ class SerialComMixin:
             self._sc_filter_match_label.setText("")
             self._sc_filter_dirty = False
             self._sc_filter_last_count = len(self._sc_all_logs)
+            self._sc_reset_applied_filter()
             self._sc_rebuild_log_view()
+
+    def _sc_reset_applied_filter(self):
+        self._sc_filter_applied_pattern = ""
+        self._sc_filter_applied_use_regex = False
+        self._sc_filter_applied_case = False
+        self._sc_filter_applied_invert = False
+        self._sc_filter_applied_before = 0
+        self._sc_filter_applied_after = 0
+
+    def _sc_filter_inputs_match_applied(self):
+        return (
+            self._sc_filter_input.text().strip() == self._sc_filter_applied_pattern
+            and self._sc_filter_regex_cb.isChecked() == self._sc_filter_applied_use_regex
+            and self._sc_filter_case_cb.isChecked() == self._sc_filter_applied_case
+            and self._sc_filter_invert_cb.isChecked() == self._sc_filter_applied_invert
+            and self._sc_filter_before_spin.value() == self._sc_filter_applied_before
+            and self._sc_filter_after_spin.value() == self._sc_filter_applied_after
+        )
+
+    def _sc_update_pending_hint(self):
+        if not self._sc_filter_row.isVisible():
+            return
+        if self._sc_filter_inputs_match_applied():
+            return
+        self._sc_filter_match_label.setText("Press Enter to apply")
+
+    def _sc_on_filter_input_changed(self, _text=None):
+        self._sc_update_pending_hint()
+
+    def _sc_on_filter_option_changed(self, *_args):
+        self._sc_update_pending_hint()
 
     def _sc_apply_filter(self, _text=None):
         self._sc_filter_dirty = False
         pattern = self._sc_filter_input.text().strip()
+        self._sc_filter_applied_pattern = pattern
+        self._sc_filter_applied_use_regex = self._sc_filter_regex_cb.isChecked()
+        self._sc_filter_applied_case = self._sc_filter_case_cb.isChecked()
+        self._sc_filter_applied_invert = self._sc_filter_invert_cb.isChecked()
+        self._sc_filter_applied_before = self._sc_filter_before_spin.value()
+        self._sc_filter_applied_after = self._sc_filter_after_spin.value()
+
         if not pattern:
             self._sc_filter_last_count = len(self._sc_all_logs)
             self._sc_rebuild_log_view()
             self._sc_filter_match_label.setText("")
             return
 
-        use_regex = self._sc_filter_regex_cb.isChecked()
-        case_sensitive = self._sc_filter_case_cb.isChecked()
-        invert = self._sc_filter_invert_cb.isChecked()
-        before = self._sc_filter_before_spin.value()
-        after = self._sc_filter_after_spin.value()
+        use_regex = self._sc_filter_applied_use_regex
+        case_sensitive = self._sc_filter_applied_case
+        invert = self._sc_filter_applied_invert
+        before = self._sc_filter_applied_before
+        after = self._sc_filter_applied_after
 
         matched_indices = self._sc_get_matched_indices(
             pattern, use_regex, case_sensitive, invert
         )
         self._sc_filter_match_label.setText(f"Matched: {len(matched_indices)} lines")
 
+        matched_set = set(matched_indices)
         visible = set()
         for idx in matched_indices:
             start = max(0, idx - before)
@@ -2137,9 +2235,16 @@ class SerialComMixin:
             if before > 0 or after > 0:
                 if prev_shown >= 0 and i - prev_shown > 1:
                     self._sc_log_edit.append(
-                        '<span style="color:#1e293b;">  ───</span>'
+                        f'<span style="color:{_CLR_TEXT_LINENO};">  ───</span>'
                     )
-            self._sc_log_edit.append(self._sc_all_logs[i][1])
+            if i in matched_set and not invert:
+                self._sc_log_edit.append(
+                    self._sc_html_with_filter_highlight(
+                        self._sc_all_logs[i][1], pattern, use_regex, case_sensitive
+                    )
+                )
+            else:
+                self._sc_log_edit.append(self._sc_all_logs[i][1])
             prev_shown = i
         self._sc_filter_last_count = len(self._sc_all_logs)
         if self._sc_auto_scroll:
@@ -2157,7 +2262,7 @@ class SerialComMixin:
 
     def _sc_is_filter_active(self):
         return (self._sc_filter_row.isVisible()
-                and bool(self._sc_filter_input.text().strip()))
+                and bool(self._sc_filter_applied_pattern))
 
     def _sc_get_matched_indices(self, pattern, use_regex, case_sensitive, invert):
         matched = []
@@ -2182,18 +2287,58 @@ class SerialComMixin:
                 matched.append(i)
         return matched
 
+    @staticmethod
+    def _sc_html_with_filter_highlight(html: str, pattern: str,
+                                       use_regex: bool, case_sensitive: bool) -> str:
+        if not pattern:
+            return html
+
+        compiled = None
+        if use_regex:
+            try:
+                flags = 0 if case_sensitive else re.IGNORECASE
+                compiled = re.compile(pattern, flags)
+            except re.error:
+                return html
+        else:
+            try:
+                flags = 0 if case_sensitive else re.IGNORECASE
+                compiled = re.compile(re.escape(pattern), flags)
+            except re.error:
+                return html
+
+        wrap_open = (
+            f'<span style="background-color:{_CLR_FILTER_BG};'
+            f'color:{_CLR_FILTER_TEXT};'
+            f'border:1px solid {_CLR_FILTER_BORDER};'
+            f'border-radius:2px;padding:0 1px;">'
+        )
+        wrap_close = '</span>'
+
+        parts = re.split(r'(<[^>]*>)', html)
+        for idx, seg in enumerate(parts):
+            if not seg or seg.startswith('<'):
+                continue
+            try:
+                parts[idx] = compiled.sub(
+                    lambda m: f'{wrap_open}{m.group(0)}{wrap_close}', seg
+                )
+            except re.error:
+                continue
+        return ''.join(parts)
+
     def _sc_copy_logs(self):
         cb = QApplication.clipboard()
         if not cb:
             return
         lines = []
-        if self._sc_filter_row.isVisible() and self._sc_filter_input.text().strip():
-            pattern = self._sc_filter_input.text().strip()
-            use_regex = self._sc_filter_regex_cb.isChecked()
-            case_sensitive = self._sc_filter_case_cb.isChecked()
-            invert = self._sc_filter_invert_cb.isChecked()
-            before = self._sc_filter_before_spin.value()
-            after = self._sc_filter_after_spin.value()
+        if self._sc_is_filter_active():
+            pattern = self._sc_filter_applied_pattern
+            use_regex = self._sc_filter_applied_use_regex
+            case_sensitive = self._sc_filter_applied_case
+            invert = self._sc_filter_applied_invert
+            before = self._sc_filter_applied_before
+            after = self._sc_filter_applied_after
             matched_indices = self._sc_get_matched_indices(
                 pattern, use_regex, case_sensitive, invert
             )
@@ -2234,6 +2379,7 @@ class SerialComMixin:
         self._sc_filter_last_count = 0
         self._sc_filter_dirty = False
         self._sc_filter_match_label.setText("")
+        self._sc_reset_applied_filter()
 
     def _sc_on_user_scroll(self, value):
         sb = self._sc_log_edit.verticalScrollBar()
@@ -2637,10 +2783,10 @@ class SerialComMixin:
 
     # --- log helpers ---
 
-    def _sc_append_log(self, message: str, color: str = "#cbd5e1"):
+    def _sc_append_log(self, message: str, color: str = _CLR_TEXT_BODY):
         ts = datetime.now().strftime("%H:%M:%S.%f")[:-3] if self._sc_show_timestamp else ""
         escaped = message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        ts_html = f'<span style="color:#64748b;">{ts}</span> ' if ts else ""
+        ts_html = f'<span style="color:{_CLR_TEXT_TIME};">{ts}</span> ' if ts else ""
         html = f'{ts_html}<span style="color:{color};">{escaped}</span>'
         self._sc_all_logs.append((message, html))
         if self._sc_is_filter_active():
@@ -2652,8 +2798,8 @@ class SerialComMixin:
         if self._sc_is_filter_active():
             if getattr(self, '_sc_filter_dirty', False):
                 self._sc_filter_dirty = False
-                before = self._sc_filter_before_spin.value()
-                after = self._sc_filter_after_spin.value()
+                before = self._sc_filter_applied_before
+                after = self._sc_filter_applied_after
                 if before == 0 and after == 0:
                     self._sc_flush_filter_incremental()
                 else:
@@ -2671,12 +2817,12 @@ class SerialComMixin:
         self._sc_flush_extra_panels()
 
     def _sc_flush_filter_incremental(self):
-        pattern = self._sc_filter_input.text().strip()
+        pattern = self._sc_filter_applied_pattern
         if not pattern:
             return
-        use_regex = self._sc_filter_regex_cb.isChecked()
-        case_sensitive = self._sc_filter_case_cb.isChecked()
-        invert = self._sc_filter_invert_cb.isChecked()
+        use_regex = self._sc_filter_applied_use_regex
+        case_sensitive = self._sc_filter_applied_case
+        invert = self._sc_filter_applied_invert
 
         compiled = None
         if use_regex:
@@ -2703,7 +2849,12 @@ class SerialComMixin:
             if hit:
                 total_match += 1
                 if i >= start_idx:
-                    new_html.append(self._sc_all_logs[i][1])
+                    base_html = self._sc_all_logs[i][1]
+                    if not invert:
+                        base_html = self._sc_html_with_filter_highlight(
+                            base_html, pattern, use_regex, case_sensitive
+                        )
+                    new_html.append(base_html)
 
         self._sc_filter_last_count = len(self._sc_all_logs)
         self._sc_filter_match_label.setText(f"Matched: {total_match} lines")
@@ -2718,13 +2869,13 @@ class SerialComMixin:
                 self._sc_scroll_to_bottom()
 
     def _sc_append_system(self, message: str):
-        color_map = {"INFO": _CLR_TEXT_INFO, "WARN": "#f59e0b", "ERROR": "#f43f5e"}
+        color_map = {"INFO": _CLR_TEXT_INFO, "WARN": _CLR_WARNING, "ERROR": _CLR_ERROR}
         tag = ""
         for t in color_map:
             if f"[{t}]" in message:
                 tag = t
                 break
-        color = color_map.get(tag, "#94a3b8")
+        color = color_map.get(tag, _CLR_TEXT_INFO)
         self._sc_append_log(message, color)
 
     @staticmethod
