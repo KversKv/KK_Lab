@@ -1,6 +1,21 @@
-from PySide6.QtWidgets import QComboBox, QStyle, QStyleOptionComboBox, QListView
+from PySide6.QtWidgets import (
+    QComboBox, QStyle, QStyleOptionComboBox, QListView, QStyledItemDelegate
+)
 from PySide6.QtCore import Qt, QRect, QRectF
 from PySide6.QtGui import QPainter, QPen, QColor, QFontMetrics, QPalette
+
+
+class _ComboItemDelegate(QStyledItemDelegate):
+    def __init__(self, padding_v=4, parent=None):
+        super().__init__(parent)
+        self._padding_v = padding_v
+
+    def sizeHint(self, option, index):
+        size = super().sizeHint(option, index)
+        min_h = option.fontMetrics.height() + self._padding_v * 2
+        if size.height() < min_h:
+            size.setHeight(min_h)
+        return size
 
 
 class DarkComboBox(QComboBox):
@@ -46,9 +61,16 @@ class DarkComboBox(QComboBox):
         self._setup_view(bg, border, hover_color)
         self.setMaxVisibleItems(30)
 
+    _ITEM_PADDING_V = 4
+
     def _setup_view(self, bg, border, hover_color):
         list_view = QListView()
         list_view.setMouseTracking(True)
+        list_view.setUniformItemSizes(True)
+        delegate = _ComboItemDelegate(
+            padding_v=self._ITEM_PADDING_V, parent=list_view
+        )
+        list_view.setItemDelegate(delegate)
         palette = list_view.palette()
         palette.setColor(QPalette.Highlight, QColor(hover_color))
         palette.setColor(QPalette.HighlightedText, QColor("#ffffff"))
@@ -61,7 +83,7 @@ class DarkComboBox(QComboBox):
                 outline: 0;
             }}
             QListView::item {{
-                padding: 4px 10px;
+                padding: {self._ITEM_PADDING_V}px 10px;
                 border: none;
             }}
             QListView::item:hover {{
@@ -134,6 +156,12 @@ class DarkComboBox(QComboBox):
             if w > max_w:
                 max_w = w
         view.setMinimumWidth(max_w)
+        visible = min(self.count(), self.maxVisibleItems())
+        if visible > 0:
+            row_h = view.sizeHintForRow(0)
+            if row_h <= 0:
+                row_h = fm.height() + self._ITEM_PADDING_V * 2
+            view.setMinimumHeight(visible * row_h)
         super().showPopup()
         popup = view.window()
         if popup:
@@ -142,3 +170,9 @@ class DarkComboBox(QComboBox):
                 f"border: 1px solid {self._popup_border}; "
                 f"padding: 0px; margin: 0px;"
             )
+            if self.count() <= self.maxVisibleItems():
+                for child in popup.children():
+                    cls_name = child.metaObject().className()
+                    if "Scroller" in cls_name or "QComboBoxPrivateScroller" in cls_name:
+                        child.hide()
+                        child.setMaximumHeight(0)
