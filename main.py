@@ -25,24 +25,19 @@ from debug_config import DEBUG_MOCK
 from ui.main_window import MainWindow
 
 setup_logging(level=logging.INFO)
-# setup_logging(level=logging.DEBUG)    # 全部输出
-# setup_logging(level=logging.INFO)     # 默认 - 正常运行信息
-# setup_logging(level=logging.WARNING)  # 仅警告和错误
-# setup_logging(level=logging.ERROR)    # 仅错误
-# import logging
-
-# # 创建模块级 logger
-# logger = logging.getLogger(__name__)
-
-# # 使用标准级别
-# logger.error("Failed to download dlog data.")     
-# logger.info("Step 1: Setting Vbat to 3V...")        
-# logger.debug(f"Downloaded {size} bytes of dlog.")   
-
-
 
 
 logger = get_logger(__name__)
+
+
+def _global_excepthook(exc_type, exc_value, exc_tb):
+    if exc_type is KeyboardInterrupt:
+        sys.__excepthook__(exc_type, exc_value, exc_tb)
+        return
+    logger.critical("Uncaught exception", exc_info=(exc_type, exc_value, exc_tb))
+
+
+sys.excepthook = _global_excepthook
 
 warnings.filterwarnings("ignore", module=r"pyvisa_py\.tcpip")
 

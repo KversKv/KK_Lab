@@ -1237,7 +1237,11 @@ class MainWindow(QMainWindow):
         logger.debug("Switching to Consumption Test UI: selected_test=%s", selected_test)
         self._hide_all_instrument_uis()
         if self.consumption_test_ui is None:
-            self.consumption_test_ui = ConsumptionTestWrapper(n6705c_top=self.n6705c_top)
+            try:
+                self.consumption_test_ui = ConsumptionTestWrapper(n6705c_top=self.n6705c_top)
+            except Exception:
+                logger.error("Failed to create ConsumptionTestWrapper", exc_info=True)
+                return
             self.instrument_ui_container_layout.addWidget(self.consumption_test_ui)
         else:
             self.consumption_test_ui.sync_n6705c_from_top()

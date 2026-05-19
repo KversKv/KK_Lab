@@ -4,7 +4,7 @@
 **开工前必读** [CLAUDE.md](../../CLAUDE.md)+[AGENTS.md](../../AGENTS.md)；按 docs/ai 分发表取细则。
 
 ## 1. 栈
-Win/PySide6·Py3.10+·pyvisa·pyqtgraph·Modbus·PyInstaller。分层 `main→ui↔core→instruments→lib`。
+Win/PySide6·Py3.12+·pyvisa·pyqtgraph·Modbus·PyInstaller。分层 `main→ui↔core→instruments→lib`。
 
 ## 2. 硬红线
 - 禁`print`，用`log_config.get_logger(__name__)`；异常`exc_info=True`，禁裸`except`。

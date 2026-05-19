@@ -17,6 +17,21 @@ def setup_logging(level=logging.DEBUG):
         handler.setFormatter(logging.Formatter(fmt, datefmt=datefmt))
         root.addHandler(handler)
 
+        if getattr(sys, "frozen", False):
+            try:
+                _log_dir = os.path.join(
+                    os.environ.get("APPDATA", os.path.expanduser("~")),
+                    "KK_Lab", "logs"
+                )
+                os.makedirs(_log_dir, exist_ok=True)
+                _log_file = os.path.join(_log_dir, "kk_lab.log")
+                fh = logging.FileHandler(_log_file, encoding="utf-8", delay=True)
+                fh.setLevel(logging.DEBUG)
+                fh.setFormatter(logging.Formatter(fmt, datefmt=datefmt))
+                root.addHandler(fh)
+            except Exception:
+                pass
+
 
 def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)

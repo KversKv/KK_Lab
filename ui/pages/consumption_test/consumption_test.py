@@ -1376,7 +1376,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self.saved_config_combo.setEnabled(False)
         self.saved_config_combo.setToolTip(
             "Saved configs for the selected chip "
-            f"(from {os.path.relpath(_MAIN_CHIP_CONFIGS_DIR, os.getcwd()) if os.path.isabs(_MAIN_CHIP_CONFIGS_DIR) else _MAIN_CHIP_CONFIGS_DIR}/<chip>.yaml)"
+            f"(from chips/bes_chip_configs/main_chip_configs/<chip>.yaml)"
         )
         saved_config_row.addWidget(self.saved_config_combo, 1)
 
