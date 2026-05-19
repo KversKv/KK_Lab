@@ -12,17 +12,15 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QGridLayout,
     QSpinBox, QDoubleSpinBox, QFrame, QApplication,
-    QSizePolicy, QScrollArea
+    QSizePolicy, QScrollArea, QLineEdit
 )
-from PySide6.QtCore import Qt, QTimer, Signal, QThread
+from PySide6.QtCore import Qt, QObject, Signal, QThread
 from PySide6.QtGui import QFont
-import pyvisa
 import sys
 import time
 from pathlib import Path
-from instruments.power.keysight.n6705c import N6705C
 from debug_config import DEBUG_MOCK
-from instruments.mock.mock_instruments import MockN6705C
+from instruments.mock.mock_instruments import MockI2C
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -33,128 +31,249 @@ sys.path.insert(0, str(i2c_lib_path))
 
 # 导入I2C接口
 from i2c_interface_x64 import I2CInterface
-from Bes_I2CIO_Interface import I2CSpeedMode, I2CWidthFlag
+from Bes_I2CIO_Interface import I2CWidthFlag
 
 
-class TestThread(QThread):
-    """测试线程类，用于在后台运行测试逻辑"""
+def parse_hex_address(text, field_name, max_value):
+    value_text = text.strip()
+    if value_text.lower().startswith("0x"):
+        value_text = value_text[2:]
+    if not value_text or any(char not in "0123456789abcdefABCDEF" for char in value_text):
+        raise ValueError(f"{field_name}必须是16进制地址")
+    value = int(value_text, 16)
+    if value > max_value:
+        raise ValueError(f"{field_name}超出范围: 0x{max_value:X}")
+    return value
 
-    status_update = Signal(str, bool)       # 状态消息, 是否错误
-    result_update = Signal(str, float)      # 结果类型, 结果值
-    test_finished = Signal(bool)            # 测试是否成功完成
 
-    def __init__(self, test_type, n6705c, **kwargs):
+def get_changed_bits(before_value, after_value):
+    change_mask = int(before_value) ^ int(after_value)
+    return [bit for bit in range(change_mask.bit_length()) if change_mask & (1 << bit)]
+
+
+def format_changed_bits(changed_bits):
+    if not changed_bits:
+        return "None"
+    return ", ".join(f"Bit{bit}" for bit in changed_bits)
+
+
+class OSCPTestWorker(QObject):
+    status_update = Signal(str, bool)
+    result_update = Signal(str, float)
+    result_detail_update = Signal(dict)
+    test_finished = Signal(bool)
+
+    def __init__(self, test_type, n6705c, config):
         super().__init__()
         self.test_type = test_type
         self.n6705c = n6705c
-        self.kwargs = kwargs
+        self.config = config
         self.is_running = True
-
-    def run(self):
-        try:
-            if self.test_type == "OVP":
-                self.run_ovp_test()
-            elif self.test_type == "UVP":
-                self.run_uvp_test()
-            elif self.test_type == "OCP":
-                self.run_ocp_test()
-            elif self.test_type == "SCP":
-                self.run_scp_test()
-            self.test_finished.emit(True)
-        except Exception as e:
-            self.status_update.emit(f"测试失败: {str(e)}", True)
-            self.test_finished.emit(False)
 
     def stop(self):
         self.is_running = False
 
-    def run_ovp_test(self):
-        vbat_channel = int(self.kwargs.get("power_channel", 1))
-        vol_channel = int(self.kwargs.get("test_channel", 2))
-        start_voltage = self.kwargs.get("voltage_start", 0.7)
-        end_voltage = self.kwargs.get("voltage_end", 1.5)
-        step_voltage = self.kwargs.get("voltage_step", 0.1)
-
-        self.status_update.emit("执行OVP测试...", False)
-        self.thread_ovp_test(vbat_channel, vol_channel, start_voltage, end_voltage, step_voltage)
-
-        self.status_update.emit("OVP测试结束，未检测到触发", False)
-
-    def run_uvp_test(self):
-        vbat_channel = int(self.kwargs.get("power_channel", 1))
-        vol_channel = int(self.kwargs.get("test_channel", 2))
-        start_voltage = self.kwargs.get("voltage_start", 0.7)
-        end_voltage = self.kwargs.get("voltage_end", 1.5)
-        step_voltage = self.kwargs.get("voltage_step", 0.1)
-
-        self.status_update.emit("执行UVP测试...", False)
-        self.thread_uvp_test(vbat_channel, vol_channel, start_voltage, end_voltage, step_voltage)
-        self.status_update.emit("UVP测试结束，未检测到触发", False)
-
-    def run_ocp_test(self):
-        self.status_update.emit("OCP测试功能尚未实现", False)
-
-    def run_scp_test(self):
-        self.status_update.emit("SCP测试功能尚未实现", False)
-
-
-    def thread_ovp_test(self, vbat_channel=1, vol_channel=2, start_voltage=0.7, end_voltage=1.5, step_voltage=0.1):
+    def run(self):
         try:
-            self.n6705c.set_mode(vol_channel, "PS2Q")
-            self.n6705c.set_voltage(vol_channel, start_voltage)
-            self.n6705c.channel_on(vol_channel)
-            QThread.msleep(500)
+            if self.test_type in ["OVP", "UVP"]:
+                success = self._run_voltage_register_sweep()
+            elif self.test_type == "OCP":
+                self.status_update.emit("OCP测试功能尚未实现", False)
+                success = False
+            elif self.test_type == "SCP":
+                self.status_update.emit("SCP测试功能尚未实现", False)
+                success = False
+            else:
+                self.status_update.emit(f"未知测试类型: {self.test_type}", True)
+                success = False
+            self.test_finished.emit(success)
+        except Exception as e:
+            logger.error("OSCP测试失败: %s", e, exc_info=True)
+            self.status_update.emit(f"测试失败: {str(e)}", True)
+            self.test_finished.emit(False)
 
-            self.status_update.emit("执行OVP测试...", False)
-            logger.info("OVP测试: 起始电压=%.3f V, 结束电压=%.3f V, 步进电压=%.3f V", start_voltage, end_voltage, step_voltage)
+    def _run_voltage_register_sweep(self):
+        test_channel = int(self.config.get("test_channel", 2))
+        device_addr = int(self.config.get("device_address", 0))
+        reg_addr = int(self.config.get("register_address", 0))
+        iic_width = int(self.config.get("iic_width", I2CWidthFlag.BIT_10))
+        start_voltage = float(self.config.get("voltage_start", 0.7))
+        end_voltage = float(self.config.get("voltage_end", 1.5))
+        step_voltage = float(self.config.get("voltage_step", 0.1))
+        delay_time_ms = float(self.config.get("delay_time_ms", 100.0))
 
-            cnt_voltage = start_voltage
-            while cnt_voltage <= end_voltage + 0.001 and self.is_running:
-                current_before = float(self.n6705c.measure_current(vbat_channel))
-                self.n6705c.set_voltage(vol_channel, cnt_voltage)
-                QThread.msleep(500)
-                current_after = float(self.n6705c.measure_current(vbat_channel))
+        voltage_points = self._generate_voltage_points(start_voltage, end_voltage, step_voltage)
+        if not voltage_points:
+            self.status_update.emit("电压扫描参数无效，请检查Start/End/Step", True)
+            return False
 
-                logger.debug("Test voltage: %.3f V, current_before: %.4f mA, current_after: %.4f mA", cnt_voltage, current_before * 1000, current_after * 1000)
+        i2c = self._create_i2c()
+        restore_state = self._capture_channel_state(test_channel, start_voltage)
+        self.status_update.emit(f"执行{self.test_type}测试...", False)
 
-                if current_after < current_before - 0.00001:
-                    logger.info("OVP触发，电压: %.3f V, 电流: %.4f mA", cnt_voltage, current_after * 1000)
-                    self.result_update.emit("保护电压", cnt_voltage)
+        try:
+            initial_voltage = voltage_points[0]
+            self.n6705c.set_voltage(test_channel, initial_voltage)
+            self.n6705c.channel_on(test_channel)
+            self._sleep_ms(max(delay_time_ms, 100.0))
+            if not self.is_running:
+                return False
+
+            raw_init = i2c.read(device_addr, reg_addr, iic_width)
+            last_raw = raw_init
+            self.status_update.emit(
+                f"{self.test_type}初始寄存器: 0x{raw_init:X} @ {initial_voltage:.3f} V", False
+            )
+            logger.info(
+                "%s测试: device=0x%02X, reg=0x%04X, width=%s, start=%.3f V, end=%.3f V, step=%.4f V, delay=%.1f ms, init=0x%X",
+                self.test_type, device_addr, reg_addr, iic_width, start_voltage, end_voltage, step_voltage, delay_time_ms, raw_init
+            )
+
+            threshold_voltage = None
+            for voltage in voltage_points:
+                if not self.is_running:
+                    self.status_update.emit("测试已停止", True)
+                    return False
+
+                self.n6705c.set_voltage(test_channel, voltage)
+                self._sleep_ms(delay_time_ms)
+                if not self.is_running:
+                    self.status_update.emit("测试已停止", True)
+                    return False
+
+                raw_now = i2c.read(device_addr, reg_addr, iic_width)
+                logger.info(
+                    "%s扫描: voltage=%.4f V, reg=0x%X, init=0x%X",
+                    self.test_type, voltage, raw_now, raw_init
+                )
+                self.status_update.emit(
+                    f"{self.test_type}扫描 {voltage:.3f} V, REG=0x{raw_now:X}", False
+                )
+
+                if raw_now != last_raw:
+                    threshold_voltage = voltage
+                    changed_bits = get_changed_bits(last_raw, raw_now)
+                    logger.info(
+                        "%s阈值触发: voltage=%.4f V, reg 0x%X -> 0x%X, bits=%s",
+                        self.test_type, voltage, last_raw, raw_now, format_changed_bits(changed_bits)
+                    )
+                    self.result_update.emit("保护电压", threshold_voltage)
+                    self.result_detail_update.emit({
+                        "test_type": self.test_type,
+                        "threshold_voltage": threshold_voltage,
+                        "trigger_reg_before": last_raw,
+                        "trigger_reg_after": raw_now,
+                        "changed_bits": changed_bits,
+                        "initial_reg": raw_init,
+                        "device_address": device_addr,
+                        "register_address": reg_addr,
+                        "iic_width": iic_width,
+                        "delay_time_ms": delay_time_ms,
+                        "start_voltage": start_voltage,
+                        "end_voltage": end_voltage,
+                        "step_voltage": step_voltage,
+                        "points_count": len(voltage_points),
+                        "restore_voltage": restore_state["voltage"],
+                    })
+                    self.status_update.emit(
+                        f"{self.test_type}阈值: {threshold_voltage:.3f} V, REG 0x{last_raw:X} -> 0x{raw_now:X}", False
+                    )
                     break
 
-                cnt_voltage += step_voltage
-        except Exception as e:
-            self.status_update.emit(f"OVP测试执行错误: {str(e)}", True)
-            logger.error("OVP测试执行错误: %s", e)
+                last_raw = raw_now
 
-    def thread_uvp_test(self, vbat_channel=1, vol_channel=2, start_voltage=0.7, end_voltage=1.5, step_voltage=0.1):
+            if threshold_voltage is None:
+                self.result_detail_update.emit({
+                    "test_type": self.test_type,
+                    "no_trigger": True,
+                    "initial_reg": raw_init,
+                    "changed_bits": [],
+                    "device_address": device_addr,
+                    "register_address": reg_addr,
+                    "iic_width": iic_width,
+                    "delay_time_ms": delay_time_ms,
+                    "start_voltage": start_voltage,
+                    "end_voltage": end_voltage,
+                    "step_voltage": step_voltage,
+                    "points_count": len(voltage_points),
+                    "restore_voltage": restore_state["voltage"],
+                })
+                self.status_update.emit(f"{self.test_type}测试结束，未检测到寄存器变化", True)
+                return False
+            return True
+        finally:
+            self._restore_channel_state(test_channel, restore_state)
+
+    def _capture_channel_state(self, channel, fallback_voltage):
+        voltage = float(fallback_voltage)
+        is_on = True
         try:
-            self.n6705c.set_mode(vol_channel, "CVLoad")
-            self.n6705c.set_voltage(vol_channel, end_voltage)
-            self.n6705c.channel_on(vol_channel)
-            QThread.msleep(500)
-
-            self.status_update.emit("执行UVP测试...", False)
-            logger.info("UVP测试: 起始电压=%.3f V, 结束电压=%.3f V, 步进电压=%.3f V", start_voltage, end_voltage, step_voltage)
-
-            cnt_voltage = end_voltage
-            while cnt_voltage >= start_voltage - 0.05 and self.is_running:
-                current_before = float(self.n6705c.measure_current(vbat_channel))
-                self.n6705c.set_voltage(vol_channel, cnt_voltage)
-                QThread.msleep(100)
-                current_after = float(self.n6705c.measure_current(vbat_channel))
-
-                logger.debug("Test voltage: %.3f V, current_before: %.4f mA, current_after: %.4f mA", cnt_voltage, current_before * 1000, current_after * 1000)
-
-                if current_after < current_before - 0.01:
-                    logger.info("UVP触发，电压: %.3f V, 电流: %.4f mA", cnt_voltage, current_after * 1000)
-                    self.result_update.emit("保护电压", cnt_voltage)
-                    break
-
-                cnt_voltage -= step_voltage
+            if hasattr(self.n6705c, "measure_voltage"):
+                voltage = float(self.n6705c.measure_voltage(channel))
         except Exception as e:
-            self.status_update.emit(f"UVP测试执行错误: {str(e)}", True)
-            logger.error("UVP测试执行错误: %s", e)
+            logger.warning("读取测试前通道电压失败，使用起始电压作为恢复值: %s", e)
+        try:
+            if hasattr(self.n6705c, "get_channel_state"):
+                is_on = bool(self.n6705c.get_channel_state(channel))
+        except Exception as e:
+            logger.warning("读取测试前通道开关状态失败，默认恢复为ON: %s", e)
+        return {"voltage": voltage, "is_on": is_on}
+
+    def _restore_channel_state(self, channel, restore_state):
+        restore_voltage = float(restore_state.get("voltage", 0.0))
+        was_on = bool(restore_state.get("is_on", True))
+        try:
+            self.n6705c.set_voltage(channel, restore_voltage)
+            if was_on:
+                self.n6705c.channel_on(channel)
+            elif hasattr(self.n6705c, "channel_off"):
+                self.n6705c.channel_off(channel)
+            self.status_update.emit(f"通道{channel}已恢复到测试前电压 {restore_voltage:.3f} V", False)
+            logger.info("OSCP测试结束恢复通道%s: voltage=%.6f V, output=%s", channel, restore_voltage, "ON" if was_on else "OFF")
+        except Exception as e:
+            logger.error("恢复N6705C通道%s失败: %s", channel, e, exc_info=True)
+            self.status_update.emit(f"通道{channel}恢复失败: {e}", True)
+
+    def _create_i2c(self):
+        if DEBUG_MOCK:
+            if hasattr(self.n6705c, "_mock_i2c") and self.n6705c._mock_i2c is not None:
+                return self.n6705c._mock_i2c
+            i2c = MockI2C()
+            if hasattr(self.n6705c, "_mock_i2c"):
+                self.n6705c._mock_i2c = i2c
+            return i2c
+        return I2CInterface()
+
+    def _generate_voltage_points(self, start_voltage, end_voltage, step_voltage):
+        step_voltage = abs(step_voltage)
+        if step_voltage <= 0:
+            return []
+
+        if self.test_type == "OVP":
+            low_voltage = min(start_voltage, end_voltage)
+            high_voltage = max(start_voltage, end_voltage)
+            points = []
+            current_voltage = low_voltage
+            while current_voltage <= high_voltage + step_voltage * 0.01:
+                points.append(round(current_voltage, 6))
+                current_voltage += step_voltage
+            return points
+
+        high_voltage = max(start_voltage, end_voltage)
+        low_voltage = min(start_voltage, end_voltage)
+        points = []
+        current_voltage = high_voltage
+        while current_voltage >= low_voltage - step_voltage * 0.01:
+            points.append(round(current_voltage, 6))
+            current_voltage -= step_voltage
+        return points
+
+    def _sleep_ms(self, delay_time_ms):
+        remaining_ms = max(0, int(delay_time_ms))
+        while remaining_ms > 0 and self.is_running:
+            chunk_ms = min(remaining_ms, 50)
+            time.sleep(chunk_ms / 1000.0)
+            remaining_ms -= chunk_ms
 
 
 class CardFrame(QFrame):
@@ -191,6 +310,7 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
 
         self.is_test_running = False
         self.test_thread = None
+        self.test_worker = None
 
         self._setup_style()
         self._create_layout()
@@ -276,7 +396,7 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
             background-color: transparent;
         }
 
-        QComboBox, QSpinBox, QDoubleSpinBox {
+        QComboBox, QSpinBox, QDoubleSpinBox, QLineEdit {
             background-color: #0a1733;
             color: #eef4ff;
             border: 1px solid #20335f;
@@ -289,7 +409,7 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
             width: 0px; height: 0px; border: none;
         }
 
-        QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {
+        QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QLineEdit:focus {
             border: 1px solid #2dd4ff;
         }
 
@@ -418,6 +538,40 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
             border: 1px solid #1a2d57;
             border-radius: 10px;
         }
+
+        QFrame[role="resultBox"][state="active"] {
+            background-color: #041f2a;
+            border: 1px solid #14d3b0;
+        }
+
+        QFrame[role="resultBox"][state="muted"] {
+            background-color: #071126;
+            border: 1px solid #16294f;
+        }
+
+        QLabel[role="resultValue"] {
+            color: #f2f6ff;
+            font-size: 15px;
+            font-weight: 800;
+            background-color: transparent;
+        }
+
+        QLabel[role="resultValue"][state="active"] {
+            color: #19f5c8;
+            font-size: 18px;
+        }
+
+        QLabel[role="resultCaption"] {
+            color: #7d94c5;
+            font-size: 10px;
+            background-color: transparent;
+        }
+
+        QLabel#resultSummary {
+            color: #9bb6e8;
+            font-size: 11px;
+            background-color: transparent;
+        }
         """ + SCROLLBAR_STYLE)
 
     def _create_layout(self):
@@ -474,10 +628,6 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
         self.config_card = CardFrame("OSCP Configuration")
         self._build_config_card()
         left_layout.addWidget(self.config_card)
-
-        self.control_card = CardFrame("Control")
-        self._build_control_card()
-        left_layout.addWidget(self.control_card)
 
         left_layout.addStretch()
 
@@ -545,43 +695,74 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
         result_outer_layout.setContentsMargins(16, 12, 16, 12)
         result_outer_layout.setSpacing(10)
 
+        result_header_layout = QHBoxLayout()
         result_title = QLabel("⊙ Results")
         result_title.setObjectName("sectionTitle")
-        result_outer_layout.addWidget(result_title)
+        result_header_layout.addWidget(result_title)
+        result_header_layout.addStretch()
+        self.result_status_label = QLabel("WAITING")
+        self.result_status_label.setStyleSheet("color:#6b84b8; font-size:10px; font-weight:700;")
+        result_header_layout.addWidget(self.result_status_label)
+        result_outer_layout.addLayout(result_header_layout)
 
         result_row = QHBoxLayout()
         result_row.setSpacing(12)
 
-        self.result_boxes = []
-        result_titles = ["PROTECT", "RECOVER", "TRIG", "REC"]
+        self.result_boxes = {}
+        result_items = [
+            ("threshold", "THRESHOLD", "Protection voltage"),
+            ("register", "REG CHANGE", "Before → After"),
+            ("bits", "BIT CHANGE", "Changed bits"),
+            ("device", "I2C TARGET", "Device / Register"),
+            ("sweep", "SWEEP", "Range / Step"),
+        ]
 
-        for title_text in result_titles:
+        for key, title_text, caption_text in result_items:
             box = QFrame()
             box.setProperty("role", "resultBox")
+            box.setProperty("state", "muted")
             box.style().polish(box)
 
             box_layout = QVBoxLayout(box)
             box_layout.setContentsMargins(10, 8, 10, 8)
+            box_layout.setSpacing(4)
 
             title_lbl = QLabel(title_text)
             title_lbl.setAlignment(Qt.AlignCenter)
-            title_lbl.setStyleSheet("color:#6b84b8; font-size:10px;")
+            title_lbl.setStyleSheet("color:#6b84b8; font-size:10px; font-weight:700;")
 
             value_lbl = QLabel("---")
             value_lbl.setAlignment(Qt.AlignCenter)
-            value_lbl.setStyleSheet("color:#f2f6ff; font-size:14px; font-weight:700;")
+            value_lbl.setProperty("role", "resultValue")
+            value_lbl.setProperty("state", "active" if key == "threshold" else "normal")
+            value_lbl.style().polish(value_lbl)
+
+            caption_lbl = QLabel(caption_text)
+            caption_lbl.setAlignment(Qt.AlignCenter)
+            caption_lbl.setProperty("role", "resultCaption")
+            caption_lbl.style().polish(caption_lbl)
 
             box_layout.addWidget(title_lbl)
             box_layout.addWidget(value_lbl)
+            box_layout.addWidget(caption_lbl)
             result_row.addWidget(box)
-            self.result_boxes.append(value_lbl)
+            self.result_boxes[key] = {
+                "box": box,
+                "value": value_lbl,
+                "caption": caption_lbl,
+            }
 
-        self.protection_current_label = self.result_boxes[0]
-        self.recovery_current_label = self.result_boxes[1]
-        self.trigger_time_label = self.result_boxes[2]
-        self.recovery_time_label = self.result_boxes[3]
+        self.protection_current_label = self.result_boxes["threshold"]["value"]
+        self.recovery_current_label = self.result_boxes["register"]["value"]
+        self.bit_change_label = self.result_boxes["bits"]["value"]
+        self.trigger_time_label = self.result_boxes["device"]["value"]
+        self.recovery_time_label = self.result_boxes["sweep"]["value"]
 
         result_outer_layout.addLayout(result_row)
+        self.result_summary_label = QLabel("Result details will appear after OVP/UVP register transition is detected.")
+        self.result_summary_label.setObjectName("resultSummary")
+        self.result_summary_label.setWordWrap(True)
+        result_outer_layout.addWidget(self.result_summary_label)
         right_layout.addWidget(self.result_frame, 1)
 
     def _build_connection_card(self):
@@ -600,16 +781,27 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
         self.type_label.setObjectName("fieldLabel")
         self.test_type_combo = DarkComboBox(bg="#0a1733", border="#20335f")
         self.test_type_combo.addItems(["OCP", "SCP", "OVP", "UVP"])
+        self.test_type_combo.setCurrentIndex(2)
 
-        self.dev_addr_label = QLabel("Dev Addr")
+        self.dev_addr_label = QLabel("Dev Addr (hex)")
         self.dev_addr_label.setObjectName("fieldLabel")
-        self.device_addr_spin = QSpinBox()
-        self.device_addr_spin.setRange(0, 0x3FF)
+        self.device_addr_edit = QLineEdit("0x17")
+        self.device_addr_edit.setPlaceholderText("0x17")
+        self.device_addr_edit.setMaxLength(5)
 
-        self.reg_addr_label = QLabel("Reg Addr")
+        self.reg_addr_label = QLabel("Reg Addr (hex)")
         self.reg_addr_label.setObjectName("fieldLabel")
-        self.reg_addr_spin = QSpinBox()
-        self.reg_addr_spin.setRange(0, 0xFFFF)
+        self.reg_addr_edit = QLineEdit("0x033b")
+        self.reg_addr_edit.setPlaceholderText("0x033b")
+        self.reg_addr_edit.setMaxLength(6)
+
+        self.iic_width_label = QLabel("IIC Width")
+        self.iic_width_label.setObjectName("fieldLabel")
+        self.iic_width_combo = DarkComboBox(bg="#0a1733", border="#20335f")
+        self.iic_width_combo.addItem("8-bit", int(I2CWidthFlag.BIT_8))
+        self.iic_width_combo.addItem("10-bit", int(I2CWidthFlag.BIT_10))
+        self.iic_width_combo.addItem("32-bit", int(I2CWidthFlag.BIT_32))
+        self.iic_width_combo.setCurrentIndex(1)
 
         self.power_ch_label = QLabel("Power CH")
         self.power_ch_label.setObjectName("fieldLabel")
@@ -644,6 +836,14 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
         self.step_label.setObjectName("fieldLabel")
         self.step_spin = QDoubleSpinBox()
 
+        self.delay_label = QLabel("Delay Time (ms)")
+        self.delay_label.setObjectName("fieldLabel")
+        self.delay_spin = QDoubleSpinBox()
+        self.delay_spin.setDecimals(1)
+        self.delay_spin.setRange(0.0, 60000.0)
+        self.delay_spin.setSingleStep(10.0)
+        self.delay_spin.setValue(100.0)
+
         self.protection_label = QLabel("OCP (A)")
         self.protection_label.setObjectName("fieldLabel")
         self.protection_spin = QDoubleSpinBox()
@@ -660,8 +860,9 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
 
         fields = [
             (self.type_label, self.test_type_combo),
-            (self.dev_addr_label, self.device_addr_spin),
-            (self.reg_addr_label, self.reg_addr_spin),
+            (self.dev_addr_label, self.device_addr_edit),
+            (self.reg_addr_label, self.reg_addr_edit),
+            (self.iic_width_label, self.iic_width_combo),
             (self.power_ch_label, self.power_channel_combo),
             (self.test_ch_label, self.test_channel_combo),
             (self.msb_label, self.msb_spin),
@@ -669,6 +870,7 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
             (self.start_label, self.start_spin),
             (self.end_label, self.end_spin),
             (self.step_label, self.step_spin),
+            (self.delay_label, self.delay_spin),
             (self.protection_label, self.protection_spin),
         ]
 
@@ -683,39 +885,6 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
 
         layout.addLayout(grid)
 
-    def _build_control_card(self):
-        layout = self.control_card.main_layout
-        grid = QGridLayout()
-        grid.setSpacing(8)
-
-        self.single_test_btn = QPushButton("SINGLE")
-        self.iteration_test_btn = QPushButton("LOOP")
-        self.test_btn = QPushButton("DEBUG")
-        self.load_btn = QPushButton("Load")
-        self.save_btn = QPushButton("Calibrate")
-        self.reset_btn = QPushButton("Reset")
-        self.abort_btn = QPushButton("⏻ Abort All")
-
-        for btn in [self.single_test_btn, self.iteration_test_btn, self.test_btn, self.load_btn]:
-            btn.setProperty("role", "secondary")
-            btn.style().polish(btn)
-
-        for btn in [self.save_btn, self.reset_btn]:
-            btn.setProperty("role", "outline")
-            btn.style().polish(btn)
-
-        self.abort_btn.setObjectName("abortBtn")
-
-        grid.addWidget(self.single_test_btn, 0, 0)
-        grid.addWidget(self.iteration_test_btn, 0, 1)
-        grid.addWidget(self.test_btn, 1, 0)
-        grid.addWidget(self.load_btn, 1, 1)
-        grid.addWidget(self.save_btn, 2, 0)
-        grid.addWidget(self.reset_btn, 2, 1)
-        grid.addWidget(self.abort_btn, 3, 0, 1, 2)
-
-        layout.addLayout(grid)
-
     def _init_ui_elements(self):
         self._update_n6705c_connect_button_state(False)
         self.stop_test_btn.setEnabled(False)
@@ -726,10 +895,6 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
 
         self.start_test_btn.clicked.connect(self._on_start_or_stop)
         self.stop_test_btn.clicked.connect(self._on_stop_test)
-
-        self.single_test_btn.clicked.connect(self._on_single_test)
-        self.iteration_test_btn.clicked.connect(self._on_iteration_test)
-        self.test_btn.clicked.connect(self.debug_test)
 
         self._update_test_config()
 
@@ -790,8 +955,10 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
             "test_type": test_type,
             "power_channel": self.power_channel_combo.currentText(),
             "test_channel": self.test_channel_combo.currentText(),
-            "device_address": self.device_addr_spin.value(),
-            "register_address": self.reg_addr_spin.value(),
+            "device_address": parse_hex_address(self.device_addr_edit.text(), "DevAddr", 0x3FF),
+            "register_address": parse_hex_address(self.reg_addr_edit.text(), "RegAddr", 0xFFFF),
+            "iic_width": self.iic_width_combo.currentData(),
+            "delay_time_ms": self.delay_spin.value(),
             "msb": self.msb_spin.value(),
             "lsb": self.lsb_spin.value(),
         }
@@ -834,18 +1001,14 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
             self.start_spin,
             self.end_spin,
             self.step_spin,
-            self.device_addr_spin,
-            self.reg_addr_spin,
+            self.delay_spin,
+            self.device_addr_edit,
+            self.reg_addr_edit,
+            self.iic_width_combo,
             self.msb_spin,
             self.lsb_spin,
             self.protection_spin,
-            self.single_test_btn,
-            self.iteration_test_btn,
-            self.test_btn,
-            self.save_btn,
-            self.load_btn,
             self.search_btn,
-            self.connect_btn,
         ]
 
         for widget in widgets:
@@ -856,25 +1019,37 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
             self.set_system_status("测试正在运行中...", True)
             return
 
-        config = self.get_test_config()
+        try:
+            config = self.get_test_config()
+        except ValueError as e:
+            self.set_system_status(str(e), True)
+            return
         test_type = config["test_type"]
 
         if not self.is_connected or self.n6705c is None:
             self.set_system_status("请先连接N6705C仪器", True)
             return
 
-        self.clear_results()
         self.set_system_status("测试进行中")
         self.is_test_running = True
+        self.clear_results()
         self.set_test_running(True)
 
         config_copy = config.copy()
         config_copy.pop("test_type", None)
 
-        self.test_thread = TestThread(test_type, self.n6705c, **config_copy)
-        self.test_thread.status_update.connect(self.set_system_status)
-        self.test_thread.result_update.connect(self._on_test_result)
-        self.test_thread.test_finished.connect(self._on_test_finished)
+        self.test_thread = QThread(self)
+        self.test_worker = OSCPTestWorker(test_type, self.n6705c, config_copy)
+        self.test_worker.moveToThread(self.test_thread)
+        self.test_thread.started.connect(self.test_worker.run)
+        self.test_worker.status_update.connect(self.set_system_status)
+        self.test_worker.result_update.connect(self._on_test_result)
+        self.test_worker.result_detail_update.connect(self._on_test_result_detail)
+        self.test_worker.test_finished.connect(self._on_test_finished)
+        self.test_worker.test_finished.connect(self.test_thread.quit)
+        self.test_thread.finished.connect(self.test_worker.deleteLater)
+        self.test_thread.finished.connect(self.test_thread.deleteLater)
+        self.test_thread.finished.connect(self._cleanup_test_thread)
         self.test_thread.start()
 
         logger.info("执行单次测试，配置: %s", config)
@@ -882,50 +1057,153 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
     def _on_stop_test(self):
         if self.is_test_running and self.test_thread:
             self.set_system_status("正在停止测试...")
-            self.test_thread.stop()
-            self.test_thread.wait(1000)
+            if self.test_worker:
+                self.test_worker.stop()
+            self.test_thread.quit()
+            if not self.test_thread.wait(1000):
+                self.test_thread.terminate()
+                self.test_thread.wait()
             self._on_test_finished(False)
 
-    def _on_iteration_test(self):
-        self.set_system_status("执行遍历测试...")
-        config = self.get_test_config()
-        logger.info("执行遍历测试，配置: %s", config)
+    def _cleanup_test_thread(self):
+        self.test_thread = None
+        self.test_worker = None
 
     def _on_test_result(self, result_type, value):
         if result_type == "保护电压":
             self.protection_current_label.setText(f"{value:.3f} V")
+            self._set_result_box_state("threshold", "active")
         elif result_type == "保护电流":
             self.protection_current_label.setText(f"{value:.3f} A")
+            self._set_result_box_state("threshold", "active")
+
+    def _on_test_result_detail(self, result):
+        if result.get("no_trigger"):
+            self._show_no_trigger_result(result)
+            return
+
+        threshold_voltage = result.get("threshold_voltage")
+        reg_before = result.get("trigger_reg_before")
+        reg_after = result.get("trigger_reg_after")
+        changed_bits = result.get("changed_bits", get_changed_bits(reg_before, reg_after))
+        bit_change_text = format_changed_bits(changed_bits)
+        device_addr = result.get("device_address")
+        reg_addr = result.get("register_address")
+        iic_width = result.get("iic_width")
+        start_voltage = result.get("start_voltage")
+        end_voltage = result.get("end_voltage")
+        step_voltage = result.get("step_voltage")
+        delay_time_ms = result.get("delay_time_ms")
+        points_count = result.get("points_count")
+        test_type = result.get("test_type", "OSCP")
+
+        self.result_status_label.setText("TRIGGERED")
+        self.result_status_label.setStyleSheet("color:#19f5c8; font-size:10px; font-weight:800;")
+        self.protection_current_label.setText(f"{threshold_voltage:.3f} V")
+        self.recovery_current_label.setText(f"0x{reg_before:X} → 0x{reg_after:X}")
+        self.bit_change_label.setText(bit_change_text)
+        self.trigger_time_label.setText(f"0x{device_addr:02X} / 0x{reg_addr:04X}")
+        self.recovery_time_label.setText(f"{start_voltage:.3f}→{end_voltage:.3f} V")
+
+        self.result_boxes["threshold"]["caption"].setText(f"{test_type} threshold")
+        self.result_boxes["register"]["caption"].setText(f"IIC Width {iic_width}, delay {delay_time_ms:.1f} ms")
+        self.result_boxes["bits"]["caption"].setText(f"{len(changed_bits)} bit(s) changed")
+        self.result_boxes["device"]["caption"].setText("Device addr / Reg addr")
+        self.result_boxes["sweep"]["caption"].setText(f"Step {step_voltage:.4f} V, {points_count} pts")
+
+        for key in self.result_boxes:
+            self._set_result_box_state(key, "active")
+
+        self.result_summary_label.setText(
+            f"{test_type} detected register transition at {threshold_voltage:.3f} V. "
+            f"REG changed from 0x{reg_before:X} to 0x{reg_after:X}; bit change: {bit_change_text}."
+        )
+
+    def _show_no_trigger_result(self, result):
+        test_type = result.get("test_type", "OSCP")
+        initial_reg = result.get("initial_reg")
+        device_addr = result.get("device_address")
+        reg_addr = result.get("register_address")
+        iic_width = result.get("iic_width")
+        start_voltage = result.get("start_voltage")
+        end_voltage = result.get("end_voltage")
+        step_voltage = result.get("step_voltage")
+        delay_time_ms = result.get("delay_time_ms")
+        points_count = result.get("points_count")
+
+        self.result_status_label.setText("NO TRIGGER")
+        self.result_status_label.setStyleSheet("color:#ffb84d; font-size:10px; font-weight:800;")
+        self.protection_current_label.setText("Not Found")
+        self.recovery_current_label.setText(f"0x{initial_reg:X}")
+        self.bit_change_label.setText("None")
+        self.trigger_time_label.setText(f"0x{device_addr:02X} / 0x{reg_addr:04X}")
+        self.recovery_time_label.setText(f"{start_voltage:.3f}→{end_voltage:.3f} V")
+
+        self.result_boxes["threshold"]["caption"].setText(f"No {test_type} transition")
+        self.result_boxes["register"]["caption"].setText(f"IIC Width {iic_width}, delay {delay_time_ms:.1f} ms")
+        self.result_boxes["bits"]["caption"].setText("No bit changed")
+        self.result_boxes["device"]["caption"].setText("Device addr / Reg addr")
+        self.result_boxes["sweep"]["caption"].setText(f"Step {step_voltage:.4f} V, {points_count} pts")
+
+        for key in self.result_boxes:
+            self._set_result_box_state(key, "muted")
+
+        self.result_summary_label.setText(
+            f"{test_type} sweep completed without register transition. "
+            f"Initial REG stayed at 0x{initial_reg:X} across configured scan range."
+        )
+
+    def _set_result_box_state(self, key, state):
+        if key not in self.result_boxes:
+            return
+        box = self.result_boxes[key]["box"]
+        box.setProperty("state", state)
+        box.style().unpolish(box)
+        box.style().polish(box)
+        box.update()
 
     def _on_test_finished(self, success):
         self.is_test_running = False
         self.set_test_running(False)
 
         if success:
+            if self.result_status_label.text() != "TRIGGERED":
+                self.result_status_label.setText("DONE")
+                self.result_status_label.setStyleSheet("color:#19f5c8; font-size:10px; font-weight:800;")
             self.set_system_status("测试完成")
-        else:
+        elif self.result_status_label.text() != "NO TRIGGER":
+            self.result_status_label.setText("STOPPED")
+            self.result_status_label.setStyleSheet("color:#ffb84d; font-size:10px; font-weight:800;")
             self.set_system_status("测试停止", True)
-
-        if self.test_thread:
-            self.test_thread.quit()
-            self.test_thread.wait()
-            self.test_thread = None
 
     def update_test_result(self, result):
         if "protection_current" in result:
             self.protection_current_label.setText(f"{result['protection_current']:.4f} A")
         if "recovery_current" in result:
             self.recovery_current_label.setText(f"{result['recovery_current']:.4f} A")
+        if "changed_bits" in result:
+            self.bit_change_label.setText(format_changed_bits(result["changed_bits"]))
         if "trigger_time" in result:
             self.trigger_time_label.setText(f"{result['trigger_time']:.4f} ms")
         if "recovery_time" in result:
             self.recovery_time_label.setText(f"{result['recovery_time']:.4f} ms")
 
     def clear_results(self):
+        self.result_status_label.setText("RUNNING" if self.is_test_running else "WAITING")
+        self.result_status_label.setStyleSheet("color:#6b84b8; font-size:10px; font-weight:700;")
         self.protection_current_label.setText("---")
         self.recovery_current_label.setText("---")
+        self.bit_change_label.setText("---")
         self.trigger_time_label.setText("---")
         self.recovery_time_label.setText("---")
+        self.result_boxes["threshold"]["caption"].setText("Protection voltage")
+        self.result_boxes["register"]["caption"].setText("Before → After")
+        self.result_boxes["bits"]["caption"].setText("Changed bits")
+        self.result_boxes["device"]["caption"].setText("Device / Register")
+        self.result_boxes["sweep"]["caption"].setText("Range / Step")
+        self.result_summary_label.setText("Result details will appear after OVP/UVP register transition is detected.")
+        for key in self.result_boxes:
+            self._set_result_box_state(key, "muted")
 
     def update_instrument_info(self, instrument_info):
         if self.is_connected:
@@ -933,69 +1211,6 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
 
     def append_log(self, message):
         pass
-
-    def debug_test(self):
-        self.set_system_status("执行Debug测试...")
-        try:
-            if self.n6705c is None:
-                if DEBUG_MOCK:
-                    self.n6705c = MockN6705C()
-                else:
-                    self.n6705c = N6705C("TCPIP0::K-N6705C-06098.local::hislip0::INSTR")
-            self.ovp_test(1, 2, 1.33, 1.5, 0.001)
-            # self.uvp_test(1, 2, 0.5, 0.55, 0.001)
-        except Exception as e:
-            self.set_system_status(f"Debug失败: {e}", True)
-
-    def ovp_test(self, vbat_channel=1, vol_channel=2, start_voltage=0.7, end_voltage=1.5, step_voltage=0.1):
-        self.n6705c.set_mode(vol_channel, "PS2Q")
-        self.n6705c.set_voltage(vol_channel, start_voltage)
-        self.n6705c.channel_on(vol_channel)
-        time.sleep(0.5)
-
-        self.set_system_status("执行OVP测试...")
-        logger.info("OVP测试: 起始电压=%.3f V, 结束电压=%.3f V, 步进电压=%.3f V", start_voltage, end_voltage, step_voltage)
-
-        cnt_voltage = start_voltage
-        while cnt_voltage <= end_voltage + 0.001:
-            current_before = float(self.n6705c.measure_current(vbat_channel))
-            self.n6705c.set_voltage(vol_channel, cnt_voltage)
-            time.sleep(0.5)
-            current_after = float(self.n6705c.measure_current(vbat_channel))
-
-            logger.debug("Test voltage: %.3f V, current_before: %.4f mA, current_after: %.4f mA", cnt_voltage, current_before * 1000, current_after * 1000)
-
-            if current_after < current_before - 0.00001:
-                logger.info("OVP触发，电压: %.3f V, 电流: %.4f mA", cnt_voltage, current_after * 1000)
-                self.protection_current_label.setText(f"{cnt_voltage:.3f} V")
-                break
-
-            cnt_voltage += step_voltage
-
-    def uvp_test(self, vbat_channel=1, vol_channel=2, start_voltage=0.7, end_voltage=1.5, step_voltage=0.1):
-        self.n6705c.set_mode(vol_channel, "CVLoad")
-        self.n6705c.set_voltage(vol_channel, end_voltage)
-        self.n6705c.channel_on(vol_channel)
-        time.sleep(0.5)
-
-        self.set_system_status("执行UVP测试...")
-        logger.info("UVP测试: 起始电压=%.3f V, 结束电压=%.3f V, 步进电压=%.3f V", start_voltage, end_voltage, step_voltage)
-
-        cnt_voltage = end_voltage
-        while cnt_voltage >= start_voltage - 0.05:
-            current_before = float(self.n6705c.measure_current(vbat_channel))
-            self.n6705c.set_voltage(vol_channel, cnt_voltage)
-            time.sleep(0.1)
-            current_after = float(self.n6705c.measure_current(vbat_channel))
-
-            logger.debug("Test voltage: %.3f V, current_before: %.4f mA, current_after: %.4f mA", cnt_voltage, current_before * 1000, current_after * 1000)
-
-            if current_after < current_before - 0.01:
-                logger.info("UVP触发，电压: %.3f V, 电流: %.4f mA", cnt_voltage, current_after * 1000)
-                self.protection_current_label.setText(f"{cnt_voltage:.3f} V")
-                break
-
-            cnt_voltage -= step_voltage
 
     def i2c_test(self):
         self.set_system_status("执行I2C测试...")
@@ -1029,7 +1244,6 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
             logger.info("   写入成功")
             self.set_system_status("I2C写入成功")
 
-            time.sleep(0.1)
             logger.info("3. 验证写入结果：")
             verify_data = i2c.read(device_addr, reg_addr_write, width_flag)
             logger.info("   寄存器地址0x%04X的当前值: 0x%04X", reg_addr_write, verify_data)
@@ -1044,7 +1258,7 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
 
         except Exception as e:
             error_msg = f"I2C测试操作失败: {e}"
-            logger.error(error_msg)
+            logger.error(error_msg, exc_info=True)
             self.set_system_status(error_msg, True)
             return False
 
