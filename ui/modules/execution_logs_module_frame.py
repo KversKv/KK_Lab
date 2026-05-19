@@ -417,6 +417,7 @@ class ExecutionLogsFrame(QFrame):
 
         self._all_logs = []
         self._auto_scroll = True
+        self._programmatic_scroll = False
         self._active_level_filter = "ALL"
         self._keyword_filter = ""
         self._start_time = None
@@ -636,6 +637,8 @@ class ExecutionLogsFrame(QFrame):
         self._auto_scroll = checked
 
     def _on_user_scroll(self, value: int):
+        if self._programmatic_scroll:
+            return
         sb = self.log_edit.verticalScrollBar()
         if sb and sb.maximum() > 0:
             at_bottom = value >= sb.maximum() - 5
@@ -649,7 +652,9 @@ class ExecutionLogsFrame(QFrame):
     def _scroll_to_bottom(self):
         sb = self.log_edit.verticalScrollBar()
         if sb:
+            self._programmatic_scroll = True
             sb.setValue(sb.maximum())
+            self._programmatic_scroll = False
 
     def _format_html(self, message: str) -> str:
         ts = datetime.now().strftime("%H:%M:%S")

@@ -722,22 +722,24 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self.log_edit.setMinimumHeight(40)
 
         splitter = QSplitter(Qt.Vertical)
-        splitter.setHandleWidth(6)
+        splitter.setHandleWidth(4)
         splitter.setStyleSheet("""
             QSplitter::handle {
-                background-color: #0a1228;
+                background-color: transparent;
             }
             QSplitter::handle:hover {
-                background-color: #1a2d57;
+                background-color: #18284d;
             }
             QSplitter::handle:pressed {
-                background-color: #2a4070;
+                background-color: #5b7cff;
             }
         """)
         splitter.addWidget(body_widget)
         splitter.addWidget(self.execution_logs)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 0)
+        splitter.setCollapsible(0, False)
+        splitter.setCollapsible(1, False)
         splitter.setSizes([600, 120])
 
         main_layout.addWidget(splitter, 1)

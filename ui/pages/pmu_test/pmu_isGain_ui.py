@@ -9,7 +9,8 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QComboBox,
     QLabel, QLineEdit, QSpinBox, QDoubleSpinBox, QFrame, QTextEdit,
     QProgressBar, QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
-    QFileDialog, QDialog, QRadioButton, QButtonGroup, QSizePolicy, QScrollArea
+    QFileDialog, QDialog, QRadioButton, QButtonGroup, QSizePolicy, QScrollArea,
+    QSplitter
 )
 from PySide6.QtCore import Qt, Signal, QThread, QObject
 from PySide6.QtGui import QFont, QColor
@@ -976,15 +977,32 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.result_table.setShowGrid(False)
         result_layout.addWidget(self.result_table)
 
-        right_layout.addWidget(self.result_frame, 5)
-
         self.execution_logs = ExecutionLogsFrame(show_progress=True)
         self.log_edit = self.execution_logs.log_edit
         self.progress_bar = self.execution_logs.progress_bar
         self.progress_text_label = self.execution_logs.progress_text_label
         self.clear_log_btn = self.execution_logs.clear_log_btn
 
-        right_layout.addWidget(self.execution_logs, 1)
+        right_splitter = QSplitter(Qt.Vertical)
+        right_splitter.setHandleWidth(4)
+        right_splitter.setStyleSheet("""
+            QSplitter::handle {
+                background-color: transparent;
+            }
+            QSplitter::handle:hover {
+                background-color: #18284d;
+            }
+            QSplitter::handle:pressed {
+                background-color: #5b7cff;
+            }
+        """)
+        right_splitter.addWidget(self.result_frame)
+        right_splitter.addWidget(self.execution_logs)
+        right_splitter.setStretchFactor(0, 5)
+        right_splitter.setStretchFactor(1, 1)
+        right_splitter.setCollapsible(0, False)
+        right_splitter.setCollapsible(1, False)
+        right_layout.addWidget(right_splitter, 1)
 
     def _build_connection_card(self):
         layout = self.connection_card.main_layout

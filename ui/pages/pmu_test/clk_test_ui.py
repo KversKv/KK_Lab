@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QLineEdit, QGridLayout, QFrame, QScrollArea,
     QSizePolicy, QSpinBox, QDoubleSpinBox, QComboBox,
-    QTextEdit, QFileDialog, QMessageBox, QProgressBar
+    QTextEdit, QFileDialog, QMessageBox, QProgressBar, QSplitter
 )
 from PySide6.QtCore import Qt, Signal, QThread, QObject
 from PySide6.QtGui import QFont
@@ -1676,8 +1676,26 @@ class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, Keysight5323
         self.progress_text_label = self.execution_logs.progress_text_label
         self.clear_log_btn = self.execution_logs.clear_log_btn
 
-        right_col.addWidget(chart_panel, 3)
-        right_col.addWidget(self.execution_logs, 2)
+        right_splitter = QSplitter(Qt.Vertical)
+        right_splitter.setHandleWidth(4)
+        right_splitter.setStyleSheet("""
+            QSplitter::handle {
+                background-color: transparent;
+            }
+            QSplitter::handle:hover {
+                background-color: #18284d;
+            }
+            QSplitter::handle:pressed {
+                background-color: #5b7cff;
+            }
+        """)
+        right_splitter.addWidget(chart_panel)
+        right_splitter.addWidget(self.execution_logs)
+        right_splitter.setStretchFactor(0, 3)
+        right_splitter.setStretchFactor(1, 2)
+        right_splitter.setCollapsible(0, False)
+        right_splitter.setCollapsible(1, False)
+        right_col.addWidget(right_splitter, 1)
 
         body_layout.addLayout(left_wrapper, 0)
         body_layout.addLayout(right_col, 1)

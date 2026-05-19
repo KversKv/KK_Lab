@@ -88,6 +88,39 @@ except Exception as e:
 - 测量结果展示卡（`value_label` + `unit_label`）必须按数值大小自动选档（V/mV/µV、Hz/kHz/MHz/GHz 等），参考 [_format_measurement_value_split](../../ui/pages/oscilloscope/oscilloscope_base_ui.py)。
 - 新增 / 修改任何此类控件时，**必须同步更新 label 文本与日志输出格式**，避免 UI 显示与 `[SETTING]` 日志单位不一致。
 
+### 6.4 ExecutionLogsFrame 必须配合 QSplitter 实现高度可调（CRITICAL）
+
+- 凡页面使用 `ExecutionLogsFrame`（日志模块），**必须**将其与上方主内容区域（图表 / 结果面板）一起放入 `QSplitter(Qt.Vertical)` 中，使用户可拖拽调整 LOG 区域高度。
+- 分割线手柄**必须使用隐式样式**：默认透明、悬停时淡色提示、按下时高亮。
+- 标准模板：
+  ```python
+  from PySide6.QtWidgets import QSplitter
+
+  right_splitter = QSplitter(Qt.Vertical)
+  right_splitter.setHandleWidth(4)
+  right_splitter.setStyleSheet("""
+      QSplitter::handle {
+          background-color: transparent;
+      }
+      QSplitter::handle:hover {
+          background-color: #18284d;
+      }
+      QSplitter::handle:pressed {
+          background-color: #5b7cff;
+      }
+  """)
+  right_splitter.addWidget(main_content_widget)   # 图表 / 结果面板
+  right_splitter.addWidget(self.execution_logs)   # LOG 模块
+  right_splitter.setStretchFactor(0, 4)           # 主内容占比大
+  right_splitter.setStretchFactor(1, 1)           # LOG 占比小
+  right_splitter.setCollapsible(0, False)
+  right_splitter.setCollapsible(1, False)
+  right_layout.addWidget(right_splitter, 1)
+  ```
+- **禁止**直接 `layout.addWidget(self.execution_logs)` 而不经过 `QSplitter`。
+- **禁止**对 `execution_logs` 设置 `setMaximumHeight` / `setFixedHeight` 来限制高度，改用 splitter 的 stretch factor 控制默认比例。
+- 参考正例：[gpadc_test_ui.py](../../ui/pages/pmu_test/gpadc_test_ui.py) 的 `right_splitter` 实现。
+
 ## 7. 仪器层规范
 
 - 所有仪器继承 `instruments/base/instrument_base.py` 的抽象基类，统一暴露：

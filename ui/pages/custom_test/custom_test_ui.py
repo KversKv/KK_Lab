@@ -93,11 +93,14 @@ _PAGE_STYLE = """
     QSplitter::handle {
         background-color: transparent;
         width: 3px;
-        height: 3px;
+        height: 4px;
         border-radius: 0px;
     }
     QSplitter::handle:hover {
-        background-color: transparent;
+        background-color: #18284d;
+    }
+    QSplitter::handle:pressed {
+        background-color: #5b7cff;
     }
     QFrame#sectionFrame {
         background-color: #09142e;

@@ -783,13 +783,15 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
         self.clear_log_btn = self.execution_logs.clear_log_btn
 
         right_splitter = QSplitter(Qt.Vertical)
+        right_splitter.setHandleWidth(4)
         right_splitter.setStyleSheet("""
             QSplitter::handle {
-                background-color: #18284d;
-                height: 4px;
-                border-radius: 2px;
+                background-color: transparent;
             }
             QSplitter::handle:hover {
+                background-color: #18284d;
+            }
+            QSplitter::handle:pressed {
                 background-color: #5b7cff;
             }
         """)
