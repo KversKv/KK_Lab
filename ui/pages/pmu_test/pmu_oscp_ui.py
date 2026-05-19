@@ -981,8 +981,6 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
         self.method_label = QLabel("Test Method")
         self.method_label.setObjectName("fieldLabel")
         self.test_method_combo = DarkComboBox(bg="#0a1733", border="#20335f")
-        self.test_method_combo.addItems(["Reg", "Current", "Voltage"])
-        self.test_method_combo.setCurrentIndex(0)
 
         grid.addWidget(self.type_label, 0, 0)
         grid.addWidget(self.test_type_combo, 1, 0)
@@ -1105,7 +1103,7 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
         self._update_n6705c_connect_button_state(False)
         self.stop_test_btn.setEnabled(False)
 
-        self.test_type_combo.currentIndexChanged.connect(self._update_test_config)
+        self.test_type_combo.currentIndexChanged.connect(self._on_type_changed)
         self.test_method_combo.currentIndexChanged.connect(self._on_method_changed)
 
         self.bind_n6705c_signals()
@@ -1113,7 +1111,26 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
         self.start_test_btn.clicked.connect(self._on_start_or_stop)
         self.stop_test_btn.clicked.connect(self._on_stop_test)
 
+        self._update_method_options()
         self._update_test_config()
+
+    def _on_type_changed(self, index=None):
+        self._update_method_options()
+        self._rebuild_config_grid()
+        self._update_test_config()
+
+    def _update_method_options(self):
+        test_type = self.test_type_combo.currentText()
+        self.test_method_combo.blockSignals(True)
+        current_method = self.test_method_combo.currentText()
+        self.test_method_combo.clear()
+        if test_type in ["OCP", "SCP"]:
+            self.test_method_combo.addItems(["Reg", "Current"])
+        else:
+            self.test_method_combo.addItems(["Reg", "Voltage"])
+        idx = self.test_method_combo.findText(current_method)
+        self.test_method_combo.setCurrentIndex(max(idx, 0))
+        self.test_method_combo.blockSignals(False)
 
     def _on_method_changed(self, index=None):
         self._rebuild_config_grid()
