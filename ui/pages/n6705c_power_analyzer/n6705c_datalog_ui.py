@@ -1200,7 +1200,7 @@ class N6705CDatalogUI(QWidget):
             QFrame#chResultCard {
                 background-color: #0a1733;
                 border: 1px solid #1a2b52;
-                border-radius: 10px;
+                border-radius: 12px;
             }
 
             QFrame#separator {
@@ -1264,7 +1264,7 @@ class N6705CDatalogUI(QWidget):
 
             QPushButton {
                 min-height: 34px;
-                border-radius: 9px;
+                border-radius: 8px;
                 padding: 6px 14px;
                 border: 1px solid #2a4272;
                 background-color: #102042;
@@ -1307,7 +1307,7 @@ class N6705CDatalogUI(QWidget):
 
             QPushButton#primaryActionBtn {
                 min-height: 40px;
-                border-radius: 10px;
+                border-radius: 8px;
                 font-size: 14px;
                 font-weight: 800;
                 color: white;

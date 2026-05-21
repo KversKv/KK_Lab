@@ -333,7 +333,7 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, VT6002ConnectionMixin,
             QFrame#panel, QFrame#chart_panel {
                 background-color: #0a1428;
                 border: 1.5px solid #162040;
-                border-radius: 10px;
+                border-radius: 12px;
             }
 
             QFrame#config_inner_panel {
@@ -368,7 +368,7 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, VT6002ConnectionMixin,
             QDoubleSpinBox, QSpinBox {
                 background-color: #0a1733;
                 border: 1.5px solid #1e3060;
-                border-radius: 5px;
+                border-radius: 6px;
                 padding: 3px 6px;
                 color: #c8d8f8;
                 font-size: 12px;

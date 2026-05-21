@@ -28,6 +28,7 @@ from ui.modules.keysight_53230a_module_frame import Keysight53230AConnectionMixi
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockMSO64B, MockVT6002, MockKeysight53230A
 from instruments.chambers import TemperatureStabilizer
+from ui.theme import FONT_MONO
 
 
 class _CLKTestWorker(QObject):
@@ -1064,7 +1065,7 @@ class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, Keysight5323
                 border-radius: 6px;
                 color: #8abaff;
                 font-size: 11px;
-                font-family: 'Consolas', monospace;
+                font-family: """ + FONT_MONO + """;
                 padding: 6px;
             }
 

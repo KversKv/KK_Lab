@@ -334,7 +334,7 @@ class PropertyPanel(QWidget):
                 shadow_label.setStyleSheet(
                     "QLabel#shadowKeyLabel { color: #ffc978; font-size: 11px;"
                     "  background-color: #0c1733; border: 1px dashed #3a5a9f;"
-                    "  border-radius: 5px; padding: 5px 8px; }"
+                    "  border-radius: 6px; padding: 5px 8px; }"
                 )
                 shadow_label.setToolTip(
                     "执行时,除了上面的『结果存入变量』,该节点还会额外写入这个隐式变量名。\n"

@@ -48,7 +48,7 @@ _CANVAS_STYLE = """
     QTreeWidget {
         background-color: #060e20;
         border: 1px solid #1a2d57;
-        border-radius: 10px;
+        border-radius: 12px;
         color: #dce7ff;
         font-size: 12px;
         outline: none;
@@ -452,7 +452,7 @@ _DELETE_OVERLAY_STYLE = """
         font-size: 13px;
         font-weight: 700;
         border: 2px dashed #ff5e7a;
-        border-radius: 10px;
+        border-radius: 12px;
     }
 """
 

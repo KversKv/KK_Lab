@@ -11,10 +11,10 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
     QPushButton, QComboBox, QLabel, QLineEdit, QGridLayout,
     QTabWidget, QCheckBox, QSplitter, QFrame, QButtonGroup,
-    QDialog, QTextBrowser
+    QDialog, QTextBrowser, QGraphicsOpacityEffect
 )
 
-from PySide6.QtCore import Qt, Signal, QEvent, QPoint, QTimer
+from PySide6.QtCore import Qt, Signal, QEvent, QPoint, QTimer, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QPalette, QColor, QFont
 from ui.widgets.plot_widget import PlotWidget
 from ui.pages.oscilloscope.oscilloscope_base_ui import OscilloscopeBaseUI
@@ -223,7 +223,7 @@ class MainWindow(QMainWindow):
             }
             QGroupBox {
                 border: 1px solid #333;
-                border-radius: 6px;
+                border-radius: 8px;
                 margin-top: 6px;
                 background-color: #020618;
             }
@@ -235,7 +235,7 @@ class MainWindow(QMainWindow):
             }
             QPushButton {
                 border: 1px solid #555;
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 6px 12px;
                 background-color: #32353a;
                 color: #c8c8c8;
@@ -256,7 +256,7 @@ class MainWindow(QMainWindow):
             }
             QComboBox {
                 border: 1px solid #555;
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 4px 20px 4px 8px;
                 background-color: #32353a;
                 color: #c8c8c8;
@@ -278,7 +278,7 @@ class MainWindow(QMainWindow):
             }
             QLineEdit {
                 border: 1px solid #555;
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 4px 8px;
                 background-color: #32353a;
                 color: #c8c8c8;
@@ -306,12 +306,12 @@ class MainWindow(QMainWindow):
             }
             QFrame {
                 border: 1px solid #333;
-                border-radius: 4px;
+                border-radius: 6px;
                 background-color: #020618;
             }
             QSpinBox, QDoubleSpinBox {
                 border: 1px solid #555;
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 4px 8px;
                 background-color: #32353a;
                 color: #c8c8c8;
@@ -400,7 +400,7 @@ class MainWindow(QMainWindow):
         automation_title = QLabel("AUTOMATION")
         automation_title.setStyleSheet("""
             QLabel {
-                color: #5f78a8;
+                color: #7b93bf;
                 font-size: 10px;
                 font-weight: 700;
                 letter-spacing: 1px;
@@ -442,7 +442,7 @@ class MainWindow(QMainWindow):
         tools_title = QLabel("TOOLS")
         tools_title.setStyleSheet("""
             QLabel {
-                color: #5f78a8;
+                color: #7b93bf;
                 font-size: 10px;
                 font-weight: 700;
                 letter-spacing: 1px;
@@ -818,6 +818,7 @@ class MainWindow(QMainWindow):
             self.n6705c_analyser_ui.show()
         self.current_instrument_ui = "power_analyser"
         self.channels = self.n6705c_analyser_ui.channels if hasattr(self.n6705c_analyser_ui, 'channels') else []
+        self._fade_in_widget(self.n6705c_analyser_ui)
 
     def _create_datalog_ui(self):
         logger.debug("Switching to Datalog UI")
@@ -829,6 +830,7 @@ class MainWindow(QMainWindow):
             self.n6705c_datalog_ui._sync_from_top()
             self.n6705c_datalog_ui.show()
         self.current_instrument_ui = "datalog"
+        self._fade_in_widget(self.n6705c_datalog_ui)
 
     def _create_oscilloscope_ui(self):
         logger.debug("Switching to Oscilloscope UI")
@@ -840,6 +842,7 @@ class MainWindow(QMainWindow):
         else:
             self.oscilloscope_ui.show()
         self.current_instrument_ui = "oscilloscope"
+        self._fade_in_widget(self.oscilloscope_ui)
 
     def _create_thermal_chamber_ui(self):
         logger.debug("Switching to Thermal Chamber UI")
@@ -851,6 +854,7 @@ class MainWindow(QMainWindow):
         else:
             self.vt6002_chamber_ui.show()
         self.current_instrument_ui = "thermal_chamber"
+        self._fade_in_widget(self.vt6002_chamber_ui)
 
     def _create_pmu_test_ui(self, selected_test=None):
         logger.debug("Switching to PMU Test UI: selected_test=%s", selected_test)
@@ -870,6 +874,7 @@ class MainWindow(QMainWindow):
             self.current_pmu_test_key = selected_test
             if hasattr(self.pmu_test_ui, "set_current_test"):
                 self.pmu_test_ui.set_current_test(selected_test)
+        self._fade_in_widget(self.pmu_test_ui)
 
     def _create_consumption_test_ui(self, selected_test=None):
         logger.debug("Switching to Consumption Test UI: selected_test=%s", selected_test)
@@ -889,6 +894,7 @@ class MainWindow(QMainWindow):
             self.current_consumption_test_key = selected_test
             if hasattr(self.consumption_test_ui, "set_current_test"):
                 self.consumption_test_ui.set_current_test(selected_test)
+        self._fade_in_widget(self.consumption_test_ui)
 
     def _create_charger_test_ui(self, selected_test=None):
         logger.debug("Switching to Charger Test UI: selected_test=%s", selected_test)
@@ -904,6 +910,7 @@ class MainWindow(QMainWindow):
             self.current_charger_test_key = selected_test
             if hasattr(self.charger_test_ui, "set_current_test"):
                 self.charger_test_ui.set_current_test(selected_test)
+        self._fade_in_widget(self.charger_test_ui)
 
     def _create_custom_test_ui(self):
         logger.debug("Switching to Custom Test UI")
@@ -919,6 +926,7 @@ class MainWindow(QMainWindow):
             self.custom_test_ui.sync_n6705c_from_top()
             self.custom_test_ui.show()
         self.current_instrument_ui = "custom_test"
+        self._fade_in_widget(self.custom_test_ui)
 
     def _create_kk_serials_ui(self):
         logger.debug("Switching to KK Serials UI")
@@ -929,6 +937,7 @@ class MainWindow(QMainWindow):
         else:
             self.kk_serials_ui.show()
         self.current_instrument_ui = "kk_serials"
+        self._fade_in_widget(self.kk_serials_ui)
 
     def _hide_all_instrument_uis(self):
         for widget in [
@@ -939,6 +948,21 @@ class MainWindow(QMainWindow):
         ]:
             if widget is not None:
                 widget.hide()
+
+    def _fade_in_widget(self, widget):
+        if widget is None:
+            return
+        effect = widget.graphicsEffect()
+        if not isinstance(effect, QGraphicsOpacityEffect):
+            effect = QGraphicsOpacityEffect(widget)
+            widget.setGraphicsEffect(effect)
+        effect.setOpacity(0.0)
+        anim = QPropertyAnimation(effect, b"opacity", self)
+        anim.setDuration(150)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.InOutQuad)
+        anim.start(QPropertyAnimation.DeleteWhenStopped)
 
     def _connect_signals(self):
         """连接信号槽"""

@@ -307,7 +307,7 @@ _INSTR_CARD_STYLE = """
     QFrame#instrCard {{
         background-color: #0d1a36;
         border: 1px solid #1a2d57;
-        border-radius: 10px;
+        border-radius: 12px;
         padding: 0px;
     }}
     QFrame#instrCard:hover {{

@@ -24,6 +24,7 @@ from instruments.power.keysight.n6705c import N6705C
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockN6705C
 from log_config import get_logger
+from ui.theme import FONT_MONO
 
 logger = get_logger(__name__)
 
@@ -895,7 +896,7 @@ class N6705CAnalyserUI(QWidget):
         self.voltage_value.setFrame(False)
         self.voltage_value.setReadOnly(True)
         self.voltage_value.setStyleSheet(f"""
-            QLineEdit {{ font-size: 26px; font-weight: bold; color: {VALUE_OFF_COLOR}; background: transparent; border: none; letter-spacing: 1px; }}
+            QLineEdit {{ font-family: {FONT_MONO}; font-size: 26px; font-weight: bold; color: {VALUE_OFF_COLOR}; background: transparent; border: none; letter-spacing: 1px; }}
         """)
         self.voltage_value.setFixedHeight(44)
         voltage_layout.addWidget(self.voltage_value)
@@ -920,7 +921,7 @@ class N6705CAnalyserUI(QWidget):
         self.current_value = QLineEdit("0.0000")
         self.current_value.setReadOnly(True)
         self.current_value.setStyleSheet(f"""
-            QLineEdit {{ font-size: 26px; font-weight: bold; color: {VALUE_OFF_COLOR}; background-color: transparent; border: none; letter-spacing: 1px; }}
+            QLineEdit {{ font-family: {FONT_MONO}; font-size: 26px; font-weight: bold; color: {VALUE_OFF_COLOR}; background-color: transparent; border: none; letter-spacing: 1px; }}
         """)
         self.current_value.setFixedHeight(44)
         current_layout.addWidget(self.current_value)
@@ -1635,10 +1636,10 @@ class N6705CAnalyserUI(QWidget):
         value_color = accent if is_on else VALUE_OFF_COLOR
 
         self.voltage_value.setStyleSheet(f"""
-            QLineEdit {{ font-size: 26px; font-weight: bold; color: {value_color}; background: transparent; border: none; letter-spacing: 1px; }}
+            QLineEdit {{ font-family: {FONT_MONO}; font-size: 26px; font-weight: bold; color: {value_color}; background: transparent; border: none; letter-spacing: 1px; }}
         """)
         self.current_value.setStyleSheet(f"""
-            QLineEdit {{ font-size: 26px; font-weight: bold; color: {value_color}; background-color: transparent; border: none; letter-spacing: 1px; }}
+            QLineEdit {{ font-family: {FONT_MONO}; font-size: 26px; font-weight: bold; color: {value_color}; background-color: transparent; border: none; letter-spacing: 1px; }}
         """)
 
     def _switch_channel(self, dev_label, ch):

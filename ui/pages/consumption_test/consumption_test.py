@@ -45,6 +45,7 @@ from chips.bes_chip_configs.bes_chip_configs import SUPPORTED_CHIPS, get_chip_co
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.widgets.progress_button import ProgressButton
 from log_config import get_logger
+from ui.theme import FONT_MONO
 
 from ui.pages.consumption_test.consumption_test_workers import (
     CURRENT_UNIT,
@@ -599,7 +600,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
     def _create_layout(self):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(16, 12, 16, 12)
-        main_layout.setSpacing(10)
+        main_layout.setSpacing(12)
 
         header_layout = QHBoxLayout()
         header_layout.setContentsMargins(0, 0, 0, 0)
@@ -1699,7 +1700,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             QFrame#testConfigPanel {
                 background-color: #0a1228;
                 border: 1px solid #1a2d57;
-                border-radius: 10px;
+                border-radius: 12px;
             }
         """)
         config_layout = QVBoxLayout(config_frame)
@@ -1873,7 +1874,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             QFrame#testConfigFrame {
                 background-color: #0a1228;
                 border: 1px solid #1a2d57;
-                border-radius: 10px;
+                border-radius: 12px;
             }
         """)
         config_layout = QVBoxLayout(config_frame)
@@ -2288,6 +2289,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         value_label.setStyleSheet(f"""
             QLabel {{
                 color: {colors['accent']};
+                font-family: {FONT_MONO};
                 font-size: 18px;
                 font-weight: 700;
                 letter-spacing: 4px;

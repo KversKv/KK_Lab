@@ -657,7 +657,7 @@ if __name__ == "__main__":
         QFrame#cardFrame {
             background-color: #071127;
             border: 1px solid #1a2b52;
-            border-radius: 14px;
+            border-radius: 12px;
         }
         QComboBox {
             background-color: #0a1733;

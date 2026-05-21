@@ -290,12 +290,12 @@ class RegulationVoltageTestUI(N6705CConnectionMixin, QWidget):
             QFrame#panelFrame {
                 background-color: #08132d;
                 border: 1px solid #16274d;
-                border-radius: 18px;
+                border-radius: 16px;
             }
             QFrame#cardFrame {
                 background-color: #071127;
                 border: 1px solid #1a2b52;
-                border-radius: 14px;
+                border-radius: 12px;
             }
             QLabel#cardTitle {
                 font-size: 11px;
@@ -355,7 +355,7 @@ class RegulationVoltageTestUI(N6705CConnectionMixin, QWidget):
             }
             QPushButton {
                 min-height: 34px;
-                border-radius: 9px;
+                border-radius: 8px;
                 padding: 6px 14px;
                 border: 1px solid #2a4272;
                 background-color: #102042;
@@ -427,7 +427,7 @@ class RegulationVoltageTestUI(N6705CConnectionMixin, QWidget):
             QFrame#miniStatCard {
                 background-color: #0a1733;
                 border: 1px solid #1b315f;
-                border-radius: 10px;
+                border-radius: 12px;
             }
         """ + SCROLLBAR_STYLE)
 
@@ -467,7 +467,7 @@ class RegulationVoltageTestUI(N6705CConnectionMixin, QWidget):
             QScrollArea#leftScrollArea {
                 background-color: #08132d;
                 border: 1px solid #16274d;
-                border-radius: 18px;
+                border-radius: 16px;
             }
         """ + SCROLLBAR_STYLE)
 
@@ -715,7 +715,7 @@ class RegulationVoltageTestUI(N6705CConnectionMixin, QWidget):
             QFrame {
                 background-color: #09142e;
                 border: 1px solid #1b315f;
-                border-radius: 10px;
+                border-radius: 12px;
             }
         """)
         v = QVBoxLayout(placeholder)

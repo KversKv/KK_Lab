@@ -79,7 +79,8 @@ class TemperatureGauge(QWidget):
 
         # 数值
         painter.setPen(QColor("#ffffff"))
-        value_font = QFont("Consolas", max(18, int(side * 0.11)))
+        value_font = QFont("JetBrains Mono", max(18, int(side * 0.11)))
+        value_font.setStyleHint(QFont.Monospace)
         value_font.setBold(True)
         painter.setFont(value_font)
 
@@ -480,7 +481,7 @@ class VT6002ChamberUI(QWidget):
         #statusWrap {
             background-color: #04102b;
             border: 1px solid #1b2f58;
-            border-radius: 10px;
+            border-radius: 8px;
         }
 
         #statusDot {
@@ -525,7 +526,7 @@ class VT6002ChamberUI(QWidget):
         #powerButton {
             background-color: #223150;
             border: 1px solid #34486f;
-            border-radius: 10px;
+            border-radius: 8px;
             color: #5f7397;
             font-size: 15px;
             font-weight: 800;
@@ -549,7 +550,7 @@ class VT6002ChamberUI(QWidget):
         #tempInput {
             background-color: #06122f;
             border: 1px solid #183261;
-            border-radius: 10px;
+            border-radius: 8px;
             color: #eaf1ff;
             padding: 0 14px;
             font-size: 16px;
@@ -563,7 +564,7 @@ class VT6002ChamberUI(QWidget):
         #setButton {
             background-color: #3d2bc6;
             border: none;
-            border-radius: 10px;
+            border-radius: 8px;
             color: #cfd5f3;
             font-weight: 800;
             padding: 0 22px;
@@ -633,7 +634,7 @@ class VT6002ChamberUI(QWidget):
                 QPushButton#powerButton {
                     background-color: #0f8f63;
                     border: 1px solid #15e6a3;
-                    border-radius: 10px;
+                    border-radius: 8px;
                     color: white;
                     font-size: 15px;
                     font-weight: 800;
@@ -652,7 +653,7 @@ class VT6002ChamberUI(QWidget):
                 QPushButton#powerButton {
                     background-color: #223150;
                     border: 1px solid #34486f;
-                    border-radius: 10px;
+                    border-radius: 8px;
                     color: #5f7397;
                     font-size: 15px;
                     font-weight: 800;

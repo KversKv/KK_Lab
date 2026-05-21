@@ -36,6 +36,7 @@ from log_config import get_logger
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockI2C, MockN6705C, MockVT6002
 from instruments.chambers import TemperatureStabilizer
+from ui.theme import FONT_MONO
 
 logger = get_logger(__name__)
 
@@ -311,7 +312,7 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
                 border-radius: 6px;
                 color: #8abaff;
                 font-size: 11px;
-                font-family: 'Consolas', monospace;
+                font-family: """ + FONT_MONO + """;
                 padding: 6px;
             }
 
@@ -2369,7 +2370,7 @@ Temperature (°C) | ADC Value
             curve_data += f"Avg ADC:  {np.mean(adc_data):.3f}\n"
             
             data_label = QLabel(curve_data)
-            data_label.setStyleSheet("color: #d8e3ff; font-family: 'Consolas', monospace; font-size: 10px;")
+            data_label.setStyleSheet(f"color: #d8e3ff; font-family: {FONT_MONO}; font-size: 10px;")
             data_label.setWordWrap(True)
             
             # 创建滚动区域以显示大量数据

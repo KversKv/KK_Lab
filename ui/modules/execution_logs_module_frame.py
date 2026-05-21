@@ -49,7 +49,7 @@ _LOG_FRAME_STYLE = """
     QFrame#logContainer {
         background-color: #0a1628;
         border: 1px solid #1a2d50;
-        border-radius: 14px;
+        border-radius: 12px;
     }
     QFrame#logContainer QLabel#sectionTitle {
         font-size: 12px;

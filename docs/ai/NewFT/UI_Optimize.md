@@ -10,13 +10,15 @@
 | 阶段 | 优先级 | 任务数 | 完成 | 状态 |
 |------|--------|--------|------|------|
 | Phase 1 | P0 - 架构级 | 4 | 4/4 | ✅ 已完成 |
-| Phase 2 | P1 - 视觉体验 | 5 | 0/5 | 🔲 未开始 |
+| Phase 2 | P1 - 视觉体验 | 5 | 5/5 | ✅ 已完成 |
 | Phase 3 | P2 - 交互精细化 | 5 | 0/5 | 🔲 未开始 |
 | Phase 4 | P3 - 代码质量 | 3 | 0/3 | 🔲 未开始 |
 
 ---
 
-## Phase 1: P0 - 架构级优化（影响全局，必须先做）
+## 
+
+: P0 - 架构级优化（影响全局，必须先做）
 
 ### Task 1.1: 建立设计令牌系统 (Design Token)
 - **目标**: 创建 `ui/theme.py`，集中定义所有颜色、字号、间距、圆角常量
@@ -93,11 +95,12 @@
   - 从 theme.py 引用圆角常量
   - 排查并修正所有 `border-radius` 值
   - 确保 panelFrame=16px, cardFrame=12px, 按钮/输入框=8px, 小控件=6px
-- **涉及文件**: 所有页面 `_setup_style()` 方法
+- **涉及文件**: 所有页面 `_setup_style()` 方法, 所有 `ui/modules/` 框架
 - **依赖**: Task 1.1, Task 1.2
 - **预计会话**: 会话 3
-- **状态**: 🔲 未开始
-- **完成日期**: —
+- **状态**: ✅ 已完成
+- **完成日期**: 2026-05-21
+- **实际变更**: 修正 29+ 文件中 60+ 处非标准圆角值 (18→16, 14→12, 9→8, 10→12/8, 5→6, 7→8/6)
 
 ### Task 2.2: 数值显示使用等宽字体
 - **目标**: 电压/电流等跳变数值使用 Tabular 数字字体，避免 UI 抖动
@@ -106,11 +109,12 @@
   - 在 theme.py 中定义 `FONT_MONO` 常量
   - 修改 N6705C Analyser、Consumption Test、PMU Test 等数值 QLabel
   - 确保 `font-variant-numeric: tabular-nums` 或固定宽度
-- **涉及文件**: `n6705c_analyser_ui.py`, `consumption_test.py`, `pmu_*.py`
+- **涉及文件**: `n6705c_analyser_ui.py`, `consumption_test.py`, `pmu_isGain_ui.py`, `pmu_dcdc_efficiency.py`, `pmu_output_voltage.py`, `gpadc_test_ui.py`, `clk_test_ui.py`, `oscilloscope_base_ui.py`, `vt6002_chamber_ui.py`
 - **依赖**: Task 1.1
 - **预计会话**: 会话 3
-- **状态**: 🔲 未开始
-- **完成日期**: —
+- **状态**: ✅ 已完成
+- **完成日期**: 2026-05-21
+- **实际变更**: 统一所有 Consolas 引用为 FONT_MONO 常量; VT6002 gauge 使用 QFont("JetBrains Mono") + setStyleHint(Monospace)
 
 ### Task 2.3: 改善对比度（WCAG AA 合规）
 - **目标**: 所有文字对比度达到 WCAG AA 标准 (4.5:1 正文, 3:1 大字)
@@ -121,11 +125,12 @@
     - `#8eb0e3` on `#0a1930` → 验证是否达标
     - 10px 字体的 muted text 需更高对比度
   - 使用在线对比度检查器验证
-- **涉及文件**: `theme.py` 中的颜色定义, `sidebar_nav_button.py`
+- **涉及文件**: `theme.py` 中 `nav_item_muted` 颜色, `main_window.py` 分组标题, `sidebar_nav_button.py`
 - **依赖**: Task 1.1
 - **预计会话**: 会话 4
-- **状态**: 🔲 未开始
-- **完成日期**: —
+- **状态**: ✅ 已完成
+- **完成日期**: 2026-05-21
+- **实际变更**: nav_group_title #5f78a8 → #7b93bf (5.8:1); nav_item_muted #7f8da9 → #8fa3c2 (6.0:1); arrow #6f7d98 → #7f8fb0
 
 ### Task 2.4: 页面切换增加过渡动画
 - **目标**: 用 150ms opacity 淡入替换瞬切，提升页面切换流畅感
@@ -137,8 +142,9 @@
 - **涉及文件**: `ui/main_window.py`
 - **依赖**: 无
 - **预计会话**: 会话 4
-- **状态**: 🔲 未开始
-- **完成日期**: —
+- **状态**: ✅ 已完成
+- **完成日期**: 2026-05-21
+- **实际变更**: 新增 `_fade_in_widget()` 方法 + 所有 9 个 `_create_*_ui` 方法末尾调用
 
 ### Task 2.5: 统一间距节奏
 - **目标**: 全局使用 4px 基础间距系统
@@ -147,11 +153,12 @@
   - 审计各页面 `setContentsMargins` / `setSpacing` 调用
   - 统一: 页面内边距 16px, 卡片内边距 12-16px, 组件间距 8-12px
   - 消除随机间距值 (如 14px, 18px, 6px 混用的情况)
-- **涉及文件**: 所有页面布局代码
+- **涉及文件**: `pmu_dcdc_efficiency.py`, `pmu_isGain_ui.py`, `oscilloscope_base_ui.py`, `custom_test_ui.py`, `consumption_test.py`
 - **依赖**: Task 1.1
 - **预计会话**: 会话 5
-- **状态**: 🔲 未开始
-- **完成日期**: —
+- **状态**: ✅ 已完成
+- **完成日期**: 2026-05-21
+- **实际变更**: 14→12/16, 18→16, 10→8/12 统一; setContentsMargins(14,x,14,x) → (16,x,16,x)
 
 ---
 
@@ -304,3 +311,4 @@
 |------|------|----------|------|
 | 2026-05-21 | 初始化 | — | 创建优化任务计划 |
 | 2026-05-21 | 会话 1 | Task 1.1 + 1.2 + 1.3 + 1.4 | Phase 1 全部完成; 新建 theme.py / page_styles.py / icon_utils.py / sidebar_submenu.py; main_window.py 减少 ~380 行 |
+| 2026-05-21 | 会话 2 | Task 2.1 + 2.2 + 2.3 + 2.4 + 2.5 | Phase 2 全部完成; 统一圆角体系(29+文件); 等宽数字字体(FONT_MONO); WCAG AA对比度修复; 150ms淡入动画; 间距标准化(4px基数) |

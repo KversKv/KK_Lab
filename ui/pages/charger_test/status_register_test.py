@@ -437,8 +437,8 @@ class StatusRegisterTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget
             QLabel { background-color: transparent; color: #dbe7ff; border: none; }
             QLabel#pageTitle { font-size: 18px; font-weight: 700; color: #f8fbff; background-color: transparent; }
             QLabel#pageSubtitle { font-size: 12px; color: #7da2d6; background-color: transparent; }
-            QFrame#panelFrame { background-color: #08132d; border: 1px solid #16274d; border-radius: 18px; }
-            QFrame#cardFrame { background-color: #071127; border: 1px solid #1a2b52; border-radius: 14px; }
+            QFrame#panelFrame { background-color: #08132d; border: 1px solid #16274d; border-radius: 16px; }
+            QFrame#cardFrame { background-color: #071127; border: 1px solid #1a2b52; border-radius: 12px; }
             QLabel#cardTitle { font-size: 11px; font-weight: 700; color: #f4f7ff; letter-spacing: 0.5px; background-color: transparent; }
             QLabel#sectionTitle { font-size: 12px; font-weight: 700; color: #f4f7ff; background-color: transparent; }
             QLabel#fieldLabel { color: #8eb0e3; font-size: 11px; background-color: transparent; }
@@ -451,7 +451,7 @@ class StatusRegisterTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget
             QComboBox { padding-right: 24px; }
             QComboBox::drop-down { border: none; width: 22px; background: transparent; }
             QComboBox QAbstractItemView { background-color: #0a1733; color: #eaf2ff; border: 1px solid #27406f; selection-background-color: #334a7d; }
-            QPushButton { min-height: 34px; border-radius: 9px; padding: 6px 14px; border: 1px solid #2a4272; background-color: #102042; color: #dfeaff; font-weight: 600; }
+            QPushButton { min-height: 34px; border-radius: 8px; padding: 6px 14px; border: 1px solid #2a4272; background-color: #102042; color: #dfeaff; font-weight: 600; }
             QPushButton:hover { background-color: #162a56; border: 1px solid #3c5fa1; }
             QPushButton:pressed { background-color: #0d1a37; }
             QPushButton:disabled { background-color: #0b1430; color: #5c7096; border: 1px solid #1a2850; }
@@ -464,7 +464,7 @@ class StatusRegisterTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget
             QLabel#regName { color: #dbe7ff; font-size: 12px; font-weight: 600; background-color: transparent; }
             QLabel#regValue { color: #ffffff; font-size: 13px; font-weight: 700; background-color: transparent; }
             QLabel#regDesc { color: #7da2d6; font-size: 10px; background-color: transparent; }
-            QFrame#regCard { background-color: #0a1733; border: 1px solid #1b315f; border-radius: 10px; }
+            QFrame#regCard { background-color: #0a1733; border: 1px solid #1b315f; border-radius: 12px; }
         """ + SCROLLBAR_STYLE)
 
     def _create_layout(self):
@@ -494,7 +494,7 @@ class StatusRegisterTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget
         self.left_scroll.setFixedWidth(320)
         self.left_scroll.setObjectName("leftScrollArea")
         self.left_scroll.setStyleSheet("""
-            QScrollArea#leftScrollArea { background-color: #08132d; border: 1px solid #16274d; border-radius: 18px; }
+            QScrollArea#leftScrollArea { background-color: #08132d; border: 1px solid #16274d; border-radius: 16px; }
         """ + SCROLLBAR_STYLE)
         self.left_panel = QWidget()
         self.left_panel.setObjectName("leftPanelInner")

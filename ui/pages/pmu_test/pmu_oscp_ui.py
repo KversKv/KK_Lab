@@ -566,7 +566,7 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
         QFrame#cardFrame {
             background-color: #0d1833;
             border: 1px solid #1a2a52;
-            border-radius: 14px;
+            border-radius: 12px;
         }
 
         QLabel#cardTitle {
@@ -660,7 +660,7 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
 
         QPushButton {
             min-height: 34px;
-            border-radius: 9px;
+            border-radius: 8px;
             padding: 6px 14px;
             border: 1px solid #273a66;
             background-color: #1a2748;
@@ -686,7 +686,7 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
         QPushButton#smallActionBtn {
             min-height: 34px;
             padding: 6px 10px;
-            border-radius: 10px;
+            border-radius: 8px;
             background-color: #1d2a49;
             color: #c8d7f5;
         }
@@ -742,7 +742,7 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
         QFrame[role="resultBox"] {
             background-color: #020b22;
             border: 1px solid #1a2d57;
-            border-radius: 10px;
+            border-radius: 12px;
         }
 
         QFrame[role="resultBox"][state="active"] {
@@ -816,7 +816,7 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
             QScrollArea#leftScrollArea {
                 background-color: #0d1833;
                 border: 1px solid #1a2a52;
-                border-radius: 18px;
+                border-radius: 16px;
             }
         """ + SCROLLBAR_STYLE)
 

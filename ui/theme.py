@@ -48,7 +48,7 @@ class Colors:
     nav_hover = "#171c2b"
     nav_group_title = "#7b93bf"
     nav_item_text = "#c7d3ee"
-    nav_item_muted = "#7f8da9"
+    nav_item_muted = "#8fa3c2"
     nav_arrow = "#6f7d98"
     nav_icon = "#93a4c3"
 

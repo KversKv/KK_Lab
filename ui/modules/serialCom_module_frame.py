@@ -781,7 +781,7 @@ class SerialComMixin:
         )
         self._sc_connect_btn.setStyleSheet(f"""
             QPushButton {{
-                min-height: 0px; max-height: 30px; padding: 4px 14px; border-radius: 5px;
+                min-height: 0px; max-height: 30px; padding: 4px 14px; border-radius: 6px;
                 background-color: #07202b; color: #34d399; font-size: 12px;
                 font-family: {_UI_FONT}; font-weight: 700; border: none;
             }}
@@ -817,7 +817,7 @@ class SerialComMixin:
         self._sc_add_log_btn.setStyleSheet("""
             QPushButton {
                 min-height: 0px; max-height: 22px; min-width: 22px; max-width: 22px;
-                padding: 0px; border-radius: 5px;
+                padding: 0px; border-radius: 6px;
                 background-color: transparent; color: #94a3b8; border: 1px solid #1e293b;
             }
             QPushButton:hover { border-color: #334155; }
@@ -836,7 +836,7 @@ class SerialComMixin:
         self._sc_remove_log_btn.setStyleSheet("""
             QPushButton {
                 min-height: 0px; max-height: 22px; min-width: 22px; max-width: 22px;
-                padding: 0px; border-radius: 5px;
+                padding: 0px; border-radius: 6px;
                 background-color: transparent; color: #94a3b8; border: 1px solid #1e293b;
             }
             QPushButton:hover { border-color: #334155; }
@@ -1414,7 +1414,7 @@ class SerialComMixin:
                 background-color: #1e293b;
                 color: #e5e7eb;
                 border: 1px solid #334155;
-                border-radius: 5px;
+                border-radius: 6px;
                 padding: 4px 12px;
                 min-height: 24px;
             }}
@@ -1559,7 +1559,7 @@ class SerialComMixin:
                 background-color: #0b1220;
                 color: #e5e7eb;
                 border: 1px solid #334155;
-                border-radius: 5px;
+                border-radius: 6px;
                 padding: 3px 8px;
                 min-height: 24px;
                 font-size: 12px;
@@ -1598,7 +1598,7 @@ class SerialComMixin:
                 background-color: #1e293b;
                 color: #e5e7eb;
                 border: 1px solid #334155;
-                border-radius: 5px;
+                border-radius: 6px;
                 padding: 4px 12px;
                 min-height: 24px;
                 font-size: 12px;
@@ -1635,7 +1635,7 @@ class SerialComMixin:
                 background-color: #1d4ed8;
                 color: #ffffff;
                 border: 1px solid #3b82f6;
-                border-radius: 5px;
+                border-radius: 6px;
                 padding: 4px 12px;
                 min-height: 24px;
                 font-size: 12px;
@@ -3978,7 +3978,7 @@ class SerialComMixin:
             icon_size = 13
             btn.setStyleSheet(f"""
                 QPushButton {{
-                    min-height: 0px; max-height: 30px; padding: 4px 10px; border-radius: 5px;
+                    min-height: 0px; max-height: 30px; padding: 4px 10px; border-radius: 6px;
                     background-color: transparent; color: {base_color}; font-size: 12px;
                     font-family: {_UI_FONT}; font-weight: 500; border: none;
                 }}

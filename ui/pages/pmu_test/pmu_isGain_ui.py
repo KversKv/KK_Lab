@@ -30,6 +30,7 @@ from instruments.mock.mock_instruments import MockN6705C, MockMSO64B
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLLBAR_STYLE, START_BTN_STYLE, update_start_btn_state
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
+from ui.theme import FONT_MONO
 
 
 class _IsGainTestWorker(QObject):
@@ -477,8 +478,8 @@ class CardFrame(QFrame):
         self.setObjectName("cardFrame")
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(14, 12, 14, 14)
-        self.main_layout.setSpacing(10)
+        self.main_layout.setContentsMargins(16, 12, 16, 16)
+        self.main_layout.setSpacing(12)
 
         if title:
             self.title_row = QHBoxLayout()
@@ -636,7 +637,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             QFrame#panelFrame {
                 background-color: #08132d;
                 border: 1px solid #16274d;
-                border-radius: 18px;
+                border-radius: 16px;
             }
 
             QFrame#cardFrame {
@@ -652,7 +653,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             QFrame#resultContainer {
                 background-color: #09142e;
                 border: 1px solid #1a2d57;
-                border-radius: 14px;
+                border-radius: 12px;
             }
 
             QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QTextEdit, QTableWidget {
@@ -739,7 +740,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             QPushButton#smallActionBtn {
                 min-height: 28px;
                 padding: 4px 10px;
-                border-radius: 7px;
+                border-radius: 8px;
                 background-color: #13254b;
                 color: #dce7ff;
             }
@@ -752,7 +753,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             QPushButton#exportBtn {
                 min-height: 28px;
                 padding: 4px 14px;
-                border-radius: 7px;
+                border-radius: 8px;
                 background-color: #16284f;
                 color: #dfe8ff;
                 border: 1px solid #233d6a;
@@ -772,7 +773,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
                 border: 1px solid #1f315d;
                 border-radius: 8px;
                 color: #7cecc8;
-                font-family: Consolas, "Courier New", monospace;
+                font-family: """ + FONT_MONO + """;
                 font-size: 11px;
             }
 
@@ -862,7 +863,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         root_layout.addLayout(title_layout)
 
         content_layout = QHBoxLayout()
-        content_layout.setSpacing(14)
+        content_layout.setSpacing(12)
         root_layout.addLayout(content_layout, 1)
 
         left_wrapper = QVBoxLayout()
@@ -879,7 +880,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
             QScrollArea#leftScrollArea {
                 background-color: #08132d;
                 border: 1px solid #142240;
-                border-radius: 14px;
+                border-radius: 16px;
             }
         """ + SCROLLBAR_STYLE)
 
@@ -1411,7 +1412,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
 
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(14)
+        layout.setSpacing(16)
 
         title = QLabel("Export Test Results")
         title.setStyleSheet("font-size: 14px; font-weight: bold; color: #f4f7ff;")

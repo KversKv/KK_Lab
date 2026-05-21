@@ -31,6 +31,7 @@ from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.chamber_module_frame import VT6002ConnectionMixin
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockN6705C, MockVT6002
+from ui.theme import FONT_MONO
 
 SMOOTH_WINDOW = 5   # 平滑窗口大小（越大越平滑，建议奇数：3/5/7/9）
 SMOOTH_POLY_ORDER = 2   # 多项式阶数（2=二次拟合，保留曲率；1=等效加权移动平均）
@@ -244,7 +245,8 @@ if HAS_QTCHARTS:
             label_text = f"  {best.x():.2f} mA, {best.y():.2f}%"
             self._marker_label = QGraphicsSimpleTextItem(label_text)
             self._marker_label.setBrush(QBrush(QColor("#ffffff")))
-            font = QFont("Consolas", 9)
+            font = QFont("JetBrains Mono", 9)
+            font.setStyleHint(QFont.Monospace)
             font.setBold(True)
             self._marker_label.setFont(font)
 
@@ -1037,13 +1039,13 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget)
             QFrame#panelFrame {
                 background-color: #08132d;
                 border: 1px solid #16274d;
-                border-radius: 18px;
+                border-radius: 16px;
             }
 
             QFrame#cardFrame {
                 background-color: #071127;
                 border: 1px solid #1a2b52;
-                border-radius: 14px;
+                border-radius: 12px;
             }
 
             QLabel#cardTitle {
@@ -1140,7 +1142,7 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget)
 
             QPushButton {
                 min-height: 34px;
-                border-radius: 9px;
+                border-radius: 8px;
                 padding: 6px 14px;
                 border: 1px solid #2a4272;
                 background-color: #102042;
@@ -1166,7 +1168,7 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget)
             QPushButton#smallActionBtn {
                 min-height: 34px;
                 padding: 6px 10px;
-                border-radius: 10px;
+                border-radius: 8px;
                 background-color: #13254b;
                 color: #dce7ff;
             }
@@ -1183,7 +1185,7 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget)
                 min-height: 26px;
                 min-width: 26px;
                 padding: 3px 8px;
-                border-radius: 7px;
+                border-radius: 6px;
                 background-color: #0e1d3d;
                 border: 1px solid #28406b;
                 color: #9fb6df;
@@ -1205,7 +1207,7 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget)
             QFrame#segmentedContainer {
                 background-color: #0e1d3d;
                 border: 1px solid #28406b;
-                border-radius: 10px;
+                border-radius: 8px;
                 padding: 2px;
             }
 
@@ -1241,7 +1243,7 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget)
                 border: 1px solid #1f315d;
                 border-radius: 8px;
                 color: #7cecc8;
-                font-family: Consolas, "Courier New", monospace;
+                font-family: """ + FONT_MONO + """;
                 font-size: 11px;
             }
 
@@ -1276,7 +1278,7 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget)
             QFrame#miniStatCard {
                 background-color: #0a1733;
                 border: 1px solid #1b315f;
-                border-radius: 10px;
+                border-radius: 12px;
             }
         """ + SCROLLBAR_STYLE)
 
@@ -1299,7 +1301,7 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget)
         root_layout.addLayout(header_layout)
 
         content_layout = QHBoxLayout()
-        content_layout.setSpacing(14)
+        content_layout.setSpacing(12)
         root_layout.addLayout(content_layout, 1)
 
         left_wrapper = QVBoxLayout()
@@ -1316,7 +1318,7 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget)
             QScrollArea#leftScrollArea {
                 background-color: #08132d;
                 border: 1px solid #16274d;
-                border-radius: 18px;
+                border-radius: 16px;
             }
         """ + SCROLLBAR_STYLE)
 
@@ -1324,8 +1326,8 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget)
         self.left_panel.setObjectName("leftPanelInner")
 
         left_layout = QVBoxLayout(self.left_panel)
-        left_layout.setContentsMargins(10, 10, 10, 10)
-        left_layout.setSpacing(10)
+        left_layout.setContentsMargins(12, 12, 12, 12)
+        left_layout.setSpacing(12)
 
         self.test_item_card = CardFrame("Test Item")
         self._build_test_item_card()
@@ -1367,14 +1369,14 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget)
         content_layout.addLayout(left_wrapper)
 
         right_layout = QVBoxLayout()
-        right_layout.setSpacing(14)
+        right_layout.setSpacing(12)
         content_layout.addLayout(right_layout, 1)
 
         self.chart_frame = QFrame()
         self.chart_frame.setObjectName("chartContainer")
         chart_outer_layout = QVBoxLayout(self.chart_frame)
         chart_outer_layout.setContentsMargins(16, 16, 16, 16)
-        chart_outer_layout.setSpacing(10)
+        chart_outer_layout.setSpacing(12)
 
         chart_header_layout = QHBoxLayout()
         self.chart_title = QLabel("∿ Live Efficiency Curve")
@@ -1421,7 +1423,7 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget)
         self.stat_container.setStyleSheet("QFrame { background: transparent; border: none; }")
         stat_layout = QHBoxLayout(self.stat_container)
         stat_layout.setContentsMargins(0, 0, 0, 0)
-        stat_layout.setSpacing(10)
+        stat_layout.setSpacing(8)
 
         self.vin_card = self._create_mini_stat("Vin", "---")
         self.vout_card = self._create_mini_stat("Vout", "---")
@@ -1820,7 +1822,7 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget)
             QFrame {
                 background-color: #09142e;
                 border: 1px solid #1b315f;
-                border-radius: 10px;
+                border-radius: 12px;
             }
         """)
         v = QVBoxLayout(placeholder)

@@ -93,7 +93,7 @@ _PAGE_STYLE = """
     QFrame#sectionFrame {
         background-color: #09142e;
         border: none;
-        border-radius: 14px;
+        border-radius: 12px;
     }
     QFrame#regionFrame {
         background-color: #08122a;
@@ -116,7 +116,7 @@ _PAGE_STYLE = """
     QFrame#innerCard {
         background-color: #0b1933;
         border: none;
-        border-radius: 10px;
+        border-radius: 12px;
     }
     QLabel#sectionTitle {
         font-size: 12px;
@@ -298,7 +298,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
         root.setContentsMargins(8, 8, 8, 8)
-        root.setSpacing(10)
+        root.setSpacing(8)
 
         header_layout = QVBoxLayout()
         header_layout.setContentsMargins(4, 0, 4, 0)

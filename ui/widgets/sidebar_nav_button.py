@@ -65,7 +65,7 @@ class SidebarNavButton(QPushButton):
         self.subtitle_label = QLabel(subtitle)
         self.subtitle_label.setStyleSheet("""
             QLabel {
-                color: #8ea0bf;
+                color: #8fa3c2;
                 font-size: 10px;
                 background: transparent;
                 border: none;
@@ -192,7 +192,7 @@ class SidebarNavButton(QPushButton):
             """)
             self.subtitle_label.setStyleSheet("""
                 QLabel {
-                    color: #7f8da9;
+                    color: #8fa3c2;
                     font-size: 10px;
                     background: transparent;
                     border: none;
@@ -200,7 +200,7 @@ class SidebarNavButton(QPushButton):
             """)
             self.arrow_label.setStyleSheet("""
                 QLabel {
-                    color: #6f7d98;
+                    color: #7f8fb0;
                     font-size: 14px;
                     background: transparent;
                     border: none;

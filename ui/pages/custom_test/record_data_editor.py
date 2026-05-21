@@ -170,7 +170,7 @@ _ROW_CB_STYLE = (
 
 _ROW_LINE_STYLE = (
     "QLineEdit { background-color: #061022; border: 1px solid #1f315d;"
-    "  border-radius: 5px; color: #dce7ff; font-size: 11px; padding: 3px 6px; }"
+    "  border-radius: 6px; color: #dce7ff; font-size: 11px; padding: 3px 6px; }"
     "QLineEdit:focus { border: 1px solid #5b5cf6; }"
     "QLineEdit[placeholderText] { color: #4e6494; }"
 )
@@ -181,7 +181,7 @@ _HINT_STYLE = (
 
 _SMALL_BTN_STYLE = (
     "QPushButton { background-color: #132040; color: #8eb0e3;"
-    "  border: 1px solid #1a2d57; border-radius: 5px; padding: 4px 10px;"
+    "  border: 1px solid #1a2d57; border-radius: 6px; padding: 4px 10px;"
     "  font-size: 11px; font-weight: 600; }"
     "QPushButton:hover { background-color: #1a2d57; color: #dce7ff; }"
     "QPushButton:pressed { background-color: #0c1733; }"

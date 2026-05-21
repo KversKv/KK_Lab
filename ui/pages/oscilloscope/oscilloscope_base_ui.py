@@ -20,6 +20,7 @@ from ui.widgets.button import SpinningSearchButton, update_connect_button_state
 from instruments.scopes.base import OscilloscopeController
 from log_config import get_logger
 from debug_config import DEBUG_MOCK
+from ui.theme import FONT_MONO
 
 DEBUG_MSO64B_FLAG = True
 DEBUG_DSOX4034A_FLAG = True
@@ -873,7 +874,7 @@ class OscilloscopeBaseUI(QWidget):
             color: #E8E9FF;
             padding: 10px 18px;
             font-weight: 700;
-            border-radius: 10px;
+            border-radius: 8px;
         }
         QPushButton#primaryBtn:hover {
             background-color: #4B40BF;
@@ -891,7 +892,7 @@ class OscilloscopeBaseUI(QWidget):
             color: #FFFFFF;
             padding: 10px 18px;
             font-weight: 700;
-            border-radius: 10px;
+            border-radius: 8px;
         }
         QPushButton#primaryBtn:hover {
             background-color: #7B40EE;
@@ -1093,7 +1094,7 @@ class OscilloscopeBaseUI(QWidget):
                 color: #E8E9FF;
                 padding: 10px 18px;
                 font-weight: 700;
-                border-radius: 10px;
+                border-radius: 8px;
             }
 
             QPushButton#primaryBtn:hover {
@@ -1224,9 +1225,9 @@ class OscilloscopeBaseUI(QWidget):
             QTextEdit#logEdit {
                 background-color: #060E28;
                 border: 1px solid #1A2A54;
-                border-radius: 10px;
+                border-radius: 8px;
                 color: #A8BBDB;
-                font-family: "Consolas", "Courier New", monospace;
+                font-family: """ + FONT_MONO + """;
                 font-size: 9pt;
                 padding: 8px;
             }
@@ -1777,7 +1778,7 @@ class OscilloscopeBaseUI(QWidget):
                 border: 1px solid #4C6FFF;
                 color: #B7C6FF;
                 padding: 4px 12px;
-                border-radius: 7px;
+                border-radius: 8px;
                 font-weight: 700;
             }
             QPushButton#triggerSingleBtn:hover {
@@ -1832,8 +1833,8 @@ class OscilloscopeBaseUI(QWidget):
         card = QFrame()
         card.setObjectName("card")
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(18, 16, 18, 18)
-        layout.setSpacing(18)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(16)
 
         title = QLabel("\u2630  Oscilloscope Settings")
         title.setObjectName("sectionTitle")
