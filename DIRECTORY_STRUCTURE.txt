@@ -123,8 +123,10 @@ instruments/
 ================================================================================
 
 ui/
-├── main_window.py           # 主窗口，包含侧边栏导航、页面切换、仪器连接管理
-│                            # (示波器页面根据资源地址自动识别仪器型号)
+├── main_window.py           # 主窗口，窗口初始化 + 布局创建 + 信号连接 + 页面切换
+├── nav_controller.py        # 导航控制器: 侧边栏创建、SubMenu管理、eventFilter、快捷键
+├── instrument_status.py     # 仪器状态面板: 左下角连接状态显示 + Toast通知
+├── cleanup_mixin.py         # 关闭清理混入: closeEvent资源释放逻辑
 ├── resource_path.py         # 资源路径工具：get_resource_base()，兼容源码运行
 │                            # 与 PyInstaller 冻结环境 (sys._MEIPASS)
 │

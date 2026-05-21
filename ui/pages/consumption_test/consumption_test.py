@@ -45,7 +45,8 @@ from chips.bes_chip_configs.bes_chip_configs import SUPPORTED_CHIPS, get_chip_co
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.widgets.progress_button import ProgressButton
 from log_config import get_logger
-from ui.theme import FONT_MONO
+from ui.theme import Colors, FontSizes, Radius, Spacing, FONT_FAMILY, FONT_MONO
+from ui.styles import get_page_base_qss, SCROLLBAR_STYLE
 
 from ui.pages.consumption_test.consumption_test_workers import (
     CURRENT_UNIT,
@@ -509,93 +510,28 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self.setFont(QFont("Segoe UI", 9))
         self.setObjectName("ConsumptionTestRoot")
         _cb_icons = self._get_checkmark_path("5d45ff")
-        self.setStyleSheet("""
-        QWidget#ConsumptionTestRoot {
-            background-color: #050b1a;
-        }
+        page_extra = f"""
+        QWidget#ConsumptionTestRoot {{
+            background-color: {Colors.bg_secondary};
+        }}
 
-        QWidget {
-            background-color: #050b1a;
-            color: #d8e3ff;
-        }
+        QFrame#logContainer {{
+            background-color: {Colors.bg_deep};
+            border: 1px solid {Colors.border_secondary};
+            border-radius: {Radius.container}px;
+        }}
 
-        QLabel {
-            color: #c8d6f0;
-            background: transparent;
-            border: none;
-        }
-
-        QFrame#logContainer {
-            background-color: #09142e;
-            border: 1px solid #1a2d57;
-            border-radius: 16px;
-        }
-
-        QLineEdit {
-            background-color: #020816;
-            border: 1px solid #1c2f54;
-            border-radius: 6px;
-            padding: 6px 10px;
-            color: #d7e3ff;
-            min-height: 32px;
-        }
-
-        QLineEdit:focus {
-            border: 1px solid #5b7cff;
-        }
-
-        QPushButton {
-            background-color: #162544;
-            border: 1px solid #25355c;
-            border-radius: 8px;
-            padding: 6px 14px;
-            color: #dbe7ff;
-            min-height: 32px;
-        }
-
-        QPushButton:hover {
-            background-color: #1c315b;
-        }
-
-        QPushButton:pressed {
-            background-color: #10203d;
-        }
-
-        QPushButton:disabled {
-            background-color: #0f1930;
-            color: #5a6b8e;
-            border: 1px solid #1b2847;
-        }
-
-        QCheckBox {
-            color: #d8e3ff;
-            spacing: 6px;
-            background: transparent;
-        }
-
-        QCheckBox::indicator {
+        QCheckBox::indicator {{
             width: 16px;
             height: 16px;
             image: url("__UNCHECKED__");
-        }
+        }}
 
-        QCheckBox::indicator:checked {
+        QCheckBox::indicator:checked {{
             image: url("__CHECKED__");
-        }
-
-        QLabel#pageTitle {
-            font-size: 18px;
-            font-weight: 700;
-            color: #f8fbff;
-            background: transparent;
-        }
-
-        QLabel#pageSubtitle {
-            font-size: 12px;
-            color: #7da2d6;
-            background: transparent;
-        }
-        """.replace("__UNCHECKED__", _cb_icons['unchecked']).replace("__CHECKED__", _cb_icons['checked']))
+        }}
+        """.replace("__UNCHECKED__", _cb_icons['unchecked']).replace("__CHECKED__", _cb_icons['checked'])
+        self.setStyleSheet(get_page_base_qss() + page_extra)
 
     def _create_layout(self):
         main_layout = QVBoxLayout(self)
@@ -745,7 +681,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         """)
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(6)
+        layout.setSpacing(8)
 
         self._n6705c_conn_widgets = {}
         _default_resources = {
@@ -770,7 +706,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             """)
             sub_layout = QVBoxLayout(sub_frame)
             sub_layout.setContentsMargins(8, 6, 8, 6)
-            sub_layout.setSpacing(2)
+            sub_layout.setSpacing(6)
 
             header = QHBoxLayout()
             header.setSpacing(4)
@@ -795,7 +731,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
                 DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
             )
             visa_combo.setMinimumContentsLength(10)
-            visa_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+            visa_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             visa_combo.setFixedHeight(24)
             font = visa_combo.font()
             font.setPixelSize(10)
@@ -804,7 +740,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             sub_layout.addWidget(visa_combo)
 
             btn_row = QHBoxLayout()
-            btn_row.setSpacing(4)
+            btn_row.setSpacing(6)
             _btn_h = 24
             _btn_height_fix = f"QPushButton {{ min-height: {_btn_h}px; max-height: {_btn_h}px; }}"
             search_btn = SpinningSearchButton(parent=sub_frame)

@@ -27,13 +27,18 @@ _PAGE_SVGS_DIR = os.path.join(
 
 
 def _tinted_svg_pixmap(svg_path: str, color: str, size: int = 16) -> QPixmap:
+    from PySide6.QtWidgets import QApplication
     renderer = QSvgRenderer(svg_path)
-    pixmap = QPixmap(size, size)
+    app = QApplication.instance()
+    dpr = app.devicePixelRatio() if app else 1.0
+    px_size = int(size * dpr)
+    pixmap = QPixmap(px_size, px_size)
+    pixmap.setDevicePixelRatio(dpr)
     pixmap.fill(Qt.transparent)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.Antialiasing)
     painter.setRenderHint(QPainter.SmoothPixmapTransform)
-    renderer.render(painter, QRectF(0, 0, size, size))
+    renderer.render(painter, QRectF(0, 0, px_size, px_size))
     painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
     painter.fillRect(pixmap.rect(), QColor(color))
     painter.end()

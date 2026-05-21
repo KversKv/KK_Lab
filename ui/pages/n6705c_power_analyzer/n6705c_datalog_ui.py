@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QGraphicsRectItem,
     QTableWidget, QTableWidgetItem, QHeaderView, QMenu,
     QToolButton, QDialog, QTabWidget, QTabBar,
-    QProgressBar, QStackedWidget, QMessageBox,
+    QProgressBar, QStackedWidget, QMessageBox, QApplication,
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QThread, QObject, QByteArray
 from PySide6.QtGui import QFont, QColor, QBrush, QPen, QPainter, QPixmap, QIcon
@@ -2042,7 +2042,10 @@ class N6705CDatalogUI(QWidget):
         thumb_label.setFixedSize(64, 38)
         svg_path = os.path.join(get_resource_base(), "resources", "pages", "n6705c_power_analyzer_SVGs", "n6705c_thumb.svg")
         if os.path.exists(svg_path):
-            pixmap = QPixmap(64, 38)
+            _dpr = QApplication.instance().devicePixelRatio() if QApplication.instance() else 1.0
+            _pw, _ph = int(64 * _dpr), int(38 * _dpr)
+            pixmap = QPixmap(_pw, _ph)
+            pixmap.setDevicePixelRatio(_dpr)
             pixmap.fill(QColor(0, 0, 0, 0))
             renderer = QSvgRenderer(svg_path)
             painter = QPainter(pixmap)

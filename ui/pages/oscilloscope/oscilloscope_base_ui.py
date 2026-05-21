@@ -41,7 +41,11 @@ def _render_svg_icon(svg_path: str, size: int, color: str) -> QPixmap:
     if _os.path.isfile(svg_path):
         with open(svg_path, "r", encoding="utf-8") as f:
             svg_data = f.read().replace('stroke="currentColor"', f'stroke="{color}"').encode("utf-8")
-    pixmap = QPixmap(size, size)
+    app = QApplication.instance()
+    dpr = app.devicePixelRatio() if app else 1.0
+    px_size = int(size * dpr)
+    pixmap = QPixmap(px_size, px_size)
+    pixmap.setDevicePixelRatio(dpr)
     pixmap.fill(Qt.transparent)
     if svg_data:
         renderer = QSvgRenderer(svg_data)

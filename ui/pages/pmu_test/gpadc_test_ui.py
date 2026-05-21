@@ -36,7 +36,8 @@ from log_config import get_logger
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockI2C, MockN6705C, MockVT6002
 from instruments.chambers import TemperatureStabilizer
-from ui.theme import FONT_MONO
+from ui.theme import Colors, FontSizes, Radius, Spacing, FONT_MONO
+from ui.styles import get_page_base_qss
 
 logger = get_logger(__name__)
 
@@ -113,210 +114,131 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
         font = QFont("Segoe UI", 9)
         self.setFont(font)
 
-        self.setStyleSheet("""
-            QWidget {
-                background-color: #050b1a;
-                color: #d8e3ff;
-                font-family: "Segoe UI";
-                font-size: 12px;
-            }
-
-            QLabel {
-                background: transparent;
-                color: #d8e3ff;
-            }
-
-            QFrame#page {
-                background-color: #050b1a;
-            }
+        page_extra = f"""
+            QFrame#page {{
+                background-color: {Colors.bg_secondary};
+            }}
 
             QFrame#panel,
             QFrame#chart_panel,
             QFrame#metric_card,
-            QFrame#config_inner_panel {
-                background-color: #0b1630;
-                border: 1px solid #18284d;
-                border-radius: 12px;
-            }
+            QFrame#config_inner_panel {{
+                background-color: {Colors.bg_card};
+                border: 1px solid {Colors.border_primary};
+                border-radius: {Radius.card}px;
+            }}
 
-            QFrame#left_scroll_content {
+            QFrame#left_scroll_content {{
                 background: transparent;
                 border: none;
-            }
+            }}
 
-            QLabel#title_label {
-                font-size: 18px;
+            QLabel#title_label {{
+                font-size: {FontSizes.title};
                 font-weight: 700;
                 color: #ffffff;
-            }
+            }}
 
-            QLabel#subtitle_label {
-                font-size: 12px;
-                color: #7e96bf;
-            }
+            QLabel#subtitle_label {{
+                font-size: {FontSizes.subtitle};
+                color: {Colors.text_muted};
+            }}
 
-            QLabel#section_title {
-                font-size: 12px;
+            QLabel#section_title {{
+                font-size: {FontSizes.body};
                 font-weight: 700;
                 color: #ffffff;
-            }
+            }}
 
-            QLabel#muted_label {
-                color: #7e96bf;
-                font-size: 11px;
-            }
+            QLabel#muted_label {{
+                color: {Colors.text_muted};
+                font-size: {FontSizes.caption};
+            }}
 
-            QLabel#metric_name {
-                color: #7e96bf;
-                font-size: 11px;
+            QLabel#metric_name {{
+                color: {Colors.text_muted};
+                font-size: {FontSizes.caption};
                 font-weight: 600;
-            }
+            }}
 
-            QLabel#metric_value_green {
-                color: #00d39a;
+            QLabel#metric_value_green {{
+                color: {Colors.success};
                 font-size: 16px;
                 font-weight: 700;
-            }
+            }}
 
-            QLabel#metric_value_blue {
-                color: #59a8ff;
+            QLabel#metric_value_blue {{
+                color: {Colors.info};
                 font-size: 16px;
                 font-weight: 700;
-            }
+            }}
 
-            QLabel#metric_value_yellow {
-                color: #f2c94c;
+            QLabel#metric_value_yellow {{
+                color: {Colors.warning};
                 font-size: 16px;
                 font-weight: 700;
-            }
+            }}
 
-            QLineEdit, QSpinBox, QDoubleSpinBox {
-                min-height: 32px;
-                border: 1px solid #24365e;
-                border-radius: 6px;
-                padding: 4px 8px;
-                background-color: #0a1733;
-                color: #dbe7ff;
-                selection-background-color: #4c6fff;
-            }
             QSpinBox::up-button, QSpinBox::down-button,
-            QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
+            QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
                 width: 0px; height: 0px; border: none;
-            }
+            }}
 
-            QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {
-                border: 1px solid #5b7cff;
-            }
-
-            QComboBox::drop-down {
-                border: none;
-                width: 22px;
-            }
-
-            QComboBox QAbstractItemView {
-                background-color: #0a1733;
-                color: #dbe7ff;
-                border: 1px solid #24365e;
-                selection-background-color: #253a70;
-            }
-
-            QComboBox QAbstractItemView::item {
-                background-color: #0a1733;
-                color: #dbe7ff;
-                padding: 4px 8px;
-            }
-
-            QComboBox QAbstractItemView::item:hover {
-                background-color: #1a3260;
-            }
-
-            QComboBox QAbstractItemView::item:selected {
-                background-color: #253a70;
-            }
-
-            QComboBox QFrame {
-                background-color: #0a1733;
-                border: 1px solid #24365e;
-            }
-
-            QPushButton {
-                min-height: 32px;
-                border: 1px solid #25355c;
-                border-radius: 8px;
-                padding: 6px 12px;
-                background-color: #162544;
-                color: #dbe7ff;
-            }
-
-            QPushButton:hover {
-                background-color: #1c315b;
-            }
-
-            QPushButton:pressed {
-                background-color: #10203d;
-            }
-
-            QPushButton:disabled {
-                background-color: #0f1930;
-                color: #5a6b8e;
-                border: 1px solid #1b2847;
-            }
-
-            QPushButton#connect_btn {
+            QPushButton#connect_btn {{
                 background-color: rgba(0, 211, 154, 0.14);
-                color: #00d39a;
+                color: {Colors.success};
                 border: 1px solid rgba(0, 211, 154, 0.25);
                 font-weight: 600;
-            }
+            }}
 
-            QPushButton#danger_btn {
+            QPushButton#danger_btn {{
                 background-color: rgba(255, 90, 122, 0.14);
                 color: #ff6f8e;
                 border: 1px solid rgba(255, 90, 122, 0.25);
                 font-weight: 600;
-            }
-""" + START_BTN_STYLE + """
-            QPushButton#tool_btn {
+            }}
+""" + START_BTN_STYLE + f"""
+            QPushButton#tool_btn {{
                 min-height: 28px;
-                border-radius: 6px;
-                background-color: #162544;
+                border-radius: {Radius.small}px;
+                background-color: {Colors.bg_card};
                 padding: 4px 10px;
-            }
+            }}
 
-            QRadioButton {
+            QRadioButton {{
                 background: transparent;
-                color: #dbe7ff;
+                color: {Colors.text_secondary};
                 spacing: 8px;
-            }
+            }}
 
-            QRadioButton::indicator {
+            QRadioButton::indicator {{
                 width: 14px;
                 height: 14px;
-            }
+            }}
 
-            QRadioButton::indicator:unchecked {
+            QRadioButton::indicator:unchecked {{
                 border: 1px solid #4a5e8e;
                 border-radius: 7px;
                 background: #071126;
-            }
+            }}
 
-            QRadioButton::indicator:checked {
+            QRadioButton::indicator:checked {{
                 border: 1px solid #4ca8ff;
                 border-radius: 7px;
                 background: #4ca8ff;
-            }
+            }}
 
-            QTextEdit {
+            QTextEdit {{
                 background-color: #050d1e;
                 border: 1px solid #0e1e40;
-                border-radius: 6px;
+                border-radius: {Radius.small}px;
                 color: #8abaff;
-                font-size: 11px;
-                font-family: """ + FONT_MONO + """;
+                font-size: {FontSizes.caption};
+                font-family: {FONT_MONO};
                 padding: 6px;
-            }
+            }}
 
-            QProgressBar {
+            QProgressBar {{
                 background-color: #152749;
                 border: none;
                 border-radius: 4px;
@@ -324,13 +246,14 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
                 color: #b7c8ea;
                 min-height: 8px;
                 max-height: 8px;
-            }
+            }}
 
-            QProgressBar::chunk {
-                background-color: #5d45ff;
+            QProgressBar::chunk {{
+                background-color: {Colors.accent_primary};
                 border-radius: 4px;
-            }
-        """ + SCROLL_AREA_STYLE)
+            }}
+        """ + SCROLL_AREA_STYLE
+        self.setStyleSheet(get_page_base_qss() + page_extra)
 
     def _create_metric_card(self, title, value="---", value_object_name="metric_value_green"):
         card = QFrame()

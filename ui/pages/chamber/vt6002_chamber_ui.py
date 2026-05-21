@@ -18,7 +18,7 @@ from ui.widgets.button import update_connect_button_state
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QPushButton,
     QLabel, QLineEdit, QFrame, QGraphicsDropShadowEffect,
-    QSizePolicy
+    QSizePolicy, QApplication
 )
 from PySide6.QtCore import Qt, QTimer, QRectF, QSize, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QFont, QPixmap
@@ -135,7 +135,10 @@ class VT6002ChamberUI(QWidget):
         if os.path.isfile(_THERMOMETER_SVG_PATH):
             with open(_THERMOMETER_SVG_PATH, "r", encoding="utf-8") as f:
                 svg_data = f.read().replace('stroke="currentColor"', 'stroke="#fb7185"').encode("utf-8")
-            pixmap = QPixmap(24, 24)
+            _dpr = QApplication.instance().devicePixelRatio() if QApplication.instance() else 1.0
+            _px = int(24 * _dpr)
+            pixmap = QPixmap(_px, _px)
+            pixmap.setDevicePixelRatio(_dpr)
             pixmap.fill(Qt.transparent)
             renderer = QSvgRenderer(svg_data)
             painter = QPainter(pixmap)

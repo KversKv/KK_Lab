@@ -521,7 +521,9 @@ class DropAwareTreeWidget(QTreeWidget):
         fm = QFontMetrics(font)
         text_w = fm.horizontalAdvance(text) + 24
         text_h = fm.height() + 12
-        pm = QPixmap(text_w, text_h)
+        dpr = self.devicePixelRatio()
+        pm = QPixmap(int(text_w * dpr), int(text_h * dpr))
+        pm.setDevicePixelRatio(dpr)
         pm.fill(Qt.transparent)
         p = QPainter(pm)
         p.setRenderHint(QPainter.Antialiasing)

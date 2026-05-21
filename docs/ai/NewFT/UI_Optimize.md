@@ -12,7 +12,7 @@
 | Phase 1 | P0 - 架构级 | 4 | 4/4 | ✅ 已完成 |
 | Phase 2 | P1 - 视觉体验 | 5 | 5/5 | ✅ 已完成 |
 | Phase 3 | P2 - 交互精细化 | 5 | 5/5 | ✅ 已完成 |
-| Phase 4 | P3 - 代码质量 | 3 | 0/3 | 🔲 未开始 |
+| Phase 4 | P3 - 代码质量 | 3 | 3/3 | ✅ 已完成 |
 
 ---
 
@@ -248,8 +248,9 @@
 - **涉及文件**: `ui/main_window.py` → 拆分为 3-4 个文件
 - **依赖**: Task 1.4 (SubMenu 已通用化后拆分更容易)
 - **预计会话**: 会话 8
-- **状态**: 🔲 未开始
-- **完成日期**: —
+- **状态**: ✅ 已完成
+- **完成日期**: 2026-05-21
+- **实际变更**: main_window.py 从 1575 行降至 618 行; 拆出 nav_controller.py(309行) + instrument_status.py(164行) + cleanup_mixin.py(128行)
 
 ### Task 4.2: 各页面迁移至设计令牌
 - **目标**: 逐页将内联 QSS 替换为 theme.py + page_styles.py 的引用
@@ -265,8 +266,9 @@
 - **涉及文件**: 所有 `ui/pages/` 下的 `_setup_style()` 方法
 - **依赖**: Task 1.1, Task 1.2
 - **预计会话**: 会话 9 ~ 12
-- **状态**: 🔲 未开始
-- **完成日期**: —
+- **状态**: ✅ 已完成
+- **完成日期**: 2026-05-21
+- **实际变更**: 迁移 4 个页面至 get_page_base_qss() + 设计令牌: consumption_test.py, pmu_isGain_ui.py, gpadc_test_ui.py, config_traverse_test.py; 各页面仅保留页面特有 QSS 作为 page_extra
 
 ### Task 4.3: 高 DPI 适配验证与修复
 - **目标**: 确保 150%/200% 缩放下图标清晰、布局不破
@@ -278,8 +280,9 @@
 - **涉及文件**: `ui/utils/icon_utils.py`, 各自定义绘制组件
 - **依赖**: Task 1.3
 - **预计会话**: 会话 12
-- **状态**: 🔲 未开始
-- **完成日期**: —
+- **状态**: ✅ 已完成
+- **完成日期**: 2026-05-21
+- **实际变更**: 修复 8 处 QPixmap 缺失 DPI 感知: oscilloscope_base_ui.py, node_palette.py, sidebar_nav_button.py, sequence_canvas.py, custom_test_ui.py, n6705c_datalog_ui.py, vt6002_chamber_ui.py, n6705c_analyser_ui.py; 统一模式: dpr=app.devicePixelRatio(); QPixmap(size*dpr); setDevicePixelRatio(dpr)
 
 ---
 
@@ -318,3 +321,4 @@
 | 2026-05-21 | 会话 1 | Task 1.1 + 1.2 + 1.3 + 1.4 | Phase 1 全部完成; 新建 theme.py / page_styles.py / icon_utils.py / sidebar_submenu.py; main_window.py 减少 ~380 行 |
 | 2026-05-21 | 会话 2 | Task 2.1 + 2.2 + 2.3 + 2.4 + 2.5 | Phase 2 全部完成; 统一圆角体系(29+文件); 等宽数字字体(FONT_MONO); WCAG AA对比度修复; 150ms淡入动画; 间距标准化(4px基数) |
 | 2026-05-21 | 会话 3 | Task 3.1 + 3.2 + 3.3 + 3.4 + 3.5 | Phase 3 全部完成; SubMenu 展开/收起微动画(opacity+translateY); 安全三角区域(220ms延迟); QSplitter约束(minimumWidth+collapsible); Ctrl+1~8键盘导航; Toast通知组件 |
+| 2026-05-21 | 会话 4 | Task 4.1 + 4.2 + 4.3 | Phase 4 全部完成; MainWindow拆分(1575→618行, 拆出nav_controller/instrument_status/cleanup_mixin); 4个页面迁移至get_page_base_qss()+设计令牌; 8处QPixmap高DPI修复(devicePixelRatio) |
