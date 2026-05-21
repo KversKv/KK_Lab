@@ -11,7 +11,7 @@
 |------|--------|--------|------|------|
 | Phase 1 | P0 - 架构级 | 4 | 4/4 | ✅ 已完成 |
 | Phase 2 | P1 - 视觉体验 | 5 | 5/5 | ✅ 已完成 |
-| Phase 3 | P2 - 交互精细化 | 5 | 0/5 | 🔲 未开始 |
+| Phase 3 | P2 - 交互精细化 | 5 | 5/5 | ✅ 已完成 |
 | Phase 4 | P3 - 代码质量 | 3 | 0/3 | 🔲 未开始 |
 
 ---
@@ -173,8 +173,9 @@
 - **涉及文件**: `ui/widgets/sidebar_submenu.py` (Task 1.4 产出)
 - **依赖**: Task 1.4
 - **预计会话**: 会话 5
-- **状态**: 🔲 未开始
-- **完成日期**: —
+- **状态**: ✅ 已完成
+- **完成日期**: 2026-05-21
+- **实际变更**: 使用 windowOpacity + pos QPropertyAnimation; show 100ms OutCubic, hide 80ms InCubic; 重复 show 时跳过动画防抖
 
 ### Task 3.2: SubMenu 安全三角区域
 - **目标**: 鼠标从导航按钮移向子菜单路径中不会意外关闭菜单
@@ -185,8 +186,9 @@
 - **涉及文件**: `ui/main_window.py` eventFilter 逻辑
 - **依赖**: Task 1.4
 - **预计会话**: 会话 6
-- **状态**: 🔲 未开始
-- **完成日期**: —
+- **状态**: ✅ 已完成
+- **完成日期**: 2026-05-21
+- **实际变更**: 隐藏延迟从 120ms → 220ms; 在 eventFilter 统一定义 _SUBMENU_HIDE_DELAY 常量
 
 ### Task 3.3: QSplitter 拖动约束
 - **目标**: 限制面板最小/最大宽度，防止意外极端拖动
@@ -197,8 +199,9 @@
 - **涉及文件**: `main_window.py`, `custom_test_ui.py`, 各测试页面
 - **依赖**: 无
 - **预计会话**: 会话 6
-- **状态**: 🔲 未开始
-- **完成日期**: —
+- **状态**: ✅ 已完成
+- **完成日期**: 2026-05-21
+- **实际变更**: main_window 主 splitter setCollapsible(False) + right_content minimumWidth=400; custom_test_ui canvas minimumWidth=300, property panel minimumWidth=200, vertical splitter setChildrenCollapsible(False)
 
 ### Task 3.4: 键盘导航支持
 - **目标**: 为主导航增加快捷键
@@ -211,8 +214,9 @@
 - **涉及文件**: `ui/main_window.py`
 - **依赖**: 无
 - **预计会话**: 会话 7
-- **状态**: 🔲 未开始
-- **完成日期**: —
+- **状态**: ✅ 已完成
+- **完成日期**: 2026-05-21
+- **实际变更**: 新增 _setup_shortcuts() 方法; QShortcut(QKeySequence) 绑定 Ctrl+1~8; tooltip 自动追加 [Ctrl+N]
 
 ### Task 3.5: 仪器连接 Toast 通知
 - **目标**: 仪器连接/断开时显示临时浮动通知
@@ -226,8 +230,9 @@
 - **涉及文件**: 新建 `ui/widgets/toast_notification.py`, 修改 `main_window.py`
 - **依赖**: Task 1.1 (使用 theme 颜色)
 - **预计会话**: 会话 7
-- **状态**: 🔲 未开始
-- **完成日期**: —
+- **状态**: ✅ 已完成
+- **完成日期**: 2026-05-21
+- **实际变更**: 新建 ToastNotification 类 (windowOpacity 动画 + pos slide); 150ms fadeIn / 300ms fadeOut / 2.5s 自动消失; 集成于 _update_instrument_status() 检测新增/移除 key
 
 ---
 
@@ -312,3 +317,4 @@
 | 2026-05-21 | 初始化 | — | 创建优化任务计划 |
 | 2026-05-21 | 会话 1 | Task 1.1 + 1.2 + 1.3 + 1.4 | Phase 1 全部完成; 新建 theme.py / page_styles.py / icon_utils.py / sidebar_submenu.py; main_window.py 减少 ~380 行 |
 | 2026-05-21 | 会话 2 | Task 2.1 + 2.2 + 2.3 + 2.4 + 2.5 | Phase 2 全部完成; 统一圆角体系(29+文件); 等宽数字字体(FONT_MONO); WCAG AA对比度修复; 150ms淡入动画; 间距标准化(4px基数) |
+| 2026-05-21 | 会话 3 | Task 3.1 + 3.2 + 3.3 + 3.4 + 3.5 | Phase 3 全部完成; SubMenu 展开/收起微动画(opacity+translateY); 安全三角区域(220ms延迟); QSplitter约束(minimumWidth+collapsible); Ctrl+1~8键盘导航; Toast通知组件 |

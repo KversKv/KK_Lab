@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from PySide6.QtCore import Qt, Signal, QEvent, QPoint, QTimer, QPropertyAnimation, QEasingCurve
-from PySide6.QtGui import QPalette, QColor, QFont
+from PySide6.QtGui import QPalette, QColor, QFont, QShortcut, QKeySequence
 from ui.widgets.plot_widget import PlotWidget
 from ui.pages.oscilloscope.oscilloscope_base_ui import OscilloscopeBaseUI
 from ui.pages.n6705c_power_analyzer.n6705c_analyser_ui import N6705CAnalyserUI
@@ -45,6 +45,7 @@ logger = get_logger(__name__)
 
 
 from ui.widgets.sidebar_submenu import SidebarSubMenu
+from ui.widgets.toast_notification import ToastNotification
 
 
 class _KKSerialsPage(SerialComMixin, QWidget):
@@ -186,6 +187,9 @@ class MainWindow(QMainWindow):
         self._create_charger_submenu()
 
         self._create_consumption_submenu()
+
+        self._toast = ToastNotification()
+        self._prev_instrument_keys = set()
 
         self._connect_signals()
 
@@ -541,6 +545,7 @@ class MainWindow(QMainWindow):
 
         # 右侧主内容区域
         self.right_content = QWidget()
+        self.right_content.setMinimumWidth(400)
         self.right_content_layout = QVBoxLayout(self.right_content)
         self.right_content_layout.setContentsMargins(0, 0, 0, 0)
 
@@ -553,6 +558,10 @@ class MainWindow(QMainWindow):
 
         main_splitter.addWidget(self.right_content)
         main_splitter.setSizes([187, 1013])
+        main_splitter.setStretchFactor(0, 0)
+        main_splitter.setStretchFactor(1, 1)
+        main_splitter.setCollapsible(0, False)
+        main_splitter.setCollapsible(1, False)
 
         self.main_layout.addWidget(main_splitter)
 
@@ -623,9 +632,15 @@ class MainWindow(QMainWindow):
         self.consumption_test_btn.installEventFilter(self)
         self.consumption_submenu.installEventFilter(self)
 
+    def _hide_other_submenus(self, except_submenu):
+        for submenu in (self.pa_submenu, self.pmu_submenu, self.charger_submenu, self.consumption_submenu):
+            if submenu and submenu is not except_submenu and submenu.isVisible():
+                submenu.force_hide()
+
     def _show_pa_submenu(self):
         if not self.pa_submenu:
             return
+        self._hide_other_submenus(self.pa_submenu)
 
         btn_global_pos = self.n6705c_power_analyzer_btn.mapToGlobal(QPoint(0, 0))
         x = btn_global_pos.x() + self.n6705c_power_analyzer_btn.width() + 8
@@ -660,6 +675,7 @@ class MainWindow(QMainWindow):
         """显示PMU二级菜单"""
         if not self.pmu_submenu:
             return
+        self._hide_other_submenus(self.pmu_submenu)
 
         btn_global_pos = self.pmu_test_btn.mapToGlobal(QPoint(0, 0))
         x = btn_global_pos.x() + self.pmu_test_btn.width() + 8
@@ -691,6 +707,7 @@ class MainWindow(QMainWindow):
     def _show_charger_submenu(self):
         if not self.charger_submenu:
             return
+        self._hide_other_submenus(self.charger_submenu)
 
         btn_global_pos = self.charger_test_btn.mapToGlobal(QPoint(0, 0))
         x = btn_global_pos.x() + self.charger_test_btn.width() + 8
@@ -721,6 +738,7 @@ class MainWindow(QMainWindow):
     def _show_consumption_submenu(self):
         if not self.consumption_submenu:
             return
+        self._hide_other_submenus(self.consumption_submenu)
 
         btn_global_pos = self.consumption_test_btn.mapToGlobal(QPoint(0, 0))
         x = btn_global_pos.x() + self.consumption_test_btn.width() + 8
@@ -749,19 +767,21 @@ class MainWindow(QMainWindow):
         self.consumption_submenu.hide()
 
     def eventFilter(self, obj, event):
+        _SUBMENU_HIDE_DELAY = 220
+
         if obj == self.pmu_test_btn:
             if event.type() == QEvent.Enter:
                 self._pmu_btn_hovered = True
                 self._show_pmu_submenu()
             elif event.type() == QEvent.Leave:
                 self._pmu_btn_hovered = False
-                QTimer.singleShot(120, self._hide_pmu_submenu_if_needed)
+                QTimer.singleShot(_SUBMENU_HIDE_DELAY, self._hide_pmu_submenu_if_needed)
 
         elif obj == self.pmu_submenu:
             if event.type() == QEvent.Enter:
                 self._show_pmu_submenu()
             elif event.type() == QEvent.Leave:
-                QTimer.singleShot(120, self._hide_pmu_submenu_if_needed)
+                QTimer.singleShot(_SUBMENU_HIDE_DELAY, self._hide_pmu_submenu_if_needed)
 
         elif obj == self.n6705c_power_analyzer_btn:
             if event.type() == QEvent.Enter:
@@ -769,13 +789,13 @@ class MainWindow(QMainWindow):
                 self._show_pa_submenu()
             elif event.type() == QEvent.Leave:
                 self._pa_btn_hovered = False
-                QTimer.singleShot(120, self._hide_pa_submenu_if_needed)
+                QTimer.singleShot(_SUBMENU_HIDE_DELAY, self._hide_pa_submenu_if_needed)
 
         elif obj == self.pa_submenu:
             if event.type() == QEvent.Enter:
                 self._show_pa_submenu()
             elif event.type() == QEvent.Leave:
-                QTimer.singleShot(120, self._hide_pa_submenu_if_needed)
+                QTimer.singleShot(_SUBMENU_HIDE_DELAY, self._hide_pa_submenu_if_needed)
 
         elif obj == self.charger_test_btn:
             if event.type() == QEvent.Enter:
@@ -783,13 +803,13 @@ class MainWindow(QMainWindow):
                 self._show_charger_submenu()
             elif event.type() == QEvent.Leave:
                 self._charger_btn_hovered = False
-                QTimer.singleShot(120, self._hide_charger_submenu_if_needed)
+                QTimer.singleShot(_SUBMENU_HIDE_DELAY, self._hide_charger_submenu_if_needed)
 
         elif obj == self.charger_submenu:
             if event.type() == QEvent.Enter:
                 self._show_charger_submenu()
             elif event.type() == QEvent.Leave:
-                QTimer.singleShot(120, self._hide_charger_submenu_if_needed)
+                QTimer.singleShot(_SUBMENU_HIDE_DELAY, self._hide_charger_submenu_if_needed)
 
         elif obj == self.consumption_test_btn:
             if event.type() == QEvent.Enter:
@@ -797,13 +817,13 @@ class MainWindow(QMainWindow):
                 self._show_consumption_submenu()
             elif event.type() == QEvent.Leave:
                 self._consumption_btn_hovered = False
-                QTimer.singleShot(120, self._hide_consumption_submenu_if_needed)
+                QTimer.singleShot(_SUBMENU_HIDE_DELAY, self._hide_consumption_submenu_if_needed)
 
         elif obj == self.consumption_submenu:
             if event.type() == QEvent.Enter:
                 self._show_consumption_submenu()
             elif event.type() == QEvent.Leave:
-                QTimer.singleShot(120, self._hide_consumption_submenu_if_needed)
+                QTimer.singleShot(_SUBMENU_HIDE_DELAY, self._hide_consumption_submenu_if_needed)
 
         return super().eventFilter(obj, event)
 
@@ -947,21 +967,21 @@ class MainWindow(QMainWindow):
             self.kk_serials_ui,
         ]:
             if widget is not None:
+                widget.setGraphicsEffect(None)
                 widget.hide()
 
     def _fade_in_widget(self, widget):
         if widget is None:
             return
-        effect = widget.graphicsEffect()
-        if not isinstance(effect, QGraphicsOpacityEffect):
-            effect = QGraphicsOpacityEffect(widget)
-            widget.setGraphicsEffect(effect)
+        effect = QGraphicsOpacityEffect(widget)
+        widget.setGraphicsEffect(effect)
         effect.setOpacity(0.0)
         anim = QPropertyAnimation(effect, b"opacity", self)
         anim.setDuration(150)
         anim.setStartValue(0.0)
         anim.setEndValue(1.0)
         anim.setEasingCurve(QEasingCurve.InOutQuad)
+        anim.finished.connect(lambda: widget.setGraphicsEffect(None))
         anim.start(QPropertyAnimation.DeleteWhenStopped)
 
     def _connect_signals(self):
@@ -980,6 +1000,27 @@ class MainWindow(QMainWindow):
 
         self.n6705c_top.connection_changed.connect(self._update_instrument_status)
         self.mso64b_top.connection_changed.connect(self._update_instrument_status)
+
+        self._setup_shortcuts()
+
+    def _setup_shortcuts(self):
+        shortcuts = [
+            ("Ctrl+1", self.n6705c_power_analyzer_btn),
+            ("Ctrl+2", self.oscilloscope_btn),
+            ("Ctrl+3", self.chamber_btn),
+            ("Ctrl+4", self.pmu_test_btn),
+            ("Ctrl+5", self.charger_test_btn),
+            ("Ctrl+6", self.consumption_test_btn),
+            ("Ctrl+7", self.custom_test_btn),
+            ("Ctrl+8", self.kk_serials_btn),
+        ]
+        for key_seq, btn in shortcuts:
+            sc = QShortcut(QKeySequence(key_seq), self)
+            sc.activated.connect(btn.click)
+            tooltip = btn.toolTip()
+            shortcut_hint = f"  [{key_seq}]"
+            if shortcut_hint not in (tooltip or ""):
+                btn.setToolTip((tooltip or btn.title_label.text()) + shortcut_hint)
 
     def _add_instrument_status(self, key: str, text: str):
         if key in self.instrument_status_items:
@@ -1087,6 +1128,19 @@ class MainWindow(QMainWindow):
             self._add_instrument_status("vt6002", "VT6002 Chamber Connected")
         else:
             self._remove_instrument_status("vt6002")
+
+        current_keys = set(self.instrument_status_items.keys())
+        newly_connected = current_keys - self._prev_instrument_keys
+        newly_disconnected = self._prev_instrument_keys - current_keys
+
+        for key in newly_connected:
+            display_name = key.replace("_", " ").replace("n6705c", "N6705C").title()
+            self._toast.show_toast(f"{display_name} Connected", ToastNotification.TYPE_SUCCESS, self)
+        for key in newly_disconnected:
+            display_name = key.replace("_", " ").replace("n6705c", "N6705C").title()
+            self._toast.show_toast(f"{display_name} Disconnected", ToastNotification.TYPE_ERROR, self)
+
+        self._prev_instrument_keys = current_keys
 
     def _on_nav_button_clicked(self):
         sender = self.sender()

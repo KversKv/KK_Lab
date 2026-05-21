@@ -339,6 +339,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
 
         main_splitter = QSplitter(Qt.Vertical)
         main_splitter.setHandleWidth(5)
+        main_splitter.setChildrenCollapsible(False)
 
         top_splitter = QSplitter(Qt.Horizontal)
         top_splitter.setObjectName("workspaceSplitter")
@@ -351,6 +352,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         self.canvas = SequenceCanvas()
         canvas_region = QFrame()
         canvas_region.setObjectName("regionFrame")
+        canvas_region.setMinimumWidth(300)
         canvas_region_layout = QVBoxLayout(canvas_region)
         canvas_region_layout.setContentsMargins(6, 6, 6, 6)
         canvas_region_layout.setSpacing(0)
@@ -361,6 +363,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         self.property_panel.set_canvas(self.canvas)
         property_region = QFrame()
         property_region.setObjectName("regionFrame")
+        property_region.setMinimumWidth(200)
         property_region_layout = QVBoxLayout(property_region)
         property_region_layout.setContentsMargins(6, 6, 6, 6)
         property_region_layout.setSpacing(0)
