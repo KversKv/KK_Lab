@@ -18,7 +18,6 @@ from PySide6.QtGui import (
     QColor, QPainter, QPen, QBrush, QFont, QFontMetrics, QPixmap, QIcon,
     QDragEnterEvent, QDragMoveEvent, QDropEvent, QDrag, QMouseEvent,
 )
-from PySide6.QtSvg import QSvgRenderer
 
 from ui.pages.custom_test.nodes.base_node import BaseNode, get_node_class
 from log_config import get_logger
@@ -32,19 +31,7 @@ _PAGE_SVGS_DIR = os.path.join(
 
 _TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
 
-
-def _tinted_svg_icon(svg_path: str, color: str, size: int = 16) -> QIcon:
-    renderer = QSvgRenderer(svg_path)
-    pixmap = QPixmap(size, size)
-    pixmap.fill(Qt.transparent)
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.Antialiasing)
-    painter.setRenderHint(QPainter.SmoothPixmapTransform)
-    renderer.render(painter, QRectF(0, 0, size, size))
-    painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
-    painter.fillRect(pixmap.rect(), QColor(color))
-    painter.end()
-    return QIcon(pixmap)
+from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
 
 _DEPTH_COLORS = [
     "#2f80ed",

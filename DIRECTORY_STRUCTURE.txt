@@ -130,6 +130,7 @@ ui/
 │
 ├── widgets/                 # 通用 UI 组件与可复用样式
 │   ├── sidebar_nav_button.py    # 侧边栏导航按钮组件
+│   ├── sidebar_submenu.py       # 通用侧边栏悬浮二级菜单组件 (SidebarSubMenu)
 │   ├── plot_widget.py           # 基于 pyqtgraph 的实时数据图表组件
 │   ├── dark_combobox.py         # 暗色主题下拉框组件
 │   ├── scrollbar.py             # 暗色滚动条样式 (SCROLLBAR_STYLE / SCROLL_AREA_STYLE)
@@ -146,9 +147,16 @@ ui/
 │   └── serialCom_module_frame.py       # 串口通信连接区 Mixin (串口搜索/连接/断开)
 │
 ├── styles/                  # 样式聚合入口
-│   └── __init__.py              # 从 ui/widgets 与 ui/modules 重新导出常用样式/组件
-│                                # (SCROLLBAR_STYLE / START_BTN_STYLE /
-│                                #  SpinningSearchButton / ExecutionLogsFrame 等)
+│   ├── __init__.py              # 从 ui/widgets 与 ui/modules 重新导出常用样式/组件
+│   │                            # (SCROLLBAR_STYLE / START_BTN_STYLE /
+│   │                            #  SpinningSearchButton / ExecutionLogsFrame 等)
+│   └── page_styles.py           # 通用页面 QSS 模板 (get_page_base_qss / get_table_qss)
+│
+├── utils/                   # UI 工具模块
+│   ├── __init__.py              # 导出 tinted_svg_icon / tinted_svg_pixmap
+│   └── icon_utils.py            # SVG 图标着色工具 (DPI 感知 + LRU 缓存)
+│
+├── theme.py                 # 设计令牌系统 (Colors / FontSizes / Spacing / Radius)
 │
 ├── pages/                   # 功能页面 (按仪器/功能分包)
 │   ├── n6705c_power_analyzer/   # 电源分析仪相关页面

@@ -75,19 +75,7 @@ _MAIN_CHIP_CONFIGS_DIR = os.path.join(
     "chips", "bes_chip_configs", "main_chip_configs"
 )
 
-
-def _tinted_svg_icon(svg_path, color, size=18):
-    renderer = QSvgRenderer(svg_path)
-    pixmap = QPixmap(size, size)
-    pixmap.fill(Qt.transparent)
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.Antialiasing)
-    painter.setRenderHint(QPainter.SmoothPixmapTransform)
-    renderer.render(painter, QRectF(0, 0, size, size))
-    painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
-    painter.fillRect(pixmap.rect(), QColor(color))
-    painter.end()
-    return QIcon(pixmap)
+from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
 
 
 class DownloadModeToggle(QWidget):

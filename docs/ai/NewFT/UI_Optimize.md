@@ -9,7 +9,7 @@
 
 | 阶段 | 优先级 | 任务数 | 完成 | 状态 |
 |------|--------|--------|------|------|
-| Phase 1 | P0 - 架构级 | 4 | 0/4 | 🔲 未开始 |
+| Phase 1 | P0 - 架构级 | 4 | 4/4 | ✅ 已完成 |
 | Phase 2 | P1 - 视觉体验 | 5 | 0/5 | 🔲 未开始 |
 | Phase 3 | P2 - 交互精细化 | 5 | 0/5 | 🔲 未开始 |
 | Phase 4 | P3 - 代码质量 | 3 | 0/3 | 🔲 未开始 |
@@ -32,8 +32,8 @@
   - 定义圆角: radius_container(16) / radius_card(12) / radius_widget(8) / radius_small(6)
 - **涉及文件**: 新建 `ui/theme.py`
 - **预计会话**: 会话 1
-- **状态**: 🔲 未开始
-- **完成日期**: —
+- **状态**: ✅ 已完成
+- **完成日期**: 2026-05-21
 
 ### Task 1.2: 抽取通用页面样式模板
 - **目标**: 建立 `ui/styles/page_styles.py`，提供 `get_page_base_qss()` 函数
@@ -46,8 +46,8 @@
 - **涉及文件**: 新建 `ui/styles/page_styles.py`，修改 `ui/styles/__init__.py`
 - **依赖**: Task 1.1
 - **预计会话**: 会话 1
-- **状态**: 🔲 未开始
-- **完成日期**: —
+- **状态**: ✅ 已完成
+- **完成日期**: 2026-05-21
 
 ### Task 1.3: 提取 `_tinted_svg_icon` 为公共工具
 - **目标**: 消除 4+ 处重复定义，统一为单一实现
@@ -59,10 +59,11 @@
 - **涉及文件**:
   - 新建 `ui/utils/icon_utils.py`
   - 修改: `consumption_test.py`, `custom_test_ui.py`, `execution_logs_module_frame.py`, `serialCom_module_frame.py`
+  - 额外修改: `high_low_temp_test_ui.py`, `sequence_canvas.py`
 - **依赖**: 无
 - **预计会话**: 会话 2
-- **状态**: 🔲 未开始
-- **完成日期**: —
+- **状态**: ✅ 已完成
+- **完成日期**: 2026-05-21
 
 ### Task 1.4: SubMenu 类抽取为通用组件
 - **目标**: 将 4 个几乎相同的 SubMenu 类合并为一个通用 `SidebarSubMenu`
@@ -78,8 +79,9 @@
   - 修改: `ui/main_window.py`
 - **依赖**: Task 1.1 (使用 theme 颜色)
 - **预计会话**: 会话 2
-- **状态**: 🔲 未开始
-- **完成日期**: —
+- **状态**: ✅ 已完成
+- **完成日期**: 2026-05-21
+- **实际减少**: ~380 行 (PMUSubMenuItem + 4 SubMenu 类 → 1 通用组件)
 
 ---
 
@@ -301,3 +303,4 @@
 | 日期 | 会话 | 完成任务 | 备注 |
 |------|------|----------|------|
 | 2026-05-21 | 初始化 | — | 创建优化任务计划 |
+| 2026-05-21 | 会话 1 | Task 1.1 + 1.2 + 1.3 + 1.4 | Phase 1 全部完成; 新建 theme.py / page_styles.py / icon_utils.py / sidebar_submenu.py; main_window.py 减少 ~380 行 |

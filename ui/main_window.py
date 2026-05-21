@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
     QPushButton, QComboBox, QLabel, QLineEdit, QGridLayout,
     QTabWidget, QCheckBox, QSplitter, QFrame, QButtonGroup,
-    QGraphicsDropShadowEffect, QDialog, QTextBrowser
+    QDialog, QTextBrowser
 )
 
 from PySide6.QtCore import Qt, Signal, QEvent, QPoint, QTimer
@@ -44,387 +44,7 @@ from debug_config import DEBUG_MOCK
 logger = get_logger(__name__)
 
 
-class PMUSubMenuItem(QPushButton):
-    """PMU二级菜单项"""
-
-    def __init__(self, text, key, position="middle", parent=None):
-        super().__init__(text, parent)
-        self.key = key
-        self.position = position
-        self.selected = False
-        self.setCursor(Qt.PointingHandCursor)
-        self.setMinimumHeight(44)
-        self._apply_style()
-
-    def set_selected(self, selected: bool):
-        self.selected = selected
-        self._apply_style()
-
-    def _apply_style(self):
-        radius_top = "12px" if self.position == "top" else "0px"
-        radius_bottom = "12px" if self.position == "bottom" else "0px"
-
-        if self.selected:
-            self.setStyleSheet(f"""
-                QPushButton {{
-                    border: none;
-                    background-color: #3f3a8a;
-                    color: #9cabff;
-                    text-align: left;
-                    padding: 0 18px;
-                    font-size: 14px;
-                    border-top-left-radius: {radius_top};
-                    border-top-right-radius: {radius_top};
-                    border-bottom-left-radius: {radius_bottom};
-                    border-bottom-right-radius: {radius_bottom};
-                }}
-                QPushButton:hover {{
-                    background-color: #4942a0;
-                    color: #ffffff;
-                }}
-            """)
-        else:
-            self.setStyleSheet(f"""
-                QPushButton {{
-                    border: none;
-                    background-color: transparent;
-                    color: #d5d9e3;
-                    text-align: left;
-                    padding: 0 18px;
-                    font-size: 14px;
-                    border-top-left-radius: {radius_top};
-                    border-top-right-radius: {radius_top};
-                    border-bottom-left-radius: {radius_bottom};
-                    border-bottom-right-radius: {radius_bottom};
-                }}
-                QPushButton:hover {{
-                    background-color: #24314a;
-                    color: #ffffff;
-                }}
-                QWidget {{
-                    background-color: #020618;
-                    color: #c8c8c8;
-                }}
-            """)
-
-
-class PMUSubMenu(QWidget):
-    """PMU Auto Test 右侧悬浮二级菜单"""
-
-    item_clicked = Signal(str)
-
-    def __init__(self, parent=None):
-        super().__init__(parent, Qt.FramelessWindowHint | Qt.Tool)
-        self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setMouseTracking(True)
-
-        self._hovered = False
-        self.current_key = None
-        self.buttons = {}
-
-        self.outer_layout = QVBoxLayout(self)
-        self.outer_layout.setContentsMargins(10, 10, 10, 10)
-        self.outer_layout.setSpacing(0)
-
-        self.panel = QFrame(self)
-        self.panel.setObjectName("pmuSubMenuPanel")
-        self.panel.setStyleSheet("""
-            QFrame#pmuSubMenuPanel {
-                background-color: #1b2233;
-                border: none;
-                border-radius: 12px;
-            }
-        """)
-
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(28)
-        shadow.setOffset(0, 8)
-        shadow.setColor(QColor(0, 0, 0, 110))
-        self.panel.setGraphicsEffect(shadow)
-
-        self.outer_layout.addWidget(self.panel)
-
-        self.layout = QVBoxLayout(self.panel)
-        self.layout.setContentsMargins(0, 0, 0, 0)
-        self.layout.setSpacing(0)
-
-        self.menu_items = [
-            ("dcdc_efficiency", "DCDC Efficiency"),
-            ("output_voltage", "Output Voltage"),
-            ("is_gain", "Is_gain"),
-            ("oscp", "OSCP"),
-            ("gpadc_test", "GPADC Test"),
-            ("clk_test", "CLK Test"),
-        ]
-
-        total = len(self.menu_items)
-        for i, (key, text) in enumerate(self.menu_items):
-            if i == 0:
-                position = "top"
-            elif i == total - 1:
-                position = "bottom"
-            else:
-                position = "middle"
-
-            btn = PMUSubMenuItem(text, key, position=position, parent=self.panel)
-            btn.clicked.connect(lambda checked=False, k=key: self.item_clicked.emit(k))
-            self.layout.addWidget(btn)
-            self.buttons[key] = btn
-
-        self.hide()
-
-    def set_current_item(self, key: str):
-        self.current_key = key
-        for item_key, btn in self.buttons.items():
-            btn.set_selected(item_key == key)
-
-    def enterEvent(self, event):
-        self._hovered = True
-        super().enterEvent(event)
-
-    def leaveEvent(self, event):
-        self._hovered = False
-        super().leaveEvent(event)
-
-    def is_hovered(self):
-        return self._hovered
-
-
-class PowerAnalyzerSubMenu(QWidget):
-
-    item_clicked = Signal(str)
-
-    def __init__(self, parent=None):
-        super().__init__(parent, Qt.FramelessWindowHint | Qt.Tool)
-        self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setMouseTracking(True)
-
-        self._hovered = False
-        self.current_key = None
-        self.buttons = {}
-
-        self.outer_layout = QVBoxLayout(self)
-        self.outer_layout.setContentsMargins(10, 10, 10, 10)
-        self.outer_layout.setSpacing(0)
-
-        self.panel = QFrame(self)
-        self.panel.setObjectName("paSubMenuPanel")
-        self.panel.setStyleSheet("""
-            QFrame#paSubMenuPanel {
-                background-color: #1b2233;
-                border: none;
-                border-radius: 12px;
-            }
-        """)
-
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(28)
-        shadow.setOffset(0, 8)
-        shadow.setColor(QColor(0, 0, 0, 110))
-        self.panel.setGraphicsEffect(shadow)
-
-        self.outer_layout.addWidget(self.panel)
-
-        self.layout = QVBoxLayout(self.panel)
-        self.layout.setContentsMargins(0, 0, 0, 0)
-        self.layout.setSpacing(0)
-
-        self.menu_items = [
-            ("analyser", "N6705C Analyser"),
-            ("datalog", "N6705C Datalog"),
-        ]
-
-        total = len(self.menu_items)
-        for i, (key, text) in enumerate(self.menu_items):
-            if i == 0:
-                position = "top"
-            elif i == total - 1:
-                position = "bottom"
-            else:
-                position = "middle"
-
-            btn = PMUSubMenuItem(text, key, position=position, parent=self.panel)
-            btn.clicked.connect(lambda checked=False, k=key: self.item_clicked.emit(k))
-            self.layout.addWidget(btn)
-            self.buttons[key] = btn
-
-        self.hide()
-
-    def set_current_item(self, key: str):
-        self.current_key = key
-        for item_key, btn in self.buttons.items():
-            btn.set_selected(item_key == key)
-
-    def enterEvent(self, event):
-        self._hovered = True
-        super().enterEvent(event)
-
-    def leaveEvent(self, event):
-        self._hovered = False
-        super().leaveEvent(event)
-
-    def is_hovered(self):
-        return self._hovered
-
-
-class ChargerSubMenu(QWidget):
-
-    item_clicked = Signal(str)
-
-    def __init__(self, parent=None):
-        super().__init__(parent, Qt.FramelessWindowHint | Qt.Tool)
-        self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setMouseTracking(True)
-
-        self._hovered = False
-        self.current_key = None
-        self.buttons = {}
-
-        self.outer_layout = QVBoxLayout(self)
-        self.outer_layout.setContentsMargins(10, 10, 10, 10)
-        self.outer_layout.setSpacing(0)
-
-        self.panel = QFrame(self)
-        self.panel.setObjectName("chargerSubMenuPanel")
-        self.panel.setStyleSheet("""
-            QFrame#chargerSubMenuPanel {
-                background-color: #1b2233;
-                border: none;
-                border-radius: 12px;
-            }
-        """)
-
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(28)
-        shadow.setOffset(0, 8)
-        shadow.setColor(QColor(0, 0, 0, 110))
-        self.panel.setGraphicsEffect(shadow)
-
-        self.outer_layout.addWidget(self.panel)
-
-        self.layout = QVBoxLayout(self.panel)
-        self.layout.setContentsMargins(0, 0, 0, 0)
-        self.layout.setSpacing(0)
-
-        self.menu_items = [
-            ("config_traverse", "Config Traverse Test"),
-            ("status_register", "Status Register Test"),
-            ("iterm", "Iterm Test"),
-            ("regulation_voltage", "Regulation Voltage Test"),
-        ]
-
-        total = len(self.menu_items)
-        for i, (key, text) in enumerate(self.menu_items):
-            if i == 0:
-                position = "top"
-            elif i == total - 1:
-                position = "bottom"
-            else:
-                position = "middle"
-
-            btn = PMUSubMenuItem(text, key, position=position, parent=self.panel)
-            btn.clicked.connect(lambda checked=False, k=key: self.item_clicked.emit(k))
-            self.layout.addWidget(btn)
-            self.buttons[key] = btn
-
-        self.hide()
-
-    def set_current_item(self, key: str):
-        self.current_key = key
-        for item_key, btn in self.buttons.items():
-            btn.set_selected(item_key == key)
-
-    def enterEvent(self, event):
-        self._hovered = True
-        super().enterEvent(event)
-
-    def leaveEvent(self, event):
-        self._hovered = False
-        super().leaveEvent(event)
-
-    def is_hovered(self):
-        return self._hovered
-
-
-class ConsumptionSubMenu(QWidget):
-
-    item_clicked = Signal(str)
-
-    def __init__(self, parent=None):
-        super().__init__(parent, Qt.FramelessWindowHint | Qt.Tool)
-        self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setMouseTracking(True)
-
-        self._hovered = False
-        self.current_key = None
-        self.buttons = {}
-
-        self.outer_layout = QVBoxLayout(self)
-        self.outer_layout.setContentsMargins(10, 10, 10, 10)
-        self.outer_layout.setSpacing(0)
-
-        self.panel = QFrame(self)
-        self.panel.setObjectName("consumptionSubMenuPanel")
-        self.panel.setStyleSheet("""
-            QFrame#consumptionSubMenuPanel {
-                background-color: #1b2233;
-                border: none;
-                border-radius: 12px;
-            }
-        """)
-
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(28)
-        shadow.setOffset(0, 8)
-        shadow.setColor(QColor(0, 0, 0, 110))
-        self.panel.setGraphicsEffect(shadow)
-
-        self.outer_layout.addWidget(self.panel)
-
-        self.layout = QVBoxLayout(self.panel)
-        self.layout.setContentsMargins(0, 0, 0, 0)
-        self.layout.setSpacing(0)
-
-        self.menu_items = [
-            ("auto_test", "Auto Test"),
-            ("high_low_temp", "High-Low Temperature Test"),
-        ]
-
-        total = len(self.menu_items)
-        for i, (key, text) in enumerate(self.menu_items):
-            if i == 0:
-                position = "top"
-            elif i == total - 1:
-                position = "bottom"
-            else:
-                position = "middle"
-
-            btn = PMUSubMenuItem(text, key, position=position, parent=self.panel)
-            btn.clicked.connect(lambda checked=False, k=key: self.item_clicked.emit(k))
-            self.layout.addWidget(btn)
-            self.buttons[key] = btn
-
-        self.hide()
-
-    def set_current_item(self, key: str):
-        self.current_key = key
-        for item_key, btn in self.buttons.items():
-            btn.set_selected(item_key == key)
-
-    def enterEvent(self, event):
-        self._hovered = True
-        super().enterEvent(event)
-
-    def leaveEvent(self, event):
-        self._hovered = False
-        super().leaveEvent(event)
-
-    def is_hovered(self):
-        return self._hovered
+from ui.widgets.sidebar_submenu import SidebarSubMenu
 
 
 class _KKSerialsPage(SerialComMixin, QWidget):
@@ -958,28 +578,46 @@ class MainWindow(QMainWindow):
                 btn.right_arrow_label.setVisible(btn.isChecked())
 
     def _create_pmu_submenu(self):
-        self.pmu_submenu = PMUSubMenu(self)
+        self.pmu_submenu = SidebarSubMenu([
+            ("dcdc_efficiency", "DCDC Efficiency"),
+            ("output_voltage", "Output Voltage"),
+            ("is_gain", "Is_gain"),
+            ("oscp", "OSCP"),
+            ("gpadc_test", "GPADC Test"),
+            ("clk_test", "CLK Test"),
+        ], parent=self)
         self.pmu_submenu.item_clicked.connect(self._on_pmu_submenu_clicked)
 
         self.pmu_test_btn.installEventFilter(self)
         self.pmu_submenu.installEventFilter(self)
 
     def _create_pa_submenu(self):
-        self.pa_submenu = PowerAnalyzerSubMenu(self)
+        self.pa_submenu = SidebarSubMenu([
+            ("analyser", "N6705C Analyser"),
+            ("datalog", "N6705C Datalog"),
+        ], parent=self)
         self.pa_submenu.item_clicked.connect(self._on_pa_submenu_clicked)
 
         self.n6705c_power_analyzer_btn.installEventFilter(self)
         self.pa_submenu.installEventFilter(self)
 
     def _create_charger_submenu(self):
-        self.charger_submenu = ChargerSubMenu(self)
+        self.charger_submenu = SidebarSubMenu([
+            ("config_traverse", "Config Traverse Test"),
+            ("status_register", "Status Register Test"),
+            ("iterm", "Iterm Test"),
+            ("regulation_voltage", "Regulation Voltage Test"),
+        ], parent=self)
         self.charger_submenu.item_clicked.connect(self._on_charger_submenu_clicked)
 
         self.charger_test_btn.installEventFilter(self)
         self.charger_submenu.installEventFilter(self)
 
     def _create_consumption_submenu(self):
-        self.consumption_submenu = ConsumptionSubMenu(self)
+        self.consumption_submenu = SidebarSubMenu([
+            ("auto_test", "Auto Test"),
+            ("high_low_temp", "High-Low Temperature Test"),
+        ], parent=self)
         self.consumption_submenu.item_clicked.connect(self._on_consumption_submenu_clicked)
 
         self.consumption_test_btn.installEventFilter(self)

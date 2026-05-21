@@ -1,6 +1,7 @@
 from ui.widgets.plot_widget import PlotWidget
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.widgets.sidebar_nav_button import SidebarNavButton
+from ui.widgets.sidebar_submenu import SidebarSubMenu
 from ui.widgets.progress_button import ProgressButton
 from ui.widgets.button import (
     SpinningSearchButton,
@@ -17,6 +18,7 @@ __all__ = [
     "PlotWidget",
     "DarkComboBox",
     "SidebarNavButton",
+    "SidebarSubMenu",
     "ProgressButton",
     "SpinningSearchButton",
     "search_button_style",

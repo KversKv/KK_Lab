@@ -18,7 +18,6 @@ from PySide6.QtCore import (
     QPropertyAnimation, Property, QEasingCurve
 )
 from PySide6.QtGui import QFont, QIcon, QPixmap, QPainter, QColor, QPen, QBrush
-from PySide6.QtSvg import QSvgRenderer
 import pyqtgraph as pg
 
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
@@ -38,19 +37,7 @@ _PAGE_SVGS_DIR = os.path.join(
     "resources", "pages", "consumption_test_SVGs"
 )
 
-
-def _tinted_svg_icon(svg_path, color, size=18):
-    renderer = QSvgRenderer(svg_path)
-    pixmap = QPixmap(size, size)
-    pixmap.fill(Qt.transparent)
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.Antialiasing)
-    painter.setRenderHint(QPainter.SmoothPixmapTransform)
-    renderer.render(painter, QRectF(0, 0, size, size))
-    painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
-    painter.fillRect(pixmap.rect(), QColor(color))
-    painter.end()
-    return QIcon(pixmap)
+from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
 
 
 class _ToggleSwitch(QWidget):

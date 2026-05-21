@@ -42,6 +42,7 @@ from PySide6.QtSvg import QSvgRenderer
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.widgets.scrollbar import SCROLLBAR_STYLE
 from debug_config import DEBUG_MOCK
+from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
 
 
 _SVG_COMMON_DIR = os.path.join(
@@ -59,22 +60,6 @@ _SVG_LOGS_DIR = os.path.join(
 _SEARCH_ICON_PATH = os.path.join(_SVG_COMMON_DIR, "search.svg")
 _LINK_ICON_PATH = os.path.join(_SVG_COMMON_DIR, "link.svg")
 _UNLINK_ICON_PATH = os.path.join(_SVG_COMMON_DIR, "unlink.svg")
-
-
-def _tinted_svg_icon(svg_path: str, color: str, size: int = 14) -> QIcon:
-    if not os.path.isfile(svg_path):
-        return QIcon()
-    renderer = QSvgRenderer(svg_path)
-    pixmap = QPixmap(size, size)
-    pixmap.fill(Qt.transparent)
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.Antialiasing)
-    painter.setRenderHint(QPainter.SmoothPixmapTransform)
-    renderer.render(painter, QRectF(0, 0, size, size))
-    painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
-    painter.fillRect(pixmap.rect(), QColor(color))
-    painter.end()
-    return QIcon(pixmap)
 
 _SERIAL_BTN_HEIGHT = 22
 _SERIAL_BTN_ICON_SIZE = 13

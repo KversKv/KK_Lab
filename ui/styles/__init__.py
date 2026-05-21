@@ -13,6 +13,7 @@ from ui.widgets.start_sequence import (
     update_start_btn_state,
 )
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
+from ui.styles.page_styles import get_page_base_qss, get_table_qss
 
 __all__ = [
     "SCROLLBAR_STYLE",
@@ -27,4 +28,6 @@ __all__ = [
     "create_start_btn",
     "update_start_btn_state",
     "ExecutionLogsFrame",
+    "get_page_base_qss",
+    "get_table_qss",
 ]

@@ -13,33 +13,14 @@ from PySide6.QtCore import Qt, QTimer, QRectF, Signal, Property, QEasingCurve
 from PySide6.QtGui import (
     QIcon, QPixmap, QPainter, QColor, QAction, QBrush, QPen, QFont, QFontMetrics,
 )
-from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtCore import QPropertyAnimation
+from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
 
 
 _SVG_DIR = os.path.join(
     get_resource_base(),
     "resources", "modules", "SVG_Logs",
 )
-
-
-def _tinted_svg_icon(svg_path: str, color: str, size: int = 14) -> QIcon:
-    if not os.path.isfile(svg_path):
-        return QIcon()
-    dpr = QApplication.instance().devicePixelRatio() if QApplication.instance() else 1.0
-    px_size = int(size * dpr)
-    renderer = QSvgRenderer(svg_path)
-    pixmap = QPixmap(px_size, px_size)
-    pixmap.setDevicePixelRatio(dpr)
-    pixmap.fill(Qt.transparent)
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.Antialiasing)
-    painter.setRenderHint(QPainter.SmoothPixmapTransform)
-    renderer.render(painter, QRectF(0, 0, size, size))
-    painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
-    painter.fillRect(QRectF(0, 0, size, size), QColor(color))
-    painter.end()
-    return QIcon(pixmap)
 
 
 _LEVEL_COLORS = {
