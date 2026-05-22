@@ -2160,6 +2160,7 @@ class SerialComMixin:
         if DEBUG_MOCK:
             self._sc_port_combo.addItem("[MOCK] COM99 - Mock Serial Device")
             self._sc_append_system("[INFO] Mock port refreshed")
+            self._sc_try_restore_last_port()
             return
         try:
             ports = serial.tools.list_ports.comports()
@@ -2172,6 +2173,19 @@ class SerialComMixin:
                 self._sc_append_system("[WARN] No serial ports found")
         except Exception as e:
             self._sc_append_system(f"[ERROR] Refresh failed: {e}")
+        self._sc_try_restore_last_port()
+
+    def _sc_try_restore_last_port(self):
+        last_port = getattr(self, "_sc_last_port", "")
+        if not last_port:
+            return
+        for i in range(self._sc_port_combo.count()):
+            if self._sc_port_combo.itemText(i).startswith(last_port.split(" - ")[0].split()[0]):
+                self._sc_port_combo.setCurrentIndex(i)
+                break
+            if last_port in self._sc_port_combo.itemText(i):
+                self._sc_port_combo.setCurrentIndex(i)
+                break
 
     def _sc_on_add_log_panel(self):
         if len(self._sc_extra_log_panels) >= 3:
@@ -3746,10 +3760,27 @@ class SerialComMixin:
         except Exception as e:
             QMessageBox.critical(self, "导入失败", f"无法读取文件:\n{e}")
             return
-        if not isinstance(data, dict) or "projects" not in data or not isinstance(data["projects"], list):
-            QMessageBox.critical(self, "导入失败", "JSON 格式不符合要求 (需 version + projects)")
+
+        if not isinstance(data, dict):
+            QMessageBox.critical(self, "导入失败", "JSON 格式不符合要求")
             return
 
+        qc_payload = None
+        if "quick_commands" in data and isinstance(data["quick_commands"], dict):
+            qc_payload = data["quick_commands"]
+        elif "projects" in data and isinstance(data["projects"], list):
+            qc_payload = data
+        else:
+            QMessageBox.critical(self, "导入失败", "JSON 格式不符合要求 (需包含 quick_commands 或 projects)")
+            return
+
+        if not isinstance(qc_payload.get("projects"), list):
+            QMessageBox.critical(self, "导入失败", "JSON 格式不符合要求 (需包含 projects 列表)")
+            return
+
+        self._sc_merge_quick_cmds(qc_payload)
+
+    def _sc_merge_quick_cmds(self, data: dict):
         used_ids = self._sc_qc_collect_existing_ids()
         stat = {"project": 0, "group": 0, "cmd": 0, "renamed": 0}
 
@@ -3764,7 +3795,6 @@ class SerialComMixin:
             return new_id
 
         def iter_groups(ip):
-            # 兼容旧格式：projects[].regions[].groups[] -> 拍平为 groups[]
             if isinstance(ip.get("regions"), list):
                 for ir in ip.get("regions", []) or []:
                     if not isinstance(ir, dict):
@@ -3806,33 +3836,41 @@ class SerialComMixin:
                     target_p["groups"].append(target_g)
                     stat["group"] += 1
 
-                used_names = {c.get("name", "") for c in target_g.setdefault("commands", [])}
+                existing_contents = {
+                    (c.get("name", ""), c.get("content", ""))
+                    for c in target_g.setdefault("commands", [])
+                }
+                used_names = {c.get("name", "") for c in target_g["commands"]}
                 for ic in ig.get("commands", []) or []:
                     if not isinstance(ic, dict):
                         continue
-                    new_name = self._sc_qc_unique_cmd_name(
-                        ic.get("name", "") or "未命名指令", used_names
-                    )
-                    if new_name != ic.get("name", ""):
+                    ic_name = ic.get("name", "") or "未命名指令"
+                    ic_content = ic.get("content", "")
+                    if (ic_name, ic_content) in existing_contents:
+                        continue
+                    new_name = self._sc_qc_unique_cmd_name(ic_name, used_names)
+                    if new_name != ic_name:
                         stat["renamed"] += 1
                     new_cmd = {
                         "id": fix_id("cmd", ic.get("id", "")),
                         "name": new_name,
-                        "content": ic.get("content", ""),
+                        "content": ic_content,
                         "send_type": ic.get("send_type", "text"),
                         "line_ending": ic.get("line_ending", ""),
                         "encoding": ic.get("encoding", "ascii"),
                     }
                     target_g["commands"].append(new_cmd)
                     used_names.add(new_name)
+                    existing_contents.add((new_name, ic_content))
                     stat["cmd"] += 1
 
         self._sc_qc_save_data()
         self._sc_qc_refresh_all()
         QMessageBox.information(
             self, "导入完成",
-            f"导入完成\n新增项目:{stat['project']}\n"
-            f"新增分组:{stat['group']}\n新增指令:{stat['cmd']}\n重命名指令:{stat['renamed']}",
+            f"增量合入完成\n新增项目:{stat['project']}\n"
+            f"新增分组:{stat['group']}\n新增指令:{stat['cmd']}\n重命名指令:{stat['renamed']}\n"
+            f"(已跳过名称和内容完全相同的重复指令)",
         )
 
     def _sc_export_quick_cmds(self):
@@ -3852,14 +3890,17 @@ class SerialComMixin:
         if not path:
             return
         payload = {
-            "version": "1.0",
-            "projects": [
-                {
-                    "id": project.get("id", ""),
-                    "name": project.get("name", ""),
-                    "groups": project.get("groups", []),
-                }
-            ],
+            "version": "2.0",
+            "quick_commands": {
+                "version": "1.0",
+                "projects": [
+                    {
+                        "id": project.get("id", ""),
+                        "name": project.get("name", ""),
+                        "groups": project.get("groups", []),
+                    }
+                ],
+            },
         }
         try:
             with open(path, "w", encoding="utf-8") as f:
@@ -3868,24 +3909,22 @@ class SerialComMixin:
         except Exception as e:
             QMessageBox.critical(self, "导出失败", f"写入失败:\n{e}")
 
-    # --- persistence (config + quick commands) ---
+    # --- persistence (unified config: KK_SerialConsole.json) ---
     #
     # 设计目标:
-    #   - 配置 / 快捷指令必须能在打包后跨次启动持久保存
+    #   - 所有串口工具配置（串口参数 / UI偏好 / 快捷指令）统一保存到单文件 KK_SerialConsole.json
     #   - 模块可能被**单独编译**分发, 因此用户目录不挂在 KK_Lab 应用名下,
     #     而是使用独立的 "SerialCom" 命名空间:
     #       打包态: %APPDATA%\SerialCom\
     #       开发态: <项目根>/user_data/SerialCom/
     #   - 严禁写到 EXE 同目录或 sys._MEIPASS, 兼容 Program Files / onefile 临时目录
-    #   - 启动时自动加载快捷指令, 优先顺序:
+    #   - 启动时自动加载, 优先顺序:
     #       1) 用户目录 (%APPDATA%\SerialCom\  /  user_data/SerialCom/)
     #       2) 回退: EXE 同目录 (打包态) / <项目根>/Results/ (开发态)
     #     回退来源仅做**只读**加载, 不会反写到用户目录, 避免污染系统配置.
-    #   - 当前为铺路骨架: 自动加载 + 应用退出时由调用方触发 _sc_save_persisted_state()
-    #     UI 上后续可再加 "Save / Reset" 按钮调用同两个方法.
+    #   - 应用退出时由调用方触发 _sc_save_persisted_state()
 
-    _SC_CONFIG_FILENAME = "config.json"
-    _SC_QUICK_CMDS_FILENAME = "quick_commands.json"
+    _SC_UNIFIED_FILENAME = "KK_SerialConsole.json"
     _SC_APP_NAMESPACE = "SerialCom"
 
     def _sc_user_config_dir(self) -> str:
@@ -3902,24 +3941,61 @@ class SerialComMixin:
             pass
         return root
 
-    def _sc_persisted_paths(self):
-        base = self._sc_user_config_dir()
-        return (
-            os.path.join(base, self._SC_CONFIG_FILENAME),
-            os.path.join(base, self._SC_QUICK_CMDS_FILENAME),
-        )
+    def _sc_persisted_path(self) -> str:
+        return os.path.join(self._sc_user_config_dir(), self._SC_UNIFIED_FILENAME)
 
     def _sc_fallback_dir(self) -> str:
         if getattr(_sys, "frozen", False):
             return _os.path.dirname(_sys.executable)
         return _os.path.join(_PROJECT_ROOT, "Results")
 
-    def _sc_fallback_paths(self):
-        base = self._sc_fallback_dir()
-        return (
-            os.path.join(base, self._SC_CONFIG_FILENAME),
-            os.path.join(base, self._SC_QUICK_CMDS_FILENAME),
-        )
+    def _sc_fallback_path(self) -> str:
+        return os.path.join(self._sc_fallback_dir(), self._SC_UNIFIED_FILENAME)
+
+    def _sc_migrate_legacy_config(self):
+        base = self._sc_user_config_dir()
+        legacy_cfg = os.path.join(base, "config.json")
+        legacy_qc = os.path.join(base, "quick_commands.json")
+        migrated = False
+
+        if os.path.isfile(legacy_cfg):
+            try:
+                with open(legacy_cfg, "r", encoding="utf-8") as f:
+                    self._sc_apply_persisted_state(json.load(f))
+                migrated = True
+            except Exception:
+                pass
+
+        if os.path.isfile(legacy_qc):
+            try:
+                with open(legacy_qc, "r", encoding="utf-8") as f:
+                    raw = json.load(f)
+                parsed = self._sc_parse_quick_cmds_payload(raw)
+                if parsed is not None:
+                    self._sc_qc_data = parsed
+                    migrated = True
+            except Exception:
+                pass
+
+        if not migrated:
+            fb_dir = self._sc_fallback_dir()
+            fb_cfg = os.path.join(fb_dir, "config.json")
+            fb_qc = os.path.join(fb_dir, "quick_commands.json")
+            if os.path.isfile(fb_cfg):
+                try:
+                    with open(fb_cfg, "r", encoding="utf-8") as f:
+                        self._sc_apply_persisted_state(json.load(f))
+                except Exception:
+                    pass
+            if os.path.isfile(fb_qc):
+                try:
+                    with open(fb_qc, "r", encoding="utf-8") as f:
+                        raw = json.load(f)
+                    parsed = self._sc_parse_quick_cmds_payload(raw)
+                    if parsed is not None:
+                        self._sc_qc_data = parsed
+                except Exception:
+                    pass
 
     def _sc_parse_quick_cmds_payload(self, data):
         """校验并标准化快捷指令 JSON; 不符合新格式返回 None."""
@@ -3996,117 +4072,251 @@ class SerialComMixin:
         return normalized
 
     def _sc_collect_persisted_state(self) -> dict:
+        port_text = ""
+        if hasattr(self, "_sc_port_combo"):
+            port_text = self._sc_port_combo.currentText()
+        baud_text = "921600"
+        if hasattr(self, "_sc_baud_combo"):
+            baud_text = self._sc_baud_combo.currentText()
+        auto_detect = False
+        if hasattr(self, "_sc_auto_detect_cb"):
+            auto_detect = self._sc_auto_detect_cb.isChecked()
+        databit = "8"
+        if hasattr(self, "_sc_databit_combo"):
+            databit = self._sc_databit_combo.currentText()
+        stopbit = "1"
+        if hasattr(self, "_sc_stopbit_combo"):
+            stopbit = self._sc_stopbit_combo.currentText()
+        parity = "None"
+        if hasattr(self, "_sc_parity_combo"):
+            parity = self._sc_parity_combo.currentText()
+        flow_ctrl = "None"
+        if hasattr(self, "_sc_flow_combo"):
+            flow_ctrl = self._sc_flow_combo.currentText()
+
+        auto_detect_config = {}
+        if hasattr(self, "_sc_auto_baud_monitor"):
+            m = self._sc_auto_baud_monitor
+            auto_detect_config = {
+                "runtime_redetect_enabled": m.runtime_redetect_enabled,
+                "candidate_baudrates": list(m._config.get("candidate_baudrates", [])),
+                "lock_threshold": m._config.get("lock_threshold", 85),
+                "bad_threshold": m._config.get("bad_threshold", 40),
+                "bad_windows_to_suspect": m._config.get("bad_windows_to_suspect", 3),
+                "suspect_windows_to_scan": m._config.get("suspect_windows_to_scan", 2),
+                "monitor_window_max_time_ms": m._config.get("monitor_window_max_time_ms", 500),
+                "switch_cooldown_ms": m._config.get("switch_cooldown_ms", 5000),
+                "switch_score_margin": m._config.get("switch_score_margin", 15),
+                "confirm_scan_rounds": m._config.get("confirm_scan_rounds", 2),
+            }
+
         return {
-            "rx_display_hex": getattr(self, "_sc_rx_display_hex", False),
-            "tx_display_hex": getattr(self, "_sc_tx_display_hex", False),
-            "show_timestamp": getattr(self, "_sc_show_timestamp", True),
-            "auto_resend": getattr(self, "_sc_auto_resend", False),
-            "resend_interval": getattr(self, "_sc_resend_interval", 1000),
-            "line_ending": getattr(self, "_sc_line_ending", "\r\n"),
-            "show_send": getattr(self, "_sc_show_send", True),
-            "line_by_line": getattr(self, "_sc_line_by_line", False),
-            "sidebar_visible": getattr(self, "_sc_sidebar_visible", True),
+            "version": "2.0",
+            "serial": {
+                "port": port_text,
+                "baudrate": baud_text,
+                "auto_detect": auto_detect,
+                "databits": databit,
+                "stopbits": stopbit,
+                "parity": parity,
+                "flow_control": flow_ctrl,
+                "auto_detect_config": auto_detect_config,
+            },
+            "ui": {
+                "rx_display_hex": getattr(self, "_sc_rx_display_hex", False),
+                "tx_display_hex": getattr(self, "_sc_tx_display_hex", False),
+                "show_timestamp": getattr(self, "_sc_show_timestamp", True),
+                "auto_resend": getattr(self, "_sc_auto_resend", False),
+                "resend_interval": getattr(self, "_sc_resend_interval", 1000),
+                "line_ending": getattr(self, "_sc_line_ending", "\r\n"),
+                "show_send": getattr(self, "_sc_show_send", True),
+                "line_by_line": getattr(self, "_sc_line_by_line", False),
+                "sidebar_visible": getattr(self, "_sc_sidebar_visible", True),
+            },
             "send_history": list(getattr(self, "_sc_send_history", []))[-50:],
+            "quick_commands": getattr(self, "_sc_qc_data", self._sc_qc_default_data()),
         }
 
     def _sc_apply_persisted_state(self, data: dict) -> None:
         if not isinstance(data, dict):
             return
-        for key, attr in (
-            ("rx_display_hex", "_sc_rx_display_hex"),
-            ("tx_display_hex", "_sc_tx_display_hex"),
-            ("show_timestamp", "_sc_show_timestamp"),
-            ("auto_resend", "_sc_auto_resend"),
-            ("resend_interval", "_sc_resend_interval"),
-            ("line_ending", "_sc_line_ending"),
-            ("show_send", "_sc_show_send"),
-            ("line_by_line", "_sc_line_by_line"),
-            ("sidebar_visible", "_sc_sidebar_visible"),
-        ):
-            if key in data:
-                setattr(self, attr, data[key])
-        if isinstance(data.get("send_history"), list):
-            self._sc_send_history = [str(x) for x in data["send_history"]]
-            if hasattr(self, "_sc_history_combo"):
-                self._sc_history_combo.blockSignals(True)
-                self._sc_history_combo.clear()
-                self._sc_history_combo.addItems(self._sc_send_history)
-                self._sc_history_combo.setCurrentIndex(-1)
-                self._sc_history_combo.blockSignals(False)
+
+        is_v2 = data.get("version") == "2.0" or "serial" in data
+
+        if is_v2:
+            serial_cfg = data.get("serial", {})
+            if isinstance(serial_cfg, dict):
+                port = serial_cfg.get("port", "")
+                if port and hasattr(self, "_sc_port_combo"):
+                    idx = self._sc_port_combo.findText(port)
+                    if idx >= 0:
+                        self._sc_port_combo.setCurrentIndex(idx)
+                    else:
+                        self._sc_last_port = port
+
+                baud = serial_cfg.get("baudrate", "")
+                if baud and hasattr(self, "_sc_baud_combo"):
+                    idx = self._sc_baud_combo.findText(str(baud))
+                    if idx >= 0:
+                        self._sc_baud_combo.setCurrentIndex(idx)
+                    else:
+                        self._sc_baud_combo.setCurrentText(str(baud))
+
+                if hasattr(self, "_sc_auto_detect_cb"):
+                    self._sc_auto_detect_cb.setChecked(bool(serial_cfg.get("auto_detect", False)))
+
+                if hasattr(self, "_sc_databit_combo"):
+                    db = serial_cfg.get("databits", "8")
+                    idx = self._sc_databit_combo.findText(str(db))
+                    if idx >= 0:
+                        self._sc_databit_combo.setCurrentIndex(idx)
+
+                if hasattr(self, "_sc_stopbit_combo"):
+                    sb = serial_cfg.get("stopbits", "1")
+                    idx = self._sc_stopbit_combo.findText(str(sb))
+                    if idx >= 0:
+                        self._sc_stopbit_combo.setCurrentIndex(idx)
+
+                if hasattr(self, "_sc_parity_combo"):
+                    pa = serial_cfg.get("parity", "None")
+                    idx = self._sc_parity_combo.findText(str(pa))
+                    if idx >= 0:
+                        self._sc_parity_combo.setCurrentIndex(idx)
+
+                if hasattr(self, "_sc_flow_combo"):
+                    fc = serial_cfg.get("flow_control", "None")
+                    idx = self._sc_flow_combo.findText(str(fc))
+                    if idx >= 0:
+                        self._sc_flow_combo.setCurrentIndex(idx)
+
+                ad_cfg = serial_cfg.get("auto_detect_config", {})
+                if isinstance(ad_cfg, dict) and hasattr(self, "_sc_auto_baud_monitor"):
+                    m = self._sc_auto_baud_monitor
+                    if "runtime_redetect_enabled" in ad_cfg:
+                        m.runtime_redetect_enabled = bool(ad_cfg["runtime_redetect_enabled"])
+                    for k in ("candidate_baudrates", "lock_threshold", "bad_threshold",
+                              "bad_windows_to_suspect", "suspect_windows_to_scan",
+                              "monitor_window_max_time_ms", "switch_cooldown_ms",
+                              "switch_score_margin", "confirm_scan_rounds"):
+                        if k in ad_cfg:
+                            m._config[k] = ad_cfg[k]
+
+            ui_cfg = data.get("ui", {})
+            if isinstance(ui_cfg, dict):
+                for key, attr in (
+                    ("rx_display_hex", "_sc_rx_display_hex"),
+                    ("tx_display_hex", "_sc_tx_display_hex"),
+                    ("show_timestamp", "_sc_show_timestamp"),
+                    ("auto_resend", "_sc_auto_resend"),
+                    ("resend_interval", "_sc_resend_interval"),
+                    ("line_ending", "_sc_line_ending"),
+                    ("show_send", "_sc_show_send"),
+                    ("line_by_line", "_sc_line_by_line"),
+                    ("sidebar_visible", "_sc_sidebar_visible"),
+                ):
+                    if key in ui_cfg:
+                        setattr(self, attr, ui_cfg[key])
+
+            if isinstance(data.get("send_history"), list):
+                self._sc_send_history = [str(x) for x in data["send_history"]]
+                if hasattr(self, "_sc_history_combo"):
+                    self._sc_history_combo.blockSignals(True)
+                    self._sc_history_combo.clear()
+                    self._sc_history_combo.addItems(self._sc_send_history)
+                    self._sc_history_combo.setCurrentIndex(-1)
+                    self._sc_history_combo.blockSignals(False)
+
+            qc = data.get("quick_commands")
+            if isinstance(qc, dict):
+                parsed = self._sc_parse_quick_cmds_payload(qc)
+                if parsed is not None:
+                    self._sc_qc_data = parsed
+        else:
+            for key, attr in (
+                ("rx_display_hex", "_sc_rx_display_hex"),
+                ("tx_display_hex", "_sc_tx_display_hex"),
+                ("show_timestamp", "_sc_show_timestamp"),
+                ("auto_resend", "_sc_auto_resend"),
+                ("resend_interval", "_sc_resend_interval"),
+                ("line_ending", "_sc_line_ending"),
+                ("show_send", "_sc_show_send"),
+                ("line_by_line", "_sc_line_by_line"),
+                ("sidebar_visible", "_sc_sidebar_visible"),
+            ):
+                if key in data:
+                    setattr(self, attr, data[key])
+            if isinstance(data.get("send_history"), list):
+                self._sc_send_history = [str(x) for x in data["send_history"]]
+                if hasattr(self, "_sc_history_combo"):
+                    self._sc_history_combo.blockSignals(True)
+                    self._sc_history_combo.clear()
+                    self._sc_history_combo.addItems(self._sc_send_history)
+                    self._sc_history_combo.setCurrentIndex(-1)
+                    self._sc_history_combo.blockSignals(False)
 
     def _sc_load_persisted_state(self) -> None:
         try:
-            cfg_path, quick_path = self._sc_persisted_paths()
-            fb_cfg_path, fb_quick_path = self._sc_fallback_paths()
+            cfg_path = self._sc_persisted_path()
+            fb_path = self._sc_fallback_path()
 
-            cfg_source = None
+            source = None
             if os.path.isfile(cfg_path):
-                cfg_source = cfg_path
-            elif os.path.isfile(fb_cfg_path) and os.path.abspath(fb_cfg_path) != os.path.abspath(cfg_path):
-                cfg_source = fb_cfg_path
-            if cfg_source:
-                try:
-                    with open(cfg_source, "r", encoding="utf-8") as f:
-                        self._sc_apply_persisted_state(json.load(f))
-                except Exception:
-                    pass
+                source = cfg_path
+            elif os.path.isfile(fb_path) and os.path.abspath(fb_path) != os.path.abspath(cfg_path):
+                source = fb_path
 
-            quick_source = None
-            if os.path.isfile(quick_path):
-                quick_source = quick_path
-            elif os.path.isfile(fb_quick_path) and os.path.abspath(fb_quick_path) != os.path.abspath(quick_path):
-                quick_source = fb_quick_path
-
-            if quick_source:
-                parsed = None
+            if source:
                 load_err = None
+                raw = None
                 try:
-                    with open(quick_source, "r", encoding="utf-8") as f:
+                    with open(source, "r", encoding="utf-8") as f:
                         raw = json.load(f)
-                    parsed = self._sc_parse_quick_cmds_payload(raw)
                 except Exception as e:
                     load_err = e
 
                 if load_err is not None:
                     try:
                         QMessageBox.warning(
-                            self, "快捷指令配置损坏",
-                            f"无法解析 {quick_source}:\n{load_err}\n\n已恢复为默认配置。",
+                            self, "配置文件损坏",
+                            f"无法解析 {source}:\n{load_err}\n\n已恢复为默认配置。",
                         )
                     except Exception:
                         pass
                     self._sc_qc_data = self._sc_qc_default_data()
-                elif parsed is None:
-                    try:
-                        QMessageBox.warning(
-                            self, "快捷指令配置损坏",
-                            f"{quick_source} 不是有效的快捷指令 JSON (需 version + projects)。\n已恢复为默认配置。",
-                        )
-                    except Exception:
-                        pass
+                    if hasattr(self, "_sc_append_system"):
+                        self._sc_append_system(f"[WARN] Config corrupted, using defaults. Path: {source}")
+                elif not isinstance(raw, dict):
                     self._sc_qc_data = self._sc_qc_default_data()
+                    if hasattr(self, "_sc_append_system"):
+                        self._sc_append_system(f"[WARN] Config invalid format, using defaults. Path: {source}")
                 else:
-                    self._sc_qc_data = parsed
+                    self._sc_apply_persisted_state(raw)
+                    if not hasattr(self, "_sc_qc_data") or not self._sc_qc_data:
+                        self._sc_qc_data = self._sc_qc_default_data()
+
                     if hasattr(self, "_sc_append_system"):
                         try:
-                            origin = "user" if quick_source == quick_path else "fallback"
+                            origin = "user" if source == cfg_path else "fallback"
                             total = sum(
                                 len(g.get("commands", []))
                                 for p in self._sc_qc_data.get("projects", [])
                                 for g in p.get("groups", [])
                             )
                             self._sc_append_system(
-                                f"[INFO] Loaded {total} quick command(s) from {origin}: {quick_source}"
+                                f"[INFO] Loaded config from {origin}: {source} ({total} quick commands)"
                             )
                         except Exception:
                             pass
             else:
-                # 配置文件不存在,创建默认结构并落盘
-                self._sc_qc_data = self._sc_qc_default_data()
+                self._sc_migrate_legacy_config()
+                if not hasattr(self, "_sc_qc_data") or not self._sc_qc_data:
+                    self._sc_qc_data = self._sc_qc_default_data()
                 try:
-                    self._sc_qc_save_data()
+                    self._sc_save_persisted_state()
                 except Exception:
                     pass
+                if hasattr(self, "_sc_append_system"):
+                    self._sc_append_system(f"[INFO] Config path: {cfg_path}")
 
             try:
                 self._sc_qc_refresh_all()
@@ -4117,31 +4327,14 @@ class SerialComMixin:
 
     def _sc_save_persisted_state(self) -> None:
         try:
-            cfg_path, quick_path = self._sc_persisted_paths()
+            cfg_path = self._sc_persisted_path()
             with open(cfg_path, "w", encoding="utf-8") as f:
                 json.dump(self._sc_collect_persisted_state(), f, ensure_ascii=False, indent=2)
-            with open(quick_path, "w", encoding="utf-8") as f:
-                json.dump(
-                    getattr(self, "_sc_qc_data", self._sc_qc_default_data()),
-                    f, ensure_ascii=False, indent=2,
-                )
         except Exception:
             pass
 
     def _sc_qc_save_data(self) -> None:
-        """单独保存快捷指令 JSON, 配置区域损坏时也不会影响串口功能."""
-        try:
-            _cfg_path, quick_path = self._sc_persisted_paths()
-            with open(quick_path, "w", encoding="utf-8") as f:
-                json.dump(
-                    getattr(self, "_sc_qc_data", self._sc_qc_default_data()),
-                    f, ensure_ascii=False, indent=2,
-                )
-        except Exception as e:
-            try:
-                QMessageBox.warning(self, "保存失败", f"无法写入快捷指令配置:\n{e}")
-            except Exception:
-                pass
+        self._sc_save_persisted_state()
 
     # --- log helpers ---
 
