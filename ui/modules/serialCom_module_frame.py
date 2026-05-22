@@ -670,6 +670,8 @@ class SerialComMixin:
         self._sc_tx_bytes = 0
         self._sc_paused = False
         self._sc_auto_scroll = True
+        self._sc_rx_line_buf = ""
+        self._sc_rx_flush_timer = None
         self._sc_all_logs = []
         self._sc_rx_display_hex = False
         self._sc_tx_display_hex = False
@@ -1843,6 +1845,10 @@ class SerialComMixin:
 
         self._sc_auto_detect_cb.toggled.connect(self._sc_on_auto_detect_toggled)
 
+        self._sc_rx_flush_timer = QTimer(self)
+        self._sc_rx_flush_timer.setSingleShot(True)
+        self._sc_rx_flush_timer.timeout.connect(self._sc_flush_rx_line_buf)
+
         self._sc_install_filter_shortcut()
 
     def _sc_install_filter_shortcut(self):
@@ -2861,6 +2867,7 @@ class SerialComMixin:
         self._sc_log_edit.clear()
         self._sc_rx_bytes = 0
         self._sc_tx_bytes = 0
+        self._sc_rx_line_buf = ""
         self._sc_status_rx_label.setText("RX: 0 B")
         self._sc_status_tx_label.setText("TX: 0 B")
         self._sc_filter_last_count = 0
@@ -2936,6 +2943,9 @@ class SerialComMixin:
 
         if self._sc_rx_display_hex:
             display = data.hex(' ')
+            for line in display.splitlines():
+                if line.strip():
+                    self._sc_append_log(f"[RX] {line}", _CLR_RX)
         else:
             display = data.decode("utf-8", errors="replace")
             display = display.replace("\x00", "")
@@ -2944,11 +2954,26 @@ class SerialComMixin:
                 for ch in display
             )
 
-        for line in display.splitlines():
-            if line.strip():
-                self._sc_append_log(f"[RX] {line}", _CLR_RX)
+            self._sc_rx_line_buf += display
+            while "\n" in self._sc_rx_line_buf:
+                line, self._sc_rx_line_buf = self._sc_rx_line_buf.split("\n", 1)
+                line = line.rstrip("\r")
+                if line.strip():
+                    self._sc_append_log(f"[RX] {line}", _CLR_RX)
+
+            if self._sc_rx_line_buf and self._sc_rx_auto_flush_cb.isChecked():
+                self._sc_rx_flush_timer.start(self._sc_rx_auto_flush_spin.value())
+            else:
+                self._sc_rx_flush_timer.stop()
 
         self._sc_feed_auto_baud_monitor(data)
+
+    def _sc_flush_rx_line_buf(self):
+        if self._sc_rx_line_buf:
+            line = self._sc_rx_line_buf.rstrip("\r")
+            self._sc_rx_line_buf = ""
+            if line.strip():
+                self._sc_append_log(f"[RX] {line}", _CLR_RX)
 
     def _sc_feed_auto_baud_monitor(self, data: bytes):
         monitor = self._sc_auto_baud_monitor
