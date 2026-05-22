@@ -19,7 +19,7 @@ class _ComboItemDelegate(QStyledItemDelegate):
 
 
 class DarkComboBox(QComboBox):
-    def __init__(self, *args, bg="#050a1d", border="#1f315d", arrow_color="#7b8fa5",
+    def __init__(self, *args, bg="#0F172A", border="#1E293B", arrow_color="#7b8fa5",
                  hover_color="#6366f1", **kwargs):
         super().__init__(*args, **kwargs)
         self._popup_bg = bg
