@@ -73,6 +73,8 @@ a = Analysis(
         'ui.widgets.start_sequence',
         'ui.styles',
         'ui.modules',
+        'core',
+        'core.auto_baud_detector',
         'log_config',
         'debug_config',
     ],

@@ -42,11 +42,15 @@ from PySide6.QtSvg import QSvgRenderer
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.widgets.scrollbar import SCROLLBAR_STYLE
 from debug_config import DEBUG_MOCK
+from log_config import get_logger
 from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
 from core.auto_baud_detector import (
     AutoBaudState, AutoBaudMonitor, AutoBaudScanWorker,
     AUTO_BAUD_CONFIG, score_rx_data,
 )
+
+
+logger = get_logger(__name__)
 
 
 _SVG_COMMON_DIR = os.path.join(
@@ -65,9 +69,9 @@ _SEARCH_ICON_PATH = os.path.join(_SVG_COMMON_DIR, "search.svg")
 _LINK_ICON_PATH = os.path.join(_SVG_COMMON_DIR, "link.svg")
 _UNLINK_ICON_PATH = os.path.join(_SVG_COMMON_DIR, "unlink.svg")
 
-_SERIAL_BTN_HEIGHT = 22
-_SERIAL_BTN_ICON_SIZE = 13
-_SERIAL_BTN_RADIUS = 4
+_SERIAL_BTN_HEIGHT = 26
+_SERIAL_BTN_ICON_SIZE = 14
+_SERIAL_BTN_RADIUS = 6
 _TERM_FONT = '"JetBrains Mono", "Fira Code", Consolas, "Menlo", "Courier New", monospace'
 _UI_FONT = '"Inter", "PingFang SC", "Microsoft YaHei", "Segoe UI", -apple-system, sans-serif'
 
@@ -697,6 +701,8 @@ class SerialComMixin:
         self._sc_filter_applied_after = 0
 
         self._sc_auto_baud_monitor = AutoBaudMonitor()
+        self._sc_auto_baud_monitor.enabled = True
+        self._sc_auto_baud_monitor.runtime_redetect_enabled = True
         self._sc_auto_baud_scan_thread = None
         self._sc_auto_baud_scan_worker = None
         self._sc_auto_baud_pending_first_rx = False
@@ -718,6 +724,9 @@ class SerialComMixin:
             QSplitter::handle:hover {{ background-color: #122042; }}
         """)
 
+        self._sc_body_splitter = body_splitter
+        self._sc_sidebar_default_width = 280
+        self._sc_sidebar_min_width = 270
         self._sc_sidebar_widget = self._build_sc_sidebar()
         body_splitter.addWidget(self._sc_sidebar_widget)
 
@@ -754,7 +763,7 @@ class SerialComMixin:
         body_splitter.addWidget(center_widget)
         body_splitter.setStretchFactor(0, 0)
         body_splitter.setStretchFactor(1, 1)
-        body_splitter.setSizes([220, 600])
+        body_splitter.setSizes([self._sc_sidebar_default_width, 600])
 
         outer.addWidget(body_splitter, 1)
 
@@ -825,18 +834,19 @@ class SerialComMixin:
         self._sc_add_log_btn = self._make_sc_btn(
             os.path.join(_SVG_LOGS_DIR, "plus.svg"), ""
         )
-        self._sc_add_log_btn.setFixedSize(22, 22)
+        self._sc_add_log_btn.setFixedSize(28, 28)
         self._sc_add_log_btn.setToolTip("Add LOG panel")
         self._sc_add_log_btn.setStyleSheet("""
             QPushButton {
-                min-height: 0px; max-height: 22px; min-width: 22px; max-width: 22px;
-                padding: 0px; border-radius: 6px;
+                min-height: 0px; max-height: 28px; min-width: 28px; max-width: 28px;
+                padding: 0px; border-radius: 7px;
                 background-color: transparent; color: #94a3b8; border: 1px solid #1e293b;
             }
             QPushButton:hover { border-color: #334155; }
+            QPushButton:focus { border-color: #818CF8; background-color: #0f172a; }
             QPushButton:pressed { background-color: #050b1e; }
         """)
-        icon_add = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "plus.svg"), "#34d399", 12)
+        icon_add = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "plus.svg"), "#34d399", 14)
         if not icon_add.isNull():
             self._sc_add_log_btn.setIcon(icon_add)
         layout.addWidget(self._sc_add_log_btn)
@@ -844,19 +854,20 @@ class SerialComMixin:
         self._sc_remove_log_btn = self._make_sc_btn(
             os.path.join(_SVG_LOGS_DIR, "minus.svg"), ""
         )
-        self._sc_remove_log_btn.setFixedSize(22, 22)
+        self._sc_remove_log_btn.setFixedSize(28, 28)
         self._sc_remove_log_btn.setToolTip("Remove current LOG panel")
         self._sc_remove_log_btn.setStyleSheet("""
             QPushButton {
-                min-height: 0px; max-height: 22px; min-width: 22px; max-width: 22px;
-                padding: 0px; border-radius: 6px;
+                min-height: 0px; max-height: 28px; min-width: 28px; max-width: 28px;
+                padding: 0px; border-radius: 7px;
                 background-color: transparent; color: #94a3b8; border: 1px solid #1e293b;
             }
             QPushButton:hover { border-color: #334155; }
+            QPushButton:focus { border-color: #818CF8; background-color: #0f172a; }
             QPushButton:pressed { background-color: #050b1e; }
             QPushButton:disabled { background-color: transparent; border-color: #1e293b; }
         """)
-        icon_remove = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "minus.svg"), "#f43f5e", 12)
+        icon_remove = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "minus.svg"), "#f43f5e", 14)
         if not icon_remove.isNull():
             self._sc_remove_log_btn.setIcon(icon_remove)
         self._sc_remove_log_btn.setEnabled(False)
@@ -893,8 +904,8 @@ class SerialComMixin:
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setMinimumWidth(230)
-        scroll.setMaximumWidth(300)
+        scroll.setMinimumWidth(self._sc_sidebar_min_width)
+        scroll.setMaximumWidth(340)
         scroll.setStyleSheet("""
             QScrollArea { background-color: #050b1e; border: none; }
             QScrollArea > QWidget > QWidget { background-color: #050b1e; }
@@ -984,8 +995,11 @@ class SerialComMixin:
         grid.addWidget(self._sc_baud_combo, 1, 1)
 
         self._sc_auto_detect_cb = QCheckBox("Auto-Detect")
+        self._sc_auto_detect_cb.setChecked(True)
         self._sc_auto_detect_cb.setStyleSheet(self._sc_checkbox_style())
         grid.addWidget(self._sc_auto_detect_cb, 2, 1)
+        self._sc_baud_combo.setEditable(False)
+        self._sc_baud_combo.setEnabled(False)
 
         grid.addWidget(self._make_sc_label("Data bits"), 3, 0)
         self._sc_databit_combo = DarkComboBox()
@@ -994,7 +1008,7 @@ class SerialComMixin:
             self._sc_databit_combo.addItem(d)
         grid.addWidget(self._sc_databit_combo, 3, 1)
 
-        grid.addWidget(self._make_sc_label("Flow ctrl"), 4, 0)
+        grid.addWidget(self._make_sc_label("Flow Control"), 4, 0)
         self._sc_flow_combo = DarkComboBox()
         self._sc_flow_combo.setFixedHeight(28)
         for fc in ["None", "RTS/CTS", "XON/XOFF"]:
@@ -1038,7 +1052,8 @@ class SerialComMixin:
 
         row_af = QHBoxLayout()
         row_af.setSpacing(4)
-        self._sc_rx_auto_flush_cb = QCheckBox("Auto FL")
+        self._sc_rx_auto_flush_cb = QCheckBox("Auto Flush")
+        self._sc_rx_auto_flush_cb.setToolTip("Flush RX data to the log after the configured idle interval")
         self._sc_rx_auto_flush_cb.setStyleSheet(self._sc_checkbox_style())
         row_af.addWidget(self._sc_rx_auto_flush_cb)
         row_af.addStretch()
@@ -1110,7 +1125,7 @@ class SerialComMixin:
 
         row_ending = QHBoxLayout()
         row_ending.setSpacing(4)
-        row_ending.addWidget(self._make_sc_label("Line End"))
+        row_ending.addWidget(self._make_sc_label("Line Ending"))
         row_ending.addStretch()
         self._sc_ending_combo = DarkComboBox()
         self._sc_ending_combo.setFixedHeight(26)
@@ -1203,11 +1218,12 @@ class SerialComMixin:
         self._sc_scroll_lock_btn.setChecked(True)
         self._sc_scroll_lock_btn.setStyleSheet(f"""
             QPushButton {{
-                min-height: 0px; max-height: 24px; padding: 3px 10px; border-radius: 6px;
+                min-height: 0px; max-height: 28px; padding: 5px 11px; border-radius: 7px;
                 background-color: rgba(15, 23, 42, 0.6); color: #cbd5e1; font-size: 12px;
                 font-family: {_UI_FONT}; font-weight: 500; border: 1px solid #334155;
             }}
             QPushButton:hover {{ background-color: #1e293b; color: #FFFFFF; border: 1px solid #475569; }}
+            QPushButton:focus {{ background-color: #1e293b; color: #FFFFFF; border: 1px solid #818CF8; }}
             QPushButton:pressed {{ background-color: #0f172a; }}
             QPushButton:checked {{
                 background-color: #0c4a3e; color: #5eead4; border: 1px solid #2dd4bf;
@@ -1236,7 +1252,7 @@ class SerialComMixin:
         self._sc_filter_input.setStyleSheet(f"""
             QLineEdit {{
                 background-color: {_CLR_INPUT_BG}; border: 1px solid rgba(51, 65, 85, 0.5); border-radius: 4px;
-                color: {_CLR_INPUT_TEXT}; font-size: 12px; font-family: {_UI_FONT}; padding: 2px 6px; min-height: 18px; max-height: 18px;
+                color: {_CLR_INPUT_TEXT}; font-size: 12px; font-family: {_UI_FONT}; padding: 3px 7px; min-height: 24px; max-height: 24px;
                 selection-background-color: {_CLR_SELECTION_BG}; selection-color: {_CLR_SELECTION_TEXT};
             }}
             QLineEdit:focus {{ border: 1px solid {_CLR_FILTER_BORDER}; }}
@@ -1284,7 +1300,7 @@ class SerialComMixin:
         self._sc_filter_before_spin = QSpinBox()
         self._sc_filter_before_spin.setRange(0, 999)
         self._sc_filter_before_spin.setValue(0)
-        self._sc_filter_before_spin.setFixedSize(48, 16)
+        self._sc_filter_before_spin.setFixedSize(56, 24)
         self._sc_filter_before_spin.setToolTip("Show N lines before matched lines")
         self._sc_filter_before_spin.setStyleSheet(f"""
             QSpinBox {{
@@ -1306,7 +1322,7 @@ class SerialComMixin:
         self._sc_filter_after_spin = QSpinBox()
         self._sc_filter_after_spin.setRange(0, 999)
         self._sc_filter_after_spin.setValue(0)
-        self._sc_filter_after_spin.setFixedSize(48, 16)
+        self._sc_filter_after_spin.setFixedSize(56, 24)
         self._sc_filter_after_spin.setToolTip("Show N lines after matched lines")
         self._sc_filter_after_spin.setStyleSheet(f"""
             QSpinBox {{
@@ -1751,7 +1767,7 @@ class SerialComMixin:
     def _build_sc_status_bar(self):
         frame = QFrame()
         frame.setObjectName("scStatusBar")
-        frame.setFixedHeight(22)
+        frame.setFixedHeight(28)
         frame.setStyleSheet(f"""
             QFrame#scStatusBar {{
                 background-color: #050b1e;
@@ -1762,8 +1778,8 @@ class SerialComMixin:
             QLabel {{ font-size: 11px; font-family: {_TERM_FONT}; background: transparent; }}
         """)
         layout = QHBoxLayout(frame)
-        layout.setContentsMargins(8, 0, 8, 0)
-        layout.setSpacing(12)
+        layout.setContentsMargins(10, 2, 10, 2)
+        layout.setSpacing(14)
 
         self._sc_status_port_label = QLabel("\u2022 Port: Unconnected")
         self._sc_status_port_label.setStyleSheet("color: #f43f5e;")
@@ -1966,11 +1982,12 @@ class SerialComMixin:
             self._sc_connect_btn.setText("Disconnect")
             self._sc_connect_btn.setStyleSheet(f"""
                 QPushButton {{
-                    min-height: 0px; max-height: 22px; padding: 2px 8px; border-radius: 4px;
+                    min-height: 0px; max-height: 30px; padding: 4px 10px; border-radius: 6px;
                     background-color: #2b0a12; color: #f43f5e; font-size: 12px;
                     font-family: {_UI_FONT}; font-weight: 700; border: none;
                 }}
                 QPushButton:hover {{ background-color: #3a0f18; }}
+                QPushButton:focus {{ border: 1px solid #818CF8; }}
                 QPushButton:pressed {{ background-color: #1c050a; }}
             """)
             icon = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "disconnect.svg"), "#f43f5e", 12)
@@ -1984,11 +2001,12 @@ class SerialComMixin:
             self._sc_connect_btn.setText("Connect")
             self._sc_connect_btn.setStyleSheet(f"""
                 QPushButton {{
-                    min-height: 0px; max-height: 22px; padding: 2px 8px; border-radius: 4px;
+                    min-height: 0px; max-height: 30px; padding: 4px 10px; border-radius: 6px;
                     background-color: #07202b; color: #34d399; font-size: 12px;
                     font-family: {_UI_FONT}; font-weight: 700; border: none;
                 }}
                 QPushButton:hover {{ background-color: #0a2d3b; }}
+                QPushButton:focus {{ border: 1px solid #818CF8; }}
                 QPushButton:pressed {{ background-color: #051820; }}
             """)
             icon = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "connect.svg"), "#34d399", 12)
@@ -2325,7 +2343,7 @@ class SerialComMixin:
 
         status_bar = QFrame()
         status_bar.setObjectName("scStatusBar")
-        status_bar.setFixedHeight(22)
+        status_bar.setFixedHeight(28)
         status_bar.setStyleSheet(f"""
             QFrame#scStatusBar {{
                 background-color: #050b1e;
@@ -2336,8 +2354,8 @@ class SerialComMixin:
             QLabel {{ font-size: 11px; font-family: {_TERM_FONT}; background: transparent; }}
         """)
         sb_layout = QHBoxLayout(status_bar)
-        sb_layout.setContentsMargins(8, 0, 8, 0)
-        sb_layout.setSpacing(12)
+        sb_layout.setContentsMargins(10, 2, 10, 2)
+        sb_layout.setSpacing(14)
 
         port_label = QLabel(f"Port: {config.get('port', 'Unconnected')}")
         port_label.setStyleSheet("color: #f43f5e;")
@@ -2514,6 +2532,11 @@ class SerialComMixin:
     def _sc_on_sidebar_toggle(self, checked):
         self._sc_sidebar_visible = checked
         self._sc_sidebar_widget.setVisible(checked)
+        if checked:
+            sizes = self._sc_body_splitter.sizes()
+            if sizes and sizes[0] < self._sc_sidebar_min_width:
+                center_width = max(sizes[1], 600) if len(sizes) > 1 else 600
+                self._sc_body_splitter.setSizes([self._sc_sidebar_default_width, center_width])
 
     def _sc_open_settings_dialog(self):
         dlg = _SerialSettingsDialog(self)
@@ -3197,7 +3220,7 @@ class SerialComMixin:
             btn.setObjectName("quickCommandButton")
             btn.set_command_index(idx)
             btn.setCursor(Qt.PointingHandCursor)
-            btn.setFocusPolicy(Qt.NoFocus)
+            btn.setFocusPolicy(Qt.StrongFocus)
             btn.setToolTip(
                 f"Name: {name}\nContent: {content}\n"
                 f"Type: {entry.get('send_type', 'text')}  "
@@ -3218,10 +3241,10 @@ class SerialComMixin:
                     background-color: #172033;
                     color: #e5e7eb;
                     border: 1px solid #334155;
-                    border-radius: 6px;
-                    padding: 5px 12px;
-                    min-height: 24px;
-                    min-width: 48px;
+                    border-radius: 7px;
+                    padding: 6px 13px;
+                    min-height: 28px;
+                    min-width: 56px;
                     font-size: 12px;
                     font-weight: 500;
                     font-family: {_UI_FONT};
@@ -3229,6 +3252,11 @@ class SerialComMixin:
                 QPushButton:hover {{
                     background-color: #25344d;
                     border-color: #3b82f6;
+                    color: #ffffff;
+                }}
+                QPushButton:focus {{
+                    background-color: #25344d;
+                    border-color: #818CF8;
                     color: #ffffff;
                 }}
                 QPushButton:pressed {{
@@ -4469,11 +4497,12 @@ class SerialComMixin:
             icon_color = "#cbd5e1"
             btn.setStyleSheet(f"""
                 QPushButton {{
-                    min-height: 0px; max-height: 24px; padding: 3px 10px; border-radius: 6px;
+                    min-height: 0px; max-height: 28px; padding: 5px 11px; border-radius: 7px;
                     background-color: rgba(15, 23, 42, 0.6); color: {base_color}; font-size: 12px;
                     font-family: {_UI_FONT}; font-weight: 500; border: 1px solid #334155;
                 }}
                 QPushButton:hover {{ background-color: #1e293b; color: #FFFFFF; border: 1px solid #475569; }}
+                QPushButton:focus {{ background-color: #1e293b; color: #FFFFFF; border: 1px solid #818CF8; }}
                 QPushButton:pressed {{ background-color: #0f172a; }}
                 QPushButton:checked {{ background-color: #1e293b; color: #FFFFFF; border: 1px solid #475569; }}
             """)
@@ -4482,11 +4511,12 @@ class SerialComMixin:
             icon_color = "#cbd5e1"
             btn.setStyleSheet(f"""
                 QPushButton {{
-                    min-height: 0px; max-height: 22px; padding: 2px 10px; border-radius: 4px;
+                    min-height: 0px; max-height: 26px; padding: 4px 11px; border-radius: 6px;
                     background-color: #202d3f; color: {base_color}; font-size: 12px;
                     font-family: {_UI_FONT}; font-weight: 500; border: 1px solid #334155;
                 }}
                 QPushButton:hover {{ background-color: #314158; color: #FFFFFF; border: 1px solid #475569; }}
+                QPushButton:focus {{ background-color: #314158; color: #FFFFFF; border: 1px solid #818CF8; }}
                 QPushButton:pressed {{ background-color: #1a2538; }}
                 QPushButton:checked {{ background-color: #314158; color: #FFFFFF; border: 1px solid #475569; }}
                 QPushButton:disabled {{ background-color: #151c2a; color: #475569; border: 1px solid #1e293b; }}
@@ -4502,6 +4532,7 @@ class SerialComMixin:
                     font-family: {_UI_FONT}; font-weight: 500; border: none;
                 }}
                 QPushButton:hover {{ border: 1px solid #334155; color: #FFFFFF; }}
+                QPushButton:focus {{ border: 1px solid #818CF8; color: #FFFFFF; background-color: #0f172a; }}
                 QPushButton:pressed {{ background-color: #050b1e; }}
                 QPushButton:checked {{ border: 1px solid #334155; color: #FFFFFF; }}
             """)
@@ -4751,7 +4782,7 @@ class _AddLogPanelDialog(QDialog):
 
         grid.addWidget(QLabel("Port"), 1, 0)
         self._port_combo = DarkComboBox()
-        self._port_combo.setFixedHeight(22)
+        self._port_combo.setFixedHeight(26)
         self._port_combo.setEditable(True)
         try:
             ports = serial.tools.list_ports.comports()
@@ -4768,7 +4799,7 @@ class _AddLogPanelDialog(QDialog):
 
         grid.addWidget(QLabel("Baudrate"), 2, 0)
         self._baud_combo = DarkComboBox()
-        self._baud_combo.setFixedHeight(22)
+        self._baud_combo.setFixedHeight(26)
         self._baud_combo.setEditable(True)
         for br in ["921600", "1152000", "2000000", "3000000"]:
             self._baud_combo.addItem(br)
@@ -4777,28 +4808,28 @@ class _AddLogPanelDialog(QDialog):
 
         grid.addWidget(QLabel("Data bits"), 3, 0)
         self._databit_combo = DarkComboBox()
-        self._databit_combo.setFixedHeight(22)
+        self._databit_combo.setFixedHeight(26)
         for d in ["8", "7", "6", "5"]:
             self._databit_combo.addItem(d)
         grid.addWidget(self._databit_combo, 3, 1)
 
         grid.addWidget(QLabel("Stop bits"), 4, 0)
         self._stopbit_combo = DarkComboBox()
-        self._stopbit_combo.setFixedHeight(22)
+        self._stopbit_combo.setFixedHeight(26)
         for s in ["1", "1.5", "2"]:
             self._stopbit_combo.addItem(s)
         grid.addWidget(self._stopbit_combo, 4, 1)
 
         grid.addWidget(QLabel("Parity"), 5, 0)
         self._parity_combo = DarkComboBox()
-        self._parity_combo.setFixedHeight(22)
+        self._parity_combo.setFixedHeight(26)
         for p in ["None", "Even", "Odd", "Mark", "Space"]:
             self._parity_combo.addItem(p)
         grid.addWidget(self._parity_combo, 5, 1)
 
-        grid.addWidget(QLabel("Flow ctrl"), 6, 0)
+        grid.addWidget(QLabel("Flow Control"), 6, 0)
         self._flow_combo = DarkComboBox()
-        self._flow_combo.setFixedHeight(22)
+        self._flow_combo.setFixedHeight(26)
         for fc in ["None", "RTS/CTS", "XON/XOFF"]:
             self._flow_combo.addItem(fc)
         grid.addWidget(self._flow_combo, 6, 1)
@@ -5206,12 +5237,12 @@ class _SerialSettingsDialog(QDialog):
 
         grid.addWidget(QLabel("Port"), 0, 0)
         self.port_combo = DarkComboBox()
-        self.port_combo.setFixedHeight(22)
+        self.port_combo.setFixedHeight(26)
         grid.addWidget(self.port_combo, 0, 1)
 
         grid.addWidget(QLabel("Baudrate"), 1, 0)
         self.baud_combo = DarkComboBox()
-        self.baud_combo.setFixedHeight(22)
+        self.baud_combo.setFixedHeight(26)
         self.baud_combo.setEditable(True)
         for br in ["921600", "1152000", "2000000", "3000000", "Custom"]:
             self.baud_combo.addItem(br)
@@ -5228,28 +5259,28 @@ class _SerialSettingsDialog(QDialog):
 
         adv_grid.addWidget(QLabel("Data bits"), 0, 0)
         self.databit_combo = DarkComboBox()
-        self.databit_combo.setFixedHeight(22)
+        self.databit_combo.setFixedHeight(26)
         for d in ["8", "7", "6", "5"]:
             self.databit_combo.addItem(d)
         adv_grid.addWidget(self.databit_combo, 0, 1)
 
         adv_grid.addWidget(QLabel("Stop bits"), 0, 2)
         self.stopbit_combo = DarkComboBox()
-        self.stopbit_combo.setFixedHeight(22)
+        self.stopbit_combo.setFixedHeight(26)
         for s in ["1", "1.5", "2"]:
             self.stopbit_combo.addItem(s)
         adv_grid.addWidget(self.stopbit_combo, 0, 3)
 
         adv_grid.addWidget(QLabel("Parity"), 1, 0)
         self.parity_combo = DarkComboBox()
-        self.parity_combo.setFixedHeight(22)
+        self.parity_combo.setFixedHeight(26)
         for p in ["None", "Even", "Odd", "Mark", "Space"]:
             self.parity_combo.addItem(p)
         adv_grid.addWidget(self.parity_combo, 1, 1)
 
-        adv_grid.addWidget(QLabel("Flow ctrl"), 1, 2)
+        adv_grid.addWidget(QLabel("Flow Control"), 1, 2)
         self.flow_combo = DarkComboBox()
-        self.flow_combo.setFixedHeight(22)
+        self.flow_combo.setFixedHeight(26)
         for fc in ["None", "RTS/CTS", "XON/XOFF"]:
             self.flow_combo.addItem(fc)
         adv_grid.addWidget(self.flow_combo, 1, 3)
@@ -5295,7 +5326,7 @@ class _SerialSettingsDialog(QDialog):
         self.rx_max_lines_spin.setRange(500, 100000)
         self.rx_max_lines_spin.setValue(10000)
         self.rx_max_lines_spin.setSingleStep(1000)
-        self.rx_max_lines_spin.setFixedHeight(20)
+        self.rx_max_lines_spin.setFixedHeight(26)
         buf_row.addWidget(self.rx_max_lines_spin)
         buf_row.addStretch()
         layout.addLayout(buf_row)
@@ -5328,7 +5359,7 @@ class _SerialSettingsDialog(QDialog):
         ending_row.setSpacing(8)
         ending_row.addWidget(QLabel("Line ending"))
         self.ending_combo = DarkComboBox()
-        self.ending_combo.setFixedHeight(22)
+        self.ending_combo.setFixedHeight(26)
         for label, val in [("\\r\\n", "\r\n"), ("\\n", "\n"), ("\\r", "\r"), ("\\n\\r", "\n\r"), ("None", "")]:
             self.ending_combo.addItem(label, val)
         ending_row.addWidget(self.ending_combo)
@@ -5345,7 +5376,7 @@ class _SerialSettingsDialog(QDialog):
         self.resend_spin.setRange(100, 60000)
         self.resend_spin.setValue(1000)
         self.resend_spin.setSingleStep(100)
-        self.resend_spin.setFixedHeight(20)
+        self.resend_spin.setFixedHeight(26)
         resend_row.addWidget(self.resend_spin)
         resend_row.addStretch()
         layout.addLayout(resend_row)
@@ -5425,7 +5456,7 @@ class _SerialSettingsDialog(QDialog):
         font_row.setSpacing(8)
         font_row.addWidget(QLabel("Font family"))
         self.display_font_combo = DarkComboBox()
-        self.display_font_combo.setFixedHeight(22)
+        self.display_font_combo.setFixedHeight(26)
         for f in ["Consolas", "Courier New", "Fira Code", "JetBrains Mono", "Cascadia Code", "Lucida Console"]:
             self.display_font_combo.addItem(f)
         font_row.addWidget(self.display_font_combo)
@@ -5438,7 +5469,7 @@ class _SerialSettingsDialog(QDialog):
         self.display_font_size_spin = QSpinBox()
         self.display_font_size_spin.setRange(8, 24)
         self.display_font_size_spin.setValue(11)
-        self.display_font_size_spin.setFixedHeight(20)
+        self.display_font_size_spin.setFixedHeight(26)
         size_row.addWidget(self.display_font_size_spin)
         size_row.addStretch()
         layout.addLayout(size_row)
@@ -5497,28 +5528,28 @@ class _SerialSettingsDialog(QDialog):
         self.auto_detect_lock_spin = QSpinBox()
         self.auto_detect_lock_spin.setRange(50, 100)
         self.auto_detect_lock_spin.setValue(AUTO_BAUD_CONFIG["lock_threshold"])
-        self.auto_detect_lock_spin.setFixedHeight(20)
+        self.auto_detect_lock_spin.setFixedHeight(26)
         thresh_grid.addWidget(self.auto_detect_lock_spin, 0, 1)
 
         thresh_grid.addWidget(QLabel("Bad threshold"), 0, 2)
         self.auto_detect_bad_spin = QSpinBox()
         self.auto_detect_bad_spin.setRange(10, 80)
         self.auto_detect_bad_spin.setValue(AUTO_BAUD_CONFIG["bad_threshold"])
-        self.auto_detect_bad_spin.setFixedHeight(20)
+        self.auto_detect_bad_spin.setFixedHeight(26)
         thresh_grid.addWidget(self.auto_detect_bad_spin, 0, 3)
 
         thresh_grid.addWidget(QLabel("Bad windows to suspect"), 1, 0)
         self.auto_detect_bad_windows_spin = QSpinBox()
         self.auto_detect_bad_windows_spin.setRange(1, 10)
         self.auto_detect_bad_windows_spin.setValue(AUTO_BAUD_CONFIG["bad_windows_to_suspect"])
-        self.auto_detect_bad_windows_spin.setFixedHeight(20)
+        self.auto_detect_bad_windows_spin.setFixedHeight(26)
         thresh_grid.addWidget(self.auto_detect_bad_windows_spin, 1, 1)
 
         thresh_grid.addWidget(QLabel("Suspect windows to scan"), 1, 2)
         self.auto_detect_suspect_windows_spin = QSpinBox()
         self.auto_detect_suspect_windows_spin.setRange(1, 10)
         self.auto_detect_suspect_windows_spin.setValue(AUTO_BAUD_CONFIG["suspect_windows_to_scan"])
-        self.auto_detect_suspect_windows_spin.setFixedHeight(20)
+        self.auto_detect_suspect_windows_spin.setFixedHeight(26)
         thresh_grid.addWidget(self.auto_detect_suspect_windows_spin, 1, 3)
 
         layout.addLayout(thresh_grid)
@@ -5534,7 +5565,7 @@ class _SerialSettingsDialog(QDialog):
         self.auto_detect_window_ms_spin = QSpinBox()
         self.auto_detect_window_ms_spin.setRange(100, 2000)
         self.auto_detect_window_ms_spin.setValue(AUTO_BAUD_CONFIG["monitor_window_max_time_ms"])
-        self.auto_detect_window_ms_spin.setFixedHeight(20)
+        self.auto_detect_window_ms_spin.setFixedHeight(26)
         time_grid.addWidget(self.auto_detect_window_ms_spin, 0, 1)
 
         time_grid.addWidget(QLabel("Switch cooldown (ms)"), 0, 2)
@@ -5542,21 +5573,21 @@ class _SerialSettingsDialog(QDialog):
         self.auto_detect_cooldown_spin.setRange(1000, 30000)
         self.auto_detect_cooldown_spin.setSingleStep(500)
         self.auto_detect_cooldown_spin.setValue(AUTO_BAUD_CONFIG["switch_cooldown_ms"])
-        self.auto_detect_cooldown_spin.setFixedHeight(20)
+        self.auto_detect_cooldown_spin.setFixedHeight(26)
         time_grid.addWidget(self.auto_detect_cooldown_spin, 0, 3)
 
         time_grid.addWidget(QLabel("Score margin"), 1, 0)
         self.auto_detect_margin_spin = QSpinBox()
         self.auto_detect_margin_spin.setRange(5, 60)
         self.auto_detect_margin_spin.setValue(AUTO_BAUD_CONFIG["switch_score_margin"])
-        self.auto_detect_margin_spin.setFixedHeight(20)
+        self.auto_detect_margin_spin.setFixedHeight(26)
         time_grid.addWidget(self.auto_detect_margin_spin, 1, 1)
 
         time_grid.addWidget(QLabel("Confirm rounds"), 1, 2)
         self.auto_detect_confirm_spin = QSpinBox()
         self.auto_detect_confirm_spin.setRange(1, 5)
         self.auto_detect_confirm_spin.setValue(AUTO_BAUD_CONFIG["confirm_scan_rounds"])
-        self.auto_detect_confirm_spin.setFixedHeight(20)
+        self.auto_detect_confirm_spin.setFixedHeight(26)
         time_grid.addWidget(self.auto_detect_confirm_spin, 1, 3)
 
         layout.addLayout(time_grid)
@@ -5692,6 +5723,8 @@ if __name__ == "__main__":
                 self.title_label = None
                 self.title_row = None
 
+    demo_logger = get_logger(f"{__name__}.demo")
+
     class _DemoSerialFullWidget(SerialComMixin, QWidget):
         serial_connection_changed = Signal(bool)
         serial_data_received = Signal(bytes)
@@ -5712,7 +5745,7 @@ if __name__ == "__main__":
             self.bind_serial_signals()
 
         def append_log(self, msg):
-            print(msg)
+            demo_logger.info(msg)
 
     class _DemoSerialSearchWidget(SerialComMixin, QWidget):
         serial_connection_changed = Signal(bool)
@@ -5734,7 +5767,7 @@ if __name__ == "__main__":
             self.bind_serial_signals()
 
         def append_log(self, msg):
-            print(msg)
+            demo_logger.info(msg)
 
     class _DemoSerialInlineWidget(SerialComMixin, QWidget):
         serial_connection_changed = Signal(bool)
@@ -5756,7 +5789,7 @@ if __name__ == "__main__":
             self.bind_serial_signals()
 
         def append_log(self, msg):
-            print(msg)
+            demo_logger.info(msg)
 
     class _DemoCompleteSerialWidget(SerialComMixin, QWidget):
         serial_connection_changed = Signal(bool)
@@ -5789,7 +5822,7 @@ if __name__ == "__main__":
     def _custom_message_handler(msg_type, context, message):
         if msg_type == QtMsgType.QtWarningMsg and "QPainter::end" in message:
             return
-        print(message)
+        demo_logger.warning(message)
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
