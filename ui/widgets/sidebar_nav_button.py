@@ -1,7 +1,7 @@
 import os
 
-from PySide6.QtWidgets import QPushButton, QLabel, QHBoxLayout, QVBoxLayout, QWidget, QApplication
-from PySide6.QtCore import Qt, QRectF
+from PySide6.QtWidgets import QPushButton, QLabel, QHBoxLayout, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QCursor, QPixmap, QPainter, QColor
 from PySide6.QtSvg import QSvgRenderer
 
@@ -96,16 +96,12 @@ class SidebarNavButton(QPushButton):
 
     def _render_svg_icon(self, color):
         size = self._ICON_SIZE
-        app = QApplication.instance()
-        dpr = app.devicePixelRatio() if app else 1.0
-        px_size = int(size * dpr)
-        pixmap = QPixmap(px_size, px_size)
-        pixmap.setDevicePixelRatio(dpr)
+        pixmap = QPixmap(size, size)
         pixmap.fill(Qt.transparent)
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
-        self._svg_renderer.render(painter, QRectF(0, 0, size, size))
+        self._svg_renderer.render(painter)
         painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
         painter.fillRect(pixmap.rect(), QColor(color))
         painter.end()

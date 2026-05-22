@@ -314,15 +314,12 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         title_icon_label.setStyleSheet("background: transparent; border: none;")
         network_icon_path = os.path.join(_PAGE_SVGS_DIR, "network.svg")
         if os.path.isfile(network_icon_path):
-            _dpr = QApplication.instance().devicePixelRatio() if QApplication.instance() else 1.0
-            _px = int(22 * _dpr)
-            icon_pixmap = QPixmap(_px, _px)
-            icon_pixmap.setDevicePixelRatio(_dpr)
+            icon_pixmap = QPixmap(22, 22)
             icon_pixmap.fill(Qt.transparent)
             painter = QPainter(icon_pixmap)
             painter.setRenderHint(QPainter.Antialiasing)
             painter.setRenderHint(QPainter.SmoothPixmapTransform)
-            QSvgRenderer(network_icon_path).render(painter, QRectF(0, 0, _px, _px))
+            QSvgRenderer(network_icon_path).render(painter)
             painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
             painter.fillRect(icon_pixmap.rect(), QColor("#6366f1"))
             painter.end()

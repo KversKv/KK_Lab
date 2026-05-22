@@ -623,15 +623,12 @@ class N6705CAnalyserUI(QWidget):
         icon_label.setFixedSize(24, 24)
         if os.path.isfile(_ZAP_ICON_PATH):
             renderer = QSvgRenderer(_ZAP_ICON_PATH)
-            _dpr = QApplication.instance().devicePixelRatio() if QApplication.instance() else 1.0
-            _px = int(24 * _dpr)
-            pixmap = QPixmap(_px, _px)
-            pixmap.setDevicePixelRatio(_dpr)
+            pixmap = QPixmap(24, 24)
             pixmap.fill(Qt.transparent)
             painter = QPainter(pixmap)
             painter.setRenderHint(QPainter.Antialiasing)
             painter.setRenderHint(QPainter.SmoothPixmapTransform)
-            renderer.render(painter, QRectF(0, 0, _px, _px))
+            renderer.render(painter)
             painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
             painter.fillRect(pixmap.rect(), QColor("#10b981"))
             painter.end()

@@ -201,3 +201,54 @@ from ui.resource_path import get_resource_base
 **参考实现**：[keysight_53230a_module_frame.py:1-13](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/modules/keysight_53230a_module_frame.py#L1-L13)
 
 **新增 UI 模组自检**：同时支持两种启动方式——`python -m ui.modules.xxx` 与 `python ui\modules\xxx.py`，均应能弹出 Demo 窗口。
+
+## 23. SVG 图标禁止使用 `QPixmap.setDevicePixelRatio()`
+
+**现象**：在 DPR > 1 的高 DPI 屏幕上，通过 `QPixmap(px_size, px_size)` + `setDevicePixelRatio(dpr)` 渲染的 SVG 图标在 `QLabel.setPixmap()` 或 `QIcon` 中只显示左上角一部分（被放大裁剪）。
+
+**根因**：当前 PySide6 版本中，`QLabel` 和 `QIcon` 在渲染带 DPR 标记的 pixmap 时，不能正确识别 `devicePixelRatio` 标记——会把物理像素大小（如 24×24）直接当作逻辑像素大小来显示，在逻辑大小为 16×16 的 label 中只能看到左上 16×16 部分。
+
+**规则**：
+
+- 渲染 SVG 到 `QPixmap` 时，**直接用逻辑大小** `QPixmap(size, size)` 创建，**不要** `setDevicePixelRatio`。
+- Qt 的 High DPI 缩放系统会在底层自动处理设备像素映射。
+- `QSvgRenderer.render(painter)` 无参数版本即可填满整个 pixmap。
+- `CompositionMode_SourceIn` + `fillRect(pixmap.rect(), color)` 实现着色。
+
+**正确模式**：
+
+```python
+pixmap = QPixmap(size, size)
+pixmap.fill(Qt.transparent)
+painter = QPainter(pixmap)
+painter.setRenderHint(QPainter.Antialiasing)
+painter.setRenderHint(QPainter.SmoothPixmapTransform)
+renderer.render(painter)
+painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+painter.fillRect(pixmap.rect(), QColor(color))
+painter.end()
+```
+
+**错误模式（禁止）**：
+
+```python
+px_size = int(size * dpr)
+pixmap = QPixmap(px_size, px_size)
+pixmap.setDevicePixelRatio(dpr)  # ← 禁止
+```
+
+**参考实现**：[icon_utils.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/utils/icon_utils.py)
+
+## 24. `get_page_base_qss()` 禁止全局 `min-height`
+
+**现象**：使用 `get_page_base_qss()` 的页面中，嵌入的模块面板（如 N6705C 连接面板）内的 QComboBox / QPushButton 被强制拉高，挤占了 `setSpacing()` 定义的布局间距，视觉上"完全没有间距"。而同一模块面板单独运行时间距正常。
+
+**根因**：`get_page_base_qss()` 曾定义全局 `QPushButton { min-height: 32px; }` / `QComboBox { min-height: 28px; }`。Qt QSS 中，父 widget 的 stylesheet 的 `min-height` 属性会级联覆盖子 widget 的 `setFixedHeight()` / `setMinimumHeight()` 代码设置。
+
+**规则**：
+
+- `get_page_base_qss()` 中**不允许**定义全局 `min-height`（QLineEdit / QPushButton / QComboBox / QSpinBox）。
+- 需要标准高度的控件，应在各页面的 `page_extra` 中为**特定 objectName** 设置 `min-height`（如 `QPushButton#smallActionBtn { min-height: 28px; }`）。
+- 通用控件的高度由代码中 `setFixedHeight()` / `setMinimumHeight()` 精确控制。
+
+**参考实现**：[page_styles.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/styles/page_styles.py)

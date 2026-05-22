@@ -741,6 +741,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
             btn_row = QHBoxLayout()
             btn_row.setSpacing(6)
+            btn_row.setContentsMargins(0, 2, 0, 0)
             _btn_h = 24
             _btn_height_fix = f"QPushButton {{ min-height: {_btn_h}px; max-height: {_btn_h}px; }}"
             search_btn = SpinningSearchButton(parent=sub_frame)

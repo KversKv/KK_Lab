@@ -97,7 +97,6 @@ def get_page_base_qss(accent_color=None):
             border-radius: {Radius.small}px;
             padding: 6px 10px;
             color: {Colors.text_secondary};
-            min-height: 32px;
         }}
 
         QLineEdit:focus {{
@@ -116,7 +115,6 @@ def get_page_base_qss(accent_color=None):
             border-radius: {Radius.widget}px;
             padding: 6px 14px;
             color: {Colors.text_secondary};
-            min-height: 32px;
         }}
 
         QPushButton:hover {{
@@ -150,7 +148,6 @@ def get_page_base_qss(accent_color=None):
             border-radius: {Radius.small}px;
             padding: 4px 8px;
             color: {Colors.text_secondary};
-            min-height: 28px;
         }}
 
         QComboBox:hover {{
@@ -175,7 +172,6 @@ def get_page_base_qss(accent_color=None):
             border-radius: {Radius.small}px;
             padding: 4px 8px;
             color: {Colors.text_secondary};
-            min-height: 28px;
         }}
 
         QDoubleSpinBox:focus, QSpinBox:focus {{

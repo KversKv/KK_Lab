@@ -41,6 +41,8 @@
 - `HoverFixStyle` 用于 Fusion 风格 `:hover` 生效，勿替换。
 - **驱动层严禁硬编码 `pyvisa.ResourceManager('@py')`**，默认走系统 VISA（NI-VISA），可选 `visa_library` 显式指定，失败再回退 `@py`。详见 [03_GOTCHAS.md §21](../docs/ai/03_GOTCHAS.md)。
 - **QComboBox `setView()` 后首次 `showPopup()` 高度不足**：Qt 内部用未含 CSS padding 的 sizeHintForRow 计算 popup 高度。修复方式：自定义 delegate 确保 sizeHint 包含 padding + `showPopup()` 前设 view.setMinimumHeight + 隐藏多余 Scroller。见 `ui/widgets/dark_combobox.py`。
+- **SVG 图标禁止 `setDevicePixelRatio`**：PySide6 中 QLabel/QIcon 不能正确处理带 DPR 标记的 pixmap，会只显示左上角。直接用 `QPixmap(size, size)` 逻辑大小渲染。详见 [03_GOTCHAS.md §23](../docs/ai/03_GOTCHAS.md)。
+- **`get_page_base_qss()` 禁止全局 `min-height`**：会级联覆盖子控件的 `setFixedHeight()`，挤占布局间距。需要标准高度的控件在 `page_extra` 中按 objectName 单独设置。详见 [03_GOTCHAS.md §24](../docs/ai/03_GOTCHAS.md)。
 
 ## 会话决策 / 偏好
 
@@ -59,3 +61,5 @@
 | 2026-04-29 | 新增 53230A 频率计驱动 / Mock / 工厂 / UI 模组（[keysight_53230A.py](../instruments/frequencyCounter/keysight_53230A.py)、[mock_instruments.py](../instruments/mock/mock_instruments.py) `MockKeysight53230A`、[factory.py](../instruments/factory.py) `create_frequency_counter`、[keysight_53230a_module_frame.py](../ui/modules/keysight_53230a_module_frame.py)），`DIRECTORY_STRUCTURE.txt` 已同步 | 完整接入 53230A 通用计数器 |
 | 2026-04-29 | 沉淀"UI 模组 Demo 入口需注入 `sys.path` 兼容直接运行"坑点：新增 [03_GOTCHAS.md §22](../docs/ai/03_GOTCHAS.md) 与 [08_CHECKLISTS.md 新增 UI 模组](../docs/ai/08_CHECKLISTS.md) 勾项 | 封堵 `ModuleNotFoundError: No module named 'ui'` 重复指令 |
 | 2026-05-19 | 修复 `DarkComboBox` 首次展开下拉菜单高度不足（内容显示不全）的问题。方案：新增 `_ComboItemDelegate` 确保 delegate sizeHint 包含 padding；`showPopup` 中在 `super().showPopup()` 之前设置 `view.setMinimumHeight`；展开后隐藏不必要的 `QComboBoxPrivateScroller` | Qt `setView()` 自定义 QListView 后，首次 `showPopup()` 内部使用的 sizeHintForRow 不含 CSS padding，导致高度差约 3px/行 |
+| 2026-05-22 | 修复全局 SVG 图标高 DPI 渲染问题：移除所有 `setDevicePixelRatio` 用法，改用 `QPixmap(size, size)` 逻辑大小直接渲染。影响 9 个文件（icon_utils / sidebar_nav_button / node_palette / custom_test_ui / sequence_canvas / oscilloscope_base_ui / n6705c_analyser_ui / n6705c_datalog_ui / vt6002_chamber_ui）。新增 [03_GOTCHAS.md §23](../docs/ai/03_GOTCHAS.md) | PySide6 QLabel/QIcon 不能正确处理带 DPR 标记的 pixmap |
+| 2026-05-22 | 修复 Consumption Test 等页面间距问题：从 `get_page_base_qss()` 移除全局 `min-height`（QPushButton 32px / QComboBox 28px / QSpinBox 28px / QLineEdit 32px）。新增 [03_GOTCHAS.md §24](../docs/ai/03_GOTCHAS.md) | QSS `min-height` 级联覆盖子控件 `setFixedHeight()` 导致间距被挤占 |
