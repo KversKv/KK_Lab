@@ -31,6 +31,91 @@ import os
 
 block_cipher = None
 
+_ALLOWED_QT_BINARY_NAMES = {
+    'd3dcompiler_47.dll',
+    'msvcp140.dll',
+    'msvcp140_1.dll',
+    'msvcp140_2.dll',
+    'pyside6.abi3.dll',
+    'python312.dll',
+    'qt6core.dll',
+    'qt6gui.dll',
+    'qt6network.dll',
+    'qt6svg.dll',
+    'qt6widgets.dll',
+    'qtcore.pyd',
+    'qtgui.pyd',
+    'qtnetwork.pyd',
+    'qtsvg.pyd',
+    'qtwidgets.pyd',
+    'shiboken6.abi3.dll',
+    'vcruntime140.dll',
+    'vcruntime140_1.dll',
+}
+
+_ALLOWED_QT_PLUGIN_PARTS = (
+    os.path.join('PySide6', 'plugins', 'iconengines', 'qsvgicon.dll').lower(),
+    os.path.join('PySide6', 'plugins', 'imageformats', 'qico.dll').lower(),
+    os.path.join('PySide6', 'plugins', 'imageformats', 'qsvg.dll').lower(),
+    os.path.join('PySide6', 'plugins', 'platforms', 'qwindows.dll').lower(),
+    os.path.join('PySide6', 'plugins', 'styles', 'qmodernwindowsstyle.dll').lower(),
+)
+
+
+def _normalize_toc_item_path(path):
+    return os.path.normpath(path).replace('/', os.path.sep).replace('\\', os.path.sep).lower()
+
+
+def _is_allowed_qt_binary(item):
+    src, dest = item[0], item[1]
+    normalized_src = _normalize_toc_item_path(src)
+    normalized_dest = _normalize_toc_item_path(dest)
+    basename = os.path.basename(normalized_src)
+    if basename in _ALLOWED_QT_BINARY_NAMES:
+        return True
+    return any(part in normalized_src or part in normalized_dest for part in _ALLOWED_QT_PLUGIN_PARTS)
+
+
+def _filter_serialcom_binaries(binaries):
+    filtered = []
+    for item in binaries:
+        src, dest = item[0], item[1]
+        normalized_src = _normalize_toc_item_path(src)
+        normalized_dest = _normalize_toc_item_path(dest)
+        if 'pyside6' + os.path.sep in normalized_src or 'pyside6' + os.path.sep in normalized_dest:
+            if _is_allowed_qt_binary(item):
+                filtered.append(item)
+            continue
+        if 'numpy' + os.path.sep in normalized_src or 'numpy' + os.path.sep in normalized_dest:
+            continue
+        if 'numpy.libs' + os.path.sep in normalized_src or 'numpy.libs' + os.path.sep in normalized_dest:
+            continue
+        if 'pyqtgraph' + os.path.sep in normalized_src or 'pyqtgraph' + os.path.sep in normalized_dest:
+            continue
+        if os.path.basename(normalized_src) in {'libcrypto-3.dll', 'libssl-3.dll'}:
+            continue
+        filtered.append(item)
+    return filtered
+
+
+def _filter_serialcom_datas(datas):
+    filtered = []
+    for item in datas:
+        src, dest = item[0], item[1]
+        normalized_src = _normalize_toc_item_path(src)
+        normalized_dest = _normalize_toc_item_path(dest)
+        if 'pyside6' + os.path.sep + 'translations' + os.path.sep in normalized_src:
+            continue
+        if 'pyside6' + os.path.sep + 'translations' + os.path.sep in normalized_dest:
+            continue
+        if 'pyqtgraph' + os.path.sep in normalized_src or 'pyqtgraph' + os.path.sep in normalized_dest:
+            continue
+        if 'numpy' + os.path.sep in normalized_src or 'numpy' + os.path.sep in normalized_dest:
+            continue
+        filtered.append(item)
+    return filtered
+
+
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(SPEC)))
 
 # ------------------------------------------------------------------
@@ -57,22 +142,13 @@ a = Analysis(
         'serial.tools.list_ports',
         'PySide6',
         'PySide6.QtSvg',
-        'PySide6.QtOpenGL',
-        'PySide6.QtOpenGLWidgets',
-        'numpy',
-        'pyqtgraph',
         'ui',
         'ui.resource_path',
         'ui.widgets',
-        'ui.widgets.plot_widget',
         'ui.widgets.dark_combobox',
-        'ui.widgets.sidebar_nav_button',
-        'ui.widgets.progress_button',
-        'ui.widgets.button',
         'ui.widgets.scrollbar',
-        'ui.widgets.start_sequence',
-        'ui.styles',
-        'ui.modules',
+        'ui.utils',
+        'ui.utils.icon_utils',
         'core',
         'core.auto_baud_detector',
         'log_config',
@@ -83,7 +159,9 @@ a = Analysis(
     runtime_hooks=[],
     excludes=[
         # 原有
+        'pyqtgraph',
         'pyqtgraph.opengl',
+        'numpy',
         'OpenGL',
         'pyvisa',
         'pyvisa_py',
@@ -123,6 +201,9 @@ a = Analysis(
     cipher=block_cipher,
     noarchive=False,
 )
+
+a.binaries = _filter_serialcom_binaries(a.binaries)
+a.datas = _filter_serialcom_datas(a.datas)
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 

@@ -1476,7 +1476,7 @@ class SerialComMixin:
             QLabel#quickCommandsTitle {{
                 color: #fbbf24;
                 font-weight: 600;
-                font-size: 13px;
+                font-size: 12px;
                 font-family: {_UI_FONT};
                 background: transparent;
             }}
@@ -1485,9 +1485,9 @@ class SerialComMixin:
                 background-color: #1e293b;
                 color: #e5e7eb;
                 border: 1px solid #334155;
-                border-radius: 6px;
-                padding: 4px 12px;
-                min-height: 24px;
+                border-radius: 5px;
+                padding: 3px 8px;
+                min-height: 17px;
             }}
             QFrame#quickCommandsPanel QPushButton:hover {{
                 background-color: #334155;
@@ -1521,10 +1521,10 @@ class SerialComMixin:
                 background-color: #172033;
                 color: #e5e7eb;
                 border: 1px solid #334155;
-                border-radius: 6px;
-                padding: 5px 12px;
-                min-height: 24px;
-                min-width: 48px;
+                border-radius: 5px;
+                padding: 4px 8px;
+                min-height: 17px;
+                min-width: 34px;
             }}
             QFrame#quickCommandsPanel QPushButton#quickCommandButton:hover {{
                 background-color: #25344d;
@@ -1549,14 +1549,14 @@ class SerialComMixin:
         header_frame = QFrame()
         header_frame.setObjectName("scQuickHeaderFrame")
         header = QHBoxLayout(header_frame)
-        header.setContentsMargins(8, 6, 8, 0)
-        header.setSpacing(6)
+        header.setContentsMargins(6, 4, 6, 0)
+        header.setSpacing(4)
 
         zap_icon = QLabel()
-        icon = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "zap.svg"), "#f59e0b", 11)
+        icon = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "zap.svg"), "#f59e0b", 10)
         if not icon.isNull():
-            zap_icon.setPixmap(icon.pixmap(11, 11))
-        zap_icon.setFixedSize(13, 13)
+            zap_icon.setPixmap(icon.pixmap(10, 10))
+        zap_icon.setFixedSize(10, 10)
         zap_icon.setStyleSheet("background: transparent;")
         header.addWidget(zap_icon)
 
@@ -1582,13 +1582,13 @@ class SerialComMixin:
                 border: 1px solid #475569;
                 border-top: 2px solid #475569;
                 border-bottom: none;
-                border-top-left-radius: 4px;
-                border-top-right-radius: 4px;
-                padding: 4px 14px;
-                margin-right: 2px;
+                border-top-left-radius: 3px;
+                border-top-right-radius: 3px;
+                padding: 3px 10px;
+                margin-right: 1px;
                 margin-bottom: 0px;
-                min-height: 22px;
-                font-size: 12px;
+                min-height: 15px;
+                font-size: 11px;
                 font-family: {_UI_FONT};
             }}
             QTabBar::tab:hover {{
@@ -1637,20 +1637,20 @@ class SerialComMixin:
         toolbar_frame = QFrame()
         toolbar_frame.setObjectName("scQuickToolbar")
         toolbar = QHBoxLayout(toolbar_frame)
-        toolbar.setContentsMargins(8, 6, 8, 6)
-        toolbar.setSpacing(6)
+        toolbar.setContentsMargins(6, 4, 6, 4)
+        toolbar.setSpacing(4)
 
         _combo_qss = f"""
             QComboBox {{
                 background-color: {_CLR_INPUT_BG};
                 color: #e5e7eb;
                 border: 1px solid rgba(51, 65, 85, 0.5);
-                border-radius: 6px;
-                padding: 3px 8px;
-                min-height: 26px;
-                font-size: 12px;
+                border-radius: 5px;
+                padding: 2px 6px;
+                min-height: 18px;
+                font-size: 11px;
                 font-family: {_UI_FONT};
-                min-width: 90px;
+                min-width: 63px;
             }}
             QComboBox:hover {{ border-color: #475569; }}
             QComboBox:focus {{ border-color: #5EEAD4; }}
@@ -1667,7 +1667,7 @@ class SerialComMixin:
 
         group_lbl = QLabel("Group:")
         group_lbl.setStyleSheet(
-            f"color: #cbd5e1; font-size: 12px; font-family: {_UI_FONT}; background: transparent;"
+            f"color: #cbd5e1; font-size: 11px; font-family: {_UI_FONT}; background: transparent;"
         )
         toolbar.addWidget(group_lbl)
         self._sc_qc_group_combo = QComboBox()
@@ -1684,10 +1684,10 @@ class SerialComMixin:
                 background-color: rgba(30, 41, 59, 0.6);
                 color: #e5e7eb;
                 border: 1px solid rgba(51, 65, 85, 0.5);
-                border-radius: 6px;
-                padding: 4px 12px;
-                min-height: 26px;
-                font-size: 12px;
+                border-radius: 5px;
+                padding: 3px 8px;
+                min-height: 18px;
+                font-size: 11px;
                 font-family: {_UI_FONT};
                 font-weight: 500;
             }}
@@ -1721,10 +1721,10 @@ class SerialComMixin:
                 background-color: #0A2B2E;
                 color: #2EE5B5;
                 border: 1px solid rgba(46, 229, 181, 0.3);
-                border-radius: 6px;
-                padding: 4px 12px;
-                min-height: 26px;
-                font-size: 12px;
+                border-radius: 5px;
+                padding: 3px 8px;
+                min-height: 18px;
+                font-size: 11px;
                 font-family: {_UI_FONT};
                 font-weight: 600;
             }}
@@ -1762,8 +1762,8 @@ class SerialComMixin:
             f"{SCROLLBAR_STYLE}"
         )
         self._sc_qc_btn_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._sc_qc_btn_scroll.setMinimumHeight(56)
-        self._sc_qc_btn_scroll.setMaximumHeight(140)
+        self._sc_qc_btn_scroll.setMinimumHeight(39)
+        self._sc_qc_btn_scroll.setMaximumHeight(98)
 
         self._sc_qc_btn_container = QWidget()
         self._sc_qc_btn_container.setObjectName("scQuickBtnContainer")
@@ -1774,9 +1774,9 @@ class SerialComMixin:
         self._sc_qc_btn_container.setAcceptDrops(True)
         self._sc_qc_btn_container.installEventFilter(self)
         self._sc_qc_btn_layout = QGridLayout(self._sc_qc_btn_container)
-        self._sc_qc_btn_layout.setContentsMargins(8, 8, 8, 8)
-        self._sc_qc_btn_layout.setHorizontalSpacing(8)
-        self._sc_qc_btn_layout.setVerticalSpacing(8)
+        self._sc_qc_btn_layout.setContentsMargins(6, 6, 6, 6)
+        self._sc_qc_btn_layout.setHorizontalSpacing(6)
+        self._sc_qc_btn_layout.setVerticalSpacing(6)
 
         self._sc_qc_btn_scroll.setWidget(self._sc_qc_btn_container)
         layout.addWidget(self._sc_qc_btn_scroll)
@@ -3242,11 +3242,12 @@ class SerialComMixin:
             btn.set_command_index(idx)
             btn.setCursor(Qt.PointingHandCursor)
             btn.setFocusPolicy(Qt.StrongFocus)
-            btn.setToolTip(
-                f"Name: {name}\nContent: {content}\n"
-                f"Type: {entry.get('send_type', 'text')}  "
-                f"Encoding: {entry.get('encoding', 'ascii')}  "
-                f"LineEnding: {repr(entry.get('line_ending', ''))}"
+            btn.set_preview_data(
+                name=name,
+                content=content,
+                send_type=entry.get('send_type', 'text'),
+                encoding=entry.get('encoding', 'ascii'),
+                line_ending=entry.get('line_ending', ''),
             )
             btn.clicked.connect(
                 lambda checked=False, e=entry: self._sc_send_quick(e)
@@ -3262,11 +3263,11 @@ class SerialComMixin:
                     background-color: #172033;
                     color: #e5e7eb;
                     border: 1px solid #334155;
-                    border-radius: 7px;
-                    padding: 6px 13px;
-                    min-height: 28px;
-                    min-width: 56px;
-                    font-size: 12px;
+                    border-radius: 4px;
+                    padding: 3px 9px;
+                    min-height: 16px;
+                    min-width: 39px;
+                    font-size: 11px;
                     font-weight: 500;
                     font-family: {_UI_FONT};
                 }}
@@ -4909,6 +4910,93 @@ class _AddLogPanelDialog(QDialog):
         }
 
 
+class _QuickCmdPreviewPopup(QFrame):
+    def __init__(self, parent=None):
+        super().__init__(parent, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        self.setObjectName("quickCmdPreviewPopup")
+        self._badge_label = QLabel("QUICK CMD")
+        self._badge_label.setObjectName("quickCmdPreviewBadge")
+        self._title_label = QLabel()
+        self._title_label.setObjectName("quickCmdPreviewTitle")
+        self._title_label.setTextFormat(Qt.PlainText)
+        self._content_label = QLabel()
+        self._content_label.setObjectName("quickCmdPreviewContent")
+        self._content_label.setWordWrap(True)
+        self._content_label.setTextFormat(Qt.PlainText)
+        self._content_label.setTextInteractionFlags(Qt.NoTextInteraction)
+        self._meta_label = QLabel()
+        self._meta_label.setObjectName("quickCmdPreviewMeta")
+        self._meta_label.setWordWrap(True)
+        self._meta_label.setTextFormat(Qt.PlainText)
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(7)
+        header_layout.addWidget(self._badge_label, 0, Qt.AlignVCenter)
+        header_layout.addWidget(self._title_label, 1, Qt.AlignVCenter)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(6)
+        layout.addLayout(header_layout)
+        layout.addWidget(self._content_label)
+        layout.addWidget(self._meta_label)
+        self.setStyleSheet(f"""
+            QFrame#quickCmdPreviewPopup {{
+                background-color: #0b1220;
+                border: 1px solid #475569;
+                border-radius: 9px;
+            }}
+            QLabel#quickCmdPreviewBadge {{
+                color: #0f172a;
+                background-color: {_CLR_TEXT_ACCENT};
+                border-radius: 4px;
+                padding: 2px 5px;
+                font-family: {_UI_FONT};
+                font-size: 9px;
+                font-weight: 800;
+            }}
+            QLabel#quickCmdPreviewTitle {{
+                color: #f8fafc;
+                font-family: {_UI_FONT};
+                font-size: 12px;
+                font-weight: 700;
+                background: transparent;
+            }}
+            QLabel#quickCmdPreviewContent {{
+                color: {_CLR_INPUT_TEXT};
+                background-color: #0f172a;
+                border: 1px solid #253247;
+                border-radius: 6px;
+                padding: 7px 8px;
+                font-family: {_TERM_FONT};
+                font-size: 11px;
+                line-height: 1.35;
+            }}
+            QLabel#quickCmdPreviewMeta {{
+                color: #94a3b8;
+                font-family: {_UI_FONT};
+                font-size: 10px;
+                background: transparent;
+            }}
+        """)
+
+    def set_preview_data(self, name: str, content: str, send_type: str, encoding: str, line_ending: str):
+        display_name = str(name or "Untitled")
+        display_content = str(content or "")
+        display_type = str(send_type or "text")
+        display_encoding = str(encoding or "ascii")
+        display_line_ending = repr(line_ending or "")
+        if len(display_content) > 360:
+            display_content = f"{display_content[:360]}..."
+        self._title_label.setText(display_name)
+        self._content_label.setText(display_content if display_content else " ")
+        self._meta_label.setText(
+            f"Type: {display_type}   Encoding: {display_encoding}   Line: {display_line_ending}"
+        )
+        self.setFixedWidth(340)
+        self.adjustSize()
+
+
 class _QuickCmdButton(QPushButton):
     """支持右键菜单 + 拖拽排序的快捷指令按钮。
 
@@ -4927,6 +5015,12 @@ class _QuickCmdButton(QPushButton):
         self._press_pos = None
         self._cmd_index = -1
         self._dragging = False
+        self._preview_data = None
+        self._preview_popup = _QuickCmdPreviewPopup()
+        self._preview_timer = QTimer(self)
+        self._preview_timer.setSingleShot(True)
+        self._preview_timer.setInterval(80)
+        self._preview_timer.timeout.connect(self._show_preview)
 
     def set_command_index(self, idx: int):
         self._cmd_index = idx
@@ -4934,7 +5028,26 @@ class _QuickCmdButton(QPushButton):
     def command_index(self) -> int:
         return self._cmd_index
 
+    def set_preview_data(self, name: str, content: str, send_type: str, encoding: str, line_ending: str):
+        self._preview_data = {
+            "name": name,
+            "content": content,
+            "send_type": send_type,
+            "encoding": encoding,
+            "line_ending": line_ending,
+        }
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        self._preview_timer.start()
+
+    def leaveEvent(self, event):
+        self._preview_timer.stop()
+        self._preview_popup.hide()
+        super().leaveEvent(event)
+
     def mousePressEvent(self, event):
+        self._preview_popup.hide()
         if event.button() == Qt.LeftButton:
             self._press_pos = event.position().toPoint()
             self._dragging = False
@@ -4950,10 +5063,34 @@ class _QuickCmdButton(QPushButton):
             if (
                 event.position().toPoint() - self._press_pos
             ).manhattanLength() >= QApplication.startDragDistance():
+                self._preview_timer.stop()
+                self._preview_popup.hide()
                 self._dragging = True
                 self._start_drag()
                 return
         super().mouseMoveEvent(event)
+
+    def _show_preview(self):
+        if not self._preview_data or self._dragging or not self.underMouse():
+            return
+        self._preview_popup.set_preview_data(**self._preview_data)
+        pos = self._bounded_preview_pos()
+        self._preview_popup.move(pos)
+        self._preview_popup.show()
+
+    def _bounded_preview_pos(self) -> QPoint:
+        pos = self.mapToGlobal(QPoint(0, self.height() + 8))
+        popup_size = self._preview_popup.sizeHint()
+        screen = QApplication.screenAt(pos) or self.screen() or QApplication.primaryScreen()
+        if screen is None:
+            return pos
+        available = screen.availableGeometry()
+        x = min(max(pos.x(), available.left() + 8), available.right() - popup_size.width() - 8)
+        y = pos.y()
+        if y + popup_size.height() + 8 > available.bottom():
+            y = self.mapToGlobal(QPoint(0, -popup_size.height() - 8)).y()
+        y = min(max(y, available.top() + 8), available.bottom() - popup_size.height() - 8)
+        return QPoint(x, y)
 
     def mouseReleaseEvent(self, event):
         # 拖拽中按下释放不触发 click（Qt 会自动把 release 派发给 drop 目标）
