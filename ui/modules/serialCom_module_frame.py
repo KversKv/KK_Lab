@@ -903,14 +903,27 @@ class SerialComMixin:
     # --- sidebar ---
 
     def _build_sc_sidebar(self):
+        wrapper = QFrame()
+        wrapper.setObjectName("scSidebarWrapper")
+        wrapper.setMinimumWidth(self._sc_sidebar_min_width)
+        wrapper.setMaximumWidth(340)
+        wrapper.setStyleSheet(f"""
+            QFrame#scSidebarWrapper {{
+                background-color: {_CLR_BG_CARD};
+                border: 1px solid {_CLR_BORDER};
+                border-radius: 8px;
+            }}
+        """)
+        wrapper_layout = QVBoxLayout(wrapper)
+        wrapper_layout.setContentsMargins(0, 0, 0, 0)
+        wrapper_layout.setSpacing(0)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setMinimumWidth(self._sc_sidebar_min_width)
-        scroll.setMaximumWidth(340)
         scroll.setStyleSheet(f"""
-            QScrollArea {{ background-color: {_CLR_BG_PANEL}; border: none; }}
-            QScrollArea > QWidget > QWidget {{ background-color: {_CLR_BG_PANEL}; }}
+            QScrollArea {{ background-color: transparent; border: none; }}
+            QScrollArea > QWidget > QWidget {{ background-color: transparent; }}
         """)
 
         vbar = scroll.verticalScrollBar()
@@ -924,12 +937,12 @@ class SerialComMixin:
                 border-radius: 2px;
             }
             QScrollBar::handle:vertical {
-                background: #1f315d;
+                background: #334155;
                 min-height: 24px;
                 border-radius: 2px;
             }
             QScrollBar::handle:vertical:hover {
-                background: #2a3a6a;
+                background: #475569;
             }
             QScrollBar::sub-line:vertical,
             QScrollBar::add-line:vertical {
@@ -955,8 +968,8 @@ class SerialComMixin:
 
         container = QWidget()
         root = QVBoxLayout(container)
-        root.setContentsMargins(12, 14, 12, 12)
-        root.setSpacing(14)
+        root.setContentsMargins(0, 6, 0, 0)
+        root.setSpacing(0)
 
         root.addWidget(self._build_sc_section_port_settings())
         root.addWidget(self._build_sc_section_rx_settings())
@@ -964,7 +977,8 @@ class SerialComMixin:
         root.addStretch()
 
         scroll.setWidget(container)
-        return scroll
+        wrapper_layout.addWidget(scroll)
+        return wrapper
 
     def _build_sc_section_port_settings(self):
         grp = self._make_sc_section("Serial Config")
@@ -4380,7 +4394,8 @@ class SerialComMixin:
         escaped = message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         ts_html = f'<span style="color:{_CLR_TEXT_TIME};">{ts}</span> ' if ts else ""
         html = f'{ts_html}<span style="color:{color};">{escaped}</span>'
-        self._sc_all_logs.append((message, html))
+        raw = f"{ts} {message}" if ts else message
+        self._sc_all_logs.append((raw, html))
         if len(self._sc_all_logs) > self._SC_MAX_LOG_LINES:
             self._sc_all_logs = self._sc_all_logs[-self._SC_MAX_LOG_LINES:]
         if self._sc_is_filter_active():
@@ -4554,9 +4569,10 @@ class SerialComMixin:
         grp.setObjectName("scSectionCard")
         grp.setStyleSheet(f"""
             QFrame#scSectionCard {{
-                background-color: {_CLR_BG_CARD};
-                border: 1px solid rgba(30, 41, 59, 0.6);
-                border-radius: 8px;
+                background-color: transparent;
+                border: none;
+                border-bottom: 1px solid rgba(30, 41, 59, 0.6);
+                border-radius: 0px;
             }}
         """)
         layout = QVBoxLayout(grp)
@@ -5855,6 +5871,10 @@ if __name__ == "__main__":
         w4.setWindowIcon(QIcon(_ICON_PATH))
     w4.resize(1300, 850)
     w4.show()
-    w4.move(50, 50)
+    _screen_geo = app.primaryScreen().availableGeometry()
+    w4.move(
+        (_screen_geo.width() - w4.frameGeometry().width()) // 2 + _screen_geo.x(),
+        (_screen_geo.height() - w4.frameGeometry().height()) // 2 + _screen_geo.y(),
+    )
 
     sys.exit(app.exec())
