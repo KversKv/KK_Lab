@@ -43,6 +43,10 @@ from ui.widgets.dark_combobox import DarkComboBox
 from ui.widgets.scrollbar import SCROLLBAR_STYLE
 from debug_config import DEBUG_MOCK
 from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
+from core.auto_baud_detector import (
+    AutoBaudState, AutoBaudMonitor, AutoBaudScanWorker,
+    AUTO_BAUD_CONFIG, score_rx_data,
+)
 
 
 _SVG_COMMON_DIR = os.path.join(
@@ -690,6 +694,13 @@ class SerialComMixin:
         self._sc_filter_applied_before = 0
         self._sc_filter_applied_after = 0
 
+        self._sc_auto_baud_monitor = AutoBaudMonitor()
+        self._sc_auto_baud_scan_thread = None
+        self._sc_auto_baud_scan_worker = None
+        self._sc_auto_baud_pending_first_rx = False
+        self._sc_auto_baud_initial_buf = bytearray()
+        self._sc_auto_baud_initial_ts = 0.0
+
         outer = QVBoxLayout()
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
@@ -970,33 +981,37 @@ class SerialComMixin:
         self._sc_baud_combo.setFont(f2)
         grid.addWidget(self._sc_baud_combo, 1, 1)
 
-        grid.addWidget(self._make_sc_label("Data bits"), 2, 0)
+        self._sc_auto_detect_cb = QCheckBox("Auto-Detect")
+        self._sc_auto_detect_cb.setStyleSheet(self._sc_checkbox_style())
+        grid.addWidget(self._sc_auto_detect_cb, 2, 1)
+
+        grid.addWidget(self._make_sc_label("Data bits"), 3, 0)
         self._sc_databit_combo = DarkComboBox()
         self._sc_databit_combo.setFixedHeight(28)
         for d in ["8", "7", "6", "5"]:
             self._sc_databit_combo.addItem(d)
-        grid.addWidget(self._sc_databit_combo, 2, 1)
+        grid.addWidget(self._sc_databit_combo, 3, 1)
 
-        grid.addWidget(self._make_sc_label("Flow ctrl"), 3, 0)
+        grid.addWidget(self._make_sc_label("Flow ctrl"), 4, 0)
         self._sc_flow_combo = DarkComboBox()
         self._sc_flow_combo.setFixedHeight(28)
         for fc in ["None", "RTS/CTS", "XON/XOFF"]:
             self._sc_flow_combo.addItem(fc)
-        grid.addWidget(self._sc_flow_combo, 3, 1)
+        grid.addWidget(self._sc_flow_combo, 4, 1)
 
-        grid.addWidget(self._make_sc_label("Stop bits"), 4, 0)
+        grid.addWidget(self._make_sc_label("Stop bits"), 5, 0)
         self._sc_stopbit_combo = DarkComboBox()
         self._sc_stopbit_combo.setFixedHeight(28)
         for s in ["1", "1.5", "2"]:
             self._sc_stopbit_combo.addItem(s)
-        grid.addWidget(self._sc_stopbit_combo, 4, 1)
+        grid.addWidget(self._sc_stopbit_combo, 5, 1)
 
-        grid.addWidget(self._make_sc_label("Parity"), 5, 0)
+        grid.addWidget(self._make_sc_label("Parity"), 6, 0)
         self._sc_parity_combo = DarkComboBox()
         self._sc_parity_combo.setFixedHeight(28)
         for p in ["None", "Even", "Odd", "Mark", "Space"]:
             self._sc_parity_combo.addItem(p)
-        grid.addWidget(self._sc_parity_combo, 5, 1)
+        grid.addWidget(self._sc_parity_combo, 6, 1)
 
         layout.addLayout(grid)
         return grp
@@ -1764,6 +1779,11 @@ class SerialComMixin:
         self._sc_status_tx_label.setStyleSheet(f"color: {_CLR_TX};")
         layout.addWidget(self._sc_status_tx_label)
 
+        self._sc_status_autobaud_label = QLabel("")
+        self._sc_status_autobaud_label.setStyleSheet("color: #818CF8;")
+        self._sc_status_autobaud_label.setVisible(False)
+        layout.addWidget(self._sc_status_autobaud_label)
+
         layout.addStretch()
 
         return frame
@@ -1820,6 +1840,8 @@ class SerialComMixin:
             _baud_line_edit.editingFinished.connect(self._sc_on_baudrate_changed)
 
         self.serial_data_received.connect(self._sc_on_data_received)
+
+        self._sc_auto_detect_cb.toggled.connect(self._sc_on_auto_detect_toggled)
 
         self._sc_install_filter_shortcut()
 
@@ -1904,12 +1926,20 @@ class SerialComMixin:
             self._sc_update_connect_ui(True)
             self._sc_append_system(f"[INFO] Connected: {port} @ {baudrate}")
             self.serial_connection_changed.emit(True)
+            if self._sc_auto_detect_cb.isChecked():
+                self._sc_auto_baud_monitor.enabled = True
+                self._sc_auto_baud_monitor.runtime_redetect_enabled = True
+                self._sc_auto_baud_pending_first_rx = True
+                self._sc_auto_baud_initial_buf = bytearray()
+                self._sc_auto_baud_initial_ts = time.perf_counter()
+                self._sc_append_system("[INFO] Auto-detect enabled, waiting for RX data...")
             self._start_serial_read()
         except Exception as e:
             self._sc_append_system(f"[ERROR] Connection failed: {e}")
 
     def _sc_do_disconnect(self):
         self._stop_serial_read()
+        self._sc_stop_auto_baud_scan()
         try:
             if self._serial_conn and self._serial_conn.is_open:
                 self._serial_conn.close()
@@ -1963,7 +1993,9 @@ class SerialComMixin:
             self._sc_status_baud_label.setText("Baud rate: -")
 
         self._sc_port_combo.setEnabled(not connected)
-        self._sc_baud_combo.setEnabled(True)
+        auto_detect_on = getattr(self, '_sc_auto_detect_cb', None) and self._sc_auto_detect_cb.isChecked()
+        self._sc_baud_combo.setEditable(not auto_detect_on)
+        self._sc_baud_combo.setEnabled(not auto_detect_on)
 
     def _sc_on_baudrate_changed(self):
         baud_text = self._sc_baud_combo.currentText().strip()
@@ -1996,6 +2028,118 @@ class SerialComMixin:
             self._sc_append_system(f"[INFO] Baud rate updated: {baudrate}")
         except Exception as e:
             self._sc_append_system(f"[ERROR] Failed to set baud rate: {e}")
+
+    def _sc_on_auto_detect_toggled(self, checked):
+        self._sc_baud_combo.setEditable(not checked)
+        self._sc_baud_combo.setEnabled(not checked)
+        self._sc_auto_baud_monitor.enabled = checked
+        self._sc_auto_baud_monitor.runtime_redetect_enabled = checked
+        if checked:
+            self._sc_status_autobaud_label.setVisible(True)
+            self._sc_status_autobaud_label.setText("AutoBaud: ON")
+            if self._serial_connected:
+                self._sc_auto_baud_pending_first_rx = True
+                self._sc_auto_baud_initial_buf = bytearray()
+                self._sc_auto_baud_initial_ts = time.perf_counter()
+                self._sc_append_system("[INFO] Auto-detect enabled, waiting for RX data...")
+        else:
+            self._sc_status_autobaud_label.setVisible(False)
+            self._sc_auto_baud_monitor.reset()
+            self._sc_auto_baud_monitor.state = AutoBaudState.UNKNOWN
+            self._sc_stop_auto_baud_scan()
+            self._sc_auto_baud_pending_first_rx = False
+
+    def _sc_start_auto_baud_scan(self, reason="initial"):
+        if self._serial_conn is None or not self._serial_conn.is_open:
+            self._sc_append_system("[WARN] Cannot auto-detect: serial not connected")
+            return
+        if self._sc_auto_baud_scan_thread is not None and self._sc_auto_baud_scan_thread.isRunning():
+            return
+
+        self._stop_serial_read()
+
+        config = dict(AUTO_BAUD_CONFIG)
+        worker = AutoBaudScanWorker(
+            self._serial_conn, config, self._serial_baudrate
+        )
+        worker.set_recent_score_avg(self._sc_auto_baud_monitor.recent_score_avg)
+        thread = QThread()
+        worker.moveToThread(thread)
+
+        if reason == "initial":
+            thread.started.connect(worker.run_initial_scan)
+        else:
+            thread.started.connect(worker.run_runtime_rescan)
+
+        worker.scan_finished.connect(self._sc_on_auto_baud_scan_finished)
+        worker.scan_progress.connect(self._sc_on_auto_baud_progress)
+        worker.state_changed.connect(self._sc_on_auto_baud_state_changed)
+        worker.baudrate_changed.connect(self._sc_on_auto_baud_baudrate_changed)
+        worker.scan_finished.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._sc_on_auto_baud_thread_cleanup)
+
+        self._sc_auto_baud_scan_thread = thread
+        self._sc_auto_baud_scan_worker = worker
+        thread.start()
+
+    def _sc_stop_auto_baud_scan(self):
+        if self._sc_auto_baud_scan_worker is not None:
+            self._sc_auto_baud_scan_worker.stop()
+        if self._sc_auto_baud_scan_thread is not None and self._sc_auto_baud_scan_thread.isRunning():
+            self._sc_auto_baud_scan_thread.quit()
+            self._sc_auto_baud_scan_thread.wait(2000)
+        self._sc_auto_baud_scan_thread = None
+        self._sc_auto_baud_scan_worker = None
+
+    def _sc_on_auto_baud_thread_cleanup(self):
+        self._sc_auto_baud_scan_thread = None
+        self._sc_auto_baud_scan_worker = None
+        if self._serial_connected:
+            self._start_serial_read()
+
+    def _sc_on_auto_baud_scan_finished(self, result):
+        if result.get("success"):
+            baud = result["baudrate"]
+            self._sc_auto_baud_monitor.state = AutoBaudState.LOCKED
+            self._sc_auto_baud_monitor.reset()
+            self._sc_auto_baud_monitor.mark_switch()
+        else:
+            reason = result.get("reason", "unknown")
+            if reason == "no_baudrate_above_threshold":
+                best = result.get("best")
+                if best:
+                    self._sc_append_system(
+                        f"[WARN] No baudrate scored above threshold. Best: {best['baudrate']} score={best['score']}"
+                    )
+            self._sc_auto_baud_monitor.state = AutoBaudState.LOCKED
+            self._sc_auto_baud_monitor.reset()
+
+    def _sc_on_auto_baud_progress(self, msg):
+        self._sc_append_system(msg)
+
+    def _sc_on_auto_baud_state_changed(self, state_str):
+        self._sc_auto_baud_monitor.state = AutoBaudState(state_str)
+        label = self._sc_status_autobaud_label
+        if state_str == AutoBaudState.SCANNING.value:
+            label.setText("AutoBaud: SCANNING")
+            label.setStyleSheet("color: #FBBF24;")
+        elif state_str == AutoBaudState.SUSPECT.value:
+            label.setText("AutoBaud: SUSPECT")
+            label.setStyleSheet("color: #F87171;")
+        elif state_str == AutoBaudState.LOCKED.value:
+            label.setText("AutoBaud: LOCKED")
+            label.setStyleSheet("color: #818CF8;")
+        else:
+            label.setText(f"AutoBaud: {state_str}")
+            label.setStyleSheet("color: #94a3b8;")
+
+    def _sc_on_auto_baud_baudrate_changed(self, baudrate):
+        self._serial_baudrate = baudrate
+        self._sc_baud_combo.setCurrentText(str(baudrate))
+        if hasattr(self, '_sc_status_baud_label'):
+            self._sc_status_baud_label.setText(f"Baud rate: {baudrate}")
 
     def _sc_on_pause(self, checked):
         self._sc_paused = checked
@@ -2387,6 +2531,20 @@ class SerialComMixin:
         dlg.display_auto_scroll_cb.setChecked(self._sc_auto_scroll)
         dlg.display_word_wrap_cb.setChecked(getattr(self, '_sc_word_wrap', True))
 
+        dlg.auto_detect_enable_cb.setChecked(self._sc_auto_detect_cb.isChecked())
+        dlg.auto_detect_runtime_cb.setChecked(self._sc_auto_baud_monitor.runtime_redetect_enabled)
+        dlg.auto_detect_candidates_edit.setText(
+            ", ".join(str(b) for b in self._sc_auto_baud_monitor._config["candidate_baudrates"])
+        )
+        dlg.auto_detect_lock_spin.setValue(self._sc_auto_baud_monitor._config["lock_threshold"])
+        dlg.auto_detect_bad_spin.setValue(self._sc_auto_baud_monitor._config["bad_threshold"])
+        dlg.auto_detect_bad_windows_spin.setValue(self._sc_auto_baud_monitor._config["bad_windows_to_suspect"])
+        dlg.auto_detect_suspect_windows_spin.setValue(self._sc_auto_baud_monitor._config["suspect_windows_to_scan"])
+        dlg.auto_detect_window_ms_spin.setValue(self._sc_auto_baud_monitor._config["monitor_window_max_time_ms"])
+        dlg.auto_detect_cooldown_spin.setValue(self._sc_auto_baud_monitor._config["switch_cooldown_ms"])
+        dlg.auto_detect_margin_spin.setValue(self._sc_auto_baud_monitor._config["switch_score_margin"])
+        dlg.auto_detect_confirm_spin.setValue(self._sc_auto_baud_monitor._config["confirm_scan_rounds"])
+
         if dlg.exec() == QDialog.Accepted:
             self._sc_port_combo.setCurrentIndex(dlg.port_combo.currentIndex())
             self._sc_baud_combo.setCurrentText(dlg.baud_combo.currentText())
@@ -2441,6 +2599,38 @@ class SerialComMixin:
             self._sc_log_edit.setLineWrapMode(
                 _QTE.WidgetWidth if self._sc_word_wrap else _QTE.NoWrap
             )
+
+            self._sc_apply_auto_detect_settings(dlg)
+
+    def _sc_apply_auto_detect_settings(self, dlg):
+        enable = dlg.auto_detect_enable_cb.isChecked()
+        runtime = dlg.auto_detect_runtime_cb.isChecked()
+
+        candidates_text = dlg.auto_detect_candidates_edit.text().strip()
+        candidates = []
+        for part in candidates_text.replace(";", ",").split(","):
+            part = part.strip()
+            if part.isdigit():
+                candidates.append(int(part))
+        if not candidates:
+            candidates = list(AUTO_BAUD_CONFIG["candidate_baudrates"])
+
+        config = dict(self._sc_auto_baud_monitor._config)
+        config["candidate_baudrates"] = candidates
+        config["lock_threshold"] = dlg.auto_detect_lock_spin.value()
+        config["bad_threshold"] = dlg.auto_detect_bad_spin.value()
+        config["bad_windows_to_suspect"] = dlg.auto_detect_bad_windows_spin.value()
+        config["suspect_windows_to_scan"] = dlg.auto_detect_suspect_windows_spin.value()
+        config["monitor_window_max_time_ms"] = dlg.auto_detect_window_ms_spin.value()
+        config["switch_cooldown_ms"] = dlg.auto_detect_cooldown_spin.value()
+        config["switch_score_margin"] = dlg.auto_detect_margin_spin.value()
+        config["confirm_scan_rounds"] = dlg.auto_detect_confirm_spin.value()
+
+        self._sc_auto_baud_monitor.update_config(config)
+        self._sc_auto_baud_monitor.runtime_redetect_enabled = runtime
+
+        if enable != self._sc_auto_detect_cb.isChecked():
+            self._sc_auto_detect_cb.setChecked(enable)
 
     def _sc_on_filter_toggle(self, checked):
         self._sc_filter_row.setVisible(checked)
@@ -2757,6 +2947,51 @@ class SerialComMixin:
         for line in display.splitlines():
             if line.strip():
                 self._sc_append_log(f"[RX] {line}", _CLR_RX)
+
+        self._sc_feed_auto_baud_monitor(data)
+
+    def _sc_feed_auto_baud_monitor(self, data: bytes):
+        monitor = self._sc_auto_baud_monitor
+        if not monitor.enabled:
+            return
+        if self._sc_auto_baud_pending_first_rx:
+            self._sc_auto_baud_initial_buf.extend(data)
+            cfg = monitor._config
+            buf_len = len(self._sc_auto_baud_initial_buf)
+            elapsed_ms = (time.perf_counter() - self._sc_auto_baud_initial_ts) * 1000
+            if buf_len >= cfg["scan_sample_bytes"] or elapsed_ms >= cfg["scan_timeout_ms"]:
+                self._sc_auto_baud_pending_first_rx = False
+                sample = bytes(self._sc_auto_baud_initial_buf)
+                self._sc_auto_baud_initial_buf = bytearray()
+                s = score_rx_data(sample)
+                if s is not None and s >= cfg["lock_threshold"]:
+                    self._sc_append_system(
+                        f"[INFO] Current baudrate {self._serial_baudrate} score={s}, locked."
+                    )
+                    monitor.state = AutoBaudState.LOCKED
+                    monitor.reset()
+                    self._sc_on_auto_baud_state_changed(AutoBaudState.LOCKED.value)
+                else:
+                    score_info = f"score={s}" if s is not None else "no data"
+                    self._sc_append_system(
+                        f"[INFO] Current baudrate {self._serial_baudrate} {score_info}, scanning candidates..."
+                    )
+                    self._sc_start_auto_baud_scan("initial")
+            return
+        monitor.hex_mode = self._sc_rx_display_hex
+        result = monitor.on_rx_data(data)
+        if result is None:
+            return
+        action = result.get("action")
+        if action == "suspect":
+            self._sc_append_system("[INFO] RX quality degraded. Enter SUSPECT state.")
+            self._sc_on_auto_baud_state_changed(AutoBaudState.SUSPECT.value)
+        elif action == "recovered":
+            self._sc_append_system("[INFO] RX quality recovered.")
+            self._sc_on_auto_baud_state_changed(AutoBaudState.LOCKED.value)
+        elif action == "scan_needed":
+            self._sc_append_system("[INFO] Sustained RX quality issue. Starting rescan...")
+            self._sc_start_auto_baud_scan("runtime")
 
     def _sc_on_auto_resend_toggled(self, checked):
         self._sc_auto_resend = checked
@@ -4717,6 +4952,7 @@ class _SerialSettingsDialog(QDialog):
         self._tabs.addTab(self._build_tab_tx(), "TX")
         self._tabs.addTab(self._build_tab_log(), "Log")
         self._tabs.addTab(self._build_tab_display(), "Display")
+        self._tabs.addTab(self._build_tab_auto_detect(), "Auto-Detect")
 
         btn_row = QHBoxLayout()
         btn_row.addStretch()
@@ -5002,6 +5238,110 @@ class _SerialSettingsDialog(QDialog):
 
         self.display_show_line_num_cb = QCheckBox("Show line numbers")
         layout.addWidget(self.display_show_line_num_cb)
+
+        layout.addStretch()
+        return page
+
+    # ---- tab: Auto-Detect ----
+
+    def _build_tab_auto_detect(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        layout.addWidget(self._section_title("Auto Baudrate Detection"))
+
+        self.auto_detect_enable_cb = QCheckBox("Enable auto baudrate detection")
+        layout.addWidget(self.auto_detect_enable_cb)
+
+        self.auto_detect_runtime_cb = QCheckBox("Allow runtime auto re-detection")
+        layout.addWidget(self.auto_detect_runtime_cb)
+
+        layout.addWidget(self._separator())
+        layout.addWidget(self._section_title("Candidate Baudrates"))
+
+        self.auto_detect_candidates_edit = QLineEdit()
+        self.auto_detect_candidates_edit.setPlaceholderText("e.g. 921600, 1152000, 2000000, 3000000")
+        self.auto_detect_candidates_edit.setText(
+            ", ".join(str(b) for b in AUTO_BAUD_CONFIG["candidate_baudrates"])
+        )
+        layout.addWidget(self.auto_detect_candidates_edit)
+
+        layout.addWidget(self._separator())
+        layout.addWidget(self._section_title("Thresholds"))
+
+        thresh_grid = QGridLayout()
+        thresh_grid.setHorizontalSpacing(12)
+        thresh_grid.setVerticalSpacing(8)
+
+        thresh_grid.addWidget(QLabel("Lock threshold"), 0, 0)
+        self.auto_detect_lock_spin = QSpinBox()
+        self.auto_detect_lock_spin.setRange(50, 100)
+        self.auto_detect_lock_spin.setValue(AUTO_BAUD_CONFIG["lock_threshold"])
+        self.auto_detect_lock_spin.setFixedHeight(20)
+        thresh_grid.addWidget(self.auto_detect_lock_spin, 0, 1)
+
+        thresh_grid.addWidget(QLabel("Bad threshold"), 0, 2)
+        self.auto_detect_bad_spin = QSpinBox()
+        self.auto_detect_bad_spin.setRange(10, 80)
+        self.auto_detect_bad_spin.setValue(AUTO_BAUD_CONFIG["bad_threshold"])
+        self.auto_detect_bad_spin.setFixedHeight(20)
+        thresh_grid.addWidget(self.auto_detect_bad_spin, 0, 3)
+
+        thresh_grid.addWidget(QLabel("Bad windows to suspect"), 1, 0)
+        self.auto_detect_bad_windows_spin = QSpinBox()
+        self.auto_detect_bad_windows_spin.setRange(1, 10)
+        self.auto_detect_bad_windows_spin.setValue(AUTO_BAUD_CONFIG["bad_windows_to_suspect"])
+        self.auto_detect_bad_windows_spin.setFixedHeight(20)
+        thresh_grid.addWidget(self.auto_detect_bad_windows_spin, 1, 1)
+
+        thresh_grid.addWidget(QLabel("Suspect windows to scan"), 1, 2)
+        self.auto_detect_suspect_windows_spin = QSpinBox()
+        self.auto_detect_suspect_windows_spin.setRange(1, 10)
+        self.auto_detect_suspect_windows_spin.setValue(AUTO_BAUD_CONFIG["suspect_windows_to_scan"])
+        self.auto_detect_suspect_windows_spin.setFixedHeight(20)
+        thresh_grid.addWidget(self.auto_detect_suspect_windows_spin, 1, 3)
+
+        layout.addLayout(thresh_grid)
+
+        layout.addWidget(self._separator())
+        layout.addWidget(self._section_title("Timing"))
+
+        time_grid = QGridLayout()
+        time_grid.setHorizontalSpacing(12)
+        time_grid.setVerticalSpacing(8)
+
+        time_grid.addWidget(QLabel("Monitor window (ms)"), 0, 0)
+        self.auto_detect_window_ms_spin = QSpinBox()
+        self.auto_detect_window_ms_spin.setRange(100, 2000)
+        self.auto_detect_window_ms_spin.setValue(AUTO_BAUD_CONFIG["monitor_window_max_time_ms"])
+        self.auto_detect_window_ms_spin.setFixedHeight(20)
+        time_grid.addWidget(self.auto_detect_window_ms_spin, 0, 1)
+
+        time_grid.addWidget(QLabel("Switch cooldown (ms)"), 0, 2)
+        self.auto_detect_cooldown_spin = QSpinBox()
+        self.auto_detect_cooldown_spin.setRange(1000, 30000)
+        self.auto_detect_cooldown_spin.setSingleStep(500)
+        self.auto_detect_cooldown_spin.setValue(AUTO_BAUD_CONFIG["switch_cooldown_ms"])
+        self.auto_detect_cooldown_spin.setFixedHeight(20)
+        time_grid.addWidget(self.auto_detect_cooldown_spin, 0, 3)
+
+        time_grid.addWidget(QLabel("Score margin"), 1, 0)
+        self.auto_detect_margin_spin = QSpinBox()
+        self.auto_detect_margin_spin.setRange(5, 60)
+        self.auto_detect_margin_spin.setValue(AUTO_BAUD_CONFIG["switch_score_margin"])
+        self.auto_detect_margin_spin.setFixedHeight(20)
+        time_grid.addWidget(self.auto_detect_margin_spin, 1, 1)
+
+        time_grid.addWidget(QLabel("Confirm rounds"), 1, 2)
+        self.auto_detect_confirm_spin = QSpinBox()
+        self.auto_detect_confirm_spin.setRange(1, 5)
+        self.auto_detect_confirm_spin.setValue(AUTO_BAUD_CONFIG["confirm_scan_rounds"])
+        self.auto_detect_confirm_spin.setFixedHeight(20)
+        time_grid.addWidget(self.auto_detect_confirm_spin, 1, 3)
+
+        layout.addLayout(time_grid)
 
         layout.addStretch()
         return page
