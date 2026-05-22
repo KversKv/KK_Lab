@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
     QFrame, QWidget, QTextEdit, QLineEdit, QComboBox, QCheckBox,
     QScrollArea, QSplitter, QApplication, QMenu, QFileDialog, QGridLayout,
     QSpinBox, QDialog, QDialogButtonBox, QTabWidget,
-    QInputDialog, QMessageBox, QTabBar,
+    QInputDialog, QMessageBox, QTabBar, QGraphicsDropShadowEffect,
 )
 import uuid as _uuid
 from PySide6.QtCore import (
@@ -4913,8 +4913,11 @@ class _AddLogPanelDialog(QDialog):
 class _QuickCmdPreviewPopup(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
-        self.setObjectName("quickCmdPreviewPopup")
+        self.setObjectName("quickCmdPreviewPopupWindow")
+        self._card = QFrame(self)
+        self._card.setObjectName("quickCmdPreviewPopup")
         self._badge_label = QLabel("QUICK CMD")
         self._badge_label.setObjectName("quickCmdPreviewBadge")
         self._title_label = QLabel()
@@ -4934,16 +4937,29 @@ class _QuickCmdPreviewPopup(QFrame):
         header_layout.setSpacing(7)
         header_layout.addWidget(self._badge_label, 0, Qt.AlignVCenter)
         header_layout.addWidget(self._title_label, 1, Qt.AlignVCenter)
+        card_layout = QVBoxLayout(self._card)
+        card_layout.setContentsMargins(10, 8, 10, 8)
+        card_layout.setSpacing(6)
+        card_layout.addLayout(header_layout)
+        card_layout.addWidget(self._content_label)
+        card_layout.addWidget(self._meta_label)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(6)
-        layout.addLayout(header_layout)
-        layout.addWidget(self._content_label)
-        layout.addWidget(self._meta_label)
+        layout.setContentsMargins(14, 10, 14, 14)
+        layout.setSpacing(0)
+        layout.addWidget(self._card)
+        shadow = QGraphicsDropShadowEffect(self._card)
+        shadow.setBlurRadius(18)
+        shadow.setOffset(0, 5)
+        shadow.setColor(QColor(0, 0, 0, 145))
+        self._card.setGraphicsEffect(shadow)
         self.setStyleSheet(f"""
+            QFrame#quickCmdPreviewPopupWindow {{
+                background-color: transparent;
+                border: none;
+            }}
             QFrame#quickCmdPreviewPopup {{
-                background-color: #0b1220;
-                border: 1px solid #475569;
+                background-color: rgba(11, 18, 32, 232);
+                border: 1px solid rgba(71, 85, 105, 210);
                 border-radius: 9px;
             }}
             QLabel#quickCmdPreviewBadge {{
@@ -4964,8 +4980,8 @@ class _QuickCmdPreviewPopup(QFrame):
             }}
             QLabel#quickCmdPreviewContent {{
                 color: {_CLR_INPUT_TEXT};
-                background-color: #0f172a;
-                border: 1px solid #253247;
+                background-color: rgba(15, 23, 42, 218);
+                border: 1px solid rgba(37, 50, 71, 220);
                 border-radius: 6px;
                 padding: 7px 8px;
                 font-family: {_TERM_FONT};
@@ -4993,7 +5009,7 @@ class _QuickCmdPreviewPopup(QFrame):
         self._meta_label.setText(
             f"Type: {display_type}   Encoding: {display_encoding}   Line: {display_line_ending}"
         )
-        self.setFixedWidth(340)
+        self.setFixedWidth(368)
         self.adjustSize()
 
 
@@ -5074,6 +5090,7 @@ class _QuickCmdButton(QPushButton):
         if not self._preview_data or self._dragging or not self.underMouse():
             return
         self._preview_popup.set_preview_data(**self._preview_data)
+        self._preview_popup.ensurePolished()
         pos = self._bounded_preview_pos()
         self._preview_popup.move(pos)
         self._preview_popup.show()
@@ -5085,11 +5102,18 @@ class _QuickCmdButton(QPushButton):
         if screen is None:
             return pos
         available = screen.availableGeometry()
-        x = min(max(pos.x(), available.left() + 8), available.right() - popup_size.width() - 8)
+        safe_margin = 24
+        x = min(
+            max(pos.x(), available.left() + safe_margin),
+            available.right() - popup_size.width() - safe_margin,
+        )
         y = pos.y()
-        if y + popup_size.height() + 8 > available.bottom():
+        if y + popup_size.height() + safe_margin > available.bottom():
             y = self.mapToGlobal(QPoint(0, -popup_size.height() - 8)).y()
-        y = min(max(y, available.top() + 8), available.bottom() - popup_size.height() - 8)
+        y = min(
+            max(y, available.top() + safe_margin),
+            available.bottom() - popup_size.height() - safe_margin,
+        )
         return QPoint(x, y)
 
     def mouseReleaseEvent(self, event):
