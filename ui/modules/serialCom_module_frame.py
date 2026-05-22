@@ -754,7 +754,7 @@ class SerialComMixin:
 
         self._sc_pending_html = []
         self._sc_flush_timer = QTimer()
-        self._sc_flush_timer.setInterval(60)
+        self._sc_flush_timer.setInterval(100)
         self._sc_flush_timer.timeout.connect(self._sc_flush_pending_logs)
         self._sc_flush_timer.start()
 
@@ -1184,6 +1184,22 @@ class SerialComMixin:
         )
         self._sc_scroll_lock_btn.setCheckable(True)
         self._sc_scroll_lock_btn.setChecked(True)
+        self._sc_scroll_lock_btn.setStyleSheet(f"""
+            QPushButton {{
+                min-height: 0px; max-height: 24px; padding: 3px 10px; border-radius: 6px;
+                background-color: rgba(15, 23, 42, 0.6); color: #cbd5e1; font-size: 12px;
+                font-family: {_UI_FONT}; font-weight: 500; border: 1px solid #334155;
+            }}
+            QPushButton:hover {{ background-color: #1e293b; color: #FFFFFF; border: 1px solid #475569; }}
+            QPushButton:pressed {{ background-color: #0f172a; }}
+            QPushButton:checked {{
+                background-color: #0c4a3e; color: #5eead4; border: 1px solid #2dd4bf;
+                font-weight: 600;
+            }}
+            QPushButton:checked:hover {{
+                background-color: #115e50; color: #99f6e4; border: 1px solid #5eead4;
+            }}
+        """)
         toolbar.addWidget(self._sc_scroll_lock_btn)
 
         layout.addLayout(toolbar)
@@ -1306,6 +1322,7 @@ class SerialComMixin:
         self._sc_log_edit.document().setDefaultStyleSheet(
             "p, div { line-height: 150%; margin: 0; padding: 0; }"
         )
+        self._sc_log_edit.document().setMaximumBlockCount(5000)
         layout.addWidget(self._sc_log_edit, 1)
 
         if self._sc_log_edit.verticalScrollBar():
@@ -1478,7 +1495,7 @@ class SerialComMixin:
         header_frame = QFrame()
         header_frame.setObjectName("scQuickHeaderFrame")
         header = QHBoxLayout(header_frame)
-        header.setContentsMargins(8, 6, 8, 4)
+        header.setContentsMargins(8, 6, 8, 0)
         header.setSpacing(6)
 
         zap_icon = QLabel()
@@ -1498,49 +1515,64 @@ class SerialComMixin:
         # 项目 Tab 栏（最顶层分组），末尾内置 "+" 加号 tab，右键菜单 + 拖拽排序
         self._sc_qc_project_tabs = _ProjectTabBar()
         self._sc_qc_project_tabs.setExpanding(False)
-        # drawBase=True：让 QTabBar 自身画底基线，与未选中 tab 形成"标签栏"贴合效果
-        self._sc_qc_project_tabs.setDrawBase(True)
+        self._sc_qc_project_tabs.setDrawBase(False)
         self._sc_qc_project_tabs.setUsesScrollButtons(True)
-        # 标签栏风格：选中 tab 背景 = 下方内容区背景，顶部 2px 蓝色高亮条，
-        # 底边盖住 QTabBar::pane 基线，视觉上与内容区"打通"；未选中 tab 透明融入栏背景。
         self._sc_qc_project_tabs.setStyleSheet(f"""
             QTabBar {{
                 background: transparent;
-                /* QTabBar 自身的底基线颜色（drawBase 时生效） */
-                qproperty-drawBase: 1;
+                border-bottom: 1px solid #1e293b;
             }}
             QTabBar::tab {{
-                background-color: transparent;
-                color: #94a3b8;
-                border: 1px solid transparent;
-                border-top: 2px solid transparent;
+                background-color: #0f172a;
+                color: #cbd5e1;
+                border: 1px solid #475569;
+                border-top: 2px solid #475569;
+                border-bottom: none;
                 border-top-left-radius: 4px;
                 border-top-right-radius: 4px;
                 padding: 4px 14px;
-                margin-right: 1px;
-                margin-bottom: -1px;
+                margin-right: 2px;
+                margin-bottom: 0px;
                 min-height: 22px;
                 font-size: 12px;
                 font-family: {_UI_FONT};
             }}
             QTabBar::tab:hover {{
                 background-color: #1e293b;
-                color: #e2e8f0;
+                color: #f1f5f9;
+                border-color: #64748b;
+                border-top-color: #64748b;
             }}
             QTabBar::tab:selected {{
                 background-color: #0f172a;
                 color: #f8fafc;
-                border: 1px solid #334155;
+                border: 1px solid #475569;
                 border-top: 2px solid #3b82f6;
-                /* 用与内容区一致的颜色覆盖下边线，视觉上把选中 tab 与内容区打通 */
-                border-bottom-color: #0f172a;
+                border-bottom: none;
             }}
             QTabBar::tab:selected:hover {{
                 background-color: #0f172a;
                 color: #ffffff;
             }}
             QTabBar::tab:!selected {{
-                margin-top: 2px;  /* 未选中 tab 略下沉，让选中 tab 看上去"凸起" */
+                margin-top: 0px;
+            }}
+            QTabBar::tear {{
+                background: transparent;
+                border: none;
+                width: 0px;
+            }}
+            QTabBar QToolButton {{
+                background-color: #0f172a;
+                border: 1px solid #334155;
+                border-radius: 3px;
+                color: #94a3b8;
+                margin: 2px;
+            }}
+            QTabBar QToolButton:hover {{
+                background-color: #1e293b;
+                border-color: #475569;
+                color: #e2e8f0;
             }}
         """)
         header.addWidget(self._sc_qc_project_tabs, 1)
@@ -2124,6 +2156,7 @@ class SerialComMixin:
         log_edit.document().setDefaultStyleSheet(
             "p, div { line-height: 150%; margin: 0; padding: 0; }"
         )
+        log_edit.document().setMaximumBlockCount(5000)
         layout.addWidget(log_edit, 1)
 
         status_bar = QFrame()
@@ -2199,6 +2232,8 @@ class SerialComMixin:
         panel["tx_bytes"] = 0
         panel["rx_label"].setText("RX: 0 B")
         panel["tx_label"].setText("TX: 0 B")
+        panel["auto_scroll"] = True
+        panel["scroll_btn"].setChecked(True)
 
     def _sc_extra_panel_on_scroll(self, panel, value):
         sb = panel["log_edit"].verticalScrollBar()
@@ -2297,12 +2332,18 @@ class SerialComMixin:
         for panel in self._sc_extra_log_panels:
             if not panel["pending_html"]:
                 continue
-            batch = panel["pending_html"]
-            panel["pending_html"] = []
+            batch = panel["pending_html"][:200]
+            panel["pending_html"] = panel["pending_html"][200:]
+            log_edit = panel["log_edit"]
+            log_edit.setUpdatesEnabled(False)
+            cursor = log_edit.textCursor()
+            cursor.beginEditBlock()
             for html in batch:
-                panel["log_edit"].append(html)
+                log_edit.append(html)
+            cursor.endEditBlock()
+            log_edit.setUpdatesEnabled(True)
             if panel["auto_scroll"]:
-                sb = panel["log_edit"].verticalScrollBar()
+                sb = log_edit.verticalScrollBar()
                 if sb:
                     sb.setValue(sb.maximum())
 
@@ -2477,7 +2518,10 @@ class SerialComMixin:
             for i in range(start, end + 1):
                 visible.add(i)
 
+        self._sc_log_edit.setUpdatesEnabled(False)
         self._sc_log_edit.clear()
+        cursor = self._sc_log_edit.textCursor()
+        cursor.beginEditBlock()
         prev_shown = -2
         for i in sorted(visible):
             if before > 0 or after > 0:
@@ -2494,17 +2538,21 @@ class SerialComMixin:
             else:
                 self._sc_log_edit.append(self._sc_all_logs[i][1])
             prev_shown = i
+        cursor.endEditBlock()
+        self._sc_log_edit.setUpdatesEnabled(True)
         self._sc_filter_last_count = len(self._sc_all_logs)
         if self._sc_auto_scroll:
             self._sc_scroll_to_bottom()
 
     def _sc_rebuild_log_view(self):
+        self._sc_log_edit.setUpdatesEnabled(False)
         self._sc_log_edit.clear()
         cursor = self._sc_log_edit.textCursor()
         cursor.beginEditBlock()
         for _raw, html in self._sc_all_logs:
             self._sc_log_edit.append(html)
         cursor.endEditBlock()
+        self._sc_log_edit.setUpdatesEnabled(True)
         if self._sc_auto_scroll:
             self._sc_scroll_to_bottom()
 
@@ -2619,6 +2667,7 @@ class SerialComMixin:
 
     def _sc_clear_logs(self):
         self._sc_all_logs.clear()
+        self._sc_pending_html.clear()
         self._sc_log_edit.clear()
         self._sc_rx_bytes = 0
         self._sc_tx_bytes = 0
@@ -2628,6 +2677,8 @@ class SerialComMixin:
         self._sc_filter_dirty = False
         self._sc_filter_match_label.setText("")
         self._sc_reset_applied_filter()
+        self._sc_auto_scroll = True
+        self._sc_scroll_lock_btn.setChecked(True)
 
     def _sc_on_user_scroll(self, value):
         sb = self._sc_log_edit.verticalScrollBar()
@@ -3834,12 +3885,16 @@ class SerialComMixin:
 
     # --- log helpers ---
 
+    _SC_MAX_LOG_LINES = 10000
+
     def _sc_append_log(self, message: str, color: str = _CLR_TEXT_BODY):
         ts = datetime.now().strftime("%H:%M:%S.%f")[:-3] if self._sc_show_timestamp else ""
         escaped = message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         ts_html = f'<span style="color:{_CLR_TEXT_TIME};">{ts}</span> ' if ts else ""
         html = f'{ts_html}<span style="color:{color};">{escaped}</span>'
         self._sc_all_logs.append((message, html))
+        if len(self._sc_all_logs) > self._SC_MAX_LOG_LINES:
+            self._sc_all_logs = self._sc_all_logs[-self._SC_MAX_LOG_LINES:]
         if self._sc_is_filter_active():
             self._sc_filter_dirty = True
         else:
@@ -3856,13 +3911,15 @@ class SerialComMixin:
                 else:
                     self._sc_apply_filter()
         elif self._sc_pending_html:
-            batch = self._sc_pending_html
-            self._sc_pending_html = []
+            batch = self._sc_pending_html[:200]
+            self._sc_pending_html = self._sc_pending_html[200:]
+            self._sc_log_edit.setUpdatesEnabled(False)
             cursor = self._sc_log_edit.textCursor()
             cursor.beginEditBlock()
             for html in batch:
                 self._sc_log_edit.append(html)
             cursor.endEditBlock()
+            self._sc_log_edit.setUpdatesEnabled(True)
             if self._sc_auto_scroll:
                 self._sc_scroll_to_bottom()
         self._sc_flush_extra_panels()
@@ -3885,9 +3942,9 @@ class SerialComMixin:
 
         start_idx = self._sc_filter_last_count
         new_html = []
-        total_match = 0
+        new_match_count = 0
 
-        for i in range(len(self._sc_all_logs)):
+        for i in range(start_idx, len(self._sc_all_logs)):
             raw = self._sc_all_logs[i][0]
             if compiled is not None:
                 hit = bool(compiled.search(raw))
@@ -3898,24 +3955,33 @@ class SerialComMixin:
             if invert:
                 hit = not hit
             if hit:
-                total_match += 1
-                if i >= start_idx:
-                    base_html = self._sc_all_logs[i][1]
-                    if not invert:
-                        base_html = self._sc_html_with_filter_highlight(
-                            base_html, pattern, use_regex, case_sensitive
-                        )
-                    new_html.append(base_html)
+                new_match_count += 1
+                base_html = self._sc_all_logs[i][1]
+                if not invert:
+                    base_html = self._sc_html_with_filter_highlight(
+                        base_html, pattern, use_regex, case_sensitive
+                    )
+                new_html.append(base_html)
 
         self._sc_filter_last_count = len(self._sc_all_logs)
+        prev_text = self._sc_filter_match_label.text()
+        prev_count = 0
+        if prev_text.startswith("Matched: "):
+            try:
+                prev_count = int(prev_text.split(":")[1].strip().split()[0])
+            except (ValueError, IndexError):
+                pass
+        total_match = prev_count + new_match_count
         self._sc_filter_match_label.setText(f"Matched: {total_match} lines")
 
         if new_html:
+            self._sc_log_edit.setUpdatesEnabled(False)
             cursor = self._sc_log_edit.textCursor()
             cursor.beginEditBlock()
             for html in new_html:
                 self._sc_log_edit.append(html)
             cursor.endEditBlock()
+            self._sc_log_edit.setUpdatesEnabled(True)
             if self._sc_auto_scroll:
                 self._sc_scroll_to_bottom()
 
