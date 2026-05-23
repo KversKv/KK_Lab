@@ -1,8 +1,27 @@
-from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
-from ui.modules.n6705c_module_frame import N6705CConnectionMixin
-from ui.modules.oscilloscope_module_frame import OscilloscopeConnectionMixin
-from ui.modules.chamber_module_frame import VT6002ConnectionMixin
-from ui.modules.serialCom_module.serialCom_module_frame import SerialComMixin
+try:
+    from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
+except ImportError:
+    pass
+
+try:
+    from ui.modules.n6705c_module_frame import N6705CConnectionMixin
+except ImportError:
+    pass
+
+try:
+    from ui.modules.oscilloscope_module_frame import OscilloscopeConnectionMixin
+except ImportError:
+    pass
+
+try:
+    from ui.modules.chamber_module_frame import VT6002ConnectionMixin
+except ImportError:
+    pass
+
+try:
+    from ui.modules.serialCom_module.serialCom_module_frame import SerialComMixin
+except ImportError:
+    pass
 
 __all__ = [
     "ExecutionLogsFrame",

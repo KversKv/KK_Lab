@@ -1,5 +1,11 @@
 import os
 
+from PySide6.QtWidgets import (
+    QComboBox, QStyle, QStyleOptionComboBox, QListView, QStyledItemDelegate
+)
+from PySide6.QtCore import Qt, QRect, QRectF
+from PySide6.QtGui import QPainter, QPen, QColor, QFontMetrics, QPalette
+
 from ui.resource_path import get_resource_base
 
 
@@ -1053,6 +1059,289 @@ DARK_CARD_STYLE = f"""
 """
 
 
+_ICONS_DIR = os.path.join(get_resource_base(), "resources", "icons")
+_ARROW_UP = os.path.join(_ICONS_DIR, "scrollbar-arrow-up.svg").replace("\\", "/")
+_ARROW_DOWN = os.path.join(_ICONS_DIR, "scrollbar-arrow-down.svg").replace("\\", "/")
+_ARROW_LEFT = os.path.join(_ICONS_DIR, "scrollbar-arrow-left.svg").replace("\\", "/")
+_ARROW_RIGHT = os.path.join(_ICONS_DIR, "scrollbar-arrow-right.svg").replace("\\", "/")
+
+SERIAL_SCROLLBAR_STYLE = f"""
+    QScrollBar:vertical {{
+        background: {_CLR_BG_MAIN};
+        width: 10px;
+        margin: 14px 0px 14px 0px;
+        border-radius: 5px;
+    }}
+    QScrollBar::handle:vertical {{
+        background: {_CLR_SCROLLBAR};
+        min-height: 30px;
+        border-radius: 5px;
+    }}
+    QScrollBar::handle:vertical:hover {{
+        background: {_CLR_SCROLLBAR_HV};
+    }}
+    QScrollBar::sub-line:vertical {{
+        height: 14px;
+        subcontrol-position: top;
+        subcontrol-origin: margin;
+        background: {_CLR_BG_CARD};
+        border-top-left-radius: 5px;
+        border-top-right-radius: 5px;
+    }}
+    QScrollBar::sub-line:vertical:hover {{
+        background: {_CLR_BORDER};
+    }}
+    QScrollBar::add-line:vertical {{
+        height: 14px;
+        subcontrol-position: bottom;
+        subcontrol-origin: margin;
+        background: {_CLR_BG_CARD};
+        border-bottom-left-radius: 5px;
+        border-bottom-right-radius: 5px;
+    }}
+    QScrollBar::add-line:vertical:hover {{
+        background: {_CLR_BORDER};
+    }}
+    QScrollBar::up-arrow:vertical {{
+        image: url("{_ARROW_UP}");
+        width: 8px;
+        height: 8px;
+    }}
+    QScrollBar::down-arrow:vertical {{
+        image: url("{_ARROW_DOWN}");
+        width: 8px;
+        height: 8px;
+    }}
+    QScrollBar::add-page:vertical,
+    QScrollBar::sub-page:vertical {{
+        background: transparent;
+    }}
+    QScrollBar:horizontal {{
+        background: {_CLR_BG_MAIN};
+        height: 10px;
+        margin: 0px 14px 0px 14px;
+        border-radius: 5px;
+    }}
+    QScrollBar::handle:horizontal {{
+        background: {_CLR_SCROLLBAR};
+        min-width: 30px;
+        border-radius: 5px;
+    }}
+    QScrollBar::handle:horizontal:hover {{
+        background: {_CLR_SCROLLBAR_HV};
+    }}
+    QScrollBar::sub-line:horizontal {{
+        width: 14px;
+        subcontrol-position: left;
+        subcontrol-origin: margin;
+        background: {_CLR_BG_CARD};
+        border-top-left-radius: 5px;
+        border-bottom-left-radius: 5px;
+    }}
+    QScrollBar::sub-line:horizontal:hover {{
+        background: {_CLR_BORDER};
+    }}
+    QScrollBar::add-line:horizontal {{
+        width: 14px;
+        subcontrol-position: right;
+        subcontrol-origin: margin;
+        background: {_CLR_BG_CARD};
+        border-top-right-radius: 5px;
+        border-bottom-right-radius: 5px;
+    }}
+    QScrollBar::add-line:horizontal:hover {{
+        background: {_CLR_BORDER};
+    }}
+    QScrollBar::left-arrow:horizontal {{
+        image: url("{_ARROW_LEFT}");
+        width: 8px;
+        height: 8px;
+    }}
+    QScrollBar::right-arrow:horizontal {{
+        image: url("{_ARROW_RIGHT}");
+        width: 8px;
+        height: 8px;
+    }}
+    QScrollBar::add-page:horizontal,
+    QScrollBar::sub-page:horizontal {{
+        background: transparent;
+    }}
+"""
+
+
+class _SerialComboItemDelegate(QStyledItemDelegate):
+    def __init__(self, padding_v=4, parent=None):
+        super().__init__(parent)
+        self._padding_v = padding_v
+
+    def sizeHint(self, option, index):
+        size = super().sizeHint(option, index)
+        min_h = option.fontMetrics.height() + self._padding_v * 2
+        if size.height() < min_h:
+            size.setHeight(min_h)
+        return size
+
+
+class SerialDarkComboBox(QComboBox):
+    _ITEM_PADDING_V = 4
+
+    def __init__(self, *args, bg=_CLR_INPUT_BG, border=_CLR_BORDER, arrow_color="#7b8fa5",
+                 hover_color="#6366f1", **kwargs):
+        super().__init__(*args, **kwargs)
+        self._popup_bg = bg
+        self._popup_border = border
+        self._arrow_color = arrow_color
+        self._hover_color = hover_color
+        self.setSizePolicy(self.sizePolicy().horizontalPolicy(), self.sizePolicy().verticalPolicy())
+        self.setMinimumWidth(0)
+        self.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {bg};
+                border: 1.5px solid {border};
+                border-radius: 6px;
+                padding: 4px 28px 4px 10px;
+                color: #c8d5e2;
+                font-size: 13px;
+            }}
+            QComboBox::drop-down {{
+                border: none;
+                width: 22px;
+            }}
+            QComboBox::down-arrow {{
+                image: none;
+                width: 0px;
+                height: 0px;
+            }}
+            QComboBox QLineEdit {{
+                background-color: transparent;
+                border: none;
+                color: #c8d5e2;
+                font-size: 13px;
+                padding: 0px;
+                margin: 0px;
+            }}
+            QComboBox QLineEdit:disabled {{
+                color: #3a4a6a;
+            }}
+        """)
+        self._setup_view(bg, border, hover_color)
+        self.setMaxVisibleItems(30)
+
+    def _setup_view(self, bg, border, hover_color):
+        list_view = QListView()
+        list_view.setMouseTracking(True)
+        list_view.setUniformItemSizes(True)
+        delegate = _SerialComboItemDelegate(
+            padding_v=self._ITEM_PADDING_V, parent=list_view
+        )
+        list_view.setItemDelegate(delegate)
+        palette = list_view.palette()
+        palette.setColor(QPalette.Highlight, QColor(hover_color))
+        palette.setColor(QPalette.HighlightedText, QColor("#ffffff"))
+        list_view.setPalette(palette)
+        list_view.setStyleSheet(f"""
+            QListView {{
+                background-color: {bg};
+                color: #eaf2ff;
+                border: 1px solid {border};
+                outline: 0;
+            }}
+            QListView::item {{
+                padding: {self._ITEM_PADDING_V}px 10px;
+                border: none;
+            }}
+            QListView::item:hover {{
+                background-color: {hover_color};
+                color: white;
+            }}
+            QListView::item:selected {{
+                background-color: {hover_color};
+                color: white;
+                border: none;
+                outline: none;
+            }}
+        """)
+        self.setView(list_view)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        r = QRectF(self.rect()).adjusted(0.75, 0.75, -0.75, -0.75)
+        bg = QColor(self._popup_bg)
+        bd = QColor(self._popup_border)
+        if not self.isEnabled():
+            bg = bg.darker(130)
+            bd = bd.darker(130)
+        painter.setPen(QPen(bd, 1.5))
+        painter.setBrush(bg)
+        painter.drawRoundedRect(r, 6, 6)
+
+        opt = QStyleOptionComboBox()
+        self.initStyleOption(opt)
+
+        if not self.isEditable():
+            text_rect: QRect = self.style().subControlRect(
+                QStyle.CC_ComboBox, opt, QStyle.SC_ComboBoxEditField, self
+            )
+            fm = QFontMetrics(self.font())
+            elided = fm.elidedText(self.currentText(), Qt.ElideMiddle, text_rect.width())
+            painter.setPen(QColor("#c8d5e2") if self.isEnabled() else QColor("#3a4a6a"))
+            painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, elided)
+
+        arrow_rect: QRect = self.style().subControlRect(
+            QStyle.CC_ComboBox, opt, QStyle.SC_ComboBoxArrow, self
+        )
+
+        color = QColor(self._arrow_color)
+        if not self.isEnabled():
+            color = QColor("#1f315d")
+        pen = QPen(color, 1.6)
+        pen.setCapStyle(Qt.RoundCap)
+        pen.setJoinStyle(Qt.RoundJoin)
+        painter.setPen(pen)
+
+        cx = arrow_rect.center().x()
+        cy = arrow_rect.center().y()
+        half_w = 4
+        half_h = 3
+
+        painter.drawLine(cx - half_w, cy - half_h, cx, cy + half_h)
+        painter.drawLine(cx, cy + half_h, cx + half_w, cy - half_h)
+
+        painter.end()
+
+    def showPopup(self):
+        view = self.view()
+        fm = self.fontMetrics()
+        max_w = self.width()
+        for i in range(self.count()):
+            w = fm.horizontalAdvance(self.itemText(i)) + 40
+            if w > max_w:
+                max_w = w
+        view.setMinimumWidth(max_w)
+        visible = min(self.count(), self.maxVisibleItems())
+        if visible > 0:
+            row_h = view.sizeHintForRow(0)
+            if row_h <= 0:
+                row_h = fm.height() + self._ITEM_PADDING_V * 2
+            view.setMinimumHeight(visible * row_h)
+        super().showPopup()
+        popup = view.window()
+        if popup:
+            popup.setStyleSheet(
+                f"background-color: {self._popup_bg}; "
+                f"border: 1px solid {self._popup_border}; "
+                f"padding: 0px; margin: 0px;"
+            )
+            if self.count() <= self.maxVisibleItems():
+                for child in popup.children():
+                    cls_name = child.metaObject().className()
+                    if "Scroller" in cls_name or "QComboBoxPrivateScroller" in cls_name:
+                        child.hide()
+                        child.setMaximumHeight(0)
+
+
 __all__ = [name for name in globals() if name.startswith("_CLR_")]
 __all__ += [
     name for name, value in globals().items()
@@ -1061,4 +1350,5 @@ __all__ += [
 __all__ += [
     "_SERIAL_BTN_HEIGHT", "_SERIAL_BTN_ICON_SIZE", "_SERIAL_BTN_RADIUS",
     "_TERM_FONT", "_UI_FONT", "_DLG_STYLE", "DARK_CARD_STYLE",
+    "SERIAL_SCROLLBAR_STYLE", "SerialDarkComboBox",
 ]

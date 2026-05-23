@@ -1,11 +1,17 @@
 import os
 
+from PySide6.QtWidgets import (
+    QComboBox, QStyle, QStyleOptionComboBox, QListView, QStyledItemDelegate
+)
+from PySide6.QtCore import Qt, QRect, QRectF, QTimer
+from PySide6.QtGui import QPainter, QPen, QColor, QFontMetrics, QPalette
+
 from ui.resource_path import get_resource_base
 
 
-# Apple-inspired light style for the serial console.
-# The function names mirror serialCom_dark_style.py so this file can be
-# swapped into serialCom_module_frame.py with only the import path changed.
+# Apple-inspired light theme for the serial console.
+# Keep the same public API as serialCom_dark_style.py so callers can switch
+# by changing only the imported style module.
 _SERIAL_BTN_HEIGHT = 26
 _SERIAL_BTN_ICON_SIZE = 14
 _SERIAL_BTN_RADIUS = 7
@@ -74,6 +80,12 @@ _CLR_DISCONNECT_TEXT = "#D70015"
 
 _DLG_CHK_SVG = os.path.join(
     get_resource_base(), "resources", "modules", "SVG_Serial", "checkmark.svg"
+).replace("\\", "/")
+_SPIN_UP_SVG = os.path.join(
+    get_resource_base(), "resources", "modules", "SVG_Serial", "spin_up.svg"
+).replace("\\", "/")
+_SPIN_DOWN_SVG = os.path.join(
+    get_resource_base(), "resources", "modules", "SVG_Serial", "spin_down.svg"
 ).replace("\\", "/")
 
 
@@ -180,19 +192,26 @@ def body_splitter_style():
     return f"""
             QSplitter {{ background-color: {_CLR_BG_MAIN}; }}
             QSplitter::handle {{ background-color: {_CLR_BG_MAIN}; border: none; }}
-            QSplitter::handle:hover {{ background-color: #E5E5EA; }}
+            QSplitter::handle:hover {{ background-color: #D8E8FF; }}
         """
 
 
 def center_widget_style():
-    return f"QFrame#scCenterWidget {{ background-color: {_CLR_BG_CARD}; border: 1px solid {_CLR_BORDER}; border-radius: 8px; }}"
+    return f"""
+            QFrame#scCenterWidget {{
+                background-color: rgba(255, 255, 255, 0.92);
+                border: 1px solid rgba(60, 60, 67, 0.16);
+                border-radius: 12px;
+            }}
+        """
 
 
 def toolbar_style():
     return f"""
             QFrame#scToolbar {{
-                background-color: {_CLR_BG_CARD};
-                border-bottom: 1px solid {_CLR_BORDER};
+                background-color: rgba(255, 255, 255, 0.86);
+                border: 1px solid rgba(60, 60, 67, 0.14);
+                border-radius: 12px;
             }}
         """
 
@@ -255,9 +274,9 @@ def separator_style(transparent=False):
 def sidebar_wrapper_style():
     return f"""
             QFrame#scSidebarWrapper {{
-                background-color: {_CLR_BG_CARD};
-                border: 1px solid {_CLR_BORDER};
-                border-radius: 8px;
+                background-color: rgba(255, 255, 255, 0.82);
+                border: 1px solid rgba(60, 60, 67, 0.14);
+                border-radius: 12px;
             }}
         """
 
@@ -297,14 +316,61 @@ def thin_scrollbar_style():
         """
 
 
-def compact_spinbox_style(up_button_width=10, padding="1px 2px"):
+def compact_spinbox_style(up_button_width=18, padding="1px 6px"):
+    btn_w = max(16, int(up_button_width or 18))
     return f"""
             QSpinBox {{
-                background-color: {_CLR_INPUT_BG}; border: 1px solid rgba(60, 60, 67, 0.18); border-radius: 6px;
-                color: {_CLR_TEXT_BTN_LOG}; font-size: 12px; font-family: {_UI_FONT}; padding: {padding};
+                background-color: rgba(255, 255, 255, 0.86);
+                border: 1px solid rgba(60, 60, 67, 0.16);
+                border-radius: 8px;
+                color: {_CLR_TEXT_BODY};
+                font-size: 12px;
+                font-family: {_UI_FONT};
+                font-weight: 500;
+                padding: {padding};
+                padding-right: {btn_w + 4}px;
+                selection-background-color: {_CLR_SELECTION_BG};
+                selection-color: {_CLR_SELECTION_TEXT};
             }}
-            QSpinBox:focus {{ border: 1px solid {_CLR_CONNECT_FG}; }}
-            QSpinBox::up-button, QSpinBox::down-button {{ width: {up_button_width}px; }}
+            QSpinBox:hover {{
+                background-color: {_CLR_BG_CARD};
+                border-color: rgba(0, 122, 255, 0.38);
+            }}
+            QSpinBox:focus {{
+                background-color: {_CLR_BG_CARD};
+                border: 1px solid {_CLR_FILTER_BORDER};
+            }}
+            QSpinBox::up-button, QSpinBox::down-button {{
+                subcontrol-origin: border;
+                width: {btn_w}px;
+                background-color: rgba(242, 242, 247, 0.92);
+                border-left: 1px solid rgba(60, 60, 67, 0.14);
+            }}
+            QSpinBox::up-button {{
+                subcontrol-position: top right;
+                border-top-right-radius: 7px;
+                border-bottom: 1px solid rgba(60, 60, 67, 0.10);
+            }}
+            QSpinBox::down-button {{
+                subcontrol-position: bottom right;
+                border-bottom-right-radius: 7px;
+            }}
+            QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
+                background-color: #E8F2FF;
+            }}
+            QSpinBox::up-button:pressed, QSpinBox::down-button:pressed {{
+                background-color: rgba(0, 122, 255, 0.18);
+            }}
+            QSpinBox::up-arrow {{
+                image: url({_SPIN_UP_SVG});
+                width: 8px;
+                height: 8px;
+            }}
+            QSpinBox::down-arrow {{
+                image: url({_SPIN_DOWN_SVG});
+                width: 8px;
+                height: 8px;
+            }}
         """
 
 
@@ -314,12 +380,12 @@ def unit_label_style(font="term", size=11):
 
 
 def log_frame_style(with_border=False):
-    border = f"1px solid {_CLR_BORDER}" if with_border else "none"
+    border = f"1px solid rgba(60, 60, 67, 0.14)" if with_border else "1px solid rgba(60, 60, 67, 0.10)"
     return f"""
             QFrame#scLogFrame {{
                 background-color: {_CLR_BG_LOG};
                 border: {border};
-                border-radius: 6px;
+                border-radius: 10px;
             }}
         """
 
@@ -329,7 +395,7 @@ def transparent_background_style():
 
 
 def log_title_style():
-    return f"color: {_CLR_TEXT_WHITE}; font-size: 14px; font-weight: 700; font-family: {_UI_FONT}; background: transparent;"
+    return f"color: {_CLR_TEXT_TITLE}; font-size: 14px; font-weight: 700; font-family: {_UI_FONT}; background: transparent;"
 
 
 def log_toolbar_button_style(checked_variant=False, max_height=28, padding="5px 11px", radius=7):
@@ -345,15 +411,15 @@ def log_toolbar_button_style(checked_variant=False, max_height=28, padding="5px 
             }}
         """
     else:
-        checked_qss = f"QPushButton:checked {{ background-color: {_CLR_BORDER}; color: {_CLR_TEXT_WHITE}; border: 1px solid {_CLR_BORDER_HOVER}; }}"
+        checked_qss = f"QPushButton:checked {{ background-color: #E8F2FF; color: {_CLR_BLUE}; border: 1px solid {_CLR_BORDER_ACTIVE}; }}"
     return f"""
                 QPushButton {{
                     min-height: 0px; max-height: {max_height}px; padding: {padding}; border-radius: {radius}px;
                     background-color: rgba(255, 255, 255, 0.74); color: {_CLR_TEXT_BTN_LOG}; font-size: 12px;
                     font-family: {_UI_FONT}; font-weight: 500; border: 1px solid {_CLR_BORDER_SOFT};
                 }}
-                QPushButton:hover {{ background-color: {_CLR_BORDER}; color: {_CLR_TEXT_WHITE}; border: 1px solid {_CLR_BORDER_HOVER}; }}
-                QPushButton:focus {{ background-color: {_CLR_BORDER}; color: {_CLR_TEXT_WHITE}; border: 1px solid {_CLR_FILTER_BORDER}; }}
+                QPushButton:hover {{ background-color: #E8F2FF; color: {_CLR_BLUE}; border: 1px solid {_CLR_BORDER_ACTIVE}; }}
+                QPushButton:focus {{ background-color: #E8F2FF; color: {_CLR_BLUE}; border: 1px solid {_CLR_FILTER_BORDER}; }}
                 QPushButton:pressed {{ background-color: {_CLR_INPUT_BG}; }}
                 {checked_qss}
             """
@@ -389,7 +455,7 @@ def log_edit_style(font_family=None, font_size=14, padding="8px 10px", include_l
     line_height = " line-height: 1.5;" if include_line_height else ""
     return f"""
                 QTextEdit {{
-                    background-color: {_CLR_BG_LOG}; border: none; border-top: 1px solid {_CLR_BORDER};
+                    background-color: {_CLR_BG_LOG}; border: none; border-top: 1px solid rgba(60, 60, 67, 0.10);
                     color: {_CLR_TEXT_BODY}; font-family: {family}; font-size: {font_size}px; font-weight: 400;
                     padding: {padding};{line_height}
                     selection-background-color: {_CLR_SELECTION_BG};
@@ -411,7 +477,7 @@ def history_combo_style():
                 selection-background-color: {_CLR_SELECTION_BG};
                 selection-color: {_CLR_SELECTION_TEXT};
             }}
-            QComboBox:focus {{ border: 1px solid {_CLR_CONNECT_FG}; }}
+            QComboBox:focus {{ border: 1px solid {_CLR_FILTER_BORDER}; }}
             QComboBox::drop-down {{ border: none; width: 22px; }}
             QComboBox::down-arrow {{ image: none; width: 0px; height: 0px; }}
             QComboBox QLineEdit {{
@@ -431,18 +497,18 @@ def transparent_toolbar_button_style():
                 background-color: transparent; color: {_CLR_TEXT_MUTED}; font-size: 12px;
                 font-family: {_UI_FONT}; font-weight: 500; border: none;
             }}
-            QPushButton:hover {{ border: 1px solid {_CLR_BORDER_SOFT}; color: {_CLR_TEXT_WHITE}; }}
-            QPushButton:focus {{ border: 1px solid {_CLR_FILTER_BORDER}; color: {_CLR_TEXT_WHITE}; background-color: {_CLR_INPUT_BG}; }}
+            QPushButton:hover {{ border: 1px solid {_CLR_BORDER_SOFT}; color: {_CLR_TEXT_TITLE}; background-color: {_CLR_INPUT_BG}; }}
+            QPushButton:focus {{ border: 1px solid {_CLR_FILTER_BORDER}; color: {_CLR_BLUE}; background-color: {_CLR_INPUT_BG}; }}
             QPushButton:pressed {{ background-color: {_CLR_BG_CARD}; }}
-            QPushButton:checked {{ border: 1px solid {_CLR_BORDER_SOFT}; color: {_CLR_TEXT_WHITE}; }}
+            QPushButton:checked {{ border: 1px solid {_CLR_BORDER_ACTIVE}; color: {_CLR_BLUE}; background-color: #E8F2FF; }}
         """
 
 
 def send_button_style():
     return f"""
             QPushButton {{
-                background-color: {_CLR_SEND_BG}; border: none; border-radius: 6px;
-                color: {_CLR_BG_MAIN}; font-weight: 700; font-size: 13px;
+                background-color: {_CLR_SEND_BG}; border: none; border-radius: 8px;
+                color: {_CLR_TEXT_WHITE}; font-weight: 700; font-size: 13px;
                 font-family: {_UI_FONT}; padding: 3px 20px;
             }}
             QPushButton:hover {{ background-color: {_CLR_SEND_HOVER}; }}
@@ -454,23 +520,23 @@ def send_button_style():
 def quick_commands_panel_style():
     return f"""
             QFrame#quickCommandsPanel {{
-                background-color: {_CLR_BG_CARD};
-                border: 1px solid {_CLR_BORDER};
-                border-radius: 8px;
+                background-color: rgba(255, 255, 255, 0.92);
+                border: 1px solid rgba(60, 60, 67, 0.12);
+                border-radius: 10px;
             }}
             QFrame#scQuickHeaderFrame {{
                 background: transparent;
                 border: none;
-                border-bottom: 1px solid {_CLR_BORDER};
+                border-bottom: 1px solid rgba(60, 60, 67, 0.10);
             }}
             QFrame#scQuickToolbar {{
                 background: transparent;
                 border: none;
-                border-bottom: 1px solid {_CLR_BORDER};
+                border-bottom: 1px solid rgba(60, 60, 67, 0.10);
             }}
             QLabel#quickCommandsTitle {{
-                color: {_CLR_TEXT_ACCENT};
-                font-weight: 600;
+                color: {_CLR_TEXT_TITLE};
+                font-weight: 700;
                 font-size: 12px;
                 font-family: {_UI_FONT};
                 background: transparent;
@@ -521,7 +587,7 @@ def quick_commands_panel_style():
             QFrame#quickCommandsPanel QPushButton#quickCommandButton:hover {{
                 background-color: #E8F2FF;
                 border-color: {_CLR_BORDER_ACTIVE};
-                color: {_CLR_TEXT_WHITE};
+                color: {_CLR_BLUE};
             }}
             QFrame#quickCommandsPanel QPushButton#quickCommandButton:pressed {{
                 background-color: {_CLR_BLUE};
@@ -570,7 +636,7 @@ def project_tabs_style():
             }}
             QTabBar::tab:selected:hover {{
                 background-color: {_CLR_INPUT_BG};
-                color: {_CLR_TEXT_WHITE};
+                color: {_CLR_TEXT_TITLE};
             }}
             QTabBar::tab:!selected {{
                 margin-top: 0px;
@@ -609,14 +675,14 @@ def quick_combo_style():
                 min-width: 63px;
             }}
             QComboBox:hover {{ border-color: {_CLR_BORDER_HOVER}; }}
-            QComboBox:focus {{ border-color: {_CLR_CONNECT_FG}; }}
+            QComboBox:focus {{ border-color: {_CLR_FILTER_BORDER}; }}
             QComboBox::drop-down {{ border: none; width: 20px; }}
             QComboBox QAbstractItemView {{
                 background-color: {_CLR_INPUT_BG};
                 color: {_CLR_TEXT_SOFT};
                 border: 1px solid {_CLR_BORDER};
-                selection-background-color: {_CLR_BORDER};
-                selection-color: {_CLR_TEXT_WHITE};
+                selection-background-color: #E8F2FF;
+                selection-color: {_CLR_BLUE};
                 outline: 0;
             }}
         """
@@ -637,23 +703,23 @@ def quick_toolbar_button_style(max_height=None, padding="3px 8px", radius=5, min
                 font-weight: 500;
             }}
             QPushButton:hover {{
-                background-color: {_CLR_BORDER_SOFT};
-                border-color: {_CLR_BORDER_HOVER};
-                color: {_CLR_TEXT_WHITE};
+                background-color: #E8F2FF;
+                border-color: {_CLR_BORDER_ACTIVE};
+                color: {_CLR_BLUE};
             }}
             QPushButton:focus {{
-                background-color: {_CLR_BORDER_SOFT};
+                background-color: #E8F2FF;
                 border-color: {_CLR_FILTER_BORDER};
-                color: {_CLR_TEXT_WHITE};
+                color: {_CLR_BLUE};
             }}
             QPushButton:pressed {{
                 background-color: {_CLR_BORDER_HOVER};
                 border-color: {_CLR_DISABLED};
             }}
             QPushButton:checked {{
-                background-color: {_CLR_BORDER_SOFT};
-                color: {_CLR_TEXT_WHITE};
-                border: 1px solid {_CLR_BORDER_HOVER};
+                background-color: #E8F2FF;
+                color: {_CLR_BLUE};
+                border: 1px solid {_CLR_BORDER_ACTIVE};
             }}
             QPushButton:disabled {{
                 background-color: #E5E5EA;
@@ -698,10 +764,10 @@ def quick_button_container_style():
 def status_bar_style():
     return f"""
             QFrame#scStatusBar {{
-                background-color: {_CLR_BG_CARD};
-                border-top: 1px solid {_CLR_BORDER};
-                border-bottom-left-radius: 6px;
-                border-bottom-right-radius: 6px;
+                background-color: rgba(242, 242, 247, 0.72);
+                border-top: 1px solid rgba(60, 60, 67, 0.10);
+                border-bottom-left-radius: 10px;
+                border-bottom-right-radius: 10px;
             }}
             QLabel {{ font-size: 11px; font-family: {_TERM_FONT}; background: transparent; }}
         """
@@ -730,13 +796,12 @@ def extra_log_error_color():
 
 
 def section_card_style():
-    return """
-            QFrame#scSectionCard {
-                background-color: transparent;
-                border: none;
-                border-bottom: 1px solid rgba(60, 60, 67, 0.14);
-                border-radius: 0px;
-            }
+    return f"""
+            QFrame#scSectionCard {{
+                background-color: rgba(242, 242, 247, 0.64);
+                border: 1px solid rgba(60, 60, 67, 0.07);
+                border-radius: 9px;
+            }}
         """
 
 
@@ -956,10 +1021,41 @@ _DLG_STYLE = f"""
     }}
     QSpinBox {{
         background-color: {_CLR_INPUT_BG}; border: 1px solid rgba(60, 60, 67, 0.18); border-radius: 6px;
-        color: {_CLR_TEXT_BTN_LOG}; font-size: 12px; font-family: {_UI_FONT}; padding: 2px 6px;
+        color: {_CLR_TEXT_BTN_LOG}; font-size: 12px; font-family: {_UI_FONT}; padding: 2px 6px; padding-right: 23px;
     }}
+    QSpinBox:hover {{ border-color: rgba(0, 122, 255, 0.38); }}
     QSpinBox:focus {{ border: 1px solid {_CLR_FILTER_BORDER}; }}
-    QSpinBox::up-button, QSpinBox::down-button {{ width: 12px; }}
+    QSpinBox::up-button, QSpinBox::down-button {{
+        subcontrol-origin: border;
+        width: 18px;
+        background-color: rgba(242, 242, 247, 0.92);
+        border-left: 1px solid rgba(60, 60, 67, 0.14);
+    }}
+    QSpinBox::up-button {{
+        subcontrol-position: top right;
+        border-top-right-radius: 5px;
+        border-bottom: 1px solid rgba(60, 60, 67, 0.10);
+    }}
+    QSpinBox::down-button {{
+        subcontrol-position: bottom right;
+        border-bottom-right-radius: 5px;
+    }}
+    QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
+        background-color: #E8F2FF;
+    }}
+    QSpinBox::up-button:pressed, QSpinBox::down-button:pressed {{
+        background-color: rgba(0, 122, 255, 0.18);
+    }}
+    QSpinBox::up-arrow {{
+        image: url({_SPIN_UP_SVG});
+        width: 8px;
+        height: 8px;
+    }}
+    QSpinBox::down-arrow {{
+        image: url({_SPIN_DOWN_SVG});
+        width: 8px;
+        height: 8px;
+    }}
     QLineEdit {{
         background-color: {_CLR_INPUT_BG}; border: 1px solid rgba(60, 60, 67, 0.18); border-radius: 6px;
         color: {_CLR_TEXT_BTN_LOG}; font-size: 12px; font-family: {_UI_FONT}; padding: 5px 8px; min-height: 24px;
@@ -979,28 +1075,37 @@ _DLG_STYLE = f"""
         background-color: {_CLR_BG_MAIN};
         border: 1px solid {_CLR_BORDER};
         border-radius: 6px;
-        padding: 6px;
+        padding: 8px;
+        top: -1px;
     }}
     QTabBar::tab {{
-        background-color: {_CLR_BG_MAIN};
+        background-color: rgba(242, 242, 247, 0.68);
         color: {_CLR_TEXT_MUTED};
-        padding: 6px 16px;
-        border: none;
-        border-top-left-radius: 6px;
-        border-top-right-radius: 6px;
+        padding: 7px 17px;
+        border: 1px solid rgba(60, 60, 67, 0.12);
+        border-bottom-color: {_CLR_BORDER};
+        border-top-left-radius: 7px;
+        border-top-right-radius: 7px;
         font-size: 13px;
         font-family: {_UI_FONT};
-        font-weight: 500;
-        margin-right: 2px;
+        font-weight: 600;
+        margin-right: 4px;
     }}
     QTabBar::tab:hover {{
-        background-color: {_CLR_BG_CARD};
+        background-color: rgba(232, 242, 255, 0.88);
+        border-color: {_CLR_BORDER_SOFT};
         color: {_CLR_TEXT_BTN_LOG};
     }}
     QTabBar::tab:selected {{
         background-color: {_CLR_BG_CARD};
         color: {_CLR_TEXT_TITLE};
-        border-bottom: 2px solid #007AFF;
+        border: 1px solid {_CLR_BORDER};
+        border-bottom-color: {_CLR_BG_CARD};
+        border-top: 2px solid #007AFF;
+        padding-top: 6px;
+    }}
+    QTabBar::tab:!selected {{
+        margin-top: 3px;
     }}
 """
 
@@ -1059,6 +1164,306 @@ DARK_CARD_STYLE = f"""
 APPLE_CARD_STYLE = DARK_CARD_STYLE
 
 
+_ICONS_DIR = os.path.join(get_resource_base(), "resources", "icons")
+_ARROW_UP = os.path.join(_ICONS_DIR, "scrollbar-arrow-up.svg").replace("\\", "/")
+_ARROW_DOWN = os.path.join(_ICONS_DIR, "scrollbar-arrow-down.svg").replace("\\", "/")
+_ARROW_LEFT = os.path.join(_ICONS_DIR, "scrollbar-arrow-left.svg").replace("\\", "/")
+_ARROW_RIGHT = os.path.join(_ICONS_DIR, "scrollbar-arrow-right.svg").replace("\\", "/")
+
+SERIAL_SCROLLBAR_STYLE = f"""
+    QScrollBar:vertical {{
+        background: {_CLR_BG_MAIN};
+        width: 10px;
+        margin: 14px 0px 14px 0px;
+        border-radius: 5px;
+    }}
+    QScrollBar::handle:vertical {{
+        background: {_CLR_SCROLLBAR};
+        min-height: 30px;
+        border-radius: 5px;
+    }}
+    QScrollBar::handle:vertical:hover {{
+        background: {_CLR_SCROLLBAR_HV};
+    }}
+    QScrollBar::sub-line:vertical {{
+        height: 14px;
+        subcontrol-position: top;
+        subcontrol-origin: margin;
+        background: {_CLR_BG_CARD};
+        border-top-left-radius: 5px;
+        border-top-right-radius: 5px;
+    }}
+    QScrollBar::sub-line:vertical:hover {{
+        background: {_CLR_BORDER};
+    }}
+    QScrollBar::add-line:vertical {{
+        height: 14px;
+        subcontrol-position: bottom;
+        subcontrol-origin: margin;
+        background: {_CLR_BG_CARD};
+        border-bottom-left-radius: 5px;
+        border-bottom-right-radius: 5px;
+    }}
+    QScrollBar::add-line:vertical:hover {{
+        background: {_CLR_BORDER};
+    }}
+    QScrollBar::up-arrow:vertical {{
+        image: url("{_ARROW_UP}");
+        width: 8px;
+        height: 8px;
+    }}
+    QScrollBar::down-arrow:vertical {{
+        image: url("{_ARROW_DOWN}");
+        width: 8px;
+        height: 8px;
+    }}
+    QScrollBar::add-page:vertical,
+    QScrollBar::sub-page:vertical {{
+        background: transparent;
+    }}
+    QScrollBar:horizontal {{
+        background: {_CLR_BG_MAIN};
+        height: 10px;
+        margin: 0px 14px 0px 14px;
+        border-radius: 5px;
+    }}
+    QScrollBar::handle:horizontal {{
+        background: {_CLR_SCROLLBAR};
+        min-width: 30px;
+        border-radius: 5px;
+    }}
+    QScrollBar::handle:horizontal:hover {{
+        background: {_CLR_SCROLLBAR_HV};
+    }}
+    QScrollBar::sub-line:horizontal {{
+        width: 14px;
+        subcontrol-position: left;
+        subcontrol-origin: margin;
+        background: {_CLR_BG_CARD};
+        border-top-left-radius: 5px;
+        border-bottom-left-radius: 5px;
+    }}
+    QScrollBar::sub-line:horizontal:hover {{
+        background: {_CLR_BORDER};
+    }}
+    QScrollBar::add-line:horizontal {{
+        width: 14px;
+        subcontrol-position: right;
+        subcontrol-origin: margin;
+        background: {_CLR_BG_CARD};
+        border-top-right-radius: 5px;
+        border-bottom-right-radius: 5px;
+    }}
+    QScrollBar::add-line:horizontal:hover {{
+        background: {_CLR_BORDER};
+    }}
+    QScrollBar::left-arrow:horizontal {{
+        image: url("{_ARROW_LEFT}");
+        width: 8px;
+        height: 8px;
+    }}
+    QScrollBar::right-arrow:horizontal {{
+        image: url("{_ARROW_RIGHT}");
+        width: 8px;
+        height: 8px;
+    }}
+    QScrollBar::add-page:horizontal,
+    QScrollBar::sub-page:horizontal {{
+        background: transparent;
+    }}
+"""
+
+
+class _SerialComboItemDelegate(QStyledItemDelegate):
+    def __init__(self, padding_v=4, parent=None):
+        super().__init__(parent)
+        self._padding_v = padding_v
+
+    def sizeHint(self, option, index):
+        size = super().sizeHint(option, index)
+        min_h = option.fontMetrics.height() + self._padding_v * 2
+        if size.height() < min_h:
+            size.setHeight(min_h)
+        return size
+
+
+class SerialDarkComboBox(QComboBox):
+    _ITEM_PADDING_V = 4
+
+    def __init__(self, *args, bg=_CLR_INPUT_BG, border=_CLR_BORDER_SOFT, arrow_color="#6E6E73",
+                 hover_color="#E8F2FF", **kwargs):
+        super().__init__(*args, **kwargs)
+        self._popup_bg = bg
+        self._popup_border = border
+        self._arrow_color = arrow_color
+        self._hover_color = hover_color
+        self.setSizePolicy(self.sizePolicy().horizontalPolicy(), self.sizePolicy().verticalPolicy())
+        self.setMinimumWidth(0)
+        self.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {bg};
+                border: 1px solid {border};
+                border-radius: 7px;
+                padding: 4px 28px 4px 10px;
+                color: {_CLR_INPUT_TEXT};
+                font-size: 13px;
+            }}
+            QComboBox::drop-down {{
+                border: none;
+                width: 22px;
+            }}
+            QComboBox::down-arrow {{
+                image: none;
+                width: 0px;
+                height: 0px;
+            }}
+            QComboBox QLineEdit {{
+                background-color: transparent;
+                border: none;
+                color: {_CLR_INPUT_TEXT};
+                font-size: 13px;
+                padding: 0px;
+                margin: 0px;
+            }}
+            QComboBox QLineEdit:disabled {{
+                color: {_CLR_DISABLED};
+            }}
+        """)
+        self._setup_view(bg, border, hover_color)
+        self.setMaxVisibleItems(30)
+
+    def _setup_view(self, bg, border, hover_color):
+        list_view = QListView()
+        list_view.setMouseTracking(True)
+        list_view.setUniformItemSizes(True)
+        list_view.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        list_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        delegate = _SerialComboItemDelegate(
+            padding_v=self._ITEM_PADDING_V, parent=list_view
+        )
+        list_view.setItemDelegate(delegate)
+        palette = list_view.palette()
+        palette.setColor(QPalette.Highlight, QColor(hover_color))
+        palette.setColor(QPalette.HighlightedText, QColor(_CLR_BLUE))
+        list_view.setPalette(palette)
+        list_view.setStyleSheet(f"""
+            QListView {{
+                background-color: {bg};
+                color: {_CLR_INPUT_TEXT};
+                border: 1px solid {border};
+                outline: 0;
+            }}
+            QListView::item {{
+                padding: {self._ITEM_PADDING_V}px 10px;
+                border: none;
+            }}
+            QListView::item:hover {{
+                background-color: {hover_color};
+                color: {_CLR_BLUE};
+            }}
+            QListView::item:selected {{
+                background-color: {hover_color};
+                color: {_CLR_BLUE};
+                border: none;
+                outline: none;
+            }}
+        """)
+        self.setView(list_view)
+
+    def _hide_popup_scrollers(self):
+        popup = self.view().window()
+        if not popup:
+            return
+        for child in popup.children():
+            cls_name = child.metaObject().className()
+            if "Scroller" in cls_name or "QComboBoxPrivateScroller" in cls_name:
+                child.hide()
+                child.setMaximumHeight(0)
+                child.setMaximumWidth(0)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        r = QRectF(self.rect()).adjusted(0.75, 0.75, -0.75, -0.75)
+        bg = QColor(self._popup_bg)
+        bd = QColor(self._popup_border)
+        if not self.isEnabled():
+            bg = bg.darker(130)
+            bd = bd.darker(130)
+        painter.setPen(QPen(bd, 1.0))
+        painter.setBrush(bg)
+        painter.drawRoundedRect(r, 6, 6)
+
+        opt = QStyleOptionComboBox()
+        self.initStyleOption(opt)
+
+        if not self.isEditable():
+            text_rect = QRect(10, 0, max(0, self.width() - 36), self.height())
+            fm = QFontMetrics(self.font())
+            elided = fm.elidedText(self.currentText(), Qt.ElideMiddle, text_rect.width())
+            painter.setPen(QColor(_CLR_INPUT_TEXT) if self.isEnabled() else QColor(_CLR_DISABLED))
+            painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, elided)
+
+        arrow_rect: QRect = self.style().subControlRect(
+            QStyle.CC_ComboBox, opt, QStyle.SC_ComboBoxArrow, self
+        )
+
+        color = QColor(self._arrow_color)
+        if not self.isEnabled():
+            color = QColor(_CLR_DISABLED)
+        pen = QPen(color, 1.6)
+        pen.setCapStyle(Qt.RoundCap)
+        pen.setJoinStyle(Qt.RoundJoin)
+        painter.setPen(pen)
+
+        cx = arrow_rect.center().x()
+        cy = arrow_rect.center().y()
+        half_w = 4
+        half_h = 3
+
+        painter.drawLine(cx - half_w, cy - half_h, cx, cy + half_h)
+        painter.drawLine(cx, cy + half_h, cx + half_w, cy - half_h)
+
+        painter.end()
+
+    def showPopup(self):
+        view = self.view()
+        fm = self.fontMetrics()
+        max_w = self.width()
+        for i in range(self.count()):
+            w = fm.horizontalAdvance(self.itemText(i)) + 40
+            if w > max_w:
+                max_w = w
+        view.setMinimumWidth(max_w)
+        visible = min(self.count(), self.maxVisibleItems())
+        if visible > 0:
+            needs_scroll = self.count() > self.maxVisibleItems()
+            view.setVerticalScrollBarPolicy(
+                Qt.ScrollBarAsNeeded if needs_scroll else Qt.ScrollBarAlwaysOff
+            )
+            row_h = view.sizeHintForRow(0)
+            if row_h <= 0:
+                row_h = fm.height() + self._ITEM_PADDING_V * 2
+            popup_h = visible * row_h + view.frameWidth() * 2 + 2
+            view.setMinimumHeight(popup_h)
+            view.setMaximumHeight(popup_h if not needs_scroll else 16777215)
+        super().showPopup()
+        popup = view.window()
+        if popup:
+            popup.setStyleSheet(
+                f"background-color: {self._popup_bg}; "
+                f"border: 1px solid {self._popup_border}; "
+                f"padding: 0px; margin: 0px;"
+            )
+            if self.count() <= self.maxVisibleItems():
+                self._hide_popup_scrollers()
+                QTimer.singleShot(0, self._hide_popup_scrollers)
+
+
+SerialAppleComboBox = SerialDarkComboBox
+
+
 __all__ = [name for name in globals() if name.startswith("_CLR_")]
 __all__ += [
     name for name, value in globals().items()
@@ -1067,5 +1472,6 @@ __all__ += [
 __all__ += [
     "_SERIAL_BTN_HEIGHT", "_SERIAL_BTN_ICON_SIZE", "_SERIAL_BTN_RADIUS",
     "_TERM_FONT", "_UI_FONT", "_DLG_STYLE", "DARK_CARD_STYLE",
-    "APPLE_CARD_STYLE",
+    "APPLE_CARD_STYLE", "SERIAL_SCROLLBAR_STYLE", "SerialDarkComboBox",
+    "SerialAppleComboBox",
 ]

@@ -39,14 +39,12 @@ from PySide6.QtGui import (
 )
 from PySide6.QtSvg import QSvgRenderer
 
-from ui.widgets.dark_combobox import DarkComboBox
-from ui.widgets.scrollbar import SCROLLBAR_STYLE
 from debug_config import DEBUG_MOCK
 from log_config import get_logger
 from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
 # from ui.modules.serialCom_module.serialCom_dark_style import (
-from ui.modules.serialCom_module.serialCom_Gemini_Final_style import (
-# from ui.modules.serialCom_module.serialCom_apple_gpt5p5_style import (
+# from ui.modules.serialCom_module.serialCom_Gemini_Final_style import (
+from ui.modules.serialCom_module.serialCom_apple_gpt5p5_style import (
     DARK_CARD_STYLE, _CLR_BG_CARD, _CLR_BG_LOG, _CLR_BG_MAIN, _CLR_BG_PANEL,
     _CLR_BORDER, _CLR_BORDER_HOVER, _CLR_CONNECT_BG, _CLR_CONNECT_FG,
     _CLR_CONNECT_TEXT, _CLR_CURSOR, _CLR_DISCONNECT_TEXT, _CLR_ERROR,
@@ -78,6 +76,7 @@ from ui.modules.serialCom_module.serialCom_Gemini_Final_style import (
     toolbar_connect_button_style, toolbar_style, toggle_colors,
     transparent_background_style, transparent_scroll_area_style,
     transparent_toolbar_button_style, unit_label_style,
+    SERIAL_SCROLLBAR_STYLE, SerialDarkComboBox,
 )
 from core.auto_baud_detector import (
     AutoBaudState, AutoBaudMonitor, AutoBaudScanWorker,
@@ -254,9 +253,9 @@ class SerialComMixin:
             self.serial_label.setStyleSheet(inline_serial_label_style())
             row.addWidget(self.serial_label)
 
-            self.serial_combo = DarkComboBox()
+            self.serial_combo = SerialDarkComboBox()
             self.serial_combo.setSizeAdjustPolicy(
-                DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+                SerialDarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
             )
             self.serial_combo.setMinimumContentsLength(10)
             self.serial_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -284,9 +283,9 @@ class SerialComMixin:
         self.serial_status_label.setObjectName("statusErr")
         layout.addWidget(self.serial_status_label)
 
-        self.serial_combo = DarkComboBox()
+        self.serial_combo = SerialDarkComboBox()
         self.serial_combo.setSizeAdjustPolicy(
-            DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+            SerialDarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
         self.serial_combo.setMinimumContentsLength(10)
         self.serial_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -555,6 +554,10 @@ class SerialComMixin:
 
     def close_serial(self):
         self._stop_serial_read()
+        if hasattr(self, '_sc_log_file_handle'):
+            self._sc_stop_auto_save()
+        if hasattr(self, '_sc_log_temp_handle'):
+            self._sc_close_temp_log(delete=True)
         try:
             if self._serial_conn is not None and self._serial_conn.is_open:
                 self._serial_conn.close()
@@ -576,6 +579,12 @@ class SerialComMixin:
         self._sc_rx_line_buf = ""
         self._sc_rx_flush_timer = None
         self._sc_all_logs = []
+        self._sc_log_auto_save = False
+        self._sc_log_save_path = ''
+        self._sc_log_file_handle = None
+        self._sc_log_file_path = None
+        self._sc_log_temp_handle = None
+        self._sc_log_temp_path = None
         self._sc_rx_display_hex = False
         self._sc_tx_display_hex = False
         self._sc_show_timestamp = True
@@ -620,8 +629,8 @@ class SerialComMixin:
         body_splitter.setStyleSheet(body_splitter_style())
 
         self._sc_body_splitter = body_splitter
-        self._sc_sidebar_default_width = 312
-        self._sc_sidebar_min_width = 296
+        self._sc_sidebar_default_width = 250
+        self._sc_sidebar_min_width = 237
         self._sc_sidebar_widget = self._build_sc_sidebar()
         body_splitter.addWidget(self._sc_sidebar_widget)
 
@@ -670,6 +679,7 @@ class SerialComMixin:
         self._sc_flush_timer.start()
 
         self._sc_load_persisted_state()
+        self._sc_start_temp_log()
 
     # --- toolbar ---
 
@@ -761,7 +771,7 @@ class SerialComMixin:
         wrapper = QFrame()
         wrapper.setObjectName("scSidebarWrapper")
         wrapper.setMinimumWidth(self._sc_sidebar_min_width)
-        wrapper.setMaximumWidth(372)
+        wrapper.setMaximumWidth(298)
         wrapper.setStyleSheet(sidebar_wrapper_style())
         wrapper_layout = QVBoxLayout(wrapper)
         wrapper_layout.setContentsMargins(0, 0, 0, 0)
@@ -778,8 +788,8 @@ class SerialComMixin:
 
         container = QWidget()
         root = QVBoxLayout(container)
-        root.setContentsMargins(10, 10, 10, 10)
-        root.setSpacing(10)
+        root.setContentsMargins(8, 8, 8, 8)
+        root.setSpacing(8)
 
         root.addWidget(self._build_sc_section_port_settings())
         root.addWidget(self._build_sc_section_rx_settings())
@@ -795,13 +805,13 @@ class SerialComMixin:
         layout = grp.property("_inner_layout")
 
         grid = QGridLayout()
-        grid.setHorizontalSpacing(12)
-        grid.setVerticalSpacing(10)
-        grid.setColumnMinimumWidth(0, 74)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(8)
+        grid.setColumnMinimumWidth(0, 66)
         grid.setColumnStretch(1, 1)
 
         grid.addWidget(self._make_sc_label("Port"), 0, 0)
-        self._sc_port_combo = DarkComboBox()
+        self._sc_port_combo = SerialDarkComboBox()
         self._sc_port_combo.setFixedHeight(28)
         self._sc_port_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         self._sc_port_combo.setMinimumWidth(60)
@@ -811,7 +821,7 @@ class SerialComMixin:
         grid.addWidget(self._sc_port_combo, 0, 1)
 
         grid.addWidget(self._make_sc_label("Baudrate"), 1, 0)
-        self._sc_baud_combo = DarkComboBox()
+        self._sc_baud_combo = SerialDarkComboBox()
         self._sc_baud_combo.setFixedHeight(28)
         self._sc_baud_combo.setEditable(True)
         for br in ["921600", "1152000", "2000000", "3000000", "Custom"]:
@@ -830,28 +840,28 @@ class SerialComMixin:
         self._sc_baud_combo.setEnabled(False)
 
         grid.addWidget(self._make_sc_label("Data bits"), 3, 0)
-        self._sc_databit_combo = DarkComboBox()
+        self._sc_databit_combo = SerialDarkComboBox()
         self._sc_databit_combo.setFixedHeight(28)
         for d in ["8", "7", "6", "5"]:
             self._sc_databit_combo.addItem(d)
         grid.addWidget(self._sc_databit_combo, 3, 1)
 
         grid.addWidget(self._make_sc_label("Flow Control"), 4, 0)
-        self._sc_flow_combo = DarkComboBox()
+        self._sc_flow_combo = SerialDarkComboBox()
         self._sc_flow_combo.setFixedHeight(28)
         for fc in ["None", "RTS/CTS", "XON/XOFF"]:
             self._sc_flow_combo.addItem(fc)
         grid.addWidget(self._sc_flow_combo, 4, 1)
 
         grid.addWidget(self._make_sc_label("Stop bits"), 5, 0)
-        self._sc_stopbit_combo = DarkComboBox()
+        self._sc_stopbit_combo = SerialDarkComboBox()
         self._sc_stopbit_combo.setFixedHeight(28)
         for s in ["1", "1.5", "2"]:
             self._sc_stopbit_combo.addItem(s)
         grid.addWidget(self._sc_stopbit_combo, 5, 1)
 
         grid.addWidget(self._make_sc_label("Parity"), 6, 0)
-        self._sc_parity_combo = DarkComboBox()
+        self._sc_parity_combo = SerialDarkComboBox()
         self._sc_parity_combo.setFixedHeight(28)
         for p in ["None", "Even", "Odd", "Mark", "Space"]:
             self._sc_parity_combo.addItem(p)
@@ -860,10 +870,11 @@ class SerialComMixin:
         layout.addLayout(grid)
         return grp
 
-    _TOGGLE_W = 80
+    _TOGGLE_W = 92
     _SPIN_W = _TOGGLE_W // 2
+    _INTERVAL_SPIN_W = _TOGGLE_W
     _MS_LABEL_W = 16
-    _COMBO_END_W = _SPIN_W + 4 + _MS_LABEL_W
+    _COMBO_END_W = _TOGGLE_W
 
     def _build_sc_section_rx_settings(self):
         grp = self._make_sc_section("RX Config")
@@ -889,13 +900,13 @@ class SerialComMixin:
         self._sc_rx_auto_flush_spin.setRange(10, 60000)
         self._sc_rx_auto_flush_spin.setValue(50)
         self._sc_rx_auto_flush_spin.setSingleStep(10)
-        self._sc_rx_auto_flush_spin.setFixedSize(self._SPIN_W, 24)
-        self._sc_rx_auto_flush_spin.setStyleSheet(compact_spinbox_style())
+        self._sc_rx_auto_flush_spin.setSuffix(" ms")
+        self._sc_rx_auto_flush_spin.setAlignment(Qt.AlignCenter)
+        self._sc_rx_auto_flush_spin.setFixedSize(self._INTERVAL_SPIN_W, 26)
+        self._sc_rx_auto_flush_spin.setStyleSheet(
+            compact_spinbox_style(up_button_width=0, padding="2px 8px")
+        )
         row_af.addWidget(self._sc_rx_auto_flush_spin)
-        af_unit = QLabel("ms")
-        af_unit.setFixedWidth(self._MS_LABEL_W)
-        af_unit.setStyleSheet(unit_label_style())
-        row_af.addWidget(af_unit)
         layout.addLayout(row_af)
 
         self._sc_rx_show_time_cb = QCheckBox("Show Time (ms)")
@@ -930,20 +941,20 @@ class SerialComMixin:
         self._sc_resend_spin.setRange(100, 60000)
         self._sc_resend_spin.setValue(1000)
         self._sc_resend_spin.setSingleStep(100)
-        self._sc_resend_spin.setFixedSize(self._SPIN_W, 24)
-        self._sc_resend_spin.setStyleSheet(compact_spinbox_style())
+        self._sc_resend_spin.setSuffix(" ms")
+        self._sc_resend_spin.setAlignment(Qt.AlignCenter)
+        self._sc_resend_spin.setFixedSize(self._INTERVAL_SPIN_W, 26)
+        self._sc_resend_spin.setStyleSheet(
+            compact_spinbox_style(up_button_width=0, padding="2px 8px")
+        )
         row_auto.addWidget(self._sc_resend_spin)
-        auto_unit = QLabel("ms")
-        auto_unit.setFixedWidth(self._MS_LABEL_W)
-        auto_unit.setStyleSheet(unit_label_style())
-        row_auto.addWidget(auto_unit)
         layout.addLayout(row_auto)
 
         row_ending = QHBoxLayout()
         row_ending.setSpacing(4)
         row_ending.addWidget(self._make_sc_label("Line Ending"))
         row_ending.addStretch()
-        self._sc_ending_combo = DarkComboBox()
+        self._sc_ending_combo = SerialDarkComboBox()
         self._sc_ending_combo.setFixedHeight(26)
         self._sc_ending_combo.setFixedWidth(self._COMBO_END_W)
         for label, val in [("\\r\\n", "\r\n"), ("\\n", "\n"), ("\\r", "\r"), ("\\n\\r", "\n\r"), ("None", "")]:
@@ -1116,7 +1127,7 @@ class SerialComMixin:
 
         self._sc_log_edit = QTextEdit()
         self._sc_log_edit.setReadOnly(True)
-        self._sc_log_edit.setStyleSheet(log_edit_style() + SCROLLBAR_STYLE)
+        self._sc_log_edit.setStyleSheet(log_edit_style() + SERIAL_SCROLLBAR_STYLE)
         self._sc_log_edit.document().setDefaultStyleSheet(log_document_style())
         self._sc_log_edit.document().setMaximumBlockCount(5000)
         layout.addWidget(self._sc_log_edit, 1)
@@ -1142,9 +1153,9 @@ class SerialComMixin:
         send_row.setContentsMargins(0, 0, 0, 0)
         send_row.setSpacing(8)
 
-        self._sc_history_combo = DarkComboBox()
+        self._sc_history_combo = SerialDarkComboBox()
         self._sc_history_combo.setEditable(True)
-        self._sc_history_combo.setInsertPolicy(DarkComboBox.NoInsert)
+        self._sc_history_combo.setInsertPolicy(SerialDarkComboBox.NoInsert)
         self._sc_history_combo.setFixedHeight(34)
         self._sc_send_input = self._sc_history_combo.lineEdit()
         self._sc_send_input.setPlaceholderText("Enter text to send (\u2193 for history)...")
@@ -1263,7 +1274,7 @@ class SerialComMixin:
         self._sc_qc_btn_scroll = QScrollArea()
         self._sc_qc_btn_scroll.setWidgetResizable(True)
         self._sc_qc_btn_scroll.setFrameShape(QFrame.NoFrame)
-        self._sc_qc_btn_scroll.setStyleSheet(quick_button_scroll_style() + SCROLLBAR_STYLE)
+        self._sc_qc_btn_scroll.setStyleSheet(quick_button_scroll_style() + SERIAL_SCROLLBAR_STYLE)
         self._sc_qc_btn_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._sc_qc_btn_scroll.setMinimumHeight(54)
         self._sc_qc_btn_scroll.setMaximumHeight(126)
@@ -1445,8 +1456,11 @@ class SerialComMixin:
             self._serial_baudrate = baudrate
             self._serial_connected = True
             self._sc_update_connect_ui(True)
+            self._sc_start_temp_log()
             self._sc_append_system(f"[INFO] Mock connected: {port} @ {baudrate}")
             self.serial_connection_changed.emit(True)
+            if getattr(self, '_sc_log_auto_save', False):
+                self._sc_start_auto_save()
             return
 
         try:
@@ -1460,8 +1474,11 @@ class SerialComMixin:
             self._serial_baudrate = baudrate
             self._serial_connected = True
             self._sc_update_connect_ui(True)
+            self._sc_start_temp_log()
             self._sc_append_system(f"[INFO] Connected: {port} @ {baudrate}")
             self.serial_connection_changed.emit(True)
+            if getattr(self, '_sc_log_auto_save', False):
+                self._sc_start_auto_save()
             if self._sc_auto_detect_cb.isChecked():
                 self._sc_auto_baud_monitor.enabled = True
                 self._sc_auto_baud_monitor.runtime_redetect_enabled = True
@@ -1476,6 +1493,8 @@ class SerialComMixin:
     def _sc_do_disconnect(self):
         self._stop_serial_read()
         self._sc_stop_auto_baud_scan()
+        self._sc_stop_auto_save()
+        self._sc_close_temp_log(delete=True)
         try:
             if self._serial_conn and self._serial_conn.is_open:
                 self._serial_conn.close()
@@ -1816,7 +1835,7 @@ class SerialComMixin:
 
         log_edit = QTextEdit()
         log_edit.setReadOnly(True)
-        log_edit.setStyleSheet(log_edit_style(padding="6px 8px") + SCROLLBAR_STYLE)
+        log_edit.setStyleSheet(log_edit_style(padding="6px 8px") + SERIAL_SCROLLBAR_STYLE)
         log_edit.document().setDefaultStyleSheet(log_document_style())
         log_edit.document().setMaximumBlockCount(5000)
         layout.addWidget(log_edit, 1)
@@ -2091,6 +2110,11 @@ class SerialComMixin:
 
             self._sc_log_auto_save = dlg.log_auto_save_cb.isChecked()
             self._sc_log_save_path = dlg.log_save_path_edit.text()
+            if self._sc_log_auto_save and self._serial_connected:
+                if self._sc_log_file_handle is None:
+                    self._sc_start_auto_save()
+            elif not self._sc_log_auto_save:
+                self._sc_stop_auto_save()
 
             font_family = dlg.display_font_combo.currentText()
             font_size = dlg.display_font_size_spin.value()
@@ -2102,7 +2126,7 @@ class SerialComMixin:
                     font_size=font_size,
                     padding="4px 6px",
                     include_line_height=True,
-                ) + SCROLLBAR_STYLE
+                ) + SERIAL_SCROLLBAR_STYLE
             )
 
             self._sc_auto_scroll = dlg.display_auto_scroll_cb.isChecked()
@@ -2364,10 +2388,24 @@ class SerialComMixin:
         path, _ = QFileDialog.getSaveFileName(
             self, "Export Logs", f"serial_log_{ts}.txt", "Text Files (*.txt);;All Files (*)"
         )
-        if path:
-            with open(path, "w", encoding="utf-8") as f:
-                for raw, _ in self._sc_all_logs:
-                    f.write(raw + "\n")
+        if not path:
+            return
+        temp_file = self._sc_log_temp_path
+        if temp_file and os.path.isfile(temp_file):
+            if self._sc_log_temp_handle is not None:
+                try:
+                    self._sc_log_temp_handle.flush()
+                except OSError:
+                    pass
+            try:
+                import shutil
+                shutil.copy2(temp_file, path)
+                return
+            except OSError:
+                pass
+        with open(path, "w", encoding="utf-8") as f:
+            for raw, _ in self._sc_all_logs:
+                f.write(raw + "\n")
 
     def _sc_clear_logs(self):
         self._sc_all_logs.clear()
@@ -2384,6 +2422,10 @@ class SerialComMixin:
         self._sc_reset_applied_filter()
         self._sc_auto_scroll = True
         self._sc_scroll_lock_btn.setChecked(True)
+        self._sc_start_temp_log()
+        if self._sc_log_file_handle is not None and self._serial_connected:
+            self._sc_stop_auto_save()
+            self._sc_start_auto_save()
 
     def _sc_on_user_scroll(self, value):
         sb = self._sc_log_edit.verticalScrollBar()
@@ -3398,6 +3440,38 @@ class SerialComMixin:
 
     _SC_UNIFIED_FILENAME = "KK_SerialConsole.json"
     _SC_APP_NAMESPACE = "SerialCom"
+    _SC_APP_VERSION = "1.0.0"
+    _SC_APP_AUTHOR = "KK_Lab Team"
+    _SC_DEFAULT_WINDOW_SIZE = (1300, 850)
+    _SC_WINDOW_MARGIN = 40
+
+    def _sc_default_persisted_state(self, quick_commands=None) -> dict:
+        return {
+            "version": "2.0",
+            "serial": {
+                "port": "",
+                "baudrate": "921600",
+                "auto_detect": True,
+                "databits": "8",
+                "stopbits": "1",
+                "parity": "None",
+                "flow_control": "None",
+                "auto_detect_config": dict(AUTO_BAUD_CONFIG),
+            },
+            "ui": {
+                "rx_display_hex": False,
+                "tx_display_hex": False,
+                "show_timestamp": True,
+                "auto_resend": False,
+                "resend_interval": 1000,
+                "line_ending": "\r\n",
+                "show_send": True,
+                "line_by_line": False,
+                "sidebar_visible": True,
+            },
+            "send_history": [],
+            "quick_commands": quick_commands or self._sc_qc_default_data(),
+        }
 
     def _sc_user_config_dir(self) -> str:
         if getattr(_sys, "frozen", False):
@@ -3423,6 +3497,101 @@ class SerialComMixin:
 
     def _sc_fallback_path(self) -> str:
         return os.path.join(self._sc_fallback_dir(), self._SC_UNIFIED_FILENAME)
+
+    def _sc_screen_available_geometry_for(self, point=None) -> QRect:
+        app = QApplication.instance()
+        screen = None
+        if app is not None and point is not None:
+            screen = app.screenAt(point)
+        if screen is None and app is not None:
+            screen = app.primaryScreen()
+        if screen is not None:
+            return screen.availableGeometry()
+        return QRect(0, 0, 1280, 720)
+
+    def _sc_default_window_geometry(self) -> QRect:
+        available = self._sc_screen_available_geometry_for()
+        target_w, target_h = self._SC_DEFAULT_WINDOW_SIZE
+        margin = self._SC_WINDOW_MARGIN
+        width = min(target_w, max(640, available.width() - margin), int(available.width() * 0.88))
+        height = min(target_h, max(480, available.height() - margin), int(available.height() * 0.88))
+        x = available.x() + max(0, (available.width() - width) // 2)
+        y = available.y() + max(0, (available.height() - height) // 2)
+        return QRect(x, y, width, height)
+
+    def _sc_collect_window_state(self) -> dict:
+        if not self.isWindow() or not self.isVisible() or self.isMinimized():
+            return {}
+
+        geom = self.normalGeometry() if self.isMaximized() else self.geometry()
+        if geom.width() <= 0 or geom.height() <= 0:
+            return {}
+
+        return {
+            "x": int(geom.x()),
+            "y": int(geom.y()),
+            "width": int(geom.width()),
+            "height": int(geom.height()),
+            "maximized": bool(self.isMaximized()),
+        }
+
+    def _sc_clamped_window_geometry(self, window_cfg: dict) -> QRect:
+        saved = QRect(
+            int(window_cfg.get("x", 0)),
+            int(window_cfg.get("y", 0)),
+            int(window_cfg.get("width", 0)),
+            int(window_cfg.get("height", 0)),
+        )
+        if saved.width() <= 0 or saved.height() <= 0:
+            return self._sc_default_window_geometry()
+
+        available = self._sc_screen_available_geometry_for(saved.center())
+        margin = self._SC_WINDOW_MARGIN
+        max_w = max(1, available.width() - margin)
+        max_h = max(1, available.height() - margin)
+        width = min(saved.width(), max_w)
+        height = min(saved.height(), max_h)
+
+        x = min(max(saved.x(), available.x()), available.right() - width + 1)
+        y = min(max(saved.y(), available.y()), available.bottom() - height + 1)
+        return QRect(x, y, width, height)
+
+    def _sc_apply_window_geometry(self) -> None:
+        window_cfg = getattr(self, "_sc_window_geometry", None)
+        if isinstance(window_cfg, dict):
+            self.setGeometry(self._sc_clamped_window_geometry(window_cfg))
+            self._sc_restore_maximized = bool(window_cfg.get("maximized", False))
+            return
+
+        self.setGeometry(self._sc_default_window_geometry())
+        self._sc_restore_maximized = False
+
+    def _sc_about_info(self) -> dict:
+        mode = "Packaged" if getattr(_sys, "frozen", False) else "Development"
+        app = QApplication.instance()
+        screen_text = "Unknown"
+        if app is not None and app.primaryScreen() is not None:
+            geo = app.primaryScreen().availableGeometry()
+            screen_text = f"{geo.width()} x {geo.height()} available"
+        quick_count = 0
+        qc_data = getattr(self, "_sc_qc_data", {})
+        if isinstance(qc_data, dict):
+            quick_count = sum(
+                len(g.get("commands", []))
+                for p in qc_data.get("projects", [])
+                for g in p.get("groups", [])
+            )
+        return {
+            "Application": "KK Serial Console",
+            "Version": self._SC_APP_VERSION,
+            "Author": self._SC_APP_AUTHOR,
+            "Config schema": "2.0",
+            "Config file": self._sc_persisted_path(),
+            "Config directory": self._sc_user_config_dir(),
+            "Quick Commands": str(quick_count),
+            "Runtime mode": mode,
+            "Primary screen": screen_text,
+        }
 
     def _sc_migrate_legacy_config(self):
         base = self._sc_user_config_dir()
@@ -3582,32 +3751,39 @@ class SerialComMixin:
                 "confirm_scan_rounds": m._config.get("confirm_scan_rounds", 2),
             }
 
-        return {
-            "version": "2.0",
-            "serial": {
-                "port": port_text,
-                "baudrate": baud_text,
-                "auto_detect": auto_detect,
-                "databits": databit,
-                "stopbits": stopbit,
-                "parity": parity,
-                "flow_control": flow_ctrl,
-                "auto_detect_config": auto_detect_config,
-            },
-            "ui": {
-                "rx_display_hex": getattr(self, "_sc_rx_display_hex", False),
-                "tx_display_hex": getattr(self, "_sc_tx_display_hex", False),
-                "show_timestamp": getattr(self, "_sc_show_timestamp", True),
-                "auto_resend": getattr(self, "_sc_auto_resend", False),
-                "resend_interval": getattr(self, "_sc_resend_interval", 1000),
-                "line_ending": getattr(self, "_sc_line_ending", "\r\n"),
-                "show_send": getattr(self, "_sc_show_send", True),
-                "line_by_line": getattr(self, "_sc_line_by_line", False),
-                "sidebar_visible": getattr(self, "_sc_sidebar_visible", True),
-            },
-            "send_history": list(getattr(self, "_sc_send_history", []))[-50:],
-            "quick_commands": getattr(self, "_sc_qc_data", self._sc_qc_default_data()),
-        }
+        persisted = self._sc_default_persisted_state(
+            quick_commands=getattr(self, "_sc_qc_data", self._sc_qc_default_data())
+        )
+        persisted["serial"].update({
+            "port": port_text,
+            "baudrate": baud_text,
+            "auto_detect": auto_detect,
+            "databits": databit,
+            "stopbits": stopbit,
+            "parity": parity,
+            "flow_control": flow_ctrl,
+            "auto_detect_config": auto_detect_config,
+        })
+        persisted["ui"].update({
+            "rx_display_hex": getattr(self, "_sc_rx_display_hex", False),
+            "tx_display_hex": getattr(self, "_sc_tx_display_hex", False),
+            "show_timestamp": getattr(self, "_sc_show_timestamp", True),
+            "auto_resend": getattr(self, "_sc_auto_resend", False),
+            "resend_interval": getattr(self, "_sc_resend_interval", 1000),
+            "line_ending": getattr(self, "_sc_line_ending", "\r\n"),
+            "show_send": getattr(self, "_sc_show_send", True),
+            "line_by_line": getattr(self, "_sc_line_by_line", False),
+            "sidebar_visible": getattr(self, "_sc_sidebar_visible", True),
+            "log_auto_save": getattr(self, "_sc_log_auto_save", False),
+            "log_save_path": getattr(self, "_sc_log_save_path", ""),
+        })
+        persisted["send_history"] = list(getattr(self, "_sc_send_history", []))[-50:]
+        window_state = self._sc_collect_window_state()
+        if window_state:
+            persisted["window"] = window_state
+        elif isinstance(getattr(self, "_sc_window_geometry", None), dict):
+            persisted["window"] = self._sc_window_geometry
+        return persisted
 
     def _sc_apply_persisted_state(self, data: dict) -> None:
         if not isinstance(data, dict):
@@ -3685,6 +3861,8 @@ class SerialComMixin:
                     ("show_send", "_sc_show_send"),
                     ("line_by_line", "_sc_line_by_line"),
                     ("sidebar_visible", "_sc_sidebar_visible"),
+                    ("log_auto_save", "_sc_log_auto_save"),
+                    ("log_save_path", "_sc_log_save_path"),
                 ):
                     if key in ui_cfg:
                         setattr(self, attr, ui_cfg[key])
@@ -3703,6 +3881,10 @@ class SerialComMixin:
                 parsed = self._sc_parse_quick_cmds_payload(qc)
                 if parsed is not None:
                     self._sc_qc_data = parsed
+
+            window_cfg = data.get("window")
+            if isinstance(window_cfg, dict):
+                self._sc_window_geometry = window_cfg
         else:
             for key, attr in (
                 ("rx_display_hex", "_sc_rx_display_hex"),
@@ -3798,6 +3980,9 @@ class SerialComMixin:
             pass
 
     def _sc_save_persisted_state(self) -> None:
+        if getattr(self, "_sc_skip_next_persist_save", False):
+            self._sc_skip_next_persist_save = False
+            return
         try:
             cfg_path = self._sc_persisted_path()
             with open(cfg_path, "w", encoding="utf-8") as f:
@@ -3805,12 +3990,186 @@ class SerialComMixin:
         except Exception:
             pass
 
+    def _sc_apply_reset_defaults_to_widgets(self) -> None:
+        if hasattr(self, "_sc_port_combo"):
+            self._sc_port_combo.setCurrentIndex(-1)
+        if hasattr(self, "_sc_baud_combo"):
+            self._sc_baud_combo.setCurrentText("921600")
+        if hasattr(self, "_sc_auto_detect_cb"):
+            self._sc_auto_detect_cb.setChecked(True)
+        if hasattr(self, "_sc_databit_combo"):
+            self._sc_databit_combo.setCurrentText("8")
+        if hasattr(self, "_sc_stopbit_combo"):
+            self._sc_stopbit_combo.setCurrentText("1")
+        if hasattr(self, "_sc_parity_combo"):
+            self._sc_parity_combo.setCurrentText("None")
+        if hasattr(self, "_sc_flow_combo"):
+            self._sc_flow_combo.setCurrentText("None")
+
+        self._sc_rx_display_hex = False
+        if hasattr(self, "_sc_rx_toggle"):
+            self._sc_rx_toggle.set_value("ASCII")
+        self._sc_tx_display_hex = False
+        if hasattr(self, "_sc_tx_toggle"):
+            self._sc_tx_toggle.set_value("ASCII")
+
+        self._sc_show_timestamp = True
+        if hasattr(self, "_sc_rx_show_time_cb"):
+            self._sc_rx_show_time_cb.setChecked(True)
+        self._sc_auto_resend = False
+        if hasattr(self, "_sc_auto_resend_cb"):
+            self._sc_auto_resend_cb.setChecked(False)
+        self._sc_resend_interval = 1000
+        if hasattr(self, "_sc_resend_spin"):
+            self._sc_resend_spin.setValue(1000)
+        self._sc_line_ending = "\r\n"
+        if hasattr(self, "_sc_ending_combo"):
+            self._sc_ending_combo.setCurrentIndex(0)
+        self._sc_show_send = True
+        if hasattr(self, "_sc_show_send_cb"):
+            self._sc_show_send_cb.setChecked(True)
+        self._sc_line_by_line = False
+        if hasattr(self, "_sc_line_by_line_cb"):
+            self._sc_line_by_line_cb.setChecked(False)
+
+        self._sc_send_history = []
+        if hasattr(self, "_sc_history_combo"):
+            self._sc_history_combo.blockSignals(True)
+            self._sc_history_combo.clear()
+            self._sc_history_combo.setCurrentIndex(-1)
+            self._sc_history_combo.blockSignals(False)
+
+        self._sc_sidebar_visible = True
+        if hasattr(self, "_sc_sidebar_widget"):
+            self._sc_sidebar_widget.setVisible(True)
+        if hasattr(self, "_sc_sidebar_toggle_btn"):
+            self._sc_sidebar_toggle_btn.setChecked(True)
+
+        if hasattr(self, "_sc_auto_baud_monitor"):
+            self._sc_auto_baud_monitor.update_config(dict(AUTO_BAUD_CONFIG))
+            self._sc_auto_baud_monitor.runtime_redetect_enabled = True
+
+    def _sc_reset_user_config_keep_quick_commands(self, dialog_parent=None) -> bool:
+        cfg_path = self._sc_persisted_path()
+        ret = QMessageBox.question(
+            dialog_parent or self,
+            "Reset user config",
+            "This will reset the user JSON to default settings, while keeping Quick Commands unchanged.\n\n"
+            f"Before continuing, please back up this JSON file if needed:\n{cfg_path}\n\n"
+            "Continue reset?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if ret != QMessageBox.Yes:
+            return False
+
+        quick_commands = getattr(self, "_sc_qc_data", self._sc_qc_default_data())
+        reset_state = self._sc_default_persisted_state(quick_commands=quick_commands)
+        try:
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                json.dump(reset_state, f, ensure_ascii=False, indent=2)
+            self._sc_window_geometry = None
+            self._sc_apply_persisted_state(reset_state)
+            self._sc_apply_reset_defaults_to_widgets()
+            self._sc_skip_next_persist_save = True
+            if hasattr(self, "_sc_append_system"):
+                self._sc_append_system(f"[INFO] User config reset to defaults. Quick Commands kept. Path: {cfg_path}")
+            QMessageBox.information(
+                dialog_parent or self,
+                "Reset complete",
+                "User JSON has been reset to default settings.\nQuick Commands were kept unchanged.",
+            )
+            if self.isWindow():
+                QTimer.singleShot(0, self.close)
+            return True
+        except Exception as e:
+            logger.error("Reset Serial Console config failed: %s", e, exc_info=True)
+            QMessageBox.critical(dialog_parent or self, "Reset failed", f"Failed to reset config:\n{e}")
+            return False
+
     def _sc_qc_save_data(self) -> None:
         self._sc_save_persisted_state()
 
     # --- log helpers ---
 
     _SC_MAX_LOG_LINES = 10000
+
+    def _sc_start_temp_log(self):
+        self._sc_close_temp_log(delete=True)
+        import tempfile
+        temp_dir = os.path.join(tempfile.gettempdir(), "kk_serial_logs")
+        try:
+            os.makedirs(temp_dir, exist_ok=True)
+        except OSError:
+            return
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        filename = f"sc_temp_{ts}.txt"
+        file_path = os.path.join(temp_dir, filename)
+        try:
+            self._sc_log_temp_handle = open(file_path, "a", encoding="utf-8")
+            self._sc_log_temp_path = file_path
+        except OSError:
+            self._sc_log_temp_handle = None
+            self._sc_log_temp_path = None
+
+    def _sc_close_temp_log(self, delete: bool = False):
+        if self._sc_log_temp_handle is not None:
+            try:
+                self._sc_log_temp_handle.close()
+            except OSError:
+                pass
+            self._sc_log_temp_handle = None
+        if delete and self._sc_log_temp_path:
+            try:
+                os.remove(self._sc_log_temp_path)
+            except OSError:
+                pass
+            self._sc_log_temp_path = None
+
+    def _sc_start_auto_save(self):
+        if self._sc_log_file_handle is not None:
+            return
+        save_dir = getattr(self, '_sc_log_save_path', '')
+        if not save_dir:
+            save_dir = self._sc_fallback_dir()
+        try:
+            os.makedirs(save_dir, exist_ok=True)
+        except OSError:
+            return
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        port = getattr(self, '_serial_port', '') or 'unknown'
+        port_safe = re.sub(r'[^\w\-.]', '_', port)
+        filename = f"serial_log_{port_safe}_{ts}.txt"
+        file_path = os.path.join(save_dir, filename)
+        try:
+            self._sc_log_file_handle = open(file_path, "a", encoding="utf-8")
+            self._sc_log_file_path = file_path
+            self._sc_append_system(f"[INFO] Auto-save started: {file_path}")
+        except OSError:
+            self._sc_log_file_handle = None
+            self._sc_log_file_path = None
+
+    def _sc_stop_auto_save(self):
+        if self._sc_log_file_handle is not None:
+            try:
+                self._sc_log_file_handle.close()
+            except OSError:
+                pass
+            self._sc_log_file_handle = None
+
+    def _sc_write_to_log_files(self, raw: str):
+        for fh_attr in ("_sc_log_temp_handle", "_sc_log_file_handle"):
+            fh = getattr(self, fh_attr, None)
+            if fh is not None:
+                try:
+                    fh.write(raw + "\n")
+                    fh.flush()
+                except OSError:
+                    try:
+                        fh.close()
+                    except OSError:
+                        pass
+                    setattr(self, fh_attr, None)
 
     def _sc_append_log(self, message: str, color: str = _CLR_TEXT_BODY):
         ts = datetime.now().strftime("%H:%M:%S.%f")[:-3] if self._sc_show_timestamp else ""
@@ -3821,6 +4180,7 @@ class SerialComMixin:
         self._sc_all_logs.append((raw, html))
         if len(self._sc_all_logs) > self._SC_MAX_LOG_LINES:
             self._sc_all_logs = self._sc_all_logs[-self._SC_MAX_LOG_LINES:]
+        self._sc_write_to_log_files(raw)
         if self._sc_is_filter_active():
             self._sc_filter_dirty = True
         else:
@@ -3958,8 +4318,8 @@ class SerialComMixin:
         grp.setObjectName("scSectionCard")
         grp.setStyleSheet(section_card_style())
         layout = QVBoxLayout(grp)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(10)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
 
         lbl = QLabel(title)
         lbl.setStyleSheet(section_title_style())
@@ -3990,7 +4350,7 @@ class _MiniSlideToggle(QWidget):
         self._value = left
         self._anim_progress = 0.0
 
-        self.setFixedSize(80, 22)
+        self.setFixedSize(SerialComMixin._TOGGLE_W, 24)
         self.setCursor(Qt.PointingHandCursor)
 
         self._anim = QPropertyAnimation(self, b"animProgress")
@@ -4099,7 +4459,7 @@ class _AddLogPanelDialog(QDialog):
         grid.addWidget(self._title_edit, 0, 1)
 
         grid.addWidget(QLabel("Port"), 1, 0)
-        self._port_combo = DarkComboBox()
+        self._port_combo = SerialDarkComboBox()
         self._port_combo.setFixedHeight(26)
         self._port_combo.setEditable(True)
         try:
@@ -4116,7 +4476,7 @@ class _AddLogPanelDialog(QDialog):
         grid.addWidget(self._port_combo, 1, 1)
 
         grid.addWidget(QLabel("Baudrate"), 2, 0)
-        self._baud_combo = DarkComboBox()
+        self._baud_combo = SerialDarkComboBox()
         self._baud_combo.setFixedHeight(26)
         self._baud_combo.setEditable(True)
         for br in ["921600", "1152000", "2000000", "3000000"]:
@@ -4125,28 +4485,28 @@ class _AddLogPanelDialog(QDialog):
         grid.addWidget(self._baud_combo, 2, 1)
 
         grid.addWidget(QLabel("Data bits"), 3, 0)
-        self._databit_combo = DarkComboBox()
+        self._databit_combo = SerialDarkComboBox()
         self._databit_combo.setFixedHeight(26)
         for d in ["8", "7", "6", "5"]:
             self._databit_combo.addItem(d)
         grid.addWidget(self._databit_combo, 3, 1)
 
         grid.addWidget(QLabel("Stop bits"), 4, 0)
-        self._stopbit_combo = DarkComboBox()
+        self._stopbit_combo = SerialDarkComboBox()
         self._stopbit_combo.setFixedHeight(26)
         for s in ["1", "1.5", "2"]:
             self._stopbit_combo.addItem(s)
         grid.addWidget(self._stopbit_combo, 4, 1)
 
         grid.addWidget(QLabel("Parity"), 5, 0)
-        self._parity_combo = DarkComboBox()
+        self._parity_combo = SerialDarkComboBox()
         self._parity_combo.setFixedHeight(26)
         for p in ["None", "Even", "Odd", "Mark", "Space"]:
             self._parity_combo.addItem(p)
         grid.addWidget(self._parity_combo, 5, 1)
 
         grid.addWidget(QLabel("Flow Control"), 6, 0)
-        self._flow_combo = DarkComboBox()
+        self._flow_combo = SerialDarkComboBox()
         self._flow_combo.setFixedHeight(26)
         for fc in ["None", "RTS/CTS", "XON/XOFF"]:
             self._flow_combo.addItem(fc)
@@ -4585,7 +4945,8 @@ class _SerialSettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Serial Settings")
-        self.setMinimumSize(500, 440)
+        self.setMinimumSize(720, 500)
+        self.resize(760, 540)
         self.setStyleSheet(_DLG_STYLE)
 
         root = QVBoxLayout(self)
@@ -4593,6 +4954,8 @@ class _SerialSettingsDialog(QDialog):
         root.setSpacing(12)
 
         self._tabs = QTabWidget()
+        self._tabs.setUsesScrollButtons(False)
+        self._tabs.tabBar().setExpanding(False)
         root.addWidget(self._tabs, 1)
 
         self._tabs.addTab(self._build_tab_serial(), "Serial")
@@ -4601,6 +4964,7 @@ class _SerialSettingsDialog(QDialog):
         self._tabs.addTab(self._build_tab_log(), "Log")
         self._tabs.addTab(self._build_tab_display(), "Display")
         self._tabs.addTab(self._build_tab_auto_detect(), "Auto-Detect")
+        self._tabs.addTab(self._build_tab_about(), "About")
 
         btn_row = QHBoxLayout()
         btn_row.addStretch()
@@ -4635,12 +4999,12 @@ class _SerialSettingsDialog(QDialog):
         grid.setVerticalSpacing(8)
 
         grid.addWidget(QLabel("Port"), 0, 0)
-        self.port_combo = DarkComboBox()
+        self.port_combo = SerialDarkComboBox()
         self.port_combo.setFixedHeight(26)
         grid.addWidget(self.port_combo, 0, 1)
 
         grid.addWidget(QLabel("Baudrate"), 1, 0)
-        self.baud_combo = DarkComboBox()
+        self.baud_combo = SerialDarkComboBox()
         self.baud_combo.setFixedHeight(26)
         self.baud_combo.setEditable(True)
         for br in ["921600", "1152000", "2000000", "3000000", "Custom"]:
@@ -4657,28 +5021,28 @@ class _SerialSettingsDialog(QDialog):
         adv_grid.setVerticalSpacing(8)
 
         adv_grid.addWidget(QLabel("Data bits"), 0, 0)
-        self.databit_combo = DarkComboBox()
+        self.databit_combo = SerialDarkComboBox()
         self.databit_combo.setFixedHeight(26)
         for d in ["8", "7", "6", "5"]:
             self.databit_combo.addItem(d)
         adv_grid.addWidget(self.databit_combo, 0, 1)
 
         adv_grid.addWidget(QLabel("Stop bits"), 0, 2)
-        self.stopbit_combo = DarkComboBox()
+        self.stopbit_combo = SerialDarkComboBox()
         self.stopbit_combo.setFixedHeight(26)
         for s in ["1", "1.5", "2"]:
             self.stopbit_combo.addItem(s)
         adv_grid.addWidget(self.stopbit_combo, 0, 3)
 
         adv_grid.addWidget(QLabel("Parity"), 1, 0)
-        self.parity_combo = DarkComboBox()
+        self.parity_combo = SerialDarkComboBox()
         self.parity_combo.setFixedHeight(26)
         for p in ["None", "Even", "Odd", "Mark", "Space"]:
             self.parity_combo.addItem(p)
         adv_grid.addWidget(self.parity_combo, 1, 1)
 
         adv_grid.addWidget(QLabel("Flow Control"), 1, 2)
-        self.flow_combo = DarkComboBox()
+        self.flow_combo = SerialDarkComboBox()
         self.flow_combo.setFixedHeight(26)
         for fc in ["None", "RTS/CTS", "XON/XOFF"]:
             self.flow_combo.addItem(fc)
@@ -4757,7 +5121,7 @@ class _SerialSettingsDialog(QDialog):
         ending_row = QHBoxLayout()
         ending_row.setSpacing(8)
         ending_row.addWidget(QLabel("Line ending"))
-        self.ending_combo = DarkComboBox()
+        self.ending_combo = SerialDarkComboBox()
         self.ending_combo.setFixedHeight(26)
         for label, val in [("\\r\\n", "\r\n"), ("\\n", "\n"), ("\\r", "\r"), ("\\n\\r", "\n\r"), ("None", "")]:
             self.ending_combo.addItem(label, val)
@@ -4847,7 +5211,7 @@ class _SerialSettingsDialog(QDialog):
         font_row = QHBoxLayout()
         font_row.setSpacing(8)
         font_row.addWidget(QLabel("Font family"))
-        self.display_font_combo = DarkComboBox()
+        self.display_font_combo = SerialDarkComboBox()
         self.display_font_combo.setFixedHeight(26)
         for f in ["Consolas", "Courier New", "Fira Code", "JetBrains Mono", "Cascadia Code", "Lucida Console"]:
             self.display_font_combo.addItem(f)
@@ -4987,7 +5351,168 @@ class _SerialSettingsDialog(QDialog):
         layout.addStretch()
         return page
 
+    # ---- tab: About ----
+
+    def _build_tab_about(self):
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet(transparent_scroll_area_style() + SERIAL_SCROLLBAR_STYLE)
+
+        content = QWidget()
+        content.setObjectName("aboutPage")
+        content.setStyleSheet("""
+            QWidget#aboutPage QLabel#aboutHeroTitle {
+                color: #1d1d1f;
+                font-size: 19px;
+                font-weight: 800;
+            }
+            QWidget#aboutPage QLabel#aboutHeroSub {
+                color: #6e6e73;
+                font-size: 12px;
+            }
+            QWidget#aboutPage QLabel#aboutCardTitle {
+                color: #4f5b6b;
+                font-size: 12px;
+                font-weight: 800;
+            }
+            QWidget#aboutPage QLabel#aboutKey {
+                color: #7a8290;
+                font-size: 11px;
+            }
+            QWidget#aboutPage QLabel#aboutValue {
+                color: #263245;
+                font-size: 12px;
+                font-weight: 600;
+            }
+            QWidget#aboutPage QLabel#aboutResetHint {
+                color: #5d6675;
+                font-size: 12px;
+                line-height: 1.35;
+            }
+        """)
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        about_info = {}
+        parent = self.parent()
+        if parent is not None and hasattr(parent, "_sc_about_info"):
+            about_info = parent._sc_about_info()
+
+        hero = QFrame()
+        hero.setObjectName("scSectionCard")
+        hero.setStyleSheet(section_card_style())
+        hero_layout = QVBoxLayout(hero)
+        hero_layout.setContentsMargins(16, 14, 16, 14)
+        hero_layout.setSpacing(5)
+
+        title = QLabel(about_info.get("Application", "KK Serial Console"))
+        title.setObjectName("aboutHeroTitle")
+        hero_layout.addWidget(title)
+
+        subtitle = QLabel(
+            f"Version {about_info.get('Version', '1.0.0')}  |  "
+            f"Author: {about_info.get('Author', 'KK_Lab Team')}"
+        )
+        subtitle.setObjectName("aboutHeroSub")
+        hero_layout.addWidget(subtitle)
+        layout.addWidget(hero)
+
+        info_card = QFrame()
+        info_card.setObjectName("scSectionCard")
+        info_card.setStyleSheet(section_card_style())
+        info_layout = QVBoxLayout(info_card)
+        info_layout.setContentsMargins(14, 12, 14, 12)
+        info_layout.setSpacing(9)
+
+        info_title = QLabel("Software Information")
+        info_title.setObjectName("aboutCardTitle")
+        info_layout.addWidget(info_title)
+
+        info_grid = QGridLayout()
+        info_grid.setHorizontalSpacing(14)
+        info_grid.setVerticalSpacing(7)
+        display_items = [
+            ("Config schema", about_info.get("Config schema", "")),
+            ("Quick Commands", about_info.get("Quick Commands", "0")),
+            ("Runtime mode", about_info.get("Runtime mode", "")),
+            ("Primary screen", about_info.get("Primary screen", "")),
+        ]
+        for row, (key, value) in enumerate(display_items):
+            key_label = QLabel(key)
+            key_label.setObjectName("aboutKey")
+            info_grid.addWidget(key_label, row, 0)
+
+            value_label = QLabel(str(value))
+            value_label.setObjectName("aboutValue")
+            value_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            info_grid.addWidget(value_label, row, 1)
+        info_grid.setColumnStretch(1, 1)
+        info_layout.addLayout(info_grid)
+        layout.addWidget(info_card)
+
+        config_card = QFrame()
+        config_card.setObjectName("scSectionCard")
+        config_card.setStyleSheet(section_card_style())
+        config_layout = QVBoxLayout(config_card)
+        config_layout.setContentsMargins(14, 12, 14, 12)
+        config_layout.setSpacing(9)
+
+        config_title = QLabel("User Configuration")
+        config_title.setObjectName("aboutCardTitle")
+        config_layout.addWidget(config_title)
+
+        for key, value in (
+            ("JSON file", about_info.get("Config file", "")),
+            ("Directory", about_info.get("Config directory", "")),
+        ):
+            key_label = QLabel(key)
+            key_label.setObjectName("aboutKey")
+            config_layout.addWidget(key_label)
+
+            path_edit = QLineEdit(str(value))
+            path_edit.setReadOnly(True)
+            path_edit.setCursorPosition(0)
+            path_edit.setStyleSheet(dialog_line_edit_style(size=11, min_height=22, padding="3px 7px"))
+            path_edit.setFixedHeight(28)
+            config_layout.addWidget(path_edit)
+            config_layout.addSpacing(4)
+
+        reset_info = QLabel(
+            "Reset restores Serial, RX/TX, display, history, and window settings to defaults. "
+            "Quick Commands are kept unchanged."
+        )
+        reset_info.setObjectName("aboutResetHint")
+        reset_info.setWordWrap(True)
+        config_layout.addWidget(reset_info)
+
+        reset_btn = QPushButton("Reset User JSON...")
+        reset_btn.setObjectName("dlgCancelBtn")
+        reset_btn.setCursor(Qt.PointingHandCursor)
+        reset_btn.setAutoDefault(False)
+        reset_btn.setDefault(False)
+        reset_btn.clicked.connect(self._on_reset_user_json_clicked)
+
+        reset_row = QHBoxLayout()
+        reset_row.addWidget(reset_btn)
+        reset_row.addStretch()
+        config_layout.addLayout(reset_row)
+
+        layout.addWidget(config_card)
+
+        layout.addStretch()
+        scroll.setWidget(content)
+        return scroll
+
     # ---- helpers ----
+
+    def _on_reset_user_json_clicked(self):
+        parent = self.parent()
+        if parent is not None and hasattr(parent, "_sc_reset_user_config_keep_quick_commands"):
+            if parent._sc_reset_user_config_keep_quick_commands(self):
+                self.reject()
 
     def _browse_log_path(self):
         path = QFileDialog.getExistingDirectory(self, "Select Log Save Directory")
@@ -5180,12 +5705,10 @@ if __name__ == "__main__":
     w4.setWindowTitle("KK Serial Console")
     if os.path.isfile(_ICON_PATH):
         w4.setWindowIcon(QIcon(_ICON_PATH))
-    w4.resize(1300, 850)
-    w4.show()
-    _screen_geo = app.primaryScreen().availableGeometry()
-    w4.move(
-        (_screen_geo.width() - w4.frameGeometry().width()) // 2 + _screen_geo.x(),
-        (_screen_geo.height() - w4.frameGeometry().height()) // 2 + _screen_geo.y(),
-    )
+    w4._sc_apply_window_geometry()
+    if getattr(w4, "_sc_restore_maximized", False):
+        w4.showMaximized()
+    else:
+        w4.show()
 
     sys.exit(app.exec())

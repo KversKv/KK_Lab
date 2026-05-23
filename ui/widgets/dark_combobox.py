@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (
     QComboBox, QStyle, QStyleOptionComboBox, QListView, QStyledItemDelegate
 )
-from PySide6.QtCore import Qt, QRect, QRectF
+from PySide6.QtCore import Qt, QRect, QRectF, QTimer
 from PySide6.QtGui import QPainter, QPen, QColor, QFontMetrics, QPalette
 
 
@@ -67,6 +67,7 @@ class DarkComboBox(QComboBox):
         list_view = QListView()
         list_view.setMouseTracking(True)
         list_view.setUniformItemSizes(True)
+        list_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         delegate = _ComboItemDelegate(
             padding_v=self._ITEM_PADDING_V, parent=list_view
         )
@@ -161,7 +162,14 @@ class DarkComboBox(QComboBox):
             row_h = view.sizeHintForRow(0)
             if row_h <= 0:
                 row_h = fm.height() + self._ITEM_PADDING_V * 2
-            view.setMinimumHeight(visible * row_h)
+            total_h = visible * row_h
+            view.setMinimumHeight(total_h)
+            view.setMaximumHeight(total_h)
+        no_scroll = self.count() <= self.maxVisibleItems()
+        if no_scroll:
+            view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        else:
+            view.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         super().showPopup()
         popup = view.window()
         if popup:
@@ -170,9 +178,13 @@ class DarkComboBox(QComboBox):
                 f"border: 1px solid {self._popup_border}; "
                 f"padding: 0px; margin: 0px;"
             )
-            if self.count() <= self.maxVisibleItems():
-                for child in popup.children():
-                    cls_name = child.metaObject().className()
-                    if "Scroller" in cls_name or "QComboBoxPrivateScroller" in cls_name:
-                        child.hide()
-                        child.setMaximumHeight(0)
+            if no_scroll:
+                self._hide_scrollers(popup)
+                QTimer.singleShot(0, lambda: self._hide_scrollers(popup))
+
+    def _hide_scrollers(self, popup):
+        for child in popup.children():
+            cls_name = child.metaObject().className()
+            if "Scroller" in cls_name or "QComboBoxPrivateScroller" in cls_name:
+                child.hide()
+                child.setMaximumHeight(0)
