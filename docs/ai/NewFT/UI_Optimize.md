@@ -60,7 +60,7 @@
   - 替换所有页面中的本地 `_tinted_svg_icon` 定义为 import
 - **涉及文件**:
   - 新建 `ui/utils/icon_utils.py`
-  - 修改: `consumption_test.py`, `custom_test_ui.py`, `execution_logs_module_frame.py`, `serialCom_module_frame.py`
+  - 修改: `consumption_test.py`, `custom_test_ui.py`, `execution_logs_module_frame.py`, `serialCom_module/serialCom_module_frame.py`
   - 额外修改: `high_low_temp_test_ui.py`, `sequence_canvas.py`
 - **依赖**: 无
 - **预计会话**: 会话 2

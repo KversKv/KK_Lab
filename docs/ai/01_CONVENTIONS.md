@@ -67,14 +67,14 @@ except Exception as e:
 - 所有 `QDialog` 子类实例化必须显式传 `self` 作为 parent，**严禁** `parent=None` 或省略。
 - 静态对话框 `QFileDialog.getOpenFileName / getSaveFileName / getExistingDirectory`、`QMessageBox.warning / information / critical / question / about`、`QInputDialog.getText / getInt / getDouble / getItem` 的第一个参数（parent）**必须**传 `self` 或对应顶层 widget；**严禁**传 `None`。
 - 依据：Qt 以 parent 的 top-level window 为锚点自动居中；`parent=None` 退化为主屏中心，多屏 / 窗口移动场景会割裂体验，并产生多余任务栏项、无法随父最小化、生命周期失管等副作用。
-- 参考正例：[_sc_open_settings_dialog](../../ui/modules/serialCom_module_frame.py) 的 `dlg = _SerialSettingsDialog(self)`。
+- 参考正例：[_sc_open_settings_dialog](../../ui/modules/serialCom_module/serialCom_module_frame.py) 的 `dlg = _SerialSettingsDialog(self)`。
 
 ### 6.2 QDialog 回车绑定（CRITICAL）
 
 - **OK / 主操作按钮**：`setDefault(True)` + `setAutoDefault(True)`，使回车键直接提交表单。
 - **Cancel / Browse / 其它副作用按钮**：`setAutoDefault(False)` + `setDefault(False)`，否则 QDialog 会隐式把所有 QPushButton 的 autoDefault 置 True，Tab 过去按回车就误触发。
 - 不要依赖 Qt 的"自动默认按钮推断"；每个按钮的 default / autoDefault 必须**显式二元化**。
-- 参考正例：[_QuickCmdDialog](../../ui/modules/serialCom_module_frame.py) 的 OK / Cancel 按钮配置。
+- 参考正例：[_QuickCmdDialog](../../ui/modules/serialCom_module/serialCom_module_frame.py) 的 OK / Cancel 按钮配置。
 
 ### 6.3 数值控件 QLabel 必须标注单位（CRITICAL）
 

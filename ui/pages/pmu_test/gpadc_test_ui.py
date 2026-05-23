@@ -12,7 +12,7 @@ from ui.widgets.button import update_connect_button_state
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.chamber_module_frame import VT6002ConnectionMixin
-from ui.modules.serialCom_module_frame import SerialComMixin, MODE_FULL
+from ui.modules.serialCom_module.serialCom_module_frame import SerialComMixin, MODE_FULL
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QLineEdit, QGridLayout, QSpinBox, QDoubleSpinBox, QFrame, QRadioButton,

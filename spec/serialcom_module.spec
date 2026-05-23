@@ -129,7 +129,7 @@ if BUILD_MODE not in ('onedir', 'onefile'):
 print(f"[spec] SerialCom_Module build mode = {BUILD_MODE}")
 
 a = Analysis(
-    [os.path.join(PROJECT_ROOT, 'ui', 'modules', 'serialCom_module_frame.py')],
+    [os.path.join(PROJECT_ROOT, 'ui', 'modules', 'serialCom_module', 'serialCom_module_frame.py')],
     pathex=[PROJECT_ROOT],
     binaries=[],
     datas=[

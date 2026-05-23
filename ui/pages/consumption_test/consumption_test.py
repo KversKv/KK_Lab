@@ -20,7 +20,7 @@ sys.path.append(get_resource_base())
 
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.widgets.button import SpinningSearchButton, update_connect_button_state
-from ui.modules.serialCom_module_frame import SerialComMixin, MODE_INLINE
+from ui.modules.serialCom_module.serialCom_module_frame import SerialComMixin, MODE_INLINE
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,

@@ -98,7 +98,7 @@ a = Analysis(
         'ui.modules.n6705c_module_frame',
         'ui.modules.oscilloscope_module_frame',
         'ui.modules.chamber_module_frame',
-        'ui.modules.serialCom_module_frame',
+        'ui.modules.serialCom_module.serialCom_module_frame',
         'ui.pages',
         'ui.pages.n6705c_power_analyzer',
         'ui.pages.n6705c_power_analyzer.n6705c_top',

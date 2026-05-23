@@ -146,7 +146,9 @@ ui/
 │   ├── oscilloscope_module_frame.py    # 示波器连接区 Mixin (VISA 搜索/连接/断开)
 │   ├── keysight_53230a_module_frame.py # 53230A 频率计连接区 Mixin (VISA 搜索/连接/断开)
 │   ├── chamber_module_frame.py         # VT6002 温箱连接区 Mixin (串口搜索/连接/断开)
-│   └── serialCom_module_frame.py       # 串口通信连接区 Mixin (串口搜索/连接/断开)
+│   └── serialCom_module/               # 串口通信连接区 Mixin (串口搜索/连接/断开)
+│       ├── serialCom_module_frame.py
+│       └── serialCom_dark_style.py     # 串口通信深色 UI 样式
 │
 ├── styles/                  # 样式聚合入口
 │   ├── __init__.py              # 从 ui/widgets 与 ui/modules 重新导出常用样式/组件

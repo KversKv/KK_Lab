@@ -27,7 +27,7 @@ from ui.pages.custom_test.context import ExecutionContext
 from ui.pages.custom_test.executor import ExecutorThread
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.chamber_module_frame import VT6002ConnectionMixin
-from ui.modules.serialCom_module_frame import SerialComMixin, MODE_FULL
+from ui.modules.serialCom_module.serialCom_module_frame import SerialComMixin, MODE_FULL
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.widgets.scrollbar import SCROLLBAR_STYLE
 from log_config import get_logger

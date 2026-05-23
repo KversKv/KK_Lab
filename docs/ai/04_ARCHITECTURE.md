@@ -65,7 +65,7 @@ main.py
 
 ### 3.4 `ui/styles/`
 - **样式常量**：`SCROLLBAR_STYLE`、`START_BTN_STYLE` 等。
-- **连接区域 Mixin**：`n6705c_module_frame.py`、`oscilloscope_module_frame.py`、`chamber_module_frame.py`、`serialCom_module_frame.py`。
+- **连接区域 Mixin**：`n6705c_module_frame.py`、`oscilloscope_module_frame.py`、`chamber_module_frame.py`、`serialCom_module/serialCom_module_frame.py`。
   - 统一提供 "VISA/串口搜索 + 连接/断开 + 状态指示" 一套 UI；
   - 页面通过 **多继承** 混入，避免重复布局。
 - **执行日志 Mixin**：`execution_logs_module_frame.py` 提供日志显示区 + 进度条。

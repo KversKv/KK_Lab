@@ -25,7 +25,7 @@ from ui.pages.chamber.vt6002_chamber_ui import VT6002ChamberUI
 from ui.pages.consumption_test.consumption_test_wrapper import ConsumptionTestWrapper
 from ui.pages.charger_test.charger_test_ui import ChargerTestUI
 from ui.pages.custom_test.custom_test_ui import CustomTestUI
-from ui.modules.serialCom_module_frame import SerialComMixin
+from ui.modules.serialCom_module.serialCom_module_frame import SerialComMixin
 from core.test_manager import TestManager
 from instruments.base.visa_instrument import VisaInstrument
 from instruments.chambers.vt6002_chamber import VT6002
@@ -45,7 +45,7 @@ class _KKSerialsPage(SerialComMixin, QWidget):
 
     def __init__(self, parent=None):
         QWidget.__init__(self, parent)
-        from ui.modules.serialCom_module_frame import MODE_FULL
+        from ui.modules.serialCom_module.serialCom_module_frame import MODE_FULL
         self.init_serial_connection(mode=MODE_FULL, prefix="KKSerials")
         self.setStyleSheet("""
             QWidget {
