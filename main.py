@@ -24,7 +24,7 @@ from log_config import setup_logging, get_logger
 from debug_config import DEBUG_MOCK
 from ui.main_window import MainWindow
 
-setup_logging(level=logging.INFO)
+setup_logging(level=logging.DEBUG)
 
 
 logger = get_logger(__name__)

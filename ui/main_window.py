@@ -614,5 +614,6 @@ class MainWindow(CleanupMixin, QMainWindow):
                     self.channels[0]['current_value'].setText(f"{current:.4f}")
 
     def closeEvent(self, event):
+        self.status_panel.suppress_toasts()
         self._perform_close_cleanup()
         super().closeEvent(event)

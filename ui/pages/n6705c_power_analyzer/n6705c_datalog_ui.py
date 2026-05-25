@@ -432,13 +432,24 @@ class _ConnectWorker(QObject):
         self._debug = debug
 
     def run(self):
+        n6705c = None
         try:
             if self._debug:
                 n6705c = MockN6705C()
+                idn = "MOCK,N6705C,MOCK"
             else:
                 n6705c = N6705C(self._visa_resource)
+                idn = n6705c.instr.query("*IDN?").strip()
+                if "N6705C" not in idn:
+                    raise RuntimeError(f"Device mismatch: {idn}")
+            logger.debug("Datalog connect worker verified IDN: %s", idn)
             self.success.emit(n6705c, self._serial, self._visa_resource)
         except Exception as e:
+            if n6705c is not None:
+                try:
+                    n6705c.disconnect()
+                except Exception:
+                    pass
             self.error.emit(str(e))
         finally:
             self.finished.emit()
@@ -1085,7 +1096,7 @@ class N6705CDatalogUI(QWidget):
                     self.is_connected_b = False
                     self._clear_slot(label)
         self.connection_status_changed.emit(self.is_connected_a)
-        self._refresh_channel_config()
+        self._refresh_channel_config(force=True)
         self._sync_device_card_states()
         self._update_time_offset_btn_visibility()
 
@@ -2104,8 +2115,11 @@ class N6705CDatalogUI(QWidget):
 
         self._scan_worker.device_found.connect(self._on_scan_device_found)
         self._scan_worker.finished.connect(self._on_scan_finished)
+        self._scan_worker.finished.connect(self._scan_thread.quit)
         self._scan_worker.error.connect(lambda e: None)
         self._scan_thread.started.connect(self._scan_worker.run)
+        self._scan_thread.finished.connect(self._scan_thread.deleteLater)
+        self._scan_thread.finished.connect(self._on_scan_thread_done)
 
         self._scan_thread.start()
 
@@ -2121,10 +2135,11 @@ class N6705CDatalogUI(QWidget):
             self.rm = self._scan_worker.rm
         self.refresh_search_btn.stop_spinning()
         self.refresh_search_btn.setEnabled(True)
-        if hasattr(self, '_scan_thread'):
-            self._scan_thread.quit()
-            self._scan_thread.wait()
         self._sync_device_card_states()
+
+    def _on_scan_thread_done(self):
+        self._scan_thread = None
+        self._scan_worker = None
 
     def _sync_device_card_states(self):
         connected_serials = set()
@@ -2151,7 +2166,7 @@ class N6705CDatalogUI(QWidget):
                     disconnect_btn.hide()
 
     def _find_next_free_slot(self):
-        for label_char in ["A", "B", "C", "D"]:
+        for label_char in ["A", "B"]:
             slot = self.slot_frames[label_char]
             if not slot.property("assigned_serial"):
                 return label_char
@@ -2179,10 +2194,13 @@ class N6705CDatalogUI(QWidget):
             lambda n6705c, s, r: self._on_connect_success(n6705c, s, r, slot_label)
         )
         self._connect_worker.error.connect(
-            lambda e: self._on_connect_error(serial)
+            lambda e: self._on_connect_error(serial, e)
         )
-        self._connect_worker.finished.connect(self._on_connect_thread_done)
+        self._connect_worker.finished.connect(self._connect_thread.quit)
+        self._connect_worker.finished.connect(self._connect_worker.deleteLater)
         self._connect_thread.started.connect(self._connect_worker.run)
+        self._connect_thread.finished.connect(self._connect_thread.deleteLater)
+        self._connect_thread.finished.connect(self._on_connect_thread_done)
 
         self._connect_thread.start()
 
@@ -2202,23 +2220,23 @@ class N6705CDatalogUI(QWidget):
         self._assign_slot(slot_label, serial, "N6705C", visa_resource)
 
         self.connection_status_changed.emit(self.is_connected_a)
-        self._refresh_channel_config()
+        self._refresh_channel_config(force=True)
         self._sync_device_card_states()
         self._update_time_offset_btn_visibility()
 
-    def _on_connect_error(self, serial):
+    def _on_connect_error(self, serial, error_msg=None):
+        logger.error("Datalog UI connect failed: serial=%s, error=%s", serial, error_msg)
         for card in self.device_cards:
             if card.property("serial") == serial:
                 btn = card.property("connect_btn")
                 if btn:
                     btn.setEnabled(True)
-                    btn.setText("Connect")
+                    update_connect_button_state(btn, connected=False)
                 break
 
     def _on_connect_thread_done(self):
-        if hasattr(self, '_connect_thread'):
-            self._connect_thread.quit()
-            self._connect_thread.wait()
+        self._connect_thread = None
+        self._connect_worker = None
 
     def _on_slot_context_menu(self, frame, pos):
         serial = frame.property("assigned_serial")
@@ -2269,7 +2287,7 @@ class N6705CDatalogUI(QWidget):
                 break
 
         self.connection_status_changed.emit(self.is_connected_a)
-        self._refresh_channel_config()
+        self._refresh_channel_config(force=True)
         self._sync_device_card_states()
         self._update_time_offset_btn_visibility()
 
@@ -2686,9 +2704,9 @@ class N6705CDatalogUI(QWidget):
     def _toggle_label_card_panel(self, checked):
         self.label_card.setVisible(checked)
 
-    def _refresh_channel_config(self):
+    def _refresh_channel_config(self, force=False):
         connected_slots = []
-        for label_char in ["A", "B", "C", "D"]:
+        for label_char in ["A", "B"]:
             slot = self.slot_frames[label_char]
             if slot.property("assigned_serial"):
                 connected_slots.append(label_char)
@@ -2698,7 +2716,7 @@ class N6705CDatalogUI(QWidget):
             for lc in connected_slots
         )
         prev_signature = getattr(self, "_ch_cfg_slots_signature", None)
-        if prev_signature is not None and prev_signature == signature:
+        if not force and prev_signature is not None and prev_signature == signature:
             return
         self._ch_cfg_slots_signature = signature
 

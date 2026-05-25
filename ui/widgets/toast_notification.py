@@ -21,6 +21,7 @@ class ToastNotification(QWidget):
     _FADE_IN_MS = 150
     _FADE_OUT_MS = 300
     _SLIDE_OFFSET = 20
+    _POS_TRACK_INTERVAL_MS = 16
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -63,14 +64,20 @@ class ToastNotification(QWidget):
         self._auto_hide_timer.setSingleShot(True)
         self._auto_hide_timer.timeout.connect(self._fade_out)
 
+        self._pos_track_timer = QTimer(self)
+        self._pos_track_timer.setInterval(self._POS_TRACK_INTERVAL_MS)
+        self._pos_track_timer.timeout.connect(self._update_position)
+
         self._anim_opacity = None
         self._anim_pos = None
         self._target_pos = QPoint()
+        self._parent_widget = None
 
         self.hide()
 
     def show_toast(self, message: str, toast_type: str = "info", parent_widget=None):
         self._auto_hide_timer.stop()
+        self._pos_track_timer.stop()
         self._stop_animations()
 
         colors = self._COLORS.get(toast_type, self._COLORS["info"])
@@ -105,16 +112,42 @@ class ToastNotification(QWidget):
         self.adjustSize()
         self.setFixedWidth(max(self.sizeHint().width() + 16, 240))
 
-        if parent_widget is not None:
-            parent_rect = parent_widget.geometry()
-            global_pos = parent_widget.mapToGlobal(QPoint(0, 0))
-            x = global_pos.x() + parent_rect.width() - self.width() - 20
-            y = global_pos.y() + parent_rect.height() - self.height() - 20
-            self._target_pos = QPoint(x, y)
+        self._parent_widget = parent_widget
+        self._compute_target_pos()
+        self._fade_in()
+
+    def _compute_target_pos(self):
+        pw = self._parent_widget
+        if pw is not None:
+            try:
+                global_pos = pw.mapToGlobal(QPoint(0, 0))
+                x = global_pos.x() + pw.width() - self.width() - 20
+                y = global_pos.y() + pw.height() - self.height() - 20
+                self._target_pos = QPoint(x, y)
+            except RuntimeError:
+                self._parent_widget = None
         else:
             self._target_pos = QPoint(100, 100)
 
-        self._fade_in()
+    def _update_position(self):
+        if self._parent_widget is None:
+            return
+        try:
+            global_pos = self._parent_widget.mapToGlobal(QPoint(0, 0))
+            x = global_pos.x() + self._parent_widget.width() - self.width() - 20
+            y = global_pos.y() + self._parent_widget.height() - self.height() - 20
+            self.move(QPoint(x, y))
+        except RuntimeError:
+            self._parent_widget = None
+            self._pos_track_timer.stop()
+
+    def force_close(self):
+        self._auto_hide_timer.stop()
+        self._pos_track_timer.stop()
+        self._stop_animations()
+        self._parent_widget = None
+        self.setWindowOpacity(1.0)
+        self.hide()
 
     def _fade_in(self):
         self._stop_animations()
@@ -141,6 +174,8 @@ class ToastNotification(QWidget):
         self._anim_pos.start()
 
         self._auto_hide_timer.start(self._DURATION_MS)
+        if self._parent_widget is not None:
+            self._pos_track_timer.start()
 
     def _fade_out(self):
         self._stop_animations()
@@ -154,6 +189,8 @@ class ToastNotification(QWidget):
         self._anim_opacity.start()
 
     def _on_fade_out_done(self):
+        self._pos_track_timer.stop()
+        self._parent_widget = None
         self.setWindowOpacity(1.0)
         self.hide()
 

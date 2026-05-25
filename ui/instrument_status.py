@@ -15,6 +15,7 @@ class InstrumentStatusPanel:
         self._toast = ToastNotification()
         self._prev_instrument_keys: set = set()
         self.instrument_status_items: dict = {}
+        self._suppressed = False
 
     def create_bottom_widget(self):
         bottom_widget = QWidget()
@@ -128,6 +129,10 @@ class InstrumentStatusPanel:
             self.instrument_status_layout.removeWidget(widget)
             widget.deleteLater()
 
+    def suppress_toasts(self):
+        self._suppressed = True
+        self._toast.force_close()
+
     def update_instrument_status(self):
         n6705c_top = self._host.n6705c_top
         mso64b_top = self._host.mso64b_top
@@ -190,11 +195,12 @@ class InstrumentStatusPanel:
         newly_connected = current_keys - self._prev_instrument_keys
         newly_disconnected = self._prev_instrument_keys - current_keys
 
-        for key in newly_connected:
-            display_name = key.replace("_", " ").replace("n6705c", "N6705C").title()
-            self._toast.show_toast(f"{display_name} Connected", ToastNotification.TYPE_SUCCESS, self._host)
-        for key in newly_disconnected:
-            display_name = key.replace("_", " ").replace("n6705c", "N6705C").title()
-            self._toast.show_toast(f"{display_name} Disconnected", ToastNotification.TYPE_ERROR, self._host)
+        if not self._suppressed:
+            for key in newly_connected:
+                display_name = key.replace("_", " ").replace("n6705c", "N6705C").title()
+                self._toast.show_toast(f"{display_name} Connected", ToastNotification.TYPE_SUCCESS, self._host)
+            for key in newly_disconnected:
+                display_name = key.replace("_", " ").replace("n6705c", "N6705C").title()
+                self._toast.show_toast(f"{display_name} Disconnected", ToastNotification.TYPE_ERROR, self._host)
 
         self._prev_instrument_keys = current_keys
