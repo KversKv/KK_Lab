@@ -149,6 +149,8 @@ a = Analysis(
         'ui.widgets.scrollbar',
         'ui.utils',
         'ui.utils.icon_utils',
+        'ui.modules.serialCom_module.serial_session',
+        'ui.modules.serialCom_module.serial_session_manager',
         'core',
         'core.auto_baud_detector',
         'log_config',

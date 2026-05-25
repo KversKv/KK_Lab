@@ -148,6 +148,8 @@ ui/
 │   ├── chamber_module_frame.py         # VT6002 温箱连接区 Mixin (串口搜索/连接/断开)
 │   └── serialCom_module/               # 串口通信连接区 Mixin (串口搜索/连接/断开)
 │       ├── serialCom_module_frame.py
+│       ├── serial_session.py           # 独立串口会话对象 (SerialSession)
+│       ├── serial_session_manager.py   # 多串口会话管理器 (SerialSessionManager)
 │       └── serialCom_dark_style.py     # 串口通信深色 UI 样式
 │
 ├── styles/                  # 样式聚合入口
@@ -331,6 +333,11 @@ docs/
     ├── 07_TEST_GUIDE.md         # 新增测试功能指南
     ├── 08_CHECKLISTS.md         # 新功能开发 Checklist ⭐
     ├── 09_WORKFLOW.md           # 任务 SOP (调用 / 执行 / 回归)
+    ├── NewFT/                   # 新功能设计草案与阶段性需求规则
+    │   ├── AutoDetectBaudrate.md # SerialCom 候选波特率自动识别设计
+    │   ├── LOG_FastCommand.md    # SerialCom 日志与快捷指令优化设计
+    │   ├── UI_Optimize.md        # SerialCom UI 优化设计
+    │   └── serialComMuti.md      # SerialCom 单窗口多串口 / 多窗口独立串口规则
     └── decisions/               # ADR 架构决策记录
         ├── 001-mock-instrument.md
         └── 002-oscilloscope-auto-detect.md

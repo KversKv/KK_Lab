@@ -218,6 +218,7 @@ class SerialComMixin:
     serial_data_received = Signal(bytes)
 
     def init_serial_connection(self, mode=MODE_FULL, baudrate=115200, prefix="Serial"):
+        from ui.modules.serialCom_module.serial_session_manager import SerialSessionManager
         self._serial_mode = mode
         self._serial_baudrate = baudrate
         self._serial_prefix = prefix
@@ -231,6 +232,10 @@ class SerialComMixin:
         self._serial_btn_height = _SERIAL_BTN_HEIGHT
         self._serial_btn_radius = _SERIAL_BTN_RADIUS
         self._serial_btn_icon_size = _SERIAL_BTN_ICON_SIZE
+
+        self._sc_session_manager = SerialSessionManager(parent=self)
+        self._sc_sessions: dict[str, "SerialSession"] = self._sc_session_manager._sessions
+        self._sc_active_session_id: str | None = None
 
     def build_serial_connection_widgets(self, layout,
                                         btn_height=_SERIAL_BTN_HEIGHT,
@@ -349,7 +354,7 @@ class SerialComMixin:
             self.serial_connect_btn.setEnabled(False)
 
         worker = _SearchSerialPortWorker()
-        thread = QThread()
+        thread = QThread(self)
         worker.moveToThread(thread)
 
         thread.started.connect(worker.run)
@@ -419,6 +424,18 @@ class SerialComMixin:
             self._serial_conn = conn
             self._serial_port = port
             self._serial_connected = True
+
+            session_id = "primary"
+            session = self._sc_session_manager.get_session(session_id)
+            if session is None:
+                session = self._sc_session_manager.create_session(
+                    session_id=session_id, display_name=self._serial_prefix, auto_activate=True
+                )
+            session.configure(port=port, baudrate=br)
+            session._serial_conn = conn
+            session._connected = True
+            self._sc_active_session_id = session_id
+
             self.serial_connection_changed.emit(True)
             return conn
         except Exception:
@@ -435,10 +452,20 @@ class SerialComMixin:
             self.serial_connect_btn.setEnabled(True)
             return
 
+        session_id = "primary"
+        session = self._sc_session_manager.get_session(session_id)
+        if session is None:
+            session = self._sc_session_manager.create_session(
+                session_id=session_id, display_name=self._serial_prefix, auto_activate=True
+            )
+        session.configure(port=port, baudrate=self._serial_baudrate)
+
         if DEBUG_MOCK:
             self._serial_conn = None
             self._serial_port = "MOCK"
             self._serial_connected = True
+            session._connected = True
+            self._sc_active_session_id = session_id
             self._update_serial_connect_ui(True)
             self._set_serial_status(f"● Connected to: MOCK (DEBUG)")
             if hasattr(self, 'append_log'):
@@ -452,6 +479,9 @@ class SerialComMixin:
             self._serial_conn = conn
             self._serial_port = port
             self._serial_connected = True
+            session._serial_conn = conn
+            session._connected = True
+            self._sc_active_session_id = session_id
             self._update_serial_connect_ui(True)
             self._set_serial_status(f"● Connected to: {port}")
             if hasattr(self, 'append_log'):
@@ -480,6 +510,10 @@ class SerialComMixin:
         self._serial_conn = None
         self._serial_port = None
         self._serial_connected = False
+        session = self._sc_session_manager.get_session("primary")
+        if session is not None:
+            session._serial_conn = None
+            session._connected = False
         self._update_serial_connect_ui(False)
         self._set_serial_status("● Not Connected", is_error=True)
         if hasattr(self, 'append_log'):
@@ -506,7 +540,7 @@ class SerialComMixin:
             return
 
         worker = _SerialReadWorker(self._serial_conn)
-        thread = QThread()
+        thread = QThread(self)
         worker.moveToThread(thread)
 
         thread.started.connect(worker.run)
@@ -534,6 +568,9 @@ class SerialComMixin:
             self.append_log(f"[{self._serial_prefix}] Read error: {err}")
 
     def serial_send(self, data):
+        active = self._sc_session_manager.active_session
+        if active is not None and active.connected:
+            return active.send(data)
         if self._serial_conn is None or not self._serial_conn.is_open:
             return False
         try:
@@ -546,14 +583,45 @@ class SerialComMixin:
                 self.append_log(f"[{self._serial_prefix}] Send error: {e}")
             return False
 
+    def send_to_session(self, session_id: str, data) -> bool:
+        return self._sc_session_manager.send_to_session(session_id, data)
+
+    def send_to_active_session(self, data) -> bool:
+        return self._sc_session_manager.send_to_active_session(data)
+
+    def broadcast_send(self, data, session_ids=None) -> dict:
+        return self._sc_session_manager.broadcast_send(data, session_ids)
+
     def get_serial_connection(self):
+        active = self._sc_session_manager.active_session
+        if active is not None:
+            return active.serial_conn
         return self._serial_conn
 
     def is_serial_connected(self):
+        active = self._sc_session_manager.active_session
+        if active is not None:
+            return active.connected
         return self._serial_connected
 
     def close_serial(self):
+        self._sc_session_manager.cleanup_all()
         self._stop_serial_read()
+        if hasattr(self, '_sc_extra_log_panels'):
+            for panel in self._sc_extra_log_panels:
+                if panel.get("read_worker"):
+                    panel["read_worker"].stop()
+                if panel.get("read_thread") and panel["read_thread"].isRunning():
+                    panel["read_thread"].quit()
+                    panel["read_thread"].wait(2000)
+                panel["read_thread"] = None
+                panel["read_worker"] = None
+                try:
+                    if panel.get("conn") and panel["conn"].is_open:
+                        panel["conn"].close()
+                except Exception:
+                    pass
+                panel["conn"] = None
         if hasattr(self, '_sc_log_file_handle'):
             self._sc_stop_auto_save()
         if hasattr(self, '_sc_log_temp_handle'):
@@ -1138,6 +1206,11 @@ class SerialComMixin:
         self._sc_status_bar = self._build_sc_status_bar()
         layout.addWidget(self._sc_status_bar)
 
+        frame.mousePressEvent = lambda event: self._sc_on_primary_panel_clicked(event)
+        self._sc_log_edit.mousePressEvent = lambda event, orig=self._sc_log_edit.mousePressEvent: (
+            self._sc_on_primary_panel_clicked(event), orig(event)
+        )
+
         return frame
 
     # --- send area ---
@@ -1428,7 +1501,7 @@ class SerialComMixin:
     def _sc_do_connect(self):
         port_text = self._sc_port_combo.currentText()
         if not port_text or port_text.startswith("No "):
-            self._sc_append_system("[ERROR] No valid port selected")
+            self._sc_append_system("[ERROR] No valid port selected", force_primary=True)
             return
 
         port = port_text.split()[0]
@@ -1437,7 +1510,7 @@ class SerialComMixin:
         try:
             baudrate = int(baud_text)
         except ValueError:
-            self._sc_append_system(f"[ERROR] Invalid baud rate: {baud_text}")
+            self._sc_append_system(f"[ERROR] Invalid baud rate: {baud_text}", force_primary=True)
             return
 
         databit = int(self._sc_databit_combo.currentText())
@@ -1450,14 +1523,27 @@ class SerialComMixin:
         xonxoff = flow == "XON/XOFF"
         rtscts = flow == "RTS/CTS"
 
+        session_id = "primary"
+        session = self._sc_session_manager.get_session(session_id)
+        if session is None:
+            session = self._sc_session_manager.create_session(
+                session_id=session_id, display_name=self._serial_prefix, auto_activate=True
+            )
+        session.configure(
+            port=port, baudrate=baudrate, bytesize=databit,
+            stopbits=stopbits, parity=parity, xonxoff=xonxoff, rtscts=rtscts,
+        )
+
         if DEBUG_MOCK:
             self._serial_conn = None
             self._serial_port = "MOCK"
             self._serial_baudrate = baudrate
             self._serial_connected = True
+            session._connected = True
+            self._sc_active_session_id = session_id
             self._sc_update_connect_ui(True)
             self._sc_start_temp_log()
-            self._sc_append_system(f"[INFO] Mock connected: {port} @ {baudrate}")
+            self._sc_append_system(f"[INFO] Mock connected: {port} @ {baudrate}", force_primary=True)
             self.serial_connection_changed.emit(True)
             if getattr(self, '_sc_log_auto_save', False):
                 self._sc_start_auto_save()
@@ -1473,9 +1559,12 @@ class SerialComMixin:
             self._serial_port = port
             self._serial_baudrate = baudrate
             self._serial_connected = True
+            session._serial_conn = conn
+            session._connected = True
+            self._sc_active_session_id = session_id
             self._sc_update_connect_ui(True)
             self._sc_start_temp_log()
-            self._sc_append_system(f"[INFO] Connected: {port} @ {baudrate}")
+            self._sc_append_system(f"[INFO] Connected: {port} @ {baudrate}", force_primary=True)
             self.serial_connection_changed.emit(True)
             if getattr(self, '_sc_log_auto_save', False):
                 self._sc_start_auto_save()
@@ -1485,10 +1574,10 @@ class SerialComMixin:
                 self._sc_auto_baud_pending_first_rx = True
                 self._sc_auto_baud_initial_buf = bytearray()
                 self._sc_auto_baud_initial_ts = time.perf_counter()
-                self._sc_append_system("[INFO] Auto-detect enabled, waiting for RX data...")
+                self._sc_append_system("[INFO] Auto-detect enabled, waiting for RX data...", force_primary=True)
             self._start_serial_read()
         except Exception as e:
-            self._sc_append_system(f"[ERROR] Connection failed: {e}")
+            self._sc_append_system(f"[ERROR] Connection failed: {e}", force_primary=True)
 
     def _sc_do_disconnect(self):
         self._stop_serial_read()
@@ -1499,12 +1588,16 @@ class SerialComMixin:
             if self._serial_conn and self._serial_conn.is_open:
                 self._serial_conn.close()
         except Exception as e:
-            self._sc_append_system(f"[WARN] Close error: {e}")
+            self._sc_append_system(f"[WARN] Close error: {e}", force_primary=True)
         self._serial_conn = None
         self._serial_port = None
         self._serial_connected = False
+        session = self._sc_session_manager.get_session("primary")
+        if session is not None:
+            session._serial_conn = None
+            session._connected = False
         self._sc_update_connect_ui(False)
-        self._sc_append_system("[INFO] Disconnected")
+        self._sc_append_system("[INFO] Disconnected", force_primary=True)
         self.serial_connection_changed.emit(False)
 
     def _sc_update_connect_ui(self, connected):
@@ -1542,7 +1635,7 @@ class SerialComMixin:
             baudrate = int(baud_text)
         except ValueError:
             if self._serial_connected:
-                self._sc_append_system(f"[ERROR] Invalid baud rate: {baud_text}")
+                self._sc_append_system(f"[ERROR] Invalid baud rate: {baud_text}", force_primary=True)
             return
 
         if baudrate == getattr(self, '_serial_baudrate', None):
@@ -1556,7 +1649,7 @@ class SerialComMixin:
             self._serial_baudrate = baudrate
             if hasattr(self, '_sc_status_baud_label'):
                 self._sc_status_baud_label.setText(f"Baud rate: {baudrate}")
-            self._sc_append_system(f"[INFO] Baud rate updated: {baudrate}")
+            self._sc_append_system(f"[INFO] Baud rate updated: {baudrate}", force_primary=True)
             return
 
         try:
@@ -1564,9 +1657,9 @@ class SerialComMixin:
             self._serial_baudrate = baudrate
             if hasattr(self, '_sc_status_baud_label'):
                 self._sc_status_baud_label.setText(f"Baud rate: {baudrate}")
-            self._sc_append_system(f"[INFO] Baud rate updated: {baudrate}")
+            self._sc_append_system(f"[INFO] Baud rate updated: {baudrate}", force_primary=True)
         except Exception as e:
-            self._sc_append_system(f"[ERROR] Failed to set baud rate: {e}")
+            self._sc_append_system(f"[ERROR] Failed to set baud rate: {e}", force_primary=True)
 
     def _sc_on_auto_detect_toggled(self, checked):
         self._sc_baud_combo.setEditable(not checked)
@@ -1580,7 +1673,7 @@ class SerialComMixin:
                 self._sc_auto_baud_pending_first_rx = True
                 self._sc_auto_baud_initial_buf = bytearray()
                 self._sc_auto_baud_initial_ts = time.perf_counter()
-                self._sc_append_system("[INFO] Auto-detect enabled, waiting for RX data...")
+                self._sc_append_system("[INFO] Auto-detect enabled, waiting for RX data...", force_primary=True)
         else:
             self._sc_status_autobaud_label.setVisible(False)
             self._sc_auto_baud_monitor.reset()
@@ -1590,7 +1683,7 @@ class SerialComMixin:
 
     def _sc_start_auto_baud_scan(self, reason="initial"):
         if self._serial_conn is None or not self._serial_conn.is_open:
-            self._sc_append_system("[WARN] Cannot auto-detect: serial not connected")
+            self._sc_append_system("[WARN] Cannot auto-detect: serial not connected", force_primary=True)
             return
         if self._sc_auto_baud_scan_thread is not None and self._sc_auto_baud_scan_thread.isRunning():
             return
@@ -1602,7 +1695,7 @@ class SerialComMixin:
             self._serial_conn, config, self._serial_baudrate
         )
         worker.set_recent_score_avg(self._sc_auto_baud_monitor.recent_score_avg)
-        thread = QThread()
+        thread = QThread(self)
         worker.moveToThread(thread)
 
         if reason == "initial":
@@ -1650,13 +1743,14 @@ class SerialComMixin:
                 best = result.get("best")
                 if best:
                     self._sc_append_system(
-                        f"[WARN] No baudrate scored above threshold. Best: {best['baudrate']} score={best['score']}"
+                        f"[WARN] No baudrate scored above threshold. Best: {best['baudrate']} score={best['score']}",
+                        force_primary=True,
                     )
             self._sc_auto_baud_monitor.state = AutoBaudState.LOCKED
             self._sc_auto_baud_monitor.reset()
 
     def _sc_on_auto_baud_progress(self, msg):
-        self._sc_append_system(msg)
+        self._sc_append_system(msg, force_primary=True)
 
     def _sc_on_auto_baud_state_changed(self, state_str):
         self._sc_auto_baud_monitor.state = AutoBaudState(state_str)
@@ -1692,7 +1786,7 @@ class SerialComMixin:
         self._sc_port_combo.clear()
         if DEBUG_MOCK:
             self._sc_port_combo.addItem("[MOCK] COM99 - Mock Serial Device")
-            self._sc_append_system("[INFO] Mock port refreshed")
+            self._sc_append_system("[INFO] Mock port refreshed", force_primary=True)
             self._sc_try_restore_last_port()
             return
         try:
@@ -1700,12 +1794,12 @@ class SerialComMixin:
             if ports:
                 for p in ports:
                     self._sc_port_combo.addItem(f"{p.device} - {p.description}")
-                self._sc_append_system(f"[INFO] Found {len(ports)} serial port(s)")
+                self._sc_append_system(f"[INFO] Found {len(ports)} serial port(s)", force_primary=True)
             else:
                 self._sc_port_combo.addItem("No serial ports found")
-                self._sc_append_system("[WARN] No serial ports found")
+                self._sc_append_system("[WARN] No serial ports found", force_primary=True)
         except Exception as e:
-            self._sc_append_system(f"[ERROR] Refresh failed: {e}")
+            self._sc_append_system(f"[ERROR] Refresh failed: {e}", force_primary=True)
         self._sc_try_restore_last_port()
 
     def _sc_try_restore_last_port(self):
@@ -1722,22 +1816,42 @@ class SerialComMixin:
 
     def _sc_on_add_log_panel(self):
         if len(self._sc_extra_log_panels) >= 3:
-            self._sc_append_system("[WARN] Maximum 4 LOG panels supported")
+            self._sc_append_system("[WARN] Maximum 4 LOG panels supported", force_primary=True)
             return
-        dlg = _AddLogPanelDialog(parent=self)
+        dlg = _AddLogPanelDialog(panel_index=len(self._sc_extra_log_panels) + 2, parent=self)
         if dlg.exec() != QDialog.Accepted:
             return
         panel_info = dlg.get_config()
+
+        if panel_info.get("independent_window", False):
+            self._sc_open_independent_window(panel_info)
+            return
+
         panel = self._build_extra_log_panel(panel_info)
         self._sc_extra_log_panels.append(panel)
         self._sc_relayout_log_panels()
         self._sc_remove_log_btn.setEnabled(True)
         self._sc_append_system(
             f"[INFO] New LOG panel: {panel_info.get('title', 'Log')} "
-            f"({panel_info.get('port', 'N/A')} @ {panel_info.get('baudrate', 'N/A')})"
+            f"({panel_info.get('port', 'N/A')} @ {panel_info.get('baudrate', 'N/A')})",
+            force_primary=True,
         )
         if panel_info.get("auto_connect", False):
             self._sc_extra_panel_connect(panel)
+
+    def _sc_open_independent_window(self, panel_info):
+        win = _IndependentSerialWindow(panel_info, parent=None)
+        if not hasattr(self, "_sc_independent_windows"):
+            self._sc_independent_windows = []
+        self._sc_independent_windows.append(win)
+        win.setAttribute(Qt.WA_DeleteOnClose)
+        win.destroyed.connect(lambda: self._sc_independent_windows.remove(win) if win in self._sc_independent_windows else None)
+        win.show()
+        self._sc_append_system(
+            f"[INFO] Independent window opened: {panel_info.get('title', 'Log')} "
+            f"({panel_info.get('port', 'N/A')} @ {panel_info.get('baudrate', 'N/A')})",
+            force_primary=True,
+        )
 
     def _sc_on_remove_log_panel(self):
         if not self._sc_extra_log_panels:
@@ -1748,7 +1862,7 @@ class SerialComMixin:
         panel["frame"].deleteLater()
         self._sc_relayout_log_panels()
         self._sc_remove_log_btn.setEnabled(len(self._sc_extra_log_panels) > 0)
-        self._sc_append_system("[INFO] LOG panel removed")
+        self._sc_append_system("[INFO] LOG panel removed", force_primary=True)
 
     def _sc_relayout_log_panels(self):
         while self._sc_log_grid.count():
@@ -1796,6 +1910,7 @@ class SerialComMixin:
         frame = QFrame()
         frame.setObjectName("scLogFrame")
         frame.setStyleSheet(log_frame_style(with_border=True))
+        frame.setContextMenuPolicy(Qt.CustomContextMenu)
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -1819,6 +1934,22 @@ class SerialComMixin:
 
         toolbar.addStretch()
 
+        filter_btn = self._make_sc_btn(
+            os.path.join(_SVG_LOGS_DIR, "filter.svg"), "Filter", tone="log"
+        )
+        filter_btn.setCheckable(True)
+        toolbar.addWidget(filter_btn)
+
+        copy_btn = self._make_sc_btn(
+            os.path.join(_SVG_LOGS_DIR, "copy.svg"), "Copy", tone="log"
+        )
+        toolbar.addWidget(copy_btn)
+
+        export_btn = self._make_sc_btn(
+            os.path.join(_SVG_LOGS_DIR, "export.svg"), "Export", tone="log"
+        )
+        toolbar.addWidget(export_btn)
+
         clear_btn = self._make_sc_btn(
             os.path.join(_SVG_LOGS_DIR, "trash.svg"), "Clear", tone="log"
         )
@@ -1829,12 +1960,29 @@ class SerialComMixin:
         )
         scroll_btn.setCheckable(True)
         scroll_btn.setChecked(True)
+        scroll_btn.setStyleSheet(log_toolbar_button_style(checked_variant=True))
         toolbar.addWidget(scroll_btn)
 
         layout.addLayout(toolbar)
 
+        filter_row = QWidget()
+        filter_row.setVisible(False)
+        filter_row.setStyleSheet(transparent_background_style())
+        filter_layout = QHBoxLayout(filter_row)
+        filter_layout.setContentsMargins(6, 0, 6, 4)
+        filter_layout.setSpacing(6)
+        filter_input = QLineEdit()
+        filter_input.setPlaceholderText("Enter keyword or regex...")
+        filter_input.setStyleSheet(filter_input_style())
+        filter_layout.addWidget(filter_input, 1)
+        filter_match_label = QLabel("")
+        filter_match_label.setStyleSheet(filter_match_label_style())
+        filter_layout.addWidget(filter_match_label)
+        layout.addWidget(filter_row)
+
         log_edit = QTextEdit()
         log_edit.setReadOnly(True)
+        log_edit.setContextMenuPolicy(Qt.CustomContextMenu)
         log_edit.setStyleSheet(log_edit_style(padding="6px 8px") + SERIAL_SCROLLBAR_STYLE)
         log_edit.document().setDefaultStyleSheet(log_document_style())
         log_edit.document().setMaximumBlockCount(5000)
@@ -1872,10 +2020,17 @@ class SerialComMixin:
             "log_edit": log_edit,
             "clear_btn": clear_btn,
             "scroll_btn": scroll_btn,
+            "filter_btn": filter_btn,
+            "filter_row": filter_row,
+            "filter_input": filter_input,
+            "filter_match_label": filter_match_label,
+            "copy_btn": copy_btn,
+            "export_btn": export_btn,
             "port_label": port_label,
             "baud_label": baud_label,
             "rx_label": rx_label,
             "tx_label": tx_label,
+            "title_label": title,
             "config": config,
             "conn": None,
             "read_thread": None,
@@ -1885,10 +2040,26 @@ class SerialComMixin:
             "auto_scroll": True,
             "all_logs": [],
             "pending_html": [],
+            "session_id": None,
         }
 
-        clear_btn.clicked.connect(lambda: self._sc_extra_panel_clear(panel))
-        scroll_btn.clicked.connect(lambda c: panel.__setitem__("auto_scroll", c))
+        clear_btn.clicked.connect(lambda _=None, p=panel: self._sc_extra_panel_clear(p))
+        scroll_btn.clicked.connect(lambda checked, p=panel: self._sc_extra_panel_toggle_scroll(p, checked))
+        filter_btn.clicked.connect(lambda checked, p=panel: self._sc_extra_panel_toggle_filter(p, checked))
+        copy_btn.clicked.connect(lambda _=None, p=panel: self._sc_extra_panel_copy(p))
+        export_btn.clicked.connect(lambda _=None, p=panel: self._sc_extra_panel_export(p))
+        filter_input.returnPressed.connect(lambda p=panel: self._sc_extra_panel_apply_filter(p))
+
+        frame.customContextMenuRequested.connect(
+            lambda pos, p=panel: self._sc_extra_panel_context_menu(p, frame.mapToGlobal(pos))
+        )
+        log_edit.customContextMenuRequested.connect(
+            lambda pos, p=panel: self._sc_extra_panel_context_menu(p, log_edit.mapToGlobal(pos))
+        )
+        frame.mousePressEvent = lambda event, p=panel: self._sc_on_log_panel_clicked(p, event)
+        log_edit.mouseReleaseEvent = lambda event, p=panel, orig=log_edit.mouseReleaseEvent: (
+            self._sc_on_log_panel_clicked(p, event), orig(event)
+        )
 
         if log_edit.verticalScrollBar():
             log_edit.verticalScrollBar().valueChanged.connect(
@@ -1908,6 +2079,75 @@ class SerialComMixin:
         panel["auto_scroll"] = True
         panel["scroll_btn"].setChecked(True)
 
+    def _sc_extra_panel_toggle_scroll(self, panel, checked):
+        panel["auto_scroll"] = checked
+        if checked:
+            sb = panel["log_edit"].verticalScrollBar()
+            if sb:
+                sb.setValue(sb.maximum())
+
+    def _sc_extra_panel_toggle_filter(self, panel, checked):
+        panel["filter_row"].setVisible(checked)
+        if not checked:
+            panel["filter_input"].clear()
+            panel["filter_match_label"].setText("")
+            self._sc_extra_panel_show_all_logs(panel)
+        else:
+            panel["filter_input"].setFocus()
+
+    def _sc_extra_panel_copy(self, panel):
+        from PySide6.QtWidgets import QApplication
+        text = panel["log_edit"].toPlainText()
+        if text:
+            QApplication.clipboard().setText(text)
+            self._sc_extra_panel_append_log(panel, "[INFO] Log copied to clipboard", _CLR_TEXT_INFO)
+
+    def _sc_extra_panel_export(self, panel):
+        from PySide6.QtWidgets import QFileDialog
+        title_text = panel.get("title_label")
+        default_name = title_text.text() if title_text else "serial_log"
+        default_name = default_name.replace(" ", "_").lower()
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Export Log", f"{default_name}.log", "Log Files (*.log);;Text Files (*.txt);;All (*.*)"
+        )
+        if not file_path:
+            return
+        try:
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(panel["log_edit"].toPlainText())
+            self._sc_extra_panel_append_log(panel, f"[INFO] Log exported: {file_path}", _CLR_TEXT_INFO)
+        except Exception as e:
+            self._sc_extra_panel_append_log(panel, f"[ERROR] Export failed: {e}", extra_log_error_color())
+
+    def _sc_extra_panel_apply_filter(self, panel):
+        keyword = panel["filter_input"].text().strip()
+        if not keyword:
+            self._sc_extra_panel_show_all_logs(panel)
+            panel["filter_match_label"].setText("")
+            return
+        log_edit = panel["log_edit"]
+        log_edit.clear()
+        count = 0
+        for msg, html in panel["all_logs"]:
+            if keyword.lower() in msg.lower():
+                log_edit.append(html)
+                count += 1
+        panel["filter_match_label"].setText(f"{count} match{'es' if count != 1 else ''}")
+        if panel["auto_scroll"]:
+            sb = log_edit.verticalScrollBar()
+            if sb:
+                sb.setValue(sb.maximum())
+
+    def _sc_extra_panel_show_all_logs(self, panel):
+        log_edit = panel["log_edit"]
+        log_edit.clear()
+        for _, html in panel["all_logs"]:
+            log_edit.append(html)
+        if panel["auto_scroll"]:
+            sb = log_edit.verticalScrollBar()
+            if sb:
+                sb.setValue(sb.maximum())
+
     def _sc_extra_panel_on_scroll(self, panel, value):
         sb = panel["log_edit"].verticalScrollBar()
         if sb and sb.maximum() > 0:
@@ -1919,6 +2159,156 @@ class SerialComMixin:
                 panel["auto_scroll"] = True
                 panel["scroll_btn"].setChecked(True)
 
+    def _sc_on_primary_panel_clicked(self, event):
+        if self._sc_active_log_panel_index != 0:
+            self._sc_active_log_panel_index = 0
+            self._sc_active_session_id = "primary"
+            self._sc_session_manager.set_active_session("primary")
+            self._sc_update_panel_focus_style()
+
+    def _sc_on_log_panel_clicked(self, panel, event):
+        try:
+            idx = self._sc_extra_log_panels.index(panel) + 1
+        except ValueError:
+            return
+        if self._sc_active_log_panel_index != idx:
+            self._sc_active_log_panel_index = idx
+            session_id = panel.get("session_id")
+            if session_id:
+                self._sc_active_session_id = session_id
+                self._sc_session_manager.set_active_session(session_id)
+            self._sc_update_panel_focus_style()
+
+    def _sc_update_panel_focus_style(self):
+        active_border = f"2px solid {_CLR_CONNECT_FG}"
+        inactive_border = f"2px solid {_CLR_BG_LOG}"
+
+        if self._sc_active_log_panel_index == 0:
+            self._sc_log_area.setStyleSheet(
+                f"QFrame#scLogFrame {{ background-color: {_CLR_BG_LOG}; border: {active_border}; border-radius: 6px; }}"
+            )
+        else:
+            self._sc_log_area.setStyleSheet(
+                f"QFrame#scLogFrame {{ background-color: {_CLR_BG_LOG}; border: {inactive_border}; border-radius: 6px; }}"
+            )
+
+        for i, p in enumerate(self._sc_extra_log_panels):
+            if self._sc_active_log_panel_index == i + 1:
+                p["frame"].setStyleSheet(
+                    f"QFrame#scLogFrame {{ background-color: {_CLR_BG_LOG}; border: {active_border}; border-radius: 6px; }}"
+                )
+            else:
+                p["frame"].setStyleSheet(
+                    f"QFrame#scLogFrame {{ background-color: {_CLR_BG_LOG}; border: {inactive_border}; border-radius: 6px; }}"
+                )
+
+    def _sc_extra_panel_context_menu(self, panel, global_pos):
+        menu = QMenu(self)
+        menu.setStyleSheet(f"""
+            QMenu {{
+                background-color: {_CLR_BG_CARD}; border: 1px solid {_CLR_BORDER_HOVER};
+                border-radius: 6px; padding: 4px 0px;
+            }}
+            QMenu::item {{
+                padding: 6px 20px; color: {_CLR_INPUT_TEXT}; font-size: 12px; font-family: {_UI_FONT};
+            }}
+            QMenu::item:selected {{
+                background-color: {_CLR_BORDER}; color: #ffffff;
+            }}
+            QMenu::separator {{
+                height: 1px; background: {_CLR_BORDER}; margin: 4px 8px;
+            }}
+        """)
+
+        is_connected = False
+        if DEBUG_MOCK:
+            session_id = panel.get("session_id")
+            if session_id:
+                session = self._sc_session_manager.get_session(session_id)
+                is_connected = session is not None and session.connected
+            else:
+                is_connected = panel.get("port_label") and "MOCK" in panel["port_label"].text()
+        else:
+            is_connected = panel.get("conn") is not None and panel["conn"].is_open
+
+        if is_connected:
+            disconnect_act = QAction("Disconnect", self)
+            disconnect_act.triggered.connect(lambda: self._sc_extra_panel_do_disconnect(panel))
+            menu.addAction(disconnect_act)
+        else:
+            connect_act = QAction("Connect", self)
+            connect_act.triggered.connect(lambda: self._sc_extra_panel_connect(panel))
+            menu.addAction(connect_act)
+
+        menu.addSeparator()
+
+        settings_act = QAction("Settings...", self)
+        settings_act.triggered.connect(lambda: self._sc_extra_panel_settings(panel))
+        menu.addAction(settings_act)
+
+        menu.addSeparator()
+
+        remove_act = QAction("Remove Panel", self)
+        remove_act.triggered.connect(lambda: self._sc_remove_specific_panel(panel))
+        menu.addAction(remove_act)
+
+        menu.exec(global_pos)
+
+    def _sc_extra_panel_do_disconnect(self, panel):
+        self._sc_extra_panel_disconnect(panel)
+        panel["port_label"].setText("Port: Disconnected")
+        panel["port_label"].setStyleSheet(status_label_style("error", compact=True))
+        self._sc_extra_panel_append_log(panel, "[INFO] Disconnected", _CLR_TEXT_INFO)
+
+    def _sc_extra_panel_settings(self, panel):
+        dlg = _PanelSettingsDialog(panel["config"], parent=self)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        new_config = dlg.get_config()
+
+        if DEBUG_MOCK:
+            session_id = panel.get("session_id")
+            session = self._sc_session_manager.get_session(session_id) if session_id else None
+            was_connected = session is not None and session.connected
+        else:
+            was_connected = panel.get("conn") is not None and panel["conn"].is_open
+        if was_connected:
+            self._sc_extra_panel_do_disconnect(panel)
+
+        panel["config"] = new_config
+        panel["title_label"].setText(new_config.get("title", "Serial Log"))
+        panel["baud_label"].setText(f"Baud rate: {new_config.get('baudrate', '-')}")
+        panel["port_label"].setText(f"Port: {new_config.get('port', 'Unconnected')}")
+        panel["port_label"].setStyleSheet(status_label_style("error", compact=True))
+
+        self._sc_extra_panel_append_log(
+            panel,
+            f"[INFO] Settings updated: {new_config.get('port', 'N/A')} @ {new_config.get('baudrate', 'N/A')}",
+            _CLR_TEXT_INFO,
+        )
+
+        if new_config.get("auto_connect", False):
+            self._sc_extra_panel_connect(panel)
+
+    def _sc_remove_specific_panel(self, panel):
+        if panel not in self._sc_extra_log_panels:
+            return
+        idx = self._sc_extra_log_panels.index(panel)
+        self._sc_extra_log_panels.remove(panel)
+        self._sc_extra_panel_disconnect(panel)
+        panel["frame"].setParent(None)
+        panel["frame"].deleteLater()
+        self._sc_relayout_log_panels()
+        self._sc_remove_log_btn.setEnabled(len(self._sc_extra_log_panels) > 0)
+        if self._sc_active_log_panel_index == idx + 1:
+            self._sc_active_log_panel_index = 0
+            self._sc_active_session_id = "primary"
+            self._sc_session_manager.set_active_session("primary")
+            self._sc_update_panel_focus_style()
+        elif self._sc_active_log_panel_index > idx + 1:
+            self._sc_active_log_panel_index -= 1
+        self._sc_append_system("[INFO] LOG panel removed", force_primary=True)
+
     def _sc_extra_panel_connect(self, panel):
         config = panel["config"]
         port = config.get("port", "")
@@ -1927,9 +2317,35 @@ class SerialComMixin:
         if not port:
             return
 
+        panel_idx = self._sc_extra_log_panels.index(panel) if panel in self._sc_extra_log_panels else 0
+        session_id = f"extra_{panel_idx}_{port}"
+        panel["session_id"] = session_id
+
+        session = self._sc_session_manager.get_session(session_id)
+        if session is None:
+            session = self._sc_session_manager.create_session(
+                session_id=session_id,
+                display_name=config.get("title", f"LOG-{panel_idx + 2}"),
+                auto_activate=False,
+            )
+        session.configure(
+            port=port, baudrate=baudrate,
+            bytesize=config.get("databit", 8),
+            stopbits={"1": serial.STOPBITS_ONE, "1.5": serial.STOPBITS_ONE_POINT_FIVE, "2": serial.STOPBITS_TWO}.get(
+                config.get("stopbit", "1"), serial.STOPBITS_ONE
+            ),
+            parity={"None": serial.PARITY_NONE, "Even": serial.PARITY_EVEN, "Odd": serial.PARITY_ODD,
+                    "Mark": serial.PARITY_MARK, "Space": serial.PARITY_SPACE}.get(
+                config.get("parity", "None"), serial.PARITY_NONE
+            ),
+            xonxoff=(config.get("flow", "None") == "XON/XOFF"),
+            rtscts=(config.get("flow", "None") == "RTS/CTS"),
+        )
+
         if DEBUG_MOCK:
             panel["conn"] = None
-            panel["port_label"].setText(f"Port: MOCK")
+            session._connected = True
+            panel["port_label"].setText("Port: MOCK")
             panel["port_label"].setStyleSheet(status_label_style("connected", include_font=True))
             self._sc_extra_panel_append_log(panel, "[INFO] Mock connected", _CLR_TEXT_INFO)
             return
@@ -1950,6 +2366,8 @@ class SerialComMixin:
                 timeout=0.1,
             )
             panel["conn"] = conn
+            session._serial_conn = conn
+            session._connected = True
             panel["port_label"].setText(f"Port: {port}")
             panel["port_label"].setStyleSheet(status_label_style("connected", include_font=True))
             self._sc_extra_panel_append_log(panel, f"[INFO] Connected: {port} @ {baudrate}", _CLR_TEXT_INFO)
@@ -1971,12 +2389,16 @@ class SerialComMixin:
         except Exception:
             pass
         panel["conn"] = None
+        session_id = panel.get("session_id")
+        if session_id:
+            self._sc_session_manager.remove_session(session_id)
+            panel["session_id"] = None
 
     def _sc_extra_panel_start_read(self, panel):
         if panel["conn"] is None or not panel["conn"].is_open:
             return
         worker = _SerialReadWorker(panel["conn"])
-        thread = QThread()
+        thread = QThread(self)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.data_received.connect(lambda data, p=panel: self._sc_extra_panel_on_data(p, data))
@@ -2463,13 +2885,14 @@ class SerialComMixin:
             else:
                 data = (line + self._sc_line_ending).encode("utf-8")
 
-            ok = self.serial_send(data)
+            ok = self._sc_send_to_focused_panel(data)
             if ok:
-                self._sc_tx_bytes += len(data)
-                self._sc_status_tx_label.setText(self._sc_format_bytes("TX", self._sc_tx_bytes))
-                if self._sc_show_send:
-                    display = line if not self._sc_tx_display_hex else data.hex(' ')
-                    self._sc_append_log(f"[TX] {display}", _CLR_TX)
+                if self._sc_active_log_panel_index == 0:
+                    self._sc_tx_bytes += len(data)
+                    self._sc_status_tx_label.setText(self._sc_format_bytes("TX", self._sc_tx_bytes))
+                    if self._sc_show_send:
+                        display = line if not self._sc_tx_display_hex else data.hex(' ')
+                        self._sc_append_log(f"[TX] {display}", _CLR_TX)
             else:
                 self._sc_append_system("[ERROR] Send failed, serial not connected")
 
@@ -2484,6 +2907,39 @@ class SerialComMixin:
             self._sc_history_combo.blockSignals(False)
 
         self._sc_send_input.clear()
+
+    def _sc_send_to_focused_panel(self, data) -> bool:
+        if self._sc_active_log_panel_index == 0:
+            return self.serial_send(data)
+
+        panel_idx = self._sc_active_log_panel_index - 1
+        if panel_idx < 0 or panel_idx >= len(self._sc_extra_log_panels):
+            return self.serial_send(data)
+
+        panel = self._sc_extra_log_panels[panel_idx]
+        conn = panel.get("conn")
+
+        if DEBUG_MOCK:
+            panel["tx_bytes"] = panel.get("tx_bytes", 0) + len(data)
+            panel["tx_label"].setText(self._sc_format_bytes("TX", panel["tx_bytes"]))
+            self._sc_extra_panel_append_log(
+                panel, f"[TX] {data.decode('utf-8', errors='replace')}", _CLR_TX
+            )
+            return True
+
+        if conn is None or not conn.is_open:
+            return False
+        try:
+            conn.write(data)
+            panel["tx_bytes"] = panel.get("tx_bytes", 0) + len(data)
+            panel["tx_label"].setText(self._sc_format_bytes("TX", panel["tx_bytes"]))
+            self._sc_extra_panel_append_log(
+                panel, f"[TX] {data.decode('utf-8', errors='replace')}", _CLR_TX
+            )
+            return True
+        except Exception as e:
+            self._sc_extra_panel_append_log(panel, f"[ERROR] Send failed: {e}", extra_log_error_color())
+            return False
 
     def _sc_on_data_received(self, data: bytes):
         if self._sc_paused:
@@ -2541,7 +2997,8 @@ class SerialComMixin:
                 s = score_rx_data(sample)
                 if s is not None and s >= cfg["lock_threshold"]:
                     self._sc_append_system(
-                        f"[INFO] Current baudrate {self._serial_baudrate} score={s}, locked."
+                        f"[INFO] Current baudrate {self._serial_baudrate} score={s}, locked.",
+                        force_primary=True,
                     )
                     monitor.state = AutoBaudState.LOCKED
                     monitor.reset()
@@ -2549,7 +3006,8 @@ class SerialComMixin:
                 else:
                     score_info = f"score={s}" if s is not None else "no data"
                     self._sc_append_system(
-                        f"[INFO] Current baudrate {self._serial_baudrate} {score_info}, scanning candidates..."
+                        f"[INFO] Current baudrate {self._serial_baudrate} {score_info}, scanning candidates...",
+                        force_primary=True,
                     )
                     self._sc_start_auto_baud_scan("initial")
             return
@@ -2559,13 +3017,13 @@ class SerialComMixin:
             return
         action = result.get("action")
         if action == "suspect":
-            self._sc_append_system("[INFO] RX quality degraded. Enter SUSPECT state.")
+            self._sc_append_system("[INFO] RX quality degraded. Enter SUSPECT state.", force_primary=True)
             self._sc_on_auto_baud_state_changed(AutoBaudState.SUSPECT.value)
         elif action == "recovered":
-            self._sc_append_system("[INFO] RX quality recovered.")
+            self._sc_append_system("[INFO] RX quality recovered.", force_primary=True)
             self._sc_on_auto_baud_state_changed(AutoBaudState.LOCKED.value)
         elif action == "scan_needed":
-            self._sc_append_system("[INFO] Sustained RX quality issue. Starting rescan...")
+            self._sc_append_system("[INFO] Sustained RX quality issue. Starting rescan...", force_primary=True)
             self._sc_start_auto_baud_scan("runtime")
 
     def _sc_on_auto_resend_toggled(self, checked):
@@ -2578,7 +3036,14 @@ class SerialComMixin:
 
     def _sc_on_resend_tick(self):
         text = self._sc_send_input.text()
-        if text and self._serial_connected:
+        if not text:
+            return
+        is_connected = self._serial_connected or (
+            self._sc_active_log_panel_index > 0
+            and self._sc_active_log_panel_index - 1 < len(self._sc_extra_log_panels)
+            and self._sc_extra_log_panels[self._sc_active_log_panel_index - 1].get("conn") is not None
+        )
+        if is_connected:
             if self._sc_tx_display_hex:
                 try:
                     data = bytes.fromhex(text.replace(" ", ""))
@@ -2586,7 +3051,7 @@ class SerialComMixin:
                     return
             else:
                 data = (text + self._sc_line_ending).encode("utf-8")
-            ok = self.serial_send(data)
+            ok = self._sc_send_to_focused_panel(data)
             if ok:
                 self._sc_tx_bytes += len(data)
                 self._sc_status_tx_label.setText(self._sc_format_bytes("TX", self._sc_tx_bytes))
@@ -3210,6 +3675,7 @@ class SerialComMixin:
         send_type = entry.get("send_type", "text")
         line_ending = entry.get("line_ending", "")
         encoding = entry.get("encoding", "ascii") or "ascii"
+        target_session_id = entry.get("target_session_id", "")
 
         if send_type == "hex":
             try:
@@ -3225,15 +3691,20 @@ class SerialComMixin:
                 self._sc_append_system(f"[ERROR] Encode failed ({encoding}): {e}")
                 return
 
-        ok = self.serial_send(data)
-        if ok:
-            self._sc_tx_bytes += len(data)
-            self._sc_status_tx_label.setText(self._sc_format_bytes("TX", self._sc_tx_bytes))
-            if self._sc_show_send:
-                display = data.hex(' ') if send_type == "hex" else content
-                self._sc_append_log(f"[TX] {display}", _CLR_TX)
+        if target_session_id:
+            ok = self.send_to_session(target_session_id, data)
         else:
-            self._sc_append_system("[ERROR] Send failed, serial not connected")
+            ok = self._sc_send_to_focused_panel(data)
+        if ok:
+            if self._sc_active_log_panel_index == 0 and not target_session_id:
+                self._sc_tx_bytes += len(data)
+                self._sc_status_tx_label.setText(self._sc_format_bytes("TX", self._sc_tx_bytes))
+                if self._sc_show_send:
+                    display = data.hex(' ') if send_type == "hex" else content
+                    self._sc_append_log(f"[TX] {display}", _CLR_TX)
+        else:
+            target_info = f" (target: {target_session_id})" if target_session_id else ""
+            self._sc_append_system(f"[ERROR] Send failed, serial not connected{target_info}")
 
     # --- 导入 / 导出 ---
 
@@ -3419,7 +3890,7 @@ class SerialComMixin:
         try:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(payload, f, ensure_ascii=False, indent=2)
-            self._sc_append_system(f"[INFO] Exported project: {project.get('name', '')}")
+            self._sc_append_system(f"[INFO] Exported project: {project.get('name', '')}", force_primary=True)
         except Exception as e:
             QMessageBox.critical(self, "导出失败", f"写入失败:\n{e}")
 
@@ -3938,11 +4409,11 @@ class SerialComMixin:
                         pass
                     self._sc_qc_data = self._sc_qc_default_data()
                     if hasattr(self, "_sc_append_system"):
-                        self._sc_append_system(f"[WARN] Config corrupted, using defaults. Path: {source}")
+                        self._sc_append_system(f"[WARN] Config corrupted, using defaults. Path: {source}", force_primary=True)
                 elif not isinstance(raw, dict):
                     self._sc_qc_data = self._sc_qc_default_data()
                     if hasattr(self, "_sc_append_system"):
-                        self._sc_append_system(f"[WARN] Config invalid format, using defaults. Path: {source}")
+                        self._sc_append_system(f"[WARN] Config invalid format, using defaults. Path: {source}", force_primary=True)
                 else:
                     self._sc_apply_persisted_state(raw)
                     if not hasattr(self, "_sc_qc_data") or not self._sc_qc_data:
@@ -3957,7 +4428,8 @@ class SerialComMixin:
                                 for g in p.get("groups", [])
                             )
                             self._sc_append_system(
-                                f"[INFO] Loaded config from {origin}: {source} ({total} quick commands)"
+                                f"[INFO] Loaded config from {origin}: {source} ({total} quick commands)",
+                                force_primary=True,
                             )
                         except Exception:
                             pass
@@ -3970,7 +4442,7 @@ class SerialComMixin:
                 except Exception:
                     pass
                 if hasattr(self, "_sc_append_system"):
-                    self._sc_append_system(f"[INFO] Config path: {cfg_path}")
+                    self._sc_append_system(f"[INFO] Config path: {cfg_path}", force_primary=True)
 
             try:
                 self._sc_qc_refresh_all()
@@ -4073,7 +4545,7 @@ class SerialComMixin:
             self._sc_apply_reset_defaults_to_widgets()
             self._sc_skip_next_persist_save = True
             if hasattr(self, "_sc_append_system"):
-                self._sc_append_system(f"[INFO] User config reset to defaults. Quick Commands kept. Path: {cfg_path}")
+                self._sc_append_system(f"[INFO] User config reset to defaults. Quick Commands kept. Path: {cfg_path}", force_primary=True)
             QMessageBox.information(
                 dialog_parent or self,
                 "Reset complete",
@@ -4144,7 +4616,7 @@ class SerialComMixin:
         try:
             self._sc_log_file_handle = open(file_path, "a", encoding="utf-8")
             self._sc_log_file_path = file_path
-            self._sc_append_system(f"[INFO] Auto-save started: {file_path}")
+            self._sc_append_system(f"[INFO] Auto-save started: {file_path}", force_primary=True)
         except OSError:
             self._sc_log_file_handle = None
             self._sc_log_file_path = None
@@ -4271,7 +4743,7 @@ class SerialComMixin:
             if self._sc_auto_scroll:
                 self._sc_scroll_to_bottom()
 
-    def _sc_append_system(self, message: str):
+    def _sc_append_system(self, message: str, force_primary: bool = False):
         color_map = {"INFO": _CLR_TEXT_INFO, "WARN": _CLR_WARNING, "ERROR": _CLR_ERROR}
         tag = ""
         for t in color_map:
@@ -4279,6 +4751,13 @@ class SerialComMixin:
                 tag = t
                 break
         color = color_map.get(tag, _CLR_TEXT_INFO)
+        if not force_primary and self._sc_active_log_panel_index > 0:
+            panel_idx = self._sc_active_log_panel_index - 1
+            if 0 <= panel_idx < len(self._sc_extra_log_panels):
+                self._sc_extra_panel_append_log(
+                    self._sc_extra_log_panels[panel_idx], message, color
+                )
+                return
         self._sc_append_log(message, color)
 
     @staticmethod
@@ -4433,8 +4912,9 @@ class _MiniSlideToggle(QWidget):
 
 class _AddLogPanelDialog(QDialog):
 
-    def __init__(self, parent=None):
+    def __init__(self, panel_index: int = 2, parent=None):
         super().__init__(parent)
+        self._panel_index = panel_index
         self.setWindowTitle("Add LOG Panel")
         self.setFixedWidth(400)
         self.setStyleSheet(_DLG_STYLE)
@@ -4454,7 +4934,7 @@ class _AddLogPanelDialog(QDialog):
         grid.addWidget(QLabel("Panel Name"), 0, 0)
         self._title_edit = QLineEdit()
         self._title_edit.setPlaceholderText("e.g. LOG-2")
-        self._title_edit.setText("Serial Log 2")
+        self._title_edit.setText(f"Serial Log {self._panel_index}")
         self._title_edit.setStyleSheet(dialog_line_edit_style())
         grid.addWidget(self._title_edit, 0, 1)
 
@@ -4514,6 +4994,22 @@ class _AddLogPanelDialog(QDialog):
 
         root.addLayout(grid)
 
+        mode_grp = QHBoxLayout()
+        mode_grp.setSpacing(16)
+        mode_label = QLabel("Open in:")
+        mode_grp.addWidget(mode_label)
+        from PySide6.QtWidgets import QRadioButton, QButtonGroup
+        self._mode_same_window = QRadioButton("Same Window")
+        self._mode_same_window.setChecked(True)
+        self._mode_independent = QRadioButton("Independent Window")
+        self._mode_group = QButtonGroup(self)
+        self._mode_group.addButton(self._mode_same_window, 0)
+        self._mode_group.addButton(self._mode_independent, 1)
+        mode_grp.addWidget(self._mode_same_window)
+        mode_grp.addWidget(self._mode_independent)
+        mode_grp.addStretch()
+        root.addLayout(mode_grp)
+
         self._auto_connect_cb = QCheckBox("Auto connect after creation")
         self._auto_connect_cb.setChecked(True)
         root.addWidget(self._auto_connect_cb)
@@ -4555,7 +5051,389 @@ class _AddLogPanelDialog(QDialog):
             "parity": self._parity_combo.currentText(),
             "flow": self._flow_combo.currentText(),
             "auto_connect": self._auto_connect_cb.isChecked(),
+            "independent_window": self._mode_independent.isChecked(),
         }
+
+
+class _PanelSettingsDialog(QDialog):
+
+    def __init__(self, current_config: dict, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Panel Settings")
+        self.setFixedWidth(400)
+        self.setStyleSheet(_DLG_STYLE)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(12)
+
+        title = QLabel("Serial Port Settings")
+        title.setObjectName("dlgSectionTitle")
+        root.addWidget(title)
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(8)
+
+        grid.addWidget(QLabel("Panel Name"), 0, 0)
+        self._title_edit = QLineEdit()
+        self._title_edit.setPlaceholderText("e.g. LOG-2")
+        self._title_edit.setText(current_config.get("title", "Serial Log"))
+        self._title_edit.setStyleSheet(dialog_line_edit_style())
+        grid.addWidget(self._title_edit, 0, 1)
+
+        grid.addWidget(QLabel("Port"), 1, 0)
+        self._port_combo = SerialDarkComboBox()
+        self._port_combo.setFixedHeight(26)
+        self._port_combo.setEditable(True)
+        try:
+            ports = serial.tools.list_ports.comports()
+            for p in ports:
+                self._port_combo.addItem(f"{p.device} - {p.description}")
+        except Exception:
+            pass
+        if self._port_combo.count() == 0:
+            if DEBUG_MOCK:
+                self._port_combo.addItem("[MOCK] COM99 - Mock Serial Device")
+            else:
+                self._port_combo.addItem("No serial ports found")
+        cur_port = current_config.get("port", "")
+        if cur_port:
+            for i in range(self._port_combo.count()):
+                if self._port_combo.itemText(i).startswith(cur_port):
+                    self._port_combo.setCurrentIndex(i)
+                    break
+            else:
+                self._port_combo.setEditText(cur_port)
+        grid.addWidget(self._port_combo, 1, 1)
+
+        grid.addWidget(QLabel("Baudrate"), 2, 0)
+        self._baud_combo = SerialDarkComboBox()
+        self._baud_combo.setFixedHeight(26)
+        self._baud_combo.setEditable(True)
+        for br in ["921600", "1152000", "2000000", "3000000", "115200", "9600"]:
+            self._baud_combo.addItem(br)
+        cur_baud = str(current_config.get("baudrate", 921600))
+        idx = self._baud_combo.findText(cur_baud)
+        if idx >= 0:
+            self._baud_combo.setCurrentIndex(idx)
+        else:
+            self._baud_combo.setEditText(cur_baud)
+        grid.addWidget(self._baud_combo, 2, 1)
+
+        grid.addWidget(QLabel("Data bits"), 3, 0)
+        self._databit_combo = SerialDarkComboBox()
+        self._databit_combo.setFixedHeight(26)
+        for d in ["8", "7", "6", "5"]:
+            self._databit_combo.addItem(d)
+        cur_databit = str(current_config.get("databit", 8))
+        idx = self._databit_combo.findText(cur_databit)
+        if idx >= 0:
+            self._databit_combo.setCurrentIndex(idx)
+        grid.addWidget(self._databit_combo, 3, 1)
+
+        grid.addWidget(QLabel("Stop bits"), 4, 0)
+        self._stopbit_combo = SerialDarkComboBox()
+        self._stopbit_combo.setFixedHeight(26)
+        for s in ["1", "1.5", "2"]:
+            self._stopbit_combo.addItem(s)
+        cur_stopbit = str(current_config.get("stopbit", "1"))
+        idx = self._stopbit_combo.findText(cur_stopbit)
+        if idx >= 0:
+            self._stopbit_combo.setCurrentIndex(idx)
+        grid.addWidget(self._stopbit_combo, 4, 1)
+
+        grid.addWidget(QLabel("Parity"), 5, 0)
+        self._parity_combo = SerialDarkComboBox()
+        self._parity_combo.setFixedHeight(26)
+        for p in ["None", "Even", "Odd", "Mark", "Space"]:
+            self._parity_combo.addItem(p)
+        cur_parity = current_config.get("parity", "None")
+        idx = self._parity_combo.findText(cur_parity)
+        if idx >= 0:
+            self._parity_combo.setCurrentIndex(idx)
+        grid.addWidget(self._parity_combo, 5, 1)
+
+        grid.addWidget(QLabel("Flow Control"), 6, 0)
+        self._flow_combo = SerialDarkComboBox()
+        self._flow_combo.setFixedHeight(26)
+        for fc in ["None", "RTS/CTS", "XON/XOFF"]:
+            self._flow_combo.addItem(fc)
+        cur_flow = current_config.get("flow", "None")
+        idx = self._flow_combo.findText(cur_flow)
+        if idx >= 0:
+            self._flow_combo.setCurrentIndex(idx)
+        grid.addWidget(self._flow_combo, 6, 1)
+
+        root.addLayout(grid)
+
+        self._auto_connect_cb = QCheckBox("Auto connect after apply")
+        self._auto_connect_cb.setChecked(True)
+        root.addWidget(self._auto_connect_cb)
+
+        root.addSpacing(4)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setObjectName("dlgCancelBtn")
+        cancel_btn.setCursor(Qt.PointingHandCursor)
+        cancel_btn.setAutoDefault(False)
+        cancel_btn.setDefault(False)
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+
+        ok_btn = QPushButton("Apply")
+        ok_btn.setObjectName("dlgOkBtn")
+        ok_btn.setCursor(Qt.PointingHandCursor)
+        ok_btn.setAutoDefault(True)
+        ok_btn.setDefault(True)
+        ok_btn.clicked.connect(self.accept)
+        btn_row.addWidget(ok_btn)
+        root.addLayout(btn_row)
+
+    def get_config(self):
+        port_text = self._port_combo.currentText()
+        port = port_text.split()[0] if port_text and not port_text.startswith("No ") else ""
+        try:
+            baudrate = int(self._baud_combo.currentText().strip())
+        except ValueError:
+            baudrate = 115200
+        return {
+            "title": self._title_edit.text().strip() or "Serial Log",
+            "port": port,
+            "baudrate": baudrate,
+            "databit": int(self._databit_combo.currentText()),
+            "stopbit": self._stopbit_combo.currentText(),
+            "parity": self._parity_combo.currentText(),
+            "flow": self._flow_combo.currentText(),
+            "auto_connect": self._auto_connect_cb.isChecked(),
+        }
+
+
+class _IndependentSerialWindow(QWidget):
+
+    def __init__(self, config: dict, parent=None):
+        super().__init__(parent)
+        self._config = config
+        self._conn = None
+        self._read_thread = None
+        self._read_worker = None
+        self._rx_bytes = 0
+        self._tx_bytes = 0
+        self._auto_scroll = True
+
+        title = config.get("title", "Serial Log")
+        self.setWindowTitle(f"Serial Console - {title}")
+        self.setMinimumSize(600, 400)
+        self.resize(750, 500)
+        self.setStyleSheet(f"background-color: {_CLR_BG_LOG}; color: {_CLR_INPUT_TEXT};")
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(8, 8, 8, 8)
+        root.setSpacing(4)
+
+        toolbar = QHBoxLayout()
+        toolbar.setSpacing(8)
+
+        port_text = config.get("port", "N/A")
+        baud_text = str(config.get("baudrate", "N/A"))
+        self._status_label = QLabel(f"{port_text} @ {baud_text}")
+        self._status_label.setStyleSheet(f"color: {_CLR_TEXT_MUTED}; font-size: 12px;")
+        toolbar.addWidget(self._status_label)
+
+        toolbar.addStretch()
+
+        self._connect_btn = QPushButton("Connect")
+        self._connect_btn.setCursor(Qt.PointingHandCursor)
+        self._connect_btn.clicked.connect(self._toggle_connect)
+        toolbar.addWidget(self._connect_btn)
+
+        clear_btn = QPushButton("Clear")
+        clear_btn.setCursor(Qt.PointingHandCursor)
+        clear_btn.clicked.connect(self._clear_log)
+        toolbar.addWidget(clear_btn)
+
+        root.addLayout(toolbar)
+
+        self._log_edit = QTextEdit()
+        self._log_edit.setReadOnly(True)
+        self._log_edit.setStyleSheet(log_edit_style(padding="6px 8px") + SERIAL_SCROLLBAR_STYLE)
+        self._log_edit.document().setDefaultStyleSheet(log_document_style())
+        self._log_edit.document().setMaximumBlockCount(5000)
+        root.addWidget(self._log_edit, 1)
+
+        send_row = QHBoxLayout()
+        send_row.setSpacing(4)
+        self._send_input = QLineEdit()
+        self._send_input.setPlaceholderText("Enter command...")
+        self._send_input.setStyleSheet(filter_input_style())
+        self._send_input.returnPressed.connect(self._on_send)
+        send_row.addWidget(self._send_input, 1)
+        send_btn = QPushButton("Send")
+        send_btn.setCursor(Qt.PointingHandCursor)
+        send_btn.clicked.connect(self._on_send)
+        send_row.addWidget(send_btn)
+        root.addLayout(send_row)
+
+        status_bar = QHBoxLayout()
+        self._rx_label = QLabel("RX: 0 B")
+        self._rx_label.setStyleSheet(f"color: {_CLR_TEXT_MUTED}; font-size: 11px;")
+        self._tx_label = QLabel("TX: 0 B")
+        self._tx_label.setStyleSheet(f"color: {_CLR_TEXT_MUTED}; font-size: 11px;")
+        status_bar.addWidget(self._rx_label)
+        status_bar.addWidget(self._tx_label)
+        status_bar.addStretch()
+        root.addLayout(status_bar)
+
+        if config.get("auto_connect", False):
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(200, self._do_connect)
+
+    def _toggle_connect(self):
+        if DEBUG_MOCK and self._connect_btn.text() == "Disconnect":
+            self._do_disconnect()
+        elif self._conn is not None and self._conn.is_open:
+            self._do_disconnect()
+        else:
+            self._do_connect()
+
+    def _do_connect(self):
+        port = self._config.get("port", "")
+        baudrate = self._config.get("baudrate", 115200)
+        if not port:
+            self._append("[ERROR] No port configured")
+            return
+
+        if DEBUG_MOCK:
+            self._conn = None
+            self._connect_btn.setText("Disconnect")
+            self._status_label.setText(f"MOCK @ {baudrate}")
+            self._status_label.setStyleSheet(f"color: {_CLR_CONNECT_FG}; font-size: 12px;")
+            self._append(f"[INFO] Mock connected: {port} @ {baudrate}")
+            return
+
+        try:
+            databit = self._config.get("databit", 8)
+            stopbit_map = {"1": serial.STOPBITS_ONE, "1.5": serial.STOPBITS_ONE_POINT_FIVE, "2": serial.STOPBITS_TWO}
+            stopbits = stopbit_map.get(str(self._config.get("stopbit", "1")), serial.STOPBITS_ONE)
+            parity_map = {"None": serial.PARITY_NONE, "Even": serial.PARITY_EVEN, "Odd": serial.PARITY_ODD}
+            parity = parity_map.get(self._config.get("parity", "None"), serial.PARITY_NONE)
+            flow = self._config.get("flow", "None")
+            conn = serial.Serial(
+                port=port, baudrate=baudrate, bytesize=databit,
+                stopbits=stopbits, parity=parity,
+                xonxoff=(flow == "XON/XOFF"), rtscts=(flow == "RTS/CTS"),
+                timeout=0.1,
+            )
+            self._conn = conn
+            self._connect_btn.setText("Disconnect")
+            self._status_label.setText(f"{port} @ {baudrate}")
+            self._status_label.setStyleSheet(f"color: {_CLR_CONNECT_FG}; font-size: 12px;")
+            self._append(f"[INFO] Connected: {port} @ {baudrate}")
+            self._start_read()
+        except Exception as e:
+            self._append(f"[ERROR] Connection failed: {e}")
+
+    def _do_disconnect(self):
+        self._stop_read()
+        try:
+            if self._conn is not None and self._conn.is_open:
+                self._conn.close()
+        except Exception:
+            pass
+        self._conn = None
+        self._connect_btn.setText("Connect")
+        self._status_label.setStyleSheet(f"color: {_CLR_TEXT_MUTED}; font-size: 12px;")
+        self._append("[INFO] Disconnected")
+
+    def _on_send(self):
+        text = self._send_input.text()
+        if not text:
+            return
+        data = (text + "\r\n").encode("utf-8")
+
+        if DEBUG_MOCK:
+            self._tx_bytes += len(data)
+            self._tx_label.setText(f"TX: {self._tx_bytes} B")
+            self._append(f"[TX] {text}")
+            self._send_input.clear()
+            return
+
+        if self._conn is None or not self._conn.is_open:
+            self._append("[ERROR] Not connected")
+            return
+        try:
+            self._conn.write(data)
+            self._tx_bytes += len(data)
+            self._tx_label.setText(f"TX: {self._tx_bytes} B")
+            self._append(f"[TX] {text}")
+            self._send_input.clear()
+        except Exception as e:
+            self._append(f"[ERROR] Send failed: {e}")
+
+    def _clear_log(self):
+        self._log_edit.clear()
+        self._rx_bytes = 0
+        self._tx_bytes = 0
+        self._rx_label.setText("RX: 0 B")
+        self._tx_label.setText("TX: 0 B")
+
+    def _append(self, message):
+        from datetime import datetime as _dt
+        ts = _dt.now().strftime("%H:%M:%S.%f")[:-3]
+        color = _CLR_TEXT_BODY
+        if "[ERROR]" in message:
+            color = _CLR_ERROR
+        elif "[INFO]" in message:
+            color = _CLR_TEXT_INFO
+        elif "[TX]" in message:
+            color = _CLR_TX
+        elif "[RX]" in message:
+            color = _CLR_RX
+        escaped = message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        html = f'<span style="color:{_CLR_TEXT_TIME};">{ts}</span> <span style="color:{color};">{escaped}</span>'
+        self._log_edit.append(html)
+        if self._auto_scroll:
+            sb = self._log_edit.verticalScrollBar()
+            if sb:
+                sb.setValue(sb.maximum())
+
+    def _start_read(self):
+        if self._conn is None:
+            return
+        worker = _SerialReadWorker(self._conn)
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.data_received.connect(self._on_data_received)
+        self._read_thread = thread
+        self._read_worker = worker
+        thread.start()
+
+    def _stop_read(self):
+        if self._read_worker:
+            self._read_worker.stop()
+        if self._read_thread and self._read_thread.isRunning():
+            self._read_thread.quit()
+            self._read_thread.wait(3000)
+        self._read_thread = None
+        self._read_worker = None
+
+    def _on_data_received(self, data: bytes):
+        self._rx_bytes += len(data)
+        self._rx_label.setText(f"RX: {self._rx_bytes} B")
+        try:
+            text = data.decode("utf-8", errors="replace")
+            for line in text.splitlines():
+                if line.strip():
+                    self._append(f"[RX] {line}")
+        except Exception:
+            self._append(f"[RX] {data.hex(' ')}")
+
+    def closeEvent(self, event):
+        self._do_disconnect()
+        super().closeEvent(event)
 
 
 class _QuickCmdPreviewPopup(QFrame):
@@ -5672,16 +6550,20 @@ if __name__ == "__main__":
             self.complete_serialComWidget(root)
 
             self._sc_on_refresh()
-            self._sc_append_system("[INFO] KK Serials initialized")
+            self._sc_append_system("[INFO] KK Serials initialized", force_primary=True)
 
         def append_log(self, msg):
-            self._sc_append_system(msg)
+            self._sc_append_system(msg, force_primary=True)
 
         def closeEvent(self, event):
             try:
                 self._sc_save_persisted_state()
             except Exception:
                 pass
+            self.close_serial()
+            if hasattr(self, '_sc_independent_windows'):
+                for win in list(self._sc_independent_windows):
+                    win.close()
             super().closeEvent(event)
 
     from PySide6.QtCore import QtMsgType, qInstallMessageHandler
