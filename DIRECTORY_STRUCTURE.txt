@@ -344,6 +344,7 @@ docs/
     │   ├── AutoDetectBaudrate.md # SerialCom 候选波特率自动识别设计
     │   ├── InstrumentsManage.md  # 通用仪器管理架构方案
     │   ├── InstrumentsManagePlan.md # 通用仪器管理改善计划
+    │   ├── InstrumentsManagePlanFixe.md # 仪器管理重构未完成项与修复计划
     │   ├── LOG_FastCommand.md    # SerialCom 日志与快捷指令优化设计
     │   ├── UI_Optimize.md        # SerialCom UI 优化设计
     │   └── serialComMuti.md      # SerialCom 单窗口多串口 / 多窗口独立串口规则

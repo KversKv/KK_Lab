@@ -241,8 +241,9 @@ class _ScopeInstrumentWorker(QObject):
 class OscilloscopeConnectionMixin:
     scope_connection_changed = Signal(bool)
 
-    def init_oscilloscope_connection(self, mso64b_top=None):
+    def init_oscilloscope_connection(self, mso64b_top=None, instrument_manager=None):
         self._mso64b_top = mso64b_top
+        self._scope_instrument_manager = instrument_manager
         self._scope_rm = None
         self.Osc_ins = None
         self.scope_connected = False
@@ -435,6 +436,12 @@ class OscilloscopeConnectionMixin:
                 self.set_page_status("Scope connected (Mock)")
             if self._mso64b_top:
                 self._mso64b_top.connect_instrument(resource, self.Osc_ins, scope_type="MSO64B")
+            elif self._scope_instrument_manager:
+                from core.instruments import InstrumentSpec
+                self._scope_instrument_manager.attach_external(
+                    InstrumentSpec(instrument_type="mso64b", resource=resource, slot="main_scope"),
+                    instance=self.Osc_ins, serial="", model="MSO64B",
+                )
             self.scope_connection_changed.emit(True)
             return
 
@@ -488,6 +495,13 @@ class OscilloscopeConnectionMixin:
 
         if self._mso64b_top:
             self._mso64b_top.connect_instrument(result["resource"], self.Osc_ins, scope_type=scope_type)
+        elif self._scope_instrument_manager:
+            from core.instruments import InstrumentSpec
+            inst_type = "dsox4034a" if "DSOX" in scope_type.upper() else "mso64b"
+            self._scope_instrument_manager.attach_external(
+                InstrumentSpec(instrument_type=inst_type, resource=result["resource"], slot="main_scope"),
+                instance=self.Osc_ins, serial="", model=scope_type,
+            )
 
     def _on_disconnect_scope(self):
         scope_type = self.scope_type_combo.currentText()
@@ -499,6 +513,15 @@ class OscilloscopeConnectionMixin:
 
         if self._mso64b_top and self._mso64b_top.is_connected:
             self._mso64b_top.disconnect()
+            self.Osc_ins = None
+            self._on_disconnect_scope_finished({"scope_type": scope_type})
+        elif self._scope_instrument_manager:
+            for inst_type in ("mso64b", "dsox4034a"):
+                session_id = f"{inst_type}:main_scope"
+                session = self._scope_instrument_manager.get_session(session_id)
+                if session and session.connected:
+                    self._scope_instrument_manager.disconnect_async(session_id)
+                    break
             self.Osc_ins = None
             self._on_disconnect_scope_finished({"scope_type": scope_type})
         else:

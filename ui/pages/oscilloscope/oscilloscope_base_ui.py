@@ -936,6 +936,8 @@ class OscilloscopeBaseUI(QWidget):
 
         if self.mso64b_top is not None:
             self.mso64b_top.connection_changed.connect(self._on_mso64b_top_changed)
+        if self._instrument_manager is not None:
+            self._instrument_manager.sessions_changed.connect(self._on_manager_sessions_changed)
 
     def _setup_fonts(self):
         self.base_font = QFont("Segoe UI", 10)
@@ -2609,6 +2611,19 @@ class OscilloscopeBaseUI(QWidget):
                     self.mso64b_top.connect_instrument(resource, self.controller.instrument, scope_type="MSO64B")
                 elif result["is_dsox"]:
                     self.mso64b_top.connect_instrument(resource, self.controller.instrument, scope_type="DSOX4034A")
+            elif self._instrument_manager:
+                from core.instruments import InstrumentSpec
+                scope_type = "mso64b" if result.get("is_mso64b") else "dsox4034a"
+                self._instrument_manager.attach_external(
+                    InstrumentSpec(
+                        instrument_type=scope_type,
+                        resource=resource,
+                        slot="main_scope",
+                    ),
+                    instance=self.controller.instrument,
+                    serial="",
+                    model=result.get("title", scope_type.upper()),
+                )
             self.connection_changed.emit()
         except Exception as e:
             logger.error("Connect oscilloscope failed: %s", e)
@@ -2628,11 +2643,19 @@ class OscilloscopeBaseUI(QWidget):
             result = self.controller.disconnect_instrument()
 
             if self.mso64b_top is not None and self.mso64b_top.is_connected:
-                self.mso64b_top.mso64b = None
-                self.mso64b_top.is_connected = False
-                self.mso64b_top.visa_resource = ""
-                self.mso64b_top.scope_type = ""
-                self.mso64b_top.connection_changed.emit()
+                self.mso64b_top.disconnect()
+            elif self._instrument_manager:
+                for scope_type in ("mso64b", "dsox4034a"):
+                    session_id = f"{scope_type}:main_scope"
+                    session = self._instrument_manager.get_session(session_id)
+                    if session and session.connected:
+                        session.instance = None
+                        session.connected = False
+                        session.touch()
+                        self._instrument_manager.session_disconnected.emit(session_id)
+                        self._instrument_manager.session_changed.emit(session_id)
+                        self._instrument_manager.sessions_changed.emit()
+                        break
 
             self.update_connection_status(False)
             self.set_invert_enabled(True)
@@ -2644,6 +2667,58 @@ class OscilloscopeBaseUI(QWidget):
             self.connection_changed.emit()
         finally:
             self.connect_btn.setEnabled(True)
+
+    def _on_manager_sessions_changed(self):
+        if not self._instrument_manager:
+            return
+        if self.mso64b_top is not None:
+            return
+        found_scope = None
+        for scope_type in ("mso64b", "dsox4034a"):
+            session_id = f"{scope_type}:main_scope"
+            session = self._instrument_manager.get_session(session_id)
+            if session and session.connected and session.instance:
+                found_scope = session
+                break
+
+        if found_scope and not self.controller.is_connected:
+            from instruments.scopes.keysight.dsox4034a import DSOX4034A
+            from instruments.scopes.tektronix.mso64b import MSO64B
+            instrument = found_scope.instance
+            self.controller._instrument = instrument
+            try:
+                info = instrument.identify_instrument()
+                self.controller._instrument_info = info
+            except Exception:
+                info = f"{found_scope.model} Connected"
+                self.controller._instrument_info = info
+            is_dsox = isinstance(instrument, DSOX4034A)
+            is_mso64b = isinstance(instrument, MSO64B)
+            self.update_connection_status(True, info)
+            title = info.split(",")[1].strip() if "," in info else info
+            self.set_title(title)
+            self.set_invert_enabled(is_dsox)
+            if is_dsox:
+                self._update_channel_colors(self.CHANNEL_COLORS_KEYSIGHT)
+                self._update_time_offset_mode("seconds")
+            elif is_mso64b:
+                self._update_channel_colors(self.CHANNEL_COLORS_TEKTRONIX)
+                self._update_time_offset_mode("percent")
+            else:
+                self._update_time_offset_mode("none")
+            idx = self.visa_resource_combo.findText(found_scope.resource)
+            if idx >= 0:
+                self.visa_resource_combo.setCurrentIndex(idx)
+            else:
+                self.visa_resource_combo.setEditText(found_scope.resource)
+            self.connection_changed.emit()
+        elif not found_scope and self.controller.is_connected:
+            self.controller._instrument = None
+            self.controller._instrument_info = ""
+            self.update_connection_status(False)
+            self.set_invert_enabled(True)
+            self._update_time_offset_mode("none")
+            self.connection_changed.emit()
 
     def _on_mso64b_top_changed(self):
         if self.mso64b_top is None:

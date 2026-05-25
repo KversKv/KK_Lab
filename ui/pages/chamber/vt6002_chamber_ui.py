@@ -703,6 +703,15 @@ class VT6002ChamberUI(QWidget):
         if is_connected:
             try:
                 self.vt6002.close()
+                if self._instrument_manager:
+                    session = self._instrument_manager.get_session("vt6002:default")
+                    if session and session.connected:
+                        session.instance = None
+                        session.connected = False
+                        session.touch()
+                        self._instrument_manager.session_disconnected.emit("vt6002:default")
+                        self._instrument_manager.session_changed.emit("vt6002:default")
+                        self._instrument_manager.sessions_changed.emit()
                 self.vt6002 = None
                 self.current_port = None
                 self.is_chamber_on = False
@@ -712,7 +721,7 @@ class VT6002ChamberUI(QWidget):
                 self._set_power_ui(False)
                 self.connection_changed.emit()
             except Exception as e:
-                logger.error("断开连接错误: %s", e)
+                logger.error("断开连接错误: %s", e, exc_info=True)
         else:
             current_text = self.port_combo.currentText().strip()
             if not current_text or current_text in ("No Serial Ports Found", "Scan Failed"):
@@ -727,12 +736,22 @@ class VT6002ChamberUI(QWidget):
                     self.vt6002 = VT6002(device_port)
                     self.current_port = device_port
 
+                if self._instrument_manager:
+                    from core.instruments import InstrumentSpec
+                    self._instrument_manager.attach_external(
+                        InstrumentSpec(
+                            instrument_type="vt6002",
+                            resource=self.current_port,
+                            slot="default",
+                        ),
+                        instance=self.vt6002, serial="", model="VT6002",
+                    )
                 self._set_connection_ui(True)
                 self._set_controls_enabled(True)
                 self._set_power_ui(False)
                 self.connection_changed.emit()
             except Exception as e:
-                logger.error("连接设备错误: %s", e)
+                logger.error("连接设备错误: %s", e, exc_info=True)
                 self.vt6002 = None
                 self.current_port = None
                 self._set_connection_ui(False)

@@ -266,8 +266,9 @@ def _match_counter_type_from_idn(idn: str) -> str:
 class Keysight53230AConnectionMixin:
     counter_connection_changed = Signal(bool)
 
-    def init_counter_connection(self, counter_top=None):
+    def init_counter_connection(self, counter_top=None, instrument_manager=None):
         self._counter_top = counter_top
+        self._counter_instrument_manager = instrument_manager
         self._counter_rm = None
         self.Counter_ins = None
         self.counter_connected = False
@@ -280,6 +281,8 @@ class Keysight53230AConnectionMixin:
 
         if self._counter_top is not None and hasattr(self._counter_top, 'connection_changed'):
             self._counter_top.connection_changed.connect(self._on_counter_top_changed)
+        if self._counter_instrument_manager is not None:
+            self._counter_instrument_manager.sessions_changed.connect(self._on_counter_manager_changed)
 
     def build_counter_connection_widgets(self, layout, title_row=None):
         self.system_status_label = QLabel("● Ready")
@@ -384,6 +387,36 @@ class Keysight53230AConnectionMixin:
             self.set_system_status("● Ready")
             if hasattr(self, 'append_log'):
                 self.append_log("[SYSTEM] Frequency counter disconnected externally.")
+
+    def _on_counter_manager_changed(self):
+        if self._counter_top is not None:
+            return
+        mgr = self._counter_instrument_manager
+        if not mgr:
+            return
+        session = mgr.get_session("keysight53230a:default")
+        if session and session.connected and session.instance:
+            if self.Counter_ins is session.instance and self.counter_connected:
+                return
+            self.Counter_ins = session.instance
+            self.counter_resource = session.resource
+            self.counter_connected = True
+            _update_cnt_btn_state(self.counter_connect_btn, True)
+            self.counter_search_btn.setEnabled(False)
+            self._current_counter_type = session.model or DEFAULT_COUNTER_TYPE
+            if session.resource:
+                self.counter_resource_combo.clear()
+                self.counter_resource_combo.addItem(session.resource)
+            self.set_system_status("● Connected")
+        elif not session or not session.connected:
+            if not self.counter_connected:
+                return
+            self.Counter_ins = None
+            self.counter_resource = None
+            self.counter_connected = False
+            _update_cnt_btn_state(self.counter_connect_btn, False)
+            self.counter_search_btn.setEnabled(True)
+            self.set_system_status("● Ready")
 
     def _on_counter_search(self):
         if self._counter_top and self._counter_top.is_connected:
@@ -525,6 +558,16 @@ class Keysight53230AConnectionMixin:
 
         if self._counter_top and hasattr(self._counter_top, 'connect_instrument'):
             self._counter_top.connect_instrument(result["resource"], self.Counter_ins, counter_type=counter_type)
+        elif self._counter_instrument_manager:
+            from core.instruments import InstrumentSpec
+            self._counter_instrument_manager.attach_external(
+                InstrumentSpec(
+                    instrument_type="keysight53230a",
+                    resource=result["resource"],
+                    slot="default",
+                ),
+                instance=self.Counter_ins, serial="", model=counter_type,
+            )
 
         self.counter_connection_changed.emit(True)
 
@@ -539,6 +582,12 @@ class Keysight53230AConnectionMixin:
 
         if self._counter_top and self._counter_top.is_connected:
             self._counter_top.disconnect()
+            self.Counter_ins = None
+            self._on_disconnect_counter_finished({"counter_type": counter_type})
+        elif self._counter_instrument_manager:
+            session = self._counter_instrument_manager.get_session("keysight53230a:default")
+            if session and session.connected:
+                self._counter_instrument_manager.disconnect_async("keysight53230a:default")
             self.Counter_ins = None
             self._on_disconnect_counter_finished({"counter_type": counter_type})
         else:

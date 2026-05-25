@@ -308,8 +308,9 @@ def build_n6705c_inline_row(label, parent=None,
 class N6705CConnectionMixin:
     connection_status_changed = Signal(bool)
 
-    def init_n6705c_connection(self, n6705c_top=None):
+    def init_n6705c_connection(self, n6705c_top=None, instrument_manager=None):
         self._n6705c_top = n6705c_top
+        self._n6705c_instrument_manager = instrument_manager
         self.rm = None
         self.n6705c = None
         self.is_connected = False
@@ -502,6 +503,12 @@ class N6705CConnectionMixin:
             device_address = self.visa_resource_combo.currentText()
             if self._n6705c_top:
                 self._n6705c_top.connect_a(device_address, self.n6705c, serial="MOCK")
+            elif self._n6705c_instrument_manager:
+                from core.instruments import InstrumentSpec
+                self._n6705c_instrument_manager.attach_external(
+                    InstrumentSpec(instrument_type="n6705c", resource=device_address, slot="A"),
+                    instance=self.n6705c, serial="MOCK", model="N6705C",
+                )
             self.connection_status_changed.emit(True)
             return
 
@@ -533,6 +540,12 @@ class N6705CConnectionMixin:
 
                 if self._n6705c_top:
                     self._n6705c_top.connect_a(device_address, self.n6705c, serial=serial)
+                elif self._n6705c_instrument_manager:
+                    from core.instruments import InstrumentSpec
+                    self._n6705c_instrument_manager.attach_external(
+                        InstrumentSpec(instrument_type="n6705c", resource=device_address, slot="A"),
+                        instance=self.n6705c, serial=serial, model="N6705C",
+                    )
 
                 self.connection_status_changed.emit(True)
             else:
@@ -555,6 +568,9 @@ class N6705CConnectionMixin:
         try:
             if self._n6705c_top:
                 self._n6705c_top.disconnect_a()
+                self.n6705c = None
+            elif self._n6705c_instrument_manager:
+                self._n6705c_instrument_manager.disconnect_async("n6705c:A")
                 self.n6705c = None
             else:
                 if self.n6705c is not None:
