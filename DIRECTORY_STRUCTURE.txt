@@ -70,6 +70,13 @@ core/
 │                            # 发出数据更新信号供 UI 层订阅
 ├── data_collector.py        # 数据采集器，基于 QTimer 定时从仪器读取电流/电压
 │                            # 数据，支持可配置采样率
+├── instruments/             # 通用仪器管理子包
+│   ├── __init__.py          # 导出 InstrumentManager, InstrumentSession 等
+│   ├── instrument_session.py # InstrumentSession/Spec/Snapshot/Identity 数据模型
+│   ├── instrument_manager.py # InstrumentManager - 统一仪器生命周期管理
+│   ├── profiles.py          # InstrumentProfile 数据类定义
+│   ├── registry.py          # ProfileRegistry + 各仪器 profile 注册
+│   └── workers.py           # ConnectWorker/DisconnectWorker/ScanWorker (QThread)
 └── controllers/             # 控制器子包 (预留，后续业务控制器)
 
 ================================================================================

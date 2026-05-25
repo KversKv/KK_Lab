@@ -393,10 +393,11 @@ class _ConsumptionTestWorker(QObject):
 class N6705CAnalyserUI(QWidget):
     connection_status_changed = Signal(bool)
 
-    def __init__(self, n6705c_top=None):
+    def __init__(self, n6705c_top=None, instrument_manager=None):
         super().__init__()
 
         self._top = n6705c_top
+        self._instrument_manager = instrument_manager
         self.devices = {
             "A": {"rm": None, "n6705c": None, "is_connected": False},
             "B": {"rm": None, "n6705c": None, "is_connected": False},
@@ -427,6 +428,43 @@ class N6705CAnalyserUI(QWidget):
             self._sync_from_top()
             if hasattr(self._top, 'connection_changed'):
                 self._top.connection_changed.connect(self._sync_from_top)
+
+        if self._instrument_manager:
+            self._instrument_manager.sessions_changed.connect(self._on_manager_sessions_changed)
+
+    def _on_manager_sessions_changed(self):
+        if self._top:
+            return
+        sessions = self._instrument_manager.sessions(instrument_type="n6705c")
+        for snap in sessions:
+            label = snap.slot.upper() if snap.slot in ("A", "B", "a", "b") else None
+            if label is None:
+                continue
+            w = self.conn_widgets.get(label)
+            if w is None:
+                continue
+            if snap.connected:
+                instance = self._instrument_manager.get_instance(snap.session_id)
+                self.devices[label]["n6705c"] = instance
+                self.devices[label]["is_connected"] = True
+                w["status"].setText("\u25cf Connected")
+                w["status"].setStyleSheet("color: #00a859; font-weight:bold;")
+                if snap.resource:
+                    w["combo"].clear()
+                    w["combo"].addItem(snap.resource)
+                update_connect_button_state(w["connect_btn"], connected=True)
+                self._update_ui_connection_state(label, True)
+            else:
+                if self.devices[label]["is_connected"]:
+                    self.devices[label]["n6705c"] = None
+                    self.devices[label]["is_connected"] = False
+                    w["status"].setText("\u25cf Disconnected")
+                    w["status"].setStyleSheet("color: #8ea6cf; font-weight:bold;")
+                    update_connect_button_state(w["connect_btn"], connected=False)
+                    self._update_ui_connection_state(label, False)
+        self._rebuild_dynamic_sections()
+        if self.devices[self.current_device]["is_connected"]:
+            self._start_channel_sync()
 
     def _connected_device_labels(self):
         return [label for label, dev in self.devices.items() if dev["is_connected"]]

@@ -27,6 +27,7 @@ from ui.pages.charger_test.charger_test_ui import ChargerTestUI
 from ui.pages.custom_test.custom_test_ui import CustomTestUI
 from ui.modules.serialCom_module.serialCom_module_frame import SerialComMixin
 from core.test_manager import TestManager
+from core.instruments import InstrumentManager, InstrumentSpec
 from instruments.base.visa_instrument import VisaInstrument
 from instruments.chambers.vt6002_chamber import VT6002
 from ui.styles import SCROLLBAR_STYLE
@@ -94,15 +95,22 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.visa_instrument = VisaInstrument()
         self.vt6002_chamber = None
 
+        self.instrument_manager = InstrumentManager(parent=self)
+
         self.n6705c_top = N6705CTop(self)
+        self.n6705c_top.set_instrument_manager(self.instrument_manager)
         self.mso64b_top = MSO64BTop(self)
+        self.mso64b_top.set_instrument_manager(self.instrument_manager)
 
         if DEBUG_MOCK:
             from instruments.mock.mock_instruments import MockN6705C, MockMSO64B
             logger.info("[MOCK] Auto-connecting mock instruments...")
-            self.n6705c_top.connect_a("MOCK::N6705C::A", MockN6705C(), "MOCK-A")
-            self.n6705c_top.connect_b("MOCK::N6705C::B", MockN6705C(), "MOCK-B")
-            self.mso64b_top.connect_instrument("MOCK::MSO64B", MockMSO64B(), "MSO64B")
+            mock_a = MockN6705C()
+            mock_b = MockN6705C()
+            mock_scope = MockMSO64B()
+            self.n6705c_top.connect_a("MOCK::N6705C::A", mock_a, "MOCK-A")
+            self.n6705c_top.connect_b("MOCK::N6705C::B", mock_b, "MOCK-B")
+            self.mso64b_top.connect_instrument("MOCK::MSO64B", mock_scope, "MSO64B")
 
         self.n6705c_analyser_ui = None
         self.n6705c_datalog_ui = None
@@ -309,6 +317,7 @@ class MainWindow(CleanupMixin, QMainWindow):
 
         self.n6705c_top.connection_changed.connect(self._update_instrument_status)
         self.mso64b_top.connection_changed.connect(self._update_instrument_status)
+        self.instrument_manager.sessions_changed.connect(self._update_instrument_status)
 
         self.nav.setup_shortcuts()
 
@@ -332,7 +341,10 @@ class MainWindow(CleanupMixin, QMainWindow):
         logger.debug("Switching to Power Analyser UI")
         self._hide_all_instrument_uis()
         if self.n6705c_analyser_ui is None:
-            self.n6705c_analyser_ui = N6705CAnalyserUI(n6705c_top=self.n6705c_top)
+            self.n6705c_analyser_ui = N6705CAnalyserUI(
+                n6705c_top=self.n6705c_top,
+                instrument_manager=self.instrument_manager,
+            )
             self.instrument_ui_container_layout.addWidget(self.n6705c_analyser_ui)
         else:
             self.n6705c_analyser_ui._sync_from_top()
@@ -345,7 +357,10 @@ class MainWindow(CleanupMixin, QMainWindow):
         logger.debug("Switching to Datalog UI")
         self._hide_all_instrument_uis()
         if self.n6705c_datalog_ui is None:
-            self.n6705c_datalog_ui = N6705CDatalogUI(n6705c_top=self.n6705c_top)
+            self.n6705c_datalog_ui = N6705CDatalogUI(
+                n6705c_top=self.n6705c_top,
+                instrument_manager=self.instrument_manager,
+            )
             self.instrument_ui_container_layout.addWidget(self.n6705c_datalog_ui)
         else:
             self.n6705c_datalog_ui._sync_from_top()
@@ -357,7 +372,10 @@ class MainWindow(CleanupMixin, QMainWindow):
         logger.debug("Switching to Oscilloscope UI")
         self._hide_all_instrument_uis()
         if self.oscilloscope_ui is None:
-            self.oscilloscope_ui = OscilloscopeBaseUI(mso64b_top=self.mso64b_top)
+            self.oscilloscope_ui = OscilloscopeBaseUI(
+                mso64b_top=self.mso64b_top,
+                instrument_manager=self.instrument_manager,
+            )
             self.oscilloscope_ui.connection_changed.connect(self._update_instrument_status)
             self.instrument_ui_container_layout.addWidget(self.oscilloscope_ui)
         else:
@@ -369,7 +387,9 @@ class MainWindow(CleanupMixin, QMainWindow):
         logger.debug("Switching to Thermal Chamber UI")
         self._hide_all_instrument_uis()
         if self.vt6002_chamber_ui is None:
-            self.vt6002_chamber_ui = VT6002ChamberUI()
+            self.vt6002_chamber_ui = VT6002ChamberUI(
+                instrument_manager=self.instrument_manager,
+            )
             self.vt6002_chamber_ui.connection_changed.connect(self._update_instrument_status)
             self.instrument_ui_container_layout.addWidget(self.vt6002_chamber_ui)
         else:
@@ -385,6 +405,7 @@ class MainWindow(CleanupMixin, QMainWindow):
                 n6705c_top=self.n6705c_top,
                 mso64b_top=self.mso64b_top,
                 vt6002_chamber_ui=self.vt6002_chamber_ui,
+                instrument_manager=self.instrument_manager,
             )
             self.instrument_ui_container_layout.addWidget(self.pmu_test_ui)
         else:
@@ -402,7 +423,10 @@ class MainWindow(CleanupMixin, QMainWindow):
         self._hide_all_instrument_uis()
         if self.consumption_test_ui is None:
             try:
-                self.consumption_test_ui = ConsumptionTestWrapper(n6705c_top=self.n6705c_top)
+                self.consumption_test_ui = ConsumptionTestWrapper(
+                    n6705c_top=self.n6705c_top,
+                    instrument_manager=self.instrument_manager,
+                )
             except Exception:
                 logger.error("Failed to create ConsumptionTestWrapper", exc_info=True)
                 return
@@ -421,7 +445,10 @@ class MainWindow(CleanupMixin, QMainWindow):
         logger.debug("Switching to Charger Test UI: selected_test=%s", selected_test)
         self._hide_all_instrument_uis()
         if self.charger_test_ui is None:
-            self.charger_test_ui = ChargerTestUI(n6705c_top=self.n6705c_top)
+            self.charger_test_ui = ChargerTestUI(
+                n6705c_top=self.n6705c_top,
+                instrument_manager=self.instrument_manager,
+            )
             self.instrument_ui_container_layout.addWidget(self.charger_test_ui)
         else:
             self.charger_test_ui._sync_from_top()
@@ -441,6 +468,7 @@ class MainWindow(CleanupMixin, QMainWindow):
                 n6705c_top=self.n6705c_top,
                 mso64b_top=self.mso64b_top,
                 vt6002_chamber_ui=self.vt6002_chamber_ui,
+                instrument_manager=self.instrument_manager,
             )
             self.instrument_ui_container_layout.addWidget(self.custom_test_ui)
         else:
@@ -615,5 +643,6 @@ class MainWindow(CleanupMixin, QMainWindow):
 
     def closeEvent(self, event):
         self.status_panel.suppress_toasts()
+        self.instrument_manager.shutdown()
         self._perform_close_cleanup()
         super().closeEvent(event)

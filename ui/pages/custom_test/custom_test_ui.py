@@ -270,7 +270,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
     serial_data_received = Signal(bytes)
 
     def __init__(self, n6705c_top=None, mso64b_top=None,
-                 vt6002_chamber_ui=None, parent=None) -> None:
+                 vt6002_chamber_ui=None, instrument_manager=None, parent=None) -> None:
         super().__init__(parent)
         self.setObjectName("customTestPage")
         self.setStyleSheet(_PAGE_STYLE)
@@ -278,6 +278,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         self._n6705c_top_ref = n6705c_top
         self._mso64b_top_ref = mso64b_top
         self._vt6002_chamber_ui_ref = vt6002_chamber_ui
+        self._instrument_manager = instrument_manager
 
         self.init_n6705c_connection(n6705c_top)
         self.init_vt6002_connection(vt6002_chamber_ui)

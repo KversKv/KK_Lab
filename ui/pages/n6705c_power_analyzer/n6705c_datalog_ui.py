@@ -980,10 +980,11 @@ class FixedPopupComboBox(DarkComboBox):
 class N6705CDatalogUI(QWidget):
     connection_status_changed = Signal(bool)
 
-    def __init__(self, n6705c_top=None):
+    def __init__(self, n6705c_top=None, instrument_manager=None):
         super().__init__()
 
         self._top = n6705c_top
+        self._instrument_manager = instrument_manager
         self.rm = None
         self.n6705c_a = None
         self.n6705c_b = None
@@ -1067,6 +1068,42 @@ class N6705CDatalogUI(QWidget):
             self._sync_from_top()
             if hasattr(self._top, 'connection_changed'):
                 self._top.connection_changed.connect(self._sync_from_top)
+
+        if self._instrument_manager:
+            self._instrument_manager.sessions_changed.connect(self._on_manager_sessions_changed)
+
+    def _on_manager_sessions_changed(self):
+        if self._top:
+            return
+        sessions = self._instrument_manager.sessions(instrument_type="n6705c")
+        for snap in sessions:
+            label = snap.slot.upper() if snap.slot in ("A", "B", "a", "b") else None
+            if label is None:
+                continue
+            if snap.connected:
+                instance = self._instrument_manager.get_instance(snap.session_id)
+                if label == "A":
+                    self.n6705c_a = instance
+                    self.is_connected_a = True
+                elif label == "B":
+                    self.n6705c_b = instance
+                    self.is_connected_b = True
+                display_serial = snap.serial if snap.serial else snap.resource
+                self._assign_slot(label, display_serial, "N6705C", snap.resource)
+                self._ensure_device_card_exists(display_serial, "N6705C", snap.resource)
+            else:
+                if label == "A" and self.is_connected_a:
+                    self.n6705c_a = None
+                    self.is_connected_a = False
+                    self._clear_slot(label)
+                elif label == "B" and self.is_connected_b:
+                    self.n6705c_b = None
+                    self.is_connected_b = False
+                    self._clear_slot(label)
+        self.connection_status_changed.emit(self.is_connected_a)
+        self._refresh_channel_config(force=True)
+        self._sync_device_card_states()
+        self._update_time_offset_btn_visibility()
 
     def _sync_from_top(self):
         if not self._top:

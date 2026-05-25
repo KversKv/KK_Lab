@@ -33,11 +33,12 @@ class PMUTestUI(QWidget):
         "clk_test": 5,
     }
 
-    def __init__(self, n6705c_top=None, mso64b_top=None, vt6002_chamber_ui=None):
+    def __init__(self, n6705c_top=None, mso64b_top=None, vt6002_chamber_ui=None, instrument_manager=None):
         super().__init__()
         self._n6705c_top = n6705c_top
         self._mso64b_top = mso64b_top
         self._vt6002_chamber_ui = vt6002_chamber_ui
+        self._instrument_manager = instrument_manager
         self._setup_style()
         self._create_layout()
         self._init_ui_elements()

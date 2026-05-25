@@ -905,7 +905,7 @@ class OscilloscopeBaseUI(QWidget):
         }
     """
 
-    def __init__(self, mso64b_top=None, parent=None):
+    def __init__(self, mso64b_top=None, instrument_manager=None, parent=None):
         super().__init__(parent)
         self.channels = []
         self.channel_cards = []
@@ -914,6 +914,7 @@ class OscilloscopeBaseUI(QWidget):
         self.is_connected = False
 
         self.mso64b_top = mso64b_top
+        self._instrument_manager = instrument_manager
         self.controller = OscilloscopeController()
         self.controller.set_log_callback(self.append_log)
 

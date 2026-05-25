@@ -22,6 +22,10 @@ class N6705CTop(QObject):
         self.visa_resource_b = ""
         self.serial_a = ""
         self.serial_b = ""
+        self._manager = None
+
+    def set_instrument_manager(self, manager):
+        self._manager = manager
 
     def connect_a(self, visa_resource, n6705c_instance=None, serial=""):
         logger.debug("N6705CTop connect_a: resource=%s, serial=%s", visa_resource, serial)
@@ -32,6 +36,12 @@ class N6705CTop(QObject):
         self.is_connected_a = True
         self.visa_resource_a = visa_resource
         self.serial_a = serial
+        if self._manager:
+            from core.instruments import InstrumentSpec
+            self._manager.attach_external(
+                InstrumentSpec(instrument_type="n6705c", resource=visa_resource, slot="A"),
+                instance=self.n6705c_a, serial=serial, model="N6705C",
+            )
         self.connection_changed.emit()
 
     def connect_b(self, visa_resource, n6705c_instance=None, serial=""):
@@ -43,6 +53,12 @@ class N6705CTop(QObject):
         self.is_connected_b = True
         self.visa_resource_b = visa_resource
         self.serial_b = serial
+        if self._manager:
+            from core.instruments import InstrumentSpec
+            self._manager.attach_external(
+                InstrumentSpec(instrument_type="n6705c", resource=visa_resource, slot="B"),
+                instance=self.n6705c_b, serial=serial, model="N6705C",
+            )
         self.connection_changed.emit()
 
     def disconnect_a(self):
@@ -56,6 +72,13 @@ class N6705CTop(QObject):
         self.is_connected_a = False
         self.visa_resource_a = ""
         self.serial_a = ""
+        if self._manager:
+            session = self._manager.get_session("n6705c:A")
+            if session and session.connected:
+                session.instance = None
+                session.connected = False
+                self._manager.session_disconnected.emit("n6705c:A")
+                self._manager.sessions_changed.emit()
         self.connection_changed.emit()
 
     def disconnect_b(self):
@@ -69,6 +92,13 @@ class N6705CTop(QObject):
         self.is_connected_b = False
         self.visa_resource_b = ""
         self.serial_b = ""
+        if self._manager:
+            session = self._manager.get_session("n6705c:B")
+            if session and session.connected:
+                session.instance = None
+                session.connected = False
+                self._manager.session_disconnected.emit("n6705c:B")
+                self._manager.sessions_changed.emit()
         self.connection_changed.emit()
 
     def disconnect_all(self):

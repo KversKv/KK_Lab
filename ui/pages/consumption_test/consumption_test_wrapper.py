@@ -16,9 +16,10 @@ class ConsumptionTestWrapper(QWidget):
         "high_low_temp": 1,
     }
 
-    def __init__(self, n6705c_top=None):
+    def __init__(self, n6705c_top=None, instrument_manager=None):
         super().__init__()
         self._n6705c_top = n6705c_top
+        self._instrument_manager = instrument_manager
         self._setup_style()
         self._create_layout()
 

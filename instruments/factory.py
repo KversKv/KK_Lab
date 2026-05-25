@@ -9,6 +9,24 @@ from log_config import get_logger
 logger = get_logger(__name__)
 
 
+_INSTRUMENT_CREATORS = {
+    "n6705c": lambda **kw: N6705C(kw["resource"]),
+    "mso64b": lambda **kw: MSO64B(kw["resource"]),
+    "dsox4034a": lambda **kw: DSOX4034A(kw["resource"]),
+    "vt6002": lambda **kw: VT6002(kw.get("port", kw.get("resource", "")), kw.get("baudrate", 9600)),
+    "keysight53230a": lambda **kw: Keysight53230A(kw["resource"]),
+}
+
+
+def create_instrument(instrument_type: str, **kwargs):
+    logger.debug("create_instrument: type=%s, kwargs=%s", instrument_type, kwargs)
+    key = str(instrument_type).strip().lower()
+    creator = _INSTRUMENT_CREATORS.get(key)
+    if creator is None:
+        raise ValueError(f"Unknown instrument type: {instrument_type}")
+    return creator(**kwargs)
+
+
 def create_oscilloscope(osc_type: str, resource: str):
     logger.debug("create_oscilloscope: type=%s, resource=%s", osc_type, resource)
     if osc_type == "dsox4034a":

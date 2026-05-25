@@ -16,6 +16,10 @@ class MSO64BTop(QObject):
         self.is_connected = False
         self.visa_resource = ""
         self.scope_type = ""
+        self._manager = None
+
+    def set_instrument_manager(self, manager):
+        self._manager = manager
 
     def connect_instrument(self, visa_resource, mso64b_instance=None, scope_type="MSO64B"):
         logger.debug("MSO64BTop connect_instrument: resource=%s, type=%s", visa_resource, scope_type)
@@ -27,6 +31,19 @@ class MSO64BTop(QObject):
         self.is_connected = True
         self.visa_resource = visa_resource
         self.scope_type = scope_type
+        inst_type = scope_type.lower() if scope_type else "mso64b"
+        if inst_type not in ("mso64b", "dsox4034a"):
+            inst_type = "mso64b"
+        if self._manager:
+            from core.instruments import InstrumentSpec
+            self._manager.attach_external(
+                InstrumentSpec(
+                    instrument_type=inst_type,
+                    resource=visa_resource,
+                    slot="main_scope",
+                ),
+                instance=self.mso64b, serial="", model=scope_type,
+            )
         self.connection_changed.emit()
 
     def disconnect(self):
@@ -39,5 +56,17 @@ class MSO64BTop(QObject):
         self.mso64b = None
         self.is_connected = False
         self.visa_resource = ""
+        scope_type = self.scope_type
         self.scope_type = ""
+        if self._manager:
+            inst_type = scope_type.lower() if scope_type else "mso64b"
+            if inst_type not in ("mso64b", "dsox4034a"):
+                inst_type = "mso64b"
+            session_id = f"{inst_type}:main_scope"
+            session = self._manager.get_session(session_id)
+            if session and session.connected:
+                session.instance = None
+                session.connected = False
+                self._manager.session_disconnected.emit(session_id)
+                self._manager.sessions_changed.emit()
         self.connection_changed.emit()

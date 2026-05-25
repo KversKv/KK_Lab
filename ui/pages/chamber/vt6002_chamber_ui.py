@@ -98,9 +98,10 @@ class VT6002ChamberUI(QWidget):
 
     connection_changed = Signal()
 
-    def __init__(self):
+    def __init__(self, instrument_manager=None):
         super().__init__()
         self.vt6002 = None
+        self._instrument_manager = instrument_manager
         self.timer = QTimer()
         self.is_chamber_on = False
         self.current_port = None
