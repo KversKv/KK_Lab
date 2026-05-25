@@ -1073,7 +1073,7 @@ class N6705CDatalogUI(QWidget):
             self._instrument_manager.sessions_changed.connect(self._on_manager_sessions_changed)
 
     def _on_manager_sessions_changed(self):
-        if self._top:
+        if not self._instrument_manager:
             return
         sessions = self._instrument_manager.sessions(instrument_type="n6705c")
         for snap in sessions:
@@ -2248,11 +2248,23 @@ class N6705CDatalogUI(QWidget):
             self.is_connected_a = True
             if self._top:
                 self._top.connect_a(visa_resource, n6705c_instance=n6705c, serial=serial)
+            elif self._instrument_manager:
+                from core.instruments import InstrumentSpec
+                self._instrument_manager.attach_external(
+                    InstrumentSpec(instrument_type="n6705c", resource=visa_resource, slot="A"),
+                    instance=n6705c, serial=serial, model="N6705C",
+                )
         elif slot_label == "B":
             self.n6705c_b = n6705c
             self.is_connected_b = True
             if self._top:
                 self._top.connect_b(visa_resource, n6705c_instance=n6705c, serial=serial)
+            elif self._instrument_manager:
+                from core.instruments import InstrumentSpec
+                self._instrument_manager.attach_external(
+                    InstrumentSpec(instrument_type="n6705c", resource=visa_resource, slot="B"),
+                    instance=n6705c, serial=serial, model="N6705C",
+                )
 
         self._assign_slot(slot_label, serial, "N6705C", visa_resource)
 
@@ -2314,12 +2326,18 @@ class N6705CDatalogUI(QWidget):
                     if self._top:
                         self._top.disconnect_a()
                         should_close_locally = False
+                    elif self._instrument_manager:
+                        self._instrument_manager.disconnect_async("n6705c:A")
+                        should_close_locally = False
                 elif label_char == "B":
                     n6705c_to_close = self.n6705c_b
                     self.n6705c_b = None
                     self.is_connected_b = False
                     if self._top:
                         self._top.disconnect_b()
+                        should_close_locally = False
+                    elif self._instrument_manager:
+                        self._instrument_manager.disconnect_async("n6705c:B")
                         should_close_locally = False
                 break
 

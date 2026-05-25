@@ -37,8 +37,11 @@ class ConnectWorker(QObject):
             if instance is not None:
                 try:
                     self._profile.disconnect(instance)
-                except Exception:
-                    pass
+                except Exception as disc_err:
+                    logger.warning(
+                        "Failed to close half-connected instance for %s: %s",
+                        self._session_id, disc_err, exc_info=True,
+                    )
             self.failed.emit(self._session_id, str(e))
         finally:
             self.finished.emit()

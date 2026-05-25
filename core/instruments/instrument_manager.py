@@ -19,8 +19,10 @@ logger = get_logger(__name__)
 
 class InstrumentManager(QObject):
     sessions_changed = Signal()
+    session_changed = Signal(str)
     session_connected = Signal(str)
     session_disconnected = Signal(str)
+    disconnect_finished = Signal(str)
     connection_failed = Signal(str, str)
     scan_finished = Signal(str, list)
     scan_failed = Signal(str, str)
@@ -174,6 +176,7 @@ class InstrumentManager(QObject):
         self._sessions[session_id] = session
         logger.info("Attached external session %s (resource=%s)", session_id, spec.resource)
         self.session_connected.emit(session_id)
+        self.session_changed.emit(session_id)
         self.sessions_changed.emit()
         return session_id
 
@@ -191,17 +194,23 @@ class InstrumentManager(QObject):
             logger.warning("No profile for %s, removing session directly", session_id)
             session.instance = None
             session.connected = False
+            session.touch()
             self.session_disconnected.emit(session_id)
+            self.session_changed.emit(session_id)
             self.sessions_changed.emit()
+            self.disconnect_finished.emit(session_id)
             return
 
         instance = session.instance
         session.instance = None
         session.connected = False
+        session.touch()
         self.session_disconnected.emit(session_id)
+        self.session_changed.emit(session_id)
         self.sessions_changed.emit()
 
         if instance is None:
+            self.disconnect_finished.emit(session_id)
             return
 
         thread_key = f"disconnect:{session_id}"
@@ -212,6 +221,7 @@ class InstrumentManager(QObject):
         thread.started.connect(worker.run)
         worker.finished.connect(thread.quit)
         worker.finished.connect(worker.deleteLater)
+        worker.finished.connect(lambda sid=session_id: self.disconnect_finished.emit(sid))
         thread.finished.connect(thread.deleteLater)
         thread.finished.connect(lambda k=thread_key: self._threads.pop(k, None))
 
@@ -271,6 +281,8 @@ class InstrumentManager(QObject):
         else:
             session.busy = False
             session.busy_owner = ""
+        session.touch()
+        self.session_changed.emit(session_id)
         self.sessions_changed.emit()
         return True
 
@@ -283,7 +295,11 @@ class InstrumentManager(QObject):
                     try:
                         profile.disconnect(session.instance)
                     except Exception as e:
-                        logger.warning("Error disconnecting removed session %s: %s", session_id, e)
+                        logger.warning(
+                            "Error disconnecting removed session %s: %s",
+                            session_id, e, exc_info=True,
+                        )
+            self.session_changed.emit(session_id)
             self.sessions_changed.emit()
 
     def _on_connected(self, session_id: str, instance: object, identity: InstrumentIdentity):
@@ -296,11 +312,13 @@ class InstrumentManager(QObject):
         session.model = identity.model
         session.serial = identity.serial
         session.last_error = ""
+        session.touch()
         logger.info(
             "Session %s connected: model=%s, serial=%s",
             session_id, identity.model, identity.serial,
         )
         self.session_connected.emit(session_id)
+        self.session_changed.emit(session_id)
         self.sessions_changed.emit()
 
     def _on_connect_failed(self, session_id: str, error: str):
@@ -309,8 +327,10 @@ class InstrumentManager(QObject):
             session.last_error = error
             session.connected = False
             session.instance = None
+            session.touch()
         logger.error("Session %s connection failed: %s", session_id, error)
         self.connection_failed.emit(session_id, error)
+        self.session_changed.emit(session_id)
         self.sessions_changed.emit()
 
     def _on_scan_finished(self, instrument_type: str, candidates: list):
@@ -333,11 +353,13 @@ class InstrumentManager(QObject):
         for thread in list(self._threads.values()):
             if thread.isRunning():
                 thread.quit()
-                thread.wait(3000)
+                if not thread.wait(3000):
+                    logger.warning("Thread did not finish in time during shutdown")
         for thread in list(self._scan_threads.values()):
             if thread.isRunning():
                 thread.quit()
-                thread.wait(3000)
+                if not thread.wait(3000):
+                    logger.warning("Scan thread did not finish in time during shutdown")
         self._threads.clear()
         self._workers.clear()
         self._scan_threads.clear()
@@ -350,7 +372,10 @@ class InstrumentManager(QObject):
                     try:
                         profile.disconnect(session.instance)
                     except Exception as e:
-                        logger.warning("Shutdown disconnect error for %s: %s", session.session_id, e)
+                        logger.warning(
+                            "Shutdown disconnect error for %s: %s",
+                            session.session_id, e, exc_info=True,
+                        )
                 session.instance = None
                 session.connected = False
         self._sessions.clear()

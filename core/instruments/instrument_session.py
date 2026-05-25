@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 
 
@@ -21,6 +22,10 @@ class InstrumentSession:
     busy: bool = False
     busy_owner: str = ""
     last_error: str = ""
+    updated_at: float = field(default_factory=time.time)
+
+    def touch(self) -> None:
+        self.updated_at = time.time()
 
     def to_snapshot(self) -> InstrumentSnapshot:
         return InstrumentSnapshot(
@@ -36,7 +41,9 @@ class InstrumentSession:
             capabilities=frozenset(self.capabilities),
             connected=self.connected,
             busy=self.busy,
+            busy_owner=self.busy_owner,
             last_error=self.last_error,
+            updated_at=self.updated_at,
         )
 
 
@@ -54,7 +61,9 @@ class InstrumentSnapshot:
     capabilities: frozenset[str] = field(default_factory=frozenset)
     connected: bool = False
     busy: bool = False
+    busy_owner: str = ""
     last_error: str = ""
+    updated_at: float = 0.0
 
 
 @dataclass

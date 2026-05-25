@@ -28,6 +28,12 @@ class ProfileRegistry:
     def types(self) -> list[str]:
         return list(self._profiles.keys())
 
+    def find_by_role(self, role: str) -> list[InstrumentProfile]:
+        return [p for p in self._profiles.values() if p.role == role]
+
+    def find_by_capability(self, capability: str) -> list[InstrumentProfile]:
+        return [p for p in self._profiles.values() if capability in p.capabilities]
+
 
 def _create_n6705c(spec: InstrumentSpec) -> object:
     from debug_config import DEBUG_MOCK
@@ -39,13 +45,22 @@ def _create_n6705c(spec: InstrumentSpec) -> object:
 
 
 def _verify_n6705c(instance: object) -> InstrumentIdentity:
+    from debug_config import DEBUG_MOCK
+    if DEBUG_MOCK:
+        return InstrumentIdentity(
+            model="N6705C", serial="MOCK", vendor="Keysight", firmware="MOCK",
+        )
     idn = ""
     if hasattr(instance, "instr") and instance.instr is not None:
-        try:
-            idn = instance.instr.query("*IDN?").strip()
-        except Exception:
-            pass
-    parts = idn.split(",") if idn else []
+        idn = instance.instr.query("*IDN?").strip()
+    if not idn:
+        raise ConnectionError("N6705C verify failed: unable to query *IDN?")
+    upper_idn = idn.upper()
+    if "N6705C" not in upper_idn and "N6705" not in upper_idn:
+        raise ConnectionError(
+            f"N6705C verify failed: IDN does not match expected device. Got: {idn}"
+        )
+    parts = idn.split(",")
     return InstrumentIdentity(
         model=parts[1].strip() if len(parts) > 1 else "N6705C",
         serial=parts[2].strip() if len(parts) > 2 else "",
@@ -133,18 +148,24 @@ def _create_mso64b(spec: InstrumentSpec) -> object:
 
 
 def _verify_mso64b(instance: object) -> InstrumentIdentity:
+    from debug_config import DEBUG_MOCK
+    if DEBUG_MOCK:
+        return InstrumentIdentity(
+            model="MSO64B", serial="MOCK000", vendor="Tektronix", firmware="MOCK",
+        )
     idn = ""
     if hasattr(instance, "identify_instrument"):
-        try:
-            idn = instance.identify_instrument()
-        except Exception:
-            pass
+        idn = instance.identify_instrument()
     elif hasattr(instance, "instrument") and instance.instrument is not None:
-        try:
-            idn = instance.instrument.query("*IDN?").strip()
-        except Exception:
-            pass
-    parts = idn.split(",") if idn else []
+        idn = instance.instrument.query("*IDN?").strip()
+    if not idn:
+        raise ConnectionError("MSO64B verify failed: unable to query identity")
+    upper_idn = idn.upper()
+    if "MSO64B" not in upper_idn and "MSO6" not in upper_idn:
+        raise ConnectionError(
+            f"MSO64B verify failed: IDN does not match expected device. Got: {idn}"
+        )
+    parts = idn.split(",")
     return InstrumentIdentity(
         model=parts[1].strip() if len(parts) > 1 else "MSO64B",
         serial=parts[2].strip() if len(parts) > 2 else "",
@@ -224,18 +245,24 @@ def _create_dsox4034a(spec: InstrumentSpec) -> object:
 
 
 def _verify_dsox4034a(instance: object) -> InstrumentIdentity:
+    from debug_config import DEBUG_MOCK
+    if DEBUG_MOCK:
+        return InstrumentIdentity(
+            model="DSOX4034A", serial="MOCK000", vendor="Keysight", firmware="MOCK",
+        )
     idn = ""
     if hasattr(instance, "identify_instrument"):
-        try:
-            idn = instance.identify_instrument()
-        except Exception:
-            pass
+        idn = instance.identify_instrument()
     elif hasattr(instance, "instrument") and instance.instrument is not None:
-        try:
-            idn = instance.instrument.query("*IDN?").strip()
-        except Exception:
-            pass
-    parts = idn.split(",") if idn else []
+        idn = instance.instrument.query("*IDN?").strip()
+    if not idn:
+        raise ConnectionError("DSOX4034A verify failed: unable to query identity")
+    upper_idn = idn.upper()
+    if "DSOX4034A" not in upper_idn and "DSO-X 4034A" not in upper_idn.replace(" ", " "):
+        raise ConnectionError(
+            f"DSOX4034A verify failed: IDN does not match expected device. Got: {idn}"
+        )
+    parts = idn.split(",")
     return InstrumentIdentity(
         model=parts[1].strip() if len(parts) > 1 else "DSOX4034A",
         serial=parts[2].strip() if len(parts) > 2 else "",
@@ -311,6 +338,22 @@ def _create_vt6002(spec: InstrumentSpec) -> object:
 
 
 def _verify_vt6002(instance: object) -> InstrumentIdentity:
+    from debug_config import DEBUG_MOCK
+    if DEBUG_MOCK:
+        return InstrumentIdentity(
+            model="VT6002", serial="", vendor="Votsch",
+        )
+    if hasattr(instance, "get_current_temp"):
+        temp = instance.get_current_temp()
+        if temp is None:
+            raise ConnectionError(
+                "VT6002 verify failed: unable to read current temperature"
+            )
+    elif hasattr(instance, "ser") and instance.ser is not None:
+        if not instance.ser.is_open:
+            raise ConnectionError("VT6002 verify failed: serial port not open")
+    else:
+        raise ConnectionError("VT6002 verify failed: no valid interface found")
     return InstrumentIdentity(
         model="VT6002",
         serial="",
@@ -364,18 +407,23 @@ def _create_keysight53230a(spec: InstrumentSpec) -> object:
 
 
 def _verify_keysight53230a(instance: object) -> InstrumentIdentity:
+    from debug_config import DEBUG_MOCK
+    if DEBUG_MOCK:
+        return InstrumentIdentity(
+            model="53230A", serial="MOCK000", vendor="Keysight", firmware="MOCK",
+        )
     idn = ""
     if hasattr(instance, "identify"):
-        try:
-            idn = instance.identify()
-        except Exception:
-            pass
+        idn = instance.identify()
     elif hasattr(instance, "identify_instrument"):
-        try:
-            idn = instance.identify_instrument()
-        except Exception:
-            pass
-    parts = idn.split(",") if idn else []
+        idn = instance.identify_instrument()
+    if not idn:
+        raise ConnectionError("53230A verify failed: unable to query identity")
+    if "53230" not in idn:
+        raise ConnectionError(
+            f"53230A verify failed: IDN does not match expected device. Got: {idn}"
+        )
+    parts = idn.split(",")
     return InstrumentIdentity(
         model=parts[1].strip() if len(parts) > 1 else "53230A",
         serial=parts[2].strip() if len(parts) > 2 else "",

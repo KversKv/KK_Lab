@@ -433,7 +433,7 @@ class N6705CAnalyserUI(QWidget):
             self._instrument_manager.sessions_changed.connect(self._on_manager_sessions_changed)
 
     def _on_manager_sessions_changed(self):
-        if self._top:
+        if not self._instrument_manager:
             return
         sessions = self._instrument_manager.sessions(instrument_type="n6705c")
         for snap in sessions:
