@@ -1174,12 +1174,14 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
 
         used_ids = self._get_used_instrument_ids()
 
-        self._context = ExecutionContext()
-        if "n6705c" in used_ids:
+        self._context = ExecutionContext(instrument_manager=self._instrument_manager)
+        self._context.populate_instruments_from_manager()
+        if "n6705c" in used_ids and self._context.instruments.get("n6705c") is None:
             self._context.instruments["n6705c"] = self.n6705c
-        if "vt6002" in used_ids:
+        if "vt6002" in used_ids and self._context.instruments.get("chamber") is None:
             self._context.instruments["chamber"] = self.vt6002
         if ("mso64b" in used_ids or "dsox4034a" in used_ids) \
+                and self._context.instruments.get("scope") is None \
                 and self._mso64b_top_ref and self._mso64b_top_ref.is_connected:
             self._context.instruments["scope"] = self._mso64b_top_ref.mso64b
 

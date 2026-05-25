@@ -445,6 +445,21 @@ class OscilloscopeConnectionMixin:
             self.scope_connection_changed.emit(True)
             return
 
+        if self._scope_instrument_manager:
+            from core.instruments import InstrumentSpec
+            inst_type = "dsox4034a" if "DSOX" in scope_type.upper() else "mso64b"
+            if hasattr(self, 'set_page_status'):
+                self.set_page_status(f"Connecting {scope_type}...")
+            self.scope_connect_btn.setEnabled(False)
+            self._scope_instrument_manager.connect_async(InstrumentSpec(
+                instrument_type=inst_type,
+                role="scope",
+                connection_kind="visa",
+                slot="main_scope",
+                resource=resource,
+            ))
+            return
+
         if hasattr(self, 'set_page_status'):
             self.set_page_status(f"Connecting {scope_type}...")
         if hasattr(self, 'append_log'):

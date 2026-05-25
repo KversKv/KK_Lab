@@ -129,9 +129,8 @@ class TestResultException(Exception):
 
 
 class ExecutionContext:
-    """执行上下文：管理变量池、结果集和仪器句柄"""
 
-    def __init__(self) -> None:
+    def __init__(self, instrument_manager=None) -> None:
         self.variables: Dict[str, Any] = {}
         self.records: List[Dict[str, Any]] = []
         self.instruments: Dict[str, Any] = {
@@ -143,6 +142,7 @@ class ExecutionContext:
             "i2c": None,
             "uart": None,
         }
+        self._instrument_manager = instrument_manager
         self._stop_requested: bool = False
         self._pause_requested: bool = False
         self._step_mode: bool = False
@@ -156,6 +156,30 @@ class ExecutionContext:
 
         self.on_step_started: Optional[Any] = None
         self.on_step_finished: Optional[Any] = None
+
+    def populate_instruments_from_manager(self) -> None:
+        if not self._instrument_manager:
+            return
+        mgr = self._instrument_manager
+        for session_id in ("n6705c:A", "n6705c:B"):
+            session = mgr.get_session(session_id)
+            if session and session.connected and session.instance:
+                self.instruments["n6705c"] = session.instance
+                break
+        for scope_type in ("mso64b:main_scope", "dsox4034a:main_scope"):
+            session = mgr.get_session(scope_type)
+            if session and session.connected and session.instance:
+                self.instruments["scope"] = session.instance
+                break
+        session = mgr.get_session("vt6002:default")
+        if session and session.connected and session.instance:
+            self.instruments["chamber"] = session.instance
+        session = mgr.get_session("keysight53230a:counter")
+        if session and session.connected and session.instance:
+            self.instruments["freq_counter"] = session.instance
+        session = mgr.get_session("bes_usb_i2c:default")
+        if session and session.connected and session.instance:
+            self.instruments["i2c"] = session.instance
 
     def set_variable(self, name: str, value: Any, export: bool = True) -> None:
         self.variables[name] = value

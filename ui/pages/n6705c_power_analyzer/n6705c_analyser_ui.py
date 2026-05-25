@@ -431,6 +431,19 @@ class N6705CAnalyserUI(QWidget):
 
         if self._instrument_manager:
             self._instrument_manager.sessions_changed.connect(self._on_manager_sessions_changed)
+            self._instrument_manager.connection_failed.connect(self._on_manager_connection_failed)
+
+    def _on_manager_connection_failed(self, session_id: str, error: str):
+        if not session_id.startswith("n6705c:"):
+            return
+        label = session_id.split(":")[1].upper() if ":" in session_id else None
+        if label is None or label not in self.conn_widgets:
+            return
+        w = self.conn_widgets[label]
+        w["status"].setText("Connection failed")
+        w["status"].setStyleSheet("color: #e53935; font-weight:bold;")
+        w["connect_btn"].setEnabled(True)
+        logger.error("[%s] Manager connection failed: %s", label, error)
 
     def _on_manager_sessions_changed(self):
         if not self._instrument_manager:
@@ -453,6 +466,7 @@ class N6705CAnalyserUI(QWidget):
                     w["combo"].clear()
                     w["combo"].addItem(snap.resource)
                 update_connect_button_state(w["connect_btn"], connected=True)
+                w["connect_btn"].setEnabled(True)
                 self._update_ui_connection_state(label, True)
             else:
                 if self.devices[label]["is_connected"]:
@@ -461,6 +475,7 @@ class N6705CAnalyserUI(QWidget):
                     w["status"].setText("\u25cf Disconnected")
                     w["status"].setStyleSheet("color: #8ea6cf; font-weight:bold;")
                     update_connect_button_state(w["connect_btn"], connected=False)
+                    w["connect_btn"].setEnabled(True)
                     self._update_ui_connection_state(label, False)
         self._rebuild_dynamic_sections()
         if self.devices[self.current_device]["is_connected"]:
@@ -524,6 +539,11 @@ class N6705CAnalyserUI(QWidget):
             return
         if self._sync_thread is not None and self._sync_thread.isRunning():
             return
+        if self._instrument_manager:
+            session_id = f"n6705c:{self.current_device}"
+            session = self._instrument_manager.get_session(session_id)
+            if session and session.busy:
+                return
         worker = _ChannelSyncWorker(dev["n6705c"], self.current_channel)
         thread = QThread()
         worker.moveToThread(thread)
@@ -1908,6 +1928,18 @@ class N6705CAnalyserUI(QWidget):
         w["status"].setStyleSheet("color: #ff9800; font-weight:bold;")
         w["connect_btn"].setEnabled(False)
 
+        if self._instrument_manager:
+            from core.instruments import InstrumentSpec
+            address = w["combo"].currentText()
+            self._instrument_manager.connect_async(InstrumentSpec(
+                instrument_type="n6705c",
+                role="power_analyzer",
+                connection_kind="visa",
+                slot=label,
+                resource=address,
+            ))
+            return
+
         try:
             address = w["combo"].currentText()
             if DEBUG_MOCK:
@@ -1953,7 +1985,11 @@ class N6705CAnalyserUI(QWidget):
         logger.debug("N6705C disconnecting: label=%s", label)
         w = self.conn_widgets[label]
         try:
-            if self._top:
+            if self._instrument_manager:
+                session_id = f"n6705c:{label}"
+                self._instrument_manager.disconnect_async(session_id)
+                return
+            elif self._top:
                 disconnect_fn = getattr(self._top, f"disconnect_{label.lower()}", None)
                 if disconnect_fn:
                     disconnect_fn()

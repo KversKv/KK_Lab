@@ -14,6 +14,8 @@ _DISPLAY_NAME_MAP = {
     "dsox4034a": "DSOX4034A",
     "vt6002": "VT6002",
     "keysight53230a": "53230A",
+    "serial_port": "Serial",
+    "bes_usb_i2c": "USB-I2C",
 }
 
 
@@ -83,7 +85,7 @@ class InstrumentStatusPanel:
 
         return bottom_widget
 
-    def _add_instrument_status(self, key: str, text: str):
+    def _add_instrument_status(self, key: str, text: str, dot_color: str = "#00d38a"):
         if key in self.instrument_status_items:
             return
         widget = QWidget()
@@ -98,13 +100,13 @@ class InstrumentStatusPanel:
         layout.setSpacing(8)
 
         dot = QLabel("\u25cf")
-        dot.setStyleSheet("""
-            QLabel {
-                color: #00d38a;
+        dot.setStyleSheet(f"""
+            QLabel {{
+                color: {dot_color};
                 font-size: 12px;
                 border: none;
                 background: transparent;
-            }
+            }}
         """)
         dot.setAlignment(Qt.AlignTop | Qt.AlignLeft)
 
@@ -149,13 +151,20 @@ class InstrumentStatusPanel:
         else:
             label = type_name
 
+        status_suffix = ""
+        if snapshot.disconnecting:
+            status_suffix = " [Disconnecting...]"
+        elif snapshot.busy:
+            owner_part = f" by {snapshot.busy_owner}" if snapshot.busy_owner else ""
+            status_suffix = f" [Busy{owner_part}]"
+
         if snapshot.model and snapshot.serial:
-            return f"{label} Connected to: {snapshot.model} {snapshot.serial}"
+            return f"{label} Connected to: {snapshot.model} {snapshot.serial}{status_suffix}"
         elif snapshot.serial:
-            return f"{label} Connected to: {snapshot.serial}"
+            return f"{label} Connected to: {snapshot.serial}{status_suffix}"
         elif snapshot.model:
-            return f"{label} Connected ({snapshot.model})"
-        return f"{label} Connected"
+            return f"{label} Connected ({snapshot.model}){status_suffix}"
+        return f"{label} Connected{status_suffix}"
 
     def update_instrument_status(self):
         manager = getattr(self._host, "instrument_manager", None)
@@ -163,18 +172,24 @@ class InstrumentStatusPanel:
             return
 
         snapshots = manager.sessions()
-        connected_keys: set = set()
+        active_keys: set = set()
 
         for snap in snapshots:
-            if not snap.connected:
+            if not snap.connected and not snap.disconnecting:
                 continue
             key = snap.session_id
-            connected_keys.add(key)
+            active_keys.add(key)
             display_text = self._format_snapshot_display(snap)
+            if snap.disconnecting:
+                dot_color = "#ff9800"
+            elif snap.busy:
+                dot_color = "#ffeb3b"
+            else:
+                dot_color = "#00d38a"
             self._remove_instrument_status(key)
-            self._add_instrument_status(key, display_text)
+            self._add_instrument_status(key, display_text, dot_color=dot_color)
 
-        stale_keys = set(self.instrument_status_items.keys()) - connected_keys
+        stale_keys = set(self.instrument_status_items.keys()) - active_keys
         for key in stale_keys:
             self._remove_instrument_status(key)
 

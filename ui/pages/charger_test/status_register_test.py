@@ -414,9 +414,10 @@ class CardFrame(QFrame):
 class StatusRegisterTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
     connection_status_changed = Signal(bool)
 
-    def __init__(self, n6705c_top=None, vt6002_chamber_ui=None):
+    def __init__(self, n6705c_top=None, vt6002_chamber_ui=None, instrument_manager=None):
         super().__init__()
-        self.init_n6705c_connection(n6705c_top)
+        self._instrument_manager = instrument_manager
+        self.init_n6705c_connection(n6705c_top, instrument_manager=instrument_manager)
         self.init_vt6002_connection(vt6002_chamber_ui)
         self.is_test_running = False
         self.test_thread = None

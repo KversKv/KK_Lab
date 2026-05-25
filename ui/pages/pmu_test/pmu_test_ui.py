@@ -137,19 +137,33 @@ class PMUTestUI(QWidget):
         self.dcdc_efficiency_ui = PMUDCDCEfficiencyUI(
             n6705c_top=self._n6705c_top,
             vt6002_chamber_ui=self._vt6002_chamber_ui,
+            instrument_manager=self._instrument_manager,
         )
         self.tab_widget.addTab(self.dcdc_efficiency_ui, "DCDC Efficiency")
 
-        self.output_voltage_ui = PMUOutputVoltageUI(n6705c_top=self._n6705c_top)
+        self.output_voltage_ui = PMUOutputVoltageUI(
+            n6705c_top=self._n6705c_top,
+            instrument_manager=self._instrument_manager,
+        )
         self.tab_widget.addTab(self.output_voltage_ui, "Output Voltage")
 
-        self.is_gain_ui = PMUIsGainUI(n6705c_top=self._n6705c_top, mso64b_top=self._mso64b_top)
+        self.is_gain_ui = PMUIsGainUI(
+            n6705c_top=self._n6705c_top,
+            mso64b_top=self._mso64b_top,
+            instrument_manager=self._instrument_manager,
+        )
         self.tab_widget.addTab(self.is_gain_ui, "Is_gain")
 
-        self.oscp_ui = PMUOSCPUI(n6705c_top=self._n6705c_top)
+        self.oscp_ui = PMUOSCPUI(
+            n6705c_top=self._n6705c_top,
+            instrument_manager=self._instrument_manager,
+        )
         self.tab_widget.addTab(self.oscp_ui, "OSCP")
 
-        self.gpadc_test_ui = GPADCTestUI(n6705c_top=self._n6705c_top)
+        self.gpadc_test_ui = GPADCTestUI(
+            n6705c_top=self._n6705c_top,
+            instrument_manager=self._instrument_manager,
+        )
         self.tab_widget.addTab(self.gpadc_test_ui, "GPADC Test")
 
         self.clk_test_ui = CLKTestUI(mso64b_top=self._mso64b_top)

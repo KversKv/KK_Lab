@@ -5,6 +5,7 @@ from core.instruments.instrument_session import (
     InstrumentIdentity,
     InstrumentCandidate,
     InstrumentRequirement,
+    InstrumentLease,
 )
 from core.instruments.profiles import InstrumentProfile
 from core.instruments.registry import ProfileRegistry
@@ -17,6 +18,7 @@ __all__ = [
     "InstrumentIdentity",
     "InstrumentCandidate",
     "InstrumentRequirement",
+    "InstrumentLease",
     "InstrumentProfile",
     "ProfileRegistry",
     "InstrumentManager",

@@ -576,6 +576,170 @@ KEYSIGHT53230A_PROFILE = InstrumentProfile(
 )
 
 
+def _create_serial_port(spec: InstrumentSpec) -> object:
+    from debug_config import DEBUG_MOCK
+    if DEBUG_MOCK:
+        from unittest.mock import MagicMock
+        mock_ser = MagicMock()
+        mock_ser.is_open = True
+        mock_ser.port = spec.resource
+        return mock_ser
+    import serial
+    return serial.Serial(spec.resource, baudrate=115200, timeout=1)
+
+
+def _verify_serial_port(instance: object) -> InstrumentIdentity:
+    from debug_config import DEBUG_MOCK
+    if DEBUG_MOCK:
+        return InstrumentIdentity(
+            model="SerialPort", serial="", vendor="Generic",
+        )
+    if hasattr(instance, "is_open") and instance.is_open:
+        port = getattr(instance, "port", "unknown")
+        return InstrumentIdentity(
+            model="SerialPort", serial=port, vendor="Generic",
+        )
+    raise ConnectionError("Serial port verify failed: port not open")
+
+
+def _scan_serial_port() -> list[InstrumentCandidate]:
+    from debug_config import DEBUG_MOCK
+    if DEBUG_MOCK:
+        return [
+            InstrumentCandidate(
+                instrument_type="serial_port",
+                connection_kind="serial",
+                resource="MOCK::COM1",
+                display_name="Mock Serial Port",
+            ),
+        ]
+    import serial.tools.list_ports
+    candidates = []
+    try:
+        ports = serial.tools.list_ports.comports()
+        for port in ports:
+            candidates.append(InstrumentCandidate(
+                instrument_type="serial_port",
+                connection_kind="serial",
+                resource=port.device,
+                display_name=f"{port.device} - {port.description}",
+            ))
+    except Exception as e:
+        logger.warning("Serial port scan failed: %s", e)
+    return candidates
+
+
+def _disconnect_serial_port(instance: object) -> None:
+    if hasattr(instance, "close"):
+        try:
+            instance.close()
+        except Exception as e:
+            logger.warning("Serial port disconnect error: %s", e)
+
+
+def _create_bes_usb_i2c(spec: InstrumentSpec) -> object:
+    from debug_config import DEBUG_MOCK
+    if DEBUG_MOCK:
+        from unittest.mock import MagicMock
+        mock_adapter = MagicMock()
+        mock_adapter.is_connected = True
+        mock_adapter.adapter_id = "MOCK_I2C"
+        return mock_adapter
+    try:
+        from instruments.i2c.bes_usb_i2c import BesUsbI2C
+        adapter = BesUsbI2C()
+        adapter.open()
+        return adapter
+    except ImportError:
+        raise ConnectionError(
+            "BES USB-I2C driver not available: DLL or module missing"
+        )
+
+
+def _verify_bes_usb_i2c(instance: object) -> InstrumentIdentity:
+    from debug_config import DEBUG_MOCK
+    if DEBUG_MOCK:
+        return InstrumentIdentity(
+            model="BES_USB_I2C", serial="MOCK", vendor="BES",
+        )
+    if hasattr(instance, "is_connected") and instance.is_connected:
+        adapter_id = getattr(instance, "adapter_id", "unknown")
+        return InstrumentIdentity(
+            model="BES_USB_I2C", serial=adapter_id, vendor="BES",
+        )
+    raise ConnectionError("BES USB-I2C verify failed: adapter not connected")
+
+
+def _scan_bes_usb_i2c() -> list[InstrumentCandidate]:
+    from debug_config import DEBUG_MOCK
+    if DEBUG_MOCK:
+        return [
+            InstrumentCandidate(
+                instrument_type="bes_usb_i2c",
+                connection_kind="usb",
+                resource="MOCK::BES_I2C",
+                display_name="Mock BES USB-I2C Adapter",
+            ),
+        ]
+    try:
+        from instruments.i2c.bes_usb_i2c import BesUsbI2C
+        candidates = []
+        adapters = BesUsbI2C.enumerate_adapters()
+        for adapter_info in adapters:
+            candidates.append(InstrumentCandidate(
+                instrument_type="bes_usb_i2c",
+                connection_kind="usb",
+                resource=adapter_info.get("id", ""),
+                display_name=adapter_info.get("name", "BES USB-I2C"),
+            ))
+        return candidates
+    except ImportError:
+        logger.warning("BES USB-I2C DLL not available for scan")
+        return []
+    except Exception as e:
+        logger.warning("BES USB-I2C scan failed: %s", e)
+        return []
+
+
+def _disconnect_bes_usb_i2c(instance: object) -> None:
+    if hasattr(instance, "close"):
+        try:
+            instance.close()
+        except Exception as e:
+            logger.warning("BES USB-I2C disconnect error: %s", e)
+
+
+SERIAL_PORT_PROFILE = InstrumentProfile(
+    instrument_type="serial_port",
+    display_name="Serial Port (Generic)",
+    connection_kind="serial",
+    role="serial",
+    capabilities=frozenset({
+        "serial_tx", "serial_rx",
+    }),
+    create=_create_serial_port,
+    verify=_verify_serial_port,
+    scan=_scan_serial_port,
+    disconnect=_disconnect_serial_port,
+    default_slot="default",
+)
+
+BES_USB_I2C_PROFILE = InstrumentProfile(
+    instrument_type="bes_usb_i2c",
+    display_name="BES USB-I2C Adapter",
+    connection_kind="usb",
+    role="i2c_adapter",
+    capabilities=frozenset({
+        "i2c_read", "i2c_write", "efuse_read", "efuse_write",
+    }),
+    create=_create_bes_usb_i2c,
+    verify=_verify_bes_usb_i2c,
+    scan=_scan_bes_usb_i2c,
+    disconnect=_disconnect_bes_usb_i2c,
+    default_slot="default",
+)
+
+
 def create_default_registry() -> ProfileRegistry:
     registry = ProfileRegistry()
     registry.register(N6705C_PROFILE)
@@ -583,4 +747,6 @@ def create_default_registry() -> ProfileRegistry:
     registry.register(DSOX4034A_PROFILE)
     registry.register(VT6002_PROFILE)
     registry.register(KEYSIGHT53230A_PROFILE)
+    registry.register(SERIAL_PORT_PROFILE)
+    registry.register(BES_USB_I2C_PROFILE)
     return registry

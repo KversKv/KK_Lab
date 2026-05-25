@@ -18,6 +18,7 @@ class InstrumentSession:
     capabilities: set[str] = field(default_factory=set)
     instance: object | None = None
     connected: bool = False
+    disconnecting: bool = False
     owner: str = "manager"
     busy: bool = False
     busy_owner: str = ""
@@ -40,6 +41,7 @@ class InstrumentSession:
             display_name=self.display_name,
             capabilities=frozenset(self.capabilities),
             connected=self.connected,
+            disconnecting=self.disconnecting,
             busy=self.busy,
             busy_owner=self.busy_owner,
             last_error=self.last_error,
@@ -60,6 +62,7 @@ class InstrumentSnapshot:
     display_name: str = ""
     capabilities: frozenset[str] = field(default_factory=frozenset)
     connected: bool = False
+    disconnecting: bool = False
     busy: bool = False
     busy_owner: str = ""
     last_error: str = ""
@@ -102,3 +105,38 @@ class InstrumentRequirement:
     instrument_type: str = ""
     min_count: int = 1
     max_count: int = 1
+
+
+class InstrumentLease:
+    def __init__(self, manager, session_id: str, owner: str):
+        self._manager = manager
+        self._session_id = session_id
+        self._owner = owner
+        self._acquired = False
+
+    def acquire(self) -> bool:
+        self._acquired = self._manager.try_set_busy(
+            self._session_id, True, self._owner
+        )
+        return self._acquired
+
+    def release(self) -> None:
+        if self._acquired:
+            self._manager.try_set_busy(self._session_id, False, self._owner)
+            self._acquired = False
+
+    def __enter__(self):
+        if not self.acquire():
+            raise RuntimeError(
+                f"Cannot acquire lease for session {self._session_id} "
+                f"(owner={self._owner})"
+            )
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.release()
+        return False
+
+    @property
+    def acquired(self) -> bool:
+        return self._acquired

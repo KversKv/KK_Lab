@@ -246,10 +246,11 @@ class CardFrame(QFrame):
 class RegulationVoltageTestUI(N6705CConnectionMixin, QWidget):
     connection_status_changed = Signal(bool)
 
-    def __init__(self, n6705c_top=None):
+    def __init__(self, n6705c_top=None, instrument_manager=None):
         super().__init__()
 
-        self.init_n6705c_connection(n6705c_top)
+        self._instrument_manager = instrument_manager
+        self.init_n6705c_connection(n6705c_top, instrument_manager=instrument_manager)
 
         self.is_test_running = False
         self.test_thread = None

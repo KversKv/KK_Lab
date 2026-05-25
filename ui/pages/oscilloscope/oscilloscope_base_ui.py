@@ -2575,6 +2575,17 @@ class OscilloscopeBaseUI(QWidget):
         self.set_system_status("● Connecting")
         self.connect_btn.setEnabled(False)
 
+        if self._instrument_manager and not DEBUG_MOCK:
+            from core.instruments import InstrumentSpec
+            self._instrument_manager.connect_async(InstrumentSpec(
+                instrument_type="mso64b",
+                role="scope",
+                connection_kind="visa",
+                slot="main_scope",
+                resource=resource,
+            ))
+            return
+
         try:
             if DEBUG_MOCK:
                 from instruments.mock.mock_instruments import MockMSO64B
@@ -2640,8 +2651,6 @@ class OscilloscopeBaseUI(QWidget):
         self.connect_btn.setEnabled(False)
 
         try:
-            result = self.controller.disconnect_instrument()
-
             if self.mso64b_top is not None and self.mso64b_top.is_connected:
                 self.mso64b_top.disconnect()
             elif self._instrument_manager:
@@ -2649,14 +2658,13 @@ class OscilloscopeBaseUI(QWidget):
                     session_id = f"{scope_type}:main_scope"
                     session = self._instrument_manager.get_session(session_id)
                     if session and session.connected:
-                        session.instance = None
-                        session.connected = False
-                        session.touch()
-                        self._instrument_manager.session_disconnected.emit(session_id)
-                        self._instrument_manager.session_changed.emit(session_id)
-                        self._instrument_manager.sessions_changed.emit()
-                        break
+                        self._instrument_manager.disconnect_async(session_id)
+                        return
+            else:
+                self.controller.disconnect_instrument()
 
+            self.controller._instrument = None
+            self.controller._instrument_info = ""
             self.update_connection_status(False)
             self.set_invert_enabled(True)
             self._update_time_offset_mode("none")
@@ -2686,16 +2694,12 @@ class OscilloscopeBaseUI(QWidget):
             from instruments.scopes.tektronix.mso64b import MSO64B
             instrument = found_scope.instance
             self.controller._instrument = instrument
-            try:
-                info = instrument.identify_instrument()
-                self.controller._instrument_info = info
-            except Exception:
-                info = f"{found_scope.model} Connected"
-                self.controller._instrument_info = info
+            info = found_scope.model if found_scope.model else "Scope Connected"
+            self.controller._instrument_info = info
             is_dsox = isinstance(instrument, DSOX4034A)
             is_mso64b = isinstance(instrument, MSO64B)
             self.update_connection_status(True, info)
-            title = info.split(",")[1].strip() if "," in info else info
+            title = found_scope.model if found_scope.model else info
             self.set_title(title)
             self.set_invert_enabled(is_dsox)
             if is_dsox:
@@ -2711,6 +2715,7 @@ class OscilloscopeBaseUI(QWidget):
                 self.visa_resource_combo.setCurrentIndex(idx)
             else:
                 self.visa_resource_combo.setEditText(found_scope.resource)
+            self.connect_btn.setEnabled(True)
             self.connection_changed.emit()
         elif not found_scope and self.controller.is_connected:
             self.controller._instrument = None
@@ -2718,6 +2723,7 @@ class OscilloscopeBaseUI(QWidget):
             self.update_connection_status(False)
             self.set_invert_enabled(True)
             self._update_time_offset_mode("none")
+            self.connect_btn.setEnabled(True)
             self.connection_changed.emit()
 
     def _on_mso64b_top_changed(self):

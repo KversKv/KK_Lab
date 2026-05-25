@@ -394,7 +394,7 @@ class Keysight53230AConnectionMixin:
         mgr = self._counter_instrument_manager
         if not mgr:
             return
-        session = mgr.get_session("keysight53230a:default")
+        session = mgr.get_session("keysight53230a:counter")
         if session and session.connected and session.instance:
             if self.Counter_ins is session.instance and self.counter_connected:
                 return
@@ -408,6 +408,7 @@ class Keysight53230AConnectionMixin:
                 self.counter_resource_combo.clear()
                 self.counter_resource_combo.addItem(session.resource)
             self.set_system_status("● Connected")
+            self.counter_connect_btn.setEnabled(True)
         elif not session or not session.connected:
             if not self.counter_connected:
                 return
@@ -416,6 +417,7 @@ class Keysight53230AConnectionMixin:
             self.counter_connected = False
             _update_cnt_btn_state(self.counter_connect_btn, False)
             self.counter_search_btn.setEnabled(True)
+            self.counter_connect_btn.setEnabled(True)
             self.set_system_status("● Ready")
 
     def _on_counter_search(self):
@@ -507,6 +509,21 @@ class Keysight53230AConnectionMixin:
             self.counter_connection_changed.emit(True)
             return
 
+        if self._counter_instrument_manager:
+            from core.instruments import InstrumentSpec
+            if hasattr(self, 'set_page_status'):
+                self.set_page_status(f"Connecting {counter_type}...")
+            self.set_system_status(f"● Connecting {counter_type}")
+            self.counter_connect_btn.setEnabled(False)
+            self._counter_instrument_manager.connect_async(InstrumentSpec(
+                instrument_type="keysight53230a",
+                role="counter",
+                connection_kind="visa",
+                slot="counter",
+                resource=resource,
+            ))
+            return
+
         if hasattr(self, 'set_page_status'):
             self.set_page_status(f"Connecting {counter_type}...")
         self.set_system_status(f"● Connecting {counter_type}")
@@ -564,7 +581,7 @@ class Keysight53230AConnectionMixin:
                 InstrumentSpec(
                     instrument_type="keysight53230a",
                     resource=result["resource"],
-                    slot="default",
+                    slot="counter",
                 ),
                 instance=self.Counter_ins, serial="", model=counter_type,
             )
@@ -585,11 +602,13 @@ class Keysight53230AConnectionMixin:
             self.Counter_ins = None
             self._on_disconnect_counter_finished({"counter_type": counter_type})
         elif self._counter_instrument_manager:
-            session = self._counter_instrument_manager.get_session("keysight53230a:default")
+            session_id = "keysight53230a:counter"
+            session = self._counter_instrument_manager.get_session(session_id)
             if session and session.connected:
-                self._counter_instrument_manager.disconnect_async("keysight53230a:default")
-            self.Counter_ins = None
-            self._on_disconnect_counter_finished({"counter_type": counter_type})
+                self._counter_instrument_manager.disconnect_async(session_id)
+            else:
+                self.Counter_ins = None
+                self._on_disconnect_counter_finished({"counter_type": counter_type})
         else:
             counter_ref = self.Counter_ins
             self.Counter_ins = None

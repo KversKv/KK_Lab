@@ -462,16 +462,17 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         {"name": "CH8", "channel": "B-CH4", "enabled": False},
     ]
 
-    def __init__(self, n6705c_top=None):
+    def __init__(self, n6705c_top=None, instrument_manager=None):
         super().__init__()
 
         self._n6705c_top = n6705c_top
+        self._instrument_manager = instrument_manager
         self.n6705c_a = None
         self.n6705c_b = None
         self.is_connected_a = False
         self.is_connected_b = False
 
-        self.init_n6705c_connection(n6705c_top)
+        self.init_n6705c_connection(n6705c_top, instrument_manager=instrument_manager)
         self.init_serial_connection(mode=MODE_INLINE, prefix="DUT Serial")
 
         self.firmware_path = ""
@@ -876,6 +877,18 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         w["status"].setStyleSheet("color: #ff9800; font-weight: bold; background: transparent; border: none;")
         w["connect_btn"].setEnabled(False)
         self.append_log(f"[SYSTEM] Connecting N6705C-{label}...")
+
+        if self._instrument_manager:
+            from core.instruments import InstrumentSpec
+            visa = w["combo"].currentText()
+            self._instrument_manager.connect_async(InstrumentSpec(
+                instrument_type="n6705c",
+                role="power_analyzer",
+                connection_kind="visa",
+                slot=label,
+                resource=visa,
+            ))
+            return
 
         try:
             from instruments.power.keysight.n6705c import N6705C

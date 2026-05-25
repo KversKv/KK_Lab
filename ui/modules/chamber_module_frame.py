@@ -202,8 +202,9 @@ class _SearchSerialWorker(QObject):
 class VT6002ConnectionMixin:
     vt6002_connection_changed = Signal(bool)
 
-    def init_vt6002_connection(self, vt6002_chamber_ui=None):
+    def init_vt6002_connection(self, vt6002_chamber_ui=None, instrument_manager=None):
         self._vt6002_chamber_ui = vt6002_chamber_ui
+        self._vt6002_instrument_manager = instrument_manager
         self.vt6002 = None
         self.is_vt6002_connected = False
         self._vt6002_syncing = False
@@ -212,6 +213,14 @@ class VT6002ConnectionMixin:
 
         if self._vt6002_chamber_ui is not None and hasattr(self._vt6002_chamber_ui, 'connection_changed'):
             self._vt6002_chamber_ui.connection_changed.connect(self._on_vt6002_external_changed)
+
+        if self._vt6002_instrument_manager is not None:
+            self._vt6002_instrument_manager.session_connected.connect(
+                self._on_vt6002_manager_connected
+            )
+            self._vt6002_instrument_manager.session_disconnected.connect(
+                self._on_vt6002_manager_disconnected
+            )
 
     def build_vt6002_connection_widgets(self, layout):
         self.vt6002_status_label = QLabel("● Not Connected")
@@ -264,6 +273,31 @@ class VT6002ConnectionMixin:
         self._update_vt6002_connection_ui(False, "Not Connected")
         if hasattr(self, 'append_log'):
             self.append_log("[VT6002] Disconnected (synced).")
+
+    def _on_vt6002_manager_connected(self, session_id: str):
+        if session_id != "vt6002:default":
+            return
+        mgr = self._vt6002_instrument_manager
+        if not mgr:
+            return
+        session = mgr.get_session(session_id)
+        if session and session.connected:
+            self.vt6002 = session.instance
+            self.is_vt6002_connected = True
+            self._update_vt6002_connection_ui(True, session.resource)
+            if hasattr(self, 'append_log'):
+                self.append_log(f"[VT6002] Connected via manager: {session.resource}")
+            self.vt6002_connection_changed.emit(True)
+
+    def _on_vt6002_manager_disconnected(self, session_id: str):
+        if session_id != "vt6002:default":
+            return
+        self.vt6002 = None
+        self.is_vt6002_connected = False
+        self._update_vt6002_connection_ui(False, "Not Connected")
+        if hasattr(self, 'append_log'):
+            self.append_log("[VT6002] Disconnected via manager.")
+        self.vt6002_connection_changed.emit(False)
 
     def _on_vt6002_search(self):
         if DEBUG_MOCK:
@@ -326,6 +360,18 @@ class VT6002ConnectionMixin:
         if DEBUG_MOCK:
             vt = MockVT6002()
             port = "MOCK"
+        elif self._vt6002_instrument_manager:
+            from core.instruments import InstrumentSpec
+            port_str = self.vt6002_combo.currentText()
+            port = port_str.split()[0]
+            self._vt6002_instrument_manager.connect_async(InstrumentSpec(
+                instrument_type="vt6002",
+                role="chamber",
+                connection_kind="serial",
+                slot="default",
+                resource=port,
+            ))
+            return
         else:
             try:
                 from instruments.chambers.vt6002_chamber import VT6002

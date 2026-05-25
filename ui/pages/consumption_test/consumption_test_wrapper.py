@@ -45,10 +45,16 @@ class ConsumptionTestWrapper(QWidget):
         self.tab_widget = QTabWidget()
         self.tab_widget.tabBar().hide()
 
-        self.auto_test_ui = ConsumptionTestUI(n6705c_top=self._n6705c_top)
+        self.auto_test_ui = ConsumptionTestUI(
+            n6705c_top=self._n6705c_top,
+            instrument_manager=self._instrument_manager,
+        )
         self.tab_widget.addTab(self.auto_test_ui, "Auto Test")
 
-        self.high_low_temp_ui = HighLowTempConsumptionTestUI(n6705c_top=self._n6705c_top)
+        self.high_low_temp_ui = HighLowTempConsumptionTestUI(
+            n6705c_top=self._n6705c_top,
+            instrument_manager=self._instrument_manager,
+        )
         self.tab_widget.addTab(self.high_low_temp_ui, "High-Low Temperature Test")
 
         main_layout.addWidget(self.tab_widget)

@@ -357,11 +357,50 @@ class VT6002ChamberUI(QWidget):
         self._scan_ports()
 
     def _connect_signals(self):
-        """连接信号槽"""
         self.connect_btn.clicked.connect(self._toggle_connection)
         self.power_btn.clicked.connect(self._toggle_chamber_power)
         self.set_btn.clicked.connect(self._set_temperature)
         self.timer.timeout.connect(self._update_temperatures)
+        if self._instrument_manager:
+            self._instrument_manager.session_connected.connect(
+                self._on_manager_session_connected
+            )
+            self._instrument_manager.session_disconnected.connect(
+                self._on_manager_session_disconnected
+            )
+            self._instrument_manager.connection_failed.connect(
+                self._on_manager_connect_failed
+            )
+
+    def _on_manager_session_connected(self, session_id: str):
+        if session_id != "vt6002:default":
+            return
+        session = self._instrument_manager.get_session(session_id)
+        if session and session.connected:
+            self.vt6002 = session.instance
+            self.current_port = session.resource
+            self._set_connection_ui(True)
+            self._set_controls_enabled(True)
+            self._set_power_ui(False)
+            self.connection_changed.emit()
+
+    def _on_manager_session_disconnected(self, session_id: str):
+        if session_id != "vt6002:default":
+            return
+        self.vt6002 = None
+        self.current_port = None
+        self.is_chamber_on = False
+        self._set_connection_ui(False)
+        self._set_controls_enabled(False)
+        self._set_power_ui(False)
+        self.connection_changed.emit()
+
+    def _on_manager_connect_failed(self, session_id: str, error: str):
+        if session_id != "vt6002:default":
+            return
+        logger.error("VT6002 connection failed via manager: %s", error)
+        self._set_connection_ui(False)
+        self._set_controls_enabled(False)
 
     def _apply_shadow(self, widget):
         """卡片阴影"""
@@ -702,24 +741,18 @@ class VT6002ChamberUI(QWidget):
 
         if is_connected:
             try:
-                self.vt6002.close()
                 if self._instrument_manager:
-                    session = self._instrument_manager.get_session("vt6002:default")
-                    if session and session.connected:
-                        session.instance = None
-                        session.connected = False
-                        session.touch()
-                        self._instrument_manager.session_disconnected.emit("vt6002:default")
-                        self._instrument_manager.session_changed.emit("vt6002:default")
-                        self._instrument_manager.sessions_changed.emit()
-                self.vt6002 = None
-                self.current_port = None
-                self.is_chamber_on = False
+                    self._instrument_manager.disconnect_async("vt6002:default")
+                else:
+                    self.vt6002.close()
+                    self.vt6002 = None
+                    self.current_port = None
+                    self.is_chamber_on = False
 
-                self._set_connection_ui(False)
-                self._set_controls_enabled(False)
-                self._set_power_ui(False)
-                self.connection_changed.emit()
+                    self._set_connection_ui(False)
+                    self._set_controls_enabled(False)
+                    self._set_power_ui(False)
+                    self.connection_changed.emit()
             except Exception as e:
                 logger.error("断开连接错误: %s", e, exc_info=True)
         else:
@@ -728,6 +761,18 @@ class VT6002ChamberUI(QWidget):
                 return
 
             try:
+                if self._instrument_manager and not DEBUG_MOCK:
+                    from core.instruments import InstrumentSpec
+                    device_port = current_text.split()[0]
+                    self._instrument_manager.connect_async(InstrumentSpec(
+                        instrument_type="vt6002",
+                        role="chamber",
+                        connection_kind="serial",
+                        slot="default",
+                        resource=device_port,
+                    ))
+                    return
+
                 if DEBUG_MOCK:
                     self.vt6002 = MockVT6002()
                     self.current_port = "MOCK"

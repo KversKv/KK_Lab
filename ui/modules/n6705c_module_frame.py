@@ -324,6 +324,17 @@ class N6705CConnectionMixin:
         if self._n6705c_top is not None and hasattr(self._n6705c_top, 'connection_changed'):
             self._n6705c_top.connection_changed.connect(self.sync_n6705c_from_top)
 
+        if self._n6705c_instrument_manager is not None:
+            self._n6705c_instrument_manager.session_connected.connect(
+                self._on_mixin_manager_connected
+            )
+            self._n6705c_instrument_manager.connection_failed.connect(
+                self._on_mixin_manager_connect_failed
+            )
+            self._n6705c_instrument_manager.session_disconnected.connect(
+                self._on_mixin_manager_disconnected
+            )
+
     def build_n6705c_connection_widgets(self, layout,
                                         btn_height=N6705C_BTN_HEIGHT,
                                         btn_radius=N6705C_BTN_RADIUS,
@@ -512,13 +523,28 @@ class N6705CConnectionMixin:
             self.connection_status_changed.emit(True)
             return
 
+        device_address = self.visa_resource_combo.currentText()
+        if self._n6705c_instrument_manager:
+            self.set_system_status("● Connecting")
+            if hasattr(self, 'append_log'):
+                self.append_log("[SYSTEM] Attempting instrument connection...")
+            self.connect_btn.setEnabled(False)
+            from core.instruments import InstrumentSpec
+            self._n6705c_instrument_manager.connect_async(InstrumentSpec(
+                instrument_type="n6705c",
+                role="power_analyzer",
+                connection_kind="visa",
+                slot="A",
+                resource=device_address,
+            ))
+            return
+
         self.set_system_status("● Connecting")
         if hasattr(self, 'append_log'):
             self.append_log("[SYSTEM] Attempting instrument connection...")
         self.connect_btn.setEnabled(False)
 
         try:
-            device_address = self.visa_resource_combo.currentText()
             self.n6705c = N6705C(device_address)
 
             idn = self.n6705c.instr.query("*IDN?")
@@ -540,12 +566,6 @@ class N6705CConnectionMixin:
 
                 if self._n6705c_top:
                     self._n6705c_top.connect_a(device_address, self.n6705c, serial=serial)
-                elif self._n6705c_instrument_manager:
-                    from core.instruments import InstrumentSpec
-                    self._n6705c_instrument_manager.attach_external(
-                        InstrumentSpec(instrument_type="n6705c", resource=device_address, slot="A"),
-                        instance=self.n6705c, serial=serial, model="N6705C",
-                    )
 
                 self.connection_status_changed.emit(True)
             else:
@@ -580,18 +600,54 @@ class N6705CConnectionMixin:
                         self.n6705c.rm.close()
                 self.n6705c = None
 
-            self._update_n6705c_connect_button_state(False)
-            self.set_system_status("● Ready")
-            self.search_btn.setEnabled(True)
-            if hasattr(self, 'append_log'):
-                self.append_log("[SYSTEM] Instrument disconnected.")
-            self.connection_status_changed.emit(False)
+                self._update_n6705c_connect_button_state(False)
+                self.set_system_status("● Ready")
+                self.search_btn.setEnabled(True)
+                if hasattr(self, 'append_log'):
+                    self.append_log("[SYSTEM] Instrument disconnected.")
+                self.connection_status_changed.emit(False)
         except Exception as e:
             self.set_system_status("● Disconnect failed", is_error=True)
             if hasattr(self, 'append_log'):
                 self.append_log(f"[ERROR] Disconnect failed: {str(e)}")
         finally:
             self.connect_btn.setEnabled(True)
+
+    def _on_mixin_manager_connected(self, session_id: str):
+        if session_id != "n6705c:A":
+            return
+        if not self._n6705c_instrument_manager:
+            return
+        session = self._n6705c_instrument_manager.get_session(session_id)
+        if session and session.connected:
+            self.n6705c = session.instance
+            self._update_n6705c_connect_button_state(True)
+            self.set_system_status("● Connected")
+            self.search_btn.setEnabled(False)
+            self.connect_btn.setEnabled(True)
+            if hasattr(self, 'append_log'):
+                self.append_log("[SYSTEM] N6705C connected via manager.")
+            self.connection_status_changed.emit(True)
+
+    def _on_mixin_manager_connect_failed(self, session_id: str, error: str):
+        if session_id != "n6705c:A":
+            return
+        self.set_system_status("● Connection failed", is_error=True)
+        if hasattr(self, 'append_log'):
+            self.append_log(f"[ERROR] Connection failed: {error}")
+        self.connect_btn.setEnabled(True)
+
+    def _on_mixin_manager_disconnected(self, session_id: str):
+        if session_id != "n6705c:A":
+            return
+        self.n6705c = None
+        self._update_n6705c_connect_button_state(False)
+        self.set_system_status("● Ready")
+        self.search_btn.setEnabled(True)
+        self.connect_btn.setEnabled(True)
+        if hasattr(self, 'append_log'):
+            self.append_log("[SYSTEM] Instrument disconnected.")
+        self.connection_status_changed.emit(False)
 
     def get_n6705c_instance(self):
         return self.n6705c

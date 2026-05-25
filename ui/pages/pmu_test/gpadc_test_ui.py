@@ -85,10 +85,11 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
         TEST_TEMP_CONSISTENCY: ["n6705c", "chamber"],
     }
 
-    def __init__(self, n6705c_top=None):
+    def __init__(self, n6705c_top=None, instrument_manager=None):
         super().__init__()
 
-        self.init_n6705c_connection(n6705c_top)
+        self._instrument_manager = instrument_manager
+        self.init_n6705c_connection(n6705c_top, instrument_manager=instrument_manager)
         self.init_vt6002_connection()
         self.init_serial_connection(mode=MODE_FULL, prefix="DUT")
 

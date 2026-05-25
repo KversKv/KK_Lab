@@ -518,6 +518,12 @@ class _DatalogWorker(QObject):
 
             def configure_and_start(idx, unit_idx, n6705c, curr_channels, volt_channels):
                 try:
+                    import time as _time
+                    _time.sleep(0.3)
+                    try:
+                        n6705c.instr.query("*OPC?")
+                    except Exception:
+                        pass
                     n6705c.instr.write("*CLS")
                     try:
                         n6705c.instr.write("ABOR:DLOG")
@@ -2222,6 +2228,17 @@ class N6705CDatalogUI(QWidget):
                     btn.setEnabled(False)
                     btn.setText("Connecting...")
                 break
+
+        if self._instrument_manager:
+            from core.instruments import InstrumentSpec
+            self._instrument_manager.connect_async(InstrumentSpec(
+                instrument_type="n6705c",
+                role="power_analyzer",
+                connection_kind="visa",
+                slot=slot_label,
+                resource=visa_resource,
+            ))
+            return
 
         self._connect_thread = QThread()
         self._connect_worker = _ConnectWorker(visa_resource, serial, DEBUG_MOCK)
@@ -4959,6 +4976,21 @@ class N6705CDatalogUI(QWidget):
         if total_active == 0:
             return
 
+        self._datalog_leases = []
+        if self._instrument_manager:
+            if self.is_connected_a and self.n6705c_a:
+                lease_a = self._instrument_manager.create_lease("n6705c:A", "datalog")
+                if lease_a.acquire():
+                    self._datalog_leases.append(lease_a)
+                else:
+                    logger.warning("Cannot acquire busy for n6705c:A (datalog)")
+            if self.is_connected_b and self.n6705c_b:
+                lease_b = self._instrument_manager.create_lease("n6705c:B", "datalog")
+                if lease_b.acquire():
+                    self._datalog_leases.append(lease_b)
+                else:
+                    logger.warning("Cannot acquire busy for n6705c:B (datalog)")
+
         if len(n6705c_list) == 1:
             unit_labels = [""]
 
@@ -5038,6 +5070,7 @@ class N6705CDatalogUI(QWidget):
     def _on_recording_finished(self):
         self.start_btn.setEnabled(True)
         self._update_recording_button_state(False)
+        self._release_datalog_leases()
         self._hide_progress_overlay()
         self._record_worker = None
         self._record_thread = None
@@ -5047,6 +5080,12 @@ class N6705CDatalogUI(QWidget):
         self.start_btn.setEnabled(True)
         self._update_recording_button_state(False)
         self._hide_progress_overlay()
+        self._release_datalog_leases()
+
+    def _release_datalog_leases(self):
+        for lease in getattr(self, '_datalog_leases', []):
+            lease.release()
+        self._datalog_leases = []
 
     def _refresh_plot(self):
         self.plot_widget.clear()

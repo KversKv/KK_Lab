@@ -300,10 +300,11 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, VT6002ConnectionMixin,
         "#a855f7", "#06b6d4", "#f97316", "#ec4899",
     ]
 
-    def __init__(self, n6705c_top=None, parent=None):
+    def __init__(self, n6705c_top=None, instrument_manager=None, parent=None):
         super().__init__(parent)
         self._n6705c_top = n6705c_top
-        self.init_n6705c_connection(n6705c_top)
+        self._instrument_manager = instrument_manager
+        self.init_n6705c_connection(n6705c_top, instrument_manager=instrument_manager)
         self.init_vt6002_connection()
 
         self._test_thread = None
