@@ -2823,6 +2823,12 @@ class N6705CDatalogUI(QWidget):
         if not connected_slots:
             self.no_instrument_label.show()
             self._instruments_tab_layout.insertWidget(0, self.channel_config_inner)
+            self._instruments_tab_layout.invalidate()
+            self._instruments_tab_layout.activate()
+            self._instruments_tab.updateGeometry()
+            self._instruments_tab.update()
+            if self.channel_config_tabbar.count() > 0:
+                self.channel_config_tabbar.setCurrentIndex(0)
             return
 
         self.no_instrument_label.hide()
@@ -2973,6 +2979,14 @@ class N6705CDatalogUI(QWidget):
             inner_layout.addWidget(slot_frame)
 
         self._instruments_tab_layout.insertWidget(0, self.channel_config_inner)
+        self._instruments_tab_layout.invalidate()
+        self._instruments_tab_layout.activate()
+        self._instruments_tab.updateGeometry()
+        self._instruments_tab.update()
+        self.channel_config_stack.updateGeometry()
+        self.channel_config_stack.update()
+        if self.channel_config_tabbar.count() > 0:
+            self.channel_config_tabbar.setCurrentIndex(0)
 
     def _build_imported_channel_config(self, tab_name=None, data_keys=None, file_prefix=None):
         import re
