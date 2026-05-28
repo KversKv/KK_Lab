@@ -207,6 +207,8 @@ class CustomTestExecutor(QObject):
             self.log_message.emit(f"[ERROR] {e}")
             self.error.emit(str(e))
             self.finished.emit(False, str(e))
+        finally:
+            self._context.release_runtime_resources()
 
     def _run_nodes(self, nodes: List[BaseNode], col_fmt: _ColumnFormatter) -> None:
         for node in nodes:

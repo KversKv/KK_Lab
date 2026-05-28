@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Type
 
 from core.custom_test.nodes.base import BaseNode
+from core.custom_test.resolver import capability_instrument_key
 
 STABLE = "stable"
 LEGACY = "legacy"
@@ -38,16 +39,6 @@ _STATUS_NOTES: Dict[str, str] = {
     "IfElse": "旧版条件节点，保留加载兼容但不在 palette 暴露。",
     "IfThenElse": "旧版条件节点，保留加载兼容但不在 palette 暴露。",
 }
-
-_INSTRUMENT_PREFIXES = (
-    ("N6705C", "n6705c"),
-    ("Scope", "scope"),
-    ("Chamber", "chamber"),
-    ("RFAnalyzer", "rf_analyzer"),
-    ("I2C", "i2c"),
-    ("MCUIO", "mcu_io"),
-    ("UART", "uart"),
-)
 
 _IMPLICIT_OUTPUTS: Dict[str, List[str]] = {
     "Aggregate": ["<prefix>_avg", "<prefix>_min", "<prefix>_max", "<prefix>_sum", "<prefix>_count"],
@@ -96,10 +87,20 @@ def filter_selectable_ops(ops: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def get_required_instruments(node_type: str) -> List[str]:
-    for prefix, instrument_id in _INSTRUMENT_PREFIXES:
-        if node_type.startswith(prefix):
-            return [instrument_id]
-    return []
+    from core.custom_test.nodes import NODE_REGISTRY
+
+    node_cls = NODE_REGISTRY.get(node_type)
+    if node_cls is None:
+        return []
+    required = {
+        capability_instrument_key(capability)
+        for capability in getattr(node_cls, "required_capabilities", ())
+    }
+    if "scope" in required:
+        return ["scope"]
+    if "rf_analyzer" in required:
+        return ["rf_analyzer"]
+    return sorted(required)
 
 
 def _schema_keys(node_cls: Type[BaseNode]) -> List[str]:
@@ -128,6 +129,7 @@ def build_node_inventory() -> List[Dict[str, Any]]:
             "category": node_cls.category,
             "status": get_node_status(node_type),
             "required_instruments": get_required_instruments(node_type),
+            "required_capabilities": list(getattr(node_cls, "required_capabilities", ())),
             "param_schema": _schema_keys(node_cls),
             "output_variables": _output_defaults(node_cls),
             "implicit_variables": _IMPLICIT_OUTPUTS.get(node_type, []),

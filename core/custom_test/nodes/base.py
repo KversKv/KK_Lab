@@ -39,6 +39,8 @@ class BaseNode(ABC):
     category: str = ""
     icon: str = ""
     color: str = "#5b5cf6"
+    required_capabilities: tuple[str, ...] = ()
+    unsupported_reason: str = ""
 
     PARAM_SCHEMA: List[Dict[str, Any]] = []
 
@@ -59,6 +61,10 @@ class BaseNode(ABC):
     def accepts_children(self) -> bool:
         """是否接受子节点（循环、分支等容器节点返回 True）"""
         return False
+
+    def required_instruments(self) -> tuple[str, ...]:
+        """返回运行该节点需要的 Custom Test capability。"""
+        return tuple(self.required_capabilities)
 
     def to_dict(self) -> Dict[str, Any]:
         """序列化为字典"""

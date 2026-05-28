@@ -630,7 +630,10 @@ class N6705CMeasureNode(BaseNode):
 - **依赖**: Phase 1
 - **预计工作量**: 0.5 ~ 1 会话
 - **预计会话**: 会话 5
-- **状态**: ⏳ 未开始
+- **完成日期**: 2026-05-28
+- **完成内容**: `BaseNode` 增加 `required_capabilities` / `required_instruments()`；仪器节点按 Custom Test 语义层声明 capability，`ScopeGetDvmDC` 独立标记 `scope.dvm`；`RFAnalyzerMeasure` 标记 unsupported。
+- **风险备注**: capability 先集中声明在 `instrument_nodes.py` 尾部，后续如新增仪器节点需同步补表；逻辑/IO/value 节点默认无仪器 capability。
+- **状态**: ✅ 已完成
 
 ### Task 2.2: 新建 `InstrumentResolver`
 
@@ -652,7 +655,10 @@ class N6705CMeasureNode(BaseNode):
 - **依赖**: Task 2.1
 - **预计工作量**: 1 ~ 1.5 会话
 - **预计会话**: 会话 5 ~ 6
-- **状态**: ⏳ 未开始
+- **完成日期**: 2026-05-28
+- **完成内容**: 新增 `core/custom_test/resolver.py`，实现 manager 优先解析、legacy fallback、I2C/UART adapter wrapper、resolved source/missing/warning 输出与 lease session 列表。
+- **风险备注**: legacy fallback 会显式 warning 且无法 lease；I2C 自动创建已从 UI 移入 resolver，但真实 DLL/硬件仍需真机 smoke 验证。
+- **状态**: ✅ 已完成
 
 ### Task 2.3: 建立 preflight validation
 
@@ -674,7 +680,10 @@ class N6705CMeasureNode(BaseNode):
 - **依赖**: Task 2.1, Task 2.2
 - **预计工作量**: 1 会话
 - **预计会话**: 会话 6
-- **状态**: ⏳ 未开始
+- **完成日期**: 2026-05-28
+- **完成内容**: 新增 `core/custom_test/validation.py`，覆盖空序列、unsupported 节点、必需仪器缺失/busy、明显非法参数、表达式语法和基础变量引用 warning；UI Run 入口复用 Logs + QMessageBox 展示。
+- **风险备注**: 变量分析为 Phase 2 基础版，动态外部注入变量会以 warning 呈现；正式可点击 issue 面板留到 Phase 4.3。
+- **状态**: ✅ 已完成
 
 ### Task 2.4: 运行上下文只接收 resolver 输出
 
@@ -690,7 +699,10 @@ class N6705CMeasureNode(BaseNode):
 - **依赖**: Task 2.2, Task 2.3
 - **预计工作量**: 1 会话
 - **预计会话**: 会话 7
-- **状态**: ⏳ 未开始
+- **完成日期**: 2026-05-28
+- **完成内容**: `ExecutionContext` 接收 resolver 输出的 adapters / `ResolvedInstruments` / lease session ids；`CustomTestUI._on_run()` 删除散落的仪器注入逻辑，只负责 resolver、preflight、context 和 runner 启动。
+- **风险备注**: 保留 legacy source 兼容旧页面状态；`populate_instruments_from_manager()` 仍保留给旧调用方。
+- **状态**: ✅ 已完成
 
 ### Task 2.5: 运行期 Instrument Lease 管理
 
@@ -709,7 +721,10 @@ class N6705CMeasureNode(BaseNode):
 - **依赖**: Task 2.2, Task 2.4
 - **预计工作量**: 0.5 ~ 1 会话
 - **预计会话**: 会话 7
-- **状态**: ⏳ 未开始
+- **完成日期**: 2026-05-28
+- **完成内容**: resolver 返回 manager session id；`ExecutionContext.acquire_leases()` 在 runner 启动前申请 lease；`CustomTestExecutor.run()` 在 `finally` 统一释放 lease 与 resolver 持有的 owned runtime 资源。
+- **风险备注**: manager session lease 路径已由 fake manager 单测覆盖；真实多页面并发占用仍需 UI/真机回归。
+- **状态**: ✅ 已完成
 
 ## Phase 3: 结果模型和导出统一
 
@@ -1094,3 +1109,4 @@ class N6705CMeasureNode(BaseNode):
 | 2026-05-28 | 查漏补缺 | 补充模板格式混用、registry import 副作用、manager capability/lease、adapter 接口差异、PromptUser 接收端、结果 view state、RF/Frequency Counter 边界等风险；调整 Phase 0/2 与会话估算 | ✅ 已记录 |
 | 2026-05-28 | Phase 0 | 完成节点清单/状态基线、list/dict 序列统一读取入口、最小无 UI smoke、RFAnalyzerMeasure/PromptUser unsupported 决策；新增 `node_metadata.py`、`sequence_io.py`、`tests/test_custom_test_phase0.py` | ✅ 已完成 |
 | 2026-05-28 | Phase 1 | 完成 `core/custom_test/` 执行内核迁移、节点实现迁移、旧路径 shim、`runtime.py` 子节点执行入口与 `_execute_children` 反向 import 清理；`core/__init__.py` 改为惰性导出以保持无 UI smoke 可导入 | ✅ 已完成 |
+| 2026-05-28 | Phase 2 | 完成节点 capability 声明、`InstrumentResolver`、preflight validation、`_on_run()` resolver 化、manager session lease 申请/释放；新增 `tests/test_custom_test_phase2.py` | ✅ 已完成 |

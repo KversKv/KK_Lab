@@ -708,3 +708,8 @@ class RepeatUntil(BaseNode):
             if context.evaluate_condition(condition):
                 logger.info("RepeatUntil: 退出条件满足 (%s)", condition)
                 return
+
+
+PromptUser.unsupported_reason = (
+    "PromptUser 当前缺少线程安全 UI 接收端，Phase 4 正规化前禁止执行。"
+)

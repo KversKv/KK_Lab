@@ -27,6 +27,8 @@ from core.custom_test.nodes.base import BaseNode, get_node_class
 from ui.pages.custom_test.node_metadata import filter_selectable_ops, is_node_selectable
 from core.custom_test.context import ExecutionContext
 from core.custom_test.executor import ExecutorThread
+from core.custom_test.resolver import InstrumentResolver, collect_required_instrument_keys
+from core.custom_test.validation import preflight_validate
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.chamber_module_frame import ChamberConnectionMixin
 from ui.modules.serialCom_module.serialCom_module_frame import SerialComMixin, MODE_FULL
@@ -454,26 +456,7 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         return outer_frame
 
     def _get_used_instrument_ids(self) -> set:
-        from ui.pages.custom_test.node_palette import INSTRUMENT_REGISTRY
-        node_type_to_instr: Dict[str, str] = {}
-        for instr in INSTRUMENT_REGISTRY:
-            for cat in instr.get("categories", []):
-                for op in cat.get("ops", []):
-                    node_type_to_instr[op["node_type"]] = instr["id"]
-
-        used = set()
-
-        def _scan_nodes(nodes):
-            for node in nodes:
-                instr_id = node_type_to_instr.get(node.node_type)
-                if instr_id:
-                    used.add(instr_id)
-                if node.children:
-                    _scan_nodes(node.children)
-
-        sequence = self.canvas.get_sequence()
-        _scan_nodes(sequence)
-        return used
+        return collect_required_instrument_keys(self.canvas.get_sequence())
 
     def _refresh_instrument_connections(self) -> None:
         while self._instr_conn_layout.count() > 0:
@@ -521,7 +504,7 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
             if self._chamber_ui_ref and self._chamber_ui_ref.chamber:
                 self._on_chamber_external_changed()
 
-        if "mso64b" in used_ids or "dsox4034a" in used_ids:
+        if "scope" in used_ids:
             lbl = QLabel("Oscilloscope")
             lbl.setObjectName("fieldLabel")
             self._instr_conn_layout.addWidget(lbl)
@@ -533,7 +516,7 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
             )
             self._instr_conn_layout.addWidget(self._scope_status)
 
-        if "cmw270" in used_ids:
+        if "rf_analyzer" in used_ids:
             lbl = QLabel("CMW270 RF Analyzer")
             lbl.setObjectName("fieldLabel")
             self._instr_conn_layout.addWidget(lbl)
@@ -1401,46 +1384,99 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         self.canvas.tree.setCurrentItem(branch_item or tree_item)
         self.canvas.sequence_changed.emit()
 
+    def _build_instrument_resolver(self) -> InstrumentResolver:
+        legacy_sources: Dict[str, object] = {}
+        legacy_labels: Dict[str, str] = {}
+
+        if getattr(self, "n6705c", None) is not None:
+            legacy_sources["n6705c"] = self.n6705c
+            legacy_labels["n6705c"] = "legacy_n6705c_mixin"
+        if getattr(self, "chamber", None) is not None:
+            legacy_sources["chamber"] = self.chamber
+            legacy_labels["chamber"] = "legacy_chamber_mixin"
+        if self._mso64b_top_ref and getattr(self._mso64b_top_ref, "is_connected", False):
+            scope = getattr(self._mso64b_top_ref, "mso64b", None)
+            if scope is not None:
+                legacy_sources["scope"] = scope
+                legacy_labels["scope"] = "legacy_scope_top"
+        if getattr(self, "_i2c_interface", None) is not None:
+            legacy_sources["i2c"] = self._i2c_interface
+            legacy_labels["i2c"] = "legacy_i2c_cached"
+        if getattr(self, "_serial_connected", False):
+            legacy_sources["uart"] = self
+            legacy_labels["uart"] = "legacy_uart_mixin"
+        if getattr(self, "is_mcu_io_connected", False) and getattr(self, "mcu_io", None) is not None:
+            legacy_sources["mcu_io"] = self.mcu_io
+            legacy_labels["mcu_io"] = "legacy_mcu_io_mixin"
+
+        return InstrumentResolver(
+            instrument_manager=self._instrument_manager,
+            legacy_sources=legacy_sources,
+            legacy_source_labels=legacy_labels,
+            owner="custom_test",
+            allow_i2c_autoconnect=True,
+        )
+
+    def _show_preflight_issues(self, issues: List[Any]) -> bool:
+        errors = [issue for issue in issues if issue.severity == "error"]
+        warnings = [issue for issue in issues if issue.severity == "warning"]
+        for issue in issues:
+            self.logs_frame.append_log(issue.format())
+            if issue.fix_hint:
+                self.logs_frame.append_log(f"        hint: {issue.fix_hint}")
+
+        if errors:
+            summary = "\n".join(issue.format() for issue in errors[:8])
+            if len(errors) > 8:
+                summary += f"\n... 另有 {len(errors) - 8} 条错误，请查看 Logs。"
+            QMessageBox.critical(self, "运行前校验失败", summary)
+            return False
+
+        if warnings:
+            summary = "\n".join(issue.format() for issue in warnings[:8])
+            if len(warnings) > 8:
+                summary += f"\n... 另有 {len(warnings) - 8} 条警告，请查看 Logs。"
+            reply = QMessageBox.question(
+                self,
+                "运行前校验警告",
+                f"{summary}\n\n是否继续运行？",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            return reply == QMessageBox.Yes
+        return True
+
     def _on_run(self) -> None:
         sequence = self.canvas.get_sequence()
-        if not sequence:
-            self.logs_frame.append_log("[WARN] 序列为空，请先添加节点")
+        resolver = self._build_instrument_resolver()
+        preflight = preflight_validate(sequence, resolver=resolver)
+
+        self.logs_frame.clear_log()
+        if preflight.issues and not self._show_preflight_issues(preflight.issues):
+            if preflight.resolved is not None:
+                preflight.resolved.close_owned()
             return
 
-        used_ids = self._get_used_instrument_ids()
+        resolved = preflight.resolved or resolver.resolve(sequence)
+        if resolved.missing:
+            for missing in resolved.missing:
+                self.logs_frame.append_log(f"[ERROR] {missing.message}")
+            resolved.close_owned()
+            return
 
-        self._context = ExecutionContext(instrument_manager=self._instrument_manager)
-        self._context.populate_instruments_from_manager()
-        if "n6705c" in used_ids and self._context.instruments.get("n6705c") is None:
-            self._context.instruments["n6705c"] = self.n6705c
-        if "chamber" in used_ids and self._context.instruments.get("chamber") is None:
-            self._context.instruments["chamber"] = self.chamber
-        if ("mso64b" in used_ids or "dsox4034a" in used_ids) \
-                and self._context.instruments.get("scope") is None \
-                and self._mso64b_top_ref and self._mso64b_top_ref.is_connected:
-            self._context.instruments["scope"] = self._mso64b_top_ref.mso64b
-
-        if "i2c" in used_ids:
-            if self._i2c_interface is None:
-                try:
-                    from lib.i2c.i2c_interface_x64 import I2CInterface
-                    i2c = I2CInterface()
-                    if i2c.initialize():
-                        self._i2c_interface = i2c
-                        logger.info("[I2C] Auto-connected for execution.")
-                    else:
-                        logger.error("[I2C] Auto-init failed")
-                except Exception as e:
-                    logger.error("[I2C] Auto-connect error: %s", e)
-            if self._i2c_interface is not None:
-                self._context.instruments["i2c"] = self._i2c_interface
-
-        if "uart" in used_ids and self._serial_connected:
-            self._context.instruments["uart"] = self
-
-        if "mcu_io" in used_ids and self._context.instruments.get("mcu_io") is None:
-            if self.is_mcu_io_connected and self.mcu_io is not None:
-                self._context.instruments["mcu_io"] = self.mcu_io
+        self._context = ExecutionContext(
+            instrument_manager=self._instrument_manager,
+            instruments=resolved.as_instrument_dict(),
+            resolved_instruments=resolved,
+            lease_session_ids=resolved.lease_session_ids,
+        )
+        try:
+            self._context.acquire_leases(owner="custom_test")
+        except Exception as exc:
+            self._context.release_runtime_resources()
+            self.logs_frame.append_log(f"[ERROR] InstrumentLease 申请失败: {exc}")
+            QMessageBox.critical(self, "仪器占用", f"InstrumentLease 申请失败:\n{exc}")
+            return
 
         self.result_table.setRowCount(0)
         self.result_table.setColumnCount(0)
@@ -1452,7 +1488,6 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
 
         self.canvas.set_running_state(True)
         self.logs_frame.set_progress(0)
-        self.logs_frame.clear_log()
 
         executor = self._executor_thread.start(sequence, self._context)
 

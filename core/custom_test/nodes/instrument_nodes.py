@@ -1157,3 +1157,51 @@ class UARTReceive(BaseNode):
                 "uart_rx_len": len(buf),
                 result_var: text[:500],
             })
+
+
+_NODE_CAPABILITIES = {
+    "N6705CSetMode": ("power_analyzer.set_voltage",),
+    "N6705CSetRange": ("power_analyzer.set_voltage",),
+    "N6705CChannelOn": ("power_analyzer.set_voltage",),
+    "N6705CChannelOff": ("power_analyzer.set_voltage",),
+    "N6705CSetVoltage": ("power_analyzer.set_voltage",),
+    "N6705CSetCurrent": ("power_analyzer.set_voltage",),
+    "N6705CSetCurrentLimit": ("power_analyzer.set_current_limit",),
+    "N6705CMeasure": ("power_analyzer.measure",),
+    "N6705CGetMode": ("power_analyzer.measure",),
+    "N6705CGetChannelState": ("power_analyzer.measure",),
+    "ScopeSetChannel": ("scope.basic",),
+    "ScopeSetScale": ("scope.basic",),
+    "ScopeSetTimebase": ("scope.basic",),
+    "ScopeSetTrigger": ("scope.basic",),
+    "ScopeRunStop": ("scope.basic",),
+    "ScopeMeasure": ("scope.measurement",),
+    "ScopeMeasureFreq": ("scope.frequency",),
+    "ScopeGetDvmDC": ("scope.dvm",),
+    "ChamberStartStop": ("chamber.temperature",),
+    "ChamberSetTemp": ("chamber.temperature",),
+    "ChamberWaitStable": ("chamber.stabilize_wait",),
+    "ChamberGetTemp": ("chamber.temperature",),
+    "ChamberGetSetTemp": ("chamber.temperature",),
+    "ChamberGetHumidity": ("chamber.temperature",),
+    "RFAnalyzerMeasure": ("rf_analyzer.basic",),
+    "I2CRead": ("i2c.register",),
+    "I2CWrite": ("i2c.register",),
+    "I2CTraverse": ("i2c.register",),
+    "MCUIOSetOutput": ("mcu_io.gpio",),
+    "MCUIOHighZ": ("mcu_io.gpio",),
+    "MCUIOPulse": ("mcu_io.gpio",),
+    "MCUIORead": ("mcu_io.gpio",),
+    "UARTSend": ("uart.session",),
+    "UARTReceive": ("uart.session",),
+}
+
+for _node_cls in list(globals().values()):
+    if isinstance(_node_cls, type) and issubclass(_node_cls, BaseNode):
+        _caps = _NODE_CAPABILITIES.get(getattr(_node_cls, "node_type", ""))
+        if _caps:
+            _node_cls.required_capabilities = _caps
+
+RFAnalyzerMeasure.unsupported_reason = (
+    "CMW270/RF Analyzer 驱动未接入，当前 Custom Test 不能执行该节点。"
+)

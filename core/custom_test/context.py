@@ -130,7 +130,13 @@ class TestResultException(Exception):
 
 class ExecutionContext:
 
-    def __init__(self, instrument_manager=None) -> None:
+    def __init__(
+        self,
+        instrument_manager=None,
+        instruments: Optional[Dict[str, Any]] = None,
+        resolved_instruments: Any = None,
+        lease_session_ids: Optional[List[str]] = None,
+    ) -> None:
         self.variables: Dict[str, Any] = {}
         self.records: List[Dict[str, Any]] = []
         self.instruments: Dict[str, Any] = {
@@ -143,7 +149,12 @@ class ExecutionContext:
             "uart": None,
             "mcu_io": None,
         }
+        if instruments:
+            self.instruments.update(instruments)
         self._instrument_manager = instrument_manager
+        self.resolved_instruments = resolved_instruments
+        self._lease_session_ids = list(lease_session_ids or [])
+        self._leases: List[Any] = []
         self._stop_requested: bool = False
         self._pause_requested: bool = False
         self._step_mode: bool = False
@@ -160,6 +171,36 @@ class ExecutionContext:
         self.on_step_started: Optional[Any] = None
         self.on_step_finished: Optional[Any] = None
 
+    def acquire_leases(self, owner: str = "custom_test") -> None:
+        if not self._instrument_manager or not self._lease_session_ids:
+            return
+        self.release_leases()
+        for session_id in self._lease_session_ids:
+            lease = self._instrument_manager.create_lease(session_id, owner)
+            if not lease.acquire():
+                self.release_leases()
+                raise RuntimeError(f"仪器 session 正忙，无法申请 lease: {session_id}")
+            self._leases.append(lease)
+
+    def release_leases(self) -> None:
+        while self._leases:
+            lease = self._leases.pop()
+            try:
+                lease.release()
+            except Exception as exc:
+                logger.warning("释放仪器 lease 失败: %s", exc, exc_info=True)
+
+    def close_owned_instruments(self) -> None:
+        if self.resolved_instruments is None:
+            return
+        close_owned = getattr(self.resolved_instruments, "close_owned", None)
+        if callable(close_owned):
+            close_owned()
+
+    def release_runtime_resources(self) -> None:
+        self.release_leases()
+        self.close_owned_instruments()
+
     def populate_instruments_from_manager(self) -> None:
         if not self._instrument_manager:
             return
@@ -174,7 +215,7 @@ class ExecutionContext:
             if session and session.connected and session.instance:
                 self.instruments["scope"] = session.instance
                 break
-        for snapshot in mgr.sessions(role="chamber", connected_only=True):
+        for snapshot in mgr.find_sessions(role="chamber", connected_only=True):
             session = mgr.get_session(snapshot.session_id)
             if session and session.connected and session.instance:
                 self.instruments["chamber"] = session.instance
@@ -318,6 +359,7 @@ class ExecutionContext:
 
     def reset(self) -> None:
         """重置上下文状态"""
+        self.release_runtime_resources()
         self.variables.clear()
         self.records.clear()
         self._stop_requested = False
