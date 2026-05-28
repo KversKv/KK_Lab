@@ -39,6 +39,7 @@ KK_Lab/
 ├── docs/                    # AI 协作与项目架构文档
 ├── hooks/                   # PyInstaller 自定义 hook
 ├── spec/                    # PyInstaller 打包配置
+├── tests/                   # 轻量回归测试
 ├── tools/                   # 开发辅助脚本 (SVG→ICO 转换等，不进打包产物)
 └── Results/                 # 测试结果输出目录 (运行时生成，Git 不跟踪)
 
@@ -227,7 +228,9 @@ ui/
 │   └── custom_test/             # 自定义测试序列（节点编辑器）
 │       ├── custom_test_ui.py         # 三栏布局主界面 (节点面板 / 画布 / 属性面板)
 │       ├── node_palette.py           # 左侧节点面板 (可折叠分组)
+│       ├── node_metadata.py          # 节点状态 / 可见性 / Phase 0 基线盘点辅助
 │       ├── sequence_canvas.py        # 中间可视化序列画布
+│       ├── sequence_io.py            # 序列 JSON 读取兼容入口 (list / dict)
 │       ├── property_panel.py         # 右侧属性面板
 │       ├── record_data_editor.py     # 数据记录字段编辑器
 │       ├── executor.py               # 序列执行线程 (ExecutorThread)
@@ -352,6 +355,7 @@ docs/
     ├── 09_WORKFLOW.md           # 任务 SOP (调用 / 执行 / 回归)
     ├── NewFT/                   # 新功能设计草案与阶段性需求规则
     │   ├── AutoDetectBaudrate.md # SerialCom 候选波特率自动识别设计
+    │   ├── CustomTestOPT.md      # Custom Test 架构优化方案与任务跟踪
     │   ├── InstrumentsManage.md  # 通用仪器管理架构方案
     │   ├── InstrumentsManagePlan.md # 通用仪器管理改善计划
     │   ├── InstrumentsManagePlanFixe.md # 仪器管理重构未完成项与修复计划
@@ -403,6 +407,14 @@ spec/
 ├── custom_test.spec         # Custom Test 独立窗口打包配置
 └── serialcom_module.spec    # SerialCom 串口模块独立窗口打包配置
                              # 打包命令: python -m PyInstaller spec/serialcom_module.spec --clean --noconfirm
+
+================================================================================
+  tests/ - 轻量回归测试
+================================================================================
+
+tests/
+├── test_auto_baud_detector.py       # SerialCom 自动波特率识别逻辑测试
+└── test_custom_test_phase0.py       # Custom Test Phase 0 序列读取 / 无 UI 执行 smoke
 
 ================================================================================
   tools/ - 开发辅助脚本

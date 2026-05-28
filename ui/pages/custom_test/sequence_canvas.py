@@ -20,6 +20,7 @@ from PySide6.QtGui import (
 )
 
 from ui.pages.custom_test.nodes.base_node import BaseNode, get_node_class
+from ui.pages.custom_test.sequence_io import load_sequence_file
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -1195,20 +1196,10 @@ class SequenceCanvas(QWidget):
         if not filepath:
             return
         try:
-            with open(filepath, "r", encoding="utf-8") as f:
-                data = json.load(f)
-
-            if isinstance(data, dict) and "sequence" in data:
-                seq_data = data["sequence"]
-                instr_meta = data.get("instruments", {})
-            else:
-                seq_data = data
-                instr_meta = {}
-
-            nodes = [BaseNode.from_dict(d) for d in seq_data]
-            self.load_from_nodes(nodes)
-            if instr_meta:
-                self.metadata_loaded.emit(instr_meta)
+            result = load_sequence_file(filepath)
+            self.load_from_nodes(result.nodes)
+            if result.instruments:
+                self.metadata_loaded.emit(result.instruments)
             logger.info("序列已加载: %s", filepath)
         except Exception as e:
             QMessageBox.warning(self, "加载失败", f"无法加载序列文件:\n{e}")

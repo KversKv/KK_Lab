@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 from ui.resource_path import get_resource_base
 import csv
-import json
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -22,8 +21,10 @@ import pyqtgraph as pg
 
 from ui.pages.custom_test.node_palette import NodePalette, CollapsibleSection
 from ui.pages.custom_test.sequence_canvas import SequenceCanvas
+from ui.pages.custom_test.sequence_io import load_sequence_file
 from ui.pages.custom_test.property_panel import PropertyPanel
 from ui.pages.custom_test.nodes.base_node import BaseNode, get_node_class
+from ui.pages.custom_test.node_metadata import filter_selectable_ops, is_node_selectable
 from ui.pages.custom_test.context import ExecutionContext
 from ui.pages.custom_test.executor import ExecutorThread
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
@@ -1174,6 +1175,9 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
 
     def _on_add_node(self, node_type: str) -> None:
         """从面板添加节点"""
+        if not is_node_selectable(node_type):
+            self.logs_frame.append_log(f"[WARN] 节点暂不可用或仅用于兼容加载: {node_type}")
+            return
         cls = get_node_class(node_type)
         if cls is None:
             self.logs_frame.append_log(f"[ERROR] 未知节点类型: {node_type}")
@@ -1200,9 +1204,17 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
             "Get": _tinted_svg_icon(os.path.join(_PAGE_SVGS_DIR, "list.svg"), "#8ea8d4") if os.path.isfile(os.path.join(_PAGE_SVGS_DIR, "list.svg")) else QIcon(),
         }
         for instr in INSTRUMENT_REGISTRY:
+            cats = []
+            for cat in instr.get("categories", []):
+                ops = filter_selectable_ops(cat.get("ops", []))
+                if ops:
+                    visible_cat = dict(cat)
+                    visible_cat["ops"] = ops
+                    cats.append(visible_cat)
+            if not cats:
+                continue
             sub = instr_submenu.addMenu(f"{instr['name']}")
             sub.setStyleSheet(_CONTEXT_MENU_STYLE)
-            cats = instr.get("categories", [])
             flat = len(cats) == 1
             for cat in cats:
                 cat_name = cat["name"]
@@ -1238,9 +1250,6 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
                         )
         menu.addSeparator()
 
-        _HIDDEN_NODE_TYPES = {
-            "IfElse", "IfThenElse", "IfBranch", "ElseIfBranch", "ElseBranch",
-        }
         _non_instr_cats = [
             ("value", "tag.svg", "Value / Variables"),
             ("logic", "git-branch.svg", "Logic / Flow"),
@@ -1249,7 +1258,7 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         for cat_key, icon_file, cat_label in _non_instr_cats:
             nodes = [
                 cls for cls in get_nodes_by_category(cat_key)
-                if cls.node_type not in _HIDDEN_NODE_TYPES
+                if is_node_selectable(cls.node_type)
             ]
             if not nodes:
                 continue
@@ -1273,8 +1282,15 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         if instr is None:
             return
 
-        categories = instr.get("categories", [])
+        categories = []
+        for cat in instr.get("categories", []):
+            ops = filter_selectable_ops(cat.get("ops", []))
+            if ops:
+                visible_cat = dict(cat)
+                visible_cat["ops"] = ops
+                categories.append(visible_cat)
         if not categories:
+            self.logs_frame.append_log(f"[WARN] 仪器节点暂不可用: {instr.get('name', instr_id)}")
             return
 
         all_ops = [op for cat in categories for op in cat.get("ops", [])]
@@ -1755,10 +1771,10 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
             self.logs_frame.append_log(f"[ERROR] 模板文件不存在: {filepath}")
             return
         try:
-            with open(filepath, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            nodes = [BaseNode.from_dict(d) for d in data]
-            self.canvas.load_from_nodes(nodes)
+            result = load_sequence_file(filepath)
+            self.canvas.load_from_nodes(result.nodes)
+            if result.instruments:
+                self._on_metadata_loaded(result.instruments)
             self.logs_frame.append_log(f"[TEMPLATE] 已加载模板: {template_name}")
         except Exception as e:
             self.logs_frame.append_log(f"[ERROR] 加载模板失败: {e}")

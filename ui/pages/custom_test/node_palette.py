@@ -14,7 +14,8 @@ from PySide6.QtCore import Qt, Signal, QMimeData
 from PySide6.QtGui import QDrag, QPixmap, QImage, QPainter, QColor, QIcon
 from PySide6.QtSvg import QSvgRenderer
 
-from ui.pages.custom_test.nodes.base_node import BaseNode, get_nodes_by_category
+from ui.pages.custom_test.nodes import BaseNode, get_nodes_by_category
+from ui.pages.custom_test.node_metadata import filter_selectable_ops, is_node_selectable
 
 from log_config import get_logger
 
@@ -516,6 +517,13 @@ def get_instrument_by_id(instr_id: str) -> Optional[Dict]:
     return None
 
 
+def _instrument_has_selectable_ops(instr: Dict) -> bool:
+    for cat in instr.get("categories", []):
+        if filter_selectable_ops(cat.get("ops", [])):
+            return True
+    return False
+
+
 class NodePalette(QWidget):
     """左栏节点面板：仪器区域（缩略图网格）+ 逻辑/IO 区域"""
 
@@ -587,7 +595,12 @@ class NodePalette(QWidget):
         grid.setSpacing(6)
         grid.setContentsMargins(0, 0, 0, 4)
 
-        for idx, instr in enumerate(INSTRUMENT_REGISTRY):
+        visible_instruments = [
+            instr for instr in INSTRUMENT_REGISTRY
+            if _instrument_has_selectable_ops(instr)
+        ]
+
+        for idx, instr in enumerate(visible_instruments):
             card = InstrumentCard(instr, self)
             card.double_clicked.connect(self._on_instrument_double_clicked)
             row = idx // 2
@@ -602,9 +615,6 @@ class NodePalette(QWidget):
         self._inner_layout.addWidget(section)
 
     def _build_category_sections(self) -> None:
-        _HIDDEN_NODE_TYPES = {
-            "IfElse", "IfThenElse", "IfBranch", "ElseIfBranch", "ElseBranch",
-        }
         _cat_icons = {
             "value": ("tag.svg", "Value / Variables"),
             "logic": ("git-branch.svg", "Logic / Flow"),
@@ -613,7 +623,7 @@ class NodePalette(QWidget):
         for cat_key, (icon_file, cat_label) in _cat_icons.items():
             nodes = [
                 cls for cls in get_nodes_by_category(cat_key)
-                if cls.node_type not in _HIDDEN_NODE_TYPES
+                if is_node_selectable(cls.node_type)
             ]
             if not nodes:
                 continue
