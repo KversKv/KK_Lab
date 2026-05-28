@@ -36,8 +36,9 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QMenu,
     QToolButton, QDialog, QTabWidget, QTabBar,
     QProgressBar, QStackedWidget, QMessageBox, QApplication,
+    QStyle, QStyleOptionTab, QStylePainter,
 )
-from PySide6.QtCore import Qt, QTimer, Signal, QThread, QObject, QByteArray
+from PySide6.QtCore import Qt, QTimer, Signal, QThread, QObject, QByteArray, QSize, QRect
 from PySide6.QtGui import QFont, QColor, QBrush, QPen, QPainter, QPixmap, QIcon
 from PySide6.QtSvg import QSvgRenderer
 import pyqtgraph as pg
@@ -834,6 +835,46 @@ class _DatalogWorker(QObject):
         return all_data
 
 
+class ChannelConfigTabBar(QTabBar):
+    NORMAL_MIN_WIDTH = 60
+    IMPORT_TAB_WIDTH = 34
+    IMPORT_ICON_SIZE = 20
+    IMPORT_TAB_KIND = "import_plus"
+
+    def tabSizeHint(self, index):
+        size = super().tabSizeHint(index)
+        if self.tabData(index) == self.IMPORT_TAB_KIND:
+            return QSize(self.IMPORT_TAB_WIDTH, size.height())
+        if size.width() < self.NORMAL_MIN_WIDTH:
+            size.setWidth(self.NORMAL_MIN_WIDTH)
+        return size
+
+    def paintEvent(self, event):
+        painter = QStylePainter(self)
+        option = QStyleOptionTab()
+        for index in range(self.count()):
+            self.initStyleOption(option, index)
+            if self.tabData(index) != self.IMPORT_TAB_KIND:
+                painter.drawControl(QStyle.CE_TabBarTab, option)
+                continue
+
+            tab_rect = option.rect
+            top = min(self.tabRect(i).top() for i in range(self.count()))
+            full_rect = QRect(tab_rect.left(), top, tab_rect.width(), tab_rect.bottom() - top + 1)
+            painter.save()
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setPen(QPen(QColor("#1a2b52"), 1))
+            painter.setBrush(QBrush(QColor("#0b1630")))
+            painter.drawRoundedRect(full_rect.adjusted(0, 0, -1, 0), 5, 5)
+            painter.fillRect(full_rect.adjusted(1, full_rect.height() - 1, -1, 0), QColor("#071127"))
+            painter.restore()
+
+            icon_rect = QRect(0, 0, self.IMPORT_ICON_SIZE, self.IMPORT_ICON_SIZE)
+            icon_rect.moveCenter(full_rect.center())
+            mode = QIcon.Selected if option.state & QStyle.State_Selected else QIcon.Normal
+            self.tabIcon(index).paint(painter, icon_rect, Qt.AlignCenter, mode)
+
+
 class VerticalTextButton(QWidget):
     clicked = Signal(bool)
 
@@ -1421,7 +1462,7 @@ class N6705CDatalogUI(QWidget):
                 border-radius: 8px;
                 background-color: #5b5cf6;
                 color: white;
-                font-size: 16px;
+                font-size: 22px;
                 font-weight: 700;
             }
 
@@ -2651,9 +2692,10 @@ class N6705CDatalogUI(QWidget):
     def _build_channel_config_card(self):
         self.channel_config_layout = self.channel_config_card.main_layout
 
-        self.channel_config_tabbar = QTabBar()
+        self.channel_config_tabbar = ChannelConfigTabBar()
         self.channel_config_tabbar.setDrawBase(False)
         self.channel_config_tabbar.setExpanding(False)
+        self.channel_config_tabbar.setIconSize(QSize(14, 14))
         self.channel_config_tabbar.setStyleSheet("""
             QTabBar {
                 background: transparent;
@@ -2671,7 +2713,6 @@ class N6705CDatalogUI(QWidget):
                 margin-bottom: 0px;
                 font-size: 11px;
                 font-weight: 600;
-                min-width: 60px;
             }
             QTabBar::tab:selected {
                 background-color: #071127;
@@ -2698,7 +2739,7 @@ class N6705CDatalogUI(QWidget):
         self.channel_config_stack.setStyleSheet("background: transparent;")
         self.channel_config_layout.addWidget(self.channel_config_stack)
 
-        self.channel_config_tabbar.currentChanged.connect(self.channel_config_stack.setCurrentIndex)
+        self.channel_config_tabbar.currentChanged.connect(self._on_channel_config_tab_changed)
         self.channel_config_tabbar.setContextMenuPolicy(Qt.CustomContextMenu)
         self.channel_config_tabbar.customContextMenuRequested.connect(self._on_ch_tabbar_context_menu)
 
@@ -2710,7 +2751,10 @@ class N6705CDatalogUI(QWidget):
         self._instruments_tab_layout.setSpacing(0)
         active_tab_idx = self.channel_config_tabbar.addTab("Active")
         self.channel_config_tabbar.setTabIcon(active_tab_idx, self._make_svg_icon("zap.svg", "#8eb0e3", 14))
+        self.channel_config_tabbar.setTabData(active_tab_idx, "active")
         self.channel_config_stack.addWidget(self._instruments_tab)
+        self._channel_config_last_tab_index = active_tab_idx
+        self._add_channel_config_import_tab()
 
         self.channel_config_inner = QWidget()
         self.channel_config_inner.setStyleSheet("background: #071127;")
@@ -2727,6 +2771,7 @@ class N6705CDatalogUI(QWidget):
         self.ch_voltage_cbs_b = []
         self.ch_current_cbs_b = []
         self.ch_power_cbs_b = []
+
         self.unit_a_ch_label = QLabel()
         self.unit_a_ch_label.hide()
         self.unit_b_ch_label = QLabel()
@@ -2739,6 +2784,33 @@ class N6705CDatalogUI(QWidget):
         self.no_instrument_label.setAlignment(Qt.AlignCenter)
         self.no_instrument_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._instruments_tab_layout.addWidget(self.no_instrument_label)
+
+    def _add_channel_config_import_tab(self):
+        tab_idx = self.channel_config_tabbar.addTab(self._make_svg_icon("plus.svg", "#8eb0e3", 20), "")
+        self.channel_config_tabbar.setTabData(tab_idx, "import_plus")
+        self.channel_config_tabbar.setTabToolTip(tab_idx, "Import Datalog")
+        self._channel_config_import_tab_idx = tab_idx
+
+    def _is_channel_config_import_tab(self, index):
+        if index < 0:
+            return False
+        return self.channel_config_tabbar.tabData(index) == "import_plus"
+
+    def _on_channel_config_tab_changed(self, index):
+        if self._is_channel_config_import_tab(index):
+            previous = getattr(self, "_channel_config_last_tab_index", 0)
+            if previous >= self.channel_config_tabbar.count() or self._is_channel_config_import_tab(previous):
+                previous = 0
+            self.channel_config_tabbar.blockSignals(True)
+            self.channel_config_tabbar.setCurrentIndex(previous)
+            self.channel_config_tabbar.blockSignals(False)
+            if previous < self.channel_config_stack.count():
+                self.channel_config_stack.setCurrentIndex(previous)
+            self._on_import()
+            return
+        if 0 <= index < self.channel_config_stack.count():
+            self.channel_config_stack.setCurrentIndex(index)
+            self._channel_config_last_tab_index = index
 
     def _make_svg_icon(self, svg_file, color="#dfe8ff", size=18):
         svg_path = os.path.join(get_resource_base(), "resources", "pages", "n6705c_power_analyzer_SVGs", svg_file)
@@ -3240,9 +3312,13 @@ class N6705CDatalogUI(QWidget):
         tab_layout.addStretch()
 
         self._imported_tab_configs.append(tab_config)
-        tab_idx = self.channel_config_tabbar.addTab(f"{tab_name}")
+        tab_idx = self.channel_config_tabbar.count()
+        if self._is_channel_config_import_tab(tab_idx - 1):
+            tab_idx -= 1
+        tab_idx = self.channel_config_tabbar.insertTab(tab_idx, f"{tab_name}")
+        self.channel_config_tabbar.setTabData(tab_idx, "imported")
         self.channel_config_tabbar.setTabIcon(tab_idx, self._make_svg_icon("file-text.svg", "#8eb0e3", 14))
-        self.channel_config_stack.addWidget(tab_widget)
+        self.channel_config_stack.insertWidget(tab_idx, tab_widget)
         close_btn = QPushButton()
         close_btn.setIcon(self._make_svg_icon("x-close.svg", "#4a6a96", 12))
         close_btn.setFixedSize(20, 20)
@@ -3258,7 +3334,7 @@ class N6705CDatalogUI(QWidget):
         self.channel_config_tabbar.setCurrentIndex(tab_idx)
 
     def _on_config_tab_close(self, index):
-        if index <= 0:
+        if index <= 0 or self._is_channel_config_import_tab(index):
             return
         widget = self.channel_config_stack.widget(index)
         if widget is None:
@@ -3492,7 +3568,7 @@ class N6705CDatalogUI(QWidget):
 
     def _on_ch_tabbar_context_menu(self, pos):
         index = self.channel_config_tabbar.tabAt(pos)
-        if index < 0:
+        if index < 0 or self._is_channel_config_import_tab(index):
             return
 
         data_keys = self._get_tab_data_keys(index)
@@ -4753,6 +4829,48 @@ class N6705CDatalogUI(QWidget):
 
         self._known_data_keys = current_keys
 
+    def _iter_channel_toggle_buttons(self):
+        groups = [
+            ("A", "I", getattr(self, 'ch_current_cbs_a', [])),
+            ("A", "V", getattr(self, 'ch_voltage_cbs_a', [])),
+            ("A", "P", getattr(self, 'ch_power_cbs_a', [])),
+            ("B", "I", getattr(self, 'ch_current_cbs_b', [])),
+            ("B", "V", getattr(self, 'ch_voltage_cbs_b', [])),
+            ("B", "P", getattr(self, 'ch_power_cbs_b', [])),
+        ]
+        for tab_idx, tc in enumerate(getattr(self, '_imported_tab_configs', [])):
+            groups.extend([
+                (f"F{tab_idx}:A", "I", tc.get("current_cbs_a", [])),
+                (f"F{tab_idx}:A", "V", tc.get("voltage_cbs_a", [])),
+                (f"F{tab_idx}:A", "P", tc.get("power_cbs_a", [])),
+                (f"F{tab_idx}:B", "I", tc.get("current_cbs_b", [])),
+                (f"F{tab_idx}:B", "V", tc.get("voltage_cbs_b", [])),
+                (f"F{tab_idx}:B", "P", tc.get("power_cbs_b", [])),
+            ])
+        for slot_key, meas_type, buttons in groups:
+            for idx, btn in enumerate(buttons):
+                yield (slot_key, meas_type, idx), btn
+
+    def _snapshot_channel_toggle_states(self):
+        return {
+            key: btn.isChecked()
+            for key, btn in self._iter_channel_toggle_buttons()
+        }
+
+    def _restore_channel_toggle_states(self, snapshot):
+        if not snapshot:
+            return
+        for key, btn in self._iter_channel_toggle_buttons():
+            if key not in snapshot:
+                continue
+            checked = snapshot[key]
+            btn.blockSignals(True)
+            btn.setChecked(checked)
+            ch_color = btn.property("ch_color")
+            if ch_color:
+                btn.setStyleSheet(self._ch_toggle_style(ch_color, checked))
+            btn.blockSignals(False)
+
     def _sync_cbs_for_data(self, data_dict, current_a, voltage_a, power_a,
                            current_b, voltage_b, power_b, new_keys=None):
         if new_keys is None:
@@ -4953,6 +5071,7 @@ class N6705CDatalogUI(QWidget):
             self._record_worker = None
             self._record_thread = None
 
+        self._recording_channel_toggle_snapshot = self._snapshot_channel_toggle_states()
         self._validate_sample_period()
 
         n6705c_list = []
@@ -5041,6 +5160,9 @@ class N6705CDatalogUI(QWidget):
                 self._known_data_keys.discard(k)
 
         self._update_recording_button_state(True)
+        self._restore_channel_toggle_states(
+            getattr(self, '_recording_channel_toggle_snapshot', None)
+        )
 
         sample_period_s = sample_period / 1_000_000.0
         total_points = monitor_time / sample_period_s if sample_period_s > 0 else 0
@@ -5084,6 +5206,10 @@ class N6705CDatalogUI(QWidget):
         self.datalog_data.update(data)
         self._clear_analysis_card_cache()
         self._sync_checkboxes_to_data()
+        if self.is_recording:
+            self._restore_channel_toggle_states(
+                getattr(self, '_recording_channel_toggle_snapshot', None)
+            )
         self._refresh_plot()
 
     def _on_dlog_raw_ready(self, dlog_list):
