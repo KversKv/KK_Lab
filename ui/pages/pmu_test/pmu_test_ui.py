@@ -33,11 +33,11 @@ class PMUTestUI(QWidget):
         "clk_test": 5,
     }
 
-    def __init__(self, n6705c_top=None, mso64b_top=None, vt6002_chamber_ui=None, instrument_manager=None):
+    def __init__(self, n6705c_top=None, mso64b_top=None, chamber_ui=None, instrument_manager=None):
         super().__init__()
         self._n6705c_top = n6705c_top
         self._mso64b_top = mso64b_top
-        self._vt6002_chamber_ui = vt6002_chamber_ui
+        self._chamber_ui = chamber_ui
         self._instrument_manager = instrument_manager
         self._setup_style()
         self._create_layout()
@@ -136,7 +136,7 @@ class PMUTestUI(QWidget):
         # 创建DCDC Efficiency页面
         self.dcdc_efficiency_ui = PMUDCDCEfficiencyUI(
             n6705c_top=self._n6705c_top,
-            vt6002_chamber_ui=self._vt6002_chamber_ui,
+            chamber_ui=self._chamber_ui,
             instrument_manager=self._instrument_manager,
         )
         self.tab_widget.addTab(self.dcdc_efficiency_ui, "DCDC Efficiency")
@@ -166,7 +166,11 @@ class PMUTestUI(QWidget):
         )
         self.tab_widget.addTab(self.gpadc_test_ui, "GPADC Test")
 
-        self.clk_test_ui = CLKTestUI(mso64b_top=self._mso64b_top)
+        self.clk_test_ui = CLKTestUI(
+            mso64b_top=self._mso64b_top,
+            chamber_ui=self._chamber_ui,
+            instrument_manager=self._instrument_manager,
+        )
         self.tab_widget.addTab(self.clk_test_ui, "CLK Test")
 
         main_layout.addWidget(self.tab_widget)

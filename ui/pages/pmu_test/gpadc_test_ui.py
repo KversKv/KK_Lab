@@ -1,4 +1,4 @@
-"""
+﻿"""
 GPADC测试UI组件
 修复左侧滚动区域宽度与显示不完整问题
 """
@@ -11,7 +11,7 @@ from ui.styles import SCROLL_AREA_STYLE, START_BTN_STYLE, update_start_btn_state
 from ui.widgets.button import update_connect_button_state
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
-from ui.modules.chamber_module_frame import VT6002ConnectionMixin
+from ui.modules.chamber_module_frame import ChamberConnectionMixin
 from ui.modules.serialCom_module.serialCom_module_frame import SerialComMixin, MODE_FULL
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
@@ -34,7 +34,7 @@ from Bes_I2CIO_Interface import I2CSpeedMode, I2CWidthFlag
 
 from log_config import get_logger
 from debug_config import DEBUG_MOCK
-from instruments.mock.mock_instruments import MockI2C, MockN6705C, MockVT6002
+from instruments.mock.mock_instruments import MockChamber, MockI2C, MockN6705C
 from instruments.chambers import TemperatureStabilizer
 from ui.theme import Colors, FontSizes, Radius, Spacing, FONT_MONO
 from ui.styles import get_page_base_qss
@@ -68,7 +68,7 @@ class _TestWorker(QObject):
             self.error.emit(str(e))
 
 
-class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, QWidget):
+class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin, QWidget):
     """GPADC测试UI组件"""
 
     connection_status_changed = Signal(bool)
@@ -90,7 +90,7 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
 
         self._instrument_manager = instrument_manager
         self.init_n6705c_connection(n6705c_top, instrument_manager=instrument_manager)
-        self.init_vt6002_connection()
+        self.init_chamber_connection(instrument_manager=instrument_manager)
         self.init_serial_connection(mode=MODE_FULL, prefix="DUT")
 
         self.dut_serial = None
@@ -389,22 +389,22 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
 
         instruments_layout.addWidget(self.n6705c_card)
 
-        self.vt6002_card = QFrame()
-        self.vt6002_card.setObjectName("config_inner_panel")
-        vt6002_card_layout = QVBoxLayout(self.vt6002_card)
-        vt6002_card_layout.setContentsMargins(10, 10, 10, 10)
-        vt6002_card_layout.setSpacing(6)
-        vt6002_title_row = QHBoxLayout()
-        vt6002_title_row.setSpacing(6)
-        vt6002_title = QLabel("VT6002 Chamber")
-        vt6002_title.setStyleSheet("color: #c8d8ff; font-size: 11px; font-weight: 600; border: none;")
-        vt6002_title_row.addWidget(vt6002_title)
-        vt6002_title_row.addStretch()
-        vt6002_card_layout.addLayout(vt6002_title_row)
-        self.build_vt6002_connection_widgets(vt6002_card_layout)
-        vt6002_card_layout.removeWidget(self.vt6002_status_label)
-        vt6002_title_row.addWidget(self.vt6002_status_label)
-        instruments_layout.addWidget(self.vt6002_card)
+        self.chamber_card = QFrame()
+        self.chamber_card.setObjectName("config_inner_panel")
+        chamber_card_layout = QVBoxLayout(self.chamber_card)
+        chamber_card_layout.setContentsMargins(10, 10, 10, 10)
+        chamber_card_layout.setSpacing(6)
+        chamber_title_row = QHBoxLayout()
+        chamber_title_row.setSpacing(6)
+        chamber_title = QLabel("Chamber")
+        chamber_title.setStyleSheet("color: #c8d8ff; font-size: 11px; font-weight: 600; border: none;")
+        chamber_title_row.addWidget(chamber_title)
+        chamber_title_row.addStretch()
+        chamber_card_layout.addLayout(chamber_title_row)
+        self.build_chamber_connection_widgets(chamber_card_layout)
+        chamber_card_layout.removeWidget(self.chamber_status_label)
+        chamber_title_row.addWidget(self.chamber_status_label)
+        instruments_layout.addWidget(self.chamber_card)
         left_col.addWidget(self.instruments_panel)
 
         # Data Acquisition
@@ -578,7 +578,7 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
         self.voltage_channel.setCurrentIndex(3)
         params_layout.addWidget(self.voltage_channel)
 
-        self.temp_hint_label = QLabel("Connect VT6002 to enable temperature testing.")
+        self.temp_hint_label = QLabel("Connect chamber to enable temperature testing.")
         self.temp_hint_label.setStyleSheet("color: #ff5a7a; font-size: 11px;")
         self.temp_hint_label.setWordWrap(True)
         params_layout.addWidget(self.temp_hint_label)
@@ -752,7 +752,7 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
         self.test_item_combo.currentIndexChanged.connect(self._on_test_item_changed)
 
         self.bind_n6705c_signals()
-        self.bind_vt6002_signals()
+        self.bind_chamber_signals()
 
         self.start_test_btn.clicked.connect(self._on_start_or_stop)
         self.stop_test_btn.clicked.connect(self._stop_test)
@@ -790,7 +790,7 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
         has_instruments = len(required) > 0
         self.instruments_panel.setVisible(has_instruments)
         self.n6705c_card.setVisible("n6705c" in required)
-        self.vt6002_card.setVisible("chamber" in required)
+        self.chamber_card.setVisible("chamber" in required)
 
         if test_item == self.TEST_1000CNT:
             self.params_mode_label.setText("1000 COUNT TEST")
@@ -1278,7 +1278,7 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
     def _set_ui_enabled(self, enabled):
         widgets = [
             self.n6705c_combo, self.n6705c_search_btn, self.n6705c_connect_btn,
-            self.vt6002_combo, self.vt6002_search_btn, self.vt6002_connect_btn,
+            self.chamber_port_combo, self.chamber_search_btn, self.chamber_connect_btn,
             self.serial_combo, self.serial_search_btn, self.serial_connect_btn, self.uart_keyword,
             self.iic_radio, self.uart_radio,
             self.iic_device_address, self.iic_data_address,
@@ -1297,7 +1297,7 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
 
         return {
             'n6705c_connected': self.is_connected,
-            'vt6002_connected': self.is_vt6002_connected,
+            'chamber_connected': self.is_chamber_connected,
             'test_item': self.current_test_item,
             'data_acquisition_mode': acquisition_mode,
             'iic_device_address': self.iic_device_address.text(),
@@ -1354,7 +1354,7 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
         except ImportError:
             isValid = lambda obj: obj is not None
 
-        for attr in ('_n6705c_search_thread', '_vt6002_search_thread', '_serial_search_thread'):
+        for attr in ('_n6705c_search_thread', '_chamber_search_thread', '_serial_search_thread'):
             thread = getattr(self, attr, None)
             if thread is not None and isValid(thread) and thread.isRunning():
                 thread.quit()
@@ -1579,17 +1579,17 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
             if DEBUG_MOCK:
                 if not hasattr(self, "_mock_i2c"):
                     self._mock_i2c = MockI2C()
-                chamber = MockVT6002()
+                chamber = MockChamber()
                 deviceI2C = self._mock_i2c
             else:
-                if not hasattr(self, 'vt6002') or not self.is_vt6002_connected:
-                    self._test_worker.log.emit("[ERROR] VT6002 chamber not connected")
-                    self.set_system_status("错误: VT6002温箱未连接", is_error=True)
+                if not hasattr(self, 'chamber') or not self.is_chamber_connected:
+                    self._test_worker.log.emit("[ERROR] Chamber not connected")
+                    self.set_system_status("错误: 温箱未连接", is_error=True)
                     return None
                 if not hasattr(self, "deviceI2C"):
                     self.deviceI2C = I2CInterface()
                     self.set_system_status("I2C接口初始化成功")
-                chamber = self.vt6002
+                chamber = self.chamber
                 deviceI2C = self.deviceI2C
 
             test_data = deviceI2C.read(device_addr, reg_addr, iic_weight)
@@ -1715,13 +1715,13 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
         if DEBUG_MOCK:
             if not hasattr(self, "_mock_i2c"):
                 self._mock_i2c = MockI2C()
-            chamber = MockVT6002()
+                chamber = MockChamber()
             vol_source = MockN6705C()
             vol_source._mock_i2c = self._mock_i2c
         else:
-            if not hasattr(self, 'vt6002') or not self.is_vt6002_connected:
-                self._test_worker.log.emit("[ERROR] VT6002 chamber not connected")
-                self.set_system_status("错误: VT6002温箱未连接", is_error=True)
+            if not hasattr(self, 'chamber') or not self.is_chamber_connected:
+                self._test_worker.log.emit("[ERROR] Chamber not connected")
+                self.set_system_status("错误: 温箱未连接", is_error=True)
                 return None
             if self.n6705c is None or not self.is_connected:
                 self._test_worker.log.emit("[ERROR] N6705C not connected")
@@ -1730,7 +1730,7 @@ class GPADCTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, 
             if not hasattr(self, "deviceI2C"):
                 self.deviceI2C = I2CInterface()
                 self.set_system_status("I2C接口初始化成功")
-            chamber = self.vt6002
+            chamber = self.chamber
             vol_source = self.n6705c
 
         settle_time = 0.0 if DEBUG_MOCK else 0.5
@@ -2353,3 +2353,6 @@ if __name__ == "__main__":
     gpadc_test_ui.show()
 
     sys.exit(app.exec())
+
+
+

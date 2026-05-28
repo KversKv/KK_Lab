@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-VT6002 温箱控制界面
-"""
+"""Generic temperature chamber control page."""
 
 import sys
 import os
 from ui.resource_path import get_resource_base
-import logging
 
 
 # 添加项目根目录到sys.path，解决模块导入问题
@@ -18,22 +15,33 @@ from ui.widgets.button import update_connect_button_state
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QPushButton,
     QLabel, QLineEdit, QFrame, QGraphicsDropShadowEffect,
-    QSizePolicy, QApplication
+    QSizePolicy, QApplication, QGridLayout
 )
 from PySide6.QtCore import Qt, QTimer, QRectF, QSize, Signal
-from PySide6.QtGui import QColor, QPainter, QPen, QFont, QPixmap
+from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QFont, QPixmap
 from PySide6.QtSvg import QSvgRenderer
-from instruments.chambers.vt6002_chamber import VT6002, serial
 from debug_config import DEBUG_MOCK
-from instruments.mock.mock_instruments import MockVT6002
+from instruments.factory import create_chamber
+from log_config import get_logger
+from ui.modules.chamber_module_frame import (
+    CHAMBER_TYPES,
+    chamber_baudrate,
+    chamber_connection_kind,
+    chamber_display_name,
+    chamber_type_label,
+)
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _PAGE_SVGS_DIR = os.path.join(
     get_resource_base(),
     "resources", "pages", "chamber_SVGs"
 )
 _THERMOMETER_SVG_PATH = os.path.join(_PAGE_SVGS_DIR, "thermometer.svg")
+_SEARCH_SVG_PATH = os.path.join(
+    get_resource_base(),
+    "resources", "modules", "SVG_Common", "search.svg"
+)
 
 
 class TemperatureGauge(QWidget):
@@ -93,17 +101,19 @@ class TemperatureGauge(QWidget):
         painter.drawText(value_rect, Qt.AlignCenter, value_text)
 
 
-class VT6002ChamberUI(QWidget):
-    """VT6002 温箱控制界面"""
+class ChamberControlUI(QWidget):
+    """Generic temperature chamber control UI."""
 
     connection_changed = Signal()
 
     def __init__(self, instrument_manager=None):
         super().__init__()
-        self.vt6002 = None
+        self.chamber = None
         self._instrument_manager = instrument_manager
         self.timer = QTimer()
         self.is_chamber_on = False
+        self.current_chamber_type = "vt6002"
+        self.current_chamber_session_id = None
         self.current_port = None
         self.preset_buttons = []
 
@@ -146,7 +156,7 @@ class VT6002ChamberUI(QWidget):
         title_icon.setStyleSheet("border: none; background: transparent;")
         title_row.addWidget(title_icon)
 
-        title_label = QLabel("VT6002 Chamber")
+        title_label = QLabel("Chamber")
         title_label.setObjectName("titleLabel")
         title_label.setStyleSheet("border: none")
         title_row.addWidget(title_label)
@@ -154,7 +164,7 @@ class VT6002ChamberUI(QWidget):
 
         header_layout.addLayout(title_row)
 
-        subtitle_label = QLabel("Thermal chamber control and monitoring via Serial Port.")
+        subtitle_label = QLabel("Thermal chamber control and monitoring via serial port.")
         subtitle_label.setObjectName("subtitleLabel")
         subtitle_label.setStyleSheet("border: none")
 
@@ -162,43 +172,90 @@ class VT6002ChamberUI(QWidget):
         main_layout.addLayout(header_layout)
 
         # 串口连接卡片
-        serial_group = QGroupBox("Serial Connection")
-        serial_group.setObjectName("cardGroup")
+        serial_group = QFrame()
+        serial_group.setObjectName("connectionCard")
         serial_layout = QVBoxLayout(serial_group)
-        serial_layout.setContentsMargins(18, 18, 18, 18)
-        serial_layout.setSpacing(12)
+        serial_layout.setContentsMargins(18, 16, 18, 18)
+        serial_layout.setSpacing(14)
+
+        connection_header = QHBoxLayout()
+        connection_header.setContentsMargins(0, 0, 0, 0)
+        connection_header.setSpacing(10)
+
+        connection_title_col = QVBoxLayout()
+        connection_title_col.setContentsMargins(0, 0, 0, 0)
+        connection_title_col.setSpacing(2)
+
+        connection_title = QLabel("Serial Connection")
+        connection_title.setObjectName("connectionTitle")
+        connection_title.setStyleSheet("border: none")
+
+        connection_subtitle = QLabel("Select chamber model and COM port")
+        connection_subtitle.setObjectName("connectionSubtitle")
+        connection_subtitle.setStyleSheet("border: none")
+
+        connection_title_col.addWidget(connection_title)
+        connection_title_col.addWidget(connection_subtitle)
+        connection_header.addLayout(connection_title_col)
+        connection_header.addStretch()
+        serial_layout.addLayout(connection_header)
+
+        type_label = QLabel("Chamber Type")
+        type_label.setObjectName("fieldLabel")
+        type_label.setStyleSheet("border: none")
+
+        self.chamber_type_combo = DarkComboBox(bg="#04102b", border="#1a315d")
+        self.chamber_type_combo.setObjectName("comboBox")
+        for chamber_type, meta in CHAMBER_TYPES.items():
+            self.chamber_type_combo.addItem(meta["label"], chamber_type)
 
         port_label = QLabel("COM Port")
         port_label.setObjectName("fieldLabel")
         port_label.setStyleSheet("border: none")
 
         row_layout = QHBoxLayout()
-        row_layout.setSpacing(12)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(14)
+
+        form_panel = QFrame()
+        form_panel.setObjectName("connectionPanel")
+        form_layout = QGridLayout(form_panel)
+        form_layout.setContentsMargins(14, 12, 14, 14)
+        form_layout.setHorizontalSpacing(12)
+        form_layout.setVerticalSpacing(8)
 
         self.port_combo = DarkComboBox(bg="#04102b", border="#1a315d")
         self.port_combo.setObjectName("comboBox")
 
-        self.scan_btn = QPushButton("⌕")
+        self.scan_btn = QPushButton()
         self.scan_btn.setObjectName("iconButton")
-        self.scan_btn.setFixedSize(40, 40)
+        self.scan_btn.setFixedSize(40, 38)
+        self.scan_btn.setToolTip("Search serial ports")
+        if os.path.isfile(_SEARCH_SVG_PATH):
+            self.scan_btn.setIcon(QIcon(_SEARCH_SVG_PATH))
+            self.scan_btn.setIconSize(QSize(16, 16))
         self.scan_btn.clicked.connect(self._scan_ports)
 
-        port_left_layout = QVBoxLayout()
-        port_left_layout.setSpacing(6)
-        port_left_layout.addWidget(port_label)
-
         port_control_layout = QHBoxLayout()
-        port_control_layout.setSpacing(10)
+        port_control_layout.setContentsMargins(0, 0, 0, 0)
+        port_control_layout.setSpacing(8)
         port_control_layout.addWidget(self.port_combo, 1)
         port_control_layout.addWidget(self.scan_btn, 0)
-        port_left_layout.addLayout(port_control_layout)
+
+        form_layout.addWidget(type_label, 0, 0)
+        form_layout.addWidget(port_label, 0, 1)
+        form_layout.addWidget(self.chamber_type_combo, 1, 0)
+        form_layout.addLayout(port_control_layout, 1, 1)
+        form_layout.setColumnStretch(0, 1)
+        form_layout.setColumnStretch(1, 2)
 
         self.status_frame = QFrame()
         self.status_frame.setObjectName("statusWrap")
-        self.status_frame.setMinimumHeight(48)
+        self.status_frame.setMinimumHeight(92)
+        self.status_frame.setMaximumWidth(370)
         status_layout = QHBoxLayout(self.status_frame)
-        status_layout.setContentsMargins(14, 8, 10, 8)
-        status_layout.setSpacing(10)
+        status_layout.setContentsMargins(16, 14, 12, 14)
+        status_layout.setSpacing(12)
 
         self.status_dot = QLabel("●")
         self.status_dot.setObjectName("statusDot")
@@ -207,7 +264,7 @@ class VT6002ChamberUI(QWidget):
         status_text_layout = QVBoxLayout()
         status_text_layout.setSpacing(0)
 
-        self.status_title = QLabel("VT6002 Status")
+        self.status_title = QLabel("Chamber Status")
         self.status_title.setObjectName("statusTitle")
         self.status_title.setStyleSheet("border: none")
 
@@ -220,14 +277,15 @@ class VT6002ChamberUI(QWidget):
 
         self.connect_btn = QPushButton()
         update_connect_button_state(self.connect_btn, connected=False)
-        self.connect_btn.setFixedHeight(36)
+        self.connect_btn.setObjectName("connectButton")
+        self.connect_btn.setFixedSize(116, 38)
 
         status_layout.addWidget(self.status_dot)
         status_layout.addLayout(status_text_layout)
         status_layout.addStretch()
         status_layout.addWidget(self.connect_btn)
 
-        row_layout.addLayout(port_left_layout, 3)
+        row_layout.addWidget(form_panel, 3)
         row_layout.addWidget(self.status_frame, 2)
 
         serial_layout.addLayout(row_layout)
@@ -357,6 +415,7 @@ class VT6002ChamberUI(QWidget):
         self._scan_ports()
 
     def _connect_signals(self):
+        self.chamber_type_combo.currentIndexChanged.connect(self._on_chamber_type_changed)
         self.connect_btn.clicked.connect(self._toggle_connection)
         self.power_btn.clicked.connect(self._toggle_chamber_power)
         self.set_btn.clicked.connect(self._set_temperature)
@@ -373,22 +432,26 @@ class VT6002ChamberUI(QWidget):
             )
 
     def _on_manager_session_connected(self, session_id: str):
-        if session_id != "vt6002:default":
-            return
         session = self._instrument_manager.get_session(session_id)
+        if not session or session.role != "chamber":
+            return
         if session and session.connected:
-            self.vt6002 = session.instance
+            self.chamber = session.instance
+            self.current_chamber_type = session.instrument_type
+            self.current_chamber_session_id = session_id
             self.current_port = session.resource
+            self._set_type_combo(session.instrument_type)
             self._set_connection_ui(True)
             self._set_controls_enabled(True)
             self._set_power_ui(False)
             self.connection_changed.emit()
 
     def _on_manager_session_disconnected(self, session_id: str):
-        if session_id != "vt6002:default":
+        if session_id != self.current_chamber_session_id:
             return
-        self.vt6002 = None
+        self.chamber = None
         self.current_port = None
+        self.current_chamber_session_id = None
         self.is_chamber_on = False
         self._set_connection_ui(False)
         self._set_controls_enabled(False)
@@ -396,11 +459,25 @@ class VT6002ChamberUI(QWidget):
         self.connection_changed.emit()
 
     def _on_manager_connect_failed(self, session_id: str, error: str):
-        if session_id != "vt6002:default":
+        if session_id != self.current_chamber_session_id and not session_id.endswith(":chamber"):
             return
-        logger.error("VT6002 connection failed via manager: %s", error)
+        logger.error("Chamber connection failed via manager: %s", error)
         self._set_connection_ui(False)
         self._set_controls_enabled(False)
+
+    def _on_chamber_type_changed(self):
+        self.current_chamber_type = self._selected_chamber_type()
+        if self.chamber is None:
+            self.port_combo.clear()
+
+    def _selected_chamber_type(self):
+        data = self.chamber_type_combo.currentData()
+        return str(data or self.current_chamber_type or "vt6002")
+
+    def _set_type_combo(self, chamber_type: str):
+        idx = self.chamber_type_combo.findData(chamber_type)
+        if idx >= 0:
+            self.chamber_type_combo.setCurrentIndex(idx)
 
     def _apply_shadow(self, widget):
         """卡片阴影"""
@@ -455,8 +532,32 @@ class VT6002ChamberUI(QWidget):
             font-weight: 700;
         }
 
+        QFrame#connectionCard {
+            background-color: #0a1738;
+            border: 1px solid rgba(94, 126, 190, 0.22);
+            border-radius: 14px;
+        }
+
+        QFrame#connectionPanel {
+            background-color: #07132e;
+            border: 1px solid #17305f;
+            border-radius: 10px;
+        }
+
+        #connectionTitle {
+            font-size: 15px;
+            font-weight: 800;
+            color: #f4f7ff;
+        }
+
+        #connectionSubtitle {
+            font-size: 12px;
+            color: #8ca5d3;
+        }
+
         #fieldLabel {
-            font-size: 13px;
+            font-size: 12px;
+            font-weight: 650;
             color: #8ca5d3;
         }
 
@@ -464,8 +565,8 @@ class VT6002ChamberUI(QWidget):
             background-color: #04102b;
             border: 1px solid #1a315d;
             border-radius: 8px;
-            padding: 10px 12px;
-            min-height: 18px;
+            padding: 0 12px;
+            min-height: 36px;
             color: #eef4ff;
         }
 
@@ -502,7 +603,7 @@ class VT6002ChamberUI(QWidget):
         }
 
         #iconButton {
-            background-color: #1a2747;
+            background-color: #13254b;
             border: 1px solid #22365d;
             border-radius: 8px;
             color: #b7c7e6;
@@ -519,18 +620,18 @@ class VT6002ChamberUI(QWidget):
         }
 
         #statusWrap {
-            background-color: #04102b;
-            border: 1px solid #1b2f58;
-            border-radius: 8px;
+            background-color: #07132e;
+            border: 1px solid #17305f;
+            border-radius: 10px;
         }
 
         #statusDot {
             color: #5d78a7;
-            font-size: 16px;
+            font-size: 18px;
         }
 
         #statusTitle {
-            font-size: 13px;
+            font-size: 14px;
             font-weight: 700;
             color: #dfe8fb;
         }
@@ -538,6 +639,14 @@ class VT6002ChamberUI(QWidget):
         #statusDesc {
             font-size: 12px;
             color: #7e95bf;
+        }
+
+        QPushButton#connectButton {
+            min-height: 38px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 800;
+            padding: 0 14px;
         }
 
         #miniInfoBox {
@@ -659,8 +768,11 @@ class VT6002ChamberUI(QWidget):
 
     def _set_connection_ui(self, connected: bool):
         update_connect_button_state(self.connect_btn, connected)
+        self.chamber_type_combo.setEnabled(not connected)
+        self.port_combo.setEnabled(not connected)
+        self.scan_btn.setEnabled(not connected)
         if connected:
-            self.status_detail.setText("Connected & Ready")
+            self.status_detail.setText(f"{chamber_display_name(self.current_chamber_type)} Connected & Ready")
             self.status_dot.setStyleSheet("color: #15e6a3; font-size: 16px;border: none")
         else:
             self.status_detail.setText("Disconnected")
@@ -713,9 +825,10 @@ class VT6002ChamberUI(QWidget):
             """)
 
     def _scan_ports(self):
+        chamber_type = self._selected_chamber_type()
         if DEBUG_MOCK:
             self.port_combo.clear()
-            self.port_combo.addItem("MOCK (Mock VT6002)")
+            self.port_combo.addItem(f"MOCK (Mock {chamber_type_label(chamber_type)})")
             return
         try:
             from serial.tools.list_ports import comports
@@ -734,19 +847,21 @@ class VT6002ChamberUI(QWidget):
             self.port_combo.addItem("Scan Failed")
 
     def _toggle_connection(self):
-        is_connected = self.vt6002 is not None and (
-            (isinstance(self.vt6002, MockVT6002) and self.vt6002.ser.is_open)
-            or (hasattr(self.vt6002, 'ser') and self.vt6002.ser.is_open)
+        is_connected = self.chamber is not None and (
+            self.chamber.is_connected()
+            if hasattr(self.chamber, "is_connected")
+            else hasattr(self.chamber, "ser") and self.chamber.ser.is_open
         )
 
         if is_connected:
             try:
-                if self._instrument_manager:
-                    self._instrument_manager.disconnect_async("vt6002:default")
+                if self._instrument_manager and self.current_chamber_session_id:
+                    self._instrument_manager.disconnect_async(self.current_chamber_session_id)
                 else:
-                    self.vt6002.close()
-                    self.vt6002 = None
+                    self.chamber.close()
+                    self.chamber = None
                     self.current_port = None
+                    self.current_chamber_session_id = None
                     self.is_chamber_on = False
 
                     self._set_connection_ui(False)
@@ -756,40 +871,43 @@ class VT6002ChamberUI(QWidget):
             except Exception as e:
                 logger.error("断开连接错误: %s", e, exc_info=True)
         else:
+            chamber_type = self._selected_chamber_type()
             current_text = self.port_combo.currentText().strip()
             if not current_text or current_text in ("No Serial Ports Found", "Scan Failed"):
                 return
 
             try:
-                if self._instrument_manager and not DEBUG_MOCK:
+                device_port = f"MOCK::{chamber_type_label(chamber_type)}" if DEBUG_MOCK else current_text.split()[0]
+                if self._instrument_manager:
                     from core.instruments import InstrumentSpec
-                    device_port = current_text.split()[0]
-                    self._instrument_manager.connect_async(InstrumentSpec(
-                        instrument_type="vt6002",
+                    self.current_chamber_session_id = self._instrument_manager.connect_async(InstrumentSpec(
+                        instrument_type=chamber_type,
                         role="chamber",
-                        connection_kind="serial",
+                        connection_kind=chamber_connection_kind(chamber_type),
                         slot="default",
                         resource=device_port,
                     ))
                     return
 
-                if DEBUG_MOCK:
-                    self.vt6002 = MockVT6002()
-                    self.current_port = "MOCK"
-                else:
-                    device_port = current_text.split()[0]
-                    self.vt6002 = VT6002(device_port)
-                    self.current_port = device_port
+                self.chamber = create_chamber(
+                    chamber_type=chamber_type,
+                    port=device_port,
+                    baudrate=chamber_baudrate(chamber_type),
+                )
+                self.current_chamber_type = chamber_type
+                self.current_port = device_port
 
                 if self._instrument_manager:
                     from core.instruments import InstrumentSpec
                     self._instrument_manager.attach_external(
                         InstrumentSpec(
-                            instrument_type="vt6002",
+                            instrument_type=chamber_type,
+                            role="chamber",
+                            connection_kind=chamber_connection_kind(chamber_type),
                             resource=self.current_port,
                             slot="default",
                         ),
-                        instance=self.vt6002, serial="", model="VT6002",
+                        instance=self.chamber, serial="", model=chamber_type_label(chamber_type),
                     )
                 self._set_connection_ui(True)
                 self._set_controls_enabled(True)
@@ -797,26 +915,26 @@ class VT6002ChamberUI(QWidget):
                 self.connection_changed.emit()
             except Exception as e:
                 logger.error("连接设备错误: %s", e, exc_info=True)
-                self.vt6002 = None
+                self.chamber = None
                 self.current_port = None
                 self._set_connection_ui(False)
                 self._set_controls_enabled(False)
 
     def _toggle_chamber_power(self):
         """切换温箱电源"""
-        if self.vt6002 is None:
+        if self.chamber is None:
             return
 
         if self.is_chamber_on:
             try:
-                self.vt6002.stop()
+                self.chamber.stop()
                 self.is_chamber_on = False
                 self._set_power_ui(False)
             except Exception as e:
                 logger.error("关闭温箱错误: %s", e)
         else:
             try:
-                self.vt6002.start()
+                self.chamber.start()
                 self.is_chamber_on = True
                 self._set_power_ui(True)
             except Exception as e:
@@ -824,12 +942,12 @@ class VT6002ChamberUI(QWidget):
 
     def _set_temperature(self):
         """设置温度"""
-        if self.vt6002 is None:
+        if self.chamber is None:
             return
 
         try:
             temp = float(self.temp_input.text())
-            self.vt6002.set_temperature(temp)
+            self.chamber.set_temperature(temp)
             self.set_temp_value.setText(f"{temp:.1f} °C")
         except ValueError:
             logger.warning("设置温度错误: 输入不是有效数字")
@@ -838,13 +956,13 @@ class VT6002ChamberUI(QWidget):
 
     def _set_preset_temp(self, temp_str):
         """设置预设温度"""
-        if self.vt6002 is None:
+        if self.chamber is None:
             return
 
         try:
             temp = float(temp_str.replace("°C", ""))
             self.temp_input.setText(str(temp))
-            self.vt6002.set_temperature(temp)
+            self.chamber.set_temperature(temp)
             self.set_temp_value.setText(f"{temp:.1f} °C")
         except ValueError:
             logger.warning("设置预设温度错误: 输入不是有效数字")
@@ -852,15 +970,18 @@ class VT6002ChamberUI(QWidget):
             logger.error("设置预设温度错误: %s", e)
 
     def _update_temperatures(self):
-        is_connected = self.vt6002 is not None and hasattr(self.vt6002, 'ser') and self.vt6002.ser.is_open
+        if self.chamber is not None and hasattr(self.chamber, "is_connected"):
+            is_connected = self.chamber.is_connected()
+        else:
+            is_connected = self.chamber is not None and hasattr(self.chamber, 'ser') and self.chamber.ser.is_open
 
         if is_connected:
             try:
-                actual_temp = self.vt6002.get_current_temp()
+                actual_temp = self.chamber.get_current_temp()
                 if actual_temp is not None:
                     self.temp_gauge.set_temperature(actual_temp)
 
-                set_temp = self.vt6002.get_set_temp()
+                set_temp = self.chamber.get_set_temp()
                 if set_temp is not None:
                     self.set_temp_value.setText(f"{set_temp:.1f} °C")
             except Exception as e:
@@ -884,8 +1005,8 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
-    window = VT6002ChamberUI()
-    window.setWindowTitle("VT6002 Chamber Test")
+    window = ChamberControlUI()
+    window.setWindowTitle("Chamber Test")
     window.resize(980, 760)
     window.show()
 

@@ -26,7 +26,7 @@ from ui.pages.custom_test.nodes.base_node import BaseNode, get_node_class
 from ui.pages.custom_test.context import ExecutionContext
 from ui.pages.custom_test.executor import ExecutorThread
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
-from ui.modules.chamber_module_frame import VT6002ConnectionMixin
+from ui.modules.chamber_module_frame import ChamberConnectionMixin
 from ui.modules.serialCom_module.serialCom_module_frame import SerialComMixin, MODE_FULL
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.widgets.scrollbar import SCROLLBAR_STYLE
@@ -261,31 +261,31 @@ _PAGE_STYLE = """
 """ + SCROLLBAR_STYLE
 
 
-class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin, QWidget):
+class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin, QWidget):
     """Custom Test 主界面"""
 
     connection_status_changed = Signal(bool)
-    vt6002_connection_changed = Signal(bool)
+    chamber_connection_changed = Signal(bool)
     serial_connection_changed = Signal(bool)
     serial_data_received = Signal(bytes)
 
     def __init__(self, n6705c_top=None, mso64b_top=None,
-                 vt6002_chamber_ui=None, instrument_manager=None, parent=None) -> None:
+                 chamber_ui=None, instrument_manager=None, parent=None) -> None:
         super().__init__(parent)
         self.setObjectName("customTestPage")
         self.setStyleSheet(_PAGE_STYLE)
 
         self._n6705c_top_ref = n6705c_top
         self._mso64b_top_ref = mso64b_top
-        self._vt6002_chamber_ui_ref = vt6002_chamber_ui
+        self._chamber_ui_ref = chamber_ui
         self._instrument_manager = instrument_manager
 
         self.init_n6705c_connection(n6705c_top)
-        self.init_vt6002_connection(vt6002_chamber_ui)
+        self.init_chamber_connection(chamber_ui, instrument_manager=instrument_manager)
         self.init_serial_connection(mode=MODE_FULL, baudrate=115200, prefix="UART")
 
         self._n6705c_widgets_built = False
-        self._vt6002_widgets_built = False
+        self._chamber_widgets_built = False
         self._uart_widgets_built = False
         self._i2c_interface = None
 
@@ -482,7 +482,7 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         used_ids = self._get_used_instrument_ids()
 
         self._n6705c_widgets_built = False
-        self._vt6002_widgets_built = False
+        self._chamber_widgets_built = False
         self._uart_widgets_built = False
 
         if not used_ids:
@@ -503,15 +503,15 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
             if self._n6705c_top_ref:
                 self.sync_n6705c_from_top()
 
-        if "vt6002" in used_ids:
-            lbl = QLabel("VT6002 Chamber")
+        if "chamber" in used_ids:
+            lbl = QLabel("Chamber")
             lbl.setObjectName("fieldLabel")
             self._instr_conn_layout.addWidget(lbl)
-            self.build_vt6002_connection_widgets(self._instr_conn_layout)
-            self.bind_vt6002_signals()
-            self._vt6002_widgets_built = True
-            if self._vt6002_chamber_ui_ref and self._vt6002_chamber_ui_ref.vt6002:
-                self._on_vt6002_external_changed()
+            self.build_chamber_connection_widgets(self._instr_conn_layout)
+            self.bind_chamber_signals()
+            self._chamber_widgets_built = True
+            if self._chamber_ui_ref and self._chamber_ui_ref.chamber:
+                self._on_chamber_external_changed()
 
         if "mso64b" in used_ids or "dsox4034a" in used_ids:
             lbl = QLabel("Oscilloscope")
@@ -557,8 +557,11 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         meta = {}
         if self._n6705c_widgets_built and hasattr(self, "visa_resource_combo"):
             meta["n6705c"] = {"visa": self.visa_resource_combo.currentText()}
-        if self._vt6002_widgets_built and hasattr(self, "vt6002_combo"):
-            meta["vt6002"] = {"port": self.vt6002_combo.currentText()}
+        if self._chamber_widgets_built and hasattr(self, "chamber_port_combo"):
+            meta["chamber"] = {
+                "type": self.chamber_type_combo.currentData() if hasattr(self, "chamber_type_combo") else "vt6002",
+                "port": self.chamber_port_combo.currentText(),
+            }
         if self._uart_widgets_built and hasattr(self, "_sc_port_combo"):
             meta["uart"] = {
                 "port": self._sc_port_combo.currentText(),
@@ -580,12 +583,17 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
                 if self.visa_resource_combo.findText(visa) < 0:
                     self.visa_resource_combo.addItem(visa)
                 self.visa_resource_combo.setCurrentText(visa)
-        if "vt6002" in meta and self._vt6002_widgets_built:
-            port = meta["vt6002"].get("port", "")
-            if port and hasattr(self, "vt6002_combo"):
-                if self.vt6002_combo.findText(port) < 0:
-                    self.vt6002_combo.addItem(port)
-                self.vt6002_combo.setCurrentText(port)
+        if "chamber" in meta and self._chamber_widgets_built:
+            chamber_type = meta["chamber"].get("type", "vt6002")
+            if hasattr(self, "chamber_type_combo"):
+                idx = self.chamber_type_combo.findData(chamber_type)
+                if idx >= 0:
+                    self.chamber_type_combo.setCurrentIndex(idx)
+            port = meta["chamber"].get("port", "")
+            if port and hasattr(self, "chamber_port_combo"):
+                if self.chamber_port_combo.findText(port) < 0:
+                    self.chamber_port_combo.addItem(port)
+                self.chamber_port_combo.setCurrentText(port)
         if "uart" in meta and self._uart_widgets_built:
             port = meta["uart"].get("port", "")
             baud = meta["uart"].get("baud", "")
@@ -622,20 +630,20 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
                 logger.warning("自动连接 N6705C 失败: %s", exc)
                 self.logs_frame.append_log(f"[AUTO] N6705C 自动连接失败: {exc}")
 
-        if "vt6002" in meta and self._vt6002_widgets_built:
+        if "chamber" in meta and self._chamber_widgets_built:
             try:
                 already = False
-                if hasattr(self, "is_vt6002_connected_status"):
+                if hasattr(self, "is_chamber_connected_status"):
                     try:
-                        already = bool(self.is_vt6002_connected_status())
+                        already = bool(self.is_chamber_connected_status())
                     except Exception:
-                        already = bool(getattr(self, "is_vt6002_connected", False))
-                if not already and hasattr(self, "_on_vt6002_connect"):
-                    self.logs_frame.append_log("[AUTO] 尝试连接 VT6002 Chamber ...")
-                    self._on_vt6002_connect()
+                        already = bool(getattr(self, "is_chamber_connected", False))
+                if not already and hasattr(self, "_on_chamber_connect"):
+                    self.logs_frame.append_log("[AUTO] 尝试连接 Chamber ...")
+                    self._on_chamber_connect()
             except Exception as exc:
-                logger.warning("自动连接 VT6002 失败: %s", exc)
-                self.logs_frame.append_log(f"[AUTO] VT6002 自动连接失败: {exc}")
+                logger.warning("自动连接 Chamber 失败: %s", exc)
+                self.logs_frame.append_log(f"[AUTO] Chamber 自动连接失败: {exc}")
 
         if "uart" in meta and self._uart_widgets_built:
             try:
@@ -929,20 +937,23 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
     def _sync_instruments(self) -> None:
         if self._n6705c_top_ref:
             self.sync_n6705c_from_top()
-        if self._vt6002_chamber_ui_ref and self._vt6002_chamber_ui_ref.vt6002:
-            self._on_vt6002_external_changed()
+        if self._chamber_ui_ref and self._chamber_ui_ref.chamber:
+            self._on_chamber_external_changed()
 
-    def _on_vt6002_external_changed(self) -> None:
-        if not self._vt6002_widgets_built:
-            if self._vt6002_chamber_ui_ref and self._vt6002_chamber_ui_ref.vt6002:
-                from instruments.mock.mock_instruments import MockVT6002
-                vt = self._vt6002_chamber_ui_ref.vt6002
-                is_open = isinstance(vt, MockVT6002) or (hasattr(vt, 'ser') and vt.ser.is_open)
+    def _on_chamber_external_changed(self) -> None:
+        if not self._chamber_widgets_built:
+            if self._chamber_ui_ref and self._chamber_ui_ref.chamber:
+                chamber = self._chamber_ui_ref.chamber
+                is_open = (
+                    chamber.is_connected()
+                    if hasattr(chamber, "is_connected")
+                    else hasattr(chamber, 'ser') and chamber.ser.is_open
+                )
                 if is_open:
-                    self.vt6002 = vt
-                    self.is_vt6002_connected = True
+                    self.chamber = chamber
+                    self.is_chamber_connected = True
             return
-        super()._on_vt6002_external_changed()
+        super()._on_chamber_external_changed()
 
     def sync_n6705c_from_top(self) -> None:
         if not self._n6705c_widgets_built:
@@ -1178,8 +1189,8 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
         self._context.populate_instruments_from_manager()
         if "n6705c" in used_ids and self._context.instruments.get("n6705c") is None:
             self._context.instruments["n6705c"] = self.n6705c
-        if "vt6002" in used_ids and self._context.instruments.get("chamber") is None:
-            self._context.instruments["chamber"] = self.vt6002
+        if "chamber" in used_ids and self._context.instruments.get("chamber") is None:
+            self._context.instruments["chamber"] = self.chamber
         if ("mso64b" in used_ids or "dsox4034a" in used_ids) \
                 and self._context.instruments.get("scope") is None \
                 and self._mso64b_top_ref and self._mso64b_top_ref.is_connected:
@@ -1551,3 +1562,17 @@ class CustomTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, SerialComMixin,
             self._i2c_interface.close()
             self._i2c_interface = None
         self.close_serial()
+
+
+def main():
+    from ui.standalone import run_standalone_widget
+
+    return run_standalone_widget(
+        lambda: CustomTestUI(),
+        "Custom Test",
+        size=(1400, 900),
+    )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

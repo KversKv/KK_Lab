@@ -328,49 +328,49 @@ def _disconnect_dsox4034a(instance: object) -> None:
     _disconnect_mso64b(instance)
 
 
-def _create_vt6002(spec: InstrumentSpec) -> object:
+def _create_chamber(spec: InstrumentSpec, chamber_type: str, mock_class_name: str) -> object:
     from debug_config import DEBUG_MOCK
     if DEBUG_MOCK:
-        from instruments.mock.mock_instruments import MockVT6002
-        return MockVT6002()
+        from instruments import mock as mock_module
+        return getattr(mock_module, mock_class_name)()
     from instruments.factory import create_chamber
-    return create_chamber(spec.resource)
+    return create_chamber(chamber_type=chamber_type, port=spec.resource)
 
 
-def _verify_vt6002(instance: object) -> InstrumentIdentity:
+def _verify_chamber(instance: object, model: str, vendor: str = "") -> InstrumentIdentity:
     from debug_config import DEBUG_MOCK
     if DEBUG_MOCK:
         return InstrumentIdentity(
-            model="VT6002", serial="", vendor="Votsch",
+            model=model, serial="", vendor=vendor,
         )
     if hasattr(instance, "get_current_temp"):
         temp = instance.get_current_temp()
         if temp is None:
             raise ConnectionError(
-                "VT6002 verify failed: unable to read current temperature"
+                f"{model} verify failed: unable to read current temperature"
             )
     elif hasattr(instance, "ser") and instance.ser is not None:
         if not instance.ser.is_open:
-            raise ConnectionError("VT6002 verify failed: serial port not open")
+            raise ConnectionError(f"{model} verify failed: serial port not open")
     else:
-        raise ConnectionError("VT6002 verify failed: no valid interface found")
+        raise ConnectionError(f"{model} verify failed: no valid interface found")
     return InstrumentIdentity(
-        model="VT6002",
+        model=model,
         serial="",
-        vendor="Votsch",
+        vendor=vendor,
     )
 
 
-def _scan_vt6002() -> list[InstrumentCandidate]:
+def _scan_serial_chamber(instrument_type: str, model: str, connection_kind: str) -> list[InstrumentCandidate]:
     from debug_config import DEBUG_MOCK
     if DEBUG_MOCK:
         return [
             InstrumentCandidate(
-                instrument_type="vt6002",
-                connection_kind="serial_modbus",
-                resource="MOCK::VT6002",
-                model_hint="VT6002",
-                display_name="Mock VT6002",
+                instrument_type=instrument_type,
+                connection_kind=connection_kind,
+                resource=f"MOCK::{model}",
+                model_hint=model,
+                display_name=f"Mock {model}",
             ),
         ]
     import serial.tools.list_ports
@@ -379,22 +379,55 @@ def _scan_vt6002() -> list[InstrumentCandidate]:
         ports = serial.tools.list_ports.comports()
         for port in ports:
             candidates.append(InstrumentCandidate(
-                instrument_type="vt6002",
-                connection_kind="serial_modbus",
+                instrument_type=instrument_type,
+                connection_kind=connection_kind,
                 resource=port.device,
+                model_hint=model,
                 display_name=f"{port.device} - {port.description}",
             ))
     except Exception as e:
-        logger.warning("VT6002 serial scan failed: %s", e)
+        logger.warning("%s serial scan failed: %s", model, e)
     return candidates
 
 
-def _disconnect_vt6002(instance: object) -> None:
+def _disconnect_chamber(instance: object, model: str) -> None:
     if hasattr(instance, "close"):
         try:
             instance.close()
         except Exception as e:
-            logger.warning("VT6002 disconnect error: %s", e)
+            logger.warning("%s disconnect error: %s", model, e)
+
+
+def _create_vt6002(spec: InstrumentSpec) -> object:
+    return _create_chamber(spec, "vt6002", "MockVT6002")
+
+
+def _verify_vt6002(instance: object) -> InstrumentIdentity:
+    return _verify_chamber(instance, "VT6002", "Votsch")
+
+
+def _scan_vt6002() -> list[InstrumentCandidate]:
+    return _scan_serial_chamber("vt6002", "VT6002", "serial_modbus")
+
+
+def _disconnect_vt6002(instance: object) -> None:
+    _disconnect_chamber(instance, "VT6002")
+
+
+def _create_mt3065(spec: InstrumentSpec) -> object:
+    return _create_chamber(spec, "mt3065", "MockMT3065")
+
+
+def _verify_mt3065(instance: object) -> InstrumentIdentity:
+    return _verify_chamber(instance, "MT3065")
+
+
+def _scan_mt3065() -> list[InstrumentCandidate]:
+    return _scan_serial_chamber("mt3065", "MT3065", "serial_ascii")
+
+
+def _disconnect_mt3065(instance: object) -> None:
+    _disconnect_chamber(instance, "MT3065")
 
 
 def _create_keysight53230a(spec: InstrumentSpec) -> object:
@@ -557,6 +590,21 @@ VT6002_PROFILE = InstrumentProfile(
     verify=_verify_vt6002,
     scan=_scan_vt6002,
     disconnect=_disconnect_vt6002,
+    default_slot="chamber",
+)
+
+MT3065_PROFILE = InstrumentProfile(
+    instrument_type="mt3065",
+    display_name="MT3065 Temperature Chamber",
+    connection_kind="serial_ascii",
+    role="chamber",
+    capabilities=frozenset({
+        "set_temperature", "read_temperature", "stabilize_wait",
+    }),
+    create=_create_mt3065,
+    verify=_verify_mt3065,
+    scan=_scan_mt3065,
+    disconnect=_disconnect_mt3065,
     default_slot="chamber",
 )
 
@@ -746,6 +794,7 @@ def create_default_registry() -> ProfileRegistry:
     registry.register(MSO64B_PROFILE)
     registry.register(DSOX4034A_PROFILE)
     registry.register(VT6002_PROFILE)
+    registry.register(MT3065_PROFILE)
     registry.register(KEYSIGHT53230A_PROFILE)
     registry.register(SERIAL_PORT_PROFILE)
     registry.register(BES_USB_I2C_PROFILE)

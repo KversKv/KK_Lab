@@ -23,10 +23,10 @@ from ui.styles import SCROLL_AREA_STYLE, START_BTN_STYLE, update_start_btn_state
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.modules.oscilloscope_module_frame import OscilloscopeConnectionMixin
-from ui.modules.chamber_module_frame import VT6002ConnectionMixin
+from ui.modules.chamber_module_frame import ChamberConnectionMixin
 from ui.modules.keysight_53230a_module_frame import Keysight53230AConnectionMixin
 from debug_config import DEBUG_MOCK
-from instruments.mock.mock_instruments import MockMSO64B, MockVT6002, MockKeysight53230A
+from instruments.mock.mock_instruments import MockMSO64B, MockKeysight53230A
 from instruments.chambers import TemperatureStabilizer
 from ui.theme import FONT_MONO
 
@@ -38,12 +38,12 @@ class _CLKTestWorker(QObject):
     progress_int = Signal(int)
     error = Signal(str)
 
-    def __init__(self, test_item, config, mso64b=None, vt6002=None, counter=None, mock_mode=False, parent=None):
+    def __init__(self, test_item, config, mso64b=None, chamber=None, counter=None, mock_mode=False, parent=None):
         super().__init__(parent)
         self.test_item = test_item
         self.config = config
         self.mso64b = mso64b
-        self.vt6002 = vt6002
+        self.chamber = chamber
         self.counter = counter
         self.mock_mode = mock_mode
         self._stop_flag = False
@@ -213,9 +213,9 @@ class _CLKTestWorker(QObject):
                 time.sleep(0.05)
             return {"mode": "temp_freq", "data": values}
 
-        chamber = self.vt6002
+        chamber = self.chamber
         if not chamber:
-            raise RuntimeError("VT6002 chamber not connected")
+            raise RuntimeError("Chamber not connected")
 
         freq_instrument = self.config.get("freq_instrument", "MSO64B")
         if freq_instrument == "MSO64B":
@@ -902,7 +902,7 @@ class _CLKTestWorker(QObject):
         }
 
 
-class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, Keysight53230AConnectionMixin, QWidget):
+class CLKTestUI(OscilloscopeConnectionMixin, ChamberConnectionMixin, Keysight53230AConnectionMixin, QWidget):
     """
     CLK Test Main UI Component
     Test Items:
@@ -915,11 +915,12 @@ class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, Keysight5323
     TEST_TEMP_FREQ = "temp_freq"
     TEST_CLK_PERF = "clk_perf"
 
-    def __init__(self, mso64b_top=None, parent=None):
+    def __init__(self, mso64b_top=None, chamber_ui=None, instrument_manager=None, parent=None):
         super().__init__(parent)
         self.init_oscilloscope_connection(mso64b_top)
-        self.init_vt6002_connection()
+        self.init_chamber_connection(chamber_ui, instrument_manager=instrument_manager)
         self.init_counter_connection()
+        self._instrument_manager = instrument_manager
         self.current_test_item = self.TEST_CAP_FREQ
 
         self._test_thread = None
@@ -1350,16 +1351,16 @@ class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, Keysight5323
         instruments_layout.addWidget(self.dmm_card)
 
         # Temperature chamber
-        self.vt6002_card = QFrame()
-        self.vt6002_card.setObjectName("config_inner_panel")
-        vt6002_card_layout = QVBoxLayout(self.vt6002_card)
-        vt6002_card_layout.setContentsMargins(10, 10, 10, 10)
-        vt6002_card_layout.setSpacing(6)
-        vt6002_title = QLabel("VT6002 Chamber")
-        vt6002_title.setStyleSheet("color: #c8d8ff; font-size: 11px; font-weight: 600; border: none;")
-        vt6002_card_layout.addWidget(vt6002_title)
-        self.build_vt6002_connection_widgets(vt6002_card_layout)
-        instruments_layout.addWidget(self.vt6002_card)
+        self.chamber_card = QFrame()
+        self.chamber_card.setObjectName("config_inner_panel")
+        chamber_card_layout = QVBoxLayout(self.chamber_card)
+        chamber_card_layout.setContentsMargins(10, 10, 10, 10)
+        chamber_card_layout.setSpacing(6)
+        chamber_title = QLabel("Chamber")
+        chamber_title.setStyleSheet("color: #c8d8ff; font-size: 11px; font-weight: 600; border: none;")
+        chamber_card_layout.addWidget(chamber_title)
+        self.build_chamber_connection_widgets(chamber_card_layout)
+        instruments_layout.addWidget(self.chamber_card)
 
         left_col.addWidget(instruments_panel)
 
@@ -1753,7 +1754,7 @@ class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, Keysight5323
         self.test_item_combo.currentIndexChanged.connect(self._on_test_item_combo_changed)
 
         self.bind_oscilloscope_signals()
-        self.bind_vt6002_signals()
+        self.bind_chamber_signals()
         self.bind_counter_signals()
 
         self.dmm_search_btn.clicked.connect(self._search_dmm)
@@ -1840,14 +1841,14 @@ class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, Keysight5323
         self.mso64b_card.setVisible(mso64b_visible)
         self.counter_card.setVisible(freq_type == "53230A")
         self.dmm_card.setVisible(freq_type == "DigitMultimeter")
-        self.vt6002_card.setVisible(self.current_test_item == self.TEST_TEMP_FREQ)
+        self.chamber_card.setVisible(self.current_test_item == self.TEST_TEMP_FREQ)
 
         if self.current_test_item == self.TEST_CLK_PERF:
             clk_source = self.clk_source_combo.currentText()
             self.mso64b_card.setVisible(clk_source == "MSO64B")
             self.counter_card.hide()
             self.dmm_card.hide()
-            self.vt6002_card.hide()
+            self.chamber_card.hide()
 
     # -------------------------------------------------------
     # Instrument search
@@ -1951,8 +1952,8 @@ class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, Keysight5323
                 raise ValueError("Register Min must not exceed Register Max")
 
         elif self.current_test_item == self.TEST_TEMP_FREQ:
-            if not self.is_vt6002_connected:
-                raise ValueError("Test Item 2 requires VT6002 chamber connection")
+            if not self.is_chamber_connected:
+                raise ValueError("Test Item 2 requires Chamber connection")
             self._validate_freq_instrument("Test Item 2")
             if self.temp_step.value() <= 0:
                 raise ValueError("Temperature step must be greater than 0")
@@ -1973,7 +1974,7 @@ class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, Keysight5323
         mso_channel = int(mso_ch_text.replace("CH", "")) if mso_ch_text else 2
         cfg = {
             "freq_instrument": self._current_freq_instrument(),
-            "temp_instrument": "VT6002",
+            "temp_instrument": "Chamber",
             "iic_device_addr": self.iic_device_addr.text().strip(),
             "iic_reg_addr": self.iic_reg_addr.text().strip(),
             "iic_width_flag": self.iic_width_flag_combo.currentData(),
@@ -2071,7 +2072,7 @@ class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, Keysight5323
         self._test_worker = _CLKTestWorker(
             self.current_test_item, config,
             mso64b=self.Osc_ins,
-            vt6002=self.vt6002,
+            chamber=self.chamber,
             counter=self.Counter_ins,
             mock_mode=DEBUG_MOCK,
         )
@@ -2590,3 +2591,17 @@ class CLKTestUI(OscilloscopeConnectionMixin, VT6002ConnectionMixin, Keysight5323
     def _on_clk_chart_param_changed(self):
         if self.result_mode == "clk_perf" and self.result_data:
             self._render_clk_chart(self.result_data, self.result_summary)
+
+
+def main():
+    from ui.standalone import run_standalone_widget
+
+    return run_standalone_widget(
+        lambda: CLKTestUI(),
+        "CLK Test",
+        size=(1300, 860),
+    )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -231,8 +231,8 @@ INSTRUMENT_REGISTRY: List[Dict] = [
         ],
     },
     {
-        "id": "vt6002",
-        "name": "VT6002",
+        "id": "chamber",
+        "name": "Chamber",
         "thumb": "vt6002_thumb.svg",
         "color": "#e07b39",
         "categories": [

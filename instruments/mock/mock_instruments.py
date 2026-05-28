@@ -294,15 +294,29 @@ class _MockSerial:
         self.is_open = False
 
 
-class MockVT6002:
+class MockChamber:
 
-    def __init__(self):
+    def __init__(self, model="MOCK Chamber"):
+        self.model = model
         self._target_temp = 25.0
         self._is_running = False
         self.ser = _MockSerial()
 
+    def connect(self):
+        self.ser.is_open = True
+        return True
+
+    def disconnect(self):
+        self.close()
+
+    def is_connected(self):
+        return self.ser.is_open
+
+    def identify(self):
+        return self.model
+
     def set_temperature(self, temp):
-        self._target_temp = temp
+        self._target_temp = float(temp)
 
     def get_current_temp(self):
         return self._target_temp
@@ -333,6 +347,16 @@ class MockVT6002:
 
     def close(self):
         self.ser.is_open = False
+
+
+class MockVT6002(MockChamber):
+    def __init__(self):
+        super().__init__("Mock VT6002 Temperature Chamber")
+
+
+class MockMT3065(MockChamber):
+    def __init__(self):
+        super().__init__("Mock MT3065 Temperature Chamber")
 
 
 class MockMSO64B:

@@ -1,99 +1,99 @@
-import time
 import serial
 
+from instruments.chambers.base import ChamberBase
+from log_config import get_logger
 
-class MT3065:
-    def __init__(self, port="COM10", baudrate=19200):
-        """初始化串口连接"""
-        self.ser = serial.Serial(port, baudrate, timeout=1)
+logger = get_logger(__name__)
 
-    def build_command(self, command):
-        return (command + "\r").encode()
 
-    def send_command(self, command):
-        request = self.build_command(command)
-        self.ser.write(request)
-        response = self.ser.read(1024)  # 读取返回
-        # print("原始响应:", response)  # 调试用，可注释掉
-        return response.decode(errors='ignore').strip()
+class MT3065(ChamberBase):
+    """MT3065 serial temperature chamber driver."""
 
-    def get_current_temp(self):
-        """读取温度PV值，返回当前温度、设定温度、温度上限、温度下限的元组"""
-        command = "1,TEMP?"
-        response = self.send_command(command)
-        # 解析响应，提取温度数据
-        lines = [line.strip() for line in response.split('\r\n') if line.strip()]
-        if not lines:
-            return (None, None, None, None)
-        data_line = lines[0]
-        parts = data_line.split(',')
-        if len(parts) == 4:
-            try:
-                current = parts[0]
-                setpoint = parts[1]
-                upper = parts[2]
-                lower = parts[3]
-                # 去除可能的额外空格或不可见字符
-                print(current.strip())
-                return current.strip()
+    def __init__(self, port: str, baudrate: int = 19200, timeout: float = 1.0):
+        self.port = port
+        self.baudrate = baudrate
+        self.timeout = timeout
+        self.ser = serial.Serial(port, baudrate, timeout=timeout)
+        self._last_set_temp = None
 
-                # return (
-                #     current.strip(),
-                #     setpoint.strip(),
-                #     upper.strip(),
-                #     lower.strip()
-                # )
-            except Exception as e:
-                print(f"解析温度数据时出错: {e}")
-                return (None, None, None, None)
-        else:
-            print(f"响应格式不正确: {response}")
-            return (None, None, None, None)
+    def connect(self, *args, **kwargs):
+        if self.ser is None:
+            self.ser = serial.Serial(self.port, self.baudrate, timeout=self.timeout)
+        elif not self.ser.is_open:
+            self.ser.open()
+        return True
 
-    def set_temperature(self, temp_celsius):
-        """设置温度设定值"""
-        command = f"1,TEMP,S{temp_celsius}"
-        response = self.send_command(command)
-        if "OK" in response:
-            print(f"温度设置为 {temp_celsius}°C 成功。")
-        else:
-            print("错误: 设置温度失败。")
-
-    def start(self):
-        """启动温箱"""
-        command = "1,POWER,ON"
-        response = self.send_command(command)
-        if "OK" in response:
-            print("温箱启动成功。")
-        else:
-            print("错误: 启动失败。")
-
-    def stop(self):
-        """停止温箱"""
-        command = "1,POWER,OFF"
-        response = self.send_command(command)
-        if "OK" in response:
-            print("温箱停止成功。")
-        else:
-            print("错误: 停止失败。")
-
-    def close(self):
-        if self.ser.is_open:
+    def disconnect(self):
+        if self.ser is not None and self.ser.is_open:
             self.ser.close()
 
+    def close(self):
+        self.disconnect()
 
-if __name__ == "__main__":
-    mt3065 = MT3065("COM10")
-    try:
-        current, setpoint, upper, lower = mt3065.read_temperature_pv()
-        if None not in (current, setpoint, upper, lower):
-            # print(f"当前温度PV值: {current}, {setpoint}, {upper}, {lower}")
-            print(f"当前温度: {current}°C, 设定温度: {setpoint}°C, 温度上限: {upper}°C, 温度下限: {lower}°C")
-        else:
-            print("无法读取温度PV值")
-        mt3065.set_temperature(25.0)
-        mt3065.start()
-        time.sleep(5)
-        # mt3065.stop()
-    finally:
-        mt3065.close()
+    def is_connected(self) -> bool:
+        return bool(self.ser is not None and self.ser.is_open)
+
+    def identify(self) -> str:
+        return "MT3065 Temperature Chamber"
+
+    def _build_command(self, command: str) -> bytes:
+        return (command + "\r").encode()
+
+    def _send_command(self, command: str) -> str:
+        if not self.is_connected():
+            raise ConnectionError("MT3065 serial port is not open")
+        request = self._build_command(command)
+        self.ser.write(request)
+        response = self.ser.read(1024)
+        return response.decode(errors="ignore").strip()
+
+    def _read_temperature_fields(self):
+        response = self._send_command("1,TEMP?")
+        lines = [line.strip() for line in response.splitlines() if line.strip()]
+        if not lines:
+            logger.warning("MT3065 temperature response is empty")
+            return None
+        parts = [part.strip() for part in lines[0].split(",")]
+        if len(parts) < 2:
+            logger.warning("MT3065 temperature response format invalid: %s", response)
+            return None
+        try:
+            current = float(parts[0])
+            setpoint = float(parts[1])
+            upper = float(parts[2]) if len(parts) > 2 and parts[2] else None
+            lower = float(parts[3]) if len(parts) > 3 and parts[3] else None
+            return current, setpoint, upper, lower
+        except ValueError:
+            logger.warning("MT3065 temperature response parse failed: %s", response)
+            return None
+
+    def get_current_temp(self):
+        values = self._read_temperature_fields()
+        if values is None:
+            return None
+        return values[0]
+
+    def get_set_temp(self):
+        values = self._read_temperature_fields()
+        if values is None:
+            return self._last_set_temp
+        return values[1]
+
+    def set_temperature(self, temp_celsius: float):
+        response = self._send_command(f"1,TEMP,S{temp_celsius}")
+        if "OK" not in response.upper():
+            raise RuntimeError(f"MT3065 set temperature failed: {response}")
+        self._last_set_temp = float(temp_celsius)
+        logger.info("MT3065 temperature set to %.1f°C", temp_celsius)
+
+    def start(self):
+        response = self._send_command("1,POWER,ON")
+        if "OK" not in response.upper():
+            raise RuntimeError(f"MT3065 start failed: {response}")
+        logger.info("MT3065 chamber started")
+
+    def stop(self):
+        response = self._send_command("1,POWER,OFF")
+        if "OK" not in response.upper():
+            raise RuntimeError(f"MT3065 stop failed: {response}")
+        logger.info("MT3065 chamber stopped")

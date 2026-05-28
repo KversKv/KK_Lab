@@ -162,9 +162,8 @@ class DarkComboBox(QComboBox):
             row_h = view.sizeHintForRow(0)
             if row_h <= 0:
                 row_h = fm.height() + self._ITEM_PADDING_V * 2
-            total_h = visible * row_h
-            view.setMinimumHeight(total_h)
-            view.setMaximumHeight(total_h)
+            total_h = visible * row_h + 2
+            view.setFixedHeight(total_h)
         no_scroll = self.count() <= self.maxVisibleItems()
         if no_scroll:
             view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -173,12 +172,24 @@ class DarkComboBox(QComboBox):
         super().showPopup()
         popup = view.window()
         if popup:
+            if visible > 0:
+                popup.setMinimumHeight(total_h)
+                popup.setMaximumHeight(total_h)
             popup.setStyleSheet(
                 f"background-color: {self._popup_bg}; "
                 f"border: 1px solid {self._popup_border}; "
                 f"padding: 0px; margin: 0px;"
             )
             if no_scroll:
+                model = view.model()
+                if model is not None and model.rowCount() > 0:
+                    view.scrollTo(model.index(0, 0), QListView.PositionAtTop)
+                    QTimer.singleShot(
+                        0,
+                        lambda v=view, m=model: v.scrollTo(
+                            m.index(0, 0), QListView.PositionAtTop
+                        ),
+                    )
                 self._hide_scrollers(popup)
                 QTimer.singleShot(0, lambda: self._hide_scrollers(popup))
 

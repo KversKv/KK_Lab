@@ -3304,3 +3304,17 @@ class OscilloscopeBaseUI(QWidget):
         super().resizeEvent(event)
         if hasattr(self, '_capture_overlay') and self._capture_overlay.isVisible():
             self._capture_overlay.resize(self.display_placeholder.size())
+
+
+def main():
+    from ui.standalone import run_standalone_widget
+
+    return run_standalone_widget(
+        lambda: OscilloscopeBaseUI(),
+        "Oscilloscope",
+        size=(1400, 900),
+    )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

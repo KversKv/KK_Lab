@@ -1,6 +1,7 @@
 import time
 import serial
 import struct
+from instruments.chambers.base import ChamberBase
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -31,11 +32,14 @@ def hex_to_int(hex_num, bit_length=16):
         return hex_num
 
 
-class VT6002:
+class VT6002(ChamberBase):
     def __init__(self, port, baudrate=9600):
         """初始化串口连接"""
         logger.debug("VT6002 __init__: port=%s, baudrate=%d", port, baudrate)
-        self.ser = serial.Serial(port, baudrate, timeout=1)
+        self.port = port
+        self.baudrate = baudrate
+        self.timeout = 1
+        self.ser = serial.Serial(port, baudrate, timeout=self.timeout)
         self.parameters = {
             "温度PV值": "0218",
             "温度设定值": "074E",
@@ -51,6 +55,22 @@ class VT6002:
             "地址站号": "00EA",
             "超时时间": "00EC"
         }
+
+    def connect(self, *args, **kwargs):
+        if self.ser is None:
+            self.ser = serial.Serial(self.port, self.baudrate, timeout=self.timeout)
+        elif not self.ser.is_open:
+            self.ser.open()
+        return True
+
+    def disconnect(self):
+        self.close()
+
+    def is_connected(self) -> bool:
+        return bool(self.ser is not None and self.ser.is_open)
+
+    def identify(self) -> str:
+        return "VT6002 Temperature Chamber"
 
     def build_request(self, address_hex):
         """构建Modbus请求帧"""
@@ -208,7 +228,7 @@ class VT6002:
     def close(self):
         """关闭串口连接"""
         logger.debug("VT6002 close called")
-        if self.ser.is_open:
+        if self.ser is not None and self.ser.is_open:
             self.ser.close()
 
 

@@ -21,11 +21,10 @@ from PySide6.QtGui import QFont, QIcon, QPixmap, QPainter, QColor, QPen, QBrush
 import pyqtgraph as pg
 
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
-from ui.modules.chamber_module_frame import VT6002ConnectionMixin
+from ui.modules.chamber_module_frame import ChamberConnectionMixin
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.styles import SCROLL_AREA_STYLE, START_BTN_STYLE, update_start_btn_state
 from debug_config import DEBUG_MOCK
-from instruments.mock.mock_instruments import MockVT6002
 from instruments.chambers import TemperatureStabilizer
 
 from log_config import get_logger
@@ -111,12 +110,12 @@ class _HighLowTempTestWorker(QObject):
     progress_int = Signal(int)
     error = Signal(str)
 
-    def __init__(self, config, n6705c_a=None, n6705c_b=None, vt6002=None, mock_mode=False, parent=None):
+    def __init__(self, config, n6705c_a=None, n6705c_b=None, chamber=None, mock_mode=False, parent=None):
         super().__init__(parent)
         self.config = config
         self.n6705c_a = n6705c_a
         self.n6705c_b = n6705c_b
-        self.vt6002 = vt6002
+        self.chamber = chamber
         self.mock_mode = mock_mode
         self._stop_flag = False
 
@@ -197,9 +196,9 @@ class _HighLowTempTestWorker(QObject):
                 time.sleep(0.05)
             return {"data": all_results, "channels": channels}
 
-        chamber = self.vt6002
+        chamber = self.chamber
         if not chamber:
-            raise RuntimeError("VT6002 chamber not connected")
+            raise RuntimeError("Chamber not connected")
 
         n6705c = self.n6705c_a
         if not n6705c:
@@ -291,7 +290,7 @@ class _HighLowTempTestWorker(QObject):
         return {"data": all_results, "channels": channels}
 
 
-class HighLowTempConsumptionTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
+class HighLowTempConsumptionTestUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget):
 
     connection_status_changed = Signal(bool)
 
@@ -305,7 +304,7 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, VT6002ConnectionMixin,
         self._n6705c_top = n6705c_top
         self._instrument_manager = instrument_manager
         self.init_n6705c_connection(n6705c_top, instrument_manager=instrument_manager)
-        self.init_vt6002_connection()
+        self.init_chamber_connection(instrument_manager=instrument_manager)
 
         self._test_thread = None
         self._test_worker = None
@@ -425,7 +424,7 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, VT6002ConnectionMixin,
         title_label.setObjectName("title_label")
         title_label.setStyleSheet("border: none")
 
-        subtitle_label = QLabel("Measure chip power consumption curves across different temperatures using VT6002 chamber and N6705C power analyzer.")
+        subtitle_label = QLabel("Measure chip power consumption curves across different temperatures using chamber and N6705C power analyzer.")
         subtitle_label.setObjectName("subtitle_label")
         subtitle_label.setStyleSheet("border: none")
 
@@ -486,22 +485,22 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, VT6002ConnectionMixin,
         self.build_n6705c_connection_widgets(n6705c_card_layout, title_row=n6705c_title_row)
         instruments_layout.addWidget(n6705c_card)
 
-        vt6002_card = QFrame()
-        vt6002_card.setObjectName("config_inner_panel")
-        vt6002_card_layout = QVBoxLayout(vt6002_card)
-        vt6002_card_layout.setContentsMargins(10, 10, 10, 10)
-        vt6002_card_layout.setSpacing(6)
-        vt6002_title_row = QHBoxLayout()
-        vt6002_title_row.setSpacing(6)
-        vt6002_title = QLabel("VT6002 Chamber")
-        vt6002_title.setStyleSheet("color: #c8d8ff; font-size: 11px; font-weight: 600; border: none;")
-        vt6002_title_row.addWidget(vt6002_title)
-        vt6002_title_row.addStretch()
-        vt6002_card_layout.addLayout(vt6002_title_row)
-        self.build_vt6002_connection_widgets(vt6002_card_layout)
-        vt6002_card_layout.removeWidget(self.vt6002_status_label)
-        vt6002_title_row.addWidget(self.vt6002_status_label)
-        instruments_layout.addWidget(vt6002_card)
+        chamber_card = QFrame()
+        chamber_card.setObjectName("config_inner_panel")
+        chamber_card_layout = QVBoxLayout(chamber_card)
+        chamber_card_layout.setContentsMargins(10, 10, 10, 10)
+        chamber_card_layout.setSpacing(6)
+        chamber_title_row = QHBoxLayout()
+        chamber_title_row.setSpacing(6)
+        chamber_title = QLabel("Chamber")
+        chamber_title.setStyleSheet("color: #c8d8ff; font-size: 11px; font-weight: 600; border: none;")
+        chamber_title_row.addWidget(chamber_title)
+        chamber_title_row.addStretch()
+        chamber_card_layout.addLayout(chamber_title_row)
+        self.build_chamber_connection_widgets(chamber_card_layout)
+        chamber_card_layout.removeWidget(self.chamber_status_label)
+        chamber_title_row.addWidget(self.chamber_status_label)
+        instruments_layout.addWidget(chamber_card)
 
         left_col.addWidget(instruments_panel)
 
@@ -711,7 +710,7 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, VT6002ConnectionMixin,
 
     def _bind_signals(self):
         self.bind_n6705c_signals()
-        self.bind_vt6002_signals()
+        self.bind_chamber_signals()
         self.start_btn.clicked.connect(self._on_start_clicked)
         self.export_csv_btn.clicked.connect(self._on_export_csv)
 
@@ -724,8 +723,8 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, VT6002ConnectionMixin,
             return
 
         if not DEBUG_MOCK:
-            if not hasattr(self, 'vt6002') or self.vt6002 is None:
-                self.append_log("[ERROR] VT6002 chamber not connected")
+            if not hasattr(self, 'chamber') or self.chamber is None:
+                self.append_log("[ERROR] Chamber not connected")
                 return
             if not hasattr(self, 'n6705c') or self.n6705c is None:
                 self.append_log("[ERROR] N6705C not connected")
@@ -755,14 +754,14 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, VT6002ConnectionMixin,
         self._plot_curves = {}
         self.result_data = []
 
-        vt6002 = getattr(self, 'vt6002', None)
+        chamber = getattr(self, 'chamber', None)
         n6705c_a = getattr(self, 'n6705c', None)
 
         self._test_worker = _HighLowTempTestWorker(
             config=config,
             n6705c_a=n6705c_a,
             n6705c_b=None,
-            vt6002=vt6002,
+            chamber=chamber,
             mock_mode=DEBUG_MOCK,
         )
         self._test_thread = QThread()
@@ -853,3 +852,17 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, VT6002ConnectionMixin,
 
     def get_test_mode(self):
         return "High-Low Temperature Consumption Test"
+
+
+def main():
+    from ui.standalone import run_standalone_widget
+
+    return run_standalone_widget(
+        lambda: HighLowTempConsumptionTestUI(),
+        "High-Low Temperature Test",
+        size=(1300, 860),
+    )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

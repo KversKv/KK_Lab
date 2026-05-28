@@ -24,10 +24,10 @@ import time
 
 from instruments.power.keysight.n6705c import N6705C
 from debug_config import DEBUG_MOCK
-from instruments.mock.mock_instruments import MockN6705C, MockVT6002
+from instruments.mock.mock_instruments import MockN6705C
 from instruments.chambers import TemperatureStabilizer
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
-from ui.modules.chamber_module_frame import VT6002ConnectionMixin
+from ui.modules.chamber_module_frame import ChamberConnectionMixin
 from i2c_interface_x64 import I2CInterface
 from Bes_I2CIO_Interface import I2CSpeedMode, I2CWidthFlag
 
@@ -52,11 +52,11 @@ class _StatusPollWorker(QObject):
     test_finished = Signal(bool)
     error = Signal(str)
 
-    def __init__(self, n6705c, config, vt6002=None):
+    def __init__(self, n6705c, config, chamber=None):
         super().__init__()
         self._n6705c = n6705c
         self._cfg = config
-        self._vt6002 = vt6002
+        self._chamber = chamber
         self._stop_flag = False
 
     def request_stop(self):
@@ -230,9 +230,9 @@ class _StatusPollWorker(QObject):
                          levels, "mA", set_func, step_delay_s)
 
     def _run_temperature_sweep(self, i2c, device_addr, reg_addr, iic_width, bits_str, val_init):
-        vt = self._vt6002
+        vt = self._chamber
         if vt is None:
-            self.log_message.emit("[ERROR] VT6002 chamber not connected.")
+            self.log_message.emit("[ERROR] Chamber not connected.")
             self.test_finished.emit(False)
             return
         start = self._cfg["start_temp"]
@@ -411,14 +411,14 @@ class CardFrame(QFrame):
 
 
 
-class StatusRegisterTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
+class StatusRegisterTestUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget):
     connection_status_changed = Signal(bool)
 
-    def __init__(self, n6705c_top=None, vt6002_chamber_ui=None, instrument_manager=None):
+    def __init__(self, n6705c_top=None, chamber_ui=None, instrument_manager=None):
         super().__init__()
         self._instrument_manager = instrument_manager
         self.init_n6705c_connection(n6705c_top, instrument_manager=instrument_manager)
-        self.init_vt6002_connection(vt6002_chamber_ui)
+        self.init_chamber_connection(chamber_ui, instrument_manager=instrument_manager)
         self.is_test_running = False
         self.test_thread = None
         self.test_worker = None
@@ -509,9 +509,9 @@ class StatusRegisterTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget
         self.connection_card = CardFrame("\u26a1 N6705C ")
         self._build_connection_card()
         left_layout.addWidget(self.connection_card)
-        self.vt6002_card = CardFrame("\U0001f321 VT6002 Chamber")
-        self._build_vt6002_card()
-        left_layout.addWidget(self.vt6002_card)
+        self.chamber_card = CardFrame("Chamber")
+        self._build_chamber_card()
+        left_layout.addWidget(self.chamber_card)
         self.test_config_card = CardFrame("\u2637 Test Config")
         self._build_test_config_card()
         left_layout.addWidget(self.test_config_card)
@@ -597,8 +597,8 @@ class StatusRegisterTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget
         is_current = (item == "Current Sweep")
         is_temp = (item == "Temperature Sweep")
         is_reg = (item == "Reg Sweep")
-        if hasattr(self, 'vt6002_card'):
-            self.vt6002_card.setVisible(is_temp)
+        if hasattr(self, 'chamber_card'):
+            self.chamber_card.setVisible(is_temp)
         if hasattr(self, 'voltage_param_widget'):
             self.voltage_param_widget.setVisible(is_voltage)
         if hasattr(self, 'current_param_widget'):
@@ -620,9 +620,9 @@ class StatusRegisterTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget
         )
 
 
-    def _build_vt6002_card(self):
-        layout = self.vt6002_card.main_layout
-        self.build_vt6002_connection_widgets(layout)
+    def _build_chamber_card(self):
+        layout = self.chamber_card.main_layout
+        self.build_chamber_connection_widgets(layout)
 
     def _build_test_config_card(self):
         layout = self.test_config_card.main_layout
@@ -864,7 +864,7 @@ class StatusRegisterTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget
 
     def _bind_signals(self):
         self.bind_n6705c_signals()
-        self.bind_vt6002_signals()
+        self.bind_chamber_signals()
         self.start_test_btn.clicked.connect(self._on_start_or_stop)
         self.stop_test_btn.clicked.connect(self._on_stop_test)
         self.clear_log_btn.clicked.connect(self._on_clear_log)
@@ -928,8 +928,8 @@ class StatusRegisterTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget
                 return
 
         if test_item == "Temperature Sweep":
-            if not self.is_vt6002_connected or self.vt6002 is None:
-                self.append_log("[ERROR] VT6002 chamber not connected. Please connect first.")
+            if not self.is_chamber_connected or self.chamber is None:
+                self.append_log("[ERROR] Chamber not connected. Please connect first.")
                 return
 
         config = self.get_test_config()
@@ -938,9 +938,9 @@ class StatusRegisterTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget
 
         self.set_test_running(True)
 
-        vt6002_ref = self.vt6002 if test_item == "Temperature Sweep" else None
+        chamber_ref = self.chamber if test_item == "Temperature Sweep" else None
 
-        self.test_worker = _StatusPollWorker(self.n6705c, config, vt6002=vt6002_ref)
+        self.test_worker = _StatusPollWorker(self.n6705c, config, chamber=chamber_ref)
         self.test_thread = QThread()
         self.test_worker.moveToThread(self.test_thread)
 
@@ -973,8 +973,8 @@ class StatusRegisterTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget
         self.visa_resource_combo.setEnabled(not running)
         self.search_btn.setEnabled(not running and not self.is_connected)
         self.test_channel_combo.setEnabled(not running)
-        self.vt6002_connect_btn.setEnabled(not running)
-        self.vt6002_search_btn.setEnabled(not running)
+        self.chamber_connect_btn.setEnabled(not running)
+        self.chamber_search_btn.setEnabled(not running)
 
     def _on_test_finished(self, success):
         self.set_test_running(False)
@@ -1023,3 +1023,17 @@ class StatusRegisterTestUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget
     def update_test_result(self, result):
         if isinstance(result, dict):
             self._on_status_update(result)
+
+
+def main():
+    from ui.standalone import run_standalone_widget
+
+    return run_standalone_widget(
+        lambda: StatusRegisterTestUI(),
+        "Status Register Test",
+        size=(1300, 860),
+    )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

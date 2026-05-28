@@ -14,7 +14,7 @@ except ImportError:
     pass
 
 try:
-    from ui.modules.chamber_module_frame import VT6002ConnectionMixin
+    from ui.modules.chamber_module_frame import ChamberConnectionMixin
 except ImportError:
     pass
 
@@ -27,6 +27,6 @@ __all__ = [
     "ExecutionLogsFrame",
     "N6705CConnectionMixin",
     "OscilloscopeConnectionMixin",
-    "VT6002ConnectionMixin",
+    "ChamberConnectionMixin",
     "SerialComMixin",
 ]

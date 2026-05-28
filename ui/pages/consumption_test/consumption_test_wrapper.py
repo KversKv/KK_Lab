@@ -76,3 +76,17 @@ class ConsumptionTestWrapper(QWidget):
 
     def _sync_from_top(self):
         self.sync_n6705c_from_top()
+
+
+def main():
+    from ui.standalone import run_standalone_widget
+
+    return run_standalone_widget(
+        lambda: ConsumptionTestWrapper(),
+        "Consumption Test",
+        size=(1300, 860),
+    )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

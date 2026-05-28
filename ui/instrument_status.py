@@ -13,6 +13,7 @@ _DISPLAY_NAME_MAP = {
     "mso64b": "MSO64B",
     "dsox4034a": "DSOX4034A",
     "vt6002": "VT6002",
+    "mt3065": "MT3065",
     "keysight53230a": "53230A",
     "serial_port": "Serial",
     "bes_usb_i2c": "USB-I2C",

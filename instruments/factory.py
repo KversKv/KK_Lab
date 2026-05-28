@@ -1,6 +1,7 @@
 from instruments.scopes.keysight.dsox4034a import DSOX4034A
 from instruments.scopes.tektronix.mso64b import MSO64B
 from instruments.power.keysight.n6705c import N6705C
+from instruments.chambers.mt3065 import MT3065
 from instruments.chambers.vt6002_chamber import VT6002
 from instruments.frequencyCounter.keysight_53230A import Keysight53230A
 from instruments.base.visa_instrument import VisaInstrument
@@ -14,6 +15,7 @@ _INSTRUMENT_CREATORS = {
     "mso64b": lambda **kw: MSO64B(kw["resource"]),
     "dsox4034a": lambda **kw: DSOX4034A(kw["resource"]),
     "vt6002": lambda **kw: VT6002(kw.get("port", kw.get("resource", "")), kw.get("baudrate", 9600)),
+    "mt3065": lambda **kw: MT3065(kw.get("port", kw.get("resource", "")), kw.get("baudrate", 19200)),
     "keysight53230a": lambda **kw: Keysight53230A(kw["resource"]),
 }
 
@@ -42,9 +44,19 @@ def create_power_analyzer(resource: str):
     return N6705C(resource)
 
 
-def create_chamber(port: str, baudrate: int = 9600):
-    logger.debug("create_chamber: port=%s, baudrate=%d", port, baudrate)
-    return VT6002(port, baudrate)
+def create_chamber(chamber_type: str = "vt6002", port: str = "", baudrate: int | None = None, resource: str = ""):
+    from debug_config import DEBUG_MOCK
+    port = port or resource
+    key = str(chamber_type).strip().lower()
+    if DEBUG_MOCK:
+        from instruments.mock.mock_instruments import MockMT3065, MockVT6002
+        if key == "mt3065":
+            return MockMT3065()
+        return MockVT6002()
+    default_baudrate = 19200 if key == "mt3065" else 9600
+    baudrate = default_baudrate if baudrate is None else baudrate
+    logger.debug("create_chamber: type=%s, port=%s, baudrate=%d", key, port, baudrate)
+    return create_instrument(key, port=port, resource=port, baudrate=baudrate)
 
 
 def create_frequency_counter(counter_type: str, resource: str):

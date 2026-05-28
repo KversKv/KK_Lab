@@ -540,7 +540,7 @@ class ScopeGetDvmDC(BaseNode):
 
 
 # ═══════════════════════════════════════════════════════════════
-#  VT6002 Chamber  —  Config / Set / Get
+#  Chamber  -  Config / Set / Get
 # ═══════════════════════════════════════════════════════════════
 
 @register_node

@@ -51,6 +51,32 @@ python -m PyInstaller spec/kk_lab.spec --clean --noconfirm
 
 # N6705C Datalog 独立工具
 python -m PyInstaller spec/n6705c_datalog.spec --clean --noconfirm
+
+# Chamber Control 独立工具
+python -m PyInstaller spec/chamber_control_ui.spec --clean --noconfirm
+
+# Chamber Control 单文件版
+$env:KK_BUILD_MODE="onefile"; python -m PyInstaller spec/chamber_control_ui.spec --clean --noconfirm
+
+# 左侧导航独立工具 / 二级子项
+python -m PyInstaller spec/n6705c_analyser.spec --clean --noconfirm
+python -m PyInstaller spec/oscilloscope.spec --clean --noconfirm
+python -m PyInstaller spec/pmu_test.spec --clean --noconfirm
+python -m PyInstaller spec/pmu_dcdc_efficiency.spec --clean --noconfirm
+python -m PyInstaller spec/pmu_output_voltage.spec --clean --noconfirm
+python -m PyInstaller spec/pmu_is_gain.spec --clean --noconfirm
+python -m PyInstaller spec/pmu_oscp.spec --clean --noconfirm
+python -m PyInstaller spec/pmu_gpadc.spec --clean --noconfirm
+python -m PyInstaller spec/pmu_clk.spec --clean --noconfirm
+python -m PyInstaller spec/charger_test.spec --clean --noconfirm
+python -m PyInstaller spec/charger_config_traverse.spec --clean --noconfirm
+python -m PyInstaller spec/charger_status_register.spec --clean --noconfirm
+python -m PyInstaller spec/charger_iterm.spec --clean --noconfirm
+python -m PyInstaller spec/charger_regulation_voltage.spec --clean --noconfirm
+python -m PyInstaller spec/consumption_test.spec --clean --noconfirm
+python -m PyInstaller spec/consumption_auto_test.spec --clean --noconfirm
+python -m PyInstaller spec/consumption_high_low_temp.spec --clean --noconfirm
+python -m PyInstaller spec/custom_test.spec --clean --noconfirm
 ```
 
 打包产物默认在 `dist/` 目录。

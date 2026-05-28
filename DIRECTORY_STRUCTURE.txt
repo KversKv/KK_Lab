@@ -105,6 +105,8 @@ instruments/
 │       └── n6705c_datalog_process.py  # Datalog CSV 数据解析与处理模块
 │
 ├── chambers/                # 环境试验箱驱动
+│   ├── base.py              # 温箱统一抽象接口
+│   ├── mt3065.py            # MT3065 温箱驱动
 │   ├── vt6002_chamber.py    # VT6002 高低温试验箱驱动
 │   │                        # (Modbus 串口协议，温度设置与读取)
 │   └── temperature_stabilizer.py  # 温箱温度判稳工具（滑窗 + watchdog，UI 无关）
@@ -119,7 +121,7 @@ instruments/
 │
 ├── mock/                    # 模拟仪器 (用于离线调试/开发)
 │   └── mock_instruments.py  # 模拟仪器实现，包含 MockN6705C / MockI2C /
-│                            # MockVT6002 / MockMSO64B / MockKeysight53230A，
+│                            # MockChamber / MockVT6002 / MockMT3065 / MockMSO64B，
 │                            # 由 DEBUG_MOCK 开关启用
 │
 └── factory.py               # 仪器工厂函数，统一创建各类仪器实例
@@ -136,6 +138,7 @@ ui/
 ├── cleanup_mixin.py         # 关闭清理混入: closeEvent资源释放逻辑
 ├── resource_path.py         # 资源路径工具：get_resource_base()，兼容源码运行
 │                            # 与 PyInstaller 冻结环境 (sys._MEIPASS)
+├── standalone.py            # 独立页面窗口启动工具 (QApplication / Fusion / Qt warning过滤)
 │
 ├── widgets/                 # 通用 UI 组件与可复用样式
 │   ├── sidebar_nav_button.py    # 侧边栏导航按钮组件
@@ -152,7 +155,7 @@ ui/
 │   ├── n6705c_module_frame.py          # N6705C 连接区 Mixin (VISA 搜索/连接/断开)
 │   ├── oscilloscope_module_frame.py    # 示波器连接区 Mixin (VISA 搜索/连接/断开)
 │   ├── keysight_53230a_module_frame.py # 53230A 频率计连接区 Mixin (VISA 搜索/连接/断开)
-│   ├── chamber_module_frame.py         # VT6002 温箱连接区 Mixin (串口搜索/连接/断开)
+│   ├── chamber_module_frame.py         # 通用温箱连接区 Mixin (型号选择/串口搜索/连接/断开)
 │   └── serialCom_module/               # 串口通信连接区 Mixin (串口搜索/连接/断开)
 │       ├── serialCom_module_frame.py
 │       ├── serial_session.py           # 独立串口会话对象 (SerialSession)
@@ -201,7 +204,7 @@ ui/
 │   │   └── regulation_voltage_ui.py  # 调节电压测试界面
 │   │
 │   ├── chamber/                 # 温箱相关页面
-│   │   └── vt6002_chamber_ui.py      # VT6002 温箱控制界面
+│   │   └── chamber_control_ui.py     # 通用温箱控制界面
 │   │
 │   ├── consumption_test/        # 功耗测试页面
 │   │   ├── consumption_test.py       # 功耗测试主界面
@@ -279,7 +282,8 @@ resources/
 ├── icons/                   # 通用图标 (SVG 为主；仅 .ico 用于窗口/打包图标)
 │   ├── kk_lab.ico / kk_lab.svg       # 应用程序图标
 │   ├── n6705c.ico / n6705c_thumb.svg # N6705C 图标
-│   ├── dsox4034a_thumb.svg / mso64b_thumb.svg / vt6002_thumb.svg / cmw270_thumb.svg
+│   ├── dsox4034a_thumb.svg / mso64b_thumb.svg / vt6002.ico / vt6002_thumb.svg / cmw270_thumb.svg
+│   ├── oscilloscope.ico / pmu_test.ico / charger_test.ico / consumption_test.ico / custom_test.ico
 │   ├── checked_*.svg / unchecked_*.svg # 侧边栏各颜色选中/未选中图标
 │   ├── polarity_*.svg                # 触发极性图标 (rising/falling/both/either)
 │   ├── panel-*.svg / scrollbar-*.svg # 面板控制 / 滚动条箭头
@@ -365,10 +369,32 @@ hooks/
 ================================================================================
 
 spec/
+├── _standalone_ui_common.py  # 独立页面 PyInstaller 公共配置片段
 ├── kk_lab.spec              # KK_Lab 主程序打包配置
 │                            # 打包命令: python -m PyInstaller spec/kk_lab.spec --clean --noconfirm
+├── n6705c_analyser.spec     # N6705C Analyser 独立窗口打包配置
+│                            # 打包命令: python -m PyInstaller spec/n6705c_analyser.spec --clean --noconfirm
 ├── n6705c_datalog.spec      # N6705C Datalog 独立工具打包配置
 │                            # 打包命令: python -m PyInstaller spec/n6705c_datalog.spec --clean --noconfirm
+├── oscilloscope.spec        # Oscilloscope 独立窗口打包配置
+├── pmu_test.spec            # PMU Test 聚合页独立窗口打包配置
+├── pmu_dcdc_efficiency.spec # PMU DCDC Efficiency 独立窗口打包配置
+├── pmu_output_voltage.spec  # PMU Output Voltage 独立窗口打包配置
+├── pmu_is_gain.spec         # PMU Is_gain 独立窗口打包配置
+├── pmu_oscp.spec            # PMU OSCP 独立窗口打包配置
+├── pmu_gpadc.spec           # PMU GPADC 独立窗口打包配置
+├── pmu_clk.spec             # PMU CLK 独立窗口打包配置
+├── charger_test.spec        # Charger Test 聚合页独立窗口打包配置
+├── charger_config_traverse.spec     # Charger Config Traverse 独立窗口打包配置
+├── charger_status_register.spec     # Charger Status Register 独立窗口打包配置
+├── charger_iterm.spec               # Charger Iterm 独立窗口打包配置
+├── charger_regulation_voltage.spec  # Charger Regulation Voltage 独立窗口打包配置
+├── chamber_control_ui.spec  # Chamber Control 独立窗口打包配置
+│                            # 打包命令: python -m PyInstaller spec/chamber_control_ui.spec --clean --noconfirm
+├── consumption_test.spec             # Consumption Test 聚合页独立窗口打包配置
+├── consumption_auto_test.spec        # Consumption Auto Test 独立窗口打包配置
+├── consumption_high_low_temp.spec    # Consumption High-Low Temperature 独立窗口打包配置
+├── custom_test.spec         # Custom Test 独立窗口打包配置
 └── serialcom_module.spec    # SerialCom 串口模块独立窗口打包配置
                              # 打包命令: python -m PyInstaller spec/serialcom_module.spec --clean --noconfirm
 

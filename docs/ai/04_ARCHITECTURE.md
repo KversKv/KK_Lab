@@ -21,7 +21,7 @@ main.py
   │   ├─ base/         (InstrumentBase / VisaInstrument / Exceptions)
   │   ├─ scopes/       (keysight/dsox4034a, tektronix/mso64b)
   │   ├─ power/        (keysight/n6705c + datalog 处理)
-  │   ├─ chambers/     (vt6002_chamber)
+  │   ├─ chambers/     (base / vt6002_chamber / mt3065)
   │   ├─ adapters/     (预留：通信适配器)
   │   ├─ mock/         (Mock 实现，DEBUG_MOCK=True 时启用)
   │   └─ factory.py    (唯一创建入口)
@@ -86,7 +86,7 @@ main.py
 - `base/exceptions.py` 业务异常（`InstrumentConnectionError` 等）。
 - 每类仪器 → 独立子包（`scopes/`、`power/`、`chambers/`）。
 - **`factory.py`** 是业务代码获取仪器实例的**唯一入口**；内部可根据 `DEBUG_MOCK` 返回 `Mock*`。
-- `mock/mock_instruments.py` 集中维护 `MockN6705C / MockDSOX / MockMSO64B / MockVT6002 / MockI2C`。
+- `mock/mock_instruments.py` 集中维护 `MockN6705C / MockDSOX / MockMSO64B / MockChamber / MockVT6002 / MockMT3065 / MockI2C`。
 
 ### 3.8 `lib/`
 - `i2c/`：

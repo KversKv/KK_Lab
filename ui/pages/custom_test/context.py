@@ -171,9 +171,11 @@ class ExecutionContext:
             if session and session.connected and session.instance:
                 self.instruments["scope"] = session.instance
                 break
-        session = mgr.get_session("vt6002:default")
-        if session and session.connected and session.instance:
-            self.instruments["chamber"] = session.instance
+        for snapshot in mgr.sessions(role="chamber", connected_only=True):
+            session = mgr.get_session(snapshot.session_id)
+            if session and session.connected and session.instance:
+                self.instruments["chamber"] = session.instance
+                break
         session = mgr.get_session("keysight53230a:counter")
         if session and session.connected and session.instance:
             self.instruments["freq_counter"] = session.instance

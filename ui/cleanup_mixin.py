@@ -60,13 +60,13 @@ class CleanupMixin:
             except Exception as e:
                 logger.warning("[CloseEvent] Error disconnecting VISA instrument: %s", e)
 
-        if self.vt6002_chamber:
-            logger.info("[CloseEvent] Closing VT6002 chamber (legacy)...")
+        if getattr(self, "chamber", None):
+            logger.info("[CloseEvent] Closing chamber (legacy)...")
             try:
-                self.vt6002_chamber.close()
+                self.chamber.close()
             except Exception as e:
-                logger.warning("[CloseEvent] Error closing VT6002 chamber: %s", e)
-            self.vt6002_chamber = None
+                logger.warning("[CloseEvent] Error closing chamber: %s", e)
+            self.chamber = None
 
         if self.consumption_test_ui is not None:
             self._cleanup_sub_ui(self.consumption_test_ui, "ConsumptionTestWrapper")

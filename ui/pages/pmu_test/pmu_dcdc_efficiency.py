@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 PMU DCDC Efficiency测试UI组件
@@ -28,9 +28,9 @@ from instruments.power.keysight.n6705c import N6705C
 from ui.styles import SCROLLBAR_STYLE, START_BTN_STYLE, update_start_btn_state
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
-from ui.modules.chamber_module_frame import VT6002ConnectionMixin
+from ui.modules.chamber_module_frame import ChamberConnectionMixin
 from debug_config import DEBUG_MOCK
-from instruments.mock.mock_instruments import MockN6705C, MockVT6002
+from instruments.mock.mock_instruments import MockN6705C
 from ui.theme import FONT_MONO
 
 SMOOTH_WINDOW = 5   # 平滑窗口大小（越大越平滑，建议奇数：3/5/7/9）
@@ -764,12 +764,12 @@ class DCDCTempSweepTestThread(QThread):
     data_row = Signal(dict)
     test_finished = Signal()
 
-    def __init__(self, n6705c, config, debug_flag=False, vt6002=None):
+    def __init__(self, n6705c, config, debug_flag=False, chamber=None):
         super().__init__()
         self._n6705c = n6705c
         self._cfg = config
         self._debug = debug_flag
-        self._vt6002 = vt6002
+        self._chamber = chamber
         self._stop_flag = False
 
     def request_stop(self):
@@ -781,7 +781,7 @@ class DCDCTempSweepTestThread(QThread):
         vout_ch = int(cfg["vout_channel"].replace("CH ", ""))
         iload_ch = int(cfg["cc_load_channel"].replace("CH ", ""))
         n = self._n6705c
-        vt = self._vt6002
+        vt = self._chamber
 
         try:
             temp_start = float(cfg.get("temp_start", -40))
@@ -814,7 +814,7 @@ class DCDCTempSweepTestThread(QThread):
             )
 
             if vt is not None:
-                self.log_message.emit("[TEMP-SWEEP] VT6002 connected — automatic temperature control enabled.")
+                self.log_message.emit("[TEMP-SWEEP] Chamber connected - automatic temperature control enabled.")
                 try:
                     vt.start()
                     self.log_message.emit("[TEMP-SWEEP] Chamber power ON.")
@@ -822,7 +822,7 @@ class DCDCTempSweepTestThread(QThread):
                     self.log_message.emit(f"[TEMP-SWEEP] Chamber start warning: {e}")
             else:
                 self.log_message.emit(
-                    "[TEMP-SWEEP] No VT6002 connected. "
+                    "[TEMP-SWEEP] No chamber connected. "
                     "Temperature must be set manually for each point."
                 )
 
@@ -982,17 +982,17 @@ class DCDCTempSweepTestThread(QThread):
             self.test_finished.emit()
 
 
-class PMUDCDCEfficiencyUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget):
+class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget):
     """PMU DCDC Efficiency测试UI组件"""
 
     connection_status_changed = Signal(bool)
 
-    def __init__(self, n6705c_top=None, vt6002_chamber_ui=None, instrument_manager=None):
+    def __init__(self, n6705c_top=None, chamber_ui=None, instrument_manager=None):
         super().__init__()
 
         self._instrument_manager = instrument_manager
         self.init_n6705c_connection(n6705c_top, instrument_manager=instrument_manager)
-        self.init_vt6002_connection(vt6002_chamber_ui)
+        self.init_chamber_connection(chamber_ui, instrument_manager=instrument_manager)
 
         self.is_test_running = False
         self.test_thread = None
@@ -1338,9 +1338,9 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget)
         self._build_connection_card()
         left_layout.addWidget(self.connection_card)
 
-        self.vt6002_card = CardFrame("VT6002 Chamber")
-        self._build_vt6002_card()
-        left_layout.addWidget(self.vt6002_card)
+        self.chamber_card = CardFrame("Chamber")
+        self._build_chamber_card()
+        left_layout.addWidget(self.chamber_card)
 
         self.test_config_card = CardFrame("Test Config")
         self._build_test_config_card()
@@ -1490,8 +1490,8 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget)
         is_temp = (item == "Temperature Sweep")
         is_eff = (item == "Efficiency Curve")
 
-        if hasattr(self, 'vt6002_card'):
-            self.vt6002_card.setVisible(is_temp)
+        if hasattr(self, 'chamber_card'):
+            self.chamber_card.setVisible(is_temp)
         if hasattr(self, 'vin_sweep_container'):
             self.vin_sweep_container.setVisible(is_vin)
         if hasattr(self, 'temp_sweep_container'):
@@ -1724,9 +1724,9 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget)
         self.lbl_dlog_duration.setVisible(is_dlog)
         self.dlog_duration_spin.setVisible(is_dlog)
 
-    def _build_vt6002_card(self):
-        layout = self.vt6002_card.main_layout
-        self.build_vt6002_connection_widgets(layout)
+    def _build_chamber_card(self):
+        layout = self.chamber_card.main_layout
+        self.build_chamber_connection_widgets(layout)
 
     def _build_channel_card(self):
         layout = self.channel_card.main_layout
@@ -1903,7 +1903,7 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget)
 
     def _bind_signals(self):
         self.bind_n6705c_signals()
-        self.bind_vt6002_signals()
+        self.bind_chamber_signals()
         self.start_test_btn.clicked.connect(self._on_start_or_stop)
         self.stop_test_btn.clicked.connect(self._on_stop_test)
         self.export_result_btn.clicked.connect(self._on_export_csv)
@@ -1948,12 +1948,12 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget)
         if test_item == "VIN Sweep":
             self.test_thread = DCDCVinSweepTestThread(self.n6705c, cfg, DEBUG_MOCK)
         elif test_item == "Temperature Sweep":
-            if not self.is_vt6002_connected or self.vt6002 is None:
-                self.append_log("[ERROR] VT6002 not connected. Please connect chamber first.")
+            if not self.is_chamber_connected or self.chamber is None:
+                self.append_log("[ERROR] Chamber not connected. Please connect chamber first.")
                 self.set_test_running(False)
                 return
             self.test_thread = DCDCTempSweepTestThread(
-                self.n6705c, cfg, DEBUG_MOCK, vt6002=self.vt6002
+                self.n6705c, cfg, DEBUG_MOCK, chamber=self.chamber
             )
         else:
             self.test_thread = DCDCEfficiencyTestThread(self.n6705c, cfg, DEBUG_MOCK)
@@ -2311,9 +2311,9 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, VT6002ConnectionMixin, QWidget)
             self.temp_end_spin,
             self.temp_step_spin,
             self.temp_fixed_load_spin,
-            self.vt6002_search_btn,
-            self.vt6002_connect_btn,
-            self.vt6002_combo,
+            self.chamber_search_btn,
+            self.chamber_connect_btn,
+            self.chamber_port_combo,
         ]
 
         for widget in widgets:
@@ -2374,3 +2374,4 @@ if __name__ == "__main__":
     window.show()
 
     sys.exit(app.exec())
+

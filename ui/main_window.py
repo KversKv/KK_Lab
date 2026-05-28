@@ -21,7 +21,7 @@ from ui.pages.n6705c_power_analyzer.n6705c_datalog_ui import N6705CDatalogUI
 from ui.pages.n6705c_power_analyzer.n6705c_top import N6705CTop
 from ui.pages.oscilloscope.mso64b_top import MSO64BTop
 from ui.pages.pmu_test.pmu_test_ui import PMUTestUI
-from ui.pages.chamber.vt6002_chamber_ui import VT6002ChamberUI
+from ui.pages.chamber.chamber_control_ui import ChamberControlUI
 from ui.pages.consumption_test.consumption_test_wrapper import ConsumptionTestWrapper
 from ui.pages.charger_test.charger_test_ui import ChargerTestUI
 from ui.pages.custom_test.custom_test_ui import CustomTestUI
@@ -29,7 +29,6 @@ from ui.modules.serialCom_module.serialCom_module_frame import SerialComMixin
 from core.test_manager import TestManager
 from core.instruments import InstrumentManager, InstrumentSpec
 from instruments.base.visa_instrument import VisaInstrument
-from instruments.chambers.vt6002_chamber import VT6002
 from ui.styles import SCROLLBAR_STYLE
 from ui.nav_controller import NavController
 from ui.instrument_status import InstrumentStatusPanel
@@ -93,7 +92,7 @@ class MainWindow(CleanupMixin, QMainWindow):
 
         self.test_manager = TestManager()
         self.visa_instrument = VisaInstrument()
-        self.vt6002_chamber = None
+        self.chamber = None
 
         self.instrument_manager = InstrumentManager(parent=self)
 
@@ -116,7 +115,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.n6705c_datalog_ui = None
         self.oscilloscope_ui = None
         self.pmu_test_ui = None
-        self.vt6002_chamber_ui = None
+        self.chamber_ui = None
         self.consumption_test_ui = None
         self.charger_test_ui = None
         self.custom_test_ui = None
@@ -386,16 +385,16 @@ class MainWindow(CleanupMixin, QMainWindow):
     def _create_thermal_chamber_ui(self):
         logger.debug("Switching to Thermal Chamber UI")
         self._hide_all_instrument_uis()
-        if self.vt6002_chamber_ui is None:
-            self.vt6002_chamber_ui = VT6002ChamberUI(
+        if self.chamber_ui is None:
+            self.chamber_ui = ChamberControlUI(
                 instrument_manager=self.instrument_manager,
             )
-            self.vt6002_chamber_ui.connection_changed.connect(self._update_instrument_status)
-            self.instrument_ui_container_layout.addWidget(self.vt6002_chamber_ui)
+            self.chamber_ui.connection_changed.connect(self._update_instrument_status)
+            self.instrument_ui_container_layout.addWidget(self.chamber_ui)
         else:
-            self.vt6002_chamber_ui.show()
+            self.chamber_ui.show()
         self.current_instrument_ui = "thermal_chamber"
-        self._fade_in_widget(self.vt6002_chamber_ui)
+        self._fade_in_widget(self.chamber_ui)
 
     def _create_pmu_test_ui(self, selected_test=None):
         logger.debug("Switching to PMU Test UI: selected_test=%s", selected_test)
@@ -404,7 +403,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             self.pmu_test_ui = PMUTestUI(
                 n6705c_top=self.n6705c_top,
                 mso64b_top=self.mso64b_top,
-                vt6002_chamber_ui=self.vt6002_chamber_ui,
+                chamber_ui=self.chamber_ui,
                 instrument_manager=self.instrument_manager,
             )
             self.instrument_ui_container_layout.addWidget(self.pmu_test_ui)
@@ -447,6 +446,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         if self.charger_test_ui is None:
             self.charger_test_ui = ChargerTestUI(
                 n6705c_top=self.n6705c_top,
+                chamber_ui=self.chamber_ui,
                 instrument_manager=self.instrument_manager,
             )
             self.instrument_ui_container_layout.addWidget(self.charger_test_ui)
@@ -467,7 +467,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             self.custom_test_ui = CustomTestUI(
                 n6705c_top=self.n6705c_top,
                 mso64b_top=self.mso64b_top,
-                vt6002_chamber_ui=self.vt6002_chamber_ui,
+                chamber_ui=self.chamber_ui,
                 instrument_manager=self.instrument_manager,
             )
             self.instrument_ui_container_layout.addWidget(self.custom_test_ui)
@@ -491,7 +491,7 @@ class MainWindow(CleanupMixin, QMainWindow):
     def _hide_all_instrument_uis(self):
         for widget in [
             self.n6705c_analyser_ui, self.n6705c_datalog_ui,
-            self.oscilloscope_ui, self.pmu_test_ui, self.vt6002_chamber_ui,
+            self.oscilloscope_ui, self.pmu_test_ui, self.chamber_ui,
             self.consumption_test_ui, self.charger_test_ui, self.custom_test_ui,
             self.kk_serials_ui,
         ]:

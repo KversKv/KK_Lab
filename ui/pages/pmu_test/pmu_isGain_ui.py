@@ -1779,3 +1779,17 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.test_thread.finished.connect(self._cleanup_test_thread)
 
         self.test_thread.start()
+
+
+def main():
+    from ui.standalone import run_standalone_widget
+
+    return run_standalone_widget(
+        lambda: PMUIsGainUI(),
+        "PMU Is_gain",
+        size=(1300, 860),
+    )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,19 +1,42 @@
 #python -m ui.modules.chamber_module_frame
 import os
-from ui.resource_path import get_resource_base
-import serial
+import sys
+
+if __name__ == "__main__" and __package__ in (None, ""):
+    _PROJECT_ROOT = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
+    )
+    if _PROJECT_ROOT not in sys.path:
+        sys.path.insert(0, _PROJECT_ROOT)
+
 import serial.tools.list_ports
-from PySide6.QtWidgets import (
-    QHBoxLayout, QPushButton, QLabel, QSizePolicy
-)
-from PySide6.QtCore import Signal, QThread, QObject, QTimer, QRectF
+from PySide6.QtCore import QObject, QThread, QTimer, QRectF, Signal
 from PySide6.QtGui import QIcon, QPainter
 from PySide6.QtSvg import QSvgRenderer
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSizePolicy
 
-from ui.widgets.dark_combobox import DarkComboBox
 from debug_config import DEBUG_MOCK
-from instruments.mock.mock_instruments import MockVT6002
+from log_config import get_logger
+from ui.resource_path import get_resource_base
+from ui.widgets.dark_combobox import DarkComboBox
 
+logger = get_logger(__name__)
+
+
+CHAMBER_TYPES = {
+    "vt6002": {
+        "label": "VT6002",
+        "display_name": "VT6002 Chamber",
+        "connection_kind": "serial_modbus",
+        "baudrate": 9600,
+    },
+    "mt3065": {
+        "label": "MT3065",
+        "display_name": "MT3065 Chamber",
+        "connection_kind": "serial_ascii",
+        "baudrate": 19200,
+    },
+}
 
 _SVG_COMMON_DIR = os.path.join(
     get_resource_base(),
@@ -23,12 +46,32 @@ _SEARCH_ICON_PATH = os.path.join(_SVG_COMMON_DIR, "search.svg")
 _LINK_ICON_PATH = os.path.join(_SVG_COMMON_DIR, "link.svg")
 _UNLINK_ICON_PATH = os.path.join(_SVG_COMMON_DIR, "unlink.svg")
 
-_VT6002_BTN_HEIGHT = 24
-_VT6002_BTN_ICON_SIZE = 14
-_VT6002_BTN_RADIUS = 6
+_CHAMBER_BTN_HEIGHT = 24
+_CHAMBER_BTN_ICON_SIZE = 14
+_CHAMBER_BTN_RADIUS = 6
 
 
-def _vt6002_search_style(h=_VT6002_BTN_HEIGHT, r=_VT6002_BTN_RADIUS):
+def chamber_display_name(chamber_type: str) -> str:
+    meta = CHAMBER_TYPES.get(str(chamber_type).strip().lower(), {})
+    return meta.get("display_name") or meta.get("label") or str(chamber_type)
+
+
+def chamber_type_label(chamber_type: str) -> str:
+    meta = CHAMBER_TYPES.get(str(chamber_type).strip().lower(), {})
+    return meta.get("label") or str(chamber_type).upper()
+
+
+def chamber_baudrate(chamber_type: str) -> int:
+    meta = CHAMBER_TYPES.get(str(chamber_type).strip().lower(), {})
+    return int(meta.get("baudrate", 9600))
+
+
+def chamber_connection_kind(chamber_type: str) -> str:
+    meta = CHAMBER_TYPES.get(str(chamber_type).strip().lower(), {})
+    return meta.get("connection_kind", "serial")
+
+
+def _search_style(h=_CHAMBER_BTN_HEIGHT, r=_CHAMBER_BTN_RADIUS):
     return f"""
         QPushButton {{
             background-color: #13254b;
@@ -53,7 +96,7 @@ def _vt6002_search_style(h=_VT6002_BTN_HEIGHT, r=_VT6002_BTN_RADIUS):
     """
 
 
-def _vt6002_connect_style(h=_VT6002_BTN_HEIGHT, r=_VT6002_BTN_RADIUS):
+def _connect_style(h=_CHAMBER_BTN_HEIGHT, r=_CHAMBER_BTN_RADIUS):
     return f"""
         QPushButton {{
             background-color: #053b38;
@@ -79,7 +122,7 @@ def _vt6002_connect_style(h=_VT6002_BTN_HEIGHT, r=_VT6002_BTN_RADIUS):
     """
 
 
-def _vt6002_disconnect_style(h=_VT6002_BTN_HEIGHT, r=_VT6002_BTN_RADIUS):
+def _disconnect_style(h=_CHAMBER_BTN_HEIGHT, r=_CHAMBER_BTN_RADIUS):
     return f"""
         QPushButton {{
             background-color: #3a0828;
@@ -105,9 +148,9 @@ def _vt6002_disconnect_style(h=_VT6002_BTN_HEIGHT, r=_VT6002_BTN_RADIUS):
     """
 
 
-class _VT6002SearchButton(QPushButton):
-    def __init__(self, parent=None, icon_size=_VT6002_BTN_ICON_SIZE,
-                 btn_height=_VT6002_BTN_HEIGHT, btn_radius=_VT6002_BTN_RADIUS):
+class _ChamberSearchButton(QPushButton):
+    def __init__(self, parent=None, icon_size=_CHAMBER_BTN_ICON_SIZE,
+                 btn_height=_CHAMBER_BTN_HEIGHT, btn_radius=_CHAMBER_BTN_RADIUS):
         super().__init__(parent)
         self._icon_size = icon_size
         self._angle = 0.0
@@ -122,7 +165,7 @@ class _VT6002SearchButton(QPushButton):
         self._timer.timeout.connect(self._on_tick)
 
         self.setText("")
-        self.setStyleSheet(_vt6002_search_style(h=btn_height, r=btn_radius))
+        self.setStyleSheet(_search_style(h=btn_height, r=btn_radius))
 
     def start_spinning(self):
         if self._spinning:
@@ -156,29 +199,27 @@ class _VT6002SearchButton(QPushButton):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
-
         painter.translate(cx, cy)
         if self._spinning:
             painter.rotate(self._angle)
         painter.translate(-s / 2.0, -s / 2.0)
-
         self._svg_renderer.render(painter, QRectF(0, 0, s, s))
         painter.end()
 
 
-def _update_vt6002_btn_state(btn, connected,
-                             h=_VT6002_BTN_HEIGHT, r=_VT6002_BTN_RADIUS,
-                             icon_size=_VT6002_BTN_ICON_SIZE):
+def _update_chamber_btn_state(btn, connected,
+                              h=_CHAMBER_BTN_HEIGHT, r=_CHAMBER_BTN_RADIUS,
+                              icon_size=_CHAMBER_BTN_ICON_SIZE):
     from PySide6.QtCore import QSize as _QSize
     if connected:
         btn.setText("Disconnect")
-        btn.setStyleSheet(_vt6002_disconnect_style(h=h, r=r))
+        btn.setStyleSheet(_disconnect_style(h=h, r=r))
         if os.path.isfile(_UNLINK_ICON_PATH):
             btn.setIcon(QIcon(_UNLINK_ICON_PATH))
             btn.setIconSize(_QSize(icon_size, icon_size))
     else:
         btn.setText("Connect")
-        btn.setStyleSheet(_vt6002_connect_style(h=h, r=r))
+        btn.setStyleSheet(_connect_style(h=h, r=r))
         if os.path.isfile(_LINK_ICON_PATH):
             btn.setIcon(QIcon(_LINK_ICON_PATH))
             btn.setIconSize(_QSize(icon_size, icon_size))
@@ -199,363 +240,384 @@ class _SearchSerialWorker(QObject):
             self.error.emit(str(e))
 
 
-class VT6002ConnectionMixin:
-    vt6002_connection_changed = Signal(bool)
+class ChamberConnectionMixin:
+    chamber_connection_changed = Signal(bool)
 
-    def init_vt6002_connection(self, vt6002_chamber_ui=None, instrument_manager=None):
-        self._vt6002_chamber_ui = vt6002_chamber_ui
-        self._vt6002_instrument_manager = instrument_manager
-        self.vt6002 = None
-        self.is_vt6002_connected = False
-        self._vt6002_syncing = False
-        self._vt6002_search_thread = None
-        self._vt6002_search_worker = None
+    def init_chamber_connection(self, chamber_ui=None, instrument_manager=None, default_chamber_type="vt6002"):
+        self._chamber_ui = chamber_ui
+        self._chamber_instrument_manager = instrument_manager
+        self.current_chamber_type = default_chamber_type
+        self.current_chamber_session_id = None
+        self.chamber = None
+        self.is_chamber_connected = False
+        self._chamber_syncing = False
+        self._chamber_search_thread = None
+        self._chamber_search_worker = None
 
-        if self._vt6002_chamber_ui is not None and hasattr(self._vt6002_chamber_ui, 'connection_changed'):
-            self._vt6002_chamber_ui.connection_changed.connect(self._on_vt6002_external_changed)
+        if self._chamber_ui is not None and hasattr(self._chamber_ui, "connection_changed"):
+            self._chamber_ui.connection_changed.connect(self._on_chamber_external_changed)
 
-        if self._vt6002_instrument_manager is not None:
-            self._vt6002_instrument_manager.session_connected.connect(
-                self._on_vt6002_manager_connected
+        if self._chamber_instrument_manager is not None:
+            self._chamber_instrument_manager.session_connected.connect(
+                self._on_chamber_manager_connected
             )
-            self._vt6002_instrument_manager.session_disconnected.connect(
-                self._on_vt6002_manager_disconnected
+            self._chamber_instrument_manager.session_disconnected.connect(
+                self._on_chamber_manager_disconnected
+            )
+            self._chamber_instrument_manager.connection_failed.connect(
+                self._on_chamber_manager_connection_failed
             )
 
-    def build_vt6002_connection_widgets(self, layout):
-        self.vt6002_status_label = QLabel("● Not Connected")
-        self.vt6002_status_label.setObjectName("statusErr")
-        layout.addWidget(self.vt6002_status_label)
+    def build_chamber_connection_widgets(self, layout):
+        self.chamber_status_label = QLabel("● Not Connected")
+        self.chamber_status_label.setObjectName("statusErr")
+        layout.addWidget(self.chamber_status_label)
 
-        self.vt6002_combo = DarkComboBox()
-        self.vt6002_combo.setSizeAdjustPolicy(
+        self.chamber_type_combo = DarkComboBox()
+        for chamber_type, meta in CHAMBER_TYPES.items():
+            self.chamber_type_combo.addItem(meta["label"], chamber_type)
+        idx = self.chamber_type_combo.findData(self.current_chamber_type)
+        if idx >= 0:
+            self.chamber_type_combo.setCurrentIndex(idx)
+        self.chamber_type_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        layout.addWidget(self.chamber_type_combo)
+
+        self.chamber_port_combo = DarkComboBox()
+        self.chamber_port_combo.setSizeAdjustPolicy(
             DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
-        self.vt6002_combo.setMinimumContentsLength(10)
-        self.vt6002_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        layout.addWidget(self.vt6002_combo)
+        self.chamber_port_combo.setMinimumContentsLength(10)
+        self.chamber_port_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        layout.addWidget(self.chamber_port_combo)
 
         btn_row = QHBoxLayout()
         btn_row.setSpacing(6)
         btn_row.setContentsMargins(0, 2, 0, 0)
 
-        self.vt6002_search_btn = _VT6002SearchButton()
+        self.chamber_search_btn = _ChamberSearchButton()
+        self.chamber_connect_btn = QPushButton()
+        _update_chamber_btn_state(self.chamber_connect_btn, connected=False)
 
-        self.vt6002_connect_btn = QPushButton()
-        _update_vt6002_btn_state(self.vt6002_connect_btn, connected=False)
-
-        btn_row.addWidget(self.vt6002_search_btn)
-        btn_row.addWidget(self.vt6002_connect_btn)
+        btn_row.addWidget(self.chamber_search_btn)
+        btn_row.addWidget(self.chamber_connect_btn)
         layout.addLayout(btn_row)
 
-    def bind_vt6002_signals(self):
-        self.vt6002_search_btn.clicked.connect(self._on_vt6002_search)
-        self.vt6002_connect_btn.clicked.connect(self._on_vt6002_toggle)
+    def bind_chamber_signals(self):
+        self.chamber_type_combo.currentIndexChanged.connect(self._on_chamber_type_changed)
+        self.chamber_search_btn.clicked.connect(self._on_chamber_search)
+        self.chamber_connect_btn.clicked.connect(self._on_chamber_toggle)
 
-    def _on_vt6002_external_changed(self):
-        if self._vt6002_syncing:
-            return
-        if self._vt6002_chamber_ui is None:
-            return
-        vt = self._vt6002_chamber_ui.vt6002
-        if vt is not None:
-            is_open = isinstance(vt, MockVT6002) or (hasattr(vt, 'ser') and vt.ser.is_open)
-            if is_open:
-                self.vt6002 = vt
-                self.is_vt6002_connected = True
-                port = getattr(self._vt6002_chamber_ui, 'current_port', 'Unknown')
-                self._update_vt6002_connection_ui(True, port)
-                if hasattr(self, 'append_log'):
-                    self.append_log(f"[VT6002] Synced: {port}")
-                return
-        self.vt6002 = None
-        self.is_vt6002_connected = False
-        self._update_vt6002_connection_ui(False, "Not Connected")
-        if hasattr(self, 'append_log'):
-            self.append_log("[VT6002] Disconnected (synced).")
+    def _selected_chamber_type(self):
+        if hasattr(self, "chamber_type_combo"):
+            data = self.chamber_type_combo.currentData()
+            if data:
+                return str(data)
+        return self.current_chamber_type or "vt6002"
 
-    def _on_vt6002_manager_connected(self, session_id: str):
-        if session_id != "vt6002:default":
+    def _selected_chamber_label(self):
+        return chamber_type_label(self._selected_chamber_type())
+
+    def _on_chamber_type_changed(self):
+        self.current_chamber_type = self._selected_chamber_type()
+        if hasattr(self, "chamber_port_combo") and not self.is_chamber_connected:
+            self.chamber_port_combo.clear()
+
+    def _on_chamber_external_changed(self):
+        if self._chamber_syncing or self._chamber_ui is None:
             return
-        mgr = self._vt6002_instrument_manager
+        chamber = getattr(self._chamber_ui, "chamber", None)
+        if chamber is not None and self._is_chamber_open(chamber):
+            self.chamber = chamber
+            self.is_chamber_connected = True
+            self.current_chamber_type = getattr(self._chamber_ui, "current_chamber_type", self.current_chamber_type)
+            self.current_chamber_session_id = getattr(self._chamber_ui, "current_chamber_session_id", None)
+            port = getattr(self._chamber_ui, "current_port", "Unknown")
+            self._update_chamber_connection_ui(True, port)
+            if hasattr(self, "append_log"):
+                self.append_log(f"[Chamber] Synced {self._selected_chamber_label()}: {port}")
+            return
+        self.chamber = None
+        self.is_chamber_connected = False
+        self.current_chamber_session_id = None
+        self._update_chamber_connection_ui(False, "Not Connected")
+        if hasattr(self, "append_log"):
+            self.append_log("[Chamber] Disconnected (synced).")
+
+    def _is_chamber_session(self, session_id: str) -> bool:
+        mgr = self._chamber_instrument_manager
         if not mgr:
+            return False
+        session = mgr.get_session(session_id)
+        return bool(session and session.role == "chamber")
+
+    def _on_chamber_manager_connected(self, session_id: str):
+        if not self._is_chamber_session(session_id):
             return
+        mgr = self._chamber_instrument_manager
         session = mgr.get_session(session_id)
         if session and session.connected:
-            self.vt6002 = session.instance
-            self.is_vt6002_connected = True
-            self._update_vt6002_connection_ui(True, session.resource)
-            if hasattr(self, 'append_log'):
-                self.append_log(f"[VT6002] Connected via manager: {session.resource}")
-            self.vt6002_connection_changed.emit(True)
+            self.chamber = session.instance
+            self.is_chamber_connected = True
+            self.current_chamber_type = session.instrument_type
+            self.current_chamber_session_id = session_id
+            if hasattr(self, "chamber_type_combo"):
+                idx = self.chamber_type_combo.findData(session.instrument_type)
+                if idx >= 0:
+                    self.chamber_type_combo.setCurrentIndex(idx)
+            self._update_chamber_connection_ui(True, session.resource)
+            if hasattr(self, "append_log"):
+                self.append_log(
+                    f"[Chamber] Connected via manager: {chamber_type_label(session.instrument_type)} {session.resource}"
+                )
+            self.chamber_connection_changed.emit(True)
 
-    def _on_vt6002_manager_disconnected(self, session_id: str):
-        if session_id != "vt6002:default":
+    def _on_chamber_manager_disconnected(self, session_id: str):
+        if session_id != self.current_chamber_session_id and not self._is_chamber_session(session_id):
             return
-        self.vt6002 = None
-        self.is_vt6002_connected = False
-        self._update_vt6002_connection_ui(False, "Not Connected")
-        if hasattr(self, 'append_log'):
-            self.append_log("[VT6002] Disconnected via manager.")
-        self.vt6002_connection_changed.emit(False)
+        self.chamber = None
+        self.is_chamber_connected = False
+        self.current_chamber_session_id = None
+        self._update_chamber_connection_ui(False, "Not Connected")
+        if hasattr(self, "append_log"):
+            self.append_log("[Chamber] Disconnected via manager.")
+        self.chamber_connection_changed.emit(False)
 
-    def _on_vt6002_search(self):
+    def _on_chamber_manager_connection_failed(self, session_id: str, error: str):
+        if session_id != self.current_chamber_session_id and not session_id.endswith(":chamber"):
+            return
+        if hasattr(self, "append_log"):
+            self.append_log(f"[Chamber] Connection failed: {error}")
+        self._update_chamber_connection_ui(False, "Error")
+        self.chamber_connection_changed.emit(False)
+
+    def _on_chamber_search(self):
+        chamber_type = self._selected_chamber_type()
         if DEBUG_MOCK:
-            self.vt6002_combo.clear()
-            self.vt6002_combo.addItem("[MOCK] COM3 - VT6002 Chamber")
+            self.chamber_port_combo.clear()
+            self.chamber_port_combo.addItem(f"[MOCK] {chamber_type_label(chamber_type)} Chamber")
             return
 
-        if self._vt6002_search_thread is not None and self._vt6002_search_thread.isRunning():
+        if self._chamber_search_thread is not None and self._chamber_search_thread.isRunning():
             return
 
-        self.vt6002_search_btn.setEnabled(False)
-        self.vt6002_connect_btn.setEnabled(False)
+        self.chamber_search_btn.setEnabled(False)
+        self.chamber_connect_btn.setEnabled(False)
+        self.chamber_search_btn.start_spinning()
 
         worker = _SearchSerialWorker()
         thread = QThread()
         worker.moveToThread(thread)
 
         thread.started.connect(worker.run)
-        worker.finished.connect(self._on_vt6002_search_done)
-        worker.error.connect(self._on_vt6002_search_error)
+        worker.finished.connect(self._on_chamber_search_done)
+        worker.error.connect(self._on_chamber_search_error)
         worker.finished.connect(thread.quit)
         worker.error.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda: self._on_vt6002_thread_cleanup())
+        thread.finished.connect(self._on_chamber_thread_cleanup)
 
-        self._vt6002_search_thread = thread
-        self._vt6002_search_worker = worker
+        self._chamber_search_thread = thread
+        self._chamber_search_worker = worker
         thread.start()
 
-    def _on_vt6002_thread_cleanup(self):
-        self._vt6002_search_thread = None
-        self._vt6002_search_worker = None
+    def _on_chamber_thread_cleanup(self):
+        self._chamber_search_thread = None
+        self._chamber_search_worker = None
 
-    def _on_vt6002_search_done(self, ports):
-        self.vt6002_combo.clear()
+    def _on_chamber_search_done(self, ports):
+        self.chamber_search_btn.stop_spinning()
+        self.chamber_port_combo.clear()
         if ports:
             for port in ports:
-                self.vt6002_combo.addItem(port)
-            self.vt6002_connect_btn.setEnabled(True)
+                self.chamber_port_combo.addItem(port)
+            self.chamber_connect_btn.setEnabled(True)
         else:
-            self.vt6002_combo.addItem("No serial ports found")
-            self.vt6002_connect_btn.setEnabled(False)
-        self.vt6002_search_btn.setEnabled(True)
+            self.chamber_port_combo.addItem("No serial ports found")
+            self.chamber_connect_btn.setEnabled(False)
+        self.chamber_search_btn.setEnabled(True)
 
-    def _on_vt6002_search_error(self, err):
-        if hasattr(self, 'append_log'):
-            self.append_log(f"[VT6002] Search error: {err}")
-        self.vt6002_search_btn.setEnabled(True)
-        self.vt6002_connect_btn.setEnabled(False)
+    def _on_chamber_search_error(self, err):
+        self.chamber_search_btn.stop_spinning()
+        if hasattr(self, "append_log"):
+            self.append_log(f"[Chamber] Search error: {err}")
+        self.chamber_search_btn.setEnabled(True)
+        self.chamber_connect_btn.setEnabled(False)
 
-    def _on_vt6002_toggle(self):
-        if self.is_vt6002_connected:
-            self._on_vt6002_disconnect()
+    def _on_chamber_toggle(self):
+        if self.is_chamber_connected:
+            self._on_chamber_disconnect()
         else:
-            self._on_vt6002_connect()
+            self._on_chamber_connect()
 
-    def _on_vt6002_connect(self):
-        self.vt6002_connect_btn.setEnabled(False)
+    def _on_chamber_connect(self):
+        self.chamber_connect_btn.setEnabled(False)
+        chamber_type = self._selected_chamber_type()
+        port_str = self.chamber_port_combo.currentText().strip()
+        if not port_str or port_str in ("No serial ports found", "Scan Failed"):
+            self._update_chamber_connection_ui(False, "No serial port selected")
+            return
+
         if DEBUG_MOCK:
-            vt = MockVT6002()
-            port = "MOCK"
-        elif self._vt6002_instrument_manager:
-            from core.instruments import InstrumentSpec
-            port_str = self.vt6002_combo.currentText()
+            port = f"MOCK::{chamber_type_label(chamber_type)}"
+        else:
             port = port_str.split()[0]
-            self._vt6002_instrument_manager.connect_async(InstrumentSpec(
-                instrument_type="vt6002",
+
+        if self._chamber_instrument_manager:
+            from core.instruments import InstrumentSpec
+            spec = InstrumentSpec(
+                instrument_type=chamber_type,
                 role="chamber",
-                connection_kind="serial",
+                connection_kind=chamber_connection_kind(chamber_type),
                 slot="default",
                 resource=port,
-            ))
+            )
+            self.current_chamber_session_id = self._chamber_instrument_manager.connect_async(spec)
             return
-        else:
-            try:
-                from instruments.chambers.vt6002_chamber import VT6002
-                port_str = self.vt6002_combo.currentText()
-                port = port_str.split()[0]
-                vt = VT6002(port)
-            except Exception as e:
-                if hasattr(self, 'append_log'):
-                    self.append_log(f"[VT6002] Connection failed: {e}")
-                self._update_vt6002_connection_ui(False, "Error")
-                return
 
-        self.vt6002 = vt
-        self.is_vt6002_connected = True
-        self._update_vt6002_connection_ui(True, port)
-        if hasattr(self, 'append_log'):
-            self.append_log(f"[VT6002] Connected: {port}")
-
-        if self._vt6002_chamber_ui is not None:
-            self._vt6002_syncing = True
-            self._vt6002_chamber_ui.vt6002 = vt
-            self._vt6002_chamber_ui.current_port = port
-            self._vt6002_chamber_ui._set_connection_ui(True)
-            self._vt6002_chamber_ui._set_controls_enabled(True)
-            self._vt6002_chamber_ui.connection_changed.emit()
-            self._vt6002_syncing = False
-
-        self.vt6002_connection_changed.emit(True)
-
-    def _on_vt6002_disconnect(self):
-        self.vt6002_connect_btn.setEnabled(False)
         try:
-            if self.vt6002 is not None:
-                self.vt6002.close()
+            from instruments.factory import create_chamber
+            chamber = create_chamber(
+                chamber_type=chamber_type,
+                port=port,
+                baudrate=chamber_baudrate(chamber_type),
+            )
         except Exception as e:
-            if hasattr(self, 'append_log'):
-                self.append_log(f"[VT6002] Close error: {e}")
+            logger.error("Chamber connection failed: %s", e, exc_info=True)
+            if hasattr(self, "append_log"):
+                self.append_log(f"[Chamber] Connection failed: {e}")
+            self._update_chamber_connection_ui(False, "Error")
+            return
 
-        self.vt6002 = None
-        self.is_vt6002_connected = False
-        self._update_vt6002_connection_ui(False, "Disconnected")
-        if hasattr(self, 'append_log'):
-            self.append_log("[VT6002] Disconnected.")
+        self.chamber = chamber
+        self.is_chamber_connected = True
+        self.current_chamber_type = chamber_type
+        self.current_chamber_session_id = None
+        self._update_chamber_connection_ui(True, port)
+        if hasattr(self, "append_log"):
+            self.append_log(f"[Chamber] Connected: {chamber_type_label(chamber_type)} {port}")
 
-        if self._vt6002_chamber_ui is not None:
-            self._vt6002_syncing = True
-            self._vt6002_chamber_ui.vt6002 = None
-            self._vt6002_chamber_ui.current_port = None
-            self._vt6002_chamber_ui.is_chamber_on = False
-            self._vt6002_chamber_ui._set_connection_ui(False)
-            self._vt6002_chamber_ui._set_controls_enabled(False)
-            self._vt6002_chamber_ui._set_power_ui(False)
-            self._vt6002_chamber_ui.connection_changed.emit()
-            self._vt6002_syncing = False
+        if self._chamber_ui is not None:
+            self._sync_connected_to_chamber_ui(chamber, chamber_type, port)
 
-        self.vt6002_connection_changed.emit(False)
+        self.chamber_connection_changed.emit(True)
 
-    def _update_vt6002_connection_ui(self, connected, status_text):
+    def _sync_connected_to_chamber_ui(self, chamber, chamber_type, port):
+        self._chamber_syncing = True
+        self._chamber_ui.chamber = chamber
+        self._chamber_ui.current_chamber_type = chamber_type
+        self._chamber_ui.current_port = port
+        self._chamber_ui.current_chamber_session_id = self.current_chamber_session_id
+        self._chamber_ui._set_connection_ui(True)
+        self._chamber_ui._set_controls_enabled(True)
+        self._chamber_ui.connection_changed.emit()
+        self._chamber_syncing = False
+
+    def _on_chamber_disconnect(self):
+        self.chamber_connect_btn.setEnabled(False)
+        if self._chamber_instrument_manager and self.current_chamber_session_id:
+            self._chamber_instrument_manager.disconnect_async(self.current_chamber_session_id)
+            return
+
+        try:
+            if self.chamber is not None:
+                self.chamber.close()
+        except Exception as e:
+            logger.warning("Chamber close error: %s", e, exc_info=True)
+            if hasattr(self, "append_log"):
+                self.append_log(f"[Chamber] Close error: {e}")
+
+        self.chamber = None
+        self.is_chamber_connected = False
+        self.current_chamber_session_id = None
+        self._update_chamber_connection_ui(False, "Disconnected")
+        if hasattr(self, "append_log"):
+            self.append_log("[Chamber] Disconnected.")
+
+        if self._chamber_ui is not None:
+            self._chamber_syncing = True
+            self._chamber_ui.chamber = None
+            self._chamber_ui.current_port = None
+            self._chamber_ui.current_chamber_session_id = None
+            self._chamber_ui.is_chamber_on = False
+            self._chamber_ui._set_connection_ui(False)
+            self._chamber_ui._set_controls_enabled(False)
+            self._chamber_ui._set_power_ui(False)
+            self._chamber_ui.connection_changed.emit()
+            self._chamber_syncing = False
+
+        self.chamber_connection_changed.emit(False)
+
+    def _is_chamber_open(self, chamber):
+        if hasattr(chamber, "is_connected"):
+            try:
+                return bool(chamber.is_connected())
+            except Exception:
+                logger.debug("Chamber is_connected failed", exc_info=True)
+        return bool(hasattr(chamber, "ser") and chamber.ser is not None and chamber.ser.is_open)
+
+    def _update_chamber_connection_ui(self, connected, status_text):
         if connected:
-            self.vt6002_status_label.setText(f"● Connected to: {status_text}")
-            self.vt6002_status_label.setObjectName("statusOk")
+            self.chamber_status_label.setText(f"● Connected to: {status_text}")
+            self.chamber_status_label.setObjectName("statusOk")
         else:
-            self.vt6002_status_label.setText(f"● {status_text}")
-            self.vt6002_status_label.setObjectName("statusErr")
-        self.vt6002_status_label.style().unpolish(self.vt6002_status_label)
-        self.vt6002_status_label.style().polish(self.vt6002_status_label)
-        self.vt6002_status_label.update()
-        _update_vt6002_btn_state(self.vt6002_connect_btn, connected)
-        self.vt6002_connect_btn.setEnabled(True)
-        self.vt6002_search_btn.setEnabled(not connected)
-        self.vt6002_combo.setEnabled(not connected)
+            self.chamber_status_label.setText(f"● {status_text}")
+            self.chamber_status_label.setObjectName("statusErr")
+        self.chamber_status_label.style().unpolish(self.chamber_status_label)
+        self.chamber_status_label.style().polish(self.chamber_status_label)
+        self.chamber_status_label.update()
+        _update_chamber_btn_state(self.chamber_connect_btn, connected)
+        self.chamber_connect_btn.setEnabled(True)
+        self.chamber_search_btn.setEnabled(not connected)
+        self.chamber_port_combo.setEnabled(not connected)
+        self.chamber_type_combo.setEnabled(not connected)
 
-    def get_vt6002_instance(self):
-        return self.vt6002
+    def get_chamber_instance(self):
+        return self.chamber
 
-    def is_vt6002_connected_status(self):
-        return self.is_vt6002_connected
+    def is_chamber_connected_status(self):
+        return self.is_chamber_connected
 
 
 if __name__ == "__main__":
-    #python -m ui.modules.chamber_module_frame
-    import sys
-    from PySide6.QtWidgets import (
-        QApplication, QWidget, QVBoxLayout, QFrame, QSizePolicy
-    )
+    from PySide6.QtCore import Signal
+    from PySide6.QtWidgets import QApplication, QFrame, QVBoxLayout, QWidget
 
-    DARK_CARD_STYLE = """
-        QWidget {
-            background-color: #020817;
-            color: #dbe7ff;
-        }
-        QLabel {
-            background-color: transparent;
-            color: #dbe7ff;
-            border: none;
-        }
-        QLabel#statusOk {
-            color: #15d1a3;
-            font-weight: 600;
-            background-color: transparent;
-        }
-        QLabel#statusWarn {
-            color: #ffb84d;
-            font-weight: 600;
-            background-color: transparent;
-        }
-        QLabel#statusErr {
-            color: #ff5e7a;
-            font-weight: 600;
-            background-color: transparent;
-        }
-        QFrame#cardFrame {
-            background-color: #071127;
-            border: 1px solid #1a2b52;
-            border-radius: 12px;
-        }
-        QComboBox {
-            background-color: #0a1733;
-            color: #eaf2ff;
-            border: 1px solid #27406f;
-            border-radius: 8px;
-            padding: 6px 10px;
-        }
-        QComboBox::drop-down {
-            border: none;
-            width: 22px;
-            background: transparent;
-        }
-        QComboBox QAbstractItemView {
-            background-color: #0a1733;
-            color: #eaf2ff;
-            border: 1px solid #27406f;
-            selection-background-color: #334a7d;
-        }
-    """
-
-    class _CardFrame(QFrame):
-        def __init__(self, title="", parent=None):
-            super().__init__(parent)
-            self.setObjectName("cardFrame")
-            self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            self.main_layout = QVBoxLayout(self)
-            self.main_layout.setContentsMargins(12, 10, 12, 12)
-            self.main_layout.setSpacing(8)
-            if title:
-                self.title_row = QHBoxLayout()
-                self.title_row.setSpacing(8)
-                self.title_label = QLabel(title)
-                self.title_label.setObjectName("cardTitle")
-                self.title_row.addWidget(self.title_label)
-                self.title_row.addStretch()
-                self.main_layout.addLayout(self.title_row)
-            else:
-                self.title_label = None
-                self.title_row = None
-
-    class _DemoVT6002Widget(VT6002ConnectionMixin, QWidget):
-        vt6002_connection_changed = Signal(bool)
+    class _DemoChamberWidget(ChamberConnectionMixin, QWidget):
+        chamber_connection_changed = Signal(bool)
 
         def __init__(self, parent=None):
             super().__init__(parent)
-            self.init_vt6002_connection()
-            self.setStyleSheet(DARK_CARD_STYLE)
+            self.init_chamber_connection()
+            self.setStyleSheet("""
+                QWidget { background-color: #020817; color: #dbe7ff; }
+                QLabel { background-color: transparent; color: #dbe7ff; border: none; }
+                QLabel#statusOk { color: #15d1a3; font-weight: 600; }
+                QLabel#statusErr { color: #ff5e7a; font-weight: 600; }
+                QFrame#cardFrame { background-color: #071127; border: 1px solid #1a2b52; border-radius: 12px; }
+            """)
 
             root = QVBoxLayout(self)
             root.setContentsMargins(12, 12, 12, 12)
-
-            card = _CardFrame("VT6002 Chamber Connection")
-            self.build_vt6002_connection_widgets(card.main_layout)
+            card = QFrame()
+            card.setObjectName("cardFrame")
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(12, 10, 12, 12)
+            card_layout.setSpacing(8)
+            card_layout.addWidget(QLabel("Chamber Connection"))
+            self.build_chamber_connection_widgets(card_layout)
             root.addWidget(card)
             root.addStretch()
-
-            self.bind_vt6002_signals()
+            self.bind_chamber_signals()
 
         def append_log(self, msg):
-            print(msg)
+            logger.info(msg)
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-
-    w = _DemoVT6002Widget()
-    w.setWindowTitle("VT6002 Chamber Module Frame Demo")
-    w.setFixedWidth(320)
+    w = _DemoChamberWidget()
+    w.setWindowTitle("Chamber Module Frame Demo")
+    w.setFixedWidth(340)
     w.show()
     w.move(100, 200)
-
     sys.exit(app.exec())
