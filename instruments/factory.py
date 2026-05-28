@@ -4,6 +4,7 @@ from instruments.power.keysight.n6705c import N6705C
 from instruments.chambers.mt3065 import MT3065
 from instruments.chambers.vt6002_chamber import VT6002
 from instruments.frequencyCounter.keysight_53230A import Keysight53230A
+from instruments.MCU_IO.YD_RP2040 import PicoGPIO
 from instruments.base.visa_instrument import VisaInstrument
 from log_config import get_logger
 
@@ -17,6 +18,11 @@ _INSTRUMENT_CREATORS = {
     "vt6002": lambda **kw: VT6002(kw.get("port", kw.get("resource", "")), kw.get("baudrate", 9600)),
     "mt3065": lambda **kw: MT3065(kw.get("port", kw.get("resource", "")), kw.get("baudrate", 19200)),
     "keysight53230a": lambda **kw: Keysight53230A(kw["resource"]),
+    "yd_rp2040": lambda **kw: PicoGPIO(
+        kw.get("port", kw.get("resource", "")),
+        kw.get("baudrate", kw.get("baud", 921600)),
+        kw.get("timeout", 0.5),
+    ),
 }
 
 
@@ -66,3 +72,14 @@ def create_frequency_counter(counter_type: str, resource: str):
         return Keysight53230A(resource)
     else:
         raise ValueError(f"Unknown frequency counter type: {counter_type}")
+
+
+def create_mcu_io(mcu_type: str = "yd_rp2040", port: str = "", baudrate: int = 921600):
+    from debug_config import DEBUG_MOCK
+    key = str(mcu_type).strip().lower()
+    if DEBUG_MOCK:
+        from instruments.mock.mock_instruments import MockPicoGPIO
+        return MockPicoGPIO(port=port, baudrate=baudrate)
+    if key in ("yd_rp2040", "rp2040", "pico", "picogpio"):
+        return create_instrument("yd_rp2040", port=port, baudrate=baudrate)
+    raise ValueError(f"Unknown MCU IO type: {mcu_type}")

@@ -531,6 +531,76 @@ def _disconnect_keysight53230a(instance: object) -> None:
             logger.warning("53230A close error: %s", e)
 
 
+def _create_mcu_io(spec: InstrumentSpec) -> object:
+    from instruments.factory import create_mcu_io
+    inst = create_mcu_io("yd_rp2040", port=spec.resource, baudrate=921600)
+    if hasattr(inst, "connect"):
+        ok = inst.connect()
+        if ok is False:
+            raise ConnectionError(f"MCU_IO connect failed: {spec.resource}")
+    return inst
+
+
+def _verify_mcu_io(instance: object) -> InstrumentIdentity:
+    if hasattr(instance, "is_connected") and not instance.is_connected():
+        raise ConnectionError("MCU_IO verify failed: device is not connected")
+    model = "YD_RP2040"
+    if hasattr(instance, "identify"):
+        text = instance.identify()
+        if text:
+            model = text
+    serial = getattr(instance, "port", "")
+    return InstrumentIdentity(
+        model=model,
+        serial=serial,
+        vendor="YD",
+    )
+
+
+def _scan_mcu_io() -> list[InstrumentCandidate]:
+    from debug_config import DEBUG_MOCK
+    if DEBUG_MOCK:
+        return [
+            InstrumentCandidate(
+                instrument_type="mcu_io",
+                connection_kind="serial_raw_repl",
+                resource="MOCK::YD_RP2040",
+                model_hint="YD_RP2040",
+                serial_hint="MOCK",
+                display_name="Mock YD RP2040 GPIO",
+            ),
+        ]
+    import serial.tools.list_ports
+    candidates = []
+    try:
+        ports = serial.tools.list_ports.comports()
+        for port in ports:
+            candidates.append(InstrumentCandidate(
+                instrument_type="mcu_io",
+                connection_kind="serial_raw_repl",
+                resource=port.device,
+                model_hint="YD_RP2040",
+                serial_hint=getattr(port, "serial_number", "") or "",
+                display_name=f"{port.device} - {port.description}",
+            ))
+    except Exception as e:
+        logger.warning("MCU_IO serial scan failed: %s", e)
+    return candidates
+
+
+def _disconnect_mcu_io(instance: object) -> None:
+    if hasattr(instance, "disconnect"):
+        try:
+            instance.disconnect()
+        except Exception as e:
+            logger.warning("MCU_IO disconnect error: %s", e)
+    elif hasattr(instance, "close"):
+        try:
+            instance.close()
+        except Exception as e:
+            logger.warning("MCU_IO close error: %s", e)
+
+
 N6705C_PROFILE = InstrumentProfile(
     instrument_type="n6705c",
     display_name="Keysight N6705C DC Power Analyzer",
@@ -621,6 +691,21 @@ KEYSIGHT53230A_PROFILE = InstrumentProfile(
     scan=_scan_keysight53230a,
     disconnect=_disconnect_keysight53230a,
     default_slot="counter",
+)
+
+MCU_IO_PROFILE = InstrumentProfile(
+    instrument_type="mcu_io",
+    display_name="YD RP2040 MCU IO",
+    connection_kind="serial_raw_repl",
+    role="mcu_io",
+    capabilities=frozenset({
+        "gpio_out", "gpio_input", "gpio_read", "gpio_pulse",
+    }),
+    create=_create_mcu_io,
+    verify=_verify_mcu_io,
+    scan=_scan_mcu_io,
+    disconnect=_disconnect_mcu_io,
+    default_slot="default",
 )
 
 
@@ -796,6 +881,7 @@ def create_default_registry() -> ProfileRegistry:
     registry.register(VT6002_PROFILE)
     registry.register(MT3065_PROFILE)
     registry.register(KEYSIGHT53230A_PROFILE)
+    registry.register(MCU_IO_PROFILE)
     registry.register(SERIAL_PORT_PROFILE)
     registry.register(BES_USB_I2C_PROFILE)
     return registry

@@ -275,6 +275,22 @@ INSTRUMENT_REGISTRY: List[Dict] = [
         ],
     },
     {
+        "id": "mcu_io",
+        "name": "MCU IO",
+        "thumb": "cpu.svg",
+        "color": "#38bdf8",
+        "categories": [
+            {"name": "Set", "ops": [
+                {"node_type": "MCUIOSetOutput", "label": "GPIO Output"},
+                {"node_type": "MCUIOHighZ", "label": "GPIO High-Z"},
+                {"node_type": "MCUIOPulse", "label": "GPIO Pulse"},
+            ]},
+            {"name": "Get", "ops": [
+                {"node_type": "MCUIORead", "label": "GPIO Read"},
+            ]},
+        ],
+    },
+    {
         "id": "uart",
         "name": "UART",
         "thumb": "terminal.svg",

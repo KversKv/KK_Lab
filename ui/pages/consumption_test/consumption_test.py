@@ -62,6 +62,42 @@ from ui.pages.consumption_test.consumption_test_workers import (
 logger = get_logger(__name__)
 
 
+class _SearchMcuPortWorker(QObject):
+    finished = Signal(list)
+    error = Signal(str)
+
+    def run(self):
+        try:
+            import serial.tools.list_ports
+            ports = serial.tools.list_ports.comports()
+            self.finished.emit([f"{p.device} - {p.description}" for p in ports])
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class _ConnectMcuWorker(QObject):
+    finished = Signal(object, str)
+    error = Signal(str)
+
+    def __init__(self, port, baudrate=921600):
+        super().__init__()
+        self._port = port
+        self._baudrate = baudrate
+
+    def run(self):
+        try:
+            from instruments.factory import create_mcu_io
+            inst = create_mcu_io("yd_rp2040", port=self._port, baudrate=self._baudrate)
+            ok = inst.connect()
+            if not ok:
+                self.error.emit(f"Failed to connect {self._port}")
+                return
+            self.finished.emit(inst, inst.identify())
+        except Exception as e:
+            logger.error("MCU IO connection failed: %s", e, exc_info=True)
+            self.error.emit(str(e))
+
+
 _ICONS_DIR = os.path.join(
     get_resource_base(),
     "resources", "icons"
@@ -471,6 +507,12 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self.n6705c_b = None
         self.is_connected_a = False
         self.is_connected_b = False
+        self.mcu_io = None
+        self.is_mcu_connected = False
+        self._mcu_search_thread = None
+        self._mcu_search_worker = None
+        self._mcu_connect_thread = None
+        self._mcu_connect_worker = None
 
         self.init_n6705c_connection(n6705c_top, instrument_manager=instrument_manager)
         self.init_serial_connection(mode=MODE_INLINE, prefix="DUT Serial")
@@ -502,6 +544,11 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
         self.poweron_channel_combo = None
         self.reset_channel_combo = None
+        self._saved_control_channels = {
+            "N6705C": {"poweron": "B-CH1", "reset": "B-CH2"},
+            "MCU": {"poweron": "GPIO0", "reset": "GPIO1"},
+        }
+        self._current_control_method = "N6705C"
 
         self._setup_style()
         self._create_layout()
@@ -1061,6 +1108,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             self._pending_channel_selections = None
 
         pending_aux = self._pending_aux_selections or {}
+        aux_options = self._get_control_channel_options()
         for key, extra_combo in (("poweron", self.poweron_channel_combo),
                                  ("reset", self.reset_channel_combo)):
             if extra_combo is None:
@@ -1070,7 +1118,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
                 desired = extra_combo.currentText()
             extra_combo.blockSignals(True)
             extra_combo.clear()
-            for opt in options:
+            for opt in aux_options:
                 extra_combo.addItem(opt)
             matched = False
             for j in range(extra_combo.count()):
@@ -1146,7 +1194,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         fw_title.setStyleSheet("font-size: 12px; font-weight: 700; color: #ffffff;")
         fw_layout.addWidget(fw_title)
 
-        self.build_serial_connection_widgets(fw_layout)
+        self._build_firmware_serial_widgets(fw_layout)
         self.bind_serial_signals()
 
         mode_row = QHBoxLayout()
@@ -1405,6 +1453,33 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self.saved_config_combo.currentIndexChanged.connect(self._on_saved_config_selected)
 
         return fw_panel, config_panel
+
+    def _build_firmware_serial_widgets(self, layout):
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        row.setContentsMargins(0, 0, 0, 0)
+
+        self.serial_label = QLabel("COM:")
+        self.serial_label.setStyleSheet("font-size: 11px; color: #7e96bf;")
+        row.addWidget(self.serial_label)
+
+        self.serial_combo = DarkComboBox()
+        self.serial_combo.setSizeAdjustPolicy(
+            DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.serial_combo.setMinimumContentsLength(10)
+        self.serial_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.serial_combo.setFixedHeight(22)
+        font = self.serial_combo.font()
+        font.setPixelSize(12)
+        self.serial_combo.setFont(font)
+        row.addWidget(self.serial_combo, 1)
+
+        self.serial_search_btn = SpinningSearchButton(parent=self, icon_size=12)
+        self.serial_search_btn.setFixedSize(22, 22)
+        row.addWidget(self.serial_search_btn)
+
+        layout.addLayout(row)
 
     def _create_consumption_test_panel(self):
         wrapper = QWidget()
@@ -1716,6 +1791,66 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
         label_style_sm = "font-size: 10px; color: #7e96bf;"
 
+        mcu_label = QLabel("MCU")
+        mcu_label.setStyleSheet(label_style_sm)
+        mcu_label.setFixedWidth(label_width)
+        mcu_block = QVBoxLayout()
+        mcu_block.setContentsMargins(0, 0, 0, 0)
+        mcu_block.setSpacing(4)
+        mcu_select_row = QHBoxLayout()
+        mcu_select_row.setContentsMargins(0, 0, 0, 0)
+        mcu_select_row.setSpacing(4)
+        mcu_status_row = QHBoxLayout()
+        mcu_status_row.setContentsMargins(0, 0, 0, 0)
+        mcu_status_row.setSpacing(4)
+
+        self.mcu_status_label = QLabel("● Disconnected")
+        self.mcu_status_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.mcu_status_label.setStyleSheet(
+            "color: #8ea6cf; font-size: 10px; font-weight: bold; background: transparent; border: none;"
+        )
+        self.mcu_port_combo = DarkComboBox(bg="#091426", border="#17345f")
+        self.mcu_port_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.mcu_port_combo.setFixedHeight(24)
+        self.mcu_port_combo.setMinimumContentsLength(8)
+        self.mcu_port_combo.setSizeAdjustPolicy(
+            DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.mcu_port_combo.addItem("Select MCU COM...")
+        font = self.mcu_port_combo.font()
+        font.setPixelSize(11)
+        self.mcu_port_combo.setFont(font)
+        self.mcu_search_btn = SpinningSearchButton(parent=config_frame)
+        self.mcu_search_btn.setFixedSize(24, 24)
+        self.mcu_connect_btn = QPushButton("Connect")
+        self.mcu_connect_btn.setFixedHeight(24)
+        self.mcu_connect_btn.setFixedWidth(88)
+        self.mcu_connect_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #053b38;
+                border: 1px solid #08c9a5;
+                border-radius: 6px;
+                color: #10e7bc;
+                font-size: 10px;
+                font-weight: 700;
+                padding: 2px 8px;
+            }
+            QPushButton:hover { background-color: #064744; }
+            QPushButton:disabled {
+                background-color: #0D1734;
+                color: #3a4a6a;
+                border: 1px solid #18264A;
+            }
+        """)
+        mcu_select_row.addWidget(self.mcu_port_combo, 1)
+        mcu_select_row.addWidget(self.mcu_search_btn, 0, Qt.AlignVCenter)
+        mcu_status_row.addWidget(self.mcu_status_label, 1, Qt.AlignVCenter)
+        mcu_status_row.addWidget(self.mcu_connect_btn, 0, Qt.AlignVCenter)
+        mcu_block.addLayout(mcu_select_row)
+        mcu_block.addLayout(mcu_status_row)
+        grid.addWidget(mcu_label, 2, 0, Qt.AlignTop)
+        grid.addLayout(mcu_block, 2, 1)
+
         poweron_label = QLabel("PwrON")
         poweron_label.setStyleSheet(label_style_sm)
         poweron_label.setFixedWidth(label_width)
@@ -1781,17 +1916,24 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self._n6705c_poweron_label = poweron_label
         self._n6705c_reset_label = reset_label
         self._n6705c_reset_label_container = reset_label_container
-        grid.addWidget(poweron_label, 2, 0, Qt.AlignVCenter)
-        grid.addLayout(poweron_row, 2, 1)
-        grid.addWidget(reset_label_container, 3, 0, Qt.AlignVCenter)
-        grid.addLayout(reset_row, 3, 1)
+        self._mcu_row_widgets = [
+            mcu_label,
+            self.mcu_status_label,
+            self.mcu_port_combo,
+            self.mcu_search_btn,
+            self.mcu_connect_btn,
+        ]
+        grid.addWidget(poweron_label, 3, 0, Qt.AlignVCenter)
+        grid.addLayout(poweron_row, 3, 1)
+        grid.addWidget(reset_label_container, 4, 0, Qt.AlignVCenter)
+        grid.addLayout(reset_row, 4, 1)
 
         self.reset_enable_cb.toggled.connect(self._on_reset_enable_toggled)
         self._on_reset_enable_toggled(self.reset_enable_cb.isChecked())
 
         config_layout.addLayout(grid)
 
-        self._n6705c_channel_row_widgets = [
+        self._control_channel_row_widgets = [
             self._n6705c_poweron_label,
             self.poweron_channel_combo,
             self.poweron_polarity_toggle,
@@ -1800,15 +1942,45 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             self.reset_polarity_toggle,
         ]
 
+        self.mcu_search_btn.clicked.connect(self._on_mcu_search)
+        self.mcu_connect_btn.clicked.connect(self._on_mcu_connect_or_disconnect)
         self.control_method_toggle.toggled.connect(self._on_control_method_changed)
         self._on_control_method_changed(self.control_method_toggle.value())
 
         return config_frame
 
     def _on_control_method_changed(self, method):
-        visible = method == "N6705C"
-        if hasattr(self, "_n6705c_channel_row_widgets"):
-            for w in self._n6705c_channel_row_widgets:
+        prev_method = getattr(self, "_current_control_method", method)
+        if prev_method != method and getattr(self, "poweron_channel_combo", None) is not None:
+            self._saved_control_channels.setdefault(prev_method, {})["poweron"] = (
+                self.poweron_channel_combo.currentText()
+            )
+        if prev_method != method and getattr(self, "reset_channel_combo", None) is not None:
+            self._saved_control_channels.setdefault(prev_method, {})["reset"] = (
+                self.reset_channel_combo.currentText()
+            )
+        self._current_control_method = method
+
+        if hasattr(self, "_mcu_row_widgets"):
+            for w in self._mcu_row_widgets:
+                w.setVisible(method == "MCU")
+
+        options = self._get_control_channel_options(method)
+        defaults = self._saved_control_channels.get(method, {})
+        self._set_combo_options(
+            self.poweron_channel_combo,
+            options,
+            defaults.get("poweron", "GPIO0" if method == "MCU" else "B-CH1"),
+        )
+        self._set_combo_options(
+            self.reset_channel_combo,
+            options,
+            defaults.get("reset", "GPIO1" if method == "MCU" else "B-CH2"),
+        )
+
+        visible = True
+        if hasattr(self, "_control_channel_row_widgets"):
+            for w in self._control_channel_row_widgets:
                 w.setVisible(visible)
 
     def _on_reset_enable_toggled(self, checked):
@@ -2904,6 +3076,9 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         m = re.match(r'^([AB])-CH(\d+)$', channel_key)
         if m:
             return m.group(1), int(m.group(2))
+        m = re.match(r'^GPIO(\d+)$', channel_key, re.IGNORECASE)
+        if m:
+            return "MCU", int(m.group(1))
         return None, None
 
     def _build_force_voltages(self):
@@ -2922,6 +3097,200 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             if device_label is not None and hw_ch is not None:
                 force_voltages[(device_label, hw_ch)] = voltage
         return force_voltages
+
+    def _get_mcu_gpio_options(self):
+        return [f"GPIO{i}" for i in range(0, 30)]
+
+    def _get_control_channel_options(self, method=None):
+        method = method or (
+            self.control_method_toggle.value()
+            if getattr(self, "control_method_toggle", None) else "N6705C"
+        )
+        if method == "MCU":
+            return self._get_mcu_gpio_options()
+        return self._get_available_channel_options()
+
+    @staticmethod
+    def _set_combo_options(combo, options, desired=None):
+        if combo is None:
+            return False
+        if desired is None:
+            desired = combo.currentText()
+        combo.blockSignals(True)
+        combo.clear()
+        for opt in options:
+            combo.addItem(opt)
+        matched = False
+        if desired:
+            for i in range(combo.count()):
+                if combo.itemText(i) == desired:
+                    combo.setCurrentIndex(i)
+                    matched = True
+                    break
+        if not matched and combo.count() > 0:
+            combo.setCurrentIndex(0)
+        combo.blockSignals(False)
+        return matched
+
+    def _selected_mcu_port(self):
+        text = self.mcu_port_combo.currentText() if getattr(self, "mcu_port_combo", None) else ""
+        if not text or text in ("No serial ports found",):
+            return None
+        return text.split()[0]
+
+    def _on_mcu_search(self):
+        from debug_config import DEBUG_MOCK
+        if DEBUG_MOCK:
+            self.mcu_port_combo.clear()
+            self.mcu_port_combo.addItem("[MOCK] COM98 - Mock YD RP2040")
+            self.mcu_status_label.setText("● Mock Ready")
+            self.mcu_status_label.setStyleSheet(
+                "color: #ff9800; font-size: 10px; font-weight: bold; background: transparent; border: none;"
+            )
+            self.mcu_connect_btn.setEnabled(True)
+            self.append_log("[DEBUG] Mock MCU IO port loaded.")
+            return
+
+        if self._mcu_search_thread is not None and self._mcu_search_thread.isRunning():
+            return
+        self.mcu_status_label.setText("● Searching")
+        self.mcu_status_label.setStyleSheet(
+            "color: #ff9800; font-size: 10px; font-weight: bold; background: transparent; border: none;"
+        )
+        self.mcu_search_btn.setEnabled(False)
+        self.mcu_connect_btn.setEnabled(False)
+        self.append_log("[MCU] Scanning serial ports for YD RP2040...")
+
+        worker = _SearchMcuPortWorker()
+        thread = QThread()
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._on_mcu_search_done)
+        worker.error.connect(self._on_mcu_search_error)
+        worker.finished.connect(thread.quit)
+        worker.error.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda: self._on_mcu_search_thread_cleanup())
+        self._mcu_search_worker = worker
+        self._mcu_search_thread = thread
+        thread.start()
+
+    def _on_mcu_search_done(self, ports):
+        self.mcu_port_combo.clear()
+        self.mcu_port_combo.setEnabled(True)
+        if ports:
+            for port in ports:
+                self.mcu_port_combo.addItem(port)
+            self.mcu_status_label.setText(f"● Found {len(ports)}")
+            self.mcu_status_label.setStyleSheet(
+                "color: #00a859; font-size: 10px; font-weight: bold; background: transparent; border: none;"
+            )
+            self.append_log(f"[MCU] Found {len(ports)} serial port(s).")
+        else:
+            self.mcu_port_combo.addItem("No serial ports found")
+            self.mcu_port_combo.setEnabled(False)
+            self.mcu_status_label.setText("● Not Found")
+            self.mcu_status_label.setStyleSheet(
+                "color: #e53935; font-size: 10px; font-weight: bold; background: transparent; border: none;"
+            )
+        self.mcu_search_btn.setEnabled(True)
+        self.mcu_connect_btn.setEnabled(bool(ports))
+
+    def _on_mcu_search_error(self, err):
+        self.mcu_status_label.setText("● Search Failed")
+        self.mcu_status_label.setStyleSheet(
+            "color: #e53935; font-size: 10px; font-weight: bold; background: transparent; border: none;"
+        )
+        self.append_log(f"[MCU] Search failed: {err}")
+        self.mcu_search_btn.setEnabled(True)
+        self.mcu_connect_btn.setEnabled(True)
+
+    def _on_mcu_search_thread_cleanup(self):
+        self._mcu_search_thread = None
+        self._mcu_search_worker = None
+
+    def _on_mcu_connect_or_disconnect(self):
+        if self.is_mcu_connected:
+            self._disconnect_mcu()
+        else:
+            self._connect_mcu()
+
+    def _connect_mcu(self):
+        port = self._selected_mcu_port()
+        if not port:
+            self.append_log("[MCU] No valid MCU port selected.")
+            return
+        if self._mcu_connect_thread is not None and self._mcu_connect_thread.isRunning():
+            return
+        self.mcu_status_label.setText("● Connecting")
+        self.mcu_status_label.setStyleSheet(
+            "color: #ff9800; font-size: 10px; font-weight: bold; background: transparent; border: none;"
+        )
+        self.mcu_search_btn.setEnabled(False)
+        self.mcu_connect_btn.setEnabled(False)
+        self.append_log(f"[MCU] Connecting YD RP2040 on {port}...")
+
+        worker = _ConnectMcuWorker(port, 921600)
+        thread = QThread()
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._on_mcu_connected)
+        worker.error.connect(self._on_mcu_connect_error)
+        worker.finished.connect(thread.quit)
+        worker.error.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda: self._on_mcu_connect_thread_cleanup())
+        self._mcu_connect_worker = worker
+        self._mcu_connect_thread = thread
+        thread.start()
+
+    def _on_mcu_connected(self, inst, idn):
+        self.mcu_io = inst
+        self.is_mcu_connected = True
+        self.mcu_status_label.setText("● Connected")
+        self.mcu_status_label.setStyleSheet(
+            "color: #00a859; font-size: 10px; font-weight: bold; background: transparent; border: none;"
+        )
+        self.mcu_search_btn.setEnabled(False)
+        self.mcu_connect_btn.setEnabled(True)
+        self.mcu_connect_btn.setText("Disconnect")
+        self.append_log(f"[MCU] Connected: {idn}")
+        self._suppress_preset_channels = False
+
+    def _on_mcu_connect_error(self, err):
+        self.mcu_status_label.setText("● Failed")
+        self.mcu_status_label.setStyleSheet(
+            "color: #e53935; font-size: 10px; font-weight: bold; background: transparent; border: none;"
+        )
+        self.mcu_search_btn.setEnabled(True)
+        self.mcu_connect_btn.setEnabled(True)
+        self.append_log(f"[MCU] Connection failed: {err}")
+        self._suppress_preset_channels = False
+
+    def _on_mcu_connect_thread_cleanup(self):
+        self._mcu_connect_thread = None
+        self._mcu_connect_worker = None
+
+    def _disconnect_mcu(self):
+        try:
+            if self.mcu_io is not None:
+                self.mcu_io.disconnect()
+        except Exception as e:
+            logger.error("MCU disconnect failed: %s", e, exc_info=True)
+            self.append_log(f"[MCU] Disconnect failed: {e}")
+        finally:
+            self.mcu_io = None
+            self.is_mcu_connected = False
+            self.mcu_status_label.setText("● Disconnected")
+            self.mcu_status_label.setStyleSheet(
+                "color: #8ea6cf; font-size: 10px; font-weight: bold; background: transparent; border: none;"
+            )
+            self.mcu_search_btn.setEnabled(True)
+            self.mcu_connect_btn.setEnabled(True)
+            self.mcu_connect_btn.setText("Connect")
+            self.append_log("[MCU] Disconnected.")
 
     # =====================================================================
     # 导入 / 导出 测试配置
@@ -2946,6 +3315,14 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         serial_port = ""
         if hasattr(self, "serial_combo") and self.serial_combo is not None:
             serial_port = self.serial_combo.currentText() or ""
+
+        mcu_io = {
+            "port": (
+                self.mcu_port_combo.currentText()
+                if getattr(self, "mcu_port_combo", None) is not None else ""
+            ),
+            "connected": bool(getattr(self, "is_mcu_connected", False)),
+        }
 
         # 通道配置(_channel_configs 内容已能描述每个通道)
         channel_configs = [dict(cfg) for cfg in self._channel_configs]
@@ -3005,6 +3382,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             "page": "consumption_test",
             "n6705c": n6705c,
             "serial_port": serial_port,
+            "mcu_io": mcu_io,
             "channel_configs": channel_configs,
             "download": download,
             "chip_selected": chip_selected,
@@ -3126,6 +3504,22 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             self.serial_combo.setEnabled(True)
             self.serial_combo.setCurrentIndex(found_idx)
 
+        # ---- 2.1 MCU IO ----
+        mcu_cfg = snapshot.get("mcu_io", {}) or {}
+        mcu_port = mcu_cfg.get("port", "") or ""
+        pending_mcu_connect = bool(mcu_cfg.get("connected"))
+        if mcu_port and getattr(self, "mcu_port_combo", None) is not None:
+            found_idx = -1
+            for i in range(self.mcu_port_combo.count()):
+                if self.mcu_port_combo.itemText(i) == mcu_port:
+                    found_idx = i
+                    break
+            if found_idx < 0:
+                self.mcu_port_combo.addItem(mcu_port)
+                found_idx = self.mcu_port_combo.count() - 1
+            self.mcu_port_combo.setEnabled(True)
+            self.mcu_port_combo.setCurrentIndex(found_idx)
+
         # ---- 3. 通道配置(重建所有 channel 卡片) ----
         channel_configs = snapshot.get("channel_configs", []) or []
         if channel_configs:
@@ -3244,6 +3638,11 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             )
             QTimer.singleShot(100, lambda labels=list(pending_connects):
                               self._auto_connect_instruments(labels))
+        if pending_mcu_connect and not getattr(self, "is_mcu_connected", False):
+            self.append_log("[CONFIG] Auto-connecting MCU IO ...")
+            QTimer.singleShot(150, self._connect_mcu)
+        if pending_connects or pending_mcu_connect:
+            return
         else:
             # 没有需要自动连接的仪器,立即恢复 preset 机制
             self._suppress_preset_channels = False
@@ -3668,6 +4067,10 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             self.reset_enable_cb.isChecked()
             if getattr(self, "reset_enable_cb", None) is not None else False
         )
+        control_method = (
+            self.control_method_toggle.value()
+            if getattr(self, "control_method_toggle", None) else "N6705C"
+        )
         reset_key = self.reset_channel_combo.currentText() if self.reset_channel_combo else ""
         if not poweron_key:
             self.append_log("[ERROR] PowerON channel not configured.")
@@ -3688,22 +4091,37 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         else:
             reset_dl, reset_hw = None, None
 
-        poweron_attr = poweron_dl.lower()
-        poweron_inst = getattr(self, f"n6705c_{poweron_attr}", None)
-        poweron_conn = getattr(self, f"is_connected_{poweron_attr}", False)
-        if not poweron_conn or not poweron_inst:
-            self.append_log(f"[ERROR] N6705C-{poweron_dl} is not connected (required by PowerON).")
-            return
-
-        if reset_enabled:
-            reset_attr = reset_dl.lower()
-            reset_inst = getattr(self, f"n6705c_{reset_attr}", None)
-            reset_conn = getattr(self, f"is_connected_{reset_attr}", False)
-            if not reset_conn or not reset_inst:
-                self.append_log(f"[ERROR] N6705C-{reset_dl} is not connected (required by RESET).")
+        if control_method == "MCU":
+            if poweron_dl != "MCU" or (reset_enabled and reset_dl != "MCU"):
+                self.append_log("[ERROR] MCU control requires GPIO channels for PowerON/RESET.")
                 return
+            if not self.is_mcu_connected or self.mcu_io is None:
+                self.append_log("[ERROR] MCU IO is not connected (required by PowerON/RESET).")
+                return
+            poweron_inst = self.mcu_io
+            poweron_dl = "MCU"
+            if reset_enabled:
+                reset_inst = self.mcu_io
+                reset_dl = "MCU"
+            else:
+                reset_inst = None
         else:
-            reset_inst = None
+            poweron_attr = poweron_dl.lower()
+            poweron_inst = getattr(self, f"n6705c_{poweron_attr}", None)
+            poweron_conn = getattr(self, f"is_connected_{poweron_attr}", False)
+            if not poweron_conn or not poweron_inst:
+                self.append_log(f"[ERROR] N6705C-{poweron_dl} is not connected (required by PowerON).")
+                return
+
+            if reset_enabled:
+                reset_attr = reset_dl.lower()
+                reset_inst = getattr(self, f"n6705c_{reset_attr}", None)
+                reset_conn = getattr(self, f"is_connected_{reset_attr}", False)
+                if not reset_conn or not reset_inst:
+                    self.append_log(f"[ERROR] N6705C-{reset_dl} is not connected (required by RESET).")
+                    return
+            else:
+                reset_inst = None
 
         poweron_polarity = self.poweron_polarity_toggle.value()
         reset_polarity = (
@@ -3766,6 +4184,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         self.append_log(
             f"[AUTO_TEST] Starting auto test: {len(firmware_paths)} BIN(s), "
             f"Vbat={vbat_cfg['name']}({vbat_cfg['channel']}), "
+            f"Control={control_method}, "
             f"PowerON={poweron_key}({poweron_polarity}), "
             f"RESET={reset_desc}"
         )
@@ -3799,6 +4218,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
                 self.force_config_cb.isChecked()
                 if getattr(self, "force_config_cb", None) is not None else False
             ),
+            control_method=control_method,
         )
         thread = QThread()
         worker.moveToThread(thread)

@@ -141,6 +141,7 @@ class ExecutionContext:
             "rf_analyzer": None,
             "i2c": None,
             "uart": None,
+            "mcu_io": None,
         }
         self._instrument_manager = instrument_manager
         self._stop_requested: bool = False
@@ -182,6 +183,9 @@ class ExecutionContext:
         session = mgr.get_session("bes_usb_i2c:default")
         if session and session.connected and session.instance:
             self.instruments["i2c"] = session.instance
+        session = mgr.get_session("mcu_io:default")
+        if session and session.connected and session.instance:
+            self.instruments["mcu_io"] = session.instance
 
     def set_variable(self, name: str, value: Any, export: bool = True) -> None:
         self.variables[name] = value

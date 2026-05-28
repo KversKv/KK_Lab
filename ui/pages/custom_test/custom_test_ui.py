@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QFrame,
     QLabel, QTableWidget, QTableWidgetItem, QTabWidget, QStackedLayout,
     QHeaderView, QPushButton, QFileDialog, QMessageBox, QApplication,
+    QSizePolicy,
 )
 from PySide6.QtCore import Qt, Signal, QSize, QRectF
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor
@@ -30,6 +31,8 @@ from ui.modules.chamber_module_frame import ChamberConnectionMixin
 from ui.modules.serialCom_module.serialCom_module_frame import SerialComMixin, MODE_FULL
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.widgets.scrollbar import SCROLLBAR_STYLE
+from ui.widgets.dark_combobox import DarkComboBox
+from ui.widgets.button import SpinningSearchButton
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -287,6 +290,9 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         self._n6705c_widgets_built = False
         self._chamber_widgets_built = False
         self._uart_widgets_built = False
+        self._mcu_io_widgets_built = False
+        self.mcu_io = None
+        self.is_mcu_io_connected = False
         self._i2c_interface = None
 
         self._executor_thread = ExecutorThread(self)
@@ -484,6 +490,7 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         self._n6705c_widgets_built = False
         self._chamber_widgets_built = False
         self._uart_widgets_built = False
+        self._mcu_io_widgets_built = False
 
         if not used_ids:
             self._instr_conn_placeholder = QLabel("No instruments in sequence")
@@ -541,6 +548,14 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
             status.setObjectName("statusOk")
             self._instr_conn_layout.addWidget(status)
 
+        if "mcu_io" in used_ids:
+            lbl = QLabel("MCU IO")
+            lbl.setObjectName("fieldLabel")
+            self._instr_conn_layout.addWidget(lbl)
+            self._build_mcu_io_connection_widgets()
+            self._mcu_io_widgets_built = True
+            self._sync_mcu_io_from_manager()
+
         if "uart" in used_ids:
             lbl = QLabel("UART (Serial)")
             lbl.setObjectName("fieldLabel")
@@ -566,6 +581,10 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
             meta["uart"] = {
                 "port": self._sc_port_combo.currentText(),
                 "baud": self._sc_baud_combo.currentText(),
+            }
+        if self._mcu_io_widgets_built and hasattr(self, "mcu_io_port_combo"):
+            meta["mcu_io"] = {
+                "port": self._mcu_io_selected_resource(),
             }
         return meta
 
@@ -603,6 +622,12 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
                 self._sc_port_combo.setCurrentText(port)
             if baud and hasattr(self, "_sc_baud_combo"):
                 self._sc_baud_combo.setCurrentText(baud)
+        if "mcu_io" in meta and self._mcu_io_widgets_built:
+            port = meta["mcu_io"].get("port", "")
+            if port and hasattr(self, "mcu_io_port_combo"):
+                if self.mcu_io_port_combo.findText(port) < 0:
+                    self.mcu_io_port_combo.addItem(port, port)
+                self.mcu_io_port_combo.setCurrentText(port)
         self._try_auto_connect_instruments(meta)
         self._pending_instr_meta = None
 
@@ -654,6 +679,15 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
             except Exception as exc:
                 logger.warning("自动连接 UART 失败: %s", exc)
                 self.logs_frame.append_log(f"[AUTO] UART 自动连接失败: {exc}")
+
+        if "mcu_io" in meta and self._mcu_io_widgets_built:
+            try:
+                if not getattr(self, "is_mcu_io_connected", False):
+                    self.logs_frame.append_log("[AUTO] 尝试连接 MCU IO ...")
+                    self._on_mcu_io_connect()
+            except Exception as exc:
+                logger.warning("自动连接 MCU IO 失败: %s", exc)
+                self.logs_frame.append_log(f"[AUTO] MCU IO 自动连接失败: {exc}")
 
     def _build_bottom_panel(self) -> QWidget:
 
@@ -934,11 +968,185 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
 
         self._executor_thread.finished.connect(self._on_execution_finished)
 
+        if self._instrument_manager is not None:
+            self._instrument_manager.scan_finished.connect(self._on_manager_scan_finished)
+            self._instrument_manager.scan_failed.connect(self._on_manager_scan_failed)
+            self._instrument_manager.session_connected.connect(self._on_manager_session_connected)
+            self._instrument_manager.connection_failed.connect(self._on_manager_connection_failed)
+            self._instrument_manager.session_disconnected.connect(self._on_manager_session_disconnected)
+
     def _sync_instruments(self) -> None:
         if self._n6705c_top_ref:
             self.sync_n6705c_from_top()
         if self._chamber_ui_ref and self._chamber_ui_ref.chamber:
             self._on_chamber_external_changed()
+        self._sync_mcu_io_from_manager()
+
+    def _build_mcu_io_connection_widgets(self) -> None:
+        box = QFrame()
+        box.setStyleSheet("""
+            QFrame {
+                background-color: #0d1a36;
+                border: 1px solid #1a2d57;
+                border-radius: 8px;
+            }
+        """)
+        layout = QVBoxLayout(box)
+        layout.setContentsMargins(8, 6, 8, 8)
+        layout.setSpacing(6)
+
+        self.mcu_io_status_label = QLabel("● Disconnected")
+        self.mcu_io_status_label.setObjectName("statusErr")
+        layout.addWidget(self.mcu_io_status_label)
+
+        self.mcu_io_port_combo = DarkComboBox(bg="#091426", border="#17345f")
+        self.mcu_io_port_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.mcu_io_port_combo.addItem("Select MCU IO port", "")
+        layout.addWidget(self.mcu_io_port_combo)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(6)
+        self.mcu_io_search_btn = SpinningSearchButton(parent=box)
+        self.mcu_io_search_btn.setFixedHeight(24)
+        self.mcu_io_connect_btn = QPushButton("Connect")
+        self.mcu_io_connect_btn.setFixedHeight(24)
+        self.mcu_io_connect_btn.setStyleSheet(
+            "QPushButton { background-color: #053b38; color: #10e7bc;"
+            " border: 1px solid #08c9a5; border-radius: 6px;"
+            " font-size: 11px; font-weight: 700; padding: 2px 8px; }"
+            "QPushButton:hover { background-color: #064744; }"
+            "QPushButton:disabled { background-color: #0D1734; color: #3a4a6a;"
+            " border: 1px solid #18264A; }"
+        )
+        btn_row.addWidget(self.mcu_io_search_btn, 0)
+        btn_row.addWidget(self.mcu_io_connect_btn, 1)
+        layout.addLayout(btn_row)
+
+        self.mcu_io_search_btn.clicked.connect(self._on_mcu_io_search)
+        self.mcu_io_connect_btn.clicked.connect(self._on_mcu_io_connect_toggle)
+        self._instr_conn_layout.addWidget(box)
+
+    def _set_mcu_io_status(self, text: str, state: str = "err") -> None:
+        if not hasattr(self, "mcu_io_status_label"):
+            return
+        self.mcu_io_status_label.setText(text)
+        obj = {
+            "ok": "statusOk",
+            "warn": "statusWarn",
+            "err": "statusErr",
+        }.get(state, "statusErr")
+        self.mcu_io_status_label.setObjectName(obj)
+        self.mcu_io_status_label.style().unpolish(self.mcu_io_status_label)
+        self.mcu_io_status_label.style().polish(self.mcu_io_status_label)
+        self.mcu_io_status_label.update()
+
+    def _mcu_io_selected_resource(self) -> str:
+        if not hasattr(self, "mcu_io_port_combo"):
+            return ""
+        data = self.mcu_io_port_combo.currentData()
+        if data:
+            return str(data)
+        text = self.mcu_io_port_combo.currentText()
+        if text.startswith("Select ") or text.startswith("No "):
+            return ""
+        return text.split()[0] if text else ""
+
+    def _on_mcu_io_search(self) -> None:
+        if self._instrument_manager is None:
+            self._set_mcu_io_status("● No manager", "err")
+            return
+        self._set_mcu_io_status("● Searching", "warn")
+        self.mcu_io_search_btn.setEnabled(False)
+        self.mcu_io_connect_btn.setEnabled(False)
+        self._instrument_manager.scan_async("mcu_io")
+
+    def _on_mcu_io_connect_toggle(self) -> None:
+        if self.is_mcu_io_connected:
+            if self._instrument_manager is not None:
+                self._instrument_manager.disconnect_async("mcu_io:default")
+            return
+        self._on_mcu_io_connect()
+
+    def _on_mcu_io_connect(self) -> None:
+        resource = self._mcu_io_selected_resource()
+        if not resource:
+            self._set_mcu_io_status("● Select port first", "err")
+            return
+        if self._instrument_manager is None:
+            self._set_mcu_io_status("● No manager", "err")
+            return
+        from core.instruments import InstrumentSpec
+        self._set_mcu_io_status("● Connecting", "warn")
+        self.mcu_io_connect_btn.setEnabled(False)
+        self._instrument_manager.connect_async(InstrumentSpec(
+            instrument_type="mcu_io",
+            role="mcu_io",
+            connection_kind="serial_raw_repl",
+            slot="default",
+            resource=resource,
+        ))
+
+    def _sync_mcu_io_from_manager(self) -> None:
+        if not self._mcu_io_widgets_built or self._instrument_manager is None:
+            return
+        session = self._instrument_manager.get_session("mcu_io:default")
+        if session and session.connected and session.instance:
+            self.mcu_io = session.instance
+            self.is_mcu_io_connected = True
+            if hasattr(self, "mcu_io_port_combo") and session.resource:
+                if self.mcu_io_port_combo.findText(session.resource) < 0:
+                    self.mcu_io_port_combo.addItem(session.resource, session.resource)
+                self.mcu_io_port_combo.setCurrentText(session.resource)
+            self._set_mcu_io_status("● Connected", "ok")
+            self.mcu_io_connect_btn.setEnabled(True)
+            self.mcu_io_connect_btn.setText("Disconnect")
+            self.mcu_io_search_btn.setEnabled(False)
+        else:
+            self.mcu_io = None
+            self.is_mcu_io_connected = False
+            self._set_mcu_io_status("● Disconnected", "err")
+            self.mcu_io_connect_btn.setEnabled(True)
+            self.mcu_io_connect_btn.setText("Connect")
+            self.mcu_io_search_btn.setEnabled(True)
+
+    def _on_manager_scan_finished(self, instrument_type: str, candidates: list) -> None:
+        if instrument_type != "mcu_io" or not self._mcu_io_widgets_built:
+            return
+        self.mcu_io_port_combo.clear()
+        if candidates:
+            for candidate in candidates:
+                display = candidate.display_name or candidate.resource
+                self.mcu_io_port_combo.addItem(display, candidate.resource)
+            self._set_mcu_io_status(f"● Found {len(candidates)}", "ok")
+            self.mcu_io_connect_btn.setEnabled(True)
+        else:
+            self.mcu_io_port_combo.addItem("No MCU IO ports found", "")
+            self._set_mcu_io_status("● Not Found", "err")
+            self.mcu_io_connect_btn.setEnabled(False)
+        self.mcu_io_search_btn.setEnabled(True)
+
+    def _on_manager_scan_failed(self, instrument_type: str, error: str) -> None:
+        if instrument_type != "mcu_io" or not self._mcu_io_widgets_built:
+            return
+        self._set_mcu_io_status("● Search Failed", "err")
+        self.mcu_io_search_btn.setEnabled(True)
+        self.mcu_io_connect_btn.setEnabled(True)
+        self.logs_frame.append_log(f"[MCU_IO] Search failed: {error}")
+
+    def _on_manager_session_connected(self, session_id: str) -> None:
+        if session_id == "mcu_io:default":
+            self._sync_mcu_io_from_manager()
+
+    def _on_manager_connection_failed(self, session_id: str, error: str) -> None:
+        if session_id == "mcu_io:default" and self._mcu_io_widgets_built:
+            self._set_mcu_io_status("● Failed", "err")
+            self.mcu_io_connect_btn.setEnabled(True)
+            self.mcu_io_search_btn.setEnabled(True)
+            self.logs_frame.append_log(f"[MCU_IO] Connection failed: {error}")
+
+    def _on_manager_session_disconnected(self, session_id: str) -> None:
+        if session_id == "mcu_io:default":
+            self._sync_mcu_io_from_manager()
 
     def _on_chamber_external_changed(self) -> None:
         if not self._chamber_widgets_built:
@@ -1213,6 +1421,10 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
 
         if "uart" in used_ids and self._serial_connected:
             self._context.instruments["uart"] = self
+
+        if "mcu_io" in used_ids and self._context.instruments.get("mcu_io") is None:
+            if self.is_mcu_io_connected and self.mcu_io is not None:
+                self._context.instruments["mcu_io"] = self.mcu_io
 
         self.result_table.setRowCount(0)
         self.result_table.setColumnCount(0)

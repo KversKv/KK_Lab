@@ -12,6 +12,7 @@ from ui.pages.custom_test.nodes.instrument_nodes import (
     ChamberGetSetTemp, ChamberGetHumidity,
     RFAnalyzerMeasure,
     I2CRead, I2CWrite, I2CTraverse,
+    MCUIOSetOutput, MCUIOHighZ, MCUIOPulse, MCUIORead,
     UARTSend, UARTReceive,
 )
 from ui.pages.custom_test.nodes.logic_nodes import (
@@ -38,6 +39,7 @@ __all__ = [
     "ChamberGetSetTemp", "ChamberGetHumidity",
     "RFAnalyzerMeasure",
     "I2CRead", "I2CWrite", "I2CTraverse",
+    "MCUIOSetOutput", "MCUIOHighZ", "MCUIOPulse", "MCUIORead",
     "UARTSend", "UARTReceive",
     "LoopRange", "LoopList", "IfElse", "SetVariable", "Delay", "MathExpression",
     "BreakNode", "ContinueNode", "WaitUntil", "IfThenStop", "IfThenElse",

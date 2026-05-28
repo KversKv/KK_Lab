@@ -117,15 +117,21 @@ instruments/
 │                            # 通道配置、SENSe 门限、CONFigure/READ?/FETCh?
 │                            # 流程、CALCulate 统计、ROSCillator 参考时基)
 │
+├── MCU_IO/                  # MCU GPIO 控制器驱动
+│   ├── __init__.py          # 导出 PicoGPIO
+│   └── YD_RP2040.py         # YD RP2040 串口 Raw REPL GPIO 控制驱动
+│                            # (用于 DUT PwrON / RESET 等数字 IO 脉冲控制)
+│
 ├── adapters/                # 通信适配器驱动 (预留)
 │
 ├── mock/                    # 模拟仪器 (用于离线调试/开发)
 │   └── mock_instruments.py  # 模拟仪器实现，包含 MockN6705C / MockI2C /
-│                            # MockChamber / MockVT6002 / MockMT3065 / MockMSO64B，
+│                            # MockPicoGPIO / MockChamber / MockVT6002 /
+│                            # MockMT3065 / MockMSO64B，
 │                            # 由 DEBUG_MOCK 开关启用
 │
 └── factory.py               # 仪器工厂函数，统一创建各类仪器实例
-                             # (含 create_frequency_counter)
+                             # (含 create_frequency_counter / create_mcu_io)
 
 ================================================================================
   ui/ - 用户界面层

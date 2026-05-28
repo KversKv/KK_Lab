@@ -53,7 +53,8 @@ class AutoTestWorker(QObject):
                  chip_combo_text=None, selected_chip_config=None,
                  config_text=None, parse_config_commands_fn=None,
                  resolve_device_fn=None, force_voltages=None,
-                 force_config_enabled=False):
+                 force_config_enabled=False,
+                 control_method="N6705C"):
         super().__init__()
         self.com_port = com_port
         self.firmware_paths = list(firmware_paths)
@@ -80,6 +81,7 @@ class AutoTestWorker(QObject):
         self._resolve_device_fn = resolve_device_fn
         self.force_voltages = force_voltages or {}
         self.force_config_enabled = bool(force_config_enabled)
+        self.control_method = control_method
         self._is_stopped = False
         self._current_download_state = None
 
@@ -111,10 +113,18 @@ class AutoTestWorker(QObject):
         return best
 
     def _toggle_signal(self, inst, hw_ch, polarity):
-        if polarity == "rising":
-            active_v, inactive_v = 2.3, 0.1
-        else:
-            active_v, inactive_v = 0.1, 2.3
+        if self.control_method == "MCU":
+            active_level, inactive_level = (1, 0) if polarity == "rising" else (0, 1)
+            inst.out(hw_ch, active_level)
+            _time.sleep(0.1)
+            inst.out(hw_ch, inactive_level)
+            try:
+                inst.in_pull(hw_ch, "none")
+            except Exception as e:
+                self._log(f"[WARNING] MCU GPIO high-Z after toggle failed (GPIO{hw_ch}): {e}")
+            return
+
+        active_v, inactive_v = (2.3, 0.1) if polarity == "rising" else (0.1, 2.3)
         # 通道可能因上一轮 POWERON/RESET 脉冲结束后已被关闭,先保证 ON 再输出脉冲
         try:
             inst.channel_on(hw_ch)
@@ -130,6 +140,11 @@ class AutoTestWorker(QObject):
             self._log(f"[WARNING] channel_off after toggle failed (CH{hw_ch}): {e}")
 
     def _setup_control_channel(self, inst, hw_ch, polarity):
+        if self.control_method == "MCU":
+            inactive_level = 0 if polarity == "rising" else 1
+            inst.out(hw_ch, inactive_level)
+            return
+
         v = 0.1 if polarity == "rising" else 2.3
         inst.set_mode(hw_ch, "PS2Q")
         inst.set_voltage(hw_ch, v)
@@ -177,8 +192,20 @@ class AutoTestWorker(QObject):
                 for ch in hw_channels:
                     _add(device_label, n6705c_inst, ch)
         _add(self.vbat_device_label, self.vbat_inst, self.vbat_hw_ch)
-        _add(self.poweron_device_label, self.poweron_inst, self.poweron_hw_ch)
-        _add(self.reset_device_label, self.reset_inst, self.reset_hw_ch)
+        if self.control_method == "MCU":
+            for label, inst, ch in (
+                (self.poweron_device_label, self.poweron_inst, self.poweron_hw_ch),
+                (self.reset_device_label, self.reset_inst, self.reset_hw_ch),
+            ):
+                if inst is None or ch is None:
+                    continue
+                try:
+                    inst.in_pull(ch, "none")
+                except Exception as e:
+                    self._log(f"[WARNING] MCU GPIO pre-config high-Z {label}-GPIO{ch} failed: {e}")
+        else:
+            _add(self.poweron_device_label, self.poweron_inst, self.poweron_hw_ch)
+            _add(self.reset_device_label, self.reset_inst, self.reset_hw_ch)
 
         if not targets:
             return

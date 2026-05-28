@@ -938,6 +938,138 @@ class I2CTraverse(BaseNode):
 
 
 # ═══════════════════════════════════════════════════════════════
+#  MCU_IO — GPIO
+# ═══════════════════════════════════════════════════════════════
+
+_GPIO_OPTIONS = list(range(0, 30))
+
+
+@register_node
+class MCUIOSetOutput(BaseNode):
+    node_type = "MCUIOSetOutput"
+    display_name = "MCU GPIO Output"
+    category = "instrument"
+    icon = "⎍"
+    color = "#38bdf8"
+
+    PARAM_SCHEMA = [
+        {"key": "pin", "label": "GPIO", "type": "int", "default": 0,
+         "options": _GPIO_OPTIONS},
+        {"key": "level", "label": "Level", "type": "int", "default": 1,
+         "options": [0, 1]},
+    ]
+
+    def execute(self, context: Any) -> None:
+        mcu = context.instruments.get("mcu_io")
+        if mcu is None:
+            raise RuntimeError("MCU_IO 未连接")
+        pin = int(context.resolve_value(self.params["pin"]))
+        level = int(context.resolve_value(self.params["level"]))
+        mcu.out(pin, level)
+        context.log_output(f"MCU_IO GPIO{pin}: OUT={level}")
+
+
+@register_node
+class MCUIOHighZ(BaseNode):
+    node_type = "MCUIOHighZ"
+    display_name = "MCU GPIO High-Z"
+    category = "instrument"
+    icon = "Z"
+    color = "#38bdf8"
+
+    PARAM_SCHEMA = [
+        {"key": "pin", "label": "GPIO", "type": "int", "default": 0,
+         "options": _GPIO_OPTIONS},
+        {"key": "pull", "label": "Pull", "type": "str", "default": "none",
+         "options": ["none", "up", "down"]},
+    ]
+
+    def execute(self, context: Any) -> None:
+        mcu = context.instruments.get("mcu_io")
+        if mcu is None:
+            raise RuntimeError("MCU_IO 未连接")
+        pin = int(context.resolve_value(self.params["pin"]))
+        pull = str(context.resolve_value(self.params["pull"]))
+        mcu.in_pull(pin, pull)
+        context.log_output(f"MCU_IO GPIO{pin}: INPUT pull={pull}")
+
+
+@register_node
+class MCUIOPulse(BaseNode):
+    node_type = "MCUIOPulse"
+    display_name = "MCU GPIO Pulse"
+    category = "instrument"
+    icon = "↕"
+    color = "#38bdf8"
+
+    PARAM_SCHEMA = [
+        {"key": "pin", "label": "GPIO", "type": "int", "default": 0,
+         "options": _GPIO_OPTIONS},
+        {"key": "active_level", "label": "Active Level", "type": "int", "default": 1,
+         "options": [0, 1]},
+        {"key": "inactive_level", "label": "Inactive Level", "type": "int", "default": 0,
+         "options": [0, 1]},
+        {"key": "duration_s", "label": "Pulse Duration (s)", "type": "float", "default": 0.1},
+        {"key": "release_high_z", "label": "Release High-Z", "type": "bool", "default": True},
+    ]
+
+    def execute(self, context: Any) -> None:
+        mcu = context.instruments.get("mcu_io")
+        if mcu is None:
+            raise RuntimeError("MCU_IO 未连接")
+        pin = int(context.resolve_value(self.params["pin"]))
+        active = int(context.resolve_value(self.params["active_level"]))
+        inactive = int(context.resolve_value(self.params["inactive_level"]))
+        duration_s = float(context.resolve_value(self.params["duration_s"]))
+        release_high_z = bool(context.resolve_value(self.params["release_high_z"]))
+        mcu.out(pin, active)
+        time.sleep(max(0.0, duration_s))
+        mcu.out(pin, inactive)
+        if release_high_z:
+            mcu.in_pull(pin, "none")
+        context.log_output(
+            f"MCU_IO GPIO{pin}: pulse {active}->{inactive}, {duration_s:.3f}s"
+        )
+
+
+@register_node
+class MCUIORead(BaseNode):
+    node_type = "MCUIORead"
+    display_name = "MCU GPIO Read"
+    category = "instrument"
+    icon = "?"
+    color = "#38bdf8"
+
+    PARAM_SCHEMA = [
+        {"key": "pin", "label": "GPIO", "type": "int", "default": 0,
+         "options": _GPIO_OPTIONS},
+        {"key": "pull", "label": "Pull", "type": "str", "default": "none",
+         "options": ["none", "up", "down"]},
+        {"key": "result_var", "label": "结果存入变量", "type": "str", "default": "gpio_val"},
+        {"key": "auto_record", "label": "自动记录数据", "type": "bool", "default": True},
+    ]
+
+    def execute(self, context: Any) -> None:
+        mcu = context.instruments.get("mcu_io")
+        if mcu is None:
+            raise RuntimeError("MCU_IO 未连接")
+        pin = int(context.resolve_value(self.params["pin"]))
+        pull = str(context.resolve_value(self.params["pull"]))
+        result_var = str(self.params["result_var"])
+        auto_record = bool(self.params.get("auto_record", True))
+        mcu.in_pull(pin, pull)
+        val = int(mcu.read(pin))
+        context.set_variable(result_var, val)
+        if auto_record:
+            context.record_data({
+                "instrument": "MCU_IO",
+                "gpio": pin,
+                result_var: val,
+            })
+        context.log_output(f"MCU_IO GPIO{pin}: READ={val}")
+
+
+# ═══════════════════════════════════════════════════════════════
 #  UART  —  Set / Get
 # ═══════════════════════════════════════════════════════════════
 

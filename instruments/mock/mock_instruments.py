@@ -262,6 +262,42 @@ class MockN6705C:
         return curr_result, volt_result
 
 
+class MockPicoGPIO:
+    def __init__(self, port="MOCK", baudrate=921600):
+        self.port = port
+        self.baudrate = baudrate
+        self._connected = False
+        self._pin_values = {}
+        self._pin_modes = {}
+
+    def connect(self):
+        self._connected = True
+        return True
+
+    def disconnect(self):
+        self._connected = False
+
+    def close(self):
+        self.disconnect()
+
+    def is_connected(self):
+        return self._connected
+
+    def identify(self):
+        return f"Mock YD RP2040 GPIO ({self.port})"
+
+    def out(self, pin, value):
+        pin = int(pin)
+        self._pin_modes[pin] = "out"
+        self._pin_values[pin] = int(value)
+
+    def in_pull(self, pin, pull="none"):
+        self._pin_modes[int(pin)] = f"in_{pull}"
+
+    def read(self, pin):
+        return self._pin_values.get(int(pin), 0)
+
+
 class MockI2C:
 
     def __init__(self):
