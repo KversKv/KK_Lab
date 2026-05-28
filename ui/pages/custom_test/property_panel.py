@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal
 
-from ui.pages.custom_test.nodes.base_node import BaseNode
+from core.custom_test.nodes.base import BaseNode
 from ui.widgets.dark_combobox import DarkComboBox
 from log_config import get_logger
 
@@ -345,7 +345,7 @@ class PropertyPanel(QWidget):
 
         self._inner_layout.addWidget(card)
 
-        from ui.pages.custom_test.nodes.logic_nodes import IfBlock, IfBranch
+        from core.custom_test.nodes.logic_nodes import IfBlock, IfBranch
         target_uid = None
         if isinstance(node, IfBlock):
             target_uid = node.uid

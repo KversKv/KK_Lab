@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QCheckBox, QFrame, QPushButton, QScrollArea, QSizePolicy,
 )
 
-from ui.pages.custom_test.nodes.base_node import BaseNode
+from core.custom_test.nodes.base import BaseNode
 
 _CHECK_ICON = _os.path.join(
     _get_resource_base(),

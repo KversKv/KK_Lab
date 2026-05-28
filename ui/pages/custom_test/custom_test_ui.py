@@ -23,10 +23,10 @@ from ui.pages.custom_test.node_palette import NodePalette, CollapsibleSection
 from ui.pages.custom_test.sequence_canvas import SequenceCanvas
 from ui.pages.custom_test.sequence_io import load_sequence_file
 from ui.pages.custom_test.property_panel import PropertyPanel
-from ui.pages.custom_test.nodes.base_node import BaseNode, get_node_class
+from core.custom_test.nodes.base import BaseNode, get_node_class
 from ui.pages.custom_test.node_metadata import filter_selectable_ops, is_node_selectable
-from ui.pages.custom_test.context import ExecutionContext
-from ui.pages.custom_test.executor import ExecutorThread
+from core.custom_test.context import ExecutionContext
+from core.custom_test.executor import ExecutorThread
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.chamber_module_frame import ChamberConnectionMixin
 from ui.modules.serialCom_module.serialCom_module_frame import SerialComMixin, MODE_FULL
@@ -1188,7 +1188,7 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
     def _on_add_btn_clicked(self) -> None:
         """工具栏 Add 按钮"""
         from PySide6.QtWidgets import QMenu
-        from ui.pages.custom_test.nodes.base_node import get_nodes_by_category
+        from core.custom_test.nodes.base import get_nodes_by_category
         from ui.pages.custom_test.node_palette import INSTRUMENT_REGISTRY
 
         menu = QMenu(self)
@@ -1358,7 +1358,7 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         self.canvas.refresh_item(uid)
 
     def _on_add_else_if(self, uid: str) -> None:
-        from ui.pages.custom_test.nodes.logic_nodes import (
+        from core.custom_test.nodes.logic_nodes import (
             IfBlock, IfBranch, ElseIfBranch, ElseBranch,
         )
         node = self.canvas._node_map.get(uid)

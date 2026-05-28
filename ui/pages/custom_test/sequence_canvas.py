@@ -19,7 +19,7 @@ from PySide6.QtGui import (
     QDragEnterEvent, QDragMoveEvent, QDropEvent, QDrag, QMouseEvent,
 )
 
-from ui.pages.custom_test.nodes.base_node import BaseNode, get_node_class
+from core.custom_test.nodes.base import BaseNode, get_node_class
 from ui.pages.custom_test.sequence_io import load_sequence_file
 from log_config import get_logger
 
@@ -807,7 +807,7 @@ class SequenceCanvas(QWidget):
 
     def add_node(self, node: BaseNode, parent_item: Optional[QTreeWidgetItem] = None,
                  _batch: bool = False) -> QTreeWidgetItem:
-        from ui.pages.custom_test.nodes.logic_nodes import IfBlock
+        from core.custom_test.nodes.logic_nodes import IfBlock
 
         if isinstance(node, IfBlock) and not node.children:
             node.ensure_structure()

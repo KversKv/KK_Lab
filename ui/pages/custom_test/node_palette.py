@@ -14,7 +14,7 @@ from PySide6.QtCore import Qt, Signal, QMimeData
 from PySide6.QtGui import QDrag, QPixmap, QImage, QPainter, QColor, QIcon
 from PySide6.QtSvg import QSvgRenderer
 
-from ui.pages.custom_test.nodes import BaseNode, get_nodes_by_category
+from core.custom_test.nodes import BaseNode, get_nodes_by_category
 from ui.pages.custom_test.node_metadata import filter_selectable_ops, is_node_selectable
 
 from log_config import get_logger

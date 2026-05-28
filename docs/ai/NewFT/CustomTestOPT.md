@@ -562,7 +562,10 @@ class N6705CMeasureNode(BaseNode):
 - **依赖**: Task 0.1, Task 0.2, Task 0.3
 - **预计工作量**: 1 会话
 - **预计会话**: 会话 2
-- **状态**: ⏳ 未开始
+- **完成日期**: 2026-05-28
+- **完成摘要**: 新增 `core/custom_test/`；`ExecutionContext`、`CustomTestExecutor`、`BaseNode` 已迁移到 core；旧 UI 路径保留 re-export shim；registry 由 `core.custom_test.nodes` 初始化。
+- **风险备注**: `core/__init__.py` 改为惰性导出，避免仅导入 `core.custom_test` 时触发 PySide6 依赖；旧路径 shim 已保留 Phase 0 兼容。
+- **状态**: ✅ 已完成
 
 ### Task 1.2: 迁移节点实现到 `core/custom_test/nodes/`
 
@@ -579,7 +582,10 @@ class N6705CMeasureNode(BaseNode):
 - **依赖**: Task 1.1
 - **预计工作量**: 1 ~ 1.5 会话
 - **预计会话**: 会话 3
-- **状态**: ⏳ 未开始
+- **完成日期**: 2026-05-28
+- **完成摘要**: `logic_nodes.py`、`value_nodes.py`、`io_nodes.py`、`instrument_nodes.py` 已迁移到 `core/custom_test/nodes/`；旧 `ui/pages/custom_test/nodes/*` 文件改为 shim；UI 主要 import 已切到 core。
+- **风险备注**: 节点实现不再 import Qt Widgets；`PromptUser` 改走 `ExecutionContext.request_user_prompt()`，当前无 UI handler 时按 Phase 0 unsupported 决策阻止静默等待。
+- **状态**: ✅ 已完成
 
 ### Task 1.3: 消除节点对 `_execute_children()` 的反向 import
 
@@ -598,7 +604,10 @@ class N6705CMeasureNode(BaseNode):
 - **依赖**: Task 1.2
 - **预计工作量**: 1 会话
 - **预计会话**: 会话 4
-- **状态**: ⏳ 未开始
+- **完成日期**: 2026-05-28
+- **完成摘要**: 新增 `core/custom_test/runtime.py`，提供 `execute_node()` / `execute_children()`；容器节点统一调用 `context.execute_children()`；旧 `_execute_children` 仅在 UI shim 中保留兼容导出。
+- **风险备注**: 已覆盖 `LoopRange`、`LoopList`、`IfBlock`、`IfElse`、`IfThenElse`、`Group`、`LoopCount`、`LoopDuration`、`WhileLoop`、`RepeatUntil`、`I2CTraverse` 的反向 import 清理。
+- **状态**: ✅ 已完成
 
 ## Phase 2: 统一仪器解析和运行前校验
 
@@ -1084,3 +1093,4 @@ class N6705CMeasureNode(BaseNode):
 | 2026-05-28 | 规划 | 建立 Custom Test 优化总方案、工作量评估和会话窗口 | ✅ 已记录 |
 | 2026-05-28 | 查漏补缺 | 补充模板格式混用、registry import 副作用、manager capability/lease、adapter 接口差异、PromptUser 接收端、结果 view state、RF/Frequency Counter 边界等风险；调整 Phase 0/2 与会话估算 | ✅ 已记录 |
 | 2026-05-28 | Phase 0 | 完成节点清单/状态基线、list/dict 序列统一读取入口、最小无 UI smoke、RFAnalyzerMeasure/PromptUser unsupported 决策；新增 `node_metadata.py`、`sequence_io.py`、`tests/test_custom_test_phase0.py` | ✅ 已完成 |
+| 2026-05-28 | Phase 1 | 完成 `core/custom_test/` 执行内核迁移、节点实现迁移、旧路径 shim、`runtime.py` 子节点执行入口与 `_execute_children` 反向 import 清理；`core/__init__.py` 改为惰性导出以保持无 UI smoke 可导入 | ✅ 已完成 |

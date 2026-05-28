@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Type
 
-from ui.pages.custom_test.nodes.base_node import BaseNode
+from core.custom_test.nodes.base import BaseNode
 
 STABLE = "stable"
 LEGACY = "legacy"
@@ -117,7 +117,7 @@ def _output_defaults(node_cls: Type[BaseNode]) -> List[str]:
 
 
 def build_node_inventory() -> List[Dict[str, Any]]:
-    from ui.pages.custom_test.nodes import NODE_REGISTRY
+    from core.custom_test.nodes import NODE_REGISTRY
 
     rows: List[Dict[str, Any]] = []
     for node_type, node_cls in sorted(NODE_REGISTRY.items()):

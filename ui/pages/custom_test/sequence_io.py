@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from ui.pages.custom_test.nodes import BaseNode
+from core.custom_test.nodes import BaseNode
 
 
 @dataclass(frozen=True)

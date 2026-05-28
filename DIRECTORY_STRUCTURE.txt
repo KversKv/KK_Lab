@@ -71,6 +71,18 @@ core/
 │                            # 发出数据更新信号供 UI 层订阅
 ├── data_collector.py        # 数据采集器，基于 QTimer 定时从仪器读取电流/电压
 │                            # 数据，支持可配置采样率
+├── custom_test/             # Custom Test 执行内核（序列上下文 / 执行器 / 节点运行时）
+│   ├── __init__.py
+│   ├── context.py           # ExecutionContext：变量池 / records / stop-pause / child executor
+│   ├── executor.py          # CustomTestExecutor / ExecutorThread（QtCore 信号，无 QtWidgets）
+│   ├── runtime.py           # execute_node / execute_children，供容器节点执行子节点
+│   └── nodes/               # Custom Test 节点实现与注册表
+│       ├── __init__.py      # 初始化 NODE_REGISTRY 并导出节点类
+│       ├── base.py          # BaseNode + register_node / get_node_class
+│       ├── instrument_nodes.py # 仪器操作类节点
+│       ├── io_nodes.py      # 输入/输出类节点
+│       ├── logic_nodes.py   # 流程控制类节点（循环/条件/分支）
+│       └── value_nodes.py   # 数值/变量类节点
 ├── instruments/             # 通用仪器管理子包
 │   ├── __init__.py          # 导出 InstrumentManager, InstrumentSession 等
 │   ├── instrument_session.py # InstrumentSession/Spec/Snapshot/Identity 数据模型
@@ -233,14 +245,14 @@ ui/
 │       ├── sequence_io.py            # 序列 JSON 读取兼容入口 (list / dict)
 │       ├── property_panel.py         # 右侧属性面板
 │       ├── record_data_editor.py     # 数据记录字段编辑器
-│       ├── executor.py               # 序列执行线程 (ExecutorThread)
-│       ├── context.py                # 执行上下文 (ExecutionContext)
-│       ├── nodes/                    # 节点类型实现
-│       │   ├── base_node.py          # 节点抽象基类 + 节点注册表
-│       │   ├── instrument_nodes.py   # 仪器操作类节点
-│       │   ├── io_nodes.py           # 输入/输出类节点
-│       │   ├── logic_nodes.py        # 流程控制类节点 (循环/条件/分支)
-│       │   └── value_nodes.py        # 数值/变量类节点
+│       ├── executor.py               # 旧路径兼容 shim，实际导出 core.custom_test.executor
+│       ├── context.py                # 旧路径兼容 shim，实际导出 core.custom_test.context
+│       ├── nodes/                    # 旧路径兼容 shim，实际节点实现位于 core/custom_test/nodes/
+│       │   ├── base_node.py
+│       │   ├── instrument_nodes.py
+│       │   ├── io_nodes.py
+│       │   ├── logic_nodes.py
+│       │   └── value_nodes.py
 │       └── templates/                # 预置序列模板 (JSON)
 │           ├── GPADC_Vsys_Channel.json
 │           ├── bes1505Icore_test.json
