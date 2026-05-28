@@ -811,7 +811,10 @@ class N6705CMeasureNode(BaseNode):
 - **依赖**: Phase 2
 - **预计工作量**: 1 会话
 - **预计会话**: 会话 11
-- **状态**: ⏳ 未开始
+- **完成日期**: 2026-05-29
+- **完成内容**: 新增 `ui/pages/custom_test/instrument_connection_panel.py`，承接仪器连接区刷新、模板 instruments meta 应用、自动连接、MCU IO 搜索/连接状态与 manager 事件处理；`CustomTestUI` 保留连接 Mixin 兼容入口，只负责面板组装与少量委托。
+- **风险备注**: 过渡期仍复用现有 N6705C / Chamber / UART Mixin 与 legacy top ref；后续若连接 Mixin 信号绑定语义变化，需要回归连接区重复刷新场景。
+- **状态**: ✅ 已完成
 
 ### Task 4.2: 拆分结果面板
 
@@ -831,7 +834,10 @@ class N6705CMeasureNode(BaseNode):
 - **依赖**: Phase 3
 - **预计工作量**: 1 会话
 - **预计会话**: 会话 12
-- **状态**: ⏳ 未开始
+- **完成日期**: 2026-05-29
+- **完成内容**: 新增 `ui/pages/custom_test/result_panel.py`，承接 Logs / Data / Chart 构建、进度、结果行渲染、可见表格导出、列重命名/隐藏/排序/格式化与 ResultStore 绘图字段渲染；`CustomTestUI` 仅切换当前运行的 `ResultStore` 并转发执行信号。
+- **风险备注**: Data 表仍沿用 Phase 3 的整表刷新策略；超大结果集的增量渲染可留到 Phase 5 稳定性优化。
+- **状态**: ✅ 已完成
 
 ### Task 4.3: 运行前校验 UI
 
@@ -848,7 +854,10 @@ class N6705CMeasureNode(BaseNode):
 - **依赖**: Task 2.3
 - **预计工作量**: 1 会话
 - **预计会话**: 会话 13
-- **状态**: ⏳ 未开始
+- **完成日期**: 2026-05-29
+- **完成内容**: 新增 `ui/pages/custom_test/validation_panel.py`，将 preflight issues 以结构化表格展示；Error 阻止运行，Warning 可由用户确认继续；点击含 `node_uid` 的 issue 会调用 `SequenceCanvas.locate_node()` 定位到对应节点。
+- **风险备注**: 当前缺失仪器引导主要依赖 `ValidationIssue.fix_hint` 文案和左侧连接区，尚未实现一键跳转/刷新 session 的专用动作按钮。
+- **状态**: ✅ 已完成
 
 ### Task 4.4: PromptUser 正规化
 
@@ -866,7 +875,10 @@ class N6705CMeasureNode(BaseNode):
 - **依赖**: Phase 1
 - **预计工作量**: 0.5 ~ 1 会话
 - **预计会话**: 会话 13
-- **状态**: ⏳ 未开始
+- **完成日期**: 2026-05-29
+- **完成内容**: `CustomTestUI` 为 `ExecutionContext` 注入线程安全 prompt handler，通过 `prompt_requested` signal 在主线程显示 `QMessageBox`；worker 通过 `_PromptRequest` 等待响应，支持确认、取消、超时和 Stop 关闭弹窗；移除 `PromptUser.unsupported_reason`，并将 PromptUser 从 unsupported 节点清单恢复为可选节点。
+- **风险备注**: 已覆盖 handler smoke 与 UI 实例化 smoke；真实人工弹窗交互仍需在桌面运行时手测确认多屏/焦点体验。
+- **状态**: ✅ 已完成
 
 ## Phase 5: 稳定性、Mock 和长期能力
 
@@ -1120,3 +1132,4 @@ class N6705CMeasureNode(BaseNode):
 | 2026-05-28 | Phase 1 | 完成 `core/custom_test/` 执行内核迁移、节点实现迁移、旧路径 shim、`runtime.py` 子节点执行入口与 `_execute_children` 反向 import 清理；`core/__init__.py` 改为惰性导出以保持无 UI smoke 可导入 | ✅ 已完成 |
 | 2026-05-28 | Phase 2 | 完成节点 capability 声明、`InstrumentResolver`、preflight validation、`_on_run()` resolver 化、manager session lease 申请/释放；新增 `tests/test_custom_test_phase2.py` | ✅ 已完成 |
 | 2026-05-29 | Phase 3 | 完成 Result Model / ResultStore、Data/Chart 绑定统一结果模型、自动/手动/节点导出统一；新增 `core/custom_test/result_store.py` 与 `tests/test_custom_test_phase3.py` | ✅ 已完成 |
+| 2026-05-29 | Phase 4 | 完成仪器连接区、结果面板、运行前校验 UI 拆分；PromptUser 改为 UI signal/dialog 正规化路径；新增 `instrument_connection_panel.py`、`result_panel.py`、`validation_panel.py` 与 `tests/test_custom_test_phase4.py` | ✅ 已完成 |

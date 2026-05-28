@@ -242,12 +242,15 @@ ui/
 │   │
 │   └── custom_test/             # 自定义测试序列（节点编辑器）
 │       ├── custom_test_ui.py         # 三栏布局主界面 (节点面板 / 画布 / 属性面板)
+│       ├── instrument_connection_panel.py # 仪器连接区面板 (连接状态 / meta / MCU IO)
 │       ├── node_palette.py           # 左侧节点面板 (可折叠分组)
 │       ├── node_metadata.py          # 节点状态 / 可见性 / Phase 0 基线盘点辅助
-│       ├── sequence_canvas.py        # 中间可视化序列画布
-│       ├── sequence_io.py            # 序列 JSON 读取兼容入口 (list / dict)
 │       ├── property_panel.py         # 右侧属性面板
 │       ├── record_data_editor.py     # 数据记录字段编辑器
+│       ├── result_panel.py           # Logs / Data / Chart / 可见表格导出面板
+│       ├── sequence_canvas.py        # 中间可视化序列画布
+│       ├── sequence_io.py            # 序列 JSON 读取兼容入口 (list / dict)
+│       ├── validation_panel.py       # 运行前校验问题对话框
 │       ├── executor.py               # 旧路径兼容 shim，实际导出 core.custom_test.executor
 │       ├── context.py                # 旧路径兼容 shim，实际导出 core.custom_test.context
 │       ├── nodes/                    # 旧路径兼容 shim，实际节点实现位于 core/custom_test/nodes/
@@ -431,7 +434,8 @@ tests/
 ├── test_auto_baud_detector.py       # SerialCom 自动波特率识别逻辑测试
 ├── test_custom_test_phase0.py       # Custom Test Phase 0 序列读取 / 无 UI 执行 smoke
 ├── test_custom_test_phase2.py       # Custom Test Phase 2 capability / resolver / preflight smoke
-└── test_custom_test_phase3.py       # Custom Test Phase 3 ResultStore / 导出统一 smoke
+├── test_custom_test_phase3.py       # Custom Test Phase 3 ResultStore / 导出统一 smoke
+└── test_custom_test_phase4.py       # Custom Test Phase 4 PromptUser / preflight UI 状态 smoke
 
 ================================================================================
   tools/ - 开发辅助脚本

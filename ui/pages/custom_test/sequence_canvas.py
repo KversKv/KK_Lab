@@ -916,6 +916,10 @@ class SequenceCanvas(QWidget):
             self.tree.setCurrentItem(item)
             self.tree.scrollToItem(item)
 
+    def locate_node(self, uid: str) -> None:
+        self.highlight_step(uid)
+        self.tree.setFocus(Qt.OtherFocusReason)
+
     def _on_current_changed(self, current: QTreeWidgetItem, previous: QTreeWidgetItem) -> None:
         if current is None:
             self.node_selected.emit(None)

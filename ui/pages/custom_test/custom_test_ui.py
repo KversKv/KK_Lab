@@ -3,20 +3,18 @@
 from __future__ import annotations
 
 import os
+import threading
+import time
 from ui.resource_path import get_resource_base
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QFrame,
-    QLabel, QTableWidget, QTableWidgetItem, QTabWidget, QStackedLayout,
-    QHeaderView, QPushButton, QFileDialog, QMessageBox, QApplication,
-    QSizePolicy,
+    QLabel, QMessageBox,
 )
-from PySide6.QtCore import Qt, Signal, QSize, QRectF
+from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor
 from PySide6.QtSvg import QSvgRenderer
-import pyqtgraph as pg
 
 from ui.pages.custom_test.node_palette import NodePalette, CollapsibleSection
 from ui.pages.custom_test.sequence_canvas import SequenceCanvas
@@ -24,18 +22,18 @@ from ui.pages.custom_test.sequence_io import load_sequence_file
 from ui.pages.custom_test.property_panel import PropertyPanel
 from core.custom_test.nodes.base import BaseNode, get_node_class
 from ui.pages.custom_test.node_metadata import filter_selectable_ops, is_node_selectable
-from core.custom_test.context import ExecutionContext
+from core.custom_test.context import ExecutionContext, StopExecution
 from core.custom_test.executor import ExecutorThread
 from core.custom_test.resolver import InstrumentResolver, collect_required_instrument_keys
 from core.custom_test.result_store import ResultStore, build_default_result_path
 from core.custom_test.validation import preflight_validate
+from ui.pages.custom_test.instrument_connection_panel import InstrumentConnectionPanel
+from ui.pages.custom_test.result_panel import ResultPanel
+from ui.pages.custom_test.validation_panel import ValidationIssuesDialog
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.chamber_module_frame import ChamberConnectionMixin
 from ui.modules.serialCom_module.serialCom_module_frame import SerialComMixin, MODE_FULL
-from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.widgets.scrollbar import SCROLLBAR_STYLE
-from ui.widgets.dark_combobox import DarkComboBox
-from ui.widgets.button import SpinningSearchButton
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -267,6 +265,48 @@ _PAGE_STYLE = """
 """ + SCROLLBAR_STYLE
 
 
+class _PromptRequest:
+    def __init__(self, message: str, timeout_s: float) -> None:
+        self.message = message
+        self.timeout_s = max(0.0, float(timeout_s))
+        self.response: Optional[str] = None
+        self.reason = ""
+        self.cancelled = False
+        self.timed_out = False
+        self._event = threading.Event()
+        self._lock = threading.Lock()
+
+    def set_response(self, response: str) -> None:
+        with self._lock:
+            if self._event.is_set():
+                return
+            self.response = response
+            self._event.set()
+
+    def cancel(self, reason: str = "") -> None:
+        with self._lock:
+            if self._event.is_set():
+                return
+            self.cancelled = True
+            self.reason = reason
+            self._event.set()
+
+    def timeout(self) -> None:
+        with self._lock:
+            if self._event.is_set():
+                return
+            self.timed_out = True
+            self.reason = "PromptUser 等待超时"
+            self._event.set()
+
+    def wait(self, timeout_s: float) -> bool:
+        return self._event.wait(timeout_s)
+
+    @property
+    def is_done(self) -> bool:
+        return self._event.is_set()
+
+
 class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin, QWidget):
     """Custom Test 主界面"""
 
@@ -274,6 +314,7 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
     chamber_connection_changed = Signal(bool)
     serial_connection_changed = Signal(bool)
     serial_data_received = Signal(bytes)
+    prompt_requested = Signal(object)
 
     def __init__(self, n6705c_top=None, mso64b_top=None,
                  chamber_ui=None, instrument_manager=None, parent=None) -> None:
@@ -301,9 +342,8 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         self._executor_thread = ExecutorThread(self)
         self._context: Optional[ExecutionContext] = None
         self._result_store = ResultStore()
-        self._plot_curves: Dict[str, Any] = {}
-        self._plot_data: Dict[str, List[float]] = {}
-        self._rendering_result_table = False
+        self._active_prompt_box: Optional[QMessageBox] = None
+        self._active_prompt_request: Optional[_PromptRequest] = None
 
         self._build_ui()
         self._connect_signals()
@@ -419,39 +459,8 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
             parent=self,
         )
 
-        self._instr_conn_frame = QWidget()
-        self._instr_conn_frame.setStyleSheet("""
-            QWidget { background: transparent; border: none; }
-            QLabel#fieldLabel {
-                color: #8eb0e3; font-size: 11px;
-                background: transparent; border: none;
-            }
-            QLabel#placeholderText {
-                color: #3f5070; font-size: 11px;
-                background: transparent; border: none;
-            }
-            QLabel#statusOk {
-                color: #15d1a3; font-weight: 600; font-size: 11px;
-                background: transparent; border: none;
-            }
-            QLabel#statusWarn {
-                color: #ffb84d; font-weight: 600; font-size: 11px;
-                background: transparent; border: none;
-            }
-            QLabel#statusErr {
-                color: #ff5e7a; font-weight: 600; font-size: 11px;
-                background: transparent; border: none;
-            }
-        """)
-        self._instr_conn_layout = QVBoxLayout(self._instr_conn_frame)
-        self._instr_conn_layout.setContentsMargins(0, 0, 0, 0)
-        self._instr_conn_layout.setSpacing(6)
-
-        self._instr_conn_placeholder = QLabel("No instruments in sequence")
-        self._instr_conn_placeholder.setObjectName("placeholderText")
-        self._instr_conn_layout.addWidget(self._instr_conn_placeholder)
-
-        self._conn_section.content_layout.addWidget(self._instr_conn_frame)
+        self.instrument_panel = InstrumentConnectionPanel(self, parent=self)
+        self._conn_section.content_layout.addWidget(self.instrument_panel)
 
         self.palette = NodePalette()
         self.palette.insert_top_widget(self._conn_section)
@@ -463,402 +472,24 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         return collect_required_instrument_keys(self.canvas.get_sequence())
 
     def _refresh_instrument_connections(self) -> None:
-        while self._instr_conn_layout.count() > 0:
-            child = self._instr_conn_layout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
-            elif child.layout():
-                while child.layout().count():
-                    sub = child.layout().takeAt(0)
-                    if sub.widget():
-                        sub.widget().deleteLater()
-
-        used_ids = self._get_used_instrument_ids()
-
-        self._n6705c_widgets_built = False
-        self._chamber_widgets_built = False
-        self._uart_widgets_built = False
-        self._mcu_io_widgets_built = False
-
-        if not used_ids:
-            self._instr_conn_placeholder = QLabel("No instruments in sequence")
-            self._instr_conn_placeholder.setObjectName("placeholderText")
-            self._instr_conn_layout.addWidget(self._instr_conn_placeholder)
-            return
-
-        if "n6705c" in used_ids:
-            lbl = QLabel("N6705C Power Analyzer")
-            lbl.setObjectName("fieldLabel")
-            self._instr_conn_layout.addWidget(lbl)
-            title_row = QHBoxLayout()
-            title_row.setSpacing(8)
-            self.build_n6705c_connection_widgets(self._instr_conn_layout, title_row=title_row)
-            self.bind_n6705c_signals()
-            self._n6705c_widgets_built = True
-            if self._n6705c_top_ref:
-                self.sync_n6705c_from_top()
-
-        if "chamber" in used_ids:
-            lbl = QLabel("Chamber")
-            lbl.setObjectName("fieldLabel")
-            self._instr_conn_layout.addWidget(lbl)
-            self.build_chamber_connection_widgets(self._instr_conn_layout)
-            self.bind_chamber_signals()
-            self._chamber_widgets_built = True
-            if self._chamber_ui_ref and self._chamber_ui_ref.chamber:
-                self._on_chamber_external_changed()
-
-        if "scope" in used_ids:
-            lbl = QLabel("Oscilloscope")
-            lbl.setObjectName("fieldLabel")
-            self._instr_conn_layout.addWidget(lbl)
-            self._scope_status = QLabel(
-                "● Synced from main" if self._mso64b_top_ref else "● Not available"
-            )
-            self._scope_status.setObjectName(
-                "statusOk" if self._mso64b_top_ref else "statusErr"
-            )
-            self._instr_conn_layout.addWidget(self._scope_status)
-
-        if "rf_analyzer" in used_ids:
-            lbl = QLabel("CMW270 RF Analyzer")
-            lbl.setObjectName("fieldLabel")
-            self._instr_conn_layout.addWidget(lbl)
-            status = QLabel("● Not implemented")
-            status.setObjectName("statusWarn")
-            self._instr_conn_layout.addWidget(status)
-
-        if "i2c" in used_ids:
-            lbl = QLabel("REG Controller (I2C)")
-            lbl.setObjectName("fieldLabel")
-            self._instr_conn_layout.addWidget(lbl)
-            status = QLabel("● Auto-connect on run")
-            status.setObjectName("statusOk")
-            self._instr_conn_layout.addWidget(status)
-
-        if "mcu_io" in used_ids:
-            lbl = QLabel("MCU IO")
-            lbl.setObjectName("fieldLabel")
-            self._instr_conn_layout.addWidget(lbl)
-            self._build_mcu_io_connection_widgets()
-            self._mcu_io_widgets_built = True
-            self._sync_mcu_io_from_manager()
-
-        if "uart" in used_ids:
-            lbl = QLabel("UART (Serial)")
-            lbl.setObjectName("fieldLabel")
-            self._instr_conn_layout.addWidget(lbl)
-            self.build_serial_connection_widgets(self._instr_conn_layout)
-            self.bind_serial_signals()
-            self._uart_widgets_built = True
-            if self._serial_connected:
-                self._update_serial_connect_ui(True)
-
-        self._apply_instrument_meta()
+        self.instrument_panel.refresh(self._get_used_instrument_ids())
 
     def _collect_instrument_meta(self) -> dict:
-        meta = {}
-        if self._n6705c_widgets_built and hasattr(self, "visa_resource_combo"):
-            meta["n6705c"] = {"visa": self.visa_resource_combo.currentText()}
-        if self._chamber_widgets_built and hasattr(self, "chamber_port_combo"):
-            meta["chamber"] = {
-                "type": self.chamber_type_combo.currentData() if hasattr(self, "chamber_type_combo") else "vt6002",
-                "port": self.chamber_port_combo.currentText(),
-            }
-        if self._uart_widgets_built and hasattr(self, "_sc_port_combo"):
-            meta["uart"] = {
-                "port": self._sc_port_combo.currentText(),
-                "baud": self._sc_baud_combo.currentText(),
-            }
-        if self._mcu_io_widgets_built and hasattr(self, "mcu_io_port_combo"):
-            meta["mcu_io"] = {
-                "port": self._mcu_io_selected_resource(),
-            }
-        return meta
+        return self.instrument_panel.collect_meta()
 
     def _on_metadata_loaded(self, meta: dict) -> None:
-        self._pending_instr_meta = meta
-        self._apply_instrument_meta()
+        self.instrument_panel.on_metadata_loaded(meta)
 
     def _apply_instrument_meta(self) -> None:
-        meta = getattr(self, "_pending_instr_meta", None)
-        if not meta:
-            return
-        if "n6705c" in meta and self._n6705c_widgets_built:
-            visa = meta["n6705c"].get("visa", "")
-            if visa and hasattr(self, "visa_resource_combo"):
-                if self.visa_resource_combo.findText(visa) < 0:
-                    self.visa_resource_combo.addItem(visa)
-                self.visa_resource_combo.setCurrentText(visa)
-        if "chamber" in meta and self._chamber_widgets_built:
-            chamber_type = meta["chamber"].get("type", "vt6002")
-            if hasattr(self, "chamber_type_combo"):
-                idx = self.chamber_type_combo.findData(chamber_type)
-                if idx >= 0:
-                    self.chamber_type_combo.setCurrentIndex(idx)
-            port = meta["chamber"].get("port", "")
-            if port and hasattr(self, "chamber_port_combo"):
-                if self.chamber_port_combo.findText(port) < 0:
-                    self.chamber_port_combo.addItem(port)
-                self.chamber_port_combo.setCurrentText(port)
-        if "uart" in meta and self._uart_widgets_built:
-            port = meta["uart"].get("port", "")
-            baud = meta["uart"].get("baud", "")
-            if port and hasattr(self, "_sc_port_combo"):
-                if self._sc_port_combo.findText(port) < 0:
-                    self._sc_port_combo.addItem(port)
-                self._sc_port_combo.setCurrentText(port)
-            if baud and hasattr(self, "_sc_baud_combo"):
-                self._sc_baud_combo.setCurrentText(baud)
-        if "mcu_io" in meta and self._mcu_io_widgets_built:
-            port = meta["mcu_io"].get("port", "")
-            if port and hasattr(self, "mcu_io_port_combo"):
-                if self.mcu_io_port_combo.findText(port) < 0:
-                    self.mcu_io_port_combo.addItem(port, port)
-                self.mcu_io_port_combo.setCurrentText(port)
-        self._try_auto_connect_instruments(meta)
-        self._pending_instr_meta = None
+        self.instrument_panel.apply_instrument_meta()
 
     def _try_auto_connect_instruments(self, meta: dict) -> None:
-        """加载模板后，根据 meta 中已保存的仪器配置尝试自动连接。
-
-        - 仅在 widget 已构建且当前未连接时才会触发；
-        - 所有异常被吞掉并记录日志，不影响模板加载流程。
-        """
-        if not meta:
-            return
-
-        if "n6705c" in meta and self._n6705c_widgets_built:
-            try:
-                already = False
-                if hasattr(self, "is_n6705c_connected"):
-                    try:
-                        already = bool(self.is_n6705c_connected())
-                    except Exception:
-                        already = bool(getattr(self, "is_connected", False))
-                if not already and hasattr(self, "_on_n6705c_connect"):
-                    self.logs_frame.append_log("[AUTO] 尝试连接 N6705C ...")
-                    self._on_n6705c_connect()
-            except Exception as exc:
-                logger.warning("自动连接 N6705C 失败: %s", exc)
-                self.logs_frame.append_log(f"[AUTO] N6705C 自动连接失败: {exc}")
-
-        if "chamber" in meta and self._chamber_widgets_built:
-            try:
-                already = False
-                if hasattr(self, "is_chamber_connected_status"):
-                    try:
-                        already = bool(self.is_chamber_connected_status())
-                    except Exception:
-                        already = bool(getattr(self, "is_chamber_connected", False))
-                if not already and hasattr(self, "_on_chamber_connect"):
-                    self.logs_frame.append_log("[AUTO] 尝试连接 Chamber ...")
-                    self._on_chamber_connect()
-            except Exception as exc:
-                logger.warning("自动连接 Chamber 失败: %s", exc)
-                self.logs_frame.append_log(f"[AUTO] Chamber 自动连接失败: {exc}")
-
-        if "uart" in meta and self._uart_widgets_built:
-            try:
-                if not getattr(self, "_serial_connected", False) \
-                        and hasattr(self, "_on_serial_connect"):
-                    self.logs_frame.append_log("[AUTO] 尝试连接 UART ...")
-                    self._on_serial_connect()
-            except Exception as exc:
-                logger.warning("自动连接 UART 失败: %s", exc)
-                self.logs_frame.append_log(f"[AUTO] UART 自动连接失败: {exc}")
-
-        if "mcu_io" in meta and self._mcu_io_widgets_built:
-            try:
-                if not getattr(self, "is_mcu_io_connected", False):
-                    self.logs_frame.append_log("[AUTO] 尝试连接 MCU IO ...")
-                    self._on_mcu_io_connect()
-            except Exception as exc:
-                logger.warning("自动连接 MCU IO 失败: %s", exc)
-                self.logs_frame.append_log(f"[AUTO] MCU IO 自动连接失败: {exc}")
+        self.instrument_panel._try_auto_connect_instruments(meta)
 
     def _build_bottom_panel(self) -> QWidget:
-
-        widget = QWidget()
-        widget.setObjectName("bottomPanel")
-        widget.setStyleSheet("QWidget#bottomPanel { background: transparent; border: none; }")
-        layout = QVBoxLayout(widget)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
-
-        tabs = QTabWidget()
-        self._bottom_tabs = tabs
-
-        self._export_btn = QPushButton("Export")
-        self._export_btn.setCursor(Qt.PointingHandCursor)
-        self._export_btn.setToolTip("将当前 Data 表格导出为 Excel / CSV")
-        self._export_btn.setStyleSheet(
-            "QPushButton { background-color: #132040; color: #8eb0e3;"
-            "  border: 1px solid #1a2d57; border-radius: 6px;"
-            "  padding: 4px 12px; font-size: 11px; font-weight: 600; margin: 2px 6px; }"
-            "QPushButton:hover { background-color: #1a2d57; color: #dce7ff; }"
-            "QPushButton:pressed { background-color: #0c1733; }"
-            "QPushButton:disabled { color: #3f5070; background-color: #0b1428;"
-            "  border: 1px solid #132040; }"
-        )
-        self._export_btn.setVisible(False)
-        self._export_btn.clicked.connect(self._on_export_clicked)
-        tabs.setCornerWidget(self._export_btn, Qt.TopRightCorner)
-        tabs.currentChanged.connect(self._on_bottom_tab_changed)
-
-        log_icon_path = os.path.join(_PAGE_SVGS_DIR, "clipboard-list.svg")
-        table_icon_path = os.path.join(_PAGE_SVGS_DIR, "table.svg")
-        chart_icon_path = os.path.join(_PAGE_SVGS_DIR, "line-chart.svg")
-
-        log_tab = QWidget()
-        log_layout = QVBoxLayout(log_tab)
-        log_layout.setContentsMargins(0, 0, 0, 0)
-        self.logs_frame = ExecutionLogsFrame(
-            title="Execution Logs", show_progress=True
-        )
-        log_layout.addWidget(self.logs_frame)
-        tabs.addTab(log_tab, "Logs")
-        if os.path.isfile(log_icon_path):
-            tabs.setTabIcon(0, _tinted_svg_icon(log_icon_path, "#5f78a8"))
-            tabs.setIconSize(QSize(14, 14))
-
-        table_tab = QWidget()
-        table_tab_layout = QVBoxLayout(table_tab)
-        table_tab_layout.setContentsMargins(0, 0, 0, 0)
-
-        self._table_stack = QWidget()
-        stack_layout = QStackedLayout(self._table_stack)
-        stack_layout.setStackingMode(QStackedLayout.StackAll)
-
-        self.result_table = QTableWidget()
-        self.result_table.setColumnCount(0)
-        self.result_table.setRowCount(0)
-        self.result_table.horizontalHeader().setStretchLastSection(False)
-        self.result_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.Interactive
-        )
-        self.result_table.horizontalHeader().setDefaultSectionSize(120)
-        self.result_table.horizontalHeader().setMinimumSectionSize(60)
-        self.result_table.horizontalHeader().setSectionsMovable(True)
-        self.result_table.horizontalHeader().setDragEnabled(True)
-        self.result_table.horizontalHeader().setDragDropMode(
-            QTableWidget.InternalMove
-        )
-        self.result_table.horizontalHeader().setContextMenuPolicy(Qt.CustomContextMenu)
-        self.result_table.horizontalHeader().customContextMenuRequested.connect(
-            self._on_header_context_menu
-        )
-        self.result_table.horizontalHeader().sectionMoved.connect(
-            self._on_result_section_moved
-        )
-        self.result_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        stack_layout.addWidget(self.result_table)
-
-        self._table_empty_label = QLabel("No data recorded yet")
-        self._table_empty_label.setAlignment(Qt.AlignCenter)
-        self._table_empty_label.setObjectName("placeholderText")
-        stack_layout.addWidget(self._table_empty_label)
-        stack_layout.setCurrentIndex(1)
-
-        table_tab_layout.addWidget(self._table_stack)
-        tabs.addTab(table_tab, "Data")
-        if os.path.isfile(table_icon_path):
-            tabs.setTabIcon(1, _tinted_svg_icon(table_icon_path, "#5f78a8"))
-
-        chart_tab = QWidget()
-        chart_layout = QVBoxLayout(chart_tab)
-        chart_layout.setContentsMargins(0, 0, 0, 0)
-        self.plot_widget = pg.PlotWidget()
-        self.plot_widget.setBackground("#060e20")
-        self.plot_widget.showGrid(x=True, y=True, alpha=0.2)
-        self.plot_widget.setLabel("bottom", "Index", color="#5f78a8")
-        self.plot_widget.setLabel("left", "Value", color="#5f78a8")
-        axis_pen = pg.mkPen(color="#1a2d57", width=1)
-        for axis_name in ("bottom", "left"):
-            ax = self.plot_widget.getAxis(axis_name)
-            ax.setPen(axis_pen)
-            ax.setTextPen(pg.mkPen(color="#5f78a8"))
-        self.plot_widget.addLegend(offset=(-10, 10))
-        chart_layout.addWidget(self.plot_widget)
-        tabs.addTab(chart_tab, "Chart")
-        if os.path.isfile(chart_icon_path):
-            tabs.setTabIcon(2, _tinted_svg_icon(chart_icon_path, "#5f78a8"))
-
-        layout.addWidget(tabs)
-        return widget
-
-    def _on_bottom_tab_changed(self, index: int) -> None:
-        """底部标签切换:Data 页显示 Export 按钮,其它页隐藏。"""
-        if not hasattr(self, "_bottom_tabs") or not hasattr(self, "_export_btn"):
-            return
-        try:
-            tab_text = self._bottom_tabs.tabText(index)
-        except Exception:
-            tab_text = ""
-        self._export_btn.setVisible(tab_text == "Data")
-
-    def _on_export_clicked(self) -> None:
-        """按当前 Data 视图导出 Excel 或 CSV。"""
-        store = self._get_result_store()
-        if not store.records:
-            QMessageBox.information(
-                self, "无可导出的数据",
-                "当前 Data 表格为空,请先运行一次测试采集数据。"
-            )
-            return
-
-        default_name = f"custom_test_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-        file_path, selected_filter = QFileDialog.getSaveFileName(
-            self,
-            "导出 Data 表格",
-            default_name,
-            "Excel Files (*.xlsx);;CSV Files (*.csv)"
-        )
-        if not file_path:
-            return
-
-        lower = file_path.lower()
-        if lower.endswith(".xlsx"):
-            target = "xlsx"
-        elif lower.endswith(".csv"):
-            target = "csv"
-        else:
-            if "CSV" in (selected_filter or ""):
-                target = "csv"
-                file_path += ".csv"
-            else:
-                target = "xlsx"
-                file_path += ".xlsx"
-
-        try:
-            if target == "xlsx":
-                self._export_table_xlsx(file_path)
-            else:
-                self._export_table_csv(file_path)
-        except Exception as exc:
-            logger.exception("导出 Data 表格失败")
-            self.logs_frame.append_log(f"[EXPORT] 导出失败: {exc}")
-            QMessageBox.critical(
-                self, "导出失败",
-                f"导出 Data 表格失败:\n{exc}"
-            )
-            return
-
-        self.logs_frame.append_log(f"[EXPORT] Data 表格已导出: {file_path}")
-        QMessageBox.information(
-            self, "导出成功",
-            f"Data 表格已成功导出到:\n{file_path}"
-        )
-
-    def _collect_table_rows(self) -> (List[str], List[List[str]]):
-        """读取当前 ResultStore 视图数据。"""
-        return self._get_result_store().view_table()
-
-    def _export_table_csv(self, file_path: str) -> None:
-        self._get_result_store().export_csv(file_path, view=True)
-
-    def _export_table_xlsx(self, file_path: str) -> None:
-        self._get_result_store().export_xlsx(file_path, view=True)
+        self.result_panel = ResultPanel(self._result_store, parent=self)
+        self.logs_frame = self.result_panel.logs_frame
+        return self.result_panel
 
     def _connect_signals(self) -> None:
         self.palette.node_requested.connect(self._on_add_node)
@@ -876,210 +507,29 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         self.property_panel.add_else_if_requested.connect(self._on_add_else_if)
 
         self._executor_thread.finished.connect(self._on_execution_finished)
+        self.prompt_requested.connect(self._on_prompt_requested, Qt.QueuedConnection)
 
         if self._instrument_manager is not None:
-            self._instrument_manager.scan_finished.connect(self._on_manager_scan_finished)
-            self._instrument_manager.scan_failed.connect(self._on_manager_scan_failed)
-            self._instrument_manager.session_connected.connect(self._on_manager_session_connected)
-            self._instrument_manager.connection_failed.connect(self._on_manager_connection_failed)
-            self._instrument_manager.session_disconnected.connect(self._on_manager_session_disconnected)
+            self._instrument_manager.scan_finished.connect(self.instrument_panel.on_manager_scan_finished)
+            self._instrument_manager.scan_failed.connect(self.instrument_panel.on_manager_scan_failed)
+            self._instrument_manager.session_connected.connect(self.instrument_panel.on_manager_session_connected)
+            self._instrument_manager.connection_failed.connect(self.instrument_panel.on_manager_connection_failed)
+            self._instrument_manager.session_disconnected.connect(self.instrument_panel.on_manager_session_disconnected)
 
     def _sync_instruments(self) -> None:
-        if self._n6705c_top_ref:
-            self.sync_n6705c_from_top()
-        if self._chamber_ui_ref and self._chamber_ui_ref.chamber:
-            self._on_chamber_external_changed()
-        self._sync_mcu_io_from_manager()
+        self.instrument_panel.sync_external()
 
-    def _build_mcu_io_connection_widgets(self) -> None:
-        box = QFrame()
-        box.setStyleSheet("""
-            QFrame {
-                background-color: #0d1a36;
-                border: 1px solid #1a2d57;
-                border-radius: 8px;
-            }
-        """)
-        layout = QVBoxLayout(box)
-        layout.setContentsMargins(8, 6, 8, 8)
-        layout.setSpacing(6)
+    def _sync_n6705c_from_top_mixin(self) -> None:
+        N6705CConnectionMixin.sync_n6705c_from_top(self)
 
-        self.mcu_io_status_label = QLabel("● Disconnected")
-        self.mcu_io_status_label.setObjectName("statusErr")
-        layout.addWidget(self.mcu_io_status_label)
-
-        self.mcu_io_port_combo = DarkComboBox(bg="#091426", border="#17345f")
-        self.mcu_io_port_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.mcu_io_port_combo.addItem("Select MCU IO port", "")
-        layout.addWidget(self.mcu_io_port_combo)
-
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(6)
-        self.mcu_io_search_btn = SpinningSearchButton(parent=box)
-        self.mcu_io_search_btn.setFixedHeight(24)
-        self.mcu_io_connect_btn = QPushButton("Connect")
-        self.mcu_io_connect_btn.setFixedHeight(24)
-        self.mcu_io_connect_btn.setStyleSheet(
-            "QPushButton { background-color: #053b38; color: #10e7bc;"
-            " border: 1px solid #08c9a5; border-radius: 6px;"
-            " font-size: 11px; font-weight: 700; padding: 2px 8px; }"
-            "QPushButton:hover { background-color: #064744; }"
-            "QPushButton:disabled { background-color: #0D1734; color: #3a4a6a;"
-            " border: 1px solid #18264A; }"
-        )
-        btn_row.addWidget(self.mcu_io_search_btn, 0)
-        btn_row.addWidget(self.mcu_io_connect_btn, 1)
-        layout.addLayout(btn_row)
-
-        self.mcu_io_search_btn.clicked.connect(self._on_mcu_io_search)
-        self.mcu_io_connect_btn.clicked.connect(self._on_mcu_io_connect_toggle)
-        self._instr_conn_layout.addWidget(box)
-
-    def _set_mcu_io_status(self, text: str, state: str = "err") -> None:
-        if not hasattr(self, "mcu_io_status_label"):
-            return
-        self.mcu_io_status_label.setText(text)
-        obj = {
-            "ok": "statusOk",
-            "warn": "statusWarn",
-            "err": "statusErr",
-        }.get(state, "statusErr")
-        self.mcu_io_status_label.setObjectName(obj)
-        self.mcu_io_status_label.style().unpolish(self.mcu_io_status_label)
-        self.mcu_io_status_label.style().polish(self.mcu_io_status_label)
-        self.mcu_io_status_label.update()
-
-    def _mcu_io_selected_resource(self) -> str:
-        if not hasattr(self, "mcu_io_port_combo"):
-            return ""
-        data = self.mcu_io_port_combo.currentData()
-        if data:
-            return str(data)
-        text = self.mcu_io_port_combo.currentText()
-        if text.startswith("Select ") or text.startswith("No "):
-            return ""
-        return text.split()[0] if text else ""
-
-    def _on_mcu_io_search(self) -> None:
-        if self._instrument_manager is None:
-            self._set_mcu_io_status("● No manager", "err")
-            return
-        self._set_mcu_io_status("● Searching", "warn")
-        self.mcu_io_search_btn.setEnabled(False)
-        self.mcu_io_connect_btn.setEnabled(False)
-        self._instrument_manager.scan_async("mcu_io")
-
-    def _on_mcu_io_connect_toggle(self) -> None:
-        if self.is_mcu_io_connected:
-            if self._instrument_manager is not None:
-                self._instrument_manager.disconnect_async("mcu_io:default")
-            return
-        self._on_mcu_io_connect()
-
-    def _on_mcu_io_connect(self) -> None:
-        resource = self._mcu_io_selected_resource()
-        if not resource:
-            self._set_mcu_io_status("● Select port first", "err")
-            return
-        if self._instrument_manager is None:
-            self._set_mcu_io_status("● No manager", "err")
-            return
-        from core.instruments import InstrumentSpec
-        self._set_mcu_io_status("● Connecting", "warn")
-        self.mcu_io_connect_btn.setEnabled(False)
-        self._instrument_manager.connect_async(InstrumentSpec(
-            instrument_type="mcu_io",
-            role="mcu_io",
-            connection_kind="serial_raw_repl",
-            slot="default",
-            resource=resource,
-        ))
-
-    def _sync_mcu_io_from_manager(self) -> None:
-        if not self._mcu_io_widgets_built or self._instrument_manager is None:
-            return
-        session = self._instrument_manager.get_session("mcu_io:default")
-        if session and session.connected and session.instance:
-            self.mcu_io = session.instance
-            self.is_mcu_io_connected = True
-            if hasattr(self, "mcu_io_port_combo") and session.resource:
-                if self.mcu_io_port_combo.findText(session.resource) < 0:
-                    self.mcu_io_port_combo.addItem(session.resource, session.resource)
-                self.mcu_io_port_combo.setCurrentText(session.resource)
-            self._set_mcu_io_status("● Connected", "ok")
-            self.mcu_io_connect_btn.setEnabled(True)
-            self.mcu_io_connect_btn.setText("Disconnect")
-            self.mcu_io_search_btn.setEnabled(False)
-        else:
-            self.mcu_io = None
-            self.is_mcu_io_connected = False
-            self._set_mcu_io_status("● Disconnected", "err")
-            self.mcu_io_connect_btn.setEnabled(True)
-            self.mcu_io_connect_btn.setText("Connect")
-            self.mcu_io_search_btn.setEnabled(True)
-
-    def _on_manager_scan_finished(self, instrument_type: str, candidates: list) -> None:
-        if instrument_type != "mcu_io" or not self._mcu_io_widgets_built:
-            return
-        self.mcu_io_port_combo.clear()
-        if candidates:
-            for candidate in candidates:
-                display = candidate.display_name or candidate.resource
-                self.mcu_io_port_combo.addItem(display, candidate.resource)
-            self._set_mcu_io_status(f"● Found {len(candidates)}", "ok")
-            self.mcu_io_connect_btn.setEnabled(True)
-        else:
-            self.mcu_io_port_combo.addItem("No MCU IO ports found", "")
-            self._set_mcu_io_status("● Not Found", "err")
-            self.mcu_io_connect_btn.setEnabled(False)
-        self.mcu_io_search_btn.setEnabled(True)
-
-    def _on_manager_scan_failed(self, instrument_type: str, error: str) -> None:
-        if instrument_type != "mcu_io" or not self._mcu_io_widgets_built:
-            return
-        self._set_mcu_io_status("● Search Failed", "err")
-        self.mcu_io_search_btn.setEnabled(True)
-        self.mcu_io_connect_btn.setEnabled(True)
-        self.logs_frame.append_log(f"[MCU_IO] Search failed: {error}")
-
-    def _on_manager_session_connected(self, session_id: str) -> None:
-        if session_id == "mcu_io:default":
-            self._sync_mcu_io_from_manager()
-
-    def _on_manager_connection_failed(self, session_id: str, error: str) -> None:
-        if session_id == "mcu_io:default" and self._mcu_io_widgets_built:
-            self._set_mcu_io_status("● Failed", "err")
-            self.mcu_io_connect_btn.setEnabled(True)
-            self.mcu_io_search_btn.setEnabled(True)
-            self.logs_frame.append_log(f"[MCU_IO] Connection failed: {error}")
-
-    def _on_manager_session_disconnected(self, session_id: str) -> None:
-        if session_id == "mcu_io:default":
-            self._sync_mcu_io_from_manager()
+    def _on_chamber_external_changed_mixin(self) -> None:
+        ChamberConnectionMixin._on_chamber_external_changed(self)
 
     def _on_chamber_external_changed(self) -> None:
-        if not self._chamber_widgets_built:
-            if self._chamber_ui_ref and self._chamber_ui_ref.chamber:
-                chamber = self._chamber_ui_ref.chamber
-                is_open = (
-                    chamber.is_connected()
-                    if hasattr(chamber, "is_connected")
-                    else hasattr(chamber, 'ser') and chamber.ser.is_open
-                )
-                if is_open:
-                    self.chamber = chamber
-                    self.is_chamber_connected = True
-            return
-        super()._on_chamber_external_changed()
+        self.instrument_panel.on_chamber_external_changed()
 
     def sync_n6705c_from_top(self) -> None:
-        if not self._n6705c_widgets_built:
-            if self._n6705c_top_ref and hasattr(self._n6705c_top_ref, 'is_connected_a'):
-                if self._n6705c_top_ref.is_connected_a and self._n6705c_top_ref.n6705c_a:
-                    self.n6705c = self._n6705c_top_ref.n6705c_a
-                    self.is_connected = True
-            return
-        super().sync_n6705c_from_top()
+        self.instrument_panel.sync_n6705c_from_top()
 
     def _on_add_node(self, node_type: str) -> None:
         """从面板添加节点"""
@@ -1343,33 +793,23 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         )
 
     def _show_preflight_issues(self, issues: List[Any]) -> bool:
-        errors = [issue for issue in issues if issue.severity == "error"]
-        warnings = [issue for issue in issues if issue.severity == "warning"]
         for issue in issues:
             self.logs_frame.append_log(issue.format())
             if issue.fix_hint:
                 self.logs_frame.append_log(f"        hint: {issue.fix_hint}")
 
-        if errors:
-            summary = "\n".join(issue.format() for issue in errors[:8])
-            if len(errors) > 8:
-                summary += f"\n... 另有 {len(errors) - 8} 条错误，请查看 Logs。"
-            QMessageBox.critical(self, "运行前校验失败", summary)
+        dialog = ValidationIssuesDialog(issues, parent=self)
+        dialog.issue_activated.connect(self._locate_validation_issue)
+        if dialog.has_errors:
+            dialog.exec()
             return False
+        return dialog.exec() == ValidationIssuesDialog.Accepted
 
-        if warnings:
-            summary = "\n".join(issue.format() for issue in warnings[:8])
-            if len(warnings) > 8:
-                summary += f"\n... 另有 {len(warnings) - 8} 条警告，请查看 Logs。"
-            reply = QMessageBox.question(
-                self,
-                "运行前校验警告",
-                f"{summary}\n\n是否继续运行？",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No,
-            )
-            return reply == QMessageBox.Yes
-        return True
+    def _locate_validation_issue(self, node_uid: str) -> None:
+        if node_uid and hasattr(self.canvas, "locate_node"):
+            self.canvas.locate_node(node_uid)
+        elif node_uid:
+            self.canvas.highlight_step(node_uid)
 
     def _on_run(self) -> None:
         sequence = self.canvas.get_sequence()
@@ -1395,7 +835,9 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
             resolved_instruments=resolved,
             lease_session_ids=resolved.lease_session_ids,
         )
+        self._context.set_prompt_handler(self._request_user_prompt)
         self._result_store = self._context.result_store
+        self.result_panel.set_result_store(self._result_store)
         try:
             self._context.acquire_leases(owner="custom_test")
         except Exception as exc:
@@ -1404,7 +846,7 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
             QMessageBox.critical(self, "仪器占用", f"InstrumentLease 申请失败:\n{exc}")
             return
 
-        self._reset_result_view()
+        self.result_panel.clear_results()
 
         self.canvas.set_running_state(True)
         self.logs_frame.set_progress(0)
@@ -1422,67 +864,24 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         return self._result_store
 
     def _reset_result_view(self) -> None:
-        self.result_table.setRowCount(0)
-        self.result_table.setColumnCount(0)
-        self._table_empty_label.setVisible(True)
-        self.plot_widget.clear()
-        self._plot_curves = {}
-        self._plot_data = {}
+        self.result_panel.clear_results()
 
     def _render_result_table(self) -> None:
-        store = self._get_result_store()
-        fields = store.get_visible_fields()
-        headers = [store.view_state.display_name(field.name) for field in fields]
-        _, rows = store.view_table()
-
-        self._rendering_result_table = True
-        try:
-            self.result_table.setRowCount(0)
-            self.result_table.setColumnCount(len(headers))
-            self.result_table.setHorizontalHeaderLabels(headers)
-            for row_values in rows:
-                row_idx = self.result_table.rowCount()
-                self.result_table.insertRow(row_idx)
-                for col, value in enumerate(row_values):
-                    item = QTableWidgetItem(str(value))
-                    item.setTextAlignment(Qt.AlignCenter)
-                    self.result_table.setItem(row_idx, col, item)
-        finally:
-            self._rendering_result_table = False
-
-        self._table_empty_label.setVisible(not rows)
-        self.result_table.resizeColumnsToContents()
-        header = self.result_table.horizontalHeader()
-        for c in range(self.result_table.columnCount()):
-            if header.sectionSize(c) < 80:
-                header.resizeSection(c, 80)
+        self.result_panel.render_result_table()
 
     def _refresh_result_plot(self) -> None:
-        store = self._get_result_store()
-        series = store.plot_series()
-        self.plot_widget.clear()
-        self._plot_curves = {}
-        self._plot_data = {}
-        pen_colors = [
-            "#5b5cf6", "#f2994a", "#27ae60", "#e74c3c",
-            "#9b59b6", "#16a085", "#f39c12", "#2ecc71",
-        ]
-        for index, (field_name, values) in enumerate(series.items()):
-            color = pen_colors[index % len(pen_colors)]
-            curve = self.plot_widget.plot(
-                [], [], pen=pg.mkPen(color=color, width=2), name=field_name
-            )
-            x_data = list(range(len(values)))
-            curve.setData(x_data, values)
-            self._plot_curves[field_name] = curve
-            self._plot_data[field_name] = values
+        self.result_panel.plot_result_fields()
 
     def _current_result_columns(self) -> List[str]:
-        return [field.name for field in self._get_result_store().get_visible_fields()]
+        return self.result_panel.current_result_columns()
 
     def _on_stop(self) -> None:
         """停止执行"""
         self._executor_thread.stop()
+        if self._active_prompt_request is not None:
+            self._active_prompt_request.cancel("PromptUser 已被停止")
+        if self._active_prompt_box is not None:
+            self._active_prompt_box.reject()
         self.logs_frame.append_log("[USER] 执行停止请求已发送")
 
     def _on_pause(self) -> None:
@@ -1498,6 +897,73 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
                 self.canvas.pause_btn.setText("▶ Resume")
                 self.logs_frame.append_log("[USER] 已暂停执行")
 
+    def _request_user_prompt(self, message: str, timeout_s: float = 300.0) -> Optional[str]:
+        request = _PromptRequest(message, timeout_s)
+        self.prompt_requested.emit(request)
+        deadline = time.monotonic() + request.timeout_s if request.timeout_s > 0 else None
+
+        while True:
+            wait_s = 0.1
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    request.timeout()
+                    raise StopExecution(request.reason)
+                wait_s = min(wait_s, remaining)
+
+            if request.wait(wait_s):
+                break
+            if self._context is not None and self._context.should_stop:
+                request.cancel("PromptUser 已被停止")
+                raise StopExecution(request.reason)
+
+        if request.timed_out:
+            raise StopExecution(request.reason)
+        if request.cancelled:
+            raise StopExecution(request.reason or "PromptUser 已取消")
+        return request.response or "confirmed"
+
+    def _on_prompt_requested(self, request: _PromptRequest) -> None:
+        if request.is_done:
+            return
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Question)
+        box.setWindowTitle("Custom Test Prompt")
+        box.setText(request.message)
+        box.setInformativeText("确认后测试流程将继续执行。")
+        confirm_btn = box.addButton("继续", QMessageBox.AcceptRole)
+        cancel_btn = box.addButton("取消", QMessageBox.RejectRole)
+        confirm_btn.setDefault(True)
+        confirm_btn.setAutoDefault(True)
+        cancel_btn.setDefault(False)
+        cancel_btn.setAutoDefault(False)
+
+        timer = QTimer(box)
+        timer.setSingleShot(True)
+        if request.timeout_s > 0:
+            timer.timeout.connect(lambda: self._expire_prompt_request(request, box))
+            timer.start(int(request.timeout_s * 1000))
+
+        self._active_prompt_box = box
+        self._active_prompt_request = request
+        try:
+            box.exec()
+            if not request.is_done:
+                if box.clickedButton() == confirm_btn:
+                    request.set_response("confirmed")
+                else:
+                    request.cancel("PromptUser 已取消")
+        finally:
+            timer.stop()
+            if self._active_prompt_box is box:
+                self._active_prompt_box = None
+            if self._active_prompt_request is request:
+                self._active_prompt_request = None
+
+    def _expire_prompt_request(self, request: _PromptRequest, box: QMessageBox) -> None:
+        request.timeout()
+        box.reject()
+
     def _on_progress(self, current: int, total: int) -> None:
         """进度更新"""
         if total > 0:
@@ -1509,143 +975,19 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         self.canvas.highlight_step(uid)
 
     def _on_data_recorded(self, row: Dict[str, Any]) -> None:
-        if not row:
-            return
-
-        if self._context is None:
-            self._result_store.append(row)
-        self._render_result_table()
-        self._refresh_result_plot()
+        self.result_panel.append_result_row(row, append_to_store=self._context is None)
 
     def _on_result_section_moved(self, logical_idx: int, old_visual: int, new_visual: int) -> None:
-        if self._rendering_result_table:
-            return
-        columns = self._current_result_columns()
-        header = self.result_table.horizontalHeader()
-        ordered = []
-        for visual in range(self.result_table.columnCount()):
-            logical = header.logicalIndex(visual)
-            if 0 <= logical < len(columns):
-                ordered.append(columns[logical])
-        self._get_result_store().set_field_order(ordered)
+        self.result_panel._on_result_section_moved(logical_idx, old_visual, new_visual)
 
     def _on_header_context_menu(self, pos) -> None:
-        from PySide6.QtWidgets import QMenu, QInputDialog
-
-        header = self.result_table.horizontalHeader()
-        logical_idx = header.logicalIndexAt(pos)
-        if logical_idx < 0 or logical_idx >= self.result_table.columnCount():
-            return
-
-        store = self._get_result_store()
-        columns = self._current_result_columns()
-        if logical_idx >= len(columns):
-            return
-        field_name = columns[logical_idx]
-        col_label = store.view_state.display_name(field_name)
-
-        menu = QMenu(self)
-        menu.setStyleSheet(_CONTEXT_MENU_STYLE)
-
-        _menu_icon_color = "#8eb0e3"
-        _bar_chart_icon = os.path.join(_PAGE_SVGS_DIR, "bar-chart.svg")
-        _pencil_icon = os.path.join(_PAGE_SVGS_DIR, "pencil.svg")
-        _hash_icon = os.path.join(_PAGE_SVGS_DIR, "hash.svg")
-        _trash_icon = os.path.join(_PAGE_SVGS_DIR, "trash.svg")
-
-        if os.path.isfile(_bar_chart_icon):
-            title_action = menu.addAction(
-                _tinted_svg_icon(_bar_chart_icon, _menu_icon_color, 16),
-                f"  {col_label}",
-            )
-        else:
-            title_action = menu.addAction(f"  {col_label}")
-        title_action.setEnabled(False)
-        menu.addSeparator()
-
-        if os.path.isfile(_pencil_icon):
-            rename_action = menu.addAction(
-                _tinted_svg_icon(_pencil_icon, _menu_icon_color, 16),
-                "重命名列",
-            )
-        else:
-            rename_action = menu.addAction("重命名列")
-        menu.addSeparator()
-
-        if os.path.isfile(_hash_icon):
-            fmt_menu = menu.addMenu(
-                _tinted_svg_icon(_hash_icon, _menu_icon_color, 16),
-                "数值格式",
-            )
-        else:
-            fmt_menu = menu.addMenu("数值格式")
-        fmt_menu.setStyleSheet(_CONTEXT_MENU_STYLE)
-        fmt_auto = fmt_menu.addAction("自动")
-        fmt_0 = fmt_menu.addAction("整数 (0)")
-        fmt_2 = fmt_menu.addAction("2 位小数 (.00)")
-        fmt_4 = fmt_menu.addAction("4 位小数 (.0000)")
-        fmt_6 = fmt_menu.addAction("6 位小数 (.000000)")
-        fmt_sci = fmt_menu.addAction("科学计数法 (1.23e+4)")
-        fmt_hex = fmt_menu.addAction("十六进制 (0x1F3A)")
-
-        menu.addSeparator()
-
-        sort_asc_action = menu.addAction("⬆  升序排列")
-        sort_desc_action = menu.addAction("⬇  降序排列")
-
-        menu.addSeparator()
-
-        if os.path.isfile(_trash_icon):
-            hide_action = menu.addAction(
-                _tinted_svg_icon(_trash_icon, _menu_icon_color, 16),
-                "删除列",
-            )
-        else:
-            hide_action = menu.addAction("删除列")
-
-        action = menu.exec(header.mapToGlobal(pos))
-        if action is None:
-            return
-
-        if action == rename_action:
-            new_name, ok = QInputDialog.getText(
-                self, "重命名列", f"列 \"{col_label}\" 的新名称:", text=col_label
-            )
-            if ok and new_name.strip():
-                store.set_display_name(field_name, new_name.strip())
-                self._render_result_table()
-
-        elif action == hide_action:
-            store.hide_field(field_name)
-            self._render_result_table()
-            self._refresh_result_plot()
-
-        elif action == sort_asc_action:
-            self._sort_column_numeric(logical_idx, ascending=True)
-
-        elif action == sort_desc_action:
-            self._sort_column_numeric(logical_idx, ascending=False)
-
-        elif action in (fmt_auto, fmt_0, fmt_2, fmt_4, fmt_6, fmt_sci, fmt_hex):
-            self._apply_column_format(logical_idx, action, {
-                fmt_auto: "auto", fmt_0: "0", fmt_2: "2", fmt_4: "4",
-                fmt_6: "6", fmt_sci: "sci", fmt_hex: "hex",
-            })
+        self.result_panel._on_header_context_menu(pos)
 
     def _apply_column_format(self, col: int, action, fmt_map: dict) -> None:
-        fmt = fmt_map.get(action, "auto")
-        columns = self._current_result_columns()
-        if col < 0 or col >= len(columns):
-            return
-        self._get_result_store().set_field_format(columns[col], fmt)
-        self._render_result_table()
+        self.result_panel._apply_column_format(col, action, fmt_map)
 
     def _sort_column_numeric(self, col: int, ascending: bool = True) -> None:
-        columns = self._current_result_columns()
-        if col < 0 or col >= len(columns):
-            return
-        self._get_result_store().sort_by(columns[col], ascending=ascending)
-        self._render_result_table()
+        self.result_panel._sort_column_numeric(col, ascending=ascending)
 
     def _on_execution_finished(self, success: bool, message: str) -> None:
         """执行完成回调"""
@@ -1709,6 +1051,10 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
 
     def cleanup_threads(self) -> None:
         """清理工作线程"""
+        if self._active_prompt_request is not None:
+            self._active_prompt_request.cancel("Custom Test 页面关闭")
+        if self._active_prompt_box is not None:
+            self._active_prompt_box.reject()
         self._executor_thread._force_stop()
         if self._i2c_interface is not None:
             self._i2c_interface.close()

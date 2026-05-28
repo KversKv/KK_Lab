@@ -159,7 +159,7 @@ def _validate_params(
         _require_number_at_least(node, "timeout_s", 0, issues, "UART timeout 不能为负数。")
 
     for key, value in params.items():
-        if key == "result_var":
+        if key == "result_var" and node.node_type != "PromptUser":
             _require_non_empty(node, key, issues)
         if key in {"condition", "expression"} and isinstance(value, str):
             _validate_expression_syntax(node, key, value, issues)

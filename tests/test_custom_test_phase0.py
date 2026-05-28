@@ -18,6 +18,7 @@ if _PYSIDE_AVAILABLE:
     from ui.pages.custom_test.context import ExecutionContext
     from ui.pages.custom_test.executor import CustomTestExecutor
 from ui.pages.custom_test.node_metadata import (
+    STABLE,
     UNSUPPORTED,
     build_node_inventory,
     get_node_status,
@@ -140,9 +141,9 @@ class CustomTestPhase0Test(unittest.TestCase):
         self.assertTrue(inventory["RecordDataPoint"]["record_data"])
 
         self.assertEqual(get_node_status("RFAnalyzerMeasure"), UNSUPPORTED)
-        self.assertEqual(get_node_status("PromptUser"), UNSUPPORTED)
+        self.assertEqual(get_node_status("PromptUser"), STABLE)
         self.assertFalse(is_node_selectable("RFAnalyzerMeasure"))
-        self.assertFalse(is_node_selectable("PromptUser"))
+        self.assertTrue(is_node_selectable("PromptUser"))
 
 
 if __name__ == "__main__":

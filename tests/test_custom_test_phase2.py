@@ -11,7 +11,7 @@ from core.custom_test.context import ExecutionContext
 from core.custom_test.nodes import (
     LoopRange,
     N6705CMeasure,
-    PromptUser,
+    RFAnalyzerMeasure,
     ScopeGetDvmDC,
 )
 from core.custom_test.resolver import InstrumentResolver, collect_required_capabilities
@@ -148,12 +148,12 @@ class CustomTestPhase2Test(unittest.TestCase):
 
     def test_preflight_reports_unsupported_and_invalid_params(self):
         loop = LoopRange(step=0)
-        prompt = PromptUser()
+        rf = RFAnalyzerMeasure()
 
-        result = preflight_validate([loop, prompt], resolver=InstrumentResolver())
+        result = preflight_validate([loop, rf], resolver=InstrumentResolver())
 
         self.assertTrue(any("step" in issue.message for issue in result.errors))
-        self.assertTrue(any("PromptUser" in issue.format() for issue in result.errors))
+        self.assertTrue(any("RFAnalyzerMeasure" in issue.format() for issue in result.errors))
 
     def test_collect_required_capabilities_walks_children(self):
         loop = LoopRange()

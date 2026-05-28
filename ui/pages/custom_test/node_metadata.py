@@ -25,7 +25,6 @@ _LEGACY_NODE_TYPES = {
 }
 
 _UNSUPPORTED_NODE_TYPES = {
-    "PromptUser",
     "RFAnalyzerMeasure",
 }
 
@@ -34,7 +33,6 @@ PLANNED_CAPABILITIES: Dict[str, str] = {
 }
 
 _STATUS_NOTES: Dict[str, str] = {
-    "PromptUser": "当前缺少 UI 接收端，先从 palette 隐藏；Phase 4 正规化 signal/dialog。",
     "RFAnalyzerMeasure": "CMW270/RF Analyzer 驱动未接入，先从 palette 隐藏；Phase 2/4 再进入 preflight。",
     "IfElse": "旧版条件节点，保留加载兼容但不在 palette 暴露。",
     "IfThenElse": "旧版条件节点，保留加载兼容但不在 palette 暴露。",
