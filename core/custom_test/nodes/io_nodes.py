@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import csv
 import os
 import sys
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from log_config import get_logger
 from core.custom_test.nodes.base import BaseNode, register_node
+from core.custom_test.result_store import build_default_result_path
 
 logger = get_logger(__name__)
 
@@ -83,7 +83,7 @@ class ExportResult(BaseNode):
         {"key": "format", "label": "导出格式", "type": "str", "default": "csv",
          "options": ["csv", "excel"]},
         {"key": "filename", "label": "文件名（不含后缀）", "type": "str",
-         "default": "custom_test_result"},
+         "default": ""},
         {"key": "output_dir", "label": "输出目录", "type": "str", "default": ""},
     ]
 
@@ -91,6 +91,7 @@ class ExportResult(BaseNode):
         fmt = str(context.resolve_value(self.params["format"])).lower()
         filename = str(context.resolve_value(self.params["filename"]))
         output_dir = str(context.resolve_value(self.params["output_dir"])).strip()
+        extension = "xlsx" if fmt in ("xlsx", "excel") else "csv"
 
         if not output_dir:
             if getattr(sys, 'frozen', False):
@@ -101,55 +102,65 @@ class ExportResult(BaseNode):
                         os.path.dirname(os.path.abspath(__file__))
                     )))
                 )
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_dir = os.path.join(project_root, "Results", "custom_test", timestamp)
+            if not filename or filename == "custom_test_result":
+                profile = str(context.get_variable("chip", context.get_variable("profile", "default")))
+                filepath = build_default_result_path(
+                    project_root,
+                    chip_or_profile=profile,
+                    fmt=extension,
+                )
+            else:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                output_dir = os.path.join(project_root, "Results", "custom_test", timestamp)
+                filepath = os.path.join(output_dir, f"{filename}.{extension}")
+        else:
+            filepath = os.path.join(output_dir, f"{filename or 'custom_test_result'}.{extension}")
 
-        os.makedirs(output_dir, exist_ok=True)
-
-        records = context.records
-        if not records:
+        if not context.records:
             logger.warning("没有数据可导出")
             return
 
-        all_keys: List[str] = []
-        seen = set()
-        for row in records:
-            for k in row.keys():
-                if k not in seen:
-                    all_keys.append(k)
-                    seen.add(k)
-
-        if fmt == "csv":
-            filepath = os.path.join(output_dir, f"{filename}.csv")
-            with open(filepath, "w", newline="", encoding="utf-8-sig") as f:
-                writer = csv.DictWriter(f, fieldnames=all_keys)
-                writer.writeheader()
-                writer.writerows(records)
-            logger.info("已导出 CSV: %s (%d 行)", filepath, len(records))
-
-        elif fmt == "excel":
-            filepath = os.path.join(output_dir, f"{filename}.xlsx")
-            try:
-                import openpyxl
-                wb = openpyxl.Workbook()
-                ws = wb.active
-                ws.title = "Results"
-                ws.append(all_keys)
-                for row in records:
-                    ws.append([row.get(k, "") for k in all_keys])
-                wb.save(filepath)
-                logger.info("已导出 Excel: %s (%d 行)", filepath, len(records))
-            except ImportError:
-                logger.warning("openpyxl 未安装，回退为 CSV 导出")
-                filepath = os.path.join(output_dir, f"{filename}.csv")
-                with open(filepath, "w", newline="", encoding="utf-8-sig") as f:
-                    writer = csv.DictWriter(f, fieldnames=all_keys)
-                    writer.writeheader()
-                    writer.writerows(records)
-                logger.info("已导出 CSV (fallback): %s", filepath)
+        manifest = context.result_store.build_manifest(
+            instrument_snapshot=_instrument_manifest(context),
+        )
+        try:
+            filepath = context.result_store.export(
+                filepath,
+                fmt=fmt,
+                view=False,
+                manifest=manifest,
+            )
+        except RuntimeError:
+            if fmt in ("excel", "xlsx"):
+                logger.warning("XLSX 导出失败，回退为 CSV", exc_info=True)
+                filepath = os.path.splitext(filepath)[0] + ".csv"
+                filepath = context.result_store.export(
+                    filepath,
+                    fmt="csv",
+                    view=False,
+                    manifest=manifest,
+                )
+            else:
+                raise
+        logger.info("已导出结果: %s (%d 行)", filepath, len(context.records))
 
         context.set_variable("_export_path", filepath)
-        context.set_variable("_export_dir", output_dir)
+        context.set_variable("_export_dir", os.path.dirname(filepath))
+
+
+def _instrument_manifest(context: Any) -> Dict[str, Dict[str, str]]:
+    resolved = getattr(context, "resolved_instruments", None)
+    if resolved is None:
+        return {}
+    instruments = getattr(resolved, "instruments", {})
+    return {
+        key: {
+            "source": getattr(item, "source", ""),
+            "session_id": getattr(item, "session_id", ""),
+            "display_name": getattr(item, "display_name", ""),
+        }
+        for key, item in instruments.items()
+    }
 
 
 @register_node

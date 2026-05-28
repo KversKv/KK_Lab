@@ -76,6 +76,7 @@ core/
 │   ├── context.py           # ExecutionContext：变量池 / records / stop-pause / child executor
 │   ├── executor.py          # CustomTestExecutor / ExecutorThread（QtCore 信号，无 QtWidgets）
 │   ├── resolver.py          # InstrumentResolver：节点 capability → runtime adapter / lease 解析
+│   ├── result_store.py      # ResultStore：统一结果模型 / 视图状态 / CSV-XLSX 导出
 │   ├── runtime.py           # execute_node / execute_children，供容器节点执行子节点
 │   ├── validation.py        # 运行前 preflight 校验（参数 / unsupported / 仪器缺失）
 │   └── nodes/               # Custom Test 节点实现与注册表
@@ -429,7 +430,8 @@ spec/
 tests/
 ├── test_auto_baud_detector.py       # SerialCom 自动波特率识别逻辑测试
 ├── test_custom_test_phase0.py       # Custom Test Phase 0 序列读取 / 无 UI 执行 smoke
-└── test_custom_test_phase2.py       # Custom Test Phase 2 capability / resolver / preflight smoke
+├── test_custom_test_phase2.py       # Custom Test Phase 2 capability / resolver / preflight smoke
+└── test_custom_test_phase3.py       # Custom Test Phase 3 ResultStore / 导出统一 smoke
 
 ================================================================================
   tools/ - 开发辅助脚本

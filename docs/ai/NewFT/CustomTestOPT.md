@@ -747,7 +747,10 @@ class N6705CMeasureNode(BaseNode):
 - **依赖**: Phase 1
 - **预计工作量**: 1 会话
 - **预计会话**: 会话 8
-- **状态**: ⏳ 未开始
+- **完成日期**: 2026-05-29
+- **完成内容**: 新增 `core/custom_test/result_store.py`，定义 `ResultField` / `ResultRow` / `ResultStore` / `ResultViewState`，支持动态字段注册、字段格式推断、可绘图字段筛选、visible view state 与 canonical records 分离；`ExecutionContext` 通过 `result_store` 记录数据并保留 `context.records` 兼容旧调用。
+- **风险备注**: source node uid 已由 `runtime.execute_node()` 注入；sequence hash 仍预留为空，正式序列版本迁移时再补稳定 hash 来源。
+- **状态**: ✅ 已完成
 
 ### Task 3.2: UI Data / Chart 绑定 Result Model
 
@@ -763,7 +766,10 @@ class N6705CMeasureNode(BaseNode):
 - **依赖**: Task 3.1
 - **预计工作量**: 1 ~ 1.5 会话
 - **预计会话**: 会话 9
-- **状态**: ⏳ 未开始
+- **完成日期**: 2026-05-29
+- **完成内容**: `CustomTestUI` 的 Data 表与 Chart 改为从 `ResultStore` 渲染；新字段会自动扩列；Chart 只绘制 `ResultField.plot=True` 的数值字段；列重命名、隐藏、格式化和排序写入 `ResultViewState`，不修改 canonical records。
+- **风险备注**: Data 表当前采用整表刷新策略，保证动态列一致性；超大数据量下后续可在 Phase 4.2 拆分结果面板时优化为增量渲染。
+- **状态**: ✅ 已完成
 
 ### Task 3.3: 统一 CSV/XLSX 导出
 
@@ -780,7 +786,10 @@ class N6705CMeasureNode(BaseNode):
 - **依赖**: Task 3.1, Task 3.2
 - **预计工作量**: 1 会话
 - **预计会话**: 会话 10
-- **状态**: ⏳ 未开始
+- **完成日期**: 2026-05-29
+- **完成内容**: `ResultStore.export_csv()` / `export_xlsx()` / `export()` 统一负责 UTF-8-SIG CSV、XLSX 样式和 manifest 输出；`ExportResult` 节点、自动导出、手动 Export 按钮均复用同一导出 API；默认自动文件名改为 `custom_test_<chip_or_profile>_<YYYYMMDD_HHMMSS>.csv`。
+- **风险备注**: XLSX 导出依赖现有 `openpyxl`；若节点导出 XLSX 失败会回退 CSV 并记录 warning。已新增 `tests/test_custom_test_phase3.py` 覆盖 ResultStore、视图导出、ExportResult 节点导出和 manifest。
+- **状态**: ✅ 已完成
 
 ## Phase 4: UI 拆分和体验完善
 
@@ -1110,3 +1119,4 @@ class N6705CMeasureNode(BaseNode):
 | 2026-05-28 | Phase 0 | 完成节点清单/状态基线、list/dict 序列统一读取入口、最小无 UI smoke、RFAnalyzerMeasure/PromptUser unsupported 决策；新增 `node_metadata.py`、`sequence_io.py`、`tests/test_custom_test_phase0.py` | ✅ 已完成 |
 | 2026-05-28 | Phase 1 | 完成 `core/custom_test/` 执行内核迁移、节点实现迁移、旧路径 shim、`runtime.py` 子节点执行入口与 `_execute_children` 反向 import 清理；`core/__init__.py` 改为惰性导出以保持无 UI smoke 可导入 | ✅ 已完成 |
 | 2026-05-28 | Phase 2 | 完成节点 capability 声明、`InstrumentResolver`、preflight validation、`_on_run()` resolver 化、manager session lease 申请/释放；新增 `tests/test_custom_test_phase2.py` | ✅ 已完成 |
+| 2026-05-29 | Phase 3 | 完成 Result Model / ResultStore、Data/Chart 绑定统一结果模型、自动/手动/节点导出统一；新增 `core/custom_test/result_store.py` 与 `tests/test_custom_test_phase3.py` | ✅ 已完成 |

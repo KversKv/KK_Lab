@@ -28,6 +28,10 @@ def execute_node(node: BaseNode, context: ExecutionContext) -> None:
     """执行单个节点，触发上下文回调。"""
     if context.on_step_started:
         context.on_step_started(node.uid, node.display_name)
-    node.execute(context)
+    previous_uid = context.set_current_node(node.uid)
+    try:
+        node.execute(context)
+    finally:
+        context.set_current_node(previous_uid)
     if context.on_step_finished:
         context.on_step_finished(node.uid, node.display_name)

@@ -8,6 +8,7 @@ import operator
 from typing import Any, Callable, Dict, List, Optional, Set
 
 from log_config import get_logger
+from core.custom_test.result_store import ResultStore
 
 logger = get_logger(__name__)
 
@@ -138,7 +139,7 @@ class ExecutionContext:
         lease_session_ids: Optional[List[str]] = None,
     ) -> None:
         self.variables: Dict[str, Any] = {}
-        self.records: List[Dict[str, Any]] = []
+        self.result_store = ResultStore()
         self.instruments: Dict[str, Any] = {
             "chamber": None,
             "n6705c": None,
@@ -167,9 +168,14 @@ class ExecutionContext:
         self._test_message: str = ""
         self._execute_children_callback: Optional[Callable[[List[Any]], None]] = None
         self._prompt_handler: Optional[Callable[[str, float], Optional[str]]] = None
+        self._current_node_uid: Optional[str] = None
 
         self.on_step_started: Optional[Any] = None
         self.on_step_finished: Optional[Any] = None
+
+    @property
+    def records(self) -> List[Dict[str, Any]]:
+        return self.result_store.records
 
     def acquire_leases(self, owner: str = "custom_test") -> None:
         if not self._instrument_manager or not self._lease_session_ids:
@@ -317,7 +323,15 @@ class ExecutionContext:
 
     def record_data(self, row: Dict[str, Any]) -> None:
         """记录一行数据"""
-        self.records.append(dict(row))
+        self.result_store.append(
+            dict(row),
+            source_node_uid=self._current_node_uid,
+        )
+
+    def set_current_node(self, uid: Optional[str]) -> Optional[str]:
+        previous = self._current_node_uid
+        self._current_node_uid = uid
+        return previous
 
     def set_child_executor(self, callback: Callable[[List[Any]], None]) -> None:
         self._execute_children_callback = callback
@@ -361,7 +375,7 @@ class ExecutionContext:
         """重置上下文状态"""
         self.release_runtime_resources()
         self.variables.clear()
-        self.records.clear()
+        self.result_store.clear()
         self._stop_requested = False
         self._pause_requested = False
         self._step_mode = False
@@ -373,5 +387,6 @@ class ExecutionContext:
         self._test_message = ""
         self._execute_children_callback = None
         self._prompt_handler = None
+        self._current_node_uid = None
         self.on_step_started = None
         self.on_step_finished = None

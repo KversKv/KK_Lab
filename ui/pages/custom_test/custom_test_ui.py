@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 from ui.resource_path import get_resource_base
-import csv
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -28,6 +27,7 @@ from ui.pages.custom_test.node_metadata import filter_selectable_ops, is_node_se
 from core.custom_test.context import ExecutionContext
 from core.custom_test.executor import ExecutorThread
 from core.custom_test.resolver import InstrumentResolver, collect_required_instrument_keys
+from core.custom_test.result_store import ResultStore, build_default_result_path
 from core.custom_test.validation import preflight_validate
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.chamber_module_frame import ChamberConnectionMixin
@@ -300,6 +300,10 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
 
         self._executor_thread = ExecutorThread(self)
         self._context: Optional[ExecutionContext] = None
+        self._result_store = ResultStore()
+        self._plot_curves: Dict[str, Any] = {}
+        self._plot_data: Dict[str, List[float]] = {}
+        self._rendering_result_table = False
 
         self._build_ui()
         self._connect_signals()
@@ -744,6 +748,9 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         self.result_table.horizontalHeader().customContextMenuRequested.connect(
             self._on_header_context_menu
         )
+        self.result_table.horizontalHeader().sectionMoved.connect(
+            self._on_result_section_moved
+        )
         self.result_table.setEditTriggers(QTableWidget.NoEditTriggers)
         stack_layout.addWidget(self.result_table)
 
@@ -791,9 +798,9 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         self._export_btn.setVisible(tab_text == "Data")
 
     def _on_export_clicked(self) -> None:
-        """导出 result_table 的全部内容到 Excel 或 CSV。"""
-        table = self.result_table
-        if table.rowCount() == 0 or table.columnCount() == 0:
+        """按当前 Data 视图导出 Excel 或 CSV。"""
+        store = self._get_result_store()
+        if not store.records:
             QMessageBox.information(
                 self, "无可导出的数据",
                 "当前 Data 表格为空,请先运行一次测试采集数据。"
@@ -844,96 +851,14 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         )
 
     def _collect_table_rows(self) -> (List[str], List[List[str]]):
-        """读取 result_table 的表头与数据(按用户当前可见顺序)。"""
-        table = self.result_table
-        header = table.horizontalHeader()
-        col_count = table.columnCount()
-        row_count = table.rowCount()
-
-        visual_order = [header.logicalIndex(v) for v in range(col_count)]
-
-        headers: List[str] = []
-        for logical in visual_order:
-            item = table.horizontalHeaderItem(logical)
-            headers.append(item.text() if item else f"Column {logical}")
-
-        rows: List[List[str]] = []
-        for r in range(row_count):
-            row_vals: List[str] = []
-            for logical in visual_order:
-                item = table.item(r, logical)
-                row_vals.append(item.text() if item else "")
-            rows.append(row_vals)
-
-        return headers, rows
+        """读取当前 ResultStore 视图数据。"""
+        return self._get_result_store().view_table()
 
     def _export_table_csv(self, file_path: str) -> None:
-        headers, rows = self._collect_table_rows()
-        with open(file_path, "w", newline="", encoding="utf-8-sig") as f:
-            writer = csv.writer(f)
-            writer.writerow(headers)
-            for r in rows:
-                writer.writerow(r)
+        self._get_result_store().export_csv(file_path, view=True)
 
     def _export_table_xlsx(self, file_path: str) -> None:
-        try:
-            import openpyxl
-            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-            from openpyxl.utils import get_column_letter
-        except ImportError:
-            raise RuntimeError(
-                "缺少 openpyxl 依赖。请先安装:\n    pip install openpyxl\n"
-                "或将文件名后缀改为 .csv 以导出为 CSV 格式。"
-            )
-
-        headers, rows = self._collect_table_rows()
-
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Custom Test Data"
-
-        header_font = Font(bold=True, color="FFFFFF", size=11)
-        header_fill = PatternFill("solid", fgColor="2F4070")
-        header_align = Alignment(horizontal="center", vertical="center")
-        cell_align = Alignment(horizontal="center", vertical="center")
-        thin = Side(style="thin", color="B4C7E7")
-        border = Border(left=thin, right=thin, top=thin, bottom=thin)
-        even_fill = PatternFill("solid", fgColor="F2F6FC")
-
-        for col_idx, h in enumerate(headers, start=1):
-            c = ws.cell(row=1, column=col_idx, value=h)
-            c.font = header_font
-            c.fill = header_fill
-            c.alignment = header_align
-            c.border = border
-
-        for r_idx, row_vals in enumerate(rows, start=2):
-            for col_idx, text in enumerate(row_vals, start=1):
-                try:
-                    value: Any = float(text)
-                except (ValueError, TypeError):
-                    value = text
-                c = ws.cell(row=r_idx, column=col_idx, value=value)
-                c.alignment = cell_align
-                c.border = border
-                if isinstance(value, float):
-                    c.number_format = "0.######"
-                if r_idx % 2 == 0:
-                    c.fill = even_fill
-
-        for col_idx, h in enumerate(headers, start=1):
-            max_len = len(str(h))
-            for row_vals in rows:
-                cell_text = row_vals[col_idx - 1] if col_idx - 1 < len(row_vals) else ""
-                if len(cell_text) > max_len:
-                    max_len = len(cell_text)
-            ws.column_dimensions[get_column_letter(col_idx)].width = min(
-                max(max_len + 4, 10), 40
-            )
-        ws.row_dimensions[1].height = 22
-        ws.freeze_panes = "A2"
-
-        wb.save(file_path)
+        self._get_result_store().export_xlsx(file_path, view=True)
 
     def _connect_signals(self) -> None:
         self.palette.node_requested.connect(self._on_add_node)
@@ -1470,6 +1395,7 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
             resolved_instruments=resolved,
             lease_session_ids=resolved.lease_session_ids,
         )
+        self._result_store = self._context.result_store
         try:
             self._context.acquire_leases(owner="custom_test")
         except Exception as exc:
@@ -1478,13 +1404,7 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
             QMessageBox.critical(self, "仪器占用", f"InstrumentLease 申请失败:\n{exc}")
             return
 
-        self.result_table.setRowCount(0)
-        self.result_table.setColumnCount(0)
-        self._table_empty_label.setVisible(True)
-        self.plot_widget.clear()
-        self._plot_curves = {}
-        self._plot_data = {}
-        self._col_dp = {}
+        self._reset_result_view()
 
         self.canvas.set_running_state(True)
         self.logs_frame.set_progress(0)
@@ -1495,6 +1415,70 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         executor.progress_updated.connect(self._on_progress, Qt.QueuedConnection)
         executor.step_started.connect(self._on_step_started, Qt.QueuedConnection)
         executor.data_recorded.connect(self._on_data_recorded, Qt.QueuedConnection)
+
+    def _get_result_store(self) -> ResultStore:
+        if self._context is not None:
+            return self._context.result_store
+        return self._result_store
+
+    def _reset_result_view(self) -> None:
+        self.result_table.setRowCount(0)
+        self.result_table.setColumnCount(0)
+        self._table_empty_label.setVisible(True)
+        self.plot_widget.clear()
+        self._plot_curves = {}
+        self._plot_data = {}
+
+    def _render_result_table(self) -> None:
+        store = self._get_result_store()
+        fields = store.get_visible_fields()
+        headers = [store.view_state.display_name(field.name) for field in fields]
+        _, rows = store.view_table()
+
+        self._rendering_result_table = True
+        try:
+            self.result_table.setRowCount(0)
+            self.result_table.setColumnCount(len(headers))
+            self.result_table.setHorizontalHeaderLabels(headers)
+            for row_values in rows:
+                row_idx = self.result_table.rowCount()
+                self.result_table.insertRow(row_idx)
+                for col, value in enumerate(row_values):
+                    item = QTableWidgetItem(str(value))
+                    item.setTextAlignment(Qt.AlignCenter)
+                    self.result_table.setItem(row_idx, col, item)
+        finally:
+            self._rendering_result_table = False
+
+        self._table_empty_label.setVisible(not rows)
+        self.result_table.resizeColumnsToContents()
+        header = self.result_table.horizontalHeader()
+        for c in range(self.result_table.columnCount()):
+            if header.sectionSize(c) < 80:
+                header.resizeSection(c, 80)
+
+    def _refresh_result_plot(self) -> None:
+        store = self._get_result_store()
+        series = store.plot_series()
+        self.plot_widget.clear()
+        self._plot_curves = {}
+        self._plot_data = {}
+        pen_colors = [
+            "#5b5cf6", "#f2994a", "#27ae60", "#e74c3c",
+            "#9b59b6", "#16a085", "#f39c12", "#2ecc71",
+        ]
+        for index, (field_name, values) in enumerate(series.items()):
+            color = pen_colors[index % len(pen_colors)]
+            curve = self.plot_widget.plot(
+                [], [], pen=pg.mkPen(color=color, width=2), name=field_name
+            )
+            x_data = list(range(len(values)))
+            curve.setData(x_data, values)
+            self._plot_curves[field_name] = curve
+            self._plot_data[field_name] = values
+
+    def _current_result_columns(self) -> List[str]:
+        return [field.name for field in self._get_result_store().get_visible_fields()]
 
     def _on_stop(self) -> None:
         """停止执行"""
@@ -1528,80 +1512,22 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         if not row:
             return
 
-        self._table_empty_label.setVisible(False)
+        if self._context is None:
+            self._result_store.append(row)
+        self._render_result_table()
+        self._refresh_result_plot()
 
-        if not hasattr(self, "_col_dp"):
-            self._col_dp: Dict[str, int] = {}
-
-        keys = list(row.keys())
-        if self.result_table.columnCount() == 0:
-            self.result_table.setColumnCount(len(keys))
-            self.result_table.setHorizontalHeaderLabels(keys)
-
-        changed_cols: list = []
-        for k, v in row.items():
-            if isinstance(v, float):
-                s = f"{v:.12g}"
-                dp = 0
-                if "." in s:
-                    dp = len(s.split(".")[1].rstrip("0")) or 0
-                dp = max(2, min(dp, 10))
-                old_dp = self._col_dp.get(k, 2)
-                if dp > old_dp:
-                    self._col_dp[k] = dp
-                    if k in keys:
-                        changed_cols.append(keys.index(k))
-
-        for col_idx in changed_cols:
-            col_key = keys[col_idx]
-            new_dp = self._col_dp[col_key]
-            for prev_row in range(self.result_table.rowCount()):
-                item = self.result_table.item(prev_row, col_idx)
-                if item:
-                    try:
-                        old_val = float(item.text())
-                        item.setText(f"{old_val:.{new_dp}f}")
-                    except (ValueError, TypeError):
-                        pass
-
-        row_idx = self.result_table.rowCount()
-        self.result_table.insertRow(row_idx)
-
-        for col, key in enumerate(keys):
-            val = row.get(key, "")
-            if isinstance(val, float):
-                dp = self._col_dp.get(key, 2)
-                display = f"{val:.{dp}f}"
-            else:
-                display = str(val)
-            item = QTableWidgetItem(display)
-            item.setTextAlignment(Qt.AlignCenter)
-            self.result_table.setItem(row_idx, col, item)
-
-        self.result_table.resizeColumnsToContents()
+    def _on_result_section_moved(self, logical_idx: int, old_visual: int, new_visual: int) -> None:
+        if self._rendering_result_table:
+            return
+        columns = self._current_result_columns()
         header = self.result_table.horizontalHeader()
-        for c in range(self.result_table.columnCount()):
-            if header.sectionSize(c) < 80:
-                header.resizeSection(c, 80)
-
-        for key, val in row.items():
-            try:
-                fval = float(val)
-            except (ValueError, TypeError):
-                continue
-
-            if key not in self._plot_data:
-                self._plot_data[key] = []
-                pen_colors = ["#5b5cf6", "#f2994a", "#27ae60", "#e74c3c", "#9b59b6",
-                              "#16a085", "#f39c12", "#2ecc71"]
-                color = pen_colors[len(self._plot_curves) % len(pen_colors)]
-                self._plot_curves[key] = self.plot_widget.plot(
-                    [], [], pen=pg.mkPen(color=color, width=2), name=key
-                )
-            self._plot_data[key].append(fval)
-            curve = self._plot_curves[key]
-            x_data = list(range(len(self._plot_data[key])))
-            curve.setData(x_data, self._plot_data[key])
+        ordered = []
+        for visual in range(self.result_table.columnCount()):
+            logical = header.logicalIndex(visual)
+            if 0 <= logical < len(columns):
+                ordered.append(columns[logical])
+        self._get_result_store().set_field_order(ordered)
 
     def _on_header_context_menu(self, pos) -> None:
         from PySide6.QtWidgets import QMenu, QInputDialog
@@ -1611,8 +1537,12 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         if logical_idx < 0 or logical_idx >= self.result_table.columnCount():
             return
 
-        col_name = self.result_table.horizontalHeaderItem(logical_idx)
-        col_label = col_name.text() if col_name else f"Column {logical_idx}"
+        store = self._get_result_store()
+        columns = self._current_result_columns()
+        if logical_idx >= len(columns):
+            return
+        field_name = columns[logical_idx]
+        col_label = store.view_state.display_name(field_name)
 
         menu = QMenu(self)
         menu.setStyleSheet(_CONTEXT_MENU_STYLE)
@@ -1682,15 +1612,13 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
                 self, "重命名列", f"列 \"{col_label}\" 的新名称:", text=col_label
             )
             if ok and new_name.strip():
-                item = self.result_table.horizontalHeaderItem(logical_idx)
-                if item:
-                    old_name = item.text()
-                    item.setText(new_name.strip())
-                    if old_name in self._col_dp:
-                        self._col_dp[new_name.strip()] = self._col_dp.pop(old_name)
+                store.set_display_name(field_name, new_name.strip())
+                self._render_result_table()
 
         elif action == hide_action:
-            self.result_table.removeColumn(logical_idx)
+            store.hide_field(field_name)
+            self._render_result_table()
+            self._refresh_result_plot()
 
         elif action == sort_asc_action:
             self._sort_column_numeric(logical_idx, ascending=True)
@@ -1706,60 +1634,18 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
 
     def _apply_column_format(self, col: int, action, fmt_map: dict) -> None:
         fmt = fmt_map.get(action, "auto")
-        for row_idx in range(self.result_table.rowCount()):
-            item = self.result_table.item(row_idx, col)
-            if item is None:
-                continue
-            text = item.text()
-            try:
-                if fmt == "hex":
-                    val = float(text)
-                    item.setText(f"0x{int(val):X}")
-                elif fmt == "sci":
-                    val = float(text)
-                    item.setText(f"{val:.6e}")
-                elif fmt == "auto":
-                    val = float(text)
-                    col_name = self.result_table.horizontalHeaderItem(col)
-                    key = col_name.text() if col_name else ""
-                    dp = self._col_dp.get(key, 2)
-                    item.setText(f"{val:.{dp}f}")
-                else:
-                    dp = int(fmt)
-                    val = float(text)
-                    item.setText(f"{val:.{dp}f}")
-            except (ValueError, TypeError):
-                pass
-
-        col_name = self.result_table.horizontalHeaderItem(col)
-        if col_name and fmt not in ("auto", "hex", "sci"):
-            self._col_dp[col_name.text()] = int(fmt)
+        columns = self._current_result_columns()
+        if col < 0 or col >= len(columns):
+            return
+        self._get_result_store().set_field_format(columns[col], fmt)
+        self._render_result_table()
 
     def _sort_column_numeric(self, col: int, ascending: bool = True) -> None:
-        table = self.result_table
-        row_count = table.rowCount()
-        col_count = table.columnCount()
-        rows_data = []
-        for r in range(row_count):
-            row_items = []
-            for c in range(col_count):
-                item = table.item(r, c)
-                row_items.append(item.text() if item else "")
-            sort_text = row_items[col] if col < len(row_items) else ""
-            try:
-                sort_key = float(sort_text)
-            except (ValueError, TypeError):
-                sort_key = sort_text
-            rows_data.append((sort_key, row_items))
-
-        rows_data.sort(key=lambda x: (isinstance(x[0], str), x[0]), reverse=not ascending)
-
-        table.setRowCount(0)
-        for _, items in rows_data:
-            row_idx = table.rowCount()
-            table.insertRow(row_idx)
-            for c, text in enumerate(items):
-                table.setItem(row_idx, c, QTableWidgetItem(text))
+        columns = self._current_result_columns()
+        if col < 0 or col >= len(columns):
+            return
+        self._get_result_store().sort_by(columns[col], ascending=ascending)
+        self._render_result_table()
 
     def _on_execution_finished(self, success: bool, message: str) -> None:
         """执行完成回调"""
@@ -1777,27 +1663,30 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         project_root = os.path.dirname(
             get_resource_base()
         )
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir = os.path.join(project_root, "Results", "custom_test", timestamp)
-        os.makedirs(output_dir, exist_ok=True)
-
-        import csv
-        records = self._context.records
-        all_keys = []
-        seen = set()
-        for r in records:
-            for k in r.keys():
-                if k not in seen:
-                    all_keys.append(k)
-                    seen.add(k)
-
-        filepath = os.path.join(output_dir, "custom_test_result.csv")
-        with open(filepath, "w", newline="", encoding="utf-8-sig") as f:
-            writer = csv.DictWriter(f, fieldnames=all_keys)
-            writer.writeheader()
-            writer.writerows(records)
+        profile = str(self._context.get_variable("chip", self._context.get_variable("profile", "default")))
+        filepath = build_default_result_path(
+            project_root,
+            chip_or_profile=profile,
+            fmt="csv",
+        )
+        manifest = self._context.result_store.build_manifest(
+            instrument_snapshot=self._collect_result_instrument_manifest(),
+        )
+        self._context.result_store.export_csv(filepath, view=False, manifest=manifest)
 
         self.logs_frame.append_log(f"[EXPORT] CSV 已自动导出: {filepath}")
+
+    def _collect_result_instrument_manifest(self) -> Dict[str, Dict[str, str]]:
+        if self._context is None or self._context.resolved_instruments is None:
+            return {}
+        return {
+            key: {
+                "source": getattr(item, "source", ""),
+                "session_id": getattr(item, "session_id", ""),
+                "display_name": getattr(item, "display_name", ""),
+            }
+            for key, item in self._context.resolved_instruments.instruments.items()
+        }
 
     def load_template(self, template_name: str) -> None:
         """加载内置模板"""
