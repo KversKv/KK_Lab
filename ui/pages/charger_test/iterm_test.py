@@ -1527,10 +1527,12 @@ class ItermTestUI(N6705CConnectionMixin, QWidget):
 
 
 if __name__ == "__main__":
+    from ui.standalone import resize_and_center_window
+
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     window = ItermTestUI()
     window.setWindowTitle("Iterm Test")
-    window.resize(1200, 800)
+    resize_and_center_window(window)
     window.show()
     sys.exit(app.exec())

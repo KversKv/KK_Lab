@@ -2599,7 +2599,6 @@ def main():
     return run_standalone_widget(
         lambda: CLKTestUI(),
         "CLK Test",
-        size=(1300, 860),
     )
 
 

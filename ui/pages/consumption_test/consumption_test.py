@@ -4511,12 +4511,14 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
 
 if __name__ == "__main__":
+    from ui.standalone import resize_and_center_window
+
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
     win = ConsumptionTestUI()
     win.setWindowTitle("Consumption Test")
-    win.setGeometry(100, 100, 1200, 820)
+    resize_and_center_window(win)
     win.show()
 
     sys.exit(app.exec())

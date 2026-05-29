@@ -33,6 +33,7 @@ from ui.styles import SCROLLBAR_STYLE
 from ui.nav_controller import NavController
 from ui.instrument_status import InstrumentStatusPanel
 from ui.cleanup_mixin import CleanupMixin
+from ui.standalone import resize_and_center_window
 from log_config import get_logger
 from debug_config import DEBUG_MOCK
 
@@ -88,7 +89,7 @@ class MainWindow(CleanupMixin, QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("功耗测试工具")
-        self.setGeometry(100, 100, 1200, 800)
+        resize_and_center_window(self)
 
         self.test_manager = TestManager()
         self.visa_instrument = VisaInstrument()

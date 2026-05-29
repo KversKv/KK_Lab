@@ -659,6 +659,7 @@ class N6705CConnectionMixin:
 if __name__ == "__main__":
     import sys
     from PySide6.QtWidgets import QApplication
+    from ui.standalone import resize_and_center_window
 
     DARK_CARD_STYLE = """
         QWidget {
@@ -796,27 +797,23 @@ if __name__ == "__main__":
 
     w1 = _DemoMixinWidget(use_title_row=True)
     w1.setWindowTitle("Style 1: Mixin Card (with title_row)")
-    w1.setFixedWidth(320)
+    resize_and_center_window(w1)
     w1.show()
-    w1.move(100, 200)
 
     w2 = _DemoMixinWidget(use_title_row=False)
     w2.setWindowTitle("Style 2: Mixin Card (no title_row)")
-    w2.setFixedWidth(320)
+    resize_and_center_window(w2)
     w2.show()
-    w2.move(450, 200)
 
     w3 = _DemoInlineWidget()
     w3.setWindowTitle("Style 3: Inline Row (A/B)")
-    w3.setFixedWidth(700)
+    resize_and_center_window(w3)
     w3.show()
-    w3.move(800, 200)
 
     w4 = _DemoMixinWidget(use_title_row=True,
                            style=DARK_CARD_STYLE_WITH_BTN_OVERRIDE)
     w4.setWindowTitle("Style 4: with parent QPushButton override")
-    w4.setFixedWidth(320)
+    resize_and_center_window(w4)
     w4.show()
-    w4.move(100, 500)
 
     sys.exit(app.exec())

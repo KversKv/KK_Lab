@@ -860,7 +860,6 @@ def main():
     return run_standalone_widget(
         lambda: HighLowTempConsumptionTestUI(),
         "High-Low Temperature Test",
-        size=(1300, 860),
     )
 
 

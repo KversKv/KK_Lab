@@ -1183,7 +1183,6 @@ def main():
     return run_standalone_widget(
         lambda: CustomTestUI(),
         "Custom Test",
-        size=(1400, 900),
     )
 
 

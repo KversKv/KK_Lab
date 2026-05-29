@@ -582,6 +582,7 @@ class ChamberConnectionMixin:
 if __name__ == "__main__":
     from PySide6.QtCore import Signal
     from PySide6.QtWidgets import QApplication, QFrame, QVBoxLayout, QWidget
+    from ui.standalone import resize_and_center_window
 
     class _DemoChamberWidget(ChamberConnectionMixin, QWidget):
         chamber_connection_changed = Signal(bool)
@@ -617,7 +618,6 @@ if __name__ == "__main__":
     app.setStyle("Fusion")
     w = _DemoChamberWidget()
     w.setWindowTitle("Chamber Module Frame Demo")
-    w.setFixedWidth(340)
+    resize_and_center_window(w)
     w.show()
-    w.move(100, 200)
     sys.exit(app.exec())

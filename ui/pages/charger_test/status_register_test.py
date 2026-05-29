@@ -1031,7 +1031,6 @@ def main():
     return run_standalone_widget(
         lambda: StatusRegisterTestUI(),
         "Status Register Test",
-        size=(1300, 860),
     )
 
 

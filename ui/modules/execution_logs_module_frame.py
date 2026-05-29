@@ -735,6 +735,7 @@ if __name__ == "__main__":
     #python -m ui.modules.execution_logs_module_frame
     import sys
     from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout
+    from ui.standalone import resize_and_center_window
 
     DARK_BG_STYLE = """
         QWidget {
@@ -792,8 +793,7 @@ if __name__ == "__main__":
 
     w = _DemoWidget()
     w.setWindowTitle("Execution Logs Module Frame Demo")
-    w.setFixedSize(900, 550)
+    resize_and_center_window(w)
     w.show()
-    w.move(100, 200)
 
     sys.exit(app.exec())

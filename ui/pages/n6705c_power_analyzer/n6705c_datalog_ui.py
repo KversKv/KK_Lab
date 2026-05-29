@@ -7587,6 +7587,7 @@ class N6705CDatalogUI(QWidget):
 
 if __name__ == "__main__":
     from PySide6.QtWidgets import QApplication
+    from ui.standalone import resize_and_center_window
     from PySide6.QtCore import qInstallMessageHandler, QtMsgType
     from PySide6.QtGui import QIcon
 
@@ -7652,7 +7653,7 @@ if __name__ == "__main__":
 
     w = N6705CDatalogUI()
     w.setWindowTitle("N6705C Datalog - Debug")
-    w.resize(1400, 900)
+    resize_and_center_window(w)
     if os.path.exists(_icon_path):
         w.setWindowIcon(QIcon(_icon_path))
     w.show()

@@ -84,7 +84,6 @@ def main():
     return run_standalone_widget(
         lambda: ConsumptionTestWrapper(),
         "Consumption Test",
-        size=(1300, 860),
     )
 
 

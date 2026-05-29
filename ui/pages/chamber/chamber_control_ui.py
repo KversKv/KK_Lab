@@ -994,6 +994,7 @@ if __name__ == "__main__":
     """测试温箱界面"""
     from PySide6.QtWidgets import QApplication
     from PySide6.QtCore import qInstallMessageHandler, QtMsgType
+    from ui.standalone import resize_and_center_window
 
     def custom_message_handler(msg_type, context, message):
         if msg_type == QtMsgType.QtWarningMsg and "QPainter::end" in message:
@@ -1007,7 +1008,7 @@ if __name__ == "__main__":
 
     window = ChamberControlUI()
     window.setWindowTitle("Chamber Test")
-    window.resize(980, 760)
+    resize_and_center_window(window)
     window.show()
 
     sys.exit(app.exec())

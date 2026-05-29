@@ -32,6 +32,7 @@ _PAGE_SVGS_DIR = os.path.join(
     get_resource_base(),
     "resources", "pages", "custom_test_SVGs"
 )
+_ICONS_DIR = os.path.join(get_resource_base(), "resources", "icons")
 
 _TEMPLATES_DIR = get_primary_template_dir()
 
@@ -696,7 +697,7 @@ class SequenceCanvas(QWidget):
 
         self.load_btn = QPushButton("Load")
         self.load_btn.setStyleSheet(_TOOLBAR_BTN_STYLE)
-        _load_icon_path = os.path.join(_PAGE_SVGS_DIR, "save.svg")
+        _load_icon_path = os.path.join(_ICONS_DIR, "upload.svg")
         if os.path.isfile(_load_icon_path):
             self.load_btn.setIcon(_tinted_svg_icon(_load_icon_path, "#dce7ff", 16))
             self.load_btn.setIconSize(QSize(16, 16))

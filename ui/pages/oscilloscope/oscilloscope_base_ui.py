@@ -3312,7 +3312,6 @@ def main():
     return run_standalone_widget(
         lambda: OscilloscopeBaseUI(),
         "Oscilloscope",
-        size=(1400, 900),
     )
 
 

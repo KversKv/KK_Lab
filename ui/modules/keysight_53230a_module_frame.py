@@ -691,6 +691,7 @@ if __name__ == "__main__":
     from PySide6.QtWidgets import (
         QApplication, QWidget, QVBoxLayout, QFrame, QSizePolicy
     )
+    from ui.standalone import resize_and_center_window
 
     DARK_CARD_STYLE = """
         QWidget {
@@ -797,8 +798,7 @@ if __name__ == "__main__":
 
     w = _DemoCounterWidget()
     w.setWindowTitle("Keysight 53230A Module Frame Demo")
-    w.setFixedWidth(320)
+    resize_and_center_window(w)
     w.show()
-    w.move(100, 200)
 
     sys.exit(app.exec())

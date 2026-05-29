@@ -1787,7 +1787,6 @@ def main():
     return run_standalone_widget(
         lambda: PMUIsGainUI(),
         "PMU Is_gain",
-        size=(1300, 860),
     )
 
 
