@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import os
+import json
 import threading
 import time
+from datetime import datetime
 from ui.resource_path import get_resource_base
 from typing import Any, Dict, List, Optional
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QFrame,
-    QLabel, QMessageBox,
+    QLabel, QMessageBox, QDialog,
 )
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor
@@ -24,11 +26,19 @@ from core.custom_test.nodes.base import BaseNode, get_node_class
 from ui.pages.custom_test.node_metadata import filter_selectable_ops, is_node_selectable
 from core.custom_test.context import ExecutionContext, StopExecution
 from core.custom_test.executor import ExecutorThread
+from core.custom_test.history import RunHistoryWriter
+from core.custom_test.paths import (
+    get_primary_template_dir,
+    record_recent_sequence,
+    resolve_template_path,
+)
 from core.custom_test.resolver import InstrumentResolver, collect_required_instrument_keys
 from core.custom_test.result_store import ResultStore, build_default_result_path
+from core.custom_test.snapshot import build_sequence_hash, clone_sequence
 from core.custom_test.validation import preflight_validate
 from ui.pages.custom_test.instrument_connection_panel import InstrumentConnectionPanel
 from ui.pages.custom_test.result_panel import ResultPanel
+from ui.pages.custom_test.template_gallery import TemplateGalleryDialog
 from ui.pages.custom_test.validation_panel import ValidationIssuesDialog
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.chamber_module_frame import ChamberConnectionMixin
@@ -43,7 +53,7 @@ _PAGE_SVGS_DIR = os.path.join(
     "resources", "pages", "custom_test_SVGs"
 )
 
-_TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
+_TEMPLATES_DIR = get_primary_template_dir()
 
 _CHEVRON_DOWN_PATH = os.path.join(_PAGE_SVGS_DIR, "chevron-down.svg").replace("\\", "/")
 
@@ -344,6 +354,9 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         self._result_store = ResultStore()
         self._active_prompt_box: Optional[QMessageBox] = None
         self._active_prompt_request: Optional[_PromptRequest] = None
+        self._active_sequence_hash = ""
+        self._active_sequence_file = ""
+        self._active_sequence_snapshot: List[BaseNode] = []
 
         self._build_ui()
         self._connect_signals()
@@ -474,6 +487,12 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
     def _refresh_instrument_connections(self) -> None:
         self.instrument_panel.refresh(self._get_used_instrument_ids())
 
+    def _set_running_state(self, running: bool) -> None:
+        self.canvas.set_running_state(running)
+        self.property_panel.set_running_state(running)
+        self.instrument_panel.set_running_state(running)
+        self.palette.setEnabled(not running)
+
     def _collect_instrument_meta(self) -> dict:
         return self.instrument_panel.collect_meta()
 
@@ -501,6 +520,7 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         self.canvas.pause_requested.connect(self._on_pause)
         self.canvas.sequence_changed.connect(self._refresh_instrument_connections)
         self.canvas.metadata_loaded.connect(self._on_metadata_loaded)
+        self.canvas.template_gallery_requested.connect(self._on_template_gallery)
         self.canvas._collect_instrument_meta = self._collect_instrument_meta
 
         self.property_panel.param_changed.connect(self._on_param_changed)
@@ -811,12 +831,37 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         elif node_uid:
             self.canvas.highlight_step(node_uid)
 
+    def _show_run_summary(self, sequence: List[BaseNode], sequence_hash: str, resolved) -> bool:
+        instrument_names = []
+        for key, item in getattr(resolved, "instruments", {}).items():
+            display = getattr(item, "display_name", "") or getattr(item, "session_id", "") or key
+            instrument_names.append(f"{key}: {display}")
+        details = [
+            f"Steps: {len(sequence)}",
+            f"Sequence hash: {sequence_hash[:12]}",
+        ]
+        if instrument_names:
+            details.append("Instruments:")
+            details.extend(f"  {name}" for name in instrument_names)
+        reply = QMessageBox.question(
+            self,
+            "Run Summary",
+            "\n".join(details) + "\n\nStart this run?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        return reply == QMessageBox.Yes
+
     def _on_run(self) -> None:
-        sequence = self.canvas.get_sequence()
+        sequence = clone_sequence(self.canvas.get_sequence())
+        sequence_hash = build_sequence_hash(sequence)
+        self._active_sequence_hash = sequence_hash
+        self._active_sequence_snapshot = clone_sequence(sequence)
         resolver = self._build_instrument_resolver()
         preflight = preflight_validate(sequence, resolver=resolver)
 
         self.logs_frame.clear_log()
+        self.canvas.clear_step_states()
         if preflight.issues and not self._show_preflight_issues(preflight.issues):
             if preflight.resolved is not None:
                 preflight.resolved.close_owned()
@@ -829,6 +874,10 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
             resolved.close_owned()
             return
 
+        if not self._show_run_summary(sequence, sequence_hash, resolved):
+            resolved.close_owned()
+            return
+
         self._context = ExecutionContext(
             instrument_manager=self._instrument_manager,
             instruments=resolved.as_instrument_dict(),
@@ -836,6 +885,8 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
             lease_session_ids=resolved.lease_session_ids,
         )
         self._context.set_prompt_handler(self._request_user_prompt)
+        self._context.set_run_snapshot(sequence, sequence_hash)
+        self._context.run_started_at = datetime.now()
         self._result_store = self._context.result_store
         self.result_panel.set_result_store(self._result_store)
         try:
@@ -848,7 +899,7 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
 
         self.result_panel.clear_results()
 
-        self.canvas.set_running_state(True)
+        self._set_running_state(True)
         self.logs_frame.set_progress(0)
 
         executor = self._executor_thread.start(sequence, self._context)
@@ -856,6 +907,7 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         executor.log_message.connect(self.logs_frame.append_log, Qt.QueuedConnection)
         executor.progress_updated.connect(self._on_progress, Qt.QueuedConnection)
         executor.step_started.connect(self._on_step_started, Qt.QueuedConnection)
+        executor.step_finished.connect(self._on_step_finished, Qt.QueuedConnection)
         executor.data_recorded.connect(self._on_data_recorded, Qt.QueuedConnection)
 
     def _get_result_store(self) -> ResultStore:
@@ -972,7 +1024,17 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
 
     def _on_step_started(self, uid: str, name: str) -> None:
         """步骤开始"""
-        self.canvas.highlight_step(uid)
+        self.canvas.mark_step_started(uid)
+
+    def _on_step_finished(
+        self,
+        uid: str,
+        name: str,
+        success: bool,
+        duration_s: float,
+        message: str,
+    ) -> None:
+        self.canvas.mark_step_finished(uid, success=success, duration_s=duration_s, message=message)
 
     def _on_data_recorded(self, row: Dict[str, Any]) -> None:
         self.result_panel.append_result_row(row, append_to_store=self._context is None)
@@ -991,8 +1053,12 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
 
     def _on_execution_finished(self, success: bool, message: str) -> None:
         """执行完成回调"""
-        self.canvas.set_running_state(False)
+        self._set_running_state(False)
         self.canvas.pause_btn.setText("∥ Pause")
+
+        if self._context is not None:
+            self._context.run_finished_at = datetime.now()
+            self._context.run_status = "passed" if success else "failed"
 
         if success and self._context and self._context.records:
             self._auto_export_csv()
@@ -1011,12 +1077,51 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
             chip_or_profile=profile,
             fmt="csv",
         )
+        run_dir = os.path.dirname(filepath)
+        run_id = os.path.basename(run_dir)
+        self._context.run_id = self._context.run_id or run_id
         manifest = self._context.result_store.build_manifest(
+            sequence_hash=self._context.sequence_hash,
             instrument_snapshot=self._collect_result_instrument_manifest(),
+            started_at=self._context.run_started_at,
+            finished_at=self._context.run_finished_at,
+            run_id=self._context.run_id,
+            sequence_file=self._active_sequence_file,
+            status=self._context.run_status,
         )
         self._context.result_store.export_csv(filepath, view=False, manifest=manifest)
+        self._write_run_artifacts(run_dir, manifest)
 
         self.logs_frame.append_log(f"[EXPORT] CSV 已自动导出: {filepath}")
+
+    def _plain_logs(self) -> List[str]:
+        raw_logs = getattr(self.logs_frame, "_all_logs", [])
+        return [str(raw) for raw, _html in raw_logs]
+
+    def _write_run_artifacts(self, run_dir: str, manifest: Dict[str, Any]) -> None:
+        if self._context is None:
+            return
+        writer = RunHistoryWriter(
+            os.path.dirname(run_dir),
+            run_id=os.path.basename(run_dir),
+        )
+        logs = self._plain_logs()
+        writer.write_manifest(manifest)
+        writer.write_sequence_snapshot(
+            clone_sequence(self._active_sequence_snapshot),
+            sequence_hash=self._context.sequence_hash,
+            metadata={"source": self._active_sequence_file},
+        )
+        writer.write_logs(logs)
+        with open(writer.artifacts.events, "w", encoding="utf-8") as f:
+            for line in logs:
+                f.write(json.dumps({"type": "log", "message": line}, ensure_ascii=False))
+                f.write("\n")
+        writer.write_report(
+            manifest=manifest,
+            records=self._context.records,
+            logs=logs,
+        )
 
     def _collect_result_instrument_manifest(self) -> Dict[str, Dict[str, str]]:
         if self._context is None or self._context.resolved_instruments is None:
@@ -1032,13 +1137,15 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
 
     def load_template(self, template_name: str) -> None:
         """加载内置模板"""
-        filepath = os.path.join(_TEMPLATES_DIR, template_name)
+        filepath = resolve_template_path(template_name)
         if not os.path.isfile(filepath):
             self.logs_frame.append_log(f"[ERROR] 模板文件不存在: {filepath}")
             return
         try:
             result = load_sequence_file(filepath)
             self.canvas.load_from_nodes(result.nodes)
+            self._active_sequence_file = filepath
+            record_recent_sequence(filepath)
             if result.instruments:
                 self._on_metadata_loaded(result.instruments)
             for issue in result.issues:
@@ -1046,6 +1153,12 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
             self.logs_frame.append_log(f"[TEMPLATE] 已加载模板: {template_name}")
         except Exception as e:
             self.logs_frame.append_log(f"[ERROR] 加载模板失败: {e}")
+
+    def _on_template_gallery(self) -> None:
+        dialog = TemplateGalleryDialog(self)
+        if dialog.exec() != QDialog.Accepted or not dialog.selected_path:
+            return
+        self.load_template(dialog.selected_path)
 
     def append_log(self, message: str) -> None:
         """统一的日志接口"""

@@ -59,6 +59,7 @@ class ResultViewState:
     display_names: Dict[str, str] = field(default_factory=dict)
     order: List[str] = field(default_factory=list)
     formats: Dict[str, str] = field(default_factory=dict)
+    plot_overrides: Dict[str, bool] = field(default_factory=dict)
     hidden_columns: set[str] = field(default_factory=set)
     row_order: Optional[List[int]] = None
 
@@ -156,7 +157,9 @@ class ResultStore:
                 field_obj.precision = inferred_precision
             else:
                 field_obj.precision = max(field_obj.precision, inferred_precision)
-        if plot is not None:
+        if field_obj.name in self.view_state.plot_overrides:
+            field_obj.plot = self.view_state.plot_overrides[field_obj.name]
+        elif plot is not None:
             field_obj.plot = field_obj.plot or plot
         if export is not None:
             field_obj.export = export
@@ -177,6 +180,12 @@ class ResultStore:
     def set_field_format(self, field_name: str, fmt: str) -> None:
         if field_name in self.fields:
             self.view_state.formats[field_name] = fmt
+
+    def set_field_plot(self, field_name: str, enabled: bool) -> None:
+        if field_name in self.fields:
+            value = bool(enabled)
+            self.fields[field_name].plot = value
+            self.view_state.plot_overrides[field_name] = value
 
     def set_field_order(self, ordered_names: Sequence[str]) -> None:
         seen = set()
@@ -377,14 +386,30 @@ class ResultStore:
         instrument_snapshot: Optional[Any] = None,
         started_at: Optional[datetime] = None,
         finished_at: Optional[datetime] = None,
+        run_id: str = "",
+        sequence_name: str = "",
+        sequence_file: str = "",
+        status: str = "",
     ) -> Dict[str, Any]:
+        start_time = started_at or self.created_at
+        end_time = finished_at or self.updated_at or datetime.now()
+        duration_s = None
+        if start_time and end_time:
+            duration_s = max(0.0, (end_time - start_time).total_seconds())
+        field_metadata = [field_obj.__dict__ for field_obj in self.fields.values()]
         return {
+            "run_id": run_id,
+            "sequence_name": sequence_name,
+            "sequence_file": sequence_file,
             "sequence_hash": sequence_hash,
-            "start_time": started_at or self.created_at,
-            "end_time": finished_at or self.updated_at or datetime.now(),
+            "status": status,
+            "start_time": start_time,
+            "end_time": end_time,
+            "duration_s": duration_s,
             "instrument_snapshot": instrument_snapshot,
             "row_count": len(self.rows),
-            "fields": [field_obj.__dict__ for field_obj in self.fields.values()],
+            "fields": field_metadata,
+            "field_metadata": field_metadata,
         }
 
     def _ordered_field_names(self, *, view: bool) -> List[str]:

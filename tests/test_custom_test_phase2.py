@@ -155,6 +155,14 @@ class CustomTestPhase2Test(unittest.TestCase):
         self.assertTrue(any("step" in issue.message for issue in result.errors))
         self.assertTrue(any("RFAnalyzerMeasure" in issue.format() for issue in result.errors))
 
+    def test_preflight_validates_param_schema_options(self):
+        node = N6705CMeasure(measure_type="bogus")
+
+        result = preflight_validate([node])
+
+        self.assertTrue(result.has_errors)
+        self.assertTrue(any("measure_type" in issue.message for issue in result.errors))
+
     def test_collect_required_capabilities_walks_children(self):
         loop = LoopRange()
         loop.children.append(N6705CMeasure())

@@ -16,10 +16,14 @@ from PySide6.QtCore import Qt, Signal, QPoint, QRect, QModelIndex, QSize, QRectF
 from PySide6.QtGui import (
     QColor, QPainter, QPen, QBrush, QFont, QFontMetrics, QPixmap, QIcon,
     QDragEnterEvent, QDragMoveEvent, QDropEvent, QDrag, QMouseEvent,
+    QShortcut, QKeySequence,
 )
 
 from core.custom_test.nodes.base import BaseNode, get_node_class
+from core.custom_test.paths import get_primary_template_dir, record_recent_sequence
+from core.custom_test.snapshot import clone_node
 from ui.pages.custom_test.sequence_io import load_sequence_file, save_sequence_file
+from ui.pages.custom_test.node_metadata import filter_selectable_ops
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -29,7 +33,7 @@ _PAGE_SVGS_DIR = os.path.join(
     "resources", "pages", "custom_test_SVGs"
 )
 
-_TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
+_TEMPLATES_DIR = get_primary_template_dir()
 
 from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
 
@@ -290,6 +294,9 @@ class SequenceItemDelegate(QStyledItemDelegate):
         elif col == 2:
             self._draw_row_background(painter, rect, item, depth, is_selected, is_container)
             self._draw_summary_cell(painter, rect, item, node)
+        else:
+            self._draw_row_background(painter, rect, item, depth, is_selected, is_container)
+            self._draw_text_cell(painter, rect, item.text(col) if item else "")
 
         painter.restore()
 
@@ -442,6 +449,15 @@ class SequenceItemDelegate(QStyledItemDelegate):
 
         text_rect = QRect(rect.left() + 4, rect.top(), rect.width() - 8, rect.height())
         painter.setPen(QColor("#7a90b8"))
+        painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, text)
+
+    def _draw_text_cell(self, painter: QPainter, rect: QRect, text: str) -> None:
+        font = painter.font()
+        font.setPixelSize(11)
+        font.setBold(False)
+        painter.setFont(font)
+        text_rect = QRect(rect.left() + 4, rect.top(), rect.width() - 8, rect.height())
+        painter.setPen(QColor("#8ea8d4"))
         painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, text)
 
 
@@ -614,12 +630,16 @@ class SequenceCanvas(QWidget):
     stop_requested = Signal()
     pause_requested = Signal()
     metadata_loaded = Signal(dict)
+    template_gallery_requested = Signal()
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._uid_map: Dict[str, QTreeWidgetItem] = {}
         self._node_map: Dict[str, BaseNode] = {}
         self._running = False
+        self._clipboard_node: Optional[BaseNode] = None
+        self._step_status: Dict[str, str] = {}
+        self._step_duration: Dict[str, float] = {}
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(0, 0, 0, 0)
@@ -637,6 +657,19 @@ class SequenceCanvas(QWidget):
         self.remove_btn.setStyleSheet(_TOOLBAR_BTN_STYLE)
         toolbar.addWidget(self.remove_btn)
 
+        self.copy_btn = QPushButton("Copy")
+        self.copy_btn.setStyleSheet(_TOOLBAR_BTN_STYLE)
+        toolbar.addWidget(self.copy_btn)
+
+        self.paste_btn = QPushButton("Paste")
+        self.paste_btn.setStyleSheet(_TOOLBAR_BTN_STYLE)
+        self.paste_btn.setEnabled(False)
+        toolbar.addWidget(self.paste_btn)
+
+        self.duplicate_btn = QPushButton("Duplicate")
+        self.duplicate_btn.setStyleSheet(_TOOLBAR_BTN_STYLE)
+        toolbar.addWidget(self.duplicate_btn)
+
         self.move_up_btn = QPushButton("↑")
         self.move_up_btn.setStyleSheet(_TOOLBAR_BTN_STYLE)
         self.move_up_btn.setFixedWidth(32)
@@ -648,6 +681,10 @@ class SequenceCanvas(QWidget):
         toolbar.addWidget(self.move_down_btn)
 
         toolbar.addStretch()
+
+        self.template_btn = QPushButton("Templates")
+        self.template_btn.setStyleSheet(_TOOLBAR_BTN_STYLE)
+        toolbar.addWidget(self.template_btn)
 
         self.save_btn = QPushButton("Save")
         self.save_btn.setStyleSheet(_TOOLBAR_BTN_STYLE)
@@ -668,8 +705,8 @@ class SequenceCanvas(QWidget):
         root_layout.addLayout(toolbar)
 
         self.tree = DropAwareTreeWidget()
-        self.tree.setHeaderLabels(["Step", "Type", "Summary"])
-        self.tree.setColumnCount(3)
+        self.tree.setHeaderLabels(["Step", "Type", "Summary", "Status", "Duration"])
+        self.tree.setColumnCount(5)
         self.tree.setRootIsDecorated(False)
         self.tree.setIndentation(0)
         self.tree.setAnimated(True)
@@ -686,6 +723,8 @@ class SequenceCanvas(QWidget):
         header.setStretchLastSection(True)
         header.resizeSection(0, 80)
         header.resizeSection(1, 180)
+        header.resizeSection(3, 90)
+        header.resizeSection(4, 80)
 
         root_layout.addWidget(self.tree, 1)
 
@@ -721,6 +760,9 @@ class SequenceCanvas(QWidget):
         self.tree.instrument_dropped.connect(self._on_instrument_dropped)
         self.tree.item_drag_deleted.connect(self._on_drag_delete)
         self.remove_btn.clicked.connect(self._on_remove)
+        self.copy_btn.clicked.connect(self.copy_selected_node)
+        self.paste_btn.clicked.connect(self.paste_node)
+        self.duplicate_btn.clicked.connect(self.duplicate_selected_node)
         self.move_up_btn.clicked.connect(self._on_move_up)
         self.move_down_btn.clicked.connect(self._on_move_down)
         self.run_btn.clicked.connect(self.run_requested.emit)
@@ -728,8 +770,22 @@ class SequenceCanvas(QWidget):
         self.pause_btn.clicked.connect(self.pause_requested.emit)
         self.save_btn.clicked.connect(self._on_save)
         self.load_btn.clicked.connect(self._on_load)
+        self.template_btn.clicked.connect(self.template_gallery_requested.emit)
+
+        self._shortcuts = []
+        for key_seq, callback in (
+            (QKeySequence.Copy, self.copy_selected_node),
+            (QKeySequence.Paste, self.paste_node),
+            (QKeySequence(Qt.Key_Delete), self._on_remove),
+            (QKeySequence("Ctrl+D"), self.duplicate_selected_node),
+        ):
+            shortcut = QShortcut(key_seq, self)
+            shortcut.activated.connect(callback)
+            self._shortcuts.append(shortcut)
 
     def _on_external_node_dropped(self, node_type: str) -> None:
+        if self._running:
+            return
         cls = get_node_class(node_type)
         if cls is None:
             return
@@ -737,6 +793,8 @@ class SequenceCanvas(QWidget):
         self.add_node(node)
 
     def _on_instrument_dropped(self, instr_id: str, global_pos: QPoint) -> None:
+        if self._running:
+            return
         from ui.pages.custom_test.node_palette import get_instrument_by_id
         instr = get_instrument_by_id(instr_id)
         if instr is None:
@@ -744,6 +802,7 @@ class SequenceCanvas(QWidget):
 
         categories = instr.get("categories", [])
         all_ops = [op for cat in categories for op in cat.get("ops", [])]
+        all_ops = filter_selectable_ops(all_ops)
         if not all_ops:
             return
 
@@ -772,7 +831,7 @@ class SequenceCanvas(QWidget):
         flat_mode = len(categories) == 1
         for cat in categories:
             cat_name = cat["name"]
-            ops = cat.get("ops", [])
+            ops = filter_selectable_ops(cat.get("ops", []))
             if not ops:
                 continue
             cat_icon = _cat_icons.get(cat_name, QIcon())
@@ -806,6 +865,9 @@ class SequenceCanvas(QWidget):
 
     def add_node(self, node: BaseNode, parent_item: Optional[QTreeWidgetItem] = None,
                  _batch: bool = False) -> QTreeWidgetItem:
+        if self._running and not _batch:
+            return self.tree.currentItem()
+
         from core.custom_test.nodes.logic_nodes import IfBlock
 
         if isinstance(node, IfBlock) and not node.children:
@@ -852,6 +914,34 @@ class SequenceCanvas(QWidget):
             self.sequence_changed.emit()
         return item
 
+    def copy_selected_node(self) -> None:
+        if self._running:
+            return
+        current = self.tree.currentItem()
+        if current is None:
+            return
+        node = self._node_map.get(current.data(0, Qt.UserRole))
+        if node is None:
+            return
+        self._clipboard_node = clone_node(node)
+        self.paste_btn.setEnabled(True)
+
+    def paste_node(self) -> None:
+        if self._running or self._clipboard_node is None:
+            return
+        self.add_node(clone_node(self._clipboard_node, preserve_uid=False))
+
+    def duplicate_selected_node(self) -> None:
+        if self._running:
+            return
+        current = self.tree.currentItem()
+        if current is None:
+            return
+        node = self._node_map.get(current.data(0, Qt.UserRole))
+        if node is None:
+            return
+        self.add_node(clone_node(node, preserve_uid=False))
+
     def refresh_item(self, uid: str) -> None:
         item = self._uid_map.get(uid)
         if item:
@@ -871,6 +961,55 @@ class SequenceCanvas(QWidget):
                 nodes.append(node)
         return nodes
 
+    def clear_step_states(self) -> None:
+        self._step_status.clear()
+        self._step_duration.clear()
+        for item in self._iter_items():
+            item.setText(3, "")
+            item.setText(4, "")
+        self.tree.viewport().update()
+
+    def mark_step_started(self, uid: str) -> None:
+        item = self._uid_map.get(uid)
+        if not item:
+            return
+        self._step_status[uid] = "Running"
+        item.setText(3, "Running")
+        item.setText(4, "")
+        self.highlight_step(uid)
+        self.tree.viewport().update()
+
+    def mark_step_finished(
+        self,
+        uid: str,
+        success: bool = True,
+        duration_s: float = 0.0,
+        message: str = "",
+    ) -> None:
+        item = self._uid_map.get(uid)
+        if not item:
+            return
+        status = "Done" if success else "Failed"
+        if message and not success:
+            status = "Failed"
+        self._step_status[uid] = status
+        self._step_duration[uid] = duration_s
+        item.setText(3, status)
+        item.setText(4, f"{duration_s:.2f}s" if duration_s else "")
+        self.tree.viewport().update()
+
+    def _iter_items(self) -> List[QTreeWidgetItem]:
+        items: List[QTreeWidgetItem] = []
+
+        def walk(item: QTreeWidgetItem) -> None:
+            items.append(item)
+            for i in range(item.childCount()):
+                walk(item.child(i))
+
+        for i in range(self.tree.topLevelItemCount()):
+            walk(self.tree.topLevelItem(i))
+        return items
+
     def _sync_children_from_tree(self, item: QTreeWidgetItem, node: BaseNode) -> None:
         node.children.clear()
         for i in range(item.childCount()):
@@ -885,6 +1024,8 @@ class SequenceCanvas(QWidget):
         self.tree.clear()
         self._uid_map.clear()
         self._node_map.clear()
+        self._step_status.clear()
+        self._step_duration.clear()
         self.sequence_changed.emit()
 
     def load_from_nodes(self, nodes: List[BaseNode]) -> None:
@@ -901,13 +1042,24 @@ class SequenceCanvas(QWidget):
         self.stop_btn.setEnabled(running)
         self.add_btn.setEnabled(not running)
         self.remove_btn.setEnabled(not running)
+        self.copy_btn.setEnabled(not running)
+        self.paste_btn.setEnabled(not running and self._clipboard_node is not None)
+        self.duplicate_btn.setEnabled(not running)
         self.move_up_btn.setEnabled(not running)
         self.move_down_btn.setEnabled(not running)
+        self.save_btn.setEnabled(not running)
         self.load_btn.setEnabled(not running)
+        self.template_btn.setEnabled(not running)
         if running:
             self.tree.setEditTriggers(QAbstractItemView.NoEditTriggers)
+            self.tree.setDragDropMode(QAbstractItemView.NoDragDrop)
+            self.tree.setDragEnabled(False)
+            self.tree.setAcceptDrops(False)
         else:
             self.tree.setEditTriggers(QAbstractItemView.DoubleClicked)
+            self.tree.setDragDropMode(QAbstractItemView.InternalMove)
+            self.tree.setDragEnabled(True)
+            self.tree.setAcceptDrops(True)
 
     def highlight_step(self, uid: str) -> None:
         item = self._uid_map.get(uid)
@@ -928,6 +1080,8 @@ class SequenceCanvas(QWidget):
         self.node_selected.emit(node)
 
     def _on_remove(self) -> None:
+        if self._running:
+            return
         current = self.tree.currentItem()
         if current is None:
             return
@@ -949,6 +1103,8 @@ class SequenceCanvas(QWidget):
         self.sequence_changed.emit()
 
     def _on_drag_delete(self, uid: str) -> None:
+        if self._running:
+            return
         item = self._uid_map.get(uid)
         if item is None:
             return
@@ -992,6 +1148,8 @@ class SequenceCanvas(QWidget):
             parent_node.children.insert(new_idx, parent_node.children.pop(old_idx))
 
     def _on_move_up(self) -> None:
+        if self._running:
+            return
         current = self.tree.currentItem()
         if current is None:
             return
@@ -1019,6 +1177,8 @@ class SequenceCanvas(QWidget):
         self.sequence_changed.emit()
 
     def _on_move_down(self) -> None:
+        if self._running:
+            return
         current = self.tree.currentItem()
         if current is None:
             return
@@ -1121,6 +1281,8 @@ class SequenceCanvas(QWidget):
         return parent_item, target_idx
 
     def _reorder_by_step(self, item: QTreeWidgetItem, new_step: str) -> None:
+        if self._running:
+            return
         if item is None:
             return
 
@@ -1173,19 +1335,25 @@ class SequenceCanvas(QWidget):
         self.sequence_changed.emit()
 
     def _on_save(self) -> None:
+        if self._running:
+            return
         nodes = self.get_sequence()
+        os.makedirs(_TEMPLATES_DIR, exist_ok=True)
         filepath, _ = QFileDialog.getSaveFileName(
             self, "保存序列", _TEMPLATES_DIR, "JSON Files (*.json)"
         )
         if not filepath:
             return
         save_sequence_file(filepath, nodes, instruments=self._collect_instrument_meta())
+        record_recent_sequence(filepath)
         logger.info("序列已保存: %s", filepath)
 
     def _collect_instrument_meta(self) -> dict:
         return {}
 
     def _on_load(self) -> None:
+        if self._running:
+            return
         start_dir = _TEMPLATES_DIR if os.path.isdir(_TEMPLATES_DIR) else ""
         filepath, _ = QFileDialog.getOpenFileName(
             self, "加载序列", start_dir, "JSON Files (*.json)"
@@ -1197,6 +1365,7 @@ class SequenceCanvas(QWidget):
             self.load_from_nodes(result.nodes)
             if result.instruments:
                 self.metadata_loaded.emit(result.instruments)
+            record_recent_sequence(filepath)
             for issue in result.issues:
                 logger.warning("序列加载 issue: %s", issue.format())
             logger.info("序列已加载: %s", filepath)

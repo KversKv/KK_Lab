@@ -341,8 +341,10 @@ ui/pages/custom_test/
 ├── node_palette.py          # 节点展示
 ├── sequence_canvas.py       # 节点树编辑
 ├── property_panel.py        # 参数编辑
-├── record_data_editor.py
-└── templates/
+└── record_data_editor.py
+
+userdata/custom_test_templates/
+└── *.json                   # Custom Test 模板，不放在 UI 包内
 ```
 
 ### 5.2 分层职责
@@ -461,7 +463,7 @@ class N6705CMeasureNode(BaseNode):
 - **涉及文件**:
   - `ui/pages/custom_test/nodes/*.py`
   - `ui/pages/custom_test/node_palette.py`
-  - `ui/pages/custom_test/templates/*.json`
+  - `userdata/custom_test_templates/*.json`
 - **预计工作量**: 0.5 会话
 - **预计会话**: 会话 1
 - **完成日期**: 2026-05-28
@@ -497,7 +499,7 @@ class N6705CMeasureNode(BaseNode):
 - **涉及文件**:
   - `ui/pages/custom_test/sequence_canvas.py`
   - `ui/pages/custom_test/custom_test_ui.py`
-  - `ui/pages/custom_test/templates/*.json`
+  - `userdata/custom_test_templates/*.json`
 - **依赖**: Task 0.1
 - **预计工作量**: 0.5 会话
 - **预计会话**: 会话 1
@@ -957,13 +959,13 @@ class N6705CMeasureNode(BaseNode):
   - UART send/receive 验证模板。
   - 每个模板附 required capabilities。
 - **涉及文件**:
-  - `ui/pages/custom_test/templates/*.json`
+  - `userdata/custom_test_templates/*.json`
   - 可选 `helps/custom_test.html`
 - **依赖**: Phase 2, Phase 3
 - **预计工作量**: 0.5 ~ 1 会话
 - **预计会话**: 会话 16
 - **完成日期**: 2026-05-29
-- **完成内容**: 新增 4 个 v2 样例模板：`sample_n6705c_voltage_sweep.json`、`sample_i2c_register_sweep.json`、`sample_chamber_n6705c_loop.json`、`sample_uart_send_receive.json`，每个模板均带 `metadata.required_capabilities`；`spec/kk_lab.spec` 同步纳入 `ui/pages/custom_test/templates` 运行时数据目录。
+- **完成内容**: 新增 4 个 v2 样例模板：`sample_n6705c_voltage_sweep.json`、`sample_i2c_register_sweep.json`、`sample_chamber_n6705c_loop.json`、`sample_uart_send_receive.json`，每个模板均带 `metadata.required_capabilities`；模板目录后续应统一为 `userdata/custom_test_templates`，并由打包配置按该目录收集运行时数据。
 - **风险备注**: 样例参数偏 smoke/入门，真实产品流程仍需按芯片和实验条件调整；未新增 help 文档，仅复用现有 Custom Test 页面入口。
 - **状态**: ✅ 已完成
 

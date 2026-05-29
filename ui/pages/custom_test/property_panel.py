@@ -134,6 +134,7 @@ class PropertyPanel(QWidget):
         self._current_node: Optional[BaseNode] = None
         self._editors: Dict[str, QWidget] = {}
         self._canvas: Any = None
+        self._running = False
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(0, 0, 0, 0)
@@ -170,6 +171,10 @@ class PropertyPanel(QWidget):
     def set_canvas(self, canvas: Any) -> None:
         """注入序列画布，用于 RecordDataPoint 自动扫描已有变量"""
         self._canvas = canvas
+
+    def set_running_state(self, running: bool) -> None:
+        self._running = running
+        self._apply_running_state()
 
     def _rebuild_form(self) -> None:
         """根据当前节点的 PARAM_SCHEMA 动态构建表单"""
@@ -212,6 +217,7 @@ class PropertyPanel(QWidget):
             self._build_record_data_editor(node, card_layout)
             self._inner_layout.addWidget(card)
             self._inner_layout.addStretch()
+            self._apply_running_state()
             return
 
         schema_map = {s["key"]: s for s in node.PARAM_SCHEMA}
@@ -352,10 +358,12 @@ class PropertyPanel(QWidget):
             )
             add_btn.clicked.connect(lambda: self.add_else_if_requested.emit(target_uid))
             btn_layout.addWidget(add_btn)
+            self._editors["__add_else_if__"] = add_btn
 
             self._inner_layout.addWidget(btn_frame)
 
         self._inner_layout.addStretch()
+        self._apply_running_state()
 
     def _build_record_data_editor(self, node: BaseNode, card_layout: QVBoxLayout) -> None:
         """为 RecordDataPoint 节点构建自定义表单：自动扫描变量 + 勾选/编辑/自定义。"""
@@ -375,12 +383,21 @@ class PropertyPanel(QWidget):
         card_layout.addWidget(editor)
         self._editors["__record_editor__"] = editor
 
+    def _apply_running_state(self) -> None:
+        for widget in self._editors.values():
+            if isinstance(widget, QWidget):
+                widget.setEnabled(not self._running)
+
     def _on_record_param_changed(self, node: BaseNode, key: str, value: Any) -> None:
+        if self._running:
+            return
         """RecordDataPoint 专属编辑器的回调。"""
         node.params[key] = value
         self.param_changed.emit(node.uid, key, value)
 
     def _on_param_changed(self, key: str, value: Any) -> None:
+        if self._running:
+            return
         if self._current_node is None:
             return
 

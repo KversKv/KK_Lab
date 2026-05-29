@@ -6,8 +6,10 @@ from typing import Iterable
 
 from PySide6.QtWidgets import (
     QFrame,
+    QComboBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QSizePolicy,
     QVBoxLayout,
@@ -33,6 +35,7 @@ class InstrumentConnectionPanel(QWidget):
         self._chamber_widgets_built = False
         self._uart_widgets_built = False
         self._mcu_io_widgets_built = False
+        self._running = False
 
         self.setStyleSheet("""
             QWidget { background: transparent; border: none; }
@@ -69,6 +72,7 @@ class InstrumentConnectionPanel(QWidget):
 
         if not used:
             self._show_placeholder()
+            self._apply_running_state()
             return
 
         if "n6705c" in used:
@@ -124,6 +128,16 @@ class InstrumentConnectionPanel(QWidget):
                 self._page._update_serial_connect_ui(True)
 
         self.apply_instrument_meta()
+        self._apply_running_state()
+
+    def set_running_state(self, running: bool) -> None:
+        self._running = running
+        self._apply_running_state()
+
+    def _apply_running_state(self) -> None:
+        enabled = not self._running
+        for widget in self.findChildren((QPushButton, QComboBox, QLineEdit)):
+            widget.setEnabled(enabled)
 
     def collect_meta(self) -> dict:
         meta = {}

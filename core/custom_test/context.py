@@ -6,6 +6,7 @@ import ast
 import re
 import operator
 import time
+from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Set
 
 from log_config import get_logger
@@ -170,6 +171,12 @@ class ExecutionContext:
         self._execute_children_callback: Optional[Callable[[List[Any]], None]] = None
         self._prompt_handler: Optional[Callable[[str, float], Optional[str]]] = None
         self._current_node_uid: Optional[str] = None
+        self.run_id: str = ""
+        self.run_status: str = ""
+        self.sequence_hash: str = ""
+        self.sequence_snapshot: List[Dict[str, Any]] = []
+        self.run_started_at: Optional[datetime] = None
+        self.run_finished_at: Optional[datetime] = None
 
         self.on_step_started: Optional[Any] = None
         self.on_step_finished: Optional[Any] = None
@@ -207,6 +214,16 @@ class ExecutionContext:
     def release_runtime_resources(self) -> None:
         self.release_leases()
         self.close_owned_instruments()
+
+    def set_run_snapshot(self, nodes: List[Any], sequence_hash: str = "") -> None:
+        from core.custom_test.snapshot import canonical_sequence_data, build_sequence_hash
+
+        self.sequence_snapshot = canonical_sequence_data(nodes)
+        self.sequence_hash = sequence_hash or build_sequence_hash(nodes)
+
+    def check_stop(self) -> None:
+        if self.should_stop:
+            raise StopExecution("Execution stopped")
 
     def populate_instruments_from_manager(self) -> None:
         if not self._instrument_manager:
@@ -405,5 +422,11 @@ class ExecutionContext:
         self._execute_children_callback = None
         self._prompt_handler = None
         self._current_node_uid = None
+        self.run_id = ""
+        self.run_status = ""
+        self.sequence_hash = ""
+        self.sequence_snapshot = []
+        self.run_started_at = None
+        self.run_finished_at = None
         self.on_step_started = None
         self.on_step_finished = None

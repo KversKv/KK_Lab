@@ -52,7 +52,7 @@ class CustomTestExecutor(QObject):
     """自定义测试执行器（在工作线程中运行）"""
 
     step_started = Signal(str, str)
-    step_finished = Signal(str, str)
+    step_finished = Signal(str, str, bool, float, str)
     data_recorded = Signal(dict)
     progress_updated = Signal(int, int)
     log_message = Signal(str)
@@ -63,6 +63,7 @@ class CustomTestExecutor(QObject):
         super().__init__(parent)
         self._sequence: List[BaseNode] = []
         self._context: Optional[ExecutionContext] = None
+        self._step_started_at: Dict[str, float] = {}
 
     def set_sequence(self, nodes: List[BaseNode]) -> None:
         """设置待执行的节点序列"""
@@ -107,6 +108,7 @@ class CustomTestExecutor(QObject):
         total_steps = self._estimate_total_steps(self._sequence, self._context)
         executed = [0]
         last_progress_time = [0.0]
+        self._step_started_at = {}
 
         original_record = self._context.record_data
 
@@ -139,6 +141,7 @@ class CustomTestExecutor(QObject):
 
         def _hooked_step_started(uid: str, name: str) -> None:
             executed[0] += 1
+            self._step_started_at[uid] = time.monotonic()
             now = time.monotonic()
             if now - last_step_time[0] >= _UI_THROTTLE_INTERVAL:
                 self.step_started.emit(uid, name)
@@ -152,7 +155,9 @@ class CustomTestExecutor(QObject):
                 last_progress_time[0] = now
 
         def _hooked_step_finished(uid: str, name: str) -> None:
-            pass
+            started = self._step_started_at.pop(uid, None)
+            duration_s = (time.monotonic() - started) if started is not None else 0.0
+            self.step_finished.emit(uid, name, True, duration_s, "")
 
         self._context.on_step_started = _hooked_step_started
         self._context.on_step_finished = _hooked_step_finished
@@ -222,6 +227,9 @@ class CustomTestExecutor(QObject):
             try:
                 execute_node(node, self._context)
             except Exception as e:
+                started = self._step_started_at.pop(node.uid, None)
+                duration_s = (time.monotonic() - started) if started is not None else 0.0
+                self.step_finished.emit(node.uid, node.display_name, False, duration_s, str(e))
                 self.log_message.emit(f"[ERROR] {node.display_name}: {e}")
                 raise
 

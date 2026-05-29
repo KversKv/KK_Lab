@@ -9,6 +9,7 @@ from typing import Any, Iterable, List, Optional, Sequence
 
 from core.custom_test.nodes.base import BaseNode
 from core.custom_test.resolver import InstrumentResolver, ResolvedInstruments
+from core.custom_test.schema import validate_param_schema
 
 SEVERITY_ERROR = "error"
 SEVERITY_WARNING = "warning"
@@ -130,6 +131,15 @@ def _validate_params(
 ) -> None:
     params = node.params
     nt = node.node_type
+
+    for schema_issue in validate_param_schema(node):
+        issues.append(ValidationIssue(
+            severity=schema_issue.severity,
+            node_uid=node.uid,
+            node_type=node.node_type,
+            message=schema_issue.message,
+            fix_hint=f"Check PARAM_SCHEMA field: {schema_issue.key}",
+        ))
 
     if nt == "LoopRange":
         _require_non_empty(node, "var_name", issues)

@@ -26,6 +26,7 @@ from ui.pages.custom_test.node_metadata import (
     is_node_selectable,
 )
 from ui.pages.custom_test.sequence_io import load_sequence_data, load_sequence_file
+from core.custom_test.paths import iter_template_files
 
 
 @unittest.skipUnless(_PYSIDE_AVAILABLE, "PySide6 is required for Custom Test executor smoke tests")
@@ -53,12 +54,10 @@ class CustomTestPhase0Test(unittest.TestCase):
         self.assertEqual(dict_result.instruments["n6705c"]["visa"], "MOCK::N6705C")
 
     def test_all_builtin_templates_load_through_shared_entry(self):
-        template_dir = os.path.join(_PROJECT_ROOT, "ui", "pages", "custom_test", "templates")
         loaded = []
-        for name in os.listdir(template_dir):
-            if not name.endswith(".json"):
-                continue
-            result = load_sequence_file(os.path.join(template_dir, name))
+        for path in iter_template_files():
+            name = os.path.basename(path)
+            result = load_sequence_file(path)
             self.assertGreater(len(result.nodes), 0, name)
             self.assertIn(result.source_format, {"list", "dict"})
             loaded.append(name)

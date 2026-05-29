@@ -41,7 +41,8 @@ KK_Lab/
 ├── spec/                    # PyInstaller 打包配置
 ├── tests/                   # 轻量回归测试
 ├── tools/                   # 开发辅助脚本 (SVG→ICO 转换等，不进打包产物)
-└── Results/                 # 测试结果输出目录 (运行时生成，Git 不跟踪)
+├── Results/                 # 测试结果输出目录 (运行时生成，Git 不跟踪)
+└── userdata/                # 用户态数据（Custom Test 模板 / 最近序列等）
 
 ================================================================================
   chips/ - BES 芯片配置
@@ -73,12 +74,25 @@ core/
 │                            # 数据，支持可配置采样率
 ├── custom_test/             # Custom Test 执行内核（序列上下文 / 执行器 / 节点运行时）
 │   ├── __init__.py
+│   ├── compiler.py          # ExecutionPlan / Dry Run 摘要编译
+│   ├── breakpoints.py       # BreakpointSet / StepRunState 单步运行基础模型
 │   ├── context.py           # ExecutionContext：变量池 / records / stop-pause / child executor
+│   ├── document.py          # CustomTestDocument v3（metadata / view_state / dirty / source_path）
+│   ├── events.py            # ExecutionEvent / events.jsonl 写入辅助
+│   ├── execution_plan.py    # ExecutionPlan / ExecutionStep 数据模型
 │   ├── executor.py          # CustomTestExecutor / ExecutorThread（QtCore 信号，无 QtWidgets）
+│   ├── history.py           # run folder artifact 写入（manifest / snapshot / report / logs）
+│   ├── macros.py            # Sub-sequence / macro 复用模型
+│   ├── paths.py             # userdata/custom_test_templates 与 recent sequences 路径
+│   ├── remote.py            # headless / remote run request 模型
+│   ├── reports.py           # report.html 生成器
 │   ├── resolver.py          # InstrumentResolver：节点 capability → runtime adapter / lease 解析
 │   ├── result_store.py      # ResultStore：统一结果模型 / 视图状态 / CSV-XLSX 导出
 │   ├── runtime.py           # execute_node / execute_children，供容器节点执行子节点
+│   ├── schema.py            # PARAM_SCHEMA 通用校验
 │   ├── serialization.py     # 序列 v2 迁移 / 读写 / load-save 入口
+│   ├── snapshot.py          # 运行快照 / canonical JSON / sequence hash
+│   ├── sweep.py             # SweepAxis / SweepPlan 扫描模型
 │   ├── validation.py        # 运行前 preflight 校验（参数 / unsupported / 仪器缺失）
 │   ├── adapters/            # Custom Test runtime adapters / Mock fallback
 │   │   ├── __init__.py
@@ -255,6 +269,7 @@ ui/
 │       ├── result_panel.py           # Logs / Data / Chart / 可见表格导出面板
 │       ├── sequence_canvas.py        # 中间可视化序列画布
 │       ├── sequence_io.py            # 序列 JSON 读写兼容 shim，实际走 core.custom_test.serialization
+│       ├── template_gallery.py       # 模板库 / 最近序列选择对话框
 │       ├── validation_panel.py       # 运行前校验问题对话框
 │       ├── executor.py               # 旧路径兼容 shim，实际导出 core.custom_test.executor
 │       ├── context.py                # 旧路径兼容 shim，实际导出 core.custom_test.context
@@ -264,18 +279,6 @@ ui/
 │       │   ├── io_nodes.py
 │       │   ├── logic_nodes.py
 │       │   └── value_nodes.py
-│       └── templates/                # 预置序列模板 (JSON)
-│           ├── GPADC_Vsys_Channel.json
-│           ├── bes1505Icore_test.json
-│           ├── case1_power_vs_temp.json
-│           ├── case2_gpadc_vs_temp_vout.json
-│           ├── case3_clk_vs_temp.json
-│           ├── case4.json
-│           ├── case5_clk_vs_vout.json
-│           ├── sample_chamber_n6705c_loop.json
-│           ├── sample_i2c_register_sweep.json
-│           ├── sample_n6705c_voltage_sweep.json
-│           └── sample_uart_send_receive.json
 │
 └── dialogs/                 # 对话框 (预留)
 
@@ -369,29 +372,32 @@ helps/
 ================================================================================
 
 docs/
-└── ai/
-    ├── 00_OVERVIEW.md           # 项目概述与分层架构
-    ├── 01_CONVENTIONS.md        # 代码规范与风格
-    ├── 02_COMMANDS.md           # 运行/打包/调试命令
-    ├── 03_GOTCHAS.md            # 坑点与重要注意事项 ⭐
-    ├── 04_ARCHITECTURE.md       # 架构细节与分层职责
-    ├── 05_INSTRUMENT_GUIDE.md   # 新增仪器驱动指南
-    ├── 06_PAGE_GUIDE.md         # 新增 UI 页面指南
-    ├── 07_TEST_GUIDE.md         # 新增测试功能指南
-    ├── 08_CHECKLISTS.md         # 新功能开发 Checklist ⭐
-    ├── 09_WORKFLOW.md           # 任务 SOP (调用 / 执行 / 回归)
-    ├── NewFT/                   # 新功能设计草案与阶段性需求规则
-    │   ├── AutoDetectBaudrate.md # SerialCom 候选波特率自动识别设计
-    │   ├── CustomTestOPT.md      # Custom Test 架构优化方案与任务跟踪
-    │   ├── InstrumentsManage.md  # 通用仪器管理架构方案
-    │   ├── InstrumentsManagePlan.md # 通用仪器管理改善计划
-    │   ├── InstrumentsManagePlanFixe.md # 仪器管理重构未完成项与修复计划
-    │   ├── LOG_FastCommand.md    # SerialCom 日志与快捷指令优化设计
-    │   ├── UI_Optimize.md        # SerialCom UI 优化设计
-    │   └── serialComMuti.md      # SerialCom 单窗口多串口 / 多窗口独立串口规则
-    └── decisions/               # ADR 架构决策记录
-        ├── 001-mock-instrument.md
-        └── 002-oscilloscope-auto-detect.md
+├── ai/
+│   ├── 00_OVERVIEW.md           # 项目概述与分层架构
+│   ├── 01_CONVENTIONS.md        # 代码规范与风格
+│   ├── 02_COMMANDS.md           # 运行/打包/调试命令
+│   ├── 03_GOTCHAS.md            # 坑点与重要注意事项 ⭐
+│   ├── 04_ARCHITECTURE.md       # 架构细节与分层职责
+│   ├── 05_INSTRUMENT_GUIDE.md   # 新增仪器驱动指南
+│   ├── 06_PAGE_GUIDE.md         # 新增 UI 页面指南
+│   ├── 07_TEST_GUIDE.md         # 新增测试功能指南
+│   ├── 08_CHECKLISTS.md         # 新功能开发 Checklist ⭐
+│   ├── 09_WORKFLOW.md           # 任务 SOP (调用 / 执行 / 回归)
+│   ├── NewFT/                   # 新功能设计草案与阶段性需求规则
+│   │   ├── AutoDetectBaudrate.md # SerialCom 候选波特率自动识别设计
+│   │   ├── CustomTestOPT.md      # Custom Test 架构优化方案与任务跟踪
+│   │   ├── InstrumentsManage.md  # 通用仪器管理架构方案
+│   │   ├── InstrumentsManagePlan.md # 通用仪器管理改善计划
+│   │   ├── InstrumentsManagePlanFixe.md # 仪器管理重构未完成项与修复计划
+│   │   ├── LOG_FastCommand.md    # SerialCom 日志与快捷指令优化设计
+│   │   ├── UI_Optimize.md        # SerialCom UI 优化设计
+│   │   └── serialComMuti.md      # SerialCom 单窗口多串口 / 多窗口独立串口规则
+│   └── decisions/               # ADR 架构决策记录
+│       ├── 001-mock-instrument.md
+│       └── 002-oscilloscope-auto-detect.md
+└── user/
+    ├── CustomTestStructure.md   # Custom Test 架构、工作流程与 UI 流程说明
+    └── CustomTestStructureOP.md # Custom Test 优化方案与实施优先级
 
 ================================================================================
   hooks/ - PyInstaller 自定义 Hook
@@ -471,6 +477,21 @@ Results/
 user_data/                   # 仅开发态存在; 打包后由 ui/resource_path.get_user_data_dir
                              # 重定向到 %APPDATA%\KK_Lab\
 └── SerialCom/               # SerialCom 模块的配置 / 快捷指令 (config.json / quick_commands.json)
+
+userdata/
+├── custom_test_templates/   # Custom Test 用户态模板（v2 JSON）
+│   ├── GPADC_Vsys_Channel.json
+│   ├── bes1505Icore_test.json
+│   ├── case1_power_vs_temp.json
+│   ├── case2_gpadc_vs_temp_vout.json
+│   ├── case3_clk_vs_temp.json
+│   ├── case4.json
+│   ├── case5_clk_vs_vout.json
+│   ├── sample_chamber_n6705c_loop.json
+│   ├── sample_i2c_register_sweep.json
+│   ├── sample_n6705c_voltage_sweep.json
+│   └── sample_uart_send_receive.json
+└── custom_test_recent.json  # 最近打开的 Custom Test 序列（运行时生成）
 
 ================================================================================
   分层与规则速查

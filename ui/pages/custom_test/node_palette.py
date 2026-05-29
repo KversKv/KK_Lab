@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Type
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
-    QScrollArea, QSizePolicy, QGridLayout, QPushButton,
+    QScrollArea, QSizePolicy, QGridLayout, QPushButton, QLineEdit,
 )
 from PySide6.QtCore import Qt, Signal, QMimeData
 from PySide6.QtGui import QDrag, QPixmap, QImage, QPainter, QColor, QIcon
@@ -536,10 +536,21 @@ class NodePalette(QWidget):
         self.setObjectName("nodePalette")
         self.setStyleSheet(_PALETTE_STYLE)
         self.setMinimumWidth(200)
+        self._filter_widgets: List[tuple[QWidget, str]] = []
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(0)
+
+        self._search = QLineEdit()
+        self._search.setPlaceholderText("Search nodes...")
+        self._search.setClearButtonEnabled(True)
+        self._search.setStyleSheet(
+            "QLineEdit { background-color: #061022; border: 1px solid #1f315d; "
+            "border-radius: 6px; color: #dce7ff; padding: 6px 8px; margin: 4px 6px; }"
+        )
+        self._search.textChanged.connect(self._apply_filter)
+        root_layout.addWidget(self._search)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -582,6 +593,10 @@ class NodePalette(QWidget):
         for idx, instr in enumerate(visible_instruments):
             card = InstrumentCard(instr, self)
             card.double_clicked.connect(self._on_instrument_double_clicked)
+            self._filter_widgets.append((
+                card,
+                f"{instr.get('name', '')} {instr.get('id', '')}",
+            ))
             row = idx // 2
             col = idx % 2
             grid.addWidget(card, row, col, Qt.AlignCenter)
@@ -618,12 +633,21 @@ class NodePalette(QWidget):
             for node_cls in nodes:
                 item = PaletteItem(node_cls, self)
                 item.double_clicked.connect(self._on_item_double_clicked)
+                self._filter_widgets.append((
+                    item,
+                    f"{node_cls.display_name} {node_cls.node_type} {cat_label}",
+                ))
                 section.content_layout.addWidget(item)
 
             self._inner_layout.addWidget(section)
 
     def insert_top_widget(self, widget: QWidget) -> None:
         self._inner_layout.insertWidget(0, widget)
+
+    def _apply_filter(self, text: str) -> None:
+        needle = text.strip().lower()
+        for widget, haystack in self._filter_widgets:
+            widget.setVisible(not needle or needle in haystack.lower())
 
     def _on_item_double_clicked(self, node_type: str) -> None:
         self.node_requested.emit(node_type)

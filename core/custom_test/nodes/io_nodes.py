@@ -121,7 +121,12 @@ class ExportResult(BaseNode):
             return
 
         manifest = context.result_store.build_manifest(
+            sequence_hash=getattr(context, "sequence_hash", ""),
             instrument_snapshot=_instrument_manifest(context),
+            started_at=getattr(context, "run_started_at", None),
+            finished_at=getattr(context, "run_finished_at", None),
+            run_id=getattr(context, "run_id", ""),
+            status=getattr(context, "run_status", ""),
         )
         try:
             filepath = context.result_store.export(

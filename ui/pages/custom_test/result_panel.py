@@ -396,6 +396,11 @@ class ResultPanel(QWidget):
         sort_asc_action = menu.addAction("⬆  升序排列")
         sort_desc_action = menu.addAction("⬇  降序排列")
         menu.addSeparator()
+        field_obj = store.fields.get(field_name)
+        plot_action = menu.addAction(
+            "Hide from chart" if field_obj and field_obj.plot else "Show on chart"
+        )
+        menu.addSeparator()
 
         if os.path.isfile(trash_icon):
             hide_action = menu.addAction(
@@ -419,6 +424,10 @@ class ResultPanel(QWidget):
         elif action == hide_action:
             store.hide_field(field_name)
             self.render_result_table()
+            self.plot_result_fields()
+        elif action == plot_action:
+            current = bool(field_obj and field_obj.plot)
+            store.set_field_plot(field_name, not current)
             self.plot_result_fields()
         elif action == sort_asc_action:
             self._sort_column_numeric(logical_idx, ascending=True)
