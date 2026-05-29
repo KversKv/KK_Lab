@@ -57,7 +57,7 @@ def preflight_validate(
 ) -> PreflightResult:
     result = PreflightResult()
 
-    if sequence_version not in (None, 1, "1", "1.0"):
+    if sequence_version not in (None, 1, "1", "1.0", 2, "2", "2.0"):
         result.issues.append(ValidationIssue(
             severity=SEVERITY_WARNING,
             message=f"未知序列版本: {sequence_version}",

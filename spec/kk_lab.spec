@@ -29,6 +29,10 @@ a = Analysis(
         (os.path.join(PROJECT_ROOT, 'lib', 'download_tools'), os.path.join('lib', 'download_tools')),
         (os.path.join(PROJECT_ROOT, 'chips'), 'chips'),
         (os.path.join(PROJECT_ROOT, 'helps'), 'helps'),
+        (
+            os.path.join(PROJECT_ROOT, 'ui', 'pages', 'custom_test', 'templates'),
+            os.path.join('ui', 'pages', 'custom_test', 'templates'),
+        ),
     ],
     hiddenimports=[
         'pyvisa',

@@ -300,11 +300,7 @@ class Delay(BaseNode):
     def execute(self, context: Any) -> None:
         seconds = float(context.resolve_value(self.params["seconds"]))
         logger.info("Delay %.2f s", seconds)
-        end_time = time.time() + seconds
-        while time.time() < end_time:
-            if context.should_stop:
-                return
-            time.sleep(min(0.2, end_time - time.time()))
+        context.sleep(seconds, poll=0.2)
 
 
 @register_node
@@ -395,7 +391,9 @@ class WaitUntil(BaseNode):
             if context.evaluate_condition(condition):
                 logger.info("WaitUntil: 条件满足")
                 return
-            time.sleep(min(poll, deadline - time.time()))
+            sleep_for = min(poll, deadline - time.time())
+            if sleep_for > 0 and not context.sleep(sleep_for, poll=min(0.1, max(0.001, poll))):
+                return
 
         msg = f"WaitUntil 超时: {condition}"
         if timeout_action == "error":

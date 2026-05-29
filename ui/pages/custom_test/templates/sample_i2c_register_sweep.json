@@ -1,0 +1,25 @@
+{
+  "version": 2,
+  "metadata": {
+    "name": "Sample - I2C Register Sweep",
+    "required_capabilities": [
+      "i2c.register"
+    ]
+  },
+  "instruments": {},
+  "sequence": [
+    {
+      "node_type": "I2CTraverse",
+      "params": {
+        "device_addr": "0x17",
+        "reg_start": "0x0000",
+        "reg_end": "0x0005",
+        "width": 10,
+        "iter_var": "reg",
+        "val_var": "reg_val",
+        "result_var": "i2c_traverse",
+        "auto_record": true
+      }
+    }
+  ]
+}

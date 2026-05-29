@@ -215,7 +215,7 @@ class CustomTestExecutor(QObject):
             if self._context.should_stop:
                 return
             while self._context.should_pause and not self._context.should_stop:
-                time.sleep(0.1)
+                self._context.sleep(0.1, poll=0.1)
 
             pre_record_count = len(self._context.records)
 

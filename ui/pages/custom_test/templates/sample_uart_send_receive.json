@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "metadata": {
+    "name": "Sample - UART Send Receive",
+    "required_capabilities": [
+      "uart.session"
+    ]
+  },
+  "instruments": {},
+  "sequence": [
+    {
+      "node_type": "UARTSend",
+      "params": {
+        "data": "AT\\r\\n",
+        "hex_mode": false
+      }
+    },
+    {
+      "node_type": "UARTReceive",
+      "params": {
+        "timeout_s": 1.0,
+        "expect": "OK",
+        "result_var": "uart_rx",
+        "auto_record": true
+      }
+    }
+  ]
+}

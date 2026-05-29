@@ -1041,6 +1041,8 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
             self.canvas.load_from_nodes(result.nodes)
             if result.instruments:
                 self._on_metadata_loaded(result.instruments)
+            for issue in result.issues:
+                self.logs_frame.append_log(issue.format())
             self.logs_frame.append_log(f"[TEMPLATE] 已加载模板: {template_name}")
         except Exception as e:
             self.logs_frame.append_log(f"[ERROR] 加载模板失败: {e}")

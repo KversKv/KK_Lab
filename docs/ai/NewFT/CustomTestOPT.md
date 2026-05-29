@@ -899,7 +899,10 @@ class N6705CMeasureNode(BaseNode):
 - **依赖**: Phase 1
 - **预计工作量**: 1 会话
 - **预计会话**: 会话 14
-- **状态**: ⏳ 未开始
+- **完成日期**: 2026-05-29
+- **完成内容**: `ExecutionContext` 新增 `sleep(seconds, poll=0.1)` 统一可取消等待入口；`Delay`、`WaitUntil`、`LoopDuration` 相关等待、温箱等待、`MCUIOPulse`、`UARTReceive` 与 executor/runtime pause loop 改为使用 context sleep；I2C adapter read/write 与 UART adapter read_available 支持 `stop_check`。
+- **风险备注**: 真实仪器单次阻塞 IO 仍受底层驱动超时限制；本阶段保证长等待/轮询/Mock adapter 路径可预测响应 Stop。
+- **状态**: ✅ 已完成
 
 ### Task 5.2: 建立 Mock Instrument Adapters
 
@@ -918,7 +921,10 @@ class N6705CMeasureNode(BaseNode):
 - **依赖**: Phase 2
 - **预计工作量**: 1 ~ 1.5 会话
 - **预计会话**: 会话 15
-- **状态**: ⏳ 未开始
+- **完成日期**: 2026-05-29
+- **完成内容**: 新增 `core/custom_test/adapters/`，将 passthrough、I2C、UART adapter 独立为 core runtime adapter；新增 Mock adapter 工厂并接入 `InstrumentResolver(allow_mock=True)` / `DEBUG_MOCK=True` fallback；`instruments/mock/mock_instruments.py` 新增 `MockUART`；新增 `tests/test_custom_test_phase5.py` 覆盖纯逻辑、Mock 仪器测量、温箱循环 3 条 smoke。
+- **风险备注**: RF Analyzer 仍按既有 unsupported 决策处理，不提供 Mock fallback；Mock fallback 默认只在 `DEBUG_MOCK=True` 或显式 `allow_mock=True` 下启用，不改变真机默认解析路径。
+- **状态**: ✅ 已完成
 
 ### Task 5.3: 序列版本迁移
 
@@ -936,7 +942,10 @@ class N6705CMeasureNode(BaseNode):
 - **依赖**: Phase 1
 - **预计工作量**: 1 会话
 - **预计会话**: 会话 16
-- **状态**: ⏳ 未开始
+- **完成日期**: 2026-05-29
+- **完成内容**: 新增 `core/custom_test/serialization.py`，提供 `load_sequence()`、`save_sequence()`、`migrate_sequence()` 以及 data/file 细分入口；list/v1 dict 自动迁移为 v2；保存序列默认写 `version: 2` 与 `metadata.required_capabilities`；未知节点、非 dict 节点、缺失参数、非法 children 均生成可读 issue；`ui/pages/custom_test/sequence_io.py` 改为兼容 shim，`sequence_canvas.py` 保存/加载改走 core serialization。
+- **风险备注**: 未知节点当前会生成 issue 并跳过加载，避免整个模板崩溃；如未来需要无损 round-trip，可追加 UnknownNode 占位模型。
+- **状态**: ✅ 已完成
 
 ### Task 5.4: 模板库和样例流程
 
@@ -953,7 +962,10 @@ class N6705CMeasureNode(BaseNode):
 - **依赖**: Phase 2, Phase 3
 - **预计工作量**: 0.5 ~ 1 会话
 - **预计会话**: 会话 16
-- **状态**: ⏳ 未开始
+- **完成日期**: 2026-05-29
+- **完成内容**: 新增 4 个 v2 样例模板：`sample_n6705c_voltage_sweep.json`、`sample_i2c_register_sweep.json`、`sample_chamber_n6705c_loop.json`、`sample_uart_send_receive.json`，每个模板均带 `metadata.required_capabilities`；`spec/kk_lab.spec` 同步纳入 `ui/pages/custom_test/templates` 运行时数据目录。
+- **风险备注**: 样例参数偏 smoke/入门，真实产品流程仍需按芯片和实验条件调整；未新增 help 文档，仅复用现有 Custom Test 页面入口。
+- **状态**: ✅ 已完成
 
 ---
 
@@ -1133,3 +1145,4 @@ class N6705CMeasureNode(BaseNode):
 | 2026-05-28 | Phase 2 | 完成节点 capability 声明、`InstrumentResolver`、preflight validation、`_on_run()` resolver 化、manager session lease 申请/释放；新增 `tests/test_custom_test_phase2.py` | ✅ 已完成 |
 | 2026-05-29 | Phase 3 | 完成 Result Model / ResultStore、Data/Chart 绑定统一结果模型、自动/手动/节点导出统一；新增 `core/custom_test/result_store.py` 与 `tests/test_custom_test_phase3.py` | ✅ 已完成 |
 | 2026-05-29 | Phase 4 | 完成仪器连接区、结果面板、运行前校验 UI 拆分；PromptUser 改为 UI signal/dialog 正规化路径；新增 `instrument_connection_panel.py`、`result_panel.py`、`validation_panel.py` 与 `tests/test_custom_test_phase4.py` | ✅ 已完成 |
+| 2026-05-29 | Phase 5 | 完成 cancellation 协议、Mock runtime adapters、序列 v2 迁移/保存入口、4 个样例模板与 Phase 5 smoke；新增 `core/custom_test/adapters/`、`core/custom_test/serialization.py`、`tests/test_custom_test_phase5.py` 与 `sample_*.json` 模板 | ✅ 已完成 |

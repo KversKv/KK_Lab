@@ -78,7 +78,12 @@ core/
 │   ├── resolver.py          # InstrumentResolver：节点 capability → runtime adapter / lease 解析
 │   ├── result_store.py      # ResultStore：统一结果模型 / 视图状态 / CSV-XLSX 导出
 │   ├── runtime.py           # execute_node / execute_children，供容器节点执行子节点
+│   ├── serialization.py     # 序列 v2 迁移 / 读写 / load-save 入口
 │   ├── validation.py        # 运行前 preflight 校验（参数 / unsupported / 仪器缺失）
+│   ├── adapters/            # Custom Test runtime adapters / Mock fallback
+│   │   ├── __init__.py
+│   │   ├── base.py          # RuntimeInstrumentAdapter / I2CAdapter / UARTAdapter
+│   │   └── mock.py          # DEBUG_MOCK / 测试环境使用的 mock adapter 工厂
 │   └── nodes/               # Custom Test 节点实现与注册表
 │       ├── __init__.py      # 初始化 NODE_REGISTRY 并导出节点类
 │       ├── base.py          # BaseNode + register_node / get_node_class
@@ -249,7 +254,7 @@ ui/
 │       ├── record_data_editor.py     # 数据记录字段编辑器
 │       ├── result_panel.py           # Logs / Data / Chart / 可见表格导出面板
 │       ├── sequence_canvas.py        # 中间可视化序列画布
-│       ├── sequence_io.py            # 序列 JSON 读取兼容入口 (list / dict)
+│       ├── sequence_io.py            # 序列 JSON 读写兼容 shim，实际走 core.custom_test.serialization
 │       ├── validation_panel.py       # 运行前校验问题对话框
 │       ├── executor.py               # 旧路径兼容 shim，实际导出 core.custom_test.executor
 │       ├── context.py                # 旧路径兼容 shim，实际导出 core.custom_test.context
@@ -266,7 +271,11 @@ ui/
 │           ├── case2_gpadc_vs_temp_vout.json
 │           ├── case3_clk_vs_temp.json
 │           ├── case4.json
-│           └── case5_clk_vs_vout.json
+│           ├── case5_clk_vs_vout.json
+│           ├── sample_chamber_n6705c_loop.json
+│           ├── sample_i2c_register_sweep.json
+│           ├── sample_n6705c_voltage_sweep.json
+│           └── sample_uart_send_receive.json
 │
 └── dialogs/                 # 对话框 (预留)
 
@@ -435,7 +444,8 @@ tests/
 ├── test_custom_test_phase0.py       # Custom Test Phase 0 序列读取 / 无 UI 执行 smoke
 ├── test_custom_test_phase2.py       # Custom Test Phase 2 capability / resolver / preflight smoke
 ├── test_custom_test_phase3.py       # Custom Test Phase 3 ResultStore / 导出统一 smoke
-└── test_custom_test_phase4.py       # Custom Test Phase 4 PromptUser / preflight UI 状态 smoke
+├── test_custom_test_phase4.py       # Custom Test Phase 4 PromptUser / preflight UI 状态 smoke
+└── test_custom_test_phase5.py       # Custom Test Phase 5 cancellation / Mock adapters / v2 serialization smoke
 
 ================================================================================
   tools/ - 开发辅助脚本

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 from ui.resource_path import get_resource_base
 from typing import Any, Dict, List, Optional
@@ -20,7 +19,7 @@ from PySide6.QtGui import (
 )
 
 from core.custom_test.nodes.base import BaseNode, get_node_class
-from ui.pages.custom_test.sequence_io import load_sequence_file
+from ui.pages.custom_test.sequence_io import load_sequence_file, save_sequence_file
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -1175,18 +1174,12 @@ class SequenceCanvas(QWidget):
 
     def _on_save(self) -> None:
         nodes = self.get_sequence()
-        save_data = {
-            "version": 1,
-            "sequence": [n.to_dict() for n in nodes],
-            "instruments": self._collect_instrument_meta(),
-        }
         filepath, _ = QFileDialog.getSaveFileName(
             self, "保存序列", _TEMPLATES_DIR, "JSON Files (*.json)"
         )
         if not filepath:
             return
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(save_data, f, ensure_ascii=False, indent=2)
+        save_sequence_file(filepath, nodes, instruments=self._collect_instrument_meta())
         logger.info("序列已保存: %s", filepath)
 
     def _collect_instrument_meta(self) -> dict:
@@ -1204,6 +1197,8 @@ class SequenceCanvas(QWidget):
             self.load_from_nodes(result.nodes)
             if result.instruments:
                 self.metadata_loaded.emit(result.instruments)
+            for issue in result.issues:
+                logger.warning("序列加载 issue: %s", issue.format())
             logger.info("序列已加载: %s", filepath)
         except Exception as e:
             QMessageBox.warning(self, "加载失败", f"无法加载序列文件:\n{e}")

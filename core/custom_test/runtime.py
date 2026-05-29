@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from typing import List
 
 from core.custom_test.context import BreakLoop, ContinueLoop, ExecutionContext
@@ -15,7 +14,7 @@ def execute_children(children: List[BaseNode], context: ExecutionContext) -> Non
         if context.should_stop:
             return
         while context.should_pause and not context.should_stop:
-            time.sleep(0.1)
+            context.sleep(0.1, poll=0.1)
         try:
             execute_node(child, context)
         except ContinueLoop:

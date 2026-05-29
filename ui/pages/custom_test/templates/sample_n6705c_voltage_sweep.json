@@ -1,0 +1,65 @@
+{
+  "version": 2,
+  "metadata": {
+    "name": "Sample - N6705C Voltage Sweep",
+    "required_capabilities": [
+      "power_analyzer.measure",
+      "power_analyzer.set_voltage"
+    ]
+  },
+  "instruments": {},
+  "sequence": [
+    {
+      "node_type": "LoopRange",
+      "params": {
+        "var_name": "vbat_set_v",
+        "start": 3.6,
+        "stop": 4.2,
+        "step": 0.2,
+        "export_var": true
+      },
+      "children": [
+        {
+          "node_type": "N6705CSetVoltage",
+          "params": {
+            "channel": 1,
+            "voltage": "${vbat_set_v}",
+            "current_limit": 0.5,
+            "output_on": true
+          }
+        },
+        {
+          "node_type": "Delay",
+          "params": {
+            "seconds": 0.1
+          }
+        },
+        {
+          "node_type": "N6705CMeasure",
+          "params": {
+            "channel": 1,
+            "measure_type": "voltage",
+            "result_var": "vbat_meas_v",
+            "export_var": true
+          }
+        },
+        {
+          "node_type": "N6705CMeasure",
+          "params": {
+            "channel": 1,
+            "measure_type": "current",
+            "result_var": "ibat_a",
+            "export_var": true
+          }
+        },
+        {
+          "node_type": "RecordDataPoint",
+          "params": {
+            "fields": "vbat_set_v=${vbat_set_v}, vbat_meas_v=${vbat_meas_v}, ibat_a=${ibat_a}",
+            "skip_no_export": true
+          }
+        }
+      ]
+    }
+  ]
+}

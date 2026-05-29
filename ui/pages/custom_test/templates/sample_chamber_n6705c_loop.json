@@ -1,0 +1,64 @@
+{
+  "version": 2,
+  "metadata": {
+    "name": "Sample - Chamber Loop With N6705C Measure",
+    "required_capabilities": [
+      "chamber.stabilize_wait",
+      "chamber.temperature",
+      "power_analyzer.measure"
+    ]
+  },
+  "instruments": {},
+  "sequence": [
+    {
+      "node_type": "LoopList",
+      "params": {
+        "var_name": "temp_c",
+        "values": "25, 40",
+        "export_var": true
+      },
+      "children": [
+        {
+          "node_type": "ChamberSetTemp",
+          "params": {
+            "temperature": "${temp_c}",
+            "wait_stable": false,
+            "stable_time": 0,
+            "tolerance": 1.0
+          }
+        },
+        {
+          "node_type": "ChamberWaitStable",
+          "params": {
+            "target": "${temp_c}",
+            "poll_interval": 0.2,
+            "window_seconds": 0.2,
+            "tolerance": 0.5,
+            "stable_hits": 1,
+            "arrive_tolerance": 1.0,
+            "max_wait_s": 2,
+            "result_var": "chamber_wait_result",
+            "export_var": false,
+            "raise_on_timeout": false
+          }
+        },
+        {
+          "node_type": "N6705CMeasure",
+          "params": {
+            "channel": 1,
+            "measure_type": "current",
+            "result_var": "ibat_a",
+            "export_var": true
+          }
+        },
+        {
+          "node_type": "RecordDataPoint",
+          "params": {
+            "fields": "temp_c=${temp_c}, ibat_a=${ibat_a}",
+            "skip_no_export": true
+          }
+        }
+      ]
+    }
+  ]
+}

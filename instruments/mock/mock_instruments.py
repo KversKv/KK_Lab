@@ -330,6 +330,63 @@ class _MockSerial:
         self.is_open = False
 
 
+class _MockSerialBuffer:
+    def __init__(self):
+        self.is_open = True
+        self._rx = bytearray()
+        self._tx = []
+
+    @property
+    def in_waiting(self):
+        return len(self._rx)
+
+    def queue_response(self, payload):
+        if isinstance(payload, str):
+            payload = payload.encode("utf-8")
+        self._rx.extend(payload)
+
+    def write(self, payload):
+        if isinstance(payload, str):
+            payload = payload.encode("utf-8")
+        self._tx.append(bytes(payload))
+        stripped = bytes(payload).strip()
+        if stripped.upper().startswith(b"AT"):
+            self.queue_response(b"OK\r\n")
+        else:
+            self.queue_response(bytes(payload))
+        return len(payload)
+
+    def read(self, size=1):
+        size = max(0, int(size))
+        data = bytes(self._rx[:size])
+        del self._rx[:size]
+        return data
+
+    def close(self):
+        self.is_open = False
+
+
+class MockUART:
+    def __init__(self):
+        self.serial_conn = _MockSerialBuffer()
+
+    def is_connected(self):
+        return self.serial_conn.is_open
+
+    def get_serial_connection(self):
+        return self.serial_conn
+
+    def serial_send(self, payload):
+        self.serial_conn.write(payload)
+        return True
+
+    def write(self, payload):
+        return self.serial_conn.write(payload)
+
+    def close(self):
+        self.serial_conn.close()
+
+
 class MockChamber:
 
     def __init__(self, model="MOCK Chamber"):

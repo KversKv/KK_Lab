@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import re
 import operator
+import time
 from typing import Any, Callable, Dict, List, Optional, Set
 
 from log_config import get_logger
@@ -350,6 +351,22 @@ class ExecutionContext:
         if self._prompt_handler is None:
             raise StopExecution("PromptUser 当前未接入 UI 接收端")
         return self._prompt_handler(message, timeout_s)
+
+    def sleep(self, seconds: float, poll: float = 0.1) -> bool:
+        duration = max(0.0, float(seconds))
+        interval = max(0.001, float(poll))
+        deadline = time.monotonic() + duration
+        while True:
+            if self.should_stop:
+                return False
+            if self.should_pause:
+                time.sleep(min(interval, 0.1))
+                deadline += min(interval, 0.1)
+                continue
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return True
+            time.sleep(min(interval, remaining))
 
     def request_stop(self) -> None:
         """请求停止执行"""

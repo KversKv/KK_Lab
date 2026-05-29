@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+import inspect
 from typing import Any, Dict, List
 
 from log_config import get_logger
@@ -603,7 +604,8 @@ class ChamberSetTemp(BaseNode):
                 if current_temp is not None and abs(current_temp - temp) <= tolerance:
                     logger.info("温度已稳定: %.1f°C", current_temp)
                     return
-                time.sleep(2.0)
+                if not context.sleep(min(2.0, max(0.0, deadline - time.time())), poll=0.1):
+                    return
             logger.warning("等待温度稳定超时")
 
 
@@ -798,6 +800,20 @@ def _resolve_hex(context: Any, raw: Any) -> int:
     except ValueError:
         return int(s)
 
+
+def _call_with_stop_check(func, *args, context: Any):
+    try:
+        signature = inspect.signature(func)
+        accepts = "stop_check" in signature.parameters or any(
+            param.kind == inspect.Parameter.VAR_KEYWORD
+            for param in signature.parameters.values()
+        )
+    except (TypeError, ValueError):
+        accepts = False
+    if accepts:
+        return func(*args, stop_check=lambda: context.should_stop)
+    return func(*args)
+
 @register_node
 class I2CRead(BaseNode):
     node_type = "I2CRead"
@@ -825,7 +841,9 @@ class I2CRead(BaseNode):
         width = int(context.resolve_value(self.params["width"]))
         result_var = str(self.params["result_var"])
         export_var = bool(self.params.get("export_var", True))
-        val = i2c.read(dev, reg, width)
+        val = _call_with_stop_check(i2c.read, dev, reg, width, context=context)
+        if val is None and context.should_stop:
+            return
         logger.info("I2C Read: dev=0x%02X reg=0x%X width=%d => 0x%X", dev, reg, width, val)
         context.set_variable(result_var, val, export=export_var)
         auto_record = self.params.get("auto_record", True)
@@ -862,7 +880,7 @@ class I2CWrite(BaseNode):
         reg = _resolve_hex(context, self.params["reg_addr"])
         data = _resolve_hex(context, self.params["write_data"])
         width = int(context.resolve_value(self.params["width"]))
-        i2c.write(dev, reg, data, width)
+        _call_with_stop_check(i2c.write, dev, reg, data, width, context=context)
         logger.info("I2C Write: dev=0x%02X reg=0x%X data=0x%X width=%d => OK", dev, reg, data, width)
 
 
@@ -909,7 +927,9 @@ class I2CTraverse(BaseNode):
             if context.should_stop:
                 break
             try:
-                val = i2c.read(dev, reg, width)
+                val = _call_with_stop_check(i2c.read, dev, reg, width, context=context)
+                if val is None and context.should_stop:
+                    break
                 results[reg] = val
                 context.set_variable(iter_var, reg, export=False)
                 context.set_variable(f"{iter_var}_hex", f"0x{reg:X}", export=False)
@@ -1022,10 +1042,12 @@ class MCUIOPulse(BaseNode):
         duration_s = float(context.resolve_value(self.params["duration_s"]))
         release_high_z = bool(context.resolve_value(self.params["release_high_z"]))
         mcu.out(pin, active)
-        time.sleep(max(0.0, duration_s))
+        completed = context.sleep(duration_s, poll=0.05)
         mcu.out(pin, inactive)
         if release_high_z:
             mcu.in_pull(pin, "none")
+        if not completed:
+            return
         context.log_output(
             f"MCU_IO GPIO{pin}: pulse {active}->{inactive}, {duration_s:.3f}s"
         )
@@ -1141,10 +1163,18 @@ class UARTReceive(BaseNode):
             if context.should_stop:
                 break
             try:
-                if hasattr(conn, "in_waiting") and conn.in_waiting > 0:
+                if hasattr(uart, "read_available"):
+                    chunk = _call_with_stop_check(uart.read_available, None, context=context)
+                    if chunk:
+                        buf += chunk
+                    else:
+                        if not context.sleep(0.05, poll=0.05):
+                            break
+                elif hasattr(conn, "in_waiting") and conn.in_waiting > 0:
                     buf += conn.read(conn.in_waiting)
                 else:
-                    time.sleep(0.05)
+                    if not context.sleep(0.05, poll=0.05):
+                        break
             except Exception:
                 break
             if expect and expect.encode("utf-8") in buf:

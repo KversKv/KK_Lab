@@ -5,7 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
+from debug_config import DEBUG_MOCK
 from log_config import get_logger
+from core.custom_test.adapters import (
+    I2CAdapter,
+    RuntimeInstrumentAdapter,
+    UARTAdapter,
+    create_mock_adapter,
+)
 from core.custom_test.nodes.base import BaseNode
 
 logger = get_logger(__name__)
@@ -26,58 +33,6 @@ class MissingInstrument:
     message: str
     source: str = "missing"
     busy_owner: str = ""
-
-
-class RuntimeInstrumentAdapter:
-    """默认 passthrough adapter：保留现有节点调用面。"""
-
-    def __init__(self, instance: object) -> None:
-        self.instance = instance
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self.instance, name)
-
-
-class I2CAdapter(RuntimeInstrumentAdapter):
-    def read(self, device_addr: int, reg_addr: int, width: int) -> Any:
-        if hasattr(self.instance, "read"):
-            return self.instance.read(device_addr, reg_addr, width)
-        if hasattr(self.instance, "read_register"):
-            return self.instance.read_register(device_addr, reg_addr, width)
-        raise RuntimeError("I2C adapter does not expose read()")
-
-    def write(self, device_addr: int, reg_addr: int, data: int, width: int) -> Any:
-        if hasattr(self.instance, "write"):
-            return self.instance.write(device_addr, reg_addr, data, width)
-        if hasattr(self.instance, "write_register"):
-            return self.instance.write_register(device_addr, reg_addr, data, width)
-        raise RuntimeError("I2C adapter does not expose write()")
-
-
-class UARTAdapter(RuntimeInstrumentAdapter):
-    def serial_send(self, payload: bytes) -> bool:
-        if hasattr(self.instance, "serial_send"):
-            return bool(self.instance.serial_send(payload))
-        if hasattr(self.instance, "send"):
-            return bool(self.instance.send(payload))
-        conn = self.get_serial_connection()
-        if conn is None or not hasattr(conn, "write"):
-            return False
-        conn.write(payload)
-        return True
-
-    def write(self, payload: bytes) -> Any:
-        conn = self.get_serial_connection()
-        if conn is None or not hasattr(conn, "write"):
-            raise RuntimeError("UART adapter does not expose write()")
-        return conn.write(payload)
-
-    def get_serial_connection(self) -> object | None:
-        if hasattr(self.instance, "get_serial_connection"):
-            return self.instance.get_serial_connection()
-        if hasattr(self.instance, "serial_conn"):
-            return self.instance.serial_conn
-        return self.instance
 
 
 @dataclass
@@ -212,12 +167,14 @@ class InstrumentResolver:
         legacy_source_labels: Optional[Dict[str, str]] = None,
         owner: str = "custom_test",
         allow_i2c_autoconnect: bool = True,
+        allow_mock: Optional[bool] = None,
     ) -> None:
         self.instrument_manager = instrument_manager
         self.legacy_sources = legacy_sources or {}
         self.legacy_source_labels = legacy_source_labels or {}
         self.owner = owner
         self.allow_i2c_autoconnect = allow_i2c_autoconnect
+        self.allow_mock = DEBUG_MOCK if allow_mock is None else bool(allow_mock)
 
     def resolve(self, nodes: Sequence[BaseNode]) -> ResolvedInstruments:
         resolved = ResolvedInstruments()
@@ -240,6 +197,8 @@ class InstrumentResolver:
             item = self._resolve_from_manager(runtime_key, capabilities, resolved)
             if item is None:
                 item = self._resolve_from_legacy(runtime_key, capabilities)
+            if item is None and self.allow_mock:
+                item = self._resolve_from_mock(runtime_key, capabilities)
             if item is None and runtime_key == "i2c" and self.allow_i2c_autoconnect:
                 item = self._auto_create_i2c(capabilities, resolved)
 
@@ -377,6 +336,23 @@ class InstrumentResolver:
                 source="auto_i2c",
             ))
             return None
+
+    def _resolve_from_mock(
+        self,
+        runtime_key: str,
+        capabilities: set[str],
+    ) -> ResolvedInstrument | None:
+        adapter = create_mock_adapter(runtime_key)
+        if adapter is None:
+            return None
+        return ResolvedInstrument(
+            runtime_key=runtime_key,
+            adapter=adapter,
+            source="mock",
+            capabilities=tuple(sorted(capabilities)),
+            display_name=f"Mock {runtime_key}",
+            owned=True,
+        )
 
     def _combined_requirement(
         self,
