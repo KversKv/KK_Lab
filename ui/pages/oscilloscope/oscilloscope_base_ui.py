@@ -12,7 +12,7 @@ from PySide6.QtCore import (
     QPropertyAnimation, QEasingCurve, QSequentialAnimationGroup,
     QSize, QRect, QPoint, Property
 )
-from PySide6.QtGui import QFont, QPixmap, QImage, QPainter, QColor, QPen, QIcon
+from PySide6.QtGui import QFont, QPixmap, QImage, QPainter, QColor, QPen, QIcon, QPalette
 from PySide6.QtSvg import QSvgRenderer
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLL_AREA_STYLE
@@ -1323,15 +1323,46 @@ class OscilloscopeBaseUI(QWidget):
 
         content_grid.addWidget(left_splitter, 1, 0, 2, 1)
 
-        right_upper = QVBoxLayout()
-        right_upper.setSpacing(16)
-        right_upper.addWidget(self._create_trigger_settings_card())
-        right_upper.addWidget(self._create_settings_card())
-        content_grid.addLayout(right_upper, 1, 1)
+        content_grid.setRowStretch(1, 1)
+        content_grid.setRowStretch(2, 0)
+        content_grid.addWidget(self._create_right_settings_scroll(), 1, 1)
 
         content_grid.addWidget(self._create_quick_function_card(), 2, 1, Qt.AlignTop)
 
         root_layout.addLayout(content_grid)
+
+    def _set_plain_background(self, widget, color):
+        widget.setAutoFillBackground(True)
+        palette = widget.palette()
+        bg_color = QColor(color)
+        palette.setColor(QPalette.Window, bg_color)
+        palette.setColor(QPalette.Base, bg_color)
+        widget.setPalette(palette)
+
+    def _create_right_settings_scroll(self):
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
+        scroll.setMinimumHeight(0)
+        self._set_plain_background(scroll, "#020B2D")
+        self._set_plain_background(scroll.viewport(), "#020B2D")
+
+        container = QWidget()
+        container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self._set_plain_background(container, "#020B2D")
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(16)
+        layout.setSizeConstraint(QLayout.SetMinAndMaxSize)
+        layout.addWidget(self._create_trigger_settings_card())
+        layout.addWidget(self._create_settings_card())
+        layout.addStretch()
+
+        scroll.setWidget(container)
+        return scroll
 
     def _create_top_bar(self):
         layout = QVBoxLayout()
@@ -1932,6 +1963,7 @@ class OscilloscopeBaseUI(QWidget):
     def _create_quick_function_card(self):
         card = QFrame()
         card.setObjectName("card")
+        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         layout = QVBoxLayout(card)
         layout.setContentsMargins(18, 16, 18, 18)
         layout.setSpacing(12)

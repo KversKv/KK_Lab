@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QSplitter, QFrame, QDialog, QTextBrowser, QGraphicsOpacityEffect
 )
 
-from PySide6.QtCore import Qt, Signal, QPropertyAnimation, QEasingCurve
+from PySide6.QtCore import Qt, Signal, QPropertyAnimation, QEasingCurve, QTimer
 from PySide6.QtGui import QPalette, QColor, QFont
 from ui.pages.oscilloscope.oscilloscope_base_ui import OscilloscopeBaseUI
 from ui.pages.n6705c_power_analyzer.n6705c_analyser_ui import N6705CAnalyserUI
@@ -122,6 +122,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.custom_test_ui = None
         self.kk_serials_ui = None
         self.current_instrument_ui = None
+        self._page_switch_geometry = None
         self.channels = []
 
         self.nav = NavController(self)
@@ -490,6 +491,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         self._fade_in_widget(self.kk_serials_ui)
 
     def _hide_all_instrument_uis(self):
+        self._page_switch_geometry = self.geometry()
         for widget in [
             self.n6705c_analyser_ui, self.n6705c_datalog_ui,
             self.oscilloscope_ui, self.pmu_test_ui, self.chamber_ui,
@@ -513,6 +515,16 @@ class MainWindow(CleanupMixin, QMainWindow):
         anim.setEasingCurve(QEasingCurve.InOutQuad)
         anim.finished.connect(lambda: widget.setGraphicsEffect(None))
         anim.start(QPropertyAnimation.DeleteWhenStopped)
+        QTimer.singleShot(0, self._restore_page_switch_geometry)
+
+    def _restore_page_switch_geometry(self):
+        if self._page_switch_geometry is None:
+            return
+        geometry = self._page_switch_geometry
+        self._page_switch_geometry = None
+        if self.isMaximized() or self.isFullScreen():
+            return
+        self.setGeometry(geometry)
 
     def _update_instrument_status(self):
         self.status_panel.update_instrument_status()
