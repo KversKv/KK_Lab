@@ -12,6 +12,7 @@ from PySide6.QtCore import Qt, Signal
 
 from core.custom_test.nodes.base import BaseNode
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.styles import SCROLLBAR_STYLE
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -143,29 +144,7 @@ class PropertyPanel(QWidget):
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._scroll.setStyleSheet("""
             QScrollArea { background: transparent; border: none; }
-            QScrollBar:vertical {
-                background: transparent;
-                width: 6px;
-                margin: 0px;
-                border-radius: 3px;
-            }
-            QScrollBar::handle:vertical {
-                background: #22345f;
-                min-height: 30px;
-                border-radius: 3px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background: #30497f;
-            }
-            QScrollBar::sub-line:vertical,
-            QScrollBar::add-line:vertical {
-                height: 0px;
-            }
-            QScrollBar::add-page:vertical,
-            QScrollBar::sub-page:vertical {
-                background: transparent;
-            }
-        """)
+        """ + SCROLLBAR_STYLE)
 
         self._inner = QWidget()
         self._inner.setObjectName("propInner")

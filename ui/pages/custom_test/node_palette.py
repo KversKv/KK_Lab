@@ -16,6 +16,7 @@ from PySide6.QtSvg import QSvgRenderer
 
 from core.custom_test.nodes import BaseNode, get_nodes_by_category
 from ui.pages.custom_test.node_metadata import filter_selectable_ops, is_node_selectable
+from ui.styles import SCROLLBAR_STYLE
 
 from log_config import get_logger
 
@@ -545,29 +546,7 @@ class NodePalette(QWidget):
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setStyleSheet("""
             QScrollArea { background: transparent; border: none; }
-            QScrollBar:vertical {
-                background: transparent;
-                width: 6px;
-                margin: 0px;
-                border-radius: 3px;
-            }
-            QScrollBar::handle:vertical {
-                background: #22345f;
-                min-height: 30px;
-                border-radius: 3px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background: #30497f;
-            }
-            QScrollBar::sub-line:vertical,
-            QScrollBar::add-line:vertical {
-                height: 0px;
-            }
-            QScrollBar::add-page:vertical,
-            QScrollBar::sub-page:vertical {
-                background: transparent;
-            }
-        """)
+        """ + SCROLLBAR_STYLE)
 
         inner = QWidget()
         inner.setStyleSheet("QWidget { background: transparent; border: none; }")

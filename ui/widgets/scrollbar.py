@@ -14,14 +14,14 @@ _ARROW_RIGHT = _os.path.join(_ICONS_DIR, "scrollbar-arrow-right.svg").replace("\
 SCROLLBAR_STYLE = f"""
     QScrollBar:vertical {{
         background: #0C1017;
-        width: 10px;
+        width: 7px;
         margin: 14px 0px 14px 0px;
-        border-radius: 5px;
+        border-radius: 4px;
     }}
     QScrollBar::handle:vertical {{
         background: #334155;
         min-height: 30px;
-        border-radius: 5px;
+        border-radius: 4px;
     }}
     QScrollBar::handle:vertical:hover {{
         background: #475569;
@@ -31,8 +31,8 @@ SCROLLBAR_STYLE = f"""
         subcontrol-position: top;
         subcontrol-origin: margin;
         background: #141B24;
-        border-top-left-radius: 5px;
-        border-top-right-radius: 5px;
+        border-top-left-radius: 4px;
+        border-top-right-radius: 4px;
     }}
     QScrollBar::sub-line:vertical:hover {{
         background: #1E293B;
@@ -42,21 +42,21 @@ SCROLLBAR_STYLE = f"""
         subcontrol-position: bottom;
         subcontrol-origin: margin;
         background: #141B24;
-        border-bottom-left-radius: 5px;
-        border-bottom-right-radius: 5px;
+        border-bottom-left-radius: 4px;
+        border-bottom-right-radius: 4px;
     }}
     QScrollBar::add-line:vertical:hover {{
         background: #1E293B;
     }}
     QScrollBar::up-arrow:vertical {{
         image: url("{_ARROW_UP}");
-        width: 8px;
-        height: 8px;
+        width: 6px;
+        height: 6px;
     }}
     QScrollBar::down-arrow:vertical {{
         image: url("{_ARROW_DOWN}");
-        width: 8px;
-        height: 8px;
+        width: 6px;
+        height: 6px;
     }}
     QScrollBar::add-page:vertical,
     QScrollBar::sub-page:vertical {{
@@ -64,14 +64,14 @@ SCROLLBAR_STYLE = f"""
     }}
     QScrollBar:horizontal {{
         background: #0C1017;
-        height: 10px;
+        height: 7px;
         margin: 0px 14px 0px 14px;
-        border-radius: 5px;
+        border-radius: 4px;
     }}
     QScrollBar::handle:horizontal {{
         background: #334155;
         min-width: 30px;
-        border-radius: 5px;
+        border-radius: 4px;
     }}
     QScrollBar::handle:horizontal:hover {{
         background: #475569;
@@ -81,8 +81,8 @@ SCROLLBAR_STYLE = f"""
         subcontrol-position: left;
         subcontrol-origin: margin;
         background: #141B24;
-        border-top-left-radius: 5px;
-        border-bottom-left-radius: 5px;
+        border-top-left-radius: 4px;
+        border-bottom-left-radius: 4px;
     }}
     QScrollBar::sub-line:horizontal:hover {{
         background: #1E293B;
@@ -92,21 +92,21 @@ SCROLLBAR_STYLE = f"""
         subcontrol-position: right;
         subcontrol-origin: margin;
         background: #141B24;
-        border-top-right-radius: 5px;
-        border-bottom-right-radius: 5px;
+        border-top-right-radius: 4px;
+        border-bottom-right-radius: 4px;
     }}
     QScrollBar::add-line:horizontal:hover {{
         background: #1E293B;
     }}
     QScrollBar::left-arrow:horizontal {{
         image: url("{_ARROW_LEFT}");
-        width: 8px;
-        height: 8px;
+        width: 6px;
+        height: 6px;
     }}
     QScrollBar::right-arrow:horizontal {{
         image: url("{_ARROW_RIGHT}");
-        width: 8px;
-        height: 8px;
+        width: 6px;
+        height: 6px;
     }}
     QScrollBar::add-page:horizontal,
     QScrollBar::sub-page:horizontal {{

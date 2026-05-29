@@ -661,14 +661,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         left_scroll.setFixedWidth(320)
         left_scroll.setStyleSheet("""
             QScrollArea { background: transparent; border: none; }
-            QScrollBar:vertical {
-                background: #0a1228; width: 6px; border: none; border-radius: 3px;
-            }
-            QScrollBar::handle:vertical {
-                background: #2a3f6e; min-height: 30px; border-radius: 3px;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
-        """)
+        """ + SCROLLBAR_STYLE)
         left_scroll.setWidget(left_inner)
 
         right_column = QVBoxLayout()
