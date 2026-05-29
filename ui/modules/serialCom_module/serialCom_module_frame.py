@@ -14,6 +14,7 @@ if _PROJECT_ROOT not in _sys.path:
     _sys.path.insert(0, _PROJECT_ROOT)
 
 import json
+import importlib as _importlib
 import os
 import re
 import time
@@ -42,42 +43,61 @@ from PySide6.QtSvg import QSvgRenderer
 from debug_config import DEBUG_MOCK
 from log_config import get_logger
 from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
-# from ui.modules.serialCom_module.serialCom_dark_style import (
-# from ui.modules.serialCom_module.serialCom_Gemini_Final_style import (
-from ui.modules.serialCom_module.serialCom_apple_gpt5p5_style import (
-    DARK_CARD_STYLE, _CLR_BG_CARD, _CLR_BG_LOG, _CLR_BG_MAIN, _CLR_BG_PANEL,
-    _CLR_BORDER, _CLR_BORDER_HOVER, _CLR_CONNECT_BG, _CLR_CONNECT_FG,
-    _CLR_CONNECT_TEXT, _CLR_CURSOR, _CLR_DISCONNECT_TEXT, _CLR_ERROR,
-    _CLR_FILTER_BG, _CLR_FILTER_BORDER, _CLR_FILTER_TEXT, _CLR_INPUT_BG,
-    _CLR_INPUT_TEXT, _CLR_ROSE_ICON, _CLR_RX, _CLR_SCROLLBAR,
-    _CLR_SCROLLBAR_HV, _CLR_SELECTION_BG, _CLR_SELECTION_TEXT, _CLR_SEND_BG,
-    _CLR_SEND_HOVER, _CLR_SEND_PRESS, _CLR_TEXT_ACCENT, _CLR_TEXT_BODY,
-    _CLR_TEXT_BTN, _CLR_TEXT_BTN_LOG, _CLR_TEXT_INFO, _CLR_TEXT_LABEL,
-    _CLR_TEXT_LINENO, _CLR_TEXT_MUTED, _CLR_TEXT_SUBTITLE, _CLR_TEXT_TIME,
-    _CLR_TEXT_TITLE, _CLR_TOGGLE_ON, _CLR_TX, _CLR_WARN_ICON, _CLR_WARNING,
-    _DLG_STYLE, _SERIAL_BTN_HEIGHT, _SERIAL_BTN_ICON_SIZE, _SERIAL_BTN_RADIUS,
-    _TERM_FONT, _UI_FONT, _serial_connect_style, _serial_disconnect_style,
-    _serial_search_style, body_splitter_style, center_widget_style,
-    checkbox_style, compact_spinbox_style, dialog_cancel_button_style,
-    dialog_line_edit_style, dialog_ok_button_style, extra_log_error_color,
-    field_label_style, filter_input_style, filter_match_label_style,
-    history_combo_style, inline_serial_label_style,
-    inline_serial_search_button_extra_style, log_color_info_style,
-    log_color_info_text, log_document_style, log_edit_style, log_frame_style,
-    log_panel_button_style,
-    log_title_style, log_toolbar_button_style, main_connect_button_style,
-    project_tabs_style, quick_add_button_style, quick_button_container_style,
-    quick_button_scroll_style, quick_cmd_dialog_style, quick_command_button_style,
-    quick_combo_style, quick_commands_panel_style, quick_preview_popup_shadow,
-    quick_preview_popup_style, quick_toolbar_button_style, section_card_style,
-    section_title_style,
-    send_button_style, separator_style, sidebar_wrapper_style, small_label_style,
-    status_bar_style, status_label_style, thin_scrollbar_style,
-    toolbar_connect_button_style, toolbar_style, toggle_colors,
-    transparent_background_style, transparent_scroll_area_style,
-    transparent_toolbar_button_style, unit_label_style,
-    SERIAL_SCROLLBAR_STYLE, SerialDarkComboBox,
+
+
+def _select_serialcom_style_module():
+    override = _os.environ.get("KK_SERIALCOM_STYLE", "").strip().lower()
+    if override in ("apple", "light", "standalone"):
+        return "ui.modules.serialCom_module.serialCom_apple_gpt5p5_style"
+    if override in ("dark", "main"):
+        return "ui.modules.serialCom_module.serialCom_dark_style"
+
+    exe_name = _os.path.splitext(_os.path.basename(getattr(_sys, "executable", "")))[0].lower()
+    if __name__ == "__main__" or (getattr(_sys, "frozen", False) and exe_name == "serialcom_module"):
+        return "ui.modules.serialCom_module.serialCom_apple_gpt5p5_style"
+    return "ui.modules.serialCom_module.serialCom_dark_style"
+
+
+_SERIALCOM_STYLE_EXPORTS = (
+    "DARK_CARD_STYLE", "_CLR_BG_CARD", "_CLR_BG_LOG", "_CLR_BG_MAIN", "_CLR_BG_PANEL",
+    "_CLR_BORDER", "_CLR_BORDER_HOVER", "_CLR_CONNECT_BG", "_CLR_CONNECT_FG",
+    "_CLR_CONNECT_TEXT", "_CLR_CURSOR", "_CLR_DISCONNECT_TEXT", "_CLR_ERROR",
+    "_CLR_FILTER_BG", "_CLR_FILTER_BORDER", "_CLR_FILTER_TEXT", "_CLR_INPUT_BG",
+    "_CLR_INPUT_TEXT", "_CLR_ROSE_ICON", "_CLR_RX", "_CLR_SCROLLBAR",
+    "_CLR_SCROLLBAR_HV", "_CLR_SELECTION_BG", "_CLR_SELECTION_TEXT", "_CLR_SEND_BG",
+    "_CLR_SEND_HOVER", "_CLR_SEND_PRESS", "_CLR_TEXT_ACCENT", "_CLR_TEXT_BODY",
+    "_CLR_TEXT_BTN", "_CLR_TEXT_BTN_LOG", "_CLR_TEXT_INFO", "_CLR_TEXT_LABEL",
+    "_CLR_TEXT_LINENO", "_CLR_TEXT_MUTED", "_CLR_TEXT_SUBTITLE", "_CLR_TEXT_TIME",
+    "_CLR_TEXT_TITLE", "_CLR_TOGGLE_ON", "_CLR_TX", "_CLR_WARN_ICON", "_CLR_WARNING",
+    "_DLG_STYLE", "_SERIAL_BTN_HEIGHT", "_SERIAL_BTN_ICON_SIZE", "_SERIAL_BTN_RADIUS",
+    "_TERM_FONT", "_UI_FONT", "_serial_connect_style", "_serial_disconnect_style",
+    "_serial_search_style", "body_splitter_style", "center_widget_style",
+    "checkbox_style", "compact_spinbox_style", "dialog_cancel_button_style",
+    "dialog_line_edit_style", "dialog_ok_button_style", "extra_log_error_color",
+    "field_label_style", "filter_input_style", "filter_match_label_style",
+    "history_combo_style", "inline_serial_label_style",
+    "inline_serial_search_button_extra_style", "log_color_info_style",
+    "log_color_info_text", "log_document_style", "log_edit_style", "log_frame_style",
+    "log_panel_button_style", "log_title_style", "log_toolbar_button_style",
+    "main_connect_button_style", "project_tabs_style", "quick_add_button_style",
+    "quick_button_container_style", "quick_button_scroll_style", "quick_cmd_dialog_style",
+    "quick_command_button_style", "quick_combo_style", "quick_commands_panel_style",
+    "quick_preview_popup_shadow", "quick_preview_popup_style", "quick_toolbar_button_style",
+    "section_card_style", "section_title_style", "send_button_style", "separator_style",
+    "sidebar_wrapper_style", "small_label_style", "status_bar_style", "status_label_style",
+    "thin_scrollbar_style", "toolbar_connect_button_style", "toolbar_style", "toggle_colors",
+    "transparent_background_style", "transparent_scroll_area_style",
+    "transparent_toolbar_button_style", "unit_label_style", "SERIAL_SCROLLBAR_STYLE",
+    "SerialDarkComboBox",
 )
+
+_SERIALCOM_STYLE_MODULE = _select_serialcom_style_module()
+_serialcom_style = _importlib.import_module(_SERIALCOM_STYLE_MODULE)
+globals().update({
+    _name: getattr(_serialcom_style, _name)
+    for _name in _SERIALCOM_STYLE_EXPORTS
+})
+del _serialcom_style
 from core.auto_baud_detector import (
     AutoBaudState, AutoBaudMonitor, AutoBaudScanWorker,
     AUTO_BAUD_CONFIG, score_rx_data,

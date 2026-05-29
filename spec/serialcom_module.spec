@@ -149,6 +149,8 @@ a = Analysis(
         'ui.widgets.scrollbar',
         'ui.utils',
         'ui.utils.icon_utils',
+        'ui.modules.serialCom_module.serialCom_apple_gpt5p5_style',
+        'ui.modules.serialCom_module.serialCom_dark_style',
         'ui.modules.serialCom_module.serial_session',
         'ui.modules.serialCom_module.serial_session_manager',
         'core',
