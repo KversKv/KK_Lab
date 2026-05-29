@@ -252,3 +252,21 @@ pixmap.setDevicePixelRatio(dpr)  # ← 禁止
 - 通用控件的高度由代码中 `setFixedHeight()` / `setMinimumHeight()` 精确控制。
 
 **参考实现**：[page_styles.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/styles/page_styles.py)
+
+## 25. Tab 状态样式的盒模型必须一致
+
+**现象**：`n6705c_analyser_ui.py` 中，连接 N6705C 后切换通道标签到 CH4，页面内容会向上偏移几个像素，底部控件看起来被牵动；CH1~CH3 切换不明显。
+
+**根因**：通道标签使用 `QPushButton` 模拟 tab，`checked` 与未选中状态的 QSS 盒模型不一致：
+
+- active 状态使用更小的垂直 `padding`；
+- active 状态使用 `border-bottom: none`，比未选中状态少 1px border；
+- Qt 会按当前样式重新计算 `sizeHint()`，最后一个 tab（CH4）激活时更容易暴露为整体上移。
+
+**规则**：
+
+- 用 `QPushButton` / 自绘控件模拟 tab 时，active / inactive / disabled 状态必须保持一致的 `padding`、`border` 宽度与 `margin`。
+- 需要做"选中 tab 与内容区连成一体"的视觉效果时，不要用 `border-bottom: none`；改用 `border-bottom: 1px solid <内容区背景色>`。
+- 不要为了修这种几像素跳动而全局固定父区域或底部控件高度，否则容易造成页面底部控件截断。
+
+**参考实现**：[n6705c_analyser_ui.py:_build_channel_tab_style](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/pages/n6705c_power_analyzer/n6705c_analyser_ui.py)

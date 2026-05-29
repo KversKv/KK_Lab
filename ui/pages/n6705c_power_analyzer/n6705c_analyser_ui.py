@@ -1523,12 +1523,12 @@ class N6705CAnalyserUI(QWidget):
             }}
         """
         if checked:
-            active_pad = "6px 12px" if dual else "7px 18px"
+            active_pad = "9px 12px" if dual else "10px 18px"
             return f"""
             QPushButton {{
                 background-color: {CONTENT_BG}; color: {theme['accent']};
                 border: 1px solid {border_color};
-                border-bottom: none;
+                border-bottom: 1px solid {CONTENT_BG};
                 {radius_str}
                 padding: {active_pad}; font-size: {font_size}; font-weight: 700;
                 margin-bottom: 0px;
