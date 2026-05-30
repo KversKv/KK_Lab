@@ -27,8 +27,10 @@ from ui.modules.chamber_module_frame import (
     CHAMBER_TYPES,
     chamber_baudrate,
     chamber_connection_kind,
+    chamber_default_resource,
     chamber_display_name,
     chamber_type_label,
+    chamber_uses_network,
 )
 
 logger = get_logger(__name__)
@@ -164,7 +166,7 @@ class ChamberControlUI(QWidget):
 
         header_layout.addLayout(title_row)
 
-        subtitle_label = QLabel("Thermal chamber control and monitoring via serial port.")
+        subtitle_label = QLabel("Thermal chamber control and monitoring via serial or Ethernet.")
         subtitle_label.setObjectName("subtitleLabel")
         subtitle_label.setStyleSheet("border: none")
 
@@ -186,11 +188,11 @@ class ChamberControlUI(QWidget):
         connection_title_col.setContentsMargins(0, 0, 0, 0)
         connection_title_col.setSpacing(2)
 
-        connection_title = QLabel("Serial Connection")
+        connection_title = QLabel("Connection")
         connection_title.setObjectName("connectionTitle")
         connection_title.setStyleSheet("border: none")
 
-        connection_subtitle = QLabel("Select chamber model and COM port")
+        connection_subtitle = QLabel("Select chamber model and connection resource")
         connection_subtitle.setObjectName("connectionSubtitle")
         connection_subtitle.setStyleSheet("border: none")
 
@@ -209,9 +211,9 @@ class ChamberControlUI(QWidget):
         for chamber_type, meta in CHAMBER_TYPES.items():
             self.chamber_type_combo.addItem(meta["label"], chamber_type)
 
-        port_label = QLabel("COM Port")
-        port_label.setObjectName("fieldLabel")
-        port_label.setStyleSheet("border: none")
+        self.port_label = QLabel("COM Port")
+        self.port_label.setObjectName("fieldLabel")
+        self.port_label.setStyleSheet("border: none")
 
         row_layout = QHBoxLayout()
         row_layout.setContentsMargins(0, 0, 0, 0)
@@ -243,7 +245,7 @@ class ChamberControlUI(QWidget):
         port_control_layout.addWidget(self.scan_btn, 0)
 
         form_layout.addWidget(type_label, 0, 0)
-        form_layout.addWidget(port_label, 0, 1)
+        form_layout.addWidget(self.port_label, 0, 1)
         form_layout.addWidget(self.chamber_type_combo, 1, 0)
         form_layout.addLayout(port_control_layout, 1, 1)
         form_layout.setColumnStretch(0, 1)
@@ -443,7 +445,7 @@ class ChamberControlUI(QWidget):
             self._set_type_combo(session.instrument_type)
             self._set_connection_ui(True)
             self._set_controls_enabled(True)
-            self._set_power_ui(False)
+            self._sync_power_state_from_chamber()
             self.connection_changed.emit()
 
     def _on_manager_session_disconnected(self, session_id: str):
@@ -455,7 +457,7 @@ class ChamberControlUI(QWidget):
         self.is_chamber_on = False
         self._set_connection_ui(False)
         self._set_controls_enabled(False)
-        self._set_power_ui(False)
+        self._set_power_ui(False, connected=False)
         self.connection_changed.emit()
 
     def _on_manager_connect_failed(self, session_id: str, error: str):
@@ -464,11 +466,12 @@ class ChamberControlUI(QWidget):
         logger.error("Chamber connection failed via manager: %s", error)
         self._set_connection_ui(False)
         self._set_controls_enabled(False)
+        self._set_power_ui(False, connected=False)
 
     def _on_chamber_type_changed(self):
         self.current_chamber_type = self._selected_chamber_type()
         if self.chamber is None:
-            self.port_combo.clear()
+            self._scan_ports()
 
     def _selected_chamber_type(self):
         data = self.chamber_type_combo.currentData()
@@ -478,6 +481,12 @@ class ChamberControlUI(QWidget):
         idx = self.chamber_type_combo.findData(chamber_type)
         if idx >= 0:
             self.chamber_type_combo.setCurrentIndex(idx)
+
+    def _update_connection_resource_mode(self, chamber_type: str):
+        uses_network = chamber_uses_network(chamber_type)
+        self.port_label.setText("IP Address" if uses_network else "COM Port")
+        self.port_combo.setEditable(uses_network)
+        self.scan_btn.setToolTip("Use default IP address" if uses_network else "Search serial ports")
 
     def _apply_shadow(self, widget):
         """卡片阴影"""
@@ -778,14 +787,34 @@ class ChamberControlUI(QWidget):
             self.status_detail.setText("Disconnected")
             self.status_dot.setStyleSheet("color: #5d78a7; font-size: 16px;border: none")
 
-    def _set_power_ui(self, chamber_on: bool):
+    def _set_power_ui(self, chamber_on: bool, connected: bool | None = None):
         """更新温箱电源按钮样式"""
-        if chamber_on:
-            self.power_btn.setText("⏻  CHAMBER ON")
+        if connected is None:
+            connected = self._is_current_chamber_connected()
+        self.is_chamber_on = bool(chamber_on) if connected else False
+        self.power_btn.setEnabled(connected)
+
+        if not connected:
+            self.power_btn.setText("⏻  CHAMBER OFFLINE")
             self.power_btn.setStyleSheet("""
                 QPushButton#powerButton {
-                    background-color: #0f8f63;
-                    border: 1px solid #15e6a3;
+                    background-color: #1a2642;
+                    border: 1px solid #2a3b63;
+                    border-radius: 8px;
+                    color: #4f6287;
+                    font-size: 15px;
+                    font-weight: 800;
+                    padding: 10px 16px;
+                }
+            """)
+            return
+
+        if chamber_on:
+            self.power_btn.setText("⏻  STOP CHAMBER")
+            self.power_btn.setStyleSheet("""
+                QPushButton#powerButton {
+                    background-color: #a9153e;
+                    border: 1px solid #ff4f7b;
                     border-radius: 8px;
                     color: white;
                     font-size: 15px;
@@ -793,42 +822,88 @@ class ChamberControlUI(QWidget):
                     padding: 10px 16px;
                 }
                 QPushButton#powerButton:hover {
-                    background-color: #11a36f;
+                    background-color: #c31d4c;
+                    border-color: #ff6b91;
                 }
                 QPushButton#powerButton:pressed {
-                    background-color: #0d7f58;
+                    background-color: #8d1134;
                 }
             """)
-        else:
-            self.power_btn.setText("⏻  TURN ON CHAMBER")
-            self.power_btn.setStyleSheet("""
-                QPushButton#powerButton {
-                    background-color: #223150;
-                    border: 1px solid #34486f;
-                    border-radius: 8px;
-                    color: #5f7397;
-                    font-size: 15px;
-                    font-weight: 800;
-                    padding: 10px 16px;
-                }
-                QPushButton#powerButton:hover:!disabled {
-                    background-color: #2a3a5e;
-                }
-                QPushButton#powerButton:pressed:!disabled {
-                    background-color: #243350;
-                }
-                QPushButton#powerButton:disabled {
-                    background-color: #1a2642;
-                    color: #4f6287;
-                    border: 1px solid #2a3b63;
-                }
-            """)
+            return
+
+        self.power_btn.setText("⏻  START CHAMBER")
+        self.power_btn.setStyleSheet("""
+            QPushButton#powerButton {
+                background-color: #0f8f63;
+                border: 1px solid #15e6a3;
+                border-radius: 8px;
+                color: white;
+                font-size: 15px;
+                font-weight: 800;
+                padding: 10px 16px;
+            }
+            QPushButton#powerButton:hover {
+                background-color: #11a36f;
+                border-color: #42f0bd;
+            }
+            QPushButton#powerButton:pressed {
+                background-color: #0d7f58;
+            }
+        """)
+
+    def _is_current_chamber_connected(self) -> bool:
+        if self.chamber is None:
+            return False
+        if hasattr(self.chamber, "is_connected"):
+            try:
+                return bool(self.chamber.is_connected())
+            except Exception:
+                logger.debug("Chamber is_connected check failed", exc_info=True)
+                return False
+        return bool(hasattr(self.chamber, "ser") and self.chamber.ser is not None and self.chamber.ser.is_open)
+
+    def _sync_power_state_from_chamber(self, allow_io: bool = True):
+        connected = self._is_current_chamber_connected()
+        if not connected:
+            self._set_power_ui(False, connected=False)
+            return
+        chamber_on = self._read_chamber_running_state(allow_io=allow_io)
+        if chamber_on is None:
+            chamber_on = self.is_chamber_on
+        self._set_power_ui(bool(chamber_on), connected=True)
+
+    def _read_chamber_running_state(self, allow_io: bool = True):
+        if self.chamber is None:
+            return None
+        cached = getattr(self.chamber, "_last_known_running_state", None)
+        verified = bool(getattr(self.chamber, "_last_known_running_state_verified", False))
+        if cached is not None and (verified or not allow_io):
+            return bool(cached)
+        if not allow_io:
+            return None
+        for method_name in ("is_running", "isRunning"):
+            method = getattr(self.chamber, method_name, None)
+            if callable(method):
+                try:
+                    running = bool(method())
+                    setattr(self.chamber, "_last_known_running_state", running)
+                    setattr(self.chamber, "_last_known_running_state_verified", True)
+                    return running
+                except Exception as e:
+                    logger.warning("读取温箱运行状态失败: %s", e, exc_info=True)
+                    return None
+        return None
 
     def _scan_ports(self):
         chamber_type = self._selected_chamber_type()
+        self._update_connection_resource_mode(chamber_type)
         if DEBUG_MOCK:
             self.port_combo.clear()
             self.port_combo.addItem(f"MOCK (Mock {chamber_type_label(chamber_type)})")
+            return
+        if chamber_uses_network(chamber_type):
+            self.port_combo.clear()
+            self.port_combo.addItem(chamber_default_resource(chamber_type))
             return
         try:
             from serial.tools.list_ports import comports
@@ -866,7 +941,7 @@ class ChamberControlUI(QWidget):
 
                     self._set_connection_ui(False)
                     self._set_controls_enabled(False)
-                    self._set_power_ui(False)
+                    self._set_power_ui(False, connected=False)
                     self.connection_changed.emit()
             except Exception as e:
                 logger.error("断开连接错误: %s", e, exc_info=True)
@@ -911,7 +986,7 @@ class ChamberControlUI(QWidget):
                     )
                 self._set_connection_ui(True)
                 self._set_controls_enabled(True)
-                self._set_power_ui(False)
+                self._sync_power_state_from_chamber()
                 self.connection_changed.emit()
             except Exception as e:
                 logger.error("连接设备错误: %s", e, exc_info=True)
@@ -919,6 +994,7 @@ class ChamberControlUI(QWidget):
                 self.current_port = None
                 self._set_connection_ui(False)
                 self._set_controls_enabled(False)
+                self._set_power_ui(False, connected=False)
 
     def _toggle_chamber_power(self):
         """切换温箱电源"""
@@ -928,17 +1004,19 @@ class ChamberControlUI(QWidget):
         if self.is_chamber_on:
             try:
                 self.chamber.stop()
-                self.is_chamber_on = False
-                self._set_power_ui(False)
+                setattr(self.chamber, "_last_known_running_state", False)
+                setattr(self.chamber, "_last_known_running_state_verified", True)
+                self._set_power_ui(False, connected=True)
             except Exception as e:
-                logger.error("关闭温箱错误: %s", e)
+                logger.error("关闭温箱错误: %s", e, exc_info=True)
         else:
             try:
                 self.chamber.start()
-                self.is_chamber_on = True
-                self._set_power_ui(True)
+                setattr(self.chamber, "_last_known_running_state", True)
+                setattr(self.chamber, "_last_known_running_state_verified", True)
+                self._set_power_ui(True, connected=True)
             except Exception as e:
-                logger.error("打开温箱错误: %s", e)
+                logger.error("打开温箱错误: %s", e, exc_info=True)
 
     def _set_temperature(self):
         """设置温度"""
@@ -984,8 +1062,9 @@ class ChamberControlUI(QWidget):
                 set_temp = self.chamber.get_set_temp()
                 if set_temp is not None:
                     self.set_temp_value.setText(f"{set_temp:.1f} °C")
+                self._sync_power_state_from_chamber(allow_io=False)
             except Exception as e:
-                logger.error("更新温度错误: %s", e)
+                logger.error("更新温度错误: %s", e, exc_info=True)
         else:
             self.temp_gauge.set_temperature(None)
 

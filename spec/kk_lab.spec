@@ -71,6 +71,7 @@ a = Analysis(
         'instruments.chambers.base',
         'instruments.chambers.mt3065',
         'instruments.chambers.vt6002_chamber',
+        'instruments.chambers.wt2040_chamber',
         'instruments.chambers.temperature_stabilizer',
         'instruments.mock',
         'instruments.mock.mock_instruments',

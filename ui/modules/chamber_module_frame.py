@@ -36,6 +36,12 @@ CHAMBER_TYPES = {
         "connection_kind": "serial_ascii",
         "baudrate": 19200,
     },
+    "wt2040": {
+        "label": "WT2040",
+        "display_name": "WT2040 Chamber",
+        "connection_kind": "tcp_hmi",
+        "default_resource": "192.168.1.66",
+    },
 }
 
 _SVG_COMMON_DIR = os.path.join(
@@ -69,6 +75,15 @@ def chamber_baudrate(chamber_type: str) -> int:
 def chamber_connection_kind(chamber_type: str) -> str:
     meta = CHAMBER_TYPES.get(str(chamber_type).strip().lower(), {})
     return meta.get("connection_kind", "serial")
+
+
+def chamber_default_resource(chamber_type: str) -> str:
+    meta = CHAMBER_TYPES.get(str(chamber_type).strip().lower(), {})
+    return meta.get("default_resource", "")
+
+
+def chamber_uses_network(chamber_type: str) -> bool:
+    return chamber_connection_kind(chamber_type).startswith("tcp")
 
 
 def _search_style(h=_CHAMBER_BTN_HEIGHT, r=_CHAMBER_BTN_RADIUS):
@@ -289,6 +304,7 @@ class ChamberConnectionMixin:
         self.chamber_port_combo.setMinimumContentsLength(10)
         self.chamber_port_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         layout.addWidget(self.chamber_port_combo)
+        self._populate_chamber_resource_combo(self.current_chamber_type)
 
         btn_row = QHBoxLayout()
         btn_row.setSpacing(6)
@@ -320,7 +336,16 @@ class ChamberConnectionMixin:
     def _on_chamber_type_changed(self):
         self.current_chamber_type = self._selected_chamber_type()
         if hasattr(self, "chamber_port_combo") and not self.is_chamber_connected:
-            self.chamber_port_combo.clear()
+            self._populate_chamber_resource_combo(self.current_chamber_type)
+
+    def _populate_chamber_resource_combo(self, chamber_type: str):
+        if not hasattr(self, "chamber_port_combo"):
+            return
+        self.chamber_port_combo.setEditable(chamber_uses_network(chamber_type))
+        self.chamber_port_combo.clear()
+        default_resource = chamber_default_resource(chamber_type)
+        if default_resource:
+            self.chamber_port_combo.addItem(default_resource)
 
     def _on_chamber_external_changed(self):
         if self._chamber_syncing or self._chamber_ui is None:
@@ -397,6 +422,11 @@ class ChamberConnectionMixin:
             self.chamber_port_combo.addItem(f"[MOCK] {chamber_type_label(chamber_type)} Chamber")
             return
 
+        if chamber_uses_network(chamber_type):
+            self._populate_chamber_resource_combo(chamber_type)
+            self.chamber_connect_btn.setEnabled(True)
+            return
+
         if self._chamber_search_thread is not None and self._chamber_search_thread.isRunning():
             return
 
@@ -455,7 +485,7 @@ class ChamberConnectionMixin:
         chamber_type = self._selected_chamber_type()
         port_str = self.chamber_port_combo.currentText().strip()
         if not port_str or port_str in ("No serial ports found", "Scan Failed"):
-            self._update_chamber_connection_ui(False, "No serial port selected")
+            self._update_chamber_connection_ui(False, "No connection resource selected")
             return
 
         if DEBUG_MOCK:
@@ -510,6 +540,8 @@ class ChamberConnectionMixin:
         self._chamber_ui.current_chamber_session_id = self.current_chamber_session_id
         self._chamber_ui._set_connection_ui(True)
         self._chamber_ui._set_controls_enabled(True)
+        if hasattr(self._chamber_ui, "_sync_power_state_from_chamber"):
+            self._chamber_ui._sync_power_state_from_chamber()
         self._chamber_ui.connection_changed.emit()
         self._chamber_syncing = False
 
@@ -542,7 +574,7 @@ class ChamberConnectionMixin:
             self._chamber_ui.is_chamber_on = False
             self._chamber_ui._set_connection_ui(False)
             self._chamber_ui._set_controls_enabled(False)
-            self._chamber_ui._set_power_ui(False)
+            self._chamber_ui._set_power_ui(False, connected=False)
             self._chamber_ui.connection_changed.emit()
             self._chamber_syncing = False
 

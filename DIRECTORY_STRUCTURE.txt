@@ -144,6 +144,7 @@ instruments/
 │   ├── mt3065.py            # MT3065 温箱驱动
 │   ├── vt6002_chamber.py    # VT6002 高低温试验箱驱动
 │   │                        # (Modbus 串口协议，温度设置与读取)
+│   ├── wt2040_chamber.py    # WT2040 网口温箱驱动（默认 IP: 192.168.1.66）
 │   └── temperature_stabilizer.py  # 温箱温度判稳工具（滑窗 + watchdog，UI 无关）
 │
 ├── frequencyCounter/        # 频率计驱动

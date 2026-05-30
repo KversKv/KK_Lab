@@ -3,6 +3,7 @@ from instruments.scopes.tektronix.mso64b import MSO64B
 from instruments.power.keysight.n6705c import N6705C
 from instruments.chambers.mt3065 import MT3065
 from instruments.chambers.vt6002_chamber import VT6002
+from instruments.chambers.wt2040_chamber import WT2040
 from instruments.frequencyCounter.keysight_53230A import Keysight53230A
 from instruments.MCU_IO.YD_RP2040 import PicoGPIO
 from instruments.base.visa_instrument import VisaInstrument
@@ -17,6 +18,11 @@ _INSTRUMENT_CREATORS = {
     "dsox4034a": lambda **kw: DSOX4034A(kw["resource"]),
     "vt6002": lambda **kw: VT6002(kw.get("port", kw.get("resource", "")), kw.get("baudrate", 9600)),
     "mt3065": lambda **kw: MT3065(kw.get("port", kw.get("resource", "")), kw.get("baudrate", 19200)),
+    "wt2040": lambda **kw: WT2040(
+        kw.get("host") or kw.get("resource") or kw.get("port") or WT2040.DEFAULT_HOST,
+        tcp_port=kw.get("tcp_port", WT2040.DEFAULT_PORT),
+        timeout=kw.get("timeout", 5.0),
+    ),
     "keysight53230a": lambda **kw: Keysight53230A(kw["resource"]),
     "yd_rp2040": lambda **kw: PicoGPIO(
         kw.get("port", kw.get("resource", "")),
@@ -55,10 +61,16 @@ def create_chamber(chamber_type: str = "vt6002", port: str = "", baudrate: int |
     port = port or resource
     key = str(chamber_type).strip().lower()
     if DEBUG_MOCK:
-        from instruments.mock.mock_instruments import MockMT3065, MockVT6002
+        from instruments.mock.mock_instruments import MockMT3065, MockVT6002, MockWT2040
+        if key == "wt2040":
+            return MockWT2040()
         if key == "mt3065":
             return MockMT3065()
         return MockVT6002()
+    if key == "wt2040":
+        host = port or resource or WT2040.DEFAULT_HOST
+        logger.debug("create_chamber: type=%s, host=%s", key, host)
+        return create_instrument(key, host=host, resource=host)
     default_baudrate = 19200 if key == "mt3065" else 9600
     baudrate = default_baudrate if baudrate is None else baudrate
     logger.debug("create_chamber: type=%s, port=%s, baudrate=%d", key, port, baudrate)

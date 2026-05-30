@@ -50,6 +50,7 @@ class VT6002(ChamberBase):
             "辅助设定SV": "0086",
             "温度输出": "01D2",
             "湿度输出": "01DC",
+            "设备运行状态": "00FA",
             "通讯协议": "00E6",
             "通讯格式": "00E8",
             "地址站号": "00EA",
@@ -76,6 +77,13 @@ class VT6002(ChamberBase):
         """构建Modbus请求帧"""
         address_bytes = bytes.fromhex(address_hex)
         request = bytes([0x01, 0x03]) + address_bytes + bytes([0x00, 0x01])
+        crc = crc16(request)
+        return request + struct.pack('<H', crc)
+
+    def build_coil_request(self, address_hex):
+        """构建Modbus线圈读取请求帧"""
+        address_bytes = bytes.fromhex(address_hex)
+        request = bytes([0x01, 0x01]) + address_bytes + bytes([0x00, 0x01])
         crc = crc16(request)
         return request + struct.pack('<H', crc)
 
@@ -110,6 +118,23 @@ class VT6002(ChamberBase):
         else:
             logger.warning("错误: 地址 %s 响应不完整", address_hex)
             return None
+
+    def read_coil(self, address_hex):
+        """读取指定线圈状态"""
+        self.ser.write(self.build_coil_request(address_hex))
+        response = self.ser.read(6)
+        if len(response) != 6:
+            logger.warning("错误: 线圈地址 %s 响应不完整", address_hex)
+            return None
+        if response[0] != 0x01 or response[1] != 0x01 or response[2] < 1:
+            logger.warning("错误: 线圈地址 %s 响应格式异常: %s", address_hex, response.hex(" "))
+            return None
+        expected_crc = struct.unpack("<H", response[-2:])[0]
+        actual_crc = crc16(response[:-2])
+        if expected_crc != actual_crc:
+            logger.warning("错误: 线圈地址 %s CRC 校验失败: %s", address_hex, response.hex(" "))
+            return None
+        return bool(response[3] & 0x01)
 
     def write_value(self, address_hex, value_to_be_write):
         """读取指定地址的数据"""
@@ -180,6 +205,18 @@ class VT6002(ChamberBase):
     def read_humidity_output(self):
         """读取湿度输出"""
         return self.read_value(self.parameters["湿度输出"])
+
+    def is_running(self) -> bool:
+        """读取设备运行状态: True=启动, False=停止"""
+        running = self.read_coil(self.parameters["设备运行状态"])
+        if running is None:
+            raise RuntimeError("VT6002 running state response invalid")
+        self._last_known_running_state = running
+        self._last_known_running_state_verified = True
+        logger.debug("VT6002 is_running: %s", running)
+        return running
+
+    isRunning = is_running
 
     def read_communication_protocol(self):
         """读取通讯协议"""

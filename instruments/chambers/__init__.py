@@ -1,6 +1,7 @@
 from instruments.chambers.base import ChamberBase
 from instruments.chambers.mt3065 import MT3065
 from instruments.chambers.vt6002_chamber import VT6002
+from instruments.chambers.wt2040_chamber import WT2040
 from instruments.chambers.temperature_stabilizer import (
     StabilizeResult,
     TemperatureStabilizer,
@@ -10,6 +11,7 @@ __all__ = [
     "ChamberBase",
     "MT3065",
     "VT6002",
+    "WT2040",
     "TemperatureStabilizer",
     "StabilizeResult",
 ]

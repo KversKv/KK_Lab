@@ -434,9 +434,20 @@ class MockChamber:
 
     def start(self):
         self._is_running = True
+        self._last_known_running_state = True
+        self._last_known_running_state_verified = True
 
     def stop(self):
         self._is_running = False
+        self._last_known_running_state = False
+        self._last_known_running_state_verified = True
+
+    def is_running(self):
+        self._last_known_running_state = self._is_running
+        self._last_known_running_state_verified = True
+        return self._is_running
+
+    isRunning = is_running
 
     def close(self):
         self.ser.is_open = False
@@ -450,6 +461,11 @@ class MockVT6002(MockChamber):
 class MockMT3065(MockChamber):
     def __init__(self):
         super().__init__("Mock MT3065 Temperature Chamber")
+
+
+class MockWT2040(MockChamber):
+    def __init__(self):
+        super().__init__("Mock WT2040 Temperature Chamber")
 
 
 class MockMSO64B:

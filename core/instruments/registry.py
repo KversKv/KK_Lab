@@ -354,6 +354,15 @@ def _verify_chamber(instance: object, model: str, vendor: str = "") -> Instrumen
             raise ConnectionError(f"{model} verify failed: serial port not open")
     else:
         raise ConnectionError(f"{model} verify failed: no valid interface found")
+    for method_name in ("is_running", "isRunning"):
+        method = getattr(instance, method_name, None)
+        if callable(method):
+            try:
+                setattr(instance, "_last_known_running_state", bool(method()))
+                setattr(instance, "_last_known_running_state_verified", True)
+            except Exception as e:
+                logger.warning("%s running state check failed: %s", model, e, exc_info=True)
+            break
     return InstrumentIdentity(
         model=model,
         serial="",
@@ -428,6 +437,42 @@ def _scan_mt3065() -> list[InstrumentCandidate]:
 
 def _disconnect_mt3065(instance: object) -> None:
     _disconnect_chamber(instance, "MT3065")
+
+
+def _create_wt2040(spec: InstrumentSpec) -> object:
+    return _create_chamber(spec, "wt2040", "MockWT2040")
+
+
+def _verify_wt2040(instance: object) -> InstrumentIdentity:
+    return _verify_chamber(instance, "WT2040")
+
+
+def _scan_wt2040() -> list[InstrumentCandidate]:
+    from debug_config import DEBUG_MOCK
+    if DEBUG_MOCK:
+        return [
+            InstrumentCandidate(
+                instrument_type="wt2040",
+                connection_kind="tcp_hmi",
+                resource="MOCK::WT2040",
+                model_hint="WT2040",
+                display_name="Mock WT2040",
+            ),
+        ]
+    from instruments.chambers.wt2040_chamber import WT2040
+    return [
+        InstrumentCandidate(
+            instrument_type="wt2040",
+            connection_kind="tcp_hmi",
+            resource=WT2040.DEFAULT_HOST,
+            model_hint="WT2040",
+            display_name=f"WT2040 - {WT2040.DEFAULT_HOST}",
+        ),
+    ]
+
+
+def _disconnect_wt2040(instance: object) -> None:
+    _disconnect_chamber(instance, "WT2040")
 
 
 def _create_keysight53230a(spec: InstrumentSpec) -> object:
@@ -678,6 +723,21 @@ MT3065_PROFILE = InstrumentProfile(
     default_slot="chamber",
 )
 
+WT2040_PROFILE = InstrumentProfile(
+    instrument_type="wt2040",
+    display_name="WT2040 Temperature Chamber",
+    connection_kind="tcp_hmi",
+    role="chamber",
+    capabilities=frozenset({
+        "set_temperature", "read_temperature", "stabilize_wait",
+    }),
+    create=_create_wt2040,
+    verify=_verify_wt2040,
+    scan=_scan_wt2040,
+    disconnect=_disconnect_wt2040,
+    default_slot="chamber",
+)
+
 KEYSIGHT53230A_PROFILE = InstrumentProfile(
     instrument_type="keysight53230a",
     display_name="Keysight 53230A Frequency Counter",
@@ -880,6 +940,7 @@ def create_default_registry() -> ProfileRegistry:
     registry.register(DSOX4034A_PROFILE)
     registry.register(VT6002_PROFILE)
     registry.register(MT3065_PROFILE)
+    registry.register(WT2040_PROFILE)
     registry.register(KEYSIGHT53230A_PROFILE)
     registry.register(MCU_IO_PROFILE)
     registry.register(SERIAL_PORT_PROFILE)

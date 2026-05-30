@@ -3,6 +3,7 @@ from instruments.mock.mock_instruments import (
     MockI2C,
     MockChamber,
     MockMT3065,
+    MockWT2040,
     MockVT6002,
     MockMSO64B,
 )
@@ -12,6 +13,7 @@ __all__ = [
     "MockI2C",
     "MockChamber",
     "MockMT3065",
+    "MockWT2040",
     "MockVT6002",
     "MockMSO64B",
 ]
