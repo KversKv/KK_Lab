@@ -7712,7 +7712,9 @@ if __name__ == "__main__":
         }
     """)
 
-    w = N6705CDatalogUI()
+    from core.instruments import InstrumentManager
+    _standalone_manager = InstrumentManager()
+    w = N6705CDatalogUI(instrument_manager=_standalone_manager)
     w.setWindowTitle("N6705C Datalog - Debug")
     resize_and_center_window(w)
     if os.path.exists(_icon_path):
