@@ -2872,6 +2872,8 @@ class N6705CDatalogUI(QWidget):
             return
         self._ch_cfg_slots_signature = signature
 
+        preserved_state = self._snapshot_native_channel_state()
+
         old_inner = self.channel_config_inner
         self._instruments_tab_layout.removeWidget(old_inner)
         old_inner.deleteLater()
@@ -3059,6 +3061,65 @@ class N6705CDatalogUI(QWidget):
         self.channel_config_stack.update()
         if self.channel_config_tabbar.count() > 0:
             self.channel_config_tabbar.setCurrentIndex(0)
+
+        self._restore_native_channel_state(preserved_state)
+
+    def _snapshot_native_channel_state(self):
+        snapshot = {}
+        groups = [
+            ("A", "I", getattr(self, 'ch_current_cbs_a', [])),
+            ("A", "V", getattr(self, 'ch_voltage_cbs_a', [])),
+            ("A", "P", getattr(self, 'ch_power_cbs_a', [])),
+            ("B", "I", getattr(self, 'ch_current_cbs_b', [])),
+            ("B", "V", getattr(self, 'ch_voltage_cbs_b', [])),
+            ("B", "P", getattr(self, 'ch_power_cbs_b', [])),
+        ]
+        for slot_char, meas_type, buttons in groups:
+            for idx, btn in enumerate(buttons):
+                try:
+                    scale_edit = btn.property("scale_edit")
+                    offset_edit = btn.property("offset_edit")
+                    snapshot[(slot_char, meas_type, idx)] = {
+                        "checked": btn.isChecked(),
+                        "user_edited": bool(btn.property("user_edited")),
+                        "scale_text": scale_edit.text() if scale_edit else None,
+                        "offset_text": offset_edit.text() if offset_edit else None,
+                    }
+                except RuntimeError:
+                    continue
+        return snapshot
+
+    def _restore_native_channel_state(self, snapshot):
+        if not snapshot:
+            return
+        groups = [
+            ("A", "I", getattr(self, 'ch_current_cbs_a', [])),
+            ("A", "V", getattr(self, 'ch_voltage_cbs_a', [])),
+            ("A", "P", getattr(self, 'ch_power_cbs_a', [])),
+            ("B", "I", getattr(self, 'ch_current_cbs_b', [])),
+            ("B", "V", getattr(self, 'ch_voltage_cbs_b', [])),
+            ("B", "P", getattr(self, 'ch_power_cbs_b', [])),
+        ]
+        for slot_char, meas_type, buttons in groups:
+            for idx, btn in enumerate(buttons):
+                state = snapshot.get((slot_char, meas_type, idx))
+                if not state:
+                    continue
+                scale_edit = btn.property("scale_edit")
+                offset_edit = btn.property("offset_edit")
+                if scale_edit and state.get("scale_text") is not None:
+                    scale_edit.setText(state["scale_text"])
+                if offset_edit and state.get("offset_text") is not None:
+                    offset_edit.setText(state["offset_text"])
+                if state.get("user_edited"):
+                    btn.setProperty("user_edited", True)
+                if state.get("checked"):
+                    btn.blockSignals(True)
+                    btn.setChecked(True)
+                    ch_color = btn.property("ch_color")
+                    if ch_color:
+                        btn.setStyleSheet(self._ch_toggle_style(ch_color, True))
+                    btn.blockSignals(False)
 
     def _build_imported_channel_config(self, tab_name=None, data_keys=None, file_prefix=None):
         import re
