@@ -28,25 +28,28 @@ class DarkComboBox(QComboBox):
         self._hover_color = hover_color
         self.setSizePolicy(self.sizePolicy().horizontalPolicy(), self.sizePolicy().verticalPolicy())
         self.setMinimumWidth(0)
+        _oid = f"darkCombo_{id(self)}"
+        self.setObjectName(_oid)
         self.setStyleSheet(f"""
-            QComboBox {{
+            QComboBox#{_oid} {{
                 background-color: {bg};
                 border: 1.5px solid {border};
                 border-radius: 6px;
-                padding: 4px 28px 4px 10px;
+                padding: 2px 28px 2px 10px;
                 color: #c8d5e2;
                 font-size: 13px;
+                min-height: 22px;
             }}
-            QComboBox::drop-down {{
+            QComboBox#{_oid}::drop-down {{
                 border: none;
                 width: 22px;
             }}
-            QComboBox::down-arrow {{
+            QComboBox#{_oid}::down-arrow {{
                 image: none;
                 width: 0px;
                 height: 0px;
             }}
-            QComboBox QLineEdit {{
+            QComboBox#{_oid} QLineEdit {{
                 background-color: transparent;
                 border: none;
                 color: #c8d5e2;
@@ -54,7 +57,7 @@ class DarkComboBox(QComboBox):
                 padding: 0px;
                 margin: 0px;
             }}
-            QComboBox QLineEdit:disabled {{
+            QComboBox#{_oid} QLineEdit:disabled {{
                 color: #3a4a6a;
             }}
         """)

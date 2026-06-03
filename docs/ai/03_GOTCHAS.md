@@ -253,6 +253,28 @@ pixmap.setDevicePixelRatio(dpr)  # ← 禁止
 
 **参考实现**：[page_styles.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/styles/page_styles.py)
 
+### 24.1 可复用控件嵌入页面时的高度治理（DarkComboBox 实战）
+
+**现象**：`DarkComboBox` 在不同页面/位置表现不一致——同一控件在 `vmin_hunter_ui.py` 的 MCU PWR / N6705C 区域被压扁成几像素的细条，而 UART 区域与其它页面（如 `pmu_dcdc_efficiency.py`）正常。规律是：**设了 `setFixedHeight()` 的 combo 正常；没设的被压扁或被撑高。**
+
+**根因（三处高度来源互相打架）**：
+
+1. 页面父级 QSS 的裸类型选择器 `QComboBox { min-height; padding }` 会**级联穿透**到嵌套模块内部的每个 combo。
+2. 可复用控件 `DarkComboBox` 自身 QSS 若用**相同特异度**的 `QComboBox` 选择器，Qt 中**祖先 stylesheet 优先**，子控件写的值反而不生效（见 #24 现象）。
+3. `min-height` 与上下 `padding` 会**叠加进最终高度**：`min-height:24 + padding:4+4 ≈ 32px`，造成"过高"；把自身 `min-height` 删成 0 又失去兜底，没设 `setFixedHeight` 的 combo 被压扁。
+
+**业内正确做法（控件高度治理三原则）**：
+
+- **单一权威来源**：一个控件的高度不要同时由"父级 QSS min-height + 自身 QSS padding + 代码 setFixedHeight"三方决定，必混乱。
+- **可复用控件必须自洽**：通用控件（如 `DarkComboBox`）应在**自身 QSS** 中用**足够高特异度的选择器**（ID 选择器 `QComboBox#objectName`，特异度 `(0,1,0,0)` > 类型选择器 `(0,0,0,1)`）钉死 `min-height` / `padding` / `border`，**绝不依赖父页面恰好给了 min-height 才长得对**。
+- **特异度只决定"谁的值生效"，不决定"值设多少"**：用 ID 选择器反超父级后，还要把 `min-height` 设为标准值（本项目 = **22px**），并把上下 `padding` 收到 **2px**，避免叠加过高。需要特殊高度的场景（如要与按钮/开关精确对齐）再由调用处 `setFixedHeight()` 指定。
+
+**本项目落地（基准值）**：
+
+- `DarkComboBox` 全局标准高度 = `min-height: 22px` + 上下 `padding: 2px`，且选择器用 `QComboBox#darkCombo_<id>`（实例唯一 objectName）。见 [dark_combobox.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/widgets/dark_combobox.py)。
+- MCU IO 模块的 combo / 按钮 / 开关统一走常量 `MCU_IO_BTN_HEIGHT = 22`，一处改动全局对齐。见 [mcu_io_module_frame.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/modules/mcu_io_module_frame.py)。
+- 页面父级 QSS 仍**禁止**用裸 `QComboBox { min-height }`（见 #24 规则）；可复用控件靠自身 ID 选择器自洽，二者配合才稳。
+
 ## 25. Tab 状态样式的盒模型必须一致
 
 **现象**：`n6705c_analyser_ui.py` 中，连接 N6705C 后切换通道标签到 CH4，页面内容会向上偏移几个像素，底部控件看起来被牵动；CH1~CH3 切换不明显。

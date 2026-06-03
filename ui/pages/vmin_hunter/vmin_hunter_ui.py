@@ -24,11 +24,12 @@ from PySide6.QtWidgets import (
     QScrollArea, QFileDialog,
     QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.chamber_module_frame import ChamberConnectionMixin
+from ui.modules.mcu_io_module_frame import McuPwrResetConfigMixin
 from ui.modules.serialCom_module.serialCom_module_frame import (
     SerialComMixin, MODE_FULL,
 )
@@ -53,12 +54,16 @@ _TEST_MODES = [
 ]
 
 
-class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin, QWidget):
+class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
+                   McuPwrResetConfigMixin, SerialComMixin, QWidget):
     """Vmin 探底测试页面。
 
-    多继承 N6705CConnectionMixin / ChamberConnectionMixin / SerialComMixin
+    多继承 N6705CConnectionMixin / ChamberConnectionMixin /
+    McuPwrResetConfigMixin / SerialComMixin
     复用仪器连接逻辑，与 GPADC / Consumption Test 保持一致的连接交互。
     """
+
+    mcu_io_connection_status_changed = Signal(bool)
 
     def __init__(self, n6705c_top=None, instrument_manager=None, parent=None):
         QWidget.__init__(self, parent)
@@ -67,6 +72,7 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
             instrument_manager=instrument_manager,
         )
         self.init_chamber_connection(instrument_manager=instrument_manager)
+        self.init_mcu_pwr_reset_config()
         self.init_serial_connection(mode=MODE_FULL, baudrate=921600, prefix="DUT")
 
         self._vcorel_enabled = False
@@ -279,6 +285,12 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
 
         layout.addLayout(self._section_title("settings.svg", "Device Connection", "#7da2d6"))
 
+        n6705c_card = QFrame()
+        n6705c_card.setObjectName("vhSubCard")
+        n6705c_layout = QVBoxLayout(n6705c_card)
+        n6705c_layout.setContentsMargins(8, 6, 8, 6)
+        n6705c_layout.setSpacing(6)
+
         title_row = QHBoxLayout()
         title_row.setSpacing(6)
         tag = QLabel("N6705C")
@@ -288,9 +300,11 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         )
         title_row.addWidget(tag)
         title_row.addStretch()
-        layout.addLayout(title_row)
+        n6705c_layout.addLayout(title_row)
 
-        self.build_n6705c_connection_widgets(layout, title_row=title_row)
+        self.build_n6705c_connection_widgets(n6705c_layout, title_row=title_row)
+
+        layout.addWidget(n6705c_card)
 
         uart_card = QFrame()
         uart_card.setObjectName("vhSubCard")
@@ -311,6 +325,26 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         self.build_serial_connection_widgets(uart_layout)
 
         layout.addWidget(uart_card)
+
+        mcu_card = QFrame()
+        mcu_card.setObjectName("vhSubCard")
+        mcu_layout = QVBoxLayout(mcu_card)
+        mcu_layout.setContentsMargins(8, 6, 8, 6)
+        mcu_layout.setSpacing(6)
+
+        mcu_header = QHBoxLayout()
+        mcu_tag = QLabel("MCU PWR / RESET")
+        mcu_tag.setStyleSheet(
+            "color: #c98bff; font-weight: 700; font-size: 11px;"
+            " background: transparent; border: none;"
+        )
+        mcu_header.addWidget(mcu_tag)
+        mcu_header.addStretch()
+        mcu_layout.addLayout(mcu_header)
+
+        self.build_mcu_pwr_reset_config_widgets(mcu_layout, title_row=mcu_header)
+
+        layout.addWidget(mcu_card)
 
         self.chamber_card = QFrame()
         self.chamber_card.setObjectName("vhSubCard")
