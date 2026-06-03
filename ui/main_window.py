@@ -25,6 +25,7 @@ from ui.pages.chamber.chamber_control_ui import ChamberControlUI
 from ui.pages.consumption_test.consumption_test_wrapper import ConsumptionTestWrapper
 from ui.pages.charger_test.charger_test_ui import ChargerTestUI
 from ui.pages.custom_test.custom_test_ui import CustomTestUI
+from ui.pages.vmin_hunter.vmin_hunter_ui import VminHunterUI
 from ui.modules.serialCom_module.serialCom_module_frame import SerialComMixin
 from core.test_manager import TestManager
 from core.instruments import InstrumentManager, InstrumentSpec
@@ -120,6 +121,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.consumption_test_ui = None
         self.charger_test_ui = None
         self.custom_test_ui = None
+        self.vmin_hunter_ui = None
         self.kk_serials_ui = None
         self.current_instrument_ui = None
         self._page_switch_geometry = None
@@ -310,6 +312,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.nav.pmu_test_btn.clicked.connect(self._on_nav_button_clicked)
         self.nav.charger_test_btn.clicked.connect(self._on_nav_button_clicked)
         self.nav.consumption_test_btn.clicked.connect(self._on_nav_button_clicked)
+        self.nav.vmin_hunter_btn.clicked.connect(self._on_nav_button_clicked)
         self.nav.custom_test_btn.clicked.connect(self._on_nav_button_clicked)
         self.nav.kk_serials_btn.clicked.connect(self._on_nav_button_clicked)
 
@@ -479,6 +482,21 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.current_instrument_ui = "custom_test"
         self._fade_in_widget(self.custom_test_ui)
 
+    def _create_vmin_hunter_ui(self):
+        logger.debug("Switching to VminHunter UI")
+        self._hide_all_instrument_uis()
+        if self.vmin_hunter_ui is None:
+            self.vmin_hunter_ui = VminHunterUI(
+                n6705c_top=self.n6705c_top,
+                instrument_manager=self.instrument_manager,
+            )
+            self.instrument_ui_container_layout.addWidget(self.vmin_hunter_ui)
+        else:
+            self.vmin_hunter_ui.sync_n6705c_from_top()
+            self.vmin_hunter_ui.show()
+        self.current_instrument_ui = "vmin_hunter"
+        self._fade_in_widget(self.vmin_hunter_ui)
+
     def _create_kk_serials_ui(self):
         logger.debug("Switching to KK Serials UI")
         self._hide_all_instrument_uis()
@@ -496,7 +514,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             self.n6705c_analyser_ui, self.n6705c_datalog_ui,
             self.oscilloscope_ui, self.pmu_test_ui, self.chamber_ui,
             self.consumption_test_ui, self.charger_test_ui, self.custom_test_ui,
-            self.kk_serials_ui,
+            self.vmin_hunter_ui, self.kk_serials_ui,
         ]:
             if widget is not None:
                 widget.setGraphicsEffect(None)

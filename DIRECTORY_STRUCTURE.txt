@@ -260,6 +260,9 @@ ui/
 │   │       ├── download_worker.py    # 固件下载 Worker
 │   │       └── force_worker.py       # Force (强制写入/激励) Worker
 │   │
+│   ├── vmin_hunter/             # VminHunter 最低工作电压探底页面
+│   │   └── vmin_hunter_ui.py         # Vmin 探底主界面 (连接 / Test Config / Channel Config / 结果表)
+│   │
 │   └── custom_test/             # 自定义测试序列（节点编辑器）
 │       ├── custom_test_ui.py         # 三栏布局主界面 (节点面板 / 画布 / 属性面板)
 │       ├── instrument_connection_panel.py # 仪器连接区面板 (连接状态 / meta / MCU IO)
@@ -342,6 +345,7 @@ resources/
     ├── charger_test_SVGs/             # Charger 测试页面
     ├── chamber_SVGs/                  # 温箱页面
     ├── consumption_test_SVGs/         # 功耗测试页面
+    ├── vmin_hunter_SVGs/              # VminHunter 探底页面
     └── custom_test_SVGs/              # 自定义测试（节点编辑器）页面
 
 注：所有新增图标必须使用 SVG；新增子目录需同步到 spec/kk_lab.spec 的 datas 配置。
@@ -355,6 +359,7 @@ helps/
 ├── datalog.html                     # Datalog 数据记录操作说明
 ├── oscilloscope.html                # 示波器操作说明
 ├── consumption_test.html            # 功耗测试操作说明
+├── vmin_hunter.html                 # VminHunter 最低工作电压探底操作说明
 ├── custom_test.html                 # 自定义测试（节点编辑器）操作说明
 ├── thermal_chamber.html             # 温箱操作说明
 ├── pmu_dcdc_efficiency.html         # DCDC 效率测试操作说明

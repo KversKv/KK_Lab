@@ -147,6 +147,11 @@ class NavController:
         )
         left_nav_layout.addWidget(self.consumption_test_btn)
 
+        self.vmin_hunter_btn = SidebarNavButton(
+            "VminHunter", "", os.path.join(_PAGE_SVGS_DIR, "crosshair.svg")
+        )
+        left_nav_layout.addWidget(self.vmin_hunter_btn)
+
         self.custom_test_btn = SidebarNavButton(
             "Custom Test", "", os.path.join(_PAGE_SVGS_DIR, "network.svg")
         )
@@ -179,6 +184,7 @@ class NavController:
         self.nav_button_group.addButton(self.pmu_test_btn)
         self.nav_button_group.addButton(self.charger_test_btn)
         self.nav_button_group.addButton(self.consumption_test_btn)
+        self.nav_button_group.addButton(self.vmin_hunter_btn)
         self.nav_button_group.addButton(self.custom_test_btn)
         self.nav_button_group.addButton(self.kk_serials_btn)
 
@@ -197,6 +203,7 @@ class NavController:
             self.pmu_test_btn,
             self.charger_test_btn,
             self.consumption_test_btn,
+            self.vmin_hunter_btn,
             self.custom_test_btn,
             self.kk_serials_btn,
         ]
@@ -478,6 +485,13 @@ class NavController:
             self._host._create_consumption_test_ui(selected_test=self.current_consumption_test_key)
             self._show_consumption_submenu()
 
+        elif sender == self.vmin_hunter_btn:
+            self.pmu_submenu.hide()
+            self.pa_submenu.hide()
+            self.charger_submenu.hide()
+            self.consumption_submenu.hide()
+            self._host._create_vmin_hunter_ui()
+
         elif sender == self.custom_test_btn:
             self.pmu_submenu.hide()
             self.pa_submenu.hide()
@@ -502,8 +516,9 @@ class NavController:
             ("Ctrl+4", self.pmu_test_btn),
             ("Ctrl+5", self.charger_test_btn),
             ("Ctrl+6", self.consumption_test_btn),
-            ("Ctrl+7", self.custom_test_btn),
-            ("Ctrl+8", self.kk_serials_btn),
+            ("Ctrl+7", self.vmin_hunter_btn),
+            ("Ctrl+8", self.custom_test_btn),
+            ("Ctrl+9", self.kk_serials_btn),
         ]
         for key_seq, btn in shortcuts:
             sc = QShortcut(QKeySequence(key_seq), self._host)
