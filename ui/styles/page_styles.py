@@ -95,12 +95,19 @@ def get_page_base_qss(accent_color=None):
             background-color: {Colors.bg_input};
             border: 1px solid {Colors.border_input};
             border-radius: {Radius.small}px;
-            padding: 6px 10px;
+            padding: 5px 10px;
             color: {Colors.text_secondary};
+            min-height: 22px;
+            selection-background-color: {Colors.accent_soft};
+        }}
+
+        QLineEdit:hover {{
+            border: 1px solid {Colors.border_accent};
         }}
 
         QLineEdit:focus {{
             border: 1px solid {accent};
+            background-color: {Colors.bg_panel};
         }}
 
         QLineEdit:disabled {{
@@ -148,10 +155,15 @@ def get_page_base_qss(accent_color=None):
             border-radius: {Radius.small}px;
             padding: 4px 8px;
             color: {Colors.text_secondary};
+            min-height: 22px;
         }}
 
         QComboBox:hover {{
             border: 1px solid {Colors.border_accent};
+        }}
+
+        QComboBox:focus {{
+            border: 1px solid {accent};
         }}
 
         QComboBox::drop-down {{
@@ -172,6 +184,11 @@ def get_page_base_qss(accent_color=None):
             border-radius: {Radius.small}px;
             padding: 4px 8px;
             color: {Colors.text_secondary};
+            min-height: 22px;
+        }}
+
+        QDoubleSpinBox:hover, QSpinBox:hover {{
+            border: 1px solid {Colors.border_accent};
         }}
 
         QDoubleSpinBox:focus, QSpinBox:focus {{

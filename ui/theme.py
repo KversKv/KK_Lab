@@ -6,10 +6,10 @@ class Colors:
     bg_panel = "#08132d"
     bg_deep = "#07111f"
 
-    border_primary = "#16274d"
-    border_secondary = "#1a2d57"
-    border_accent = "#25355c"
-    border_input = "#1c2f54"
+    border_primary = "#1f3262"
+    border_secondary = "#243a6e"
+    border_accent = "#2f4380"
+    border_input = "#2b466f"
 
     text_primary = "#f8fbff"
     text_secondary = "#dbe7ff"

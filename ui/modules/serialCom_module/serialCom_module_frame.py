@@ -233,6 +233,167 @@ MODE_FULL = "full"
 MODE_INLINE = "inline"
 
 
+class _MixinSerialSettingsDialog(QDialog):
+    """SerialComMixin 用的轻量串口参数设置对话框
+    （波特率/数据位/停止位/校验/流控）。
+
+    与本文件内独立窗口模式下的多标签 ``_SerialSettingsDialog`` 区分开，
+    后者由 ``_sc_open_settings_dialog`` 使用。
+    """
+
+    _BAUDRATES = [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600, 1500000, 2000000]
+    _BYTESIZES = [
+        ("5", 5), ("6", 6), ("7", 7), ("8", 8),
+    ]
+    _STOPBITS = [
+        ("1", serial.STOPBITS_ONE),
+        ("1.5", serial.STOPBITS_ONE_POINT_FIVE),
+        ("2", serial.STOPBITS_TWO),
+    ]
+    _PARITIES = [
+        ("None", serial.PARITY_NONE),
+        ("Even", serial.PARITY_EVEN),
+        ("Odd", serial.PARITY_ODD),
+        ("Mark", serial.PARITY_MARK),
+        ("Space", serial.PARITY_SPACE),
+    ]
+    _FLOWS = [
+        ("None", (False, False)),
+        ("XON/XOFF (Software)", (True, False)),
+        ("RTS/CTS (Hardware)", (False, True)),
+    ]
+
+    def __init__(self, parent=None, *,
+                 baudrate=921600,
+                 bytesize=8,
+                 stopbits=serial.STOPBITS_ONE,
+                 parity=serial.PARITY_NONE,
+                 xonxoff=False,
+                 rtscts=False,
+                 connected=False):
+        super().__init__(parent)
+        self.setWindowTitle("Serial Port Settings")
+        self.setModal(True)
+        try:
+            self.setStyleSheet(_DLG_STYLE)
+        except Exception:
+            pass
+
+        form = QGridLayout()
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+        form.setContentsMargins(14, 12, 14, 12)
+
+        def _label(text):
+            lab = QLabel(text)
+            lab.setStyleSheet("color:#cfd9ec;font-size:12px;background:transparent;border:none;")
+            return lab
+
+        self._baud_combo = QComboBox()
+        self._baud_combo.setEditable(True)
+        for br in self._BAUDRATES:
+            self._baud_combo.addItem(str(br), br)
+        self._baud_combo.setCurrentText(str(baudrate))
+
+        self._bytesize_combo = QComboBox()
+        for label, val in self._BYTESIZES:
+            self._bytesize_combo.addItem(label, val)
+        self._select_by_data(self._bytesize_combo, bytesize)
+
+        self._stopbits_combo = QComboBox()
+        for label, val in self._STOPBITS:
+            self._stopbits_combo.addItem(label, val)
+        self._select_by_data(self._stopbits_combo, stopbits)
+
+        self._parity_combo = QComboBox()
+        for label, val in self._PARITIES:
+            self._parity_combo.addItem(label, val)
+        self._select_by_data(self._parity_combo, parity)
+
+        self._flow_combo = QComboBox()
+        for label, val in self._FLOWS:
+            self._flow_combo.addItem(label, val)
+        self._select_by_data(self._flow_combo, (bool(xonxoff), bool(rtscts)))
+
+        for combo in (self._baud_combo, self._bytesize_combo, self._stopbits_combo,
+                      self._parity_combo, self._flow_combo):
+            combo.setMinimumWidth(180)
+            combo.setStyleSheet(
+                "QComboBox{background:#091426;color:#e9eef7;border:1px solid #2b466f;"
+                "border-radius:4px;padding:3px 6px;min-height:22px;}"
+                "QComboBox:hover{border-color:#3a5a8a;}"
+                "QComboBox:focus{border-color:#3a5a8a;}"
+                "QComboBox QAbstractItemView{background:#091426;color:#e9eef7;"
+                "selection-background-color:#162a4a;border:1px solid #2b466f;}"
+            )
+
+        form.addWidget(_label("Baudrate"),    0, 0)
+        form.addWidget(self._baud_combo,      0, 1)
+        form.addWidget(_label("Data Bits"),   1, 0)
+        form.addWidget(self._bytesize_combo,  1, 1)
+        form.addWidget(_label("Stop Bits"),   2, 0)
+        form.addWidget(self._stopbits_combo,  2, 1)
+        form.addWidget(_label("Parity"),      3, 0)
+        form.addWidget(self._parity_combo,    3, 1)
+        form.addWidget(_label("Flow Control"),4, 0)
+        form.addWidget(self._flow_combo,      4, 1)
+
+        if connected:
+            warn = QLabel("⚠ Already connected. Changes apply to the next connection "
+                          "(baudrate hot-applied).")
+            warn.setWordWrap(True)
+            warn.setStyleSheet("color:#f2994a;font-size:11px;background:transparent;border:none;")
+            form.addWidget(warn, 5, 0, 1, 2)
+
+        btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        ok_btn = btn_box.button(QDialogButtonBox.Ok)
+        cancel_btn = btn_box.button(QDialogButtonBox.Cancel)
+        try:
+            ok_btn.setStyleSheet(dialog_ok_button_style())
+            cancel_btn.setStyleSheet(dialog_cancel_button_style())
+        except Exception:
+            pass
+        ok_btn.setDefault(True)
+        ok_btn.setAutoDefault(True)
+        cancel_btn.setDefault(False)
+        cancel_btn.setAutoDefault(False)
+        btn_box.accepted.connect(self.accept)
+        btn_box.rejected.connect(self.reject)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        root.addLayout(form)
+        root.addWidget(btn_box)
+
+        self.setMinimumWidth(320)
+
+    @staticmethod
+    def _select_by_data(combo, data):
+        for i in range(combo.count()):
+            if combo.itemData(i) == data:
+                combo.setCurrentIndex(i)
+                return
+        combo.setCurrentIndex(0)
+
+    def result_config(self) -> dict:
+        try:
+            baudrate = int(self._baud_combo.currentText().strip())
+            if baudrate <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            baudrate = self._baud_combo.itemData(self._baud_combo.currentIndex()) or 921600
+        flow_val = self._flow_combo.currentData() or (False, False)
+        return {
+            "baudrate": baudrate,
+            "bytesize": self._bytesize_combo.currentData(),
+            "stopbits": self._stopbits_combo.currentData(),
+            "parity": self._parity_combo.currentData(),
+            "xonxoff": bool(flow_val[0]),
+            "rtscts": bool(flow_val[1]),
+        }
+
+
 class SerialComMixin:
     serial_connection_changed = Signal(bool)
     serial_data_received = Signal(bytes)
@@ -241,6 +402,11 @@ class SerialComMixin:
         from ui.modules.serialCom_module.serial_session_manager import SerialSessionManager
         self._serial_mode = mode
         self._serial_baudrate = baudrate
+        self._serial_bytesize = 8
+        self._serial_stopbits = serial.STOPBITS_ONE
+        self._serial_parity = serial.PARITY_NONE
+        self._serial_xonxoff = False
+        self._serial_rtscts = False
         self._serial_prefix = prefix
         self._serial_port = None
         self._serial_conn = None
@@ -304,9 +470,29 @@ class SerialComMixin:
             layout.addLayout(row)
             return
 
+        status_row = QHBoxLayout()
+        status_row.setSpacing(6)
+        status_row.setContentsMargins(0, 0, 0, 0)
+
         self.serial_status_label = QLabel("● Not Connected")
         self.serial_status_label.setObjectName("statusErr")
-        layout.addWidget(self.serial_status_label)
+        status_row.addWidget(self.serial_status_label, 1)
+
+        self.serial_settings_btn = QPushButton("⚙")
+        self.serial_settings_btn.setToolTip("Serial port settings")
+        self.serial_settings_btn.setFocusPolicy(Qt.NoFocus)
+        self.serial_settings_btn.setCursor(Qt.PointingHandCursor)
+        self.serial_settings_btn.setFixedSize(btn_height, btn_height)
+        self.serial_settings_btn.setStyleSheet(
+            f"QPushButton{{background:transparent;color:#8ea6cf;border:1px solid #2b466f;"
+            f"border-radius:{btn_radius}px;font-size:13px;padding:0;}}"
+            f"QPushButton:hover{{color:#e9eef7;border-color:#3a5a8a;background:#162a4a;}}"
+            f"QPushButton:pressed{{background:#0f1f3a;}}"
+            f"QPushButton:disabled{{color:#4a5b78;border-color:#1f3262;}}"
+        )
+        status_row.addWidget(self.serial_settings_btn, 0)
+
+        layout.addLayout(status_row)
 
         self.serial_combo = SerialDarkComboBox()
         self.serial_combo.setSizeAdjustPolicy(
@@ -341,6 +527,8 @@ class SerialComMixin:
         self.serial_search_btn.clicked.connect(self._on_serial_search)
         if self._serial_mode == MODE_FULL and hasattr(self, 'serial_connect_btn'):
             self.serial_connect_btn.clicked.connect(self._on_serial_toggle)
+        if hasattr(self, 'serial_settings_btn'):
+            self.serial_settings_btn.clicked.connect(self._on_serial_settings)
 
     def _set_serial_status(self, text, is_error=False):
         if not hasattr(self, 'serial_status_label'):
@@ -478,7 +666,15 @@ class SerialComMixin:
             session = self._sc_session_manager.create_session(
                 session_id=session_id, display_name=self._serial_prefix, auto_activate=True
             )
-        session.configure(port=port, baudrate=self._serial_baudrate)
+        session.configure(
+            port=port,
+            baudrate=self._serial_baudrate,
+            bytesize=self._serial_bytesize,
+            stopbits=self._serial_stopbits,
+            parity=self._serial_parity,
+            xonxoff=self._serial_xonxoff,
+            rtscts=self._serial_rtscts,
+        )
 
         if DEBUG_MOCK:
             self._serial_conn = None
@@ -495,7 +691,16 @@ class SerialComMixin:
 
         self._set_serial_status("● Connecting")
         try:
-            conn = serial.Serial(port, self._serial_baudrate, timeout=1)
+            conn = serial.Serial(
+                port,
+                self._serial_baudrate,
+                bytesize=self._serial_bytesize,
+                stopbits=self._serial_stopbits,
+                parity=self._serial_parity,
+                xonxoff=self._serial_xonxoff,
+                rtscts=self._serial_rtscts,
+                timeout=1,
+            )
             self._serial_conn = conn
             self._serial_port = port
             self._serial_connected = True
@@ -541,6 +746,48 @@ class SerialComMixin:
         self.serial_connection_changed.emit(False)
         self.serial_connect_btn.setEnabled(True)
 
+    def _on_serial_settings(self):
+        dlg = _MixinSerialSettingsDialog(
+            parent=self if isinstance(self, QWidget) else None,
+            baudrate=self._serial_baudrate,
+            bytesize=self._serial_bytesize,
+            stopbits=self._serial_stopbits,
+            parity=self._serial_parity,
+            xonxoff=self._serial_xonxoff,
+            rtscts=self._serial_rtscts,
+            connected=self._serial_connected,
+        )
+        if dlg.exec() != QDialog.Accepted:
+            return
+        cfg = dlg.result_config()
+        self._serial_baudrate = cfg["baudrate"]
+        self._serial_bytesize = cfg["bytesize"]
+        self._serial_stopbits = cfg["stopbits"]
+        self._serial_parity = cfg["parity"]
+        self._serial_xonxoff = cfg["xonxoff"]
+        self._serial_rtscts = cfg["rtscts"]
+
+        session = self._sc_session_manager.get_session("primary") \
+            if hasattr(self, "_sc_session_manager") else None
+        if session is not None:
+            session.configure(
+                port=session.port or (self._serial_port or ""),
+                baudrate=self._serial_baudrate,
+                bytesize=self._serial_bytesize,
+                stopbits=self._serial_stopbits,
+                parity=self._serial_parity,
+                xonxoff=self._serial_xonxoff,
+                rtscts=self._serial_rtscts,
+            )
+
+        if hasattr(self, "append_log"):
+            self.append_log(
+                f"[{self._serial_prefix}] Settings updated: "
+                f"{self._serial_baudrate} {self._serial_bytesize}"
+                f"{self._serial_parity}{self._serial_stopbits} "
+                f"flow={'XON' if self._serial_xonxoff else ('RTS' if self._serial_rtscts else 'None')}"
+            )
+
     def _update_serial_connect_ui(self, connected):
         if not hasattr(self, 'serial_connect_btn'):
             return
@@ -552,6 +799,8 @@ class SerialComMixin:
         )
         self.serial_search_btn.setEnabled(not connected)
         self.serial_combo.setEnabled(not connected)
+        if hasattr(self, 'serial_settings_btn'):
+            self.serial_settings_btn.setEnabled(not connected)
 
     def _start_serial_read(self):
         if self._serial_conn is None or not self._serial_conn.is_open:

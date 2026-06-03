@@ -28,6 +28,10 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
+from ui.modules.chamber_module_frame import ChamberConnectionMixin
+from ui.modules.serialCom_module.serialCom_module_frame import (
+    SerialComMixin, MODE_FULL,
+)
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import get_page_base_qss, SCROLLBAR_STYLE
@@ -49,11 +53,11 @@ _TEST_MODES = [
 ]
 
 
-class VminHunterUI(N6705CConnectionMixin, QWidget):
+class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin, QWidget):
     """Vmin 探底测试页面。
 
-    多继承 N6705CConnectionMixin 复用 N6705C 连接逻辑，
-    与 Consumption Test 保持一致的连接交互。
+    多继承 N6705CConnectionMixin / ChamberConnectionMixin / SerialComMixin
+    复用仪器连接逻辑，与 GPADC / Consumption Test 保持一致的连接交互。
     """
 
     def __init__(self, n6705c_top=None, instrument_manager=None, parent=None):
@@ -62,6 +66,8 @@ class VminHunterUI(N6705CConnectionMixin, QWidget):
             n6705c_top=n6705c_top,
             instrument_manager=instrument_manager,
         )
+        self.init_chamber_connection(instrument_manager=instrument_manager)
+        self.init_serial_connection(mode=MODE_FULL, baudrate=921600, prefix="DUT")
 
         self._vcorel_enabled = False
         self._temp_enabled = False
@@ -94,6 +100,31 @@ class VminHunterUI(N6705CConnectionMixin, QWidget):
             background-color: {Colors.bg_panel};
             border: 1px solid {Colors.border_secondary};
             border-radius: {Radius.widget}px;
+        }}
+
+        QLineEdit {{
+            background-color: #0a1733;
+            color: #eaf2ff;
+            border: 1px solid #27406f;
+            border-radius: 8px;
+            padding: 6px 10px;
+            min-height: 22px;
+            selection-background-color: #4f46e5;
+        }}
+
+        QLineEdit:hover {{
+            border: 1px solid #3c5fa1;
+        }}
+
+        QLineEdit:focus {{
+            border: 1px solid #4cc9f0;
+            background-color: #0d1f42;
+        }}
+
+        QLineEdit:disabled {{
+            background-color: {Colors.disabled_bg};
+            border: 1px solid {Colors.disabled_border};
+            color: {Colors.disabled_text};
         }}
 
         QCheckBox::indicator {{
@@ -134,11 +165,13 @@ class VminHunterUI(N6705CConnectionMixin, QWidget):
         left_column.setSpacing(10)
         left_column.addWidget(self._create_connection_panel())
         left_column.addWidget(self._create_test_config_panel())
-        left_column.addWidget(self._create_channel_config_panel())
         left_column.addStretch()
 
         left_inner = QWidget()
-        left_inner.setStyleSheet("background: transparent; border: none;")
+        left_inner.setObjectName("vhLeftInner")
+        left_inner.setStyleSheet(
+            "QWidget#vhLeftInner { background: transparent; border: none; }"
+        )
         left_inner.setLayout(left_column)
 
         left_scroll = QScrollArea()
@@ -154,18 +187,25 @@ class VminHunterUI(N6705CConnectionMixin, QWidget):
         right_column = QVBoxLayout()
         right_column.setContentsMargins(0, 0, 0, 0)
         right_column.setSpacing(10)
+        right_column.addWidget(self._create_channel_config_panel())
         right_column.addWidget(self._create_action_row())
         right_column.addWidget(self._create_result_panel(), 1)
 
         right_widget = QWidget()
-        right_widget.setStyleSheet("background: transparent; border: none;")
+        right_widget.setObjectName("vhRightWidget")
+        right_widget.setStyleSheet(
+            "QWidget#vhRightWidget { background: transparent; border: none; }"
+        )
         right_widget.setLayout(right_column)
 
         body_layout.addWidget(left_scroll)
         body_layout.addWidget(right_widget, 1)
 
         body_widget = QWidget()
-        body_widget.setStyleSheet("background: transparent; border: none;")
+        body_widget.setObjectName("vhBodyWidget")
+        body_widget.setStyleSheet(
+            "QWidget#vhBodyWidget { background: transparent; border: none; }"
+        )
         body_widget.setLayout(body_layout)
 
         self.execution_logs = ExecutionLogsFrame(show_progress=True)
@@ -272,36 +312,39 @@ class VminHunterUI(N6705CConnectionMixin, QWidget):
         uart_layout.setSpacing(6)
 
         uart_header = QHBoxLayout()
-        uart_tag = QLabel("UART (DUT Log)")
+        uart_tag = QLabel("UART (DUT Log) @ 921600")
         uart_tag.setStyleSheet(
             "color: #f2994a; font-weight: 700; font-size: 11px;"
             " background: transparent; border: none;"
         )
-        self.uart_status_label = QLabel("● Disconnected")
-        self.uart_status_label.setStyleSheet(
-            "color: #8ea6cf; font-size: 10px; font-weight: bold;"
-            " background: transparent; border: none;"
-        )
         uart_header.addWidget(uart_tag)
         uart_header.addStretch()
-        uart_header.addWidget(self.uart_status_label)
         uart_layout.addLayout(uart_header)
 
-        port_row = QHBoxLayout()
-        port_row.setSpacing(6)
-        self.uart_port_combo = DarkComboBox(bg="#091426", border="#17345f")
-        self.uart_port_combo.setEditable(True)
-        self.uart_port_combo.addItems(["COM3", "COM4", "COM5"])
-        self.uart_baud_combo = DarkComboBox(bg="#091426", border="#17345f")
-        self.uart_baud_combo.addItems(["115200", "921600", "460800", "230400"])
-        port_row.addWidget(self.uart_port_combo, 1)
-        port_row.addWidget(self.uart_baud_combo, 0)
-        uart_layout.addLayout(port_row)
-
-        self.uart_connect_btn = QPushButton("Connect UART")
-        uart_layout.addWidget(self.uart_connect_btn)
+        self.build_serial_connection_widgets(uart_layout)
 
         layout.addWidget(uart_card)
+
+        self.chamber_card = QFrame()
+        self.chamber_card.setObjectName("vhSubCard")
+        chamber_layout = QVBoxLayout(self.chamber_card)
+        chamber_layout.setContentsMargins(8, 6, 8, 6)
+        chamber_layout.setSpacing(6)
+
+        chamber_header = QHBoxLayout()
+        chamber_tag = QLabel("Chamber")
+        chamber_tag.setStyleSheet(
+            "color: #5b9cf5; font-weight: 700; font-size: 11px;"
+            " background: transparent; border: none;"
+        )
+        chamber_header.addWidget(chamber_tag)
+        chamber_header.addStretch()
+        chamber_layout.addLayout(chamber_header)
+
+        self.build_chamber_connection_widgets(chamber_layout)
+
+        layout.addWidget(self.chamber_card)
+        self.chamber_card.setVisible(False)
         return panel
 
     # ------------------------------------------------------------------
@@ -365,10 +408,29 @@ class VminHunterUI(N6705CConnectionMixin, QWidget):
         ch_row.addStretch()
         layout.addLayout(ch_row)
 
-        # ---- 电压点列表 ----
-        self.voltage_points_input = QLineEdit("0.80, 0.75, 0.70, 0.65, 0.60")
-        self.voltage_points_input.setToolTip("Voltage points to sweep (V), high to low, comma separated")
-        layout.addWidget(self._labeled("Voltage Points (V)", self.voltage_points_input))
+        # ---- 电压扫描区间 (Start / End / Step) ----
+        vp_title = QLabel("Voltage Sweep")
+        vp_title.setObjectName("fieldLabel")
+        layout.addWidget(vp_title)
+
+        vp_grid = QGridLayout()
+        vp_grid.setHorizontalSpacing(8)
+        vp_grid.setVerticalSpacing(4)
+
+        self.voltage_start_input = QLineEdit("0.80")
+        self.voltage_start_input.setToolTip("Sweep start voltage (V), typically the higher voltage")
+        self.voltage_end_input = QLineEdit("0.60")
+        self.voltage_end_input.setToolTip("Sweep end voltage (V), typically the lower voltage")
+        self.voltage_step_input = QLineEdit("0.05")
+        self.voltage_step_input.setToolTip("Sweep step (V), positive value; sweep direction is from Start to End")
+
+        vp_grid.addWidget(self._field_label("Start (V)"), 0, 0)
+        vp_grid.addWidget(self._field_label("End (V)"), 0, 1)
+        vp_grid.addWidget(self._field_label("Step (V)"), 0, 2)
+        vp_grid.addWidget(self.voltage_start_input, 1, 0)
+        vp_grid.addWidget(self.voltage_end_input, 1, 1)
+        vp_grid.addWidget(self.voltage_step_input, 1, 2)
+        layout.addLayout(vp_grid)
 
         return panel
 
@@ -598,7 +660,10 @@ class VminHunterUI(N6705CConnectionMixin, QWidget):
 
     def _labeled(self, text, widget):
         container = QWidget()
-        container.setStyleSheet("background: transparent; border: none;")
+        container.setObjectName("vhLabeled")
+        container.setStyleSheet(
+            "QWidget#vhLabeled { background: transparent; border: none; }"
+        )
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(3)
@@ -611,6 +676,9 @@ class VminHunterUI(N6705CConnectionMixin, QWidget):
     # ------------------------------------------------------------------
     def _bind_signals(self):
         self.bind_n6705c_signals()
+        self.bind_chamber_signals()
+        self.bind_serial_signals()
+        self.serial_data_received.connect(self._on_uart_data_received)
 
         self.temp_enable_cb.toggled.connect(self._on_temp_toggled)
         self.vcorel_cb.toggled.connect(self._on_vcorel_toggled)
@@ -629,6 +697,8 @@ class VminHunterUI(N6705CConnectionMixin, QWidget):
     def _on_temp_toggled(self, checked):
         self._temp_enabled = checked
         self.temp_points_input.setEnabled(checked)
+        if hasattr(self, "chamber_card"):
+            self.chamber_card.setVisible(checked)
 
     def _on_vcorel_toggled(self, checked):
         self._vcorel_enabled = checked
@@ -672,6 +742,21 @@ class VminHunterUI(N6705CConnectionMixin, QWidget):
         self.execution_logs.append_log("[STOP] VminHunter sweep stopped")
 
     # ------------------------------------------------------------------
+    # UART 日志桥接（供 SerialComMixin 回调）
+    # ------------------------------------------------------------------
+    def append_log(self, message: str):
+        if hasattr(self, "execution_logs") and self.execution_logs is not None:
+            self.execution_logs.append_log(message)
+
+    def _on_uart_data_received(self, data: bytes):
+        try:
+            text = data.decode("utf-8", errors="replace").rstrip("\r\n")
+        except Exception:
+            text = repr(data)
+        if text:
+            self.append_log(f"[DUT] {text}")
+
+    # ------------------------------------------------------------------
     # 参数读取 / 配置导入导出
     # ------------------------------------------------------------------
     def _parse_float_list(self, text, field):
@@ -686,6 +771,38 @@ class VminHunterUI(N6705CConnectionMixin, QWidget):
             raise ValueError(f"{field} must not be empty")
         return result
 
+    def _parse_voltage_sweep(self):
+        def _to_float(text, field):
+            try:
+                return float(text.strip())
+            except ValueError:
+                raise ValueError(f"{field} must be a number")
+
+        start = _to_float(self.voltage_start_input.text(), "Voltage Start")
+        end = _to_float(self.voltage_end_input.text(), "Voltage End")
+        step = _to_float(self.voltage_step_input.text(), "Voltage Step")
+
+        if step <= 0:
+            raise ValueError("Voltage Step must be positive")
+        if start == end:
+            raise ValueError("Voltage Start must differ from End")
+
+        direction = -1.0 if start > end else 1.0
+        signed_step = step * direction
+
+        points = []
+        eps = step / 1000.0
+        v = start
+        while (direction < 0 and v >= end - eps) or (direction > 0 and v <= end + eps):
+            points.append(round(v, 6))
+            v += signed_step
+            if len(points) > 10000:
+                raise ValueError("Voltage sweep range/step produces too many points (>10000)")
+
+        if not points:
+            raise ValueError("Voltage sweep produced no points")
+        return start, end, step, points
+
     def _read_params(self):
         try:
             test_cnt = int(self.test_cnt_input.text().strip())
@@ -694,7 +811,7 @@ class VminHunterUI(N6705CConnectionMixin, QWidget):
         if test_cnt <= 0:
             raise ValueError("Test CNT must be positive")
 
-        voltage_points = self._parse_float_list(self.voltage_points_input.text(), "Voltage Points")
+        v_start, v_end, v_step, voltage_points = self._parse_voltage_sweep()
 
         params = {
             "test_cnt": test_cnt,
@@ -707,6 +824,11 @@ class VminHunterUI(N6705CConnectionMixin, QWidget):
             "monitor_channels": {
                 "VcoreM": True,
                 "VcoreL": self._vcorel_enabled,
+            },
+            "voltage_sweep": {
+                "start": v_start,
+                "end": v_end,
+                "step": v_step,
             },
             "voltage_points": voltage_points,
             "channel_config": {
@@ -721,8 +843,8 @@ class VminHunterUI(N6705CConnectionMixin, QWidget):
                 },
             },
             "uart": {
-                "port": self.uart_port_combo.currentText().strip(),
-                "baudrate": int(self.uart_baud_combo.currentText()),
+                "port": self.get_selected_serial_port() or "",
+                "baudrate": int(self._serial_baudrate),
             },
         }
         return params
@@ -788,9 +910,32 @@ class VminHunterUI(N6705CConnectionMixin, QWidget):
             channels = data.get("monitor_channels", {})
             self.vcorel_cb.setChecked(bool(channels.get("VcoreL", False)))
 
-            vp = data.get("voltage_points", [])
-            if vp:
-                self.voltage_points_input.setText(", ".join(str(v) for v in vp))
+            sweep = data.get("voltage_sweep")
+            if isinstance(sweep, dict):
+                if "start" in sweep:
+                    self.voltage_start_input.setText(str(sweep["start"]))
+                if "end" in sweep:
+                    self.voltage_end_input.setText(str(sweep["end"]))
+                if "step" in sweep:
+                    self.voltage_step_input.setText(str(sweep["step"]))
+            else:
+                vp = data.get("voltage_points", [])
+                if isinstance(vp, list) and len(vp) >= 2:
+                    try:
+                        floats = [float(v) for v in vp]
+                        v_start = floats[0]
+                        v_end = floats[-1]
+                        if len(floats) >= 2:
+                            v_step = abs(floats[1] - floats[0])
+                        else:
+                            v_step = abs(v_start - v_end)
+                        if v_step <= 0:
+                            v_step = abs(v_start - v_end) or 0.05
+                        self.voltage_start_input.setText(str(v_start))
+                        self.voltage_end_input.setText(str(v_end))
+                        self.voltage_step_input.setText(str(round(v_step, 6)))
+                    except (TypeError, ValueError):
+                        logger.warning("Legacy voltage_points failed to convert", exc_info=True)
 
             ch_cfg = data.get("channel_config", {})
             iic = ch_cfg.get("iic", {})
@@ -800,10 +945,19 @@ class VminHunterUI(N6705CConnectionMixin, QWidget):
             self._apply_iic_group(self._vcorel_iic, iic.get("VcoreL", {}))
 
             uart = data.get("uart", {})
-            if uart.get("port"):
-                self.uart_port_combo.setCurrentText(str(uart["port"]))
+            if uart.get("port") and hasattr(self, "serial_combo"):
+                port_text = str(uart["port"])
+                idx = self.serial_combo.findText(port_text, Qt.MatchStartsWith)
+                if idx >= 0:
+                    self.serial_combo.setCurrentIndex(idx)
+                else:
+                    self.serial_combo.addItem(port_text)
+                    self.serial_combo.setCurrentText(port_text)
             if uart.get("baudrate"):
-                self.uart_baud_combo.setCurrentText(str(uart["baudrate"]))
+                try:
+                    self._serial_baudrate = int(uart["baudrate"])
+                except (TypeError, ValueError):
+                    pass
         except (TypeError, ValueError):
             logger.error("Failed to apply VminHunter config", exc_info=True)
             QMessageBox.warning(self, "Import Warning", "Config partially applied; some fields invalid.")
