@@ -176,6 +176,11 @@ class NavController:
         )
         left_nav_layout.addWidget(self.kk_serials_btn)
 
+        self.collection_btn = SidebarNavButton(
+            "Collection", "", os.path.join(_PAGE_SVGS_DIR, "settings.svg")
+        )
+        left_nav_layout.addWidget(self.collection_btn)
+
         self.nav_button_group = QButtonGroup(self._host)
         self.nav_button_group.setExclusive(True)
         self.nav_button_group.addButton(self.n6705c_power_analyzer_btn)
@@ -187,6 +192,7 @@ class NavController:
         self.nav_button_group.addButton(self.vmin_hunter_btn)
         self.nav_button_group.addButton(self.custom_test_btn)
         self.nav_button_group.addButton(self.kk_serials_btn)
+        self.nav_button_group.addButton(self.collection_btn)
 
         self._refresh_nav_arrow_state()
 
@@ -206,6 +212,7 @@ class NavController:
             self.vmin_hunter_btn,
             self.custom_test_btn,
             self.kk_serials_btn,
+            self.collection_btn,
         ]
         for btn in nav_buttons:
             if hasattr(btn, "set_arrow_visible"):
@@ -506,6 +513,13 @@ class NavController:
             self.consumption_submenu.hide()
             self._host._create_kk_serials_ui()
 
+        elif sender == self.collection_btn:
+            self.pmu_submenu.hide()
+            self.pa_submenu.hide()
+            self.charger_submenu.hide()
+            self.consumption_submenu.hide()
+            self._host._create_collection_ui()
+
         self._refresh_nav_arrow_state()
 
     def setup_shortcuts(self):
@@ -519,6 +533,7 @@ class NavController:
             ("Ctrl+7", self.vmin_hunter_btn),
             ("Ctrl+8", self.custom_test_btn),
             ("Ctrl+9", self.kk_serials_btn),
+            ("Ctrl+0", self.collection_btn),
         ]
         for key_seq, btn in shortcuts:
             sc = QShortcut(QKeySequence(key_seq), self._host)

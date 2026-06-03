@@ -291,11 +291,51 @@ class MockPicoGPIO:
         self._pin_modes[pin] = "out"
         self._pin_values[pin] = int(value)
 
+    def high(self, pin):
+        self.out(pin, 1)
+
+    def low(self, pin):
+        self.out(pin, 0)
+
+    def toggle(self, pin):
+        pin = int(pin)
+        self.out(pin, 0 if self._pin_values.get(pin, 0) else 1)
+
+    def pulse(self, pin, width_ms=10, active=1):
+        self.out(pin, active)
+        self.out(pin, 0 if active else 1)
+
+    def hiz(self, pin):
+        self.in_pull(pin, "none")
+
     def in_pull(self, pin, pull="none"):
         self._pin_modes[int(pin)] = f"in_{pull}"
 
     def read(self, pin):
         return self._pin_values.get(int(pin), 0)
+
+    def read_pull(self, pin, pull="none"):
+        self.in_pull(pin, pull)
+        return self.read(pin)
+
+    def read_adc(self, pin):
+        return 32768
+
+    def read_voltage(self, pin):
+        return self.read_adc(pin) * 3.3 / 65535
+
+    def read_temperature(self):
+        return 25.0
+
+    def pwm(self, pin, freq=1000, duty_u16=32768):
+        self._pin_modes[int(pin)] = f"pwm_{freq}_{duty_u16}"
+
+    def pwm_off(self, pin):
+        self._pin_modes.pop(int(pin), None)
+
+    def soft_reset(self):
+        self._pin_values.clear()
+        self._pin_modes.clear()
 
 
 class MockI2C:

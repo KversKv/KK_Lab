@@ -23,10 +23,16 @@ try:
 except ImportError:
     pass
 
+try:
+    from ui.modules.mcu_io_module_frame import McuIoConnectionMixin
+except ImportError:
+    pass
+
 __all__ = [
     "ExecutionLogsFrame",
     "N6705CConnectionMixin",
     "OscilloscopeConnectionMixin",
     "ChamberConnectionMixin",
     "SerialComMixin",
+    "McuIoConnectionMixin",
 ]

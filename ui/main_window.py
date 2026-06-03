@@ -27,6 +27,8 @@ from ui.pages.charger_test.charger_test_ui import ChargerTestUI
 from ui.pages.custom_test.custom_test_ui import CustomTestUI
 from ui.pages.vmin_hunter.vmin_hunter_ui import VminHunterUI
 from ui.modules.serialCom_module.serialCom_module_frame import SerialComMixin
+from ui.modules.mcu_io_module_frame import McuIoConnectionMixin
+from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from core.test_manager import TestManager
 from core.instruments import InstrumentManager, InstrumentSpec
 from instruments.base.visa_instrument import VisaInstrument
@@ -85,6 +87,101 @@ class _KKSerialsPage(SerialComMixin, QWidget):
         self._sc_append_system(msg)
 
 
+class _CollectionPage(McuIoConnectionMixin, QWidget):
+    def __init__(self, parent=None):
+        QWidget.__init__(self, parent)
+        self.init_mcu_io_connection()
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #020817;
+                color: #dbe7ff;
+            }
+            QLabel {
+                background-color: transparent;
+                color: #dbe7ff;
+                border: none;
+            }
+            QLabel#statusOk {
+                color: #15d1a3;
+                font-weight: 600;
+                background-color: transparent;
+            }
+            QLabel#statusWarn {
+                color: #ffb84d;
+                font-weight: 600;
+                background-color: transparent;
+            }
+            QLabel#statusErr {
+                color: #ff5e7a;
+                font-weight: 600;
+                background-color: transparent;
+            }
+        """)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(8)
+
+        body_layout = QVBoxLayout()
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(8)
+
+        title_row = QHBoxLayout()
+        title_row.setSpacing(8)
+        title_label = QLabel("MCU IO (YD RP2040)")
+        title_label.setStyleSheet("font-size: 15px; font-weight: 700;")
+        title_row.addWidget(title_label)
+        title_row.addStretch(1)
+        body_layout.addLayout(title_row)
+
+        panel = QFrame()
+        panel.setStyleSheet(
+            "QFrame { background-color: #060f24; border: 1px solid #17345f;"
+            " border-radius: 8px; }"
+        )
+        panel.setMaximumWidth(380)
+        panel_layout = QVBoxLayout(panel)
+        panel_layout.setContentsMargins(12, 12, 12, 12)
+        panel_layout.setSpacing(6)
+        self.build_mcu_io_connection_widgets(panel_layout, title_row=title_row)
+
+        content_row = QHBoxLayout()
+        content_row.addWidget(panel, 0, Qt.AlignTop)
+        content_row.addStretch(1)
+        body_layout.addLayout(content_row)
+        body_layout.addStretch(1)
+
+        body_widget = QWidget()
+        body_widget.setStyleSheet("background: transparent; border: none;")
+        body_widget.setLayout(body_layout)
+
+        self.execution_logs = ExecutionLogsFrame(
+            title="MCU IO Logs", show_progress=False
+        )
+
+        splitter = QSplitter(Qt.Vertical)
+        splitter.setHandleWidth(4)
+        splitter.setStyleSheet("""
+            QSplitter::handle { background-color: transparent; }
+            QSplitter::handle:hover { background-color: #18284d; }
+            QSplitter::handle:pressed { background-color: #5b7cff; }
+        """)
+        splitter.addWidget(body_widget)
+        splitter.addWidget(self.execution_logs)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 0)
+        splitter.setCollapsible(0, False)
+        splitter.setCollapsible(1, False)
+        splitter.setSizes([600, 140])
+
+        root.addWidget(splitter, 1)
+
+        self.bind_mcu_io_signals()
+
+    def append_log(self, msg):
+        self.execution_logs.append_log(msg)
+
+
 class MainWindow(CleanupMixin, QMainWindow):
 
     def __init__(self):
@@ -123,6 +220,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.custom_test_ui = None
         self.vmin_hunter_ui = None
         self.kk_serials_ui = None
+        self.collection_ui = None
         self.current_instrument_ui = None
         self._page_switch_geometry = None
         self.channels = []
@@ -315,6 +413,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.nav.vmin_hunter_btn.clicked.connect(self._on_nav_button_clicked)
         self.nav.custom_test_btn.clicked.connect(self._on_nav_button_clicked)
         self.nav.kk_serials_btn.clicked.connect(self._on_nav_button_clicked)
+        self.nav.collection_btn.clicked.connect(self._on_nav_button_clicked)
 
         self.status_panel.help_btn.clicked.connect(self._on_help)
         self.test_manager.data_updated.connect(self._update_data)
@@ -508,13 +607,24 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.current_instrument_ui = "kk_serials"
         self._fade_in_widget(self.kk_serials_ui)
 
+    def _create_collection_ui(self):
+        logger.debug("Switching to Collection UI")
+        self._hide_all_instrument_uis()
+        if self.collection_ui is None:
+            self.collection_ui = _CollectionPage()
+            self.instrument_ui_container_layout.addWidget(self.collection_ui)
+        else:
+            self.collection_ui.show()
+        self.current_instrument_ui = "collection"
+        self._fade_in_widget(self.collection_ui)
+
     def _hide_all_instrument_uis(self):
         self._page_switch_geometry = self.geometry()
         for widget in [
             self.n6705c_analyser_ui, self.n6705c_datalog_ui,
             self.oscilloscope_ui, self.pmu_test_ui, self.chamber_ui,
             self.consumption_test_ui, self.charger_test_ui, self.custom_test_ui,
-            self.vmin_hunter_ui, self.kk_serials_ui,
+            self.vmin_hunter_ui, self.kk_serials_ui, self.collection_ui,
         ]:
             if widget is not None:
                 widget.setGraphicsEffect(None)

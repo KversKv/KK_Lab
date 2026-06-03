@@ -198,6 +198,7 @@ ui/
 │   ├── oscilloscope_module_frame.py    # 示波器连接区 Mixin (VISA 搜索/连接/断开)
 │   ├── keysight_53230a_module_frame.py # 53230A 频率计连接区 Mixin (VISA 搜索/连接/断开)
 │   ├── chamber_module_frame.py         # 通用温箱连接区 Mixin (型号选择/串口搜索/连接/断开)
+│   ├── mcu_io_module_frame.py          # MCU IO 连接区 Mixin (串口搜索/连接/GPIO 高低HighZ 输出/读取)
 │   └── serialCom_module/               # 串口通信连接区 Mixin (串口搜索/连接/断开)
 │       ├── serialCom_module_frame.py
 │       ├── serial_session.py           # 独立串口会话对象 (SerialSession)
