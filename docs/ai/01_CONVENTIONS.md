@@ -92,34 +92,30 @@ except Exception as e:
 
 - 凡页面使用 `ExecutionLogsFrame`（日志模块），**必须**将其与上方主内容区域（图表 / 结果面板）一起放入 `QSplitter(Qt.Vertical)` 中，使用户可拖拽调整 LOG 区域高度。
 - 分割线手柄**必须使用隐式样式**：默认透明、悬停时淡色提示、按下时高亮。
+- **必须使用工厂方法** `ExecutionLogsFrame.wrap_with(...)` 完成装配，**禁止**在页面里手写 `QSplitter` 拼装样板。该工厂已把上述 CRITICAL 约束（隐式手柄、`setCollapsible(False)`、stretch 比例）固化进单一可信源。
 - 标准模板：
   ```python
-  from PySide6.QtWidgets import QSplitter
+  from ui.modules import ExecutionLogsFrame
 
-  right_splitter = QSplitter(Qt.Vertical)
-  right_splitter.setHandleWidth(4)
-  right_splitter.setStyleSheet("""
-      QSplitter::handle {
-          background-color: transparent;
-      }
-      QSplitter::handle:hover {
-          background-color: #18284d;
-      }
-      QSplitter::handle:pressed {
-          background-color: #5b7cff;
-      }
-  """)
-  right_splitter.addWidget(main_content_widget)   # 图表 / 结果面板
-  right_splitter.addWidget(self.execution_logs)   # LOG 模块
-  right_splitter.setStretchFactor(0, 4)           # 主内容占比大
-  right_splitter.setStretchFactor(1, 1)           # LOG 占比小
-  right_splitter.setCollapsible(0, False)
-  right_splitter.setCollapsible(1, False)
+  # 返回 (splitter, logs)；title/show_progress/stretch/sizes/min_log_height 按需传
+  right_splitter, self.execution_logs = ExecutionLogsFrame.wrap_with(
+      main_content_widget,            # 图表 / 结果面板
+      show_progress=True,
+      stretch=(4, 1),                 # 主内容占比大、LOG 占比小
+  )
+  # 变量名按页保留别名透传（部分页用 log_text / log_edit）
+  self.log_edit = self.execution_logs.log_edit
   right_layout.addWidget(right_splitter, 1)
   ```
-- **禁止**直接 `layout.addWidget(self.execution_logs)` 而不经过 `QSplitter`。
-- **禁止**对 `execution_logs` 设置 `setMaximumHeight` / `setFixedHeight` 来限制高度，改用 splitter 的 stretch factor 控制默认比例。
-- 参考正例：[gpadc_test_ui.py](../../ui/pages/pmu_test/gpadc_test_ui.py) 的 `right_splitter` 实现。
+- 工厂参数说明：
+  - `title` —— LOG 卡片标题，默认 `"Execution Logs"`（如 gpadc / clk 用 `"TEST LOG"`）。
+  - `show_progress` —— 是否显示进度条。
+  - `stretch` —— `(主内容, LOG)` 的 stretch factor，默认 `(4, 1)`。
+  - `sizes` —— 初始像素高度 `[主内容, LOG]`，可选。
+  - `min_log_height` —— LOG 区最小高度，可选。
+- **禁止**直接 `layout.addWidget(self.execution_logs)` 而不经过 `QSplitter` / 工厂。
+- **禁止**对 `execution_logs` 设置 `setMaximumHeight` / `setFixedHeight` 来限制高度，改用工厂的 `stretch` / `sizes` 控制默认比例。
+- 工厂实现见 [ExecutionLogsFrame.wrap_with](../../ui/modules/execution_logs_module_frame.py)；参考正例：[gpadc_test_ui.py](../../ui/pages/pmu_test/gpadc_test_ui.py)。
 
 ## 7. 仪器层规范
 

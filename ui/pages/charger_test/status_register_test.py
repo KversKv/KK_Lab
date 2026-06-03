@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QLineEdit, QGridLayout, QFrame, QDoubleSpinBox, QSpinBox,
     QTextEdit, QProgressBar, QSizePolicy, QScrollArea,
-    QApplication, QSplitter
+    QApplication
 )
 from PySide6.QtCore import Qt, Signal, QThread, QObject, QTimer
 from PySide6.QtGui import QFont
@@ -560,29 +560,11 @@ class StatusRegisterTestUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidge
         reg_outer.addLayout(reg_grid)
         reg_outer.addStretch()
 
-        self.execution_logs = ExecutionLogsFrame(show_progress=False)
+        right_splitter, self.execution_logs = ExecutionLogsFrame.wrap_with(
+            reg_frame, show_progress=False, stretch=(4, 1)
+        )
         self.log_edit = self.execution_logs.log_edit
         self.clear_log_btn = self.execution_logs.clear_log_btn
-
-        right_splitter = QSplitter(Qt.Vertical)
-        right_splitter.setHandleWidth(4)
-        right_splitter.setStyleSheet("""
-            QSplitter::handle {
-                background-color: transparent;
-            }
-            QSplitter::handle:hover {
-                background-color: #18284d;
-            }
-            QSplitter::handle:pressed {
-                background-color: #5b7cff;
-            }
-        """)
-        right_splitter.addWidget(reg_frame)
-        right_splitter.addWidget(self.execution_logs)
-        right_splitter.setStretchFactor(0, 4)
-        right_splitter.setStretchFactor(1, 1)
-        right_splitter.setCollapsible(0, False)
-        right_splitter.setCollapsible(1, False)
         right_layout.addWidget(right_splitter, 1)
 
     def _build_test_item_card(self):

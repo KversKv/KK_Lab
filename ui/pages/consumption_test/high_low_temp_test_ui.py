@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QGridLayout, QFrame, QScrollArea,
     QSizePolicy, QSpinBox, QDoubleSpinBox,
-    QFileDialog, QSplitter
+    QFileDialog
 )
 from PySide6.QtCore import (
     Qt, Signal, QThread, QObject, QRectF, QSize,
@@ -677,27 +677,9 @@ class HighLowTempConsumptionTestUI(N6705CConnectionMixin, ChamberConnectionMixin
         self.plot_widget.addLegend(offset=(10, 10))
         chart_layout.addWidget(self.plot_widget, 1)
 
-        self.execution_logs = ExecutionLogsFrame(show_progress=True)
-
-        right_splitter = QSplitter(Qt.Vertical)
-        right_splitter.setHandleWidth(4)
-        right_splitter.setStyleSheet("""
-            QSplitter::handle {
-                background-color: transparent;
-            }
-            QSplitter::handle:hover {
-                background-color: #18284d;
-            }
-            QSplitter::handle:pressed {
-                background-color: #5b7cff;
-            }
-        """)
-        right_splitter.addWidget(chart_panel)
-        right_splitter.addWidget(self.execution_logs)
-        right_splitter.setStretchFactor(0, 3)
-        right_splitter.setStretchFactor(1, 1)
-        right_splitter.setCollapsible(0, False)
-        right_splitter.setCollapsible(1, False)
+        right_splitter, self.execution_logs = ExecutionLogsFrame.wrap_with(
+            chart_panel, show_progress=True, stretch=(3, 1)
+        )
         right_col.addWidget(right_splitter, 1)
 
         body_layout.addLayout(right_col, 1)

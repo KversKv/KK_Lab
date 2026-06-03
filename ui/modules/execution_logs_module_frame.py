@@ -7,7 +7,7 @@ from datetime import datetime
 from PySide6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QTextEdit, QProgressBar, QLineEdit,
-    QMenu, QApplication, QFileDialog, QWidget,
+    QMenu, QApplication, QFileDialog, QWidget, QSplitter,
 )
 from PySide6.QtCore import Qt, QTimer, QRectF, Signal, Property, QEasingCurve
 from PySide6.QtGui import (
@@ -44,6 +44,18 @@ _DEFAULT_LOG_COLOR = "#c8d8f0"
 
 _COLLAPSED_HEIGHT = 30
 _DEFAULT_HEIGHT = 200
+
+_LOG_SPLITTER_STYLE = """
+    QSplitter::handle {
+        background-color: transparent;
+    }
+    QSplitter::handle:hover {
+        background-color: #18284d;
+    }
+    QSplitter::handle:pressed {
+        background-color: #5b7cff;
+    }
+"""
 
 _LOG_FRAME_STYLE = """
     QFrame#logContainer {
@@ -542,6 +554,35 @@ class ExecutionLogsFrame(QFrame):
             self.log_edit.verticalScrollBar().valueChanged.connect(
                 self._on_user_scroll
             )
+
+    @classmethod
+    def wrap_with(
+        cls,
+        content_widget,
+        *,
+        title="Execution Logs",
+        show_progress=True,
+        stretch=(4, 1),
+        sizes=None,
+        min_log_height=None,
+        parent=None,
+    ):
+        logs = cls(title=title, show_progress=show_progress, parent=parent)
+        if min_log_height is not None:
+            logs.log_edit.setMinimumHeight(min_log_height)
+
+        splitter = QSplitter(Qt.Vertical)
+        splitter.setHandleWidth(4)
+        splitter.setStyleSheet(_LOG_SPLITTER_STYLE)
+        splitter.addWidget(content_widget)
+        splitter.addWidget(logs)
+        splitter.setStretchFactor(0, stretch[0])
+        splitter.setStretchFactor(1, stretch[1])
+        splitter.setCollapsible(0, False)
+        splitter.setCollapsible(1, False)
+        if sizes is not None:
+            splitter.setSizes(list(sizes))
+        return splitter, logs
 
     def _make_toolbar_btn(self, svg_path: str, text: str) -> QPushButton:
         btn = QPushButton(text)

@@ -1,4 +1,4 @@
-﻿"""
+"""
 GPADC测试UI组件
 修复左侧滚动区域宽度与显示不完整问题
 """
@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QLineEdit, QGridLayout, QSpinBox, QDoubleSpinBox, QFrame, QRadioButton,
     QButtonGroup, QApplication, QSizePolicy, QStackedWidget, QScrollArea,
-    QTextEdit, QSplitter, QProgressBar
+    QTextEdit, QProgressBar
 )
 from PySide6.QtCore import Qt, Signal, QThread, QObject
 from PySide6.QtGui import QFont
@@ -701,31 +701,13 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
 
         chart_layout.addWidget(self.chart_placeholder, 1)
 
-        self.execution_logs = ExecutionLogsFrame(title="TEST LOG", show_progress=True)
+        right_splitter, self.execution_logs = ExecutionLogsFrame.wrap_with(
+            chart_panel, title="TEST LOG", show_progress=True, stretch=(3, 2)
+        )
         self.log_text = self.execution_logs.log_edit
         self.progress_bar = self.execution_logs.progress_bar
         self.progress_text_label = self.execution_logs.progress_text_label
         self.clear_log_btn = self.execution_logs.clear_log_btn
-
-        right_splitter = QSplitter(Qt.Vertical)
-        right_splitter.setHandleWidth(4)
-        right_splitter.setStyleSheet("""
-            QSplitter::handle {
-                background-color: transparent;
-            }
-            QSplitter::handle:hover {
-                background-color: #18284d;
-            }
-            QSplitter::handle:pressed {
-                background-color: #5b7cff;
-            }
-        """)
-        right_splitter.addWidget(chart_panel)
-        right_splitter.addWidget(self.execution_logs)
-        right_splitter.setStretchFactor(0, 3)
-        right_splitter.setStretchFactor(1, 2)
-        right_splitter.setCollapsible(0, False)
-        right_splitter.setCollapsible(1, False)
 
         right_col.addWidget(right_splitter, 1)
 

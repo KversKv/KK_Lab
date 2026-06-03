@@ -21,7 +21,7 @@ from ui.resource_path import get_resource_base
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QLabel, QLineEdit, QFrame, QCheckBox,
-    QScrollArea, QSplitter, QFileDialog,
+    QScrollArea, QFileDialog,
     QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView,
 )
 from PySide6.QtCore import Qt
@@ -208,23 +208,10 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         )
         body_widget.setLayout(body_layout)
 
-        self.execution_logs = ExecutionLogsFrame(show_progress=True)
+        splitter, self.execution_logs = ExecutionLogsFrame.wrap_with(
+            body_widget, show_progress=True, stretch=(1, 0), sizes=[600, 140]
+        )
         self.log_edit = self.execution_logs.log_edit
-
-        splitter = QSplitter(Qt.Vertical)
-        splitter.setHandleWidth(4)
-        splitter.setStyleSheet("""
-            QSplitter::handle { background-color: transparent; }
-            QSplitter::handle:hover { background-color: #18284d; }
-            QSplitter::handle:pressed { background-color: #5b7cff; }
-        """)
-        splitter.addWidget(body_widget)
-        splitter.addWidget(self.execution_logs)
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 0)
-        splitter.setCollapsible(0, False)
-        splitter.setCollapsible(1, False)
-        splitter.setSizes([600, 140])
 
         main_layout.addWidget(splitter, 1)
 

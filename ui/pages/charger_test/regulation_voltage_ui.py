@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QLineEdit, QGridLayout, QSpinBox, QDoubleSpinBox, QFrame,
     QTextEdit, QProgressBar, QSizePolicy, QScrollArea,
-    QApplication, QFileDialog, QSplitter
+    QApplication, QFileDialog
 )
 from PySide6.QtCore import Qt, Signal, QThread, QObject, QTimer, QMargins
 from PySide6.QtGui import QFont
@@ -552,31 +552,13 @@ class RegulationVoltageTestUI(N6705CConnectionMixin, QWidget):
 
         chart_outer_layout.addLayout(stat_layout)
 
-        self.execution_logs = ExecutionLogsFrame(show_progress=True)
+        right_splitter, self.execution_logs = ExecutionLogsFrame.wrap_with(
+            self.chart_frame, show_progress=True, stretch=(4, 1)
+        )
         self.log_edit = self.execution_logs.log_edit
         self.progress_bar = self.execution_logs.progress_bar
         self.progress_text_label = self.execution_logs.progress_text_label
         self.clear_log_btn = self.execution_logs.clear_log_btn
-
-        right_splitter = QSplitter(Qt.Vertical)
-        right_splitter.setHandleWidth(4)
-        right_splitter.setStyleSheet("""
-            QSplitter::handle {
-                background-color: transparent;
-            }
-            QSplitter::handle:hover {
-                background-color: #18284d;
-            }
-            QSplitter::handle:pressed {
-                background-color: #5b7cff;
-            }
-        """)
-        right_splitter.addWidget(self.chart_frame)
-        right_splitter.addWidget(self.execution_logs)
-        right_splitter.setStretchFactor(0, 4)
-        right_splitter.setStretchFactor(1, 1)
-        right_splitter.setCollapsible(0, False)
-        right_splitter.setCollapsible(1, False)
         right_layout.addWidget(right_splitter, 1)
 
     def _build_connection_card(self):

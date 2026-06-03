@@ -28,7 +28,6 @@ from PySide6.QtWidgets import (
     QFrame, QApplication, QFileDialog,
     QCheckBox, QSizePolicy, QMessageBox, QScrollArea,
     QTableWidget, QTableWidgetItem, QHeaderView,
-    QSplitter
 )
 from PySide6.QtCore import (
     Qt, QTimer, Signal, QThread, QObject, QSize,
@@ -682,31 +681,12 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         body_widget.setStyleSheet("background: transparent; border: none;")
         body_widget.setLayout(body_layout)
 
-        self.execution_logs = ExecutionLogsFrame(show_progress=False)
+        splitter, self.execution_logs = ExecutionLogsFrame.wrap_with(
+            body_widget, show_progress=False, stretch=(1, 0),
+            sizes=[600, 120], min_log_height=40,
+        )
         self.log_edit = self.execution_logs.log_edit
         self.clear_log_btn = self.execution_logs.clear_log_btn
-        self.log_edit.setMinimumHeight(40)
-
-        splitter = QSplitter(Qt.Vertical)
-        splitter.setHandleWidth(4)
-        splitter.setStyleSheet("""
-            QSplitter::handle {
-                background-color: transparent;
-            }
-            QSplitter::handle:hover {
-                background-color: #18284d;
-            }
-            QSplitter::handle:pressed {
-                background-color: #5b7cff;
-            }
-        """)
-        splitter.addWidget(body_widget)
-        splitter.addWidget(self.execution_logs)
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 0)
-        splitter.setCollapsible(0, False)
-        splitter.setCollapsible(1, False)
-        splitter.setSizes([600, 120])
 
         main_layout.addWidget(splitter, 1)
 
