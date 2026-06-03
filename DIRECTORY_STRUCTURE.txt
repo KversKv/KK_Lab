@@ -112,7 +112,11 @@ core/
 │   ├── profiles.py          # InstrumentProfile 数据类定义
 │   ├── registry.py          # ProfileRegistry + 各仪器 profile 注册
 │   └── workers.py           # ConnectWorker/DisconnectWorker/ScanWorker (QThread)
-└── controllers/             # 控制器子包 (预留，后续业务控制器)
+├── controllers/             # 控制器子包 (预留，后续业务控制器)
+└── vmin_hunter/             # VminHunter 探底测试编排内核（与 UI/仪器无关）
+    ├── __init__.py          # 导出判活器 / 策略 / 睡眠 Vmin 引擎
+    ├── alive_checker.py     # DUT 判活器：可插拔策略（默认 sleep=0/1 翻转 + 崩溃关键字 + 超时）
+    └── sleep_vmin_engine.py # 外供电睡眠 Vmin 探底引擎（QThread 编排 + EngineHooks 注入硬件动作）
 
 ================================================================================
   instruments/ - 仪器驱动层

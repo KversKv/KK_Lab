@@ -15,6 +15,7 @@ VminHunter UI 页面
 
 import os
 import json
+import time
 
 from ui.resource_path import get_resource_base
 
@@ -38,6 +39,12 @@ from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import get_page_base_qss, SCROLLBAR_STYLE
 from ui.theme import Colors, Radius
 from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
+from core.vmin_hunter import (
+    SleepVminConfig,
+    EngineHooks,
+    SleepVminEngine,
+    SleepVminRunner,
+)
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -77,6 +84,7 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
 
         self._vcorel_enabled = False
         self._temp_enabled = False
+        self._runner = None
 
         self._setup_style()
         self._create_layout()
@@ -741,26 +749,141 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
             return
 
         logger.info("VminHunter start requested: %s", params)
+
+        if params["test_mode"] != "external":
+            QMessageBox.information(
+                self, "Not Implemented",
+                "Currently only External Supply (N6705C) sleep Vmin sweep is implemented.",
+            )
+            return
+
+        try:
+            self._start_external_sleep_sweep(params)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Cannot Start", str(exc))
+
+    def _start_external_sleep_sweep(self, params):
+        n6705c = self.get_n6705c_instance()
+        if n6705c is None:
+            raise ValueError("N6705C not connected.")
+        if not self.is_mcu_io_connected or self.mcu_io is None:
+            raise ValueError("MCU IO (Status control) not connected.")
+
+        mcu_cfg = self.get_mcu_pwr_reset_config()
+        if not mcu_cfg["status_enabled"] or mcu_cfg["status_channel"] is None:
+            raise ValueError("MCU Status GPIO is not enabled/configured.")
+        status_pin = self._mcu_pr_pin_index(mcu_cfg["status_channel"])
+        if status_pin is None:
+            raise ValueError("Invalid MCU Status GPIO channel.")
+
+        sweep = params["voltage_sweep"]
+        wake_voltage = max(sweep["start"], sweep["end"])
+        sleep_points = sorted(params["voltage_points"], reverse=True)
+        channel = params["channel_config"]["n6705c"]["VcoreM_channel"]
+        status_polarity = mcu_cfg["status_polarity"]
+        iic_cfg = params["channel_config"]["iic"]["VcoreM"]
+
+        config = SleepVminConfig(
+            wake_voltage=wake_voltage,
+            sleep_points=sleep_points,
+            channel=channel,
+            test_cnt=params["test_cnt"],
+            temperature=None,
+        )
+        hooks = self._build_external_hooks(
+            n6705c, status_pin, status_polarity, iic_cfg
+        )
+
+        engine = SleepVminEngine(config, hooks)
+        self._runner = SleepVminRunner(engine)
+        engine.log_message.connect(self.append_log)
+        engine.result_row.connect(self.append_result_row)
+        engine.vmin_found.connect(self.set_vmin_summary)
+        engine.finished.connect(self._on_engine_finished)
+
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
         self.result_table.setRowCount(0)
         self.vmin_summary_label.setText("Vmin: hunting...")
-        self.execution_logs.append_log("[START] VminHunter sweep started")
+        self.execution_logs.append_log("[START] External sleep Vmin sweep started")
         self.execution_logs.append_log(
-            f"[INFO] mode={params['test_mode']} cnt={params['test_cnt']} "
-            f"points={params['voltage_points']}"
+            f"[INFO] wake={wake_voltage:.3f}V ch={channel} points={sleep_points}"
         )
-        # NOTE: 真正的遍历引擎应在 core 层用 QThread 执行，并通过 Signal/Slot
-        #       回填结果。此处仅完成 UI 层交互与参数收集。
-        self.execution_logs.append_log(
-            "[WARN] Sweep engine (core) not wired yet; UI-only scaffold."
+        self._runner.start()
+
+    def _build_external_hooks(self, n6705c, status_pin, status_polarity, iic_cfg):
+        active = 1 if status_polarity == "rising" else 0
+        inactive = 1 - active
+        current_limit = 1.0
+
+        device_addr = self._parse_int(iic_cfg.get("device_addr"))
+        reg_addr = self._parse_int(iic_cfg.get("sleep_ctrl_addr"))
+        width_flag = self._parse_int(iic_cfg.get("bit_width")) or 8
+        min_value = 0x0F
+
+        def set_voltage(channel, voltage):
+            n6705c.set_voltage(channel, voltage)
+
+        def output_on(channel):
+            n6705c.set_current_limit(channel, current_limit)
+            n6705c.channel_on(channel)
+
+        def output_off(channel):
+            n6705c.channel_off(channel)
+
+        def status_pulse():
+            self.mcu_io.out(status_pin, active)
+            time.sleep(0.1)
+            self.mcu_io.out(status_pin, inactive)
+
+        def init_internal_supply():
+            from i2c_interface_x64 import I2CInterface
+            i2c = I2CInterface()
+            i2c.write(device_addr, reg_addr, min_value, width_flag)
+
+        hooks_kwargs = dict(
+            set_voltage=set_voltage,
+            output_on=output_on,
+            status_sleep=status_pulse,
+            status_wake=status_pulse,
+            output_off=output_off,
         )
+        if device_addr is not None and reg_addr is not None:
+            hooks_kwargs["init_internal_supply"] = init_internal_supply
+
+        return EngineHooks(**hooks_kwargs)
+
+    @staticmethod
+    def _parse_int(text):
+        if text is None:
+            return None
+        s = str(text).strip()
+        if not s:
+            return None
+        try:
+            return int(s, 0)
+        except ValueError:
+            try:
+                return int(s)
+            except ValueError:
+                return None
+
+    def _on_engine_finished(self, ok, message):
+        self.start_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
+        if not ok and message:
+            self.execution_logs.append_log(f"[ERROR] Engine finished with error: {message}")
+        self._runner = None
 
     def _on_stop_clicked(self):
         logger.info("VminHunter stop requested")
-        self.start_btn.setEnabled(True)
-        self.stop_btn.setEnabled(False)
-        self.execution_logs.append_log("[STOP] VminHunter sweep stopped")
+        if self._runner is not None and self._runner.is_running():
+            self._runner.stop()
+            self.execution_logs.append_log("[STOP] Stop requested; finishing current step...")
+        else:
+            self.start_btn.setEnabled(True)
+            self.stop_btn.setEnabled(False)
+            self.execution_logs.append_log("[STOP] VminHunter sweep stopped")
 
     # ------------------------------------------------------------------
     # UART 日志桥接（供 SerialComMixin 回调）
@@ -774,7 +897,13 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
             text = data.decode("utf-8", errors="replace").rstrip("\r\n")
         except Exception:
             text = repr(data)
-        if text:
+        if not text:
+            return
+        if self._runner is not None and self._runner.is_running():
+            for line in text.splitlines():
+                if line:
+                    self._runner.feed_uart_line(line)
+        else:
             self.append_log(f"[DUT] {text}")
 
     # ------------------------------------------------------------------
