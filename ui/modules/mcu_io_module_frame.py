@@ -3,7 +3,6 @@
 
 import os
 import sys
-from time import sleep as _time_sleep
 
 if __name__ == "__main__" and __package__ in (None, ""):
     _PROJECT_ROOT = os.path.abspath(
@@ -15,7 +14,7 @@ if __name__ == "__main__" and __package__ in (None, ""):
 from ui.resource_path import get_resource_base
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton,
-    QLabel, QFrame, QSizePolicy, QToolTip, QCheckBox
+    QLabel, QFrame, QSizePolicy, QToolTip, QCheckBox, QDoubleSpinBox
 )
 from PySide6.QtCore import (
     Qt, QThread, Signal, QObject, QSize, QRect, QRectF,
@@ -64,6 +63,10 @@ _POLARITY_OPTIONS = [
 
 MCU_DRIVE_MODE_PULSE = "pulse"
 MCU_DRIVE_MODE_LEVEL = "level"
+
+MCU_PWR_RESET_PULSE_WIDTH_DEFAULT_MS = 100.0
+MCU_PWR_RESET_PULSE_WIDTH_MIN_MS = 1.0
+MCU_PWR_RESET_PULSE_WIDTH_MAX_MS = 60000.0
 
 _DRIVE_MODE_OPTIONS = [
     {"key": MCU_DRIVE_MODE_PULSE, "label": "Pulse"},
@@ -309,6 +312,28 @@ class _GpioOutputWorker(QObject):
             self.error.emit(str(e))
 
 
+class _GpioPulseWorker(QObject):
+    finished = Signal(int)
+    error = Signal(str)
+
+    def __init__(self, inst, pin, active, width_ms):
+        super().__init__()
+        self._inst = inst
+        self._pin = pin
+        self._active = active
+        self._width_ms = width_ms
+
+    def run(self):
+        try:
+            self._inst.pulse(
+                self._pin, width_ms=self._width_ms, active=self._active
+            )
+            self.finished.emit(self._pin)
+        except Exception as e:
+            logger.error("MCU IO GPIO pulse failed: %s", e, exc_info=True)
+            self.error.emit(str(e))
+
+
 class _GpioReadWorker(QObject):
     finished = Signal(int, int)
     error = Signal(str)
@@ -343,18 +368,10 @@ class _PwrResetPulseWorker(QObject):
 
     def run(self):
         try:
+            width_ms = int(round(self._pulse_width * 1000))
             for name, pin, polarity in self._actions:
-                active, inactive = (1, 0) if polarity == "rising" else (0, 1)
-                self._inst.out(pin, active)
-                _time_sleep(self._pulse_width)
-                self._inst.out(pin, inactive)
-                try:
-                    self._inst.in_pull(pin, "none")
-                except Exception as e:
-                    logger.warning(
-                        "MCU PWR/RESET high-Z after %s pulse failed (GPIO%s): %s",
-                        name, pin, e,
-                    )
+                active = 1 if polarity == "rising" else 0
+                self._inst.pulse(pin, width_ms=width_ms, active=active)
             self.finished.emit("done")
         except Exception as e:
             logger.error("MCU PWR/RESET pulse failed: %s", e, exc_info=True)
@@ -396,6 +413,8 @@ class McuIoConnectionMixin:
         self._mcu_io_output_worker = None
         self._mcu_io_read_thread = None
         self._mcu_io_read_worker = None
+        self._mcu_io_pulse_thread = None
+        self._mcu_io_pulse_worker = None
 
     def build_mcu_io_connection_widgets(self, layout, title_row=None, with_gpio=True):
         self.mcu_io_status_label = QLabel("● Disconnected")
@@ -434,6 +453,7 @@ class McuIoConnectionMixin:
 
     def _build_mcu_io_gpio_widgets(self, layout):
         self.mcu_io_output_toggles = {}
+        self.mcu_io_pulse_buttons = {}
         for pin in MCU_IO_GPIO_PINS:
             row = QHBoxLayout()
             row.setSpacing(6)
@@ -449,10 +469,70 @@ class McuIoConnectionMixin:
             )
             row.addWidget(state_toggle, 0, Qt.AlignVCenter)
 
+            pulse_btn = QPushButton("Pulse")
+            pulse_btn.setFixedHeight(MCU_IO_BTN_HEIGHT)
+            pulse_btn.setFixedWidth(56)
+            pulse_btn.setStyleSheet(_mcu_io_action_style())
+            pulse_btn.setToolTip(
+                "Send a single pulse on this GPIO. Active level follows the level "
+                "toggle (High/Low); width uses the Pulse (ms) value below."
+            )
+            pulse_btn.clicked.connect(lambda _=False, p=pin: self._on_mcu_io_pulse(p))
+            row.addWidget(pulse_btn, 0, Qt.AlignVCenter)
+
             row.addStretch(1)
 
             layout.addLayout(row)
             self.mcu_io_output_toggles[pin] = state_toggle
+            self.mcu_io_pulse_buttons[pin] = pulse_btn
+
+        pulse_width_row = QHBoxLayout()
+        pulse_width_row.setSpacing(6)
+        pulse_width_row.setContentsMargins(0, 2, 0, 0)
+        pulse_width_label = QLabel("Pulse (ms)")
+        pulse_width_label.setFixedWidth(56)
+        pulse_width_row.addWidget(pulse_width_label, 0, Qt.AlignVCenter)
+        self.mcu_io_pulse_width_spin = QDoubleSpinBox()
+        self.mcu_io_pulse_width_spin.setObjectName("mcuIoPulseWidthSpin")
+        self.mcu_io_pulse_width_spin.setDecimals(1)
+        self.mcu_io_pulse_width_spin.setRange(
+            MCU_PWR_RESET_PULSE_WIDTH_MIN_MS, MCU_PWR_RESET_PULSE_WIDTH_MAX_MS
+        )
+        self.mcu_io_pulse_width_spin.setSingleStep(10.0)
+        self.mcu_io_pulse_width_spin.setValue(MCU_PWR_RESET_PULSE_WIDTH_DEFAULT_MS)
+        self.mcu_io_pulse_width_spin.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Fixed
+        )
+        self.mcu_io_pulse_width_spin.setToolTip(
+            "Pulse width in milliseconds, shared by all GPIO Pulse buttons."
+        )
+        self.mcu_io_pulse_width_spin.setStyleSheet(f"""
+            QDoubleSpinBox#mcuIoPulseWidthSpin {{
+                background-color: #091426;
+                border: 1.5px solid #17345f;
+                border-radius: 6px;
+                color: #c8d5e2;
+                padding: 2px 8px;
+                min-height: {MCU_IO_BTN_HEIGHT}px;
+                max-height: {MCU_IO_BTN_HEIGHT}px;
+            }}
+            QDoubleSpinBox#mcuIoPulseWidthSpin:focus {{
+                border: 1.5px solid #2dd4ff;
+            }}
+            QDoubleSpinBox#mcuIoPulseWidthSpin::up-button,
+            QDoubleSpinBox#mcuIoPulseWidthSpin::down-button {{
+                width: 0px;
+                height: 0px;
+                border: none;
+            }}
+            QDoubleSpinBox#mcuIoPulseWidthSpin:disabled {{
+                background-color: #0b1430;
+                color: #5c7096;
+                border: 1.5px solid #1a2850;
+            }}
+        """)
+        pulse_width_row.addWidget(self.mcu_io_pulse_width_spin, 1, Qt.AlignVCenter)
+        layout.addLayout(pulse_width_row)
 
         read_row = QHBoxLayout()
         read_row.setSpacing(6)
@@ -491,6 +571,10 @@ class McuIoConnectionMixin:
     def _set_mcu_io_gpio_controls_enabled(self, enabled: bool):
         for toggle in getattr(self, "mcu_io_output_toggles", {}).values():
             toggle.setEnabled(enabled)
+        for btn in getattr(self, "mcu_io_pulse_buttons", {}).values():
+            btn.setEnabled(enabled)
+        if getattr(self, "mcu_io_pulse_width_spin", None) is not None:
+            self.mcu_io_pulse_width_spin.setEnabled(enabled)
         if hasattr(self, "mcu_io_read_combo"):
             self.mcu_io_read_combo.setEnabled(enabled)
         if hasattr(self, "mcu_io_read_btn"):
@@ -702,6 +786,56 @@ class McuIoConnectionMixin:
     def _on_mcu_io_output_error(self, err):
         self.set_mcu_io_status("● Set Failed", is_error=True)
         self._mcu_io_log(f"[MCU] Set GPIO output failed: {err}")
+
+    def _on_mcu_io_pulse(self, pin):
+        if not self.is_mcu_io_connected or self.mcu_io is None:
+            self._mcu_io_log("[MCU] Not connected, cannot pulse GPIO.")
+            return
+        if self._mcu_io_pulse_thread is not None and self._mcu_io_pulse_thread.isRunning():
+            return
+
+        toggle = self.mcu_io_output_toggles.get(pin)
+        state = toggle.value() if toggle else GPIO_STATE_HIGH
+        active = 0 if state == GPIO_STATE_LOW else 1
+
+        spin = getattr(self, "mcu_io_pulse_width_spin", None)
+        width_ms = int(round(
+            spin.value() if spin else MCU_PWR_RESET_PULSE_WIDTH_DEFAULT_MS
+        ))
+
+        self.set_mcu_io_status(f"● Pulsing GPIO{pin}")
+        self._mcu_io_log(
+            f"[MCU] Pulsing GPIO{pin} active={active} width={width_ms}ms..."
+        )
+
+        worker = _GpioPulseWorker(self.mcu_io, pin, active, width_ms)
+        thread = QThread()
+        worker.moveToThread(thread)
+
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._on_mcu_io_pulse_done)
+        worker.error.connect(self._on_mcu_io_pulse_error)
+        worker.finished.connect(thread.quit)
+        worker.error.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._on_mcu_io_pulse_thread_cleanup)
+
+        self._mcu_io_pulse_worker = worker
+        self._mcu_io_pulse_thread = thread
+        thread.start()
+
+    def _on_mcu_io_pulse_thread_cleanup(self):
+        self._mcu_io_pulse_thread = None
+        self._mcu_io_pulse_worker = None
+
+    def _on_mcu_io_pulse_done(self, pin):
+        self.set_mcu_io_status("● Connected")
+        self._mcu_io_log(f"[MCU] GPIO{pin} pulse done.")
+
+    def _on_mcu_io_pulse_error(self, err):
+        self.set_mcu_io_status("● Pulse Failed", is_error=True)
+        self._mcu_io_log(f"[MCU] Pulse GPIO failed: {err}")
 
     def _selected_mcu_io_read_pin(self):
         text = (
@@ -1192,6 +1326,59 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
         grid.addWidget(status_label_container, 2, 0, Qt.AlignVCenter)
         grid.addLayout(status_row, 2, 1)
 
+        pulse_width_label = QLabel("Pulse (ms)")
+        pulse_width_label.setStyleSheet(label_style_sm)
+        pulse_width_label.setFixedWidth(label_width)
+        self.mcu_pr_pulse_width_spin = QDoubleSpinBox()
+        self.mcu_pr_pulse_width_spin.setObjectName("mcuPrPulseWidthSpin")
+        self.mcu_pr_pulse_width_spin.setDecimals(1)
+        self.mcu_pr_pulse_width_spin.setRange(
+            MCU_PWR_RESET_PULSE_WIDTH_MIN_MS, MCU_PWR_RESET_PULSE_WIDTH_MAX_MS
+        )
+        self.mcu_pr_pulse_width_spin.setSingleStep(10.0)
+        self.mcu_pr_pulse_width_spin.setValue(MCU_PWR_RESET_PULSE_WIDTH_DEFAULT_MS)
+        self.mcu_pr_pulse_width_spin.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Fixed
+        )
+        font = self.mcu_pr_pulse_width_spin.font()
+        font.setPixelSize(11)
+        self.mcu_pr_pulse_width_spin.setFont(font)
+        self.mcu_pr_pulse_width_spin.setToolTip(
+            "Pulse width in milliseconds. Applies to PowerON / RESET / Status "
+            "pulse actions."
+        )
+        self.mcu_pr_pulse_width_spin.setStyleSheet(f"""
+            QDoubleSpinBox#mcuPrPulseWidthSpin {{
+                background-color: #091426;
+                border: 1.5px solid #17345f;
+                border-radius: 6px;
+                color: #c8d5e2;
+                padding: 2px 8px;
+                min-height: {MCU_IO_BTN_HEIGHT}px;
+                max-height: {MCU_IO_BTN_HEIGHT}px;
+            }}
+            QDoubleSpinBox#mcuPrPulseWidthSpin:focus {{
+                border: 1.5px solid #2dd4ff;
+            }}
+            QDoubleSpinBox#mcuPrPulseWidthSpin::up-button,
+            QDoubleSpinBox#mcuPrPulseWidthSpin::down-button {{
+                width: 0px;
+                height: 0px;
+                border: none;
+            }}
+            QDoubleSpinBox#mcuPrPulseWidthSpin:disabled {{
+                background-color: #0b1430;
+                color: #5c7096;
+                border: 1.5px solid #1a2850;
+            }}
+        """)
+        pulse_width_row = QHBoxLayout()
+        pulse_width_row.setContentsMargins(0, 0, 0, 0)
+        pulse_width_row.setSpacing(3)
+        pulse_width_row.addWidget(self.mcu_pr_pulse_width_spin, 1)
+        grid.addWidget(pulse_width_label, 3, 0, Qt.AlignVCenter)
+        grid.addLayout(pulse_width_row, 3, 1)
+
         layout.addLayout(grid)
 
         self.mcu_pr_reset_enable_cb.toggled.connect(
@@ -1253,7 +1440,14 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
             "status_mode": (
                 self.mcu_pr_status_mode_toggle.value() if status_enabled else None
             ),
+            "pulse_width": self.get_mcu_pr_pulse_width(),
         }
+
+    def get_mcu_pr_pulse_width(self):
+        spin = getattr(self, "mcu_pr_pulse_width_spin", None)
+        if spin is None:
+            return MCU_PWR_RESET_PULSE_WIDTH_DEFAULT_MS / 1000.0
+        return spin.value() / 1000.0
 
     @staticmethod
     def _mcu_pr_pin_index(channel):
@@ -1345,8 +1539,10 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
         thread.start()
         return True
 
-    def mcu_power_on(self, pulse_width=0.1, on_done=None):
+    def mcu_power_on(self, pulse_width=None, on_done=None):
         cfg = self.get_mcu_pwr_reset_config()
+        if pulse_width is None:
+            pulse_width = cfg["pulse_width"]
         pin = self._mcu_pr_pin_index(cfg["poweron_channel"])
         if pin is None:
             self._mcu_io_log("[MCU] Invalid PowerON channel.")
@@ -1357,8 +1553,10 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
             on_done=on_done,
         )
 
-    def mcu_reset(self, pulse_width=0.1, on_done=None):
+    def mcu_reset(self, pulse_width=None, on_done=None):
         cfg = self.get_mcu_pwr_reset_config()
+        if pulse_width is None:
+            pulse_width = cfg["pulse_width"]
         if not cfg["reset_enabled"]:
             self._mcu_io_log("[MCU] RESET disabled, skipped.")
             return False
@@ -1372,8 +1570,10 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
             on_done=on_done,
         )
 
-    def mcu_status_toggle(self, pulse_width=0.1, on_done=None):
+    def mcu_status_toggle(self, pulse_width=None, on_done=None):
         cfg = self.get_mcu_pwr_reset_config()
+        if pulse_width is None:
+            pulse_width = cfg["pulse_width"]
         if not cfg["status_enabled"]:
             self._mcu_io_log("[MCU] Status disabled, skipped.")
             return False
@@ -1407,8 +1607,10 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
             "Status", pin, level, on_done=on_done
         )
 
-    def mcu_power_on_reset_sequence(self, pulse_width=0.1, on_done=None):
+    def mcu_power_on_reset_sequence(self, pulse_width=None, on_done=None):
         cfg = self.get_mcu_pwr_reset_config()
+        if pulse_width is None:
+            pulse_width = cfg["pulse_width"]
         poweron_pin = self._mcu_pr_pin_index(cfg["poweron_channel"])
         if poweron_pin is None:
             self._mcu_io_log("[MCU] Invalid PowerON channel.")

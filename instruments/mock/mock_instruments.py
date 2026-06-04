@@ -1,5 +1,6 @@
 import math
 import random
+import time
 
 
 class MockInstr:
@@ -301,9 +302,13 @@ class MockPicoGPIO:
         pin = int(pin)
         self.out(pin, 0 if self._pin_values.get(pin, 0) else 1)
 
-    def pulse(self, pin, width_ms=10, active=1):
+    def pulse(self, pin, width_ms=10, active=1, release_high_z=True):
+        active = int(active)
         self.out(pin, active)
+        time.sleep(max(0, int(width_ms)) / 1000.0)
         self.out(pin, 0 if active else 1)
+        if release_high_z:
+            self.in_pull(pin, "none")
 
     def hiz(self, pin):
         self.in_pull(pin, "none")

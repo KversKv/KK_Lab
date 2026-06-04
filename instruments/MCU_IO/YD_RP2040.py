@@ -128,8 +128,9 @@ p.value(0 if p.value() else 1)
 """
         self._send(cmd)
 
-    def pulse(self, pin, width_ms=10, active=1):
+    def pulse(self, pin, width_ms=10, active=1, release_high_z=True):
         self._ensure_connected()
+        release = "Pin({pin}, Pin.IN, None)".format(pin=pin) if release_high_z else ""
         cmd = f"""
 from machine import Pin
 import time
@@ -137,6 +138,7 @@ p = Pin({pin}, Pin.OUT)
 p.value({int(active)})
 time.sleep_ms({int(width_ms)})
 p.value({int(not active)})
+{release}
 """
         self._send(cmd)
 

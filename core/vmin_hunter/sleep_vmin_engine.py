@@ -5,6 +5,8 @@
 1. 给芯片 Vcore 外供电，唤醒电压取最高值 ``wake_voltage``。
 2. 通过 IIC 接口把芯片内部电源输出调到最低值（``init_internal_supply`` 回调），
    避免内部电源影响外部供电准确性；整个遍历开始前只执行一次。
+2.5 保护逻辑：遍历开始前主动触发 STATUS 并读取 UART，确保 DUT 以 sleep=0
+   （唤醒）这一已知状态进入测试；若读到 sleep=1 则再翻转一次回到 sleep=0。
 3. 从高到低遍历睡眠 Vcore 电压 ``sleep_points``，每个睡眠电压点：
    a. 先在 ``wake_voltage`` 保持；
    b. 通过 STATUS IO 让芯片进入睡眠；
@@ -12,9 +14,12 @@
    d. 保持 ``sleep_hold_s``（默认 3s）；
    e. 将 Vcore 恢复到 ``wake_voltage``；
    f. 通过 STATUS IO 让芯片唤醒。
-4. 每个睡眠电压点完成后，在 ``wake_voltage`` 条件下用 STATUS IO 触发一次完整
-   睡眠/唤醒，配合 ``AliveChecker`` 判断 DUT 是否正常。
-5. 最低的判活 PASS 的睡眠电压即 Sleep Vmin。
+4. 每个睡眠电压点完成后，在 ``wake_voltage`` 条件下用 STATUS IO 主动触发两次
+   按键翻转（每次翻转状态），凑齐 sleep=0 / sleep=1 两种事件，配合
+   ``AliveChecker`` 判断 DUT 是否正常。
+   每个睡眠电压点会按 ``test_cnt`` 连续重复以上 a~f + 判活流程；任一次判活
+   FAIL 即立即停止该电压点并判该点 FAIL，全部迭代 PASS 才算该点 PASS。
+5. 最低的（全部迭代判活 PASS 的）睡眠电压即 Sleep Vmin。
 
 本引擎与 UI / 具体仪器驱动解耦：所有硬件动作（设电压 / STATUS 睡眠 / STATUS
 唤醒）由上层通过 ``EngineHooks`` 注入的同步回调执行；DUT 的 UART 日志由上层通过
@@ -23,6 +28,7 @@
 """
 
 import queue
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional
@@ -39,6 +45,9 @@ from core.vmin_hunter.alive_checker import (
 
 logger = get_logger(__name__)
 
+_WAKE_RE = re.compile(r"key_event_process:\s*sleep=0")
+_SLEEP_RE = re.compile(r"key_event_process:\s*sleep=1")
+
 
 @dataclass
 class SleepVminConfig:
@@ -50,7 +59,9 @@ class SleepVminConfig:
     sleep_hold_s: float = 3.0
     wake_settle_s: float = 0.1
     status_settle_s: float = 0.1
+    alive_toggle_interval_s: float = 0.8
     alive_poll_interval_s: float = 0.05
+    ensure_state_timeout_s: float = 3.0
     test_cnt: int = 1
     temperature: Optional[float] = None
 
@@ -146,10 +157,25 @@ class SleepVminEngine(QObject):
             self.log_message.emit(
                 "[INIT] IIC: set chip internal supply to minimum"
             )
-            self._safe_hook("init_internal_supply", self._hooks.init_internal_supply)
+            messages = []
+
+            def _do_init_supply():
+                result = self._hooks.init_internal_supply()
+                if result:
+                    messages.extend(result)
+
+            self._safe_hook("init_internal_supply", _do_init_supply)
+            for msg in messages:
+                self.log_message.emit(msg)
             time.sleep(cfg.wake_settle_s)
 
+        if not self._ensure_wake_state():
+            self._result.stopped = True
+            self._finalize(None)
+            return
+
         total = len(cfg.sleep_points)
+        cnt = max(1, int(cfg.test_cnt))
         last_pass: Optional[float] = None
 
         for idx, sleep_v in enumerate(cfg.sleep_points):
@@ -161,28 +187,114 @@ class SleepVminEngine(QObject):
 
             self.progress.emit(idx + 1, total)
             self.log_message.emit(
-                f"[STEP {idx + 1}/{total}] Sleep voltage = {sleep_v:.3f} V"
+                f"[STEP {idx + 1}/{total}] Sleep voltage = {sleep_v:.3f} V "
+                f"(x{cnt})"
             )
 
-            ok = self._run_one_sleep_point(sleep_v)
-            if not ok:
-                continue
+            point_status = "PASS"
+            point_note = ""
+            for it in range(1, cnt + 1):
+                if self._stop_flag:
+                    self.log_message.emit("[STOP] Stopped by user.")
+                    self._result.stopped = True
+                    self._finalize(last_pass)
+                    return
 
-            status, note = self._run_alive_check(sleep_v)
-            self._emit_row(sleep_v, temp, ch, status, note)
+                if cnt > 1:
+                    self.log_message.emit(
+                        f"[ITER {it}/{cnt}] Sleep voltage = {sleep_v:.3f} V"
+                    )
 
-            if status == "PASS":
+                ok = self._run_one_sleep_point(sleep_v)
+                if not ok:
+                    status, note = "FAIL", "sleep/drop/restore sequence failed"
+                else:
+                    status, note = self._run_alive_check(sleep_v)
+
+                self._emit_row(sleep_v, temp, ch, it, status, note)
+
+                if status != "PASS":
+                    point_status, point_note = status, note
+                    break
+
+            if point_status == "PASS":
                 last_pass = sleep_v
                 self._result.last_pass_voltage = sleep_v
             else:
                 self._result.first_fail_voltage = sleep_v
                 self.log_message.emit(
-                    f"[FAIL] DUT abnormal at sleep={sleep_v:.3f} V ({note}); "
+                    f"[FAIL] DUT abnormal at sleep={sleep_v:.3f} V ({point_note}); "
                     f"stop hunting."
                 )
                 break
 
         self._finalize(last_pass)
+
+    # ------------------------------------------------------------------
+    # 保护逻辑：探测前主动触发 STATUS，确保 DUT 以 sleep=0（唤醒）状态进入测试
+    # ------------------------------------------------------------------
+    def _ensure_wake_state(self) -> bool:
+        cfg = self._cfg
+
+        self.log_message.emit(
+            "[INIT] Ensure DUT enters test in sleep=0 (wake) state"
+        )
+
+        for attempt in range(2):
+            if self._stop_flag:
+                self.log_message.emit("[STOP] Stopped by user.")
+                return False
+
+            self._drain_uart_queue()
+            try:
+                self.log_message.emit("[INIT] STATUS toggle (ensure wake)")
+                self._hooks.status_wake()
+            except Exception as exc:
+                logger.error("Ensure-wake trigger failed: %s", exc, exc_info=True)
+                self.log_message.emit(f"[ERROR] Ensure-wake trigger failed: {exc}")
+                return False
+
+            state = self._read_sleep_state(cfg.ensure_state_timeout_s)
+            if state == 0:
+                self.log_message.emit("[INIT] DUT confirmed sleep=0 (wake).")
+                return True
+            if state == 1:
+                self.log_message.emit(
+                    "[INIT] DUT at sleep=1, toggle again to reach sleep=0."
+                )
+                if self._sleep_with_stop(cfg.alive_toggle_interval_s):
+                    return False
+                continue
+
+            self.log_message.emit(
+                f"[FAIL] No sleep state log within "
+                f"{cfg.ensure_state_timeout_s:.1f}s while ensuring wake state."
+            )
+            return False
+
+        self.log_message.emit(
+            "[FAIL] Unable to put DUT into sleep=0 (wake) state before test."
+        )
+        return False
+
+    def _read_sleep_state(self, timeout_s: float) -> Optional[int]:
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            if self._stop_flag:
+                return None
+            try:
+                line = self._uart_queue.get(
+                    timeout=min(self._cfg.alive_poll_interval_s,
+                                max(0.0, deadline - time.monotonic()))
+                )
+            except queue.Empty:
+                continue
+            logger.debug("DUT UART: %s", line)
+            if _WAKE_RE.search(line):
+                return 0
+            if _SLEEP_RE.search(line):
+                return 1
+        return None
 
     # ------------------------------------------------------------------
     # 单个睡眠电压点的睡眠/降压/恢复/唤醒流程
@@ -217,25 +329,26 @@ class SleepVminEngine(QObject):
             return False
 
     # ------------------------------------------------------------------
-    # 判活：wake_voltage 下触发一次完整睡眠/唤醒，喂 UART LOG 判定
+    # 判活：按键翻转状态，主动触发两次，凑齐 sleep=0 / sleep=1 一轮，喂 UART LOG 判定
     # ------------------------------------------------------------------
     def _run_alive_check(self, sleep_v: float):
         cfg = self._cfg
         checker = AliveChecker(self._strategy)
 
         self._drain_uart_queue()
+        checker.start()
 
         try:
-            self.log_message.emit("[ALIVE] STATUS -> sleep (alive probe)")
-            self._hooks.status_sleep()
-            time.sleep(cfg.status_settle_s)
-            self.log_message.emit("[ALIVE] STATUS -> wake (alive probe)")
+            self.log_message.emit("[ALIVE] STATUS toggle #1 (alive probe)")
             self._hooks.status_wake()
+            if self._sleep_with_stop(cfg.alive_toggle_interval_s):
+                return "FAIL", "stopped during alive check"
+            self.log_message.emit("[ALIVE] STATUS toggle #2 (alive probe)")
+            self._hooks.status_sleep()
         except Exception as exc:
             logger.error("Alive probe trigger failed: %s", exc, exc_info=True)
             return "FAIL", f"status trigger error: {exc}"
 
-        checker.start()
         while True:
             if self._stop_flag:
                 return "FAIL", "stopped during alive check"
@@ -245,7 +358,7 @@ class SleepVminEngine(QObject):
             except queue.Empty:
                 result = checker.tick()
             else:
-                self.log_message.emit(f"[DUT] {line}")
+                logger.debug("DUT UART: %s", line)
                 result = checker.feed_line(line)
 
             if result.state is AliveState.PASS:
@@ -279,15 +392,16 @@ class SleepVminEngine(QObject):
             self.log_message.emit(f"[ERROR] Hook '{name}' failed: {exc}")
             raise
 
-    def _emit_row(self, sleep_v, temp, ch, status, note) -> None:
+    def _emit_row(self, sleep_v, temp, ch, iteration, status, note) -> None:
         self._result.rows.append({
             "voltage": sleep_v,
             "temperature": temp,
             "channel": ch,
+            "iteration": iteration,
             "status": status,
             "note": note,
         })
-        self.result_row.emit(sleep_v, temp, f"CH{ch}", 1, status, note)
+        self.result_row.emit(sleep_v, temp, f"CH{ch}", iteration, status, note)
 
     def _finalize(self, last_pass: Optional[float]) -> None:
         self._result.vmin = last_pass

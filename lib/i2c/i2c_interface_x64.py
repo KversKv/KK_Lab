@@ -179,7 +179,8 @@ class I2CInterface:
             width_flag,
         )
 
-    def write(self, device_addr, reg_addr, write_data, width_flag):
+    def write(self, device_addr, reg_addr, write_data, width_flag,
+              high_bit=-1, low_bit=-1):
         """
         向I2C设备写入数据
 
@@ -188,6 +189,8 @@ class I2CInterface:
         reg_addr: 寄存器地址
         write_data: 要写入的数据
         width_flag: 位宽标志（I2CWidthFlag 或 整数 8/10/32）
+        high_bit: 位操作的高位位置，-1表示整寄存器写（不按位写）
+        low_bit: 位操作的低位位置，-1表示整寄存器写（不按位写）
 
         异常:
         I2CDeviceError: 设备打开或连接失败
@@ -203,6 +206,8 @@ class I2CInterface:
             reg_addr,
             write_data,
             width_flag,
+            high_bit,
+            low_bit,
         )
         return True
 

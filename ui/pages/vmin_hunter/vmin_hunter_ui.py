@@ -15,14 +15,13 @@ VminHunter UI 页面
 
 import os
 import json
-import time
 
 from ui.resource_path import get_resource_base
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QLabel, QLineEdit, QFrame, QCheckBox,
-    QScrollArea, QFileDialog,
+    QScrollArea, QFileDialog, QDoubleSpinBox,
     QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView,
 )
 from PySide6.QtCore import Qt, Signal
@@ -45,6 +44,7 @@ from core.vmin_hunter import (
     SleepVminEngine,
     SleepVminRunner,
 )
+from Bes_I2CIO_Interface import I2CWidthFlag
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -59,6 +59,10 @@ _TEST_MODES = [
     ("internal", "Internal Voltage (IIC)"),
     ("external", "External Supply (N6705C)"),
 ]
+
+CURRENT_LIMIT_DEFAULT_MA = 20.0
+CURRENT_LIMIT_MIN_MA = 0.1
+CURRENT_LIMIT_MAX_MA = 5000.0
 
 
 class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
@@ -128,6 +132,26 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
 
         QLineEdit:hover {{
             border: 1px solid #3c5fa1;
+        }}
+
+        QDoubleSpinBox {{
+            background-color: #0a1733;
+            color: #eaf2ff;
+            border: 1px solid #27406f;
+            border-radius: 8px;
+            padding: 6px 10px;
+            min-height: 22px;
+            selection-background-color: #4f46e5;
+        }}
+
+        QDoubleSpinBox:hover {{
+            border: 1px solid #3c5fa1;
+        }}
+
+        QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
+            width: 0px;
+            height: 0px;
+            border: none;
         }}
 
         QLineEdit:focus {{
@@ -393,7 +417,7 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         form.setVerticalSpacing(8)
 
         form.addWidget(self._field_label("Test CNT"), 0, 0)
-        self.test_cnt_input = QLineEdit("100")
+        self.test_cnt_input = QLineEdit("1")
         self.test_cnt_input.setToolTip("Number of test iterations per condition")
         form.addWidget(self.test_cnt_input, 0, 1)
 
@@ -478,32 +502,62 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         n6705c_row = QGridLayout()
         n6705c_row.setHorizontalSpacing(8)
         n6705c_row.setVerticalSpacing(6)
+
         n6705c_row.addWidget(self._field_label("VcoreM Ch"), 0, 0)
         self.vcorem_channel_combo = DarkComboBox(bg="#091426", border="#17345f")
         self.vcorem_channel_combo.addItems(["1", "2", "3", "4"])
+        self.vcorem_channel_combo.setCurrentIndex(1)
         n6705c_row.addWidget(self.vcorem_channel_combo, 0, 1)
-        n6705c_row.addWidget(self._field_label("VcoreL Ch"), 0, 2)
+        n6705c_row.addWidget(self._field_label("Current Limit (mA)"), 0, 2)
+        self.vcorem_ilimit_spin = self._make_current_limit_spin()
+        n6705c_row.addWidget(self.vcorem_ilimit_spin, 0, 3)
+
+        vcorel_ch_label = self._field_label("VcoreL Ch")
+        n6705c_row.addWidget(vcorel_ch_label, 1, 0)
         self.vcorel_channel_combo = DarkComboBox(bg="#091426", border="#17345f")
         self.vcorel_channel_combo.addItems(["1", "2", "3", "4"])
         self.vcorel_channel_combo.setCurrentIndex(1)
-        n6705c_row.addWidget(self.vcorel_channel_combo, 0, 3)
+        n6705c_row.addWidget(self.vcorel_channel_combo, 1, 1)
+        vcorel_ilimit_label = self._field_label("Current Limit (mA)")
+        n6705c_row.addWidget(vcorel_ilimit_label, 1, 2)
+        self.vcorel_ilimit_spin = self._make_current_limit_spin()
+        n6705c_row.addWidget(self.vcorel_ilimit_spin, 1, 3)
+        self._vcorel_n6705c_widgets = [
+            vcorel_ch_label, self.vcorel_channel_combo,
+            vcorel_ilimit_label, self.vcorel_ilimit_spin,
+        ]
+
+        n6705c_row.setColumnStretch(1, 1)
+        n6705c_row.setColumnStretch(3, 1)
         layout.addLayout(n6705c_row)
 
-        self.iic_ctrl_word_input = QLineEdit("0x10")
-        layout.addWidget(self._labeled("Voltage Ctrl Word Addr", self.iic_ctrl_word_input))
-
-        self._vcorem_iic = self._create_iic_group("VcoreM", required=True,
-                                                   defaults={"device": "0x60", "width": "8",
-                                                             "sleep": "0x20", "wakeup": "0x22"})
+        self._vcorem_iic = self._create_iic_group(
+            "VcoreM", required=True,
+            defaults={"device": "0x27", "width": I2CWidthFlag.BIT_10,
+                      "sleep": "0x133", "sleep_msb": "7", "sleep_lsb": "0",
+                      "normal": "0x132", "normal_msb": "7", "normal_lsb": "0"})
         layout.addWidget(self._vcorem_iic["card"])
 
-        self._vcorel_iic = self._create_iic_group("VcoreL", required=False,
-                                                   defaults={"device": "0x62", "width": "8",
-                                                             "sleep": "0x24", "wakeup": "0x26"})
+        self._vcorel_iic = self._create_iic_group(
+            "VcoreL", required=False,
+            defaults={"device": "0x62", "width": I2CWidthFlag.BIT_8,
+                      "sleep": "0x24", "sleep_msb": "7", "sleep_lsb": "0",
+                      "normal": "0x26", "normal_msb": "7", "normal_lsb": "0"})
         layout.addWidget(self._vcorel_iic["card"])
-        self._set_iic_group_enabled(self._vcorel_iic, False)
+        self._vcorel_iic["card"].setVisible(False)
+        for w in self._vcorel_n6705c_widgets:
+            w.setVisible(False)
 
         return panel
+
+    def _make_current_limit_spin(self):
+        spin = QDoubleSpinBox()
+        spin.setDecimals(1)
+        spin.setRange(CURRENT_LIMIT_MIN_MA, CURRENT_LIMIT_MAX_MA)
+        spin.setSingleStep(1.0)
+        spin.setValue(CURRENT_LIMIT_DEFAULT_MA)
+        spin.setToolTip("Output current limit applied when this channel turns on.")
+        return spin
 
     def _create_iic_group(self, name, required, defaults):
         card = QFrame()
@@ -513,7 +567,7 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         layout.setSpacing(6)
 
         header = QHBoxLayout()
-        tag = QLabel(f"{name} IIC" + (" (required)" if required else " (optional)"))
+        tag = QLabel(f"{name} IIC" + ("" if required else " (optional)"))
         tag.setStyleSheet(
             "color: #9cabff; font-weight: 700; font-size: 11px;"
             " background: transparent; border: none;"
@@ -523,34 +577,65 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         layout.addLayout(header)
 
         grid = QGridLayout()
-        grid.setHorizontalSpacing(8)
+        grid.setHorizontalSpacing(6)
         grid.setVerticalSpacing(6)
 
         device_input = QLineEdit(defaults["device"])
-        width_input = QLineEdit(defaults["width"])
-        sleep_input = QLineEdit(defaults["sleep"])
-        wakeup_input = QLineEdit(defaults["wakeup"])
+        width_combo = DarkComboBox(bg="#091426", border="#17345f")
+        width_combo.addItem("8 BIT", I2CWidthFlag.BIT_8)
+        width_combo.addItem("10 BIT", I2CWidthFlag.BIT_10)
+        width_combo.addItem("32 BIT", I2CWidthFlag.BIT_32)
+        width_default = defaults.get("width", I2CWidthFlag.BIT_8)
+        width_idx = width_combo.findData(width_default)
+        if width_idx >= 0:
+            width_combo.setCurrentIndex(width_idx)
 
-        grid.addWidget(self._field_label("Device Addr"), 0, 0)
+        sleep_input = QLineEdit(defaults["sleep"])
+        sleep_msb_input = QLineEdit(defaults["sleep_msb"])
+        sleep_lsb_input = QLineEdit(defaults["sleep_lsb"])
+        normal_input = QLineEdit(defaults["normal"])
+        normal_msb_input = QLineEdit(defaults["normal_msb"])
+        normal_lsb_input = QLineEdit(defaults["normal_lsb"])
+
+        grid.addWidget(self._inline_field_label("Device Addr"), 0, 0)
         grid.addWidget(device_input, 0, 1)
-        grid.addWidget(self._field_label("Bit Width"), 0, 2)
-        grid.addWidget(width_input, 0, 3)
-        grid.addWidget(self._field_label("Sleep Ctrl Addr"), 1, 0)
+        grid.addWidget(self._inline_field_label("Bit Width"), 0, 2)
+        grid.addWidget(width_combo, 0, 3)
+
+        grid.addWidget(self._inline_field_label("Sleep Addr"), 1, 0)
         grid.addWidget(sleep_input, 1, 1)
-        grid.addWidget(self._field_label("Wakeup Ctrl Addr"), 1, 2)
-        grid.addWidget(wakeup_input, 1, 3)
+        grid.addWidget(self._inline_field_label("MSB"), 1, 2)
+        grid.addWidget(sleep_msb_input, 1, 3)
+        grid.addWidget(self._inline_field_label("LSB"), 1, 4)
+        grid.addWidget(sleep_lsb_input, 1, 5)
+
+        grid.addWidget(self._inline_field_label("Normal Addr"), 2, 0)
+        grid.addWidget(normal_input, 2, 1)
+        grid.addWidget(self._inline_field_label("MSB"), 2, 2)
+        grid.addWidget(normal_msb_input, 2, 3)
+        grid.addWidget(self._inline_field_label("LSB"), 2, 4)
+        grid.addWidget(normal_lsb_input, 2, 5)
+
+        grid.setColumnStretch(1, 2)
+        grid.setColumnStretch(3, 1)
+        grid.setColumnStretch(5, 1)
         layout.addLayout(grid)
 
         return {
             "card": card,
             "device": device_input,
-            "width": width_input,
+            "width": width_combo,
             "sleep": sleep_input,
-            "wakeup": wakeup_input,
+            "sleep_msb": sleep_msb_input,
+            "sleep_lsb": sleep_lsb_input,
+            "normal": normal_input,
+            "normal_msb": normal_msb_input,
+            "normal_lsb": normal_lsb_input,
         }
 
     def _set_iic_group_enabled(self, group, enabled):
-        for key in ("device", "width", "sleep", "wakeup"):
+        for key in ("device", "width", "sleep", "sleep_msb", "sleep_lsb",
+                    "normal", "normal_msb", "normal_lsb"):
             group[key].setEnabled(enabled)
 
     # ------------------------------------------------------------------
@@ -613,6 +698,21 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
 
         layout.addWidget(self.start_btn)
         layout.addWidget(self.stop_btn)
+
+        self.sleep_probe_cb = QCheckBox("睡眠电压探测")
+        self.sleep_probe_cb.setChecked(True)
+        self.sleep_probe_cb.setStyleSheet(
+            "color: #dbe7ff; font-size: 11px; font-weight: 600;"
+            " background: transparent; border: none;"
+        )
+        self.wake_popup_cb = QCheckBox("唤醒电压弹窗")
+        self.wake_popup_cb.setStyleSheet(
+            "color: #dbe7ff; font-size: 11px; font-weight: 600;"
+            " background: transparent; border: none;"
+        )
+        layout.addWidget(self.sleep_probe_cb)
+        layout.addWidget(self.wake_popup_cb)
+
         layout.addStretch()
 
         self.vmin_summary_label = QLabel("Vmin: --")
@@ -687,6 +787,12 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         label.setObjectName("fieldLabel")
         return label
 
+    def _inline_field_label(self, text):
+        label = QLabel(text)
+        label.setObjectName("fieldLabel")
+        label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        return label
+
     def _labeled(self, text, widget):
         container = QWidget()
         container.setObjectName("vhLabeled")
@@ -711,7 +817,6 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
 
         self.temp_enable_cb.toggled.connect(self._on_temp_toggled)
         self.vcorel_cb.toggled.connect(self._on_vcorel_toggled)
-        self.test_mode_combo.currentIndexChanged.connect(self._on_test_mode_changed)
 
         self.import_config_btn.clicked.connect(self._import_config)
         self.export_config_btn.clicked.connect(self._export_config)
@@ -731,15 +836,10 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
 
     def _on_vcorel_toggled(self, checked):
         self._vcorel_enabled = checked
+        self._vcorel_iic["card"].setVisible(checked)
         self._set_iic_group_enabled(self._vcorel_iic, checked)
-        self.vcorel_channel_combo.setEnabled(checked)
-
-    def _on_test_mode_changed(self):
-        mode = self.test_mode_combo.currentData()
-        is_internal = mode == "internal"
-        self._vcorem_iic["card"].setVisible(is_internal)
-        self._vcorel_iic["card"].setVisible(is_internal)
-        self.iic_ctrl_word_input.parentWidget().setVisible(is_internal)
+        for w in self._vcorel_n6705c_widgets:
+            w.setVisible(checked)
 
     def _on_start_clicked(self):
         try:
@@ -780,8 +880,12 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         wake_voltage = max(sweep["start"], sweep["end"])
         sleep_points = sorted(params["voltage_points"], reverse=True)
         channel = params["channel_config"]["n6705c"]["VcoreM_channel"]
+        current_limit_ma = params["channel_config"]["n6705c"]["VcoreM_current_limit_ma"]
         status_polarity = mcu_cfg["status_polarity"]
-        iic_cfg = params["channel_config"]["iic"]["VcoreM"]
+        iic_all = params["channel_config"]["iic"]
+        vcorel_enabled = bool(
+            params["monitor_channels"].get("VcoreL", False)
+        )
 
         config = SleepVminConfig(
             wake_voltage=wake_voltage,
@@ -791,7 +895,8 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
             temperature=None,
         )
         hooks = self._build_external_hooks(
-            n6705c, status_pin, status_polarity, iic_cfg
+            n6705c, status_pin, status_polarity, iic_all, current_limit_ma,
+            vcorel_enabled=vcorel_enabled,
         )
 
         engine = SleepVminEngine(config, hooks)
@@ -807,19 +912,23 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         self.vmin_summary_label.setText("Vmin: hunting...")
         self.execution_logs.append_log("[START] External sleep Vmin sweep started")
         self.execution_logs.append_log(
-            f"[INFO] wake={wake_voltage:.3f}V ch={channel} points={sleep_points}"
+            f"[INFO] wake={wake_voltage:.3f}V ch={channel} "
+            f"ilimit={current_limit_ma}mA points={sleep_points}"
         )
         self._runner.start()
 
-    def _build_external_hooks(self, n6705c, status_pin, status_polarity, iic_cfg):
+    def _build_external_hooks(self, n6705c, status_pin, status_polarity, iic_all,
+                              current_limit_ma=CURRENT_LIMIT_DEFAULT_MA,
+                              vcorel_enabled=False):
         active = 1 if status_polarity == "rising" else 0
-        inactive = 1 - active
-        current_limit = 1.0
+        try:
+            current_limit_ma = float(current_limit_ma)
+        except (TypeError, ValueError):
+            current_limit_ma = CURRENT_LIMIT_DEFAULT_MA
+        current_limit = current_limit_ma / 1000.0
 
-        device_addr = self._parse_int(iic_cfg.get("device_addr"))
-        reg_addr = self._parse_int(iic_cfg.get("sleep_ctrl_addr"))
-        width_flag = self._parse_int(iic_cfg.get("bit_width")) or 8
         min_value = 0x0F
+        writes = self._collect_internal_supply_writes(iic_all, vcorel_enabled)
 
         def set_voltage(channel, voltage):
             n6705c.set_voltage(channel, voltage)
@@ -832,14 +941,68 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
             n6705c.channel_off(channel)
 
         def status_pulse():
-            self.mcu_io.out(status_pin, active)
-            time.sleep(0.1)
-            self.mcu_io.out(status_pin, inactive)
+            self.mcu_io.pulse(
+                status_pin, width_ms=100, active=active, release_high_z=False
+            )
 
         def init_internal_supply():
             from i2c_interface_x64 import I2CInterface
             i2c = I2CInterface()
-            i2c.write(device_addr, reg_addr, min_value, width_flag)
+            ui_logs = []
+            for w in writes:
+                logger.info(
+                    "IIC 配低 %s: device=0x%02X reg=0x%X [%d:%d]=0x%X width=%s",
+                    w["name"], w["device_addr"], w["reg_addr"],
+                    w["msb"], w["lsb"], min_value, w["width_flag"],
+                )
+                i2c.write(
+                    w["device_addr"], w["reg_addr"], min_value,
+                    w["width_flag"], w["msb"], w["lsb"],
+                )
+                read_back = None
+                try:
+                    read_back = i2c.read(
+                        w["device_addr"], w["reg_addr"], w["width_flag"]
+                    )
+                except Exception:
+                    logger.warning(
+                        "IIC 回读失败 %s: device=0x%02X reg=0x%X",
+                        w["name"], w["device_addr"], w["reg_addr"],
+                        exc_info=True,
+                    )
+                if read_back is None:
+                    logger.error(
+                        "IIC 核查 %s 失败：回读为空 device=0x%02X reg=0x%X",
+                        w["name"], w["device_addr"], w["reg_addr"],
+                    )
+                    ui_logs.append(f"[IIC] {w['name']} read-back failed")
+                    continue
+                width = w["msb"] - w["lsb"] + 1
+                field = (read_back >> w["lsb"]) & ((1 << width) - 1)
+                logger.info(
+                    "IIC 回读 %s: device=0x%02X reg=0x%X = 0x%X, [%d:%d]=0x%X",
+                    w["name"], w["device_addr"], w["reg_addr"], read_back,
+                    w["msb"], w["lsb"], field,
+                )
+                if field == min_value:
+                    logger.info(
+                        "IIC 核查 %s 通过：[%d:%d]=0x%X 符合预期",
+                        w["name"], w["msb"], w["lsb"], field,
+                    )
+                    ui_logs.append(
+                        f"[IIC] {w['name']} [{w['msb']}:{w['lsb']}]"
+                        f"=0x{field:X} OK"
+                    )
+                else:
+                    logger.error(
+                        "IIC 核查 %s 失败：[%d:%d]=0x%X 期望0x%X",
+                        w["name"], w["msb"], w["lsb"], field, min_value,
+                    )
+                    ui_logs.append(
+                        f"[IIC] {w['name']} [{w['msb']}:{w['lsb']}]"
+                        f"=0x{field:X} FAIL (expect 0x{min_value:X})"
+                    )
+            return ui_logs
 
         hooks_kwargs = dict(
             set_voltage=set_voltage,
@@ -848,10 +1011,52 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
             status_wake=status_pulse,
             output_off=output_off,
         )
-        if device_addr is not None and reg_addr is not None:
+        if writes:
             hooks_kwargs["init_internal_supply"] = init_internal_supply
 
         return EngineHooks(**hooks_kwargs)
+
+    def _collect_internal_supply_writes(self, iic_all, vcorel_enabled):
+        groups = [("VcoreM", iic_all.get("VcoreM"))]
+        if vcorel_enabled:
+            groups.append(("VcoreL", iic_all.get("VcoreL")))
+
+        writes = []
+        for name, cfg in groups:
+            if not cfg:
+                continue
+            device_addr = self._parse_int(cfg.get("device_addr"))
+            if device_addr is None:
+                logger.warning("IIC %s 设备地址无效，跳过配低: %r",
+                               name, cfg.get("device_addr"))
+                continue
+            try:
+                width_flag = I2CWidthFlag(int(cfg.get("bit_width")))
+            except (TypeError, ValueError):
+                width_flag = I2CWidthFlag.BIT_8
+
+            for prefix in ("sleep", "normal"):
+                reg_addr = self._parse_int(cfg.get(f"{prefix}_ctrl_addr"))
+                msb = self._parse_int(cfg.get(f"{prefix}_msb"))
+                lsb = self._parse_int(cfg.get(f"{prefix}_lsb"))
+                if reg_addr is None or msb is None or lsb is None:
+                    logger.warning(
+                        "IIC %s.%s 控制字不完整，跳过: addr=%r msb=%r lsb=%r",
+                        name, prefix, cfg.get(f"{prefix}_ctrl_addr"),
+                        cfg.get(f"{prefix}_msb"), cfg.get(f"{prefix}_lsb"),
+                    )
+                    continue
+                writes.append({
+                    "name": f"{name}.{prefix}",
+                    "device_addr": device_addr,
+                    "reg_addr": reg_addr,
+                    "width_flag": width_flag,
+                    "msb": msb,
+                    "lsb": lsb,
+                })
+        logger.info("IIC 配低收集到 %d 条写入: %s",
+                    len(writes), [w["name"] for w in writes])
+        return writes
 
     @staticmethod
     def _parse_int(text):
@@ -966,6 +1171,10 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         params = {
             "test_cnt": test_cnt,
             "test_mode": self.test_mode_combo.currentData(),
+            "test_items": {
+                "sleep_probe": self.sleep_probe_cb.isChecked(),
+                "wake_popup": self.wake_popup_cb.isChecked(),
+            },
             "temperature": {
                 "enable": self._temp_enabled,
                 "points": self._parse_float_list(self.temp_points_input.text(), "Temp Points")
@@ -985,9 +1194,10 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
                 "n6705c": {
                     "VcoreM_channel": int(self.vcorem_channel_combo.currentText()),
                     "VcoreL_channel": int(self.vcorel_channel_combo.currentText()),
+                    "VcoreM_current_limit_ma": self.vcorem_ilimit_spin.value(),
+                    "VcoreL_current_limit_ma": self.vcorel_ilimit_spin.value(),
                 },
                 "iic": {
-                    "voltage_ctrl_word_addr": self.iic_ctrl_word_input.text().strip(),
                     "VcoreM": self._read_iic_group(self._vcorem_iic),
                     "VcoreL": self._read_iic_group(self._vcorel_iic),
                 },
@@ -1002,9 +1212,13 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
     def _read_iic_group(self, group):
         return {
             "device_addr": group["device"].text().strip(),
-            "bit_width": group["width"].text().strip(),
+            "bit_width": int(group["width"].currentData()),
             "sleep_ctrl_addr": group["sleep"].text().strip(),
-            "wakeup_ctrl_addr": group["wakeup"].text().strip(),
+            "sleep_msb": group["sleep_msb"].text().strip(),
+            "sleep_lsb": group["sleep_lsb"].text().strip(),
+            "normal_ctrl_addr": group["normal"].text().strip(),
+            "normal_msb": group["normal_msb"].text().strip(),
+            "normal_lsb": group["normal_lsb"].text().strip(),
         }
 
     def _export_config(self):
@@ -1045,7 +1259,7 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
 
     def _apply_config(self, data):
         try:
-            self.test_cnt_input.setText(str(data.get("test_cnt", 100)))
+            self.test_cnt_input.setText(str(data.get("test_cnt", 1)))
             mode = data.get("test_mode", "internal")
             for i in range(self.test_mode_combo.count()):
                 if self.test_mode_combo.itemData(i) == mode:
@@ -1056,6 +1270,10 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
             self.temp_enable_cb.setChecked(bool(temp.get("enable", False)))
             if temp.get("points"):
                 self.temp_points_input.setText(", ".join(str(p) for p in temp["points"]))
+
+            test_items = data.get("test_items", {})
+            self.sleep_probe_cb.setChecked(bool(test_items.get("sleep_probe", True)))
+            self.wake_popup_cb.setChecked(bool(test_items.get("wake_popup", False)))
 
             channels = data.get("monitor_channels", {})
             self.vcorel_cb.setChecked(bool(channels.get("VcoreL", False)))
@@ -1088,9 +1306,27 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
                         logger.warning("Legacy voltage_points failed to convert", exc_info=True)
 
             ch_cfg = data.get("channel_config", {})
+            n6705c_cfg = ch_cfg.get("n6705c", {})
+            if n6705c_cfg.get("VcoreM_channel") is not None:
+                idx = self.vcorem_channel_combo.findText(str(n6705c_cfg["VcoreM_channel"]))
+                if idx >= 0:
+                    self.vcorem_channel_combo.setCurrentIndex(idx)
+            if n6705c_cfg.get("VcoreL_channel") is not None:
+                idx = self.vcorel_channel_combo.findText(str(n6705c_cfg["VcoreL_channel"]))
+                if idx >= 0:
+                    self.vcorel_channel_combo.setCurrentIndex(idx)
+            if n6705c_cfg.get("VcoreM_current_limit_ma") is not None:
+                try:
+                    self.vcorem_ilimit_spin.setValue(float(n6705c_cfg["VcoreM_current_limit_ma"]))
+                except (TypeError, ValueError):
+                    logger.warning("Invalid VcoreM current limit in config", exc_info=True)
+            if n6705c_cfg.get("VcoreL_current_limit_ma") is not None:
+                try:
+                    self.vcorel_ilimit_spin.setValue(float(n6705c_cfg["VcoreL_current_limit_ma"]))
+                except (TypeError, ValueError):
+                    logger.warning("Invalid VcoreL current limit in config", exc_info=True)
+
             iic = ch_cfg.get("iic", {})
-            if iic.get("voltage_ctrl_word_addr"):
-                self.iic_ctrl_word_input.setText(str(iic["voltage_ctrl_word_addr"]))
             self._apply_iic_group(self._vcorem_iic, iic.get("VcoreM", {}))
             self._apply_iic_group(self._vcorel_iic, iic.get("VcoreL", {}))
 
@@ -1115,15 +1351,28 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
     def _apply_iic_group(self, group, data):
         if not isinstance(data, dict):
             return
-        mapping = {
+        line_mapping = {
             "device": "device_addr",
-            "width": "bit_width",
             "sleep": "sleep_ctrl_addr",
-            "wakeup": "wakeup_ctrl_addr",
+            "sleep_msb": "sleep_msb",
+            "sleep_lsb": "sleep_lsb",
+            "normal": "normal_ctrl_addr",
+            "normal_msb": "normal_msb",
+            "normal_lsb": "normal_lsb",
         }
-        for widget_key, data_key in mapping.items():
+        for widget_key, data_key in line_mapping.items():
             if data.get(data_key) is not None:
                 group[widget_key].setText(str(data[data_key]))
+
+        if data.get("bit_width") is not None:
+            try:
+                width_flag = I2CWidthFlag(int(data["bit_width"]))
+            except (TypeError, ValueError):
+                width_flag = None
+            if width_flag is not None:
+                idx = group["width"].findData(width_flag)
+                if idx >= 0:
+                    group["width"].setCurrentIndex(idx)
 
     def _export_results(self):
         if self.result_table.rowCount() == 0:

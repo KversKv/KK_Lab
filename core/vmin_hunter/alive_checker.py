@@ -13,10 +13,11 @@
     key_event_process: sleep=0   -> 唤醒
     key_event_process: sleep=1   -> 休眠
 
-判定规则（一次主动触发 STATUS IO 后）：
+判定规则（按键翻转状态：主动触发两次 STATUS IO 后）：
 
-- PASS : 先观察到 sleep=0（唤醒），再观察到 sleep=1（重新休眠），完整一轮。
-- FAIL : 出现 ASSERT/崩溃关键字；或超时无任何新日志；或超时未出现期望翻转。
+- PASS : 在判活窗口内同时观察到 sleep=0（唤醒）与 sleep=1（重新休眠），
+         不限定先后顺序（按键翻转无法保证首次翻转方向）。
+- FAIL : 出现 ASSERT/崩溃关键字；或超时无任何新日志；或超时未凑齐两种翻转。
 """
 
 import re
@@ -163,11 +164,13 @@ class SleepWakeLogStrategy(AliveStrategy):
         if not self._woke and self._wake_re.search(line):
             self._woke = True
             self._matched.append(line)
-        elif self._woke and not self._slept_again and self._sleep_re.search(line):
+        elif not self._slept_again and self._sleep_re.search(line):
             self._slept_again = True
             self._matched.append(line)
 
-        if self._woke and (self._slept_again or not self._require_full_cycle):
+        if (self._woke and self._slept_again) or (
+            (self._woke or self._slept_again) and not self._require_full_cycle
+        ):
             return AliveResult(
                 state=AliveState.PASS,
                 detail="Sleep/wake cycle observed",
