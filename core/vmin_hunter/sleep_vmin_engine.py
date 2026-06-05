@@ -53,6 +53,7 @@ _SLEEP_RE = re.compile(r"key_event_process:\s*sleep=1")
 class SleepVminConfig:
     wake_voltage: float
     sleep_points: List[float]
+    default_voltage: Optional[float] = None
     channel: int = 1
     current_limit: float = 1.0
     pre_drop_delay_s: float = 0.1
@@ -64,6 +65,11 @@ class SleepVminConfig:
     ensure_state_timeout_s: float = 3.0
     test_cnt: int = 1
     temperature: Optional[float] = None
+
+    @property
+    def restore_voltage(self) -> float:
+        """睡眠点间恢复 / 初始唤醒使用的电压（Default 优先，回退到最高唤醒电压）。"""
+        return self.default_voltage if self.default_voltage is not None else self.wake_voltage
 
 
 @dataclass
@@ -79,6 +85,7 @@ class EngineHooks:
     status_wake: Callable[[], None]
     output_off: Optional[Callable[[int], None]] = None
     init_internal_supply: Optional[Callable[[], None]] = None
+    reset: Optional[Callable[[], None]] = None
 
 
 @dataclass
@@ -94,7 +101,7 @@ class SleepVminEngine(QObject):
     """外供电睡眠 Vmin 探底引擎（运行于工作线程）。"""
 
     log_message = Signal(str)
-    result_row = Signal(float, object, str, int, str, str)
+    result_row = Signal(float, object, str, str, str, str)
     vmin_found = Signal(object)
     progress = Signal(int, int)
     finished = Signal(bool, str)
@@ -144,12 +151,17 @@ class SleepVminEngine(QObject):
         temp = cfg.temperature
         ch = cfg.channel
 
+        restore_v = cfg.restore_voltage
         self.log_message.emit(
-            f"[START] Sleep Vmin sweep: wake={cfg.wake_voltage:.3f}V, "
+            f"[START] Sleep Vmin sweep: default={restore_v:.3f}V, "
             f"points={cfg.sleep_points}"
         )
 
-        self._safe_hook("set_voltage", lambda: self._hooks.set_voltage(ch, cfg.wake_voltage))
+        if self._hooks.reset is not None:
+            self.log_message.emit("[INIT] Reset DUT before sweep")
+            self._safe_hook("reset", self._hooks.reset)
+
+        self._safe_hook("set_voltage", lambda: self._hooks.set_voltage(ch, restore_v))
         self._safe_hook("output_on", lambda: self._hooks.output_on(ch))
         time.sleep(cfg.wake_settle_s)
 
@@ -193,10 +205,16 @@ class SleepVminEngine(QObject):
 
             point_status = "PASS"
             point_note = ""
+            pass_count = 0
+            done = 0
             for it in range(1, cnt + 1):
                 if self._stop_flag:
                     self.log_message.emit("[STOP] Stopped by user.")
                     self._result.stopped = True
+                    self._emit_row(
+                        sleep_v, temp, ch, f"{pass_count}/{done}",
+                        point_status, "stopped during iterations",
+                    )
                     self._finalize(last_pass)
                     return
 
@@ -211,11 +229,17 @@ class SleepVminEngine(QObject):
                 else:
                     status, note = self._run_alive_check(sleep_v)
 
-                self._emit_row(sleep_v, temp, ch, it, status, note)
-
-                if status != "PASS":
+                done += 1
+                if status == "PASS":
+                    pass_count += 1
+                else:
                     point_status, point_note = status, note
                     break
+
+            self._emit_row(
+                sleep_v, temp, ch, f"{pass_count}/{cnt}",
+                point_status, point_note,
+            )
 
             if point_status == "PASS":
                 last_pass = sleep_v
@@ -302,8 +326,9 @@ class SleepVminEngine(QObject):
     def _run_one_sleep_point(self, sleep_v: float) -> bool:
         cfg = self._cfg
         ch = cfg.channel
+        restore_v = cfg.restore_voltage
         try:
-            self._hooks.set_voltage(ch, cfg.wake_voltage)
+            self._hooks.set_voltage(ch, restore_v)
             time.sleep(cfg.wake_settle_s)
 
             self.log_message.emit("[SEQ] STATUS -> sleep")
@@ -315,8 +340,8 @@ class SleepVminEngine(QObject):
             if self._sleep_with_stop(cfg.sleep_hold_s):
                 return False
 
-            self.log_message.emit(f"[SEQ] Restore Vcore -> {cfg.wake_voltage:.3f} V")
-            self._hooks.set_voltage(ch, cfg.wake_voltage)
+            self.log_message.emit(f"[SEQ] Restore Vcore -> {restore_v:.3f} V")
+            self._hooks.set_voltage(ch, restore_v)
             time.sleep(cfg.wake_settle_s)
 
             self.log_message.emit("[SEQ] STATUS -> wake")
@@ -392,16 +417,16 @@ class SleepVminEngine(QObject):
             self.log_message.emit(f"[ERROR] Hook '{name}' failed: {exc}")
             raise
 
-    def _emit_row(self, sleep_v, temp, ch, iteration, status, note) -> None:
+    def _emit_row(self, sleep_v, temp, ch, pass_cnt, status, note) -> None:
         self._result.rows.append({
             "voltage": sleep_v,
             "temperature": temp,
             "channel": ch,
-            "iteration": iteration,
+            "pass_cnt": pass_cnt,
             "status": status,
             "note": note,
         })
-        self.result_row.emit(sleep_v, temp, f"CH{ch}", iteration, status, note)
+        self.result_row.emit(sleep_v, temp, f"CH{ch}", str(pass_cnt), status, note)
 
     def _finalize(self, last_pass: Optional[float]) -> None:
         self._result.vmin = last_pass

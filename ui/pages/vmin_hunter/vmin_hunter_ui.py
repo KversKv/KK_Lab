@@ -83,12 +83,13 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
             instrument_manager=instrument_manager,
         )
         self.init_chamber_connection(instrument_manager=instrument_manager)
-        self.init_mcu_pwr_reset_config()
+        self.init_mcu_pwr_reset_config(instrument_manager=instrument_manager)
         self.init_serial_connection(mode=MODE_FULL, baudrate=921600, prefix="DUT")
 
         self._vcorel_enabled = False
         self._temp_enabled = False
         self._runner = None
+        self._sweep_context = None
 
         self._setup_style()
         self._create_layout()
@@ -461,8 +462,8 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         ch_row.addStretch()
         layout.addLayout(ch_row)
 
-        # ---- 电压扫描区间 (Start / End / Step) ----
-        vp_title = QLabel("Voltage Sweep")
+        # ---- VcoreM 电压扫描区间 (Default / Start / End / Step) ----
+        vp_title = QLabel("Voltage Sweep (VcoreM)")
         vp_title.setObjectName("fieldLabel")
         layout.addWidget(vp_title)
 
@@ -470,6 +471,8 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         vp_grid.setHorizontalSpacing(8)
         vp_grid.setVerticalSpacing(4)
 
+        self.voltage_default_input = QLineEdit("0.80")
+        self.voltage_default_input.setToolTip("Default voltage (V): restore/wake voltage between sleep points")
         self.voltage_start_input = QLineEdit("0.80")
         self.voltage_start_input.setToolTip("Sweep start voltage (V), typically the higher voltage")
         self.voltage_end_input = QLineEdit("0.60")
@@ -477,13 +480,57 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         self.voltage_step_input = QLineEdit("0.05")
         self.voltage_step_input.setToolTip("Sweep step (V), positive value; sweep direction is from Start to End")
 
-        vp_grid.addWidget(self._field_label("Start (V)"), 0, 0)
-        vp_grid.addWidget(self._field_label("End (V)"), 0, 1)
-        vp_grid.addWidget(self._field_label("Step (V)"), 0, 2)
-        vp_grid.addWidget(self.voltage_start_input, 1, 0)
-        vp_grid.addWidget(self.voltage_end_input, 1, 1)
-        vp_grid.addWidget(self.voltage_step_input, 1, 2)
+        vp_grid.addWidget(self._field_label("Default (V)"), 0, 0)
+        vp_grid.addWidget(self._field_label("Start (V)"), 0, 1)
+        vp_grid.addWidget(self._field_label("End (V)"), 0, 2)
+        vp_grid.addWidget(self._field_label("Step (V)"), 0, 3)
+        vp_grid.addWidget(self.voltage_default_input, 1, 0)
+        vp_grid.addWidget(self.voltage_start_input, 1, 1)
+        vp_grid.addWidget(self.voltage_end_input, 1, 2)
+        vp_grid.addWidget(self.voltage_step_input, 1, 3)
         layout.addLayout(vp_grid)
+
+        # ---- VcoreL 电压扫描区间 (勾选 VcoreL 后显示) ----
+        self.vcorel_sweep_title = QLabel("Voltage Sweep (VcoreL)")
+        self.vcorel_sweep_title.setObjectName("fieldLabel")
+        self.vcorel_sweep_title.setVisible(False)
+        layout.addWidget(self.vcorel_sweep_title)
+
+        vpl_grid = QGridLayout()
+        vpl_grid.setHorizontalSpacing(8)
+        vpl_grid.setVerticalSpacing(4)
+
+        self.vcorel_default_input = QLineEdit("0.80")
+        self.vcorel_default_input.setToolTip("VcoreL default voltage (V): restore/wake voltage between sleep points")
+        self.vcorel_start_input = QLineEdit("0.80")
+        self.vcorel_start_input.setToolTip("VcoreL sweep start voltage (V)")
+        self.vcorel_end_input = QLineEdit("0.60")
+        self.vcorel_end_input.setToolTip("VcoreL sweep end voltage (V)")
+        self.vcorel_step_input = QLineEdit("0.05")
+        self.vcorel_step_input.setToolTip("VcoreL sweep step (V), positive value")
+
+        vpl_default_label = self._field_label("Default (V)")
+        vpl_start_label = self._field_label("Start (V)")
+        vpl_end_label = self._field_label("End (V)")
+        vpl_step_label = self._field_label("Step (V)")
+        vpl_grid.addWidget(vpl_default_label, 0, 0)
+        vpl_grid.addWidget(vpl_start_label, 0, 1)
+        vpl_grid.addWidget(vpl_end_label, 0, 2)
+        vpl_grid.addWidget(vpl_step_label, 0, 3)
+        vpl_grid.addWidget(self.vcorel_default_input, 1, 0)
+        vpl_grid.addWidget(self.vcorel_start_input, 1, 1)
+        vpl_grid.addWidget(self.vcorel_end_input, 1, 2)
+        vpl_grid.addWidget(self.vcorel_step_input, 1, 3)
+        layout.addLayout(vpl_grid)
+
+        self._vcorel_sweep_widgets = [
+            self.vcorel_sweep_title,
+            vpl_default_label, vpl_start_label, vpl_end_label, vpl_step_label,
+            self.vcorel_default_input, self.vcorel_start_input,
+            self.vcorel_end_input, self.vcorel_step_input,
+        ]
+        for w in self._vcorel_sweep_widgets:
+            w.setVisible(False)
 
         return panel
 
@@ -736,7 +783,7 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
 
         self.result_table = QTableWidget(0, 6)
         self.result_table.setHorizontalHeaderLabels([
-            "Voltage (V)", "Temp (°C)", "Channel", "Iteration", "Status", "Note",
+            "Voltage (V)", "Temp (°C)", "Channel", "Pass/CNT", "Status", "Note",
         ])
         self.result_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.result_table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -840,6 +887,8 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         self._set_iic_group_enabled(self._vcorel_iic, checked)
         for w in self._vcorel_n6705c_widgets:
             w.setVisible(checked)
+        for w in getattr(self, "_vcorel_sweep_widgets", []):
+            w.setVisible(checked)
 
     def _on_start_clicked(self):
         try:
@@ -876,27 +925,96 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         if status_pin is None:
             raise ValueError("Invalid MCU Status GPIO channel.")
 
-        sweep = params["voltage_sweep"]
-        wake_voltage = max(sweep["start"], sweep["end"])
-        sleep_points = sorted(params["voltage_points"], reverse=True)
-        channel = params["channel_config"]["n6705c"]["VcoreM_channel"]
-        current_limit_ma = params["channel_config"]["n6705c"]["VcoreM_current_limit_ma"]
         status_polarity = mcu_cfg["status_polarity"]
         iic_all = params["channel_config"]["iic"]
-        vcorel_enabled = bool(
-            params["monitor_channels"].get("VcoreL", False)
-        )
+        vcorel_enabled = bool(params["monitor_channels"].get("VcoreL", False))
+
+        reset_pin = None
+        reset_active = None
+        if mcu_cfg.get("reset_enabled") and mcu_cfg.get("reset_channel") is not None:
+            reset_pin = self._mcu_pr_pin_index(mcu_cfg["reset_channel"])
+            if reset_pin is not None:
+                reset_active = 1 if mcu_cfg.get("reset_polarity") == "rising" else 0
+
+        n6705c_cfg = params["channel_config"]["n6705c"]
+        sweep_m = params["voltage_sweep"]
+        phases = [{
+            "name": "VcoreM",
+            "channel": n6705c_cfg["VcoreM_channel"],
+            "current_limit_ma": n6705c_cfg["VcoreM_current_limit_ma"],
+            "default_voltage": sweep_m["default"],
+            "sleep_points": sorted(params["voltage_points"], reverse=True),
+            "fixed_channel": None,
+            "fixed_voltage": None,
+        }]
+
+        if vcorel_enabled:
+            sweep_l = params["vcorel_voltage_sweep"] or {}
+            vcorel_channel = n6705c_cfg["VcoreL_channel"]
+            vcorel_default = sweep_l.get("default", sweep_m["default"])
+            phases[0]["fixed_channel"] = vcorel_channel
+            phases[0]["fixed_voltage"] = vcorel_default
+            phases.append({
+                "name": "VcoreL",
+                "channel": vcorel_channel,
+                "current_limit_ma": n6705c_cfg["VcoreL_current_limit_ma"],
+                "default_voltage": vcorel_default,
+                "sleep_points": sorted(params["vcorel_voltage_points"], reverse=True),
+                "fixed_channel": n6705c_cfg["VcoreM_channel"],
+                "fixed_voltage": sweep_m["default"],
+            })
+
+        self._sweep_context = {
+            "n6705c": n6705c,
+            "status_pin": status_pin,
+            "status_polarity": status_polarity,
+            "iic_all": iic_all,
+            "vcorel_enabled": vcorel_enabled,
+            "reset_pin": reset_pin,
+            "reset_active": reset_active,
+            "test_cnt": params["test_cnt"],
+            "phases": phases,
+            "phase_index": 0,
+        }
+
+        self.start_btn.setEnabled(False)
+        self.stop_btn.setEnabled(True)
+        self.result_table.setRowCount(0)
+        self.vmin_summary_label.setText("Vmin: hunting...")
+        self.execution_logs.append_log("[START] External sleep Vmin sweep started")
+        self._start_sweep_phase(0)
+
+    def _start_sweep_phase(self, phase_index):
+        ctx = self._sweep_context
+        phases = ctx["phases"]
+        if phase_index >= len(phases):
+            self._sweep_context = None
+            self._on_engine_finished(True, "")
+            return
+
+        ctx["phase_index"] = phase_index
+        phase = phases[phase_index]
+        channel = phase["channel"]
+        current_limit_ma = phase["current_limit_ma"]
+        default_voltage = phase["default_voltage"]
+        sleep_points = phase["sleep_points"]
 
         config = SleepVminConfig(
-            wake_voltage=wake_voltage,
+            wake_voltage=max(default_voltage, *sleep_points)
+            if sleep_points else default_voltage,
+            default_voltage=default_voltage,
             sleep_points=sleep_points,
             channel=channel,
-            test_cnt=params["test_cnt"],
+            test_cnt=ctx["test_cnt"],
             temperature=None,
         )
         hooks = self._build_external_hooks(
-            n6705c, status_pin, status_polarity, iic_all, current_limit_ma,
-            vcorel_enabled=vcorel_enabled,
+            ctx["n6705c"], ctx["status_pin"], ctx["status_polarity"],
+            ctx["iic_all"], current_limit_ma,
+            vcorel_enabled=ctx["vcorel_enabled"],
+            reset_pin=ctx["reset_pin"], reset_active=ctx["reset_active"],
+            fixed_channel=phase["fixed_channel"],
+            fixed_voltage=phase["fixed_voltage"],
         )
 
         engine = SleepVminEngine(config, hooks)
@@ -904,22 +1022,40 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         engine.log_message.connect(self.append_log)
         engine.result_row.connect(self.append_result_row)
         engine.vmin_found.connect(self.set_vmin_summary)
-        engine.finished.connect(self._on_engine_finished)
+        engine.finished.connect(self._on_phase_finished)
 
-        self.start_btn.setEnabled(False)
-        self.stop_btn.setEnabled(True)
-        self.result_table.setRowCount(0)
-        self.vmin_summary_label.setText("Vmin: hunting...")
-        self.execution_logs.append_log("[START] External sleep Vmin sweep started")
+        fixed_note = ""
+        if phase["fixed_channel"] is not None:
+            fixed_note = (
+                f" (fix CH{phase['fixed_channel']}={phase['fixed_voltage']:.3f}V)"
+            )
         self.execution_logs.append_log(
-            f"[INFO] wake={wake_voltage:.3f}V ch={channel} "
-            f"ilimit={current_limit_ma}mA points={sleep_points}"
+            f"[PHASE {phase_index + 1}/{len(phases)}] Sweep {phase['name']} "
+            f"default={default_voltage:.3f}V ch={channel} "
+            f"ilimit={current_limit_ma}mA points={sleep_points}{fixed_note}"
         )
         self._runner.start()
 
+    def _on_phase_finished(self, ok, message):
+        ctx = self._sweep_context
+        if ctx is None:
+            self._on_engine_finished(ok, message)
+            return
+
+        self._runner = None
+        next_index = ctx["phase_index"] + 1
+        if not ok or ctx.get("stop_requested") or next_index >= len(ctx["phases"]):
+            self._sweep_context = None
+            self._on_engine_finished(ok, message)
+            return
+
+        self._start_sweep_phase(next_index)
+
     def _build_external_hooks(self, n6705c, status_pin, status_polarity, iic_all,
                               current_limit_ma=CURRENT_LIMIT_DEFAULT_MA,
-                              vcorel_enabled=False):
+                              vcorel_enabled=False, reset_pin=None,
+                              reset_active=None, fixed_channel=None,
+                              fixed_voltage=None):
         active = 1 if status_polarity == "rising" else 0
         try:
             current_limit_ma = float(current_limit_ma)
@@ -936,6 +1072,9 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         def output_on(channel):
             n6705c.set_current_limit(channel, current_limit)
             n6705c.channel_on(channel)
+            if fixed_channel is not None and fixed_voltage is not None:
+                n6705c.set_voltage(fixed_channel, fixed_voltage)
+                n6705c.channel_on(fixed_channel)
 
         def output_off(channel):
             n6705c.channel_off(channel)
@@ -943,6 +1082,11 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         def status_pulse():
             self.mcu_io.pulse(
                 status_pin, width_ms=100, active=active, release_high_z=False
+            )
+
+        def reset_dut():
+            self.mcu_io.pulse(
+                reset_pin, width_ms=100, active=reset_active, release_high_z=False
             )
 
         def init_internal_supply():
@@ -1013,6 +1157,8 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         )
         if writes:
             hooks_kwargs["init_internal_supply"] = init_internal_supply
+        if reset_pin is not None and reset_active is not None:
+            hooks_kwargs["reset"] = reset_dut
 
         return EngineHooks(**hooks_kwargs)
 
@@ -1082,6 +1228,8 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
 
     def _on_stop_clicked(self):
         logger.info("VminHunter stop requested")
+        if self._sweep_context is not None:
+            self._sweep_context["stop_requested"] = True
         if self._runner is not None and self._runner.is_running():
             self._runner.stop()
             self.execution_logs.append_log("[STOP] Stop requested; finishing current step...")
@@ -1126,21 +1274,28 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
             raise ValueError(f"{field} must not be empty")
         return result
 
-    def _parse_voltage_sweep(self):
+    def _parse_voltage_sweep(self, default_input=None, start_input=None,
+                             end_input=None, step_input=None, prefix="Voltage"):
+        default_input = default_input or self.voltage_default_input
+        start_input = start_input or self.voltage_start_input
+        end_input = end_input or self.voltage_end_input
+        step_input = step_input or self.voltage_step_input
+
         def _to_float(text, field):
             try:
                 return float(text.strip())
             except ValueError:
                 raise ValueError(f"{field} must be a number")
 
-        start = _to_float(self.voltage_start_input.text(), "Voltage Start")
-        end = _to_float(self.voltage_end_input.text(), "Voltage End")
-        step = _to_float(self.voltage_step_input.text(), "Voltage Step")
+        default_v = _to_float(default_input.text(), f"{prefix} Default")
+        start = _to_float(start_input.text(), f"{prefix} Start")
+        end = _to_float(end_input.text(), f"{prefix} End")
+        step = _to_float(step_input.text(), f"{prefix} Step")
 
         if step <= 0:
-            raise ValueError("Voltage Step must be positive")
+            raise ValueError(f"{prefix} Step must be positive")
         if start == end:
-            raise ValueError("Voltage Start must differ from End")
+            raise ValueError(f"{prefix} Start must differ from End")
 
         direction = -1.0 if start > end else 1.0
         signed_step = step * direction
@@ -1152,11 +1307,11 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
             points.append(round(v, 6))
             v += signed_step
             if len(points) > 10000:
-                raise ValueError("Voltage sweep range/step produces too many points (>10000)")
+                raise ValueError(f"{prefix} sweep range/step produces too many points (>10000)")
 
         if not points:
-            raise ValueError("Voltage sweep produced no points")
-        return start, end, step, points
+            raise ValueError(f"{prefix} sweep produced no points")
+        return default_v, start, end, step, points
 
     def _read_params(self):
         try:
@@ -1166,7 +1321,25 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         if test_cnt <= 0:
             raise ValueError("Test CNT must be positive")
 
-        v_start, v_end, v_step, voltage_points = self._parse_voltage_sweep()
+        v_default, v_start, v_end, v_step, voltage_points = self._parse_voltage_sweep()
+
+        vcorel_sweep = None
+        vcorel_points = []
+        if self._vcorel_enabled:
+            (vl_default, vl_start, vl_end, vl_step,
+             vcorel_points) = self._parse_voltage_sweep(
+                default_input=self.vcorel_default_input,
+                start_input=self.vcorel_start_input,
+                end_input=self.vcorel_end_input,
+                step_input=self.vcorel_step_input,
+                prefix="VcoreL Voltage",
+            )
+            vcorel_sweep = {
+                "default": vl_default,
+                "start": vl_start,
+                "end": vl_end,
+                "step": vl_step,
+            }
 
         params = {
             "test_cnt": test_cnt,
@@ -1185,11 +1358,14 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
                 "VcoreL": self._vcorel_enabled,
             },
             "voltage_sweep": {
+                "default": v_default,
                 "start": v_start,
                 "end": v_end,
                 "step": v_step,
             },
             "voltage_points": voltage_points,
+            "vcorel_voltage_sweep": vcorel_sweep,
+            "vcorel_voltage_points": vcorel_points,
             "channel_config": {
                 "n6705c": {
                     "VcoreM_channel": int(self.vcorem_channel_combo.currentText()),
@@ -1280,6 +1456,8 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
 
             sweep = data.get("voltage_sweep")
             if isinstance(sweep, dict):
+                if "default" in sweep:
+                    self.voltage_default_input.setText(str(sweep["default"]))
                 if "start" in sweep:
                     self.voltage_start_input.setText(str(sweep["start"]))
                 if "end" in sweep:
@@ -1304,6 +1482,17 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
                         self.voltage_step_input.setText(str(round(v_step, 6)))
                     except (TypeError, ValueError):
                         logger.warning("Legacy voltage_points failed to convert", exc_info=True)
+
+            vcorel_sweep = data.get("vcorel_voltage_sweep")
+            if isinstance(vcorel_sweep, dict):
+                if "default" in vcorel_sweep:
+                    self.vcorel_default_input.setText(str(vcorel_sweep["default"]))
+                if "start" in vcorel_sweep:
+                    self.vcorel_start_input.setText(str(vcorel_sweep["start"]))
+                if "end" in vcorel_sweep:
+                    self.vcorel_end_input.setText(str(vcorel_sweep["end"]))
+                if "step" in vcorel_sweep:
+                    self.vcorel_step_input.setText(str(vcorel_sweep["step"]))
 
             ch_cfg = data.get("channel_config", {})
             n6705c_cfg = ch_cfg.get("n6705c", {})
@@ -1406,14 +1595,14 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
     # ------------------------------------------------------------------
     # 结果回填 (供 core 层通过 Signal/Slot 调用)
     # ------------------------------------------------------------------
-    def append_result_row(self, voltage, temp, channel, iteration, status, note=""):
+    def append_result_row(self, voltage, temp, channel, pass_cnt, status, note=""):
         row = self.result_table.rowCount()
         self.result_table.insertRow(row)
         values = [
             f"{voltage:.3f}" if isinstance(voltage, (int, float)) else str(voltage),
             str(temp),
             str(channel),
-            str(iteration),
+            str(pass_cnt),
             str(status),
             str(note),
         ]

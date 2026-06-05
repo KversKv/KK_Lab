@@ -258,7 +258,8 @@ def _verify_dsox4034a(instance: object) -> InstrumentIdentity:
     if not idn:
         raise ConnectionError("DSOX4034A verify failed: unable to query identity")
     upper_idn = idn.upper()
-    if "DSOX4034A" not in upper_idn and "DSO-X 4034A" not in upper_idn.replace(" ", " "):
+    normalized_idn = " ".join(upper_idn.split())
+    if "DSOX4034A" not in normalized_idn and "DSO-X 4034A" not in normalized_idn:
         raise ConnectionError(
             f"DSOX4034A verify failed: IDN does not match expected device. Got: {idn}"
         )

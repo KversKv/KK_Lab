@@ -105,6 +105,9 @@ class InstrumentManager(QObject):
 
         if session_id in self._threads:
             logger.warning("Connection already in progress for %s", session_id)
+            self.connection_failed.emit(
+                session_id, "Connection already in progress, please wait."
+            )
             return session_id
 
         slot = spec.slot
@@ -337,12 +340,7 @@ class InstrumentManager(QObject):
         self.sessions_changed.emit()
 
     def _on_connect_failed(self, session_id: str, error: str):
-        session = self._sessions.get(session_id)
-        if session:
-            session.last_error = error
-            session.connected = False
-            session.instance = None
-            session.touch()
+        self._sessions.pop(session_id, None)
         logger.error("Session %s connection failed: %s", session_id, error)
         self.connection_failed.emit(session_id, error)
         self.session_changed.emit(session_id)

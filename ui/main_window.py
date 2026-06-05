@@ -88,9 +88,9 @@ class _KKSerialsPage(SerialComMixin, QWidget):
 
 
 class _CollectionPage(McuIoConnectionMixin, QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, instrument_manager=None):
         QWidget.__init__(self, parent)
-        self.init_mcu_io_connection()
+        self.init_mcu_io_connection(instrument_manager=instrument_manager)
         self.setStyleSheet("""
             QWidget {
                 background-color: #020817;
@@ -577,6 +577,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             self.instrument_ui_container_layout.addWidget(self.custom_test_ui)
         else:
             self.custom_test_ui.sync_n6705c_from_top()
+            self.custom_test_ui._sync_instruments()
             self.custom_test_ui.show()
         self.current_instrument_ui = "custom_test"
         self._fade_in_widget(self.custom_test_ui)
@@ -611,7 +612,9 @@ class MainWindow(CleanupMixin, QMainWindow):
         logger.debug("Switching to Collection UI")
         self._hide_all_instrument_uis()
         if self.collection_ui is None:
-            self.collection_ui = _CollectionPage()
+            self.collection_ui = _CollectionPage(
+                instrument_manager=self.instrument_manager
+            )
             self.instrument_ui_container_layout.addWidget(self.collection_ui)
         else:
             self.collection_ui.show()

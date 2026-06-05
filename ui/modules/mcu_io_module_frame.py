@@ -312,6 +312,25 @@ class _GpioOutputWorker(QObject):
             self.error.emit(str(e))
 
 
+class _GpioDefaultHighZWorker(QObject):
+    finished = Signal(list)
+    error = Signal(str)
+
+    def __init__(self, inst, pins):
+        super().__init__()
+        self._inst = inst
+        self._pins = list(pins)
+
+    def run(self):
+        try:
+            for pin in self._pins:
+                self._inst.in_pull(pin, "none")
+            self.finished.emit(self._pins)
+        except Exception as e:
+            logger.error("MCU IO default High-Z failed: %s", e, exc_info=True)
+            self.error.emit(str(e))
+
+
 class _GpioPulseWorker(QObject):
     finished = Signal(int)
     error = Signal(str)
@@ -401,10 +420,13 @@ class _LevelSetWorker(QObject):
 class McuIoConnectionMixin:
     mcu_io_connection_status_changed = Signal(bool)
 
-    def init_mcu_io_connection(self, baudrate=MCU_IO_DEFAULT_BAUDRATE):
+    def init_mcu_io_connection(self, baudrate=MCU_IO_DEFAULT_BAUDRATE,
+                               instrument_manager=None):
         self.mcu_io = None
         self.is_mcu_io_connected = False
         self._mcu_io_baudrate = baudrate
+        self._mcu_io_manager = instrument_manager
+        self._mcu_io_session_id = "mcu_io:default"
         self._mcu_io_search_thread = None
         self._mcu_io_search_worker = None
         self._mcu_io_connect_thread = None
@@ -415,6 +437,8 @@ class McuIoConnectionMixin:
         self._mcu_io_read_worker = None
         self._mcu_io_pulse_thread = None
         self._mcu_io_pulse_worker = None
+        self._mcu_io_default_thread = None
+        self._mcu_io_default_worker = None
 
     def build_mcu_io_connection_widgets(self, layout, title_row=None, with_gpio=True):
         self.mcu_io_status_label = QLabel("● Disconnected")
@@ -560,6 +584,24 @@ class McuIoConnectionMixin:
 
         self._set_mcu_io_gpio_controls_enabled(False)
 
+    def set_mcu_io_instrument_manager(self, instrument_manager):
+        self._mcu_io_manager = instrument_manager
+        self._bind_mcu_io_manager_signals()
+        self._sync_mcu_io_from_manager()
+
+    def _bind_mcu_io_manager_signals(self):
+        manager = getattr(self, "_mcu_io_manager", None)
+        if manager is None or getattr(self, "_mcu_io_manager_bound", False):
+            return
+        manager.session_connected.connect(self._on_mcu_io_manager_session_connected)
+        manager.session_disconnected.connect(
+            self._on_mcu_io_manager_session_disconnected
+        )
+        manager.connection_failed.connect(self._on_mcu_io_manager_connect_failed)
+        manager.scan_finished.connect(self._on_mcu_io_manager_scan_finished)
+        manager.scan_failed.connect(self._on_mcu_io_manager_scan_failed)
+        self._mcu_io_manager_bound = True
+
     def bind_mcu_io_signals(self):
         self.mcu_io_search_btn.clicked.connect(self._on_mcu_io_search)
         self.mcu_io_connect_btn.clicked.connect(
@@ -567,6 +609,8 @@ class McuIoConnectionMixin:
         )
         if getattr(self, "mcu_io_read_btn", None) is not None:
             self.mcu_io_read_btn.clicked.connect(self._on_mcu_io_read)
+        self._bind_mcu_io_manager_signals()
+        self._sync_mcu_io_from_manager()
 
     def _set_mcu_io_gpio_controls_enabled(self, enabled: bool):
         for toggle in getattr(self, "mcu_io_output_toggles", {}).values():
@@ -607,6 +651,14 @@ class McuIoConnectionMixin:
         return text.split()[0]
 
     def _on_mcu_io_search(self):
+        if getattr(self, "_mcu_io_manager", None) is not None:
+            self.set_mcu_io_status("● Searching")
+            self._mcu_io_log("[MCU] Scanning serial ports for YD RP2040...")
+            self.mcu_io_search_btn.setEnabled(False)
+            self.mcu_io_connect_btn.setEnabled(False)
+            self._mcu_io_manager.scan_async("mcu_io")
+            return
+
         if DEBUG_MOCK:
             self.mcu_io_port_combo.clear()
             self.mcu_io_port_combo.addItem("[MOCK] COM98 - Mock YD RP2040")
@@ -679,6 +731,27 @@ class McuIoConnectionMixin:
             self._mcu_io_log("[MCU] No valid MCU port selected.")
             self.set_mcu_io_status("● Select port first", is_error=True)
             return
+
+        manager = getattr(self, "_mcu_io_manager", None)
+        if manager is not None:
+            existing = manager.get_session(self._mcu_io_session_id)
+            if existing and existing.connected:
+                self._sync_mcu_io_from_manager()
+                return
+            self.set_mcu_io_status("● Connecting")
+            self.mcu_io_search_btn.setEnabled(False)
+            self.mcu_io_connect_btn.setEnabled(False)
+            self._mcu_io_log(f"[MCU] Connecting YD RP2040 on {port}...")
+            from core.instruments import InstrumentSpec
+            manager.connect_async(InstrumentSpec(
+                instrument_type="mcu_io",
+                role="mcu_io",
+                connection_kind="serial_raw_repl",
+                slot="default",
+                resource=port,
+            ))
+            return
+
         if self._mcu_io_connect_thread is not None and self._mcu_io_connect_thread.isRunning():
             return
 
@@ -710,14 +783,67 @@ class McuIoConnectionMixin:
 
     def _on_mcu_io_connected(self, inst, idn):
         self.mcu_io = inst
+        self._apply_mcu_io_connected_ui()
+        self._mcu_io_log(f"[MCU] Connected: {idn}")
+        self.mcu_io_connection_status_changed.emit(True)
+        self._apply_default_gpio_highz()
+
+    def _apply_mcu_io_connected_ui(self):
         self.is_mcu_io_connected = True
         self.set_mcu_io_status("● Connected")
         self.mcu_io_search_btn.setEnabled(False)
         self.mcu_io_connect_btn.setEnabled(True)
         update_connect_button_state(self.mcu_io_connect_btn, connected=True)
         self._set_mcu_io_gpio_controls_enabled(True)
-        self._mcu_io_log(f"[MCU] Connected: {idn}")
-        self.mcu_io_connection_status_changed.emit(True)
+
+    def _apply_mcu_io_disconnected_ui(self):
+        self.mcu_io = None
+        self.is_mcu_io_connected = False
+        self.set_mcu_io_status("● Disconnected", is_error=True)
+        self.mcu_io_search_btn.setEnabled(True)
+        self.mcu_io_connect_btn.setEnabled(True)
+        update_connect_button_state(self.mcu_io_connect_btn, connected=False)
+        self._set_mcu_io_gpio_controls_enabled(False)
+
+    def _apply_default_gpio_highz(self):
+        if not self.is_mcu_io_connected or self.mcu_io is None:
+            return
+        for pin in MCU_IO_GPIO_PINS:
+            toggle = getattr(self, "mcu_io_output_toggles", {}).get(pin)
+            if toggle is not None:
+                toggle.setValue(GPIO_STATE_HIGHZ)
+        if self._mcu_io_default_thread is not None and self._mcu_io_default_thread.isRunning():
+            return
+        worker = _GpioDefaultHighZWorker(self.mcu_io, MCU_IO_GPIO_PINS)
+        thread = QThread()
+        worker.moveToThread(thread)
+
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._on_mcu_io_default_done)
+        worker.error.connect(self._on_mcu_io_default_error)
+        worker.finished.connect(thread.quit)
+        worker.error.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._on_mcu_io_default_thread_cleanup)
+
+        self._mcu_io_default_worker = worker
+        self._mcu_io_default_thread = thread
+        self._mcu_io_log("[MCU] Setting GPIO0/GPIO1 to High-Z (default)...")
+        thread.start()
+
+    def _on_mcu_io_default_thread_cleanup(self):
+        self._mcu_io_default_thread = None
+        self._mcu_io_default_worker = None
+
+    def _on_mcu_io_default_done(self, pins):
+        self._mcu_io_log(
+            "[MCU] Default High-Z applied: "
+            + ", ".join(f"GPIO{p}" for p in pins)
+        )
+
+    def _on_mcu_io_default_error(self, err):
+        self._mcu_io_log(f"[MCU] Default High-Z failed: {err}")
 
     def _on_mcu_io_connect_error(self, err):
         self.set_mcu_io_status("● Failed", is_error=True)
@@ -725,8 +851,110 @@ class McuIoConnectionMixin:
         self.mcu_io_connect_btn.setEnabled(True)
         self._mcu_io_log(f"[MCU] Connection failed: {err}")
 
+    def _sync_mcu_io_from_manager(self):
+        manager = getattr(self, "_mcu_io_manager", None)
+        if manager is None or not hasattr(self, "mcu_io_connect_btn"):
+            return
+        session = manager.get_session(self._mcu_io_session_id)
+        if session and session.connected and session.instance:
+            already = self.is_mcu_io_connected and self.mcu_io is session.instance
+            self.mcu_io = session.instance
+            self._apply_mcu_io_connected_ui()
+            if session.resource and hasattr(self, "mcu_io_port_combo"):
+                if self.mcu_io_port_combo.findText(session.resource) < 0:
+                    self.mcu_io_port_combo.addItem(session.resource)
+                self.mcu_io_port_combo.setCurrentText(session.resource)
+            if not already:
+                self.mcu_io_connection_status_changed.emit(True)
+        else:
+            if self.is_mcu_io_connected or self.mcu_io is not None:
+                self._apply_mcu_io_disconnected_ui()
+                self.mcu_io_connection_status_changed.emit(False)
+
+    def _on_mcu_io_manager_session_connected(self, session_id):
+        if session_id != self._mcu_io_session_id:
+            return
+        was_connected = self.is_mcu_io_connected
+        self._sync_mcu_io_from_manager()
+        if not was_connected and self.is_mcu_io_connected:
+            self._mcu_io_log("[MCU] Connected (shared session).")
+            self._apply_default_gpio_highz()
+
+    def _on_mcu_io_manager_session_disconnected(self, session_id):
+        if session_id != self._mcu_io_session_id:
+            return
+        self._sync_mcu_io_from_manager()
+        self._mcu_io_log("[MCU] Disconnected (shared session).")
+
+    def _on_mcu_io_manager_connect_failed(self, session_id, error):
+        if session_id != self._mcu_io_session_id:
+            return
+        self._on_mcu_io_connect_error(error)
+
+    def _on_mcu_io_manager_scan_finished(self, instrument_type, candidates):
+        if instrument_type != "mcu_io" or not hasattr(self, "mcu_io_port_combo"):
+            return
+        self.mcu_io_port_combo.clear()
+        self.mcu_io_port_combo.setEnabled(True)
+        if candidates:
+            for cand in candidates:
+                label = cand.display_name or cand.resource
+                self.mcu_io_port_combo.addItem(label)
+            self.set_mcu_io_status(f"● Found {len(candidates)}")
+            self._mcu_io_log(f"[MCU] Found {len(candidates)} serial port(s).")
+        else:
+            self.mcu_io_port_combo.addItem("No serial ports found")
+            self.mcu_io_port_combo.setEnabled(False)
+            self.set_mcu_io_status("● Not Found", is_error=True)
+            self._mcu_io_log("[MCU] No serial ports found.")
+        self.mcu_io_search_btn.setEnabled(True)
+        self.mcu_io_connect_btn.setEnabled(bool(candidates))
+
+    def _on_mcu_io_manager_scan_failed(self, instrument_type, error):
+        if instrument_type != "mcu_io":
+            return
+        self.set_mcu_io_status("● Search Failed", is_error=True)
+        self._mcu_io_log(f"[MCU] Search failed: {error}")
+        self.mcu_io_search_btn.setEnabled(True)
+        self.mcu_io_connect_btn.setEnabled(True)
+
+    def _reset_gpio_highz_before_disconnect(self):
+        inst = self.mcu_io
+        if inst is None:
+            return
+        try:
+            for pin in MCU_IO_GPIO_PINS:
+                inst.in_pull(pin, "none")
+            self._mcu_io_log(
+                "[MCU] Restored GPIO0/GPIO1 to High-Z before disconnect."
+            )
+            for pin in MCU_IO_GPIO_PINS:
+                toggle = getattr(self, "mcu_io_output_toggles", {}).get(pin)
+                if toggle is not None:
+                    toggle.setValue(GPIO_STATE_HIGHZ)
+        except Exception as e:
+            logger.error(
+                "MCU IO restore High-Z before disconnect failed: %s",
+                e, exc_info=True
+            )
+            self._mcu_io_log(f"[MCU] Restore High-Z failed: {e}")
+
     def _disconnect_mcu_io(self):
+        manager = getattr(self, "_mcu_io_manager", None)
+        if manager is not None:
+            session = manager.get_session(self._mcu_io_session_id)
+            if session and session.connected:
+                self.set_mcu_io_status("● Disconnecting")
+                self.mcu_io_connect_btn.setEnabled(False)
+                self._reset_gpio_highz_before_disconnect()
+                manager.disconnect_async(self._mcu_io_session_id)
+                return
+            self._apply_mcu_io_disconnected_ui()
+            self.mcu_io_connection_status_changed.emit(False)
+            return
+
         self.set_mcu_io_status("● Disconnecting")
+        self._reset_gpio_highz_before_disconnect()
         self.mcu_io_connect_btn.setEnabled(False)
         try:
             if self.mcu_io is not None:
@@ -735,13 +963,7 @@ class McuIoConnectionMixin:
             logger.error("MCU IO disconnect failed: %s", e, exc_info=True)
             self._mcu_io_log(f"[MCU] Disconnect failed: {e}")
         finally:
-            self.mcu_io = None
-            self.is_mcu_io_connected = False
-            self.set_mcu_io_status("● Disconnected", is_error=True)
-            self.mcu_io_search_btn.setEnabled(True)
-            self.mcu_io_connect_btn.setEnabled(True)
-            update_connect_button_state(self.mcu_io_connect_btn, connected=False)
-            self._set_mcu_io_gpio_controls_enabled(False)
+            self._apply_mcu_io_disconnected_ui()
             self._mcu_io_log("[MCU] Disconnected.")
             self.mcu_io_connection_status_changed.emit(False)
 
@@ -1165,8 +1387,11 @@ class ModeToggle(QWidget):
 
 
 class McuPwrResetConfigMixin(McuIoConnectionMixin):
-    def init_mcu_pwr_reset_config(self, baudrate=MCU_IO_DEFAULT_BAUDRATE):
-        self.init_mcu_io_connection(baudrate=baudrate)
+    def init_mcu_pwr_reset_config(self, baudrate=MCU_IO_DEFAULT_BAUDRATE,
+                                  instrument_manager=None):
+        self.init_mcu_io_connection(
+            baudrate=baudrate, instrument_manager=instrument_manager
+        )
         self._mcu_pr_pulse_thread = None
         self._mcu_pr_pulse_worker = None
 

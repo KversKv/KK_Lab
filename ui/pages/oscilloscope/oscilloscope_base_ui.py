@@ -938,6 +938,7 @@ class OscilloscopeBaseUI(QWidget):
             self.mso64b_top.connection_changed.connect(self._on_mso64b_top_changed)
         if self._instrument_manager is not None:
             self._instrument_manager.sessions_changed.connect(self._on_manager_sessions_changed)
+            self._instrument_manager.connection_failed.connect(self._on_manager_connection_failed)
 
     def _setup_fonts(self):
         self.base_font = QFont("Segoe UI", 10)
@@ -2395,6 +2396,7 @@ class OscilloscopeBaseUI(QWidget):
     def update_connection_status(self, connected, instrument_info=None):
         self._update_connect_button_state(connected)
         self._set_interactive_enabled(connected)
+        self.connect_btn.setEnabled(True)
         if connected:
             self.search_btn.setEnabled(False)
             text = instrument_info if instrument_info else "Connected"
@@ -2609,8 +2611,9 @@ class OscilloscopeBaseUI(QWidget):
 
         if self._instrument_manager and not DEBUG_MOCK:
             from core.instruments import InstrumentSpec
+            scope_type = "dsox4034a" if OscilloscopeController._is_visa_resource(resource) else "mso64b"
             self._instrument_manager.connect_async(InstrumentSpec(
-                instrument_type="mso64b",
+                instrument_type=scope_type,
                 role="scope",
                 connection_kind="visa",
                 slot="main_scope",
@@ -2707,6 +2710,17 @@ class OscilloscopeBaseUI(QWidget):
             self.connection_changed.emit()
         finally:
             self.connect_btn.setEnabled(True)
+
+    def _on_manager_connection_failed(self, session_id: str, error: str):
+        if not session_id.endswith(":main_scope"):
+            return
+        logger.error("Oscilloscope connect failed: %s", error)
+        self.update_connection_status(False)
+        self.set_system_status("● Connection failed", is_error=True)
+        self.append_log(f"[ERROR] Connection failed: {error}")
+        self.search_btn.setEnabled(True)
+        self.connect_btn.setEnabled(True)
+        self.connection_changed.emit()
 
     def _on_manager_sessions_changed(self):
         if not self._instrument_manager:

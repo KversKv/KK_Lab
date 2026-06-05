@@ -20,6 +20,8 @@ _DISPLAY_NAME_MAP = {
     "bes_usb_i2c": "USB-I2C",
 }
 
+_HIDDEN_SLOTS = ("default", "main_scope")
+
 
 class InstrumentStatusPanel:
     def __init__(self, host):
@@ -148,7 +150,7 @@ class InstrumentStatusPanel:
     def _format_snapshot_display(self, snapshot) -> str:
         type_name = _DISPLAY_NAME_MAP.get(snapshot.instrument_type, snapshot.instrument_type)
         slot = snapshot.slot
-        if slot and slot not in ("default",):
+        if slot and slot not in _HIDDEN_SLOTS:
             label = f"{type_name}-{slot.upper()}"
         else:
             label = type_name
@@ -160,13 +162,10 @@ class InstrumentStatusPanel:
             owner_part = f" by {snapshot.busy_owner}" if snapshot.busy_owner else ""
             status_suffix = f" [Busy{owner_part}]"
 
-        if snapshot.model and snapshot.serial:
-            return f"{label} Connected to: {snapshot.model} {snapshot.serial}{status_suffix}"
-        elif snapshot.serial:
-            return f"{label} Connected to: {snapshot.serial}{status_suffix}"
-        elif snapshot.model:
-            return f"{label} Connected ({snapshot.model}){status_suffix}"
-        return f"{label} Connected{status_suffix}"
+        model = snapshot.model or label
+        if snapshot.serial:
+            return f"{model} {snapshot.serial}{status_suffix}"
+        return f"{model}{status_suffix}"
 
     def update_instrument_status(self):
         manager = getattr(self._host, "instrument_manager", None)
@@ -203,7 +202,7 @@ class InstrumentStatusPanel:
             for key in newly_connected:
                 parts = key.split(":")
                 type_name = _DISPLAY_NAME_MAP.get(parts[0], parts[0]) if parts else key
-                slot_part = f"-{parts[1].upper()}" if len(parts) > 1 and parts[1] not in ("default",) else ""
+                slot_part = f"-{parts[1].upper()}" if len(parts) > 1 and parts[1] not in _HIDDEN_SLOTS else ""
                 self._toast.show_toast(
                     f"{type_name}{slot_part} Connected",
                     ToastNotification.TYPE_SUCCESS, self._host,
@@ -211,7 +210,7 @@ class InstrumentStatusPanel:
             for key in newly_disconnected:
                 parts = key.split(":")
                 type_name = _DISPLAY_NAME_MAP.get(parts[0], parts[0]) if parts else key
-                slot_part = f"-{parts[1].upper()}" if len(parts) > 1 and parts[1] not in ("default",) else ""
+                slot_part = f"-{parts[1].upper()}" if len(parts) > 1 and parts[1] not in _HIDDEN_SLOTS else ""
                 self._toast.show_toast(
                     f"{type_name}{slot_part} Disconnected",
                     ToastNotification.TYPE_ERROR, self._host,
