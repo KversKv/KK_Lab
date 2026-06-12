@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
     QSpinBox, QDialog, QDialogButtonBox, QTabWidget,
     QInputDialog, QMessageBox, QTabBar, QGraphicsDropShadowEffect,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QPlainTextEdit,
+    QPlainTextEdit, QTreeWidget, QTreeWidgetItem,
 )
 import uuid as _uuid
 from PySide6.QtCore import (
@@ -38,7 +38,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QIcon, QPainter, QPixmap, QColor, QAction, QPen, QFont,
-    QShortcut, QKeySequence,
+    QShortcut, QKeySequence, QCursor,
 )
 from PySide6.QtSvg import QSvgRenderer
 
@@ -3641,8 +3641,6 @@ class SerialComMixin:
             "cmd": "",
             "priority": 1,
             "wait_ms": 1000,
-            "send_type": "text",
-            "line_ending": "\r\n",
             "wait_keyword": "",
             "wait_timeout_ms": 0,
         }
@@ -3771,7 +3769,9 @@ class SerialComMixin:
             "loop_count": 1,
             "steps": [self._sc_script_default_step()],
         }
-        dlg = _SerialScriptEditorDialog(self, script)
+        dlg = _SerialScriptEditorDialog(
+            self, script, quick_commands=self._sc_qc_collect_all_commands()
+        )
         if dlg.exec() == QDialog.Accepted:
             self._sc_script_data.setdefault("scripts", []).append(dlg.get_script())
             self._sc_script_data["last_script_id"] = script["id"]
@@ -3783,7 +3783,9 @@ class SerialComMixin:
         if cur is None:
             QMessageBox.information(self, "提示", "请先新建一个脚本")
             return
-        dlg = _SerialScriptEditorDialog(self, cur)
+        dlg = _SerialScriptEditorDialog(
+            self, cur, quick_commands=self._sc_qc_collect_all_commands()
+        )
         if dlg.exec() == QDialog.Accepted:
             edited = dlg.get_script()
             cur.update(edited)
@@ -3962,22 +3964,29 @@ class SerialComMixin:
 
     def _sc_script_send_step(self, step) -> bool:
         cmd = step.get("cmd", "")
-        send_type = step.get("send_type", "text")
-        if send_type == "hex":
+        send_hex = step.get("send_type")
+        if send_hex is None:
+            send_hex = bool(getattr(self, "_sc_tx_display_hex", False))
+        else:
+            send_hex = send_hex == "hex"
+        if send_hex:
             try:
                 data = bytes.fromhex(cmd.replace(" ", ""))
             except ValueError:
                 self._sc_append_system(f"[SCRIPT][ERROR] Invalid HEX: {cmd}")
                 return False
         else:
-            data = (cmd + step.get("line_ending", "\r\n")).encode("utf-8")
+            line_ending = step.get("line_ending")
+            if line_ending is None:
+                line_ending = getattr(self, "_sc_line_ending", "\r\n")
+            data = (cmd + line_ending).encode("utf-8")
 
         ok = self._sc_send_to_focused_panel(data)
         if ok and self._sc_active_log_panel_index == 0:
             self._sc_tx_bytes += len(data)
             self._sc_status_tx_label.setText(self._sc_format_bytes("TX", self._sc_tx_bytes))
             if self._sc_show_send:
-                display = cmd if send_type != "hex" else data.hex(' ')
+                display = data.hex(' ') if send_hex else cmd
                 self._sc_append_log(f"[TX] {display}", _CLR_TX)
         return ok
 
@@ -4086,6 +4095,27 @@ class SerialComMixin:
         return self._sc_qc_get_group(
             self._sc_qc_current_project(), self._sc_qc_data.get("last_group_id")
         )
+
+    def _sc_qc_collect_all_commands(self):
+        result = []
+        for project in self._sc_qc_data.get("projects", []) or []:
+            project_name = project.get("name", "")
+            for group in project.get("groups", []) or []:
+                group_name = group.get("name", "")
+                for cmd in group.get("commands", []) or []:
+                    content = cmd.get("content", "")
+                    if not content:
+                        continue
+                    result.append({
+                        "name": cmd.get("name", "") or content,
+                        "content": content,
+                        "send_type": cmd.get("send_type", "text"),
+                        "line_ending": cmd.get("line_ending", "\r\n"),
+                        "encoding": cmd.get("encoding", "ascii"),
+                        "project": project_name,
+                        "group": group_name,
+                    })
+        return result
 
     def _sc_qc_ensure_selection(self):
         projects = self._sc_qc_data.get("projects", [])
@@ -6807,15 +6837,211 @@ class _ProjectTabBar(QTabBar):
         self.project_reorder_requested.emit(source_index, target_index)
 
 
-class _SerialScriptEditorDialog(QDialog):
-    _COLS = ["指令", "优先级", "等待(ms)", "类型", "结尾符", "等待关键字", "关键字超时(ms)"]
+class _QuickCommandPickerPopup(QFrame):
+    _ENTRY_ROLE = Qt.UserRole + 1
 
-    def __init__(self, parent=None, script: dict = None):
+    def __init__(self, parent=None, quick_commands=None, on_pick=None):
+        super().__init__(parent, Qt.Popup)
+        self.setObjectName("pkPopup")
+        self.setAttribute(Qt.WA_DeleteOnClose, True)
+        self.setStyleSheet(self._picker_style())
+        self._entries = list(quick_commands or [])
+        self._on_pick = on_pick
+        self.setFixedWidth(360)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(8, 8, 8, 8)
+        root.setSpacing(8)
+
+        self._search = QLineEdit()
+        self._search.setObjectName("pkSearch")
+        self._search.setPlaceholderText("搜索指令 / 分组 / 项目…")
+        self._search.setClearButtonEnabled(True)
+        self._search.textChanged.connect(self._apply_filter)
+        self._search.returnPressed.connect(self._activate_current)
+        root.addWidget(self._search)
+
+        self._tree = QTreeWidget()
+        self._tree.setObjectName("pkTree")
+        self._tree.setHeaderHidden(True)
+        self._tree.setColumnCount(1)
+        self._tree.setUniformRowHeights(True)
+        self._tree.setIndentation(14)
+        self._tree.setAnimated(True)
+        self._tree.setExpandsOnDoubleClick(False)
+        self._tree.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._tree.setMaximumHeight(320)
+        self._tree.setMinimumHeight(200)
+        self._tree.itemClicked.connect(self._on_item_activated)
+        root.addWidget(self._tree, 1)
+
+        self._build_tree()
+
+    def popup_at(self, anchor):
+        self.adjustSize()
+        screen = self.screen() or QApplication.primaryScreen()
+        avail = screen.availableGeometry() if screen else None
+        if anchor is not None:
+            below = anchor.mapToGlobal(QPoint(0, anchor.height() + 4))
+            pos = below
+            if avail is not None:
+                if pos.x() + self.width() > avail.right():
+                    pos.setX(avail.right() - self.width())
+                if pos.x() < avail.left():
+                    pos.setX(avail.left())
+                if pos.y() + self.height() > avail.bottom():
+                    above = anchor.mapToGlobal(QPoint(0, -self.height() - 4))
+                    pos = above
+            self.move(pos)
+        else:
+            self.move(QCursor.pos())
+        self.show()
+        self._search.setFocus()
+
+    def _picker_style(self) -> str:
+        return f"""
+            QFrame#pkPopup {{
+                background-color: {_CLR_BG_CARD};
+                border: 1px solid {_CLR_BORDER_HOVER};
+                border-radius: 12px;
+            }}
+            QLineEdit#pkSearch {{
+                background-color: {_CLR_INPUT_BG};
+                border: 1px solid {_CLR_BORDER};
+                border-radius: 8px;
+                color: {_CLR_TEXT_BTN_LOG};
+                font-size: 12px; font-family: {_UI_FONT};
+                padding: 6px 9px;
+                min-height: 22px;
+            }}
+            QLineEdit#pkSearch:focus {{ border: 1px solid {_CLR_FILTER_BORDER}; }}
+            QTreeWidget#pkTree {{
+                background-color: {_CLR_INPUT_BG};
+                border: 1px solid {_CLR_BORDER};
+                border-radius: 10px;
+                color: {_CLR_TEXT_BTN_LOG};
+                font-size: 12px; font-family: {_UI_FONT};
+                outline: none;
+                padding: 4px;
+            }}
+            QTreeWidget#pkTree::item {{
+                min-height: 25px;
+                padding: 2px 4px;
+                border-radius: 6px;
+            }}
+            QTreeWidget#pkTree::item:hover {{
+                background-color: {_CLR_BORDER};
+            }}
+            QTreeWidget#pkTree::item:selected {{
+                background-color: {_CLR_SELECTION_BG};
+                color: {_CLR_TEXT_TITLE};
+            }}
+            QTreeWidget#pkTree::branch {{
+                background: transparent;
+            }}
+        """
+
+    def _build_tree(self):
+        tree = {}
+        order = []
+        for entry in self._entries:
+            project = entry.get("project") or "未分组项目"
+            group = entry.get("group") or "默认分组"
+            if project not in tree:
+                tree[project] = {}
+                order.append(project)
+            tree[project].setdefault(group, []).append(entry)
+
+        title_font = QFont(self._tree.font())
+        title_font.setBold(True)
+        for project in order:
+            p_item = QTreeWidgetItem([project])
+            p_item.setFont(0, title_font)
+            p_item.setForeground(0, QColor(_CLR_TEXT_TITLE))
+            p_item.setFlags(p_item.flags() & ~Qt.ItemIsSelectable)
+            self._tree.addTopLevelItem(p_item)
+            for group, entries in tree[project].items():
+                g_item = QTreeWidgetItem([group])
+                g_item.setForeground(0, QColor(_CLR_TEXT_MUTED))
+                g_item.setFlags(g_item.flags() & ~Qt.ItemIsSelectable)
+                p_item.addChild(g_item)
+                for entry in entries:
+                    label = entry.get("name", "") or entry.get("content", "")
+                    c_item = QTreeWidgetItem([label])
+                    c_item.setData(0, self._ENTRY_ROLE, entry)
+                    c_item.setToolTip(0, entry.get("content", ""))
+                    g_item.addChild(c_item)
+        self._tree.expandAll()
+
+    def _apply_filter(self, text):
+        needle = (text or "").strip().lower()
+
+        def match_entry(item):
+            entry = item.data(0, self._ENTRY_ROLE)
+            haystack = " ".join(str(entry.get(k, "")) for k in
+                                 ("name", "content", "group", "project")).lower()
+            return needle in haystack
+
+        for i in range(self._tree.topLevelItemCount()):
+            p_item = self._tree.topLevelItem(i)
+            p_visible = False
+            for j in range(p_item.childCount()):
+                g_item = p_item.child(j)
+                g_visible = False
+                for k in range(g_item.childCount()):
+                    c_item = g_item.child(k)
+                    show = not needle or match_entry(c_item)
+                    c_item.setHidden(not show)
+                    g_visible = g_visible or show
+                g_item.setHidden(not g_visible)
+                if g_visible and needle:
+                    g_item.setExpanded(True)
+                p_visible = p_visible or g_visible
+            p_item.setHidden(not p_visible)
+            if p_visible and needle:
+                p_item.setExpanded(True)
+
+    def _on_item_activated(self, item, _column):
+        if item is None:
+            return
+        entry = item.data(0, self._ENTRY_ROLE)
+        if not entry:
+            item.setExpanded(not item.isExpanded())
+            return
+        if callable(self._on_pick):
+            self._on_pick(entry)
+        self.close()
+
+    def _activate_current(self):
+        for it in self._tree.selectedItems():
+            if it.data(0, self._ENTRY_ROLE):
+                self._on_item_activated(it, 0)
+                return
+        for i in range(self._tree.topLevelItemCount()):
+            p_item = self._tree.topLevelItem(i)
+            if p_item.isHidden():
+                continue
+            for j in range(p_item.childCount()):
+                g_item = p_item.child(j)
+                if g_item.isHidden():
+                    continue
+                for k in range(g_item.childCount()):
+                    c_item = g_item.child(k)
+                    if not c_item.isHidden() and c_item.data(0, self._ENTRY_ROLE):
+                        self._on_item_activated(c_item, 0)
+                        return
+
+
+class _SerialScriptEditorDialog(QDialog):
+    _COLS = ["指令", "优先级", "等待(ms)", "等待关键字", "关键字超时(ms)"]
+
+    def __init__(self, parent=None, script: dict = None, quick_commands: list = None):
         super().__init__(parent)
         self.setWindowTitle("脚本编辑器")
         self.setMinimumSize(720, 460)
         self.setStyleSheet(_DLG_STYLE)
         script = script or {}
+        self._quick_commands = list(quick_commands or [])
 
         root = QVBoxLayout(self)
         root.setContentsMargins(18, 18, 18, 18)
@@ -6916,14 +7142,12 @@ class _SerialScriptEditorDialog(QDialog):
         hdr.setMinimumSectionSize(72)
         hdr.setHighlightSections(False)
         hdr.setSectionResizeMode(0, QHeaderView.Stretch)
-        hdr.setSectionResizeMode(5, QHeaderView.Stretch)
-        for c in (1, 2, 3, 4, 6):
+        hdr.setSectionResizeMode(3, QHeaderView.Stretch)
+        for c in (1, 2, 4):
             hdr.setSectionResizeMode(c, QHeaderView.Fixed)
         self._table.setColumnWidth(1, 84)
         self._table.setColumnWidth(2, 104)
-        self._table.setColumnWidth(3, 92)
-        self._table.setColumnWidth(4, 92)
-        self._table.setColumnWidth(6, 128)
+        self._table.setColumnWidth(4, 128)
         root.addWidget(self._table, 1)
 
         for step in script.get("steps", []):
@@ -6961,18 +7185,48 @@ class _SerialScriptEditorDialog(QDialog):
         lay.addWidget(widget)
         return holder
 
+    def _make_cmd_cell(self, text: str) -> QWidget:
+        holder = QWidget()
+        lay = QHBoxLayout(holder)
+        lay.setContentsMargins(6, 4, 6, 4)
+        lay.setSpacing(6)
+        edit = QLineEdit(text)
+        edit.setPlaceholderText("如：AT+RST")
+        edit.setStyleSheet(dialog_line_edit_style())
+        holder._cmd_edit = edit
+        lay.addWidget(edit, 1)
+        pick_btn = QPushButton("选择")
+        pick_btn.setObjectName("dlgRowBtn")
+        pick_btn.setCursor(Qt.PointingHandCursor)
+        pick_btn.setToolTip("从 Quick Commands 选择指令")
+        pick_btn.clicked.connect(lambda: self._pick_quick_command(holder, pick_btn))
+        if not self._quick_commands:
+            pick_btn.setEnabled(False)
+            pick_btn.setToolTip("暂无可选的 Quick Commands")
+        lay.addWidget(pick_btn)
+        return holder
+
+    def _pick_quick_command(self, holder, anchor=None):
+        if not self._quick_commands:
+            return
+
+        def _on_pick(entry):
+            edit = getattr(holder, "_cmd_edit", None)
+            if isinstance(edit, QLineEdit):
+                edit.setText(entry.get("content", ""))
+
+        popup = _QuickCommandPickerPopup(self, self._quick_commands, _on_pick)
+        popup.popup_at(anchor)
+
     def _add_row(self, step: dict = None):
         step = step or {
             "cmd": "", "priority": self._table.rowCount() + 1, "wait_ms": 1000,
-            "send_type": "text", "line_ending": "\r\n",
             "wait_keyword": "", "wait_timeout_ms": 0,
         }
         row = self._table.rowCount()
         self._table.insertRow(row)
 
-        cmd_item = QTableWidgetItem(step.get("cmd", ""))
-        cmd_item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self._table.setItem(row, 0, cmd_item)
+        self._table.setCellWidget(row, 0, self._make_cmd_cell(step.get("cmd", "")))
 
         prio_spin = QSpinBox()
         prio_spin.setRange(0, 9999)
@@ -6985,31 +7239,15 @@ class _SerialScriptEditorDialog(QDialog):
         wait_spin.setValue(int(step.get("wait_ms", 1000)))
         self._table.setCellWidget(row, 2, self._wrap_cell(wait_spin))
 
-        type_combo = QComboBox()
-        type_combo.addItem("TEXT", "text")
-        type_combo.addItem("HEX", "hex")
-        ti = type_combo.findData(step.get("send_type", "text"))
-        type_combo.setCurrentIndex(ti if ti >= 0 else 0)
-        self._table.setCellWidget(row, 3, self._wrap_cell(type_combo))
-
-        le_combo = QComboBox()
-        le_combo.addItem("无", "")
-        le_combo.addItem("\\r", "\r")
-        le_combo.addItem("\\n", "\n")
-        le_combo.addItem("\\r\\n", "\r\n")
-        li = le_combo.findData(step.get("line_ending", "\r\n"))
-        le_combo.setCurrentIndex(li if li >= 0 else 3)
-        self._table.setCellWidget(row, 4, self._wrap_cell(le_combo))
-
         kw_item = QTableWidgetItem(step.get("wait_keyword", ""))
         kw_item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self._table.setItem(row, 5, kw_item)
+        self._table.setItem(row, 3, kw_item)
 
         to_spin = QSpinBox()
         to_spin.setRange(0, 3600000)
         to_spin.setSingleStep(100)
         to_spin.setValue(int(step.get("wait_timeout_ms", 0)))
-        self._table.setCellWidget(row, 6, self._wrap_cell(to_spin))
+        self._table.setCellWidget(row, 4, self._wrap_cell(to_spin))
 
     def _del_row(self):
         row = self._table.currentRow()
@@ -7051,19 +7289,16 @@ class _SerialScriptEditorDialog(QDialog):
     def _collect_steps(self) -> list:
         steps = []
         for row in range(self._table.rowCount()):
-            cmd_item = self._table.item(row, 0)
-            kw_item = self._table.item(row, 5)
+            cmd_holder = self._table.cellWidget(row, 0)
+            cmd_edit = getattr(cmd_holder, "_cmd_edit", None) if cmd_holder else None
+            kw_item = self._table.item(row, 3)
             prio = self._inner_widget(row, 1)
             wait = self._inner_widget(row, 2)
-            tcombo = self._inner_widget(row, 3)
-            lcombo = self._inner_widget(row, 4)
-            to = self._inner_widget(row, 6)
+            to = self._inner_widget(row, 4)
             steps.append({
-                "cmd": cmd_item.text() if cmd_item else "",
+                "cmd": cmd_edit.text() if isinstance(cmd_edit, QLineEdit) else "",
                 "priority": prio.value() if isinstance(prio, QSpinBox) else row + 1,
                 "wait_ms": wait.value() if isinstance(wait, QSpinBox) else 0,
-                "send_type": tcombo.currentData() if isinstance(tcombo, QComboBox) else "text",
-                "line_ending": lcombo.currentData() if isinstance(lcombo, QComboBox) else "\r\n",
                 "wait_keyword": kw_item.text() if kw_item else "",
                 "wait_timeout_ms": to.value() if isinstance(to, QSpinBox) else 0,
             })

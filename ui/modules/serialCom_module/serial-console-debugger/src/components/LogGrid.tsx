@@ -1,0 +1,426 @@
+import React, { useRef, useEffect } from 'react';
+import { LogPanel, LogItem, LogType } from '../types';
+import { formatByteCount } from '../utils/serialHelper';
+import { 
+  Filter, Copy, Download, Save, Trash2, ArrowDown, ChevronDown, Cpu 
+} from 'lucide-react';
+
+// Custom highlight parsing helper matching Python utility `_sc_html_with_filter_highlight`
+const highlightMatch = (text: string, keyword: string, isRegex: boolean, isCase: boolean): React.ReactNode => {
+  if (!keyword) return text;
+  try {
+    const flags = isCase ? 'g' : 'gi';
+    const escapedKeyword = isRegex ? keyword : keyword.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+    const regex = new RegExp(`(${escapedKeyword})`, flags);
+    const parts = text.split(regex);
+    return (
+      <>
+        {parts.map((part, i) => 
+          regex.test(part) ? (
+            <mark key={i} className="bg-[#EFEFFF] text-[#5E5CE6] border border-[#0A84FF] px-0.5 rounded-sm font-semibold">
+              {part}
+            </mark>
+          ) : part
+        )}
+      </>
+    );
+  } catch {
+    return text;
+  }
+};
+
+// Perform before/after context logging filters
+const getFilteredLogs = (panel: LogPanel): { logs: LogItem[]; indices: Set<number> } => {
+  const { allLogs, filterKeyword, filterRegex, filterCase, filterInvert, filterBefore, filterAfter } = panel;
+  if (!filterKeyword) {
+    return { logs: allLogs, indices: new Set(allLogs.map((_, i) => i)) };
+  }
+
+  const matchedIndices: number[] = [];
+  const keywordLower = filterKeyword.toLowerCase();
+
+  // Find direct matches
+  allLogs.forEach((log, index) => {
+    let isMatch = false;
+    if (filterRegex) {
+      try {
+        const regex = new RegExp(filterKeyword, filterCase ? 'i' : 'gi');
+        isMatch = regex.test(log.text);
+      } catch {
+        isMatch = false;
+      }
+    } else {
+      const textTarget = filterCase ? log.text : log.text.toLowerCase();
+      const searchTarget = filterCase ? filterKeyword : keywordLower;
+      isMatch = textTarget.includes(searchTarget);
+    }
+
+    if (filterInvert) {
+      isMatch = !isMatch;
+    }
+
+    if (isMatch) {
+      matchedIndices.push(index);
+    }
+  });
+
+  // Expand to include Before and After context blocks
+  const finalSet = new Set<number>();
+  matchedIndices.forEach(idx => {
+    const start = Math.max(0, idx - filterBefore);
+    const end = Math.min(allLogs.length - 1, idx + filterAfter);
+    for (let i = start; i <= end; i++) {
+      finalSet.add(i);
+    }
+  });
+
+  const logs: LogItem[] = [];
+  allLogs.forEach((log, i) => {
+    if (finalSet.has(i)) {
+      logs.push(log);
+    }
+  });
+
+  return { logs, indices: new Set(matchedIndices) };
+};
+
+// Copy logs logic
+const handleCopyLogs = (panel: LogPanel) => {
+  const text = panel.allLogs.map(l => `${l.timestamp} ${l.text}`).join('\n');
+  navigator.clipboard.writeText(text);
+};
+
+// Export diagnostic files download
+const handleExportLogs = (panel: LogPanel) => {
+  const blob = new Blob([panel.allLogs.map(l => `${l.timestamp} ${l.text}`).join('\n')], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${panel.title.replace(/\s+/g, '_').toLowerCase()}_port_output.log`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
+interface LogPanelCardProps {
+  key?: string | number;
+  panel: LogPanel;
+  idx: number;
+  isActive: boolean;
+  setActivePanelIndex: (idx: number) => void;
+  updatePanelSettings: (idx: number, settings: Partial<LogPanel>) => void;
+  onClearLogs: (idx: number) => void;
+}
+
+function LogPanelCard({
+  panel,
+  idx,
+  isActive,
+  setActivePanelIndex,
+  updatePanelSettings,
+  onClearLogs
+}: LogPanelCardProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const { logs: displayLogs, indices: directMatchSet } = getFilteredLogs(panel);
+
+  // Track auto-scroll behaviour perfectly on streaming additions
+  useEffect(() => {
+    if (panel.autoScroll && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [panel.allLogs.length, panel.autoScroll]);
+
+  // Scroll listener to toggle autoScroll when user scrolls up
+  const handleScroll = () => {
+    if (!scrollRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < 15;
+    if (isAtBottom && !panel.autoScroll) {
+      updatePanelSettings(idx, { autoScroll: true });
+    } else if (!isAtBottom && panel.autoScroll) {
+      updatePanelSettings(idx, { autoScroll: false });
+    }
+  };
+
+  const getLogColorClass = (type: LogType): string => {
+    switch (type) {
+      case 'rx': return 'text-slate-800'; // Charcoal for RX
+      case 'tx': return 'text-[#007AFF] font-medium'; // Deep Apple Blue for TX
+      case 'info': return 'text-[#0A84FF] font-semibold'; // Info cyan-blue
+      case 'warn': return 'text-[#FF9F0A] font-semibold'; // Amber warning
+      case 'error': return 'text-[#FF3B30] font-semibold'; // Red warning
+      case 'sys': return 'text-violet-500 italic'; // Violet system notes
+      default: return 'text-slate-700';
+    }
+  };
+
+  return (
+    <div
+      onClick={() => setActivePanelIndex(idx)}
+      className={`bg-[#FBFBFD] rounded-xl border-2 flex flex-col h-full shadow-inner overflow-hidden transition-all duration-150 ${
+        isActive 
+          ? 'border-[#34C759] ring-2 ring-[#34C759]/10' 
+          : 'border-transparent hover:border-gray-200'
+      }`}
+      id={`log-card-panel-${idx}`}
+    >
+      {/* CARD HEADER bar */}
+      <div className="bg-[#FAFBFD] px-3.5 py-2.5 border-b border-gray-150 flex items-center justify-between text-xs select-none" id="log-card-meta-toolbar">
+        <div className="flex items-center gap-2">
+          <span className={`h-2.5 w-2.5 rounded-full ${panel.isConnected ? 'bg-[#34C759]' : 'bg-[#AEAEB2]'}`} />
+          <span className="font-bold text-gray-800">{panel.title}</span>
+          <span className="text-[10px] text-gray-400 font-bold bg-gray-100 px-1.5 py-0.5 rounded-md">
+            {panel.port ? panel.port.split(' ')[0] : 'Idle'}
+          </span>
+        </div>
+
+        {/* Header Action Tools */}
+        <div className="flex items-center gap-1.5" id="header-card-tool-icons">
+          {/* Search Filter toggle */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              updatePanelSettings(idx, { filterRegex: !panel.filterRegex });
+            }}
+            title="Filter Logs"
+            className={`p-1.5 rounded-md hover:bg-gray-100 transition-colors cursor-pointer ${panel.filterKeyword ? 'text-[#007AFF] bg-blue-50' : 'text-gray-500'}`}
+          >
+            <Filter size={13} />
+          </button>
+
+          {/* Copy logs */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleCopyLogs(panel);
+            }}
+            title="Copy terminal buffer"
+            className="p-1.5 rounded-md text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors cursor-pointer"
+          >
+            <Copy size={13} />
+          </button>
+
+          {/* Export Log */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleExportLogs(panel);
+            }}
+            title="Download device log"
+            className="p-1.5 rounded-md text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors cursor-pointer"
+          >
+            <Download size={13} />
+          </button>
+
+          {/* Clear Board Screen */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onClearLogs(idx);
+            }}
+            title="Flush screen logs"
+            className="p-1.5 rounded-md text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors cursor-pointer"
+          >
+            <Trash2 size={13} />
+          </button>
+
+          {/* Auto Scroll Lock toggle */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              updatePanelSettings(idx, { autoScroll: !panel.autoScroll });
+            }}
+            title={panel.autoScroll ? "Lock Scroll down" : "Release Lock"}
+            className={`p-1.5 rounded-md transition-colors cursor-pointer ${
+              panel.autoScroll 
+                ? 'text-[#34C759] bg-[#E8F8EE]' 
+                : 'text-gray-400 hover:bg-gray-100'
+            }`}
+          >
+            <ArrowDown size={13} className={panel.autoScroll ? "animate-bounce" : ""} />
+          </button>
+        </div>
+      </div>
+
+      {/* FILTER PANEL ROW */}
+      <div className="bg-white border-b border-gray-100 p-2.5 text-xs space-y-2" id="filter-input-toolbar" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            placeholder="Enter keyword or search query..."
+            value={panel.filterKeyword}
+            onChange={(e) => updatePanelSettings(idx, { filterKeyword: e.target.value })}
+            className="flex-1 bg-gray-50 border border-gray-200 focus:border-[#007AFF] focus:ring-1 focus:ring-[#007AFF] rounded-md px-2 py-1 outline-none text-[11px]"
+          />
+          
+          {panel.filterKeyword && (
+            <span className="text-[10px] text-[#5E5CE6] font-bold bg-[#EFEFFF] px-1.5 py-0.5 rounded">
+              Matches: {directMatchSet.size}
+            </span>
+          )}
+        </div>
+
+        {/* Filter Modifiers checkboxes and After/Before Lines spins */}
+        <div className="flex items-center flex-wrap gap-x-4 gap-y-1.5 text-[10px] text-gray-500 font-semibold select-none">
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={panel.filterRegex}
+              onChange={(e) => updatePanelSettings(idx, { filterRegex: e.target.checked })}
+              className="rounded text-[#007AFF] border-gray-200 h-3 w-3"
+            />
+            <span>Regex</span>
+          </label>
+
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={panel.filterCase}
+              onChange={(e) => updatePanelSettings(idx, { filterCase: e.target.checked })}
+              className="rounded text-[#007AFF] border-gray-200 h-3 w-3"
+            />
+            <span>Match Case</span>
+          </label>
+
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={panel.filterInvert}
+              onChange={(e) => updatePanelSettings(idx, { filterInvert: e.target.checked })}
+              className="rounded text-[#007AFF] border-gray-200 h-3 w-3"
+            />
+            <span>Invert</span>
+          </label>
+
+          <div className="h-3 w-px bg-gray-200" />
+
+          {/* Context Blocks Before spin */}
+          <div className="flex items-center gap-1">
+            <span>Before</span>
+            <input
+              type="number"
+              min={0}
+              max={50}
+              value={panel.filterBefore}
+              onChange={(e) => updatePanelSettings(idx, { filterBefore: Math.max(0, Number(e.target.value)) })}
+              className="w-10 text-center bg-gray-50 border border-gray-200 rounded p-0.5 text-[10px]"
+            />
+            <span className="text-[9px] text-gray-400">lines</span>
+          </div>
+
+          {/* Context Blocks After spin */}
+          <div className="flex items-center gap-1">
+            <span>After</span>
+            <input
+              type="number"
+              min={0}
+              max={50}
+              value={panel.filterAfter}
+              onChange={(e) => updatePanelSettings(idx, { filterAfter: Math.max(0, Number(e.target.value)) })}
+              className="w-10 text-center bg-gray-50 border border-gray-200 rounded p-0.5 text-[10px]"
+            />
+            <span className="text-[9px] text-gray-400">lines</span>
+          </div>
+        </div>
+      </div>
+
+      {/* TERMINAL PRINT WINDOW */}
+      <div 
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-auto p-3.5 font-mono text-[11px] leading-relaxed bg-[#FBFBFD] outline-none select-text selection:bg-[#BBD7FF] scrollbar-thin"
+        id={`terminal-view-${idx}`}
+      >
+        {displayLogs.length === 0 ? (
+          <div className="flex flex-col items-center justify-center text-center h-full text-gray-300 py-12 select-none">
+            <Cpu size={28} className="stroke-[1.5] mb-2 opacity-50 text-gray-400" />
+            <p className="text-xs font-semibold text-gray-400">No data received</p>
+            <p className="text-[10px] text-gray-300 mt-1">Configure serial ports on the sidebar to get started.</p>
+          </div>
+        ) : (
+          <div className="space-y-1 block max-w-full overflow-hidden select-text text-left">
+            {displayLogs.map((log) => {
+              return (
+                <div key={log.id} className="hover:bg-gray-50/50 py-0.5 rounded px-1 transition-colors flex items-start gap-2 break-all text-left">
+                  {/* Timestamps */}
+                  {panel.showTime && (
+                    <span className="text-gray-400 select-none text-[10px] pr-1 border-r border-gray-100 flex-shrink-0">
+                      {log.timestamp}
+                    </span>
+                  )}
+                  {/* Custom NTP calibration index prefix */}
+                  {panel.useNtp && log.ntpTimestamp && (
+                    <span className="text-amber-500 font-bold select-none text-[10px] flex-shrink-0">
+                      [NTP] {log.ntpTimestamp}
+                    </span>
+                  )}
+                  {/* Log Text */}
+                  <span className={`flex-1 text-left ${getLogColorClass(log.type)}`}>
+                    {panel.filterKeyword 
+                      ? highlightMatch(log.text, panel.filterKeyword, panel.filterRegex, panel.filterCase)
+                      : log.text
+                    }
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* CARD STATUS FOOTER */}
+      <div className="bg-[#FAFBFD] px-3.5 py-1.5 border-t border-gray-150 flex items-center justify-between text-[10px] text-gray-500 select-none" id="log-card-footer">
+        <div className="flex gap-4">
+          <span>Port: <strong className="text-gray-700">{panel.port ? panel.port.split(' ')[0] : 'None'}</strong></span>
+          <span>Baudrate: <strong className="text-gray-700">{panel.baudrate} bps</strong></span>
+        </div>
+        <div className="flex gap-4">
+          <span className="text-[#1D1D1F]">RX: <strong>{formatByteCount(panel.rxBytes)}</strong></span>
+          <span className="text-[#007AFF]">TX: <strong>{formatByteCount(panel.txBytes)}</strong></span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface LogGridProps {
+  panels: LogPanel[];
+  activePanelIndex: number;
+  setActivePanelIndex: (idx: number) => void;
+  updatePanelSettings: (idx: number, settings: Partial<LogPanel>) => void;
+  onClearLogs: (idx: number) => void;
+}
+
+export function LogGrid({
+  panels,
+  activePanelIndex,
+  setActivePanelIndex,
+  updatePanelSettings,
+  onClearLogs
+}: LogGridProps) {
+  return (
+    <div 
+      className={`grid gap-4 h-full p-4 bg-[#F2F2F7] flex-1 ${
+        panels.length === 1 
+          ? 'grid-cols-1 grid-rows-1' 
+          : panels.length === 2 
+            ? 'grid-cols-2 grid-rows-1' 
+            : 'grid-cols-2 grid-rows-2'
+      }`}
+      id="logs-quadrants-grid"
+    >
+      {panels.map((panel, idx) => (
+        <LogPanelCard
+          key={panel.id}
+          panel={panel}
+          idx={idx}
+          isActive={activePanelIndex === idx}
+          setActivePanelIndex={setActivePanelIndex}
+          updatePanelSettings={updatePanelSettings}
+          onClearLogs={onClearLogs}
+        />
+      ))}
+    </div>
+  );
+}
