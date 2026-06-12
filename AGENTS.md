@@ -39,7 +39,10 @@ main.py → ui/ ←→ core/ → instruments/ → lib/
 
 ## 运行 / 打包
 
+> 📌 项目自带虚拟环境 **`.venv/`**（仓库根目录），命令前先激活：`.\.venv\Scripts\Activate.ps1`。
+
 ```powershell
+.\.venv\Scripts\Activate.ps1
 python main.py
 python -m PyInstaller spec/kk_lab.spec --clean --noconfirm
 python -m PyInstaller spec/n6705c_datalog.spec --clean --noconfirm

@@ -28,6 +28,8 @@ from PySide6.QtWidgets import (
     QScrollArea, QSplitter, QApplication, QMenu, QFileDialog, QGridLayout,
     QSpinBox, QDialog, QDialogButtonBox, QTabWidget,
     QInputDialog, QMessageBox, QTabBar, QGraphicsDropShadowEffect,
+    QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
+    QPlainTextEdit,
 )
 import uuid as _uuid
 from PySide6.QtCore import (
@@ -71,7 +73,8 @@ _SERIALCOM_STYLE_EXPORTS = (
     "_CLR_TEXT_TITLE", "_CLR_TOGGLE_ON", "_CLR_TX", "_CLR_WARN_ICON", "_CLR_WARNING",
     "_DLG_STYLE", "_SERIAL_BTN_HEIGHT", "_SERIAL_BTN_ICON_SIZE", "_SERIAL_BTN_RADIUS",
     "_TERM_FONT", "_UI_FONT", "_serial_connect_style", "_serial_disconnect_style",
-    "_serial_search_style", "body_splitter_style", "center_widget_style",
+    "_serial_search_style", "body_splitter_style", "center_vsplitter_style",
+    "center_widget_style",
     "checkbox_style", "compact_spinbox_style", "dialog_cancel_button_style",
     "dialog_line_edit_style", "dialog_ok_button_style", "extra_log_error_color",
     "field_label_style", "filter_input_style", "filter_match_label_style",
@@ -83,6 +86,7 @@ _SERIALCOM_STYLE_EXPORTS = (
     "quick_button_container_style", "quick_button_scroll_style", "quick_cmd_dialog_style",
     "quick_command_button_style", "quick_combo_style", "quick_commands_panel_style",
     "quick_preview_popup_shadow", "quick_preview_popup_style", "quick_toolbar_button_style",
+    "bottom_tabs_style",
     "section_card_style", "section_title_style", "send_button_style", "separator_style",
     "sidebar_wrapper_style", "small_label_style", "status_bar_style", "status_label_style",
     "thin_scrollbar_style", "toolbar_connect_button_style", "toolbar_style", "toggle_colors",
@@ -874,6 +878,10 @@ class SerialComMixin:
         return self._serial_connected
 
     def close_serial(self):
+        if hasattr(self, "_sc_stop_ntp_sync"):
+            self._sc_stop_ntp_sync()
+        if getattr(self, "_sc_script_running", False):
+            self._sc_script_stop()
         self._sc_session_manager.cleanup_all()
         self._stop_serial_read()
         if hasattr(self, '_sc_extra_log_panels'):
@@ -893,6 +901,8 @@ class SerialComMixin:
                 panel["conn"] = None
         if hasattr(self, '_sc_log_file_handle'):
             self._sc_stop_auto_save()
+        if hasattr(self, '_sc_save_handle'):
+            self._sc_stop_manual_save()
         if hasattr(self, '_sc_log_temp_handle'):
             self._sc_close_temp_log(delete=True)
         try:
@@ -922,17 +932,34 @@ class SerialComMixin:
         self._sc_log_file_path = None
         self._sc_log_temp_handle = None
         self._sc_log_temp_path = None
+        self._sc_save_handle = None
+        self._sc_save_path = None
+        self._sc_save_keep_timestamp = True
         self._sc_rx_display_hex = False
         self._sc_tx_display_hex = False
         self._sc_show_timestamp = True
-        self._sc_auto_resend = False
-        self._sc_resend_interval = 1000
+        self._sc_use_ntp = False
+        self._sc_ntp_offset = 0.0
+        self._sc_ntp_synced = False
+        self._sc_ntp_thread = None
+        self._sc_ntp_worker = None
         self._sc_line_ending = "\r\n"
         self._sc_show_send = True
         self._sc_line_by_line = False
         self._sc_send_history = []
         self._sc_quick_commands = []  # 兼容占位，已不再使用
         self._sc_qc_data = self._sc_qc_default_data()
+        self._sc_script_data = self._sc_script_default_data()
+        self._sc_script_running = False
+        self._sc_script_paused = False
+        self._sc_script_steps = []
+        self._sc_script_step_index = 0
+        self._sc_script_loop_remaining = 0
+        self._sc_script_wait_keyword = ""
+        self._sc_script_wait_buffer = ""
+        self._sc_script_timer = QTimer(self)
+        self._sc_script_timer.setSingleShot(True)
+        self._sc_script_timer.timeout.connect(self._sc_script_on_timeout)
         self._sc_sidebar_visible = True
         self._sc_extra_log_panels = []
         self._sc_active_log_panel_index = 0
@@ -980,6 +1007,18 @@ class SerialComMixin:
         center_layout.setContentsMargins(10, 10, 10, 10)
         center_layout.setSpacing(10)
 
+        center_splitter = QSplitter(Qt.Vertical)
+        center_splitter.setObjectName("scCenterVSplitter")
+        center_splitter.setHandleWidth(6)
+        center_splitter.setChildrenCollapsible(False)
+        center_splitter.setStyleSheet(center_vsplitter_style())
+        self._sc_center_splitter = center_splitter
+
+        top_section = QWidget()
+        top_section_layout = QVBoxLayout(top_section)
+        top_section_layout.setContentsMargins(0, 0, 0, 0)
+        top_section_layout.setSpacing(10)
+
         self._sc_log_container = QWidget()
         self._sc_log_grid = QGridLayout(self._sc_log_container)
         self._sc_log_grid.setContentsMargins(0, 0, 0, 0)
@@ -987,13 +1026,30 @@ class SerialComMixin:
 
         self._sc_log_area = self._build_sc_log_area()
         self._sc_log_grid.addWidget(self._sc_log_area, 0, 0)
-        center_layout.addWidget(self._sc_log_container, 1)
+        top_section_layout.addWidget(self._sc_log_container, 1)
 
         self._sc_send_area = self._build_sc_send_area()
-        center_layout.addWidget(self._sc_send_area)
+        top_section_layout.addWidget(self._sc_send_area)
 
         self._sc_quick_area = self._build_sc_quick_commands()
-        center_layout.addWidget(self._sc_quick_area)
+        self._sc_quick_area.setMinimumHeight(150)
+
+        center_splitter.addWidget(top_section)
+        center_splitter.addWidget(self._sc_quick_area)
+        center_splitter.setStretchFactor(0, 1)
+        center_splitter.setStretchFactor(1, 0)
+        self._sc_center_splitter_default_sizes = [680, 155]
+        center_splitter.setSizes(self._sc_center_splitter_default_sizes)
+
+        self._sc_center_split_save_timer = QTimer(self)
+        self._sc_center_split_save_timer.setSingleShot(True)
+        self._sc_center_split_save_timer.setInterval(400)
+        self._sc_center_split_save_timer.timeout.connect(self._sc_save_persisted_state)
+        center_splitter.splitterMoved.connect(
+            lambda *_: self._sc_center_split_save_timer.start()
+        )
+
+        center_layout.addWidget(center_splitter, 1)
 
         body_splitter.addWidget(center_widget)
         body_splitter.setStretchFactor(0, 0)
@@ -1005,9 +1061,6 @@ class SerialComMixin:
         parent_layout.addLayout(outer)
 
         self._bind_sc_signals()
-
-        self._sc_resend_timer = QTimer()
-        self._sc_resend_timer.timeout.connect(self._sc_on_resend_tick)
 
         self._sc_pending_html = []
         self._sc_flush_timer = QTimer()
@@ -1053,6 +1106,13 @@ class SerialComMixin:
             os.path.join(_SVG_SERIAL_DIR, "refresh.svg"), "Refresh"
         )
         layout.addWidget(self._sc_refresh_btn)
+
+        layout.addSpacing(8)
+        sep_conn = QFrame()
+        sep_conn.setFrameShape(QFrame.VLine)
+        sep_conn.setStyleSheet(separator_style())
+        layout.addWidget(sep_conn)
+        layout.addSpacing(8)
 
         self._sc_add_log_btn = self._make_sc_btn(
             os.path.join(_SVG_LOGS_DIR, "plus.svg"), ""
@@ -1267,26 +1327,6 @@ class SerialComMixin:
         row1.addWidget(self._sc_tx_toggle)
         layout.addLayout(row1)
 
-        row_auto = QHBoxLayout()
-        row_auto.setSpacing(4)
-        self._sc_auto_resend_cb = QCheckBox("Auto Send")
-        self._sc_auto_resend_cb.setStyleSheet(self._sc_checkbox_style())
-        self._sc_auto_resend_cb.toggled.connect(self._sc_on_auto_resend_toggled)
-        row_auto.addWidget(self._sc_auto_resend_cb)
-        row_auto.addStretch()
-        self._sc_resend_spin = QSpinBox()
-        self._sc_resend_spin.setRange(100, 60000)
-        self._sc_resend_spin.setValue(1000)
-        self._sc_resend_spin.setSingleStep(100)
-        self._sc_resend_spin.setSuffix(" ms")
-        self._sc_resend_spin.setAlignment(Qt.AlignCenter)
-        self._sc_resend_spin.setFixedSize(self._INTERVAL_SPIN_W, 26)
-        self._sc_resend_spin.setStyleSheet(
-            compact_spinbox_style(up_button_width=0, padding="2px 8px")
-        )
-        row_auto.addWidget(self._sc_resend_spin)
-        layout.addLayout(row_auto)
-
         row_ending = QHBoxLayout()
         row_ending.setSpacing(4)
         row_ending.addWidget(self._make_sc_label("Line Ending"))
@@ -1352,6 +1392,7 @@ class SerialComMixin:
             os.path.join(_SVG_LOGS_DIR, "filter.svg"), "Filter", tone="log"
         )
         self._sc_filter_btn.setCheckable(True)
+        self._sc_filter_btn.setStyleSheet(log_toolbar_button_style(checked_variant=True))
         toolbar.addWidget(self._sc_filter_btn)
 
         self._sc_copy_btn = self._make_sc_btn(
@@ -1363,6 +1404,14 @@ class SerialComMixin:
             os.path.join(_SVG_LOGS_DIR, "export.svg"), "Export", tone="log"
         )
         toolbar.addWidget(self._sc_export_btn)
+
+        self._sc_save_btn = self._make_sc_btn(
+            os.path.join(_SVG_LOGS_DIR, "save.svg"), "Save", tone="log"
+        )
+        self._sc_save_btn.setCheckable(True)
+        self._sc_save_btn.setStyleSheet(log_toolbar_button_style(checked_variant=True))
+        self._sc_save_btn.setToolTip("Save logs to a file and keep appending new logs")
+        toolbar.addWidget(self._sc_save_btn)
 
         self._sc_clear_btn = self._make_sc_btn(
             os.path.join(_SVG_LOGS_DIR, "trash.svg"), "Clear", tone="log"
@@ -1522,12 +1571,33 @@ class SerialComMixin:
     # --- quick commands ---
 
     def _build_sc_quick_commands(self):
+        tabs = QTabWidget()
+        tabs.setObjectName("scBottomTabs")
+        tabs.setDocumentMode(True)
+        tabs.setStyleSheet(bottom_tabs_style())
+        tabs.tabBar().setCursor(Qt.PointingHandCursor)
+        self._sc_bottom_tabs = tabs
+
+        qc_icon = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "zap.svg"), _CLR_TEXT_MUTED, 13)
+        script_icon = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "logs.svg"), _CLR_TEXT_MUTED, 13)
+
+        qc_index = tabs.addTab(self._build_sc_qc_tab(), "Quick Commands")
+        script_index = tabs.addTab(self._build_sc_script_tab(), "Scripts")
+        if not qc_icon.isNull():
+            tabs.setTabIcon(qc_index, qc_icon)
+        if not script_icon.isNull():
+            tabs.setTabIcon(script_index, script_icon)
+        tabs.setIconSize(QSize(13, 13))
+        return tabs
+
+    def _build_sc_qc_tab(self):
         frame = QFrame()
         # 双 objectName 不可行：保留 scQuickFrame 给现有内嵌 QSS；面板级 QSS 通过 quickCommandsPanel 选择器命中
         frame.setObjectName("quickCommandsPanel")
         frame.setProperty("class", "scQuickFrame")
         # 外层面板 + 内部分隔条：背景柔和、低对比边框、圆角；不改变布局
-        frame.setStyleSheet(quick_commands_panel_style())
+        # 置于 scBottomTabs 的 pane 内，外框由 pane 提供，内层面板去边框避免双边框
+        frame.setStyleSheet(quick_commands_panel_style() + "QFrame#quickCommandsPanel { border: none; background: transparent; }")
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -1535,6 +1605,7 @@ class SerialComMixin:
         # --- header: 标题 + 项目 Tab 栏 ---
         header_frame = QFrame()
         header_frame.setObjectName("scQuickHeaderFrame")
+        header_frame.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         header = QHBoxLayout(header_frame)
         header.setContentsMargins(10, 8, 10, 0)
         header.setSpacing(6)
@@ -1559,6 +1630,8 @@ class SerialComMixin:
         self._sc_qc_project_tabs.setDrawBase(False)
         self._sc_qc_project_tabs.setUsesScrollButtons(True)
         self._sc_qc_project_tabs.setStyleSheet(project_tabs_style())
+        self._sc_qc_project_tabs.setMinimumHeight(24)
+        self._sc_qc_project_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         header.addWidget(self._sc_qc_project_tabs, 1)
 
         layout.addWidget(header_frame)
@@ -1566,6 +1639,7 @@ class SerialComMixin:
         # --- 工具栏:区域/分组下拉 + 操作按钮 ---
         toolbar_frame = QFrame()
         toolbar_frame.setObjectName("scQuickToolbar")
+        toolbar_frame.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         toolbar = QHBoxLayout(toolbar_frame)
         toolbar.setContentsMargins(10, 8, 10, 8)
         toolbar.setSpacing(6)
@@ -1618,8 +1692,9 @@ class SerialComMixin:
         self._sc_qc_btn_scroll.setFrameShape(QFrame.NoFrame)
         self._sc_qc_btn_scroll.setStyleSheet(quick_button_scroll_style() + SERIAL_SCROLLBAR_STYLE)
         self._sc_qc_btn_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._sc_qc_btn_scroll.setMinimumHeight(54)
+        self._sc_qc_btn_scroll.setMinimumHeight(44)
         self._sc_qc_btn_scroll.setMaximumHeight(126)
+        self._sc_qc_btn_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         self._sc_qc_btn_container = QWidget()
         self._sc_qc_btn_container.setObjectName("scQuickBtnContainer")
@@ -1637,6 +1712,146 @@ class SerialComMixin:
 
         return frame
 
+    # --- scripts ---
+
+    def _build_sc_script_tab(self):
+        frame = QFrame()
+        frame.setObjectName("quickCommandsPanel")
+        frame.setProperty("class", "scQuickFrame")
+        # 置于 scBottomTabs 的 pane 内，外框由 pane 提供，内层面板去边框避免双边框
+        frame.setStyleSheet(quick_commands_panel_style() + "QFrame#quickCommandsPanel { border: none; background: transparent; }")
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # --- 工具栏：脚本选择 + 运行控制 ---
+        toolbar_frame = QFrame()
+        toolbar_frame.setObjectName("scQuickToolbar")
+        toolbar = QHBoxLayout(toolbar_frame)
+        toolbar.setContentsMargins(10, 8, 10, 8)
+        toolbar.setSpacing(6)
+
+        _combo_qss = quick_combo_style()
+        _toolbar_btn_qss = quick_toolbar_button_style()
+
+        script_lbl = QLabel("Script:")
+        script_lbl.setStyleSheet(small_label_style(color="soft", size=11))
+        toolbar.addWidget(script_lbl)
+
+        self._sc_script_combo = QComboBox()
+        self._sc_script_combo.setStyleSheet(_combo_qss)
+        self._sc_script_combo.setMinimumWidth(160)
+        toolbar.addWidget(self._sc_script_combo)
+
+        self._sc_script_run_btn = self._make_sc_btn(
+            os.path.join(_SVG_SERIAL_DIR, "send.svg"), "Run", tone="quick"
+        )
+        self._sc_script_run_btn.setObjectName("primaryButton")
+        self._sc_script_run_btn.setStyleSheet(quick_add_button_style())
+        toolbar.addWidget(self._sc_script_run_btn)
+
+        self._sc_script_stop_btn = self._make_sc_btn(
+            os.path.join(_SVG_SERIAL_DIR, "stop.svg"), "Stop", tone="quick"
+        )
+        self._sc_script_stop_btn.setStyleSheet(_toolbar_btn_qss)
+        self._sc_script_stop_btn.setEnabled(False)
+        toolbar.addWidget(self._sc_script_stop_btn)
+
+        toolbar.addSpacing(8)
+        self._sc_script_loop_cb = QCheckBox("Loop")
+        self._sc_script_loop_cb.setStyleSheet(self._sc_checkbox_style())
+        self._sc_script_loop_cb.setToolTip("Repeat the script for the configured number of times")
+        toolbar.addWidget(self._sc_script_loop_cb)
+
+        self._sc_script_loop_spin = QSpinBox()
+        self._sc_script_loop_spin.setObjectName("scIntervalSpin")
+        self._sc_script_loop_spin.setRange(1, 99999)
+        self._sc_script_loop_spin.setValue(1)
+        self._sc_script_loop_spin.setFixedWidth(self._INTERVAL_SPIN_W)
+        self._sc_script_loop_spin.setToolTip("Number of times to repeat the script")
+        self._sc_script_loop_spin.setStyleSheet(quick_combo_style())
+        toolbar.addWidget(self._sc_script_loop_spin)
+
+        toolbar.addStretch()
+
+        self._sc_script_new_btn = self._make_sc_btn(
+            os.path.join(_SVG_SERIAL_DIR, "plus.svg"), "New", tone="quick"
+        )
+        self._sc_script_new_btn.setStyleSheet(_toolbar_btn_qss)
+        toolbar.addWidget(self._sc_script_new_btn)
+
+        self._sc_script_edit_btn = self._make_sc_btn(
+            os.path.join(_SVG_SERIAL_DIR, "settings.svg"), "Edit", tone="quick"
+        )
+        self._sc_script_edit_btn.setStyleSheet(_toolbar_btn_qss)
+        toolbar.addWidget(self._sc_script_edit_btn)
+
+        self._sc_script_del_btn = self._make_sc_btn(
+            os.path.join(_SVG_LOGS_DIR, "trash.svg"), "Delete", tone="quick"
+        )
+        self._sc_script_del_btn.setStyleSheet(_toolbar_btn_qss)
+        toolbar.addWidget(self._sc_script_del_btn)
+
+        self._sc_script_import_btn = self._make_sc_btn(
+            os.path.join(_SVG_SERIAL_DIR, "import.svg"), "Import", tone="quick"
+        )
+        self._sc_script_import_btn.setStyleSheet(_toolbar_btn_qss)
+        toolbar.addWidget(self._sc_script_import_btn)
+
+        self._sc_script_export_btn = self._make_sc_btn(
+            os.path.join(_SVG_LOGS_DIR, "export.svg"), "Export", tone="quick"
+        )
+        self._sc_script_export_btn.setStyleSheet(_toolbar_btn_qss)
+        toolbar.addWidget(self._sc_script_export_btn)
+
+        layout.addWidget(toolbar_frame)
+
+        # --- 状态栏 ---
+        status_frame = QFrame()
+        status_frame.setObjectName("scQuickToolbar")
+        status_row = QHBoxLayout(status_frame)
+        status_row.setContentsMargins(10, 0, 10, 6)
+        status_row.setSpacing(6)
+        self._sc_script_status_label = QLabel("\u2022 Idle")
+        self._sc_script_status_label.setStyleSheet(status_label_style("muted", include_font=True))
+        status_row.addWidget(self._sc_script_status_label)
+        status_row.addStretch()
+        layout.addWidget(status_frame)
+
+        # --- 步骤预览表 ---
+        self._sc_script_table = QTableWidget(0, 5)
+        self._sc_script_table.setHorizontalHeaderLabels(
+            ["#", "Command", "Priority", "Wait (ms)", "Status"]
+        )
+        self._sc_script_table.verticalHeader().setVisible(False)
+        self._sc_script_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._sc_script_table.setSelectionMode(QAbstractItemView.NoSelection)
+        self._sc_script_table.setFocusPolicy(Qt.NoFocus)
+        self._sc_script_table.setStyleSheet(self._sc_script_table_qss() + SERIAL_SCROLLBAR_STYLE)
+        self._sc_script_table.setMinimumHeight(54)
+        self._sc_script_table.setMaximumHeight(160)
+        hdr = self._sc_script_table.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(1, QHeaderView.Stretch)
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        layout.addWidget(self._sc_script_table)
+
+        self._sc_script_combo.currentIndexChanged.connect(self._sc_script_on_combo_changed)
+        self._sc_script_run_btn.clicked.connect(self._sc_script_run)
+        self._sc_script_stop_btn.clicked.connect(self._sc_script_stop)
+        self._sc_script_loop_cb.toggled.connect(self._sc_script_on_loop_toggled)
+        self._sc_script_loop_spin.valueChanged.connect(self._sc_script_on_loop_count_changed)
+        self._sc_script_new_btn.clicked.connect(self._sc_script_new)
+        self._sc_script_edit_btn.clicked.connect(self._sc_script_edit)
+        self._sc_script_del_btn.clicked.connect(self._sc_script_delete)
+        self._sc_script_import_btn.clicked.connect(self._sc_script_import_txt)
+        self._sc_script_export_btn.clicked.connect(self._sc_script_export_txt)
+
+        QTimer.singleShot(0, self._sc_script_refresh_all)
+        return frame
+
     # --- status bar ---
 
     def _build_sc_status_bar(self):
@@ -1652,7 +1867,7 @@ class SerialComMixin:
         self._sc_status_port_label.setStyleSheet(status_label_style("error", compact=True))
         layout.addWidget(self._sc_status_port_label)
 
-        self._sc_status_baud_label = QLabel("Baud rate: -")
+        self._sc_status_baud_label = QLabel("Baud rate (bps): -")
         self._sc_status_baud_label.setStyleSheet(status_label_style("muted", compact=True))
         layout.addWidget(self._sc_status_baud_label)
 
@@ -1695,6 +1910,7 @@ class SerialComMixin:
         self._sc_filter_after_spin.valueChanged.connect(self._sc_on_filter_option_changed)
         self._sc_copy_btn.clicked.connect(self._sc_copy_logs)
         self._sc_export_btn.clicked.connect(self._sc_export_logs)
+        self._sc_save_btn.clicked.connect(self._sc_on_save_toggle)
         self._sc_clear_btn.clicked.connect(self._sc_clear_logs)
         self._sc_scroll_lock_btn.clicked.connect(
             lambda c: setattr(self, '_sc_auto_scroll', c)
@@ -1882,7 +2098,7 @@ class SerialComMixin:
             self._sc_status_port_label.setText(f"\u2022 Port: {self._serial_port}")
             self._sc_status_port_label.setStyleSheet(status_label_style("ok", include_font=True))
             baud = getattr(self, '_serial_baudrate', '-')
-            self._sc_status_baud_label.setText(f"Baud rate: {baud}")
+            self._sc_status_baud_label.setText(f"Baud rate (bps): {baud}")
         else:
             self._sc_connect_btn.setText("Connect")
             self._sc_connect_btn.setStyleSheet(main_connect_button_style(connected=False))
@@ -1891,7 +2107,7 @@ class SerialComMixin:
                 self._sc_connect_btn.setIcon(icon)
             self._sc_status_port_label.setText("\u2022 Port: Unconnected")
             self._sc_status_port_label.setStyleSheet(status_label_style("error", include_font=True))
-            self._sc_status_baud_label.setText("Baud rate: -")
+            self._sc_status_baud_label.setText("Baud rate (bps): -")
 
         self._sc_port_combo.setEnabled(not connected)
         auto_detect_on = getattr(self, '_sc_auto_detect_cb', None) and self._sc_auto_detect_cb.isChecked()
@@ -1917,7 +2133,7 @@ class SerialComMixin:
         if DEBUG_MOCK or self._serial_conn is None:
             self._serial_baudrate = baudrate
             if hasattr(self, '_sc_status_baud_label'):
-                self._sc_status_baud_label.setText(f"Baud rate: {baudrate}")
+                self._sc_status_baud_label.setText(f"Baud rate (bps): {baudrate}")
             self._sc_append_system(f"[INFO] Baud rate updated: {baudrate}", force_primary=True)
             return
 
@@ -1925,7 +2141,7 @@ class SerialComMixin:
             self._serial_conn.baudrate = baudrate
             self._serial_baudrate = baudrate
             if hasattr(self, '_sc_status_baud_label'):
-                self._sc_status_baud_label.setText(f"Baud rate: {baudrate}")
+                self._sc_status_baud_label.setText(f"Baud rate (bps): {baudrate}")
             self._sc_append_system(f"[INFO] Baud rate updated: {baudrate}", force_primary=True)
         except Exception as e:
             self._sc_append_system(f"[ERROR] Failed to set baud rate: {e}", force_primary=True)
@@ -2041,7 +2257,7 @@ class SerialComMixin:
         self._serial_baudrate = baudrate
         self._sc_baud_combo.setCurrentText(str(baudrate))
         if hasattr(self, '_sc_status_baud_label'):
-            self._sc_status_baud_label.setText(f"Baud rate: {baudrate}")
+            self._sc_status_baud_label.setText(f"Baud rate (bps): {baudrate}")
 
     def _sc_on_pause(self, checked):
         self._sc_paused = checked
@@ -2737,11 +2953,10 @@ class SerialComMixin:
 
         dlg.rx_hex_toggle.set_value("HEX" if self._sc_rx_display_hex else "ASCII")
         dlg.show_time_cb.setChecked(self._sc_show_timestamp)
+        dlg.rx_use_ntp_cb.setChecked(self._sc_use_ntp)
         dlg.rx_max_lines_spin.setValue(getattr(self, '_sc_max_log_lines', 10000))
 
         dlg.tx_hex_toggle.set_value("HEX" if self._sc_tx_display_hex else "ASCII")
-        dlg.auto_resend_cb.setChecked(self._sc_auto_resend)
-        dlg.resend_spin.setValue(self._sc_resend_spin.value())
         idx = self._sc_ending_combo.currentIndex()
         if 0 <= idx < dlg.ending_combo.count():
             dlg.ending_combo.setCurrentIndex(idx)
@@ -2784,14 +2999,12 @@ class SerialComMixin:
 
             self._sc_show_timestamp = dlg.show_time_cb.isChecked()
             self._sc_rx_show_time_cb.setChecked(self._sc_show_timestamp)
+            self._sc_apply_ntp_setting(dlg.rx_use_ntp_cb.isChecked())
             self._sc_max_log_lines = dlg.rx_max_lines_spin.value()
 
             tx_val = dlg.tx_hex_toggle.value()
             self._sc_tx_display_hex = tx_val == "HEX"
             self._sc_tx_toggle.set_value(tx_val)
-
-            self._sc_auto_resend_cb.setChecked(dlg.auto_resend_cb.isChecked())
-            self._sc_resend_spin.setValue(dlg.resend_spin.value())
 
             ending_idx = dlg.ending_combo.currentIndex()
             self._sc_ending_combo.setCurrentIndex(ending_idx)
@@ -3098,6 +3311,116 @@ class SerialComMixin:
             for raw, _ in self._sc_all_logs:
                 f.write(raw + "\n")
 
+    @staticmethod
+    def _sc_strip_timestamp(raw: str) -> str:
+        return re.sub(r'^\d{2}:\d{2}:\d{2}\.\d{3}\s', '', raw)
+
+    def _sc_on_save_toggle(self, checked: bool):
+        if checked:
+            if not self._sc_start_manual_save():
+                self._sc_save_btn.setChecked(False)
+        else:
+            self._sc_stop_manual_save()
+
+    def _sc_start_manual_save(self) -> bool:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_dir = getattr(self, '_sc_log_save_path', '') or self._sc_fallback_dir()
+        default_name = f"serial_log_{ts}.txt"
+        dlg = _SerialSaveDialog(
+            self,
+            default_dir=default_dir,
+            default_name=default_name,
+            keep_timestamp=self._sc_save_keep_timestamp,
+        )
+        if dlg.exec() != QDialog.Accepted:
+            return False
+        cfg = dlg.get_config()
+        save_dir = cfg["directory"]
+        name = cfg["name"]
+        keep_ts = cfg["keep_timestamp"]
+        if not name:
+            name = default_name
+        if not name.lower().endswith(".txt"):
+            name += ".txt"
+        if not save_dir:
+            save_dir = self._sc_fallback_dir()
+        try:
+            os.makedirs(save_dir, exist_ok=True)
+        except OSError as exc:
+            logger.error("Save: cannot create directory %s", save_dir, exc_info=True)
+            QMessageBox.warning(self, "Save", f"Cannot create directory:\n{exc}")
+            return False
+        file_path = os.path.join(save_dir, name)
+        if os.path.exists(file_path):
+            reply = QMessageBox.question(
+                self, "Save",
+                f"File already exists:\n{file_path}\n\nOverwrite it?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+            )
+            if reply != QMessageBox.Yes:
+                return False
+        try:
+            handle = open(file_path, "w", encoding="utf-8")
+        except OSError as exc:
+            logger.error("Save: cannot open file %s", file_path, exc_info=True)
+            QMessageBox.warning(self, "Save", f"Cannot open file:\n{exc}")
+            return False
+
+        self._sc_save_keep_timestamp = keep_ts
+        try:
+            self._sc_write_buffer_to_handle(handle, keep_ts)
+            handle.flush()
+        except OSError:
+            logger.error("Save: failed writing buffer to %s", file_path, exc_info=True)
+            try:
+                handle.close()
+            except OSError:
+                pass
+            QMessageBox.warning(self, "Save", "Failed to write existing buffer.")
+            return False
+
+        self._sc_save_handle = handle
+        self._sc_save_path = file_path
+        self._sc_log_save_path = save_dir
+        self._sc_append_system(f"[INFO] Save started: {file_path}", force_primary=True)
+        return True
+
+    def _sc_write_buffer_to_handle(self, handle, keep_ts: bool):
+        written = False
+        temp_file = self._sc_log_temp_path
+        if temp_file and os.path.isfile(temp_file):
+            if self._sc_log_temp_handle is not None:
+                try:
+                    self._sc_log_temp_handle.flush()
+                except OSError:
+                    pass
+            try:
+                with open(temp_file, "r", encoding="utf-8") as src:
+                    for line in src:
+                        line = line.rstrip("\n")
+                        out = line if keep_ts else self._sc_strip_timestamp(line)
+                        handle.write(out + "\n")
+                written = True
+            except OSError:
+                written = False
+        if not written:
+            for raw, _ in self._sc_all_logs:
+                out = raw if keep_ts else self._sc_strip_timestamp(raw)
+                handle.write(out + "\n")
+
+    def _sc_stop_manual_save(self):
+        if self._sc_save_handle is not None:
+            path = self._sc_save_path
+            try:
+                self._sc_save_handle.flush()
+                self._sc_save_handle.close()
+            except OSError:
+                pass
+            self._sc_save_handle = None
+            if path:
+                self._sc_append_system(f"[INFO] Save stopped: {path}", force_primary=True)
+            self._sc_save_path = None
+
     def _sc_clear_logs(self):
         self._sc_all_logs.clear()
         self._sc_pending_html.clear()
@@ -3213,6 +3536,11 @@ class SerialComMixin:
     def _sc_on_data_received(self, data: bytes):
         if self._sc_paused:
             return
+        if self._sc_script_wait_keyword:
+            try:
+                self._sc_script_feed_rx(data.decode("utf-8", errors="replace"))
+            except Exception:
+                pass
         self._sc_rx_bytes += len(data)
         self._sc_status_rx_label.setText(self._sc_format_bytes("RX", self._sc_rx_bytes))
 
@@ -3295,37 +3623,420 @@ class SerialComMixin:
             self._sc_append_system("[INFO] Sustained RX quality issue. Starting rescan...", force_primary=True)
             self._sc_start_auto_baud_scan("runtime")
 
-    def _sc_on_auto_resend_toggled(self, checked):
-        self._sc_auto_resend = checked
-        if checked:
-            self._sc_resend_timer.setInterval(self._sc_resend_spin.value())
-            self._sc_resend_timer.start()
-        else:
-            self._sc_resend_timer.stop()
-
-    def _sc_on_resend_tick(self):
-        text = self._sc_send_input.text()
-        if not text:
-            return
-        is_connected = self._serial_connected or (
-            self._sc_active_log_panel_index > 0
-            and self._sc_active_log_panel_index - 1 < len(self._sc_extra_log_panels)
-            and self._sc_extra_log_panels[self._sc_active_log_panel_index - 1].get("conn") is not None
-        )
-        if is_connected:
-            if self._sc_tx_display_hex:
-                try:
-                    data = bytes.fromhex(text.replace(" ", ""))
-                except ValueError:
-                    return
-            else:
-                data = (text + self._sc_line_ending).encode("utf-8")
-            ok = self._sc_send_to_focused_panel(data)
-            if ok:
-                self._sc_tx_bytes += len(data)
-                self._sc_status_tx_label.setText(self._sc_format_bytes("TX", self._sc_tx_bytes))
-
     # --- quick commands (项目 -> 分组 -> 指令) ---
+
+    # ==================== Scripts 子系统 ====================
+
+    @staticmethod
+    def _sc_script_default_data():
+        return {
+            "version": "1.0",
+            "last_script_id": "",
+            "scripts": [],
+        }
+
+    @staticmethod
+    def _sc_script_default_step():
+        return {
+            "cmd": "",
+            "priority": 1,
+            "wait_ms": 1000,
+            "send_type": "text",
+            "line_ending": "\r\n",
+            "wait_keyword": "",
+            "wait_timeout_ms": 0,
+        }
+
+    def _sc_script_table_qss(self) -> str:
+        return (
+            f"QTableWidget {{"
+            f"  background: transparent;"
+            f"  color: {_CLR_TEXT_BODY};"
+            f"  border: none;"
+            f"  gridline-color: transparent;"
+            f"  font-size: 12px;"
+            f"  outline: none;"
+            f"}}"
+            f"QTableWidget::item {{ padding: 4px 6px; border: none; }}"
+            f"QHeaderView::section {{"
+            f"  background: transparent;"
+            f"  color: {_CLR_TEXT_MUTED};"
+            f"  border: none;"
+            f"  border-bottom: 1px solid {_CLR_BORDER};"
+            f"  padding: 5px 6px;"
+            f"  font-size: 11px;"
+            f"  font-weight: 600;"
+            f"}}"
+            f"QTableCornerButton::section {{"
+            f"  background: transparent;"
+            f"  border: none;"
+            f"}}"
+        )
+
+    def _sc_script_current(self):
+        sid = self._sc_script_data.get("last_script_id", "")
+        for s in self._sc_script_data.get("scripts", []):
+            if s.get("id") == sid:
+                return s
+        scripts = self._sc_script_data.get("scripts", [])
+        return scripts[0] if scripts else None
+
+    def _sc_script_refresh_all(self):
+        if not hasattr(self, "_sc_script_combo"):
+            return
+        combo = self._sc_script_combo
+        combo.blockSignals(True)
+        combo.clear()
+        scripts = self._sc_script_data.get("scripts", [])
+        for s in scripts:
+            combo.addItem(s.get("name", "未命名"), s.get("id", ""))
+        cur = self._sc_script_current()
+        if cur is not None:
+            idx = combo.findData(cur.get("id", ""))
+            combo.setCurrentIndex(idx if idx >= 0 else 0)
+            self._sc_script_data["last_script_id"] = cur.get("id", "")
+        combo.blockSignals(False)
+        self._sc_script_sync_loop_widgets()
+        self._sc_script_refresh_table()
+
+    def _sc_script_sync_loop_widgets(self):
+        cur = self._sc_script_current()
+        if cur is None:
+            return
+        self._sc_script_loop_cb.blockSignals(True)
+        self._sc_script_loop_spin.blockSignals(True)
+        self._sc_script_loop_cb.setChecked(bool(cur.get("loop", False)))
+        self._sc_script_loop_spin.setValue(int(cur.get("loop_count", 1)) or 1)
+        self._sc_script_loop_cb.blockSignals(False)
+        self._sc_script_loop_spin.blockSignals(False)
+
+    def _sc_script_refresh_table(self, running_index: int = -1):
+        table = self._sc_script_table
+        cur = self._sc_script_current()
+        steps = self._sc_script_ordered_steps(cur) if cur else []
+        table.setRowCount(len(steps))
+        for row, step in enumerate(steps):
+            cmd = step.get("cmd", "")
+            if step.get("wait_keyword"):
+                cmd = f"{cmd}  ⟶ wait \"{step['wait_keyword']}\""
+            prio = str(step.get("priority", 1))
+            wait = str(step.get("wait_ms", 0))
+            if running_index < 0:
+                status = "Pending"
+            elif row < running_index:
+                status = "✓ Done"
+            elif row == running_index:
+                status = "▶ Running"
+            else:
+                status = "Pending"
+            for col, text in enumerate((str(row + 1), cmd, prio, wait, status)):
+                item = QTableWidgetItem(text)
+                if col in (0, 2, 3):
+                    item.setTextAlignment(Qt.AlignCenter)
+                table.setItem(row, col, item)
+
+    @staticmethod
+    def _sc_script_ordered_steps(script) -> list:
+        if not script:
+            return []
+        steps = [s for s in script.get("steps", []) if int(s.get("priority", 0)) > 0]
+        return sorted(steps, key=lambda s: int(s.get("priority", 0)))
+
+    def _sc_script_on_combo_changed(self, _index: int):
+        sid = self._sc_script_combo.currentData()
+        if sid:
+            self._sc_script_data["last_script_id"] = sid
+            self._sc_script_sync_loop_widgets()
+            self._sc_script_refresh_table()
+
+    def _sc_script_on_loop_toggled(self, checked: bool):
+        cur = self._sc_script_current()
+        if cur is not None:
+            cur["loop"] = bool(checked)
+            self._sc_save_persisted_state()
+
+    def _sc_script_on_loop_count_changed(self, value: int):
+        cur = self._sc_script_current()
+        if cur is not None:
+            cur["loop_count"] = int(value)
+            self._sc_save_persisted_state()
+
+    # ---- 编辑 / 增删 ----
+
+    def _sc_script_new(self):
+        script = {
+            "id": self._sc_qc_gen_id("script"),
+            "name": "新脚本",
+            "loop": False,
+            "loop_count": 1,
+            "steps": [self._sc_script_default_step()],
+        }
+        dlg = _SerialScriptEditorDialog(self, script)
+        if dlg.exec() == QDialog.Accepted:
+            self._sc_script_data.setdefault("scripts", []).append(dlg.get_script())
+            self._sc_script_data["last_script_id"] = script["id"]
+            self._sc_save_persisted_state()
+            self._sc_script_refresh_all()
+
+    def _sc_script_edit(self):
+        cur = self._sc_script_current()
+        if cur is None:
+            QMessageBox.information(self, "提示", "请先新建一个脚本")
+            return
+        dlg = _SerialScriptEditorDialog(self, cur)
+        if dlg.exec() == QDialog.Accepted:
+            edited = dlg.get_script()
+            cur.update(edited)
+            self._sc_save_persisted_state()
+            self._sc_script_refresh_all()
+
+    def _sc_script_delete(self):
+        cur = self._sc_script_current()
+        if cur is None:
+            return
+        if QMessageBox.question(
+            self, "删除脚本", f"确定删除脚本 “{cur.get('name', '')}” ?"
+        ) != QMessageBox.Yes:
+            return
+        scripts = self._sc_script_data.get("scripts", [])
+        scripts.remove(cur)
+        self._sc_script_data["last_script_id"] = scripts[0]["id"] if scripts else ""
+        self._sc_save_persisted_state()
+        self._sc_script_refresh_all()
+
+    # ---- txt 导入 / 导出 ----
+
+    def _sc_script_import_txt(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "导入脚本 (.txt)", "", "Text Files (*.txt);;All Files (*)"
+        )
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                lines = f.read().splitlines()
+        except Exception as e:
+            QMessageBox.critical(self, "导入失败", str(e))
+            return
+        steps = []
+        priority = 1
+        for raw in lines:
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = [p.strip() for p in line.split(",")]
+            step = self._sc_script_default_step()
+            step["cmd"] = parts[0]
+            if len(parts) >= 2 and parts[1]:
+                try:
+                    step["priority"] = int(parts[1])
+                except ValueError:
+                    step["priority"] = priority
+            else:
+                step["priority"] = priority
+            if len(parts) >= 3 and parts[2]:
+                try:
+                    step["wait_ms"] = int(parts[2])
+                except ValueError:
+                    pass
+            steps.append(step)
+            priority += 1
+        if not steps:
+            QMessageBox.warning(self, "导入失败", "未解析到有效指令行")
+            return
+        name = os.path.splitext(os.path.basename(path))[0]
+        script = {
+            "id": self._sc_qc_gen_id("script"),
+            "name": name,
+            "loop": False,
+            "loop_count": 1,
+            "steps": steps,
+        }
+        self._sc_script_data.setdefault("scripts", []).append(script)
+        self._sc_script_data["last_script_id"] = script["id"]
+        self._sc_save_persisted_state()
+        self._sc_script_refresh_all()
+        self._sc_append_system(f"[SCRIPT] 已导入脚本 “{name}” ({len(steps)} 步)")
+
+    def _sc_script_export_txt(self):
+        cur = self._sc_script_current()
+        if cur is None:
+            QMessageBox.information(self, "提示", "没有可导出的脚本")
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "导出脚本 (.txt)", f"{cur.get('name', 'script')}.txt",
+            "Text Files (*.txt);;All Files (*)"
+        )
+        if not path:
+            return
+        lines = [
+            "# 格式: 指令,优先级,等待ms  (优先级=0 表示跳过)",
+            f"# 脚本: {cur.get('name', '')}",
+        ]
+        for step in cur.get("steps", []):
+            lines.append(
+                f"{step.get('cmd', '')},{step.get('priority', 1)},{step.get('wait_ms', 0)}"
+            )
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines))
+        except Exception as e:
+            QMessageBox.critical(self, "导出失败", str(e))
+            return
+        self._sc_append_system(f"[SCRIPT] 已导出脚本到 {path}")
+
+    # ---- 运行引擎 ----
+
+    def _sc_script_run(self):
+        if self._sc_script_running:
+            return
+        cur = self._sc_script_current()
+        if cur is None:
+            QMessageBox.information(self, "提示", "请先新建或选择一个脚本")
+            return
+        steps = self._sc_script_ordered_steps(cur)
+        if not steps:
+            QMessageBox.warning(self, "提示", "脚本没有可执行的步骤 (优先级需 > 0)")
+            return
+
+        self._sc_script_steps = steps
+        self._sc_script_step_index = 0
+        loop_on = self._sc_script_loop_cb.isChecked()
+        self._sc_script_loop_remaining = (
+            int(self._sc_script_loop_spin.value()) if loop_on else 1
+        )
+        self._sc_script_running = True
+        self._sc_script_set_controls_enabled(False)
+        self._sc_append_system(
+            f"[SCRIPT] 开始执行 “{cur.get('name', '')}” "
+            f"({len(steps)} 步, 循环 x{self._sc_script_loop_remaining})"
+        )
+        self._sc_script_refresh_table(running_index=0)
+        self._sc_script_exec_current_step()
+
+    def _sc_script_set_controls_enabled(self, enabled: bool):
+        self._sc_script_run_btn.setEnabled(enabled)
+        self._sc_script_stop_btn.setEnabled(not enabled)
+        self._sc_script_combo.setEnabled(enabled)
+        self._sc_script_new_btn.setEnabled(enabled)
+        self._sc_script_edit_btn.setEnabled(enabled)
+        self._sc_script_del_btn.setEnabled(enabled)
+        self._sc_script_import_btn.setEnabled(enabled)
+        self._sc_script_export_btn.setEnabled(enabled)
+        self._sc_script_loop_cb.setEnabled(enabled)
+        self._sc_script_loop_spin.setEnabled(enabled)
+
+    def _sc_script_exec_current_step(self):
+        if not self._sc_script_running:
+            return
+        idx = self._sc_script_step_index
+        steps = self._sc_script_steps
+        if idx >= len(steps):
+            self._sc_script_on_loop_end()
+            return
+
+        step = steps[idx]
+        self._sc_script_refresh_table(running_index=idx)
+        self._sc_script_status_label.setText(
+            f"\u2022 Running (Step {idx + 1}/{len(steps)})"
+        )
+        self._sc_script_status_label.setStyleSheet(status_label_style("ok", include_font=True))
+
+        cmd = step.get("cmd", "")
+        ok = self._sc_script_send_step(step)
+        if not ok:
+            self._sc_append_system("[SCRIPT] 发送失败，串口未连接，已停止")
+            self._sc_script_stop()
+            return
+
+        keyword = step.get("wait_keyword", "").strip()
+        wait_ms = max(0, int(step.get("wait_ms", 0)))
+        if keyword:
+            self._sc_script_wait_keyword = keyword
+            self._sc_script_wait_buffer = ""
+            timeout = int(step.get("wait_timeout_ms", 0)) or wait_ms or 5000
+            self._sc_script_timer.start(timeout)
+        else:
+            self._sc_script_wait_keyword = ""
+            self._sc_script_timer.start(wait_ms)
+
+    def _sc_script_send_step(self, step) -> bool:
+        cmd = step.get("cmd", "")
+        send_type = step.get("send_type", "text")
+        if send_type == "hex":
+            try:
+                data = bytes.fromhex(cmd.replace(" ", ""))
+            except ValueError:
+                self._sc_append_system(f"[SCRIPT][ERROR] Invalid HEX: {cmd}")
+                return False
+        else:
+            data = (cmd + step.get("line_ending", "\r\n")).encode("utf-8")
+
+        ok = self._sc_send_to_focused_panel(data)
+        if ok and self._sc_active_log_panel_index == 0:
+            self._sc_tx_bytes += len(data)
+            self._sc_status_tx_label.setText(self._sc_format_bytes("TX", self._sc_tx_bytes))
+            if self._sc_show_send:
+                display = cmd if send_type != "hex" else data.hex(' ')
+                self._sc_append_log(f"[TX] {display}", _CLR_TX)
+        return ok
+
+    def _sc_script_feed_rx(self, text: str):
+        if not self._sc_script_wait_keyword:
+            return
+        self._sc_script_wait_buffer += text
+        if len(self._sc_script_wait_buffer) > 4096:
+            self._sc_script_wait_buffer = self._sc_script_wait_buffer[-4096:]
+        if self._sc_script_wait_keyword in self._sc_script_wait_buffer:
+            self._sc_script_wait_keyword = ""
+            self._sc_script_wait_buffer = ""
+            self._sc_script_timer.stop()
+            QTimer.singleShot(0, self._sc_script_advance)
+
+    def _sc_script_on_timeout(self):
+        if not self._sc_script_running:
+            return
+        if self._sc_script_wait_keyword:
+            self._sc_append_system(
+                f"[SCRIPT] 等待关键字 “{self._sc_script_wait_keyword}” 超时，继续下一步"
+            )
+            self._sc_script_wait_keyword = ""
+            self._sc_script_wait_buffer = ""
+        self._sc_script_advance()
+
+    def _sc_script_advance(self):
+        if not self._sc_script_running:
+            return
+        self._sc_script_step_index += 1
+        self._sc_script_exec_current_step()
+
+    def _sc_script_on_loop_end(self):
+        self._sc_script_loop_remaining -= 1
+        if self._sc_script_loop_remaining > 0:
+            self._sc_script_step_index = 0
+            self._sc_append_system(
+                f"[SCRIPT] 进入下一轮循环 (剩余 {self._sc_script_loop_remaining} 轮)"
+            )
+            self._sc_script_exec_current_step()
+        else:
+            self._sc_append_system("[SCRIPT] 执行完成")
+            self._sc_script_finish()
+
+    def _sc_script_stop(self):
+        if not self._sc_script_running:
+            return
+        self._sc_append_system("[SCRIPT] 已手动停止")
+        self._sc_script_finish()
+
+    def _sc_script_finish(self):
+        self._sc_script_running = False
+        self._sc_script_wait_keyword = ""
+        self._sc_script_wait_buffer = ""
+        self._sc_script_timer.stop()
+        self._sc_script_set_controls_enabled(True)
+        self._sc_script_status_label.setText("\u2022 Idle")
+        self._sc_script_status_label.setStyleSheet(status_label_style("muted", include_font=True))
+        self._sc_script_refresh_table(running_index=-1)
 
     @staticmethod
     def _sc_qc_default_data():
@@ -4185,7 +4896,7 @@ class SerialComMixin:
     _SC_DEFAULT_WINDOW_SIZE = (1300, 850)
     _SC_WINDOW_MARGIN = 40
 
-    def _sc_default_persisted_state(self, quick_commands=None) -> dict:
+    def _sc_default_persisted_state(self, quick_commands=None, scripts=None) -> dict:
         return {
             "version": "2.0",
             "serial": {
@@ -4202,15 +4913,16 @@ class SerialComMixin:
                 "rx_display_hex": False,
                 "tx_display_hex": False,
                 "show_timestamp": True,
-                "auto_resend": False,
-                "resend_interval": 1000,
+                "use_ntp": False,
                 "line_ending": "\r\n",
                 "show_send": True,
                 "line_by_line": False,
                 "sidebar_visible": True,
+                "center_split_sizes": [680, 155],
             },
             "send_history": [],
             "quick_commands": quick_commands or self._sc_qc_default_data(),
+            "scripts": scripts or self._sc_script_default_data(),
         }
 
     def _sc_user_config_dir(self) -> str:
@@ -4492,7 +5204,8 @@ class SerialComMixin:
             }
 
         persisted = self._sc_default_persisted_state(
-            quick_commands=getattr(self, "_sc_qc_data", self._sc_qc_default_data())
+            quick_commands=getattr(self, "_sc_qc_data", self._sc_qc_default_data()),
+            scripts=getattr(self, "_sc_script_data", self._sc_script_default_data()),
         )
         persisted["serial"].update({
             "port": port_text,
@@ -4508,14 +5221,18 @@ class SerialComMixin:
             "rx_display_hex": getattr(self, "_sc_rx_display_hex", False),
             "tx_display_hex": getattr(self, "_sc_tx_display_hex", False),
             "show_timestamp": getattr(self, "_sc_show_timestamp", True),
-            "auto_resend": getattr(self, "_sc_auto_resend", False),
-            "resend_interval": getattr(self, "_sc_resend_interval", 1000),
+            "use_ntp": getattr(self, "_sc_use_ntp", False),
             "line_ending": getattr(self, "_sc_line_ending", "\r\n"),
             "show_send": getattr(self, "_sc_show_send", True),
             "line_by_line": getattr(self, "_sc_line_by_line", False),
             "sidebar_visible": getattr(self, "_sc_sidebar_visible", True),
             "log_auto_save": getattr(self, "_sc_log_auto_save", False),
             "log_save_path": getattr(self, "_sc_log_save_path", ""),
+            "center_split_sizes": (
+                list(self._sc_center_splitter.sizes())
+                if hasattr(self, "_sc_center_splitter")
+                else []
+            ),
         })
         persisted["send_history"] = list(getattr(self, "_sc_send_history", []))[-50:]
         window_state = self._sc_collect_window_state()
@@ -4595,8 +5312,7 @@ class SerialComMixin:
                     ("rx_display_hex", "_sc_rx_display_hex"),
                     ("tx_display_hex", "_sc_tx_display_hex"),
                     ("show_timestamp", "_sc_show_timestamp"),
-                    ("auto_resend", "_sc_auto_resend"),
-                    ("resend_interval", "_sc_resend_interval"),
+                    ("use_ntp", "_sc_use_ntp"),
                     ("line_ending", "_sc_line_ending"),
                     ("show_send", "_sc_show_send"),
                     ("line_by_line", "_sc_line_by_line"),
@@ -4606,6 +5322,17 @@ class SerialComMixin:
                 ):
                     if key in ui_cfg:
                         setattr(self, attr, ui_cfg[key])
+                if getattr(self, "_sc_use_ntp", False):
+                    self._sc_apply_ntp_setting(True)
+
+                split_sizes = ui_cfg.get("center_split_sizes")
+                if (
+                    isinstance(split_sizes, list)
+                    and len(split_sizes) == 2
+                    and all(isinstance(x, (int, float)) and x > 0 for x in split_sizes)
+                    and hasattr(self, "_sc_center_splitter")
+                ):
+                    self._sc_center_splitter.setSizes([int(x) for x in split_sizes])
 
             if isinstance(data.get("send_history"), list):
                 self._sc_send_history = [str(x) for x in data["send_history"]]
@@ -4622,6 +5349,12 @@ class SerialComMixin:
                 if parsed is not None:
                     self._sc_qc_data = parsed
 
+            scripts = data.get("scripts")
+            if isinstance(scripts, dict) and isinstance(scripts.get("scripts"), list):
+                self._sc_script_data = scripts
+                if hasattr(self, "_sc_script_combo"):
+                    self._sc_script_refresh_all()
+
             window_cfg = data.get("window")
             if isinstance(window_cfg, dict):
                 self._sc_window_geometry = window_cfg
@@ -4630,8 +5363,6 @@ class SerialComMixin:
                 ("rx_display_hex", "_sc_rx_display_hex"),
                 ("tx_display_hex", "_sc_tx_display_hex"),
                 ("show_timestamp", "_sc_show_timestamp"),
-                ("auto_resend", "_sc_auto_resend"),
-                ("resend_interval", "_sc_resend_interval"),
                 ("line_ending", "_sc_line_ending"),
                 ("show_send", "_sc_show_send"),
                 ("line_by_line", "_sc_line_by_line"),
@@ -4757,12 +5488,7 @@ class SerialComMixin:
         self._sc_show_timestamp = True
         if hasattr(self, "_sc_rx_show_time_cb"):
             self._sc_rx_show_time_cb.setChecked(True)
-        self._sc_auto_resend = False
-        if hasattr(self, "_sc_auto_resend_cb"):
-            self._sc_auto_resend_cb.setChecked(False)
-        self._sc_resend_interval = 1000
-        if hasattr(self, "_sc_resend_spin"):
-            self._sc_resend_spin.setValue(1000)
+        self._sc_apply_ntp_setting(False)
         self._sc_line_ending = "\r\n"
         if hasattr(self, "_sc_ending_combo"):
             self._sc_ending_combo.setCurrentIndex(0)
@@ -4786,6 +5512,11 @@ class SerialComMixin:
         if hasattr(self, "_sc_sidebar_toggle_btn"):
             self._sc_sidebar_toggle_btn.setChecked(True)
 
+        if hasattr(self, "_sc_center_splitter"):
+            self._sc_center_splitter.setSizes(
+                list(getattr(self, "_sc_center_splitter_default_sizes", [680, 155]))
+            )
+
         if hasattr(self, "_sc_auto_baud_monitor"):
             self._sc_auto_baud_monitor.update_config(dict(AUTO_BAUD_CONFIG))
             self._sc_auto_baud_monitor.runtime_redetect_enabled = True
@@ -4805,7 +5536,10 @@ class SerialComMixin:
             return False
 
         quick_commands = getattr(self, "_sc_qc_data", self._sc_qc_default_data())
-        reset_state = self._sc_default_persisted_state(quick_commands=quick_commands)
+        scripts = getattr(self, "_sc_script_data", self._sc_script_default_data())
+        reset_state = self._sc_default_persisted_state(
+            quick_commands=quick_commands, scripts=scripts
+        )
         try:
             with open(cfg_path, "w", encoding="utf-8") as f:
                 json.dump(reset_state, f, ensure_ascii=False, indent=2)
@@ -4911,13 +5645,95 @@ class SerialComMixin:
                     except OSError:
                         pass
                     setattr(self, fh_attr, None)
+        save_fh = getattr(self, "_sc_save_handle", None)
+        if save_fh is not None:
+            line = raw if self._sc_save_keep_timestamp else self._sc_strip_timestamp(raw)
+            try:
+                save_fh.write(line + "\n")
+                save_fh.flush()
+            except OSError:
+                try:
+                    save_fh.close()
+                except OSError:
+                    pass
+                self._sc_save_handle = None
+                if hasattr(self, "_sc_save_btn"):
+                    self._sc_save_btn.setChecked(False)
+
+    # --- NTP network time ---
+
+    def _sc_start_ntp_sync(self):
+        if self._sc_ntp_thread is not None:
+            return
+        self._sc_ntp_synced = False
+        worker = _NtpSyncWorker()
+        thread = QThread()
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.synced.connect(self._sc_on_ntp_synced)
+        worker.failed.connect(self._sc_on_ntp_failed)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        self._sc_ntp_thread = thread
+        self._sc_ntp_worker = worker
+        thread.start()
+
+    def _sc_stop_ntp_sync(self):
+        worker = getattr(self, "_sc_ntp_worker", None)
+        thread = getattr(self, "_sc_ntp_thread", None)
+        self._sc_ntp_worker = None
+        self._sc_ntp_thread = None
+        self._sc_ntp_synced = False
+        if worker is not None:
+            worker.stop()
+        if thread is not None:
+            thread.quit()
+            thread.wait(2000)
+
+    def _sc_on_ntp_synced(self, offset: float, rtt: float):
+        self._sc_ntp_offset = offset
+        self._sc_ntp_synced = True
+        if hasattr(self, "_sc_append_system"):
+            self._sc_append_system(
+                f"[INFO] NTP synced: offset={offset * 1000:.1f} ms, rtt={rtt * 1000:.1f} ms",
+                force_primary=True,
+            )
+
+    def _sc_on_ntp_failed(self, reason: str):
+        self._sc_ntp_synced = False
+        logger.warning("NTP sync failed: %s", reason)
+        if hasattr(self, "_sc_append_system"):
+            self._sc_append_system(f"[WARN] NTP sync failed: {reason}", force_primary=True)
+
+    def _sc_ntp_timestamp(self):
+        if not (self._sc_use_ntp and self._sc_ntp_synced):
+            return ""
+        ntp_dt = datetime.fromtimestamp(time.time() + self._sc_ntp_offset)
+        return ntp_dt.strftime("%H:%M:%S.%f")[:-3]
+
+    def _sc_apply_ntp_setting(self, enabled: bool):
+        self._sc_use_ntp = bool(enabled)
+        if self._sc_use_ntp:
+            self._sc_start_ntp_sync()
+        else:
+            self._sc_stop_ntp_sync()
 
     def _sc_append_log(self, message: str, color: str = _CLR_TEXT_BODY):
         ts = datetime.now().strftime("%H:%M:%S.%f")[:-3] if self._sc_show_timestamp else ""
+        ntp_ts = self._sc_ntp_timestamp()
         escaped = message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         ts_html = f'<span style="color:{_CLR_TEXT_TIME};">{ts}</span> ' if ts else ""
-        html = f'{ts_html}<span style="color:{color};">{escaped}</span>'
-        raw = f"{ts} {message}" if ts else message
+        ntp_html = (
+            f'<span style="color:{_CLR_TEXT_ACCENT};">[NTP]</span> '
+            f'<span style="color:{_CLR_TEXT_TIME};">{ntp_ts}</span> '
+            if ntp_ts else ""
+        )
+        html = f'{ts_html}{ntp_html}<span style="color:{color};">{escaped}</span>'
+        prefix = ts
+        if ntp_ts:
+            prefix = f"{prefix} [NTP] {ntp_ts}" if prefix else f"[NTP] {ntp_ts}"
+        raw = f"{prefix} {message}" if prefix else message
         self._sc_all_logs.append((raw, html))
         if len(self._sc_all_logs) > self._SC_MAX_LOG_LINES:
             self._sc_all_logs = self._sc_all_logs[-self._SC_MAX_LOG_LINES:]
@@ -5701,6 +6517,7 @@ class _IndependentSerialWindow(QWidget):
             self._append(f"[RX] {data.hex(' ')}")
 
     def closeEvent(self, event):
+        self._sc_stop_ntp_sync()
         self._do_disconnect()
         super().closeEvent(event)
 
@@ -5990,6 +6807,288 @@ class _ProjectTabBar(QTabBar):
         self.project_reorder_requested.emit(source_index, target_index)
 
 
+class _SerialScriptEditorDialog(QDialog):
+    _COLS = ["指令", "优先级", "等待(ms)", "类型", "结尾符", "等待关键字", "关键字超时(ms)"]
+
+    def __init__(self, parent=None, script: dict = None):
+        super().__init__(parent)
+        self.setWindowTitle("脚本编辑器")
+        self.setMinimumSize(720, 460)
+        self.setStyleSheet(_DLG_STYLE)
+        script = script or {}
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(18, 18, 18, 18)
+        root.setSpacing(14)
+
+        title = QLabel("编辑脚本")
+        title.setObjectName("qcTitle")
+        root.addWidget(title)
+
+        # --- 脚本属性卡片 ---
+        prop_card = QFrame()
+        prop_card.setObjectName("dlgGroupCard")
+        prop_form = QVBoxLayout(prop_card)
+        prop_form.setContentsMargins(14, 12, 14, 12)
+        prop_form.setSpacing(8)
+
+        prop_row = QHBoxLayout()
+        prop_row.setSpacing(8)
+        name_lbl = QLabel("脚本名称")
+        name_lbl.setObjectName("dlgFieldLabel")
+        prop_row.addWidget(name_lbl)
+        self._name_edit = QLineEdit()
+        self._name_edit.setPlaceholderText("如：WiFi 压测")
+        self._name_edit.setText(script.get("name", ""))
+        prop_row.addWidget(self._name_edit, 1)
+
+        self._loop_cb = QCheckBox("循环")
+        self._loop_cb.setChecked(bool(script.get("loop", False)))
+        prop_row.addWidget(self._loop_cb)
+
+        count_lbl = QLabel("次数")
+        count_lbl.setObjectName("dlgFieldLabel")
+        prop_row.addWidget(count_lbl)
+        self._loop_spin = QSpinBox()
+        self._loop_spin.setRange(1, 99999)
+        self._loop_spin.setValue(int(script.get("loop_count", 1)) or 1)
+        prop_row.addWidget(self._loop_spin)
+        prop_form.addLayout(prop_row)
+
+        hint = QLabel("提示：优先级=0 表示跳过该步；其余按从小到大顺序执行。设置“等待关键字”后将先等待收到该字符串，超时后继续。")
+        hint.setWordWrap(True)
+        hint.setObjectName("dlgHint")
+        prop_form.addWidget(hint)
+        root.addWidget(prop_card)
+
+        # --- 步骤区：标题 + 行操作 ---
+        steps_head = QHBoxLayout()
+        steps_head.setSpacing(8)
+        steps_title = QLabel("执行步骤")
+        steps_title.setObjectName("dlgSectionTitle")
+        steps_head.addWidget(steps_title)
+        steps_head.addStretch()
+
+        add_btn = QPushButton("+ 添加步骤")
+        add_btn.setObjectName("dlgRowBtn")
+        add_btn.setCursor(Qt.PointingHandCursor)
+        add_btn.clicked.connect(lambda: self._add_row())
+        steps_head.addWidget(add_btn)
+
+        del_btn = QPushButton("- 删除选中")
+        del_btn.setObjectName("dlgRowBtn")
+        del_btn.setCursor(Qt.PointingHandCursor)
+        del_btn.clicked.connect(self._del_row)
+        steps_head.addWidget(del_btn)
+
+        up_btn = QPushButton("↑ 上移")
+        up_btn.setObjectName("dlgRowBtn")
+        up_btn.setCursor(Qt.PointingHandCursor)
+        up_btn.clicked.connect(lambda: self._move_row(-1))
+        steps_head.addWidget(up_btn)
+
+        down_btn = QPushButton("↓ 下移")
+        down_btn.setObjectName("dlgRowBtn")
+        down_btn.setCursor(Qt.PointingHandCursor)
+        down_btn.clicked.connect(lambda: self._move_row(1))
+        steps_head.addWidget(down_btn)
+
+        renum_btn = QPushButton("重排优先级")
+        renum_btn.setObjectName("dlgRowBtn")
+        renum_btn.setCursor(Qt.PointingHandCursor)
+        renum_btn.clicked.connect(self._renumber_priority)
+        steps_head.addWidget(renum_btn)
+        root.addLayout(steps_head)
+
+        # --- 步骤表 ---
+        self._table = QTableWidget(0, len(self._COLS))
+        self._table.setObjectName("dlgStepTable")
+        self._table.setHorizontalHeaderLabels(self._COLS)
+        self._table.verticalHeader().setVisible(False)
+        self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self._table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._table.setShowGrid(False)
+        self._table.setAlternatingRowColors(False)
+        self._table.setWordWrap(False)
+        self._table.verticalHeader().setDefaultSectionSize(40)
+        self._table.verticalHeader().setSectionResizeMode(QHeaderView.Fixed)
+        hdr = self._table.horizontalHeader()
+        hdr.setMinimumSectionSize(72)
+        hdr.setHighlightSections(False)
+        hdr.setSectionResizeMode(0, QHeaderView.Stretch)
+        hdr.setSectionResizeMode(5, QHeaderView.Stretch)
+        for c in (1, 2, 3, 4, 6):
+            hdr.setSectionResizeMode(c, QHeaderView.Fixed)
+        self._table.setColumnWidth(1, 84)
+        self._table.setColumnWidth(2, 104)
+        self._table.setColumnWidth(3, 92)
+        self._table.setColumnWidth(4, 92)
+        self._table.setColumnWidth(6, 128)
+        root.addWidget(self._table, 1)
+
+        for step in script.get("steps", []):
+            self._add_row(step)
+        if self._table.rowCount() == 0:
+            self._add_row()
+
+        # --- OK / Cancel ---
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setCursor(Qt.PointingHandCursor)
+        cancel_btn.setStyleSheet(dialog_cancel_button_style())
+        cancel_btn.setAutoDefault(False)
+        cancel_btn.setDefault(False)
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+
+        ok_btn = QPushButton("OK")
+        ok_btn.setCursor(Qt.PointingHandCursor)
+        ok_btn.setStyleSheet(dialog_ok_button_style())
+        ok_btn.setAutoDefault(True)
+        ok_btn.setDefault(True)
+        ok_btn.clicked.connect(self._on_accept)
+        btn_row.addWidget(ok_btn)
+        root.addLayout(btn_row)
+
+        self._script_id = script.get("id", "")
+
+    def _wrap_cell(self, widget) -> QWidget:
+        holder = QWidget()
+        lay = QHBoxLayout(holder)
+        lay.setContentsMargins(6, 4, 6, 4)
+        lay.setSpacing(0)
+        lay.addWidget(widget)
+        return holder
+
+    def _add_row(self, step: dict = None):
+        step = step or {
+            "cmd": "", "priority": self._table.rowCount() + 1, "wait_ms": 1000,
+            "send_type": "text", "line_ending": "\r\n",
+            "wait_keyword": "", "wait_timeout_ms": 0,
+        }
+        row = self._table.rowCount()
+        self._table.insertRow(row)
+
+        cmd_item = QTableWidgetItem(step.get("cmd", ""))
+        cmd_item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self._table.setItem(row, 0, cmd_item)
+
+        prio_spin = QSpinBox()
+        prio_spin.setRange(0, 9999)
+        prio_spin.setValue(int(step.get("priority", row + 1)))
+        self._table.setCellWidget(row, 1, self._wrap_cell(prio_spin))
+
+        wait_spin = QSpinBox()
+        wait_spin.setRange(0, 3600000)
+        wait_spin.setSingleStep(100)
+        wait_spin.setValue(int(step.get("wait_ms", 1000)))
+        self._table.setCellWidget(row, 2, self._wrap_cell(wait_spin))
+
+        type_combo = QComboBox()
+        type_combo.addItem("TEXT", "text")
+        type_combo.addItem("HEX", "hex")
+        ti = type_combo.findData(step.get("send_type", "text"))
+        type_combo.setCurrentIndex(ti if ti >= 0 else 0)
+        self._table.setCellWidget(row, 3, self._wrap_cell(type_combo))
+
+        le_combo = QComboBox()
+        le_combo.addItem("无", "")
+        le_combo.addItem("\\r", "\r")
+        le_combo.addItem("\\n", "\n")
+        le_combo.addItem("\\r\\n", "\r\n")
+        li = le_combo.findData(step.get("line_ending", "\r\n"))
+        le_combo.setCurrentIndex(li if li >= 0 else 3)
+        self._table.setCellWidget(row, 4, self._wrap_cell(le_combo))
+
+        kw_item = QTableWidgetItem(step.get("wait_keyword", ""))
+        kw_item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self._table.setItem(row, 5, kw_item)
+
+        to_spin = QSpinBox()
+        to_spin.setRange(0, 3600000)
+        to_spin.setSingleStep(100)
+        to_spin.setValue(int(step.get("wait_timeout_ms", 0)))
+        self._table.setCellWidget(row, 6, self._wrap_cell(to_spin))
+
+    def _del_row(self):
+        row = self._table.currentRow()
+        if row >= 0:
+            self._table.removeRow(row)
+
+    def _move_row(self, delta: int):
+        row = self._table.currentRow()
+        if row < 0:
+            return
+        target = row + delta
+        if target < 0 or target >= self._table.rowCount():
+            return
+        steps = self._collect_steps()
+        steps[row], steps[target] = steps[target], steps[row]
+        self._reload_steps(steps)
+        self._table.setCurrentCell(target, 0)
+
+    def _inner_widget(self, row: int, col: int):
+        holder = self._table.cellWidget(row, col)
+        if holder is None:
+            return None
+        lay = holder.layout()
+        if lay is not None and lay.count() > 0:
+            return lay.itemAt(0).widget()
+        return holder
+
+    def _renumber_priority(self):
+        for row in range(self._table.rowCount()):
+            spin = self._inner_widget(row, 1)
+            if isinstance(spin, QSpinBox):
+                spin.setValue(row + 1)
+
+    def _reload_steps(self, steps: list):
+        self._table.setRowCount(0)
+        for step in steps:
+            self._add_row(step)
+
+    def _collect_steps(self) -> list:
+        steps = []
+        for row in range(self._table.rowCount()):
+            cmd_item = self._table.item(row, 0)
+            kw_item = self._table.item(row, 5)
+            prio = self._inner_widget(row, 1)
+            wait = self._inner_widget(row, 2)
+            tcombo = self._inner_widget(row, 3)
+            lcombo = self._inner_widget(row, 4)
+            to = self._inner_widget(row, 6)
+            steps.append({
+                "cmd": cmd_item.text() if cmd_item else "",
+                "priority": prio.value() if isinstance(prio, QSpinBox) else row + 1,
+                "wait_ms": wait.value() if isinstance(wait, QSpinBox) else 0,
+                "send_type": tcombo.currentData() if isinstance(tcombo, QComboBox) else "text",
+                "line_ending": lcombo.currentData() if isinstance(lcombo, QComboBox) else "\r\n",
+                "wait_keyword": kw_item.text() if kw_item else "",
+                "wait_timeout_ms": to.value() if isinstance(to, QSpinBox) else 0,
+            })
+        return steps
+
+    def _on_accept(self):
+        if not self._name_edit.text().strip():
+            QMessageBox.warning(self, "提示", "请填写脚本名称")
+            return
+        steps = [s for s in self._collect_steps() if s["cmd"].strip()]
+        if not steps:
+            QMessageBox.warning(self, "提示", "至少需要一个有内容的步骤")
+            return
+        self.accept()
+
+    def get_script(self) -> dict:
+        return {
+            "id": self._script_id,
+            "name": self._name_edit.text().strip(),
+            "loop": self._loop_cb.isChecked(),
+            "loop_count": self._loop_spin.value(),
+            "steps": [s for s in self._collect_steps() if s["cmd"].strip()],
+        }
+
+
 class _QuickCmdDialog(QDialog):
 
     def __init__(self, parent=None, name="", content="", send_type="text",
@@ -6085,6 +7184,87 @@ class _QuickCmdDialog(QDialog):
 
     def get_cmd(self):
         return self._cmd_edit.text().strip()
+
+
+class _SerialSaveDialog(QDialog):
+
+    def __init__(self, parent=None, default_dir="", default_name="", keep_timestamp=True):
+        super().__init__(parent)
+        self.setWindowTitle("Save Logs")
+        self.setFixedWidth(440)
+        self.setStyleSheet(quick_cmd_dialog_style())
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(10)
+
+        title = QLabel("保存日志")
+        title.setObjectName("qcTitle")
+        root.addWidget(title)
+
+        root.addWidget(QLabel("保存位置"))
+        dir_row = QHBoxLayout()
+        dir_row.setSpacing(8)
+        self._dir_edit = QLineEdit()
+        self._dir_edit.setPlaceholderText("选择保存目录")
+        self._dir_edit.setText(default_dir)
+        dir_row.addWidget(self._dir_edit, 1)
+        browse_btn = QPushButton("浏览…")
+        browse_btn.setCursor(Qt.PointingHandCursor)
+        browse_btn.setStyleSheet(dialog_cancel_button_style())
+        browse_btn.setAutoDefault(False)
+        browse_btn.setDefault(False)
+        browse_btn.clicked.connect(self._on_browse)
+        dir_row.addWidget(browse_btn)
+        root.addLayout(dir_row)
+
+        root.addWidget(QLabel("文件名"))
+        self._name_edit = QLineEdit()
+        self._name_edit.setPlaceholderText("如:serial_log.txt")
+        self._name_edit.setText(default_name)
+        root.addWidget(self._name_edit)
+
+        self._keep_ts_cb = QCheckBox("保留系统时间戳（每行前缀 HH:MM:SS.fff）")
+        self._keep_ts_cb.setChecked(keep_timestamp)
+        root.addWidget(self._keep_ts_cb)
+
+        hint = QLabel("点击保存后将写入当前完整日志，并持续追加后续新日志。")
+        hint.setWordWrap(True)
+        root.addWidget(hint)
+
+        root.addSpacing(4)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setCursor(Qt.PointingHandCursor)
+        cancel_btn.setStyleSheet(dialog_cancel_button_style())
+        cancel_btn.setAutoDefault(False)
+        cancel_btn.setDefault(False)
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+
+        ok_btn = QPushButton("Save")
+        ok_btn.setCursor(Qt.PointingHandCursor)
+        ok_btn.setStyleSheet(dialog_ok_button_style())
+        ok_btn.setAutoDefault(True)
+        ok_btn.setDefault(True)
+        ok_btn.clicked.connect(self.accept)
+        btn_row.addWidget(ok_btn)
+        root.addLayout(btn_row)
+
+    def _on_browse(self):
+        current = self._dir_edit.text().strip()
+        directory = QFileDialog.getExistingDirectory(self, "Select Directory", current)
+        if directory:
+            self._dir_edit.setText(directory)
+
+    def get_config(self) -> dict:
+        return {
+            "directory": self._dir_edit.text().strip(),
+            "name": self._name_edit.text().strip(),
+            "keep_timestamp": self._keep_ts_cb.isChecked(),
+        }
 
 
 class _SerialSettingsDialog(QDialog):
@@ -6263,7 +7443,7 @@ class _SerialSettingsDialog(QDialog):
         layout.addLayout(row)
 
         layout.addWidget(self._separator())
-        layout.addWidget(self._section_title("Line Ending & Auto Resend"))
+        layout.addWidget(self._section_title("Line Ending"))
 
         ending_row = QHBoxLayout()
         ending_row.setSpacing(8)
@@ -6275,21 +7455,6 @@ class _SerialSettingsDialog(QDialog):
         ending_row.addWidget(self.ending_combo)
         ending_row.addStretch()
         layout.addLayout(ending_row)
-
-        self.auto_resend_cb = QCheckBox("Enable auto resend")
-        layout.addWidget(self.auto_resend_cb)
-
-        resend_row = QHBoxLayout()
-        resend_row.setSpacing(8)
-        resend_row.addWidget(QLabel("Resend interval (ms)"))
-        self.resend_spin = QSpinBox()
-        self.resend_spin.setRange(100, 60000)
-        self.resend_spin.setValue(1000)
-        self.resend_spin.setSingleStep(100)
-        self.resend_spin.setFixedHeight(26)
-        resend_row.addWidget(self.resend_spin)
-        resend_row.addStretch()
-        layout.addLayout(resend_row)
 
         layout.addWidget(self._separator())
         layout.addWidget(self._section_title("Other"))
@@ -6679,6 +7844,87 @@ class _SerialSettingsDialog(QDialog):
         sep.setFrameShape(QFrame.HLine)
         sep.setFixedHeight(1)
         return sep
+
+
+class _NtpSyncWorker(QObject):
+    synced = Signal(float, float)
+    failed = Signal(str)
+    finished = Signal()
+
+    _NTP_SERVERS = (
+        "pool.ntp.org",
+        "time.windows.com",
+        "time.google.com",
+        "ntp.aliyun.com",
+        "cn.pool.ntp.org",
+    )
+    _NTP_PORT = 123
+    _NTP_DELTA = 2208988800.0
+    _RESYNC_INTERVAL_S = 300.0
+    _SOCKET_TIMEOUT_S = 3.0
+    _RETRY_SLEEP_MS = 5000
+
+    def __init__(self):
+        super().__init__()
+        self._running = True
+
+    def stop(self):
+        self._running = False
+
+    def run(self):
+        import socket
+        import struct
+
+        while self._running:
+            offset = None
+            rtt = None
+            last_error = ""
+            for server in self._NTP_SERVERS:
+                if not self._running:
+                    break
+                try:
+                    packet = bytearray(48)
+                    packet[0] = 0x1B
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    sock.settimeout(self._SOCKET_TIMEOUT_S)
+                    try:
+                        t0 = time.time()
+                        sock.sendto(bytes(packet), (server, self._NTP_PORT))
+                        data, _ = sock.recvfrom(48)
+                        t3 = time.time()
+                    finally:
+                        sock.close()
+                    if len(data) < 48:
+                        last_error = f"{server}: short response"
+                        continue
+                    recv_int, recv_frac = struct.unpack("!II", data[32:40])
+                    tx_int, tx_frac = struct.unpack("!II", data[40:48])
+                    t1 = (recv_int + recv_frac / 2 ** 32) - self._NTP_DELTA
+                    t2 = (tx_int + tx_frac / 2 ** 32) - self._NTP_DELTA
+                    rtt = (t3 - t0) - (t2 - t1)
+                    offset = ((t1 - t0) + (t2 - t3)) / 2.0
+                    break
+                except Exception as e:
+                    last_error = f"{server}: {e}"
+                    continue
+
+            if not self._running:
+                break
+
+            if offset is not None:
+                self.synced.emit(offset, rtt or 0.0)
+                slept = 0
+                while self._running and slept < self._RESYNC_INTERVAL_S * 1000:
+                    QThread.msleep(200)
+                    slept += 200
+            else:
+                self.failed.emit(last_error or "All NTP servers unreachable")
+                slept = 0
+                while self._running and slept < self._RETRY_SLEEP_MS:
+                    QThread.msleep(200)
+                    slept += 200
+
+        self.finished.emit()
 
 
 class _SerialReadWorker(QObject):

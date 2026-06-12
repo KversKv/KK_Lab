@@ -187,6 +187,24 @@ def body_splitter_style():
         """
 
 
+def center_vsplitter_style():
+    return f"""
+            QSplitter#scCenterVSplitter {{ background: transparent; }}
+            QSplitter#scCenterVSplitter::handle {{
+                background-color: transparent;
+            }}
+            QSplitter#scCenterVSplitter::handle:vertical {{
+                height: 6px;
+                margin: 1px 0;
+                border-radius: 2px;
+                background-color: transparent;
+            }}
+            QSplitter#scCenterVSplitter::handle:vertical:hover {{
+                background-color: {_CLR_BORDER_HOVER};
+            }}
+        """
+
+
 def center_widget_style():
     return f"QFrame#scCenterWidget {{ background-color: {_CLR_BG_CARD}; border: 1px solid {_CLR_BORDER}; border-radius: 8px; }}"
 
@@ -346,18 +364,25 @@ def log_toolbar_button_style(checked_variant=False, max_height=28, padding="5px 
             QPushButton:checked:hover {{
                 background-color: #115e50; color: #99f6e4; border: 1px solid #5eead4;
             }}
+            QPushButton:checked:pressed {{
+                background-color: #0a3d33; color: #5eead4; border: 1px solid #99f6e4;
+            }}
         """
     else:
-        checked_qss = f"QPushButton:checked {{ background-color: {_CLR_BORDER}; color: {_CLR_TEXT_WHITE}; border: 1px solid {_CLR_BORDER_HOVER}; }}"
+        checked_qss = f"""
+            QPushButton:checked {{ background-color: {_CLR_BORDER}; color: {_CLR_TEXT_WHITE}; border: 1px solid {_CLR_BORDER_HOVER}; }}
+            QPushButton:checked:hover {{ background-color: #2B3A52; color: {_CLR_TEXT_WHITE}; border: 1px solid {_CLR_FILTER_BORDER}; }}
+            QPushButton:checked:pressed {{ background-color: {_CLR_BG_PANEL}; color: {_CLR_TEXT_WHITE}; border: 1px solid {_CLR_FILTER_BORDER}; }}
+        """
     return f"""
                 QPushButton {{
                     min-height: 0px; max-height: {max_height}px; padding: {padding}; border-radius: {radius}px;
                     background-color: rgba(15, 23, 42, 0.6); color: {_CLR_TEXT_BTN_LOG}; font-size: 12px;
                     font-family: {_UI_FONT}; font-weight: 500; border: 1px solid {_CLR_BORDER_SOFT};
                 }}
+                QPushButton:focus {{ outline: none; }}
                 QPushButton:hover {{ background-color: {_CLR_BORDER}; color: {_CLR_TEXT_WHITE}; border: 1px solid {_CLR_BORDER_HOVER}; }}
-                QPushButton:focus {{ background-color: {_CLR_BORDER}; color: {_CLR_TEXT_WHITE}; border: 1px solid {_CLR_FILTER_BORDER}; }}
-                QPushButton:pressed {{ background-color: {_CLR_INPUT_BG}; }}
+                QPushButton:pressed {{ background-color: {_CLR_BG_PANEL}; color: {_CLR_TEXT_WHITE}; border: 1px solid {_CLR_FILTER_BORDER}; }}
                 {checked_qss}
             """
 
@@ -434,10 +459,12 @@ def transparent_toolbar_button_style():
                 background-color: transparent; color: {_CLR_TEXT_MUTED}; font-size: 12px;
                 font-family: {_UI_FONT}; font-weight: 500; border: none;
             }}
+            QPushButton:focus {{ outline: none; }}
             QPushButton:hover {{ border: 1px solid {_CLR_BORDER_SOFT}; color: {_CLR_TEXT_WHITE}; }}
-            QPushButton:focus {{ border: 1px solid {_CLR_FILTER_BORDER}; color: {_CLR_TEXT_WHITE}; background-color: {_CLR_INPUT_BG}; }}
             QPushButton:pressed {{ background-color: {_CLR_BG_CARD}; }}
-            QPushButton:checked {{ border: 1px solid {_CLR_BORDER_SOFT}; color: {_CLR_TEXT_WHITE}; }}
+            QPushButton:checked {{ background-color: #0c4a3e; color: #5eead4; border: 1px solid #2dd4bf; font-weight: 600; }}
+            QPushButton:checked:hover {{ background-color: #115e50; color: #99f6e4; border: 1px solid #5eead4; }}
+            QPushButton:checked:pressed {{ background-color: #0a3d33; color: #5eead4; border: 1px solid #99f6e4; }}
         """
 
 
@@ -457,19 +484,16 @@ def send_button_style():
 def quick_commands_panel_style():
     return f"""
             QFrame#quickCommandsPanel {{
-                background-color: {_CLR_BG_CARD};
-                border: 1px solid {_CLR_BORDER};
-                border-radius: 8px;
+                background: transparent;
+                border: none;
             }}
             QFrame#scQuickHeaderFrame {{
                 background: transparent;
                 border: none;
-                border-bottom: 1px solid {_CLR_BORDER};
             }}
             QFrame#scQuickToolbar {{
                 background: transparent;
                 border: none;
-                border-bottom: 1px solid {_CLR_BORDER};
             }}
             QLabel#quickCommandsTitle {{
                 color: {_CLR_TEXT_ACCENT};
@@ -530,9 +554,48 @@ def quick_commands_panel_style():
                 background-color: {_CLR_BLUE};
                 border-color: {_CLR_BLUE_LIGHT};
             }}
-            QFrame#quickCommandsPanel QScrollArea {{
+            QLabel#scQuickEmptyHint {{
+                color: {_CLR_TEXT_MUTED};
+                font-size: 12px;
+                font-family: {_UI_FONT};
+                background: transparent;
+            }}
+        """
+
+
+def bottom_tabs_style():
+    return f"""
+            QTabWidget#scBottomTabs {{
                 background: transparent;
                 border: none;
+            }}
+            QTabWidget#scBottomTabs::pane {{
+                background-color: {_CLR_BG_CARD};
+                border: 1px solid {_CLR_BORDER};
+                border-radius: 8px;
+                top: -1px;
+            }}
+            QTabWidget#scBottomTabs QTabBar {{
+                background: transparent;
+            }}
+            QTabWidget#scBottomTabs QTabBar::tab {{
+                background: transparent;
+                color: {_CLR_TEXT_MUTED};
+                border: none;
+                border-bottom: 2px solid transparent;
+                padding: 5px 14px;
+                margin-right: 2px;
+                min-height: 18px;
+                font-size: 12px;
+                font-weight: 600;
+                font-family: {_UI_FONT};
+            }}
+            QTabWidget#scBottomTabs QTabBar::tab:hover {{
+                color: {_CLR_TEXT_BTN_LOG};
+            }}
+            QTabWidget#scBottomTabs QTabBar::tab:selected {{
+                color: {_CLR_TEXT_TITLE};
+                border-bottom: 2px solid {_CLR_TEXT_ACCENT};
             }}
         """
 
@@ -691,7 +754,12 @@ def quick_add_button_style():
 
 
 def quick_button_scroll_style():
-    return "QScrollArea { background: transparent; border: none; }"
+    return f"""
+            QScrollArea {{
+                background: transparent;
+                border: none;
+            }}
+        """
 
 
 def quick_button_container_style():
@@ -937,12 +1005,15 @@ def log_color_info_text():
 
 _DLG_STYLE = f"""
     QDialog {{
-        background-color: {_CLR_BG_MAIN};
+        background-color: {_CLR_BG_CARD};
         color: {_CLR_TEXT_BTN_LOG};
     }}
     QLabel {{ color: {_CLR_TEXT_MUTED}; font-size: 12px; font-family: {_UI_FONT}; background: transparent; }}
+    QLabel#qcTitle {{
+        color: {_CLR_TEXT_TITLE}; font-size: 15px; font-weight: 700; font-family: {_UI_FONT}; background: transparent;
+    }}
     QLabel#dlgSectionTitle {{
-        color: {_CLR_TEXT_MUTED}; font-size: 13px; font-weight: 700; font-family: {_UI_FONT}; background: transparent;
+        color: {_CLR_TEXT_TITLE}; font-size: 13px; font-weight: 700; font-family: {_UI_FONT}; background: transparent;
         padding-bottom: 2px;
     }}
     QFrame#dlgSep {{ background-color: {_CLR_BORDER}; }}
@@ -968,6 +1039,17 @@ _DLG_STYLE = f"""
         color: {_CLR_TEXT_BTN_LOG}; font-size: 12px; font-family: {_UI_FONT}; padding: 5px 8px; min-height: 24px;
     }}
     QLineEdit:focus {{ border: 1px solid {_CLR_CONNECT_FG}; }}
+    QComboBox {{
+        background-color: {_CLR_INPUT_BG}; border: 1px solid rgba(51, 65, 85, 0.5); border-radius: 4px;
+        color: {_CLR_TEXT_BTN_LOG}; font-size: 12px; font-family: {_UI_FONT}; padding: 3px 8px; min-height: 24px;
+    }}
+    QComboBox:hover {{ border-color: {_CLR_BORDER_SOFT}; }}
+    QComboBox:focus {{ border-color: {_CLR_CONNECT_FG}; }}
+    QComboBox::drop-down {{ border: none; width: 20px; }}
+    QComboBox QAbstractItemView {{
+        background-color: {_CLR_INPUT_BG}; color: {_CLR_TEXT_BTN_LOG};
+        border: 1px solid {_CLR_BORDER}; selection-background-color: {_CLR_BORDER}; outline: 0;
+    }}
     QPushButton#dlgOkBtn {{
         background-color: {_CLR_GREEN_OK}; border: none; border-radius: 6px;
         color: {_CLR_TEXT_WHITE}; font-weight: 700; font-size: 13px; font-family: {_UI_FONT}; padding: 6px 20px;
@@ -1004,6 +1086,67 @@ _DLG_STYLE = f"""
         background-color: {_CLR_BG_CARD};
         color: {_CLR_TEXT_WHITE};
         border-bottom: 2px solid #6366f1;
+    }}
+    QFrame#dlgGroupCard {{
+        background: transparent;
+        border: none;
+        border-bottom: 1px solid {_CLR_BORDER};
+    }}
+    QLabel#dlgFieldLabel {{
+        color: {_CLR_TEXT_MUTED}; font-size: 12px; font-family: {_UI_FONT}; background: transparent;
+    }}
+    QLabel#dlgHint {{
+        color: {_CLR_TEXT_MUTED}; font-size: 11px; font-family: {_UI_FONT}; background: transparent;
+    }}
+    QPushButton#dlgRowBtn {{
+        background-color: {_CLR_INPUT_BG};
+        color: {_CLR_TEXT_BTN_LOG};
+        border: 1px solid {_CLR_BORDER};
+        border-radius: 6px;
+        font-size: 12px;
+        font-family: {_UI_FONT};
+        padding: 4px 12px;
+        min-height: 20px;
+    }}
+    QPushButton#dlgRowBtn:hover {{
+        background-color: {_CLR_BORDER};
+        border-color: {_CLR_BORDER_HOVER};
+        color: {_CLR_TEXT_WHITE};
+    }}
+    QPushButton#dlgRowBtn:pressed {{
+        background-color: {_CLR_BORDER_SOFT};
+    }}
+    QTableWidget#dlgStepTable {{
+        background-color: {_CLR_INPUT_BG};
+        color: {_CLR_TEXT_BTN_LOG};
+        border: 1px solid {_CLR_BORDER};
+        border-radius: 8px;
+        gridline-color: transparent;
+        font-size: 12px;
+        font-family: {_UI_FONT};
+        outline: none;
+    }}
+    QTableWidget#dlgStepTable::item {{
+        padding: 3px 6px;
+        border: none;
+    }}
+    QTableWidget#dlgStepTable::item:selected {{
+        background-color: rgba(99, 102, 241, 0.22);
+        color: {_CLR_TEXT_WHITE};
+    }}
+    QTableWidget#dlgStepTable QHeaderView::section {{
+        background-color: {_CLR_INPUT_BG};
+        color: {_CLR_TEXT_MUTED};
+        border: none;
+        border-bottom: 1px solid {_CLR_BORDER};
+        padding: 6px 6px;
+        font-size: 11px;
+        font-weight: 600;
+        font-family: {_UI_FONT};
+    }}
+    QTableWidget#dlgStepTable QTableCornerButton::section {{
+        background-color: {_CLR_INPUT_BG};
+        border: none;
     }}
 """
 

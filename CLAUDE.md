@@ -89,7 +89,10 @@ inst = create_instrument("n6705c", resource="USB0::...")
 
 ## 5. 常用命令
 
+> 📌 项目自带虚拟环境 **`.venv/`**（仓库根目录），命令前先激活：`.\.venv\Scripts\Activate.ps1`。
+
 ```powershell
+.\.venv\Scripts\Activate.ps1                                        # 激活虚拟环境
 python main.py                                                      # 运行
 python -m PyInstaller spec/kk_lab.spec --clean --noconfirm          # 打包主程序
 python -m PyInstaller spec/n6705c_datalog.spec --clean --noconfirm  # 打包子工具

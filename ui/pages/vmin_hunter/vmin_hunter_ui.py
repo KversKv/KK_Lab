@@ -20,7 +20,7 @@ from ui.resource_path import get_resource_base
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QPushButton, QLabel, QLineEdit, QFrame, QCheckBox,
+    QPushButton, QLabel, QLineEdit, QFrame, QCheckBox, QTabWidget,
     QScrollArea, QFileDialog, QDoubleSpinBox,
     QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView,
 )
@@ -174,6 +174,71 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
 
         QCheckBox::indicator:checked {{
             image: url("__CHECKED__");
+        }}
+
+        QTabWidget#vhSweepTabs::pane {{
+            background-color: {Colors.bg_panel};
+            border: 1px solid {Colors.border_secondary};
+            border-radius: {Radius.widget}px;
+            top: -1px;
+        }}
+
+        QTabWidget#vhSweepTabs QTabBar {{
+            qproperty-drawBase: 0;
+            left: 6px;
+        }}
+
+        QTabWidget#vhSweepTabs QTabBar::tab {{
+            background-color: {Colors.bg_card};
+            color: #6c80a6;
+            border: 1px solid {Colors.border_secondary};
+            border-bottom: 2px solid {Colors.border_secondary};
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+            padding: 5px 18px;
+            font-size: 11px;
+            font-weight: 600;
+        }}
+
+        QTabWidget#vhSweepTabs QTabBar::tab:selected {{
+            background-color: {Colors.bg_panel};
+            color: #ffffff;
+            border: 1px solid #4f7bd0;
+            border-bottom: 2px solid #7c5cff;
+        }}
+
+        QTabWidget#vhSweepTabs QTabBar::tab:hover:!selected {{
+            color: #aebdda;
+            border-color: #345594;
+        }}
+
+        QTabWidget#vhSweepTabs QLineEdit {{
+            background-color: #0a1733;
+            border: 1px solid #27406f;
+            border-radius: 8px;
+            padding: 6px 10px;
+            min-height: 22px;
+            color: #eaf2ff;
+        }}
+
+        QTabWidget#vhSweepTabs QLineEdit:focus {{
+            border: 1px solid #4cc9f0;
+        }}
+
+        QLabel#sweepFieldLabel {{
+            color: #9fb4d8;
+            font-size: 11px;
+        }}
+
+        QLabel#vhSweepHeader {{
+            color: #eaf2ff;
+            font-size: 12px;
+            font-weight: 600;
+        }}
+
+        QLabel#sweepHint {{
+            color: #6f84a8;
+            font-size: 10px;
         }}
         """.replace("__UNCHECKED__", cb_icons["unchecked"]).replace("__CHECKED__", cb_icons["checked"])
         self.setStyleSheet(get_page_base_qss() + page_extra)
@@ -462,14 +527,10 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         ch_row.addStretch()
         layout.addLayout(ch_row)
 
-        # ---- VcoreM 电压扫描区间 (Default / Start / End / Step) ----
-        vp_title = QLabel("Voltage Sweep (VcoreM)")
-        vp_title.setObjectName("fieldLabel")
-        layout.addWidget(vp_title)
-
-        vp_grid = QGridLayout()
-        vp_grid.setHorizontalSpacing(8)
-        vp_grid.setVerticalSpacing(4)
+        # ---- 电压扫描配置 (选项卡: VcoreM / VcoreL) ----
+        sweep_title = QLabel("Voltage Sweep Configuration")
+        sweep_title.setObjectName("vhSweepHeader")
+        layout.addWidget(sweep_title)
 
         self.voltage_default_input = QLineEdit("0.80")
         self.voltage_default_input.setToolTip("Default voltage (V): restore/wake voltage between sleep points")
@@ -480,26 +541,6 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         self.voltage_step_input = QLineEdit("0.05")
         self.voltage_step_input.setToolTip("Sweep step (V), positive value; sweep direction is from Start to End")
 
-        vp_grid.addWidget(self._field_label("Default (V)"), 0, 0)
-        vp_grid.addWidget(self._field_label("Start (V)"), 0, 1)
-        vp_grid.addWidget(self._field_label("End (V)"), 0, 2)
-        vp_grid.addWidget(self._field_label("Step (V)"), 0, 3)
-        vp_grid.addWidget(self.voltage_default_input, 1, 0)
-        vp_grid.addWidget(self.voltage_start_input, 1, 1)
-        vp_grid.addWidget(self.voltage_end_input, 1, 2)
-        vp_grid.addWidget(self.voltage_step_input, 1, 3)
-        layout.addLayout(vp_grid)
-
-        # ---- VcoreL 电压扫描区间 (勾选 VcoreL 后显示) ----
-        self.vcorel_sweep_title = QLabel("Voltage Sweep (VcoreL)")
-        self.vcorel_sweep_title.setObjectName("fieldLabel")
-        self.vcorel_sweep_title.setVisible(False)
-        layout.addWidget(self.vcorel_sweep_title)
-
-        vpl_grid = QGridLayout()
-        vpl_grid.setHorizontalSpacing(8)
-        vpl_grid.setVerticalSpacing(4)
-
         self.vcorel_default_input = QLineEdit("0.80")
         self.vcorel_default_input.setToolTip("VcoreL default voltage (V): restore/wake voltage between sleep points")
         self.vcorel_start_input = QLineEdit("0.80")
@@ -509,30 +550,36 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         self.vcorel_step_input = QLineEdit("0.05")
         self.vcorel_step_input.setToolTip("VcoreL sweep step (V), positive value")
 
-        vpl_default_label = self._field_label("Default (V)")
-        vpl_start_label = self._field_label("Start (V)")
-        vpl_end_label = self._field_label("End (V)")
-        vpl_step_label = self._field_label("Step (V)")
-        vpl_grid.addWidget(vpl_default_label, 0, 0)
-        vpl_grid.addWidget(vpl_start_label, 0, 1)
-        vpl_grid.addWidget(vpl_end_label, 0, 2)
-        vpl_grid.addWidget(vpl_step_label, 0, 3)
-        vpl_grid.addWidget(self.vcorel_default_input, 1, 0)
-        vpl_grid.addWidget(self.vcorel_start_input, 1, 1)
-        vpl_grid.addWidget(self.vcorel_end_input, 1, 2)
-        vpl_grid.addWidget(self.vcorel_step_input, 1, 3)
-        layout.addLayout(vpl_grid)
+        self.sweep_tabs = QTabWidget()
+        self.sweep_tabs.setObjectName("vhSweepTabs")
 
-        self._vcorel_sweep_widgets = [
-            self.vcorel_sweep_title,
-            vpl_default_label, vpl_start_label, vpl_end_label, vpl_step_label,
+        self._vcorem_sweep_tab = self._build_sweep_tab(
+            self.voltage_default_input, self.voltage_start_input,
+            self.voltage_end_input, self.voltage_step_input,
+        )
+        self._vcorel_sweep_tab = self._build_sweep_tab(
             self.vcorel_default_input, self.vcorel_start_input,
             self.vcorel_end_input, self.vcorel_step_input,
-        ]
-        for w in self._vcorel_sweep_widgets:
-            w.setVisible(False)
+        )
+        self.sweep_tabs.addTab(self._vcorem_sweep_tab, "VcoreM Sweep")
+        self.sweep_tabs.currentChanged.connect(self._update_sweep_hint)
+        layout.addWidget(self.sweep_tabs)
+
+        self.sweep_hint = QLabel()
+        self.sweep_hint.setObjectName("sweepHint")
+        self.sweep_hint.setWordWrap(True)
+        layout.addWidget(self.sweep_hint)
+        self._update_sweep_hint(0)
 
         return panel
+
+    def _update_sweep_hint(self, _index=0):
+        widget = self.sweep_tabs.currentWidget()
+        channel = "VcoreL" if widget is getattr(self, "_vcorel_sweep_tab", None) else "VcoreM"
+        self.sweep_hint.setText(
+            f"Define the default voltage and the automatic sweep range parameters "
+            f"for the {channel} channel. Adjust values with precision."
+        )
 
     # ------------------------------------------------------------------
     # Channel Config 面板 (IIC 控制字)
@@ -834,6 +881,34 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         label.setObjectName("fieldLabel")
         return label
 
+    def _sweep_field(self, text, widget):
+        box = QVBoxLayout()
+        box.setContentsMargins(0, 0, 0, 0)
+        box.setSpacing(3)
+        label = QLabel(text)
+        label.setObjectName("sweepFieldLabel")
+        box.addWidget(label)
+        box.addWidget(widget)
+        return box
+
+    def _build_sweep_tab(self, default_input, start_input, end_input, step_input):
+        tab = QWidget()
+        tab.setObjectName("vhSweepTab")
+        tab.setStyleSheet("QWidget#vhSweepTab { background: transparent; }")
+        grid = QGridLayout(tab)
+        grid.setContentsMargins(10, 10, 10, 8)
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(8)
+
+        grid.addLayout(self._sweep_field("Default (V)", default_input), 0, 0)
+        grid.addLayout(self._sweep_field("Sweep Start (V)", start_input), 0, 1)
+        grid.addLayout(self._sweep_field("Step (V)", step_input), 1, 0)
+        grid.addLayout(self._sweep_field("Sweep End (V)", end_input), 1, 1)
+
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+        return tab
+
     def _inline_field_label(self, text):
         label = QLabel(text)
         label.setObjectName("fieldLabel")
@@ -887,8 +962,14 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         self._set_iic_group_enabled(self._vcorel_iic, checked)
         for w in self._vcorel_n6705c_widgets:
             w.setVisible(checked)
-        for w in getattr(self, "_vcorel_sweep_widgets", []):
-            w.setVisible(checked)
+        if checked:
+            if self.sweep_tabs.indexOf(self._vcorel_sweep_tab) < 0:
+                self.sweep_tabs.addTab(self._vcorel_sweep_tab, "VcoreL Sweep")
+            self.sweep_tabs.setCurrentWidget(self._vcorel_sweep_tab)
+        else:
+            idx = self.sweep_tabs.indexOf(self._vcorel_sweep_tab)
+            if idx >= 0:
+                self.sweep_tabs.removeTab(idx)
 
     def _on_start_clicked(self):
         try:

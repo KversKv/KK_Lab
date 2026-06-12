@@ -6,9 +6,18 @@
 
 ## 1. 环境准备
 
+> 📌 项目自带虚拟环境 **`.venv/`**（位于仓库根目录），**所有命令都应在激活该环境后执行**。
+
 ```powershell
-# 建议 Python 3.10 / 3.11 x64
+# 激活虚拟环境（PowerShell）
+.\.venv\Scripts\Activate.ps1
+
+# 激活虚拟环境（CMD，备用）
+.\.venv\Scripts\activate.bat
+
+# 确认使用的是 .venv 内的解释器（建议 Python 3.12+ x64）
 python --version
+where.exe python   # 第一条应指向 .venv\Scripts\python.exe
 
 # 安装依赖（锁定版本）
 python -m pip install -r requirements.txt
@@ -16,6 +25,8 @@ python -m pip install -r requirements.txt
 # 或使用 pyproject 安装
 python -m pip install -e .
 ```
+
+> 若未激活，也可直接用 `.\.venv\Scripts\python.exe <脚本>` 调用虚拟环境内的解释器。
 
 ## 2. 运行
 
