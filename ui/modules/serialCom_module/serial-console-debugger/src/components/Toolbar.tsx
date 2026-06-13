@@ -1,7 +1,7 @@
 import React from 'react';
 import { LogPanel } from '../types';
 import { 
-  Play, Pause, Square, RotateCw, Plus, Minus, Columns, Settings, Sliders 
+  Play, Pause, Square, RotateCw, Plus, Minus, Columns, Settings, Sliders, Sun, Moon 
 } from 'lucide-react';
 
 interface ToolbarProps {
@@ -9,13 +9,14 @@ interface ToolbarProps {
   onToggleConnect: () => void;
   onPauseToggle: () => void;
   onStop: () => void;
-  onRefresh: () => void;
   sidebarVisible: boolean;
   onToggleSidebar: () => void;
   onAddLogPanel: () => void;
   onRemoveLogPanel: () => void;
   totalPanels: number;
   onOpenSettingsModal: () => void;
+  isDark: boolean;
+  onToggleTheme: () => void;
 }
 
 export function Toolbar({
@@ -23,13 +24,14 @@ export function Toolbar({
   onToggleConnect,
   onPauseToggle,
   onStop,
-  onRefresh,
   sidebarVisible,
   onToggleSidebar,
   onAddLogPanel,
   onRemoveLogPanel,
   totalPanels,
-  onOpenSettingsModal
+  onOpenSettingsModal,
+  isDark,
+  onToggleTheme
 }: ToolbarProps) {
   
   return (
@@ -74,16 +76,6 @@ export function Toolbar({
         >
           <Square size={11} fill="currentColor" />
           <span>Stop</span>
-        </button>
-
-        {/* Refresh button */}
-        <button
-          onClick={onRefresh}
-          className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg border border-gray-150 transition-all cursor-pointer"
-          id="btn-refresh-serial"
-        >
-          <RotateCw size={11} />
-          <span>Refresh</span>
         </button>
       </div>
 
@@ -132,8 +124,18 @@ export function Toolbar({
       {/* Stretch spacer */}
       <div className="flex-1" />
 
-      {/* Group 3: Settings Wheel */}
+      {/* Group 3: Settings & Theme Switch */}
       <div className="flex items-center gap-2" id="toolbar-global-actions">
+        {/* Toggle Theme button */}
+        <button
+          onClick={onToggleTheme}
+          title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+          className="flex items-center justify-center p-2 text-gray-500 hover:text-gray-900 border border-gray-150 hover:bg-gray-100 rounded-lg transition-all cursor-pointer"
+          id="btn-toggle-theme"
+        >
+          {isDark ? <Sun size={13} className="text-amber-500 hover:scale-110 transition-transform" /> : <Moon size={13} className="bg-transparent hover:scale-110 transition-transform" />}
+        </button>
+
         <button
           onClick={onOpenSettingsModal}
           className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-gray-500 hover:text-gray-900 border border-gray-150 hover:bg-gray-100 rounded-lg transition-all cursor-pointer"

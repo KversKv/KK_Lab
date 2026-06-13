@@ -6,20 +6,47 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
+/* Custom premium scrollbar style */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: rgba(60, 60, 60, 0.15);
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(60, 60, 60, 0.35);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background-color: rgba(240, 240, 240, 0.15);
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(240, 240, 240, 0.35);
+}
+
 /* Custom scrollbars thin */
 .scrollbar-thin::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 .scrollbar-thin::-webkit-scrollbar-track {
   background: transparent;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: rgba(120, 120, 120, 0.3);
-  border-radius: 3px;
+  background-color: rgba(60, 60, 60, 0.15);
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: rgba(100, 100, 100, 0.5);
+  background-color: rgba(60, 60, 60, 0.35);
 }
 
 @keyframes fadeIn {
@@ -39,3 +66,172 @@
 .animate-scale-up {
   animation: scaleUp 0.18s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
+
+/* ==========================================
+   IMMERSIVE HARDWARE DARK MODE STYLES
+   ========================================== */
+.dark {
+  color-scheme: dark;
+  background-color: #09090b !important;
+  color: #f4f4f5 !important;
+}
+
+/* Background overrides */
+.dark #kk-uart-suite-window {
+  background-color: #09090b !important;
+  color: #f4f4f5 !important;
+}
+
+.dark .bg-white,
+.dark [class*="bg-white"] {
+  background-color: #121214 !important;
+}
+
+.dark aside,
+.dark #serial-config-sidebar,
+.dark #diagnostics-sandbox,
+.dark #logs-quadrants-grid {
+  background-color: #09090b !important;
+}
+
+.dark #quick-commands-console,
+.dark #auxiliary-diagnostic-console,
+.dark #workspace-tab-contents {
+  background-color: #121214 !important;
+}
+
+.dark .bg-\[\#F5F5F7\],
+.dark .bg-\[\#F2F2F7\],
+.dark .bg-\[\#FAFBFD\],
+.dark .bg-\[\#FBFBFD\],
+.dark .bg-gray-50,
+.dark .bg-gray-100 {
+  background-color: #181c20 !important;
+}
+
+/* Split screen active board styling overrides */
+.dark .bg-\[\#FAFBFD\]#log-card-meta-toolbar, 
+.dark .bg-\[\#FBFBFD\]#terminal-view-0, 
+.dark .bg-\[\#FBFBFD\]#terminal-view-1, 
+.dark .bg-\[\#FBFBFD\]#terminal-view-2, 
+.dark .bg-\[\#FBFBFD\]#terminal-view-3 {
+  background-color: #0d0e11 !important;
+}
+
+/* Form inputs & inputs inside dark wrapper */
+.dark input[type="text"],
+.dark input[type="number"],
+.dark select,
+.dark textarea {
+  background-color: #0d0e11 !important;
+  color: #f4f4f5 !important;
+  border-color: #2a2a30 !important;
+}
+
+.dark input[type="text"]:focus,
+.dark input[type="number"]:focus,
+.dark select:focus,
+.dark textarea:focus {
+  border-color: #007AFF !important;
+  outline: none;
+}
+
+/* Borders and dividers */
+.dark .border-gray-100,
+.dark .border-gray-150,
+.dark .border-gray-200,
+.dark .border-gray-205,
+.dark .border-b,
+.dark .border-t,
+.dark .border-r,
+.dark .border-l,
+.dark .border {
+  border-color: #222225 !important;
+}
+
+/* Text and Labels overrides */
+.dark .text-slate-800,
+.dark .text-gray-800,
+.dark .text-gray-700,
+.dark .text-gray-900,
+.dark .text-[#1D1D1F] {
+  color: #f4f4f5 !important;
+}
+
+.dark .text-gray-600,
+.dark .text-gray-500,
+.dark .text-gray-400 {
+  color: #a1a1aa !important;
+}
+
+/* Sub-panels, hover elements, specific buttons */
+.dark .hover\:bg-gray-50:hover,
+.dark .hover\:bg-gray-100:hover,
+.dark .hover\:text-gray-800:hover,
+.dark .hover\:text-gray-900:hover {
+  background-color: #1e1e24 !important;
+  color: #ffffff !important;
+}
+
+.dark #btn-toggle-config-sidebar,
+.dark #btn-pause-log,
+.dark #btn-stop-connection,
+.dark #btn-refresh-serial,
+.dark #btn-global-settings,
+.dark #btn-toggle-theme {
+  background-color: #1c1c1e !important;
+  border-color: #2c2c2e !important;
+  color: #e5e5ea !important;
+}
+
+.dark #btn-toggle-config-sidebar:hover,
+.dark #btn-pause-log:hover,
+.dark #btn-stop-connection:hover,
+.dark #btn-refresh-serial:hover,
+.dark #btn-global-settings:hover,
+.dark #btn-toggle-theme:hover {
+  background-color: #2c2c2e !important;
+  color: #ffffff !important;
+}
+
+.dark #console-sub-navigation {
+  background-color: #141416 !important;
+  border-bottom-color: #222225 !important;
+}
+
+/* Terminal Log specific typography overlays */
+.dark .text-slate-800 {
+  color: #e5e5ea !important; /* Soft white/gray for RX log content in terminal */
+}
+
+.dark .text-\[\#007AFF\] {
+  color: #409EFF !important; /* Lighter vivid blue for high contrast TX output */
+}
+
+/* Scrollbar tweaks in Dark Mode */
+.dark .scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: rgba(240, 240, 240, 0.15);
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.dark .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(240, 240, 240, 0.35);
+}
+
+/* Dark mode slide toggler background override */
+.dark [id^="slider-"] {
+  background-color: #09090b !important;
+  border-color: #222225 !important;
+}
+
+/* Tooltips & Modal cards templates */
+.dark #modal-overlay {
+  background-color: rgba(0, 0, 0, 0.75) !important;
+}
+.dark #settings-dialog-card,
+.dark [id$="-modal"] > div {
+  background-color: #121214 !important;
+  border-color: #2a2a30 !important;
+}
+

@@ -289,9 +289,9 @@ export function QuickCommandsTab({
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#FAFBFD]" id="quick-commands-console">
+    <div className="flex flex-col h-full bg-[#FAFBFD] dark:bg-zinc-950" id="quick-commands-console">
       {/* 1. PROJECT TOP TABS BAR */}
-      <div className="flex items-center justify-between border-b border-gray-150 px-4 py-1" id="project-tabs-navigation">
+      <div className="flex items-center justify-between border-b border-gray-150 dark:border-zinc-800 px-4 py-1" id="project-tabs-navigation">
         <div className="flex items-center gap-1.5 overflow-x-auto max-w-[80vw]" id="tabs-container">
           <Zap size={13} className="text-[#FF9F0A] animate-pulse" />
           
@@ -306,8 +306,8 @@ export function QuickCommandsTab({
                 }}
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-t-lg transition-all border-t border-x cursor-pointer ${
                   isSel 
-                    ? 'bg-white border-gray-200 text-slate-800 -mb-[5px] z-10' 
-                    : 'bg-[#F2F2F7] border-transparent text-gray-500 hover:text-slate-700 hover:bg-[#FAFBFD]'
+                    ? 'bg-white text-slate-800 border-gray-200 -mb-[5px] z-10 dark:bg-zinc-900 dark:text-zinc-100 dark:border-zinc-800' 
+                    : 'bg-[#F2F2F7] border-transparent text-gray-400 hover:text-slate-700 hover:bg-[#FAFBFD] dark:bg-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-900'
                 }`}
               >
                 <span>{proj.name}</span>
@@ -332,8 +332,8 @@ export function QuickCommandsTab({
         </div>
 
         {/* Import/Export buttons */}
-        <div className="flex items-center gap-1 text-[11px] font-bold text-gray-500">
-          <label className="flex items-center gap-1 border border-gray-150 rounded-lg p-1.5 bg-white hover:bg-gray-50 cursor-pointer">
+        <div className="flex items-center gap-1 text-[11px] font-bold text-gray-500 dark:text-zinc-400">
+          <label className="flex items-center gap-1 border border-gray-150 rounded-lg p-1.5 bg-white hover:bg-gray-50 dark:bg-zinc-800 dark:border-zinc-700 dark:hover:bg-zinc-700 dark:text-zinc-200 cursor-pointer">
             <Upload size={12} />
             <span>Import</span>
             <input type="file" accept=".json" onChange={handleImportJson} className="hidden" />
@@ -341,7 +341,7 @@ export function QuickCommandsTab({
           
           <button 
             onClick={handleExportJson}
-            className="flex items-center gap-1 border border-gray-150 rounded-lg p-1.5 bg-white hover:bg-[#E8F2FF] text-[#007AFF] cursor-pointer"
+            className="flex items-center gap-1 border border-gray-150 rounded-lg p-1.5 bg-white hover:bg-[#E8F2FF] text-[#007AFF] dark:bg-zinc-800 dark:border-zinc-700 dark:hover:bg-zinc-700 dark:text-blue-400 cursor-pointer"
           >
             <Download size={12} />
             <span>Export</span>
@@ -350,15 +350,15 @@ export function QuickCommandsTab({
       </div>
 
       {/* 2. GROUP SELECTOR AND CONTROLS ACTION ROW */}
-      <div className="bg-[#FAFBFD] px-4 py-2 border-b border-gray-150 flex items-center justify-between text-xs select-none" id="group-action-row">
+      <div className="bg-[#FAFBFD] dark:bg-zinc-900 px-4 py-2 border-b border-gray-150 dark:border-zinc-800 flex items-center justify-between text-xs select-none" id="group-action-row">
         <div className="flex items-center gap-3">
-          <span className="font-semibold text-gray-500">Group:</span>
+          <span className="font-semibold text-gray-500 dark:text-zinc-400">Group:</span>
           {activeProject ? (
             <div className="flex items-center gap-2">
               <select
                 value={activeGroupId}
                 onChange={(e) => setActiveGroupId(e.target.value)}
-                className="bg-white text-xs border border-gray-250 p-1.5 rounded-lg focus:outline-none"
+                className="bg-white dark:bg-zinc-800 text-xs border border-gray-200 dark:border-zinc-700 p-1.5 rounded-lg focus:outline-none dark:text-zinc-100"
               >
                 {activeProject.groups.map(g => (
                   <option key={g.id} value={g.id}>{g.name}</option>
@@ -367,7 +367,7 @@ export function QuickCommandsTab({
 
               <button 
                 onClick={handleAddNewGroup}
-                className="flex items-center gap-0.5 px-2 py-1 bg-white hover:bg-blue-50 text-[#007AFF] border border-gray-150 rounded-lg font-bold transition-all cursor-pointer"
+                className="flex items-center gap-0.5 px-2 py-1 bg-white hover:bg-blue-50 text-[#007AFF] dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:text-blue-400 dark:border-zinc-700 border border-gray-150 rounded-lg font-bold transition-all cursor-pointer"
               >
                 <FolderPlus size={11} />
                 <span>+ Group</span>
@@ -401,8 +401,8 @@ export function QuickCommandsTab({
         {!activeGroup || activeGroup.commands.length === 0 ? (
           <div className="flex flex-col items-center justify-center p-8 py-16 text-center select-none">
             <Zap size={24} className="stroke-[1.5] text-amber-400 mb-2" />
-            <p className="text-xs font-bold text-gray-400">Default group is empty</p>
-            <p className="text-[10px] text-gray-300 mt-0.5">Click &quot;Add Command&quot; to append debug macros or hex sensor directives.</p>
+            <p className="text-xs font-bold text-gray-400 dark:text-zinc-500">Default group is empty</p>
+            <p className="text-[10px] text-gray-300 dark:text-zinc-600 mt-0.5">Click &quot;Add Command&quot; to append debug macros or hex sensor directives.</p>
           </div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3" id="quick-buttons-grid">
@@ -413,7 +413,7 @@ export function QuickCommandsTab({
                   onClick={() => onSendCommand(cmd)}
                   onMouseMove={(e) => handleMouseMove(cmd, e)}
                   onMouseLeave={() => setHoveredCommand(null)}
-                  className="relative group bg-[#F2F2F7] hover:bg-[#E8F2FF] border border-gray-150 hover:border-[#BBD7FF] text-[#1D1D1F] hover:text-[#007AFF] px-3.5 py-3 rounded-lg text-center font-bold text-xs select-none transition-all active:scale-97 shadow-xs flex flex-col justify-center items-center h-16 cursor-pointer"
+                  className="relative group bg-[#F2F2F7] dark:bg-zinc-800 hover:bg-[#E8F2FF] dark:hover:bg-zinc-700 border border-gray-150 dark:border-zinc-700 hover:border-[#BBD7FF] dark:hover:border-zinc-600 text-slate-800 dark:text-zinc-100 hover:text-[#007AFF] dark:hover:text-blue-400 px-3.5 py-3 rounded-lg text-center font-bold text-xs select-none transition-all active:scale-97 shadow-xs flex flex-col justify-center items-center h-16 cursor-pointer"
                   id={`quick-cmd-btn-${idx}`}
                 >
                   {/* Reordering indicators / Edit actions - visible on hover */}
@@ -422,7 +422,7 @@ export function QuickCommandsTab({
                       onClick={(e) => handleMoveCommandIndex(idx, -1, e)}
                       title="Move Left"
                       disabled={idx === 0}
-                      className="text-gray-450 hover:bg-gray-100 p-0.5 rounded disabled:opacity-30"
+                      className="text-gray-450 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-600 p-0.5 rounded disabled:opacity-30"
                     >
                       <ChevronLeft size={10} />
                     </button>
@@ -430,21 +430,21 @@ export function QuickCommandsTab({
                       onClick={(e) => handleMoveCommandIndex(idx, 1, e)}
                       title="Move Right"
                       disabled={idx === activeGroup.commands.length - 1}
-                      className="text-gray-455 hover:bg-gray-100 p-0.5 rounded disabled:opacity-30"
+                      className="text-gray-455 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-600 p-0.5 rounded disabled:opacity-30"
                     >
                       <ChevronRight size={10} />
                     </button>
                     <button 
                       onClick={(e) => { e.stopPropagation(); handleOpenCommandModal('edit', cmd); }}
                       title="Edit macro"
-                      className="text-blue-500 hover:bg-blue-50 p-0.5 rounded"
+                      className="text-blue-500 hover:bg-blue-50 dark:hover:bg-zinc-600 p-0.5 rounded"
                     >
                       <Edit3 size={10} />
                     </button>
                     <button 
                       onClick={(e) => handleDeleteCommand(cmd.id, e)}
                       title="Delete macro"
-                      className="text-red-500 hover:bg-red-50 p-0.5 rounded"
+                      className="text-red-500 hover:bg-red-50 dark:hover:bg-zinc-600 p-0.5 rounded"
                     >
                       <Trash2 size={10} />
                     </button>
@@ -461,18 +461,18 @@ export function QuickCommandsTab({
       {/* 4. HOVER FLOATING PREVIEW CARD (matched style to PySide6 `_QuickCmdPreviewPopup`) */}
       {hoveredCommand && (
         <div 
-          className="fixed bg-white border border-gray-250 shadow-xl rounded-xl p-3 z-50 pointer-events-none w-72 text-left space-y-2 leading-relaxed animate-fade-in"
+          className="fixed bg-white dark:bg-zinc-900 border border-gray-250 dark:border-zinc-700 shadow-xl rounded-xl p-3 z-50 pointer-events-none w-72 text-left space-y-2 leading-relaxed animate-fade-in text-gray-850 dark:text-zinc-200"
           style={{ left: hoveredPosition.x, top: hoveredPosition.y }}
           id="cmd-hover-floating-dialog"
         >
-          <div className="flex items-center gap-2 border-b border-gray-100 pb-1">
+          <div className="flex items-center gap-2 border-b border-gray-100 dark:border-zinc-800 pb-1">
             <span className="text-[9px] font-bold text-white bg-[#FF9F0A] px-1.5 py-0.5 rounded">QUICK CMD</span>
-            <span className="text-xs font-bold text-gray-800 truncate">{hoveredCommand.name}</span>
+            <span className="text-xs font-bold text-gray-800 dark:text-zinc-100 truncate">{hoveredCommand.name}</span>
           </div>
-          <div className="bg-gray-50 border border-gray-200 rounded p-1.5 font-mono text-[10px] break-all max-h-24 overflow-y-auto">
+          <div className="bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded p-1.5 font-mono text-[10px] break-all max-h-24 overflow-y-auto">
             {hoveredCommand.content}
           </div>
-          <div className="flex justify-between text-[9px] text-gray-400 font-bold">
+          <div className="flex justify-between text-[9px] text-gray-400 dark:text-zinc-500 font-bold">
             <span>Format: {hoveredCommand.send_type.toUpperCase()}</span>
             <span>Line Ending: {repr(hoveredCommand.line_ending)}</span>
           </div>

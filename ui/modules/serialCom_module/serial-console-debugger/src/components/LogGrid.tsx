@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { LogPanel, LogItem, LogType } from '../types';
 import { formatByteCount } from '../utils/serialHelper';
 import { 
@@ -123,6 +123,7 @@ function LogPanelCard({
 }: LogPanelCardProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const { logs: displayLogs, indices: directMatchSet } = getFilteredLogs(panel);
+  const [isFilterOpen, setIsFilterOpen] = useState(() => !!panel.filterKeyword);
 
   // Track auto-scroll behaviour perfectly on streaming additions
   useEffect(() => {
@@ -181,10 +182,14 @@ function LogPanelCard({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              updatePanelSettings(idx, { filterRegex: !panel.filterRegex });
+              setIsFilterOpen(!isFilterOpen);
             }}
-            title="Filter Logs"
-            className={`p-1.5 rounded-md hover:bg-gray-100 transition-colors cursor-pointer ${panel.filterKeyword ? 'text-[#007AFF] bg-blue-50' : 'text-gray-500'}`}
+            title="Toggle Filter Panel"
+            className={`p-1.5 rounded-md hover:bg-gray-100 transition-colors cursor-pointer ${
+              isFilterOpen 
+                ? 'text-[#007AFF] bg-blue-50 dark:bg-blue-950/45 dark:text-blue-400 font-bold' 
+                : 'text-gray-500 hover:text-gray-800'
+            }`}
           >
             <Filter size={13} />
           </button>
@@ -244,86 +249,88 @@ function LogPanelCard({
       </div>
 
       {/* FILTER PANEL ROW */}
-      <div className="bg-white border-b border-gray-100 p-2.5 text-xs space-y-2" id="filter-input-toolbar" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-2">
-          <input
-            type="text"
-            placeholder="Enter keyword or search query..."
-            value={panel.filterKeyword}
-            onChange={(e) => updatePanelSettings(idx, { filterKeyword: e.target.value })}
-            className="flex-1 bg-gray-50 border border-gray-200 focus:border-[#007AFF] focus:ring-1 focus:ring-[#007AFF] rounded-md px-2 py-1 outline-none text-[11px]"
-          />
-          
-          {panel.filterKeyword && (
-            <span className="text-[10px] text-[#5E5CE6] font-bold bg-[#EFEFFF] px-1.5 py-0.5 rounded">
-              Matches: {directMatchSet.size}
-            </span>
-          )}
-        </div>
-
-        {/* Filter Modifiers checkboxes and After/Before Lines spins */}
-        <div className="flex items-center flex-wrap gap-x-4 gap-y-1.5 text-[10px] text-gray-500 font-semibold select-none">
-          <label className="flex items-center gap-1.5 cursor-pointer">
+      {isFilterOpen && (
+        <div className="bg-white dark:bg-zinc-900 border-b border-gray-100 dark:border-zinc-800 p-2.5 text-xs space-y-2 animate-fade-in" id="filter-input-toolbar" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center gap-2">
             <input
-              type="checkbox"
-              checked={panel.filterRegex}
-              onChange={(e) => updatePanelSettings(idx, { filterRegex: e.target.checked })}
-              className="rounded text-[#007AFF] border-gray-200 h-3 w-3"
+              type="text"
+              placeholder="Enter keyword or search query..."
+              value={panel.filterKeyword}
+              onChange={(e) => updatePanelSettings(idx, { filterKeyword: e.target.value })}
+              className="flex-1 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 focus:border-[#007AFF] focus:ring-1 focus:ring-[#007AFF] focus:outline-none rounded-md px-2 py-1 outline-none text-[11px] dark:text-zinc-100"
             />
-            <span>Regex</span>
-          </label>
-
-          <label className="flex items-center gap-1.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={panel.filterCase}
-              onChange={(e) => updatePanelSettings(idx, { filterCase: e.target.checked })}
-              className="rounded text-[#007AFF] border-gray-200 h-3 w-3"
-            />
-            <span>Match Case</span>
-          </label>
-
-          <label className="flex items-center gap-1.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={panel.filterInvert}
-              onChange={(e) => updatePanelSettings(idx, { filterInvert: e.target.checked })}
-              className="rounded text-[#007AFF] border-gray-200 h-3 w-3"
-            />
-            <span>Invert</span>
-          </label>
-
-          <div className="h-3 w-px bg-gray-200" />
-
-          {/* Context Blocks Before spin */}
-          <div className="flex items-center gap-1">
-            <span>Before</span>
-            <input
-              type="number"
-              min={0}
-              max={50}
-              value={panel.filterBefore}
-              onChange={(e) => updatePanelSettings(idx, { filterBefore: Math.max(0, Number(e.target.value)) })}
-              className="w-10 text-center bg-gray-50 border border-gray-200 rounded p-0.5 text-[10px]"
-            />
-            <span className="text-[9px] text-gray-400">lines</span>
+            
+            {panel.filterKeyword && (
+              <span className="text-[10px] text-[#5E5CE6] dark:text-violet-400 font-bold bg-[#EFEFFF] dark:bg-violet-950/40 px-1.5 py-0.5 rounded">
+                Matches: {directMatchSet.size}
+              </span>
+            )}
           </div>
 
-          {/* Context Blocks After spin */}
-          <div className="flex items-center gap-1">
-            <span>After</span>
-            <input
-              type="number"
-              min={0}
-              max={50}
-              value={panel.filterAfter}
-              onChange={(e) => updatePanelSettings(idx, { filterAfter: Math.max(0, Number(e.target.value)) })}
-              className="w-10 text-center bg-gray-50 border border-gray-200 rounded p-0.5 text-[10px]"
-            />
-            <span className="text-[9px] text-gray-400">lines</span>
+          {/* Filter Modifiers checkboxes and After/Before Lines spins */}
+          <div className="flex items-center flex-wrap gap-x-4 gap-y-1.5 text-[10px] text-gray-500 dark:text-zinc-400 font-semibold select-none">
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={panel.filterRegex}
+                onChange={(e) => updatePanelSettings(idx, { filterRegex: e.target.checked })}
+                className="rounded text-[#007AFF] border-gray-200 dark:border-zinc-700 h-3 w-3 dark:bg-zinc-800"
+              />
+              <span>Regex</span>
+            </label>
+
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={panel.filterCase}
+                onChange={(e) => updatePanelSettings(idx, { filterCase: e.target.checked })}
+                className="rounded text-[#007AFF] border-gray-200 dark:border-zinc-700 h-3 w-3 dark:bg-zinc-800"
+              />
+              <span>Match Case</span>
+            </label>
+
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={panel.filterInvert}
+                onChange={(e) => updatePanelSettings(idx, { filterInvert: e.target.checked })}
+                className="rounded text-[#007AFF] border-gray-200 dark:border-zinc-700 h-3 w-3 dark:bg-zinc-800"
+              />
+              <span>Invert</span>
+            </label>
+
+            <div className="h-3 w-px bg-gray-200 dark:bg-zinc-800" />
+
+            {/* Context Blocks Before spin */}
+            <div className="flex items-center gap-1">
+              <span>Before</span>
+              <input
+                type="number"
+                min={0}
+                max={50}
+                value={panel.filterBefore}
+                onChange={(e) => updatePanelSettings(idx, { filterBefore: Math.max(0, Number(e.target.value)) })}
+                className="w-10 text-center bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 dark:text-zinc-100 rounded p-0.5 text-[10px] focus:outline-none"
+              />
+              <span className="text-[9px] text-gray-450 dark:text-zinc-500">lines</span>
+            </div>
+
+            {/* Context Blocks After spin */}
+            <div className="flex items-center gap-1">
+              <span>After</span>
+              <input
+                type="number"
+                min={0}
+                max={50}
+                value={panel.filterAfter}
+                onChange={(e) => updatePanelSettings(idx, { filterAfter: Math.max(0, Number(e.target.value)) })}
+                className="w-10 text-center bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 dark:text-zinc-100 rounded p-0.5 text-[10px] focus:outline-none"
+              />
+              <span className="text-[9px] text-gray-450 dark:text-zinc-500">lines</span>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* TERMINAL PRINT WINDOW */}
       <div 
@@ -376,7 +383,7 @@ function LogPanelCard({
           <span>Baudrate: <strong className="text-gray-700">{panel.baudrate} bps</strong></span>
         </div>
         <div className="flex gap-4">
-          <span className="text-[#1D1D1F]">RX: <strong>{formatByteCount(panel.rxBytes)}</strong></span>
+          <span className="text-slate-800 dark:text-zinc-100">RX: <strong>{formatByteCount(panel.rxBytes)}</strong></span>
           <span className="text-[#007AFF]">TX: <strong>{formatByteCount(panel.txBytes)}</strong></span>
         </div>
       </div>

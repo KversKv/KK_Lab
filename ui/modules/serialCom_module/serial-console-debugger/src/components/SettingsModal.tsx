@@ -239,7 +239,7 @@ export function SettingsModal({
             {activeTab === 'about' && (
               <div className="space-y-4" id="tab-about">
                 <div className="bg-gray-50 border border-gray-150 rounded-xl p-4 space-y-2 select-text" id="card-about-detail">
-                  <h3 className="font-bold text-[#1D1D1F] text-sm">KK Serial Terminal Console</h3>
+                  <h3 className="font-bold text-slate-800 dark:text-zinc-100 text-sm">KK Serial Terminal Console</h3>
                   <p className="text-gray-400 font-semibold text-[10px]">Web Version 2.4.0 (Engine v2.0)</p>
                   <p className="text-gray-500 leading-relaxed font-medium">
                     A premium web-native Serial Debugging platform built in React & Tailwind CSS. Inspired by professional instrumentation tools, featuring Web Serial API, multiple split windows, automated test script routines, and offline mock-diagnostic playgrounds.

@@ -34,6 +34,15 @@ const INITIAL_AUTOBAUD_SETTINGS: AutoBaudSettings = {
 };
 
 export default function App() {
+  const [isDark, setIsDark] = useState<boolean>(() => {
+    const saved = localStorage.getItem('kk_is_dark');
+    return saved ? JSON.parse(saved) : false;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('kk_is_dark', JSON.stringify(isDark));
+  }, [isDark]);
+
   const [panels, setPanels] = useState<LogPanel[]>([createDefaultPanel('1', 'Primary Log')]);
   const [activePanelIndex, setActivePanelIndex] = useState<number>(0);
   const [availablePorts, setAvailablePorts] = useState<string[]>([]);
@@ -607,7 +616,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-[#F5F5F7]" id="kk-uart-suite-window">
+    <div className={`flex flex-col h-screen ${isDark ? 'dark bg-zinc-950 text-zinc-50' : 'bg-[#F5F5F7] text-slate-800'}`} id="kk-uart-suite-window">
       
       {/* GLOBAL TOP HEADER BAR */}
       <Toolbar 
@@ -615,13 +624,14 @@ export default function App() {
         onToggleConnect={handleToggleConnectActivePort}
         onPauseToggle={handlePauseToggle}
         onStop={() => doDisconnectPanel(activePanelIndex)}
-        onRefresh={handleQueryPorts}
         sidebarVisible={true}
         onToggleSidebar={() => {}}
         onAddLogPanel={handleAddLogPanel}
         onRemoveLogPanel={handleRemoveLogPanel}
         totalPanels={panels.length}
         onOpenSettingsModal={() => setIsSettingsOpen(true)}
+        isDark={isDark}
+        onToggleTheme={() => setIsDark(!isDark)}
       />
 
       <div className="flex-1 flex overflow-hidden" id="workspace-layout-split">

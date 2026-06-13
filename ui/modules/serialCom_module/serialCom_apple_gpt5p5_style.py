@@ -18,8 +18,8 @@ _SERIAL_BTN_RADIUS = 7
 _TERM_FONT = '"JetBrains Mono", "Fira Code", Consolas, "Menlo", "Courier New", monospace'
 _UI_FONT = '"Inter", "PingFang SC", "Microsoft YaHei", "Segoe UI", -apple-system, sans-serif'
 
-_CLR_BG_MAIN = "#F5F5F7"
-_CLR_BG_PANEL = "#F5F5F7"
+_CLR_BG_MAIN = "#fcfdfe"
+_CLR_BG_PANEL = "#fcfdfe"
 _CLR_BG_CARD = "#FFFFFF"
 _CLR_BG_LOG = "#FBFBFD"
 _CLR_BORDER = "#D2D2D7"
@@ -795,23 +795,74 @@ def quick_toolbar_button_style(max_height=None, padding="3px 8px", radius=5, min
 def quick_add_button_style():
     return f"""
             QPushButton {{
-                background-color: {_CLR_CONNECT_BG};
-                color: {_CLR_CONNECT_TEXT};
-                border: 1px solid rgba(52, 199, 89, 0.28);
-                border-radius: 5px;
-                padding: 3px 8px;
+                background-color: {_CLR_BLUE};
+                color: {_CLR_TEXT_WHITE};
+                border: none;
+                border-radius: 8px;
+                padding: 3px 12px;
                 min-height: 18px;
                 font-size: 11px;
                 font-family: {_UI_FONT};
-                font-weight: 600;
+                font-weight: 700;
             }}
             QPushButton:hover {{
-                background-color: {_CLR_CONNECT_HOVER};
-                border-color: rgba(52, 199, 89, 0.45);
+                background-color: {_CLR_BLUE_HOVER};
             }}
             QPushButton:pressed {{
-                background-color: {_CLR_CONNECT_PRESS};
-                border-color: rgba(52, 199, 89, 0.56);
+                background-color: {_CLR_BLUE_PRESS};
+            }}
+            QPushButton:disabled {{
+                background-color: {_CLR_BORDER};
+                color: {_CLR_DISABLED};
+            }}
+        """
+
+
+def script_stop_button_style():
+    return f"""
+            QPushButton {{
+                background-color: {_CLR_DISCONNECT_TEXT};
+                color: {_CLR_TEXT_WHITE};
+                border: none;
+                border-radius: 8px;
+                padding: 3px 12px;
+                min-height: 18px;
+                font-size: 11px;
+                font-family: {_UI_FONT};
+                font-weight: 700;
+            }}
+            QPushButton:hover {{
+                background-color: #E0352B;
+            }}
+            QPushButton:pressed {{
+                background-color: #C72A21;
+            }}
+            QPushButton:disabled {{
+                background-color: {_CLR_BORDER};
+                color: {_CLR_DISABLED};
+            }}
+        """
+
+
+def script_add_step_button_style():
+    return f"""
+            QPushButton#scAddStepBtn {{
+                background-color: #F2F2F7;
+                color: {_CLR_TEXT_MUTED};
+                border: 1px dashed {_CLR_BORDER};
+                border-radius: 10px;
+                padding: 7px 12px;
+                font-size: 12px;
+                font-family: {_UI_FONT};
+                font-weight: 700;
+            }}
+            QPushButton#scAddStepBtn:hover {{
+                background-color: #E8F2FF;
+                color: {_CLR_SEND_BG};
+                border: 1px dashed {_CLR_SEND_BG};
+            }}
+            QPushButton#scAddStepBtn:pressed {{
+                background-color: #D7E8FF;
             }}
         """
 
@@ -866,15 +917,31 @@ def extra_log_error_color():
 def section_card_style():
     return f"""
             QFrame#scSectionCard {{
-                background-color: rgba(242, 242, 247, 0.64);
-                border: 1px solid rgba(60, 60, 67, 0.07);
-                border-radius: 9px;
+                background-color: {_CLR_BG_CARD};
+                border: 1px solid #E5E5EA;
+                border-radius: 12px;
             }}
         """
 
 
+def section_card_shadow():
+    return {
+        "blur_radius": 14,
+        "offset_x": 0,
+        "offset_y": 2,
+        "color": (29, 29, 31, 18),
+    }
+
+
 def section_title_style():
-    return f"color: {_CLR_TEXT_MUTED}; font-size: 12px; font-weight: 700; font-family: {_UI_FONT}; background: transparent; border: none; margin-bottom: 4px;"
+    return (
+        f"color: #374151; font-size: 11px; font-weight: 700; font-family: {_UI_FONT};"
+        f" letter-spacing: 0.6px; background: transparent; border: none;"
+    )
+
+
+def section_header_divider_style():
+    return "background-color: #F0F0F2; border: none;"
 
 
 def field_label_style():
@@ -980,29 +1047,47 @@ def quick_command_button_style():
                     background-color: #F2F2F7;
                     color: {_CLR_TEXT_SOFT};
                     border: 1px solid {_CLR_BORDER_SOFT};
-                    border-radius: 6px;
-                    padding: 3px 9px;
-                    min-height: 16px;
+                    border-radius: 8px;
+                    padding: 4px 14px;
+                    min-height: 21px;
                     min-width: 39px;
-                    font-size: 11px;
-                    font-weight: 500;
+                    font-size: 12px;
+                    font-weight: 700;
                     font-family: {_UI_FONT};
                 }}
                 QPushButton:hover {{
                     background-color: #E8F2FF;
-                    border-color: {_CLR_BORDER_ACTIVE};
+                    border-color: #BBD7FF;
                     color: {_CLR_BLUE};
                 }}
                 QPushButton:focus {{
                     background-color: #E8F2FF;
-                    border-color: {_CLR_FILTER_BORDER};
+                    border-color: #BBD7FF;
                     color: {_CLR_BLUE};
                 }}
                 QPushButton:pressed {{
                     background-color: {_CLR_BLUE};
                     border-color: {_CLR_BLUE_LIGHT};
+                    color: {_CLR_TEXT_WHITE};
                 }}
             """
+
+
+def quick_action_overlay_style():
+    return f"""
+            QToolButton#quickCmdAction {{
+                background-color: transparent;
+                border: none;
+                border-radius: 4px;
+                padding: 1px;
+            }}
+            QToolButton#quickCmdAction:hover {{
+                background-color: rgba(60, 60, 67, 28);
+            }}
+            QToolButton#quickCmdAction:disabled {{
+                background-color: transparent;
+            }}
+        """
 
 
 def quick_cmd_dialog_style():
@@ -1015,24 +1100,39 @@ def quick_cmd_dialog_style():
                 color: {_CLR_TEXT_MUTED}; font-size: 12px; font-family: {_UI_FONT}; background: transparent;
             }}
             QLabel#qcTitle {{
-                color: {_CLR_TEXT_MUTED}; font-size: 13px; font-weight: 700; font-family: {_UI_FONT}; background: transparent;
+                color: {_CLR_TEXT_TITLE}; font-size: 15px; font-weight: 700; font-family: {_UI_FONT}; background: transparent;
             }}
             QLineEdit {{
-                background-color: {_CLR_INPUT_BG}; border: 1px solid rgba(60, 60, 67, 0.18); border-radius: 7px;
-                color: {_CLR_TEXT_BTN_LOG}; font-size: 13px; font-family: {_UI_FONT}; padding: 5px 8px; min-height: 26px;
+                background-color: {_CLR_INPUT_BG}; border: 1px solid rgba(60, 60, 67, 0.18); border-radius: 8px;
+                color: {_CLR_TEXT_BODY}; font-size: 13px; font-family: {_UI_FONT}; padding: 6px 10px; min-height: 26px;
             }}
-            QLineEdit:focus {{ border: 1px solid {_CLR_FILTER_BORDER}; }}
+            QLineEdit:hover {{ border-color: rgba(0, 122, 255, 0.38); }}
+            QLineEdit:focus {{ border: 1px solid {_CLR_BORDER_ACTIVE}; background-color: {_CLR_BG_CARD}; }}
+            QLineEdit::placeholder {{ color: {_CLR_TEXT_MUTED}; }}
             QComboBox {{
-                background-color: {_CLR_INPUT_BG}; border: 1px solid rgba(60, 60, 67, 0.18); border-radius: 7px;
-                color: {_CLR_TEXT_BTN_LOG}; font-size: 13px; font-family: {_UI_FONT}; padding: 4px 8px; min-height: 26px;
+                background-color: {_CLR_INPUT_BG}; border: 1px solid rgba(60, 60, 67, 0.18); border-radius: 8px;
+                color: {_CLR_TEXT_BODY}; font-size: 13px; font-family: {_UI_FONT}; padding: 5px 10px; min-height: 26px;
             }}
-            QComboBox:hover {{ border-color: {_CLR_BORDER_SOFT}; }}
-            QComboBox:focus {{ border-color: {_CLR_FILTER_BORDER}; }}
-            QComboBox::drop-down {{ border: none; width: 22px; }}
+            QComboBox:hover {{ border-color: rgba(0, 122, 255, 0.38); }}
+            QComboBox:focus {{ border: 1px solid {_CLR_BORDER_ACTIVE}; }}
+            QComboBox::drop-down {{ border: none; width: 24px; }}
+            QComboBox::down-arrow {{ image: url({_SPIN_DOWN_SVG}); width: 11px; height: 11px; }}
             QComboBox QAbstractItemView {{
-                background-color: {_CLR_INPUT_BG}; color: {_CLR_TEXT_BTN_LOG};
-                border: 1px solid {_CLR_BORDER}; selection-background-color: {_CLR_BORDER};
+                background-color: {_CLR_BG_CARD}; color: {_CLR_TEXT_BODY};
+                border: 1px solid {_CLR_BORDER}; border-radius: 8px; padding: 4px;
+                selection-background-color: {_CLR_INPUT_BG}; selection-color: {_CLR_BLUE};
                 outline: 0;
+            }}
+            QCheckBox {{
+                color: {_CLR_TEXT_MUTED}; font-size: 12px; font-family: {_UI_FONT}; background: transparent; spacing: 6px;
+            }}
+            QCheckBox::indicator {{
+                width: 14px; height: 14px; border: 1px solid {_CLR_BORDER}; border-radius: 4px;
+                background-color: {_CLR_BG_CARD};
+            }}
+            QCheckBox::indicator:hover {{ border-color: {_CLR_BORDER_ACTIVE}; }}
+            QCheckBox::indicator:checked {{
+                background-color: {_CLR_BLUE}; border-color: {_CLR_BLUE}; image: url({_DLG_CHK_SVG});
             }}
         """
 
@@ -1040,20 +1140,22 @@ def quick_cmd_dialog_style():
 def dialog_cancel_button_style():
     return f"""
             QPushButton {{
-                background-color: transparent; border: 1px solid {_CLR_BORDER}; border-radius: 6px;
-                color: {_CLR_TEXT_MUTED}; font-size: 13px; font-family: {_UI_FONT}; padding: 6px 20px;
+                background-color: {_CLR_BG_CARD}; border: 1px solid {_CLR_BORDER}; border-radius: 8px;
+                color: {_CLR_TEXT_SOFT}; font-size: 13px; font-family: {_UI_FONT}; padding: 6px 20px; min-height: 26px;
             }}
-            QPushButton:hover {{ border-color: {_CLR_BORDER_SOFT}; color: {_CLR_TEXT_WHITE}; }}
+            QPushButton:hover {{ background-color: {_CLR_INPUT_BG}; border-color: {_CLR_BORDER_HOVER}; color: {_CLR_TEXT_BODY}; }}
+            QPushButton:pressed {{ background-color: {_CLR_BORDER_SOFT}; }}
         """
 
 
 def dialog_ok_button_style():
     return f"""
             QPushButton {{
-                background-color: {_CLR_GREEN_OK}; border: none; border-radius: 6px;
-                color: {_CLR_TEXT_WHITE}; font-weight: 700; font-size: 13px; font-family: {_UI_FONT}; padding: 6px 20px;
+                background-color: {_CLR_BLUE}; border: none; border-radius: 8px;
+                color: {_CLR_TEXT_WHITE}; font-weight: 700; font-size: 13px; font-family: {_UI_FONT}; padding: 6px 20px; min-height: 26px;
             }}
-            QPushButton:hover {{ background-color: {_CLR_GREEN_OK_HOVER}; }}
+            QPushButton:hover {{ background-color: {_CLR_BLUE_HOVER}; }}
+            QPushButton:pressed {{ background-color: {_CLR_BLUE_PRESS}; }}
         """
 
 

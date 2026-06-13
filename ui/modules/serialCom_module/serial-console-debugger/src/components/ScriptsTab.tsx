@@ -238,19 +238,19 @@ export function ScriptsTab({
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#FAFBFD]" id="automated-script-sequencer">
+    <div className="flex flex-col h-full bg-[#FAFBFD] dark:bg-zinc-950" id="automated-script-sequencer">
       
       {/* 1. SCRIPT TOOLBAR CONTROLS */}
-      <div className="bg-[#FAFBFD] px-4 py-2 border-b border-gray-150 flex items-center justify-between text-xs select-none" id="script-toolbar-controls">
+      <div className="bg-[#FAFBFD] dark:bg-zinc-900 px-4 py-2 border-b border-gray-150 dark:border-zinc-800 flex items-center justify-between text-xs select-none" id="script-toolbar-controls">
         <div className="flex items-center gap-3">
-          <span className="font-semibold text-gray-500">Run File:</span>
+          <span className="font-semibold text-gray-500 dark:text-zinc-400">Run File:</span>
           {activeScript ? (
             <div className="flex items-center gap-2">
               <select
                 value={activeScriptId}
                 onChange={(e) => setActiveScriptId(e.target.value)}
                 disabled={isRunning}
-                className="bg-white text-xs border border-gray-250 p-1.5 rounded-lg focus:outline-none"
+                className="bg-white dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-100 text-xs border border-gray-250 p-1.5 rounded-lg focus:outline-none"
               >
                 {scripts.map(s => (
                   <option key={s.id} value={s.id}>{s.name}</option>
@@ -277,19 +277,19 @@ export function ScriptsTab({
             <span className="text-gray-400 italic">No script selected</span>
           )}
 
-          <div className="h-4 w-px bg-gray-200" />
+          <div className="h-4 w-px bg-gray-200 dark:bg-zinc-750" />
 
           {/* New / Import / Export buttons */}
           <div className="flex items-center gap-1.5" id="script-folder-triggers">
             <button 
               onClick={handleCreateScript}
               disabled={isRunning}
-              className="px-2 py-1 px-3.5 bg-white border border-gray-150 hover:bg-gray-50 rounded-lg text-gray-600 font-bold transition-all disabled:opacity-50 cursor-pointer"
+              className="px-2 py-1 px-3.5 bg-white hover:bg-gray-50 dark:bg-zinc-800 dark:hover:bg-zinc-750 dark:border-zinc-700 dark:text-zinc-200 border border-gray-150 rounded-lg text-gray-600 font-bold transition-all disabled:opacity-50 cursor-pointer"
             >
               + New Suite
             </button>
             
-            <label className="flex items-center gap-1 border border-gray-150 rounded-lg p-1 px-2.5 bg-white hover:bg-gray-50 cursor-pointer text-gray-500 disabled:opacity-50">
+            <label className="flex items-center gap-1 border border-gray-150 dark:border-zinc-700 rounded-lg p-1 px-2.5 bg-white hover:bg-gray-50 dark:bg-zinc-800 dark:hover:bg-zinc-750 cursor-pointer text-gray-500 dark:text-zinc-300 disabled:opacity-50 text-[11px]">
               <Upload size={11} />
               <span>Import TXT</span>
               <input type="file" accept=".txt,.csv" onChange={handleImportText} disabled={isRunning} className="hidden" />
@@ -297,7 +297,7 @@ export function ScriptsTab({
 
             <button 
               onClick={handleExportText}
-              className="flex items-center gap-1 border border-gray-150 rounded-lg p-1 px-2.5 bg-white hover:bg-gray-50 text-gray-500 transition-all cursor-pointer"
+              className="flex items-center gap-1 border border-gray-150 dark:border-zinc-700 rounded-lg p-1 px-2.5 bg-white hover:bg-gray-50 dark:bg-zinc-800 dark:hover:bg-zinc-750 text-gray-500 dark:text-zinc-300 transition-all cursor-pointer"
             >
               <Download size={11} />
               <span>Export</span>
@@ -329,7 +329,7 @@ export function ScriptsTab({
       </div>
 
       {/* 2. PROGRESS META ROW */}
-      <div className="bg-[#FAFBFD] px-4 py-1.5 border-b border-gray-150 flex items-center justify-between text-[11px] text-gray-500 font-semibold" id="script-status-progress">
+      <div className="bg-[#FAFBFD] dark:bg-zinc-900 px-4 py-1.5 border-b border-gray-150 dark:border-zinc-800 flex items-center justify-between text-[11px] text-gray-500 dark:text-zinc-400 font-semibold" id="script-status-progress">
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1.5">
             <span className={`h-2 w-2 rounded-full ${isRunning ? 'bg-[#34C759] animate-pulse' : 'bg-[#AEAEB2]'}`} />

@@ -27,9 +27,9 @@ from PySide6.QtWidgets import (
     QFrame, QWidget, QTextEdit, QLineEdit, QComboBox, QCheckBox,
     QScrollArea, QSplitter, QApplication, QMenu, QFileDialog, QGridLayout,
     QSpinBox, QDialog, QDialogButtonBox, QTabWidget,
-    QInputDialog, QMessageBox, QTabBar, QGraphicsDropShadowEffect,
+    QMessageBox, QTabBar, QGraphicsDropShadowEffect,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QPlainTextEdit, QTreeWidget, QTreeWidgetItem,
+    QPlainTextEdit, QTreeWidget, QTreeWidgetItem, QToolButton,
 )
 import uuid as _uuid
 from PySide6.QtCore import (
@@ -82,12 +82,15 @@ _SERIALCOM_STYLE_EXPORTS = (
     "inline_serial_search_button_extra_style", "log_color_info_style",
     "log_color_info_text", "log_document_style", "log_edit_style", "log_frame_style",
     "log_panel_button_style", "log_title_style", "log_toolbar_button_style",
-    "main_connect_button_style", "project_tabs_style", "quick_add_button_style",
+    "main_connect_button_style", "project_tabs_style", "quick_action_overlay_style",
+    "quick_add_button_style",
     "quick_button_container_style", "quick_button_scroll_style", "quick_cmd_dialog_style",
     "quick_command_button_style", "quick_combo_style", "quick_commands_panel_style",
     "quick_preview_popup_shadow", "quick_preview_popup_style", "quick_toolbar_button_style",
     "bottom_tabs_style",
-    "section_card_style", "section_title_style", "send_button_style", "separator_style",
+    "section_card_style", "section_card_shadow", "section_header_divider_style",
+    "script_stop_button_style", "script_add_step_button_style",
+    "section_title_style", "send_button_style", "separator_style",
     "sidebar_wrapper_style", "small_label_style", "status_bar_style", "status_label_style",
     "thin_scrollbar_style", "toolbar_connect_button_style", "toolbar_style", "toggle_colors",
     "transparent_background_style", "transparent_scroll_area_style",
@@ -1177,10 +1180,12 @@ class SerialComMixin:
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setStyleSheet(transparent_scroll_area_style())
 
         vbar = scroll.verticalScrollBar()
-        vbar.setFixedWidth(4)
+        _vbar_width = 4
+        vbar.setFixedWidth(_vbar_width)
         vbar.setStyleSheet(thin_scrollbar_style())
 
         container = QWidget()
@@ -1198,7 +1203,9 @@ class SerialComMixin:
         return wrapper
 
     def _build_sc_section_port_settings(self):
-        grp = self._make_sc_section("Serial Config")
+        grp = self._make_sc_section(
+            "Serial Config", os.path.join(_SVG_SERIAL_DIR, "sidebar.svg")
+        )
         layout = grp.property("_inner_layout")
 
         grid = QGridLayout()
@@ -1220,6 +1227,8 @@ class SerialComMixin:
         grid.addWidget(self._make_sc_label("Baudrate"), 1, 0)
         self._sc_baud_combo = SerialDarkComboBox()
         self._sc_baud_combo.setFixedHeight(28)
+        self._sc_baud_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self._sc_baud_combo.setMinimumWidth(60)
         self._sc_baud_combo.setEditable(True)
         for br in ["921600", "1152000", "2000000", "3000000", "Custom"]:
             self._sc_baud_combo.addItem(br)
@@ -1239,6 +1248,8 @@ class SerialComMixin:
         grid.addWidget(self._make_sc_label("Data bits"), 3, 0)
         self._sc_databit_combo = SerialDarkComboBox()
         self._sc_databit_combo.setFixedHeight(28)
+        self._sc_databit_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self._sc_databit_combo.setMinimumWidth(60)
         for d in ["8", "7", "6", "5"]:
             self._sc_databit_combo.addItem(d)
         grid.addWidget(self._sc_databit_combo, 3, 1)
@@ -1246,6 +1257,8 @@ class SerialComMixin:
         grid.addWidget(self._make_sc_label("Flow Control"), 4, 0)
         self._sc_flow_combo = SerialDarkComboBox()
         self._sc_flow_combo.setFixedHeight(28)
+        self._sc_flow_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self._sc_flow_combo.setMinimumWidth(60)
         for fc in ["None", "RTS/CTS", "XON/XOFF"]:
             self._sc_flow_combo.addItem(fc)
         grid.addWidget(self._sc_flow_combo, 4, 1)
@@ -1253,6 +1266,8 @@ class SerialComMixin:
         grid.addWidget(self._make_sc_label("Stop bits"), 5, 0)
         self._sc_stopbit_combo = SerialDarkComboBox()
         self._sc_stopbit_combo.setFixedHeight(28)
+        self._sc_stopbit_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self._sc_stopbit_combo.setMinimumWidth(60)
         for s in ["1", "1.5", "2"]:
             self._sc_stopbit_combo.addItem(s)
         grid.addWidget(self._sc_stopbit_combo, 5, 1)
@@ -1260,6 +1275,8 @@ class SerialComMixin:
         grid.addWidget(self._make_sc_label("Parity"), 6, 0)
         self._sc_parity_combo = SerialDarkComboBox()
         self._sc_parity_combo.setFixedHeight(28)
+        self._sc_parity_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self._sc_parity_combo.setMinimumWidth(60)
         for p in ["None", "Even", "Odd", "Mark", "Space"]:
             self._sc_parity_combo.addItem(p)
         grid.addWidget(self._sc_parity_combo, 6, 1)
@@ -1274,7 +1291,9 @@ class SerialComMixin:
     _COMBO_END_W = _TOGGLE_W
 
     def _build_sc_section_rx_settings(self):
-        grp = self._make_sc_section("RX Config")
+        grp = self._make_sc_section(
+            "RX Config", os.path.join(_SVG_SERIAL_DIR, "zap.svg")
+        )
         layout = grp.property("_inner_layout")
 
         row1 = QHBoxLayout()
@@ -1315,7 +1334,9 @@ class SerialComMixin:
         return grp
 
     def _build_sc_section_tx_settings(self):
-        grp = self._make_sc_section("TX Config")
+        grp = self._make_sc_section(
+            "TX Config", os.path.join(_SVG_SERIAL_DIR, "send.svg")
+        )
         layout = grp.property("_inner_layout")
 
         row1 = QHBoxLayout()
@@ -1618,12 +1639,6 @@ class SerialComMixin:
         zap_icon.setStyleSheet(transparent_background_style())
         header.addWidget(zap_icon)
 
-        lbl = QLabel("Quick Commands")
-        lbl.setObjectName("quickCommandsTitle")
-        # 颜色 / 字号由面板级 QSS (#quickCommandsTitle) 接管，此处仅设置背景透明以避免被父容器覆盖
-        lbl.setStyleSheet(transparent_background_style())
-        header.addWidget(lbl)
-
         # 项目 Tab 栏（最顶层分组），末尾内置 "+" 加号 tab，右键菜单 + 拖拽排序
         self._sc_qc_project_tabs = _ProjectTabBar()
         self._sc_qc_project_tabs.setExpanding(False)
@@ -1651,7 +1666,6 @@ class SerialComMixin:
         toolbar.addWidget(group_lbl)
         self._sc_qc_group_combo = QComboBox()
         self._sc_qc_group_combo.setStyleSheet(_combo_qss)
-        self._sc_qc_group_combo.setContextMenuPolicy(Qt.CustomContextMenu)
         toolbar.addWidget(self._sc_qc_group_combo)
 
         self._sc_qc_new_group_btn = self._make_sc_btn(
@@ -1661,6 +1675,37 @@ class SerialComMixin:
         _toolbar_btn_qss = quick_toolbar_button_style()
         self._sc_qc_new_group_btn.setStyleSheet(_toolbar_btn_qss)
         toolbar.addWidget(self._sc_qc_new_group_btn)
+
+        # "+ Group" 右侧两个小图标按钮：编辑 / 删除当前分组（替代下拉右键菜单）
+        self._sc_qc_group_edit_btn = QToolButton(toolbar_frame)
+        self._sc_qc_group_edit_btn.setObjectName("quickCmdAction")
+        self._sc_qc_group_edit_btn.setCursor(Qt.PointingHandCursor)
+        self._sc_qc_group_edit_btn.setFocusPolicy(Qt.NoFocus)
+        self._sc_qc_group_edit_btn.setFixedSize(18, 18)
+        self._sc_qc_group_edit_btn.setIconSize(QSize(11, 11))
+        self._sc_qc_group_edit_btn.setToolTip("Edit group")
+        self._sc_qc_group_edit_btn.setStyleSheet(quick_action_overlay_style())
+        _gedit_icon = _tinted_svg_icon(
+            os.path.join(_SVG_SERIAL_DIR, "edit.svg"), _CLR_SEND_BG, 11
+        )
+        if not _gedit_icon.isNull():
+            self._sc_qc_group_edit_btn.setIcon(_gedit_icon)
+        toolbar.addWidget(self._sc_qc_group_edit_btn)
+
+        self._sc_qc_group_delete_btn = QToolButton(toolbar_frame)
+        self._sc_qc_group_delete_btn.setObjectName("quickCmdAction")
+        self._sc_qc_group_delete_btn.setCursor(Qt.PointingHandCursor)
+        self._sc_qc_group_delete_btn.setFocusPolicy(Qt.NoFocus)
+        self._sc_qc_group_delete_btn.setFixedSize(18, 18)
+        self._sc_qc_group_delete_btn.setIconSize(QSize(11, 11))
+        self._sc_qc_group_delete_btn.setToolTip("Delete group")
+        self._sc_qc_group_delete_btn.setStyleSheet(quick_action_overlay_style())
+        _gdel_icon = _tinted_svg_icon(
+            os.path.join(_SVG_LOGS_DIR, "trash.svg"), _CLR_ERROR, 11
+        )
+        if not _gdel_icon.isNull():
+            self._sc_qc_group_delete_btn.setIcon(_gdel_icon)
+        toolbar.addWidget(self._sc_qc_group_delete_btn)
 
         toolbar.addStretch()
 
@@ -1734,7 +1779,7 @@ class SerialComMixin:
         _combo_qss = quick_combo_style()
         _toolbar_btn_qss = quick_toolbar_button_style()
 
-        script_lbl = QLabel("Script:")
+        script_lbl = QLabel("Run File:")
         script_lbl.setStyleSheet(small_label_style(color="soft", size=11))
         toolbar.addWidget(script_lbl)
 
@@ -1753,7 +1798,7 @@ class SerialComMixin:
         self._sc_script_stop_btn = self._make_sc_btn(
             os.path.join(_SVG_SERIAL_DIR, "stop.svg"), "Stop", tone="quick"
         )
-        self._sc_script_stop_btn.setStyleSheet(_toolbar_btn_qss)
+        self._sc_script_stop_btn.setStyleSheet(script_stop_button_style())
         self._sc_script_stop_btn.setEnabled(False)
         toolbar.addWidget(self._sc_script_stop_btn)
 
@@ -1812,16 +1857,24 @@ class SerialComMixin:
         status_row = QHBoxLayout(status_frame)
         status_row.setContentsMargins(10, 0, 10, 6)
         status_row.setSpacing(6)
-        self._sc_script_status_label = QLabel("\u2022 Idle")
+        self._sc_script_status_dot = QLabel()
+        self._sc_script_status_dot.setFixedSize(8, 8)
+        self._sc_script_set_status_dot(False)
+        status_row.addWidget(self._sc_script_status_dot)
+        self._sc_script_status_label = QLabel("Status: \u2022 Idle")
         self._sc_script_status_label.setStyleSheet(status_label_style("muted", include_font=True))
         status_row.addWidget(self._sc_script_status_label)
         status_row.addStretch()
+        self._sc_script_count_label = QLabel("Steps count (\u6b65): 0")
+        self._sc_script_count_label.setStyleSheet(status_label_style("muted", include_font=True))
+        status_row.addWidget(self._sc_script_count_label)
         layout.addWidget(status_frame)
 
         # --- 步骤预览表 ---
-        self._sc_script_table = QTableWidget(0, 5)
+        self._sc_script_table = QTableWidget(0, 6)
         self._sc_script_table.setHorizontalHeaderLabels(
-            ["#", "Command", "Priority", "Wait (ms)", "Status"]
+            ["#", "Command / Instructions Directive", "Priority",
+             "Wait (ms)", "Status Condition", "Actions"]
         )
         self._sc_script_table.verticalHeader().setVisible(False)
         self._sc_script_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -1829,14 +1882,54 @@ class SerialComMixin:
         self._sc_script_table.setFocusPolicy(Qt.NoFocus)
         self._sc_script_table.setStyleSheet(self._sc_script_table_qss() + SERIAL_SCROLLBAR_STYLE)
         self._sc_script_table.setMinimumHeight(54)
-        self._sc_script_table.setMaximumHeight(160)
+        self._sc_script_table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._sc_script_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         hdr = self._sc_script_table.horizontalHeader()
         hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         hdr.setSectionResizeMode(1, QHeaderView.Stretch)
         hdr.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         hdr.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         hdr.setSectionResizeMode(4, QHeaderView.ResizeToContents)
-        layout.addWidget(self._sc_script_table)
+        hdr.setSectionResizeMode(5, QHeaderView.ResizeToContents)
+
+        self._sc_script_add_step_btn = QPushButton("+ Add Sequence Step Directive")
+        self._sc_script_add_step_btn.setObjectName("scAddStepBtn")
+        self._sc_script_add_step_btn.setCursor(Qt.PointingHandCursor)
+        self._sc_script_add_step_btn.setStyleSheet(script_add_step_button_style())
+        self._sc_script_add_step_btn.clicked.connect(self._sc_script_add_step)
+        add_step_wrap = QFrame()
+        add_step_wrap.setObjectName("scQuickToolbar")
+        add_step_wrap.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        add_step_row = QHBoxLayout(add_step_wrap)
+        add_step_row.setContentsMargins(10, 8, 10, 8)
+        add_step_row.setSpacing(0)
+        add_step_row.addWidget(self._sc_script_add_step_btn)
+
+        # --- 内容区:QScrollArea 包裹步骤表 + 新增按钮，新增按钮位于可滚动内容最底部；
+        #     区域高度偏低时整体自适应滚动，滚到底可见完整按钮 ---
+        body_container = QWidget()
+        body_container.setObjectName("scScriptBody")
+        body_container.setStyleSheet(transparent_background_style())
+        body_layout = QVBoxLayout(body_container)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(0)
+        body_layout.addWidget(self._sc_script_table)
+        body_layout.addWidget(add_step_wrap)
+        body_layout.addStretch()
+
+        self._sc_script_body_scroll = QScrollArea()
+        self._sc_script_body_scroll.setWidgetResizable(True)
+        self._sc_script_body_scroll.setFrameShape(QFrame.NoFrame)
+        self._sc_script_body_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._sc_script_body_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._sc_script_body_scroll.setStyleSheet(
+            transparent_scroll_area_style() + SERIAL_SCROLLBAR_STYLE
+        )
+        self._sc_script_body_scroll.verticalScrollBar().setStyleSheet(thin_scrollbar_style())
+        self._sc_script_body_scroll.setMinimumHeight(54)
+        self._sc_script_body_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self._sc_script_body_scroll.setWidget(body_container)
+        layout.addWidget(self._sc_script_body_scroll)
 
         self._sc_script_combo.currentIndexChanged.connect(self._sc_script_on_combo_changed)
         self._sc_script_run_btn.clicked.connect(self._sc_script_run)
@@ -1931,9 +2024,8 @@ class SerialComMixin:
             self._sc_qc_on_project_reorder
         )
         self._sc_qc_group_combo.currentIndexChanged.connect(self._sc_qc_on_group_changed)
-        self._sc_qc_group_combo.customContextMenuRequested.connect(
-            self._sc_qc_on_group_combo_context_menu
-        )
+        self._sc_qc_group_edit_btn.clicked.connect(self._sc_qc_edit_current_group)
+        self._sc_qc_group_delete_btn.clicked.connect(self._sc_qc_delete_current_group)
 
         self._sc_baud_combo.activated.connect(lambda _idx: self._sc_on_baudrate_changed())
         _baud_line_edit = self._sc_baud_combo.lineEdit()
@@ -3708,30 +3800,167 @@ class SerialComMixin:
         self._sc_script_loop_cb.blockSignals(False)
         self._sc_script_loop_spin.blockSignals(False)
 
+    def _sc_script_set_status_dot(self, running: bool):
+        if not hasattr(self, "_sc_script_status_dot"):
+            return
+        color = "#34C759" if running else "#AEAEB2"
+        self._sc_script_status_dot.setStyleSheet(
+            f"background-color: {color}; border-radius: 4px;"
+        )
+
     def _sc_script_refresh_table(self, running_index: int = -1):
         table = self._sc_script_table
         cur = self._sc_script_current()
         steps = self._sc_script_ordered_steps(cur) if cur else []
         table.setRowCount(len(steps))
+        if hasattr(self, "_sc_script_count_label"):
+            self._sc_script_count_label.setText(f"Steps count (\u6b65): {len(steps)}")
+        self._sc_script_set_status_dot(running_index >= 0)
+        light = _CLR_BG_MAIN.upper() == "#F5F5F7"
         for row, step in enumerate(steps):
             cmd = step.get("cmd", "")
-            if step.get("wait_keyword"):
-                cmd = f"{cmd}  ⟶ wait \"{step['wait_keyword']}\""
             prio = str(step.get("priority", 1))
-            wait = str(step.get("wait_ms", 0))
+            wait = f"{step.get('wait_ms', 0)} ms"
+            keyword = step.get("wait_keyword", "")
+            timeout = step.get("wait_timeout_ms", 0) or step.get("wait_ms", 0)
             if running_index < 0:
-                status = "Pending"
+                state = "pending"
             elif row < running_index:
-                status = "✓ Done"
+                state = "done"
             elif row == running_index:
-                status = "▶ Running"
+                state = "running"
             else:
-                status = "Pending"
-            for col, text in enumerate((str(row + 1), cmd, prio, wait, status)):
+                state = "pending"
+            if state == "running":
+                row_fg = QColor(_CLR_SEND_BG)
+                row_bg = QColor("#E8F2FF") if light else QColor("#172554")
+            elif state == "done":
+                row_fg = QColor(_CLR_TEXT_MUTED)
+                row_bg = None
+            else:
+                row_fg = QColor(_CLR_TEXT_BODY)
+                row_bg = None
+            row_done = state == "done"
+            for col, text in ((0, str(row + 1)), (2, prio), (3, wait)):
                 item = QTableWidgetItem(text)
-                if col in (0, 2, 3):
-                    item.setTextAlignment(Qt.AlignCenter)
+                item.setTextAlignment(Qt.AlignCenter)
+                item.setForeground(row_fg)
+                if row_bg is not None:
+                    item.setBackground(row_bg)
+                if row_done:
+                    f = item.font()
+                    f.setStrikeOut(True)
+                    item.setFont(f)
                 table.setItem(row, col, item)
+            cmd_widget = self._sc_script_make_cmd_cell(
+                cmd, keyword, timeout, row_fg, row_done, row_bg
+            )
+            table.setCellWidget(row, 1, cmd_widget)
+            badge = self._sc_script_make_status_badge(state, light)
+            table.setCellWidget(row, 4, badge)
+            actions = self._sc_script_make_actions_cell(
+                row, len(steps), running_index >= 0
+            )
+            table.setCellWidget(row, 5, actions)
+        table.resizeRowsToContents()
+        self._sc_script_adjust_table_height()
+
+    def _sc_script_adjust_table_height(self):
+        table = getattr(self, "_sc_script_table", None)
+        if table is None:
+            return
+        header_h = table.horizontalHeader().height()
+        rows_h = sum(
+            table.rowHeight(r) for r in range(table.rowCount())
+        )
+        frame = 2 * table.frameWidth()
+        total = header_h + rows_h + frame
+        table.setMinimumHeight(max(54, total))
+        table.setMaximumHeight(max(54, total))
+
+    def _sc_script_make_cmd_cell(self, cmd, keyword, timeout, row_fg, strike, row_bg):
+        w = QFrame()
+        w.setStyleSheet(
+            f"background-color: {row_bg.name()};" if row_bg is not None
+            else "background: transparent;"
+        )
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(8, 4, 8, 4)
+        lay.setSpacing(1)
+        deco = "text-decoration: line-through;" if strike else ""
+        cmd_lbl = QLabel(cmd)
+        cmd_lbl.setStyleSheet(
+            f"color: {row_fg.name()}; font-family: {_TERM_FONT}; "
+            f"font-size: 12px; font-weight: 700; background: transparent; {deco}"
+        )
+        cmd_lbl.setWordWrap(True)
+        lay.addWidget(cmd_lbl)
+        if keyword:
+            sub = QLabel(f"\u27f6 wait keyword: \"{keyword}\" (timeout: {timeout}ms)")
+            sub.setStyleSheet(
+                "color: #7C6CF0; font-size: 9px; font-weight: 700; background: transparent;"
+            )
+            lay.addWidget(sub)
+        return w
+
+    def _sc_script_make_status_badge(self, state, light):
+        if state == "running":
+            text, fg, bg = "\u25b6 Running", ("#1D4ED8" if light else "#93C5FD"), ("#DBEAFE" if light else "#1E3A8A")
+        elif state == "done":
+            text, fg, bg = "\u2713 Done", ("#6B7280" if light else "#A1A1AA"), ("#F3F4F6" if light else "#27272A")
+        else:
+            text, fg, bg = "Pending", ("#6B7280" if light else "#A1A1AA"), ("#F1F5F9" if light else "#27272A")
+        wrap = QFrame()
+        wrap.setStyleSheet("background: transparent;")
+        lay = QHBoxLayout(wrap)
+        lay.setContentsMargins(8, 4, 8, 4)
+        lay.setSpacing(0)
+        badge = QLabel(text)
+        badge.setStyleSheet(
+            f"color: {fg}; background-color: {bg}; border-radius: 4px; "
+            f"padding: 1px 7px; font-size: 10px; font-weight: 700; "
+            f"font-family: {_UI_FONT};"
+        )
+        lay.addWidget(badge)
+        lay.addStretch()
+        return wrap
+
+    def _sc_script_make_actions_cell(self, row, total, running):
+        wrap = QFrame()
+        wrap.setStyleSheet("background: transparent;")
+        lay = QHBoxLayout(wrap)
+        lay.setContentsMargins(6, 4, 8, 4)
+        lay.setSpacing(3)
+        lay.addStretch()
+        specs = [
+            (os.path.join(_SVG_LOGS_DIR, "arrow-up.svg"), _CLR_TEXT_MUTED,
+             "Move Up", lambda: self._sc_script_move_step(row, -1),
+             not running and row > 0),
+            (os.path.join(_SVG_LOGS_DIR, "arrow-down.svg"), _CLR_TEXT_MUTED,
+             "Move Down", lambda: self._sc_script_move_step(row, 1),
+             not running and row < total - 1),
+            (os.path.join(_SVG_SERIAL_DIR, "edit.svg"), _CLR_SEND_BG,
+             "Edit step", lambda: self._sc_script_edit_step(row), not running),
+            (os.path.join(_SVG_LOGS_DIR, "trash.svg"), _CLR_ERROR,
+             "Delete step", lambda: self._sc_script_delete_step(row),
+             not running and total > 1),
+        ]
+        for svg, color, tip, cb, enabled in specs:
+            btn = QToolButton(wrap)
+            btn.setObjectName("quickCmdAction")
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setFocusPolicy(Qt.NoFocus)
+            btn.setFixedSize(18, 18)
+            btn.setIconSize(QSize(12, 12))
+            btn.setToolTip(tip)
+            btn.setStyleSheet(quick_action_overlay_style())
+            icon = _tinted_svg_icon(svg, color, 12)
+            if not icon.isNull():
+                btn.setIcon(icon)
+            btn.setEnabled(enabled)
+            btn.clicked.connect(lambda checked=False, fn=cb: fn())
+            lay.addWidget(btn)
+        return wrap
 
     @staticmethod
     def _sc_script_ordered_steps(script) -> list:
@@ -3739,6 +3968,70 @@ class SerialComMixin:
             return []
         steps = [s for s in script.get("steps", []) if int(s.get("priority", 0)) > 0]
         return sorted(steps, key=lambda s: int(s.get("priority", 0)))
+
+    def _sc_script_move_step(self, row: int, delta: int):
+        cur = self._sc_script_current()
+        if cur is None:
+            return
+        ordered = self._sc_script_ordered_steps(cur)
+        target = row + delta
+        if not (0 <= row < len(ordered)) or not (0 <= target < len(ordered)):
+            return
+        ordered[row], ordered[target] = ordered[target], ordered[row]
+        for i, step in enumerate(ordered):
+            step["priority"] = i + 1
+        self._sc_save_persisted_state()
+        self._sc_script_refresh_table()
+
+    def _sc_script_edit_step(self, row: int):
+        cur = self._sc_script_current()
+        if cur is None:
+            return
+        ordered = self._sc_script_ordered_steps(cur)
+        if not (0 <= row < len(ordered)):
+            return
+        step = ordered[row]
+        dlg = _SerialScriptStepDialog(self, step=step, mode="edit")
+        if dlg.exec() == QDialog.Accepted:
+            step.update(dlg.result_step())
+            self._sc_save_persisted_state()
+            self._sc_script_refresh_table()
+
+    def _sc_script_delete_step(self, row: int):
+        cur = self._sc_script_current()
+        if cur is None:
+            return
+        ordered = self._sc_script_ordered_steps(cur)
+        if not (0 <= row < len(ordered)):
+            return
+        step = ordered[row]
+        if QMessageBox.question(
+            self, "删除步骤",
+            f"确定删除步骤 “{step.get('cmd', '')}” ?"
+        ) != QMessageBox.Yes:
+            return
+        try:
+            cur.get("steps", []).remove(step)
+        except ValueError:
+            return
+        for i, s in enumerate(self._sc_script_ordered_steps(cur)):
+            s["priority"] = i + 1
+        self._sc_save_persisted_state()
+        self._sc_script_refresh_table()
+
+    def _sc_script_add_step(self):
+        cur = self._sc_script_current()
+        if cur is None:
+            QMessageBox.information(self, "提示", "请先新建或选择一个脚本")
+            return
+        step = self._sc_script_default_step()
+        step["priority"] = len(self._sc_script_ordered_steps(cur)) + 1
+        dlg = _SerialScriptStepDialog(self, step=step, mode="create")
+        if dlg.exec() == QDialog.Accepted:
+            step.update(dlg.result_step())
+            cur.setdefault("steps", []).append(step)
+            self._sc_save_persisted_state()
+            self._sc_script_refresh_table()
 
     def _sc_script_on_combo_changed(self, _index: int):
         sid = self._sc_script_combo.currentData()
@@ -3927,6 +4220,8 @@ class SerialComMixin:
         self._sc_script_export_btn.setEnabled(enabled)
         self._sc_script_loop_cb.setEnabled(enabled)
         self._sc_script_loop_spin.setEnabled(enabled)
+        if hasattr(self, "_sc_script_add_step_btn"):
+            self._sc_script_add_step_btn.setEnabled(enabled)
 
     def _sc_script_exec_current_step(self):
         if not self._sc_script_running:
@@ -3940,7 +4235,7 @@ class SerialComMixin:
         step = steps[idx]
         self._sc_script_refresh_table(running_index=idx)
         self._sc_script_status_label.setText(
-            f"\u2022 Running (Step {idx + 1}/{len(steps)})"
+            f"Status: \u2022 Running (Step {idx + 1}/{len(steps)})"
         )
         self._sc_script_status_label.setStyleSheet(status_label_style("ok", include_font=True))
 
@@ -4043,7 +4338,7 @@ class SerialComMixin:
         self._sc_script_wait_buffer = ""
         self._sc_script_timer.stop()
         self._sc_script_set_controls_enabled(True)
-        self._sc_script_status_label.setText("\u2022 Idle")
+        self._sc_script_status_label.setText("Status: \u2022 Idle")
         self._sc_script_status_label.setStyleSheet(status_label_style("muted", include_font=True))
         self._sc_script_refresh_table(running_index=-1)
 
@@ -4182,6 +4477,12 @@ class SerialComMixin:
         if combo.count() > 0:
             combo.setCurrentIndex(active_index)
         combo.blockSignals(False)
+        # 编辑/删除按钮可用性：无分组禁用编辑；仅剩一个分组禁用删除
+        group_count = len(project.get("groups", [])) if project else 0
+        if hasattr(self, "_sc_qc_group_edit_btn"):
+            self._sc_qc_group_edit_btn.setEnabled(group_count > 0)
+        if hasattr(self, "_sc_qc_group_delete_btn"):
+            self._sc_qc_group_delete_btn.setEnabled(group_count > 1)
 
     def _sc_qc_clear_button_grid(self):
         layout = self._sc_qc_btn_layout
@@ -4224,6 +4525,11 @@ class SerialComMixin:
             btn.customContextMenuRequested.connect(
                 lambda pos, b=btn, i=idx: self._sc_qc_on_cmd_btn_context_menu(b, pos, i)
             )
+            # 悬停浮出：左移 / 右移 / 编辑 / 删除
+            btn.set_move_bounds(idx > 0, idx < len(commands) - 1)
+            btn.move_requested.connect(self._sc_qc_move_command)
+            btn.edit_requested.connect(self._sc_qc_edit_command)
+            btn.delete_requested.connect(self._sc_qc_delete_command)
             btn.setStyleSheet(quick_command_button_style())
             row, col = divmod(idx, cols)
             self._sc_qc_btn_layout.addWidget(btn, row, col)
@@ -4310,8 +4616,9 @@ class SerialComMixin:
         if not isinstance(project, dict):
             return
         old_name = project.get("name", "")
-        text, ok = QInputDialog.getText(
-            self, "重命名项目", "项目名称:", QLineEdit.Normal, old_name
+        text, ok = _QuickTextInputDialog.get_input(
+            self, title="重命名项目", label="项目名称", text=old_name,
+            placeholder="如:主控测试",
         )
         if not ok:
             return
@@ -4371,7 +4678,10 @@ class SerialComMixin:
     # --- 新增 ---
 
     def _sc_qc_prompt_text(self, title: str, label: str) -> str:
-        text, ok = QInputDialog.getText(self, title, label)
+        clean_label = label.rstrip("：:").strip()
+        text, ok = _QuickTextInputDialog.get_input(
+            self, title=title, label=clean_label,
+        )
         if not ok:
             return ""
         return text.strip()
@@ -4417,44 +4727,41 @@ class SerialComMixin:
         self._sc_qc_refresh_group_combo()
         self._sc_refresh_quick_buttons()
 
-    # --- 分组右键菜单 / 重命名 / 删除 ---
+    # --- 分组编辑 / 删除（"+ Group" 右侧图标按钮触发）---
 
-    def _sc_qc_on_group_combo_context_menu(self, pos):
-        combo = self._sc_qc_group_combo
-        # 优先取右键位置下的项；取不到时退回当前项
-        index = combo.view().indexAt(combo.view().mapFrom(combo, pos)).row()
-        if index < 0:
-            index = combo.currentIndex()
+    def _sc_qc_edit_current_group(self):
+        index = self._sc_qc_group_combo.currentIndex()
         if index < 0:
             return
-        group_id = combo.itemData(index)
+        group_id = self._sc_qc_group_combo.itemData(index)
         if not group_id:
             return
         project = self._sc_qc_current_project()
         group = self._sc_qc_get_group(project, group_id)
         if group is None:
             return
-        menu = QMenu(self)
-        act_rename = menu.addAction("重命名")
-        menu.addSeparator()
-        act_delete = menu.addAction("删除")
-        # 仅剩一个分组时禁止删除，防止当前项目分组完全清空
-        if len(project.get("groups", [])) <= 1:
-            act_delete.setEnabled(False)
-        chosen = menu.exec(combo.mapToGlobal(pos))
-        if chosen is None:
+        self._sc_qc_rename_group(group)
+
+    def _sc_qc_delete_current_group(self):
+        index = self._sc_qc_group_combo.currentIndex()
+        if index < 0:
             return
-        if chosen is act_rename:
-            self._sc_qc_rename_group(group)
-        elif chosen is act_delete:
-            self._sc_qc_delete_group(group)
+        group_id = self._sc_qc_group_combo.itemData(index)
+        if not group_id:
+            return
+        project = self._sc_qc_current_project()
+        group = self._sc_qc_get_group(project, group_id)
+        if group is None:
+            return
+        self._sc_qc_delete_group(group)
 
     def _sc_qc_rename_group(self, group):
         if not isinstance(group, dict):
             return
         old_name = group.get("name", "")
-        text, ok = QInputDialog.getText(
-            self, "重命名分组", "分组名称:", QLineEdit.Normal, old_name
+        text, ok = _QuickTextInputDialog.get_input(
+            self, title="重命名分组", label="分组名称", text=old_name,
+            placeholder="如:基础指令",
         )
         if not ok:
             return
@@ -4529,6 +4836,18 @@ class SerialComMixin:
             self._sc_qc_edit_command(idx)
         elif act == act_del:
             self._sc_qc_delete_command(idx)
+
+    def _sc_qc_move_command(self, idx, delta):
+        group = self._sc_qc_current_group()
+        if group is None:
+            return
+        commands = group.get("commands", []) or []
+        target = idx + delta
+        if not (0 <= idx < len(commands)) or not (0 <= target < len(commands)):
+            return
+        commands[idx], commands[target] = commands[target], commands[idx]
+        self._sc_qc_save_data()
+        self._sc_refresh_quick_buttons()
 
     def _sc_qc_edit_command(self, idx):
         group = self._sc_qc_current_group()
@@ -5907,17 +6226,53 @@ class SerialComMixin:
         return btn
 
     @staticmethod
-    def _make_sc_section(title):
+    def _make_sc_section(title, icon_path=None):
         grp = QFrame()
         grp.setObjectName("scSectionCard")
         grp.setStyleSheet(section_card_style())
-        layout = QVBoxLayout(grp)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(8)
 
-        lbl = QLabel(title)
+        shadow_cfg = section_card_shadow()
+        if shadow_cfg:
+            shadow = QGraphicsDropShadowEffect(grp)
+            shadow.setBlurRadius(shadow_cfg["blur_radius"])
+            shadow.setOffset(shadow_cfg["offset_x"], shadow_cfg["offset_y"])
+            shadow.setColor(QColor(*shadow_cfg["color"]))
+            grp.setGraphicsEffect(shadow)
+
+        layout = QVBoxLayout(grp)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(14)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(7)
+
+        if icon_path and os.path.isfile(icon_path):
+            icon_lbl = QLabel()
+            icon_lbl.setStyleSheet(transparent_background_style())
+            icon_pm = _tinted_svg_icon(icon_path, _CLR_TEXT_LABEL, 14).pixmap(14, 14)
+            if not icon_pm.isNull():
+                icon_lbl.setPixmap(icon_pm)
+                icon_lbl.setFixedSize(14, 14)
+                header.addWidget(icon_lbl)
+
+        lbl = QLabel(title.upper())
         lbl.setStyleSheet(section_title_style())
-        layout.addWidget(lbl)
+        header.addWidget(lbl)
+        header.addStretch()
+
+        header_wrap = QVBoxLayout()
+        header_wrap.setContentsMargins(0, 0, 0, 0)
+        header_wrap.setSpacing(7)
+        header_wrap.addLayout(header)
+
+        divider = QFrame()
+        divider.setFrameShape(QFrame.HLine)
+        divider.setFixedHeight(1)
+        divider.setStyleSheet(section_header_divider_style())
+        header_wrap.addWidget(divider)
+
+        layout.addLayout(header_wrap)
 
         grp.setProperty("_inner_layout", layout)
         return grp
@@ -5990,7 +6345,7 @@ class _MiniSlideToggle(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         w, h = self.width(), self.height()
-        outer_r = 4
+        outer_r = 6
 
         colors = toggle_colors()
         p.setPen(QPen(QColor(colors["border"]), 1))
@@ -6626,6 +6981,10 @@ class _QuickCmdButton(QPushButton):
 
     _MIME_TYPE = "application/x-kklab-quickcmd"
 
+    move_requested = Signal(int, int)
+    edit_requested = Signal(int)
+    delete_requested = Signal(int)
+
     def __init__(self, text: str = "", parent=None):
         super().__init__(text, parent)
         self.setAcceptDrops(False)  # 容器统一接收 drop，按钮自身不参与
@@ -6638,6 +6997,79 @@ class _QuickCmdButton(QPushButton):
         self._preview_timer.setSingleShot(True)
         self._preview_timer.setInterval(80)
         self._preview_timer.timeout.connect(self._show_preview)
+        self._build_action_overlay()
+
+    def _build_action_overlay(self):
+        self._action_left = self._make_action_btn(
+            os.path.join(_SVG_SERIAL_DIR, "chevron-left.svg"), _CLR_TEXT_MUTED, "Move Left"
+        )
+        self._action_right = self._make_action_btn(
+            os.path.join(_SVG_SERIAL_DIR, "chevron-right.svg"), _CLR_TEXT_MUTED, "Move Right"
+        )
+        self._action_edit = self._make_action_btn(
+            os.path.join(_SVG_SERIAL_DIR, "edit.svg"), _CLR_SEND_BG, "Edit macro"
+        )
+        self._action_delete = self._make_action_btn(
+            os.path.join(_SVG_LOGS_DIR, "trash.svg"), _CLR_ERROR, "Delete macro"
+        )
+        self._action_btns = [
+            self._action_left,
+            self._action_right,
+            self._action_edit,
+            self._action_delete,
+        ]
+        for b in self._action_btns:
+            b.setStyleSheet(quick_action_overlay_style())
+            b.hide()
+        self._action_left.clicked.connect(
+            lambda: self.move_requested.emit(self._cmd_index, -1)
+        )
+        self._action_right.clicked.connect(
+            lambda: self.move_requested.emit(self._cmd_index, 1)
+        )
+        self._action_edit.clicked.connect(
+            lambda: self.edit_requested.emit(self._cmd_index)
+        )
+        self._action_delete.clicked.connect(
+            lambda: self.delete_requested.emit(self._cmd_index)
+        )
+
+    def _make_action_btn(self, svg_path, color, tip):
+        btn = QToolButton(self)
+        btn.setObjectName("quickCmdAction")
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setFocusPolicy(Qt.NoFocus)
+        btn.setFixedSize(16, 16)
+        btn.setIconSize(QSize(10, 10))
+        btn.setToolTip(tip)
+        icon = _tinted_svg_icon(svg_path, color, 10)
+        if not icon.isNull():
+            btn.setIcon(icon)
+        return btn
+
+    def set_move_bounds(self, can_left: bool, can_right: bool):
+        self._action_left.setEnabled(can_left)
+        self._action_right.setEnabled(can_right)
+
+    def _layout_action_overlay(self):
+        if not getattr(self, "_action_btns", None):
+            return
+        gap = 2
+        size = 16
+        total = len(self._action_btns) * size + (len(self._action_btns) - 1) * gap
+        x = self.width() - total - 4
+        y = 4
+        for b in self._action_btns:
+            b.move(x, y)
+            x += size + gap
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._layout_action_overlay()
+
+    def _set_actions_visible(self, visible: bool):
+        for b in getattr(self, "_action_btns", []) or []:
+            b.setVisible(visible)
 
     def set_command_index(self, idx: int):
         self._cmd_index = idx
@@ -6656,11 +7088,13 @@ class _QuickCmdButton(QPushButton):
 
     def enterEvent(self, event):
         super().enterEvent(event)
+        self._set_actions_visible(True)
         self._preview_timer.start()
 
     def leaveEvent(self, event):
         self._preview_timer.stop()
         self._preview_popup.hide()
+        self._set_actions_visible(False)
         super().leaveEvent(event)
 
     def mousePressEvent(self, event):
@@ -7032,6 +7466,117 @@ class _QuickCommandPickerPopup(QFrame):
                         return
 
 
+class _SerialScriptStepDialog(QDialog):
+    def __init__(self, parent=None, step: dict = None, mode: str = "create"):
+        super().__init__(parent)
+        step = step or {}
+        self.setWindowTitle(
+            "Add Execution Command" if mode == "create" else "Edit Step Directive"
+        )
+        self.setMinimumWidth(360)
+        self.setStyleSheet(_DLG_STYLE)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(18, 18, 18, 18)
+        root.setSpacing(14)
+
+        title = QLabel(
+            "Add Execution Command" if mode == "create" else "Edit Step Directive"
+        )
+        title.setObjectName("qcTitle")
+        root.addWidget(title)
+
+        card = QFrame()
+        card.setObjectName("dlgGroupCard")
+        form = QVBoxLayout(card)
+        form.setContentsMargins(14, 12, 14, 12)
+        form.setSpacing(8)
+
+        cmd_lbl = QLabel("Step Command (TEXT/HEX payload)")
+        cmd_lbl.setObjectName("dlgFieldLabel")
+        form.addWidget(cmd_lbl)
+        self._cmd_edit = QLineEdit(step.get("cmd", ""))
+        self._cmd_edit.setPlaceholderText("e.g. AT+CWCAP")
+        self._cmd_edit.setStyleSheet(dialog_line_edit_style())
+        form.addWidget(self._cmd_edit)
+
+        pw_row = QHBoxLayout()
+        pw_row.setSpacing(8)
+        prio_box = QVBoxLayout()
+        prio_box.setSpacing(4)
+        prio_lbl = QLabel("Priority Ordering")
+        prio_lbl.setObjectName("dlgFieldLabel")
+        prio_box.addWidget(prio_lbl)
+        self._prio_spin = QSpinBox()
+        self._prio_spin.setRange(1, 99999)
+        self._prio_spin.setValue(int(step.get("priority", 1)) or 1)
+        prio_box.addWidget(self._prio_spin)
+        pw_row.addLayout(prio_box, 1)
+
+        wait_box = QVBoxLayout()
+        wait_box.setSpacing(4)
+        wait_lbl = QLabel("Step Wait Delay (ms)")
+        wait_lbl.setObjectName("dlgFieldLabel")
+        wait_box.addWidget(wait_lbl)
+        self._wait_spin = QSpinBox()
+        self._wait_spin.setRange(0, 999999)
+        self._wait_spin.setValue(int(step.get("wait_ms", 0)))
+        wait_box.addWidget(self._wait_spin)
+        pw_row.addLayout(wait_box, 1)
+        form.addLayout(pw_row)
+
+        kw_lbl = QLabel("Expected Wait Keyword (Optional)")
+        kw_lbl.setObjectName("dlgFieldLabel")
+        form.addWidget(kw_lbl)
+        self._kw_edit = QLineEdit(step.get("wait_keyword", ""))
+        self._kw_edit.setPlaceholderText("e.g. OK, READY, or SUCCESS")
+        self._kw_edit.setStyleSheet(dialog_line_edit_style())
+        form.addWidget(self._kw_edit)
+
+        to_lbl = QLabel("Keyword Timeout (ms - default is Wait Delay)")
+        to_lbl.setObjectName("dlgFieldLabel")
+        form.addWidget(to_lbl)
+        self._to_spin = QSpinBox()
+        self._to_spin.setRange(0, 999999)
+        self._to_spin.setValue(int(step.get("wait_timeout_ms", 0)))
+        form.addWidget(self._to_spin)
+        root.addWidget(card)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setCursor(Qt.PointingHandCursor)
+        cancel_btn.setStyleSheet(dialog_cancel_button_style())
+        cancel_btn.setAutoDefault(False)
+        cancel_btn.setDefault(False)
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+
+        ok_btn = QPushButton("OK")
+        ok_btn.setCursor(Qt.PointingHandCursor)
+        ok_btn.setStyleSheet(dialog_ok_button_style())
+        ok_btn.setAutoDefault(True)
+        ok_btn.setDefault(True)
+        ok_btn.clicked.connect(self._on_accept)
+        btn_row.addWidget(ok_btn)
+        root.addLayout(btn_row)
+
+    def _on_accept(self):
+        if not self._cmd_edit.text().strip():
+            QMessageBox.warning(self, "提示", "指令不能为空")
+            return
+        self.accept()
+
+    def result_step(self) -> dict:
+        return {
+            "cmd": self._cmd_edit.text().strip(),
+            "priority": int(self._prio_spin.value()),
+            "wait_ms": int(self._wait_spin.value()),
+            "wait_keyword": self._kw_edit.text().strip(),
+            "wait_timeout_ms": int(self._to_spin.value()),
+        }
+
+
 class _SerialScriptEditorDialog(QDialog):
     _COLS = ["指令", "优先级", "等待(ms)", "等待关键字", "关键字超时(ms)"]
 
@@ -7322,6 +7867,71 @@ class _SerialScriptEditorDialog(QDialog):
             "loop_count": self._loop_spin.value(),
             "steps": [s for s in self._collect_steps() if s["cmd"].strip()],
         }
+
+
+class _QuickTextInputDialog(QDialog):
+
+    def __init__(self, parent=None, title="", label="", text="",
+                 placeholder="", ok_text="OK"):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setFixedWidth(360)
+        self.setStyleSheet(quick_cmd_dialog_style())
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(10)
+
+        title_lbl = QLabel(title)
+        title_lbl.setObjectName("qcTitle")
+        root.addWidget(title_lbl)
+
+        if label:
+            root.addWidget(QLabel(label))
+
+        self._edit = QLineEdit()
+        self._edit.setText(text)
+        if placeholder:
+            self._edit.setPlaceholderText(placeholder)
+        self._edit.selectAll()
+        self._edit.returnPressed.connect(self.accept)
+        root.addWidget(self._edit)
+
+        root.addSpacing(4)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setCursor(Qt.PointingHandCursor)
+        cancel_btn.setStyleSheet(dialog_cancel_button_style())
+        cancel_btn.setAutoDefault(False)
+        cancel_btn.setDefault(False)
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+
+        ok_btn = QPushButton(ok_text)
+        ok_btn.setCursor(Qt.PointingHandCursor)
+        ok_btn.setStyleSheet(dialog_ok_button_style())
+        ok_btn.setAutoDefault(True)
+        ok_btn.setDefault(True)
+        ok_btn.clicked.connect(self.accept)
+        btn_row.addWidget(ok_btn)
+        root.addLayout(btn_row)
+
+        self._edit.setFocus()
+
+    def get_text(self) -> str:
+        return self._edit.text().strip()
+
+    @staticmethod
+    def get_input(parent=None, title="", label="", text="",
+                  placeholder="", ok_text="OK"):
+        dlg = _QuickTextInputDialog(
+            parent=parent, title=title, label=label, text=text,
+            placeholder=placeholder, ok_text=ok_text,
+        )
+        accepted = dlg.exec() == QDialog.Accepted
+        return dlg.get_text(), accepted
 
 
 class _QuickCmdDialog(QDialog):
