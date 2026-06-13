@@ -95,7 +95,7 @@ _SERIALCOM_STYLE_EXPORTS = (
     "thin_scrollbar_style", "toolbar_connect_button_style", "toolbar_style", "toggle_colors",
     "transparent_background_style", "transparent_scroll_area_style",
     "transparent_toolbar_button_style", "unit_label_style", "SERIAL_SCROLLBAR_STYLE",
-    "SerialDarkComboBox",
+    "SerialDarkComboBox", "SerialHistoryComboBox", "_CLR_HISTORY_COMBO_BG",
 )
 
 _SERIALCOM_STYLE_MODULE = _select_serialcom_style_module()
@@ -1565,14 +1565,13 @@ class SerialComMixin:
         send_row.setContentsMargins(0, 0, 0, 0)
         send_row.setSpacing(8)
 
-        self._sc_history_combo = SerialDarkComboBox()
+        self._sc_history_combo = SerialHistoryComboBox()
         self._sc_history_combo.setEditable(True)
-        self._sc_history_combo.setInsertPolicy(SerialDarkComboBox.NoInsert)
+        self._sc_history_combo.setInsertPolicy(SerialHistoryComboBox.NoInsert)
         self._sc_history_combo.setFixedHeight(34)
         self._sc_send_input = self._sc_history_combo.lineEdit()
         self._sc_send_input.setPlaceholderText("Enter text to send (\u2193 for history)...")
         self._sc_send_input.setClearButtonEnabled(False)
-        self._sc_history_combo.setStyleSheet(history_combo_style())
         send_row.addWidget(self._sc_history_combo, 1)
 
         self._sc_send_btn = QPushButton("Send")
@@ -1599,17 +1598,27 @@ class SerialComMixin:
         tabs.tabBar().setCursor(Qt.PointingHandCursor)
         self._sc_bottom_tabs = tabs
 
-        qc_icon = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "zap.svg"), _CLR_TEXT_MUTED, 13)
-        script_icon = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "logs.svg"), _CLR_TEXT_MUTED, 13)
-
         qc_index = tabs.addTab(self._build_sc_qc_tab(), "Quick Commands")
         script_index = tabs.addTab(self._build_sc_script_tab(), "Scripts")
-        if not qc_icon.isNull():
-            tabs.setTabIcon(qc_index, qc_icon)
-        if not script_icon.isNull():
-            tabs.setTabIcon(script_index, script_icon)
         tabs.setIconSize(QSize(13, 13))
+
+        self._sc_bottom_tab_icons = {
+            qc_index: os.path.join(_SVG_SERIAL_DIR, "zap.svg"),
+            script_index: os.path.join(_SVG_LOGS_DIR, "logs.svg"),
+        }
+        tabs.currentChanged.connect(self._sc_refresh_bottom_tab_icons)
+        self._sc_refresh_bottom_tab_icons(tabs.currentIndex())
         return tabs
+
+    def _sc_refresh_bottom_tab_icons(self, current_index):
+        tabs = getattr(self, "_sc_bottom_tabs", None)
+        if tabs is None:
+            return
+        for index, icon_path in self._sc_bottom_tab_icons.items():
+            color = _CLR_TEXT_TITLE if index == current_index else _CLR_TEXT_MUTED
+            icon = _tinted_svg_icon(icon_path, color, 13)
+            if not icon.isNull():
+                tabs.setTabIcon(index, icon)
 
     def _build_sc_qc_tab(self):
         frame = QFrame()

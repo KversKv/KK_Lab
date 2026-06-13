@@ -493,10 +493,14 @@ def log_document_style():
     return "p, div { line-height: 150%; margin: 0; padding: 0; }"
 
 
+_CLR_HISTORY_COMBO_BG = "rgba(242, 242, 247, 0.64)"
+_HISTORY_COMBO_FIELD_QCOLOR = QColor(242, 242, 247, 163)
+
+
 def history_combo_style():
     return f"""
             QComboBox {{
-                background-color: {_CLR_INPUT_BG}; border: 1px solid rgba(60, 60, 67, 0.18); border-radius: 7px;
+                background-color: {_CLR_HISTORY_COMBO_BG}; border: 1px solid rgba(60, 60, 67, 0.18); border-radius: 7px;
                 color: {_CLR_INPUT_TEXT}; font-size: 14px; font-family: {_UI_FONT};
                 padding: 3px 28px 3px 10px;
                 selection-background-color: {_CLR_SELECTION_BG};
@@ -1709,6 +1713,22 @@ class SerialDarkComboBox(QComboBox):
 SerialAppleComboBox = SerialDarkComboBox
 
 
+class SerialHistoryComboBox(SerialDarkComboBox):
+    def __init__(self, *args, field_bg=_HISTORY_COMBO_FIELD_QCOLOR, popup_bg=_CLR_INPUT_BG,
+                 border=_CLR_BORDER_SOFT, **kwargs):
+        super().__init__(*args, bg=popup_bg, border=border, **kwargs)
+        self._field_bg = QColor(field_bg)
+        self.setStyleSheet(history_combo_style())
+
+    def paintEvent(self, event):
+        original_popup_bg = self._popup_bg
+        self._popup_bg = self._field_bg
+        try:
+            super().paintEvent(event)
+        finally:
+            self._popup_bg = original_popup_bg
+
+
 __all__ = [name for name in globals() if name.startswith("_CLR_")]
 __all__ += [
     name for name, value in globals().items()
@@ -1718,5 +1738,5 @@ __all__ += [
     "_SERIAL_BTN_HEIGHT", "_SERIAL_BTN_ICON_SIZE", "_SERIAL_BTN_RADIUS",
     "_TERM_FONT", "_UI_FONT", "_DLG_STYLE", "DARK_CARD_STYLE",
     "APPLE_CARD_STYLE", "SERIAL_SCROLLBAR_STYLE", "SerialDarkComboBox",
-    "SerialAppleComboBox",
+    "SerialAppleComboBox", "SerialHistoryComboBox", "_CLR_HISTORY_COMBO_BG",
 ]

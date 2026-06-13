@@ -15,7 +15,7 @@ from ui.widgets.button import update_connect_button_state
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QPushButton,
     QLabel, QLineEdit, QFrame, QGraphicsDropShadowEffect,
-    QSizePolicy, QApplication, QGridLayout
+    QSizePolicy, QApplication, QGridLayout, QCheckBox
 )
 from PySide6.QtCore import Qt, QTimer, QRectF, QSize, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QFont, QPixmap
@@ -118,6 +118,20 @@ class ChamberControlUI(QWidget):
         self.current_chamber_session_id = None
         self.current_port = None
         self.preset_buttons = []
+
+        # 温度循环序列状态
+        self.loop_timer = QTimer()
+        self.loop_timer.setInterval(1000)
+        self._loop_running = False
+        self._loop_sequence = []
+        self._loop_index = 0
+        self._loop_cycle = 0
+        self._loop_phase = "idle"
+        self._loop_dwell_remaining = 0
+        self._loop_tolerance = 1.0
+        self._loop_dwell_seconds = 0
+        self._loop_forever = False
+        self._loop_cycles_total = 1
 
         # 初始化界面
         self._setup_ui()
@@ -404,8 +418,96 @@ class ChamberControlUI(QWidget):
         temp_panel_layout.addLayout(temp_input_layout)
         temp_panel_layout.addLayout(preset_layout)
 
+        # 温度循环序列区域
+        loop_panel = QFrame()
+        loop_panel.setObjectName("innerPanel")
+        loop_panel_layout = QVBoxLayout(loop_panel)
+        loop_panel_layout.setContentsMargins(18, 18, 18, 18)
+        loop_panel_layout.setSpacing(12)
+
+        loop_header = QHBoxLayout()
+        loop_header.setContentsMargins(0, 0, 0, 0)
+        loop_header.setSpacing(8)
+        loop_title = QLabel("Temperature Loop")
+        loop_title.setObjectName("fieldLabel")
+        loop_title.setStyleSheet("border: none")
+        loop_header.addWidget(loop_title)
+        loop_header.addStretch()
+        self.loop_forever_check = QCheckBox("Repeat forever")
+        self.loop_forever_check.setObjectName("loopCheck")
+        loop_header.addWidget(self.loop_forever_check)
+        loop_panel_layout.addLayout(loop_header)
+
+        seq_label = QLabel("Temperature Sequence (°C, comma separated)")
+        seq_label.setObjectName("fieldLabelSmall")
+        seq_label.setStyleSheet("border: none")
+        loop_panel_layout.addWidget(seq_label)
+
+        self.loop_sequence_input = QLineEdit()
+        self.loop_sequence_input.setObjectName("loopInput")
+        self.loop_sequence_input.setFixedHeight(40)
+        self.loop_sequence_input.setPlaceholderText("e.g. -20, 25, 85, 125")
+        self.loop_sequence_input.setText("-20, 25, 85")
+        loop_panel_layout.addWidget(self.loop_sequence_input)
+
+        loop_params_layout = QGridLayout()
+        loop_params_layout.setHorizontalSpacing(12)
+        loop_params_layout.setVerticalSpacing(6)
+
+        dwell_label = QLabel("Dwell per Step (min)")
+        dwell_label.setObjectName("fieldLabelSmall")
+        dwell_label.setStyleSheet("border: none")
+        tol_label = QLabel("Arrival Tolerance (°C)")
+        tol_label.setObjectName("fieldLabelSmall")
+        tol_label.setStyleSheet("border: none")
+        cycles_label = QLabel("Cycles")
+        cycles_label.setObjectName("fieldLabelSmall")
+        cycles_label.setStyleSheet("border: none")
+
+        self.loop_dwell_input = QLineEdit()
+        self.loop_dwell_input.setObjectName("loopInput")
+        self.loop_dwell_input.setFixedHeight(38)
+        self.loop_dwell_input.setText("5")
+        self.loop_tolerance_input = QLineEdit()
+        self.loop_tolerance_input.setObjectName("loopInput")
+        self.loop_tolerance_input.setFixedHeight(38)
+        self.loop_tolerance_input.setText("1.0")
+        self.loop_cycles_input = QLineEdit()
+        self.loop_cycles_input.setObjectName("loopInput")
+        self.loop_cycles_input.setFixedHeight(38)
+        self.loop_cycles_input.setText("1")
+
+        loop_params_layout.addWidget(dwell_label, 0, 0)
+        loop_params_layout.addWidget(tol_label, 0, 1)
+        loop_params_layout.addWidget(cycles_label, 0, 2)
+        loop_params_layout.addWidget(self.loop_dwell_input, 1, 0)
+        loop_params_layout.addWidget(self.loop_tolerance_input, 1, 1)
+        loop_params_layout.addWidget(self.loop_cycles_input, 1, 2)
+        loop_panel_layout.addLayout(loop_params_layout)
+
+        loop_btn_layout = QHBoxLayout()
+        loop_btn_layout.setSpacing(10)
+        self.loop_start_btn = QPushButton("▶  START LOOP")
+        self.loop_start_btn.setObjectName("loopStartButton")
+        self.loop_start_btn.setFixedHeight(42)
+        self.loop_start_btn.setEnabled(False)
+        self.loop_stop_btn = QPushButton("■  STOP LOOP")
+        self.loop_stop_btn.setObjectName("loopStopButton")
+        self.loop_stop_btn.setFixedHeight(42)
+        self.loop_stop_btn.setEnabled(False)
+        loop_btn_layout.addWidget(self.loop_start_btn, 1)
+        loop_btn_layout.addWidget(self.loop_stop_btn, 1)
+        loop_panel_layout.addLayout(loop_btn_layout)
+
+        self.loop_status_label = QLabel("Loop idle")
+        self.loop_status_label.setObjectName("loopStatusLabel")
+        self.loop_status_label.setStyleSheet("border: none")
+        self.loop_status_label.setWordWrap(True)
+        loop_panel_layout.addWidget(self.loop_status_label)
+
         control_layout.addWidget(power_panel)
         control_layout.addWidget(temp_panel)
+        control_layout.addWidget(loop_panel)
         control_layout.addStretch()
 
         self._apply_shadow(control_group)
@@ -421,6 +523,9 @@ class ChamberControlUI(QWidget):
         self.connect_btn.clicked.connect(self._toggle_connection)
         self.power_btn.clicked.connect(self._toggle_chamber_power)
         self.set_btn.clicked.connect(self._set_temperature)
+        self.loop_start_btn.clicked.connect(self._start_loop)
+        self.loop_stop_btn.clicked.connect(self._stop_loop)
+        self.loop_timer.timeout.connect(self._loop_tick)
         self.timer.timeout.connect(self._update_temperatures)
         if self._instrument_manager:
             self._instrument_manager.session_connected.connect(
@@ -766,6 +871,110 @@ class ChamberControlUI(QWidget):
             color: #51658f;
             border: 1px solid #1b2948;
         }
+
+        #fieldLabelSmall {
+            font-size: 11px;
+            font-weight: 600;
+            color: #7e95bf;
+        }
+
+        #loopInput {
+            background-color: #06122f;
+            border: 1px solid #183261;
+            border-radius: 8px;
+            color: #eaf1ff;
+            padding: 0 12px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        #loopInput:focus {
+            border: 1px solid #4a68ff;
+        }
+
+        #loopInput:disabled {
+            background-color: #0a1430;
+            color: #51658f;
+            border: 1px solid #16264a;
+        }
+
+        QCheckBox#loopCheck {
+            color: #8ca5d3;
+            font-size: 12px;
+            font-weight: 600;
+            spacing: 6px;
+        }
+
+        QCheckBox#loopCheck::indicator {
+            width: 16px;
+            height: 16px;
+            border-radius: 4px;
+            border: 1px solid #2a3b63;
+            background-color: #06122f;
+        }
+
+        QCheckBox#loopCheck::indicator:checked {
+            background-color: #3d2bc6;
+            border: 1px solid #4b38df;
+        }
+
+        QCheckBox#loopCheck:disabled {
+            color: #51658f;
+        }
+
+        #loopStartButton {
+            background-color: #0f8f63;
+            border: 1px solid #15e6a3;
+            border-radius: 8px;
+            color: white;
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+        #loopStartButton:hover:!disabled {
+            background-color: #11a36f;
+            border-color: #42f0bd;
+        }
+
+        #loopStartButton:pressed:!disabled {
+            background-color: #0d7f58;
+        }
+
+        #loopStartButton:disabled {
+            background-color: #1a2642;
+            color: #4f6287;
+            border: 1px solid #2a3b63;
+        }
+
+        #loopStopButton {
+            background-color: #a9153e;
+            border: 1px solid #ff4f7b;
+            border-radius: 8px;
+            color: white;
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+        #loopStopButton:hover:!disabled {
+            background-color: #c31d4c;
+            border-color: #ff6b91;
+        }
+
+        #loopStopButton:pressed:!disabled {
+            background-color: #8d1134;
+        }
+
+        #loopStopButton:disabled {
+            background-color: #1a2642;
+            color: #4f6287;
+            border: 1px solid #2a3b63;
+        }
+
+        #loopStatusLabel {
+            font-size: 12px;
+            font-weight: 600;
+            color: #8ca5d3;
+        }
         """
 
     def _set_controls_enabled(self, enabled: bool):
@@ -774,6 +983,9 @@ class ChamberControlUI(QWidget):
         self.set_btn.setEnabled(enabled)
         for btn in self.preset_buttons:
             btn.setEnabled(enabled)
+        if not enabled and self._loop_running:
+            self._stop_loop(reason="Chamber disconnected")
+        self.loop_start_btn.setEnabled(enabled and not self._loop_running)
 
     def _set_connection_ui(self, connected: bool):
         update_connect_button_state(self.connect_btn, connected)
@@ -1003,6 +1215,8 @@ class ChamberControlUI(QWidget):
 
         if self.is_chamber_on:
             try:
+                if self._loop_running:
+                    self._stop_loop(reason="Loop stopped: chamber powered off")
                 self.chamber.stop()
                 setattr(self.chamber, "_last_known_running_state", False)
                 setattr(self.chamber, "_last_known_running_state_verified", True)
@@ -1046,6 +1260,186 @@ class ChamberControlUI(QWidget):
             logger.warning("设置预设温度错误: 输入不是有效数字")
         except Exception as e:
             logger.error("设置预设温度错误: %s", e)
+
+    def _parse_loop_sequence(self):
+        raw = self.loop_sequence_input.text().strip()
+        sequence = []
+        for token in raw.replace(";", ",").split(","):
+            token = token.strip()
+            if not token:
+                continue
+            try:
+                sequence.append(float(token))
+            except ValueError:
+                raise ValueError(f"Invalid temperature value: '{token}'")
+        return sequence
+
+    def _start_loop(self):
+        if self.chamber is None or self._loop_running:
+            return
+        try:
+            sequence = self._parse_loop_sequence()
+        except ValueError as e:
+            self.loop_status_label.setText(f"Loop error: {e}")
+            logger.warning("温度循环序列解析失败: %s", e)
+            return
+        if not sequence:
+            self.loop_status_label.setText("Loop error: sequence is empty")
+            return
+
+        try:
+            dwell_min = float(self.loop_dwell_input.text())
+            if dwell_min < 0:
+                raise ValueError
+        except ValueError:
+            self.loop_status_label.setText("Loop error: invalid dwell time")
+            return
+        try:
+            tolerance = float(self.loop_tolerance_input.text())
+            if tolerance <= 0:
+                raise ValueError
+        except ValueError:
+            self.loop_status_label.setText("Loop error: invalid tolerance")
+            return
+
+        self._loop_forever = self.loop_forever_check.isChecked()
+        if self._loop_forever:
+            self._loop_cycles_total = 0
+        else:
+            try:
+                cycles = int(float(self.loop_cycles_input.text()))
+                if cycles < 1:
+                    raise ValueError
+            except ValueError:
+                self.loop_status_label.setText("Loop error: invalid cycles")
+                return
+            self._loop_cycles_total = cycles
+
+        self._loop_sequence = sequence
+        self._loop_tolerance = tolerance
+        self._loop_dwell_seconds = int(round(dwell_min * 60))
+        self._loop_index = 0
+        self._loop_cycle = 1
+        self._loop_running = True
+        self._loop_phase = "ramp"
+        self._loop_dwell_remaining = 0
+
+        try:
+            if not self.is_chamber_on:
+                self.chamber.start()
+                setattr(self.chamber, "_last_known_running_state", True)
+                setattr(self.chamber, "_last_known_running_state_verified", True)
+                self._set_power_ui(True, connected=True)
+        except Exception as e:
+            logger.error("启动温箱以执行循环失败: %s", e, exc_info=True)
+            self._loop_running = False
+            self.loop_status_label.setText("Loop error: failed to start chamber")
+            return
+
+        self._set_loop_running_ui(True)
+        self._apply_loop_target()
+        self.loop_timer.start()
+        logger.info(
+            "温度循环开始: 序列=%s 保压=%ss 容差=%.1f°C 循环=%s",
+            self._loop_sequence, self._loop_dwell_seconds, self._loop_tolerance,
+            "forever" if self._loop_forever else self._loop_cycles_total,
+        )
+
+    def _stop_loop(self, reason: str = "Loop stopped"):
+        was_running = self._loop_running
+        self._loop_running = False
+        self._loop_phase = "idle"
+        self.loop_timer.stop()
+        self._set_loop_running_ui(False)
+        connected = self._is_current_chamber_connected()
+        self.loop_start_btn.setEnabled(connected and True)
+        self.loop_status_label.setText(reason)
+        if was_running:
+            logger.info("温度循环停止: %s", reason)
+
+    def _apply_loop_target(self):
+        target = self._loop_sequence[self._loop_index]
+        try:
+            self.chamber.set_temperature(target)
+            self.set_temp_value.setText(f"{target:.1f} °C")
+            self.temp_input.setText(f"{target:.1f}")
+        except Exception as e:
+            logger.error("循环设置温度失败: %s", e, exc_info=True)
+            self._stop_loop(reason="Loop error: failed to set temperature")
+            return
+        self._loop_phase = "ramp"
+        self._update_loop_status()
+
+    def _loop_tick(self):
+        if not self._loop_running or self.chamber is None:
+            return
+        if not self._is_current_chamber_connected():
+            self._stop_loop(reason="Loop error: chamber disconnected")
+            return
+
+        target = self._loop_sequence[self._loop_index]
+        try:
+            actual = self.chamber.get_current_temp()
+        except Exception as e:
+            logger.warning("循环读取温度失败: %s", e, exc_info=True)
+            actual = None
+
+        if self._loop_phase == "ramp":
+            if actual is not None and abs(actual - target) <= self._loop_tolerance:
+                self._loop_phase = "dwell"
+                self._loop_dwell_remaining = self._loop_dwell_seconds
+            self._update_loop_status(actual)
+        elif self._loop_phase == "dwell":
+            if self._loop_dwell_remaining > 0:
+                self._loop_dwell_remaining -= 1
+                self._update_loop_status(actual)
+            else:
+                self._advance_loop()
+
+    def _advance_loop(self):
+        self._loop_index += 1
+        if self._loop_index >= len(self._loop_sequence):
+            self._loop_index = 0
+            if not self._loop_forever:
+                if self._loop_cycle >= self._loop_cycles_total:
+                    self._stop_loop(reason="Loop finished")
+                    return
+            self._loop_cycle += 1
+        self._apply_loop_target()
+
+    def _update_loop_status(self, actual=None):
+        if not self._loop_running:
+            return
+        target = self._loop_sequence[self._loop_index]
+        step_txt = f"Step {self._loop_index + 1}/{len(self._loop_sequence)}"
+        if self._loop_forever:
+            cycle_txt = f"Cycle {self._loop_cycle}/∞"
+        else:
+            cycle_txt = f"Cycle {self._loop_cycle}/{self._loop_cycles_total}"
+        actual_txt = "--" if actual is None else f"{actual:.1f}"
+        if self._loop_phase == "ramp":
+            phase_txt = f"Ramping to {target:.1f} °C (now {actual_txt} °C)"
+        elif self._loop_phase == "dwell":
+            mins, secs = divmod(max(0, self._loop_dwell_remaining), 60)
+            phase_txt = (
+                f"Holding {target:.1f} °C, {mins:02d}:{secs:02d} left "
+                f"(now {actual_txt} °C)"
+            )
+        else:
+            phase_txt = ""
+        self.loop_status_label.setText(f"{cycle_txt} · {step_txt} · {phase_txt}")
+
+    def _set_loop_running_ui(self, running: bool):
+        self.loop_start_btn.setEnabled(not running)
+        self.loop_stop_btn.setEnabled(running)
+        self.loop_sequence_input.setEnabled(not running)
+        self.loop_dwell_input.setEnabled(not running)
+        self.loop_tolerance_input.setEnabled(not running)
+        self.loop_cycles_input.setEnabled(not running)
+        self.loop_forever_check.setEnabled(not running)
+        self.set_btn.setEnabled(not running and self._is_current_chamber_connected())
+        for btn in self.preset_buttons:
+            btn.setEnabled(not running and self._is_current_chamber_connected())
 
     def _update_temperatures(self):
         if self.chamber is not None and hasattr(self.chamber, "is_connected"):
