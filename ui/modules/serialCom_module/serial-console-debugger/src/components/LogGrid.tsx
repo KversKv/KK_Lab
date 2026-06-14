@@ -17,7 +17,7 @@ const highlightMatch = (text: string, keyword: string, isRegex: boolean, isCase:
       <>
         {parts.map((part, i) => 
           regex.test(part) ? (
-            <mark key={i} className="bg-[#EFEFFF] text-[#5E5CE6] border border-[#0A84FF] px-0.5 rounded-sm font-semibold">
+            <mark key={i} className="bg-blue-100 text-blue-700 border border-blue-400 px-0.5 rounded-sm font-semibold">
               {part}
             </mark>
           ) : part
@@ -146,32 +146,32 @@ function LogPanelCard({
 
   const getLogColorClass = (type: LogType): string => {
     switch (type) {
-      case 'rx': return 'text-slate-800'; // Charcoal for RX
-      case 'tx': return 'text-[#007AFF] font-medium'; // Deep Apple Blue for TX
-      case 'info': return 'text-[#0A84FF] font-semibold'; // Info cyan-blue
-      case 'warn': return 'text-[#FF9F0A] font-semibold'; // Amber warning
-      case 'error': return 'text-[#FF3B30] font-semibold'; // Red warning
-      case 'sys': return 'text-violet-500 italic'; // Violet system notes
-      default: return 'text-slate-700';
+      case 'rx': return 'text-slate-800 dark:text-slate-300'; // Charcoal for RX
+      case 'tx': return 'text-blue-600 dark:text-blue-400 font-medium'; // Deep Apple Blue for TX
+      case 'info': return 'text-cyan-600 dark:text-cyan-500 font-semibold'; // Info cyan-blue
+      case 'warn': return 'text-amber-500 dark:text-amber-400 font-semibold'; // Amber warning
+      case 'error': return 'text-red-500 dark:text-red-400 font-semibold'; // Red warning
+      case 'sys': return 'text-violet-500 dark:text-violet-400 italic'; // Violet system notes
+      default: return 'text-slate-700 dark:text-slate-400';
     }
   };
 
   return (
     <div
       onClick={() => setActivePanelIndex(idx)}
-      className={`bg-[#FBFBFD] rounded-xl border-2 flex flex-col h-full shadow-inner overflow-hidden transition-all duration-150 ${
+      className={`bg-white/80 dark:bg-slate-950/80 backdrop-blur-md rounded-2xl flex flex-col h-full shadow-sm overflow-hidden transition-all duration-300 border-[1px] ${
         isActive 
-          ? 'border-[#34C759] ring-2 ring-[#34C759]/10' 
-          : 'border-transparent hover:border-gray-200'
+          ? 'border-blue-500 shadow-[0_4px_24px_-4px_rgba(59,130,246,0.15)] ring-4 ring-blue-500/10' 
+          : 'border-slate-200/80 dark:border-slate-800/80 hover:border-slate-300 dark:hover:border-slate-700/80'
       }`}
       id={`log-card-panel-${idx}`}
     >
       {/* CARD HEADER bar */}
-      <div className="bg-[#FAFBFD] px-3.5 py-2.5 border-b border-gray-150 flex items-center justify-between text-xs select-none" id="log-card-meta-toolbar">
+      <div className="bg-slate-50/50 dark:bg-slate-900/50 border-b border-slate-200/80 dark:border-slate-800/80 px-4 py-2.5 flex items-center justify-between text-xs select-none backdrop-blur-sm" id="log-card-meta-toolbar">
         <div className="flex items-center gap-2">
-          <span className={`h-2.5 w-2.5 rounded-full ${panel.isConnected ? 'bg-[#34C759]' : 'bg-[#AEAEB2]'}`} />
-          <span className="font-bold text-gray-800">{panel.title}</span>
-          <span className="text-[10px] text-gray-400 font-bold bg-gray-100 px-1.5 py-0.5 rounded-md">
+          <span className={`h-2.5 w-2.5 rounded-full shadow-sm ${panel.isConnected ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-slate-300/80 dark:bg-slate-700/80'}`} />
+          <span className="font-bold text-slate-800 dark:text-slate-100 tracking-tight">{panel.title}</span>
+          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold bg-slate-200/50 dark:bg-slate-800/50 px-2 py-0.5 rounded-md">
             {panel.port ? panel.port.split(' ')[0] : 'Idle'}
           </span>
         </div>
@@ -182,13 +182,17 @@ function LogPanelCard({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              setIsFilterOpen(!isFilterOpen);
+              const nextState = !isFilterOpen;
+              setIsFilterOpen(nextState);
+              if (!nextState && panel.filterKeyword) {
+                updatePanelSettings(idx, { filterKeyword: '' });
+              }
             }}
             title="Toggle Filter Panel"
-            className={`p-1.5 rounded-md hover:bg-gray-100 transition-colors cursor-pointer ${
+            className={`p-1.5 rounded-md transition-colors cursor-pointer ${
               isFilterOpen 
-                ? 'text-[#007AFF] bg-blue-50 dark:bg-blue-950/45 dark:text-blue-400 font-bold' 
-                : 'text-gray-500 hover:text-gray-800'
+                ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/40 dark:text-blue-400 font-bold' 
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
             <Filter size={13} />
@@ -201,7 +205,7 @@ function LogPanelCard({
               handleCopyLogs(panel);
             }}
             title="Copy terminal buffer"
-            className="p-1.5 rounded-md text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors cursor-pointer"
+            className="p-1.5 rounded-md text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <Copy size={13} />
           </button>
@@ -213,7 +217,7 @@ function LogPanelCard({
               handleExportLogs(panel);
             }}
             title="Download device log"
-            className="p-1.5 rounded-md text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors cursor-pointer"
+            className="p-1.5 rounded-md text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <Download size={13} />
           </button>
@@ -225,7 +229,7 @@ function LogPanelCard({
               onClearLogs(idx);
             }}
             title="Flush screen logs"
-            className="p-1.5 rounded-md text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors cursor-pointer"
+            className="p-1.5 rounded-md text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors cursor-pointer"
           >
             <Trash2 size={13} />
           </button>
@@ -239,8 +243,8 @@ function LogPanelCard({
             title={panel.autoScroll ? "Lock Scroll down" : "Release Lock"}
             className={`p-1.5 rounded-md transition-colors cursor-pointer ${
               panel.autoScroll 
-                ? 'text-[#34C759] bg-[#E8F8EE]' 
-                : 'text-gray-400 hover:bg-gray-100'
+                ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 dark:text-emerald-400 font-bold' 
+                : 'text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
             <ArrowDown size={13} className={panel.autoScroll ? "animate-bounce" : ""} />
@@ -250,31 +254,31 @@ function LogPanelCard({
 
       {/* FILTER PANEL ROW */}
       {isFilterOpen && (
-        <div className="bg-white dark:bg-zinc-900 border-b border-gray-100 dark:border-zinc-800 p-2.5 text-xs space-y-2 animate-fade-in" id="filter-input-toolbar" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-white dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800 p-2.5 text-xs space-y-2 animate-fade-in" id="filter-input-toolbar" onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center gap-2">
             <input
               type="text"
               placeholder="Enter keyword or search query..."
               value={panel.filterKeyword}
               onChange={(e) => updatePanelSettings(idx, { filterKeyword: e.target.value })}
-              className="flex-1 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 focus:border-[#007AFF] focus:ring-1 focus:ring-[#007AFF] focus:outline-none rounded-md px-2 py-1 outline-none text-[11px] dark:text-zinc-100"
+              className="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:border-blue-500 dark:focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none rounded-md px-2 py-1 outline-none text-[11px] text-slate-800 dark:text-slate-100"
             />
             
             {panel.filterKeyword && (
-              <span className="text-[10px] text-[#5E5CE6] dark:text-violet-400 font-bold bg-[#EFEFFF] dark:bg-violet-950/40 px-1.5 py-0.5 rounded">
+              <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 rounded">
                 Matches: {directMatchSet.size}
               </span>
             )}
           </div>
 
           {/* Filter Modifiers checkboxes and After/Before Lines spins */}
-          <div className="flex items-center flex-wrap gap-x-4 gap-y-1.5 text-[10px] text-gray-500 dark:text-zinc-400 font-semibold select-none">
+          <div className="flex items-center flex-wrap gap-x-4 gap-y-1.5 text-[10px] text-slate-500 dark:text-slate-400 font-semibold select-none">
             <label className="flex items-center gap-1.5 cursor-pointer">
               <input
                 type="checkbox"
                 checked={panel.filterRegex}
                 onChange={(e) => updatePanelSettings(idx, { filterRegex: e.target.checked })}
-                className="rounded text-[#007AFF] border-gray-200 dark:border-zinc-700 h-3 w-3 dark:bg-zinc-800"
+                className="rounded text-blue-600 border-slate-300 dark:border-slate-700 dark:border-slate-800 h-3 w-3 focus:ring-blue-500"
               />
               <span>Regex</span>
             </label>
@@ -284,7 +288,7 @@ function LogPanelCard({
                 type="checkbox"
                 checked={panel.filterCase}
                 onChange={(e) => updatePanelSettings(idx, { filterCase: e.target.checked })}
-                className="rounded text-[#007AFF] border-gray-200 dark:border-zinc-700 h-3 w-3 dark:bg-zinc-800"
+                className="rounded text-blue-600 border-slate-300 dark:border-slate-700 dark:border-slate-800 h-3 w-3 focus:ring-blue-500"
               />
               <span>Match Case</span>
             </label>
@@ -294,12 +298,12 @@ function LogPanelCard({
                 type="checkbox"
                 checked={panel.filterInvert}
                 onChange={(e) => updatePanelSettings(idx, { filterInvert: e.target.checked })}
-                className="rounded text-[#007AFF] border-gray-200 dark:border-zinc-700 h-3 w-3 dark:bg-zinc-800"
+                className="rounded text-blue-600 border-slate-300 dark:border-slate-700 dark:border-slate-800 h-3 w-3 focus:ring-blue-500"
               />
               <span>Invert</span>
             </label>
 
-            <div className="h-3 w-px bg-gray-200 dark:bg-zinc-800" />
+            <div className="h-3 w-px bg-slate-200 dark:bg-slate-700" />
 
             {/* Context Blocks Before spin */}
             <div className="flex items-center gap-1">
@@ -310,9 +314,9 @@ function LogPanelCard({
                 max={50}
                 value={panel.filterBefore}
                 onChange={(e) => updatePanelSettings(idx, { filterBefore: Math.max(0, Number(e.target.value)) })}
-                className="w-10 text-center bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 dark:text-zinc-100 rounded p-0.5 text-[10px] focus:outline-none"
+                className="w-10 text-center bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded p-0.5 text-[10px] focus:outline-none focus:border-blue-500"
               />
-              <span className="text-[9px] text-gray-450 dark:text-zinc-500">lines</span>
+              <span className="text-[9px] text-slate-400 dark:text-slate-500">lines</span>
             </div>
 
             {/* Context Blocks After spin */}
@@ -324,9 +328,9 @@ function LogPanelCard({
                 max={50}
                 value={panel.filterAfter}
                 onChange={(e) => updatePanelSettings(idx, { filterAfter: Math.max(0, Number(e.target.value)) })}
-                className="w-10 text-center bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 dark:text-zinc-100 rounded p-0.5 text-[10px] focus:outline-none"
+                className="w-10 text-center bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded p-0.5 text-[10px] focus:outline-none focus:border-blue-500"
               />
-              <span className="text-[9px] text-gray-450 dark:text-zinc-500">lines</span>
+              <span className="text-[9px] text-slate-400 dark:text-slate-500">lines</span>
             </div>
           </div>
         </div>
@@ -336,23 +340,23 @@ function LogPanelCard({
       <div 
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-auto p-3.5 font-mono text-[11px] leading-relaxed bg-[#FBFBFD] outline-none select-text selection:bg-[#BBD7FF] scrollbar-thin"
+        className="flex-1 overflow-auto p-4 font-mono text-[11px] leading-relaxed bg-transparent outline-none select-text selection:bg-blue-100 dark:selection:bg-blue-900/40 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800"
         id={`terminal-view-${idx}`}
       >
         {displayLogs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center text-center h-full text-gray-300 py-12 select-none">
-            <Cpu size={28} className="stroke-[1.5] mb-2 opacity-50 text-gray-400" />
-            <p className="text-xs font-semibold text-gray-400">No data received</p>
-            <p className="text-[10px] text-gray-300 mt-1">Configure serial ports on the sidebar to get started.</p>
+          <div className="flex flex-col items-center justify-center text-center h-full text-slate-300 py-12 select-none">
+            <Cpu size={28} className="stroke-[1.5] mb-2 opacity-50 text-slate-400" />
+            <p className="text-xs font-semibold text-slate-400">No data received</p>
+            <p className="text-[10px] text-slate-400 mt-1">Configure serial ports on the sidebar to get started.</p>
           </div>
         ) : (
           <div className="space-y-1 block max-w-full overflow-hidden select-text text-left">
             {displayLogs.map((log) => {
               return (
-                <div key={log.id} className="hover:bg-gray-50/50 py-0.5 rounded px-1 transition-colors flex items-start gap-2 break-all text-left">
+                <div key={log.id} className="hover:bg-slate-50 dark:bg-slate-900/50 py-0.5 rounded px-1 transition-colors flex items-start gap-2 break-all text-left">
                   {/* Timestamps */}
                   {panel.showTime && (
-                    <span className="text-gray-400 select-none text-[10px] pr-1 border-r border-gray-100 flex-shrink-0">
+                    <span className="text-slate-400 dark:text-slate-500 select-none text-[10px] pr-1.5 border-r border-slate-100 dark:border-slate-800 flex-shrink-0 font-medium">
                       {log.timestamp}
                     </span>
                   )}
@@ -377,14 +381,14 @@ function LogPanelCard({
       </div>
 
       {/* CARD STATUS FOOTER */}
-      <div className="bg-[#FAFBFD] px-3.5 py-1.5 border-t border-gray-150 flex items-center justify-between text-[10px] text-gray-500 select-none" id="log-card-footer">
+      <div className="bg-slate-50/50 dark:bg-slate-900/50 border-t border-slate-200/80 dark:border-slate-800/80 px-4 py-2 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 select-none backdrop-blur-sm" id="log-card-footer">
         <div className="flex gap-4">
-          <span>Port: <strong className="text-gray-700">{panel.port ? panel.port.split(' ')[0] : 'None'}</strong></span>
-          <span>Baudrate: <strong className="text-gray-700">{panel.baudrate} bps</strong></span>
+          <span>Port: <strong className="text-slate-700 dark:text-slate-300 font-bold">{panel.port ? panel.port.split(' ')[0] : 'None'}</strong></span>
+          <span>Baudrate: <strong className="text-slate-700 dark:text-slate-300 font-bold">{panel.baudrate} bps</strong></span>
         </div>
-        <div className="flex gap-4">
-          <span className="text-slate-800 dark:text-zinc-100">RX: <strong>{formatByteCount(panel.rxBytes)}</strong></span>
-          <span className="text-[#007AFF]">TX: <strong>{formatByteCount(panel.txBytes)}</strong></span>
+        <div className="flex gap-4 font-mono font-medium">
+          <span className="text-slate-700 dark:text-slate-300">RX: <strong className="font-bold">{formatByteCount(panel.rxBytes)}</strong></span>
+          <span className="text-blue-600 dark:text-blue-400">TX: <strong className="font-bold">{formatByteCount(panel.txBytes)}</strong></span>
         </div>
       </div>
     </div>
@@ -408,7 +412,7 @@ export function LogGrid({
 }: LogGridProps) {
   return (
     <div 
-      className={`grid gap-4 h-full p-4 bg-[#F2F2F7] flex-1 ${
+      className={`grid gap-4 h-full p-4 bg-slate-50 dark:bg-[#070709] flex-1 ${
         panels.length === 1 
           ? 'grid-cols-1 grid-rows-1' 
           : panels.length === 2 

@@ -289,11 +289,11 @@ export function QuickCommandsTab({
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#FAFBFD] dark:bg-zinc-950" id="quick-commands-console">
+    <div className="flex flex-col h-full bg-white dark:bg-[#020617]" id="quick-commands-console">
       {/* 1. PROJECT TOP TABS BAR */}
-      <div className="flex items-center justify-between border-b border-gray-150 dark:border-zinc-800 px-4 py-1" id="project-tabs-navigation">
-        <div className="flex items-center gap-1.5 overflow-x-auto max-w-[80vw]" id="tabs-container">
-          <Zap size={13} className="text-[#FF9F0A] animate-pulse" />
+      <div className="flex items-center justify-between border-b border-slate-200/80 dark:border-slate-800/80 px-4 py-2" id="project-tabs-navigation">
+        <div className="flex items-center gap-2 overflow-x-auto max-w-[80vw]" id="tabs-container">
+          <Zap size={14} className="text-amber-500 animate-pulse mr-1" />
           
           {projects.map((proj) => {
             const isSel = proj.id === activeProjectId;
@@ -304,17 +304,17 @@ export function QuickCommandsTab({
                   setActiveProjectId(proj.id);
                   if (proj.groups[0]) setActiveGroupId(proj.groups[0].id);
                 }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-t-lg transition-all border-t border-x cursor-pointer ${
+                className={`flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-lg transition-all border cursor-pointer ${
                   isSel 
-                    ? 'bg-white text-slate-800 border-gray-200 -mb-[5px] z-10 dark:bg-zinc-900 dark:text-zinc-100 dark:border-zinc-800' 
-                    : 'bg-[#F2F2F7] border-transparent text-gray-400 hover:text-slate-700 hover:bg-[#FAFBFD] dark:bg-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-900'
+                    ? 'bg-blue-50/80 text-blue-600 border-blue-200/50 shadow-sm dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20' 
+                    : 'bg-transparent border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:hover:bg-slate-400 dark:bg-slate-200 dark:bg-slate-800/80'
                 }`}
               >
                 <span>{proj.name}</span>
                 {isSel && (
-                  <div className="flex gap-0.5 ml-1 opacity-0 hover:opacity-100 transition-opacity">
-                    <button onClick={(e) => { e.stopPropagation(); handleEditProject(proj); }} className="hover:text-blue-500 p-0.5"><Edit3 size={10} /></button>
-                    <button onClick={(e) => { e.stopPropagation(); handleDeleteProject(proj.id); }} className="hover:text-red-500 p-0.5"><Trash2 size={10} /></button>
+                  <div className="flex gap-1 ml-1 opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity">
+                    <button onClick={(e) => { e.stopPropagation(); handleEditProject(proj); }} className="hover:text-blue-500 hover:bg-blue-100 dark:hover:bg-blue-500/20 p-1 rounded transition-colors"><Edit3 size={11} /></button>
+                    <button onClick={(e) => { e.stopPropagation(); handleDeleteProject(proj.id); }} className="hover:text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-500/20 p-1 rounded transition-colors"><Trash2 size={11} /></button>
                   </div>
                 )}
               </div>
@@ -324,41 +324,41 @@ export function QuickCommandsTab({
           {/* Add Project prompt trigger */}
           <button 
             onClick={handleAddNewProject}
-            className="p-1 text-[#007AFF] hover:bg-blue-50 rounded"
+            className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg transition-colors border border-transparent hover:border-blue-200/50 dark:hover:border-blue-500/20 ml-1"
             title="Create new project folder"
           >
-            <Plus size={13} className="stroke-[3px]" />
+            <Plus size={14} className="stroke-[2.5]" />
           </button>
         </div>
 
         {/* Import/Export buttons */}
-        <div className="flex items-center gap-1 text-[11px] font-bold text-gray-500 dark:text-zinc-400">
-          <label className="flex items-center gap-1 border border-gray-150 rounded-lg p-1.5 bg-white hover:bg-gray-50 dark:bg-zinc-800 dark:border-zinc-700 dark:hover:bg-zinc-700 dark:text-zinc-200 cursor-pointer">
-            <Upload size={12} />
+        <div className="flex items-center gap-2 text-[11px] font-bold text-slate-500 dark:text-slate-400">
+          <label className="flex items-center gap-1.5 border border-slate-200/80 rounded-lg px-2.5 py-1.5 bg-white hover:bg-slate-50 dark:hover:bg-slate-900 dark:bg-slate-800/80 dark:bg-slate-800 dark:bg-slate-300 cursor-pointer transition-colors shadow-sm">
+            <Upload size={13} />
             <span>Import</span>
             <input type="file" accept=".json" onChange={handleImportJson} className="hidden" />
           </label>
           
           <button 
             onClick={handleExportJson}
-            className="flex items-center gap-1 border border-gray-150 rounded-lg p-1.5 bg-white hover:bg-[#E8F2FF] text-[#007AFF] dark:bg-zinc-800 dark:border-zinc-700 dark:hover:bg-zinc-700 dark:text-blue-400 cursor-pointer"
+            className="flex items-center gap-1.5 border border-slate-200/80 rounded-lg px-2.5 py-1.5 bg-white hover:bg-blue-50 text-blue-600 dark:text-slate-900 dark:text-slate-800/80 dark:hover:bg-blue-500/10 dark:text-blue-400 cursor-pointer transition-colors shadow-sm"
           >
-            <Download size={12} />
+            <Download size={13} />
             <span>Export</span>
           </button>
         </div>
       </div>
 
       {/* 2. GROUP SELECTOR AND CONTROLS ACTION ROW */}
-      <div className="bg-[#FAFBFD] dark:bg-zinc-900 px-4 py-2 border-b border-gray-150 dark:border-zinc-800 flex items-center justify-between text-xs select-none" id="group-action-row">
+      <div className="bg-slate-50/50 dark:bg-slate-950/50 px-4 py-2 border-b border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between text-xs select-none backdrop-blur-sm" id="group-action-row">
         <div className="flex items-center gap-3">
-          <span className="font-semibold text-gray-500 dark:text-zinc-400">Group:</span>
+          <span className="font-bold text-slate-500 dark:text-slate-500">Group:</span>
           {activeProject ? (
             <div className="flex items-center gap-2">
               <select
                 value={activeGroupId}
                 onChange={(e) => setActiveGroupId(e.target.value)}
-                className="bg-white dark:bg-zinc-800 text-xs border border-gray-200 dark:border-zinc-700 p-1.5 rounded-lg focus:outline-none dark:text-zinc-100"
+                className="bg-white dark:bg-slate-900 text-xs font-bold border border-slate-200 dark:border-slate-700 py-1.5 px-2 rounded-lg focus:outline-none dark:bg-slate-100 shadow-sm"
               >
                 {activeProject.groups.map(g => (
                   <option key={g.id} value={g.id}>{g.name}</option>
@@ -367,16 +367,16 @@ export function QuickCommandsTab({
 
               <button 
                 onClick={handleAddNewGroup}
-                className="flex items-center gap-0.5 px-2 py-1 bg-white hover:bg-blue-50 text-[#007AFF] dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:text-blue-400 dark:border-zinc-700 border border-gray-150 rounded-lg font-bold transition-all cursor-pointer"
+                className="flex items-center gap-1 px-2.5 py-1.5 bg-white hover:bg-blue-50 text-blue-600 dark:text-slate-900 dark:hover:bg-blue-500/10 dark:text-blue-400 dark:text-slate-700 border border-slate-200 rounded-lg font-bold transition-all cursor-pointer shadow-sm"
               >
-                <FolderPlus size={11} />
+                <FolderPlus size={13} />
                 <span>+ Group</span>
               </button>
 
               {activeGroup && (
-                <div className="flex gap-1.5 ml-1">
-                  <button onClick={() => handleEditGroup(activeGroup)} className="text-gray-400 hover:text-blue-500"><Edit3 size={11} /></button>
-                  <button onClick={() => handleDeleteGroup(activeGroup.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={11} /></button>
+                <div className="flex gap-1 ml-2">
+                  <button onClick={() => handleEditGroup(activeGroup)} className="text-slate-400 hover:text-blue-600 dark:hover:text-slate-500 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/10 p-1.5 rounded-lg transition-colors border border-transparent hover:border-blue-200/50 dark:hover:border-blue-500/20"><Edit3 size={13} /></button>
+                  <button onClick={() => handleDeleteGroup(activeGroup.id)} className="text-slate-400 hover:text-rose-600 dark:hover:text-slate-500 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 p-1.5 rounded-lg transition-colors border border-transparent hover:border-rose-200/50 dark:hover:border-rose-500/20"><Trash2 size={13} /></button>
                 </div>
               )}
             </div>
@@ -389,23 +389,25 @@ export function QuickCommandsTab({
         <button
           onClick={() => handleOpenCommandModal('create')}
           disabled={!activeGroup}
-          className="flex items-center gap-1 px-3 py-1.5 bg-[#007AFF] text-white rounded-lg font-bold hover:bg-[#0A84FF] disabled:opacity-50 transition-all cursor-pointer shadow-sm active:scale-97"
+          className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50 transition-all cursor-pointer shadow-sm active:scale-95 focus:ring-4 focus:ring-blue-500/20"
         >
-          <Plus size={13} className="stroke-[3px]" />
+          <Plus size={14} className="stroke-[2.5]" />
           <span>Add Command</span>
         </button>
       </div>
 
       {/* 3. BUTTONS WORKSPACE OR GRID */}
-      <div className="p-4 flex-1 overflow-y-auto" id="quick-buttons-panel-scroll">
+      <div className="p-4 flex-1 overflow-y-auto bg-slate-50/30 dark:bg-[#020617]/30" id="quick-buttons-panel-scroll">
         {!activeGroup || activeGroup.commands.length === 0 ? (
           <div className="flex flex-col items-center justify-center p-8 py-16 text-center select-none">
-            <Zap size={24} className="stroke-[1.5] text-amber-400 mb-2" />
-            <p className="text-xs font-bold text-gray-400 dark:text-zinc-500">Default group is empty</p>
-            <p className="text-[10px] text-gray-300 dark:text-zinc-600 mt-0.5">Click &quot;Add Command&quot; to append debug macros or hex sensor directives.</p>
+            <div className="h-12 w-12 rounded-2xl bg-amber-50 dark:bg-amber-500/10 flex items-center justify-center mb-3">
+              <Zap size={24} className="stroke-[1.5] text-amber-500" />
+            </div>
+            <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Default group is empty</p>
+            <p className="text-[11px] font-medium text-slate-400 dark:text-slate-500 mt-1">Click &quot;Add Command&quot; to append debug macros or hex sensor directives.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3" id="quick-buttons-grid">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3" id="quick-buttons-grid">
             {activeGroup.commands.map((cmd, idx) => {
               return (
                 <div
@@ -413,40 +415,40 @@ export function QuickCommandsTab({
                   onClick={() => onSendCommand(cmd)}
                   onMouseMove={(e) => handleMouseMove(cmd, e)}
                   onMouseLeave={() => setHoveredCommand(null)}
-                  className="relative group bg-[#F2F2F7] dark:bg-zinc-800 hover:bg-[#E8F2FF] dark:hover:bg-zinc-700 border border-gray-150 dark:border-zinc-700 hover:border-[#BBD7FF] dark:hover:border-zinc-600 text-slate-800 dark:text-zinc-100 hover:text-[#007AFF] dark:hover:text-blue-400 px-3.5 py-3 rounded-lg text-center font-bold text-xs select-none transition-all active:scale-97 shadow-xs flex flex-col justify-center items-center h-16 cursor-pointer"
+                  className="relative group bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 shadow-sm hover:shadow-md hover:border-blue-300 dark:hover:border-blue-500/30 text-slate-800 dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400 px-4 py-3 rounded-xl text-center font-bold text-xs select-none transition-all active:scale-95 flex flex-col justify-center items-center h-16 cursor-pointer"
                   id={`quick-cmd-btn-${idx}`}
                 >
                   {/* Reordering indicators / Edit actions - visible on hover */}
-                  <div className="absolute top-1 right-1 flex opacity-0 group-hover:opacity-100 transition-opacity gap-0.5 z-20">
+                  <div className="absolute -top-2.5 right-1 flex opacity-0 group-hover:opacity-100 transition-opacity gap-1 z-20 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur-md px-1.5 py-1 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm">
                     <button 
                       onClick={(e) => handleMoveCommandIndex(idx, -1, e)}
                       title="Move Left"
                       disabled={idx === 0}
-                      className="text-gray-450 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-600 p-0.5 rounded disabled:opacity-30"
+                      className="text-slate-500 dark:text-slate-400 hover:text-blue-600 hover:bg-slate-100 dark:hover:bg-slate-800 p-1 rounded-md disabled:opacity-30 transition-colors"
                     >
-                      <ChevronLeft size={10} />
+                      <ChevronLeft size={12} />
                     </button>
                     <button 
                       onClick={(e) => handleMoveCommandIndex(idx, 1, e)}
                       title="Move Right"
                       disabled={idx === activeGroup.commands.length - 1}
-                      className="text-gray-455 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-600 p-0.5 rounded disabled:opacity-30"
+                      className="text-slate-500 dark:text-slate-400 hover:text-blue-600 hover:bg-slate-100 dark:hover:bg-slate-800 p-1 rounded-md disabled:opacity-30 transition-colors"
                     >
-                      <ChevronRight size={10} />
+                      <ChevronRight size={12} />
                     </button>
                     <button 
                       onClick={(e) => { e.stopPropagation(); handleOpenCommandModal('edit', cmd); }}
                       title="Edit macro"
-                      className="text-blue-500 hover:bg-blue-50 dark:hover:bg-zinc-600 p-0.5 rounded"
+                      className="text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-400 dark:hover:bg-blue-500/10 p-1 rounded-md transition-colors"
                     >
-                      <Edit3 size={10} />
+                      <Edit3 size={12} />
                     </button>
                     <button 
                       onClick={(e) => handleDeleteCommand(cmd.id, e)}
                       title="Delete macro"
-                      className="text-red-500 hover:bg-red-50 dark:hover:bg-zinc-600 p-0.5 rounded"
+                      className="text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-400 dark:hover:bg-rose-500/10 p-1 rounded-md transition-colors"
                     >
-                      <Trash2 size={10} />
+                      <Trash2 size={12} />
                     </button>
                   </div>
 
@@ -461,18 +463,18 @@ export function QuickCommandsTab({
       {/* 4. HOVER FLOATING PREVIEW CARD (matched style to PySide6 `_QuickCmdPreviewPopup`) */}
       {hoveredCommand && (
         <div 
-          className="fixed bg-white dark:bg-zinc-900 border border-gray-250 dark:border-zinc-700 shadow-xl rounded-xl p-3 z-50 pointer-events-none w-72 text-left space-y-2 leading-relaxed animate-fade-in text-gray-850 dark:text-zinc-200"
+          className="fixed bg-white dark:bg-slate-900 border border-slate-200 shadow-lg shadow-slate-200/50 dark:shadow-none dark:bg-slate-700 rounded-xl p-3 z-50 pointer-events-none w-72 text-left space-y-2 leading-relaxed animate-fade-in text-slate-800 dark:text-slate-200"
           style={{ left: hoveredPosition.x, top: hoveredPosition.y }}
           id="cmd-hover-floating-dialog"
         >
-          <div className="flex items-center gap-2 border-b border-gray-100 dark:border-zinc-800 pb-1">
-            <span className="text-[9px] font-bold text-white bg-[#FF9F0A] px-1.5 py-0.5 rounded">QUICK CMD</span>
-            <span className="text-xs font-bold text-gray-800 dark:text-zinc-100 truncate">{hoveredCommand.name}</span>
+          <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-1">
+            <span className="text-[9px] font-bold text-white bg-amber-500 px-1.5 py-0.5 rounded">QUICK CMD</span>
+            <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{hoveredCommand.name}</span>
           </div>
-          <div className="bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded p-1.5 font-mono text-[10px] break-all max-h-24 overflow-y-auto">
+          <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded p-1.5 font-mono text-[10px] break-all max-h-24 overflow-y-auto">
             {hoveredCommand.content}
           </div>
-          <div className="flex justify-between text-[9px] text-gray-400 dark:text-zinc-500 font-bold">
+          <div className="flex justify-between text-[9px] text-slate-400 dark:text-slate-500 font-bold">
             <span>Format: {hoveredCommand.send_type.toUpperCase()}</span>
             <span>Line Ending: {repr(hoveredCommand.line_ending)}</span>
           </div>
@@ -482,21 +484,21 @@ export function QuickCommandsTab({
       {/* MODAL 1: ADD/EDIT PROJECT */}
       {showProjectModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl max-w-sm w-full p-5 shadow-2xl space-y-4 text-slate-800">
-            <h3 className="text-sm font-bold text-slate-800">{modalType === 'create' ? "New Project" : "Rename Project"}</h3>
+          <div className="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-5 shadow-2xl space-y-4 text-slate-800 dark:text-slate-100 border border-transparent dark:border-slate-800">
+            <h3 className="text-sm font-bold">{modalType === 'create' ? "New Project" : "Rename Project"}</h3>
             <div className="space-y-1">
-              <label className="text-[10px] font-bold text-gray-400 tracking-wide uppercase">Project Name</label>
+              <label className="text-[10px] font-bold text-slate-400 dark:text-slate-400 tracking-wide uppercase">Project Name</label>
               <input
                 type="text"
                 placeholder="e.g. ESP32 Sensor"
                 value={currentProjectName}
                 onChange={(e) => setCurrentProjectName(e.target.value)}
-                className="w-full text-xs bg-gray-50 border border-gray-200 rounded-lg p-2 focus:ring-1 focus:ring-[#007AFF] outline-none"
+                className="w-full text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 focus:ring-1 focus:ring-blue-500 outline-none"
               />
             </div>
             <div className="flex justify-end gap-2 text-xs font-bold">
-              <button onClick={() => setShowProjectModal(false)} className="px-4 py-2 border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50 cursor-pointer">Cancel</button>
-              <button onClick={handleSaveProject} className="px-4 py-2 bg-[#FF9F0A] text-white rounded-lg hover:bg-amber-600 cursor-pointer">OK</button>
+              <button onClick={() => setShowProjectModal(false)} className="px-4 py-2 border border-slate-200 dark:border-slate-700 dark:border-slate-300 rounded-lg text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">Cancel</button>
+              <button onClick={handleSaveProject} className="px-4 py-2 bg-blue-600 dark:bg-blue-600 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-500 cursor-pointer">OK</button>
             </div>
           </div>
         </div>
@@ -505,21 +507,21 @@ export function QuickCommandsTab({
       {/* MODAL 2: ADD/EDIT GROUP */}
       {showGroupModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl max-w-sm w-full p-5 shadow-2xl space-y-4 text-slate-800">
-            <h3 className="text-sm font-bold text-slate-800">{modalType === 'create' ? "New Group" : "Rename Group"}</h3>
+          <div className="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-5 shadow-2xl space-y-4 text-slate-800 dark:text-slate-100 border border-transparent dark:border-slate-800">
+            <h3 className="text-sm font-bold">{modalType === 'create' ? "New Group" : "Rename Group"}</h3>
             <div className="space-y-1">
-              <label className="text-[10px] font-bold text-gray-400 tracking-wide uppercase">Group Name</label>
+              <label className="text-[10px] font-bold text-slate-400 dark:text-slate-400 tracking-wide uppercase">Group Name</label>
               <input
                 type="text"
                 placeholder="e.g. WiFi Credentials"
                 value={currentGroupName}
                 onChange={(e) => setCurrentGroupName(e.target.value)}
-                className="w-full text-xs bg-gray-50 border border-gray-200 rounded-lg p-2 focus:ring-1 focus:ring-[#007AFF] outline-none"
+                className="w-full text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 focus:ring-1 focus:ring-blue-500 outline-none"
               />
             </div>
             <div className="flex justify-end gap-2 text-xs font-bold">
-              <button onClick={() => setShowGroupModal(false)} className="px-4 py-2 border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50 cursor-pointer">Cancel</button>
-              <button onClick={handleSaveGroup} className="px-4 py-2 bg-[#007AFF] text-white rounded-lg hover:bg-[#0A84FF] cursor-pointer">OK</button>
+              <button onClick={() => setShowGroupModal(false)} className="px-4 py-2 border border-slate-200 dark:border-slate-700 dark:border-slate-300 rounded-lg text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">Cancel</button>
+              <button onClick={handleSaveGroup} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer">OK</button>
             </div>
           </div>
         </div>
@@ -528,39 +530,39 @@ export function QuickCommandsTab({
       {/* MODAL 3: ADD/EDIT COMMAND */}
       {showCommandModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl max-w-md w-full p-5 shadow-2xl space-y-4 text-slate-800">
-            <h3 className="text-sm font-bold text-slate-800">{modalType === 'create' ? "New Quick Command" : "Edit Command"}</h3>
+          <div className="bg-white dark:bg-slate-900 rounded-xl max-w-md w-full p-5 shadow-2xl space-y-4 text-slate-800 dark:text-slate-100 border border-transparent dark:border-slate-800">
+            <h3 className="text-sm font-bold">{modalType === 'create' ? "New Quick Command" : "Edit Command"}</h3>
             
             <div className="space-y-3 text-xs">
               <div className="space-y-1">
-                <label className="font-bold text-gray-400 text-[10px]">指令名称 / Macro Name</label>
+                <label className="font-bold text-slate-400 dark:text-slate-400 text-[10px]">指令名称 / Macro Name</label>
                 <input
                   type="text"
                   placeholder="e.g. Core Ping"
                   value={commandName}
                   onChange={(e) => setCommandName(e.target.value)}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-lg p-2 outline-none focus:ring-1 focus:ring-[#007AFF]"
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="font-bold text-gray-400 text-[10px]">指令内容 / Raw Payload</label>
+                <label className="font-bold text-slate-400 dark:text-slate-400 text-[10px]">指令内容 / Raw Payload</label>
                 <input
                   type="text"
                   placeholder="e.g. AT or 01 02 C0 AB"
                   value={commandContent}
                   onChange={(e) => setCommandContent(e.target.value)}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-lg p-2 outline-none focus:ring-1 focus:ring-[#007AFF]"
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
 
               <div className="grid grid-cols-3 gap-2">
                 <div className="space-y-1">
-                  <label className="font-bold text-gray-400 text-[10px]">Format</label>
+                  <label className="font-bold text-slate-400 dark:text-slate-400 text-[10px]">Format</label>
                   <select
                     value={commandFormat}
                     onChange={(e) => setCommandFormat(e.target.value as any)}
-                    className="w-full bg-gray-50 border border-gray-250 p-2 rounded-lg"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-2 rounded-lg outline-none focus:ring-1 focus:ring-blue-500"
                   >
                     <option value="text">TEXT</option>
                     <option value="hex">HEX</option>
@@ -568,11 +570,11 @@ export function QuickCommandsTab({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-bold text-gray-400 text-[10px]">Line Ending</label>
+                  <label className="font-bold text-slate-400 dark:text-slate-400 text-[10px]">Line Ending</label>
                   <select
                     value={commandEnding}
                     onChange={(e) => setCommandEnding(e.target.value)}
-                    className="w-full bg-gray-50 border border-gray-250 p-2 rounded-lg"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-2 rounded-lg outline-none focus:ring-1 focus:ring-blue-500"
                   >
                     <option value="">None</option>
                     <option value="\r">\r</option>
@@ -582,11 +584,11 @@ export function QuickCommandsTab({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-bold text-gray-400 text-[10px]">Encoding</label>
+                  <label className="font-bold text-slate-400 dark:text-slate-400 text-[10px]">Encoding</label>
                   <select
                     value={commandEncoding}
                     onChange={(e) => setCommandEncoding(e.target.value)}
-                    className="w-full bg-gray-50 border border-gray-250 p-2 rounded-lg"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-2 rounded-lg outline-none focus:ring-1 focus:ring-blue-500"
                   >
                     <option value="utf-8">UTF-8</option>
                     <option value="ascii">ASCII</option>
@@ -596,9 +598,9 @@ export function QuickCommandsTab({
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 text-xs font-bold pt-2 border-t border-gray-100">
-              <button onClick={() => setShowCommandModal(false)} className="px-4 py-2 border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50 cursor-pointer">Cancel</button>
-              <button onClick={handleSaveCommand} className="px-4 py-2 bg-[#34C759] text-white rounded-lg hover:bg-[#30B650] cursor-pointer">OK</button>
+            <div className="flex justify-end gap-2 text-xs font-bold pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button onClick={() => setShowCommandModal(false)} className="px-4 py-2 border border-slate-200 dark:border-slate-700 dark:border-slate-300 rounded-lg text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">Cancel</button>
+              <button onClick={handleSaveCommand} className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 cursor-pointer shadow-sm">OK</button>
             </div>
           </div>
         </div>

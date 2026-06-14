@@ -70,7 +70,7 @@ _SERIALCOM_STYLE_EXPORTS = (
     "_CLR_SEND_HOVER", "_CLR_SEND_PRESS", "_CLR_TEXT_ACCENT", "_CLR_TEXT_BODY",
     "_CLR_TEXT_BTN", "_CLR_TEXT_BTN_LOG", "_CLR_TEXT_INFO", "_CLR_TEXT_LABEL",
     "_CLR_TEXT_LINENO", "_CLR_TEXT_MUTED", "_CLR_TEXT_SUBTITLE", "_CLR_TEXT_TIME",
-    "_CLR_TEXT_TITLE", "_CLR_TOGGLE_ON", "_CLR_TX", "_CLR_WARN_ICON", "_CLR_WARNING",
+    "_CLR_TEXT_TITLE", "_CLR_TEXT_WHITE", "_CLR_TOGGLE_ON", "_CLR_TX", "_CLR_WARN_ICON", "_CLR_WARNING",
     "_DLG_STYLE", "_SERIAL_BTN_HEIGHT", "_SERIAL_BTN_ICON_SIZE", "_SERIAL_BTN_RADIUS",
     "_TERM_FONT", "_UI_FONT", "_serial_connect_style", "_serial_disconnect_style",
     "_serial_search_style", "body_splitter_style", "center_vsplitter_style",
@@ -83,6 +83,7 @@ _SERIALCOM_STYLE_EXPORTS = (
     "log_color_info_text", "log_document_style", "log_edit_style", "log_frame_style",
     "log_panel_button_style", "log_title_style", "log_toolbar_button_style",
     "main_connect_button_style", "project_tabs_style", "quick_action_overlay_style",
+    "quick_action_overlay_container_style",
     "quick_add_button_style",
     "quick_button_container_style", "quick_button_scroll_style", "quick_cmd_dialog_style",
     "quick_command_button_style", "quick_combo_style", "quick_commands_panel_style",
@@ -91,6 +92,8 @@ _SERIALCOM_STYLE_EXPORTS = (
     "section_card_style", "section_card_shadow", "section_header_divider_style",
     "script_stop_button_style", "script_add_step_button_style",
     "section_title_style", "send_button_style", "separator_style",
+    "sidebar_toggle_button_style", "auto_scroll_button_style",
+    "sidebar_toggle_icon_colors", "auto_scroll_icon_colors",
     "sidebar_wrapper_style", "small_label_style", "status_bar_style", "status_label_style",
     "thin_scrollbar_style", "toolbar_connect_button_style", "toolbar_style", "toggle_colors",
     "transparent_background_style", "transparent_scroll_area_style",
@@ -1152,8 +1155,15 @@ class SerialComMixin:
         self._sc_sidebar_toggle_btn = self._make_sc_btn(
             os.path.join(_SVG_SERIAL_DIR, "sidebar.svg"), "Sidebar"
         )
+        self._sc_sidebar_toggle_btn.setStyleSheet(sidebar_toggle_button_style())
         self._sc_sidebar_toggle_btn.setCheckable(True)
         self._sc_sidebar_toggle_btn.setChecked(True)
+        self._sc_bind_toggle_icon(
+            self._sc_sidebar_toggle_btn,
+            os.path.join(_SVG_SERIAL_DIR, "sidebar.svg"),
+            sidebar_toggle_icon_colors(),
+            13,
+        )
         layout.addWidget(self._sc_sidebar_toggle_btn)
 
         layout.addStretch()
@@ -1444,7 +1454,13 @@ class SerialComMixin:
         )
         self._sc_scroll_lock_btn.setCheckable(True)
         self._sc_scroll_lock_btn.setChecked(True)
-        self._sc_scroll_lock_btn.setStyleSheet(log_toolbar_button_style(checked_variant=True))
+        self._sc_scroll_lock_btn.setStyleSheet(auto_scroll_button_style())
+        self._sc_bind_toggle_icon(
+            self._sc_scroll_lock_btn,
+            os.path.join(_SVG_LOGS_DIR, "auto-scroll.svg"),
+            auto_scroll_icon_colors(),
+            11,
+        )
         toolbar.addWidget(self._sc_scroll_lock_btn)
 
         layout.addLayout(toolbar)
@@ -1620,6 +1636,19 @@ class SerialComMixin:
             if not icon.isNull():
                 tabs.setTabIcon(index, icon)
 
+    def _sc_bind_toggle_icon(self, btn, svg_path, colors, size):
+        normal_color = colors.get("normal")
+        checked_color = colors.get("checked")
+
+        def _apply(checked):
+            color = checked_color if checked else normal_color
+            icon = _tinted_svg_icon(svg_path, color, size)
+            if not icon.isNull():
+                btn.setIcon(icon)
+
+        btn.toggled.connect(_apply)
+        _apply(btn.isChecked())
+
     def _build_sc_qc_tab(self):
         frame = QFrame()
         # 双 objectName 不可行：保留 scQuickFrame 给现有内嵌 QSS；面板级 QSS 通过 quickCommandsPanel 选择器命中
@@ -1724,6 +1753,11 @@ class SerialComMixin:
         # + Add 作为主操作按钮：蓝色突出
         self._sc_qc_add_btn.setObjectName("primaryButton")
         self._sc_qc_add_btn.setStyleSheet(quick_add_button_style())
+        _add_plus_icon = _tinted_svg_icon(
+            os.path.join(_SVG_SERIAL_DIR, "plus-bold.svg"), _CLR_TEXT_WHITE, 11
+        )
+        if not _add_plus_icon.isNull():
+            self._sc_qc_add_btn.setIcon(_add_plus_icon)
         toolbar.addWidget(self._sc_qc_add_btn)
 
         self._sc_qc_import_btn = self._make_sc_btn(
@@ -2546,7 +2580,13 @@ class SerialComMixin:
         )
         scroll_btn.setCheckable(True)
         scroll_btn.setChecked(True)
-        scroll_btn.setStyleSheet(log_toolbar_button_style(checked_variant=True))
+        scroll_btn.setStyleSheet(auto_scroll_button_style())
+        self._sc_bind_toggle_icon(
+            scroll_btn,
+            os.path.join(_SVG_LOGS_DIR, "auto-scroll.svg"),
+            auto_scroll_icon_colors(),
+            11,
+        )
         toolbar.addWidget(scroll_btn)
 
         layout.addLayout(toolbar)
@@ -4501,6 +4541,9 @@ class SerialComMixin:
                 continue
             w = item.widget()
             if w is not None:
+                cleanup = getattr(w, "_cleanup_action_bar", None)
+                if callable(cleanup):
+                    cleanup()
                 w.setParent(None)
                 w.deleteLater()
 
@@ -7007,8 +7050,29 @@ class _QuickCmdButton(QPushButton):
         self._preview_timer.setInterval(80)
         self._preview_timer.timeout.connect(self._show_preview)
         self._build_action_overlay()
+        self._hide_actions_timer = QTimer(self)
+        self._hide_actions_timer.setSingleShot(True)
+        self._hide_actions_timer.setInterval(60)
+        self._hide_actions_timer.timeout.connect(self._maybe_hide_actions)
 
     def _build_action_overlay(self):
+        # 悬浮操作条：用独立的无边框顶层窗口承载，溢出在按钮顶部（参考 -top-2.5）。
+        # 不能作为按钮或网格容器的子控件——前者会被裁剪、后者会被 QScrollArea
+        # 视口边界裁掉，因此顶层窗口才能真正浮在按钮上边缘之上。
+        self._action_bar = QFrame(None)
+        self._action_bar.setObjectName("quickCmdActionBar")
+        self._action_bar.setWindowFlags(
+            Qt.Tool | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint
+        )
+        self._action_bar.setAttribute(Qt.WA_TranslucentBackground, True)
+        self._action_bar.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        self._action_bar.setStyleSheet(quick_action_overlay_container_style())
+        self._action_bar.setCursor(Qt.ArrowCursor)
+        self._action_bar.setAttribute(Qt.WA_Hover, True)
+        self._action_bar.installEventFilter(self)
+        bar_lay = QHBoxLayout(self._action_bar)
+        bar_lay.setContentsMargins(4, 3, 4, 3)
+        bar_lay.setSpacing(2)
         self._action_left = self._make_action_btn(
             os.path.join(_SVG_SERIAL_DIR, "chevron-left.svg"), _CLR_TEXT_MUTED, "Move Left"
         )
@@ -7028,8 +7092,8 @@ class _QuickCmdButton(QPushButton):
             self._action_delete,
         ]
         for b in self._action_btns:
-            b.setStyleSheet(quick_action_overlay_style())
-            b.hide()
+            bar_lay.addWidget(b)
+        self._action_bar.hide()
         self._action_left.clicked.connect(
             lambda: self.move_requested.emit(self._cmd_index, -1)
         )
@@ -7044,14 +7108,15 @@ class _QuickCmdButton(QPushButton):
         )
 
     def _make_action_btn(self, svg_path, color, tip):
-        btn = QToolButton(self)
+        btn = QToolButton(self._action_bar)
         btn.setObjectName("quickCmdAction")
+        btn.setStyleSheet(quick_action_overlay_style())
         btn.setCursor(Qt.PointingHandCursor)
         btn.setFocusPolicy(Qt.NoFocus)
-        btn.setFixedSize(16, 16)
-        btn.setIconSize(QSize(10, 10))
+        btn.setFixedSize(18, 18)
+        btn.setIconSize(QSize(12, 12))
         btn.setToolTip(tip)
-        icon = _tinted_svg_icon(svg_path, color, 10)
+        icon = _tinted_svg_icon(svg_path, color, 12)
         if not icon.isNull():
             btn.setIcon(icon)
         return btn
@@ -7060,25 +7125,63 @@ class _QuickCmdButton(QPushButton):
         self._action_left.setEnabled(can_left)
         self._action_right.setEnabled(can_right)
 
-    def _layout_action_overlay(self):
-        if not getattr(self, "_action_btns", None):
+    def _position_action_bar(self):
+        bar = getattr(self, "_action_bar", None)
+        if bar is None:
             return
-        gap = 2
-        size = 16
-        total = len(self._action_btns) * size + (len(self._action_btns) - 1) * gap
-        x = self.width() - total - 4
-        y = 4
-        for b in self._action_btns:
-            b.move(x, y)
-            x += size + gap
+        bar.adjustSize()
+        bar_w = bar.sizeHint().width()
+        bar_h = bar.sizeHint().height()
+        # 顶层窗口用全局坐标定位：右侧与按钮右边缘对齐，整体向上溢出按钮顶部
+        # （参考 -top-2.5：操作条底部压在按钮上边缘上方约一半处）。
+        top_right = self.mapToGlobal(QPoint(self.width(), 0))
+        x = top_right.x() - bar_w - 4
+        y = top_right.y() - bar_h + bar_h // 2
+        bar.move(x, y)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self._layout_action_overlay()
+        if getattr(self, "_action_bar", None) is not None and self._action_bar.isVisible():
+            self._position_action_bar()
 
     def _set_actions_visible(self, visible: bool):
-        for b in getattr(self, "_action_btns", []) or []:
-            b.setVisible(visible)
+        bar = getattr(self, "_action_bar", None)
+        if bar is None:
+            return
+        if visible:
+            self._hide_actions_timer.stop()
+            self._position_action_bar()
+            bar.raise_()
+            bar.show()
+        else:
+            bar.hide()
+
+    def _cleanup_action_bar(self):
+        bar = getattr(self, "_action_bar", None)
+        if bar is None:
+            return
+        bar.hide()
+        bar.removeEventFilter(self)
+        bar.setParent(None)
+        bar.deleteLater()
+        self._action_bar = None
+
+    def _maybe_hide_actions(self):
+        bar = getattr(self, "_action_bar", None)
+        if bar is None:
+            return
+        if self.underMouse() or bar.underMouse():
+            return
+        bar.hide()
+
+    def eventFilter(self, obj, event):
+        from PySide6.QtCore import QEvent  # 局部引入，避免顶部冗余导入
+        if obj is getattr(self, "_action_bar", None):
+            if event.type() == QEvent.Enter:
+                self._hide_actions_timer.stop()
+            elif event.type() == QEvent.Leave:
+                self._hide_actions_timer.start()
+        return super().eventFilter(obj, event)
 
     def set_command_index(self, idx: int):
         self._cmd_index = idx
@@ -7103,7 +7206,7 @@ class _QuickCmdButton(QPushButton):
     def leaveEvent(self, event):
         self._preview_timer.stop()
         self._preview_popup.hide()
-        self._set_actions_visible(False)
+        self._hide_actions_timer.start()
         super().leaveEvent(event)
 
     def mousePressEvent(self, event):

@@ -63,26 +63,26 @@ export function Sidebar({
   };
 
   return (
-    <aside className="w-72 bg-[#F5F5F7] border-r border-gray-200 flex flex-col h-full overflow-y-auto select-none" id="serial-config-sidebar">
+    <aside className="w-[300px] bg-slate-50/50 dark:bg-[#020617]/50 backdrop-blur-md border-r border-slate-200 dark:border-slate-800/80 flex flex-col h-full overflow-y-auto select-none" id="serial-config-sidebar">
       {/* Scrollable Container wrapper to keep scrollbars thin */}
-      <div className="p-4 space-y-5 flex-1 pr-3 scrollbar-thin">
+      <div className="p-5 space-y-5 flex-1 pr-3 scrollbar-thin">
         
         {/* SECTION 1: Serial Config Card */}
-        <div className="bg-white rounded-xl border border-gray-150 p-3.5 shadow-sm space-y-4" id="card-config-serial">
-          <div className="flex items-center gap-2 pb-1 border-b border-gray-100" id="header-config">
-            <Sliders size={14} className="text-gray-500" />
-            <h3 className="text-xs font-bold text-gray-700 tracking-wide uppercase">Serial Config</h3>
+        <div className="bg-white/60 dark:bg-slate-900/40 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 space-y-4 backdrop-blur-sm" id="card-config-serial">
+          <div className="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-800/60" id="header-config">
+            <Sliders size={14} className="text-blue-500" />
+            <h3 className="text-xs font-bold text-slate-700 dark:text-slate-200 tracking-wider uppercase">Serial Config</h3>
           </div>
 
           <div className="space-y-3" id="inputs-grid-serial">
             {/* Port dropdown selector */}
             <div className="space-y-1" id="field-port">
-              <div className="flex items-center justify-between">
-                <label className="text-[11px] font-medium text-gray-500">Port</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400">Port</label>
                 <button 
                   onClick={onRefreshPorts}
                   title="Scan hardware serial ports"
-                  className="p-1 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                  className="p-1 rounded-md text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                   id="btn-scan"
                 >
                   <RefreshCw size={11} className={panel.isConnected ? "animate-spin" : ""} />
@@ -92,7 +92,7 @@ export function Sidebar({
                 value={panel.port}
                 onChange={handlePortChange}
                 disabled={panel.isConnected}
-                className="w-full text-xs bg-gray-50 text-gray-800 border border-gray-200 hover:border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-[#007AFF] focus:border-[#007AFF] transition-colors"
+                className="w-full text-xs font-medium bg-slate-50 dark:bg-[#020617] text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-lg py-2.5 px-3 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all disabled:opacity-50"
                 id="select-port"
               >
                 <option value="">-- Select Port --</option>
@@ -109,14 +109,14 @@ export function Sidebar({
 
             {/* Baud Rate selector */}
             <div className="space-y-1" id="field-baud">
-              <div className="flex items-center justify-between">
-                <label className="text-[11px] font-medium text-gray-500">Baud Rate (bps)</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400">Baud Rate (bps)</label>
                 <button
                   onClick={() => setCustomBaud(!customBaud)}
-                  className="text-[10px] font-semibold text-[#007AFF] hover:underline"
+                  className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline"
                   id="btn-baud-mode"
                 >
-                  {customBaud ? "Select Preset" : "Custom Custom"}
+                  {customBaud ? "Select Preset" : "Custom"}
                 </button>
               </div>
 
@@ -126,7 +126,7 @@ export function Sidebar({
                   value={panel.baudrate}
                   onChange={handleBaudrateChange}
                   disabled={panel.isConnected && !panel.isMock}
-                  className="w-full text-xs bg-gray-50 text-gray-800 border border-gray-200 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-[#007AFF] focus:border-[#007AFF]"
+                  className="w-full text-xs font-medium bg-slate-50 dark:bg-[#020617] text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 rounded-lg py-2.5 px-3 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all disabled:opacity-50 font-mono"
                   id="input-custom-baud"
                   placeholder="e.g. 115200"
                 />
@@ -135,7 +135,7 @@ export function Sidebar({
                   value={panel.baudrate}
                   onChange={handleBaudrateChange}
                   disabled={panel.isConnected && !panel.isMock}
-                  className="w-full text-xs bg-gray-50 text-gray-800 border border-gray-200 rounded-lg p-2 focus:outline-none focus:ring-1"
+                  className="w-full text-xs font-medium bg-slate-50 dark:bg-[#020617] text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 rounded-lg py-2.5 px-3 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all disabled:opacity-50"
                   id="select-baud"
                 >
                   {SUPPORTED_BAUDRATES.map(b => (
@@ -146,26 +146,28 @@ export function Sidebar({
             </div>
 
             {/* Auto Baudrate Detection */}
-            <div className="flex items-center justify-between pt-1 border-t border-gray-50" id="field-autodetect">
-              <span className="text-[11px] font-medium text-gray-500">Auto-Detect Baud</span>
-              <input
-                type="checkbox"
-                checked={autoBaud.enabled}
-                onChange={(e) => updateAutoBaud({ enabled: e.target.checked })}
-                className="h-3.5 w-3.5 rounded text-[#007AFF] border-gray-300 focus:ring-[#007AFF] cursor-pointer"
-                id="checkbox-auto-baud"
-              />
+            <div className="flex items-center justify-between pt-3 mt-1 border-t border-slate-100 dark:border-slate-800/60" id="field-autodetect">
+              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">Auto-Detect</span>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={autoBaud.enabled}
+                  onChange={(e) => updateAutoBaud({ enabled: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-7 h-4 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
             </div>
 
             {/* Advanced configurations collapsible or toggled inside list */}
-            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-100 text-[11px]" id="collapsed-advanced-serial">
-              <div className="space-y-1">
-                <span className="text-gray-400 font-medium">Data bits</span>
+            <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-100 dark:border-slate-800/60 text-[11px]" id="collapsed-advanced-serial">
+              <div className="space-y-1.5">
+                <span className="text-slate-500 dark:text-slate-500 font-bold">Data bits</span>
                 <select
                   value={panel.databits}
                   onChange={(e) => updatePanelSettings({ databits: Number(e.target.value) })}
                   disabled={panel.isConnected}
-                  className="w-full bg-gray-50 text-gray-700 border border-gray-200 rounded-md p-1 focus:ring-1"
+                  className="w-full bg-slate-50 dark:bg-[#020617] text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 rounded-md py-1.5 px-2 focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50"
                 >
                   <option value={8}>8</option>
                   <option value={7}>7</option>
@@ -174,13 +176,13 @@ export function Sidebar({
                 </select>
               </div>
 
-              <div className="space-y-1">
-                <span className="text-gray-400 font-medium">Stop bits</span>
+              <div className="space-y-1.5">
+                <span className="text-slate-500 dark:text-slate-500 font-bold">Stop bits</span>
                 <select
                   value={panel.stopbits}
                   onChange={(e) => updatePanelSettings({ stopbits: e.target.value as any })}
                   disabled={panel.isConnected}
-                  className="w-full bg-gray-50 text-gray-700 border border-gray-200 rounded-md p-1 focus:ring-1"
+                  className="w-full bg-slate-50 dark:bg-[#020617] text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 rounded-md py-1.5 px-2 focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50"
                 >
                   <option value="1">1</option>
                   <option value="1.5">1.5</option>
@@ -188,13 +190,13 @@ export function Sidebar({
                 </select>
               </div>
 
-              <div className="space-y-1">
-                <span className="text-gray-400 font-medium">Parity</span>
+              <div className="space-y-1.5">
+                <span className="text-slate-500 dark:text-slate-500 font-bold">Parity</span>
                 <select
                   value={panel.parity}
                   onChange={(e) => updatePanelSettings({ parity: e.target.value as any })}
                   disabled={panel.isConnected}
-                  className="w-full bg-gray-50 text-gray-700 border border-gray-200 rounded-md p-1 focus:ring-1"
+                  className="w-full bg-slate-50 dark:bg-[#020617] text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 rounded-md py-1.5 px-2 focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50"
                 >
                   <option value="None">None</option>
                   <option value="Even">Even</option>
@@ -204,13 +206,13 @@ export function Sidebar({
                 </select>
               </div>
 
-              <div className="space-y-1">
-                <span className="text-gray-400 font-medium">Flow Control</span>
+              <div className="space-y-1.5">
+                <span className="text-slate-500 dark:text-slate-500 font-bold">Flow Control</span>
                 <select
                   value={panel.flowControl}
                   onChange={(e) => updatePanelSettings({ flowControl: e.target.value as any })}
                   disabled={panel.isConnected}
-                  className="w-full bg-gray-50 text-gray-700 border border-gray-200 rounded-md p-1"
+                  className="w-full bg-slate-50 dark:bg-[#020617] text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 rounded-md py-1.5 px-2 focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50"
                 >
                   <option value="None">None</option>
                   <option value="RTS/CTS">RTS/CTS</option>
@@ -223,67 +225,67 @@ export function Sidebar({
         </div>
 
         {/* SECTION 2: RX Settings Card */}
-        <div className="bg-white rounded-xl border border-gray-150 p-3.5 shadow-sm space-y-3.5" id="card-config-rx">
-          <div className="flex items-center gap-2 pb-1 border-b border-gray-100" id="header-rx">
-            <Activity size={14} className="text-gray-500" />
-            <h3 className="text-xs font-bold text-gray-700 tracking-wide uppercase">RX Config</h3>
+        <div className="bg-white/60 dark:bg-slate-900/40 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 space-y-4 backdrop-blur-sm" id="card-config-rx">
+          <div className="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-800/60" id="header-rx">
+            <Activity size={14} className="text-blue-500" />
+            <h3 className="text-xs font-bold text-slate-700 dark:text-slate-200 tracking-wider uppercase">RX Config</h3>
           </div>
 
-          <div className="space-y-2.5 text-xs text-gray-600" id="inputs-rx">
+          <div className="space-y-3 text-xs text-slate-600 dark:text-slate-400" id="inputs-rx">
             {/* ASCII/HEX slides toggle */}
             {renderSlideToggle('Format', panel.rxFormat, (val) => updatePanelSettings({ rxFormat: val }))}
 
             {/* Auto flush interval spin */}
-            <div className="flex items-center justify-between py-1.5" id="field-flush">
-              <span className="text-xs font-medium text-gray-500">Auto Flush</span>
-              <div className="flex items-center gap-1.5" id="flush-timing-spin">
+            <div className="flex items-center justify-between py-1" id="field-flush">
+              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">Auto Flush</span>
+              <div className="flex items-center gap-2" id="flush-timing-spin">
                 <input
                   type="checkbox"
                   checked={panel.autoFlush}
                   onChange={(e) => updatePanelSettings({ autoFlush: e.target.checked })}
-                  className="rounded text-[#007AFF] border-gray-200 cursor-pointer h-3.5 w-3.5"
+                  className="rounded text-blue-600 border-slate-300 dark:border-slate-700 dark:border-slate-900 h-4 w-4 focus:ring-blue-500/50 cursor-pointer"
                 />
                 <input
                   type="number"
                   value={panel.autoFlushMs}
                   onChange={(e) => updatePanelSettings({ autoFlushMs: Math.max(10, Number(e.target.value)) })}
                   disabled={!panel.autoFlush}
-                  className="w-16 text-center text-[11px] font-bold bg-gray-50 p-1 border border-gray-200 rounded-md outline-none focus:ring-1 focus:ring-[#007AFF]"
+                  className="w-16 text-center text-[11px] font-bold bg-slate-50 dark:bg-[#020617] px-2 py-1.5 border border-slate-200 dark:border-slate-800 rounded-md outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-200 disabled:opacity-50"
                   title="Flush wait timer (ms)"
                 />
-                <span className="text-[10px] text-gray-400 font-semibold">ms</span>
+                <span className="text-[10px] text-slate-400 font-bold">ms</span>
               </div>
             </div>
 
             {/* Custom check indicators */}
-            <div className="space-y-2 pt-2 border-t border-gray-55" id="checkboxes-rx-options">
-              <label className="flex items-center gap-2.5 font-medium cursor-pointer py-0.5">
+            <div className="space-y-3 pt-3 mt-1 border-t border-slate-100 dark:border-slate-800/60" id="checkboxes-rx-options">
+              <label className="flex items-center gap-3 font-medium cursor-pointer py-1">
                 <input
                   type="checkbox"
                   checked={panel.showTime}
                   onChange={(e) => updatePanelSettings({ showTime: e.target.checked })}
-                  className="rounded text-[#007AFF] border-gray-200 h-3.5 w-3.5"
+                  className="rounded text-blue-600 border-slate-300 dark:border-slate-700 dark:border-slate-900 h-4 w-4 focus:ring-blue-500/50"
                 />
                 <span>Show Time (ms)</span>
               </label>
 
-              <label className="flex items-center gap-2.5 font-medium cursor-pointer py-0.5">
+              <label className="flex items-center gap-3 font-medium cursor-pointer py-1">
                 <input
                   type="checkbox"
                   checked={panel.useNtp}
                   onChange={(e) => updatePanelSettings({ useNtp: e.target.checked })}
-                  className="rounded text-[#007AFF] border-gray-200 h-3.5 w-3.5"
+                  className="rounded text-blue-600 border-slate-300 dark:border-slate-700 dark:border-slate-900 h-4 w-4 focus:ring-blue-500/50"
                 />
                 <span>NTP Calibrated</span>
               </label>
 
-              <div className="flex items-center justify-between py-0.5" id="max-lines-display">
-                <span className="font-medium text-gray-500">Max Scroll Lines</span>
+              <div className="flex items-center justify-between pt-1" id="max-lines-display">
+                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">Max Scroll Lines</span>
                 <input
                   type="number"
                   value={panel.maxLines}
                   onChange={(e) => updatePanelSettings({ maxLines: Math.max(500, Number(e.target.value)) })}
-                  className="w-20 text-center text-[11px] bg-gray-50 p-1 border border-gray-205 rounded-md focus:ring-1 focus:ring-[#007AFF]"
+                  className="w-20 text-center text-[11px] font-bold bg-slate-50 dark:bg-[#020617] px-2 py-1.5 border border-slate-200 dark:border-slate-800 rounded-md outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-200"
                 />
               </div>
             </div>
@@ -291,23 +293,23 @@ export function Sidebar({
         </div>
 
         {/* SECTION 3: TX Settings Card */}
-        <div className="bg-white rounded-xl border border-gray-150 p-3.5 shadow-sm space-y-3.5" id="card-config-tx">
-          <div className="flex items-center gap-2 pb-1 border-b border-gray-100" id="header-tx">
-            <Send size={13} className="text-gray-500" />
-            <h3 className="text-xs font-bold text-gray-700 tracking-wide uppercase">TX Config</h3>
+        <div className="bg-white/60 dark:bg-slate-900/40 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 space-y-4 backdrop-blur-sm" id="card-config-tx">
+          <div className="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-800/60" id="header-tx">
+            <Send size={13} className="text-blue-500" />
+            <h3 className="text-xs font-bold text-slate-700 dark:text-slate-200 tracking-wider uppercase">TX Config</h3>
           </div>
 
-          <div className="space-y-2.5 text-xs text-gray-600" id="inputs-tx">
+          <div className="space-y-3 text-xs text-slate-600 dark:text-slate-400" id="inputs-tx">
             {/* ASCII/HEX slide toggle */}
             {renderSlideToggle('Format', panel.txFormat, (val) => updatePanelSettings({ txFormat: val }))}
 
             {/* Line ending dropdown selector */}
-            <div className="flex items-center justify-between py-1 border-t border-gray-50" id="field-ending">
-              <span className="text-xs font-medium text-gray-500">Line Ending</span>
+            <div className="flex items-center justify-between py-2 mt-1 border-t border-slate-100 dark:border-slate-800/60" id="field-ending">
+              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">Line Ending</span>
               <select
                 value={panel.lineEnding}
                 onChange={(e) => updatePanelSettings({ lineEnding: e.target.value })}
-                className="w-24 text-[11px] bg-gray-50 text-gray-700 border border-gray-200 rounded-md p-1 focus:ring-1"
+                className="w-24 text-[11px] bg-slate-50 dark:bg-[#020617] text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 rounded-md py-1.5 px-2 focus:ring-2 focus:ring-blue-500/20"
                 id="select-line-ending"
               >
                 <option value="\r\n">\r\n (CRLF)</option>
@@ -319,23 +321,23 @@ export function Sidebar({
             </div>
 
             {/* Additional parameters */}
-            <div className="space-y-2 pt-2 border-t border-gray-55" id="checkboxes-tx-options">
-              <label className="flex items-center gap-2.5 font-medium cursor-pointer py-0.5">
+            <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800/60" id="checkboxes-tx-options">
+              <label className="flex items-center gap-3 font-medium cursor-pointer py-1">
                 <input
                   type="checkbox"
                   checked={panel.showSent}
                   onChange={(e) => updatePanelSettings({ showSent: e.target.checked })}
-                  className="rounded text-[#007AFF] border-gray-200 h-3.5 w-3.5"
+                  className="rounded text-blue-600 border-slate-300 dark:border-slate-700 dark:border-slate-900 h-4 w-4 focus:ring-blue-500/50"
                 />
                 <span>Show Sent Data</span>
               </label>
 
-              <label className="flex items-center gap-2.5 font-medium cursor-pointer py-0.5">
+              <label className="flex items-center gap-3 font-medium cursor-pointer py-1">
                 <input
                   type="checkbox"
                   checked={panel.lineByLine}
                   onChange={(e) => updatePanelSettings({ lineByLine: e.target.checked })}
-                  className="rounded text-[#007AFF] border-gray-200 h-3.5 w-3.5"
+                  className="rounded text-blue-600 border-slate-300 dark:border-slate-700 dark:border-slate-900 h-4 w-4 focus:ring-blue-500/50"
                 />
                 <span>Line by Line Send</span>
               </label>

@@ -616,7 +616,7 @@ export default function App() {
   };
 
   return (
-    <div className={`flex flex-col h-screen ${isDark ? 'dark bg-zinc-950 text-zinc-50' : 'bg-[#F5F5F7] text-slate-800'}`} id="kk-uart-suite-window">
+    <div className={`flex flex-col h-screen font-sans ${isDark ? 'dark bg-[#020617] text-slate-300' : 'bg-slate-50 text-slate-800'}`} id="kk-uart-suite-window">
       
       {/* GLOBAL TOP HEADER BAR */}
       <Toolbar 
@@ -646,10 +646,10 @@ export default function App() {
         />
 
         {/* Diagnostic workspace splits containing boards & tabs console */}
-        <main className="flex-1 flex flex-col h-full bg-[#F2F2F7] overflow-hidden" id="diagnostics-sandbox">
+        <main className="flex-1 flex flex-col h-full bg-slate-100/50 dark:bg-[#020617] overflow-hidden" id="diagnostics-sandbox">
           
           {/* Top segment: Log screen grid columns splits */}
-          <div className="flex-1 min-h-[40%] overflow-hidden" id="diagnostics-log-boards">
+          <div className="flex-1 min-h-[40%] overflow-hidden bg-slate-50/50 dark:bg-[#070709]" id="diagnostics-log-boards">
             <LogGrid 
               panels={panels}
               activePanelIndex={activePanelIndex}
@@ -660,9 +660,9 @@ export default function App() {
           </div>
 
           {/* Quick interactive command sender row bar */}
-          <div className="bg-white border-t border-b border-gray-150 p-3.5 px-6 flex items-center gap-3 select-none" id="tx-quick-command-bar">
-            <div className="flex items-center gap-1.5 text-xs text-gray-500 font-bold select-none" id="tx-console-icon">
-              <Terminal size={14} className="text-[#007AFF]" />
+          <div className="bg-white/80 dark:bg-[#020617]/80 border-y border-slate-200/80 dark:border-slate-800/80 p-3.5 px-6 flex items-center gap-3 select-none backdrop-blur-xl z-10" id="tx-quick-command-bar">
+            <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-500 font-bold select-none" id="tx-console-icon">
+              <Terminal size={14} className="text-blue-600 dark:text-blue-500" />
               <span>Diagnostic CLI</span>
             </div>
             
@@ -673,14 +673,14 @@ export default function App() {
               onChange={(e) => setSendText(e.target.value)}
               onKeyDown={handleKeyDownHistory}
               onKeyPress={(e) => e.key === 'Enter' && handleInputSubmit()}
-              className="flex-1 text-xs bg-gray-50 text-slate-800 p-2.5 rounded-lg border border-gray-205 focus:border-[#007AFF] outline-none font-mono"
+              className="flex-1 text-xs bg-slate-50 dark:bg-slate-900/50 dark:text-slate-100 text-slate-900 p-2.5 rounded-lg border border-slate-200 dark:border-slate-800/80 focus:border-blue-500 dark:focus:border-blue-500/50 focus:ring-4 focus:ring-blue-500/10 dark:focus:ring-blue-500/10 outline-none font-mono transition-all shadow-inner dark:shadow-none placeholder:text-slate-400 dark:placeholder:text-slate-600"
               id="input-diagnostic-console-feed"
             />
 
             <button
               onClick={handleInputSubmit}
               title="Push directive payload"
-              className="flex items-center gap-1 px-4 py-2 bg-[#007AFF] hover:bg-[#0A84FF] active:scale-97 text-white font-bold text-xs rounded-lg cursor-pointer transition-all shadow-sm"
+              className="flex items-center gap-1.5 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold text-xs rounded-lg transition-all focus:outline-none focus:ring-4 focus:ring-blue-500/20 shadow-sm"
               id="btn-send-payoad"
             >
               <Send size={11} fill="currentColor" />
@@ -689,14 +689,14 @@ export default function App() {
           </div>
 
           {/* Bottom segment: Custom interactive selector tabs console */}
-          <div className="h-64 bg-white border-t border-gray-200 flex flex-col overflow-hidden" id="auxiliary-diagnostic-console">
+          <div className="h-64 bg-slate-50/80 dark:bg-[#09090b] flex flex-col overflow-hidden" id="auxiliary-diagnostic-console">
             {/* Console switcher header rows */}
-            <div className="bg-gray-50 px-4 py-1.5 border-b border-gray-150 flex items-center justify-between text-xs font-semibold select-none" id="console-sub-navigation">
-              <div className="flex items-center gap-4">
+            <div className="bg-white/50 dark:bg-[#020617]/50 px-4 flex items-center justify-between text-xs font-semibold select-none border-b border-slate-200/80 dark:border-slate-800 backdrop-blur-md" id="console-sub-navigation">
+              <div className="flex items-center gap-6 pt-2">
                 <button
                   onClick={() => setActiveTab('quick')}
-                  className={`py-1.5 border-b-2 font-bold cursor-pointer transition-colors ${
-                    activeTab === 'quick' ? 'border-[#007AFF] text-[#007AFF]' : 'border-transparent text-gray-400 hover:text-gray-700'
+                  className={`pb-2 border-b-2 transition-colors ${
+                    activeTab === 'quick' ? 'border-blue-600 text-blue-600 dark:border-blue-500 dark:text-blue-400 font-bold' : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-500 dark:hover:text-slate-300 font-medium'
                   }`}
                 >
                   Quick Commands
@@ -704,17 +704,17 @@ export default function App() {
 
                 <button
                   onClick={() => setActiveTab('scripts')}
-                  className={`py-1.5 border-b-2 font-bold cursor-pointer transition-colors ${
-                    activeTab === 'scripts' ? 'border-[#007AFF] text-[#007AFF]' : 'border-transparent text-gray-400 hover:text-gray-700'
+                  className={`pb-2 border-b-2 transition-colors ${
+                    activeTab === 'scripts' ? 'border-blue-600 text-blue-600 dark:border-blue-500 dark:text-blue-400 font-bold' : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-500 dark:hover:text-slate-300 font-medium'
                   }`}
                 >
                   Automated Sequences
                 </button>
               </div>
 
-              <div className="flex items-center gap-1 text-[10px] text-gray-400 font-bold select-none">
-                <HelpCircle size={11} />
-                <span>Double click buttons to edit macros quickly</span>
+              <div className="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-slate-500 font-bold select-none bg-slate-100/80 dark:bg-slate-900 px-3 py-1.5 rounded-full mb-1">
+                <HelpCircle size={12} />
+                <span>Double click buttons to edit macros</span>
               </div>
             </div>
 
