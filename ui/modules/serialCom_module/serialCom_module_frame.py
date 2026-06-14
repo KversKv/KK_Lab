@@ -62,6 +62,7 @@ def _select_serialcom_style_module():
 
 _SERIALCOM_STYLE_EXPORTS = (
     "DARK_CARD_STYLE", "_CLR_BG_CARD", "_CLR_BG_LOG", "_CLR_BG_MAIN", "_CLR_BG_PANEL",
+    "_CLR_BLUE",
     "_CLR_BORDER", "_CLR_BORDER_HOVER", "_CLR_CONNECT_BG", "_CLR_CONNECT_FG",
     "_CLR_CONNECT_TEXT", "_CLR_CURSOR", "_CLR_DISCONNECT_TEXT", "_CLR_ERROR",
     "_CLR_FILTER_BG", "_CLR_FILTER_BORDER", "_CLR_FILTER_TEXT", "_CLR_INPUT_BG",
@@ -84,7 +85,7 @@ _SERIALCOM_STYLE_EXPORTS = (
     "log_panel_button_style", "log_title_style", "log_toolbar_button_style",
     "main_connect_button_style", "project_tabs_style", "quick_action_overlay_style",
     "quick_action_overlay_container_style",
-    "quick_add_button_style",
+    "quick_add_button_style", "quick_group_button_style",
     "quick_button_container_style", "quick_button_scroll_style", "quick_cmd_dialog_style",
     "quick_command_button_style", "quick_combo_style", "quick_commands_panel_style",
     "quick_preview_popup_shadow", "quick_preview_popup_style", "quick_toolbar_button_style",
@@ -1711,7 +1712,13 @@ class SerialComMixin:
         )
         # 工具栏统一暗色按钮样式：覆盖 _make_sc_btn(quick) 的局部 setStyleSheet
         _toolbar_btn_qss = quick_toolbar_button_style()
-        self._sc_qc_new_group_btn.setStyleSheet(_toolbar_btn_qss)
+        # "+ Group" 为白底按钮，仅文字与 "+" 图标呼应蓝色
+        self._sc_qc_new_group_btn.setStyleSheet(quick_group_button_style())
+        _group_plus_icon = _tinted_svg_icon(
+            os.path.join(_SVG_SERIAL_DIR, "plus-bold.svg"), _CLR_BLUE, 11
+        )
+        if not _group_plus_icon.isNull():
+            self._sc_qc_new_group_btn.setIcon(_group_plus_icon)
         toolbar.addWidget(self._sc_qc_new_group_btn)
 
         # "+ Group" 右侧两个小图标按钮：编辑 / 删除当前分组（替代下拉右键菜单）
@@ -1724,7 +1731,7 @@ class SerialComMixin:
         self._sc_qc_group_edit_btn.setToolTip("Edit group")
         self._sc_qc_group_edit_btn.setStyleSheet(quick_action_overlay_style())
         _gedit_icon = _tinted_svg_icon(
-            os.path.join(_SVG_SERIAL_DIR, "edit.svg"), _CLR_SEND_BG, 11
+            os.path.join(_SVG_SERIAL_DIR, "edit.svg"), _CLR_TEXT_TITLE, 11
         )
         if not _gedit_icon.isNull():
             self._sc_qc_group_edit_btn.setIcon(_gedit_icon)
@@ -1739,7 +1746,7 @@ class SerialComMixin:
         self._sc_qc_group_delete_btn.setToolTip("Delete group")
         self._sc_qc_group_delete_btn.setStyleSheet(quick_action_overlay_style())
         _gdel_icon = _tinted_svg_icon(
-            os.path.join(_SVG_LOGS_DIR, "trash.svg"), _CLR_ERROR, 11
+            os.path.join(_SVG_LOGS_DIR, "trash.svg"), _CLR_TEXT_TITLE, 11
         )
         if not _gdel_icon.isNull():
             self._sc_qc_group_delete_btn.setIcon(_gdel_icon)
@@ -4508,6 +4515,7 @@ class SerialComMixin:
         plus_index = tabs.addTab("+")
         tabs.setTabData(plus_index, self._SC_QC_ADD_TAB_MARK)
         tabs.setTabToolTip(plus_index, "新增项目")
+        tabs.setTabTextColor(plus_index, QColor(_CLR_BLUE))
         if projects:
             tabs.setCurrentIndex(active_index)
         tabs.blockSignals(False)
@@ -7059,19 +7067,27 @@ class _QuickCmdButton(QPushButton):
         # 悬浮操作条：用独立的无边框顶层窗口承载，溢出在按钮顶部（参考 -top-2.5）。
         # 不能作为按钮或网格容器的子控件——前者会被裁剪、后者会被 QScrollArea
         # 视口边界裁掉，因此顶层窗口才能真正浮在按钮上边缘之上。
+        # 顶层窗口本身保持透明，真正带"整体外边框"的胶囊是其内部子控件，
+        # 这样 QSS 的 border/background 才能在半透明顶层窗口上稳定渲染。
         self._action_bar = QFrame(None)
-        self._action_bar.setObjectName("quickCmdActionBar")
         self._action_bar.setWindowFlags(
             Qt.Tool | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint
         )
         self._action_bar.setAttribute(Qt.WA_TranslucentBackground, True)
         self._action_bar.setAttribute(Qt.WA_ShowWithoutActivating, True)
-        self._action_bar.setStyleSheet(quick_action_overlay_container_style())
+        self._action_bar.setStyleSheet("QFrame { background: transparent; border: none; }")
         self._action_bar.setCursor(Qt.ArrowCursor)
         self._action_bar.setAttribute(Qt.WA_Hover, True)
         self._action_bar.installEventFilter(self)
-        bar_lay = QHBoxLayout(self._action_bar)
-        bar_lay.setContentsMargins(4, 3, 4, 3)
+        outer_lay = QHBoxLayout(self._action_bar)
+        outer_lay.setContentsMargins(2, 2, 2, 2)
+        outer_lay.setSpacing(0)
+        self._action_pill = QFrame(self._action_bar)
+        self._action_pill.setObjectName("quickCmdActionBar")
+        self._action_pill.setStyleSheet(quick_action_overlay_container_style())
+        outer_lay.addWidget(self._action_pill)
+        bar_lay = QHBoxLayout(self._action_pill)
+        bar_lay.setContentsMargins(5, 4, 5, 4)
         bar_lay.setSpacing(2)
         self._action_left = self._make_action_btn(
             os.path.join(_SVG_SERIAL_DIR, "chevron-left.svg"), _CLR_TEXT_MUTED, "Move Left"
@@ -7108,7 +7124,7 @@ class _QuickCmdButton(QPushButton):
         )
 
     def _make_action_btn(self, svg_path, color, tip):
-        btn = QToolButton(self._action_bar)
+        btn = QToolButton(self._action_pill)
         btn.setObjectName("quickCmdAction")
         btn.setStyleSheet(quick_action_overlay_style())
         btn.setCursor(Qt.PointingHandCursor)

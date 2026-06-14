@@ -711,39 +711,35 @@ def project_tabs_style():
     return f"""
             QTabBar {{
                 background: transparent;
-                border-bottom: 1px solid {_CLR_BORDER};
+                border: none;
             }}
             QTabBar::tab {{
-                background-color: {_CLR_INPUT_BG};
+                background-color: transparent;
                 color: {_CLR_TEXT_BTN_LOG};
-                border: 1px solid {_CLR_BORDER_HOVER};
-                border-top: 2px solid {_CLR_BORDER_HOVER};
-                border-bottom: none;
-                border-top-left-radius: 3px;
-                border-top-right-radius: 3px;
-                padding: 3px 10px;
-                margin-right: 1px;
+                border: 1px solid transparent;
+                border-radius: 7px;
+                padding: 4px 12px;
+                margin-right: 4px;
                 margin-bottom: 0px;
-                min-height: 15px;
+                min-height: 16px;
                 font-size: 11px;
+                font-weight: 600;
                 font-family: {_UI_FONT};
             }}
             QTabBar::tab:hover {{
-                background-color: {_CLR_BORDER};
+                background-color: #F1F5F9;
                 color: {_CLR_TEXT_TAB};
-                border-color: {_CLR_DISABLED};
-                border-top-color: {_CLR_DISABLED};
+                border-color: transparent;
             }}
             QTabBar::tab:selected {{
-                background-color: {_CLR_INPUT_BG};
-                color: {_CLR_TEXT_TITLE};
-                border: 1px solid {_CLR_BORDER_HOVER};
-                border-top: 2px solid {_CLR_BORDER_ACTIVE};
-                border-bottom: none;
+                background-color: #F2F8FF;
+                color: {_CLR_BLUE};
+                border: 1px solid transparent;
+                font-weight: 700;
             }}
             QTabBar::tab:selected:hover {{
-                background-color: {_CLR_INPUT_BG};
-                color: {_CLR_TEXT_TITLE};
+                background-color: #F2F8FF;
+                color: {_CLR_BLUE};
             }}
             QTabBar::tab:!selected {{
                 margin-top: 0px;
@@ -827,6 +823,36 @@ def quick_toolbar_button_style(max_height=None, padding="3px 8px", radius=5, min
                 background-color: #E8F2FF;
                 color: {_CLR_BLUE};
                 border: 1px solid {_CLR_BORDER_ACTIVE};
+            }}
+            QPushButton:disabled {{
+                background-color: #E5E5EA;
+                color: {_CLR_DISABLED};
+                border-color: {_CLR_BORDER};
+            }}
+        """
+
+
+def quick_group_button_style():
+    return f"""
+            QPushButton {{
+                min-height: 18px;
+                background-color: #FFFFFF;
+                color: {_CLR_BLUE};
+                border: 1px solid rgba(60, 60, 67, 0.18);
+                border-radius: 5px;
+                padding: 3px 8px;
+                font-size: 11px;
+                font-family: {_UI_FONT};
+                font-weight: 700;
+            }}
+            QPushButton:hover {{
+                background-color: #E8F2FF;
+                border-color: {_CLR_BORDER_ACTIVE};
+                color: {_CLR_BLUE};
+            }}
+            QPushButton:pressed {{
+                background-color: {_CLR_BORDER_HOVER};
+                border-color: {_CLR_DISABLED};
             }}
             QPushButton:disabled {{
                 background-color: #E5E5EA;
@@ -1092,9 +1118,9 @@ def quick_command_button_style():
                     color: {_CLR_TEXT_SOFT};
                     border: 1px solid {_CLR_BORDER_SOFT};
                     border-radius: 10px;
-                    padding: 8px 16px;
+                    padding: 8px 20px;
                     min-height: 30px;
-                    min-width: 44px;
+                    min-width: 84px;
                     font-size: 12px;
                     font-weight: 700;
                     font-family: {_UI_FONT};
@@ -1137,8 +1163,8 @@ def quick_action_overlay_style():
 def quick_action_overlay_container_style():
     return f"""
             QFrame#quickCmdActionBar {{
-                background-color: rgba(248, 248, 250, 0.96);
-                border: 1px solid {_CLR_BORDER};
+                background-color: rgba(248, 248, 250, 0.97);
+                border: 1px solid #CBD0D6;
                 border-radius: 8px;
             }}
         """
