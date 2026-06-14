@@ -45,6 +45,7 @@ from PySide6.QtSvg import QSvgRenderer
 from debug_config import DEBUG_MOCK
 from log_config import get_logger
 from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
+from ui.utils.icon_utils import tinted_svg_pixmap as _tinted_svg_pixmap
 
 
 def _select_serialcom_style_module():
@@ -83,11 +84,13 @@ _SERIALCOM_STYLE_EXPORTS = (
     "inline_serial_search_button_extra_style", "log_color_info_style",
     "log_color_info_text", "log_document_style", "log_edit_style", "log_frame_style",
     "log_panel_button_style", "log_title_style", "log_toolbar_button_style",
+    "log_icon_button_style",
     "main_connect_button_style", "project_tabs_style", "quick_action_overlay_style",
     "quick_action_overlay_container_style",
     "quick_add_button_style", "quick_group_button_style",
     "quick_button_container_style", "quick_button_scroll_style", "quick_cmd_dialog_style",
-    "quick_command_button_style", "quick_combo_style", "quick_commands_panel_style",
+    "quick_command_button_style", "quick_combo_style", "quick_group_combo_bg_style",
+    "quick_commands_panel_style",
     "quick_preview_popup_shadow", "quick_preview_popup_style", "quick_toolbar_button_style",
     "bottom_tabs_style",
     "section_card_style", "section_card_shadow", "section_header_divider_style",
@@ -1127,7 +1130,9 @@ class SerialComMixin:
         self._sc_add_log_btn.setFixedSize(28, 28)
         self._sc_add_log_btn.setToolTip("Add LOG panel")
         self._sc_add_log_btn.setStyleSheet(log_panel_button_style())
-        icon_add = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "plus.svg"), _CLR_CONNECT_TEXT, 14)
+        icon_add = self._sc_make_enabled_disabled_icon(
+            os.path.join(_SVG_LOGS_DIR, "plus.svg"), 14
+        )
         if not icon_add.isNull():
             self._sc_add_log_btn.setIcon(icon_add)
         layout.addWidget(self._sc_add_log_btn)
@@ -1138,7 +1143,9 @@ class SerialComMixin:
         self._sc_remove_log_btn.setFixedSize(28, 28)
         self._sc_remove_log_btn.setToolTip("Remove current LOG panel")
         self._sc_remove_log_btn.setStyleSheet(log_panel_button_style(disabled=True))
-        icon_remove = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "minus.svg"), _CLR_ROSE_ICON, 14)
+        icon_remove = self._sc_make_enabled_disabled_icon(
+            os.path.join(_SVG_LOGS_DIR, "minus.svg"), 14
+        )
         if not icon_remove.isNull():
             self._sc_remove_log_btn.setIcon(icon_remove)
         self._sc_remove_log_btn.setEnabled(False)
@@ -1420,47 +1427,80 @@ class SerialComMixin:
 
         toolbar.addStretch()
 
+        _icon_btn_pad = "6px"
+        _icon_btn_size = 14
+
+        def _to_icon_only(btn, svg_name, color):
+            btn.setText("")
+            _icon = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, svg_name), color, _icon_btn_size)
+            if not _icon.isNull():
+                btn.setIcon(_icon)
+            btn.setIconSize(QSize(_icon_btn_size, _icon_btn_size))
+
         self._sc_filter_btn = self._make_sc_btn(
             os.path.join(_SVG_LOGS_DIR, "filter.svg"), "Filter", tone="log"
         )
+        _to_icon_only(self._sc_filter_btn, "filter.svg", _CLR_TEXT_BTN_LOG)
         self._sc_filter_btn.setCheckable(True)
-        self._sc_filter_btn.setStyleSheet(log_toolbar_button_style(checked_variant=True))
+        self._sc_filter_btn.setStyleSheet(
+            log_icon_button_style(checked_variant="blue", padding=_icon_btn_pad)
+        )
+        self._sc_filter_btn.setToolTip("Filter\nShow only log lines matching a keyword or regex")
         toolbar.addWidget(self._sc_filter_btn)
 
         self._sc_copy_btn = self._make_sc_btn(
             os.path.join(_SVG_LOGS_DIR, "copy.svg"), "Copy", tone="log"
         )
+        _to_icon_only(self._sc_copy_btn, "copy.svg", _CLR_TEXT_BTN_LOG)
+        self._sc_copy_btn.setStyleSheet(log_icon_button_style(padding=_icon_btn_pad))
+        self._sc_copy_btn.setToolTip("Copy\nCopy all current log content to the clipboard")
         toolbar.addWidget(self._sc_copy_btn)
 
         self._sc_export_btn = self._make_sc_btn(
             os.path.join(_SVG_LOGS_DIR, "export.svg"), "Export", tone="log"
         )
+        _to_icon_only(self._sc_export_btn, "export.svg", _CLR_TEXT_BTN_LOG)
+        self._sc_export_btn.setStyleSheet(log_icon_button_style(padding=_icon_btn_pad))
+        self._sc_export_btn.setToolTip("Export\nSave the current log content as a file")
         toolbar.addWidget(self._sc_export_btn)
 
         self._sc_save_btn = self._make_sc_btn(
             os.path.join(_SVG_LOGS_DIR, "save.svg"), "Save", tone="log"
         )
+        _to_icon_only(self._sc_save_btn, "save.svg", _CLR_TEXT_BTN_LOG)
         self._sc_save_btn.setCheckable(True)
-        self._sc_save_btn.setStyleSheet(log_toolbar_button_style(checked_variant=True))
-        self._sc_save_btn.setToolTip("Save logs to a file and keep appending new logs")
+        self._sc_save_btn.setStyleSheet(
+            log_icon_button_style(checked_variant="blue", padding=_icon_btn_pad)
+        )
+        self._sc_save_btn.setToolTip("Save\nSave logs to a file and keep appending new logs")
         toolbar.addWidget(self._sc_save_btn)
 
         self._sc_clear_btn = self._make_sc_btn(
             os.path.join(_SVG_LOGS_DIR, "trash.svg"), "Clear", tone="log"
         )
+        _to_icon_only(self._sc_clear_btn, "trash.svg", _CLR_TEXT_BTN_LOG)
+        self._sc_clear_btn.setStyleSheet(log_icon_button_style(padding=_icon_btn_pad))
+        self._sc_clear_btn.setToolTip("Clear\nClear all log content in the console")
         toolbar.addWidget(self._sc_clear_btn)
 
         self._sc_scroll_lock_btn = self._make_sc_btn(
             os.path.join(_SVG_LOGS_DIR, "auto-scroll.svg"), "Auto-scroll", tone="log"
         )
+        self._sc_scroll_lock_btn.setText("")
+        self._sc_scroll_lock_btn.setIconSize(QSize(_icon_btn_size, _icon_btn_size))
         self._sc_scroll_lock_btn.setCheckable(True)
         self._sc_scroll_lock_btn.setChecked(True)
-        self._sc_scroll_lock_btn.setStyleSheet(auto_scroll_button_style())
+        self._sc_scroll_lock_btn.setStyleSheet(
+            log_icon_button_style(checked_variant="green", padding=_icon_btn_pad)
+        )
+        self._sc_scroll_lock_btn.setToolTip(
+            "Auto-scroll\nAutomatically scroll to the latest log line"
+        )
         self._sc_bind_toggle_icon(
             self._sc_scroll_lock_btn,
             os.path.join(_SVG_LOGS_DIR, "auto-scroll.svg"),
             auto_scroll_icon_colors(),
-            11,
+            _icon_btn_size,
         )
         toolbar.addWidget(self._sc_scroll_lock_btn)
 
@@ -1587,7 +1627,9 @@ class SerialComMixin:
         self._sc_history_combo.setInsertPolicy(SerialHistoryComboBox.NoInsert)
         self._sc_history_combo.setFixedHeight(34)
         self._sc_send_input = self._sc_history_combo.lineEdit()
-        self._sc_send_input.setPlaceholderText("Enter text to send (\u2193 for history)...")
+        self._sc_send_input.setPlaceholderText(
+            "Inject command... (Use \u2191/\u2193 arrow keys for command history)"
+        )
         self._sc_send_input.setClearButtonEnabled(False)
         send_row.addWidget(self._sc_history_combo, 1)
 
@@ -1704,7 +1746,7 @@ class SerialComMixin:
         group_lbl.setStyleSheet(small_label_style(color="soft", size=11))
         toolbar.addWidget(group_lbl)
         self._sc_qc_group_combo = QComboBox()
-        self._sc_qc_group_combo.setStyleSheet(_combo_qss)
+        self._sc_qc_group_combo.setStyleSheet(_combo_qss + quick_group_combo_bg_style())
         toolbar.addWidget(self._sc_qc_group_combo)
 
         self._sc_qc_new_group_btn = self._make_sc_btn(
@@ -1843,6 +1885,11 @@ class SerialComMixin:
         )
         self._sc_script_run_btn.setObjectName("primaryButton")
         self._sc_script_run_btn.setStyleSheet(quick_add_button_style())
+        _run_icon = _tinted_svg_icon(
+            os.path.join(_SVG_SERIAL_DIR, "send.svg"), _CLR_TEXT_WHITE, 11
+        )
+        if not _run_icon.isNull():
+            self._sc_script_run_btn.setIcon(_run_icon)
         toolbar.addWidget(self._sc_script_run_btn)
 
         self._sc_script_stop_btn = self._make_sc_btn(
@@ -4511,11 +4558,16 @@ class SerialComMixin:
             tabs.setTabData(i, p.get("id", ""))
             if p.get("id") == self._sc_qc_data.get("last_project_id"):
                 active_index = i
-        # 末尾追加 "+" 加号 tab，单击即新增项目
-        plus_index = tabs.addTab("+")
+        # 末尾追加加号 tab（用 SVG 图标替代纯文字 "+"），单击即新增项目
+        plus_index = tabs.addTab("")
         tabs.setTabData(plus_index, self._SC_QC_ADD_TAB_MARK)
         tabs.setTabToolTip(plus_index, "新增项目")
-        tabs.setTabTextColor(plus_index, QColor(_CLR_BLUE))
+        _plus_tab_icon = _tinted_svg_icon(
+            os.path.join(_SVG_SERIAL_DIR, "plus-tab.svg"), _CLR_TEXT_TITLE, 14
+        )
+        if not _plus_tab_icon.isNull():
+            tabs.setTabIcon(plus_index, _plus_tab_icon)
+            tabs.setIconSize(QSize(14, 14))
         if projects:
             tabs.setCurrentIndex(active_index)
         tabs.blockSignals(False)
@@ -6284,6 +6336,19 @@ class SerialComMixin:
         if not icon.isNull():
             btn.setIcon(icon)
         return btn
+
+    @staticmethod
+    def _sc_make_enabled_disabled_icon(svg_path, size):
+        icon = QIcon()
+        normal_pix = _tinted_svg_pixmap(svg_path, _CLR_TEXT_TITLE, size)
+        if not normal_pix.isNull():
+            icon.addPixmap(normal_pix, QIcon.Normal, QIcon.On)
+            icon.addPixmap(normal_pix, QIcon.Normal, QIcon.Off)
+        disabled_pix = _tinted_svg_pixmap(svg_path, _CLR_TEXT_MUTED, size)
+        if not disabled_pix.isNull():
+            icon.addPixmap(disabled_pix, QIcon.Disabled, QIcon.On)
+            icon.addPixmap(disabled_pix, QIcon.Disabled, QIcon.Off)
+        return icon
 
     @staticmethod
     def _make_sc_section(title, icon_path=None):

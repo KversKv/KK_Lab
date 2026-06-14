@@ -255,16 +255,16 @@ def toolbar_connect_button_style():
 
 
 def log_panel_button_style(disabled=False):
-    disabled_qss = f"\n            QPushButton:disabled {{ background-color: transparent; border-color: {_CLR_BORDER}; }}" if disabled else ""
+    disabled_qss = f"\n            QPushButton:disabled {{ background-color: transparent; border: none; }}" if disabled else ""
     return f"""
             QPushButton {{
                 min-height: 0px; max-height: 28px; min-width: 28px; max-width: 28px;
                 padding: 0px; border-radius: 7px;
-                background-color: transparent; color: {_CLR_TEXT_MUTED}; border: 1px solid {_CLR_BORDER};
+                background-color: transparent; color: {_CLR_TEXT_MUTED}; border: none;
             }}
-            QPushButton:hover {{ border-color: {_CLR_BORDER_SOFT}; }}
-            QPushButton:focus {{ border-color: {_CLR_FILTER_BORDER}; background-color: {_CLR_INPUT_BG}; }}
-            QPushButton:pressed {{ background-color: {_CLR_BG_CARD}; }}{disabled_qss}
+            QPushButton:hover {{ background-color: {_CLR_BORDER_SOFT}; border: none; }}
+            QPushButton:focus {{ background-color: {_CLR_INPUT_BG}; border: none; }}
+            QPushButton:pressed {{ background-color: {_CLR_BG_CARD}; border: none; }}{disabled_qss}
         """
 
 
@@ -387,6 +387,34 @@ def log_toolbar_button_style(checked_variant=False, max_height=28, padding="5px 
             """
 
 
+def log_icon_button_style(checked_variant="none", padding="7px"):
+    if checked_variant == "blue":
+        checked_qss = f"""
+            QPushButton:checked {{ background-color: #172554; color: {_CLR_BLUE_HOVER}; border: none; }}
+            QPushButton:checked:hover {{ background-color: #1E3A8A; color: {_CLR_BLUE_HOVER}; border: none; }}
+            QPushButton:checked:pressed {{ background-color: #1E40AF; color: {_CLR_BLUE_HOVER}; border: none; }}
+        """
+    elif checked_variant == "green":
+        checked_qss = f"""
+            QPushButton:checked {{ background-color: #0E2A1A; color: #30D158; border: none; }}
+            QPushButton:checked:hover {{ background-color: #123B23; color: #34C759; border: none; }}
+            QPushButton:checked:pressed {{ background-color: #0B1F13; color: #248A3D; border: none; }}
+        """
+    else:
+        checked_qss = ""
+    return f"""
+                QPushButton {{
+                    min-height: 0px; max-height: 28px; padding: {padding}; border-radius: 7px;
+                    background-color: transparent; color: {_CLR_TEXT_BTN_LOG}; font-size: 12px;
+                    font-family: {_UI_FONT}; font-weight: 500; border: none;
+                }}
+                QPushButton:focus {{ outline: none; }}
+                QPushButton:hover {{ background-color: {_CLR_BORDER_SOFT}; color: {_CLR_TEXT_WHITE}; border: none; }}
+                QPushButton:pressed {{ background-color: {_CLR_BORDER}; color: {_CLR_TEXT_WHITE}; border: none; }}
+                {checked_qss}
+            """
+
+
 def filter_input_style():
     return f"""
             QLineEdit {{
@@ -462,10 +490,10 @@ def sidebar_toggle_button_style():
         """
 
 
-def auto_scroll_button_style():
+def auto_scroll_button_style(padding="5px 11px"):
     return f"""
             QPushButton {{
-                min-height: 0px; max-height: 28px; padding: 5px 11px; border-radius: 7px;
+                min-height: 0px; max-height: 28px; padding: {padding}; border-radius: 7px;
                 background-color: #181C20; color: {_CLR_TEXT_BTN_LOG}; font-size: 12px;
                 font-family: {_UI_FONT}; font-weight: 500; border: 1px solid {_CLR_BORDER_SOFT};
             }}
@@ -673,6 +701,10 @@ def project_tabs_style():
                 color: {_CLR_INPUT_TEXT};
             }}
         """
+
+
+def quick_group_combo_bg_style():
+    return ""
 
 
 def quick_combo_style():
@@ -1646,7 +1678,7 @@ def history_combo_style():
     return f"""
             QComboBox {{
                 background-color: {_CLR_HISTORY_COMBO_BG}; border: 1px solid #222225; border-radius: 6px;
-                color: {_CLR_INPUT_TEXT}; font-size: 14px; font-family: {_UI_FONT};
+                color: {_CLR_INPUT_TEXT}; font-size: 13px; font-family: {_TERM_FONT};
                 padding: 3px 28px 3px 10px;
                 selection-background-color: {_CLR_SELECTION_BG};
                 selection-color: {_CLR_SELECTION_TEXT};
@@ -1656,7 +1688,7 @@ def history_combo_style():
             QComboBox::down-arrow {{ image: none; width: 0px; height: 0px; }}
             QComboBox QLineEdit {{
                 background-color: transparent; border: none;
-                color: {_CLR_INPUT_TEXT}; font-size: 14px; font-family: {_UI_FONT};
+                color: {_CLR_INPUT_TEXT}; font-size: 13px; font-family: {_TERM_FONT};
                 padding: 0px; margin: 0px;
                 selection-background-color: {_CLR_SELECTION_BG};
                 selection-color: {_CLR_SELECTION_TEXT};
