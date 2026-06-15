@@ -86,7 +86,7 @@ _SERIALCOM_STYLE_EXPORTS = (
     "history_combo_style", "inline_serial_label_style",
     "inline_serial_search_button_extra_style", "log_color_info_style",
     "log_color_info_text", "log_document_style", "log_edit_style", "log_frame_style",
-    "log_panel_button_style", "log_title_style", "log_toolbar_button_style",
+    "log_panel_button_style", "log_title_style", "log_title_icon_color", "log_toolbar_button_style",
     "log_icon_button_style",
     "main_connect_button_style", "project_tabs_style", "quick_action_overlay_style",
     "quick_action_overlay_container_style",
@@ -97,6 +97,7 @@ _SERIALCOM_STYLE_EXPORTS = (
     "quick_preview_popup_shadow", "quick_preview_popup_style", "quick_toolbar_button_style",
     "bottom_tabs_style",
     "section_card_style", "section_card_shadow", "section_header_divider_style",
+    "panel_divider_style",
     "script_stop_button_style", "script_add_step_button_style",
     "section_title_style", "send_button_style", "separator_style",
     "sidebar_toggle_button_style", "auto_scroll_button_style",
@@ -1485,7 +1486,7 @@ class SerialComMixin:
 
     def _build_sc_section_tx_settings(self):
         grp = self._make_sc_section(
-            "TX Config", os.path.join(_SVG_SERIAL_DIR, "send.svg")
+            "TX Config", os.path.join(_SVG_SERIAL_DIR, "send-outline.svg")
         )
         layout = grp.property("_inner_layout")
 
@@ -1544,6 +1545,15 @@ class SerialComMixin:
         frame.setObjectName("scLogFrame")
         frame.setStyleSheet(log_frame_style())
         frame.setProperty("_is_primary", True)
+
+        shadow_cfg = section_card_shadow()
+        if shadow_cfg:
+            shadow = QGraphicsDropShadowEffect(frame)
+            shadow.setBlurRadius(shadow_cfg["blur_radius"])
+            shadow.setOffset(shadow_cfg["offset_x"], shadow_cfg["offset_y"])
+            shadow.setColor(QColor(*shadow_cfg["color"]))
+            frame.setGraphicsEffect(shadow)
+
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -1553,10 +1563,10 @@ class SerialComMixin:
         toolbar.setSpacing(8)
 
         icon_label = QLabel()
-        icon = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "logs.svg"), _CLR_TEXT_BTN_LOG, 12)
+        icon = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "logs.svg"), log_title_icon_color(), 14)
         if not icon.isNull():
-            icon_label.setPixmap(icon.pixmap(12, 12))
-        icon_label.setFixedSize(14, 14)
+            icon_label.setPixmap(icon.pixmap(14, 14))
+        icon_label.setFixedSize(16, 16)
         icon_label.setStyleSheet(transparent_background_style())
         toolbar.addWidget(icon_label)
 
@@ -1831,6 +1841,14 @@ class SerialComMixin:
         btn.toggled.connect(_apply)
         _apply(btn.isChecked())
 
+    @staticmethod
+    def _make_panel_divider():
+        divider = QFrame()
+        divider.setFrameShape(QFrame.HLine)
+        divider.setFixedHeight(1)
+        divider.setStyleSheet(panel_divider_style())
+        return divider
+
     def _build_sc_qc_tab(self):
         frame = QFrame()
         # 双 objectName 不可行：保留 scQuickFrame 给现有内嵌 QSS；面板级 QSS 通过 quickCommandsPanel 选择器命中
@@ -1870,6 +1888,7 @@ class SerialComMixin:
         header.addWidget(self._sc_qc_project_tabs, 1)
 
         layout.addWidget(header_frame)
+        layout.addWidget(self._make_panel_divider())
 
         # --- 工具栏:区域/分组下拉 + 操作按钮 ---
         toolbar_frame = QFrame()
@@ -1961,6 +1980,7 @@ class SerialComMixin:
         toolbar.addWidget(self._sc_qc_export_btn)
 
         layout.addWidget(toolbar_frame)
+        layout.addWidget(self._make_panel_divider())
 
         # --- 按钮区:QScrollArea + QGridLayout ---
         self._sc_qc_btn_scroll = QScrollArea()
@@ -2093,6 +2113,7 @@ class SerialComMixin:
         toolbar.addWidget(self._sc_script_export_btn)
 
         layout.addWidget(toolbar_frame)
+        layout.addWidget(self._make_panel_divider())
 
         # --- 状态栏 ---
         status_frame = QFrame()
@@ -2746,10 +2767,10 @@ class SerialComMixin:
         toolbar.setSpacing(4)
 
         icon_label = QLabel()
-        icon = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "logs.svg"), _CLR_TEXT_BTN_LOG, 12)
+        icon = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, "logs.svg"), log_title_icon_color(), 14)
         if not icon.isNull():
-            icon_label.setPixmap(icon.pixmap(12, 12))
-        icon_label.setFixedSize(14, 14)
+            icon_label.setPixmap(icon.pixmap(14, 14))
+        icon_label.setFixedSize(16, 16)
         icon_label.setStyleSheet(transparent_background_style())
         toolbar.addWidget(icon_label)
 

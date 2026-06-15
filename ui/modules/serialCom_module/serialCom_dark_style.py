@@ -128,9 +128,9 @@ def _serial_connect_style(h=_SERIAL_BTN_HEIGHT, r=_SERIAL_BTN_RADIUS):
             background-color: {_CLR_CONNECT_PRESS};
         }}
         QPushButton:disabled {{
-            background-color: {_CLR_BORDER};
+            background-color: #0B1220;
             color: {_CLR_DISABLED};
-            border: none;
+            border: 1px solid #1A2436;
         }}
     """
 
@@ -155,9 +155,9 @@ def _serial_disconnect_style(h=_SERIAL_BTN_HEIGHT, r=_SERIAL_BTN_RADIUS):
             background-color: {_CLR_DISCONNECT_PRESS};
         }}
         QPushButton:disabled {{
-            background-color: {_CLR_BORDER};
+            background-color: #0B1220;
             color: {_CLR_DISABLED};
-            border: none;
+            border: 1px solid #1A2436;
         }}
     """
 
@@ -363,6 +363,10 @@ def log_title_style():
     return f"color: {_CLR_TEXT_WHITE}; font-size: 14px; font-weight: 700; font-family: {_UI_FONT}; background: transparent;"
 
 
+def log_title_icon_color():
+    return _CLR_TEXT_WHITE
+
+
 def log_toolbar_button_style(checked_variant=False, max_height=28, padding="5px 11px", radius=7):
     checked_qss = ""
     if checked_variant:
@@ -533,7 +537,7 @@ def send_button_style():
             }}
             QPushButton:hover {{ background-color: {_CLR_SEND_HOVER}; }}
             QPushButton:pressed {{ background-color: {_CLR_SEND_PRESS}; }}
-            QPushButton:disabled {{ background-color: {_CLR_BORDER}; color: {_CLR_DISABLED}; }}
+            QPushButton:disabled {{ background-color: #0B1220; color: {_CLR_DISABLED}; border: 1px solid #1A2436; }}
         """
 
 
@@ -840,8 +844,9 @@ def quick_add_button_style():
                 background-color: {_CLR_BLUE_PRESS};
             }}
             QPushButton:disabled {{
-                background-color: {_CLR_BORDER};
+                background-color: #0B1220;
                 color: {_CLR_DISABLED};
+                border: 1px solid #1A2436;
             }}
         """
 
@@ -866,8 +871,9 @@ def script_stop_button_style():
                 background-color: #E0352B;
             }}
             QPushButton:disabled {{
-                background-color: {_CLR_BORDER};
+                background-color: #0B1220;
                 color: {_CLR_DISABLED};
+                border: 1px solid #1A2436;
             }}
         """
 
@@ -970,6 +976,10 @@ def section_title_style():
 
 def section_header_divider_style():
     return f"background-color: {_CLR_BORDER}; border: none;"
+
+
+def panel_divider_style():
+    return "background-color: rgba(148, 163, 184, 0.10); border: none;"
 
 
 def field_label_style():
@@ -1729,6 +1739,11 @@ class SerialDarkComboBox(QComboBox):
                 color: #E5E5EA;
                 font-size: 13px;
             }}
+            QComboBox:disabled {{
+                background-color: #0B1220;
+                color: {_CLR_DISABLED};
+                border: 1.5px solid #1A2436;
+            }}
             QComboBox::drop-down {{
                 border: none;
                 width: 22px;
@@ -1747,7 +1762,7 @@ class SerialDarkComboBox(QComboBox):
                 margin: 0px;
             }}
             QComboBox QLineEdit:disabled {{
-                color: #52525B;
+                color: {_CLR_DISABLED};
             }}
         """)
         self._setup_view(bg, border, hover_color)
