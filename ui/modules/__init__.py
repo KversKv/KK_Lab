@@ -1,3 +1,5 @@
+MODULE_VERSION = "0.0.0"
+
 try:
     from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 except ImportError:

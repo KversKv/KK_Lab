@@ -43,6 +43,7 @@ from PySide6.QtGui import (
 from PySide6.QtSvg import QSvgRenderer
 
 from debug_config import DEBUG_MOCK
+from version import __version__ as _APP_VERSION
 from log_config import get_logger
 from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
 from ui.utils.icon_utils import tinted_svg_pixmap as _tinted_svg_pixmap
@@ -5352,7 +5353,7 @@ class SerialComMixin:
 
     _SC_UNIFIED_FILENAME = "KK_SerialConsole.json"
     _SC_APP_NAMESPACE = "SerialCom"
-    _SC_APP_VERSION = "1.0.0"
+    _SC_APP_VERSION = _APP_VERSION
     _SC_APP_AUTHOR = "KK_Lab Team"
     _SC_DEFAULT_WINDOW_SIZE = (1300, 850)
     _SC_WINDOW_MARGIN = 40
@@ -5494,9 +5495,14 @@ class SerialComMixin:
                 for p in qc_data.get("projects", [])
                 for g in p.get("groups", [])
             )
+        try:
+            from ui.modules.serialCom_module import MODULE_VERSION as module_version
+        except Exception:
+            module_version = "0.0.0"
         return {
             "Application": "KK Serial Console",
             "Version": self._SC_APP_VERSION,
+            "Module version": module_version,
             "Author": self._SC_APP_AUTHOR,
             "Config schema": "2.0",
             "Config file": self._sc_persisted_path(),
@@ -8763,7 +8769,8 @@ class _SerialSettingsDialog(QDialog):
         hero_layout.addWidget(title)
 
         subtitle = QLabel(
-            f"Version {about_info.get('Version', '1.0.0')}  |  "
+            f"App v{about_info.get('Version', '0.0.0')}  |  "
+            f"Module v{about_info.get('Module version', '0.0.0')}  |  "
             f"Author: {about_info.get('Author', 'KK_Lab Team')}"
         )
         subtitle.setObjectName("aboutHeroSub")

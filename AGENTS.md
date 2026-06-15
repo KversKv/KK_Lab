@@ -16,6 +16,7 @@
 6. [docs/ai/04_ARCHITECTURE.md](./docs/ai/04_ARCHITECTURE.md) —— 架构分层
 7. [.trae/rules/project-rules.md](./.trae/rules/project-rules.md) —— TRAE IDE 规则
 8. [.ai/memory.md](./.ai/memory.md) —— 会话沉淀的长期记忆
+9. [docs/ai/10_VERSIONING.md](./docs/ai/10_VERSIONING.md) —— 版本号管理规范
 
 ---
 
@@ -36,6 +37,14 @@ main.py → ui/ ←→ core/ → instruments/ → lib/
 - 日志统一用 `log_config.get_logger(__name__)`，禁止 `print()`。
 - 仪器统一走 `instruments/factory.py` 创建。
 - 新仪器必须同时提供 Mock 实现（`instruments/mock/mock_instruments.py`）。
+
+## 版本号管理（研发初期·与 git 解耦）
+
+- 版本号唯一事实源：[version.py](./version.py)（`__version__` / `__build__` / `APP_NAME`），其它地方一律引用，**禁止写死版本号字符串**。
+- 与 git **完全解耦**：日常 `commit` 不动版本号、不打 tag、不从 git 反推；仅在"标记里程碑 / 对外发包"时手动改 `version.py`。
+- 格式 SemVer，研发期停在 `0.x`；攒功能发包 MINOR +1，急修发包 PATCH +1，日常提交什么都不动。
+- 模块级子版本：`ui/pages/*` 与 `ui/modules/` 各模块 `__init__.py` 内 `MODULE_VERSION`（当前均 `0.0.0`），模块单独迭代时自行 +1，不牵动主版本。
+- 细则见 [docs/ai/10_VERSIONING.md](./docs/ai/10_VERSIONING.md)。
 
 ## 运行 / 打包
 
@@ -66,6 +75,7 @@ python -m PyInstaller spec/n6705c_datalog.spec --clean --noconfirm
 | **排查 Bug / 回归报错** | [03_GOTCHAS](./docs/ai/03_GOTCHAS.md) · [09_WORKFLOW](./docs/ai/09_WORKFLOW.md) · [.ai/memory.md](./.ai/memory.md) | [decisions/](./docs/ai/decisions/) |
 | **重构 / 架构调整 / 分层变动** | [04_ARCHITECTURE](./docs/ai/04_ARCHITECTURE.md) · [00_OVERVIEW](./docs/ai/00_OVERVIEW.md) · [decisions/](./docs/ai/decisions/) | [01_CONVENTIONS](./docs/ai/01_CONVENTIONS.md) |
 | **新增依赖 / 环境配置** | [02_COMMANDS](./docs/ai/02_COMMANDS.md) · [08_CHECKLISTS](./docs/ai/08_CHECKLISTS.md) | — |
+| **版本号 / 发版 / 改版本** | [10_VERSIONING](./docs/ai/10_VERSIONING.md) | [08_CHECKLISTS](./docs/ai/08_CHECKLISTS.md) |
 | **按 SOP 走 / 大任务开工** | [09_WORKFLOW](./docs/ai/09_WORKFLOW.md) · [08_CHECKLISTS](./docs/ai/08_CHECKLISTS.md) | 上述所有 |
 | **纯文档 / 规则维护** | [08_CHECKLISTS §同步矩阵](./docs/ai/08_CHECKLISTS.md) · [.trae/rules/project-rules.md](./.trae/rules/project-rules.md) | — |
 

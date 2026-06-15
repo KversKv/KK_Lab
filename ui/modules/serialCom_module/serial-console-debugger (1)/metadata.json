@@ -1,6 +1,0 @@
-{
-  "name": "Serial Console Debugger",
-  "description": "A web-native Serial Console Debugger supporting multiple split panels, Web Serial API hardware connections, automated scripts execution, and customizable macro buttons.",
-  "requestFramePermissions": ["serial"],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

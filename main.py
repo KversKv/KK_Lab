@@ -22,6 +22,7 @@ from PySide6.QtCore import qInstallMessageHandler, QtMsgType, Qt
 from PySide6.QtGui import QIcon
 from log_config import setup_logging, get_logger
 from debug_config import DEBUG_MOCK
+from version import version_string
 from ui.main_window import MainWindow
 
 setup_logging(level=logging.INFO)
@@ -70,6 +71,7 @@ def custom_message_handler(msg_type, context, message):
 
 def main():
     """主函数"""
+    logger.info("%s starting", version_string())
     logger.debug("Application starting")
     qInstallMessageHandler(custom_message_handler)
     

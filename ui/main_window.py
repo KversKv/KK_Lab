@@ -38,6 +38,7 @@ from ui.instrument_status import InstrumentStatusPanel
 from ui.cleanup_mixin import CleanupMixin
 from ui.standalone import resize_and_center_window
 from log_config import get_logger
+from version import APP_NAME, __version__
 from debug_config import DEBUG_MOCK
 
 logger = get_logger(__name__)
@@ -186,7 +187,7 @@ class MainWindow(CleanupMixin, QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("功耗测试工具")
+        self.setWindowTitle(f"{APP_NAME} v{__version__}")
         resize_and_center_window(self)
 
         self.test_manager = TestManager()
@@ -689,6 +690,37 @@ class MainWindow(CleanupMixin, QMainWindow):
             return self.current_instrument_ui
         return "power_analyser"
 
+    def _current_module_version(self):
+        module_map = {
+            "pmu_test": "ui.pages.pmu_test",
+            "charger_test": "ui.pages.charger_test",
+            "power_analyser": "ui.pages.n6705c_power_analyzer",
+            "datalog": "ui.pages.n6705c_power_analyzer",
+            "oscilloscope": "ui.pages.oscilloscope",
+            "consumption_test": "ui.pages.consumption_test",
+            "custom_test": "ui.pages.custom_test",
+            "chamber": "ui.pages.chamber",
+            "vmin_hunter": "ui.pages.vmin_hunter",
+        }
+        module_path = module_map.get(self.current_instrument_ui)
+        if not module_path:
+            return None
+        try:
+            import importlib
+            mod = importlib.import_module(module_path)
+            return getattr(mod, "MODULE_VERSION", None)
+        except Exception:
+            logger.debug("read MODULE_VERSION failed for %s", module_path, exc_info=True)
+            return None
+
+    def _build_help_version_footer(self):
+        module_version = self._current_module_version()
+        module_part = f"  |  模块版本 v{module_version}" if module_version else ""
+        return (
+            "<hr style='border:none;border-top:1px solid #2a3656;margin-top:18px;'>"
+            f"<p style='color:#7b88a8;font-size:12px;'>{APP_NAME} v{__version__}{module_part}</p>"
+        )
+
     def _on_help(self):
         help_key = self._get_current_help_key()
         helps_dir = os.path.join(get_resource_base(), "helps")
@@ -699,6 +731,8 @@ class MainWindow(CleanupMixin, QMainWindow):
                 content = f.read()
         else:
             content = "<h2>帮助</h2><p>当前页面暂无帮助文档。</p>"
+
+        content += self._build_help_version_footer()
 
         dialog = QDialog(self)
         dialog.setWindowTitle("帮助")
