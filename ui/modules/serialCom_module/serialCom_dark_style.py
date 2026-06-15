@@ -15,65 +15,65 @@ _SERIAL_BTN_RADIUS = 6
 _TERM_FONT = '"JetBrains Mono", "Fira Code", Consolas, "Menlo", "Courier New", monospace'
 _UI_FONT = '"Inter", "PingFang SC", "Microsoft YaHei", "Segoe UI", -apple-system, sans-serif'
 
-_CLR_BG_MAIN = "#09090B"
-_CLR_BG_PANEL = "#09090B"
-_CLR_BG_CARD = "#121214"
-_CLR_BG_LOG = "#0D0E11"
-_CLR_BORDER = "#222225"
-_CLR_BORDER_HOVER = "#3F3F46"
-_CLR_TEXT_TITLE = "#F4F4F5"
-_CLR_TEXT_ACCENT = "#FF9F0A"
-_CLR_TEXT_SUBTITLE = "#409EFF"
-_CLR_TEXT_LABEL = "#A1A1AA"
-_CLR_TEXT_BTN = "#409EFF"
-_CLR_TEXT_BTN_LOG = "#E5E5EA"
-_CLR_TEXT_BODY = "#E5E5EA"
-_CLR_TEXT_TIME = "#71717A"
-_CLR_TEXT_LINENO = "#52525B"
-_CLR_TEXT_INFO = "#409EFF"
-_CLR_INPUT_BG = "#0D0E11"
-_CLR_INPUT_TEXT = "#F4F4F5"
-_CLR_CURSOR = "#409EFF"
+_CLR_BG_MAIN = "#020617"
+_CLR_BG_PANEL = "#020617"
+_CLR_BG_CARD = "#0F172A"
+_CLR_BG_LOG = "#020617"
+_CLR_BORDER = "#1E293B"
+_CLR_BORDER_HOVER = "#334155"
+_CLR_TEXT_TITLE = "#E2E8F0"
+_CLR_TEXT_ACCENT = "#FBBF24"
+_CLR_TEXT_SUBTITLE = "#60A5FA"
+_CLR_TEXT_LABEL = "#94A3B8"
+_CLR_TEXT_BTN = "#60A5FA"
+_CLR_TEXT_BTN_LOG = "#CBD5E1"
+_CLR_TEXT_BODY = "#CBD5E1"
+_CLR_TEXT_TIME = "#64748B"
+_CLR_TEXT_LINENO = "#475569"
+_CLR_TEXT_INFO = "#06B6D4"
+_CLR_INPUT_BG = "#020617"
+_CLR_INPUT_TEXT = "#E2E8F0"
+_CLR_CURSOR = "#60A5FA"
 _CLR_SELECTION_BG = "#1E3A5F"
-_CLR_SELECTION_TEXT = "#F4F4F5"
-_CLR_SCROLLBAR = "#3F3F46"
-_CLR_SCROLLBAR_HV = "#52525B"
-_CLR_CONNECT_FG = "#007AFF"
-_CLR_CONNECT_BG = "#E8F8EE"
-_CLR_SEND_BG = "#0A84FF"
-_CLR_SEND_HOVER = "#409EFF"
-_CLR_SEND_PRESS = "#0066CC"
-_CLR_WARNING = "#FF9F0A"
-_CLR_ERROR = "#FF453A"
-_CLR_RX = "#E5E5EA"
-_CLR_TX = "#409EFF"
+_CLR_SELECTION_TEXT = "#E2E8F0"
+_CLR_SCROLLBAR = "#334155"
+_CLR_SCROLLBAR_HV = "#475569"
+_CLR_CONNECT_FG = "#3B82F6"
+_CLR_CONNECT_BG = "#10291F"
+_CLR_SEND_BG = "#2563EB"
+_CLR_SEND_HOVER = "#3B82F6"
+_CLR_SEND_PRESS = "#1D4ED8"
+_CLR_WARNING = "#FBBF24"
+_CLR_ERROR = "#F87171"
+_CLR_RX = "#CBD5E1"
+_CLR_TX = "#60A5FA"
 _CLR_FILTER_TEXT = "#A78BFA"
 _CLR_FILTER_BG = "#1E1B2E"
-_CLR_FILTER_BORDER = "#409EFF"
-_CLR_TOGGLE_ON = "#007AFF"
+_CLR_FILTER_BORDER = "#3B82F6"
+_CLR_TOGGLE_ON = "#2563EB"
 
-_CLR_TEXT_MUTED = "#A1A1AA"
+_CLR_TEXT_MUTED = "#94A3B8"
 _CLR_TEXT_WHITE = "#FFFFFF"
-_CLR_TEXT_SOFT = "#E5E5EA"
-_CLR_TEXT_TAB = "#F4F4F5"
-_CLR_DISABLED = "#52525B"
-_CLR_BORDER_SOFT = "#2C2C2E"
-_CLR_BORDER_ACTIVE = "#007AFF"
-_CLR_BLUE = "#0A84FF"
-_CLR_BLUE_HOVER = "#409EFF"
-_CLR_BLUE_PRESS = "#0066CC"
+_CLR_TEXT_SOFT = "#CBD5E1"
+_CLR_TEXT_TAB = "#E2E8F0"
+_CLR_DISABLED = "#475569"
+_CLR_BORDER_SOFT = "#243044"
+_CLR_BORDER_ACTIVE = "#3B82F6"
+_CLR_BLUE = "#2563EB"
+_CLR_BLUE_HOVER = "#3B82F6"
+_CLR_BLUE_PRESS = "#1D4ED8"
 _CLR_BLUE_LIGHT = "#60A5FA"
-_CLR_GREEN_OK = "#30D158"
-_CLR_GREEN_OK_HOVER = "#28BD4F"
-_CLR_ROSE_ICON = "#FF453A"
-_CLR_WARN_ICON = "#FF9F0A"
-_CLR_CONNECT_TEXT = "#248A3D"
-_CLR_CONNECT_HOVER = "#DDF7E6"
-_CLR_CONNECT_PRESS = "#CDEFD9"
-_CLR_DISCONNECT_BG = "#FFECEA"
-_CLR_DISCONNECT_HOVER = "#FFDAD6"
-_CLR_DISCONNECT_PRESS = "#FFC8C2"
-_CLR_DISCONNECT_TEXT = "#D70015"
+_CLR_GREEN_OK = "#10B981"
+_CLR_GREEN_OK_HOVER = "#059669"
+_CLR_ROSE_ICON = "#F87171"
+_CLR_WARN_ICON = "#FBBF24"
+_CLR_CONNECT_TEXT = "#34D399"
+_CLR_CONNECT_HOVER = "#15311F"
+_CLR_CONNECT_PRESS = "#0E2618"
+_CLR_DISCONNECT_BG = "#2A1418"
+_CLR_DISCONNECT_HOVER = "#3A1A1F"
+_CLR_DISCONNECT_PRESS = "#451A20"
+_CLR_DISCONNECT_TEXT = "#FB7185"
 
 _DLG_CHK_SVG = os.path.join(
     get_resource_base(), "resources", "modules", "SVG_Serial", "checkmark.svg"
@@ -95,7 +95,7 @@ def _serial_search_style(h=_SERIAL_BTN_HEIGHT, r=_SERIAL_BTN_RADIUS):
         QPushButton:hover {{
             border: 1px solid {_CLR_BORDER_SOFT};
             color: {_CLR_TEXT_BTN_LOG};
-            background-color: #1E1E24;
+            background-color: #1E293B;
         }}
         QPushButton:pressed {{
             background-color: {_CLR_BG_CARD};
@@ -112,7 +112,7 @@ def _serial_connect_style(h=_SERIAL_BTN_HEIGHT, r=_SERIAL_BTN_RADIUS):
     return f"""
         QPushButton {{
             background-color: {_CLR_CONNECT_BG};
-            border: none;
+            border: 1px solid rgba(16, 185, 129, 0.20);
             border-radius: {r}px;
             color: {_CLR_CONNECT_TEXT};
             font-family: {_UI_FONT};
@@ -139,7 +139,7 @@ def _serial_disconnect_style(h=_SERIAL_BTN_HEIGHT, r=_SERIAL_BTN_RADIUS):
     return f"""
         QPushButton {{
             background-color: {_CLR_DISCONNECT_BG};
-            border: none;
+            border: 1px solid rgba(244, 63, 94, 0.20);
             border-radius: {r}px;
             color: {_CLR_DISCONNECT_TEXT};
             font-family: {_UI_FONT};
@@ -183,7 +183,7 @@ def body_splitter_style():
     return f"""
             QSplitter {{ background-color: {_CLR_BG_MAIN}; }}
             QSplitter::handle {{ background-color: {_CLR_BG_MAIN}; border: none; }}
-            QSplitter::handle:hover {{ background-color: #1E1E24; }}
+            QSplitter::handle:hover {{ background-color: #1E293B; }}
         """
 
 
@@ -224,7 +224,7 @@ def main_connect_button_style(connected=False):
                 QPushButton {{
                     min-height: 0px; max-height: 30px; padding: 4px 10px; border-radius: 6px;
                     background-color: {_CLR_DISCONNECT_BG}; color: {_CLR_DISCONNECT_TEXT}; font-size: 12px;
-                    font-family: {_UI_FONT}; font-weight: 700; border: none;
+                    font-family: {_UI_FONT}; font-weight: 700; border: 1px solid rgba(244, 63, 94, 0.20);
                 }}
                 QPushButton:hover {{ background-color: {_CLR_DISCONNECT_HOVER}; }}
                 QPushButton:focus {{ border: 1px solid {_CLR_FILTER_BORDER}; }}
@@ -234,7 +234,7 @@ def main_connect_button_style(connected=False):
             QPushButton {{
                 min-height: 0px; max-height: 30px; padding: 4px 10px; border-radius: 6px;
                 background-color: {_CLR_CONNECT_BG}; color: {_CLR_CONNECT_TEXT}; font-size: 12px;
-                font-family: {_UI_FONT}; font-weight: 700; border: none;
+                font-family: {_UI_FONT}; font-weight: 700; border: 1px solid rgba(16, 185, 129, 0.20);
             }}
             QPushButton:hover {{ background-color: {_CLR_CONNECT_HOVER}; }}
             QPushButton:focus {{ border: 1px solid {_CLR_FILTER_BORDER}; }}
@@ -247,7 +247,7 @@ def toolbar_connect_button_style():
             QPushButton {{
                 min-height: 0px; max-height: 30px; padding: 4px 14px; border-radius: 6px;
                 background-color: {_CLR_CONNECT_BG}; color: {_CLR_CONNECT_TEXT}; font-size: 12px;
-                font-family: {_UI_FONT}; font-weight: 700; border: none;
+                font-family: {_UI_FONT}; font-weight: 700; border: 1px solid rgba(16, 185, 129, 0.20);
             }}
             QPushButton:hover {{ background-color: {_CLR_CONNECT_HOVER}; }}
             QPushButton:pressed {{ background-color: {_CLR_CONNECT_PRESS}; }}
@@ -321,7 +321,7 @@ def thin_scrollbar_style():
 def compact_spinbox_style(up_button_width=10, padding="1px 2px"):
     return f"""
             QSpinBox {{
-                background-color: {_CLR_INPUT_BG}; border: 1px solid #222225; border-radius: 4px;
+                background-color: {_CLR_INPUT_BG}; border: 1px solid #1E293B; border-radius: 4px;
                 color: {_CLR_TEXT_BTN_LOG}; font-size: 12px; font-family: {_UI_FONT}; padding: {padding};
             }}
             QSpinBox:focus {{ border: 1px solid {_CLR_CONNECT_FG}; }}
@@ -365,19 +365,19 @@ def log_toolbar_button_style(checked_variant=False, max_height=28, padding="5px 
                 background-color: #1E3A8A; color: #93C5FD; border: 1px solid #2563EB;
             }}
             QPushButton:checked:pressed {{
-                background-color: #14254D; color: #60A5FA; border: 1px solid #2563EB;
+                background-color: #172554; color: #60A5FA; border: 1px solid #2563EB;
             }}
         """
     else:
         checked_qss = f"""
             QPushButton:checked {{ background-color: {_CLR_BORDER}; color: {_CLR_TEXT_WHITE}; border: 1px solid {_CLR_BORDER_HOVER}; }}
-            QPushButton:checked:hover {{ background-color: #2C2C2E; color: {_CLR_TEXT_WHITE}; border: 1px solid {_CLR_FILTER_BORDER}; }}
+            QPushButton:checked:hover {{ background-color: #334155; color: {_CLR_TEXT_WHITE}; border: 1px solid {_CLR_FILTER_BORDER}; }}
             QPushButton:checked:pressed {{ background-color: {_CLR_BG_PANEL}; color: {_CLR_TEXT_WHITE}; border: 1px solid {_CLR_FILTER_BORDER}; }}
         """
     return f"""
                 QPushButton {{
                     min-height: 0px; max-height: {max_height}px; padding: {padding}; border-radius: {radius}px;
-                    background-color: #181C20; color: {_CLR_TEXT_BTN_LOG}; font-size: 12px;
+                    background-color: #0F172A; color: {_CLR_TEXT_BTN_LOG}; font-size: 12px;
                     font-family: {_UI_FONT}; font-weight: 500; border: 1px solid {_CLR_BORDER_SOFT};
                 }}
                 QPushButton:focus {{ outline: none; }}
@@ -396,9 +396,9 @@ def log_icon_button_style(checked_variant="none", padding="7px"):
         """
     elif checked_variant == "green":
         checked_qss = f"""
-            QPushButton:checked {{ background-color: #0E2A1A; color: #30D158; border: none; }}
-            QPushButton:checked:hover {{ background-color: #123B23; color: #34C759; border: none; }}
-            QPushButton:checked:pressed {{ background-color: #0B1F13; color: #248A3D; border: none; }}
+            QPushButton:checked {{ background-color: #10291F; color: #34D399; border: none; }}
+            QPushButton:checked:hover {{ background-color: #15311F; color: #6EE7B7; border: none; }}
+            QPushButton:checked:pressed {{ background-color: #0E2618; color: #10B981; border: none; }}
         """
     else:
         checked_qss = ""
@@ -418,7 +418,7 @@ def log_icon_button_style(checked_variant="none", padding="7px"):
 def filter_input_style():
     return f"""
             QLineEdit {{
-                background-color: {_CLR_INPUT_BG}; border: 1px solid #222225; border-radius: 5px;
+                background-color: {_CLR_INPUT_BG}; border: 1px solid #1E293B; border-radius: 5px;
                 color: {_CLR_INPUT_TEXT}; font-size: 12px; font-family: {_UI_FONT}; padding: 4px 8px; min-height: 26px; max-height: 26px;
                 selection-background-color: {_CLR_SELECTION_BG}; selection-color: {_CLR_SELECTION_TEXT};
             }}
@@ -470,7 +470,7 @@ def transparent_toolbar_button_style():
             QPushButton:pressed {{ background-color: {_CLR_BG_CARD}; }}
             QPushButton:checked {{ background-color: #172554; color: #60A5FA; border: 1px solid #1E3A8A; font-weight: 600; }}
             QPushButton:checked:hover {{ background-color: #1E3A8A; color: #93C5FD; border: 1px solid #2563EB; }}
-            QPushButton:checked:pressed {{ background-color: #14254D; color: #60A5FA; border: 1px solid #2563EB; }}
+            QPushButton:checked:pressed {{ background-color: #172554; color: #60A5FA; border: 1px solid #2563EB; }}
         """
 
 
@@ -486,7 +486,7 @@ def sidebar_toggle_button_style():
             QPushButton:pressed {{ background-color: {_CLR_BG_CARD}; }}
             QPushButton:checked {{ background-color: #172554; color: #60A5FA; border: none; font-weight: 600; }}
             QPushButton:checked:hover {{ background-color: #1E3A8A; color: #93C5FD; border: none; }}
-            QPushButton:checked:pressed {{ background-color: #14254D; color: #60A5FA; border: none; }}
+            QPushButton:checked:pressed {{ background-color: #172554; color: #60A5FA; border: none; }}
         """
 
 
@@ -494,7 +494,7 @@ def auto_scroll_button_style(padding="5px 11px"):
     return f"""
             QPushButton {{
                 min-height: 0px; max-height: 28px; padding: {padding}; border-radius: 7px;
-                background-color: #181C20; color: {_CLR_TEXT_BTN_LOG}; font-size: 12px;
+                background-color: #0F172A; color: {_CLR_TEXT_BTN_LOG}; font-size: 12px;
                 font-family: {_UI_FONT}; font-weight: 500; border: 1px solid {_CLR_BORDER_SOFT};
             }}
             QPushButton:focus {{ outline: none; }}
@@ -502,7 +502,7 @@ def auto_scroll_button_style(padding="5px 11px"):
             QPushButton:pressed {{ background-color: {_CLR_BG_PANEL}; color: {_CLR_TEXT_WHITE}; border: 1px solid {_CLR_FILTER_BORDER}; }}
             QPushButton:checked {{ background-color: #172554; color: #60A5FA; border: none; font-weight: 600; }}
             QPushButton:checked:hover {{ background-color: #1E3A8A; color: #93C5FD; border: none; }}
-            QPushButton:checked:pressed {{ background-color: #14254D; color: #60A5FA; border: none; }}
+            QPushButton:checked:pressed {{ background-color: #172554; color: #60A5FA; border: none; }}
         """
 
 
@@ -566,7 +566,7 @@ def quick_commands_panel_style():
                 border-color: {_CLR_DISABLED};
             }}
             QFrame#quickCommandsPanel QPushButton:disabled {{
-                background-color: #181C20;
+                background-color: #0F172A;
                 color: {_CLR_DISABLED};
                 border-color: {_CLR_BORDER};
             }}
@@ -583,7 +583,7 @@ def quick_commands_panel_style():
                 background-color: {_CLR_BLUE_PRESS};
             }}
             QFrame#quickCommandsPanel QPushButton#quickCommandButton {{
-                background-color: #1C1C1E;
+                background-color: #0F172A;
                 color: {_CLR_TEXT_SOFT};
                 border: 1px solid {_CLR_BORDER_SOFT};
                 border-radius: 5px;
@@ -592,7 +592,7 @@ def quick_commands_panel_style():
                 min-width: 34px;
             }}
             QFrame#quickCommandsPanel QPushButton#quickCommandButton:hover {{
-                background-color: #2C2C2E;
+                background-color: #334155;
                 border-color: {_CLR_BORDER_ACTIVE};
                 color: {_CLR_TEXT_WHITE};
             }}
@@ -712,7 +712,7 @@ def quick_combo_style():
             QComboBox {{
                 background-color: {_CLR_INPUT_BG};
                 color: {_CLR_TEXT_SOFT};
-                border: 1px solid #222225;
+                border: 1px solid #1E293B;
                 border-radius: 5px;
                 padding: 2px 6px;
                 min-height: 18px;
@@ -739,9 +739,9 @@ def quick_toolbar_button_style(max_height=None, padding="3px 8px", radius=5, min
     return f"""
             QPushButton {{
                 min-height: {min_height}px;{max_height_qss}
-                background-color: #181C20;
+                background-color: #0F172A;
                 color: {_CLR_TEXT_SOFT};
-                border: 1px solid #222225;
+                border: 1px solid #1E293B;
                 border-radius: {radius}px;
                 padding: {padding};
                 font-size: 11px;
@@ -768,7 +768,7 @@ def quick_toolbar_button_style(max_height=None, padding="3px 8px", radius=5, min
                 border: 1px solid {_CLR_BORDER_HOVER};
             }}
             QPushButton:disabled {{
-                background-color: #181C20;
+                background-color: #0F172A;
                 color: {_CLR_DISABLED};
                 border-color: {_CLR_BORDER};
             }}
@@ -779,9 +779,9 @@ def quick_group_button_style():
     return f"""
             QPushButton {{
                 min-height: 18px;
-                background-color: #181C20;
+                background-color: #0F172A;
                 color: {_CLR_BLUE};
-                border: 1px solid #222225;
+                border: 1px solid #1E293B;
                 border-radius: 5px;
                 padding: 3px 8px;
                 font-size: 11px;
@@ -798,7 +798,7 @@ def quick_group_button_style():
                 border-color: {_CLR_DISABLED};
             }}
             QPushButton:disabled {{
-                background-color: #181C20;
+                background-color: #0F172A;
                 color: {_CLR_DISABLED};
                 border-color: {_CLR_BORDER};
             }}
@@ -860,7 +860,7 @@ def script_stop_button_style():
 def script_add_step_button_style():
     return f"""
             QPushButton#scAddStepBtn {{
-                background-color: #1C1C1F;
+                background-color: #0F172A;
                 color: {_CLR_TEXT_MUTED};
                 border: 1px dashed {_CLR_BORDER};
                 border-radius: 10px;
@@ -907,7 +907,7 @@ def status_bar_style():
 
 def status_label_style(kind="muted", include_font=False, compact=False):
     colors = {
-        "ok": "#30D158",
+        "ok": "#34D399",
         "connected": _CLR_CONNECT_TEXT,
         "error": _CLR_DISCONNECT_TEXT,
         "warn": _CLR_WARNING,
@@ -992,7 +992,7 @@ def toggle_colors():
 def dialog_line_edit_style(size=13, min_height=26, padding="5px 8px"):
     return f"""
             QLineEdit {{
-                background-color: {_CLR_INPUT_BG}; border: 1px solid #222225; border-radius: 5px;
+                background-color: {_CLR_INPUT_BG}; border: 1px solid #1E293B; border-radius: 5px;
                 color: {_CLR_TEXT_BTN_LOG}; font-size: {size}px; font-family: {_UI_FONT}; padding: {padding}; min-height: {min_height}px;
             }}
             QLineEdit:focus {{ border: 1px solid {_CLR_CONNECT_FG}; }}
@@ -1015,8 +1015,8 @@ def quick_preview_popup_style():
                 border: none;
             }}
             QFrame#quickCmdPreviewPopup {{
-                background-color: #161618;
-                border: 1px solid #2A2A30;
+                background-color: #0F172A;
+                border: 1px solid #1E293B;
                 border-radius: 9px;
             }}
             QLabel#quickCmdPreviewBadge {{
@@ -1037,8 +1037,8 @@ def quick_preview_popup_style():
             }}
             QLabel#quickCmdPreviewContent {{
                 color: {_CLR_INPUT_TEXT};
-                background-color: #0D0E11;
-                border: 1px solid #222225;
+                background-color: #020617;
+                border: 1px solid #1E293B;
                 border-radius: 6px;
                 padding: 7px 8px;
                 font-family: {_TERM_FONT};
@@ -1057,7 +1057,7 @@ def quick_preview_popup_style():
 def quick_command_button_style():
     return f"""
                 QPushButton {{
-                    background-color: #1C1C1E;
+                    background-color: #0F172A;
                     color: {_CLR_TEXT_SOFT};
                     border: 1px solid {_CLR_BORDER_SOFT};
                     border-radius: 10px;
@@ -1069,12 +1069,12 @@ def quick_command_button_style():
                     font-family: {_UI_FONT};
                 }}
                 QPushButton:hover {{
-                    background-color: #2C2C2E;
+                    background-color: #334155;
                     border-color: {_CLR_BORDER_HOVER};
                     color: {_CLR_BLUE_HOVER};
                 }}
                 QPushButton:focus {{
-                    background-color: #2C2C2E;
+                    background-color: #334155;
                     border-color: {_CLR_BORDER_HOVER};
                     color: {_CLR_BLUE_HOVER};
                 }}
@@ -1126,13 +1126,13 @@ def quick_cmd_dialog_style():
                 color: {_CLR_TEXT_TITLE}; font-size: 15px; font-weight: 700; font-family: {_UI_FONT}; background: transparent;
             }}
             QLineEdit {{
-                background-color: {_CLR_INPUT_BG}; border: 1px solid #222225; border-radius: 8px;
+                background-color: {_CLR_INPUT_BG}; border: 1px solid #1E293B; border-radius: 8px;
                 color: {_CLR_TEXT_BODY}; font-size: 13px; font-family: {_UI_FONT}; padding: 6px 10px; min-height: 26px;
             }}
             QLineEdit:hover {{ border-color: {_CLR_BORDER_HOVER}; }}
             QLineEdit:focus {{ border: 1px solid {_CLR_BORDER_ACTIVE}; }}
             QComboBox {{
-                background-color: {_CLR_INPUT_BG}; border: 1px solid #222225; border-radius: 8px;
+                background-color: {_CLR_INPUT_BG}; border: 1px solid #1E293B; border-radius: 8px;
                 color: {_CLR_TEXT_BODY}; font-size: 13px; font-family: {_UI_FONT}; padding: 5px 10px; min-height: 26px;
             }}
             QComboBox:hover {{ border-color: {_CLR_BORDER_HOVER}; }}
@@ -1214,18 +1214,18 @@ _DLG_STYLE = f"""
         image: url({_DLG_CHK_SVG});
     }}
     QSpinBox {{
-        background-color: {_CLR_INPUT_BG}; border: 1px solid #222225; border-radius: 4px;
+        background-color: {_CLR_INPUT_BG}; border: 1px solid #1E293B; border-radius: 4px;
         color: {_CLR_TEXT_BTN_LOG}; font-size: 12px; font-family: {_UI_FONT}; padding: 2px 6px;
     }}
     QSpinBox:focus {{ border: 1px solid {_CLR_CONNECT_FG}; }}
     QSpinBox::up-button, QSpinBox::down-button {{ width: 12px; }}
     QLineEdit {{
-        background-color: {_CLR_INPUT_BG}; border: 1px solid #222225; border-radius: 4px;
+        background-color: {_CLR_INPUT_BG}; border: 1px solid #1E293B; border-radius: 4px;
         color: {_CLR_TEXT_BTN_LOG}; font-size: 12px; font-family: {_UI_FONT}; padding: 5px 8px; min-height: 24px;
     }}
     QLineEdit:focus {{ border: 1px solid {_CLR_CONNECT_FG}; }}
     QComboBox {{
-        background-color: {_CLR_INPUT_BG}; border: 1px solid #222225; border-radius: 4px;
+        background-color: {_CLR_INPUT_BG}; border: 1px solid #1E293B; border-radius: 4px;
         color: {_CLR_TEXT_BTN_LOG}; font-size: 12px; font-family: {_UI_FONT}; padding: 3px 8px; min-height: 24px;
     }}
     QComboBox:hover {{ border-color: {_CLR_BORDER_SOFT}; }}
@@ -1338,7 +1338,7 @@ _DLG_STYLE = f"""
 
 DARK_CARD_STYLE = f"""
     QWidget {{
-        background-color: #09090B;
+        background-color: #020617;
         color: #E5E5EA;
     }}
     QLabel {{
@@ -1362,14 +1362,14 @@ DARK_CARD_STYLE = f"""
         background-color: transparent;
     }}
     QFrame#cardFrame {{
-        background-color: #121214;
-        border: 1px solid #222225;
+        background-color: #0F172A;
+        border: 1px solid #1E293B;
         border-radius: 4px;
     }}
     QComboBox {{
-        background-color: #0D0E11;
+        background-color: #020617;
         color: #E5E5EA;
-        border: 1px solid #2A2A30;
+        border: 1px solid #1E293B;
         border-radius: 4px;
         padding: 4px 8px;
     }}
@@ -1379,10 +1379,10 @@ DARK_CARD_STYLE = f"""
         background: transparent;
     }}
     QComboBox QAbstractItemView {{
-        background-color: #0D0E11;
+        background-color: #020617;
         color: #E5E5EA;
-        border: 1px solid #2A2A30;
-        selection-background-color: #2C2C2E;
+        border: 1px solid #1E293B;
+        selection-background-color: #334155;
     }}
 """
 
@@ -1677,7 +1677,7 @@ _HISTORY_COMBO_FIELD_QCOLOR = QColor(13, 14, 17, 163)
 def history_combo_style():
     return f"""
             QComboBox {{
-                background-color: {_CLR_HISTORY_COMBO_BG}; border: 1px solid #222225; border-radius: 6px;
+                background-color: {_CLR_HISTORY_COMBO_BG}; border: 1px solid #1E293B; border-radius: 6px;
                 color: {_CLR_INPUT_TEXT}; font-size: 13px; font-family: {_TERM_FONT};
                 padding: 3px 28px 3px 10px;
                 selection-background-color: {_CLR_SELECTION_BG};
