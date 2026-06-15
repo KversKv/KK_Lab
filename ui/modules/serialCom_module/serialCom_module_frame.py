@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
     QFrame, QWidget, QTextEdit, QLineEdit, QComboBox, QCheckBox,
     QScrollArea, QSplitter, QApplication, QMenu, QFileDialog, QGridLayout,
     QSpinBox, QDialog, QDialogButtonBox, QTabWidget,
-    QMessageBox, QTabBar, QGraphicsDropShadowEffect,
+    QMessageBox, QTabBar, QGraphicsDropShadowEffect, QGraphicsBlurEffect,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
     QPlainTextEdit, QTreeWidget, QTreeWidgetItem, QToolButton,
 )
@@ -65,7 +65,7 @@ def _select_serialcom_style_module():
 _SERIALCOM_STYLE_EXPORTS = (
     "DARK_CARD_STYLE", "_CLR_BG_CARD", "_CLR_BG_LOG", "_CLR_BG_MAIN", "_CLR_BG_PANEL",
     "_CLR_BLUE",
-    "_CLR_BORDER", "_CLR_BORDER_HOVER", "_CLR_CONNECT_BG", "_CLR_CONNECT_FG",
+    "_CLR_BORDER", "_CLR_BORDER_HOVER", "_CLR_BORDER_SOFT", "_CLR_CONNECT_BG", "_CLR_CONNECT_FG",
     "_CLR_CONNECT_TEXT", "_CLR_CURSOR", "_CLR_DISCONNECT_TEXT", "_CLR_ERROR",
     "_CLR_FILTER_BG", "_CLR_FILTER_BORDER", "_CLR_FILTER_TEXT", "_CLR_INPUT_BG",
     "_CLR_INPUT_TEXT", "_CLR_ROSE_ICON", "_CLR_RX", "_CLR_SCROLLBAR",
@@ -78,7 +78,8 @@ _SERIALCOM_STYLE_EXPORTS = (
     "_TERM_FONT", "_UI_FONT", "_serial_connect_style", "_serial_disconnect_style",
     "_serial_search_style", "body_splitter_style", "center_vsplitter_style",
     "center_widget_style",
-    "checkbox_style", "compact_spinbox_style", "dialog_cancel_button_style",
+    "checkbox_style", "compact_spinbox_style", "dialog_backdrop_style",
+    "frameless_chrome_style", "script_editor_dialog_style", "dialog_cancel_button_style",
     "dialog_line_edit_style", "dialog_ok_button_style", "extra_log_error_color",
     "field_label_style", "filter_input_style", "filter_match_label_style",
     "history_combo_style", "inline_serial_label_style",
@@ -248,7 +249,146 @@ MODE_FULL = "full"
 MODE_INLINE = "inline"
 
 
-class _MixinSerialSettingsDialog(QDialog):
+class _FramelessChromeDialog(QDialog):
+    """统一的无边框圆角对话框基类。
+
+    提供：自绘标题栏（图标 + 标题 + 关闭按钮）、圆角容器、柔和投影、
+    标题栏拖动、以及弹出时主窗口模糊遮罩。子类把内容控件加入
+    ``self._content`` 布局，并用 ``self._apply_content_style(qss)``
+    合并自身样式表。
+    """
+
+    def __init__(self, parent=None, title="", icon_name="edit.svg"):
+        super().__init__(parent)
+        self.setObjectName("scChromeDialog")
+        self.setWindowFlag(Qt.FramelessWindowHint, True)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setModal(True)
+        self._drag_pos = None
+        self._backdrop = None
+        self._blur_effect = None
+        self._content_qss = ""
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(54, 50, 54, 62)
+        outer.setSpacing(0)
+
+        container = QFrame()
+        container.setObjectName("scEditorContainer")
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(48)
+        shadow.setOffset(0, 8)
+        shadow.setColor(QColor(15, 23, 42, 50))
+        container.setGraphicsEffect(shadow)
+        outer.addWidget(container)
+
+        shell = QVBoxLayout(container)
+        shell.setContentsMargins(0, 0, 0, 0)
+        shell.setSpacing(0)
+
+        header = QFrame()
+        header.setObjectName("scEditorHeader")
+        header.installEventFilter(self)
+        self._header = header
+        header_row = QHBoxLayout(header)
+        header_row.setContentsMargins(24, 16, 20, 16)
+        header_row.setSpacing(10)
+        title_icon = QLabel()
+        _ico = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, icon_name), _CLR_SEND_BG, 18)
+        if not _ico.isNull():
+            title_icon.setPixmap(_ico.pixmap(18, 18))
+        header_row.addWidget(title_icon)
+        title_lbl = QLabel(title)
+        title_lbl.setObjectName("scEditorTitle")
+        self._title_lbl = title_lbl
+        header_row.addWidget(title_lbl)
+        header_row.addStretch()
+        close_btn = QPushButton("\u2715")
+        close_btn.setObjectName("scEditorClose")
+        close_btn.setCursor(Qt.PointingHandCursor)
+        close_btn.setFixedSize(28, 28)
+        close_btn.setAutoDefault(False)
+        close_btn.setDefault(False)
+        close_btn.clicked.connect(self.reject)
+        header_row.addWidget(close_btn)
+        shell.addWidget(header)
+
+        body_host = QFrame()
+        body_host.setObjectName("scChromeBody")
+        self._content = QVBoxLayout(body_host)
+        self._content.setContentsMargins(24, 20, 24, 22)
+        self._content.setSpacing(12)
+        shell.addWidget(body_host, 1)
+
+        self.setStyleSheet(self._chrome_qss())
+
+    def set_title(self, text):
+        self._title_lbl.setText(text)
+
+    def _apply_content_style(self, qss):
+        self._content_qss = qss or ""
+        self.setStyleSheet(self._chrome_qss() + self._content_qss)
+
+    def _chrome_qss(self):
+        return frameless_chrome_style()
+
+    def eventFilter(self, obj, event):
+        from PySide6.QtCore import QEvent  # 局部引入，避免顶部冗余导入
+        if obj is getattr(self, "_header", None):
+            et = event.type()
+            if et == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
+                self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+                return True
+            if et == QEvent.MouseMove and self._drag_pos is not None and (event.buttons() & Qt.LeftButton):
+                self.move(event.globalPosition().toPoint() - self._drag_pos)
+                return True
+            if et == QEvent.MouseButtonRelease:
+                self._drag_pos = None
+        return super().eventFilter(obj, event)
+
+    def _target_window(self):
+        parent = self.parent()
+        if parent is None:
+            return None
+        return parent.window()
+
+    def _install_backdrop(self):
+        win = self._target_window()
+        if win is None:
+            return
+        try:
+            blur = QGraphicsBlurEffect(win)
+            blur.setBlurRadius(9)
+            win.setGraphicsEffect(blur)
+            self._blur_effect = blur
+        except Exception:
+            self._blur_effect = None
+        backdrop = QWidget(win)
+        backdrop.setObjectName("scEditorBackdrop")
+        backdrop.setStyleSheet(dialog_backdrop_style())
+        backdrop.setGeometry(win.rect())
+        backdrop.show()
+        backdrop.raise_()
+        self._backdrop = backdrop
+
+    def _remove_backdrop(self):
+        if self._backdrop is not None:
+            self._backdrop.deleteLater()
+            self._backdrop = None
+        win = self._target_window()
+        if win is not None:
+            win.setGraphicsEffect(None)
+        self._blur_effect = None
+
+    def exec(self):
+        self._install_backdrop()
+        try:
+            return super().exec()
+        finally:
+            self._remove_backdrop()
+
+
+class _MixinSerialSettingsDialog(_FramelessChromeDialog):
     """SerialComMixin 用的轻量串口参数设置对话框
     （波特率/数据位/停止位/校验/流控）。
 
@@ -286,22 +426,20 @@ class _MixinSerialSettingsDialog(QDialog):
                  xonxoff=False,
                  rtscts=False,
                  connected=False):
-        super().__init__(parent)
-        self.setWindowTitle("Serial Port Settings")
-        self.setModal(True)
+        super().__init__(parent, title="SERIAL PORT SETTINGS", icon_name="settings.svg")
         try:
-            self.setStyleSheet(_DLG_STYLE)
+            self._apply_content_style(_DLG_STYLE)
         except Exception:
             pass
 
         form = QGridLayout()
         form.setHorizontalSpacing(10)
         form.setVerticalSpacing(8)
-        form.setContentsMargins(14, 12, 14, 12)
+        form.setContentsMargins(0, 0, 0, 4)
 
         def _label(text):
             lab = QLabel(text)
-            lab.setStyleSheet("color:#cfd9ec;font-size:12px;background:transparent;border:none;")
+            lab.setStyleSheet(f"color:{_CLR_TEXT_BTN_LOG};font-size:12px;background:transparent;border:none;")
             return lab
 
         self._baud_combo = QComboBox()
@@ -333,14 +471,6 @@ class _MixinSerialSettingsDialog(QDialog):
         for combo in (self._baud_combo, self._bytesize_combo, self._stopbits_combo,
                       self._parity_combo, self._flow_combo):
             combo.setMinimumWidth(180)
-            combo.setStyleSheet(
-                "QComboBox{background:#091426;color:#e9eef7;border:1px solid #2b466f;"
-                "border-radius:4px;padding:3px 6px;min-height:22px;}"
-                "QComboBox:hover{border-color:#3a5a8a;}"
-                "QComboBox:focus{border-color:#3a5a8a;}"
-                "QComboBox QAbstractItemView{background:#091426;color:#e9eef7;"
-                "selection-background-color:#162a4a;border:1px solid #2b466f;}"
-            )
 
         form.addWidget(_label("Baudrate"),    0, 0)
         form.addWidget(self._baud_combo,      0, 1)
@@ -375,13 +505,12 @@ class _MixinSerialSettingsDialog(QDialog):
         btn_box.accepted.connect(self.accept)
         btn_box.rejected.connect(self.reject)
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(0)
+        root = self._content
+        root.setSpacing(12)
         root.addLayout(form)
         root.addWidget(btn_box)
 
-        self.setMinimumWidth(320)
+        self.setFixedWidth(488)
 
     @staticmethod
     def _select_by_data(combo, data):
@@ -956,6 +1085,7 @@ class SerialComMixin:
         self._sc_ntp_worker = None
         self._sc_line_ending = "\r\n"
         self._sc_show_send = True
+        self._sc_show_system_log = False
         self._sc_line_by_line = False
         self._sc_send_history = []
         self._sc_quick_commands = []  # 兼容占位，已不再使用
@@ -1391,6 +1521,13 @@ class SerialComMixin:
         self._sc_show_send_cb.setStyleSheet(self._sc_checkbox_style())
         self._sc_show_send_cb.toggled.connect(lambda v: setattr(self, '_sc_show_send', v))
         layout.addWidget(self._sc_show_send_cb)
+
+        self._sc_show_system_cb = QCheckBox("Show System Log")
+        self._sc_show_system_cb.setChecked(False)
+        self._sc_show_system_cb.setToolTip("Show blue system/info messages in log")
+        self._sc_show_system_cb.setStyleSheet(self._sc_checkbox_style())
+        self._sc_show_system_cb.toggled.connect(lambda v: setattr(self, '_sc_show_system_log', v))
+        layout.addWidget(self._sc_show_system_cb)
 
         self._sc_line_by_line_cb = QCheckBox("Line by Line")
         self._sc_line_by_line_cb.setStyleSheet(self._sc_checkbox_style())
@@ -1915,6 +2052,11 @@ class SerialComMixin:
         self._sc_script_loop_spin.setStyleSheet(quick_combo_style())
         toolbar.addWidget(self._sc_script_loop_spin)
 
+        self._sc_script_loop_inf_cb = QCheckBox("\u221e")
+        self._sc_script_loop_inf_cb.setStyleSheet(self._sc_checkbox_style())
+        self._sc_script_loop_inf_cb.setToolTip("Loop forever until manually stopped")
+        toolbar.addWidget(self._sc_script_loop_inf_cb)
+
         toolbar.addStretch()
 
         self._sc_script_new_btn = self._make_sc_btn(
@@ -1962,6 +2104,11 @@ class SerialComMixin:
         self._sc_script_status_label = QLabel("Status: \u2022 Idle")
         self._sc_script_status_label.setStyleSheet(status_label_style("muted", include_font=True))
         status_row.addWidget(self._sc_script_status_label)
+        self._sc_script_loop_label = QLabel("")
+        self._sc_script_loop_label.setStyleSheet(status_label_style("muted", include_font=True))
+        self._sc_script_loop_label.setVisible(False)
+        status_row.addSpacing(12)
+        status_row.addWidget(self._sc_script_loop_label)
         status_row.addStretch()
         self._sc_script_count_label = QLabel("Steps count (\u6b65): 0")
         self._sc_script_count_label.setStyleSheet(status_label_style("muted", include_font=True))
@@ -2034,6 +2181,7 @@ class SerialComMixin:
         self._sc_script_stop_btn.clicked.connect(self._sc_script_stop)
         self._sc_script_loop_cb.toggled.connect(self._sc_script_on_loop_toggled)
         self._sc_script_loop_spin.valueChanged.connect(self._sc_script_on_loop_count_changed)
+        self._sc_script_loop_inf_cb.toggled.connect(self._sc_script_on_loop_inf_toggled)
         self._sc_script_new_btn.clicked.connect(self._sc_script_new)
         self._sc_script_edit_btn.clicked.connect(self._sc_script_edit)
         self._sc_script_del_btn.clicked.connect(self._sc_script_delete)
@@ -3899,10 +4047,22 @@ class SerialComMixin:
             return
         self._sc_script_loop_cb.blockSignals(True)
         self._sc_script_loop_spin.blockSignals(True)
-        self._sc_script_loop_cb.setChecked(bool(cur.get("loop", False)))
+        self._sc_script_loop_inf_cb.blockSignals(True)
+        loop_on = bool(cur.get("loop", False))
+        loop_inf = bool(cur.get("loop_infinite", False))
+        self._sc_script_loop_cb.setChecked(loop_on)
         self._sc_script_loop_spin.setValue(int(cur.get("loop_count", 1)) or 1)
+        self._sc_script_loop_inf_cb.setChecked(loop_inf)
         self._sc_script_loop_cb.blockSignals(False)
         self._sc_script_loop_spin.blockSignals(False)
+        self._sc_script_loop_inf_cb.blockSignals(False)
+        self._sc_script_update_loop_widgets_enabled()
+
+    def _sc_script_update_loop_widgets_enabled(self):
+        loop_on = self._sc_script_loop_cb.isChecked()
+        loop_inf = self._sc_script_loop_inf_cb.isChecked()
+        self._sc_script_loop_inf_cb.setEnabled(loop_on)
+        self._sc_script_loop_spin.setEnabled(loop_on and not loop_inf)
 
     def _sc_script_set_status_dot(self, running: bool):
         if not hasattr(self, "_sc_script_status_dot"):
@@ -3967,6 +4127,8 @@ class SerialComMixin:
             )
             table.setCellWidget(row, 5, actions)
         table.resizeRowsToContents()
+        for col in (2, 3, 4):
+            table.resizeColumnToContents(col)
         self._sc_script_adjust_table_height()
 
     def _sc_script_adjust_table_height(self):
@@ -4145,9 +4307,17 @@ class SerialComMixin:
             self._sc_script_refresh_table()
 
     def _sc_script_on_loop_toggled(self, checked: bool):
+        self._sc_script_update_loop_widgets_enabled()
         cur = self._sc_script_current()
         if cur is not None:
             cur["loop"] = bool(checked)
+            self._sc_save_persisted_state()
+
+    def _sc_script_on_loop_inf_toggled(self, checked: bool):
+        self._sc_script_update_loop_widgets_enabled()
+        cur = self._sc_script_current()
+        if cur is not None:
+            cur["loop_infinite"] = bool(checked)
             self._sc_save_persisted_state()
 
     def _sc_script_on_loop_count_changed(self, value: int):
@@ -4164,6 +4334,7 @@ class SerialComMixin:
             "name": "新脚本",
             "loop": False,
             "loop_count": 1,
+            "loop_infinite": False,
             "steps": [self._sc_script_default_step()],
         }
         dlg = _SerialScriptEditorDialog(
@@ -4301,17 +4472,41 @@ class SerialComMixin:
         self._sc_script_steps = steps
         self._sc_script_step_index = 0
         loop_on = self._sc_script_loop_cb.isChecked()
-        self._sc_script_loop_remaining = (
-            int(self._sc_script_loop_spin.value()) if loop_on else 1
-        )
+        loop_inf = loop_on and self._sc_script_loop_inf_cb.isChecked()
+        self._sc_script_loop_infinite = loop_inf
+        if loop_inf:
+            self._sc_script_loop_total = -1
+            self._sc_script_loop_remaining = -1
+        else:
+            self._sc_script_loop_total = (
+                int(self._sc_script_loop_spin.value()) if loop_on else 1
+            )
+            self._sc_script_loop_remaining = self._sc_script_loop_total
+        self._sc_script_loop_done = 0
         self._sc_script_running = True
         self._sc_script_set_controls_enabled(False)
+        loop_desc = "x\u221e" if loop_inf else f"x{self._sc_script_loop_total}"
         self._sc_append_system(
             f"[SCRIPT] 开始执行 “{cur.get('name', '')}” "
-            f"({len(steps)} 步, 循环 x{self._sc_script_loop_remaining})"
+            f"({len(steps)} 步, 循环 {loop_desc})"
         )
+        self._sc_script_update_loop_label()
         self._sc_script_refresh_table(running_index=0)
         self._sc_script_exec_current_step()
+
+    def _sc_script_update_loop_label(self):
+        if not hasattr(self, "_sc_script_loop_label"):
+            return
+        if not self._sc_script_running:
+            self._sc_script_loop_label.setVisible(False)
+            return
+        done = getattr(self, "_sc_script_loop_done", 0)
+        if getattr(self, "_sc_script_loop_infinite", False):
+            self._sc_script_loop_label.setText(f"Loop: {done + 1}/\u221e")
+        else:
+            total = getattr(self, "_sc_script_loop_total", 1)
+            self._sc_script_loop_label.setText(f"Loop: {min(done + 1, total)}/{total}")
+        self._sc_script_loop_label.setVisible(True)
 
     def _sc_script_set_controls_enabled(self, enabled: bool):
         self._sc_script_run_btn.setEnabled(enabled)
@@ -4323,7 +4518,10 @@ class SerialComMixin:
         self._sc_script_import_btn.setEnabled(enabled)
         self._sc_script_export_btn.setEnabled(enabled)
         self._sc_script_loop_cb.setEnabled(enabled)
+        self._sc_script_loop_inf_cb.setEnabled(enabled)
         self._sc_script_loop_spin.setEnabled(enabled)
+        if enabled:
+            self._sc_script_update_loop_widgets_enabled()
         if hasattr(self, "_sc_script_add_step_btn"):
             self._sc_script_add_step_btn.setEnabled(enabled)
 
@@ -4419,9 +4617,19 @@ class SerialComMixin:
         self._sc_script_exec_current_step()
 
     def _sc_script_on_loop_end(self):
+        self._sc_script_loop_done = getattr(self, "_sc_script_loop_done", 0) + 1
+        if getattr(self, "_sc_script_loop_infinite", False):
+            self._sc_script_step_index = 0
+            self._sc_script_update_loop_label()
+            self._sc_append_system(
+                f"[SCRIPT] 进入下一轮循环 (已完成 {self._sc_script_loop_done} 轮, \u221e)"
+            )
+            self._sc_script_exec_current_step()
+            return
         self._sc_script_loop_remaining -= 1
         if self._sc_script_loop_remaining > 0:
             self._sc_script_step_index = 0
+            self._sc_script_update_loop_label()
             self._sc_append_system(
                 f"[SCRIPT] 进入下一轮循环 (剩余 {self._sc_script_loop_remaining} 轮)"
             )
@@ -4444,6 +4652,8 @@ class SerialComMixin:
         self._sc_script_set_controls_enabled(True)
         self._sc_script_status_label.setText("Status: \u2022 Idle")
         self._sc_script_status_label.setStyleSheet(status_label_style("muted", include_font=True))
+        if hasattr(self, "_sc_script_loop_label"):
+            self._sc_script_loop_label.setVisible(False)
         self._sc_script_refresh_table(running_index=-1)
 
     @staticmethod
@@ -5378,6 +5588,7 @@ class SerialComMixin:
                 "use_ntp": False,
                 "line_ending": "\r\n",
                 "show_send": True,
+                "show_system_log": False,
                 "line_by_line": False,
                 "sidebar_visible": True,
                 "center_split_sizes": [680, 155],
@@ -5691,6 +5902,7 @@ class SerialComMixin:
             "use_ntp": getattr(self, "_sc_use_ntp", False),
             "line_ending": getattr(self, "_sc_line_ending", "\r\n"),
             "show_send": getattr(self, "_sc_show_send", True),
+            "show_system_log": getattr(self, "_sc_show_system_log", False),
             "line_by_line": getattr(self, "_sc_line_by_line", False),
             "sidebar_visible": getattr(self, "_sc_sidebar_visible", True),
             "log_auto_save": getattr(self, "_sc_log_auto_save", False),
@@ -5782,6 +5994,7 @@ class SerialComMixin:
                     ("use_ntp", "_sc_use_ntp"),
                     ("line_ending", "_sc_line_ending"),
                     ("show_send", "_sc_show_send"),
+                    ("show_system_log", "_sc_show_system_log"),
                     ("line_by_line", "_sc_line_by_line"),
                     ("sidebar_visible", "_sc_sidebar_visible"),
                     ("log_auto_save", "_sc_log_auto_save"),
@@ -5789,6 +6002,10 @@ class SerialComMixin:
                 ):
                     if key in ui_cfg:
                         setattr(self, attr, ui_cfg[key])
+                if "show_system_log" in ui_cfg and hasattr(self, "_sc_show_system_cb"):
+                    self._sc_show_system_cb.blockSignals(True)
+                    self._sc_show_system_cb.setChecked(bool(ui_cfg["show_system_log"]))
+                    self._sc_show_system_cb.blockSignals(False)
                 if getattr(self, "_sc_use_ntp", False):
                     self._sc_apply_ntp_setting(True)
 
@@ -5832,6 +6049,7 @@ class SerialComMixin:
                 ("show_timestamp", "_sc_show_timestamp"),
                 ("line_ending", "_sc_line_ending"),
                 ("show_send", "_sc_show_send"),
+                ("show_system_log", "_sc_show_system_log"),
                 ("line_by_line", "_sc_line_by_line"),
                 ("sidebar_visible", "_sc_sidebar_visible"),
             ):
@@ -5962,6 +6180,9 @@ class SerialComMixin:
         self._sc_show_send = True
         if hasattr(self, "_sc_show_send_cb"):
             self._sc_show_send_cb.setChecked(True)
+        self._sc_show_system_log = False
+        if hasattr(self, "_sc_show_system_cb"):
+            self._sc_show_system_cb.setChecked(False)
         self._sc_line_by_line = False
         if hasattr(self, "_sc_line_by_line_cb"):
             self._sc_line_by_line_cb.setChecked(False)
@@ -6303,6 +6524,8 @@ class SerialComMixin:
                 tag = t
                 break
         color = color_map.get(tag, _CLR_TEXT_INFO)
+        if tag in ("", "INFO") and not getattr(self, "_sc_show_system_log", False):
+            return
         if not force_primary and self._sc_active_log_panel_index > 0:
             panel_idx = self._sc_active_log_panel_index - 1
             if 0 <= panel_idx < len(self._sc_extra_log_panels):
@@ -6511,17 +6734,14 @@ class _MiniSlideToggle(QWidget):
         p.end()
 
 
-class _AddLogPanelDialog(QDialog):
+class _AddLogPanelDialog(_FramelessChromeDialog):
 
     def __init__(self, panel_index: int = 2, parent=None):
-        super().__init__(parent)
+        super().__init__(parent, title="ADD LOG PANEL", icon_name="plus.svg")
         self._panel_index = panel_index
-        self.setWindowTitle("Add LOG Panel")
-        self.setFixedWidth(400)
-        self.setStyleSheet(_DLG_STYLE)
+        self._apply_content_style(_DLG_STYLE)
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(16, 16, 16, 16)
+        root = self._content
         root.setSpacing(12)
 
         title = QLabel("New Serial LOG")
@@ -6636,6 +6856,8 @@ class _AddLogPanelDialog(QDialog):
         btn_row.addWidget(ok_btn)
         root.addLayout(btn_row)
 
+        self.setFixedWidth(508)
+
     def get_config(self):
         port_text = self._port_combo.currentText()
         port = port_text.split()[0] if port_text and not port_text.startswith("No ") else ""
@@ -6656,16 +6878,13 @@ class _AddLogPanelDialog(QDialog):
         }
 
 
-class _PanelSettingsDialog(QDialog):
+class _PanelSettingsDialog(_FramelessChromeDialog):
 
     def __init__(self, current_config: dict, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Panel Settings")
-        self.setFixedWidth(400)
-        self.setStyleSheet(_DLG_STYLE)
+        super().__init__(parent, title="PANEL SETTINGS", icon_name="settings.svg")
+        self._apply_content_style(_DLG_STYLE)
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(16, 16, 16, 16)
+        root = self._content
         root.setSpacing(12)
 
         title = QLabel("Serial Port Settings")
@@ -6792,6 +7011,8 @@ class _PanelSettingsDialog(QDialog):
         ok_btn.clicked.connect(self.accept)
         btn_row.addWidget(ok_btn)
         root.addLayout(btn_row)
+
+        self.setFixedWidth(508)
 
     def get_config(self):
         port_text = self._port_combo.currentText()
@@ -7665,25 +7886,18 @@ class _QuickCommandPickerPopup(QFrame):
                         return
 
 
-class _SerialScriptStepDialog(QDialog):
+class _SerialScriptStepDialog(_FramelessChromeDialog):
     def __init__(self, parent=None, step: dict = None, mode: str = "create"):
-        super().__init__(parent)
         step = step or {}
-        self.setWindowTitle(
-            "Add Execution Command" if mode == "create" else "Edit Step Directive"
+        super().__init__(
+            parent,
+            title="ADD EXECUTION COMMAND" if mode == "create" else "EDIT STEP DIRECTIVE",
+            icon_name="edit.svg",
         )
-        self.setMinimumWidth(360)
-        self.setStyleSheet(_DLG_STYLE)
+        self._apply_content_style(_DLG_STYLE)
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(18, 18, 18, 18)
+        root = self._content
         root.setSpacing(14)
-
-        title = QLabel(
-            "Add Execution Command" if mode == "create" else "Edit Step Directive"
-        )
-        title.setObjectName("qcTitle")
-        root.addWidget(title)
 
         card = QFrame()
         card.setObjectName("dlgGroupCard")
@@ -7760,6 +7974,8 @@ class _SerialScriptStepDialog(QDialog):
         btn_row.addWidget(ok_btn)
         root.addLayout(btn_row)
 
+        self.setFixedWidth(488)
+
     def _on_accept(self):
         if not self._cmd_edit.text().strip():
             QMessageBox.warning(self, "提示", "指令不能为空")
@@ -7777,98 +7993,126 @@ class _SerialScriptStepDialog(QDialog):
 
 
 class _SerialScriptEditorDialog(QDialog):
-    _COLS = ["指令", "优先级", "等待(ms)", "等待关键字", "关键字超时(ms)"]
+    _COLS = ["#", "COMMAND PAYLOAD", "WAIT (MS)", "WAIT KEYWORD", "TIMEOUT (MS)", "ACTIONS"]
 
     def __init__(self, parent=None, script: dict = None, quick_commands: list = None):
         super().__init__(parent)
         self.setWindowTitle("脚本编辑器")
-        self.setMinimumSize(720, 460)
-        self.setStyleSheet(_DLG_STYLE)
+        self.setObjectName("scEditorDialog")
+        self.setMinimumSize(1008, 672)
+        self.setWindowFlag(Qt.FramelessWindowHint, True)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setStyleSheet(_DLG_STYLE + script_editor_dialog_style())
         script = script or {}
         self._quick_commands = list(quick_commands or [])
+        self._drag_pos = None
+        self._backdrop = None
+        self._blur_effect = None
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(18, 18, 18, 18)
-        root.setSpacing(14)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(54, 50, 54, 62)
+        outer.setSpacing(0)
 
-        title = QLabel("编辑脚本")
-        title.setObjectName("qcTitle")
-        root.addWidget(title)
+        container = QFrame()
+        container.setObjectName("scEditorContainer")
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(48)
+        shadow.setOffset(0, 8)
+        shadow.setColor(QColor(15, 23, 42, 50))
+        container.setGraphicsEffect(shadow)
+        outer.addWidget(container)
 
-        # --- 脚本属性卡片 ---
+        root = QVBoxLayout(container)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # --- 标题栏 ---
+        header = QFrame()
+        header.setObjectName("scEditorHeader")
+        header.installEventFilter(self)
+        self._header = header
+        header_row = QHBoxLayout(header)
+        header_row.setContentsMargins(24, 16, 20, 16)
+        header_row.setSpacing(10)
+        title_icon = QLabel()
+        _ico = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "edit.svg"), _CLR_SEND_BG, 18)
+        if not _ico.isNull():
+            title_icon.setPixmap(_ico.pixmap(18, 18))
+        header_row.addWidget(title_icon)
+        title = QLabel("EDIT SUITE & SEQUENCE STEPS")
+        title.setObjectName("scEditorTitle")
+        header_row.addWidget(title)
+        header_row.addStretch()
+        close_btn = QPushButton("\u2715")
+        close_btn.setObjectName("scEditorClose")
+        close_btn.setCursor(Qt.PointingHandCursor)
+        close_btn.setFixedSize(28, 28)
+        close_btn.setAutoDefault(False)
+        close_btn.setDefault(False)
+        close_btn.clicked.connect(self.reject)
+        header_row.addWidget(close_btn)
+        root.addWidget(header)
+
+        body = QVBoxLayout()
+        body.setContentsMargins(24, 18, 24, 4)
+        body.setSpacing(16)
+
+        # --- SUITE NAME 卡片 ---
         prop_card = QFrame()
-        prop_card.setObjectName("dlgGroupCard")
+        prop_card.setObjectName("scEditorCard")
         prop_form = QVBoxLayout(prop_card)
-        prop_form.setContentsMargins(14, 12, 14, 12)
+        prop_form.setContentsMargins(20, 16, 20, 16)
         prop_form.setSpacing(8)
 
-        prop_row = QHBoxLayout()
-        prop_row.setSpacing(8)
-        name_lbl = QLabel("脚本名称")
-        name_lbl.setObjectName("dlgFieldLabel")
-        prop_row.addWidget(name_lbl)
-        self._name_edit = QLineEdit()
-        self._name_edit.setPlaceholderText("如：WiFi 压测")
-        self._name_edit.setText(script.get("name", ""))
-        prop_row.addWidget(self._name_edit, 1)
+        name_lbl = QLabel("SUITE NAME")
+        name_lbl.setObjectName("scEditorFieldLabel")
+        prop_form.addWidget(name_lbl)
 
-        self._loop_cb = QCheckBox("循环")
+        prop_row = QHBoxLayout()
+        prop_row.setSpacing(16)
+        self._name_edit = QLineEdit()
+        self._name_edit.setPlaceholderText("e.g. ESP32 WiFi Handshake Suite")
+        self._name_edit.setText(script.get("name", ""))
+        self._name_edit.setMinimumWidth(260)
+        prop_row.addWidget(self._name_edit, 0)
+
+        self._loop_cb = QCheckBox("Loop Sequence Execution")
         self._loop_cb.setChecked(bool(script.get("loop", False)))
         prop_row.addWidget(self._loop_cb)
 
-        count_lbl = QLabel("次数")
-        count_lbl.setObjectName("dlgFieldLabel")
+        count_lbl = QLabel("Count")
+        count_lbl.setObjectName("scEditorInlineLabel")
         prop_row.addWidget(count_lbl)
         self._loop_spin = QSpinBox()
         self._loop_spin.setRange(1, 99999)
         self._loop_spin.setValue(int(script.get("loop_count", 1)) or 1)
+        self._loop_spin.setFixedWidth(78)
+        self._loop_spin.setEnabled(self._loop_cb.isChecked())
+        self._loop_cb.toggled.connect(self._loop_spin.setEnabled)
         prop_row.addWidget(self._loop_spin)
+        prop_row.addStretch()
         prop_form.addLayout(prop_row)
+        body.addWidget(prop_card)
 
-        hint = QLabel("提示：优先级=0 表示跳过该步；其余按从小到大顺序执行。设置“等待关键字”后将先等待收到该字符串，超时后继续。")
-        hint.setWordWrap(True)
-        hint.setObjectName("dlgHint")
-        prop_form.addWidget(hint)
-        root.addWidget(prop_card)
-
-        # --- 步骤区：标题 + 行操作 ---
+        # --- 步骤区标题 + Add Step ---
         steps_head = QHBoxLayout()
         steps_head.setSpacing(8)
-        steps_title = QLabel("执行步骤")
-        steps_title.setObjectName("dlgSectionTitle")
-        steps_head.addWidget(steps_title)
+        self._steps_title = QLabel("Sequence Directives (0)")
+        self._steps_title.setObjectName("scEditorSectionTitle")
+        steps_head.addWidget(self._steps_title)
         steps_head.addStretch()
 
-        add_btn = QPushButton("+ 添加步骤")
-        add_btn.setObjectName("dlgRowBtn")
+        add_btn = QPushButton("  Add Step")
+        add_btn.setObjectName("scEditorAddBtn")
         add_btn.setCursor(Qt.PointingHandCursor)
+        _plus_icon = _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "plus.svg"), _CLR_SEND_BG, 12)
+        if not _plus_icon.isNull():
+            add_btn.setIcon(_plus_icon)
+        add_btn.setAutoDefault(False)
+        add_btn.setDefault(False)
         add_btn.clicked.connect(lambda: self._add_row())
         steps_head.addWidget(add_btn)
-
-        del_btn = QPushButton("- 删除选中")
-        del_btn.setObjectName("dlgRowBtn")
-        del_btn.setCursor(Qt.PointingHandCursor)
-        del_btn.clicked.connect(self._del_row)
-        steps_head.addWidget(del_btn)
-
-        up_btn = QPushButton("↑ 上移")
-        up_btn.setObjectName("dlgRowBtn")
-        up_btn.setCursor(Qt.PointingHandCursor)
-        up_btn.clicked.connect(lambda: self._move_row(-1))
-        steps_head.addWidget(up_btn)
-
-        down_btn = QPushButton("↓ 下移")
-        down_btn.setObjectName("dlgRowBtn")
-        down_btn.setCursor(Qt.PointingHandCursor)
-        down_btn.clicked.connect(lambda: self._move_row(1))
-        steps_head.addWidget(down_btn)
-
-        renum_btn = QPushButton("重排优先级")
-        renum_btn.setObjectName("dlgRowBtn")
-        renum_btn.setCursor(Qt.PointingHandCursor)
-        renum_btn.clicked.connect(self._renumber_priority)
-        steps_head.addWidget(renum_btn)
-        root.addLayout(steps_head)
+        body.addLayout(steps_head)
 
         # --- 步骤表 ---
         self._table = QTableWidget(0, len(self._COLS))
@@ -7880,53 +8124,118 @@ class _SerialScriptEditorDialog(QDialog):
         self._table.setShowGrid(False)
         self._table.setAlternatingRowColors(False)
         self._table.setWordWrap(False)
-        self._table.verticalHeader().setDefaultSectionSize(40)
+        self._table.setFocusPolicy(Qt.NoFocus)
+        self._table.verticalHeader().setDefaultSectionSize(52)
         self._table.verticalHeader().setSectionResizeMode(QHeaderView.Fixed)
         hdr = self._table.horizontalHeader()
-        hdr.setMinimumSectionSize(72)
+        hdr.setMinimumSectionSize(64)
         hdr.setHighlightSections(False)
-        hdr.setSectionResizeMode(0, QHeaderView.Stretch)
-        hdr.setSectionResizeMode(3, QHeaderView.Stretch)
-        for c in (1, 2, 4):
+        hdr.setSectionResizeMode(0, QHeaderView.Fixed)
+        hdr.setSectionResizeMode(1, QHeaderView.Stretch)
+        for c in (2, 3, 4, 5):
             hdr.setSectionResizeMode(c, QHeaderView.Fixed)
-        self._table.setColumnWidth(1, 84)
-        self._table.setColumnWidth(2, 104)
-        self._table.setColumnWidth(4, 128)
-        root.addWidget(self._table, 1)
+        self._table.setColumnWidth(0, 48)
+        self._table.setColumnWidth(2, 110)
+        self._table.setColumnWidth(3, 150)
+        self._table.setColumnWidth(4, 120)
+        self._table.setColumnWidth(5, 110)
+        body.addWidget(self._table, 1)
+
+        root.addLayout(body, 1)
 
         for step in script.get("steps", []):
             self._add_row(step)
         if self._table.rowCount() == 0:
             self._add_row()
+        self._refresh_index_column()
 
-        # --- OK / Cancel ---
-        btn_row = QHBoxLayout()
+        # --- 底部 Cancel / Save ---
+        footer = QFrame()
+        footer.setObjectName("scEditorFooter")
+        btn_row = QHBoxLayout(footer)
+        btn_row.setContentsMargins(24, 14, 24, 16)
         btn_row.addStretch()
         cancel_btn = QPushButton("Cancel")
+        cancel_btn.setObjectName("scEditorCancelBtn")
         cancel_btn.setCursor(Qt.PointingHandCursor)
-        cancel_btn.setStyleSheet(dialog_cancel_button_style())
         cancel_btn.setAutoDefault(False)
         cancel_btn.setDefault(False)
         cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(cancel_btn)
 
-        ok_btn = QPushButton("OK")
+        ok_btn = QPushButton("Save Suite Configuration")
+        ok_btn.setObjectName("scEditorSaveBtn")
         ok_btn.setCursor(Qt.PointingHandCursor)
-        ok_btn.setStyleSheet(dialog_ok_button_style())
         ok_btn.setAutoDefault(True)
         ok_btn.setDefault(True)
         ok_btn.clicked.connect(self._on_accept)
         btn_row.addWidget(ok_btn)
-        root.addLayout(btn_row)
+        root.addWidget(footer)
 
         self._script_id = script.get("id", "")
+
+    def _target_window(self):
+        parent = self.parent()
+        if parent is None:
+            return None
+        return parent.window()
+
+    def _install_backdrop(self):
+        win = self._target_window()
+        if win is None:
+            return
+        try:
+            blur = QGraphicsBlurEffect(win)
+            blur.setBlurRadius(9)
+            win.setGraphicsEffect(blur)
+            self._blur_effect = blur
+        except Exception:
+            self._blur_effect = None
+        backdrop = QWidget(win)
+        backdrop.setObjectName("scEditorBackdrop")
+        backdrop.setStyleSheet(dialog_backdrop_style())
+        backdrop.setGeometry(win.rect())
+        backdrop.show()
+        backdrop.raise_()
+        self._backdrop = backdrop
+
+    def _remove_backdrop(self):
+        if self._backdrop is not None:
+            self._backdrop.deleteLater()
+            self._backdrop = None
+        win = self._target_window()
+        if win is not None:
+            win.setGraphicsEffect(None)
+        self._blur_effect = None
+
+    def exec(self):
+        self._install_backdrop()
+        try:
+            return super().exec()
+        finally:
+            self._remove_backdrop()
+
+    def eventFilter(self, obj, event):
+        from PySide6.QtCore import QEvent  # 局部引入，避免顶部冗余导入
+        if obj is getattr(self, "_header", None):
+            et = event.type()
+            if et == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
+                self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+                return True
+            if et == QEvent.MouseMove and self._drag_pos is not None and (event.buttons() & Qt.LeftButton):
+                self.move(event.globalPosition().toPoint() - self._drag_pos)
+                return True
+            if et == QEvent.MouseButtonRelease:
+                self._drag_pos = None
+        return super().eventFilter(obj, event)
 
     def _wrap_cell(self, widget) -> QWidget:
         holder = QWidget()
         lay = QHBoxLayout(holder)
         lay.setContentsMargins(6, 4, 6, 4)
         lay.setSpacing(0)
-        lay.addWidget(widget)
+        lay.setAlignment(Qt.AlignVCenter)
+        lay.addWidget(widget, 0, Qt.AlignVCenter)
         return holder
 
     def _make_cmd_cell(self, text: str) -> QWidget:
@@ -7934,11 +8243,12 @@ class _SerialScriptEditorDialog(QDialog):
         lay = QHBoxLayout(holder)
         lay.setContentsMargins(6, 4, 6, 4)
         lay.setSpacing(6)
+        lay.setAlignment(Qt.AlignVCenter)
         edit = QLineEdit(text)
         edit.setPlaceholderText("如：AT+RST")
         edit.setStyleSheet(dialog_line_edit_style())
         holder._cmd_edit = edit
-        lay.addWidget(edit, 1)
+        lay.addWidget(edit, 1, Qt.AlignVCenter)
         pick_btn = QPushButton("选择")
         pick_btn.setObjectName("dlgRowBtn")
         pick_btn.setCursor(Qt.PointingHandCursor)
@@ -7962,6 +8272,60 @@ class _SerialScriptEditorDialog(QDialog):
         popup = _QuickCommandPickerPopup(self, self._quick_commands, _on_pick)
         popup.popup_at(anchor)
 
+    def _make_index_cell(self, row: int) -> QWidget:
+        holder = QWidget()
+        lay = QHBoxLayout(holder)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setAlignment(Qt.AlignCenter)
+        lbl = QLabel(str(row + 1))
+        lbl.setObjectName("scEditorRowIndex")
+        lbl.setAlignment(Qt.AlignCenter)
+        holder._index_label = lbl
+        lay.addWidget(lbl)
+        return holder
+
+    def _make_keyword_cell(self, text: str) -> QWidget:
+        holder = QWidget()
+        lay = QHBoxLayout(holder)
+        lay.setContentsMargins(6, 4, 6, 4)
+        lay.setSpacing(0)
+        lay.setAlignment(Qt.AlignVCenter)
+        edit = QLineEdit(text)
+        edit.setPlaceholderText("如：OK")
+        edit.setStyleSheet(dialog_line_edit_style())
+        holder._kw_edit = edit
+        lay.addWidget(edit, 1, Qt.AlignVCenter)
+        return holder
+
+    def _make_actions_cell(self, row: int) -> QWidget:
+        holder = QWidget()
+        lay = QHBoxLayout(holder)
+        lay.setContentsMargins(6, 4, 6, 4)
+        lay.setSpacing(2)
+        lay.setAlignment(Qt.AlignCenter)
+
+        def _icon_btn(svg_name: str, tip: str, slot):
+            btn = QPushButton()
+            btn.setObjectName("scEditorRowIcon")
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setFixedSize(28, 28)
+            btn.setToolTip(tip)
+            btn.setAutoDefault(False)
+            btn.setDefault(False)
+            ico = _tinted_svg_icon(os.path.join(_SVG_LOGS_DIR, svg_name), _CLR_TEXT_MUTED, 15)
+            if not ico.isNull():
+                btn.setIcon(ico)
+            btn.clicked.connect(slot)
+            return btn
+
+        up_btn = _icon_btn("arrow-up.svg", "上移", lambda: self._move_holder(holder, -1))
+        down_btn = _icon_btn("arrow-down.svg", "下移", lambda: self._move_holder(holder, 1))
+        del_btn = _icon_btn("trash.svg", "删除", lambda: self._del_holder(holder))
+        lay.addWidget(up_btn)
+        lay.addWidget(down_btn)
+        lay.addWidget(del_btn)
+        return holder
+
     def _add_row(self, step: dict = None):
         step = step or {
             "cmd": "", "priority": self._table.rowCount() + 1, "wait_ms": 1000,
@@ -7970,12 +8334,8 @@ class _SerialScriptEditorDialog(QDialog):
         row = self._table.rowCount()
         self._table.insertRow(row)
 
-        self._table.setCellWidget(row, 0, self._make_cmd_cell(step.get("cmd", "")))
-
-        prio_spin = QSpinBox()
-        prio_spin.setRange(0, 9999)
-        prio_spin.setValue(int(step.get("priority", row + 1)))
-        self._table.setCellWidget(row, 1, self._wrap_cell(prio_spin))
+        self._table.setCellWidget(row, 0, self._make_index_cell(row))
+        self._table.setCellWidget(row, 1, self._make_cmd_cell(step.get("cmd", "")))
 
         wait_spin = QSpinBox()
         wait_spin.setRange(0, 3600000)
@@ -7983,15 +8343,46 @@ class _SerialScriptEditorDialog(QDialog):
         wait_spin.setValue(int(step.get("wait_ms", 1000)))
         self._table.setCellWidget(row, 2, self._wrap_cell(wait_spin))
 
-        kw_item = QTableWidgetItem(step.get("wait_keyword", ""))
-        kw_item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self._table.setItem(row, 3, kw_item)
+        self._table.setCellWidget(row, 3, self._make_keyword_cell(step.get("wait_keyword", "")))
 
         to_spin = QSpinBox()
         to_spin.setRange(0, 3600000)
         to_spin.setSingleStep(100)
         to_spin.setValue(int(step.get("wait_timeout_ms", 0)))
         self._table.setCellWidget(row, 4, self._wrap_cell(to_spin))
+
+        self._table.setCellWidget(row, 5, self._make_actions_cell(row))
+        self._refresh_index_column()
+
+    def _refresh_index_column(self):
+        count = self._table.rowCount()
+        for row in range(count):
+            holder = self._table.cellWidget(row, 0)
+            lbl = getattr(holder, "_index_label", None) if holder else None
+            if isinstance(lbl, QLabel):
+                lbl.setText(str(row + 1))
+        self._steps_title.setText(f"Sequence Directives ({count})")
+
+    def _row_of_holder(self, holder) -> int:
+        for row in range(self._table.rowCount()):
+            for col in range(self._table.columnCount()):
+                if self._table.cellWidget(row, col) is holder:
+                    return row
+        return -1
+
+    def _move_holder(self, holder, delta: int):
+        row = self._row_of_holder(holder)
+        if row < 0:
+            return
+        self._table.setCurrentCell(row, 1)
+        self._move_row(delta)
+
+    def _del_holder(self, holder):
+        row = self._row_of_holder(holder)
+        if row < 0:
+            return
+        self._table.removeRow(row)
+        self._refresh_index_column()
 
     def _del_row(self):
         row = self._table.currentRow()
@@ -8008,7 +8399,7 @@ class _SerialScriptEditorDialog(QDialog):
         steps = self._collect_steps()
         steps[row], steps[target] = steps[target], steps[row]
         self._reload_steps(steps)
-        self._table.setCurrentCell(target, 0)
+        self._table.setCurrentCell(target, 1)
 
     def _inner_widget(self, row: int, col: int):
         holder = self._table.cellWidget(row, col)
@@ -8020,30 +8411,28 @@ class _SerialScriptEditorDialog(QDialog):
         return holder
 
     def _renumber_priority(self):
-        for row in range(self._table.rowCount()):
-            spin = self._inner_widget(row, 1)
-            if isinstance(spin, QSpinBox):
-                spin.setValue(row + 1)
+        self._refresh_index_column()
 
     def _reload_steps(self, steps: list):
         self._table.setRowCount(0)
         for step in steps:
             self._add_row(step)
+        self._refresh_index_column()
 
     def _collect_steps(self) -> list:
         steps = []
         for row in range(self._table.rowCount()):
-            cmd_holder = self._table.cellWidget(row, 0)
+            cmd_holder = self._table.cellWidget(row, 1)
             cmd_edit = getattr(cmd_holder, "_cmd_edit", None) if cmd_holder else None
-            kw_item = self._table.item(row, 3)
-            prio = self._inner_widget(row, 1)
+            kw_holder = self._table.cellWidget(row, 3)
+            kw_edit = getattr(kw_holder, "_kw_edit", None) if kw_holder else None
             wait = self._inner_widget(row, 2)
             to = self._inner_widget(row, 4)
             steps.append({
                 "cmd": cmd_edit.text() if isinstance(cmd_edit, QLineEdit) else "",
-                "priority": prio.value() if isinstance(prio, QSpinBox) else row + 1,
+                "priority": row + 1,
                 "wait_ms": wait.value() if isinstance(wait, QSpinBox) else 0,
-                "wait_keyword": kw_item.text() if kw_item else "",
+                "wait_keyword": kw_edit.text() if isinstance(kw_edit, QLineEdit) else "",
                 "wait_timeout_ms": to.value() if isinstance(to, QSpinBox) else 0,
             })
         return steps
@@ -8068,22 +8457,15 @@ class _SerialScriptEditorDialog(QDialog):
         }
 
 
-class _QuickTextInputDialog(QDialog):
+class _QuickTextInputDialog(_FramelessChromeDialog):
 
     def __init__(self, parent=None, title="", label="", text="",
                  placeholder="", ok_text="OK"):
-        super().__init__(parent)
-        self.setWindowTitle(title)
-        self.setFixedWidth(360)
-        self.setStyleSheet(quick_cmd_dialog_style())
+        super().__init__(parent, title=(title or "").upper(), icon_name="edit.svg")
+        self._apply_content_style(quick_cmd_dialog_style())
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(16, 16, 16, 16)
+        root = self._content
         root.setSpacing(10)
-
-        title_lbl = QLabel(title)
-        title_lbl.setObjectName("qcTitle")
-        root.addWidget(title_lbl)
 
         if label:
             root.addWidget(QLabel(label))
@@ -8117,6 +8499,7 @@ class _QuickTextInputDialog(QDialog):
         btn_row.addWidget(ok_btn)
         root.addLayout(btn_row)
 
+        self.setFixedWidth(468)
         self._edit.setFocus()
 
     def get_text(self) -> str:
@@ -8133,23 +8516,20 @@ class _QuickTextInputDialog(QDialog):
         return dlg.get_text(), accepted
 
 
-class _QuickCmdDialog(QDialog):
+class _QuickCmdDialog(_FramelessChromeDialog):
 
     def __init__(self, parent=None, name="", content="", send_type="text",
                  line_ending="\r\n", encoding="ascii"):
-        super().__init__(parent)
-        self.setWindowTitle("Quick Command")
-        self.setFixedWidth(380)
-        self.setStyleSheet(quick_cmd_dialog_style())
-
-        root = QVBoxLayout(self)
-        root.setContentsMargins(16, 16, 16, 16)
-        root.setSpacing(10)
-
         is_edit = bool(name or content)
-        title = QLabel("Edit Quick Command" if is_edit else "New Quick Command")
-        title.setObjectName("qcTitle")
-        root.addWidget(title)
+        super().__init__(
+            parent,
+            title="EDIT QUICK COMMAND" if is_edit else "NEW QUICK COMMAND",
+            icon_name="edit.svg",
+        )
+        self._apply_content_style(quick_cmd_dialog_style())
+
+        root = self._content
+        root.setSpacing(10)
 
         root.addWidget(QLabel("指令名称"))
         self._name_edit = QLineEdit()
@@ -8213,6 +8593,8 @@ class _QuickCmdDialog(QDialog):
         btn_row.addWidget(ok_btn)
         root.addLayout(btn_row)
 
+        self.setFixedWidth(488)
+
     def get_command(self) -> dict:
         return {
             "name": self._name_edit.text().strip(),
@@ -8230,21 +8612,14 @@ class _QuickCmdDialog(QDialog):
         return self._cmd_edit.text().strip()
 
 
-class _SerialSaveDialog(QDialog):
+class _SerialSaveDialog(_FramelessChromeDialog):
 
     def __init__(self, parent=None, default_dir="", default_name="", keep_timestamp=True):
-        super().__init__(parent)
-        self.setWindowTitle("Save Logs")
-        self.setFixedWidth(440)
-        self.setStyleSheet(quick_cmd_dialog_style())
+        super().__init__(parent, title="SAVE LOGS", icon_name="edit.svg")
+        self._apply_content_style(quick_cmd_dialog_style())
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(16, 16, 16, 16)
+        root = self._content
         root.setSpacing(10)
-
-        title = QLabel("保存日志")
-        title.setObjectName("qcTitle")
-        root.addWidget(title)
 
         root.addWidget(QLabel("保存位置"))
         dir_row = QHBoxLayout()
@@ -8297,6 +8672,8 @@ class _SerialSaveDialog(QDialog):
         btn_row.addWidget(ok_btn)
         root.addLayout(btn_row)
 
+        self.setFixedWidth(548)
+
     def _on_browse(self):
         current = self._dir_edit.text().strip()
         directory = QFileDialog.getExistingDirectory(self, "Select Directory", current)
@@ -8311,17 +8688,14 @@ class _SerialSaveDialog(QDialog):
         }
 
 
-class _SerialSettingsDialog(QDialog):
+class _SerialSettingsDialog(_FramelessChromeDialog):
 
     def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Serial Settings")
-        self.setMinimumSize(720, 500)
-        self.resize(760, 540)
-        self.setStyleSheet(_DLG_STYLE)
+        super().__init__(parent, title="SERIAL SETTINGS", icon_name="settings.svg")
+        self._apply_content_style(_DLG_STYLE)
+        self.setMinimumSize(720 + 108, 500 + 112)
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(14, 14, 14, 14)
+        root = self._content
         root.setSpacing(12)
 
         self._tabs = QTabWidget()

@@ -1188,6 +1188,111 @@ def log_color_info_text():
     return "RX → White (#E5E5EA)    TX → Blue (#409EFF)\nINFO → Blue (#409EFF)    WARN → Amber (#FF9F0A)    ERROR → Red (#FF453A)"
 
 
+def dialog_backdrop_style():
+    return "QWidget#scEditorBackdrop { background-color: rgba(2, 6, 23, 110); }"
+
+
+def frameless_chrome_style(dialog_id="scChromeDialog"):
+    return f"""
+            QDialog#{dialog_id} {{ background: transparent; }}
+            QFrame#scEditorContainer {{
+                background-color: {_CLR_BG_MAIN};
+                border: 1px solid {_CLR_BORDER};
+                border-radius: 14px;
+            }}
+            QFrame#scChromeBody {{
+                background-color: {_CLR_BG_MAIN};
+                border-bottom-left-radius: 13px;
+                border-bottom-right-radius: 13px;
+            }}
+            QFrame#scEditorHeader {{
+                background-color: {_CLR_BG_CARD};
+                border-bottom: 1px solid {_CLR_BORDER};
+                border-top-left-radius: 13px;
+                border-top-right-radius: 13px;
+            }}
+            QLabel#scEditorTitle {{
+                color: {_CLR_TEXT_TITLE}; font-size: 14px; font-weight: 700;
+                font-family: {_UI_FONT}; letter-spacing: 0.6px; background: transparent;
+            }}
+            QPushButton#scEditorClose {{
+                background: transparent; border: none; border-radius: 6px;
+                color: {_CLR_TEXT_MUTED}; font-size: 15px; font-family: {_UI_FONT};
+            }}
+            QPushButton#scEditorClose:hover {{
+                background-color: {_CLR_INPUT_BG}; color: {_CLR_TEXT_TITLE};
+            }}
+        """
+
+
+def script_editor_dialog_style():
+    return frameless_chrome_style("scEditorDialog") + f"""
+            QFrame#scEditorCard {{
+                background-color: {_CLR_BG_CARD};
+                border: 1px solid {_CLR_BORDER};
+                border-radius: 12px;
+            }}
+            QLabel#scEditorFieldLabel {{
+                color: {_CLR_TEXT_MUTED}; font-size: 11px; font-weight: 700;
+                font-family: {_UI_FONT}; letter-spacing: 0.5px; background: transparent;
+            }}
+            QLabel#scEditorInlineLabel {{
+                color: {_CLR_TEXT_MUTED}; font-size: 12px; font-family: {_UI_FONT};
+                background: transparent;
+            }}
+            QLabel#scEditorSectionTitle {{
+                color: {_CLR_TEXT_TITLE}; font-size: 14px; font-weight: 700;
+                font-family: {_UI_FONT}; background: transparent;
+            }}
+            QPushButton#scEditorAddBtn {{
+                background-color: rgba(0, 122, 255, 0.10);
+                border: none; border-radius: 8px;
+                color: {_CLR_SEND_BG}; font-size: 12px; font-weight: 700;
+                font-family: {_UI_FONT}; padding: 7px 14px;
+            }}
+            QPushButton#scEditorAddBtn:hover {{
+                background-color: rgba(0, 122, 255, 0.18);
+            }}
+            QFrame#scEditorFooter {{
+                background-color: {_CLR_BG_MAIN};
+                border-top: 1px solid {_CLR_BORDER};
+                border-bottom-left-radius: 13px;
+                border-bottom-right-radius: 13px;
+            }}
+            QPushButton#scEditorCancelBtn {{
+                background-color: {_CLR_BG_CARD};
+                border: 1px solid {_CLR_BORDER}; border-radius: 8px;
+                color: {_CLR_TEXT_BTN_LOG}; font-size: 13px; font-weight: 600;
+                font-family: {_UI_FONT}; padding: 8px 22px;
+            }}
+            QPushButton#scEditorCancelBtn:hover {{
+                background-color: {_CLR_INPUT_BG}; border-color: {_CLR_BORDER_SOFT};
+            }}
+            QPushButton#scEditorSaveBtn {{
+                background-color: {_CLR_SEND_BG};
+                border: none; border-radius: 8px;
+                color: #FFFFFF; font-size: 13px; font-weight: 700;
+                font-family: {_UI_FONT}; padding: 8px 22px;
+            }}
+            QPushButton#scEditorSaveBtn:hover {{
+                background-color: #0A6FE0;
+            }}
+            QPushButton#scEditorRowIcon {{
+                background: transparent; border: none; border-radius: 6px;
+            }}
+            QPushButton#scEditorRowIcon:hover {{
+                background-color: {_CLR_INPUT_BG};
+            }}
+            QPushButton#scEditorRowIcon:disabled {{
+                background: transparent;
+            }}
+            QLabel#scEditorRowIndex {{
+                color: {_CLR_TEXT_MUTED}; font-size: 13px; font-weight: 600;
+                font-family: {_UI_FONT}; background: transparent;
+            }}
+        """
+
+
 _DLG_STYLE = f"""
     QDialog {{
         background-color: {_CLR_BG_CARD};
