@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QTabBar, QGraphicsDropShadowEffect, QGraphicsBlurEffect,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
     QPlainTextEdit, QTreeWidget, QTreeWidgetItem, QToolButton,
+    QListWidget, QListWidgetItem,
 )
 import uuid as _uuid
 from PySide6.QtCore import (
@@ -2049,7 +2050,9 @@ class SerialComMixin:
         self._sc_script_loop_spin.setValue(1)
         self._sc_script_loop_spin.setFixedWidth(self._INTERVAL_SPIN_W)
         self._sc_script_loop_spin.setToolTip("Number of times to repeat the script")
-        self._sc_script_loop_spin.setStyleSheet(quick_combo_style())
+        self._sc_script_loop_spin.setStyleSheet(
+            compact_spinbox_style(up_button_width=0, padding="2px 8px")
+        )
         toolbar.addWidget(self._sc_script_loop_spin)
 
         self._sc_script_loop_inf_cb = QCheckBox("\u221e")
@@ -7693,6 +7696,7 @@ class _ProjectTabBar(QTabBar):
 
 class _QuickCommandPickerPopup(QFrame):
     _ENTRY_ROLE = Qt.UserRole + 1
+    _KEY_ROLE = Qt.UserRole + 2
 
     def __init__(self, parent=None, quick_commands=None, on_pick=None):
         super().__init__(parent, Qt.Popup)
@@ -7701,7 +7705,17 @@ class _QuickCommandPickerPopup(QFrame):
         self.setStyleSheet(self._picker_style())
         self._entries = list(quick_commands or [])
         self._on_pick = on_pick
-        self.setFixedWidth(360)
+        self.setFixedWidth(540)
+
+        self._tree_data = {}
+        self._order = []
+        for entry in self._entries:
+            project = entry.get("project") or "未分组项目"
+            group = entry.get("group") or "默认分组"
+            if project not in self._tree_data:
+                self._tree_data[project] = {}
+                self._order.append(project)
+            self._tree_data[project].setdefault(group, []).append(entry)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(8, 8, 8, 8)
@@ -7715,21 +7729,49 @@ class _QuickCommandPickerPopup(QFrame):
         self._search.returnPressed.connect(self._activate_current)
         root.addWidget(self._search)
 
-        self._tree = QTreeWidget()
-        self._tree.setObjectName("pkTree")
-        self._tree.setHeaderHidden(True)
-        self._tree.setColumnCount(1)
-        self._tree.setUniformRowHeights(True)
-        self._tree.setIndentation(14)
-        self._tree.setAnimated(True)
-        self._tree.setExpandsOnDoubleClick(False)
-        self._tree.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self._tree.setMaximumHeight(320)
-        self._tree.setMinimumHeight(200)
-        self._tree.itemClicked.connect(self._on_item_activated)
-        root.addWidget(self._tree, 1)
+        cols = QHBoxLayout()
+        cols.setContentsMargins(0, 0, 0, 0)
+        cols.setSpacing(6)
 
-        self._build_tree()
+        self._proj_list = self._make_column("pkColProject")
+        self._group_list = self._make_column("pkColGroup")
+        self._cmd_list = self._make_column("pkColCmd")
+        cols.addWidget(self._proj_list, 1)
+        cols.addWidget(self._group_list, 1)
+        cols.addWidget(self._cmd_list, 1)
+        root.addLayout(cols, 1)
+
+        self._search_list = QListWidget()
+        self._search_list.setObjectName("pkSearchList")
+        self._search_list.setMouseTracking(True)
+        self._search_list.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._search_list.setMaximumHeight(320)
+        self._search_list.setMinimumHeight(220)
+        self._search_list.itemClicked.connect(self._on_search_clicked)
+        self._search_list.hide()
+        root.addWidget(self._search_list, 1)
+
+        self._proj_list.itemEntered.connect(self._on_project_changed)
+        self._proj_list.currentItemChanged.connect(
+            lambda cur, _prev: self._on_project_changed(cur)
+        )
+        self._group_list.itemEntered.connect(self._on_group_changed)
+        self._group_list.currentItemChanged.connect(
+            lambda cur, _prev: self._on_group_changed(cur)
+        )
+        self._cmd_list.itemClicked.connect(self._on_cmd_clicked)
+
+        self._build_projects()
+
+    def _make_column(self, name):
+        lst = QListWidget()
+        lst.setObjectName(name)
+        lst.setMouseTracking(True)
+        lst.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        lst.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        lst.setMaximumHeight(320)
+        lst.setMinimumHeight(220)
+        return lst
 
     def popup_at(self, anchor):
         self.adjustSize()
@@ -7769,7 +7811,8 @@ class _QuickCommandPickerPopup(QFrame):
                 min-height: 22px;
             }}
             QLineEdit#pkSearch:focus {{ border: 1px solid {_CLR_FILTER_BORDER}; }}
-            QTreeWidget#pkTree {{
+            QListWidget#pkColProject, QListWidget#pkColGroup,
+            QListWidget#pkColCmd, QListWidget#pkSearchList {{
                 background-color: {_CLR_INPUT_BG};
                 border: 1px solid {_CLR_BORDER};
                 border-radius: 10px;
@@ -7778,112 +7821,124 @@ class _QuickCommandPickerPopup(QFrame):
                 outline: none;
                 padding: 4px;
             }}
-            QTreeWidget#pkTree::item {{
+            QListWidget#pkColProject::item, QListWidget#pkColGroup::item,
+            QListWidget#pkColCmd::item, QListWidget#pkSearchList::item {{
                 min-height: 25px;
-                padding: 2px 4px;
+                padding: 3px 6px;
                 border-radius: 6px;
             }}
-            QTreeWidget#pkTree::item:hover {{
+            QListWidget#pkColProject::item:hover, QListWidget#pkColGroup::item:hover,
+            QListWidget#pkColCmd::item:hover, QListWidget#pkSearchList::item:hover {{
                 background-color: {_CLR_BORDER};
             }}
-            QTreeWidget#pkTree::item:selected {{
+            QListWidget#pkColProject::item:selected, QListWidget#pkColGroup::item:selected,
+            QListWidget#pkColCmd::item:selected, QListWidget#pkSearchList::item:selected {{
                 background-color: {_CLR_SELECTION_BG};
                 color: {_CLR_TEXT_TITLE};
             }}
-            QTreeWidget#pkTree::branch {{
-                background: transparent;
-            }}
         """
 
-    def _build_tree(self):
-        tree = {}
-        order = []
-        for entry in self._entries:
-            project = entry.get("project") or "未分组项目"
-            group = entry.get("group") or "默认分组"
-            if project not in tree:
-                tree[project] = {}
-                order.append(project)
-            tree[project].setdefault(group, []).append(entry)
-
-        title_font = QFont(self._tree.font())
+    def _build_projects(self):
+        title_font = QFont(self._proj_list.font())
         title_font.setBold(True)
-        for project in order:
-            p_item = QTreeWidgetItem([project])
-            p_item.setFont(0, title_font)
-            p_item.setForeground(0, QColor(_CLR_TEXT_TITLE))
-            p_item.setFlags(p_item.flags() & ~Qt.ItemIsSelectable)
-            self._tree.addTopLevelItem(p_item)
-            for group, entries in tree[project].items():
-                g_item = QTreeWidgetItem([group])
-                g_item.setForeground(0, QColor(_CLR_TEXT_MUTED))
-                g_item.setFlags(g_item.flags() & ~Qt.ItemIsSelectable)
-                p_item.addChild(g_item)
-                for entry in entries:
-                    label = entry.get("name", "") or entry.get("content", "")
-                    c_item = QTreeWidgetItem([label])
-                    c_item.setData(0, self._ENTRY_ROLE, entry)
-                    c_item.setToolTip(0, entry.get("content", ""))
-                    g_item.addChild(c_item)
-        self._tree.expandAll()
+        self._proj_list.clear()
+        for project in self._order:
+            item = QListWidgetItem(f"{project}  ›")
+            item.setData(self._KEY_ROLE, project)
+            item.setFont(title_font)
+            item.setForeground(QColor(_CLR_TEXT_TITLE))
+            self._proj_list.addItem(item)
+        self._group_list.clear()
+        self._cmd_list.clear()
+        if self._proj_list.count() == 1:
+            self._on_project_changed(self._proj_list.item(0))
 
-    def _apply_filter(self, text):
-        needle = (text or "").strip().lower()
-
-        def match_entry(item):
-            entry = item.data(0, self._ENTRY_ROLE)
-            haystack = " ".join(str(entry.get(k, "")) for k in
-                                 ("name", "content", "group", "project")).lower()
-            return needle in haystack
-
-        for i in range(self._tree.topLevelItemCount()):
-            p_item = self._tree.topLevelItem(i)
-            p_visible = False
-            for j in range(p_item.childCount()):
-                g_item = p_item.child(j)
-                g_visible = False
-                for k in range(g_item.childCount()):
-                    c_item = g_item.child(k)
-                    show = not needle or match_entry(c_item)
-                    c_item.setHidden(not show)
-                    g_visible = g_visible or show
-                g_item.setHidden(not g_visible)
-                if g_visible and needle:
-                    g_item.setExpanded(True)
-                p_visible = p_visible or g_visible
-            p_item.setHidden(not p_visible)
-            if p_visible and needle:
-                p_item.setExpanded(True)
-
-    def _on_item_activated(self, item, _column):
+    def _on_project_changed(self, item):
+        self._group_list.clear()
+        self._cmd_list.clear()
         if item is None:
             return
-        entry = item.data(0, self._ENTRY_ROLE)
+        project = item.data(self._KEY_ROLE)
+        if project is None:
+            return
+        groups = self._tree_data.get(project, {})
+        for group in groups:
+            g_item = QListWidgetItem(f"{group}  ›")
+            g_item.setData(self._KEY_ROLE, (project, group))
+            g_item.setForeground(QColor(_CLR_TEXT_MUTED))
+            self._group_list.addItem(g_item)
+        if self._group_list.count() == 1:
+            self._on_group_changed(self._group_list.item(0))
+
+    def _on_group_changed(self, item):
+        self._cmd_list.clear()
+        if item is None:
+            return
+        key = item.data(self._KEY_ROLE)
+        if not key:
+            return
+        project, group = key
+        for entry in self._tree_data.get(project, {}).get(group, []):
+            label = entry.get("name", "") or entry.get("content", "")
+            c_item = QListWidgetItem(label)
+            c_item.setData(self._ENTRY_ROLE, entry)
+            c_item.setToolTip(entry.get("content", ""))
+            self._cmd_list.addItem(c_item)
+
+    def _on_cmd_clicked(self, item):
+        if item is None:
+            return
+        entry = item.data(self._ENTRY_ROLE)
         if not entry:
-            item.setExpanded(not item.isExpanded())
             return
         if callable(self._on_pick):
             self._on_pick(entry)
         self.close()
 
-    def _activate_current(self):
-        for it in self._tree.selectedItems():
-            if it.data(0, self._ENTRY_ROLE):
-                self._on_item_activated(it, 0)
-                return
-        for i in range(self._tree.topLevelItemCount()):
-            p_item = self._tree.topLevelItem(i)
-            if p_item.isHidden():
+    def _apply_filter(self, text):
+        needle = (text or "").strip().lower()
+        if not needle:
+            self._search_list.hide()
+            self._proj_list.show()
+            self._group_list.show()
+            self._cmd_list.show()
+            return
+        self._proj_list.hide()
+        self._group_list.hide()
+        self._cmd_list.hide()
+        self._search_list.show()
+        self._search_list.clear()
+        for entry in self._entries:
+            haystack = " ".join(str(entry.get(k, "")) for k in
+                                 ("name", "content", "group", "project")).lower()
+            if needle not in haystack:
                 continue
-            for j in range(p_item.childCount()):
-                g_item = p_item.child(j)
-                if g_item.isHidden():
-                    continue
-                for k in range(g_item.childCount()):
-                    c_item = g_item.child(k)
-                    if not c_item.isHidden() and c_item.data(0, self._ENTRY_ROLE):
-                        self._on_item_activated(c_item, 0)
-                        return
+            project = entry.get("project") or "未分组项目"
+            group = entry.get("group") or "默认分组"
+            name = entry.get("name", "") or entry.get("content", "")
+            item = QListWidgetItem(f"{project} / {group} / {name}")
+            item.setData(self._ENTRY_ROLE, entry)
+            item.setToolTip(entry.get("content", ""))
+            self._search_list.addItem(item)
+        if self._search_list.count() > 0:
+            self._search_list.setCurrentRow(0)
+
+    def _on_search_clicked(self, item):
+        self._on_cmd_clicked(item)
+
+    def _activate_current(self):
+        if self._search_list.isVisible():
+            item = self._search_list.currentItem() or (
+                self._search_list.item(0) if self._search_list.count() else None
+            )
+            if item is not None:
+                self._on_cmd_clicked(item)
+            return
+        item = self._cmd_list.currentItem()
+        if item is None and self._cmd_list.count() > 0:
+            item = self._cmd_list.item(0)
+        if item is not None:
+            self._on_cmd_clicked(item)
 
 
 class _SerialScriptStepDialog(_FramelessChromeDialog):
@@ -8087,9 +8142,16 @@ class _SerialScriptEditorDialog(QDialog):
         self._loop_spin.setRange(1, 99999)
         self._loop_spin.setValue(int(script.get("loop_count", 1)) or 1)
         self._loop_spin.setFixedWidth(78)
-        self._loop_spin.setEnabled(self._loop_cb.isChecked())
-        self._loop_cb.toggled.connect(self._loop_spin.setEnabled)
         prop_row.addWidget(self._loop_spin)
+
+        self._loop_inf_cb = QCheckBox("\u221e")
+        self._loop_inf_cb.setChecked(bool(script.get("loop_infinite", False)))
+        self._loop_inf_cb.setToolTip("Loop forever until manually stopped")
+        prop_row.addWidget(self._loop_inf_cb)
+
+        self._loop_cb.toggled.connect(self._sync_loop_widgets)
+        self._loop_inf_cb.toggled.connect(self._sync_loop_widgets)
+        self._sync_loop_widgets()
         prop_row.addStretch()
         prop_form.addLayout(prop_row)
         body.addWidget(prop_card)
@@ -8118,9 +8180,11 @@ class _SerialScriptEditorDialog(QDialog):
         self._table = QTableWidget(0, len(self._COLS))
         self._table.setObjectName("dlgStepTable")
         self._table.setHorizontalHeaderLabels(self._COLS)
+        _kw_header_item = self._table.horizontalHeaderItem(3)
+        if _kw_header_item is not None:
+            _kw_header_item.setForeground(QColor("#9898ed"))
         self._table.verticalHeader().setVisible(False)
-        self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self._table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._table.setSelectionMode(QAbstractItemView.NoSelection)
         self._table.setShowGrid(False)
         self._table.setAlternatingRowColors(False)
         self._table.setWordWrap(False)
@@ -8246,7 +8310,6 @@ class _SerialScriptEditorDialog(QDialog):
         lay.setAlignment(Qt.AlignVCenter)
         edit = QLineEdit(text)
         edit.setPlaceholderText("如：AT+RST")
-        edit.setStyleSheet(dialog_line_edit_style())
         holder._cmd_edit = edit
         lay.addWidget(edit, 1, Qt.AlignVCenter)
         pick_btn = QPushButton("选择")
@@ -8292,7 +8355,6 @@ class _SerialScriptEditorDialog(QDialog):
         lay.setAlignment(Qt.AlignVCenter)
         edit = QLineEdit(text)
         edit.setPlaceholderText("如：OK")
-        edit.setStyleSheet(dialog_line_edit_style())
         holder._kw_edit = edit
         lay.addWidget(edit, 1, Qt.AlignVCenter)
         return holder
@@ -8447,12 +8509,19 @@ class _SerialScriptEditorDialog(QDialog):
             return
         self.accept()
 
+    def _sync_loop_widgets(self, *args):
+        loop_on = self._loop_cb.isChecked()
+        loop_inf = self._loop_inf_cb.isChecked()
+        self._loop_inf_cb.setEnabled(loop_on)
+        self._loop_spin.setEnabled(loop_on and not loop_inf)
+
     def get_script(self) -> dict:
         return {
             "id": self._script_id,
             "name": self._name_edit.text().strip(),
             "loop": self._loop_cb.isChecked(),
             "loop_count": self._loop_spin.value(),
+            "loop_infinite": self._loop_cb.isChecked() and self._loop_inf_cb.isChecked(),
             "steps": [s for s in self._collect_steps() if s["cmd"].strip()],
         }
 

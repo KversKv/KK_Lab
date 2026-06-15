@@ -279,7 +279,8 @@ def log_panel_button_style(disabled=False):
                 background-color: transparent; color: {_CLR_TEXT_MUTED}; border: none;
             }}
             QPushButton:hover {{ background-color: #F1F5F9; border: none; }}
-            QPushButton:focus {{ background-color: {_CLR_INPUT_BG}; border: none; }}
+            QPushButton:focus {{ background-color: transparent; border: none; }}
+            QPushButton:hover:focus {{ background-color: #F1F5F9; border: none; }}
             QPushButton:pressed {{ background-color: {_CLR_BG_CARD}; border: none; }}{disabled_qss}
         """
 
@@ -388,6 +389,18 @@ def compact_spinbox_style(up_button_width=18, padding="1px 6px"):
                 image: url({_SPIN_DOWN_SVG});
                 width: 8px;
                 height: 8px;
+            }}
+            QSpinBox:disabled {{
+                background-color: #eef0f2; color: #b8bdc4;
+                border-color: rgba(60, 60, 67, 0.10);
+            }}
+            QSpinBox::up-button:disabled, QSpinBox::down-button:disabled {{
+                background-color: #e6e8eb;
+                border-left-color: rgba(60, 60, 67, 0.08);
+                border-bottom-color: rgba(60, 60, 67, 0.06);
+            }}
+            QSpinBox::up-arrow:disabled, QSpinBox::down-arrow:disabled {{
+                image: none;
             }}
         """
 
@@ -846,8 +859,13 @@ def quick_toolbar_button_style(max_height=None, padding="3px 8px", radius=5, min
                 color: {_CLR_BLUE};
             }}
             QPushButton:focus {{
+                background-color: rgba(255, 255, 255, 0.72);
+                color: {_CLR_TEXT_SOFT};
+                border: 1px solid rgba(60, 60, 67, 0.18);
+            }}
+            QPushButton:hover:focus {{
                 background-color: #E8F2FF;
-                border-color: {_CLR_FILTER_BORDER};
+                border-color: {_CLR_BORDER_ACTIVE};
                 color: {_CLR_BLUE};
             }}
             QPushButton:pressed {{
@@ -952,7 +970,7 @@ def script_stop_button_style():
 def script_add_step_button_style():
     return f"""
             QPushButton#scAddStepBtn {{
-                background-color: #F2F2F7;
+                background-color: #fdfdfb;
                 color: {_CLR_TEXT_MUTED};
                 border: 1px dashed {_CLR_BORDER};
                 border-radius: 10px;
@@ -962,7 +980,7 @@ def script_add_step_button_style():
                 font-weight: 700;
             }}
             QPushButton#scAddStepBtn:hover {{
-                background-color: #E8F2FF;
+                background-color: #eff6ff;
                 color: {_CLR_SEND_BG};
                 border: 1px dashed {_CLR_SEND_BG};
             }}
@@ -1067,6 +1085,13 @@ def checkbox_style(checkmark_svg):
         f"QCheckBox::indicator:checked {{"
         f"  background-color: #007AFF; border-color: #007AFF;"
         f"  image: url({checkmark_svg});"
+        f"}}"
+        f"QCheckBox:disabled {{ color: #b8bdc4; }}"
+        f"QCheckBox::indicator:disabled {{"
+        f"  background-color: #eef0f2; border-color: rgba(60, 60, 67, 0.10);"
+        f"}}"
+        f"QCheckBox::indicator:checked:disabled {{"
+        f"  background-color: #c7d3e0; border-color: #c7d3e0;"
         f"}}"
     )
 
@@ -1322,7 +1347,7 @@ def frameless_chrome_style(dialog_id="scChromeDialog"):
 def script_editor_dialog_style():
     return frameless_chrome_style("scEditorDialog") + f"""
             QFrame#scEditorCard {{
-                background-color: {_CLR_BG_CARD};
+                background-color: #f7f8f8;
                 border: 1px solid {_CLR_BORDER};
                 border-radius: 12px;
             }}
@@ -1383,6 +1408,77 @@ def script_editor_dialog_style():
             QLabel#scEditorRowIndex {{
                 color: {_CLR_TEXT_MUTED}; font-size: 13px; font-weight: 600;
                 font-family: {_UI_FONT}; background: transparent;
+            }}
+            QTableWidget#dlgStepTable {{
+                background-color: #ffffff;
+            }}
+            QTableWidget#dlgStepTable::item:selected {{
+                background-color: transparent;
+                color: {_CLR_TEXT_BTN_LOG};
+            }}
+            QTableWidget#dlgStepTable::item:hover {{
+                background-color: #f8fafc;
+            }}
+            QTableWidget#dlgStepTable QHeaderView::section {{
+                background-color: #f9fafa;
+                color: {_CLR_TEXT_MUTED};
+                border: none;
+                border-bottom: 1px solid {_CLR_BORDER};
+                padding: 6px 6px;
+                font-size: 11px;
+                font-weight: 600;
+                font-family: {_UI_FONT};
+            }}
+            QTableWidget#dlgStepTable QLineEdit {{
+                background-color: #f9fafc;
+                border: 1px solid rgba(60, 60, 67, 0.18); border-radius: 7px;
+                color: {_CLR_TEXT_BTN_LOG}; font-size: 13px; font-family: {_TERM_FONT};
+                padding: 5px 8px; min-height: 26px;
+            }}
+            QTableWidget#dlgStepTable QLineEdit:focus {{ border: 1px solid {_CLR_FILTER_BORDER}; }}
+            QTableWidget#dlgStepTable QSpinBox {{
+                background-color: #f9fafc;
+                color: {_CLR_TEXT_BTN_LOG}; font-family: {_TERM_FONT};
+            }}
+            QFrame#scEditorCard QLineEdit {{
+                background-color: #ffffff; font-family: {_UI_FONT};
+            }}
+            QFrame#scEditorCard QComboBox {{
+                background-color: #ffffff; font-family: {_UI_FONT};
+            }}
+            QFrame#scEditorCard QSpinBox {{
+                background-color: #ffffff; font-family: {_UI_FONT};
+            }}
+            QFrame#scEditorCard QSpinBox:disabled {{
+                background-color: #eef0f2; color: #b8bdc4;
+                border-color: rgba(60, 60, 67, 0.10);
+            }}
+            QFrame#scEditorCard QSpinBox::up-button:disabled,
+            QFrame#scEditorCard QSpinBox::down-button:disabled {{
+                background-color: #e6e8eb;
+                border-left-color: rgba(60, 60, 67, 0.08);
+                border-bottom-color: rgba(60, 60, 67, 0.06);
+            }}
+            QFrame#scEditorCard QSpinBox::up-arrow:disabled,
+            QFrame#scEditorCard QSpinBox::down-arrow:disabled {{
+                image: none;
+            }}
+            QFrame#scEditorCard QCheckBox {{
+                font-family: {_UI_FONT};
+            }}
+            QFrame#scEditorCard QCheckBox:disabled {{
+                color: #b8bdc4;
+            }}
+            QFrame#scEditorCard QCheckBox::indicator {{
+                background-color: #ffffff;
+            }}
+            QFrame#scEditorCard QCheckBox::indicator:disabled {{
+                background-color: #eef0f2;
+                border-color: rgba(60, 60, 67, 0.10);
+            }}
+            QFrame#scEditorCard QCheckBox::indicator:checked:disabled {{
+                background-color: #c7d3e0;
+                border-color: #c7d3e0;
             }}
         """
 
