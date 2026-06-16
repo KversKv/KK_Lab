@@ -1115,6 +1115,10 @@ class SerialComMixin:
         self._sc_filter_applied_before = 0
         self._sc_filter_applied_after = 0
 
+        self._sc_chart_config = None
+        self._sc_chart_controller = None
+        self._sc_chart_dialog = None
+
         self._sc_auto_baud_monitor = AutoBaudMonitor()
         self._sc_auto_baud_monitor.enabled = True
         self._sc_auto_baud_monitor.runtime_redetect_enabled = True
@@ -1308,6 +1312,11 @@ class SerialComMixin:
         layout.addWidget(self._sc_sidebar_toggle_btn)
 
         layout.addStretch()
+
+        self._sc_chart_btn = self._make_sc_btn(
+            os.path.join(_SVG_SERIAL_DIR, "chart.svg"), "Chart"
+        )
+        layout.addWidget(self._sc_chart_btn)
 
         self._sc_settings_btn = self._make_sc_btn(
             os.path.join(_SVG_SERIAL_DIR, "settings.svg"), "Settings"
@@ -2262,6 +2271,7 @@ class SerialComMixin:
         self._sc_remove_log_btn.clicked.connect(self._sc_on_remove_log_panel)
         self._sc_sidebar_toggle_btn.clicked.connect(self._sc_on_sidebar_toggle)
         self._sc_settings_btn.clicked.connect(self._sc_open_settings_dialog)
+        self._sc_chart_btn.clicked.connect(self._sc_open_chart_dialog)
 
         self._sc_filter_btn.clicked.connect(self._sc_on_filter_toggle)
         self._sc_filter_input.returnPressed.connect(self._sc_apply_filter)
@@ -3912,6 +3922,8 @@ class SerialComMixin:
         self._sc_rx_bytes += len(data)
         self._sc_status_rx_label.setText(self._sc_format_bytes("RX", self._sc_rx_bytes))
 
+        self._sc_chart_feed_bytes(data)
+
         if self._sc_rx_display_hex:
             display = data.hex(' ')
             for line in display.splitlines():
@@ -3930,6 +3942,7 @@ class SerialComMixin:
                 line, self._sc_rx_line_buf = self._sc_rx_line_buf.split("\n", 1)
                 line = line.rstrip("\r")
                 if line.strip():
+                    self._sc_chart_feed_line(line)
                     self._sc_append_log(f"[RX] {line}", _CLR_RX)
 
             if self._sc_rx_line_buf and self._sc_rx_auto_flush_cb.isChecked():
@@ -3944,7 +3957,96 @@ class SerialComMixin:
             line = self._sc_rx_line_buf.rstrip("\r")
             self._sc_rx_line_buf = ""
             if line.strip():
+                self._sc_chart_feed_line(line)
                 self._sc_append_log(f"[RX] {line}", _CLR_RX)
+
+    # ==================== RX 数据可视化（Chart）====================
+
+    def _sc_ensure_chart_config(self):
+        if self._sc_chart_config is None:
+            from ui.modules.serialCom_module.serial_chart_model import ChartConfig
+            self._sc_chart_config = ChartConfig()
+        return self._sc_chart_config
+
+    def _sc_ensure_chart_controller(self):
+        if self._sc_chart_controller is None:
+            from ui.modules.serialCom_module.serial_chart_controller import (
+                SerialChartController,
+            )
+            self._sc_chart_controller = SerialChartController(
+                self._sc_ensure_chart_config()
+            )
+        return self._sc_chart_controller
+
+    def _sc_chart_feed_line(self, line, session_id="active", rx_time=None):
+        controller = self._sc_chart_controller
+        if controller is None:
+            return
+        try:
+            controller.feed_line(line, session_id=session_id, rx_time=rx_time)
+        except Exception:
+            logger.error("chart feed_line failed", exc_info=True)
+
+    def _sc_chart_feed_bytes(self, data, session_id="active", rx_time=None):
+        controller = self._sc_chart_controller
+        if controller is None:
+            return
+        try:
+            controller.feed_bytes(data, session_id=session_id, rx_time=rx_time)
+        except Exception:
+            logger.error("chart feed_bytes failed", exc_info=True)
+
+    def _sc_open_chart_dialog(self):
+        try:
+            import pyqtgraph  # noqa: F401
+        except Exception:
+            logger.error("pyqtgraph unavailable", exc_info=True)
+            QMessageBox.warning(self, "Chart", "pyqtgraph is not available.")
+            return
+
+        self._sc_ensure_chart_controller()
+
+        if self._sc_chart_dialog is not None:
+            try:
+                self._sc_chart_dialog.raise_()
+                self._sc_chart_dialog.activateWindow()
+                return
+            except RuntimeError:
+                self._sc_chart_dialog = None
+
+        from ui.modules.serialCom_module.serial_chart_dialog import SerialChartDialog
+
+        dlg = SerialChartDialog(
+            self,
+            config=self._sc_ensure_chart_config(),
+            on_config_changed=self._sc_on_chart_config_changed,
+        )
+        # 让宿主 feed 直接走对话框内置 controller，避免双份缓存
+        self._sc_chart_controller = dlg.controller
+        self._sc_chart_dialog = dlg
+        dlg.finished.connect(self._sc_on_chart_dialog_finished)
+        dlg.show()
+
+    def _sc_on_chart_dialog_finished(self, *_):
+        dlg = self._sc_chart_dialog
+        self._sc_chart_dialog = None
+        cfg = self._sc_ensure_chart_config()
+        if not cfg.capture_when_dialog_closed:
+            self._sc_chart_controller = None
+        else:
+            from ui.modules.serialCom_module.serial_chart_controller import (
+                SerialChartController,
+            )
+            self._sc_chart_controller = SerialChartController(cfg)
+        self._sc_on_chart_config_changed()
+        if dlg is not None:
+            dlg.deleteLater()
+
+    def _sc_on_chart_config_changed(self):
+        try:
+            self._sc_save_persisted_state()
+        except Exception:
+            logger.error("save chart config failed", exc_info=True)
 
     def _sc_feed_auto_baud_monitor(self, data: bytes):
         monitor = self._sc_auto_baud_monitor
@@ -5620,6 +5722,7 @@ class SerialComMixin:
             "send_history": [],
             "quick_commands": quick_commands or self._sc_qc_default_data(),
             "scripts": scripts or self._sc_script_default_data(),
+            "chart": {},
         }
 
     def _sc_user_config_dir(self) -> str:
@@ -5938,6 +6041,11 @@ class SerialComMixin:
             ),
         })
         persisted["send_history"] = list(getattr(self, "_sc_send_history", []))[-50:]
+        if getattr(self, "_sc_chart_config", None) is not None:
+            try:
+                persisted["chart"] = self._sc_chart_config.to_dict()
+            except Exception:
+                logger.error("收集 chart 配置失败", exc_info=True)
         window_state = self._sc_collect_window_state()
         if window_state:
             persisted["window"] = window_state
@@ -6066,6 +6174,14 @@ class SerialComMixin:
             window_cfg = data.get("window")
             if isinstance(window_cfg, dict):
                 self._sc_window_geometry = window_cfg
+
+            chart_cfg = data.get("chart")
+            if isinstance(chart_cfg, dict) and chart_cfg:
+                try:
+                    from ui.modules.serialCom_module.serial_chart_model import ChartConfig
+                    self._sc_chart_config = ChartConfig.from_dict(chart_cfg)
+                except Exception:
+                    logger.error("恢复 chart 配置失败", exc_info=True)
         else:
             for key, attr in (
                 ("rx_display_hex", "_sc_rx_display_hex"),
