@@ -23,6 +23,18 @@ TIMESTAMP_MODES = ("rx_time", "sequence_index")
 CHART_TYPES = ("line", "scatter", "step")
 GROUP_BY_OPTIONS = ("none", "channel", "key", "session")
 SOURCE_SESSIONS = ("active", "all")
+CHANNEL_DISPLAY_MODES = ("merged", "split_axis", "split")
+STAT_METRICS = ("count", "mean", "max", "min", "std", "last", "ptp")
+STAT_METRIC_LABELS = {
+    "count": "Count",
+    "mean": "Mean",
+    "max": "Max",
+    "min": "Min",
+    "std": "Std",
+    "last": "Last",
+    "ptp": "Peak-Peak",
+}
+STAT_METRICS_DEFAULT = ("count", "mean", "max", "min", "std")
 
 DERIVED_OPERATIONS = (
     "add", "subtract", "multiply", "divide", "rolling_avg", "rolling_rate",
@@ -49,6 +61,14 @@ PRESET_TEMPLATES = {
 
 def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
+
+
+def parse_channel_filter(text: str):
+    if not text:
+        return None
+    items = [t.strip() for t in str(text).replace(";", ",").split(",")]
+    items = [t for t in items if t]
+    return items or None
 
 
 @dataclass
@@ -154,6 +174,8 @@ class ChartSeries:
     rule_id: str = ""
     field_name: str = ""
     group_by: str = "none"
+    channels: str = ""
+    channel_display: str = "merged"
     chart_type: str = "line"
     axis: str = "left"
     color: str = "#15d1a3"
@@ -175,6 +197,8 @@ class ChartSeries:
             "rule_id": self.rule_id,
             "field_name": self.field_name,
             "group_by": self.group_by,
+            "channels": self.channels,
+            "channel_display": self.channel_display,
             "chart_type": self.chart_type,
             "axis": self.axis,
             "color": self.color,
@@ -208,6 +232,8 @@ class ChartSeries:
             rule_id=str(data.get("rule_id", "")),
             field_name=str(data.get("field_name", "")),
             group_by=str(data.get("group_by", "none")),
+            channels=str(data.get("channels", "")),
+            channel_display=str(data.get("channel_display", "merged")),
             chart_type=str(data.get("chart_type", "line")),
             axis=str(data.get("axis", "left")),
             color=str(data.get("color", "#15d1a3")),
@@ -227,6 +253,7 @@ class ChartConfig:
         self.enabled = True
         self.capture_when_dialog_closed = False
         self.max_points_default = CHART_MAX_POINTS_DEFAULT
+        self.stat_metrics: list = list(STAT_METRICS_DEFAULT)
         self.rules: list = []
         self.series: list = []
 
@@ -235,6 +262,7 @@ class ChartConfig:
             "enabled": self.enabled,
             "capture_when_dialog_closed": self.capture_when_dialog_closed,
             "max_points_default": self.max_points_default,
+            "stat_metrics": list(self.stat_metrics),
             "rules": [r.to_dict() for r in self.rules],
             "series": [s.to_dict() for s in self.series],
         }
@@ -250,6 +278,9 @@ class ChartConfig:
             cfg.max_points_default = int(data.get("max_points_default", CHART_MAX_POINTS_DEFAULT))
         except (TypeError, ValueError):
             cfg.max_points_default = CHART_MAX_POINTS_DEFAULT
+        raw_metrics = data.get("stat_metrics")
+        if isinstance(raw_metrics, (list, tuple)):
+            cfg.stat_metrics = [m for m in raw_metrics if m in STAT_METRICS] or list(STAT_METRICS_DEFAULT)
         cfg.rules = [ChartRule.from_dict(r) for r in (data.get("rules") or [])]
         cfg.series = [ChartSeries.from_dict(s) for s in (data.get("series") or [])]
         return cfg

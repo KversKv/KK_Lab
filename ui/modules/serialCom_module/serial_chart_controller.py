@@ -3,7 +3,10 @@ from collections import deque
 from PySide6.QtCore import QObject, Signal
 
 from log_config import get_logger
-from ui.modules.serialCom_module.serial_chart_model import now_ts
+from ui.modules.serialCom_module.serial_chart_model import (
+    now_ts,
+    parse_channel_filter,
+)
 from ui.modules.serialCom_module.serial_chart_parser import (
     SerialChartParser,
     ChartSeriesBuffer,
@@ -22,10 +25,11 @@ class SerialChartController(QObject):
         self._config = config
         self._parser = SerialChartParser(config)
         self._buffers = {}
-        self._seq = 0
+        self._seq_map = {}
         self._t0 = now_ts()
         self._paused = False
         self._recent_events = deque(maxlen=_RECENT_EVENT_MAX)
+        self._events_seen = 0
         self.rebuild_series()
 
     @property
@@ -35,6 +39,10 @@ class SerialChartController(QObject):
     @property
     def recent_events(self):
         return list(self._recent_events)
+
+    @property
+    def events_seen(self):
+        return self._events_seen
 
     def set_paused(self, paused: bool):
         self._paused = bool(paused)
@@ -79,11 +87,17 @@ class SerialChartController(QObject):
     def buffers(self):
         return dict(self._buffers)
 
+    def mark_all_dirty(self):
+        for buf in self._buffers.values():
+            if buf.xs:
+                buf.dirty = True
+
     def clear(self):
         for buf in self._buffers.values():
             buf.clear()
         self._recent_events.clear()
-        self._seq = 0
+        self._events_seen = 0
+        self._seq_map = {}
         self._t0 = now_ts()
 
     def feed_line(self, line, session_id="active", rx_time=None):
@@ -102,10 +116,11 @@ class SerialChartController(QObject):
         events = self._parser.feed_bytes(data, session_id, rx_time)
         self._dispatch(events)
 
-    def _x_value(self, rule, rx_time):
+    def _x_value(self, rule, rx_time, seq_key):
         if rule is not None and rule.timestamp_mode == "sequence_index":
-            self._seq += 1
-            return float(self._seq)
+            seq = self._seq_map.get(seq_key, 0) + 1
+            self._seq_map[seq_key] = seq
+            return float(seq)
         return float(rx_time - self._t0)
 
     def _dispatch(self, events):
@@ -113,8 +128,8 @@ class SerialChartController(QObject):
             return
         for ev in events:
             self._recent_events.append(ev)
+            self._events_seen += 1
             rule = self._config.rule_by_id(ev["rule_id"])
-            x = self._x_value(rule, ev["rx_time"])
             for s in self._config.series:
                 if not s.enabled or s.source_type != "field":
                     continue
@@ -127,6 +142,12 @@ class SerialChartController(QObject):
                     continue
                 label = ev["labels"].get(s.field_name)
                 suffix = self._group_suffix(s, ev)
+                if s.group_by == "channel":
+                    allow = parse_channel_filter(getattr(s, "channels", ""))
+                    if allow is not None and str(suffix) not in allow:
+                        continue
+                seq_key = f"{s.series_id}::{suffix}" if suffix else s.series_id
+                x = self._x_value(rule, ev["rx_time"], seq_key)
                 buf = self.buffer_for(s.series_id, suffix)
                 if buf is not None:
                     buf.append(x, float(y), label)

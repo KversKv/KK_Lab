@@ -486,7 +486,7 @@ class _MixinSerialSettingsDialog(_FramelessChromeDialog):
         form.addWidget(self._flow_combo,      4, 1)
 
         if connected:
-            warn = QLabel("⚠ Already connected. Changes apply to the next connection "
+            warn = QLabel("Already connected. Changes apply to the next connection "
                           "(baudrate hot-applied).")
             warn.setWordWrap(True)
             warn.setStyleSheet("color:#f2994a;font-size:11px;background:transparent;border:none;")
@@ -620,18 +620,22 @@ class SerialComMixin:
         status_row.setSpacing(6)
         status_row.setContentsMargins(0, 0, 0, 0)
 
-        self.serial_status_label = QLabel("● Not Connected")
+        self.serial_status_label = QLabel("Not Connected")
         self.serial_status_label.setObjectName("statusErr")
         status_row.addWidget(self.serial_status_label, 1)
 
-        self.serial_settings_btn = QPushButton("⚙")
+        self.serial_settings_btn = QPushButton()
+        self.serial_settings_btn.setIcon(
+            _tinted_svg_icon(os.path.join(_SVG_SERIAL_DIR, "settings.svg"), "#8ea6cf", 14)
+        )
+        self.serial_settings_btn.setIconSize(QSize(14, 14))
         self.serial_settings_btn.setToolTip("Serial port settings")
         self.serial_settings_btn.setFocusPolicy(Qt.NoFocus)
         self.serial_settings_btn.setCursor(Qt.PointingHandCursor)
         self.serial_settings_btn.setFixedSize(btn_height, btn_height)
         self.serial_settings_btn.setStyleSheet(
             f"QPushButton{{background:transparent;color:#8ea6cf;border:1px solid #2b466f;"
-            f"border-radius:{btn_radius}px;font-size:13px;padding:0;}}"
+            f"border-radius:{btn_radius}px;padding:0;}}"
             f"QPushButton:hover{{color:#e9eef7;border-color:#3a5a8a;background:#162a4a;}}"
             f"QPushButton:pressed{{background:#0f1f3a;}}"
             f"QPushButton:disabled{{color:#4a5b78;border-color:#1f3262;}}"
@@ -694,7 +698,7 @@ class SerialComMixin:
         if DEBUG_MOCK:
             self.serial_combo.clear()
             self.serial_combo.addItem("[MOCK] COM99 - Mock Serial Device")
-            self._set_serial_status("● Mock port ready")
+            self._set_serial_status("Mock port ready")
             if hasattr(self, 'append_log'):
                 self.append_log(f"[{self._serial_prefix}] Mock port loaded.")
             return
@@ -702,7 +706,7 @@ class SerialComMixin:
         if self._serial_search_thread is not None and self._serial_search_thread.isRunning():
             return
 
-        self._set_serial_status("● Searching")
+        self._set_serial_status("Searching")
         self.serial_search_btn.setEnabled(False)
         if self._serial_mode == MODE_FULL and hasattr(self, 'serial_connect_btn'):
             self.serial_connect_btn.setEnabled(False)
@@ -734,13 +738,13 @@ class SerialComMixin:
             for port in ports:
                 self.serial_combo.addItem(port)
             count = len(ports)
-            self._set_serial_status(f"● Found {count} port(s)")
+            self._set_serial_status(f"Found {count} port(s)")
             if hasattr(self, 'append_log'):
                 self.append_log(f"[{self._serial_prefix}] Found {count} serial port(s).")
         else:
             self.serial_combo.addItem("No serial ports found")
             self.serial_combo.setEnabled(False)
-            self._set_serial_status("● No port found", is_error=True)
+            self._set_serial_status("No port found", is_error=True)
             if hasattr(self, 'append_log'):
                 self.append_log(f"[{self._serial_prefix}] No serial ports found.")
 
@@ -749,7 +753,7 @@ class SerialComMixin:
             self.serial_connect_btn.setEnabled(bool(ports))
 
     def _on_serial_search_error(self, err):
-        self._set_serial_status("● Search failed", is_error=True)
+        self._set_serial_status("Search failed", is_error=True)
         if hasattr(self, 'append_log'):
             self.append_log(f"[{self._serial_prefix}] Search error: {err}")
         self.serial_search_btn.setEnabled(True)
@@ -802,7 +806,7 @@ class SerialComMixin:
 
         port = self.get_selected_serial_port()
         if port is None:
-            self._set_serial_status("● No valid port selected", is_error=True)
+            self._set_serial_status("No valid port selected", is_error=True)
             self.serial_connect_btn.setEnabled(True)
             return
 
@@ -829,13 +833,13 @@ class SerialComMixin:
             session._connected = True
             self._sc_active_session_id = session_id
             self._update_serial_connect_ui(True)
-            self._set_serial_status(f"● Connected to: MOCK (DEBUG)")
+            self._set_serial_status(f"Connected to: MOCK (DEBUG)")
             if hasattr(self, 'append_log'):
                 self.append_log(f"[{self._serial_prefix}] Mock serial connected.")
             self.serial_connection_changed.emit(True)
             return
 
-        self._set_serial_status("● Connecting")
+        self._set_serial_status("Connecting")
         try:
             conn = serial.Serial(
                 port,
@@ -854,13 +858,13 @@ class SerialComMixin:
             session._connected = True
             self._sc_active_session_id = session_id
             self._update_serial_connect_ui(True)
-            self._set_serial_status(f"● Connected to: {port}")
+            self._set_serial_status(f"Connected to: {port}")
             if hasattr(self, 'append_log'):
                 self.append_log(f"[{self._serial_prefix}] Connected: {port} @ {self._serial_baudrate}")
             self.serial_connection_changed.emit(True)
             self._start_serial_read()
         except Exception as e:
-            self._set_serial_status("● Connection failed", is_error=True)
+            self._set_serial_status("Connection failed", is_error=True)
             if hasattr(self, 'append_log'):
                 self.append_log(f"[{self._serial_prefix}] Connection failed: {e}")
         finally:
@@ -886,7 +890,7 @@ class SerialComMixin:
             session._serial_conn = None
             session._connected = False
         self._update_serial_connect_ui(False)
-        self._set_serial_status("● Not Connected", is_error=True)
+        self._set_serial_status("Not Connected", is_error=True)
         if hasattr(self, 'append_log'):
             self.append_log(f"[{self._serial_prefix}] Disconnected.")
         self.serial_connection_changed.emit(False)
@@ -1068,6 +1072,7 @@ class SerialComMixin:
         self._sc_rx_line_buf = ""
         self._sc_rx_flush_timer = None
         self._sc_all_logs = []
+        self._sc_max_log_lines = self._SC_MAX_LOG_LINES_DEFAULT
         self._sc_log_auto_save = False
         self._sc_log_save_path = ''
         self._sc_log_file_handle = None
@@ -1491,6 +1496,13 @@ class SerialComMixin:
         self._sc_rx_show_time_cb.toggled.connect(lambda v: setattr(self, '_sc_show_timestamp', v))
         layout.addWidget(self._sc_rx_show_time_cb)
 
+        self._sc_show_system_cb = QCheckBox("Show System Log")
+        self._sc_show_system_cb.setChecked(False)
+        self._sc_show_system_cb.setToolTip("Show blue system/info messages in log")
+        self._sc_show_system_cb.setStyleSheet(self._sc_checkbox_style())
+        self._sc_show_system_cb.toggled.connect(lambda v: setattr(self, '_sc_show_system_log', v))
+        layout.addWidget(self._sc_show_system_cb)
+
         return grp
 
     def _build_sc_section_tx_settings(self):
@@ -1532,13 +1544,6 @@ class SerialComMixin:
         self._sc_show_send_cb.setStyleSheet(self._sc_checkbox_style())
         self._sc_show_send_cb.toggled.connect(lambda v: setattr(self, '_sc_show_send', v))
         layout.addWidget(self._sc_show_send_cb)
-
-        self._sc_show_system_cb = QCheckBox("Show System Log")
-        self._sc_show_system_cb.setChecked(False)
-        self._sc_show_system_cb.setToolTip("Show blue system/info messages in log")
-        self._sc_show_system_cb.setStyleSheet(self._sc_checkbox_style())
-        self._sc_show_system_cb.toggled.connect(lambda v: setattr(self, '_sc_show_system_log', v))
-        layout.addWidget(self._sc_show_system_cb)
 
         self._sc_line_by_line_cb = QCheckBox("Line by Line")
         self._sc_line_by_line_cb.setStyleSheet(self._sc_checkbox_style())
@@ -1751,7 +1756,7 @@ class SerialComMixin:
         self._sc_log_edit.setReadOnly(True)
         self._sc_log_edit.setStyleSheet(log_edit_style() + SERIAL_SCROLLBAR_STYLE)
         self._sc_log_edit.document().setDefaultStyleSheet(log_document_style())
-        self._sc_log_edit.document().setMaximumBlockCount(5000)
+        self._sc_log_edit.document().setMaximumBlockCount(self._sc_max_log_lines)
         layout.addWidget(self._sc_log_edit, 1)
 
         if self._sc_log_edit.verticalScrollBar():
@@ -3378,7 +3383,7 @@ class SerialComMixin:
             self._sc_show_timestamp = dlg.show_time_cb.isChecked()
             self._sc_rx_show_time_cb.setChecked(self._sc_show_timestamp)
             self._sc_apply_ntp_setting(dlg.rx_use_ntp_cb.isChecked())
-            self._sc_max_log_lines = dlg.rx_max_lines_spin.value()
+            self._sc_apply_max_log_lines(dlg.rx_max_lines_spin.value())
 
             tx_val = dlg.tx_hex_toggle.value()
             self._sc_tx_display_hex = tx_val == "HEX"
@@ -3400,16 +3405,18 @@ class SerialComMixin:
 
             font_family = dlg.display_font_combo.currentText()
             font_size = dlg.display_font_size_spin.value()
-            self._sc_display_font = font_family
-            self._sc_display_font_size = font_size
-            self._sc_log_edit.setStyleSheet(
-                log_edit_style(
-                    font_family=font_family,
-                    font_size=font_size,
-                    padding="4px 6px",
-                    include_line_height=True,
-                ) + SERIAL_SCROLLBAR_STYLE
-            )
+            if (font_family != getattr(self, '_sc_display_font', 'Consolas')
+                    or font_size != getattr(self, '_sc_display_font_size', 11)):
+                self._sc_display_font = font_family
+                self._sc_display_font_size = font_size
+                self._sc_log_edit.setStyleSheet(
+                    log_edit_style(
+                        font_family=font_family,
+                        font_size=font_size,
+                        padding="4px 6px",
+                        include_line_height=True,
+                    ) + SERIAL_SCROLLBAR_STYLE
+                )
 
             self._sc_auto_scroll = dlg.display_auto_scroll_cb.isChecked()
             self._sc_scroll_lock_btn.setChecked(self._sc_auto_scroll)
@@ -3421,6 +3428,17 @@ class SerialComMixin:
             )
 
             self._sc_apply_auto_detect_settings(dlg)
+
+    def _sc_apply_max_log_lines(self, value):
+        value = max(500, min(int(value), self._SC_MAX_LOG_LINES_LIMIT))
+        if value == getattr(self, '_sc_max_log_lines', self._SC_MAX_LOG_LINES_DEFAULT):
+            return
+        self._sc_max_log_lines = value
+        self._sc_log_edit.document().setMaximumBlockCount(value)
+        if len(self._sc_all_logs) > value:
+            self._sc_all_logs = self._sc_all_logs[-value:]
+            if not self._sc_is_filter_active():
+                self._sc_rebuild_log_view()
 
     def _sc_apply_auto_detect_settings(self, dlg):
         enable = dlg.auto_detect_enable_cb.isChecked()
@@ -6395,7 +6413,8 @@ class SerialComMixin:
 
     # --- log helpers ---
 
-    _SC_MAX_LOG_LINES = 10000
+    _SC_MAX_LOG_LINES_DEFAULT = 10000
+    _SC_MAX_LOG_LINES_LIMIT = 500000
 
     def _sc_start_temp_log(self):
         self._sc_close_temp_log(delete=True)
@@ -6563,8 +6582,8 @@ class SerialComMixin:
             prefix = f"{prefix} [NTP] {ntp_ts}" if prefix else f"[NTP] {ntp_ts}"
         raw = f"{prefix} {message}" if prefix else message
         self._sc_all_logs.append((raw, html))
-        if len(self._sc_all_logs) > self._SC_MAX_LOG_LINES:
-            self._sc_all_logs = self._sc_all_logs[-self._SC_MAX_LOG_LINES:]
+        if len(self._sc_all_logs) > self._sc_max_log_lines:
+            self._sc_all_logs = self._sc_all_logs[-self._sc_max_log_lines:]
         self._sc_write_to_log_files(raw)
         if self._sc_is_filter_active():
             self._sc_filter_dirty = True
@@ -9037,10 +9056,14 @@ class _SerialSettingsDialog(_FramelessChromeDialog):
         buf_row.setSpacing(8)
         buf_row.addWidget(QLabel("Max lines"))
         self.rx_max_lines_spin = QSpinBox()
-        self.rx_max_lines_spin.setRange(500, 100000)
+        self.rx_max_lines_spin.setRange(500, 500000)
         self.rx_max_lines_spin.setValue(10000)
         self.rx_max_lines_spin.setSingleStep(1000)
         self.rx_max_lines_spin.setFixedHeight(26)
+        self.rx_max_lines_spin.setToolTip(
+            "RX log buffer size (lines). Higher values use more memory; "
+            "500000 lines is about 100-300 MB depending on line length."
+        )
         buf_row.addWidget(self.rx_max_lines_spin)
         buf_row.addStretch()
         layout.addLayout(buf_row)

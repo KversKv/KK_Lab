@@ -1,0 +1,64 @@
+{
+  "enabled": true,
+  "capture_when_dialog_closed": false,
+  "max_points_default": 20000,
+  "stat_metrics": [
+    "count",
+    "mean",
+    "max",
+    "min",
+    "std"
+  ],
+  "rules": [
+    {
+      "rule_id": "rule_gpadcvolt",
+      "name": "gpadc_volt",
+      "enabled": true,
+      "source_session": "active",
+      "input_mode": "line",
+      "match_mode": "regex",
+      "keyword_before": "",
+      "keyword_after": "",
+      "regex": "ch=(?P<channel>\\d+)\\s+i=(?P<seq>\\d+)\\s+volt=(?P<volt>\\d+)",
+      "case_sensitive": false,
+      "field_specs": [
+        {
+          "name": "volt",
+          "type": "int",
+          "unit": "mV",
+          "group": "",
+          "enum_map": {},
+          "pass_fail_map": {}
+        }
+      ],
+      "emit_policy": "each_match",
+      "timestamp_mode": "sequence_index",
+      "frame_start": "",
+      "frame_end": ""
+    }
+  ],
+  "series": [
+    {
+      "series_id": "series_gpadcvolt",
+      "name": "volt",
+      "enabled": true,
+      "source_type": "field",
+      "rule_id": "rule_gpadcvolt",
+      "field_name": "volt",
+      "group_by": "channel",
+      "channels": "",
+      "channel_display": "merged",
+      "chart_type": "line",
+      "axis": "left",
+      "color": "#15d1a3",
+      "max_points": 20000,
+      "time_window_s": 0.0,
+      "operation": "add",
+      "source_a": "",
+      "source_b": "",
+      "op_window": 100,
+      "op_value": 1.0,
+      "op_scale": 1.0
+    }
+  ]
+}

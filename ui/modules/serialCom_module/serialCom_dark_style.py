@@ -1217,7 +1217,7 @@ def log_color_info_style():
 
 
 def log_color_info_text():
-    return "RX → White (#E5E5EA)    TX → Blue (#409EFF)\nINFO → Blue (#409EFF)    WARN → Amber (#FF9F0A)    ERROR → Red (#FF453A)"
+    return "RX: White (#E5E5EA)    TX: Blue (#409EFF)\nINFO: Blue (#409EFF)    WARN: Amber (#FF9F0A)    ERROR: Red (#FF453A)"
 
 
 def dialog_backdrop_style():

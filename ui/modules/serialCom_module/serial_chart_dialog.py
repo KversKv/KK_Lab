@@ -1,7 +1,8 @@
 import json
+import math
 import os
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QEvent, QPoint
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
@@ -9,6 +10,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox, QCheckBox, QFormLayout, QPlainTextEdit, QTableWidget,
     QTableWidgetItem, QHeaderView, QAbstractItemView, QColorDialog,
     QMessageBox, QFileDialog, QTabWidget, QWidget,
+    QStackedWidget, QToolButton,
 )
 
 from log_config import get_logger
@@ -16,6 +18,8 @@ from ui.modules.serialCom_module.serial_chart_model import (
     ChartRule, ChartSeries, FieldSpec, ChartConfig,
     FIELD_TYPES, MATCH_MODES, INPUT_MODES, EMIT_POLICIES, TIMESTAMP_MODES,
     CHART_TYPES, GROUP_BY_OPTIONS, SOURCE_SESSIONS, DERIVED_OPERATIONS,
+    CHANNEL_DISPLAY_MODES,
+    STAT_METRICS, STAT_METRIC_LABELS, STAT_METRICS_DEFAULT,
     PRESET_TEMPLATES, DEFAULT_COLORS, CHART_RULE_WARN_COUNT,
     CHART_REFRESH_INTERVAL_MS, new_id,
 )
@@ -82,6 +86,34 @@ QPushButton {
 QPushButton:hover { background-color: #29374B; }
 QPushButton#chartPrimary { background-color: #15806A; border-color: #15806A; color: #ECFDF5; }
 QPushButton#chartPrimary:hover { background-color: #199e83; }
+QFrame#chartStatsOverlay {
+    background-color: rgba(11, 18, 32, 200);
+    border: 1px solid rgba(56, 78, 110, 180);
+    border-radius: 8px;
+}
+QFrame#chartStatsHandle { background-color: transparent; border: none; }
+QLabel#chartStatsCaption { color: #93A4BC; font-size: 11px; font-weight: 600; }
+QFrame#chartSplitPanel { background-color: #0B1220; border: 1px solid #1E293B; border-radius: 4px; }
+QFrame#chartSplitBar { background-color: #111c2e; border-bottom: 1px solid #1E293B; }
+QLabel#chartSplitCaption { color: #C7D2E0; font-size: 11px; font-weight: 600; }
+QToolButton#chartSplitMoveBtn {
+    color: #93A4BC; font-size: 11px; border: none; border-radius: 3px;
+    padding: 0 4px; min-width: 18px; min-height: 18px;
+}
+QToolButton#chartSplitMoveBtn:hover { background-color: #1E293B; color: #E6EEF8; }
+QPushButton#chartStatsBtn {
+    background-color: rgba(30, 41, 59, 180); border: 1px solid #29374B;
+    border-radius: 5px; color: #C7D2E0; font-size: 11px; padding: 3px 10px; min-height: 20px;
+}
+QPushButton#chartStatsBtn:hover { background-color: #29374B; color: #E6EEF8; }
+QTableWidget#chartStatsTable {
+    background-color: transparent; border: none; color: #D6E0EE;
+    gridline-color: rgba(56, 78, 110, 120); font-size: 11px;
+}
+QTableWidget#chartStatsTable QHeaderView::section {
+    background-color: rgba(17, 28, 46, 160); color: #8FA3BF;
+    border: none; border-right: 1px solid rgba(56, 78, 110, 120); padding: 3px 6px;
+}
 QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox, QPlainTextEdit {
     background-color: #0F172A; border: 1px solid #1E293B; border-radius: 5px;
     color: #E2E8F0; font-size: 12px; padding: 4px 6px; min-height: 22px;
@@ -520,6 +552,15 @@ class _SeriesEditorDialog(QDialog):
         self.group_combo.setCurrentText(self._series.group_by)
         form.addRow("Group by", self.group_combo)
 
+        self.channels_edit = QLineEdit(self._series.channels)
+        self.channels_edit.setPlaceholderText("e.g. 0,1  (empty = all channels)")
+        form.addRow("Channels", self.channels_edit)
+
+        self.channel_display_combo = QComboBox()
+        self.channel_display_combo.addItems(CHANNEL_DISPLAY_MODES)
+        self.channel_display_combo.setCurrentText(self._series.channel_display)
+        form.addRow("Channel display", self.channel_display_combo)
+
         self.op_combo = QComboBox()
         self.op_combo.addItems(DERIVED_OPERATIONS)
         self.op_combo.setCurrentText(self._series.operation)
@@ -621,7 +662,8 @@ class _SeriesEditorDialog(QDialog):
 
     def _on_source_changed(self, mode):
         is_field = mode == "field"
-        for w in (self.rule_combo, self.field_combo, self.group_combo):
+        for w in (self.rule_combo, self.field_combo, self.group_combo,
+                  self.channels_edit, self.channel_display_combo):
             w.setEnabled(is_field)
         for w in (self.op_combo, self.a_combo, self.b_combo,
                   self.window_spin, self.value_spin, self.scale_spin):
@@ -643,6 +685,8 @@ class _SeriesEditorDialog(QDialog):
         s.rule_id = self.rule_combo.currentData() or ""
         s.field_name = self.field_combo.currentText().strip()
         s.group_by = self.group_combo.currentText()
+        s.channels = self.channels_edit.text().strip()
+        s.channel_display = self.channel_display_combo.currentText()
         s.operation = self.op_combo.currentText()
         s.source_a = self.a_combo.currentData() or ""
         s.source_b = self.b_combo.currentData() or ""
@@ -663,6 +707,51 @@ class _SeriesEditorDialog(QDialog):
         return self._series
 
 
+class _StatColumnsDialog(QDialog):
+    def __init__(self, parent=None, selected=None):
+        super().__init__(parent)
+        self.setObjectName("scStatColumns")
+        self.setWindowTitle("Stat Columns")
+        self.setMinimumWidth(240)
+        _styled_dialog(self)
+        selected = set(selected or [])
+
+        root = QVBoxLayout(self)
+        hint = QLabel("Select statistics to display:")
+        root.addWidget(hint)
+
+        self._checks = {}
+        for m in STAT_METRICS:
+            cb = QCheckBox(STAT_METRIC_LABELS[m])
+            cb.setChecked(m in selected)
+            root.addWidget(cb)
+            self._checks[m] = cb
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel = QPushButton("Cancel")
+        cancel.setAutoDefault(False)
+        cancel.setDefault(False)
+        cancel.clicked.connect(self.reject)
+        ok = QPushButton("OK")
+        ok.setObjectName("chartPrimary")
+        ok.setAutoDefault(True)
+        ok.setDefault(True)
+        ok.clicked.connect(self._on_ok)
+        btn_row.addWidget(cancel)
+        btn_row.addWidget(ok)
+        root.addLayout(btn_row)
+
+    def _on_ok(self):
+        if not any(cb.isChecked() for cb in self._checks.values()):
+            QMessageBox.warning(self, "Stat Columns", "Select at least one statistic.")
+            return
+        self.accept()
+
+    def result_metrics(self):
+        return [m for m in STAT_METRICS if self._checks[m].isChecked()]
+
+
 class SerialChartDialog(QDialog):
     def __init__(self, parent=None, config: ChartConfig = None, on_config_changed=None):
         super().__init__(parent)
@@ -676,10 +765,15 @@ class SerialChartDialog(QDialog):
         self._controller = SerialChartController(self._config, self)
         self._plot_items = {}
         self._color_cycle = 0
+        self._channel_order = {}
+        self._stat_user_moved = False
+        self._stat_drag_offset = None
+        self._events_shown = 0
+        self._stats_tick = 0
 
         import pyqtgraph as pg
         self._pg = pg
-        pg.setConfigOptions(antialias=True)
+        pg.setConfigOptions(antialias=False)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(14, 12, 14, 14)
@@ -736,6 +830,14 @@ class SerialChartDialog(QDialog):
         self.series_toggle_btn.toggled.connect(self._on_toggle_series_panel)
         row.addWidget(self.series_toggle_btn)
 
+        self.stats_toggle_btn = QPushButton("Stats")
+        self.stats_toggle_btn.setObjectName("chartToggle")
+        self.stats_toggle_btn.setCheckable(True)
+        self.stats_toggle_btn.setChecked(True)
+        self.stats_toggle_btn.setAutoDefault(False)
+        self.stats_toggle_btn.toggled.connect(self._on_toggle_stats_panel)
+        row.addWidget(self.stats_toggle_btn)
+
         row.addStretch()
 
         self.run_btn = QPushButton("Pause")
@@ -755,12 +857,12 @@ class SerialChartDialog(QDialog):
         export_btn.clicked.connect(self._on_export)
         row.addWidget(export_btn)
 
-        import_cfg = QPushButton("Import Cfg")
+        import_cfg = QPushButton("Import CFG")
         import_cfg.setAutoDefault(False)
         import_cfg.clicked.connect(self._on_import_config)
         row.addWidget(import_cfg)
 
-        export_cfg = QPushButton("Export Cfg")
+        export_cfg = QPushButton("Export CFG")
         export_cfg.setAutoDefault(False)
         export_cfg.clicked.connect(self._on_export_config)
         row.addWidget(export_cfg)
@@ -809,6 +911,9 @@ class SerialChartDialog(QDialog):
         plot_host = QWidget()
         plot_layout = QVBoxLayout(plot_host)
         plot_layout.setContentsMargins(0, 0, 0, 0)
+
+        self._plot_stack = QStackedWidget()
+
         self.plot_widget = self._pg.PlotWidget()
         self.plot_widget.setBackground("#0B1220")
         self.plot_widget.showGrid(x=True, y=True, alpha=0.2)
@@ -820,7 +925,20 @@ class SerialChartDialog(QDialog):
         self._plot_item.showAxis("right")
         self._right_vb.setXLink(self._plot_item)
         self._plot_item.vb.sigResized.connect(self._sync_right_vb)
-        plot_layout.addWidget(self.plot_widget)
+        self._plot_stack.addWidget(self.plot_widget)
+
+        self._split_splitter = QSplitter(Qt.Vertical)
+        self._split_splitter.setObjectName("chartSplitSplitter")
+        self._split_splitter.setHandleWidth(6)
+        self._split_splitter.setChildrenCollapsible(False)
+        self._plot_stack.addWidget(self._split_splitter)
+
+        plot_layout.addWidget(self._plot_stack)
+        self._plot_host = plot_host
+        self._split_panels = {}
+        self._split_order = []
+        self._build_stats_overlay(plot_host)
+        plot_host.installEventFilter(self)
         tabs.addTab(plot_host, "Plot")
 
         table_host = QWidget()
@@ -835,9 +953,238 @@ class SerialChartDialog(QDialog):
         tabs.addTab(table_host, "Events")
         return tabs
 
+    def _build_stats_overlay(self, parent):
+        panel = QFrame(parent)
+        panel.setObjectName("chartStatsOverlay")
+        panel.setAttribute(Qt.WA_StyledBackground, True)
+        col = QVBoxLayout(panel)
+        col.setContentsMargins(8, 6, 8, 8)
+        col.setSpacing(4)
+
+        handle = QFrame()
+        handle.setObjectName("chartStatsHandle")
+        handle.setCursor(Qt.SizeAllCursor)
+        bar = QHBoxLayout(handle)
+        bar.setContentsMargins(0, 0, 0, 0)
+        bar.setSpacing(6)
+        cap = QLabel("\u2630  Statistics")
+        cap.setObjectName("chartStatsCaption")
+        cap.setCursor(Qt.SizeAllCursor)
+        bar.addWidget(cap)
+        bar.addStretch(1)
+        self.stat_cols_btn = QPushButton("Columns...")
+        self.stat_cols_btn.setObjectName("chartStatsBtn")
+        self.stat_cols_btn.setAutoDefault(False)
+        self.stat_cols_btn.setCursor(Qt.ArrowCursor)
+        self.stat_cols_btn.clicked.connect(self._on_config_stat_columns)
+        bar.addWidget(self.stat_cols_btn)
+        col.addWidget(handle)
+
+        self.stat_table = QTableWidget(0, 0)
+        self.stat_table.setObjectName("chartStatsTable")
+        self.stat_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.stat_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.stat_table.setFocusPolicy(Qt.NoFocus)
+        self.stat_table.verticalHeader().setVisible(False)
+        self.stat_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.stat_table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        col.addWidget(self.stat_table)
+
+        self._stat_panel = panel
+        self._stat_handle = handle
+        handle.installEventFilter(self)
+        cap.installEventFilter(self)
+        self._rebuild_stat_columns()
+        self._autosize_stats_overlay()
+        self._reposition_stats_overlay()
+        return panel
+
+    def _autosize_stats_overlay(self):
+        panel = getattr(self, "_stat_panel", None)
+        host = getattr(self, "_plot_host", None)
+        if panel is None or host is None:
+            return
+        table = self.stat_table
+        table.resizeColumnsToContents()
+        table.resizeRowsToContents()
+        hdr = table.horizontalHeader()
+        w = table.verticalHeader().width() if table.verticalHeader().isVisible() else 0
+        for c in range(table.columnCount()):
+            w += hdr.sectionSize(c)
+        h = hdr.height()
+        for r in range(table.rowCount()):
+            h += table.rowHeight(r)
+        frame = 2 * table.frameWidth()
+        table.setFixedWidth(w + frame)
+        table.setFixedHeight(max(h + frame, 24))
+        panel.adjustSize()
+        margin = 12
+        max_w = max(160, host.width() - 2 * margin)
+        max_h = max(120, host.height() - 2 * margin)
+        pw = min(panel.width(), max_w)
+        ph = min(panel.height(), max_h)
+        panel.resize(pw, ph)
+
+    def _reposition_stats_overlay(self):
+        panel = getattr(self, "_stat_panel", None)
+        host = getattr(self, "_plot_host", None)
+        if panel is None or host is None:
+            return
+        margin = 12
+        if self._stat_user_moved:
+            x = min(max(0, panel.x()), max(0, host.width() - panel.width()))
+            y = min(max(0, panel.y()), max(0, host.height() - panel.height()))
+        else:
+            x = max(margin, host.width() - panel.width() - margin)
+            y = margin
+        panel.move(x, y)
+        panel.raise_()
+
+    def eventFilter(self, obj, event):
+        if obj is getattr(self, "_plot_host", None) and event.type() == QEvent.Resize:
+            self._reposition_stats_overlay()
+            return False
+        handle = getattr(self, "_stat_handle", None)
+        panel = getattr(self, "_stat_panel", None)
+        is_handle = handle is not None and (obj is handle or (obj is not None and obj.objectName() == "chartStatsCaption"))
+        if is_handle and panel is not None:
+            et = event.type()
+            if et == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
+                self._stat_drag_offset = event.globalPosition().toPoint() - panel.pos()
+                return False
+            if et == QEvent.MouseMove and self._stat_drag_offset is not None:
+                host = self._plot_host
+                new_pos = event.globalPosition().toPoint() - self._stat_drag_offset
+                x = min(max(0, new_pos.x()), max(0, host.width() - panel.width()))
+                y = min(max(0, new_pos.y()), max(0, host.height() - panel.height()))
+                panel.move(x, y)
+                self._stat_user_moved = True
+                return True
+            if et == QEvent.MouseButtonRelease and event.button() == Qt.LeftButton:
+                self._stat_drag_offset = None
+                return True
+        return super().eventFilter(obj, event)
+
+    def _on_toggle_stats_panel(self, checked):
+        panel = getattr(self, "_stat_panel", None)
+        if panel is not None:
+            panel.setVisible(bool(checked))
+            if checked:
+                self._autosize_stats_overlay()
+                self._reposition_stats_overlay()
+
+    def _active_stat_metrics(self):
+        metrics = [m for m in self._config.stat_metrics if m in STAT_METRICS]
+        return metrics or list(STAT_METRICS_DEFAULT)
+
+    def _rebuild_stat_columns(self):
+        metrics = self._active_stat_metrics()
+        headers = ["Series"] + [STAT_METRIC_LABELS[m] for m in metrics]
+        self.stat_table.setColumnCount(len(headers))
+        self.stat_table.setHorizontalHeaderLabels(headers)
+        self.stat_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+
+    def _on_config_stat_columns(self):
+        dlg = _StatColumnsDialog(self, self._active_stat_metrics())
+        if dlg.exec() == QDialog.Accepted:
+            self._config.stat_metrics = dlg.result_metrics()
+            self._rebuild_stat_columns()
+            self._refresh_stats()
+            if callable(self._on_config_changed):
+                try:
+                    self._on_config_changed()
+                except Exception:
+                    logger.error("chart config changed callback failed", exc_info=True)
+
     def _sync_right_vb(self):
         self._right_vb.setGeometry(self._plot_item.vb.sceneBoundingRect())
         self._right_vb.linkedViewChanged(self._plot_item.vb, self._right_vb.XAxis)
+
+    def _split_mode_active(self):
+        for s in self._config.series:
+            if (s.enabled and s.source_type == "field"
+                    and s.group_by == "channel"
+                    and s.channel_display == "split"):
+                return True
+        return False
+
+    def _split_channel_token(self, key, suffix):
+        return str(suffix) if suffix is not None else key
+
+    def _ensure_split_panel(self, token, title):
+        panel = self._split_panels.get(token)
+        if panel is not None:
+            return panel
+        pg = self._pg
+        host = QFrame()
+        host.setObjectName("chartSplitPanel")
+        host.setAttribute(Qt.WA_StyledBackground, True)
+        col = QVBoxLayout(host)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(0)
+
+        bar = QFrame()
+        bar.setObjectName("chartSplitBar")
+        bar.setAttribute(Qt.WA_StyledBackground, True)
+        bar_row = QHBoxLayout(bar)
+        bar_row.setContentsMargins(8, 2, 6, 2)
+        bar_row.setSpacing(4)
+        cap = QLabel(title)
+        cap.setObjectName("chartSplitCaption")
+        bar_row.addWidget(cap)
+        bar_row.addStretch(1)
+        up_btn = QToolButton()
+        up_btn.setObjectName("chartSplitMoveBtn")
+        up_btn.setText("\u25b2")
+        up_btn.setAutoRaise(True)
+        up_btn.setToolTip("Move up")
+        up_btn.clicked.connect(lambda _=False, t=token: self._move_split_panel(t, -1))
+        down_btn = QToolButton()
+        down_btn.setObjectName("chartSplitMoveBtn")
+        down_btn.setText("\u25bc")
+        down_btn.setAutoRaise(True)
+        down_btn.setToolTip("Move down")
+        down_btn.clicked.connect(lambda _=False, t=token: self._move_split_panel(t, 1))
+        bar_row.addWidget(up_btn)
+        bar_row.addWidget(down_btn)
+        col.addWidget(bar)
+
+        plot = pg.PlotWidget()
+        plot.setBackground("#0B1220")
+        plot.showGrid(x=True, y=True, alpha=0.2)
+        plot.addLegend()
+        col.addWidget(plot, 1)
+
+        plot_item = plot.getPlotItem()
+        if self._split_order:
+            plot_item.setXLink(self._split_panels[self._split_order[0]]["plot_item"])
+        panel = {
+            "host": host, "plot": plot, "plot_item": plot_item,
+            "caption": cap, "title": title,
+        }
+        self._split_panels[token] = panel
+        self._split_order.append(token)
+        self._split_splitter.addWidget(host)
+        return panel
+
+    def _move_split_panel(self, token, delta):
+        if token not in self._split_order:
+            return
+        idx = self._split_order.index(token)
+        new_idx = idx + delta
+        if new_idx < 0 or new_idx >= len(self._split_order):
+            return
+        panel = self._split_panels[token]
+        self._split_order.insert(new_idx, self._split_order.pop(idx))
+        self._split_splitter.insertWidget(new_idx, panel["host"])
+
+    def _clear_split_panels(self):
+        for token in list(self._split_panels.keys()):
+            panel = self._split_panels.pop(token)
+            host = panel["host"]
+            host.setParent(None)
+            host.deleteLater()
+        self._split_order = []
 
     def _on_toggle_rules_panel(self, checked):
         self._rules_panel.setVisible(bool(checked))
@@ -884,6 +1231,7 @@ class SerialChartDialog(QDialog):
         for item in self._plot_items.values():
             item.setData([], [])
         self.event_table.setRowCount(0)
+        self.stat_table.setRowCount(0)
 
     def _next_color(self):
         c = DEFAULT_COLORS[self._color_cycle % len(DEFAULT_COLORS)]
@@ -1008,6 +1356,8 @@ class SerialChartDialog(QDialog):
         self._reload_rules()
         self._reload_series()
         self._rebuild_plot_items()
+        self._controller.mark_all_dirty()
+        self._refresh_plots()
         if callable(self._on_config_changed):
             try:
                 self._on_config_changed()
@@ -1027,20 +1377,53 @@ class SerialChartDialog(QDialog):
         if legend is not None:
             legend.clear()
         self._plot_items = {}
+        self._channel_order = {}
+        self._clear_split_panels()
+        if self._split_mode_active():
+            self._plot_stack.setCurrentWidget(self._split_splitter)
+        else:
+            self._plot_stack.setCurrentWidget(self.plot_widget)
+
+    def _channel_index(self, series_id, suffix):
+        order = self._channel_order.setdefault(series_id, [])
+        token = str(suffix)
+        if token not in order:
+            order.append(token)
+        return order.index(token)
 
     def _ensure_plot_item(self, key, series, suffix=None):
         if key in self._plot_items:
             return self._plot_items[key]
         pg = self._pg
         name = series.name + (f" {suffix}" if suffix else "")
-        pen = pg.mkPen(series.color, width=2)
+
+        if suffix is not None:
+            idx = self._channel_index(series.series_id, suffix)
+            color = DEFAULT_COLORS[idx % len(DEFAULT_COLORS)]
+        else:
+            idx = 0
+            color = series.color
+
+        on_right = series.axis == "right"
+        if suffix is not None and series.channel_display == "split_axis":
+            on_right = (idx % 2 == 1)
+
+        pen = pg.mkPen(color, width=2)
         if series.chart_type == "scatter":
-            item = pg.ScatterPlotItem(size=6, brush=pg.mkBrush(series.color), name=name)
+            item = pg.ScatterPlotItem(size=6, brush=pg.mkBrush(color), name=name)
         elif series.chart_type == "step":
             item = pg.PlotDataItem(pen=pen, stepMode="right", name=name)
         else:
             item = pg.PlotDataItem(pen=pen, name=name)
-        if series.axis == "right":
+        if isinstance(item, pg.PlotDataItem):
+            item.setDownsampling(auto=True, method="peak")
+            item.setClipToView(True)
+        if suffix is not None and series.channel_display == "split":
+            token = self._split_channel_token(key, suffix)
+            title = f"Ch {suffix}" if suffix is not None else series.name
+            panel = self._ensure_split_panel(token, title)
+            panel["plot_item"].addItem(item)
+        elif on_right:
             self._right_vb.addItem(item)
         else:
             self._plot_item.addItem(item)
@@ -1067,20 +1450,111 @@ class SerialChartDialog(QDialog):
                     item.setData(xs, ys)
                 buf.dirty = False
         self._refresh_events()
+        self._stats_tick += 1
+        if self.stats_toggle_btn.isChecked() and self._stats_tick % 4 == 0:
+            self._refresh_stats()
+
+    def _compute_stats(self, ys, metrics):
+        n = len(ys)
+        result = {m: (n if m == "count" else None) for m in metrics}
+        if n == 0:
+            return result
+        need_sum = "mean" in metrics or "std" in metrics
+        need_minmax = "max" in metrics or "min" in metrics or "ptp" in metrics
+        total = 0.0
+        total_sq = 0.0
+        vmax = ys[0]
+        vmin = ys[0]
+        for v in ys:
+            if need_sum:
+                total += v
+                total_sq += v * v
+            if need_minmax:
+                if v > vmax:
+                    vmax = v
+                elif v < vmin:
+                    vmin = v
+        mean = total / n
+        for m in metrics:
+            if m == "mean":
+                result[m] = mean
+            elif m == "max":
+                result[m] = vmax
+            elif m == "min":
+                result[m] = vmin
+            elif m == "ptp":
+                result[m] = vmax - vmin
+            elif m == "last":
+                result[m] = ys[-1]
+            elif m == "std":
+                if n < 2:
+                    result[m] = 0.0
+                else:
+                    var = max(0.0, total_sq / n - mean * mean)
+                    result[m] = math.sqrt(var)
+        return result
+
+    def _format_stat(self, metric, value):
+        if value is None:
+            return "-"
+        if metric == "count":
+            return str(int(value))
+        return f"{value:.4g}"
+
+    def _refresh_stats(self):
+        metrics = self._active_stat_metrics()
+        buffers = self._controller.buffers()
+        rows = []
+        for s in self._config.series:
+            if not s.enabled:
+                continue
+            for key in sorted(buffers.keys()):
+                base_id = key.split("::", 1)[0]
+                if base_id != s.series_id:
+                    continue
+                suffix = key.split("::", 1)[1] if "::" in key else None
+                ys = buffers[key].ys
+                name = s.name + (f" {suffix}" if suffix else "")
+                rows.append((name, self._compute_stats(ys, metrics)))
+        self.stat_table.setRowCount(len(rows))
+        for r, (name, stats) in enumerate(rows):
+            self.stat_table.setItem(r, 0, QTableWidgetItem(name))
+            for c, m in enumerate(metrics, start=1):
+                self.stat_table.setItem(r, c, QTableWidgetItem(self._format_stat(m, stats.get(m))))
+        self._autosize_stats_overlay()
+        self._reposition_stats_overlay()
+
+    _EVENT_VIEW_MAX = 200
 
     def _refresh_events(self):
-        events = self._controller.recent_events
-        if self.event_table.rowCount() == len(events):
+        seen = self._controller.events_seen
+        if seen == self._events_shown:
             return
-        self.event_table.setRowCount(0)
-        for ev in events[-200:]:
-            row = self.event_table.rowCount()
-            self.event_table.insertRow(row)
-            self.event_table.setItem(row, 0, QTableWidgetItem(f"{ev['rx_time']:.3f}"))
-            rule = self._config.rule_by_id(ev["rule_id"])
-            self.event_table.setItem(row, 1, QTableWidgetItem(rule.name if rule else ev["rule_id"]))
-            fields = ", ".join(f"{k}={v}" for k, v in ev["fields"].items())
-            self.event_table.setItem(row, 2, QTableWidgetItem(fields))
+        new_count = seen - self._events_shown
+        if new_count <= 0:
+            self._events_shown = seen
+            return
+        events = self._controller.recent_events
+        if new_count >= self._EVENT_VIEW_MAX or new_count >= len(events):
+            new_events = events[-self._EVENT_VIEW_MAX:]
+        else:
+            new_events = events[-new_count:]
+        self.event_table.setUpdatesEnabled(False)
+        try:
+            for ev in new_events:
+                rule = self._config.rule_by_id(ev["rule_id"])
+                fields = ", ".join(f"{k}={v}" for k, v in ev["fields"].items())
+                row = self.event_table.rowCount()
+                self.event_table.insertRow(row)
+                self.event_table.setItem(row, 0, QTableWidgetItem(f"{ev['rx_time']:.3f}"))
+                self.event_table.setItem(row, 1, QTableWidgetItem(rule.name if rule else ev["rule_id"]))
+                self.event_table.setItem(row, 2, QTableWidgetItem(fields))
+            overflow = self.event_table.rowCount() - self._EVENT_VIEW_MAX
+            for _ in range(max(0, overflow)):
+                self.event_table.removeRow(0)
+        finally:
+            self.event_table.setUpdatesEnabled(True)
+        self._events_shown = seen
 
     def _on_export(self):
         path, _ = QFileDialog.getSaveFileName(self, "Export chart data", "chart_data.json", "JSON (*.json)")
@@ -1127,6 +1601,10 @@ class SerialChartDialog(QDialog):
         self._config.max_points_default = new_cfg.max_points_default
         self._on_clear()
         self._commit_config()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._reposition_stats_overlay()
 
     def closeEvent(self, event):
         try:
