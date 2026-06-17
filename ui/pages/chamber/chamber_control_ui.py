@@ -1088,11 +1088,8 @@ class ChamberControlUI(QWidget):
         if self.chamber is None:
             return None
         cached = getattr(self.chamber, "_last_known_running_state", None)
-        verified = bool(getattr(self.chamber, "_last_known_running_state_verified", False))
-        if cached is not None and (verified or not allow_io):
-            return bool(cached)
         if not allow_io:
-            return None
+            return bool(cached) if cached is not None else None
         for method_name in ("is_running", "isRunning"):
             method = getattr(self.chamber, method_name, None)
             if callable(method):
@@ -1103,8 +1100,8 @@ class ChamberControlUI(QWidget):
                     return running
                 except Exception as e:
                     logger.warning("读取温箱运行状态失败: %s", e, exc_info=True)
-                    return None
-        return None
+                    return bool(cached) if cached is not None else None
+        return bool(cached) if cached is not None else None
 
     def _scan_ports(self):
         chamber_type = self._selected_chamber_type()
@@ -1456,7 +1453,7 @@ class ChamberControlUI(QWidget):
                 set_temp = self.chamber.get_set_temp()
                 if set_temp is not None:
                     self.set_temp_value.setText(f"{set_temp:.1f} °C")
-                self._sync_power_state_from_chamber(allow_io=False)
+                self._sync_power_state_from_chamber(allow_io=True)
             except Exception as e:
                 logger.error("更新温度错误: %s", e, exc_info=True)
         else:
