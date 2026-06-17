@@ -268,6 +268,8 @@ class MainWindow(CleanupMixin, QMainWindow):
             page_key_getter=self._get_ai_page_key,
             parent=self,
         )
+        self.ai_service.set_serial_status_getter(self._get_ai_serial_status)
+        self.ai_service.set_execution_logs_getter(self._get_ai_execution_logs)
         self.ai_panel = None
         self.outer_splitter = None
 
@@ -491,6 +493,52 @@ class MainWindow(CleanupMixin, QMainWindow):
     def _get_ai_page_key(self):
         return self._get_current_help_key()
 
+    def _wire_serial_rx_to_ai(self, page):
+        manager = getattr(page, "_sc_session_manager", None)
+        if manager is None or getattr(self, "ai_service", None) is None:
+            return
+        manager.session_data_received.connect(self.ai_service.feed_serial_rx)
+
+    def _current_serial_manager(self):
+        page = getattr(self, "kk_serials_ui", None)
+        if page is None:
+            return None
+        return getattr(page, "_sc_session_manager", None)
+
+    def _get_ai_serial_status(self):
+        manager = self._current_serial_manager()
+        if manager is None:
+            return None
+        session = manager.active_session
+        if session is None:
+            return None
+        return {
+            "session_id": session.session_id,
+            "port": getattr(session, "port", "") or "",
+            "baudrate": getattr(session, "baudrate", 0),
+            "connected": bool(getattr(session, "connected", False)),
+            "rx_bytes": getattr(session, "rx_bytes", 0),
+            "tx_bytes": getattr(session, "tx_bytes", 0),
+        }
+
+    def _get_ai_execution_logs(self):
+        page = self._current_active_page()
+        logs_frame = getattr(page, "logs_frame", None) if page is not None else None
+        if logs_frame is None:
+            return []
+        raw_logs = getattr(logs_frame, "_all_logs", [])
+        return [str(raw) for raw, _html in raw_logs]
+
+    def _current_active_page(self):
+        mapping = {
+            "kk_serials": getattr(self, "kk_serials_ui", None),
+            "custom_test": getattr(self, "custom_test_ui", None),
+            "pmu_test": getattr(self, "pmu_test_ui", None),
+            "charger_test": getattr(self, "charger_test_ui", None),
+            "consumption_test": getattr(self, "consumption_test_ui", None),
+        }
+        return mapping.get(self.current_instrument_ui)
+
     def _connect_signals(self):
         self.nav.n6705c_power_analyzer_btn.clicked.connect(self._on_nav_button_clicked)
         self.nav.oscilloscope_btn.clicked.connect(self._on_nav_button_clicked)
@@ -691,6 +739,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         if self.kk_serials_ui is None:
             self.kk_serials_ui = _KKSerialsPage()
             self.instrument_ui_container_layout.addWidget(self.kk_serials_ui)
+            self._wire_serial_rx_to_ai(self.kk_serials_ui)
         else:
             self.kk_serials_ui.show()
         self.current_instrument_ui = "kk_serials"

@@ -1,6 +1,8 @@
 """ChatView：聊天消息列表展示（只读滚动区）。"""
 from __future__ import annotations
 
+import html as _html_mod
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFrame,
@@ -44,6 +46,29 @@ QLabel#aiBubbleSys {
 }
 """
 
+_SEVERITY_COLORS = {
+    "info": "#7aa2ff",
+    "low": "#5fcf80",
+    "medium": "#e6c23c",
+    "high": "#ef8f4b",
+    "critical": "#ef5a5a",
+}
+
+
+def _esc(text) -> str:
+    return _html_mod.escape(str(text))
+
+
+def _html_list(title: str, items) -> str:
+    items = [i for i in (items or []) if str(i).strip()]
+    if not items:
+        return ""
+    lis = "".join(f"<li>{_esc(i)}</li>" for i in items)
+    return (
+        f'<div style="margin-top:6px;font-weight:600;">{title}</div>'
+        f'<ul style="margin:2px 0 0 16px;padding:0;">{lis}</ul>'
+    )
+
 
 class ChatView(QScrollArea):
     def __init__(self, parent=None):
@@ -82,6 +107,24 @@ class ChatView(QScrollArea):
 
     def add_ai_message(self, text: str) -> QLabel:
         return self._append_bubble(text, "aiBubbleAI", _BUBBLE_STYLE_AI, Qt.AlignLeft)
+
+    def add_analysis_message(self, result) -> QLabel:
+        """渲染结构化日志分析结果（summary/severity/证据/原因/建议）。"""
+        severity = (getattr(result, "severity", "info") or "info").lower()
+        color = _SEVERITY_COLORS.get(severity, "#8fa3c2")
+        parts = [
+            f'<div style="color:{color};font-weight:700;">'
+            f'日志分析 · 严重度 {severity.upper()}'
+            f'（置信度 {getattr(result, "confidence", 0.0):.0%}）</div>'
+        ]
+        summary = getattr(result, "summary", "")
+        if summary:
+            parts.append(f'<div style="margin-top:4px;">{_esc(summary)}</div>')
+        parts.append(_html_list("证据", getattr(result, "evidence", [])))
+        parts.append(_html_list("可能原因", getattr(result, "possible_causes", [])))
+        parts.append(_html_list("建议", getattr(result, "suggested_actions", [])))
+        html = "".join(p for p in parts if p)
+        return self._append_bubble(html, "aiBubbleAI", _BUBBLE_STYLE_AI, Qt.AlignLeft)
 
     def add_system_message(self, text: str) -> None:
         self._append_bubble(text, "aiBubbleSys", _BUBBLE_STYLE_SYS, Qt.AlignHCenter)

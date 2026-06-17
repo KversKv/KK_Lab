@@ -11,14 +11,22 @@
 """
 from __future__ import annotations
 
+import json
+import re
+
 from PySide6.QtCore import QObject, QThread, Signal
 
 from core.ai.config import AISettings
+from core.ai.context_builder import ContextBuilder, ContextOptions
 from core.ai.log_ring import get_log_ring
 from core.ai.newapi_client import AIClientError, ChatResult, NewAPIClient
 from core.ai.profiles import get_profile
 from core.ai.prompt_manager import PromptManager
+from core.ai.providers.log_provider import LogContextProvider
 from core.ai.providers.page_provider import PageContextProvider
+from core.ai.providers.serial_provider import SerialContextProvider
+from core.ai.schemas import LogAnalysisResult
+from core.ai.serial_rx_cache import SerialRxCache
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -61,6 +69,7 @@ class _ChatWorker(QObject):
 
 class AIService(QObject):
     response_ready = Signal(str)
+    analysis_ready = Signal(object)
     error_occurred = Signal(str)
     busy_changed = Signal(bool)
     connection_tested = Signal(bool, str)
@@ -71,6 +80,7 @@ class AIService(QObject):
         self._page_key: str | None = None
         self._history: list[dict[str, str]] = []
         self._busy = False
+        self._analysis_pending = False
 
         self._prompt_manager = PromptManager(
             enable_log_masking=settings.enable_log_masking
@@ -78,8 +88,45 @@ class AIService(QObject):
         if page_key_getter is not None:
             self._prompt_manager.add_provider(PageContextProvider(page_key_getter))
 
+        self._rx_cache = SerialRxCache()
+        self._log_provider = LogContextProvider(
+            max_app_lines=settings.max_recent_log_lines,
+        )
+        self._serial_provider = SerialContextProvider(self._rx_cache)
+        self._context_builder = ContextBuilder(
+            log_provider=self._log_provider,
+            serial_provider=self._serial_provider,
+        )
+
         self._thread: QThread | None = None
         self._worker: _ChatWorker | None = None
+
+    @property
+    def rx_cache(self) -> SerialRxCache:
+        return self._rx_cache
+
+    def set_execution_logs_getter(self, getter) -> None:
+        """UI 注入：返回当前页执行日志 list[str] 的回调。"""
+        self._log_provider = LogContextProvider(
+            max_app_lines=self._settings.max_recent_log_lines,
+            execution_logs_getter=getter,
+        )
+        self._context_builder = ContextBuilder(
+            log_provider=self._log_provider,
+            serial_provider=self._serial_provider,
+        )
+
+    def set_serial_status_getter(self, getter) -> None:
+        """UI 注入：返回当前活动串口状态 dict 的回调。"""
+        self._serial_provider = SerialContextProvider(self._rx_cache, getter)
+        self._context_builder = ContextBuilder(
+            log_provider=self._log_provider,
+            serial_provider=self._serial_provider,
+        )
+
+    def feed_serial_rx(self, session_id: str, data: bytes) -> None:
+        """UI 把 SerialSessionManager.session_data_received 喂进 RX 缓存。"""
+        self._rx_cache.feed(session_id, data)
 
     @property
     def settings(self) -> AISettings:
@@ -155,15 +202,42 @@ class AIService(QObject):
 
     def _on_finished(self, result: ChatResult) -> None:
         content = result.content if result else ""
+        analysis_pending = self._analysis_pending
+        self._analysis_pending = False
         self._history.append({"role": "assistant", "content": content})
-        self.response_ready.emit(content)
+        if analysis_pending:
+            parsed = self._parse_analysis(content)
+            if parsed is not None:
+                self.analysis_ready.emit(parsed)
+            else:
+                self.response_ready.emit(content)
+        else:
+            self.response_ready.emit(content)
         self._set_busy(False)
 
     def _on_failed(self, message: str) -> None:
+        self._analysis_pending = False
         if self._history and self._history[-1].get("role") == "user":
             self._history.pop()
         self.error_occurred.emit(message)
         self._set_busy(False)
+
+    @staticmethod
+    def _parse_analysis(content: str) -> LogAnalysisResult | None:
+        if not content:
+            return None
+        text = content.strip()
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if not match:
+            return None
+        try:
+            data = json.loads(match.group(0))
+        except (ValueError, TypeError):
+            logger.warning("解析日志分析结果 JSON 失败", exc_info=True)
+            return None
+        if not isinstance(data, dict):
+            return None
+        return LogAnalysisResult.from_dict(data)
 
     def _cleanup_thread(self) -> None:
         if self._worker is not None:
@@ -186,10 +260,55 @@ class AIService(QObject):
         return "\n".join(lines)
 
     def analyze_recent_logs(self) -> None:
-        """基础日志分析：取最近 N 行日志请模型给出排查建议。"""
-        self.send(
-            "请基于最近的运行日志，分析是否存在异常/告警/错误，并给出可能原因与排查建议。",
-            include_recent_logs=True,
+        """基础日志分析入口（兼容旧调用）：走结构化分析。"""
+        self.analyze_logs()
+
+    def analyze_logs(self, options: ContextOptions | None = None) -> None:
+        """结构化日志分析：聚合软件/串口/执行日志上下文，请模型输出结构化结果。
+
+        上下文经 ContextBuilder 脱敏 / 等级过滤 / 超限摘要截断；
+        模型按 LOG_ANALYSIS_SCHEMA 输出 JSON，回报 analysis_ready(LogAnalysisResult)。
+        """
+        if self._busy:
+            self.error_occurred.emit("正在处理上一条请求，请稍候。")
+            return
+        if not self._settings.is_configured():
+            self.error_occurred.emit("AI 未配置（缺少 base_url 或 API Key）。")
+            return
+
+        opts = options or ContextOptions(
+            max_app_lines=self._settings.max_recent_log_lines,
+            enable_masking=self._settings.enable_log_masking,
+        )
+        context_text = self._context_builder.build(opts)
+        if not context_text.strip():
+            self.error_occurred.emit("没有可分析的日志（软件 / 串口 / 执行日志均为空）。")
+            return
+
+        instruction = (
+            "你是测试设备日志分析助手。请分析以下软件运行日志、串口接收日志与执行日志，"
+            "判断是否存在异常、告警或错误，定位关键证据并给出可能原因与排查建议。\n"
+            "只输出一个 JSON 对象（不要任何额外文字、不要 Markdown 代码块），字段如下：\n"
+            '{"summary": "一句话结论", "severity": "info|low|medium|high|critical", '
+            '"evidence": ["关键日志行"], "possible_causes": ["可能原因"], '
+            '"suggested_actions": ["排查/修复建议"], "confidence": 0.0~1.0}'
+        )
+        user_text = instruction + "\n\n[待分析日志]\n" + context_text
+
+        messages = self._prompt_manager.build_messages(
+            page_key=self._page_key,
+            history=[],
+            user_text=user_text,
+        )
+        self._history.append({"role": "user", "content": "（请求结构化日志分析）"})
+
+        profile = get_profile(self._page_key)
+        self._analysis_pending = True
+        self._start_worker(
+            messages=messages,
+            model=profile.get("model", self._settings.effective_model),
+            temperature=profile.get("temperature", 0.1),
+            max_tokens=profile.get("max_tokens", 2048),
         )
 
     def test_connection(self) -> None:

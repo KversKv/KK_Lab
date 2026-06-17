@@ -10,15 +10,18 @@ import os
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QCursor, QKeyEvent
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
     QPlainTextEdit,
     QPushButton,
+    QSpinBox,
     QVBoxLayout,
 )
 
 from core.ai.ai_service import AIService
+from core.ai.context_builder import ContextOptions
 from ui.ai.chat_view import ChatView
 from ui.resource_path import get_resource_base
 from ui.utils.icon_utils import tinted_svg_icon
@@ -67,7 +70,38 @@ QPushButton#aiSendBtn:disabled, QPushButton#aiAnalyzeBtn:disabled {
     color: #5c7096;
     border: 1px solid #1a2850;
 }
+QLabel#aiRangeLabel {
+    color: #8fa3c2;
+    font-size: 11px;
+    background: transparent;
+}
+QComboBox#aiLevelCombo {
+    min-height: 22px;
+    padding: 1px 6px;
+    border: 1px solid #243152;
+    border-radius: 6px;
+    background-color: #11182c;
+    color: #dce7ff;
+    font-size: 11px;
+}
+QComboBox#aiLevelCombo QAbstractItemView {
+    background-color: #11182c;
+    color: #dce7ff;
+    selection-background-color: #1d3a6e;
+}
+QSpinBox#aiLinesSpin {
+    min-height: 22px;
+    padding: 1px 4px;
+    border: 1px solid #243152;
+    border-radius: 6px;
+    background-color: #11182c;
+    color: #dce7ff;
+    font-size: 11px;
+}
 """
+
+_LOG_LEVELS = ("DEBUG", "INFO", "WARN", "ERROR")
+_MAX_LINES_CAP = 1000
 
 
 class _InputEdit(QPlainTextEdit):
@@ -109,6 +143,7 @@ class AIAssistPanel(QFrame):
         self._input.submitted.connect(self._on_send_clicked)
         root.addWidget(self._input)
 
+        root.addLayout(self._build_range_bar())
         root.addLayout(self._build_action_bar())
 
         self._chat.add_system_message("AI 助手已就绪。")
@@ -137,6 +172,37 @@ class AIAssistPanel(QFrame):
         layout.addWidget(close_btn)
         return layout
 
+    def _build_range_bar(self) -> QHBoxLayout:
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+
+        level_label = QLabel("日志等级")
+        level_label.setObjectName("aiRangeLabel")
+        layout.addWidget(level_label)
+
+        self._level_combo = QComboBox()
+        self._level_combo.setObjectName("aiLevelCombo")
+        self._level_combo.addItems(_LOG_LEVELS)
+        self._level_combo.setCurrentText("INFO")
+        self._level_combo.setToolTip("分析时只保留不低于该等级的日志")
+        layout.addWidget(self._level_combo)
+
+        lines_label = QLabel("最大行数")
+        lines_label.setObjectName("aiRangeLabel")
+        layout.addWidget(lines_label)
+
+        self._lines_spin = QSpinBox()
+        self._lines_spin.setObjectName("aiLinesSpin")
+        self._lines_spin.setRange(20, _MAX_LINES_CAP)
+        self._lines_spin.setSingleStep(50)
+        self._lines_spin.setValue(300)
+        self._lines_spin.setToolTip(f"每类日志取的最大行数（上限 {_MAX_LINES_CAP}）")
+        layout.addWidget(self._lines_spin)
+
+        layout.addStretch(1)
+        return layout
+
     def _build_action_bar(self) -> QHBoxLayout:
         layout = QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
@@ -163,6 +229,7 @@ class AIAssistPanel(QFrame):
 
     def _wire_service(self) -> None:
         self._service.response_ready.connect(self._on_response)
+        self._service.analysis_ready.connect(self._on_analysis)
         self._service.error_occurred.connect(self._on_error)
         self._service.busy_changed.connect(self._on_busy_changed)
         self._service.connection_tested.connect(self._on_connection_tested)
@@ -176,11 +243,25 @@ class AIAssistPanel(QFrame):
         self._service.send(text)
 
     def _on_analyze_clicked(self) -> None:
-        self._chat.add_user_message("分析最近运行日志")
-        self._service.analyze_recent_logs()
+        level = self._level_combo.currentText()
+        max_lines = min(self._lines_spin.value(), _MAX_LINES_CAP)
+        self._chat.add_user_message(
+            f"分析最近日志（等级≥{level}，每类≤{max_lines}行）"
+        )
+        options = ContextOptions(
+            max_app_lines=max_lines,
+            max_exec_lines=max_lines,
+            max_rx_lines=max_lines,
+            min_level=level,
+            enable_masking=self._service.settings.enable_log_masking,
+        )
+        self._service.analyze_logs(options)
 
     def _on_response(self, content: str) -> None:
         self._chat.add_ai_message(content)
+
+    def _on_analysis(self, result) -> None:
+        self._chat.add_analysis_message(result)
 
     def _on_error(self, message: str) -> None:
         self._chat.add_system_message(f"错误：{message}")

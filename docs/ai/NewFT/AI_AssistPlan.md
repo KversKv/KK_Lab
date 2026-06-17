@@ -13,7 +13,7 @@
 |---|---|---|---|---|
 | 0 | 对接前置确认 | ☑ | 网关参数 / tools 支持 / 依赖选型 | — |
 | 1 | 顶栏 + 面板 + 基础问答 | ☑ | 右面板可开关 + 能调通 New API | 阶段 0 |
-| 2 | 日志分析与上下文增强 | ☐ | 软件日志 + 串口日志结构化分析 | 阶段 1 |
+| 2 | 日志分析与上下文增强 | ☑ | 软件日志 + 串口日志结构化分析 | 阶段 1 |
 | 3 | 测试配置与脚本生成 | ☐ | 草案 → 预览 → 校验 → apply | 阶段 1、2 |
 | 4 | Action Registry 与 UI/仪器控制 | ☐ | 受控动作闭环（权限/确认/审计） | 阶段 1~3 |
 | 5 | 体验优化 | ☐ | 流式 / 历史 / 多模型 /（可选）方案 B | 阶段 1~4 |
@@ -97,16 +97,23 @@
 
 | # | 任务 | 文件 | 状态 |
 |---|---|---|---|
-| 2.1 | `LogContextProvider`：读 log_ring + ExecutionLogsFrame 缓存 | `core/ai/providers/log_provider.py` | ☐ |
-| 2.2 | `SerialContextProvider`：读 SerialSessionManager 状态 + RX 缓存 | `core/ai/providers/serial_provider.py` | ☐ |
-| 2.3 | `ContextBuilder`：聚合 Provider 输出为只读快照 | `core/ai/context_builder.py` | ☐ |
-| 2.4 | 日志范围选择控件（InputArea 内）+ 上限保护 | `ui/ai/ai_assist_panel.py` | ☐ |
-| 2.5 | 脱敏（序列号/IP/路径/token 正则掩码）+ 等级过滤 + 超限摘要 | `core/ai/context_builder.py` | ☐ |
-| 2.6 | 分析结果 Schema（summary/severity/evidence/...）+ 渲染 | `core/ai/schemas.py` / ChatView | ☐ |
+| 2.1 | `LogContextProvider`：读 log_ring + ExecutionLogsFrame 缓存 | `core/ai/providers/log_provider.py` | ☑ |
+| 2.2 | `SerialContextProvider`：读 SerialSessionManager 状态 + RX 缓存 | `core/ai/providers/serial_provider.py` | ☑ |
+| 2.3 | `ContextBuilder`：聚合 Provider 输出为只读快照 | `core/ai/context_builder.py` | ☑ |
+| 2.4 | 日志范围选择控件（InputArea 内）+ 上限保护 | `ui/ai/ai_assist_panel.py` | ☑ |
+| 2.5 | 脱敏（序列号/IP/路径/token 正则掩码）+ 等级过滤 + 超限摘要 | `core/ai/context_builder.py` | ☑ |
+| 2.6 | 分析结果 Schema（summary/severity/evidence/...）+ 渲染 | `core/ai/schemas.py` / ChatView | ☑ |
 
 **阶段 2 验收**（§17 第 6 条）：
-- ☐ 能分析最近串口日志与软件运行日志，输出结构化分析（含 severity/证据/建议）；
-- ☐ 超长日志自动摘要+截断并提示；脱敏生效。
+- ☑ 能分析最近串口日志与软件运行日志，输出结构化分析（含 severity/证据/建议）；
+- ☑ 超长日志自动摘要+截断并提示；脱敏生效。
+
+> ✅ 阶段 2 已完成（2026-06-17）：
+> - core：新增 `serial_rx_cache.py`、`schemas.py`、`context_builder.py`、`providers/log_provider.py`、`providers/serial_provider.py`；`providers/__init__.py` 导出。
+> - `AIService`：新增 `analysis_ready(object)` 信号、`analyze_logs(ContextOptions)`、`feed_serial_rx()`、`set_serial_status_getter()`/`set_execution_logs_getter()` 注入；`_parse_analysis` 把模型 JSON 解析为 `LogAnalysisResult`。
+> - UI：`ai_assist_panel.py` 加日志等级下拉 + 最大行数 SpinBox（上限 1000）；`chat_view.py` 加 `add_analysis_message` 结构化渲染（severity 色阶 + 证据/原因/建议）。
+> - 接线：`main_window.py` 把 `SerialSessionManager.session_data_received` 喂入 RX 缓存，并按当前页注入串口状态 / 执行日志 getter。
+> - core 不依赖 ui/Qt（回调注入）；脱敏复用 `mask_sensitive` + 扩展 IP/PATH/SN；超 char_budget 自动摘要截断并加提示。
 
 ---
 

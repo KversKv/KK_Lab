@@ -121,10 +121,15 @@ core/
 │   ├── prompt_manager.py    # PromptManager：拼装 messages + 敏感信息脱敏
 │   ├── ai_service.py        # AIService：QObject + QThread worker + 信号（UI↔core 桥）
 │   ├── log_ring.py          # LogRingHandler：线程安全环形日志缓冲（供日志分析）
+│   ├── serial_rx_cache.py   # SerialRxCache：串口 RX 行缓存（按 session_id 定长 deque）
+│   ├── context_builder.py   # ContextBuilder：聚合 Provider + 脱敏/等级过滤/摘要截断
+│   ├── schemas.py           # LogAnalysisResult + LOG_ANALYSIS_SCHEMA（日志分析结构化）
 │   └── providers/           # 上下文提供者
 │       ├── __init__.py
 │       ├── base.py          # ContextProvider 抽象基类
-│       └── page_provider.py # PageContextProvider：当前页面 → 上下文文本
+│       ├── page_provider.py # PageContextProvider：当前页面 → 上下文文本
+│       ├── log_provider.py  # LogContextProvider：软件运行日志 + 执行日志 → 上下文
+│       └── serial_provider.py # SerialContextProvider：活动串口状态 + 最近 RX → 上下文
 ├── controllers/             # 控制器子包 (预留，后续业务控制器)
 └── vmin_hunter/             # VminHunter 探底测试编排内核（与 UI/仪器无关）
     ├── __init__.py          # 导出判活器 / 策略 / 睡眠 Vmin 引擎
