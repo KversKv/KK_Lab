@@ -28,6 +28,7 @@ from core.ai.profiles import get_profile
 from core.ai.prompt_manager import PromptManager
 from core.ai.providers.log_provider import LogContextProvider
 from core.ai.providers.page_provider import PageContextProvider
+from core.ai.providers.sequence_provider import SequenceContextProvider
 from core.ai.providers.serial_provider import SerialContextProvider
 from core.ai.response_parser import (
     KIND_LOG_ANALYSIS,
@@ -164,6 +165,8 @@ class AIService(QObject):
         )
         if page_key_getter is not None:
             self._prompt_manager.add_provider(PageContextProvider(page_key_getter))
+        self._sequence_provider = SequenceContextProvider()
+        self._prompt_manager.add_provider(self._sequence_provider)
 
         self._rx_cache = SerialRxCache()
         self._log_provider = LogContextProvider(
@@ -208,6 +211,13 @@ class AIService(QObject):
             log_provider=self._log_provider,
             serial_provider=self._serial_provider,
         )
+
+    def set_sequence_data_getter(self, getter) -> None:
+        """UI 注入：返回当前 Custom Test 画布序列 v2 dict 的回调（F5.1）。
+
+        传入 None 表示当前无序列源（非 Custom Test 页面）。
+        """
+        self._sequence_provider.set_getter(getter)
 
     def set_serial_status_getter(self, getter) -> None:
         """UI 注入：返回当前活动串口状态 dict 的回调。"""
@@ -708,7 +718,9 @@ class AIService(QObject):
                 '"sequence": [{"node_type": "<已注册节点类型>", "params": {...}, '
                 '"children": [...]}], "instruments": {}, "metadata": {}}\n'
                 "sequence 为节点树，node_type 必须是系统已注册的节点类型；"
-                "容器节点（循环/分支）用 children 表达子节点。这是草案，会经本地 preflight 校验后由用户确认才应用。"
+                "容器节点（循环/分支）用 children 表达子节点。\n"
+                "若上下文已提供[当前 Custom Test 画布序列]，请在其基础上按用户需求优化，"
+                "并输出优化后的完整序列。这是草案，会经本地 preflight 校验后由用户确认才应用。"
             )
         return (
             "你是测试配置助手。请根据用户需求生成一个测试配置草案。\n"

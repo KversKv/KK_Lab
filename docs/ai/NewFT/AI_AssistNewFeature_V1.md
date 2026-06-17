@@ -235,11 +235,11 @@ class SessionStats:
 ### 5.2 任务
 | # | 任务 | 文件 | 状态 |
 |---|---|---|---|
-| F5.1 | `SequenceContextProvider`：读画布 → v2 dict（data 级） | `core/ai/providers/sequence_provider.py` | ☐ |
-| F5.2 | patch 模型 + 应用器（插入/删除/改参，作用于 dict） | `core/ai/sequence_patch.py` | ☐ |
-| F5.3 | AI 输出（完整/patch）→ 反序列化 + preflight 校验 | 接 `core/custom_test` | ☐ |
-| F5.4 | `ConfigPreview` 序列 before/after diff 视图 | `ui/ai/config_preview.py` | ☐ |
-| F5.5 | 应用回画布 + 应用前快照 + 撤销 | Custom Test UI 接线 | ☐ |
+| F5.1 | `SequenceContextProvider`：读画布 → v2 dict（data 级） | `core/ai/providers/sequence_provider.py` | ☑ |
+| F5.2 | patch 模型 + 应用器（插入/删除/改参，作用于 dict） | `core/ai/sequence_patch.py` | ☑ |
+| F5.3 | AI 输出（完整/patch）→ 反序列化 + preflight 校验 | 接 `core/custom_test` | ☑ |
+| F5.4 | 序列 before/after diff 视图（增强 ScriptPreview） | `ui/ai/script_preview.py` | ☑ |
+| F5.5 | 应用回画布 + 应用前快照 + 撤销 | Custom Test UI 接线 | ☑ |
 
 ---
 
@@ -278,7 +278,7 @@ AI 默认输出 Markdown，对话 UI 必须渲染，否则代码/表格挤成一
 |---|---|---|---|---|---|
 | A | 体验底座（Markdown + 用量 + 波形摘要） | ☐ | F6.1~F6.4 / F3.1~F3.5 / F1.1~F1.3、F1.5~F1.6 | 主计划阶段 1 面板骨架 | 对话 Markdown + 用量条 + 波形摘要分析 |
 | B | 受控控制闭环（安全折衷 + Action 覆盖） | ☑ | F2.1~F2.7 / F4.1~F4.4 / F1.4 | Phase A + 主计划阶段 1 | 4 层防线 + 语义 Action + drill-down |
-| C | 序列智能优化（免文件往返） | ☐ | F5.1~F5.5 | Phase A、B + custom_test | 读画布→优化→校验→diff→应用→可撤销 |
+| C | 序列智能优化（免文件往返） | ☑ | F5.1~F5.5 | Phase A、B + custom_test | 读画布→优化→校验→diff→应用→可撤销 |
 
 > 状态：`☐ 待办` / `◐ 进行中` / `☑ 完成` / `⊘ 阻塞` / `— 不适用`。
 > 若进度紧张，Phase A 可独立交付（已显著提升体验）；B、C 可顺延但不拆散（安全/序列各自需完整闭环）。
@@ -344,15 +344,15 @@ AI 默认输出 Markdown，对话 UI 必须渲染，否则代码/表格挤成一
 
 | # | 任务 | 文件 | 状态 |
 |---|---|---|---|
-| F5.1 | `SequenceContextProvider`：读画布 → v2 dict（data 级） | `core/ai/providers/sequence_provider.py` | ☐ |
-| F5.2 | patch 模型 + 应用器（插入/删除/改参，作用于 dict） | `core/ai/sequence_patch.py` | ☐ |
-| F5.3 | AI 输出（完整/patch）→ 反序列化 + preflight 校验 | 接 `core/custom_test` | ☐ |
-| F5.4 | `ConfigPreview` 序列 before/after diff 视图 | `ui/ai/config_preview.py` | ☐ |
-| F5.5 | 应用回画布 + 应用前快照 + 撤销 | Custom Test UI 接线 | ☐ |
+| F5.1 | `SequenceContextProvider`：读画布 → v2 dict（data 级） | `core/ai/providers/sequence_provider.py` | ☑ |
+| F5.2 | patch 模型 + 应用器（插入/删除/改参，作用于 dict） | `core/ai/sequence_patch.py` | ☑ |
+| F5.3 | AI 输出（完整/patch）→ 反序列化 + preflight 校验 | 接 `core/custom_test` | ☑ |
+| F5.4 | 序列 before/after diff 视图（增强 ScriptPreview） | `ui/ai/script_preview.py` | ☑ |
+| F5.5 | 应用回画布 + 应用前快照 + 撤销 | Custom Test UI 接线 | ☑ |
 
 **Phase C 验收**：
-- ☐ AI 读当前画布序列 → 按提示词优化 → preflight 校验 → diff 预览 → 应用回画布（可撤销）；
-- ☐ 全程不落盘、无需手动导入；error 阻止应用、warning 提示可继续。
+- ☑ AI 读当前画布序列 → 按提示词优化 → preflight 校验 → diff 预览 → 应用回画布（可撤销）；
+- ☑ 全程不落盘、无需手动导入；error 阻止应用、warning 提示可继续。
 
 ---
 

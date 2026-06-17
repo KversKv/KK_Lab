@@ -363,6 +363,32 @@ class ChatView(QScrollArea):
     def add_system_message(self, text: str) -> None:
         self._append_bubble(text, "aiBubbleSys", _BUBBLE_STYLE_SYS, Qt.AlignHCenter)
 
+    def add_system_action(self, text: str, button_text: str, callback) -> QPushButton:
+        """系统消息 + 内联动作按钮（F5.5：应用后提供"撤销"入口）。
+
+        返回按钮供调用方在动作完成后禁用/改文案。
+        """
+        container = QWidget()
+        container.setObjectName("aiBubbleSys")
+        container.setStyleSheet(_BUBBLE_STYLE_SYS)
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(6)
+
+        label = QLabel(text)
+        label.setWordWrap(True)
+        label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        layout.addWidget(label)
+
+        button = QPushButton(button_text)
+        button.setObjectName("aiCopyBtn")
+        button.setCursor(Qt.PointingHandCursor)
+        button.clicked.connect(callback)
+        layout.addWidget(button, 0, Qt.AlignLeft)
+
+        self._insert_row(container, Qt.AlignHCenter)
+        return button
+
     def _scroll_to_bottom(self) -> None:
         bar = self.verticalScrollBar()
         bar.setValue(bar.maximum())

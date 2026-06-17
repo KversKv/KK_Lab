@@ -166,6 +166,8 @@ class AIAssistPanel(QFrame):
         self._config_apply_cb = None
         self._script_apply_cb = None
         self._waveform_provider_cb = None
+        self._sequence_data_cb = None
+        self._sequence_undo_cb = None
         self.setObjectName("aiAssistPanel")
         self.setStyleSheet(_PANEL_STYLE)
 
@@ -513,6 +515,20 @@ class AIAssistPanel(QFrame):
         """注入测试脚本草案 apply 回调：callback(nodes) -> (ok, message)。"""
         self._script_apply_cb = callback
 
+    def set_sequence_data_callback(self, callback) -> None:
+        """注入当前画布序列读取回调：callback() -> v2 dict | None。
+
+        用于脚本草案预览的 before/after diff（F5.4）。
+        """
+        self._sequence_data_cb = callback
+
+    def set_sequence_undo_callback(self, callback) -> None:
+        """注入序列撤销回调：callback() -> (ok, message)。
+
+        应用草案后在聊天区给出"撤销 AI 修改"按钮（F5.5）。
+        """
+        self._sequence_undo_cb = callback
+
     def _on_send_clicked(self) -> None:
         text = self._input.toPlainText().strip()
         if not text:
@@ -579,9 +595,44 @@ class AIAssistPanel(QFrame):
             return
         from ui.ai.script_preview import ScriptPreviewDialog
 
-        dialog = ScriptPreviewDialog(draft, self._script_apply_cb, parent=self)
+        before_sequence = None
+        if self._sequence_data_cb is not None:
+            try:
+                before_sequence = self._sequence_data_cb()
+            except Exception:
+                logger.error("读取当前画布序列失败", exc_info=True)
+                before_sequence = None
+
+        dialog = ScriptPreviewDialog(
+            draft,
+            self._script_apply_cb,
+            parent=self,
+            before_sequence=before_sequence,
+        )
         if dialog.exec():
+            self._on_script_applied()
+
+    def _on_script_applied(self) -> None:
+        if self._sequence_undo_cb is None:
             self._chat.add_system_message("已将测试脚本草案应用到画布。")
+            return
+
+        def _undo() -> None:
+            try:
+                ok, message = self._sequence_undo_cb()
+            except Exception:
+                logger.error("撤销 AI 序列修改失败", exc_info=True)
+                ok, message = False, "撤销失败，请查看日志。"
+            if ok:
+                undo_btn.setEnabled(False)
+                undo_btn.setText("已撤销")
+                self._chat.add_system_message("已撤销 AI 对画布的修改。")
+            else:
+                self._chat.add_system_message(f"撤销失败：{message}")
+
+        undo_btn = self._chat.add_system_action(
+            "已将测试脚本草案应用到画布。", "撤销 AI 修改", _undo
+        )
 
     def _on_response(self, content: str) -> None:
         self._chat.add_ai_message(content)

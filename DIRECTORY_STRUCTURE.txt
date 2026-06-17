@@ -126,11 +126,13 @@ core/
 │   ├── context_builder.py   # ContextBuilder：聚合 Provider + 脱敏/等级过滤/摘要截断
 │   ├── schemas.py           # LogAnalysisResult + ConfigDraft/ScriptDraft + 对应 JSON Schema
 │   ├── response_parser.py   # ResponseParser：双模式（原生 tools / 降级 JSON）+ Schema 校验 + 重试
-│   ├── draft_validation.py  # 草案本地校验：序列反序列化 + preflight（error/warning 语义）
+│   ├── draft_validation.py  # 草案本地校验：序列/patch 反序列化 + preflight（error/warning 语义）
+│   ├── sequence_patch.py    # 序列 Patch 模型 + 应用器（insert/delete/edit 作用于 v2 dict，F5.2）
 │   ├── providers/           # 上下文提供者
 │   │   ├── __init__.py
 │   │   ├── base.py          # ContextProvider 抽象基类
 │   │   ├── page_provider.py # PageContextProvider：当前页面 → 上下文文本
+│   │   ├── sequence_provider.py # SequenceContextProvider：当前画布序列 → 上下文文本（F5.1）
 │   │   ├── log_provider.py  # LogContextProvider：软件运行日志 + 执行日志 → 上下文
 │   │   ├── serial_provider.py # SerialContextProvider：活动串口状态 + 最近 RX → 上下文
 │   │   └── waveform_provider.py # 波形摘要：LTTB 降采样 + 统计/异常/稳态段 → WaveformDigest（F1）
