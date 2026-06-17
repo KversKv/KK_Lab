@@ -958,6 +958,8 @@ class MainWindow(CleanupMixin, QMainWindow):
         if getattr(self, "ai_service", None) is not None:
             self.ai_service.set_page_context(self._get_current_help_key())
             self._update_ai_apply_callbacks()
+            if getattr(self, "ai_panel", None) is not None:
+                self.ai_panel.refresh_quick_actions()
         if widget is None:
             return
         effect = QGraphicsOpacityEffect(widget)

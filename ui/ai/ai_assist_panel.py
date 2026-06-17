@@ -17,12 +17,15 @@ from PySide6.QtWidgets import (
     QLabel,
     QPlainTextEdit,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QVBoxLayout,
+    QWidget,
 )
 
 from core.ai.ai_service import AIService
 from core.ai.context_builder import ContextOptions
+from core.ai.profiles import get_quick_actions
 from core.ai.response_parser import ParsedResponse
 from core.ai.schemas import CONFIG_DRAFT, SCRIPT_DRAFT
 from ui.ai.chat_view import ChatView
@@ -101,6 +104,33 @@ QSpinBox#aiLinesSpin {
     color: #dce7ff;
     font-size: 11px;
 }
+QComboBox#aiModelCombo {
+    min-height: 22px;
+    padding: 1px 6px;
+    border: 1px solid #243152;
+    border-radius: 6px;
+    background-color: #11182c;
+    color: #dce7ff;
+    font-size: 11px;
+}
+QComboBox#aiModelCombo QAbstractItemView {
+    background-color: #11182c;
+    color: #dce7ff;
+    selection-background-color: #1d3a6e;
+}
+QPushButton#aiQuickBtn {
+    min-height: 22px;
+    padding: 1px 10px;
+    border: 1px solid #22376A;
+    border-radius: 11px;
+    background-color: #101b38;
+    color: #b9cbf0;
+    font-size: 11px;
+}
+QPushButton#aiQuickBtn:hover {
+    background-color: #1C2D55;
+    border: 1px solid #3A5A9F;
+}
 """
 
 _LOG_LEVELS = ("DEBUG", "INFO", "WARN", "ERROR")
@@ -137,9 +167,13 @@ class AIAssistPanel(QFrame):
         root.setSpacing(8)
 
         root.addLayout(self._build_header())
+        root.addLayout(self._build_model_bar())
 
         self._chat = ChatView()
         root.addWidget(self._chat, 1)
+
+        self._quick_row = self._build_quick_row()
+        root.addWidget(self._quick_row)
 
         self._input = _InputEdit()
         self._input.setObjectName("aiInput")
@@ -152,6 +186,8 @@ class AIAssistPanel(QFrame):
         root.addLayout(self._build_action_bar())
 
         self._chat.add_system_message("AI 助手已就绪。")
+        self._replay_history()
+        self.refresh_quick_actions()
         self._wire_service()
 
     def _build_header(self) -> QHBoxLayout:
@@ -161,6 +197,13 @@ class AIAssistPanel(QFrame):
         title.setObjectName("aiPanelTitle")
         layout.addWidget(title)
         layout.addStretch(1)
+
+        self._clear_btn = QPushButton("清空")
+        self._clear_btn.setObjectName("aiSettingsBtn")
+        self._clear_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        self._clear_btn.setToolTip("清空当前会话历史")
+        self._clear_btn.clicked.connect(self._on_clear_clicked)
+        layout.addWidget(self._clear_btn)
 
         self._settings_btn = QPushButton("设置")
         self._settings_btn.setObjectName("aiSettingsBtn")
@@ -176,6 +219,76 @@ class AIAssistPanel(QFrame):
         close_btn.clicked.connect(self.request_close.emit)
         layout.addWidget(close_btn)
         return layout
+
+    def _build_model_bar(self) -> QHBoxLayout:
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+
+        model_label = QLabel("模型")
+        model_label.setObjectName("aiRangeLabel")
+        layout.addWidget(model_label)
+
+        self._model_combo = QComboBox()
+        self._model_combo.setObjectName("aiModelCombo")
+        self._model_combo.setToolTip("手动切换模型（按 Profile 自动选择 / 指定模型）")
+        self._populate_models()
+        self._model_combo.currentTextChanged.connect(self._on_model_changed)
+        layout.addWidget(self._model_combo, 1)
+        return layout
+
+    def _populate_models(self) -> None:
+        self._model_combo.blockSignals(True)
+        self._model_combo.clear()
+        self._model_combo.addItem("自动（按页面）", "")
+        for model in self._service.available_models():
+            self._model_combo.addItem(model, model)
+        self._model_combo.setCurrentIndex(0)
+        self._model_combo.blockSignals(False)
+
+    def _on_model_changed(self, _text: str) -> None:
+        model = self._model_combo.currentData() or ""
+        self._service.set_model_override(model or None)
+        if model:
+            self._chat.add_system_message(f"已切换模型：{model}")
+        else:
+            self._chat.add_system_message("模型已切回：自动（按页面）")
+
+    def _build_quick_row(self) -> QWidget:
+        row = QWidget()
+        row.setStyleSheet("background: transparent;")
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        layout.addStretch(1)
+        self._quick_layout = layout
+        return row
+
+    def refresh_quick_actions(self) -> None:
+        """按当前页面 Profile 重建快捷指令按钮（5.4）。"""
+        layout = getattr(self, "_quick_layout", None)
+        if layout is None:
+            return
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        actions = get_quick_actions(self._service.current_page_key())
+        for text in actions:
+            btn = QPushButton(text)
+            btn.setObjectName("aiQuickBtn")
+            btn.setCursor(QCursor(Qt.PointingHandCursor))
+            btn.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+            btn.clicked.connect(lambda _checked=False, t=text: self._on_quick_clicked(t))
+            layout.addWidget(btn)
+        layout.addStretch(1)
+        self._quick_row.setVisible(bool(actions))
+
+    def _on_quick_clicked(self, text: str) -> None:
+        self._input.setPlainText(text)
+        self._on_send_clicked()
 
     def _build_range_bar(self) -> QHBoxLayout:
         layout = QHBoxLayout()
@@ -241,12 +354,42 @@ class AIAssistPanel(QFrame):
 
     def _wire_service(self) -> None:
         self._service.response_ready.connect(self._on_response)
+        self._service.response_started.connect(self._on_stream_started)
+        self._service.response_delta.connect(self._on_stream_delta)
+        self._service.response_finished.connect(self._on_stream_finished)
         self._service.analysis_ready.connect(self._on_analysis)
         self._service.draft_ready.connect(self._on_draft_ready)
         self._service.error_occurred.connect(self._on_error)
         self._service.busy_changed.connect(self._on_busy_changed)
         self._service.connection_tested.connect(self._on_connection_tested)
         self._service.action_result.connect(self._on_action_result)
+
+    def _replay_history(self) -> None:
+        """启动时回放持久化的会话历史（5.2）。"""
+        history = self._service.persisted_history()
+        if not history:
+            return
+        for item in history:
+            role = item.get("role")
+            content = item.get("content") or ""
+            if role == "user":
+                self._chat.add_user_message(content)
+            elif role == "assistant":
+                self._chat.add_ai_message(content)
+        self._chat.add_system_message("（已恢复上次会话历史）")
+
+    def _on_clear_clicked(self) -> None:
+        self._service.clear_history()
+        self._chat.add_system_message("会话历史已清空。")
+
+    def _on_stream_started(self) -> None:
+        self._chat.begin_stream_message()
+
+    def _on_stream_delta(self, chunk: str) -> None:
+        self._chat.append_stream_delta(chunk)
+
+    def _on_stream_finished(self, content: str) -> None:
+        self._chat.end_stream_message(content)
 
     def confirm_action(self, spec, arguments: dict, reason: str = "") -> bool:
         """供 ActionDispatcher 注入的确认回调：弹 ActionConfirmDialog 二元确认。"""
@@ -382,4 +525,5 @@ class AIAssistPanel(QFrame):
         from ui.ai.ai_settings_dialog import AISettingsDialog
 
         dialog = AISettingsDialog(self._service, parent=self)
-        dialog.exec()
+        if dialog.exec() == QDialog.Accepted:
+            self._populate_models()

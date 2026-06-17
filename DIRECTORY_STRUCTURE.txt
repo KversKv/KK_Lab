@@ -116,8 +116,9 @@ core/
 ├── ai/                      # AI Assist 内核（New API 接入 / Profile / Prompt，无 QtWidgets）
 │   ├── __init__.py          # MODULE_VERSION
 │   ├── config.py            # AISettings：env 优先 + user_data/ai/config.json 读写
-│   ├── newapi_client.py     # NewAPIClient：OpenAI 兼容 /chat/completions（非流式 + 超时/取消）
-│   ├── profiles.py          # AI_PROFILES：页面键 → 模型参数 + system_prompt
+│   ├── newapi_client.py     # NewAPIClient：OpenAI 兼容 /chat/completions（非流式 + SSE 流式 chat_stream + 超时/取消）
+│   ├── conversation_store.py # 会话历史持久化：user_data/ai/history.json（user/assistant，上限 40 条）
+│   ├── profiles.py          # AI_PROFILES：页面键 → 模型参数 + system_prompt + quick_actions
 │   ├── prompt_manager.py    # PromptManager：拼装 messages + 敏感信息脱敏
 │   ├── ai_service.py        # AIService：QObject + QThread worker + 信号（UI↔core 桥）
 │   ├── log_ring.py          # LogRingHandler：线程安全环形日志缓冲（供日志分析）

@@ -86,6 +86,9 @@ class ChatView(QScrollArea):
         self._layout.addStretch(1)
         self.setWidget(self._container)
 
+        self._stream_label: QLabel | None = None
+        self._stream_text = ""
+
     def _append_bubble(self, text: str, object_name: str, style: str, align) -> QLabel:
         label = QLabel(text)
         label.setObjectName(object_name)
@@ -107,6 +110,34 @@ class ChatView(QScrollArea):
 
     def add_ai_message(self, text: str) -> QLabel:
         return self._append_bubble(text, "aiBubbleAI", _BUBBLE_STYLE_AI, Qt.AlignLeft)
+
+    def begin_stream_message(self) -> QLabel:
+        """开始一条流式 AI 气泡，返回 QLabel 供增量更新。"""
+        self._stream_label = self._append_bubble(
+            "▍", "aiBubbleAI", _BUBBLE_STYLE_AI, Qt.AlignLeft
+        )
+        self._stream_text = ""
+        return self._stream_label
+
+    def append_stream_delta(self, chunk: str) -> None:
+        """向当前流式气泡追加增量文本。"""
+        label = getattr(self, "_stream_label", None)
+        if label is None:
+            return
+        self._stream_text = getattr(self, "_stream_text", "") + (chunk or "")
+        label.setText(self._stream_text + "▍")
+        self._scroll_to_bottom()
+
+    def end_stream_message(self, final_text: str = "") -> None:
+        """结束流式气泡：写入最终全文（去掉光标），清理状态。"""
+        label = getattr(self, "_stream_label", None)
+        if label is None:
+            return
+        text = final_text if final_text else getattr(self, "_stream_text", "")
+        label.setText(text or "（无内容）")
+        self._stream_label = None
+        self._stream_text = ""
+        self._scroll_to_bottom()
 
     def add_analysis_message(self, result) -> QLabel:
         """渲染结构化日志分析结果（summary/severity/证据/原因/建议）。"""

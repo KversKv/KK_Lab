@@ -32,7 +32,8 @@ _DEFAULTS: dict[str, Any] = {
     "base_url": "",
     "api_key": "",
     "default_model": "glm-5.1-fp8",
-    "stream": False,
+    "available_models": ["glm-5.1-fp8", "deepseekv4flash"],
+    "stream": True,
     "timeout_seconds": 60,
     "max_recent_log_lines": 300,
     "enable_log_masking": True,
@@ -54,7 +55,10 @@ class AISettings:
     base_url: str = ""
     api_key: str = ""
     default_model: str = "glm-5.1-fp8"
-    stream: bool = False
+    available_models: list[str] = field(
+        default_factory=lambda: ["glm-5.1-fp8", "deepseekv4flash"]
+    )
+    stream: bool = True
     timeout_seconds: int = 60
     max_recent_log_lines: int = 300
     enable_log_masking: bool = True
@@ -103,6 +107,11 @@ class AISettings:
                     data.update({k: section[k] for k in section if k in _DEFAULTS})
             except (OSError, json.JSONDecodeError) as exc:
                 logger.error("读取 AI 配置失败: %s", path, exc_info=True)
+        models = data.get("available_models")
+        if not isinstance(models, list) or not models:
+            data["available_models"] = list(_DEFAULTS["available_models"])
+        else:
+            data["available_models"] = [str(m) for m in models if str(m).strip()]
         return cls(**data)
 
     def save(self) -> bool:
@@ -114,6 +123,7 @@ class AISettings:
                 "base_url": self.base_url,
                 "api_key": self.api_key,
                 "default_model": self.default_model,
+                "available_models": list(self.available_models),
                 "stream": self.stream,
                 "timeout_seconds": self.timeout_seconds,
                 "max_recent_log_lines": self.max_recent_log_lines,

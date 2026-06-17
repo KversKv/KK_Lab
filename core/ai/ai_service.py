@@ -17,6 +17,11 @@ from PySide6.QtCore import QObject, QThread, QTimer, Signal
 
 from core.ai.config import AISettings
 from core.ai.context_builder import ContextBuilder, ContextOptions
+from core.ai.conversation_store import (
+    clear_history as _clear_persisted_history,
+    load_history as _load_persisted_history,
+    save_history as _save_persisted_history,
+)
 from core.ai.log_ring import get_log_ring
 from core.ai.newapi_client import AIClientError, ChatResult, NewAPIClient
 from core.ai.profiles import get_profile
@@ -76,6 +81,45 @@ class _ChatWorker(QObject):
         self.finished.emit(result)
 
 
+class _StreamWorker(QObject):
+    """流式 chat worker：逐块经 delta 信号回报增量正文，结束发 finished。"""
+
+    delta = Signal(str)
+    finished = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, client: NewAPIClient, model, messages, temperature, max_tokens):
+        super().__init__()
+        self._client = client
+        self._model = model
+        self._messages = messages
+        self._temperature = temperature
+        self._max_tokens = max_tokens
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
+
+    def run(self) -> None:
+        try:
+            result = self._client.chat_stream(
+                model=self._model,
+                messages=self._messages,
+                temperature=self._temperature,
+                max_tokens=self._max_tokens,
+                on_delta=lambda chunk: self.delta.emit(chunk),
+                cancel_check=lambda: self._cancelled,
+            )
+        except AIClientError as exc:
+            self.failed.emit(str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001 - 兜底转用户可读错误
+            logger.error("AI 流式 worker 未预期异常", exc_info=True)
+            self.failed.emit(f"未预期错误：{exc}")
+            return
+        self.finished.emit(result)
+
+
 _MODE_CHAT = "chat"
 _MODE_ANALYSIS = "analysis"
 _MODE_CONFIG_DRAFT = "config_draft"
@@ -87,6 +131,9 @@ _MAX_TOOL_ROUNDS = 5
 
 class AIService(QObject):
     response_ready = Signal(str)
+    response_started = Signal()
+    response_delta = Signal(str)
+    response_finished = Signal(str)
     analysis_ready = Signal(object)
     draft_ready = Signal(object)
     error_occurred = Signal(str)
@@ -99,9 +146,11 @@ class AIService(QObject):
         super().__init__(parent)
         self._settings = settings
         self._page_key: str | None = None
-        self._history: list[dict[str, str]] = []
+        self._history: list[dict[str, str]] = _load_persisted_history()
         self._busy = False
         self._pending_mode = _MODE_CHAT
+        self._model_override: str | None = None
+        self._stream_buffer = ""
 
         self._prompt_manager = PromptManager(
             enable_log_masking=settings.enable_log_masking
@@ -178,8 +227,46 @@ class AIService(QObject):
             self._page_key = page_key
             logger.debug("AI 上下文切换页面: %s", page_key)
 
+    def current_page_key(self) -> str | None:
+        return self._page_key
+
     def clear_history(self) -> None:
         self._history.clear()
+        _clear_persisted_history()
+
+    def persisted_history(self) -> list[dict[str, str]]:
+        """返回当前会话历史（user/assistant 正文），供 UI 启动时回放。"""
+        return list(self._history)
+
+    def available_models(self) -> list[str]:
+        """可选模型清单（含默认模型，去重保序）。"""
+        models = list(self._settings.available_models or [])
+        default = self._settings.effective_model
+        if default and default not in models:
+            models.insert(0, default)
+        seen = set()
+        ordered = []
+        for m in models:
+            if m and m not in seen:
+                seen.add(m)
+                ordered.append(m)
+        return ordered
+
+    def current_model(self) -> str:
+        """当前生效模型：手动覆盖 > Profile > 设置默认。"""
+        if self._model_override:
+            return self._model_override
+        profile = get_profile(self._page_key)
+        return profile.get("model", self._settings.effective_model)
+
+    def set_model_override(self, model: str | None) -> None:
+        """手动切换模型（5.3）。传 None / 空串恢复按 Profile 自动选择。"""
+        value = (model or "").strip()
+        self._model_override = value or None
+        logger.debug("AI 模型手动覆盖: %s", self._model_override)
+
+    def _resolve_model(self, profile_model: str) -> str:
+        return self._model_override or profile_model
 
     def _make_client(self) -> NewAPIClient:
         return NewAPIClient(
@@ -212,7 +299,7 @@ class AIService(QObject):
         self._history.append({"role": "user", "content": text})
 
         profile = get_profile(self._page_key)
-        model = profile.get("model", self._settings.effective_model)
+        model = self._resolve_model(profile.get("model", self._settings.effective_model))
         temperature = profile.get("temperature", 0.2)
         max_tokens = profile.get("max_tokens", 2048)
 
@@ -233,6 +320,14 @@ class AIService(QObject):
                 temperature=temperature,
                 max_tokens=max_tokens,
                 tools=tools,
+            )
+        elif self._settings.stream:
+            self._pending_mode = _MODE_CHAT
+            self._start_stream_worker(
+                messages=messages,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
             )
         else:
             self._pending_mode = _MODE_CHAT
@@ -264,6 +359,39 @@ class AIService(QObject):
         self._thread.finished.connect(self._cleanup_thread)
         self._thread.start()
 
+    def _start_stream_worker(self, messages, model, temperature, max_tokens) -> None:
+        self._teardown_thread()
+        self._set_busy(True)
+        self._stream_buffer = ""
+        client = self._make_client()
+        self._thread = QThread()
+        self._worker = _StreamWorker(client, model, messages, temperature, max_tokens)
+        self._worker.moveToThread(self._thread)
+        self._thread.started.connect(self._worker.run)
+        self._worker.delta.connect(self._on_stream_delta)
+        self._worker.finished.connect(self._on_stream_finished)
+        self._worker.failed.connect(self._on_failed)
+        self._worker.finished.connect(self._thread.quit)
+        self._worker.failed.connect(self._thread.quit)
+        self._thread.finished.connect(self._cleanup_thread)
+        self._thread.start()
+        self.response_started.emit()
+
+    def _on_stream_delta(self, chunk: str) -> None:
+        if not chunk:
+            return
+        self._stream_buffer += chunk
+        self.response_delta.emit(chunk)
+
+    def _on_stream_finished(self, result: ChatResult) -> None:
+        content = (result.content if result else "") or self._stream_buffer
+        self._pending_mode = _MODE_CHAT
+        self._history.append({"role": "assistant", "content": content})
+        _save_persisted_history(self._history)
+        self.response_finished.emit(content)
+        self._stream_buffer = ""
+        self._set_busy(False)
+
     def _on_finished(self, result: ChatResult) -> None:
         content = result.content if result else ""
         tool_calls = result.tool_calls if result else []
@@ -275,6 +403,7 @@ class AIService(QObject):
 
         self._pending_mode = _MODE_CHAT
         self._history.append({"role": "assistant", "content": content})
+        _save_persisted_history(self._history)
 
         if mode == _MODE_ANALYSIS:
             parsed = parse(content, tool_calls)
@@ -294,6 +423,7 @@ class AIService(QObject):
 
     def _on_failed(self, message: str) -> None:
         self._pending_mode = _MODE_CHAT
+        self._stream_buffer = ""
         if self._history and self._history[-1].get("role") == "user":
             self._history.pop()
         self.error_occurred.emit(message)
@@ -310,6 +440,7 @@ class AIService(QObject):
         if not tool_calls:
             self._pending_mode = _MODE_CHAT
             self._history.append({"role": "assistant", "content": content})
+            _save_persisted_history(self._history)
             self.response_ready.emit(content)
             self._set_busy(False)
             return
@@ -402,6 +533,10 @@ class AIService(QObject):
             pass
         if worker is not None:
             try:
+                worker.cancel()
+            except (RuntimeError, AttributeError):
+                pass
+            try:
                 worker.finished.disconnect()
                 worker.failed.disconnect()
             except (RuntimeError, TypeError):
@@ -480,7 +615,7 @@ class AIService(QObject):
         self._pending_mode = _MODE_ANALYSIS
         self._start_worker(
             messages=messages,
-            model=profile.get("model", self._settings.effective_model),
+            model=self._resolve_model(profile.get("model", self._settings.effective_model)),
             temperature=profile.get("temperature", 0.1),
             max_tokens=profile.get("max_tokens", 2048),
         )
@@ -521,7 +656,7 @@ class AIService(QObject):
         )
         self._start_worker(
             messages=messages,
-            model=profile.get("model", self._settings.effective_model),
+            model=self._resolve_model(profile.get("model", self._settings.effective_model)),
             temperature=profile.get("temperature", 0.0),
             max_tokens=max(profile.get("max_tokens", 2048), 4096),
         )
@@ -553,7 +688,7 @@ class AIService(QObject):
             return
         try:
             client = self._make_client()
-            client.ping(self._settings.effective_model)
+            client.ping(self.current_model())
         except AIClientError as exc:
             self.connection_tested.emit(False, str(exc))
             return

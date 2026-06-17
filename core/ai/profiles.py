@@ -30,6 +30,11 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "你专注于 KK_Lab 串口日志分析，聚焦异常、超时、复位、协议错误。"
             "分析时引用具体日志行，禁止臆造日志内容。"
         ),
+        "quick_actions": [
+            "分析最近串口接收的异常",
+            "解释这段串口日志的协议含义",
+            "排查串口超时/无响应的可能原因",
+        ],
     },
     "power_analyser": {
         "label": "仪器助手",
@@ -47,6 +52,11 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "若查询返回 VI_ERROR_TMO（超时），优先检查通道语法是否为 (@n)，"
             "而非简单判定仪器不支持。"
         ),
+        "quick_actions": [
+            "查询当前各通道电压电流",
+            "解读最近的功率测量曲线",
+            "给出 N6705C 常用 SCPI 查询命令",
+        ],
     },
     "datalog": {
         "label": "仪器助手",
@@ -54,6 +64,10 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "temperature": 0.2,
         "max_tokens": 2048,
         "system_prompt": "你专注于 N6705C Datalog 数据记录的配置与数据解读。",
+        "quick_actions": [
+            "解读最近一次 Datalog 数据趋势",
+            "建议合适的采样率与时长",
+        ],
     },
     "oscilloscope": {
         "label": "仪器助手",
@@ -61,6 +75,10 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "temperature": 0.2,
         "max_tokens": 2048,
         "system_prompt": "你专注于示波器（DSOX4034A / MSO64B）波形测量与触发设置。",
+        "quick_actions": [
+            "解读当前波形测量结果",
+            "建议合适的触发与时基设置",
+        ],
     },
     "thermal_chamber": {
         "label": "仪器助手",
@@ -68,6 +86,10 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "temperature": 0.2,
         "max_tokens": 2048,
         "system_prompt": "你专注于 VT6002 温箱的温度控制与稳定性判断。",
+        "quick_actions": [
+            "判断当前温度是否已稳定",
+            "建议合适的温度梯度与保温时间",
+        ],
     },
     "pmu_test": {
         "label": "测试配置助手",
@@ -75,6 +97,11 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "temperature": 0.1,
         "max_tokens": 2048,
         "system_prompt": "你专注于 PMU 测试（DCDC 效率/输出电压/IS Gain/OSCP 等）的配置与结果分析。",
+        "quick_actions": [
+            "生成一份 DCDC 效率测试配置草案",
+            "分析最近一次 PMU 测试结果",
+            "解释 IS Gain / OSCP 测试要点",
+        ],
     },
     "charger_test": {
         "label": "测试配置助手",
@@ -82,6 +109,11 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "temperature": 0.1,
         "max_tokens": 2048,
         "system_prompt": "你专注于充电测试（配置遍历/状态寄存器/Iterm/调压等）的配置与结果分析。",
+        "quick_actions": [
+            "生成一份充电测试配置草案",
+            "解读充电状态寄存器含义",
+            "分析最近一次充电测试结果",
+        ],
     },
     "consumption_test": {
         "label": "测试配置助手",
@@ -89,6 +121,10 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "temperature": 0.1,
         "max_tokens": 2048,
         "system_prompt": "你专注于功耗测试的配置与电流功耗数据解读。",
+        "quick_actions": [
+            "生成一份功耗测试配置草案",
+            "解读最近一次功耗电流数据",
+        ],
     },
     "custom_test": {
         "label": "脚本助手",
@@ -99,6 +135,11 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "你专注于 Custom Test 测试序列。只能生成符合 core/custom_test 节点 schema 的序列草案，"
             "草案必须经预览与本地校验通过后才能应用，禁止直接运行高风险序列。"
         ),
+        "quick_actions": [
+            "生成一个简单的测试序列草案",
+            "解释可用的节点类型",
+            "检查当前序列的潜在问题",
+        ],
     },
     "vmin_hunter": {
         "label": "测试配置助手",
@@ -106,6 +147,10 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "temperature": 0.1,
         "max_tokens": 2048,
         "system_prompt": "你专注于 VminHunter 最低工作电压搜索的配置与结果解读。",
+        "quick_actions": [
+            "解读最近一次 Vmin 搜索结果",
+            "建议合适的搜索步进与范围",
+        ],
     },
     "collection": {
         "label": "通用助手",
@@ -113,6 +158,10 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "temperature": 0.2,
         "max_tokens": 2048,
         "system_prompt": "你是 KK_Lab 的通用智能助手。",
+        "quick_actions": [
+            "介绍 KK_Lab 的主要功能",
+            "分析最近的运行日志",
+        ],
     },
     "_default": {
         "label": "通用助手",
@@ -120,6 +169,10 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "temperature": 0.2,
         "max_tokens": 2048,
         "system_prompt": "你是 KK_Lab 测试工具的智能助手。",
+        "quick_actions": [
+            "介绍当前页面能做什么",
+            "分析最近的运行日志",
+        ],
     },
 }
 
@@ -133,3 +186,10 @@ def get_profile(page_key: str | None) -> dict[str, Any]:
     if page_key and page_key in AI_PROFILES:
         return AI_PROFILES[page_key]
     return AI_PROFILES["_default"]
+
+
+def get_quick_actions(page_key: str | None) -> list[str]:
+    """按页面键取快捷指令文案列表（5.4 快捷指令动态化）。"""
+    profile = get_profile(page_key)
+    actions = profile.get("quick_actions") or []
+    return [str(a) for a in actions if str(a).strip()]

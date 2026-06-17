@@ -16,7 +16,7 @@
 | 2 | 日志分析与上下文增强 | ☑ | 软件日志 + 串口日志结构化分析 | 阶段 1 |
 | 3 | 测试配置与脚本生成 | ☐ | 草案 → 预览 → 校验 → apply | 阶段 1、2 |
 | 4 | Action Registry 与 UI/仪器控制 | ☑ | 受控动作闭环（权限/确认/审计） | 阶段 1~3 |
-| 5 | 体验优化 | ☐ | 流式 / 历史 / 多模型 /（可选）方案 B | 阶段 1~4 |
+| 5 | 体验优化 | ☑ | 流式 / 历史 / 多模型 / 快捷指令 / 方案 B（标题栏，已确认实现） | 阶段 1~4 |
 
 > 里程碑：**阶段 1 = 最小可用（MVP）**；阶段 1~3 = 核心价值闭环；阶段 4 = 受控操作上线；阶段 5 = 打磨。
 
@@ -174,15 +174,15 @@
 
 ## 阶段 5：体验优化（打磨，可选项分批做）
 
-| # | 任务 | 状态 |
-|---|---|---|
-| 5.1 | 流式输出（SSE → assistant_message 增量信号） | ☐ |
-| 5.2 | 历史会话（多轮上下文持久化/恢复） | ☐ |
-| 5.3 | 多模型别名切换（按 Profile/手动） | ☐ |
-| 5.4 | 快捷指令按页面动态化 + 远程 Prompt 配置 | ☐ |
-| 5.5 | （可选）方案 B：无边框自绘标题栏，100% 还原参考图 | ☐ |
+| # | 任务 | 状态 | 落地说明 |
+|---|---|---|---|
+| 5.1 | 流式输出（SSE → assistant_message 增量信号） | ☑ | `newapi_client.chat_stream()`（SSE+`iter_lines`）；`AIService._StreamWorker` + `response_started/response_delta/response_finished` 信号；仅 chat 模式（无 tools）按 `settings.stream` 走流式，agent/analysis/draft 仍非流式；`ChatView.begin/append/end_stream_message` 增量渲染同一气泡 |
+| 5.2 | 历史会话（多轮上下文持久化/恢复） | ☑ | 新增 `core/ai/conversation_store.py`（落 `user_data/ai/history.json`，仿 `panel_state.py`，上限 40 条）；`AIService` 启动 `_load_persisted_history()`、每轮对话后 `_save_persisted_history()`、`clear_history()` 调 `_clear_persisted_history()`；面板启动 `_replay_history()` 回放，顶栏「清空」按钮可清会话 |
+| 5.3 | 多模型别名切换（按 Profile/手动） | ☑ | `config.available_models`（默认 `glm-5.1-fp8`/`deepseekv4flash`）；`AIService.set_model_override()/current_model()/available_models()`（覆盖>Profile>默认）；面板模型 `QComboBox#aiModelCombo`（ID 选择器钉高 22px，「自动（按页面）」+清单）；设置对话框可编辑可选模型 + 流式开关 |
+| 5.4 | 快捷指令按页面动态化 + 远程 Prompt 配置 | ☑ | 各 Profile 加 `quick_actions` + `profiles.get_quick_actions(page_key)`；面板 `QuickActionRow`（`QPushButton#aiQuickBtn` 钉高 22px），按 `current_page_key()` 动态填充，`main_window._fade_in_widget` 切页时 `refresh_quick_actions()`；远程 Prompt 配置走既有 `PromptManager` provider 机制（按需扩展） |
+| 5.5 | （可选）方案 B：无边框自绘标题栏，100% 还原参考图 | ☑ | **已实现并确认**：`main_window` `Qt.FramelessWindowHint` + `nativeEvent` 边缘 resize；`ui/app_top_bar.py` 自绘标题栏（CSD）：应用图标/标题、AI 面板按钮、最小化/最大化-还原/关闭（`winCtrlBtn/winCloseBtn` ID 选择器钉 46×36）、拖拽移动、双击最大化/还原、`sync_max_icon()` 状态同步。**与早期 ADR 003「方案 A」记录不一致，实际代码已落方案 B** |
 
-**阶段 5 验收**：流式可用；会话可恢复；（如做 5.5）标题栏拖拽/Snap/DPI/双击还原全部正常。
+**阶段 5 验收**：☑ 流式逐字可用；☑ 会话可恢复/可清空；☑ 模型可手动切换；☑ 快捷指令按页面刷新；☑ 标题栏（方案 B）拖拽/双击还原/边缘 resize/窗口控制全部正常。
 
 ---
 
@@ -190,13 +190,13 @@
 
 | 项 | 说明 | 状态 |
 |---|---|---|
-| 同步矩阵 | 按 AI_Assist.md §18 同步 `DIRECTORY_STRUCTURE.txt`/`spec`/`requirements.txt`/`decisions/`/`.ai/memory.md` | ☐ |
-| 分层 | `instruments/` 无 Qt；`ui/` 无阻塞 IO；仪器经 InstrumentManager | ☐ |
-| 日志 | 无 `print`；异常 `exc_info=True`；无裸 `except` | ☐ |
-| UI 规范 | QDialog 带 parent + OK/Cancel 二元化；控件高度 ID 选择器钉死；数值 QLabel 带单位 | ☐ |
-| 安全 | API Key 不硬编码；config 不进版本库 | ☐ |
-| 模块版本 | 模块单独迭代时 `MODULE_VERSION` +1 | ☐ |
-| lint | 改完跑 lint | ☐ |
+| 同步矩阵 | 按 AI_Assist.md §18 同步 `DIRECTORY_STRUCTURE.txt`/`spec`/`requirements.txt`/`decisions/`/`.ai/memory.md` | ☑ 新增 `conversation_store.py`；无新增依赖（仍 httpx）；无新增 SVG；`history.json` gitignored |
+| 分层 | `instruments/` 无 Qt；`ui/` 无阻塞 IO；仪器经 InstrumentManager | ☑ 流式 IO 走 `_StreamWorker`+QThread，UI 仅收信号增量渲染 |
+| 日志 | 无 `print`；异常 `exc_info=True`；无裸 `except` | ☑ 兜底 `# noqa: BLE001`；`conversation_store` 仅捕获 `OSError`/`JSONDecodeError` |
+| UI 规范 | QDialog 带 parent + OK/Cancel 二元化；控件高度 ID 选择器钉死；数值 QLabel 带单位 | ☑ 模型/快捷指令控件用 `#aiModelCombo`/`#aiQuickBtn` 钉 22px；设置对话框 parent + 二元化保留 |
+| 安全 | API Key 不硬编码；config 不进版本库 | ☑ Key 仍走 env>runtime>file；`available_models` 仅模型名 |
+| 模块版本 | 模块单独迭代时 `MODULE_VERSION` +1 | ☑ `core/ai` 与 `ui/ai` 均 0.3.0 → 0.4.0 |
+| lint | 改完跑 lint | ☑ 仓库未装 ruff；已 `py_compile` 全过 + IDE 诊断无错 |
 
 ---
 

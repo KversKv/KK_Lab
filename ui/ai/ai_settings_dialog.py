@@ -75,6 +75,15 @@ class AISettingsDialog(QDialog):
         self._model_edit.setPlaceholderText("glm-5.1-fp8")
         form.addRow("默认模型", self._model_edit)
 
+        self._models_edit = QLineEdit(", ".join(self._settings.available_models))
+        self._models_edit.setPlaceholderText("glm-5.1-fp8, deepseekv4flash")
+        self._models_edit.setToolTip("可选模型清单（逗号分隔），用于面板手动切换")
+        form.addRow("可选模型", self._models_edit)
+
+        self._stream_chk = QCheckBox("流式输出（逐字返回）")
+        self._stream_chk.setChecked(self._settings.stream)
+        form.addRow("", self._stream_chk)
+
         self._timeout_spin = QSpinBox()
         self._timeout_spin.setRange(5, 600)
         self._timeout_spin.setValue(int(self._settings.timeout_seconds))
@@ -130,6 +139,9 @@ class AISettingsDialog(QDialog):
         self._settings.base_url = self._base_url_edit.text().strip()
         self._settings.api_key = self._api_key_edit.text().strip()
         self._settings.default_model = self._model_edit.text().strip() or "glm-5.1-fp8"
+        models = [m.strip() for m in self._models_edit.text().split(",") if m.strip()]
+        self._settings.available_models = models or ["glm-5.1-fp8", "deepseekv4flash"]
+        self._settings.stream = self._stream_chk.isChecked()
         self._settings.timeout_seconds = int(self._timeout_spin.value())
         self._settings.max_recent_log_lines = int(self._log_lines_spin.value())
         self._settings.enable_log_masking = self._masking_chk.isChecked()
