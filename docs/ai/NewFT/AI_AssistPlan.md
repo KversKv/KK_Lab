@@ -12,7 +12,7 @@
 | 阶段 | 主题 | 状态 | 关键交付 | 依赖 |
 |---|---|---|---|---|
 | 0 | 对接前置确认 | ☑ | 网关参数 / tools 支持 / 依赖选型 | — |
-| 1 | 顶栏 + 面板 + 基础问答 | ☐ | 右面板可开关 + 能调通 New API | 阶段 0 |
+| 1 | 顶栏 + 面板 + 基础问答 | ☑ | 右面板可开关 + 能调通 New API | 阶段 0 |
 | 2 | 日志分析与上下文增强 | ☐ | 软件日志 + 串口日志结构化分析 | 阶段 1 |
 | 3 | 测试配置与脚本生成 | ☐ | 草案 → 预览 → 校验 → apply | 阶段 1、2 |
 | 4 | Action Registry 与 UI/仪器控制 | ☐ | 受控动作闭环（权限/确认/审计） | 阶段 1~3 |
@@ -49,45 +49,45 @@
 ### 1.A 骨架与目录
 | # | 任务 | 文件 | 状态 |
 |---|---|---|---|
-| 1.A.1 | 建 `core/ai/` 包 + `MODULE_VERSION="0.0.0"` | `core/ai/__init__.py` | ☐ |
-| 1.A.2 | 建 `ui/ai/` 包 + `MODULE_VERSION="0.0.0"` | `ui/ai/__init__.py` | ☐ |
-| 1.A.3 | 新增 SVG 图标目录与右面板图标 | `resources/.../ai/ai_panel.svg`、`send.svg` | ☐ |
+| 1.A.1 | 建 `core/ai/` 包 + `MODULE_VERSION="0.0.0"` | `core/ai/__init__.py` | ☑ |
+| 1.A.2 | 建 `ui/ai/` 包 + `MODULE_VERSION="0.0.0"` | `ui/ai/__init__.py` | ☑ |
+| 1.A.3 | 新增 SVG 图标目录与右面板图标 | `resources/icons_svg/ai/ai_panel.svg`、`send.svg` | ☑ |
 
 ### 1.B core/ai 基础链路
 | # | 任务 | 文件 | 状态 |
 |---|---|---|---|
-| 1.B.1 | `AISettings` 读写（env 优先 + `user_data/ai/config.json`） | `core/ai/config.py` | ☐ |
-| 1.B.2 | `NewAPIClient`：OpenAI 兼容 `/chat/completions`（非流式 + 超时/取消） | `core/ai/newapi_client.py` | ☐ |
-| 1.B.3 | `profiles.py`：`AI_PROFILES`（页面 → model/温度/system_prompt） | `core/ai/profiles.py` | ☐ |
-| 1.B.4 | `PromptManager`：拼装 system/page/task 段 | `core/ai/prompt_manager.py` | ☐ |
-| 1.B.5 | `AIService(QObject)`：QThread 调用 + 信号（assistant_message/busy_changed/error） | `core/ai/ai_service.py` | ☐ |
-| 1.B.6 | `log_ring.py`：环形 logging Handler，挂 root logger | `core/ai/log_ring.py` | ☐ |
-| 1.B.7 | `PageContextProvider`：读 `current_instrument_ui` + nav 子键 | `core/ai/providers/page_provider.py` | ☐ |
+| 1.B.1 | `AISettings` 读写（env 优先 + `user_data/ai/config.json`） | `core/ai/config.py` | ☑ |
+| 1.B.2 | `NewAPIClient`：OpenAI 兼容 `/chat/completions`（非流式 + 超时/取消） | `core/ai/newapi_client.py` | ☑ |
+| 1.B.3 | `profiles.py`：`AI_PROFILES`（页面 → model/温度/system_prompt） | `core/ai/profiles.py` | ☑ |
+| 1.B.4 | `PromptManager`：拼装 system/page/task 段 | `core/ai/prompt_manager.py` | ☑ |
+| 1.B.5 | `AIService(QObject)`：QThread 调用 + 信号（response_ready/busy_changed/error_occurred/connection_tested） | `core/ai/ai_service.py` | ☑ |
+| 1.B.6 | `log_ring.py`：环形 logging Handler，挂 root logger | `core/ai/log_ring.py` | ☑ |
+| 1.B.7 | `PageContextProvider`：读 `current_instrument_ui` + nav 子键 | `core/ai/providers/page_provider.py` | ☑ |
 
 ### 1.C UI：顶栏与面板
 | # | 任务 | 文件 | 状态 |
 |---|---|---|---|
-| 1.C.1 | `AppTopBar`（方案 A）：靠右放分隔线 + 右面板按钮 | `ui/app_top_bar.py` | ☐ |
-| 1.C.2 | `AIPanelButton`：QPushButton checkable，`#aiPanelButton{min-height:22px}` | `ui/ai/ai_panel_button.py` | ☐ |
-| 1.C.3 | `AIAssistPanel`：Header + ContextSummaryBar + ChatView + InputArea | `ui/ai/ai_assist_panel.py` | ☐ |
-| 1.C.4 | `ChatView`：消息气泡渲染（流式预留接口） | `ui/ai/chat_view.py` | ☐ |
-| 1.C.5 | MainWindow 接线：`outer_splitter` 包裹 `main_splitter` + 面板 | `ui/main_window.py` | ☐ |
-| 1.C.6 | 面板开关持久化 `user_data/ai/ui_state.json`（宽度 360，范围 300-600） | `ui/main_window.py` | ☐ |
-| 1.C.7 | 页面切换 → `AIService.set_page_context()` 切 Profile | `ui/nav_controller.py` 接线 | ☐ |
+| 1.C.1 | `AppTopBar`（方案 A）：靠右放分隔线 + 右面板按钮 | `ui/app_top_bar.py` | ☑ |
+| 1.C.2 | `AIPanelButton`：QPushButton checkable，`#aiPanelButton{min-height:22px}` | `ui/ai/ai_panel_button.py` | ☑ |
+| 1.C.3 | `AIAssistPanel`：Header + ChatView + InputArea + 操作栏 | `ui/ai/ai_assist_panel.py` | ☑ |
+| 1.C.4 | `ChatView`：消息气泡渲染（流式预留接口） | `ui/ai/chat_view.py` | ☑ |
+| 1.C.5 | MainWindow 接线：`outer_splitter` 包裹 `main_splitter` + 面板 | `ui/main_window.py` | ☑ |
+| 1.C.6 | 面板开关持久化 `user_data/ai/ui_state.json`（宽度 360，范围 300-600） | `ui/main_window.py`、`ui/ai/panel_state.py` | ☑ |
+| 1.C.7 | 页面切换 → `AIService.set_page_context()` 切 Profile | `ui/main_window.py::_fade_in_widget`（切页唯一 chokepoint） | ☑ |
 
 ### 1.D 设置与连通
 | # | 任务 | 状态 |
 |---|---|---|
-| 1.D.1 | AI 设置入口（base_url/api_key/model）+「测试连接」按钮 | ☐ |
-| 1.D.2 | `enabled=false` 时不显示面板按钮 | ☐ |
-| 1.D.3 | 基础日志分析（取 log_ring 最近 N 行喂模型） | ☐ |
+| 1.D.1 | AI 设置入口（base_url/api_key/model）+「测试连接」按钮 | ☑ |
+| 1.D.2 | `enabled=false` 时不显示面板按钮 | ☑ |
+| 1.D.3 | 基础日志分析（取 log_ring 最近 N 行喂模型） | ☑ |
 
 **阶段 1 验收**（对应 AI_Assist.md §17 1~5、11~13、15）：
-- ☐ 顶栏出现分隔线 + 右面板按钮（打开高亮）；点击可开关面板，不破坏业务布局；
-- ☐ 「测试连接」成功；能发消息并展示回复；
-- ☐ 切页面时 Profile/Prompt 随之变化；
-- ☐ 网络/解析在 QThread，UI 不卡；API Key 不硬编码、config 不进版本库；
-- ☐ 异常友好提示、`exc_info=True`、无裸 `except`；lint 通过。
+- ☑ 顶栏出现分隔线 + 右面板按钮（打开高亮）；点击可开关面板，不破坏业务布局；
+- ☑ 「测试连接」成功；能发消息并展示回复（真机 ping `glm-5.1-fp8` content 非空）；
+- ☑ 切页面时 Profile/Prompt 随之变化（经 `_fade_in_widget` → `set_page_context`）；
+- ☑ 网络/解析在 QThread，UI 不卡；API Key 不硬编码（env>runtime>file）、config 不进版本库；
+- ☑ 异常友好提示、`exc_info=True`、无裸 `except`（兜底 `# noqa: BLE001`）；`GetDiagnostics` 无错误。
 
 ---
 

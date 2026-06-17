@@ -5,6 +5,7 @@
 """
 
 import os
+import sys
 from ui.resource_path import get_resource_base
 
 from PySide6.QtWidgets import (
@@ -13,7 +14,28 @@ from PySide6.QtWidgets import (
     QSplitter, QFrame, QDialog, QTextBrowser, QGraphicsOpacityEffect
 )
 
-from PySide6.QtCore import Qt, Signal, QPropertyAnimation, QEasingCurve, QTimer
+from PySide6.QtCore import (
+    Qt, Signal, QPropertyAnimation, QEasingCurve, QTimer, QEvent, QPoint
+)
+
+if sys.platform == "win32":
+    import ctypes
+    import ctypes.wintypes
+
+    _WM_NCHITTEST = 0x0084
+    _HTLEFT = 10
+    _HTRIGHT = 11
+    _HTTOP = 12
+    _HTTOPLEFT = 13
+    _HTTOPRIGHT = 14
+    _HTBOTTOM = 15
+    _HTBOTTOMLEFT = 16
+    _HTBOTTOMRIGHT = 17
+
+    _DWMWA_WINDOW_CORNER_PREFERENCE = 33
+    _DWMWA_BORDER_COLOR = 34
+    _DWMWCP_ROUND = 2
+    _WINDOW_BORDER_COLOR = 0x00403420  # COLORREF 0x00BBGGRR -> 边框 #203440
 from PySide6.QtGui import QPalette, QColor, QFont
 from ui.pages.oscilloscope.oscilloscope_base_ui import OscilloscopeBaseUI
 from ui.pages.n6705c_power_analyzer.n6705c_analyser_ui import N6705CAnalyserUI
@@ -35,6 +57,11 @@ from instruments.base.visa_instrument import VisaInstrument
 from ui.styles import SCROLLBAR_STYLE
 from ui.nav_controller import NavController
 from ui.instrument_status import InstrumentStatusPanel
+from ui.app_top_bar import AppTopBar
+from ui.ai.ai_assist_panel import AIAssistPanel
+from ui.ai.panel_state import load_panel_state, save_panel_state, clamp_width
+from core.ai.config import AISettings
+from core.ai.ai_service import AIService
 from ui.cleanup_mixin import CleanupMixin
 from ui.standalone import resize_and_center_window
 from log_config import get_logger
@@ -188,6 +215,12 @@ class MainWindow(CleanupMixin, QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"{APP_NAME} v{__version__}")
+        self.setWindowFlags(Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground, False)
+        self._resize_border = 6
+        self._resize_edge = None
+        self._resize_origin = None
+        self.setMouseTracking(True)
         resize_and_center_window(self)
 
         self.test_manager = TestManager()
@@ -228,6 +261,15 @@ class MainWindow(CleanupMixin, QMainWindow):
 
         self.nav = NavController(self)
         self.status_panel = InstrumentStatusPanel(self)
+
+        self.ai_settings = AISettings.load()
+        self.ai_service = AIService(
+            self.ai_settings,
+            page_key_getter=self._get_ai_page_key,
+            parent=self,
+        )
+        self.ai_panel = None
+        self.outer_splitter = None
 
         self._setup_style()
         self.central_widget = QWidget()
@@ -401,8 +443,53 @@ class MainWindow(CleanupMixin, QMainWindow):
         main_splitter.setStretchFactor(1, 1)
         main_splitter.setCollapsible(0, False)
         main_splitter.setCollapsible(1, False)
+        self.main_splitter = main_splitter
 
-        self.main_layout.addWidget(main_splitter)
+        self.top_bar = AppTopBar(self)
+        self.main_layout.addWidget(self.top_bar)
+
+        self._setup_ai_panel(main_splitter)
+
+    def _setup_ai_panel(self, main_splitter):
+        outer_splitter = QSplitter(Qt.Horizontal)
+        outer_splitter.addWidget(main_splitter)
+
+        self.ai_panel = AIAssistPanel(self.ai_service, parent=self)
+        self.ai_panel.request_close.connect(self._on_ai_panel_close_requested)
+        outer_splitter.addWidget(self.ai_panel)
+
+        outer_splitter.setStretchFactor(0, 1)
+        outer_splitter.setStretchFactor(1, 0)
+        outer_splitter.setCollapsible(0, False)
+        outer_splitter.setCollapsible(1, False)
+        self.outer_splitter = outer_splitter
+        self.main_layout.addWidget(outer_splitter)
+
+        panel_open, panel_width = load_panel_state()
+        self._ai_panel_width = clamp_width(panel_width)
+
+        if not self.ai_settings.enabled:
+            self.top_bar.ai_panel_button.setVisible(False)
+            self.ai_panel.setVisible(False)
+        else:
+            self.top_bar.ai_panel_button.toggled.connect(self._on_ai_panel_toggled)
+            self.top_bar.ai_panel_button.setChecked(panel_open)
+            self._apply_ai_panel_visibility(panel_open)
+
+    def _apply_ai_panel_visibility(self, visible):
+        self.ai_panel.setVisible(visible)
+        if visible:
+            total = max(self.outer_splitter.width(), 800)
+            self.outer_splitter.setSizes([total - self._ai_panel_width, self._ai_panel_width])
+
+    def _on_ai_panel_toggled(self, checked):
+        self._apply_ai_panel_visibility(checked)
+
+    def _on_ai_panel_close_requested(self):
+        self.top_bar.ai_panel_button.setChecked(False)
+
+    def _get_ai_page_key(self):
+        return self._get_current_help_key()
 
     def _connect_signals(self):
         self.nav.n6705c_power_analyzer_btn.clicked.connect(self._on_nav_button_clicked)
@@ -635,6 +722,8 @@ class MainWindow(CleanupMixin, QMainWindow):
                 widget.hide()
 
     def _fade_in_widget(self, widget):
+        if getattr(self, "ai_service", None) is not None:
+            self.ai_service.set_page_context(self._get_current_help_key())
         if widget is None:
             return
         effect = QGraphicsOpacityEffect(widget)
@@ -819,8 +908,86 @@ class MainWindow(CleanupMixin, QMainWindow):
                     self.channels[0]['voltage_value'].setText(f"{voltage:.4f}")
                     self.channels[0]['current_value'].setText(f"{current:.4f}")
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        if sys.platform == "win32" and not getattr(self, "_dwm_applied", False):
+            self._apply_dwm_round_corners()
+            self._dwm_applied = True
+
+    def _apply_dwm_round_corners(self):
+        try:
+            hwnd = int(self.winId())
+            dwmapi = ctypes.windll.dwmapi
+            pref = ctypes.c_int(_DWMWCP_ROUND)
+            dwmapi.DwmSetWindowAttribute(
+                hwnd,
+                _DWMWA_WINDOW_CORNER_PREFERENCE,
+                ctypes.byref(pref),
+                ctypes.sizeof(pref),
+            )
+            color = ctypes.c_uint(_WINDOW_BORDER_COLOR)
+            dwmapi.DwmSetWindowAttribute(
+                hwnd,
+                _DWMWA_BORDER_COLOR,
+                ctypes.byref(color),
+                ctypes.sizeof(color),
+            )
+        except Exception:  # noqa: BLE001
+            logger.debug("DWM 圆角设置失败（系统不支持，忽略）", exc_info=True)
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.WindowStateChange and getattr(self, "top_bar", None) is not None:
+            self.top_bar.sync_max_icon()
+
+    def nativeEvent(self, event_type, message):
+        if event_type == b"windows_generic_MSG" and not self.isMaximized():
+            try:
+                msg = ctypes.wintypes.MSG.from_address(int(message))
+            except (TypeError, ValueError):
+                return False, 0
+            if msg.message == _WM_NCHITTEST:
+                global_x = ctypes.c_int16(msg.lParam & 0xFFFF).value
+                global_y = ctypes.c_int16((msg.lParam >> 16) & 0xFFFF).value
+                pos = self.mapFromGlobal(QPoint(global_x, global_y))
+                x, y = pos.x(), pos.y()
+                w, h = self.width(), self.height()
+                b = self._resize_border
+                left, right = x < b, x > w - b
+                top, bottom = y < b, y > h - b
+                if top and left:
+                    return True, _HTTOPLEFT
+                if top and right:
+                    return True, _HTTOPRIGHT
+                if bottom and left:
+                    return True, _HTBOTTOMLEFT
+                if bottom and right:
+                    return True, _HTBOTTOMRIGHT
+                if left:
+                    return True, _HTLEFT
+                if right:
+                    return True, _HTRIGHT
+                if top:
+                    return True, _HTTOP
+                if bottom:
+                    return True, _HTBOTTOM
+        return super().nativeEvent(event_type, message)
+
     def closeEvent(self, event):
         self.status_panel.suppress_toasts()
+        self._save_ai_panel_state()
+        if getattr(self, "ai_service", None) is not None:
+            self.ai_service.shutdown()
         self.instrument_manager.shutdown()
         self._perform_close_cleanup()
         super().closeEvent(event)
+
+    def _save_ai_panel_state(self):
+        if self.outer_splitter is None or self.ai_panel is None:
+            return
+        panel_open = self.ai_panel.isVisible()
+        if panel_open:
+            sizes = self.outer_splitter.sizes()
+            if len(sizes) == 2 and sizes[1] > 0:
+                self._ai_panel_width = clamp_width(sizes[1])
+        save_panel_state(panel_open, self._ai_panel_width)

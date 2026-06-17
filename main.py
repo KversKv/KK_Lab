@@ -23,9 +23,11 @@ from PySide6.QtGui import QIcon
 from log_config import setup_logging, get_logger
 from debug_config import DEBUG_MOCK
 from version import version_string
+from core.ai.log_ring import install_log_ring
 from ui.main_window import MainWindow
 
 setup_logging(level=logging.INFO)
+install_log_ring()
 
 
 logger = get_logger(__name__)
@@ -55,6 +57,8 @@ pyvisa.ResourceManager.__del__ = _safe_rm_del
 class HoverFixStyle(QProxyStyle):
     def __init__(self, base_style=None):
         super().__init__(base_style)
+
+
 
     def polish(self, obj):
         super().polish(obj)

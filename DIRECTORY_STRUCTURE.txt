@@ -113,6 +113,18 @@ core/
 │   ├── profiles.py          # InstrumentProfile 数据类定义
 │   ├── registry.py          # ProfileRegistry + 各仪器 profile 注册
 │   └── workers.py           # ConnectWorker/DisconnectWorker/ScanWorker (QThread)
+├── ai/                      # AI Assist 内核（New API 接入 / Profile / Prompt，无 QtWidgets）
+│   ├── __init__.py          # MODULE_VERSION
+│   ├── config.py            # AISettings：env 优先 + user_data/ai/config.json 读写
+│   ├── newapi_client.py     # NewAPIClient：OpenAI 兼容 /chat/completions（非流式 + 超时/取消）
+│   ├── profiles.py          # AI_PROFILES：页面键 → 模型参数 + system_prompt
+│   ├── prompt_manager.py    # PromptManager：拼装 messages + 敏感信息脱敏
+│   ├── ai_service.py        # AIService：QObject + QThread worker + 信号（UI↔core 桥）
+│   ├── log_ring.py          # LogRingHandler：线程安全环形日志缓冲（供日志分析）
+│   └── providers/           # 上下文提供者
+│       ├── __init__.py
+│       ├── base.py          # ContextProvider 抽象基类
+│       └── page_provider.py # PageContextProvider：当前页面 → 上下文文本
 ├── controllers/             # 控制器子包 (预留，后续业务控制器)
 └── vmin_hunter/             # VminHunter 探底测试编排内核（与 UI/仪器无关）
     ├── __init__.py          # 导出判活器 / 策略 / 睡眠 Vmin 引擎
@@ -180,12 +192,21 @@ instruments/
 
 ui/
 ├── main_window.py           # 主窗口，窗口初始化 + 布局创建 + 信号连接 + 页面切换
+├── app_top_bar.py           # 应用内顶栏 AppTopBar (方案A): 右侧 AI 面板开关按钮
 ├── nav_controller.py        # 导航控制器: 侧边栏创建、SubMenu管理、eventFilter、快捷键
 ├── instrument_status.py     # 仪器状态面板: 左下角连接状态显示 + Toast通知
 ├── cleanup_mixin.py         # 关闭清理混入: closeEvent资源释放逻辑
 ├── resource_path.py         # 资源路径工具：get_resource_base()，兼容源码运行
 │                            # 与 PyInstaller 冻结环境 (sys._MEIPASS)
 ├── standalone.py            # 独立页面窗口启动工具 (QApplication / Fusion / Qt warning过滤)
+│
+├── ai/                      # AI 助手 UI（右侧面板 / 聊天视图 / 设置对话框）
+│   ├── __init__.py              # MODULE_VERSION
+│   ├── ai_panel_button.py       # 顶栏 AI 面板开关按钮 (#aiPanelButton, checkable)
+│   ├── ai_assist_panel.py       # 右侧 AIAssistPanel: 标题 + ChatView + 输入 + 发送/分析日志
+│   ├── chat_view.py             # ChatView: 聊天消息气泡列表 (用户/AI/系统)
+│   ├── ai_settings_dialog.py    # AISettingsDialog: AI 设置 + 「测试连接」
+│   └── panel_state.py           # 面板 UI 状态持久化 (user_data/ai/ui_state.json)
 │
 ├── widgets/                 # 通用 UI 组件与可复用样式
 │   ├── sidebar_nav_button.py    # 侧边栏导航按钮组件
@@ -341,6 +362,9 @@ resources/
 │   ├── polarity_*.svg                # 触发极性图标 (rising/falling/both/either)
 │   ├── panel-*.svg / scrollbar-*.svg # 面板控制 / 滚动条箭头
 │   └── activity / camera / download / gauge / link / search / settings / ... 等通用图标
+│
+├── icons_svg/               # 新增 SVG 图标分组目录
+│   └── ai/                     # AI 助手图标 (ai_panel.svg / send.svg)
 │
 ├── modules/                 # 通用 UI 模块专用图标 (按模块归类)
 │   ├── SVG_Common/             # 连接区通用 (search/link/unlink)
