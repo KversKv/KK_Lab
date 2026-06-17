@@ -126,12 +126,27 @@ core/
 │   ├── schemas.py           # LogAnalysisResult + ConfigDraft/ScriptDraft + 对应 JSON Schema
 │   ├── response_parser.py   # ResponseParser：双模式（原生 tools / 降级 JSON）+ Schema 校验 + 重试
 │   ├── draft_validation.py  # 草案本地校验：序列反序列化 + preflight（error/warning 语义）
-│   └── providers/           # 上下文提供者
-│       ├── __init__.py
-│       ├── base.py          # ContextProvider 抽象基类
-│       ├── page_provider.py # PageContextProvider：当前页面 → 上下文文本
-│       ├── log_provider.py  # LogContextProvider：软件运行日志 + 执行日志 → 上下文
-│       └── serial_provider.py # SerialContextProvider：活动串口状态 + 最近 RX → 上下文
+│   ├── providers/           # 上下文提供者
+│   │   ├── __init__.py
+│   │   ├── base.py          # ContextProvider 抽象基类
+│   │   ├── page_provider.py # PageContextProvider：当前页面 → 上下文文本
+│   │   ├── log_provider.py  # LogContextProvider：软件运行日志 + 执行日志 → 上下文
+│   │   └── serial_provider.py # SerialContextProvider：活动串口状态 + 最近 RX → 上下文
+│   └── actions/             # 受控动作层（Action Registry / 权限 / 确认 / 审计，无 QtWidgets）
+│       ├── __init__.py      # MODULE_VERSION + 导出 registry/permission/dispatcher/audit/builder/deps
+│       ├── registry.py      # ActionSpec + ActionRegistry：注册/查找/渲染 OpenAI tools
+│       ├── permission.py    # PermissionChecker/RiskDecision：low/medium/high/critical 风险策略
+│       ├── dispatcher.py    # ActionDispatcher：Schema 校验 → 权限 → 确认 → 路由 handler → 审计
+│       ├── audit.py         # AuditLog：线程安全 JSONL 落 user_data/ai/audit.log（含拒绝/取消）
+│       ├── builder.py       # build_action_system/build_registry：装配 registry + dispatcher
+│       └── handlers/        # 动作处理器（经注入回调间接操作 UI/仪器，不直接依赖 Qt）
+│           ├── __init__.py
+│           ├── deps.py      # ActionDeps：UI 注入的 getter/callback 依赖集合
+│           ├── query.py     # 查询类：页面/串口/日志/仪器快照/测试序列状态（low）
+│           ├── ui.py        # UI 类：open_page/toggle_ai_panel（low）
+│           ├── serial.py    # 串口类：clear（low）/send（high+确认）经 SerialSessionManager
+│           ├── instrument.py # 仪器类：query（low）/disconnect（medium）/set_output（critical 默认禁）
+│           └── test.py      # 测试类：start/pause（high+确认）/stop（high）经 custom_test runner
 ├── controllers/             # 控制器子包 (预留，后续业务控制器)
 └── vmin_hunter/             # VminHunter 探底测试编排内核（与 UI/仪器无关）
     ├── __init__.py          # 导出判活器 / 策略 / 睡眠 Vmin 引擎
@@ -214,6 +229,7 @@ ui/
 │   ├── chat_view.py             # ChatView: 聊天消息气泡列表 (用户/AI/系统)
 │   ├── config_preview.py        # ConfigPreviewDialog: 测试配置草案预览 + 应用
 │   ├── script_preview.py        # ScriptPreviewDialog: 脚本草案预览 + 本地校验 + 应用到画布
+│   ├── action_confirm_dialog.py # ActionConfirmDialog: 高/critical 风险动作确认 (parent=面板, 取消为默认)
 │   ├── ai_settings_dialog.py    # AISettingsDialog: AI 设置 + 「测试连接」
 │   └── panel_state.py           # 面板 UI 状态持久化 (user_data/ai/ui_state.json)
 │

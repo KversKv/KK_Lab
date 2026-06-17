@@ -54,6 +54,8 @@ class NewAPIClient:
         *,
         temperature: float = 0.2,
         max_tokens: int = 2048,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: Any | None = None,
         cancel_check=None,
     ) -> ChatResult:
         """同步调用 chat/completions（非流式）。
@@ -73,6 +75,10 @@ class NewAPIClient:
             "max_tokens": effective_max_tokens,
             "stream": False,
         }
+        if tools:
+            payload["tools"] = tools
+            if tool_choice is not None:
+                payload["tool_choice"] = tool_choice
         url = f"{self._base_url}/chat/completions"
 
         if cancel_check and cancel_check():

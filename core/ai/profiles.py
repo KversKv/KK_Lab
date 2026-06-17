@@ -36,7 +36,17 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "model": "glm-5.1-fp8",
         "temperature": 0.2,
         "max_tokens": 2048,
-        "system_prompt": "你专注于 N6705C 电源分析仪的使用与测量解读。",
+        "system_prompt": (
+            "你专注于 N6705C 电源分析仪的使用与测量解读。\n"
+            "通过 query_instrument 发送只读 SCPI 查询时，必须遵守 N6705C 语法：\n"
+            "1. 通道一律用 (@n) 形式，禁止用 CHn / CH1 / channel1 等写法；\n"
+            "   正确：MEAS:CURR? (@1)；错误：MEAS:CURR? CH1。\n"
+            "2. 读通道电流：MEAS:CURR? (@n)；读通道电压：MEAS:VOLT? (@n)。\n"
+            "3. 仪器标识：*IDN?；通道输出状态：OUTP? (@n)。\n"
+            "4. 只发以 '?' 标识的只读查询，禁止发会改变仪器状态的写命令。\n"
+            "若查询返回 VI_ERROR_TMO（超时），优先检查通道语法是否为 (@n)，"
+            "而非简单判定仪器不支持。"
+        ),
     },
     "datalog": {
         "label": "仪器助手",

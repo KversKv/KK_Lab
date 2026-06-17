@@ -11,7 +11,9 @@
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, QThread, Signal
+import json
+
+from PySide6.QtCore import QObject, QThread, QTimer, Signal
 
 from core.ai.config import AISettings
 from core.ai.context_builder import ContextBuilder, ContextOptions
@@ -38,13 +40,17 @@ class _ChatWorker(QObject):
     finished = Signal(object)
     failed = Signal(str)
 
-    def __init__(self, client: NewAPIClient, model: str, messages, temperature, max_tokens):
+    def __init__(
+        self, client: NewAPIClient, model: str, messages, temperature, max_tokens,
+        tools=None,
+    ):
         super().__init__()
         self._client = client
         self._model = model
         self._messages = messages
         self._temperature = temperature
         self._max_tokens = max_tokens
+        self._tools = tools
         self._cancelled = False
 
     def cancel(self) -> None:
@@ -57,6 +63,7 @@ class _ChatWorker(QObject):
                 messages=self._messages,
                 temperature=self._temperature,
                 max_tokens=self._max_tokens,
+                tools=self._tools,
                 cancel_check=lambda: self._cancelled,
             )
         except AIClientError as exc:
@@ -73,6 +80,9 @@ _MODE_CHAT = "chat"
 _MODE_ANALYSIS = "analysis"
 _MODE_CONFIG_DRAFT = "config_draft"
 _MODE_SCRIPT_DRAFT = "script_draft"
+_MODE_AGENT = "agent"
+
+_MAX_TOOL_ROUNDS = 5
 
 
 class AIService(QObject):
@@ -82,6 +92,8 @@ class AIService(QObject):
     error_occurred = Signal(str)
     busy_changed = Signal(bool)
     connection_tested = Signal(bool, str)
+    action_requested = Signal(object)
+    action_result = Signal(object)
 
     def __init__(self, settings: AISettings, page_key_getter=None, parent=None):
         super().__init__(parent)
@@ -109,6 +121,22 @@ class AIService(QObject):
 
         self._thread: QThread | None = None
         self._worker: _ChatWorker | None = None
+
+        self._registry = None
+        self._dispatcher = None
+        self._agent_messages: list[dict] = []
+        self._agent_rounds = 0
+        self._agent_model = ""
+        self._agent_temperature = 0.2
+        self._agent_max_tokens = 2048
+
+    def set_action_system(self, registry, dispatcher) -> None:
+        """UI 注入受控动作系统（ActionRegistry + ActionDispatcher）。
+
+        注入后 send() 默认带 tools，进入 agent 模式（多轮 tool-calling）。
+        """
+        self._registry = registry
+        self._dispatcher = dispatcher
 
     @property
     def rx_cache(self) -> SerialRxCache:
@@ -184,23 +212,49 @@ class AIService(QObject):
         self._history.append({"role": "user", "content": text})
 
         profile = get_profile(self._page_key)
-        self._pending_mode = _MODE_CHAT
-        self._start_worker(
-            messages=messages,
-            model=profile.get("model", self._settings.effective_model),
-            temperature=profile.get("temperature", 0.2),
-            max_tokens=profile.get("max_tokens", 2048),
-        )
+        model = profile.get("model", self._settings.effective_model)
+        temperature = profile.get("temperature", 0.2)
+        max_tokens = profile.get("max_tokens", 2048)
+
+        tools = None
+        if self._dispatcher is not None and self._registry is not None:
+            tools = self._registry.to_tools()
+
+        if tools:
+            self._pending_mode = _MODE_AGENT
+            self._agent_messages = list(messages)
+            self._agent_rounds = 0
+            self._agent_model = model
+            self._agent_temperature = temperature
+            self._agent_max_tokens = max_tokens
+            self._start_worker(
+                messages=self._agent_messages,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                tools=tools,
+            )
+        else:
+            self._pending_mode = _MODE_CHAT
+            self._start_worker(
+                messages=messages,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
 
     def cancel(self) -> None:
         if self._worker is not None:
             self._worker.cancel()
 
-    def _start_worker(self, messages, model, temperature, max_tokens) -> None:
+    def _start_worker(self, messages, model, temperature, max_tokens, tools=None) -> None:
+        self._teardown_thread()
         self._set_busy(True)
         client = self._make_client()
         self._thread = QThread()
-        self._worker = _ChatWorker(client, model, messages, temperature, max_tokens)
+        self._worker = _ChatWorker(
+            client, model, messages, temperature, max_tokens, tools=tools
+        )
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
         self._worker.finished.connect(self._on_finished)
@@ -214,6 +268,11 @@ class AIService(QObject):
         content = result.content if result else ""
         tool_calls = result.tool_calls if result else []
         mode = self._pending_mode
+
+        if mode == _MODE_AGENT:
+            self._handle_agent_round(content, tool_calls)
+            return
+
         self._pending_mode = _MODE_CHAT
         self._history.append({"role": "assistant", "content": content})
 
@@ -239,6 +298,120 @@ class AIService(QObject):
             self._history.pop()
         self.error_occurred.emit(message)
         self._set_busy(False)
+
+    def _handle_agent_round(self, content: str, tool_calls: list) -> None:
+        """处理一轮 agent 结果：无 tool_calls 则结束；有则执行并回灌再起一轮。
+
+        关键：执行 tool_calls 可能弹模态确认框（嵌套事件循环），必须延后到
+        本槽函数返回、worker/QThread 完成清理之后再执行，否则嵌套事件循环会
+        在 finished 信号仍在栈上时触发 _cleanup_thread.deleteLater() 销毁 worker，
+        导致 C++ 对象在信号发射期间被删除而崩溃（窗口闪退）。
+        """
+        if not tool_calls:
+            self._pending_mode = _MODE_CHAT
+            self._history.append({"role": "assistant", "content": content})
+            self.response_ready.emit(content)
+            self._set_busy(False)
+            return
+
+        self._agent_messages.append(
+            {"role": "assistant", "content": content or "", "tool_calls": tool_calls}
+        )
+        QTimer.singleShot(0, lambda: self._run_tool_calls(content, list(tool_calls)))
+
+    def _run_tool_calls(self, content: str, tool_calls: list) -> None:
+        """延后执行的 tool_calls 处理（已脱离 worker.finished 槽栈）。"""
+        if self._pending_mode != _MODE_AGENT:
+            return
+
+        for call in tool_calls:
+            self._execute_tool_call(call)
+
+        self._agent_rounds += 1
+        if self._agent_rounds >= _MAX_TOOL_ROUNDS:
+            self._pending_mode = _MODE_CHAT
+            self.response_ready.emit(
+                content or "已达到工具调用上限，已停止继续执行动作。"
+            )
+            self._set_busy(False)
+            return
+
+        QTimer.singleShot(0, self._run_next_agent_round)
+
+    def _execute_tool_call(self, call: dict) -> None:
+        function = (call or {}).get("function") or {}
+        name = function.get("name", "")
+        call_id = call.get("id", "") or name
+        raw_args = function.get("arguments") or "{}"
+        try:
+            arguments = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+            if not isinstance(arguments, dict):
+                arguments = {}
+        except (ValueError, TypeError):
+            arguments = {}
+
+        self.action_requested.emit({"name": name, "arguments": arguments})
+
+        outcome = self._dispatcher.dispatch(name, arguments)
+        self.action_result.emit(outcome)
+
+        try:
+            payload = json.dumps(
+                outcome.to_tool_payload(), ensure_ascii=False, default=str
+            )
+        except (TypeError, ValueError):
+            payload = json.dumps({"status": outcome.status, "message": outcome.message})
+
+        self._agent_messages.append(
+            {
+                "role": "tool",
+                "tool_call_id": call_id,
+                "name": name,
+                "content": payload,
+            }
+        )
+
+    def _run_next_agent_round(self) -> None:
+        if self._pending_mode != _MODE_AGENT:
+            return
+        tools = self._registry.to_tools() if self._registry else None
+        self._start_worker(
+            messages=self._agent_messages,
+            model=self._agent_model,
+            temperature=self._agent_temperature,
+            max_tokens=self._agent_max_tokens,
+            tools=tools,
+        )
+
+    def _teardown_thread(self) -> None:
+        """启动新 worker 前，确保上一个 QThread 已彻底退出并断连。
+
+        多轮 tool-calling 下，前一轮的 thread.finished -> _cleanup_thread 可能尚未
+        被事件循环处理，此时直接覆写 self._thread/_worker 会丢失对正在退出线程的
+        引用，造成 C++ 对象提前析构而崩溃。这里同步收尾旧线程后再继续。
+        """
+        thread = self._thread
+        worker = self._worker
+        self._thread = None
+        self._worker = None
+        if thread is None:
+            return
+        try:
+            thread.finished.disconnect(self._cleanup_thread)
+        except (RuntimeError, TypeError):
+            pass
+        if worker is not None:
+            try:
+                worker.finished.disconnect()
+                worker.failed.disconnect()
+            except (RuntimeError, TypeError):
+                pass
+        if thread.isRunning():
+            thread.quit()
+            thread.wait(3000)
+        if worker is not None:
+            worker.deleteLater()
+        thread.deleteLater()
 
     def _cleanup_thread(self) -> None:
         if self._worker is not None:
@@ -391,6 +564,7 @@ class AIService(QObject):
         self.connection_tested.emit(True, "连接成功")
 
     def shutdown(self) -> None:
+        self._pending_mode = _MODE_CHAT
         self.cancel()
         if self._thread is not None and self._thread.isRunning():
             self._thread.quit()

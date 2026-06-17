@@ -11,6 +11,7 @@ from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QCursor, QKeyEvent
 from PySide6.QtWidgets import (
     QComboBox,
+    QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -245,6 +246,38 @@ class AIAssistPanel(QFrame):
         self._service.error_occurred.connect(self._on_error)
         self._service.busy_changed.connect(self._on_busy_changed)
         self._service.connection_tested.connect(self._on_connection_tested)
+        self._service.action_result.connect(self._on_action_result)
+
+    def confirm_action(self, spec, arguments: dict, reason: str = "") -> bool:
+        """供 ActionDispatcher 注入的确认回调：弹 ActionConfirmDialog 二元确认。"""
+        from ui.ai.action_confirm_dialog import ActionConfirmDialog
+
+        dialog = ActionConfirmDialog(
+            action_name=spec.name,
+            description=spec.description,
+            risk_level=spec.risk_level,
+            arguments=arguments,
+            reason=reason,
+            parent=self,
+        )
+        return dialog.exec() == QDialog.Accepted
+
+    def _on_action_result(self, outcome) -> None:
+        if outcome is None:
+            return
+        status = getattr(outcome, "status", "")
+        name = getattr(outcome, "name", "")
+        message = getattr(outcome, "message", "")
+        prefix = {
+            "executed": "✓ 已执行",
+            "denied": "⛔ 已拒绝",
+            "cancelled": "✗ 已取消",
+            "failed": "⚠ 执行失败",
+        }.get(status, status)
+        text = f"{prefix} 动作 [{name}]"
+        if message:
+            text += f"：{message}"
+        self._chat.add_system_message(text)
 
     def set_config_apply_callback(self, callback) -> None:
         """注入测试配置草案 apply 回调：callback(ConfigDraft) -> (ok, message)。"""

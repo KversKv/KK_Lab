@@ -62,6 +62,7 @@ from ui.ai.ai_assist_panel import AIAssistPanel
 from ui.ai.panel_state import load_panel_state, save_panel_state, clamp_width
 from core.ai.config import AISettings
 from core.ai.ai_service import AIService
+from core.ai.log_ring import get_log_ring
 from ui.cleanup_mixin import CleanupMixin
 from ui.standalone import resize_and_center_window
 from log_config import get_logger
@@ -459,6 +460,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.ai_panel = AIAssistPanel(self.ai_service, parent=self)
         self.ai_panel.request_close.connect(self._on_ai_panel_close_requested)
         self.ai_panel.set_config_apply_callback(self._apply_ai_config_draft)
+        self._setup_ai_action_system()
         outer_splitter.addWidget(self.ai_panel)
 
         outer_splitter.setStretchFactor(0, 1)
@@ -490,6 +492,140 @@ class MainWindow(CleanupMixin, QMainWindow):
 
     def _on_ai_panel_close_requested(self):
         self.top_bar.ai_panel_button.setChecked(False)
+
+    def _setup_ai_action_system(self):
+        from core.ai.actions import ActionDeps, build_action_system
+
+        deps = ActionDeps(
+            instrument_manager=self.instrument_manager,
+            page_key_getter=self._get_ai_page_key,
+            serial_status_getter=self._get_ai_serial_status,
+            serial_manager_getter=self._current_serial_manager,
+            execution_logs_getter=self._get_ai_execution_logs,
+            app_logs_getter=self._get_ai_app_logs,
+            rx_recent_getter=self._get_ai_recent_rx,
+            test_status_getter=self._get_ai_test_status,
+            open_page_callback=self._ai_open_page,
+            toggle_ai_panel_callback=self._ai_toggle_panel,
+            serial_send_text_callback=self._ai_serial_send_text,
+            serial_clear_callback=self._ai_serial_clear,
+            test_run_callback=self._ai_test_run,
+            test_pause_callback=self._ai_test_pause,
+            test_stop_callback=self._ai_test_stop,
+        )
+        registry, dispatcher = build_action_system(
+            deps,
+            require_confirm_high=self.ai_settings.require_confirm_high_risk_action,
+            allow_critical=False,
+        )
+        dispatcher.set_confirm_callback(self.ai_panel.confirm_action)
+        self.ai_service.set_action_system(registry, dispatcher)
+
+    def _get_ai_app_logs(self, lines):
+        ring = get_log_ring()
+        if ring is None:
+            return []
+        return ring.recent(lines)
+
+    def _get_ai_recent_rx(self, session_id, lines):
+        service = getattr(self, "ai_service", None)
+        if service is None:
+            return []
+        return service.rx_cache.recent(session_id, lines)
+
+    def _get_ai_test_status(self):
+        ui = getattr(self, "custom_test_ui", None)
+        if ui is None or self.current_instrument_ui != "custom_test":
+            return None
+        canvas = getattr(ui, "canvas", None)
+        running = bool(getattr(canvas, "_running", False)) if canvas else False
+        steps = 0
+        if canvas is not None:
+            try:
+                steps = len(canvas.get_sequence())
+            except Exception:  # noqa: BLE001 - 状态查询失败不致命
+                steps = 0
+        return {"available": True, "running": running, "steps": steps}
+
+    def _ai_open_page(self, page):
+        button_map = {
+            "power_analyser": self.nav.n6705c_power_analyzer_btn,
+            "datalog": self.nav.n6705c_power_analyzer_btn,
+            "oscilloscope": self.nav.oscilloscope_btn,
+            "thermal_chamber": self.nav.chamber_btn,
+            "pmu_test": self.nav.pmu_test_btn,
+            "charger_test": self.nav.charger_test_btn,
+            "consumption_test": self.nav.consumption_test_btn,
+            "vmin_hunter": self.nav.vmin_hunter_btn,
+            "custom_test": self.nav.custom_test_btn,
+            "kk_serials": self.nav.kk_serials_btn,
+            "collection": self.nav.collection_btn,
+        }
+        button = button_map.get(page)
+        if button is None:
+            return False, f"未知页面：{page}"
+        self.nav.handle_nav_button_clicked(button)
+        return True, f"已跳转到 {page}"
+
+    def _ai_toggle_panel(self, want_open):
+        button = getattr(self.top_bar, "ai_panel_button", None)
+        if button is None:
+            return False, "面板按钮不可用。"
+        button.setChecked(bool(want_open))
+        return True, "面板已打开。" if want_open else "面板已关闭。"
+
+    def _ai_serial_send_text(self, text, newline):
+        manager = self._current_serial_manager()
+        if manager is None:
+            return False, "当前无串口管理器。"
+        session = manager.active_session
+        if session is None or not getattr(session, "connected", False):
+            return False, "当前无已连接的活动串口会话。"
+        try:
+            ok = manager.send_to_active_session((text + newline).encode("utf-8"))
+        except Exception:  # noqa: BLE001 - 发送异常转可读结果
+            logger.error("AI 串口发送失败", exc_info=True)
+            return False, "串口发送异常，请查看日志。"
+        return bool(ok), "已发送。" if ok else "发送失败。"
+
+    def _ai_serial_clear(self):
+        service = getattr(self, "ai_service", None)
+        if service is not None:
+            service.rx_cache.clear()
+        return True, "已清空 AI 侧串口接收缓存。"
+
+    def _ai_test_run(self):
+        ui = getattr(self, "custom_test_ui", None)
+        if ui is None or self.current_instrument_ui != "custom_test":
+            return False, "请先切换到 Custom Test 页面。"
+        try:
+            ui._on_run()
+        except Exception:  # noqa: BLE001 - 启动异常转可读结果
+            logger.error("AI 启动测试序列失败", exc_info=True)
+            return False, "启动测试序列异常，请查看日志。"
+        return True, "已请求启动测试序列。"
+
+    def _ai_test_pause(self):
+        ui = getattr(self, "custom_test_ui", None)
+        if ui is None or self.current_instrument_ui != "custom_test":
+            return False, "请先切换到 Custom Test 页面。"
+        try:
+            ui._on_pause()
+        except Exception:  # noqa: BLE001 - 暂停异常转可读结果
+            logger.error("AI 暂停测试序列失败", exc_info=True)
+            return False, "暂停测试序列异常，请查看日志。"
+        return True, "已切换暂停/恢复。"
+
+    def _ai_test_stop(self):
+        ui = getattr(self, "custom_test_ui", None)
+        if ui is None or self.current_instrument_ui != "custom_test":
+            return False, "请先切换到 Custom Test 页面。"
+        try:
+            ui._on_stop()
+        except Exception:  # noqa: BLE001 - 停止异常转可读结果
+            logger.error("AI 停止测试序列失败", exc_info=True)
+            return False, "停止测试序列异常，请查看日志。"
+        return True, "已发送停止请求。"
 
     def _get_ai_page_key(self):
         return self._get_current_help_key()

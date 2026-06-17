@@ -15,7 +15,7 @@
 | 1 | 顶栏 + 面板 + 基础问答 | ☑ | 右面板可开关 + 能调通 New API | 阶段 0 |
 | 2 | 日志分析与上下文增强 | ☑ | 软件日志 + 串口日志结构化分析 | 阶段 1 |
 | 3 | 测试配置与脚本生成 | ☐ | 草案 → 预览 → 校验 → apply | 阶段 1、2 |
-| 4 | Action Registry 与 UI/仪器控制 | ☐ | 受控动作闭环（权限/确认/审计） | 阶段 1~3 |
+| 4 | Action Registry 与 UI/仪器控制 | ☑ | 受控动作闭环（权限/确认/审计） | 阶段 1~3 |
 | 5 | 体验优化 | ☐ | 流式 / 历史 / 多模型 /（可选）方案 B | 阶段 1~4 |
 
 > 里程碑：**阶段 1 = 最小可用（MVP）**；阶段 1~3 = 核心价值闭环；阶段 4 = 受控操作上线；阶段 5 = 打磨。
@@ -142,24 +142,33 @@
 
 | # | 任务 | 文件 | 状态 |
 |---|---|---|---|
-| 4.1 | `ActionSpec` + `ActionRegistry`（注册/查找/渲染 tools） | `core/ai/actions/registry.py` | ☐ |
-| 4.2 | `PermissionChecker / RiskPolicy`（low/medium/high/critical） | `core/ai/actions/permission.py` | ☐ |
-| 4.3 | `ActionDispatcher`（按 name 路由 handlers） | `core/ai/actions/dispatcher.py` | ☐ |
-| 4.4 | `AuditLog` 落 `user_data/ai/audit.log`（含拒绝/取消） | `core/ai/actions/audit.py` | ☐ |
-| 4.5 | `ActionConfirmDialog`（parent=面板，OK/Cancel 二元化） | `ui/ai/action_confirm_dialog.py` | ☐ |
-| 4.6 | handlers/query：page/serial/app_logs/instrument/test 状态 | `core/ai/actions/handlers/` | ☐ |
-| 4.7 | handlers/ui：open_page/switch_tab/toggle_ai_panel | `core/ai/actions/handlers/` | ☐ |
-| 4.8 | handlers/serial：clear/change_config/send(需确认) 经 SerialSessionManager | `core/ai/actions/handlers/` | ☐ |
-| 4.9 | handlers/instrument：query/connect/disconnect 经 InstrumentManager；output=critical 默认禁 | `core/ai/actions/handlers/` | ☐ |
-| 4.10 | handlers/test：run/start/pause/stop 经 custom_test runner（需确认） | `core/ai/actions/handlers/` | ☐ |
-| 4.11 | 多轮 tool-calling：执行结果回灌 AIService | `core/ai/ai_service.py` | ☐ |
+| 4.1 | `ActionSpec` + `ActionRegistry`（注册/查找/渲染 tools） | `core/ai/actions/registry.py` | ☑ |
+| 4.2 | `PermissionChecker / RiskPolicy`（low/medium/high/critical） | `core/ai/actions/permission.py` | ☑ |
+| 4.3 | `ActionDispatcher`（按 name 路由 handlers） | `core/ai/actions/dispatcher.py` | ☑ |
+| 4.4 | `AuditLog` 落 `user_data/ai/audit.log`（含拒绝/取消） | `core/ai/actions/audit.py` | ☑ |
+| 4.5 | `ActionConfirmDialog`（parent=面板，OK/Cancel 二元化） | `ui/ai/action_confirm_dialog.py` | ☑ |
+| 4.6 | handlers/query：page/serial/app_logs/instrument/test 状态 | `core/ai/actions/handlers/query.py` | ☑ |
+| 4.7 | handlers/ui：open_page/toggle_ai_panel | `core/ai/actions/handlers/ui.py` | ☑ |
+| 4.8 | handlers/serial：clear/send(需确认) 经 SerialSessionManager | `core/ai/actions/handlers/serial.py` | ☑ |
+| 4.9 | handlers/instrument：query/disconnect 经 InstrumentManager；output=critical 默认禁 | `core/ai/actions/handlers/instrument.py` | ☑ |
+| 4.10 | handlers/test：start/pause/stop 经 custom_test runner（需确认） | `core/ai/actions/handlers/test.py` | ☑ |
+| 4.11 | 多轮 tool-calling：执行结果回灌 AIService | `core/ai/ai_service.py` | ☑ |
 
 **阶段 4 验收**（§17 第 8~10、14 条）：
-- ☐ 能读 InstrumentManager 快照查仪器状态（不主动 query 真机）；
-- ☐ 能经受控 Action 操作 UI（跳页等）；
-- ☐ 高风险动作（串口发送/仪器输出/测试启动/脚本运行）必须确认；critical 默认禁 AI 直接执行；
-- ☐ 仪器一律经 InstrumentManager，AI 无法绕过 `instruments/`；
-- ☐ 所有动作（含拒绝/取消）写审计。
+- ☑ 能读 InstrumentManager 快照查仪器状态（不主动 query 真机）；
+- ☑ 能经受控 Action 操作 UI（跳页等）；
+- ☑ 高风险动作（串口发送/仪器输出/测试启动/脚本运行）必须确认；critical 默认禁 AI 直接执行；
+- ☑ 仪器一律经 InstrumentManager，AI 无法绕过 `instruments/`；
+- ☑ 所有动作（含拒绝/取消）写审计。
+
+**阶段 4 完成总结**：
+- 新增动作层 `core/ai/actions/`（registry/permission/dispatcher/audit/builder + handlers/{deps,query,ui,serial,instrument,test}）；动作流：`Registry → JSON Schema 校验 → PermissionChecker → 必要时 ActionConfirmDialog → Dispatcher 路由 handler → AuditLog`。
+- 共注册 16 个动作：查询类（6，low）、UI 类（2，low）、串口类（clear=low / send=high+确认）、仪器类（query=low / disconnect=medium / set_output=critical 默认禁）、测试类（start/pause=high+确认 / stop=high）。
+- 风险分级双保险：`PermissionChecker(allow_critical=False)` 拦截 critical + instrument handler `set_instrument_output` 兜底返回禁止。
+- `AIService` 进入 agent 多轮 tool-calling（`_MAX_TOOL_ROUNDS=5`，用 `QTimer.singleShot(0, ...)` 避免 QThread 竞态），执行结果回灌为 `role=tool` 消息续跑。
+- `newapi_client.chat()` 支持原生 `tools`/`tool_choice`；确认对话框以 AI 面板为 parent，取消为默认按钮防误触。
+- main_window 注入全套回调（页面/串口/日志/测试状态 getter + open_page/toggle/serial_send/clear/test run/pause/stop）。
+- 冒烟验证通过：low→executed、critical→denied、high 无确认回调→cancelled，三态均写 audit.log（UTF-8）。
 
 ---
 
