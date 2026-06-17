@@ -9,7 +9,7 @@
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -32,6 +32,7 @@ class ChatResult:
     model: str = ""
     finish_reason: str = ""
     usage: dict[str, Any] | None = None
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
 
 
 class NewAPIClient:
@@ -112,14 +113,18 @@ class NewAPIClient:
         message = first.get("message") or {}
         content = message.get("content")
         reasoning = message.get("reasoning") or ""
-        if content is None:
+        tool_calls = message.get("tool_calls") or []
+        if not isinstance(tool_calls, list):
+            tool_calls = []
+        if content is None and not tool_calls:
             raise AIClientError("响应 content 为空（可能 max_tokens 过小被推理耗尽）")
         return ChatResult(
-            content=str(content),
+            content=str(content) if content is not None else "",
             reasoning=str(reasoning),
             model=str(body.get("model", "")),
             finish_reason=str(first.get("finish_reason", "")),
             usage=body.get("usage"),
+            tool_calls=tool_calls,
         )
 
     def ping(self, model: str) -> ChatResult:

@@ -123,16 +123,16 @@
 
 | # | 任务 | 文件 | 状态 |
 |---|---|---|---|
-| 3.1 | `response_parser.py` 双模式（原生 tools / 降级 JSON）+ Schema 校验 + 重试 | `core/ai/response_parser.py` | ☐ |
-| 3.2 | `ConfigPreview`：测试配置草案预览 + 应用 | `ui/ai/config_preview.py` | ☐ |
-| 3.3 | `ScriptPreview`：脚本草案预览 + 校验 + 应用 | `ui/ai/script_preview.py` | ☐ |
-| 3.4 | Custom Test 草案接 `core/custom_test` serialization + validation(preflight) | 接线 | ☐ |
-| 3.5 | 其它页面配置走页面自身 import/校验逻辑 | 接线 | ☐ |
-| 3.6 | 流程闭环：生成 → 预览 → 校验(error阻止/warning可继续) → 确认 → apply | — | ☐ |
+| 3.1 | `response_parser.py` 双模式（原生 tools / 降级 JSON）+ Schema 校验 + 重试 | `core/ai/response_parser.py` | ☑ |
+| 3.2 | `ConfigPreview`：测试配置草案预览 + 应用 | `ui/ai/config_preview.py` | ☑ |
+| 3.3 | `ScriptPreview`：脚本草案预览 + 校验 + 应用 | `ui/ai/script_preview.py` | ☑ |
+| 3.4 | Custom Test 草案接 `core/custom_test` serialization + validation(preflight) | `core/ai/draft_validation.py` + main_window 接线 | ☑ |
+| 3.5 | 其它页面配置走页面自身 import/校验逻辑 | main_window `_apply_ai_config_draft`（页面实现 `apply_ai_config_draft`） | ☑ |
+| 3.6 | 流程闭环：生成 → 预览 → 校验(error阻止/warning可继续) → 确认 → apply | AIService.generate_draft + draft_ready → 预览弹窗 | ☑ |
 
 **阶段 3 验收**（§17 第 7 条）：
-- ☐ 能生成测试配置/脚本草案；
-- ☐ 预览 + 本地校验通过后才能 apply；error 阻止、warning 可确认继续。
+- ☑ 能生成测试配置/脚本草案；
+- ☑ 预览 + 本地校验通过后才能 apply；error 阻止、warning 可确认继续。
 
 ---
 

@@ -458,6 +458,7 @@ class MainWindow(CleanupMixin, QMainWindow):
 
         self.ai_panel = AIAssistPanel(self.ai_service, parent=self)
         self.ai_panel.request_close.connect(self._on_ai_panel_close_requested)
+        self.ai_panel.set_config_apply_callback(self._apply_ai_config_draft)
         outer_splitter.addWidget(self.ai_panel)
 
         outer_splitter.setStretchFactor(0, 1)
@@ -492,6 +493,53 @@ class MainWindow(CleanupMixin, QMainWindow):
 
     def _get_ai_page_key(self):
         return self._get_current_help_key()
+
+    def _update_ai_apply_callbacks(self):
+        panel = getattr(self, "ai_panel", None)
+        if panel is None:
+            return
+        if self.current_instrument_ui == "custom_test":
+            panel.set_script_apply_callback(self._apply_ai_script_draft)
+        else:
+            panel.set_script_apply_callback(None)
+        panel.set_config_apply_callback(self._apply_ai_config_draft)
+
+    def _apply_ai_script_draft(self, nodes):
+        ui = getattr(self, "custom_test_ui", None)
+        if ui is None or getattr(ui, "canvas", None) is None:
+            return False, "Custom Test 页面不可用。"
+        if getattr(ui.canvas, "_running", False):
+            return False, "序列运行中，无法应用草案。"
+        try:
+            ui.canvas.load_from_nodes(nodes)
+        except Exception:
+            logger.error("应用 AI 脚本草案到画布失败", exc_info=True)
+            return False, "应用到画布失败，请查看日志。"
+        return True, ""
+
+    def _apply_ai_config_draft(self, draft):
+        page = getattr(self, "current_instrument_ui", None)
+        ui_map = {
+            "custom_test": getattr(self, "custom_test_ui", None),
+            "vmin_hunter": getattr(self, "vmin_hunter_ui", None),
+            "pmu_test": getattr(self, "pmu_test_ui", None),
+            "charger_test": getattr(self, "charger_test_ui", None),
+            "consumption_test": getattr(self, "consumption_test_ui", None),
+        }
+        target = ui_map.get(page)
+        if target is None:
+            return False, "当前页面不支持应用配置草案。"
+        importer = getattr(target, "apply_ai_config_draft", None)
+        if not callable(importer):
+            return False, "当前页面尚未实现配置草案导入接口。"
+        try:
+            ok = importer(draft.payload)
+        except Exception:
+            logger.error("应用 AI 配置草案失败", exc_info=True)
+            return False, "应用配置失败，请查看日志。"
+        if ok is False:
+            return False, "页面拒绝了该配置草案。"
+        return True, ""
 
     def _wire_serial_rx_to_ai(self, page):
         manager = getattr(page, "_sc_session_manager", None)
@@ -773,6 +821,7 @@ class MainWindow(CleanupMixin, QMainWindow):
     def _fade_in_widget(self, widget):
         if getattr(self, "ai_service", None) is not None:
             self.ai_service.set_page_context(self._get_current_help_key())
+            self._update_ai_apply_callbacks()
         if widget is None:
             return
         effect = QGraphicsOpacityEffect(widget)

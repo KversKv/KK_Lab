@@ -22,6 +22,8 @@ from PySide6.QtWidgets import (
 
 from core.ai.ai_service import AIService
 from core.ai.context_builder import ContextOptions
+from core.ai.response_parser import ParsedResponse
+from core.ai.schemas import CONFIG_DRAFT, SCRIPT_DRAFT
 from ui.ai.chat_view import ChatView
 from ui.resource_path import get_resource_base
 from ui.utils.icon_utils import tinted_svg_icon
@@ -124,6 +126,8 @@ class AIAssistPanel(QFrame):
     def __init__(self, service: AIService, parent=None):
         super().__init__(parent)
         self._service = service
+        self._config_apply_cb = None
+        self._script_apply_cb = None
         self.setObjectName("aiAssistPanel")
         self.setStyleSheet(_PANEL_STYLE)
 
@@ -215,6 +219,13 @@ class AIAssistPanel(QFrame):
         self._analyze_btn.clicked.connect(self._on_analyze_clicked)
         layout.addWidget(self._analyze_btn)
 
+        self._draft_btn = QPushButton("生成草案")
+        self._draft_btn.setObjectName("aiAnalyzeBtn")
+        self._draft_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        self._draft_btn.setToolTip("根据输入框需求生成测试配置/脚本草案（预览校验后才应用）")
+        self._draft_btn.clicked.connect(self._on_draft_clicked)
+        layout.addWidget(self._draft_btn)
+
         layout.addStretch(1)
 
         self._send_btn = QPushButton("发送")
@@ -230,9 +241,18 @@ class AIAssistPanel(QFrame):
     def _wire_service(self) -> None:
         self._service.response_ready.connect(self._on_response)
         self._service.analysis_ready.connect(self._on_analysis)
+        self._service.draft_ready.connect(self._on_draft_ready)
         self._service.error_occurred.connect(self._on_error)
         self._service.busy_changed.connect(self._on_busy_changed)
         self._service.connection_tested.connect(self._on_connection_tested)
+
+    def set_config_apply_callback(self, callback) -> None:
+        """注入测试配置草案 apply 回调：callback(ConfigDraft) -> (ok, message)。"""
+        self._config_apply_cb = callback
+
+    def set_script_apply_callback(self, callback) -> None:
+        """注入测试脚本草案 apply 回调：callback(nodes) -> (ok, message)。"""
+        self._script_apply_cb = callback
 
     def _on_send_clicked(self) -> None:
         text = self._input.toPlainText().strip()
@@ -257,6 +277,53 @@ class AIAssistPanel(QFrame):
         )
         self._service.analyze_logs(options)
 
+    def _on_draft_clicked(self) -> None:
+        text = self._input.toPlainText().strip()
+        if not text:
+            self._chat.add_system_message("请先在输入框描述需要生成的测试配置或脚本。")
+            return
+        kind = SCRIPT_DRAFT if self._script_apply_cb is not None else CONFIG_DRAFT
+        label = "测试脚本" if kind == SCRIPT_DRAFT else "测试配置"
+        self._chat.add_user_message(f"生成{label}草案：{text}")
+        self._input.clear()
+        self._service.generate_draft(kind, text)
+
+    def _on_draft_ready(self, parsed: ParsedResponse) -> None:
+        if parsed is None:
+            return
+        if not parsed.ok or parsed.payload is None:
+            errors = "；".join(parsed.errors) if parsed.errors else "草案解析失败"
+            self._chat.add_system_message(f"草案无法解析：{errors}")
+            if parsed.message:
+                self._chat.add_ai_message(parsed.message)
+            return
+        if parsed.kind == SCRIPT_DRAFT:
+            self._show_script_preview(parsed.payload)
+        elif parsed.kind == CONFIG_DRAFT:
+            self._show_config_preview(parsed.payload)
+        else:
+            self._chat.add_ai_message(parsed.message or parsed.raw)
+
+    def _show_config_preview(self, draft) -> None:
+        if self._config_apply_cb is None:
+            self._chat.add_system_message("当前页面不支持应用配置草案。")
+            return
+        from ui.ai.config_preview import ConfigPreviewDialog
+
+        dialog = ConfigPreviewDialog(draft, self._config_apply_cb, parent=self)
+        if dialog.exec():
+            self._chat.add_system_message("已应用测试配置草案。")
+
+    def _show_script_preview(self, draft) -> None:
+        if self._script_apply_cb is None:
+            self._chat.add_system_message("当前页面不支持应用脚本草案（请切到 Custom Test 页面）。")
+            return
+        from ui.ai.script_preview import ScriptPreviewDialog
+
+        dialog = ScriptPreviewDialog(draft, self._script_apply_cb, parent=self)
+        if dialog.exec():
+            self._chat.add_system_message("已将测试脚本草案应用到画布。")
+
     def _on_response(self, content: str) -> None:
         self._chat.add_ai_message(content)
 
@@ -269,6 +336,7 @@ class AIAssistPanel(QFrame):
     def _on_busy_changed(self, busy: bool) -> None:
         self._send_btn.setEnabled(not busy)
         self._analyze_btn.setEnabled(not busy)
+        self._draft_btn.setEnabled(not busy)
         self._send_btn.setText("处理中…" if busy else "发送")
 
     def _on_connection_tested(self, ok: bool, message: str) -> None:

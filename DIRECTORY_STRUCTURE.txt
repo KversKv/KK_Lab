@@ -123,7 +123,9 @@ core/
 │   ├── log_ring.py          # LogRingHandler：线程安全环形日志缓冲（供日志分析）
 │   ├── serial_rx_cache.py   # SerialRxCache：串口 RX 行缓存（按 session_id 定长 deque）
 │   ├── context_builder.py   # ContextBuilder：聚合 Provider + 脱敏/等级过滤/摘要截断
-│   ├── schemas.py           # LogAnalysisResult + LOG_ANALYSIS_SCHEMA（日志分析结构化）
+│   ├── schemas.py           # LogAnalysisResult + ConfigDraft/ScriptDraft + 对应 JSON Schema
+│   ├── response_parser.py   # ResponseParser：双模式（原生 tools / 降级 JSON）+ Schema 校验 + 重试
+│   ├── draft_validation.py  # 草案本地校验：序列反序列化 + preflight（error/warning 语义）
 │   └── providers/           # 上下文提供者
 │       ├── __init__.py
 │       ├── base.py          # ContextProvider 抽象基类
@@ -208,8 +210,10 @@ ui/
 ├── ai/                      # AI 助手 UI（右侧面板 / 聊天视图 / 设置对话框）
 │   ├── __init__.py              # MODULE_VERSION
 │   ├── ai_panel_button.py       # 顶栏 AI 面板开关按钮 (#aiPanelButton, checkable)
-│   ├── ai_assist_panel.py       # 右侧 AIAssistPanel: 标题 + ChatView + 输入 + 发送/分析日志
+│   ├── ai_assist_panel.py       # 右侧 AIAssistPanel: 标题 + ChatView + 输入 + 发送/分析/生成草案
 │   ├── chat_view.py             # ChatView: 聊天消息气泡列表 (用户/AI/系统)
+│   ├── config_preview.py        # ConfigPreviewDialog: 测试配置草案预览 + 应用
+│   ├── script_preview.py        # ScriptPreviewDialog: 脚本草案预览 + 本地校验 + 应用到画布
 │   ├── ai_settings_dialog.py    # AISettingsDialog: AI 设置 + 「测试连接」
 │   └── panel_state.py           # 面板 UI 状态持久化 (user_data/ai/ui_state.json)
 │

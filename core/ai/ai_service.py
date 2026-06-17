@@ -11,9 +11,6 @@
 """
 from __future__ import annotations
 
-import json
-import re
-
 from PySide6.QtCore import QObject, QThread, Signal
 
 from core.ai.config import AISettings
@@ -25,7 +22,12 @@ from core.ai.prompt_manager import PromptManager
 from core.ai.providers.log_provider import LogContextProvider
 from core.ai.providers.page_provider import PageContextProvider
 from core.ai.providers.serial_provider import SerialContextProvider
-from core.ai.schemas import LogAnalysisResult
+from core.ai.response_parser import (
+    KIND_LOG_ANALYSIS,
+    parse,
+    parse_expected,
+)
+from core.ai.schemas import CONFIG_DRAFT, SCRIPT_DRAFT
 from core.ai.serial_rx_cache import SerialRxCache
 from log_config import get_logger
 
@@ -67,9 +69,16 @@ class _ChatWorker(QObject):
         self.finished.emit(result)
 
 
+_MODE_CHAT = "chat"
+_MODE_ANALYSIS = "analysis"
+_MODE_CONFIG_DRAFT = "config_draft"
+_MODE_SCRIPT_DRAFT = "script_draft"
+
+
 class AIService(QObject):
     response_ready = Signal(str)
     analysis_ready = Signal(object)
+    draft_ready = Signal(object)
     error_occurred = Signal(str)
     busy_changed = Signal(bool)
     connection_tested = Signal(bool, str)
@@ -80,7 +89,7 @@ class AIService(QObject):
         self._page_key: str | None = None
         self._history: list[dict[str, str]] = []
         self._busy = False
-        self._analysis_pending = False
+        self._pending_mode = _MODE_CHAT
 
         self._prompt_manager = PromptManager(
             enable_log_masking=settings.enable_log_masking
@@ -175,6 +184,7 @@ class AIService(QObject):
         self._history.append({"role": "user", "content": text})
 
         profile = get_profile(self._page_key)
+        self._pending_mode = _MODE_CHAT
         self._start_worker(
             messages=messages,
             model=profile.get("model", self._settings.effective_model),
@@ -202,42 +212,33 @@ class AIService(QObject):
 
     def _on_finished(self, result: ChatResult) -> None:
         content = result.content if result else ""
-        analysis_pending = self._analysis_pending
-        self._analysis_pending = False
+        tool_calls = result.tool_calls if result else []
+        mode = self._pending_mode
+        self._pending_mode = _MODE_CHAT
         self._history.append({"role": "assistant", "content": content})
-        if analysis_pending:
-            parsed = self._parse_analysis(content)
-            if parsed is not None:
-                self.analysis_ready.emit(parsed)
+
+        if mode == _MODE_ANALYSIS:
+            parsed = parse(content, tool_calls)
+            if parsed.kind == KIND_LOG_ANALYSIS and parsed.payload is not None:
+                self.analysis_ready.emit(parsed.payload)
             else:
-                self.response_ready.emit(content)
+                self.response_ready.emit(content or "（无分析结果）")
+        elif mode == _MODE_CONFIG_DRAFT:
+            parsed = parse_expected(content, CONFIG_DRAFT)
+            self.draft_ready.emit(parsed)
+        elif mode == _MODE_SCRIPT_DRAFT:
+            parsed = parse_expected(content, SCRIPT_DRAFT)
+            self.draft_ready.emit(parsed)
         else:
             self.response_ready.emit(content)
         self._set_busy(False)
 
     def _on_failed(self, message: str) -> None:
-        self._analysis_pending = False
+        self._pending_mode = _MODE_CHAT
         if self._history and self._history[-1].get("role") == "user":
             self._history.pop()
         self.error_occurred.emit(message)
         self._set_busy(False)
-
-    @staticmethod
-    def _parse_analysis(content: str) -> LogAnalysisResult | None:
-        if not content:
-            return None
-        text = content.strip()
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if not match:
-            return None
-        try:
-            data = json.loads(match.group(0))
-        except (ValueError, TypeError):
-            logger.warning("解析日志分析结果 JSON 失败", exc_info=True)
-            return None
-        if not isinstance(data, dict):
-            return None
-        return LogAnalysisResult.from_dict(data)
 
     def _cleanup_thread(self) -> None:
         if self._worker is not None:
@@ -303,12 +304,73 @@ class AIService(QObject):
         self._history.append({"role": "user", "content": "（请求结构化日志分析）"})
 
         profile = get_profile(self._page_key)
-        self._analysis_pending = True
+        self._pending_mode = _MODE_ANALYSIS
         self._start_worker(
             messages=messages,
             model=profile.get("model", self._settings.effective_model),
             temperature=profile.get("temperature", 0.1),
             max_tokens=profile.get("max_tokens", 2048),
+        )
+
+    def generate_draft(self, kind: str, user_text: str) -> None:
+        """生成测试配置 / 测试脚本草案（AI_Assist.md §9 / §12）。
+
+        kind: CONFIG_DRAFT 或 SCRIPT_DRAFT；
+        模型按对应 schema 输出 JSON 草案，回报 draft_ready(ParsedResponse)。
+        草案仅为草案——须经 UI 预览 + 本地校验 + 用户确认后才能 apply。
+        """
+        text = (user_text or "").strip()
+        if not text:
+            return
+        if self._busy:
+            self.error_occurred.emit("正在处理上一条请求，请稍候。")
+            return
+        if not self._settings.is_configured():
+            self.error_occurred.emit("AI 未配置（缺少 base_url 或 API Key）。")
+            return
+        if kind not in (CONFIG_DRAFT, SCRIPT_DRAFT):
+            self.error_occurred.emit(f"未知草案类型：{kind}")
+            return
+
+        instruction = self._draft_instruction(kind)
+        full_text = instruction + "\n\n[用户需求]\n" + text
+
+        messages = self._prompt_manager.build_messages(
+            page_key=self._page_key,
+            history=[],
+            user_text=full_text,
+        )
+        self._history.append({"role": "user", "content": text})
+
+        profile = get_profile(self._page_key)
+        self._pending_mode = (
+            _MODE_CONFIG_DRAFT if kind == CONFIG_DRAFT else _MODE_SCRIPT_DRAFT
+        )
+        self._start_worker(
+            messages=messages,
+            model=profile.get("model", self._settings.effective_model),
+            temperature=profile.get("temperature", 0.0),
+            max_tokens=max(profile.get("max_tokens", 2048), 4096),
+        )
+
+    def _draft_instruction(self, kind: str) -> str:
+        page = self._page_key or "_default"
+        if kind == SCRIPT_DRAFT:
+            return (
+                "你是 Custom Test 序列助手。请根据用户需求生成一个测试序列草案。\n"
+                "只输出一个 JSON 对象（不要任何额外文字、不要 Markdown 代码块），结构如下：\n"
+                '{"kind": "script_draft", "title": "标题", "notes": "说明", '
+                '"sequence": [{"node_type": "<已注册节点类型>", "params": {...}, '
+                '"children": [...]}], "instruments": {}, "metadata": {}}\n'
+                "sequence 为节点树，node_type 必须是系统已注册的节点类型；"
+                "容器节点（循环/分支）用 children 表达子节点。这是草案，会经本地 preflight 校验后由用户确认才应用。"
+            )
+        return (
+            "你是测试配置助手。请根据用户需求生成一个测试配置草案。\n"
+            "只输出一个 JSON 对象（不要任何额外文字、不要 Markdown 代码块），结构如下：\n"
+            '{"kind": "config_draft", "target_page": "' + page + '", '
+            '"title": "标题", "notes": "说明", "payload": {<配置字段>}}\n'
+            "payload 为页面配置字典。这是草案，会由用户预览校验确认后才应用。"
         )
 
     def test_connection(self) -> None:
