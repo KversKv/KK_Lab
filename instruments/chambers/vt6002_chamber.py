@@ -175,8 +175,9 @@ class VT6002(ChamberBase):
     def get_set_temp(self):
         """读取温度PV值"""
         value = self.read_value(self.parameters["温度设定值"])
-        value2 = hex_to_int(value)
-        return value2 / 10
+        if value is None:
+            return None
+        return value / 10
 
     def read_humidity_pv(self):
         """读取湿度PV值"""
