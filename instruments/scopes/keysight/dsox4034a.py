@@ -207,6 +207,10 @@ class DSOX4034A:
     def single(self):
         self.write(':SINGLE')
 
+    def is_acquiring(self) -> bool:
+        state = self.query(':RSTate?').strip().upper()
+        return state in ('RUN', 'SING', 'WAIT')
+
     def autoscale(self):
         self.write(':AUToscale')
         self.query_opc(timeout_s=10.0)
@@ -315,6 +319,12 @@ class DSOX4034A:
 
     def get_trigger_source(self) -> str:
         return self.query(':TRIGger:EDGE:SOURce?').strip()
+
+    def get_trigger_slope(self) -> str:
+        return self.query(':TRIGger:EDGE:SLOPe?').strip()
+
+    def get_trigger_level(self) -> float:
+        return self._safe_float(self.query(':TRIGger:EDGE:LEVel?').strip())
 
     def set_trigger_sweep(self, mode: str = 'AUTO'):
         normalized = mode.strip().upper()

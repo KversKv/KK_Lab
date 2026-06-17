@@ -518,9 +518,28 @@ class MockMSO64B:
     def __init__(self):
         self.instrument = MockInstr()
         self._channel_display = {1: True, 2: True, 3: True, 4: True}
+        self._acquiring = True
+        self._timebase_scale = 1e-6
+        self._timebase_position = 0.0
+        self._channel_bandwidth = {1: 'FUL', 2: 'FUL', 3: 'FUL', 4: 'FUL'}
+        self._trigger_source = 'CH1'
+        self._trigger_slope = 'POS'
+        self._trigger_level = 1.25
 
     def identify_instrument(self):
         return "TEKTRONIX,MSO64B,MOCK000,FW1.0"
+
+    def run(self):
+        self._acquiring = True
+
+    def stop(self):
+        self._acquiring = False
+
+    def single(self):
+        self._acquiring = False
+
+    def is_acquiring(self):
+        return self._acquiring
 
     def disconnect(self):
         pass
@@ -568,22 +587,36 @@ class MockMSO64B:
         return 0.0
 
     def set_timebase_scale(self, seconds_per_div):
-        pass
+        self._timebase_scale = seconds_per_div
+
+    def get_timebase_scale(self):
+        return self._timebase_scale
 
     def set_trigger_mode(self, mode='EDGE'):
         pass
 
     def set_trigger_source(self, source_channel):
-        pass
+        self._trigger_source = f'CH{source_channel}'
+
+    def get_trigger_source(self):
+        return self._trigger_source
 
     def set_trigger_slope(self, slope='POS'):
-        pass
+        self._trigger_slope = slope.upper()
+
+    def get_trigger_slope(self):
+        return self._trigger_slope
 
     def set_trigger_level(self, source_channel, level):
-        pass
+        self._trigger_level = level
+
+    def get_trigger_level(self):
+        return self._trigger_level
 
     def set_trigger_config(self, source_channel, level, slope='POS'):
-        pass
+        self.set_trigger_source(source_channel)
+        self.set_trigger_slope(slope)
+        self.set_trigger_level(source_channel, level)
 
     def set_trigger_sweep(self, mode='AUTO'):
         pass
@@ -610,10 +643,16 @@ class MockMSO64B:
         return 0.05 + random.gauss(0, 0.005)
 
     def set_channel_bandwidth(self, channel, bandwidth='FULl'):
-        pass
+        self._channel_bandwidth[channel] = bandwidth
+
+    def get_channel_bandwidth(self, channel):
+        return self._channel_bandwidth.get(channel, 'FUL')
 
     def set_timebase_position(self, position_pct):
-        pass
+        self._timebase_position = position_pct
+
+    def get_timebase_position(self):
+        return self._timebase_position
 
     def set_AutoRipple_test(self, channel):
         pass

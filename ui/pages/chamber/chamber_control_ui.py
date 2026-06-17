@@ -12,6 +12,7 @@ sys.path.append(get_resource_base())
 
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.widgets.button import update_connect_button_state
+from ui.widgets.instrument_state_poller import InstrumentStatePoller
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QPushButton,
     QLabel, QLineEdit, QFrame, QGraphicsDropShadowEffect,
@@ -112,7 +113,13 @@ class ChamberControlUI(QWidget):
         super().__init__()
         self.chamber = None
         self._instrument_manager = instrument_manager
-        self.timer = QTimer()
+        self._state_poller = InstrumentStatePoller(
+            read_state_fn=self._read_chamber_snapshot,
+            apply_state_fn=self._apply_chamber_snapshot,
+            interval_s=1.0,
+            busy_check_fn=self._is_chamber_session_busy,
+            parent=self,
+        )
         self.is_chamber_on = False
         self.current_chamber_type = "vt6002"
         self.current_chamber_session_id = None
@@ -136,9 +143,6 @@ class ChamberControlUI(QWidget):
         # 初始化界面
         self._setup_ui()
         self._connect_signals()
-
-        # 开始定时更新温度
-        self.timer.start(1000)
 
     def _setup_ui(self):
         """设置界面"""
@@ -526,7 +530,6 @@ class ChamberControlUI(QWidget):
         self.loop_start_btn.clicked.connect(self._start_loop)
         self.loop_stop_btn.clicked.connect(self._stop_loop)
         self.loop_timer.timeout.connect(self._loop_tick)
-        self.timer.timeout.connect(self._update_temperatures)
         if self._instrument_manager:
             self._instrument_manager.session_connected.connect(
                 self._on_manager_session_connected
@@ -995,9 +998,12 @@ class ChamberControlUI(QWidget):
         if connected:
             self.status_detail.setText(f"{chamber_display_name(self.current_chamber_type)} Connected & Ready")
             self.status_dot.setStyleSheet("color: #15e6a3; font-size: 16px;border: none")
+            if self.isVisible():
+                self._state_poller.resume()
         else:
             self.status_detail.setText("Disconnected")
             self.status_dot.setStyleSheet("color: #5d78a7; font-size: 16px;border: none")
+            self._state_poller.pause()
 
     def _set_power_ui(self, chamber_on: bool, connected: bool | None = None):
         """更新温箱电源按钮样式"""
@@ -1214,7 +1220,8 @@ class ChamberControlUI(QWidget):
             try:
                 if self._loop_running:
                     self._stop_loop(reason="Loop stopped: chamber powered off")
-                self.chamber.stop()
+                with self._state_poller.writing():
+                    self.chamber.stop()
                 setattr(self.chamber, "_last_known_running_state", False)
                 setattr(self.chamber, "_last_known_running_state_verified", True)
                 self._set_power_ui(False, connected=True)
@@ -1222,7 +1229,8 @@ class ChamberControlUI(QWidget):
                 logger.error("关闭温箱错误: %s", e, exc_info=True)
         else:
             try:
-                self.chamber.start()
+                with self._state_poller.writing():
+                    self.chamber.start()
                 setattr(self.chamber, "_last_known_running_state", True)
                 setattr(self.chamber, "_last_known_running_state_verified", True)
                 self._set_power_ui(True, connected=True)
@@ -1236,7 +1244,8 @@ class ChamberControlUI(QWidget):
 
         try:
             temp = float(self.temp_input.text())
-            self.chamber.set_temperature(temp)
+            with self._state_poller.writing():
+                self.chamber.set_temperature(temp)
             self.set_temp_value.setText(f"{temp:.1f} °C")
         except ValueError:
             logger.warning("设置温度错误: 输入不是有效数字")
@@ -1251,7 +1260,8 @@ class ChamberControlUI(QWidget):
         try:
             temp = float(temp_str.replace("°C", ""))
             self.temp_input.setText(str(temp))
-            self.chamber.set_temperature(temp)
+            with self._state_poller.writing():
+                self.chamber.set_temperature(temp)
             self.set_temp_value.setText(f"{temp:.1f} °C")
         except ValueError:
             logger.warning("设置预设温度错误: 输入不是有效数字")
@@ -1334,6 +1344,7 @@ class ChamberControlUI(QWidget):
             return
 
         self._set_loop_running_ui(True)
+        self._state_poller.pause()
         self._apply_loop_target()
         self.loop_timer.start()
         logger.info(
@@ -1351,6 +1362,8 @@ class ChamberControlUI(QWidget):
         connected = self._is_current_chamber_connected()
         self.loop_start_btn.setEnabled(connected and True)
         self.loop_status_label.setText(reason)
+        if connected and self.isVisible():
+            self._state_poller.resume()
         if was_running:
             logger.info("温度循环停止: %s", reason)
 
@@ -1438,26 +1451,71 @@ class ChamberControlUI(QWidget):
         for btn in self.preset_buttons:
             btn.setEnabled(not running and self._is_current_chamber_connected())
 
-    def _update_temperatures(self):
-        if self.chamber is not None and hasattr(self.chamber, "is_connected"):
-            is_connected = self.chamber.is_connected()
-        else:
-            is_connected = self.chamber is not None and hasattr(self.chamber, 'ser') and self.chamber.ser.is_open
+    def _is_chamber_session_busy(self):
+        if not self._instrument_manager or not self.current_chamber_session_id:
+            return False
+        session = self._instrument_manager.get_session(self.current_chamber_session_id)
+        if session and session.connected:
+            return bool(session.busy)
+        return False
 
-        if is_connected:
+    def _read_chamber_snapshot(self):
+        if self.chamber is None:
+            return None
+        if hasattr(self.chamber, "is_connected"):
             try:
-                actual_temp = self.chamber.get_current_temp()
-                if actual_temp is not None:
-                    self.temp_gauge.set_temperature(actual_temp)
-
-                set_temp = self.chamber.get_set_temp()
-                if set_temp is not None:
-                    self.set_temp_value.setText(f"{set_temp:.1f} °C")
-                self._sync_power_state_from_chamber(allow_io=True)
-            except Exception as e:
-                logger.error("更新温度错误: %s", e, exc_info=True)
+                is_connected = bool(self.chamber.is_connected())
+            except Exception:
+                is_connected = False
         else:
+            is_connected = hasattr(self.chamber, 'ser') and self.chamber.ser is not None and self.chamber.ser.is_open
+
+        snapshot = {"connected": is_connected}
+        if not is_connected:
+            return snapshot
+
+        try:
+            snapshot["actual_temp"] = self.chamber.get_current_temp()
+        except Exception:
+            snapshot["actual_temp"] = None
+        try:
+            snapshot["set_temp"] = self.chamber.get_set_temp()
+        except Exception:
+            snapshot["set_temp"] = None
+        snapshot["running"] = self._read_chamber_running_state(allow_io=True)
+        return snapshot
+
+    def _apply_chamber_snapshot(self, snapshot):
+        if not snapshot.get("connected"):
             self.temp_gauge.set_temperature(None)
+            self._set_power_ui(False, connected=False)
+            return
+
+        actual_temp = snapshot.get("actual_temp")
+        if actual_temp is not None:
+            self.temp_gauge.set_temperature(actual_temp)
+
+        set_temp = snapshot.get("set_temp")
+        if set_temp is not None:
+            self.set_temp_value.setText(f"{set_temp:.1f} °C")
+
+        chamber_on = snapshot.get("running")
+        if chamber_on is None:
+            chamber_on = self.is_chamber_on
+        self._set_power_ui(bool(chamber_on), connected=True)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self._is_current_chamber_connected():
+            self._state_poller.resume()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self._state_poller.pause()
+
+    def closeEvent(self, event):
+        self._state_poller.stop()
+        super().closeEvent(event)
 
 
 if __name__ == "__main__":

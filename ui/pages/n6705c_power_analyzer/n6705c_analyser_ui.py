@@ -8,6 +8,7 @@ from ui.resource_path import get_resource_base
 sys.path.append(get_resource_base())
 
 from ui.widgets.button import update_connect_button_state
+from ui.widgets.instrument_state_poller import InstrumentStatePoller
 from ui.modules.n6705c_module_frame import build_n6705c_inline_row
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
@@ -415,6 +416,14 @@ class N6705CAnalyserUI(QWidget):
         self.channels = []
         self._prev_dual_mode = None
 
+        self._state_poller = InstrumentStatePoller(
+            read_state_fn=self._read_channel_snapshot,
+            apply_state_fn=self._apply_channel_snapshot,
+            interval_s=1.0,
+            busy_check_fn=self._is_active_session_busy,
+            parent=self,
+        )
+
         self._setup_style()
         self._create_layout()
 
@@ -480,6 +489,8 @@ class N6705CAnalyserUI(QWidget):
         self._rebuild_dynamic_sections()
         if self.devices[self.current_device]["is_connected"]:
             self._start_channel_sync()
+        else:
+            self._state_poller.pause()
 
     def _connected_device_labels(self):
         return [label for label, dev in self.devices.items() if dev["is_connected"]]
@@ -532,34 +543,61 @@ class N6705CAnalyserUI(QWidget):
         self._rebuild_dynamic_sections()
         if self.devices[self.current_device]["is_connected"]:
             self._start_channel_sync()
+        else:
+            self._state_poller.pause()
+
+    def _is_active_session_busy(self):
+        if not self._instrument_manager:
+            return False
+        session = self._instrument_manager.get_session(f"n6705c:{self.current_device}")
+        if session and session.connected:
+            return bool(session.busy)
+        return False
 
     def _start_channel_sync(self):
         dev = self.devices[self.current_device]
         if not dev["is_connected"] or not dev["n6705c"]:
             return
-        if self._sync_thread is not None and self._sync_thread.isRunning():
-            return
-        if self._instrument_manager:
-            session_id = f"n6705c:{self.current_device}"
-            session = self._instrument_manager.get_session(session_id)
-            if session and session.busy:
-                return
-        worker = _ChannelSyncWorker(dev["n6705c"], self.current_channel)
-        thread = QThread()
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.result.connect(self._on_channel_sync_result)
-        worker.finished.connect(thread.quit)
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(self._on_channel_sync_done)
-        self._sync_thread = thread
-        self._sync_worker = worker
-        thread.start()
+        if self.isVisible():
+            self._state_poller.resume()
 
-    def _on_channel_sync_result(self, data):
+    def _read_channel_snapshot(self):
+        dev = self.devices.get(self.current_device)
+        if not dev or not dev["is_connected"] or not dev["n6705c"]:
+            return None
+        n6705c = dev["n6705c"]
+        channel_num = self.current_channel
+        data = {"device": self.current_device, "channel": channel_num}
+        try:
+            data["channel_state"] = n6705c.get_channel_state(channel_num)
+        except Exception:
+            data["channel_state"] = None
+        try:
+            data["mode"] = n6705c.get_mode(channel_num)
+        except Exception:
+            data["mode"] = None
+        try:
+            data["voltage"] = float(n6705c.measure_voltage(channel_num))
+        except Exception:
+            data["voltage"] = None
+        try:
+            data["current"] = float(n6705c.measure_current(channel_num))
+        except Exception:
+            data["current"] = None
+        try:
+            data["limit_current"] = float(n6705c.get_current_limit(channel_num))
+        except Exception:
+            data["limit_current"] = None
+        return data
+
+    def _apply_channel_snapshot(self, data):
+        if data.get("device") != self.current_device or data.get("channel") != self.current_channel:
+            return
+
         if data.get("channel_state") is not None:
+            self.output_toggle.blockSignals(True)
             self.output_toggle.setChecked(data["channel_state"])
+            self.output_toggle.blockSignals(False)
         self._update_output_visual_state()
 
         mode_raw = data.get("mode")
@@ -569,6 +607,9 @@ class N6705CAnalyserUI(QWidget):
                 btn.setChecked(btn.text() == ui_mode)
             self._apply_mode_button_styles()
             self._update_labels_for_mode(ui_mode)
+
+        if self._dirty_voltage or self._dirty_current:
+            return
 
         voltage = data.get("voltage")
         current = data.get("current")
@@ -580,9 +621,18 @@ class N6705CAnalyserUI(QWidget):
         self._dirty_current = False
         self._update_set_button_dirty_state()
 
-    def _on_channel_sync_done(self):
-        self._sync_thread = None
-        self._sync_worker = None
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self.devices[self.current_device]["is_connected"]:
+            self._state_poller.resume()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self._state_poller.pause()
+
+    def closeEvent(self, event):
+        self._state_poller.stop()
+        super().closeEvent(event)
 
     def _setup_style(self):
         self.setFont(QFont("Segoe UI", 9))
@@ -1772,7 +1822,8 @@ class N6705CAnalyserUI(QWidget):
         if dev["is_connected"] and dev["n6705c"]:
             try:
                 inst_mode = self._map_ui_mode_to_instrument_mode(ui_mode)
-                dev["n6705c"].set_mode(self.current_channel, inst_mode)
+                with self._state_poller.writing():
+                    dev["n6705c"].set_mode(self.current_channel, inst_mode)
                 logger.info("[%s] Channel %d mode set to: %s", self.current_device, self.current_channel, inst_mode)
                 self._start_channel_sync()
             except Exception as e:
@@ -1782,10 +1833,11 @@ class N6705CAnalyserUI(QWidget):
         dev = self.devices[self.current_device]
         if dev["is_connected"] and dev["n6705c"]:
             try:
-                if checked:
-                    dev["n6705c"].channel_on(self.current_channel)
-                else:
-                    dev["n6705c"].channel_off(self.current_channel)
+                with self._state_poller.writing():
+                    if checked:
+                        dev["n6705c"].channel_on(self.current_channel)
+                    else:
+                        dev["n6705c"].channel_off(self.current_channel)
             except Exception as e:
                 logger.error("Toggle failed: %s", e)
         self._update_output_visual_state()
@@ -1797,10 +1849,11 @@ class N6705CAnalyserUI(QWidget):
         try:
             value = float(self.voltage_set_input.text())
             ui_mode = self._get_current_mode_text()
-            if ui_mode == "PS2Q":
-                dev["n6705c"].set_voltage(self.current_channel, value)
-            elif ui_mode == "CC":
-                dev["n6705c"].set_voltage_limit(self.current_channel, value)
+            with self._state_poller.writing():
+                if ui_mode == "PS2Q":
+                    dev["n6705c"].set_voltage(self.current_channel, value)
+                elif ui_mode == "CC":
+                    dev["n6705c"].set_voltage_limit(self.current_channel, value)
         except Exception as e:
             logger.error("Voltage set failed: %s", e)
         self.voltage_set_input.selectAll()
@@ -1812,12 +1865,13 @@ class N6705CAnalyserUI(QWidget):
         try:
             value = float(self.limit_current_value.text())
             ui_mode = self._get_current_mode_text()
-            if ui_mode == "PS2Q":
-                dev["n6705c"].set_current_limit(self.current_channel, value)
-            elif ui_mode == "CC":
-                value = -abs(value)
-                self.limit_current_value.setText(f"{value:.4f}")
-                dev["n6705c"].set_current(self.current_channel, value)
+            with self._state_poller.writing():
+                if ui_mode == "PS2Q":
+                    dev["n6705c"].set_current_limit(self.current_channel, value)
+                elif ui_mode == "CC":
+                    value = -abs(value)
+                    self.limit_current_value.setText(f"{value:.4f}")
+                    dev["n6705c"].set_current(self.current_channel, value)
         except Exception as e:
             logger.error("Current set failed: %s", e)
         self.limit_current_value.selectAll()
@@ -1834,16 +1888,17 @@ class N6705CAnalyserUI(QWidget):
             ch = self.current_channel
             ui_mode = self._get_current_mode_text()
             inst_mode = self._map_ui_mode_to_instrument_mode(ui_mode)
-            n6705c.set_mode(ch, inst_mode)
+            with self._state_poller.writing():
+                n6705c.set_mode(ch, inst_mode)
 
-            if ui_mode == "PS2Q":
-                n6705c.set_voltage(ch, float(self.voltage_set_input.text()))
-                n6705c.set_current_limit(ch, float(self.limit_current_value.text()))
-            elif ui_mode == "CC":
-                n6705c.set_voltage_limit(ch, float(self.voltage_set_input.text()))
-                cur = -abs(float(self.limit_current_value.text()))
-                self.limit_current_value.setText(f"{cur:.4f}")
-                n6705c.set_current(ch, cur)
+                if ui_mode == "PS2Q":
+                    n6705c.set_voltage(ch, float(self.voltage_set_input.text()))
+                    n6705c.set_current_limit(ch, float(self.limit_current_value.text()))
+                elif ui_mode == "CC":
+                    n6705c.set_voltage_limit(ch, float(self.voltage_set_input.text()))
+                    cur = -abs(float(self.limit_current_value.text()))
+                    self.limit_current_value.setText(f"{cur:.4f}")
+                    n6705c.set_current(ch, cur)
 
             self._dirty_voltage = False
             self._dirty_current = False

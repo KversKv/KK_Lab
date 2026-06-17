@@ -90,6 +90,20 @@ class MSO64B:
         self.set_trigger_slope(slope)
         self.set_trigger_level(source_channel, level)
 
+    def get_trigger_source(self):
+        return self.instrument.query('TRIGger:A:EDGE:SOUrce?').strip()
+
+    def get_trigger_slope(self):
+        tek_slope = self.instrument.query('TRIGger:A:EDGE:SLOpe?').strip().upper()
+        slope_map = {'RIS': 'POS', 'RISE': 'POS', 'FALL': 'NEG', 'EIT': 'EITH', 'EITHER': 'EITH'}
+        return slope_map.get(tek_slope, 'POS')
+
+    def get_trigger_level(self):
+        source = self.get_trigger_source().upper()
+        digits = ''.join(c for c in source if c.isdigit())
+        ch = digits if digits else '1'
+        return self._safe_float(self.instrument.query(f'TRIGger:A:LEVel:CH{ch}?'))
+
     def set_dvm_trigger_frequency_counter_enabled(self, enable=True):
         """
         设置 DVM trigger frequency counter 显示开关
@@ -220,6 +234,9 @@ class MSO64B:
     def set_channel_bandwidth(self, channel, bandwidth='FULl'):
         self.instrument.write(f'CH{channel}:BANdwidth {bandwidth}')
 
+    def get_channel_bandwidth(self, channel):
+        return self.instrument.query(f'CH{channel}:BANdwidth?').strip()
+
     def set_channel_scale(self, channel, volts_per_div):
         self.instrument.write(f'CH{channel}:SCAle {volts_per_div}')
 
@@ -235,8 +252,14 @@ class MSO64B:
     def set_timebase_scale(self, seconds_per_div):
         self.instrument.write(f'HORizontal:SCAle {seconds_per_div}')
 
+    def get_timebase_scale(self):
+        return self._safe_float(self.instrument.query('HORizontal:SCAle?'))
+
     def set_timebase_position(self, position_pct):
         self.instrument.write(f'HORizontal:POSition {position_pct}')
+
+    def get_timebase_position(self):
+        return self._safe_float(self.instrument.query('HORizontal:POSition?'))
 
     def clear_all_measurements(self):
         self.instrument.write('MEASUrement:DELete:ALL')
@@ -247,6 +270,10 @@ class MSO64B:
 
     def run(self):
         self.instrument.write('ACQuire:STATE RUN')
+
+    def is_acquiring(self):
+        state = self.instrument.query('ACQuire:STATE?').strip().upper()
+        return state in ('1', 'RUN', 'ON')
 
     def set_AutoRipple_test(self, channel):
         self.clear_all_measurements()

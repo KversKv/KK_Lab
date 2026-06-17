@@ -17,6 +17,7 @@ from PySide6.QtSvg import QSvgRenderer
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLL_AREA_STYLE
 from ui.widgets.button import SpinningSearchButton, update_connect_button_state
+from ui.widgets.instrument_state_poller import InstrumentStatePoller
 from instruments.scopes.base import OscilloscopeController
 from log_config import get_logger
 from debug_config import DEBUG_MOCK
@@ -843,6 +844,7 @@ class OscilloscopeBaseUI(QWidget):
 
     MEASUREMENT_TYPES = ["PK2PK", "FREQUENCY", "MEAN", "VMAX", "VMIN", "RMS"]
     MEASUREMENT_POLL_INTERVAL_S = 0.5
+    STATE_POLL_INTERVAL_S = 1.0
 
     CHANNEL_COLORS_DEFAULT = {
         1: "#7B8CB7",
@@ -927,6 +929,14 @@ class OscilloscopeBaseUI(QWidget):
         self._apply_pulse_timer = None
 
         self._osc_search_thread = None
+
+        self._state_poller = InstrumentStatePoller(
+            read_state_fn=self._read_instrument_snapshot,
+            apply_state_fn=self._apply_instrument_snapshot,
+            interval_s=self.STATE_POLL_INTERVAL_S,
+            busy_check_fn=self._is_scope_session_busy,
+            parent=self,
+        )
 
         self._setup_fonts()
         self._setup_style()
@@ -2404,10 +2414,10 @@ class OscilloscopeBaseUI(QWidget):
             self.set_system_status("● Connected")
             self.append_log(f"[SYSTEM] Connected: {text}")
             self._sync_channel_states_from_instrument()
-            if self._measurement_items:
-                self._start_polling()
+            if self.isVisible():
+                self._state_poller.resume()
         else:
-            self._stop_polling()
+            self._state_poller.pause()
             self.search_btn.setEnabled(True)
             self.instrument_info_label.setText("")
             self.set_system_status("● Ready")
@@ -2904,9 +2914,6 @@ class OscilloscopeBaseUI(QWidget):
 
         self._rebuild_measurement_grid()
 
-        if self._polling_worker is not None:
-            self._polling_worker.update_items(self._measurement_items)
-
         self.append_log(f"[MEASURE] Removed: CH{channel} {mtype}")
 
     def _rebuild_measurement_grid(self):
@@ -2920,8 +2927,6 @@ class OscilloscopeBaseUI(QWidget):
         logger.debug("[MEAS] _on_clear_measurements called")
         self._measurement_items.clear()
         self._clear_result_cards()
-        if self._polling_worker is not None:
-            self._polling_worker.update_items([])
         self.append_log("[MEASURE] All measurements cleared.")
         logger.debug("[MEAS] _on_clear_measurements finished")
 
@@ -2937,46 +2942,15 @@ class OscilloscopeBaseUI(QWidget):
         logger.debug("[MEAS] _clear_result_cards finished")
 
     def _start_polling(self):
-        if not self.is_connected or not self._measurement_items:
-            return
-        if self._polling_thread is not None and self._polling_thread.isRunning():
-            return
-
-        logger.debug("[MEAS] _start_polling: creating worker and thread")
-        self._polling_worker = MeasurementPollingWorker(
-            self.controller, self.MEASUREMENT_POLL_INTERVAL_S
-        )
-        self._polling_worker.update_items(self._measurement_items)
-        self._polling_thread = QThread()
-        self._polling_worker.moveToThread(self._polling_thread)
-        self._polling_thread.started.connect(self._polling_worker.start_polling)
-        self._polling_worker.results_ready.connect(self._on_polling_results)
-        self._polling_worker.finished.connect(self._polling_thread.quit)
-        self._polling_thread.finished.connect(self._polling_worker.deleteLater)
-        self._polling_thread.finished.connect(self._polling_thread.deleteLater)
-        self._polling_thread.finished.connect(self._on_polling_done)
-        self._polling_thread.start()
-        logger.debug("[MEAS] _start_polling: thread started")
+        if self.is_connected and self.isVisible():
+            self._state_poller.resume()
 
     def _stop_polling(self):
-        logger.debug("[MEAS] _stop_polling called")
-        if self._polling_worker is not None:
-            self._polling_worker.stop()
-        if self._polling_thread is not None and self._polling_thread.isRunning():
-            logger.debug("[MEAS] _stop_polling: waiting for thread...")
-            self._polling_thread.quit()
-            self._polling_thread.wait()
-            logger.debug("[MEAS] _stop_polling: thread finished")
-        self._polling_worker = None
-        self._polling_thread = None
+        self._state_poller.pause()
 
     def _sync_polling_items(self):
-        logger.debug("[MEAS] _sync_polling_items: items=%d", len(self._measurement_items))
-        if self._polling_worker is not None and self._polling_thread is not None and self._polling_thread.isRunning():
-            self._polling_worker.update_items(self._measurement_items)
-            logger.debug("[MEAS] _sync_polling_items: updated existing worker")
-        elif self._measurement_items:
-            self._start_polling()
+        if self.is_connected and self.isVisible():
+            self._state_poller.resume()
 
     def _on_polling_done(self):
         logger.debug("[MEAS] _on_polling_done called")
@@ -3049,12 +3023,13 @@ class OscilloscopeBaseUI(QWidget):
             ]
             trigger_settings = self.get_trigger_settings()
 
-            self.controller.apply_settings(
-                timebase_seconds=timebase_val,
-                channel_settings=channel_settings,
-                trigger_settings=trigger_settings,
-                num_channels=self.NUM_CHANNELS,
-            )
+            with self._state_poller.writing():
+                self.controller.apply_settings(
+                    timebase_seconds=timebase_val,
+                    channel_settings=channel_settings,
+                    trigger_settings=trigger_settings,
+                    num_channels=self.NUM_CHANNELS,
+                )
 
             if self._time_offset_mode != "none":
                 inst = self.controller.instrument
@@ -3240,7 +3215,8 @@ class OscilloscopeBaseUI(QWidget):
             return
         inst = self.controller.instrument
         try:
-            inst.set_channel_display(channel_num, enabled)
+            with self._state_poller.writing():
+                inst.set_channel_display(channel_num, enabled)
             self.append_log(
                 f"[SETTING] CH{channel_num}: {'ON' if enabled else 'OFF'}"
             )
@@ -3258,7 +3234,8 @@ class OscilloscopeBaseUI(QWidget):
 
             if source_text.startswith("CH"):
                 trigger_ch = int(source_text[2:])
-                self.controller.instrument.set_trigger_config(trigger_ch, trigger_level, slope)
+                with self._state_poller.writing():
+                    self.controller.instrument.set_trigger_config(trigger_ch, trigger_level, slope)
                 self.append_log(
                     f"[SETTING] Trigger: {source_text}, Level={trigger_level} V, Slope={slope}"
                 )
@@ -3272,14 +3249,15 @@ class OscilloscopeBaseUI(QWidget):
             return
         inst = self.controller.instrument
         try:
-            if hasattr(inst, "single"):
-                inst.single()
-            elif hasattr(inst, "instrument") and hasattr(inst.instrument, "write"):
-                inst.instrument.write("ACQuire:STOPAfter SEQuence")
-                inst.instrument.write("ACQuire:STATE RUN")
-            else:
-                self.append_log("[WARN] Single not supported by this instrument.")
-                return
+            with self._state_poller.writing():
+                if hasattr(inst, "single"):
+                    inst.single()
+                elif hasattr(inst, "instrument") and hasattr(inst.instrument, "write"):
+                    inst.instrument.write("ACQuire:STOPAfter SEQuence")
+                    inst.instrument.write("ACQuire:STATE RUN")
+                else:
+                    self.append_log("[WARN] Single not supported by this instrument.")
+                    return
             self._apply_run_stop_style(False)
             self.trigger_run_stop_btn.setWaiting(True)
             self.append_log("[TRIGGER] Single acquisition triggered.")
@@ -3295,13 +3273,15 @@ class OscilloscopeBaseUI(QWidget):
         try:
             self.trigger_run_stop_btn.setWaiting(False)
             if self._trigger_running:
-                if hasattr(inst, "stop"):
-                    inst.stop()
+                with self._state_poller.writing():
+                    if hasattr(inst, "stop"):
+                        inst.stop()
                 self._apply_run_stop_style(False)
                 self.append_log("[TRIGGER] Acquisition stopped.")
             else:
-                if hasattr(inst, "run"):
-                    inst.run()
+                with self._state_poller.writing():
+                    if hasattr(inst, "run"):
+                        inst.run()
                 self._apply_run_stop_style(True)
                 self.append_log("[TRIGGER] Acquisition running.")
         except Exception as e:
@@ -3344,6 +3324,221 @@ class OscilloscopeBaseUI(QWidget):
                 self.channel_tab_buttons[i].setChecked(on)
             except Exception:
                 self.channel_tab_buttons[i].setChecked(True)
+
+    def _is_scope_session_busy(self):
+        if not self._instrument_manager:
+            return False
+        for scope_type in ("mso64b", "dsox4034a"):
+            session = self._instrument_manager.get_session(f"{scope_type}:main_scope")
+            if session and session.connected:
+                return bool(session.busy)
+        return False
+
+    def _read_instrument_snapshot(self):
+        if not self.controller.is_connected:
+            return None
+        inst = self.controller.instrument
+        if inst is None:
+            return None
+
+        snapshot = {"channels": {}}
+
+        for ch_num in range(1, self.NUM_CHANNELS + 1):
+            ch_state = {}
+            try:
+                if hasattr(inst, 'is_channel_displayed'):
+                    ch_state["displayed"] = bool(inst.is_channel_displayed(ch_num))
+            except Exception:
+                pass
+            try:
+                if hasattr(inst, 'get_channel_scale'):
+                    ch_state["scale"] = float(inst.get_channel_scale(ch_num))
+            except Exception:
+                pass
+            try:
+                if hasattr(inst, 'get_channel_offset'):
+                    ch_state["offset"] = float(inst.get_channel_offset(ch_num))
+            except Exception:
+                pass
+            try:
+                if hasattr(inst, 'get_channel_coupling'):
+                    ch_state["coupling"] = str(inst.get_channel_coupling(ch_num)).strip()
+            except Exception:
+                pass
+            if ch_state:
+                snapshot["channels"][ch_num] = ch_state
+
+        try:
+            if hasattr(inst, 'get_timebase_scale'):
+                snapshot["timebase"] = float(inst.get_timebase_scale())
+        except Exception:
+            pass
+        try:
+            if hasattr(inst, 'get_trigger_source'):
+                snapshot["trigger_source"] = str(inst.get_trigger_source()).strip()
+        except Exception:
+            pass
+        try:
+            if hasattr(inst, 'get_trigger_level'):
+                snapshot["trigger_level"] = float(inst.get_trigger_level())
+        except Exception:
+            pass
+        try:
+            if hasattr(inst, 'get_trigger_slope'):
+                snapshot["trigger_slope"] = str(inst.get_trigger_slope()).strip()
+        except Exception:
+            pass
+        try:
+            if hasattr(inst, 'is_acquiring'):
+                snapshot["acquiring"] = bool(inst.is_acquiring())
+        except Exception:
+            pass
+
+        measure_results = []
+        for item in list(self._measurement_items):
+            mtype = item["type"]
+            channel = item["channel"]
+            try:
+                value = self._read_one_measurement(inst, channel, mtype)
+                measure_results.append({"type": mtype, "channel": channel, "value": value})
+            except Exception:
+                measure_results.append({"type": mtype, "channel": channel, "value": None})
+        snapshot["measurements"] = measure_results
+
+        return snapshot
+
+    @staticmethod
+    def _read_one_measurement(inst, channel, mtype):
+        func_map = {
+            "PK2PK": inst.get_channel_pk2pk,
+            "FREQUENCY": inst.get_channel_frequency,
+            "MEAN": inst.get_channel_mean,
+            "VMAX": inst.get_channel_max,
+            "VMIN": inst.get_channel_min,
+            "RMS": inst.get_channel_rms,
+        }
+        func = func_map.get(mtype)
+        if func is None:
+            raise ValueError(f"Unknown measurement type: {mtype}")
+        return func(channel)
+
+    def _apply_instrument_snapshot(self, snapshot):
+        if not self.is_connected:
+            return
+
+        channels = snapshot.get("channels", {})
+        for ch_num, ch_state in channels.items():
+            idx = ch_num - 1
+            if not (0 <= idx < len(self.channel_tab_buttons)):
+                continue
+            if "displayed" in ch_state:
+                btn = self.channel_tab_buttons[idx]
+                if btn.isChecked() != ch_state["displayed"]:
+                    btn.blockSignals(True)
+                    btn.setChecked(ch_state["displayed"])
+                    btn.blockSignals(False)
+            if idx < len(self.channels):
+                channel = self.channels[idx]
+                if "scale" in ch_state and not self._field_is_editing(channel['scale_edit']):
+                    channel['scale_edit'].setText(self._format_state_number(ch_state["scale"]))
+                if "offset" in ch_state and not self._field_is_editing(channel['offset_edit']):
+                    channel['offset_edit'].setText(self._format_state_number(ch_state["offset"]))
+                if "coupling" in ch_state and hasattr(channel.get('coupling_toggle'), 'setValue'):
+                    coupling = ch_state["coupling"].upper()
+                    if coupling in ("AC", "DC"):
+                        try:
+                            channel['coupling_toggle'].setValue(coupling)
+                        except Exception:
+                            pass
+
+        if "timebase" in snapshot and not self._field_is_editing(self.timebase_edit):
+            try:
+                display = TimeScaleEdit.seconds_to_display(float(snapshot["timebase"]))
+                if self.timebase_edit.text() != display:
+                    self.timebase_edit.blockSignals(True)
+                    self.timebase_edit.setText(display)
+                    self.timebase_edit.blockSignals(False)
+            except Exception:
+                pass
+        if "trigger_source" in snapshot and not self._field_is_editing(self.trigger_source_combo):
+            source = self._normalize_trigger_source(snapshot["trigger_source"])
+            if source is not None:
+                idx = self.trigger_source_combo.findText(source)
+                if idx >= 0 and self.trigger_source_combo.currentIndex() != idx:
+                    self.trigger_source_combo.blockSignals(True)
+                    self.trigger_source_combo.setCurrentIndex(idx)
+                    self.trigger_source_combo.blockSignals(False)
+        if "trigger_slope" in snapshot and not self._field_is_editing(self.trigger_slope_combo):
+            slope = str(snapshot["trigger_slope"]).strip().upper()
+            idx = self.trigger_slope_combo.findText(slope)
+            if idx >= 0 and self.trigger_slope_combo.currentIndex() != idx:
+                self.trigger_slope_combo.blockSignals(True)
+                self.trigger_slope_combo.setCurrentIndex(idx)
+                self.trigger_slope_combo.blockSignals(False)
+        if "trigger_level" in snapshot and not self._field_is_editing(self.trigger_level_edit):
+            level_text = self._format_state_number(snapshot["trigger_level"])
+            if self.trigger_level_edit.text() != level_text:
+                self.trigger_level_edit.blockSignals(True)
+                self.trigger_level_edit.setText(level_text)
+                self.trigger_level_edit.blockSignals(False)
+
+        if "acquiring" in snapshot:
+            acquiring = snapshot["acquiring"]
+            if acquiring != self._trigger_running:
+                self.trigger_run_stop_btn.setWaiting(False)
+                self._apply_run_stop_style(acquiring)
+
+        for result in snapshot.get("measurements", []):
+            self.update_measure_result(result["type"], result["channel"], result["value"])
+
+    @staticmethod
+    def _field_is_editing(widget):
+        if widget is None:
+            return False
+        try:
+            if widget.hasFocus():
+                return True
+        except Exception:
+            return False
+        view = getattr(widget, "view", None)
+        if callable(view):
+            try:
+                popup = widget.view()
+                if popup is not None and popup.isVisible():
+                    return True
+            except Exception:
+                pass
+        return False
+
+    @staticmethod
+    def _format_state_number(value):
+        if value == int(value):
+            return str(int(value))
+        return f"{value:g}"
+
+    @staticmethod
+    def _normalize_trigger_source(raw):
+        text = str(raw).strip().upper()
+        if text.startswith("EXT"):
+            return "EXT"
+        digits = ''.join(c for c in text if c.isdigit())
+        if digits:
+            return f"CH{digits}"
+        return None
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self.is_connected:
+            self._state_poller.resume()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self._state_poller.pause()
+
+    def closeEvent(self, event):
+        self._state_poller.stop()
+        self._stop_polling()
+        super().closeEvent(event)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
