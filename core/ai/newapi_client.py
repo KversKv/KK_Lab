@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -34,6 +35,7 @@ class ChatResult:
     finish_reason: str = ""
     usage: dict[str, Any] | None = None
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    elapsed_ms: int = 0
 
 
 class NewAPIClient:
@@ -85,6 +87,7 @@ class NewAPIClient:
         if cancel_check and cancel_check():
             raise AIClientError("已取消")
 
+        start = time.monotonic()
         try:
             with httpx.Client(trust_env=False, timeout=self._timeout) as client:
                 resp = client.post(url, headers=self._headers(), json=payload)
@@ -109,7 +112,10 @@ class NewAPIClient:
             logger.error("New API 响应非 JSON", exc_info=True)
             raise AIClientError("响应解析失败（非 JSON）") from exc
 
-        return self._parse(body)
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+        result = self._parse(body)
+        result.elapsed_ms = elapsed_ms
+        return result
 
     def chat_stream(
         self,
@@ -147,7 +153,9 @@ class NewAPIClient:
         reasoning_parts: list[str] = []
         finish_reason = ""
         resp_model = model
+        usage: dict[str, Any] | None = None
 
+        start = time.monotonic()
         try:
             with httpx.Client(trust_env=False, timeout=self._timeout) as client:
                 with client.stream(
@@ -174,6 +182,9 @@ class NewAPIClient:
                             chunk = json.loads(data)
                         except ValueError:
                             continue
+                        chunk_usage = chunk.get("usage")
+                        if isinstance(chunk_usage, dict):
+                            usage = chunk_usage
                         delta_content, delta_reason, fr, mdl = self._parse_chunk(chunk)
                         if mdl:
                             resp_model = mdl
@@ -195,11 +206,14 @@ class NewAPIClient:
         content = "".join(content_parts)
         if not content and not reasoning_parts:
             raise AIClientError("流式响应为空（可能 max_tokens 过小被推理耗尽）")
+        elapsed_ms = int((time.monotonic() - start) * 1000)
         return ChatResult(
             content=content,
             reasoning="".join(reasoning_parts),
             model=str(resp_model),
             finish_reason=finish_reason,
+            usage=usage,
+            elapsed_ms=elapsed_ms,
         )
 
     @staticmethod

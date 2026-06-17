@@ -5260,6 +5260,18 @@ class N6705CDatalogUI(QWidget):
             self._record_worker.stop()
             self.start_btn.setEnabled(False)
 
+    def get_waveform_data(self):
+        """返回当前内存中的波形数据（供 AI 摘要），结构 {label: {time, values}}。"""
+        return self.datalog_data
+
+    def build_waveform_digest(self):
+        """构建波形摘要（F1.5）：把内存波形压成 WaveformDigest 喂 AI。"""
+        from core.ai.providers.waveform_provider import build_digest
+
+        if not self.datalog_data:
+            return None
+        return build_digest(self.datalog_data)
+
     def _on_data_ready(self, data):
         power_chs_a = [cb.isChecked() for cb in getattr(self, 'ch_power_cbs_a', [])]
         power_chs_b = [cb.isChecked() for cb in getattr(self, 'ch_power_cbs_b', [])]

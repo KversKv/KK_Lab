@@ -18,6 +18,118 @@ from typing import Any
 
 SEVERITY_LEVELS = ("info", "low", "medium", "high", "critical")
 
+
+@dataclass
+class WaveformStat:
+    """单通道波形统计摘要（F1 第 1 层，纯标量，不含原始点）。"""
+
+    label: str = ""
+    unit: str = ""
+    sample_period_s: float = 0.0
+    point_count: int = 0
+    minimum: float = 0.0
+    maximum: float = 0.0
+    average: float = 0.0
+    peak_to_peak: float = 0.0
+    std: float = 0.0
+    anomalies: list[dict[str, Any]] = field(default_factory=list)
+    steady_segments: list[dict[str, Any]] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "label": self.label,
+            "unit": self.unit,
+            "sample_period_s": self.sample_period_s,
+            "point_count": self.point_count,
+            "minimum": self.minimum,
+            "maximum": self.maximum,
+            "average": self.average,
+            "peak_to_peak": self.peak_to_peak,
+            "std": self.std,
+            "anomalies": list(self.anomalies),
+            "steady_segments": list(self.steady_segments),
+        }
+
+
+@dataclass
+class WaveformDigest:
+    """波形摘要包（F1 三层结构的可序列化载荷）。
+
+    stats: 各通道统计摘要（第 1 层，永远先传）；
+    downsampled: LTTB 降采样后的形状数据（第 2 层，可选）：
+                 {label: {"time": [...], "values": [...]}}；
+    note: 给模型的说明（如"原始 150 万点已降采样至 1500 点"）。
+    """
+
+    stats: list[WaveformStat] = field(default_factory=list)
+    downsampled: dict[str, dict[str, list[float]]] = field(default_factory=dict)
+    note: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "stats": [s.to_dict() for s in self.stats],
+            "downsampled": {
+                k: {"time": list(v.get("time", [])), "values": list(v.get("values", []))}
+                for k, v in self.downsampled.items()
+            },
+            "note": self.note,
+        }
+
+
+@dataclass
+class TurnUsage:
+    """单轮请求的用量与速度（F3，来自响应 usage + 客户端计时）。"""
+
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    elapsed_ms: int = 0
+
+    @property
+    def output_tps(self) -> float:
+        if self.elapsed_ms <= 0:
+            return 0.0
+        return self.completion_tokens / (self.elapsed_ms / 1000.0)
+
+    @classmethod
+    def from_result(
+        cls, usage: dict[str, Any] | None, elapsed_ms: int
+    ) -> "TurnUsage":
+        usage = usage or {}
+
+        def _as_int(value: Any) -> int:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return 0
+
+        return cls(
+            prompt_tokens=_as_int(usage.get("prompt_tokens")),
+            completion_tokens=_as_int(usage.get("completion_tokens")),
+            total_tokens=_as_int(usage.get("total_tokens")),
+            elapsed_ms=max(0, int(elapsed_ms)),
+        )
+
+
+@dataclass
+class SessionStats:
+    """会话累计用量（F3，客户端累加）。"""
+
+    requests: int = 0
+    prompt_tokens_total: int = 0
+    completion_tokens_total: int = 0
+
+    def add(self, turn: TurnUsage) -> None:
+        self.requests += 1
+        self.prompt_tokens_total += turn.prompt_tokens
+        self.completion_tokens_total += turn.completion_tokens
+
+    def reset(self) -> None:
+        self.requests = 0
+        self.prompt_tokens_total = 0
+        self.completion_tokens_total = 0
+
+
 CONFIG_DRAFT = "config_draft"
 SCRIPT_DRAFT = "script_draft"
 DRAFT_KINDS = (CONFIG_DRAFT, SCRIPT_DRAFT)

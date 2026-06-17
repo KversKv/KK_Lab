@@ -4,6 +4,13 @@
 > 文档定位：AI Assist 的落地架构与实现规范，供后续拆分任务、逐阶段开发。
 > 分层铁律：`main.py → ui/ ←→ core/ → instruments/ → lib/`，`instruments/` 禁 Qt，`ui/` 禁阻塞 IO。
 
+> 📚 **AI Assist 文档索引**
+> | 文档 | 角色 |
+> |---|---|
+> | **[AI_Assist.md](./AI_Assist.md)**（本文） | 架构设计与规范（事实源） |
+> | [AI_AssistPlan.md](./AI_AssistPlan.md) | 主实现计划与进度表（阶段 0~5） |
+> | [AI_AssistNewFeature_V1.md](./AI_AssistNewFeature_V1.md) | 功能增补 V1（波形/控制/用量/序列/Markdown，Phase A~C） |
+
 ---
 
 ## 0. 本文档与原始需求的差异说明（务必先读）

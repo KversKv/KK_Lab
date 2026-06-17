@@ -132,7 +132,8 @@ core/
 │   │   ├── base.py          # ContextProvider 抽象基类
 │   │   ├── page_provider.py # PageContextProvider：当前页面 → 上下文文本
 │   │   ├── log_provider.py  # LogContextProvider：软件运行日志 + 执行日志 → 上下文
-│   │   └── serial_provider.py # SerialContextProvider：活动串口状态 + 最近 RX → 上下文
+│   │   ├── serial_provider.py # SerialContextProvider：活动串口状态 + 最近 RX → 上下文
+│   │   └── waveform_provider.py # 波形摘要：LTTB 降采样 + 统计/异常/稳态段 → WaveformDigest（F1）
 │   └── actions/             # 受控动作层（Action Registry / 权限 / 确认 / 审计，无 QtWidgets）
 │       ├── __init__.py      # MODULE_VERSION + 导出 registry/permission/dispatcher/audit/builder/deps
 │       ├── registry.py      # ActionSpec + ActionRegistry：注册/查找/渲染 OpenAI tools

@@ -131,6 +131,12 @@ QPushButton#aiQuickBtn:hover {
     background-color: #1C2D55;
     border: 1px solid #3A5A9F;
 }
+QLabel#aiUsageLabel {
+    color: #7e93b8;
+    font-size: 10px;
+    background: transparent;
+    padding: 1px 2px;
+}
 """
 
 _LOG_LEVELS = ("DEBUG", "INFO", "WARN", "ERROR")
@@ -159,6 +165,7 @@ class AIAssistPanel(QFrame):
         self._service = service
         self._config_apply_cb = None
         self._script_apply_cb = None
+        self._waveform_provider_cb = None
         self.setObjectName("aiAssistPanel")
         self.setStyleSheet(_PANEL_STYLE)
 
@@ -184,6 +191,7 @@ class AIAssistPanel(QFrame):
 
         root.addLayout(self._build_range_bar())
         root.addLayout(self._build_action_bar())
+        root.addWidget(self._build_usage_bar())
 
         self._chat.add_system_message("AI 助手已就绪。")
         self._replay_history()
@@ -340,6 +348,14 @@ class AIAssistPanel(QFrame):
         self._draft_btn.clicked.connect(self._on_draft_clicked)
         layout.addWidget(self._draft_btn)
 
+        self._waveform_btn = QPushButton("发送波形给 AI")
+        self._waveform_btn.setObjectName("aiAnalyzeBtn")
+        self._waveform_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        self._waveform_btn.setToolTip("把当前页面波形（摘要+降采样）发送给 AI 分析")
+        self._waveform_btn.clicked.connect(self._on_waveform_clicked)
+        self._waveform_btn.setVisible(False)
+        layout.addWidget(self._waveform_btn)
+
         layout.addStretch(1)
 
         self._send_btn = QPushButton("发送")
@@ -352,6 +368,63 @@ class AIAssistPanel(QFrame):
         layout.addWidget(self._send_btn)
         return layout
 
+    def _build_usage_bar(self) -> QWidget:
+        row = QWidget()
+        row.setStyleSheet("background: transparent;")
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        self._usage_label = QLabel("用量 (tokens)：暂无")
+        self._usage_label.setObjectName("aiUsageLabel")
+        self._usage_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        layout.addWidget(self._usage_label)
+        layout.addStretch(1)
+        return row
+
+    def set_waveform_provider_callback(self, callback) -> None:
+        """注入波形提供回调：callback() -> WaveformDigest | None。
+
+        传入 None 表示当前页面无波形源，隐藏"发送波形给 AI"按钮。
+        """
+        self._waveform_provider_cb = callback
+        if hasattr(self, "_waveform_btn"):
+            self._waveform_btn.setVisible(callback is not None)
+
+    def _on_waveform_clicked(self) -> None:
+        if self._waveform_provider_cb is None:
+            self._chat.add_system_message("当前页面无可发送的波形数据。")
+            return
+        try:
+            digest = self._waveform_provider_cb()
+        except Exception:
+            logger.error("获取波形摘要失败", exc_info=True)
+            self._chat.add_system_message("获取波形数据失败，请查看日志。")
+            return
+        if digest is None or not getattr(digest, "stats", None):
+            self._chat.add_system_message("当前没有可分析的波形数据。")
+            return
+        text = self._input.toPlainText().strip() or "请分析以下波形数据的特征、异常与可能原因。"
+        self._input.clear()
+        self._chat.add_user_message(f"[发送波形] {text}")
+        self._service.send_with_waveform(text, digest)
+
+    def _on_usage_updated(self, turn, session) -> None:
+        if turn is None:
+            self._usage_label.setText("用量 (tokens)：暂无")
+            return
+        try:
+            tps = turn.output_tps
+            sess_prompt = getattr(session, "prompt_tokens_total", 0)
+            sess_completion = getattr(session, "completion_tokens_total", 0)
+            requests = getattr(session, "requests", 0)
+            self._usage_label.setText(
+                f"本次 ↑{turn.prompt_tokens} ↓{turn.completion_tokens} tokens @ "
+                f"{tps:.1f} tok·s⁻¹ ｜ 会话 ↑{sess_prompt} ↓{sess_completion} tokens"
+                f"（{requests} 次）"
+            )
+        except Exception:
+            logger.error("刷新用量状态栏失败", exc_info=True)
+
     def _wire_service(self) -> None:
         self._service.response_ready.connect(self._on_response)
         self._service.response_started.connect(self._on_stream_started)
@@ -363,6 +436,7 @@ class AIAssistPanel(QFrame):
         self._service.busy_changed.connect(self._on_busy_changed)
         self._service.connection_tested.connect(self._on_connection_tested)
         self._service.action_result.connect(self._on_action_result)
+        self._service.usage_updated.connect(self._on_usage_updated)
 
     def _replay_history(self) -> None:
         """启动时回放持久化的会话历史（5.2）。"""

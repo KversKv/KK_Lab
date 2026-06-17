@@ -640,6 +640,17 @@ class MainWindow(CleanupMixin, QMainWindow):
             panel.set_script_apply_callback(None)
         panel.set_config_apply_callback(self._apply_ai_config_draft)
 
+        if self.current_instrument_ui == "datalog":
+            panel.set_waveform_provider_callback(self._provide_ai_waveform_digest)
+        else:
+            panel.set_waveform_provider_callback(None)
+
+    def _provide_ai_waveform_digest(self):
+        ui = getattr(self, "n6705c_datalog_ui", None)
+        if ui is None:
+            return None
+        return ui.build_waveform_digest()
+
     def _apply_ai_script_draft(self, nodes):
         ui = getattr(self, "custom_test_ui", None)
         if ui is None or getattr(ui, "canvas", None) is None:

@@ -1,5 +1,12 @@
 # AI Assist 实现计划与进度表
 
+> 📚 **AI Assist 文档索引**
+> | 文档 | 角色 |
+> |---|---|
+> | [AI_Assist.md](./AI_Assist.md) | 架构设计与规范（事实源） |
+> | **[AI_AssistPlan.md](./AI_AssistPlan.md)**（本文） | 主实现计划与进度表（阶段 0~5） |
+> | [AI_AssistNewFeature_V1.md](./AI_AssistNewFeature_V1.md) | 功能增补 V1（波形/控制/用量/序列/Markdown，Phase A~C） |
+
 > 配套设计文档：[AI_Assist.md](./AI_Assist.md)（架构与规范的唯一事实源）
 > 本文定位：把 AI_Assist.md §16 的 5 个阶段拆成**可执行、可勾选、可验收**的任务清单与进度表。
 > 分层铁律：`main.py → ui/ ←→ core/ → instruments/ → lib/`；`instruments/` 禁 Qt；`ui/` 禁阻塞 IO（走 QThread + Signal/Slot）。

@@ -34,7 +34,12 @@ from core.ai.response_parser import (
     parse,
     parse_expected,
 )
-from core.ai.schemas import CONFIG_DRAFT, SCRIPT_DRAFT
+from core.ai.schemas import (
+    CONFIG_DRAFT,
+    SCRIPT_DRAFT,
+    SessionStats,
+    TurnUsage,
+)
 from core.ai.serial_rx_cache import SerialRxCache
 from log_config import get_logger
 
@@ -141,6 +146,7 @@ class AIService(QObject):
     connection_tested = Signal(bool, str)
     action_requested = Signal(object)
     action_result = Signal(object)
+    usage_updated = Signal(object, object)
 
     def __init__(self, settings: AISettings, page_key_getter=None, parent=None):
         super().__init__(parent)
@@ -151,6 +157,7 @@ class AIService(QObject):
         self._pending_mode = _MODE_CHAT
         self._model_override: str | None = None
         self._stream_buffer = ""
+        self._session_stats = SessionStats()
 
         self._prompt_manager = PromptManager(
             enable_log_masking=settings.enable_log_masking
@@ -233,6 +240,21 @@ class AIService(QObject):
     def clear_history(self) -> None:
         self._history.clear()
         _clear_persisted_history()
+        self._session_stats.reset()
+        self.usage_updated.emit(None, self._session_stats)
+
+    @property
+    def session_stats(self) -> SessionStats:
+        return self._session_stats
+
+    def _record_usage(self, result: ChatResult | None) -> None:
+        if result is None:
+            return
+        turn = TurnUsage.from_result(result.usage, result.elapsed_ms)
+        if turn.total_tokens == 0 and turn.completion_tokens == 0:
+            return
+        self._session_stats.add(turn)
+        self.usage_updated.emit(turn, self._session_stats)
 
     def persisted_history(self) -> list[dict[str, str]]:
         """返回当前会话历史（user/assistant 正文），供 UI 启动时回放。"""
@@ -275,7 +297,12 @@ class AIService(QObject):
             timeout_seconds=self._settings.timeout_seconds,
         )
 
-    def send(self, user_text: str, include_recent_logs: bool = False) -> None:
+    def send(
+        self,
+        user_text: str,
+        include_recent_logs: bool = False,
+        extra_context: str = "",
+    ) -> None:
         text = (user_text or "").strip()
         if not text:
             return
@@ -295,6 +322,7 @@ class AIService(QObject):
             history=self._history,
             user_text=text,
             log_context=log_context,
+            extra_context=extra_context,
         )
         self._history.append({"role": "user", "content": text})
 
@@ -337,6 +365,13 @@ class AIService(QObject):
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
+
+    def send_with_waveform(self, user_text: str, digest) -> None:
+        """带波形摘要发送（F1.5/F1.6）：把 WaveformDigest 文本化注入上下文。"""
+        from core.ai.prompt_manager import format_waveform_digest
+
+        context = format_waveform_digest(digest)
+        self.send(user_text, extra_context=context)
 
     def cancel(self) -> None:
         if self._worker is not None:
@@ -385,6 +420,7 @@ class AIService(QObject):
 
     def _on_stream_finished(self, result: ChatResult) -> None:
         content = (result.content if result else "") or self._stream_buffer
+        self._record_usage(result)
         self._pending_mode = _MODE_CHAT
         self._history.append({"role": "assistant", "content": content})
         _save_persisted_history(self._history)
@@ -396,6 +432,7 @@ class AIService(QObject):
         content = result.content if result else ""
         tool_calls = result.tool_calls if result else []
         mode = self._pending_mode
+        self._record_usage(result)
 
         if mode == _MODE_AGENT:
             self._handle_agent_round(content, tool_calls)
