@@ -24,5 +24,8 @@ numpy==2.4.4
 # YAML 配置解析 (Consumption Test - 芯片已保存配置)
 PyYAML>=6.0.2,<7
 
+# AI Assist - New API (OpenAI 兼容) HTTP 客户端，原生超时/取消/连接复用
+httpx>=0.27,<0.28
+
 # 打包
 pyinstaller>=6.0,<7
