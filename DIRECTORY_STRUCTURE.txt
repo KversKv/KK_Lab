@@ -138,13 +138,14 @@ core/
 │       ├── __init__.py      # MODULE_VERSION + 导出 registry/permission/dispatcher/audit/builder/deps
 │       ├── registry.py      # ActionSpec + ActionRegistry：注册/查找/渲染 OpenAI tools
 │       ├── permission.py    # PermissionChecker/RiskDecision：low/medium/high/critical 风险策略
-│       ├── dispatcher.py    # ActionDispatcher：Schema 校验 → 权限 → 确认 → 路由 handler → 审计
+│       ├── policy.py        # PolicyStore：白名单（带护栏 when）/黑名单读写 + 通用护栏求值（policy.json）
+│       ├── dispatcher.py    # ActionDispatcher：Schema 校验 → 黑名单/权限 → 白名单/隐式 → 确认 → handler → 审计
 │       ├── audit.py         # AuditLog：线程安全 JSONL 落 user_data/ai/audit.log（含拒绝/取消）
 │       ├── builder.py       # build_action_system/build_registry：装配 registry + dispatcher
 │       └── handlers/        # 动作处理器（经注入回调间接操作 UI/仪器，不直接依赖 Qt）
 │           ├── __init__.py
-│           ├── deps.py      # ActionDeps：UI 注入的 getter/callback 依赖集合
-│           ├── query.py     # 查询类：页面/串口/日志/仪器快照/测试序列状态（low）
+│           ├── deps.py      # ActionDeps：UI 注入的 getter/callback 依赖集合（含波形原始数据 getter）
+│           ├── query.py     # 查询类：页面/串口/日志/仪器快照/测试状态/波形 drill-down（low）
 │           ├── ui.py        # UI 类：open_page/toggle_ai_panel（low）
 │           ├── serial.py    # 串口类：clear（low）/send（high+确认）经 SerialSessionManager
 │           ├── instrument.py # 仪器类：query（low）/disconnect（medium）/set_output（critical 默认禁）

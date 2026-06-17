@@ -465,8 +465,12 @@ class AIAssistPanel(QFrame):
     def _on_stream_finished(self, content: str) -> None:
         self._chat.end_stream_message(content)
 
-    def confirm_action(self, spec, arguments: dict, reason: str = "") -> bool:
-        """供 ActionDispatcher 注入的确认回调：弹 ActionConfirmDialog 二元确认。"""
+    def confirm_action(self, spec, arguments: dict, reason: str = ""):
+        """供 ActionDispatcher 注入的确认回调：弹 ActionConfirmDialog 二元确认。
+
+        返回 ConfirmResult（含白名单写回意愿），由 dispatcher 据此落白名单（F2.4）。
+        """
+        from core.ai.actions import ConfirmResult
         from ui.ai.action_confirm_dialog import ActionConfirmDialog
 
         dialog = ActionConfirmDialog(
@@ -477,7 +481,12 @@ class AIAssistPanel(QFrame):
             reason=reason,
             parent=self,
         )
-        return dialog.exec() == QDialog.Accepted
+        confirmed = dialog.exec() == QDialog.Accepted
+        return ConfirmResult(
+            confirmed=confirmed,
+            remember_session=confirmed and dialog.remember_session,
+            remember_resident=confirmed and dialog.remember_resident,
+        )
 
     def _on_action_result(self, outcome) -> None:
         if outcome is None:

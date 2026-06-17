@@ -505,6 +505,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             app_logs_getter=self._get_ai_app_logs,
             rx_recent_getter=self._get_ai_recent_rx,
             test_status_getter=self._get_ai_test_status,
+            waveform_data_getter=self._provide_ai_waveform_data,
             open_page_callback=self._ai_open_page,
             toggle_ai_panel_callback=self._ai_toggle_panel,
             serial_send_text_callback=self._ai_serial_send_text,
@@ -519,7 +520,15 @@ class MainWindow(CleanupMixin, QMainWindow):
             allow_critical=False,
         )
         dispatcher.set_confirm_callback(self.ai_panel.confirm_action)
+        dispatcher.set_implicit_whitelist_check(self._ai_sequence_running)
         self.ai_service.set_action_system(registry, dispatcher)
+
+    def _ai_sequence_running(self) -> bool:
+        ui = getattr(self, "custom_test_ui", None)
+        if ui is None:
+            return False
+        canvas = getattr(ui, "canvas", None)
+        return bool(getattr(canvas, "_running", False)) if canvas else False
 
     def _get_ai_app_logs(self, lines):
         ring = get_log_ring()
@@ -650,6 +659,16 @@ class MainWindow(CleanupMixin, QMainWindow):
         if ui is None:
             return None
         return ui.build_waveform_digest()
+
+    def _provide_ai_waveform_data(self):
+        ui = getattr(self, "n6705c_datalog_ui", None)
+        if ui is None:
+            return None
+        try:
+            return ui.get_waveform_data()
+        except Exception:  # noqa: BLE001 - 波形数据读取失败不致命
+            logger.error("读取 AI 波形原始数据失败", exc_info=True)
+            return None
 
     def _apply_ai_script_draft(self, nodes):
         ui = getattr(self, "custom_test_ui", None)

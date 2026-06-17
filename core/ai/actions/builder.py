@@ -17,6 +17,7 @@ from core.ai.actions.handlers import (
 )
 from core.ai.actions.handlers.deps import ActionDeps
 from core.ai.actions.permission import PermissionChecker
+from core.ai.actions.policy import PolicyStore
 from core.ai.actions.registry import ActionRegistry
 from log_config import get_logger
 
@@ -43,7 +44,8 @@ def build_action_system(
         require_confirm_high=require_confirm_high,
         allow_critical=allow_critical,
     )
-    dispatcher = ActionDispatcher(registry, permission)
+    policy = PolicyStore.load()
+    dispatcher = ActionDispatcher(registry, permission, policy=policy)
     for module in _HANDLER_MODULES:
         dispatcher.register_handlers(module.build_handlers(deps))
     logger.debug("Action system 装配完成：%d 个动作", len(registry.names()))

@@ -24,6 +24,7 @@ from core.ai.actions.audit import (
     get_audit_log,
 )
 from core.ai.actions.permission import PermissionChecker
+from core.ai.actions.policy import PolicyStore
 from core.ai.actions.registry import ActionRegistry, ActionSpec
 from core.ai.response_parser import validate_against_schema
 from log_config import get_logger
@@ -31,7 +32,19 @@ from log_config import get_logger
 logger = get_logger(__name__)
 
 Handler = Callable[[dict], "dict[str, Any]"]
-ConfirmCallback = Callable[[ActionSpec, dict, str], bool]
+
+
+@dataclass
+class ConfirmResult:
+    """确认回调返回结果（支持会话级/常驻白名单写回，AI_AssistNewFeature_V1 F2.4）。"""
+
+    confirmed: bool
+    remember_session: bool = False
+    remember_resident: bool = False
+
+
+# 确认回调可返回 bool（仅确认）或 ConfirmResult（含白名单写回）。
+ConfirmCallback = Callable[[ActionSpec, dict, str], "bool | ConfirmResult"]
 
 
 @dataclass
@@ -63,16 +76,40 @@ class ActionDispatcher:
         registry: ActionRegistry,
         permission: PermissionChecker,
         audit: AuditLog | None = None,
+        policy: PolicyStore | None = None,
     ) -> None:
         self._registry = registry
         self._permission = permission
         self._audit = audit or get_audit_log()
+        self._policy = policy or PolicyStore.load()
         self._handlers: dict[str, Handler] = {}
         self._confirm_cb: ConfirmCallback | None = None
+        self._implicit_whitelist_check: Callable[[], bool] | None = None
 
     @property
     def registry(self) -> ActionRegistry:
         return self._registry
+
+    @property
+    def policy(self) -> PolicyStore:
+        return self._policy
+
+    def set_implicit_whitelist_check(self, check: Callable[[], bool] | None) -> None:
+        """注入序列运行隐式白名单判定回调（AI_AssistNewFeature_V1 §2.1③）。
+
+        已过 preflight + 用户点 Run、序列运行中时，high 动作不再逐次打扰；
+        critical 不受影响。回调返回 True 表示当前处于序列运行窗口。
+        """
+        self._implicit_whitelist_check = check
+
+    def _in_implicit_whitelist(self) -> bool:
+        if self._implicit_whitelist_check is None:
+            return False
+        try:
+            return bool(self._implicit_whitelist_check())
+        except Exception:  # noqa: BLE001 - 判定异常视为不在白名单窗口
+            logger.error("序列运行隐式白名单判定异常", exc_info=True)
+            return False
 
     def set_confirm_callback(self, callback: ConfirmCallback | None) -> None:
         """注入确认回调：callback(spec, arguments, reason) -> bool（True=用户确认）。"""
@@ -97,30 +134,16 @@ class ActionDispatcher:
                 msg = "参数校验失败：" + "；".join(errors)
                 return self._fail(name, spec.risk_level, STATUS_FAILED, msg, args)
 
+        policy_result = self._policy.evaluate(name, args)
+        if policy_result.blocked:
+            return self._deny(name, spec.risk_level, policy_result.reason, args)
+
         decision = self._permission.check(spec)
         if decision.blocked:
-            self._audit.record(
-                action=name,
-                status=STATUS_DENIED,
-                risk_level=spec.risk_level,
-                arguments=args,
-                message=decision.reason,
-            )
-            return ActionOutcome(
-                name=name,
-                status=STATUS_DENIED,
-                message=decision.reason,
-                risk_level=spec.risk_level,
-            )
+            return self._deny(name, spec.risk_level, decision.reason, args)
 
         if decision.require_confirmation:
-            confirmed = False
-            if self._confirm_cb is not None:
-                try:
-                    confirmed = bool(self._confirm_cb(spec, args, decision.reason))
-                except Exception:  # noqa: BLE001 - 确认回调异常视为未确认
-                    logger.error("动作确认回调异常: %s", name, exc_info=True)
-                    confirmed = False
+            confirmed = self._resolve_confirmation(spec, args, decision.reason, policy_result)
             if not confirmed:
                 self._audit.record(
                     action=name,
@@ -171,6 +194,86 @@ class ActionDispatcher:
             result=result,
             message=message,
             risk_level=spec.risk_level,
+        )
+
+    def _resolve_confirmation(
+        self, spec: ActionSpec, args: dict, reason: str, policy_result
+    ) -> bool:
+        """决策链确认环节（AI_AssistNewFeature_V1 §2.3）。
+
+        命中白名单（护栏通过）-> 免确认；critical 不享白名单/隐式窗口；
+        隐式窗口（序列运行中）对 high 免确认；否则弹确认框，
+        确认回调可携带"记住本动作"以写回会话级/常驻白名单。
+        """
+        if policy_result.auto_approve and spec.risk_level != "critical":
+            self._audit.record(
+                action=spec.name,
+                status=STATUS_EXECUTED,
+                risk_level=spec.risk_level,
+                arguments=args,
+                message="白名单自动批准：" + (policy_result.reason or ""),
+            )
+            return True
+
+        if spec.risk_level == "high" and self._in_implicit_whitelist():
+            self._audit.record(
+                action=spec.name,
+                status=STATUS_EXECUTED,
+                risk_level=spec.risk_level,
+                arguments=args,
+                message="序列运行隐式白名单自动批准。",
+            )
+            return True
+
+        if self._confirm_cb is None:
+            return False
+        try:
+            result = self._confirm_cb(spec, args, reason)
+        except Exception:  # noqa: BLE001 - 确认回调异常视为未确认
+            logger.error("动作确认回调异常: %s", spec.name, exc_info=True)
+            return False
+
+        if isinstance(result, ConfirmResult):
+            if result.confirmed:
+                self._apply_grants(spec, args, result)
+            return bool(result.confirmed)
+        return bool(result)
+
+    def _apply_grants(self, spec: ActionSpec, args: dict, result: ConfirmResult) -> None:
+        """根据确认结果写回白名单（护栏取当前参数的标量值为边界）。"""
+        if not (result.remember_session or result.remember_resident):
+            return
+        when = self._guardrail_from_args(spec, args)
+        if result.remember_resident:
+            self._policy.grant_resident(spec.name, when)
+        elif result.remember_session:
+            self._policy.grant_session(spec.name, when)
+
+    @staticmethod
+    def _guardrail_from_args(spec: ActionSpec, args: dict) -> dict[str, Any]:
+        """high 动作记住时，按当前数值参数生成 *_max 护栏，避免无边界放行。"""
+        if spec.risk_level != "high":
+            return {}
+        guardrail: dict[str, Any] = {}
+        for key, value in (args or {}).items():
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, (int, float)):
+                guardrail[f"{key}_max"] = value
+        return guardrail
+
+    def _deny(
+        self, name: str, risk_level: str, reason: str, args: dict | None = None
+    ) -> ActionOutcome:
+        self._audit.record(
+            action=name,
+            status=STATUS_DENIED,
+            risk_level=risk_level,
+            arguments=args or {},
+            message=reason,
+        )
+        return ActionOutcome(
+            name=name, status=STATUS_DENIED, message=reason, risk_level=risk_level
         )
 
     def _fail(

@@ -8,7 +8,7 @@ from __future__ import annotations
 MODULE_VERSION = "0.1.0"
 
 from core.ai.actions.audit import AuditLog, get_audit_log
-from core.ai.actions.dispatcher import ActionDispatcher, ActionOutcome
+from core.ai.actions.dispatcher import ActionDispatcher, ActionOutcome, ConfirmResult
 from core.ai.actions.permission import (
     RISK_CRITICAL,
     RISK_HIGH,
@@ -17,6 +17,7 @@ from core.ai.actions.permission import (
     PermissionChecker,
     RiskDecision,
 )
+from core.ai.actions.policy import PolicyResult, PolicyStore
 from core.ai.actions.registry import ActionRegistry, ActionSpec
 from core.ai.actions.builder import build_action_system, build_registry
 from core.ai.actions.handlers.deps import ActionDeps
@@ -27,8 +28,11 @@ __all__ = [
     "ActionRegistry",
     "ActionDispatcher",
     "ActionOutcome",
+    "ConfirmResult",
     "PermissionChecker",
     "RiskDecision",
+    "PolicyStore",
+    "PolicyResult",
     "RISK_LOW",
     "RISK_MEDIUM",
     "RISK_HIGH",

@@ -28,6 +28,7 @@ SerialSendCallback = Callable[[str, str], "tuple[bool, str]"]
 SerialClearCallback = Callable[[], "tuple[bool, str]"]
 TestControlCallback = Callable[[], "tuple[bool, str]"]
 TestStatusGetter = Callable[[], "dict[str, Any]"]
+WaveformDataGetter = Callable[[], "dict[str, Any] | None"]
 
 
 @dataclass
@@ -43,6 +44,7 @@ class ActionDeps:
     app_logs_getter: AppLogsGetter | None = None
     rx_recent_getter: RxRecentGetter | None = None
     test_status_getter: TestStatusGetter | None = None
+    waveform_data_getter: WaveformDataGetter | None = None
 
     open_page_callback: OpenPageCallback | None = None
     toggle_ai_panel_callback: ToggleAiPanelCallback | None = None

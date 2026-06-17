@@ -11,6 +11,7 @@ import json
 from typing import Any
 
 from PySide6.QtWidgets import (
+    QCheckBox,
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -40,6 +41,8 @@ QPushButton:hover { background-color: #1C2D55; border: 1px solid #3A5A9F; }
 QPushButton#aiOkBtn { background-color: #b3422f; border: 1px solid #d4503a; color: #ffffff; }
 QLabel#aiRisk { font-weight: 700; }
 QLabel#aiHint { font-size: 11px; color: #ffb27a; }
+QCheckBox { color: #c8d4ee; font-size: 11px; background: transparent; spacing: 6px; }
+QCheckBox::indicator { width: 14px; height: 14px; }
 """
 
 _RISK_LABEL = {
@@ -70,6 +73,9 @@ class ActionConfirmDialog(QDialog):
         self.setWindowTitle("AI 动作确认")
         self.setMinimumSize(460, 380)
         self.setStyleSheet(_DIALOG_STYLE)
+        self._risk_level = risk_level
+        self._session_check: QCheckBox | None = None
+        self._resident_check: QCheckBox | None = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 16, 16, 16)
@@ -100,7 +106,32 @@ class ActionConfirmDialog(QDialog):
         editor.setPlainText(self._pretty(arguments or {}))
         root.addWidget(editor, 1)
 
+        # 白名单写回：仅 high 风险动作允许"记住"（critical 不可白名单）。
+        if risk_level == "high":
+            self._session_check = QCheckBox("本次会话内自动批准该动作（带当前参数护栏）")
+            root.addWidget(self._session_check)
+            self._resident_check = QCheckBox("以后始终自动批准该动作（写入常驻白名单）")
+            root.addWidget(self._resident_check)
+            self._session_check.toggled.connect(self._on_session_toggled)
+            self._resident_check.toggled.connect(self._on_resident_toggled)
+
         root.addLayout(self._build_button_bar())
+
+    def _on_session_toggled(self, checked: bool) -> None:
+        if not checked and self._resident_check is not None:
+            self._resident_check.setChecked(False)
+
+    def _on_resident_toggled(self, checked: bool) -> None:
+        if checked and self._session_check is not None:
+            self._session_check.setChecked(True)
+
+    @property
+    def remember_session(self) -> bool:
+        return bool(self._session_check and self._session_check.isChecked())
+
+    @property
+    def remember_resident(self) -> bool:
+        return bool(self._resident_check and self._resident_check.isChecked())
 
     @staticmethod
     def _pretty(payload) -> str:

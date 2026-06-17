@@ -73,7 +73,7 @@ class WaveformDigest:
 | F1.1 | `WaveformStat`/`WaveformDigest` dataclass | `core/ai/schemas.py` | ☐ |
 | F1.2 | LTTB 降采样（纯算法 / 复用 pyqtgraph） | `core/ai/providers/waveform_provider.py` | ☐ |
 | F1.3 | 统计摘要 + 异常点 + 稳态段识别 | 同上 | ☐ |
-| F1.4 | 按需放大 `slice_window()` + AI drill-down action | 同上 + actions | ☐ |
+| F1.4 | 按需放大 `slice_window()` + AI drill-down action | 同上 + actions | ☑ |
 | F1.5 | Datalog 页面"发送波形给 AI"入口（读内存 all_data） | Datalog UI 接线 | ☐ |
 | F1.6 | digest → prompt 文本化模板 | `core/ai/prompt_manager.py` | ☐ |
 
@@ -128,13 +128,13 @@ AI 请求动作
 ### 2.4 任务
 | # | 任务 | 文件 | 状态 |
 |---|---|---|---|
-| F2.1 | `RiskPolicy` + 动作风险等级表 | `core/ai/actions/permission.py` | ☐ |
-| F2.2 | `policy.json` 读写 + 护栏条件求值 | `core/ai/actions/policy.py` | ☐ |
-| F2.3 | `ActionConfirmDialog`（parent=面板，OK/Cancel 二元化） | `ui/ai/action_confirm_dialog.py` | ☐ |
-| F2.4 | 会话级"自动批准本动作"勾选 + 常驻白名单写入 | dialog + policy | ☐ |
-| F2.5 | dispatcher 决策链接入 + 序列运行隐式白名单 | `core/ai/actions/dispatcher.py` | ☐ |
-| F2.6 | instruments 层硬熔断校验点核查（量程/安全） | 复用现有驱动校验 | ☐ |
-| F2.7 | 审计日志 `user_data/ai/audit.log`（含拒绝/取消） | `core/ai/actions/audit.py` | ☐ |
+| F2.1 | `RiskPolicy` + 动作风险等级表 | `core/ai/actions/permission.py` | ☑ |
+| F2.2 | `policy.json` 读写 + 护栏条件求值 | `core/ai/actions/policy.py` | ☑ |
+| F2.3 | `ActionConfirmDialog`（parent=面板，OK/Cancel 二元化） | `ui/ai/action_confirm_dialog.py` | ☑ |
+| F2.4 | 会话级"自动批准本动作"勾选 + 常驻白名单写入 | dialog + policy | ☑ |
+| F2.5 | dispatcher 决策链接入 + 序列运行隐式白名单 | `core/ai/actions/dispatcher.py` | ☑ |
+| F2.6 | instruments 层硬熔断校验点核查（量程/安全） | 复用现有驱动校验 | ☑ |
+| F2.7 | 审计日志 `user_data/ai/audit.log`（含拒绝/取消） | `core/ai/actions/audit.py` | ☑ |
 
 ---
 
@@ -277,7 +277,7 @@ AI 默认输出 Markdown，对话 UI 必须渲染，否则代码/表格挤成一
 | Phase | 主题 | 状态 | 含特性任务 | 依赖 | 关键交付 |
 |---|---|---|---|---|---|
 | A | 体验底座（Markdown + 用量 + 波形摘要） | ☐ | F6.1~F6.4 / F3.1~F3.5 / F1.1~F1.3、F1.5~F1.6 | 主计划阶段 1 面板骨架 | 对话 Markdown + 用量条 + 波形摘要分析 |
-| B | 受控控制闭环（安全折衷 + Action 覆盖） | ☐ | F2.1~F2.7 / F4.1~F4.4 / F1.4 | Phase A + 主计划阶段 1 | 4 层防线 + 语义 Action + drill-down |
+| B | 受控控制闭环（安全折衷 + Action 覆盖） | ☑ | F2.1~F2.7 / F4.1~F4.4 / F1.4 | Phase A + 主计划阶段 1 | 4 层防线 + 语义 Action + drill-down |
 | C | 序列智能优化（免文件往返） | ☐ | F5.1~F5.5 | Phase A、B + custom_test | 读画布→优化→校验→diff→应用→可撤销 |
 
 > 状态：`☐ 待办` / `◐ 进行中` / `☑ 完成` / `⊘ 阻塞` / `— 不适用`。
@@ -318,24 +318,24 @@ AI 默认输出 Markdown，对话 UI 必须渲染，否则代码/表格挤成一
 
 | # | 任务 | 文件 | 状态 |
 |---|---|---|---|
-| F2.1 | `RiskPolicy` + 动作风险等级表 | `core/ai/actions/permission.py` | ☐ |
-| F2.2 | `policy.json` 读写 + 护栏条件求值 | `core/ai/actions/policy.py` | ☐ |
-| F2.3 | `ActionConfirmDialog`（parent=面板，OK/Cancel 二元化） | `ui/ai/action_confirm_dialog.py` | ☐ |
-| F2.4 | 会话级"自动批准本动作"勾选 + 常驻白名单写入 | dialog + policy | ☐ |
-| F2.5 | dispatcher 决策链接入 + 序列运行隐式白名单 | `core/ai/actions/dispatcher.py` | ☐ |
-| F2.6 | instruments 层硬熔断校验点核查（量程/安全） | 复用现有驱动校验 | ☐ |
-| F2.7 | 审计日志 `user_data/ai/audit.log`（含拒绝/取消） | `core/ai/actions/audit.py` | ☐ |
-| F4.1 | `ActionSpec` + `ActionRegistry`（注册/查找/渲染 tools） | `core/ai/actions/registry.py` | ☐ |
-| F4.2 | Action 清单表落档（对照各页面逐条登记） | 本文 §4.2 维护 | ☐ |
-| F4.3 | handlers 分批实现（导航查询→核心流程→边角） | `core/ai/actions/handlers/` | ☐ |
-| F4.4 | 多轮 tool-calling：执行结果回灌 AIService | `core/ai/ai_service.py` | ☐ |
-| F1.4 | 按需放大 `slice_window()` + AI drill-down action | `core/ai/providers/waveform_provider.py` + actions | ☐ |
+| F2.1 | `RiskPolicy` + 动作风险等级表 | `core/ai/actions/permission.py` | ☑ |
+| F2.2 | `policy.json` 读写 + 护栏条件求值 | `core/ai/actions/policy.py` | ☑ |
+| F2.3 | `ActionConfirmDialog`（parent=面板，OK/Cancel 二元化） | `ui/ai/action_confirm_dialog.py` | ☑ |
+| F2.4 | 会话级"自动批准本动作"勾选 + 常驻白名单写入 | dialog + policy | ☑ |
+| F2.5 | dispatcher 决策链接入 + 序列运行隐式白名单 | `core/ai/actions/dispatcher.py` | ☑ |
+| F2.6 | instruments 层硬熔断校验点核查（量程/安全） | 复用现有驱动校验 | ☑ |
+| F2.7 | 审计日志 `user_data/ai/audit.log`（含拒绝/取消） | `core/ai/actions/audit.py` | ☑ |
+| F4.1 | `ActionSpec` + `ActionRegistry`（注册/查找/渲染 tools） | `core/ai/actions/registry.py` | ☑ |
+| F4.2 | Action 清单表落档（对照各页面逐条登记） | 本文 §4.2 维护 | ☑ |
+| F4.3 | handlers 分批实现（导航查询→核心流程→边角） | `core/ai/actions/handlers/` | ☑ |
+| F4.4 | 多轮 tool-calling：执行结果回灌 AIService | `core/ai/ai_service.py` | ☑ |
+| F1.4 | 按需放大 `slice_window()` + AI drill-down action | `core/ai/providers/waveform_provider.py` + actions | ☑ |
 
 **Phase B 验收**：
-- ☐ low 直执行、high 弹确认、白名单带护栏自动批准、critical 禁执行；
-- ☐ instruments 层硬熔断生效（AI/白名单均不可绕过）；全程审计含拒绝/取消；
-- ☐ AI 可经语义 Action 跳页/查状态/控仪器（高风险确认）；
-- ☐ 仪器一律经 InstrumentManager，AI 无法绕过 `instruments/`。
+- ☑ low 直执行、high 弹确认、白名单带护栏自动批准、critical 禁执行；
+- ☑ instruments 层硬熔断生效（AI/白名单均不可绕过）；全程审计含拒绝/取消；
+- ☑ AI 可经语义 Action 跳页/查状态/控仪器（高风险确认）；
+- ☑ 仪器一律经 InstrumentManager，AI 无法绕过 `instruments/`。
 
 ---
 

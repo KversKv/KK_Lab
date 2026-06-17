@@ -64,6 +64,30 @@ SPECS: list[ActionSpec] = [
         risk_level="low",
         category=CATEGORY_QUERY,
     ),
+    ActionSpec(
+        name="get_waveform_window",
+        description=(
+            "波形按需放大（drill-down）：截取指定通道在 [t0, t1] 时间窗内的"
+            "高分辨率片段。先看过波形统计摘要后，定位到感兴趣区间再放大查看细节。"
+        ),
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "label": {"type": "string", "description": "通道标签，如 'CH1 I'。"},
+                "t0": {"type": "number", "description": "时间窗起点（秒）。"},
+                "t1": {"type": "number", "description": "时间窗终点（秒）。"},
+                "max_points": {
+                    "type": "integer",
+                    "minimum": 10,
+                    "maximum": 5000,
+                    "description": "返回点数上限（默认 2500，超出做 LTTB 压缩）。",
+                },
+            },
+            "required": ["label", "t0", "t1"],
+        },
+        risk_level="low",
+        category=CATEGORY_QUERY,
+    ),
 ]
 
 
@@ -137,6 +161,41 @@ def build_handlers(deps: ActionDeps) -> dict[str, Any]:
             return {"available": False, "_message": "当前页面无测试序列。"}
         return dict(status)
 
+    def get_waveform_window(args: dict) -> dict:
+        from core.ai.providers.waveform_provider import slice_window
+
+        all_data = deps.waveform_data_getter() if deps.waveform_data_getter else None
+        if not all_data:
+            return {"ok": False, "_message": "当前无可放大的波形数据。"}
+        label = str(args.get("label", ""))
+        if label not in all_data:
+            return {
+                "ok": False,
+                "available_labels": list(all_data.keys()),
+                "_message": f"通道 '{label}' 不存在，请从 available_labels 选择。",
+            }
+        try:
+            t0 = float(args.get("t0"))
+            t1 = float(args.get("t1"))
+        except (TypeError, ValueError):
+            return {"ok": False, "_message": "t0/t1 必须为数值。"}
+        max_points = args.get("max_points", 2500)
+        try:
+            max_points = max(10, min(int(max_points), 5000))
+        except (TypeError, ValueError):
+            max_points = 2500
+        segment = slice_window(all_data, label, t0, t1, max_points=max_points)
+        point_count = len(segment.get("values", []))
+        return {
+            "label": label,
+            "t0": t0,
+            "t1": t1,
+            "point_count": point_count,
+            "time": segment.get("time", []),
+            "values": segment.get("values", []),
+            "_message": f"通道 {label} 在 [{t0}, {t1}] 窗口返回 {point_count} 点。",
+        }
+
     return {
         "get_current_page": get_current_page,
         "get_serial_status": get_serial_status,
@@ -144,4 +203,5 @@ def build_handlers(deps: ActionDeps) -> dict[str, Any]:
         "get_recent_app_logs": get_recent_app_logs,
         "get_instrument_status": get_instrument_status,
         "get_test_sequence_status": get_test_sequence_status,
+        "get_waveform_window": get_waveform_window,
     }
