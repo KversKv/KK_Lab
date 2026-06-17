@@ -86,12 +86,6 @@ def _filter_serialcom_binaries(binaries):
             if _is_allowed_qt_binary(item):
                 filtered.append(item)
             continue
-        if 'numpy' + os.path.sep in normalized_src or 'numpy' + os.path.sep in normalized_dest:
-            continue
-        if 'numpy.libs' + os.path.sep in normalized_src or 'numpy.libs' + os.path.sep in normalized_dest:
-            continue
-        if 'pyqtgraph' + os.path.sep in normalized_src or 'pyqtgraph' + os.path.sep in normalized_dest:
-            continue
         if os.path.basename(normalized_src) in {'libcrypto-3.dll', 'libssl-3.dll'}:
             continue
         filtered.append(item)
@@ -107,10 +101,6 @@ def _filter_serialcom_datas(datas):
         if 'pyside6' + os.path.sep + 'translations' + os.path.sep in normalized_src:
             continue
         if 'pyside6' + os.path.sep + 'translations' + os.path.sep in normalized_dest:
-            continue
-        if 'pyqtgraph' + os.path.sep in normalized_src or 'pyqtgraph' + os.path.sep in normalized_dest:
-            continue
-        if 'numpy' + os.path.sep in normalized_src or 'numpy' + os.path.sep in normalized_dest:
             continue
         filtered.append(item)
     return filtered
@@ -142,6 +132,9 @@ a = Analysis(
         'serial.tools.list_ports',
         'PySide6',
         'PySide6.QtSvg',
+        'numpy',
+        'pyqtgraph',
+        'ui.modules.serialCom_module.serial_chart_dialog',
         'ui',
         'ui.resource_path',
         'ui.widgets',
@@ -162,10 +155,8 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        # 原有
-        'pyqtgraph',
+        # 原有 (注意: pyqtgraph / numpy 是 Chart 功能依赖, 不能排除)
         'pyqtgraph.opengl',
-        'numpy',
         'OpenGL',
         'pyvisa',
         'pyvisa_py',

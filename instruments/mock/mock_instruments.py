@@ -570,7 +570,22 @@ class MockMSO64B:
     def set_timebase_scale(self, seconds_per_div):
         pass
 
-    def set_trigger_edge(self, source_channel, level, slope='POS'):
+    def set_trigger_mode(self, mode='EDGE'):
+        pass
+
+    def set_trigger_source(self, source_channel):
+        pass
+
+    def set_trigger_slope(self, slope='POS'):
+        pass
+
+    def set_trigger_level(self, source_channel, level):
+        pass
+
+    def set_trigger_config(self, source_channel, level, slope='POS'):
+        pass
+
+    def set_trigger_sweep(self, mode='AUTO'):
         pass
 
     def capture_screen_png(self, **kwargs):

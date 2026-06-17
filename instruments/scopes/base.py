@@ -51,7 +51,7 @@ class OscilloscopeBase(InstrumentBase):
         raise NotImplementedError
 
     @abstractmethod
-    def set_trigger_edge(self, source_channel: int, level: float, slope: str = 'POS'):
+    def set_trigger_config(self, source_channel: int, level: float, slope: str = 'POS'):
         raise NotImplementedError
 
     @abstractmethod
@@ -219,7 +219,7 @@ class OscilloscopeController:
 
             if source_text.startswith("CH"):
                 trigger_ch = int(source_text[2:])
-                self._instrument.set_trigger_edge(trigger_ch, trigger_level, slope)
+                self._instrument.set_trigger_config(trigger_ch, trigger_level, slope)
                 self._log(
                     f"[SETTING] Trigger: CH{trigger_ch}, Level={trigger_level} V, Slope={slope}"
                 )

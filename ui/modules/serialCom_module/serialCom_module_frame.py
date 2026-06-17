@@ -1184,13 +1184,13 @@ class SerialComMixin:
         top_section_layout.addWidget(self._sc_send_area)
 
         self._sc_quick_area = self._build_sc_quick_commands()
-        self._sc_quick_area.setMinimumHeight(150)
+        self._sc_quick_area.setMinimumHeight(178)
 
         center_splitter.addWidget(top_section)
         center_splitter.addWidget(self._sc_quick_area)
         center_splitter.setStretchFactor(0, 1)
         center_splitter.setStretchFactor(1, 0)
-        self._sc_center_splitter_default_sizes = [680, 155]
+        self._sc_center_splitter_default_sizes = [680, 185]
         center_splitter.setSizes(self._sc_center_splitter_default_sizes)
 
         self._sc_center_split_save_timer = QTimer(self)
@@ -2002,8 +2002,8 @@ class SerialComMixin:
         self._sc_qc_btn_scroll.setFrameShape(QFrame.NoFrame)
         self._sc_qc_btn_scroll.setStyleSheet(quick_button_scroll_style() + SERIAL_SCROLLBAR_STYLE)
         self._sc_qc_btn_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._sc_qc_btn_scroll.setMinimumHeight(44)
-        self._sc_qc_btn_scroll.setMaximumHeight(126)
+        self._sc_qc_btn_scroll.setMinimumHeight(68)
+        self._sc_qc_btn_scroll.setMaximumHeight(150)
         self._sc_qc_btn_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         self._sc_qc_btn_container = QWidget()
@@ -5735,7 +5735,7 @@ class SerialComMixin:
                 "show_system_log": False,
                 "line_by_line": False,
                 "sidebar_visible": True,
-                "center_split_sizes": [680, 155],
+                "center_split_sizes": [680, 185],
             },
             "send_history": [],
             "quick_commands": quick_commands or self._sc_qc_default_data(),
@@ -6360,7 +6360,7 @@ class SerialComMixin:
 
         if hasattr(self, "_sc_center_splitter"):
             self._sc_center_splitter.setSizes(
-                list(getattr(self, "_sc_center_splitter_default_sizes", [680, 155]))
+                list(getattr(self, "_sc_center_splitter_default_sizes", [680, 185]))
             )
 
         if hasattr(self, "_sc_auto_baud_monitor"):

@@ -3258,7 +3258,7 @@ class OscilloscopeBaseUI(QWidget):
 
             if source_text.startswith("CH"):
                 trigger_ch = int(source_text[2:])
-                self.controller.instrument.set_trigger_edge(trigger_ch, trigger_level, slope)
+                self.controller.instrument.set_trigger_config(trigger_ch, trigger_level, slope)
                 self.append_log(
                     f"[SETTING] Trigger: {source_text}, Level={trigger_level} V, Slope={slope}"
                 )
@@ -3317,8 +3317,7 @@ class OscilloscopeBaseUI(QWidget):
             from instruments.scopes.keysight.dsox4034a import DSOX4034A
 
             if isinstance(inst, DSOX4034A):
-                value = "AUTO" if mode == "AUTO" else "NORMal"
-                inst.write(f":TRIGger:SWEep {value}")
+                inst.set_trigger_sweep("AUTO" if mode == "AUTO" else "NORMal")
             elif isinstance(inst, MSO64B):
                 value = "AUTO" if mode == "AUTO" else "NORMal"
                 inst.instrument.write(f"TRIGger:A:MODe {value}")

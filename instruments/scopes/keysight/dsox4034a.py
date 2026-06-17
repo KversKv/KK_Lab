@@ -284,20 +284,48 @@ class DSOX4034A:
     # 触发
     # =========================
 
-    def set_trigger_edge(self, source_channel: int, level: float, slope: str = 'POS'):
+    def set_trigger_mode(self, mode: str = 'EDGE'):
+        logger.debug('DSOX4034A set_trigger_mode: %s', mode)
+        self.write(f':TRIGger:MODE {mode}')
+
+    def set_trigger_source(self, source_channel: int):
         self._validate_channel(source_channel)
-        logger.debug('DSOX4034A set_trigger_edge: CH%d, level=%s, slope=%s', source_channel, level, slope)
+        logger.debug('DSOX4034A set_trigger_source: CH%d', source_channel)
+        self.write(f':TRIGger:EDGE:SOURce CHANnel{source_channel}')
+
+    def set_trigger_slope(self, slope: str = 'POS'):
         slope = slope.upper()
         if slope not in ('POS', 'NEG', 'EITH'):
             raise ValueError('slope 必须是 POS / NEG / EITH')
-
-        self.write(':TRIGger:MODE EDGE')
-        self.write(f':TRIGger:EDGE:SOURce CHANnel{source_channel}')
+        logger.debug('DSOX4034A set_trigger_slope: %s', slope)
         self.write(f':TRIGger:EDGE:SLOPe {slope}')
+
+    def set_trigger_level(self, source_channel: int, level: float):
+        self._validate_channel(source_channel)
+        logger.debug('DSOX4034A set_trigger_level: CH%d, level=%s', source_channel, level)
         self.write(f':TRIGger:LEVel CHANnel{source_channel},{level}')
+
+    def set_trigger_config(self, source_channel: int, level: float, slope: str = 'POS'):
+        self._validate_channel(source_channel)
+        logger.debug('DSOX4034A set_trigger_config: CH%d, level=%s, slope=%s', source_channel, level, slope)
+        self.set_trigger_mode('EDGE')
+        self.set_trigger_source(source_channel)
+        self.set_trigger_slope(slope)
+        self.set_trigger_level(source_channel, level)
 
     def get_trigger_source(self) -> str:
         return self.query(':TRIGger:EDGE:SOURce?').strip()
+
+    def set_trigger_sweep(self, mode: str = 'AUTO'):
+        normalized = mode.strip().upper()
+        if normalized == 'AUTO':
+            scpi_mode = 'AUTO'
+        elif normalized in ('NORM', 'NORMAL'):
+            scpi_mode = 'NORMal'
+        else:
+            raise ValueError('mode 必须是 AUTO / NORMal')
+        logger.debug('DSOX4034A set_trigger_sweep: %s', scpi_mode)
+        self.write(f':TRIGger:SWEep {scpi_mode}')
 
     # =========================
     # 测量
@@ -438,7 +466,12 @@ class DSOX4034A:
         self._validate_channel(channel)
 
         self.clear_all_measurements()
-        
+
+        # 0. 触发设为 Auto 并保持采集，避免波形不刷新导致无测量值
+        self.set_trigger_sweep('AUTO')
+        self.run()
+        time.sleep(0.1)
+
         # 1. 基础设置
         self.set_timebase_scale(0.001)
         time.sleep(0.1)
@@ -448,7 +481,7 @@ class DSOX4034A:
         # 2. 先用大刻度测平均值
         self.set_channel_scale(channel, 0.5)
         time.sleep(0.1)
-        self.set_channel_offset(channel, 0.0)
+        self.set_channel_offset(channel, 1.5)
         time.sleep(0.1)
 
         mean_vol = self.get_channel_mean(channel)
@@ -460,6 +493,14 @@ class DSOX4034A:
 
         # 4. 再设置 offset 到均值附近
         self.set_channel_offset(channel, mean_vol - 0.02)
+        time.sleep(0.1)
+
+        # 5. 打开通道带宽限制，抑制高频噪声
+        self.set_channel_bandwidth(channel, 'ON')
+        time.sleep(0.1)
+
+        # 6. 触发电平设为该通道平均值，确保波形稳定刷新
+        self.set_trigger_level(channel, mean_vol)
         time.sleep(0.1)
 
         # mean_vol = self.get_channel_mean(channel)

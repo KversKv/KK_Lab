@@ -65,14 +65,30 @@ class MSO64B:
     def get_channel_rms(self, channel):
         return self._measure_immediate(channel, 'RMS')
 
-    def set_trigger_edge(self, source_channel, level, slope='POS'):
-        logger.debug("MSO64B set_trigger_edge: CH%s, level=%s, slope=%s", source_channel, level, slope)
+    def set_trigger_mode(self, mode='EDGE'):
+        logger.debug("MSO64B set_trigger_mode: %s", mode)
+        self.instrument.write(f'TRIGger:A:TYPe {mode}')
+
+    def set_trigger_source(self, source_channel):
+        logger.debug("MSO64B set_trigger_source: CH%s", source_channel)
+        self.instrument.write(f'TRIGger:A:EDGE:SOUrce CH{source_channel}')
+
+    def set_trigger_slope(self, slope='POS'):
         slope_map = {'POS': 'RISe', 'NEG': 'FALL', 'EITH': 'EITher'}
         tek_slope = slope_map.get(slope.upper(), 'RISe')
-        self.instrument.write(f'TRIGger:A:TYPe EDGE')
-        self.instrument.write(f'TRIGger:A:EDGE:SOUrce CH{source_channel}')
+        logger.debug("MSO64B set_trigger_slope: %s", tek_slope)
         self.instrument.write(f'TRIGger:A:EDGE:SLOpe {tek_slope}')
+
+    def set_trigger_level(self, source_channel, level):
+        logger.debug("MSO64B set_trigger_level: CH%s, level=%s", source_channel, level)
         self.instrument.write(f'TRIGger:A:LEVel:CH{source_channel} {level}')
+
+    def set_trigger_config(self, source_channel, level, slope='POS'):
+        logger.debug("MSO64B set_trigger_config: CH%s, level=%s, slope=%s", source_channel, level, slope)
+        self.set_trigger_mode('EDGE')
+        self.set_trigger_source(source_channel)
+        self.set_trigger_slope(slope)
+        self.set_trigger_level(source_channel, level)
 
     def set_dvm_trigger_frequency_counter_enabled(self, enable=True):
         """

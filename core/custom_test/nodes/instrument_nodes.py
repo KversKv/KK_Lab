@@ -399,7 +399,7 @@ class ScopeSetTrigger(BaseNode):
         ch = int(context.resolve_value(self.params["channel"]))
         level = float(context.resolve_value(self.params["level"]))
         slope = str(context.resolve_value(self.params["slope"]))
-        scope.set_trigger_edge(ch, level, slope)
+        scope.set_trigger_config(ch, level, slope)
         context.log_output(f"Scope: trigger CH{ch} level={level}V slope={slope}")
 
 
