@@ -514,6 +514,7 @@ class AIService(QObject):
     def _run_tool_calls(self, content: str, tool_calls: list) -> None:
         """延后执行的 tool_calls 处理（已脱离 worker.finished 槽栈）。"""
         if self._pending_mode != _MODE_AGENT:
+            self._set_busy(False)
             return
 
         for call in tool_calls:
@@ -565,6 +566,7 @@ class AIService(QObject):
 
     def _run_next_agent_round(self) -> None:
         if self._pending_mode != _MODE_AGENT:
+            self._set_busy(False)
             return
         tools = self._registry.to_tools() if self._registry else None
         self._start_worker(

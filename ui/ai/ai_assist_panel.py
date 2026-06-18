@@ -783,12 +783,16 @@ class AIAssistPanel(QFrame):
         status = getattr(outcome, "status", "")
         name = getattr(outcome, "name", "")
         message = getattr(outcome, "message", "")
-        prefix = {
-            "executed": "✓ 已执行",
-            "denied": "⛔ 已拒绝",
-            "cancelled": "✗ 已取消",
-            "failed": "⚠ 执行失败",
-        }.get(status, status)
+        auto_approved = getattr(outcome, "auto_approved", False)
+        if status == "executed" and auto_approved:
+            prefix = "⚡ 已按白名单自动执行"
+        else:
+            prefix = {
+                "executed": "✓ 已执行",
+                "denied": "⛔ 已拒绝",
+                "cancelled": "✗ 已取消",
+                "failed": "⚠ 执行失败",
+            }.get(status, status)
         text = f"{prefix} 动作 [{name}]"
         if message:
             text += f"：{message}"

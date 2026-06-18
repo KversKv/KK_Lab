@@ -56,6 +56,7 @@ class ActionOutcome:
     result: dict = field(default_factory=dict)
     message: str = ""
     risk_level: str = ""
+    auto_approved: bool = False
 
     @property
     def ok(self) -> bool:
@@ -142,8 +143,11 @@ class ActionDispatcher:
         if decision.blocked:
             return self._deny(name, spec.risk_level, decision.reason, args)
 
+        auto_approved = False
         if decision.require_confirmation:
-            confirmed = self._resolve_confirmation(spec, args, decision.reason, policy_result)
+            confirmed, auto_approved = self._resolve_confirmation(
+                spec, args, decision.reason, policy_result
+            )
             if not confirmed:
                 self._audit.record(
                     action=name,
@@ -181,12 +185,15 @@ class ActionDispatcher:
         # 否则模型会误判成功而反复重试直至达到工具调用上限。
         ok = result.get("ok", True)
         status = STATUS_EXECUTED if ok else STATUS_FAILED
+        audit_message = message
+        if auto_approved and status == STATUS_EXECUTED:
+            audit_message = ("[白名单自动批准] " + message).strip()
         self._audit.record(
             action=name,
             status=status,
             risk_level=spec.risk_level,
             arguments=args,
-            message=message,
+            message=audit_message,
         )
         return ActionOutcome(
             name=name,
@@ -194,50 +201,41 @@ class ActionDispatcher:
             result=result,
             message=message,
             risk_level=spec.risk_level,
+            auto_approved=auto_approved and status == STATUS_EXECUTED,
         )
 
     def _resolve_confirmation(
         self, spec: ActionSpec, args: dict, reason: str, policy_result
-    ) -> bool:
+    ) -> tuple[bool, bool]:
         """决策链确认环节（AI_AssistNewFeature_V1 §2.3）。
 
         命中白名单（护栏通过）-> 免确认；critical 不享白名单/隐式窗口；
         隐式窗口（序列运行中）对 high 免确认；否则弹确认框，
         确认回调可携带"记住本动作"以写回会话级/常驻白名单。
+
+        返回 (confirmed, auto_approved)：auto_approved 表示命中白名单/隐式窗口
+        而免确认（未弹卡片），供 UI 给出"已自动执行"提示。免确认时不在此处
+        预写审计，统一由 dispatch() 在 handler 真正执行后落一条结果审计，避免重复。
         """
         if policy_result.auto_approve and spec.risk_level != "critical":
-            self._audit.record(
-                action=spec.name,
-                status=STATUS_EXECUTED,
-                risk_level=spec.risk_level,
-                arguments=args,
-                message="白名单自动批准：" + (policy_result.reason or ""),
-            )
-            return True
+            return True, True
 
         if spec.risk_level == "high" and self._in_implicit_whitelist():
-            self._audit.record(
-                action=spec.name,
-                status=STATUS_EXECUTED,
-                risk_level=spec.risk_level,
-                arguments=args,
-                message="序列运行隐式白名单自动批准。",
-            )
-            return True
+            return True, True
 
         if self._confirm_cb is None:
-            return False
+            return False, False
         try:
             result = self._confirm_cb(spec, args, reason)
         except Exception:  # noqa: BLE001 - 确认回调异常视为未确认
             logger.error("动作确认回调异常: %s", spec.name, exc_info=True)
-            return False
+            return False, False
 
         if isinstance(result, ConfirmResult):
             if result.confirmed:
                 self._apply_grants(spec, args, result)
-            return bool(result.confirmed)
-        return bool(result)
+            return bool(result.confirmed), False
+        return bool(result), False
 
     def _apply_grants(self, spec: ActionSpec, args: dict, result: ConfirmResult) -> None:
         """根据确认结果写回白名单（护栏取当前参数的标量值为边界）。"""

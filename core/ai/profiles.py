@@ -62,7 +62,8 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         ),
         "quick_actions": [
             "查询当前各通道电压电流",
-            "关闭通道 1 输出",
+            "Close CH1 OUTPUT",
+            "Open CH1 OUTPUT",
             "解读最近的功率测量曲线",
         ],
     },

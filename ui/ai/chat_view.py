@@ -53,6 +53,10 @@ QTextBrowser#aiBubbleAI {
 }
 """
 
+_BUBBLE_PAD_V = 28
+_BUBBLE_PAD_H = 36
+_BUBBLE_MIN_H = 40
+
 _BUBBLE_STYLE_SYS = """
 QLabel#aiBubbleSys {
     background-color: transparent;
@@ -337,18 +341,22 @@ class _MarkdownBubble(QWidget):
         view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         view.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        view.document().setDocumentMargin(0)
         view.setMarkdown(md_text)
-        view.document().setTextWidth(view.viewport().width())
         view.document().contentsChanged.connect(lambda v=view: self._fit_height(v))
+        QTimer.singleShot(0, lambda v=view: self._fit_height(v))
         self._fit_height(view)
         return view
 
     @staticmethod
     def _fit_height(view: QTextBrowser) -> None:
         doc = view.document()
-        doc.setTextWidth(view.viewport().width())
-        height = int(doc.size().height()) + 8
-        view.setFixedHeight(max(24, height))
+        width = view.viewport().width()
+        if width <= 0:
+            width = max(0, view.width() - _BUBBLE_PAD_H)
+        doc.setTextWidth(width)
+        height = int(doc.size().height()) + _BUBBLE_PAD_V
+        view.setFixedHeight(max(_BUBBLE_MIN_H, height))
 
     def _make_code_block(self, lang: str, code: str) -> QFrame:
         frame = QFrame()
