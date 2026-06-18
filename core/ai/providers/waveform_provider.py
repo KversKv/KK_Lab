@@ -21,10 +21,43 @@ from log_config import get_logger
 logger = get_logger(__name__)
 
 
-def _infer_unit(label: str) -> str:
-    """从通道标签尾部推断单位（CH1 I -> A，CH1 V -> V，CH1 P -> W）。"""
+_BASE_UNIT_BY_TOKEN = {"I": "A", "V": "V", "P": "W"}
+
+_UNIT_PREFIXES = (
+    (1.0, ""),
+    (1e-3, "m"),
+    (1e-6, "u"),
+    (1e-9, "n"),
+)
+
+
+def _infer_base_unit(label: str) -> str:
+    """从通道标签尾部推断基本单位（CH1 I -> A，CH1 V -> V，CH1 P -> W）。"""
     token = (label or "").strip().rsplit(" ", 1)[-1].upper()
-    return {"I": "A", "V": "V", "P": "W"}.get(token, "")
+    return _BASE_UNIT_BY_TOKEN.get(token, "")
+
+
+def _pick_scale(values: list[float], base_unit: str) -> tuple[float, str]:
+    """按通道整体量级选档，返回 (倍率, 单位字符串)。
+
+    Datalog 内存值统一为「真实值 × 1000」（电流 mA / 电压 mV / 功率 mW）。
+    先把代表幅值（最大绝对值）还原为基本单位下的真实值，再按 SI 前缀选档，
+    使整条通道的所有标量共用同一量纲（避免 avg 用 mA、max 用 A 的混乱）。
+    无法识别单位（如时间轴）时不换算。
+    """
+    if not base_unit:
+        return 1.0, ""
+    peak_real = max((abs(v) for v in values), default=0.0) / 1000.0
+    threshold, prefix = _UNIT_PREFIXES[1]
+    if peak_real > 0.0:
+        for thr, pfx in _UNIT_PREFIXES:
+            if peak_real >= thr:
+                threshold, prefix = thr, pfx
+                break
+        else:
+            threshold, prefix = _UNIT_PREFIXES[-1]
+    factor = 1.0 / (1000.0 * threshold)
+    return factor, f"{prefix}{base_unit}"
 
 
 def lttb_downsample(
@@ -192,18 +225,30 @@ def _channel_stat(
     sample_period = 0.0
     if len(times) >= 2:
         sample_period = abs(times[1] - times[0])
+
+    factor, unit = _pick_scale(values, _infer_base_unit(label))
+
+    anomalies = _detect_anomalies(times, values, avg, std, anomaly_sigma)
+    steady_segments = _detect_steady_segments(times, values, avg, std)
+    if factor != 1.0:
+        for a in anomalies:
+            a["value"] = round(a["value"] * factor, 6)
+        for s in steady_segments:
+            s["avg"] = round(s["avg"] * factor, 6)
+            s["std"] = round(s["std"] * factor, 6)
+
     return WaveformStat(
         label=label,
-        unit=_infer_unit(label),
+        unit=unit,
         sample_period_s=sample_period,
         point_count=len(values),
-        minimum=vmin,
-        maximum=vmax,
-        average=avg,
-        peak_to_peak=vmax - vmin,
-        std=std,
-        anomalies=_detect_anomalies(times, values, avg, std, anomaly_sigma),
-        steady_segments=_detect_steady_segments(times, values, avg, std),
+        minimum=round(vmin * factor, 6),
+        maximum=round(vmax * factor, 6),
+        average=round(avg * factor, 6),
+        peak_to_peak=round((vmax - vmin) * factor, 6),
+        std=round(std * factor, 6),
+        anomalies=anomalies,
+        steady_segments=steady_segments,
     )
 
 
@@ -235,9 +280,10 @@ def build_digest(
             times = channel.get("time") or list(range(stat.point_count))
             values = channel.get("values") or []
             ds_t, ds_v = lttb_downsample(list(times), list(values), max_points)
+            factor, _ = _pick_scale(values, _infer_base_unit(str(label)))
             downsampled[str(label)] = {
                 "time": [round(x, 6) for x in ds_t],
-                "values": [round(x, 6) for x in ds_v],
+                "values": [round(x * factor, 6) for x in ds_v],
             }
 
     ds_count = max((len(v["values"]) for v in downsampled.values()), default=0)

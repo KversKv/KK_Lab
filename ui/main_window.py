@@ -505,7 +505,6 @@ class MainWindow(CleanupMixin, QMainWindow):
             app_logs_getter=self._get_ai_app_logs,
             rx_recent_getter=self._get_ai_recent_rx,
             test_status_getter=self._get_ai_test_status,
-            waveform_data_getter=self._provide_ai_waveform_data,
             open_page_callback=self._ai_open_page,
             toggle_ai_panel_callback=self._ai_toggle_panel,
             serial_send_text_callback=self._ai_serial_send_text,
@@ -520,15 +519,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             allow_critical=False,
         )
         dispatcher.set_confirm_callback(self.ai_panel.confirm_action)
-        dispatcher.set_implicit_whitelist_check(self._ai_sequence_running)
         self.ai_service.set_action_system(registry, dispatcher)
-
-    def _ai_sequence_running(self) -> bool:
-        ui = getattr(self, "custom_test_ui", None)
-        if ui is None:
-            return False
-        canvas = getattr(ui, "canvas", None)
-        return bool(getattr(canvas, "_running", False)) if canvas else False
 
     def _get_ai_app_logs(self, lines):
         ring = get_log_ring()
@@ -645,20 +636,9 @@ class MainWindow(CleanupMixin, QMainWindow):
             return
         if self.current_instrument_ui == "custom_test":
             panel.set_script_apply_callback(self._apply_ai_script_draft)
-            panel.set_sequence_data_callback(self._provide_ai_sequence_data)
-            panel.set_sequence_undo_callback(self._undo_ai_sequence)
         else:
             panel.set_script_apply_callback(None)
-            panel.set_sequence_data_callback(None)
-            panel.set_sequence_undo_callback(None)
         panel.set_config_apply_callback(self._apply_ai_config_draft)
-
-        service = getattr(self, "ai_service", None)
-        if service is not None:
-            if self.current_instrument_ui == "custom_test":
-                service.set_sequence_data_getter(self._provide_ai_sequence_data)
-            else:
-                service.set_sequence_data_getter(None)
 
         if self.current_instrument_ui == "datalog":
             panel.set_waveform_provider_callback(self._provide_ai_waveform_digest)
@@ -671,29 +651,6 @@ class MainWindow(CleanupMixin, QMainWindow):
             return None
         return ui.build_waveform_digest()
 
-    def _provide_ai_waveform_data(self):
-        ui = getattr(self, "n6705c_datalog_ui", None)
-        if ui is None:
-            return None
-        try:
-            return ui.get_waveform_data()
-        except Exception:  # noqa: BLE001 - 波形数据读取失败不致命
-            logger.error("读取 AI 波形原始数据失败", exc_info=True)
-            return None
-
-    def _provide_ai_sequence_data(self):
-        ui = getattr(self, "custom_test_ui", None)
-        if ui is None or getattr(ui, "canvas", None) is None:
-            return None
-        try:
-            from core.custom_test.serialization import save_sequence_data
-
-            nodes = ui.canvas.get_sequence()
-            return save_sequence_data(nodes)
-        except Exception:  # noqa: BLE001 - 读取序列失败不致命
-            logger.error("读取 AI 画布序列数据失败", exc_info=True)
-            return None
-
     def _apply_ai_script_draft(self, nodes):
         ui = getattr(self, "custom_test_ui", None)
         if ui is None or getattr(ui, "canvas", None) is None:
@@ -701,36 +658,10 @@ class MainWindow(CleanupMixin, QMainWindow):
         if getattr(ui.canvas, "_running", False):
             return False, "序列运行中，无法应用草案。"
         try:
-            from core.custom_test.snapshot import clone_sequence
-
-            self._ai_sequence_snapshot = clone_sequence(ui.canvas.get_sequence())
-        except Exception:  # noqa: BLE001 - 快照失败不阻断应用，仅丢失撤销能力
-            logger.error("生成 AI 序列撤销快照失败", exc_info=True)
-            self._ai_sequence_snapshot = None
-        try:
             ui.canvas.load_from_nodes(nodes)
         except Exception:
             logger.error("应用 AI 脚本草案到画布失败", exc_info=True)
             return False, "应用到画布失败，请查看日志。"
-        return True, ""
-
-    def _undo_ai_sequence(self):
-        ui = getattr(self, "custom_test_ui", None)
-        if ui is None or getattr(ui, "canvas", None) is None:
-            return False, "Custom Test 页面不可用。"
-        if getattr(ui.canvas, "_running", False):
-            return False, "序列运行中，无法撤销。"
-        snapshot = getattr(self, "_ai_sequence_snapshot", None)
-        if snapshot is None:
-            return False, "没有可撤销的快照。"
-        try:
-            from core.custom_test.snapshot import clone_sequence
-
-            ui.canvas.load_from_nodes(clone_sequence(snapshot))
-        except Exception:
-            logger.error("撤销 AI 序列修改失败", exc_info=True)
-            return False, "撤销失败，请查看日志。"
-        self._ai_sequence_snapshot = None
         return True, ""
 
     def _apply_ai_config_draft(self, draft):

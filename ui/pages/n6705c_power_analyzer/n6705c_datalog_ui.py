@@ -5270,7 +5270,7 @@ class N6705CDatalogUI(QWidget):
 
         if not self.datalog_data:
             return None
-        return build_digest(self.datalog_data)
+        return build_digest(dict(self.datalog_data))
 
     def _on_data_ready(self, data):
         power_chs_a = [cb.isChecked() for cb in getattr(self, 'ch_power_cbs_a', [])]
