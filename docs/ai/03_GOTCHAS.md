@@ -292,3 +292,25 @@ pixmap.setDevicePixelRatio(dpr)  # ← 禁止
 - 不要为了修这种几像素跳动而全局固定父区域或底部控件高度，否则容易造成页面底部控件截断。
 
 **参考实现**：[n6705c_analyser_ui.py:_build_channel_tab_style](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/pages/n6705c_power_analyzer/n6705c_analyser_ui.py)
+
+## 26. AI Agent「上下文自我污染」与「强制重试启新 worker 的时序闪退」
+
+**现象 A（多次设置不生效）**：新对话第一次让 AI"打开通道 1"能真控制仪器，第二次起 AI 只回"✅ CH1 输出已开启，系统已弹出确认框…"之类文字，但**不再发 tool_call**，仪器不动。
+
+**根因 A —— 上下文自我污染**：AI 第一次真调工具成功后，它编造的"系统已弹出确认框/确认后即执行"叙述被写入 `history` 并由 `PromptManager.build_messages` 原样回灌；第二次起模型照抄这段文本、不再发 `tool_call` → `ActionDispatcher` 无动作可执行。
+
+**修复 A —— 动作轮强制要求 tool_call**（[ai_service.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/core/ai/ai_service.py)）：
+- `_looks_like_fake_execution(content)` 识别"嘴上执行"关键词；
+- 仅当 `_agent_rounds == 0 and not _agent_forced_retry`（真·首轮、一次工具都没调过）才触发，避免误判多轮真执行后的合法总结；
+- 回灌 `_FORCE_TOOL_NUDGE` 强约束提示，`_agent_forced_retry=True`，重跑一轮逼模型改用工具。
+
+**现象 B（强制重试后窗口闪退）**：实施修复 A 后，触发强制重试时进程**无声退出**（非 segfault，`faulthandler` 抓不到栈、写文件为空 → 这是关键判据：空 faulthandler ≈ Qt 内部状态损坏 abort，而非野指针）。
+
+**根因 B —— QThread 清理时序竞争**：强制重试在首轮 worker 的 `finished` 回调链里用 `QTimer.singleShot(0, ...)` 再起新 worker，回调被排到**首轮 QThread 的 `finished → _cleanup_thread`（deleteLater）之前**，二者交织破坏 Qt 线程对象状态。
+
+**修复 B**：把重试延后量从 `0ms` 改为 `QTimer.singleShot(50, self._run_forced_retry)`，让首轮线程的 `finished`/`deleteLater` 先排空，竞争消失。`_run_forced_retry` 为独立延后入口（先 `_teardown_thread` 再 `_run_next_agent_round`）。
+
+**规则**：
+- AI 历史回灌是污染传播路径；凡"声称已执行控制类动作"的轮次必须强制走真 tool_call，禁止用文字假装完成。
+- 在 worker `finished` 信号槽链里**再起新 QThread worker**，必须用**带正延迟**的 `singleShot`（≥50ms）或等首轮线程 `finished` 完全处理后再启动，禁止 `singleShot(0)` 直接重入，否则与上一轮线程清理竞态导致闪退。
+- 排查"无声闪退"时：`faulthandler` 输出为空往往指向 Qt 线程/对象生命周期问题，而非 C 段错误；用分步 `logger.warning` 埋点夹逼定位（注意 `StreamHandler` 默认每条 flush，最后一条日志可信）。

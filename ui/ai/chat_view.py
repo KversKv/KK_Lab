@@ -617,7 +617,10 @@ class ChatView(QScrollArea):
         bar = self.verticalScrollBar()
         bar.setValue(bar.maximum())
         QTimer.singleShot(0, self._scroll_to_bottom_deferred)
+        QTimer.singleShot(30, self._scroll_to_bottom_deferred)
 
     def _scroll_to_bottom_deferred(self) -> None:
+        self._container.updateGeometry()
+        self._layout.activate()
         bar = self.verticalScrollBar()
         bar.setValue(bar.maximum())

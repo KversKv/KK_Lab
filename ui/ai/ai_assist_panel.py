@@ -5,7 +5,9 @@
 """
 from __future__ import annotations
 
+import json
 import os
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import (
@@ -23,6 +25,7 @@ from PySide6.QtGui import QColor, QCursor, QKeyEvent
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
+    QFileDialog,
     QFrame,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
@@ -175,6 +178,20 @@ QPushButton#aiScriptBtn:disabled {
     background-color: #0f172a;
     color: #475569;
     border: 1px solid #1e293b;
+}
+QPushButton#aiExportBtn {
+    min-height: 22px;
+    padding: 4px 12px;
+    border: 1px solid #2a3344;
+    border-radius: 8px;
+    background-color: #131a26;
+    color: #94a3b8;
+    font-size: 11px;
+    font-weight: 600;
+}
+QPushButton#aiExportBtn:hover {
+    background-color: #1b2433;
+    color: #cbd5e1;
 }
 QLabel#aiRangeLabel {
     color: #64748b;
@@ -369,6 +386,8 @@ class AIAssistPanel(QFrame):
         self._digest_thread = None
         self._digest_worker = None
         self._pending_waveform_text = ""
+        self._transcript: list[dict] = []
+        self._session_started_at = datetime.now()
         self.setObjectName("aiAssistPanel")
         self.setStyleSheet(_PANEL_STYLE)
 
@@ -397,6 +416,7 @@ class AIAssistPanel(QFrame):
         bottom_layout.addWidget(self._input)
 
         bottom_layout.addLayout(self._build_range_bar())
+        bottom_layout.addLayout(self._build_export_bar())
         bottom_layout.addLayout(self._build_action_bar())
         bottom_layout.addWidget(self._build_usage_bar())
 
@@ -548,6 +568,21 @@ class AIAssistPanel(QFrame):
         layout.addStretch(1)
         return layout
 
+    def _build_export_bar(self) -> QHBoxLayout:
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        layout.addStretch(1)
+        self._export_btn = QPushButton("导出本轮会话")
+        self._export_btn.setObjectName("aiExportBtn")
+        self._export_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        self._export_btn.setToolTip(
+            "导出本次会话的问 / 系统提示 / AI 回复 / 执行的指令 / 审计 / 用量等调试信息（Markdown）"
+        )
+        self._export_btn.clicked.connect(self._on_export_clicked)
+        layout.addWidget(self._export_btn)
+        return layout
+
     def _build_action_bar(self) -> QHBoxLayout:
         layout = QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
@@ -652,6 +687,7 @@ class AIAssistPanel(QFrame):
             self._chat.add_system_message("当前没有可分析的波形数据。")
             return
         text = self._pending_waveform_text or "请分析以下波形数据的特征、异常与可能原因。"
+        self._record("user", text=f"[发送波形] {text}")
         self._chat.add_user_message(f"[发送波形] {text}")
         self._service.send_with_waveform(text, digest)
 
@@ -677,6 +713,15 @@ class AIAssistPanel(QFrame):
             sess_prompt = getattr(session, "prompt_tokens_total", 0)
             sess_completion = getattr(session, "completion_tokens_total", 0)
             requests = getattr(session, "requests", 0)
+            self._record(
+                "usage",
+                turn_prompt=getattr(turn, "prompt_tokens", 0),
+                turn_completion=getattr(turn, "completion_tokens", 0),
+                output_tps=round(float(tps), 2),
+                session_prompt=sess_prompt,
+                session_completion=sess_completion,
+                requests=requests,
+            )
             self._usage_label.setText(
                 f"本次 ↑{turn.prompt_tokens} ↓{turn.completion_tokens} tokens @ "
                 f"{tps:.1f} tok·s⁻¹ ｜ 会话 ↑{sess_prompt} ↓{sess_completion} tokens"
@@ -695,6 +740,7 @@ class AIAssistPanel(QFrame):
         self._service.error_occurred.connect(self._on_error)
         self._service.busy_changed.connect(self._on_busy_changed)
         self._service.connection_tested.connect(self._on_connection_tested)
+        self._service.action_requested.connect(self._on_action_requested)
         self._service.action_result.connect(self._on_action_result)
         self._service.usage_updated.connect(self._on_usage_updated)
 
@@ -714,6 +760,8 @@ class AIAssistPanel(QFrame):
 
     def _on_clear_clicked(self) -> None:
         self._service.clear_history()
+        self._transcript.clear()
+        self._session_started_at = datetime.now()
         self._chat.add_system_message("会话历史已清空。")
 
     def _on_stream_started(self) -> None:
@@ -723,6 +771,7 @@ class AIAssistPanel(QFrame):
         self._chat.append_stream_delta(chunk)
 
     def _on_stream_finished(self, content: str) -> None:
+        self._record("assistant", text=content or "")
         self._chat.end_stream_message(content)
 
     def confirm_action(self, spec, arguments: dict, reason: str = "") -> "ConfirmResult":
@@ -743,6 +792,14 @@ class AIAssistPanel(QFrame):
         if reason:
             description = f"{description}\n{reason}".strip()
 
+        self._record(
+            "confirm_prompt",
+            name=spec.name,
+            risk_level=spec.risk_level,
+            arguments=arguments,
+            reason=reason,
+        )
+
         card = self._chat.add_action_confirm(
             action_name=spec.name,
             description=description,
@@ -754,6 +811,14 @@ class AIAssistPanel(QFrame):
         result = ConfirmResult(confirmed=False)
 
         def _finish(outcome: ConfirmResult, status_text: str) -> None:
+            self._record(
+                "confirm_decision",
+                name=spec.name,
+                confirmed=outcome.confirmed,
+                remember_session=outcome.remember_session,
+                remember_resident=outcome.remember_resident,
+                status_text=status_text,
+            )
             result.confirmed = outcome.confirmed
             result.remember_session = outcome.remember_session
             result.remember_resident = outcome.remember_resident
@@ -784,6 +849,15 @@ class AIAssistPanel(QFrame):
         name = getattr(outcome, "name", "")
         message = getattr(outcome, "message", "")
         auto_approved = getattr(outcome, "auto_approved", False)
+        self._record(
+            "action_result",
+            name=name,
+            status=status,
+            auto_approved=bool(auto_approved),
+            risk_level=getattr(outcome, "risk_level", ""),
+            message=message,
+            result=getattr(outcome, "result", {}),
+        )
         if status == "executed" and auto_approved:
             prefix = "⚡ 已按白名单自动执行"
         else:
@@ -806,10 +880,228 @@ class AIAssistPanel(QFrame):
         """注入测试脚本草案 apply 回调：callback(nodes) -> (ok, message)。"""
         self._script_apply_cb = callback
 
+    def _record(self, kind: str, **fields) -> None:
+        """记录一条会话流水，用于导出调试信息。"""
+        entry = {"ts": datetime.now().isoformat(timespec="seconds"), "kind": kind}
+        entry.update(fields)
+        self._transcript.append(entry)
+
+    def _on_action_requested(self, payload) -> None:
+        if not isinstance(payload, dict):
+            return
+        self._record(
+            "action_requested",
+            name=payload.get("name", ""),
+            arguments=payload.get("arguments", {}),
+        )
+
+    def _on_export_clicked(self) -> None:
+        default_name = (
+            "ai_session_"
+            + datetime.now().strftime("%Y%m%d_%H%M%S")
+            + ".md"
+        )
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "导出本轮会话（调试信息）",
+            default_name,
+            "Markdown (*.md)",
+        )
+        if not path:
+            return
+        try:
+            content = self._build_export_markdown()
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(content)
+        except Exception:
+            logger.error("导出会话失败: %s", path, exc_info=True)
+            self._chat.add_system_message("导出会话失败，请查看日志。")
+            return
+        self._chat.add_system_message(f"已导出本轮会话调试信息：{path}")
+
+    def _build_export_markdown(self) -> str:
+        from core.ai.profiles import get_global_system_prompt, get_profile
+
+        page_key = self._service.current_page_key()
+        profile = get_profile(page_key)
+        settings = self._service.settings
+        lines: list[str] = []
+
+        lines.append("# KK_Lab AI 会话调试导出")
+        lines.append("")
+        lines.append(
+            f"- 导出时间：{datetime.now().isoformat(timespec='seconds')}"
+        )
+        lines.append(
+            f"- 会话开始：{self._session_started_at.isoformat(timespec='seconds')}"
+        )
+        lines.append(f"- 当前页面 (page_key)：`{page_key or '_default'}`")
+        lines.append(
+            f"- 模型：`{getattr(settings, 'default_model', '')}` "
+            f"（model_mode=`{getattr(settings, 'model_mode', '')}`，"
+            f"stream=`{getattr(settings, 'stream', '')}`）"
+        )
+        lines.append(f"- 手动选择模型：`{self._model_combo.currentData() or '自动'}`")
+        lines.append("")
+
+        lines.append("## 系统提示（System Prompt）")
+        lines.append("")
+        lines.append("### 全局")
+        lines.append("")
+        lines.append("```text")
+        lines.append(get_global_system_prompt())
+        lines.append("```")
+        lines.append("")
+        lines.append("### 页面 Profile")
+        lines.append("")
+        lines.append("```text")
+        lines.append(str(profile.get("system_prompt", "")))
+        lines.append("```")
+        lines.append("")
+
+        lines.append("## 会话流水（问 / 提示 / 答 / 执行的指令）")
+        lines.append("")
+        if not self._transcript:
+            lines.append("_（本轮会话暂无流水记录）_")
+            lines.append("")
+        for entry in self._transcript:
+            lines.extend(self._format_entry(entry))
+
+        lines.append("## 持久化历史（service.persisted_history）")
+        lines.append("")
+        history = self._service.persisted_history()
+        if not history:
+            lines.append("_（无）_")
+        else:
+            for item in history:
+                role = item.get("role", "")
+                lines.append(f"- **{role}**：{item.get('content', '')}")
+        lines.append("")
+
+        lines.append("## 动作审计日志（audit.log）")
+        lines.append("")
+        lines.append(self._read_audit_tail())
+        lines.append("")
+
+        return "\n".join(lines)
+
+    def _format_entry(self, entry: dict) -> list[str]:
+        ts = entry.get("ts", "")
+        kind = entry.get("kind", "")
+        out: list[str] = []
+        if kind == "user":
+            out.append(f"### 🧑 用户  `{ts}`")
+            out.append("")
+            out.append(str(entry.get("text", "")))
+        elif kind == "assistant":
+            out.append(f"### 🤖 AI 回复  `{ts}`")
+            out.append("")
+            out.append(str(entry.get("text", "")))
+        elif kind == "analysis":
+            out.append(f"### 📊 日志分析  `{ts}`")
+            out.append("")
+            out.append(str(entry.get("text", "")))
+        elif kind == "error":
+            out.append(f"### ⚠ 错误  `{ts}`")
+            out.append("")
+            out.append(str(entry.get("text", "")))
+        elif kind == "action_requested":
+            out.append(f"### ⚙ 请求执行指令  `{ts}`")
+            out.append("")
+            out.append(f"- 动作：`{entry.get('name', '')}`")
+            out.append("- 参数：")
+            out.append("")
+            out.append("```json")
+            out.append(
+                json.dumps(
+                    entry.get("arguments", {}), ensure_ascii=False, indent=2, default=str
+                )
+            )
+            out.append("```")
+        elif kind == "action_result":
+            out.append(f"### ✅ 指令执行结果  `{ts}`")
+            out.append("")
+            out.append(f"- 动作：`{entry.get('name', '')}`")
+            out.append(f"- 状态：`{entry.get('status', '')}`")
+            out.append(f"- 风险等级：`{entry.get('risk_level', '')}`")
+            out.append(f"- 白名单自动执行：`{entry.get('auto_approved', False)}`")
+            out.append(f"- 消息：{entry.get('message', '')}")
+            out.append("- 结果：")
+            out.append("")
+            out.append("```json")
+            out.append(
+                json.dumps(
+                    entry.get("result", {}), ensure_ascii=False, indent=2, default=str
+                )
+            )
+            out.append("```")
+        elif kind == "confirm_prompt":
+            out.append(f"### ❓ 弹出确认卡片  `{ts}`")
+            out.append("")
+            out.append(f"- 动作：`{entry.get('name', '')}`")
+            out.append(f"- 风险等级：`{entry.get('risk_level', '')}`")
+            out.append(f"- 原因：{entry.get('reason', '')}")
+            out.append("- 参数：")
+            out.append("")
+            out.append("```json")
+            out.append(
+                json.dumps(
+                    entry.get("arguments", {}), ensure_ascii=False, indent=2, default=str
+                )
+            )
+            out.append("```")
+        elif kind == "confirm_decision":
+            out.append(f"### 🖱 确认决定  `{ts}`")
+            out.append("")
+            out.append(f"- 动作：`{entry.get('name', '')}`")
+            out.append(f"- 确认：`{entry.get('confirmed', False)}`")
+            out.append(f"- 记住本会话：`{entry.get('remember_session', False)}`")
+            out.append(f"- 加入白名单：`{entry.get('remember_resident', False)}`")
+            out.append(f"- 卡片状态：{entry.get('status_text', '')}")
+        elif kind == "usage":
+            out.append(f"### 📈 用量  `{ts}`")
+            out.append("")
+            out.append(
+                f"- 本次：↑{entry.get('turn_prompt', 0)} ↓{entry.get('turn_completion', 0)} "
+                f"tokens @ {entry.get('output_tps', 0)} tok/s"
+            )
+            out.append(
+                f"- 会话累计：↑{entry.get('session_prompt', 0)} "
+                f"↓{entry.get('session_completion', 0)} tokens "
+                f"（{entry.get('requests', 0)} 次请求）"
+            )
+        else:
+            out.append(f"### {kind}  `{ts}`")
+            out.append("")
+            out.append(
+                "```json\n"
+                + json.dumps(entry, ensure_ascii=False, indent=2, default=str)
+                + "\n```"
+            )
+        out.append("")
+        return out
+
+    def _read_audit_tail(self, max_lines: int = 50) -> str:
+        try:
+            from core.ai.actions.audit import get_audit_log
+
+            path = get_audit_log().path
+            if not os.path.isfile(path):
+                return "_（无审计日志文件）_"
+            with open(path, "r", encoding="utf-8") as f:
+                tail = f.readlines()[-max_lines:]
+            if not tail:
+                return "_（审计日志为空）_"
+            return "```jsonl\n" + "".join(tail).rstrip("\n") + "\n```"
+        except Exception:
+            logger.error("读取审计日志失败", exc_info=True)
+            return "_（读取审计日志失败，请查看应用日志）_"
+
     def _on_send_clicked(self) -> None:
         text = self._input.toPlainText().strip()
         if not text:
             return
+        self._record("user", text=text)
         self._chat.add_user_message(text)
         self._input.clear()
         self._service.send(text)
@@ -817,6 +1109,9 @@ class AIAssistPanel(QFrame):
     def _on_analyze_clicked(self) -> None:
         level = self._level_combo.currentText()
         max_lines = min(self._lines_spin.value(), _MAX_LINES_CAP)
+        self._record(
+            "user", text=f"[分析日志] 等级≥{level}，每类≤{max_lines}行"
+        )
         self._chat.add_user_message(
             f"分析最近日志（等级≥{level}，每类≤{max_lines}行）"
         )
@@ -836,6 +1131,7 @@ class AIAssistPanel(QFrame):
             return
         kind = SCRIPT_DRAFT if self._script_apply_cb is not None else CONFIG_DRAFT
         label = "测试脚本" if kind == SCRIPT_DRAFT else "测试配置"
+        self._record("user", text=f"[生成{label}草案] {text}")
         self._chat.add_user_message(f"生成{label}草案：{text}")
         self._input.clear()
         self._service.generate_draft(kind, text)
@@ -877,12 +1173,15 @@ class AIAssistPanel(QFrame):
             self._chat.add_system_message("已将测试脚本草案应用到画布。")
 
     def _on_response(self, content: str) -> None:
+        self._record("assistant", text=content or "")
         self._chat.add_ai_message(content)
 
     def _on_analysis(self, result) -> None:
+        self._record("analysis", text=str(getattr(result, "summary", "") or result))
         self._chat.add_analysis_message(result)
 
     def _on_error(self, message: str) -> None:
+        self._record("error", text=message)
         self._chat.add_system_message(f"错误：{message}")
 
     def _on_busy_changed(self, busy: bool) -> None:

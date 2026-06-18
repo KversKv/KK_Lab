@@ -134,6 +134,18 @@ _MODE_AGENT = "agent"
 
 _MAX_TOOL_ROUNDS = 5
 
+_FORCE_RETRY_DELAY_MS = 50
+
+_FORCE_TOOL_NUDGE = (
+    "[系统强制提示] 上一条回复没有调用任何工具，却用文字声称已执行或"
+    "“系统已弹出确认框/确认后即执行”等。这是被禁止的：你不能假装已执行，"
+    "也不能只给出命令文本。若用户的请求需要改变仪器/串口/测试运行状态"
+    "（如开关输出、设置电压电流、运行/停止序列等），你必须立即调用对应的"
+    "受控动作（工具）来执行；高风险动作系统会自动弹确认框，确认后由程序安全下发。"
+    "请现在直接发起正确的工具调用；若确实缺少必要参数（如 session_id、通道号），"
+    "先调用查询类动作补全，或简短询问用户，但不要再用文字假装已完成。"
+)
+
 
 class AIService(QObject):
     response_ready = Signal(str)
@@ -188,6 +200,7 @@ class AIService(QObject):
         self._agent_model = ""
         self._agent_temperature = 0.2
         self._agent_max_tokens = 2048
+        self._agent_forced_retry = False
 
     def set_action_system(self, registry, dispatcher) -> None:
         """UI 注入受控动作系统（ActionRegistry + ActionDispatcher）。
@@ -363,6 +376,7 @@ class AIService(QObject):
             self._pending_mode = _MODE_AGENT
             self._agent_messages = list(messages)
             self._agent_rounds = 0
+            self._agent_forced_retry = False
             self._agent_model = model
             self._agent_temperature = temperature
             self._agent_max_tokens = max_tokens
@@ -490,6 +504,32 @@ class AIService(QObject):
         self.error_occurred.emit(message)
         self._set_busy(False)
 
+    @staticmethod
+    def _looks_like_fake_execution(content: str) -> bool:
+        """判断模型是否“嘴上执行”：没调工具却声称已执行/已弹确认框。
+
+        命中任一关键短语即认为是假执行叙述，触发一次强制工具重试。
+        宁可漏判（保守）也不误伤普通问答。
+        """
+        if not content:
+            return False
+        markers = (
+            "系统已弹出确认框",
+            "确认后即执行",
+            "确认后将执行",
+            "确认后由程序",
+            "请确认后执行",
+            "已弹出确认",
+            "已开启",
+            "已关闭",
+            "已设置",
+            "已下发",
+            "已执行",
+            "已完成设置",
+            "输出已",
+        )
+        return any(m in content for m in markers)
+
     def _handle_agent_round(self, content: str, tool_calls: list) -> None:
         """处理一轮 agent 结果：无 tool_calls 则结束；有则执行并回灌再起一轮。
 
@@ -499,6 +539,24 @@ class AIService(QObject):
         导致 C++ 对象在信号发射期间被删除而崩溃（窗口闪退）。
         """
         if not tool_calls:
+            if (
+                self._agent_rounds == 0
+                and not self._agent_forced_retry
+                and self._looks_like_fake_execution(content)
+            ):
+                logger.warning(
+                    "Agent 未调用工具却声称已执行，强制回灌提示重试一轮: %s",
+                    (content or "")[:80],
+                )
+                self._agent_forced_retry = True
+                self._agent_messages.append(
+                    {"role": "assistant", "content": content or ""}
+                )
+                self._agent_messages.append(
+                    {"role": "user", "content": _FORCE_TOOL_NUDGE}
+                )
+                QTimer.singleShot(_FORCE_RETRY_DELAY_MS, self._run_forced_retry)
+                return
             self._pending_mode = _MODE_CHAT
             self._history.append({"role": "assistant", "content": content})
             _save_persisted_history(self._history)
@@ -516,6 +574,8 @@ class AIService(QObject):
         if self._pending_mode != _MODE_AGENT:
             self._set_busy(False)
             return
+
+        self._teardown_thread()
 
         for call in tool_calls:
             self._execute_tool_call(call)
@@ -563,6 +623,13 @@ class AIService(QObject):
                 "content": payload,
             }
         )
+
+    def _run_forced_retry(self) -> None:
+        if self._pending_mode != _MODE_AGENT:
+            self._set_busy(False)
+            return
+        self._teardown_thread()
+        self._run_next_agent_round()
 
     def _run_next_agent_round(self) -> None:
         if self._pending_mode != _MODE_AGENT:
