@@ -108,12 +108,12 @@ _SEVERITY_COLORS = {
 
 _CONFIRM_FRAME_STYLE = """
 QFrame#aiConfirmFrame {
-    background-color: #161b2e;
-    border: 1px solid #2a3552;
+    background-color: #121629;
+    border: 1px solid #1e293b;
     border-radius: 12px;
 }
 QLabel#aiConfirmTitle {
-    color: #ffb27a;
+    color: #fbbf77;
     font-size: 12px;
     font-weight: 700;
     background: transparent;
@@ -124,31 +124,34 @@ QLabel#aiConfirmDesc {
     background: transparent;
 }
 QPlainTextEdit#aiConfirmArgs {
-    background-color: #0e1424;
-    color: #e6eeff;
-    border: 1px solid #243152;
+    background-color: #070709;
+    color: #cbd5e1;
+    border: 1px solid #1e293b;
     border-radius: 8px;
     font-family: Consolas, "Courier New", monospace;
     font-size: 11px;
 }
 QPushButton#aiConfirmRun {
     min-height: 22px; padding: 4px 14px;
-    border: 1px solid #2e7d4f; border-radius: 8px;
-    background-color: #1f6b41; color: #eafff2; font-weight: 700; font-size: 11px;
+    border: none; border-radius: 8px;
+    background-color: #16a34a; color: #ffffff; font-weight: 700; font-size: 11px;
 }
-QPushButton#aiConfirmRun:hover { background-color: #258050; border: 1px solid #36a06a; }
+QPushButton#aiConfirmRun:hover { background-color: #15803d; }
+QPushButton#aiConfirmRun:disabled { background-color: #0f172a; color: #475569; }
 QPushButton#aiConfirmReject {
     min-height: 22px; padding: 4px 14px;
-    border: 1px solid #6a3636; border-radius: 8px;
-    background-color: #4a2424; color: #ffd9d9; font-weight: 700; font-size: 11px;
+    border: 1px solid #7f1d1d; border-radius: 8px;
+    background-color: #2a1414; color: #fca5a5; font-weight: 700; font-size: 11px;
 }
-QPushButton#aiConfirmReject:hover { background-color: #5e2c2c; border: 1px solid #8a4242; }
+QPushButton#aiConfirmReject:hover { background-color: #3a1a1a; }
+QPushButton#aiConfirmReject:disabled { background-color: #0f172a; color: #475569; border: 1px solid #1e293b; }
 QPushButton#aiConfirmAllow {
     min-height: 22px; padding: 4px 14px;
-    border: 1px solid #22376A; border-radius: 8px;
-    background-color: #13254b; color: #dce7ff; font-weight: 700; font-size: 11px;
+    border: 1px solid #1d2f52; border-radius: 8px;
+    background-color: #0e1b33; color: #3b82f6; font-weight: 700; font-size: 11px;
 }
-QPushButton#aiConfirmAllow:hover { background-color: #1C2D55; border: 1px solid #3A5A9F; }
+QPushButton#aiConfirmAllow:hover { background-color: #14264a; }
+QPushButton#aiConfirmAllow:disabled { background-color: #0f172a; color: #475569; border: 1px solid #1e293b; }
 """
 
 _RISK_LABEL_CN = {
@@ -233,6 +236,8 @@ class ActionConfirmCard(QFrame):
         self._allow_btn.setObjectName("aiConfirmAllow")
         self._allow_btn.setCursor(Qt.PointingHandCursor)
         self._allow_btn.clicked.connect(self.allow_clicked.emit)
+        # 仅 high 风险动作可写白名单；critical 不可白名单，故隐藏该按钮。
+        self._allow_btn.setVisible(risk_level == "high")
         bar.addWidget(self._allow_btn)
 
         bar.addStretch(1)

@@ -6,9 +6,11 @@
 from __future__ import annotations
 
 import os
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import (
     QEasingCurve,
+    QEventLoop,
     QObject,
     QPropertyAnimation,
     QRect,
@@ -42,6 +44,9 @@ from ui.ai.chat_view import ChatView
 from ui.resource_path import get_resource_base
 from ui.utils.icon_utils import tinted_svg_icon, tinted_svg_pixmap
 from log_config import get_logger
+
+if TYPE_CHECKING:
+    from core.ai.actions.dispatcher import ConfirmResult
 
 logger = get_logger(__name__)
 
@@ -709,19 +714,57 @@ class AIAssistPanel(QFrame):
     def _on_stream_finished(self, content: str) -> None:
         self._chat.end_stream_message(content)
 
-    def confirm_action(self, spec, arguments: dict, reason: str = "") -> bool:
-        """供 ActionDispatcher 注入的确认回调：弹 ActionConfirmDialog 二元确认。"""
-        from ui.ai.action_confirm_dialog import ActionConfirmDialog
+    def confirm_action(self, spec, arguments: dict, reason: str = "") -> "ConfirmResult":
+        """供 ActionDispatcher 注入的确认回调：在聊天内嵌入确认卡片。
 
-        dialog = ActionConfirmDialog(
+        指令 / shell 类需确认动作（high/critical）走此回调，故卡片仅在
+        真正需要确认时出现；其余动作不会插入卡片。回调对 dispatcher 保持
+        同步语义：用局部 QEventLoop 阻塞直到用户在卡片上做出选择。
+
+        返回 ConfirmResult：
+          - 运行        -> confirmed=True；
+          - 添加到白名单 -> confirmed=True + remember_resident=True（仅 high）；
+          - 拒绝        -> confirmed=False。
+        """
+        from core.ai.actions.dispatcher import ConfirmResult
+
+        description = spec.description or ""
+        if reason:
+            description = f"{description}\n{reason}".strip()
+
+        card = self._chat.add_action_confirm(
             action_name=spec.name,
-            description=spec.description,
+            description=description,
             risk_level=spec.risk_level,
             arguments=arguments,
-            reason=reason,
-            parent=self,
         )
-        return dialog.exec() == QDialog.Accepted
+
+        loop = QEventLoop(self)
+        result = ConfirmResult(confirmed=False)
+
+        def _finish(outcome: ConfirmResult, status_text: str) -> None:
+            result.confirmed = outcome.confirmed
+            result.remember_session = outcome.remember_session
+            result.remember_resident = outcome.remember_resident
+            card.finalize(status_text)
+            if loop.isRunning():
+                loop.quit()
+
+        card.run_clicked.connect(
+            lambda: _finish(ConfirmResult(confirmed=True), "✓ 已选择运行")
+        )
+        card.reject_clicked.connect(
+            lambda: _finish(ConfirmResult(confirmed=False), "⛔ 已拒绝执行")
+        )
+        card.allow_clicked.connect(
+            lambda: _finish(
+                ConfirmResult(confirmed=True, remember_resident=True),
+                "✓ 已添加到白名单并运行",
+            )
+        )
+
+        loop.exec()
+        return result
 
     def _on_action_result(self, outcome) -> None:
         if outcome is None:
