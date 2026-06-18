@@ -15,6 +15,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
+    QComboBox,
     QDialog,
     QFormLayout,
     QHBoxLayout,
@@ -37,10 +38,15 @@ logger = get_logger(__name__)
 _DIALOG_STYLE = """
 QDialog { background-color: #0e1525; }
 QLabel { color: #c8d4ee; font-size: 12px; background: transparent; }
-QLineEdit, QSpinBox {
+QLineEdit, QSpinBox, QComboBox {
     background-color: #11182c; color: #e6eeff;
     border: 1px solid #243152; border-radius: 6px; padding: 4px 8px;
     min-height: 22px;
+}
+QComboBox::drop-down { border: none; width: 18px; }
+QComboBox QAbstractItemView {
+    background-color: #11182c; color: #dce7ff;
+    border: 1px solid #243152; selection-background-color: #1C2D55;
 }
 QCheckBox { color: #c8d4ee; font-size: 12px; }
 QListWidget {
@@ -121,12 +127,27 @@ class AISettingsDialog(QDialog):
         self._api_key_edit.setPlaceholderText("sk-...（留空则用环境变量 KK_LAB_AI_API_KEY）")
         form.addRow("API Key", self._api_key_edit)
 
-        self._model_edit = QLineEdit(self._settings.default_model)
-        self._model_edit.setPlaceholderText("glm-5.1-fp8")
-        form.addRow("默认模型", self._model_edit)
+        self._mode_combo = QComboBox()
+        self._mode_combo.addItem("自动（按页面）", "auto")
+        self._mode_combo.addItem("固定模型", "fixed")
+        mode_idx = self._mode_combo.findData(self._settings.model_mode)
+        self._mode_combo.setCurrentIndex(mode_idx if mode_idx >= 0 else 1)
+        self._mode_combo.setToolTip(
+            "自动：按当前页面 Profile 选择模型；固定：所有页面统一使用下方默认模型"
+        )
+        form.addRow("模型模式", self._mode_combo)
+
+        self._model_combo = QComboBox()
+        self._model_combo.setEditable(True)
+        self._model_combo.addItems(self._settings.available_models)
+        self._model_combo.setCurrentText(self._settings.default_model)
+        self._model_combo.setToolTip("固定模式下统一使用的模型；可手动输入网关支持的模型名")
+        form.addRow("默认模型", self._model_combo)
+        self._mode_combo.currentIndexChanged.connect(self._on_mode_changed)
+        self._on_mode_changed()
 
         self._models_edit = QLineEdit(", ".join(self._settings.available_models))
-        self._models_edit.setPlaceholderText("glm-5.1-fp8, deepseekv4flash")
+        self._models_edit.setPlaceholderText("deepseekv4flash, glm-5.1-fp8")
         self._models_edit.setToolTip("可选模型清单（逗号分隔），用于面板手动切换")
         form.addRow("可选模型", self._models_edit)
 
@@ -291,13 +312,20 @@ class AISettingsDialog(QDialog):
         bar.addWidget(ok)
         return bar
 
+    def _on_mode_changed(self) -> None:
+        """固定模式才需要默认模型；自动模式下置灰默认模型选择。"""
+        self._model_combo.setEnabled(self._mode_combo.currentData() == "fixed")
+
     def _apply_to_settings(self) -> None:
         self._settings.enabled = self._enabled_chk.isChecked()
         self._settings.base_url = self._base_url_edit.text().strip()
         self._settings.api_key = self._api_key_edit.text().strip()
-        self._settings.default_model = self._model_edit.text().strip() or "glm-5.1-fp8"
+        self._settings.model_mode = self._mode_combo.currentData() or "fixed"
+        self._settings.default_model = (
+            self._model_combo.currentText().strip() or "deepseekv4flash"
+        )
         models = [m.strip() for m in self._models_edit.text().split(",") if m.strip()]
-        self._settings.available_models = models or ["glm-5.1-fp8", "deepseekv4flash"]
+        self._settings.available_models = models or ["deepseekv4flash", "glm-5.1-fp8"]
         self._settings.stream = self._stream_chk.isChecked()
         self._settings.timeout_seconds = int(self._timeout_spin.value())
         self._settings.max_recent_log_lines = int(self._log_lines_spin.value())

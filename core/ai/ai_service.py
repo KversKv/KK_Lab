@@ -290,11 +290,15 @@ class AIService(QObject):
         return ordered
 
     def current_model(self) -> str:
-        """当前生效模型：手动覆盖 > Profile > 设置默认。"""
-        if self._model_override:
-            return self._model_override
+        """当前生效模型：手动覆盖 > 固定默认模型 > Profile > 设置默认。
+
+        model_mode='fixed' 时固定使用设置里的默认模型（覆盖各页面 Profile）；
+        'auto' 时按页面 Profile 选择，Profile 未指定才回退设置默认。
+        """
         profile = get_profile(self._page_key)
-        return profile.get("model", self._settings.effective_model)
+        return self._resolve_model(
+            profile.get("model", self._settings.effective_model)
+        )
 
     def set_model_override(self, model: str | None) -> None:
         """手动切换模型（5.3）。传 None / 空串恢复按 Profile 自动选择。"""
@@ -303,7 +307,12 @@ class AIService(QObject):
         logger.debug("AI 模型手动覆盖: %s", self._model_override)
 
     def _resolve_model(self, profile_model: str) -> str:
-        return self._model_override or profile_model
+        """统一模型解析：手动覆盖 > 固定默认模型 > Profile 模型。"""
+        if self._model_override:
+            return self._model_override
+        if self._settings.model_mode == "fixed" and self._settings.effective_model:
+            return self._settings.effective_model
+        return profile_model
 
     def _make_client(self) -> NewAPIClient:
         return NewAPIClient(

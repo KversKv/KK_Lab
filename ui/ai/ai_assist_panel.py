@@ -454,13 +454,24 @@ class AIAssistPanel(QFrame):
         return bar
 
     def _populate_models(self) -> None:
+        settings = self._service.settings
+        fixed = settings.model_mode == "fixed"
+        target = settings.effective_model if fixed else ""
         self._model_combo.blockSignals(True)
         self._model_combo.clear()
         self._model_combo.addItem("自动（按页面）", "")
         for model in self._service.available_models():
             self._model_combo.addItem(model, model)
-        self._model_combo.setCurrentIndex(0)
+        if fixed and target:
+            idx = self._model_combo.findData(target)
+            if idx < 0:
+                self._model_combo.addItem(target, target)
+                idx = self._model_combo.count() - 1
+            self._model_combo.setCurrentIndex(idx)
+        else:
+            self._model_combo.setCurrentIndex(0)
         self._model_combo.blockSignals(False)
+        self._service.set_model_override(target or None)
 
     def _on_model_changed(self, _text: str) -> None:
         model = self._model_combo.currentData() or ""

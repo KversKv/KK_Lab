@@ -31,8 +31,9 @@ _DEFAULTS: dict[str, Any] = {
     "enabled": True,
     "base_url": "",
     "api_key": "",
-    "default_model": "glm-5.1-fp8",
-    "available_models": ["glm-5.1-fp8", "deepseekv4flash"],
+    "default_model": "deepseekv4flash",
+    "model_mode": "fixed",
+    "available_models": ["deepseekv4flash", "glm-5.1-fp8"],
     "stream": True,
     "timeout_seconds": 60,
     "max_recent_log_lines": 300,
@@ -54,9 +55,10 @@ class AISettings:
     enabled: bool = True
     base_url: str = ""
     api_key: str = ""
-    default_model: str = "glm-5.1-fp8"
+    default_model: str = "deepseekv4flash"
+    model_mode: str = "fixed"
     available_models: list[str] = field(
-        default_factory=lambda: ["glm-5.1-fp8", "deepseekv4flash"]
+        default_factory=lambda: ["deepseekv4flash", "glm-5.1-fp8"]
     )
     stream: bool = True
     timeout_seconds: int = 60
@@ -112,6 +114,8 @@ class AISettings:
             data["available_models"] = list(_DEFAULTS["available_models"])
         else:
             data["available_models"] = [str(m) for m in models if str(m).strip()]
+        if str(data.get("model_mode")) not in ("auto", "fixed"):
+            data["model_mode"] = _DEFAULTS["model_mode"]
         return cls(**data)
 
     def save(self) -> bool:
@@ -123,6 +127,7 @@ class AISettings:
                 "base_url": self.base_url,
                 "api_key": self.api_key,
                 "default_model": self.default_model,
+                "model_mode": self.model_mode,
                 "available_models": list(self.available_models),
                 "stream": self.stream,
                 "timeout_seconds": self.timeout_seconds,
