@@ -198,6 +198,11 @@ class AIService(QObject):
         self._dispatcher = dispatcher
 
     @property
+    def dispatcher(self):
+        """已注入的 ActionDispatcher（未注入时为 None）。"""
+        return self._dispatcher
+
+    @property
     def rx_cache(self) -> SerialRxCache:
         return self._rx_cache
 

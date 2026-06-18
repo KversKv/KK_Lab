@@ -1,20 +1,32 @@
-"""AISettingsDialog：AI 设置入口 + 「测试连接」。
+"""AISettingsDialog：AI 设置入口（标签页）+ 「测试连接」+ 白名单管理。
+
+标签页：
+  - 常规：连接 / 模型 / 流式 / 超时 / 日志 / 脱敏等基础配置（落盘 AISettings.save）；
+  - 白名单：管理常驻白名单（auto_approve）与黑名单（blocked），落盘 policy.json。
 
 遵守约定：parent=self；OK/Cancel/Test 按钮 default/autoDefault 显式二元化；
 API Key 输入框用 EchoMode.Password，落盘走 AISettings.save（不展示 env 注入值）。
 """
 from __future__ import annotations
 
+import json
+
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QCheckBox,
     QDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QPushButton,
     QSpinBox,
+    QTabWidget,
     QVBoxLayout,
+    QWidget,
 )
 
 from core.ai.ai_service import AIService
@@ -31,6 +43,22 @@ QLineEdit, QSpinBox {
     min-height: 22px;
 }
 QCheckBox { color: #c8d4ee; font-size: 12px; }
+QListWidget {
+    background-color: #11182c; color: #dce7ff;
+    border: 1px solid #243152; border-radius: 6px;
+    font-size: 11px;
+}
+QListWidget::item { padding: 4px 6px; }
+QListWidget::item:selected { background-color: #1C2D55; }
+QTabWidget::pane { border: 1px solid #243152; border-radius: 8px; top: -1px; }
+QTabBar::tab {
+    background-color: #11182c; color: #9fb2d8;
+    border: 1px solid #243152; border-bottom: none;
+    padding: 5px 16px; margin-right: 2px;
+    border-top-left-radius: 8px; border-top-right-radius: 8px;
+    font-size: 12px;
+}
+QTabBar::tab:selected { background-color: #1C2D55; color: #eaf1ff; }
 QPushButton {
     min-height: 22px; padding: 4px 16px;
     border: 1px solid #22376A; border-radius: 8px;
@@ -39,6 +67,7 @@ QPushButton {
 QPushButton:hover { background-color: #1C2D55; border: 1px solid #3A5A9F; }
 QPushButton#aiOkBtn { background-color: #5b3df5; border: 1px solid #6548ff; color: #ffffff; }
 QLabel#aiTestResult { font-size: 11px; }
+QLabel#aiHint { color: #8fa0c4; font-size: 11px; }
 """
 
 
@@ -47,13 +76,34 @@ class AISettingsDialog(QDialog):
         super().__init__(parent)
         self._service = service
         self._settings = service.settings
+        self._policy = service.dispatcher.policy if service.dispatcher else None
         self.setWindowTitle("AI 设置")
-        self.setMinimumWidth(440)
+        self.setMinimumWidth(460)
         self.setStyleSheet(_DIALOG_STYLE)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 16, 16, 16)
         root.setSpacing(12)
+
+        tabs = QTabWidget()
+        tabs.addTab(self._build_general_tab(), "常规")
+        tabs.addTab(self._build_whitelist_tab(), "白名单")
+        root.addWidget(tabs)
+
+        self._test_result = QLabel("")
+        self._test_result.setObjectName("aiTestResult")
+        self._test_result.setWordWrap(True)
+        root.addWidget(self._test_result)
+
+        root.addLayout(self._build_button_bar())
+
+        self._service.connection_tested.connect(self._on_connection_tested)
+
+    def _build_general_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(12)
 
         form = QFormLayout()
         form.setSpacing(8)
@@ -98,16 +148,123 @@ class AISettingsDialog(QDialog):
         self._masking_chk.setChecked(self._settings.enable_log_masking)
         form.addRow("", self._masking_chk)
 
-        root.addLayout(form)
+        layout.addLayout(form)
+        layout.addStretch(1)
+        return tab
 
-        self._test_result = QLabel("")
-        self._test_result.setObjectName("aiTestResult")
-        self._test_result.setWordWrap(True)
-        root.addWidget(self._test_result)
+    def _build_whitelist_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
 
-        root.addLayout(self._build_button_bar())
+        if self._policy is None:
+            hint = QLabel("动作系统未就绪，白名单不可用。")
+            hint.setObjectName("aiHint")
+            layout.addWidget(hint)
+            layout.addStretch(1)
+            self._approve_list = None
+            self._blocked_list = None
+            return tab
 
-        self._service.connection_tested.connect(self._on_connection_tested)
+        approve_hint = QLabel("常驻白名单（命中且护栏通过则免确认，重启仍生效）")
+        approve_hint.setObjectName("aiHint")
+        layout.addWidget(approve_hint)
+
+        self._approve_list = QListWidget()
+        self._approve_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        layout.addWidget(self._approve_list, 1)
+
+        approve_bar = QHBoxLayout()
+        approve_bar.addStretch(1)
+        remove_approve = QPushButton("移除所选")
+        remove_approve.setAutoDefault(False)
+        remove_approve.setDefault(False)
+        remove_approve.clicked.connect(self._on_remove_approve)
+        approve_bar.addWidget(remove_approve)
+        layout.addLayout(approve_bar)
+
+        blocked_hint = QLabel("黑名单（永远拒绝执行，优先级最高）")
+        blocked_hint.setObjectName("aiHint")
+        layout.addWidget(blocked_hint)
+
+        self._blocked_list = QListWidget()
+        self._blocked_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._blocked_list.setMaximumHeight(120)
+        layout.addWidget(self._blocked_list)
+
+        blocked_bar = QHBoxLayout()
+        self._blocked_edit = QLineEdit()
+        self._blocked_edit.setPlaceholderText("动作名，如 set_instrument_output")
+        blocked_bar.addWidget(self._blocked_edit, 1)
+        add_blocked = QPushButton("加入黑名单")
+        add_blocked.setAutoDefault(False)
+        add_blocked.setDefault(False)
+        add_blocked.clicked.connect(self._on_add_blocked)
+        blocked_bar.addWidget(add_blocked)
+        remove_blocked = QPushButton("移除所选")
+        remove_blocked.setAutoDefault(False)
+        remove_blocked.setDefault(False)
+        remove_blocked.clicked.connect(self._on_remove_blocked)
+        blocked_bar.addWidget(remove_blocked)
+        layout.addLayout(blocked_bar)
+
+        self._reload_policy_lists()
+        return tab
+
+    def _reload_policy_lists(self) -> None:
+        if self._policy is None:
+            return
+        self._approve_list.clear()
+        for entry in self._policy.auto_approve:
+            action = entry.get("action", "")
+            when = entry.get("when") or {}
+            text = action if not when else f"{action}  ·  {json.dumps(when, ensure_ascii=False)}"
+            item = QListWidgetItem(text)
+            item.setData(Qt.UserRole, entry)
+            self._approve_list.addItem(item)
+        self._blocked_list.clear()
+        for name in self._policy.blocked:
+            self._blocked_list.addItem(QListWidgetItem(str(name)))
+
+    def _on_remove_approve(self) -> None:
+        if self._policy is None:
+            return
+        row = self._approve_list.currentRow()
+        if row < 0:
+            return
+        item = self._approve_list.item(row)
+        entry = item.data(Qt.UserRole)
+        try:
+            self._policy.auto_approve.remove(entry)
+        except ValueError:
+            logger.warning("白名单条目已不存在: %s", entry)
+        self._policy.save()
+        self._reload_policy_lists()
+
+    def _on_add_blocked(self) -> None:
+        if self._policy is None:
+            return
+        name = self._blocked_edit.text().strip()
+        if not name:
+            return
+        if name not in self._policy.blocked:
+            self._policy.blocked.append(name)
+            self._policy.save()
+        self._blocked_edit.clear()
+        self._reload_policy_lists()
+
+    def _on_remove_blocked(self) -> None:
+        if self._policy is None:
+            return
+        item = self._blocked_list.currentItem()
+        if item is None:
+            return
+        name = item.text()
+        if name in self._policy.blocked:
+            self._policy.blocked.remove(name)
+            self._policy.save()
+        self._reload_policy_lists()
 
     def _build_button_bar(self) -> QHBoxLayout:
         bar = QHBoxLayout()

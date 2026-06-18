@@ -9,7 +9,7 @@ from __future__ import annotations
 import html as _html_mod
 import re
 
-from PySide6.QtCore import QTimer, QUrl, Qt
+from PySide6.QtCore import QTimer, QUrl, Qt, Signal
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
     QFrame,
@@ -31,22 +31,24 @@ logger = get_logger(__name__)
 
 _BUBBLE_STYLE_USER = """
 QLabel#aiBubbleUser {
-    background-color: #1d3a6e;
-    color: #eaf1ff;
-    border: 1px solid #2a4d8f;
-    border-radius: 10px;
-    padding: 8px 10px;
+    background-color: #18397a;
+    color: #eff6ff;
+    border: none;
+    border-radius: 16px;
+    border-bottom-right-radius: 2px;
+    padding: 12px 16px;
     font-size: 12px;
 }
 """
 
 _BUBBLE_STYLE_AI = """
 QTextBrowser#aiBubbleAI {
-    background-color: #141b2c;
-    color: #d7e3ff;
-    border: 1px solid #243152;
-    border-radius: 10px;
-    padding: 6px 10px;
+    background-color: #121629;
+    color: #cbd5e1;
+    border: 1px solid #1e293b;
+    border-radius: 16px;
+    border-bottom-left-radius: 2px;
+    padding: 12px 16px;
     font-size: 12px;
 }
 """
@@ -54,7 +56,7 @@ QTextBrowser#aiBubbleAI {
 _BUBBLE_STYLE_SYS = """
 QLabel#aiBubbleSys {
     background-color: transparent;
-    color: #8fa3c2;
+    color: #64748b;
     font-size: 11px;
     padding: 2px 4px;
 }
@@ -62,35 +64,37 @@ QLabel#aiBubbleSys {
 
 _CODE_FRAME_STYLE = """
 QFrame#aiCodeFrame {
-    background-color: #0d1322;
-    border: 1px solid #243152;
-    border-radius: 8px;
+    background-color: #070709;
+    border: 1px solid #1e293b;
+    border-radius: 12px;
 }
 QPlainTextEdit#aiCodeText {
     background-color: transparent;
-    color: #cfe1ff;
+    color: #cbd5e1;
     border: none;
     font-family: Consolas, "Courier New", monospace;
     font-size: 12px;
 }
 QLabel#aiCodeLang {
-    color: #7e93b8;
+    color: #64748b;
     font-size: 10px;
+    font-weight: 700;
     background: transparent;
     padding: 2px 6px;
 }
 QPushButton#aiCopyBtn {
     min-height: 20px;
     padding: 1px 10px;
-    border: 1px solid #22376A;
+    border: 1px solid #1e293b;
     border-radius: 6px;
-    background-color: #13254b;
-    color: #cfe1ff;
+    background-color: #1e293b;
+    color: #cbd5e1;
     font-size: 10px;
+    font-weight: 600;
 }
 QPushButton#aiCopyBtn:hover {
-    background-color: #1C2D55;
-    border: 1px solid #3A5A9F;
+    background-color: #334155;
+    border: 1px solid #475569;
 }
 """
 
@@ -101,6 +105,155 @@ _SEVERITY_COLORS = {
     "high": "#ef8f4b",
     "critical": "#ef5a5a",
 }
+
+_CONFIRM_FRAME_STYLE = """
+QFrame#aiConfirmFrame {
+    background-color: #161b2e;
+    border: 1px solid #2a3552;
+    border-radius: 12px;
+}
+QLabel#aiConfirmTitle {
+    color: #ffb27a;
+    font-size: 12px;
+    font-weight: 700;
+    background: transparent;
+}
+QLabel#aiConfirmDesc {
+    color: #cbd5e1;
+    font-size: 11px;
+    background: transparent;
+}
+QPlainTextEdit#aiConfirmArgs {
+    background-color: #0e1424;
+    color: #e6eeff;
+    border: 1px solid #243152;
+    border-radius: 8px;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 11px;
+}
+QPushButton#aiConfirmRun {
+    min-height: 22px; padding: 4px 14px;
+    border: 1px solid #2e7d4f; border-radius: 8px;
+    background-color: #1f6b41; color: #eafff2; font-weight: 700; font-size: 11px;
+}
+QPushButton#aiConfirmRun:hover { background-color: #258050; border: 1px solid #36a06a; }
+QPushButton#aiConfirmReject {
+    min-height: 22px; padding: 4px 14px;
+    border: 1px solid #6a3636; border-radius: 8px;
+    background-color: #4a2424; color: #ffd9d9; font-weight: 700; font-size: 11px;
+}
+QPushButton#aiConfirmReject:hover { background-color: #5e2c2c; border: 1px solid #8a4242; }
+QPushButton#aiConfirmAllow {
+    min-height: 22px; padding: 4px 14px;
+    border: 1px solid #22376A; border-radius: 8px;
+    background-color: #13254b; color: #dce7ff; font-weight: 700; font-size: 11px;
+}
+QPushButton#aiConfirmAllow:hover { background-color: #1C2D55; border: 1px solid #3A5A9F; }
+"""
+
+_RISK_LABEL_CN = {
+    "low": "低风险",
+    "medium": "中风险",
+    "high": "高风险",
+    "critical": "危险",
+}
+
+
+class ActionConfirmCard(QFrame):
+    """聊天内联动作确认卡片：运行 / 拒绝 / 添加到白名单。
+
+    仅用于需要确认的动作（high/critical）。三个按钮通过信号回报用户选择：
+      - run_clicked     : 直接运行（不写白名单）；
+      - reject_clicked  : 拒绝执行；
+      - allow_clicked   : 添加到白名单（由面板弹会话/永久二选一）。
+    回报后卡片自动禁用所有按钮并显示最终状态文案，避免重复点击。
+    """
+
+    run_clicked = Signal()
+    reject_clicked = Signal()
+    allow_clicked = Signal()
+
+    def __init__(self, action_name: str, description: str, risk_level: str,
+                 arguments: dict, parent=None):
+        super().__init__(parent)
+        self.setObjectName("aiConfirmFrame")
+        self.setStyleSheet(_CONFIRM_FRAME_STYLE)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(8)
+
+        risk_cn = _RISK_LABEL_CN.get(risk_level, risk_level)
+        title = QLabel(f"待确认动作 · {risk_cn} · {action_name}")
+        title.setObjectName("aiConfirmTitle")
+        title.setWordWrap(True)
+        layout.addWidget(title)
+
+        if description:
+            desc = QLabel(description)
+            desc.setObjectName("aiConfirmDesc")
+            desc.setWordWrap(True)
+            layout.addWidget(desc)
+
+        if arguments:
+            args_view = QPlainTextEdit()
+            args_view.setObjectName("aiConfirmArgs")
+            args_view.setReadOnly(True)
+            try:
+                import json as _json
+
+                args_text = _json.dumps(arguments, ensure_ascii=False, indent=2)
+            except (TypeError, ValueError):
+                args_text = str(arguments)
+            args_view.setPlainText(args_text)
+            lines = args_text.count("\n") + 1
+            args_view.setFixedHeight(min(140, 18 * lines + 14))
+            layout.addWidget(args_view)
+
+        self._status = QLabel("")
+        self._status.setObjectName("aiConfirmDesc")
+        self._status.setWordWrap(True)
+        self._status.setVisible(False)
+        layout.addWidget(self._status)
+
+        bar = QHBoxLayout()
+        bar.setSpacing(8)
+        self._run_btn = QPushButton("运行")
+        self._run_btn.setObjectName("aiConfirmRun")
+        self._run_btn.setCursor(Qt.PointingHandCursor)
+        self._run_btn.clicked.connect(self._on_run)
+        bar.addWidget(self._run_btn)
+
+        self._reject_btn = QPushButton("拒绝")
+        self._reject_btn.setObjectName("aiConfirmReject")
+        self._reject_btn.setCursor(Qt.PointingHandCursor)
+        self._reject_btn.clicked.connect(self._on_reject)
+        bar.addWidget(self._reject_btn)
+
+        self._allow_btn = QPushButton("添加到白名单")
+        self._allow_btn.setObjectName("aiConfirmAllow")
+        self._allow_btn.setCursor(Qt.PointingHandCursor)
+        self._allow_btn.clicked.connect(self.allow_clicked.emit)
+        bar.addWidget(self._allow_btn)
+
+        bar.addStretch(1)
+        layout.addLayout(bar)
+
+    def _on_run(self) -> None:
+        self.run_clicked.emit()
+
+    def _on_reject(self) -> None:
+        self.reject_clicked.emit()
+
+    def set_buttons_enabled(self, enabled: bool) -> None:
+        self._run_btn.setEnabled(enabled)
+        self._reject_btn.setEnabled(enabled)
+        self._allow_btn.setEnabled(enabled)
+
+    def finalize(self, status_text: str) -> None:
+        """收尾：禁用按钮并显示最终状态文案。"""
+        self.set_buttons_enabled(False)
+        self._status.setText(status_text)
+        self._status.setVisible(True)
 
 _FENCE_RE = re.compile(r"```([^\n`]*)\n(.*?)```", re.DOTALL)
 
@@ -249,19 +402,29 @@ class _MarkdownBubble(QWidget):
                 self._fit_height(widget)
 
 
+_CHAT_VIEW_RESET_STYLE = """
+QScrollArea { background: transparent; border: none; }
+QFrame { border: none; background: transparent; }
+QLabel { border: none; background: transparent; }
+QTextBrowser { border: none; }
+QPlainTextEdit { border: none; }
+QPushButton { border: none; }
+"""
+
+
 class ChatView(QScrollArea):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWidgetResizable(True)
         self.setFrameShape(QFrame.NoFrame)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.setStyleSheet(SCROLLBAR_STYLE + "QScrollArea { background: transparent; border: none; }")
+        self.setStyleSheet(SCROLLBAR_STYLE + _CHAT_VIEW_RESET_STYLE)
 
         self._container = QWidget()
         self._container.setStyleSheet("background: transparent;")
         self._layout = QVBoxLayout(self._container)
-        self._layout.setContentsMargins(8, 8, 8, 8)
-        self._layout.setSpacing(8)
+        self._layout.setContentsMargins(16, 16, 16, 16)
+        self._layout.setSpacing(20)
         self._layout.addStretch(1)
         self.setWidget(self._container)
 
@@ -270,10 +433,10 @@ class ChatView(QScrollArea):
         self._user_bubbles: list[QLabel] = []
 
     def _available_width(self) -> int:
-        return max(120, self.viewport().width() - 16)
+        return max(120, self.viewport().width() - 32)
 
     def _fit_user_bubble(self, label: QLabel) -> None:
-        label.setMaximumWidth(int(self._available_width() * 0.78))
+        label.setMaximumWidth(int(self._available_width() * 0.88))
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -298,9 +461,14 @@ class ChatView(QScrollArea):
         label.setObjectName(object_name)
         label.setWordWrap(True)
         label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         label.setStyleSheet(style)
-        self._insert_row(label, align)
+        if align == Qt.AlignHCenter:
+            label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+            label.setAlignment(Qt.AlignHCenter)
+            self._insert_row(label)
+        else:
+            label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+            self._insert_row(label, align)
         return label
 
     def _append_html_bubble(self, html: str) -> QTextBrowser:
@@ -419,9 +587,24 @@ class ChatView(QScrollArea):
         button.clicked.connect(callback)
         layout.addWidget(button, 0, Qt.AlignLeft)
 
-        self._insert_row(container, Qt.AlignHCenter)
+        container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self._insert_row(container)
         return button
 
+    def add_action_confirm(
+        self, action_name: str, description: str, risk_level: str, arguments: dict
+    ) -> ActionConfirmCard:
+        """插入内联动作确认卡片（运行/拒绝/添加到白名单），返回卡片供面板接线。"""
+        card = ActionConfirmCard(action_name, description, risk_level, arguments)
+        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        self._insert_row(card)
+        return card
+
     def _scroll_to_bottom(self) -> None:
+        bar = self.verticalScrollBar()
+        bar.setValue(bar.maximum())
+        QTimer.singleShot(0, self._scroll_to_bottom_deferred)
+
+    def _scroll_to_bottom_deferred(self) -> None:
         bar = self.verticalScrollBar()
         bar.setValue(bar.maximum())
