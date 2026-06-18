@@ -473,7 +473,11 @@ class AIService(QObject):
         self._record_usage(result)
 
         if mode == _MODE_AGENT:
-            self._handle_agent_round(content, tool_calls)
+            try:
+                self._handle_agent_round(content, tool_calls)
+            except Exception:
+                logger.error("处理 agent 轮次失败", exc_info=True)
+                self._abort_agent(content, "处理结果失败，已停止本次操作。")
             return
 
         self._pending_mode = _MODE_CHAT
@@ -569,20 +573,52 @@ class AIService(QObject):
         )
         QTimer.singleShot(0, lambda: self._run_tool_calls(content, list(tool_calls)))
 
+    def _abort_agent(self, content: str, reason: str) -> None:
+        """Agent 循环异常/中断时的兜底收尾：落盘已产生历史、复位 busy、报错。
+
+        无论 tool 执行、确认回调（嵌套事件循环）还是回灌请求出现任何异常，
+        都必须经此路径恢复，杜绝"转圈卡死且重启无历史"。
+        """
+        self._pending_mode = _MODE_CHAT
+        try:
+            self._teardown_thread()
+        except Exception:
+            logger.error("Agent 中断收尾时清理线程失败", exc_info=True)
+        fallback = (content or "").strip() or "处理过程中出现异常，已停止本次操作。"
+        if not self._history or self._history[-1].get("content") != fallback:
+            self._history.append({"role": "assistant", "content": fallback})
+        _save_persisted_history(self._history)
+        self.error_occurred.emit(reason)
+        self.response_ready.emit(fallback)
+        self._set_busy(False)
+
     def _run_tool_calls(self, content: str, tool_calls: list) -> None:
         """延后执行的 tool_calls 处理（已脱离 worker.finished 槽栈）。"""
         if self._pending_mode != _MODE_AGENT:
             self._set_busy(False)
             return
 
-        self._teardown_thread()
+        try:
+            self._teardown_thread()
 
-        for call in tool_calls:
-            self._execute_tool_call(call)
+            for call in tool_calls:
+                self._execute_tool_call(call)
+        except Exception:
+            logger.error("执行 agent 工具调用失败", exc_info=True)
+            self._abort_agent(content, "执行工具调用失败，已停止本次操作。")
+            return
 
         self._agent_rounds += 1
         if self._agent_rounds >= _MAX_TOOL_ROUNDS:
             self._pending_mode = _MODE_CHAT
+            self._history.append(
+                {
+                    "role": "assistant",
+                    "content": content
+                    or "已达到工具调用上限，已停止继续执行动作。",
+                }
+            )
+            _save_persisted_history(self._history)
             self.response_ready.emit(
                 content or "已达到工具调用上限，已停止继续执行动作。"
             )
@@ -628,21 +664,29 @@ class AIService(QObject):
         if self._pending_mode != _MODE_AGENT:
             self._set_busy(False)
             return
-        self._teardown_thread()
-        self._run_next_agent_round()
+        try:
+            self._teardown_thread()
+            self._run_next_agent_round()
+        except Exception:
+            logger.error("Agent 强制重试失败", exc_info=True)
+            self._abort_agent("", "重试失败，已停止本次操作。")
 
     def _run_next_agent_round(self) -> None:
         if self._pending_mode != _MODE_AGENT:
             self._set_busy(False)
             return
-        tools = self._registry.to_tools() if self._registry else None
-        self._start_worker(
-            messages=self._agent_messages,
-            model=self._agent_model,
-            temperature=self._agent_temperature,
-            max_tokens=self._agent_max_tokens,
-            tools=tools,
-        )
+        try:
+            tools = self._registry.to_tools() if self._registry else None
+            self._start_worker(
+                messages=self._agent_messages,
+                model=self._agent_model,
+                temperature=self._agent_temperature,
+                max_tokens=self._agent_max_tokens,
+                tools=tools,
+            )
+        except Exception:
+            logger.error("启动下一轮 agent 失败", exc_info=True)
+            self._abort_agent("", "无法继续执行，已停止本次操作。")
 
     def _teardown_thread(self) -> None:
         """启动新 worker 前，确保上一个 QThread 已彻底退出并断连。

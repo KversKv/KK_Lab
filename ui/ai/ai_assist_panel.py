@@ -386,6 +386,7 @@ class AIAssistPanel(QFrame):
         self._digest_thread = None
         self._digest_worker = None
         self._pending_waveform_text = ""
+        self._pending_waveform_via_button = False
         self._transcript: list[dict] = []
         self._session_started_at = datetime.now()
         self.setObjectName("aiAssistPanel")
@@ -662,12 +663,21 @@ class AIAssistPanel(QFrame):
         if self._waveform_provider_cb is None:
             self._chat.add_system_message("当前页面无可发送的波形数据。")
             return
+        text = self._input.toPlainText().strip() or "请分析以下波形数据的特征、异常与可能原因。"
+        self._input.clear()
+        self._start_digest_send(text, via_button=True)
+
+    def _start_digest_send(self, text: str, *, via_button: bool) -> None:
+        """统一的波形分析发送入口：后台构建摘要后注入上下文再发送。
+
+        via_button=True 走"发送波形"按钮（用户气泡加 [发送波形] 前缀）；
+        via_button=False 走普通文字提问（datalog 页自动带摘要，用户气泡显示原文）。
+        """
         if self._digest_thread is not None:
             self._chat.add_system_message("正在构建波形摘要，请稍候。")
             return
-        text = self._input.toPlainText().strip() or "请分析以下波形数据的特征、异常与可能原因。"
-        self._input.clear()
         self._pending_waveform_text = text
+        self._pending_waveform_via_button = via_button
         self._waveform_btn.setEnabled(False)
         self._chat.add_system_message("正在后台构建波形摘要…")
 
@@ -683,16 +693,37 @@ class AIAssistPanel(QFrame):
         self._digest_thread.start()
 
     def _on_digest_ready(self, digest) -> None:
-        if digest is None or not getattr(digest, "stats", None):
-            self._chat.add_system_message("当前没有可分析的波形数据。")
-            return
         text = self._pending_waveform_text or "请分析以下波形数据的特征、异常与可能原因。"
-        self._record("user", text=f"[发送波形] {text}")
-        self._chat.add_user_message(f"[发送波形] {text}")
+        via_button = self._pending_waveform_via_button
+        if digest is None or not getattr(digest, "stats", None):
+            if via_button:
+                self._chat.add_system_message("当前没有可分析的波形数据。")
+                return
+            self._chat.add_system_message(
+                "当前没有可分析的波形数据，将按普通对话处理。"
+            )
+            self._record("user", text=text)
+            self._chat.add_user_message(text)
+            self._service.send(text)
+            return
+        if via_button:
+            self._record("user", text=f"[发送波形] {text}")
+            self._chat.add_user_message(f"[发送波形] {text}")
+        else:
+            self._record("user", text=text)
+            self._chat.add_user_message(text)
         self._service.send_with_waveform(text, digest)
 
     def _on_digest_failed(self) -> None:
-        self._chat.add_system_message("获取波形数据失败，请查看日志。")
+        text = self._pending_waveform_text
+        via_button = self._pending_waveform_via_button
+        if via_button or not text:
+            self._chat.add_system_message("获取波形数据失败，请查看日志。")
+            return
+        self._chat.add_system_message("获取波形数据失败，将按普通对话处理。")
+        self._record("user", text=text)
+        self._chat.add_user_message(text)
+        self._service.send(text)
 
     def _cleanup_digest_thread(self) -> None:
         if self._digest_worker is not None:
@@ -702,6 +733,7 @@ class AIAssistPanel(QFrame):
             self._digest_thread.deleteLater()
             self._digest_thread = None
         self._pending_waveform_text = ""
+        self._pending_waveform_via_button = False
         self._waveform_btn.setEnabled(True)
 
     def _on_usage_updated(self, turn, session) -> None:
@@ -1101,9 +1133,12 @@ class AIAssistPanel(QFrame):
         text = self._input.toPlainText().strip()
         if not text:
             return
+        self._input.clear()
+        if self._waveform_provider_cb is not None:
+            self._start_digest_send(text, via_button=False)
+            return
         self._record("user", text=text)
         self._chat.add_user_message(text)
-        self._input.clear()
         self._service.send(text)
 
     def _on_analyze_clicked(self) -> None:
