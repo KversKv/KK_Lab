@@ -9,10 +9,11 @@ from __future__ import annotations
 import html as _html_mod
 import re
 
-from PySide6.QtCore import QUrl, Qt
+from PySide6.QtCore import QTimer, QUrl, Qt
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
     QFrame,
+    QHBoxLayout,
     QLabel,
     QPlainTextEdit,
     QPushButton,
@@ -201,8 +202,6 @@ class _MarkdownBubble(QWidget):
 
         header = QWidget()
         header.setStyleSheet("background: transparent;")
-        from PySide6.QtWidgets import QHBoxLayout
-
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(0, 0, 0, 0)
         lang_label = QLabel(lang or "code")
@@ -268,13 +267,29 @@ class ChatView(QScrollArea):
 
         self._stream_bubble: _MarkdownBubble | None = None
         self._stream_text = ""
+        self._user_bubbles: list[QLabel] = []
 
-    def _insert_row(self, widget: QWidget, align) -> None:
+    def _available_width(self) -> int:
+        return max(120, self.viewport().width() - 16)
+
+    def _fit_user_bubble(self, label: QLabel) -> None:
+        label.setMaximumWidth(int(self._available_width() * 0.78))
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        for label in self._user_bubbles:
+            if label is not None:
+                self._fit_user_bubble(label)
+
+    def _insert_row(self, widget: QWidget, align=None) -> None:
         row = QWidget()
         row.setStyleSheet("background: transparent;")
         row_layout = QVBoxLayout(row)
         row_layout.setContentsMargins(0, 0, 0, 0)
-        row_layout.addWidget(widget, 0, align)
+        if align is None:
+            row_layout.addWidget(widget)
+        else:
+            row_layout.addWidget(widget, 0, align)
         self._layout.insertWidget(self._layout.count() - 1, row)
         self._scroll_to_bottom()
 
@@ -296,22 +311,40 @@ class ChatView(QScrollArea):
         view.setFrameShape(QFrame.NoFrame)
         view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         view.setHtml(html)
         doc = view.document()
         doc.setTextWidth(view.viewport().width())
         view.setMinimumHeight(int(doc.size().height()) + 12)
-        self._insert_row(view, Qt.AlignLeft)
+        self._insert_row(view)
         return view
 
     def _append_markdown_bubble(self, text: str) -> _MarkdownBubble:
         bubble = _MarkdownBubble()
-        bubble.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        bubble.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         bubble.set_markdown(text)
-        self._insert_row(bubble, Qt.AlignLeft)
+        self._insert_row(bubble)
         return bubble
 
     def add_user_message(self, text: str) -> None:
-        self._append_bubble(text, "aiBubbleUser", _BUBBLE_STYLE_USER, Qt.AlignRight)
+        label = QLabel(text)
+        label.setObjectName("aiBubbleUser")
+        label.setWordWrap(True)
+        label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+        label.setStyleSheet(_BUBBLE_STYLE_USER)
+
+        row = QWidget()
+        row.setStyleSheet("background: transparent;")
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.addStretch(1)
+        row_layout.addWidget(label, 0, Qt.AlignTop)
+        self._user_bubbles.append(label)
+        self._fit_user_bubble(label)
+        self._layout.insertWidget(self._layout.count() - 1, row)
+        QTimer.singleShot(0, lambda lb=label: self._fit_user_bubble(lb))
+        self._scroll_to_bottom()
 
     def add_ai_message(self, text: str) -> _MarkdownBubble:
         return self._append_markdown_bubble(text or "（无内容）")

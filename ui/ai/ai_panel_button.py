@@ -44,7 +44,7 @@ class AIPanelButton(QPushButton):
         self.setCheckable(True)
         self.setCursor(QCursor(Qt.PointingHandCursor))
         self.setFocusPolicy(Qt.NoFocus)
-        self.setToolTip("打开 / 关闭 AI 助手面板")
+        self.setToolTip("Open / close AI Assistant panel")
         self.setStyleSheet(_STYLE)
         if os.path.isfile(_PANEL_ICON):
             self.setIcon(tinted_svg_icon(_PANEL_ICON, "#c6d4f2", 16))
