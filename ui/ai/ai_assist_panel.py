@@ -7,12 +7,22 @@ from __future__ import annotations
 
 import os
 
-from PySide6.QtCore import QObject, QSize, Qt, QThread, Signal
-from PySide6.QtGui import QCursor, QKeyEvent
+from PySide6.QtCore import (
+    QEasingCurve,
+    QObject,
+    QPropertyAnimation,
+    QRect,
+    QSize,
+    Qt,
+    QThread,
+    Signal,
+)
+from PySide6.QtGui import QColor, QCursor, QKeyEvent
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QFrame,
+    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QPlainTextEdit,
@@ -30,110 +40,206 @@ from core.ai.response_parser import ParsedResponse
 from core.ai.schemas import CONFIG_DRAFT, SCRIPT_DRAFT
 from ui.ai.chat_view import ChatView
 from ui.resource_path import get_resource_base
-from ui.utils.icon_utils import tinted_svg_icon
+from ui.utils.icon_utils import tinted_svg_icon, tinted_svg_pixmap
 from log_config import get_logger
 
 logger = get_logger(__name__)
 
 _AI_SVG_DIR = os.path.join(get_resource_base(), "resources", "icons_svg", "ai")
 _SEND_ICON = os.path.join(_AI_SVG_DIR, "send.svg")
+_PANEL_ICON = os.path.join(_AI_SVG_DIR, "ai_panel.svg")
+_SPARKLES_ICON = os.path.join(_AI_SVG_DIR, "sparkles.svg")
 
 _PANEL_STYLE = """
 QFrame#aiAssistPanel {
-    background-color: #0b1020;
-    border-left: 1px solid #1a2440;
+    background-color: #070709;
+    border-left: 1px solid #1e293b;
+}
+QFrame#aiHeaderBar {
+    background-color: #020617;
+    border-bottom: 1px solid #1e293b;
+}
+QFrame#aiBottomBar {
+    background-color: #070709;
+    border-top: 1px solid #1e293b;
 }
 QLabel#aiPanelTitle {
-    color: #d7e3ff;
-    font-size: 13px;
+    color: #e2e8f0;
+    font-size: 14px;
     font-weight: 700;
+    letter-spacing: 0.4px;
     background: transparent;
+    border: none;
 }
-QPlainTextEdit#aiInput {
-    background-color: #11182c;
-    color: #e6eeff;
-    border: 1px solid #243152;
-    border-radius: 8px;
-    padding: 6px 8px;
-    font-size: 12px;
+QLabel#aiPanelTitleIcon {
+    background: transparent;
+    border: none;
 }
-QPushButton#aiSendBtn, QPushButton#aiAnalyzeBtn, QPushButton#aiSettingsBtn {
+QLabel#aiHeaderSep {
+    color: #1e293b;
+    font-size: 14px;
+    background: transparent;
+    border: none;
+}
+QPushButton#aiSettingsBtn {
     min-height: 22px;
-    padding: 2px 10px;
-    border: 1px solid #22376A;
-    border-radius: 8px;
-    background-color: #13254b;
-    color: #dce7ff;
+    padding: 4px 10px;
+    border: none;
+    border-radius: 6px;
+    background-color: #1e293b;
+    color: #cbd5e1;
     font-size: 12px;
     font-weight: 600;
 }
-QPushButton#aiSendBtn:hover, QPushButton#aiAnalyzeBtn:hover, QPushButton#aiSettingsBtn:hover {
-    background-color: #1C2D55;
-    border: 1px solid #3A5A9F;
+QPushButton#aiSettingsBtn:hover {
+    background-color: #334155;
+    color: #e2e8f0;
 }
-QPushButton#aiSendBtn:disabled, QPushButton#aiAnalyzeBtn:disabled {
-    background-color: #0b1430;
-    color: #5c7096;
-    border: 1px solid #1a2850;
+QPushButton#aiCloseBtn {
+    border: none;
+    border-radius: 6px;
+    background-color: transparent;
+    color: #64748b;
+    font-size: 16px;
+    font-weight: 700;
+}
+QPushButton#aiCloseBtn:hover {
+    background-color: #1e293b;
+    color: #e2e8f0;
+}
+QPlainTextEdit#aiInput {
+    background-color: #070709;
+    color: #e2e8f0;
+    border: 1px solid #1e293b;
+    border-radius: 12px;
+    padding: 8px 10px;
+    font-size: 12px;
+}
+QPlainTextEdit#aiInput:focus {
+    border: 1px solid #3b82f6;
+}
+QPushButton#aiSendBtn {
+    min-height: 22px;
+    padding: 4px 14px;
+    border: none;
+    border-radius: 4px;
+    background-color: #2563eb;
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 700;
+}
+QPushButton#aiSendBtn:hover {
+    background-color: #1d4fd0;
+}
+QPushButton#aiSendBtn:disabled {
+    background-color: #0f172a;
+    color: #475569;
+}
+QPushButton#aiAnalyzeBtn {
+    min-height: 22px;
+    padding: 4px 12px;
+    border: 1px solid #1d2f52;
+    border-radius: 8px;
+    background-color: #0e1b33;
+    color: #3b82f6;
+    font-size: 11px;
+    font-weight: 600;
+}
+QPushButton#aiAnalyzeBtn:hover {
+    background-color: #14264a;
+}
+QPushButton#aiAnalyzeBtn:disabled {
+    background-color: #0f172a;
+    color: #475569;
+    border: 1px solid #1e293b;
+}
+QPushButton#aiScriptBtn {
+    min-height: 22px;
+    padding: 4px 12px;
+    border: 1px solid #2a2750;
+    border-radius: 8px;
+    background-color: #171430;
+    color: #818cf8;
+    font-size: 11px;
+    font-weight: 600;
+}
+QPushButton#aiScriptBtn:hover {
+    background-color: #211d44;
+}
+QPushButton#aiScriptBtn:disabled {
+    background-color: #0f172a;
+    color: #475569;
+    border: 1px solid #1e293b;
 }
 QLabel#aiRangeLabel {
-    color: #8fa3c2;
-    font-size: 11px;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
     background: transparent;
 }
 QComboBox#aiLevelCombo {
     min-height: 22px;
     padding: 1px 6px;
-    border: 1px solid #243152;
-    border-radius: 6px;
-    background-color: #11182c;
-    color: #dce7ff;
-    font-size: 11px;
+    border: 1px solid #1e293b;
+    border-radius: 4px;
+    background-color: #0f172a;
+    color: #cbd5e1;
+    font-size: 10px;
+    font-weight: 700;
 }
 QComboBox#aiLevelCombo QAbstractItemView {
-    background-color: #11182c;
-    color: #dce7ff;
+    background-color: #0f172a;
+    color: #cbd5e1;
     selection-background-color: #1d3a6e;
 }
 QSpinBox#aiLinesSpin {
     min-height: 22px;
     padding: 1px 4px;
-    border: 1px solid #243152;
-    border-radius: 6px;
-    background-color: #11182c;
-    color: #dce7ff;
-    font-size: 11px;
+    border: 1px solid #1e293b;
+    border-radius: 4px;
+    background-color: #0f172a;
+    color: #cbd5e1;
+    font-size: 10px;
+    font-weight: 700;
 }
 QComboBox#aiModelCombo {
     min-height: 22px;
     padding: 1px 6px;
-    border: 1px solid #243152;
-    border-radius: 6px;
-    background-color: #11182c;
-    color: #dce7ff;
-    font-size: 11px;
+    border: 1px solid #1e293b;
+    border-radius: 4px;
+    background-color: transparent;
+    color: #cbd5e1;
+    font-size: 10px;
+    font-weight: 700;
+}
+QComboBox#aiModelCombo:hover {
+    border: 1px solid #334155;
 }
 QComboBox#aiModelCombo QAbstractItemView {
-    background-color: #11182c;
-    color: #dce7ff;
+    background-color: #0f172a;
+    color: #cbd5e1;
     selection-background-color: #1d3a6e;
 }
 QPushButton#aiQuickBtn {
     min-height: 22px;
-    padding: 1px 10px;
-    border: 1px solid #22376A;
-    border-radius: 11px;
-    background-color: #101b38;
-    color: #b9cbf0;
-    font-size: 11px;
+    padding: 5px 12px;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    background-color: #0f172a;
+    color: #94a3b8;
+    font-size: 10px;
+    font-weight: 700;
 }
 QPushButton#aiQuickBtn:hover {
-    background-color: #1C2D55;
-    border: 1px solid #3A5A9F;
+    background-color: #1e293b;
+    color: #cbd5e1;
 }
 QLabel#aiUsageLabel {
-    color: #7e93b8;
+    color: #64748b;
     font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
     background: transparent;
     padding: 1px 2px;
 }
@@ -144,9 +250,43 @@ _MAX_LINES_CAP = 1000
 
 
 class _InputEdit(QPlainTextEdit):
-    """Enter 发送，Shift+Enter 换行。"""
+    """Enter 发送，Shift+Enter 换行；聚焦时显示蓝色焦点环，高度随内容弹性自适应。"""
 
     submitted = Signal()
+
+    _MIN_HEIGHT = 80
+    _MAX_HEIGHT = 160
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setFixedHeight(self._MIN_HEIGHT)
+
+        self._focus_ring = QGraphicsDropShadowEffect(self)
+        self._focus_ring.setColor(QColor(59, 130, 246, 90))
+        self._focus_ring.setBlurRadius(14)
+        self._focus_ring.setOffset(0, 0)
+        self._focus_ring.setEnabled(False)
+        self.setGraphicsEffect(self._focus_ring)
+
+        self.document().documentLayout().documentSizeChanged.connect(
+            self._adjust_height
+        )
+
+    def _adjust_height(self) -> None:
+        doc_height = int(self.document().size().height())
+        target = max(self._MIN_HEIGHT, min(self._MAX_HEIGHT, doc_height + 18))
+        if target != self.height():
+            self.setFixedHeight(target)
+
+    def focusInEvent(self, event) -> None:
+        self._focus_ring.setEnabled(True)
+        super().focusInEvent(event)
+
+    def focusOutEvent(self, event) -> None:
+        self._focus_ring.setEnabled(False)
+        super().focusOutEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() in (Qt.Key_Return, Qt.Key_Enter) and not (
@@ -155,6 +295,41 @@ class _InputEdit(QPlainTextEdit):
             self.submitted.emit()
             return
         super().keyPressEvent(event)
+
+
+class _PressScaleButton(QPushButton):
+    """按下时几何缩放至 95%、松开还原的微动效按钮（active:scale-95）。"""
+
+    def __init__(self, text: str = "", parent=None):
+        super().__init__(text, parent)
+        self._anim = QPropertyAnimation(self, b"geometry", self)
+        self._anim.setDuration(90)
+        self._anim.setEasingCurve(QEasingCurve.OutCubic)
+        self._base_geometry: QRect | None = None
+
+    def _scaled_rect(self, factor: float) -> QRect:
+        rect = self._base_geometry or self.geometry()
+        new_w = int(rect.width() * factor)
+        new_h = int(rect.height() * factor)
+        dx = (rect.width() - new_w) // 2
+        dy = (rect.height() - new_h) // 2
+        return QRect(rect.x() + dx, rect.y() + dy, new_w, new_h)
+
+    def mousePressEvent(self, event) -> None:
+        self._base_geometry = self.geometry()
+        self._anim.stop()
+        self._anim.setStartValue(self.geometry())
+        self._anim.setEndValue(self._scaled_rect(0.95))
+        self._anim.start()
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if self._base_geometry is not None:
+            self._anim.stop()
+            self._anim.setStartValue(self.geometry())
+            self._anim.setEndValue(self._base_geometry)
+            self._anim.start()
+        super().mouseReleaseEvent(event)
 
 
 class _DigestWorker(QObject):
@@ -193,37 +368,55 @@ class AIAssistPanel(QFrame):
         self.setStyleSheet(_PANEL_STYLE)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(10, 10, 10, 10)
-        root.setSpacing(8)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
-        root.addLayout(self._build_header())
-        root.addLayout(self._build_model_bar())
+        root.addWidget(self._build_header())
 
         self._chat = ChatView()
         root.addWidget(self._chat, 1)
 
+        bottom_bar = QFrame()
+        bottom_bar.setObjectName("aiBottomBar")
+        bottom_layout = QVBoxLayout(bottom_bar)
+        bottom_layout.setContentsMargins(16, 12, 16, 12)
+        bottom_layout.setSpacing(12)
+
         self._quick_row = self._build_quick_row()
-        root.addWidget(self._quick_row)
+        bottom_layout.addWidget(self._quick_row)
 
         self._input = _InputEdit()
         self._input.setObjectName("aiInput")
         self._input.setPlaceholderText("输入问题，Enter 发送 / Shift+Enter 换行")
-        self._input.setFixedHeight(72)
         self._input.submitted.connect(self._on_send_clicked)
-        root.addWidget(self._input)
+        bottom_layout.addWidget(self._input)
 
-        root.addLayout(self._build_range_bar())
-        root.addLayout(self._build_action_bar())
-        root.addWidget(self._build_usage_bar())
+        bottom_layout.addLayout(self._build_range_bar())
+        bottom_layout.addLayout(self._build_action_bar())
+        bottom_layout.addWidget(self._build_usage_bar())
+
+        root.addWidget(bottom_bar)
 
         self._chat.add_system_message("AI 助手已就绪。")
         self._replay_history()
         self.refresh_quick_actions()
         self._wire_service()
 
-    def _build_header(self) -> QHBoxLayout:
-        layout = QHBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
+    def _build_header(self) -> QFrame:
+        bar = QFrame()
+        bar.setObjectName("aiHeaderBar")
+        bar.setFixedHeight(56)
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(16, 0, 16, 0)
+        layout.setSpacing(6)
+
+        icon = QLabel()
+        icon.setObjectName("aiPanelTitleIcon")
+        icon.setFixedSize(18, 18)
+        if os.path.isfile(_PANEL_ICON):
+            icon.setPixmap(tinted_svg_pixmap(_PANEL_ICON, "#3b82f6", 18))
+        layout.addWidget(icon)
+
         title = QLabel("AI 助手")
         title.setObjectName("aiPanelTitle")
         layout.addWidget(title)
@@ -242,31 +435,18 @@ class AIAssistPanel(QFrame):
         self._settings_btn.clicked.connect(self._open_settings)
         layout.addWidget(self._settings_btn)
 
+        sep = QLabel("｜")
+        sep.setObjectName("aiHeaderSep")
+        layout.addWidget(sep)
+
         close_btn = QPushButton("×")
-        close_btn.setObjectName("aiSettingsBtn")
+        close_btn.setObjectName("aiCloseBtn")
         close_btn.setFixedWidth(28)
         close_btn.setCursor(QCursor(Qt.PointingHandCursor))
         close_btn.setToolTip("关闭面板")
         close_btn.clicked.connect(self.request_close.emit)
         layout.addWidget(close_btn)
-        return layout
-
-    def _build_model_bar(self) -> QHBoxLayout:
-        layout = QHBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
-
-        model_label = QLabel("模型")
-        model_label.setObjectName("aiRangeLabel")
-        layout.addWidget(model_label)
-
-        self._model_combo = QComboBox()
-        self._model_combo.setObjectName("aiModelCombo")
-        self._model_combo.setToolTip("手动切换模型（按 Profile 自动选择 / 指定模型）")
-        self._populate_models()
-        self._model_combo.currentTextChanged.connect(self._on_model_changed)
-        layout.addWidget(self._model_combo, 1)
-        return layout
+        return bar
 
     def _populate_models(self) -> None:
         self._model_combo.blockSignals(True)
@@ -361,13 +541,19 @@ class AIAssistPanel(QFrame):
         self._analyze_btn.setObjectName("aiAnalyzeBtn")
         self._analyze_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self._analyze_btn.setToolTip("基于最近运行日志进行分析")
+        if os.path.isfile(_SPARKLES_ICON):
+            self._analyze_btn.setIcon(tinted_svg_icon(_SPARKLES_ICON, "#3b82f6", 13))
+            self._analyze_btn.setIconSize(QSize(13, 13))
         self._analyze_btn.clicked.connect(self._on_analyze_clicked)
         layout.addWidget(self._analyze_btn)
 
         self._draft_btn = QPushButton("生成草案")
-        self._draft_btn.setObjectName("aiAnalyzeBtn")
+        self._draft_btn.setObjectName("aiScriptBtn")
         self._draft_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self._draft_btn.setToolTip("根据输入框需求生成测试配置/脚本草案（预览校验后才应用）")
+        if os.path.isfile(_SPARKLES_ICON):
+            self._draft_btn.setIcon(tinted_svg_icon(_SPARKLES_ICON, "#818cf8", 13))
+            self._draft_btn.setIconSize(QSize(13, 13))
         self._draft_btn.clicked.connect(self._on_draft_clicked)
         layout.addWidget(self._draft_btn)
 
@@ -381,11 +567,19 @@ class AIAssistPanel(QFrame):
 
         layout.addStretch(1)
 
-        self._send_btn = QPushButton("发送")
+        self._model_combo = QComboBox()
+        self._model_combo.setObjectName("aiModelCombo")
+        self._model_combo.setMinimumWidth(120)
+        self._model_combo.setToolTip("手动切换模型（按 Profile 自动选择 / 指定模型）")
+        self._populate_models()
+        self._model_combo.currentTextChanged.connect(self._on_model_changed)
+        layout.addWidget(self._model_combo)
+
+        self._send_btn = _PressScaleButton("发送")
         self._send_btn.setObjectName("aiSendBtn")
         self._send_btn.setCursor(QCursor(Qt.PointingHandCursor))
         if os.path.isfile(_SEND_ICON):
-            self._send_btn.setIcon(tinted_svg_icon(_SEND_ICON, "#dce7ff", 14))
+            self._send_btn.setIcon(tinted_svg_icon(_SEND_ICON, "#ffffff", 14))
             self._send_btn.setIconSize(QSize(14, 14))
         self._send_btn.clicked.connect(self._on_send_clicked)
         layout.addWidget(self._send_btn)
