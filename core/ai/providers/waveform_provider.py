@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import bisect
 import math
 
 from core.ai.schemas import WaveformDigest, WaveformStat
@@ -294,6 +295,55 @@ def build_digest(
     return WaveformDigest(stats=stats, downsampled=downsampled, note=note)
 
 
+def _locate_index_bounds(times: list[float], lo: float, hi: float) -> tuple[int, int]:
+    """定位 [lo, hi] 对应的索引闭区间 [i0, i1]，避免 O(n) 全遍历。
+
+    times 必须递增。等步长时走算术 O(1) 定位，否则走 bisect O(log n)。
+    返回 (i0, i1)；窗口外或空数据返回 (0, -1)（表示空选区）。
+    """
+    n = len(times)
+    if n == 0:
+        return 0, -1
+    t_first = times[0]
+    t_last = times[-1]
+    if hi < t_first or lo > t_last:
+        return 0, -1
+
+    period = 0.0
+    if n >= 2:
+        period = times[1] - times[0]
+    is_uniform = period > 0.0 and n >= 2 and (
+        abs((t_last - t_first) - period * (n - 1)) <= abs(period) * 1e-6
+    )
+
+    if is_uniform:
+        i0 = int(math.ceil((lo - t_first) / period))
+        i1 = int(math.floor((hi - t_first) / period))
+    else:
+        i0 = bisect.bisect_left(times, lo)
+        i1 = bisect.bisect_right(times, hi) - 1
+
+    i0 = max(0, i0)
+    i1 = min(n - 1, i1)
+    return i0, i1
+
+
+def slice_channel_fast(
+    times: list[float], values: list[float], x0: float, x1: float
+) -> tuple[list[float], list[float]]:
+    """按 [x0, x1] 时间窗快速切片（不重新采数）。
+
+    等步长走算术 O(1) 定位，非等步长走 bisect O(log n)，禁 O(n) 全遍历。
+    """
+    if not times or not values:
+        return [], []
+    lo, hi = (x0, x1) if x0 <= x1 else (x1, x0)
+    i0, i1 = _locate_index_bounds(times, lo, hi)
+    if i1 < i0:
+        return [], []
+    return times[i0 : i1 + 1], values[i0 : i1 + 1]
+
+
 def slice_window(
     all_data: dict, label: str, t0: float, t1: float, *, max_points: int = 2500
 ) -> dict:
@@ -306,13 +356,94 @@ def slice_window(
         return {"time": [], "values": []}
     times = channel.get("time") or []
     values = channel.get("values") or []
-    lo, hi = (t0, t1) if t0 <= t1 else (t1, t0)
-    sel_t: list[float] = []
-    sel_v: list[float] = []
-    for t, v in zip(times, values):
-        if lo <= t <= hi:
-            sel_t.append(t)
-            sel_v.append(v)
+    sel_t, sel_v = slice_channel_fast(list(times), list(values), t0, t1)
     if len(sel_v) > max_points:
         sel_t, sel_v = lttb_downsample(sel_t, sel_v, max_points)
     return {"time": sel_t, "values": sel_v}
+
+
+def build_window_digest(
+    all_data: dict,
+    x0: float,
+    x1: float,
+    *,
+    max_points: int = 1500,
+    anomaly_sigma: float = 3.0,
+    include_downsampled: bool = True,
+) -> WaveformDigest:
+    """按可见窗口 [x0, x1] 快速切片后构建摘要（不重新采数）。
+
+    各通道按同一 [x0, x1] 独立切片，复用 build_digest 做统计与 LTTB 降采样。
+    digest.window 记录分析范围（full=False）。
+    """
+    if not all_data:
+        return WaveformDigest(note="无波形数据", window={"x0": x0, "x1": x1, "full": False})
+
+    lo, hi = (x0, x1) if x0 <= x1 else (x1, x0)
+    windowed: dict[str, dict[str, list[float]]] = {}
+    for label, channel in all_data.items():
+        if not isinstance(channel, dict):
+            continue
+        times = channel.get("time") or []
+        values = channel.get("values") or []
+        sel_t, sel_v = slice_channel_fast(list(times), list(values), lo, hi)
+        if not sel_v:
+            continue
+        windowed[str(label)] = {"time": sel_t, "values": sel_v}
+
+    if not windowed:
+        return WaveformDigest(
+            note=f"窗口 [{round(lo, 6)}, {round(hi, 6)}] s 内无数据",
+            window={"x0": round(lo, 6), "x1": round(hi, 6), "full": False},
+        )
+
+    digest = build_digest(
+        windowed,
+        max_points=max_points,
+        anomaly_sigma=anomaly_sigma,
+        include_downsampled=include_downsampled,
+    )
+    digest.window = {"x0": round(lo, 6), "x1": round(hi, 6), "full": False}
+    digest.note = f"分析范围 [{round(lo, 6)}, {round(hi, 6)}] s（屏幕可见区）：" + digest.note
+    return digest
+
+
+def marker_segment_stats(all_data: dict, a: float, b: float) -> dict | None:
+    """计算 Marker A→B 区间各通道统计（时长 + 均值/最值/峰峰）。
+
+    走快速切片定位区间，纯标量输出；量纲与 build_digest 的 stats 一致。
+    A/B 缺失或区间内无数据时返回 None。
+    """
+    if not all_data or a is None or b is None:
+        return None
+    lo, hi = (a, b) if a <= b else (b, a)
+    per_channel: list[dict] = []
+    for label, channel in all_data.items():
+        if not isinstance(channel, dict):
+            continue
+        times = channel.get("time") or []
+        values = channel.get("values") or []
+        _, sel_v = slice_channel_fast(list(times), list(values), lo, hi)
+        if not sel_v:
+            continue
+        vmin, vmax, avg, _ = _statistics(sel_v)
+        factor, unit = _pick_scale(sel_v, _infer_base_unit(str(label)))
+        per_channel.append(
+            {
+                "label": str(label),
+                "unit": unit,
+                "point_count": len(sel_v),
+                "minimum": round(vmin * factor, 6),
+                "maximum": round(vmax * factor, 6),
+                "average": round(avg * factor, 6),
+                "peak_to_peak": round((vmax - vmin) * factor, 6),
+            }
+        )
+    if not per_channel:
+        return None
+    return {
+        "a": round(lo, 6),
+        "b": round(hi, 6),
+        "duration_s": round(abs(hi - lo), 6),
+        "per_channel": per_channel,
+    }

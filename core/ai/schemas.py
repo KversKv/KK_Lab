@@ -64,6 +64,8 @@ class WaveformDigest:
     stats: list[WaveformStat] = field(default_factory=list)
     downsampled: dict[str, dict[str, list[float]]] = field(default_factory=dict)
     note: str = ""
+    window: dict[str, Any] | None = None
+    marker_segment: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -73,6 +75,8 @@ class WaveformDigest:
                 for k, v in self.downsampled.items()
             },
             "note": self.note,
+            "window": dict(self.window) if self.window else None,
+            "marker_segment": dict(self.marker_segment) if self.marker_segment else None,
         }
 
 

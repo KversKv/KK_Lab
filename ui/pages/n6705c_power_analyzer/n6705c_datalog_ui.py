@@ -5264,13 +5264,108 @@ class N6705CDatalogUI(QWidget):
         """返回当前内存中的波形数据（供 AI 摘要），结构 {label: {time, values}}。"""
         return self.datalog_data
 
-    def build_waveform_digest(self):
-        """构建波形摘要（F1.5）：把内存波形压成 WaveformDigest 喂 AI。"""
-        from core.ai.providers.waveform_provider import build_digest
+    def _data_time_extent(self):
+        """返回当前内存波形的整体时间范围 (t_min, t_max)，无数据返回 None。"""
+        t_min = None
+        t_max = None
+        for channel in self.datalog_data.values():
+            if not isinstance(channel, dict):
+                continue
+            times = channel.get("time") or []
+            if not times:
+                continue
+            c_min = times[0]
+            c_max = times[-1]
+            t_min = c_min if t_min is None else min(t_min, c_min)
+            t_max = c_max if t_max is None else max(t_max, c_max)
+        if t_min is None or t_max is None:
+            return None
+        return t_min, t_max
+
+    def get_visible_x_range(self):
+        """读当前图表可见 X 范围（UI 线程，禁子线程调用）。
+
+        与数据整体范围求交并裁剪；可见区基本覆盖全程时返回 None（等价全量）。
+        """
+        extent = self._data_time_extent()
+        if extent is None:
+            return None
+        t_min, t_max = extent
+        try:
+            vb = self.plot_widget.getPlotItem().getViewBox()
+            x_min, x_max = vb.viewRange()[0]
+        except Exception:  # noqa: BLE001 - 读视图失败退回全量
+            logger.error("读取可见 X 范围失败", exc_info=True)
+            return None
+        lo = max(t_min, min(x_min, x_max))
+        hi = min(t_max, max(x_min, x_max))
+        if hi <= lo:
+            return None
+        span = t_max - t_min
+        if span <= 0:
+            return None
+        if (hi - lo) / span >= 0.99:
+            return None
+        return lo, hi
+
+    def get_marker_window(self):
+        """A/B 标记都放置时返回 {"a":..., "b":...}（UI 线程读 marker 位置）。"""
+        a = self.marker_a_pos
+        b = self.marker_b_pos
+        if a is None or b is None:
+            return None
+        return {"a": float(a), "b": float(b)}
+
+    def build_waveform_digest(self, x_range=None, marker=None):
+        """构建波形摘要（F1.7）：按可见窗口裁剪 + 附带 Marker 区间统计。
+
+        x_range=None → 全量；否则按 [x0, x1] 快速切片后构建摘要。
+        marker={"a","b"} → 附带 Marker A→B 区间派生统计。
+        """
+        from core.ai.providers.waveform_provider import (
+            build_digest,
+            build_window_digest,
+            marker_segment_stats,
+        )
 
         if not self.datalog_data:
             return None
-        return build_digest(dict(self.datalog_data))
+        data = dict(self.datalog_data)
+        if x_range is None:
+            digest = build_digest(data)
+            digest.window = {"full": True}
+        else:
+            digest = build_window_digest(data, float(x_range[0]), float(x_range[1]))
+        if marker:
+            digest.marker_segment = marker_segment_stats(
+                data, marker.get("a"), marker.get("b")
+            )
+        return digest
+
+    def get_waveform_data_windowed(self):
+        """返回按当前可见窗口裁剪后的波形数据，供 AI drill-down 钳制范围。
+
+        未缩放（看全程）时返回完整数据。仅在 UI 线程调用。
+        """
+        if not self.datalog_data:
+            return None
+        x_range = self.get_visible_x_range()
+        if x_range is None:
+            return dict(self.datalog_data)
+        from core.ai.providers.waveform_provider import slice_channel_fast
+
+        lo, hi = x_range
+        windowed = {}
+        for label, channel in self.datalog_data.items():
+            if not isinstance(channel, dict):
+                continue
+            times = channel.get("time") or []
+            values = channel.get("values") or []
+            sel_t, sel_v = slice_channel_fast(list(times), list(values), lo, hi)
+            if not sel_v:
+                continue
+            windowed[label] = {"time": sel_t, "values": sel_v}
+        return windowed
 
     def _on_data_ready(self, data):
         power_chs_a = [cb.isChecked() for cb in getattr(self, 'ch_power_cbs_a', [])]

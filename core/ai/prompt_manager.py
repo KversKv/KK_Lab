@@ -45,6 +45,14 @@ def format_waveform_digest(digest, *, include_downsampled: bool = True) -> str:
         return "[波形数据] 当前无可分析的波形。"
 
     lines = ["[波形数据摘要]"]
+    window = getattr(digest, "window", None)
+    if window:
+        if window.get("full"):
+            lines.append("分析范围：全程")
+        else:
+            lines.append(
+                f"分析范围：{_fmt(window.get('x0'))}~{_fmt(window.get('x1'))} s（屏幕可见区）"
+            )
     note = getattr(digest, "note", "")
     if note:
         lines.append(note)
@@ -80,6 +88,20 @@ def format_waveform_digest(digest, *, include_downsampled: bool = True) -> str:
                 f"({_fmt(t)},{_fmt(v)})" for t, v in zip(times, values)
             )
             lines.append(f"- {label}: {pairs}")
+
+    marker = getattr(digest, "marker_segment", None)
+    if marker and marker.get("per_channel"):
+        lines.append(
+            f"[Marker A→B 区间] A={_fmt(marker.get('a'))}s, B={_fmt(marker.get('b'))}s, "
+            f"时长={_fmt(marker.get('duration_s'))}s"
+        )
+        for ch in marker.get("per_channel", []):
+            unit = f" {ch.get('unit')}" if ch.get("unit") else ""
+            lines.append(
+                f"- 通道 {ch.get('label')}（{ch.get('point_count')} 点）："
+                f"avg={_fmt(ch.get('average'))}{unit}，min={_fmt(ch.get('minimum'))}{unit}，"
+                f"max={_fmt(ch.get('maximum'))}{unit}，pp={_fmt(ch.get('peak_to_peak'))}{unit}"
+            )
 
     return "\n".join(lines)
 

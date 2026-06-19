@@ -360,13 +360,15 @@ class _DigestWorker(QObject):
     finished = Signal(object)
     failed = Signal()
 
-    def __init__(self, provider_cb):
+    def __init__(self, provider_cb, x_range=None, marker=None):
         super().__init__()
         self._provider_cb = provider_cb
+        self._x_range = x_range
+        self._marker = marker
 
     def run(self) -> None:
         try:
-            digest = self._provider_cb()
+            digest = self._provider_cb(self._x_range, self._marker)
         except Exception:
             logger.error("后台构建波形摘要失败", exc_info=True)
             self.failed.emit()
@@ -383,6 +385,8 @@ class AIAssistPanel(QFrame):
         self._config_apply_cb = None
         self._script_apply_cb = None
         self._waveform_provider_cb = None
+        self._waveform_range_getter = None
+        self._waveform_marker_getter = None
         self._digest_thread = None
         self._digest_worker = None
         self._pending_waveform_text = ""
@@ -651,13 +655,22 @@ class AIAssistPanel(QFrame):
         return row
 
     def set_waveform_provider_callback(self, callback) -> None:
-        """注入波形提供回调：callback() -> WaveformDigest | None。
+        """注入波形提供回调：callback(x_range, marker) -> WaveformDigest | None。
 
+        x_range/marker 由 UI 线程的 getter 在进后台线程前取好快照传入；
         传入 None 表示当前页面无波形源，隐藏"发送波形给 AI"按钮。
         """
         self._waveform_provider_cb = callback
         if hasattr(self, "_waveform_btn"):
             self._waveform_btn.setVisible(callback is not None)
+
+    def set_waveform_range_getter(self, getter) -> None:
+        """注入可见 X 范围 getter：getter() -> (x0, x1) | None（UI 线程同步调用）。"""
+        self._waveform_range_getter = getter
+
+    def set_waveform_marker_getter(self, getter) -> None:
+        """注入 Marker getter：getter() -> {"a","b"} | None（UI 线程同步调用）。"""
+        self._waveform_marker_getter = getter
 
     def _on_waveform_clicked(self) -> None:
         if self._waveform_provider_cb is None:
@@ -681,8 +694,23 @@ class AIAssistPanel(QFrame):
         self._waveform_btn.setEnabled(False)
         self._chat.add_system_message("正在后台构建波形摘要…")
 
+        x_range = None
+        marker = None
+        if self._waveform_range_getter is not None:
+            try:
+                x_range = self._waveform_range_getter()
+            except Exception:
+                logger.error("读取可见 X 范围失败", exc_info=True)
+        if self._waveform_marker_getter is not None:
+            try:
+                marker = self._waveform_marker_getter()
+            except Exception:
+                logger.error("读取 Marker 范围失败", exc_info=True)
+
         self._digest_thread = QThread()
-        self._digest_worker = _DigestWorker(self._waveform_provider_cb)
+        self._digest_worker = _DigestWorker(
+            self._waveform_provider_cb, x_range=x_range, marker=marker
+        )
         self._digest_worker.moveToThread(self._digest_thread)
         self._digest_thread.started.connect(self._digest_worker.run)
         self._digest_worker.finished.connect(self._on_digest_ready)

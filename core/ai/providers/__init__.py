@@ -8,7 +8,10 @@ from core.ai.providers.sequence_provider import SequenceContextProvider
 from core.ai.providers.serial_provider import SerialContextProvider
 from core.ai.providers.waveform_provider import (
     build_digest,
+    build_window_digest,
     lttb_downsample,
+    marker_segment_stats,
+    slice_channel_fast,
     slice_window,
 )
 
@@ -19,6 +22,9 @@ __all__ = [
     "SequenceContextProvider",
     "SerialContextProvider",
     "build_digest",
+    "build_window_digest",
     "lttb_downsample",
+    "marker_segment_stats",
+    "slice_channel_fast",
     "slice_window",
 ]

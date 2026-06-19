@@ -505,6 +505,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             app_logs_getter=self._get_ai_app_logs,
             rx_recent_getter=self._get_ai_recent_rx,
             test_status_getter=self._get_ai_test_status,
+            waveform_data_getter=self._provide_ai_waveform_windowed,
             open_page_callback=self._ai_open_page,
             toggle_ai_panel_callback=self._ai_toggle_panel,
             serial_send_text_callback=self._ai_serial_send_text,
@@ -642,14 +643,36 @@ class MainWindow(CleanupMixin, QMainWindow):
 
         if self.current_instrument_ui == "datalog":
             panel.set_waveform_provider_callback(self._provide_ai_waveform_digest)
+            panel.set_waveform_range_getter(self._provide_ai_waveform_range)
+            panel.set_waveform_marker_getter(self._provide_ai_waveform_marker)
         else:
             panel.set_waveform_provider_callback(None)
+            panel.set_waveform_range_getter(None)
+            panel.set_waveform_marker_getter(None)
 
-    def _provide_ai_waveform_digest(self):
+    def _provide_ai_waveform_digest(self, x_range=None, marker=None):
         ui = getattr(self, "n6705c_datalog_ui", None)
         if ui is None:
             return None
-        return ui.build_waveform_digest()
+        return ui.build_waveform_digest(x_range=x_range, marker=marker)
+
+    def _provide_ai_waveform_range(self):
+        ui = getattr(self, "n6705c_datalog_ui", None)
+        if ui is None:
+            return None
+        return ui.get_visible_x_range()
+
+    def _provide_ai_waveform_marker(self):
+        ui = getattr(self, "n6705c_datalog_ui", None)
+        if ui is None:
+            return None
+        return ui.get_marker_window()
+
+    def _provide_ai_waveform_windowed(self):
+        ui = getattr(self, "n6705c_datalog_ui", None)
+        if ui is None or self.current_instrument_ui != "datalog":
+            return None
+        return ui.get_waveform_data_windowed()
 
     def _apply_ai_script_draft(self, nodes):
         ui = getattr(self, "custom_test_ui", None)
