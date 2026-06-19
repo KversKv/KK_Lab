@@ -6,10 +6,12 @@
 """
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 
 from core.ai import context_budget
+from core.ai.nudges import page_nudges
 from core.ai.profiles import (
     get_global_system_prompt,
     get_profile,
@@ -17,6 +19,21 @@ from core.ai.profiles import (
     get_user_prompt,
 )
 from core.ai.providers.base import ContextProvider
+from ui.resource_path import get_user_data_dir
+
+_LOCAL_PROJECT_RULES_NAME = "project_rules.local.md"
+
+
+def _get_local_project_rules() -> str:
+    """读取本机沉淀的项目规则（user_data/ai/project_rules.local.md）。"""
+    path = os.path.join(get_user_data_dir("ai"), _LOCAL_PROJECT_RULES_NAME)
+    if not os.path.isfile(path):
+        return ""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
 
 
 @dataclass
@@ -140,10 +157,19 @@ class PromptManager:
         if project_prompt:
             parts.append(project_prompt)
 
+        local_rules = _get_local_project_rules()
+        if local_rules:
+            parts.append(local_rules)
+
         profile = get_profile(page_key)
         profile_prompt = (profile.get("system_prompt") or "").strip()
         if profile_prompt:
             parts.append(profile_prompt)
+
+        for nudge in page_nudges(page_key):
+            text = nudge.get("text", "").strip()
+            if text:
+                parts.append(text)
 
         user_prompt = get_user_prompt()
         if user_prompt:
@@ -170,6 +196,7 @@ class PromptManager:
         log_context: str = "",
         extra_context: str = "",
         budget: BudgetConfig | None = None,
+        summary: str = "",
     ) -> list[dict[str, str]]:
         """组装 OpenAI 兼容 messages。
 
@@ -177,9 +204,13 @@ class PromptManager:
         log_context: 可选最近日志文本，作为附加 system 提示注入。
         extra_context: 可选附加上下文（如波形摘要 F1），作为附加 system 提示注入。
         budget: 可选 token 预算配置；提供时按当前模型窗口裁剪历史，止住上下文膨胀。
+        summary: 可选前情提要（Phase 6），作为 [前情提要] system 段注入会话头。
         """
         system_text = self._build_system_text(page_key, budget)
         block_cap = budget.max_context_block_tokens if budget else 0
+        if summary:
+            summ = mask_sensitive(summary) if self._enable_masking else summary
+            system_text += "\n\n[前情提要]\n" + summ
         if log_context:
             ctx = mask_sensitive(log_context) if self._enable_masking else log_context
             if block_cap > 0:

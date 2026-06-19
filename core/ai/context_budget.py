@@ -188,3 +188,23 @@ def fit_messages(
             dropped,
         )
     return result
+
+
+def should_summarize(
+    messages: list[dict],
+    *,
+    window: int,
+    reserve_output: int,
+    trigger_ratio: float,
+) -> bool:
+    """判断历史是否已逼近窗口、需要压缩摘要（Phase 6）。
+
+    触发阈值 = (window - reserve_output) * trigger_ratio；当全部 messages 估算
+    token 超过该阈值时返回 True。trigger_ratio<=0 关闭该机制。
+    """
+    if trigger_ratio <= 0 or not messages:
+        return False
+    usable = max(1, int(window) - int(reserve_output))
+    threshold = usable * float(trigger_ratio)
+    total = sum(_message_tokens(m) for m in messages)
+    return total > threshold

@@ -24,6 +24,7 @@ logger = get_logger(__name__)
 _ENV_BASE_URL = "KK_LAB_AI_BASE_URL"
 _ENV_API_KEY = "KK_LAB_AI_API_KEY"
 _ENV_MODEL = "KK_LAB_AI_MODEL"
+_ENV_TELEMETRY_ENDPOINT = "KK_LAB_AI_TELEMETRY_ENDPOINT"
 
 _CONFIG_FILENAME = "config.json"
 
@@ -49,6 +50,16 @@ _DEFAULTS: dict[str, Any] = {
     "reserve_output_tokens": 4096,
     "soft_budget_ratio": 0.5,
     "max_context_block_tokens": 8192,
+    "summary_trigger_ratio": 0.7,
+    "enable_history_summary": True,
+    "summary_model": "deepseekv4flash",
+    "curator_ai_assist_enabled": True,
+    "curator_draft_model": "deepseekv4flash",
+    "telemetry_enabled": True,
+    "telemetry_endpoint": "",
+    "telemetry_batch_size": 20,
+    "telemetry_flush_interval_s": 300,
+    "telemetry_client_id": "",
 }
 
 
@@ -85,6 +96,16 @@ class AISettings:
     reserve_output_tokens: int = 4096
     soft_budget_ratio: float = 0.5
     max_context_block_tokens: int = 8192
+    summary_trigger_ratio: float = 0.7
+    enable_history_summary: bool = True
+    summary_model: str = "deepseekv4flash"
+    curator_ai_assist_enabled: bool = True
+    curator_draft_model: str = "deepseekv4flash"
+    telemetry_enabled: bool = True
+    telemetry_endpoint: str = ""
+    telemetry_batch_size: int = 20
+    telemetry_flush_interval_s: int = 300
+    telemetry_client_id: str = ""
     _runtime_api_key: str = field(default="", repr=False, compare=False)
 
     def context_window_for(self, model: str) -> int:
@@ -121,6 +142,12 @@ class AISettings:
     def effective_model(self) -> str:
         env_model = os.environ.get(_ENV_MODEL, "").strip()
         return env_model or self.default_model
+
+    @property
+    def effective_telemetry_endpoint(self) -> str:
+        """遥测上报地址（env > 文件）；为空表示未配置上报，仅本地缓冲。"""
+        env_ep = os.environ.get(_ENV_TELEMETRY_ENDPOINT, "").strip()
+        return (env_ep or self.telemetry_endpoint).strip()
 
     def set_runtime_api_key(self, key: str) -> None:
         """设置仅本会话内存生效的临时 Key（不落盘明文）。"""
@@ -187,6 +214,16 @@ class AISettings:
                 "reserve_output_tokens": self.reserve_output_tokens,
                 "soft_budget_ratio": self.soft_budget_ratio,
                 "max_context_block_tokens": self.max_context_block_tokens,
+                "summary_trigger_ratio": self.summary_trigger_ratio,
+                "enable_history_summary": self.enable_history_summary,
+                "summary_model": self.summary_model,
+                "curator_ai_assist_enabled": self.curator_ai_assist_enabled,
+                "curator_draft_model": self.curator_draft_model,
+                "telemetry_enabled": self.telemetry_enabled,
+                "telemetry_endpoint": self.telemetry_endpoint,
+                "telemetry_batch_size": self.telemetry_batch_size,
+                "telemetry_flush_interval_s": self.telemetry_flush_interval_s,
+                "telemetry_client_id": self.telemetry_client_id,
             }
         }
         try:

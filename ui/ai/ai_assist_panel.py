@@ -40,7 +40,11 @@ from PySide6.QtWidgets import (
 
 from core.ai.ai_service import AIService
 from core.ai.context_builder import ContextOptions
-from core.ai.profiles import get_quick_actions
+from core.ai.profiles import (
+    fill_quick_action,
+    get_quick_actions,
+    quick_action_placeholders,
+)
 from core.ai.response_parser import ParsedResponse
 from core.ai.schemas import CONFIG_DRAFT, SCRIPT_DRAFT
 from ui.ai.chat_view import ChatView
@@ -392,6 +396,8 @@ class AIAssistPanel(QFrame):
         self._pending_waveform_text = ""
         self._pending_waveform_via_button = False
         self._transcript: list[dict] = []
+        self._last_user_text = ""
+        self._last_assistant_text = ""
         self._session_started_at = datetime.now()
         self.setObjectName("aiAssistPanel")
         self.setStyleSheet(_PANEL_STYLE)
@@ -403,6 +409,8 @@ class AIAssistPanel(QFrame):
         root.addWidget(self._build_header())
 
         self._chat = ChatView()
+        self._chat.feedback_submitted.connect(self._on_feedback)
+        self._chat.curate_requested.connect(self._on_curate_requested)
         root.addWidget(self._chat, 1)
 
         bottom_bar = QFrame()
@@ -431,6 +439,7 @@ class AIAssistPanel(QFrame):
         self._replay_history()
         self.refresh_quick_actions()
         self._wire_service()
+        self._service.start_telemetry()
 
     def _build_header(self) -> QFrame:
         bar = QFrame()
@@ -539,8 +548,60 @@ class AIAssistPanel(QFrame):
         self._quick_row.setVisible(bool(actions))
 
     def _on_quick_clicked(self, text: str) -> None:
+        placeholders = quick_action_placeholders(text)
+        if placeholders:
+            values = self._prompt_quick_action_values(text, placeholders)
+            if values is None:
+                return
+            text = fill_quick_action(text, values)
         self._input.setPlainText(text)
         self._on_send_clicked()
+
+    def _prompt_quick_action_values(
+        self, template: str, placeholders: list[str]
+    ) -> dict[str, str] | None:
+        """对带占位符的快捷指令弹轻量输入框；取消返回 None。"""
+        from PySide6.QtWidgets import QDialogButtonBox, QFormLayout, QLineEdit
+
+        dialog = QDialog(parent=self)
+        dialog.setWindowTitle("填写快捷指令参数")
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        tip = QLabel(template)
+        tip.setWordWrap(True)
+        layout.addWidget(tip)
+
+        form = QFormLayout()
+        form.setSpacing(8)
+        edits: dict[str, QLineEdit] = {}
+        for name in placeholders:
+            edit = QLineEdit()
+            edit.setPlaceholderText(f"输入 {name}")
+            form.addRow(name, edit)
+            edits[name] = edit
+        layout.addLayout(form)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dialog
+        )
+        ok_btn = buttons.button(QDialogButtonBox.Ok)
+        ok_btn.setAutoDefault(True)
+        ok_btn.setDefault(True)
+        cancel_btn = buttons.button(QDialogButtonBox.Cancel)
+        cancel_btn.setAutoDefault(False)
+        cancel_btn.setDefault(False)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if placeholders:
+            edits[placeholders[0]].setFocus()
+
+        if dialog.exec() != QDialog.Accepted:
+            return None
+        return {name: edit.text().strip() for name, edit in edits.items()}
 
     def _build_range_bar(self) -> QHBoxLayout:
         layout = QHBoxLayout()
@@ -832,6 +893,7 @@ class AIAssistPanel(QFrame):
 
     def _on_stream_finished(self, content: str) -> None:
         self._record("assistant", text=content or "")
+        self._last_assistant_text = content or ""
         self._chat.end_stream_message(content)
 
     def confirm_action(self, spec, arguments: dict, reason: str = "") -> "ConfirmResult":
@@ -1166,6 +1228,7 @@ class AIAssistPanel(QFrame):
             self._start_digest_send(text, via_button=False)
             return
         self._record("user", text=text)
+        self._last_user_text = text
         self._chat.add_user_message(text)
         self._service.send(text)
 
@@ -1237,7 +1300,94 @@ class AIAssistPanel(QFrame):
 
     def _on_response(self, content: str) -> None:
         self._record("assistant", text=content or "")
+        self._last_assistant_text = content or ""
         self._chat.add_ai_message(content)
+
+    def _on_feedback(self, msg_id: str, rating: str) -> None:
+        """👍/👎 反馈：转发给 service 采集（隐私开关关闭时静默）。"""
+        try:
+            self._service.record_feedback(msg_id, rating)
+        except Exception:
+            logger.error("提交反馈失败", exc_info=True)
+        self._chat.add_system_message(
+            "感谢反馈 👍" if rating == "up" else "已记录，感谢反馈 👎"
+        )
+
+    def _on_curate_requested(self, kind: str, _payload: str) -> None:
+        """对话气泡⋯菜单：把当前这轮沉淀为对应资产（草稿生成走后台线程）。"""
+        if not (self._last_user_text or self._last_assistant_text):
+            self._chat.add_system_message("暂无可沉淀的对话内容。")
+            return
+        turn = {
+            "user": self._last_user_text,
+            "assistant": self._last_assistant_text,
+            "page_key": self._service.current_page_key() or "",
+        }
+        self._chat.add_system_message("正在生成沉淀草稿…")
+        self._start_curate(kind, turn)
+
+    def _start_curate(self, kind: str, turn: dict) -> None:
+        from PySide6.QtCore import QObject, QThread, Signal
+
+        from core.ai.curator import Curator
+
+        settings = self._service.settings
+
+        class _DraftWorker(QObject):
+            done = Signal(dict)
+            failed = Signal(str)
+
+            def run(self) -> None:
+                try:
+                    draft = Curator(settings).make_draft(turn, kind)
+                    self.done.emit(draft or {})
+                except Exception as exc:  # noqa: BLE001
+                    self.failed.emit(str(exc))
+
+        thread = QThread(self)
+        worker = _DraftWorker()
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.done.connect(lambda d: self._on_draft_made(kind, turn, d))
+        worker.failed.connect(
+            lambda m: self._chat.add_system_message(f"草稿生成失败：{m}")
+        )
+        worker.done.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        self._curate_thread = thread
+        self._curate_worker = worker
+        thread.start()
+
+    def _on_draft_made(self, kind: str, turn: dict, draft: dict) -> None:
+        from ui.ai.curate_dialog import CurateDialog
+        from core.ai.curator import Curator
+
+        if not draft:
+            self._chat.add_system_message("草稿为空，已取消沉淀。")
+            return
+        dialog = CurateDialog(kind, draft, parent=self)
+        if not dialog.exec():
+            self._chat.add_system_message("已取消沉淀。")
+            return
+        final_draft = dialog.result_draft()
+        curator = Curator(self._service.settings)
+        ok = {
+            "nudge": curator.as_nudge,
+            "quick_action": curator.as_quick_action,
+            "project_rule": curator.as_project_rule,
+            "eval_case": curator.as_eval_case,
+        }.get(kind, lambda _d: False)(final_draft)
+        if ok:
+            self._chat.add_system_message("已沉淀，立即生效。")
+            self.refresh_quick_actions()
+            if self._service.settings.telemetry_enabled:
+                self._service._record_telemetry(
+                    "curated", {"kind": kind, "src": final_draft.get("_src", "")}
+                )
+        else:
+            self._chat.add_system_message("沉淀写入失败，请查看日志。")
 
     def _on_analysis(self, result) -> None:
         self._record("analysis", text=str(getattr(result, "summary", "") or result))

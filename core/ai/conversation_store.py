@@ -92,6 +92,9 @@ def save_history(
     """把指定会话历史写回（仅 user/assistant 正文，超限截断旧消息）。"""
     path = _session_path(session_key)
     payload = {"messages": _clean_messages(messages)[-_MAX_MESSAGES:]}
+    existing_summary = _read_session_raw(session_key).get("summary")
+    if isinstance(existing_summary, str) and existing_summary.strip():
+        payload["summary"] = existing_summary.strip()
     try:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
@@ -107,6 +110,38 @@ def clear_history(session_key: str = _DEFAULT_SESSION) -> None:
             os.remove(path)
         except OSError:
             logger.error("删除 AI 会话历史失败: %s", path, exc_info=True)
+
+
+def _read_session_raw(session_key: str) -> dict:
+    path = _session_path(session_key)
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f) or {}
+    except (OSError, json.JSONDecodeError):
+        logger.error("读取 AI 会话文件失败: %s", path, exc_info=True)
+        return {}
+
+
+def load_summary(session_key: str = _DEFAULT_SESSION) -> str:
+    """读取会话的前情提要摘要（Phase 6）；无则空串。"""
+    _migrate_legacy_if_needed()
+    summary = _read_session_raw(session_key).get("summary")
+    return summary.strip() if isinstance(summary, str) else ""
+
+
+def save_summary(summary: str, session_key: str = _DEFAULT_SESSION) -> None:
+    """把前情提要摘要写回会话文件（与 messages 同文件，键 summary）。"""
+    path = _session_path(session_key)
+    data = _read_session_raw(session_key)
+    data["summary"] = (summary or "").strip()
+    data.setdefault("messages", [])
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except OSError:
+        logger.error("写入 AI 会话摘要失败: %s", path, exc_info=True)
 
 
 def list_sessions() -> list[str]:

@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
@@ -426,6 +427,9 @@ QPushButton { border: none; }
 
 
 class ChatView(QScrollArea):
+    feedback_submitted = Signal(str, str)
+    curate_requested = Signal(str, str)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWidgetResizable(True)
@@ -444,6 +448,48 @@ class ChatView(QScrollArea):
         self._stream_bubble: _MarkdownBubble | None = None
         self._stream_text = ""
         self._user_bubbles: list[QLabel] = []
+        self._msg_seq = 0
+
+    def _next_msg_id(self) -> str:
+        self._msg_seq += 1
+        return f"msg_{self._msg_seq}"
+
+    def _make_ai_footer(self, msg_id: str) -> QWidget:
+        """AI 气泡下方动作条：👍/👎 反馈 + ⋯ 沉淀菜单。"""
+        bar = QWidget()
+        bar.setStyleSheet("background: transparent;")
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(2, 0, 0, 0)
+        layout.setSpacing(4)
+
+        up = QPushButton("\U0001F44D")
+        down = QPushButton("\U0001F44E")
+        more = QPushButton("\u22EF")
+        for btn in (up, down, more):
+            btn.setObjectName("aiCopyBtn")
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setFixedHeight(22)
+            layout.addWidget(btn)
+        layout.addStretch(1)
+
+        up.clicked.connect(lambda _=False: self.feedback_submitted.emit(msg_id, "up"))
+        down.clicked.connect(lambda _=False: self.feedback_submitted.emit(msg_id, "down"))
+        more.clicked.connect(lambda _=False, b=more: self._show_curate_menu(b))
+        return bar
+
+    def _show_curate_menu(self, anchor: QPushButton) -> None:
+        menu = QMenu(self)
+        menu.addAction("沉淀为纠偏", lambda: self.curate_requested.emit("nudge", ""))
+        menu.addAction(
+            "沉淀为快捷指令", lambda: self.curate_requested.emit("quick_action", "")
+        )
+        menu.addAction(
+            "沉淀为项目规则", lambda: self.curate_requested.emit("project_rule", "")
+        )
+        menu.addAction(
+            "沉淀为 eval 用例", lambda: self.curate_requested.emit("eval_case", "")
+        )
+        menu.exec(anchor.mapToGlobal(anchor.rect().bottomLeft()))
 
     def _available_width(self) -> int:
         return max(120, self.viewport().width() - 32)
@@ -528,7 +574,9 @@ class ChatView(QScrollArea):
         self._scroll_to_bottom()
 
     def add_ai_message(self, text: str) -> _MarkdownBubble:
-        return self._append_markdown_bubble(text or "（无内容）")
+        bubble = self._append_markdown_bubble(text or "（无内容）")
+        self._insert_row(self._make_ai_footer(self._next_msg_id()))
+        return bubble
 
     def begin_stream_message(self) -> _MarkdownBubble:
         """开始一条流式 AI 气泡，返回气泡供增量更新。"""
@@ -554,6 +602,7 @@ class ChatView(QScrollArea):
         bubble.set_markdown(text or "（无内容）")
         self._stream_bubble = None
         self._stream_text = ""
+        self._insert_row(self._make_ai_footer(self._next_msg_id()))
         self._scroll_to_bottom()
 
     def add_analysis_message(self, result) -> QTextBrowser:

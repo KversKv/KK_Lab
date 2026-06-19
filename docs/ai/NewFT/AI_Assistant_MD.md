@@ -331,17 +331,17 @@ user_data/ai/history/
 
 | Phase | 主题 | 目标 | 依赖 | 状态 |
 |---|---|---|---|---|
-| P1 | 上下文地基 | token 预算裁剪，止住窗口溢出 | 无 | ⬜ |
-| P2 | Prompt 分层 | 系统/项目/用户三层外置，自用与分发解耦 | 无 | ⬜ |
-| P3 | 会话隔离 | 按页面/任务分会话 + 旧数据迁移 | P1 | ⬜ |
-| P4 | 坑沉淀 | 纠偏片段库 + quick_action 参数化 | P2 | ⬜ |
-| P5a | 自用快捷 | 一键沉淀 + 一键回归（本机即时回路） | P4,P7 | ⬜ |
-| P5b | 服务器回流 | telemetry 采集→上报→后台 review | P1-P4 | ⬜ |
-| P6 | 智能压缩 | 历史摘要压缩（长会话） | P1,P3 | ⬜ |
-| P7 | 防退化 | eval 回归集 | P4 | ⬜ |
+| P1 | 上下文地基 | token 预算裁剪，止住窗口溢出 | 无 | ✅ |
+| P2 | Prompt 分层 | 系统/项目/用户三层外置，自用与分发解耦 | 无 | ✅ |
+| P3 | 会话隔离 | 按页面/任务分会话 + 旧数据迁移 | P1 | ✅ |
+| P4 | 坑沉淀 | 纠偏片段库 + quick_action 参数化 | P2 | ✅ |
+| P5a | 自用快捷 | 一键沉淀 + 一键回归（本机即时回路） | P4,P7 | ✅ |
+| P5b | 服务器回流 | telemetry 采集→上报→后台 review | P1-P4 | 🟡 |
+| P6 | 智能压缩 | 历史摘要压缩（长会话） | P1,P3 | ✅ |
+| P7 | 防退化 | eval 回归集 | P4 | ✅ |
 
 里程碑：
-- **M1（可用地基）** = P1 + P2 + P3 完成。
+- **M1（可用地基）** = P1 + P2 + P3 完成。✅
 - **M2（自用顺手）** = M1 + P4 + P7 + P5a 完成（你本人当下就能一键沉淀/回归）。
 - **M3（可分发内测）** = M2 + P5b 完成（telemetry 远程回流上线）。
 - **M4（可持续优化）** = M3 + P6 完成。
@@ -357,13 +357,13 @@ user_data/ai/history/
 
 | # | 任务 | 文件 | 状态 | 备注 |
 |---|---|---|---|---|
-| 1.1 | 新增 `estimate_tokens()`（tiktoken 优先，启发式回退） | `context_budget.py`(新) | ⬜ | |
-| 1.2 | 实现 `fit_messages()`（system+本轮固定保留，块限额，历史从旧裁） | `context_budget.py`(新) | ⬜ | |
-| 1.3 | 按模型取窗口（glm 128k / dsv4flash 1MB），未知回退最小窗口 | `context_budget.py`(新) `config.py` | ⬜ | |
-| 1.4 | `build_messages` 接入预算裁剪（按当前模型窗口） | `prompt_manager.py` | ⬜ | |
-| 1.5 | 新增模型窗口表/预留/软预算/块上限等配置项 | `config.py` | ⬜ | |
-| 1.6 | agent 模式 `_agent_messages` 每轮预算检查 | `ai_service.py` | ⬜ | |
-| 1.7 | 裁剪触发记 INFO 日志 + 自测 | — | ⬜ | |
+| 1.1 | 新增 `estimate_tokens()`（tiktoken 优先，启发式回退） | `context_budget.py`(新) | ✅ | tiktoken 缺失自动回退中英文启发式 |
+| 1.2 | 实现 `fit_messages()`（system+本轮固定保留，块限额，历史从旧裁） | `context_budget.py`(新) | ✅ | 软/硬预算取小，id() 身份判断保留项 |
+| 1.3 | 按模型取窗口（glm 128k / dsv4flash 1MB），未知回退最小窗口 | `context_budget.py`(新) `config.py` | ✅ | `context_window_for()`，未知回退 131072 |
+| 1.4 | `build_messages` 接入预算裁剪（按当前模型窗口） | `prompt_manager.py` | ✅ | `BudgetConfig` + 末端 `fit_messages` |
+| 1.5 | 新增模型窗口表/预留/软预算/块上限等配置项 | `config.py` | ✅ | windows/reserve/soft_ratio/block 上限 |
+| 1.6 | agent 模式 `_agent_messages` 每轮预算检查 | `ai_service.py` | ✅ | `_trim_agent_messages` + tool 结果 clip |
+| 1.7 | 裁剪触发记 INFO 日志 + 自测 | — | ✅ | 4096 窗口实测裁到 [system, user] |
 
 验收：长对话/大日志注入下不再溢出窗口；裁剪时有日志可观测。
 
@@ -376,12 +376,12 @@ user_data/ai/history/
 
 | # | 任务 | 文件 | 状态 | 备注 |
 |---|---|---|---|---|
-| 2.1 | 创建项目层默认文件 | `resources/ai/project_prompt.md`(新) | ⬜ | |
-| 2.2 | 创建用户层空模板（git 忽略） | `user_data/ai/user_prompt.md`(新) | ⬜ | |
-| 2.3 | 新增 `get_project_prompt()` / `get_user_prompt()` | `profiles.py` | ⬜ | |
-| 2.4 | `_build_system_text` 按序插入项目层/用户层 | `prompt_manager.py` | ⬜ | |
-| 2.5 | 打包纳入 `resources/ai/` | `spec/kk_lab.spec` | ⬜ | |
-| 2.6 | `.gitignore` 忽略 `user_prompt.md` + 同步目录结构 | `DIRECTORY_STRUCTURE.txt` | ⬜ | |
+| 2.1 | 创建项目层默认文件 | `resources/ai/project_prompt.md`(新) | ✅ | KK_Lab 项目约定 + 拼装顺序说明 |
+| 2.2 | 创建用户层空模板（git 忽略） | `user_data/ai/user_prompt.md`(新) | ✅ | 含填写指引注释，被 `user_data/` 整目录忽略 |
+| 2.3 | 新增 `get_project_prompt()` / `get_user_prompt()` | `profiles.py` | ✅ | 缺失/OSError 回退空串 |
+| 2.4 | `_build_system_text` 按序插入项目层/用户层 | `prompt_manager.py` | ✅ | 系统→项目→Profile→用户→动态 |
+| 2.5 | 打包纳入 `resources/ai/` | `spec/kk_lab.spec` | ✅ | datas 新增 `resources/ai` |
+| 2.6 | `.gitignore` 忽略 `user_prompt.md` + 同步目录结构 | `DIRECTORY_STRUCTURE.txt` | ✅ | `user_data/` 已整目录忽略；目录结构已同步 |
 
 验收：删/改用户层文件不影响系统层红线；项目层随包生效。
 
@@ -394,12 +394,12 @@ user_data/ai/history/
 
 | # | 任务 | 文件 | 状态 | 备注 |
 |---|---|---|---|---|
-| 3.1 | 存储改 `history/{session_key}.json` | `conversation_store.py` | ⬜ | |
-| 3.2 | `load/save/clear_history` 增 `session_key` 参数 | `conversation_store.py` | ⬜ | |
-| 3.3 | 新增 `list_sessions()` / `new_session()` | `conversation_store.py` | ⬜ | |
-| 3.4 | 旧 `history.json` → `history/_default.json` 一次性迁移 | `conversation_store.py` | ⬜ | |
-| 3.5 | `set_page_context` 切换对应会话历史 | `ai_service.py` | ⬜ | |
-| 3.6 | 回归：切页面历史互不污染 | — | ⬜ | |
+| 3.1 | 存储改 `history/{session_key}.json` | `conversation_store.py` | ✅ | session_key 经 `_SAFE_KEY` 清洗 |
+| 3.2 | `load/save/clear_history` 增 `session_key` 参数 | `conversation_store.py` | ✅ | 默认 `_default`，向后兼容 |
+| 3.3 | 新增 `list_sessions()` / `new_session()` | `conversation_store.py` | ✅ | `new_session` 带时间戳后缀 |
+| 3.4 | 旧 `history.json` → `history/_default.json` 一次性迁移 | `conversation_store.py` | ✅ | 实测迁移成功并删除旧文件 |
+| 3.5 | `set_page_context` 切换对应会话历史 | `ai_service.py` | ✅ | 切前存旧会话、切后载新会话 |
+| 3.6 | 回归：切页面历史互不污染 | — | ✅ | 实测 pmu_test 与 _default 互不串扰 |
 
 验收：不同页面历史互不串扰；老用户升级后旧历史不丢。
 
@@ -412,11 +412,11 @@ user_data/ai/history/
 
 | # | 任务 | 文件 | 状态 | 备注 |
 |---|---|---|---|---|
-| 4.1 | 创建片段库（含 force_tool / scpi 等） | `resources/ai/nudges.json`(新) | ⬜ | |
-| 4.2 | 按触发条件加载/注入 nudge，替换硬编码 | `ai_service.py` | ⬜ | |
-| 4.3 | quick_actions 升级为模板（`{ch}`/`{v}`） | `profiles.py` | ⬜ | |
-| 4.4 | UI 对带占位符项弹轻量输入 | UI | ⬜ | |
-| 4.5 | 打包纳入 nudges.json | `spec/kk_lab.spec` | ⬜ | |
+| 4.1 | 创建片段库（含 force_tool / scpi 等） | `resources/ai/nudges.json`(新) | ✅ | 随包 + `nudges.local.json` 本机覆盖按 id 合并 |
+| 4.2 | 按触发条件加载/注入 nudge，替换硬编码 | `ai_service.py` `nudges.py`(新) | ✅ | `force_tool_nudge`/`page_nudges` |
+| 4.3 | quick_actions 升级为模板（`{ch}`/`{v}`） | `profiles.py` | ✅ | `quick_action_placeholders`/`fill_quick_action` |
+| 4.4 | UI 对带占位符项弹轻量输入 | UI | ✅ | `_prompt_quick_action_values` QDialog |
+| 4.5 | 打包纳入 nudges.json | `spec/kk_lab.spec` | ✅ | datas 含 `resources/ai` |
 
 验收：新增坑只需加一条 json；快捷指令可带参下发。
 
@@ -429,14 +429,14 @@ user_data/ai/history/
 
 | # | 任务 | 文件 | 状态 | 备注 |
 |---|---|---|---|---|
-| 5a.1 | 新增沉淀器（as_nudge/as_quick_action/as_project_rule/as_eval_case） | `core/ai/curator.py`(新) | ⬜ | 去重+脱敏+时间戳/来源标记 |
-| 5a.1b | 草稿生成默认走 AI 润色（`_draft_via_ai`），失败降级规则兜底（`_draft_via_rule`） | `core/ai/curator.py`(新) `config.py` | ⬜ | `curator_ai_assist_enabled`/`curator_draft_model` |
-| 5a.2 | 对话气泡「⋯」菜单加 4 个一键沉淀动作（润色走 QThread，不阻塞 UI） | UI | ⬜ | |
-| 5a.3 | 新增回归执行器（读 eval 用例→逐条跑→红绿汇总） | `core/ai/eval_runner.py`(新) | ⬜ | 支持 mock 离线 / 真模型 |
-| 5a.4 | 命令行入口 `python -m core.ai.eval_runner` + 非零退出码 | `core/ai/eval_runner.py` | ⬜ | CI 可挂 |
-| 5a.5 | 设置页「本机经验」面板：一键回归按钮（QThread）+ 结果展示 | UI 设置页 | ⬜ | |
-| 5a.6 | 导出经验包 / 重置出厂（破坏性弹 `QDialog(parent=self)` 确认） | `curator.py` + UI | ⬜ | |
-| 5a.7 | 本机经验条目查看/删除管理 | UI 设置页 | ⬜ | |
+| 5a.1 | 新增沉淀器（as_nudge/as_quick_action/as_project_rule/as_eval_case） | `core/ai/curator.py`(新) | ✅ | 去重+脱敏+时间戳/来源标记，写本机 .local 兼容 frozen 只读 |
+| 5a.1b | 草稿生成默认走 AI 润色（`_draft_via_ai`），失败降级规则兜底（`_draft_via_rule`） | `core/ai/curator.py`(新) `config.py` | ✅ | `curator_ai_assist_enabled`/`curator_draft_model` |
+| 5a.2 | 对话气泡「⋯」菜单加 4 个一键沉淀动作（润色走 QThread，不阻塞 UI） | UI | ✅ | `chat_view` footer + `ai_assist_panel` `_start_curate` + `curate_dialog` |
+| 5a.3 | 新增回归执行器（读 eval 用例→逐条跑→红绿汇总） | `core/ai/eval_runner.py`(新) | ✅ | 支持 mock 离线 / 真模型 |
+| 5a.4 | 命令行入口 `python -m core.ai.eval_runner` + 非零退出码 | `core/ai/eval_runner.py` | ✅ | 实测 `--mock` 通过 2/2 |
+| 5a.5 | 设置页「本机经验」面板：一键回归按钮（QThread）+ 结果展示 | UI 设置页 | ✅ | `_build_experience_tab` + `_on_run_eval` 后台线程 |
+| 5a.6 | 导出经验包 / 重置出厂（破坏性弹 `QDialog(parent=self)` 确认） | `curator.py` + UI | ✅ | `export_pack`/`reset_local` + 二次确认对话框 |
+| 5a.7 | 本机经验条目查看/删除管理 | UI 设置页 | ✅ | `list_local`/`delete_nudge`/`delete_eval_case` |
 
 验收：对话里一键即可把"刚纠正的坑"写进 nudges 并立刻生效；点一下"一键回归"能跑完 eval 看红绿；离线可用，不依赖 telemetry。
 
@@ -449,13 +449,13 @@ user_data/ai/history/
 
 | # | 任务 | 文件 | 状态 | 备注 |
 |---|---|---|---|---|
-| 5.1 | 新增 telemetry 配置项 + env 覆盖 | `config.py` | ⬜ | |
-| 5.2 | `TelemetryEvent` + `record()` 写本地 jsonl | `telemetry.py`(新) | ⬜ | |
-| 5.3 | `TelemetryUploader`（QThread/定时，批量+重试+离线堆积） | `telemetry.py`(新) | ⬜ | |
-| 5.4 | 接入点埋点（回答/nudge/错误/压缩） | `ai_service.py` | ⬜ | |
-| 5.5 | UI：👍/👎 反馈 + 隐私开关 | UI 设置页 | ⬜ | |
-| 5.6 | 服务器最小形态 `POST /v1/telemetry` + 落库 | 服务器 | ⬜ | |
-| 5.7 | 全程脱敏校验 + 关闭开关彻底静默 | — | ⬜ | |
+| 5.1 | 新增 telemetry 配置项 + env 覆盖 | `config.py` | ✅ | enabled/endpoint/batch/flush/client_id + `effective_telemetry_endpoint` |
+| 5.2 | `TelemetryEvent` + `record()` 写本地 jsonl | `telemetry.py`(新) | ✅ | buffer.jsonl + 滚动上限 + `_mask_payload` |
+| 5.3 | `TelemetryUploader`（QThread/定时，批量+重试+离线堆积） | `telemetry.py`(新) | ✅ | QTimer→短命 QThread→httpx POST，成功后重写剩余 |
+| 5.4 | 接入点埋点（回答/nudge/错误/压缩） | `ai_service.py` | ✅ | answer/error/nudge_hit/summary/feedback 5 处 |
+| 5.5 | UI：👍/👎 反馈 + 隐私开关 | UI 设置页 | ✅ | `chat_view` footer 反馈 + 常规页 `telemetry_enabled` 开关 |
+| 5.6 | 服务器最小形态 `POST /v1/telemetry` + 落库 | 服务器 | ⏸️ | 服务器侧不在本仓库范围（仅客户端落地） |
+| 5.7 | 全程脱敏校验 + 关闭开关彻底静默 | — | ✅ | `record` 开关关闭直接 return + `mask_sensitive` 二次脱敏 |
 
 验收：开关关闭时零采集零上报；上报体无敏感原文；离线可堆积补传。
 
@@ -468,10 +468,10 @@ user_data/ai/history/
 
 | # | 任务 | 文件 | 状态 | 备注 |
 |---|---|---|---|---|
-| 6.1 | `fit_messages` 检测超 `summary_trigger_ratio` 触发 | `context_budget.py` | ⬜ | |
-| 6.2 | 后台用 `deepseekv4flash` 生成摘要 | `ai_service.py` | ⬜ | |
-| 6.3 | 摘要走 `mask_sensitive`，失败回退滑动窗口 | `ai_service.py` | ⬜ | |
-| 6.4 | 摘要以 system「[前情提要]」插入会话头 | `conversation_store.py` | ⬜ | |
+| 6.1 | `fit_messages` 检测超 `summary_trigger_ratio` 触发 | `context_budget.py` | ✅ | `should_summarize` |
+| 6.2 | 后台用 `deepseekv4flash` 生成摘要 | `ai_service.py` | ✅ | `_SummaryWorker` QThread + `summary_model` |
+| 6.3 | 摘要走 `mask_sensitive`，失败回退滑动窗口 | `ai_service.py` | ✅ | `_on_summary_failed` 回退原历史 |
+| 6.4 | 摘要以 system「[前情提要]」插入会话头 | `conversation_store.py` | ✅ | `save_summary`/`load_summary` + `build_messages(summary=)` |
 
 验收：超长会话仍保留早期关键约定；摘要不覆盖系统层规则。
 
@@ -484,9 +484,9 @@ user_data/ai/history/
 
 | # | 任务 | 文件 | 状态 | 备注 |
 |---|---|---|---|---|
-| 7.1 | 建 eval 目录与用例格式 | `tests/ai_eval/`(新) | ⬜ | |
-| 7.2 | 把已知坑转为「输入→期望行为」用例 | `tests/ai_eval/` | ⬜ | |
-| 7.3 | 上报坑→用例的转换约定 | 文档 | ⬜ | |
+| 7.1 | 建 eval 目录与用例格式 | `tests/ai_eval/`(新) | ✅ | `cases/*.json` + `README.md` 格式说明 |
+| 7.2 | 把已知坑转为「输入→期望行为」用例 | `tests/ai_eval/` | ✅ | force_tool_open_output / scpi_channel_syntax 两种子用例 |
+| 7.3 | 上报坑→用例的转换约定 | 文档 | ✅ | curator `as_eval_case` 一键沉淀；README 说明格式 |
 
 验收：改 prompt 后跑回归不破坏既有坑的修复。
 

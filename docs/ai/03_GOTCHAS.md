@@ -314,3 +314,19 @@ pixmap.setDevicePixelRatio(dpr)  # ← 禁止
 - AI 历史回灌是污染传播路径；凡"声称已执行控制类动作"的轮次必须强制走真 tool_call，禁止用文字假装完成。
 - 在 worker `finished` 信号槽链里**再起新 QThread worker**，必须用**带正延迟**的 `singleShot`（≥50ms）或等首轮线程 `finished` 完全处理后再启动，禁止 `singleShot(0)` 直接重入，否则与上一轮线程清理竞态导致闪退。
 - 排查"无声闪退"时：`faulthandler` 输出为空往往指向 Qt 线程/对象生命周期问题，而非 C 段错误；用分步 `logger.warning` 埋点夹逼定位（注意 `StreamHandler` 默认每条 flush，最后一条日志可信）。
+
+## 27. AI 经验沉淀写盘：`resources/` 打包后只读，必须写本机 `.local` 覆盖文件
+
+**现象**：开发态把 AI「一键沉淀」的纠偏片段、快捷指令、项目规则直接写回随包的 `resources/ai/nudges.json` 看似可行；PyInstaller 打包（frozen）后，`resources/` 落在只读安装目录（甚至 `_MEI` 临时解包目录），运行时写入会 `PermissionError` 或写到临时目录被下次启动丢弃。
+
+**根因**：随包资源是只读发布物；用户态可写数据必须落在 `get_user_data_dir()`（`user_data/`），二者不能混。
+
+**修复（本机 `.local` 覆盖方案）**：
+- 随包只读：`resources/ai/nudges.json`（出厂片段库）。
+- 本机可写：`user_data/ai/nudges.local.json` / `quick_actions.local.json` / `project_rules.local.md` / `user_prompt.md` 与 `tests/ai_eval/cases/local_*.json`。
+- 加载侧合并：[nudges.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/core/ai/nudges.py) 按 `id` 合并（本机优先覆盖随包）；[profiles.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/core/ai/profiles.py) 按 `page_key` 合并快捷指令；[prompt_manager.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/core/ai/prompt_manager.py) 把本机项目规则插在「项目层之后、Profile 之前」。
+- 写入侧统一走 [curator.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/core/ai/curator.py)，只写 `.local`；`reset_local()` 只删本机沉淀，不动随包出厂项。
+
+**规则**：
+- 凡运行时需写入的 AI 配置/经验，一律写 `get_user_data_dir()` 下的 `.local` 文件，禁止写 `resources/`。
+- 「随包出厂 + 本机覆盖」按稳定主键（`id` / `page_key`）合并，本机优先；删除/重置只作用于本机层。

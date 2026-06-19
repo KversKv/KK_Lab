@@ -9,7 +9,9 @@
 """
 from __future__ import annotations
 
+import json
 import os
+import re
 from typing import Any
 
 from ui.resource_path import get_resource_base, get_user_data_dir
@@ -71,8 +73,9 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         ),
         "quick_actions": [
             "查询当前各通道电压电流",
-            "Close CH1 OUTPUT",
-            "Open CH1 OUTPUT",
+            "把通道 {ch} 输出电压设到 {v}V",
+            "打开通道 {ch} 的输出",
+            "关闭通道 {ch} 的输出",
             "解读最近的功率测量曲线",
         ],
     },
@@ -239,7 +242,57 @@ def get_profile(page_key: str | None) -> dict[str, Any]:
 
 
 def get_quick_actions(page_key: str | None) -> list[str]:
-    """按页面键取快捷指令文案列表（5.4 快捷指令动态化）。"""
+    """按页面键取快捷指令文案列表（5.4 快捷指令动态化）。
+
+    文案可含 `{占位符}`（如 `把通道 {ch} 设到 {v}V`），UI 侧对带占位符的项
+    弹轻量输入后再发送（见 quick_action_placeholders / fill_quick_action）。
+    """
     profile = get_profile(page_key)
-    actions = profile.get("quick_actions") or []
-    return [str(a) for a in actions if str(a).strip()]
+    actions = [str(a) for a in (profile.get("quick_actions") or []) if str(a).strip()]
+    for extra in _local_quick_actions(page_key):
+        if extra not in actions:
+            actions.append(extra)
+    return actions
+
+
+_QUICK_ACTIONS_LOCAL = "quick_actions.local.json"
+
+
+def _local_quick_actions(page_key: str | None) -> list[str]:
+    """读取本机沉淀的快捷指令（user_data/ai/quick_actions.local.json）。"""
+    path = os.path.join(get_user_data_dir("ai"), _QUICK_ACTIONS_LOCAL)
+    if not os.path.isfile(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f) or {}
+    except (OSError, json.JSONDecodeError):
+        logger.error("读取本机快捷指令失败: %s", path, exc_info=True)
+        return []
+    groups = data.get("quick_actions") or {}
+    if not isinstance(groups, dict):
+        return []
+    key = page_key if (page_key and page_key in groups) else "_default"
+    return [str(a) for a in (groups.get(key) or []) if str(a).strip()]
+
+
+_PLACEHOLDER_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def quick_action_placeholders(template: str) -> list[str]:
+    """解析快捷指令模板中的占位符名（去重保序），无占位符返回空列表。"""
+    seen: list[str] = []
+    for name in _PLACEHOLDER_RE.findall(template or ""):
+        if name not in seen:
+            seen.append(name)
+    return seen
+
+
+def fill_quick_action(template: str, values: dict[str, str]) -> str:
+    """用 values 填充模板占位符；缺失的占位符原样保留。"""
+    def _sub(match: "re.Match[str]") -> str:
+        key = match.group(1)
+        val = values.get(key)
+        return str(val) if val not in (None, "") else match.group(0)
+
+    return _PLACEHOLDER_RE.sub(_sub, template or "")

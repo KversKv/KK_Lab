@@ -21,12 +21,15 @@ from core.ai.context_builder import ContextBuilder, ContextOptions
 from core.ai.conversation_store import (
     clear_history as _clear_persisted_history,
     load_history as _load_persisted_history,
+    load_summary as _load_persisted_summary,
     save_history as _save_persisted_history,
+    save_summary as _save_persisted_summary,
 )
 from core.ai.log_ring import get_log_ring
 from core.ai.newapi_client import AIClientError, ChatResult, NewAPIClient
+from core.ai.nudges import force_tool_nudge
 from core.ai.profiles import get_profile
-from core.ai.prompt_manager import BudgetConfig, PromptManager
+from core.ai.prompt_manager import BudgetConfig, PromptManager, mask_sensitive
 from core.ai.providers.log_provider import LogContextProvider
 from core.ai.providers.page_provider import PageContextProvider
 from core.ai.providers.sequence_provider import SequenceContextProvider
@@ -127,6 +130,48 @@ class _StreamWorker(QObject):
         self.finished.emit(result)
 
 
+class _SummaryWorker(QObject):
+    """前情提要压缩 worker（Phase 6）：把旧历史压成短摘要，失败发 failed 由调用方回退。"""
+
+    finished = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, client: NewAPIClient, model: str, messages, max_tokens: int):
+        super().__init__()
+        self._client = client
+        self._model = model
+        self._messages = messages
+        self._max_tokens = max_tokens
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
+
+    def run(self) -> None:
+        try:
+            result = self._client.chat(
+                model=self._model,
+                messages=self._messages,
+                temperature=0.2,
+                max_tokens=self._max_tokens,
+                cancel_check=lambda: self._cancelled,
+            )
+        except AIClientError as exc:
+            self.failed.emit(str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001 - 兜底转可读错误
+            logger.error("AI 摘要 worker 未预期异常", exc_info=True)
+            self.failed.emit(f"未预期错误：{exc}")
+            return
+        self.finished.emit((result.content or "").strip())
+
+
+_SUMMARY_INSTRUCTION = (
+    "你是对话压缩助手。请把下面这段实验室仪器控制对话压缩成简洁的「前情提要」，"
+    "保留：用户目标、已确认的关键参数（通道/电压/电流/序列名等）、已执行过的操作与结论、"
+    "尚未完成的事项。要求：用简体中文、要点式、不超过 200 字，不要复述客套话，不要编造。"
+)
+
 _DEFAULT_SESSION = "_default"
 
 _MODE_CHAT = "chat"
@@ -139,7 +184,7 @@ _MAX_TOOL_ROUNDS = 5
 
 _FORCE_RETRY_DELAY_MS = 50
 
-_FORCE_TOOL_NUDGE = (
+_FORCE_TOOL_NUDGE_FALLBACK = (
     "[系统强制提示] 上一条回复没有调用任何工具，却用文字声称已执行或"
     "“系统已弹出确认框/确认后即执行”等。这是被禁止的：你不能假装已执行，"
     "也不能只给出命令文本。若用户的请求需要改变仪器/串口/测试运行状态"
@@ -148,6 +193,11 @@ _FORCE_TOOL_NUDGE = (
     "请现在直接发起正确的工具调用；若确实缺少必要参数（如 session_id、通道号），"
     "先调用查询类动作补全，或简短询问用户，但不要再用文字假装已完成。"
 )
+
+
+def _force_tool_nudge_text() -> str:
+    """取 force_tool 纠偏片段；片段库缺失时回退内置常量。"""
+    return force_tool_nudge() or _FORCE_TOOL_NUDGE_FALLBACK
 
 
 class AIService(QObject):
@@ -170,6 +220,10 @@ class AIService(QObject):
         self._page_key: str | None = None
         self._session_key: str = _DEFAULT_SESSION
         self._history: list[dict[str, str]] = _load_persisted_history(self._session_key)
+        self._summary: str = _load_persisted_summary(self._session_key)
+        self._summary_thread: QThread | None = None
+        self._summary_worker: _SummaryWorker | None = None
+        self._telemetry_uploader = None
         self._busy = False
         self._pending_mode = _MODE_CHAT
         self._model_override: str | None = None
@@ -269,6 +323,7 @@ class AIService(QObject):
         self._page_key = page_key
         self._session_key = page_key or _DEFAULT_SESSION
         self._history = _load_persisted_history(self._session_key)
+        self._summary = _load_persisted_summary(self._session_key)
         logger.debug("AI 上下文切换页面: %s（会话 %s）", page_key, self._session_key)
 
     def current_page_key(self) -> str | None:
@@ -279,6 +334,7 @@ class AIService(QObject):
 
     def clear_history(self) -> None:
         self._history.clear()
+        self._summary = ""
         _clear_persisted_history(self._session_key)
         self._session_stats.reset()
         self.usage_updated.emit(None, self._session_stats)
@@ -365,6 +421,143 @@ class AIService(QObject):
             timeout_seconds=self._settings.timeout_seconds,
         )
 
+    def _record_telemetry(self, event_type: str, payload: dict | None = None) -> None:
+        """采集一条遥测事件（隐私开关关闭时由 telemetry.record 静默）。"""
+        if not self._settings.telemetry_enabled:
+            return
+        try:
+            from core.ai.telemetry import TelemetryEvent, record
+
+            record(
+                TelemetryEvent(
+                    event_type=event_type,
+                    page_key=self._page_key or "",
+                    payload=payload or {},
+                ),
+                self._settings,
+            )
+        except Exception:  # noqa: BLE001 - 采集失败绝不影响主流程
+            logger.error("采集遥测事件失败: %s", event_type, exc_info=True)
+
+    def record_feedback(self, msg_id: str, rating: str, comment: str = "") -> None:
+        """UI 👍/👎 反馈入口（§3.2 回答反馈事件）。"""
+        self._record_telemetry(
+            "feedback",
+            {"msg_id": msg_id, "rating": rating, "comment": comment},
+        )
+
+    def start_telemetry(self) -> None:
+        """按当前隐私开关启动后台遥测上报器（关闭则停止/不启动）。"""
+        if not self._settings.telemetry_enabled:
+            if self._telemetry_uploader is not None:
+                self._telemetry_uploader.stop()
+            return
+        try:
+            if self._telemetry_uploader is None:
+                from core.ai.telemetry import TelemetryUploader
+
+                self._telemetry_uploader = TelemetryUploader(self._settings, parent=self)
+            self._telemetry_uploader.start()
+        except Exception:  # noqa: BLE001 - 上报器启动失败不影响主流程
+            logger.error("启动遥测上报器失败", exc_info=True)
+
+    def _maybe_summarize(self) -> None:
+        """一轮结束后检查历史是否逼近窗口，必要时后台压缩前情提要（Phase 6）。
+
+        失败/未配置时不影响主流程：context_budget.fit_messages 仍按滑动窗口兜底。
+        """
+        if not self._settings.enable_history_summary:
+            return
+        if self._summary_thread is not None:
+            return
+        if len(self._history) < 4:
+            return
+        model = self._resolve_model(
+            get_profile(self._page_key).get("model", self._settings.effective_model)
+        )
+        window = self._settings.context_window_for(model)
+        if not context_budget.should_summarize(
+            self._history,
+            window=window,
+            reserve_output=self._settings.reserve_output_tokens,
+            trigger_ratio=self._settings.summary_trigger_ratio,
+        ):
+            return
+        if not self._settings.is_configured():
+            return
+
+        keep_recent = 4
+        old = self._history[:-keep_recent]
+        if not old:
+            return
+        transcript_lines = []
+        if self._summary:
+            transcript_lines.append(f"[已有前情提要]\n{self._summary}")
+        for item in old:
+            role = "用户" if item.get("role") == "user" else "助手"
+            transcript_lines.append(f"{role}：{item.get('content', '')}")
+        transcript = "\n".join(transcript_lines)
+        if self._prompt_manager._enable_masking:
+            transcript = mask_sensitive(transcript)
+
+        summary_model = self._settings.summary_model or model
+        messages = [
+            {"role": "system", "content": _SUMMARY_INSTRUCTION},
+            {"role": "user", "content": transcript},
+        ]
+        try:
+            client = self._make_client()
+        except Exception:
+            logger.error("创建摘要 client 失败", exc_info=True)
+            return
+
+        self._summary_old_count = len(old)
+        self._summary_thread = QThread()
+        self._summary_worker = _SummaryWorker(
+            client, summary_model, messages, max_tokens=512
+        )
+        self._summary_worker.moveToThread(self._summary_thread)
+        self._summary_thread.started.connect(self._summary_worker.run)
+        self._summary_worker.finished.connect(self._on_summary_finished)
+        self._summary_worker.failed.connect(self._on_summary_failed)
+        self._summary_worker.finished.connect(self._summary_thread.quit)
+        self._summary_worker.failed.connect(self._summary_thread.quit)
+        self._summary_thread.finished.connect(self._cleanup_summary_thread)
+        self._summary_thread.start()
+
+    def _on_summary_finished(self, summary: str) -> None:
+        summary = (summary or "").strip()
+        if not summary:
+            return
+        old_count = getattr(self, "_summary_old_count", 0)
+        if old_count <= 0 or old_count > len(self._history):
+            return
+        self._summary = summary
+        self._history = self._history[old_count:]
+        _save_persisted_summary(self._summary, self._session_key)
+        _save_persisted_history(self._history, self._session_key)
+        logger.info(
+            "已压缩前情提要（会话 %s）：折叠 %d 条旧历史", self._session_key, old_count
+        )
+        self._record_telemetry(
+            "summary",
+            {
+                "trigger_ratio": self._settings.summary_trigger_ratio,
+                "summarized_turns": old_count,
+            },
+        )
+
+    def _on_summary_failed(self, message: str) -> None:
+        logger.warning("前情提要压缩失败，回退滑动窗口：%s", message)
+
+    def _cleanup_summary_thread(self) -> None:
+        if self._summary_worker is not None:
+            self._summary_worker.deleteLater()
+            self._summary_worker = None
+        if self._summary_thread is not None:
+            self._summary_thread.deleteLater()
+            self._summary_thread = None
+
     def send(
         self,
         user_text: str,
@@ -397,6 +590,7 @@ class AIService(QObject):
             log_context=log_context,
             extra_context=extra_context,
             budget=self._budget_for(model),
+            summary=self._summary,
         )
         self._history.append({"role": "user", "content": text})
 
@@ -497,6 +691,8 @@ class AIService(QObject):
         self.response_finished.emit(content)
         self._stream_buffer = ""
         self._set_busy(False)
+        self._record_telemetry("answer", {"mode": "chat_stream"})
+        self._maybe_summarize()
 
     def _on_finished(self, result: ChatResult) -> None:
         content = result.content if result else ""
@@ -531,6 +727,8 @@ class AIService(QObject):
         else:
             self.response_ready.emit(content)
         self._set_busy(False)
+        self._record_telemetry("answer", {"mode": mode})
+        self._maybe_summarize()
 
     def _on_failed(self, message: str) -> None:
         self._pending_mode = _MODE_CHAT
@@ -539,6 +737,10 @@ class AIService(QObject):
             self._history.pop()
         self.error_occurred.emit(message)
         self._set_busy(False)
+        self._record_telemetry(
+            "error",
+            {"error_type": "chat_failed", "masked_message": (message or "")[:200]},
+        )
 
     @staticmethod
     def _looks_like_fake_execution(content: str) -> bool:
@@ -589,7 +791,11 @@ class AIService(QObject):
                     {"role": "assistant", "content": content or ""}
                 )
                 self._agent_messages.append(
-                    {"role": "user", "content": _FORCE_TOOL_NUDGE}
+                    {"role": "user", "content": _force_tool_nudge_text()}
+                )
+                self._record_telemetry(
+                    "nudge_hit",
+                    {"nudge_id": "force_tool", "before": (content or "")[:120]},
                 )
                 QTimer.singleShot(_FORCE_RETRY_DELAY_MS, self._run_forced_retry)
                 return
@@ -598,6 +804,7 @@ class AIService(QObject):
             _save_persisted_history(self._history, self._session_key)
             self.response_ready.emit(content)
             self._set_busy(False)
+            self._maybe_summarize()
             return
 
         self._agent_messages.append(

@@ -118,10 +118,14 @@ core/
 │   ├── config.py            # AISettings：env 优先 + user_data/ai/config.json 读写
 │   ├── newapi_client.py     # NewAPIClient：OpenAI 兼容 /chat/completions（非流式 + SSE 流式 chat_stream + 超时/取消）
 │   ├── conversation_store.py # 会话历史持久化：user_data/ai/history/<session_key>.json（按页面隔离 + 旧 history.json 迁移，上限 40 条兜底）
-│   ├── context_budget.py    # token 预算与裁剪：estimate_tokens / resolve_window / clip_context_block / fit_messages（tiktoken 优先，缺失启发式）
-│   ├── profiles.py          # AI_PROFILES：页面键 → 模型参数 + system_prompt + quick_actions；get_project_prompt/get_user_prompt（项目层/用户层）
-│   ├── prompt_manager.py    # PromptManager：四层拼装(系统/项目/用户/动态) + 敏感信息脱敏 + BudgetConfig 预算裁剪
-│   ├── ai_service.py        # AIService：QObject + QThread worker + 信号（UI↔core 桥）
+│   ├── context_budget.py    # token 预算与裁剪：estimate_tokens / resolve_window / clip_context_block / fit_messages / should_summarize（tiktoken 优先，缺失启发式）
+│   ├── profiles.py          # AI_PROFILES：页面键 → 模型参数 + system_prompt + quick_actions(占位符模板)；get_project_prompt/get_user_prompt + quick_actions.local 合并
+│   ├── nudges.py            # 纠偏片段库：随包 resources/ai/nudges.json + 本机 nudges.local.json 按 id 合并；force_tool_nudge/page_nudges
+│   ├── curator.py           # 经验沉淀器：as_nudge/as_quick_action/as_project_rule/as_eval_case + AI 草稿润色(降级规则) + list/delete/export_pack/reset_local（写本机 .local）
+│   ├── eval_runner.py       # eval 回归执行器：load_cases/run_all/summarize + `python -m core.ai.eval_runner [--mock]` 非零退出码
+│   ├── telemetry.py         # 客户端遥测：TelemetryEvent/record 写 buffer.jsonl + TelemetryUploader(QTimer→QThread→httpx POST)，隐私开关静默 + 二次脱敏
+│   ├── prompt_manager.py    # PromptManager：四层拼装(系统/项目/本机项目规则/用户/动态) + 敏感信息脱敏 + BudgetConfig 预算裁剪
+│   ├── ai_service.py        # AIService：QObject + QThread worker + 信号（UI↔core 桥）+ 历史摘要压缩 + telemetry 埋点
 │   ├── log_ring.py          # LogRingHandler：线程安全环形日志缓冲（供日志分析）
 │   ├── serial_rx_cache.py   # SerialRxCache：串口 RX 行缓存（按 session_id 定长 deque）
 │   ├── context_builder.py   # ContextBuilder：聚合 Provider + 脱敏/等级过滤/摘要截断
@@ -232,11 +236,12 @@ ui/
 │   ├── __init__.py              # MODULE_VERSION
 │   ├── ai_panel_button.py       # 顶栏 AI 面板开关按钮 (#aiPanelButton, checkable)
 │   ├── ai_assist_panel.py       # 右侧 AIAssistPanel: 标题 + ChatView + 输入 + 发送/分析/生成草案
-│   ├── chat_view.py             # ChatView: 聊天消息气泡列表 (用户/AI/系统)
+│   ├── chat_view.py             # ChatView: 聊天消息气泡列表 (用户/AI/系统) + AI 气泡 footer 👍/👎 反馈 + ⋯ 一键沉淀菜单
 │   ├── config_preview.py        # ConfigPreviewDialog: 测试配置草案预览 + 应用
 │   ├── script_preview.py        # ScriptPreviewDialog: 脚本草案预览 + 本地校验 + 应用到画布
 │   ├── action_confirm_dialog.py # ActionConfirmDialog: 高/critical 风险动作确认 (parent=面板, 取消为默认)
-│   ├── ai_settings_dialog.py    # AISettingsDialog: AI 设置 + 「测试连接」
+│   ├── curate_dialog.py         # CurateDialog: 一键沉淀草稿微调对话框 (nudge/quick_action/project_rule/eval_case)
+│   ├── ai_settings_dialog.py    # AISettingsDialog: AI 设置 + 「测试连接」+ 白名单 + 「本机经验」(一键回归/条目管理/导出重置/隐私开关)
 │   └── panel_state.py           # 面板 UI 状态持久化 (user_data/ai/ui_state.json)
 │
 ├── widgets/                 # 通用 UI 组件与可复用样式
@@ -398,7 +403,8 @@ resources/
 │   └── ai/                     # AI 助手图标 (ai_panel.svg / send.svg)
 │
 ├── ai/                      # AI Prompt 项目层 (随包只读)
-│   └── project_prompt.md       # 项目层 Prompt：KK_Lab 通用约定 (拼装于系统层之后、用户层之前)
+│   ├── project_prompt.md       # 项目层 Prompt：KK_Lab 通用约定 (拼装于系统层之后、用户层之前)
+│   └── nudges.json             # 随包纠偏片段库 (force_tool / scpi_channel_syntax；本机 nudges.local.json 可覆盖)
 │
 ├── modules/                 # 通用 UI 模块专用图标 (按模块归类)
 │   ├── SVG_Common/             # 连接区通用 (search/link/unlink)
@@ -527,7 +533,10 @@ tests/
 ├── test_custom_test_phase2.py       # Custom Test Phase 2 capability / resolver / preflight smoke
 ├── test_custom_test_phase3.py       # Custom Test Phase 3 ResultStore / 导出统一 smoke
 ├── test_custom_test_phase4.py       # Custom Test Phase 4 PromptUser / preflight UI 状态 smoke
-└── test_custom_test_phase5.py       # Custom Test Phase 5 cancellation / Mock adapters / v2 serialization smoke
+├── test_custom_test_phase5.py       # Custom Test Phase 5 cancellation / Mock adapters / v2 serialization smoke
+└── ai_eval/                         # AI eval 回归集 (防退化)
+    ├── README.md                    # 用例格式说明 + 坑→用例转换约定
+    └── cases/                       # 用例 *.json (输入→期望行为；本机沉淀 local_*.json)
 
 ================================================================================
   tools/ - 开发辅助脚本

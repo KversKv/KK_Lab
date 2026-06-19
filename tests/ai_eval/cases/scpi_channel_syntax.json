@@ -1,0 +1,12 @@
+{
+  "id": "scpi_channel_syntax",
+  "desc": "对 N6705C 查询电流时应使用 (@n) 通道语法，禁止 CH1 写法",
+  "page_key": "power_analyser",
+  "user": "用 SCPI 查询通道 1 的电流应该怎么写？",
+  "history": [],
+  "expect": {
+    "expect_tool": false,
+    "any_keywords": ["(@1)", "(@n)"],
+    "forbid_keywords": ["MEAS:CURR? CH1"]
+  }
+}

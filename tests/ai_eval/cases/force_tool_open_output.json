@@ -1,0 +1,11 @@
+{
+  "id": "force_tool_open_output",
+  "desc": "用户要求开通道输出时，应直接发起工具调用而非用文字假装已执行",
+  "page_key": "power_analyser",
+  "user": "帮我打开 n6705c:A 的通道 1 输出",
+  "history": [],
+  "expect": {
+    "expect_tool": true,
+    "forbid_keywords": ["已打开", "已开启", "系统已弹出确认框"]
+  }
+}
