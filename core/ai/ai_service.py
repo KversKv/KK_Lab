@@ -15,6 +15,7 @@ import json
 
 from PySide6.QtCore import QObject, QThread, QTimer, Signal
 
+from core.ai import context_budget
 from core.ai.config import AISettings
 from core.ai.context_builder import ContextBuilder, ContextOptions
 from core.ai.conversation_store import (
@@ -25,7 +26,7 @@ from core.ai.conversation_store import (
 from core.ai.log_ring import get_log_ring
 from core.ai.newapi_client import AIClientError, ChatResult, NewAPIClient
 from core.ai.profiles import get_profile
-from core.ai.prompt_manager import PromptManager
+from core.ai.prompt_manager import BudgetConfig, PromptManager
 from core.ai.providers.log_provider import LogContextProvider
 from core.ai.providers.page_provider import PageContextProvider
 from core.ai.providers.sequence_provider import SequenceContextProvider
@@ -126,6 +127,8 @@ class _StreamWorker(QObject):
         self.finished.emit(result)
 
 
+_DEFAULT_SESSION = "_default"
+
 _MODE_CHAT = "chat"
 _MODE_ANALYSIS = "analysis"
 _MODE_CONFIG_DRAFT = "config_draft"
@@ -165,7 +168,8 @@ class AIService(QObject):
         super().__init__(parent)
         self._settings = settings
         self._page_key: str | None = None
-        self._history: list[dict[str, str]] = _load_persisted_history()
+        self._session_key: str = _DEFAULT_SESSION
+        self._history: list[dict[str, str]] = _load_persisted_history(self._session_key)
         self._busy = False
         self._pending_mode = _MODE_CHAT
         self._model_override: str | None = None
@@ -258,16 +262,24 @@ class AIService(QObject):
         return self._busy
 
     def set_page_context(self, page_key: str | None) -> None:
-        if page_key != self._page_key:
-            self._page_key = page_key
-            logger.debug("AI 上下文切换页面: %s", page_key)
+        if page_key == self._page_key:
+            return
+        if self._history:
+            _save_persisted_history(self._history, self._session_key)
+        self._page_key = page_key
+        self._session_key = page_key or _DEFAULT_SESSION
+        self._history = _load_persisted_history(self._session_key)
+        logger.debug("AI 上下文切换页面: %s（会话 %s）", page_key, self._session_key)
 
     def current_page_key(self) -> str | None:
         return self._page_key
 
+    def current_session_key(self) -> str:
+        return self._session_key
+
     def clear_history(self) -> None:
         self._history.clear()
-        _clear_persisted_history()
+        _clear_persisted_history(self._session_key)
         self._session_stats.reset()
         self.usage_updated.emit(None, self._session_stats)
 
@@ -327,6 +339,25 @@ class AIService(QObject):
             return self._settings.effective_model
         return profile_model
 
+    def _budget_for(self, model: str) -> BudgetConfig:
+        """按当前实际模型构建 token 预算配置（窗口随模型而非全局固定）。"""
+        return BudgetConfig(
+            window=self._settings.context_window_for(model),
+            reserve_output=self._settings.reserve_output_tokens,
+            soft_budget_ratio=self._settings.soft_budget_ratio,
+            max_context_block_tokens=self._settings.max_context_block_tokens,
+        )
+
+    def _trim_agent_messages(self, model: str) -> None:
+        """进入下一轮 agent 请求前，对 messages 跑一次预算检查并裁剪最旧历史。"""
+        budget = self._budget_for(model)
+        self._agent_messages = context_budget.fit_messages(
+            self._agent_messages,
+            window=budget.window,
+            reserve_output=budget.reserve_output,
+            soft_budget_ratio=budget.soft_budget_ratio,
+        )
+
     def _make_client(self) -> NewAPIClient:
         return NewAPIClient(
             base_url=self._settings.effective_base_url,
@@ -354,19 +385,20 @@ class AIService(QObject):
         if include_recent_logs:
             log_context = self._recent_logs_text()
 
+        profile = get_profile(self._page_key)
+        model = self._resolve_model(profile.get("model", self._settings.effective_model))
+        temperature = profile.get("temperature", 0.2)
+        max_tokens = profile.get("max_tokens", 2048)
+
         messages = self._prompt_manager.build_messages(
             page_key=self._page_key,
             history=self._history,
             user_text=text,
             log_context=log_context,
             extra_context=extra_context,
+            budget=self._budget_for(model),
         )
         self._history.append({"role": "user", "content": text})
-
-        profile = get_profile(self._page_key)
-        model = self._resolve_model(profile.get("model", self._settings.effective_model))
-        temperature = profile.get("temperature", 0.2)
-        max_tokens = profile.get("max_tokens", 2048)
 
         tools = None
         if self._dispatcher is not None and self._registry is not None:
@@ -461,7 +493,7 @@ class AIService(QObject):
         self._record_usage(result)
         self._pending_mode = _MODE_CHAT
         self._history.append({"role": "assistant", "content": content})
-        _save_persisted_history(self._history)
+        _save_persisted_history(self._history, self._session_key)
         self.response_finished.emit(content)
         self._stream_buffer = ""
         self._set_busy(False)
@@ -482,7 +514,7 @@ class AIService(QObject):
 
         self._pending_mode = _MODE_CHAT
         self._history.append({"role": "assistant", "content": content})
-        _save_persisted_history(self._history)
+        _save_persisted_history(self._history, self._session_key)
 
         if mode == _MODE_ANALYSIS:
             parsed = parse(content, tool_calls)
@@ -563,7 +595,7 @@ class AIService(QObject):
                 return
             self._pending_mode = _MODE_CHAT
             self._history.append({"role": "assistant", "content": content})
-            _save_persisted_history(self._history)
+            _save_persisted_history(self._history, self._session_key)
             self.response_ready.emit(content)
             self._set_busy(False)
             return
@@ -587,7 +619,7 @@ class AIService(QObject):
         fallback = (content or "").strip() or "处理过程中出现异常，已停止本次操作。"
         if not self._history or self._history[-1].get("content") != fallback:
             self._history.append({"role": "assistant", "content": fallback})
-        _save_persisted_history(self._history)
+        _save_persisted_history(self._history, self._session_key)
         self.error_occurred.emit(reason)
         self.response_ready.emit(fallback)
         self._set_busy(False)
@@ -618,7 +650,7 @@ class AIService(QObject):
                     or "已达到工具调用上限，已停止继续执行动作。",
                 }
             )
-            _save_persisted_history(self._history)
+            _save_persisted_history(self._history, self._session_key)
             self.response_ready.emit(
                 content or "已达到工具调用上限，已停止继续执行动作。"
             )
@@ -651,6 +683,10 @@ class AIService(QObject):
         except (TypeError, ValueError):
             payload = json.dumps({"status": outcome.status, "message": outcome.message})
 
+        payload = context_budget.clip_context_block(
+            payload, self._settings.max_context_block_tokens
+        )
+
         self._agent_messages.append(
             {
                 "role": "tool",
@@ -676,6 +712,7 @@ class AIService(QObject):
             self._set_busy(False)
             return
         try:
+            self._trim_agent_messages(self._agent_model)
             tools = self._registry.to_tools() if self._registry else None
             self._start_worker(
                 messages=self._agent_messages,
@@ -778,18 +815,22 @@ class AIService(QObject):
         )
         user_text = instruction + "\n\n[待分析日志]\n" + context_text
 
+        profile = get_profile(self._page_key)
+        analysis_model = self._resolve_model(
+            profile.get("model", self._settings.effective_model)
+        )
         messages = self._prompt_manager.build_messages(
             page_key=self._page_key,
             history=[],
             user_text=user_text,
+            budget=self._budget_for(analysis_model),
         )
         self._history.append({"role": "user", "content": "（请求结构化日志分析）"})
 
-        profile = get_profile(self._page_key)
         self._pending_mode = _MODE_ANALYSIS
         self._start_worker(
             messages=messages,
-            model=self._resolve_model(profile.get("model", self._settings.effective_model)),
+            model=analysis_model,
             temperature=profile.get("temperature", 0.1),
             max_tokens=profile.get("max_tokens", 2048),
         )
@@ -817,20 +858,24 @@ class AIService(QObject):
         instruction = self._draft_instruction(kind)
         full_text = instruction + "\n\n[用户需求]\n" + text
 
+        profile = get_profile(self._page_key)
+        draft_model = self._resolve_model(
+            profile.get("model", self._settings.effective_model)
+        )
         messages = self._prompt_manager.build_messages(
             page_key=self._page_key,
             history=[],
             user_text=full_text,
+            budget=self._budget_for(draft_model),
         )
         self._history.append({"role": "user", "content": text})
 
-        profile = get_profile(self._page_key)
         self._pending_mode = (
             _MODE_CONFIG_DRAFT if kind == CONFIG_DRAFT else _MODE_SCRIPT_DRAFT
         )
         self._start_worker(
             messages=messages,
-            model=self._resolve_model(profile.get("model", self._settings.effective_model)),
+            model=draft_model,
             temperature=profile.get("temperature", 0.0),
             max_tokens=max(profile.get("max_tokens", 2048), 4096),
         )

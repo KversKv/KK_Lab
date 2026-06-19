@@ -9,7 +9,16 @@
 """
 from __future__ import annotations
 
+import os
 from typing import Any
+
+from ui.resource_path import get_resource_base, get_user_data_dir
+from log_config import get_logger
+
+logger = get_logger(__name__)
+
+_PROJECT_PROMPT_REL = ("resources", "ai", "project_prompt.md")
+_USER_PROMPT_NAME = "user_prompt.md"
 
 _GLOBAL_SYSTEM_PROMPT = (
     "你是 KK_Lab 实验室测试工具内置的智能助手（AI Assist），定位是测试工程师的副驾。\n"
@@ -188,6 +197,38 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
 
 def get_global_system_prompt() -> str:
     return _GLOBAL_SYSTEM_PROMPT
+
+
+def get_project_prompt() -> str:
+    """读取项目层 prompt（resources/ai/project_prompt.md，随包只读）。
+
+    缺失或读取失败回退空串，不影响拼装。
+    """
+    path = os.path.join(get_resource_base(), *_PROJECT_PROMPT_REL)
+    if not os.path.isfile(path):
+        return ""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        logger.error("读取项目层 prompt 失败: %s", path, exc_info=True)
+        return ""
+
+
+def get_user_prompt() -> str:
+    """读取用户层 prompt（user_data/ai/user_prompt.md，本机可改）。
+
+    缺失或读取失败回退空串，不影响拼装。
+    """
+    path = os.path.join(get_user_data_dir("ai"), _USER_PROMPT_NAME)
+    if not os.path.isfile(path):
+        return ""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        logger.error("读取用户层 prompt 失败: %s", path, exc_info=True)
+        return ""
 
 
 def get_profile(page_key: str | None) -> dict[str, Any]:

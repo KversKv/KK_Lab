@@ -117,9 +117,10 @@ core/
 │   ├── __init__.py          # MODULE_VERSION
 │   ├── config.py            # AISettings：env 优先 + user_data/ai/config.json 读写
 │   ├── newapi_client.py     # NewAPIClient：OpenAI 兼容 /chat/completions（非流式 + SSE 流式 chat_stream + 超时/取消）
-│   ├── conversation_store.py # 会话历史持久化：user_data/ai/history.json（user/assistant，上限 40 条）
-│   ├── profiles.py          # AI_PROFILES：页面键 → 模型参数 + system_prompt + quick_actions
-│   ├── prompt_manager.py    # PromptManager：拼装 messages + 敏感信息脱敏
+│   ├── conversation_store.py # 会话历史持久化：user_data/ai/history/<session_key>.json（按页面隔离 + 旧 history.json 迁移，上限 40 条兜底）
+│   ├── context_budget.py    # token 预算与裁剪：estimate_tokens / resolve_window / clip_context_block / fit_messages（tiktoken 优先，缺失启发式）
+│   ├── profiles.py          # AI_PROFILES：页面键 → 模型参数 + system_prompt + quick_actions；get_project_prompt/get_user_prompt（项目层/用户层）
+│   ├── prompt_manager.py    # PromptManager：四层拼装(系统/项目/用户/动态) + 敏感信息脱敏 + BudgetConfig 预算裁剪
 │   ├── ai_service.py        # AIService：QObject + QThread worker + 信号（UI↔core 桥）
 │   ├── log_ring.py          # LogRingHandler：线程安全环形日志缓冲（供日志分析）
 │   ├── serial_rx_cache.py   # SerialRxCache：串口 RX 行缓存（按 session_id 定长 deque）
@@ -396,6 +397,9 @@ resources/
 ├── icons_svg/               # 新增 SVG 图标分组目录
 │   └── ai/                     # AI 助手图标 (ai_panel.svg / send.svg)
 │
+├── ai/                      # AI Prompt 项目层 (随包只读)
+│   └── project_prompt.md       # 项目层 Prompt：KK_Lab 通用约定 (拼装于系统层之后、用户层之前)
+│
 ├── modules/                 # 通用 UI 模块专用图标 (按模块归类)
 │   ├── SVG_Common/             # 连接区通用 (search/link/unlink)
 │   ├── SVG_Logs/               # 执行日志区 (logs/filter/export/copy/auto-scroll 等)
@@ -548,6 +552,10 @@ Results/
 
 user_data/                   # 仅开发态存在; 打包后由 ui/resource_path.get_user_data_dir
                              # 重定向到 %APPDATA%\KK_Lab\
+├── ai/                      # AI Assist 运行时数据 (本机)
+│   ├── config.json             # AISettings 持久化
+│   ├── user_prompt.md          # 用户层 Prompt (本机, 拼装于项目层之后/动态层之前)
+│   └── history/                # 按 session_key 隔离的会话历史 (<page_key>.json / _default.json)
 └── SerialCom/               # SerialCom 模块的配置 / 快捷指令 (config.json / quick_commands.json)
 
 userdata/

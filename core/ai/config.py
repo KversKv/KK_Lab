@@ -41,6 +41,14 @@ _DEFAULTS: dict[str, Any] = {
     "require_confirm_high_risk_action": True,
     "panel_default_open": False,
     "panel_width": 360,
+    "model_context_windows": {
+        "glm-5.1-fp8": 131072,
+        "deepseekv4flash": 1048576,
+    },
+    "default_context_window": 131072,
+    "reserve_output_tokens": 4096,
+    "soft_budget_ratio": 0.5,
+    "max_context_block_tokens": 8192,
 }
 
 
@@ -67,7 +75,32 @@ class AISettings:
     require_confirm_high_risk_action: bool = True
     panel_default_open: bool = False
     panel_width: int = 360
+    model_context_windows: dict[str, int] = field(
+        default_factory=lambda: {
+            "glm-5.1-fp8": 131072,
+            "deepseekv4flash": 1048576,
+        }
+    )
+    default_context_window: int = 131072
+    reserve_output_tokens: int = 4096
+    soft_budget_ratio: float = 0.5
+    max_context_block_tokens: int = 8192
     _runtime_api_key: str = field(default="", repr=False, compare=False)
+
+    def context_window_for(self, model: str) -> int:
+        """按模型取上下文窗口；未知模型回退最小已知窗口（保守不溢出）。"""
+        windows = self.model_context_windows or {}
+        if model and model in windows:
+            try:
+                return int(windows[model])
+            except (TypeError, ValueError):
+                pass
+        if windows:
+            try:
+                return min(int(v) for v in windows.values())
+            except (TypeError, ValueError):
+                pass
+        return int(self.default_context_window)
 
     @property
     def effective_api_key(self) -> str:
@@ -116,6 +149,19 @@ class AISettings:
             data["available_models"] = [str(m) for m in models if str(m).strip()]
         if str(data.get("model_mode")) not in ("auto", "fixed"):
             data["model_mode"] = _DEFAULTS["model_mode"]
+        windows = data.get("model_context_windows")
+        if not isinstance(windows, dict) or not windows:
+            data["model_context_windows"] = dict(_DEFAULTS["model_context_windows"])
+        else:
+            clean_windows: dict[str, int] = {}
+            for key, val in windows.items():
+                try:
+                    clean_windows[str(key)] = int(val)
+                except (TypeError, ValueError):
+                    continue
+            data["model_context_windows"] = (
+                clean_windows or dict(_DEFAULTS["model_context_windows"])
+            )
         return cls(**data)
 
     def save(self) -> bool:
@@ -136,6 +182,11 @@ class AISettings:
                 "require_confirm_high_risk_action": self.require_confirm_high_risk_action,
                 "panel_default_open": self.panel_default_open,
                 "panel_width": self.panel_width,
+                "model_context_windows": dict(self.model_context_windows),
+                "default_context_window": self.default_context_window,
+                "reserve_output_tokens": self.reserve_output_tokens,
+                "soft_budget_ratio": self.soft_budget_ratio,
+                "max_context_block_tokens": self.max_context_block_tokens,
             }
         }
         try:

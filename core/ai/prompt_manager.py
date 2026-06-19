@@ -7,9 +7,26 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
-from core.ai.profiles import get_global_system_prompt, get_profile
+from core.ai import context_budget
+from core.ai.profiles import (
+    get_global_system_prompt,
+    get_profile,
+    get_project_prompt,
+    get_user_prompt,
+)
 from core.ai.providers.base import ContextProvider
+
+
+@dataclass
+class BudgetConfig:
+    """token 预算配置快照（按当前模型解析后的窗口）。"""
+
+    window: int = 131072
+    reserve_output: int = 4096
+    soft_budget_ratio: float = 0.5
+    max_context_block_tokens: int = 8192
 
 _MASK_PATTERNS = [
     (re.compile(r"(?i)\b(sk-[A-Za-z0-9_\-]{8,})\b"), "[REDACTED_KEY]"),
@@ -114,19 +131,35 @@ class PromptManager:
     def add_provider(self, provider: ContextProvider) -> None:
         self._providers.append(provider)
 
-    def _build_system_text(self, page_key: str | None) -> str:
+    def _build_system_text(
+        self, page_key: str | None, budget: BudgetConfig | None = None
+    ) -> str:
         parts = [get_global_system_prompt().strip()]
+
+        project_prompt = get_project_prompt()
+        if project_prompt:
+            parts.append(project_prompt)
+
         profile = get_profile(page_key)
         profile_prompt = (profile.get("system_prompt") or "").strip()
         if profile_prompt:
             parts.append(profile_prompt)
+
+        user_prompt = get_user_prompt()
+        if user_prompt:
+            parts.append(user_prompt)
+
+        block_cap = budget.max_context_block_tokens if budget else 0
         for provider in self._providers:
             try:
                 ctx = provider.build_context(page_key)
             except Exception:
                 ctx = ""
             if ctx:
-                parts.append(ctx.strip())
+                ctx = ctx.strip()
+                if block_cap > 0:
+                    ctx = context_budget.clip_context_block(ctx, block_cap)
+                parts.append(ctx)
         return "\n\n".join(p for p in parts if p)
 
     def build_messages(
@@ -136,19 +169,26 @@ class PromptManager:
         user_text: str,
         log_context: str = "",
         extra_context: str = "",
+        budget: BudgetConfig | None = None,
     ) -> list[dict[str, str]]:
         """组装 OpenAI 兼容 messages。
 
         history: 既有对话（不含本轮 user_text），形如 [{"role","content"}, ...]。
         log_context: 可选最近日志文本，作为附加 system 提示注入。
         extra_context: 可选附加上下文（如波形摘要 F1），作为附加 system 提示注入。
+        budget: 可选 token 预算配置；提供时按当前模型窗口裁剪历史，止住上下文膨胀。
         """
-        system_text = self._build_system_text(page_key)
+        system_text = self._build_system_text(page_key, budget)
+        block_cap = budget.max_context_block_tokens if budget else 0
         if log_context:
             ctx = mask_sensitive(log_context) if self._enable_masking else log_context
+            if block_cap > 0:
+                ctx = context_budget.clip_context_block(ctx, block_cap)
             system_text += "\n\n[最近运行日志，供参考]\n" + ctx
         if extra_context:
             ctx = mask_sensitive(extra_context) if self._enable_masking else extra_context
+            if block_cap > 0:
+                ctx = context_budget.clip_context_block(ctx, block_cap)
             system_text += "\n\n" + ctx
 
         messages: list[dict[str, str]] = [{"role": "system", "content": system_text}]
@@ -160,4 +200,12 @@ class PromptManager:
 
         text = mask_sensitive(user_text) if self._enable_masking else user_text
         messages.append({"role": "user", "content": text})
+
+        if budget is not None:
+            messages = context_budget.fit_messages(
+                messages,
+                window=budget.window,
+                reserve_output=budget.reserve_output,
+                soft_budget_ratio=budget.soft_budget_ratio,
+            )
         return messages

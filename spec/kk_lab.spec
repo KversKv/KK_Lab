@@ -26,6 +26,7 @@ a = Analysis(
         (os.path.join(PROJECT_ROOT, 'resources', 'icons_svg'), os.path.join('resources', 'icons_svg')),
         (os.path.join(PROJECT_ROOT, 'resources', 'pages'), os.path.join('resources', 'pages')),
         (os.path.join(PROJECT_ROOT, 'resources', 'modules'), os.path.join('resources', 'modules')),
+        (os.path.join(PROJECT_ROOT, 'resources', 'ai'), os.path.join('resources', 'ai')),
         (os.path.join(PROJECT_ROOT, 'lib', 'i2c'), os.path.join('lib', 'i2c')),
         (os.path.join(PROJECT_ROOT, 'lib', 'download_tools'), os.path.join('lib', 'download_tools')),
         (os.path.join(PROJECT_ROOT, 'chips'), 'chips'),
