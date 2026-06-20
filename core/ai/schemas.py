@@ -33,6 +33,7 @@ class WaveformStat:
     peak_to_peak: float = 0.0
     std: float = 0.0
     anomalies: list[dict[str, Any]] = field(default_factory=list)
+    spike_events: list[dict[str, Any]] = field(default_factory=list)
     steady_segments: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -47,6 +48,7 @@ class WaveformStat:
             "peak_to_peak": self.peak_to_peak,
             "std": self.std,
             "anomalies": list(self.anomalies),
+            "spike_events": list(self.spike_events),
             "steady_segments": list(self.steady_segments),
         }
 

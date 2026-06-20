@@ -50,6 +50,7 @@ from ui.widgets.button import SpinningSearchButton, update_connect_button_state
 from instruments.power.keysight.n6705c_datalog_process import (
     parse_csv_text, parse_dlog_binary, compute_power_channels,
     calc_power_for_ch, import_csv_file, import_edlg_file, import_dlog_file,
+    parse_channel_label, unit_for_label,
 )
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLL_AREA_STYLE
@@ -117,26 +118,7 @@ _BAND_CEILING = 0.88
 
 
 def _parse_ch_label(label):
-    import re
-    raw = label.strip()
-    file_prefix = ""
-    fm = re.match(r'^(F\d+)-(.*)', raw)
-    if fm:
-        file_prefix = fm.group(1)
-        raw = fm.group(2).strip()
-    m = re.search(r'CH(\d+)\s*(I|V|P)', raw)
-    if m:
-        ch_num = int(m.group(1))
-        mtype = m.group(2)
-        is_b = raw.startswith("B ") or raw.startswith("B_")
-        return ch_num, mtype, is_b
-    dm = re.match(r'^([AB])\s*[-_]\s*(I|V|P)(\d+)$', raw)
-    if dm:
-        is_b = dm.group(1) == "B"
-        mtype = dm.group(2)
-        ch_num = int(dm.group(3))
-        return ch_num, mtype, is_b
-    return None, None, False
+    return parse_channel_label(label)
 
 
 def _display_label(key):
@@ -209,12 +191,8 @@ def _parse_value_with_unit(text, base_unit=None):
 
 
 def _unit_for_label(label):
-    _, mtype, _ = _parse_ch_label(label)
-    if mtype == "V":
-        return "mV"
-    if mtype == "P":
-        return "mW"
-    return "mA"
+    unit = unit_for_label(label)
+    return unit or "mA"
 
 
 def _format_value(value_mA):

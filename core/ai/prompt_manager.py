@@ -100,7 +100,20 @@ def format_waveform_digest(digest, *, include_downsampled: bool = True) -> str:
             f"avg={_fmt(stat.average)}{unit}，pp={_fmt(stat.peak_to_peak)}{unit}，"
             f"std={_fmt(stat.std)}{unit}"
         )
-        if stat.anomalies:
+        spike_events = getattr(stat, "spike_events", None)
+        if spike_events:
+            over_total = spike_events[0].get("over_threshold_total", "")
+            event_count = len(spike_events)
+            shown = ", ".join(
+                f"事件{idx}[{_fmt(e.get('start'))}~{_fmt(e.get('end'))}]s "
+                f"峰值={_fmt(e.get('peak_value'))}{unit}({e.get('type', '')})"
+                for idx, e in enumerate(spike_events, 1)
+            )
+            lines.append(
+                f"  · 尖峰事件（按时间聚簇计 {event_count} 处；"
+                f"超阈采样点共 {over_total} 个，非独立脉冲数）：{shown}"
+            )
+        elif stat.anomalies:
             shown = ", ".join(
                 f"t={_fmt(a.get('t'))}s→{_fmt(a.get('value'))}{unit}({a.get('type', '')})"
                 for a in stat.anomalies[:10]
@@ -197,14 +210,17 @@ class PromptManager:
         extra_context: str = "",
         budget: BudgetConfig | None = None,
         summary: str = "",
+        waveform_context: str = "",
     ) -> list[dict[str, str]]:
         """组装 OpenAI 兼容 messages。
 
         history: 既有对话（不含本轮 user_text），形如 [{"role","content"}, ...]。
         log_context: 可选最近日志文本，作为附加 system 提示注入。
-        extra_context: 可选附加上下文（如波形摘要 F1），作为附加 system 提示注入。
+        extra_context: 可选附加上下文，作为附加 system 提示注入。
         budget: 可选 token 预算配置；提供时按当前模型窗口裁剪历史，止住上下文膨胀。
         summary: 可选前情提要（Phase 6），作为 [前情提要] system 段注入会话头。
+        waveform_context: 可选波形摘要（F1），紧邻本轮 user 消息注入并附时效声明，
+            确保新的 Marker / 可见范围数据优先于历史中的旧波形结论。
         """
         system_text = self._build_system_text(page_key, budget)
         block_cap = budget.max_context_block_tokens if budget else 0
@@ -230,6 +246,22 @@ class PromptManager:
                 messages.append({"role": role, "content": content})
 
         text = mask_sensitive(user_text) if self._enable_masking else user_text
+        if waveform_context:
+            wave = (
+                mask_sensitive(waveform_context)
+                if self._enable_masking
+                else waveform_context
+            )
+            if block_cap > 0:
+                wave = context_budget.clip_context_block(wave, block_cap)
+            text = (
+                "【本轮波形数据（最新，以此为准）】\n"
+                "以下为当前 Marker / 屏幕可见范围对应的波形数据；"
+                "若与此前对话中的波形数值或结论冲突，一律以本段为准，忽略历史中的旧波形数据。\n"
+                f"{wave}\n\n"
+                "【我的问题】\n"
+                f"{text}"
+            )
         messages.append({"role": "user", "content": text})
 
         if budget is not None:

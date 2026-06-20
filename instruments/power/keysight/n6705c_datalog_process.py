@@ -5,6 +5,53 @@ from log_config import get_logger
 logger = get_logger(__name__)
 
 
+_MEAS_TYPE_TO_UNIT = {"I": "mA", "V": "mV", "P": "mW"}
+_MEAS_TYPE_TO_BASE_UNIT = {"I": "A", "V": "V", "P": "W"}
+
+
+def parse_channel_label(label):
+    """从通道标签解析 (channel_num, meas_type, is_slot_b)。
+
+    兼容两种命名：
+      - "CH1 I" / "F1-A CH2 V" / "B CH3 P"
+      - "A-I1" / "F1-B_V2"（Datalog Viewer 导出风格）
+    解析失败返回 (None, None, False)。纯函数，无 Qt 依赖，供 UI 与 AI 摘要共用。
+    """
+    raw = (label or "").strip()
+    fm = re.match(r'^(F\d+)-(.*)', raw)
+    if fm:
+        raw = fm.group(2).strip()
+    m = re.search(r'CH(\d+)\s*(I|V|P)', raw)
+    if m:
+        ch_num = int(m.group(1))
+        mtype = m.group(2)
+        is_b = raw.startswith("B ") or raw.startswith("B_")
+        return ch_num, mtype, is_b
+    dm = re.match(r'^([AB])\s*[-_]\s*(I|V|P)(\d+)$', raw)
+    if dm:
+        is_b = dm.group(1) == "B"
+        mtype = dm.group(2)
+        ch_num = int(dm.group(3))
+        return ch_num, mtype, is_b
+    return None, None, False
+
+
+def unit_for_label(label):
+    """返回通道显示单位（mA/mV/mW）。
+
+    内存值统一为 mA/mV/mW 量纲（电流/电压 ×1000、CSV 导出即工程值），
+    与 Datalog Viewer 显示语义一致。无法识别时返回空串。
+    """
+    _, mtype, _ = parse_channel_label(label)
+    return _MEAS_TYPE_TO_UNIT.get(mtype, "")
+
+
+def base_unit_for_label(label):
+    """返回通道基础单位（A/V/W）。无法识别时返回空串。"""
+    _, mtype, _ = parse_channel_label(label)
+    return _MEAS_TYPE_TO_BASE_UNIT.get(mtype, "")
+
+
 def parse_csv_text(csv_text, curr_channels, volt_channels, ulabel, sample_period_s):
     actual_interval = None
     match = re.search(r'Sample interval:\s*([\d.eE+\-]+)', csv_text)

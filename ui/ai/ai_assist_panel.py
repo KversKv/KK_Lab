@@ -941,6 +941,9 @@ class AIAssistPanel(QFrame):
             self._chat.add_user_message(text)
             self._service.send(text)
             return
+        scope = self._format_waveform_scope(digest)
+        if scope:
+            self._chat.add_system_message(scope)
         if via_button:
             self._record("user", text=f"[Send Waveform] {text}")
             self._chat.add_user_message(f"[Send Waveform] {text}")
@@ -948,6 +951,35 @@ class AIAssistPanel(QFrame):
             self._record("user", text=text)
             self._chat.add_user_message(text)
         self._service.send_with_waveform(text, digest)
+
+    @staticmethod
+    def _format_waveform_scope(digest) -> str:
+        """生成本轮波形分析范围的提示文本，让用户确认 AI 用的是最新 Marker/可见范围。"""
+        def _fmt(value) -> str:
+            try:
+                return f"{float(value):.6g}"
+            except (TypeError, ValueError):
+                return str(value)
+
+        parts: list[str] = []
+        window = getattr(digest, "window", None)
+        if window:
+            if window.get("full"):
+                parts.append("可见范围：全程")
+            else:
+                parts.append(
+                    f"可见范围：{_fmt(window.get('x0'))}~{_fmt(window.get('x1'))} s"
+                )
+        marker = getattr(digest, "marker_segment", None)
+        if marker and marker.get("per_channel"):
+            parts.append(
+                f"Marker A={_fmt(marker.get('a'))} s, "
+                f"B={_fmt(marker.get('b'))} s, "
+                f"时长={_fmt(marker.get('duration_s'))} s"
+            )
+        if not parts:
+            return ""
+        return "本轮分析范围 — " + "；".join(parts)
 
     def _on_digest_failed(self) -> None:
         text = self._pending_waveform_text

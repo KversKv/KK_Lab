@@ -17,12 +17,11 @@ import bisect
 import math
 
 from core.ai.schemas import WaveformDigest, WaveformStat
+from instruments.power.keysight.n6705c_datalog_process import base_unit_for_label
 from log_config import get_logger
 
 logger = get_logger(__name__)
 
-
-_BASE_UNIT_BY_TOKEN = {"I": "A", "V": "V", "P": "W"}
 
 _UNIT_PREFIXES = (
     (1.0, ""),
@@ -33,9 +32,12 @@ _UNIT_PREFIXES = (
 
 
 def _infer_base_unit(label: str) -> str:
-    """从通道标签尾部推断基本单位（CH1 I -> A，CH1 V -> V，CH1 P -> W）。"""
-    token = (label or "").strip().rsplit(" ", 1)[-1].upper()
-    return _BASE_UNIT_BY_TOKEN.get(token, "")
+    """推断通道基本单位（电流 -> A，电压 -> V，功率 -> W）。
+
+    委托 n6705c_datalog_process.base_unit_for_label，兼容 "CH1 I" 与
+    "F1-A-I1" 两种命名（与 Datalog Viewer 单位语义同源）。
+    """
+    return base_unit_for_label(label)
 
 
 def _pick_scale(values: list[float], base_unit: str) -> tuple[float, str]:
@@ -164,6 +166,58 @@ def _detect_anomalies(
     return anomalies
 
 
+def _cluster_spike_events(
+    times: list[float],
+    values: list[float],
+    average: float,
+    std: float,
+    sigma: float,
+    gap_s: float,
+    max_report: int = 20,
+) -> tuple[list[dict], int]:
+    """把超阈采样点按时间邻近聚成尖峰事件簇。
+
+    返回 (事件簇列表, 超阈采样点总数)。相邻超阈点时间间隔 <= gap_s 视为同一
+    事件；每簇取簇内绝对偏离最大的点为峰值。用于避免把"一簇内多个采样点"
+    误读成多个独立脉冲。
+    """
+    if std <= 0.0:
+        return [], 0
+    threshold = sigma * std
+    over: list[tuple[float, float]] = [
+        (t, v) for t, v in zip(times, values) if abs(v - average) > threshold
+    ]
+    total_over = len(over)
+    if not over:
+        return [], 0
+
+    if gap_s <= 0.0:
+        gap_s = 0.0
+
+    events: list[dict] = []
+    cluster: list[tuple[float, float]] = [over[0]]
+    for t, v in over[1:]:
+        if t - cluster[-1][0] <= gap_s:
+            cluster.append((t, v))
+        else:
+            events.append(_build_event(cluster, average))
+            cluster = [(t, v)]
+    events.append(_build_event(cluster, average))
+    return events[:max_report], total_over
+
+
+def _build_event(cluster: list[tuple[float, float]], average: float) -> dict:
+    peak_t, peak_v = max(cluster, key=lambda tv: abs(tv[1] - average))
+    return {
+        "start": round(cluster[0][0], 6),
+        "end": round(cluster[-1][0], 6),
+        "peak_t": round(peak_t, 6),
+        "peak_value": round(peak_v, 6),
+        "point_count": len(cluster),
+        "type": "spike" if peak_v > average else "dip",
+    }
+
+
 def _detect_steady_segments(
     times: list[float],
     values: list[float],
@@ -230,13 +284,21 @@ def _channel_stat(
     factor, unit = _pick_scale(values, _infer_base_unit(label))
 
     anomalies = _detect_anomalies(times, values, avg, std, anomaly_sigma)
+    gap_s = max(sample_period * 5.0, 5e-4) if sample_period > 0 else 5e-4
+    spike_events, over_count = _cluster_spike_events(
+        times, values, avg, std, anomaly_sigma, gap_s
+    )
     steady_segments = _detect_steady_segments(times, values, avg, std)
     if factor != 1.0:
         for a in anomalies:
             a["value"] = round(a["value"] * factor, 6)
+        for e in spike_events:
+            e["peak_value"] = round(e["peak_value"] * factor, 6)
         for s in steady_segments:
             s["avg"] = round(s["avg"] * factor, 6)
             s["std"] = round(s["std"] * factor, 6)
+    for e in spike_events:
+        e["over_threshold_total"] = over_count
 
     return WaveformStat(
         label=label,
@@ -249,6 +311,7 @@ def _channel_stat(
         peak_to_peak=round((vmax - vmin) * factor, 6),
         std=round(std * factor, 6),
         anomalies=anomalies,
+        spike_events=spike_events,
         steady_segments=steady_segments,
     )
 

@@ -563,6 +563,7 @@ class AIService(QObject):
         user_text: str,
         include_recent_logs: bool = False,
         extra_context: str = "",
+        waveform_context: str = "",
     ) -> None:
         text = (user_text or "").strip()
         if not text:
@@ -591,6 +592,7 @@ class AIService(QObject):
             extra_context=extra_context,
             budget=self._budget_for(model),
             summary=self._summary,
+            waveform_context=waveform_context,
         )
         self._history.append({"role": "user", "content": text})
 
@@ -635,7 +637,7 @@ class AIService(QObject):
         from core.ai.prompt_manager import format_waveform_digest
 
         context = format_waveform_digest(digest)
-        self.send(user_text, extra_context=context)
+        self.send(user_text, waveform_context=context)
 
     def cancel(self) -> None:
         if self._worker is not None:
