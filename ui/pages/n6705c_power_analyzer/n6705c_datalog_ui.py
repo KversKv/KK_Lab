@@ -5325,10 +5325,21 @@ class N6705CDatalogUI(QWidget):
             return None
         data = dict(self.datalog_data)
         if x_range is None:
-            digest = build_digest(data)
+            digest = build_digest(data, event_aware=True)
             digest.window = {"full": True}
         else:
-            digest = build_window_digest(data, float(x_range[0]), float(x_range[1]))
+            digest = build_window_digest(
+                data, float(x_range[0]), float(x_range[1]), event_aware=True
+            )
+            if not getattr(digest, "stats", None):
+                logger.warning(
+                    "波形窗口 [%s, %s] 内无任何通道命中（可能为导入数据与可见区时间轴不重叠），"
+                    "回退为全量摘要以确保导入波形可被识别。",
+                    x_range[0],
+                    x_range[1],
+                )
+                digest = build_digest(data, event_aware=True)
+                digest.window = {"full": True}
         if marker:
             digest.marker_segment = marker_segment_stats(
                 data, marker.get("a"), marker.get("b")
@@ -5358,6 +5369,14 @@ class N6705CDatalogUI(QWidget):
             if not sel_v:
                 continue
             windowed[label] = {"time": sel_t, "values": sel_v}
+        if not windowed:
+            logger.warning(
+                "可见窗口 [%s, %s] 内无任何通道命中（可能为导入数据时间轴与可见区不重叠），"
+                "回退为全量数据供 AI drill-down。",
+                lo,
+                hi,
+            )
+            return dict(self.datalog_data)
         return windowed
 
     def _on_data_ready(self, data):

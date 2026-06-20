@@ -20,6 +20,14 @@ from core.ai.schemas import WaveformDigest, WaveformStat
 from instruments.power.keysight.n6705c_datalog_process import base_unit_for_label
 from log_config import get_logger
 
+try:
+    import numpy as np
+
+    _HAS_NUMPY = True
+except ImportError:  # pragma: no cover - numpy 缺失时回退纯 Python
+    np = None  # type: ignore[assignment]
+    _HAS_NUMPY = False
+
 logger = get_logger(__name__)
 
 
@@ -218,6 +226,305 @@ def _build_event(cluster: list[tuple[float, float]], average: float) -> dict:
     }
 
 
+def _trapezoid(seg_values, dx: float) -> float:
+    """梯形积分，兼容新旧 numpy（np.trapezoid / np.trapz）；无 numpy 走纯 Python。"""
+    if _HAS_NUMPY and not isinstance(seg_values, list):
+        integ = getattr(np, "trapezoid", None) or getattr(np, "trapz")
+        return float(integ(seg_values, dx=dx))
+    vals = list(seg_values)
+    n = len(vals)
+    if n < 2:
+        return 0.0
+    total = 0.0
+    for i in range(n - 1):
+        total += (vals[i] + vals[i + 1]) * 0.5 * dx
+    return total
+
+
+def detect_events_stalta(
+    times: list[float],
+    values: list[float],
+    *,
+    sta_s: float = 1e-4,
+    lta_s: float = 5e-3,
+    on: float = 4.0,
+    off: float = 1.5,
+    merge_gap_s: float = 2e-4,
+    mad_k: float = 6.0,
+) -> list[tuple[int, int]]:
+    """C1：STA-LTA 能量比定位窄尖峰/突发事件 + MAD 绝对幅值闸门滤伪事件。
+
+    返回事件索引区间列表 [(i0, i1), ...]。能量比定位"哪里有突变"（对相对变化敏感），
+    MAD 闸门裁定"突变够不够大"（绝对幅值，抗 99% 睡眠基线下 std 塌陷）。
+    参数默认值与原型 tests/_stalta_tmp.py 实测一致（§9.7）。
+
+    需 numpy（向量化前缀和 O(N) 单趟）；缺 numpy 时返回空（调用方回退旧逻辑）。
+    """
+    n = len(values)
+    if not _HAS_NUMPY or n < 4:
+        return []
+    t = np.asarray(times, dtype=float)
+    v = np.asarray(values, dtype=float)
+    dt = float(np.median(np.diff(t))) if n >= 2 else 0.0
+    if dt <= 0.0:
+        return []
+
+    sta_n = max(1, int(round(sta_s / dt)))
+    lta_n = max(2, int(round(lta_s / dt)))
+    if lta_n >= n:
+        return []
+
+    char = v * v
+    cum = np.concatenate(([0.0], np.cumsum(char)))
+
+    def _win_mean(win_n: int):
+        s = cum[win_n:] - cum[:-win_n]
+        out = np.full(v.shape, np.nan)
+        out[win_n - 1:] = s / win_n
+        return out
+
+    sta = _win_mean(sta_n)
+    lta = _win_mean(lta_n)
+    ratio = np.zeros(v.shape, dtype=float)
+    valid = lta > 0
+    ratio[valid] = np.nan_to_num(sta[valid]) / lta[valid]
+
+    raw: list[list[int]] = []
+    active = False
+    start = 0
+    for i in range(n):
+        r = ratio[i]
+        if not active and r >= on:
+            active = True
+            start = i
+        elif active and r <= off:
+            active = False
+            raw.append([start, i])
+    if active:
+        raw.append([start, n - 1])
+
+    if not raw:
+        return []
+    gap = int(round(merge_gap_s / dt))
+    merged = [list(raw[0])]
+    for s, e in raw[1:]:
+        if s - merged[-1][1] <= gap:
+            merged[-1][1] = e
+        else:
+            merged.append([s, e])
+
+    med = float(np.median(v))
+    mad = float(np.median(np.abs(v - med)))
+    floor = med + mad_k * mad * 1.4826
+    kept: list[tuple[int, int]] = []
+    for i0, i1 in merged:
+        if float(v[i0:i1 + 1].max()) >= floor:
+            kept.append((i0, i1))
+    return kept
+
+
+def detect_segments_pelt(
+    values: list[float],
+    *,
+    pen: float = 6.0,
+    min_size: int = 3,
+    max_n: int = 4000,
+    auto_scale: bool = True,
+) -> list[int]:
+    """C10：PELT 均值变点检测，把信号切成均质段（专抓 RX/电平/DVFS 平台）。
+
+    返回变点索引列表（不含 0 与 N）。自研均值代价（SSE）实现，零依赖。
+    复杂度近 O(n)（剪枝后），但最坏 O(n^2)；为保护性能仅对 max_n 内的小窗启用
+    （drill-down 子窗），整段大数据不直接跑。需 numpy。
+
+    auto_scale=True（默认）：按 BIC 把惩罚缩放为 pen · sigma² · log(n)，
+    其中 sigma² 取相邻差分的鲁棒噪声估计（MAD），使 pen 对量纲（A vs mA）鲁棒——
+    否则 SSE 随值平方膨胀会导致过分段。
+    """
+    n = len(values)
+    if not _HAS_NUMPY or n < 2 * min_size or n > max_n:
+        return []
+    v = np.asarray(values, dtype=float)
+    if auto_scale:
+        diffs = np.abs(np.diff(v))
+        noise_mad = float(np.median(diffs)) if diffs.size else 0.0
+        sigma = noise_mad * 1.4826 / math.sqrt(2.0)
+        sigma2 = max(sigma * sigma, 1e-12)
+        pen = pen * sigma2 * math.log(max(n, 2))
+    cs = np.concatenate(([0.0], np.cumsum(v)))
+    cs2 = np.concatenate(([0.0], np.cumsum(v * v)))
+
+    def _cost(a: int, b: int) -> float:
+        m = b - a
+        if m <= 0:
+            return 0.0
+        s = cs[b] - cs[a]
+        s2 = cs2[b] - cs2[a]
+        return float(s2 - s * s / m)
+
+    F = np.full(n + 1, np.inf)
+    F[0] = -pen
+    cp: list[list[int]] = [[] for _ in range(n + 1)]
+    R = [0]
+    for tau in range(min_size, n + 1):
+        best = math.inf
+        arg = 0
+        for s in R:
+            if tau - s < min_size:
+                continue
+            c = F[s] + _cost(s, tau) + pen
+            if c < best:
+                best, arg = c, s
+        F[tau] = best
+        cp[tau] = cp[arg] + [arg]
+        R = [s for s in R if F[s] + _cost(s, tau) <= F[tau]] + [tau]
+    return [c for c in cp[n] if c > 0]
+
+
+def classify_segment(
+    mean: float, peak: float, width_s: float, baseline: float, std: float
+) -> str:
+    """C11：按 宽度 + 峰均比 + 均值层级 给段贴标签。
+
+    返回 spike（尖峰）/ plateau（平台）/ valley（低谷）/ ramp（缓变）。
+    PELT 只切分不分类，本分类器避免把尖峰误算成平台。
+    """
+    pk_mean = (peak / mean) if mean > 1e-12 else float("inf")
+    above = mean - baseline
+    band = max(abs(baseline) * 0.2, 1e-9)
+    peak_above = peak - baseline
+    narrow = width_s <= 1e-3
+    if narrow and peak_above >= 4.0 * max(band, 1e-9):
+        return "spike"
+    if pk_mean >= 1.8 and width_s <= 5e-3:
+        return "spike"
+    if above < -band:
+        return "valley"
+    if above > band and pk_mean < 1.5:
+        return "plateau"
+    if pk_mean >= 1.8:
+        return "spike"
+    return "ramp"
+
+
+def segment_features(
+    times: list[float],
+    values: list[float],
+    segments: list[tuple[int, int]],
+    *,
+    factor: float = 1.0,
+    baseline: float | None = None,
+    std: float = 0.0,
+    max_report: int = 30,
+) -> list[dict]:
+    """C3：对每段算 均值/峰值/峰均比/宽度/上升下降/积分电荷(µAh)/能量，并贴标签。
+
+    电荷 = ∫i·dt（梯形积分，单位换算后按 A·s/3600 → mAh 再 ×1000 → µAh）。
+    factor 把内存值（真实值×1000）还原为展示量纲，与 _pick_scale 同源。
+    """
+    n = len(values)
+    if n == 0 or not segments:
+        return []
+    if baseline is None:
+        baseline = (sum(values) / n) if n else 0.0
+    dt = abs(times[1] - times[0]) if n >= 2 else 0.0
+    out: list[dict] = []
+    for i0, i1 in segments:
+        i0 = max(0, i0)
+        i1 = min(n - 1, i1)
+        if i1 < i0:
+            continue
+        seg_v = values[i0:i1 + 1]
+        m = len(seg_v)
+        seg_mean = sum(seg_v) / m
+        seg_peak = max(seg_v, key=abs)
+        width_s = abs(times[i1] - times[i0])
+        rise = seg_v[-1] - seg_v[0]
+        charge_raw = _trapezoid(values[i0:i1 + 1], dt)
+        charge_uah = (charge_raw / 1000.0) / 3.6
+        label = classify_segment(
+            seg_mean, abs(seg_peak), width_s, baseline, std
+        )
+        pk_mean = (seg_peak / seg_mean) if abs(seg_mean) > 1e-12 else 0.0
+        out.append(
+            {
+                "start": round(times[i0], 6),
+                "end": round(times[i1], 6),
+                "label": label,
+                "mean": round(seg_mean * factor, 6),
+                "peak": round(seg_peak * factor, 6),
+                "peak_to_mean": round(pk_mean, 3),
+                "width_ms": round(width_s * 1e3, 4),
+                "rise": round(rise * factor, 6),
+                "charge_uAh": round(charge_uah, 6),
+                "point_count": m,
+            }
+        )
+        if len(out) >= max_report:
+            break
+    return out
+
+
+def adaptive_downsample(
+    times: list[float],
+    values: list[float],
+    events: list[tuple[int, int]],
+    *,
+    base_points: int = 1200,
+    event_keep: int = 60,
+) -> tuple[list[float], list[float], list[dict]]:
+    """C2：事件感知非均匀降采样——平稳段 min-max 稀疏，事件段高密度保留。
+
+    返回 (ds_times, ds_values, density_map)。density_map 显式标注各区段采样密度，
+    供 AI 正确解读时间轴为"非均匀采样"（C7 配套），避免误判密度。
+    """
+    n = len(values)
+    if n == 0:
+        return [], [], []
+    if not _HAS_NUMPY or not events:
+        ds_t, ds_v = lttb_downsample(list(times), list(values), base_points)
+        return ds_t, ds_v, [{"kind": "uniform", "points": len(ds_v)}]
+
+    keep = [False] * n
+    density: list[dict] = []
+    for i0, i1 in events:
+        i0 = max(0, i0)
+        i1 = min(n - 1, i1)
+        lo = max(0, i0 - 2)
+        hi = min(n - 1, i1 + 2)
+        for j in range(lo, hi + 1):
+            keep[j] = True
+        density.append(
+            {
+                "start": round(times[i0], 6),
+                "end": round(times[i1], 6),
+                "density": "full",
+                "points": hi - lo + 1,
+            }
+        )
+
+    bucket = max(1, n // max(1, base_points))
+    ds_idx: list[int] = []
+    for b in range(0, n, bucket):
+        end = min(n, b + bucket)
+        seg = values[b:end]
+        lo_off = min(range(len(seg)), key=lambda k: seg[k])
+        hi_off = max(range(len(seg)), key=lambda k: seg[k])
+        ds_idx.append(b + min(lo_off, hi_off))
+        if hi_off != lo_off:
+            ds_idx.append(b + max(lo_off, hi_off))
+    for i, flag in enumerate(keep):
+        if flag:
+            ds_idx.append(i)
+    ds_idx = sorted(set(ds_idx))
+    ds_t = [round(times[i], 6) for i in ds_idx]
+    ds_v = [values[i] for i in ds_idx]
+    density.insert(
+        0, {"kind": "minmax_baseline", "bucket_points": bucket}
+    )
+    return ds_t, ds_v, density
+
+
 def _detect_steady_segments(
     times: list[float],
     values: list[float],
@@ -268,7 +575,7 @@ def _detect_steady_segments(
 
 
 def _channel_stat(
-    label: str, channel: dict, anomaly_sigma: float
+    label: str, channel: dict, anomaly_sigma: float, *, event_aware: bool = False
 ) -> WaveformStat | None:
     values = channel.get("values") or []
     times = channel.get("time") or []
@@ -300,6 +607,13 @@ def _channel_stat(
     for e in spike_events:
         e["over_threshold_total"] = over_count
 
+    segments: list[dict] = []
+    if event_aware:
+        events = detect_events_stalta(times, values)
+        segments = segment_features(
+            times, values, events, factor=factor, baseline=avg, std=std
+        )
+
     return WaveformStat(
         label=label,
         unit=unit,
@@ -313,6 +627,7 @@ def _channel_stat(
         anomalies=anomalies,
         spike_events=spike_events,
         steady_segments=steady_segments,
+        segments=segments,
     )
 
 
@@ -322,8 +637,14 @@ def build_digest(
     max_points: int = 1500,
     anomaly_sigma: float = 3.0,
     include_downsampled: bool = True,
+    event_aware: bool = False,
 ) -> WaveformDigest:
-    """把 all_data 压成 WaveformDigest（统计摘要 + 可选 LTTB 降采样）。"""
+    """把 all_data 压成 WaveformDigest（统计摘要 + 可选 LTTB 降采样）。
+
+    event_aware=False（默认）：行为与改造前完全一致（LTTB 降采样 + σ·std 尖峰聚簇）。
+    event_aware=True：额外走 STA-LTA+MAD 事件检测 → 段落特征化（segments）+ 事件感知
+    非均匀降采样（density_map 标注密度，平稳段 min-max 稀疏、事件段高密度保留）。
+    """
     if not all_data:
         return WaveformDigest(note="无波形数据")
 
@@ -334,7 +655,9 @@ def build_digest(
     for label, channel in all_data.items():
         if not isinstance(channel, dict):
             continue
-        stat = _channel_stat(str(label), channel, anomaly_sigma)
+        stat = _channel_stat(
+            str(label), channel, anomaly_sigma, event_aware=event_aware
+        )
         if stat is None:
             continue
         stats.append(stat)
@@ -343,18 +666,33 @@ def build_digest(
         if include_downsampled:
             times = channel.get("time") or list(range(stat.point_count))
             values = channel.get("values") or []
-            ds_t, ds_v = lttb_downsample(list(times), list(values), max_points)
             factor, _ = _pick_scale(values, _infer_base_unit(str(label)))
+            if event_aware:
+                events = detect_events_stalta(list(times), list(values))
+                ds_t, ds_v, density = adaptive_downsample(
+                    list(times), list(values), events, base_points=max_points
+                )
+                stat.density_map = density
+            else:
+                ds_t, ds_v = lttb_downsample(
+                    list(times), list(values), max_points
+                )
             downsampled[str(label)] = {
                 "time": [round(x, 6) for x in ds_t],
                 "values": [round(x * factor, 6) for x in ds_v],
             }
 
     ds_count = max((len(v["values"]) for v in downsampled.values()), default=0)
-    note = (
-        f"原始 {total_points} 点（{len(stats)} 通道）"
-        + (f"，已 LTTB 降采样至每通道约 {ds_count} 点" if include_downsampled else "")
-    )
+    ds_note = ""
+    if include_downsampled:
+        if event_aware:
+            ds_note = (
+                f"，已事件感知非均匀降采样至每通道约 {ds_count} 点"
+                "（平稳段 min-max 稀疏 + 事件段高密度，时间轴非均匀，见 density_map）"
+            )
+        else:
+            ds_note = f"，已 LTTB 降采样至每通道约 {ds_count} 点"
+    note = f"原始 {total_points} 点（{len(stats)} 通道）" + ds_note
     return WaveformDigest(stats=stats, downsampled=downsampled, note=note)
 
 
@@ -425,6 +763,51 @@ def slice_window(
     return {"time": sel_t, "values": sel_v}
 
 
+def analyze_window_segments(
+    all_data: dict,
+    label: str,
+    t0: float,
+    t1: float,
+    *,
+    pen: float = 6.0,
+    max_n: int = 4000,
+) -> dict:
+    """C12 drill-down：对一个已识别"尖峰事件"窗口用 PELT 重扫，暴露窗内子结构。
+
+    当 AI 对某尖峰窗口请求放大时，窗内可能含 RX 平台串等中幅子结构——STA-LTA 对其
+    结构性失明，必须改用 PELT 均值变点切分 + 段形态分类（§9.8 双引擎铁证）。
+    返回 {"label","t0","t1","segments":[...]}；segments 每段含 label/mean/peak/...
+    """
+    channel = (all_data or {}).get(label)
+    if not isinstance(channel, dict):
+        return {"label": label, "t0": t0, "t1": t1, "segments": []}
+    times = channel.get("time") or []
+    values = channel.get("values") or []
+    sel_t, sel_v = slice_channel_fast(list(times), list(values), t0, t1)
+    if not sel_v:
+        return {"label": label, "t0": t0, "t1": t1, "segments": []}
+    if len(sel_v) > max_n:
+        sel_t, sel_v = lttb_downsample(sel_t, sel_v, max_n)
+    factor, _ = _pick_scale(values, _infer_base_unit(str(label)))
+    _, _, avg, std = _statistics(sel_v)
+    cps = detect_segments_pelt(sel_v, pen=pen, max_n=max_n)
+    bounds = [0] + cps + [len(sel_v)]
+    seg_ranges = [
+        (bounds[i], bounds[i + 1] - 1) for i in range(len(bounds) - 1)
+    ]
+    segments = segment_features(
+        sel_t, sel_v, seg_ranges, factor=factor, baseline=avg, std=std,
+        max_report=40,
+    )
+    return {
+        "label": label,
+        "t0": t0,
+        "t1": t1,
+        "engine": "pelt",
+        "segments": segments,
+    }
+
+
 def build_window_digest(
     all_data: dict,
     x0: float,
@@ -433,11 +816,13 @@ def build_window_digest(
     max_points: int = 1500,
     anomaly_sigma: float = 3.0,
     include_downsampled: bool = True,
+    event_aware: bool = False,
 ) -> WaveformDigest:
     """按可见窗口 [x0, x1] 快速切片后构建摘要（不重新采数）。
 
     各通道按同一 [x0, x1] 独立切片，复用 build_digest 做统计与 LTTB 降采样。
     digest.window 记录分析范围（full=False）。
+    event_aware 透传给 build_digest（C12：窗口级也支持事件感知）。
     """
     if not all_data:
         return WaveformDigest(note="无波形数据", window={"x0": x0, "x1": x1, "full": False})
@@ -465,6 +850,7 @@ def build_window_digest(
         max_points=max_points,
         anomaly_sigma=anomaly_sigma,
         include_downsampled=include_downsampled,
+        event_aware=event_aware,
     )
     digest.window = {"x0": round(lo, 6), "x1": round(hi, 6), "full": False}
     digest.note = f"分析范围 [{round(lo, 6)}, {round(hi, 6)}] s（屏幕可见区）：" + digest.note

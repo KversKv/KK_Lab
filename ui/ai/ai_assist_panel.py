@@ -59,6 +59,13 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+_NO_WAVEFORM_GUARD = (
+    "[波形数据] 当前没有任何可分析的波形数据（内存中无波形，或所选范围内无数据点）。\n"
+    "严格要求：你绝对不能编造、估算或假设任何波形读数（如电流峰值、周期、尖峰个数、"
+    "幅值、时间等）。请明确告知用户「当前没有可分析的波形数据」，并提示用户先采集或导入"
+    "（Import）波形后再分析。仅可就用户的纯文字问题作答，不得输出任何虚构的测量数值或分析结论。"
+)
+
 _AI_SVG_DIR = os.path.join(get_resource_base(), "resources", "icons_svg", "ai")
 _SEND_ICON = os.path.join(_AI_SVG_DIR, "send.svg")
 _PANEL_ICON = os.path.join(_AI_SVG_DIR, "ai_panel.svg")
@@ -935,11 +942,12 @@ class AIAssistPanel(QFrame):
                 self._chat.add_system_message("No waveform data available to analyze.")
                 return
             self._chat.add_system_message(
-                "No waveform data available to analyze; handling as a regular conversation."
+                "No waveform data available to analyze; the assistant will be told not "
+                "to fabricate any waveform readings."
             )
             self._record("user", text=text)
             self._chat.add_user_message(text)
-            self._service.send(text)
+            self._service.send(text, waveform_context=_NO_WAVEFORM_GUARD)
             return
         scope = self._format_waveform_scope(digest)
         if scope:
@@ -987,10 +995,13 @@ class AIAssistPanel(QFrame):
         if via_button or not text:
             self._chat.add_system_message("Failed to fetch waveform data, please check the logs.")
             return
-        self._chat.add_system_message("Failed to fetch waveform data; handling as a regular conversation.")
+        self._chat.add_system_message(
+            "Failed to fetch waveform data; the assistant will be told not to "
+            "fabricate any waveform readings."
+        )
         self._record("user", text=text)
         self._chat.add_user_message(text)
-        self._service.send(text)
+        self._service.send(text, waveform_context=_NO_WAVEFORM_GUARD)
 
     def _cleanup_digest_thread(self) -> None:
         if self._digest_worker is not None:

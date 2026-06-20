@@ -125,6 +125,33 @@ def format_waveform_digest(digest, *, include_downsampled: bool = True) -> str:
                 for s in stat.steady_segments[:5]
             )
             lines.append(f"  · 稳态段：{shown}")
+        segments = getattr(stat, "segments", None)
+        if segments:
+            shown = ", ".join(
+                f"段{idx}[{_fmt(s.get('start'))}~{_fmt(s.get('end'))}]s "
+                f"{s.get('label', '')} mean={_fmt(s.get('mean'))}{unit} "
+                f"peak={_fmt(s.get('peak'))}{unit} 宽={_fmt(s.get('width_ms'))}ms "
+                f"电荷={_fmt(s.get('charge_uAh'))}uAh"
+                for idx, s in enumerate(segments[:15], 1)
+            )
+            lines.append(
+                f"  · 事件感知段落（STA-LTA+MAD 定位，共 {len(segments)} 段）：{shown}"
+            )
+        density_map = getattr(stat, "density_map", None)
+        if density_map:
+            high = [d for d in density_map if d.get("density") == "full"]
+            base = next(
+                (d for d in density_map if d.get("kind") == "minmax_baseline"),
+                None,
+            )
+            base_txt = (
+                f"基线 min-max 每桶约 {base.get('bucket_points')} 点稀疏；"
+                if base
+                else ""
+            )
+            lines.append(
+                f"  · 采样密度（非均匀）：{base_txt}事件高密度区 {len(high)} 处"
+            )
 
     if include_downsampled and getattr(digest, "downsampled", None):
         lines.append("[降采样形状点（LTTB，仅供观察趋势，非原始精度）]")

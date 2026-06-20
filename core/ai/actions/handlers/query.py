@@ -88,6 +88,32 @@ SPECS: list[ActionSpec] = [
         risk_level="low",
         category=CATEGORY_QUERY,
     ),
+    ActionSpec(
+        name="get_waveform_segments",
+        description=(
+            "波形段落子结构分析（PELT 双引擎 drill-down）：对一个已识别的尖峰/事件"
+            "时间窗 [t0, t1] 用变点检测重扫，暴露窗内中幅平台/电平台阶等子结构"
+            "（如 RX 平台串）。每段返回 形态标签/均值/峰值/宽度/电荷。"
+            "当统计摘要里的尖峰事件可能内含更细结构时调用。"
+        ),
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "label": {"type": "string", "description": "通道标签，如 'CH1 I'。"},
+                "t0": {"type": "number", "description": "时间窗起点（秒）。"},
+                "t1": {"type": "number", "description": "时间窗终点（秒）。"},
+                "pen": {
+                    "type": "number",
+                    "minimum": 0.1,
+                    "maximum": 1000.0,
+                    "description": "PELT 惩罚系数（默认 6.0，越大段越少越粗）。",
+                },
+            },
+            "required": ["label", "t0", "t1"],
+        },
+        risk_level="low",
+        category=CATEGORY_QUERY,
+    ),
 ]
 
 
@@ -196,6 +222,44 @@ def build_handlers(deps: ActionDeps) -> dict[str, Any]:
             "_message": f"通道 {label} 在 [{t0}, {t1}] 窗口返回 {point_count} 点。",
         }
 
+    def get_waveform_segments(args: dict) -> dict:
+        from core.ai.providers.waveform_provider import analyze_window_segments
+
+        all_data = deps.waveform_data_getter() if deps.waveform_data_getter else None
+        if not all_data:
+            return {"ok": False, "_message": "当前无可分析的波形数据。"}
+        label = str(args.get("label", ""))
+        if label not in all_data:
+            return {
+                "ok": False,
+                "available_labels": list(all_data.keys()),
+                "_message": f"通道 '{label}' 不存在，请从 available_labels 选择。",
+            }
+        try:
+            t0 = float(args.get("t0"))
+            t1 = float(args.get("t1"))
+        except (TypeError, ValueError):
+            return {"ok": False, "_message": "t0/t1 必须为数值。"}
+        try:
+            pen = float(args.get("pen", 6.0))
+        except (TypeError, ValueError):
+            pen = 6.0
+        pen = max(0.1, min(pen, 1000.0))
+        result = analyze_window_segments(all_data, label, t0, t1, pen=pen)
+        segments = result.get("segments", [])
+        return {
+            "ok": True,
+            "label": label,
+            "t0": t0,
+            "t1": t1,
+            "engine": result.get("engine", "pelt"),
+            "segment_count": len(segments),
+            "segments": segments,
+            "_message": (
+                f"通道 {label} 在 [{t0}, {t1}] 窗口 PELT 切出 {len(segments)} 段。"
+            ),
+        }
+
     return {
         "get_current_page": get_current_page,
         "get_serial_status": get_serial_status,
@@ -204,4 +268,5 @@ def build_handlers(deps: ActionDeps) -> dict[str, Any]:
         "get_instrument_status": get_instrument_status,
         "get_test_sequence_status": get_test_sequence_status,
         "get_waveform_window": get_waveform_window,
+        "get_waveform_segments": get_waveform_segments,
     }

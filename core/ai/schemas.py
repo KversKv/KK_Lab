@@ -35,6 +35,8 @@ class WaveformStat:
     anomalies: list[dict[str, Any]] = field(default_factory=list)
     spike_events: list[dict[str, Any]] = field(default_factory=list)
     steady_segments: list[dict[str, Any]] = field(default_factory=list)
+    segments: list[dict[str, Any]] = field(default_factory=list)
+    density_map: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -50,6 +52,8 @@ class WaveformStat:
             "anomalies": list(self.anomalies),
             "spike_events": list(self.spike_events),
             "steady_segments": list(self.steady_segments),
+            "segments": list(self.segments),
+            "density_map": list(self.density_map),
         }
 
 
