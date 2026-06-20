@@ -3431,10 +3431,25 @@ class N6705CDatalogUI(QWidget):
                     lbl for lbl in self.custom_labels
                     if lbl.get("channel", "") not in actually_removed
                 ]
+        target_index = index - 1
+        if target_index < 0 or self._is_channel_config_import_tab(target_index):
+            target_index = 0
+        self.channel_config_tabbar.blockSignals(True)
+        self.channel_config_tabbar.setCurrentIndex(target_index)
         self.channel_config_tabbar.removeTab(index)
+        self.channel_config_tabbar.blockSignals(False)
         self.channel_config_stack.removeWidget(widget)
         if widget:
             widget.deleteLater()
+        current_index = self.channel_config_tabbar.currentIndex()
+        if self._is_channel_config_import_tab(current_index):
+            current_index = 0
+            self.channel_config_tabbar.blockSignals(True)
+            self.channel_config_tabbar.setCurrentIndex(current_index)
+            self.channel_config_tabbar.blockSignals(False)
+        if 0 <= current_index < self.channel_config_stack.count():
+            self.channel_config_stack.setCurrentIndex(current_index)
+        self._channel_config_last_tab_index = current_index
         self._refresh_plot()
 
     def _get_tab_cbs(self, index):
@@ -7361,12 +7376,16 @@ class N6705CDatalogUI(QWidget):
             return
         if mode == "combined":
             self._export_combined_csv()
+        elif mode == "marker":
+            self._export_marker_csv()
         else:
             self._export_standard()
 
     def _show_export_dialog(self):
         visible_keys = self._get_visible_keys()
         visible_count = len(visible_keys)
+        marker_window = self.get_marker_window()
+        has_markers = marker_window is not None
 
         dialog = QDialog(self)
         dialog.setWindowTitle("Export Datalog")
@@ -7453,6 +7472,32 @@ class N6705CDatalogUI(QWidget):
             cmb_hint.setText("    (No visible channels — enable at least one in Channel Config)")
             cmb_hint.setStyleSheet("color: #8a3a3a; font-size: 10px;")
 
+        rb_marker = QRadioButton(
+            f"Marker Export  (visible channels only: {visible_count})"
+        )
+        group.addButton(rb_marker)
+        layout.addWidget(rb_marker)
+
+        mk_hint = QLabel("    Exports only the region between Marker A and Marker B\n"
+                         "    for currently visible channels (.csv or .dlog).")
+        mk_hint.setStyleSheet("color: #667ba0; font-size: 10px;")
+        layout.addWidget(mk_hint)
+
+        if not has_markers:
+            rb_marker.setEnabled(False)
+            mk_hint.setText("    (Place both Marker A and Marker B to enable this option)")
+            mk_hint.setStyleSheet("color: #8a3a3a; font-size: 10px;")
+        elif visible_count == 0:
+            rb_marker.setEnabled(False)
+            mk_hint.setText("    (No visible channels — enable at least one in Channel Config)")
+            mk_hint.setStyleSheet("color: #8a3a3a; font-size: 10px;")
+        else:
+            lo = min(marker_window["a"], marker_window["b"])
+            hi = max(marker_window["a"], marker_window["b"])
+            mk_hint.setText("    Exports only the region between Marker A and Marker B\n"
+                            f"    for currently visible channels (.csv or .dlog).\n"
+                            f"    Region: {lo:.4f}s ~ {hi:.4f}s")
+
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(8)
         btn_layout.addStretch()
@@ -7481,7 +7526,12 @@ class N6705CDatalogUI(QWidget):
         result = {"mode": None}
 
         def _accept():
-            result["mode"] = "combined" if rb_combined.isChecked() else "standard"
+            if rb_marker.isChecked():
+                result["mode"] = "marker"
+            elif rb_combined.isChecked():
+                result["mode"] = "combined"
+            else:
+                result["mode"] = "standard"
             dialog.accept()
 
         ok_btn.clicked.connect(_accept)
@@ -7751,6 +7801,260 @@ class N6705CDatalogUI(QWidget):
         except Exception:
             import traceback
             logger.error("Combined CSV export failed:\n%s", traceback.format_exc())
+
+    def _export_marker_csv(self):
+        visible_keys = self._get_visible_keys()
+        if not visible_keys:
+            return
+
+        marker_window = self.get_marker_window()
+        if marker_window is None:
+            return
+
+        lo = min(marker_window["a"], marker_window["b"])
+        hi = max(marker_window["a"], marker_window["b"])
+
+        path, selected_filter = QFileDialog.getSaveFileName(
+            self, "Export Marker Region", "",
+            "CSV Files (*.csv);;Dlog Files (*.dlog);;All Files (*)"
+        )
+        if not path:
+            return
+
+        want_dlog = path.lower().endswith(".dlog") or "*.dlog" in (selected_filter or "")
+        if want_dlog:
+            if not path.lower().endswith(".dlog"):
+                path = path + ".dlog"
+            self._export_marker_dlog(path, sorted(visible_keys, key=_sort_key_for_label), lo, hi)
+            return
+
+        if not path.lower().endswith(".csv"):
+            path = path + ".csv"
+
+        try:
+            sorted_keys = sorted(visible_keys, key=_sort_key_for_label)
+
+            def _csv_escape(s):
+                s = str(s)
+                if "," in s or '"' in s or "\n" in s:
+                    return '"' + s.replace('"', '""') + '"'
+                return s
+
+            channel_rows = {}
+            max_len = 0
+            for lbl in sorted_keys:
+                ch = self.datalog_data.get(lbl)
+                if ch is None:
+                    channel_rows[lbl] = []
+                    continue
+                off = self._get_total_time_offset(lbl)
+                times = ch.get("time", [])
+                values = ch.get("values", [])
+                rows = []
+                for j in range(min(len(times), len(values))):
+                    t_eff = times[j] + off
+                    if lo <= t_eff <= hi:
+                        rows.append((t_eff, values[j]))
+                channel_rows[lbl] = rows
+                max_len = max(max_len, len(rows))
+
+            display_names = []
+            for lbl in sorted_keys:
+                disp = self.ch_name_renames.get(lbl) or _display_label(lbl)
+                display_names.append(disp)
+
+            with open(path, "w", newline="") as f:
+                f.write("[COMBINED_EXPORT]\n")
+                f.write("version,1\n\n")
+
+                header_parts = []
+                for disp in display_names:
+                    header_parts.append(_csv_escape(f"Time_{disp}(s)"))
+                    header_parts.append(_csv_escape(disp))
+                f.write(",".join(header_parts) + "\n")
+
+                for i in range(max_len):
+                    row_parts = []
+                    for lbl in sorted_keys:
+                        rows = channel_rows.get(lbl, [])
+                        if i < len(rows):
+                            t_val, v_val = rows[i]
+                            row_parts.append(f"{t_val:.6f}")
+                            row_parts.append(f"{v_val:.9f}")
+                        else:
+                            row_parts.append("")
+                            row_parts.append("")
+                    f.write(",".join(row_parts) + "\n")
+
+                prefixes_in_use = set()
+                for lbl in sorted_keys:
+                    p = self._get_file_prefix(lbl)
+                    if p:
+                        prefixes_in_use.add(p)
+
+                has_b_visible = any(self._is_b_label(lbl) for lbl in sorted_keys)
+                time_offset_rows = []
+                if has_b_visible and self._b_time_offset:
+                    time_offset_rows.append(("B_slot", f"{self._b_time_offset:.9f}"))
+                for prefix in sorted(prefixes_in_use):
+                    off = self._file_time_offsets.get(prefix, 0.0)
+                    if off:
+                        time_offset_rows.append((prefix, f"{off:.9f}"))
+                if time_offset_rows:
+                    f.write("\n[TIME_OFFSETS]\n")
+                    f.write("scope,offset_s\n")
+                    for scope, val in time_offset_rows:
+                        f.write(f"{_csv_escape(scope)},{val}\n")
+
+                source_rows = []
+                for tc in self._imported_tab_configs:
+                    prefix = tc.get("file_prefix", "")
+                    if prefix and prefix in prefixes_in_use:
+                        source_rows.append((prefix, tc.get("tab_name", "")))
+                if source_rows:
+                    f.write("\n[SOURCE_FILES]\n")
+                    f.write("file_prefix,source_name\n")
+                    for prefix, name in source_rows:
+                        f.write(f"{_csv_escape(prefix)},{_csv_escape(name)}\n")
+
+                if self.custom_labels:
+                    label_rows = []
+                    for lbl in self.custom_labels:
+                        ch_raw = lbl.get("channel", "")
+                        if ch_raw and ch_raw not in visible_keys:
+                            continue
+                        t_val = lbl.get("time", 0.0)
+                        if ch_raw:
+                            t_val = t_val + self._get_total_time_offset(ch_raw)
+                        if not (lo <= t_val <= hi):
+                            continue
+                        ch_display = _display_label(ch_raw) if ch_raw else ""
+                        label_rows.append((t_val, lbl.get("text", ""), ch_display))
+                    if label_rows:
+                        f.write("\n[CUSTOM_LABELS]\n")
+                        f.write("time,text,channel\n")
+                        for t_val, text, ch_display in label_rows:
+                            f.write(
+                                f"{t_val:.6f},"
+                                f"{_csv_escape(text)},"
+                                f"{_csv_escape(ch_display)}\n"
+                            )
+
+                if self.ch_name_renames:
+                    rename_rows = []
+                    for key, display_name in self.ch_name_renames.items():
+                        if key not in visible_keys:
+                            continue
+                        rename_rows.append((_display_label(key), display_name))
+                    if rename_rows:
+                        f.write("\n[CH_NAME_RENAMES]\n")
+                        f.write("key,display_name\n")
+                        for key_display, display_name in rename_rows:
+                            f.write(
+                                f"{_csv_escape(key_display)},"
+                                f"{_csv_escape(display_name)}\n"
+                            )
+        except Exception:
+            import traceback
+            logger.error("Marker region CSV export failed:\n%s", traceback.format_exc())
+
+    def _build_marker_dlog_bytes(self, unit_channels, lo, hi):
+        import struct
+
+        traces = []
+        for ch_num in sorted(unit_channels.keys()):
+            entry = unit_channels[ch_num]
+            if "V" in entry:
+                traces.append(("volt", ch_num, entry["V"]))
+            if "I" in entry:
+                traces.append(("curr", ch_num, entry["I"]))
+        if not traces:
+            return None
+
+        sample_period = 0.001
+        window_samples = []
+        for _, _, info in traces:
+            times = info["times"]
+            off = info["offset"]
+            idxs = [j for j in range(len(times)) if lo <= (times[j] + off) <= hi]
+            window_samples.append(idxs)
+            if len(times) >= 2:
+                sample_period = float(times[1] - times[0])
+
+        num_samples = min((len(idxs) for idxs in window_samples), default=0)
+        if num_samples <= 0:
+            return None
+
+        ch_ids = sorted(unit_channels.keys())
+        header_parts = ['<?xml version="1.0" encoding="UTF-8"?>']
+        header_parts.append("<dlog>")
+        header_parts.append(f"<frame><tint>{sample_period:.9g}</tint>"
+                            f"<points>{num_samples}</points></frame>")
+        for ch_num in ch_ids:
+            entry = unit_channels[ch_num]
+            sense_v = 1 if "V" in entry else 0
+            sense_c = 1 if "I" in entry else 0
+            header_parts.append(
+                f'<channel id="{ch_num}">'
+                f"<sense_volt>{sense_v}</sense_volt>"
+                f"<sense_curr>{sense_c}</sense_curr>"
+                f"</channel>"
+            )
+        header_parts.append("</dlog>")
+        header_str = "".join(header_parts)
+
+        out = bytearray()
+        out.extend(header_str.encode("ascii", errors="replace"))
+        out.extend(b"\x00" * 9)
+
+        num_traces = len(traces)
+        flat = []
+        for i in range(num_samples):
+            for t_idx, (_, _, info) in enumerate(traces):
+                src_idx = window_samples[t_idx][i]
+                flat.append(info["values"][src_idx] / 1000.0)
+        out.extend(struct.pack(f">{num_traces * num_samples}f", *flat))
+        return bytes(out)
+
+    def _export_marker_dlog(self, path, sorted_keys, lo, hi):
+        try:
+            units = {"A": {}, "B": {}}
+            for lbl in sorted_keys:
+                ch_num, mtype, is_b = _parse_ch_label(lbl)
+                if ch_num is None or mtype == "P":
+                    continue
+                ch = self.datalog_data.get(lbl)
+                if ch is None:
+                    continue
+                slot = "B" if is_b else "A"
+                units[slot].setdefault(ch_num, {})[mtype] = {
+                    "times": ch.get("time", []),
+                    "values": ch.get("values", []),
+                    "offset": self._get_total_time_offset(lbl),
+                }
+
+            blobs = []
+            for slot in ("A", "B"):
+                if units[slot]:
+                    blob = self._build_marker_dlog_bytes(units[slot], lo, hi)
+                    if blob:
+                        blobs.append(blob)
+
+            if not blobs:
+                logger.warning("Marker region dlog export: no valid samples in window.")
+                return
+
+            with open(path, "wb") as f:
+                f.write(blobs[0])
+            if len(blobs) > 1:
+                import os
+                base, ext = os.path.splitext(path)
+                for idx in range(1, len(blobs)):
+                    with open(f"{base}_unit{idx}{ext}", "wb") as f:
+                        f.write(blobs[idx])
+        except Exception:
+            import traceback
+            logger.error("Marker region dlog export failed:\n%s", traceback.format_exc())
 
 
 if __name__ == "__main__":
