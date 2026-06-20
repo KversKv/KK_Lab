@@ -14,6 +14,7 @@ from PySide6.QtCore import (
     QEasingCurve,
     QEventLoop,
     QObject,
+    QPoint,
     QPropertyAnimation,
     QRect,
     QSize,
@@ -30,6 +31,7 @@ from PySide6.QtWidgets import (
     QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QPlainTextEdit,
     QPushButton,
     QSizePolicy,
@@ -61,19 +63,41 @@ _AI_SVG_DIR = os.path.join(get_resource_base(), "resources", "icons_svg", "ai")
 _SEND_ICON = os.path.join(_AI_SVG_DIR, "send.svg")
 _PANEL_ICON = os.path.join(_AI_SVG_DIR, "ai_panel.svg")
 _SPARKLES_ICON = os.path.join(_AI_SVG_DIR, "sparkles.svg")
+_CLOSE_ICON = os.path.join(_AI_SVG_DIR, "close.svg")
 
 _PANEL_STYLE = """
 QFrame#aiAssistPanel {
     background-color: #070709;
     border-left: 1px solid #1e293b;
+    border-radius: 0px;
 }
 QFrame#aiHeaderBar {
     background-color: #020617;
+    border: none;
     border-bottom: 1px solid #1e293b;
+    border-radius: 0px;
 }
 QFrame#aiBottomBar {
-    background-color: #070709;
+    background-color: #030616;
     border-top: 1px solid #1e293b;
+}
+QFrame#aiComposeBox {
+    background-color: #070709;
+    border: 1px solid #1e293b;
+    border-radius: 12px;
+}
+QFrame#aiInputArea {
+    background-color: #070709;
+    border: none;
+    border-top-left-radius: 11px;
+    border-top-right-radius: 11px;
+}
+QFrame#aiControlsArea {
+    background-color: #04060f;
+    border: none;
+    border-top: 1px solid #1e293b;
+    border-bottom-left-radius: 11px;
+    border-bottom-right-radius: 11px;
 }
 QLabel#aiPanelTitle {
     color: #e2e8f0;
@@ -120,15 +144,15 @@ QPushButton#aiCloseBtn:hover {
     color: #e2e8f0;
 }
 QPlainTextEdit#aiInput {
-    background-color: #070709;
+    background-color: transparent;
     color: #e2e8f0;
-    border: 1px solid #1e293b;
-    border-radius: 12px;
-    padding: 8px 10px;
+    border: none;
+    border-radius: 0px;
+    padding: 2px 2px;
     font-size: 12px;
 }
 QPlainTextEdit#aiInput:focus {
-    border: 1px solid #3b82f6;
+    border: none;
 }
 QPushButton#aiSendBtn {
     min-height: 22px;
@@ -203,19 +227,20 @@ QLabel#aiRangeLabel {
     font-weight: 700;
     letter-spacing: 0.4px;
     background: transparent;
+    border: none;
 }
 QComboBox#aiLevelCombo {
     min-height: 22px;
     padding: 1px 6px;
     border: 1px solid #1e293b;
     border-radius: 4px;
-    background-color: #0f172a;
+    background-color: #04060f;
     color: #cbd5e1;
     font-size: 10px;
     font-weight: 700;
 }
 QComboBox#aiLevelCombo QAbstractItemView {
-    background-color: #0f172a;
+    background-color: #04060f;
     color: #cbd5e1;
     selection-background-color: #1d3a6e;
 }
@@ -224,7 +249,7 @@ QSpinBox#aiLinesSpin {
     padding: 1px 4px;
     border: 1px solid #1e293b;
     border-radius: 4px;
-    background-color: #0f172a;
+    background-color: #04060f;
     color: #cbd5e1;
     font-size: 10px;
     font-weight: 700;
@@ -273,6 +298,87 @@ QLabel#aiUsageLabel {
 
 _LOG_LEVELS = ("DEBUG", "INFO", "WARN", "ERROR")
 _MAX_LINES_CAP = 1000
+
+
+class _FlowLayout(QLayout):
+    """自动换行的流式布局：宽度不足时把控件折到下一行，避免横向撑宽面板。"""
+
+    def __init__(self, parent=None, margin: int = 0, spacing: int = 6):
+        super().__init__(parent)
+        if parent is not None:
+            self.setContentsMargins(margin, margin, margin, margin)
+        self.setSpacing(spacing)
+        self._items: list = []
+
+    def __del__(self):
+        while self._items:
+            self._items.pop()
+
+    def addItem(self, item):
+        self._items.append(item)
+
+    def count(self):
+        return len(self._items)
+
+    def itemAt(self, index):
+        if 0 <= index < len(self._items):
+            return self._items[index]
+        return None
+
+    def takeAt(self, index):
+        if 0 <= index < len(self._items):
+            return self._items.pop(index)
+        return None
+
+    def expandingDirections(self):
+        return Qt.Orientations(Qt.Orientation(0))
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self._do_layout(QRect(0, 0, width, 0), True)
+
+    def setGeometry(self, rect):
+        super().setGeometry(rect)
+        self._do_layout(rect, False)
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        margins = self.contentsMargins()
+        size += QSize(
+            margins.left() + margins.right(),
+            margins.top() + margins.bottom(),
+        )
+        return size
+
+    def _do_layout(self, rect, test_only):
+        margins = self.contentsMargins()
+        effective = rect.adjusted(
+            margins.left(), margins.top(), -margins.right(), -margins.bottom()
+        )
+        x = effective.x()
+        y = effective.y()
+        line_height = 0
+        spacing = self.spacing()
+        for item in self._items:
+            item_size = item.sizeHint()
+            next_x = x + item_size.width() + spacing
+            if next_x - spacing > effective.right() and line_height > 0:
+                x = effective.x()
+                y = y + line_height + spacing
+                next_x = x + item_size.width() + spacing
+                line_height = 0
+            if not test_only:
+                item.setGeometry(QRect(QPoint(x, y), item_size))
+            x = next_x
+            line_height = max(line_height, item_size.height())
+        return y + line_height - rect.y() + margins.bottom()
 
 
 class _InputEdit(QPlainTextEdit):
@@ -422,20 +528,42 @@ class AIAssistPanel(QFrame):
         self._quick_row = self._build_quick_row()
         bottom_layout.addWidget(self._quick_row)
 
+        compose_box = QFrame()
+        compose_box.setObjectName("aiComposeBox")
+        compose_layout = QVBoxLayout(compose_box)
+        compose_layout.setContentsMargins(0, 0, 0, 0)
+        compose_layout.setSpacing(0)
+
+        input_area = QFrame()
+        input_area.setObjectName("aiInputArea")
+        input_layout = QVBoxLayout(input_area)
+        input_layout.setContentsMargins(12, 12, 12, 12)
+        input_layout.setSpacing(0)
+
         self._input = _InputEdit()
         self._input.setObjectName("aiInput")
-        self._input.setPlaceholderText("输入问题，Enter 发送 / Shift+Enter 换行")
+        self._input.setPlaceholderText("Ask a question, Enter to send / Shift+Enter for new line")
         self._input.submitted.connect(self._on_send_clicked)
-        bottom_layout.addWidget(self._input)
+        input_layout.addWidget(self._input)
+        compose_layout.addWidget(input_area)
 
-        bottom_layout.addLayout(self._build_range_bar())
-        bottom_layout.addLayout(self._build_export_bar())
-        bottom_layout.addLayout(self._build_action_bar())
+        controls_area = QFrame()
+        controls_area.setObjectName("aiControlsArea")
+        controls_layout = QVBoxLayout(controls_area)
+        controls_layout.setContentsMargins(12, 10, 12, 12)
+        controls_layout.setSpacing(10)
+        controls_layout.addLayout(self._build_range_bar())
+        controls_layout.addLayout(self._build_export_bar())
+        controls_layout.addLayout(self._build_action_bar())
+        compose_layout.addWidget(controls_area)
+
+        bottom_layout.addWidget(compose_box)
+
         bottom_layout.addWidget(self._build_usage_bar())
 
         root.addWidget(bottom_bar)
 
-        self._chat.add_system_message("AI 助手已就绪。")
+        self._chat.add_system_message("AI Assistant is ready.")
         self._replay_history()
         self.refresh_quick_actions()
         self._wire_service()
@@ -456,19 +584,19 @@ class AIAssistPanel(QFrame):
             icon.setPixmap(tinted_svg_pixmap(_PANEL_ICON, "#3b82f6", 18))
         layout.addWidget(icon)
 
-        title = QLabel("AI 助手")
+        title = QLabel("AI Assistant")
         title.setObjectName("aiPanelTitle")
         layout.addWidget(title)
         layout.addStretch(1)
 
-        self._clear_btn = QPushButton("清空")
+        self._clear_btn = QPushButton("Clear")
         self._clear_btn.setObjectName("aiSettingsBtn")
         self._clear_btn.setCursor(QCursor(Qt.PointingHandCursor))
-        self._clear_btn.setToolTip("清空当前会话历史")
+        self._clear_btn.setToolTip("Clear current conversation history")
         self._clear_btn.clicked.connect(self._on_clear_clicked)
         layout.addWidget(self._clear_btn)
 
-        self._settings_btn = QPushButton("设置")
+        self._settings_btn = QPushButton("Settings")
         self._settings_btn.setObjectName("aiSettingsBtn")
         self._settings_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self._settings_btn.clicked.connect(self._open_settings)
@@ -478,11 +606,14 @@ class AIAssistPanel(QFrame):
         sep.setObjectName("aiHeaderSep")
         layout.addWidget(sep)
 
-        close_btn = QPushButton("×")
+        close_btn = QPushButton()
         close_btn.setObjectName("aiCloseBtn")
         close_btn.setFixedWidth(28)
         close_btn.setCursor(QCursor(Qt.PointingHandCursor))
-        close_btn.setToolTip("关闭面板")
+        close_btn.setToolTip("Close panel")
+        if os.path.isfile(_CLOSE_ICON):
+            close_btn.setIcon(tinted_svg_icon(_CLOSE_ICON, "#64748b", 16))
+            close_btn.setIconSize(QSize(16, 16))
         close_btn.clicked.connect(self.request_close.emit)
         layout.addWidget(close_btn)
         return bar
@@ -493,7 +624,7 @@ class AIAssistPanel(QFrame):
         target = settings.effective_model if fixed else ""
         self._model_combo.blockSignals(True)
         self._model_combo.clear()
-        self._model_combo.addItem("自动（按页面）", "")
+        self._model_combo.addItem("Auto (Page)", "")
         for model in self._service.available_models():
             self._model_combo.addItem(model, model)
         if fixed and target:
@@ -511,17 +642,15 @@ class AIAssistPanel(QFrame):
         model = self._model_combo.currentData() or ""
         self._service.set_model_override(model or None)
         if model:
-            self._chat.add_system_message(f"已切换模型：{model}")
+            self._chat.add_system_message(f"Model switched: {model}")
         else:
-            self._chat.add_system_message("模型已切回：自动（按页面）")
+            self._chat.add_system_message("Model reset to: Auto (Page)")
 
     def _build_quick_row(self) -> QWidget:
         row = QWidget()
         row.setStyleSheet("background: transparent;")
-        layout = QHBoxLayout(row)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
-        layout.addStretch(1)
+        row.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        layout = _FlowLayout(row, margin=0, spacing=6)
         self._quick_layout = layout
         return row
 
@@ -544,7 +673,6 @@ class AIAssistPanel(QFrame):
             btn.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
             btn.clicked.connect(lambda _checked=False, t=text: self._on_quick_clicked(t))
             layout.addWidget(btn)
-        layout.addStretch(1)
         self._quick_row.setVisible(bool(actions))
 
     def _on_quick_clicked(self, text: str) -> None:
@@ -564,7 +692,7 @@ class AIAssistPanel(QFrame):
         from PySide6.QtWidgets import QDialogButtonBox, QFormLayout, QLineEdit
 
         dialog = QDialog(parent=self)
-        dialog.setWindowTitle("填写快捷指令参数")
+        dialog.setWindowTitle("Fill Quick Action Parameters")
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(10)
@@ -578,7 +706,7 @@ class AIAssistPanel(QFrame):
         edits: dict[str, QLineEdit] = {}
         for name in placeholders:
             edit = QLineEdit()
-            edit.setPlaceholderText(f"输入 {name}")
+            edit.setPlaceholderText(f"Enter {name}")
             form.addRow(name, edit)
             edits[name] = edit
         layout.addLayout(form)
@@ -608,7 +736,7 @@ class AIAssistPanel(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
 
-        level_label = QLabel("日志等级")
+        level_label = QLabel("Log Level")
         level_label.setObjectName("aiRangeLabel")
         layout.addWidget(level_label)
 
@@ -616,10 +744,10 @@ class AIAssistPanel(QFrame):
         self._level_combo.setObjectName("aiLevelCombo")
         self._level_combo.addItems(_LOG_LEVELS)
         self._level_combo.setCurrentText("INFO")
-        self._level_combo.setToolTip("分析时只保留不低于该等级的日志")
+        self._level_combo.setToolTip("Only keep logs at or above this level during analysis")
         layout.addWidget(self._level_combo)
 
-        lines_label = QLabel("最大行数")
+        lines_label = QLabel("Max Lines")
         lines_label.setObjectName("aiRangeLabel")
         layout.addWidget(lines_label)
 
@@ -628,7 +756,7 @@ class AIAssistPanel(QFrame):
         self._lines_spin.setRange(20, _MAX_LINES_CAP)
         self._lines_spin.setSingleStep(50)
         self._lines_spin.setValue(300)
-        self._lines_spin.setToolTip(f"每类日志取的最大行数（上限 {_MAX_LINES_CAP}）")
+        self._lines_spin.setToolTip(f"Max lines taken per log type (cap {_MAX_LINES_CAP})")
         layout.addWidget(self._lines_spin)
 
         layout.addStretch(1)
@@ -639,11 +767,11 @@ class AIAssistPanel(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
         layout.addStretch(1)
-        self._export_btn = QPushButton("导出本轮会话")
+        self._export_btn = QPushButton("Export Session")
         self._export_btn.setObjectName("aiExportBtn")
         self._export_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self._export_btn.setToolTip(
-            "导出本次会话的问 / 系统提示 / AI 回复 / 执行的指令 / 审计 / 用量等调试信息（Markdown）"
+            "Export this session's debug info: questions / system prompts / AI replies / executed actions / audit / usage (Markdown)"
         )
         self._export_btn.clicked.connect(self._on_export_clicked)
         layout.addWidget(self._export_btn)
@@ -654,30 +782,30 @@ class AIAssistPanel(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
-        self._analyze_btn = QPushButton("分析日志")
+        self._analyze_btn = QPushButton("Analyze")
         self._analyze_btn.setObjectName("aiAnalyzeBtn")
         self._analyze_btn.setCursor(QCursor(Qt.PointingHandCursor))
-        self._analyze_btn.setToolTip("基于最近运行日志进行分析")
+        self._analyze_btn.setToolTip("Analyze based on recent run logs")
         if os.path.isfile(_SPARKLES_ICON):
             self._analyze_btn.setIcon(tinted_svg_icon(_SPARKLES_ICON, "#3b82f6", 13))
             self._analyze_btn.setIconSize(QSize(13, 13))
         self._analyze_btn.clicked.connect(self._on_analyze_clicked)
         layout.addWidget(self._analyze_btn)
 
-        self._draft_btn = QPushButton("生成草案")
+        self._draft_btn = QPushButton("Script")
         self._draft_btn.setObjectName("aiScriptBtn")
         self._draft_btn.setCursor(QCursor(Qt.PointingHandCursor))
-        self._draft_btn.setToolTip("根据输入框需求生成测试配置/脚本草案（预览校验后才应用）")
+        self._draft_btn.setToolTip("Generate a test config/script draft from the input (applied only after preview validation)")
         if os.path.isfile(_SPARKLES_ICON):
             self._draft_btn.setIcon(tinted_svg_icon(_SPARKLES_ICON, "#818cf8", 13))
             self._draft_btn.setIconSize(QSize(13, 13))
         self._draft_btn.clicked.connect(self._on_draft_clicked)
         layout.addWidget(self._draft_btn)
 
-        self._waveform_btn = QPushButton("发送波形给 AI")
+        self._waveform_btn = QPushButton("Send Waveform to AI")
         self._waveform_btn.setObjectName("aiAnalyzeBtn")
         self._waveform_btn.setCursor(QCursor(Qt.PointingHandCursor))
-        self._waveform_btn.setToolTip("把当前页面波形（摘要+降采样）发送给 AI 分析")
+        self._waveform_btn.setToolTip("Send the current page's waveform (summary + downsampled) to AI for analysis")
         self._waveform_btn.clicked.connect(self._on_waveform_clicked)
         self._waveform_btn.setVisible(False)
         layout.addWidget(self._waveform_btn)
@@ -687,12 +815,12 @@ class AIAssistPanel(QFrame):
         self._model_combo = QComboBox()
         self._model_combo.setObjectName("aiModelCombo")
         self._model_combo.setMinimumWidth(120)
-        self._model_combo.setToolTip("手动切换模型（按 Profile 自动选择 / 指定模型）")
+        self._model_combo.setToolTip("Manually switch model (auto by Profile / specify a model)")
         self._populate_models()
         self._model_combo.currentTextChanged.connect(self._on_model_changed)
         layout.addWidget(self._model_combo)
 
-        self._send_btn = _PressScaleButton("发送")
+        self._send_btn = _PressScaleButton("Send")
         self._send_btn.setObjectName("aiSendBtn")
         self._send_btn.setCursor(QCursor(Qt.PointingHandCursor))
         if os.path.isfile(_SEND_ICON):
@@ -708,7 +836,7 @@ class AIAssistPanel(QFrame):
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
-        self._usage_label = QLabel("用量 (tokens)：暂无")
+        self._usage_label = QLabel("Usage (tokens): None")
         self._usage_label.setObjectName("aiUsageLabel")
         self._usage_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         layout.addWidget(self._usage_label)
@@ -735,9 +863,9 @@ class AIAssistPanel(QFrame):
 
     def _on_waveform_clicked(self) -> None:
         if self._waveform_provider_cb is None:
-            self._chat.add_system_message("当前页面无可发送的波形数据。")
+            self._chat.add_system_message("No waveform data available to send on the current page.")
             return
-        text = self._input.toPlainText().strip() or "请分析以下波形数据的特征、异常与可能原因。"
+        text = self._input.toPlainText().strip() or "Please analyze the characteristics, anomalies and possible causes of the following waveform data."
         self._input.clear()
         self._start_digest_send(text, via_button=True)
 
@@ -748,12 +876,12 @@ class AIAssistPanel(QFrame):
         via_button=False 走普通文字提问（datalog 页自动带摘要，用户气泡显示原文）。
         """
         if self._digest_thread is not None:
-            self._chat.add_system_message("正在构建波形摘要，请稍候。")
+            self._chat.add_system_message("Building waveform summary, please wait.")
             return
         self._pending_waveform_text = text
         self._pending_waveform_via_button = via_button
         self._waveform_btn.setEnabled(False)
-        self._chat.add_system_message("正在后台构建波形摘要…")
+        self._chat.add_system_message("Building waveform summary in the background…")
 
         x_range = None
         marker = None
@@ -782,22 +910,22 @@ class AIAssistPanel(QFrame):
         self._digest_thread.start()
 
     def _on_digest_ready(self, digest) -> None:
-        text = self._pending_waveform_text or "请分析以下波形数据的特征、异常与可能原因。"
+        text = self._pending_waveform_text or "Please analyze the characteristics, anomalies and possible causes of the following waveform data."
         via_button = self._pending_waveform_via_button
         if digest is None or not getattr(digest, "stats", None):
             if via_button:
-                self._chat.add_system_message("当前没有可分析的波形数据。")
+                self._chat.add_system_message("No waveform data available to analyze.")
                 return
             self._chat.add_system_message(
-                "当前没有可分析的波形数据，将按普通对话处理。"
+                "No waveform data available to analyze; handling as a regular conversation."
             )
             self._record("user", text=text)
             self._chat.add_user_message(text)
             self._service.send(text)
             return
         if via_button:
-            self._record("user", text=f"[发送波形] {text}")
-            self._chat.add_user_message(f"[发送波形] {text}")
+            self._record("user", text=f"[Send Waveform] {text}")
+            self._chat.add_user_message(f"[Send Waveform] {text}")
         else:
             self._record("user", text=text)
             self._chat.add_user_message(text)
@@ -807,9 +935,9 @@ class AIAssistPanel(QFrame):
         text = self._pending_waveform_text
         via_button = self._pending_waveform_via_button
         if via_button or not text:
-            self._chat.add_system_message("获取波形数据失败，请查看日志。")
+            self._chat.add_system_message("Failed to fetch waveform data, please check the logs.")
             return
-        self._chat.add_system_message("获取波形数据失败，将按普通对话处理。")
+        self._chat.add_system_message("Failed to fetch waveform data; handling as a regular conversation.")
         self._record("user", text=text)
         self._chat.add_user_message(text)
         self._service.send(text)
@@ -827,7 +955,7 @@ class AIAssistPanel(QFrame):
 
     def _on_usage_updated(self, turn, session) -> None:
         if turn is None:
-            self._usage_label.setText("用量 (tokens)：暂无")
+            self._usage_label.setText("Usage (tokens): None")
             return
         try:
             tps = turn.output_tps
@@ -844,9 +972,9 @@ class AIAssistPanel(QFrame):
                 requests=requests,
             )
             self._usage_label.setText(
-                f"本次 ↑{turn.prompt_tokens} ↓{turn.completion_tokens} tokens @ "
-                f"{tps:.1f} tok·s⁻¹ ｜ 会话 ↑{sess_prompt} ↓{sess_completion} tokens"
-                f"（{requests} 次）"
+                f"This turn ↑{turn.prompt_tokens} ↓{turn.completion_tokens} tokens @ "
+                f"{tps:.1f} tok·s⁻¹ | Session ↑{sess_prompt} ↓{sess_completion} tokens"
+                f" ({requests} requests)"
             )
         except Exception:
             logger.error("刷新用量状态栏失败", exc_info=True)
@@ -877,13 +1005,13 @@ class AIAssistPanel(QFrame):
                 self._chat.add_user_message(content)
             elif role == "assistant":
                 self._chat.add_ai_message(content)
-        self._chat.add_system_message("（已恢复上次会话历史）")
+        self._chat.add_system_message("(Restored previous conversation history)")
 
     def _on_clear_clicked(self) -> None:
         self._service.clear_history()
         self._transcript.clear()
         self._session_started_at = datetime.now()
-        self._chat.add_system_message("会话历史已清空。")
+        self._chat.add_system_message("Conversation history cleared.")
 
     def _on_stream_started(self) -> None:
         self._chat.begin_stream_message()
@@ -949,15 +1077,15 @@ class AIAssistPanel(QFrame):
                 loop.quit()
 
         card.run_clicked.connect(
-            lambda: _finish(ConfirmResult(confirmed=True), "✓ 已选择运行")
+            lambda: _finish(ConfirmResult(confirmed=True), "✓ Run selected")
         )
         card.reject_clicked.connect(
-            lambda: _finish(ConfirmResult(confirmed=False), "⛔ 已拒绝执行")
+            lambda: _finish(ConfirmResult(confirmed=False), "⛔ Execution rejected")
         )
         card.allow_clicked.connect(
             lambda: _finish(
                 ConfirmResult(confirmed=True, remember_resident=True),
-                "✓ 已添加到白名单并运行",
+                "✓ Added to whitelist and run",
             )
         )
 
@@ -981,17 +1109,17 @@ class AIAssistPanel(QFrame):
             result=getattr(outcome, "result", {}),
         )
         if status == "executed" and auto_approved:
-            prefix = "⚡ 已按白名单自动执行"
+            prefix = "⚡ Auto-executed via whitelist"
         else:
             prefix = {
-                "executed": "✓ 已执行",
-                "denied": "⛔ 已拒绝",
-                "cancelled": "✗ 已取消",
-                "failed": "⚠ 执行失败",
+                "executed": "✓ Executed",
+                "denied": "⛔ Denied",
+                "cancelled": "✗ Cancelled",
+                "failed": "⚠ Execution failed",
             }.get(status, status)
-        text = f"{prefix} 动作 [{name}]"
+        text = f"{prefix} action [{name}]"
         if message:
-            text += f"：{message}"
+            text += f": {message}"
         self._chat.add_system_message(text)
 
     def set_config_apply_callback(self, callback) -> None:
@@ -1025,7 +1153,7 @@ class AIAssistPanel(QFrame):
         )
         path, _ = QFileDialog.getSaveFileName(
             self,
-            "导出本轮会话（调试信息）",
+            "Export Session (Debug Info)",
             default_name,
             "Markdown (*.md)",
         )
@@ -1037,9 +1165,9 @@ class AIAssistPanel(QFrame):
                 f.write(content)
         except Exception:
             logger.error("导出会话失败: %s", path, exc_info=True)
-            self._chat.add_system_message("导出会话失败，请查看日志。")
+            self._chat.add_system_message("Failed to export session, please check the logs.")
             return
-        self._chat.add_system_message(f"已导出本轮会话调试信息：{path}")
+        self._chat.add_system_message(f"Session debug info exported: {path}")
 
     def _build_export_markdown(self) -> str:
         from core.ai.profiles import get_global_system_prompt, get_profile
@@ -1236,10 +1364,10 @@ class AIAssistPanel(QFrame):
         level = self._level_combo.currentText()
         max_lines = min(self._lines_spin.value(), _MAX_LINES_CAP)
         self._record(
-            "user", text=f"[分析日志] 等级≥{level}，每类≤{max_lines}行"
+            "user", text=f"[Analyze Logs] level≥{level}, ≤{max_lines} lines per type"
         )
         self._chat.add_user_message(
-            f"分析最近日志（等级≥{level}，每类≤{max_lines}行）"
+            f"Analyze recent logs (level≥{level}, ≤{max_lines} lines per type)"
         )
         options = ContextOptions(
             max_app_lines=max_lines,
@@ -1253,12 +1381,12 @@ class AIAssistPanel(QFrame):
     def _on_draft_clicked(self) -> None:
         text = self._input.toPlainText().strip()
         if not text:
-            self._chat.add_system_message("请先在输入框描述需要生成的测试配置或脚本。")
+            self._chat.add_system_message("Please describe the test config or script to generate in the input box first.")
             return
         kind = SCRIPT_DRAFT if self._script_apply_cb is not None else CONFIG_DRAFT
-        label = "测试脚本" if kind == SCRIPT_DRAFT else "测试配置"
-        self._record("user", text=f"[生成{label}草案] {text}")
-        self._chat.add_user_message(f"生成{label}草案：{text}")
+        label = "Test Script" if kind == SCRIPT_DRAFT else "Test Config"
+        self._record("user", text=f"[Generate {label} Draft] {text}")
+        self._chat.add_user_message(f"Generate {label} draft: {text}")
         self._input.clear()
         self._service.generate_draft(kind, text)
 
@@ -1266,8 +1394,8 @@ class AIAssistPanel(QFrame):
         if parsed is None:
             return
         if not parsed.ok or parsed.payload is None:
-            errors = "；".join(parsed.errors) if parsed.errors else "草案解析失败"
-            self._chat.add_system_message(f"草案无法解析：{errors}")
+            errors = "; ".join(parsed.errors) if parsed.errors else "Draft parsing failed"
+            self._chat.add_system_message(f"Draft cannot be parsed: {errors}")
             if parsed.message:
                 self._chat.add_ai_message(parsed.message)
             return
@@ -1280,23 +1408,23 @@ class AIAssistPanel(QFrame):
 
     def _show_config_preview(self, draft) -> None:
         if self._config_apply_cb is None:
-            self._chat.add_system_message("当前页面不支持应用配置草案。")
+            self._chat.add_system_message("The current page does not support applying config drafts.")
             return
         from ui.ai.config_preview import ConfigPreviewDialog
 
         dialog = ConfigPreviewDialog(draft, self._config_apply_cb, parent=self)
         if dialog.exec():
-            self._chat.add_system_message("已应用测试配置草案。")
+            self._chat.add_system_message("Test config draft applied.")
 
     def _show_script_preview(self, draft) -> None:
         if self._script_apply_cb is None:
-            self._chat.add_system_message("当前页面不支持应用脚本草案（请切到 Custom Test 页面）。")
+            self._chat.add_system_message("The current page does not support applying script drafts (switch to the Custom Test page).")
             return
         from ui.ai.script_preview import ScriptPreviewDialog
 
         dialog = ScriptPreviewDialog(draft, self._script_apply_cb, parent=self)
         if dialog.exec():
-            self._chat.add_system_message("已将测试脚本草案应用到画布。")
+            self._chat.add_system_message("Test script draft applied to the canvas.")
 
     def _on_response(self, content: str) -> None:
         self._record("assistant", text=content or "")
@@ -1310,20 +1438,20 @@ class AIAssistPanel(QFrame):
         except Exception:
             logger.error("提交反馈失败", exc_info=True)
         self._chat.add_system_message(
-            "感谢反馈 👍" if rating == "up" else "已记录，感谢反馈 👎"
+            "Thanks for the feedback 👍" if rating == "up" else "Recorded, thanks for the feedback 👎"
         )
 
     def _on_curate_requested(self, kind: str, _payload: str) -> None:
         """对话气泡⋯菜单：把当前这轮沉淀为对应资产（草稿生成走后台线程）。"""
         if not (self._last_user_text or self._last_assistant_text):
-            self._chat.add_system_message("暂无可沉淀的对话内容。")
+            self._chat.add_system_message("No conversation content available to curate.")
             return
         turn = {
             "user": self._last_user_text,
             "assistant": self._last_assistant_text,
             "page_key": self._service.current_page_key() or "",
         }
-        self._chat.add_system_message("正在生成沉淀草稿…")
+        self._chat.add_system_message("Generating curation draft…")
         self._start_curate(kind, turn)
 
     def _start_curate(self, kind: str, turn: dict) -> None:
@@ -1350,7 +1478,7 @@ class AIAssistPanel(QFrame):
         thread.started.connect(worker.run)
         worker.done.connect(lambda d: self._on_draft_made(kind, turn, d))
         worker.failed.connect(
-            lambda m: self._chat.add_system_message(f"草稿生成失败：{m}")
+            lambda m: self._chat.add_system_message(f"Draft generation failed: {m}")
         )
         worker.done.connect(thread.quit)
         worker.failed.connect(thread.quit)
@@ -1365,11 +1493,11 @@ class AIAssistPanel(QFrame):
         from core.ai.curator import Curator
 
         if not draft:
-            self._chat.add_system_message("草稿为空，已取消沉淀。")
+            self._chat.add_system_message("Draft is empty, curation cancelled.")
             return
         dialog = CurateDialog(kind, draft, parent=self)
         if not dialog.exec():
-            self._chat.add_system_message("已取消沉淀。")
+            self._chat.add_system_message("Curation cancelled.")
             return
         final_draft = dialog.result_draft()
         curator = Curator(self._service.settings)
@@ -1380,14 +1508,14 @@ class AIAssistPanel(QFrame):
             "eval_case": curator.as_eval_case,
         }.get(kind, lambda _d: False)(final_draft)
         if ok:
-            self._chat.add_system_message("已沉淀，立即生效。")
+            self._chat.add_system_message("Curated and applied immediately.")
             self.refresh_quick_actions()
             if self._service.settings.telemetry_enabled:
                 self._service._record_telemetry(
                     "curated", {"kind": kind, "src": final_draft.get("_src", "")}
                 )
         else:
-            self._chat.add_system_message("沉淀写入失败，请查看日志。")
+            self._chat.add_system_message("Failed to write curation, please check the logs.")
 
     def _on_analysis(self, result) -> None:
         self._record("analysis", text=str(getattr(result, "summary", "") or result))
@@ -1395,19 +1523,19 @@ class AIAssistPanel(QFrame):
 
     def _on_error(self, message: str) -> None:
         self._record("error", text=message)
-        self._chat.add_system_message(f"错误：{message}")
+        self._chat.add_system_message(f"Error: {message}")
 
     def _on_busy_changed(self, busy: bool) -> None:
         self._send_btn.setEnabled(not busy)
         self._analyze_btn.setEnabled(not busy)
         self._draft_btn.setEnabled(not busy)
-        self._send_btn.setText("处理中…" if busy else "发送")
+        self._send_btn.setText("Processing…" if busy else "Send")
 
     def _on_connection_tested(self, ok: bool, message: str) -> None:
         if ok:
-            self._chat.add_system_message(f"测试连接：{message}")
+            self._chat.add_system_message(f"Connection test: {message}")
         else:
-            self._chat.add_system_message(f"测试连接失败：{message}")
+            self._chat.add_system_message(f"Connection test failed: {message}")
 
     def _open_settings(self) -> None:
         from ui.ai.ai_settings_dialog import AISettingsDialog

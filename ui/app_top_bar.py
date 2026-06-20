@@ -21,11 +21,12 @@ from PySide6.QtWidgets import (
 
 from ui.ai.ai_panel_button import AIPanelButton
 from ui.resource_path import get_resource_base
-from ui.utils.icon_utils import tinted_svg_pixmap
+from ui.utils.icon_utils import tinted_svg_icon, tinted_svg_pixmap
 
 _TITLE_BAR_HEIGHT = 36
 
 _APP_ICON_SVG = os.path.join(get_resource_base(), "resources", "icons", "kk_lab.svg")
+_CLOSE_ICON_SVG = os.path.join(get_resource_base(), "resources", "icons", "x-close.svg")
 
 _BAR_STYLE = """
 QWidget#appTopBar {
@@ -152,8 +153,12 @@ class AppTopBar(QWidget):
     def _make_caption_button(self, object_name, kind, tooltip, slot):
         btn = QPushButton(self)
         btn.setObjectName(object_name)
-        btn.setIcon(_caption_icon(kind))
-        btn.setIconSize(QSize(10, 10))
+        if kind == "close" and os.path.isfile(_CLOSE_ICON_SVG):
+            btn.setIcon(tinted_svg_icon(_CLOSE_ICON_SVG, "#c6d4f2", 14))
+            btn.setIconSize(QSize(14, 14))
+        else:
+            btn.setIcon(_caption_icon(kind))
+            btn.setIconSize(QSize(10, 10))
         btn.setCursor(QCursor(Qt.ArrowCursor))
         btn.setToolTip(tooltip)
         btn.setFocusPolicy(Qt.NoFocus)
