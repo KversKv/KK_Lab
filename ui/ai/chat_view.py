@@ -7,9 +7,10 @@ HTML 组件（F6.4，不混入自由 Markdown）。
 from __future__ import annotations
 
 import html as _html_mod
+import os
 import re
 
-from PySide6.QtCore import QTimer, QUrl, Qt, Signal
+from PySide6.QtCore import QSize, QTimer, QUrl, Qt, Signal
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
     QFrame,
@@ -26,9 +27,16 @@ from PySide6.QtWidgets import (
 )
 
 from log_config import get_logger
+from ui.resource_path import get_resource_base
+from ui.utils.icon_utils import tinted_svg_icon
 from ui.widgets.scrollbar import SCROLLBAR_STYLE
 
 logger = get_logger(__name__)
+
+_ICONS_DIR = os.path.join(get_resource_base(), "resources", "icons")
+_THUMBS_UP_ICON = os.path.join(_ICONS_DIR, "thumbs-up.svg")
+_THUMBS_DOWN_ICON = os.path.join(_ICONS_DIR, "thumbs-down.svg")
+_MORE_ICON = os.path.join(_ICONS_DIR, "more-horizontal.svg")
 
 _BUBBLE_STYLE_USER = """
 QLabel#aiBubbleUser {
@@ -462,13 +470,20 @@ class ChatView(QScrollArea):
         layout.setContentsMargins(2, 0, 0, 0)
         layout.setSpacing(4)
 
-        up = QPushButton("\U0001F44D")
-        down = QPushButton("\U0001F44E")
-        more = QPushButton("\u22EF")
-        for btn in (up, down, more):
+        up = QPushButton()
+        down = QPushButton()
+        more = QPushButton()
+        for btn, icon_path, size in (
+            (up, _THUMBS_UP_ICON, 12),
+            (down, _THUMBS_DOWN_ICON, 12),
+            (more, _MORE_ICON, 14),
+        ):
             btn.setObjectName("aiCopyBtn")
             btn.setCursor(Qt.PointingHandCursor)
             btn.setFixedHeight(22)
+            if os.path.isfile(icon_path):
+                btn.setIcon(tinted_svg_icon(icon_path, "#cbd5e1", size))
+                btn.setIconSize(QSize(size, size))
             layout.addWidget(btn)
         layout.addStretch(1)
 

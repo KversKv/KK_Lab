@@ -1438,7 +1438,7 @@ class AIAssistPanel(QFrame):
         except Exception:
             logger.error("提交反馈失败", exc_info=True)
         self._chat.add_system_message(
-            "Thanks for the feedback 👍" if rating == "up" else "Recorded, thanks for the feedback 👎"
+            "Thanks for the feedback." if rating == "up" else "Recorded, thanks for the feedback."
         )
 
     def _on_curate_requested(self, kind: str, _payload: str) -> None:
