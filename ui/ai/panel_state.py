@@ -1,7 +1,7 @@
 """AI 面板 UI 状态持久化：user_data/ai/ui_state.json。
 
 仅保存 UI 偏好（是否打开、宽度），与 config.json（功能配置）分离。
-宽度范围钳制 300~600，默认 360。
+宽度范围钳制 240~600，默认 360。
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from log_config import get_logger
 logger = get_logger(__name__)
 
 _FILENAME = "ui_state.json"
-_MIN_WIDTH = 300
+_MIN_WIDTH = 240
 _MAX_WIDTH = 600
 _DEFAULT_WIDTH = 360
 

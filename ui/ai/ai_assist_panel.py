@@ -362,22 +362,33 @@ class _FlowLayout(QLayout):
         effective = rect.adjusted(
             margins.left(), margins.top(), -margins.right(), -margins.bottom()
         )
+        spacing = self.spacing()
         x = effective.x()
         y = effective.y()
         line_height = 0
-        spacing = self.spacing()
+        line_items: list = []
+
+        def place_line():
+            if test_only:
+                return
+            for line_item, line_x, item_size in line_items:
+                offset_y = y + (line_height - item_size.height()) // 2
+                line_item.setGeometry(QRect(QPoint(line_x, offset_y), item_size))
+
         for item in self._items:
             item_size = item.sizeHint()
             next_x = x + item_size.width() + spacing
             if next_x - spacing > effective.right() and line_height > 0:
+                place_line()
+                line_items = []
                 x = effective.x()
                 y = y + line_height + spacing
                 next_x = x + item_size.width() + spacing
                 line_height = 0
-            if not test_only:
-                item.setGeometry(QRect(QPoint(x, y), item_size))
+            line_items.append((item, x, item_size))
             x = next_x
             line_height = max(line_height, item_size.height())
+        place_line()
         return y + line_height - rect.y() + margins.bottom()
 
 
@@ -507,6 +518,7 @@ class AIAssistPanel(QFrame):
         self._session_started_at = datetime.now()
         self.setObjectName("aiAssistPanel")
         self.setStyleSheet(_PANEL_STYLE)
+        self.setMinimumWidth(240)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -555,6 +567,7 @@ class AIAssistPanel(QFrame):
         controls_layout.addLayout(self._build_range_bar())
         controls_layout.addLayout(self._build_export_bar())
         controls_layout.addLayout(self._build_action_bar())
+        controls_layout.addLayout(self._build_send_bar())
         compose_layout.addWidget(controls_area)
 
         bottom_layout.addWidget(compose_box)
@@ -586,6 +599,7 @@ class AIAssistPanel(QFrame):
 
         title = QLabel("AI Assistant")
         title.setObjectName("aiPanelTitle")
+        title.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         layout.addWidget(title)
         layout.addStretch(1)
 
@@ -731,10 +745,9 @@ class AIAssistPanel(QFrame):
             return None
         return {name: edit.text().strip() for name, edit in edits.items()}
 
-    def _build_range_bar(self) -> QHBoxLayout:
-        layout = QHBoxLayout()
+    def _build_range_bar(self) -> QLayout:
+        layout = _FlowLayout(spacing=6)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
 
         level_label = QLabel("Log Level")
         level_label.setObjectName("aiRangeLabel")
@@ -759,7 +772,6 @@ class AIAssistPanel(QFrame):
         self._lines_spin.setToolTip(f"Max lines taken per log type (cap {_MAX_LINES_CAP})")
         layout.addWidget(self._lines_spin)
 
-        layout.addStretch(1)
         return layout
 
     def _build_export_bar(self) -> QHBoxLayout:
@@ -777,10 +789,9 @@ class AIAssistPanel(QFrame):
         layout.addWidget(self._export_btn)
         return layout
 
-    def _build_action_bar(self) -> QHBoxLayout:
-        layout = QHBoxLayout()
+    def _build_action_bar(self) -> QLayout:
+        layout = _FlowLayout(spacing=8)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
 
         self._analyze_btn = QPushButton("Analyze")
         self._analyze_btn.setObjectName("aiAnalyzeBtn")
@@ -809,16 +820,23 @@ class AIAssistPanel(QFrame):
         self._waveform_btn.clicked.connect(self._on_waveform_clicked)
         self._waveform_btn.setVisible(False)
         layout.addWidget(self._waveform_btn)
+        return layout
 
-        layout.addStretch(1)
+    def _build_send_bar(self) -> QHBoxLayout:
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
 
         self._model_combo = QComboBox()
         self._model_combo.setObjectName("aiModelCombo")
-        self._model_combo.setMinimumWidth(120)
+        self._model_combo.setMinimumWidth(80)
+        self._model_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._model_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self._model_combo.setMinimumContentsLength(6)
         self._model_combo.setToolTip("Manually switch model (auto by Profile / specify a model)")
         self._populate_models()
         self._model_combo.currentTextChanged.connect(self._on_model_changed)
-        layout.addWidget(self._model_combo)
+        layout.addWidget(self._model_combo, 1)
 
         self._send_btn = _PressScaleButton("Send")
         self._send_btn.setObjectName("aiSendBtn")
