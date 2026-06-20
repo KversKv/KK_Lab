@@ -60,6 +60,7 @@ _DEFAULTS: dict[str, Any] = {
     "telemetry_batch_size": 20,
     "telemetry_flush_interval_s": 300,
     "telemetry_client_id": "",
+    "trace_enabled": True,
 }
 
 
@@ -106,6 +107,7 @@ class AISettings:
     telemetry_batch_size: int = 20
     telemetry_flush_interval_s: int = 300
     telemetry_client_id: str = ""
+    trace_enabled: bool = True
     _runtime_api_key: str = field(default="", repr=False, compare=False)
 
     def context_window_for(self, model: str) -> int:
@@ -224,6 +226,7 @@ class AISettings:
                 "telemetry_batch_size": self.telemetry_batch_size,
                 "telemetry_flush_interval_s": self.telemetry_flush_interval_s,
                 "telemetry_client_id": self.telemetry_client_id,
+                "trace_enabled": self.trace_enabled,
             }
         }
         try:

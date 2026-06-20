@@ -213,6 +213,7 @@ class AIService(QObject):
     action_requested = Signal(object)
     action_result = Signal(object)
     usage_updated = Signal(object, object)
+    trace_recorded = Signal(str)
 
     def __init__(self, settings: AISettings, page_key_getter=None, parent=None):
         super().__init__(parent)
@@ -229,6 +230,7 @@ class AIService(QObject):
         self._model_override: str | None = None
         self._stream_buffer = ""
         self._session_stats = SessionStats()
+        self._pending_trace: dict | None = None
 
         self._prompt_manager = PromptManager(
             enable_log_masking=settings.enable_log_masking
@@ -439,6 +441,56 @@ class AIService(QObject):
         except Exception:  # noqa: BLE001 - 采集失败绝不影响主流程
             logger.error("采集遥测事件失败: %s", event_type, exc_info=True)
 
+    def _record_trace(
+        self,
+        result: ChatResult | None,
+        mode,
+        *,
+        error: str | None = None,
+    ) -> None:
+        """落一条完整对话 trace（隐私开关关闭时由 trace_store.record 静默）。
+
+        trace 含本轮喂给模型的完整 messages 与原始输出，供 replay 重放对比；
+        成功落盘后 emit trace_recorded(trace_id) 供 UI 绑定 👍/👎 回填 rating。
+        """
+        snapshot = self._pending_trace
+        if not snapshot:
+            return
+        self._pending_trace = None
+        try:
+            from core.ai.trace_store import build_trace, record
+
+            trace = build_trace(
+                page_key=snapshot.get("page_key"),
+                mode=str(mode or ""),
+                model=str(snapshot.get("model") or ""),
+                temperature=float(snapshot.get("temperature") or 0.0),
+                max_tokens=int(snapshot.get("max_tokens") or 0),
+                messages_in=snapshot.get("messages_in") or [],
+                raw_output=(result.content if result else ""),
+                reasoning=(result.reasoning if result else ""),
+                tool_calls=(result.tool_calls if result else []),
+                usage=(result.usage if result else None),
+                latency_ms=(result.elapsed_ms if result else 0),
+                error=error,
+            )
+            trace_id = record(trace, self._settings)
+            if trace_id:
+                self.trace_recorded.emit(trace_id)
+        except Exception:  # noqa: BLE001 - trace 采集失败绝不影响主流程
+            logger.error("落对话 trace 失败", exc_info=True)
+
+    def rate_trace(self, trace_id: str, rating: str) -> None:
+        """把 UI 反馈的 👍/👎 回填到对应 trace（便于后续筛差评转 eval）。"""
+        if not trace_id:
+            return
+        try:
+            from core.ai.trace_store import set_rating
+
+            set_rating(trace_id, rating)
+        except Exception:  # noqa: BLE001
+            logger.error("回填 trace rating 失败", exc_info=True)
+
     def record_feedback(self, msg_id: str, rating: str, comment: str = "") -> None:
         """UI 👍/👎 反馈入口（§3.2 回答反馈事件）。"""
         self._record_telemetry(
@@ -594,6 +646,13 @@ class AIService(QObject):
             summary=self._summary,
             waveform_context=waveform_context,
         )
+        self._pending_trace = {
+            "page_key": self._page_key,
+            "model": model,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "messages_in": list(messages),
+        }
         self._history.append({"role": "user", "content": text})
 
         tools = None
@@ -694,6 +753,7 @@ class AIService(QObject):
         self._stream_buffer = ""
         self._set_busy(False)
         self._record_telemetry("answer", {"mode": "chat_stream"})
+        self._record_trace(result, "chat_stream")
         self._maybe_summarize()
 
     def _on_finished(self, result: ChatResult) -> None:
@@ -730,6 +790,7 @@ class AIService(QObject):
             self.response_ready.emit(content)
         self._set_busy(False)
         self._record_telemetry("answer", {"mode": mode})
+        self._record_trace(result, mode)
         self._maybe_summarize()
 
     def _on_failed(self, message: str) -> None:
@@ -743,6 +804,7 @@ class AIService(QObject):
             "error",
             {"error_type": "chat_failed", "masked_message": (message or "")[:200]},
         )
+        self._record_trace(None, _MODE_CHAT, error=(message or "")[:500])
 
     @staticmethod
     def _looks_like_fake_execution(content: str) -> bool:
@@ -806,6 +868,7 @@ class AIService(QObject):
             _save_persisted_history(self._history, self._session_key)
             self.response_ready.emit(content)
             self._set_busy(False)
+            self._record_trace(ChatResult(content=content or ""), _MODE_AGENT)
             self._maybe_summarize()
             return
 

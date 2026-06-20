@@ -81,6 +81,76 @@ def load_cases(directory: str | None = None) -> list[EvalCase]:
     return cases
 
 
+def _extract_json(text: str) -> dict | None:
+    """从模型回复中提取首个 JSON 对象（容忍 ```json 包裹与前后噪声）。"""
+    if not text:
+        return None
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        return json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return None
+
+
+def _judge_with_llm(
+    user: str, answer: str, judge: dict, settings, model: str
+) -> tuple[bool, str]:
+    """LLM-as-judge：用便宜模型按 rubric 给答案打分，返回 (通过, 明细)。
+
+    judge: {"criteria": "...评分标准...", "min_score": 4}
+    评分范围固定 0-5；裁判输出 JSON {score, reason}；解析失败按未通过处理。
+    """
+    criteria = str(judge.get("criteria") or "").strip()
+    min_score = float(judge.get("min_score", 4))
+    if not criteria:
+        return True, "judge: 未提供 criteria，跳过"
+    if not settings.is_configured():
+        return False, "judge: AI 未配置，无法评分"
+
+    from core.ai.newapi_client import AIClientError, NewAPIClient
+
+    sys_prompt = (
+        "你是严格的答案质量评审。依据给定标准给被测回答打分。\n"
+        "评分范围 0-5（5 最好）。只输出 JSON，不要多余文字：\n"
+        '{"score": <0-5整数>, "reason": "<简短中文理由>"}'
+    )
+    user_prompt = (
+        f"评分标准：\n{criteria}\n\n"
+        f"用户问题：\n{user}\n\n"
+        f"被测回答：\n{answer}\n\n"
+        "请按标准打分并给出理由。"
+    )
+    client = NewAPIClient(
+        base_url=settings.effective_base_url,
+        api_key=settings.effective_api_key,
+        timeout_seconds=settings.timeout_seconds,
+    )
+    try:
+        result = client.chat(
+            model=model,
+            messages=[
+                {"role": "system", "content": sys_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.0,
+            max_tokens=1024,
+        )
+    except AIClientError as exc:
+        return False, f"judge 调用失败: {exc}"
+
+    data = _extract_json(result.content) or {}
+    try:
+        score = float(data.get("score"))
+    except (TypeError, ValueError):
+        return False, f"judge 输出无法解析为分数: {result.content[:120]}"
+    reason = str(data.get("reason") or "")
+    passed = score >= min_score
+    return passed, f"judge 评分 {score:g}/{min_score:g}（{reason}）"
+
+
 def _check_expect(content: str, tool_called: bool, expect: dict) -> tuple[bool, str]:
     """对模型结果做断言，返回 (通过, 失败原因)。"""
     if expect.get("expect_tool") is True and not tool_called:
@@ -169,6 +239,18 @@ def run_case(case: EvalCase, *, mock: bool = False) -> EvalResult:
         return EvalResult(case.id, False, f"模型调用失败: {exc}")
     tool_called = bool(getattr(result, "tool_calls", None))
     passed, detail = _check_expect(result.content, tool_called, case.expect)
+    if not passed:
+        return EvalResult(case.id, False, detail)
+
+    judge = case.expect.get("judge")
+    if isinstance(judge, dict) and judge:
+        judge_model = judge.get("model") or settings.curator_draft_model
+        j_passed, j_detail = _judge_with_llm(
+            case.user, result.content, judge, settings, judge_model
+        )
+        merged = "; ".join(d for d in (detail, j_detail) if d)
+        return EvalResult(case.id, j_passed, merged)
+
     return EvalResult(case.id, passed, detail)
 
 

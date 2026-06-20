@@ -239,6 +239,39 @@ class Curator:
             logger.error("追加项目规则失败: %s", path, exc_info=True)
             return False
 
+    @staticmethod
+    def eval_case_draft_from_trace(trace: dict) -> dict:
+        """把一条对话 trace 转成 as_eval_case 可用的草稿。
+
+        提取最后一条 user 作为输入、其前置 messages（去掉 system）作为 history，
+        默认预置一个 judge expect（标准取该轮原始输出为对照，需人工微调）。
+        """
+        messages = trace.get("messages_in") or []
+        user_text = ""
+        user_idx = -1
+        for i in range(len(messages) - 1, -1, -1):
+            if messages[i].get("role") == "user":
+                user_text = str(messages[i].get("content") or "")
+                user_idx = i
+                break
+        history = [
+            m for m in messages[:user_idx]
+            if isinstance(m, dict) and m.get("role") in ("user", "assistant")
+        ]
+        return {
+            "id": f"trace_{str(trace.get('trace_id') or int(time.time()))[:12]}",
+            "desc": "由对话 trace 转入（请微调期望）",
+            "page_key": trace.get("page_key") or "",
+            "user": user_text,
+            "history": history,
+            "expect": {
+                "judge": {
+                    "criteria": "回答须基于给定上下文、不臆造测量值、给出可执行下一步",
+                    "min_score": 4,
+                }
+            },
+        }
+
     def as_eval_case(self, draft: dict) -> bool:
         """把草稿写入 tests/ai_eval/cases/<id>.json。"""
         case_id = str(draft.get("id") or f"local_{int(time.time())}").strip()
