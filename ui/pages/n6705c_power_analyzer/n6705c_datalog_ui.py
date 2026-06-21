@@ -5315,6 +5315,7 @@ class N6705CDatalogUI(QWidget):
         x_range=None → 全量；否则按 [x0, x1] 快速切片后构建摘要。
         marker={"a","b"} → 附带 Marker A→B 区间派生统计。
         """
+        from core.ai.config import AISettings
         from core.ai.providers.waveform_provider import (
             build_digest,
             build_window_digest,
@@ -5324,12 +5325,22 @@ class N6705CDatalogUI(QWidget):
         if not self.datalog_data:
             return None
         data = dict(self.datalog_data)
+        settings = AISettings.load()
+        algo = settings.waveform_event_algo
+        algo_params = settings.waveform_algo_params.get(algo, {})
         if x_range is None:
-            digest = build_digest(data, event_aware=True)
+            digest = build_digest(
+                data, event_aware=True, algo=algo, algo_params=algo_params
+            )
             digest.window = {"full": True}
         else:
             digest = build_window_digest(
-                data, float(x_range[0]), float(x_range[1]), event_aware=True
+                data,
+                float(x_range[0]),
+                float(x_range[1]),
+                event_aware=True,
+                algo=algo,
+                algo_params=algo_params,
             )
             if not getattr(digest, "stats", None):
                 logger.warning(
@@ -5338,7 +5349,9 @@ class N6705CDatalogUI(QWidget):
                     x_range[0],
                     x_range[1],
                 )
-                digest = build_digest(data, event_aware=True)
+                digest = build_digest(
+                    data, event_aware=True, algo=algo, algo_params=algo_params
+                )
                 digest.window = {"full": True}
         if marker:
             digest.marker_segment = marker_segment_stats(

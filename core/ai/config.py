@@ -47,6 +47,8 @@ _DEFAULTS: dict[str, Any] = {
         "deepseekv4flash": 1048576,
     },
     "default_context_window": 131072,
+    "waveform_event_algo": "stalta",
+    "waveform_algo_params": {},
     "reserve_output_tokens": 4096,
     "soft_budget_ratio": 0.5,
     "max_context_block_tokens": 8192,
@@ -94,6 +96,8 @@ class AISettings:
         }
     )
     default_context_window: int = 131072
+    waveform_event_algo: str = "stalta"
+    waveform_algo_params: dict[str, dict[str, Any]] = field(default_factory=dict)
     reserve_output_tokens: int = 4096
     soft_budget_ratio: float = 0.5
     max_context_block_tokens: int = 8192
@@ -191,6 +195,18 @@ class AISettings:
             data["model_context_windows"] = (
                 clean_windows or dict(_DEFAULTS["model_context_windows"])
             )
+        algo = data.get("waveform_event_algo")
+        if not isinstance(algo, str) or not algo.strip():
+            data["waveform_event_algo"] = _DEFAULTS["waveform_event_algo"]
+        algo_params = data.get("waveform_algo_params")
+        if not isinstance(algo_params, dict):
+            data["waveform_algo_params"] = {}
+        else:
+            clean_params: dict[str, dict[str, Any]] = {}
+            for key, val in algo_params.items():
+                if isinstance(val, dict):
+                    clean_params[str(key)] = dict(val)
+            data["waveform_algo_params"] = clean_params
         return cls(**data)
 
     def save(self) -> bool:
@@ -213,6 +229,10 @@ class AISettings:
                 "panel_width": self.panel_width,
                 "model_context_windows": dict(self.model_context_windows),
                 "default_context_window": self.default_context_window,
+                "waveform_event_algo": self.waveform_event_algo,
+                "waveform_algo_params": {
+                    k: dict(v) for k, v in self.waveform_algo_params.items()
+                },
                 "reserve_output_tokens": self.reserve_output_tokens,
                 "soft_budget_ratio": self.soft_budget_ratio,
                 "max_context_block_tokens": self.max_context_block_tokens,

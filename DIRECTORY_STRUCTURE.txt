@@ -140,7 +140,15 @@ core/
 │   │   ├── sequence_provider.py # SequenceContextProvider：当前画布序列 → 上下文文本（F5.1）
 │   │   ├── log_provider.py  # LogContextProvider：软件运行日志 + 执行日志 → 上下文
 │   │   ├── serial_provider.py # SerialContextProvider：活动串口状态 + 最近 RX → 上下文
-│   │   └── waveform_provider.py # 波形摘要：LTTB 降采样 + 统计/异常/稳态段 → WaveformDigest（F1）
+│   │   └── waveform_provider.py # 波形摘要编排：统计/异常/稳态段 → WaveformDigest（算法委托 algorithms/，F1）
+│   ├── algorithms/          # 波形算法包：归一化输入输出，可互换/可调试/可平滑新增（无 Qt）
+│   │   ├── __init__.py      # 导出契约 + 注册表 + 各算法；import 即触发 @register（swed/stalta/pelt）
+│   │   ├── base.py          # 归一化契约：Signal 输入 / Event·Segment·EventResult·SegmentResult 输出（to_dict(factor)）/ WaveformAlgorithm 抽象基类 + infer_dt/trapezoid/statistics
+│   │   ├── registry.py      # 算法注册表：register/get(name)/available(kind) 按名互换做参数对照
+│   │   ├── swed.py          # SWED 事件检测：滑窗增量均值 + 单调队列极值 + 双判据状态机 + 睡眠门限 + 相对回落
+│   │   ├── stalta.py        # STA-LTA 事件检测：能量比 + MAD 绝对幅值闸门
+│   │   ├── pelt.py          # PELT 均值变点分段 + classify_segment 形态分类 + segment_features 段特征
+│   │   └── downsample.py    # LTTB / adaptive_downsample 事件感知非均匀降采样
 │   └── actions/             # 受控动作层（Action Registry / 权限 / 确认 / 审计，无 QtWidgets）
 │       ├── __init__.py      # MODULE_VERSION + 导出 registry/permission/dispatcher/audit/builder/deps
 │       ├── registry.py      # ActionSpec + ActionRegistry：注册/查找/渲染 OpenAI tools

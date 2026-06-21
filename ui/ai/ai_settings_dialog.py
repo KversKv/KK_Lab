@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QDoubleSpinBox,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -93,6 +94,7 @@ class AISettingsDialog(QDialog):
 
         tabs = QTabWidget()
         tabs.addTab(self._build_general_tab(), "常规")
+        tabs.addTab(self._build_waveform_tab(), "波形算法")
         tabs.addTab(self._build_whitelist_tab(), "白名单")
         tabs.addTab(self._build_experience_tab(), "本机经验")
         root.addWidget(tabs)
@@ -187,6 +189,88 @@ class AISettingsDialog(QDialog):
         layout.addLayout(form)
         layout.addStretch(1)
         return tab
+
+    def _build_waveform_tab(self) -> QWidget:
+        """波形事件检测算法选择 + 随算法动态切换的常用参数（落盘 AISettings）。"""
+        from core.ai.algorithms import available, get
+
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        hint = QLabel(
+            "选择「Send Waveform to AI」时使用的事件检测算法；切换算法会显示该算法的常用参数。"
+        )
+        hint.setObjectName("aiHint")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        form = QFormLayout()
+        form.setSpacing(8)
+
+        self._wave_algo_combo = QComboBox()
+        self._wave_event_algos = available("event")
+        for algo_name in self._wave_event_algos:
+            self._wave_algo_combo.addItem(algo_name, algo_name)
+        cur = self._settings.waveform_event_algo
+        idx = self._wave_algo_combo.findData(cur)
+        if idx < 0 and self._wave_event_algos:
+            idx = 0
+        if idx >= 0:
+            self._wave_algo_combo.setCurrentIndex(idx)
+        self._wave_algo_combo.setToolTip("kind=event 的算法自动列举；新增算法会自动出现")
+        form.addRow("事件算法", self._wave_algo_combo)
+        layout.addLayout(form)
+
+        self._wave_param_form = QFormLayout()
+        self._wave_param_form.setSpacing(8)
+        param_box = QWidget()
+        param_box.setLayout(self._wave_param_form)
+        layout.addWidget(param_box)
+        layout.addStretch(1)
+
+        self._wave_param_editors: dict[str, QDoubleSpinBox | QSpinBox] = {}
+        self._wave_get_algo = get
+        self._wave_algo_combo.currentIndexChanged.connect(self._rebuild_wave_params)
+        self._rebuild_wave_params()
+        return tab
+
+    def _rebuild_wave_params(self) -> None:
+        """按当前所选算法的 params_cls 重建参数控件，回填已保存覆盖值。"""
+        import dataclasses
+
+        while self._wave_param_form.rowCount() > 0:
+            self._wave_param_form.removeRow(0)
+        self._wave_param_editors = {}
+
+        algo_name = self._wave_algo_combo.currentData()
+        if not algo_name:
+            return
+        try:
+            instance = self._wave_get_algo(algo_name)
+        except KeyError:
+            return
+        params_cls = getattr(instance, "params_cls", None)
+        if params_cls is None:
+            return
+
+        saved = self._settings.waveform_algo_params.get(algo_name, {})
+        for fld in dataclasses.fields(params_cls):
+            default = saved.get(fld.name, fld.default)
+            if fld.type in ("int", int):
+                editor = QSpinBox()
+                editor.setRange(0, 10_000_000)
+                editor.setValue(int(default))
+            else:
+                editor = QDoubleSpinBox()
+                editor.setDecimals(6)
+                editor.setRange(0.0, 1_000_000.0)
+                editor.setSingleStep(0.01)
+                editor.setValue(float(default))
+            editor.setToolTip(f"{fld.name}（默认 {fld.default}）")
+            self._wave_param_form.addRow(fld.name, editor)
+            self._wave_param_editors[fld.name] = editor
 
     def _build_whitelist_tab(self) -> QWidget:
         tab = QWidget()
@@ -524,6 +608,37 @@ class AISettingsDialog(QDialog):
         self._settings.enable_history_summary = self._summary_chk.isChecked()
         self._settings.curator_ai_assist_enabled = self._curator_ai_chk.isChecked()
         self._settings.telemetry_enabled = self._telemetry_chk.isChecked()
+        self._apply_waveform_settings()
+
+    def _apply_waveform_settings(self) -> None:
+        """把波形算法标签页的选择与参数写回 settings（仅存非默认覆盖值）。"""
+        import dataclasses
+
+        combo = getattr(self, "_wave_algo_combo", None)
+        if combo is None:
+            return
+        algo_name = combo.currentData()
+        if not algo_name:
+            return
+        self._settings.waveform_event_algo = algo_name
+        try:
+            instance = self._wave_get_algo(algo_name)
+            params_cls = getattr(instance, "params_cls", None)
+        except KeyError:
+            params_cls = None
+        overrides: dict[str, float] = {}
+        if params_cls is not None:
+            defaults = {f.name: f.default for f in dataclasses.fields(params_cls)}
+            for name, editor in self._wave_param_editors.items():
+                value = editor.value()
+                if name in defaults and value != defaults[name]:
+                    overrides[name] = value
+        params_map = dict(self._settings.waveform_algo_params)
+        if overrides:
+            params_map[algo_name] = overrides
+        else:
+            params_map.pop(algo_name, None)
+        self._settings.waveform_algo_params = params_map
 
     def _on_test_clicked(self) -> None:
         self._apply_to_settings()
