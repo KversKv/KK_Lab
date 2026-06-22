@@ -608,6 +608,16 @@ class ChatView(QScrollArea):
         bubble.set_markdown(self._stream_text + " ▍")
         self._scroll_to_bottom()
 
+    def discard_stream_message(self) -> None:
+        """出错时清理未完成的流式气泡：保留已收到的文本，去掉光标，不再追加。"""
+        bubble = getattr(self, "_stream_bubble", None)
+        if bubble is None:
+            return
+        text = getattr(self, "_stream_text", "")
+        bubble.set_markdown(text or "（已中断）")
+        self._stream_bubble = None
+        self._stream_text = ""
+
     def end_stream_message(self, final_text: str = "") -> None:
         """结束流式气泡：写入最终全文（去掉光标），清理状态。"""
         bubble = getattr(self, "_stream_bubble", None)

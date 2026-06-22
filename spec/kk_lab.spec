@@ -2,8 +2,11 @@
 # PyInstaller spec file for KK_Lab Main Application
 
 #run cmd
+# 带 AI（默认）
 #python -m PyInstaller spec/kk_lab.spec --clean --noconfirm
 
+# 不带 AI：临时设环境变量后再打包
+#$env:KK_LAB_WITH_AI="0"; python -m PyInstaller spec/kk_lab.spec --clean --noconfirm; Remove-Item Env:KK_LAB_WITH_AI
 
 import os
 

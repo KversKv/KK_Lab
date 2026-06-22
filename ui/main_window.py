@@ -213,8 +213,9 @@ class _CollectionPage(McuIoConnectionMixin, QWidget):
 
 class MainWindow(CleanupMixin, QMainWindow):
 
-    def __init__(self):
+    def __init__(self, with_ai: bool = True):
         super().__init__()
+        self.with_ai = with_ai
         self.setWindowTitle(f"{APP_NAME} v{__version__}")
         self.setWindowFlags(Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground, False)
@@ -263,14 +264,18 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.nav = NavController(self)
         self.status_panel = InstrumentStatusPanel(self)
 
-        self.ai_settings = AISettings.load()
-        self.ai_service = AIService(
-            self.ai_settings,
-            page_key_getter=self._get_ai_page_key,
-            parent=self,
-        )
-        self.ai_service.set_serial_status_getter(self._get_ai_serial_status)
-        self.ai_service.set_execution_logs_getter(self._get_ai_execution_logs)
+        if self.with_ai:
+            self.ai_settings = AISettings.load()
+            self.ai_service = AIService(
+                self.ai_settings,
+                page_key_getter=self._get_ai_page_key,
+                parent=self,
+            )
+            self.ai_service.set_serial_status_getter(self._get_ai_serial_status)
+            self.ai_service.set_execution_logs_getter(self._get_ai_execution_logs)
+        else:
+            self.ai_settings = None
+            self.ai_service = None
         self.ai_panel = None
         self.outer_splitter = None
 
@@ -454,6 +459,13 @@ class MainWindow(CleanupMixin, QMainWindow):
         self._setup_ai_panel(main_splitter)
 
     def _setup_ai_panel(self, main_splitter):
+        if not self.with_ai:
+            self.main_layout.addWidget(main_splitter)
+            ai_button = getattr(self.top_bar, "ai_panel_button", None)
+            if ai_button is not None:
+                ai_button.setVisible(False)
+            return
+
         outer_splitter = QSplitter(Qt.Horizontal)
         outer_splitter.addWidget(main_splitter)
 

@@ -98,13 +98,16 @@ class _StreamWorker(QObject):
     finished = Signal(object)
     failed = Signal(str)
 
-    def __init__(self, client: NewAPIClient, model, messages, temperature, max_tokens):
+    def __init__(
+        self, client: NewAPIClient, model, messages, temperature, max_tokens, tools=None
+    ):
         super().__init__()
         self._client = client
         self._model = model
         self._messages = messages
         self._temperature = temperature
         self._max_tokens = max_tokens
+        self._tools = tools
         self._cancelled = False
 
     def cancel(self) -> None:
@@ -117,6 +120,7 @@ class _StreamWorker(QObject):
                 messages=self._messages,
                 temperature=self._temperature,
                 max_tokens=self._max_tokens,
+                tools=self._tools,
                 on_delta=lambda chunk: self.delta.emit(chunk),
                 cancel_check=lambda: self._cancelled,
             )
@@ -229,6 +233,8 @@ class AIService(QObject):
         self._pending_mode = _MODE_CHAT
         self._model_override: str | None = None
         self._stream_buffer = ""
+        self._stream_started = False
+        self._answer_was_streamed = False
         self._session_stats = SessionStats()
         self._pending_trace: dict | None = None
 
@@ -252,6 +258,7 @@ class AIService(QObject):
 
         self._thread: QThread | None = None
         self._worker: _ChatWorker | None = None
+        self._orphans: list[tuple[QThread, QObject]] = []
 
         self._registry = None
         self._dispatcher = None
@@ -667,13 +674,7 @@ class AIService(QObject):
             self._agent_model = model
             self._agent_temperature = temperature
             self._agent_max_tokens = max_tokens
-            self._start_worker(
-                messages=self._agent_messages,
-                model=model,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                tools=tools,
-            )
+            self._start_agent_round(tools)
         elif self._settings.stream:
             self._pending_mode = _MODE_CHAT
             self._start_stream_worker(
@@ -719,13 +720,18 @@ class AIService(QObject):
         self._thread.finished.connect(self._cleanup_thread)
         self._thread.start()
 
-    def _start_stream_worker(self, messages, model, temperature, max_tokens) -> None:
+    def _start_stream_worker(
+        self, messages, model, temperature, max_tokens, tools=None
+    ) -> None:
         self._teardown_thread()
         self._set_busy(True)
         self._stream_buffer = ""
+        self._stream_started = False
         client = self._make_client()
         self._thread = QThread()
-        self._worker = _StreamWorker(client, model, messages, temperature, max_tokens)
+        self._worker = _StreamWorker(
+            client, model, messages, temperature, max_tokens, tools=tools
+        )
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
         self._worker.delta.connect(self._on_stream_delta)
@@ -735,26 +741,60 @@ class AIService(QObject):
         self._worker.failed.connect(self._thread.quit)
         self._thread.finished.connect(self._cleanup_thread)
         self._thread.start()
-        self.response_started.emit()
 
     def _on_stream_delta(self, chunk: str) -> None:
         if not chunk:
             return
+        if not self._stream_started:
+            self._stream_started = True
+            self.response_started.emit()
         self._stream_buffer += chunk
         self.response_delta.emit(chunk)
 
     def _on_stream_finished(self, result: ChatResult) -> None:
         content = (result.content if result else "") or self._stream_buffer
+        tool_calls = result.tool_calls if result else []
         self._record_usage(result)
+
+        if self._pending_mode == _MODE_AGENT:
+            self._stream_buffer = ""
+            self._on_agent_stream_finished(content, tool_calls, result)
+            return
+
         self._pending_mode = _MODE_CHAT
+        if not self._stream_started:
+            self.response_ready.emit(content)
+        else:
+            self.response_finished.emit(content)
         self._history.append({"role": "assistant", "content": content})
         _save_persisted_history(self._history, self._session_key)
-        self.response_finished.emit(content)
         self._stream_buffer = ""
+        self._stream_started = False
         self._set_busy(False)
         self._record_telemetry("answer", {"mode": "chat_stream"})
         self._record_trace(result, "chat_stream")
         self._maybe_summarize()
+
+    def _on_agent_stream_finished(self, content, tool_calls, result) -> None:
+        """Agent 流式轮收尾：有 tool_calls 则结束流式气泡转工具执行；否则正文即最终答复。
+
+        本轮是否已把正文流式渲染到气泡，记到 _answer_was_streamed，供
+        _handle_agent_round 决定最终用 response_finished（收尾流式气泡）
+        还是 response_ready（新建气泡）。若本轮有 tool_calls，正文气泡此处先收尾，
+        后续工具轮/末轮再各自渲染。
+        """
+        streamed = self._stream_started
+        if streamed and tool_calls:
+            self.response_finished.emit(content)
+            self._answer_was_streamed = False
+        else:
+            self._answer_was_streamed = streamed
+        self._stream_started = False
+        try:
+            self._handle_agent_round(content, tool_calls)
+        except Exception:
+            logger.error("处理 agent 流式轮次失败", exc_info=True)
+            self._abort_agent(content, "处理结果失败，已停止本次操作。")
 
     def _on_finished(self, result: ChatResult) -> None:
         content = result.content if result else ""
@@ -796,6 +836,8 @@ class AIService(QObject):
     def _on_failed(self, message: str) -> None:
         self._pending_mode = _MODE_CHAT
         self._stream_buffer = ""
+        self._stream_started = False
+        self._answer_was_streamed = False
         if self._history and self._history[-1].get("role") == "user":
             self._history.pop()
         self.error_occurred.emit(message)
@@ -850,6 +892,9 @@ class AIService(QObject):
                     "Agent 未调用工具却声称已执行，强制回灌提示重试一轮: %s",
                     (content or "")[:80],
                 )
+                if self._answer_was_streamed:
+                    self.response_finished.emit(content)
+                    self._answer_was_streamed = False
                 self._agent_forced_retry = True
                 self._agent_messages.append(
                     {"role": "assistant", "content": content or ""}
@@ -866,7 +911,11 @@ class AIService(QObject):
             self._pending_mode = _MODE_CHAT
             self._history.append({"role": "assistant", "content": content})
             _save_persisted_history(self._history, self._session_key)
-            self.response_ready.emit(content)
+            if self._answer_was_streamed:
+                self.response_finished.emit(content)
+                self._answer_was_streamed = False
+            else:
+                self.response_ready.emit(content)
             self._set_busy(False)
             self._record_trace(ChatResult(content=content or ""), _MODE_AGENT)
             self._maybe_summarize()
@@ -984,8 +1033,30 @@ class AIService(QObject):
             self._set_busy(False)
             return
         try:
-            self._trim_agent_messages(self._agent_model)
             tools = self._registry.to_tools() if self._registry else None
+            self._start_agent_round(tools)
+        except Exception:
+            logger.error("启动下一轮 agent 失败", exc_info=True)
+            self._abort_agent("", "无法继续执行，已停止本次操作。")
+
+    def _start_agent_round(self, tools) -> None:
+        """启动一个 agent 轮：流式开启则走 _StreamWorker（tool-call 感知），否则非流式。
+
+        流式 worker 在 finished 时返回聚合的 content + tool_calls，
+        由 _on_stream_finished -> _on_agent_stream_finished 统一进入
+        _handle_agent_round，与非流式路径行为一致。
+        """
+        self._trim_agent_messages(self._agent_model)
+        self._answer_was_streamed = False
+        if self._settings.stream:
+            self._start_stream_worker(
+                messages=self._agent_messages,
+                model=self._agent_model,
+                temperature=self._agent_temperature,
+                max_tokens=self._agent_max_tokens,
+                tools=tools,
+            )
+        else:
             self._start_worker(
                 messages=self._agent_messages,
                 model=self._agent_model,
@@ -993,16 +1064,16 @@ class AIService(QObject):
                 max_tokens=self._agent_max_tokens,
                 tools=tools,
             )
-        except Exception:
-            logger.error("启动下一轮 agent 失败", exc_info=True)
-            self._abort_agent("", "无法继续执行，已停止本次操作。")
 
     def _teardown_thread(self) -> None:
-        """启动新 worker 前，确保上一个 QThread 已彻底退出并断连。
+        """启动新 worker 前，非阻塞地放手上一个 QThread。
 
-        多轮 tool-calling 下，前一轮的 thread.finished -> _cleanup_thread 可能尚未
-        被事件循环处理，此时直接覆写 self._thread/_worker 会丢失对正在退出线程的
-        引用，造成 C++ 对象提前析构而崩溃。这里同步收尾旧线程后再继续。
+        关键（修复主窗口卡死）：本方法运行在 UI 线程，禁止 thread.wait() 长阻塞。
+        本地大模型高峰期单次请求可能数十秒，worker 卡在 httpx 读取上无法立刻退出，
+        若在此 wait() 会冻结主窗口。改为：断开旧信号、置取消标志、调用 quit() 让其
+        在自身事件循环空闲时退出，并把 (thread, worker) 转入孤儿表自管理回收，
+        UI 线程立即返回。线程真正结束后 finished -> _reap_orphan 异步清理引用，
+        既不丢引用（避免 C++ 对象提前析构崩溃）又不阻塞 UI。
         """
         thread = self._thread
         worker = self._worker
@@ -1025,11 +1096,26 @@ class AIService(QObject):
             except (RuntimeError, TypeError):
                 pass
         if thread.isRunning():
+            self._orphans.append((thread, worker))
+            thread.finished.connect(lambda t=thread: self._reap_orphan(t))
             thread.quit()
-            thread.wait(3000)
+            return
         if worker is not None:
             worker.deleteLater()
         thread.deleteLater()
+
+    def _reap_orphan(self, thread: QThread) -> None:
+        """孤儿线程真正退出后异步回收（运行在 UI 线程的事件循环里）。"""
+        for idx, (t, worker) in enumerate(list(self._orphans)):
+            if t is thread:
+                try:
+                    self._orphans.pop(idx)
+                except IndexError:
+                    pass
+                if worker is not None:
+                    worker.deleteLater()
+                t.deleteLater()
+                break
 
     def _cleanup_thread(self) -> None:
         if self._worker is not None:
@@ -1198,3 +1284,13 @@ class AIService(QObject):
             self._thread.quit()
             self._thread.wait(2000)
         self._cleanup_thread()
+        for thread, worker in list(self._orphans):
+            try:
+                if worker is not None:
+                    worker.cancel()
+                if thread.isRunning():
+                    thread.quit()
+                    thread.wait(2000)
+            except RuntimeError:
+                pass
+        self._orphans.clear()

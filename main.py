@@ -23,11 +23,20 @@ from PySide6.QtGui import QIcon
 from log_config import setup_logging, get_logger
 from debug_config import DEBUG_MOCK
 from version import version_string
-from core.ai.log_ring import install_log_ring
 from ui.main_window import MainWindow
 
+WITH_AI_ASSISTANT = os.environ.get("KK_LAB_WITH_AI", "1").strip().lower() not in (
+    "0",
+    "false",
+    "off",
+    "no",
+)
+
 setup_logging(level=logging.INFO)
-install_log_ring()
+if WITH_AI_ASSISTANT:
+    from core.ai.log_ring import install_log_ring
+
+    install_log_ring()
 
 
 logger = get_logger(__name__)
@@ -89,7 +98,8 @@ def main():
         logger.debug("Application icon loaded: %s", _icon_path)
     
     logger.debug("DEBUG_MOCK=%s", DEBUG_MOCK)
-    main_window = MainWindow()
+    logger.info("WITH_AI_ASSISTANT=%s", WITH_AI_ASSISTANT)
+    main_window = MainWindow(with_ai=WITH_AI_ASSISTANT)
     main_window.show()
     logger.debug("MainWindow shown, entering event loop")
     

@@ -1583,6 +1583,7 @@ class AIAssistPanel(QFrame):
         self._chat.add_analysis_message(result)
 
     def _on_error(self, message: str) -> None:
+        self._chat.discard_stream_message()
         self._record("error", text=message)
         self._chat.add_system_message(f"Error: {message}")
 
