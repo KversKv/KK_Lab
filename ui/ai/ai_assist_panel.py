@@ -418,6 +418,31 @@ class _FlowLayout(QLayout):
         return y + line_height - rect.y() + margins.bottom()
 
 
+class _FlowWidget(QWidget):
+    """承载 _FlowLayout 的容器：把流式布局的 heightForWidth 上报给父级垂直布局，
+    避免按钮换行后该行真实高度未被预留、挤掉与下方控件间距的问题。"""
+
+    def __init__(self, flow: "_FlowLayout", parent=None):
+        super().__init__(parent)
+        self._flow = flow
+        self.setLayout(flow)
+        policy = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+        policy.setHeightForWidth(True)
+        self.setSizePolicy(policy)
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self._flow.heightForWidth(width)
+
+    def sizeHint(self):
+        return self._flow.sizeHint()
+
+    def minimumSizeHint(self):
+        return self._flow.minimumSize()
+
+
 class _InputEdit(QPlainTextEdit):
     """Enter 发送，Shift+Enter 换行；聚焦时显示蓝色焦点环，高度随内容弹性自适应。"""
 
@@ -537,6 +562,7 @@ class AIAssistPanel(QFrame):
         self._waveform_marker_getter = None
         self._digest_thread = None
         self._digest_worker = None
+        self._busy = False
         self._pending_waveform_text = ""
         self._pending_waveform_via_button = False
         self._pending_picked_context = ""
@@ -595,7 +621,7 @@ class AIAssistPanel(QFrame):
         controls_layout.setContentsMargins(12, 10, 12, 12)
         controls_layout.setSpacing(10)
         controls_layout.addLayout(self._build_range_bar())
-        controls_layout.addLayout(self._build_action_bar())
+        controls_layout.addWidget(self._build_action_bar())
         controls_layout.addLayout(self._build_send_bar())
         compose_layout.addWidget(controls_area)
 
@@ -830,7 +856,7 @@ class AIAssistPanel(QFrame):
 
         return layout
 
-    def _build_action_bar(self) -> QLayout:
+    def _build_action_bar(self) -> QWidget:
         layout = _FlowLayout(spacing=8)
         layout.setContentsMargins(0, 0, 0, 0)
 
@@ -866,14 +892,14 @@ class AIAssistPanel(QFrame):
         self._draft_btn.clicked.connect(self._on_draft_clicked)
         layout.addWidget(self._draft_btn)
 
-        self._waveform_btn = QPushButton("Send Waveform to AI")
+        self._waveform_btn = QPushButton("Send Wave")
         self._waveform_btn.setObjectName("aiAnalyzeBtn")
         self._waveform_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self._waveform_btn.setToolTip("Send the current page's waveform (summary + downsampled) to AI for analysis")
         self._waveform_btn.clicked.connect(self._on_waveform_clicked)
         self._waveform_btn.setVisible(False)
         layout.addWidget(self._waveform_btn)
-        return layout
+        return _FlowWidget(layout)
 
     def _build_send_bar(self) -> QHBoxLayout:
         layout = QHBoxLayout()
@@ -1083,7 +1109,7 @@ class AIAssistPanel(QFrame):
             self._digest_thread = None
         self._pending_waveform_text = ""
         self._pending_waveform_via_button = False
-        self._waveform_btn.setEnabled(True)
+        self._waveform_btn.setEnabled(not getattr(self, "_busy", False))
 
     def _on_usage_updated(self, turn, session) -> None:
         if turn is None:
@@ -1772,9 +1798,15 @@ class AIAssistPanel(QFrame):
         self._chat.add_system_message(f"Error: {message}")
 
     def _on_busy_changed(self, busy: bool) -> None:
+        self._busy = busy
         self._send_btn.setEnabled(not busy)
         self._analyze_btn.setEnabled(not busy)
         self._draft_btn.setEnabled(not busy)
+        self._select_btn.setEnabled(not busy)
+        if busy:
+            self._waveform_btn.setEnabled(False)
+        elif self._digest_thread is None:
+            self._waveform_btn.setEnabled(True)
         self._send_btn.setText("Processing…" if busy else "Send")
 
     def _on_connection_tested(self, ok: bool, message: str) -> None:
