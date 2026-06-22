@@ -93,8 +93,10 @@ def _caption_icon(kind: str, color: str = "#c6d4f2", size: int = 12) -> QIcon:
     elif kind == "max":
         painter.drawRect(QRectF(x0, y0, x1 - x0, y1 - y0))
     elif kind == "restore":
-        off = 2.0
-        painter.drawRect(QRectF(x0, y0 + off, (x1 - x0) - off, (y1 - y0) - off))
+        off = 3.0
+        rect_w = (x1 - x0) - off
+        rect_h = (y1 - y0) - off
+        painter.drawRect(QRectF(x0, y0 + off, rect_w, rect_h))
         painter.drawLine(QRectF(x0 + off, y0, 0, 0).topLeft(),
                          QRectF(x1, y0, 0, 0).topLeft())
         painter.drawLine(QRectF(x1, y0, 0, 0).topLeft(),
@@ -118,7 +120,6 @@ class AppTopBar(QWidget):
         self.setStyleSheet(_BAR_STYLE)
 
         self._window = self.window()
-        self._drag_offset = None
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 0, 0, 0)
@@ -149,6 +150,13 @@ class AppTopBar(QWidget):
 
         self._close_btn = self._make_caption_button("winCloseBtn", "close", "关闭", self._on_close)
         layout.addWidget(self._close_btn, 0, Qt.AlignVCenter)
+
+        self._interactive_widgets = [
+            self.ai_panel_button,
+            self._min_btn,
+            self._max_btn,
+            self._close_btn,
+        ]
 
     def _make_caption_button(self, object_name, kind, tooltip, slot):
         btn = QPushButton(self)
@@ -190,37 +198,29 @@ class AppTopBar(QWidget):
         if self._window is not None:
             self._window.close()
 
-    def mouseDoubleClickEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self._on_toggle_max()
-            event.accept()
-            return
-        super().mouseDoubleClickEvent(event)
-
     def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton and self._window is not None:
-            if self._window.isMaximized():
-                self._drag_offset = None
-            else:
-                self._drag_offset = (
-                    event.globalPosition().toPoint()
-                    - self._window.frameGeometry().topLeft()
-                )
-            event.accept()
-            return
+        if event.button() == Qt.RightButton and self._window is not None:
+            global_pos = event.globalPosition().toPoint()
+            if self.is_caption_point(global_pos):
+                show_menu = getattr(self._window, "show_system_menu", None)
+                if callable(show_menu) and show_menu(global_pos):
+                    event.accept()
+                    return
         super().mousePressEvent(event)
 
-    def mouseMoveEvent(self, event):
-        if (
-            self._drag_offset is not None
-            and self._window is not None
-            and event.buttons() & Qt.LeftButton
-        ):
-            self._window.move(event.globalPosition().toPoint() - self._drag_offset)
-            event.accept()
-            return
-        super().mouseMoveEvent(event)
+    def is_caption_point(self, global_pos) -> bool:
+        """判断全局坐标是否落在标题栏的可拖动区域（即标题栏内、且不在交互控件上）。
 
-    def mouseReleaseEvent(self, event):
-        self._drag_offset = None
-        super().mouseReleaseEvent(event)
+        返回 True 时，宿主窗口在 WM_NCHITTEST 中将该点报告为 HTCAPTION，
+        从而交由系统处理拖动 / Aero Snap / 双击最大化 / 右键系统菜单。
+        """
+        local = self.mapFromGlobal(global_pos)
+        if not self.rect().contains(local):
+            return False
+        for widget in self._interactive_widgets:
+            if widget is None or not widget.isVisible():
+                continue
+            top_left = widget.mapTo(self, widget.rect().topLeft())
+            if widget.rect().translated(top_left).contains(local):
+                return False
+        return True

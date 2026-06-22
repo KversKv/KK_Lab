@@ -23,6 +23,14 @@ if sys.platform == "win32":
     import ctypes.wintypes
 
     _WM_NCHITTEST = 0x0084
+    _WM_NCCALCSIZE = 0x0083
+    _WM_GETMINMAXINFO = 0x0024
+    _WM_SYSCOMMAND = 0x0112
+    _TPM_RETURNCMD = 0x0100
+    _TPM_LEFTALIGN = 0x0000
+    _TPM_TOPALIGN = 0x0000
+    _HTCLIENT = 1
+    _HTCAPTION = 2
     _HTLEFT = 10
     _HTRIGHT = 11
     _HTTOP = 12
@@ -31,6 +39,40 @@ if sys.platform == "win32":
     _HTBOTTOM = 15
     _HTBOTTOMLEFT = 16
     _HTBOTTOMRIGHT = 17
+
+    _GWL_STYLE = -16
+    _WS_CAPTION = 0x00C00000
+    _WS_THICKFRAME = 0x00040000
+    _WS_MINIMIZEBOX = 0x00020000
+    _WS_MAXIMIZEBOX = 0x00010000
+    _WS_SYSMENU = 0x00080000
+
+    _MONITOR_DEFAULTTONEAREST = 0x00000002
+
+    class _RECT(ctypes.Structure):
+        _fields_ = [
+            ("left", ctypes.c_long),
+            ("top", ctypes.c_long),
+            ("right", ctypes.c_long),
+            ("bottom", ctypes.c_long),
+        ]
+
+    class _MONITORINFO(ctypes.Structure):
+        _fields_ = [
+            ("cbSize", ctypes.c_ulong),
+            ("rcMonitor", _RECT),
+            ("rcWork", _RECT),
+            ("dwFlags", ctypes.c_ulong),
+        ]
+
+    class _MINMAXINFO(ctypes.Structure):
+        _fields_ = [
+            ("ptReserved", ctypes.wintypes.POINT),
+            ("ptMaxSize", ctypes.wintypes.POINT),
+            ("ptMaxPosition", ctypes.wintypes.POINT),
+            ("ptMinTrackSize", ctypes.wintypes.POINT),
+            ("ptMaxTrackSize", ctypes.wintypes.POINT),
+        ]
 
     _DWMWA_WINDOW_CORNER_PREFERENCE = 33
     _DWMWA_BORDER_COLOR = 34
@@ -217,7 +259,10 @@ class MainWindow(CleanupMixin, QMainWindow):
         super().__init__()
         self.with_ai = with_ai
         self.setWindowTitle(f"{APP_NAME} v{__version__}")
-        self.setWindowFlags(Qt.FramelessWindowHint)
+        if sys.platform == "win32":
+            self.setWindowFlags(Qt.Window)
+        else:
+            self.setWindowFlags(Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground, False)
         self._resize_border = 6
         self._resize_edge = None
@@ -1220,8 +1265,33 @@ class MainWindow(CleanupMixin, QMainWindow):
     def showEvent(self, event):
         super().showEvent(event)
         if sys.platform == "win32" and not getattr(self, "_dwm_applied", False):
+            self._enable_native_window_frame()
             self._apply_dwm_round_corners()
             self._dwm_applied = True
+
+    def _enable_native_window_frame(self):
+        try:
+            hwnd = int(self.winId())
+            user32 = ctypes.windll.user32
+            style = user32.GetWindowLongW(hwnd, _GWL_STYLE)
+            style |= (
+                _WS_CAPTION
+                | _WS_THICKFRAME
+                | _WS_MINIMIZEBOX
+                | _WS_MAXIMIZEBOX
+                | _WS_SYSMENU
+            )
+            user32.SetWindowLongW(hwnd, _GWL_STYLE, style)
+            SWP_NOSIZE = 0x0001
+            SWP_NOMOVE = 0x0002
+            SWP_NOZORDER = 0x0004
+            SWP_FRAMECHANGED = 0x0020
+            user32.SetWindowPos(
+                hwnd, 0, 0, 0, 0, 0,
+                SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_FRAMECHANGED,
+            )
+        except Exception:  # noqa: BLE001
+            logger.debug("原生窗口样式注入失败", exc_info=True)
 
     def _apply_dwm_round_corners(self):
         try:
@@ -1249,37 +1319,98 @@ class MainWindow(CleanupMixin, QMainWindow):
         if event.type() == QEvent.WindowStateChange and getattr(self, "top_bar", None) is not None:
             self.top_bar.sync_max_icon()
 
+    def show_system_menu(self, global_pos):
+        if sys.platform != "win32":
+            return False
+        try:
+            user32 = ctypes.windll.user32
+            hwnd = int(self.winId())
+            hmenu = user32.GetSystemMenu(hwnd, False)
+            if not hmenu:
+                return False
+            pt = ctypes.wintypes.POINT()
+            user32.GetCursorPos(ctypes.byref(pt))
+            flags = _TPM_RETURNCMD | _TPM_LEFTALIGN | _TPM_TOPALIGN
+            user32.SetForegroundWindow(hwnd)
+            cmd = user32.TrackPopupMenu(
+                hmenu, flags, pt.x, pt.y, 0, hwnd, None
+            )
+            if cmd:
+                user32.PostMessageW(hwnd, _WM_SYSCOMMAND, cmd, 0)
+            return True
+        except Exception:  # noqa: BLE001
+            logger.debug("系统菜单弹出失败", exc_info=True)
+            return False
+
+    def _adjust_maximized_size(self, msg):
+        try:
+            user32 = ctypes.windll.user32
+            hwnd = int(self.winId())
+            monitor = user32.MonitorFromWindow(hwnd, _MONITOR_DEFAULTTONEAREST)
+            if not monitor:
+                return False
+            info = _MONITORINFO()
+            info.cbSize = ctypes.sizeof(_MONITORINFO)
+            if not user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+                return False
+            work = info.rcWork
+            mon = info.rcMonitor
+            mmi = _MINMAXINFO.from_address(int(msg.lParam))
+            mmi.ptMaxPosition.x = work.left - mon.left
+            mmi.ptMaxPosition.y = work.top - mon.top
+            mmi.ptMaxSize.x = work.right - work.left
+            mmi.ptMaxSize.y = work.bottom - work.top
+            mmi.ptMaxTrackSize.x = work.right - work.left
+            mmi.ptMaxTrackSize.y = work.bottom - work.top
+            return True
+        except Exception:  # noqa: BLE001
+            logger.debug("最大化尺寸校正失败", exc_info=True)
+            return False
+
     def nativeEvent(self, event_type, message):
-        if event_type == b"windows_generic_MSG" and not self.isMaximized():
+        if event_type == b"windows_generic_MSG":
             try:
                 msg = ctypes.wintypes.MSG.from_address(int(message))
             except (TypeError, ValueError):
                 return False, 0
+            if msg.message == _WM_NCCALCSIZE:
+                if msg.wParam:
+                    return True, 0
+                return False, 0
+            if msg.message == _WM_GETMINMAXINFO:
+                if self._adjust_maximized_size(msg):
+                    return True, 0
+                return False, 0
             if msg.message == _WM_NCHITTEST:
                 global_x = ctypes.c_int16(msg.lParam & 0xFFFF).value
                 global_y = ctypes.c_int16((msg.lParam >> 16) & 0xFFFF).value
-                pos = self.mapFromGlobal(QPoint(global_x, global_y))
+                global_pos = QPoint(global_x, global_y)
+                pos = self.mapFromGlobal(global_pos)
                 x, y = pos.x(), pos.y()
                 w, h = self.width(), self.height()
                 b = self._resize_border
-                left, right = x < b, x > w - b
-                top, bottom = y < b, y > h - b
-                if top and left:
-                    return True, _HTTOPLEFT
-                if top and right:
-                    return True, _HTTOPRIGHT
-                if bottom and left:
-                    return True, _HTBOTTOMLEFT
-                if bottom and right:
-                    return True, _HTBOTTOMRIGHT
-                if left:
-                    return True, _HTLEFT
-                if right:
-                    return True, _HTRIGHT
-                if top:
-                    return True, _HTTOP
-                if bottom:
-                    return True, _HTBOTTOM
+                if not self.isMaximized():
+                    left, right = x < b, x > w - b
+                    top, bottom = y < b, y > h - b
+                    if top and left:
+                        return True, _HTTOPLEFT
+                    if top and right:
+                        return True, _HTTOPRIGHT
+                    if bottom and left:
+                        return True, _HTBOTTOMLEFT
+                    if bottom and right:
+                        return True, _HTBOTTOMRIGHT
+                    if left:
+                        return True, _HTLEFT
+                    if right:
+                        return True, _HTRIGHT
+                    if top:
+                        return True, _HTTOP
+                    if bottom:
+                        return True, _HTBOTTOM
+                top_bar = getattr(self, "top_bar", None)
+                if top_bar is not None and top_bar.is_caption_point(global_pos):
+                    return True, _HTCAPTION
         return super().nativeEvent(event_type, message)
 
     def closeEvent(self, event):

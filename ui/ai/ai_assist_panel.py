@@ -992,25 +992,31 @@ class AIAssistPanel(QFrame):
                 "to fabricate any waveform readings."
             )
             self._record("user", text=text)
+            self._last_user_text = text
             self._chat.add_user_message(text)
+            picked = self._take_picked_context()
+            self._record_injected_context(
+                picked=picked, waveform_guard=_NO_WAVEFORM_GUARD
+            )
             self._service.send(
                 text,
-                extra_context=self._take_picked_context(),
+                extra_context=picked,
                 waveform_context=_NO_WAVEFORM_GUARD,
             )
             return
         scope = self._format_waveform_scope(digest)
         if scope:
             self._chat.add_system_message(scope)
+        picked = self._take_picked_context()
         if via_button:
             self._record("user", text=f"[Send Waveform] {text}")
             self._chat.add_user_message(f"[Send Waveform] {text}")
         else:
             self._record("user", text=text)
             self._chat.add_user_message(text)
-        self._service.send_with_waveform(
-            text, digest, extra_context=self._take_picked_context()
-        )
+        self._record_injected_context(digest=digest, picked=picked, scope=scope)
+        self._last_user_text = text
+        self._service.send_with_waveform(text, digest, extra_context=picked)
 
     @staticmethod
     def _format_waveform_scope(digest) -> str:
@@ -1063,7 +1069,9 @@ class AIAssistPanel(QFrame):
             "fabricate any waveform readings."
         )
         self._record("user", text=text)
+        self._last_user_text = text
         self._chat.add_user_message(text)
+        self._record_injected_context(waveform_guard=_NO_WAVEFORM_GUARD)
         self._service.send(text, waveform_context=_NO_WAVEFORM_GUARD)
 
     def _cleanup_digest_thread(self) -> None:
@@ -1285,6 +1293,38 @@ class AIAssistPanel(QFrame):
         entry.update(fields)
         self._transcript.append(entry)
 
+    def _record_injected_context(
+        self,
+        *,
+        digest=None,
+        picked: str = "",
+        scope: str = "",
+        waveform_guard: str = "",
+    ) -> None:
+        """记录本轮随用户提问一起喂给模型的注入上下文（数据是如何传递的）。
+
+        让导出流水能看清「解读 Datalog」这类问题里，波形摘要 / 拾取内容 /
+        无波形守卫等数据块是如何随消息传给 AI 的，而不只是看到用户的一句话。
+        """
+        blocks: list[dict] = []
+        if digest is not None:
+            try:
+                from core.ai.prompt_manager import format_waveform_digest
+
+                waveform_text = format_waveform_digest(digest)
+            except Exception:
+                logger.error("格式化波形摘要用于流水记录失败", exc_info=True)
+                waveform_text = ""
+            if waveform_text:
+                blocks.append({"source": "波形数据摘要", "text": waveform_text})
+        if waveform_guard:
+            blocks.append({"source": "无波形守卫", "text": waveform_guard})
+        if picked:
+            blocks.append({"source": "页面拾取内容", "text": picked})
+        if not blocks:
+            return
+        self._record("context", scope=scope or "", blocks=blocks)
+
     def _on_action_requested(self, payload) -> None:
         if not isinstance(payload, dict):
             return
@@ -1358,13 +1398,18 @@ class AIAssistPanel(QFrame):
         lines.append("```")
         lines.append("")
 
-        lines.append("## 会话流水（问 / 提示 / 答 / 执行的指令）")
+        lines.append("## 会话流水（按轮次分组的完整顺序流程）")
+        lines.append("")
+        lines.append(
+            "> 每一轮从用户提问开始，依序记录：注入上下文（喂给模型的数据）→ "
+            "请求执行指令 → 指令执行结果 → 确认卡片 → AI 回复 → 用量。"
+        )
         lines.append("")
         if not self._transcript:
             lines.append("_（本轮会话暂无流水记录）_")
             lines.append("")
-        for entry in self._transcript:
-            lines.extend(self._format_entry(entry))
+        else:
+            lines.extend(self._format_rounds(self._transcript))
 
         lines.append("## 持久化历史（service.persisted_history）")
         lines.append("")
@@ -1384,7 +1429,39 @@ class AIAssistPanel(QFrame):
 
         return "\n".join(lines)
 
-    def _format_entry(self, entry: dict) -> list[str]:
+    def _format_rounds(self, transcript: list[dict]) -> list[str]:
+        """把扁平流水按「轮次」分组并加步骤编号，让单轮调用顺序一目了然。
+
+        每遇到一个 user / analysis 条目即开启新一轮；轮内每个条目依序编号
+        （step 1、step 2 …），AI 回复 / 用量等都归入当轮，从而能看清一次
+        提问到最终回答之间，数据注入、工具调用、确认、回复的完整顺序。
+        """
+        out: list[str] = []
+        round_no = 0
+        step_no = 0
+        opened = False
+
+        def _close_round() -> None:
+            if opened:
+                out.append("---")
+                out.append("")
+
+        for entry in transcript:
+            kind = entry.get("kind", "")
+            if kind in ("user", "analysis") or not opened:
+                _close_round()
+                round_no += 1
+                step_no = 0
+                opened = True
+                ts = entry.get("ts", "")
+                out.append(f"## 🔁 第 {round_no} 轮  `{ts}`")
+                out.append("")
+            step_no += 1
+            out.extend(self._format_entry(entry, step=step_no))
+        _close_round()
+        return out
+
+    def _format_entry(self, entry: dict, step: int | None = None) -> list[str]:
         ts = entry.get("ts", "")
         kind = entry.get("kind", "")
         out: list[str] = []
@@ -1457,6 +1534,21 @@ class AIAssistPanel(QFrame):
             out.append(f"- 记住本会话：`{entry.get('remember_session', False)}`")
             out.append(f"- 加入白名单：`{entry.get('remember_resident', False)}`")
             out.append(f"- 卡片状态：{entry.get('status_text', '')}")
+        elif kind == "context":
+            out.append(f"### 📎 注入上下文（喂给模型的数据）  `{ts}`")
+            out.append("")
+            scope = str(entry.get("scope", "") or "")
+            if scope:
+                out.append(f"- 范围：{scope}")
+            blocks = entry.get("blocks", []) or []
+            out.append(f"- 数据块数量：{len(blocks)}")
+            for block in blocks:
+                out.append("")
+                out.append(f"**{block.get('source', '上下文')}：**")
+                out.append("")
+                out.append("```text")
+                out.append(str(block.get("text", "")))
+                out.append("```")
         elif kind == "usage":
             out.append(f"### 📈 用量  `{ts}`")
             out.append("")
@@ -1478,6 +1570,8 @@ class AIAssistPanel(QFrame):
                 + "\n```"
             )
         out.append("")
+        if step is not None and out and out[0].startswith("### "):
+            out[0] = "#### " + f"步骤 {step} · " + out[0][len("### "):]
         return out
 
     def _read_audit_tail(self, max_lines: int = 50) -> str:
@@ -1507,7 +1601,9 @@ class AIAssistPanel(QFrame):
         self._record("user", text=text)
         self._last_user_text = text
         self._chat.add_user_message(text)
-        self._service.send(text, extra_context=self._take_picked_context())
+        picked = self._take_picked_context()
+        self._record_injected_context(picked=picked)
+        self._service.send(text, extra_context=picked)
 
     def _on_analyze_clicked(self) -> None:
         level = self._level_combo.currentText()
