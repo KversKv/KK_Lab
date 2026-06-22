@@ -471,6 +471,8 @@ class MainWindow(CleanupMixin, QMainWindow):
 
         self.ai_panel = AIAssistPanel(self.ai_service, parent=self)
         self.ai_panel.request_close.connect(self._on_ai_panel_close_requested)
+        self.ai_panel.request_open.connect(self._on_ai_panel_open_requested)
+        self.ai_panel.pick_requested.connect(self._on_pick_requested)
         self.ai_panel.set_config_apply_callback(self._apply_ai_config_draft)
         self._setup_ai_action_system()
         outer_splitter.addWidget(self.ai_panel)
@@ -492,6 +494,31 @@ class MainWindow(CleanupMixin, QMainWindow):
             self.top_bar.ai_panel_button.toggled.connect(self._on_ai_panel_toggled)
             self.top_bar.ai_panel_button.setChecked(panel_open)
             self._apply_ai_panel_visibility(panel_open)
+            self._setup_element_picker()
+
+    def _setup_element_picker(self):
+        from ui.ai.element_picker import ElementPicker
+
+        self.element_picker = ElementPicker(
+            self, on_pick=self._on_element_picked, parent=self
+        )
+
+    def _on_element_picked(self, label, content):
+        if getattr(self, "ai_panel", None) is None:
+            return
+        self.ai_panel.attach_picked_context(label, content)
+
+    def _on_pick_requested(self):
+        if getattr(self, "element_picker", None) is None:
+            return
+        self.element_picker.start()
+
+    def _on_ai_panel_open_requested(self):
+        button = self.top_bar.ai_panel_button
+        if button.isChecked():
+            self._apply_ai_panel_visibility(True)
+        else:
+            button.setChecked(True)
 
     def _apply_ai_panel_visibility(self, visible):
         self.ai_panel.setVisible(visible)

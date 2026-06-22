@@ -87,6 +87,7 @@ a = Analysis(
         'ui.ai.ai_panel_button',
         'ui.ai.ai_assist_panel',
         'ui.ai.chat_view',
+        'ui.ai.element_picker',
         'ui.ai.config_preview',
         'ui.ai.script_preview',
         'ui.ai.action_confirm_dialog',

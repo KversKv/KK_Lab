@@ -692,12 +692,14 @@ class AIService(QObject):
                 max_tokens=max_tokens,
             )
 
-    def send_with_waveform(self, user_text: str, digest) -> None:
+    def send_with_waveform(
+        self, user_text: str, digest, extra_context: str = ""
+    ) -> None:
         """带波形摘要发送（F1.5/F1.6）：把 WaveformDigest 文本化注入上下文。"""
         from core.ai.prompt_manager import format_waveform_digest
 
         context = format_waveform_digest(digest)
-        self.send(user_text, waveform_context=context)
+        self.send(user_text, extra_context=extra_context, waveform_context=context)
 
     def cancel(self) -> None:
         if self._worker is not None:

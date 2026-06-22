@@ -70,6 +70,7 @@ _AI_SVG_DIR = os.path.join(get_resource_base(), "resources", "icons_svg", "ai")
 _SEND_ICON = os.path.join(_AI_SVG_DIR, "send.svg")
 _PANEL_ICON = os.path.join(_AI_SVG_DIR, "ai_panel.svg")
 _SPARKLES_ICON = os.path.join(_AI_SVG_DIR, "sparkles.svg")
+_INSPECT_ICON = os.path.join(_AI_SVG_DIR, "inspect.svg")
 _CLOSE_ICON = os.path.join(_AI_SVG_DIR, "close.svg")
 
 _PANEL_STYLE = """
@@ -506,6 +507,8 @@ class _DigestWorker(QObject):
 
 class AIAssistPanel(QFrame):
     request_close = Signal()
+    request_open = Signal()
+    pick_requested = Signal()
 
     def __init__(self, service: AIService, parent=None):
         super().__init__(parent)
@@ -519,6 +522,7 @@ class AIAssistPanel(QFrame):
         self._digest_worker = None
         self._pending_waveform_text = ""
         self._pending_waveform_via_button = False
+        self._pending_picked_context = ""
         self._transcript: list[dict] = []
         self._last_user_text = ""
         self._last_assistant_text = ""
@@ -800,6 +804,18 @@ class AIAssistPanel(QFrame):
         layout = _FlowLayout(spacing=8)
         layout.setContentsMargins(0, 0, 0, 0)
 
+        self._select_btn = QPushButton("Select")
+        self._select_btn.setObjectName("aiAnalyzeBtn")
+        self._select_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        self._select_btn.setToolTip(
+            "Pick any element/data on the page (Ctrl+Shift+C) and attach it to the next message"
+        )
+        if os.path.isfile(_INSPECT_ICON):
+            self._select_btn.setIcon(tinted_svg_icon(_INSPECT_ICON, "#34d399", 13))
+            self._select_btn.setIconSize(QSize(13, 13))
+        self._select_btn.clicked.connect(self.pick_requested.emit)
+        layout.addWidget(self._select_btn)
+
         self._analyze_btn = QPushButton("Analyze")
         self._analyze_btn.setObjectName("aiAnalyzeBtn")
         self._analyze_btn.setCursor(QCursor(Qt.PointingHandCursor))
@@ -947,7 +963,11 @@ class AIAssistPanel(QFrame):
             )
             self._record("user", text=text)
             self._chat.add_user_message(text)
-            self._service.send(text, waveform_context=_NO_WAVEFORM_GUARD)
+            self._service.send(
+                text,
+                extra_context=self._take_picked_context(),
+                waveform_context=_NO_WAVEFORM_GUARD,
+            )
             return
         scope = self._format_waveform_scope(digest)
         if scope:
@@ -958,7 +978,9 @@ class AIAssistPanel(QFrame):
         else:
             self._record("user", text=text)
             self._chat.add_user_message(text)
-        self._service.send_with_waveform(text, digest)
+        self._service.send_with_waveform(
+            text, digest, extra_context=self._take_picked_context()
+        )
 
     @staticmethod
     def _format_waveform_scope(digest) -> str:
@@ -1182,6 +1204,31 @@ class AIAssistPanel(QFrame):
         if message:
             text += f": {message}"
         self._chat.add_system_message(text)
+
+    def attach_picked_context(self, label: str, content: str) -> None:
+        """元素拾取器注入：把页面拾取到的内容挂为下一次发送的附带上下文。
+
+        多次拾取累加；面板自动展开并提示用户已附加。下一次 send 时随
+        extra_context 一并发出并清空。
+        """
+        content = (content or "").strip()
+        if not content:
+            return
+        block = f"[页面拾取内容：{label}]\n{content}"
+        if self._pending_picked_context:
+            self._pending_picked_context += "\n\n" + block
+        else:
+            self._pending_picked_context = block
+        self.request_open.emit()
+        self._input.setFocus()
+        self._chat.add_system_message(
+            f"已附加页面内容「{label}」，将随下一条消息发送给 AI。"
+        )
+
+    def _take_picked_context(self) -> str:
+        ctx = self._pending_picked_context
+        self._pending_picked_context = ""
+        return ctx
 
     def set_config_apply_callback(self, callback) -> None:
         """注入测试配置草案 apply 回调：callback(ConfigDraft) -> (ok, message)。"""
@@ -1419,7 +1466,7 @@ class AIAssistPanel(QFrame):
         self._record("user", text=text)
         self._last_user_text = text
         self._chat.add_user_message(text)
-        self._service.send(text)
+        self._service.send(text, extra_context=self._take_picked_context())
 
     def _on_analyze_clicked(self) -> None:
         level = self._level_combo.currentText()
