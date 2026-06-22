@@ -318,6 +318,7 @@ QLabel#aiUsageLabel {
     font-weight: 700;
     letter-spacing: 0.4px;
     background: transparent;
+    border: none;
     padding: 1px 2px;
 }
 """

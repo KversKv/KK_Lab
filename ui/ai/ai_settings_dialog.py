@@ -38,7 +38,7 @@ logger = get_logger(__name__)
 
 _DIALOG_STYLE = """
 QDialog { background-color: #0e1525; }
-QLabel { color: #c8d4ee; font-size: 12px; background: transparent; }
+QLabel { color: #c8d4ee; font-size: 12px; background: transparent; border: none; }
 QLineEdit, QSpinBox, QComboBox {
     background-color: #11182c; color: #e6eeff;
     border: 1px solid #243152; border-radius: 6px; padding: 4px 8px;
@@ -57,7 +57,7 @@ QListWidget {
 }
 QListWidget::item { padding: 4px 6px; }
 QListWidget::item:selected { background-color: #1C2D55; }
-QTabWidget::pane { border: 1px solid #243152; border-radius: 8px; top: -1px; }
+QTabWidget::pane { border: none; top: -1px; }
 QTabBar::tab {
     background-color: #11182c; color: #9fb2d8;
     border: 1px solid #243152; border-bottom: none;
