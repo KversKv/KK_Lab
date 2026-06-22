@@ -198,29 +198,23 @@ class AppTopBar(QWidget):
         if self._window is not None:
             self._window.close()
 
-    def mousePressEvent(self, event):
-        if event.button() == Qt.RightButton and self._window is not None:
-            global_pos = event.globalPosition().toPoint()
-            if self.is_caption_point(global_pos):
-                show_menu = getattr(self._window, "show_system_menu", None)
-                if callable(show_menu) and show_menu(global_pos):
-                    event.accept()
-                    return
-        super().mousePressEvent(event)
+    def is_caption_window_point(self, win_x, win_y, dpr) -> bool:
+        """判断窗口内物理偏移坐标是否落在标题栏可拖动区域（不在交互控件上）。
 
-    def is_caption_point(self, global_pos) -> bool:
-        """判断全局坐标是否落在标题栏的可拖动区域（即标题栏内、且不在交互控件上）。
-
-        返回 True 时，宿主窗口在 WM_NCHITTEST 中将该点报告为 HTCAPTION，
-        从而交由系统处理拖动 / Aero Snap / 双击最大化 / 右键系统菜单。
+        win_x / win_y 为相对宿主窗口左上角的物理像素偏移，与宿主窗口
+        WM_NCHITTEST 中使用的坐标系完全一致，避免高 DPI 下的换算偏移。
+        返回 True 时，宿主窗口将该点报告为 HTCAPTION。
         """
-        local = self.mapFromGlobal(global_pos)
-        if not self.rect().contains(local):
-            return False
+        dpr = dpr or 1.0
+        window = self.window()
         for widget in self._interactive_widgets:
             if widget is None or not widget.isVisible():
                 continue
-            top_left = widget.mapTo(self, widget.rect().topLeft())
-            if widget.rect().translated(top_left).contains(local):
+            top_left = widget.mapTo(window, widget.rect().topLeft())
+            left = top_left.x() * dpr
+            top = top_left.y() * dpr
+            right = left + widget.width() * dpr
+            bottom = top + widget.height() * dpr
+            if left <= win_x <= right and top <= win_y <= bottom:
                 return False
         return True

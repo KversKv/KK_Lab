@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from PySide6.QtCore import (
-    Qt, Signal, QPropertyAnimation, QEasingCurve, QTimer, QEvent, QPoint
+    Qt, Signal, QPropertyAnimation, QEasingCurve, QTimer, QEvent
 )
 
 if sys.platform == "win32":
@@ -26,6 +26,7 @@ if sys.platform == "win32":
     _WM_NCCALCSIZE = 0x0083
     _WM_GETMINMAXINFO = 0x0024
     _WM_SYSCOMMAND = 0x0112
+    _WM_NCRBUTTONUP = 0x00A5
     _TPM_RETURNCMD = 0x0100
     _TPM_LEFTALIGN = 0x0000
     _TPM_TOPALIGN = 0x0000
@@ -1381,37 +1382,92 @@ class MainWindow(CleanupMixin, QMainWindow):
                 if self._adjust_maximized_size(msg):
                     return True, 0
                 return False, 0
+            if msg.message == _WM_NCRBUTTONUP and msg.wParam == _HTCAPTION:
+                if self.show_system_menu(None):
+                    return True, 0
             if msg.message == _WM_NCHITTEST:
                 global_x = ctypes.c_int16(msg.lParam & 0xFFFF).value
                 global_y = ctypes.c_int16((msg.lParam >> 16) & 0xFFFF).value
-                global_pos = QPoint(global_x, global_y)
-                pos = self.mapFromGlobal(global_pos)
-                x, y = pos.x(), pos.y()
-                w, h = self.width(), self.height()
-                b = self._resize_border
-                if not self.isMaximized():
-                    left, right = x < b, x > w - b
-                    top, bottom = y < b, y > h - b
-                    if top and left:
-                        return True, _HTTOPLEFT
-                    if top and right:
-                        return True, _HTTOPRIGHT
-                    if bottom and left:
-                        return True, _HTBOTTOMLEFT
-                    if bottom and right:
-                        return True, _HTBOTTOMRIGHT
-                    if left:
-                        return True, _HTLEFT
-                    if right:
-                        return True, _HTRIGHT
-                    if top:
-                        return True, _HTTOP
-                    if bottom:
-                        return True, _HTBOTTOM
-                top_bar = getattr(self, "top_bar", None)
-                if top_bar is not None and top_bar.is_caption_point(global_pos):
-                    return True, _HTCAPTION
+                hit = self._hit_test_native(global_x, global_y)
+                if hit is not None:
+                    return True, hit
         return super().nativeEvent(event_type, message)
+
+    def _hit_test_native(self, screen_x, screen_y):
+        try:
+            user32 = ctypes.windll.user32
+            hwnd = int(self.winId())
+            rect = _RECT()
+            if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                return None
+            win_w = rect.right - rect.left
+            win_h = rect.bottom - rect.top
+            x = screen_x - rect.left
+            y = screen_y - rect.top
+            dpr = self.devicePixelRatioF() or 1.0
+            b = int(round(self._resize_border * dpr))
+            if not (self.isMaximized() or self._is_snapped()):
+                left, right = x < b, x > win_w - b
+                top, bottom = y < b, y > win_h - b
+                if top and left:
+                    return _HTTOPLEFT
+                if top and right:
+                    return _HTTOPRIGHT
+                if bottom and left:
+                    return _HTBOTTOMLEFT
+                if bottom and right:
+                    return _HTBOTTOMRIGHT
+                if left:
+                    return _HTLEFT
+                if right:
+                    return _HTRIGHT
+                if top:
+                    return _HTTOP
+                if bottom:
+                    return _HTBOTTOM
+            bar_h = int(round(self._caption_height_px() * dpr))
+            if 0 <= y <= bar_h:
+                top_bar = getattr(self, "top_bar", None)
+                if top_bar is not None and top_bar.is_caption_window_point(
+                    x, y, dpr
+                ):
+                    return _HTCAPTION
+            return None
+        except Exception:  # noqa: BLE001
+            logger.debug("命中测试失败", exc_info=True)
+            return None
+
+    def _caption_height_px(self):
+        top_bar = getattr(self, "top_bar", None)
+        if top_bar is not None:
+            return top_bar.height()
+        return 36
+
+    def _is_snapped(self):
+        try:
+            user32 = ctypes.windll.user32
+            hwnd = int(self.winId())
+            monitor = user32.MonitorFromWindow(hwnd, _MONITOR_DEFAULTTONEAREST)
+            if not monitor:
+                return False
+            info = _MONITORINFO()
+            info.cbSize = ctypes.sizeof(_MONITORINFO)
+            if not user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+                return False
+            rect = _RECT()
+            if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                return False
+            work = info.rcWork
+            touch_left = rect.left <= work.left
+            touch_right = rect.right >= work.right
+            touch_top = rect.top <= work.top
+            touch_bottom = rect.bottom >= work.bottom
+            full_height = touch_top and touch_bottom
+            half_width = (rect.right - rect.left) < (work.right - work.left)
+            return full_height and half_width and (touch_left or touch_right)
+        except Exception:  # noqa: BLE001
+            logger.debug("Snap 状态检测失败", exc_info=True)
+            return False
 
     def closeEvent(self, event):
         self.status_panel.suppress_toasts()
