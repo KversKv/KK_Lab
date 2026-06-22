@@ -87,10 +87,17 @@ def format_sequence_data(data: dict[str, Any]) -> str:
         return ""
     total = _count_nodes(sequence)
     if total == 0:
-        return "[当前 Custom Test 画布序列]\n（空序列，尚未添加节点）"
+        return (
+            "[当前 Custom Test 画布序列（最新，以此为准）]\n"
+            "以下为用户画布的当前实时序列；若与此前对话中的序列内容或结论冲突，"
+            "一律以本段为准，忽略历史中的旧序列。\n"
+            "（空序列，尚未添加节点）"
+        )
 
     lines: list[str] = [
-        "[当前 Custom Test 画布序列]",
+        "[当前 Custom Test 画布序列（最新，以此为准）]",
+        "以下为用户画布的当前实时序列；若与此前对话中的序列内容或结论冲突，"
+        "一律以本段为准，忽略历史中的旧序列。",
         f"版本：v{data.get('version', 2)}　顶层节点：{len(sequence)}　总节点：{total}",
     ]
     metadata = data.get("metadata") or {}

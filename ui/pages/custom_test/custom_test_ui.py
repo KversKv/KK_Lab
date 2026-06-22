@@ -34,6 +34,7 @@ from core.custom_test.paths import (
 )
 from core.custom_test.resolver import InstrumentResolver, collect_required_instrument_keys
 from core.custom_test.result_store import ResultStore, build_default_result_path
+from core.custom_test.serialization import save_sequence_data
 from core.custom_test.snapshot import build_sequence_hash, clone_sequence
 from core.custom_test.validation import preflight_validate
 from ui.pages.custom_test.instrument_connection_panel import InstrumentConnectionPanel
@@ -495,6 +496,17 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
 
     def _collect_instrument_meta(self) -> dict:
         return self.instrument_panel.collect_meta()
+
+    def get_ai_sequence_data(self) -> Optional[Dict[str, Any]]:
+        try:
+            nodes = self.canvas.get_sequence()
+            return save_sequence_data(
+                nodes,
+                instruments=self._collect_instrument_meta(),
+            )
+        except Exception:
+            logger.error("构建 AI 序列上下文失败", exc_info=True)
+            return None
 
     def _on_metadata_loaded(self, meta: dict) -> None:
         self.instrument_panel.on_metadata_loaded(meta)

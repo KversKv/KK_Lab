@@ -726,6 +726,13 @@ class MainWindow(CleanupMixin, QMainWindow):
             panel.set_script_apply_callback(None)
         panel.set_config_apply_callback(self._apply_ai_config_draft)
 
+        service = getattr(self, "ai_service", None)
+        if service is not None:
+            if self.current_instrument_ui == "custom_test":
+                service.set_sequence_data_getter(self._get_ai_sequence_data)
+            else:
+                service.set_sequence_data_getter(None)
+
         if self.current_instrument_ui == "datalog":
             panel.set_waveform_provider_callback(self._provide_ai_waveform_digest)
             panel.set_waveform_range_getter(self._provide_ai_waveform_range)
@@ -734,6 +741,12 @@ class MainWindow(CleanupMixin, QMainWindow):
             panel.set_waveform_provider_callback(None)
             panel.set_waveform_range_getter(None)
             panel.set_waveform_marker_getter(None)
+
+    def _get_ai_sequence_data(self):
+        ui = getattr(self, "custom_test_ui", None)
+        if ui is None or self.current_instrument_ui != "custom_test":
+            return None
+        return ui.get_ai_sequence_data()
 
     def _provide_ai_waveform_digest(self, x_range=None, marker=None):
         ui = getattr(self, "n6705c_datalog_ui", None)
