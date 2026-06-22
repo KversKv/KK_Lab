@@ -44,6 +44,7 @@ class BudgetConfig:
     reserve_output: int = 4096
     soft_budget_ratio: float = 0.5
     max_context_block_tokens: int = 8192
+    waveform_block_tokens: int = 8192
 
 _MASK_PATTERNS = [
     (re.compile(r"(?i)\b(sk-[A-Za-z0-9_\-]{8,})\b"), "[REDACTED_KEY]"),
@@ -251,6 +252,7 @@ class PromptManager:
         """
         system_text = self._build_system_text(page_key, budget)
         block_cap = budget.max_context_block_tokens if budget else 0
+        wave_cap = budget.waveform_block_tokens if budget else 0
         if summary:
             summ = mask_sensitive(summary) if self._enable_masking else summary
             system_text += "\n\n[前情提要]\n" + summ
@@ -279,8 +281,8 @@ class PromptManager:
                 if self._enable_masking
                 else waveform_context
             )
-            if block_cap > 0:
-                wave = context_budget.clip_context_block(wave, block_cap)
+            if wave_cap > 0:
+                wave = context_budget.clip_context_block(wave, wave_cap)
             text = (
                 "【本轮波形数据（最新，以此为准）】\n"
                 "以下为当前 Marker / 屏幕可见范围对应的波形数据；"

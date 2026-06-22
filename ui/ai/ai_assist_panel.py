@@ -1007,6 +1007,17 @@ class AIAssistPanel(QFrame):
                 f"B={_fmt(marker.get('b'))} s, "
                 f"时长={_fmt(marker.get('duration_s'))} s"
             )
+        stats = getattr(digest, "stats", None) or []
+        raw_points = sum(int(getattr(s, "point_count", 0) or 0) for s in stats)
+        downsampled = getattr(digest, "downsampled", None) or {}
+        ds_points = sum(
+            len((v or {}).get("values", []) or []) for v in downsampled.values()
+        )
+        if raw_points or ds_points:
+            parts.append(
+                f"点数：采样前 {raw_points} → 采样后 {ds_points}"
+                f"（{len(stats)} 通道）"
+            )
         if not parts:
             return ""
         return "本轮分析范围 — " + "；".join(parts)

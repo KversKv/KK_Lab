@@ -406,11 +406,16 @@ class AIService(QObject):
 
     def _budget_for(self, model: str) -> BudgetConfig:
         """按当前实际模型构建 token 预算配置（窗口随模型而非全局固定）。"""
+        window = self._settings.context_window_for(model)
+        block_cap = self._settings.max_context_block_tokens
+        usable = max(1, int(window) - int(self._settings.reserve_output_tokens))
+        waveform_cap = max(block_cap, int(usable * 0.6))
         return BudgetConfig(
-            window=self._settings.context_window_for(model),
+            window=window,
             reserve_output=self._settings.reserve_output_tokens,
             soft_budget_ratio=self._settings.soft_budget_ratio,
-            max_context_block_tokens=self._settings.max_context_block_tokens,
+            max_context_block_tokens=block_cap,
+            waveform_block_tokens=waveform_cap,
         )
 
     def _trim_agent_messages(self, model: str) -> None:
