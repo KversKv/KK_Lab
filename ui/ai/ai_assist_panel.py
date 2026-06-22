@@ -22,13 +22,12 @@ from PySide6.QtCore import (
     QThread,
     Signal,
 )
-from PySide6.QtGui import QColor, QCursor, QKeyEvent
+from PySide6.QtGui import QCursor, QKeyEvent
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QFileDialog,
     QFrame,
-    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QLayout,
@@ -71,6 +70,9 @@ _SEND_ICON = os.path.join(_AI_SVG_DIR, "send.svg")
 _PANEL_ICON = os.path.join(_AI_SVG_DIR, "ai_panel.svg")
 _SPARKLES_ICON = os.path.join(_AI_SVG_DIR, "sparkles.svg")
 _INSPECT_ICON = os.path.join(_AI_SVG_DIR, "inspect.svg")
+_CLEAR_ICON = os.path.join(_AI_SVG_DIR, "clear.svg")
+_SETTINGS_ICON = os.path.join(_AI_SVG_DIR, "settings.svg")
+_EXPORT_ICON = os.path.join(_AI_SVG_DIR, "export.svg")
 _CLOSE_ICON = os.path.join(_AI_SVG_DIR, "close.svg")
 
 _PANEL_STYLE = """
@@ -93,6 +95,9 @@ QFrame#aiComposeBox {
     background-color: #070709;
     border: 1px solid #1e293b;
     border-radius: 12px;
+}
+QFrame#aiComposeBox[focused="true"] {
+    border: 1px solid #3b82f6;
 }
 QFrame#aiInputArea {
     background-color: #070709;
@@ -124,6 +129,19 @@ QLabel#aiHeaderSep {
     font-size: 14px;
     background: transparent;
     border: none;
+}
+QPushButton#aiIconBtn {
+    min-width: 28px;
+    min-height: 28px;
+    max-width: 28px;
+    max-height: 28px;
+    padding: 0px;
+    border: none;
+    border-radius: 6px;
+    background-color: transparent;
+}
+QPushButton#aiIconBtn:hover {
+    background-color: #1e293b;
 }
 QPushButton#aiSettingsBtn {
     min-height: 22px;
@@ -408,18 +426,13 @@ class _InputEdit(QPlainTextEdit):
     _MIN_HEIGHT = 80
     _MAX_HEIGHT = 160
 
+    focus_changed = Signal(bool)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setFixedHeight(self._MIN_HEIGHT)
-
-        self._focus_ring = QGraphicsDropShadowEffect(self)
-        self._focus_ring.setColor(QColor(59, 130, 246, 90))
-        self._focus_ring.setBlurRadius(14)
-        self._focus_ring.setOffset(0, 0)
-        self._focus_ring.setEnabled(False)
-        self.setGraphicsEffect(self._focus_ring)
 
         self.document().documentLayout().documentSizeChanged.connect(
             self._adjust_height
@@ -432,12 +445,16 @@ class _InputEdit(QPlainTextEdit):
             self.setFixedHeight(target)
 
     def focusInEvent(self, event) -> None:
-        self._focus_ring.setEnabled(True)
         super().focusInEvent(event)
+        self.focus_changed.emit(True)
 
     def focusOutEvent(self, event) -> None:
-        self._focus_ring.setEnabled(False)
         super().focusOutEvent(event)
+        self.focus_changed.emit(False)
+
+    def inputMethodEvent(self, event) -> None:
+        super().inputMethodEvent(event)
+        self.viewport().update()
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() in (Qt.Key_Return, Qt.Key_Enter) and not (
@@ -567,6 +584,8 @@ class AIAssistPanel(QFrame):
         self._input.setObjectName("aiInput")
         self._input.setPlaceholderText("Ask a question, Enter to send / Shift+Enter for new line")
         self._input.submitted.connect(self._on_send_clicked)
+        self._compose_box = compose_box
+        self._input.focus_changed.connect(self._on_input_focus_changed)
         input_layout.addWidget(self._input)
         compose_layout.addWidget(input_area)
 
@@ -576,7 +595,6 @@ class AIAssistPanel(QFrame):
         controls_layout.setContentsMargins(12, 10, 12, 12)
         controls_layout.setSpacing(10)
         controls_layout.addLayout(self._build_range_bar())
-        controls_layout.addLayout(self._build_export_bar())
         controls_layout.addLayout(self._build_action_bar())
         controls_layout.addLayout(self._build_send_bar())
         compose_layout.addWidget(controls_area)
@@ -610,20 +628,39 @@ class AIAssistPanel(QFrame):
 
         title = QLabel("AI Assistant")
         title.setObjectName("aiPanelTitle")
-        title.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        title.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         layout.addWidget(title)
         layout.addStretch(1)
 
-        self._clear_btn = QPushButton("Clear")
-        self._clear_btn.setObjectName("aiSettingsBtn")
+        self._clear_btn = QPushButton()
+        self._clear_btn.setObjectName("aiIconBtn")
         self._clear_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self._clear_btn.setToolTip("Clear current conversation history")
+        if os.path.isfile(_CLEAR_ICON):
+            self._clear_btn.setIcon(tinted_svg_icon(_CLEAR_ICON, "#94a3b8", 16))
+            self._clear_btn.setIconSize(QSize(16, 16))
         self._clear_btn.clicked.connect(self._on_clear_clicked)
         layout.addWidget(self._clear_btn)
 
-        self._settings_btn = QPushButton("Settings")
-        self._settings_btn.setObjectName("aiSettingsBtn")
+        self._export_btn = QPushButton()
+        self._export_btn.setObjectName("aiIconBtn")
+        self._export_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        self._export_btn.setToolTip(
+            "Export this session's debug info: questions / system prompts / AI replies / executed actions / audit / usage (Markdown)"
+        )
+        if os.path.isfile(_EXPORT_ICON):
+            self._export_btn.setIcon(tinted_svg_icon(_EXPORT_ICON, "#94a3b8", 16))
+            self._export_btn.setIconSize(QSize(16, 16))
+        self._export_btn.clicked.connect(self._on_export_clicked)
+        layout.addWidget(self._export_btn)
+
+        self._settings_btn = QPushButton()
+        self._settings_btn.setObjectName("aiIconBtn")
         self._settings_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        self._settings_btn.setToolTip("Settings")
+        if os.path.isfile(_SETTINGS_ICON):
+            self._settings_btn.setIcon(tinted_svg_icon(_SETTINGS_ICON, "#94a3b8", 16))
+            self._settings_btn.setIconSize(QSize(16, 16))
         self._settings_btn.clicked.connect(self._open_settings)
         layout.addWidget(self._settings_btn)
 
@@ -642,6 +679,14 @@ class AIAssistPanel(QFrame):
         close_btn.clicked.connect(self.request_close.emit)
         layout.addWidget(close_btn)
         return bar
+
+    def _on_input_focus_changed(self, focused: bool) -> None:
+        box = getattr(self, "_compose_box", None)
+        if box is None:
+            return
+        box.setProperty("focused", "true" if focused else "false")
+        box.style().unpolish(box)
+        box.style().polish(box)
 
     def _populate_models(self) -> None:
         settings = self._service.settings
@@ -783,21 +828,6 @@ class AIAssistPanel(QFrame):
         self._lines_spin.setToolTip(f"Max lines taken per log type (cap {_MAX_LINES_CAP})")
         layout.addWidget(self._lines_spin)
 
-        return layout
-
-    def _build_export_bar(self) -> QHBoxLayout:
-        layout = QHBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
-        layout.addStretch(1)
-        self._export_btn = QPushButton("Export Session")
-        self._export_btn.setObjectName("aiExportBtn")
-        self._export_btn.setCursor(QCursor(Qt.PointingHandCursor))
-        self._export_btn.setToolTip(
-            "Export this session's debug info: questions / system prompts / AI replies / executed actions / audit / usage (Markdown)"
-        )
-        self._export_btn.clicked.connect(self._on_export_clicked)
-        layout.addWidget(self._export_btn)
         return layout
 
     def _build_action_bar(self) -> QLayout:
