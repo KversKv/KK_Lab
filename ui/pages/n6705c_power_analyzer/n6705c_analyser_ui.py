@@ -16,16 +16,20 @@ from PySide6.QtWidgets import (
     QGridLayout, QFrame, QApplication, QCheckBox,
     QSizePolicy, QFileDialog
 )
-from PySide6.QtCore import Qt, QTimer, Signal, QThread, QObject, QPropertyAnimation, Property, QRectF, QEasingCurve
+from PySide6.QtCore import Qt, QTimer, Signal, QThread, QPropertyAnimation, Property, QRectF, QEasingCurve
 from PySide6.QtGui import QFont, QPainter, QColor, QPen, QPixmap
 from PySide6.QtSvg import QSvgRenderer
-import pyvisa
 
 from instruments.power.keysight.n6705c import N6705C
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockN6705C
 from log_config import get_logger
 from ui.theme import FONT_MONO
+from core.n6705c import (
+    SearchThread as _SearchThread,
+    ChannelSyncWorker as _ChannelSyncWorker,
+    ConsumptionTestWorker as _ConsumptionTestWorker,
+)
 
 logger = get_logger(__name__)
 
@@ -275,120 +279,6 @@ def _batch_channel_button_style():
         QPushButton:disabled {{ background-color: #0b1730; color: {DISABLED_TEXT}; border: 1px solid {DISABLED_BTN_BORDER}; }}
     """
 
-
-
-class _SearchThread(QThread):
-    search_result = Signal(str, list)
-
-    def __init__(self, label, parent=None):
-        super().__init__(parent)
-        self._label = label
-
-    def run(self):
-        found = []
-        rm = None
-        try:
-            try:
-                rm = pyvisa.ResourceManager()
-            except Exception:
-                rm = pyvisa.ResourceManager('@ni')
-            resources = list(rm.list_resources()) or []
-            seen = {}
-            for res in resources:
-                try:
-                    instr = rm.open_resource(res, timeout=1000)
-                    idn = instr.query('*IDN?').strip()
-                    instr.close()
-                    if "N6705C" in idn:
-                        parts = idn.split(",")
-                        serial = parts[2].strip() if len(parts) > 2 else res
-                        if serial in seen:
-                            if "hislip" in res and "hislip" not in seen[serial]:
-                                seen[serial] = res
-                        else:
-                            seen[serial] = res
-                except Exception:
-                    pass
-            found = list(seen.values())
-        except Exception:
-            pass
-        finally:
-            if rm is not None:
-                try:
-                    rm.close()
-                except Exception:
-                    pass
-        self.search_result.emit(self._label, found)
-
-
-class _ChannelSyncWorker(QObject):
-    result = Signal(dict)
-    finished = Signal()
-
-    def __init__(self, n6705c, channel_num):
-        super().__init__()
-        self.n6705c = n6705c
-        self.channel_num = channel_num
-
-    def run(self):
-        data = {}
-        try:
-            data["channel_state"] = self.n6705c.get_channel_state(self.channel_num)
-        except Exception:
-            data["channel_state"] = None
-        try:
-            data["mode"] = self.n6705c.get_mode(self.channel_num)
-        except Exception:
-            data["mode"] = None
-        try:
-            data["voltage"] = float(self.n6705c.measure_voltage(self.channel_num))
-        except Exception:
-            data["voltage"] = None
-        try:
-            data["current"] = float(self.n6705c.measure_current(self.channel_num))
-        except Exception:
-            data["current"] = None
-        try:
-            data["limit_current"] = float(self.n6705c.get_current_limit(self.channel_num))
-        except Exception:
-            data["limit_current"] = None
-        self.result.emit(data)
-        self.finished.emit()
-
-
-class _ConsumptionTestWorker(QObject):
-    channel_result = Signal(str, int, float)
-    finished = Signal()
-    error = Signal(str)
-
-    def __init__(self, n6705c, device_label, channels, test_time, sample_period):
-        super().__init__()
-        self.n6705c = n6705c
-        self.device_label = device_label
-        self.channels = channels
-        self.test_time = test_time
-        self.sample_period = sample_period
-        self._is_stopped = False
-
-    def stop(self):
-        self._is_stopped = True
-
-    def run(self):
-        try:
-            if self._is_stopped:
-                self.finished.emit()
-                return
-            result = self.n6705c.fetch_current_by_datalog(
-                self.channels, self.test_time, self.sample_period
-            )
-            for ch, avg_current in result.items():
-                if self._is_stopped:
-                    break
-                self.channel_result.emit(self.device_label, ch, float(avg_current))
-            self.finished.emit()
-        except Exception as e:
-            self.error.emit(f"[{self.device_label}] {e}")
-            self.finished.emit()
 
 
 class N6705CAnalyserUI(QWidget):

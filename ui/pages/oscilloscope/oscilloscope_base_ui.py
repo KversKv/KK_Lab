@@ -19,6 +19,7 @@ from ui.styles import SCROLL_AREA_STYLE
 from ui.widgets.button import SpinningSearchButton, update_connect_button_state
 from ui.widgets.instrument_state_poller import InstrumentStatePoller
 from instruments.scopes.base import OscilloscopeController
+from core.controllers import OscilloscopeControllerEx
 from log_config import get_logger
 from debug_config import DEBUG_MOCK
 from ui.theme import FONT_MONO
@@ -917,7 +918,7 @@ class OscilloscopeBaseUI(QWidget):
 
         self.mso64b_top = mso64b_top
         self._instrument_manager = instrument_manager
-        self.controller = OscilloscopeController()
+        self.controller = OscilloscopeControllerEx()
         self.controller.set_log_callback(self.append_log)
 
         self._measurement_items = []
@@ -2017,57 +2018,22 @@ class OscilloscopeBaseUI(QWidget):
             self.append_log("[WARN] Instrument not connected.")
             return
 
-        inst = self.controller.instrument
-        try:
-            from instruments.scopes.tektronix.mso64b import MSO64B
-            from instruments.scopes.keysight.dsox4034a import DSOX4034A
-
-            if not isinstance(inst, (MSO64B, DSOX4034A)):
-                self.append_log("[WARN] This function is only available for Tektronix MSO64B / Keysight DSO-X 4034A.")
-                return
-
-            self.append_log("[QUICK] Setting all channels to default ripple config...")
-            for ch in range(1, self.NUM_CHANNELS + 1):
-                inst.set_channel_display(ch, True)
-                if hasattr(inst, 'set_channel_bandwidth'):
-                    inst.set_channel_bandwidth(ch, '20E+6')
-                inst.set_channel_scale(ch, 0.5)
-                inst.set_channel_offset(ch, 1.8)
-            inst.set_timebase_scale(0.001)
-            if hasattr(inst, 'set_timebase_position'):
-                inst.set_timebase_position(50 if isinstance(inst, MSO64B) else 0.0)
-
+        ok = self.controller.set_all_channels_default(self.NUM_CHANNELS)
+        if ok:
             for i, channel_data in enumerate(self.channels):
                 self.channel_tab_buttons[i].setChecked(True)
                 channel_data['scale_edit'].setText("0.5")
                 channel_data['offset_edit'].setText("1.8")
             self.timebase_edit.setText("1ms")
 
-            self.append_log("[QUICK] All channels set: ON, BW=20MHz, Scale=500mV/div, Offset=1.8V; TimeScale=1ms/div")
-        except Exception as e:
-            self.append_log(f"[ERROR] All Channel Set Default failed: {e}")
-
     def _on_ripple_set(self):
         if not self.controller.is_connected:
             self.append_log("[WARN] Instrument not connected.")
             return
 
-        inst = self.controller.instrument
-        try:
-            from instruments.scopes.tektronix.mso64b import MSO64B
-            from instruments.scopes.keysight.dsox4034a import DSOX4034A
-
-            if not isinstance(inst, (MSO64B, DSOX4034A)):
-                self.append_log("[WARN] This function is only available for Tektronix MSO64B / Keysight DSO-X 4034A.")
-                return
-
-            ch_text = self.quick_channel_combo.currentText()
-            channel = int(ch_text.replace("CH", ""))
-            self.append_log(f"[QUICK] Running RippleSet on {ch_text}...")
-            inst.set_AutoRipple_test(channel)
-            self.append_log(f"[QUICK] RippleSet on {ch_text} completed.")
-        except Exception as e:
-            self.append_log(f"[ERROR] RippleSet failed: {e}")
+        ch_text = self.quick_channel_combo.currentText()
+        channel = int(ch_text.replace("CH", ""))
+        self.controller.run_ripple_test(channel)
 
     def _create_small_section_title(self, text):
         label = QLabel(text)
@@ -3162,15 +3128,11 @@ class OscilloscopeBaseUI(QWidget):
             return
         if self._time_offset_mode == "none":
             return
-        inst = self.controller.instrument
-        if not hasattr(inst, "set_timebase_position"):
-            self.append_log("[WARN] This instrument does not support horizontal offset.")
-            return
         try:
             value = self._get_time_offset_value()
             if value is None:
                 return
-            inst.set_timebase_position(value)
+            self.controller.set_timebase_position(value)
             if self._time_offset_mode == "seconds":
                 self.append_log(f"[SETTING] Time Offset: {value} s")
             else:
@@ -3182,16 +3144,11 @@ class OscilloscopeBaseUI(QWidget):
     def _apply_channel_scale_offset(self, channel_num):
         if not self.controller.is_connected:
             return
-        inst = self.controller.instrument
         ch = self.channels[channel_num - 1]
         try:
             scale = float(ch['scale_edit'].text())
             offset = float(ch['offset_edit'].text())
-            inst.set_channel_scale(channel_num, scale)
-            inst.set_channel_offset(channel_num, offset)
-            self.append_log(
-                f"[SETTING] CH{channel_num}: Scale={scale} V/div, Offset={offset} V"
-            )
+            self.controller.set_channel_scale_offset(channel_num, scale, offset)
             self._clear_settings_dirty()
         except Exception as e:
             self.append_log(f"[ERROR] CH{channel_num} setting failed: {e}")
@@ -3199,27 +3156,15 @@ class OscilloscopeBaseUI(QWidget):
     def _apply_channel_coupling(self, channel_num, coupling_value):
         if not self.controller.is_connected:
             return
-        inst = self.controller.instrument
-        try:
-            if hasattr(inst, 'set_channel_coupling'):
-                inst.set_channel_coupling(channel_num, coupling_value)
-                self.append_log(f"[SETTING] CH{channel_num}: Coupling={coupling_value}")
-            else:
-                self.append_log(f"[SETTING] CH{channel_num}: Coupling={coupling_value} (not supported by this instrument)")
-            self._clear_settings_dirty()
-        except Exception as e:
-            self.append_log(f"[ERROR] CH{channel_num} coupling failed: {e}")
+        self.controller.set_channel_coupling(channel_num, coupling_value)
+        self._clear_settings_dirty()
 
     def _apply_channel_display(self, channel_num, enabled):
         if not self.controller.is_connected:
             return
-        inst = self.controller.instrument
         try:
             with self._state_poller.writing():
-                inst.set_channel_display(channel_num, enabled)
-            self.append_log(
-                f"[SETTING] CH{channel_num}: {'ON' if enabled else 'OFF'}"
-            )
+                self.controller.set_channel_display(channel_num, enabled)
         except Exception as e:
             self.append_log(f"[ERROR] CH{channel_num} display toggle failed: {e}")
 
@@ -3235,10 +3180,7 @@ class OscilloscopeBaseUI(QWidget):
             if source_text.startswith("CH"):
                 trigger_ch = int(source_text[2:])
                 with self._state_poller.writing():
-                    self.controller.instrument.set_trigger_config(trigger_ch, trigger_level, slope)
-                self.append_log(
-                    f"[SETTING] Trigger: {source_text}, Level={trigger_level} V, Slope={slope}"
-                )
+                    self.controller.set_trigger_config_safe(trigger_ch, trigger_level, slope)
             self._clear_settings_dirty()
         except Exception as e:
             self.append_log(f"[ERROR] Trigger setting failed: {e}")

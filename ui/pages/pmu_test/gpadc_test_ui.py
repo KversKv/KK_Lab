@@ -19,18 +19,14 @@ from PySide6.QtWidgets import (
     QButtonGroup, QApplication, QSizePolicy, QStackedWidget, QScrollArea,
     QTextEdit, QProgressBar
 )
-from PySide6.QtCore import Qt, Signal, QThread, QObject
+from PySide6.QtCore import Qt, Signal, QThread
 from PySide6.QtGui import QFont
 import time
 
 import sys
 from pathlib import Path
 
-i2c_lib_path = Path(__file__).parent.parent.parent.parent / "lib" / "i2c"
-sys.path.insert(0, str(i2c_lib_path))
-
-from i2c_interface_x64 import I2CInterface
-from Bes_I2CIO_Interface import I2CSpeedMode, I2CWidthFlag
+from lib.i2c.i2c_interface_x64 import I2CInterface
 
 from log_config import get_logger
 from debug_config import DEBUG_MOCK
@@ -38,34 +34,9 @@ from instruments.mock.mock_instruments import MockChamber, MockI2C, MockN6705C
 from instruments.chambers import TemperatureStabilizer
 from ui.theme import Colors, FontSizes, Radius, Spacing, FONT_MONO
 from ui.styles import get_page_base_qss
+from core.pmu_test.gpadc import TestWorker as _TestWorker, compute_reg_stats, compute_calibration
 
 logger = get_logger(__name__)
-
-
-class _TestWorker(QObject):
-    finished = Signal(object)
-    error = Signal(str)
-    log = Signal(str)
-    progress = Signal(int)
-
-    def __init__(self, fn, kwargs):
-        super().__init__()
-        self._fn = fn
-        self._kwargs = kwargs
-        self._stop_requested = False
-
-    def request_stop(self):
-        self._stop_requested = True
-
-    def is_stop_requested(self):
-        return self._stop_requested
-
-    def run(self):
-        try:
-            result = self._fn(stop_check=self.is_stop_requested, **self._kwargs)
-            self.finished.emit(result)
-        except Exception as e:
-            self.error.emit(str(e))
 
 
 class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin, QWidget):
@@ -1406,24 +1377,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             if progress_callback:
                 progress_callback(int((i + 1) * 100 / get_reg_cnt))
 
-        # 排序用于统计
-        sorted_data = sorted(raw_data)
-
-        reg_min = sorted_data[0]
-        reg_max = sorted_data[-1]
-
-        # Trimmed Mean（去掉5%极值）
-        trim = max(1, int(len(sorted_data) * 0.05))
-        trimmed = sorted_data[trim:-trim] if len(sorted_data) > 2 * trim else sorted_data
-
-        avg = sum(trimmed) / len(trimmed)
-
-        # print(f"{get_reg_cnt} counts: avg={avg:.3f}; max={reg_max}; min={reg_min}")
-
-        if return_raw:
-            return avg, reg_max, reg_min, raw_data
-        else:
-            return avg, reg_max, reg_min
+        return compute_reg_stats(raw_data, return_raw=return_raw)
 
     def gpadc_force_voltage_test(
         self,
@@ -1509,20 +1463,10 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         adc_min      = result["min"]
         adc_max      = result["max"]
 
-        n        = len(adc_raw_data)
-        idx_low  = n // 4
-        idx_high = (3 * n) // 4
-
-        v_low,  m_low  = adc_raw_data[idx_low],  adc_mean[idx_low]
-        v_high, m_high = adc_raw_data[idx_high], adc_mean[idx_high]
-        k = (m_high - m_low) / (v_high - v_low)
-        b = m_low - k * v_low
+        k, b, mean_cali, adc_min_cali, adc_max_cali, v_low, m_low, v_high, m_high = \
+            compute_calibration(adc_raw_data, adc_mean, adc_min, adc_max)
 
         self._append_log(f"[INFO] Calibration: k={k:.6f} (LSB/V), b={b:.6f} (LSB)")
-
-        mean_cali    = [(adc - b) / k for adc in adc_mean]
-        adc_min_cali = [(adc - b) / k for adc in adc_min]
-        adc_max_cali = [(adc - b) / k for adc in adc_max]
 
         self._append_log(
             'Voltage,RawMean,mean_cali,Δmean(mV),RawMin,RawMax,min_cali,max_cali,Δmin(mV),Δmax(mV)'
