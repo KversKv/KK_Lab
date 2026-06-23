@@ -166,10 +166,15 @@ core/
 │           ├── instrument.py # 仪器类：query（low）/disconnect（medium）/set_output（critical 默认禁）
 │           └── test.py      # 测试类：start/pause（high+确认）/stop（high）经 custom_test runner
 ├── controllers/             # 控制器子包 (预留，后续业务控制器)
-└── vmin_hunter/             # VminHunter 探底测试编排内核（与 UI/仪器无关）
-    ├── __init__.py          # 导出判活器 / 策略 / 睡眠 Vmin 引擎
-    ├── alive_checker.py     # DUT 判活器：可插拔策略（默认 sleep=0/1 翻转 + 崩溃关键字 + 超时）
-    └── sleep_vmin_engine.py # 外供电睡眠 Vmin 探底引擎（QThread 编排 + EngineHooks 注入硬件动作）
+├── vmin_hunter/             # VminHunter 探底测试编排内核（与 UI/仪器无关）
+│   ├── __init__.py          # 导出判活器 / 策略 / 睡眠 Vmin 引擎
+│   ├── alive_checker.py     # DUT 判活器：可插拔策略（默认 sleep=0/1 翻转 + 崩溃关键字 + 超时）
+│   └── sleep_vmin_engine.py # 外供电睡眠 Vmin 探底引擎（QThread 编排 + EngineHooks 注入硬件动作）
+└── n6705c/                  # N6705C 分析仪 Worker 内核（QThread，无 QtWidgets）
+    ├── __init__.py          # 导出 SearchThread / ChannelSyncWorker / ConsumptionTestWorker
+    ├── search_worker.py     # 仪器搜索线程（VISA 资源发现）
+    ├── channel_sync_worker.py # 通道状态周期同步 Worker（电压/电流/模式回读）
+    └── consumption_worker.py # 功耗采集 Worker（按通道定时采样求均值）
 
 ================================================================================
   instruments/ - 仪器驱动层
@@ -299,7 +304,11 @@ ui/
 ├── pages/                   # 功能页面 (按仪器/功能分包)
 │   ├── n6705c_power_analyzer/   # 电源分析仪相关页面
 │   │   ├── n6705c_top.py             # N6705C 连接状态管理 (支持双台仪器 A/B)
-│   │   ├── n6705c_analyser_ui.py     # N6705C 电源分析仪控制界面
+│   │   ├── n6705c_analyser_ui.py     # N6705C 电源分析仪控制界面 (主壳：状态机/连接/通道切换/装配)
+│   │   ├── widgets.py                # 自定义控件与常量 (SlideToggle/ChannelTabBar/颜色 token/样式辅助)
+│   │   ├── analyser_view_setting.py  # 设置面板视图 Mixin (电压/电流输入/模式按钮)
+│   │   ├── analyser_view_batch.py    # 批量操作视图 Mixin (通道选择/批量设值/Auto Set)
+│   │   ├── analyser_view_consumption.py # 功耗测试视图 Mixin (测试配置/结果卡片/采集编排)
 │   │   ├── n6705c_datalog_ui.py      # N6705C 数据记录界面
 │   │   ├── n6705c_analyser_ui_updata_log.txt  # 界面迭代日志
 │   │   └── n6705c_datalog_ui_usage.md         # Datalog 功能使用说明

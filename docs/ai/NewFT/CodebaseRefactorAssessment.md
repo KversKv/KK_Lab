@@ -232,7 +232,7 @@ ui/modules/serialCom_module/
 | **Phase 0** | 立基线 + 测试网 | 全局 | 行数基线快照 + 冒烟脚本 + smoke 测试占位 | 低 | 无 | ✅ | 100% | AI | 2026-06-23 |
 | **Phase 1** | PMU 算法/Worker 下沉 | clk / gpadc / dcdc / isGain / oscp | `core/pmu_test/*` analysis+worker | 中 | Phase 0 | ✅ | 100% | AI | 2026-06-23 |
 | **Phase 2** | 示波器 controller 化 | oscilloscope_base_ui | `core/controllers/oscilloscope_controller.py` | 中 | Phase 0 | ✅ | 100% | AI | 2026-06-23 |
-| **Phase 3** | n6705c_analyser 拆分（P0） | n6705c_analyser_ui | Worker→core，widgets/view 分文件 | 高 | Phase 1 | 🟦 | 60% | AI | 2026-06-23 |
+| **Phase 3** | n6705c_analyser 拆分（P0） | n6705c_analyser_ui | Worker→core，widgets/view 分文件 | 高 | Phase 1 | ✅ | 100% | AI | 2026-06-24 |
 | **Phase 4** | serialCom 巨石拆分（P0） | serialCom_module_frame | mixins/ + widgets/ + 脚本引擎下沉 core | 高 | Phase 0 | ⬜ | 0% | — | — |
 | **Phase 5** | consumption_test 收尾 | consumption_test | `core/consumption_test/consumption_controller.py` | 中 | Phase 3, Phase 4 | ⬜ | 0% | — | — |
 | **Phase 6** | 样式 token 统一 | serialCom_*_style / theme | 合并皮肤为 token + 去重 | 中 | Phase 4 | ⬜ | 0% | — | — |
@@ -333,11 +333,11 @@ ui/modules/serialCom_module/
 | # | 任务 | 状态 | 备注 |
 |---|---|---|---|
 | 3-1 | 三个 Worker 下沉 `core/n6705c/` | ✅ | sync/consumption/search 三 Worker 已迁 core |
-| 3-2 | 自定义控件抽 `widgets.py` | ⬜ | SlideToggle/ChannelTabBar（后续迭代） |
-| 3-3 | 视图块拆 setting/batch/consumption | ⬜ | Mixin 多继承（后续迭代） |
-| 3-4 | 主壳瘦身 < 2000 行 | 🟦 | 当前 2275 行（原 2389），Worker 已迁出 |
+| 3-2 | 自定义控件抽 `widgets.py` | ✅ | SlideToggle/ChannelTabBar/颜色 token/样式辅助已抽出 |
+| 3-3 | 视图块拆 setting/batch/consumption | ✅ | Mixin 多继承落地（SettingViewMixin/BatchViewMixin/ConsumptionViewMixin） |
+| 3-4 | 主壳瘦身 < 2000 行 | ✅ | 2275 → 1047 行（远低于 2000 目标） |
 | 3-5 | Worker mock 单测 | ✅ | 4 单测绿 |
-| 3-6 | 验收：单/双机+批量+消耗测试正常 | ✅ | 编译+导入+全测绿 |
+| 3-6 | 验收：单/双机+批量+消耗测试正常 | ✅ | 编译+导入+实例化+全测绿 |
 
 | 动作 | 文件 | 内容（对应当前源码块） |
 |---|---|---|
