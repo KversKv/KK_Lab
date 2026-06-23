@@ -2187,35 +2187,39 @@ class N6705CAnalyserUI(QWidget):
         return [ch for dl, ch, cb in self.batch_channel_buttons if dl == dev_label and cb.isChecked()]
 
     def _on_batch_measure(self):
-        for label, dev in self.devices.items():
-            if not dev["is_connected"] or not dev["n6705c"]:
-                continue
-            channels = self._get_selected_batch_channels(label)
-            for ch in channels:
-                try:
-                    dev["n6705c"].set_mode(ch, "VMETer")
-                    dev["n6705c"].channel_on(ch)
-                except Exception as e:
-                    logger.error("[%s] CH%d VMeter failed: %s", label, ch, e)
+        with self._state_poller.writing():
+            for label, dev in self.devices.items():
+                if not dev["is_connected"] or not dev["n6705c"]:
+                    continue
+                channels = self._get_selected_batch_channels(label)
+                for ch in channels:
+                    try:
+                        dev["n6705c"].set_mode(ch, "VMETer")
+                        dev["n6705c"].channel_on(ch)
+                    except Exception as e:
+                        logger.error("[%s] CH%d VMeter failed: %s", label, ch, e)
+        self._start_channel_sync()
 
     def _on_batch_set(self):
-        for label, dev in self.devices.items():
-            if not dev["is_connected"] or not dev["n6705c"]:
-                continue
-            channels = self._get_selected_batch_channels(label)
-            if label not in self.batch_voltage_inputs:
-                continue
-            voltages = [float(inp.text()) for inp in self.batch_voltage_inputs[label]]
-            currents = [float(inp.text()) for inp in self.batch_current_inputs[label]]
-            for ch in channels:
-                try:
-                    idx = ch - 1
-                    dev["n6705c"].set_mode(ch, "PS2Q")
-                    dev["n6705c"].set_voltage(ch, voltages[idx])
-                    dev["n6705c"].set_current_limit(ch, currents[idx])
-                    dev["n6705c"].channel_on(ch)
-                except Exception as e:
-                    logger.error("[%s] CH%d Set failed: %s", label, ch, e)
+        with self._state_poller.writing():
+            for label, dev in self.devices.items():
+                if not dev["is_connected"] or not dev["n6705c"]:
+                    continue
+                channels = self._get_selected_batch_channels(label)
+                if label not in self.batch_voltage_inputs:
+                    continue
+                voltages = [float(inp.text()) for inp in self.batch_voltage_inputs[label]]
+                currents = [float(inp.text()) for inp in self.batch_current_inputs[label]]
+                for ch in channels:
+                    try:
+                        idx = ch - 1
+                        dev["n6705c"].set_mode(ch, "PS2Q")
+                        dev["n6705c"].set_voltage(ch, voltages[idx])
+                        dev["n6705c"].set_current_limit(ch, currents[idx])
+                        dev["n6705c"].channel_on(ch)
+                    except Exception as e:
+                        logger.error("[%s] CH%d Set failed: %s", label, ch, e)
+        self._start_channel_sync()
 
     def _on_batch_auto_20mv(self):
         self._on_batch_auto_with_offset(0.02)
@@ -2237,42 +2241,46 @@ class N6705CAnalyserUI(QWidget):
         return best
 
     def _on_batch_auto_set(self):
-        for label, dev in self.devices.items():
-            if not dev["is_connected"] or not dev["n6705c"]:
-                continue
-            channels = self._get_selected_batch_channels(label)
-            for ch in channels:
-                try:
-                    dev["n6705c"].set_mode(ch, "VMETer")
-                    v = float(dev["n6705c"].measure_voltage(ch))
-                    new_v = self._align_voltage(v)
-                    dev["n6705c"].set_mode(ch, "PS2Q")
-                    dev["n6705c"].set_voltage(ch, new_v)
-                    dev["n6705c"].set_current_limit(ch, 0.02)
-                    dev["n6705c"].channel_on(ch)
-                    final_limit = 0.07 if new_v < 1.0 else 0.15
-                    dev["n6705c"].set_current_limit(ch, final_limit)
-                except Exception as e:
-                    logger.error("[%s] CH%d Auto Set failed: %s", label, ch, e)
+        with self._state_poller.writing():
+            for label, dev in self.devices.items():
+                if not dev["is_connected"] or not dev["n6705c"]:
+                    continue
+                channels = self._get_selected_batch_channels(label)
+                for ch in channels:
+                    try:
+                        dev["n6705c"].set_mode(ch, "VMETer")
+                        v = float(dev["n6705c"].measure_voltage(ch))
+                        new_v = self._align_voltage(v)
+                        dev["n6705c"].set_mode(ch, "PS2Q")
+                        dev["n6705c"].set_voltage(ch, new_v)
+                        dev["n6705c"].set_current_limit(ch, 0.02)
+                        dev["n6705c"].channel_on(ch)
+                        final_limit = 0.07 if new_v < 1.0 else 0.15
+                        dev["n6705c"].set_current_limit(ch, final_limit)
+                    except Exception as e:
+                        logger.error("[%s] CH%d Auto Set failed: %s", label, ch, e)
+        self._start_channel_sync()
 
     def _on_batch_auto_with_offset(self, offset):
-        for label, dev in self.devices.items():
-            if not dev["is_connected"] or not dev["n6705c"]:
-                continue
-            channels = self._get_selected_batch_channels(label)
-            for ch in channels:
-                try:
-                    dev["n6705c"].set_mode(ch, "VMETer")
-                    v = float(dev["n6705c"].measure_voltage(ch))
-                    new_v = v + offset
-                    dev["n6705c"].set_mode(ch, "PS2Q")
-                    dev["n6705c"].set_voltage(ch, new_v)
-                    dev["n6705c"].set_current_limit(ch, 0.02)
-                    dev["n6705c"].channel_on(ch)
-                    final_limit = 0.07 if new_v < 1.0 else 0.15
-                    dev["n6705c"].set_current_limit(ch, final_limit)
-                except Exception as e:
-                    logger.error("[%s] CH%d Auto failed: %s", label, ch, e)
+        with self._state_poller.writing():
+            for label, dev in self.devices.items():
+                if not dev["is_connected"] or not dev["n6705c"]:
+                    continue
+                channels = self._get_selected_batch_channels(label)
+                for ch in channels:
+                    try:
+                        dev["n6705c"].set_mode(ch, "VMETer")
+                        v = float(dev["n6705c"].measure_voltage(ch))
+                        new_v = v + offset
+                        dev["n6705c"].set_mode(ch, "PS2Q")
+                        dev["n6705c"].set_voltage(ch, new_v)
+                        dev["n6705c"].set_current_limit(ch, 0.02)
+                        dev["n6705c"].channel_on(ch)
+                        final_limit = 0.07 if new_v < 1.0 else 0.15
+                        dev["n6705c"].set_current_limit(ch, final_limit)
+                    except Exception as e:
+                        logger.error("[%s] CH%d Auto failed: %s", label, ch, e)
+        self._start_channel_sync()
 
     def _ct_start_test(self):
         if self.is_testing:
