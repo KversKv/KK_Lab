@@ -6,6 +6,7 @@ from instruments.chambers.vt6002_chamber import VT6002
 from instruments.chambers.wt2040_chamber import WT2040
 from instruments.frequencyCounter.keysight_53230A import Keysight53230A
 from instruments.MCU_IO.YD_RP2040 import PicoGPIO
+from instruments.MCU_IO.ch9114f import CH9114F
 from instruments.base.visa_instrument import VisaInstrument
 from log_config import get_logger
 
@@ -28,6 +29,9 @@ _INSTRUMENT_CREATORS = {
         kw.get("port", kw.get("resource", "")),
         kw.get("baudrate", kw.get("baud", 921600)),
         kw.get("timeout", 0.5),
+    ),
+    "ch9114f": lambda **kw: CH9114F(
+        kw.get("port", kw.get("resource", "auto")),
     ),
 }
 
@@ -89,6 +93,11 @@ def create_frequency_counter(counter_type: str, resource: str):
 def create_mcu_io(mcu_type: str = "yd_rp2040", port: str = "", baudrate: int = 921600):
     from debug_config import DEBUG_MOCK
     key = str(mcu_type).strip().lower()
+    if key in ("ch9114f", "ch9114"):
+        if DEBUG_MOCK:
+            from instruments.mock.mock_instruments import MockCH9114F
+            return MockCH9114F(port=port or "MOCK")
+        return create_instrument("ch9114f", port=port or "auto")
     if DEBUG_MOCK:
         from instruments.mock.mock_instruments import MockPicoGPIO
         return MockPicoGPIO(port=port, baudrate=baudrate)

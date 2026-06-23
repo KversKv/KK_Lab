@@ -1,6 +1,7 @@
 import math
 import random
 import time
+from contextlib import contextmanager
 
 
 class MockInstr:
@@ -341,6 +342,164 @@ class MockPicoGPIO:
     def soft_reset(self):
         self._pin_values.clear()
         self._pin_modes.clear()
+
+
+class MockCH9114F:
+    DIR_INPUT = 0
+    DIR_OUTPUT = 1
+
+    def __init__(self, port="MOCK"):
+        self.port = port
+        self._connected = False
+        self._gpio_count = 16
+        self._pin_values = {}
+        self._pin_dirs = {}
+        self._pin_func = {}
+
+    def connect(self):
+        self._connected = True
+        return True
+
+    def disconnect(self):
+        self._connected = False
+
+    def close(self):
+        self.disconnect()
+
+    def is_connected(self):
+        return self._connected
+
+    def identify(self):
+        return f"Mock CH9114F GPIO ({self.port}, pins={self._gpio_count})"
+
+    @property
+    def gpio_count(self):
+        return self._gpio_count
+
+    def config(self, pin, direction=DIR_OUTPUT, gpio_func=True):
+        pin = int(pin)
+        self._pin_dirs[pin] = direction
+        self._pin_func[pin] = bool(gpio_func)
+
+    def set_output(self, pin):
+        self.config(pin, direction=self.DIR_OUTPUT, gpio_func=True)
+
+    def set_input(self, pin, gpio_func=True):
+        self.config(pin, direction=self.DIR_INPUT, gpio_func=gpio_func)
+
+    def out(self, pin, value):
+        pin = int(pin)
+        self._pin_dirs[pin] = self.DIR_OUTPUT
+        self._pin_values[pin] = 1 if int(value) else 0
+
+    def high(self, pin):
+        self.out(pin, 1)
+
+    def low(self, pin):
+        self.out(pin, 0)
+
+    def toggle(self, pin):
+        self.out(pin, 0 if self._pin_values.get(int(pin), 0) else 1)
+
+    def read(self, pin):
+        return self._pin_values.get(int(pin), 0)
+
+    def read_all(self):
+        value = 0
+        for pin, level in self._pin_values.items():
+            if level:
+                value |= (1 << pin)
+        return value
+
+    def get_config(self, pin):
+        pin = int(pin)
+        return {
+            "gpio_func": self._pin_func.get(pin, True),
+            "direction": self._pin_dirs.get(pin, self.DIR_INPUT),
+            "level": self._pin_values.get(pin, 0),
+        }
+
+    def config_mask(self, enable_mask, func_mask, dir_out_mask):
+        for pin in range(self._gpio_count):
+            if enable_mask & (1 << pin):
+                self._pin_func[pin] = bool(func_mask & (1 << pin))
+                self._pin_dirs[pin] = self.DIR_OUTPUT if dir_out_mask & (1 << pin) else self.DIR_INPUT
+
+    def set_mask(self, enable_mask, data_out_mask):
+        for pin in range(self._gpio_count):
+            if enable_mask & (1 << pin):
+                self._pin_values[pin] = 1 if data_out_mask & (1 << pin) else 0
+
+    def __enter__(self):
+        if not self._connected:
+            self.connect()
+        return self
+
+    def __exit__(self, exc_type, exc_value, exc_tb):
+        self.disconnect()
+        return False
+
+    @contextmanager
+    def _session(self):
+        opened_here = False
+        if not self._connected:
+            self.connect()
+            opened_here = True
+        try:
+            yield self
+        finally:
+            if opened_here:
+                self.disconnect()
+
+    def set_gpio(self, pin, level):
+        with self._session():
+            self.set_output(pin)
+            self.out(pin, 1 if int(level) else 0)
+        return int(bool(level))
+
+    def get_gpio(self, pin):
+        with self._session():
+            return self.read(pin)
+
+    def read_input(self, pin):
+        with self._session():
+            self.set_input(pin)
+            return self.read(pin)
+
+    def toggle_gpio(self, pin):
+        with self._session():
+            self.set_output(pin)
+            new_level = 0 if self.read(pin) else 1
+            self.out(pin, new_level)
+        return new_level
+
+
+def _mock_make_set(pin):
+    def _setter(self, level=1):
+        return self.set_gpio(pin, level)
+    _setter.__name__ = f"setGPIO{pin}"
+    return _setter
+
+
+def _mock_make_get(pin):
+    def _getter(self):
+        return self.get_gpio(pin)
+    _getter.__name__ = f"getGPIO{pin}"
+    return _getter
+
+
+def _mock_make_toggle(pin):
+    def _toggler(self):
+        return self.toggle_gpio(pin)
+    _toggler.__name__ = f"toggleGPIO{pin}"
+    return _toggler
+
+
+for _mock_pin in range(16):
+    setattr(MockCH9114F, f"setGPIO{_mock_pin}", _mock_make_set(_mock_pin))
+    setattr(MockCH9114F, f"getGPIO{_mock_pin}", _mock_make_get(_mock_pin))
+    setattr(MockCH9114F, f"toggleGPIO{_mock_pin}", _mock_make_toggle(_mock_pin))
+del _mock_pin
 
 
 class MockI2C:

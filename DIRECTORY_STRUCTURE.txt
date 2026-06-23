@@ -211,9 +211,12 @@ instruments/
 │                            # 流程、CALCulate 统计、ROSCillator 参考时基)
 │
 ├── MCU_IO/                  # MCU GPIO 控制器驱动
-│   ├── __init__.py          # 导出 PicoGPIO
-│   └── YD_RP2040.py         # YD RP2040 串口 Raw REPL GPIO 控制驱动
-│                            # (用于 DUT PwrON / RESET 等数字 IO 脉冲控制)
+│   ├── __init__.py          # 导出 PicoGPIO / CH9114F
+│   ├── YD_RP2040.py         # YD RP2040 串口 Raw REPL GPIO 控制驱动
+│   │                        # (用于 DUT PwrON / RESET 等数字 IO 脉冲控制)
+│   ├── ch9114f.py           # CH9114F GPIO 驱动 (ctypes 调用 CH343PT DLL,
+│   │                        # CreateFileW 取串口句柄, GpioInit/Config/Set/Get)
+│   └── CH343SER/            # 沁恒 CH343 系列驱动与 CH343PT DLL/LIB/头文件资料
 │
 ├── adapters/                # 通信适配器驱动 (预留)
 │
@@ -270,6 +273,7 @@ ui/
 │   ├── keysight_53230a_module_frame.py # 53230A 频率计连接区 Mixin (VISA 搜索/连接/断开)
 │   ├── chamber_module_frame.py         # 通用温箱连接区 Mixin (型号选择/串口搜索/连接/断开)
 │   ├── mcu_io_module_frame.py          # MCU IO 连接区 Mixin (串口搜索/连接/GPIO 高低HighZ 输出/读取)
+│   ├── ch9114f_gpio_module_frame.py    # CH9114F GPIO 连接区 Mixin (CH9114F 端口搜索/连接/GPIO 高低输出/读取)
 │   └── serialCom_module/               # 串口通信连接区 Mixin (串口搜索/连接/断开)
 │       ├── serialCom_module_frame.py
 │       ├── serial_session.py           # 独立串口会话对象 (SerialSession)

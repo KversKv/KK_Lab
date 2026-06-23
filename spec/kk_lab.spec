@@ -35,6 +35,10 @@ a = Analysis(
         (os.path.join(PROJECT_ROOT, 'chips'), 'chips'),
         (os.path.join(PROJECT_ROOT, 'helps'), 'helps'),
         (
+            os.path.join(PROJECT_ROOT, 'instruments', 'MCU_IO', 'CH343SER', 'Driver'),
+            os.path.join('instruments', 'MCU_IO', 'CH343SER', 'Driver'),
+        ),
+        (
             os.path.join(PROJECT_ROOT, 'ui', 'pages', 'custom_test', 'templates'),
             os.path.join('ui', 'pages', 'custom_test', 'templates'),
         ),
