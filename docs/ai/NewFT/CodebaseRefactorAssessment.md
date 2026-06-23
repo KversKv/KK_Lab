@@ -233,12 +233,12 @@ ui/modules/serialCom_module/
 | **Phase 1** | PMU 算法/Worker 下沉 | clk / gpadc / dcdc / isGain / oscp | `core/pmu_test/*` analysis+worker | 中 | Phase 0 | ✅ | 100% | AI | 2026-06-23 |
 | **Phase 2** | 示波器 controller 化 | oscilloscope_base_ui | `core/controllers/oscilloscope_controller.py` | 中 | Phase 0 | ✅ | 100% | AI | 2026-06-23 |
 | **Phase 3** | n6705c_analyser 拆分（P0） | n6705c_analyser_ui | Worker→core，widgets/view 分文件 | 高 | Phase 1 | ✅ | 100% | AI | 2026-06-24 |
-| **Phase 4** | serialCom 巨石拆分（P0） | serialCom_module_frame | mixins/ + widgets/ + 脚本引擎下沉 core | 高 | Phase 0 | ⬜ | 0% | — | — |
+| **Phase 4** | serialCom 巨石拆分（P0） | serialCom_module_frame | mixins/ + widgets/ + 脚本引擎下沉 core | 高 | Phase 0 | ✅ | 100% | AI | 2026-06-24 |
 | **Phase 5** | consumption_test 收尾 | consumption_test | `core/consumption_test/consumption_controller.py` | 中 | Phase 3, Phase 4 | ⬜ | 0% | — | — |
 | **Phase 6** | 样式 token 统一 | serialCom_*_style / theme | 合并皮肤为 token + 去重 | 中 | Phase 4 | ⬜ | 0% | — | — |
 | **Phase 7** | 收尾（main_window / ai_panel / datalog） | main_window / ai_assist_panel / n6705c_datalog | 连接中枢抽出、panel 子组件、解析复用 | 中 | Phase 3, Phase 5 | ⬜ | 0% | — | — |
 
-**整体进度**：3.6 / 8 Phase 完成（45%）
+**整体进度**：5 / 8 Phase 完成（62%）
 
 > 注：Phase 1 / Phase 2 与 Phase 4 之间**无强依赖**，可并行；Phase 3、Phase 5 必须串行（consumption 依赖 n6705c 与 serialCom 的稳定接口）。
 
@@ -364,17 +364,17 @@ ui/modules/serialCom_module/
 
 | # | 任务 | 状态 | 备注 |
 |---|---|---|---|
-| 4-1 | 抽 widgets.py（按钮/对话框/搜索 worker） | ⬜ | 低耦合先行 |
-| 4-2 | connection_mixin | ⬜ | — |
-| 4-3 | toolbar_mixin | ⬜ | — |
-| 4-4 | log_panel_mixin | ⬜ | 多面板最复杂 |
-| 4-5 | filter_save_mixin | ⬜ | — |
-| 4-6 | send_mixin | ⬜ | — |
-| 4-7 | chart_mixin | ⬜ | 复用 serial_chart_* |
-| 4-8 | script_mixin + 引擎下沉 core/serial_script | ⬜ | 逻辑与 UI 分离 |
-| 4-9 | 瘦壳多继承装配 + re-export 兼容 | ⬜ | 关键兼容点 |
-| 4-10 | 脚本引擎单测 | ⬜ | — |
-| 4-11 | 验收：连接/日志/过滤/绘图/脚本全回归 | ⬜ | 退出 Phase 门禁 |
+| 4-1 | 抽 widgets.py（按钮/对话框/搜索 worker） | ✅ | `_SerialSearchButton`/`_FramelessChromeDialog`/`_MixinSerialSettingsDialog`/`_SearchSerialPortWorker`/`_update_serial_btn_state` 已抽出 |
+| 4-2 | connection_mixin | ✅ | 端口搜索/连接/断开/自动波特率/读线程/会话管理 |
+| 4-3 | toolbar_mixin | ✅ | 工具栏/侧栏/状态栏/按钮工厂 |
+| 4-4 | log_panel_mixin | ✅ | 多面板/追加/过滤增量/临时日志/NTP（6 方法注入 deferred import） |
+| 4-5 | filter_save_mixin | ✅ | 过滤/手动保存/导出 |
+| 4-6 | send_mixin | ✅ | 发送区/快捷指令/HEX/历史/eventFilter（9 方法注入 deferred import） |
+| 4-7 | chart_mixin | ✅ | 复用 serial_chart_*，配置接入 |
+| 4-8 | script_mixin + 引擎下沉 core/serial_script | ✅ | `ordered_steps`/`match_wait_keyword`/`decide_loop_next` 下沉纯逻辑，mixin 委托 |
+| 4-9 | 瘦壳多继承装配 + re-export 兼容 | ✅ | 7 Mixin 装配，MRO 线性无冲突；5 消费页未改一行即兼容 |
+| 4-10 | 脚本引擎单测 | ✅ | `tests/test_serial_script_engine.py` 9 例全绿 |
+| 4-11 | 验收：连接/日志/过滤/绘图/脚本全回归 | ✅ | namecheck+py_compile+import+装配体 smoke(7 区子控件断言)+引擎单测+smoke_import 全绿 |
 
 | 动作 | 文件 | 内容（对应当前方法簇） |
 |---|---|---|

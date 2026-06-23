@@ -170,11 +170,14 @@ core/
 │   ├── __init__.py          # 导出判活器 / 策略 / 睡眠 Vmin 引擎
 │   ├── alive_checker.py     # DUT 判活器：可插拔策略（默认 sleep=0/1 翻转 + 崩溃关键字 + 超时）
 │   └── sleep_vmin_engine.py # 外供电睡眠 Vmin 探底引擎（QThread 编排 + EngineHooks 注入硬件动作）
-└── n6705c/                  # N6705C 分析仪 Worker 内核（QThread，无 QtWidgets）
-    ├── __init__.py          # 导出 SearchThread / ChannelSyncWorker / ConsumptionTestWorker
-    ├── search_worker.py     # 仪器搜索线程（VISA 资源发现）
-    ├── channel_sync_worker.py # 通道状态周期同步 Worker（电压/电流/模式回读）
-    └── consumption_worker.py # 功耗采集 Worker（按通道定时采样求均值）
+├── n6705c/                  # N6705C 分析仪 Worker 内核（QThread，无 QtWidgets）
+│   ├── __init__.py          # 导出 SearchThread / ChannelSyncWorker / ConsumptionTestWorker
+│   ├── search_worker.py     # 仪器搜索线程（VISA 资源发现）
+│   ├── channel_sync_worker.py # 通道状态周期同步 Worker（电压/电流/模式回读）
+│   └── consumption_worker.py # 功耗采集 Worker（按通道定时采样求均值）
+└── serial_script/           # 串口脚本执行引擎纯逻辑（无 Qt / 无 IO，可单测）
+    ├── __init__.py          # 导出 ordered_steps / match_wait_keyword / decide_loop_next
+    └── script_engine.py     # 步骤排序 / 等待关键字匹配 / 循环与下一步判定
 
 ================================================================================
   instruments/ - 仪器驱动层
@@ -279,8 +282,17 @@ ui/
 │   ├── chamber_module_frame.py         # 通用温箱连接区 Mixin (型号选择/串口搜索/连接/断开)
 │   ├── mcu_io_module_frame.py          # MCU IO 连接区 Mixin (串口搜索/连接/GPIO 高低HighZ 输出/读取)
 │   ├── ch9114f_gpio_module_frame.py    # CH9114F GPIO 连接区 Mixin (CH9114F 端口搜索/连接/GPIO 高低输出/读取)
-│   └── serialCom_module/               # 串口通信连接区 Mixin (串口搜索/连接/断开)
-│       ├── serialCom_module_frame.py
+│   └── serialCom_module/               # 串口通信连接区 Mixin (串口搜索/连接/断开/收发/脚本)
+│       ├── serialCom_module_frame.py   # SerialComMixin 薄壳：装配 7 Mixin + complete_serialComWidget + 持久化
+│       ├── widgets.py                  # 可复用串口 UI 组件 (_SerialSearchButton/_FramelessChromeDialog/...)
+│       ├── mixins/                     # SerialComMixin 职责拆分 (Phase 4 重构，7 个 Mixin)
+│       │   ├── connection_mixin.py     # 端口搜索/连接/断开/自动波特率/读线程/会话管理
+│       │   ├── toolbar_mixin.py        # 工具栏/侧栏/状态栏构建 + 通用按钮工厂
+│       │   ├── log_panel_mixin.py      # 日志区/多面板/追加/过滤增量/临时日志/NTP
+│       │   ├── filter_save_mixin.py    # 过滤/手动保存/导出
+│       │   ├── send_mixin.py           # 发送区/快捷指令/HEX/历史/事件过滤
+│       │   ├── chart_mixin.py          # RX 可视化图表配置接入
+│       │   └── script_mixin.py         # 脚本编辑/运行/循环/超时/导入导出 (委托 core.serial_script)
 │       ├── serial_session.py           # 独立串口会话对象 (SerialSession)
 │       ├── serial_session_manager.py   # 多串口会话管理器 (SerialSessionManager)
 │       ├── serial_chart_model.py       # RX 可视化数据模型 (ChartConfig/Rule/Series/FieldSpec)
@@ -551,6 +563,9 @@ spec/
 
 tests/
 ├── test_auto_baud_detector.py       # SerialCom 自动波特率识别逻辑测试
+├── test_serial_script_engine.py     # core.serial_script 引擎纯逻辑单测 (排序/关键字/循环判定)
+├── test_serialcom_mixin_assembly.py # SerialComMixin 7-Mixin 装配体实例化 + complete_serialComWidget smoke
+├── test_smoke_import.py             # Phase 0 安全网：全量 py_compile + core 导入冒烟
 ├── test_custom_test_phase0.py       # Custom Test Phase 0 序列读取 / 无 UI 执行 smoke
 ├── test_custom_test_phase2.py       # Custom Test Phase 2 capability / resolver / preflight smoke
 ├── test_custom_test_phase3.py       # Custom Test Phase 3 ResultStore / 导出统一 smoke
