@@ -350,16 +350,12 @@ ui/
 │   │   └── chamber_control_ui.py     # 通用温箱控制界面
 │   │
 │   ├── consumption_test/        # 功耗测试页面
-│   │   ├── consumption_test.py       # 功耗测试主界面
+│   │   ├── consumption_test.py       # 功耗测试主界面 (委托 controller + mixin)
 │   │   ├── consumption_test_wrapper.py # 功耗测试封装层 (对外统一入口)
 │   │   ├── high_low_temp_test_ui.py  # 高低温联动功耗测试界面
-│   │   └── consumption_test_workers/ # 后台 Worker 线程 (QThread)
-│   │       ├── common.py             # Worker 通用工具 / 基类
-│   │       ├── consumption_worker.py # 功耗采集 Worker
-│   │       ├── auto_test_worker.py   # 自动测试 Worker
-│   │       ├── chip_check_worker.py  # 芯片检测 Worker
-│   │       ├── download_worker.py    # 固件下载 Worker
-│   │       └── force_worker.py       # Force (强制写入/激励) Worker
+│   │   ├── widgets.py                # 专属控件 (DownloadModeToggle/ControlMethodToggle/PolarityToggle)
+│   │   ├── view_config.py            # 通道配置面板视图 mixin
+│   │   └── view_results.py           # 结果卡片视图 mixin
 │   │
 │   ├── vmin_hunter/             # VminHunter 最低工作电压探底页面
 │   │   └── vmin_hunter_ui.py         # Vmin 探底主界面 (连接 / Test Config / Channel Config / 结果表)

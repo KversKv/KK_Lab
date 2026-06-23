@@ -47,16 +47,20 @@ from log_config import get_logger
 from ui.theme import Colors, FontSizes, Radius, Spacing, FONT_FAMILY, FONT_MONO
 from ui.styles import get_page_base_qss, SCROLLBAR_STYLE
 
-from ui.pages.consumption_test.consumption_test_workers import (
+from core.consumption_test.workers import (
     CURRENT_UNIT,
     _UNIT_CONFIG,
     _format_current_unified,
-    _DownloadWorker,
     _ChipCheckWorker,
     _ConsumptionTestForceHighWorker,
     _ConsumptionTestForceWorker,
-    _AutoTestWorker,
 )
+from ui.pages.consumption_test.widgets import (
+    DownloadModeToggle, ControlMethodToggle, PolarityToggle,
+)
+from ui.pages.consumption_test.view_config import ConsumptionTestViewConfigMixin
+from ui.pages.consumption_test.view_results import ConsumptionTestViewResultsMixin
+from core.consumption_test.consumption_controller import ConsumptionController
 
 logger = get_logger(__name__)
 
@@ -115,353 +119,7 @@ _MAIN_CHIP_CONFIGS_DIR = os.path.join(
 from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
 
 
-class DownloadModeToggle(QWidget):
-    toggled = Signal(str)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setFixedHeight(32)
-        self._value = "FLASH"
-        self._anim_progress = 0.0
-
-        self._bg_color = QColor("#1A2750")
-        self._knob_color = QColor("#243760")
-        self._text_active = QColor("#F3F6FF")
-        self._text_inactive = QColor("#5F77AE")
-        self._border_color = QColor("#22376A")
-
-        self._anim = QPropertyAnimation(self, b"animProgress")
-        self._anim.setDuration(180)
-        self._anim.setEasingCurve(QEasingCurve.InOutCubic)
-
-        self.setCursor(Qt.PointingHandCursor)
-
-    def _get_anim_progress(self):
-        return self._anim_progress
-
-    def _set_anim_progress(self, val):
-        self._anim_progress = val
-        self.update()
-
-    animProgress = Property(float, _get_anim_progress, _set_anim_progress)
-
-    def value(self):
-        return self._value
-
-    def setValue(self, val):
-        val = val.upper()
-        if val not in ("FLASH", "RAMRUN"):
-            return
-        if val == self._value:
-            return
-        self._value = val
-        target = 0.0 if val == "FLASH" else 1.0
-        self._anim.stop()
-        self._anim.setStartValue(self._anim_progress)
-        self._anim.setEndValue(target)
-        self._anim.start()
-        self.toggled.emit(self._value)
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            new_val = "RAMRUN" if self._value == "FLASH" else "FLASH"
-            self.setValue(new_val)
-        super().mousePressEvent(event)
-
-    def paintEvent(self, event):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-
-        w, h = self.width(), self.height()
-        radius = h / 2
-
-        p.setPen(QPen(self._border_color, 1))
-        p.setBrush(self._bg_color)
-        p.drawRoundedRect(QRect(0, 0, w, h), radius, radius)
-
-        knob_margin = 3
-        knob_h = h - knob_margin * 2
-        knob_w = w / 2 - knob_margin
-        knob_x = knob_margin + self._anim_progress * (w / 2)
-        knob_y = knob_margin
-
-        p.setPen(Qt.NoPen)
-        p.setBrush(self._knob_color)
-        p.drawRoundedRect(QRect(int(knob_x), int(knob_y), int(knob_w), int(knob_h)),
-                          knob_h / 2, knob_h / 2)
-
-        font = p.font()
-        font.setWeight(QFont.Bold)
-        font.setPointSize(9)
-        p.setFont(font)
-
-        left_rect = QRect(0, 0, w // 2, h)
-        right_rect = QRect(w // 2, 0, w // 2, h)
-
-        p.setPen(self._text_active if self._anim_progress < 0.5 else self._text_inactive)
-        p.drawText(left_rect, Qt.AlignCenter, "Flash")
-
-        p.setPen(self._text_active if self._anim_progress >= 0.5 else self._text_inactive)
-        p.drawText(right_rect, Qt.AlignCenter, "RAMRUN")
-
-        p.end()
-
-    def sizeHint(self):
-        return QSize(160, 32)
-
-
-class ControlMethodToggle(QWidget):
-    toggled = Signal(str)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setFixedHeight(32)
-        self._value = "N6705C"
-        self._anim_progress = 0.0
-
-        self._bg_color = QColor("#1A2750")
-        self._knob_color = QColor("#243760")
-        self._text_active = QColor("#F3F6FF")
-        self._text_inactive = QColor("#5F77AE")
-        self._border_color = QColor("#22376A")
-
-        self._anim = QPropertyAnimation(self, b"animProgress")
-        self._anim.setDuration(180)
-        self._anim.setEasingCurve(QEasingCurve.InOutCubic)
-
-        self.setCursor(Qt.PointingHandCursor)
-
-    def _get_anim_progress(self):
-        return self._anim_progress
-
-    def _set_anim_progress(self, val):
-        self._anim_progress = val
-        self.update()
-
-    animProgress = Property(float, _get_anim_progress, _set_anim_progress)
-
-    def value(self):
-        return self._value
-
-    def setValue(self, val):
-        if val not in ("N6705C", "MCU"):
-            return
-        if val == self._value:
-            return
-        self._value = val
-        target = 0.0 if val == "N6705C" else 1.0
-        self._anim.stop()
-        self._anim.setStartValue(self._anim_progress)
-        self._anim.setEndValue(target)
-        self._anim.start()
-        self.toggled.emit(self._value)
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            new_val = "MCU" if self._value == "N6705C" else "N6705C"
-            self.setValue(new_val)
-        super().mousePressEvent(event)
-
-    def paintEvent(self, event):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-
-        w, h = self.width(), self.height()
-        radius = h / 2
-
-        p.setPen(QPen(self._border_color, 1))
-        p.setBrush(self._bg_color)
-        p.drawRoundedRect(QRect(0, 0, w, h), radius, radius)
-
-        knob_margin = 3
-        knob_h = h - knob_margin * 2
-        knob_w = w / 2 - knob_margin
-        knob_x = knob_margin + self._anim_progress * (w / 2)
-        knob_y = knob_margin
-
-        p.setPen(Qt.NoPen)
-        p.setBrush(self._knob_color)
-        p.drawRoundedRect(QRect(int(knob_x), int(knob_y), int(knob_w), int(knob_h)),
-                          knob_h / 2, knob_h / 2)
-
-        font = p.font()
-        font.setWeight(QFont.Bold)
-        font.setPointSize(9)
-        p.setFont(font)
-
-        left_rect = QRect(0, 0, w // 2, h)
-        right_rect = QRect(w // 2, 0, w // 2, h)
-
-        p.setPen(self._text_active if self._anim_progress < 0.5 else self._text_inactive)
-        p.drawText(left_rect, Qt.AlignCenter, "N6705C")
-
-        p.setPen(self._text_active if self._anim_progress >= 0.5 else self._text_inactive)
-        p.drawText(right_rect, Qt.AlignCenter, "MCU")
-
-        p.end()
-
-    def sizeHint(self):
-        return QSize(160, 32)
-
-
-_POLARITY_OPTIONS = [
-    {"key": "rising", "label": "Rising Edge", "svg": os.path.join(_PAGE_SVGS_DIR, "polarity_rising.svg")},
-    {"key": "falling", "label": "Falling Edge", "svg": os.path.join(_PAGE_SVGS_DIR, "polarity_falling.svg")},
-]
-
-
-class PolarityToggle(QWidget):
-    polarity_changed = Signal(str)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._options = _POLARITY_OPTIONS
-        self._index = 0
-        self._anim_progress = 0.0
-        self._n = len(self._options)
-
-        self.setFixedHeight(28)
-        self.setFixedWidth(self._n * 32)
-        self.setCursor(Qt.PointingHandCursor)
-
-        self._bg_color = QColor("#1A2750")
-        self._knob_color = QColor("#243760")
-        self._icon_active_color = QColor("#F3F6FF")
-        self._icon_inactive_color = QColor("#5F77AE")
-        self._border_color = QColor("#22376A")
-
-        self._anim = QPropertyAnimation(self, b"animProgress")
-        self._anim.setDuration(180)
-        self._anim.setEasingCurve(QEasingCurve.InOutCubic)
-
-        self._icon_cache = {}
-
-    def _get_anim_progress(self):
-        return self._anim_progress
-
-    def _set_anim_progress(self, val):
-        self._anim_progress = val
-        self.update()
-
-    animProgress = Property(float, _get_anim_progress, _set_anim_progress)
-
-    def _render_icon(self, svg_path, color, size=16):
-        cache_key = (svg_path, color.name(), size)
-        if cache_key in self._icon_cache:
-            return self._icon_cache[cache_key]
-        renderer = QSvgRenderer(svg_path)
-        pixmap = QPixmap(size, size)
-        pixmap.fill(Qt.transparent)
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setRenderHint(QPainter.SmoothPixmapTransform)
-        renderer.render(painter, QRectF(0, 0, size, size))
-        painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
-        painter.fillRect(pixmap.rect(), color)
-        painter.end()
-        self._icon_cache[cache_key] = pixmap
-        return pixmap
-
-    def value(self):
-        return self._options[self._index]["key"]
-
-    def setValue(self, key):
-        for i, opt in enumerate(self._options):
-            if opt["key"] == key:
-                if i == self._index:
-                    return
-                self._index = i
-                target = float(i)
-                self._anim.stop()
-                self._anim.setStartValue(self._anim_progress)
-                self._anim.setEndValue(target)
-                self._anim.start()
-                self.polarity_changed.emit(key)
-                return
-
-    def mousePressEvent(self, event):
-        if not self.isEnabled():
-            super().mousePressEvent(event)
-            return
-        if event.button() == Qt.LeftButton:
-            seg_w = self.width() / self._n
-            clicked_idx = int(event.position().x() / seg_w)
-            clicked_idx = max(0, min(clicked_idx, self._n - 1))
-            if clicked_idx != self._index:
-                self._index = clicked_idx
-                target = float(clicked_idx)
-                self._anim.stop()
-                self._anim.setStartValue(self._anim_progress)
-                self._anim.setEndValue(target)
-                self._anim.start()
-                self.polarity_changed.emit(self._options[self._index]["key"])
-        super().mousePressEvent(event)
-
-    def paintEvent(self, event):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        if not self.isEnabled():
-            p.setOpacity(0.4)
-
-        w, h = self.width(), self.height()
-        radius = h / 2
-
-        p.setPen(QPen(self._border_color, 1))
-        p.setBrush(self._bg_color)
-        p.drawRoundedRect(QRect(0, 0, w, h), radius, radius)
-
-        margin = 3
-        seg_w = w / self._n
-        knob_w = seg_w - margin
-        knob_h = h - margin * 2
-        knob_x = margin + self._anim_progress * seg_w
-        knob_y = margin
-
-        p.setPen(Qt.NoPen)
-        p.setBrush(self._knob_color)
-        p.drawRoundedRect(QRectF(knob_x, knob_y, knob_w, knob_h),
-                          knob_h / 2, knob_h / 2)
-
-        icon_size = 16
-        for i, opt in enumerate(self._options):
-            cx = seg_w * i + seg_w / 2
-            cy = h / 2
-            dist = abs(self._anim_progress - i)
-            is_active = dist < 0.5
-            color = self._icon_active_color if is_active else self._icon_inactive_color
-            pixmap = self._render_icon(opt["svg"], color, icon_size)
-            ix = int(cx - icon_size / 2)
-            iy = int(cy - icon_size / 2)
-            p.drawPixmap(ix, iy, pixmap)
-
-        p.end()
-
-    def sizeHint(self):
-        return QSize(self._n * 32, 28)
-
-    def toolTip(self):
-        return self._options[self._index]["label"]
-
-    def changeEvent(self, event):
-        if event.type() == event.Type.EnabledChange:
-            self.setCursor(Qt.PointingHandCursor if self.isEnabled() else Qt.ArrowCursor)
-            self.update()
-        super().changeEvent(event)
-
-    def event(self, ev):
-        if ev.type() == ev.Type.ToolTip:
-            from PySide6.QtWidgets import QToolTip
-            seg_w = self.width() / self._n
-            x = ev.pos().x()
-            idx = int(x / seg_w)
-            idx = max(0, min(idx, self._n - 1))
-            QToolTip.showText(ev.globalPos(), self._options[idx]["label"], self)
-            return True
-        return super().event(ev)
-
-
-
-class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
+class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTestViewResultsMixin, N6705CConnectionMixin, SerialComMixin):
     connection_status_changed = Signal(bool)
     serial_connection_changed = Signal(bool)
     serial_data_received = Signal(bytes)
@@ -548,6 +206,21 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             "MCU": {"poweron": "GPIO0", "reset": "GPIO1"},
         }
         self._current_control_method = "N6705C"
+
+        self._controller = ConsumptionController(parent=self)
+        self._controller.log_message.connect(self.append_log)
+        self._controller.download_started.connect(self._on_ctrl_download_started)
+        self._controller.download_state_changed.connect(self._on_ctrl_download_state_changed)
+        self._controller.download_finished.connect(self._on_ctrl_download_finished)
+        self._controller.download_error.connect(self._on_ctrl_download_error)
+        self._controller.download_cleaned.connect(self._on_ctrl_download_cleaned)
+
+        self._controller.auto_test_channel_result.connect(self._on_force_high_channel_result)
+        self._controller.auto_test_summary.connect(self._on_test_summary)
+        self._controller.auto_test_progress.connect(lambda v: self.auto_test_btn.setProgress(v))
+        self._controller.auto_test_error.connect(self._on_auto_test_error)
+        self._controller.auto_test_finished.connect(self._on_auto_test_finished)
+        self._controller.auto_test_cleaned.connect(self._on_auto_test_thread_cleaned)
 
         self._setup_style()
         self._create_layout()
@@ -1691,718 +1364,6 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
 
         return btn_widget
 
-    def _create_test_config_panel(self):
-        config_frame = QFrame()
-        config_frame.setObjectName("testConfigPanel")
-        config_frame.setStyleSheet("""
-            QFrame#testConfigPanel {
-                background-color: #0a1228;
-                border: 1px solid #1a2d57;
-                border-radius: 12px;
-            }
-        """)
-        config_layout = QVBoxLayout(config_frame)
-        config_layout.setContentsMargins(12, 10, 12, 10)
-        config_layout.setSpacing(8)
-
-        config_header = QHBoxLayout()
-        config_header.setSpacing(6)
-        cfg_icon = QLabel()
-        _wrench_svg = os.path.join(_PAGE_SVGS_DIR, "wrench.svg")
-        if os.path.isfile(_wrench_svg):
-            cfg_icon.setPixmap(_tinted_svg_icon(_wrench_svg, "#c8d6f0", 14).pixmap(14, 14))
-        cfg_icon.setFixedSize(16, 16)
-        cfg_icon.setStyleSheet("background: transparent; border: none;")
-        cfg_title = QLabel("Test Config")
-        cfg_title.setStyleSheet("font-size: 12px; font-weight: 700; color: #ffffff;")
-        config_header.addWidget(cfg_icon)
-        config_header.addWidget(cfg_title)
-        config_header.addStretch()
-        config_layout.addLayout(config_header)
-
-        label_style = "font-size: 11px; color: #7e96bf;"
-        label_width = 72
-
-        grid = QGridLayout()
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(8)
-        grid.setVerticalSpacing(6)
-
-        time_label = QLabel("Test Time (s)")
-        time_label.setStyleSheet(label_style)
-        time_label.setFixedWidth(label_width)
-        self.test_time_input = QLineEdit("10")
-        self.test_time_input.setFixedHeight(24)
-        self.test_time_input.setAlignment(Qt.AlignCenter)
-        self.test_time_input.setStyleSheet("""
-            QLineEdit {
-                background-color: #020816;
-                border: 1px solid #1c2f54;
-                border-radius: 6px;
-                padding: 2px 8px;
-                color: #d7e3ff;
-                font-size: 11px;
-            }
-            QLineEdit:focus {
-                border: 1px solid #5b7cff;
-            }
-        """)
-        grid.addWidget(time_label, 0, 0, Qt.AlignVCenter)
-        grid.addWidget(self.test_time_input, 0, 1, Qt.AlignVCenter)
-
-        method_label = QLabel("Control")
-        method_label.setStyleSheet(label_style)
-        method_label.setFixedWidth(label_width)
-        self.control_method_toggle = ControlMethodToggle()
-        self.control_method_toggle.setFixedWidth(140)
-        method_ctrl_row = QHBoxLayout()
-        method_ctrl_row.setSpacing(0)
-        method_ctrl_row.addWidget(self.control_method_toggle)
-        method_ctrl_row.addStretch()
-        grid.addWidget(method_label, 1, 0, Qt.AlignVCenter)
-        grid.addLayout(method_ctrl_row, 1, 1)
-
-        label_style_sm = "font-size: 10px; color: #7e96bf;"
-
-        mcu_label = QLabel("MCU")
-        mcu_label.setStyleSheet(label_style_sm)
-        mcu_label.setFixedWidth(label_width)
-        mcu_block = QVBoxLayout()
-        mcu_block.setContentsMargins(0, 0, 0, 0)
-        mcu_block.setSpacing(4)
-        mcu_select_row = QHBoxLayout()
-        mcu_select_row.setContentsMargins(0, 0, 0, 0)
-        mcu_select_row.setSpacing(4)
-        mcu_status_row = QHBoxLayout()
-        mcu_status_row.setContentsMargins(0, 0, 0, 0)
-        mcu_status_row.setSpacing(4)
-
-        self.mcu_status_label = QLabel("● Disconnected")
-        self.mcu_status_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.mcu_status_label.setStyleSheet(
-            "color: #8ea6cf; font-size: 10px; font-weight: bold; background: transparent; border: none;"
-        )
-        self.mcu_port_combo = DarkComboBox(bg="#091426", border="#17345f")
-        self.mcu_port_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.mcu_port_combo.setFixedHeight(24)
-        self.mcu_port_combo.setMinimumContentsLength(8)
-        self.mcu_port_combo.setSizeAdjustPolicy(
-            DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
-        )
-        self.mcu_port_combo.addItem("Select MCU COM...")
-        font = self.mcu_port_combo.font()
-        font.setPixelSize(11)
-        self.mcu_port_combo.setFont(font)
-        self.mcu_search_btn = SpinningSearchButton(parent=config_frame)
-        self.mcu_search_btn.setFixedSize(24, 24)
-        self.mcu_connect_btn = QPushButton("Connect")
-        self.mcu_connect_btn.setFixedHeight(24)
-        self.mcu_connect_btn.setFixedWidth(88)
-        self.mcu_connect_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #053b38;
-                border: 1px solid #08c9a5;
-                border-radius: 6px;
-                color: #10e7bc;
-                font-size: 10px;
-                font-weight: 700;
-                padding: 2px 8px;
-            }
-            QPushButton:hover { background-color: #064744; }
-            QPushButton:disabled {
-                background-color: #0D1734;
-                color: #3a4a6a;
-                border: 1px solid #18264A;
-            }
-        """)
-        mcu_select_row.addWidget(self.mcu_port_combo, 1)
-        mcu_select_row.addWidget(self.mcu_search_btn, 0, Qt.AlignVCenter)
-        mcu_status_row.addWidget(self.mcu_status_label, 1, Qt.AlignVCenter)
-        mcu_status_row.addWidget(self.mcu_connect_btn, 0, Qt.AlignVCenter)
-        mcu_block.addLayout(mcu_select_row)
-        mcu_block.addLayout(mcu_status_row)
-        grid.addWidget(mcu_label, 2, 0, Qt.AlignTop)
-        grid.addLayout(mcu_block, 2, 1)
-
-        poweron_label = QLabel("PwrON")
-        poweron_label.setStyleSheet(label_style_sm)
-        poweron_label.setFixedWidth(label_width)
-        self.poweron_channel_combo = DarkComboBox()
-        self.poweron_channel_combo.setFixedHeight(24)
-        self.poweron_channel_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        font = self.poweron_channel_combo.font()
-        font.setPixelSize(11)
-        self.poweron_channel_combo.setFont(font)
-        for opt in self._get_available_channel_options():
-            self.poweron_channel_combo.addItem(opt)
-        for i in range(self.poweron_channel_combo.count()):
-            if self.poweron_channel_combo.itemText(i) == "B-CH1":
-                self.poweron_channel_combo.setCurrentIndex(i)
-                break
-        self.poweron_polarity_toggle = PolarityToggle()
-        poweron_row = QHBoxLayout()
-        poweron_row.setContentsMargins(0, 0, 0, 0)
-        poweron_row.setSpacing(4)
-        poweron_row.addWidget(self.poweron_channel_combo, 1)
-        poweron_row.addWidget(self.poweron_polarity_toggle, 0, Qt.AlignVCenter)
-
-        reset_label_row = QHBoxLayout()
-        reset_label_row.setContentsMargins(0, 0, 0, 0)
-        reset_label_row.setSpacing(4)
-        reset_label = QLabel("Reset")
-        reset_label.setStyleSheet(label_style_sm)
-        self.reset_enable_cb = QCheckBox()
-        self.reset_enable_cb.setChecked(False)
-        self.reset_enable_cb.setToolTip("Enable Reset channel. When unchecked, RESET step is skipped.")
-        self.reset_enable_cb.setStyleSheet("""
-            QCheckBox {
-                spacing: 0px;
-                background: transparent;
-            }
-        """)
-        reset_label_row.addWidget(reset_label)
-        reset_label_row.addWidget(self.reset_enable_cb)
-        reset_label_row.addStretch()
-        reset_label_container = QWidget()
-        reset_label_container.setFixedWidth(label_width)
-        reset_label_container.setLayout(reset_label_row)
-
-        self.reset_channel_combo = DarkComboBox()
-        self.reset_channel_combo.setFixedHeight(24)
-        self.reset_channel_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        font = self.reset_channel_combo.font()
-        font.setPixelSize(11)
-        self.reset_channel_combo.setFont(font)
-        for opt in self._get_available_channel_options():
-            self.reset_channel_combo.addItem(opt)
-        for i in range(self.reset_channel_combo.count()):
-            if self.reset_channel_combo.itemText(i) == "B-CH2":
-                self.reset_channel_combo.setCurrentIndex(i)
-                break
-        self.reset_polarity_toggle = PolarityToggle()
-        reset_row = QHBoxLayout()
-        reset_row.setContentsMargins(0, 0, 0, 0)
-        reset_row.setSpacing(4)
-        reset_row.addWidget(self.reset_channel_combo, 1)
-        reset_row.addWidget(self.reset_polarity_toggle, 0, Qt.AlignVCenter)
-
-        self._n6705c_poweron_label = poweron_label
-        self._n6705c_reset_label = reset_label
-        self._n6705c_reset_label_container = reset_label_container
-        self._mcu_row_widgets = [
-            mcu_label,
-            self.mcu_status_label,
-            self.mcu_port_combo,
-            self.mcu_search_btn,
-            self.mcu_connect_btn,
-        ]
-        grid.addWidget(poweron_label, 3, 0, Qt.AlignVCenter)
-        grid.addLayout(poweron_row, 3, 1)
-        grid.addWidget(reset_label_container, 4, 0, Qt.AlignVCenter)
-        grid.addLayout(reset_row, 4, 1)
-
-        self.reset_enable_cb.toggled.connect(self._on_reset_enable_toggled)
-        self._on_reset_enable_toggled(self.reset_enable_cb.isChecked())
-
-        config_layout.addLayout(grid)
-
-        self._control_channel_row_widgets = [
-            self._n6705c_poweron_label,
-            self.poweron_channel_combo,
-            self.poweron_polarity_toggle,
-            self._n6705c_reset_label_container,
-            self.reset_channel_combo,
-            self.reset_polarity_toggle,
-        ]
-
-        self.mcu_search_btn.clicked.connect(self._on_mcu_search)
-        self.mcu_connect_btn.clicked.connect(self._on_mcu_connect_or_disconnect)
-        self.control_method_toggle.toggled.connect(self._on_control_method_changed)
-        self._on_control_method_changed(self.control_method_toggle.value())
-
-        return config_frame
-
-    def _on_control_method_changed(self, method):
-        prev_method = getattr(self, "_current_control_method", method)
-        if prev_method != method and getattr(self, "poweron_channel_combo", None) is not None:
-            self._saved_control_channels.setdefault(prev_method, {})["poweron"] = (
-                self.poweron_channel_combo.currentText()
-            )
-        if prev_method != method and getattr(self, "reset_channel_combo", None) is not None:
-            self._saved_control_channels.setdefault(prev_method, {})["reset"] = (
-                self.reset_channel_combo.currentText()
-            )
-        self._current_control_method = method
-
-        if hasattr(self, "_mcu_row_widgets"):
-            for w in self._mcu_row_widgets:
-                w.setVisible(method == "MCU")
-
-        options = self._get_control_channel_options(method)
-        defaults = self._saved_control_channels.get(method, {})
-        self._set_combo_options(
-            self.poweron_channel_combo,
-            options,
-            defaults.get("poweron", "GPIO0" if method == "MCU" else "B-CH1"),
-        )
-        self._set_combo_options(
-            self.reset_channel_combo,
-            options,
-            defaults.get("reset", "GPIO1" if method == "MCU" else "B-CH2"),
-        )
-
-        visible = True
-        if hasattr(self, "_control_channel_row_widgets"):
-            for w in self._control_channel_row_widgets:
-                w.setVisible(visible)
-
-    def _on_reset_enable_toggled(self, checked):
-        if hasattr(self, "reset_channel_combo") and self.reset_channel_combo is not None:
-            self.reset_channel_combo.setEnabled(checked)
-        if hasattr(self, "reset_polarity_toggle") and self.reset_polarity_toggle is not None:
-            self.reset_polarity_toggle.setEnabled(checked)
-
-    def _create_channel_config_section(self):
-        config_frame = QFrame()
-        config_frame.setObjectName("testConfigFrame")
-        config_frame.setStyleSheet("""
-            QFrame#testConfigFrame {
-                background-color: #0a1228;
-                border: 1px solid #1a2d57;
-                border-radius: 12px;
-            }
-        """)
-        config_layout = QVBoxLayout(config_frame)
-        config_layout.setContentsMargins(14, 10, 14, 10)
-        config_layout.setSpacing(8)
-
-        config_header = QHBoxLayout()
-        config_header.setSpacing(8)
-        cfg_icon = QLabel()
-        _settings_svg = os.path.join(_PAGE_SVGS_DIR, "settings.svg")
-        if os.path.isfile(_settings_svg):
-            cfg_icon.setPixmap(_tinted_svg_icon(_settings_svg, "#c8d6f0", 14).pixmap(14, 14))
-        cfg_icon.setFixedSize(16, 16)
-        cfg_icon.setStyleSheet("background: transparent; border: none;")
-        cfg_title = QLabel("Channel Config")
-        cfg_title.setStyleSheet("font-size: 13px; font-weight: 700; color: #ffffff;")
-        config_header.addWidget(cfg_icon)
-        config_header.addWidget(cfg_title)
-        config_header.addStretch()
-        config_layout.addLayout(config_header)
-
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll_area.setFixedHeight(200)
-        scroll_area.setStyleSheet("""
-            QScrollArea {
-                background: transparent;
-                border: none;
-            }
-            QWidget#channelConfigContainer {
-                background: transparent;
-            }
-            QScrollBar:horizontal {
-                background: #0a1228;
-                height: 6px;
-                border: none;
-                border-radius: 3px;
-            }
-            QScrollBar::handle:horizontal {
-                background: #2a3f6e;
-                min-width: 30px;
-                border-radius: 3px;
-            }
-            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
-                width: 0px;
-            }
-        """)
-
-        self._channel_config_container = QWidget()
-        self._channel_config_container.setObjectName("channelConfigContainer")
-        self._channel_config_row = QHBoxLayout(self._channel_config_container)
-        self._channel_config_row.setContentsMargins(0, 0, 0, 0)
-        self._channel_config_row.setSpacing(10)
-        self._channel_config_row.addStretch()
-
-        scroll_area.setWidget(self._channel_config_container)
-        config_layout.addWidget(scroll_area)
-
-        return config_frame
-
-    def _add_channel_config_card(self, name, channel_key, enabled):
-        idx = len(self._channel_configs)
-        config = {"name": name, "channel": channel_key, "enabled": enabled,
-                  "force_vol_enabled": False, "force_vol_value": ""}
-        self._channel_configs.append(config)
-
-        card = QFrame()
-        card_id = f"cfgCard{idx}"
-        card.setObjectName(card_id)
-        card.setStyleSheet(f"""
-            QFrame#{card_id} {{
-                background-color: #0d1b3e;
-                border: 1px solid #1c2f54;
-                border-radius: 8px;
-            }}
-        """)
-        card.setFixedWidth(140)
-        card.setMinimumHeight(100)
-
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(10, 8, 10, 8)
-        card_layout.setSpacing(5)
-
-        top_row = QHBoxLayout()
-        top_row.setSpacing(4)
-
-        enable_cb = QCheckBox("Enable")
-        enable_cb.setChecked(enabled)
-        enable_cb.setStyleSheet("""
-            QCheckBox {
-                color: #ffffff;
-                font-size: 11px;
-                font-weight: 600;
-            }
-        """)
-        top_row.addWidget(enable_cb)
-        top_row.addStretch()
-
-        remove_btn = QPushButton("✕")
-        remove_btn.setFixedSize(20, 20)
-        remove_btn.setStyleSheet("""
-            QPushButton {
-                background: transparent;
-                color: #5a6b8e;
-                border: none;
-                font-size: 13px;
-                font-weight: 700;
-                min-height: 0px;
-                padding: 0px;
-            }
-            QPushButton:hover { color: #ff5a5a; }
-        """)
-        top_row.addWidget(remove_btn)
-        card_layout.addLayout(top_row)
-
-        name_label = QLabel("Name")
-        name_label.setStyleSheet("font-size: 10px; color: #7e96bf;")
-        card_layout.addWidget(name_label)
-
-        name_input = DarkComboBox()
-        name_input.setFixedHeight(26)
-        font = name_input.font()
-        font.setPixelSize(12)
-        name_input.setFont(font)
-        for opt in self.NAME_OPTIONS:
-            name_input.addItem(opt)
-        for i in range(name_input.count()):
-            if name_input.itemText(i) == name:
-                name_input.setCurrentIndex(i)
-                break
-        else:
-            name_input.setEditable(True)
-            name_input.setCurrentText(name)
-            name_input.setEditable(False)
-        card_layout.addWidget(name_input)
-
-        ch_label = QLabel("Channel (N6705C)")
-        ch_label.setStyleSheet("font-size: 10px; color: #7e96bf;")
-        card_layout.addWidget(ch_label)
-
-        channel_combo = DarkComboBox()
-        channel_combo.setFixedHeight(26)
-        font = channel_combo.font()
-        font.setPixelSize(11)
-        channel_combo.setFont(font)
-        options = self._get_available_channel_options()
-        for opt in options:
-            channel_combo.addItem(opt)
-        for i in range(channel_combo.count()):
-            if channel_combo.itemText(i) == channel_key:
-                channel_combo.setCurrentIndex(i)
-                break
-        card_layout.addWidget(channel_combo)
-
-        force_vol_cb = QCheckBox("Force Vol")
-        force_vol_cb.setChecked(False)
-        force_vol_cb.setStyleSheet("""
-            QCheckBox {
-                color: #b0c4e8;
-                font-size: 10px;
-                font-weight: 600;
-            }
-        """)
-        card_layout.addWidget(force_vol_cb)
-
-        force_vol_input = QLineEdit()
-        force_vol_input.setPlaceholderText("V")
-        force_vol_input.setEnabled(False)
-        font = force_vol_input.font()
-        font.setPixelSize(11)
-        force_vol_input.setFont(font)
-        force_vol_input.setMaximumHeight(26)
-        force_vol_input.setStyleSheet("""
-            QLineEdit {
-                background-color: #0a1733;
-                color: #c8d8f8;
-                border: 1.5px solid #27406f;
-                border-radius: 6px;
-                padding: 0px 10px;
-                max-height: 18px;
-            }
-            QLineEdit:disabled {
-                background-color: #060d1f;
-                color: #3a4a6a;
-                border: 1.5px solid #1a2a4a;
-            }
-        """)
-        card_layout.addWidget(force_vol_input)
-
-        stretch_idx = self._channel_config_row.count() - 1
-        self._channel_config_row.insertWidget(stretch_idx, card)
-
-        wdata = {
-            "card": card,
-            "card_id": card_id,
-            "enable_cb": enable_cb,
-            "name_input": name_input,
-            "channel_combo": channel_combo,
-            "remove_btn": remove_btn,
-            "name_label": name_label,
-            "ch_label": ch_label,
-            "force_vol_cb": force_vol_cb,
-            "force_vol_input": force_vol_input,
-            "config_index": idx,
-        }
-        self._channel_config_widgets.append(wdata)
-
-        enable_cb.toggled.connect(lambda checked, i=idx: self._on_config_enable_changed(i, checked))
-        name_input.currentTextChanged.connect(lambda text, i=idx: self._on_config_name_changed(i, text))
-        channel_combo.currentIndexChanged.connect(lambda ci, i=idx: self._on_config_channel_changed(i))
-        remove_btn.clicked.connect(lambda checked=False, i=idx: self._remove_channel_config(i))
-        force_vol_cb.toggled.connect(lambda checked, i=idx: self._on_force_vol_toggled(i, checked))
-        force_vol_input.textChanged.connect(lambda text, i=idx: self._on_force_vol_changed(i, text))
-
-        self._update_card_disabled_state(wdata, enabled)
-        self._refresh_result_cards()
-
-    def _on_config_enable_changed(self, idx, checked):
-        if idx < len(self._channel_configs):
-            self._channel_configs[idx]["enabled"] = checked
-            self._update_card_disabled_state(self._channel_config_widgets[idx], checked)
-            self._refresh_result_cards()
-
-    def _update_card_disabled_state(self, wdata, enabled):
-        wdata["name_input"].setEnabled(enabled)
-        wdata["channel_combo"].setEnabled(enabled)
-        wdata["remove_btn"].setEnabled(enabled)
-        wdata["force_vol_cb"].setEnabled(enabled)
-        if enabled:
-            wdata["force_vol_input"].setEnabled(wdata["force_vol_cb"].isChecked())
-        else:
-            wdata["force_vol_input"].setEnabled(False)
-
-        card = wdata["card"]
-        card_id = wdata["card_id"]
-        if enabled:
-            card.setStyleSheet(f"""
-                QFrame#{card_id} {{
-                    background-color: #0d1b3e;
-                    border: 1px solid #1c2f54;
-                    border-radius: 8px;
-                }}
-            """)
-            wdata["name_label"].setStyleSheet("font-size: 10px; color: #7e96bf;")
-            wdata["ch_label"].setStyleSheet("font-size: 10px; color: #7e96bf;")
-            wdata["remove_btn"].setStyleSheet("""
-                QPushButton {
-                    background: transparent;
-                    color: #5a6b8e;
-                    border: none;
-                    font-size: 13px;
-                    font-weight: 700;
-                    min-height: 0px;
-                    padding: 0px;
-                }
-                QPushButton:hover { color: #ff5a5a; }
-            """)
-        else:
-            card.setStyleSheet(f"""
-                QFrame#{card_id} {{
-                    background-color: #080e1e;
-                    border: 1px solid #131d36;
-                    border-radius: 8px;
-                }}
-            """)
-            wdata["name_label"].setStyleSheet("font-size: 10px; color: #3a4a6a;")
-            wdata["ch_label"].setStyleSheet("font-size: 10px; color: #3a4a6a;")
-            wdata["remove_btn"].setStyleSheet("""
-                QPushButton {
-                    background: transparent;
-                    color: #2a3550;
-                    border: none;
-                    font-size: 13px;
-                    font-weight: 700;
-                    min-height: 0px;
-                    padding: 0px;
-                }
-            """)
-
-    def _on_config_name_changed(self, idx, text):
-        if idx < len(self._channel_configs):
-            self._channel_configs[idx]["name"] = text
-            self._refresh_result_cards()
-
-    def _on_config_channel_changed(self, idx):
-        if idx < len(self._channel_configs):
-            wdata = self._channel_config_widgets[idx]
-            raw = wdata["channel_combo"].currentText()
-            self._channel_configs[idx]["channel"] = raw
-            self._refresh_result_cards()
-
-    def _on_force_vol_toggled(self, idx, checked):
-        if idx < len(self._channel_configs):
-            self._channel_configs[idx]["force_vol_enabled"] = checked
-            wdata = self._channel_config_widgets[idx]
-            wdata["force_vol_input"].setEnabled(checked)
-
-    def _on_force_vol_changed(self, idx, text):
-        if idx < len(self._channel_configs):
-            self._channel_configs[idx]["force_vol_value"] = text
-
-    def _remove_channel_config(self, idx):
-        if idx >= len(self._channel_configs):
-            return
-        wdata = self._channel_config_widgets[idx]
-        wdata["card"].hide()
-        wdata["card"].deleteLater()
-
-        self._channel_configs.pop(idx)
-        self._channel_config_widgets.pop(idx)
-
-        for i, w in enumerate(self._channel_config_widgets):
-            w["config_index"] = i
-            w["enable_cb"].toggled.disconnect()
-            w["name_input"].currentTextChanged.disconnect()
-            w["channel_combo"].currentIndexChanged.disconnect()
-            w["remove_btn"].clicked.disconnect()
-            w["force_vol_cb"].toggled.disconnect()
-            w["force_vol_input"].textChanged.disconnect()
-            w["enable_cb"].toggled.connect(lambda checked, ci=i: self._on_config_enable_changed(ci, checked))
-            w["name_input"].currentTextChanged.connect(lambda text, ci=i: self._on_config_name_changed(ci, text))
-            w["channel_combo"].currentIndexChanged.connect(lambda cii, ci=i: self._on_config_channel_changed(ci))
-            w["remove_btn"].clicked.connect(lambda checked=False, ci=i: self._remove_channel_config(ci))
-            w["force_vol_cb"].toggled.connect(lambda checked, ci=i: self._on_force_vol_toggled(ci, checked))
-            w["force_vol_input"].textChanged.connect(lambda text, ci=i: self._on_force_vol_changed(ci, text))
-
-        self._refresh_result_cards()
-
-    def _refresh_result_cards(self):
-        while self.result_cards_layout.count():
-            item = self.result_cards_layout.takeAt(0)
-            w = item.widget()
-            if w:
-                w.hide()
-                w.deleteLater()
-        self.channel_cards = {}
-        self._vbat_remain_card = None
-
-        vbat_idx = None
-        has_sub_channel = False
-        for i, cfg in enumerate(self._channel_configs):
-            if not cfg["enabled"]:
-                continue
-            if cfg["name"].lower().startswith("vbat"):
-                vbat_idx = i
-            else:
-                has_sub_channel = True
-            colors = self.CHANNEL_COLORS_LIST[i % len(self.CHANNEL_COLORS_LIST)]
-            card = self._create_result_card(i, cfg["name"], cfg["channel"], colors)
-            self.result_cards_layout.addWidget(card, 1)
-
-        if has_sub_channel and vbat_idx is not None:
-            remain_colors = {"accent": "#a0a0a0", "bg": "#121218", "border": "#2a2a36"}
-            remain_card = self._create_result_card(-1, "Vbat_remain", "", remain_colors)
-            self.result_cards_layout.addWidget(remain_card, 1)
-            self._vbat_remain_card = self.channel_cards.pop(-1)
-
-    def _create_result_card(self, idx, name, channel_key, colors):
-        card = QFrame()
-        card_id = f"resultCard{idx}"
-        card.setObjectName(card_id)
-        card.setStyleSheet(f"""
-            QFrame#{card_id} {{
-                background-color: {colors['bg']};
-                border: 1px solid {colors['border']};
-                border-radius: 10px;
-            }}
-        """)
-        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(14, 10, 14, 14)
-        layout.setSpacing(8)
-
-        top_row = QHBoxLayout()
-        top_row.setSpacing(6)
-
-        title_label = QLabel(f"{name}")
-        title_label.setStyleSheet(f"""
-            QLabel {{
-                color: {colors['accent']};
-                font-size: 13px;
-                font-weight: 700;
-                background: transparent;
-            }}
-        """)
-        top_row.addWidget(title_label)
-        top_row.addStretch()
-
-        ch_tag = QLabel(channel_key)
-        ch_tag.setStyleSheet(f"""
-            QLabel {{
-                color: #7e96bf;
-                font-size: 10px;
-                background: transparent;
-            }}
-        """)
-        top_row.addWidget(ch_tag)
-        layout.addLayout(top_row)
-
-        layout.addStretch()
-
-        avg_label = QLabel("AVG CURRENT")
-        avg_label.setAlignment(Qt.AlignCenter)
-        avg_label.setStyleSheet("color: #7e96bf; font-size: 11px; font-weight: 600;")
-        layout.addWidget(avg_label)
-
-        value_label = QLabel("- - -")
-        value_label.setAlignment(Qt.AlignCenter)
-        value_label.setStyleSheet(f"""
-            QLabel {{
-                color: {colors['accent']};
-                font-family: {FONT_MONO};
-                font-size: 18px;
-                font-weight: 700;
-                letter-spacing: 4px;
-            }}
-        """)
-        layout.addWidget(value_label)
-
-        layout.addStretch()
-
-        self.channel_cards[idx] = {
-            "card": card,
-            "value_label": value_label,
-            "name": name,
-            "channel_key": channel_key,
-        }
-
-        return card
-
     def _get_checkmark_path(self, accent_color):
         safe_name = accent_color.replace("#", "").replace(" ", "")
         icons_dir = os.path.join(
@@ -2433,7 +1394,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             self.append_log("[WARNING] No firmware file selected.")
             return
 
-        if self._download_thread is not None and self._download_thread.isRunning():
+        if self._controller.is_download_running():
             logger.warning("Download already in progress")
             self.append_log("[WARNING] Download already in progress.")
             return
@@ -2450,83 +1411,33 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
         mode_str = self.download_mode_toggle.value().lower()
         mode = DownloadMode.FLASH if mode_str == "flash" else DownloadMode.RAMRUN
 
-        logger.info("Downloading firmware to DUT: port=%s, file=%s, mode=%s",
-                     com_port, self.firmware_path, mode.value)
-        self.append_log(f"[DOWNLOAD] Starting download: port={com_port}, file={os.path.basename(self.firmware_path)}, mode={mode.value}")
+        self._controller.start_download(com_port, self.firmware_path, mode)
 
-        chip = detect_chip_from_bin(self.firmware_path)
-        if chip:
-            logger.info("Detected chip model: %s", chip)
-            self.append_log(f"[DOWNLOAD] Detected chip model: {chip}")
-        else:
-            logger.warning("Could not detect chip model from firmware file")
-            self.append_log("[DOWNLOAD] Could not detect chip model from firmware file")
-
-        try:
-            file_size = os.path.getsize(self.firmware_path)
-        except OSError:
-            file_size = 0
+    def _on_ctrl_download_started(self, file_size):
         self.download_btn.setFileSize(file_size)
         self.download_btn.setStateWaiting()
 
-        worker = _DownloadWorker(com_port, self.firmware_path, mode)
-        thread = QThread()
-        worker.moveToThread(thread)
-
-        thread.started.connect(worker.run)
-        worker.state_changed.connect(self._on_download_state_changed)
-        worker.finished.connect(self._on_download_finished)
-        worker.error.connect(self._on_download_error)
-        worker.finished.connect(thread.quit)
-        worker.error.connect(thread.quit)
-        thread.finished.connect(self._on_download_thread_cleaned)
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-
-        self._download_thread = thread
-        self._download_worker = worker
-        thread.start()
-
-    def _on_download_state_changed(self, state_value):
-        logger.info("Download state: %s", state_value)
-        self.append_log(f"[DOWNLOAD] State: {state_value}")
+    def _on_ctrl_download_state_changed(self, state_value):
         if state_value in (DownloadState.WAITING_SYNC.value, DownloadState.SYNCING.value):
             if self.download_btn.state() != ProgressButton.STATE_WAITING:
                 self.download_btn.setStateWaiting()
         elif state_value == DownloadState.PROGRAMMING.value:
             self.download_btn.setStateProgramming()
 
-    def _on_download_finished(self, result: DownloadResult):
+    def _on_ctrl_download_finished(self, result):
         if result.success:
-            logger.info("Download succeeded")
-            self.append_log("[DOWNLOAD] ✅ Download succeeded.")
             self.download_btn.setStateComplete()
         else:
-            logger.error("Download failed: %s", result.error_message)
-            self.append_log(f"[ERROR] Download failed: {result.error_message}")
             self.download_btn.setStateFailed()
 
-    def _on_download_error(self, err_msg):
-        logger.error("Download error: %s", err_msg)
-        self.append_log(f"[ERROR] Download error: {err_msg}")
+    def _on_ctrl_download_error(self, err_msg):
         self.download_btn.setStateFailed()
 
-    def _on_download_thread_cleaned(self):
-        self._download_worker = None
-        self._download_thread = None
+    def _on_ctrl_download_cleaned(self):
+        pass
 
     def _stop_download(self):
-        if self._download_worker is not None:
-            try:
-                from lib.download_tools.download_script import DldTool
-                proc = getattr(self._download_worker, '_dld', None)
-                if proc and hasattr(proc, 'cancel'):
-                    proc.cancel()
-            except Exception:
-                pass
-        if self._download_thread is not None and self._download_thread.isRunning():
-            self._download_thread.quit()
-            self._download_thread.wait(3000)
+        self._controller.stop_download()
         self.download_btn.setStateFailed()
         self.append_log("[DOWNLOAD] Download stopped by user.")
         logger.info("Download stopped by user")
@@ -4162,7 +3073,7 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             f"RESET={reset_desc}"
         )
 
-        worker = _AutoTestWorker(
+        worker_kwargs = dict(
             com_port=com_port,
             firmware_paths=firmware_paths,
             download_mode=download_mode,
@@ -4193,45 +3104,23 @@ class ConsumptionTestUI(QWidget, N6705CConnectionMixin, SerialComMixin):
             ),
             control_method=control_method,
         )
-        thread = QThread()
-        worker.moveToThread(thread)
-
-        thread.started.connect(worker.run)
-        worker.log_message.connect(self.append_log)
-        worker.channel_result.connect(self._on_force_high_channel_result)
-        worker.test_summary.connect(self._on_test_summary)
-        worker.progress.connect(self.auto_test_btn.setProgress)
-        worker.download_state_changed.connect(
-            lambda s: self.append_log(f"[AUTO_TEST] Download state: {s}")
-        )
-        worker.error.connect(self._on_auto_test_error)
-        worker.finished.connect(self._on_auto_test_finished)
-        worker.finished.connect(thread.quit)
-        thread.finished.connect(self._on_auto_test_thread_cleaned)
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-
-        self._auto_test_thread = thread
-        self._auto_test_worker = worker
+        self._controller.start_auto_test(worker_kwargs)
         self.auto_test_btn.setStateProgramming()
         self.auto_test_btn._progress_timer.stop()
-        thread.start()
 
     def _on_auto_test_error(self, err_msg):
-        self.append_log(f"[AUTO_TEST] Error: {err_msg}")
+        pass
 
     def _on_auto_test_finished(self):
         self.is_testing = False
         self.auto_test_btn.setStateComplete()
-        self.append_log("[AUTO_TEST] Auto test completed.")
 
     def _on_auto_test_thread_cleaned(self):
         self._auto_test_worker = None
         self._auto_test_thread = None
 
     def _stop_auto_test(self):
-        if self._auto_test_worker:
-            self._auto_test_worker.stop()
+        self._controller.stop_auto_test()
         self.is_testing = False
         self.auto_test_btn.setStateFailed()
         self.append_log("[AUTO_TEST] Auto test stopped by user.")
