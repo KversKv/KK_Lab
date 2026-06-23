@@ -76,6 +76,9 @@ _EXPORT_ICON = os.path.join(_AI_SVG_DIR, "export.svg")
 _CLOSE_ICON = os.path.join(_AI_SVG_DIR, "close.svg")
 
 _PANEL_STYLE = """
+QFrame#aiAssistPanel, QFrame#aiAssistPanel * {
+    font-family: "Segoe UI", "Microsoft YaHei UI", "Inter", system-ui, sans-serif;
+}
 QFrame#aiAssistPanel {
     background-color: #070709;
     border-left: 1px solid #1e293b;
@@ -116,7 +119,7 @@ QLabel#aiPanelTitle {
     color: #e2e8f0;
     font-size: 14px;
     font-weight: 700;
-    letter-spacing: 0.4px;
+    letter-spacing: 0.6px;
     background: transparent;
     border: none;
 }
@@ -176,6 +179,7 @@ QPlainTextEdit#aiInput {
     border-radius: 0px;
     padding: 2px 2px;
     font-size: 12px;
+    font-weight: 500;
 }
 QPlainTextEdit#aiInput:focus {
     border: none;
@@ -205,7 +209,7 @@ QPushButton#aiAnalyzeBtn {
     background-color: #0e1b33;
     color: #3b82f6;
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 700;
 }
 QPushButton#aiAnalyzeBtn:hover {
     background-color: #14264a;
@@ -223,7 +227,7 @@ QPushButton#aiScriptBtn {
     background-color: #171430;
     color: #818cf8;
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 700;
 }
 QPushButton#aiScriptBtn:hover {
     background-color: #211d44;
@@ -305,8 +309,8 @@ QPushButton#aiQuickBtn {
     border-radius: 8px;
     background-color: #0f172a;
     color: #94a3b8;
-    font-size: 10px;
-    font-weight: 700;
+    font-size: 11px;
+    font-weight: 500;
 }
 QPushButton#aiQuickBtn:hover {
     background-color: #1e293b;
@@ -315,7 +319,7 @@ QPushButton#aiQuickBtn:hover {
 QLabel#aiUsageLabel {
     color: #64748b;
     font-size: 10px;
-    font-weight: 700;
+    font-weight: 600;
     letter-spacing: 0.4px;
     background: transparent;
     border: none;

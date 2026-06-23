@@ -37,6 +37,9 @@ from log_config import get_logger
 logger = get_logger(__name__)
 
 _DIALOG_STYLE = """
+QDialog, QDialog * {
+    font-family: "Segoe UI", "Microsoft YaHei UI", "Inter", system-ui, sans-serif;
+}
 QDialog { background-color: #0e1525; }
 QLabel { color: #c8d4ee; font-size: 12px; background: transparent; border: none; }
 QLineEdit, QSpinBox, QComboBox {
@@ -49,7 +52,7 @@ QComboBox QAbstractItemView {
     background-color: #11182c; color: #dce7ff;
     border: 1px solid #243152; selection-background-color: #1C2D55;
 }
-QCheckBox { color: #c8d4ee; font-size: 12px; }
+QCheckBox { color: #c8d4ee; font-size: 12px; font-weight: 700; }
 QListWidget {
     background-color: #11182c; color: #dce7ff;
     border: 1px solid #243152; border-radius: 6px;
@@ -74,7 +77,7 @@ QPushButton {
 QPushButton:hover { background-color: #1C2D55; border: 1px solid #3A5A9F; }
 QPushButton#aiOkBtn { background-color: #5b3df5; border: 1px solid #6548ff; color: #ffffff; }
 QLabel#aiTestResult { font-size: 11px; }
-QLabel#aiHint { color: #8fa0c4; font-size: 11px; }
+QLabel#aiHint { color: #8fa0c4; font-size: 11px; font-weight: 700; }
 """
 
 

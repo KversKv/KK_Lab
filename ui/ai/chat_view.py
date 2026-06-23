@@ -47,6 +47,7 @@ QLabel#aiBubbleUser {
     border-bottom-right-radius: 2px;
     padding: 12px 16px;
     font-size: 12px;
+    font-weight: 400;
 }
 """
 
@@ -59,6 +60,7 @@ QTextBrowser#aiBubbleAI {
     border-bottom-left-radius: 2px;
     padding: 12px 16px;
     font-size: 12px;
+    font-weight: 400;
 }
 """
 
