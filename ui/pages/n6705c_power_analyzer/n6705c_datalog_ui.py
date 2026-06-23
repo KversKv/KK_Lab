@@ -816,8 +816,13 @@ class _DatalogWorker(QObject):
 class ChannelConfigTabBar(QTabBar):
     NORMAL_MIN_WIDTH = 60
     IMPORT_TAB_WIDTH = 34
-    IMPORT_ICON_SIZE = 20
+    IMPORT_ICON_SIZE = 16
     IMPORT_TAB_KIND = "import_plus"
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._hover_index = -1
+        self.setMouseTracking(True)
 
     def tabSizeHint(self, index):
         size = super().tabSizeHint(index)
@@ -826,6 +831,19 @@ class ChannelConfigTabBar(QTabBar):
         if size.width() < self.NORMAL_MIN_WIDTH:
             size.setWidth(self.NORMAL_MIN_WIDTH)
         return size
+
+    def mouseMoveEvent(self, event):
+        idx = self.tabAt(event.pos())
+        if idx != self._hover_index:
+            self._hover_index = idx
+            self.update()
+        super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event):
+        if self._hover_index != -1:
+            self._hover_index = -1
+            self.update()
+        super().leaveEvent(event)
 
     def paintEvent(self, event):
         painter = QStylePainter(self)
@@ -839,13 +857,15 @@ class ChannelConfigTabBar(QTabBar):
             tab_rect = option.rect
             top = min(self.tabRect(i).top() for i in range(self.count()))
             full_rect = QRect(tab_rect.left(), top, tab_rect.width(), tab_rect.bottom() - top + 1)
-            painter.save()
-            painter.setRenderHint(QPainter.Antialiasing)
-            painter.setPen(QPen(QColor("#1a2b52"), 1))
-            painter.setBrush(QBrush(QColor("#0b1630")))
-            painter.drawRoundedRect(full_rect.adjusted(0, 0, -1, 0), 5, 5)
-            painter.fillRect(full_rect.adjusted(1, full_rect.height() - 1, -1, 0), QColor("#071127"))
-            painter.restore()
+
+            if index == self._hover_index:
+                painter.save()
+                painter.setRenderHint(QPainter.Antialiasing)
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QBrush(QColor("#16294d")))
+                hover_rect = full_rect.adjusted(2, 4, -3, -4)
+                painter.drawRoundedRect(hover_rect, 6, 6)
+                painter.restore()
 
             icon_rect = QRect(0, 0, self.IMPORT_ICON_SIZE, self.IMPORT_ICON_SIZE)
             icon_rect.moveCenter(full_rect.center())
@@ -2804,7 +2824,7 @@ class N6705CDatalogUI(QWidget):
         self._instruments_tab_layout.addWidget(self.no_instrument_label)
 
     def _add_channel_config_import_tab(self):
-        tab_idx = self.channel_config_tabbar.addTab(self._make_svg_icon("plus.svg", "#8eb0e3", 20), "")
+        tab_idx = self.channel_config_tabbar.addTab(self._make_svg_icon("plus.svg", "#8eb0e3", 16), "")
         self.channel_config_tabbar.setTabData(tab_idx, "import_plus")
         self.channel_config_tabbar.setTabToolTip(tab_idx, "Import Datalog")
         self._channel_config_import_tab_idx = tab_idx
