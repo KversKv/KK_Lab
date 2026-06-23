@@ -980,16 +980,21 @@ class VerticalTextButton(QWidget):
 
 
 class CardFrame(QFrame):
+    header_clicked = Signal()
+
     def __init__(self, title="", icon="", parent=None, svg_icon=None, svg_color="#8eb0e3", svg_size=14):
         super().__init__(parent)
         self.setObjectName("cardFrame")
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(14, 14, 14, 14)
         self.main_layout.setSpacing(10)
+        self.header_widget = None
 
         if title:
             if svg_icon:
-                title_row = QHBoxLayout()
+                self.header_widget = QWidget()
+                self.header_widget.setStyleSheet("background: transparent; border: none;")
+                title_row = QHBoxLayout(self.header_widget)
                 title_row.setSpacing(6)
                 title_row.setContentsMargins(0, 0, 0, 0)
                 svg_path = os.path.join(get_resource_base(), "resources", "pages", "n6705c_power_analyzer_SVGs", svg_icon)
@@ -1010,11 +1015,78 @@ class CardFrame(QFrame):
                 self.title_label.setObjectName("cardTitle")
                 title_row.addWidget(self.title_label)
                 title_row.addStretch()
-                self.main_layout.addLayout(title_row)
+                self.main_layout.addWidget(self.header_widget)
             else:
                 self.title_label = QLabel(f"{icon}  {title}" if icon else title)
                 self.title_label.setObjectName("cardTitle")
                 self.main_layout.addWidget(self.title_label)
+
+    def set_header_clickable(self, tooltip=""):
+        if self.header_widget is None:
+            return
+        self.header_widget.setCursor(Qt.PointingHandCursor)
+        if tooltip:
+            self.header_widget.setToolTip(tooltip)
+        self.header_widget.mousePressEvent = self._on_header_mouse_press
+        self.header_widget.enterEvent = self._on_header_enter
+        self.header_widget.leaveEvent = self._on_header_leave
+
+    def _on_header_mouse_press(self, event):
+        if event.button() == Qt.LeftButton:
+            self.header_clicked.emit()
+            event.accept()
+
+    def _on_header_enter(self, event):
+        self.title_label.setStyleSheet("color: #8eb0e3;")
+        event.accept()
+
+    def _on_header_leave(self, event):
+        self.title_label.setStyleSheet("")
+        event.accept()
+
+
+class ClickableHeader(QWidget):
+    clicked = Signal()
+
+    def __init__(self, title="", svg_icon=None, svg_color="#8eb0e3", svg_size=14, parent=None):
+        super().__init__(parent)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setStyleSheet("background: transparent; border: none;")
+        row = QHBoxLayout(self)
+        row.setSpacing(6)
+        row.setContentsMargins(0, 0, 0, 0)
+
+        if svg_icon:
+            svg_path = os.path.join(get_resource_base(), "resources", "pages", "n6705c_power_analyzer_SVGs", svg_icon)
+            with open(svg_path, "r", encoding="utf-8") as f:
+                svg_data = f.read().replace("currentColor", svg_color)
+            renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))
+            pixmap = QPixmap(svg_size, svg_size)
+            pixmap.fill(QColor(0, 0, 0, 0))
+            painter = QPainter(pixmap)
+            renderer.render(painter)
+            painter.end()
+            icon_lbl = QLabel()
+            icon_lbl.setPixmap(pixmap)
+            icon_lbl.setFixedSize(svg_size, svg_size)
+            icon_lbl.setStyleSheet("border: none; background: transparent;")
+            row.addWidget(icon_lbl)
+
+        self.title_label = QLabel(title)
+        self.title_label.setObjectName("cardTitle")
+        row.addWidget(self.title_label)
+        row.addStretch()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit()
+            event.accept()
+
+    def enterEvent(self, event):
+        self.title_label.setStyleSheet("color: #8eb0e3;")
+
+    def leaveEvent(self, event):
+        self.title_label.setStyleSheet("")
 
 
 class FixedPopupComboBox(DarkComboBox):
@@ -1619,6 +1691,13 @@ class N6705CDatalogUI(QWidget):
         instr_inner.setContentsMargins(8, 8, 8, 8)
         instr_inner.setSpacing(8)
 
+        self.instrument_panel_header = ClickableHeader(
+            "INSTRUMENT CONNECTION", svg_icon="link-connect.svg", svg_color="#8eb0e3"
+        )
+        self.instrument_panel_header.setToolTip("Collapse")
+        self.instrument_panel_header.clicked.connect(self._collapse_instrument_panel)
+        instr_inner.addWidget(self.instrument_panel_header)
+
         search_row = QHBoxLayout()
         search_row.setSpacing(6)
         self.refresh_search_btn = SpinningSearchButton()
@@ -1942,6 +2021,8 @@ class N6705CDatalogUI(QWidget):
 
         self.label_card = CardFrame("CUSTOM LABELS", svg_icon="tag.svg", svg_color="#8eb0e3")
         self.label_card.setFixedWidth(240)
+        self.label_card.set_header_clickable("Collapse")
+        self.label_card.header_clicked.connect(self._collapse_label_card_panel)
         self._build_label_card()
         self.label_card.hide()
         label_sidebar_layout.addWidget(self.label_card)
@@ -2893,6 +2974,12 @@ class N6705CDatalogUI(QWidget):
 
     def _toggle_label_card_panel(self, checked):
         self.label_card.setVisible(checked)
+        self.label_toggle_btn.setVisible(not checked)
+
+    def _collapse_label_card_panel(self):
+        self.label_card.hide()
+        self.label_toggle_btn.setChecked(False)
+        self.label_toggle_btn.show()
 
     def _refresh_channel_config(self, force=False):
         connected_slots = []
@@ -4023,6 +4110,12 @@ class N6705CDatalogUI(QWidget):
 
     def _toggle_instrument_panel(self, checked):
         self.instrument_panel.setVisible(checked)
+        self.instrument_toggle_btn.setVisible(not checked)
+
+    def _collapse_instrument_panel(self):
+        self.instrument_panel.hide()
+        self.instrument_toggle_btn.setChecked(False)
+        self.instrument_toggle_btn.show()
 
     def _on_add_instrument_manually(self):
         dialog = QDialog(self)
