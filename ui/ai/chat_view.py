@@ -464,6 +464,17 @@ class ChatView(QScrollArea):
         self._msg_seq += 1
         return f"msg_{self._msg_seq}"
 
+    def clear(self) -> None:
+        """清空所有已显示的消息气泡，恢复到空白会话状态。"""
+        while self._layout.count() > 1:
+            item = self._layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self._stream_bubble = None
+        self._stream_text = ""
+        self._user_bubbles = []
+
     def _make_ai_footer(self, msg_id: str) -> QWidget:
         """AI 气泡下方动作条：👍/👎 反馈 + ⋯ 沉淀菜单。"""
         bar = QWidget()

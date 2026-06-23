@@ -70,6 +70,8 @@ _SEND_ICON = os.path.join(_AI_SVG_DIR, "send.svg")
 _PANEL_ICON = os.path.join(_AI_SVG_DIR, "ai_panel.svg")
 _SPARKLES_ICON = os.path.join(_AI_SVG_DIR, "sparkles.svg")
 _INSPECT_ICON = os.path.join(_AI_SVG_DIR, "inspect.svg")
+_ACTIVITY_ICON = os.path.join(_AI_SVG_DIR, "activity.svg")
+_CODE_ICON = os.path.join(_AI_SVG_DIR, "code.svg")
 _CLEAR_ICON = os.path.join(_AI_SVG_DIR, "clear.svg")
 _SETTINGS_ICON = os.path.join(_AI_SVG_DIR, "settings.svg")
 _EXPORT_ICON = os.path.join(_AI_SVG_DIR, "export.svg")
@@ -200,6 +202,22 @@ QPushButton#aiSendBtn:hover {
 QPushButton#aiSendBtn:disabled {
     background-color: #0f172a;
     color: #475569;
+}
+QPushButton#aiToolIconBtn {
+    min-width: 28px;
+    min-height: 28px;
+    max-width: 28px;
+    max-height: 28px;
+    padding: 0px;
+    border: none;
+    border-radius: 6px;
+    background-color: transparent;
+}
+QPushButton#aiToolIconBtn:hover {
+    background-color: #1e293b;
+}
+QPushButton#aiToolIconBtn:disabled {
+    background-color: transparent;
 }
 QPushButton#aiAnalyzeBtn {
     min-height: 22px;
@@ -865,35 +883,35 @@ class AIAssistPanel(QFrame):
         layout = _FlowLayout(spacing=8)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        self._select_btn = QPushButton("Select")
-        self._select_btn.setObjectName("aiAnalyzeBtn")
+        self._select_btn = QPushButton()
+        self._select_btn.setObjectName("aiToolIconBtn")
         self._select_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self._select_btn.setToolTip(
             "Pick any element/data on the page (Ctrl+Shift+C) and attach it to the next message"
         )
         if os.path.isfile(_INSPECT_ICON):
-            self._select_btn.setIcon(tinted_svg_icon(_INSPECT_ICON, "#34d399", 13))
-            self._select_btn.setIconSize(QSize(13, 13))
+            self._select_btn.setIcon(tinted_svg_icon(_INSPECT_ICON, "#34d399", 14))
+            self._select_btn.setIconSize(QSize(14, 14))
         self._select_btn.clicked.connect(self.pick_requested.emit)
         layout.addWidget(self._select_btn)
 
-        self._analyze_btn = QPushButton("Analyze")
-        self._analyze_btn.setObjectName("aiAnalyzeBtn")
+        self._analyze_btn = QPushButton()
+        self._analyze_btn.setObjectName("aiToolIconBtn")
         self._analyze_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self._analyze_btn.setToolTip("Analyze based on recent run logs")
-        if os.path.isfile(_SPARKLES_ICON):
-            self._analyze_btn.setIcon(tinted_svg_icon(_SPARKLES_ICON, "#3b82f6", 13))
-            self._analyze_btn.setIconSize(QSize(13, 13))
+        if os.path.isfile(_ACTIVITY_ICON):
+            self._analyze_btn.setIcon(tinted_svg_icon(_ACTIVITY_ICON, "#3b82f6", 14))
+            self._analyze_btn.setIconSize(QSize(14, 14))
         self._analyze_btn.clicked.connect(self._on_analyze_clicked)
         layout.addWidget(self._analyze_btn)
 
-        self._draft_btn = QPushButton("Script")
-        self._draft_btn.setObjectName("aiScriptBtn")
+        self._draft_btn = QPushButton()
+        self._draft_btn.setObjectName("aiToolIconBtn")
         self._draft_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self._draft_btn.setToolTip("Generate a test config/script draft from the input (applied only after preview validation)")
-        if os.path.isfile(_SPARKLES_ICON):
-            self._draft_btn.setIcon(tinted_svg_icon(_SPARKLES_ICON, "#818cf8", 13))
-            self._draft_btn.setIconSize(QSize(13, 13))
+        if os.path.isfile(_CODE_ICON):
+            self._draft_btn.setIcon(tinted_svg_icon(_CODE_ICON, "#818cf8", 14))
+            self._draft_btn.setIconSize(QSize(14, 14))
         self._draft_btn.clicked.connect(self._on_draft_clicked)
         layout.addWidget(self._draft_btn)
 
@@ -1173,7 +1191,11 @@ class AIAssistPanel(QFrame):
     def _on_clear_clicked(self) -> None:
         self._service.clear_history()
         self._transcript.clear()
+        self._pending_picked_context = ""
+        self._pending_waveform_text = ""
+        self._pending_waveform_via_button = False
         self._session_started_at = datetime.now()
+        self._chat.clear()
         self._chat.add_system_message("Conversation history cleared.")
 
     def _on_stream_started(self) -> None:

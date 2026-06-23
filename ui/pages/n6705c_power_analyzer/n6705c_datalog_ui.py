@@ -1386,6 +1386,31 @@ class N6705CDatalogUI(QWidget):
                 background-color: #0d1a37;
             }
 
+            QPushButton#chartIconBtn {
+                min-width: 30px;
+                max-width: 30px;
+                min-height: 28px;
+                max-height: 28px;
+                padding: 0px;
+                border-radius: 8px;
+                border: 1px solid transparent;
+                background-color: #13254b;
+            }
+
+            QPushButton#chartIconBtn:hover {
+                background-color: #1a3260;
+                border: 1px solid #3c5fa1;
+            }
+
+            QPushButton#chartIconBtn:pressed {
+                background-color: #0d1a37;
+            }
+
+            QPushButton#chartIconBtn:checked {
+                background-color: #1f5f3a;
+                border: 1px solid #3fbf6f;
+            }
+
             QPushButton#primaryActionBtn {
                 min-height: 40px;
                 border-radius: 8px;
@@ -1780,32 +1805,47 @@ class N6705CDatalogUI(QWidget):
         chart_header.addWidget(chart_title)
         chart_header.addStretch()
 
-        self.box_zoom_btn = QPushButton("\u2316 Box Zoom: OFF")
-        self.box_zoom_btn.setObjectName("chartToolBtn")
+        self.box_zoom_btn = QPushButton()
+        self.box_zoom_btn.setObjectName("chartIconBtn")
+        self.box_zoom_btn.setIcon(self._make_svg_icon("box-select.svg", "#dce7ff", 16))
+        self.box_zoom_btn.setCheckable(True)
+        self.box_zoom_btn.setToolTip("Box Zoom: OFF")
         chart_header.addWidget(self.box_zoom_btn)
 
-        self.reset_view_btn = QPushButton("\u2316 Auto")
-        self.reset_view_btn.setObjectName("chartToolBtn")
+        self.reset_view_btn = QPushButton()
+        self.reset_view_btn.setObjectName("chartIconBtn")
+        self.reset_view_btn.setIcon(self._make_svg_icon("fit-view.svg", "#dce7ff", 16))
+        self.reset_view_btn.setToolTip("Auto Fit View")
         chart_header.addWidget(self.reset_view_btn)
 
-        self.marker_a_btn = QPushButton("Set Marker A")
-        self.marker_a_btn.setObjectName("chartToolBtn")
+        self.marker_a_btn = QPushButton()
+        self.marker_a_btn.setObjectName("chartIconBtn")
+        self.marker_a_btn.setIcon(self._make_svg_icon("marker-a.svg", "#d4a514", 16))
+        self.marker_a_btn.setToolTip("Set Marker A")
         chart_header.addWidget(self.marker_a_btn)
 
-        self.marker_b_btn = QPushButton("Set Marker B")
-        self.marker_b_btn.setObjectName("chartToolBtn")
+        self.marker_b_btn = QPushButton()
+        self.marker_b_btn.setObjectName("chartIconBtn")
+        self.marker_b_btn.setIcon(self._make_svg_icon("marker-b.svg", "#4cc9f0", 16))
+        self.marker_b_btn.setToolTip("Set Marker B")
         chart_header.addWidget(self.marker_b_btn)
 
-        self.add_markers_btn = QPushButton("Add Markers")
-        self.add_markers_btn.setObjectName("chartToolBtn")
+        self.add_markers_btn = QPushButton()
+        self.add_markers_btn.setObjectName("chartIconBtn")
+        self.add_markers_btn.setIcon(self._make_svg_icon("markers-add.svg", "#dce7ff", 16))
+        self.add_markers_btn.setToolTip("Add Markers")
         chart_header.addWidget(self.add_markers_btn)
 
-        self.clear_markers_btn = QPushButton("Clear Markers")
-        self.clear_markers_btn.setObjectName("chartToolBtn")
+        self.clear_markers_btn = QPushButton()
+        self.clear_markers_btn.setObjectName("chartIconBtn")
+        self.clear_markers_btn.setIcon(self._make_svg_icon("markers-clear.svg", "#dce7ff", 16))
+        self.clear_markers_btn.setToolTip("Clear Markers")
         chart_header.addWidget(self.clear_markers_btn)
 
-        self.time_offset_btn = QPushButton("Time Offset")
-        self.time_offset_btn.setObjectName("chartToolBtn")
+        self.time_offset_btn = QPushButton()
+        self.time_offset_btn.setObjectName("chartIconBtn")
+        self.time_offset_btn.setIcon(self._make_svg_icon("time-offset.svg", "#dce7ff", 16))
+        self.time_offset_btn.setToolTip("Time Offset")
         self.time_offset_btn.hide()
         chart_header.addWidget(self.time_offset_btn)
 
@@ -5569,7 +5609,8 @@ class N6705CDatalogUI(QWidget):
         if self.box_zoom_enabled:
             self.box_zoom_enabled = False
             self._box_zoom_auto_off_timer.stop()
-            self.box_zoom_btn.setText("\u2316 Box Zoom: OFF")
+            self.box_zoom_btn.setChecked(False)
+            self.box_zoom_btn.setToolTip("Box Zoom: OFF")
 
         vb = self.plot_widget.getPlotItem().getViewBox()
         vb.setMouseMode(vb.PanMode)
@@ -5593,14 +5634,16 @@ class N6705CDatalogUI(QWidget):
     def _toggle_box_zoom(self):
         self.box_zoom_enabled = not self.box_zoom_enabled
         if self.box_zoom_enabled:
-            self.box_zoom_btn.setText("\u2316 Box Zoom: ON")
+            self.box_zoom_btn.setChecked(True)
+            self.box_zoom_btn.setToolTip("Box Zoom: ON")
             self.plot_widget.setMouseEnabled(x=True, y=True)
             vb = self.plot_widget.getPlotItem().getViewBox()
             vb.setMouseMode(vb.RectMode)
             self._box_zoom_auto_off_timer.start()
         else:
             self._box_zoom_auto_off_timer.stop()
-            self.box_zoom_btn.setText("\u2316 Box Zoom: OFF")
+            self.box_zoom_btn.setChecked(False)
+            self.box_zoom_btn.setToolTip("Box Zoom: OFF")
             vb = self.plot_widget.getPlotItem().getViewBox()
             vb.setMouseMode(vb.PanMode)
             self.plot_widget.setMouseEnabled(x=True, y=False)
@@ -5610,7 +5653,8 @@ class N6705CDatalogUI(QWidget):
     def _auto_off_box_zoom(self):
         if self.box_zoom_enabled:
             self.box_zoom_enabled = False
-            self.box_zoom_btn.setText("\u2316 Box Zoom: OFF")
+            self.box_zoom_btn.setChecked(False)
+            self.box_zoom_btn.setToolTip("Box Zoom: OFF")
             vb = self.plot_widget.getPlotItem().getViewBox()
             vb.setMouseMode(vb.PanMode)
             self.plot_widget.setMouseEnabled(x=True, y=False)
@@ -5663,7 +5707,7 @@ class N6705CDatalogUI(QWidget):
             lambda line, ev: self._on_marker_line_clicked("A", ev)
         )
         self.plot_widget.addItem(self.marker_a_line)
-        self.marker_a_btn.setText(f"Set Marker A ({x:.4f}s)")
+        self.marker_a_btn.setToolTip(f"Set Marker A ({x:.4f}s)")
 
     def _place_marker_b(self, x):
         if self.marker_b_line:
@@ -5682,15 +5726,15 @@ class N6705CDatalogUI(QWidget):
             lambda line, ev: self._on_marker_line_clicked("B", ev)
         )
         self.plot_widget.addItem(self.marker_b_line)
-        self.marker_b_btn.setText(f"Set Marker B ({x:.4f}s)")
+        self.marker_b_btn.setToolTip(f"Set Marker B ({x:.4f}s)")
 
     def _on_marker_moved(self, which, value):
         if which == "A":
             self.marker_a_pos = value
-            self.marker_a_btn.setText(f"Set Marker A ({value:.4f}s)")
+            self.marker_a_btn.setToolTip(f"Set Marker A ({value:.4f}s)")
         else:
             self.marker_b_pos = value
-            self.marker_b_btn.setText(f"Set Marker B ({value:.4f}s)")
+            self.marker_b_btn.setToolTip(f"Set Marker B ({value:.4f}s)")
         self._update_marker_region()
         self._update_marker_analysis()
 
@@ -5817,8 +5861,8 @@ class N6705CDatalogUI(QWidget):
             self._marker_ab_text_item = None
         self.marker_a_pos = None
         self.marker_b_pos = None
-        self.marker_a_btn.setText("Set Marker A")
-        self.marker_b_btn.setText("Set Marker B")
+        self.marker_a_btn.setToolTip("Set Marker A")
+        self.marker_b_btn.setToolTip("Set Marker B")
 
         for em in self._extra_markers:
             if em["line1"]:
@@ -6007,8 +6051,8 @@ class N6705CDatalogUI(QWidget):
             self._marker_ab_text_item = None
         self.marker_a_pos = None
         self.marker_b_pos = None
-        self.marker_a_btn.setText("Set Marker A")
-        self.marker_b_btn.setText("Set Marker B")
+        self.marker_a_btn.setToolTip("Set Marker A")
+        self.marker_b_btn.setToolTip("Set Marker B")
 
         if self._extra_markers:
             first = self._extra_markers.pop(0)
@@ -6264,7 +6308,7 @@ class N6705CDatalogUI(QWidget):
             self.marker_b_pos = new_b_pos
             if self.marker_b_line:
                 self.marker_b_line.setValue(new_b_pos)
-            self.marker_b_btn.setText(f"Set Marker B ({new_b_pos:.4f}s)")
+            self.marker_b_btn.setToolTip(f"Set Marker B ({new_b_pos:.4f}s)")
             self._update_marker_region()
             self._update_marker_analysis()
             dialog.done(QDialog.Rejected)
@@ -6316,9 +6360,9 @@ class N6705CDatalogUI(QWidget):
         self._b_time_offset = offset_s
         if offset_s != 0.0:
             offset_ms = offset_s * 1000.0
-            self.time_offset_btn.setText(f"Time Offset: {offset_ms:+.3f}ms")
+            self.time_offset_btn.setToolTip(f"Time Offset: {offset_ms:+.3f}ms")
         else:
-            self.time_offset_btn.setText("Time Offset")
+            self.time_offset_btn.setToolTip("Time Offset")
         self._on_channel_visibility_changed()
 
     def _on_file_time_offset(self, file_prefix):
@@ -6451,7 +6495,7 @@ class N6705CDatalogUI(QWidget):
             self.marker_b_pos = new_b_pos
             if self.marker_b_line:
                 self.marker_b_line.setValue(new_b_pos)
-            self.marker_b_btn.setText(f"Set Marker B ({new_b_pos:.4f}s)")
+            self.marker_b_btn.setToolTip(f"Set Marker B ({new_b_pos:.4f}s)")
             self._update_marker_region()
             self._update_marker_analysis()
             dialog.done(QDialog.Rejected)
