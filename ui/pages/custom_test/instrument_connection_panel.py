@@ -35,6 +35,7 @@ class InstrumentConnectionPanel(QWidget):
         self._chamber_widgets_built = False
         self._uart_widgets_built = False
         self._mcu_io_widgets_built = False
+        self._ch9114f_widgets_built = False
         self._running = False
 
         self.setStyleSheet("""
@@ -69,6 +70,7 @@ class InstrumentConnectionPanel(QWidget):
         self._clear_layout()
         used = set(used_ids)
         self._set_built_flags(False, False, False, False)
+        self._set_ch9114f_built(False)
 
         if not used:
             self._show_placeholder()
@@ -119,6 +121,12 @@ class InstrumentConnectionPanel(QWidget):
             self._set_mcu_io_built(True)
             self.sync_mcu_io_from_manager()
 
+        if "ch9114f" in used:
+            self._add_label("CH9114F")
+            self._build_ch9114f_connection_widgets()
+            self._set_ch9114f_built(True)
+            self.sync_ch9114f_from_manager()
+
         if "uart" in used:
             self._add_label("UART (Serial)")
             self._page.build_serial_connection_widgets(self._layout)
@@ -156,6 +164,8 @@ class InstrumentConnectionPanel(QWidget):
             }
         if self._mcu_io_widgets_built and hasattr(page, "mcu_io_port_combo"):
             meta["mcu_io"] = {"port": self._mcu_io_selected_resource()}
+        if self._ch9114f_widgets_built and hasattr(page, "ch9114f_port_combo"):
+            meta["ch9114f"] = {"port": self._ch9114f_selected_resource()}
         return meta
 
     def on_metadata_loaded(self, meta: dict) -> None:
@@ -199,6 +209,12 @@ class InstrumentConnectionPanel(QWidget):
                 if page.mcu_io_port_combo.findText(port) < 0:
                     page.mcu_io_port_combo.addItem(port, port)
                 page.mcu_io_port_combo.setCurrentText(port)
+        if "ch9114f" in meta and self._ch9114f_widgets_built:
+            port = meta["ch9114f"].get("port", "")
+            if port and hasattr(page, "ch9114f_port_combo"):
+                if page.ch9114f_port_combo.findText(port) < 0:
+                    page.ch9114f_port_combo.addItem(port, port)
+                page.ch9114f_port_combo.setCurrentText(port)
         self._try_auto_connect_instruments(meta)
         self._pending_instr_meta = None
 
@@ -209,6 +225,7 @@ class InstrumentConnectionPanel(QWidget):
         if chamber_ui and getattr(chamber_ui, "chamber", None):
             self.on_chamber_external_changed()
         self.sync_mcu_io_from_manager()
+        self.sync_ch9114f_from_manager()
 
     def sync_n6705c_from_top(self) -> None:
         page = self._page
@@ -240,6 +257,20 @@ class InstrumentConnectionPanel(QWidget):
 
     def on_manager_scan_finished(self, instrument_type: str, candidates: list) -> None:
         page = self._page
+        if instrument_type == "ch9114f" and self._ch9114f_widgets_built:
+            page.ch9114f_port_combo.clear()
+            if candidates:
+                for candidate in candidates:
+                    display = candidate.display_name or candidate.resource
+                    page.ch9114f_port_combo.addItem(display, candidate.resource)
+                self._set_ch9114f_status(f"● Found {len(candidates)}", "ok")
+                page.ch9114f_connect_btn.setEnabled(True)
+            else:
+                page.ch9114f_port_combo.addItem("No CH9114F ports found", "")
+                self._set_ch9114f_status("● Not Found", "err")
+                page.ch9114f_connect_btn.setEnabled(False)
+            page.ch9114f_search_btn.setEnabled(True)
+            return
         if instrument_type != "mcu_io" or not self._mcu_io_widgets_built:
             return
         page.mcu_io_port_combo.clear()
@@ -257,6 +288,12 @@ class InstrumentConnectionPanel(QWidget):
 
     def on_manager_scan_failed(self, instrument_type: str, error: str) -> None:
         page = self._page
+        if instrument_type == "ch9114f" and self._ch9114f_widgets_built:
+            self._set_ch9114f_status("● Search Failed", "err")
+            page.ch9114f_search_btn.setEnabled(True)
+            page.ch9114f_connect_btn.setEnabled(True)
+            self._append_log(f"[CH9114F] Search failed: {error}")
+            return
         if instrument_type != "mcu_io" or not self._mcu_io_widgets_built:
             return
         self._set_mcu_io_status("● Search Failed", "err")
@@ -267,6 +304,8 @@ class InstrumentConnectionPanel(QWidget):
     def on_manager_session_connected(self, session_id: str) -> None:
         if session_id == "mcu_io:default":
             self.sync_mcu_io_from_manager()
+        elif session_id == "ch9114f:default":
+            self.sync_ch9114f_from_manager()
 
     def on_manager_connection_failed(self, session_id: str, error: str) -> None:
         page = self._page
@@ -275,10 +314,17 @@ class InstrumentConnectionPanel(QWidget):
             page.mcu_io_connect_btn.setEnabled(True)
             page.mcu_io_search_btn.setEnabled(True)
             self._append_log(f"[MCU_IO] Connection failed: {error}")
+        elif session_id == "ch9114f:default" and self._ch9114f_widgets_built:
+            self._set_ch9114f_status("● Failed", "err")
+            page.ch9114f_connect_btn.setEnabled(True)
+            page.ch9114f_search_btn.setEnabled(True)
+            self._append_log(f"[CH9114F] Connection failed: {error}")
 
     def on_manager_session_disconnected(self, session_id: str) -> None:
         if session_id == "mcu_io:default":
             self.sync_mcu_io_from_manager()
+        elif session_id == "ch9114f:default":
+            self.sync_ch9114f_from_manager()
 
     def sync_mcu_io_from_manager(self) -> None:
         page = self._page
@@ -304,6 +350,31 @@ class InstrumentConnectionPanel(QWidget):
             page.mcu_io_connect_btn.setEnabled(True)
             page.mcu_io_connect_btn.setText("Connect")
             page.mcu_io_search_btn.setEnabled(True)
+
+    def sync_ch9114f_from_manager(self) -> None:
+        page = self._page
+        manager = getattr(page, "_instrument_manager", None)
+        if not self._ch9114f_widgets_built or manager is None:
+            return
+        session = manager.get_session("ch9114f:default")
+        if session and session.connected and session.instance:
+            page.ch9114f = session.instance
+            page.is_ch9114f_connected = True
+            if hasattr(page, "ch9114f_port_combo") and session.resource:
+                if page.ch9114f_port_combo.findText(session.resource) < 0:
+                    page.ch9114f_port_combo.addItem(session.resource, session.resource)
+                page.ch9114f_port_combo.setCurrentText(session.resource)
+            self._set_ch9114f_status("● Connected", "ok")
+            page.ch9114f_connect_btn.setEnabled(True)
+            page.ch9114f_connect_btn.setText("Disconnect")
+            page.ch9114f_search_btn.setEnabled(False)
+        else:
+            page.ch9114f = None
+            page.is_ch9114f_connected = False
+            self._set_ch9114f_status("● Disconnected", "err")
+            page.ch9114f_connect_btn.setEnabled(True)
+            page.ch9114f_connect_btn.setText("Connect")
+            page.ch9114f_search_btn.setEnabled(True)
 
     def _try_auto_connect_instruments(self, meta: dict) -> None:
         if not meta:
@@ -357,6 +428,15 @@ class InstrumentConnectionPanel(QWidget):
             except Exception as exc:
                 logger.warning("自动连接 MCU IO 失败: %s", exc, exc_info=True)
                 self._append_log(f"[AUTO] MCU IO 自动连接失败: {exc}")
+
+        if "ch9114f" in meta and self._ch9114f_widgets_built:
+            try:
+                if not getattr(page, "is_ch9114f_connected", False):
+                    self._append_log("[AUTO] 尝试连接 CH9114F ...")
+                    self._on_ch9114f_connect()
+            except Exception as exc:
+                logger.warning("自动连接 CH9114F 失败: %s", exc, exc_info=True)
+                self._append_log(f"[AUTO] CH9114F 自动连接失败: {exc}")
 
     def _build_mcu_io_connection_widgets(self) -> None:
         page = self._page
@@ -470,6 +550,118 @@ class InstrumentConnectionPanel(QWidget):
             resource=resource,
         ))
 
+    def _build_ch9114f_connection_widgets(self) -> None:
+        page = self._page
+        box = QFrame()
+        box.setStyleSheet("""
+            QFrame {
+                background-color: #0d1a36;
+                border: 1px solid #1a2d57;
+                border-radius: 8px;
+            }
+        """)
+        layout = QVBoxLayout(box)
+        layout.setContentsMargins(8, 6, 8, 8)
+        layout.setSpacing(6)
+
+        page.ch9114f_status_label = QLabel("● Disconnected")
+        page.ch9114f_status_label.setObjectName("statusErr")
+        layout.addWidget(page.ch9114f_status_label)
+
+        page.ch9114f_port_combo = DarkComboBox(bg="#091426", border="#17345f")
+        page.ch9114f_port_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        page.ch9114f_port_combo.addItem("Select CH9114F port", "")
+        layout.addWidget(page.ch9114f_port_combo)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(6)
+        page.ch9114f_search_btn = SpinningSearchButton(parent=box)
+        page.ch9114f_search_btn.setFixedHeight(24)
+        page.ch9114f_connect_btn = QPushButton("Connect")
+        page.ch9114f_connect_btn.setFixedHeight(24)
+        page.ch9114f_connect_btn.setStyleSheet(
+            "QPushButton { background-color: #053b38; color: #10e7bc;"
+            " border: 1px solid #08c9a5; border-radius: 6px;"
+            " font-size: 11px; font-weight: 700; padding: 2px 8px; }"
+            "QPushButton:hover { background-color: #064744; }"
+            "QPushButton:disabled { background-color: #0D1734; color: #3a4a6a;"
+            " border: 1px solid #18264A; }"
+        )
+        btn_row.addWidget(page.ch9114f_search_btn, 0)
+        btn_row.addWidget(page.ch9114f_connect_btn, 1)
+        layout.addLayout(btn_row)
+
+        page.ch9114f_search_btn.clicked.connect(self._on_ch9114f_search)
+        page.ch9114f_connect_btn.clicked.connect(self._on_ch9114f_connect_toggle)
+        self._layout.addWidget(box)
+
+    def _set_ch9114f_status(self, text: str, state: str = "err") -> None:
+        page = self._page
+        if not hasattr(page, "ch9114f_status_label"):
+            return
+        page.ch9114f_status_label.setText(text)
+        obj = {
+            "ok": "statusOk",
+            "warn": "statusWarn",
+            "err": "statusErr",
+        }.get(state, "statusErr")
+        page.ch9114f_status_label.setObjectName(obj)
+        page.ch9114f_status_label.style().unpolish(page.ch9114f_status_label)
+        page.ch9114f_status_label.style().polish(page.ch9114f_status_label)
+        page.ch9114f_status_label.update()
+
+    def _ch9114f_selected_resource(self) -> str:
+        page = self._page
+        if not hasattr(page, "ch9114f_port_combo"):
+            return ""
+        data = page.ch9114f_port_combo.currentData()
+        if data:
+            return str(data)
+        text = page.ch9114f_port_combo.currentText()
+        if text.startswith("Select ") or text.startswith("No "):
+            return ""
+        return text.split()[0] if text else ""
+
+    def _on_ch9114f_search(self) -> None:
+        page = self._page
+        manager = getattr(page, "_instrument_manager", None)
+        if manager is None:
+            self._set_ch9114f_status("● No manager", "err")
+            return
+        self._set_ch9114f_status("● Searching", "warn")
+        page.ch9114f_search_btn.setEnabled(False)
+        page.ch9114f_connect_btn.setEnabled(False)
+        manager.scan_async("ch9114f")
+
+    def _on_ch9114f_connect_toggle(self) -> None:
+        page = self._page
+        if getattr(page, "is_ch9114f_connected", False):
+            manager = getattr(page, "_instrument_manager", None)
+            if manager is not None:
+                manager.disconnect_async("ch9114f:default")
+            return
+        self._on_ch9114f_connect()
+
+    def _on_ch9114f_connect(self) -> None:
+        page = self._page
+        resource = self._ch9114f_selected_resource()
+        if not resource:
+            self._set_ch9114f_status("● Select port first", "err")
+            return
+        manager = getattr(page, "_instrument_manager", None)
+        if manager is None:
+            self._set_ch9114f_status("● No manager", "err")
+            return
+        self._set_ch9114f_status("● Connecting", "warn")
+        page.ch9114f_connect_btn.setEnabled(False)
+        manager.connect_async(InstrumentSpec(
+            instrument_type="ch9114f",
+            role="ch9114f",
+            connection_kind="serial_raw_repl",
+            slot="default",
+            resource=resource,
+        ))
+
     def _clear_layout(self) -> None:
         while self._layout.count() > 0:
             child = self._layout.takeAt(0)
@@ -518,3 +710,7 @@ class InstrumentConnectionPanel(QWidget):
     def _set_mcu_io_built(self, value: bool) -> None:
         self._mcu_io_widgets_built = value
         setattr(self._page, "_mcu_io_widgets_built", value)
+
+    def _set_ch9114f_built(self, value: bool) -> None:
+        self._ch9114f_widgets_built = value
+        setattr(self._page, "_ch9114f_widgets_built", value)

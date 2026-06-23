@@ -348,6 +348,9 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         self._mcu_io_widgets_built = False
         self.mcu_io = None
         self.is_mcu_io_connected = False
+        self._ch9114f_widgets_built = False
+        self.ch9114f = None
+        self.is_ch9114f_connected = False
         self._i2c_interface = None
 
         self._executor_thread = ExecutorThread(self)
@@ -815,6 +818,9 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         if getattr(self, "is_mcu_io_connected", False) and getattr(self, "mcu_io", None) is not None:
             legacy_sources["mcu_io"] = self.mcu_io
             legacy_labels["mcu_io"] = "legacy_mcu_io_mixin"
+        if getattr(self, "is_ch9114f_connected", False) and getattr(self, "ch9114f", None) is not None:
+            legacy_sources["ch9114f"] = self.ch9114f
+            legacy_labels["ch9114f"] = "legacy_ch9114f_mixin"
 
         return InstrumentResolver(
             instrument_manager=self._instrument_manager,

@@ -1091,6 +1091,130 @@ class MCUIORead(BaseNode):
 
 
 # ═══════════════════════════════════════════════════════════════
+#  CH9114F — GPIO
+# ═══════════════════════════════════════════════════════════════
+
+_CH9114F_GPIO_OPTIONS = [0, 1, 6, 7, 2, 8, 14, 20]
+
+
+@register_node
+class CH9114FSetOutput(BaseNode):
+    node_type = "CH9114FSetOutput"
+    display_name = "CH9114F GPIO Output"
+    category = "instrument"
+    icon = "⎍"
+    color = "#a78bfa"
+
+    PARAM_SCHEMA = [
+        {"key": "pin", "label": "GPIO", "type": "int", "default": 0,
+         "options": _CH9114F_GPIO_OPTIONS},
+        {"key": "level", "label": "Level", "type": "int", "default": 1,
+         "options": [0, 1]},
+    ]
+
+    def execute(self, context: Any) -> None:
+        ch = context.instruments.get("ch9114f")
+        if ch is None:
+            raise RuntimeError("CH9114F 未连接")
+        pin = int(context.resolve_value(self.params["pin"]))
+        level = int(context.resolve_value(self.params["level"]))
+        ch.set_output(pin)
+        ch.out(pin, level)
+        context.log_output(f"CH9114F GPIO{pin}: OUT={level}")
+
+
+@register_node
+class CH9114FHighZ(BaseNode):
+    node_type = "CH9114FHighZ"
+    display_name = "CH9114F GPIO High-Z"
+    category = "instrument"
+    icon = "Z"
+    color = "#a78bfa"
+
+    PARAM_SCHEMA = [
+        {"key": "pin", "label": "GPIO", "type": "int", "default": 0,
+         "options": _CH9114F_GPIO_OPTIONS},
+    ]
+
+    def execute(self, context: Any) -> None:
+        ch = context.instruments.get("ch9114f")
+        if ch is None:
+            raise RuntimeError("CH9114F 未连接")
+        pin = int(context.resolve_value(self.params["pin"]))
+        ch.set_input(pin)
+        context.log_output(f"CH9114F GPIO{pin}: INPUT (High-Z)")
+
+
+@register_node
+class CH9114FPulse(BaseNode):
+    node_type = "CH9114FPulse"
+    display_name = "CH9114F GPIO Pulse"
+    category = "instrument"
+    icon = "↕"
+    color = "#a78bfa"
+
+    PARAM_SCHEMA = [
+        {"key": "pin", "label": "GPIO", "type": "int", "default": 0,
+         "options": _CH9114F_GPIO_OPTIONS},
+        {"key": "active_level", "label": "Active Level", "type": "int", "default": 1,
+         "options": [0, 1]},
+        {"key": "duration_s", "label": "Pulse Duration (s)", "type": "float", "default": 0.1},
+    ]
+
+    def execute(self, context: Any) -> None:
+        ch = context.instruments.get("ch9114f")
+        if ch is None:
+            raise RuntimeError("CH9114F 未连接")
+        pin = int(context.resolve_value(self.params["pin"]))
+        active = int(context.resolve_value(self.params["active_level"]))
+        duration_s = float(context.resolve_value(self.params["duration_s"]))
+        idle = 0 if active else 1
+        ch.set_output(pin)
+        ch.out(pin, idle)
+        ch.out(pin, active)
+        completed = context.sleep(duration_s, poll=0.05)
+        ch.out(pin, idle)
+        if not completed:
+            return
+        context.log_output(
+            f"CH9114F GPIO{pin}: pulse {active}->{idle}, {duration_s:.3f}s"
+        )
+
+
+@register_node
+class CH9114FRead(BaseNode):
+    node_type = "CH9114FRead"
+    display_name = "CH9114F GPIO Read"
+    category = "instrument"
+    icon = "?"
+    color = "#a78bfa"
+
+    PARAM_SCHEMA = [
+        {"key": "pin", "label": "GPIO", "type": "int", "default": 0,
+         "options": _CH9114F_GPIO_OPTIONS},
+        {"key": "result_var", "label": "结果存入变量", "type": "str", "default": "gpio_val"},
+        {"key": "auto_record", "label": "自动记录数据", "type": "bool", "default": True},
+    ]
+
+    def execute(self, context: Any) -> None:
+        ch = context.instruments.get("ch9114f")
+        if ch is None:
+            raise RuntimeError("CH9114F 未连接")
+        pin = int(context.resolve_value(self.params["pin"]))
+        result_var = str(self.params["result_var"])
+        auto_record = bool(self.params.get("auto_record", True))
+        val = int(ch.read(pin))
+        context.set_variable(result_var, val)
+        if auto_record:
+            context.record_data({
+                "instrument": "CH9114F",
+                "gpio": pin,
+                result_var: val,
+            })
+        context.log_output(f"CH9114F GPIO{pin}: READ={val}")
+
+
+# ═══════════════════════════════════════════════════════════════
 #  UART  —  Set / Get
 # ═══════════════════════════════════════════════════════════════
 
@@ -1222,6 +1346,10 @@ _NODE_CAPABILITIES = {
     "MCUIOHighZ": ("mcu_io.gpio",),
     "MCUIOPulse": ("mcu_io.gpio",),
     "MCUIORead": ("mcu_io.gpio",),
+    "CH9114FSetOutput": ("ch9114f.gpio",),
+    "CH9114FHighZ": ("ch9114f.gpio",),
+    "CH9114FPulse": ("ch9114f.gpio",),
+    "CH9114FRead": ("ch9114f.gpio",),
     "UARTSend": ("uart.session",),
     "UARTReceive": ("uart.session",),
 }

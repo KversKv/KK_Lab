@@ -293,6 +293,22 @@ INSTRUMENT_REGISTRY: List[Dict] = [
         ],
     },
     {
+        "id": "ch9114f",
+        "name": "CH9114F",
+        "thumb": "cpu.svg",
+        "color": "#a78bfa",
+        "categories": [
+            {"name": "Set", "ops": [
+                {"node_type": "CH9114FSetOutput", "label": "GPIO Output"},
+                {"node_type": "CH9114FHighZ", "label": "GPIO High-Z"},
+                {"node_type": "CH9114FPulse", "label": "GPIO Pulse"},
+            ]},
+            {"name": "Get", "ops": [
+                {"node_type": "CH9114FRead", "label": "GPIO Read"},
+            ]},
+        ],
+    },
+    {
         "id": "uart",
         "name": "UART",
         "thumb": "terminal.svg",

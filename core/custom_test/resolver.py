@@ -122,6 +122,7 @@ _CAPABILITY_REQUIREMENTS: Dict[str, CapabilityRequirement] = {
         "uart", "serial", (frozenset({"serial_tx", "serial_rx"}),),
     ),
     "mcu_io.gpio": CapabilityRequirement("mcu_io", "mcu_io"),
+    "ch9114f.gpio": CapabilityRequirement("ch9114f", "ch9114f"),
     "rf_analyzer.basic": CapabilityRequirement(
         "rf_analyzer",
         "rf_analyzer",

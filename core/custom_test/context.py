@@ -151,6 +151,7 @@ class ExecutionContext:
             "i2c": None,
             "uart": None,
             "mcu_io": None,
+            "ch9114f": None,
         }
         if instruments:
             self.instruments.update(instruments)
@@ -253,6 +254,9 @@ class ExecutionContext:
         session = mgr.get_session("mcu_io:default")
         if session and session.connected and session.instance:
             self.instruments["mcu_io"] = session.instance
+        session = mgr.get_session("ch9114f:default")
+        if session and session.connected and session.instance:
+            self.instruments["ch9114f"] = session.instance
 
     def set_variable(self, name: str, value: Any, export: bool = True) -> None:
         self.variables[name] = value

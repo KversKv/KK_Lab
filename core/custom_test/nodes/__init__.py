@@ -13,6 +13,7 @@ from core.custom_test.nodes.instrument_nodes import (
     RFAnalyzerMeasure,
     I2CRead, I2CWrite, I2CTraverse,
     MCUIOSetOutput, MCUIOHighZ, MCUIOPulse, MCUIORead,
+    CH9114FSetOutput, CH9114FHighZ, CH9114FPulse, CH9114FRead,
     UARTSend, UARTReceive,
 )
 from core.custom_test.nodes.logic_nodes import (
@@ -40,6 +41,7 @@ __all__ = [
     "RFAnalyzerMeasure",
     "I2CRead", "I2CWrite", "I2CTraverse",
     "MCUIOSetOutput", "MCUIOHighZ", "MCUIOPulse", "MCUIORead",
+    "CH9114FSetOutput", "CH9114FHighZ", "CH9114FPulse", "CH9114FRead",
     "UARTSend", "UARTReceive",
     "LoopRange", "LoopList", "IfElse", "SetVariable", "Delay", "MathExpression",
     "BreakNode", "ContinueNode", "WaitUntil", "IfThenStop", "IfThenElse",

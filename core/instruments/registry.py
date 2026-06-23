@@ -647,6 +647,75 @@ def _disconnect_mcu_io(instance: object) -> None:
             logger.warning("MCU_IO close error: %s", e)
 
 
+def _create_ch9114f(spec: InstrumentSpec) -> object:
+    from instruments.factory import create_mcu_io
+    inst = create_mcu_io("ch9114f", port=spec.resource)
+    if hasattr(inst, "connect"):
+        ok = inst.connect()
+        if ok is False:
+            raise ConnectionError(f"CH9114F connect failed: {spec.resource}")
+    return inst
+
+
+def _verify_ch9114f(instance: object) -> InstrumentIdentity:
+    if hasattr(instance, "is_connected") and not instance.is_connected():
+        raise ConnectionError("CH9114F verify failed: device is not connected")
+    model = "CH9114F"
+    if hasattr(instance, "identify"):
+        text = instance.identify()
+        if text:
+            model = text
+    serial = getattr(instance, "port", "")
+    return InstrumentIdentity(
+        model=model,
+        serial=serial,
+        vendor="WCH",
+    )
+
+
+def _scan_ch9114f() -> list[InstrumentCandidate]:
+    from debug_config import DEBUG_MOCK
+    if DEBUG_MOCK:
+        return [
+            InstrumentCandidate(
+                instrument_type="ch9114f",
+                connection_kind="serial_raw_repl",
+                resource="MOCK::CH9114F",
+                model_hint="CH9114F",
+                serial_hint="MOCK",
+                display_name="Mock CH9114F GPIO",
+            ),
+        ]
+    candidates = []
+    try:
+        from instruments.MCU_IO import list_ch9114f_ports
+        for device in list_ch9114f_ports():
+            candidates.append(InstrumentCandidate(
+                instrument_type="ch9114f",
+                connection_kind="serial_raw_repl",
+                resource=device,
+                model_hint="CH9114F",
+                serial_hint="",
+                display_name=f"{device} - CH9114F",
+            ))
+    except Exception as e:
+        logger.warning("CH9114F scan failed: %s", e)
+    return candidates
+
+
+def _disconnect_ch9114f(instance: object) -> None:
+    if hasattr(instance, "disconnect"):
+        try:
+            instance.disconnect()
+        except Exception as e:
+            logger.warning("CH9114F disconnect error: %s", e)
+    elif hasattr(instance, "close"):
+        try:
+            instance.close()
+        except Exception as e:
+            logger.warning("CH9114F close error: %s", e)
+
+
 N6705C_PROFILE = InstrumentProfile(
     instrument_type="n6705c",
     display_name="Keysight N6705C DC Power Analyzer",
@@ -766,6 +835,21 @@ MCU_IO_PROFILE = InstrumentProfile(
     verify=_verify_mcu_io,
     scan=_scan_mcu_io,
     disconnect=_disconnect_mcu_io,
+    default_slot="default",
+)
+
+CH9114F_PROFILE = InstrumentProfile(
+    instrument_type="ch9114f",
+    display_name="WCH CH9114F GPIO",
+    connection_kind="serial_raw_repl",
+    role="ch9114f",
+    capabilities=frozenset({
+        "gpio_out", "gpio_input", "gpio_read", "gpio_pulse",
+    }),
+    create=_create_ch9114f,
+    verify=_verify_ch9114f,
+    scan=_scan_ch9114f,
+    disconnect=_disconnect_ch9114f,
     default_slot="default",
 )
 
@@ -944,6 +1028,7 @@ def create_default_registry() -> ProfileRegistry:
     registry.register(WT2040_PROFILE)
     registry.register(KEYSIGHT53230A_PROFILE)
     registry.register(MCU_IO_PROFILE)
+    registry.register(CH9114F_PROFILE)
     registry.register(SERIAL_PORT_PROFILE)
     registry.register(BES_USB_I2C_PROFILE)
     return registry
