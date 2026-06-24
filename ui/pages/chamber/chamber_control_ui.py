@@ -4,6 +4,14 @@
 
 import sys
 import os
+
+if not getattr(sys, "frozen", False):
+    _PROJECT_ROOT = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    )
+    if _PROJECT_ROOT not in sys.path:
+        sys.path.insert(0, _PROJECT_ROOT)
+
 from ui.resource_path import get_resource_base
 
 
@@ -45,6 +53,20 @@ _SEARCH_SVG_PATH = os.path.join(
     get_resource_base(),
     "resources", "modules", "SVG_Common", "search.svg"
 )
+
+
+def _build_thermometer_icon(size=256, stroke="#fb7185"):
+    if not os.path.isfile(_THERMOMETER_SVG_PATH):
+        return QIcon()
+    with open(_THERMOMETER_SVG_PATH, "r", encoding="utf-8") as f:
+        svg_data = f.read().replace('stroke="currentColor"', f'stroke="{stroke}"').encode("utf-8")
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    renderer = QSvgRenderer(svg_data)
+    painter = QPainter(pixmap)
+    renderer.render(painter)
+    painter.end()
+    return QIcon(pixmap)
 
 
 class TemperatureGauge(QWidget):
@@ -1534,7 +1556,11 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
+    chamber_icon = _build_thermometer_icon()
+    app.setWindowIcon(chamber_icon)
+
     window = ChamberControlUI()
+    window.setWindowIcon(chamber_icon)
     window.setWindowTitle("Chamber Test")
     resize_and_center_window(window)
     window.show()

@@ -1012,6 +1012,7 @@ class Ch9114GpioMixin:
 
 if __name__ == "__main__":
     from PySide6.QtWidgets import QApplication
+    from PySide6.QtCore import QTimer
     from ui.standalone import resize_and_center_window
 
     DARK_CARD_STYLE = """
@@ -1091,9 +1092,25 @@ if __name__ == "__main__":
             root.addWidget(card)
 
             self.bind_ch9114f_signals()
+            QTimer.singleShot(0, self._on_ch9114f_search)
 
         def append_log(self, msg):
             logger.info(msg)
+
+        def _on_ch9114f_search_done(self, ports):
+            super()._on_ch9114f_search_done(ports)
+            if not ports:
+                return
+            combo = self.ch9114f_port_combo
+            best_idx = 0
+            best_num = -1
+            for i in range(combo.count()):
+                m = re.search(r'COM(\d+)', combo.itemText(i), re.IGNORECASE)
+                num = int(m.group(1)) if m else -1
+                if num > best_num:
+                    best_num = num
+                    best_idx = i
+            combo.setCurrentIndex(best_idx)
 
     class _DemoWindow(QWidget):
         def __init__(self, parent=None):
@@ -1110,7 +1127,7 @@ if __name__ == "__main__":
 
     w = _DemoWindow()
     w.setWindowTitle("CH9114F GPIO Card")
-    resize_and_center_window(w)
+    resize_and_center_window(w, size=(510, 510))
     w.show()
 
     sys.exit(app.exec())
