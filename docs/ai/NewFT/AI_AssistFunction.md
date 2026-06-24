@@ -9,7 +9,7 @@
 
 所有 Action 以 `ActionSpec` 注册（`name` / `description` / `parameters_schema` / `risk_level` / `require_confirmation` / `category`），由 `builder.py` 装配进 registry，并经 `to_tools()` 渲染为 OpenAI tools 提供给模型。
 
-### 1.1 查询类（category=query，全部只读，风险 low）
+### 1.1 查询类（category=query，只读为主；P7 诊断自检并入此类，run_instrument_selftest 为 medium）
 
 | 动作 | 参数 | 风险 | 需确认 | 作用 |
 |---|---|---|---|---|
@@ -21,6 +21,11 @@
 | `get_test_sequence_status` | 无 | low | 否 | 获取当前测试序列运行状态（是否运行/暂停/步骤数） |
 | `get_waveform_window` | `label`, `t0`, `t1`, `max_points`(10-5000) | low | 否 | 波形按需放大：截取指定通道 [t0,t1] 高分辨率片段（超出 LTTB 压缩） |
 | `get_waveform_segments` | `label`, `t0`, `t1`, `pen`(0.1-1000) | low | 否 | 波形段落子结构分析（PELT 变点检测），返回形态标签/均值/峰值/宽度/电荷 |
+| `get_instrument_errors` | `session_id` | low | 否 | 读取已连接仪器 SCPI 错误队列（驱动 get_errors），返回错误列表/数量/has_errors |
+| `run_instrument_selftest` | `session_id` | medium | 否 | 触发仪器自检（*TST?），持 busy 租约；返回结果码与 passed 标志（0=通过） |
+| `ping_instrument` | `session_id` | low | 否 | 连通性检查（ping / identify_instrument / *IDN?），返回 alive 与 idn |
+| `get_recent_audit_log` | `lines`(1-1000) | low | 否 | 回看 AI 历史动作审计日志最近 N 行（JSONL 解析为 entries） |
+| `get_app_log_errors` | `lines`(1-1000) | low | 否 | 软件日志环形缓冲仅过滤 ERROR/WARN/CRITICAL 记录，返回最近 N 行 |
 
 ### 1.2 UI 导航类（category=ui，风险 low）
 
@@ -134,8 +139,8 @@
 
 ### 1.9 动作总览
 
-- 已注册动作合计 **63 个**：查询 8 + UI 2 + 串口 7 + 仪器 16 + 示波器 11 + 温箱 6 + 测试序列 4 + 测试编排 5 + 数据导出 4。
-- 风险分布：low 32、medium 10、high 21。
+- 已注册动作合计 **68 个**：查询 13 + UI 2 + 串口 7 + 仪器 16 + 示波器 11 + 温箱 6 + 测试序列 4 + 测试编排 5 + 数据导出 4。
+- 风险分布：low 36、medium 11、high 21。
 - 需二次确认：`send_serial_text`、`send_serial_hex`、`send_serial_to_session`、`connect_instrument`、`disconnect_all_instruments`、`set_instrument_output`、`set_instrument_voltage`、`set_instrument_current`、`set_current_limit`、`set_output_off_mode`、`start_test_sequence`、`pause_test_sequence`、`scope_set_timebase`、`scope_set_channel_scale`、`scope_set_trigger`、`chamber_set_temperature`、`chamber_start`、`chamber_stop`、`chamber_wait_stable`、`apply_test_config_draft`、`set_test_variable`、`run_single_step`。
 
 ---
@@ -189,8 +194,8 @@
 
 ## 5. 接口扩展计划（Roadmap）
 
-> 目标：把当前 31 个动作扩成覆盖「连接管理 → 仪器测量 → 示波器 → 温箱 → 串口 → 测试编排 → 数据导出 → 诊断」的完整接口体系。
-> 原则：① 每个规划动作都对应代码库**已存在**的底层能力，避免空中楼阁；② 沿用现有 `ActionSpec` + `ActionDeps` + dispatcher 闭环，不破坏分层；③ 风险等级与确认策略与现有保持一致（写类 high+确认，读类 low）。
+> 状态：本 Roadmap（P1~P7）**已全部落地**，动作总数由初版 20 个扩至 68 个，覆盖「连接管理 → 仪器测量 → 示波器 → 温箱 → 串口 → 测试编排 → 数据导出 → 诊断」的完整接口体系。下文保留各阶段规划表与实施进度，供追溯与后续迭代参考。
+> 原则：① 每个动作都对应代码库**已存在**的底层能力，避免空中楼阁；② 沿用现有 `ActionSpec` + `ActionDeps` + dispatcher 闭环，不破坏分层；③ 风险等级与确认策略与现有保持一致（写类 high+确认，读类 low）。
 > 落地映射依据：仪器驱动 [n6705c.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/instruments/power/keysight/n6705c.py)、[dsox4034a.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/instruments/scopes/keysight/dsox4034a.py)、[mso64b.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/instruments/scopes/tektronix/mso64b.py)、[vt6002_chamber.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/instruments/chambers/vt6002_chamber.py)；管理层 [instrument_manager.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/core/instruments/instrument_manager.py)；测试节点 [instrument_nodes.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/core/custom_test/nodes/instrument_nodes.py)。
 
 ### 5.0 优先级与阶段划分
@@ -202,8 +207,8 @@
 | P3 | 温箱能力（控温/读温/判稳） | 中（温扫测试刚需） | 中 |
 | P4 | 串口/会话扩展（多会话/HEX/枚举） | 中 | 低 |
 | P5 | 测试编排进阶（草案应用/单步/变量） | 高（与 `generate_draft` 打通） | 高 |
-| P6 | 数据导出与产物（截图保存/Datalog/报告） | 中 | 中 |
-| P7 | 诊断与自检（错误队列/自检/审计回看） | 中 | 低 |
+| P6 | 数据导出与产物（截图/Datalog/波形 CSV/产物登记） | 中 | 中 |
+| P7 | 诊断与自检（错误队列/自检/ping/审计回看） | 中 | 低 |
 
 ---
 
@@ -383,11 +388,11 @@
 
 | 动作 | 状态 | 负责模块 | 备注 |
 |---|---|---|---|
-| `get_instrument_errors` | ⬜ 未开始 | `handlers/query.py` | 读类 |
-| `run_instrument_selftest` | ⬜ 未开始 | `handlers/query.py` | medium |
-| `ping_instrument` | ⬜ 未开始 | `handlers/query.py` | 读类 |
-| `get_recent_audit_log` | ⬜ 未开始 | `handlers/query.py` | 读类 |
-| `get_app_log_errors` | ⬜ 未开始 | `handlers/query.py` | 读类 |
+| `get_instrument_errors` | ✅ 已完成 | `handlers/query.py` | 读类 low；复用 `_run_read_action` 调 `get_errors`，回灌 errors/error_count/has_errors |
+| `run_instrument_selftest` | ✅ 已完成 | `handlers/query.py` | medium；复用 `_run_write_action` 持租约调 `self_test`，回灌 self_test_result/passed（0=通过） |
+| `ping_instrument` | ✅ 已完成 | `handlers/query.py` | 读类 low；优先 `ping()`，回退 `identify_instrument()` / `*IDN?`，回灌 alive/idn，异常优雅返回未存活 |
+| `get_recent_audit_log` | ✅ 已完成 | `handlers/query.py` | 读类 low；读 `get_audit_log().path` JSONL 最近 N 行解析为 entries |
+| `get_app_log_errors` | ✅ 已完成 | `handlers/query.py` | 读类 low；`app_logs_getter` 取环形缓冲窗口过滤 ERROR/WARN/CRITICAL |
 
 > 状态图例：⬜ 未开始 ｜ 🟡 进行中 ｜ ✅ 已完成 ｜ ⏸ 暂缓。实现某动作后将对应行状态更新即可，便于追踪整体落地进度。
 
@@ -407,7 +412,7 @@
 
 ## 7. 扩展后规模预估
 
-- 现状：9 类 63 个动作（P1 连接管理 5 + 仪器测量 6 + P2 示波器 11 + P3 温箱 6 + P4 串口扩展 5 + P5 测试编排 6 + P6 数据导出 4 已落地）。
-- 剩余规划：诊断 5 个（P7）。
-- 全部扩展后总计约 **68 个**动作，category 由 9 类扩为 9 类（P6 已新增 `export`，P7 `diagnostic` 可并入 `query`）。
+- 现状：9 类 68 个动作（P1 连接管理 5 + 仪器测量 6 + P2 示波器 11 + P3 温箱 6 + P4 串口扩展 5 + P5 测试编排 6 + P6 数据导出 4 + P7 诊断自检 5 已落地）。
+- Roadmap（P1~P7）已全部落地，无剩余规划动作。
+- 总计 **68 个**动作，category 维持 9 类（P6 新增 `export`，P7 诊断并入 `query`）。
 - 能力覆盖从「查询 + 基础控制」升级为「连接 → 测量 → 控制 → 编排 → 导出 → 诊断」全链路闭环。

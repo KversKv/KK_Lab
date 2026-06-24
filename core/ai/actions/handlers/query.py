@@ -2,13 +2,27 @@
 
 全部为只读、low 风险：当前页 / 串口状态 / 串口最近日志 / 软件日志 / 仪器状态 / 测试状态。
 仪器状态仅读 InstrumentManager.sessions() 快照，不主动 query 真机。
+P7 诊断自检动作亦并入本模块（category=query）：
+  get_instrument_errors   : low，读 SCPI 错误队列（驱动 get_errors）；
+  run_instrument_selftest : medium，触发仪器自检（*TST?），持 busy 租约；
+  ping_instrument         : low，连通性检查（ping / identify_instrument / *IDN?）；
+  get_recent_audit_log    : low，回看 AI 历史动作审计（JSONL）；
+  get_app_log_errors      : low，软件日志环形缓冲仅过滤 ERROR/WARN。
 本模块禁 import Qt。
 """
 from __future__ import annotations
 
+import json
+import os
 from typing import Any
 
+from core.ai.actions.audit import get_audit_log
 from core.ai.actions.handlers.deps import ActionDeps
+from core.ai.actions.handlers.instrument import (
+    _resolve_query_fn,
+    _run_read_action,
+    _run_write_action,
+)
 from core.ai.actions.registry import CATEGORY_QUERY, ActionSpec
 from log_config import get_logger
 
@@ -114,6 +128,56 @@ SPECS: list[ActionSpec] = [
         risk_level="low",
         category=CATEGORY_QUERY,
     ),
+    ActionSpec(
+        name="get_instrument_errors",
+        description="读取已连接仪器 SCPI 错误队列（驱动 get_errors，low：只读）。",
+        parameters_schema={
+            "type": "object",
+            "properties": {"session_id": {"type": "string"}},
+            "required": ["session_id"],
+        },
+        risk_level="low",
+        category=CATEGORY_QUERY,
+    ),
+    ActionSpec(
+        name="run_instrument_selftest",
+        description=(
+            "触发已连接仪器自检（*TST?，medium：自检期间持 busy 租约，避免抢占运行中测试）。"
+            "返回结果码与 passed 标志（0=通过）。"
+        ),
+        parameters_schema={
+            "type": "object",
+            "properties": {"session_id": {"type": "string"}},
+            "required": ["session_id"],
+        },
+        risk_level="medium",
+        category=CATEGORY_QUERY,
+    ),
+    ActionSpec(
+        name="ping_instrument",
+        description="检查已连接仪器连通性（ping / identify_instrument / *IDN?，low：只读）。",
+        parameters_schema={
+            "type": "object",
+            "properties": {"session_id": {"type": "string"}},
+            "required": ["session_id"],
+        },
+        risk_level="low",
+        category=CATEGORY_QUERY,
+    ),
+    ActionSpec(
+        name="get_recent_audit_log",
+        description="回看 AI 历史动作审计日志最近 N 行（JSONL，low：只读）。",
+        parameters_schema=_LINES_SCHEMA,
+        risk_level="low",
+        category=CATEGORY_QUERY,
+    ),
+    ActionSpec(
+        name="get_app_log_errors",
+        description="读取软件日志环形缓冲中最近 N 行 ERROR/WARN/CRITICAL 记录（low：只读）。",
+        parameters_schema=_LINES_SCHEMA,
+        risk_level="low",
+        category=CATEGORY_QUERY,
+    ),
 ]
 
 
@@ -123,6 +187,52 @@ def _clamp_lines(args: dict, default: int = 200) -> int:
     except (TypeError, ValueError):
         value = default
     return max(1, min(value, 1000))
+
+
+def _is_no_error(err: Any) -> bool:
+    """判断 SCPI 错误队列条目是否表示「无错误」（如 '+0,"No error"'）。"""
+    text = str(err).strip().lower()
+    return text.startswith("+0") or "no error" in text or text.startswith("0,")
+
+
+_ERROR_LEVEL_MARKERS = ("[error]", "[warning]", "[warn]", "[critical]")
+
+
+def _is_log_error_line(line: str) -> bool:
+    """判断格式化日志行是否为 ERROR/WARN/CRITICAL 级别。"""
+    if not line:
+        return False
+    lowered = line.lower()
+    return any(marker in lowered for marker in _ERROR_LEVEL_MARKERS)
+
+
+def _read_recent_audit(lines: int) -> list[dict]:
+    """读取审计日志 JSONL 文件最近 N 行并解析为 dict 列表。"""
+    try:
+        audit = get_audit_log()
+    except Exception:  # noqa: BLE001 - 审计单例不可用不应阻断查询
+        return []
+    path = audit.path
+    if not path or not os.path.isfile(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            all_lines = fh.readlines()
+    except OSError:
+        logger.error("读取审计日志失败: %s", path, exc_info=True)
+        return []
+    recent = all_lines[-lines:] if lines < len(all_lines) else all_lines
+    entries: list[dict] = []
+    for raw in recent:
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            entry = json.loads(raw)
+            entries.append(entry if isinstance(entry, dict) else {"raw": str(entry)})
+        except (TypeError, ValueError):
+            entries.append({"raw": raw})
+    return entries
 
 
 def build_handlers(deps: ActionDeps) -> dict[str, Any]:
@@ -260,6 +370,124 @@ def build_handlers(deps: ActionDeps) -> dict[str, Any]:
             ),
         }
 
+    def get_instrument_errors(args: dict) -> dict:
+        session_id = str(args.get("session_id", ""))
+
+        def apply(instance: Any) -> dict:
+            fn = getattr(instance, "get_errors", None)
+            if not callable(fn):
+                raise AttributeError("该仪器不支持 get_errors（SCPI 错误队列）。")
+            errors = fn()
+            if not isinstance(errors, list):
+                errors = [errors] if errors is not None else []
+            errors = [str(e) for e in errors]
+            has_errors = bool(errors) and not _is_no_error(errors[0])
+            return {
+                "errors": errors,
+                "error_count": len(errors),
+                "has_errors": has_errors,
+            }
+
+        return _run_read_action(
+            deps.instrument_manager,
+            session_id,
+            apply,
+            "仪器错误队列读取完成。",
+        )
+
+    def run_instrument_selftest(args: dict) -> dict:
+        session_id = str(args.get("session_id", ""))
+
+        def apply(instance: Any) -> dict:
+            fn = getattr(instance, "self_test", None)
+            if not callable(fn):
+                raise AttributeError("该仪器不支持 self_test（*TST?）。")
+            result = fn()
+            text = str(result).strip()
+            try:
+                code = int(text.lstrip("+").strip('"').strip("'"))
+                passed = code == 0
+            except (TypeError, ValueError):
+                passed = False
+            return {"self_test_result": text, "passed": passed}
+
+        return _run_write_action(
+            deps.instrument_manager,
+            session_id,
+            apply,
+            "仪器自检完成。",
+        )
+
+    def ping_instrument(args: dict) -> dict:
+        session_id = str(args.get("session_id", ""))
+
+        def apply(instance: Any) -> dict:
+            ping_fn = getattr(instance, "ping", None)
+            if callable(ping_fn):
+                try:
+                    alive = bool(ping_fn())
+                except Exception:  # noqa: BLE001 - ping 应优雅返回未存活
+                    alive = False
+                idn = ""
+                idn_fn = getattr(instance, "identify_instrument", None)
+                if callable(idn_fn):
+                    try:
+                        idn = str(idn_fn())
+                    except Exception:  # noqa: BLE001 - IDN 失败不致命
+                        idn = ""
+                return {"alive": alive, "idn": idn}
+            idn_fn = getattr(instance, "identify_instrument", None)
+            if callable(idn_fn):
+                try:
+                    idn = str(idn_fn())
+                    return {"alive": bool(idn), "idn": idn}
+                except Exception:  # noqa: BLE001 - ping 应优雅返回未存活
+                    return {"alive": False, "idn": ""}
+            query_fn = _resolve_query_fn(instance)
+            if query_fn is not None:
+                try:
+                    idn = str(query_fn("*IDN?"))
+                    return {"alive": bool(idn), "idn": idn}
+                except Exception:  # noqa: BLE001 - ping 应优雅返回未存活
+                    return {"alive": False, "idn": ""}
+            raise AttributeError(
+                "该仪器不支持 ping / identify_instrument / *IDN? 查询。"
+            )
+
+        return _run_read_action(
+            deps.instrument_manager,
+            session_id,
+            apply,
+            "仪器连通性检查完成。",
+        )
+
+    def get_recent_audit_log(args: dict) -> dict:
+        lines = _clamp_lines(args, default=200)
+        entries = _read_recent_audit(lines)
+        return {
+            "lines_returned": len(entries),
+            "entries": entries,
+            "truncated": len(entries) >= lines,
+        }
+
+    def get_app_log_errors(args: dict) -> dict:
+        lines = _clamp_lines(args, default=300)
+        getter = deps.app_logs_getter
+        if getter is None:
+            return {
+                "lines_returned": 0,
+                "logs": [],
+                "_message": "日志环形缓冲不可用。",
+            }
+        window = getter(max(lines * 8, 2000))
+        errors = [ln for ln in window if _is_log_error_line(ln)]
+        errors = errors[-lines:]
+        return {
+            "lines_returned": len(errors),
+            "logs": errors,
+            "truncated": len(errors) >= lines,
+        }
+
     return {
         "get_current_page": get_current_page,
         "get_serial_status": get_serial_status,
@@ -269,4 +497,9 @@ def build_handlers(deps: ActionDeps) -> dict[str, Any]:
         "get_test_sequence_status": get_test_sequence_status,
         "get_waveform_window": get_waveform_window,
         "get_waveform_segments": get_waveform_segments,
+        "get_instrument_errors": get_instrument_errors,
+        "run_instrument_selftest": run_instrument_selftest,
+        "ping_instrument": ping_instrument,
+        "get_recent_audit_log": get_recent_audit_log,
+        "get_app_log_errors": get_app_log_errors,
     }
