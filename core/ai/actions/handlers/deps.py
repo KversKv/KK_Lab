@@ -19,6 +19,7 @@ from typing import Any, Callable
 PageKeyGetter = Callable[[], "str | None"]
 SerialStatusGetter = Callable[[], "dict[str, Any] | None"]
 SerialManagerGetter = Callable[[], "Any | None"]
+SerialPortsGetter = Callable[[], "list[dict[str, Any]]"]
 ExecutionLogsGetter = Callable[[], "list[str]"]
 AppLogsGetter = Callable[[int], "list[str]"]
 RxRecentGetter = Callable[[str | None, int], "list[str]"]
@@ -43,6 +44,7 @@ class ActionDeps:
     page_key_getter: PageKeyGetter | None = None
     serial_status_getter: SerialStatusGetter | None = None
     serial_manager_getter: SerialManagerGetter | None = None
+    serial_ports_getter: SerialPortsGetter | None = None
     execution_logs_getter: ExecutionLogsGetter | None = None
     app_logs_getter: AppLogsGetter | None = None
     rx_recent_getter: RxRecentGetter | None = None

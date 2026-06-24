@@ -590,6 +590,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             page_key_getter=self._get_ai_page_key,
             serial_status_getter=self._get_ai_serial_status,
             serial_manager_getter=self._current_serial_manager,
+            serial_ports_getter=self._ai_serial_list_ports,
             execution_logs_getter=self._get_ai_execution_logs,
             app_logs_getter=self._get_ai_app_logs,
             rx_recent_getter=self._get_ai_recent_rx,
@@ -684,6 +685,28 @@ class MainWindow(CleanupMixin, QMainWindow):
         if service is not None:
             service.rx_cache.clear()
         return True, "已清空 AI 侧串口接收缓存。"
+
+    def _ai_serial_list_ports(self):
+        """枚举系统可用串口（供 AI list_serial_ports 动作调用）。
+
+        经 pyserial 的 list_ports.comports() 本地枚举，返回设备名/描述/硬件 ID。
+        UI 层负责实际 IO 枚举，core handler 不直连 serial 库。
+        """
+        try:
+            import serial.tools.list_ports as list_ports
+
+            ports = list_ports.comports()
+            return [
+                {
+                    "device": p.device,
+                    "description": getattr(p, "description", "") or "",
+                    "hwid": getattr(p, "hwid", "") or "",
+                }
+                for p in ports
+            ]
+        except Exception:  # noqa: BLE001 - 枚举失败回空列表，不致命
+            logger.error("AI 枚举串口失败", exc_info=True)
+            return []
 
     def _ai_test_run(self):
         ui = getattr(self, "custom_test_ui", None)

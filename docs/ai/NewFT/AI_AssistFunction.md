@@ -37,6 +37,13 @@
 |---|---|---|---|---|
 | `clear_serial_log` | 无 | low | 否 | 清空 AI 侧串口接收日志缓存 |
 | `send_serial_text` | `text`, `append_newline`(bool) | high | 是 | 向当前活动串口会话发送一段文本（经 SerialSessionManager） |
+| `list_serial_sessions` | 无 | low | 否 | 列出所有串口会话（含活动标记/端口/波特率/连接/收发字节） |
+| `list_serial_ports` | 无 | low | 否 | 枚举系统可用 COM 口（设备名/描述/硬件 ID） |
+| `send_serial_hex` | `session_id`, `hex` | high | 是 | 向指定会话发送 HEX 数据（仅允许 0-9/a-f/A-F 与空白） |
+| `send_serial_to_session` | `session_id`, `text`, `append_newline`(bool) | high | 是 | 向指定会话发送文本（多会话定向发送） |
+| `set_active_serial_session` | `session_id` | medium | 否 | 切换当前活动串口会话 |
+
+> 串口读类（`list_serial_sessions`/`list_serial_ports`）经 `serial_manager_getter` / `serial_ports_getter` 访问器只读快照，不持租约。写类（`send_serial_hex`/`send_serial_to_session`）须会话已连接，经 `SerialSessionManager.send_to_session` 发送，high 需确认。`set_active_serial_session` 为 medium，切换后影响后续 `send_serial_text` / `get_serial_status` 的目标会话。
 
 ### 1.4 仪器类（category=instrument，一律经 InstrumentManager）
 
@@ -103,9 +110,9 @@
 
 ### 1.8 动作总览
 
-- 已注册动作合计 **48 个**：查询 8 + UI 2 + 串口 2 + 仪器 16 + 示波器 11 + 温箱 6 + 测试序列 3。
-- 风险分布：low 25、medium 7、high 16。
-- 需二次确认：`send_serial_text`、`connect_instrument`、`disconnect_all_instruments`、`set_instrument_output`、`set_instrument_voltage`、`set_instrument_current`、`set_current_limit`、`set_output_off_mode`、`start_test_sequence`、`pause_test_sequence`、`scope_set_timebase`、`scope_set_channel_scale`、`scope_set_trigger`、`chamber_set_temperature`、`chamber_start`、`chamber_stop`、`chamber_wait_stable`。
+- 已注册动作合计 **53 个**：查询 8 + UI 2 + 串口 7 + 仪器 16 + 示波器 11 + 温箱 6 + 测试序列 3。
+- 风险分布：low 27、medium 8、high 18。
+- 需二次确认：`send_serial_text`、`send_serial_hex`、`send_serial_to_session`、`connect_instrument`、`disconnect_all_instruments`、`set_instrument_output`、`set_instrument_voltage`、`set_instrument_current`、`set_current_limit`、`set_output_off_mode`、`start_test_sequence`、`pause_test_sequence`、`scope_set_timebase`、`scope_set_channel_scale`、`scope_set_trigger`、`chamber_set_temperature`、`chamber_start`、`chamber_stop`、`chamber_wait_stable`。
 
 ---
 
@@ -113,7 +120,7 @@
 
 由 UI 层（MainWindow）构造并注入只读访问器与受控操作回调，core 不反向依赖 ui；字段为 None 表示当前环境不支持，handler 优雅降级。
 
-- 只读访问器：`instrument_manager`、`page_key_getter`、`serial_status_getter`、`serial_manager_getter`、`execution_logs_getter`、`app_logs_getter`、`rx_recent_getter`、`test_status_getter`、`waveform_data_getter`。
+- 只读访问器：`instrument_manager`、`page_key_getter`、`serial_status_getter`、`serial_manager_getter`、`serial_ports_getter`、`execution_logs_getter`、`app_logs_getter`、`rx_recent_getter`、`test_status_getter`、`waveform_data_getter`。
 - 受控操作回调：`open_page_callback`、`toggle_ai_panel_callback`、`serial_send_text_callback`、`serial_clear_callback`、`test_run_callback`、`test_pause_callback`、`test_stop_callback`、`chamber_wait_stable_callback`。
 
 ---
@@ -288,11 +295,11 @@
 
 | 动作 | 状态 | 负责模块 | 备注 |
 |---|---|---|---|
-| `list_serial_sessions` | ⬜ 未开始 | `handlers/serial.py` | 读类 |
-| `list_serial_ports` | ⬜ 未开始 | `handlers/serial.py` | 读类 |
-| `send_serial_hex` | ⬜ 未开始 | `handlers/serial.py` | 写类，需确认 |
-| `send_serial_to_session` | ⬜ 未开始 | `handlers/serial.py` | 写类，需确认 |
-| `set_active_serial_session` | ⬜ 未开始 | `handlers/serial.py` | medium |
+| `list_serial_sessions` | ✅ 已完成 | `handlers/serial.py` | 读类，经 `serial_manager_getter` |
+| `list_serial_ports` | ✅ 已完成 | `handlers/serial.py` | 读类，经 `serial_ports_getter`（UI 注入 `serial.tools.list_ports`） |
+| `send_serial_hex` | ✅ 已完成 | `handlers/serial.py` | 写类，需确认；HEX 解析后经 `send_to_session` |
+| `send_serial_to_session` | ✅ 已完成 | `handlers/serial.py` | 写类，需确认；定向会话发送 |
+| `set_active_serial_session` | ✅ 已完成 | `handlers/serial.py` | medium，切换活动会话 |
 
 ### 5.6 P5 · 测试编排进阶（category=test_config / test_sequence）
 
@@ -376,7 +383,7 @@
 
 ## 7. 扩展后规模预估
 
-- 现状：5 类 31 个动作（P1 连接管理 5 + 仪器测量 6 已落地）。
-- 剩余规划：示波器 11 + 温箱 6 + 串口扩展 5 + 测试编排 6 + 导出 4 + 诊断 5 ≈ **37 个**。
-- 全部扩展后总计约 **68 个**动作，category 由 5 类扩为 8 类（新增 `scope` / `chamber` / `export`，`diagnostic` 可并入 `query`）。
+- 现状：7 类 53 个动作（P1 连接管理 5 + 仪器测量 6 + P2 示波器 11 + P3 温箱 6 + P4 串口扩展 5 已落地）。
+- 剩余规划：测试编排 6 + 导出 4 + 诊断 5 ≈ **15 个**。
+- 全部扩展后总计约 **68 个**动作，category 由 7 类扩为 8 类（新增 `export`，`diagnostic` 可并入 `query`）。
 - 能力覆盖从「查询 + 基础控制」升级为「连接 → 测量 → 控制 → 编排 → 导出 → 诊断」全链路闭环。
