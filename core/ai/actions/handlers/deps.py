@@ -29,6 +29,9 @@ SerialClearCallback = Callable[[], "tuple[bool, str]"]
 TestControlCallback = Callable[[], "tuple[bool, str]"]
 TestStatusGetter = Callable[[], "dict[str, Any]"]
 WaveformDataGetter = Callable[[], "dict[str, Any] | None"]
+ChamberWaitStableCallback = Callable[
+    [str, float, float, float], "dict[str, Any]"
+]
 
 
 @dataclass
@@ -55,3 +58,5 @@ class ActionDeps:
     test_run_callback: TestControlCallback | None = None
     test_pause_callback: TestControlCallback | None = None
     test_stop_callback: TestControlCallback | None = None
+
+    chamber_wait_stable_callback: ChamberWaitStableCallback | None = None

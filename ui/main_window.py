@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from PySide6.QtCore import (
-    Qt, Signal, QPropertyAnimation, QEasingCurve, QTimer, QEvent
+    Qt, Signal, QPropertyAnimation, QEasingCurve, QTimer, QEvent, QEventLoop
 )
 
 if sys.platform == "win32":
@@ -602,6 +602,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             test_run_callback=self._ai_test_run,
             test_pause_callback=self._ai_test_pause,
             test_stop_callback=self._ai_test_stop,
+            chamber_wait_stable_callback=self._ai_chamber_wait_stable,
         )
         registry, dispatcher = build_action_system(
             deps,
@@ -716,6 +717,102 @@ class MainWindow(CleanupMixin, QMainWindow):
             logger.error("AI 停止测试序列失败", exc_info=True)
             return False, "停止测试序列异常，请查看日志。"
         return True, "已发送停止请求。"
+
+    def _ai_chamber_wait_stable(self, session_id, target, tolerance, timeout):
+        """温箱等待稳定：经 worker 线程运行 TemperatureStabilizer，QEventLoop 保持 UI 响应。
+
+        执行期持 busy 租约，避免其它流程改温度；判稳跑在独立线程，主线程经
+        QEventLoop + QTimer 轮询 future 完成状态，不阻塞 UI 事件循环。返回结果 dict
+        供 chamber_wait_stable handler 回灌模型。
+        """
+        from concurrent.futures import ThreadPoolExecutor
+
+        from instruments.chambers import TemperatureStabilizer
+
+        manager = self.instrument_manager
+        session = manager.get_session(session_id)
+        if session is None or not session.connected:
+            return {"ok": False, "_message": f"会话未连接：{session_id}"}
+        chamber = manager.get_instance(session_id)
+        if chamber is None:
+            return {"ok": False, "_message": f"无法获取温箱实例：{session_id}"}
+        if not manager.try_set_busy(session_id, True, owner="AIAssist"):
+            owner = getattr(session, "busy_owner", "")
+            return {
+                "ok": False,
+                "_message": f"温箱忙（owner={owner or '未知'}），拒绝等待以免冲突。",
+            }
+
+        stabilizer = TemperatureStabilizer(
+            chamber,
+            poll_interval=5.0,
+            window_seconds=60.0,
+            tolerance=tolerance,
+            stable_hits=2,
+            max_wait_s=timeout,
+            arrive_tolerance=1.0,
+            log_fn=lambda msg: logger.info("chamber_wait_stable[%s]: %s", session_id, msg),
+            stop_check=None,
+        )
+
+        box: dict = {}
+
+        def _run():
+            try:
+                box["result"] = stabilizer.wait_for_stable(target)
+            except Exception as exc:  # noqa: BLE001 - 透传给主线程统一处理
+                box["error"] = exc
+
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(_run)
+
+        loop = QEventLoop()
+
+        def _on_poll():
+            if future.done():
+                poll.stop()
+                loop.quit()
+
+        poll = QTimer()
+        poll.setInterval(100)
+        poll.timeout.connect(_on_poll)
+        poll.start()
+        if not future.done():
+            loop.exec()
+        poll.stop()
+        executor.shutdown(wait=False)
+
+        try:
+            manager.try_set_busy(session_id, False, owner="AIAssist")
+        except Exception:  # noqa: BLE001 - 释放租约失败不掩盖主结果
+            logger.error("释放温箱租约失败：%s", session_id, exc_info=True)
+
+        if "error" in box:
+            return {"ok": False, "_message": f"等待稳定异常：{box['error']}"}
+        result = box.get("result")
+        if result is None:
+            return {"ok": False, "_message": "等待稳定未返回结果。"}
+
+        actual = result.actual
+        actual_txt = f"{actual:.2f}" if isinstance(actual, (int, float)) else str(actual)
+        if result.stable:
+            msg = f"温度已稳定：{actual_txt} °C（耗时 {result.waited_s:.0f}s）。"
+        else:
+            msg = (
+                f"未稳定（{result.reason}）：当前 {actual_txt} °C，"
+                f"已等待 {result.waited_s:.0f}s。"
+            )
+        return {
+            "ok": bool(result.stable),
+            "session_id": session_id,
+            "stable": bool(result.stable),
+            "reason": result.reason,
+            "target": result.target,
+            "actual": actual,
+            "waited_s": round(result.waited_s, 1),
+            "poll_count": result.poll_count,
+            "_message": msg,
+        }
 
     def _get_ai_page_key(self):
         return self._get_current_help_key()

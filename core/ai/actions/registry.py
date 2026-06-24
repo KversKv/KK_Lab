@@ -24,6 +24,7 @@ CATEGORY_TEST_SEQUENCE = "test_sequence"
 CATEGORY_SERIAL = "serial"
 CATEGORY_INSTRUMENT = "instrument"
 CATEGORY_SCOPE = "scope"
+CATEGORY_CHAMBER = "chamber"
 CATEGORY_SCRIPT = "script"
 
 

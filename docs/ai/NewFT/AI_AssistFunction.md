@@ -88,11 +88,24 @@
 
 > 示波器动作复用仪器类 `_run_read_action` / `_run_write_action` 骨架（会话存在 + 已连接 + 未被占用 + 租约管理 + 异常兜底）。读类不持租约，仪器忙时拒绝以免抢占运行中测试；写类持 busy 租约。`scope_capture_screen` 截图为二进制，回灌模型时只回路径/尺寸/状态，图像走 P6 产物通道，不塞进对话上下文（防撑爆 token）。
 
-### 1.7 动作总览
+### 1.7 温箱类（category=chamber，经 InstrumentManager 取温箱驱动实例）
 
-- 已注册动作合计 **42 个**：查询 8 + UI 2 + 串口 2 + 仪器 16 + 示波器 11 + 测试序列 3。
-- 风险分布：low 23、medium 7、high 12。
-- 需二次确认：`send_serial_text`、`connect_instrument`、`disconnect_all_instruments`、`set_instrument_output`、`set_instrument_voltage`、`set_instrument_current`、`set_current_limit`、`set_output_off_mode`、`start_test_sequence`、`pause_test_sequence`、`scope_set_timebase`、`scope_set_channel_scale`、`scope_set_trigger`。
+| 动作 | 参数 | 风险 | 需确认 | 作用 |
+|---|---|---|---|---|
+| `chamber_get_current_temp` | `session_id` | low | 否 | 读取当前温度 PV（get_current_temp，单位 °C） |
+| `chamber_get_set_temp` | `session_id` | low | 否 | 读取设定温度 SV（get_set_temp，单位 °C） |
+| `chamber_set_temperature` | `session_id`, `temperature` | high | 是 | 设置目标温度（set_temperature，影响 DUT 环境） |
+| `chamber_start` | `session_id` | high | 是 | 启动温箱控温（start） |
+| `chamber_stop` | `session_id` | high | 是 | 停止温箱控温（stop） |
+| `chamber_wait_stable` | `session_id`, `target`, `tolerance`, `timeout` | high | 是 | 等待温度到达并稳定（复用 TemperatureStabilizer，长流程走 worker + busy 租约） |
+
+> 温箱读/写动作复用仪器类 `_run_read_action` / `_run_write_action` 骨架（会话存在 + 已连接 + 未被占用 + 租约管理 + 异常兜底），与仪器/示波器类一致。`chamber_wait_stable` 为长耗时动作（数分钟级），handler 模块禁 import Qt，故经 `ActionDeps.chamber_wait_stable_callback` 由 UI 层（MainWindow）注入 worker：在独立线程运行 `TemperatureStabilizer.wait_for_stable`，主线程经 `QEventLoop` + `QTimer` 轮询完成状态以保持 UI 响应；执行期持 busy 租约，避免其它流程改温度。`timeout` 硬上限 3600s，超时返回未稳定结果（不抛异常）。典型闭环：`chamber_set_temperature` → `chamber_start` → `chamber_wait_stable`。
+
+### 1.8 动作总览
+
+- 已注册动作合计 **48 个**：查询 8 + UI 2 + 串口 2 + 仪器 16 + 示波器 11 + 温箱 6 + 测试序列 3。
+- 风险分布：low 25、medium 7、high 16。
+- 需二次确认：`send_serial_text`、`connect_instrument`、`disconnect_all_instruments`、`set_instrument_output`、`set_instrument_voltage`、`set_instrument_current`、`set_current_limit`、`set_output_off_mode`、`start_test_sequence`、`pause_test_sequence`、`scope_set_timebase`、`scope_set_channel_scale`、`scope_set_trigger`、`chamber_set_temperature`、`chamber_start`、`chamber_stop`、`chamber_wait_stable`。
 
 ---
 
@@ -101,7 +114,7 @@
 由 UI 层（MainWindow）构造并注入只读访问器与受控操作回调，core 不反向依赖 ui；字段为 None 表示当前环境不支持，handler 优雅降级。
 
 - 只读访问器：`instrument_manager`、`page_key_getter`、`serial_status_getter`、`serial_manager_getter`、`execution_logs_getter`、`app_logs_getter`、`rx_recent_getter`、`test_status_getter`、`waveform_data_getter`。
-- 受控操作回调：`open_page_callback`、`toggle_ai_panel_callback`、`serial_send_text_callback`、`serial_clear_callback`、`test_run_callback`、`test_pause_callback`、`test_stop_callback`。
+- 受控操作回调：`open_page_callback`、`toggle_ai_panel_callback`、`serial_send_text_callback`、`serial_clear_callback`、`test_run_callback`、`test_pause_callback`、`test_stop_callback`、`chamber_wait_stable_callback`。
 
 ---
 
@@ -247,7 +260,7 @@
 | `chamber_get_set_temp` | `session_id` | low | `vt6002.get_set_temp` |
 | `chamber_set_temperature` | `session_id`, `temperature` | high | `vt6002.set_temperature`（影响 DUT 环境） |
 | `chamber_start` / `chamber_stop` | `session_id` | high | `vt6002.start` / `stop` |
-| `chamber_wait_stable` | `session_id`, `target`, `tolerance`, `timeout` | high | 复用 [SetChamberTemp 判稳逻辑](file:///d:/CodeProject/TRAE_Projects/KK_Lab/core/custom_test/nodes/instrument_nodes.py#L587-L609)（长流程走 worker + busy 租约） |
+| `chamber_wait_stable` | `session_id`, `target`, `tolerance`, `timeout` | high | 复用 [TemperatureStabilizer](file:///d:/CodeProject/TRAE_Projects/KK_Lab/instruments/chambers/temperature_stabilizer.py)（长流程走 worker + busy 租约） |
 
 > `chamber_wait_stable` 是长耗时动作，必须经 QThread worker，禁止阻塞；执行期持 busy 租约，避免其它流程改温度。
 
@@ -255,11 +268,11 @@
 
 | 动作 | 状态 | 负责模块 | 备注 |
 |---|---|---|---|
-| `chamber_get_current_temp` | ⬜ 未开始 | `handlers/chamber.py`（新建） | 读类 |
-| `chamber_get_set_temp` | ⬜ 未开始 | `handlers/chamber.py` | 读类 |
-| `chamber_set_temperature` | ⬜ 未开始 | `handlers/chamber.py` | 写类，需确认 |
-| `chamber_start` / `chamber_stop` | ⬜ 未开始 | `handlers/chamber.py` | 写类，需确认 |
-| `chamber_wait_stable` | ⬜ 未开始 | `handlers/chamber.py` | 长流程，走 worker |
+| `chamber_get_current_temp` | ✅ 已完成 | `handlers/chamber.py` | 读类，经 `_run_read_action` |
+| `chamber_get_set_temp` | ✅ 已完成 | `handlers/chamber.py` | 读类 |
+| `chamber_set_temperature` | ✅ 已完成 | `handlers/chamber.py` | 写类，需确认 |
+| `chamber_start` / `chamber_stop` | ✅ 已完成 | `handlers/chamber.py` | 写类，需确认 |
+| `chamber_wait_stable` | ✅ 已完成 | `handlers/chamber.py` + `MainWindow._ai_chamber_wait_stable` | 长流程，worker 经 `chamber_wait_stable_callback` 注入，复用 `TemperatureStabilizer` |
 
 ### 5.5 P4 · 串口/会话扩展（category=serial）
 
