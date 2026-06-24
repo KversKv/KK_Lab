@@ -24,7 +24,7 @@ from ui.widgets.instrument_state_poller import InstrumentStatePoller
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QPushButton,
     QLabel, QLineEdit, QFrame, QGraphicsDropShadowEffect,
-    QSizePolicy, QApplication, QGridLayout, QCheckBox
+    QSizePolicy, QApplication, QGridLayout, QCheckBox, QScrollArea
 )
 from PySide6.QtCore import Qt, QTimer, QRectF, QSize, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QFont, QPixmap
@@ -75,7 +75,7 @@ class TemperatureGauge(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._actual_temp = None
-        self.setMinimumSize(240, 240)
+        self.setMinimumSize(150, 150)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
     def set_temperature(self, value):
@@ -166,13 +166,36 @@ class ChamberControlUI(QWidget):
         self._setup_ui()
         self._connect_signals()
 
+        # 允许窗口缩到比内容更小：超出部分由外层滚动区接管，
+        # 打断内层 content_widget 最小尺寸向顶层窗口的传导。
+        self.setMinimumSize(520, 420)
+
     def _setup_ui(self):
         """设置界面"""
         self.setObjectName("rootWidget")
         self.setStyleSheet(self._build_stylesheet())
 
+        # 外层滚动区：窗口缩小时出现滚动条，而非被内容撑住最小尺寸
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+
+        scroll_area = QScrollArea(self)
+        scroll_area.setObjectName("pageScrollArea")
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.NoFrame)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setMinimumSize(0, 0)
+        scroll_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        outer_layout.addWidget(scroll_area)
+
+        content_widget = QWidget()
+        content_widget.setObjectName("rootWidget")
+        scroll_area.setWidget(content_widget)
+
         # 主布局
-        main_layout = QVBoxLayout(self)
+        main_layout = QVBoxLayout(content_widget)
         main_layout.setContentsMargins(16, 16, 16, 16)
         main_layout.setSpacing(18)
 
@@ -633,6 +656,56 @@ class ChamberControlUI(QWidget):
             color: #eaf1ff;
             font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
             font-size: 14px;
+        }
+
+        QScrollArea#pageScrollArea {
+            background: transparent;
+            border: none;
+        }
+
+        QScrollArea#pageScrollArea > QWidget > QWidget {
+            background: transparent;
+        }
+
+        QScrollBar:vertical {
+            background: transparent;
+            width: 10px;
+            margin: 0px;
+        }
+
+        QScrollBar::handle:vertical {
+            background: #1a315d;
+            min-height: 30px;
+            border-radius: 5px;
+        }
+
+        QScrollBar::handle:vertical:hover {
+            background: #27457d;
+        }
+
+        QScrollBar:horizontal {
+            background: transparent;
+            height: 10px;
+            margin: 0px;
+        }
+
+        QScrollBar::handle:horizontal {
+            background: #1a315d;
+            min-width: 30px;
+            border-radius: 5px;
+        }
+
+        QScrollBar::handle:horizontal:hover {
+            background: #27457d;
+        }
+
+        QScrollBar::add-line, QScrollBar::sub-line {
+            width: 0px;
+            height: 0px;
+        }
+
+        QScrollBar::add-page, QScrollBar::sub-page {
+            background: transparent;
         }
 
         QLabel {
@@ -1562,7 +1635,7 @@ if __name__ == "__main__":
     window = ChamberControlUI()
     window.setWindowIcon(chamber_icon)
     window.setWindowTitle("Chamber Test")
-    resize_and_center_window(window)
+    resize_and_center_window(window, size=(620, 520))
     window.show()
 
     sys.exit(app.exec())
