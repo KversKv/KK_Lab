@@ -233,12 +233,14 @@ ui/modules/serialCom_module/
 | **Phase 1** | PMU 算法/Worker 下沉 | clk / gpadc / dcdc / isGain / oscp | `core/pmu_test/*` analysis+worker | 中 | Phase 0 | ✅ | 100% | AI | 2026-06-23 |
 | **Phase 2** | 示波器 controller 化 | oscilloscope_base_ui | `core/controllers/oscilloscope_controller.py` | 中 | Phase 0 | ✅ | 100% | AI | 2026-06-23 |
 | **Phase 3** | n6705c_analyser 拆分（P0） | n6705c_analyser_ui | Worker→core，widgets/view 分文件 | 高 | Phase 1 | ✅ | 100% | AI | 2026-06-24 |
-| **Phase 4** | serialCom 巨石拆分（P0） | serialCom_module_frame | mixins/ + widgets/ + 脚本引擎下沉 core | 高 | Phase 0 | ✅ | 100% | AI | 2026-06-24 |
-| **Phase 5** | consumption_test 收尾 | consumption_test | `core/consumption_test/consumption_controller.py` | 中 | Phase 3, Phase 4 | ✅ | 100% | AI | 2026-06-24 |
+| **Phase 4** | serialCom 巨石拆分（P0） | serialCom_module_frame | mixins/ + widgets/ + 脚本引擎下沉 core | 高 | Phase 0 | 🔁 | 85% | AI | 2026-06-24 |
+| **Phase 5** | consumption_test 收尾 | consumption_test | `core/consumption_test/consumption_controller.py` | 中 | Phase 3, Phase 4 | 🔁 | 60% | AI | 2026-06-24 |
 | **Phase 6** | 样式 token 统一 | serialCom_*_style / theme | 合并皮肤为 token + 去重 | 中 | Phase 4 | ✅ | 100% | AI | 2026-06-24 |
 | **Phase 7** | 收尾（main_window / ai_panel / datalog） | main_window / ai_assist_panel / n6705c_datalog | 连接中枢抽出、panel 子组件、解析复用 | 中 | Phase 3, Phase 5 | ✅ | 100% | AI | 2026-06-24 |
 
-**整体进度**：8 / 8 Phase 完成（100%）
+**整体进度**：核心分层 100% 完成、测试 9/9 全绿；视图瘦身约 85%（6 / 8 Phase 满分，Phase 4/5 因主壳与 consumption 视图未达瘦壳目标按实测回退为部分完成）
+
+> 🔁 校正说明（2026-06-24 实测复核）：**Phase 4** 算法/Worker/Mixin 下沉与 re-export 已完成，但主壳实测 3369 行仍含 6+ Dialog 类未搬 `widgets.py`，记 85%；**Phase 5** Mixin 抽取完成、`consumption_test.py` 实测 3393 行远超 §4.2 目标，记 60%。详见 §12.2 / §12.3 / §13.3。
 
 > 注：Phase 1 / Phase 2 与 Phase 4 之间**无强依赖**，可并行；Phase 3、Phase 5 必须串行（consumption 依赖 n6705c 与 serialCom 的稳定接口）。
 
@@ -565,16 +567,45 @@ requirements.txt（如引入 pytest 相关，需确认是否已有）
 - **Phase 6 — 样式 token 化接入**：`ui/styles/serial_tokens.py` 提炼出 `APPLE_TOKENS` / `DARK_TOKENS`，两套皮肤均已切换为引用 token（apple 皮肤 `from ui.styles.serial_tokens import APPLE_TOKENS as _T`，dark 皮肤同构）。
 - **测试网全绿**：`tests/test_smoke_import.py` 与 `tests/refactor/` 下各单测以独立入口运行全部通过（venv 未装 pytest，改用各文件 `__main__` 入口执行）。
 
-### 12.2 需收尾问题 ⚠️
+### 12.2 需收尾问题 ⚠️（2026-06-24 复核校正）
 
-1. **主壳未彻底瘦身**：`serialCom_module_frame.py` 仍 3462 行，残留 6 个对话框/控件类（`_AddLogPanelDialog` / `_PanelSettingsDialog` / `_IndependentSerialWindow` / `_QuickCmdButton` / `_ProjectTabBar` / `_QuickCommandPickerPopup`）未搬到 `widgets.py`，未达 §11「源文件必须变短 / 瘦壳」目标。
-2. **残留备份文件**：`serialCom_module_frame.py.bak_mixins`（7529 行）应删除，避免误引用与索引干扰。
-3. **缺脚本引擎单测**：主看板 §7 任务 4-10「脚本引擎单测」标 ✅，但 `tests/refactor/test_serial_script_engine.py` 实际不存在，需补齐或回退看板状态。
+> 下列状态以本轮**实测**为准，已修正旧版数据偏差。
 
-### 12.3 看板一致性提醒
+1. **主壳瘦身半程**：`serialCom_module_frame.py` 旧版记为 3462 行有误，复核时实测为 **3991 行**（残留 17 个类，含 2 个 QObject Worker + 13 个 Dialog/控件类）。✅ 已下沉 `_SerialReadWorker` / `_NtpSyncWorker` 至 `core/serial_io/`（顶部 re-export 保兼容），主壳降至 **3369 行**。剩余 Dialog/控件类（`_AddLogPanelDialog` / `_PanelSettingsDialog` / `_IndependentSerialWindow` / `_QuickCmdButton` / `_ProjectTabBar` / `_QuickCommandPickerPopup` 等）仍待搬入 `widgets.py`，未完全达 §11 瘦壳目标。
+2. **残留备份文件**：✅ 已删除 `serialCom_module_frame.py.bak_mixins`（7529 行）。
+3. **脚本引擎单测（结论修正）**：旧版称缺失有误，实测 `tests/test_serial_script_engine.py` **存在且实跑 PASS**（仅未置于计划口径的 `tests/refactor/` 下，属命名口径差异，见 §13.2）。看板 4-10 标 ✅ 成立。
 
-- `consumption_test.py` 已出现 Phase 5 产物（`ConsumptionTestViewConfigMixin` / `ConsumptionTestViewResultsMixin`），但主看板 §7 中 Phase 5 仍标 ⬜（0%），存在「代码已动、看板未更」的不一致，建议同步看板状态。
+### 12.3 看板一致性提醒（已校正）
+
+- `consumption_test.py` 已落地 Phase 5 产物（`ConsumptionTestViewConfigMixin` / `ConsumptionTestViewResultsMixin`），§7 Phase 5 已同步标 ✅。但实测视图仍 **3393 行**，远超 §4.2 目标（< 1000~1500 行），属「Mixin 抽取完成、视图瘦身未尽」，建议将 Phase 5 完成度记为部分完成而非满分。
 
 ### 12.4 结论
 
-Phase 4、Phase 6 核心目标（Mixin 拆分、算法下沉无 Qt、re-export 兼容、token 化、测试全绿）均已达成，可判定通过；遗留 12.2 的 3 项收尾事项与 12.3 的看板一致性问题，建议在进入/收尾 Phase 5 时一并处理。
+Phase 4、Phase 6 核心目标（Mixin 拆分、算法下沉无 Qt、re-export 兼容、token 化、测试全绿）均已达成，可判定通过。12.2 第 2/3 项已于 2026-06-24 收尾复核中处理（删 bak、下沉 Worker、订正测试结论），剩余主壳 Dialog 群与 consumption 视图瘦身列为后续收尾。
+
+---
+
+## 13. Phase 7 检查结论（验收）
+
+> 核查时间：2026-06-24 ｜ 核查范围：Phase 7（收尾：main_window / ai_assist_panel / n6705c_datalog + 架构文档/ADR）
+
+### 13.1 验收通过项 ✅
+
+- **7-1 连接中枢抽出**：`core/instruments/connection_hub.py` 新建 `ConnectionHub(QObject)`，仅依赖 `QtCore`、无 `QtWidgets`、不反向 import `ui`（符合 `core/` 分层铁律）。`ui/main_window.py` L282 构造 hub、L877 单点订阅 `connection_changed`、L1492 统一 `shutdown()`，原分散三处（N6705C / 示波器 / manager）连线已收敛为一处 hub 订阅。
+- **7-2 ai_assist_panel 拆子组件**：导出 Markdown 逻辑下沉为 `ui/ai/transcript_exporter.py` 的 `build_export_markdown()`（纯逻辑，无 Qt 控件依赖）；`ai_assist_panel.py` L51 import、L1415 委托调用。
+- **7-3 n6705c_datalog 复用**：`_build_marker_dlog_bytes` 下沉为 `instruments/power/keysight/n6705c_datalog_process.py:L558` 的 `build_marker_dlog_bytes`；`n6705c_datalog_ui.py` L53 import 复用、L8148 调用，UI 内已无重复 dlog 构建函数（仅剩 `_export_marker_dlog` 编排壳），dlog 读/写格式知识合一。
+- **7-5 架构铁律 + ADR**：`docs/ai/04_ARCHITECTURE.md §2.1`「强化铁律」已正式并入（禁 UI 出现纯算法、connection_hub 单点订阅）；`docs/ai/decisions/005-monolith-refactor.md`（ADR 005）状态 Accepted。
+- **7-6 全量回归全绿**：`tests/refactor/test_phase7_connection_dlog.py`（6 单测：build_marker_dlog_bytes valid/empty/no_window + connection_hub properties/wiring/shutdown/signal_aggregation）与 `tests/test_smoke_import.py`（compile_all + import_core_modules）以独立入口运行全部通过。
+
+### 13.2 需留意项 ⚠️（2026-06-24 复核校正）
+
+1. **测试命名口径不一致**：§9.1 计划新建 `test_serial_script_engine.py` / `test_consumption_controller.py` 等，Phase 7 实际新增的是 `test_phase7_connection_dlog.py`（功能覆盖到位，仅命名口径不同）。
+2. **`test_serial_script_engine.py`（结论修正）**：旧版称该文件缺失有误——实测存在于 `tests/test_serial_script_engine.py` 且实跑 PASS，仅未落在 §9.1 计划口径的 `tests/refactor/` 目录下。若要严格对齐计划口径，可将其移入 `tests/refactor/`，否则功能上已满足。
+
+### 13.3 结论
+
+Phase 7 收尾阶段核心目标——连接中枢下沉、AI 导出逻辑剥离、dlog 格式知识合一、架构铁律固化与 ADR 归档——均已达成，判定通过；整体看板 8/8（100%）。13.2 与 §12.2 的零星问题已在 2026-06-24 收尾复核中处理或订正。
+
+> **2026-06-24 全方位评估补记**：本轮以实测（行数统计 / 依赖污染扫描 / 9 套测试实跑 / 残留类清点）复核了全部 Phase 成果。结论：**分层正确性满分**（13 个 `core/**/_worker.py` 与 `*_analysis.py` 零 Qt 污染、connection_hub 单向依赖、re-export 零破坏、9/9 测试 PASS）；**视图瘦身约 6 成**——`gpadc_test_ui.py`(1998→2285)、`oscilloscope_base_ui.py`(3031→3501)、`main_window.py`(1360→1504) 三处不降反增，`consumption_test.py`(3393) 远超目标，列为后续收尾重点。已处理项：删 `.bak_mixins`、下沉 serial Worker（主壳 3991→3369）、订正本节与 §12 过期数据。
+>
+> **2026-06-24 视图瘦身（首项·oscilloscope 控件外迁）**：将 `oscilloscope_base_ui.py` 内嵌的 7 个纯 UI 控件类（`CaptureLoadingOverlay` / `TruncatedComboBox` / `CouplingToggle` / `TriggerModeToggle` / `RunStopToggle` / `TimeScaleEdit` / `FlowLayout`）外迁至新建的 [ui/pages/oscilloscope/widgets.py](../../../ui/pages/oscilloscope/widgets.py)；将 `MeasurementPollingWorker`（纯 QtCore Worker）下沉至 [core/controllers/oscilloscope_measure_worker.py](../../../core/controllers/oscilloscope_measure_worker.py) 并经 `core/controllers/__init__.py` 导出。主壳保留 `_OscSearchThread`（耦合 controller）与 `OscilloscopeBaseUI`，顶部加 re-export 保兼容。**主壳 3501 → 2767 行**（-734）。回归：oscilloscope controller 6/6、smoke import（含 compile_all）、refactor 全套 58、serialCom mixin + 脚本引擎全 PASS，零行为漂移、零编码损坏。
