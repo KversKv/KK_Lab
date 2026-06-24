@@ -7837,20 +7837,15 @@ class N6705CDatalogUI(QWidget):
         except Exception:
             pass
 
-    def _export_combined_csv(self):
+    def _write_combined_csv(self, path):
+        """把当前可见通道数据写入 CSV（核心导出逻辑，非交互）。
+
+        返回 {"ok": bool, "path": str, "rows": int, "channels": int, "bytes": int, "message": str}。
+        供 _export_combined_csv（对话框）与 export_combined_csv_to_path（AI 受控）复用。
+        """
         visible_keys = self._get_visible_keys()
         if not visible_keys:
-            return
-
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Export Combined CSV", "",
-            "CSV Files (*.csv);;All Files (*)"
-        )
-        if not path:
-            return
-        if not path.lower().endswith(".csv"):
-            path = path + ".csv"
-
+            return {"ok": False, "message": "当前无可见通道数据。"}
         try:
             sorted_keys = sorted(visible_keys, key=_sort_key_for_label)
 
@@ -7968,6 +7963,37 @@ class N6705CDatalogUI(QWidget):
         except Exception:
             import traceback
             logger.error("Combined CSV export failed:\n%s", traceback.format_exc())
+            return {"ok": False, "message": "CSV 导出失败，请查看日志。"}
+        bytes_written = os.path.getsize(path) if os.path.exists(path) else 0
+        return {
+            "ok": True,
+            "path": path,
+            "rows": max_len,
+            "channels": len(sorted_keys),
+            "bytes": bytes_written,
+            "message": f"已导出 {len(sorted_keys)} 通道 / {max_len} 行。",
+        }
+
+    def _export_combined_csv(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Combined CSV", "",
+            "CSV Files (*.csv);;All Files (*)"
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".csv"):
+            path = path + ".csv"
+        self._write_combined_csv(path)
+
+    def export_combined_csv_to_path(self, path):
+        """非交互式导出当前可见通道数据到指定 CSV 路径（供 AI 受控导出，P6）。
+
+        path 须为可写绝对路径（AI 侧已限定在用户数据目录下）；自动补 .csv 后缀。
+        返回 _write_combined_csv 的结果 dict。
+        """
+        if not path.lower().endswith(".csv"):
+            path = path + ".csv"
+        return self._write_combined_csv(path)
 
     def _export_marker_csv(self):
         visible_keys = self._get_visible_keys()

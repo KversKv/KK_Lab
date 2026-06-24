@@ -10,6 +10,8 @@ UI 层（MainWindow）构造并注入只读访问器与受控操作回调，core
   - 测试编排（P5）经 test_config_getter/test_steps_getter/test_result_summary_getter
     只读快照 + test_set_variable_callback/test_run_single_step_callback 受控回调；
     草案落地经 config_apply_callback/script_apply_callback + draft_registry 句柄；
+  - 数据导出与产物（P6）经 datalog_export_callback 受控导出 + waveform_full_data_getter
+    全量波形快照 + artifact_registry 产物句柄登记；
   - UI 跳页经 open_page_callback。
 本模块禁 import Qt。
 """
@@ -40,9 +42,11 @@ TestRunSingleStepCallback = Callable[[str], "tuple[bool, str]"]
 ConfigApplyCallback = Callable[[Any], "tuple[bool, str]"]
 ScriptApplyCallback = Callable[[list[Any]], "tuple[bool, str]"]
 WaveformDataGetter = Callable[[], "dict[str, Any] | None"]
+WaveformFullDataGetter = Callable[[], "dict[str, Any] | None"]
 ChamberWaitStableCallback = Callable[
     [str, float, float, float], "dict[str, Any]"
 ]
+DatalogExportCallback = Callable[[str, str], "dict[str, Any]"]
 
 
 @dataclass
@@ -63,7 +67,9 @@ class ActionDeps:
     test_steps_getter: TestStepsGetter | None = None
     test_result_summary_getter: TestResultSummaryGetter | None = None
     waveform_data_getter: WaveformDataGetter | None = None
+    waveform_full_data_getter: WaveformFullDataGetter | None = None
     draft_registry: Any | None = None
+    artifact_registry: Any | None = None
 
     open_page_callback: OpenPageCallback | None = None
     toggle_ai_panel_callback: ToggleAiPanelCallback | None = None
@@ -80,3 +86,5 @@ class ActionDeps:
     script_apply_callback: ScriptApplyCallback | None = None
 
     chamber_wait_stable_callback: ChamberWaitStableCallback | None = None
+
+    datalog_export_callback: DatalogExportCallback | None = None

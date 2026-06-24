@@ -325,12 +325,24 @@ def build_handlers(deps: ActionDeps) -> dict[str, Any]:
                 "_message": f"截屏已保存：{path}" if path else "截屏已捕获但落盘失败。",
             }
 
-        return _run_read_action(
+        result = _run_read_action(
             deps.instrument_manager,
             session_id,
             apply,
             f"示波器 {session_id} 截屏完成。",
         )
+        if (
+            result.get("ok")
+            and result.get("path")
+            and deps.artifact_registry is not None
+        ):
+            result["artifact_id"] = deps.artifact_registry.register(
+                "scope_screenshot",
+                result["path"],
+                session_id=session_id,
+                bytes=int(result.get("bytes", 0)),
+            )
+        return result
 
     def scope_autoscale(args: dict) -> dict:
         session_id = str(args.get("session_id", ""))

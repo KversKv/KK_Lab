@@ -26,6 +26,7 @@ CATEGORY_INSTRUMENT = "instrument"
 CATEGORY_SCOPE = "scope"
 CATEGORY_CHAMBER = "chamber"
 CATEGORY_SCRIPT = "script"
+CATEGORY_EXPORT = "export"
 
 
 @dataclass(frozen=True)

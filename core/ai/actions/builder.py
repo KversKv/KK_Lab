@@ -10,6 +10,7 @@ from core.ai.actions.dispatcher import ActionDispatcher
 from core.ai.actions.handlers import deps as _deps_mod
 from core.ai.actions.handlers import (
     chamber as _chamber,
+    export as _export,
     instrument as _instrument,
     query as _query,
     scope as _scope,
@@ -25,7 +26,7 @@ from log_config import get_logger
 
 logger = get_logger(__name__)
 
-_HANDLER_MODULES = (_query, _ui, _serial, _instrument, _scope, _chamber, _test)
+_HANDLER_MODULES = (_query, _ui, _serial, _instrument, _scope, _chamber, _test, _export)
 
 
 def build_registry() -> ActionRegistry:

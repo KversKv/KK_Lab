@@ -26,6 +26,7 @@ from core.ai.conversation_store import (
     save_summary as _save_persisted_summary,
 )
 from core.ai.draft_registry import DraftRegistry
+from core.ai.artifact_registry import ArtifactRegistry
 from core.ai.log_ring import get_log_ring
 from core.ai.newapi_client import AIClientError, ChatResult, NewAPIClient
 from core.ai.nudges import force_tool_nudge
@@ -264,6 +265,7 @@ class AIService(QObject):
         self._registry = None
         self._dispatcher = None
         self._draft_registry = DraftRegistry()
+        self._artifact_registry = ArtifactRegistry()
         self._agent_messages: list[dict] = []
         self._agent_rounds = 0
         self._agent_model = ""
@@ -288,6 +290,11 @@ class AIService(QObject):
     def draft_registry(self) -> DraftRegistry:
         """草案注册表：generate_draft 产出的草案按 draft_id 登记，供 apply 动作落地。"""
         return self._draft_registry
+
+    @property
+    def artifact_registry(self) -> ArtifactRegistry:
+        """产物注册表：P6 导出动作落盘的产物按 artifact_id 登记，供 get_artifact_list 回看。"""
+        return self._artifact_registry
 
     @property
     def rx_cache(self) -> SerialRxCache:

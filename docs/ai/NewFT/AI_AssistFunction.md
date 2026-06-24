@@ -121,10 +121,21 @@
 
 > 温箱读/写动作复用仪器类 `_run_read_action` / `_run_write_action` 骨架（会话存在 + 已连接 + 未被占用 + 租约管理 + 异常兜底），与仪器/示波器类一致。`chamber_wait_stable` 为长耗时动作（数分钟级），handler 模块禁 import Qt，故经 `ActionDeps.chamber_wait_stable_callback` 由 UI 层（MainWindow）注入 worker：在独立线程运行 `TemperatureStabilizer.wait_for_stable`，主线程经 `QEventLoop` + `QTimer` 轮询完成状态以保持 UI 响应；执行期持 busy 租约，避免其它流程改温度。`timeout` 硬上限 3600s，超时返回未稳定结果（不抛异常）。典型闭环：`chamber_set_temperature` → `chamber_start` → `chamber_wait_stable`。
 
-### 1.8 动作总览
+### 1.8 数据导出与产物类（category=export，P6）
 
-- 已注册动作合计 **59 个**：查询 8 + UI 2 + 串口 7 + 仪器 16 + 示波器 11 + 温箱 6 + 测试序列 4 + 测试编排 5。
-- 风险分布：low 30、medium 8、high 21。
+| 动作 | 参数 | 风险 | 需确认 | 作用 |
+|---|---|---|---|---|
+| `save_scope_screenshot` | `session_id`, `dir` | medium | 否 | 截取已连接示波器屏幕 PNG 导出到指定目录（默认 `ai/exports/`），回灌路径/字节数/产物句柄 |
+| `export_datalog_csv` | `session_id`, `dir` | medium | 否 | 把当前 Datalog 页内存数据导出为合并 CSV（经 `datalog_export_callback` 非交互导出） |
+| `export_waveform_csv` | `label`, `t0`, `t1`, `dir` | low | 否 | 把指定通道 [t0,t1] 片段导出为 CSV（`waveform_full_data_getter` + `slice_channel_fast`） |
+| `get_artifact_list` | 无 | low | 否 | 列出本次会话产生的所有产物路径与元信息（经 `ArtifactRegistry`） |
+
+> 产物路径限定在用户数据目录（`user_data/` 或打包态 `%APPDATA%/KK_Lab/`）之下，`dir` 留空用默认 `ai/exports/`，禁止任意路径写入与路径穿越（`_resolve_export_dir` 校验 allowed_root）。二进制/大产物只回灌「路径 + 元信息 + artifact_id」，不回灌内容本身（防撑爆 token）。`scope_capture_screen`（P2）落盘后亦经 `ArtifactRegistry` 登记句柄，统一纳入产物通道。`ArtifactRegistry` 镜像 `DraftRegistry` 设计（线程安全 + FIFO 上限 200），由 `AIService.artifact_registry` 暴露、`ActionDeps.artifact_registry` 注入。`export_datalog_csv` 复用 Datalog 页 `_write_combined_csv` 核心逻辑（对话框版 `_export_combined_csv` 与 AI 版 `export_combined_csv_to_path` 共用），`session_id` 仅用于审计追溯。
+
+### 1.9 动作总览
+
+- 已注册动作合计 **63 个**：查询 8 + UI 2 + 串口 7 + 仪器 16 + 示波器 11 + 温箱 6 + 测试序列 4 + 测试编排 5 + 数据导出 4。
+- 风险分布：low 32、medium 10、high 21。
 - 需二次确认：`send_serial_text`、`send_serial_hex`、`send_serial_to_session`、`connect_instrument`、`disconnect_all_instruments`、`set_instrument_output`、`set_instrument_voltage`、`set_instrument_current`、`set_current_limit`、`set_output_off_mode`、`start_test_sequence`、`pause_test_sequence`、`scope_set_timebase`、`scope_set_channel_scale`、`scope_set_trigger`、`chamber_set_temperature`、`chamber_start`、`chamber_stop`、`chamber_wait_stable`、`apply_test_config_draft`、`set_test_variable`、`run_single_step`。
 
 ---
@@ -133,8 +144,8 @@
 
 由 UI 层（MainWindow）构造并注入只读访问器与受控操作回调，core 不反向依赖 ui；字段为 None 表示当前环境不支持，handler 优雅降级。
 
-- 只读访问器：`instrument_manager`、`page_key_getter`、`serial_status_getter`、`serial_manager_getter`、`serial_ports_getter`、`execution_logs_getter`、`app_logs_getter`、`rx_recent_getter`、`test_status_getter`、`test_config_getter`、`test_steps_getter`、`test_result_summary_getter`、`waveform_data_getter`、`draft_registry`。
-- 受控操作回调：`open_page_callback`、`toggle_ai_panel_callback`、`serial_send_text_callback`、`serial_clear_callback`、`test_run_callback`、`test_pause_callback`、`test_stop_callback`、`test_set_variable_callback`、`test_run_single_step_callback`、`config_apply_callback`、`script_apply_callback`、`chamber_wait_stable_callback`。
+- 只读访问器：`instrument_manager`、`page_key_getter`、`serial_status_getter`、`serial_manager_getter`、`serial_ports_getter`、`execution_logs_getter`、`app_logs_getter`、`rx_recent_getter`、`test_status_getter`、`test_config_getter`、`test_steps_getter`、`test_result_summary_getter`、`waveform_data_getter`、`waveform_full_data_getter`、`draft_registry`、`artifact_registry`。
+- 受控操作回调：`open_page_callback`、`toggle_ai_panel_callback`、`serial_send_text_callback`、`serial_clear_callback`、`test_run_callback`、`test_pause_callback`、`test_stop_callback`、`test_set_variable_callback`、`test_run_single_step_callback`、`config_apply_callback`、`script_apply_callback`、`chamber_wait_stable_callback`、`datalog_export_callback`。
 
 ---
 
@@ -154,7 +165,7 @@
 | `clear_history()` | 清空当前会话历史 |
 | `session_stats()` / `persisted_history()` | 会话统计 / 已落盘历史 |
 | `available_models()` / `current_model()` / `set_model_override(model)` | 模型列表 / 当前模型 / 临时切换模型 |
-| `is_busy()` / `settings` / `dispatcher` / `draft_registry` / `rx_cache` | 状态与组件属性（draft_registry 为草案句柄登记表） |
+| `is_busy()` / `settings` / `dispatcher` / `draft_registry` / `artifact_registry` / `rx_cache` | 状态与组件属性（draft_registry 为草案句柄登记表，artifact_registry 为产物句柄登记表） |
 | `analyze_recent_logs()` / `analyze_logs(options)` | 触发日志分析 |
 | `generate_draft(kind, user_text)` | 生成草案（测试配置/脚本草案） |
 | `test_connection()` | 测试 New API 连通性 |
@@ -353,10 +364,10 @@
 
 | 动作 | 状态 | 负责模块 | 备注 |
 |---|---|---|---|
-| `save_scope_screenshot` | ⬜ 未开始 | `handlers/export.py`（新建） | 存盘，回灌路径 |
-| `export_datalog_csv` | ⬜ 未开始 | `handlers/export.py` | medium |
-| `export_waveform_csv` | ⬜ 未开始 | `handlers/export.py` | 读类 |
-| `get_artifact_list` | ⬜ 未开始 | `handlers/export.py` | 读类 |
+| `save_scope_screenshot` | ✅ 已完成 | `handlers/export.py` | medium；复用 `_run_read_action` 调 `capture_screen_png`，落盘到 `_resolve_export_dir` 校验目录，登记 artifact |
+| `export_datalog_csv` | ✅ 已完成 | `handlers/export.py` + `n6705c_datalog_ui.export_combined_csv_to_path` | medium；经 `datalog_export_callback` 非交互导出，复用 `_write_combined_csv` 核心 |
+| `export_waveform_csv` | ✅ 已完成 | `handlers/export.py` | 读类 low；`waveform_full_data_getter` + `slice_channel_fast` 切片写 CSV |
+| `get_artifact_list` | ✅ 已完成 | `handlers/export.py` + `core/ai/artifact_registry.py` | 读类 low；回灌 `ArtifactRegistry.list()` 摘要 |
 
 ### 5.8 P7 · 诊断与自检（category=query / diagnostic）
 
@@ -396,7 +407,7 @@
 
 ## 7. 扩展后规模预估
 
-- 现状：8 类 59 个动作（P1 连接管理 5 + 仪器测量 6 + P2 示波器 11 + P3 温箱 6 + P4 串口扩展 5 + P5 测试编排 6 已落地）。
-- 剩余规划：导出 4 + 诊断 5 ≈ **9 个**。
-- 全部扩展后总计约 **68 个**动作，category 由 8 类扩为 9 类（新增 `export`，`diagnostic` 可并入 `query`）。
+- 现状：9 类 63 个动作（P1 连接管理 5 + 仪器测量 6 + P2 示波器 11 + P3 温箱 6 + P4 串口扩展 5 + P5 测试编排 6 + P6 数据导出 4 已落地）。
+- 剩余规划：诊断 5 个（P7）。
+- 全部扩展后总计约 **68 个**动作，category 由 9 类扩为 9 类（P6 已新增 `export`，P7 `diagnostic` 可并入 `query`）。
 - 能力覆盖从「查询 + 基础控制」升级为「连接 → 测量 → 控制 → 编排 → 导出 → 诊断」全链路闭环。

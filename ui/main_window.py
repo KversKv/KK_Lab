@@ -599,7 +599,9 @@ class MainWindow(CleanupMixin, QMainWindow):
             test_steps_getter=self._get_ai_test_steps,
             test_result_summary_getter=self._get_ai_test_result_summary,
             waveform_data_getter=self._provide_ai_waveform_windowed,
+            waveform_full_data_getter=self._provide_ai_waveform_full,
             draft_registry=self.ai_service.draft_registry,
+            artifact_registry=self.ai_service.artifact_registry,
             open_page_callback=self._ai_open_page,
             toggle_ai_panel_callback=self._ai_toggle_panel,
             serial_send_text_callback=self._ai_serial_send_text,
@@ -612,6 +614,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             config_apply_callback=self._apply_ai_config_draft,
             script_apply_callback=self._apply_ai_script_draft,
             chamber_wait_stable_callback=self._ai_chamber_wait_stable,
+            datalog_export_callback=self._ai_export_datalog_csv,
         )
         registry, dispatcher = build_action_system(
             deps,
@@ -956,6 +959,34 @@ class MainWindow(CleanupMixin, QMainWindow):
         if ui is None or self.current_instrument_ui != "datalog":
             return None
         return ui.get_waveform_data_windowed()
+
+    def _provide_ai_waveform_full(self):
+        """返回 Datalog 页全量波形数据（未按可见窗口裁剪），供 P6 波形 CSV 导出切片。"""
+        ui = getattr(self, "n6705c_datalog_ui", None)
+        if ui is None or self.current_instrument_ui != "datalog":
+            return None
+        getter = getattr(ui, "get_waveform_data", None)
+        if not callable(getter):
+            return None
+        return getter()
+
+    def _ai_export_datalog_csv(self, session_id, dir_path):
+        """P6 Datalog CSV 导出回调：委托 Datalog 页非交互式导出到指定目录。
+
+        session_id 仅用于审计追溯；实际导出的是当前 Datalog 页内存中的可见通道数据。
+        返回 {ok, path, rows, channels, bytes, message} 供 export_datalog_csv handler 回灌。
+        """
+        ui = getattr(self, "n6705c_datalog_ui", None)
+        if ui is None or self.current_instrument_ui != "datalog":
+            return {"ok": False, "message": "当前不在 Datalog 页面，无法导出。"}
+        exporter = getattr(ui, "export_combined_csv_to_path", None)
+        if not callable(exporter):
+            return {"ok": False, "message": "Datalog 页面不支持非交互式导出。"}
+        try:
+            return exporter(dir_path)
+        except Exception:  # noqa: BLE001 - 导出异常转可读结果
+            logger.error("AI Datalog CSV 导出失败", exc_info=True)
+            return {"ok": False, "message": "导出异常，请查看日志。"}
 
     def _apply_ai_script_draft(self, nodes):
         ui = getattr(self, "custom_test_ui", None)
