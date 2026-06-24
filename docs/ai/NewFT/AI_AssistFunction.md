@@ -70,11 +70,29 @@
 | `pause_test_sequence` | 无 | high | 是 | 暂停/恢复当前运行的测试序列 |
 | `stop_test_sequence` | 无 | high | 否（安全操作，仍写审计） | 停止当前运行的测试序列 |
 
-### 1.6 动作总览
+### 1.6 示波器类（category=scope，经 InstrumentManager 取示波器驱动实例）
 
-- 已注册动作合计 **31 个**：查询 8 + UI 2 + 串口 2 + 仪器 16 + 测试序列 3。
-- 风险分布：low 19、medium 3、high 9。
-- 需二次确认：`send_serial_text`、`connect_instrument`、`disconnect_all_instruments`、`set_instrument_output`、`set_instrument_voltage`、`set_instrument_current`、`set_current_limit`、`set_output_off_mode`、`start_test_sequence`、`pause_test_sequence`。
+| 动作 | 参数 | 风险 | 需确认 | 作用 |
+|---|---|---|---|---|
+| `scope_measure_channel` | `session_id`, `channel` | low | 否 | 一次取 PK2PK/FREQUENCY/VMAX/VMIN 四项（容忍单项失败） |
+| `scope_get_measurement` | `session_id`, `channel`, `type` | low | 否 | 按类型取单项测量（pk2pk/frequency/mean/max/min/rms/amplitude） |
+| `scope_capture_screen` | `session_id`, `invert` | low | 否 | 截屏 PNG 落盘到 user_data/ai/screenshots/，只回路径/尺寸/状态 |
+| `scope_autoscale` | `session_id` | medium | 否 | 一键自动量程（仅 DSOX4034A 支持，MSO64B 优雅失败） |
+| `scope_set_timebase` | `session_id`, `seconds_per_div` | high | 是 | 设置时基（秒/格） |
+| `scope_set_channel_scale` | `session_id`, `channel`, `volts_per_div` | high | 是 | 设置通道垂直档位（V/格） |
+| `scope_set_trigger` | `session_id`, `source`, `level`, `slope` | high | 是 | 设置边沿触发（源通道/电平/斜率 POS/NEG/EITH） |
+| `scope_run` | `session_id` | medium | 否 | 连续采集（RUN） |
+| `scope_stop` | `session_id` | medium | 否 | 停止采集（STOP） |
+| `scope_single` | `session_id` | medium | 否 | 单次采集（SINGLE） |
+| `scope_is_acquiring` | `session_id` | low | 否 | 读取采集状态（is_acquiring） |
+
+> 示波器动作复用仪器类 `_run_read_action` / `_run_write_action` 骨架（会话存在 + 已连接 + 未被占用 + 租约管理 + 异常兜底）。读类不持租约，仪器忙时拒绝以免抢占运行中测试；写类持 busy 租约。`scope_capture_screen` 截图为二进制，回灌模型时只回路径/尺寸/状态，图像走 P6 产物通道，不塞进对话上下文（防撑爆 token）。
+
+### 1.7 动作总览
+
+- 已注册动作合计 **42 个**：查询 8 + UI 2 + 串口 2 + 仪器 16 + 示波器 11 + 测试序列 3。
+- 风险分布：low 23、medium 7、high 12。
+- 需二次确认：`send_serial_text`、`connect_instrument`、`disconnect_all_instruments`、`set_instrument_output`、`set_instrument_voltage`、`set_instrument_current`、`set_current_limit`、`set_output_off_mode`、`start_test_sequence`、`pause_test_sequence`、`scope_set_timebase`、`scope_set_channel_scale`、`scope_set_trigger`。
 
 ---
 
@@ -211,15 +229,15 @@
 
 | 动作 | 状态 | 负责模块 | 备注 |
 |---|---|---|---|
-| `scope_measure_channel` | ⬜ 未开始 | `handlers/scope.py`（新建） | 读类 |
-| `scope_get_measurement` | ⬜ 未开始 | `handlers/scope.py` | 读类 |
-| `scope_capture_screen` | ⬜ 未开始 | `handlers/scope.py` | 产物回灌路径 |
-| `scope_autoscale` | ⬜ 未开始 | `handlers/scope.py` | medium |
-| `scope_set_timebase` | ⬜ 未开始 | `handlers/scope.py` | 写类，需确认 |
-| `scope_set_channel_scale` | ⬜ 未开始 | `handlers/scope.py` | 写类，需确认 |
-| `scope_set_trigger` | ⬜ 未开始 | `handlers/scope.py` | 写类，需确认 |
-| `scope_run` / `scope_stop` / `scope_single` | ⬜ 未开始 | `handlers/scope.py` | medium |
-| `scope_is_acquiring` | ⬜ 未开始 | `handlers/scope.py` | 读类 |
+| `scope_measure_channel` | ✅ 已完成 | `handlers/scope.py` | 读类，PK2PK/FREQUENCY/VMAX/VMIN 容忍单项失败 |
+| `scope_get_measurement` | ✅ 已完成 | `handlers/scope.py` | 读类，7 种测量类型 |
+| `scope_capture_screen` | ✅ 已完成 | `handlers/scope.py` | PNG 落盘 user_data/ai/screenshots/，回路径/尺寸 |
+| `scope_autoscale` | ✅ 已完成 | `handlers/scope.py` | medium，仅 DSOX4034A 支持 |
+| `scope_set_timebase` | ✅ 已完成 | `handlers/scope.py` | 写类，需确认 |
+| `scope_set_channel_scale` | ✅ 已完成 | `handlers/scope.py` | 写类，需确认 |
+| `scope_set_trigger` | ✅ 已完成 | `handlers/scope.py` | 写类，需确认 |
+| `scope_run` / `scope_stop` / `scope_single` | ✅ 已完成 | `handlers/scope.py` | medium |
+| `scope_is_acquiring` | ✅ 已完成 | `handlers/scope.py` | 读类 |
 
 ### 5.4 P3 · 温箱能力（新增 category=chamber）
 

@@ -11,6 +11,7 @@ from core.ai.actions.handlers import deps as _deps_mod
 from core.ai.actions.handlers import (
     instrument as _instrument,
     query as _query,
+    scope as _scope,
     serial as _serial,
     test as _test,
     ui as _ui,
@@ -23,7 +24,7 @@ from log_config import get_logger
 
 logger = get_logger(__name__)
 
-_HANDLER_MODULES = (_query, _ui, _serial, _instrument, _test)
+_HANDLER_MODULES = (_query, _ui, _serial, _instrument, _scope, _test)
 
 
 def build_registry() -> ActionRegistry:

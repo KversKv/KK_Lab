@@ -23,6 +23,7 @@ CATEGORY_TEST_CONFIG = "test_config"
 CATEGORY_TEST_SEQUENCE = "test_sequence"
 CATEGORY_SERIAL = "serial"
 CATEGORY_INSTRUMENT = "instrument"
+CATEGORY_SCOPE = "scope"
 CATEGORY_SCRIPT = "script"
 
 
