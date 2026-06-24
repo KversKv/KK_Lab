@@ -76,6 +76,19 @@
 | `start_test_sequence` | 无 | high | 是 | 启动当前页面的测试序列 |
 | `pause_test_sequence` | 无 | high | 是 | 暂停/恢复当前运行的测试序列 |
 | `stop_test_sequence` | 无 | high | 否（安全操作，仍写审计） | 停止当前运行的测试序列 |
+| `run_single_step` | `step_id` | high | 是 | 单步执行指定 uid 节点（调试用，复用 runner 仪器解析+租约，运行中拒绝） |
+
+### 1.5.1 测试编排类（category=test_config，P5）
+
+| 动作 | 参数 | 风险 | 需确认 | 作用 |
+|---|---|---|---|---|
+| `get_current_test_config` | 无 | low | 否 | 当前页面/custom_test 配置快照（序列节点树+仪器 meta+元信息） |
+| `list_test_steps` | 无 | low | 否 | 列出 custom_test 节点步骤（uid/node_type/display_name/是否容器/参数键） |
+| `get_test_result_summary` | 无 | low | 否 | 最近一次测试结果摘要（状态/行数/字段/运行 ID/起止/耗时） |
+| `apply_test_config_draft` | `draft_id` | high | 是 | 把 generate_draft 草案按 draft_id 经预览确认后落地（config→页面导入，script→画布载入） |
+| `set_test_variable` | `name`, `value` | high | 是 | 设置测试变量（运行中写上下文，运行前写预设变量池供下次运行继承） |
+
+> 草案落地链路：`AIService.generate_draft` → `draft_ready` → `DraftRegistry` 登记 `draft_id` 并以 system 消息回灌模型 → AI 调 `apply_test_config_draft(draft_id)` → `ActionDispatcher` 确认闭环 → apply 回调落地。script 草案落地前经 `validate_script_draft` 反序列化+preflight 校验，error 阻止应用。`set_test_variable` 运行中写入 `ExecutionContext.variables`（运行结束失效），运行前写入 `custom_test_ui._ai_preset_variables` 预设池，在 `_on_run`/`ai_run_single_step` 创建上下文后注入。`run_single_step` 复用 runner 的仪器解析与租约，跳过 Run Summary 弹窗（确认已由 ActionDispatcher 完成），序列运行中拒绝以免冲突。
 
 ### 1.6 示波器类（category=scope，经 InstrumentManager 取示波器驱动实例）
 
@@ -110,9 +123,9 @@
 
 ### 1.8 动作总览
 
-- 已注册动作合计 **53 个**：查询 8 + UI 2 + 串口 7 + 仪器 16 + 示波器 11 + 温箱 6 + 测试序列 3。
-- 风险分布：low 27、medium 8、high 18。
-- 需二次确认：`send_serial_text`、`send_serial_hex`、`send_serial_to_session`、`connect_instrument`、`disconnect_all_instruments`、`set_instrument_output`、`set_instrument_voltage`、`set_instrument_current`、`set_current_limit`、`set_output_off_mode`、`start_test_sequence`、`pause_test_sequence`、`scope_set_timebase`、`scope_set_channel_scale`、`scope_set_trigger`、`chamber_set_temperature`、`chamber_start`、`chamber_stop`、`chamber_wait_stable`。
+- 已注册动作合计 **59 个**：查询 8 + UI 2 + 串口 7 + 仪器 16 + 示波器 11 + 温箱 6 + 测试序列 4 + 测试编排 5。
+- 风险分布：low 30、medium 8、high 21。
+- 需二次确认：`send_serial_text`、`send_serial_hex`、`send_serial_to_session`、`connect_instrument`、`disconnect_all_instruments`、`set_instrument_output`、`set_instrument_voltage`、`set_instrument_current`、`set_current_limit`、`set_output_off_mode`、`start_test_sequence`、`pause_test_sequence`、`scope_set_timebase`、`scope_set_channel_scale`、`scope_set_trigger`、`chamber_set_temperature`、`chamber_start`、`chamber_stop`、`chamber_wait_stable`、`apply_test_config_draft`、`set_test_variable`、`run_single_step`。
 
 ---
 
@@ -120,8 +133,8 @@
 
 由 UI 层（MainWindow）构造并注入只读访问器与受控操作回调，core 不反向依赖 ui；字段为 None 表示当前环境不支持，handler 优雅降级。
 
-- 只读访问器：`instrument_manager`、`page_key_getter`、`serial_status_getter`、`serial_manager_getter`、`serial_ports_getter`、`execution_logs_getter`、`app_logs_getter`、`rx_recent_getter`、`test_status_getter`、`waveform_data_getter`。
-- 受控操作回调：`open_page_callback`、`toggle_ai_panel_callback`、`serial_send_text_callback`、`serial_clear_callback`、`test_run_callback`、`test_pause_callback`、`test_stop_callback`、`chamber_wait_stable_callback`。
+- 只读访问器：`instrument_manager`、`page_key_getter`、`serial_status_getter`、`serial_manager_getter`、`serial_ports_getter`、`execution_logs_getter`、`app_logs_getter`、`rx_recent_getter`、`test_status_getter`、`test_config_getter`、`test_steps_getter`、`test_result_summary_getter`、`waveform_data_getter`、`draft_registry`。
+- 受控操作回调：`open_page_callback`、`toggle_ai_panel_callback`、`serial_send_text_callback`、`serial_clear_callback`、`test_run_callback`、`test_pause_callback`、`test_stop_callback`、`test_set_variable_callback`、`test_run_single_step_callback`、`config_apply_callback`、`script_apply_callback`、`chamber_wait_stable_callback`。
 
 ---
 
@@ -141,7 +154,7 @@
 | `clear_history()` | 清空当前会话历史 |
 | `session_stats()` / `persisted_history()` | 会话统计 / 已落盘历史 |
 | `available_models()` / `current_model()` / `set_model_override(model)` | 模型列表 / 当前模型 / 临时切换模型 |
-| `is_busy()` / `settings` / `dispatcher` / `rx_cache` | 状态与组件属性 |
+| `is_busy()` / `settings` / `dispatcher` / `draft_registry` / `rx_cache` | 状态与组件属性（draft_registry 为草案句柄登记表） |
 | `analyze_recent_logs()` / `analyze_logs(options)` | 触发日志分析 |
 | `generate_draft(kind, user_text)` | 生成草案（测试配置/脚本草案） |
 | `test_connection()` | 测试 New API 连通性 |
@@ -318,12 +331,12 @@
 
 | 动作 | 状态 | 负责模块 | 备注 |
 |---|---|---|---|
-| `get_current_test_config` | ⬜ 未开始 | `handlers/test.py` | 读类 |
-| `apply_test_config_draft` | ⬜ 未开始 | `handlers/test.py` | 写类，需预览确认 |
-| `list_test_steps` | ⬜ 未开始 | `handlers/test.py` | 读类 |
-| `run_single_step` | ⬜ 未开始 | `handlers/test.py` | 写类，需确认 |
-| `set_test_variable` | ⬜ 未开始 | `handlers/test.py` | 写类，需确认 |
-| `get_test_result_summary` | ⬜ 未开始 | `handlers/test.py` | 读类 |
+| `get_current_test_config` | ✅ 已完成 | `handlers/test.py` | 读类；custom_test 返回序列+仪器 meta+元信息 |
+| `apply_test_config_draft` | ✅ 已完成 | `handlers/test.py` + `core/ai/draft_registry.py` | 写类，需确认；按 draft_id 落地，script 经 `validate_script_draft` 校验 |
+| `list_test_steps` | ✅ 已完成 | `handlers/test.py` | 读类；展平节点树回灌 uid/node_type/display_name |
+| `run_single_step` | ✅ 已完成 | `handlers/test.py` + `custom_test_ui.ai_run_single_step` | 写类，需确认；复用 runner 仪器解析+租约，运行中拒绝 |
+| `set_test_variable` | ✅ 已完成 | `handlers/test.py` + `custom_test_ui.ai_set_test_variable` | 写类，需确认；运行中写上下文，运行前写预设变量池 |
+| `get_test_result_summary` | ✅ 已完成 | `handlers/test.py` + `custom_test_ui.get_ai_test_result_summary` | 读类；状态/行数/字段/运行 ID/耗时 |
 
 ### 5.7 P6 · 数据导出与产物（新增 category=export）
 
@@ -383,7 +396,7 @@
 
 ## 7. 扩展后规模预估
 
-- 现状：7 类 53 个动作（P1 连接管理 5 + 仪器测量 6 + P2 示波器 11 + P3 温箱 6 + P4 串口扩展 5 已落地）。
-- 剩余规划：测试编排 6 + 导出 4 + 诊断 5 ≈ **15 个**。
-- 全部扩展后总计约 **68 个**动作，category 由 7 类扩为 8 类（新增 `export`，`diagnostic` 可并入 `query`）。
+- 现状：8 类 59 个动作（P1 连接管理 5 + 仪器测量 6 + P2 示波器 11 + P3 温箱 6 + P4 串口扩展 5 + P5 测试编排 6 已落地）。
+- 剩余规划：导出 4 + 诊断 5 ≈ **9 个**。
+- 全部扩展后总计约 **68 个**动作，category 由 8 类扩为 9 类（新增 `export`，`diagnostic` 可并入 `query`）。
 - 能力覆盖从「查询 + 基础控制」升级为「连接 → 测量 → 控制 → 编排 → 导出 → 诊断」全链路闭环。

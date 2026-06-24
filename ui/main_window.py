@@ -595,7 +595,11 @@ class MainWindow(CleanupMixin, QMainWindow):
             app_logs_getter=self._get_ai_app_logs,
             rx_recent_getter=self._get_ai_recent_rx,
             test_status_getter=self._get_ai_test_status,
+            test_config_getter=self._get_ai_test_config,
+            test_steps_getter=self._get_ai_test_steps,
+            test_result_summary_getter=self._get_ai_test_result_summary,
             waveform_data_getter=self._provide_ai_waveform_windowed,
+            draft_registry=self.ai_service.draft_registry,
             open_page_callback=self._ai_open_page,
             toggle_ai_panel_callback=self._ai_toggle_panel,
             serial_send_text_callback=self._ai_serial_send_text,
@@ -603,6 +607,10 @@ class MainWindow(CleanupMixin, QMainWindow):
             test_run_callback=self._ai_test_run,
             test_pause_callback=self._ai_test_pause,
             test_stop_callback=self._ai_test_stop,
+            test_set_variable_callback=self._ai_test_set_variable,
+            test_run_single_step_callback=self._ai_test_run_single_step,
+            config_apply_callback=self._apply_ai_config_draft,
+            script_apply_callback=self._apply_ai_script_draft,
             chamber_wait_stable_callback=self._ai_chamber_wait_stable,
         )
         registry, dispatcher = build_action_system(
@@ -638,6 +646,59 @@ class MainWindow(CleanupMixin, QMainWindow):
             except Exception:  # noqa: BLE001 - 状态查询失败不致命
                 steps = 0
         return {"available": True, "running": running, "steps": steps}
+
+    def _get_ai_test_config(self):
+        ui = getattr(self, "custom_test_ui", None)
+        if ui is None or self.current_instrument_ui != "custom_test":
+            return None
+        getter = getattr(ui, "get_ai_test_config", None)
+        if not callable(getter):
+            return None
+        return getter()
+
+    def _get_ai_test_steps(self):
+        ui = getattr(self, "custom_test_ui", None)
+        if ui is None or self.current_instrument_ui != "custom_test":
+            return None
+        getter = getattr(ui, "get_ai_test_steps", None)
+        if not callable(getter):
+            return None
+        return getter()
+
+    def _get_ai_test_result_summary(self):
+        ui = getattr(self, "custom_test_ui", None)
+        if ui is None or self.current_instrument_ui != "custom_test":
+            return None
+        getter = getattr(ui, "get_ai_test_result_summary", None)
+        if not callable(getter):
+            return None
+        return getter()
+
+    def _ai_test_set_variable(self, name, value):
+        ui = getattr(self, "custom_test_ui", None)
+        if ui is None or self.current_instrument_ui != "custom_test":
+            return False, "请先切换到 Custom Test 页面。"
+        setter = getattr(ui, "ai_set_test_variable", None)
+        if not callable(setter):
+            return False, "当前页面不支持设置测试变量。"
+        try:
+            return setter(name, value)
+        except Exception:  # noqa: BLE001 - 设置异常转可读结果
+            logger.error("AI 设置测试变量失败", exc_info=True)
+            return False, "设置变量异常，请查看日志。"
+
+    def _ai_test_run_single_step(self, step_id):
+        ui = getattr(self, "custom_test_ui", None)
+        if ui is None or self.current_instrument_ui != "custom_test":
+            return False, "请先切换到 Custom Test 页面。"
+        runner = getattr(ui, "ai_run_single_step", None)
+        if not callable(runner):
+            return False, "当前页面不支持单步执行。"
+        try:
+            return runner(step_id)
+        except Exception:  # noqa: BLE001 - 单步异常转可读结果
+            logger.error("AI 单步执行失败", exc_info=True)
+            return False, "单步执行异常，请查看日志。"
 
     def _ai_open_page(self, page):
         button_map = {

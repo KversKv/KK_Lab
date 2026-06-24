@@ -361,6 +361,7 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         self._active_sequence_hash = ""
         self._active_sequence_file = ""
         self._active_sequence_snapshot: List[BaseNode] = []
+        self._ai_preset_variables: Dict[str, Any] = {}
 
         self._build_ui()
         self._connect_signals()
@@ -510,6 +511,222 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         except Exception:
             logger.error("构建 AI 序列上下文失败", exc_info=True)
             return None
+
+    def get_ai_test_config(self) -> Optional[Dict[str, Any]]:
+        """AI get_current_test_config 动作的快照源：返回当前 Custom Test 配置。
+
+        含序列节点树（v2 dict）、仪器连接 meta、元信息与步骤数；序列过大时仅回灌
+        摘要 + 节点类型分布，避免撑爆对话上下文。
+        """
+        try:
+            nodes = self.canvas.get_sequence()
+        except Exception:  # noqa: BLE001 - 快照失败不致命
+            logger.error("AI 取测试配置失败", exc_info=True)
+            return {"available": False, "_message": "取配置快照异常，请查看日志。"}
+        if not nodes:
+            return {
+                "available": True,
+                "page_key": "custom_test",
+                "kind": "sequence",
+                "step_count": 0,
+                "instruments": self._collect_instrument_meta(),
+                "metadata": {},
+                "sequence": [],
+                "_message": "当前 Custom Test 序列为空。",
+            }
+        try:
+            payload = save_sequence_data(
+                nodes,
+                instruments=self._collect_instrument_meta(),
+            )
+        except Exception:  # noqa: BLE001 - 序列化失败回退摘要
+            logger.error("AI 序列化测试配置失败", exc_info=True)
+            return {
+                "available": True,
+                "page_key": "custom_test",
+                "kind": "sequence",
+                "step_count": len(nodes),
+                "_message": "配置序列化失败，仅回灌步骤数。",
+            }
+        sequence = payload.get("sequence", []) or []
+        type_counts: Dict[str, int] = {}
+        for item in sequence:
+            nt = str(item.get("node_type", "")) if isinstance(item, dict) else ""
+            type_counts[nt] = type_counts.get(nt, 0) + 1
+        return {
+            "available": True,
+            "page_key": "custom_test",
+            "kind": "sequence",
+            "step_count": len(nodes),
+            "node_type_counts": type_counts,
+            "instruments": payload.get("instruments", {}) or {},
+            "metadata": payload.get("metadata", {}) or {},
+            "sequence": sequence,
+            "_message": f"当前 Custom Test 配置：{len(nodes)} 个顶层节点。",
+        }
+
+    def get_ai_test_steps(self) -> Optional[List[Dict[str, Any]]]:
+        """AI list_test_steps 动作的数据源：展平节点树，回灌 uid/node_type/display_name。"""
+        try:
+            nodes = self.canvas.get_sequence()
+        except Exception:  # noqa: BLE001 - 列举失败不致命
+            logger.error("AI 列举测试步骤失败", exc_info=True)
+            return None
+
+        def _walk(node: BaseNode, depth: int, acc: List[Dict[str, Any]]) -> None:
+            acc.append({
+                "uid": node.uid,
+                "node_type": node.node_type,
+                "display_name": node.display_name or node.node_type,
+                "is_container": bool(node.accepts_children),
+                "param_keys": list(node.params.keys()) if isinstance(node.params, dict) else [],
+                "depth": depth,
+            })
+            for child in getattr(node, "children", []) or []:
+                _walk(child, depth + 1, acc)
+
+        steps: List[Dict[str, Any]] = []
+        for node in nodes:
+            _walk(node, 0, steps)
+        return steps
+
+    def get_ai_test_result_summary(self) -> Optional[Dict[str, Any]]:
+        """AI get_test_result_summary 动作的数据源：最近一次运行结果摘要。"""
+        store = self._get_result_store()
+        if store is None:
+            return {"available": False, "_message": "当前无测试结果。"}
+        ctx = self._context
+        status = ""
+        run_id = ""
+        started_at = None
+        finished_at = None
+        duration_s = None
+        if ctx is not None:
+            status = ctx.run_status or ""
+            run_id = ctx.run_id or ""
+            started_at = ctx.run_started_at
+            finished_at = ctx.run_finished_at
+            if started_at and finished_at:
+                duration_s = max(0.0, (finished_at - started_at).total_seconds())
+        field_names = [f.name for f in store.fields.values()]
+        return {
+            "available": True,
+            "status": status or ("running" if self._is_running() else "idle"),
+            "row_count": len(store.rows),
+            "field_count": len(field_names),
+            "field_names": field_names,
+            "run_id": run_id,
+            "started_at": started_at.isoformat(timespec="seconds") if started_at else None,
+            "finished_at": finished_at.isoformat(timespec="seconds") if finished_at else None,
+            "duration_s": round(duration_s, 1) if duration_s is not None else None,
+            "_message": (
+                f"最近一次测试：{status or '未运行'}，{len(store.rows)} 行数据，"
+                f"{len(field_names)} 个字段。"
+            ),
+        }
+
+    def ai_set_test_variable(self, name: str, value: Any) -> tuple[bool, str]:
+        """AI set_test_variable 动作的落地：运行中写上下文，运行前写预设变量池。"""
+        if not name or not str(name).replace("_", "").isalnum():
+            return False, "变量名仅允许字母/数字/下划线且非空。"
+        ctx = self._context
+        if ctx is not None and self._is_running():
+            ctx.set_variable(name, value)
+            return True, f"已设置运行中变量 {name}（运行结束失效）。"
+        self._ai_preset_variables[name] = value
+        return True, f"已设置预设变量 {name}（下次运行生效，运行后清除）。"
+
+    def ai_run_single_step(self, step_id: str) -> tuple[bool, str]:
+        """AI run_single_step 动作的落地：单步执行指定 uid 的节点。
+
+        复用 runner 的仪器解析与租约；序列运行中拒绝；跳过 Run Summary 弹窗
+        （确认已由 ActionDispatcher 确认闭环完成）。
+        """
+        if not step_id:
+            return False, "缺少 step_id。"
+        if self._is_running():
+            return False, "序列运行中，无法单步执行（请先停止当前运行）。"
+        try:
+            nodes = self.canvas.get_sequence()
+        except Exception:  # noqa: BLE001 - 取序列失败转可读结果
+            logger.error("单步执行取序列失败", exc_info=True)
+            return False, "读取当前序列失败，请查看日志。"
+        target = self._find_node_by_uid(nodes, step_id)
+        if target is None:
+            return False, f"未找到 uid={step_id} 的节点（先用 list_test_steps 确认）。"
+
+        sequence = clone_sequence([target])
+        sequence_hash = build_sequence_hash(sequence)
+        self._active_sequence_hash = sequence_hash
+        self._active_sequence_snapshot = clone_sequence(sequence)
+        resolver = self._build_instrument_resolver()
+        preflight = preflight_validate(sequence, resolver=resolver)
+        if preflight.has_errors:
+            resolved = preflight.resolved
+            if resolved is not None:
+                resolved.close_owned()
+            msgs = "; ".join(issue.format() for issue in preflight.errors)
+            return False, f"单步 preflight 失败：{msgs}"
+        for issue in preflight.warnings:
+            self.logs_frame.append_log(issue.format())
+
+        resolved = preflight.resolved or resolver.resolve(sequence)
+        if resolved.missing:
+            for missing in resolved.missing:
+                self.logs_frame.append_log(f"[ERROR] {missing.message}")
+            resolved.close_owned()
+            return False, "仪器解析失败，请查看日志。"
+
+        self._context = ExecutionContext(
+            instrument_manager=self._instrument_manager,
+            instruments=resolved.as_instrument_dict(),
+            resolved_instruments=resolved,
+            lease_session_ids=resolved.lease_session_ids,
+        )
+        self._context.set_prompt_handler(self._request_user_prompt)
+        self._context.set_run_snapshot(sequence, sequence_hash)
+        self._context.run_started_at = datetime.now()
+        for var_name, var_value in self._ai_preset_variables.items():
+            self._context.set_variable(var_name, var_value)
+        self._result_store = self._context.result_store
+        self.result_panel.set_result_store(self._result_store)
+        try:
+            self._context.acquire_leases(owner="custom_test")
+        except Exception as exc:
+            self._context.release_runtime_resources()
+            self.logs_frame.append_log(f"[ERROR] InstrumentLease 申请失败: {exc}")
+            return False, f"仪器占用申请失败: {exc}"
+
+        self.result_panel.clear_results()
+        self._set_running_state(True)
+        self.logs_frame.set_progress(0)
+        self.logs_frame.append_log(
+            f"[AI] 单步执行：{target.display_name or target.node_type} (uid={step_id[:8]})"
+        )
+
+        executor = self._executor_thread.start(sequence, self._context)
+        executor.log_message.connect(self.logs_frame.append_log, Qt.QueuedConnection)
+        executor.progress_updated.connect(self._on_progress, Qt.QueuedConnection)
+        executor.step_started.connect(self._on_step_started, Qt.QueuedConnection)
+        executor.step_finished.connect(self._on_step_finished, Qt.QueuedConnection)
+        executor.data_recorded.connect(self._on_data_recorded, Qt.QueuedConnection)
+        return True, f"已启动单步执行：{target.display_name or target.node_type}。"
+
+    def _is_running(self) -> bool:
+        canvas = getattr(self, "canvas", None)
+        return bool(getattr(canvas, "_running", False)) if canvas else False
+
+    @staticmethod
+    def _find_node_by_uid(nodes: List[BaseNode], uid: str) -> Optional[BaseNode]:
+        """深度优先在节点树中按 uid 查找节点。"""
+        for node in nodes:
+            if node.uid == uid:
+                return node
+            for child in getattr(node, "children", []) or []:
+                found = CustomTestUI._find_node_by_uid([child], uid)
+                if found is not None:
+                    return found
+        return None
 
     def _on_metadata_loaded(self, meta: dict) -> None:
         self.instrument_panel.on_metadata_loaded(meta)
@@ -905,6 +1122,8 @@ class CustomTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin
         self._context.set_prompt_handler(self._request_user_prompt)
         self._context.set_run_snapshot(sequence, sequence_hash)
         self._context.run_started_at = datetime.now()
+        for var_name, var_value in self._ai_preset_variables.items():
+            self._context.set_variable(var_name, var_value)
         self._result_store = self._context.result_store
         self.result_panel.set_result_store(self._result_store)
         try:

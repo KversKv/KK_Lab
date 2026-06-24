@@ -25,6 +25,7 @@ from core.ai.conversation_store import (
     save_history as _save_persisted_history,
     save_summary as _save_persisted_summary,
 )
+from core.ai.draft_registry import DraftRegistry
 from core.ai.log_ring import get_log_ring
 from core.ai.newapi_client import AIClientError, ChatResult, NewAPIClient
 from core.ai.nudges import force_tool_nudge
@@ -262,6 +263,7 @@ class AIService(QObject):
 
         self._registry = None
         self._dispatcher = None
+        self._draft_registry = DraftRegistry()
         self._agent_messages: list[dict] = []
         self._agent_rounds = 0
         self._agent_model = ""
@@ -281,6 +283,11 @@ class AIService(QObject):
     def dispatcher(self):
         """已注入的 ActionDispatcher（未注入时为 None）。"""
         return self._dispatcher
+
+    @property
+    def draft_registry(self) -> DraftRegistry:
+        """草案注册表：generate_draft 产出的草案按 draft_id 登记，供 apply 动作落地。"""
+        return self._draft_registry
 
     @property
     def rx_cache(self) -> SerialRxCache:
@@ -829,9 +836,11 @@ class AIService(QObject):
                 self.response_ready.emit(content or "（无分析结果）")
         elif mode == _MODE_CONFIG_DRAFT:
             parsed = parse_expected(content, CONFIG_DRAFT)
+            self._register_draft(parsed)
             self.draft_ready.emit(parsed)
         elif mode == _MODE_SCRIPT_DRAFT:
             parsed = parse_expected(content, SCRIPT_DRAFT)
+            self._register_draft(parsed)
             self.draft_ready.emit(parsed)
         else:
             self.response_ready.emit(content)
@@ -1266,6 +1275,33 @@ class AIService(QObject):
             '"title": "标题", "notes": "说明", "payload": {<配置字段>}}\n'
             "payload 为页面配置字典。这是草案，会由用户预览校验确认后才应用。"
         )
+
+    def _register_draft(self, parsed) -> None:
+        """把 generate_draft 产出的草案登记到 DraftRegistry，并向模型回灌 draft_id。
+
+        草案经 draft_ready 给 UI 预览的同时，登记一个稳定 draft_id 并以 system 消息
+        写入对话历史，使后续 agent 轮次中模型可调 apply_test_config_draft(draft_id)
+        经确认闭环落地。草案解析失败时不登记、不回灌句柄。
+        """
+        if parsed is None or not getattr(parsed, "ok", False) or parsed.payload is None:
+            return
+        try:
+            draft_id = self._draft_registry.register(parsed)
+        except Exception:  # noqa: BLE001 - 登记失败不影响 draft_ready 主流程
+            logger.error("登记草案失败", exc_info=True)
+            return
+        if not draft_id:
+            return
+        kind = getattr(parsed, "kind", "")
+        title = getattr(parsed.payload, "title", "") or ""
+        kind_label = "脚本" if kind == SCRIPT_DRAFT else "配置"
+        note = (
+            f"[系统] 已生成{kind_label}草案 {draft_id}（标题：{title}）。"
+            f"如需应用，调用 apply_test_config_draft(draft_id=\"{draft_id}\")，"
+            f"经用户确认后落地；草案绝不自动应用。"
+        )
+        self._history.append({"role": "system", "content": note})
+        _save_persisted_history(self._history, self._session_key)
 
     def test_connection(self) -> None:
         """连通性测试（同步、轻量），结果经 connection_tested 信号回报。"""
