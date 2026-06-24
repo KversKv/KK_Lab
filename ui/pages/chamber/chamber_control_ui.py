@@ -24,7 +24,8 @@ from ui.widgets.instrument_state_poller import InstrumentStatePoller
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QPushButton,
     QLabel, QLineEdit, QFrame, QGraphicsDropShadowEffect,
-    QSizePolicy, QApplication, QGridLayout, QCheckBox, QScrollArea
+    QSizePolicy, QApplication, QGridLayout, QCheckBox, QScrollArea,
+    QStackedWidget, QTabWidget
 )
 from PySide6.QtCore import Qt, QTimer, QRectF, QSize, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QFont, QPixmap
@@ -70,49 +71,92 @@ def _build_thermometer_icon(size=256, stroke="#fb7185"):
 
 
 class TemperatureGauge(QWidget):
-    """圆形温度显示控件"""
+    """圆形/仪表式温度显示控件，支持自适应尺寸。
 
-    def __init__(self, parent=None):
+    通过 :meth:`set_size_mode` 在 ``"large"`` 与 ``"compact"`` 两种尺寸预设间
+    切换；内部所有元素（外环直径、环宽、标签字体、数值字体、内外边距）均按
+    控件可用空间等比缩放，保持深色主题下原有视觉效果。
+    """
+
+    SIZE_PRESETS = {
+        "large": {
+            "min": 200,
+            "hint": 280,
+            "max": 320,
+            "ring_ratio": 0.030,
+            "title_ratio": 0.044,
+            "value_ratio": 0.115,
+        },
+        "compact": {
+            "min": 130,
+            "hint": 160,
+            "max": 180,
+            "ring_ratio": 0.040,
+            "title_ratio": 0.058,
+            "value_ratio": 0.150,
+        },
+    }
+
+    def __init__(self, parent=None, size_mode="large"):
         super().__init__(parent)
         self._actual_temp = None
-        self.setMinimumSize(150, 150)
+        self._size_mode = "large"
+        self.set_size_mode(size_mode)
+
+    def set_size_mode(self, mode: str):
+        """设置尺寸模式：``"large"`` 或 ``"compact"``。"""
+        if mode not in self.SIZE_PRESETS:
+            mode = "large"
+        if mode == self._size_mode:
+            return
+        self._size_mode = mode
+        preset = self.SIZE_PRESETS[mode]
+        self.setMinimumSize(preset["min"], preset["min"])
+        self.setMaximumSize(preset["max"], preset["max"])
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.updateGeometry()
+        self.update()
 
     def set_temperature(self, value):
         self._actual_temp = value
         self.update()
 
     def sizeHint(self):
-        return QSize(280, 280)
+        hint = self.SIZE_PRESETS[self._size_mode]["hint"]
+        return QSize(hint, hint)
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
+        preset = self.SIZE_PRESETS[self._size_mode]
         rect = self.rect()
-        side = min(rect.width(), rect.height()) - 18
+        margin = max(8, int(min(rect.width(), rect.height()) * 0.06))
+        side = min(rect.width(), rect.height()) - margin
+        if side <= 0:
+            return
         x = (rect.width() - side) / 2
         y = (rect.height() - side) / 2
         circle_rect = QRectF(x, y, side, side)
 
         # 外环
         ring_pen = QPen(QColor("#1b2d4d"))
-        ring_pen.setWidth(8)
+        ring_pen.setWidth(max(4, int(side * preset["ring_ratio"])))
         painter.setPen(ring_pen)
         painter.setBrush(QColor("#02092a"))
         painter.drawEllipse(circle_rect)
 
         # 标题
         painter.setPen(QColor("#6d83b1"))
-        title_font = QFont("Segoe UI", max(8, int(side * 0.04)))
+        title_font = QFont("Segoe UI", max(8, int(side * preset["title_ratio"])))
         title_font.setBold(True)
         painter.setFont(title_font)
-        title_rect = QRectF(circle_rect.left(), circle_rect.top() + side * 0.33, side, 24)
+        title_rect = QRectF(circle_rect.left(), circle_rect.top() + side * 0.33, side, side * 0.16)
         painter.drawText(title_rect, Qt.AlignCenter, "ACTUAL TEMP")
 
         # 数值
         painter.setPen(QColor("#ffffff"))
-        value_font = QFont("JetBrains Mono", max(18, int(side * 0.11)))
+        value_font = QFont("JetBrains Mono", max(16, int(side * preset["value_ratio"])))
         value_font.setStyleHint(QFont.Monospace)
         value_font.setBold(True)
         painter.setFont(value_font)
@@ -122,7 +166,7 @@ class TemperatureGauge(QWidget):
         else:
             value_text = f"{self._actual_temp:.1f}°C"
 
-        value_rect = QRectF(circle_rect.left(), circle_rect.top() + side * 0.46, side, 40)
+        value_rect = QRectF(circle_rect.left(), circle_rect.top() + side * 0.46, side, side * 0.22)
         painter.drawText(value_rect, Qt.AlignCenter, value_text)
 
 
@@ -170,42 +214,50 @@ class ChamberControlUI(QWidget):
         # 打断内层 content_widget 最小尺寸向顶层窗口的传导。
         self.setMinimumSize(520, 420)
 
+    LARGE_BREAKPOINT = 1200
+    SMALL_BREAKPOINT = 900
+
     def _setup_ui(self):
-        """设置界面"""
+        """设置界面：构建可复用功能积木，并组装大屏 / 小屏两套响应式布局。"""
         self.setObjectName("rootWidget")
         self.setStyleSheet(self._build_stylesheet())
+
+        self._layout_mode = None
+
+        # 先构建所有功能积木（控件实例与信号绑定全程不变）
+        self._build_blocks()
 
         # 外层滚动区：窗口缩小时出现滚动条，而非被内容撑住最小尺寸
         outer_layout = QVBoxLayout(self)
         outer_layout.setContentsMargins(0, 0, 0, 0)
         outer_layout.setSpacing(0)
 
-        scroll_area = QScrollArea(self)
-        scroll_area.setObjectName("pageScrollArea")
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setFrameShape(QFrame.NoFrame)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll_area.setMinimumSize(0, 0)
-        scroll_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        outer_layout.addWidget(scroll_area)
+        self._layout_stack = QStackedWidget(self)
+        outer_layout.addWidget(self._layout_stack)
 
-        content_widget = QWidget()
-        content_widget.setObjectName("rootWidget")
-        scroll_area.setWidget(content_widget)
+        self._build_large_layout()
+        self._build_compact_layout()
 
-        # 主布局
-        main_layout = QVBoxLayout(content_widget)
-        main_layout.setContentsMargins(16, 16, 16, 16)
-        main_layout.setSpacing(18)
+        # 默认进入小屏布局，resizeEvent 会按当前宽度纠正
+        self._apply_layout_mode("compact")
 
-        # 标题区
-        header_layout = QVBoxLayout()
-        header_layout.setSpacing(4)
+        # 扫描可用端口
+        self._scan_ports()
 
-        title_row = QHBoxLayout()
-        title_row.setSpacing(8)
+    # ------------------------------------------------------------------
+    # 功能积木构建
+    # ------------------------------------------------------------------
+    def _build_blocks(self):
+        self._build_header_block()
+        self._build_connection_form_block()
+        self._build_status_block()
+        self._build_monitor_block()
+        self._build_power_block()
+        self._build_target_block()
+        self._build_loop_block()
+        self._build_summary_block()
 
+    def _build_header_block(self):
         title_icon = QLabel()
         title_icon.setFixedSize(24, 24)
         if os.path.isfile(_THERMOMETER_SVG_PATH):
@@ -219,51 +271,26 @@ class ChamberControlUI(QWidget):
             painter.end()
             title_icon.setPixmap(pixmap)
         title_icon.setStyleSheet("border: none; background: transparent;")
-        title_row.addWidget(title_icon)
+        self._title_icon = title_icon
 
         title_label = QLabel("Chamber")
         title_label.setObjectName("titleLabel")
         title_label.setStyleSheet("border: none")
-        title_row.addWidget(title_label)
-        title_row.addStretch()
-
-        header_layout.addLayout(title_row)
+        self._title_label = title_label
 
         subtitle_label = QLabel("Thermal chamber control and monitoring via serial or Ethernet.")
         subtitle_label.setObjectName("subtitleLabel")
         subtitle_label.setStyleSheet("border: none")
+        self._subtitle_label = subtitle_label
 
-        header_layout.addWidget(subtitle_label)
-        main_layout.addLayout(header_layout)
-
-        # 串口连接卡片
-        serial_group = QFrame()
-        serial_group.setObjectName("connectionCard")
-        serial_layout = QVBoxLayout(serial_group)
-        serial_layout.setContentsMargins(18, 16, 18, 18)
-        serial_layout.setSpacing(14)
-
-        connection_header = QHBoxLayout()
-        connection_header.setContentsMargins(0, 0, 0, 0)
-        connection_header.setSpacing(10)
-
-        connection_title_col = QVBoxLayout()
-        connection_title_col.setContentsMargins(0, 0, 0, 0)
-        connection_title_col.setSpacing(2)
-
-        connection_title = QLabel("Connection")
-        connection_title.setObjectName("connectionTitle")
-        connection_title.setStyleSheet("border: none")
-
-        connection_subtitle = QLabel("Select chamber model and connection resource")
-        connection_subtitle.setObjectName("connectionSubtitle")
-        connection_subtitle.setStyleSheet("border: none")
-
-        connection_title_col.addWidget(connection_title)
-        connection_title_col.addWidget(connection_subtitle)
-        connection_header.addLayout(connection_title_col)
-        connection_header.addStretch()
-        serial_layout.addLayout(connection_header)
+    def _build_connection_form_block(self):
+        """连接配置表单（Chamber Type / COM Port / Search）。"""
+        block = QFrame()
+        block.setObjectName("connectionPanel")
+        form_layout = QGridLayout(block)
+        form_layout.setContentsMargins(14, 12, 14, 14)
+        form_layout.setHorizontalSpacing(12)
+        form_layout.setVerticalSpacing(8)
 
         type_label = QLabel("Chamber Type")
         type_label.setObjectName("fieldLabel")
@@ -278,19 +305,19 @@ class ChamberControlUI(QWidget):
         self.port_label.setObjectName("fieldLabel")
         self.port_label.setStyleSheet("border: none")
 
-        row_layout = QHBoxLayout()
-        row_layout.setContentsMargins(0, 0, 0, 0)
-        row_layout.setSpacing(14)
-
-        form_panel = QFrame()
-        form_panel.setObjectName("connectionPanel")
-        form_layout = QGridLayout(form_panel)
-        form_layout.setContentsMargins(14, 12, 14, 14)
-        form_layout.setHorizontalSpacing(12)
-        form_layout.setVerticalSpacing(8)
-
         self.port_combo = DarkComboBox(bg="#04102b", border="#1a315d")
         self.port_combo.setObjectName("comboBox")
+        # COM Port 名称可能很长（如 "COM3 (Intel(R) Active Management ...)"），
+        # 收起时不允许其撑大控件破坏布局：固定按最小内容长度计算首选宽，
+        # 水平方向交给父布局拉伸；超长文本由 DarkComboBox 的 elide 省略显示，
+        # 完整内容在展开下拉菜单时溢出展示。
+        self.port_combo.setSizeAdjustPolicy(
+            DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.port_combo.setMinimumContentsLength(8)
+        self.port_combo.setSizePolicy(
+            QSizePolicy.Ignored, self.port_combo.sizePolicy().verticalPolicy()
+        )
 
         self.scan_btn = QPushButton()
         self.scan_btn.setObjectName("iconButton")
@@ -314,12 +341,15 @@ class ChamberControlUI(QWidget):
         form_layout.setColumnStretch(0, 1)
         form_layout.setColumnStretch(1, 2)
 
-        self.status_frame = QFrame()
-        self.status_frame.setObjectName("statusWrap")
-        self.status_frame.setMinimumHeight(92)
-        self.status_frame.setMaximumWidth(370)
-        status_layout = QHBoxLayout(self.status_frame)
-        status_layout.setContentsMargins(16, 14, 12, 14)
+        self.connection_form_block = block
+
+    def _build_status_block(self):
+        """连接状态 + Connect 按钮。"""
+        block = QFrame()
+        block.setObjectName("statusWrap")
+        block.setMinimumHeight(64)
+        status_layout = QHBoxLayout(block)
+        status_layout.setContentsMargins(16, 12, 12, 12)
         status_layout.setSpacing(12)
 
         self.status_dot = QLabel("●")
@@ -350,29 +380,18 @@ class ChamberControlUI(QWidget):
         status_layout.addStretch()
         status_layout.addWidget(self.connect_btn)
 
-        row_layout.addWidget(form_panel, 3)
-        row_layout.addWidget(self.status_frame, 2)
+        self.status_block = block
 
-        serial_layout.addLayout(row_layout)
-        self._apply_shadow(serial_group)
-        main_layout.addWidget(serial_group)
-
-        # 中间内容区
-        content_layout = QHBoxLayout()
-        content_layout.setSpacing(18)
-
-        # 左侧温度监控卡片
-        monitor_group = QGroupBox("⌁ Temperature Monitor")
-        monitor_group.setObjectName("cardGroup")
-        monitor_layout = QVBoxLayout(monitor_group)
-        monitor_layout.setContentsMargins(18, 18, 18, 18)
-        monitor_layout.setSpacing(18)
-
-        monitor_layout.addSpacing(4)
+    def _build_monitor_block(self):
+        """圆形/仪表式温度显示积木（含 SET TEMP 迷你信息卡）。"""
+        block = QWidget()
+        layout = QVBoxLayout(block)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
 
         self.temp_gauge = TemperatureGauge()
-        monitor_layout.addStretch(1)
-        monitor_layout.addWidget(self.temp_gauge, 0, alignment=Qt.AlignHCenter)
+        layout.addStretch(1)
+        layout.addWidget(self.temp_gauge, 0, alignment=Qt.AlignHCenter)
 
         set_temp_widget = QFrame()
         set_temp_widget.setObjectName("miniInfoBox")
@@ -391,25 +410,17 @@ class ChamberControlUI(QWidget):
         set_temp_layout.addStretch()
         set_temp_layout.addWidget(self.set_temp_value)
 
-        monitor_layout.addWidget(set_temp_widget)
-        monitor_layout.addStretch(2)
+        layout.addWidget(set_temp_widget)
+        layout.addStretch(1)
 
-        self._apply_shadow(monitor_group)
-        content_layout.addWidget(monitor_group, 1)
+        self.monitor_block = block
 
-        # 右侧控制卡片
-        control_group = QGroupBox("Chamber Control")
-        control_group.setObjectName("cardGroup")
-        control_layout = QVBoxLayout(control_group)
-        control_layout.setContentsMargins(18, 18, 18, 18)
-        control_layout.setSpacing(18)
-
-        # 电源区域
-        power_panel = QFrame()
-        power_panel.setObjectName("innerPanel")
-        power_panel_layout = QVBoxLayout(power_panel)
-        power_panel_layout.setContentsMargins(18, 18, 18, 18)
-        power_panel_layout.setSpacing(10)
+    def _build_power_block(self):
+        block = QFrame()
+        block.setObjectName("innerPanel")
+        layout = QVBoxLayout(block)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(10)
 
         power_label = QLabel("Chamber Power")
         power_label.setObjectName("fieldLabel")
@@ -417,18 +428,20 @@ class ChamberControlUI(QWidget):
 
         self.power_btn = QPushButton("⏻  TURN ON CHAMBER")
         self.power_btn.setObjectName("powerButton")
-        self.power_btn.setFixedHeight(46)
+        self.power_btn.setFixedHeight(40)
         self.power_btn.setEnabled(False)
 
-        power_panel_layout.addWidget(power_label)
-        power_panel_layout.addWidget(self.power_btn)
+        layout.addWidget(power_label)
+        layout.addWidget(self.power_btn)
 
-        # 温度设置区域
-        temp_panel = QFrame()
-        temp_panel.setObjectName("innerPanel")
-        temp_panel_layout = QVBoxLayout(temp_panel)
-        temp_panel_layout.setContentsMargins(18, 18, 18, 18)
-        temp_panel_layout.setSpacing(12)
+        self.power_block = block
+
+    def _build_target_block(self):
+        block = QFrame()
+        block.setObjectName("innerPanel")
+        layout = QVBoxLayout(block)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(12)
 
         temp_label = QLabel("Target Temperature (°C)")
         temp_label.setObjectName("fieldLabel")
@@ -439,40 +452,45 @@ class ChamberControlUI(QWidget):
 
         self.temp_input = QLineEdit()
         self.temp_input.setObjectName("tempInput")
-        self.temp_input.setFixedHeight(44)
+        self.temp_input.setFixedHeight(36)
         self.temp_input.setText("25.0")
 
         self.set_btn = QPushButton("SET")
         self.set_btn.setObjectName("setButton")
-        self.set_btn.setFixedHeight(44)
+        self.set_btn.setFixedHeight(36)
         self.set_btn.setEnabled(False)
 
         temp_input_layout.addWidget(self.temp_input, 1)
         temp_input_layout.addWidget(self.set_btn, 0)
 
-        preset_layout = QHBoxLayout()
-        preset_layout.setSpacing(8)
+        preset_grid = QGridLayout()
+        preset_grid.setHorizontalSpacing(8)
+        preset_grid.setVerticalSpacing(8)
 
         preset_temps = ["-40°C", "-20°C", "0°C", "25°C", "50°C", "85°C", "125°C"]
-        for temp in preset_temps:
+        columns = 4
+        for idx, temp in enumerate(preset_temps):
             btn = QPushButton(temp)
             btn.setObjectName("presetButton")
-            btn.setFixedHeight(30)
+            btn.setMinimumHeight(30)
+            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             btn.setEnabled(False)
             btn.clicked.connect(lambda checked=False, t=temp: self._set_preset_temp(t))
             self.preset_buttons.append(btn)
-            preset_layout.addWidget(btn)
+            preset_grid.addWidget(btn, idx // columns, idx % columns)
 
-        temp_panel_layout.addWidget(temp_label)
-        temp_panel_layout.addLayout(temp_input_layout)
-        temp_panel_layout.addLayout(preset_layout)
+        layout.addWidget(temp_label)
+        layout.addLayout(temp_input_layout)
+        layout.addLayout(preset_grid)
 
-        # 温度循环序列区域
-        loop_panel = QFrame()
-        loop_panel.setObjectName("innerPanel")
-        loop_panel_layout = QVBoxLayout(loop_panel)
-        loop_panel_layout.setContentsMargins(18, 18, 18, 18)
-        loop_panel_layout.setSpacing(12)
+        self.target_block = block
+
+    def _build_loop_block(self):
+        block = QFrame()
+        block.setObjectName("innerPanel")
+        layout = QVBoxLayout(block)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(12)
 
         loop_header = QHBoxLayout()
         loop_header.setContentsMargins(0, 0, 0, 0)
@@ -485,19 +503,19 @@ class ChamberControlUI(QWidget):
         self.loop_forever_check = QCheckBox("Repeat forever")
         self.loop_forever_check.setObjectName("loopCheck")
         loop_header.addWidget(self.loop_forever_check)
-        loop_panel_layout.addLayout(loop_header)
+        layout.addLayout(loop_header)
 
         seq_label = QLabel("Temperature Sequence (°C, comma separated)")
         seq_label.setObjectName("fieldLabelSmall")
         seq_label.setStyleSheet("border: none")
-        loop_panel_layout.addWidget(seq_label)
+        layout.addWidget(seq_label)
 
         self.loop_sequence_input = QLineEdit()
         self.loop_sequence_input.setObjectName("loopInput")
-        self.loop_sequence_input.setFixedHeight(40)
+        self.loop_sequence_input.setFixedHeight(36)
         self.loop_sequence_input.setPlaceholderText("e.g. -20, 25, 85, 125")
         self.loop_sequence_input.setText("-20, 25, 85")
-        loop_panel_layout.addWidget(self.loop_sequence_input)
+        layout.addWidget(self.loop_sequence_input)
 
         loop_params_layout = QGridLayout()
         loop_params_layout.setHorizontalSpacing(12)
@@ -515,15 +533,15 @@ class ChamberControlUI(QWidget):
 
         self.loop_dwell_input = QLineEdit()
         self.loop_dwell_input.setObjectName("loopInput")
-        self.loop_dwell_input.setFixedHeight(38)
+        self.loop_dwell_input.setFixedHeight(34)
         self.loop_dwell_input.setText("5")
         self.loop_tolerance_input = QLineEdit()
         self.loop_tolerance_input.setObjectName("loopInput")
-        self.loop_tolerance_input.setFixedHeight(38)
+        self.loop_tolerance_input.setFixedHeight(34)
         self.loop_tolerance_input.setText("1.0")
         self.loop_cycles_input = QLineEdit()
         self.loop_cycles_input.setObjectName("loopInput")
-        self.loop_cycles_input.setFixedHeight(38)
+        self.loop_cycles_input.setFixedHeight(34)
         self.loop_cycles_input.setText("1")
 
         loop_params_layout.addWidget(dwell_label, 0, 0)
@@ -532,40 +550,298 @@ class ChamberControlUI(QWidget):
         loop_params_layout.addWidget(self.loop_dwell_input, 1, 0)
         loop_params_layout.addWidget(self.loop_tolerance_input, 1, 1)
         loop_params_layout.addWidget(self.loop_cycles_input, 1, 2)
-        loop_panel_layout.addLayout(loop_params_layout)
+        layout.addLayout(loop_params_layout)
 
         loop_btn_layout = QHBoxLayout()
         loop_btn_layout.setSpacing(10)
         self.loop_start_btn = QPushButton("▶  START LOOP")
         self.loop_start_btn.setObjectName("loopStartButton")
-        self.loop_start_btn.setFixedHeight(42)
+        self.loop_start_btn.setFixedHeight(38)
         self.loop_start_btn.setEnabled(False)
         self.loop_stop_btn = QPushButton("■  STOP LOOP")
         self.loop_stop_btn.setObjectName("loopStopButton")
-        self.loop_stop_btn.setFixedHeight(42)
+        self.loop_stop_btn.setFixedHeight(38)
         self.loop_stop_btn.setEnabled(False)
         loop_btn_layout.addWidget(self.loop_start_btn, 1)
         loop_btn_layout.addWidget(self.loop_stop_btn, 1)
-        loop_panel_layout.addLayout(loop_btn_layout)
+        layout.addLayout(loop_btn_layout)
 
         self.loop_status_label = QLabel("Loop idle")
         self.loop_status_label.setObjectName("loopStatusLabel")
         self.loop_status_label.setStyleSheet("border: none")
         self.loop_status_label.setWordWrap(True)
-        loop_panel_layout.addWidget(self.loop_status_label)
+        layout.addWidget(self.loop_status_label)
 
-        control_layout.addWidget(power_panel)
-        control_layout.addWidget(temp_panel)
-        control_layout.addWidget(loop_panel)
-        control_layout.addStretch()
+        self.loop_block = block
 
-        self._apply_shadow(control_group)
+    def _build_summary_block(self):
+        """小屏 Summary 摘要：Target / Power / Loop 状态。"""
+        block = QFrame()
+        block.setObjectName("summaryBox")
+        layout = QVBoxLayout(block)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(8)
+
+        def _row(caption):
+            row = QHBoxLayout()
+            row.setSpacing(8)
+            cap = QLabel(caption)
+            cap.setObjectName("summaryCaption")
+            cap.setStyleSheet("border: none")
+            val = QLabel("--")
+            val.setObjectName("summaryValue")
+            val.setStyleSheet("border: none")
+            val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            row.addWidget(cap)
+            row.addStretch()
+            row.addWidget(val)
+            layout.addLayout(row)
+            return val
+
+        self.summary_target_value = _row("Target (°C)")
+        self.summary_power_value = _row("Chamber")
+        self.summary_loop_value = _row("Loop")
+
+        self.summary_block = block
+
+    # ------------------------------------------------------------------
+    # 大屏布局（>= 1200px）：双栏
+    # ------------------------------------------------------------------
+    def _build_large_layout(self):
+        scroll_area = QScrollArea()
+        scroll_area.setObjectName("pageScrollArea")
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.NoFrame)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+
+        content = QWidget()
+        content.setObjectName("rootWidget")
+        scroll_area.setWidget(content)
+
+        main_layout = QVBoxLayout(content)
+        main_layout.setContentsMargins(16, 16, 16, 16)
+        main_layout.setSpacing(18)
+
+        header_layout = QVBoxLayout()
+        header_layout.setSpacing(4)
+        title_row = QHBoxLayout()
+        title_row.setSpacing(8)
+        title_row.addWidget(self._title_icon)
+        title_row.addWidget(self._title_label)
+        title_row.addStretch()
+        header_layout.addLayout(title_row)
+        header_layout.addWidget(self._subtitle_label)
+        main_layout.addLayout(header_layout)
+
+        serial_group = QFrame()
+        serial_group.setObjectName("connectionCard")
+        serial_layout = QVBoxLayout(serial_group)
+        serial_layout.setContentsMargins(18, 16, 18, 18)
+        serial_layout.setSpacing(14)
+
+        connection_title = QLabel("Connection")
+        connection_title.setObjectName("connectionTitle")
+        connection_title.setStyleSheet("border: none")
+        connection_subtitle = QLabel("Select chamber model and connection resource")
+        connection_subtitle.setObjectName("connectionSubtitle")
+        connection_subtitle.setStyleSheet("border: none")
+        title_col = QVBoxLayout()
+        title_col.setSpacing(2)
+        title_col.addWidget(connection_title)
+        title_col.addWidget(connection_subtitle)
+        ch = QHBoxLayout()
+        ch.addLayout(title_col)
+        ch.addStretch()
+        serial_layout.addLayout(ch)
+
+        row_layout = QHBoxLayout()
+        row_layout.setSpacing(14)
+        serial_layout.addLayout(row_layout)
+        main_layout.addWidget(serial_group)
+
+        content_layout = QHBoxLayout()
+        content_layout.setSpacing(18)
+
+        monitor_group = QGroupBox("⌁ Temperature Monitor")
+        monitor_group.setObjectName("cardGroup")
+        monitor_layout = QVBoxLayout(monitor_group)
+        monitor_layout.setContentsMargins(18, 34, 18, 18)
+        content_layout.addWidget(monitor_group, 1)
+
+        control_group = QGroupBox("Chamber Control")
+        control_group.setObjectName("cardGroup")
+        control_layout = QVBoxLayout(control_group)
+        control_layout.setContentsMargins(18, 34, 18, 18)
+        control_layout.setSpacing(18)
         content_layout.addWidget(control_group, 1)
 
         main_layout.addLayout(content_layout)
 
-        # 扫描可用端口
-        self._scan_ports()
+        self._large_page = scroll_area
+        self._large_form_row = row_layout
+        self._large_monitor_layout = monitor_layout
+        self._large_control_layout = control_layout
+        self._layout_stack.addWidget(scroll_area)
+
+    # ------------------------------------------------------------------
+    # 小屏布局（< 900px）：Header + Summary + Tab
+    # ------------------------------------------------------------------
+    def _build_compact_layout(self):
+        page = QWidget()
+        page.setObjectName("rootWidget")
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(10, 10, 10, 10)
+        page_layout.setSpacing(8)
+
+        # 紧凑 Header / Status Bar
+        header_bar = QFrame()
+        header_bar.setObjectName("compactHeader")
+        hb = QHBoxLayout(header_bar)
+        hb.setContentsMargins(12, 8, 12, 8)
+        hb.setSpacing(10)
+        self._compact_title = QLabel("Chamber")
+        self._compact_title.setObjectName("titleLabel")
+        self._compact_title.setStyleSheet("border: none")
+        self._compact_conn_state = QLabel("Disconnected")
+        self._compact_conn_state.setObjectName("statusDesc")
+        self._compact_conn_state.setStyleSheet("border: none")
+        hb.addWidget(self._compact_title)
+        hb.addWidget(self._compact_conn_state)
+        hb.addStretch()
+        page_layout.addWidget(header_bar)
+
+        # Compact Monitor / Summary 区域：左圆形温度控件 + 右摘要
+        summary_row = QFrame()
+        summary_row.setObjectName("innerPanel")
+        sr = QHBoxLayout(summary_row)
+        sr.setContentsMargins(12, 10, 12, 10)
+        sr.setSpacing(12)
+        self._compact_monitor_holder = QVBoxLayout()
+        self._compact_monitor_holder.setContentsMargins(0, 0, 0, 0)
+        sr.addLayout(self._compact_monitor_holder, 1)
+        sr.addWidget(self.summary_block, 1)
+        page_layout.addWidget(summary_row)
+        self._compact_summary_row = summary_row
+
+        # 主功能 Tab（Monitor 摘要已常驻上方 Summary 区，Tab 聚焦操作类内容）
+        tabs = QTabWidget()
+        tabs.setObjectName("mainTabs")
+
+        tabs.addTab(self._wrap_scroll(self._make_tab_holder("connection_tab_holder")), "Connection")
+        tabs.addTab(self._wrap_scroll(self._make_tab_holder("control_tab_holder")), "Control")
+        tabs.addTab(self._wrap_scroll(self._make_tab_holder("loop_tab_holder")), "Loop")
+
+        page_layout.addWidget(tabs, 1)
+        self._compact_tabs = tabs
+
+        self._compact_page = page
+        self._layout_stack.addWidget(page)
+
+    def _make_tab_holder(self, attr_name):
+        holder = QWidget()
+        holder.setObjectName("rootWidget")
+        layout = QVBoxLayout(holder)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+        setattr(self, attr_name, layout)
+        setattr(self, attr_name + "_widget", holder)
+        return holder
+
+    def _wrap_scroll(self, inner):
+        scroll = QScrollArea()
+        scroll.setObjectName("pageScrollArea")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setWidget(inner)
+        return scroll
+
+    # ------------------------------------------------------------------
+    # 响应式布局切换
+    # ------------------------------------------------------------------
+    def _desired_layout_mode(self, width):
+        if width >= self.LARGE_BREAKPOINT:
+            return "large"
+        if width < self.SMALL_BREAKPOINT:
+            return "compact"
+        # 900~1199：保证不截断，沿用紧凑单栏
+        return self._layout_mode or "compact"
+
+    def _apply_layout_mode(self, mode):
+        if mode == self._layout_mode:
+            return
+        self._layout_mode = mode
+        if mode == "large":
+            self._mount_large()
+        else:
+            self._mount_compact()
+
+    def _mount_large(self):
+        """把共享积木挂回大屏双栏布局。
+
+        ``QBoxLayout.addWidget`` 会自动把控件从原父布局移除并重新归属，
+        因此切换模式时无需手动 ``removeWidget`` 控件；但残留的 stretch
+        占位需先清掉，避免反复切换时空白堆叠。
+        """
+        self.temp_gauge.set_size_mode("large")
+
+        self._clear_spacers(self._large_monitor_layout)
+        self._large_monitor_layout.addWidget(self.monitor_block)
+        self._large_monitor_layout.addStretch(1)
+
+        self._clear_spacers(self._large_control_layout)
+        self._large_control_layout.addWidget(self.power_block)
+        self._large_control_layout.addWidget(self.target_block)
+        self._large_control_layout.addWidget(self.loop_block)
+        self._large_control_layout.addStretch(1)
+
+        self._large_form_row.addWidget(self.connection_form_block, 3)
+        self._large_form_row.addWidget(self.status_block, 2)
+
+        self._layout_stack.setCurrentWidget(self._large_page)
+
+    def _mount_compact(self):
+        """把共享积木挂进小屏 Tab 布局。"""
+        self.temp_gauge.set_size_mode("compact")
+
+        # Compact Monitor / Summary 区域：左侧圆形温度控件 + 右侧状态摘要
+        self._clear_spacers(self._compact_monitor_holder)
+        self._compact_monitor_holder.addWidget(
+            self.monitor_block, 0, Qt.AlignHCenter
+        )
+
+        # Control Tab：电源 + 目标温度
+        self._clear_spacers(self.control_tab_holder)
+        self.control_tab_holder.addWidget(self.power_block)
+        self.control_tab_holder.addWidget(self.target_block)
+        self.control_tab_holder.addStretch(1)
+
+        # Loop Tab：循环配置
+        self._clear_spacers(self.loop_tab_holder)
+        self.loop_tab_holder.addWidget(self.loop_block)
+        self.loop_tab_holder.addStretch(1)
+
+        # Connection Tab：连接表单 + 状态
+        self._clear_spacers(self.connection_tab_holder)
+        self.connection_tab_holder.addWidget(self.connection_form_block)
+        self.connection_tab_holder.addWidget(self.status_block)
+        self.connection_tab_holder.addStretch(1)
+
+        self._layout_stack.setCurrentWidget(self._compact_page)
+
+    @staticmethod
+    def _clear_spacers(layout):
+        """移除布局中所有 stretch / spacer 占位（保留真实控件）。"""
+        for i in range(layout.count() - 1, -1, -1):
+            item = layout.itemAt(i)
+            if item is not None and item.spacerItem() is not None:
+                layout.takeAt(i)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._apply_layout_mode(self._desired_layout_mode(self.width()))
 
     def _connect_signals(self):
         self.chamber_type_combo.currentIndexChanged.connect(self._on_chamber_type_changed)
@@ -884,6 +1160,61 @@ class ChamberControlUI(QWidget):
             border-radius: 12px;
         }
 
+        #compactHeader {
+            background-color: #061436;
+            border: 1px solid #17305f;
+            border-radius: 12px;
+        }
+
+        #summaryBox {
+            background-color: #040d28;
+            border: 1px solid #17305f;
+            border-radius: 12px;
+        }
+
+        #summaryCaption {
+            color: #7e95bf;
+            font-size: 12px;
+            font-weight: 600;
+            border: none;
+        }
+
+        #summaryValue {
+            color: #eaf1ff;
+            font-size: 16px;
+            font-weight: 800;
+            border: none;
+        }
+
+        #mainTabs::pane {
+            background-color: #040d28;
+            border: 1px solid #17305f;
+            border-radius: 12px;
+            top: -1px;
+        }
+
+        #mainTabs QTabBar::tab {
+            background-color: #0a1c40;
+            color: #7e95bf;
+            border: 1px solid #17305f;
+            border-bottom: none;
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+            padding: 8px 16px;
+            margin-right: 2px;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        #mainTabs QTabBar::tab:selected {
+            background-color: #173a7a;
+            color: #eaf1ff;
+        }
+
+        #mainTabs QTabBar::tab:hover:!selected {
+            background-color: #102a59;
+        }
+
         #powerButton {
             background-color: #223150;
             border: 1px solid #34486f;
@@ -1093,11 +1424,17 @@ class ChamberControlUI(QWidget):
         if connected:
             self.status_detail.setText(f"{chamber_display_name(self.current_chamber_type)} Connected & Ready")
             self.status_dot.setStyleSheet("color: #15e6a3; font-size: 16px;border: none")
+            self._compact_conn_state.setText(
+                f"Connected · {chamber_display_name(self.current_chamber_type)}"
+            )
+            self._compact_conn_state.setStyleSheet("border: none; color: #15e6a3;")
             if self.isVisible():
                 self._state_poller.resume()
         else:
             self.status_detail.setText("Disconnected")
             self.status_dot.setStyleSheet("color: #5d78a7; font-size: 16px;border: none")
+            self._compact_conn_state.setText("Disconnected")
+            self._compact_conn_state.setStyleSheet("border: none; color: #7e95bf;")
             self._state_poller.pause()
 
     def _set_power_ui(self, chamber_on: bool, connected: bool | None = None):
@@ -1106,6 +1443,13 @@ class ChamberControlUI(QWidget):
             connected = self._is_current_chamber_connected()
         self.is_chamber_on = bool(chamber_on) if connected else False
         self.power_btn.setEnabled(connected)
+
+        if not connected:
+            self.summary_power_value.setText("Offline")
+        elif chamber_on:
+            self.summary_power_value.setText("On")
+        else:
+            self.summary_power_value.setText("Off")
 
         if not connected:
             self.power_btn.setText("⏻  CHAMBER OFFLINE")
@@ -1332,6 +1676,11 @@ class ChamberControlUI(QWidget):
             except Exception as e:
                 logger.error("打开温箱错误: %s", e, exc_info=True)
 
+    def _set_target_display(self, text: str):
+        """同步更新监控卡的 SET TEMP 与小屏摘要的 Target 值。"""
+        self.set_temp_value.setText(text)
+        self.summary_target_value.setText(text)
+
     def _set_temperature(self):
         """设置温度"""
         if self.chamber is None:
@@ -1341,7 +1690,7 @@ class ChamberControlUI(QWidget):
             temp = float(self.temp_input.text())
             with self._state_poller.writing():
                 self.chamber.set_temperature(temp)
-            self.set_temp_value.setText(f"{temp:.1f} °C")
+            self._set_target_display(f"{temp:.1f} °C")
         except ValueError:
             logger.warning("设置温度错误: 输入不是有效数字")
         except Exception as e:
@@ -1357,7 +1706,7 @@ class ChamberControlUI(QWidget):
             self.temp_input.setText(str(temp))
             with self._state_poller.writing():
                 self.chamber.set_temperature(temp)
-            self.set_temp_value.setText(f"{temp:.1f} °C")
+            self._set_target_display(f"{temp:.1f} °C")
         except ValueError:
             logger.warning("设置预设温度错误: 输入不是有效数字")
         except Exception as e:
@@ -1466,7 +1815,7 @@ class ChamberControlUI(QWidget):
         target = self._loop_sequence[self._loop_index]
         try:
             self.chamber.set_temperature(target)
-            self.set_temp_value.setText(f"{target:.1f} °C")
+            self._set_target_display(f"{target:.1f} °C")
             self.temp_input.setText(f"{target:.1f}")
         except Exception as e:
             logger.error("循环设置温度失败: %s", e, exc_info=True)
@@ -1535,6 +1884,7 @@ class ChamberControlUI(QWidget):
         self.loop_status_label.setText(f"{cycle_txt} · {step_txt} · {phase_txt}")
 
     def _set_loop_running_ui(self, running: bool):
+        self.summary_loop_value.setText("Running" if running else "Idle")
         self.loop_start_btn.setEnabled(not running)
         self.loop_stop_btn.setEnabled(running)
         self.loop_sequence_input.setEnabled(not running)
@@ -1592,7 +1942,7 @@ class ChamberControlUI(QWidget):
 
         set_temp = snapshot.get("set_temp")
         if set_temp is not None:
-            self.set_temp_value.setText(f"{set_temp:.1f} °C")
+            self._set_target_display(f"{set_temp:.1f} °C")
 
         chamber_on = snapshot.get("running")
         if chamber_on is None:
@@ -1610,7 +1960,41 @@ class ChamberControlUI(QWidget):
 
     def closeEvent(self, event):
         self._state_poller.stop()
+        self._disconnect_on_close()
         super().closeEvent(event)
+
+    def _disconnect_on_close(self):
+        """关闭窗口时自动断开已连接的温箱，避免端口/连接句柄泄漏。
+
+        仅在「独立运行」（无 instrument_manager）时执行直连断开。嵌入主窗口
+        运行时，连接归 InstrumentManager 统一托管，关闭由主窗口的
+        ``connection_hub.shutdown()`` 同步断开所有 session 负责；此处若再发起
+        ``disconnect_async`` 会与之产生重复断开 / 线程竞争，故直接返回交给主窗口。
+        """
+        if self._instrument_manager is not None:
+            return
+
+        if self._loop_running:
+            self._stop_loop(reason="Window closed")
+
+        is_connected = self.chamber is not None and (
+            self.chamber.is_connected()
+            if hasattr(self.chamber, "is_connected")
+            else hasattr(self.chamber, "ser") and self.chamber.ser.is_open
+        )
+        if not is_connected:
+            return
+
+        try:
+            self.chamber.close()
+            logger.info("窗口关闭：已自动断开温箱连接")
+        except Exception as e:
+            logger.error("窗口关闭断开温箱失败: %s", e, exc_info=True)
+        finally:
+            self.chamber = None
+            self.current_port = None
+            self.current_chamber_session_id = None
+            self.is_chamber_on = False
 
 
 if __name__ == "__main__":
@@ -1635,7 +2019,7 @@ if __name__ == "__main__":
     window = ChamberControlUI()
     window.setWindowIcon(chamber_icon)
     window.setWindowTitle("Chamber Test")
-    resize_and_center_window(window, size=(620, 520))
+    resize_and_center_window(window, size=(1400, 970))
     window.show()
 
     sys.exit(app.exec())
