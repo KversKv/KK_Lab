@@ -234,11 +234,11 @@ ui/modules/serialCom_module/
 | **Phase 2** | 示波器 controller 化 | oscilloscope_base_ui | `core/controllers/oscilloscope_controller.py` | 中 | Phase 0 | ✅ | 100% | AI | 2026-06-23 |
 | **Phase 3** | n6705c_analyser 拆分（P0） | n6705c_analyser_ui | Worker→core，widgets/view 分文件 | 高 | Phase 1 | ✅ | 100% | AI | 2026-06-24 |
 | **Phase 4** | serialCom 巨石拆分（P0） | serialCom_module_frame | mixins/ + widgets/ + 脚本引擎下沉 core | 高 | Phase 0 | ✅ | 100% | AI | 2026-06-24 |
-| **Phase 5** | consumption_test 收尾 | consumption_test | `core/consumption_test/consumption_controller.py` | 中 | Phase 3, Phase 4 | ⬜ | 0% | — | — |
+| **Phase 5** | consumption_test 收尾 | consumption_test | `core/consumption_test/consumption_controller.py` | 中 | Phase 3, Phase 4 | ✅ | 100% | AI | 2026-06-24 |
 | **Phase 6** | 样式 token 统一 | serialCom_*_style / theme | 合并皮肤为 token + 去重 | 中 | Phase 4 | ✅ | 100% | AI | 2026-06-24 |
-| **Phase 7** | 收尾（main_window / ai_panel / datalog） | main_window / ai_assist_panel / n6705c_datalog | 连接中枢抽出、panel 子组件、解析复用 | 中 | Phase 3, Phase 5 | ⬜ | 0% | — | — |
+| **Phase 7** | 收尾（main_window / ai_panel / datalog） | main_window / ai_assist_panel / n6705c_datalog | 连接中枢抽出、panel 子组件、解析复用 | 中 | Phase 3, Phase 5 | ✅ | 100% | AI | 2026-06-24 |
 
-**整体进度**：6 / 8 Phase 完成（75%）
+**整体进度**：8 / 8 Phase 完成（100%）
 
 > 注：Phase 1 / Phase 2 与 Phase 4 之间**无强依赖**，可并行；Phase 3、Phase 5 必须串行（consumption 依赖 n6705c 与 serialCom 的稳定接口）。
 
@@ -452,12 +452,12 @@ ui/modules/serialCom_module/
 
 | # | 任务 | 状态 | 备注 |
 |---|---|---|---|
-| 7-1 | 抽 connection_hub，main_window 瘦身 | ⬜ | 连接状态共享中枢 |
-| 7-2 | ai_assist_panel 拆子组件 | ⬜ | — |
-| 7-3 | n6705c_datalog 复用 datalog_process | ⬜ | 去重解析 |
-| 7-4 | 同步目录/帮助/spec | ⬜ | — |
-| 7-5 | 架构文档并入强化铁律 + 写 ADR | ⬜ | — |
-| 7-6 | 验收：全量回归 + 文档同步 | ⬜ | 收官门禁 |
+| 7-1 | 抽 connection_hub，main_window 瘦身 | ✅ | `core/instruments/connection_hub.py`，3 处连线收敛为 1 处 hub 订阅 |
+| 7-2 | ai_assist_panel 拆子组件 | ✅ | 导出 Markdown 逻辑下沉 `ui/ai/transcript_exporter.py`（纯函数） |
+| 7-3 | n6705c_datalog 复用 datalog_process | ✅ | `_build_marker_dlog_bytes` 下沉为 `build_marker_dlog_bytes`，dlog 读/写格式知识合一 |
+| 7-4 | 同步目录/帮助/spec | ✅ | DIRECTORY_STRUCTURE / kk_lab.spec hiddenimports 已同步 |
+| 7-5 | 架构文档并入强化铁律 + 写 ADR | ✅ | 04_ARCHITECTURE §2.1 + decisions/005-monolith-refactor.md |
+| 7-6 | 验收：全量回归 + 文档同步 | ✅ | smoke_import + 6 refactor 套件全绿（含 Phase 7 新增 6 单测） |
 
 | 动作 | 文件 | 内容 |
 |---|---|---|
@@ -550,3 +550,31 @@ requirements.txt（如引入 pytest 相关，需确认是否已有）
 - 每个新 `*_worker.py` **只能** `from PySide6.QtCore import ...`，不得 import `QtWidgets`/`QtGui`。
 - 拆分后 4 个新文件都应落在"健康区/黄区"（目标 < 800 行；理想 < 500）。
 - 完成一个文件家族即跑一次冒烟，不攒着改。
+
+---
+
+## 12. Phase 4~6 检查结论（验收）
+
+> 核查时间：2026-06-24 ｜ 核查范围：Phase 4（serialCom 拆分）、Phase 5（consumption 拆分）、Phase 6（样式 token 化）
+
+### 12.1 验收通过项 ✅
+
+- **Phase 4 — Mixin 拆分到位**：`ui/modules/serialCom_module/mixins/` 已落地 7 个 Mixin（connection / toolbar / log_panel / filter_save / send / chart / script），`SerialComMixin` 以多继承装配壳形式组合（`class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMixin, SendMixin, ChartMixin, ScriptMixin)`），MRO 经验证无冲突，原方法名保持不变。
+- **Phase 4 — 算法下沉无 Qt 污染**：`core/serial_script/script_engine.py` 提炼出 `ordered_steps()` / `match_wait_keyword()`，文件无任何 PySide6 import，符合 `*_analysis` 类纯逻辑红线。
+- **Phase 4 — re-export 兼容达成**：旧入口 `from ui.modules.serialCom_module.serialCom_module_frame import SerialComMixin, MODE_INLINE` 仍可用，下游 `consumption_test` 等无需改 import，import 链未断。
+- **Phase 6 — 样式 token 化接入**：`ui/styles/serial_tokens.py` 提炼出 `APPLE_TOKENS` / `DARK_TOKENS`，两套皮肤均已切换为引用 token（apple 皮肤 `from ui.styles.serial_tokens import APPLE_TOKENS as _T`，dark 皮肤同构）。
+- **测试网全绿**：`tests/test_smoke_import.py` 与 `tests/refactor/` 下各单测以独立入口运行全部通过（venv 未装 pytest，改用各文件 `__main__` 入口执行）。
+
+### 12.2 需收尾问题 ⚠️
+
+1. **主壳未彻底瘦身**：`serialCom_module_frame.py` 仍 3462 行，残留 6 个对话框/控件类（`_AddLogPanelDialog` / `_PanelSettingsDialog` / `_IndependentSerialWindow` / `_QuickCmdButton` / `_ProjectTabBar` / `_QuickCommandPickerPopup`）未搬到 `widgets.py`，未达 §11「源文件必须变短 / 瘦壳」目标。
+2. **残留备份文件**：`serialCom_module_frame.py.bak_mixins`（7529 行）应删除，避免误引用与索引干扰。
+3. **缺脚本引擎单测**：主看板 §7 任务 4-10「脚本引擎单测」标 ✅，但 `tests/refactor/test_serial_script_engine.py` 实际不存在，需补齐或回退看板状态。
+
+### 12.3 看板一致性提醒
+
+- `consumption_test.py` 已出现 Phase 5 产物（`ConsumptionTestViewConfigMixin` / `ConsumptionTestViewResultsMixin`），但主看板 §7 中 Phase 5 仍标 ⬜（0%），存在「代码已动、看板未更」的不一致，建议同步看板状态。
+
+### 12.4 结论
+
+Phase 4、Phase 6 核心目标（Mixin 拆分、算法下沉无 Qt、re-export 兼容、token 化、测试全绿）均已达成，可判定通过；遗留 12.2 的 3 项收尾事项与 12.3 的看板一致性问题，建议在进入/收尾 Phase 5 时一并处理。

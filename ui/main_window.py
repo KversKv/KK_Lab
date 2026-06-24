@@ -95,7 +95,7 @@ from ui.modules.serialCom_module.serialCom_module_frame import SerialComMixin
 from ui.modules.mcu_io_module_frame import McuIoConnectionMixin
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from core.test_manager import TestManager
-from core.instruments import InstrumentManager, InstrumentSpec
+from core.instruments import InstrumentManager, InstrumentSpec, ConnectionHub
 from instruments.base.visa_instrument import VisaInstrument
 from ui.styles import SCROLLBAR_STYLE
 from ui.nav_controller import NavController
@@ -278,9 +278,13 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.instrument_manager = InstrumentManager(parent=self)
 
         self.n6705c_top = N6705CTop(self)
-        self.n6705c_top.set_instrument_manager(self.instrument_manager)
         self.mso64b_top = MSO64BTop(self)
-        self.mso64b_top.set_instrument_manager(self.instrument_manager)
+        self.connection_hub = ConnectionHub(
+            self.instrument_manager,
+            self.n6705c_top,
+            self.mso64b_top,
+            parent=self,
+        )
 
         if DEBUG_MOCK:
             from instruments.mock.mock_instruments import MockN6705C, MockMSO64B
@@ -870,9 +874,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.status_panel.help_btn.clicked.connect(self._on_help)
         self.test_manager.data_updated.connect(self._update_data)
 
-        self.n6705c_top.connection_changed.connect(self._update_instrument_status)
-        self.mso64b_top.connection_changed.connect(self._update_instrument_status)
-        self.instrument_manager.sessions_changed.connect(self._update_instrument_status)
+        self.connection_hub.connection_changed.connect(self._update_instrument_status)
 
         self.nav.setup_shortcuts()
 
@@ -1487,7 +1489,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         self._save_ai_panel_state()
         if getattr(self, "ai_service", None) is not None:
             self.ai_service.shutdown()
-        self.instrument_manager.shutdown()
+        self.connection_hub.shutdown()
         self._perform_close_cleanup()
         super().closeEvent(event)
 

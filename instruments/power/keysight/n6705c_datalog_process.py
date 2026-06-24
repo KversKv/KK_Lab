@@ -555,6 +555,72 @@ def import_edlg_file(path):
     return all_data, raw_data
 
 
+def build_marker_dlog_bytes(unit_channels, lo, hi):
+    """把标记区间内的通道数据打包成 N6705C dlog 二进制（与解析格式对偶）。
+
+    纯函数，无 Qt 依赖。``unit_channels`` 形如 ``{ch_num: {"V": info, "I": info}}``，
+    其中 ``info`` 含 ``times`` / ``values`` / ``offset``。返回二进制 ``bytes``，
+    无有效样本时返回 ``None``。供 UI 导出标记区间 dlog 复用，避免解析/导出格式
+    知识散落两处。
+    """
+    import struct
+
+    traces = []
+    for ch_num in sorted(unit_channels.keys()):
+        entry = unit_channels[ch_num]
+        if "V" in entry:
+            traces.append(("volt", ch_num, entry["V"]))
+        if "I" in entry:
+            traces.append(("curr", ch_num, entry["I"]))
+    if not traces:
+        return None
+
+    sample_period = 0.001
+    window_samples = []
+    for _, _, info in traces:
+        times = info["times"]
+        off = info["offset"]
+        idxs = [j for j in range(len(times)) if lo <= (times[j] + off) <= hi]
+        window_samples.append(idxs)
+        if len(times) >= 2:
+            sample_period = float(times[1] - times[0])
+
+    num_samples = min((len(idxs) for idxs in window_samples), default=0)
+    if num_samples <= 0:
+        return None
+
+    ch_ids = sorted(unit_channels.keys())
+    header_parts = ['<?xml version="1.0" encoding="UTF-8"?>']
+    header_parts.append("<dlog>")
+    header_parts.append(f"<frame><tint>{sample_period:.9g}</tint>"
+                        f"<points>{num_samples}</points></frame>")
+    for ch_num in ch_ids:
+        entry = unit_channels[ch_num]
+        sense_v = 1 if "V" in entry else 0
+        sense_c = 1 if "I" in entry else 0
+        header_parts.append(
+            f'<channel id="{ch_num}">'
+            f"<sense_volt>{sense_v}</sense_volt>"
+            f"<sense_curr>{sense_c}</sense_curr>"
+            f"</channel>"
+        )
+    header_parts.append("</dlog>")
+    header_str = "".join(header_parts)
+
+    out = bytearray()
+    out.extend(header_str.encode("ascii", errors="replace"))
+    out.extend(b"\x00" * 9)
+
+    num_traces = len(traces)
+    flat = []
+    for i in range(num_samples):
+        for t_idx, (_, _, info) in enumerate(traces):
+            src_idx = window_samples[t_idx][i]
+            flat.append(info["values"][src_idx] / 1000.0)
+    out.extend(struct.pack(f">{num_traces * num_samples}f", *flat))
+    return bytes(out)
+
+
 def import_dlog_file(path):
     with open(path, "rb") as f:
         raw_data = f.read()

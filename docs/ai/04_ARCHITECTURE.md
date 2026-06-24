@@ -46,6 +46,16 @@ main.py
 | `instruments/` | `lib/`, `log_config`, `debug_config` | 任何 UI / Qt Widget |
 | `lib/` | 第三方 / 标准库 | 业务代码、Qt、`instruments` |
 
+### 2.1 UI 层内容约束（强化铁律）
+
+> 巨石重构（[ADR 005](./decisions/005-monolith-refactor.md)）后追加的硬约束，避免 `ui/` 重新膨胀为"上帝 QWidget"。
+
+- `ui/` 中**禁止**出现纯数据解析 / 算法 / 统计函数（`_parse_*` / `_analyze_*` / `*_from_csv` / 降采样 / 拟合等）；此类一律落 `core/**/*_analysis.py`，须无任何 `PySide6` import，可被 pytest 直测。
+- `QObject` + `run()` 的 Worker 只能 `from PySide6.QtCore import ...`，**不得** import `QtWidgets` / `QtGui`；统一落 `core/**/*_worker.py`。
+- View（`_build_*` / `_create_*`）留在 `ui/`，单个方法 > ~80 行须抽小工厂函数。
+- View 不直接发 SCPI / 读串口，一律经 `core` controller → `instruments/factory`。
+- 连接状态共享经 [core/instruments/connection_hub.py](../../core/instruments/connection_hub.py) 的 `ConnectionHub` 单点订阅；`ui/main_window.py` 仅订阅 `hub.connection_changed`，不再各自连线 N6705C / 示波器 / manager 三处信号。
+
 ## 3. 模块职责
 
 ### 3.1 入口 `main.py`
@@ -56,8 +66,8 @@ main.py
 
 ### 3.2 `ui/main_window.py`
 - 侧边栏导航 + `QStackedWidget` 切页。
-- 各仪器连接状态管理（N6705C A/B 双台 / 示波器自动识别 / 温箱）。
-- 作为 Signal/Slot 的顶层宿主，把仪器连接共享给各页面。
+- 经 `core/instruments/connection_hub.py` 的 `ConnectionHub` 统一聚合 N6705C A/B 双台 / 示波器自动识别 / 温箱连接状态，单点订阅 `hub.connection_changed` 刷新状态栏。
+- 作为 Signal/Slot 的顶层宿主，把 `n6705c_top` / `mso64b_top` / `instrument_manager` 共享给各页面。
 
 ### 3.3 `ui/pages/`
 - 按仪器 / 功能分包：`n6705c_power_analyzer/`、`oscilloscope/`、`pmu_test/`、`charger_test/`、`chamber/`、`consumption_test/`。

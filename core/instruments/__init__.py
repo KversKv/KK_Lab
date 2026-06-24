@@ -10,6 +10,7 @@ from core.instruments.instrument_session import (
 from core.instruments.profiles import InstrumentProfile
 from core.instruments.registry import ProfileRegistry
 from core.instruments.instrument_manager import InstrumentManager
+from core.instruments.connection_hub import ConnectionHub
 
 __all__ = [
     "InstrumentSession",
@@ -22,4 +23,5 @@ __all__ = [
     "InstrumentProfile",
     "ProfileRegistry",
     "InstrumentManager",
+    "ConnectionHub",
 ]

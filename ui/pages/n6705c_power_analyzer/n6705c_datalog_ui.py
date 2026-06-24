@@ -50,7 +50,7 @@ from ui.widgets.button import SpinningSearchButton, update_connect_button_state
 from instruments.power.keysight.n6705c_datalog_process import (
     parse_csv_text, parse_dlog_binary, compute_power_channels,
     calc_power_for_ch, import_csv_file, import_edlg_file, import_dlog_file,
-    parse_channel_label, unit_for_label,
+    parse_channel_label, unit_for_label, build_marker_dlog_bytes,
 )
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLL_AREA_STYLE
@@ -8125,64 +8125,6 @@ class N6705CDatalogUI(QWidget):
             import traceback
             logger.error("Marker region CSV export failed:\n%s", traceback.format_exc())
 
-    def _build_marker_dlog_bytes(self, unit_channels, lo, hi):
-        import struct
-
-        traces = []
-        for ch_num in sorted(unit_channels.keys()):
-            entry = unit_channels[ch_num]
-            if "V" in entry:
-                traces.append(("volt", ch_num, entry["V"]))
-            if "I" in entry:
-                traces.append(("curr", ch_num, entry["I"]))
-        if not traces:
-            return None
-
-        sample_period = 0.001
-        window_samples = []
-        for _, _, info in traces:
-            times = info["times"]
-            off = info["offset"]
-            idxs = [j for j in range(len(times)) if lo <= (times[j] + off) <= hi]
-            window_samples.append(idxs)
-            if len(times) >= 2:
-                sample_period = float(times[1] - times[0])
-
-        num_samples = min((len(idxs) for idxs in window_samples), default=0)
-        if num_samples <= 0:
-            return None
-
-        ch_ids = sorted(unit_channels.keys())
-        header_parts = ['<?xml version="1.0" encoding="UTF-8"?>']
-        header_parts.append("<dlog>")
-        header_parts.append(f"<frame><tint>{sample_period:.9g}</tint>"
-                            f"<points>{num_samples}</points></frame>")
-        for ch_num in ch_ids:
-            entry = unit_channels[ch_num]
-            sense_v = 1 if "V" in entry else 0
-            sense_c = 1 if "I" in entry else 0
-            header_parts.append(
-                f'<channel id="{ch_num}">'
-                f"<sense_volt>{sense_v}</sense_volt>"
-                f"<sense_curr>{sense_c}</sense_curr>"
-                f"</channel>"
-            )
-        header_parts.append("</dlog>")
-        header_str = "".join(header_parts)
-
-        out = bytearray()
-        out.extend(header_str.encode("ascii", errors="replace"))
-        out.extend(b"\x00" * 9)
-
-        num_traces = len(traces)
-        flat = []
-        for i in range(num_samples):
-            for t_idx, (_, _, info) in enumerate(traces):
-                src_idx = window_samples[t_idx][i]
-                flat.append(info["values"][src_idx] / 1000.0)
-        out.extend(struct.pack(f">{num_traces * num_samples}f", *flat))
-        return bytes(out)
-
     def _export_marker_dlog(self, path, sorted_keys, lo, hi):
         try:
             units = {"A": {}, "B": {}}
@@ -8203,7 +8145,7 @@ class N6705CDatalogUI(QWidget):
             blobs = []
             for slot in ("A", "B"):
                 if units[slot]:
-                    blob = self._build_marker_dlog_bytes(units[slot], lo, hi)
+                    blob = build_marker_dlog_bytes(units[slot], lo, hi)
                     if blob:
                         blobs.append(blob)
 

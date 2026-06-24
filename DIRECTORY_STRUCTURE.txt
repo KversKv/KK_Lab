@@ -110,6 +110,7 @@ core/
 │   ├── __init__.py          # 导出 InstrumentManager, InstrumentSession 等
 │   ├── instrument_session.py # InstrumentSession/Spec/Snapshot/Identity 数据模型
 │   ├── instrument_manager.py # InstrumentManager - 统一仪器生命周期管理
+│   ├── connection_hub.py    # ConnectionHub - 聚合 N6705C/示波器/manager 连接状态共享中枢
 │   ├── profiles.py          # InstrumentProfile 数据类定义
 │   ├── registry.py          # ProfileRegistry + 各仪器 profile 注册
 │   └── workers.py           # ConnectWorker/DisconnectWorker/ScanWorker (QThread)
@@ -259,6 +260,7 @@ ui/
 │   ├── element_picker.py        # ElementPicker: F12 式页面元素拾取 (Ctrl+Shift+C), 高亮+抽取文本/表格/曲线注入 AI
 │   ├── config_preview.py        # ConfigPreviewDialog: 测试配置草案预览 + 应用
 │   ├── script_preview.py        # ScriptPreviewDialog: 脚本草案预览 + 本地校验 + 应用到画布
+│   ├── transcript_exporter.py   # 会话调试导出 Markdown 纯函数 (build_export_markdown, 从 ai_assist_panel 抽出)
 │   ├── action_confirm_dialog.py # ActionConfirmDialog: 高/critical 风险动作确认 (parent=面板, 取消为默认)
 │   ├── curate_dialog.py         # CurateDialog: 一键沉淀草稿微调对话框 (nudge/quick_action/project_rule/eval_case)
 │   ├── ai_settings_dialog.py    # AISettingsDialog: AI 设置 + 「测试连接」+ 白名单 + 「本机经验」(一键回归/条目管理/导出重置/隐私开关)
@@ -569,6 +571,13 @@ tests/
 ├── test_custom_test_phase3.py       # Custom Test Phase 3 ResultStore / 导出统一 smoke
 ├── test_custom_test_phase4.py       # Custom Test Phase 4 PromptUser / preflight UI 状态 smoke
 ├── test_custom_test_phase5.py       # Custom Test Phase 5 cancellation / Mock adapters / v2 serialization smoke
+├── refactor/                        # 巨石重构期回归测试 (各文件 __main__ 可独立运行)
+│   ├── test_clk_analysis.py         # Phase 1: clk CSV 解析 / 频率分析纯函数单测
+│   ├── test_pmu_analysis.py         # Phase 1: gpadc/dcdc/isgain/oscp 算法纯函数单测
+│   ├── test_oscilloscope_controller.py # Phase 2: oscilloscope_controller mock 单测
+│   ├── test_n6705c_worker.py        # Phase 3: n6705c channel_sync / consumption worker 单测
+│   ├── test_consumption_controller.py # Phase 5: consumption_controller 信号/状态机单测
+│   └── test_phase7_connection_dlog.py # Phase 7: ConnectionHub 信号聚合 + dlog 导出纯函数单测
 └── ai_eval/                         # AI eval 回归集 (防退化)
     ├── README.md                    # 用例格式说明 + 坑→用例转换约定
     └── cases/                       # 用例 *.json (输入→期望行为；本机沉淀 local_*.json)
