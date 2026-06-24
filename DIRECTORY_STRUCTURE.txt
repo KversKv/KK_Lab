@@ -299,13 +299,15 @@ ui/
 │       ├── serial_chart_parser.py      # RX 可视化规则引擎 (SerialChartParser/缓存)
 │       ├── serial_chart_controller.py  # RX 可视化控制器 (数据路由/派生曲线)
 │       ├── serial_chart_dialog.py      # RX 可视化图表配置与显示对话框
-│       └── serialCom_dark_style.py     # 串口通信深色 UI 样式
+│       ├── serialCom_apple_gpt5p5_style.py  # 串口通信 Apple 浅色 UI 样式 (消费 ui/styles/serial_tokens)
+│       └── serialCom_dark_style.py          # 串口通信深色 UI 样式 (消费 ui/styles/serial_tokens)
 │
 ├── styles/                  # 样式聚合入口
 │   ├── __init__.py              # 从 ui/widgets 与 ui/modules 重新导出常用样式/组件
 │   │                            # (SCROLLBAR_STYLE / START_BTN_STYLE /
 │   │                            #  SpinningSearchButton / ExecutionLogsFrame 等)
-│   └── page_styles.py           # 通用页面 QSS 模板 (get_page_base_qss / get_table_qss)
+│   ├── page_styles.py           # 通用页面 QSS 模板 (get_page_base_qss / get_table_qss)
+│   └── serial_tokens.py         # 串口皮肤 token 单一事实源 (SerialColorTokens/APPLE_TOKENS/DARK_TOKENS)
 │
 ├── utils/                   # UI 工具模块
 │   ├── __init__.py              # 导出 tinted_svg_icon / tinted_svg_pixmap

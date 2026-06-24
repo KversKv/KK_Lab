@@ -235,10 +235,10 @@ ui/modules/serialCom_module/
 | **Phase 3** | n6705c_analyser 拆分（P0） | n6705c_analyser_ui | Worker→core，widgets/view 分文件 | 高 | Phase 1 | ✅ | 100% | AI | 2026-06-24 |
 | **Phase 4** | serialCom 巨石拆分（P0） | serialCom_module_frame | mixins/ + widgets/ + 脚本引擎下沉 core | 高 | Phase 0 | ✅ | 100% | AI | 2026-06-24 |
 | **Phase 5** | consumption_test 收尾 | consumption_test | `core/consumption_test/consumption_controller.py` | 中 | Phase 3, Phase 4 | ⬜ | 0% | — | — |
-| **Phase 6** | 样式 token 统一 | serialCom_*_style / theme | 合并皮肤为 token + 去重 | 中 | Phase 4 | ⬜ | 0% | — | — |
+| **Phase 6** | 样式 token 统一 | serialCom_*_style / theme | 合并皮肤为 token + 去重 | 中 | Phase 4 | ✅ | 100% | AI | 2026-06-24 |
 | **Phase 7** | 收尾（main_window / ai_panel / datalog） | main_window / ai_assist_panel / n6705c_datalog | 连接中枢抽出、panel 子组件、解析复用 | 中 | Phase 3, Phase 5 | ⬜ | 0% | — | — |
 
-**整体进度**：5 / 8 Phase 完成（62%）
+**整体进度**：6 / 8 Phase 完成（75%）
 
 > 注：Phase 1 / Phase 2 与 Phase 4 之间**无强依赖**，可并行；Phase 3、Phase 5 必须串行（consumption 依赖 n6705c 与 serialCom 的稳定接口）。
 
@@ -429,11 +429,11 @@ ui/modules/serialCom_module/
 
 | # | 任务 | 状态 | 备注 |
 |---|---|---|---|
-| 6-1 | 提炼 serial_tokens.py | ⬜ | 取两套皮肤公共项 |
-| 6-2 | apple 皮肤基于 token 重写 | ⬜ | — |
-| 6-3 | dark 皮肤基于 token 重写 | ⬜ | — |
-| 6-4 | theme/page_styles 对齐命名 | ⬜ | — |
-| 6-5 | 验收：两套皮肤视觉一致（截图对比） | ⬜ | 退出 Phase 门禁 |
+| 6-1 | 提炼 serial_tokens.py | ✅ | `SerialColorTokens`+`APPLE_TOKENS`/`DARK_TOKENS`+共享度量/字体/SVG |
+| 6-2 | apple 皮肤基于 token 重写 | ✅ | `_CLR_*` 改为 `_T.*` 绑定，QSS 函数体不动 |
+| 6-3 | dark 皮肤基于 token 重写 | ✅ | 同上 |
+| 6-4 | theme/page_styles 对齐命名 | ✅ | `Serial*` 前缀镜像 `Colors/FontSizes/Spacing/Radius`；两文件加 docstring 标边界 |
+| 6-5 | 验收：两套皮肤视觉一致（截图对比） | ✅ | 字节级快照比对 IDENTICAL（强于截图）+ frame 动态再导出 128 名零缺失 + smoke 绿 |
 
 | 动作 | 文件 | 内容 |
 |---|---|---|

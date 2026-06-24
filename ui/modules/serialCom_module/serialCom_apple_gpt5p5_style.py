@@ -12,81 +12,86 @@ from ui.resource_path import get_resource_base
 # Apple-inspired light theme for the serial console.
 # Keep the same public API as serialCom_dark_style.py so callers can switch
 # by changing only the imported style module.
-_SERIAL_BTN_HEIGHT = 26
-_SERIAL_BTN_ICON_SIZE = 14
-_SERIAL_BTN_RADIUS = 7
-_TERM_FONT = '"JetBrains Mono", "Fira Code", Consolas, "Menlo", "Courier New", monospace'
-_UI_FONT = '"Inter", "PingFang SC", "Microsoft YaHei", "Segoe UI", -apple-system, sans-serif'
+from ui.styles.serial_tokens import (
+    APPLE_TOKENS as _T,
+    SERIAL_BTN_HEIGHT,
+    SERIAL_BTN_ICON_SIZE,
+    TERM_FONT,
+    UI_FONT,
+    dlg_check_svg,
+    spin_up_svg,
+    spin_down_svg,
+)
 
-_CLR_BG_MAIN = "#fcfdfe"
-_CLR_BG_PANEL = "#fcfdfe"
-_CLR_BG_CARD = "#FFFFFF"
-_CLR_BG_LOG = "#FBFBFD"
-_CLR_BORDER = "#D2D2D7"
-_CLR_BORDER_HOVER = "#A1A1A6"
-_CLR_TEXT_TITLE = "#1D1D1F"
-_CLR_TEXT_ACCENT = "#FF9F0A"
-_CLR_TEXT_SUBTITLE = "#0A84FF"
-_CLR_TEXT_LABEL = "#515154"
-_CLR_TEXT_BTN = "#0A84FF"
-_CLR_TEXT_BTN_LOG = "#3A3A3C"
-_CLR_TEXT_BODY = "#1D1D1F"
-_CLR_TEXT_TIME = "#8E8E93"
-_CLR_TEXT_LINENO = "#A1A1A6"
-_CLR_TEXT_INFO = "#0A84FF"
-_CLR_INPUT_BG = "#F2F2F7"
-_CLR_INPUT_TEXT = "#1D1D1F"
-_CLR_CURSOR = "#007AFF"
-_CLR_SELECTION_BG = "#BBD7FF"
-_CLR_SELECTION_TEXT = "#000000"
-_CLR_SCROLLBAR = "#C7C7CC"
-_CLR_SCROLLBAR_HV = "#AEAEB2"
-_CLR_CONNECT_FG = "#30D158"
-_CLR_CONNECT_BG = "#E8F8EE"
-_CLR_SEND_BG = "#007AFF"
-_CLR_SEND_HOVER = "#0A84FF"
-_CLR_SEND_PRESS = "#0066CC"
-_CLR_WARNING = "#FF9F0A"
-_CLR_ERROR = "#FF3B30"
-_CLR_RX = "#1D1D1F"
-_CLR_TX = "#007AFF"
-_CLR_FILTER_TEXT = "#5E5CE6"
-_CLR_FILTER_BG = "#EFEFFF"
-_CLR_FILTER_BORDER = "#0A84FF"
-_CLR_TOGGLE_ON = "#34C759"
+_SERIAL_BTN_HEIGHT = SERIAL_BTN_HEIGHT
+_SERIAL_BTN_ICON_SIZE = SERIAL_BTN_ICON_SIZE
+_SERIAL_BTN_RADIUS = _T.btn_radius
+_TERM_FONT = TERM_FONT
+_UI_FONT = UI_FONT
 
-_CLR_TEXT_MUTED = "#6E6E73"
-_CLR_TEXT_WHITE = "#FFFFFF"
-_CLR_TEXT_SOFT = "#3A3A3C"
-_CLR_TEXT_TAB = "#1D1D1F"
-_CLR_DISABLED = "#AEAEB2"
-_CLR_BORDER_SOFT = "#E5E5EA"
-_CLR_BORDER_ACTIVE = "#007AFF"
-_CLR_BLUE = "#007AFF"
-_CLR_BLUE_HOVER = "#0A84FF"
-_CLR_BLUE_PRESS = "#0066CC"
-_CLR_BLUE_LIGHT = "#64D2FF"
-_CLR_GREEN_OK = "#34C759"
-_CLR_GREEN_OK_HOVER = "#30B650"
-_CLR_ROSE_ICON = "#FF375F"
-_CLR_WARN_ICON = "#FF9F0A"
-_CLR_CONNECT_TEXT = "#248A3D"
-_CLR_CONNECT_HOVER = "#DDF7E6"
-_CLR_CONNECT_PRESS = "#CDEFD9"
-_CLR_DISCONNECT_BG = "#FFECEA"
-_CLR_DISCONNECT_HOVER = "#FFDAD6"
-_CLR_DISCONNECT_PRESS = "#FFC8C2"
-_CLR_DISCONNECT_TEXT = "#D70015"
+_CLR_BG_MAIN = _T.bg_main
+_CLR_BG_PANEL = _T.bg_panel
+_CLR_BG_CARD = _T.bg_card
+_CLR_BG_LOG = _T.bg_log
+_CLR_BORDER = _T.border
+_CLR_BORDER_HOVER = _T.border_hover
+_CLR_TEXT_TITLE = _T.text_title
+_CLR_TEXT_ACCENT = _T.text_accent
+_CLR_TEXT_SUBTITLE = _T.text_subtitle
+_CLR_TEXT_LABEL = _T.text_label
+_CLR_TEXT_BTN = _T.text_btn
+_CLR_TEXT_BTN_LOG = _T.text_btn_log
+_CLR_TEXT_BODY = _T.text_body
+_CLR_TEXT_TIME = _T.text_time
+_CLR_TEXT_LINENO = _T.text_lineno
+_CLR_TEXT_INFO = _T.text_info
+_CLR_INPUT_BG = _T.input_bg
+_CLR_INPUT_TEXT = _T.input_text
+_CLR_CURSOR = _T.cursor
+_CLR_SELECTION_BG = _T.selection_bg
+_CLR_SELECTION_TEXT = _T.selection_text
+_CLR_SCROLLBAR = _T.scrollbar
+_CLR_SCROLLBAR_HV = _T.scrollbar_hv
+_CLR_CONNECT_FG = _T.connect_fg
+_CLR_CONNECT_BG = _T.connect_bg
+_CLR_SEND_BG = _T.send_bg
+_CLR_SEND_HOVER = _T.send_hover
+_CLR_SEND_PRESS = _T.send_press
+_CLR_WARNING = _T.warning
+_CLR_ERROR = _T.error
+_CLR_RX = _T.rx
+_CLR_TX = _T.tx
+_CLR_FILTER_TEXT = _T.filter_text
+_CLR_FILTER_BG = _T.filter_bg
+_CLR_FILTER_BORDER = _T.filter_border
+_CLR_TOGGLE_ON = _T.toggle_on
 
-_DLG_CHK_SVG = os.path.join(
-    get_resource_base(), "resources", "modules", "SVG_Serial", "checkmark.svg"
-).replace("\\", "/")
-_SPIN_UP_SVG = os.path.join(
-    get_resource_base(), "resources", "modules", "SVG_Serial", "spin_up.svg"
-).replace("\\", "/")
-_SPIN_DOWN_SVG = os.path.join(
-    get_resource_base(), "resources", "modules", "SVG_Serial", "spin_down.svg"
-).replace("\\", "/")
+_CLR_TEXT_MUTED = _T.text_muted
+_CLR_TEXT_WHITE = _T.text_white
+_CLR_TEXT_SOFT = _T.text_soft
+_CLR_TEXT_TAB = _T.text_tab
+_CLR_DISABLED = _T.disabled
+_CLR_BORDER_SOFT = _T.border_soft
+_CLR_BORDER_ACTIVE = _T.border_active
+_CLR_BLUE = _T.blue
+_CLR_BLUE_HOVER = _T.blue_hover
+_CLR_BLUE_PRESS = _T.blue_press
+_CLR_BLUE_LIGHT = _T.blue_light
+_CLR_GREEN_OK = _T.green_ok
+_CLR_GREEN_OK_HOVER = _T.green_ok_hover
+_CLR_ROSE_ICON = _T.rose_icon
+_CLR_WARN_ICON = _T.warn_icon
+_CLR_CONNECT_TEXT = _T.connect_text
+_CLR_CONNECT_HOVER = _T.connect_hover
+_CLR_CONNECT_PRESS = _T.connect_press
+_CLR_DISCONNECT_BG = _T.disconnect_bg
+_CLR_DISCONNECT_HOVER = _T.disconnect_hover
+_CLR_DISCONNECT_PRESS = _T.disconnect_press
+_CLR_DISCONNECT_TEXT = _T.disconnect_text
+
+_DLG_CHK_SVG = dlg_check_svg()
+_SPIN_UP_SVG = spin_up_svg()
+_SPIN_DOWN_SVG = spin_down_svg()
 
 
 def _serial_search_style(h=_SERIAL_BTN_HEIGHT, r=_SERIAL_BTN_RADIUS):
@@ -538,8 +543,8 @@ def log_document_style():
     return "p, div { line-height: 150%; margin: 0; padding: 0; }"
 
 
-_CLR_HISTORY_COMBO_BG = "rgba(242, 242, 247, 0.64)"
-_HISTORY_COMBO_FIELD_QCOLOR = QColor(242, 242, 247, 163)
+_CLR_HISTORY_COMBO_BG = _T.history_combo_bg
+_HISTORY_COMBO_FIELD_QCOLOR = _T.history_combo_qcolor
 
 
 def history_combo_style():

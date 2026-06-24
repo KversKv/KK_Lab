@@ -1,3 +1,12 @@
+"""应用级样式 token（app-wide design tokens）.
+
+本模块是主程序全局 chrome 的 token 单一事实源：``Colors`` / ``FontSizes`` /
+``Spacing`` / ``Radius`` / ``FONT_FAMILY`` / ``FONT_MONO``。serialCom 模块皮肤
+另有独立 token 层 ``ui.styles.serial_tokens``（``SerialColorTokens`` /
+``SerialFontSizes`` / ``SerialSpacing`` / ``SerialRadius``），两者边界清晰、互不重叠。
+"""
+
+
 class Colors:
     bg_primary = "#020618"
     bg_secondary = "#050b1a"

@@ -1,3 +1,9 @@
+"""页面基础 QSS（基于 ``ui.theme`` 应用级 token 生成）.
+
+serialCom 模块皮肤不使用本模块：其样式 token 见 ``ui.styles.serial_tokens``，
+QSS 生成见 ``ui.modules.serialCom_module.serialCom_apple_gpt5p5_style`` /
+``serialCom_dark_style``（由 ``serialCom_module_frame._select_serialcom_style_module`` 切换）。
+"""
 from ui.theme import Colors, FontSizes, Radius, Spacing, FONT_FAMILY
 from ui.widgets.scrollbar import SCROLLBAR_STYLE
 

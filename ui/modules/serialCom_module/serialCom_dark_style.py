@@ -9,75 +9,82 @@ from PySide6.QtGui import QPainter, QPen, QColor, QFontMetrics, QPalette
 from ui.resource_path import get_resource_base
 
 
-_SERIAL_BTN_HEIGHT = 26
-_SERIAL_BTN_ICON_SIZE = 14
-_SERIAL_BTN_RADIUS = 6
-_TERM_FONT = '"JetBrains Mono", "Fira Code", Consolas, "Menlo", "Courier New", monospace'
-_UI_FONT = '"Inter", "PingFang SC", "Microsoft YaHei", "Segoe UI", -apple-system, sans-serif'
+from ui.styles.serial_tokens import (
+    DARK_TOKENS as _T,
+    SERIAL_BTN_HEIGHT,
+    SERIAL_BTN_ICON_SIZE,
+    TERM_FONT,
+    UI_FONT,
+    dlg_check_svg,
+)
 
-_CLR_BG_MAIN = "#020617"
-_CLR_BG_PANEL = "#020617"
-_CLR_BG_CARD = "#0F172A"
-_CLR_BG_LOG = "#020617"
-_CLR_BORDER = "#1E293B"
-_CLR_BORDER_HOVER = "#334155"
-_CLR_TEXT_TITLE = "#E2E8F0"
-_CLR_TEXT_ACCENT = "#FBBF24"
-_CLR_TEXT_SUBTITLE = "#60A5FA"
-_CLR_TEXT_LABEL = "#94A3B8"
-_CLR_TEXT_BTN = "#60A5FA"
-_CLR_TEXT_BTN_LOG = "#CBD5E1"
-_CLR_TEXT_BODY = "#CBD5E1"
-_CLR_TEXT_TIME = "#64748B"
-_CLR_TEXT_LINENO = "#475569"
-_CLR_TEXT_INFO = "#06B6D4"
-_CLR_INPUT_BG = "#020617"
-_CLR_INPUT_TEXT = "#E2E8F0"
-_CLR_CURSOR = "#60A5FA"
-_CLR_SELECTION_BG = "#1E3A5F"
-_CLR_SELECTION_TEXT = "#E2E8F0"
-_CLR_SCROLLBAR = "#334155"
-_CLR_SCROLLBAR_HV = "#475569"
-_CLR_CONNECT_FG = "#3B82F6"
-_CLR_CONNECT_BG = "#10291F"
-_CLR_SEND_BG = "#2563EB"
-_CLR_SEND_HOVER = "#3B82F6"
-_CLR_SEND_PRESS = "#1D4ED8"
-_CLR_WARNING = "#FBBF24"
-_CLR_ERROR = "#F87171"
-_CLR_RX = "#CBD5E1"
-_CLR_TX = "#60A5FA"
-_CLR_FILTER_TEXT = "#A78BFA"
-_CLR_FILTER_BG = "#1E1B2E"
-_CLR_FILTER_BORDER = "#3B82F6"
-_CLR_TOGGLE_ON = "#2563EB"
+_SERIAL_BTN_HEIGHT = SERIAL_BTN_HEIGHT
+_SERIAL_BTN_ICON_SIZE = SERIAL_BTN_ICON_SIZE
+_SERIAL_BTN_RADIUS = _T.btn_radius
+_TERM_FONT = TERM_FONT
+_UI_FONT = UI_FONT
 
-_CLR_TEXT_MUTED = "#94A3B8"
-_CLR_TEXT_WHITE = "#FFFFFF"
-_CLR_TEXT_SOFT = "#CBD5E1"
-_CLR_TEXT_TAB = "#E2E8F0"
-_CLR_DISABLED = "#475569"
-_CLR_BORDER_SOFT = "#243044"
-_CLR_BORDER_ACTIVE = "#3B82F6"
-_CLR_BLUE = "#2563EB"
-_CLR_BLUE_HOVER = "#3B82F6"
-_CLR_BLUE_PRESS = "#1D4ED8"
-_CLR_BLUE_LIGHT = "#60A5FA"
-_CLR_GREEN_OK = "#10B981"
-_CLR_GREEN_OK_HOVER = "#059669"
-_CLR_ROSE_ICON = "#F87171"
-_CLR_WARN_ICON = "#FBBF24"
-_CLR_CONNECT_TEXT = "#34D399"
-_CLR_CONNECT_HOVER = "#15311F"
-_CLR_CONNECT_PRESS = "#0E2618"
-_CLR_DISCONNECT_BG = "#2A1418"
-_CLR_DISCONNECT_HOVER = "#3A1A1F"
-_CLR_DISCONNECT_PRESS = "#451A20"
-_CLR_DISCONNECT_TEXT = "#FB7185"
+_CLR_BG_MAIN = _T.bg_main
+_CLR_BG_PANEL = _T.bg_panel
+_CLR_BG_CARD = _T.bg_card
+_CLR_BG_LOG = _T.bg_log
+_CLR_BORDER = _T.border
+_CLR_BORDER_HOVER = _T.border_hover
+_CLR_TEXT_TITLE = _T.text_title
+_CLR_TEXT_ACCENT = _T.text_accent
+_CLR_TEXT_SUBTITLE = _T.text_subtitle
+_CLR_TEXT_LABEL = _T.text_label
+_CLR_TEXT_BTN = _T.text_btn
+_CLR_TEXT_BTN_LOG = _T.text_btn_log
+_CLR_TEXT_BODY = _T.text_body
+_CLR_TEXT_TIME = _T.text_time
+_CLR_TEXT_LINENO = _T.text_lineno
+_CLR_TEXT_INFO = _T.text_info
+_CLR_INPUT_BG = _T.input_bg
+_CLR_INPUT_TEXT = _T.input_text
+_CLR_CURSOR = _T.cursor
+_CLR_SELECTION_BG = _T.selection_bg
+_CLR_SELECTION_TEXT = _T.selection_text
+_CLR_SCROLLBAR = _T.scrollbar
+_CLR_SCROLLBAR_HV = _T.scrollbar_hv
+_CLR_CONNECT_FG = _T.connect_fg
+_CLR_CONNECT_BG = _T.connect_bg
+_CLR_SEND_BG = _T.send_bg
+_CLR_SEND_HOVER = _T.send_hover
+_CLR_SEND_PRESS = _T.send_press
+_CLR_WARNING = _T.warning
+_CLR_ERROR = _T.error
+_CLR_RX = _T.rx
+_CLR_TX = _T.tx
+_CLR_FILTER_TEXT = _T.filter_text
+_CLR_FILTER_BG = _T.filter_bg
+_CLR_FILTER_BORDER = _T.filter_border
+_CLR_TOGGLE_ON = _T.toggle_on
 
-_DLG_CHK_SVG = os.path.join(
-    get_resource_base(), "resources", "modules", "SVG_Serial", "checkmark.svg"
-).replace("\\", "/")
+_CLR_TEXT_MUTED = _T.text_muted
+_CLR_TEXT_WHITE = _T.text_white
+_CLR_TEXT_SOFT = _T.text_soft
+_CLR_TEXT_TAB = _T.text_tab
+_CLR_DISABLED = _T.disabled
+_CLR_BORDER_SOFT = _T.border_soft
+_CLR_BORDER_ACTIVE = _T.border_active
+_CLR_BLUE = _T.blue
+_CLR_BLUE_HOVER = _T.blue_hover
+_CLR_BLUE_PRESS = _T.blue_press
+_CLR_BLUE_LIGHT = _T.blue_light
+_CLR_GREEN_OK = _T.green_ok
+_CLR_GREEN_OK_HOVER = _T.green_ok_hover
+_CLR_ROSE_ICON = _T.rose_icon
+_CLR_WARN_ICON = _T.warn_icon
+_CLR_CONNECT_TEXT = _T.connect_text
+_CLR_CONNECT_HOVER = _T.connect_hover
+_CLR_CONNECT_PRESS = _T.connect_press
+_CLR_DISCONNECT_BG = _T.disconnect_bg
+_CLR_DISCONNECT_HOVER = _T.disconnect_hover
+_CLR_DISCONNECT_PRESS = _T.disconnect_press
+_CLR_DISCONNECT_TEXT = _T.disconnect_text
+
+_DLG_CHK_SVG = dlg_check_svg()
 
 
 def _serial_search_style(h=_SERIAL_BTN_HEIGHT, r=_SERIAL_BTN_RADIUS):
@@ -1883,8 +1890,8 @@ class SerialDarkComboBox(QComboBox):
                         child.setMaximumHeight(0)
 
 
-_CLR_HISTORY_COMBO_BG = "rgba(13, 14, 17, 0.64)"
-_HISTORY_COMBO_FIELD_QCOLOR = QColor(13, 14, 17, 163)
+_CLR_HISTORY_COMBO_BG = _T.history_combo_bg
+_HISTORY_COMBO_FIELD_QCOLOR = _T.history_combo_qcolor
 
 
 def history_combo_style():
