@@ -171,6 +171,10 @@ class N6705C:
         # 获取电流限制
         return self.instr.query(f"CURR:LIM? (@{channel})")
 
+    def get_voltage_limit(self, channel):
+        # 获取电压限制
+        return self.instr.query(f"VOLT:LIM? (@{channel})")
+
     def fetch_current(self, channel):
         self.instr.write(f"INIT (@{channel})")
         result = float(self.instr.query(f"FETC:CURR? (@{channel})"))

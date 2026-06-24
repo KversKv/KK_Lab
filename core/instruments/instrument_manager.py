@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from PySide6.QtCore import QObject, QThread, Signal
 
 from core.instruments.instrument_session import (
@@ -37,6 +39,7 @@ class InstrumentManager(QObject):
         self._scan_threads: dict[str, QThread] = {}
         self._scan_workers: dict[str, QObject] = {}
         self._pending_removal: set[str] = set()
+        self._last_scan: dict[str, tuple[float, list[InstrumentCandidate]]] = {}
 
     @property
     def registry(self) -> ProfileRegistry:
@@ -282,6 +285,16 @@ class InstrumentManager(QObject):
         thread.start()
         logger.debug("Scan async started for %s", instrument_type)
 
+    def get_last_scan(self, instrument_type: str) -> list[InstrumentCandidate] | None:
+        """返回最近一次扫描的候选列表副本（无缓存返回 None）。
+
+        供 AI 动作层轮询取回异步扫描结果（scan_async 为 fire-and-forget）。
+        """
+        entry = self._last_scan.get(instrument_type)
+        if entry is None:
+            return None
+        return list(entry[1])
+
     def try_set_busy(self, session_id: str, busy: bool, owner: str = "") -> bool:
         session = self._sessions.get(session_id)
         if not session:
@@ -379,6 +392,7 @@ class InstrumentManager(QObject):
 
     def _on_scan_finished(self, instrument_type: str, candidates: list):
         logger.debug("Scan finished for %s: %d candidates", instrument_type, len(candidates))
+        self._last_scan[instrument_type] = (time.time(), list(candidates))
         self.scan_finished.emit(instrument_type, candidates)
 
     def _on_scan_failed(self, instrument_type: str, error: str):

@@ -43,13 +43,24 @@
 | 动作 | 参数 | 风险 | 需确认 | 作用 |
 |---|---|---|---|---|
 | `query_instrument` | `session_id`, `command` | low | 否 | 对已连接会话发只读 SCPI 查询（命令须含 `?`） |
+| `connect_instrument` | `instrument_type`, `resource`, `role`, `slot` | medium | 是 | 按类型发起异步连接（`connect_async`） |
+| `scan_instruments` | `instrument_type` | low | 否 | 异步扫描 + 回灌上次缓存候选 |
 | `disconnect_instrument` | `session_id` | medium | 否 | 断开指定仪器会话（异步） |
+| `disconnect_all_instruments` | 无 | medium | 是 | 断开所有已连接会话（异步） |
+| `find_instrument_sessions` | `role`, `required_capabilities[]` | low | 否 | 按角色/能力查找已连接会话 |
+| `get_instrument_capabilities` | `session_id` | low | 否 | 读取会话能力集合 |
+| `measure_voltage` | `session_id`, `channel` | low | 否 | 测量通道电压（MEAS:VOLT?） |
+| `measure_current` | `session_id`, `channel` | low | 否 | 测量通道电流（MEAS:CURR?） |
+| `get_channel_output_state` | `session_id`, `channel` | low | 否 | 读取通道输出开关状态（OUTP?） |
+| `get_channel_limits` | `session_id`, `channel` | low | 否 | 读取通道电流/电压限值（CURR:LIM? / VOLT:LIM?） |
 | `set_instrument_output` | `session_id`, `channel`, `enabled` | high | 是 | 开/关通道输出（OUTP ON/OFF） |
 | `set_instrument_voltage` | `session_id`, `channel`, `voltage` | high | 是 | 设置通道输出电压（VOLT，单位 V） |
 | `set_instrument_current` | `session_id`, `channel`, `current` | high | 是 | 设置通道输出电流（CURR，单位 A） |
+| `set_current_limit` | `session_id`, `channel`, `limit` | high | 是 | 设置通道电流限值（CURR:LIM，单位 A） |
+| `set_output_off_mode` | `session_id`, `channel`, `mode(HIGHZ/LOWZ)` | high | 是 | 设置输出关闭模式（OUTP:TMOD，影响 DUT 安全） |
 
-> 写类高风险动作执行约束：会话须已连接、未被其它 owner 占用；执行期 `try_set_busy` 取短租约后调用驱动方法，驱动内部对量程/SCPI 安全做硬熔断，AI 无法突破。
-> 注：`instrument.py` 文档串里提及的 `connect_instrument` 当前未在 `SPECS` 中注册，未对模型暴露。
+> 写类高风险动作执行约束：会话须已连接、未被其它 owner 占用；执行期 `try_set_busy` 取短租约后调用驱动方法，驱动内部对量程/SCPI 安全做硬熔断，AI 无法突破。只读测量类（measure_*/get_channel_*）不持租约，但仪器忙时拒绝以免抢占运行中的测试。
+> `scan_instruments` 为异步扫描（VISA 探测耗时数秒），handler fire-and-forget 发起 `scan_async` 并回灌上次缓存候选；扫描结果由 `InstrumentManager.get_last_scan` 缓存，AI 再次调用即可取回最新结果。
 
 ### 1.5 测试序列类（category=test_sequence，经 custom_test runner）
 
@@ -61,9 +72,9 @@
 
 ### 1.6 动作总览
 
-- 已注册动作合计 **20 个**：查询 8 + UI 2 + 串口 2 + 仪器 5 + 测试序列 3。
-- 风险分布：low 12、medium 1、high 7。
-- 需二次确认：`send_serial_text`、`set_instrument_output`、`set_instrument_voltage`、`set_instrument_current`、`start_test_sequence`、`pause_test_sequence`。
+- 已注册动作合计 **31 个**：查询 8 + UI 2 + 串口 2 + 仪器 16 + 测试序列 3。
+- 风险分布：low 19、medium 3、high 9。
+- 需二次确认：`send_serial_text`、`connect_instrument`、`disconnect_all_instruments`、`set_instrument_output`、`set_instrument_voltage`、`set_instrument_current`、`set_current_limit`、`set_output_off_mode`、`start_test_sequence`、`pause_test_sequence`。
 
 ---
 
@@ -116,7 +127,7 @@
 
 ## 5. 接口扩展计划（Roadmap）
 
-> 目标：把当前 20 个动作扩成覆盖「连接管理 → 仪器测量 → 示波器 → 温箱 → 串口 → 测试编排 → 数据导出 → 诊断」的完整接口体系。
+> 目标：把当前 31 个动作扩成覆盖「连接管理 → 仪器测量 → 示波器 → 温箱 → 串口 → 测试编排 → 数据导出 → 诊断」的完整接口体系。
 > 原则：① 每个规划动作都对应代码库**已存在**的底层能力，避免空中楼阁；② 沿用现有 `ActionSpec` + `ActionDeps` + dispatcher 闭环，不破坏分层；③ 风险等级与确认策略与现有保持一致（写类 high+确认，读类 low）。
 > 落地映射依据：仪器驱动 [n6705c.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/instruments/power/keysight/n6705c.py)、[dsox4034a.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/instruments/scopes/keysight/dsox4034a.py)、[mso64b.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/instruments/scopes/tektronix/mso64b.py)、[vt6002_chamber.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/instruments/chambers/vt6002_chamber.py)；管理层 [instrument_manager.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/core/instruments/instrument_manager.py)；测试节点 [instrument_nodes.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/core/custom_test/nodes/instrument_nodes.py)。
 
@@ -144,17 +155,17 @@
 | `find_instrument_sessions` | `role`, `required_capabilities[]` | low | 否 | `InstrumentManager.find_sessions` |
 | `get_instrument_capabilities` | `session_id` | low | 否 | `InstrumentSnapshot.capabilities` |
 
-> 说明：`connect_instrument` 当前在 docstring 提及但未注册，应在 P1 正式补全；扫描结果通过 `scan_finished(instrument_type, candidates)` 异步回灌，handler 需处理「异步发起 + 轮询/回调」模式（与现有 `disconnect_async` 一致）。
+> 说明：`connect_instrument` 已在 P1 正式补全注册；扫描结果通过 `scan_finished(instrument_type, candidates)` 异步回灌并由 `InstrumentManager.get_last_scan` 缓存，handler 处理「异步发起 + 轮询取回」模式（与现有 `disconnect_async` 一致）。
 
 **实施进度（P1 连接管理）**
 
 | 动作 | 状态 | 负责模块 | 备注 |
 |---|---|---|---|
-| `connect_instrument` | ⬜ 未开始 | `handlers/instrument.py` | 须先在 `SPECS` 注册 |
-| `scan_instruments` | ⬜ 未开始 | `handlers/instrument.py` | 异步信号回灌 |
-| `disconnect_all_instruments` | ⬜ 未开始 | `handlers/instrument.py` | — |
-| `find_instrument_sessions` | ⬜ 未开始 | `handlers/instrument.py` | — |
-| `get_instrument_capabilities` | ⬜ 未开始 | `handlers/instrument.py` | — |
+| `connect_instrument` | ✅ 已完成 | `handlers/instrument.py` | 已在 `SPECS` 注册，medium+确认 |
+| `scan_instruments` | ✅ 已完成 | `handlers/instrument.py` | 异步扫描 + `get_last_scan` 缓存回灌 |
+| `disconnect_all_instruments` | ✅ 已完成 | `handlers/instrument.py` | medium+确认 |
+| `find_instrument_sessions` | ✅ 已完成 | `handlers/instrument.py` | — |
+| `get_instrument_capabilities` | ✅ 已完成 | `handlers/instrument.py` | — |
 
 ### 5.2 P1 · 仪器测量读数（category=instrument，读类 low）
 
@@ -173,12 +184,12 @@
 
 | 动作 | 状态 | 负责模块 | 备注 |
 |---|---|---|---|
-| `measure_voltage` | ⬜ 未开始 | `handlers/instrument.py` | 读类 |
-| `measure_current` | ⬜ 未开始 | `handlers/instrument.py` | 读类 |
-| `get_channel_output_state` | ⬜ 未开始 | `handlers/instrument.py` | 读类 |
-| `get_channel_limits` | ⬜ 未开始 | `handlers/instrument.py` | 读类 |
-| `set_current_limit` | ⬜ 未开始 | `handlers/instrument.py` | 写类，需确认 |
-| `set_output_off_mode` | ⬜ 未开始 | `handlers/instrument.py` | 写类，需确认 |
+| `measure_voltage` | ✅ 已完成 | `handlers/instrument.py` | 读类，经 `_run_read_action` |
+| `measure_current` | ✅ 已完成 | `handlers/instrument.py` | 读类 |
+| `get_channel_output_state` | ✅ 已完成 | `handlers/instrument.py` | 读类 |
+| `get_channel_limits` | ✅ 已完成 | `handlers/instrument.py` | 读类；补全驱动 `get_voltage_limit` |
+| `set_current_limit` | ✅ 已完成 | `handlers/instrument.py` | 写类，需确认 |
+| `set_output_off_mode` | ✅ 已完成 | `handlers/instrument.py` | 写类，需确认 |
 
 ### 5.3 P2 · 示波器能力（新增 category=scope）
 
@@ -334,7 +345,7 @@
 
 ## 7. 扩展后规模预估
 
-- 现状：5 类 20 个动作。
-- 规划新增：连接管理 5 + 仪器测量 6 + 示波器 11 + 温箱 6 + 串口扩展 5 + 测试编排 6 + 导出 4 + 诊断 5 ≈ **48 个**。
-- 扩展后总计约 **68 个**动作，category 由 5 类扩为 8 类（新增 `scope` / `chamber` / `export`，`diagnostic` 可并入 `query`）。
+- 现状：5 类 31 个动作（P1 连接管理 5 + 仪器测量 6 已落地）。
+- 剩余规划：示波器 11 + 温箱 6 + 串口扩展 5 + 测试编排 6 + 导出 4 + 诊断 5 ≈ **37 个**。
+- 全部扩展后总计约 **68 个**动作，category 由 5 类扩为 8 类（新增 `scope` / `chamber` / `export`，`diagnostic` 可并入 `query`）。
 - 能力覆盖从「查询 + 基础控制」升级为「连接 → 测量 → 控制 → 编排 → 导出 → 诊断」全链路闭环。

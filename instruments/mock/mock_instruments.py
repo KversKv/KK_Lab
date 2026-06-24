@@ -73,6 +73,9 @@ class MockN6705C:
     def get_current_limit(self, channel):
         return str(self._channel_current_limits.get(channel, 1.0))
 
+    def get_voltage_limit(self, channel):
+        return str(self._channel_voltage_limits.get(channel, 20.0))
+
     def set_voltage_limit(self, channel, voltage_limit):
         self._channel_voltage_limits[channel] = voltage_limit
 
