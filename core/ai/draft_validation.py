@@ -1,8 +1,8 @@
 """草案本地校验（AI_Assist.md §12，阶段 3 任务 3.4；F5.3）。
 
 把 AI 产出的序列草案接到现有内核：
-  - core/custom_test/serialization.load_sequence_data 反序列化 + 迁移；
-  - core/custom_test/validation.preflight_validate 做运行前校验
+  - core/orchestrator/serialization.load_sequence_data 反序列化 + 迁移；
+  - core/orchestrator/validation.preflight_validate 做运行前校验
     （可选接 InstrumentResolver 做仪器解析校验）。
 
 支持两类来源：
@@ -20,8 +20,8 @@ from typing import Any
 
 from core.ai.schemas import ScriptDraft
 from core.ai.sequence_patch import SequencePatch, apply_patch
-from core.custom_test.serialization import load_sequence_data
-from core.custom_test.validation import preflight_validate
+from core.orchestrator.serialization import load_sequence_data
+from core.orchestrator.validation import preflight_validate
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -91,7 +91,7 @@ def validate_sequence_data(
 
 
 def validate_script_draft(draft: ScriptDraft, resolver: Any = None) -> DraftValidationResult:
-    """校验 Custom Test 序列草案（完整序列往返）。"""
+    """校验 Orchestrator 序列草案（完整序列往返）。"""
     return validate_sequence_data(draft.to_sequence_data(), resolver=resolver)
 
 

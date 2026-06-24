@@ -222,40 +222,16 @@ PendingTask:
 
 ---
 
-## 7. 实施计划（分阶段）
+## 7. 页面定位与导航归类（Custom Test → Orchestrator）
 
-| 阶段 | 内容 | 依赖 | 风险 |
-|---|---|---|---|
-| **S1 注册表底座** | `PendingTaskRegistry` + `ScheduledTaskRegistry`（纯逻辑，仿 draft_registry，含单测） | 无 | 低 |
-| **S2 Resume 续跑入口** | `AIService.resume_with_task_result()` + 会话定位 + 安全阀（轮数/预算/幂等/降级） | S1 | 中（触及 agent 循环核心） |
-| **S3 异步动作升级** | `scan_instruments` / `start_test_sequence` 改为 pending + 完成信号 → resume；新增 `get_task_result` / `list_pending_tasks` | S1·S2 | 中 |
-| **S4 调度能力** | `schedule.py` handlers（`schedule_action`/`list`/`cancel`）+ `CATEGORY_SCHEDULE` + UI 层 QTimer 触发器 + `ActionDeps` 字段 | S1·S2 | 中 |
-| **S5 安全与审计** | §5 全部边界落地；定时/异步完成动作写 AuditLog；`pre_authorized` 策略 | S2·S4 | 中 |
-| **S6 持久化（可选）** | 调度任务落盘（重启不丢）、pending 任务恢复 | S4 | 高（涉及生命周期与一致性） |
-
-### 实施进度
-
-| 阶段 | 状态 | 负责模块 | 备注 |
-|---|---|---|---|
-| S1 注册表底座 | ⬜ 未开始 | `core/ai/pending_task_registry.py` · `scheduled_task_registry.py` | — |
-| S2 Resume 续跑入口 | ⬜ 未开始 | `core/ai/ai_service.py` | 核心，需复用现有轮数/预算约束 |
-| S3 异步动作升级 | ⬜ 未开始 | `handlers/instrument.py` · `handlers/test.py` · `handlers/query.py` | scan / 序列结果回灌 |
-| S4 调度能力 | ⬜ 未开始 | `handlers/schedule.py` · `registry.py` · `deps.py` · UI(MainWindow) | QTimer 在 UI 层 |
-| S5 安全与审计 | ⬜ 未开始 | `dispatcher.py` · `audit.py` · `ai_service.py` | 会话隔离/幂等/降级 |
-| S6 持久化（可选） | ⬜ 未开始 | `core/ai/` + user_data | 视需求决定是否做 |
-
----
-
-## 8. 页面定位与导航归类（Custom Test → Orchestrator）
-
-### 8.1 结论先行
+### 7.1 结论先行
 
 综合型 / 多仪器调用的测试任务**不新开第二套页面**，而是把现有 **Custom Test 重新定位为独立的「编排器（Orchestrator）」**：
 - **载体不变**：仍复用 Custom Test 现有的多仪器连接 Mixin、节点引擎（If/While/Loop/PassFail）、`ExecutorThread`、preflight、租约、AI 集成方法——避免重复造轮子与 AI 集成割裂。
 - **定位升级**：它与 PMU/Charger/Consumption 等「固定流程测试」本质不同——后者是**预设单一测试**，前者是**用户/AI 自由编排的多仪器综合调度**，理应**单独成类**。
 - **本设计（§3 调度 / §4 异步回灌）正是 Orchestrator 的核心增量**：定时调度、长任务异步回灌、AI 续跑，都挂载在这个页面上。
 
-### 8.2 更名
+### 7.2 更名
 
 | 项 | 原 | 新 |
 |---|---|---|
@@ -265,7 +241,7 @@ PendingTask:
 
 > page_key 改动牵涉 AI 集成方法判定（[`main_window`](../../../ui/main_window.py) 的 `_get_ai_test_*` / `_ai_test_run` 均判 `current_instrument_ui == "custom_test"`）与 [`custom_test_ui`](../../../ui/pages/custom_test/custom_test_ui.py) 的 `get_ai_test_config` 返回 `page_key="custom_test"`，须一并更新，且 `_ai_open_page` 的 `button_map` 同步。
 
-### 8.3 导航归类：在 TOOLS 下方新增 `ORCHESTRATION` 分组
+### 7.3 导航归类：在 TOOLS 下方新增 `ORCHESTRATION` 分组
 
 当前侧边栏分组顺序（[`nav_controller.py`](../../../ui/nav_controller.py)）：
 
@@ -284,7 +260,7 @@ TOOLS         → KK Serials / Collection
 ORCHESTRATION → Orchestrator   ← 新分组（位于 TOOLS 下方）
 ```
 
-### 8.4 落地改动点（导航 / 命名层）
+### 7.4 落地改动点（导航 / 命名层）
 
 | 改动 | 位置 | 说明 |
 |---|---|---|
@@ -296,23 +272,23 @@ ORCHESTRATION → Orchestrator   ← 新分组（位于 TOOLS 下方）
 | AI 集成判定值 `"custom_test"` → `"orchestrator"` | `main_window` `_get_ai_test_*` / `_ai_test_run` · `custom_test_ui` `get_ai_test_*` 返回值 | page_key 全链路统一 |
 | 同步矩阵 | `DIRECTORY_STRUCTURE.txt` / `helps/` / 本文 | 按 [08_CHECKLISTS](../08_CHECKLISTS.md) 同步矩阵核对 |
 
-### 8.5 命名范围决策（实现层是否物理改名）
+### 7.5 命名范围决策（实现层是否物理改名）
 
 两种力度，建议**先做轻量（A）**，避免大范围目录/导入改名带来的回归风险：
 
 - **A · 轻量（推荐先行）**：仅改**显示名 + page_key + 导航分组**；目录 `ui/pages/custom_test/` 与类名 `CustomTestUI` 暂留，内部加注释标明「对外定位为 Orchestrator」。改动面小、可快速上线，与本文 §3/§4 的调度/回灌增量解耦。
 - **B · 彻底（可作为后续重构）**：连目录 `custom_test/` → `orchestrator/`、类名 `CustomTestUI` → `OrchestratorUI`、`core/custom_test/` 一并改名。牵涉大量 import 与 spec/同步矩阵，单列一次重构任务执行。
 
-> 与 §7 实施计划的关系：本节（§8）属**定位 / 导航 / 命名**调整，可独立于 S1~S6 提前或并行落地；其中 page_key 统一应在接入 §4 resume 续跑（需按 session/page profile 定位会话）之前完成，避免续跑时 page_key 口径不一致。
+> 与实施计划（§10）的关系：本节（§7）属**定位 / 导航 / 命名**调整，可独立于其余阶段提前或并行落地；其中 page_key 统一应在接入 §4 resume 续跑（需按 session/page profile 定位会话）之前完成，避免续跑时 page_key 口径不一致。
 
 ---
 
-## 9. 工作流在 AI Assistant 面板 UI 上的体现
+## 8. 工作流在 AI Assistant 面板 UI 上的体现
 
 > 调度（§3）与异步回灌（§4）是后台机制，但用户感知它们的唯一窗口是 **AI Assistant 面板**（[`ai_assist_panel.py`](../../../ui/ai/ai_assist_panel.py) / [`chat_view.py`](../../../ui/ai/chat_view.py)）。
 > 若任务"在后台默默跑、完成后 AI 突然冒出一句话"，用户会困惑。本节定义这些工作流如何在面板里**可见、可控、可追溯**。
 
-### 9.1 现有面板结构（落点）
+### 8.1 现有面板结构（落点）
 
 `AIAssistPanel(QFrame#aiAssistPanel)` 自上而下：
 ```
@@ -322,9 +298,9 @@ PreviewArea(QStackedWidget, 默认隐藏) → ConfigPreview / ScriptPreview
 QuickActionRow(aiQuickBtn) → 动态快捷指令
 BottomBar(aiBottomBar) → 输入框 + Send/Stop
 ```
-工作流的 UI 体现**复用并扩展上述区域**，不另起独立窗口（与 §8「不新开页面」一致）。
+工作流的 UI 体现**复用并扩展上述区域**，不另起独立窗口（与 §7「不新开页面」一致）。
 
-### 9.2 三类工作流状态 → 三种 UI 呈现
+### 8.2 三类工作流状态 → 三种 UI 呈现
 
 | 工作流阶段 | 触发机制 | 面板 UI 呈现 | 落点组件 |
 |---|---|---|---|
@@ -332,7 +308,7 @@ BottomBar(aiBottomBar) → 输入框 + Send/Stop
 | **② 任务进行中（pending）** | 长任务 / scan / 序列返回 `pending+task_id` | 顶部新增 **TaskTray（任务托盘条）**：常驻显示「进行中 N 个 / 待触发 M 个」，可展开列表 | 新增 `aiTaskTray`（见 §9.3） |
 | **③ 任务完成 → AI 续跑** | `task_finished` → `resume_with_task_result` | 先插一条 system 卡片「✅ task=sched_001 已完成」，**紧接 AI 气泡自动续跑发言**（视觉上接续，不突兀） | `chat_view.add_task_card` + 现有 AI 气泡 |
 
-### 9.3 新增组件：TaskTray（任务托盘条）
+### 8.3 新增组件：TaskTray（任务托盘条）
 
 - **位置**：Header 下、ChatView 上方，常驻细条（仅在有活动任务时显示，无任务时折叠为 0 高）。
 - **objectName**：`aiTaskTray`，背景 `#0b1428`，底边框 `1px #1e293b`，与面板暗色一致。
@@ -340,14 +316,14 @@ BottomBar(aiBottomBar) → 输入框 + Send/Stop
 - **数据源**：`list_scheduled_tasks` / `list_pending_tasks`（§3.3 / §4.4 已规划的只读动作），UI 定时轮询或经信号刷新。
 - **交互**：`[取消]` → 调 `cancel_scheduled_task`（medium，二次确认）；`[查看结果]` → 调 `get_task_result` 并在 ChatView 展开摘要。
 
-### 9.4 ChatView 内联任务卡片（add_task_card）
+### 8.4 ChatView 内联任务卡片（add_task_card）
 
 在对话流里以 **system 消息卡片**形式内联，区别于普通 AI/用户气泡：
 - 样式：浅色边框卡片（非气泡），左侧状态图标（⏱待触发 / ⟳进行中 / ✅完成 / ✖失败/取消），灰蓝底 `#121629`。
 - 关键：**完成卡片 + AI 续跑气泡视觉相邻**，让用户理解"这条 AI 发言是任务完成自动触发的"，必要时卡片加角标「自动续跑」。
 - 幂等：同一 `task_id` 的卡片随状态原地更新（pending→done），不重复堆叠。
 
-### 9.5 状态可见性与控制（守住"可控"）
+### 8.5 状态可见性与控制（守住"可控"）
 
 1. **登记即反馈**：`schedule_action` 一确认，立刻在 ChatView 出现"已登记"卡片 + TaskTray 计数 +1（不让用户怀疑是否生效）。
 2. **随时可取消**：TaskTray 与卡片均提供 `[取消]`，对应 `cancel_scheduled_task`（守 §5.6 确认策略）。
@@ -355,7 +331,7 @@ BottomBar(aiBottomBar) → 输入框 + Send/Stop
 4. **降级提示**：若用户已 Clear 会话 / 关闭面板（§5.5 降级），任务完成只更新 TaskTray + 记审计，**重新打开面板时**在 TaskTray 显示「N 个任务已完成（未回灌）」，点开可 `get_task_result` 补看，不强行拉起模型。
 5. **会话隔离**：TaskTray 只展示**当前 page profile / session** 名下的任务（守 §5.1），切换页面时刷新。
 
-### 9.6 落地改动点（UI 层）
+### 8.6 落地改动点（UI 层）
 
 | 改动 | 位置 | 说明 |
 |---|---|---|
@@ -369,7 +345,151 @@ BottomBar(aiBottomBar) → 输入框 + Send/Stop
 
 ---
 
-## 10. 与现有文档的关系
+## 9. 与现有文档的关系
 
-- 受控动作总册：[AI_AssistFunction.md](./AI_AssistFunction.md)（本文新增的 `schedule_action` 等动作落地后，需回写其 §1 动作总览与 §2 `ActionDeps`；§8 的 Orchestrator 更名落地后，若动作描述/示例中引用了 `custom_test` page_key，亦需同步为 `orchestrator`）。
+- 受控动作总册：[AI_AssistFunction.md](./AI_AssistFunction.md)（本文新增的 `schedule_action` 等动作落地后，需回写其 §1 动作总览与 §2 `ActionDeps`；§7 的 Orchestrator 更名落地后，若动作描述/示例中引用了 `custom_test` page_key，亦需同步为 `orchestrator`）。
 - 本文聚焦「调度 + 异步回灌」两块**新机制**，不重复动作清单细节；动作级 schema 在实现阶段补入 `handlers/schedule.py` 的 `SPECS`。
+
+---
+
+## 10. 实施计划（详细 · 分阶段 · 每阶段独立进度表）
+
+> 本章是全文的落地总纲，置于文末便于持续更新进度。
+> 状态图例：⬜ 未开始 · 🟡 进行中 · ✅ 已完成 · ⏸ 阻塞/挂起 · ➖ 不适用。
+> 覆盖三条主线：**A 后端机制（调度 + 回灌，§3/§4/§5/§6）**、**B 页面定位与导航（§7）**、**C AI Assistant 面板 UI（§8）**。
+
+### 10.0 阶段总览与依赖拓扑
+
+| 阶段 | 主线 | 内容 | 依赖 | 风险 |
+|---|---|---|---|---|
+| **S1 注册表底座** | A | `PendingTaskRegistry` + `ScheduledTaskRegistry`（纯逻辑，仿 draft_registry，含单测） | 无 | 低 |
+| **S2 Resume 续跑入口** | A | `AIService.resume_with_task_result()` + 会话定位 + 安全阀（轮数/预算/幂等/降级） | S1 | 中（触及 agent 循环核心） |
+| **S3 异步动作升级** | A | `scan_instruments` / `start_test_sequence` 改 pending + 完成信号 → resume；新增 `get_task_result` / `list_pending_tasks` | S1·S2 | 中 |
+| **S4 调度能力** | A | `schedule.py` handlers + `CATEGORY_SCHEDULE` + UI 层 QTimer 触发器 + `ActionDeps` 字段 | S1·S2 | 中 |
+| **S5 安全与审计** | A | §5 全部边界落地；定时/异步完成动作写 AuditLog；`pre_authorized` 策略 | S2·S4 | 中 |
+| **S6 页面定位与导航** | B | Custom Test → Orchestrator 更名 + page_key 统一 + TOOLS 下新增 ORCHESTRATION 分组（§7 轻量 A 方案） | 独立（建议先于 S7 完成 page_key 统一） | 低 |
+| **S7 面板 UI · TaskTray + 任务卡片** | C | `aiTaskTray` 容器 + `chat_view.add_task_card` + 状态轮询/信号刷新（§8.3/§8.4） | S3·S4·S6 | 中 |
+| **S8 面板 UI · 续跑可视化与降级提示** | C | 完成卡片→AI 续跑气泡视觉接续、降级"未回灌"提示、会话隔离刷新（§8.5） | S2·S7 | 中 |
+| **S9 持久化（可选）** | A | 调度任务落盘（重启不丢）、pending 任务恢复 | S4 | 高（生命周期与一致性） |
+
+依赖拓扑（简）：
+```
+S1 ─┬─ S2 ─┬─ S3 ─┐
+    │      ├─ S4 ─┼─ S5
+    │      │      │
+    S6（独立，page_key 统一须早于 S7）
+                   └─ S7 ─ S8
+S4 ─ S9（可选）
+```
+
+---
+
+### 10.1 S1 注册表底座
+
+| # | 任务 | 文件/位置 | 状态 |
+|---|---|---|---|
+| S1-1 | `PendingTaskRegistry`（线程安全 + FIFO 上限，仿 draft_registry） | `core/ai/pending_task_registry.py` | ✅ |
+| S1-2 | `ScheduledTaskRegistry`（同上 + trigger/fire_at 字段） | `core/ai/scheduled_task_registry.py` | ✅ |
+| S1-3 | `PendingTask` / `ScheduledTask` 数据结构（§3.2/§4.3） | 同上 | ✅ |
+| S1-4 | 单测：注册/获取/列举/取消/FIFO 淘汰/线程安全 | `tests/core/ai/` | ✅ |
+| S1-5 | `ActionDeps` 新增句柄字段占位（不接线） | `core/ai/actions/handlers/deps.py` | ✅ |
+
+### 10.2 S2 Resume 续跑入口
+
+| # | 任务 | 文件/位置 | 状态 |
+|---|---|---|---|
+| S2-1 | `AIService.resume_with_task_result(task_id, result)` 入口 | `core/ai/ai_service.py` | ✅ |
+| S2-2 | 按 task_id→session_key 定位归属会话 `_agent_messages` | 同上 | ✅ |
+| S2-3 | 结果包成消息塞入 + 主动起一轮 `_start_agent_round` | 同上 | ✅ |
+| S2-4 | 安全阀：复用 `_MAX_TOOL_ROUNDS` + `_budget_for` + `clip_context_block` | 同上 | ✅ |
+| S2-5 | 幂等：`resumed` 标志保证同结果只续跑一次 | 同上 + registry | ✅ |
+| S2-6 | 降级：会话失效/面板关闭时只记审计 + 通知 UI | 同上 | ✅ |
+| S2-7 | 单测：定位/幂等/预算/降级分支 | `tests/core/ai/` | ✅ |
+
+### 10.3 S3 异步动作升级
+
+| # | 任务 | 文件/位置 | 状态 |
+|---|---|---|---|
+| S3-1 | `scan_instruments` 改返回 `pending+task_id`，`scan_finished`→resume | `core/ai/actions/handlers/instrument.py` | ✅ |
+| S3-2 | `start_test_sequence` 完成（executor.finished）→resume 回灌 PASS/FAIL+行数 | `handlers/test.py` · `ui` 信号 | ✅ |
+| S3-3 | 新增 `get_task_result`（low，B 兜底） | `handlers/query.py` | ✅ |
+| S3-4 | 新增 `list_pending_tasks`（low） | `handlers/query.py` | ✅ |
+| S3-5 | 回写 [AI_AssistFunction.md](./AI_AssistFunction.md) 动作总览（+2 动作） | 文档 | ✅ |
+
+### 10.4 S4 调度能力
+
+| # | 任务 | 文件/位置 | 状态 |
+|---|---|---|---|
+| S4-1 | `schedule.py`：`SPECS` + `build_handlers(deps)`（禁 Qt） | `core/ai/actions/handlers/schedule.py` | ✅ |
+| S4-2 | `schedule_action`（high）/`list_scheduled_tasks`（low）/`cancel_scheduled_task`（medium） | 同上 | ✅ |
+| S4-3 | `CATEGORY_SCHEDULE` 常量 | `core/ai/actions/registry.py` | ✅ |
+| S4-4 | `builder._HANDLER_MODULES` 纳入 schedule | `core/ai/actions/builder.py` | ✅ |
+| S4-5 | `ActionDeps` 接 `scheduled_task_registry` + `schedule_register_callback` | `handlers/deps.py` | ✅ |
+| S4-6 | UI 层 QTimer 触发器：到点 dispatch + emit `task_finished` | `ui/main_window.py` | ✅ |
+| S4-7 | 登记时校验 `action.name` 在注册表存在 | `handlers/schedule.py` | ✅ |
+| S4-8 | 回写 [AI_AssistFunction.md](./AI_AssistFunction.md)（+3 动作 + category） | 文档 | ✅ |
+
+### 10.5 S5 安全与审计
+
+| # | 任务 | 文件/位置 | 状态 |
+|---|---|---|---|
+| S5-1 | 会话归属隔离（防串台，§5.1） | `ai_service.py` · registry | ✅ |
+| S5-2 | 定时/异步完成动作一律写 `AuditLog`（§5.4） | `core/ai/actions/audit.py` · dispatcher | ✅ |
+| S5-3 | `pre_authorized` 策略（仅非 critical，§5.6） | `handlers/schedule.py` · permission | ✅ |
+| S5-4 | 关闭即清理：进程退出/会话清空清两注册表（§5.7） | `ai_service.py` · UI | ✅ |
+| S5-5 | 续跑轮数/预算硬约束回归测试 | `tests/core/ai/` | ✅ |
+
+### 10.6 S6 页面定位与导航（Orchestrator）
+
+| # | 任务 | 文件/位置 | 状态 |
+|---|---|---|---|
+| S6-1 | AUTOMATION 移除 `orchestrator_btn`，新增 `ORCHESTRATION` 分组标题 | `ui/nav_controller.py` | ✅ |
+| S6-2 | 新增 `orchestrator_btn`（显示名 Orchestrator）+ button_group/箭头名单同步 | 同上 | ✅ |
+| S6-3 | `_create_orchestrator_ui`/懒加载字段/`_ai_open_page` button_map 同步 | `ui/main_window.py` | ✅ |
+| S6-4 | page_key `custom_test`→`orchestrator` 全链路统一（含 AI 集成判定 + 磁盘目录/字面量） | `main_window.py` · `orchestrator_ui.py` · `core/orchestrator/` | ✅ |
+| S6-5 | 同步矩阵：`DIRECTORY_STRUCTURE.txt` / `helps/` / `spec/` / 资源目录 | 文档/资源 | ✅ |
+
+### 10.7 S7 面板 UI · TaskTray + 任务卡片
+
+| # | 任务 | 文件/位置 | 状态 |
+|---|---|---|---|
+| S7-1 | `aiTaskTray` 容器（Header 与 ChatView 间，无任务 0 高） | `ui/ai/ai_assist_panel.py` | ✅ |
+| S7-2 | TaskTray 摘要（⏱待触发 M · ⟳进行中 N）+ 展开列表 | 同上 | ✅ |
+| S7-3 | `chat_view.add_task_card(task_id, status, text)`（system 卡片 + 原地更新） | `ui/ai/chat_view.py` | ✅ |
+| S7-4 | 数据源接 `list_scheduled_tasks`/`list_pending_tasks`（QTimer 轮询刷新） | `ai_assist_panel.py` | ✅ |
+| S7-5 | 行内 `[取消]`→`cancel_scheduled_task`；`[查看结果]`→`get_task_result` | 同上 | ✅ |
+| S7-6 | QSS 与暗色一致（`#0b1428`/`#121629`/边框 `#1e293b`）；走 Signal/Slot 禁阻塞 | 同上 | ✅ |
+
+### 10.8 S8 面板 UI · 续跑可视化与降级提示
+
+| # | 任务 | 文件/位置 | 状态 |
+|---|---|---|---|
+| S8-1 | `task_resumed`→插"✅完成"卡片，紧接 AI 续跑气泡（视觉接续） | `ai_assist_panel.py` · `chat_view.py` | ✅ |
+| S8-2 | 续跑发言复用现有 `response_*`/`add_ai_message` 通道（resume 走 `_run_next_agent_round`，不新建通道） | `ai_service.py`→面板 | ✅ |
+| S8-3 | 完成卡片"自动续跑"角标 | `chat_view.py` | ✅ |
+| S8-4 | 降级：`task_resume_skipped` 提示 + Clear/切页后 TaskTray 显示「N 个已完成（未回灌）」 | `ai_assist_panel.py` | ✅ |
+| S8-5 | 会话隔离：按 `current_session_key()` 过滤，`on_page_changed` 切页刷新 | 同上 | ✅ |
+
+### 10.9 S9 持久化（可选）
+
+| # | 任务 | 文件/位置 | 状态 |
+|---|---|---|---|
+| S9-1 | `ScheduledTaskRegistry` 落盘（重启不丢） | `core/ai/` + user_data | ⬜ |
+| S9-2 | pending 任务恢复策略（重启后状态判定） | 同上 | ⬜ |
+| S9-3 | 生命周期/一致性回归测试 | `tests/core/ai/` | ⬜ |
+
+---
+
+### 10.10 总览进度
+
+| 阶段 | 主线 | 状态 | 备注 |
+|---|---|---|---|
+| S1 注册表底座 | A | ✅ 已完成 | 纯逻辑，无依赖，可先行 |
+| S2 Resume 续跑入口 | A | ✅ 已完成 | 触及 agent 循环核心 |
+| S3 异步动作升级 | A | ✅ 已完成 | scan / 序列结果回灌 |
+| S4 调度能力 | A | ✅ 已完成 | QTimer 在 UI 层 |
+| S5 安全与审计 | A | ✅ 已完成 | 会话隔离/幂等/降级/回归测试 |
+| S6 页面定位与导航 | B | ✅ 已完成 | page_key 统一须早于 S7 |
+| S7 面板 UI · TaskTray | C | ✅ 已完成 | 依赖 S3/S4/S6 |
+| S8 面板 UI · 续跑可视化 | C | ✅ 已完成 | 依赖 S2/S7 |
+| S9 持久化（可选） | A | ➖ 不适用 | 本轮不做 |

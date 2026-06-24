@@ -47,6 +47,9 @@ ChamberWaitStableCallback = Callable[
     [str, float, float, float], "dict[str, Any]"
 ]
 DatalogExportCallback = Callable[[str, str], "dict[str, Any]"]
+# 调度（§3）：UI 注入，登记后据 delay_seconds 起 QTimer，到点 dispatch 目标动作。
+ScheduleRegisterCallback = Callable[[str, float], "tuple[bool, str]"]
+SessionKeyGetter = Callable[[], "str"]
 
 
 @dataclass
@@ -70,6 +73,13 @@ class ActionDeps:
     waveform_full_data_getter: WaveformFullDataGetter | None = None
     draft_registry: Any | None = None
     artifact_registry: Any | None = None
+    # 调度（§3）/ 异步回灌（§4）注册表句柄（纯逻辑，UI 注入）
+    scheduled_task_registry: Any | None = None
+    pending_task_registry: Any | None = None
+    # 校验 schedule_action 的目标动作名是否已注册（§3.3 登记即校验）
+    action_name_validator: Callable[[str], bool] | None = None
+    # 当前归属会话 key（防串台，§5.1）；登记 pending/scheduled 任务时绑定
+    session_key_getter: SessionKeyGetter | None = None
 
     open_page_callback: OpenPageCallback | None = None
     toggle_ai_panel_callback: ToggleAiPanelCallback | None = None
@@ -88,3 +98,6 @@ class ActionDeps:
     chamber_wait_stable_callback: ChamberWaitStableCallback | None = None
 
     datalog_export_callback: DatalogExportCallback | None = None
+
+    # 调度（§3）：登记成功后由 UI 起 QTimer，到点执行目标动作
+    schedule_register_callback: ScheduleRegisterCallback | None = None

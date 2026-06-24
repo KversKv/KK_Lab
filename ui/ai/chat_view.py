@@ -77,6 +77,28 @@ QLabel#aiBubbleSys {
 }
 """
 
+# 任务卡片（S7-3 / S8）：定时/异步任务状态展示，居中、可原地更新。
+_TASK_CARD_STYLE = """
+QFrame#aiTaskCard {
+    background-color: #0b1428;
+    border: 1px solid #1e293b;
+    border-radius: 12px;
+}
+QLabel#aiTaskCardText {
+    background: transparent;
+    color: #cbd5e1;
+    font-size: 11px;
+}
+QLabel#aiTaskCardBadge {
+    background-color: #122a1c;
+    color: #4ade80;
+    border: 1px solid #14532d;
+    border-radius: 8px;
+    padding: 1px 8px;
+    font-size: 10px;
+}
+"""
+
 _CODE_FRAME_STYLE = """
 QFrame#aiCodeFrame {
     background-color: #070709;
@@ -459,6 +481,8 @@ class ChatView(QScrollArea):
         self._stream_text = ""
         self._user_bubbles: list[QLabel] = []
         self._msg_seq = 0
+        # task_id -> (card_frame, text_label, badge_label) 供原地更新（S7-3）
+        self._task_cards: dict[str, tuple] = {}
 
     def _next_msg_id(self) -> str:
         self._msg_seq += 1
@@ -474,6 +498,7 @@ class ChatView(QScrollArea):
         self._stream_bubble = None
         self._stream_text = ""
         self._user_bubbles = []
+        self._task_cards = {}
 
     def _make_ai_footer(self, msg_id: str) -> QWidget:
         """AI 气泡下方动作条：👍/👎 反馈 + ⋯ 沉淀菜单。"""
@@ -699,6 +724,45 @@ class ChatView(QScrollArea):
         card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         self._insert_row(card)
         return card
+
+    def add_task_card(
+        self, task_id: str, status: str, text: str, *, auto_resume: bool = False
+    ) -> None:
+        """插入/更新一张任务状态卡片（S7-3 / S8）。
+
+        同一 task_id 重复调用为原地更新（status/text 变化即刷新），不重复插入；
+        auto_resume=True 时显示"自动续跑"角标（S8-3）。
+        """
+        existing = self._task_cards.get(task_id)
+        if existing is not None:
+            _card, text_label, badge_label = existing
+            text_label.setText(text)
+            if auto_resume:
+                badge_label.setText("自动续跑")
+                badge_label.setVisible(True)
+            return
+
+        card = QFrame()
+        card.setObjectName("aiTaskCard")
+        card.setStyleSheet(_TASK_CARD_STYLE)
+        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        layout = QHBoxLayout(card)
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setSpacing(8)
+
+        text_label = QLabel(text)
+        text_label.setObjectName("aiTaskCardText")
+        text_label.setWordWrap(True)
+        text_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        layout.addWidget(text_label, 1)
+
+        badge_label = QLabel("自动续跑")
+        badge_label.setObjectName("aiTaskCardBadge")
+        badge_label.setVisible(auto_resume)
+        layout.addWidget(badge_label, 0, Qt.AlignTop)
+
+        self._task_cards[task_id] = (card, text_label, badge_label)
+        self._insert_row(card)
 
     def _scroll_to_bottom(self) -> None:
         bar = self.verticalScrollBar()

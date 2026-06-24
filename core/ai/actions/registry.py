@@ -27,6 +27,7 @@ CATEGORY_SCOPE = "scope"
 CATEGORY_CHAMBER = "chamber"
 CATEGORY_SCRIPT = "script"
 CATEGORY_EXPORT = "export"
+CATEGORY_SCHEDULE = "schedule"
 
 
 @dataclass(frozen=True)

@@ -122,7 +122,9 @@ class ActionDispatcher:
     def register_handlers(self, mapping: dict[str, Handler]) -> None:
         self._handlers.update(mapping)
 
-    def dispatch(self, name: str, arguments: dict | None = None) -> ActionOutcome:
+    def dispatch(
+        self, name: str, arguments: dict | None = None, *, bypass_confirmation: bool = False
+    ) -> ActionOutcome:
         args = arguments or {}
         spec = self._registry.get(name)
         if spec is None:
@@ -144,7 +146,11 @@ class ActionDispatcher:
             return self._deny(name, spec.risk_level, decision.reason, args)
 
         auto_approved = False
-        if decision.require_confirmation:
+        # 调度任务登记时已一次性授权（pre_authorized，§5.6）：到点免确认。
+        # 安全：仅非 critical 动作可走此路径（critical 已在 permission.check 拦截）。
+        if decision.require_confirmation and bypass_confirmation:
+            auto_approved = True
+        elif decision.require_confirmation:
             confirmed, auto_approved = self._resolve_confirmation(
                 spec, args, decision.reason, policy_result
             )

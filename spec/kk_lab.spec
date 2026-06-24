@@ -39,8 +39,8 @@ a = Analysis(
             os.path.join('instruments', 'MCU_IO', 'CH343SER', 'Driver'),
         ),
         (
-            os.path.join(PROJECT_ROOT, 'ui', 'pages', 'custom_test', 'templates'),
-            os.path.join('ui', 'pages', 'custom_test', 'templates'),
+            os.path.join(PROJECT_ROOT, 'ui', 'pages', 'orchestrator', 'templates'),
+            os.path.join('ui', 'pages', 'orchestrator', 'templates'),
         ),
     ],
     hiddenimports=[

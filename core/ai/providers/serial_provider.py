@@ -1,6 +1,6 @@
 """SerialContextProvider：把当前活动串口会话状态 + 最近 RX 翻译成上下文文本。
 
-串口会话由各页面（kk_serials / custom_test / ...）的 SerialSessionManager 各自持有，
+串口会话由各页面（kk_serials / orchestrator / ...）的 SerialSessionManager 各自持有，
 非全局单例。为保持 core 不反向依赖 ui，本类通过两个轻量回调消费：
   - status_getter() -> dict | None：当前活动会话只读状态快照
       {session_id, port, baudrate, connected, rx_bytes, tx_bytes}

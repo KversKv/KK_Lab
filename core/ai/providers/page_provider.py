@@ -18,7 +18,7 @@ _PAGE_LABELS: dict[str, str] = {
     "pmu_test": "PMU 测试",
     "charger_test": "充电测试",
     "consumption_test": "功耗测试",
-    "custom_test": "Custom Test 自定义测试",
+    "orchestrator": "Orchestrator 自定义测试",
     "vmin_hunter": "VminHunter",
     "kk_serials": "KK 串口工具",
     "collection": "Collection 集合页",

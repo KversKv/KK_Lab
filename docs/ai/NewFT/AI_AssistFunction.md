@@ -26,6 +26,8 @@
 | `ping_instrument` | `session_id` | low | 否 | 连通性检查（ping / identify_instrument / *IDN?），返回 alive 与 idn |
 | `get_recent_audit_log` | `lines`(1-1000) | low | 否 | 回看 AI 历史动作审计日志最近 N 行（JSONL 解析为 entries） |
 | `get_app_log_errors` | `lines`(1-1000) | low | 否 | 软件日志环形缓冲仅过滤 ERROR/WARN/CRITICAL 记录，返回最近 N 行 |
+| `get_task_result` | `task_id` | low | 否 | 按 task_id 查询异步任务结果（B 兜底：事件续跑未触发时主动查），返回状态/结果摘要 |
+| `list_pending_tasks` | 无 | low | 否 | 列出当前会话所有挂起/已完成异步任务（task_id/kind/状态/是否已回灌） |
 
 ### 1.2 UI 导航类（category=ui，风险 low）
 
@@ -137,11 +139,22 @@
 
 > 产物路径限定在用户数据目录（`user_data/` 或打包态 `%APPDATA%/KK_Lab/`）之下，`dir` 留空用默认 `ai/exports/`，禁止任意路径写入与路径穿越（`_resolve_export_dir` 校验 allowed_root）。二进制/大产物只回灌「路径 + 元信息 + artifact_id」，不回灌内容本身（防撑爆 token）。`scope_capture_screen`（P2）落盘后亦经 `ArtifactRegistry` 登记句柄，统一纳入产物通道。`ArtifactRegistry` 镜像 `DraftRegistry` 设计（线程安全 + FIFO 上限 200），由 `AIService.artifact_registry` 暴露、`ActionDeps.artifact_registry` 注入。`export_datalog_csv` 复用 Datalog 页 `_write_combined_csv` 核心逻辑（对话框版 `_export_combined_csv` 与 AI 版 `export_combined_csv_to_path` 共用），`session_id` 仅用于审计追溯。
 
-### 1.9 动作总览
+### 1.9 调度类（category=schedule，定时/延迟任务）
 
-- 已注册动作合计 **68 个**：查询 13 + UI 2 + 串口 7 + 仪器 16 + 示波器 11 + 温箱 6 + 测试序列 4 + 测试编排 5 + 数据导出 4。
-- 风险分布：low 36、medium 11、high 21。
-- 需二次确认：`send_serial_text`、`send_serial_hex`、`send_serial_to_session`、`connect_instrument`、`disconnect_all_instruments`、`set_instrument_output`、`set_instrument_voltage`、`set_instrument_current`、`set_current_limit`、`set_output_off_mode`、`start_test_sequence`、`pause_test_sequence`、`scope_set_timebase`、`scope_set_channel_scale`、`scope_set_trigger`、`chamber_set_temperature`、`chamber_start`、`chamber_stop`、`chamber_wait_stable`、`apply_test_config_draft`、`set_test_variable`、`run_single_step`。
+| 动作 | 参数 | 风险 | 需确认 | 作用 |
+|---|---|---|---|---|
+| `schedule_action` | `trigger`(delay/at), `action`(name+arguments), `pre_authorized`(bool) | high | 是 | 登记定时/延迟任务到点自动执行指定动作；只登记不立即执行，返回 task_id |
+| `list_scheduled_tasks` | 无 | low | 否 | 列出当前会话待执行 / 历史调度任务摘要 |
+| `cancel_scheduled_task` | `task_id` | medium | 否 | 取消一个尚未触发的调度任务 |
+
+> `schedule_action` 为 Plan-then-Execute：handler 仅把「触发条件 + 目标动作名/参数」登记进 `ScheduledTaskRegistry` 并返回 task_id，登记时即校验目标 `action.name` 已注册。登记成功后经 UI 注入的 `schedule_register_callback` 在 UI 层起 `QTimer`，到点 `dispatcher.dispatch(..., bypass_confirmation=pre_authorized)` 执行并 emit `task_finished` 触发续跑。`pre_authorized=true` 表示登记时一次性授权、到点免确认，**仅允许非 critical 动作**（critical 仍被 `permission.check` 拦截）；到点执行无论是否预授权一律照常写 `AuditLog`。
+
+### 1.10 动作总览
+
+- 已注册动作合计 **73 个**：查询 15 + UI 2 + 串口 7 + 仪器 16 + 示波器 11 + 温箱 6 + 测试序列 4 + 测试编排 5 + 数据导出 4 + 调度 3。
+- category 维持 10 类（S4 新增 `schedule`）。
+- 风险分布：low 38、medium 12、high 22。
+- 需二次确认：`send_serial_text`、`send_serial_hex`、`send_serial_to_session`、`connect_instrument`、`disconnect_all_instruments`、`set_instrument_output`、`set_instrument_voltage`、`set_instrument_current`、`set_current_limit`、`set_output_off_mode`、`start_test_sequence`、`pause_test_sequence`、`scope_set_timebase`、`scope_set_channel_scale`、`scope_set_trigger`、`chamber_set_temperature`、`chamber_start`、`chamber_stop`、`chamber_wait_stable`、`apply_test_config_draft`、`set_test_variable`、`run_single_step`、`schedule_action`。
 
 ---
 
@@ -150,7 +163,8 @@
 由 UI 层（MainWindow）构造并注入只读访问器与受控操作回调，core 不反向依赖 ui；字段为 None 表示当前环境不支持，handler 优雅降级。
 
 - 只读访问器：`instrument_manager`、`page_key_getter`、`serial_status_getter`、`serial_manager_getter`、`serial_ports_getter`、`execution_logs_getter`、`app_logs_getter`、`rx_recent_getter`、`test_status_getter`、`test_config_getter`、`test_steps_getter`、`test_result_summary_getter`、`waveform_data_getter`、`waveform_full_data_getter`、`draft_registry`、`artifact_registry`。
-- 受控操作回调：`open_page_callback`、`toggle_ai_panel_callback`、`serial_send_text_callback`、`serial_clear_callback`、`test_run_callback`、`test_pause_callback`、`test_stop_callback`、`test_set_variable_callback`、`test_run_single_step_callback`、`config_apply_callback`、`script_apply_callback`、`chamber_wait_stable_callback`、`datalog_export_callback`。
+- 任务注册表（S1/S4）：`pending_task_registry`（异步任务登记/结果回灌）、`scheduled_task_registry`（定时/延迟任务登记）。
+- 受控操作回调：`open_page_callback`、`toggle_ai_panel_callback`、`serial_send_text_callback`、`serial_clear_callback`、`test_run_callback`、`test_pause_callback`、`test_stop_callback`、`test_set_variable_callback`、`test_run_single_step_callback`、`config_apply_callback`、`script_apply_callback`、`chamber_wait_stable_callback`、`datalog_export_callback`、`schedule_register_callback`（S4：登记成功后由 UI 起 QTimer 触发器）。
 
 ---
 
@@ -167,7 +181,9 @@
 | `feed_serial_rx(session_id, data)` | 喂入串口 RX 数据到缓存 |
 | `set_page_context(page_key)` | 页面切换时切换 Profile 与会话历史 |
 | `current_page_key()` / `current_session_key()` | 当前页面/会话标识 |
-| `clear_history()` | 清空当前会话历史 |
+| `resume_with_task_result(task_id, result, *, kind, title)` | 异步/定时任务完成后的续跑入口（S2）：按 task_id 定位归属会话、幂等回灌结果并主动起一轮 agent；会话不符/未配置/忙碌时优雅降级 |
+| `pending_task_registry` / `scheduled_task_registry` | 异步任务 / 调度任务注册表句柄（S1/S4） |
+| `clear_history()` | 清空当前会话历史（同时清空两任务注册表，S5.4） |
 | `session_stats()` / `persisted_history()` | 会话统计 / 已落盘历史 |
 | `available_models()` / `current_model()` / `set_model_override(model)` | 模型列表 / 当前模型 / 临时切换模型 |
 | `is_busy()` / `settings` / `dispatcher` / `draft_registry` / `artifact_registry` / `rx_cache` | 状态与组件属性（draft_registry 为草案句柄登记表，artifact_registry 为产物句柄登记表） |
@@ -180,7 +196,7 @@
 
 ### 3.2 信号（Signal）
 
-`response_ready` / `response_started` / `response_delta` / `response_finished` / `analysis_ready` / `draft_ready` / `error_occurred` / `busy_changed` / `connection_tested` / `action_requested` / `action_result` / `usage_updated` / `trace_recorded`。
+`response_ready` / `response_started` / `response_delta` / `response_finished` / `analysis_ready` / `draft_ready` / `error_occurred` / `busy_changed` / `connection_tested` / `action_requested` / `action_result` / `usage_updated` / `trace_recorded` / `task_resumed`（S2：任务结果已回灌并发起续跑）/ `task_resume_skipped`（S2：续跑降级，含 reason=already_resumed/session_mismatch/unavailable/busy）。
 
 ---
 

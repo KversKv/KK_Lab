@@ -1,9 +1,9 @@
 """序列上下文 Provider（F5.1）：把当前画布序列读为 v2 dict 并文本化喂给 AI。
 
 设计（AI_Assist_NewFeature_V1 §5）：
-  - data 级入口：复用 core/custom_test/serialization（dict ↔ 节点树），不落盘；
+  - data 级入口：复用 core/orchestrator/serialization（dict ↔ 节点树），不落盘；
   - core 不反向依赖 ui：通过 UI 注入的 sequence_data_getter 回调读取画布 v2 dict；
-  - 仅在 Custom Test 页面（page_key == "custom_test"）注入上下文，避免无谓污染。
+  - 仅在 Orchestrator 页面（page_key == "orchestrator"）注入上下文，避免无谓污染。
 
 本模块纯逻辑，禁 import Qt。
 """
@@ -22,7 +22,7 @@ _MAX_NODES_IN_CONTEXT = 200
 
 
 class SequenceContextProvider(ContextProvider):
-    """把当前 Custom Test 画布序列（v2 dict）摘要为上下文文本。"""
+    """把当前 Orchestrator 画布序列（v2 dict）摘要为上下文文本。"""
 
     def __init__(self, sequence_data_getter: SequenceDataGetter | None = None):
         self._getter = sequence_data_getter
@@ -34,7 +34,7 @@ class SequenceContextProvider(ContextProvider):
         self._getter = getter
 
     def build_context(self, page_key: str | None) -> str:
-        if page_key not in (None, "custom_test"):
+        if page_key not in (None, "orchestrator"):
             return ""
         if self._getter is None:
             return ""
@@ -88,14 +88,14 @@ def format_sequence_data(data: dict[str, Any]) -> str:
     total = _count_nodes(sequence)
     if total == 0:
         return (
-            "[当前 Custom Test 画布序列（最新，以此为准）]\n"
+            "[当前 Orchestrator 画布序列（最新，以此为准）]\n"
             "以下为用户画布的当前实时序列；若与此前对话中的序列内容或结论冲突，"
             "一律以本段为准，忽略历史中的旧序列。\n"
             "（空序列，尚未添加节点）"
         )
 
     lines: list[str] = [
-        "[当前 Custom Test 画布序列（最新，以此为准）]",
+        "[当前 Orchestrator 画布序列（最新，以此为准）]",
         "以下为用户画布的当前实时序列；若与此前对话中的序列内容或结论冲突，"
         "一律以本段为准，忽略历史中的旧序列。",
         f"版本：v{data.get('version', 2)}　顶层节点：{len(sequence)}　总节点：{total}",

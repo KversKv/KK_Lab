@@ -27,6 +27,8 @@ from core.ai.conversation_store import (
 )
 from core.ai.draft_registry import DraftRegistry
 from core.ai.artifact_registry import ArtifactRegistry
+from core.ai.pending_task_registry import PendingTaskRegistry
+from core.ai.scheduled_task_registry import ScheduledTaskRegistry
 from core.ai.log_ring import get_log_ring
 from core.ai.newapi_client import AIClientError, ChatResult, NewAPIClient
 from core.ai.nudges import force_tool_nudge
@@ -220,6 +222,9 @@ class AIService(QObject):
     action_result = Signal(object)
     usage_updated = Signal(object, object)
     trace_recorded = Signal(str)
+    # 异步任务完成 → 续跑可视化（§8）：UI 据此插入完成卡片 / 刷新 TaskTray
+    task_resumed = Signal(object)
+    task_resume_skipped = Signal(object)
 
     def __init__(self, settings: AISettings, page_key_getter=None, parent=None):
         super().__init__(parent)
@@ -266,6 +271,8 @@ class AIService(QObject):
         self._dispatcher = None
         self._draft_registry = DraftRegistry()
         self._artifact_registry = ArtifactRegistry()
+        self._pending_task_registry = PendingTaskRegistry()
+        self._scheduled_task_registry = ScheduledTaskRegistry()
         self._agent_messages: list[dict] = []
         self._agent_rounds = 0
         self._agent_model = ""
@@ -297,6 +304,16 @@ class AIService(QObject):
         return self._artifact_registry
 
     @property
+    def pending_task_registry(self) -> PendingTaskRegistry:
+        """异步任务注册表（§4）：长任务/异步动作按 task_id 登记，完成后 resume 续跑。"""
+        return self._pending_task_registry
+
+    @property
+    def scheduled_task_registry(self) -> ScheduledTaskRegistry:
+        """调度任务注册表（§3）：schedule_action 登记的定时/延迟任务句柄。"""
+        return self._scheduled_task_registry
+
+    @property
     def rx_cache(self) -> SerialRxCache:
         return self._rx_cache
 
@@ -312,9 +329,9 @@ class AIService(QObject):
         )
 
     def set_sequence_data_getter(self, getter) -> None:
-        """UI 注入：返回当前 Custom Test 画布序列 v2 dict 的回调（F5.1）。
+        """UI 注入：返回当前 Orchestrator 画布序列 v2 dict 的回调（F5.1）。
 
-        传入 None 表示当前无序列源（非 Custom Test 页面）。
+        传入 None 表示当前无序列源（非 Orchestrator 页面）。
         """
         self._sequence_provider.set_getter(getter)
 
@@ -360,6 +377,9 @@ class AIService(QObject):
         self._summary = ""
         _clear_persisted_history(self._session_key)
         self._session_stats.reset()
+        # 清空异步/调度任务（§5.4 会话级清理）
+        self._pending_task_registry.clear()
+        self._scheduled_task_registry.clear()
         self.usage_updated.emit(None, self._session_stats)
 
     @property
@@ -1062,6 +1082,112 @@ class AIService(QObject):
             logger.error("启动下一轮 agent 失败", exc_info=True)
             self._abort_agent("", "无法继续执行，已停止本次操作。")
 
+    def resume_with_task_result(
+        self, task_id: str, result: dict | None, *, kind: str = "", title: str = ""
+    ) -> bool:
+        """异步/定时任务完成后的续跑入口（§4.2 / S2 核心）。
+
+        ① 按 task_id 定位归属会话（session_key），仅当与当前会话一致才续跑；
+        ② 把结果包成一条 user 提示塞入 `_agent_messages`，主动起一轮 agent；
+        ③ 安全阀：幂等（resumed 标志）、轮数/预算约束（复用既有 agent 路径）、
+           会话失效/忙碌/未配置时优雅降级（仅记审计 + 通知 UI，不强行拉起模型）。
+
+        返回 True 表示已发起续跑；False 表示降级（未续跑）。
+        """
+        if not task_id:
+            return False
+        reg = self._pending_task_registry
+        snapshot = reg.mark_done(task_id, result)
+        if snapshot is None:
+            logger.warning("resume 失败：未知 task_id=%s", task_id)
+            return False
+
+        info = {
+            "task_id": task_id,
+            "session_key": snapshot.session_key,
+            "kind": kind or snapshot.kind,
+            "title": title or snapshot.title,
+            "result": snapshot.result,
+        }
+
+        # 幂等：同一结果只续跑一次（§5.3）
+        if not reg.mark_resumed(task_id):
+            logger.debug("resume 跳过（已续跑过）：%s", task_id)
+            self.task_resume_skipped.emit({**info, "reason": "already_resumed"})
+            return False
+
+        # 会话归属隔离：任务必须回灌到发起它的那个会话（§5.1）
+        if snapshot.session_key and snapshot.session_key != self._session_key:
+            logger.info(
+                "resume 降级：任务 %s 归属会话 %s 与当前 %s 不一致，仅记审计",
+                task_id, snapshot.session_key, self._session_key,
+            )
+            self.task_resume_skipped.emit({**info, "reason": "session_mismatch"})
+            return False
+
+        # 降级：未配置 / 忙碌 / 无动作系统时不强行拉起模型（§5.5）
+        if not self._settings.is_configured() or self._registry is None:
+            self.task_resume_skipped.emit({**info, "reason": "unavailable"})
+            return False
+        if self._busy:
+            logger.info("resume 暂缓：当前忙碌，任务 %s 留待用户查看", task_id)
+            self.task_resume_skipped.emit({**info, "reason": "busy"})
+            return False
+
+        # 构造续跑上下文：若当前无 agent 会话（已结束），用历史重建一条上下文
+        result_text = self._format_task_result(info)
+        if not self._agent_messages:
+            profile = get_profile(self._page_key)
+            model = self._resolve_model(
+                profile.get("model", self._settings.effective_model)
+            )
+            self._agent_model = model
+            self._agent_temperature = profile.get("temperature", 0.2)
+            self._agent_max_tokens = profile.get("max_tokens", 2048)
+            self._agent_messages = self._prompt_manager.build_messages(
+                page_key=self._page_key,
+                history=self._history,
+                user_text=result_text,
+                budget=self._budget_for(model),
+                summary=self._summary,
+            )
+        else:
+            self._agent_messages.append({"role": "user", "content": result_text})
+
+        self._pending_mode = _MODE_AGENT
+        self._agent_rounds = 0
+        self._agent_forced_retry = False
+        self.task_resumed.emit(info)
+        reg.mark_consumed(task_id)
+        try:
+            self._run_next_agent_round()
+        except Exception:
+            logger.error("resume 续跑启动失败：%s", task_id, exc_info=True)
+            self._abort_agent("", "任务结果回灌后续跑失败，已停止本次操作。")
+            return False
+        return True
+
+    @staticmethod
+    def _format_task_result(info: dict) -> str:
+        """把任务结果摘要包成一条续跑提示（只发摘要，控 token，§6）。"""
+        task_id = info.get("task_id", "")
+        kind = info.get("kind", "") or "任务"
+        title = info.get("title", "")
+        result = info.get("result")
+        try:
+            result_json = json.dumps(result, ensure_ascii=False, default=str)
+        except (TypeError, ValueError):
+            result_json = str(result)
+        result_json = context_budget.clip_context_block(result_json, 800)
+        head = f"[系统通知] 后台{kind}（task={task_id}"
+        if title:
+            head += f"，{title}"
+        head += "）已完成。"
+        return (
+            f"{head}\n执行结果：{result_json}\n"
+            "请根据该结果判断是否需要继续下一步动作；若已达成目标，简要总结即可。"
+        )
+
     def _start_agent_round(self, tools) -> None:
         """启动一个 agent 轮：流式开启则走 _StreamWorker（tool-call 感知），否则非流式。
 
@@ -1265,14 +1391,14 @@ class AIService(QObject):
         page = self._page_key or "_default"
         if kind == SCRIPT_DRAFT:
             return (
-                "你是 Custom Test 序列助手。请根据用户需求生成一个测试序列草案。\n"
+                "你是 Orchestrator 序列助手。请根据用户需求生成一个测试序列草案。\n"
                 "只输出一个 JSON 对象（不要任何额外文字、不要 Markdown 代码块），结构如下：\n"
                 '{"kind": "script_draft", "title": "标题", "notes": "说明", '
                 '"sequence": [{"node_type": "<已注册节点类型>", "params": {...}, '
                 '"children": [...]}], "instruments": {}, "metadata": {}}\n'
                 "sequence 为节点树，node_type 必须是系统已注册的节点类型；"
                 "容器节点（循环/分支）用 children 表达子节点。\n"
-                "若上下文已提供[当前 Custom Test 画布序列]，请在其基础上按用户需求优化，"
+                "若上下文已提供[当前 Orchestrator 画布序列]，请在其基础上按用户需求优化，"
                 "并输出优化后的完整序列。这是草案，会经本地 preflight 校验后由用户确认才应用。"
             )
         return (

@@ -551,14 +551,27 @@ def build_handlers(deps: ActionDeps) -> dict[str, Any]:
         cached_list = [_candidate_to_dict(c) for c in cached] if cached else []
         manager.scan_async(instrument_type)
         payload: dict = {"ok": True, "instrument_type": instrument_type}
+        # 异步动作升级（§4 / S3-1）：登记 pending 任务，完成后由 UI 回灌续跑
+        registry = deps.pending_task_registry
+        if registry is not None:
+            session_key = ""
+            if deps.session_key_getter is not None:
+                try:
+                    session_key = deps.session_key_getter() or ""
+                except Exception:  # noqa: BLE001
+                    logger.error("session_key_getter 调用异常", exc_info=True)
+            task_id = registry.register(
+                session_key, "scan_instruments", title=instrument_type
+            )
+            payload["task_id"] = task_id
         if cached_list:
             payload["cached_candidates"] = cached_list
             payload["_message"] = (
                 f"已发起新一轮扫描；上次扫描到 {len(cached_list)} 个候选。"
-                "完成后再次调用可获取最新结果。"
+                "完成后会自动回灌最新结果。"
             )
         else:
-            payload["_message"] = "已发起扫描（异步），完成后再次调用可获取结果。"
+            payload["_message"] = "已发起扫描（异步），完成后会自动回灌结果。"
         return payload
 
     def disconnect_all_instruments(_args: dict) -> dict:

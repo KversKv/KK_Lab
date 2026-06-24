@@ -165,13 +165,13 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "解读最近一次功耗电流数据",
         ],
     },
-    "custom_test": {
+    "orchestrator": {
         "label": "脚本助手",
         "model": "glm-5.1-fp8",
         "temperature": 0.0,
         "max_tokens": 4096,
         "system_prompt": (
-            "你专注于 Custom Test 测试序列。只能生成符合 core/custom_test 节点 schema 的序列草案，"
+            "你专注于 Orchestrator 测试序列。只能生成符合 core/orchestrator 节点 schema 的序列草案，"
             "草案必须经预览与本地校验通过后才能应用，禁止直接运行高风险序列。"
         ),
         "quick_actions": [

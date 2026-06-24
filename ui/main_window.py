@@ -89,7 +89,7 @@ from ui.pages.pmu_test.pmu_test_ui import PMUTestUI
 from ui.pages.chamber.chamber_control_ui import ChamberControlUI
 from ui.pages.consumption_test.consumption_test_wrapper import ConsumptionTestWrapper
 from ui.pages.charger_test.charger_test_ui import ChargerTestUI
-from ui.pages.custom_test.custom_test_ui import CustomTestUI
+from ui.pages.orchestrator.orchestrator_ui import OrchestratorUI
 from ui.pages.vmin_hunter.vmin_hunter_ui import VminHunterUI
 from ui.modules.serialCom_module.serialCom_module_frame import SerialComMixin
 from ui.modules.mcu_io_module_frame import McuIoConnectionMixin
@@ -303,7 +303,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.chamber_ui = None
         self.consumption_test_ui = None
         self.charger_test_ui = None
-        self.custom_test_ui = None
+        self.orchestrator_ui = None
         self.vmin_hunter_ui = None
         self.kk_serials_ui = None
         self.collection_ui = None
@@ -602,6 +602,11 @@ class MainWindow(CleanupMixin, QMainWindow):
             waveform_full_data_getter=self._provide_ai_waveform_full,
             draft_registry=self.ai_service.draft_registry,
             artifact_registry=self.ai_service.artifact_registry,
+            scheduled_task_registry=self.ai_service.scheduled_task_registry,
+            pending_task_registry=self.ai_service.pending_task_registry,
+            session_key_getter=self.ai_service.current_session_key,
+            action_name_validator=self._ai_action_is_registered,
+            schedule_register_callback=self._ai_schedule_register,
             open_page_callback=self._ai_open_page,
             toggle_ai_panel_callback=self._ai_toggle_panel,
             serial_send_text_callback=self._ai_serial_send_text,
@@ -623,6 +628,102 @@ class MainWindow(CleanupMixin, QMainWindow):
         )
         dispatcher.set_confirm_callback(self.ai_panel.confirm_action)
         self.ai_service.set_action_system(registry, dispatcher)
+        # 调度（§3/§4）：task_id -> QTimer，到点触发已登记的目标动作
+        self._scheduled_timers: dict[str, QTimer] = {}
+        # 异步动作回灌（§4 / S3）：扫描完成 → 找到对应 pending 任务并续跑
+        try:
+            self.instrument_manager.scan_finished.connect(
+                self._ai_on_scan_finished_resume
+            )
+        except Exception:  # noqa: BLE001
+            logger.error("连接 scan_finished 回灌信号失败", exc_info=True)
+
+    def _ai_on_scan_finished_resume(self, instrument_type: str, candidates: list):
+        """扫描完成 → 回灌对应 pending 任务，触发 AI 续跑（§4 / S3-1）。"""
+        registry = self.ai_service.pending_task_registry
+        session_key = self.ai_service.current_session_key()
+        # 找最新一个未 resumed、kind=scan_instruments 且 title==type 的 pending 任务
+        target = None
+        for t in registry.list(session_key=session_key):
+            if (
+                t.kind == "scan_instruments"
+                and t.title == instrument_type
+                and not t.resumed
+            ):
+                target = t
+        if target is None:
+            return
+        count = len(candidates) if candidates else 0
+        result = {
+            "ok": True,
+            "instrument_type": instrument_type,
+            "count": count,
+            "_message": f"扫描完成：找到 {count} 个 {instrument_type} 候选。",
+        }
+        self.ai_service.resume_with_task_result(
+            target.task_id, result, kind="scan_instruments", title=instrument_type
+        )
+
+    def _ai_action_is_registered(self, name: str) -> bool:
+        """校验 schedule_action 的目标动作名是否已注册（§3.3）。"""
+        registry = getattr(self.ai_service, "_registry", None)
+        return bool(registry and registry.has(name))
+
+    def _ai_schedule_register(self, task_id: str, delay_seconds: float):
+        """UI 注入回调：登记成功后起一个单次 QTimer，到点执行目标动作（§3.4）。"""
+        try:
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            interval_ms = max(0, int(float(delay_seconds) * 1000))
+            timer.timeout.connect(lambda tid=task_id: self._ai_fire_scheduled_task(tid))
+            self._scheduled_timers[task_id] = timer
+            timer.start(interval_ms)
+            return True, f"已启动定时触发器：{task_id}"
+        except Exception:  # noqa: BLE001
+            logger.error("启动调度定时器失败：%s", task_id, exc_info=True)
+            return False, "启动定时触发器失败。"
+
+    def _ai_fire_scheduled_task(self, task_id: str):
+        """QTimer 到点回调：经 dispatcher 执行目标动作并续跑回灌（§3.4/§4）。"""
+        self._scheduled_timers.pop(task_id, None)
+        registry = self.ai_service.scheduled_task_registry
+        task = registry.mark_running(task_id)
+        if task is None:
+            logger.info("调度任务 %s 已取消或状态异常，跳过触发。", task_id)
+            return
+        dispatcher = self.ai_service.dispatcher
+        if dispatcher is None:
+            registry.mark_done(task_id, {"status": "failed"}, ok=False)
+            return
+        action = task.action or {}
+        name = str(action.get("name", ""))
+        arguments = action.get("arguments") or {}
+        try:
+            outcome = dispatcher.dispatch(
+                name, arguments, bypass_confirmation=bool(task.pre_authorized)
+            )
+            result = outcome.to_tool_payload()
+            ok = outcome.ok
+        except Exception:  # noqa: BLE001
+            logger.error("调度任务 %s 执行动作 %s 失败", task_id, name, exc_info=True)
+            result = {"status": "failed", "message": "执行异常"}
+            ok = False
+        registry.mark_done(task_id, result, ok=ok)
+        # 把调度结果作为一个 pending 任务回灌 AI 续跑（§4）
+        pending = self.ai_service.pending_task_registry
+        pid = pending.register(
+            task.session_key, "scheduled", title=f"定时执行 {name}"
+        )
+        self.ai_service.resume_with_task_result(
+            pid, result, kind="scheduled", title=f"定时执行 {name}"
+        )
+
+    def _ai_cancel_scheduled_timer(self, task_id: str):
+        """取消调度任务时一并停掉 QTimer（配合 cancel_scheduled_task）。"""
+        timer = self._scheduled_timers.pop(task_id, None)
+        if timer is not None:
+            timer.stop()
+            timer.deleteLater()
 
     def _get_ai_app_logs(self, lines):
         ring = get_log_ring()
@@ -637,8 +738,8 @@ class MainWindow(CleanupMixin, QMainWindow):
         return service.rx_cache.recent(session_id, lines)
 
     def _get_ai_test_status(self):
-        ui = getattr(self, "custom_test_ui", None)
-        if ui is None or self.current_instrument_ui != "custom_test":
+        ui = getattr(self, "orchestrator_ui", None)
+        if ui is None or self.current_instrument_ui != "orchestrator":
             return None
         canvas = getattr(ui, "canvas", None)
         running = bool(getattr(canvas, "_running", False)) if canvas else False
@@ -651,8 +752,8 @@ class MainWindow(CleanupMixin, QMainWindow):
         return {"available": True, "running": running, "steps": steps}
 
     def _get_ai_test_config(self):
-        ui = getattr(self, "custom_test_ui", None)
-        if ui is None or self.current_instrument_ui != "custom_test":
+        ui = getattr(self, "orchestrator_ui", None)
+        if ui is None or self.current_instrument_ui != "orchestrator":
             return None
         getter = getattr(ui, "get_ai_test_config", None)
         if not callable(getter):
@@ -660,8 +761,8 @@ class MainWindow(CleanupMixin, QMainWindow):
         return getter()
 
     def _get_ai_test_steps(self):
-        ui = getattr(self, "custom_test_ui", None)
-        if ui is None or self.current_instrument_ui != "custom_test":
+        ui = getattr(self, "orchestrator_ui", None)
+        if ui is None or self.current_instrument_ui != "orchestrator":
             return None
         getter = getattr(ui, "get_ai_test_steps", None)
         if not callable(getter):
@@ -669,8 +770,8 @@ class MainWindow(CleanupMixin, QMainWindow):
         return getter()
 
     def _get_ai_test_result_summary(self):
-        ui = getattr(self, "custom_test_ui", None)
-        if ui is None or self.current_instrument_ui != "custom_test":
+        ui = getattr(self, "orchestrator_ui", None)
+        if ui is None or self.current_instrument_ui != "orchestrator":
             return None
         getter = getattr(ui, "get_ai_test_result_summary", None)
         if not callable(getter):
@@ -678,9 +779,9 @@ class MainWindow(CleanupMixin, QMainWindow):
         return getter()
 
     def _ai_test_set_variable(self, name, value):
-        ui = getattr(self, "custom_test_ui", None)
-        if ui is None or self.current_instrument_ui != "custom_test":
-            return False, "请先切换到 Custom Test 页面。"
+        ui = getattr(self, "orchestrator_ui", None)
+        if ui is None or self.current_instrument_ui != "orchestrator":
+            return False, "请先切换到 Orchestrator 页面。"
         setter = getattr(ui, "ai_set_test_variable", None)
         if not callable(setter):
             return False, "当前页面不支持设置测试变量。"
@@ -691,9 +792,9 @@ class MainWindow(CleanupMixin, QMainWindow):
             return False, "设置变量异常，请查看日志。"
 
     def _ai_test_run_single_step(self, step_id):
-        ui = getattr(self, "custom_test_ui", None)
-        if ui is None or self.current_instrument_ui != "custom_test":
-            return False, "请先切换到 Custom Test 页面。"
+        ui = getattr(self, "orchestrator_ui", None)
+        if ui is None or self.current_instrument_ui != "orchestrator":
+            return False, "请先切换到 Orchestrator 页面。"
         runner = getattr(ui, "ai_run_single_step", None)
         if not callable(runner):
             return False, "当前页面不支持单步执行。"
@@ -713,7 +814,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             "charger_test": self.nav.charger_test_btn,
             "consumption_test": self.nav.consumption_test_btn,
             "vmin_hunter": self.nav.vmin_hunter_btn,
-            "custom_test": self.nav.custom_test_btn,
+            "orchestrator": self.nav.orchestrator_btn,
             "kk_serials": self.nav.kk_serials_btn,
             "collection": self.nav.collection_btn,
         }
@@ -773,20 +874,47 @@ class MainWindow(CleanupMixin, QMainWindow):
             return []
 
     def _ai_test_run(self):
-        ui = getattr(self, "custom_test_ui", None)
-        if ui is None or self.current_instrument_ui != "custom_test":
-            return False, "请先切换到 Custom Test 页面。"
+        ui = getattr(self, "orchestrator_ui", None)
+        if ui is None or self.current_instrument_ui != "orchestrator":
+            return False, "请先切换到 Orchestrator 页面。"
         try:
             ui._on_run()
         except Exception:  # noqa: BLE001 - 启动异常转可读结果
             logger.error("AI 启动测试序列失败", exc_info=True)
             return False, "启动测试序列异常，请查看日志。"
-        return True, "已请求启动测试序列。"
+        # 登记 pending 任务（§4 / S3-2）：完成后由 sequence_execution_finished 回灌
+        registry = self.ai_service.pending_task_registry
+        registry.register(
+            self.ai_service.current_session_key(),
+            "start_test_sequence",
+            title="测试序列",
+        )
+        return True, "已请求启动测试序列；完成后会自动回灌结果。"
+
+    def _ai_on_sequence_finished_resume(self, success: bool, message: str):
+        """测试序列完成 → 回灌对应 pending 任务并触发续跑（§4 / S3-2）。"""
+        registry = self.ai_service.pending_task_registry
+        session_key = self.ai_service.current_session_key()
+        target = None
+        for t in registry.list(session_key=session_key):
+            if t.kind == "start_test_sequence" and not t.resumed:
+                target = t
+        if target is None:
+            return
+        result = {
+            "ok": bool(success),
+            "verdict": "PASS" if success else "FAIL",
+            "detail": message,
+            "_message": f"测试序列执行完成：{'PASS' if success else 'FAIL'}。{message}",
+        }
+        self.ai_service.resume_with_task_result(
+            target.task_id, result, kind="start_test_sequence", title="测试序列"
+        )
 
     def _ai_test_pause(self):
-        ui = getattr(self, "custom_test_ui", None)
-        if ui is None or self.current_instrument_ui != "custom_test":
-            return False, "请先切换到 Custom Test 页面。"
+        ui = getattr(self, "orchestrator_ui", None)
+        if ui is None or self.current_instrument_ui != "orchestrator":
+            return False, "请先切换到 Orchestrator 页面。"
         try:
             ui._on_pause()
         except Exception:  # noqa: BLE001 - 暂停异常转可读结果
@@ -795,9 +923,9 @@ class MainWindow(CleanupMixin, QMainWindow):
         return True, "已切换暂停/恢复。"
 
     def _ai_test_stop(self):
-        ui = getattr(self, "custom_test_ui", None)
-        if ui is None or self.current_instrument_ui != "custom_test":
-            return False, "请先切换到 Custom Test 页面。"
+        ui = getattr(self, "orchestrator_ui", None)
+        if ui is None or self.current_instrument_ui != "orchestrator":
+            return False, "请先切换到 Orchestrator 页面。"
         try:
             ui._on_stop()
         except Exception:  # noqa: BLE001 - 停止异常转可读结果
@@ -908,7 +1036,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         panel = getattr(self, "ai_panel", None)
         if panel is None:
             return
-        if self.current_instrument_ui == "custom_test":
+        if self.current_instrument_ui == "orchestrator":
             panel.set_script_apply_callback(self._apply_ai_script_draft)
         else:
             panel.set_script_apply_callback(None)
@@ -916,7 +1044,7 @@ class MainWindow(CleanupMixin, QMainWindow):
 
         service = getattr(self, "ai_service", None)
         if service is not None:
-            if self.current_instrument_ui == "custom_test":
+            if self.current_instrument_ui == "orchestrator":
                 service.set_sequence_data_getter(self._get_ai_sequence_data)
             else:
                 service.set_sequence_data_getter(None)
@@ -931,8 +1059,8 @@ class MainWindow(CleanupMixin, QMainWindow):
             panel.set_waveform_marker_getter(None)
 
     def _get_ai_sequence_data(self):
-        ui = getattr(self, "custom_test_ui", None)
-        if ui is None or self.current_instrument_ui != "custom_test":
+        ui = getattr(self, "orchestrator_ui", None)
+        if ui is None or self.current_instrument_ui != "orchestrator":
             return None
         return ui.get_ai_sequence_data()
 
@@ -989,9 +1117,9 @@ class MainWindow(CleanupMixin, QMainWindow):
             return {"ok": False, "message": "导出异常，请查看日志。"}
 
     def _apply_ai_script_draft(self, nodes):
-        ui = getattr(self, "custom_test_ui", None)
+        ui = getattr(self, "orchestrator_ui", None)
         if ui is None or getattr(ui, "canvas", None) is None:
-            return False, "Custom Test 页面不可用。"
+            return False, "Orchestrator 页面不可用。"
         if getattr(ui.canvas, "_running", False):
             return False, "序列运行中，无法应用草案。"
         try:
@@ -1004,7 +1132,7 @@ class MainWindow(CleanupMixin, QMainWindow):
     def _apply_ai_config_draft(self, draft):
         page = getattr(self, "current_instrument_ui", None)
         ui_map = {
-            "custom_test": getattr(self, "custom_test_ui", None),
+            "orchestrator": getattr(self, "orchestrator_ui", None),
             "vmin_hunter": getattr(self, "vmin_hunter_ui", None),
             "pmu_test": getattr(self, "pmu_test_ui", None),
             "charger_test": getattr(self, "charger_test_ui", None),
@@ -1064,7 +1192,7 @@ class MainWindow(CleanupMixin, QMainWindow):
     def _current_active_page(self):
         mapping = {
             "kk_serials": getattr(self, "kk_serials_ui", None),
-            "custom_test": getattr(self, "custom_test_ui", None),
+            "orchestrator": getattr(self, "orchestrator_ui", None),
             "pmu_test": getattr(self, "pmu_test_ui", None),
             "charger_test": getattr(self, "charger_test_ui", None),
             "consumption_test": getattr(self, "consumption_test_ui", None),
@@ -1079,7 +1207,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.nav.charger_test_btn.clicked.connect(self._on_nav_button_clicked)
         self.nav.consumption_test_btn.clicked.connect(self._on_nav_button_clicked)
         self.nav.vmin_hunter_btn.clicked.connect(self._on_nav_button_clicked)
-        self.nav.custom_test_btn.clicked.connect(self._on_nav_button_clicked)
+        self.nav.orchestrator_btn.clicked.connect(self._on_nav_button_clicked)
         self.nav.kk_serials_btn.clicked.connect(self._on_nav_button_clicked)
         self.nav.collection_btn.clicked.connect(self._on_nav_button_clicked)
 
@@ -1230,23 +1358,32 @@ class MainWindow(CleanupMixin, QMainWindow):
                 self.charger_test_ui.set_current_test(selected_test)
         self._fade_in_widget(self.charger_test_ui)
 
-    def _create_custom_test_ui(self):
-        logger.debug("Switching to Custom Test UI")
+    def _create_orchestrator_ui(self):
+        logger.debug("Switching to Orchestrator UI")
         self._hide_all_instrument_uis()
-        if self.custom_test_ui is None:
-            self.custom_test_ui = CustomTestUI(
+        if self.orchestrator_ui is None:
+            self.orchestrator_ui = OrchestratorUI(
                 n6705c_top=self.n6705c_top,
                 mso64b_top=self.mso64b_top,
                 chamber_ui=self.chamber_ui,
                 instrument_manager=self.instrument_manager,
             )
-            self.instrument_ui_container_layout.addWidget(self.custom_test_ui)
+            self.instrument_ui_container_layout.addWidget(self.orchestrator_ui)
+            # 测试序列完成 → AI 异步动作回灌续跑（§4 / S3-2）
+            try:
+                self.orchestrator_ui.sequence_execution_finished.connect(
+                    self._ai_on_sequence_finished_resume
+                )
+            except Exception:  # noqa: BLE001
+                logger.error("连接序列完成回灌信号失败", exc_info=True)
+            self.orchestrator_ui._sync_instruments()
+            self.orchestrator_ui.show()
         else:
-            self.custom_test_ui.sync_n6705c_from_top()
-            self.custom_test_ui._sync_instruments()
-            self.custom_test_ui.show()
-        self.current_instrument_ui = "custom_test"
-        self._fade_in_widget(self.custom_test_ui)
+            self.orchestrator_ui.sync_n6705c_from_top()
+            self.orchestrator_ui._sync_instruments()
+            self.orchestrator_ui.show()
+        self.current_instrument_ui = "orchestrator"
+        self._fade_in_widget(self.orchestrator_ui)
 
     def _create_vmin_hunter_ui(self):
         logger.debug("Switching to VminHunter UI")
@@ -1293,7 +1430,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         for widget in [
             self.n6705c_analyser_ui, self.n6705c_datalog_ui,
             self.oscilloscope_ui, self.pmu_test_ui, self.chamber_ui,
-            self.consumption_test_ui, self.charger_test_ui, self.custom_test_ui,
+            self.consumption_test_ui, self.charger_test_ui, self.orchestrator_ui,
             self.vmin_hunter_ui, self.kk_serials_ui, self.collection_ui,
         ]:
             if widget is not None:
@@ -1306,6 +1443,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             self._update_ai_apply_callbacks()
             if getattr(self, "ai_panel", None) is not None:
                 self.ai_panel.refresh_quick_actions()
+                self.ai_panel.on_page_changed()
         if widget is None:
             return
         effect = QGraphicsOpacityEffect(widget)
@@ -1369,7 +1507,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             "datalog": "ui.pages.n6705c_power_analyzer",
             "oscilloscope": "ui.pages.oscilloscope",
             "consumption_test": "ui.pages.consumption_test",
-            "custom_test": "ui.pages.custom_test",
+            "orchestrator": "ui.pages.orchestrator",
             "chamber": "ui.pages.chamber",
             "vmin_hunter": "ui.pages.vmin_hunter",
         }
@@ -1699,6 +1837,15 @@ class MainWindow(CleanupMixin, QMainWindow):
     def closeEvent(self, event):
         self.status_panel.suppress_toasts()
         self._save_ai_panel_state()
+        # 关闭即清理调度定时器（§5.4）
+        for timer in list(getattr(self, "_scheduled_timers", {}).values()):
+            try:
+                timer.stop()
+                timer.deleteLater()
+            except Exception:  # noqa: BLE001
+                pass
+        if hasattr(self, "_scheduled_timers"):
+            self._scheduled_timers.clear()
         if getattr(self, "ai_service", None) is not None:
             self.ai_service.shutdown()
         self.connection_hub.shutdown()

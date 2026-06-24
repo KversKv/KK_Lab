@@ -43,7 +43,7 @@ KK_Lab/
 ├── tests/                   # 轻量回归测试
 ├── tools/                   # 开发辅助脚本 (SVG→ICO 转换等，不进打包产物)
 ├── Results/                 # 测试结果输出目录 (运行时生成，Git 不跟踪)
-└── userdata/                # 用户态数据（Custom Test 模板 / 最近序列等）
+└── userdata/                # 用户态数据（Orchestrator 模板 / 最近序列等）
 
 ================================================================================
   chips/ - BES 芯片配置
@@ -73,18 +73,18 @@ core/
 │                            # 发出数据更新信号供 UI 层订阅
 ├── data_collector.py        # 数据采集器，基于 QTimer 定时从仪器读取电流/电压
 │                            # 数据，支持可配置采样率
-├── custom_test/             # Custom Test 执行内核（序列上下文 / 执行器 / 节点运行时）
+├── orchestrator/             # Orchestrator 执行内核（序列上下文 / 执行器 / 节点运行时）
 │   ├── __init__.py
 │   ├── compiler.py          # ExecutionPlan / Dry Run 摘要编译
 │   ├── breakpoints.py       # BreakpointSet / StepRunState 单步运行基础模型
 │   ├── context.py           # ExecutionContext：变量池 / records / stop-pause / child executor
-│   ├── document.py          # CustomTestDocument v3（metadata / view_state / dirty / source_path）
+│   ├── document.py          # OrchestratorDocument v3（metadata / view_state / dirty / source_path）
 │   ├── events.py            # ExecutionEvent / events.jsonl 写入辅助
 │   ├── execution_plan.py    # ExecutionPlan / ExecutionStep 数据模型
-│   ├── executor.py          # CustomTestExecutor / ExecutorThread（QtCore 信号，无 QtWidgets）
+│   ├── executor.py          # OrchestratorExecutor / ExecutorThread（QtCore 信号，无 QtWidgets）
 │   ├── history.py           # run folder artifact 写入（manifest / snapshot / report / logs）
 │   ├── macros.py            # Sub-sequence / macro 复用模型
-│   ├── paths.py             # userdata/custom_test_templates 与 recent sequences 路径
+│   ├── paths.py             # userdata/orchestrator_templates 与 recent sequences 路径
 │   ├── remote.py            # headless / remote run request 模型
 │   ├── reports.py           # report.html 生成器
 │   ├── resolver.py          # InstrumentResolver：节点 capability → runtime adapter / lease 解析
@@ -95,11 +95,11 @@ core/
 │   ├── snapshot.py          # 运行快照 / canonical JSON / sequence hash
 │   ├── sweep.py             # SweepAxis / SweepPlan 扫描模型
 │   ├── validation.py        # 运行前 preflight 校验（参数 / unsupported / 仪器缺失）
-│   ├── adapters/            # Custom Test runtime adapters / Mock fallback
+│   ├── adapters/            # Orchestrator runtime adapters / Mock fallback
 │   │   ├── __init__.py
 │   │   ├── base.py          # RuntimeInstrumentAdapter / I2CAdapter / UARTAdapter
 │   │   └── mock.py          # DEBUG_MOCK / 测试环境使用的 mock adapter 工厂
-│   └── nodes/               # Custom Test 节点实现与注册表
+│   └── nodes/               # Orchestrator 节点实现与注册表
 │       ├── __init__.py      # 初始化 NODE_REGISTRY 并导出节点类
 │       ├── base.py          # BaseNode + register_node / get_node_class
 │       ├── instrument_nodes.py # 仪器操作类节点
@@ -165,7 +165,7 @@ core/
 │           ├── ui.py        # UI 类：open_page/toggle_ai_panel（low）
 │           ├── serial.py    # 串口类：clear（low）/send（high+确认）经 SerialSessionManager
 │           ├── instrument.py # 仪器类：query（low）/disconnect（medium）/set_output（critical 默认禁）
-│           └── test.py      # 测试类：start/pause（high+确认）/stop（high）经 custom_test runner
+│           └── test.py      # 测试类：start/pause（high+确认）/stop（high）经 orchestrator runner
 ├── controllers/             # 控制器子包 (预留，后续业务控制器)
 ├── vmin_hunter/             # VminHunter 探底测试编排内核（与 UI/仪器无关）
 │   ├── __init__.py          # 导出判活器 / 策略 / 睡眠 Vmin 引擎
@@ -364,8 +364,8 @@ ui/
 │   ├── vmin_hunter/             # VminHunter 最低工作电压探底页面
 │   │   └── vmin_hunter_ui.py         # Vmin 探底主界面 (连接 / Test Config / Channel Config / 结果表)
 │   │
-│   └── custom_test/             # 自定义测试序列（节点编辑器）
-│       ├── custom_test_ui.py         # 三栏布局主界面 (节点面板 / 画布 / 属性面板)
+│   └── orchestrator/             # 自定义测试序列（节点编辑器）
+│       ├── orchestrator_ui.py         # 三栏布局主界面 (节点面板 / 画布 / 属性面板)
 │       ├── instrument_connection_panel.py # 仪器连接区面板 (连接状态 / meta / MCU IO)
 │       ├── node_palette.py           # 左侧节点面板 (可折叠分组)
 │       ├── node_metadata.py          # 节点状态 / 可见性 / Phase 0 基线盘点辅助
@@ -373,12 +373,12 @@ ui/
 │       ├── record_data_editor.py     # 数据记录字段编辑器
 │       ├── result_panel.py           # Logs / Data / Chart / 可见表格导出面板
 │       ├── sequence_canvas.py        # 中间可视化序列画布
-│       ├── sequence_io.py            # 序列 JSON 读写兼容 shim，实际走 core.custom_test.serialization
+│       ├── sequence_io.py            # 序列 JSON 读写兼容 shim，实际走 core.orchestrator.serialization
 │       ├── template_gallery.py       # 模板库 / 最近序列选择对话框
 │       ├── validation_panel.py       # 运行前校验问题对话框
-│       ├── executor.py               # 旧路径兼容 shim，实际导出 core.custom_test.executor
-│       ├── context.py                # 旧路径兼容 shim，实际导出 core.custom_test.context
-│       ├── nodes/                    # 旧路径兼容 shim，实际节点实现位于 core/custom_test/nodes/
+│       ├── executor.py               # 旧路径兼容 shim，实际导出 core.orchestrator.executor
+│       ├── context.py                # 旧路径兼容 shim，实际导出 core.orchestrator.context
+│       ├── nodes/                    # 旧路径兼容 shim，实际节点实现位于 core/orchestrator/nodes/
 │       │   ├── base_node.py
 │       │   ├── instrument_nodes.py
 │       │   ├── io_nodes.py
@@ -427,7 +427,7 @@ resources/
 │   ├── kk_lab.ico / kk_lab.svg       # 应用程序图标
 │   ├── n6705c.ico / n6705c_thumb.svg # N6705C 图标
 │   ├── dsox4034a_thumb.svg / mso64b_thumb.svg / vt6002.ico / vt6002_thumb.svg / cmw270_thumb.svg
-│   ├── oscilloscope.ico / pmu_test.ico / charger_test.ico / consumption_test.ico / custom_test.ico
+│   ├── oscilloscope.ico / pmu_test.ico / charger_test.ico / consumption_test.ico / orchestrator.ico
 │   ├── checked_*.svg / unchecked_*.svg # 侧边栏各颜色选中/未选中图标
 │   ├── polarity_*.svg                # 触发极性图标 (rising/falling/both/either)
 │   ├── panel-*.svg / scrollbar-*.svg # 面板控制 / 滚动条箭头
@@ -454,7 +454,7 @@ resources/
     ├── chamber_SVGs/                  # 温箱页面
     ├── consumption_test_SVGs/         # 功耗测试页面
     ├── vmin_hunter_SVGs/              # VminHunter 探底页面
-    └── custom_test_SVGs/              # 自定义测试（节点编辑器）页面
+    └── orchestrator_SVGs/              # 自定义测试（节点编辑器）页面
 
 注：所有新增图标必须使用 SVG；新增子目录需同步到 spec/kk_lab.spec 的 datas 配置。
 
@@ -468,7 +468,7 @@ helps/
 ├── oscilloscope.html                # 示波器操作说明
 ├── consumption_test.html            # 功耗测试操作说明
 ├── vmin_hunter.html                 # VminHunter 最低工作电压探底操作说明
-├── custom_test.html                 # 自定义测试（节点编辑器）操作说明
+├── orchestrator.html                 # 自定义测试（节点编辑器）操作说明
 ├── thermal_chamber.html             # 温箱操作说明
 ├── pmu_dcdc_efficiency.html         # DCDC 效率测试操作说明
 ├── pmu_output_voltage.html          # PMU 输出电压测试操作说明
@@ -500,7 +500,7 @@ docs/
 │   ├── 10_VERSIONING.md         # 版本号管理规范 (研发初期·与 git 解耦)
 │   ├── NewFT/                   # 新功能设计草案与阶段性需求规则
 │   │   ├── AutoDetectBaudrate.md # SerialCom 候选波特率自动识别设计
-│   │   ├── CustomTestOPT.md      # Custom Test 架构优化方案与任务跟踪
+│   │   ├── OrchestratorOPT.md      # Orchestrator 架构优化方案与任务跟踪
 │   │   ├── InstrumentsManage.md  # 通用仪器管理架构方案
 │   │   ├── InstrumentsManagePlan.md # 通用仪器管理改善计划
 │   │   ├── InstrumentsManagePlanFixe.md # 仪器管理重构未完成项与修复计划
@@ -512,8 +512,8 @@ docs/
 │       ├── 001-mock-instrument.md
 │       └── 002-oscilloscope-auto-detect.md
 └── user/
-    ├── CustomTestStructure.md   # Custom Test 架构、工作流程与 UI 流程说明
-    └── CustomTestStructureOP.md # Custom Test 优化方案与实施优先级
+    ├── OrchestratorStructure.md   # Orchestrator 架构、工作流程与 UI 流程说明
+    └── OrchestratorStructureOP.md # Orchestrator 优化方案与实施优先级
 
 ================================================================================
   hooks/ - PyInstaller 自定义 Hook
@@ -553,7 +553,7 @@ spec/
 ├── consumption_test.spec             # Consumption Test 聚合页独立窗口打包配置
 ├── consumption_auto_test.spec        # Consumption Auto Test 独立窗口打包配置
 ├── consumption_high_low_temp.spec    # Consumption High-Low Temperature 独立窗口打包配置
-├── custom_test.spec         # Custom Test 独立窗口打包配置
+├── orchestrator.spec         # Orchestrator 独立窗口打包配置
 └── serialcom_module.spec    # SerialCom 串口模块独立窗口打包配置
                              # 打包命令: python -m PyInstaller spec/serialcom_module.spec --clean --noconfirm
 
@@ -566,11 +566,11 @@ tests/
 ├── test_serial_script_engine.py     # core.serial_script 引擎纯逻辑单测 (排序/关键字/循环判定)
 ├── test_serialcom_mixin_assembly.py # SerialComMixin 7-Mixin 装配体实例化 + complete_serialComWidget smoke
 ├── test_smoke_import.py             # Phase 0 安全网：全量 py_compile + core 导入冒烟
-├── test_custom_test_phase0.py       # Custom Test Phase 0 序列读取 / 无 UI 执行 smoke
-├── test_custom_test_phase2.py       # Custom Test Phase 2 capability / resolver / preflight smoke
-├── test_custom_test_phase3.py       # Custom Test Phase 3 ResultStore / 导出统一 smoke
-├── test_custom_test_phase4.py       # Custom Test Phase 4 PromptUser / preflight UI 状态 smoke
-├── test_custom_test_phase5.py       # Custom Test Phase 5 cancellation / Mock adapters / v2 serialization smoke
+├── test_orchestrator_phase0.py       # Orchestrator Phase 0 序列读取 / 无 UI 执行 smoke
+├── test_orchestrator_phase2.py       # Orchestrator Phase 2 capability / resolver / preflight smoke
+├── test_orchestrator_phase3.py       # Orchestrator Phase 3 ResultStore / 导出统一 smoke
+├── test_orchestrator_phase4.py       # Orchestrator Phase 4 PromptUser / preflight UI 状态 smoke
+├── test_orchestrator_phase5.py       # Orchestrator Phase 5 cancellation / Mock adapters / v2 serialization smoke
 ├── refactor/                        # 巨石重构期回归测试 (各文件 __main__ 可独立运行)
 │   ├── test_clk_analysis.py         # Phase 1: clk CSV 解析 / 频率分析纯函数单测
 │   ├── test_pmu_analysis.py         # Phase 1: gpadc/dcdc/isgain/oscp 算法纯函数单测
@@ -612,7 +612,7 @@ user_data/                   # 仅开发态存在; 打包后由 ui/resource_path
 └── SerialCom/               # SerialCom 模块的配置 / 快捷指令 (config.json / quick_commands.json)
 
 userdata/
-├── custom_test_templates/   # Custom Test 用户态模板（v2 JSON）
+├── orchestrator_templates/   # Orchestrator 用户态模板（v2 JSON）
 │   ├── GPADC_Vsys_Channel.json
 │   ├── bes1505Icore_test.json
 │   ├── case1_power_vs_temp.json
@@ -624,7 +624,7 @@ userdata/
 │   ├── sample_i2c_register_sweep.json
 │   ├── sample_n6705c_voltage_sweep.json
 │   └── sample_uart_send_receive.json
-└── custom_test_recent.json  # 最近打开的 Custom Test 序列（运行时生成）
+└── orchestrator_recent.json  # 最近打开的 Orchestrator 序列（运行时生成）
 
 ================================================================================
   分层与规则速查

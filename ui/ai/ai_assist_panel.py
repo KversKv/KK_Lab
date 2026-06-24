@@ -19,6 +19,7 @@ from PySide6.QtCore import (
     QSize,
     Qt,
     QThread,
+    QTimer,
     Signal,
 )
 from PySide6.QtGui import QCursor, QKeyEvent
@@ -570,6 +571,157 @@ class _DigestWorker(QObject):
         self.finished.emit(digest)
 
 
+_TASK_TRAY_STYLE = """
+QFrame#aiTaskTray {
+    background-color: #0b1428;
+    border: none;
+    border-bottom: 1px solid #1e293b;
+}
+QLabel#aiTaskTraySummary {
+    color: #94a3b8;
+    font-size: 11px;
+    background: transparent;
+}
+QFrame#aiTaskTrayList {
+    background-color: #121629;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+}
+QLabel#aiTaskTrayRow {
+    color: #cbd5e1;
+    font-size: 11px;
+    background: transparent;
+}
+QPushButton#aiTaskTrayBtn {
+    color: #93c5fd;
+    background: transparent;
+    border: none;
+    font-size: 11px;
+    padding: 0 4px;
+}
+QPushButton#aiTaskTrayBtn:hover { color: #bfdbfe; }
+QPushButton#aiTaskTrayToggle {
+    color: #94a3b8;
+    background: transparent;
+    border: none;
+    font-size: 11px;
+    text-align: left;
+}
+QPushButton#aiTaskTrayToggle:hover { color: #cbd5e1; }
+"""
+
+
+class _TaskTray(QFrame):
+    """TaskTray：Header 与 ChatView 之间的任务托盘（S7）。
+
+    展示当前会话「⏱ 待触发 M · ⟳ 进行中 N」摘要，可展开列表逐行查看；
+    行内提供 [取消]（调度任务）/ [查看结果]（已完成异步任务）入口。
+    无任务时整体 0 高（隐藏），不占用聊天空间。数据由面板按需 refresh 推入，
+    本控件不直接持有 service（守 UI 不阻塞、单向数据流）。
+    """
+
+    cancel_requested = Signal(str)   # scheduled task_id
+    view_requested = Signal(str)     # pending task_id
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("aiTaskTray")
+        self.setStyleSheet(_TASK_TRAY_STYLE)
+        self._expanded = False
+        self._scheduled: list[dict] = []
+        self._pending: list[dict] = []
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 8, 16, 8)
+        root.setSpacing(6)
+
+        self._toggle = QPushButton("")
+        self._toggle.setObjectName("aiTaskTrayToggle")
+        self._toggle.setCursor(QCursor(Qt.PointingHandCursor))
+        self._toggle.clicked.connect(self._on_toggle)
+        root.addWidget(self._toggle)
+
+        self._list = QFrame()
+        self._list.setObjectName("aiTaskTrayList")
+        self._list_layout = QVBoxLayout(self._list)
+        self._list_layout.setContentsMargins(10, 8, 10, 8)
+        self._list_layout.setSpacing(6)
+        self._list.setVisible(False)
+        root.addWidget(self._list)
+
+        self.setVisible(False)
+
+    def set_tasks(self, scheduled: list[dict], pending: list[dict]) -> None:
+        """更新数据源并刷新展示（S7-4：面板按需推入）。"""
+        self._scheduled = [t for t in scheduled if t.get("status") == "pending"]
+        # 仅展示进行中（pending）的异步任务，已完成走聊天卡片
+        self._pending = [t for t in pending if t.get("status") == "pending"]
+        m, n = len(self._scheduled), len(self._pending)
+        if m == 0 and n == 0:
+            self.setVisible(False)
+            self._expanded = False
+            self._list.setVisible(False)
+            return
+        self.setVisible(True)
+        arrow = "▾" if self._expanded else "▸"
+        self._toggle.setText(f"{arrow}  ⏱ 待触发 {m} · ⟳ 进行中 {n}")
+        if self._expanded:
+            self._rebuild_list()
+        self._list.setVisible(self._expanded)
+
+    def _on_toggle(self) -> None:
+        self._expanded = not self._expanded
+        self.set_tasks(self._scheduled, self._pending)
+
+    def _clear_list(self) -> None:
+        while self._list_layout.count():
+            item = self._list_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+
+    def _rebuild_list(self) -> None:
+        self._clear_list()
+        for task in self._scheduled:
+            self._add_row(task, scheduled=True)
+        for task in self._pending:
+            self._add_row(task, scheduled=False)
+
+    def _add_row(self, task: dict, *, scheduled: bool) -> None:
+        row = QFrame()
+        row.setStyleSheet("background: transparent;")
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+
+        task_id = task.get("task_id", "")
+        if scheduled:
+            name = task.get("action", {}).get("name", "?")
+            fire_at = task.get("fire_at", "")
+            text = f"⏱ {name}  →  {fire_at}".strip()
+        else:
+            text = f"⟳ {task.get('kind', '任务')}  {task.get('title', '')}".strip()
+        label = QLabel(text)
+        label.setObjectName("aiTaskTrayRow")
+        label.setWordWrap(True)
+        layout.addWidget(label, 1)
+
+        if scheduled:
+            btn = QPushButton("取消")
+            btn.setObjectName("aiTaskTrayBtn")
+            btn.setCursor(QCursor(Qt.PointingHandCursor))
+            btn.clicked.connect(lambda _=False, tid=task_id: self.cancel_requested.emit(tid))
+            layout.addWidget(btn, 0)
+        else:
+            btn = QPushButton("查看结果")
+            btn.setObjectName("aiTaskTrayBtn")
+            btn.setCursor(QCursor(Qt.PointingHandCursor))
+            btn.clicked.connect(lambda _=False, tid=task_id: self.view_requested.emit(tid))
+            layout.addWidget(btn, 0)
+
+        self._list_layout.addWidget(row)
+
+
 class AIAssistPanel(QFrame):
     request_close = Signal()
     request_open = Signal()
@@ -602,6 +754,12 @@ class AIAssistPanel(QFrame):
         root.setSpacing(0)
 
         root.addWidget(self._build_header())
+
+        # TaskTray：Header 与 ChatView 之间，无任务 0 高（S7-1）
+        self._task_tray = _TaskTray()
+        self._task_tray.cancel_requested.connect(self._on_task_cancel_requested)
+        self._task_tray.view_requested.connect(self._on_task_view_requested)
+        root.addWidget(self._task_tray)
 
         self._chat = ChatView()
         self._chat.feedback_submitted.connect(self._on_feedback)
@@ -659,6 +817,14 @@ class AIAssistPanel(QFrame):
         self.refresh_quick_actions()
         self._wire_service()
         self._service.start_telemetry()
+
+        # TaskTray 周期刷新（S7-4）：调度登记/异步发起均在 agent 回合内异步发生，
+        # 用低频 QTimer 拉取注册表摘要驱动展示，避免侵入 service 增信号。
+        self._task_tray_timer = QTimer(self)
+        self._task_tray_timer.setInterval(1500)
+        self._task_tray_timer.timeout.connect(self._refresh_task_tray)
+        self._task_tray_timer.start()
+        self._refresh_task_tray()
 
     def _build_header(self) -> QFrame:
         bar = QFrame()
@@ -1173,6 +1339,9 @@ class AIAssistPanel(QFrame):
         self._service.action_requested.connect(self._on_action_requested)
         self._service.action_result.connect(self._on_action_result)
         self._service.usage_updated.connect(self._on_usage_updated)
+        # S8：续跑可视化与降级提示
+        self._service.task_resumed.connect(self._on_task_resumed)
+        self._service.task_resume_skipped.connect(self._on_task_resume_skipped)
 
     def _replay_history(self) -> None:
         """启动时回放持久化的会话历史（5.2）。"""
@@ -1197,6 +1366,96 @@ class AIAssistPanel(QFrame):
         self._session_started_at = datetime.now()
         self._chat.clear()
         self._chat.add_system_message("Conversation history cleared.")
+        self._refresh_task_tray()
+
+    # ------------------------------------------------------------------ #
+    # TaskTray / 续跑可视化（S7 / S8）
+    # ------------------------------------------------------------------ #
+    def _refresh_task_tray(self) -> None:
+        """按当前会话刷新 TaskTray 摘要（S7-4 / S8-5 会话隔离）。"""
+        try:
+            sk = self._service.current_session_key()
+            scheduled = self._service.scheduled_task_registry.list(session_key=sk)
+            pending = self._service.pending_task_registry.list(session_key=sk)
+            self._task_tray.set_tasks(scheduled, pending)
+            # S8-4 降级：有已完成但未回灌的任务时提示
+            unconsumed = self._service.pending_task_registry.list_unconsumed_done(sk)
+            if unconsumed and not getattr(self, "_unconsumed_hint_shown", False):
+                self._chat.add_system_message(
+                    f"有 {len(unconsumed)} 个已完成任务（未回灌），可在任务托盘查看结果。"
+                )
+                self._unconsumed_hint_shown = True
+            elif not unconsumed:
+                self._unconsumed_hint_shown = False
+        except Exception:
+            logger.error("刷新任务托盘失败", exc_info=True)
+
+    def on_page_changed(self) -> None:
+        """切页后刷新任务托盘（S8-5：仅展示当前 session 的任务）。"""
+        self._unconsumed_hint_shown = False
+        self._refresh_task_tray()
+
+    def _on_task_cancel_requested(self, task_id: str) -> None:
+        """行内取消调度任务（S7-5 → cancel_scheduled_task）。"""
+        if not task_id:
+            return
+        dispatcher = self._service.dispatcher
+        if dispatcher is None:
+            self._chat.add_system_message("动作系统未就绪，无法取消任务。")
+            return
+        try:
+            dispatcher.dispatch("cancel_scheduled_task", {"task_id": task_id})
+        except Exception:
+            logger.error("取消调度任务失败：%s", task_id, exc_info=True)
+            self._chat.add_system_message("取消任务失败，请查看日志。")
+        finally:
+            self._refresh_task_tray()
+
+    def _on_task_view_requested(self, task_id: str) -> None:
+        """行内查看异步任务结果（S7-5 → get_task_result）。"""
+        if not task_id:
+            return
+        dispatcher = self._service.dispatcher
+        if dispatcher is None:
+            self._chat.add_system_message("动作系统未就绪，无法查看结果。")
+            return
+        try:
+            outcome = dispatcher.dispatch("get_task_result", {"task_id": task_id})
+            data = getattr(outcome, "data", None) or {}
+            status = data.get("status", "")
+            self._chat.add_task_card(
+                task_id, status, f"任务 {task_id}：{status or '查询结果'}"
+            )
+        except Exception:
+            logger.error("查看任务结果失败：%s", task_id, exc_info=True)
+            self._chat.add_system_message("查看结果失败，请查看日志。")
+        finally:
+            self._refresh_task_tray()
+
+    def _on_task_resumed(self, info: dict) -> None:
+        """任务完成并已发起自动续跑（S8-1 / S8-3）。"""
+        task_id = (info or {}).get("task_id", "")
+        kind = (info or {}).get("kind", "") or "任务"
+        title = (info or {}).get("title", "")
+        text = f"✅ 后台{kind}完成：{title}".strip().rstrip("：")
+        self._chat.add_task_card(task_id, "done", text, auto_resume=True)
+        self._refresh_task_tray()
+
+    def _on_task_resume_skipped(self, info: dict) -> None:
+        """任务完成但未自动续跑（S8-4 降级提示）。"""
+        info = info or {}
+        task_id = info.get("task_id", "")
+        kind = info.get("kind", "") or "任务"
+        reason = info.get("reason", "")
+        reason_text = {
+            "already_resumed": "已回灌过",
+            "session_mismatch": "归属其它会话",
+            "unavailable": "动作系统未就绪",
+            "busy": "当前忙碌，稍后可手动查看",
+        }.get(reason, reason or "未回灌")
+        text = f"⚠ 后台{kind}完成（{reason_text}），可在任务托盘查看结果。"
+        self._chat.add_task_card(task_id, "done", text)
+        self._refresh_task_tray()
 
     def _on_stream_started(self) -> None:
         self._chat.begin_stream_message()
@@ -1492,7 +1751,7 @@ class AIAssistPanel(QFrame):
 
     def _show_script_preview(self, draft) -> None:
         if self._script_apply_cb is None:
-            self._chat.add_system_message("The current page does not support applying script drafts (switch to the Custom Test page).")
+            self._chat.add_system_message("The current page does not support applying script drafts (switch to the Orchestrator page).")
             return
         from ui.ai.script_preview import ScriptPreviewDialog
 

@@ -13,6 +13,7 @@ from core.ai.actions.handlers import (
     export as _export,
     instrument as _instrument,
     query as _query,
+    schedule as _schedule,
     scope as _scope,
     serial as _serial,
     test as _test,
@@ -26,7 +27,7 @@ from log_config import get_logger
 
 logger = get_logger(__name__)
 
-_HANDLER_MODULES = (_query, _ui, _serial, _instrument, _scope, _chamber, _test, _export)
+_HANDLER_MODULES = (_query, _ui, _serial, _instrument, _scope, _chamber, _test, _export, _schedule)
 
 
 def build_registry() -> ActionRegistry:

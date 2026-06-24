@@ -152,11 +152,6 @@ class NavController:
         )
         left_nav_layout.addWidget(self.vmin_hunter_btn)
 
-        self.custom_test_btn = SidebarNavButton(
-            "Custom Test", "", os.path.join(_PAGE_SVGS_DIR, "network.svg")
-        )
-        left_nav_layout.addWidget(self.custom_test_btn)
-
         tools_title = QLabel("TOOLS")
         tools_title.setStyleSheet("""
             QLabel {
@@ -181,6 +176,25 @@ class NavController:
         )
         left_nav_layout.addWidget(self.collection_btn)
 
+        orchestration_title = QLabel("ORCHESTRATION")
+        orchestration_title.setStyleSheet("""
+            QLabel {
+                color: #7b93bf;
+                font-size: 10px;
+                font-weight: 700;
+                letter-spacing: 1px;
+                padding: 10px 4px 2px 4px;
+                border: none;
+                background: transparent;
+            }
+        """)
+        left_nav_layout.addWidget(orchestration_title)
+
+        self.orchestrator_btn = SidebarNavButton(
+            "Orchestrator", "", os.path.join(_PAGE_SVGS_DIR, "network.svg")
+        )
+        left_nav_layout.addWidget(self.orchestrator_btn)
+
         self.nav_button_group = QButtonGroup(self._host)
         self.nav_button_group.setExclusive(True)
         self.nav_button_group.addButton(self.n6705c_power_analyzer_btn)
@@ -190,7 +204,7 @@ class NavController:
         self.nav_button_group.addButton(self.charger_test_btn)
         self.nav_button_group.addButton(self.consumption_test_btn)
         self.nav_button_group.addButton(self.vmin_hunter_btn)
-        self.nav_button_group.addButton(self.custom_test_btn)
+        self.nav_button_group.addButton(self.orchestrator_btn)
         self.nav_button_group.addButton(self.kk_serials_btn)
         self.nav_button_group.addButton(self.collection_btn)
 
@@ -210,7 +224,7 @@ class NavController:
             self.charger_test_btn,
             self.consumption_test_btn,
             self.vmin_hunter_btn,
-            self.custom_test_btn,
+            self.orchestrator_btn,
             self.kk_serials_btn,
             self.collection_btn,
         ]
@@ -499,12 +513,12 @@ class NavController:
             self.consumption_submenu.hide()
             self._host._create_vmin_hunter_ui()
 
-        elif sender == self.custom_test_btn:
+        elif sender == self.orchestrator_btn:
             self.pmu_submenu.hide()
             self.pa_submenu.hide()
             self.charger_submenu.hide()
             self.consumption_submenu.hide()
-            self._host._create_custom_test_ui()
+            self._host._create_orchestrator_ui()
 
         elif sender == self.kk_serials_btn:
             self.pmu_submenu.hide()
@@ -531,7 +545,7 @@ class NavController:
             ("Ctrl+5", self.charger_test_btn),
             ("Ctrl+6", self.consumption_test_btn),
             ("Ctrl+7", self.vmin_hunter_btn),
-            ("Ctrl+8", self.custom_test_btn),
+            ("Ctrl+8", self.orchestrator_btn),
             ("Ctrl+9", self.kk_serials_btn),
             ("Ctrl+0", self.collection_btn),
         ]

@@ -178,6 +178,26 @@ SPECS: list[ActionSpec] = [
         risk_level="low",
         category=CATEGORY_QUERY,
     ),
+    ActionSpec(
+        name="get_task_result",
+        description=(
+            "按 task_id 查询一个异步任务的结果（B 兜底：事件续跑未触发时主动查）。"
+        ),
+        parameters_schema={
+            "type": "object",
+            "properties": {"task_id": {"type": "string"}},
+            "required": ["task_id"],
+        },
+        risk_level="low",
+        category=CATEGORY_QUERY,
+    ),
+    ActionSpec(
+        name="list_pending_tasks",
+        description="列出当前会话进行中 / 已完成未消费的异步任务摘要。",
+        parameters_schema={"type": "object", "properties": {}},
+        risk_level="low",
+        category=CATEGORY_QUERY,
+    ),
 ]
 
 
@@ -488,6 +508,45 @@ def build_handlers(deps: ActionDeps) -> dict[str, Any]:
             "truncated": len(errors) >= lines,
         }
 
+    def _session_key() -> str:
+        if deps.session_key_getter is not None:
+            try:
+                return deps.session_key_getter() or ""
+            except Exception:  # noqa: BLE001
+                logger.error("session_key_getter 调用异常", exc_info=True)
+        return ""
+
+    def get_task_result(args: dict) -> dict:
+        registry = deps.pending_task_registry
+        if registry is None:
+            return {"ok": False, "_message": "当前环境不支持异步任务查询。"}
+        task_id = str(args.get("task_id", "")).strip()
+        if not task_id:
+            return {"ok": False, "_message": "缺少 task_id。"}
+        task = registry.get(task_id)
+        if task is None:
+            return {"ok": False, "_message": f"未知 task_id：{task_id}"}
+        return {
+            "ok": True,
+            "task_id": task.task_id,
+            "status": task.status,
+            "kind": task.kind,
+            "result": task.result,
+            "_message": f"任务 {task_id} 当前状态：{task.status}。",
+        }
+
+    def list_pending_tasks(_args: dict) -> dict:
+        registry = deps.pending_task_registry
+        if registry is None:
+            return {"ok": False, "_message": "当前环境不支持异步任务查询。"}
+        tasks = registry.list(session_key=_session_key() or None)
+        return {
+            "ok": True,
+            "count": len(tasks),
+            "tasks": tasks,
+            "_message": f"当前共有 {len(tasks)} 个异步任务。",
+        }
+
     return {
         "get_current_page": get_current_page,
         "get_serial_status": get_serial_status,
@@ -502,4 +561,6 @@ def build_handlers(deps: ActionDeps) -> dict[str, Any]:
         "ping_instrument": ping_instrument,
         "get_recent_audit_log": get_recent_audit_log,
         "get_app_log_errors": get_app_log_errors,
+        "get_task_result": get_task_result,
+        "list_pending_tasks": list_pending_tasks,
     }

@@ -1,6 +1,6 @@
 """序列 Patch 模型 + 应用器（F5.2）。
 
-AI 优化 Custom Test 序列有两种回报：
+AI 优化 Orchestrator 序列有两种回报：
   - 完整序列（短序列最稳）：由 ScriptDraft 走完整往返；
   - 结构化 patch（长序列省 token、diff 清晰）：由本模块定义并应用于 v2 dict。
 

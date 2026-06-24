@@ -71,10 +71,10 @@ def test_import_core_modules():
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     errors = []
     core_targets = [
-        "core.custom_test.document",
-        "core.custom_test.executor",
-        "core.custom_test.compiler",
-        "core.custom_test.result_store",
+        "core.orchestrator.document",
+        "core.orchestrator.executor",
+        "core.orchestrator.compiler",
+        "core.orchestrator.result_store",
         "core.ai.ai_service",
         "core.instruments.instrument_manager",
         "core.instruments.registry",

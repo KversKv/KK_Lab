@@ -246,10 +246,10 @@ class ConfigDraft:
 
 @dataclass
 class ScriptDraft:
-    """测试脚本（Custom Test 序列）草案（AI 产出，仅草案）。
+    """测试脚本（Orchestrator 序列）草案（AI 产出，仅草案）。
 
     sequence: 节点树（list[dict]，每个含 node_type/uid?/params/children?），
-              由 core/custom_test/serialization + validation 负责反序列化与 preflight；
+              由 core/orchestrator/serialization + validation 负责反序列化与 preflight；
     instruments/metadata: 可选连接 meta 与元信息。
     """
 
@@ -279,7 +279,7 @@ class ScriptDraft:
         )
 
     def to_sequence_data(self) -> dict[str, Any]:
-        """转为 core/custom_test serialization 可读的 v2 dict。"""
+        """转为 core/orchestrator serialization 可读的 v2 dict。"""
         return {
             "version": 2,
             "sequence": list(self.sequence),

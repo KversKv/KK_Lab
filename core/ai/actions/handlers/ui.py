@@ -24,7 +24,7 @@ _PAGE_KEYS = [
     "pmu_test",
     "consumption_test",
     "charger_test",
-    "custom_test",
+    "orchestrator",
     "vmin_hunter",
     "kk_serials",
     "collection",

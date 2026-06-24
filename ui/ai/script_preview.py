@@ -1,4 +1,4 @@
-"""ScriptPreviewDialog：测试脚本（Custom Test 序列）草案预览 + 校验 + 应用。
+"""ScriptPreviewDialog：测试脚本（Orchestrator 序列）草案预览 + 校验 + 应用。
 
 AI_Assist.md §12，阶段 3 任务 3.3 + 3.4；F5.4 序列 before/after diff：
   - 预览 ScriptDraft 序列（JSON pretty）；
@@ -6,7 +6,7 @@ AI_Assist.md §12，阶段 3 任务 3.3 + 3.4；F5.4 序列 before/after diff：
   - 本地校验：core/ai/draft_validation.validate_script_draft
     （= load_sequence_data 反序列化 + preflight_validate）；
   - error 阻止 apply、warning 可确认继续；
-  - 用户确认 → 回调 apply（custom_test → canvas.load_from_nodes）。
+  - 用户确认 → 回调 apply（orchestrator → canvas.load_from_nodes）。
 
 遵守约定：parent 必传；OK/Cancel 按钮 default/autoDefault 显式二元化。
 apply 回调入参为已反序列化的 nodes（list[BaseNode]），便于直接接 canvas.load_from_nodes。

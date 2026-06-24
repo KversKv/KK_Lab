@@ -105,8 +105,8 @@ class CleanupMixin:
                 if sub_ui is not None:
                     self._cleanup_sub_ui(sub_ui, f"Charger.{attr}")
 
-        if self.custom_test_ui is not None:
-            self._cleanup_sub_ui(self.custom_test_ui, "CustomTestUI")
+        if self.orchestrator_ui is not None:
+            self._cleanup_sub_ui(self.orchestrator_ui, "OrchestratorUI")
 
         if self.kk_serials_ui is not None:
             try:
