@@ -199,6 +199,7 @@ class _PillSwitcher(QWidget):
         super().__init__(parent)
         self._current_index = 0
         self._anim_x = 3.0
+        self._compact = False
         self.setCursor(Qt.PointingHandCursor)
 
         self._item_widths: list[int] = []
@@ -215,18 +216,37 @@ class _PillSwitcher(QWidget):
         self._anim.setDuration(200)
         self._anim.setEasingCurve(QEasingCurve.InOutCubic)
 
+    def setCompact(self, compact: bool):
+        if compact == self._compact:
+            return
+        self._compact = compact
+        if compact:
+            self.setToolTip("All Info / Warning / Error")
+        else:
+            self.setToolTip("")
+        self._calculate_sizes()
+        self.setFixedSize(self._total_width, self._h)
+        self._anim.stop()
+        self._anim_x = float(self._item_x(self._current_index))
+        self.update()
+
     def _calculate_sizes(self):
-        font = QFont()
-        font.setPixelSize(11)
-        font.setWeight(QFont.Normal)
-        fm = QFontMetrics(font)
-        max_w = 0
-        for _, label, _ in self._ITEMS:
-            w = self._pad_x * 2 + self._dot_r + 6 + fm.horizontalAdvance(label)
-            if w > max_w:
-                max_w = w
-        self._item_widths = [max_w] * len(self._ITEMS)
-        total = max_w * len(self._ITEMS) + self._spacing * (len(self._ITEMS) - 1)
+        if self._compact:
+            item_w = self._pad_x + self._dot_r
+            self._item_widths = [item_w] * len(self._ITEMS)
+        else:
+            font = QFont()
+            font.setPixelSize(11)
+            font.setWeight(QFont.Normal)
+            fm = QFontMetrics(font)
+            max_w = 0
+            for _, label, _ in self._ITEMS:
+                w = self._pad_x * 2 + self._dot_r + 6 + fm.horizontalAdvance(label)
+                if w > max_w:
+                    max_w = w
+            self._item_widths = [max_w] * len(self._ITEMS)
+        total = (sum(self._item_widths)
+                 + self._spacing * (len(self._ITEMS) - 1))
         self._total_width = total + 6
 
     def _get_anim_x(self):
@@ -309,8 +329,11 @@ class _PillSwitcher(QWidget):
             cy = h / 2.0
 
             fm = p.fontMetrics()
-            text_w = fm.horizontalAdvance(label)
-            content_w = self._dot_r + 6 + text_w
+            if self._compact:
+                content_w = self._dot_r
+            else:
+                text_w = fm.horizontalAdvance(label)
+                content_w = self._dot_r + 6 + text_w
             content_x = offset_x + (iw - content_w) / 2.0
 
             p.setPen(Qt.NoPen)
@@ -318,13 +341,15 @@ class _PillSwitcher(QWidget):
             dot_y = cy - self._dot_r / 2.0
             p.drawEllipse(QRectF(content_x, dot_y, self._dot_r, self._dot_r))
 
-            text_x = content_x + self._dot_r + 6
-            text_rect = QRectF(text_x, 0, text_w, h)
-            if i == self._current_index:
-                p.setPen(QColor("#ffffff"))
-            else:
-                p.setPen(QColor("#8899bb"))
-            p.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, label)
+            if not self._compact:
+                text_w = fm.horizontalAdvance(label)
+                text_x = content_x + self._dot_r + 6
+                text_rect = QRectF(text_x, 0, text_w, h)
+                if i == self._current_index:
+                    p.setPen(QColor("#ffffff"))
+                else:
+                    p.setPen(QColor("#8899bb"))
+                p.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, label)
 
             offset_x += iw + self._spacing
 
@@ -588,10 +613,43 @@ class ExecutionLogsFrame(QFrame):
         btn = QPushButton(text)
         btn.setObjectName("smallActionBtn")
         btn.setCursor(Qt.PointingHandCursor)
+        btn._full_text = text
+        btn._icon_path = svg_path
+        btn.setToolTip(text)
         icon = _tinted_svg_icon(svg_path, "#8eb0e3", 12)
         if not icon.isNull():
             btn.setIcon(icon)
         return btn
+
+    def _set_btn_compact(self, btn: QPushButton, compact: bool):
+        if getattr(btn, "_compact_state", None) == compact:
+            return
+        btn._compact_state = compact
+        if compact:
+            btn.setText("")
+            btn.setObjectName("iconOnlyBtn")
+        else:
+            btn.setText(getattr(btn, "_full_text", ""))
+            btn.setObjectName("smallActionBtn")
+        btn.style().unpolish(btn)
+        btn.style().polish(btn)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._apply_responsive_layout(self.width())
+
+    def _apply_responsive_layout(self, width: int):
+        # 宽度阈值：低于该值时把工具栏控件收缩为仅图标
+        compact = width < 560
+        if getattr(self, "_responsive_compact", None) == compact:
+            return
+        self._responsive_compact = compact
+
+        self._pill_switcher.setCompact(compact)
+        self._search_input.setVisible(not compact)
+        for btn in (getattr(self, "export_btn", None), self.clear_btn):
+            if btn is not None:
+                self._set_btn_compact(btn, compact)
 
     def _on_pill_changed(self, key: str):
         self._active_level_filter = key

@@ -833,6 +833,7 @@ class AIAssistPanel(QFrame):
         self._digest_thread = None
         self._digest_worker = None
         self._busy = False
+        self._replayed_session_key: str | None = None
         self._pending_waveform_text = ""
         self._pending_waveform_via_button = False
         self._pending_picked_context = ""
@@ -1507,6 +1508,7 @@ class AIAssistPanel(QFrame):
 
     def _replay_history(self) -> None:
         """启动时回放持久化的会话历史（5.2）。"""
+        self._replayed_session_key = self._service.current_session_key()
         history = self._service.persisted_history()
         if not history:
             return
@@ -1577,9 +1579,19 @@ class AIAssistPanel(QFrame):
             logger.error("刷新任务托盘失败", exc_info=True)
 
     def on_page_changed(self) -> None:
-        """切页后刷新任务托盘（S8-5：仅展示当前 session 的任务）。"""
+        """切页后刷新任务托盘（S8-5：仅展示当前 session 的任务）。
+
+        会话（session_key）随页面切换而变（见 AIService.set_page_context），
+        service 侧已重载该页历史，但聊天视图仍停留在上一页的气泡，需在此重渲染
+        当前页历史，否则「切到本页后历史没被恢复」。流式生成中不打断，避免清掉
+        正在输出的气泡。
+        """
         self._unconsumed_hint_shown = False
         self._refresh_task_tray()
+        current_key = self._service.current_session_key()
+        if current_key != self._replayed_session_key and not getattr(self, "_busy", False):
+            self._chat.clear()
+            self._replay_history()
 
     def _on_task_cancel_requested(self, task_id: str) -> None:
         """行内取消调度任务（S7-5 → cancel_scheduled_task）。"""

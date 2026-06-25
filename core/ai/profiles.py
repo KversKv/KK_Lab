@@ -32,6 +32,10 @@ _GLOBAL_SYSTEM_PROMPT = (
     "而不是只给出命令文本让用户手动操作。高风险动作系统会自动弹出确认框由用户确认，"
     "确认后由程序经受控通道安全执行；你不得假装已执行，也不得以“无法执行/属于高风险操作”"
     "为由拒绝调用动作。若缺少必要参数（如 session_id、通道号），先询问或用查询动作补全。\n"
+    "2.1 执行类动作（启动/停止/暂停测试、改仪器/串口状态等）必须实际调用对应工具：在工具"
+    "真正返回成功结果之前，严禁回复「已启动」「已停止」「正在运行」「已完成」等表示动作已发生"
+    "的表述——本轮没有发起工具调用即视为未执行，必须如实说明尚未执行并给出下一步。"
+    "禁止把只读查询动作（如 get_*_status）当作执行手段；启动测试就调用启动动作本身。\n"
     "3. 回答简洁、面向工程实践，使用中文（简体）。\n"
 )
 
@@ -45,11 +49,6 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "你专注于 KK_Lab 串口日志分析，聚焦异常、超时、复位、协议错误。"
             "分析时引用具体日志行，禁止臆造日志内容。"
         ),
-        "quick_actions": [
-            "分析最近串口接收的异常",
-            "解释这段串口日志的协议含义",
-            "排查串口超时/无响应的可能原因",
-        ],
     },
     "power_analyser": {
         "label": "仪器助手",
@@ -78,14 +77,6 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "行为与用户点击按钮完全一致；未连接仪器或未选中通道时该动作不可用，"
             "不要在不满足前置条件时反复重试。"
         ),
-        "quick_actions": [
-            "查询当前各通道电压电流",
-            "把通道 {ch} 输出电压设到 {v}V",
-            "打开通道 {ch} 的输出",
-            "关闭通道 {ch} 的输出",
-            "解读最近的功率测量曲线",
-            "执行 Auto Set 批量自动设置",
-        ],
     },
     "datalog": {
         "label": "仪器助手",
@@ -108,11 +99,6 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "4. 导入（Import）的波形通道带 F1- / F2- 等前缀（如 F1-A CH2 V、F1-A-I1），"
             "与实时采集通道同等对待；摘要里出现的所有通道都是有效数据，不要忽略带前缀的导入通道。"
         ),
-        "quick_actions": [
-            "解读最近一次 Datalog 数据趋势",
-            "统计电流尖峰事件的位置与峰值",
-            "建议合适的采样率与时长",
-        ],
     },
     "oscilloscope": {
         "label": "仪器助手",
@@ -120,10 +106,6 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "temperature": 0.2,
         "max_tokens": 2048,
         "system_prompt": "你专注于示波器（DSOX4034A / MSO64B）波形测量与触发设置。",
-        "quick_actions": [
-            "解读当前波形测量结果",
-            "建议合适的触发与时基设置",
-        ],
     },
     "thermal_chamber": {
         "label": "仪器助手",
@@ -131,10 +113,6 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "temperature": 0.2,
         "max_tokens": 2048,
         "system_prompt": "你专注于 VT6002 温箱的温度控制与稳定性判断。",
-        "quick_actions": [
-            "判断当前温度是否已稳定",
-            "建议合适的温度梯度与保温时间",
-        ],
     },
     "pmu_test": {
         "label": "测试配置助手",
@@ -149,11 +127,6 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "CLK 子页暂未接入，需用户手动点 START 按钮启动。"
             "若用户要在未接入的子页启动测试，引导其点 START；要编排复杂序列请切到 Orchestrator。"
         ),
-        "quick_actions": [
-            "生成一份 DCDC 效率测试配置草案",
-            "分析最近一次 PMU 测试结果",
-            "解释 IS Gain / OSCP 测试要点",
-        ],
     },
     "pmu_dcdc_efficiency": {
         "label": "DCDC 效率测试助手",
@@ -173,13 +146,9 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "配置快照中的 sweep_dimensions 字段即本次实际会遍历的维度，"
             "禁止把未列入 sweep_dimensions 的参数当作遍历维度去推算组合数。"
             "用户只要求改某个范围（如电流）时，仅改该参数、保持其它配置不变，不要擅自新增遍历维度。"
+            "本页启动测试用 start_test_sequence、停止用 stop_test_sequence（执行类动作的通用纪律见全局红线 2.1）。"
             "若用户要执行复杂测试序列编排，请建议切到 Orchestrator 页面。"
         ),
-        "quick_actions": [
-            "测 1~200mA 效率",
-            "生成一份 DCDC 效率测试配置草案",
-            "分析最近一次效率测试结果",
-        ],
     },
     "pmu_output_voltage": {
         "label": "输出电压线性度测试助手",
@@ -197,10 +166,6 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "若某动作不在工具列表中即表示本页不支持，应直接告知用户并给出可执行替代。"
             "启动测试前需连接 N6705C 仪器。"
         ),
-        "quick_actions": [
-            "生成一份输出电压线性度测试配置草案",
-            "分析最近一次输出电压测试结果",
-        ],
     },
     "pmu_is_gain": {
         "label": "IS Gain 测试助手",
@@ -217,10 +182,6 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "若某动作不在工具列表中即表示本页不支持，应直接告知用户并给出可执行替代。"
             "启动测试前需同时连接 N6705C 与示波器；Step Current 必须 > 0。"
         ),
-        "quick_actions": [
-            "生成一份 IS Gain 测试配置草案",
-            "分析最近一次 IS Gain 测试结果",
-        ],
     },
     "pmu_oscp": {
         "label": "OSCP 保护点测试助手",
@@ -238,10 +199,6 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "若某动作不在工具列表中即表示本页不支持，应直接告知用户并给出可执行替代。"
             "启动测试前需连接 N6705C 仪器；Reg 方法的设备/寄存器地址为 16 进制。"
         ),
-        "quick_actions": [
-            "生成一份 OSCP 保护点测试配置草案",
-            "分析最近一次 OSCP 测试结果",
-        ],
     },
     "pmu_gpadc": {
         "label": "GPADC 测试助手",
@@ -260,10 +217,6 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "启动测试前按测试项需求连接仪器：Force Voltage 需 N6705C；"
             "High-Low Temp / Temp Consistency 需 N6705C + 温箱。"
         ),
-        "quick_actions": [
-            "生成一份 GPADC Force Voltage 测试配置草案",
-            "分析最近一次 GPADC 测试结果",
-        ],
     },
     "charger_test": {
         "label": "测试配置助手",
@@ -278,11 +231,6 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "AI 仍可：查询仪器状态、操作 N6705C 通道、解读日志、生成测试配置草案供用户参考。"
             "要编排复杂序列请切到 Orchestrator。"
         ),
-        "quick_actions": [
-            "生成一份充电测试配置草案",
-            "解读充电状态寄存器含义",
-            "分析最近一次充电测试结果",
-        ],
     },
     "charger_config_traverse": {
         "label": "配置遍历测试助手",
@@ -300,10 +248,6 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "若某动作不在工具列表中即表示本页不支持，应直接告知用户并给出可执行替代。"
             "启动测试前需连接 N6705C 仪器。"
         ),
-        "quick_actions": [
-            "生成一份配置遍历测试配置草案",
-            "分析最近一次配置遍历测试结果",
-        ],
     },
     "charger_status_register": {
         "label": "状态寄存器测试助手",
@@ -322,10 +266,6 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "启动测试前按测试项校验仪器：Voltage/Current/Reg Sweep 需 N6705C；"
             "Temperature Sweep 需温箱。设备/寄存器地址为 16 进制。"
         ),
-        "quick_actions": [
-            "生成一份状态寄存器测试配置草案",
-            "分析最近一次状态寄存器测试结果",
-        ],
     },
     "charger_iterm": {
         "label": "Iterm 测试助手",
@@ -343,10 +283,6 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "若某动作不在工具列表中即表示本页不支持，应直接告知用户并给出可执行替代。"
             "启动测试前需连接 N6705C 仪器。"
         ),
-        "quick_actions": [
-            "生成一份 Iterm 测试配置草案",
-            "分析最近一次 Iterm 测试结果",
-        ],
     },
     "charger_regulation_voltage": {
         "label": "调压测试助手",
@@ -364,10 +300,6 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "若某动作不在工具列表中即表示本页不支持，应直接告知用户并给出可执行替代。"
             "启动测试前需连接 N6705C 仪器。"
         ),
-        "quick_actions": [
-            "生成一份调压测试配置草案",
-            "分析最近一次调压测试结果",
-        ],
     },
     "consumption_test": {
         "label": "测试配置助手",
@@ -380,10 +312,6 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "AI 仍可：查询仪器状态、操作 N6705C 通道、解读电流功耗数据、生成测试配置草案供用户参考。"
             "若用户要启动本页测试，引导其点页面 START 按钮；要编排复杂序列请切到 Orchestrator。"
         ),
-        "quick_actions": [
-            "生成一份功耗测试配置草案",
-            "解读最近一次功耗电流数据",
-        ],
     },
     "orchestrator": {
         "label": "脚本助手",
@@ -398,11 +326,6 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "页级写动作已按本页能力裁剪可见——你看到的就是本页能干的；不要尝试调用本页未声明的动作，"
             "若某动作不在工具列表中即表示本页不支持，应直接告知用户并给出可执行替代。"
         ),
-        "quick_actions": [
-            "生成一个简单的测试序列草案",
-            "解释可用的节点类型",
-            "检查当前序列的潜在问题",
-        ],
     },
     "vmin_hunter": {
         "label": "测试配置助手",
@@ -415,10 +338,6 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "AI 仍可：查询仪器状态、操作 N6705C 通道、解读 Vmin 搜索结果、建议搜索参数。"
             "若用户要启动搜索，引导其点页面 START 按钮；要编排复杂序列请切到 Orchestrator。"
         ),
-        "quick_actions": [
-            "解读最近一次 Vmin 搜索结果",
-            "建议合适的搜索步进与范围",
-        ],
     },
     "collection": {
         "label": "通用助手",
@@ -426,10 +345,6 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "temperature": 0.2,
         "max_tokens": 2048,
         "system_prompt": "你是 KK_Lab 的通用智能助手。",
-        "quick_actions": [
-            "介绍 KK_Lab 的主要功能",
-            "分析最近的运行日志",
-        ],
     },
     "_default": {
         "label": "通用助手",
@@ -437,10 +352,6 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "temperature": 0.2,
         "max_tokens": 2048,
         "system_prompt": "你是 KK_Lab 测试工具的智能助手。",
-        "quick_actions": [
-            "介绍当前页面能做什么",
-            "分析最近的运行日志",
-        ],
     },
 }
 

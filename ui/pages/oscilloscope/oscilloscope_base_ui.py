@@ -4,8 +4,8 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QLineEdit, QFrame, QSizePolicy,
-    QStackedWidget, QApplication, QTextEdit, QMenu, QFileDialog,
-    QScrollArea, QGridLayout, QSplitter, QGraphicsOpacityEffect, QLayout
+    QStackedWidget, QApplication, QMenu, QFileDialog,
+    QScrollArea, QGridLayout, QGraphicsOpacityEffect, QLayout
 )
 from PySide6.QtCore import (
     Qt, QTimer, Signal, QThread, QObject,
@@ -33,6 +33,7 @@ from ui.pages.oscilloscope.widgets import (
 from log_config import get_logger
 from debug_config import DEBUG_MOCK
 from ui.theme import FONT_MONO
+from ui.modules import ExecutionLogsFrame
 
 DEBUG_MSO64B_FLAG = True
 DEBUG_DSOX4034A_FLAG = True
@@ -539,21 +540,6 @@ class OscilloscopeBaseUI(QWidget):
                 background-color: #3A0820;
                 color: #FF6B8A;
             }
-
-            QPushButton#logToggleBtn {
-                background-color: transparent;
-                border: 1px solid #22376A;
-                border-radius: 6px;
-                color: #7F96C7;
-                padding: 4px 10px;
-                font-size: 9pt;
-                font-weight: 600;
-            }
-
-            QPushButton#logToggleBtn:hover {
-                background-color: #1C2D55;
-                color: #A8BBDB;
-            }
         """ + SCROLL_AREA_STYLE)
 
     def _init_layout(self):
@@ -570,15 +556,6 @@ class OscilloscopeBaseUI(QWidget):
 
         self._create_control_row(content_grid)
 
-        left_splitter = QSplitter(Qt.Vertical)
-        left_splitter.setChildrenCollapsible(True)
-        left_splitter.setHandleWidth(2)
-        left_splitter.setStyleSheet("""
-            QSplitter { background: transparent; border: none; }
-            QSplitter::handle { background-color: transparent; height: 2px; border: none; }
-            QSplitter::handle:hover { background-color: transparent; }
-        """)
-
         left_upper_widget = QWidget()
         left_upper_widget.setAttribute(Qt.WA_TranslucentBackground, True)
         left_upper = QVBoxLayout(left_upper_widget)
@@ -587,16 +564,14 @@ class OscilloscopeBaseUI(QWidget):
         left_upper.addWidget(self._create_display_card(), 3)
         left_upper.addWidget(self._create_measurements_card(), 1)
 
+        left_splitter, self.execution_logs = ExecutionLogsFrame.wrap_with(
+            left_upper_widget,
+            show_progress=False,
+            stretch=(4, 1),
+            sizes=(600, 120),
+        )
         self._left_splitter = left_splitter
-        log_card = self._create_log_card()
-        self._log_card = log_card
-
-        left_splitter.addWidget(left_upper_widget)
-        left_splitter.addWidget(log_card)
-        left_splitter.setStretchFactor(0, 4)
-        left_splitter.setStretchFactor(1, 1)
-        left_splitter.setSizes([600, 120])
-        self._log_expanded_sizes = [600, 120]
+        self.log_edit = self.execution_logs.log_edit
 
         content_grid.addWidget(left_splitter, 1, 0, 2, 1)
 
@@ -1467,74 +1442,11 @@ class OscilloscopeBaseUI(QWidget):
         self._set_interactive_enabled(False)
         self.append_log("[SYSTEM] Ready. Waiting for instrument connection.")
 
-    def _create_log_card(self):
-        card = QFrame()
-        card.setObjectName("logContainer")
-        log_layout = QVBoxLayout(card)
-        log_layout.setContentsMargins(18, 12, 18, 12)
-        log_layout.setSpacing(8)
-
-        log_header = QHBoxLayout()
-
-        self.log_toggle_btn = QPushButton("▾  Execution Logs")
-        self.log_toggle_btn.setObjectName("logToggleBtn")
-        self.log_toggle_btn.setCursor(Qt.PointingHandCursor)
-        self.log_toggle_btn.clicked.connect(self._toggle_log_panel)
-        log_header.addWidget(self.log_toggle_btn)
-        log_header.addStretch()
-
-        self.clear_log_btn = QPushButton("Clear")
-        self.clear_log_btn.setObjectName("smallActionBtn")
-        self.clear_log_btn.clicked.connect(self._on_clear_log)
-        log_header.addWidget(self.clear_log_btn)
-
-        log_layout.addLayout(log_header)
-
-        self.log_edit = QTextEdit()
-        self.log_edit.setObjectName("logEdit")
-        self.log_edit.setReadOnly(True)
-        self.log_edit.setMinimumHeight(60)
-        self.log_edit.setMaximumHeight(300)
-        self._log_expanded = True
-        log_layout.addWidget(self.log_edit)
-
-        return card
-
-    def _toggle_log_panel(self):
-        if self._log_expanded:
-            current_sizes = self._left_splitter.sizes()
-            if current_sizes and all(s >= 0 for s in current_sizes):
-                self._log_expanded_sizes = list(current_sizes)
-
-            self.log_edit.hide()
-            self.clear_log_btn.hide()
-            self.log_toggle_btn.setText("▸  Execution Logs")
-            self._log_expanded = False
-
-            collapsed_h = self._log_card.layout().contentsMargins().top() \
-                + self.log_toggle_btn.sizeHint().height() \
-                + self._log_card.layout().contentsMargins().bottom()
-            self._log_card.setMaximumHeight(collapsed_h)
-            self._log_card.setMinimumHeight(0)
-
-            total = sum(self._log_expanded_sizes) if self._log_expanded_sizes else 720
-            self._left_splitter.setSizes([max(total - collapsed_h, 0), collapsed_h])
-        else:
-            self.log_edit.show()
-            self.clear_log_btn.show()
-            self.log_toggle_btn.setText("▾  Execution Logs")
-            self._log_expanded = True
-
-            self._log_card.setMaximumHeight(16777215)
-            self._log_card.setMinimumHeight(0)
-            sizes = self._log_expanded_sizes or [600, 120]
-            self._left_splitter.setSizes(sizes)
-
     def append_log(self, message):
-        self.log_edit.append(message)
+        self.execution_logs.append_log(message)
 
     def _on_clear_log(self):
-        self.log_edit.clear()
+        self.execution_logs.clear_log()
 
     # ------------------------------------------------------------------
     # Smart Apply: dirty tracking

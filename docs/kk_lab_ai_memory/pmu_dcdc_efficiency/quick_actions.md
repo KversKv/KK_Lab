@@ -21,7 +21,7 @@
 - 页面：pmu_dcdc_efficiency
 - 来源：profile_migration
 - 状态：active
-- 模板：分析最近一次 PMU 测试结果
+- 模板：分析最近一次 效率 测试结果
 - 占位符：无
 - 适用条件：
   - 当前有 PMU 测试结果数据
@@ -33,7 +33,7 @@
 - 页面：pmu_dcdc_efficiency
 - 来源：phase4_capability_boundary
 - 状态：active
-- 模板：测 1~200mA 效率
+- 模板：帮我测试 1~10mA 效率曲线
 - 占位符：无
 - 适用条件：
   - 当前在 PMU DCDC 效率子页面
