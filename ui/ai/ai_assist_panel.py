@@ -22,7 +22,7 @@ from PySide6.QtCore import (
     QTimer,
     Signal,
 )
-from PySide6.QtGui import QCursor, QKeyEvent
+from PySide6.QtGui import QColor, QCursor, QFontMetrics, QKeyEvent
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
     QLayout,
     QPlainTextEdit,
     QPushButton,
+    QGraphicsDropShadowEffect,
     QSizePolicy,
     QSpinBox,
     QVBoxLayout,
@@ -68,6 +69,7 @@ _NO_WAVEFORM_GUARD = (
 
 _AI_SVG_DIR = os.path.join(get_resource_base(), "resources", "icons_svg", "ai")
 _SEND_ICON = os.path.join(_AI_SVG_DIR, "send.svg")
+_SEND_UP_ICON = os.path.join(get_resource_base(), "resources", "modules", "SVG_Logs", "arrow-up.svg")
 _PANEL_ICON = os.path.join(_AI_SVG_DIR, "ai_panel.svg")
 _SPARKLES_ICON = os.path.join(_AI_SVG_DIR, "sparkles.svg")
 _INSPECT_ICON = os.path.join(_AI_SVG_DIR, "inspect.svg")
@@ -94,7 +96,7 @@ QFrame#aiHeaderBar {
     border-radius: 0px;
 }
 QFrame#aiBottomBar {
-    background-color: #030616;
+    background-color: #070709;
     border-top: 1px solid #1e293b;
 }
 QFrame#aiComposeBox {
@@ -181,20 +183,23 @@ QPlainTextEdit#aiInput {
     border: none;
     border-radius: 0px;
     padding: 2px 2px;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 500;
 }
 QPlainTextEdit#aiInput:focus {
     border: none;
 }
 QPushButton#aiSendBtn {
-    min-height: 22px;
-    padding: 4px 14px;
+    min-width: 26px;
+    min-height: 26px;
+    max-width: 26px;
+    max-height: 26px;
+    padding: 0px;
     border: none;
-    border-radius: 4px;
+    border-radius: 6px;
     background-color: #2563eb;
     color: #ffffff;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
 }
 QPushButton#aiSendBtn:hover {
@@ -205,10 +210,10 @@ QPushButton#aiSendBtn:disabled {
     color: #475569;
 }
 QPushButton#aiToolIconBtn {
-    min-width: 28px;
-    min-height: 28px;
-    max-width: 28px;
-    max-height: 28px;
+    min-width: 26px;
+    min-height: 26px;
+    max-width: 26px;
+    max-height: 26px;
     padding: 0px;
     border: none;
     border-radius: 6px;
@@ -221,17 +226,17 @@ QPushButton#aiToolIconBtn:disabled {
     background-color: transparent;
 }
 QPushButton#aiAnalyzeBtn {
-    min-height: 22px;
+    min-height: 28px;
     padding: 4px 12px;
     border: 1px solid #1d2f52;
-    border-radius: 8px;
+    border-radius: 6px;
     background-color: #0e1b33;
     color: #3b82f6;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
 }
 QPushButton#aiAnalyzeBtn:hover {
-    background-color: #14264a;
+    background-color: #172a4f;
 }
 QPushButton#aiAnalyzeBtn:disabled {
     background-color: #0f172a;
@@ -239,13 +244,13 @@ QPushButton#aiAnalyzeBtn:disabled {
     border: 1px solid #1e293b;
 }
 QPushButton#aiScriptBtn {
-    min-height: 22px;
+    min-height: 28px;
     padding: 4px 12px;
     border: 1px solid #2a2750;
-    border-radius: 8px;
+    border-radius: 6px;
     background-color: #171430;
     color: #818cf8;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
 }
 QPushButton#aiScriptBtn:hover {
@@ -257,13 +262,13 @@ QPushButton#aiScriptBtn:disabled {
     border: 1px solid #1e293b;
 }
 QPushButton#aiExportBtn {
-    min-height: 22px;
+    min-height: 28px;
     padding: 4px 12px;
     border: 1px solid #2a3344;
-    border-radius: 8px;
+    border-radius: 6px;
     background-color: #131a26;
     color: #94a3b8;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
 }
 QPushButton#aiExportBtn:hover {
@@ -272,7 +277,7 @@ QPushButton#aiExportBtn:hover {
 }
 QLabel#aiRangeLabel {
     color: #64748b;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.4px;
     background: transparent;
@@ -304,31 +309,39 @@ QSpinBox#aiLinesSpin {
     font-weight: 700;
 }
 QComboBox#aiModelCombo {
-    min-height: 22px;
-    padding: 1px 6px;
-    border: 1px solid #1e293b;
-    border-radius: 4px;
+    min-width: 66px;
+    max-width: 66px;
+    min-height: 26px;
+    max-height: 26px;
+    padding: 1px 2px 1px 6px;
+    border: none;
+    border-radius: 6px;
     background-color: transparent;
     color: #cbd5e1;
     font-size: 10px;
     font-weight: 700;
 }
 QComboBox#aiModelCombo:hover {
-    border: 1px solid #334155;
+    background-color: #1e293b;
+}
+QComboBox#aiModelCombo::drop-down {
+    border: none;
+    width: 12px;
 }
 QComboBox#aiModelCombo QAbstractItemView {
     background-color: #0f172a;
     color: #cbd5e1;
+    border: 1px solid #1e293b;
     selection-background-color: #1d3a6e;
 }
 QPushButton#aiQuickBtn {
     min-height: 22px;
-    padding: 5px 12px;
+    padding: 4px 12px;
     border: 1px solid #1e293b;
-    border-radius: 8px;
+    border-radius: 999px;
     background-color: #0f172a;
     color: #94a3b8;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 500;
 }
 QPushButton#aiQuickBtn:hover {
@@ -748,6 +761,8 @@ class AIAssistPanel(QFrame):
         self.setObjectName("aiAssistPanel")
         self.setStyleSheet(_PANEL_STYLE)
         self.setMinimumWidth(240)
+        self.setMaximumWidth(600)
+        self.setGraphicsEffect(self._build_panel_shadow())
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -803,7 +818,6 @@ class AIAssistPanel(QFrame):
         controls_layout.setContentsMargins(12, 10, 12, 12)
         controls_layout.setSpacing(10)
         controls_layout.addLayout(self._build_range_bar())
-        controls_layout.addWidget(self._build_action_bar())
         controls_layout.addLayout(self._build_send_bar())
         compose_layout.addWidget(controls_area)
 
@@ -826,6 +840,14 @@ class AIAssistPanel(QFrame):
         self._task_tray_timer.timeout.connect(self._refresh_task_tray)
         self._task_tray_timer.start()
         self._refresh_task_tray()
+
+    @staticmethod
+    def _build_panel_shadow() -> QGraphicsDropShadowEffect:
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(28)
+        shadow.setOffset(-10, 0)
+        shadow.setColor(QColor(2, 6, 23, 190))
+        return shadow
 
     def _build_header(self) -> QFrame:
         bar = QFrame()
@@ -904,6 +926,15 @@ class AIAssistPanel(QFrame):
         box.style().unpolish(box)
         box.style().polish(box)
 
+    def _resize_model_popup(self) -> None:
+        view = self._model_combo.view()
+        font_metrics = QFontMetrics(view.font())
+        max_text_width = 0
+        for index in range(self._model_combo.count()):
+            max_text_width = max(max_text_width, font_metrics.horizontalAdvance(self._model_combo.itemText(index)))
+        popup_width = max(self._model_combo.width(), min(max_text_width + 44, 420))
+        view.setMinimumWidth(popup_width)
+
     def _populate_models(self) -> None:
         settings = self._service.settings
         fixed = settings.model_mode == "fixed"
@@ -921,6 +952,7 @@ class AIAssistPanel(QFrame):
             self._model_combo.setCurrentIndex(idx)
         else:
             self._model_combo.setCurrentIndex(0)
+        self._resize_model_popup()
         self._model_combo.blockSignals(False)
         self._service.set_model_override(target or None)
 
@@ -1046,10 +1078,7 @@ class AIAssistPanel(QFrame):
 
         return layout
 
-    def _build_action_bar(self) -> QWidget:
-        layout = _FlowLayout(spacing=8)
-        layout.setContentsMargins(0, 0, 0, 0)
-
+    def _build_action_buttons(self) -> tuple[QPushButton, QPushButton, QPushButton]:
         self._select_btn = QPushButton()
         self._select_btn.setObjectName("aiToolIconBtn")
         self._select_btn.setCursor(QCursor(Qt.PointingHandCursor))
@@ -1060,7 +1089,6 @@ class AIAssistPanel(QFrame):
             self._select_btn.setIcon(tinted_svg_icon(_INSPECT_ICON, "#34d399", 14))
             self._select_btn.setIconSize(QSize(14, 14))
         self._select_btn.clicked.connect(self.pick_requested.emit)
-        layout.addWidget(self._select_btn)
 
         self._analyze_btn = QPushButton()
         self._analyze_btn.setObjectName("aiToolIconBtn")
@@ -1070,7 +1098,6 @@ class AIAssistPanel(QFrame):
             self._analyze_btn.setIcon(tinted_svg_icon(_ACTIVITY_ICON, "#3b82f6", 14))
             self._analyze_btn.setIconSize(QSize(14, 14))
         self._analyze_btn.clicked.connect(self._on_analyze_clicked)
-        layout.addWidget(self._analyze_btn)
 
         self._draft_btn = QPushButton()
         self._draft_btn.setObjectName("aiToolIconBtn")
@@ -1080,7 +1107,26 @@ class AIAssistPanel(QFrame):
             self._draft_btn.setIcon(tinted_svg_icon(_CODE_ICON, "#818cf8", 14))
             self._draft_btn.setIconSize(QSize(14, 14))
         self._draft_btn.clicked.connect(self._on_draft_clicked)
-        layout.addWidget(self._draft_btn)
+        return self._select_btn, self._analyze_btn, self._draft_btn
+
+    def _build_send_bar(self) -> QHBoxLayout:
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        for button in self._build_action_buttons():
+            layout.addWidget(button)
+
+        self._model_combo = QComboBox()
+        self._model_combo.setObjectName("aiModelCombo")
+        self._model_combo.setFixedWidth(66)
+        self._model_combo.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self._model_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self._model_combo.setMinimumContentsLength(4)
+        self._model_combo.setToolTip("Manually switch model (auto by Profile / specify a model)")
+        self._populate_models()
+        self._model_combo.currentTextChanged.connect(self._on_model_changed)
+        layout.addWidget(self._model_combo)
 
         self._waveform_btn = QPushButton("Send Wave")
         self._waveform_btn.setObjectName("aiAnalyzeBtn")
@@ -1089,29 +1135,16 @@ class AIAssistPanel(QFrame):
         self._waveform_btn.clicked.connect(self._on_waveform_clicked)
         self._waveform_btn.setVisible(False)
         layout.addWidget(self._waveform_btn)
-        return _FlowWidget(layout)
 
-    def _build_send_bar(self) -> QHBoxLayout:
-        layout = QHBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.addStretch(1)
 
-        self._model_combo = QComboBox()
-        self._model_combo.setObjectName("aiModelCombo")
-        self._model_combo.setMinimumWidth(80)
-        self._model_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self._model_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
-        self._model_combo.setMinimumContentsLength(6)
-        self._model_combo.setToolTip("Manually switch model (auto by Profile / specify a model)")
-        self._populate_models()
-        self._model_combo.currentTextChanged.connect(self._on_model_changed)
-        layout.addWidget(self._model_combo, 1)
-
-        self._send_btn = _PressScaleButton("Send")
+        self._send_btn = _PressScaleButton()
         self._send_btn.setObjectName("aiSendBtn")
         self._send_btn.setCursor(QCursor(Qt.PointingHandCursor))
-        if os.path.isfile(_SEND_ICON):
-            self._send_btn.setIcon(tinted_svg_icon(_SEND_ICON, "#ffffff", 14))
+        self._send_btn.setToolTip("Send")
+        send_icon = _SEND_UP_ICON if os.path.isfile(_SEND_UP_ICON) else _SEND_ICON
+        if os.path.isfile(send_icon):
+            self._send_btn.setIcon(tinted_svg_icon(send_icon, "#ffffff", 14))
             self._send_btn.setIconSize(QSize(14, 14))
         self._send_btn.clicked.connect(self._on_send_clicked)
         layout.addWidget(self._send_btn)
@@ -1967,9 +2000,10 @@ class AIAssistPanel(QFrame):
         self._select_btn.setEnabled(not busy)
         if busy:
             self._waveform_btn.setEnabled(False)
+            self._send_btn.setToolTip("Processing…")
         elif self._digest_thread is None:
             self._waveform_btn.setEnabled(True)
-        self._send_btn.setText("Processing…" if busy else "Send")
+            self._send_btn.setToolTip("Send")
 
     def _on_connection_tested(self, ok: bool, message: str) -> None:
         if ok:

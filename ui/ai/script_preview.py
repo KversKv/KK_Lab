@@ -35,34 +35,36 @@ from log_config import get_logger
 logger = get_logger(__name__)
 
 _DIALOG_STYLE = """
-QDialog { background-color: #0e1525; }
-QLabel { color: #c8d4ee; font-size: 12px; background: transparent; }
+QDialog { background-color: #070709; }
+QLabel { color: #cbd5e1; font-size: 12px; background: transparent; }
 QPlainTextEdit {
-    background-color: #11182c; color: #e6eeff;
-    border: 1px solid #243152; border-radius: 6px; padding: 6px 8px;
-    font-family: Consolas, "Courier New", monospace; font-size: 12px;
+    background-color: #070709; color: #cbd5e1;
+    border: 1px solid #1e293b; border-radius: 12px; padding: 8px 10px;
+    font-family: Consolas, "Courier New", monospace; font-size: 11px;
 }
+QPlainTextEdit:focus { border: 1px solid #3b82f6; }
 QPushButton {
-    min-height: 22px; padding: 4px 16px;
-    border: 1px solid #22376A; border-radius: 8px;
-    background-color: #13254b; color: #dce7ff; font-weight: 600; font-size: 12px;
+    min-height: 28px; padding: 4px 16px;
+    border: 1px solid #1e293b; border-radius: 6px;
+    background-color: #0f172a; color: #cbd5e1; font-weight: 600; font-size: 12px;
 }
-QPushButton:hover { background-color: #1C2D55; border: 1px solid #3A5A9F; }
-QPushButton#aiOkBtn { background-color: #5b3df5; border: 1px solid #6548ff; color: #ffffff; }
-QPushButton#aiOkBtn:disabled { background-color: #2a2f48; border: 1px solid #2a2f48; color: #7d86a3; }
-QLabel#aiIssues { font-size: 11px; }
-QTabWidget::pane { border: 1px solid #243152; border-radius: 6px; }
+QPushButton:hover { background-color: #1e293b; border: 1px solid #334155; }
+QPushButton#aiOkBtn { background-color: #5b3df5; border: 1px solid #5b3df5; color: #ffffff; }
+QPushButton#aiOkBtn:disabled { background-color: #0f172a; border: 1px solid #1e293b; color: #64748b; }
+QLabel#aiIssues { color: #94a3b8; font-size: 11px; }
+QTabWidget::pane { border: 1px solid #1e293b; border-radius: 8px; }
 QTabBar::tab {
-    background: #11182c; color: #9fb0d6; padding: 4px 14px;
-    border: 1px solid #243152; border-bottom: none;
+    background: #0f172a; color: #94a3b8; padding: 4px 14px;
+    border: 1px solid #1e293b; border-bottom: none;
     border-top-left-radius: 6px; border-top-right-radius: 6px;
 }
-QTabBar::tab:selected { background: #1a2540; color: #e6eeff; }
+QTabBar::tab:selected { background: #121629; color: #e2e8f0; }
 QTextEdit {
-    background-color: #11182c; color: #e6eeff;
-    border: 1px solid #243152; border-radius: 6px; padding: 6px 8px;
-    font-family: Consolas, "Courier New", monospace; font-size: 12px;
+    background-color: #070709; color: #cbd5e1;
+    border: 1px solid #1e293b; border-radius: 12px; padding: 8px 10px;
+    font-family: Consolas, "Courier New", monospace; font-size: 11px;
 }
+QTextEdit:focus { border: 1px solid #3b82f6; }
 """
 
 ApplyCallback = Callable[[list[Any]], tuple[bool, str]]

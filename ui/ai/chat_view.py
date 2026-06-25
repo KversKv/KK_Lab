@@ -46,7 +46,7 @@ QLabel#aiBubbleUser {
     border-radius: 16px;
     border-bottom-right-radius: 2px;
     padding: 12px 16px;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 400;
 }
 """
@@ -59,7 +59,7 @@ QTextBrowser#aiBubbleAI {
     border-radius: 16px;
     border-bottom-left-radius: 2px;
     padding: 12px 16px;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 400;
 }
 """
@@ -80,7 +80,7 @@ QLabel#aiBubbleSys {
 # 任务卡片（S7-3 / S8）：定时/异步任务状态展示，居中、可原地更新。
 _TASK_CARD_STYLE = """
 QFrame#aiTaskCard {
-    background-color: #0b1428;
+    background-color: #121629;
     border: 1px solid #1e293b;
     border-radius: 12px;
 }
@@ -110,7 +110,7 @@ QPlainTextEdit#aiCodeText {
     color: #cbd5e1;
     border: none;
     font-family: Consolas, "Courier New", monospace;
-    font-size: 12px;
+    font-size: 11px;
 }
 QLabel#aiCodeLang {
     color: #64748b;
@@ -120,18 +120,17 @@ QLabel#aiCodeLang {
     padding: 2px 6px;
 }
 QPushButton#aiCopyBtn {
-    min-height: 20px;
+    min-height: 22px;
     padding: 1px 10px;
-    border: 1px solid #1e293b;
+    border: none;
     border-radius: 6px;
-    background-color: #1e293b;
+    background-color: rgba(15, 23, 42, 128);
     color: #cbd5e1;
     font-size: 10px;
     font-weight: 600;
 }
 QPushButton#aiCopyBtn:hover {
-    background-color: #334155;
-    border: 1px solid #475569;
+    background-color: #1e293b;
 }
 """
 
@@ -164,30 +163,30 @@ QPlainTextEdit#aiConfirmArgs {
     background-color: #070709;
     color: #cbd5e1;
     border: 1px solid #1e293b;
-    border-radius: 8px;
+    border-radius: 12px;
     font-family: Consolas, "Courier New", monospace;
     font-size: 11px;
 }
 QPushButton#aiConfirmRun {
-    min-height: 22px; padding: 4px 14px;
-    border: none; border-radius: 8px;
-    background-color: #16a34a; color: #ffffff; font-weight: 700; font-size: 11px;
+    min-height: 28px; padding: 4px 14px;
+    border: none; border-radius: 6px;
+    background-color: #16a34a; color: #ffffff; font-weight: 700; font-size: 12px;
 }
 QPushButton#aiConfirmRun:hover { background-color: #15803d; }
 QPushButton#aiConfirmRun:disabled { background-color: #0f172a; color: #475569; }
 QPushButton#aiConfirmReject {
-    min-height: 22px; padding: 4px 14px;
-    border: 1px solid #7f1d1d; border-radius: 8px;
-    background-color: #2a1414; color: #fca5a5; font-weight: 700; font-size: 11px;
+    min-height: 28px; padding: 4px 14px;
+    border: none; border-radius: 6px;
+    background-color: #2a1414; color: #fca5a5; font-weight: 700; font-size: 12px;
 }
-QPushButton#aiConfirmReject:hover { background-color: #3a1a1a; }
+QPushButton#aiConfirmReject:hover { background-color: #3f1d1d; }
 QPushButton#aiConfirmReject:disabled { background-color: #0f172a; color: #475569; border: 1px solid #1e293b; }
 QPushButton#aiConfirmAllow {
-    min-height: 22px; padding: 4px 14px;
-    border: 1px solid #1d2f52; border-radius: 8px;
-    background-color: #0e1b33; color: #3b82f6; font-weight: 700; font-size: 11px;
+    min-height: 28px; padding: 4px 14px;
+    border: none; border-radius: 6px;
+    background-color: #0e1b33; color: #3b82f6; font-weight: 700; font-size: 12px;
 }
-QPushButton#aiConfirmAllow:hover { background-color: #14264a; }
+QPushButton#aiConfirmAllow:hover { background-color: #172a4f; }
 QPushButton#aiConfirmAllow:disabled { background-color: #0f172a; color: #475569; border: 1px solid #1e293b; }
 """
 

@@ -25,23 +25,24 @@ from log_config import get_logger
 logger = get_logger(__name__)
 
 _DIALOG_STYLE = """
-QDialog { background-color: #0e1525; }
-QLabel { color: #c8d4ee; font-size: 12px; background: transparent; }
+QDialog { background-color: #070709; }
+QLabel { color: #cbd5e1; font-size: 12px; background: transparent; }
 QPlainTextEdit {
-    background-color: #11182c; color: #e6eeff;
-    border: 1px solid #243152; border-radius: 6px; padding: 6px 8px;
-    font-family: Consolas, "Courier New", monospace; font-size: 12px;
+    background-color: #070709; color: #cbd5e1;
+    border: 1px solid #1e293b; border-radius: 12px; padding: 8px 10px;
+    font-family: Consolas, "Courier New", monospace; font-size: 11px;
 }
+QPlainTextEdit:focus { border: 1px solid #3b82f6; }
 QPushButton {
-    min-height: 22px; padding: 4px 16px;
-    border: 1px solid #22376A; border-radius: 8px;
-    background-color: #13254b; color: #dce7ff; font-weight: 600; font-size: 12px;
+    min-height: 28px; padding: 4px 16px;
+    border: 1px solid #1e293b; border-radius: 6px;
+    background-color: #0f172a; color: #cbd5e1; font-weight: 600; font-size: 12px;
 }
-QPushButton:hover { background-color: #1C2D55; border: 1px solid #3A5A9F; }
+QPushButton:hover { background-color: #1e293b; border: 1px solid #334155; }
 QPushButton#aiOkBtn { background-color: #b3422f; border: 1px solid #d4503a; color: #ffffff; }
 QLabel#aiRisk { font-weight: 700; }
-QLabel#aiHint { font-size: 11px; color: #ffb27a; }
-QCheckBox { color: #c8d4ee; font-size: 11px; background: transparent; spacing: 6px; }
+QLabel#aiHint { font-size: 11px; color: #fbbf77; }
+QCheckBox { color: #cbd5e1; font-size: 11px; background: transparent; spacing: 6px; }
 QCheckBox::indicator { width: 14px; height: 14px; }
 """
 

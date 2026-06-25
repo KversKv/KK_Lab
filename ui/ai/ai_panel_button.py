@@ -29,10 +29,10 @@ QPushButton#aiPanelButton {
     background-color: transparent;
 }
 QPushButton#aiPanelButton:hover {
-    background-color: #1b2640;
+    background-color: #1e293b;
 }
 QPushButton#aiPanelButton:checked {
-    background-color: #5b3df5;
+    background-color: #2563eb;
 }
 """
 

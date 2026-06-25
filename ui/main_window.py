@@ -517,6 +517,15 @@ class MainWindow(CleanupMixin, QMainWindow):
             return
 
         outer_splitter = QSplitter(Qt.Horizontal)
+        outer_splitter.setHandleWidth(1)
+        outer_splitter.setStyleSheet("""
+        QSplitter::handle {
+            background-color: #1e293b;
+        }
+        QSplitter::handle:hover {
+            background-color: #3b82f6;
+        }
+        """)
         outer_splitter.addWidget(main_splitter)
 
         self.ai_panel = AIAssistPanel(self.ai_service, parent=self)
