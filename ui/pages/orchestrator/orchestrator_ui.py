@@ -37,6 +37,13 @@ from core.orchestrator.result_store import ResultStore, build_default_result_pat
 from core.orchestrator.serialization import save_sequence_data
 from core.orchestrator.snapshot import build_sequence_hash, clone_sequence
 from core.orchestrator.validation import preflight_validate
+from core.ai.page_contract import (
+    CAP_APPLY_CONFIG,
+    CAP_GET_CONFIG,
+    CAP_GET_RESULT,
+    CAP_START_TEST,
+    CAP_STOP_TEST,
+)
 from ui.pages.orchestrator.instrument_connection_panel import InstrumentConnectionPanel
 from ui.pages.orchestrator.result_panel import ResultPanel
 from ui.pages.orchestrator.template_gallery import TemplateGalleryDialog
@@ -713,6 +720,33 @@ class OrchestratorUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMix
         executor.step_finished.connect(self._on_step_finished, Qt.QueuedConnection)
         executor.data_recorded.connect(self._on_data_recorded, Qt.QueuedConnection)
         return True, f"已启动单步执行：{target.display_name or target.node_type}。"
+
+    # ------------------------------------------------------------------
+    # AIControllablePage 契约实现（AIAssist_PageScopedControlPlan.md §2）
+    #
+    # Orchestrator 作为契约的一个实现者，薄封装既有方法；不再由 MainWindow 硬编码
+    # 分支特判。Orchestrator 使用脚本草案（script_draft），不声明 CAP_APPLY_CONFIG。
+    # ------------------------------------------------------------------
+    def ai_capabilities(self) -> set[str]:
+        return {CAP_GET_CONFIG, CAP_START_TEST, CAP_STOP_TEST, CAP_GET_RESULT}
+
+    def ai_get_config(self) -> Optional[Dict[str, Any]]:
+        return self.get_ai_test_config()
+
+    def ai_apply_config(self, payload: Any) -> tuple[bool, str]:
+        # Orchestrator 使用脚本草案（经 script_apply_callback），不支持配置草案导入
+        return False, "Orchestrator 使用脚本草案，不支持配置草案导入。"
+
+    def ai_start_test(self) -> tuple[bool, str]:
+        self._on_run()
+        return True, "已请求启动测试序列；完成后会自动回灌结果。"
+
+    def ai_stop_test(self) -> tuple[bool, str]:
+        self._on_stop()
+        return True, "已发送停止请求。"
+
+    def ai_get_result_summary(self) -> Optional[Dict[str, Any]]:
+        return self.get_ai_test_result_summary()
 
     def _is_running(self) -> bool:
         canvas = getattr(self, "canvas", None)

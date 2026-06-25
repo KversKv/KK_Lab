@@ -257,11 +257,11 @@ AI: ui_invoke(action_id="n6705c.auto_set")
 
 | # | 任务 | 文件 | 状态 |
 |---|---|---|---|
-| 1.1 | 新增 `AIControllablePage` Protocol + 能力常量 | `core/ai/page_contract.py` | ☐ |
-| 1.2 | `MainWindow.resolve_active_ai_page()`（含 Tab 子页下钻） | `ui/main_window.py` | ☐ |
-| 1.3 | 改写 `_ai_test_run/_ai_test_stop/_get_ai_test_config` 去 orchestrator 硬编码 | `ui/main_window.py` | ☐ |
-| 1.4 | `_apply_ai_config_draft` 统一走契约（保留 orchestrator 兼容） | `ui/main_window.py` | ☐ |
-| 1.5 | 回归：orchestrator 现有 AI 流程不退化 | — | ☐ |
+| 1.1 | 新增 `AIControllablePage` Protocol + 能力常量 | `core/ai/page_contract.py` | ☑ |
+| 1.2 | `MainWindow.resolve_active_ai_page()`（含 Tab 子页下钻） | `ui/main_window.py` | ☑ |
+| 1.3 | 改写 `_ai_test_run/_ai_test_stop/_get_ai_test_config` 去 orchestrator 硬编码 | `ui/main_window.py` | ☑ |
+| 1.4 | `_apply_ai_config_draft` 统一走契约（保留 orchestrator 兼容） | `ui/main_window.py` | ☑ |
+| 1.5 | 回归：orchestrator 现有 AI 流程不退化 | — | ☑ |
 
 **验收**：orchestrator 全流程不变；专项页调用写动作不再恒返回「请切到 Orchestrator」（而是按能力判定）。
 

@@ -106,6 +106,12 @@ from ui.ai.panel_state import load_panel_state, save_panel_state, clamp_width
 from core.ai.config import AISettings
 from core.ai.ai_service import AIService
 from core.ai.log_ring import get_log_ring
+from core.ai.page_contract import (
+    CAP_APPLY_CONFIG,
+    CAP_GET_CONFIG,
+    CAP_START_TEST,
+    CAP_STOP_TEST,
+)
 from ui.cleanup_mixin import CleanupMixin
 from ui.standalone import resize_and_center_window
 from log_config import get_logger
@@ -113,6 +119,21 @@ from version import APP_NAME, __version__
 from debug_config import DEBUG_MOCK
 
 logger = get_logger(__name__)
+
+
+def _ai_caps(page) -> set[str]:
+    """安全获取页面的 AI 能力集（未实现 ai_capabilities 返回空集）。
+
+    鸭子类型：页面不强制继承 AIControllablePage，只要实现 ai_capabilities() 即可。
+    """
+    getter = getattr(page, "ai_capabilities", None)
+    if not callable(getter):
+        return set()
+    try:
+        return set(getter())
+    except Exception:  # noqa: BLE001 - 能力查询失败不致命，降级为空集
+        logger.error("获取页面 AI 能力集失败", exc_info=True)
+        return set()
 
 
 class _KKSerialsPage(SerialComMixin, QWidget):
@@ -761,13 +782,17 @@ class MainWindow(CleanupMixin, QMainWindow):
         return {"available": True, "running": running, "steps": steps}
 
     def _get_ai_test_config(self):
-        ui = getattr(self, "orchestrator_ui", None)
-        if ui is None or self.current_instrument_ui != "orchestrator":
+        page = self.resolve_active_ai_page()
+        if page is None or CAP_GET_CONFIG not in _ai_caps(page):
             return None
-        getter = getattr(ui, "get_ai_test_config", None)
+        getter = getattr(page, "ai_get_config", None)
         if not callable(getter):
             return None
-        return getter()
+        try:
+            return getter()
+        except Exception:  # noqa: BLE001 - 快照失败不致命
+            logger.error("AI 获取测试配置失败", exc_info=True)
+            return None
 
     def _get_ai_test_steps(self):
         ui = getattr(self, "orchestrator_ui", None)
@@ -883,22 +908,26 @@ class MainWindow(CleanupMixin, QMainWindow):
             return []
 
     def _ai_test_run(self):
-        ui = getattr(self, "orchestrator_ui", None)
-        if ui is None or self.current_instrument_ui != "orchestrator":
-            return False, "请先切换到 Orchestrator 页面。"
+        page = self.resolve_active_ai_page()
+        if page is None or CAP_START_TEST not in _ai_caps(page):
+            return False, "当前页面不支持由 AI 启动测试。"
         try:
-            ui._on_run()
+            ok, message = page.ai_start_test()
         except Exception:  # noqa: BLE001 - 启动异常转可读结果
-            logger.error("AI 启动测试序列失败", exc_info=True)
-            return False, "启动测试序列异常，请查看日志。"
-        # 登记 pending 任务（§4 / S3-2）：完成后由 sequence_execution_finished 回灌
-        registry = self.ai_service.pending_task_registry
-        registry.register(
-            self.ai_service.current_session_key(),
-            "start_test_sequence",
-            title="测试序列",
-        )
-        return True, "已请求启动测试序列；完成后会自动回灌结果。"
+            logger.error("AI 启动测试失败", exc_info=True)
+            return False, "启动测试异常，请查看日志。"
+        if not ok:
+            return False, message or "启动失败。"
+        # 异步测试完成回灌（§4 / S3-2）：仅对具备 sequence_execution_finished
+        # 信号的页面登记 pending 任务，完成后由该信号回灌续跑
+        if hasattr(page, "sequence_execution_finished"):
+            registry = self.ai_service.pending_task_registry
+            registry.register(
+                self.ai_service.current_session_key(),
+                "start_test_sequence",
+                title="测试序列",
+            )
+        return True, message or "已请求启动测试。"
 
     def _ai_on_sequence_finished_resume(self, success: bool, message: str):
         """测试序列完成 → 回灌对应 pending 任务并触发续跑（§4 / S3-2）。"""
@@ -932,15 +961,15 @@ class MainWindow(CleanupMixin, QMainWindow):
         return True, "已切换暂停/恢复。"
 
     def _ai_test_stop(self):
-        ui = getattr(self, "orchestrator_ui", None)
-        if ui is None or self.current_instrument_ui != "orchestrator":
-            return False, "请先切换到 Orchestrator 页面。"
+        page = self.resolve_active_ai_page()
+        if page is None or CAP_STOP_TEST not in _ai_caps(page):
+            return False, "当前页面不支持由 AI 停止测试。"
         try:
-            ui._on_stop()
+            ok, message = page.ai_stop_test()
         except Exception:  # noqa: BLE001 - 停止异常转可读结果
-            logger.error("AI 停止测试序列失败", exc_info=True)
-            return False, "停止测试序列异常，请查看日志。"
-        return True, "已发送停止请求。"
+            logger.error("AI 停止测试失败", exc_info=True)
+            return False, "停止测试异常，请查看日志。"
+        return bool(ok), message or ("已发送停止请求。" if ok else "停止失败。")
 
     def _ai_chamber_wait_stable(self, session_id, target, tolerance, timeout):
         """温箱等待稳定：经 worker 线程运行 TemperatureStabilizer，QEventLoop 保持 UI 响应。
@@ -1139,28 +1168,20 @@ class MainWindow(CleanupMixin, QMainWindow):
         return True, ""
 
     def _apply_ai_config_draft(self, draft):
-        page = getattr(self, "current_instrument_ui", None)
-        ui_map = {
-            "orchestrator": getattr(self, "orchestrator_ui", None),
-            "vmin_hunter": getattr(self, "vmin_hunter_ui", None),
-            "pmu_test": getattr(self, "pmu_test_ui", None),
-            "charger_test": getattr(self, "charger_test_ui", None),
-            "consumption_test": getattr(self, "consumption_test_ui", None),
-        }
-        target = ui_map.get(page)
-        if target is None:
+        page = self.resolve_active_ai_page()
+        if page is None or CAP_APPLY_CONFIG not in _ai_caps(page):
             return False, "当前页面不支持应用配置草案。"
-        importer = getattr(target, "apply_ai_config_draft", None)
+        importer = getattr(page, "ai_apply_config", None)
         if not callable(importer):
             return False, "当前页面尚未实现配置草案导入接口。"
         try:
-            ok = importer(draft.payload)
+            ok, message = importer(draft.payload)
         except Exception:
             logger.error("应用 AI 配置草案失败", exc_info=True)
             return False, "应用配置失败，请查看日志。"
         if ok is False:
-            return False, "页面拒绝了该配置草案。"
-        return True, ""
+            return False, message or "页面拒绝了该配置草案。"
+        return True, message or ""
 
     def _wire_serial_rx_to_ai(self, page):
         manager = getattr(page, "_sc_session_manager", None)
@@ -1197,6 +1218,34 @@ class MainWindow(CleanupMixin, QMainWindow):
             return []
         raw_logs = getattr(logs_frame, "_all_logs", [])
         return [str(raw) for raw, _html in raw_logs]
+
+    def resolve_active_ai_page(self):
+        """返回当前可被 AI 控制的页面对象（含 Tab 子页下钻），无则 None。
+
+        - Orchestrator：返回 orchestrator_ui（契约实现者之一）；
+        - Tab 容器页（pmu_test / charger_test）：下钻到 tab_widget.currentWidget()，
+          使 AI 能力裁剪与子页 page_key 对齐（如 pmu_dcdc_efficiency）；
+        - 其它页：返回页面实例本身（若实现契约方法即可被 AI 控制）。
+        """
+        page_key = self.current_instrument_ui
+        if page_key == "orchestrator":
+            return getattr(self, "orchestrator_ui", None)
+        # Tab 容器页：下钻到当前子页
+        if page_key in ("pmu_test", "charger_test"):
+            attr = f"{page_key}_ui"
+            container = getattr(self, attr, None)
+            if container is None:
+                return None
+            tab_widget = getattr(container, "tab_widget", None)
+            if tab_widget is not None:
+                return tab_widget.currentWidget()
+            return container
+        # 其它页：返回页面实例本身
+        mapping = {
+            "vmin_hunter": getattr(self, "vmin_hunter_ui", None),
+            "consumption_test": getattr(self, "consumption_test_ui", None),
+        }
+        return mapping.get(page_key)
 
     def _current_active_page(self):
         mapping = {

@@ -117,6 +117,7 @@ core/
 ├── ai/                      # AI Assist 内核（New API 接入 / Profile / Prompt，无 QtWidgets）
 │   ├── __init__.py          # MODULE_VERSION
 │   ├── config.py            # AISettings：env 优先 + user_data/ai/config.json 读写
+│   ├── page_contract.py     # AIControllablePage Protocol + 能力常量（CAP_*）：专项页面向 AI 暴露的受控能力契约（鸭子类型，禁 Qt）
 │   ├── newapi_client.py     # NewAPIClient：OpenAI 兼容 /chat/completions（非流式 + SSE 流式 chat_stream + 超时/取消）
 │   ├── conversation_store.py # 会话历史持久化：user_data/ai/history/<session_key>.json（按页面隔离 + 旧 history.json 迁移，上限 40 条兜底）
 │   ├── context_budget.py    # token 预算与裁剪：estimate_tokens / resolve_window / clip_context_block / fit_messages / should_summarize（tiktoken 优先，缺失启发式）
