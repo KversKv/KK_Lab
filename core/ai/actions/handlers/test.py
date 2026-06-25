@@ -314,15 +314,31 @@ def build_handlers(deps: ActionDeps) -> dict[str, Any]:
         entry = registry.get(draft_id) if draft_id else None
         if entry is None:
             available = registry.list() if hasattr(registry, "list") else []
-            avail_text = ", ".join(d["draft_id"] for d in available) if available else "（无）"
-            return {
-                "ok": False,
-                "draft_id": draft_id,
-                "available_drafts": available,
-                "_message": (
-                    f"草案句柄 '{draft_id}' 不存在或已失效。可用草案：{avail_text}。"
-                ),
-            }
+            # 请求的 draft_id 失效/对不上时，若当前仅存一份草案，回退到该唯一草案：
+            # 模型常据残留历史误填旧句柄（如 draft_001），但本会话实际只生成了一份
+            # 新草案，此时按唯一草案落地比直接报错更符合用户「确认即应用刚生成的草案」
+            # 的预期。存在多份草案则不擅自猜测，仍如实报错让模型/用户明确选择。
+            fallback = registry.latest() if len(available) == 1 else None
+            if fallback is not None:
+                logger.info(
+                    "apply_test_config_draft：请求句柄 '%s' 失效，回退到唯一草案 %s",
+                    draft_id,
+                    fallback.get("draft_id"),
+                )
+                entry = fallback
+                draft_id = fallback.get("draft_id", draft_id)
+            else:
+                avail_text = (
+                    ", ".join(d["draft_id"] for d in available) if available else "（无）"
+                )
+                return {
+                    "ok": False,
+                    "draft_id": draft_id,
+                    "available_drafts": available,
+                    "_message": (
+                        f"草案句柄 '{draft_id}' 不存在或已失效。可用草案：{avail_text}。"
+                    ),
+                }
         kind = entry.get("kind", "")
         payload = entry.get("payload")
         title = entry.get("title", "")

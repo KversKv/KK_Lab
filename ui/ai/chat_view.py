@@ -181,6 +181,13 @@ QPushButton#aiConfirmReject {
 }
 QPushButton#aiConfirmReject:hover { background-color: #3f1d1d; }
 QPushButton#aiConfirmReject:disabled { background-color: #0f172a; color: #475569; border: 1px solid #1e293b; }
+QPushButton#aiConfirmSession {
+    min-height: 28px; padding: 4px 14px;
+    border: 1px solid #1e3a2e; border-radius: 6px;
+    background-color: #0d1f17; color: #4ade80; font-weight: 700; font-size: 12px;
+}
+QPushButton#aiConfirmSession:hover { background-color: #142b20; }
+QPushButton#aiConfirmSession:disabled { background-color: #0f172a; color: #475569; border: 1px solid #1e293b; }
 QPushButton#aiConfirmAllow {
     min-height: 28px; padding: 4px 14px;
     border: none; border-radius: 6px;
@@ -199,17 +206,19 @@ _RISK_LABEL_CN = {
 
 
 class ActionConfirmCard(QFrame):
-    """聊天内联动作确认卡片：运行 / 拒绝 / 添加到白名单。
+    """聊天内联动作确认卡片：运行 / 拒绝 / 本次会话免确认 / 添加到白名单。
 
-    仅用于需要确认的动作（high/critical）。三个按钮通过信号回报用户选择：
-      - run_clicked     : 直接运行（不写白名单）；
-      - reject_clicked  : 拒绝执行；
-      - allow_clicked   : 添加到白名单（由面板弹会话/永久二选一）。
+    仅用于需要确认的动作（high/critical）。按钮通过信号回报用户选择：
+      - run_clicked          : 直接运行（不写白名单）；
+      - reject_clicked       : 拒绝执行；
+      - allow_session_clicked: 运行并在本次会话内自动批准该动作（仅内存，仅 high）；
+      - allow_clicked        : 运行并写入常驻白名单（落盘，仅 high）。
     回报后卡片自动禁用所有按钮并显示最终状态文案，避免重复点击。
     """
 
     run_clicked = Signal()
     reject_clicked = Signal()
+    allow_session_clicked = Signal()
     allow_clicked = Signal()
 
     def __init__(self, action_name: str, description: str, risk_level: str,
@@ -268,12 +277,25 @@ class ActionConfirmCard(QFrame):
         self._reject_btn.clicked.connect(self._on_reject)
         bar.addWidget(self._reject_btn)
 
-        self._allow_btn = QPushButton("添加到白名单")
+        # 仅 high 风险动作可免确认/写白名单；critical 不可，故隐藏这两个按钮。
+        is_high = risk_level == "high"
+
+        self._session_btn = QPushButton("本次会话免确认")
+        self._session_btn.setObjectName("aiConfirmSession")
+        self._session_btn.setCursor(Qt.PointingHandCursor)
+        self._session_btn.setToolTip(
+            "运行本次，并在本次会话内自动批准该动作（带当前参数护栏，不落盘）。"
+        )
+        self._session_btn.clicked.connect(self.allow_session_clicked.emit)
+        self._session_btn.setVisible(is_high)
+        bar.addWidget(self._session_btn)
+
+        self._allow_btn = QPushButton("加入白名单")
         self._allow_btn.setObjectName("aiConfirmAllow")
         self._allow_btn.setCursor(Qt.PointingHandCursor)
+        self._allow_btn.setToolTip("运行本次，并写入常驻白名单（落盘，以后始终自动批准）。")
         self._allow_btn.clicked.connect(self.allow_clicked.emit)
-        # 仅 high 风险动作可写白名单；critical 不可白名单，故隐藏该按钮。
-        self._allow_btn.setVisible(risk_level == "high")
+        self._allow_btn.setVisible(is_high)
         bar.addWidget(self._allow_btn)
 
         bar.addStretch(1)
@@ -288,6 +310,7 @@ class ActionConfirmCard(QFrame):
     def set_buttons_enabled(self, enabled: bool) -> None:
         self._run_btn.setEnabled(enabled)
         self._reject_btn.setEnabled(enabled)
+        self._session_btn.setEnabled(enabled)
         self._allow_btn.setEnabled(enabled)
 
     def finalize(self, status_text: str) -> None:
@@ -422,10 +445,15 @@ class _MarkdownBubble(QWidget):
         if width <= 0:
             QTimer.singleShot(0, lambda v=view: _MarkdownBubble._fit_height(v))
             return
-        doc.setTextWidth(width)
-        # 文档高度 + 上下 QSS 内边距(24) + 上下边框(2) + 安全余量(6)，吸收 CJK 行高
-        # 浮点取整误差，杜绝末行被裁出现内部滚动条（部分气泡显示不完全的根因）。
-        height = int(doc.size().height() + 0.5) + _BUBBLE_PAD_V + 6
+        # QSS 的 padding:12px 16px 会把文本实际可用宽度收窄左右各 16px（共 _BUBBLE_PAD_H）。
+        # 若按 viewport 全宽喂给文档算高，文档会以为自己有更宽空间、少算换行，导致 CJK
+        # 长段被低估高度而末行裁出滚动条（部分气泡显示不完全的根因）。这里按真实文本
+        # 宽度（扣掉水平内边距）排版，才能算到与渲染一致的换行行数与高度。
+        text_width = max(1, width - _BUBBLE_PAD_H)
+        doc.setTextWidth(text_width)
+        # 文档高度 + 上下 QSS 内边距 + 边框 + 安全余量(8)，吸收 CJK 行高浮点取整误差，
+        # 杜绝末行被裁出现内部滚动条（部分气泡显示不完全的根因）。
+        height = int(doc.size().height() + 0.5) + _BUBBLE_PAD_V + 8
         view.setFixedHeight(max(_BUBBLE_MIN_H, height))
 
     @staticmethod

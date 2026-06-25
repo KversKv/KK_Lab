@@ -438,6 +438,15 @@ class AIService(QObject):
         # 清空异步/调度任务（§5.4 会话级清理）
         self._pending_task_registry.clear()
         self._scheduled_task_registry.clear()
+        # 清空草案注册表并复位计数器：否则旧会话残留的 draft_id 会与新会话生成的
+        # 草案句柄错位（如旧 draft_001 仍可被取回），模型据残留历史误调旧 draft_id。
+        self._draft_registry.clear()
+        # 清空本会话临时白名单（会话级免确认授权），避免跨会话误放行。
+        if self._dispatcher is not None:
+            try:
+                self._dispatcher.policy.clear_session_grants()
+            except Exception:  # noqa: BLE001 - 清理失败不阻断会话清空主流程
+                logger.error("清空会话级白名单失败", exc_info=True)
         self.usage_updated.emit(None, self._session_stats)
 
     @property

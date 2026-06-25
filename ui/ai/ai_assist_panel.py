@@ -1747,6 +1747,12 @@ class AIAssistPanel(QFrame):
         card.reject_clicked.connect(
             lambda: _finish(ConfirmResult(confirmed=False), "⛔ Execution rejected")
         )
+        card.allow_session_clicked.connect(
+            lambda: _finish(
+                ConfirmResult(confirmed=True, remember_session=True),
+                "✓ Auto-approved for this session and run",
+            )
+        )
         card.allow_clicked.connect(
             lambda: _finish(
                 ConfirmResult(confirmed=True, remember_resident=True),

@@ -82,6 +82,18 @@ class DraftRegistry:
                 for d in self._drafts.values()
             ]
 
+    def latest(self) -> Optional[dict[str, Any]]:
+        """返回最近登记的草案完整信息（含 payload），无草案时返回 None。
+
+        供 apply 动作在请求的 draft_id 失效/对不上（如模型据残留历史误填旧句柄）
+        时回退到本会话最新草案，避免落地到陈旧或不存在的草案。
+        """
+        with self._lock:
+            if not self._drafts:
+                return None
+            last_key = next(reversed(self._drafts))
+            return dict(self._drafts[last_key])
+
     def clear(self) -> None:
         with self._lock:
             self._drafts.clear()
