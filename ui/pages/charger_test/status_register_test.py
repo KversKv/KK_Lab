@@ -430,6 +430,9 @@ class CardFrame(QFrame):
 
 class StatusRegisterTestUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget):
     connection_status_changed = Signal(bool)
+    # 测试结束 → AI 异步动作回灌续跑（与 Orchestrator 同契约，§4 / S3-2）。
+    # MainWindow._ai_on_sequence_finished_resume 监听本信号，回灌 pending 任务。
+    sequence_execution_finished = Signal(bool, str)
 
     def __init__(self, n6705c_top=None, chamber_ui=None, instrument_manager=None):
         super().__init__()
@@ -981,10 +984,16 @@ class StatusRegisterTestUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidge
             self.append_log("[SYSTEM] Test completed successfully \u2714")
         else:
             self.append_log("[SYSTEM] Test completed (no flip detected or error).")
+        # 通知 AI 异步动作层：测试结束，触发 pending 任务回灌续跑（§4 / S3-2）。
+        self.sequence_execution_finished.emit(
+            bool(success), "测试完成" if success else "测试结束（未检测到翻转或出错）"
+        )
 
     def _on_test_error(self, msg):
         self.set_test_running(False)
         self.append_log(f"[ERROR] {msg}")
+        # 异常路径同样回灌 AI pending 任务，避免 task 永远 pending（§4 / S3-2）。
+        self.sequence_execution_finished.emit(False, f"测试异常：{msg}")
 
     def _on_status_update(self, data):
         for key, info in data.items():

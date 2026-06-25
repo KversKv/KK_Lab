@@ -69,6 +69,9 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
     """PMU OSCP测试UI组件"""
 
     connection_status_changed = Signal(bool)
+    # 测试结束 → AI 异步动作回灌续跑（与 Orchestrator 同契约，§4 / S3-2）。
+    # MainWindow._ai_on_sequence_finished_resume 监听本信号，回灌 pending 任务。
+    sequence_execution_finished = Signal(bool, str)
 
     def __init__(self, n6705c_top=None, instrument_manager=None):
         super().__init__()
@@ -1020,6 +1023,10 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
             self.result_status_label.setText("STOPPED")
             self.result_status_label.setStyleSheet("color:#ffb84d; font-size:10px; font-weight:800;")
             self.set_system_status("测试停止", True)
+        # 通知 AI 异步动作层：测试结束，触发 pending 任务回灌续跑（§4 / S3-2）。
+        self.sequence_execution_finished.emit(
+            bool(success), "测试完成" if success else "测试停止"
+        )
 
     def update_test_result(self, result):
         if "protection_current" in result:

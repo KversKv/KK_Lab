@@ -688,9 +688,9 @@ class MainWindow(CleanupMixin, QMainWindow):
         target = None
         for t in registry.list(session_key=session_key):
             if (
-                t.kind == "scan_instruments"
-                and t.title == instrument_type
-                and not t.resumed
+                t.get("kind") == "scan_instruments"
+                and t.get("title") == instrument_type
+                and not t.get("resumed")
             ):
                 target = t
         if target is None:
@@ -703,7 +703,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             "_message": f"扫描完成：找到 {count} 个 {instrument_type} 候选。",
         }
         self.ai_service.resume_with_task_result(
-            target.task_id, result, kind="scan_instruments", title=instrument_type
+            target.get("task_id"), result, kind="scan_instruments", title=instrument_type
         )
 
     def _ai_action_is_registered(self, name: str) -> bool:
@@ -934,15 +934,21 @@ class MainWindow(CleanupMixin, QMainWindow):
             return False, "启动测试异常，请查看日志。"
         if not ok:
             return False, message or "启动失败。"
-        # 异步测试完成回灌（§4 / S3-2）：仅对具备 sequence_execution_finished
-        # 信号的页面登记 pending 任务，完成后由该信号回灌续跑
-        if hasattr(page, "sequence_execution_finished"):
-            registry = self.ai_service.pending_task_registry
-            registry.register(
-                self.ai_service.current_session_key(),
-                "start_test_sequence",
-                title="测试序列",
-            )
+        # 注意：pending 任务由 start_test_sequence handler 统一登记（kind="test_sequence"
+        # 并把 task_id 回给 AI）。此处不再重复登记，否则会产生 kind 不一致的孤儿任务，
+        # 导致序列完成后无法回灌、TaskTray「进行中」清不掉、AI 一直卡住（§4 / S3-2）。
+        #
+        # 完成回灌依赖页面的 sequence_execution_finished 信号（Orchestrator 在创建时
+        # 已连接；PMU/Charger 等专项子页在此按需幂等连接，避免漏接导致 task 永远 pending）。
+        sig = getattr(page, "sequence_execution_finished", None)
+        if sig is not None:
+            try:
+                sig.connect(
+                    self._ai_on_sequence_finished_resume, Qt.UniqueConnection
+                )
+            except (RuntimeError, TypeError):
+                # 已连接（UniqueConnection 重复）即跳过，不影响后续回灌
+                pass
         return True, message or "已请求启动测试。"
 
     def _ai_on_sequence_finished_resume(self, success: bool, message: str):
@@ -951,7 +957,11 @@ class MainWindow(CleanupMixin, QMainWindow):
         session_key = self.ai_service.current_session_key()
         target = None
         for t in registry.list(session_key=session_key):
-            if t.kind == "start_test_sequence" and not t.resumed:
+            if (
+                t.get("kind") == "test_sequence"
+                and t.get("status") == "pending"
+                and not t.get("resumed")
+            ):
                 target = t
         if target is None:
             return
@@ -962,7 +972,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             "_message": f"测试序列执行完成：{'PASS' if success else 'FAIL'}。{message}",
         }
         self.ai_service.resume_with_task_result(
-            target.task_id, result, kind="start_test_sequence", title="测试序列"
+            target.get("task_id"), result, kind="test_sequence", title="测试序列"
         )
 
     def _ai_test_pause(self):

@@ -57,6 +57,9 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
     """GPADC测试UI组件"""
 
     connection_status_changed = Signal(bool)
+    # 测试结束 → AI 异步动作回灌续跑（与 Orchestrator 同契约，§4 / S3-2）。
+    # MainWindow._ai_on_sequence_finished_resume 监听本信号，回灌 pending 任务。
+    sequence_execution_finished = Signal(bool, str)
 
     TEST_1000CNT = "1000CNT TEST"
     TEST_FORCE_VOLTAGE = "Force Voltage Test"
@@ -823,6 +826,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self.is_test_running = True
         self.start_test_btn.setEnabled(True)
         self.stop_test_btn.setEnabled(True)
+        self._test_stop_requested = False
         self._update_test_button_state(True)
         self._set_ui_enabled(False)
         self.set_progress(0)
@@ -1027,6 +1031,10 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self.stop_test_btn.setEnabled(False)
         self._update_test_button_state(False)
         self._set_ui_enabled(True)
+        # 通知 AI 异步动作层：测试结束，触发 pending 任务回灌续跑（§4 / S3-2）。
+        stopped = bool(getattr(self, "_test_stop_requested", False))
+        summary = "测试被中止" if stopped else "测试完成"
+        self.sequence_execution_finished.emit(not stopped, summary)
 
     def _update_test_button_state(self, running):
         update_start_btn_state(self.start_test_btn, running,
@@ -1036,6 +1044,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
     def _stop_test(self):
         if self._test_worker is not None:
             self._test_worker.request_stop()
+        self._test_stop_requested = True
         if self.test_thread is not None and self.test_thread.isRunning():
             self.test_thread.quit()
             self.test_thread.wait()

@@ -278,6 +278,9 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
     """PMU DCDC Efficiency测试UI组件"""
 
     connection_status_changed = Signal(bool)
+    # 测试结束 → AI 异步动作回灌续跑（与 Orchestrator 同契约，§4 / S3-2）。
+    # MainWindow._ai_on_sequence_finished_resume 监听本信号，回灌 pending 任务。
+    sequence_execution_finished = Signal(bool, str)
 
     def __init__(self, n6705c_top=None, chamber_ui=None, instrument_manager=None):
         super().__init__()
@@ -1214,6 +1217,7 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
         if self.is_test_running:
             return
         self._export_data = []
+        self._test_stop_requested = False
         self.set_test_running(True)
         self.set_progress(0)
         cfg = self.get_test_config()
@@ -1249,6 +1253,7 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
     def _on_stop_test(self):
         if self.test_thread is not None:
             self.test_thread.request_stop()
+        self._test_stop_requested = True
         self.append_log("[TEST] Stop requested...")
 
     def _on_chart_clear(self):
@@ -1373,6 +1378,18 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
 
     def _on_test_finished(self):
         self.set_test_running(False)
+        # 通知 AI 异步动作层：测试结束，触发 pending 任务回灌续跑（§4 / S3-2）。
+        # 成功判据：未被用户中止且采集到有效数据行；否则视为未完成/失败。
+        stopped = bool(getattr(self, "_test_stop_requested", False))
+        rows = len(self._export_data) if self._export_data else 0
+        success = (not stopped) and rows > 0
+        if stopped:
+            summary = f"测试被中止（已采集 {rows} 行）"
+        elif rows > 0:
+            summary = f"测试完成（采集 {rows} 行）"
+        else:
+            summary = "测试结束但未采集到有效数据"
+        self.sequence_execution_finished.emit(success, summary)
 
     def _on_baseline_row(self, row):
         self._export_data.insert(0, row)

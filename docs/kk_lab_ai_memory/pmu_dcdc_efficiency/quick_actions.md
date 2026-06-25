@@ -33,7 +33,7 @@
 - 页面：pmu_dcdc_efficiency
 - 来源：phase4_capability_boundary
 - 状态：active
-- 模板：帮我测试 1~10mA 效率曲线
+- 模板：帮我启动测试 1~10mA 效率曲线并分析结果
 - 占位符：无
 - 适用条件：
   - 当前在 PMU DCDC 效率子页面

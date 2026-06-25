@@ -103,6 +103,9 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
     """PMU Is_gain测试UI组件"""
 
     connection_status_changed = Signal(bool)
+    # 测试结束 → AI 异步动作回灌续跑（与 Orchestrator 同契约，§4 / S3-2）。
+    # MainWindow._ai_on_sequence_finished_resume 监听本信号，回灌 pending 任务。
+    sequence_execution_finished = Signal(bool, str)
 
     def __init__(self, n6705c_top=None, mso64b_top=None, instrument_manager=None):
         super().__init__()
@@ -569,6 +572,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         if self.is_test_running:
             if self._test_worker is not None:
                 self._test_worker.stop()
+            self._test_stop_requested = True
             self.append_log("[TEST] Abort requested by external stop button.")
 
     def _on_test_selection_changed(self):
@@ -1252,6 +1256,10 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
     def _on_test_finished(self):
         self.set_test_running(False)
         self.set_page_status("Test completed")
+        # 通知 AI 异步动作层：测试结束，触发 pending 任务回灌续跑（§4 / S3-2）。
+        stopped = bool(getattr(self, "_test_stop_requested", False))
+        summary = "测试被中止" if stopped else "测试完成"
+        self.sequence_execution_finished.emit(not stopped, summary)
 
     def _cleanup_test_thread(self):
         if self.test_thread is not None:
@@ -1283,6 +1291,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         if self.is_test_running:
             if self._test_worker is not None:
                 self._test_worker.stop()
+            self._test_stop_requested = True
             self.append_log("[TEST] Abort requested by user.")
             return
 
@@ -1318,6 +1327,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
 
     def _launch_test_thread(self, config, test_mode, status_msg):
         self.clear_results()
+        self._test_stop_requested = False
         self.set_test_running(True)
         self.set_page_status(status_msg)
 

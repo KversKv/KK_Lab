@@ -316,6 +316,9 @@ class CardFrame(QFrame):
 
 class ConfigTraverseTestUI(N6705CConnectionMixin, QWidget):
     connection_status_changed = Signal(bool)
+    # 测试结束 → AI 异步动作回灌续跑（与 Orchestrator 同契约，§4 / S3-2）。
+    # MainWindow._ai_on_sequence_finished_resume 监听本信号，回灌 pending 任务。
+    sequence_execution_finished = Signal(bool, str)
 
     def __init__(self, n6705c_top=None, instrument_manager=None):
         super().__init__()
@@ -841,6 +844,10 @@ class ConfigTraverseTestUI(N6705CConnectionMixin, QWidget):
             self.test_thread.wait()
             self.test_thread = None
             self.test_worker = None
+        # 通知 AI 异步动作层：测试结束，触发 pending 任务回灌续跑（§4 / S3-2）。
+        self.sequence_execution_finished.emit(
+            bool(success), "测试完成" if success else "测试结束（出错）"
+        )
 
     def _on_clear_log(self):
         self.execution_logs.clear_log()
