@@ -3,6 +3,8 @@
 
 import sys
 import os
+import threading
+from typing import Any
 from ui.resource_path import get_resource_base
 import math
 
@@ -31,6 +33,20 @@ from instruments.mock.mock_instruments import MockN6705C
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from i2c_interface_x64 import I2CInterface
 from Bes_I2CIO_Interface import I2CSpeedMode, I2CWidthFlag
+from core.ai.page_contract import (
+    CAP_APPLY_CONFIG,
+    CAP_GET_CONFIG,
+    CAP_GET_RESULT,
+    CAP_START_TEST,
+    CAP_STOP_TEST,
+)
+
+logger = get_logger(__name__)
+
+# AI 回填可视化（AIAssist_PageScopedControlPlan.md §4.2 / Phase 3）：
+# 被 AI 修改的控件临时高亮边框色 + 持续时长。
+_AI_HIGHLIGHT_QSS = "border: 1px solid #15d1a3;"
+_AI_HIGHLIGHT_MS = 1500
 
 try:
     from PySide6.QtCharts import (
@@ -40,8 +56,6 @@ try:
     HAS_QTCHARTS = True
 except Exception:
     HAS_QTCHARTS = False
-
-logger = get_logger(__name__)
 
 SAVE_DEBUG_DLOG_FLAG = False
 
@@ -1506,6 +1520,194 @@ class ItermTestUI(N6705CConnectionMixin, QWidget):
             self.step_iterm_card["value"].setText(f"{result['step_value']:.4f} mA/code")
         if "linearity" in result:
             self.linearity_iterm_card["value"].setText(f"{result['linearity']:.4f}%")
+
+    # ------------------------------------------------------------------
+    # AIControllablePage 契约实现（AIAssist_PageScopedControlPlan.md §2 / Phase 5）
+    #
+    # Charger Iterm 测试接入 AI 受控契约，薄封装既有方法：
+    #   - ai_get_config 复用 get_test_config()
+    #   - ai_apply_config 经 apply_config_to_controls() 单一写入口回填控件
+    #   - ai_start_test/ai_stop_test 复用 _on_start_test/_on_stop_test
+    # 枢纽（MainWindow.resolve_active_ai_page）经 Tab 子页下钻拿到本实例，
+    # 鸭子调用契约方法，无需 core / handler 改动。
+    # ------------------------------------------------------------------
+    def ai_capabilities(self) -> set[str]:
+        return {
+            CAP_GET_CONFIG,
+            CAP_APPLY_CONFIG,
+            CAP_START_TEST,
+            CAP_STOP_TEST,
+            CAP_GET_RESULT,
+        }
+
+    def ai_get_config(self) -> dict[str, Any] | None:
+        try:
+            return self.get_test_config()
+        except Exception:  # noqa: BLE001 - 快照失败降级为 None
+            logger.error("AI 读取 Iterm 测试配置失败", exc_info=True)
+            return None
+
+    def ai_apply_config(self, payload: Any) -> tuple[bool, str]:
+        """落地配置草案到控件（写操作，经确认+审计后由枢纽调用）。"""
+        if self.is_test_running:
+            return False, "测试运行中，无法修改配置，请先停止测试。"
+        return self.apply_config_to_controls(payload if isinstance(payload, dict) else {})
+
+    def ai_start_test(self) -> tuple[bool, str]:
+        if not self.is_connected or self.n6705c is None:
+            return False, "未连接 N6705C 仪器，请先连接再启动测试。"
+        if self.is_test_running:
+            return False, "测试已在运行中。"
+        test_item = self.test_item_combo.currentText()
+        self.append_log(f"[AI] 请求启动 Iterm 测试：{test_item}。")
+        try:
+            self._on_start_test()
+        except Exception:  # noqa: BLE001 - 启动异常转可读结果
+            logger.error("AI 启动 Iterm 测试失败", exc_info=True)
+            return False, "启动测试异常，请查看日志。"
+        if self.is_test_running:
+            return True, f"已请求启动 Iterm 测试：{test_item}。"
+        return False, "启动未成功，请查看执行日志。"
+
+    def ai_stop_test(self) -> tuple[bool, str]:
+        if not self.is_test_running:
+            return False, "当前未在运行测试。"
+        self.append_log("[AI] 请求停止测试。")
+        try:
+            self._on_stop_test()
+        except Exception:  # noqa: BLE001 - 停止异常转可读结果
+            logger.error("AI 停止 Iterm 测试失败", exc_info=True)
+            return False, "停止测试异常，请查看日志。"
+        return True, "已发送停止请求。"
+
+    def ai_get_result_summary(self) -> dict[str, Any] | None:
+        summary: dict[str, Any] = {
+            "available": True,
+            "running": self.is_test_running,
+            "total": self._total_count,
+            "pass": self._pass_count,
+            "fail": self._fail_count,
+            "rows": len(self._export_data) if self._export_data else 0,
+        }
+        return summary
+
+    # ------------------------------------------------------------------
+    # UI 回填单一写入口（AIAssist_PageScopedControlPlan.md §4.2）
+    # ------------------------------------------------------------------
+    def apply_config_to_controls(self, cfg: dict) -> tuple[bool, str]:
+        if not isinstance(cfg, dict):
+            return False, "配置草案格式无效（期望 dict）。"
+        if threading.current_thread() is not threading.main_thread():
+            logger.error(
+                "apply_config_to_controls 在非主线程被调用，拒绝回填以防违反线程边界"
+            )
+            return False, "配置回填未在主线程执行，已拒绝。"
+
+        applied: list[str] = []
+        touched: list = []
+
+        def _to_hex(val) -> str:
+            try:
+                return hex(int(val, 16)) if isinstance(val, str) else hex(int(val))
+            except (TypeError, ValueError):
+                return str(val)
+
+        def _set_combo_text(combo, key, normalize=None):
+            val = cfg.get(key)
+            if val is None:
+                return
+            text = normalize(val) if normalize is not None else str(val)
+            if text is None:
+                return
+            idx = combo.findText(text)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+                applied.append(key)
+                touched.append(combo)
+
+        def _set_combo_data(combo, key):
+            val = cfg.get(key)
+            if val is None:
+                return
+            idx = combo.findData(val)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+                applied.append(key)
+                touched.append(combo)
+
+        def _set_spin(spin, key):
+            val = cfg.get(key)
+            if val is None:
+                return
+            try:
+                spin.setValue(float(val))
+            except (TypeError, ValueError):
+                return
+            applied.append(key)
+            touched.append(spin)
+
+        def _set_hex_edit(edit, key):
+            val = cfg.get(key)
+            if val is None:
+                return
+            edit.setText(_to_hex(val))
+            applied.append(key)
+            touched.append(edit)
+
+        def _set_int_edit(edit, key):
+            val = cfg.get(key)
+            if val is None:
+                return
+            edit.setText(str(val))
+            applied.append(key)
+            touched.append(edit)
+
+        # 测试项
+        _set_combo_text(self.test_item_combo, "test_item")
+        # I2C 地址 / 代码
+        _set_hex_edit(self.device_addr_edit, "device_addr")
+        _set_hex_edit(self.reg_addr_edit, "reg_addr")
+        _set_int_edit(self.msb_edit, "msb")
+        _set_int_edit(self.lsb_edit, "lsb")
+        _set_hex_edit(self.min_code_edit, "min_code")
+        _set_hex_edit(self.max_code_edit, "max_code")
+        _set_combo_data(self.iic_width_combo, "iic_width")
+        # 通道 / 参数（_on_start_test 使用但 get_test_config 未含的也支持）
+        # 通道在配置中为 int，combo 文本为 "CH n"，按归一化匹配
+        _set_combo_text(self.measure_channel_combo, "measure_channel",
+                        normalize=lambda v: f"CH {int(v)}" if str(v).lstrip("-").isdigit() else str(v))
+        _set_combo_text(self.vbat_channel_combo, "vbat_channel",
+                        normalize=lambda v: f"CH {int(v)}" if str(v).lstrip("-").isdigit() else str(v))
+        _set_spin(self.avg_time_spin, "average_time_ms")
+        _set_spin(self.voreg_spin, "voreg")
+
+        if not applied:
+            return False, "配置草案未包含任何可识别的配置项。"
+        self._highlight_widgets(touched)
+        self.append_log(f"[AI] 已应用配置：{', '.join(applied)}")
+        return True, f"已应用配置项：{', '.join(applied)}。"
+
+    def _highlight_widgets(self, widgets: list) -> None:
+        """被 AI 修改的控件临时高亮边框（§4.2-3 / Phase 3）。"""
+        if not widgets:
+            return
+        for widget in widgets:
+            if widget is None:
+                continue
+            widget.setStyleSheet(_AI_HIGHLIGHT_QSS)
+            widget.setProperty("aiHighlighted", True)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+
+            def _clear(_w=widget):
+                try:
+                    _w.setStyleSheet("")
+                    _w.setProperty("aiHighlighted", False)
+                    _w.style().unpolish(_w)
+                    _w.style().polish(_w)
+                except RuntimeError:  # noqa: BLE001 - widget 可能已销毁
+                    pass
+            QTimer.singleShot(_AI_HIGHLIGHT_MS, _clear)
 
 
 if __name__ == "__main__":

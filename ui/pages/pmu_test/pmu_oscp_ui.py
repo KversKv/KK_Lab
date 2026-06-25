@@ -15,9 +15,11 @@ from PySide6.QtWidgets import (
     QSpinBox, QDoubleSpinBox, QFrame, QApplication,
     QSizePolicy, QScrollArea, QLineEdit
 )
-from PySide6.QtCore import Qt, Signal, QThread
+from PySide6.QtCore import Qt, Signal, QThread, QTimer
 from PySide6.QtGui import QFont
 import sys
+import threading
+from typing import Any
 from log_config import get_logger
 from lib.i2c.i2c_interface_x64 import I2CInterface
 from lib.i2c.Bes_I2CIO_Interface import I2CWidthFlag
@@ -25,8 +27,20 @@ from core.pmu_test.oscp import (
     OSCPMonitorWorker, OSCPTestWorker,
     parse_hex_address, get_changed_bits, format_changed_bits,
 )
+from core.ai.page_contract import (
+    CAP_APPLY_CONFIG,
+    CAP_GET_CONFIG,
+    CAP_GET_RESULT,
+    CAP_START_TEST,
+    CAP_STOP_TEST,
+)
 
 logger = get_logger(__name__)
+
+# AI 回填可视化（AIAssist_PageScopedControlPlan.md §4.2 / Phase 3）：
+# 被 AI 修改的控件临时高亮边框色 + 持续时长。
+_AI_HIGHLIGHT_QSS = "border: 1px solid #15d1a3;"
+_AI_HIGHLIGHT_MS = 1500
 
 
 class CardFrame(QFrame):
@@ -1096,6 +1110,207 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
             logger.error(error_msg, exc_info=True)
             self.set_system_status(error_msg, True)
             return False
+
+    # ------------------------------------------------------------------
+    # AIControllablePage 契约实现（AIAssist_PageScopedControlPlan.md §2 / Phase 5）
+    #
+    # PMU OSCP/OVP/UVP/SCP 保护点测试接入 AI 受控契约，薄封装既有方法：
+    #   - ai_get_config 复用 get_test_config()
+    #   - ai_apply_config 经 apply_config_to_controls() 单一写入口回填控件
+    #   - ai_start_test/ai_stop_test 复用 _on_single_test/_on_stop_test
+    # 枢纽（MainWindow.resolve_active_ai_page）经 Tab 子页下钻拿到本实例，
+    # 鸭子调用契约方法，无需 core / handler 改动。
+    # ------------------------------------------------------------------
+    def ai_capabilities(self) -> set[str]:
+        return {
+            CAP_GET_CONFIG,
+            CAP_APPLY_CONFIG,
+            CAP_START_TEST,
+            CAP_STOP_TEST,
+            CAP_GET_RESULT,
+        }
+
+    def ai_get_config(self) -> dict[str, Any] | None:
+        try:
+            return self.get_test_config()
+        except Exception:  # noqa: BLE001 - 快照失败降级为 None（parse_hex_address 可能抛 ValueError）
+            logger.error("AI 读取 OSCP 测试配置失败", exc_info=True)
+            return None
+
+    def ai_apply_config(self, payload: Any) -> tuple[bool, str]:
+        """落地配置草案到控件（写操作，经确认+审计后由枢纽调用）。
+
+        运行中拒绝改配置（§6.3），避免与正在执行的扫描冲突。
+        """
+        if self.is_test_running:
+            return False, "测试运行中，无法修改配置，请先停止测试。"
+        return self.apply_config_to_controls(payload if isinstance(payload, dict) else {})
+
+    def ai_start_test(self) -> tuple[bool, str]:
+        if not self.is_connected or self.n6705c is None:
+            return False, "未连接 N6705C 仪器，请先连接再启动测试。"
+        if self.is_test_running:
+            return False, "测试已在运行中。"
+        try:
+            cfg = self.get_test_config()
+        except ValueError as e:  # parse_hex_address 校验失败
+            return False, f"配置校验失败：{e}"
+        self.append_log(
+            f"[AI] 请求启动 {cfg.get('test_type', 'OSCP')} 测试："
+            f"方法 {cfg.get('method', 'Reg')}。"
+        )
+        try:
+            self._on_single_test()
+        except Exception:  # noqa: BLE001 - 启动异常转可读结果
+            logger.error("AI 启动 OSCP 测试失败", exc_info=True)
+            return False, "启动测试异常，请查看日志。"
+        if self.is_test_running:
+            return True, f"已请求启动 {cfg.get('test_type', 'OSCP')} 测试。"
+        return False, "启动未成功，请查看执行日志。"
+
+    def ai_stop_test(self) -> tuple[bool, str]:
+        if not self.is_test_running:
+            return False, "当前未在运行测试。"
+        self.append_log("[AI] 请求停止测试。")
+        try:
+            self._on_stop_test()
+        except Exception:  # noqa: BLE001 - 停止异常转可读结果
+            logger.error("AI 停止 OSCP 测试失败", exc_info=True)
+            return False, "停止测试异常，请查看日志。"
+        return True, "已发送停止请求。"
+
+    def ai_get_result_summary(self) -> dict[str, Any] | None:
+        summary: dict[str, Any] = {
+            "available": True,
+            "running": self.is_test_running,
+            "status": self.result_status_label.text(),
+        }
+        # 结果标签文本（无结构化数据时回读控件文本，禁止臆造数值）
+        labels = {
+            "protection_current": self.protection_current_label.text(),
+            "recovery_current": self.recovery_current_label.text(),
+            "changed_bits": self.bit_change_label.text(),
+            "trigger_time": self.trigger_time_label.text(),
+            "recovery_time": self.recovery_time_label.text(),
+        }
+        has_data = any(v.strip() not in ("", "---") for v in labels.values())
+        if not has_data:
+            return summary
+        summary.update(labels)
+        return summary
+
+    # ------------------------------------------------------------------
+    # UI 回填单一写入口（AIAssist_PageScopedControlPlan.md §4.2）
+    #
+    # apply_config_to_controls(cfg) 是回填测试配置控件的唯一入口，
+    # AI 回填与未来轮询/手动刷新共用，杜绝两套逻辑漂移。键名与
+    # get_test_config() 输出对齐。
+    # ------------------------------------------------------------------
+    def apply_config_to_controls(self, cfg: dict) -> tuple[bool, str]:
+        if not isinstance(cfg, dict):
+            return False, "配置草案格式无效（期望 dict）。"
+
+        # 线程边界（§4.2-2）：AI 决策在 QThread，回填须经主线程执行；
+        # dispatcher 经 QTimer.singleShot(0) 已切回主线程，此处加防御性守卫，
+        # 杜绝 worker 线程直接 setValue 违反「UI 禁阻塞 / 跨线程改控件」铁律。
+        if threading.current_thread() is not threading.main_thread():
+            logger.error(
+                "apply_config_to_controls 在非主线程被调用，拒绝回填以防违反线程边界"
+            )
+            return False, "配置回填未在主线程执行，已拒绝。"
+
+        applied: list[str] = []
+        touched: list = []
+
+        def _set_combo_text(combo, key):
+            val = cfg.get(key)
+            if val is None:
+                return
+            idx = combo.findText(str(val))
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+                applied.append(key)
+                touched.append(combo)
+
+        def _set_combo_data(combo, key):
+            val = cfg.get(key)
+            if val is None:
+                return
+            idx = combo.findData(val)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+                applied.append(key)
+                touched.append(combo)
+
+        def _set_spin(spin, key):
+            val = cfg.get(key)
+            if val is None:
+                return
+            try:
+                spin.setValue(float(val))
+            except (TypeError, ValueError):
+                return
+            applied.append(key)
+            touched.append(spin)
+
+        def _set_text(edit, key):
+            val = cfg.get(key)
+            if val is None:
+                return
+            edit.setText(str(val))
+            applied.append(key)
+            touched.append(edit)
+
+        # 测试类型 / 方法 / 通道 / 延迟
+        _set_combo_text(self.test_type_combo, "test_type")
+        _set_combo_text(self.test_method_combo, "method")
+        _set_combo_text(self.test_channel_combo, "test_channel")
+        _set_spin(self.delay_spin, "delay_time_ms")
+
+        # Reg 方法专属
+        _set_text(self.device_addr_edit, "device_address")
+        _set_text(self.reg_addr_edit, "register_address")
+        _set_combo_data(self.iic_width_combo, "iic_width")
+
+        # Monitor 方法专属
+        _set_combo_text(self.monitor_channel_combo, "monitor_channel")
+
+        # 扫描范围（电流/电压共用 start/end/step 控件）
+        _set_spin(self.start_spin, "current_start")
+        _set_spin(self.start_spin, "voltage_start")
+        _set_spin(self.end_spin, "current_end")
+        _set_spin(self.end_spin, "voltage_end")
+        _set_spin(self.step_spin, "current_step")
+        _set_spin(self.step_spin, "voltage_step")
+
+        if not applied:
+            return False, "配置草案未包含任何可识别的配置项。"
+        # §4.2-3 可视化反馈：被 AI 修改的控件临时高亮（Phase 3）。
+        self._highlight_widgets(touched)
+        self.append_log(f"[AI] 已应用配置：{', '.join(applied)}")
+        return True, f"已应用配置项：{', '.join(applied)}。"
+
+    def _highlight_widgets(self, widgets: list) -> None:
+        """被 AI 修改的控件临时高亮边框（§4.2-3 / Phase 3）。"""
+        if not widgets:
+            return
+        for widget in widgets:
+            if widget is None:
+                continue
+            widget.setStyleSheet(_AI_HIGHLIGHT_QSS)
+            widget.setProperty("aiHighlighted", True)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+
+            def _clear(_w=widget):
+                try:
+                    _w.setStyleSheet("")
+                    _w.setProperty("aiHighlighted", False)
+                    _w.style().unpolish(_w)
+                    _w.style().polish(_w)
+                except RuntimeError:  # noqa: BLE001 - widget 可能已销毁
+                    pass
+            QTimer.singleShot(_AI_HIGHLIGHT_MS, _clear)
 
 
 if __name__ == '__main__':

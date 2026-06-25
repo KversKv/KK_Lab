@@ -19,9 +19,11 @@ from PySide6.QtWidgets import (
     QButtonGroup, QApplication, QSizePolicy, QStackedWidget, QScrollArea,
     QTextEdit, QProgressBar
 )
-from PySide6.QtCore import Qt, Signal, QThread
+from PySide6.QtCore import Qt, Signal, QThread, QTimer
 from PySide6.QtGui import QFont
 import time
+import threading
+from typing import Any
 
 import sys
 from pathlib import Path
@@ -35,8 +37,20 @@ from instruments.chambers import TemperatureStabilizer
 from ui.theme import Colors, FontSizes, Radius, Spacing, FONT_MONO
 from ui.styles import get_page_base_qss
 from core.pmu_test.gpadc import TestWorker as _TestWorker, compute_reg_stats, compute_calibration
+from core.ai.page_contract import (
+    CAP_APPLY_CONFIG,
+    CAP_GET_CONFIG,
+    CAP_GET_RESULT,
+    CAP_START_TEST,
+    CAP_STOP_TEST,
+)
 
 logger = get_logger(__name__)
+
+# AI 回填可视化（AIAssist_PageScopedControlPlan.md §4.2 / Phase 3）：
+# 被 AI 修改的控件临时高亮边框色 + 持续时长。
+_AI_HIGHLIGHT_QSS = "border: 1px solid #15d1a3;"
+_AI_HIGHLIGHT_MS = 1500
 
 
 class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin, QWidget):
@@ -2255,6 +2269,221 @@ Temperature (°C) | ADC Value
             if chart_placeholder_layout is None:
                 chart_placeholder_layout = QVBoxLayout(self.chart_placeholder)
             chart_placeholder_layout.addWidget(error_label, 1, Qt.AlignCenter)
+
+    # ------------------------------------------------------------------
+    # AIControllablePage 契约实现（AIAssist_PageScopedControlPlan.md §2 / Phase 5）
+    #
+    # GPADC 测试接入 AI 受控契约，薄封装既有方法：
+    #   - ai_get_config 复用 get_test_config()
+    #   - ai_apply_config 经 apply_config_to_controls() 单一写入口回填控件
+    #   - ai_start_test/ai_stop_test 复用 _start_test/_stop_test
+    # 枢纽（MainWindow.resolve_active_ai_page）经 Tab 子页下钻拿到本实例，
+    # 鸭子调用契约方法，无需 core / handler 改动。
+    # ------------------------------------------------------------------
+    def ai_capabilities(self) -> set[str]:
+        return {
+            CAP_GET_CONFIG,
+            CAP_APPLY_CONFIG,
+            CAP_START_TEST,
+            CAP_STOP_TEST,
+            CAP_GET_RESULT,
+        }
+
+    def ai_get_config(self) -> dict[str, Any] | None:
+        try:
+            return self.get_test_config()
+        except Exception:  # noqa: BLE001 - 快照失败降级为 None
+            logger.error("AI 读取 GPADC 测试配置失败", exc_info=True)
+            return None
+
+    def ai_apply_config(self, payload: Any) -> tuple[bool, str]:
+        """落地配置草案到控件（写操作，经确认+审计后由枢纽调用）。
+
+        运行中拒绝改配置（§6.3），避免与正在执行的测试冲突。
+        """
+        if self.is_test_running:
+            return False, "测试运行中，无法修改配置，请先停止测试。"
+        return self.apply_config_to_controls(payload if isinstance(payload, dict) else {})
+
+    def ai_start_test(self) -> tuple[bool, str]:
+        if self.is_test_running:
+            return False, "测试已在运行中。"
+        # 按当前测试项的仪器需求前置校验（INSTRUMENT_MAP）
+        required = self.INSTRUMENT_MAP.get(self.current_test_item, [])
+        if "n6705c" in required and (not self.is_connected or self.n6705c is None):
+            return False, f"当前测试项 {self.current_test_item} 需要 N6705C，请先连接再启动。"
+        if "chamber" in required and (not self.is_chamber_connected or self.chamber is None):
+            return False, f"当前测试项 {self.current_test_item} 需要温箱，请先连接温箱再启动。"
+        # I2C 模式下校验地址可解析
+        if self.iic_radio.isChecked():
+            try:
+                int(self.iic_device_address.text(), 16)
+                int(self.iic_data_address.text(), 16)
+            except ValueError:
+                return False, "I2C 设备/寄存器地址格式无效（应为 16 进制）。"
+        self.append_log(f"[AI] 请求启动 GPADC 测试：{self.current_test_item}。")
+        try:
+            self._start_test()
+        except Exception:  # noqa: BLE001 - 启动异常转可读结果
+            logger.error("AI 启动 GPADC 测试失败", exc_info=True)
+            return False, "启动测试异常，请查看日志。"
+        if self.is_test_running:
+            return True, f"已请求启动 GPADC 测试：{self.current_test_item}。"
+        return False, "启动未成功，请查看执行日志。"
+
+    def ai_stop_test(self) -> tuple[bool, str]:
+        if not self.is_test_running:
+            return False, "当前未在运行测试。"
+        self.append_log("[AI] 请求停止测试。")
+        try:
+            self._stop_test()
+        except Exception:  # noqa: BLE001 - 停止异常转可读结果
+            logger.error("AI 停止 GPADC 测试失败", exc_info=True)
+            return False, "停止测试异常，请查看日志。"
+        return True, "已发送停止请求。"
+
+    def ai_get_result_summary(self) -> dict[str, Any] | None:
+        summary: dict[str, Any] = {
+            "available": True,
+            "running": self.is_test_running,
+            "test_item": self.current_test_item,
+        }
+        if not self._export_data:
+            return summary
+        params = self._export_data.get("params") if isinstance(self._export_data, dict) else None
+        if params:
+            summary["params"] = params
+        return summary
+
+    # ------------------------------------------------------------------
+    # UI 回填单一写入口（AIAssist_PageScopedControlPlan.md §4.2）
+    #
+    # apply_config_to_controls(cfg) 是回填测试配置控件的唯一入口，
+    # AI 回填与未来轮询/手动刷新共用，杜绝两套逻辑漂移。键名与
+    # get_test_config() 输出对齐。
+    # ------------------------------------------------------------------
+    def apply_config_to_controls(self, cfg: dict) -> tuple[bool, str]:
+        if not isinstance(cfg, dict):
+            return False, "配置草案格式无效（期望 dict）。"
+
+        # 线程边界（§4.2-2）：AI 决策在 QThread，回填须经主线程执行；
+        # dispatcher 经 QTimer.singleShot(0) 已切回主线程，此处加防御性守卫，
+        # 杜绝 worker 线程直接 setValue 违反「UI 禁阻塞 / 跨线程改控件」铁律。
+        if threading.current_thread() is not threading.main_thread():
+            logger.error(
+                "apply_config_to_controls 在非主线程被调用，拒绝回填以防违反线程边界"
+            )
+            return False, "配置回填未在主线程执行，已拒绝。"
+
+        applied: list[str] = []
+        touched: list = []
+
+        def _set_spin(spin, key):
+            val = cfg.get(key)
+            if val is None:
+                return
+            try:
+                spin.setValue(float(val))
+            except (TypeError, ValueError):
+                return
+            applied.append(key)
+            touched.append(spin)
+
+        def _set_int_spin(spin, key):
+            val = cfg.get(key)
+            if val is None:
+                return
+            try:
+                spin.setValue(int(float(val)))
+            except (TypeError, ValueError):
+                return
+            applied.append(key)
+            touched.append(spin)
+
+        def _set_text(edit, key):
+            val = cfg.get(key)
+            if val is None:
+                return
+            edit.setText(str(val))
+            applied.append(key)
+            touched.append(edit)
+
+        def _set_combo_data(combo, key):
+            val = cfg.get(key)
+            if val is None:
+                return
+            idx = combo.findData(val)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+                applied.append(key)
+                touched.append(combo)
+
+        # 测试项（按 data 匹配，触发 _on_test_item_changed → _set_test_item）
+        test_item = cfg.get("test_item")
+        if test_item is not None:
+            idx = self.test_item_combo.findData(test_item)
+            if idx >= 0:
+                self.test_item_combo.setCurrentIndex(idx)
+                applied.append("test_item")
+                touched.append(self.test_item_combo)
+
+        # 数据采集模式
+        mode = cfg.get("data_acquisition_mode")
+        if mode is not None:
+            is_iic = str(mode).upper().startswith("IIC")
+            self.iic_radio.setChecked(is_iic)
+            self.uart_radio.setChecked(not is_iic)
+            self._update_data_acquisition_ui()
+            applied.append("data_acquisition_mode")
+            touched.extend([self.iic_radio, self.uart_radio])
+
+        # I2C 地址
+        _set_text(self.iic_device_address, "iic_device_address")
+        _set_text(self.iic_data_address, "iic_data_address")
+
+        # UART 配置
+        _set_text(self.uart_keyword, "uart_keyword")
+
+        # 电压扫描参数
+        _set_combo_data(self.voltage_channel, "voltage_channel")
+        _set_spin(self.voltage_min, "voltage_min")
+        _set_spin(self.voltage_max, "voltage_max")
+        _set_spin(self.voltage_step, "voltage_step")
+
+        # 温度扫描参数
+        _set_spin(self.temp_min, "temp_min")
+        _set_spin(self.temp_max, "temp_max")
+        _set_spin(self.temp_step, "temp_step")
+        _set_int_spin(self.soak_time, "soak_time")
+
+        if not applied:
+            return False, "配置草案未包含任何可识别的配置项。"
+        # §4.2-3 可视化反馈：被 AI 修改的控件临时高亮（Phase 3）。
+        self._highlight_widgets(touched)
+        self.append_log(f"[AI] 已应用配置：{', '.join(applied)}")
+        return True, f"已应用配置项：{', '.join(applied)}。"
+
+    def _highlight_widgets(self, widgets: list) -> None:
+        """被 AI 修改的控件临时高亮边框（§4.2-3 / Phase 3）。"""
+        if not widgets:
+            return
+        for widget in widgets:
+            if widget is None:
+                continue
+            widget.setStyleSheet(_AI_HIGHLIGHT_QSS)
+            widget.setProperty("aiHighlighted", True)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+
+            def _clear(_w=widget):
+                try:
+                    _w.setStyleSheet("")
+                    _w.setProperty("aiHighlighted", False)
+                    _w.style().unpolish(_w)
+                    _w.style().polish(_w)
+                except RuntimeError:  # noqa: BLE001 - widget 可能已销毁
+                    pass
+            QTimer.singleShot(_AI_HIGHLIGHT_MS, _clear)
 
 
 if __name__ == "__main__":

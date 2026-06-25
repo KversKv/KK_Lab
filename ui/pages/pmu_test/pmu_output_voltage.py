@@ -7,6 +7,8 @@ PMU Output Voltage测试UI组件
 
 import sys
 import os
+import threading
+from typing import Any
 from ui.resource_path import get_resource_base
 import time
 
@@ -31,6 +33,21 @@ from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockN6705C, MockI2C
 from ui.theme import FONT_MONO
+from core.ai.page_contract import (
+    CAP_APPLY_CONFIG,
+    CAP_GET_CONFIG,
+    CAP_GET_RESULT,
+    CAP_START_TEST,
+    CAP_STOP_TEST,
+)
+from log_config import get_logger
+
+_logger = get_logger(__name__)
+
+# AI 回填可视化（AIAssist_PageScopedControlPlan.md §4.2 / Phase 3）：
+# 被 AI 修改的控件临时高亮边框色 + 持续时长。
+_AI_HIGHLIGHT_QSS = "border: 1px solid #15d1a3;"
+_AI_HIGHLIGHT_MS = 1500
 
 try:
     from PySide6.QtCharts import (
@@ -1070,6 +1087,236 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
                 max_y = max(p.y() for p in pts)
                 margin_y = max((max_y - min_y) * 0.05, 0.01)
                 self.axis_y.setRange(max(0, min_y - margin_y), max_y + margin_y)
+
+    # ------------------------------------------------------------------
+    # AIControllablePage 契约实现（AIAssist_PageScopedControlPlan.md §2 / Phase 5）
+    #
+    # PMU 输出电压线性度测试接入 AI 受控契约，薄封装既有方法：
+    #   - ai_get_config 复用 get_test_config()
+    #   - ai_apply_config 经 apply_config_to_controls() 单一写入口回填控件
+    #   - ai_start_test/ai_stop_test 复用 _on_start_test/_on_stop_test
+    # 枢纽（MainWindow.resolve_active_ai_page）经 Tab 子页下钻拿到本实例，
+    # 鸭子调用契约方法，无需 core / handler 改动。
+    # ------------------------------------------------------------------
+    def ai_capabilities(self) -> set[str]:
+        return {
+            CAP_GET_CONFIG,
+            CAP_APPLY_CONFIG,
+            CAP_START_TEST,
+            CAP_STOP_TEST,
+            CAP_GET_RESULT,
+        }
+
+    def ai_get_config(self) -> dict[str, Any] | None:
+        try:
+            return self.get_test_config()
+        except Exception:  # noqa: BLE001 - 快照失败降级为 None
+            _logger.error("AI 读取输出电压测试配置失败", exc_info=True)
+            return None
+
+    def ai_apply_config(self, payload: Any) -> tuple[bool, str]:
+        """落地配置草案到控件（写操作，经确认+审计后由枢纽调用）。
+
+        运行中拒绝改配置（§6.3），避免与正在执行的扫描冲突。
+        """
+        if self.is_test_running:
+            return False, "测试运行中，无法修改配置，请先停止测试。"
+        return self.apply_config_to_controls(payload if isinstance(payload, dict) else {})
+
+    def ai_start_test(self) -> tuple[bool, str]:
+        if not self.is_connected or self.n6705c is None:
+            return False, "未连接 N6705C 仪器，请先连接再启动测试。"
+        if self.is_test_running:
+            return False, "测试已在运行中。"
+        cfg = self.get_test_config()
+        self.append_log(
+            f"[AI] 请求启动输出电压线性度测试："
+            f"代码范围 {cfg.get('min_code')}~{cfg.get('max_code')}。"
+        )
+        try:
+            self._on_start_test()
+        except Exception:  # noqa: BLE001 - 启动异常转可读结果
+            _logger.error("AI 启动输出电压测试失败", exc_info=True)
+            return False, "启动测试异常，请查看日志。"
+        if self.is_test_running:
+            return True, "已请求启动输出电压线性度测试。"
+        return False, "启动未成功，请查看执行日志。"
+
+    def ai_stop_test(self) -> tuple[bool, str]:
+        if not self.is_test_running:
+            return False, "当前未在运行测试。"
+        self.append_log("[AI] 请求停止测试。")
+        try:
+            self._on_stop_test()
+        except Exception:  # noqa: BLE001 - 停止异常转可读结果
+            _logger.error("AI 停止输出电压测试失败", exc_info=True)
+            return False, "停止测试异常，请查看日志。"
+        return True, "已发送停止请求。"
+
+    def ai_get_result_summary(self) -> dict[str, Any] | None:
+        summary: dict[str, Any] = {
+            "available": True,
+            "running": self.is_test_running,
+        }
+        # 结果卡片文本（无结构化数据时回读控件文本，禁止臆造数值）
+        cards = {
+            "default_voltage": self.default_voltage_card["value"].text(),
+            "min_voltage": self.min_voltage_card["value"].text(),
+            "max_voltage": self.max_voltage_card["value"].text(),
+            "step_voltage": self.step_voltage_card["value"].text(),
+            "linearity": self.linearity_card["value"].text(),
+        }
+        has_data = any(v.strip() not in ("", "---") for v in cards.values())
+        if not has_data:
+            return summary
+        summary.update(cards)
+        return summary
+
+    # ------------------------------------------------------------------
+    # UI 回填单一写入口（AIAssist_PageScopedControlPlan.md §4.2）
+    #
+    # apply_config_to_controls(cfg) 是回填测试配置控件的唯一入口，
+    # AI 回填与未来轮询/手动刷新共用，杜绝两套逻辑漂移。键名与
+    # get_test_config() 输出对齐。
+    # ------------------------------------------------------------------
+    def apply_config_to_controls(self, cfg: dict) -> tuple[bool, str]:
+        if not isinstance(cfg, dict):
+            return False, "配置草案格式无效（期望 dict）。"
+
+        # 线程边界（§4.2-2）：AI 决策在 QThread，回填须经主线程执行；
+        # dispatcher 经 QTimer.singleShot(0) 已切回主线程，此处加防御性守卫，
+        # 杜绝 worker 线程直接 setValue 违反「UI 禁阻塞 / 跨线程改控件」铁律。
+        if threading.current_thread() is not threading.main_thread():
+            _logger.error(
+                "apply_config_to_controls 在非主线程被调用，拒绝回填以防违反线程边界"
+            )
+            return False, "配置回填未在主线程执行，已拒绝。"
+
+        applied: list[str] = []
+        touched: list = []
+
+        def _set_combo(combo, key, normalize=None):
+            val = cfg.get(key)
+            if val is None:
+                return
+            text = normalize(val) if normalize is not None else str(val)
+            if text is None:
+                return
+            idx = combo.findText(text)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+                applied.append(key)
+                touched.append(combo)
+
+        def _set_spin(spin, key):
+            val = cfg.get(key)
+            if val is None:
+                return
+            try:
+                spin.setValue(float(val))
+            except (TypeError, ValueError):
+                return
+            applied.append(key)
+            touched.append(spin)
+
+        def _set_int_spin(spin, key):
+            val = cfg.get(key)
+            if val is None:
+                return
+            try:
+                spin.setValue(int(float(val)))
+            except (TypeError, ValueError):
+                return
+            applied.append(key)
+            touched.append(spin)
+
+        def _set_text(edit, key):
+            val = cfg.get(key)
+            if val is None:
+                return
+            edit.setText(str(val))
+            applied.append(key)
+            touched.append(edit)
+
+        def _set_check(check, key):
+            val = cfg.get(key)
+            if val is None:
+                return
+            check.setChecked(bool(val))
+            applied.append(key)
+            touched.append(check)
+
+        def _normalize_channel(val) -> str | None:
+            s = str(val).strip().upper()
+            if not s:
+                return None
+            digits = ""
+            for ch in s[::-1]:
+                if ch.isdigit():
+                    digits = ch + digits
+                else:
+                    break
+            return f"CH {digits}" if digits else None
+
+        # 通道与扫描参数（键名与 get_test_config 对齐）
+        _set_combo(self.output_channel_combo, "output_channel",
+                   normalize=_normalize_channel)
+        _set_spin(self.set_voltage_spin, "set_voltage")
+        _set_spin(self.load_current_min_spin, "load_current_min")
+        _set_spin(self.load_current_max_spin, "load_current_max")
+        _set_spin(self.current_step_spin, "current_step")
+        _set_int_spin(self.measure_count_spin, "measure_count")
+        _set_spin(self.stabilize_time_spin, "stabilize_time")
+        _set_spin(self.sample_interval_spin, "sample_interval")
+        _set_check(self.ovp_checkbox, "enable_ovp")
+        _set_spin(self.ovp_spin, "ovp_value")
+
+        # I2C / 电压计配置
+        _set_combo(self.vmeter_channel_combo, "vmeter_channel",
+                   normalize=_normalize_channel)
+        _set_text(self.device_addr_edit, "device_addr")
+        _set_text(self.reg_addr_edit, "reg_addr")
+        _set_int_spin(self.msb_spin, "msb")
+        _set_int_spin(self.lsb_spin, "lsb")
+        # width_flag 是 combo currentData（枚举值），按 data 匹配
+        width_flag = cfg.get("width_flag")
+        if width_flag is not None:
+            idx = self.iic_width_flag_combo.findData(width_flag)
+            if idx >= 0:
+                self.iic_width_flag_combo.setCurrentIndex(idx)
+                applied.append("width_flag")
+                touched.append(self.iic_width_flag_combo)
+        _set_text(self.min_code_edit, "min_code")
+        _set_text(self.max_code_edit, "max_code")
+
+        if not applied:
+            return False, "配置草案未包含任何可识别的配置项。"
+        # §4.2-3 可视化反馈：被 AI 修改的控件临时高亮（Phase 3）。
+        self._highlight_widgets(touched)
+        self.append_log(f"[AI] 已应用配置：{', '.join(applied)}")
+        return True, f"已应用配置项：{', '.join(applied)}。"
+
+    def _highlight_widgets(self, widgets: list) -> None:
+        """被 AI 修改的控件临时高亮边框（§4.2-3 / Phase 3）。"""
+        if not widgets:
+            return
+        for widget in widgets:
+            if widget is None:
+                continue
+            widget.setStyleSheet(_AI_HIGHLIGHT_QSS)
+            widget.setProperty("aiHighlighted", True)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+
+            def _clear(_w=widget):
+                try:
+                    _w.setStyleSheet("")
+                    _w.setProperty("aiHighlighted", False)
+                    _w.style().unpolish(_w)
+                    _w.style().polish(_w)
+                except RuntimeError:  # noqa: BLE001 - widget 可能已销毁
+                    pass
+            QTimer.singleShot(_AI_HIGHLIGHT_MS, _clear)
 
 
 if __name__ == "__main__":

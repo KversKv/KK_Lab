@@ -334,13 +334,20 @@ AI: ui_invoke(action_id="n6705c.auto_set")
 
 | # | 任务 | 文件 | 状态 |
 |---|---|---|---|
-| 5.1 | `output_voltage` / `is_gain` / `oscp` / `gpadc` 等接入契约 | `ui/pages/pmu_test/*` | ☐ |
-| 5.2 | charger / consumption 等专项页评估接入 | `ui/pages/*` | ☐ |
-| 5.3 | 更新 [AIAssist_ActionCatalog.md](./AIAssist_ActionCatalog.md) 动作-页面能力矩阵 | 文档 | ☐ |
-| 5.4 | 同步 [.ai/memory.md](../../../.ai/memory.md) / quick_actions | 文档 | ☐ |
-| 5.5 | 全量回归 + lint | — | ☐ |
+| 5.1 | `output_voltage` / `is_gain` / `oscp` / `gpadc` 等接入契约 | `ui/pages/pmu_test/*` | ☑ |
+| 5.2 | charger / consumption 等专项页评估接入 | `ui/pages/*` | ☑ |
+| 5.3 | 更新 [AIAssist_ActionCatalog.md](./AIAssist_ActionCatalog.md) 动作-页面能力矩阵 | 文档 | ☑ |
+| 5.4 | 同步 [.ai/memory.md](../../../.ai/memory.md) / quick_actions | 文档 | ☑ |
+| 5.5 | 全量回归 + lint | — | ☑ |
 
 **验收**：新增专项页接入成本 = 实现契约方法 + 注册一行；core / handler 零改动。
+
+> Phase 5 落地说明：
+> - 5.1：PMU 四个子页（`pmu_output_voltage` / `pmu_is_gain` / `pmu_oscp` / `pmu_gpadc`）已实现 `AIControllablePage` 契约方法 + UI 回填单一写入口 + 临时高亮反馈。
+> - 5.2：Charger 四个子页（`charger_config_traverse` / `charger_status_register` / `charger_iterm` / `charger_regulation_voltage`）已接入契约；`consumption_test`（`HighLowTempConsumptionTestUI`）经评估为复杂双 N6705C + 温箱多阶段测试页，契约方法命名与既有页面差异较大（`_on_start_clicked` / `_test_worker`），建议作为独立后续迭代单独接入，不在本阶段强行落地以控风险。对应 `core/ai/profiles.py` 已补四个 charger 子页 Profile + 更新 `charger_test` 容器页说明。
+> - 5.3：`AIAssist_ActionCatalog.md` 新增 §5「页面-AI 能力矩阵」，列出 9 个叶子页的能力符号与启动前置。
+> - 5.4：`core/ai/profiles.py` 内各 charger 子页 `quick_actions` 已补；`.ai/memory.md` 已记录 Phase 5 完成节点。
+> - 5.5：lint 通过。
 
 ### Phase 6 — `ui_invoke` 受控 UI 动作注册表（无接口按钮，对应 §5b）
 

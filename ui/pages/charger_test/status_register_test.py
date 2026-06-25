@@ -3,6 +3,8 @@
 
 import sys
 import os
+import threading
+from typing import Any
 from ui.resource_path import get_resource_base
 
 sys.path.append(get_resource_base())
@@ -30,6 +32,21 @@ from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.chamber_module_frame import ChamberConnectionMixin
 from i2c_interface_x64 import I2CInterface
 from Bes_I2CIO_Interface import I2CSpeedMode, I2CWidthFlag
+from core.ai.page_contract import (
+    CAP_APPLY_CONFIG,
+    CAP_GET_CONFIG,
+    CAP_GET_RESULT,
+    CAP_START_TEST,
+    CAP_STOP_TEST,
+)
+from log_config import get_logger
+
+_logger = get_logger(__name__)
+
+# AI 回填可视化（AIAssist_PageScopedControlPlan.md §4.2 / Phase 3）：
+# 被 AI 修改的控件临时高亮边框色 + 持续时长。
+_AI_HIGHLIGHT_QSS = "border: 1px solid #15d1a3;"
+_AI_HIGHLIGHT_MS = 1500
 
 
 STATUS_REGISTER_MAP = {
@@ -1005,6 +1022,228 @@ class StatusRegisterTestUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidge
     def update_test_result(self, result):
         if isinstance(result, dict):
             self._on_status_update(result)
+
+    # ------------------------------------------------------------------
+    # AIControllablePage 契约实现（AIAssist_PageScopedControlPlan.md §2 / Phase 5）
+    #
+    # Charger 状态寄存器测试接入 AI 受控契约，薄封装既有方法：
+    #   - ai_get_config 复用 get_test_config()
+    #   - ai_apply_config 经 apply_config_to_controls() 单一写入口回填控件
+    #   - ai_start_test/ai_stop_test 复用 _on_start_test/_on_stop_test
+    # 枢纽（MainWindow.resolve_active_ai_page）经 Tab 子页下钻拿到本实例，
+    # 鸭子调用契约方法，无需 core / handler 改动。
+    # ------------------------------------------------------------------
+    def ai_capabilities(self) -> set[str]:
+        return {
+            CAP_GET_CONFIG,
+            CAP_APPLY_CONFIG,
+            CAP_START_TEST,
+            CAP_STOP_TEST,
+            CAP_GET_RESULT,
+        }
+
+    def ai_get_config(self) -> dict[str, Any] | None:
+        try:
+            return self.get_test_config()
+        except Exception:  # noqa: BLE001 - 快照失败降级为 None（int 解析可能抛 ValueError）
+            _logger.error("AI 读取状态寄存器测试配置失败", exc_info=True)
+            return None
+
+    def ai_apply_config(self, payload: Any) -> tuple[bool, str]:
+        """落地配置草案到控件（写操作，经确认+审计后由枢纽调用）。"""
+        if self.is_test_running:
+            return False, "测试运行中，无法修改配置，请先停止测试。"
+        return self.apply_config_to_controls(payload if isinstance(payload, dict) else {})
+
+    def ai_start_test(self) -> tuple[bool, str]:
+        if self.is_test_running:
+            return False, "测试已在运行中。"
+        test_item = self.test_item_combo.currentText()
+        # 按测试项校验仪器（Voltage/Current/Reg Sweep 需 N6705C；Temperature Sweep 需温箱）
+        if test_item == "Temperature Sweep":
+            if not self.is_chamber_connected or self.chamber is None:
+                return False, "当前测试项为 Temperature Sweep，但未连接温箱，请先连接温箱。"
+        else:
+            if not self.is_connected or self.n6705c is None:
+                return False, f"当前测试项 {test_item} 需要 N6705C，请先连接再启动。"
+        try:
+            cfg = self.get_test_config()
+        except ValueError as e:
+            return False, f"配置校验失败：{e}"
+        self.append_log(f"[AI] 请求启动状态寄存器测试：{test_item}。")
+        try:
+            self._on_start_test()
+        except Exception:  # noqa: BLE001 - 启动异常转可读结果
+            _logger.error("AI 启动状态寄存器测试失败", exc_info=True)
+            return False, "启动测试异常，请查看日志。"
+        if self.is_test_running:
+            return True, f"已请求启动状态寄存器测试：{test_item}。"
+        return False, "启动未成功，请查看执行日志。"
+
+    def ai_stop_test(self) -> tuple[bool, str]:
+        if not self.is_test_running:
+            return False, "当前未在运行测试。"
+        self.append_log("[AI] 请求停止测试。")
+        try:
+            self._on_stop_test()
+        except Exception:  # noqa: BLE001 - 停止异常转可读结果
+            _logger.error("AI 停止状态寄存器测试失败", exc_info=True)
+            return False, "停止测试异常，请查看日志。"
+        return True, "已发送停止请求。"
+
+    def ai_get_result_summary(self) -> dict[str, Any] | None:
+        summary: dict[str, Any] = {
+            "available": True,
+            "running": self.is_test_running,
+            "test_item": self.test_item_combo.currentText(),
+        }
+        # 状态标签文本（bit 翻转检测结果回读控件文本，禁止臆造）
+        labels = {
+            name: card["value_label"].text()
+            for name, card in self.status_labels.items()
+        }
+        has_data = any(v.strip() not in ("", "---") for v in labels.values())
+        if not has_data:
+            return summary
+        summary["status_labels"] = labels
+        return summary
+
+    # ------------------------------------------------------------------
+    # UI 回填单一写入口（AIAssist_PageScopedControlPlan.md §4.2）
+    # ------------------------------------------------------------------
+    def apply_config_to_controls(self, cfg: dict) -> tuple[bool, str]:
+        if not isinstance(cfg, dict):
+            return False, "配置草案格式无效（期望 dict）。"
+        if threading.current_thread() is not threading.main_thread():
+            _logger.error(
+                "apply_config_to_controls 在非主线程被调用，拒绝回填以防违反线程边界"
+            )
+            return False, "配置回填未在主线程执行，已拒绝。"
+
+        applied: list[str] = []
+        touched: list = []
+
+        def _to_hex(val) -> str:
+            try:
+                return hex(int(val, 16)) if isinstance(val, str) else hex(int(val))
+            except (TypeError, ValueError):
+                return str(val)
+
+        def _set_combo_text(combo, key, normalize=None):
+            val = cfg.get(key)
+            if val is None:
+                return
+            text = normalize(val) if normalize is not None else str(val)
+            if text is None:
+                return
+            idx = combo.findText(text)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+                applied.append(key)
+                touched.append(combo)
+
+        def _set_combo_data(combo, key):
+            val = cfg.get(key)
+            if val is None:
+                return
+            idx = combo.findData(val)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+                applied.append(key)
+                touched.append(combo)
+
+        def _set_spin(spin, key):
+            val = cfg.get(key)
+            if val is None:
+                return
+            try:
+                spin.setValue(float(val))
+            except (TypeError, ValueError):
+                return
+            applied.append(key)
+            touched.append(spin)
+
+        def _set_hex_edit(edit, key):
+            val = cfg.get(key)
+            if val is None:
+                return
+            edit.setText(_to_hex(val))
+            applied.append(key)
+            touched.append(edit)
+
+        def _set_text(edit, key):
+            val = cfg.get(key)
+            if val is None:
+                return
+            edit.setText(str(val))
+            applied.append(key)
+            touched.append(edit)
+
+        def _ch_norm(v):
+            return f"CH {int(v)}" if str(v).lstrip("-").isdigit() else str(v)
+
+        # 公共字段
+        _set_combo_text(self.test_item_combo, "test_item")
+        _set_hex_edit(self.device_addr_edit, "device_addr")
+        _set_hex_edit(self.reg_addr_edit, "reg_addr")
+        _set_text(self.reg_bit_edit, "reg_bit")
+        _set_combo_data(self.iic_width_combo, "iic_width")
+
+        # Voltage / Current Sweep 通道
+        _set_combo_text(self.test_channel_combo, "test_channel", normalize=_ch_norm)
+
+        # Voltage Sweep
+        _set_spin(self.start_voltage_spin, "start_voltage")
+        _set_spin(self.end_voltage_spin, "end_voltage")
+        _set_spin(self.step_voltage_spin, "step_voltage")
+        _set_spin(self.step_delay_v_spin, "step_delay_ms")
+
+        # Current Sweep
+        _set_spin(self.start_current_spin, "start_current")
+        _set_spin(self.end_current_spin, "end_current")
+        _set_spin(self.step_current_spin, "step_current")
+        _set_spin(self.step_delay_c_spin, "step_delay_ms")
+
+        # Temperature Sweep
+        _set_spin(self.start_temp_spin, "start_temp")
+        _set_spin(self.end_temp_spin, "end_temp")
+        _set_spin(self.step_temp_spin, "step_temp")
+        _set_spin(self.step_delay_t_spin, "step_delay_ms")
+
+        # Reg Sweep
+        _set_hex_edit(self.write_reg_addr_edit, "write_reg_addr")
+        _set_spin(self.reg_start_spin, "reg_start_value")
+        _set_spin(self.reg_end_spin, "reg_end_value")
+        _set_spin(self.reg_step_spin, "reg_step_value")
+        _set_spin(self.step_delay_r_spin, "step_delay_ms")
+
+        if not applied:
+            return False, "配置草案未包含任何可识别的配置项。"
+        self._highlight_widgets(touched)
+        self.append_log(f"[AI] 已应用配置：{', '.join(applied)}")
+        return True, f"已应用配置项：{', '.join(applied)}。"
+
+    def _highlight_widgets(self, widgets: list) -> None:
+        """被 AI 修改的控件临时高亮边框（§4.2-3 / Phase 3）。"""
+        if not widgets:
+            return
+        for widget in widgets:
+            if widget is None:
+                continue
+            widget.setStyleSheet(_AI_HIGHLIGHT_QSS)
+            widget.setProperty("aiHighlighted", True)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+
+            def _clear(_w=widget):
+                try:
+                    _w.setStyleSheet("")
+                    _w.setProperty("aiHighlighted", False)
+                    _w.style().unpolish(_w)
+                    _w.style().polish(_w)
+                except RuntimeError:  # noqa: BLE001 - widget 可能已销毁
+                    pass
+            QTimer.singleShot(_AI_HIGHLIGHT_MS, _clear)
 
 
 def main():

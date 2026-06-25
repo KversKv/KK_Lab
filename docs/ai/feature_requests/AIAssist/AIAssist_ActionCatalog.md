@@ -432,3 +432,47 @@
 - Roadmap（P1~P7）已全部落地，无剩余规划动作。
 - 总计 **68 个**动作，category 维持 9 类（P6 新增 `export`，P7 诊断并入 `query`）。
 - 能力覆盖从「查询 + 基础控制」升级为「连接 → 测量 → 控制 → 编排 → 导出 → 诊断」全链路闭环。
+
+---
+
+## 5. 页面-AI 能力矩阵（Phase 5：页级受控契约 AIControllablePage）
+
+> 事实源：`core/ai/page_contract.py`（协议）·`ui/main_window.py::resolve_active_ai_page`（下钻）·各页面 `ai_capabilities()`。
+> 说明：Tab 容器页（`pmu_test` / `charger_test`）经 `resolve_active_ai_page` 下钻到当前子页实例；下表「页」列给出**叶子页 page_key**，能力随当前子页而定。仅下表「✓」能力对应的页级动作对该页可见，`builder`/`dispatcher` 按本表裁剪工具列表——AI 看到的就是该页能干的。
+
+### 5.1 能力符号
+
+| 符号 | 含义（`core/ai/page_contract.py` 常量） |
+|---|---|
+| `get_config` | `CAP_GET_CONFIG` — 读当前页测试配置快照 |
+| `apply_config` | `CAP_APPLY_CONFIG` — 应用配置草案到控件（写操作，经确认+审计） |
+| `start_test` | `CAP_START_TEST` — 启动本页测试 |
+| `stop_test` | `CAP_STOP_TEST` — 停止本页测试 |
+| `get_result` | `CAP_GET_RESULT` — 读最近一次测试结果摘要 |
+
+### 5.2 各页能力
+
+| 页（page_key） | get_config | apply_config | start_test | stop_test | get_result | 启动前置（仪器/校验） |
+|---|:---:|:---:|:---:|:---:|:---:|---|
+| `orchestrator`（custom_test 编排） | ✓ | ✓ | ✓ | ✓ | ✓ | 序列非空；运行中拒绝单步 |
+| `pmu_output_voltage`（输出电压线性度） | ✓ | ✓ | ✓ | ✓ | ✓ | 连接 N6705C |
+| `pmu_is_gain`（Is Gain） | ✓ | ✓ | ✓ | ✓ | ✓ | 连接示波器；Step Current>0 |
+| `pmu_oscp`（OSCP 保护点） | ✓ | ✓ | ✓ | ✓ | ✓ | 连接 N6705C；hex 地址校验 |
+| `pmu_gpadc`（GPADC） | ✓ | ✓ | ✓ | ✓ | ✓ | 按 `INSTRUMENT_MAP` 校验（温箱/示波器/N6705C） |
+| `charger_config_traverse`（配置遍历） | ✓ | ✓ | ✓ | ✓ | ✓ | 连接 N6705C |
+| `charger_status_register`（状态寄存器） | ✓ | ✓ | ✓ | ✓ | ✓ | V/I/Reg Sweep 需 N6705C；Temp Sweep 需温箱 |
+| `charger_iterm`（Iterm） | ✓ | ✓ | ✓ | ✓ | ✓ | 连接 N6705C |
+| `charger_regulation_voltage`（调压） | ✓ | ✓ | ✓ | ✓ | ✓ | 连接 N6705C |
+
+> 未列入表中的页（`power_analyser` / `datalog` / `oscilloscope` / `thermal_chamber` / `consumption_test` / `vmin_hunter` / `kk_serials` / `collection`）暂未接入 `AIControllablePage` 契约，AI 无法直接启动/停止/配置其测试；其能力仍由 §1 通用动作（仪器/示波器/温箱/串口/导出等）提供。
+
+### 5.3 契约方法语义（鸭子类型，非强制继承）
+
+- `ai_capabilities() -> set[str]`：声明本页支持的页级能力（上表「✓」即来自此处）；`builder` 据此裁剪该页可见的页级动作。
+- `ai_get_config() -> dict | None`：读快照，失败降级为 `None`（不抛异常）。
+- `ai_apply_config(payload) -> tuple[bool, str]`：落地草案到控件（经 `apply_config_to_controls` 单一写入口 + 临时高亮反馈）；测试运行中拒绝。
+- `ai_start_test() -> tuple[bool, str]`：薄封装既有 `_on_start_test`，先校验仪器/参数再启动，返回可读结果。
+- `ai_stop_test() -> tuple[bool, str]`：薄封装既有 `_on_stop_test`，未运行时返回失败。
+- `ai_get_result_summary() -> dict | None`：回读结果卡片/计数文本，无数据时返回仅含 `available`/`running` 的最小摘要（禁止臆造数值）。
+
+> 所有页级写动作经 `apply_config_to_controls` 单一写入口回填控件并临时高亮（`_AI_HIGHLIGHT_QSS` + `QTimer` 1.5s 自动复位），主线程边界校验拒绝非主线程调用。`start_test`/`stop_test` 复用页面既有按钮逻辑，不绕过租约/连接校验。`get_result` 仅回读控件文本，不发任何仪器命令。
