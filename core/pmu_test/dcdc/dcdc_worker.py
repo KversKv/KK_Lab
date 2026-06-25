@@ -132,11 +132,11 @@ def _run_efficiency_curve(n, cfg, debug, stop_flag_fn,
     sum_vout = 0.0
     total_count = progress_total if progress_total is not None else len(current_points)
 
-    hdr = (f"{'#':>4s}  {'Iset(mA)':>10s}  {'Vin(V)':>8s}  "
+    hdr = (f"[DATA] {'#':>4s}  {'Iset(mA)':>10s}  {'Vin(V)':>8s}  "
            f"{'Vout(V)':>8s}  {'Iin(A)':>10s}  {'Iout(A)':>10s}  "
            f"{'Iload(A)':>10s}  {'Eff(%)':>7s}")
     log_fn(hdr)
-    log_fn("-" * len(hdr))
+    log_fn("[DATA] " + "-" * (len(hdr) - 7))
 
     for idx, i_set in enumerate(current_points):
         if stop_flag_fn():
@@ -162,7 +162,7 @@ def _run_efficiency_curve(n, cfg, debug, stop_flag_fn,
         eff_pct = eff * 100
 
         log_fn(
-            f"{idx+1:4d}  {current_points_neg[idx]*1000:10.3f}  {vbat:8.4f}  "
+            f"[DATA] {idx+1:4d}  {current_points_neg[idx]*1000:10.3f}  {vbat:8.4f}  "
             f"{vout:8.4f}  {i_in:10.6f}  {i_out:10.6f}  "
             f"{i_load_actual:10.6f}  {eff_pct:7.2f}"
         )
@@ -524,11 +524,11 @@ class DCDCTempSweepTestThread(QThread):
             sum_eff = 0.0
             total_count = len(temp_points)
 
-            hdr = (f"{'#':>4s}  {'Temp(°C)':>10s}  {'Vin(V)':>8s}  "
+            hdr = (f"[DATA] {'#':>4s}  {'Temp(°C)':>10s}  {'Vin(V)':>8s}  "
                    f"{'Vout(V)':>8s}  {'Iin(A)':>10s}  {'Iout(A)':>10s}  "
                    f"{'Eff(%)':>7s}")
             self.log_message.emit(hdr)
-            self.log_message.emit("-" * len(hdr))
+            self.log_message.emit("[DATA] " + "-" * (len(hdr) - 7))
 
             TEMP_TOLERANCE = 1.0
             TEMP_SETTLE_POLL_S = 2.0
@@ -603,7 +603,7 @@ class DCDCTempSweepTestThread(QThread):
                 eff_pct = eff * 100
 
                 self.log_message.emit(
-                    f"{idx+1:4d}  {temp_set:10.1f}  {vbat:8.4f}  "
+                    f"[DATA] {idx+1:4d}  {temp_set:10.1f}  {vbat:8.4f}  "
                     f"{vout:8.4f}  {i_in:10.6f}  {i_out:10.6f}  "
                     f"{eff_pct:7.2f}"
                 )
