@@ -48,6 +48,9 @@ ACTION_CAPABILITY_MAP: dict[str, tuple[str, ...]] = {
     # apply_test_config_draft 双路径：config_draft 走 CAP_APPLY_CONFIG（专项页），
     # script_draft 走 CAP_APPLY_SCRIPT（orchestrator）；满足任一即可。
     "apply_test_config_draft": (CAP_APPLY_CONFIG, CAP_APPLY_SCRIPT),
+    # generate_config_draft：基于当前页配置 + changes 生成可落地的配置草案（只读取当前值、
+    # 登记 draft_id，不直接落地），随后由 apply_test_config_draft 经确认闭环应用。
+    "generate_config_draft": (CAP_APPLY_CONFIG,),
     "set_test_variable": (CAP_SET_VARIABLE,),
 }
 

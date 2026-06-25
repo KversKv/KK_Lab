@@ -18,6 +18,7 @@ AI 调 apply_test_config_draft(draft_id) → ActionDispatcher 确认闭环 → a
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 from core.ai.actions.handlers.deps import ActionDeps
@@ -26,6 +27,7 @@ from core.ai.actions.registry import (
     CATEGORY_TEST_SEQUENCE,
     ActionSpec,
 )
+from core.ai.schemas import CONFIG_DRAFT, ConfigDraft
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -106,6 +108,35 @@ SPECS: list[ActionSpec] = [
         },
         risk_level="high",
         require_confirmation=True,
+        category=CATEGORY_TEST_CONFIG,
+    ),
+    ActionSpec(
+        name="generate_config_draft",
+        description=(
+            "基于当前页配置生成配置草案：读取本页当前配置快照，按 changes 覆盖指定字段"
+            "（其余字段保持不变），登记为可引用的 draft_id。本动作不落地、不改控件，"
+            "仅产出草案句柄；随后须调 apply_test_config_draft(draft_id) 经用户确认后落地。"
+            "用户要求修改本页某些配置参数（如终点电流 end_current_a）时，用本动作生成草案。"
+            "changes 的键名须与 get_current_test_config 返回的字段一致。"
+        ),
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "changes": {
+                    "type": "object",
+                    "description": (
+                        "要覆盖的配置字段键值对（键名与 get_current_test_config 一致），"
+                        "如 {\"end_current_a\": 0.01}。未列出的字段沿用当前值。"
+                    ),
+                },
+                "title": {
+                    "type": "string",
+                    "description": "草案标题（可选，便于用户在预览中识别）。",
+                },
+            },
+            "required": ["changes"],
+        },
+        risk_level="low",
         category=CATEGORY_TEST_CONFIG,
     ),
     ActionSpec(
@@ -400,6 +431,73 @@ def build_handlers(deps: ActionDeps) -> dict[str, Any]:
             "_message": message or ("单步执行已启动。" if ok else "单步执行失败。"),
         }
 
+    def generate_config_draft(args: dict) -> dict:
+        registry = deps.draft_registry
+        if registry is None:
+            return {"ok": False, "_message": "草案注册表不可用，无法生成配置草案。"}
+        if deps.config_apply_callback is None:
+            return {"ok": False, "_message": "当前页面不支持应用配置草案，生成草案无意义。"}
+        getter = deps.test_config_getter
+        if getter is None:
+            return {"ok": False, "_message": "当前页面不支持读取配置快照，无法生成草案。"}
+        changes = args.get("changes")
+        if not isinstance(changes, dict) or not changes:
+            return {"ok": False, "_message": "缺少 changes（要覆盖的配置字段键值对）。"}
+        try:
+            current = getter()
+        except Exception:  # noqa: BLE001 - 读取异常转可读结果
+            logger.error("读取当前配置失败", exc_info=True)
+            return {"ok": False, "_message": "读取当前配置异常，请查看日志。"}
+        if not isinstance(current, dict):
+            current = {}
+        unknown = [k for k in changes if k not in current]
+        if unknown and current:
+            return {
+                "ok": False,
+                "unknown_keys": unknown,
+                "valid_keys": sorted(current.keys()),
+                "_message": (
+                    f"以下字段不在本页配置中：{', '.join(unknown)}。"
+                    f"可用字段：{', '.join(sorted(current.keys()))}。"
+                ),
+            }
+        payload = dict(current)
+        payload.update(changes)
+        page_key = ""
+        if deps.page_key_getter is not None:
+            try:
+                page_key = deps.page_key_getter() or ""
+            except Exception:  # noqa: BLE001
+                page_key = ""
+        title = str(args.get("title", "")).strip() or "配置草案"
+        notes = "由 AI 基于当前配置生成：" + ", ".join(
+            f"{k}={changes[k]}" for k in changes
+        )
+        draft = ConfigDraft(
+            target_page=page_key, title=title, notes=notes, payload=payload
+        )
+        parsed = SimpleNamespace(
+            ok=True, payload=draft, kind=CONFIG_DRAFT
+        )
+        try:
+            draft_id = registry.register(parsed)
+        except Exception:  # noqa: BLE001 - 登记异常转可读结果
+            logger.error("登记配置草案失败", exc_info=True)
+            return {"ok": False, "_message": "登记草案异常，请查看日志。"}
+        if not draft_id:
+            return {"ok": False, "_message": "草案登记失败（无效 payload）。"}
+        return {
+            "ok": True,
+            "draft_id": draft_id,
+            "kind": CONFIG_DRAFT,
+            "title": title,
+            "changes": dict(changes),
+            "_message": (
+                f"已生成配置草案 {draft_id}（{notes}）。"
+                f"请调用 apply_test_config_draft(draft_id=\"{draft_id}\") 经用户确认后落地。"
+            ),
+        }
+
     return {
         "start_test_sequence": start_test_sequence,
         "pause_test_sequence": pause_test_sequence,
@@ -408,6 +506,7 @@ def build_handlers(deps: ActionDeps) -> dict[str, Any]:
         "list_test_steps": list_test_steps,
         "get_test_result_summary": get_test_result_summary,
         "apply_test_config_draft": apply_test_config_draft,
+        "generate_config_draft": generate_config_draft,
         "set_test_variable": set_test_variable,
         "run_single_step": run_single_step,
     }

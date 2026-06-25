@@ -423,8 +423,9 @@ class _MarkdownBubble(QWidget):
             QTimer.singleShot(0, lambda v=view: _MarkdownBubble._fit_height(v))
             return
         doc.setTextWidth(width)
-        # +2 安全余量，吸收浮点取整误差，杜绝末行被裁出现内部滚动条。
-        height = int(doc.size().height() + 0.5) + _BUBBLE_PAD_V + 2
+        # 文档高度 + 上下 QSS 内边距(24) + 上下边框(2) + 安全余量(6)，吸收 CJK 行高
+        # 浮点取整误差，杜绝末行被裁出现内部滚动条（部分气泡显示不完全的根因）。
+        height = int(doc.size().height() + 0.5) + _BUBBLE_PAD_V + 6
         view.setFixedHeight(max(_BUBBLE_MIN_H, height))
 
     @staticmethod
