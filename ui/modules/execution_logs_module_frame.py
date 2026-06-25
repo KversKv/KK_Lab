@@ -216,6 +216,19 @@ class _PillSwitcher(QWidget):
         self._anim.setDuration(200)
         self._anim.setEasingCurve(QEasingCurve.InOutCubic)
 
+    def _expanded_width(self) -> int:
+        font = QFont()
+        font.setPixelSize(11)
+        font.setWeight(QFont.Normal)
+        fm = QFontMetrics(font)
+        max_w = 0
+        for _, label, _ in self._ITEMS:
+            w = self._pad_x * 2 + self._dot_r + 6 + fm.horizontalAdvance(label)
+            if w > max_w:
+                max_w = w
+        total = max_w * len(self._ITEMS) + self._spacing * (len(self._ITEMS) - 1)
+        return total + 6
+
     def setCompact(self, compact: bool):
         if compact == self._compact:
             return
@@ -536,6 +549,7 @@ class ExecutionLogsFrame(QFrame):
         self.clear_btn.clicked.connect(self.clear_log)
         toolbar.addWidget(self.clear_btn)
 
+        self._toolbar_layout = toolbar
         header_layout.addLayout(toolbar)
 
         if show_progress:
@@ -619,6 +633,7 @@ class ExecutionLogsFrame(QFrame):
         icon = _tinted_svg_icon(svg_path, "#8eb0e3", 12)
         if not icon.isNull():
             btn.setIcon(icon)
+        btn._expanded_width = btn.sizeHint().width()
         return btn
 
     def _set_btn_compact(self, btn: QPushButton, compact: bool):
@@ -638,11 +653,61 @@ class ExecutionLogsFrame(QFrame):
         super().resizeEvent(event)
         self._apply_responsive_layout(self.width())
 
+    def _expanded_toolbar_width(self) -> int:
+        """工具栏在完整（非紧凑）状态下需要的最小宽度。"""
+        lay = self._toolbar_layout
+        margins = lay.contentsMargins()
+        total = margins.left() + margins.right()
+        spacing = lay.spacing()
+        count = 0
+        for i in range(lay.count()):
+            item = lay.itemAt(i)
+            w = item.widget()
+            if w is not None:
+                if w is self._pill_switcher:
+                    # 始终按展开（带文字）宽度计算阈值
+                    total += self._pill_switcher._expanded_width()
+                    count += 1
+                elif w is self._search_input:
+                    # 即使当前隐藏，也按其展开所需最小宽度计入阈值
+                    total += self._search_input.minimumWidth()
+                    count += 1
+                elif w is getattr(self, "export_btn", None):
+                    # Export 默认隐藏，不计入
+                    continue
+                else:
+                    if not w.isVisible():
+                        continue
+                    bw = getattr(w, "_expanded_width", None)
+                    total += bw if bw is not None else w.sizeHint().width()
+                    count += 1
+            elif item.spacerItem() is not None:
+                # addSpacing 固定间距；addStretch 不计入最小宽度
+                sh = item.spacerItem().sizeHint()
+                if item.spacerItem().expandingDirections() & Qt.Horizontal:
+                    continue
+                total += sh.width()
+                count += 1
+        if count > 1:
+            total += spacing * (count - 1)
+        return total
+
     def _apply_responsive_layout(self, width: int):
-        # 宽度阈值：低于该值时把工具栏控件收缩为仅图标
-        compact = width < 560
-        if getattr(self, "_responsive_compact", None) == compact:
+        # 容器内边距（header_layout margins）需扣除
+        header_margins = self._header_widget.layout().contentsMargins()
+        avail = width - header_margins.left() - header_margins.right()
+
+        needed = self._expanded_toolbar_width()
+        current = getattr(self, "_responsive_compact", False)
+        if current:
+            # 紧凑态：需要足够余量才还原，避免临界抖动
+            compact = avail < needed + 24
+        else:
+            compact = avail < needed
+
+        if current == compact and getattr(self, "_responsive_inited", False):
             return
+        self._responsive_inited = True
         self._responsive_compact = compact
 
         self._pill_switcher.setCompact(compact)
