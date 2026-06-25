@@ -1,4 +1,4 @@
-"""AI 草案注册表（AI_AssistFunction.md §5.6 P5）。
+"""AI 草案注册表（AIAssist_ActionCatalog.md §5.6 P5）。
 
 `AIService.generate_draft` 产出的草案（ConfigDraft / ScriptDraft）经 `draft_ready`
 信号回灌 UI 预览的同时，由本注册表登记一个稳定 draft_id，供 AI 通过

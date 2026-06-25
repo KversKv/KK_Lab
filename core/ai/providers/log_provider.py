@@ -1,6 +1,6 @@
 """LogContextProvider：把软件运行日志 + 当前页执行日志翻译成上下文文本。
 
-来源（AI_Assist.md §11）：
+来源（AIAssist_Architecture.md §11）：
   - 软件运行日志：log_ring 环形缓冲（挂 root logger）；
   - 执行日志：当前页 ExecutionLogsFrame 缓存，经 UI 注入的 execution_logs_getter 回调读取。
 

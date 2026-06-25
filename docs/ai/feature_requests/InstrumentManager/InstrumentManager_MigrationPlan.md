@@ -1,6 +1,6 @@
 # 通用仪器管理改善计划
 
-> 本计划基于 [InstrumentsManage.md](./InstrumentsManage.md) 的目标架构，以及当前代码中已经引入的 `core/instruments/*`、`InstrumentManager`、`InstrumentProfile`、`InstrumentSession` 等实现。
+> 本计划基于 [InstrumentManager_Architecture.md](./InstrumentManager_Architecture.md) 的目标架构，以及当前代码中已经引入的 `core/instruments/*`、`InstrumentManager`、`InstrumentProfile`、`InstrumentSession` 等实现。
 >
 > 目标不是再写一份架构设想，而是指定一条可以逐步执行、逐步验证、最终覆盖所有仪器和两种运行模式的改善路线。
 

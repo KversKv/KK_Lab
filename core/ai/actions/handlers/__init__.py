@@ -1,4 +1,4 @@
-"""AI 受控动作 handlers（AI_Assist.md §8）。
+"""AI 受控动作 handlers（AIAssist_Architecture.md §8）。
 
 各 handler 模块导出：
   - SPECS: list[ActionSpec]（动作元数据）

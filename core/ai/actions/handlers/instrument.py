@@ -1,4 +1,4 @@
-"""仪器类动作 handlers（AI_Assist.md §8 / §10）。
+"""仪器类动作 handlers（AIAssist_Architecture.md §8 / §10）。
 
 一律经 InstrumentManager，AI 无法绕过 instruments/：
   query_instrument            : low，对已连接会话发只读 SCPI 查询（query 接口）；

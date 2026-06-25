@@ -1,4 +1,4 @@
-"""ActionSpec + ActionRegistry（AI_Assist.md §8）。
+"""ActionSpec + ActionRegistry（AIAssist_Architecture.md §8）。
 
 ActionSpec 描述一个受控动作的元数据（名称 / 描述 / 参数 Schema / 风险等级 /
 是否需确认 / 结果 Schema / 类别）。executor 不在 spec 上，由 dispatcher 按 name
@@ -32,7 +32,7 @@ CATEGORY_SCHEDULE = "schedule"
 
 @dataclass(frozen=True)
 class ActionSpec:
-    """受控动作元数据（AI_Assist.md §8）。"""
+    """受控动作元数据（AIAssist_Architecture.md §8）。"""
 
     name: str
     description: str

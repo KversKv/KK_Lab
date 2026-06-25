@@ -3,12 +3,12 @@
 > 📚 **AI Assist 文档索引**
 > | 文档 | 角色 |
 > |---|---|
-> | [AI_Assist.md](./AI_Assist.md) | 架构设计与规范（事实源） |
-> | [AI_AssistPlan.md](./AI_AssistPlan.md) | 主实现计划与进度表（阶段 0~5） |
-> | [AI_AssistNewFeature_V1.md](./AI_AssistNewFeature_V1.md) | 功能增补 V1（波形/控制/用量/序列/Markdown，F1~F6） |
-> | **[AI_Assistant_Datalog.md](./AI_Assistant_Datalog.md)**（本文） | F1 增强：波形按「屏幕可见窗口 + Marker」喂 AI |
+> | [AIAssist_Architecture.md](./AIAssist_Architecture.md) | 架构设计与规范（事实源） |
+> | [AIAssist_ImplementationPlan.md](./AIAssist_ImplementationPlan.md) | 主实现计划与进度表（阶段 0~5） |
+> | [AIAssist_FeatureExtension_V1.md](./AIAssist_FeatureExtension_V1.md) | 功能增补 V1（波形/控制/用量/序列/Markdown，F1~F6） |
+> | **[AIAssist_DatalogVisibleWaveform.md](./AIAssist_DatalogVisibleWaveform.md)**（本文） | F1 增强：波形按「屏幕可见窗口 + Marker」喂 AI |
 
-> 配套主文档：[AI_Assist.md](./AI_Assist.md)（架构事实源）、[AI_AssistNewFeature_V1.md](./AI_AssistNewFeature_V1.md) §1（F1 三层结构）。
+> 配套主文档：[AIAssist_Architecture.md](./AIAssist_Architecture.md)（架构事实源）、[AIAssist_FeatureExtension_V1.md](./AIAssist_FeatureExtension_V1.md) §1（F1 三层结构）。
 > 本文定位：在 F1（波形喂 AI）基础上，把「全量喂」改为「**按 Datalog Viewer 当前 X 轴可见范围喂**」，并附带 Marker A/B 区间统计。属 **F1 增强（记作 F1.7）**。
 > 分层铁律：`main.py → ui/ ←→ core/ → instruments/ → lib/`；`instruments/` 禁 Qt；`ui/` 禁阻塞 IO（QThread + Signal/Slot）；禁 `print`、异常 `exc_info=True`、禁裸 `except`。
 > 状态：`☐ 待办` / `◐ 进行中` / `☑ 完成` / `⊘ 阻塞` / `— 不适用`。
@@ -225,4 +225,4 @@ class WaveformDigest:
 | `helps/datalog.html` | 可补一句「可发送当前可见波形给 AI 助手」 |
 | `.ai/memory.md` | 记录「波形喂 AI 改为按可见窗口 + Marker」决策 |
 | `docs/ai/03_GOTCHAS.md` | 记「子线程禁读 Qt ViewBox；范围快照须 UI 线程取」坑点 |
-| `AI_AssistNewFeature_V1.md` | F1 表追加 F1.7 指向本文 |
+| `AIAssist_FeatureExtension_V1.md` | F1 表追加 F1.7 指向本文 |

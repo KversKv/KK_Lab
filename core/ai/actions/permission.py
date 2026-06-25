@@ -1,4 +1,4 @@
-"""PermissionChecker / RiskPolicy（AI_Assist.md §10）。
+"""PermissionChecker / RiskPolicy（AIAssist_Architecture.md §10）。
 
 风险分级与策略：
   - low      : 可直接执行（仍写审计）

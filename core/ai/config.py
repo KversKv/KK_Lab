@@ -1,6 +1,6 @@
 """AI Assist 配置读写。
 
-事实源与优先级（与 AI_Assist.md §14 一致，禁硬编码 Key）：
+事实源与优先级（与 AIAssist_Architecture.md §14 一致，禁硬编码 Key）：
   环境变量 KK_LAB_AI_BASE_URL / KK_LAB_AI_API_KEY / KK_LAB_AI_MODEL
   > user_data/ai/config.json 的 ai.{...}
   > 内置默认值

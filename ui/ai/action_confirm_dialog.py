@@ -1,4 +1,4 @@
-"""ActionConfirmDialog：AI 受控动作执行前确认（AI_Assist.md §10 / §13）。
+"""ActionConfirmDialog：AI 受控动作执行前确认（AIAssist_Architecture.md §10 / §13）。
 
 high / critical 动作执行前弹此对话框，展示动作名 / 风险等级 / 参数 / 风险提示，
 用户显式确认后才执行。遵守约定：parent 必传；OK/Cancel default/autoDefault 二元化。

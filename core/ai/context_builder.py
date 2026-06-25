@@ -1,6 +1,6 @@
 """ContextBuilder：聚合各 Provider 输出为只读、受裁剪、可脱敏的上下文快照。
 
-职责（AI_Assist.md §11）：
+职责（AIAssist_Architecture.md §11）：
   - 汇总 LogContextProvider / SerialContextProvider 的文本；
   - 日志范围选择（行数上限保护）；
   - 等级过滤（仅保留 >= 指定等级的行）；

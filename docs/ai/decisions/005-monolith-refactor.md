@@ -3,7 +3,7 @@
 - **状态**：Accepted
 - **日期**：2026-06-24
 - **范围**：`ui/` 红区巨石文件（serialCom_module_frame / n6705c_analyser_ui / n6705c_datalog_ui / pmu_test/* / oscilloscope / consumption_test / main_window / ai_assist_panel）、新增 `core/pmu_test/`、`core/controllers/`、`core/n6705c/`、`core/serial_script/`、`core/consumption_test/`、`core/instruments/connection_hub.py`、`ui/ai/transcript_exporter.py`、`ui/styles/serial_tokens.py` 等
-- **关联**：[CodebaseRefactorAssessment.md](../NewFT/CodebaseRefactorAssessment.md)、[04_ARCHITECTURE.md §2.1](../04_ARCHITECTURE.md)
+- **关联**：[Codebase_RefactorAssessment.md](../feature_requests/Codebase/Codebase_RefactorAssessment.md)、[04_ARCHITECTURE.md §2.1](../04_ARCHITECTURE.md)
 
 ---
 

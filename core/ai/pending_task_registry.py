@@ -1,4 +1,4 @@
-"""异步任务注册表（AI_Assistant_Plan.md §4 / S1）。
+"""异步任务注册表（AIAssist_TaskSchedulingResumePlan.md §4 / S1）。
 
 长任务 / 异步动作发起后立即返回 `{status:"pending", task_id}`，由本注册表登记
 `task_id -> PendingTask`。后台执行（QThread worker / QTimer / executor）完成后，

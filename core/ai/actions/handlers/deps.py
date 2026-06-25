@@ -1,4 +1,4 @@
-"""ActionDeps：动作 handler 的依赖注入容器（AI_Assist.md §8 / §13）。
+"""ActionDeps：动作 handler 的依赖注入容器（AIAssist_Architecture.md §8 / §13）。
 
 UI 层（MainWindow）构造并注入只读访问器与受控操作回调，core 不反向依赖 ui。
 所有字段均可选（None 表示当前环境不支持该能力，handler 应优雅降级）。

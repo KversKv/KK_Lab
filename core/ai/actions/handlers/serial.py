@@ -1,4 +1,4 @@
-"""串口类动作 handlers（AI_Assist.md §8）。
+"""串口类动作 handlers（AIAssist_Architecture.md §8）。
 
 clear_serial_log  : low，清空 AI 侧 RX 缓存日志；
 send_serial_text  : high，向活动会话发送文本（必须确认，经 SerialSessionManager）。

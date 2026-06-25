@@ -1,4 +1,4 @@
-"""示波器类动作 handlers（AI_AssistFunction.md §5.3 P2）。
+"""示波器类动作 handlers（AIAssist_ActionCatalog.md §5.3 P2）。
 
 一律经 InstrumentManager 取得示波器驱动实例（DSOX4034A / MSO64B / MockMSO64B），
 AI 无法绕过 instruments/。复用 instrument 模块的 _run_read_action / _run_write_action

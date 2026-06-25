@@ -1,4 +1,4 @@
-"""草案本地校验（AI_Assist.md §12，阶段 3 任务 3.4；F5.3）。
+"""草案本地校验（AIAssist_Architecture.md §12，阶段 3 任务 3.4；F5.3）。
 
 把 AI 产出的序列草案接到现有内核：
   - core/orchestrator/serialization.load_sequence_data 反序列化 + 迁移；

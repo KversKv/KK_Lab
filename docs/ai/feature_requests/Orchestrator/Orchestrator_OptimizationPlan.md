@@ -467,7 +467,7 @@ class N6705CMeasureNode(BaseNode):
 - **预计工作量**: 0.5 会话
 - **预计会话**: 会话 1
 - **完成日期**: 2026-05-28
-- **完成文件**: `ui/pages/custom_test/node_metadata.py`、`tests/test_custom_test_phase0.py`、`docs/ai/NewFT/CustomTestOPT.md`
+- **完成文件**: `ui/pages/custom_test/node_metadata.py`、`tests/test_custom_test_phase0.py`、`docs/ai/feature_requests/Orchestrator/Orchestrator_OptimizationPlan.md`
 - **风险备注**: `build_node_inventory()` 已形成 Phase 0 节点清单入口；输出/隐式变量仍是迁移前基线快照，后续 Phase 1/3 需沉淀为 `NodeDefinition` / Result Model。
 - **状态**: ✅ 已完成
 

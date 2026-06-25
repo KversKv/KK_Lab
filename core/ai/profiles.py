@@ -2,7 +2,7 @@
 
 页面键直接复用 MainWindow.current_instrument_ui（见 _get_current_help_key 验证）。
 
-⚠️ 阶段 1 落地约束（AI_Assist.md §5/§6）：
+⚠️ 阶段 1 落地约束（AIAssist_Architecture.md §5/§6）：
   - 当前网关仅暴露真实模型 glm-5.1-fp8（默认）与 deepseekv4flash，无功能别名路由；
     因此各 Profile 的 model 一律先映射到实际可用模型，功能差异靠 system_prompt/temperature 体现；
   - glm-5.1-fp8 为推理模型，reasoning 先消耗 token，max_tokens 必须 ≥ 1024，否则 content 可能为空。

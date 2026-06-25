@@ -1,4 +1,4 @@
-"""AI 产物注册表（AI_AssistFunction.md §5.7 P6）。
+"""AI 产物注册表（AIAssist_ActionCatalog.md §5.7 P6）。
 
 P6 数据导出与产物通道的统一句柄登记表：save_scope_screenshot /
 export_datalog_csv / export_waveform_csv 等导出动作落盘后，把产物路径与元信息

@@ -1,4 +1,4 @@
-"""AI 受控动作层（AI_Assist.md §8 / §10）。
+"""AI 受控动作层（AIAssist_Architecture.md §8 / §10）。
 
 AI 一切落地动作必须经此层：注册 -> 权限/风险判定 -> 必要时确认 -> 执行 -> 审计。
 本层禁 import Qt Widgets（dispatcher/handlers 通过 UI 注入的回调间接操作 UI/仪器）。

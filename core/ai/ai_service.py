@@ -1343,7 +1343,7 @@ class AIService(QObject):
         )
 
     def generate_draft(self, kind: str, user_text: str) -> None:
-        """生成测试配置 / 测试脚本草案（AI_Assist.md §9 / §12）。
+        """生成测试配置 / 测试脚本草案（AIAssist_Architecture.md §9 / §12）。
 
         kind: CONFIG_DRAFT 或 SCRIPT_DRAFT；
         模型按对应 schema 输出 JSON 草案，回报 draft_ready(ParsedResponse)。

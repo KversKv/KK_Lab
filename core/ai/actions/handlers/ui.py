@@ -1,4 +1,4 @@
-"""UI 类动作 handlers（AI_Assist.md §8）。
+"""UI 类动作 handlers（AIAssist_Architecture.md §8）。
 
 open_page：经 UI 注入的受控回调跳转页面（不直接操作 Qt）；
 toggle_ai_panel：开关右侧 AI 面板。

@@ -1,6 +1,6 @@
 # AI Assistant 进阶能力设计：任务调度 + 异步结果回灌
 
-> 范围：在现有「受控动作体系（[AI_AssistFunction.md](./AI_AssistFunction.md)）+ agent 多轮 tool-calling 循环」之上，补齐两块当前缺失的能力——
+> 范围：在现有「受控动作体系（[AIAssist_ActionCatalog.md](./AIAssist_ActionCatalog.md)）+ agent 多轮 tool-calling 循环」之上，补齐两块当前缺失的能力——
 > **① 定时 / 延迟任务调度（Scheduler）**、**② 异步 / 跨回合任务完成后的结果自动回灌（Resume 续跑）**。
 > 目标：让「AI 决策 → 发起长任务 / 定时任务 → 任务完成后自动反馈 → AI 继续决策」形成完整闭环。
 >
@@ -270,7 +270,7 @@ ORCHESTRATION → Orchestrator   ← 新分组（位于 TOOLS 下方）
 | `nav_button_group.addButton` / `_refresh_nav_arrow_state` 名单同步 | 同上 | 把 custom_test_btn 改为 orchestrator_btn |
 | `_create_custom_test_ui` / 懒加载字段 / `_ai_open_page` button_map | [`main_window`](../../../ui/main_window.py) | 改名与 page_key 同步 |
 | AI 集成判定值 `"custom_test"` → `"orchestrator"` | `main_window` `_get_ai_test_*` / `_ai_test_run` · `custom_test_ui` `get_ai_test_*` 返回值 | page_key 全链路统一 |
-| 同步矩阵 | `DIRECTORY_STRUCTURE.txt` / `helps/` / 本文 | 按 [08_CHECKLISTS](../08_CHECKLISTS.md) 同步矩阵核对 |
+| 同步矩阵 | `DIRECTORY_STRUCTURE.txt` / `helps/` / 本文 | 按 [08_CHECKLISTS](../../08_CHECKLISTS.md) 同步矩阵核对 |
 
 ### 7.5 命名范围决策（实现层是否物理改名）
 
@@ -347,7 +347,7 @@ BottomBar(aiBottomBar) → 输入框 + Send/Stop
 
 ## 9. 与现有文档的关系
 
-- 受控动作总册：[AI_AssistFunction.md](./AI_AssistFunction.md)（本文新增的 `schedule_action` 等动作落地后，需回写其 §1 动作总览与 §2 `ActionDeps`；§7 的 Orchestrator 更名落地后，若动作描述/示例中引用了 `custom_test` page_key，亦需同步为 `orchestrator`）。
+- 受控动作总册：[AIAssist_ActionCatalog.md](./AIAssist_ActionCatalog.md)（本文新增的 `schedule_action` 等动作落地后，需回写其 §1 动作总览与 §2 `ActionDeps`；§7 的 Orchestrator 更名落地后，若动作描述/示例中引用了 `custom_test` page_key，亦需同步为 `orchestrator`）。
 - 本文聚焦「调度 + 异步回灌」两块**新机制**，不重复动作清单细节；动作级 schema 在实现阶段补入 `handlers/schedule.py` 的 `SPECS`。
 
 ---
@@ -414,7 +414,7 @@ S4 ─ S9（可选）
 | S3-2 | `start_test_sequence` 完成（executor.finished）→resume 回灌 PASS/FAIL+行数 | `handlers/test.py` · `ui` 信号 | ✅ |
 | S3-3 | 新增 `get_task_result`（low，B 兜底） | `handlers/query.py` | ✅ |
 | S3-4 | 新增 `list_pending_tasks`（low） | `handlers/query.py` | ✅ |
-| S3-5 | 回写 [AI_AssistFunction.md](./AI_AssistFunction.md) 动作总览（+2 动作） | 文档 | ✅ |
+| S3-5 | 回写 [AIAssist_ActionCatalog.md](./AIAssist_ActionCatalog.md) 动作总览（+2 动作） | 文档 | ✅ |
 
 ### 10.4 S4 调度能力
 
@@ -427,7 +427,7 @@ S4 ─ S9（可选）
 | S4-5 | `ActionDeps` 接 `scheduled_task_registry` + `schedule_register_callback` | `handlers/deps.py` | ✅ |
 | S4-6 | UI 层 QTimer 触发器：到点 dispatch + emit `task_finished` | `ui/main_window.py` | ✅ |
 | S4-7 | 登记时校验 `action.name` 在注册表存在 | `handlers/schedule.py` | ✅ |
-| S4-8 | 回写 [AI_AssistFunction.md](./AI_AssistFunction.md)（+3 动作 + category） | 文档 | ✅ |
+| S4-8 | 回写 [AIAssist_ActionCatalog.md](./AIAssist_ActionCatalog.md)（+3 动作 + category） | 文档 | ✅ |
 
 ### 10.5 S5 安全与审计
 

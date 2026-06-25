@@ -1,13 +1,13 @@
 """AI Assist 阶段 0 网关连通性冒烟测试（New API / OpenAI 兼容）。
 
-用途：在写 core/ai 功能代码前，验证 [AI_AssistPlan.md 阶段 0] 的 0.1~0.4、0.6——
+用途：在写 core/ai 功能代码前，验证 [AIAssist_ImplementationPlan.md 阶段 0] 的 0.1~0.4、0.6——
   - 0.1 base_url 完整路径是否可达；
   - 0.2 鉴权头（Authorization: Bearer <key>）是否被接受；
   - 0.3 列出可用 model 名称；
   - 0.4 原生 tools(function calling) 与 stream 是否支持；
   - 0.6 跑通一条最小 /chat/completions 请求并留存样例。
 
-配置读取优先级（与 AI_Assist.md §14 一致，禁硬编码 Key）：
+配置读取优先级（与 AIAssist_Architecture.md §14 一致，禁硬编码 Key）：
   环境变量 KK_LAB_AI_BASE_URL / KK_LAB_AI_API_KEY / KK_LAB_AI_MODEL
   > user_data/ai/config.json 的 ai.{base_url,api_key,default_model}
 

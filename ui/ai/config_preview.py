@@ -1,4 +1,4 @@
-"""ConfigPreviewDialog：测试配置草案预览 + 应用（AI_Assist.md §12，阶段 3 任务 3.2）。
+"""ConfigPreviewDialog：测试配置草案预览 + 应用（AIAssist_Architecture.md §12，阶段 3 任务 3.2）。
 
 流程：AI 生成 ConfigDraft 草案 → 本对话框预览（JSON pretty）→ 用户确认 → 回调 apply。
 草案的"具体校验"交给目标页面自身的 import/校验逻辑（任务 3.5）：

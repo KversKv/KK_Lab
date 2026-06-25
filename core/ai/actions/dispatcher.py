@@ -1,4 +1,4 @@
-"""ActionDispatcher：按动作 name 路由到 handler 并执行（AI_Assist.md §8 / §10）。
+"""ActionDispatcher：按动作 name 路由到 handler 并执行（AIAssist_Architecture.md §8 / §10）。
 
 职责：
   - 持有 ActionRegistry / PermissionChecker / AuditLog；

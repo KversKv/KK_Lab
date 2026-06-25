@@ -1,4 +1,4 @@
-"""温箱类动作 handlers（AI_AssistFunction.md §5.4 P3）。
+"""温箱类动作 handlers（AIAssist_ActionCatalog.md §5.4 P3）。
 
 一律经 InstrumentManager 取得温箱驱动实例（VT6002 / MT3065 / WT2040 / Mock），
 AI 无法绕过 instruments/。复用 instrument 模块的 _run_read_action / _run_write_action

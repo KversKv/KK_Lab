@@ -1,4 +1,4 @@
-"""ResponseParser：把模型输出解析为结构化响应（AI_Assist.md §9 / §12）。
+"""ResponseParser：把模型输出解析为结构化响应（AIAssist_Architecture.md §9 / §12）。
 
 双模式（阶段 3 任务 3.1）：
   - 原生 tools 模式：从 message.tool_calls 读取（function.name + arguments）；

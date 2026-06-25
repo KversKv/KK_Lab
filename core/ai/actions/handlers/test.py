@@ -1,4 +1,4 @@
-"""测试序列/编排类动作 handlers（AI_Assist.md §8 / §10 / AI_AssistFunction.md §5.6 P5）。
+"""测试序列/编排类动作 handlers（AIAssist_Architecture.md §8 / §10 / AIAssist_ActionCatalog.md §5.6 P5）。
 
 start_test_sequence / pause_test_sequence / stop_test_sequence：
   均为 high 风险，经 UI 注入的受控回调（最终走 orchestrator runner），

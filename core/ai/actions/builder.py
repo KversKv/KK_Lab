@@ -1,4 +1,4 @@
-"""build_action_system：装配 ActionRegistry + ActionDispatcher（AI_Assist.md §8）。
+"""build_action_system：装配 ActionRegistry + ActionDispatcher（AIAssist_Architecture.md §8）。
 
 把各 handlers 模块的 SPECS 注册进 registry，build_handlers(deps) 注册进 dispatcher，
 返回 (registry, dispatcher)。UI 注入 ActionDeps 与确认回调即可闭环。

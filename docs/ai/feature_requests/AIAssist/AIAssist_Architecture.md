@@ -7,15 +7,15 @@
 > 📚 **AI Assist 文档索引**
 > | 文档 | 角色 |
 > |---|---|
-> | **[AI_Assist.md](./AI_Assist.md)**（本文） | 架构设计与规范（事实源） |
-> | [AI_AssistPlan.md](./AI_AssistPlan.md) | 主实现计划与进度表（阶段 0~5） |
-> | [AI_AssistNewFeature_V1.md](./AI_AssistNewFeature_V1.md) | 功能增补 V1（波形/控制/用量/序列/Markdown，Phase A~C） |
+> | **[AIAssist_Architecture.md](./AIAssist_Architecture.md)**（本文） | 架构设计与规范（事实源） |
+> | [AIAssist_ImplementationPlan.md](./AIAssist_ImplementationPlan.md) | 主实现计划与进度表（阶段 0~5） |
+> | [AIAssist_FeatureExtension_V1.md](./AIAssist_FeatureExtension_V1.md) | 功能增补 V1（波形/控制/用量/序列/Markdown，Phase A~C） |
 
 ---
 
 ## 0. 本文档与原始需求的差异说明（务必先读）
 
-原始 `AI_Assist.md` 是一份「让 AI 生成文档的提示词」，其中的目录结构（`src/ai/`）和部分模块假设与 KK_Lab 真实代码并不一致。本文档已基于真实代码基线做出以下**关键修正**，这些修正直接影响可落地性：
+原始 `AIAssist_Architecture.md` 是一份「让 AI 生成文档的提示词」，其中的目录结构（`src/ai/`）和部分模块假设与 KK_Lab 真实代码并不一致。本文档已基于真实代码基线做出以下**关键修正**，这些修正直接影响可落地性：
 
 | 原始方案假设 | KK_Lab 真实情况 | 本文档结论 |
 |---|---|---|
@@ -177,7 +177,7 @@ resources/icons_svg/ai/          # 仅 SVG 图标（铁律：图标仅 SVG 入 r
 
 ### 4.1 顶栏与右面板开关按钮（关键决策点）
 
-> 📷 参考图：`docs/ai/NewFT/20260617-161442.jpg`。其形态为「IDE 风格标题栏，**靠右、紧邻窗口控制按钮（最小化）一侧**，有一个『右面板切换』图标按钮，按钮与其余区域之间用一条竖向分隔线隔开」。本节方案需对齐该形态。
+> 📷 参考图：`docs/ai/feature_requests/20260617-161442.jpg`。其形态为「IDE 风格标题栏，**靠右、紧邻窗口控制按钮（最小化）一侧**，有一个『右面板切换』图标按钮，按钮与其余区域之间用一条竖向分隔线隔开」。本节方案需对齐该形态。
 
 > ⚠️ 现状（已核查代码）：`MainWindow` 使用**原生 Windows 标题栏**——`ui/main_window.py` 中无 `setWindowFlags(FramelessWindowHint)`、无自绘 WindowControlButtons；仅子模块/弹窗（serialCom_module、toast、sidebar_submenu）局部用 Frameless，与主窗口无关。原生标题栏的最小化按钮由系统绘制，**Qt 无法在其左侧插入控件**。因此参考图「按钮紧贴系统最小化按钮左侧」的字面效果，必须在两条路中二选一。
 
@@ -287,7 +287,7 @@ self.ai_service.error.connect(self._show_error)
 | 0.4 | 原生 `tools` / `stream` | tools=**支持**（返回 `tool_calls`）；stream=**支持**（SSE） | ☑ | 第一版可直接走原生 tools；流式留阶段 5 |
 | 0.5 | HTTP 依赖选型 | `httpx>=0.27,<0.28`（已装 0.27.2） | ☑ | 原生超时/取消/连接复用；localhost/内网直连需 `trust_env=False` 绕过系统代理 |
 | 0.6 | 最小请求实测 | `/v1/chat/completions` → 200，`content="你好"` | ☑ | 样例见下方；vLLM 后端（`vllm-0.21.0`） |
-| 0.7 | 标题栏方案拍板 | 方案 A（见 ADR 003） | ☑ | [decisions/003-ai-assist-titlebar.md](../decisions/003-ai-assist-titlebar.md) |
+| 0.7 | 标题栏方案拍板 | 方案 A（见 ADR 003） | ☑ | [decisions/003-ai-assist-titlebar.md](../../decisions/003-ai-assist-titlebar.md) |
 
 **0.6 实测响应样例**（`glm-5.1-fp8`，OpenAI 兼容；解析层对齐字段用）：
 

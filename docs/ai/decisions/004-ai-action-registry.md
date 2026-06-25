@@ -3,7 +3,7 @@
 - **状态**：Accepted
 - **日期**：2026-06-17
 - **范围**：`core/ai/actions/`（新增整层）、`core/ai/ai_service.py`、`core/ai/newapi_client.py`、`ui/ai/action_confirm_dialog.py`（新增）、`ui/ai/ai_assist_panel.py`、`ui/main_window.py`
-- **关联**：[AI_Assist.md §17](../NewFT/AI_Assist.md)、[AI_AssistPlan.md 阶段 4](../NewFT/AI_AssistPlan.md)
+- **关联**：[AIAssist_Architecture.md §17](../feature_requests/AIAssist/AIAssist_Architecture.md)、[AIAssist_ImplementationPlan.md 阶段 4](../feature_requests/AIAssist/AIAssist_ImplementationPlan.md)
 
 ---
 

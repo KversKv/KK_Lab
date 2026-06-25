@@ -1,4 +1,4 @@
-"""定时 / 延迟任务调度注册表（AI_Assistant_Plan.md §3 / S1）。
+"""定时 / 延迟任务调度注册表（AIAssist_TaskSchedulingResumePlan.md §3 / S1）。
 
 AI 经 `schedule_action` 把「触发器 + 目标动作」编译成一份计划，登记进本注册表后
 本轮立即结束（0 token 等待）。UI 层 `QTimer` 到点回调 → 经 `ActionDispatcher`

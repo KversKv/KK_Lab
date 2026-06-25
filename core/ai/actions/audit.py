@@ -1,4 +1,4 @@
-"""AuditLog：把所有动作执行（含拒绝/取消）写入 user_data/ai/audit.log（AI_Assist.md §10）。
+"""AuditLog：把所有动作执行（含拒绝/取消）写入 user_data/ai/audit.log（AIAssist_Architecture.md §10）。
 
 每条审计是一行 JSON（JSONL），含时间戳 / 动作名 / 参数 / 风险等级 / 结果状态 /
 消息。参数与结果经轻量脱敏（避免落盘明文 Key / 长串）。

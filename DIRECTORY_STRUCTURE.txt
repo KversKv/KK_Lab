@@ -498,16 +498,35 @@ docs/
 │   ├── 08_CHECKLISTS.md         # 新功能开发 Checklist ⭐
 │   ├── 09_WORKFLOW.md           # 任务 SOP (调用 / 执行 / 回归)
 │   ├── 10_VERSIONING.md         # 版本号管理规范 (研发初期·与 git 解耦)
-│   ├── NewFT/                   # 新功能设计草案与阶段性需求规则
-│   │   ├── AutoDetectBaudrate.md # SerialCom 候选波特率自动识别设计
-│   │   ├── OrchestratorOPT.md      # Orchestrator 架构优化方案与任务跟踪
-│   │   ├── InstrumentsManage.md  # 通用仪器管理架构方案
-│   │   ├── InstrumentsManagePlan.md # 通用仪器管理改善计划
-│   │   ├── InstrumentsManagePlanFixe.md # 仪器管理重构未完成项与修复计划
-│   │   ├── LOG_FastCommand.md    # SerialCom 日志与快捷指令优化设计
-│   │   ├── UI_Optimize.md        # SerialCom UI 优化设计
-│   │   ├── dataVisualization.md  # SerialCom RX 数据可视化框架与实现计划
-│   │   └── serialComMuti.md      # SerialCom 单窗口多串口 / 多窗口独立串口规则
+│   ├── feature_requests/        # 新需求设计草案与阶段性方案归档
+│   │   ├── 20260617-161442.jpg  # AI Assist 标题栏参考图
+│   │   ├── AIAssist/            # AI Assist 需求与实现方案
+│   │   │   ├── AIAssist_ActionCatalog.md            # AI Assistant 受控动作接口总册
+│   │   │   ├── AIAssist_Architecture.md             # AI Assist 架构设计与实现规范
+│   │   │   ├── AIAssist_DatalogVisibleWaveform.md   # Datalog 可见波形喂 AI 方案
+│   │   │   ├── AIAssist_FeatureExtension_V1.md      # AI Assist 功能增补 V1
+│   │   │   ├── AIAssist_FontSpec.md                 # AI Assistant 字体规格
+│   │   │   ├── AIAssist_ImplementationPlan.md       # AI Assist 主实现计划
+│   │   │   ├── AIAssist_PromptContextMemoryPlan.md  # Prompt / Context / Memory 方案
+│   │   │   └── AIAssist_TaskSchedulingResumePlan.md # AI 任务调度与异步结果回灌方案
+│   │   ├── Codebase/            # 代码库评估与重构需求
+│   │   │   ├── Codebase_RefactorAssessment.md       # 代码体量评估与重构建议
+│   │   │   └── Codebase_RefactorAssessment_GLM52.md # GLM-5.2 代码重构评估
+│   │   ├── InstrumentManager/   # 通用仪器管理需求
+│   │   │   ├── InstrumentManager_Architecture.md    # 通用仪器管理架构方案
+│   │   │   ├── InstrumentManager_MigrationPlan.md   # 通用仪器管理迁移计划
+│   │   │   └── InstrumentManager_RemainingFixPlan.md # 仪器管理重构剩余修复计划
+│   │   ├── Orchestrator/        # Orchestrator 需求与优化方案
+│   │   │   └── Orchestrator_OptimizationPlan.md     # Orchestrator 架构优化方案与任务跟踪
+│   │   ├── SerialCom/           # 串口工具需求与设计方案
+│   │   │   ├── SerialCom_AutoBaudrateDetection.md   # SerialCom 候选波特率自动识别设计
+│   │   │   ├── SerialCom_MultiSessionArchitecture.md # SerialCom 多会话架构规则
+│   │   │   ├── SerialCom_QuickCommands_UIStyle.md   # SerialCom 快捷指令 UI 样式方案
+│   │   │   ├── SerialCom_RX_DataVisualizationPlan.md # SerialCom RX 数据可视化计划
+│   │   │   └── SerialCom_ScriptSequenceDesign.md    # SerialCom 脚本序列结构设计
+│   │   └── UI/                  # UI 通用优化需求
+│   │       ├── ExecutionLogs_CompositionRefactor.md # Execution Logs 组合式重构方案
+│   │       └── UI_OptimizationTracker.md            # UI 优化任务跟踪
 │   └── decisions/               # ADR 架构决策记录
 │       ├── 001-mock-instrument.md
 │       └── 002-oscilloscope-auto-detect.md

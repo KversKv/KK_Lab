@@ -68,5 +68,5 @@ layout.addWidget(splitter, 1)
 - 分割条样式抽为模块常量 `_LOG_SPLITTER_STYLE`，由工厂统一应用。
 - 已迁移 11 个页面（pmu_test / charger_test / consumption_test / vmin_hunter 下），并移除各页面不再使用的 `QSplitter` 导入；
   例外（保持不变）：`result_panel.py`（Tab 内，无 splitter）、`oscilloscope_base_ui.py`（裸 `QTextEdit`）、`custom_test_ui.py`（复用 `result_panel`）。
-- 规范同步：见 [01_CONVENTIONS.md §6.4](../01_CONVENTIONS.md)，标准模板已改为 `ExecutionLogsFrame.wrap_with(...)`。
+- 规范同步：见 [01_CONVENTIONS.md §6.4](../../01_CONVENTIONS.md)，标准模板已改为 `ExecutionLogsFrame.wrap_with(...)`。
 - 实现位置：[execution_logs_module_frame.py](../../../ui/modules/execution_logs_module_frame.py) 的 `wrap_with`。

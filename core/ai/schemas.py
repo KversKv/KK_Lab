@@ -1,10 +1,10 @@
 """AI 结构化数据 Schema（请求/分析结果/草案）。
 
-阶段 2 聚焦"日志分析结果"结构化（AI_Assist.md §11）：
+阶段 2 聚焦"日志分析结果"结构化（AIAssist_Architecture.md §11）：
   - LogAnalysisResult dataclass：summary/severity/evidence/...
   - LOG_ANALYSIS_SCHEMA：对应 JSON Schema，供 response_parser 校验降级 JSON。
 
-阶段 3 新增"草案"结构化（AI_Assist.md §9 / §12）：
+阶段 3 新增"草案"结构化（AIAssist_Architecture.md §9 / §12）：
   - DraftKind：草案类别（测试配置 / 测试脚本-序列）。
   - ConfigDraft / ScriptDraft dataclass：AI 产出的草案载荷（仅草案，须预览 + 校验 + 确认后才能 apply）。
   - CONFIG_DRAFT_SCHEMA / SCRIPT_DRAFT_SCHEMA：对应 JSON Schema，供 response_parser 校验。

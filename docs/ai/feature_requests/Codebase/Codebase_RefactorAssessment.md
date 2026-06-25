@@ -3,7 +3,7 @@
 > 评估对象：KK_Lab 全量 Python 源码（排除 `.venv` / `build` / `dist` / 第三方 skill）
 > 评估日期：2026-06-23
 > 目的：盘点"巨石文件"，给出**该不该拆、拆成什么、按什么架构拆**的统一结论，作为后续渐进式重构的依据。
-> 阅读前置：[04_ARCHITECTURE.md](../04_ARCHITECTURE.md) · [06_PAGE_GUIDE.md](../06_PAGE_GUIDE.md) · [01_CONVENTIONS.md](../01_CONVENTIONS.md)
+> 阅读前置：[04_ARCHITECTURE.md](../../04_ARCHITECTURE.md) · [06_PAGE_GUIDE.md](../../06_PAGE_GUIDE.md) · [01_CONVENTIONS.md](../../01_CONVENTIONS.md)
 
 ---
 
@@ -182,7 +182,7 @@ ui/modules/serialCom_module/
 - `consumption_test.py` 仅保留视图与信号订阅，目标 < 1000 行。
 
 ### 4.3 目标分层依赖（强化版）
-沿用 [04_ARCHITECTURE §2](../04_ARCHITECTURE.md) 铁律，**额外补一条**：
+沿用 [04_ARCHITECTURE §2](../../04_ARCHITECTURE.md) 铁律，**额外补一条**：
 > `ui/` 中**禁止**出现纯数据解析/算法/统计函数；此类一律落 `core/`。Worker 可留在 `ui→core` 之间，但只依赖 `QtCore`，不得 import `QtWidgets`。
 
 ### 4.4 渐进式落地路线（不大爆炸重构）

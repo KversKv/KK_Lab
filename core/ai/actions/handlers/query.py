@@ -1,4 +1,4 @@
-"""查询类动作 handlers（AI_Assist.md §8）。
+"""查询类动作 handlers（AIAssist_Architecture.md §8）。
 
 全部为只读、low 风险：当前页 / 串口状态 / 串口最近日志 / 软件日志 / 仪器状态 / 测试状态。
 仪器状态仅读 InstrumentManager.sessions() 快照，不主动 query 真机。

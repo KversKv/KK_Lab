@@ -1,6 +1,6 @@
 """New API（OpenAI 兼容网关）客户端：非流式 /chat/completions。
 
-约束（AI_Assist.md §5 + 阶段 0 smoke test 验证）：
+约束（AIAssist_Architecture.md §5 + 阶段 0 smoke test 验证）：
   - localhost / 内网 IP 走直连，httpx.Client(trust_env=False) 绕过系统代理；
   - 鉴权 Authorization: Bearer <key>；
   - 推理模型 glm-5.1-fp8：正文取 choices[0].message.content，

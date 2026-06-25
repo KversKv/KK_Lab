@@ -1,6 +1,6 @@
 """ScriptPreviewDialog：测试脚本（Orchestrator 序列）草案预览 + 校验 + 应用。
 
-AI_Assist.md §12，阶段 3 任务 3.3 + 3.4；F5.4 序列 before/after diff：
+AIAssist_Architecture.md §12，阶段 3 任务 3.3 + 3.4；F5.4 序列 before/after diff：
   - 预览 ScriptDraft 序列（JSON pretty）；
   - 当提供当前画布序列（before_sequence v2 dict）时，展示 before/after 文本 diff；
   - 本地校验：core/ai/draft_validation.validate_script_draft

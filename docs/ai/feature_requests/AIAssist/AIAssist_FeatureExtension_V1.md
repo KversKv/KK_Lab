@@ -3,11 +3,11 @@
 > 📚 **AI Assist 文档索引**
 > | 文档 | 角色 |
 > |---|---|
-> | [AI_Assist.md](./AI_Assist.md) | 架构设计与规范（事实源） |
-> | [AI_AssistPlan.md](./AI_AssistPlan.md) | 主实现计划与进度表（阶段 0~5） |
-> | **[AI_AssistNewFeature_V1.md](./AI_AssistNewFeature_V1.md)**（本文） | 功能增补 V1（波形/控制/用量/序列/Markdown，Phase A~C） |
+> | [AIAssist_Architecture.md](./AIAssist_Architecture.md) | 架构设计与规范（事实源） |
+> | [AIAssist_ImplementationPlan.md](./AIAssist_ImplementationPlan.md) | 主实现计划与进度表（阶段 0~5） |
+> | **[AIAssist_FeatureExtension_V1.md](./AIAssist_FeatureExtension_V1.md)**（本文） | 功能增补 V1（波形/控制/用量/序列/Markdown，Phase A~C） |
 
-> 配套主文档：[AI_Assist.md](./AI_Assist.md)（架构事实源）、[AI_AssistPlan.md](./AI_AssistPlan.md)（主进度表）。
+> 配套主文档：[AIAssist_Architecture.md](./AIAssist_Architecture.md)（架构事实源）、[AIAssist_ImplementationPlan.md](./AIAssist_ImplementationPlan.md)（主进度表）。
 > 本文定位：在主架构之上，落地 6 个真实工程难题的解决方案与实现步骤。属**补充任务**，规划为 Phase A / B / C（预计 2~3 次会话完成）。
 > 分层铁律：`main.py → ui/ ←→ core/ → instruments/ → lib/`；`instruments/` 禁 Qt；`ui/` 禁阻塞 IO（QThread + Signal/Slot）；禁 `print`、异常 `exc_info=True`、禁裸 `except`。
 > 状态：`☐ 待办` / `◐ 进行中` / `☑ 完成` / `⊘ 阻塞` / `— 不适用`。

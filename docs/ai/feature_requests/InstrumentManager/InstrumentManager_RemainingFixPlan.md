@@ -1,6 +1,6 @@
 # 仪器管理重构未完成项与修复计划
 
-> 本文用于承接 [InstrumentsManagePlan.md](./InstrumentsManagePlan.md) 的实际落地检查结果。
+> 本文用于承接 [InstrumentManager_MigrationPlan.md](./InstrumentManager_MigrationPlan.md) 的实际落地检查结果。
 >
 > 当前代码已经做了一些 manager 兼容接入，但主要还是“页面 / 模块先连接仪器，再 `attach_external()` 登记到 manager”。这不是最终目标。后续修复必须把连接 owner 收敛到 `InstrumentManager.connect_async()`。
 

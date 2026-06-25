@@ -4,9 +4,9 @@
 > 评估日期：2026-06-23
 > 评估方：GLM-5.2
 > 目的：独立盘点"巨石文件"，给出**该不该拆、拆成什么、按什么架构拆**的结论，并输出**逐文件、逐阶段、带进度看板**的可执行计划。
-> 阅读前置：[04_ARCHITECTURE.md](../04_ARCHITECTURE.md) · [06_PAGE_GUIDE.md](../06_PAGE_GUIDE.md) · [01_CONVENTIONS.md](../01_CONVENTIONS.md) · [CLAUDE.md](../../../CLAUDE.md)
+> 阅读前置：[04_ARCHITECTURE.md](../../04_ARCHITECTURE.md) · [06_PAGE_GUIDE.md](../../06_PAGE_GUIDE.md) · [01_CONVENTIONS.md](../../01_CONVENTIONS.md) · [CLAUDE.md](../../../../CLAUDE.md)
 >
-> ⚠️ 本文件与同目录 [CodebaseRefactorAssessment.md](./CodebaseRefactorAssessment.md) 互为独立视角；行数以本文件实测为准（已修正原文件的 n6705c_analyser/datalog 行数对调问题）。
+> ⚠️ 本文件与同目录 [Codebase_RefactorAssessment.md](./Codebase_RefactorAssessment.md) 互为独立视角；行数以本文件实测为准（已修正原文件的 n6705c_analyser/datalog 行数对调问题）。
 
 ---
 
@@ -50,7 +50,7 @@
 | 1155 | [ai_service.py](../../../core/ai/ai_service.py) | core/ai | — | 🟢 单一职责，可接受 |
 | 1134 | [wt2040_chamber.py](../../../instruments/chambers/wt2040_chamber.py) | instruments | — | 🟢 单驱动，可接受 |
 
-> **勘误**：原 [CodebaseRefactorAssessment.md §0.1](./CodebaseRefactorAssessment.md) 将 `n6705c_analyser_ui.py` 标为 7234 行、`n6705c_datalog_ui.py` 标为 2065 行，实测**两者对调**。本文件已修正。
+> **勘误**：原 [Codebase_RefactorAssessment.md §0.1](./Codebase_RefactorAssessment.md) 将 `n6705c_analyser_ui.py` 标为 7234 行、`n6705c_datalog_ui.py` 标为 2065 行，实测**两者对调**。本文件已修正。
 
 ---
 
@@ -258,7 +258,7 @@ core/instruments/
 ```
 
 ### 4.5 目标分层依赖（强化版）
-沿用 [04_ARCHITECTURE §2](../04_ARCHITECTURE.md) 铁律，**额外补两条**：
+沿用 [04_ARCHITECTURE §2](../../04_ARCHITECTURE.md) 铁律，**额外补两条**：
 > 1. `ui/` 中**禁止**出现纯数据解析/算法/统计函数；此类一律落 `core/`。Worker 可留在 `ui→core` 之间，但只依赖 `QtCore`，不得 import `QtWidgets`。
 > 2. `ui/pages/` 与 `ui/modules/` 中**禁止**定义被 ≥2 个文件使用的自定义控件；此类一律落 `ui/widgets/`。
 

@@ -1,4 +1,4 @@
-"""调度类动作 handlers（AI_Assistant_Plan.md §3 / S4）。
+"""调度类动作 handlers（AIAssist_TaskSchedulingResumePlan.md §3 / S4）。
 
 schedule_action     : high，登记「延迟/定时 + 目标动作」到 ScheduledTaskRegistry，
                       返回 task_id；不立即执行（Plan-then-Execute，§3.1）。

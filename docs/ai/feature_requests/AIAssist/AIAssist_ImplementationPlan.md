@@ -3,12 +3,12 @@
 > 📚 **AI Assist 文档索引**
 > | 文档 | 角色 |
 > |---|---|
-> | [AI_Assist.md](./AI_Assist.md) | 架构设计与规范（事实源） |
-> | **[AI_AssistPlan.md](./AI_AssistPlan.md)**（本文） | 主实现计划与进度表（阶段 0~5） |
-> | [AI_AssistNewFeature_V1.md](./AI_AssistNewFeature_V1.md) | 功能增补 V1（波形/控制/用量/序列/Markdown，Phase A~C） |
+> | [AIAssist_Architecture.md](./AIAssist_Architecture.md) | 架构设计与规范（事实源） |
+> | **[AIAssist_ImplementationPlan.md](./AIAssist_ImplementationPlan.md)**（本文） | 主实现计划与进度表（阶段 0~5） |
+> | [AIAssist_FeatureExtension_V1.md](./AIAssist_FeatureExtension_V1.md) | 功能增补 V1（波形/控制/用量/序列/Markdown，Phase A~C） |
 
-> 配套设计文档：[AI_Assist.md](./AI_Assist.md)（架构与规范的唯一事实源）
-> 本文定位：把 AI_Assist.md §16 的 5 个阶段拆成**可执行、可勾选、可验收**的任务清单与进度表。
+> 配套设计文档：[AIAssist_Architecture.md](./AIAssist_Architecture.md)（架构与规范的唯一事实源）
+> 本文定位：把 AIAssist_Architecture.md §16 的 5 个阶段拆成**可执行、可勾选、可验收**的任务清单与进度表。
 > 分层铁律：`main.py → ui/ ←→ core/ → instruments/ → lib/`；`instruments/` 禁 Qt；`ui/` 禁阻塞 IO（走 QThread + Signal/Slot）。
 > 状态约定：`☐ 待办` / `◐ 进行中` / `☑ 完成` / `⊘ 阻塞` / `— 不适用`。
 
@@ -35,13 +35,13 @@
 
 | # | 任务 | 状态 | 备注 |
 |---|---|---|---|
-| 0.1 | 向内网运维确认 `base_url` 完整路径（`.../v1` 还是含 `/chat/completions`） | ☑ | `http://172.16.10.84:3000/v1`，`GET /v1/models` 实测 200，详见 [AI_Assist.md §5.0](./AI_Assist.md) |
+| 0.1 | 向内网运维确认 `base_url` 完整路径（`.../v1` 还是含 `/chat/completions`） | ☑ | `http://172.16.10.84:3000/v1`，`GET /v1/models` 实测 200，详见 [AIAssist_Architecture.md §5.0](./AIAssist_Architecture.md) |
 | 0.2 | 确认鉴权头格式（标准 `Authorization: Bearer <key>` 或 New API 自定义头） | ☑ | 标准 `Authorization: Bearer <key>`，无需自定义头 |
 | 0.3 | 获取可用 `model` 名称/别名清单，替换 §6 设想别名 | ☑ | 实测仅 `glm-5.1-fp8`（默认）、`deepseekv4flash`；Profile 先统一映射到 `glm-5.1-fp8` |
 | 0.4 | 确认网关是否支持原生 `tools`（function calling）与 `stream` | ☑ | tools 支持（返回 `tool_calls`）、stream 支持（SSE 35 块）；第一版走原生 tools |
 | 0.5 | HTTP 依赖选型：`httpx` vs `requests`（建议 `httpx`，支持超时/取消更优） | ☑ | 已选 `httpx>=0.27,<0.28`，写入 `requirements.txt` 并安装 0.27.2 验证可导入 |
 | 0.6 | 用 curl/Postman 跑通一条最小 `/chat/completions` 请求（验证 0.1~0.4） | ☑ | `scripts/ai_smoke_test.py` 实测 200，`content="你好"`；样例与解析注意事项落 §5.0 |
-| 0.7 | 标题栏方案最终拍板（方案 A 默认 / 方案 B 还原参考图） | ☑ | 拍板方案 A，落 [decisions/003-ai-assist-titlebar.md](../decisions/003-ai-assist-titlebar.md) |
+| 0.7 | 标题栏方案最终拍板（方案 A 默认 / 方案 B 还原参考图） | ☑ | 拍板方案 A，落 [decisions/003-ai-assist-titlebar.md](../../decisions/003-ai-assist-titlebar.md) |
 
 **阶段 0 验收**：上述参数全部明确，且有一条真实跑通的请求/响应样例。
 > ✅ 阶段 0 已完成（2026-06-17）：网关 `http://172.16.10.84:3000/v1` 连通、Bearer 鉴权 OK、模型 `glm-5.1-fp8`/`deepseekv4flash`、tools+stream 均支持、`/chat/completions` 实测通过。真实 base_url/Key 落 `user_data/ai/config.json`（gitignored）。复测：`.\.venv\Scripts\python.exe scripts\ai_smoke_test.py`。
@@ -89,7 +89,7 @@
 | 1.D.2 | `enabled=false` 时不显示面板按钮 | ☑ |
 | 1.D.3 | 基础日志分析（取 log_ring 最近 N 行喂模型） | ☑ |
 
-**阶段 1 验收**（对应 AI_Assist.md §17 1~5、11~13、15）：
+**阶段 1 验收**（对应 AIAssist_Architecture.md §17 1~5、11~13、15）：
 - ☑ 顶栏出现分隔线 + 右面板按钮（打开高亮）；点击可开关面板，不破坏业务布局；
 - ☑ 「测试连接」成功；能发消息并展示回复（真机 ping `glm-5.1-fp8` content 非空）；
 - ☑ 切页面时 Profile/Prompt 随之变化（经 `_fade_in_widget` → `set_page_context`）；
@@ -197,7 +197,7 @@
 
 | 项 | 说明 | 状态 |
 |---|---|---|
-| 同步矩阵 | 按 AI_Assist.md §18 同步 `DIRECTORY_STRUCTURE.txt`/`spec`/`requirements.txt`/`decisions/`/`.ai/memory.md` | ☑ 新增 `conversation_store.py`；无新增依赖（仍 httpx）；无新增 SVG；`history.json` gitignored |
+| 同步矩阵 | 按 AIAssist_Architecture.md §18 同步 `DIRECTORY_STRUCTURE.txt`/`spec`/`requirements.txt`/`decisions/`/`.ai/memory.md` | ☑ 新增 `conversation_store.py`；无新增依赖（仍 httpx）；无新增 SVG；`history.json` gitignored |
 | 分层 | `instruments/` 无 Qt；`ui/` 无阻塞 IO；仪器经 InstrumentManager | ☑ 流式 IO 走 `_StreamWorker`+QThread，UI 仅收信号增量渲染 |
 | 日志 | 无 `print`；异常 `exc_info=True`；无裸 `except` | ☑ 兜底 `# noqa: BLE001`；`conversation_store` 仅捕获 `OSError`/`JSONDecodeError` |
 | UI 规范 | QDialog 带 parent + OK/Cancel 二元化；控件高度 ID 选择器钉死；数值 QLabel 带单位 | ☑ 模型/快捷指令控件用 `#aiModelCombo`/`#aiQuickBtn` 钉 22px；设置对话框 parent + 二元化保留 |

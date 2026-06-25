@@ -1,4 +1,4 @@
-"""数据导出与产物类动作 handlers（AI_AssistFunction.md §5.7 P6）。
+"""数据导出与产物类动作 handlers（AIAssist_ActionCatalog.md §5.7 P6）。
 
 新增 category=export，统一管理 AI 落盘产物（截图 / Datalog CSV / 波形 CSV）：
   save_scope_screenshot  : medium，截取已连接示波器屏幕 PNG 导出到指定目录；
@@ -8,7 +8,7 @@
                            （经 waveform_full_data_getter 取全量数据 + slice_channel_fast 切片）；
   get_artifact_list      : low，列出本次会话产生的所有产物路径与元信息。
 
-产物路径安全（AI_AssistFunction.md §5.7 / §6）：
+产物路径安全（AIAssist_ActionCatalog.md §5.7 / §6）：
   - 导出目录限定在用户数据目录（user_data/ 或打包态 %APPDATA%/KK_Lab/）之下，
     禁止任意路径写入与路径穿越；dir 留空则用默认 ai/exports/；
   - 二进制/大产物只回灌「路径 + 元信息 + artifact_id」，不回灌内容本身
@@ -118,7 +118,7 @@ def _safe_name(name: str) -> str:
 
 
 def _resolve_export_dir(dir_arg: str) -> tuple[str | None, str]:
-    """解析导出目录（AI_AssistFunction.md §5.7 P6 路径安全约束）。
+    """解析导出目录（AIAssist_ActionCatalog.md §5.7 P6 路径安全约束）。
 
     - dir_arg 为空 → 默认 user_data/ai/exports/；
     - dir_arg 非空 → 须解析后落在用户数据根目录之下（防路径穿越/任意写入）。
