@@ -461,6 +461,7 @@ QPushButton { border: none; }
 class ChatView(QScrollArea):
     feedback_submitted = Signal(str, str)
     curate_requested = Signal(str, str)
+    manage_memory_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -559,6 +560,8 @@ class ChatView(QScrollArea):
         kk_menu.addAction(
             "本页快捷指令", lambda: self.curate_requested.emit("kk_quick_action", "")
         )
+        menu.addSeparator()
+        menu.addAction("管理本页记忆…", self.manage_memory_requested.emit)
         menu.exec(anchor.mapToGlobal(anchor.rect().bottomLeft()))
 
     def _available_width(self) -> int:

@@ -293,6 +293,10 @@ user_data/ai/kk_lab_ai_memory/
 | `archive_kk_lab_memory` | medium | 将当前对话或选中文本归档到当前页面指定文件 |
 | `list_kk_lab_memory` | low | 列出当前页面已有记忆条目索引 |
 | `search_kk_lab_memory` | low | 在当前页面与 `_shared` 中搜索关键字 |
+| `index_kk_lab_memory` | low | 构建条目索引（含 ID/标题/页面/类型/标签/来源层），Phase 3 |
+| `generate_quick_action_from_test_item` | medium | 把测试项转为快捷指令草稿并写入，Phase 3 |
+| `export_test_case_to_eval_draft` | medium | 把可自动化用例（full/partial）导出为 eval 草稿，Phase 3 |
+| `delete_kk_lab_memory` | medium | 删除指定条目（本机/项目级），Phase 3 |
 | `promote_local_kk_lab_memory` | medium | 将本机私有沉淀提升到项目级 docs，需确认 |
 
 安全规则：
@@ -358,10 +362,10 @@ user_data/ai/kk_lab_ai_memory/
 
 | 任务 | 产物 | 状态 |
 |---|---|---|
-| 测试项 / 测试用例条目索引化 | 条目 ID、标题、标签、页面键索引 | ⬜ 未开始 |
-| 支持从测试项生成快捷指令草稿 | `quick_actions.md` 草稿或本机 `quick_actions.local.md` 条目 | ⬜ 未开始 |
-| 支持可自动化用例导出 eval 草稿 | `tests/ai_eval/cases` 草稿 | ⬜ 未开始 |
-| 增加 KK Lab AI 记忆管理入口 | 查看、删除、提升本机经验到项目级 | ⬜ 未开始 |
+| 测试项 / 测试用例条目索引化 | 条目 ID、标题、标签、页面键索引 | ✅ 已完成 |
+| 支持从测试项生成快捷指令草稿 | `quick_actions.md` 草稿或本机 `quick_actions.local.md` 条目 | ✅ 已完成 |
+| 支持可自动化用例导出 eval 草稿 | `tests/ai_eval/cases` 草稿 | ✅ 已完成 |
+| 增加 KK Lab AI 记忆管理入口 | 查看、删除、提升本机经验到项目级 | ✅ 已完成 |
 
 验收标准：
 - 常用测试项能被 AI 检索、复述并转成执行建议。

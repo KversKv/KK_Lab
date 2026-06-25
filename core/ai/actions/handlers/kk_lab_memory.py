@@ -1,9 +1,14 @@
-"""KK Lab AI 记忆受控动作 handlers（AIAssist_KKLabAIMemoryArchivePlan.md Phase 2）。
+"""KK Lab AI 记忆受控动作 handlers（AIAssist_KKLabAIMemoryArchivePlan.md Phase 2 + Phase 3）。
 
 动作：
-  - archive_kk_lab_memory : medium，把草稿写入当前页面记忆文件（默认本机私有层）；
-  - list_kk_lab_memory    : low，列出当前页面 + _shared 已有条目索引；
-  - search_kk_lab_memory  : low，在当前页面 + _shared 中搜索关键字。
+  - archive_kk_lab_memory                  : medium，把草稿写入当前页面记忆文件；
+  - list_kk_lab_memory                     : low，列出当前页面 + _shared 已有条目索引；
+  - search_kk_lab_memory                   : low，在当前页面 + _shared 中搜索关键字;
+  - index_kk_lab_memory                    : low，构建条目索引（含标签/来源层），Phase 3;
+  - generate_quick_action_from_test_item   : medium，把测试项转为快捷指令草稿并写入，Phase 3;
+  - export_test_case_to_eval_draft         : medium，把可自动化用例导出为 eval 草稿，Phase 3;
+  - delete_kk_lab_memory                   : medium，删除指定条目（本机/项目级），Phase 3;
+  - promote_local_kk_lab_memory            : medium，把本机条目提升到项目级 docs，Phase 3。
 
 写入路径白名单：只能写 docs/kk_lab_ai_memory/<page_key>/ 或
 user_data/ai/kk_lab_ai_memory/<page_key>/；page_key 必须在白名单内。
@@ -68,6 +73,104 @@ _SEARCH_SCHEMA = {
     "required": ["keyword"],
 }
 
+_INDEX_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "page_key": {
+            "type": "string",
+            "enum": sorted(kk_lab_memory.PAGE_KEYS),
+            "description": "只索引指定页面；不传则索引当前页面。",
+        },
+        "kind": {
+            "type": "string",
+            "enum": list(kk_lab_memory.KINDS),
+            "description": "只索引指定类型；不传则索引全部 5 类。",
+        },
+        "include_shared": {
+            "type": "boolean",
+            "description": "是否纳入 _shared/cross_page_lessons.md，默认 false。",
+        },
+    },
+}
+
+_GENERATE_QA_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "entry_id": {
+            "type": "string",
+            "description": "test_items.md 中的条目 ID（T-YYYYMMDD-HHMMSS）。",
+        },
+        "page_key": {
+            "type": "string",
+            "enum": sorted(kk_lab_memory.PAGE_KEYS),
+            "description": "测试项所属页面；不传则用当前页面。",
+        },
+        "target": {
+            "type": "string",
+            "enum": [kk_lab_memory.TARGET_LOCAL, kk_lab_memory.TARGET_PROJECT],
+            "description": "快捷指令写入目标，默认 local。",
+        },
+    },
+    "required": ["entry_id"],
+}
+
+_EXPORT_EVAL_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "entry_id": {
+            "type": "string",
+            "description": "test_cases.md 中的条目 ID（TC-YYYYMMDD-HHMMSS）。",
+        },
+        "page_key": {
+            "type": "string",
+            "enum": sorted(kk_lab_memory.PAGE_KEYS),
+            "description": "测试用例所属页面；不传则用当前页面。",
+        },
+    },
+    "required": ["entry_id"],
+}
+
+_DELETE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "entry_id": {"type": "string", "description": "待删除条目 ID。"},
+        "kind": {
+            "type": "string",
+            "enum": list(kk_lab_memory.KINDS),
+            "description": "条目所属文件类型。",
+        },
+        "page_key": {
+            "type": "string",
+            "enum": sorted(kk_lab_memory.PAGE_KEYS),
+            "description": "条目所属页面；不传则用当前页面。",
+        },
+        "target": {
+            "type": "string",
+            "enum": [kk_lab_memory.TARGET_LOCAL, kk_lab_memory.TARGET_PROJECT],
+            "description": "从哪一层删除，默认 local。",
+        },
+    },
+    "required": ["entry_id", "kind"],
+}
+
+_PROMOTE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "entry_id": {"type": "string", "description": "待提升条目 ID。"},
+        "kind": {
+            "type": "string",
+            "enum": list(kk_lab_memory.KINDS),
+            "description": "条目所属文件类型。",
+        },
+        "page_key": {
+            "type": "string",
+            "enum": sorted(kk_lab_memory.PAGE_KEYS),
+            "description": "条目所属页面；不传则用当前页面。",
+        },
+    },
+    "required": ["entry_id", "kind"],
+}
+
 SPECS: list[ActionSpec] = [
     ActionSpec(
         name="archive_kk_lab_memory",
@@ -93,6 +196,60 @@ SPECS: list[ActionSpec] = [
         description="在当前页面 + _shared 的 KK Lab AI 记忆中搜索关键字。",
         parameters_schema=_SEARCH_SCHEMA,
         risk_level="low",
+        category=CATEGORY_QUERY,
+    ),
+    ActionSpec(
+        name="index_kk_lab_memory",
+        description=(
+            "构建 KK Lab AI 记忆条目索引（含 ID/标题/页面/类型/标签/来源层）。"
+            "Phase 3：用于管理入口与测试项复用。"
+        ),
+        parameters_schema=_INDEX_SCHEMA,
+        risk_level="low",
+        category=CATEGORY_QUERY,
+    ),
+    ActionSpec(
+        name="generate_quick_action_from_test_item",
+        description=(
+            "把指定 test_items 条目转为 quick_actions 草稿并写入（默认本机层）。"
+            "Phase 3：测试项复用为快捷指令。"
+        ),
+        parameters_schema=_GENERATE_QA_SCHEMA,
+        risk_level="medium",
+        require_confirmation=True,
+        category=CATEGORY_QUERY,
+    ),
+    ActionSpec(
+        name="export_test_case_to_eval_draft",
+        description=(
+            "把指定 test_cases 条目（可自动化程度=full/partial）导出为 eval 草稿，"
+            "写入 tests/ai_eval/cases/<id>.json。Phase 3：可自动化用例沉淀为 eval。"
+        ),
+        parameters_schema=_EXPORT_EVAL_SCHEMA,
+        risk_level="medium",
+        require_confirmation=True,
+        category=CATEGORY_QUERY,
+    ),
+    ActionSpec(
+        name="delete_kk_lab_memory",
+        description=(
+            "删除指定 KK Lab AI 记忆条目（本机或项目级）。"
+            "Phase 3：记忆管理入口，项目级删除需确认。"
+        ),
+        parameters_schema=_DELETE_SCHEMA,
+        risk_level="medium",
+        require_confirmation=True,
+        category=CATEGORY_QUERY,
+    ),
+    ActionSpec(
+        name="promote_local_kk_lab_memory",
+        description=(
+            "把本机私有层条目提升到项目级 docs（删除本机 + 追加项目）。"
+            "Phase 3：记忆管理入口，需确认。"
+        ),
+        parameters_schema=_PROMOTE_SCHEMA,
+        risk_level="medium",
+        require_confirmation=True,
         category=CATEGORY_QUERY,
     ),
 ]
@@ -214,8 +371,159 @@ def build_handlers(deps: ActionDeps) -> dict[str, Any]:
             "_message": f"搜索到 {len(results)} 条匹配条目。",
         }
 
+    def index_kk_lab_memory(args: dict) -> dict:
+        page_key = str(args.get("page_key") or "").strip() or _resolve_page_key(deps)
+        if page_key and not kk_lab_memory.is_valid_page_key(page_key):
+            return {"ok": False, "_message": f"非法 page_key：{page_key}"}
+        kind = args.get("kind")
+        if kind and kind not in kk_lab_memory.KINDS:
+            return {"ok": False, "_message": f"非法 kind：{kind}"}
+        include_shared = bool(args.get("include_shared", False))
+        index = kk_lab_memory.build_index(
+            page_key or None, kind, include_shared=include_shared
+        )
+        return {
+            "ok": True,
+            "page_key": page_key or "(all)",
+            "count": len(index),
+            "entries": index,
+            "_message": f"索引构建完成，共 {len(index)} 条条目。",
+        }
+
+    def generate_quick_action_from_test_item(args: dict) -> dict:
+        entry_id = str(args.get("entry_id") or "").strip()
+        if not entry_id:
+            return {"ok": False, "_message": "entry_id 不能为空。"}
+        page_key = str(args.get("page_key") or "").strip() or _resolve_page_key(deps)
+        if not kk_lab_memory.is_valid_page_key(page_key):
+            return {"ok": False, "_message": f"非法 page_key：{page_key}"}
+        target = str(args.get("target") or kk_lab_memory.TARGET_LOCAL).strip()
+        if target not in (kk_lab_memory.TARGET_LOCAL, kk_lab_memory.TARGET_PROJECT):
+            target = kk_lab_memory.TARGET_LOCAL
+
+        entries = kk_lab_memory.read_entries(page_key, kk_lab_memory.KIND_TEST_ITEMS)
+        source = next((e for e in entries if e.entry_id == entry_id), None)
+        if source is None:
+            return {"ok": False, "_message": f"未找到测试项 {entry_id}"}
+
+        draft = kk_lab_memory.test_item_to_quick_action_draft(source, page_key)
+        draft["target"] = target
+        entry_text = kk_lab_memory.render_draft_entry(draft)
+        existing = kk_lab_memory.read_entries(page_key, kk_lab_memory.KIND_QUICK_ACTIONS)
+        dup = kk_lab_memory.find_duplicate(existing, draft["title"])
+        if dup is not None:
+            entry_text = kk_lab_memory.render_entry(
+                kk_lab_memory.KIND_QUICK_ACTIONS,
+                dup.entry_id,
+                draft["title"],
+                draft.get("fields", []),
+            )
+        ok, message = kk_lab_memory.append_entry(
+            page_key, kk_lab_memory.KIND_QUICK_ACTIONS, entry_text, target=target
+        )
+        if not ok:
+            return {"ok": False, "_message": f"写入快捷指令失败：{message}"}
+        target_label = "项目级 docs" if target == kk_lab_memory.TARGET_PROJECT else "本机私有层"
+        return {
+            "ok": True,
+            "entry_id": draft["entry_id"],
+            "source_entry_id": entry_id,
+            "page_key": page_key,
+            "target": target,
+            "_message": (
+                f"已从测试项 {entry_id} 生成快捷指令到{target_label}："
+                f"{draft['entry_id']} {draft['title']}"
+            ),
+        }
+
+    def export_test_case_to_eval_draft(args: dict) -> dict:
+        entry_id = str(args.get("entry_id") or "").strip()
+        if not entry_id:
+            return {"ok": False, "_message": "entry_id 不能为空。"}
+        page_key = str(args.get("page_key") or "").strip() or _resolve_page_key(deps)
+        if not kk_lab_memory.is_valid_page_key(page_key):
+            return {"ok": False, "_message": f"非法 page_key：{page_key}"}
+
+        entries = kk_lab_memory.read_entries(page_key, kk_lab_memory.KIND_TEST_CASES)
+        source = next((e for e in entries if e.entry_id == entry_id), None)
+        if source is None:
+            return {"ok": False, "_message": f"未找到测试用例 {entry_id}"}
+
+        draft = kk_lab_memory.test_case_to_eval_draft(source, page_key)
+        if draft is None:
+            return {
+                "ok": False,
+                "_message": f"用例 {entry_id} 可自动化程度不是 full/partial，不导出。",
+            }
+        ok, path_or_msg = kk_lab_memory.write_eval_draft(draft)
+        if not ok:
+            return {"ok": False, "_message": path_or_msg}
+        return {
+            "ok": True,
+            "case_id": draft["id"],
+            "source_entry_id": entry_id,
+            "path": path_or_msg,
+            "_message": f"已导出 eval 草稿：{path_or_msg}",
+        }
+
+    def delete_kk_lab_memory(args: dict) -> dict:
+        entry_id = str(args.get("entry_id") or "").strip()
+        if not entry_id:
+            return {"ok": False, "_message": "entry_id 不能为空。"}
+        kind = str(args.get("kind") or "").strip()
+        if kind not in kk_lab_memory.KINDS:
+            return {"ok": False, "_message": f"非法 kind：{kind}"}
+        page_key = str(args.get("page_key") or "").strip() or _resolve_page_key(deps)
+        if not kk_lab_memory.is_valid_page_key(page_key):
+            return {"ok": False, "_message": f"非法 page_key：{page_key}"}
+        target = str(args.get("target") or kk_lab_memory.TARGET_LOCAL).strip()
+        if target not in (kk_lab_memory.TARGET_LOCAL, kk_lab_memory.TARGET_PROJECT):
+            target = kk_lab_memory.TARGET_LOCAL
+
+        ok, message = kk_lab_memory.delete_entry(
+            page_key, kind, entry_id, target=target
+        )
+        if not ok:
+            return {"ok": False, "_message": f"删除失败：{message}"}
+        target_label = "项目级 docs" if target == kk_lab_memory.TARGET_PROJECT else "本机私有层"
+        return {
+            "ok": True,
+            "entry_id": entry_id,
+            "kind": kind,
+            "page_key": page_key,
+            "target": target,
+            "_message": f"已从{target_label}删除条目 {entry_id}",
+        }
+
+    def promote_local_kk_lab_memory(args: dict) -> dict:
+        entry_id = str(args.get("entry_id") or "").strip()
+        if not entry_id:
+            return {"ok": False, "_message": "entry_id 不能为空。"}
+        kind = str(args.get("kind") or "").strip()
+        if kind not in kk_lab_memory.KINDS:
+            return {"ok": False, "_message": f"非法 kind：{kind}"}
+        page_key = str(args.get("page_key") or "").strip() or _resolve_page_key(deps)
+        if not kk_lab_memory.is_valid_page_key(page_key):
+            return {"ok": False, "_message": f"非法 page_key：{page_key}"}
+
+        ok, message = kk_lab_memory.promote_local_to_project(page_key, kind, entry_id)
+        if not ok:
+            return {"ok": False, "_message": f"提升失败：{message}"}
+        return {
+            "ok": True,
+            "entry_id": entry_id,
+            "kind": kind,
+            "page_key": page_key,
+            "_message": message,
+        }
+
     return {
         "archive_kk_lab_memory": archive_kk_lab_memory,
         "list_kk_lab_memory": list_kk_lab_memory,
         "search_kk_lab_memory": search_kk_lab_memory,
+        "index_kk_lab_memory": index_kk_lab_memory,
+        "generate_quick_action_from_test_item": generate_quick_action_from_test_item,
+        "export_test_case_to_eval_draft": export_test_case_to_eval_draft,
+        "delete_kk_lab_memory": delete_kk_lab_memory,
+        "promote_local_kk_lab_memory": promote_local_kk_lab_memory,
     }

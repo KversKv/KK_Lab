@@ -505,6 +505,39 @@ def _extract_field(body: str, field_name: str) -> str:
     return ""
 
 
+_CONTINUATION_RE = re.compile(r"^\s+[-\d]")
+
+
+def _extract_multiline_field(body: str, field_name: str) -> str:
+    """提取字段值，包含后续缩进续行（- 子项 / 1. 编号 / 纯缩进文本）。"""
+    if not body:
+        return ""
+    lines = body.splitlines()
+    for i, line in enumerate(lines):
+        match = _FIELD_RE.match(line.strip())
+        if not match or match.group(1).strip() != field_name:
+            continue
+        value = match.group(2).strip()
+        buf: list[str] = []
+        if value:
+            buf.append(value)
+        for j in range(i + 1, len(lines)):
+            nxt = lines[j]
+            if not nxt.strip():
+                continue
+            is_top_field = bool(_FIELD_RE.match(nxt)) and not nxt[:1].isspace()
+            if is_top_field:
+                break
+            if _CONTINUATION_RE.match(nxt):
+                buf.append(nxt.strip())
+            elif value and not buf:
+                break
+            else:
+                break
+        return "\n".join(buf)
+    return ""
+
+
 # ---- 搜索与列表 ------------------------------------------------------------
 
 
@@ -886,3 +919,310 @@ def render_draft_entry(draft: dict) -> str:
         draft.get("title", ""),
         draft.get("fields", []),
     )
+
+
+# ---- Phase 3：条目索引化 --------------------------------------------------
+
+
+_TAG_FIELDS: dict[str, tuple[str, ...]] = {
+    KIND_MEMORY: ("稳定性", "来源"),
+    KIND_LESSONS: ("类型", "风险等级"),
+    KIND_TEST_ITEMS: (),
+    KIND_TEST_CASES: ("用例类型", "可自动化程度"),
+    KIND_QUICK_ACTIONS: ("状态", "来源"),
+}
+
+
+def extract_tags(entry: MemoryEntry, kind: str) -> list[str]:
+    """从条目 body 中抽取分类标签字段（类型/状态/风险等级等）。"""
+    fields = _TAG_FIELDS.get(kind, ())
+    tags: list[str] = []
+    for name in fields:
+        value = _extract_field(entry.body, name)
+        if value:
+            tags.append(f"{name}:{value}")
+    return tags
+
+
+def build_index(
+    page_key: str | None = None,
+    kind: str | None = None,
+    *,
+    include_shared: bool = False,
+) -> list[dict]:
+    """构建条目索引：entry_id / title / page / kind / tags / target / source_file。
+
+    page_key 为 None 时遍历全部白名单页面；kind 为 None 时遍历全部 5 类。
+    include_shared=True 时额外纳入 _shared/cross_page_lessons.md。
+    """
+    pages: list[str] = (
+        [page_key] if page_key and is_valid_page_key(page_key) else list(PAGE_KEYS)
+    )
+    kinds: tuple[str, ...] = (kind,) if kind and kind in KINDS else KINDS
+    index: list[dict] = []
+    for pk in pages:
+        for k in kinds:
+            for ent in read_entries(pk, k):
+                index.append(
+                    _entry_to_index(ent, k, pk, _detect_target(ent.source_file))
+                )
+    if include_shared and (kind is None or kind == KIND_LESSONS):
+        for ent in read_shared_lessons():
+            index.append(_entry_to_index(ent, KIND_LESSONS, "_shared", "project"))
+    return index
+
+
+def _entry_to_index(
+    ent: MemoryEntry, kind: str, page_key: str, target: str
+) -> dict:
+    return {
+        "entry_id": ent.entry_id,
+        "title": ent.title,
+        "page": page_key,
+        "kind": kind,
+        "tags": extract_tags(ent, kind),
+        "target": target,
+        "source_file": ent.source_file,
+    }
+
+
+def _detect_target(source_file: str) -> str:
+    """根据 source_file 路径推断来源层（local/project）。"""
+    if not source_file:
+        return TARGET_LOCAL
+    if ".local.md" in os.path.basename(source_file):
+        return TARGET_LOCAL
+    return TARGET_PROJECT
+
+
+# ---- Phase 3：测试项 → 快捷指令草稿 ---------------------------------------
+
+
+_NUMBERED_STEP_RE = re.compile(r"^\s*\d+\.\s*(.*)$")
+
+
+def test_item_to_quick_action_draft(entry: MemoryEntry, page_key: str) -> dict:
+    """把一条 test_items 条目转为 quick_action 草稿（供 KKLabMemoryDialog 微调）。
+
+    步骤首行作为模板雏形，数值替换成 {v} 占位符；参数字段映射为占位符说明。
+    """
+    goal = _extract_field(entry.body, "目标")
+    steps = _extract_multiline_field(entry.body, "步骤")
+    params = _extract_multiline_field(entry.body, "参数")
+    expected = _extract_multiline_field(entry.body, "期望结果")
+
+    template = _first_step_as_template(steps) or goal or entry.title
+    placeholders = _params_to_placeholders(params)
+
+    file_kind = KIND_QUICK_ACTIONS
+    entry_id = make_id(file_kind)
+    fields = _draft_to_fields(
+        {
+            "title": f"{entry.title}（快捷指令）",
+            "template": template,
+            "placeholders": placeholders,
+            "condition": f"页面 {page_key}" if page_key else "",
+            "expectation": expected or goal,
+            "status": "draft",
+        },
+        KIND_DRAFT_QUICK_ACTION,
+        page_key,
+    )
+    return {
+        "entry_id": entry_id,
+        "file_kind": file_kind,
+        "draft_kind": KIND_DRAFT_QUICK_ACTION,
+        "title": f"{entry.title}（快捷指令）",
+        "fields": fields,
+        "target": TARGET_LOCAL,
+        "page_key": page_key,
+        "_src": _now_src("test_item_conversion"),
+        "_raw": {"source_entry_id": entry.entry_id},
+    }
+
+
+def _first_step_as_template(steps_text: str) -> str:
+    """取步骤首行，数值替换为 {v}，作为快捷指令模板雏形。"""
+    if not steps_text:
+        return ""
+    for line in steps_text.splitlines():
+        match = _NUMBERED_STEP_RE.match(line)
+        if match:
+            return _NUMBER_RE.sub("{v}", match.group(1).strip())
+    return _NUMBER_RE.sub("{v}", steps_text.splitlines()[0].strip())
+
+
+def _params_to_placeholders(params_text: str) -> str:
+    """把"参数"字段（chip: ...; voltage: ...）转成占位符说明。"""
+    if not params_text:
+        return ""
+    parts: list[str] = []
+    for line in params_text.splitlines():
+        line = line.strip().lstrip("-").strip()
+        if not line or ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        key = key.strip()
+        value = value.strip()
+        if key:
+            parts.append(f"{key}: {value}" if value else key)
+    return "; ".join(parts)
+
+
+# ---- Phase 3：测试用例 → eval 草稿 ----------------------------------------
+
+
+_AUTOMATION_FULL = "full"
+_AUTOMATION_PARTIAL = "partial"
+
+
+def test_case_to_eval_draft(entry: MemoryEntry, page_key: str) -> dict | None:
+    """把一条 test_cases 条目转为 eval case JSON 草稿。
+
+    仅当"可自动化程度"为 full 或 partial 时导出；返回 None 表示不适用。
+    """
+    automation = _extract_field(entry.body, "可自动化程度").strip().lower()
+    if automation not in (_AUTOMATION_FULL, _AUTOMATION_PARTIAL):
+        return None
+
+    case_input = _extract_multiline_field(entry.body, "输入")
+    expected = _extract_multiline_field(entry.body, "期望行为")
+    pass_criteria = _extract_multiline_field(entry.body, "通过标准")
+    case_type = _extract_field(entry.body, "用例类型")
+
+    case_id = _sanitize_eval_id(entry.entry_id, page_key)
+    expect: dict = {}
+    if case_type == "instrument_required":
+        expect["expect_tool"] = True
+    elif case_type == "manual":
+        expect["expect_tool"] = False
+    any_kw = _split_keywords(expected)
+    if any_kw:
+        expect["any_keywords"] = any_kw
+    all_kw = _split_keywords(pass_criteria)
+    if all_kw:
+        expect["all_keywords"] = all_kw
+
+    return {
+        "id": case_id,
+        "desc": f"{entry.title}（来源：{entry.entry_id}，自动化={automation}）",
+        "page_key": page_key,
+        "user": _strip_list_marker(case_input) or entry.title,
+        "history": [],
+        "expect": expect,
+        "_source_entry_id": entry.entry_id,
+        "_automation": automation,
+    }
+
+
+def _sanitize_eval_id(entry_id: str, page_key: str) -> str:
+    """把 TC-YYYYMMDD-HHMMSS 转为 eval case 文件名友好的 id。"""
+    raw = f"{page_key}_{entry_id}".lower()
+    return re.sub(r"[^a-z0-9_]+", "_", raw).strip("_")
+
+
+_LIST_MARKER_RE = re.compile(r"^\s*(?:-\s+|\d+\.\s+)")
+
+
+def _strip_list_marker(text: str) -> str:
+    """去掉 markdown 列表标记（- / 1.），保留正文。"""
+    if not text:
+        return ""
+    lines = []
+    for line in text.splitlines():
+        lines.append(_LIST_MARKER_RE.sub("", line).strip())
+    return "\n".join(lines).strip()
+
+
+def _split_keywords(text: str) -> list[str]:
+    """把多行/分号分隔的文本拆为关键字列表，去掉列表标记。"""
+    if not text:
+        return []
+    parts: list[str] = []
+    for chunk in re.split(r"[\n;；]", text):
+        kw = _LIST_MARKER_RE.sub("", chunk).strip()
+        if kw:
+            parts.append(kw)
+    return parts
+
+
+def eval_cases_dir() -> str:
+    """tests/ai_eval/cases 目录绝对路径。"""
+    return os.path.join(get_resource_base(), "tests", "ai_eval", "cases")
+
+
+def write_eval_draft(draft: dict) -> tuple[bool, str]:
+    """把 eval 草稿写入 tests/ai_eval/cases/<id>.json。返回 (ok, path_or_message)。"""
+    if not draft or not draft.get("id"):
+        return False, "eval 草稿缺少 id"
+    case_id = str(draft["id"])
+    directory = eval_cases_dir()
+    if not _ensure_dir(os.path.join(directory, case_id + ".json")):
+        return False, "创建 eval 用例目录失败"
+    path = os.path.join(directory, f"{case_id}.json")
+    payload = {k: v for k, v in draft.items() if not k.startswith("_")}
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, ensure_ascii=False, indent=2)
+        return True, path
+    except OSError:
+        logger.error("写入 eval 草稿失败: %s", path, exc_info=True)
+        return False, "写入 eval 草稿失败"
+
+
+# ---- Phase 3：删除与提升 --------------------------------------------------
+
+
+def delete_entry(
+    page_key: str | None, kind: str, entry_id: str, *, target: str = TARGET_LOCAL
+) -> tuple[bool, str]:
+    """从指定文件删除一条 entry_id 条目。返回 (ok, message)。"""
+    if target == TARGET_PROJECT:
+        path = project_file(page_key or "", kind)
+    else:
+        path = local_file(page_key or "", kind)
+    if path is None:
+        return False, "非法 page_key 或 kind"
+    existing = _read_text(path)
+    if not existing:
+        return False, "文件不存在或为空"
+    lines = existing.splitlines(keepends=True)
+    start = _find_entry_line_index(lines, entry_id)
+    if start >= len(lines) or not lines[start].startswith(f"## {entry_id}"):
+        return False, f"未找到条目 {entry_id}"
+    end = _find_entry_end_index(lines, start, entry_id)
+    rebuilt = "".join(lines[:start]) + "".join(lines[end:])
+    ok = _write_file(path, rebuilt)
+    return ok, "已删除" if ok else "写入失败"
+
+
+def promote_local_to_project(
+    page_key: str | None, kind: str, entry_id: str
+) -> tuple[bool, str]:
+    """把本机私有层条目提升到项目级 docs（删除本机 + 追加项目）。"""
+    loc_path = local_file(page_key or "", kind)
+    if loc_path is None:
+        return False, "非法 page_key 或 kind"
+    existing = _read_text(loc_path)
+    if not existing:
+        return False, "本机文件不存在或为空"
+    entries = parse_entries(existing, loc_path)
+    target_entry: MemoryEntry | None = None
+    for ent in entries:
+        if ent.entry_id == entry_id:
+            target_entry = ent
+            break
+    if target_entry is None:
+        return False, f"本机层未找到条目 {entry_id}"
+
+    ok_append, msg_append = append_entry(
+        page_key, kind, target_entry.raw.strip(), target=TARGET_PROJECT
+    )
+    if not ok_append:
+        return False, f"写入项目级失败：{msg_append}"
+    ok_del, msg_del = delete_entry(page_key, kind, entry_id, target=TARGET_LOCAL)
+    if not ok_del:
+        logger.warning(
+            "提升后本机删除失败 entry_id=%s： %s", entry_id, msg_del
+        )
+    return True, f"已提升到项目级 docs（{entry_id}）"

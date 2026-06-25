@@ -764,6 +764,7 @@ class AIAssistPanel(QFrame):
         self._chat = ChatView()
         self._chat.feedback_submitted.connect(self._on_feedback)
         self._chat.curate_requested.connect(self._on_curate_requested)
+        self._chat.manage_memory_requested.connect(self._on_manage_memory_requested)
         root.addWidget(self._chat, 1)
 
         bottom_bar = QFrame()
@@ -1790,6 +1791,21 @@ class AIAssistPanel(QFrame):
             return
         self._chat.add_system_message("Generating curation draft…")
         self._start_curate(kind, turn)
+
+    def _on_manage_memory_requested(self) -> None:
+        """Phase 3：打开 KK Lab AI 记忆管理对话框。"""
+        from ui.ai.kk_lab_memory_dialog import KKLabMemoryManagerDialog
+        from core.ai import kk_lab_memory
+
+        page_key = self._service.current_page_key() or ""
+        if not kk_lab_memory.is_valid_page_key(page_key):
+            self._chat.add_system_message(
+                f"当前页面键 '{page_key}' 不在白名单，无法打开记忆管理。"
+            )
+            return
+        dialog = KKLabMemoryManagerDialog(page_key, parent=self)
+        dialog.exec()
+        self.refresh_quick_actions()
 
     def _start_curate(self, kind: str, turn: dict) -> None:
         from PySide6.QtCore import QObject, QThread, Signal
