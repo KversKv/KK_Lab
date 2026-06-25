@@ -246,6 +246,8 @@ class AIService(QObject):
     draft_ready = Signal(object)
     error_occurred = Signal(str)
     busy_changed = Signal(bool)
+    # 用户主动停止生成（§停止AI生成）：UI 据此收尾未完成的流式气泡
+    generation_cancelled = Signal()
     connection_tested = Signal(bool, str)
     action_requested = Signal(object)
     action_result = Signal(object)
@@ -799,8 +801,26 @@ class AIService(QObject):
         self.send(user_text, extra_context=extra_context, waveform_context=context)
 
     def cancel(self) -> None:
-        if self._worker is not None:
-            self._worker.cancel()
+        """中断本次生成：放手在途 worker、复位会话状态、立即解除忙碌。
+
+        UI 上的“停止”按钮调用本方法。非阻塞放手在途线程（_teardown_thread 会置
+        取消标志并把线程转入孤儿表自管理回收），随后清理流式/agent 中间态并发
+        cancelled 信号让面板收尾未完成的流式气泡。late 到达的 finished/failed 因
+        worker 已与本服务断开连接，不会再回灌渲染。
+        """
+        if not self._busy and self._thread is None:
+            return
+        if self._history and self._history[-1].get("role") == "user":
+            self._history.pop()
+        self._teardown_thread()
+        self._pending_mode = _MODE_CHAT
+        self._stream_buffer = ""
+        self._stream_started = False
+        self._answer_was_streamed = False
+        self._agent_messages = []
+        self._agent_rounds = 0
+        self.generation_cancelled.emit()
+        self._set_busy(False)
 
     def _start_worker(self, messages, model, temperature, max_tokens, tools=None) -> None:
         self._teardown_thread()

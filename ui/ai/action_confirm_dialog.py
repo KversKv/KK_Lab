@@ -22,6 +22,8 @@ from PySide6.QtWidgets import (
 
 from log_config import get_logger
 
+from ui.ai.dialog_theme import apply_ai_dialog_theme
+
 logger = get_logger(__name__)
 
 _DIALOG_STYLE = """
@@ -73,7 +75,7 @@ class ActionConfirmDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("AI 动作确认")
         self.setMinimumSize(460, 380)
-        self.setStyleSheet(_DIALOG_STYLE)
+        apply_ai_dialog_theme(self, _DIALOG_STYLE)
         self._risk_level = risk_level
         self._session_check: QCheckBox | None = None
         self._resident_check: QCheckBox | None = None

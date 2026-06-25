@@ -34,6 +34,8 @@ from PySide6.QtWidgets import (
 from core.ai.ai_service import AIService
 from log_config import get_logger
 
+from ui.ai.dialog_theme import apply_ai_dialog_theme
+
 logger = get_logger(__name__)
 
 _DIALOG_STYLE = """
@@ -92,7 +94,7 @@ class AISettingsDialog(QDialog):
         self._policy = service.dispatcher.policy if service.dispatcher else None
         self.setWindowTitle("AI 设置")
         self.setMinimumWidth(460)
-        self.setStyleSheet(_DIALOG_STYLE)
+        apply_ai_dialog_theme(self, _DIALOG_STYLE)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 16, 16, 16)
@@ -494,7 +496,7 @@ class AISettingsDialog(QDialog):
     def _on_reset_local(self) -> None:
         confirm = QDialog(parent=self)
         confirm.setWindowTitle("确认重置")
-        confirm.setStyleSheet(_DIALOG_STYLE)
+        apply_ai_dialog_theme(confirm, _DIALOG_STYLE)
         c_layout = QVBoxLayout(confirm)
         c_layout.setContentsMargins(16, 16, 16, 16)
         c_layout.setSpacing(12)

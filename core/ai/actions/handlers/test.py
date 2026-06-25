@@ -178,7 +178,22 @@ def build_handlers(deps: ActionDeps) -> dict[str, Any]:
         if deps.test_run_callback is None:
             return {"ok": False, "_message": "当前页面不支持启动测试序列（请切到 Orchestrator）。"}
         ok, message = deps.test_run_callback()
-        return {"ok": bool(ok), "_message": message or ("已启动测试序列。" if ok else "启动失败。")}
+        result = {"ok": bool(ok), "_message": message or ("已启动测试序列。" if ok else "启动失败。")}
+        # 登记后台测试任务，供 TaskTray 展示「进行中」并提供停止入口（问题2）。
+        if ok:
+            registry = deps.pending_task_registry
+            if registry is not None:
+                session_key = ""
+                if deps.session_key_getter is not None:
+                    try:
+                        session_key = deps.session_key_getter() or ""
+                    except Exception:  # noqa: BLE001
+                        logger.error("session_key_getter 调用异常", exc_info=True)
+                title = str(_args.get("title", "")) if isinstance(_args, dict) else ""
+                result["task_id"] = registry.register(
+                    session_key, "test_sequence", title=title or "测试序列"
+                )
+        return result
 
     def pause_test_sequence(_args: dict) -> dict:
         if deps.test_pause_callback is None:
@@ -190,6 +205,20 @@ def build_handlers(deps: ActionDeps) -> dict[str, Any]:
         if deps.test_stop_callback is None:
             return {"ok": False, "_message": "当前页面不支持停止测试序列。"}
         ok, message = deps.test_stop_callback()
+        # 停止成功后把对应的后台测试任务标记完成，让 TaskTray「进行中」清零（问题2）。
+        if ok:
+            registry = deps.pending_task_registry
+            if registry is not None:
+                session_key = ""
+                if deps.session_key_getter is not None:
+                    try:
+                        session_key = deps.session_key_getter() or ""
+                    except Exception:  # noqa: BLE001
+                        logger.error("session_key_getter 调用异常", exc_info=True)
+                for task in registry.list(session_key=session_key or None):
+                    if task.get("kind") == "test_sequence" and task.get("status") == "pending":
+                        registry.mark_done(task.get("task_id"), {"stopped": True})
+                        registry.mark_consumed(task.get("task_id"))
         return {"ok": bool(ok), "_message": message or "已发送停止请求。"}
 
     def get_current_test_config(_args: dict) -> dict:

@@ -1645,10 +1645,26 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
 
     def ai_get_config(self) -> dict[str, Any] | None:
         try:
-            return self.get_test_config()
+            cfg = dict(self.get_test_config())
         except Exception:  # noqa: BLE001 - 快照失败降级为 None
             _logger.error("AI 读取 DCDC 效率测试配置失败", exc_info=True)
             return None
+        # 仅暴露当前测试项「真正会遍历」的维度，避免 AI 把 UI 上常驻但未激活的
+        # VIN / 温度扫描字段当成会执行的遍历维度（如 Efficiency Curve 仅扫电流，
+        # 不遍历 VIN / 温度）。否则 AI 会臆造「电流×VIN×温度」的组合数误导用户。
+        test_item = cfg.get("test_item", "Efficiency Curve")
+        if test_item != "VIN Sweep":
+            for key in ("vin_start", "vin_end", "vin_step"):
+                cfg.pop(key, None)
+        if test_item != "Temperature Sweep":
+            for key in ("temp_start", "temp_end", "temp_step", "fixed_load_a"):
+                cfg.pop(key, None)
+        cfg["sweep_dimensions"] = ["load_current"]
+        if test_item == "VIN Sweep":
+            cfg["sweep_dimensions"].append("vin")
+        elif test_item == "Temperature Sweep":
+            cfg["sweep_dimensions"].append("temperature")
+        return cfg
 
     def ai_apply_config(self, payload: Any) -> tuple[bool, str]:
         """落地配置草案到控件（写操作，经确认+审计后由枢纽调用）。

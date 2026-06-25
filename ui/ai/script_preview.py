@@ -32,6 +32,8 @@ from core.ai.draft_validation import DraftValidationResult, validate_script_draf
 from core.ai.schemas import ScriptDraft
 from log_config import get_logger
 
+from ui.ai.dialog_theme import apply_ai_dialog_theme
+
 logger = get_logger(__name__)
 
 _DIALOG_STYLE = """
@@ -86,7 +88,7 @@ class ScriptPreviewDialog(QDialog):
         self._confirmed_warnings = False
         self.setWindowTitle("测试脚本草案 - 预览与校验")
         self.setMinimumSize(560, 540)
-        self.setStyleSheet(_DIALOG_STYLE)
+        apply_ai_dialog_theme(self, _DIALOG_STYLE)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 16, 16, 16)

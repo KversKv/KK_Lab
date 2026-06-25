@@ -168,6 +168,11 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "（这些仅在 Orchestrator 页可用）。\n"
             "页级写动作已按本页能力裁剪可见——你看到的就是本页能干的；不要尝试调用本页未声明的动作，"
             "若某动作不在工具列表中即表示本页不支持，应直接告知用户并给出可执行替代。"
+            "效率测试默认仅遍历负载电流（test_item=Efficiency Curve），不遍历 VIN 或温度；"
+            "只有 test_item 为 VIN Sweep / Temperature Sweep 时才分别遍历 VIN / 温度。"
+            "配置快照中的 sweep_dimensions 字段即本次实际会遍历的维度，"
+            "禁止把未列入 sweep_dimensions 的参数当作遍历维度去推算组合数。"
+            "用户只要求改某个范围（如电流）时，仅改该参数、保持其它配置不变，不要擅自新增遍历维度。"
             "若用户要执行复杂测试序列编排，请建议切到 Orchestrator 页面。"
         ),
         "quick_actions": [

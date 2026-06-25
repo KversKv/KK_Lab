@@ -50,6 +50,7 @@ from core.ai.profiles import (
 from core.ai.response_parser import ParsedResponse
 from core.ai.schemas import CONFIG_DRAFT, SCRIPT_DRAFT
 from ui.ai.chat_view import ChatView
+from ui.ai.dialog_theme import apply_ai_dialog_theme
 from ui.ai.transcript_exporter import build_export_markdown
 from ui.resource_path import get_resource_base
 from ui.utils.icon_utils import tinted_svg_icon, tinted_svg_pixmap
@@ -70,6 +71,7 @@ _NO_WAVEFORM_GUARD = (
 _AI_SVG_DIR = os.path.join(get_resource_base(), "resources", "icons_svg", "ai")
 _SEND_ICON = os.path.join(_AI_SVG_DIR, "send.svg")
 _SEND_UP_ICON = os.path.join(get_resource_base(), "resources", "modules", "SVG_Logs", "arrow-up.svg")
+_STOP_ICON = os.path.join(get_resource_base(), "resources", "icons", "square.svg")
 _PANEL_ICON = os.path.join(_AI_SVG_DIR, "ai_panel.svg")
 _SPARKLES_ICON = os.path.join(_AI_SVG_DIR, "sparkles.svg")
 _INSPECT_ICON = os.path.join(_AI_SVG_DIR, "inspect.svg")
@@ -357,10 +359,82 @@ QLabel#aiUsageLabel {
     border: none;
     padding: 1px 2px;
 }
+QMenu {
+    background-color: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 4px;
+    color: #cbd5e1;
+    font-size: 12px;
+}
+QMenu::item {
+    padding: 5px 14px;
+    border-radius: 4px;
+    background: transparent;
+}
+QMenu::item:selected {
+    background-color: #1e293b;
+    color: #e2e8f0;
+}
 """
 
 _LOG_LEVELS = ("DEBUG", "INFO", "WARN", "ERROR")
 _MAX_LINES_CAP = 1000
+
+_QUICK_PARAM_DIALOG_STYLE = """
+QDialog {
+    background-color: #070709;
+}
+QLabel {
+    color: #cbd5e1;
+    font-size: 12px;
+    background: transparent;
+    border: none;
+}
+QLabel#aiQuickParamTip {
+    color: #e2e8f0;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 10px;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    background-color: #0f172a;
+}
+QLineEdit {
+    min-height: 22px;
+    padding: 4px 8px;
+    color: #e2e8f0;
+    background-color: #04060f;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    font-size: 12px;
+}
+QLineEdit:focus {
+    border: 1px solid #3b82f6;
+}
+QPushButton {
+    min-height: 26px;
+    padding: 4px 16px;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    background-color: #0f172a;
+    color: #cbd5e1;
+    font-size: 12px;
+    font-weight: 600;
+}
+QPushButton:hover {
+    background-color: #1e293b;
+    border: 1px solid #334155;
+}
+QPushButton:default {
+    background-color: #2563eb;
+    border: 1px solid #2563eb;
+    color: #ffffff;
+}
+QPushButton:default:hover {
+    background-color: #1d4fd0;
+}
+"""
 
 
 class _FlowLayout(QLayout):
@@ -635,6 +709,7 @@ class _TaskTray(QFrame):
 
     cancel_requested = Signal(str)   # scheduled task_id
     view_requested = Signal(str)     # pending task_id
+    stop_requested = Signal(str)     # 进行中后台任务 task_id（如测试序列）
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -726,6 +801,13 @@ class _TaskTray(QFrame):
             btn.clicked.connect(lambda _=False, tid=task_id: self.cancel_requested.emit(tid))
             layout.addWidget(btn, 0)
         else:
+            # 进行中的后台测试任务额外提供「停止」入口（问题2）。
+            if task.get("kind") == "test_sequence":
+                stop_btn = QPushButton("停止")
+                stop_btn.setObjectName("aiTaskTrayBtn")
+                stop_btn.setCursor(QCursor(Qt.PointingHandCursor))
+                stop_btn.clicked.connect(lambda _=False, tid=task_id: self.stop_requested.emit(tid))
+                layout.addWidget(stop_btn, 0)
             btn = QPushButton("查看结果")
             btn.setObjectName("aiTaskTrayBtn")
             btn.setCursor(QCursor(Qt.PointingHandCursor))
@@ -774,6 +856,7 @@ class AIAssistPanel(QFrame):
         self._task_tray = _TaskTray()
         self._task_tray.cancel_requested.connect(self._on_task_cancel_requested)
         self._task_tray.view_requested.connect(self._on_task_view_requested)
+        self._task_tray.stop_requested.connect(self._on_task_stop_requested)
         root.addWidget(self._task_tray)
 
         self._chat = ChatView()
@@ -990,8 +1073,47 @@ class AIAssistPanel(QFrame):
             btn.setCursor(QCursor(Qt.PointingHandCursor))
             btn.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
             btn.clicked.connect(lambda _checked=False, t=text: self._on_quick_clicked(t))
+            btn.setContextMenuPolicy(Qt.CustomContextMenu)
+            btn.customContextMenuRequested.connect(
+                lambda pos, b=btn, t=text: self._on_quick_context_menu(b, pos, t)
+            )
             layout.addWidget(btn)
         self._quick_row.setVisible(bool(actions))
+
+    def _on_quick_context_menu(self, button: QPushButton, pos: QPoint, text: str) -> None:
+        """快捷指令右键菜单：编辑后发送 / 添加到发送区（手动微调）。"""
+        from PySide6.QtWidgets import QMenu
+
+        menu = QMenu(self)
+        edit_action = menu.addAction("编辑参数后发送")
+        compose_action = menu.addAction("添加到发送区（手动微调）")
+        chosen = menu.exec(button.mapToGlobal(pos))
+        if chosen is None:
+            return
+        if chosen is edit_action:
+            self._on_quick_clicked(text)
+        elif chosen is compose_action:
+            self._add_quick_to_compose(text)
+
+    def _add_quick_to_compose(self, text: str) -> None:
+        """把快捷指令文案填入发送区供用户手动微调，不直接发送。
+
+        带占位符时先弹参数填充框（取消则填入原模板由用户手改）。
+        """
+        placeholders = quick_action_placeholders(text)
+        if placeholders:
+            values = self._prompt_quick_action_values(text, placeholders)
+            if values is not None:
+                text = fill_quick_action(text, values)
+        existing = self._input.toPlainText()
+        if existing.strip():
+            text = existing.rstrip() + "\n" + text
+        self._input.setPlainText(text)
+        self._input.setFocus()
+        cursor = self._input.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        self._input.setTextCursor(cursor)
+        self.request_open.emit()
 
     def _on_quick_clicked(self, text: str) -> None:
         placeholders = quick_action_placeholders(text)
@@ -1011,11 +1133,14 @@ class AIAssistPanel(QFrame):
 
         dialog = QDialog(parent=self)
         dialog.setWindowTitle("Fill Quick Action Parameters")
+        # 统一深色样式 + 防首帧闪白。
+        apply_ai_dialog_theme(dialog, _QUICK_PARAM_DIALOG_STYLE)
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(10)
 
         tip = QLabel(template)
+        tip.setObjectName("aiQuickParamTip")
         tip.setWordWrap(True)
         layout.addWidget(tip)
 
@@ -1143,8 +1268,10 @@ class AIAssistPanel(QFrame):
         self._send_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self._send_btn.setToolTip("Send")
         send_icon = _SEND_UP_ICON if os.path.isfile(_SEND_UP_ICON) else _SEND_ICON
-        if os.path.isfile(send_icon):
-            self._send_btn.setIcon(tinted_svg_icon(send_icon, "#ffffff", 14))
+        self._send_icon = tinted_svg_icon(send_icon, "#ffffff", 14) if os.path.isfile(send_icon) else None
+        self._stop_icon = tinted_svg_icon(_STOP_ICON, "#ffffff", 14) if os.path.isfile(_STOP_ICON) else None
+        if self._send_icon is not None:
+            self._send_btn.setIcon(self._send_icon)
             self._send_btn.setIconSize(QSize(14, 14))
         self._send_btn.clicked.connect(self._on_send_clicked)
         layout.addWidget(self._send_btn)
@@ -1369,6 +1496,7 @@ class AIAssistPanel(QFrame):
         self._service.draft_ready.connect(self._on_draft_ready)
         self._service.error_occurred.connect(self._on_error)
         self._service.busy_changed.connect(self._on_busy_changed)
+        self._service.generation_cancelled.connect(self._on_generation_cancelled)
         self._service.connection_tested.connect(self._on_connection_tested)
         self._service.action_requested.connect(self._on_action_requested)
         self._service.action_result.connect(self._on_action_result)
@@ -1405,11 +1533,35 @@ class AIAssistPanel(QFrame):
     # ------------------------------------------------------------------ #
     # TaskTray / 续跑可视化（S7 / S8）
     # ------------------------------------------------------------------ #
+    def _reap_finished_test_tasks(self, pending: list, session_key: str) -> None:
+        """测试序列结束（running=False）后，把对应 pending 任务收尾以清空托盘。"""
+        if not any(t.get("kind") == "test_sequence" and t.get("status") == "pending" for t in pending):
+            return
+        dispatcher = self._service.dispatcher
+        if dispatcher is None:
+            return
+        try:
+            outcome = dispatcher.dispatch("get_test_sequence_status", {})
+            data = getattr(outcome, "data", None) or {}
+        except Exception:
+            logger.error("查询测试序列状态失败", exc_info=True)
+            return
+        if not data.get("available", False) or data.get("running", False):
+            return
+        registry = self._service.pending_task_registry
+        for t in pending:
+            if t.get("kind") == "test_sequence" and t.get("status") == "pending":
+                registry.mark_done(t.get("task_id"), {"finished": True})
+                registry.mark_consumed(t.get("task_id"))
+
     def _refresh_task_tray(self) -> None:
         """按当前会话刷新 TaskTray 摘要（S7-4 / S8-5 会话隔离）。"""
         try:
             sk = self._service.current_session_key()
             scheduled = self._service.scheduled_task_registry.list(session_key=sk)
+            pending = self._service.pending_task_registry.list(session_key=sk)
+            # 测试序列已不在运行则自动收尾，避免「进行中」长挂（问题2）。
+            self._reap_finished_test_tasks(pending, sk)
             pending = self._service.pending_task_registry.list(session_key=sk)
             self._task_tray.set_tasks(scheduled, pending)
             # S8-4 降级：有已完成但未回灌的任务时提示
@@ -1466,6 +1618,24 @@ class AIAssistPanel(QFrame):
         finally:
             self._refresh_task_tray()
 
+    def _on_task_stop_requested(self, task_id: str) -> None:
+        """行内停止进行中的后台测试任务（问题2 → stop_test_sequence）。"""
+        if not task_id:
+            return
+        dispatcher = self._service.dispatcher
+        if dispatcher is None:
+            self._chat.add_system_message("动作系统未就绪，无法停止任务。")
+            return
+        try:
+            outcome = dispatcher.dispatch("stop_test_sequence", {})
+            data = getattr(outcome, "data", None) or {}
+            self._chat.add_system_message(data.get("_message") or "已发送停止请求。")
+        except Exception:
+            logger.error("停止后台测试任务失败：%s", task_id, exc_info=True)
+            self._chat.add_system_message("停止任务失败，请查看日志。")
+        finally:
+            self._refresh_task_tray()
+
     def _on_task_resumed(self, info: dict) -> None:
         """任务完成并已发起自动续跑（S8-1 / S8-3）。"""
         task_id = (info or {}).get("task_id", "")
@@ -1501,6 +1671,11 @@ class AIAssistPanel(QFrame):
         self._record("assistant", text=content or "")
         self._last_assistant_text = content or ""
         self._chat.end_stream_message(content)
+
+    def _on_generation_cancelled(self) -> None:
+        """用户停止生成：收尾未完成的流式气泡并提示已停止（问题3）。"""
+        self._chat.discard_stream_message()
+        self._chat.add_system_message("已停止生成。")
 
     def confirm_action(self, spec, arguments: dict, reason: str = "") -> "ConfirmResult":
         """供 ActionDispatcher 注入的确认回调：在聊天内嵌入确认卡片。
@@ -1713,6 +1888,10 @@ class AIAssistPanel(QFrame):
         )
 
     def _on_send_clicked(self) -> None:
+        # 生成中：发送键即“停止”，中断本次 AI 生成（问题3）。
+        if getattr(self, "_busy", False):
+            self._service.cancel()
+            return
         text = self._input.toPlainText().strip()
         if not text:
             return
@@ -1994,16 +2173,22 @@ class AIAssistPanel(QFrame):
 
     def _on_busy_changed(self, busy: bool) -> None:
         self._busy = busy
-        self._send_btn.setEnabled(not busy)
+        # 生成中发送键变“停止”（保持可点用于中断），其余动作键禁用（问题3）。
+        self._send_btn.setEnabled(True)
         self._analyze_btn.setEnabled(not busy)
         self._draft_btn.setEnabled(not busy)
         self._select_btn.setEnabled(not busy)
         if busy:
             self._waveform_btn.setEnabled(False)
-            self._send_btn.setToolTip("Processing…")
-        elif self._digest_thread is None:
-            self._waveform_btn.setEnabled(True)
+            if getattr(self, "_stop_icon", None) is not None:
+                self._send_btn.setIcon(self._stop_icon)
+            self._send_btn.setToolTip("Stop generating")
+        else:
+            if getattr(self, "_send_icon", None) is not None:
+                self._send_btn.setIcon(self._send_icon)
             self._send_btn.setToolTip("Send")
+            if self._digest_thread is None:
+                self._waveform_btn.setEnabled(True)
 
     def _on_connection_tested(self, ok: bool, message: str) -> None:
         if ok:

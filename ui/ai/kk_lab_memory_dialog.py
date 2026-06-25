@@ -28,6 +28,8 @@ from PySide6.QtWidgets import (
 from core.ai import kk_lab_memory
 from log_config import get_logger
 
+from ui.ai.dialog_theme import apply_ai_dialog_theme
+
 logger = get_logger(__name__)
 
 _KIND_TITLES = {
@@ -58,6 +60,7 @@ class KKLabMemoryDialog(QDialog):
         title = _KIND_TITLES.get(draft_kind, "归档到本页记忆")
         self.setWindowTitle(title)
         self.setMinimumWidth(520)
+        apply_ai_dialog_theme(self)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -164,6 +167,7 @@ class KKLabMemoryManagerDialog(QDialog):
         self._page_key = page_key or ""
         self.setWindowTitle("KK Lab AI 记忆管理")
         self.setMinimumSize(640, 480)
+        apply_ai_dialog_theme(self)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)

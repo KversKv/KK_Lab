@@ -23,6 +23,8 @@ from PySide6.QtWidgets import (
 from core.ai.schemas import ConfigDraft
 from log_config import get_logger
 
+from ui.ai.dialog_theme import apply_ai_dialog_theme
+
 logger = get_logger(__name__)
 
 _DIALOG_STYLE = """
@@ -55,7 +57,7 @@ class ConfigPreviewDialog(QDialog):
         self._apply_cb = apply_cb
         self.setWindowTitle("测试配置草案 - 预览")
         self.setMinimumSize(520, 480)
-        self.setStyleSheet(_DIALOG_STYLE)
+        apply_ai_dialog_theme(self, _DIALOG_STYLE)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 16, 16, 16)

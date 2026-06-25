@@ -19,6 +19,8 @@ from PySide6.QtWidgets import (
 
 from log_config import get_logger
 
+from ui.ai.dialog_theme import apply_ai_dialog_theme
+
 logger = get_logger(__name__)
 
 _KIND_TITLES = {
@@ -42,6 +44,7 @@ class CurateDialog(QDialog):
 
         self.setWindowTitle(_KIND_TITLES.get(kind, "沉淀草稿"))
         self.setMinimumWidth(460)
+        apply_ai_dialog_theme(self)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)

@@ -10,7 +10,7 @@ import html as _html_mod
 import os
 import re
 
-from PySide6.QtCore import QSize, QTimer, QUrl, Qt, Signal
+from PySide6.QtCore import QEvent, QSize, QTimer, QUrl, Qt, Signal
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
     QFrame,
@@ -375,20 +375,57 @@ class _MarkdownBubble(QWidget):
         view.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         view.document().setDocumentMargin(0)
         view.setMarkdown(md_text)
+        # 吞掉气泡内的滚轮事件并转交外层 ChatView 滚动：即便高度估算偶有 1px 偏差，
+        # 用户滚轮也直接滚动整个会话区，而非在气泡内部滚动看内容（问题1的体验诉求）。
+        view.viewport().installEventFilter(self)
         view.document().contentsChanged.connect(lambda v=view: self._fit_height(v))
         QTimer.singleShot(0, lambda v=view: self._fit_height(v))
         self._fit_height(view)
         return view
 
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Wheel:
+            chat = self.parent()
+            while chat is not None and not isinstance(chat, QScrollArea):
+                chat = chat.parent()
+            if chat is not None:
+                bar = chat.verticalScrollBar()
+                bar.setValue(bar.value() - event.angleDelta().y())
+                return True
+        return super().eventFilter(obj, event)
+
     @staticmethod
     def _fit_height(view: QTextBrowser) -> None:
+        # 用真实可用文本宽度计算文档高度，并把整段高度钉死到 QTextBrowser 上，
+        # 让气泡“铺开”而非内部滚动。viewport 宽度未就绪（<=0）时延后再算，避免
+        # 用错误宽度低估高度而裁剪正文（用户得在气泡内滚滚轮才能看全的根因）。
+        #
+        # 流式渲染时 set_markdown 每个增量都重建 QTextBrowser，新建控件尚未完成
+        # 布局，其 viewport 宽度可能为 0 或停留在默认窄值，导致 _fit_height 低估
+        # 高度、首帧裁剪正文。这里在 viewport 宽度无效时，回退到外层 ChatView 的
+        # 实际可用宽度，立即按最终宽度算高，杜绝流式裁剪。
         doc = view.document()
         width = view.viewport().width()
         if width <= 0:
-            width = max(0, view.width() - _BUBBLE_PAD_H)
+            width = _MarkdownBubble._resolve_chat_width(view)
+        if width <= 0:
+            QTimer.singleShot(0, lambda v=view: _MarkdownBubble._fit_height(v))
+            return
         doc.setTextWidth(width)
-        height = int(doc.size().height()) + _BUBBLE_PAD_V
+        # +2 安全余量，吸收浮点取整误差，杜绝末行被裁出现内部滚动条。
+        height = int(doc.size().height() + 0.5) + _BUBBLE_PAD_V + 2
         view.setFixedHeight(max(_BUBBLE_MIN_H, height))
+
+    @staticmethod
+    def _resolve_chat_width(view: QTextBrowser) -> int:
+        """viewport 宽度未就绪时，回退取外层 ChatView 视口可用宽度。"""
+        node = view.parent()
+        while node is not None and not isinstance(node, QScrollArea):
+            node = node.parent()
+        if node is None:
+            return 0
+        # 减去 ChatView 容器左右内边距（16+16）与气泡内边距，估算文本可用宽。
+        return max(0, node.viewport().width() - 32 - _BUBBLE_PAD_V)
 
     def _make_code_block(self, lang: str, code: str) -> QFrame:
         frame = QFrame()

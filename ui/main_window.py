@@ -109,6 +109,7 @@ from core.ai.log_ring import get_log_ring
 from core.ai.page_contract import (
     CAP_APPLY_CONFIG,
     CAP_GET_CONFIG,
+    CAP_GET_RESULT,
     CAP_START_TEST,
     CAP_STOP_TEST,
 )
@@ -815,13 +816,17 @@ class MainWindow(CleanupMixin, QMainWindow):
         return getter()
 
     def _get_ai_test_result_summary(self):
-        ui = getattr(self, "orchestrator_ui", None)
-        if ui is None or self.current_instrument_ui != "orchestrator":
+        page = self.resolve_active_ai_page()
+        if page is None or CAP_GET_RESULT not in _ai_caps(page):
             return None
-        getter = getattr(ui, "get_ai_test_result_summary", None)
+        getter = getattr(page, "ai_get_result_summary", None)
         if not callable(getter):
             return None
-        return getter()
+        try:
+            return getter()
+        except Exception:  # noqa: BLE001 - 摘要查询失败不致命
+            logger.error("AI 获取测试结果摘要失败", exc_info=True)
+            return None
 
     def _ai_test_set_variable(self, name, value):
         ui = getattr(self, "orchestrator_ui", None)
@@ -1653,6 +1658,11 @@ class MainWindow(CleanupMixin, QMainWindow):
         dialog = QDialog(self)
         dialog.setWindowTitle("帮助")
         dialog.setMinimumSize(560, 480)
+        # 首帧防闪白：样式表 polish 前用调色板锁定深色背景，避免默认白底闪一下。
+        dialog.setAttribute(Qt.WA_StyledBackground, True)
+        _pal = dialog.palette()
+        _pal.setColor(dialog.backgroundRole(), QColor("#0e1525"))
+        dialog.setPalette(_pal)
         dialog.setStyleSheet("""
             QDialog {
                 background-color: #0e1525;
