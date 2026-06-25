@@ -208,6 +208,35 @@ def _force_tool_nudge_text() -> str:
     return force_tool_nudge() or _FORCE_TOOL_NUDGE_FALLBACK
 
 
+# Phase 4.3：动作不可用兜底 nudge —— 当本轮有写动作返回「当前页面不支持…」
+# /「请切到 Orchestrator」/「未注入…」时注入，引导模型给出可执行替代而非沉默。
+_ACTION_UNAVAILABLE_NUDGE = (
+    "[系统提示] 上一轮调用的动作在当前页面不可用（返回了「不支持」/"
+    "「请切到其它页面」/「未注入访问器」之类）。请按以下优先级处理：\n"
+    "1. 若目标动作在当前页面确实不存在，请直接用简短中文告诉用户"
+    "「当前页面不支持此操作，需要先切换到 XX 页面」，并给出可执行的替代步骤"
+    "（如点 START 按钮、切到 Orchestrator 等）；\n"
+    "2. 不要再重试同一个不可用的动作，也不要假装已执行；\n"
+    "3. 若用户目标可在当前页用其它动作达成（如查询类只读动作），改用可用动作继续。\n"
+    "请基于当前可用工具与上下文，给出明确、可执行的下一步。"
+)
+
+# 视为"动作不可用"的关键词（出现任一即触发兜底 nudge）。
+_UNAVAILABLE_MARKERS = ("不支持", "请切到", "未注入", "无可用", "无能力")
+
+
+def _is_unsupported_outcome(outcome) -> bool:
+    """判断动作结果是否表示"目标动作在当前页不可用"（用于触发兜底引导）。"""
+    if outcome is None:
+        return False
+    # 只对失败/拒绝的结果触发；成功路径不触发。
+    status = getattr(outcome, "status", "") or ""
+    if status not in ("failed", "denied"):
+        return False
+    msg = getattr(outcome, "message", "") or ""
+    return any(marker in msg for marker in _UNAVAILABLE_MARKERS)
+
+
 class AIService(QObject):
     response_ready = Signal(str)
     response_started = Signal()
@@ -279,6 +308,7 @@ class AIService(QObject):
         self._agent_temperature = 0.2
         self._agent_max_tokens = 2048
         self._agent_forced_retry = False
+        self._page_capabilities_getter = None  # UI 注入：返回当前页 AI 能力集（set[str]）
 
     def set_action_system(self, registry, dispatcher) -> None:
         """UI 注入受控动作系统（ActionRegistry + ActionDispatcher）。
@@ -287,6 +317,32 @@ class AIService(QObject):
         """
         self._registry = registry
         self._dispatcher = dispatcher
+
+    def set_page_capabilities_getter(self, getter) -> None:
+        """UI 注入：返回当前页 AI 能力集（set[str]，CAP_* 常量）。
+
+        getter 返回空 set 表示当前页无任何 AIControllablePage 契约能力（仅保留
+        通用只读/查询/测量/串口/仪器等动作）。返回 None 等价于"不裁剪"（向后兼容）。
+        用于 send()/_run_next_agent_round() 调 registry.to_tools(capabilities) 按页裁剪。
+        """
+        self._page_capabilities_getter = getter
+
+    def _current_page_capabilities(self) -> set[str] | None:
+        """取当前页 AI 能力集；getter 未注入或异常时返回 None（不裁剪）。"""
+        getter = self._page_capabilities_getter
+        if not callable(getter):
+            return None
+        try:
+            caps = getter()
+        except Exception:  # noqa: BLE001 - 能力查询失败不致命，降级为不裁剪
+            logger.error("获取当前页 AI 能力集失败", exc_info=True)
+            return None
+        if caps is None:
+            return None
+        try:
+            return set(caps)
+        except TypeError:
+            return None
 
     @property
     def dispatcher(self):
@@ -703,7 +759,9 @@ class AIService(QObject):
 
         tools = None
         if self._dispatcher is not None and self._registry is not None:
-            tools = self._registry.to_tools()
+            # 按当前页 AI 能力集裁剪 tools（Phase 4.2）：专项页模型只看到
+            # 本页能干的事 + 通用只读/查询/测量动作，省 token 且防误调。
+            tools = self._registry.to_tools(self._current_page_capabilities())
 
         if tools:
             self._pending_mode = _MODE_AGENT
@@ -917,6 +975,33 @@ class AIService(QObject):
         )
         return any(m in content for m in markers)
 
+    def _empty_response_fallback(self) -> str:
+        """空回复兜底文案：明示状态 + 给出可执行引导（Phase 4.3）。
+
+        依据当前页 page_key 与能力集给出针对性提示，避免模型沉默退出。
+        """
+        page_key = self._page_key or "当前页"
+        caps = self._current_page_capabilities()
+        if not caps:
+            return (
+                f"我已遍历可用工具，但当前页面「{page_key}」未声明任何 AI 受控能力，"
+                "无法直接执行测试启动/配置/停止等操作。\n"
+                "可执行的下一步：\n"
+                "- 若要启动测试序列，请切换到 Orchestrator 页面再让我处理；\n"
+                "- 若要操作仪器（开关输出、设电压电流），直接告诉我目标通道与数值，"
+                "我会通过仪器类受控动作执行；\n"
+                "- 若要分析当前页数据，请提供具体目标（如解读波形、统计尖峰）。"
+            )
+        caps_text = "、".join(sorted(caps))
+        return (
+            f"我已尝试处理，但本轮未能给出明确结论。当前页面「{page_key}」"
+            f"声明的 AI 能力：{caps_text}。\n"
+            "可执行的下一步：\n"
+            "- 若要启动/停止测试，直接说「启动测试」或「停止测试」，我会调对应动作；\n"
+            "- 若要修改配置，请提供具体参数（如扫描范围、电压/电流值）；\n"
+            "- 若目标在当前页不可达，请告诉我你希望切到哪个页面或达成什么目的。"
+        )
+
     def _handle_agent_round(self, content: str, tool_calls: list) -> None:
         """处理一轮 agent 结果：无 tool_calls 则结束；有则执行并回灌再起一轮。
 
@@ -951,16 +1036,26 @@ class AIService(QObject):
                 )
                 QTimer.singleShot(_FORCE_RETRY_DELAY_MS, self._run_forced_retry)
                 return
+            # Phase 4.3：空回复兜底 —— 静默结束时改为输出可执行引导，
+            # 防止"AI 连串只读探查后空回复静默退出"现象（见故障复盘）。
+            final_content = content or ""
+            if not final_content.strip():
+                final_content = self._empty_response_fallback()
+                logger.warning("Agent 空回复兜底，注入引导: %s", final_content[:80])
+                self._record_telemetry(
+                    "nudge_hit",
+                    {"nudge_id": "empty_response_fallback", "rounds": self._agent_rounds},
+                )
             self._pending_mode = _MODE_CHAT
-            self._history.append({"role": "assistant", "content": content})
+            self._history.append({"role": "assistant", "content": final_content})
             _save_persisted_history(self._history, self._session_key)
             if self._answer_was_streamed:
-                self.response_finished.emit(content)
+                self.response_finished.emit(final_content)
                 self._answer_was_streamed = False
             else:
-                self.response_ready.emit(content)
+                self.response_ready.emit(final_content)
             self._set_busy(False)
-            self._record_trace(ChatResult(content=content or ""), _MODE_AGENT)
+            self._record_trace(ChatResult(content=final_content), _MODE_AGENT)
             self._maybe_summarize()
             return
 
@@ -994,15 +1089,28 @@ class AIService(QObject):
             self._set_busy(False)
             return
 
+        unsupported_hit = False
         try:
             self._teardown_thread()
 
             for call in tool_calls:
-                self._execute_tool_call(call)
+                outcome = self._execute_tool_call(call)
+                if not unsupported_hit and _is_unsupported_outcome(outcome):
+                    unsupported_hit = True
         except Exception:
             logger.error("执行 agent 工具调用失败", exc_info=True)
             self._abort_agent(content, "执行工具调用失败，已停止本次操作。")
             return
+
+        # Phase 4.3：动作不可用兜底 —— 本轮有动作返回「当前页面不支持…」时，
+        # 注入一次轻量 nudge，引导模型给用户可执行替代而非沉默或重试同一动作。
+        if unsupported_hit:
+            self._agent_messages.append(
+                {"role": "user", "content": _ACTION_UNAVAILABLE_NUDGE}
+            )
+            self._record_telemetry(
+                "nudge_hit", {"nudge_id": "action_unavailable"}
+            )
 
         self._agent_rounds += 1
         if self._agent_rounds >= _MAX_TOOL_ROUNDS:
@@ -1023,7 +1131,11 @@ class AIService(QObject):
 
         QTimer.singleShot(0, self._run_next_agent_round)
 
-    def _execute_tool_call(self, call: dict) -> None:
+    def _execute_tool_call(self, call: dict):
+        """执行单个工具调用并把结果回灌到 _agent_messages；返回 outcome 供调用方判定。
+
+        Phase 4.3：返回 outcome 以便 _run_tool_calls 检测"动作不可用"并注入兜底 nudge。
+        """
         function = (call or {}).get("function") or {}
         name = function.get("name", "")
         call_id = call.get("id", "") or name
@@ -1059,6 +1171,7 @@ class AIService(QObject):
                 "content": payload,
             }
         )
+        return outcome
 
     def _run_forced_retry(self) -> None:
         if self._pending_mode != _MODE_AGENT:
@@ -1076,7 +1189,10 @@ class AIService(QObject):
             self._set_busy(False)
             return
         try:
-            tools = self._registry.to_tools() if self._registry else None
+            tools = (
+                self._registry.to_tools(self._current_page_capabilities())
+                if self._registry else None
+            )
             self._start_agent_round(tools)
         except Exception:
             logger.error("启动下一轮 agent 失败", exc_info=True)

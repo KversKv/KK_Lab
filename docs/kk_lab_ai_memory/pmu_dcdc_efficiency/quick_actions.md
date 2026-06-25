@@ -27,3 +27,16 @@
   - 当前有 PMU 测试结果数据
 - 执行预期：
   - AI 依据真实结果数据解读，禁止臆造读数
+
+## QA-20260625-003 - 测 1~200mA 效率
+
+- 页面：pmu_dcdc_efficiency
+- 来源：phase4_capability_boundary
+- 状态：active
+- 模板：测 1~200mA 效率
+- 占位符：无
+- 适用条件：
+  - 当前在 PMU DCDC 效率子页面
+  - 已连接 N6705C 仪器
+- 执行预期：
+  - AI 经 get_current_test_config 读取当前配置 → 应用 1~200mA 扫描范围 → 弹确认 → 启动本页测试

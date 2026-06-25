@@ -38,9 +38,13 @@ from core.orchestrator.serialization import save_sequence_data
 from core.orchestrator.snapshot import build_sequence_hash, clone_sequence
 from core.orchestrator.validation import preflight_validate
 from core.ai.page_contract import (
-    CAP_APPLY_CONFIG,
+    CAP_APPLY_SCRIPT,
     CAP_GET_CONFIG,
     CAP_GET_RESULT,
+    CAP_LIST_STEPS,
+    CAP_PAUSE_TEST,
+    CAP_RUN_SINGLE_STEP,
+    CAP_SET_VARIABLE,
     CAP_START_TEST,
     CAP_STOP_TEST,
 )
@@ -725,10 +729,22 @@ class OrchestratorUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMix
     # AIControllablePage 契约实现（AIAssist_PageScopedControlPlan.md §2）
     #
     # Orchestrator 作为契约的一个实现者，薄封装既有方法；不再由 MainWindow 硬编码
-    # 分支特判。Orchestrator 使用脚本草案（script_draft），不声明 CAP_APPLY_CONFIG。
+    # 分支特判。Orchestrator 使用脚本草案（script_draft），声明 CAP_APPLY_SCRIPT
+    # 而非 CAP_APPLY_CONFIG；同时声明 pause/list_steps/set_variable/run_single_step
+    # 等 orchestrator 专属能力，供 to_tools 按页裁剪保留对应动作。
     # ------------------------------------------------------------------
     def ai_capabilities(self) -> set[str]:
-        return {CAP_GET_CONFIG, CAP_START_TEST, CAP_STOP_TEST, CAP_GET_RESULT}
+        return {
+            CAP_GET_CONFIG,
+            CAP_START_TEST,
+            CAP_STOP_TEST,
+            CAP_GET_RESULT,
+            CAP_APPLY_SCRIPT,
+            CAP_PAUSE_TEST,
+            CAP_LIST_STEPS,
+            CAP_SET_VARIABLE,
+            CAP_RUN_SINGLE_STEP,
+        }
 
     def ai_get_config(self) -> Optional[Dict[str, Any]]:
         return self.get_ai_test_config()

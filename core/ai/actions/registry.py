@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from core.ai.page_contract import ACTION_CAPABILITY_MAP
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -82,6 +83,29 @@ class ActionRegistry:
     def names(self) -> list[str]:
         return list(self._specs.keys())
 
-    def to_tools(self) -> list[dict[str, Any]]:
-        """渲染为 OpenAI tools 列表（原生 function calling）。"""
-        return [spec.to_tool() for spec in self._specs.values()]
+    def to_tools(
+        self, capabilities: set[str] | None = None
+    ) -> list[dict[str, Any]]:
+        """渲染为 OpenAI tools 列表（原生 function calling）。
+
+        Args:
+            capabilities: 当前页面 AI 能力集（CAP_* 常量）。
+                - None：不裁剪，返回全量（向后兼容，未注入 getter 的调用方仍可用）；
+                - 非 None：按 ACTION_CAPABILITY_MAP 过滤页级动作（test_config/test_sequence
+                  类），未列入 map 的通用动作（查询/测量/串口/仪器/导出/调度等）始终保留。
+                命中 map 中任一所列能力即保留该动作。
+        """
+        if capabilities is None:
+            return [spec.to_tool() for spec in self._specs.values()]
+
+        caps = set(capabilities)
+        tools: list[dict[str, Any]] = []
+        for spec in self._specs.values():
+            required = ACTION_CAPABILITY_MAP.get(spec.name)
+            if required is None:
+                # 通用动作，始终保留（只读查询/测量/串口/仪器/导出/调度等）。
+                tools.append(spec.to_tool())
+                continue
+            if any(cap in caps for cap in required):
+                tools.append(spec.to_tool())
+        return tools

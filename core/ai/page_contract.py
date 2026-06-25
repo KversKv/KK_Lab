@@ -16,11 +16,40 @@ from typing import Any, Protocol
 
 
 # 能力标识常量（与动作名解耦，便于裁剪 tools）
-CAP_GET_CONFIG = "get_config"       # 读当前页配置快照
-CAP_APPLY_CONFIG = "apply_config"   # 落地配置草案到控件
-CAP_START_TEST = "start_test"       # 启动本页测试
-CAP_STOP_TEST = "stop_test"         # 停止本页测试
-CAP_GET_RESULT = "get_result"       # 读最近结果摘要
+CAP_GET_CONFIG = "get_config"        # 读当前页配置快照
+CAP_APPLY_CONFIG = "apply_config"    # 落地配置草案到控件（config_draft 路径）
+CAP_APPLY_SCRIPT = "apply_script"    # 落地脚本草案到画布（script_draft 路径，orchestrator）
+CAP_START_TEST = "start_test"        # 启动本页测试
+CAP_STOP_TEST = "stop_test"          # 停止本页测试
+CAP_PAUSE_TEST = "pause_test"        # 暂停/恢复测试（orchestrator）
+CAP_GET_RESULT = "get_result"        # 读最近结果摘要
+CAP_LIST_STEPS = "list_steps"        # 列出序列节点步骤（orchestrator）
+CAP_SET_VARIABLE = "set_variable"    # 设置测试变量（orchestrator）
+CAP_RUN_SINGLE_STEP = "run_single_step"  # 单步执行节点（orchestrator）
+
+
+# 动作名 → 所需页面能力（一个或多个，满足任一即可）。
+# 未列入 map 的动作视为通用动作（查询/测量/串口/仪器/导出/调度等），
+# to_tools(capabilities) 在按页裁剪时始终保留。
+# 含义：
+#   - capabilities is None   → 不裁剪，返回全量（向后兼容，旧调用方/未注入 getter）；
+#   - capabilities is set()  → 仅返回通用动作（页面无任何契约能力）；
+#   - capabilities 非空 set  → 通用动作 + 命中所声明能力的页级动作。
+ACTION_CAPABILITY_MAP: dict[str, tuple[str, ...]] = {
+    # 测试序列类（category=test_sequence）
+    "start_test_sequence": (CAP_START_TEST,),
+    "pause_test_sequence": (CAP_PAUSE_TEST,),
+    "stop_test_sequence": (CAP_STOP_TEST,),
+    "run_single_step": (CAP_RUN_SINGLE_STEP,),
+    # 测试配置类（category=test_config）
+    "get_current_test_config": (CAP_GET_CONFIG,),
+    "list_test_steps": (CAP_LIST_STEPS,),
+    "get_test_result_summary": (CAP_GET_RESULT,),
+    # apply_test_config_draft 双路径：config_draft 走 CAP_APPLY_CONFIG（专项页），
+    # script_draft 走 CAP_APPLY_SCRIPT（orchestrator）；满足任一即可。
+    "apply_test_config_draft": (CAP_APPLY_CONFIG, CAP_APPLY_SCRIPT),
+    "set_test_variable": (CAP_SET_VARIABLE,),
+}
 
 
 class AIControllablePage(Protocol):

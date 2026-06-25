@@ -293,13 +293,42 @@ AI: ui_invoke(action_id="n6705c.auto_set")
 
 | # | 任务 | 文件 | 状态 |
 |---|---|---|---|
-| 4.1 | `to_tools(capabilities)` 支持按能力过滤写类动作 | `core/ai/actions/registry.py` | ☐ |
-| 4.2 | `AIService` 组装 tools 时注入当前页 capabilities | `core/ai/ai_service.py` | ☐ |
-| 4.3 | 空回复 / 动作不可用兜底引导 | `core/ai/ai_service.py` | ☐ |
-| 4.4 | 各专项页 Profile system_prompt 声明能力边界（呼应专一/省 Token） | `core/ai/profiles.py` | ☐ |
-| 4.5 | Token 对比：专项页 tools 体积下降验证 | — | ☐ |
+| 4.1 | `to_tools(capabilities)` 支持按能力过滤写类动作 | `core/ai/actions/registry.py` | ☑ |
+| 4.2 | `AIService` 组装 tools 时注入当前页 capabilities | `core/ai/ai_service.py` | ☑ |
+| 4.3 | 空回复 / 动作不可用兜底引导 | `core/ai/ai_service.py` | ☑ |
+| 4.4 | 各专项页 Profile system_prompt 声明能力边界（呼应专一/省 Token） | `core/ai/profiles.py` | ☑ |
+| 4.5 | Token 对比：专项页 tools 体积下降验证 | — | ☑ |
 
 **验收**：专项页请求 tools 体积显著下降；模型不再误调不可用动作；无静默失败。
+
+> Phase 4 落地说明：
+> - **4.1**：`page_contract.py` 新增 `CAP_APPLY_SCRIPT` / `CAP_PAUSE_TEST` / `CAP_LIST_STEPS` /
+>   `CAP_SET_VARIABLE` / `CAP_RUN_SINGLE_STEP` 5 个能力常量，并定义 `ACTION_CAPABILITY_MAP`
+>   （动作名 → 所需能力元组，满足任一即可见）；`ActionRegistry.to_tools(capabilities=None)`
+>   支持 None（不裁剪，向后兼容）/ set（按 map 过滤，未列入 map 的通用动作始终保留）。
+>   `apply_test_config_draft` 经 `CAP_APPLY_CONFIG`（专项页 config_draft 路径）或
+>   `CAP_APPLY_SCRIPT`（orchestrator script_draft 路径）双通道可见。
+> - **4.2**：`AIService.set_page_capabilities_getter()` 接收 UI 注入的回调；
+>   `send()` / `_run_next_agent_round()` 调 `to_tools(self._current_page_capabilities())`
+>   按页裁剪。`MainWindow._setup_ai_action_system` 注入
+>   `lambda: _ai_caps(self.resolve_active_ai_page())`，复用 Phase 1 的 `_ai_caps()` 鸭子取值。
+>   `orchestrator_ui.ai_capabilities()` 同步声明 9 项能力，确保其全契约动作不误裁。
+> - **4.3**：`_handle_agent_round` 在 `not tool_calls and not content.strip()` 时调用
+>   `_empty_response_fallback()`（依 page_key + 能力集生成针对性引导）取代静默退出；
+>   `_run_tool_calls` 在本轮有动作返回「不支持 / 请切到 / 未注入 / 无可用 / 无能力」
+>   时注入 `_ACTION_UNAVAILABLE_NUDGE` 引导模型给可执行替代而非沉默或重试。
+>   `_is_unsupported_outcome()` 仅对 failed/denied 状态触发，成功路径不误伤。
+> - **4.4**：`profiles.py` 为 `orchestrator` / `pmu_test` / 新增 `pmu_dcdc_efficiency` /
+>   `charger_test` / `consumption_test` / `vmin_hunter` 的 system_prompt 追加能力边界声明
+>   （已声明 vs 暂未接入 + 可执行替代引导）；同步在
+>   `docs/kk_lab_ai_memory/pmu_dcdc_efficiency/quick_actions.md` 追加
+>   「测 1~200mA 效率」快捷指令，与故障复盘场景对齐。
+> - **4.5**：实测对比（81 个动作基线）—— orchestrator 全契约 = 100%（无回归）；
+>   pmu_dcdc_efficiency（5 caps）省 3.9%；未接入契约页省 8.1%。
+>   体积下降幅度虽不大（页级动作仅 9/81），但**核心收益是定性**：
+>   专项页模型不再看到 `list_test_steps` / `run_single_step` / `set_test_variable` 等
+>   orchestrator 专属动作，杜绝「误调 → 沉默放弃」路径；配合 system_prompt 双重声明
+>   能力边界，模型对本页能/不能干什么有明确认知。
 
 ### Phase 5 — 推广其余专项页 + 文档同步
 

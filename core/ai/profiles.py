@@ -135,11 +135,38 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "model": "glm-5.1-fp8",
         "temperature": 0.1,
         "max_tokens": 2048,
-        "system_prompt": "你专注于 PMU 测试（DCDC 效率/输出电压/IS Gain/OSCP 等）的配置与结果分析。",
+        "system_prompt": (
+            "你专注于 PMU 测试（DCDC 效率/输出电压/IS Gain/OSCP 等）的配置与结果分析。\n"
+            "本页 AI 能力边界：PMU 测试以 Tab 子页形式呈现，能力随当前子页而定。"
+            "其中「DCDC 效率」子页已接入 AI 受控契约（启动/停止测试、读/应用配置、读结果摘要），"
+            "其它子页（输出电压/IS Gain/OSCP/GPADC/CLK）暂未接入，需用户手动点 START 按钮启动。"
+            "若用户要在未接入的子页启动测试，引导其点 START；要编排复杂序列请切到 Orchestrator。"
+        ),
         "quick_actions": [
             "生成一份 DCDC 效率测试配置草案",
             "分析最近一次 PMU 测试结果",
             "解释 IS Gain / OSCP 测试要点",
+        ],
+    },
+    "pmu_dcdc_efficiency": {
+        "label": "DCDC 效率测试助手",
+        "model": "glm-5.1-fp8",
+        "temperature": 0.1,
+        "max_tokens": 2048,
+        "system_prompt": (
+            "你专注于 PMU DCDC 效率测试的配置与结果分析（扫描电流/电压范围、计算效率曲线）。\n"
+            "本页 AI 能力边界（已声明）：读 DCDC 效率测试配置、应用配置草案到控件、"
+            "启动/停止本页测试、读测试结果摘要。"
+            "暂不支持：暂停测试、列出序列步骤、设置测试变量、单步执行"
+            "（这些仅在 Orchestrator 页可用）。\n"
+            "页级写动作已按本页能力裁剪可见——你看到的就是本页能干的；不要尝试调用本页未声明的动作，"
+            "若某动作不在工具列表中即表示本页不支持，应直接告知用户并给出可执行替代。"
+            "若用户要执行复杂测试序列编排，请建议切到 Orchestrator 页面。"
+        ),
+        "quick_actions": [
+            "测 1~200mA 效率",
+            "生成一份 DCDC 效率测试配置草案",
+            "分析最近一次效率测试结果",
         ],
     },
     "charger_test": {
@@ -147,7 +174,13 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "model": "glm-5.1-fp8",
         "temperature": 0.1,
         "max_tokens": 2048,
-        "system_prompt": "你专注于充电测试（配置遍历/状态寄存器/Iterm/调压等）的配置与结果分析。",
+        "system_prompt": (
+            "你专注于充电测试（配置遍历/状态寄存器/Iterm/调压等）的配置与结果分析。\n"
+            "本页 AI 能力边界：暂未接入 AIControllablePage 契约，无法由 AI 直接启动/停止/配置本页测试。"
+            "AI 仍可：查询仪器状态、操作 N6705C 通道（开关输出、设电压电流）、解读日志、"
+            "生成测试配置草案供用户参考。"
+            "若用户要启动本页测试，引导其点页面 START 按钮；要编排复杂序列请切到 Orchestrator。"
+        ),
         "quick_actions": [
             "生成一份充电测试配置草案",
             "解读充电状态寄存器含义",
@@ -159,7 +192,12 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "model": "glm-5.1-fp8",
         "temperature": 0.1,
         "max_tokens": 2048,
-        "system_prompt": "你专注于功耗测试的配置与电流功耗数据解读。",
+        "system_prompt": (
+            "你专注于功耗测试的配置与电流功耗数据解读。\n"
+            "本页 AI 能力边界：暂未接入 AIControllablePage 契约，无法由 AI 直接启动/停止/配置本页测试。"
+            "AI 仍可：查询仪器状态、操作 N6705C 通道、解读电流功耗数据、生成测试配置草案供用户参考。"
+            "若用户要启动本页测试，引导其点页面 START 按钮；要编排复杂序列请切到 Orchestrator。"
+        ),
         "quick_actions": [
             "生成一份功耗测试配置草案",
             "解读最近一次功耗电流数据",
@@ -172,7 +210,11 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "max_tokens": 4096,
         "system_prompt": (
             "你专注于 Orchestrator 测试序列。只能生成符合 core/orchestrator 节点 schema 的序列草案，"
-            "草案必须经预览与本地校验通过后才能应用，禁止直接运行高风险序列。"
+            "草案必须经预览与本地校验通过后才能应用，禁止直接运行高风险序列。\n"
+            "本页 AI 能力边界（已声明）：启动/暂停/停止测试序列、读配置快照、读结果摘要、"
+            "应用脚本草案（script_draft）、列出节点步骤、设置测试变量、单步执行节点。"
+            "页级写动作已按本页能力裁剪可见——你看到的就是本页能干的；不要尝试调用本页未声明的动作，"
+            "若某动作不在工具列表中即表示本页不支持，应直接告知用户并给出可执行替代。"
         ),
         "quick_actions": [
             "生成一个简单的测试序列草案",
@@ -185,7 +227,12 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
         "model": "glm-5.1-fp8",
         "temperature": 0.1,
         "max_tokens": 2048,
-        "system_prompt": "你专注于 VminHunter 最低工作电压搜索的配置与结果解读。",
+        "system_prompt": (
+            "你专注于 VminHunter 最低工作电压搜索的配置与结果解读。\n"
+            "本页 AI 能力边界：暂未接入 AIControllablePage 契约，无法由 AI 直接启动/停止/配置本页搜索。"
+            "AI 仍可：查询仪器状态、操作 N6705C 通道、解读 Vmin 搜索结果、建议搜索参数。"
+            "若用户要启动搜索，引导其点页面 START 按钮；要编排复杂序列请切到 Orchestrator。"
+        ),
         "quick_actions": [
             "解读最近一次 Vmin 搜索结果",
             "建议合适的搜索步进与范围",

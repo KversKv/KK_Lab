@@ -658,6 +658,11 @@ class MainWindow(CleanupMixin, QMainWindow):
         )
         dispatcher.set_confirm_callback(self.ai_panel.confirm_action)
         self.ai_service.set_action_system(registry, dispatcher)
+        # Phase 4.2：注入当前页 AI 能力集 getter，供 AIService 调
+        # registry.to_tools(capabilities) 按页裁剪 tools（专项页只看到本页能干的事）。
+        self.ai_service.set_page_capabilities_getter(
+            lambda: _ai_caps(self.resolve_active_ai_page())
+        )
         # 调度（§3/§4）：task_id -> QTimer，到点触发已登记的目标动作
         self._scheduled_timers: dict[str, QTimer] = {}
         # 异步动作回灌（§4 / S3）：扫描完成 → 找到对应 pending 任务并续跑
