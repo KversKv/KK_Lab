@@ -38,6 +38,7 @@ from core.ai.page_contract import (
     CAP_START_TEST,
     CAP_STOP_TEST,
 )
+from core.ai.ui_action_registry import UIActionSpec
 from log_config import get_logger
 
 _logger = get_logger(__name__)
@@ -107,10 +108,12 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
     # MainWindow._ai_on_sequence_finished_resume 监听本信号，回灌 pending 任务。
     sequence_execution_finished = Signal(bool, str)
 
-    def __init__(self, n6705c_top=None, mso64b_top=None, instrument_manager=None):
+    def __init__(self, n6705c_top=None, mso64b_top=None, instrument_manager=None,
+                 ui_action_registry=None):
         super().__init__()
 
         self._instrument_manager = instrument_manager
+        self._ui_action_registry = ui_action_registry
         self.init_n6705c_connection(n6705c_top, instrument_manager=instrument_manager)
         self.init_oscilloscope_connection(mso64b_top, instrument_manager=instrument_manager)
 
@@ -123,6 +126,7 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self._create_layout()
         self._init_ui_elements()
         self._bind_signals()
+        self._register_ai_ui_actions()
         self.sync_n6705c_from_top()
         self.sync_oscilloscope_from_top()
 
@@ -567,6 +571,38 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
         self.stop_test_btn.clicked.connect(self._abort_test_from_external)
         self.export_result_btn.clicked.connect(self._on_export)
         self.clear_log_btn.clicked.connect(self._on_clear_log)
+
+    def _register_ai_ui_actions(self):
+        """§5b.5：登记本页无专用接口的按钮为 AI 可触发的具名 UI 动作。
+
+        handler 复用按钮原槽；启停已有专用契约，不在此重复登记。
+        """
+        registry = self._ui_action_registry
+        if registry is None:
+            return
+
+        def _wrap(label, fn):
+            def _run() -> tuple[bool, str]:
+                try:
+                    fn()
+                    return True, f"{label} 已执行。"
+                except Exception as exc:  # noqa: BLE001
+                    _logger.error("%s 执行失败", label, exc_info=True)
+                    return False, f"{label} 执行失败：{exc}"
+            return _run
+
+        registry.register_many([
+            UIActionSpec(
+                id="pmu_is_gain.export_result",
+                label="导出结果",
+                page_key="pmu_is_gain",
+                handler=_wrap("导出结果", self._on_export),
+                risk="low",
+                confirm=False,
+                enabled_when=lambda: bool(self._test_result_data),
+                description="导出当前 Is_gain 测试结果。需已有测试结果数据。",
+            ),
+        ])
 
     def _abort_test_from_external(self):
         if self.is_test_running:

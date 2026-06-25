@@ -43,6 +43,7 @@ from core.ai.page_contract import (
     CAP_START_TEST,
     CAP_STOP_TEST,
 )
+from core.ai.ui_action_registry import UIActionSpec
 from log_config import get_logger
 
 _logger = get_logger(__name__)
@@ -282,10 +283,12 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
     # MainWindow._ai_on_sequence_finished_resume 监听本信号，回灌 pending 任务。
     sequence_execution_finished = Signal(bool, str)
 
-    def __init__(self, n6705c_top=None, chamber_ui=None, instrument_manager=None):
+    def __init__(self, n6705c_top=None, chamber_ui=None, instrument_manager=None,
+                 ui_action_registry=None):
         super().__init__()
 
         self._instrument_manager = instrument_manager
+        self._ui_action_registry = ui_action_registry
         self.init_n6705c_connection(n6705c_top, instrument_manager=instrument_manager)
         self.init_chamber_connection(chamber_ui, instrument_manager=instrument_manager)
 
@@ -297,6 +300,7 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
         self._create_layout()
         self._init_ui_elements()
         self._bind_signals()
+        self._register_ai_ui_actions()
         self.sync_n6705c_from_top()
 
     def _setup_style(self):
@@ -1194,6 +1198,59 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
         self.chart_marker_btn.toggled.connect(self._on_chart_marker_toggled)
         self.test_item_combo.currentTextChanged.connect(self._on_test_item_changed)
         self.sampling_method_combo.currentTextChanged.connect(self._on_sampling_method_changed)
+
+    def _register_ai_ui_actions(self):
+        """§5b.5：登记本页无专用接口的按钮为 AI 可触发的具名 UI 动作。
+
+        handler 直接复用按钮原 clicked.connect 的槽（行为与人点完全一致）；
+        enabled_when 校验前置条件，不满足时 list_ui_actions 不返回、ui_invoke
+        明示不可用（不盲点）。启停已有专用契约（ai_start_test/ai_stop_test），
+        不在此重复登记，避免双通道。
+        """
+        registry = self._ui_action_registry
+        if registry is None:
+            return
+
+        def _wrap(label, fn):
+            def _run() -> tuple[bool, str]:
+                try:
+                    fn()
+                    return True, f"{label} 已执行。"
+                except Exception as exc:  # noqa: BLE001
+                    _logger.error("%s 执行失败", label, exc_info=True)
+                    return False, f"{label} 执行失败：{exc}"
+            return _run
+
+        registry.register_many([
+            UIActionSpec(
+                id="pmu_dcdc_efficiency.export_csv",
+                label="导出结果 CSV",
+                page_key="pmu_dcdc_efficiency",
+                handler=_wrap("导出结果 CSV", self._on_export_csv),
+                risk="low",
+                confirm=False,
+                enabled_when=lambda: bool(self._export_data),
+                description="把当前效率曲线结果导出为 CSV 文件。需已有测试结果数据。",
+            ),
+            UIActionSpec(
+                id="pmu_dcdc_efficiency.import_csv",
+                label="导入结果 CSV",
+                page_key="pmu_dcdc_efficiency",
+                handler=_wrap("导入结果 CSV", self._on_import_csv),
+                risk="low",
+                confirm=False,
+                description="从 CSV 文件导入历史效率曲线结果用于查看/对比。",
+            ),
+            UIActionSpec(
+                id="pmu_dcdc_efficiency.chart_auto_fit",
+                label="图表自适应缩放",
+                page_key="pmu_dcdc_efficiency",
+                handler=_wrap("图表自适应缩放", self._on_chart_auto_fit),
+                risk="low",
+                confirm=False,
+                description="把效率曲线图缩放还原到自适应视图。",
+            ),
+        ])
 
     def _on_start_or_stop(self):
         if self.is_test_running:

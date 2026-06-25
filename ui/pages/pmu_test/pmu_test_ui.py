@@ -33,12 +33,14 @@ class PMUTestUI(QWidget):
         "clk_test": 5,
     }
 
-    def __init__(self, n6705c_top=None, mso64b_top=None, chamber_ui=None, instrument_manager=None):
+    def __init__(self, n6705c_top=None, mso64b_top=None, chamber_ui=None, instrument_manager=None,
+                 ui_action_registry=None):
         super().__init__()
         self._n6705c_top = n6705c_top
         self._mso64b_top = mso64b_top
         self._chamber_ui = chamber_ui
         self._instrument_manager = instrument_manager
+        self._ui_action_registry = ui_action_registry
         self._setup_style()
         self._create_layout()
         self._init_ui_elements()
@@ -138,6 +140,7 @@ class PMUTestUI(QWidget):
             n6705c_top=self._n6705c_top,
             chamber_ui=self._chamber_ui,
             instrument_manager=self._instrument_manager,
+            ui_action_registry=self._ui_action_registry,
         )
         self.tab_widget.addTab(self.dcdc_efficiency_ui, "DCDC Efficiency")
 
@@ -151,6 +154,7 @@ class PMUTestUI(QWidget):
             n6705c_top=self._n6705c_top,
             mso64b_top=self._mso64b_top,
             instrument_manager=self._instrument_manager,
+            ui_action_registry=self._ui_action_registry,
         )
         self.tab_widget.addTab(self.is_gain_ui, "Is_gain")
 
@@ -163,6 +167,7 @@ class PMUTestUI(QWidget):
         self.gpadc_test_ui = GPADCTestUI(
             n6705c_top=self._n6705c_top,
             instrument_manager=self._instrument_manager,
+            ui_action_registry=self._ui_action_registry,
         )
         self.tab_widget.addTab(self.gpadc_test_ui, "GPADC Test")
 

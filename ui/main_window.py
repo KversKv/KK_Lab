@@ -1425,6 +1425,7 @@ class MainWindow(CleanupMixin, QMainWindow):
                 mso64b_top=self.mso64b_top,
                 chamber_ui=self.chamber_ui,
                 instrument_manager=self.instrument_manager,
+                ui_action_registry=getattr(self, "_ui_action_registry", None),
             )
             self.instrument_ui_container_layout.addWidget(self.pmu_test_ui)
         else:

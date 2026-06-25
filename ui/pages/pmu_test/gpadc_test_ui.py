@@ -44,6 +44,7 @@ from core.ai.page_contract import (
     CAP_START_TEST,
     CAP_STOP_TEST,
 )
+from core.ai.ui_action_registry import UIActionSpec
 
 logger = get_logger(__name__)
 
@@ -73,10 +74,11 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         TEST_TEMP_CONSISTENCY: ["n6705c", "chamber"],
     }
 
-    def __init__(self, n6705c_top=None, instrument_manager=None):
+    def __init__(self, n6705c_top=None, instrument_manager=None, ui_action_registry=None):
         super().__init__()
 
         self._instrument_manager = instrument_manager
+        self._ui_action_registry = ui_action_registry
         self.init_n6705c_connection(n6705c_top, instrument_manager=instrument_manager)
         self.init_chamber_connection(instrument_manager=instrument_manager)
         self.init_serial_connection(mode=MODE_FULL, prefix="DUT")
@@ -97,7 +99,40 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self._setup_style()
         self._create_layout()
         self._init_ui_elements()
+        self._register_ai_ui_actions()
         self.sync_n6705c_from_top()
+
+    def _register_ai_ui_actions(self):
+        """§5b.5：登记本页无专用接口的按钮为 AI 可触发的具名 UI 动作。
+
+        handler 复用按钮原槽；启停已有专用契约，不在此重复登记。
+        """
+        registry = self._ui_action_registry
+        if registry is None:
+            return
+
+        def _wrap(label, fn):
+            def _run() -> tuple[bool, str]:
+                try:
+                    fn()
+                    return True, f"{label} 已执行。"
+                except Exception as exc:  # noqa: BLE001
+                    logger.error("%s 执行失败", label, exc_info=True)
+                    return False, f"{label} 执行失败：{exc}"
+            return _run
+
+        registry.register_many([
+            UIActionSpec(
+                id="pmu_gpadc.export_result",
+                label="导出结果",
+                page_key="pmu_gpadc",
+                handler=_wrap("导出结果", self.export_result),
+                risk="low",
+                confirm=False,
+                enabled_when=lambda: self._export_data is not None,
+                description="导出当前 GPADC 测试结果为 Excel。需已有测试结果数据。",
+            ),
+        ])
 
     def _setup_style(self):
         font = QFont("Segoe UI", 9)

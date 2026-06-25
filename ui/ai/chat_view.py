@@ -348,9 +348,11 @@ class _MarkdownBubble(QWidget):
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(6)
         self._raw_text = ""
+        self._md_views: list[QTextBrowser] = []
 
     def set_markdown(self, text: str) -> None:
         self._raw_text = text or ""
+        self._md_views = []
         while self._layout.count():
             item = self._layout.takeAt(0)
             widget = item.widget()
@@ -361,6 +363,14 @@ class _MarkdownBubble(QWidget):
                 self._layout.addWidget(self._make_code_block(lang, content))
             else:
                 self._layout.addWidget(self._make_md_block(content))
+
+    def resizeEvent(self, event) -> None:
+        # 气泡宽度变化（面板缩放 / 插入后布局稳定）时，按新宽度重算每个 Markdown
+        # 块高度，避免用旧宽度估算导致换行后正文被裁（显示不完全的根因）。
+        super().resizeEvent(event)
+        for view in self._md_views:
+            if view is not None:
+                self._fit_height(view)
 
     def _make_md_block(self, md_text: str) -> QTextBrowser:
         view = QTextBrowser()
@@ -381,6 +391,7 @@ class _MarkdownBubble(QWidget):
         view.document().contentsChanged.connect(lambda v=view: self._fit_height(v))
         QTimer.singleShot(0, lambda v=view: self._fit_height(v))
         self._fit_height(view)
+        self._md_views.append(view)
         return view
 
     def eventFilter(self, obj, event):
@@ -424,8 +435,8 @@ class _MarkdownBubble(QWidget):
             node = node.parent()
         if node is None:
             return 0
-        # 减去 ChatView 容器左右内边距（16+16）与气泡内边距，估算文本可用宽。
-        return max(0, node.viewport().width() - 32 - _BUBBLE_PAD_V)
+        # 减去 ChatView 容器左右内边距（16+16）与气泡水平内边距，估算文本可用宽。
+        return max(0, node.viewport().width() - 32 - _BUBBLE_PAD_H)
 
     def _make_code_block(self, lang: str, code: str) -> QFrame:
         frame = QFrame()
@@ -612,7 +623,7 @@ class ChatView(QScrollArea):
             if label is not None:
                 self._fit_user_bubble(label)
 
-    def _insert_row(self, widget: QWidget, align=None) -> None:
+    def _insert_row(self, widget: QWidget, align=None) -> QWidget:
         row = QWidget()
         row.setStyleSheet("background: transparent;")
         row_layout = QVBoxLayout(row)
@@ -623,6 +634,7 @@ class ChatView(QScrollArea):
             row_layout.addWidget(widget, 0, align)
         self._layout.insertWidget(self._layout.count() - 1, row)
         self._scroll_to_bottom()
+        return row
 
     def _append_bubble(self, text: str, object_name: str, style: str, align) -> QLabel:
         label = QLabel(text)
@@ -659,8 +671,17 @@ class ChatView(QScrollArea):
         bubble = _MarkdownBubble()
         bubble.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         bubble.set_markdown(text)
-        self._insert_row(bubble)
+        bubble._row = self._insert_row(bubble)
         return bubble
+
+    def _remove_bubble(self, bubble) -> None:
+        """删除一条 Markdown 气泡所在的整行（用于丢弃无文本的空气泡）。"""
+        row = getattr(bubble, "_row", None)
+        if row is None:
+            return
+        self._layout.removeWidget(row)
+        row.setParent(None)
+        row.deleteLater()
 
     def add_user_message(self, text: str) -> None:
         label = QLabel(text)
@@ -682,8 +703,11 @@ class ChatView(QScrollArea):
         QTimer.singleShot(0, lambda lb=label: self._fit_user_bubble(lb))
         self._scroll_to_bottom()
 
-    def add_ai_message(self, text: str) -> _MarkdownBubble:
-        bubble = self._append_markdown_bubble(text or "（无内容）")
+    def add_ai_message(self, text: str) -> _MarkdownBubble | None:
+        # 模型本轮只发起工具调用、无文本输出时，不渲染空气泡（避免中间一串空白气泡）。
+        if not (text or "").strip():
+            return None
+        bubble = self._append_markdown_bubble(text)
         self._insert_row(self._make_ai_footer(self._next_msg_id()))
         return bubble
 
@@ -713,14 +737,21 @@ class ChatView(QScrollArea):
         self._stream_text = ""
 
     def end_stream_message(self, final_text: str = "") -> None:
-        """结束流式气泡：写入最终全文（去掉光标），清理状态。"""
+        """结束流式气泡：写入最终全文（去掉光标），清理状态。
+
+        本轮模型若只发起工具调用、无任何文本输出，则丢弃该空气泡，
+        避免在动作流水之间留下一串空白气泡。
+        """
         bubble = getattr(self, "_stream_bubble", None)
         if bubble is None:
             return
         text = final_text if final_text else getattr(self, "_stream_text", "")
-        bubble.set_markdown(text or "（无内容）")
         self._stream_bubble = None
         self._stream_text = ""
+        if not (text or "").strip():
+            self._remove_bubble(bubble)
+            return
+        bubble.set_markdown(text)
         self._insert_row(self._make_ai_footer(self._next_msg_id()))
         self._scroll_to_bottom()
 
