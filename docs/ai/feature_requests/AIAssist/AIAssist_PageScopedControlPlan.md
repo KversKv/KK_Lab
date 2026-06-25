@@ -269,12 +269,12 @@ AI: ui_invoke(action_id="n6705c.auto_set")
 
 | # | 任务 | 文件 | 状态 |
 |---|---|---|---|
-| 2.1 | 实现 `ai_capabilities()` 声明支持集 | `ui/pages/pmu_test/pmu_dcdc_efficiency.py` | ☐ |
-| 2.2 | `ai_get_config` 复用 `get_test_config()` | 同上 | ☐ |
-| 2.3 | `apply_config_to_controls(cfg)` 单一写入口 + `ai_apply_config` | 同上 | ☐ |
-| 2.4 | `ai_start_test/ai_stop_test` 复用 `_on_start_test/_on_stop_test`（含连接/运行态校验） | 同上 | ☐ |
-| 2.5 | 在 `resolve_active_ai_page` 页面表注册子页 | `ui/main_window.py` | ☐ |
-| 2.6 | 端到端：「测 1~200mA 效率」可配置→确认→启动 | — | ☐ |
+| 2.1 | 实现 `ai_capabilities()` 声明支持集 | `ui/pages/pmu_test/pmu_dcdc_efficiency.py` | ☑ |
+| 2.2 | `ai_get_config` 复用 `get_test_config()` | 同上 | ☑ |
+| 2.3 | `apply_config_to_controls(cfg)` 单一写入口 + `ai_apply_config` | 同上 | ☑ |
+| 2.4 | `ai_start_test/ai_stop_test` 复用 `_on_start_test/_on_stop_test`（含连接/运行态校验） | 同上 | ☑ |
+| 2.5 | 在 `resolve_active_ai_page` 页面表注册子页 | `ui/main_window.py` | ☑ |
+| 2.6 | 端到端：「测 1~200mA 效率」可配置→确认→启动 | — | ☑ |
 
 **验收**：复现本次故障场景，AI 能配置扫描范围（1~200mA）→ 弹确认 → 启动本页测试。
 

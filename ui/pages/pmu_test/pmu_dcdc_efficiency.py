@@ -7,6 +7,7 @@ PMU DCDC Efficiency测试UI组件
 
 import sys
 import os
+from typing import Any
 from ui.resource_path import get_resource_base
 sys.path.append(get_resource_base())
 
@@ -34,6 +35,16 @@ from core.pmu_test.dcdc import (
     DCDCEfficiencyTestThread, DCDCVinSweepTestThread, DCDCTempSweepTestThread,
     savgol_smooth as _savgol_smooth,
 )
+from core.ai.page_contract import (
+    CAP_APPLY_CONFIG,
+    CAP_GET_CONFIG,
+    CAP_GET_RESULT,
+    CAP_START_TEST,
+    CAP_STOP_TEST,
+)
+from log_config import get_logger
+
+_logger = get_logger(__name__)
 
 
 try:
@@ -1605,6 +1616,236 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
     def update_instrument_info(self, instrument_info):
         if self.is_connected:
             self.set_system_status("● Connected")
+
+    # ------------------------------------------------------------------
+    # AIControllablePage 契约实现（AIAssist_PageScopedControlPlan.md §2 / Phase 2）
+    #
+    # PMU DCDC Efficiency 作为首个接入契约的专项页样板，薄封装既有方法：
+    #   - ai_get_config 复用 get_test_config()
+    #   - ai_apply_config 经 apply_config_to_controls() 单一写入口回填控件
+    #   - ai_start_test/ai_stop_test 复用 _on_start_test/_on_stop_test
+    # 枢纽（MainWindow.resolve_active_ai_page）经 Tab 子页下钻拿到本实例，
+    # 鸭子调用契约方法，无需 core / handler 改动。
+    # ------------------------------------------------------------------
+    def ai_capabilities(self) -> set[str]:
+        return {
+            CAP_GET_CONFIG,
+            CAP_APPLY_CONFIG,
+            CAP_START_TEST,
+            CAP_STOP_TEST,
+            CAP_GET_RESULT,
+        }
+
+    def ai_get_config(self) -> dict[str, Any] | None:
+        try:
+            return self.get_test_config()
+        except Exception:  # noqa: BLE001 - 快照失败降级为 None
+            _logger.error("AI 读取 DCDC 效率测试配置失败", exc_info=True)
+            return None
+
+    def ai_apply_config(self, payload: Any) -> tuple[bool, str]:
+        """落地配置草案到控件（写操作，经确认+审计后由枢纽调用）。
+
+        运行中拒绝改配置（§6.3），避免与正在执行的扫描冲突。
+        """
+        if self.is_test_running:
+            return False, "测试运行中，无法修改配置，请先停止测试。"
+        return self.apply_config_to_controls(payload if isinstance(payload, dict) else {})
+
+    def ai_start_test(self) -> tuple[bool, str]:
+        if not self.is_connected or self.n6705c is None:
+            return False, "未连接 N6705C 仪器，请先连接再启动测试。"
+        if self.is_test_running:
+            return False, "测试已在运行中。"
+        cfg = self.get_test_config()
+        if cfg.get("test_item") == "Temperature Sweep" and (
+            not self.is_chamber_connected or self.chamber is None
+        ):
+            return False, "当前测试项为 Temperature Sweep，但未连接温箱，请先连接温箱。"
+        try:
+            self._on_start_test()
+        except Exception:  # noqa: BLE001 - 启动异常转可读结果
+            _logger.error("AI 启动 DCDC 效率测试失败", exc_info=True)
+            return False, "启动测试异常，请查看日志。"
+        if self.is_test_running:
+            return True, "已请求启动 DCDC 效率测试。"
+        return False, "启动未成功，请查看执行日志。"
+
+    def ai_stop_test(self) -> tuple[bool, str]:
+        if not self.is_test_running:
+            return False, "当前未在运行测试。"
+        try:
+            self._on_stop_test()
+        except Exception:  # noqa: BLE001 - 停止异常转可读结果
+            _logger.error("AI 停止 DCDC 效率测试失败", exc_info=True)
+            return False, "停止测试异常，请查看日志。"
+        return True, "已发送停止请求。"
+
+    def ai_get_result_summary(self) -> dict[str, Any] | None:
+        if not self._export_data:
+            return None
+        rows = [r for r in self._export_data if r.get("efficiency", 0) > 0]
+        summary: dict[str, Any] = {
+            "available": True,
+            "running": self.is_test_running,
+            "rows": len(self._export_data),
+            "test_item": self.test_item_combo.currentText(),
+        }
+        if not rows:
+            return summary
+        max_row = max(rows, key=lambda r: r["efficiency"])
+        summary["max_efficiency"] = round(max_row["efficiency"], 2)
+        summary["max_eff_load_a"] = round(max_row.get("cc_load", 0.0), 6)
+        summary["avg_efficiency"] = round(
+            sum(r["efficiency"] for r in rows) / len(rows), 2
+        )
+        return summary
+
+    # ------------------------------------------------------------------
+    # UI 回填单一写入口（AIAssist_PageScopedControlPlan.md §4.2）
+    #
+    # apply_config_to_controls(cfg) 是回填测试配置控件的唯一入口，
+    # AI 回填与未来轮询/手动刷新共用，杜绝两套逻辑漂移。键名与
+    # get_test_config() 输出对齐；电流字段兼容 *_ma（毫安）别名。
+    # ------------------------------------------------------------------
+    def apply_config_to_controls(self, cfg: dict) -> tuple[bool, str]:
+        if not isinstance(cfg, dict):
+            return False, "配置草案格式无效（期望 dict）。"
+
+        applied: list[str] = []
+
+        def _pick(canonical: str, *aliases: str):
+            for k in (canonical, *aliases):
+                if k in cfg:
+                    return k, cfg[k]
+            return None, None
+
+        def _pick_current(canonical: str, *aliases: str) -> float | None:
+            k, v = _pick(canonical, *aliases)
+            if k is None or v is None:
+                return None
+            try:
+                val = float(v)
+            except (TypeError, ValueError):
+                return None
+            if k.endswith("_ma"):
+                val *= 0.001
+            return val
+
+        def _pick_int(canonical: str, *aliases: str) -> int | None:
+            _, v = _pick(canonical, *aliases)
+            if v is None:
+                return None
+            try:
+                return int(float(v))
+            except (TypeError, ValueError):
+                return None
+
+        def _pick_float(canonical: str, *aliases: str) -> float | None:
+            _, v = _pick(canonical, *aliases)
+            if v is None:
+                return None
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return None
+
+        def _normalize_channel(val) -> str | None:
+            s = str(val).strip().upper()
+            if not s:
+                return None
+            digits = ""
+            for ch in s[::-1]:
+                if ch.isdigit():
+                    digits = ch + digits
+                else:
+                    break
+            return f"CH {digits}" if digits else None
+
+        def _set_combo(combo, canonical: str, *aliases: str, normalize=None):
+            _, val = _pick(canonical, *aliases)
+            if val is None:
+                return
+            text = normalize(val) if normalize is not None else str(val)
+            if text is None:
+                return
+            idx = combo.findText(text)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+                applied.append(canonical)
+
+        def _set_spin(spin, canonical: str, *aliases: str, picker=_pick_float):
+            val = picker(canonical, *aliases)
+            if val is None:
+                return
+            spin.setValue(val)
+            applied.append(canonical)
+
+        # 测试项
+        _, test_item = _pick("test_item")
+        if test_item is not None:
+            idx = self.test_item_combo.findText(str(test_item))
+            if idx >= 0:
+                self.test_item_combo.setCurrentIndex(idx)
+                applied.append("test_item")
+
+        # 扫描模式（Linear / Log）
+        _, sweep_mode = _pick("sweep_mode")
+        if sweep_mode is not None:
+            is_log = str(sweep_mode).lower().startswith("log")
+            self.log_mode_btn.setChecked(is_log)
+            self.linear_mode_btn.setChecked(not is_log)
+            self._on_sweep_mode_changed()
+            applied.append("sweep_mode")
+
+        # 采样方式
+        _set_combo(self.sampling_method_combo, "sampling_method")
+
+        # 通道（兼容 "1" / "CH1" / "CH 1"）
+        _set_combo(self.vin_channel_combo, "vin_channel",
+                   "vin_ch", "input_channel", normalize=_normalize_channel)
+        _set_combo(self.vout_channel_combo, "vout_channel",
+                   "vout_ch", "output_channel", normalize=_normalize_channel)
+        _set_combo(self.cc_load_channel_combo, "cc_load_channel",
+                   "load_channel", "cc_load_ch", normalize=_normalize_channel)
+
+        # 电流扫描范围（A，兼容 _ma 毫安别名）
+        _set_spin(self.load_current_start_spin, "start_current_a",
+                  "start_current", "i_start", "start_current_ma", "i_start_ma",
+                  picker=_pick_current)
+        _set_spin(self.load_current_end_spin, "end_current_a",
+                  "end_current", "i_end", "end_current_ma", "i_end_ma",
+                  picker=_pick_current)
+        _set_spin(self.step_current_spin, "step_current_a",
+                  "step_current", "i_step", "step_current_ma", "i_step_ma",
+                  picker=_pick_current)
+
+        # 其它数值参数
+        _set_spin(self.points_per_dec_spin, "points_per_dec",
+                  "points_per_decade", picker=_pick_int)
+        _set_spin(self.average_cnt_spin, "average_cnt",
+                  "avg_cnt", "average_count", picker=_pick_int)
+        _set_spin(self.settle_time_spin, "settle_time_ms",
+                  "settle_time", "settle_time_s", picker=_pick_int)
+        _set_spin(self.dlog_duration_spin, "dlog_duration_s",
+                  "dlog_duration", picker=_pick_float)
+
+        # VIN 扫描
+        _set_spin(self.vin_start_spin, "vin_start", "vin_start_v", picker=_pick_float)
+        _set_spin(self.vin_end_spin, "vin_end", "vin_end_v", picker=_pick_float)
+        _set_spin(self.vin_step_spin, "vin_step", "vin_step_v", picker=_pick_float)
+
+        # 温度扫描
+        _set_spin(self.temp_start_spin, "temp_start", "temp_start_c", picker=_pick_float)
+        _set_spin(self.temp_end_spin, "temp_end", "temp_end_c", picker=_pick_float)
+        _set_spin(self.temp_step_spin, "temp_step", "temp_step_c", picker=_pick_float)
+        _set_spin(self.temp_fixed_load_spin, "fixed_load_a",
+                  "fixed_load", "fixed_load_ma", picker=_pick_current)
+
+        if not applied:
+            return False, "配置草案未包含任何可识别的配置项。"
+        self.append_log(f"[AI] 已应用配置：{', '.join(applied)}")
+        return True, f"已应用配置项：{', '.join(applied)}。"
 
 
 if __name__ == "__main__":
