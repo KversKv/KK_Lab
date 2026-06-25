@@ -482,10 +482,36 @@ helps/
 └── charger_regulation_voltage.html  # 调节电压测试操作说明
 
 ================================================================================
-  docs/ - AI 协作与架构文档
+  docs/ - 项目文档、运行期知识库与 AI 协作资料
 ================================================================================
 
 docs/
+├── kk_lab_ai_memory/             # KK Lab AI 记忆体系：页面经验、常用测试项与测试用例归档
+│   ├── _shared/                  # 跨页面共性规则、经验与写入规范
+│   │   ├── README.md             # 体系总览：与 docs/ai 边界、目录结构、文件职责
+│   │   ├── conventions.md        # 写入规范：页面键白名单、5 类模板、ID 规则、安全规则
+│   │   └── cross_page_lessons.md # 跨页面共性经验（仪器连接/日志分析/串口共性问题）
+│   ├── kk_serials/               # 串口工具（P0）：memory/lessons/test_items/test_cases/quick_actions
+│   ├── datalog/                  # N6705C Datalog（P0）：同上 5 类文件
+│   ├── orchestrator/             # Orchestrator（P0）：同上 5 类文件
+│   ├── power_analyser/           # N6705C 电源分析仪（P1）：quick_actions 已迁移，其余按需追加
+│   ├── pmu_dcdc_efficiency/      # PMU DCDC 效率（P1）：quick_actions 已迁移
+│   ├── pmu_output_voltage/       # PMU 输出电压（P1）：quick_actions 已迁移
+│   ├── pmu_is_gain/              # PMU Is Gain（P1）：quick_actions 已迁移
+│   ├── pmu_oscp/                 # PMU OSCP（P1）：quick_actions 已迁移
+│   ├── pmu_gpadc/                # PMU GPADC（P1）：quick_actions 已迁移
+│   ├── pmu_clk/                  # PMU CLK（P1）：quick_actions 已迁移
+│   ├── charger_config_traverse/  # Charger 配置遍历（P1）：quick_actions 已迁移
+│   ├── charger_status_register/  # Charger 状态寄存器（P1）：quick_actions 已迁移
+│   ├── charger_iterm/            # Charger Iterm（P1）：quick_actions 已迁移
+│   ├── charger_regulation_voltage/ # Charger 调节电压（P1）：quick_actions 已迁移
+│   ├── oscilloscope/             # 示波器（P2）：quick_actions 已迁移
+│   ├── thermal_chamber/          # 温箱（P2）：quick_actions 已迁移
+│   ├── vmin_hunter/              # VminHunter（P2）：quick_actions 已迁移
+│   └── consumption_test/         # 功耗测试（P2）：quick_actions 已迁移
+│   # 每个页面目录固定 5 个核心文件：memory.md / lessons.md / test_items.md /
+│   # test_cases.md / quick_actions.md；本机私有层镜像在 user_data/ai/kk_lab_ai_memory/
+│   # <page_key>/*.local.md。页面键唯一来源：MainWindow._get_current_help_key()
 ├── ai/
 │   ├── 00_OVERVIEW.md           # 项目概述与分层架构
 │   ├── 01_CONVENTIONS.md        # 代码规范与风格
@@ -507,6 +533,7 @@ docs/
 │   │   │   ├── AIAssist_FeatureExtension_V1.md      # AI Assist 功能增补 V1
 │   │   │   ├── AIAssist_FontSpec.md                 # AI Assistant 字体规格
 │   │   │   ├── AIAssist_ImplementationPlan.md       # AI Assist 主实现计划
+│   │   │   ├── AIAssist_KKLabAIMemoryArchivePlan.md # KK Lab AI 记忆体系与测试项归档规划
 │   │   │   ├── AIAssist_PromptContextMemoryPlan.md  # Prompt / Context / Memory 方案
 │   │   │   └── AIAssist_TaskSchedulingResumePlan.md # AI 任务调度与异步结果回灌方案
 │   │   ├── Codebase/            # 代码库评估与重构需求
