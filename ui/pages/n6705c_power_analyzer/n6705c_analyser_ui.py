@@ -22,6 +22,7 @@ from PySide6.QtSvg import QSvgRenderer
 from instruments.power.keysight.n6705c import N6705C
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockN6705C
+from core.ai.ui_action_registry import UIActionSpec
 from log_config import get_logger
 from ui.theme import FONT_MONO
 from core.n6705c import SearchThread as _SearchThread
@@ -45,11 +46,12 @@ logger = get_logger(__name__)
 class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionViewMixin):
     connection_status_changed = Signal(bool)
 
-    def __init__(self, n6705c_top=None, instrument_manager=None):
+    def __init__(self, n6705c_top=None, instrument_manager=None, ui_action_registry=None):
         super().__init__()
 
         self._top = n6705c_top
         self._instrument_manager = instrument_manager
+        self._ui_action_registry = ui_action_registry
         self.devices = {
             "A": {"rm": None, "n6705c": None, "is_connected": False},
             "B": {"rm": None, "n6705c": None, "is_connected": False},
@@ -92,6 +94,62 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         if self._instrument_manager:
             self._instrument_manager.sessions_changed.connect(self._on_manager_sessions_changed)
             self._instrument_manager.connection_failed.connect(self._on_manager_connection_failed)
+
+        # §5b：登记本页无专用接口的按钮为具名 UI 动作（白名单制，handler 复用原槽）
+        self._register_ai_ui_actions()
+
+    def _register_ai_ui_actions(self):
+        """§5b.5：登记本页无专用接口的按钮（Auto Set 系列）为 AI 可触发的具名 UI 动作。
+
+        handler 直接复用按钮原 clicked.connect 的槽（_on_batch_auto_set 等），
+        行为与人点按钮完全一致；enabled_when 校验至少一台 N6705C 已连接，
+        不满足时 list_ui_actions 不返回、ui_invoke 明示不可用（不盲点）。
+        """
+        registry = self._ui_action_registry
+        if registry is None:
+            return
+
+        def _any_connected() -> bool:
+            return any(d.get("is_connected") for d in self.devices.values())
+
+        def _wrap(label, fn):
+            def _run() -> tuple[bool, str]:
+                try:
+                    fn()
+                    return True, f"{label} 已执行（按所选通道/设备生效）。"
+                except Exception as exc:  # noqa: BLE001
+                    logger.error("%s 执行失败", label, exc_info=True)
+                    return False, f"{label} 执行失败：{exc}"
+            return _run
+
+        registry.register_many([
+            UIActionSpec(
+                id="power_analyser.auto_set",
+                label="Auto Set",
+                page_key="power_analyser",
+                handler=_wrap("Auto Set", self._on_batch_auto_set),
+                risk="high",
+                confirm=True,
+                enabled_when=_any_connected,
+                description=(
+                    "批量自动设置：测当前电压并对齐到 50mV 网格（含特殊电压），"
+                    "设电流限值并打开通道输出。需至少一台 N6705C 已连接并选中通道。"
+                ),
+            ),
+            UIActionSpec(
+                id="power_analyser.auto_set_20mv",
+                label="Auto Set (+20mV)",
+                page_key="power_analyser",
+                handler=_wrap("Auto Set (+20mV)", self._on_batch_auto_20mv),
+                risk="high",
+                confirm=True,
+                enabled_when=_any_connected,
+                description=(
+                    "批量自动设置（+20mV 偏移）：测当前电压后 +20mV 设为目标，"
+                    "设电流限值并打开通道输出。需至少一台 N6705C 已连接并选中通道。"
+                ),
+            ),
+        ])
 
     def _on_manager_connection_failed(self, session_id: str, error: str):
         if not session_id.startswith("n6705c:"):

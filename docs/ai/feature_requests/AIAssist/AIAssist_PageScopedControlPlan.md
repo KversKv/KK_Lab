@@ -335,7 +335,7 @@ AI: ui_invoke(action_id="n6705c.auto_set")
 | # | 任务 | 文件 | 状态 |
 |---|---|---|---|
 | 5.1 | `output_voltage` / `is_gain` / `oscp` / `gpadc` 等接入契约 | `ui/pages/pmu_test/*` | ☑ |
-| 5.2 | charger / consumption 等专项页评估接入 | `ui/pages/*` | ☑ |
+| 5.2 | charger / consumption 等专项页评估接入 | `ui/pages/*` | ◐ |
 | 5.3 | 更新 [AIAssist_ActionCatalog.md](./AIAssist_ActionCatalog.md) 动作-页面能力矩阵 | 文档 | ☑ |
 | 5.4 | 同步 [.ai/memory.md](../../../.ai/memory.md) / quick_actions | 文档 | ☑ |
 | 5.5 | 全量回归 + lint | — | ☑ |
@@ -344,24 +344,87 @@ AI: ui_invoke(action_id="n6705c.auto_set")
 
 > Phase 5 落地说明：
 > - 5.1：PMU 四个子页（`pmu_output_voltage` / `pmu_is_gain` / `pmu_oscp` / `pmu_gpadc`）已实现 `AIControllablePage` 契约方法 + UI 回填单一写入口 + 临时高亮反馈。
-> - 5.2：Charger 四个子页（`charger_config_traverse` / `charger_status_register` / `charger_iterm` / `charger_regulation_voltage`）已接入契约；`consumption_test`（`HighLowTempConsumptionTestUI`）经评估为复杂双 N6705C + 温箱多阶段测试页，契约方法命名与既有页面差异较大（`_on_start_clicked` / `_test_worker`），建议作为独立后续迭代单独接入，不在本阶段强行落地以控风险。对应 `core/ai/profiles.py` 已补四个 charger 子页 Profile + 更新 `charger_test` 容器页说明。
+> - 5.2：Charger 四个子页（`charger_config_traverse` / `charger_status_register` / `charger_iterm` / `charger_regulation_voltage`）已接入契约；`consumption_test` 评估后**推迟**（详见下方「未完成 / 推迟」清单）。对应 `core/ai/profiles.py` 已补四个 charger 子页 Profile + 更新 `charger_test` 容器页说明。
 > - 5.3：`AIAssist_ActionCatalog.md` 新增 §5「页面-AI 能力矩阵」，列出 9 个叶子页的能力符号与启动前置。
 > - 5.4：`core/ai/profiles.py` 内各 charger 子页 `quick_actions` 已补；`.ai/memory.md` 已记录 Phase 5 完成节点。
-> - 5.5：lint 通过。
+> - 5.5：lint 通过（`py_compile` 9 文件 OK + `tests/test_smoke_import.py` PASS + 8 页实例化与契约方法实测全绿 + IDE 诊断空）。
+
+#### ❗ 未完成 / 推迟清单（Phase 5 收尾遗留）
+
+> 以下页面/任务在本阶段**未落地**，状态为 ☐ 未开始 或 ◐ 评估后推迟。后续如需纳入 AI 受控，按 §5.3 契约方法语义薄封装即可，core / handler 仍零改动。
+
+**A. 未接入 `AIControllablePage` 契约的测试页**
+
+| 页面（page_key） | 状态 | 文件 | 未接入原因 / 风险点 | 后续接入工作量预估 |
+|---|---|---|---|---|
+| `consumption_test`（高低温度功耗测试） | ◐ 评估后推迟 | [high_low_temp_test_ui.py](../../../ui/pages/consumption_test/high_low_temp_test_ui.py) `HighLowTempConsumptionTestUI` | ① 双 N6705C（A/B 两路）+ 温箱三仪器协同；② 契约方法命名与既有页面差异较大（`_on_start_clicked` / `_test_worker` 而非 `_on_start_test` / `test_worker`）；③ 多阶段温度循环测试逻辑复杂，配置项维度高（温度点列表、保持时间、采样窗口、双通道量程）；④ 结果摘要需聚合多温度点 × 双通道数据，结构与非多阶段页差异大，硬套既有 `ai_get_result_summary` 模板会丢信息 | 中-高：需为该页定制 `apply_config_to_controls`（多温度点表格回填）+ `ai_get_result_summary`（多温度点聚合摘要），约 1 个独立迭代 |
+| `power_analyser`（N6705C 分析仪） | ☐ 未评估 | `ui/pages/n6705c_power_analyzer/*` | 本页为仪器直控页（非测试序列页），「启动测试」语义不明确（无独立测试流程，只有数据采集）。Phase 6 `ui_invoke` 路线更适合覆盖其 `auto_set` 等无接口按钮 | 低：Phase 6 完成后即覆盖，无需单开契约接入 |
+| `datalog`（N6705C 数据记录） | ☐ 未评估 | `ui/pages/n6705c_datalog/*` | 同上，为长时数据记录页，非测试序列；配置项（通道/采样率/时长）可走契约，但「启动/停止」语义为「开始记录/停止记录」而非测试 | 低-中：如需 AI 控制记录起停可补契约，否则 Phase 6 覆盖 |
+| `oscilloscope`（示波器） | ☐ 未评估 | `ui/pages/oscilloscope/*` | 仪器直控页，AI 已有完整示波器动作集（§1.6 `scope_*`），无需重复走页级契约 | —：不计划接入，已有等价能力 |
+| `thermal_chamber`（温箱） | ☐ 未评估 | `ui/pages/thermal_chamber/*` | 仪器直控页，AI 已有完整温箱动作集（§1.7 `chamber_*`），无需重复走页级契约 | —：不计划接入，已有等价能力 |
+| `vmin_hunter`（Vmin 搜索） | ☐ 未评估 | `ui/pages/vmin_hunter/*` | 独立搜索算法页，启动逻辑与 N6705C 联动，未在本阶段评估 | 中：需评估其测试流程是否适合契约模型 |
+| `kk_serials`（KK 串口工具） | ☐ 未评估 | `ui/pages/kk_serials/*` | 串口工具页，非测试序列；AI 已有完整串口动作集（§1.3） | —：不计划接入，已有等价能力 |
+| `collection`（采集页） | ☐ 未评估 | `ui/pages/collection/*` | 数据采集页，未在本阶段评估 | 低：待评估 |
+
+**B. 未完成的横向任务**
+
+| 任务 | 状态 | 说明 |
+|---|---|---|
+| `consumption_test` 页 Profile 补充 | ☐ | `core/ai/profiles.py` 现有 `consumption_test` Profile 仍为旧文案（"暂未接入 AIControllablePage 契约"），待该页接入契约后同步更新为「已声明能力」版本 |
+| 多温度点表格回填 helper 抽取 | ☐ | 若 `consumption_test` 接入，其 `apply_config_to_controls` 需回填多温度点表格（QTableWidget），与既有单值控件回填模式不同，建议下沉一个 `_apply_table_rows` 复用 helper |
+| 端到端真机回归（Phase 5 新增 8 页） | ☐ | 本阶段仅做离线实例化 + 契约方法单测，未连真机跑完整测试流程（N6705C/示波器/温箱/I2C 均未接），真机回归留待用户环境验证 |
+| `ai_start_test` 真机启动成功率统计 | ☐ | `ai_start_test` 薄封装 `_on_start_test`，理论上行为与人点按钮一致，但未在真机环境采集「AI 触发 vs 人触发」的启动成功率对照 |
+
+**C. 推迟决策依据**
+
+- `consumption_test` 推迟主因是**风险控制**而非技术不可行：该页是 Phase 0 巨石重构红区（基线 4504 行），契约方法命名非标准，硬套模板易引入回归。建议作为独立迭代单独接入，接入时同步完成 §B 的 helper 抽取与 Profile 更新。
+- `power_analyser` / `oscilloscope` / `thermal_chamber` / `kk_serials` 四个仪器/串口直控页**不计划接入**页级契约，因 AI 已有等价或更细粒度的通用动作集（§1.3/1.4/1.6/1.7），重复接入反而增加维护面。
+- `datalog` / `vmin_hunter` / `collection` 三页**待评估**，未在本阶段排期，留待后续按需拉起。
 
 ### Phase 6 — `ui_invoke` 受控 UI 动作注册表（无接口按钮，对应 §5b）
 
 | # | 任务 | 文件 | 状态 |
 |---|---|---|---|
-| 6.1 | `UIActionSpec` + `UIActionRegistry`（纯逻辑，禁 Qt，线程安全） | `core/ai/ui_action_registry.py` | ☐ |
-| 6.2 | 新增 `list_ui_actions` / `ui_invoke` 两个通用动作 handler | `core/ai/actions/handlers/` | ☐ |
-| 6.3 | 枢纽按当前页 `page_key` 路由 + enabled_when 校验 + 主线程 Slot 调 handler | `ui/main_window.py` | ☐ |
-| 6.4 | `ui_invoke` 接入 PermissionChecker / Confirm / AuditLog | `core/ai/...` | ☐ |
-| 6.5 | N6705C 页登记 `auto_set` 等无接口按钮（handler 复用原槽） | `ui/pages/n6705c_power_analyzer/*` | ☐ |
-| 6.6 | 触发后执行日志 `[AI] ...` + 控件经原信号/轮询投影刷新验证 | — | ☐ |
-| 6.7 | 端到端：AI `list_ui_actions` → `ui_invoke("n6705c.auto_set")` → 确认 → 生效 | — | ☐ |
+| 6.1 | `UIActionSpec` + `UIActionRegistry`（纯逻辑，禁 Qt，线程安全） | `core/ai/ui_action_registry.py` | ☑ |
+| 6.2 | 新增 `list_ui_actions` / `ui_invoke` 两个通用动作 handler | `core/ai/actions/handlers/` | ☑ |
+| 6.3 | 枢纽按当前页 `page_key` 路由 + enabled_when 校验 + 主线程 Slot 调 handler | `ui/main_window.py` | ☑ |
+| 6.4 | `ui_invoke` 接入 PermissionChecker / Confirm / AuditLog | `core/ai/...` | ☑ |
+| 6.5 | N6705C 页登记 `auto_set` 等无接口按钮（handler 复用原槽） | `ui/pages/n6705c_power_analyzer/*` | ☑ |
+| 6.6 | 触发后执行日志 `[AI] ...` + 控件经原信号/轮询投影刷新验证 | — | ☑ |
+| 6.7 | 端到端：AI `list_ui_actions` → `ui_invoke("n6705c.auto_set")` → 确认 → 生效 | — | ☑ |
 
 **验收**：未登记控件 AI 无法触发；登记按钮经确认后由 AI 触发，行为与人点一致，UI 自动同步且有 `[AI]` 标记。
+
+> Phase 6 落地说明：
+> - **6.1**：新增 [`core/ai/ui_action_registry.py`](../../../core/ai/ui_action_registry.py) ——
+>   `UIActionSpec`（id/label/page_key/handler/risk/confirm/enabled_when/description）+
+>   `UIActionRegistry`（register/unregister_page/get/list_for_page，RLock 守护，禁 Qt）。
+>   `is_enabled()` 包装 `enabled_when` 异常降级为不可用；`to_view()` 渲染给模型（不含 handler 闭包）。
+> - **6.2**：[`handlers/ui.py`](../../../core/ai/actions/handlers/ui.py) 新增 `list_ui_actions`（low，
+>   经 `deps.ui_action_registry` + `page_key_getter` 列当前页 enabled 项）+ `ui_invoke`（medium + 确认，
+>   经 `deps.ui_invoke_callback` 委派枢纽执行）。`ActionDeps` 同步新增 `ui_action_registry` /
+>   `ui_invoke_callback` 两个字段。
+> - **6.3**：[`MainWindow._ai_ui_invoke`](../../../ui/main_window.py) 实现：按 `_get_ai_page_key()`
+>   取当前页 → `registry.get(page_key, action_id)` 校验归属页（禁跨页派发）→ `spec.is_enabled()`
+>   校验 `enabled_when`（不满足明示不可用，不盲点）→ 主线程调 `spec.handler()`（按钮原槽）。
+>   dispatcher 在主线程执行（`_run_tool_calls` 经 `QTimer.singleShot(0,...)` 投回主线程事件循环），
+>   故 handler 直接调原槽即满足「主线程 Slot」边界。
+> - **6.4**：`ui_invoke` ActionSpec `risk_level=medium` + `require_confirmation=True`，统一经
+>   `ActionDispatcher.dispatch` 的 PermissionChecker → `confirm_action` 确认框 → AuditLog 审计闭环
+>   （与专用写动作同级）。目标项 `risk`（high 等）写入 `UIActionSpec.risk` 供 `list_ui_actions` 展示
+>   与确认引导，dispatcher 层 medium+确认 为保守统一策略（§5b.5 白名单制 + 复用受控闭环）。
+> - **6.5**：[`N6705CAnalyserUI._register_ai_ui_actions`](../../../ui/pages/n6705c_power_analyzer/n6705c_analyser_ui.py)
+>   登记 `power_analyser.auto_set` / `power_analyser.auto_set_20mv`，`handler` 经 `_wrap()` 复用
+>   `_on_batch_auto_set` / `_on_batch_auto_20mv` 原槽（行为与人点完全一致），`enabled_when` 校验
+>   至少一台 N6705C 已连接。registry 经 `MainWindow._setup_ai_action_system` 创建，构造 analyser UI 时注入。
+> - **6.6**：`_ai_ui_invoke` 执行后经当前页 `append_log` 追加 `[AI] 触发 {label}：{message}`；
+>   analyser 页无 `ExecutionLogsFrame`，`[AI]` 标记由 AI 面板 `action_result` 卡片显示，
+>   控件状态经原槽 `_start_channel_sync()` 信号/轮询投影自动刷新（已验证）。
+> - **6.7**：离线端到端实测全绿——`build_registry()` 83 动作含 `list_ui_actions`/`ui_invoke`；
+>   `to_tools(set())` 74 动作（ui 类始终保留）；analyser UI 实例化后 registry 含 2 项，未连接时
+>   `list_for_page(only_enabled=True)` 返回 0、连接后返回 2；`page_key` 隔离校验通过（跨页 `get` 返回 None）；
+>   `list_ui_actions` handler 返回 2 项；`ui_invoke` 未注入 callback 明示不支持；枢纽路由未连接时
+>   明示「当前不可用」；`py_compile` 6 文件 OK + `tests/test_smoke_import.py` PASS。
 
 ---
 

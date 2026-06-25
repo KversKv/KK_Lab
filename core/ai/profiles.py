@@ -71,7 +71,12 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "这些为高风险动作，系统会在执行前弹出确认框由用户确认，你只需正确调用动作即可，"
             "无需以“无法执行”为由拒绝。session_id 形如 'n6705c:A'，可先用查询类动作确认。\n"
             "若查询返回 VI_ERROR_TMO（超时），优先检查通道语法是否为 (@n)，"
-            "而非简单判定仪器不支持。"
+            "而非简单判定仪器不支持。\n"
+            "本页部分按钮无专用动作接口（如 Auto Set / Auto Set +20mV 批量自动设置），"
+            "需先调 list_ui_actions 查看当前可触发的具名 UI 动作，再用 "
+            "ui_invoke(action_id) 触发（如 power_analyser.auto_set）。ui_invoke 会弹确认框，"
+            "行为与用户点击按钮完全一致；未连接仪器或未选中通道时该动作不可用，"
+            "不要在不满足前置条件时反复重试。"
         ),
         "quick_actions": [
             "查询当前各通道电压电流",
@@ -79,6 +84,7 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "打开通道 {ch} 的输出",
             "关闭通道 {ch} 的输出",
             "解读最近的功率测量曲线",
+            "执行 Auto Set 批量自动设置",
         ],
     },
     "datalog": {

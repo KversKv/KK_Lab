@@ -29,14 +29,18 @@
 | `get_task_result` | `task_id` | low | 否 | 按 task_id 查询异步任务结果（B 兜底：事件续跑未触发时主动查），返回状态/结果摘要 |
 | `list_pending_tasks` | 无 | low | 否 | 列出当前会话所有挂起/已完成异步任务（task_id/kind/状态/是否已回灌） |
 
-### 1.2 UI 导航类（category=ui，风险 low）
+### 1.2 UI 导航类（category=ui）
 
 | 动作 | 参数 | 风险 | 需确认 | 作用 |
 |---|---|---|---|---|
 | `open_page` | `page`(枚举) | low | 否 | 切换到指定页面 |
-| `toggle_ai_panel` | `open`(bool) | low | 否 | 打开/关闭右侧 AI 助手面板 |
+| `toggle_ai_panel` | `open`(bool) | low | 否 | 打开或关闭右侧 AI 助手面板 |
+| `list_ui_actions` | 无 | low | 否 | 列出当前页面可由 AI 触发的具名 UI 动作（白名单制，仅返回 enabled 项） |
+| `ui_invoke` | `action_id`(string) | medium | 是 | 触发当前页已登记的具名 UI 动作（无专用接口的按钮，如 Auto Set） |
 
 `open_page` 的 `page` 枚举：`power_analyser` / `datalog` / `oscilloscope` / `thermal_chamber` / `pmu_test` / `consumption_test` / `charger_test` / `custom_test` / `vmin_hunter` / `kk_serials` / `collection`。
+
+> `list_ui_actions` / `ui_invoke`（Phase 6 / §5b）覆盖「页面上有按钮但无专用动作接口」的场景（如 N6705C 的 Auto Set / Zero / Calibrate）。**白名单制**：只有页面经 `UIActionRegistry.register(UIActionSpec(...))` 显式登记的按钮可被 AI 触发；未登记的控件 AI 无任何途径操作。`list_ui_actions` 经 `page_key_getter` + `registry.list_for_page(only_enabled=True)` 渲染当前页可触发集（`enabled_when` 不满足的项不返回，AI 不盲点）。`ui_invoke(action_id)` 经 `deps.ui_invoke_callback` 委派枢纽：校验归属页（`page_key` 匹配，禁跨页派发）+ `enabled_when` → 主线程调按钮原槽（行为与人点完全一致）→ `[AI]` 日志回填主区。`ui_invoke` 统一 medium + 确认（AI 触发 UI 按钮属特权操作），目标项 `risk` 仅作展示与引导；执行结果照常经原有信号/轮询投影刷新 UI。
 
 ### 1.3 串口类（category=serial）
 
@@ -476,3 +480,20 @@
 - `ai_get_result_summary() -> dict | None`：回读结果卡片/计数文本，无数据时返回仅含 `available`/`running` 的最小摘要（禁止臆造数值）。
 
 > 所有页级写动作经 `apply_config_to_controls` 单一写入口回填控件并临时高亮（`_AI_HIGHLIGHT_QSS` + `QTimer` 1.5s 自动复位），主线程边界校验拒绝非主线程调用。`start_test`/`stop_test` 复用页面既有按钮逻辑，不绕过租约/连接校验。`get_result` 仅回读控件文本，不发任何仪器命令。
+
+## 6. UI 动作注册表（Phase 6 / §5b：`ui_invoke` 受控 UI 动作）
+
+> 事实源：`core/ai/ui_action_registry.py`（`UIActionSpec` + `UIActionRegistry`）·`ui/main_window.py::_ai_ui_invoke`（枢纽路由）·各页面 `_register_ai_ui_actions`。
+> 说明：覆盖「页面上有按钮但无专用动作接口」的场景（如 N6705C 的 Auto Set）。**白名单制**——只有页面显式 `register` 的按钮可被 AI 经 `list_ui_actions` / `ui_invoke` 触发；未登记的控件 AI 无任何途径操作。`handler` 直接复用按钮原 `clicked.connect` 的槽，行为与人点完全一致；`enabled_when` 不满足时 `list_ui_actions` 不返回、`ui_invoke` 明示不可用（不盲点）。`ui_invoke` 统一 medium + 确认 + 审计，目标项 `risk` 仅作展示与引导。
+
+### 6.1 已登记的 UI 动作清单
+
+| action_id | 页面 | label | risk | enabled_when | handler（原槽） | 作用 |
+|---|---|---|---|---|---|---|
+| `power_analyser.auto_set` | `power_analyser` | Auto Set | high | 至少一台 N6705C 已连接 | `_on_batch_auto_set` | 测当前电压并对齐到 50mV 网格（含特殊电压），设电流限值并打开通道输出 |
+| `power_analyser.auto_set_20mv` | `power_analyser` | Auto Set (+20mV) | high | 至少一台 N6705C 已连接 | `_on_batch_auto_20mv` | 测当前电压后 +20mV 设为目标，设电流限值并打开通道输出 |
+
+### 6.2 新增按钮接入成本
+
+新增任何「想给 AI 用的按钮」= 页面 `_register_ai_ui_actions` 内 `registry.register(UIActionSpec(...))` 一行，AI 工具集恒定（始终只有 `list_ui_actions` + `ui_invoke`），无需扩 `ActionSpec` / 改 `registry` / 改 handler。`page_key` 与 `_get_current_help_key` 返回值对齐；`enabled_when` 据按钮真实可用条件声明（连接态/运行态/选中项等）。
+

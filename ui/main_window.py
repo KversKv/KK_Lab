@@ -112,6 +112,7 @@ from core.ai.page_contract import (
     CAP_START_TEST,
     CAP_STOP_TEST,
 )
+from core.ai.ui_action_registry import UIActionRegistry, UIActionSpec
 from ui.cleanup_mixin import CleanupMixin
 from ui.standalone import resize_and_center_window
 from log_config import get_logger
@@ -615,6 +616,9 @@ class MainWindow(CleanupMixin, QMainWindow):
     def _setup_ai_action_system(self):
         from core.ai.actions import ActionDeps, build_action_system
 
+        # §5b：UI 动作注册表（页面声明式白名单，供 list_ui_actions/ui_invoke）
+        self._ui_action_registry = UIActionRegistry()
+
         deps = ActionDeps(
             instrument_manager=self.instrument_manager,
             page_key_getter=self._get_ai_page_key,
@@ -650,6 +654,8 @@ class MainWindow(CleanupMixin, QMainWindow):
             script_apply_callback=self._apply_ai_script_draft,
             chamber_wait_stable_callback=self._ai_chamber_wait_stable,
             datalog_export_callback=self._ai_export_datalog_csv,
+            ui_action_registry=self._ui_action_registry,
+            ui_invoke_callback=self._ai_ui_invoke,
         )
         registry, dispatcher = build_action_system(
             deps,
@@ -1188,6 +1194,43 @@ class MainWindow(CleanupMixin, QMainWindow):
             return False, message or "页面拒绝了该配置草案。"
         return True, message or ""
 
+    def _ai_ui_invoke(self, action_id: str) -> tuple[bool, str]:
+        """§5b 枢纽：按当前页 page_key 路由 ui_invoke 到已登记的按钮原槽。
+
+        链路：查 UIActionRegistry（page_key 匹配 + enabled_when）→ 不满足明示不可用
+        → 主线程调 spec.handler()（按钮原槽，行为与人点一致）→ [AI] 日志回填主区。
+        page_key 隔离：仅能触发 page_key == 当前页 的动作，禁跨页派发。
+        """
+        registry = getattr(self, "_ui_action_registry", None)
+        if registry is None:
+            return False, "UI 动作注册表未启用。"
+        page_key = self._get_ai_page_key()
+        if not page_key:
+            return False, "无法确定当前页面。"
+        spec = registry.get(page_key, action_id)
+        if spec is None:
+            return False, f"未登记或非当前页的 UI 动作：{action_id}"
+        if not spec.is_enabled():
+            return False, f"「{spec.label}」当前不可用（不满足触发前置条件）。"
+        try:
+            ok, message = spec.handler()
+        except Exception:
+            logger.error("ui_invoke 执行失败: %s", action_id, exc_info=True)
+            return False, f"「{spec.label}」执行异常，详见日志。"
+        ok = bool(ok)
+        # §5b.6：[AI] 日志回填主区（页面有 append_log 即追加，AI 面板由 action_result 显示）
+        log_msg = f"[AI] 触发 {spec.label}：{message or ('成功' if ok else '失败')}"
+        page = self._current_active_page()
+        appender = getattr(page, "append_log", None) if page is not None else None
+        if callable(appender):
+            try:
+                appender(log_msg)
+            except Exception:  # noqa: BLE001
+                logger.error("ui_invoke 追加 [AI] 日志失败", exc_info=True)
+        if ok:
+            return True, message or f"已触发「{spec.label}」。"
+        return False, message or f"「{spec.label}」触发失败。"
+
     def _wire_serial_rx_to_ai(self, page):
         manager = getattr(page, "_sc_session_manager", None)
         if manager is None or getattr(self, "ai_service", None) is None:
@@ -1304,6 +1347,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             self.n6705c_analyser_ui = N6705CAnalyserUI(
                 n6705c_top=self.n6705c_top,
                 instrument_manager=self.instrument_manager,
+                ui_action_registry=getattr(self, "_ui_action_registry", None),
             )
             self.instrument_ui_container_layout.addWidget(self.n6705c_analyser_ui)
         else:

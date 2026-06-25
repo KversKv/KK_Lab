@@ -118,6 +118,7 @@ core/
 │   ├── __init__.py          # MODULE_VERSION
 │   ├── config.py            # AISettings：env 优先 + user_data/ai/config.json 读写
 │   ├── page_contract.py     # AIControllablePage Protocol + 能力常量（CAP_*）：专项页面向 AI 暴露的受控能力契约（鸭子类型，禁 Qt）
+│   ├── ui_action_registry.py # UIActionSpec + UIActionRegistry：页面声明式具名 UI 动作白名单（§5b，无接口按钮如 Auto Set，禁 Qt，线程安全）
 │   ├── newapi_client.py     # NewAPIClient：OpenAI 兼容 /chat/completions（非流式 + SSE 流式 chat_stream + 超时/取消）
 │   ├── conversation_store.py # 会话历史持久化：user_data/ai/history/<session_key>.json（按页面隔离 + 旧 history.json 迁移，上限 40 条兜底）
 │   ├── context_budget.py    # token 预算与裁剪：estimate_tokens / resolve_window / clip_context_block / fit_messages / should_summarize（tiktoken 优先，缺失启发式）
@@ -162,9 +163,9 @@ core/
 │       ├── builder.py       # build_action_system/build_registry：装配 registry + dispatcher
 │       └── handlers/        # 动作处理器（经注入回调间接操作 UI/仪器，不直接依赖 Qt）
 │           ├── __init__.py
-│           ├── deps.py      # ActionDeps：UI 注入的 getter/callback 依赖集合（含波形原始数据 getter）
+│           ├── deps.py      # ActionDeps：UI 注入的 getter/callback 依赖集合（含波形原始数据 getter + ui_action_registry/ui_invoke_callback）
 │           ├── query.py     # 查询类：页面/串口/日志/仪器快照/测试状态/波形 drill-down（low）
-│           ├── ui.py        # UI 类：open_page/toggle_ai_panel（low）
+│           ├── ui.py        # UI 类：open_page/toggle_ai_panel（low）/list_ui_actions（low，列当前页可触发 UI 动作）/ui_invoke（medium+确认，触发具名 UI 动作）
 │           ├── serial.py    # 串口类：clear（low）/send（high+确认）经 SerialSessionManager
 │           ├── instrument.py # 仪器类：query（low）/disconnect（medium）/set_output（critical 默认禁）
 │           ├── test.py      # 测试类：start/pause（high+确认）/stop（high）经 orchestrator runner

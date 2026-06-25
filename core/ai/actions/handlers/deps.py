@@ -50,6 +50,9 @@ DatalogExportCallback = Callable[[str, str], "dict[str, Any]"]
 # 调度（§3）：UI 注入，登记后据 delay_seconds 起 QTimer，到点 dispatch 目标动作。
 ScheduleRegisterCallback = Callable[[str, float], "tuple[bool, str]"]
 SessionKeyGetter = Callable[[], "str"]
+# UI 动作触发（§5b）：UI 注入，按 action_id 经当前页 UIActionRegistry 路由到按钮原槽。
+# 回调内部完成 page_key 归属校验 + enabled_when + 主线程调 handler + [AI] 日志。
+UIInvokeCallback = Callable[[str], "tuple[bool, str]"]
 
 
 @dataclass
@@ -101,3 +104,10 @@ class ActionDeps:
 
     # 调度（§3）：登记成功后由 UI 起 QTimer，到点执行目标动作
     schedule_register_callback: ScheduleRegisterCallback | None = None
+
+    # UI 动作注册表（§5b）：页面声明式登记的具名 UI 动作白名单（UIActionRegistry）。
+    # list_ui_actions 经 page_key_getter + registry.list_for_page 渲染当前页可触发集。
+    ui_action_registry: Any | None = None
+    # UI 动作触发回调（§5b）：ui_invoke 经此委派枢纽执行（page_key 校验 + enabled_when
+    # + 主线程调原槽 + [AI] 日志），core 不直接调 Qt 槽。
+    ui_invoke_callback: UIInvokeCallback | None = None
