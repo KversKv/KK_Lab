@@ -342,12 +342,12 @@ user_data/ai/kk_lab_ai_memory/
 
 | 任务 | 产物 | 状态 |
 |---|---|---|
-| 实现 KK Lab AI 记忆路径映射与白名单校验 | `core/ai/kk_lab_memory.py` | ⬜ 未开始 |
-| 实现归档草稿生成与脱敏去重 | 复用或扩展 `core/ai/curator.py` | ⬜ 未开始 |
-| 增加受控 Action：归档 / 列表 / 搜索 | ActionRegistry 新动作 | ⬜ 未开始 |
-| 快捷指令加载改走 KK Lab AI 记忆体系 | `get_quick_actions()` 读取 `quick_actions.md` + `quick_actions.local.md` | ⬜ 未开始 |
-| PromptManager 注入 KK Lab AI 记忆摘要 | 当前页面 + `_shared` 预算裁剪读取 | ⬜ 未开始 |
-| 增加最小 UI 确认流 | 对话区触发后预览并确认 | ⬜ 未开始 |
+| 实现 KK Lab AI 记忆路径映射与白名单校验 | `core/ai/kk_lab_memory.py` | ✅ 已完成 |
+| 实现归档草稿生成与脱敏去重 | `core/ai/kk_lab_memory.py` KKLabMemoryCurator | ✅ 已完成 |
+| 增加受控 Action：归档 / 列表 / 搜索 | `core/ai/actions/handlers/kk_lab_memory.py` | ✅ 已完成 |
+| 快捷指令加载改走 KK Lab AI 记忆体系 | `get_quick_actions()` 读取 `quick_actions.md` + `quick_actions.local.md` | ✅ 已完成 |
+| PromptManager 注入 KK Lab AI 记忆摘要 | 当前页面 + `_shared` 预算裁剪读取 | ✅ 已完成 |
+| 增加最小 UI 确认流 | `ui/ai/kk_lab_memory_dialog.py` + 对话区⋯菜单 | ✅ 已完成 |
 
 验收标准：
 - 用户在 AI Assistant 中说「把这条归档为当前页面经验」，AI 能定位当前页面并生成草稿。

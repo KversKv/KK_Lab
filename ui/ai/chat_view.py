@@ -542,6 +542,23 @@ class ChatView(QScrollArea):
         menu.addAction(
             "沉淀为 eval 用例", lambda: self.curate_requested.emit("eval_case", "")
         )
+        menu.addSeparator()
+        kk_menu = menu.addMenu("归档到本页记忆")
+        kk_menu.addAction(
+            "本页长期记忆", lambda: self.curate_requested.emit("kk_memory", "")
+        )
+        kk_menu.addAction(
+            "本页经验/排障", lambda: self.curate_requested.emit("kk_lesson", "")
+        )
+        kk_menu.addAction(
+            "本页测试项", lambda: self.curate_requested.emit("kk_test_item", "")
+        )
+        kk_menu.addAction(
+            "本页测试用例", lambda: self.curate_requested.emit("kk_test_case", "")
+        )
+        kk_menu.addAction(
+            "本页快捷指令", lambda: self.curate_requested.emit("kk_quick_action", "")
+        )
         menu.exec(anchor.mapToGlobal(anchor.rect().bottomLeft()))
 
     def _available_width(self) -> int:

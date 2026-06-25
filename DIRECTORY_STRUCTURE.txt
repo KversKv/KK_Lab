@@ -120,12 +120,13 @@ core/
 │   ├── newapi_client.py     # NewAPIClient：OpenAI 兼容 /chat/completions（非流式 + SSE 流式 chat_stream + 超时/取消）
 │   ├── conversation_store.py # 会话历史持久化：user_data/ai/history/<session_key>.json（按页面隔离 + 旧 history.json 迁移，上限 40 条兜底）
 │   ├── context_budget.py    # token 预算与裁剪：estimate_tokens / resolve_window / clip_context_block / fit_messages / should_summarize（tiktoken 优先，缺失启发式）
-│   ├── profiles.py          # AI_PROFILES：页面键 → 模型参数 + system_prompt + quick_actions(占位符模板)；get_project_prompt/get_user_prompt + quick_actions.local 合并
+│   ├── profiles.py          # AI_PROFILES：页面键 → 模型参数 + system_prompt + quick_actions(占位符模板)；get_project_prompt/get_user_prompt + quick_actions.local 合并；quick_actions 优先读 KK Lab AI 记忆 md
 │   ├── nudges.py            # 纠偏片段库：随包 resources/ai/nudges.json + 本机 nudges.local.json 按 id 合并；force_tool_nudge/page_nudges
 │   ├── curator.py           # 经验沉淀器：as_nudge/as_quick_action/as_project_rule/as_eval_case + AI 草稿润色(降级规则) + list/delete/export_pack/reset_local（写本机 .local）
+│   ├── kk_lab_memory.py     # KK Lab AI 记忆体系：页面键白名单/路径映射/读写/去重/摘要/快捷指令加载 + KKLabMemoryCurator 草稿生成（5 类：memory/lessons/test_items/test_cases/quick_actions）
 │   ├── eval_runner.py       # eval 回归执行器：load_cases/run_all/summarize + `python -m core.ai.eval_runner [--mock]` 非零退出码
 │   ├── telemetry.py         # 客户端遥测：TelemetryEvent/record 写 buffer.jsonl + TelemetryUploader(QTimer→QThread→httpx POST)，隐私开关静默 + 二次脱敏
-│   ├── prompt_manager.py    # PromptManager：四层拼装(系统/项目/本机项目规则/用户/动态) + 敏感信息脱敏 + BudgetConfig 预算裁剪
+│   ├── prompt_manager.py    # PromptManager：四层拼装(系统/项目/本机项目规则/用户/动态) + 敏感信息脱敏 + BudgetConfig 预算裁剪 + KK Lab AI 记忆摘要注入
 │   ├── ai_service.py        # AIService：QObject + QThread worker + 信号（UI↔core 桥）+ 历史摘要压缩 + telemetry 埋点
 │   ├── log_ring.py          # LogRingHandler：线程安全环形日志缓冲（供日志分析）
 │   ├── serial_rx_cache.py   # SerialRxCache：串口 RX 行缓存（按 session_id 定长 deque）
@@ -165,7 +166,12 @@ core/
 │           ├── ui.py        # UI 类：open_page/toggle_ai_panel（low）
 │           ├── serial.py    # 串口类：clear（low）/send（high+确认）经 SerialSessionManager
 │           ├── instrument.py # 仪器类：query（low）/disconnect（medium）/set_output（critical 默认禁）
-│           └── test.py      # 测试类：start/pause（high+确认）/stop（high）经 orchestrator runner
+│           ├── test.py      # 测试类：start/pause（high+确认）/stop（high）经 orchestrator runner
+│           ├── scope.py     # 示波器类：scope 操作经 InstrumentManager
+│           ├── chamber.py   # 温箱类：chamber wait_stable 等经受控回调
+│           ├── export.py    # 导出类：datalog/波形导出经 datalog_export_callback
+│           ├── schedule.py  # 调度类：schedule_action 登记经 schedule_register_callback
+│           └── kk_lab_memory.py # KK Lab AI 记忆类：archive/list/search（medium+确认/low/low）
 ├── controllers/             # 控制器子包 (预留，后续业务控制器)
 ├── vmin_hunter/             # VminHunter 探底测试编排内核（与 UI/仪器无关）
 │   ├── __init__.py          # 导出判活器 / 策略 / 睡眠 Vmin 引擎
@@ -263,6 +269,7 @@ ui/
 │   ├── transcript_exporter.py   # 会话调试导出 Markdown 纯函数 (build_export_markdown, 从 ai_assist_panel 抽出)
 │   ├── action_confirm_dialog.py # ActionConfirmDialog: 高/critical 风险动作确认 (parent=面板, 取消为默认)
 │   ├── curate_dialog.py         # CurateDialog: 一键沉淀草稿微调对话框 (nudge/quick_action/project_rule/eval_case)
+│   ├── kk_lab_memory_dialog.py  # KKLabMemoryDialog: KK Lab AI 记忆归档草稿微调对话框 (5 类 + 本机/项目级目标选择)
 │   ├── ai_settings_dialog.py    # AISettingsDialog: AI 设置 + 「测试连接」+ 白名单 + 「本机经验」(一键回归/条目管理/导出重置/隐私开关)
 │   └── panel_state.py           # 面板 UI 状态持久化 (user_data/ai/ui_state.json)
 │

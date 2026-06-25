@@ -36,6 +36,28 @@ def _get_local_project_rules() -> str:
         return ""
 
 
+_KK_LAB_MEMORY_SUMMARY_BUDGET = 1500
+
+
+def _kk_lab_memory_summary(page_key: str | None, budget: BudgetConfig | None) -> str:
+    """读取当前页面 KK Lab AI 记忆摘要（memory + lessons + _shared/cross_page_lessons）。
+
+    按 token 预算裁剪后返回；失败或无内容返回空串（不影响拼装）。
+    """
+    if not page_key:
+        return ""
+    try:
+        from core.ai import kk_lab_memory
+        if not kk_lab_memory.is_valid_page_key(page_key):
+            return ""
+        cap = _KK_LAB_MEMORY_SUMMARY_BUDGET
+        if budget is not None and budget.max_context_block_tokens > 0:
+            cap = min(cap, budget.max_context_block_tokens)
+        return kk_lab_memory.read_summary(page_key, max_tokens=cap)
+    except Exception:  # noqa: BLE001 - 记忆摘要读取失败不应阻断 prompt 拼装
+        return ""
+
+
 @dataclass
 class BudgetConfig:
     """token 预算配置快照（按当前模型解析后的窗口）。"""
@@ -206,6 +228,10 @@ class PromptManager:
         profile_prompt = (profile.get("system_prompt") or "").strip()
         if profile_prompt:
             parts.append(profile_prompt)
+
+        memory_summary = _kk_lab_memory_summary(page_key, budget)
+        if memory_summary:
+            parts.append(memory_summary)
 
         for nudge in page_nudges(page_key):
             text = nudge.get("text", "").strip()

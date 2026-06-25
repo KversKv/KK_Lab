@@ -12,6 +12,7 @@ from core.ai.actions.handlers import (
     chamber as _chamber,
     export as _export,
     instrument as _instrument,
+    kk_lab_memory as _kk_lab_memory,
     query as _query,
     schedule as _schedule,
     scope as _scope,
@@ -19,7 +20,6 @@ from core.ai.actions.handlers import (
     test as _test,
     ui as _ui,
 )
-from core.ai.actions.handlers.deps import ActionDeps
 from core.ai.actions.permission import PermissionChecker
 from core.ai.actions.policy import PolicyStore
 from core.ai.actions.registry import ActionRegistry
@@ -27,7 +27,10 @@ from log_config import get_logger
 
 logger = get_logger(__name__)
 
-_HANDLER_MODULES = (_query, _ui, _serial, _instrument, _scope, _chamber, _test, _export, _schedule)
+_HANDLER_MODULES = (
+    _query, _ui, _serial, _instrument, _scope, _chamber,
+    _test, _export, _schedule, _kk_lab_memory,
+)
 
 
 def build_registry() -> ActionRegistry:

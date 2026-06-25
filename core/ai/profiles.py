@@ -264,13 +264,36 @@ def get_quick_actions(page_key: str | None) -> list[str]:
 
     文案可含 `{占位符}`（如 `把通道 {ch} 设到 {v}V`），UI 侧对带占位符的项
     弹轻量输入后再发送（见 quick_action_placeholders / fill_quick_action）。
+
+    优先读取 KK Lab AI 记忆体系（docs/kk_lab_ai_memory/<page_key>/quick_actions.md
+    + 本机 quick_actions.local.md，status=active）；若 md 文件无条目则回退
+    AI_PROFILES[*].quick_actions，再合并本机 quick_actions.local.json 沉淀。
     """
-    profile = get_profile(page_key)
-    actions = [str(a) for a in (profile.get("quick_actions") or []) if str(a).strip()]
+    actions = _kk_lab_memory_quick_actions(page_key)
+    if not actions:
+        profile = get_profile(page_key)
+        actions = [str(a) for a in (profile.get("quick_actions") or []) if str(a).strip()]
     for extra in _local_quick_actions(page_key):
         if extra not in actions:
             actions.append(extra)
     return actions
+
+
+def _kk_lab_memory_quick_actions(page_key: str | None) -> list[str]:
+    """读取 KK Lab AI 记忆体系中的快捷指令模板（status=active）。
+
+    失败或无文件返回空列表（调用方回退 AI_PROFILES）。
+    """
+    if not page_key:
+        return []
+    try:
+        from core.ai import kk_lab_memory
+        if not kk_lab_memory.is_valid_page_key(page_key):
+            return []
+        return kk_lab_memory.read_quick_action_templates(page_key)
+    except Exception:  # noqa: BLE001 - 记忆体系读取失败不应阻断快捷指令
+        logger.error("读取 KK Lab 记忆快捷指令失败", exc_info=True)
+        return []
 
 
 _QUICK_ACTIONS_LOCAL = "quick_actions.local.json"

@@ -1784,6 +1784,10 @@ class AIAssistPanel(QFrame):
             "assistant": self._last_assistant_text,
             "page_key": self._service.current_page_key() or "",
         }
+        if kind.startswith("kk_"):
+            self._chat.add_system_message("Generating KK Lab memory draft…")
+            self._start_kk_lab_curate(kind, turn)
+            return
         self._chat.add_system_message("Generating curation draft…")
         self._start_curate(kind, turn)
 
@@ -1849,6 +1853,86 @@ class AIAssistPanel(QFrame):
                 )
         else:
             self._chat.add_system_message("Failed to write curation, please check the logs.")
+
+    def _start_kk_lab_curate(self, kind: str, turn: dict) -> None:
+        """KK Lab AI 记忆草稿生成（后台线程，AI 优先/规则兜底）。"""
+        from PySide6.QtCore import QObject, QThread, Signal
+
+        from core.ai.kk_lab_memory import KKLabMemoryCurator
+
+        settings = self._service.settings
+
+        class _KKDraftWorker(QObject):
+            done = Signal(dict)
+            failed = Signal(str)
+
+            def run(self) -> None:
+                try:
+                    draft = KKLabMemoryCurator(settings).make_draft(turn, kind)
+                    self.done.emit(draft or {})
+                except Exception as exc:  # noqa: BLE001
+                    self.failed.emit(str(exc))
+
+        thread = QThread(self)
+        worker = _KKDraftWorker()
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.done.connect(lambda d: self._on_kk_lab_draft_made(kind, turn, d))
+        worker.failed.connect(
+            lambda m: self._chat.add_system_message(f"Draft generation failed: {m}")
+        )
+        worker.done.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        self._curate_thread = thread
+        self._curate_worker = worker
+        thread.start()
+
+    def _on_kk_lab_draft_made(self, kind: str, turn: dict, draft: dict) -> None:
+        from ui.ai.kk_lab_memory_dialog import KKLabMemoryDialog
+        from core.ai import kk_lab_memory
+
+        if not draft:
+            self._chat.add_system_message("Draft is empty, curation cancelled.")
+            return
+        page_key = draft.get("page_key") or ""
+        if not kk_lab_memory.is_valid_page_key(page_key):
+            self._chat.add_system_message(
+                f"当前页面 '{page_key}' 不在白名单，无法归档到本页记忆。"
+            )
+            return
+        dialog = KKLabMemoryDialog(draft, parent=self)
+        if not dialog.exec():
+            self._chat.add_system_message("Curation cancelled.")
+            return
+        final_draft = dialog.result_draft()
+        entry_text = kk_lab_memory.render_draft_entry(final_draft)
+        target = final_draft.get("target", kk_lab_memory.TARGET_LOCAL)
+        file_kind = final_draft.get("file_kind", kk_lab_memory.KIND_LESSONS)
+        title = final_draft.get("title", "")
+        existing = kk_lab_memory.read_entries(page_key, file_kind)
+        dup = kk_lab_memory.find_duplicate(existing, title)
+        if dup is not None:
+            entry_text = kk_lab_memory.render_entry(
+                file_kind, dup.entry_id, title, final_draft.get("fields", [])
+            )
+        ok, message = kk_lab_memory.append_entry(
+            page_key, file_kind, entry_text, target=target
+        )
+        if ok:
+            target_label = "项目级 docs" if target == kk_lab_memory.TARGET_PROJECT else "本机私有层"
+            self._chat.add_system_message(
+                f"已归档到{target_label}：{page_key}/{kk_lab_memory._FILE_NAME[file_kind]}（{title}）"
+            )
+            self.refresh_quick_actions()
+            if self._service.settings.telemetry_enabled:
+                self._service._record_telemetry(
+                    "kk_lab_memory_curated",
+                    {"kind": kind, "target": target, "src": final_draft.get("_src", "")},
+                )
+        else:
+            self._chat.add_system_message(f"Failed to write: {message}")
 
     def _on_analysis(self, result) -> None:
         self._record("analysis", text=str(getattr(result, "summary", "") or result))
