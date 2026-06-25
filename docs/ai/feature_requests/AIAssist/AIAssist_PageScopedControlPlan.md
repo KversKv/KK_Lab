@@ -282,10 +282,10 @@ AI: ui_invoke(action_id="n6705c.auto_set")
 
 | # | 任务 | 文件 | 状态 |
 |---|---|---|---|
-| 3.1 | 回填经 Signal/Slot 切主线程，规范写入口 | `ui/pages/pmu_test/pmu_dcdc_efficiency.py` | ☐ |
-| 3.2 | 被 AI 改动控件临时高亮（复用既有 QSS/动效） | 同上 | ☐ |
-| 3.3 | `[AI] ...` 行追加到 `ExecutionLogsFrame` | 同上 | ☐ |
-| 3.4 | 轮询刷新与 AI 回填共用 `apply_config_to_controls` 验证 | — | ☐ |
+| 3.1 | 回填经 Signal/Slot 切主线程，规范写入口 | `ui/pages/pmu_test/pmu_dcdc_efficiency.py` | ☑ |
+| 3.2 | 被 AI 改动控件临时高亮（复用既有 QSS/动效） | 同上 | ☑ |
+| 3.3 | `[AI] ...` 行追加到 `ExecutionLogsFrame` | 同上 | ☑ |
+| 3.4 | 轮询刷新与 AI 回填共用 `apply_config_to_controls` 验证 | — | ☑ |
 
 **验收**：AI 改参数后，用户在主区控件即时看到变化 + 高亮 + 执行日志标记。
 

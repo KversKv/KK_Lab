@@ -7,6 +7,7 @@ PMU DCDC Efficiency测试UI组件
 
 import sys
 import os
+import threading
 from typing import Any
 from ui.resource_path import get_resource_base
 sys.path.append(get_resource_base())
@@ -45,6 +46,12 @@ from core.ai.page_contract import (
 from log_config import get_logger
 
 _logger = get_logger(__name__)
+
+# AI 回填可视化（AIAssist_PageScopedControlPlan.md §4.2 / Phase 3）：
+# 被 AI 修改的控件临时高亮边框色 + 持续时长。色值与页面 statusOk 一致，
+# 仅改 border 颜色（宽度沿用页面 QSS 的 1px，避免布局抖动）。
+_AI_HIGHLIGHT_QSS = "border: 1px solid #15d1a3;"
+_AI_HIGHLIGHT_MS = 1500
 
 
 try:
@@ -1662,6 +1669,10 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
             not self.is_chamber_connected or self.chamber is None
         ):
             return False, "当前测试项为 Temperature Sweep，但未连接温箱，请先连接温箱。"
+        self.append_log(
+            f"[AI] 请求启动测试：{cfg.get('test_item', 'Efficiency Curve')}，"
+            f"扫描 {cfg.get('start_current_a')}~{cfg.get('end_current_a')}A。"
+        )
         try:
             self._on_start_test()
         except Exception:  # noqa: BLE001 - 启动异常转可读结果
@@ -1674,6 +1685,7 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
     def ai_stop_test(self) -> tuple[bool, str]:
         if not self.is_test_running:
             return False, "当前未在运行测试。"
+        self.append_log("[AI] 请求停止测试。")
         try:
             self._on_stop_test()
         except Exception:  # noqa: BLE001 - 停止异常转可读结果
@@ -1712,7 +1724,17 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
         if not isinstance(cfg, dict):
             return False, "配置草案格式无效（期望 dict）。"
 
+        # 线程边界（§4.2-2）：AI 决策在 QThread，回填须经主线程执行；
+        # dispatcher 经 QTimer.singleShot(0) 已切回主线程，此处加防御性守卫，
+        # 杜绝 worker 线程直接 setValue 违反「UI 禁阻塞 / 跨线程改控件」铁律。
+        if threading.current_thread() is not threading.main_thread():
+            _logger.error(
+                "apply_config_to_controls 在非主线程被调用，拒绝回填以防违反线程边界"
+            )
+            return False, "配置回填未在主线程执行，已拒绝。"
+
         applied: list[str] = []
+        touched: list = []  # 被 AI 修改的控件，用于回填后高亮（§4.2-3 / Phase 3）
 
         def _pick(canonical: str, *aliases: str):
             for k in (canonical, *aliases):
@@ -1773,6 +1795,7 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
             if idx >= 0:
                 combo.setCurrentIndex(idx)
                 applied.append(canonical)
+                touched.append(combo)
 
         def _set_spin(spin, canonical: str, *aliases: str, picker=_pick_float):
             val = picker(canonical, *aliases)
@@ -1780,6 +1803,7 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
                 return
             spin.setValue(val)
             applied.append(canonical)
+            touched.append(spin)
 
         # 测试项
         _, test_item = _pick("test_item")
@@ -1788,6 +1812,7 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
             if idx >= 0:
                 self.test_item_combo.setCurrentIndex(idx)
                 applied.append("test_item")
+                touched.append(self.test_item_combo)
 
         # 扫描模式（Linear / Log）
         _, sweep_mode = _pick("sweep_mode")
@@ -1797,6 +1822,7 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
             self.linear_mode_btn.setChecked(not is_log)
             self._on_sweep_mode_changed()
             applied.append("sweep_mode")
+            touched.extend([self.log_mode_btn, self.linear_mode_btn])
 
         # 采样方式
         _set_combo(self.sampling_method_combo, "sampling_method")
@@ -1844,8 +1870,36 @@ class PMUDCDCEfficiencyUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidget
 
         if not applied:
             return False, "配置草案未包含任何可识别的配置项。"
+        # §4.2-3 可视化反馈：被 AI 修改的控件临时高亮（Phase 3）。
+        self._highlight_widgets(touched)
         self.append_log(f"[AI] 已应用配置：{', '.join(applied)}")
         return True, f"已应用配置项：{', '.join(applied)}。"
+
+    def _highlight_widgets(self, widgets: list) -> None:
+        """被 AI 修改的控件临时高亮边框（§4.2-3 / Phase 3）。
+
+        复用页面 QSS：仅覆盖 border 颜色（不重写背景/padding，未指定的属性
+        仍由页面 QSS 提供），到期后清空 widget 本地 stylesheet 让页面 QSS 复原。
+        """
+        if not widgets:
+            return
+        for widget in widgets:
+            if widget is None:
+                continue
+            widget.setStyleSheet(_AI_HIGHLIGHT_QSS)
+            widget.setProperty("aiHighlighted", True)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+            # 持有各自定时器引用避免被 GC；到期清回空样式让页面 QSS 接管
+            def _clear(_w=widget, _qss_ref=widget):
+                try:
+                    _w.setStyleSheet("")
+                    _w.setProperty("aiHighlighted", False)
+                    _w.style().unpolish(_w)
+                    _w.style().polish(_w)
+                except RuntimeError:  # noqa: BLE001 - widget 可能已销毁
+                    pass
+            QTimer.singleShot(_AI_HIGHLIGHT_MS, _clear)
 
 
 if __name__ == "__main__":
