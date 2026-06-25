@@ -40,6 +40,7 @@ from core.ai.page_contract import (
     CAP_START_TEST,
     CAP_STOP_TEST,
 )
+from core.ai.ui_action_registry import UIActionSpec
 
 logger = get_logger(__name__)
 
@@ -574,10 +575,11 @@ class ItermTestUI(N6705CConnectionMixin, QWidget):
     # MainWindow._ai_on_sequence_finished_resume 监听本信号，回灌 pending 任务。
     sequence_execution_finished = Signal(bool, str)
 
-    def __init__(self, n6705c_top=None, instrument_manager=None):
+    def __init__(self, n6705c_top=None, instrument_manager=None, ui_action_registry=None):
         super().__init__()
 
         self._instrument_manager = instrument_manager
+        self._ui_action_registry = ui_action_registry
         self.init_n6705c_connection(n6705c_top, instrument_manager=instrument_manager)
 
         self.is_test_running = False
@@ -598,7 +600,37 @@ class ItermTestUI(N6705CConnectionMixin, QWidget):
         self._create_layout()
         self._init_ui_elements()
         self._bind_signals()
+        self._register_ai_ui_actions()
         self.sync_n6705c_from_top()
+
+    def _register_ai_ui_actions(self):
+        """§5b.5：登记本页导出按钮为 AI 可触发的具名 UI 动作（handler 复用原槽）。"""
+        registry = self._ui_action_registry
+        if registry is None:
+            return
+
+        def _wrap(label, fn):
+            def _run() -> tuple[bool, str]:
+                try:
+                    fn()
+                    return True, f"{label} 已执行。"
+                except Exception as exc:  # noqa: BLE001
+                    logger.error("%s 执行失败", label, exc_info=True)
+                    return False, f"{label} 执行失败：{exc}"
+            return _run
+
+        registry.register_many([
+            UIActionSpec(
+                id="charger_iterm.export_csv",
+                label="导出结果 CSV",
+                page_key="charger_iterm",
+                handler=_wrap("导出结果 CSV", self._on_export_csv),
+                risk="low",
+                confirm=False,
+                enabled_when=lambda: bool(self._export_data),
+                description="把当前终止电流测试结果导出为 CSV。需已有测试结果数据。",
+            ),
+        ])
 
     def _setup_style(self):
         font = QFont("Segoe UI", 9)

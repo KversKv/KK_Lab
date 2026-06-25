@@ -246,6 +246,9 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "（这些仅在 Orchestrator 页可用）。\n"
             "页级写动作已按本页能力裁剪可见——你看到的就是本页能干的；不要尝试调用本页未声明的动作，"
             "若某动作不在工具列表中即表示本页不支持，应直接告知用户并给出可执行替代。"
+            "你可经 apply_test_config_draft 修改以下参数键（与本页 get_test_config 对齐）："
+            "vmeter_channel、test_mode、device_addr、reg_addr、msb、lsb、min_code、max_code、iic_width。"
+            "其中 device_addr/reg_addr/min_code/max_code 为 16 进制，msb/lsb 为 10 进制位序。"
             "启动测试前需连接 N6705C 仪器。"
         ),
     },
@@ -263,6 +266,12 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "（这些仅在 Orchestrator 页可用）。\n"
             "页级写动作已按本页能力裁剪可见——你看到的就是本页能干的；不要尝试调用本页未声明的动作，"
             "若某动作不在工具列表中即表示本页不支持，应直接告知用户并给出可执行替代。"
+            "你可经 apply_test_config_draft 修改以下参数键（随 test_item 暴露不同子集）："
+            "test_item、device_addr、reg_addr、reg_bit、iic_width（全部测试项）；"
+            "test_channel + start/end/step_voltage（Voltage Sweep）；"
+            "test_channel + start/end/step_current（Current Sweep）；"
+            "start/end/step_temp（Temperature Sweep）；"
+            "write_reg_addr + reg_start/end/step_value（Reg Sweep）；step_delay_ms（各扫描通用）。"
             "启动测试前按测试项校验仪器：Voltage/Current/Reg Sweep 需 N6705C；"
             "Temperature Sweep 需温箱。设备/寄存器地址为 16 进制。"
         ),
@@ -281,6 +290,9 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "（这些仅在 Orchestrator 页可用）。\n"
             "页级写动作已按本页能力裁剪可见——你看到的就是本页能干的；不要尝试调用本页未声明的动作，"
             "若某动作不在工具列表中即表示本页不支持，应直接告知用户并给出可执行替代。"
+            "你可经 apply_test_config_draft 修改以下参数键（与本页 get_test_config 对齐）："
+            "device_addr、reg_addr、iic_width、measure_channel、msb、lsb、min_code、max_code。"
+            "其中 device_addr/reg_addr/min_code/max_code 为 16 进制，msb/lsb 为 10 进制位序（默认 9~5）。"
             "启动测试前需连接 N6705C 仪器。"
         ),
     },
@@ -298,6 +310,9 @@ AI_PROFILES: dict[str, dict[str, Any]] = {
             "（这些仅在 Orchestrator 页可用）。\n"
             "页级写动作已按本页能力裁剪可见——你看到的就是本页能干的；不要尝试调用本页未声明的动作，"
             "若某动作不在工具列表中即表示本页不支持，应直接告知用户并给出可执行替代。"
+            "你可经 apply_test_config_draft 修改以下参数键（与本页 get_test_config 对齐）："
+            "vmeter_channel、device_addr、reg_addr、msb、lsb、min_code、max_code、iic_width。"
+            "其中 device_addr/reg_addr/min_code/max_code 为 16 进制（max_code 默认 0x3F），msb/lsb 为 10 进制位序。"
             "启动测试前需连接 N6705C 仪器。"
         ),
     },

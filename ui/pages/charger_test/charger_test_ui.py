@@ -20,11 +20,12 @@ class ChargerTestUI(QWidget):
         "regulation_voltage": 3,
     }
 
-    def __init__(self, n6705c_top=None, chamber_ui=None, instrument_manager=None):
+    def __init__(self, n6705c_top=None, chamber_ui=None, instrument_manager=None, ui_action_registry=None):
         super().__init__()
         self._n6705c_top = n6705c_top
         self._chamber_ui = chamber_ui
         self._instrument_manager = instrument_manager
+        self._ui_action_registry = ui_action_registry
         self._setup_style()
         self._create_layout()
         self._init_ui_elements()
@@ -54,6 +55,7 @@ class ChargerTestUI(QWidget):
         self.config_traverse_ui = ConfigTraverseTestUI(
             n6705c_top=self._n6705c_top,
             instrument_manager=self._instrument_manager,
+            ui_action_registry=self._ui_action_registry,
         )
         self.tab_widget.addTab(self.config_traverse_ui, "Config Traverse Test")
 
@@ -67,12 +69,14 @@ class ChargerTestUI(QWidget):
         self.iterm_ui = ItermTestUI(
             n6705c_top=self._n6705c_top,
             instrument_manager=self._instrument_manager,
+            ui_action_registry=self._ui_action_registry,
         )
         self.tab_widget.addTab(self.iterm_ui, "Iterm Test")
 
         self.regulation_voltage_ui = RegulationVoltageTestUI(
             n6705c_top=self._n6705c_top,
             instrument_manager=self._instrument_manager,
+            ui_action_registry=self._ui_action_registry,
         )
         self.tab_widget.addTab(self.regulation_voltage_ui, "Regulation Voltage Test")
 

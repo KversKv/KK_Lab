@@ -54,6 +54,7 @@ from instruments.power.keysight.n6705c_datalog_process import (
 )
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.styles import SCROLL_AREA_STYLE
+from core.ai.ui_action_registry import UIActionSpec
 from log_config import get_logger
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockN6705C
@@ -1105,11 +1106,12 @@ class FixedPopupComboBox(DarkComboBox):
 class N6705CDatalogUI(QWidget):
     connection_status_changed = Signal(bool)
 
-    def __init__(self, n6705c_top=None, instrument_manager=None):
+    def __init__(self, n6705c_top=None, instrument_manager=None, ui_action_registry=None):
         super().__init__()
 
         self._top = n6705c_top
         self._instrument_manager = instrument_manager
+        self._ui_action_registry = ui_action_registry
         self.rm = None
         self.n6705c_a = None
         self.n6705c_b = None
@@ -1197,7 +1199,60 @@ class N6705CDatalogUI(QWidget):
         if self._instrument_manager:
             self._instrument_manager.sessions_changed.connect(self._on_manager_sessions_changed)
 
-    def _on_manager_sessions_changed(self):
+        # §5b：登记本页无专用接口的按钮（Auto Fit / 导出 / 导入）为具名 UI 动作
+        self._register_ai_ui_actions()
+
+    def _register_ai_ui_actions(self):
+        """§5b.5：登记本页无专用接口的按钮为 AI 可触发的具名 UI 动作。
+
+        handler 直接复用按钮原 clicked.connect 的槽（_reset_view / _on_export / _on_import），
+        行为与人点按钮完全一致；导出类绑定 datalog_data 前置校验，无数据时
+        list_ui_actions 不返回、ui_invoke 明示不可用（不盲点）。
+        """
+        registry = self._ui_action_registry
+        if registry is None:
+            return
+
+        def _wrap(label, fn):
+            def _run() -> tuple[bool, str]:
+                try:
+                    fn()
+                    return True, f"{label} 已执行。"
+                except Exception as exc:  # noqa: BLE001
+                    logger.error("%s 执行失败", label, exc_info=True)
+                    return False, f"{label} 执行失败：{exc}"
+            return _run
+
+        registry.register_many([
+            UIActionSpec(
+                id="datalog.auto_fit",
+                label="Auto Fit 自适应视图",
+                page_key="datalog",
+                handler=_wrap("Auto Fit 自适应视图", self._reset_view),
+                risk="low",
+                confirm=False,
+                description="把 Datalog 波形图缩放还原到自适应视图。",
+            ),
+            UIActionSpec(
+                id="datalog.export",
+                label="导出 Datalog",
+                page_key="datalog",
+                handler=_wrap("导出 Datalog", self._on_export),
+                risk="low",
+                confirm=False,
+                enabled_when=lambda: bool(self.datalog_data),
+                description="导出当前 Datalog 数据。需已有采集/导入的数据。",
+            ),
+            UIActionSpec(
+                id="datalog.import",
+                label="导入 Datalog",
+                page_key="datalog",
+                handler=_wrap("导入 Datalog", self._on_import),
+                risk="low",
+                confirm=False,
+                description="从文件导入历史 Datalog 数据用于查看/对比。",
+            ),
+        ])
         if not self._instrument_manager:
             return
         sessions = self._instrument_manager.sessions(instrument_type="n6705c")

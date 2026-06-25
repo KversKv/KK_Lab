@@ -1379,6 +1379,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             self.n6705c_datalog_ui = N6705CDatalogUI(
                 n6705c_top=self.n6705c_top,
                 instrument_manager=self.instrument_manager,
+                ui_action_registry=getattr(self, "_ui_action_registry", None),
             )
             self.instrument_ui_container_layout.addWidget(self.n6705c_datalog_ui)
         else:
@@ -1469,6 +1470,7 @@ class MainWindow(CleanupMixin, QMainWindow):
                 n6705c_top=self.n6705c_top,
                 chamber_ui=self.chamber_ui,
                 instrument_manager=self.instrument_manager,
+                ui_action_registry=getattr(self, "_ui_action_registry", None),
             )
             self.instrument_ui_container_layout.addWidget(self.charger_test_ui)
         else:

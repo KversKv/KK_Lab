@@ -124,18 +124,96 @@
 
 ---
 
-## 2. Charger 测试子页（容器 `charger_test`）
+## 2. Charger 测试子页（容器 `charger_test`，按当前 Tab 子页裁剪）
 
-> 4 个子页（`config_traverse` / `status_register` / `iterm` / `regulation_voltage`）均已实现 `ai_capabilities`；参数键以各自 `get_test_config()` 为准，登记规则同 PMU（扫描范围 / 通道 / IIC 寄存器 / 步进），导出类按钮经 `register_ui_action` 纳管。
+> 4 个子页均已实现 `ai_capabilities`；参数键以各自 `get_test_config()` 为准。
+> 公共 IIC 寄存器约定：`device_addr` / `reg_addr` 为十六进制输入（页面内 `int(text,16)`），
+> `msb` / `lsb` 为十进制位序，`min_code` / `max_code` 为十六进制 DAC 代码，
+> `iic_width` 取自宽度下拉 `currentData()`。导出按钮均为 `_on_export_csv`。
 
-| 子页 page_key | 重点参数方向 |
-|---|---|
-| `charger_config_traverse` | 配置遍历范围、寄存器组合 |
-| `charger_status_register` | 状态寄存器读取地址 |
-| `charger_iterm` | 终止电流扫描范围 (A) |
-| `charger_regulation_voltage` | 调压点扫描范围 (V) |
+### 2.1 `charger_config_traverse` — 配置遍历
 
-> 落地时按 §1 同样形式补全各子页参数表（读各自 `get_test_config()`）。
+能力：`get_config / apply_config / start_test / stop_test / get_result`
+
+**常用参数（`config_draft` 键）**
+
+| 参数键 | 控件 | 含义 / 单位 |
+|---|---|---|
+| `vmeter_channel` | `vmeter_channel_combo` | 电压表通道 |
+| `test_mode` | `test_mode_combo` | 测试模式 |
+| `device_addr` / `reg_addr` | `device_addr_edit` / `reg_addr_edit` | IIC 设备 / 寄存器地址（hex） |
+| `msb` / `lsb` | `msb_edit` / `lsb_edit` | 寄存器位段 |
+| `min_code` / `max_code` | `min_code_edit` / `max_code_edit` | DAC 代码范围（hex，默认 0~0xFF） |
+| `iic_width` | `iic_width_combo` | IIC 数据宽度 |
+
+**建议登记 UI 动作**
+
+| action_id | label | handler | risk | enabled_when |
+|---|---|---|---|---|
+| `charger_config_traverse.export_csv` | 导出结果 CSV | `_on_export_csv` | low | 有结果数据 |
+
+### 2.2 `charger_status_register` — 状态寄存器扫描
+
+能力：`get_config / apply_config / start_test / stop_test / get_result`
+
+**常用参数（随 `test_item` 暴露不同子集）**
+
+| 参数键 | 含义 / 单位 | 适用 test_item |
+|---|---|---|
+| `test_item` | 扫描类型 | `Voltage Sweep`/`Current Sweep`/`Temperature Sweep`/`Reg Sweep` |
+| `device_addr` / `reg_addr` | IIC 设备 / 寄存器地址（hex） | 全部 |
+| `reg_bit` | 监控位 | 全部 |
+| `iic_width` | IIC 数据宽度 | 全部 |
+| `test_channel` | 测试通道 | Voltage/Current Sweep |
+| `start_voltage` / `end_voltage` / `step_voltage` | 电压扫描 (V) | Voltage Sweep |
+| `start_current` / `end_current` / `step_current` | 电流扫描 (A) | Current Sweep |
+| `start_temp` / `end_temp` / `step_temp` | 温度扫描 (℃) | Temperature Sweep |
+| `write_reg_addr` / `reg_start_value` / `reg_end_value` / `reg_step_value` | 寄存器扫描（hex 地址 + 值范围） | Reg Sweep |
+| `step_delay_ms` | 每步延时 (ms) | 全部扫描 |
+
+> 该页 `get_test_config()` 无导出按钮专用槽，UI 动作暂不登记（仅参数词表）。
+
+### 2.3 `charger_iterm` — 终止电流
+
+能力：`get_config / apply_config / start_test / stop_test / get_result`
+
+**常用参数**
+
+| 参数键 | 控件 | 含义 / 单位 |
+|---|---|---|
+| `device_addr` / `reg_addr` | `device_addr_edit` / `reg_addr_edit` | IIC 设备 / 寄存器地址（hex） |
+| `iic_width` | `iic_width_combo` | IIC 数据宽度 |
+| `measure_channel` | `measure_channel_combo` | 测量通道（CH n） |
+| `msb` / `lsb` | `msb_edit` / `lsb_edit` | 寄存器位段（默认 9~5） |
+| `min_code` / `max_code` | `min_code_edit` / `max_code_edit` | DAC 代码范围（hex） |
+
+**建议登记 UI 动作**
+
+| action_id | label | handler | risk | enabled_when |
+|---|---|---|---|---|
+| `charger_iterm.export_csv` | 导出结果 CSV | `_on_export_csv` | low | 有结果数据 |
+
+### 2.4 `charger_regulation_voltage` — 调压点
+
+能力：`get_config / apply_config / start_test / stop_test / get_result`
+
+**常用参数**
+
+| 参数键 | 控件 | 含义 / 单位 |
+|---|---|---|
+| `vmeter_channel` | `vmeter_channel_combo` | 电压表通道 |
+| `device_addr` / `reg_addr` | `device_addr_edit` / `reg_addr_edit` | IIC 设备 / 寄存器地址（hex） |
+| `msb` / `lsb` | `msb_edit` / `lsb_edit` | 寄存器位段 |
+| `min_code` / `max_code` | `min_code_edit` / `max_code_edit` | DAC 代码范围（hex，默认 0~0x3F） |
+| `iic_width` | `iic_width_combo` | IIC 数据宽度 |
+
+**建议登记 UI 动作**
+
+| action_id | label | handler | risk | enabled_when |
+|---|---|---|---|---|
+| `charger_regulation_voltage.export_csv` | 导出结果 CSV | `_on_export_csv` | low | 有结果数据 |
+
+> 启停均有专用契约（`ai_start_test`/`ai_stop_test`），**不再**登记为 ui_invoke。
 
 ---
 
@@ -143,21 +221,30 @@
 
 ### 3.1 `power_analyser`（N6705C 电源分析仪）
 
-无 `ai_capabilities`（非测试序列页），但有典型「无专用接口的页面按钮」，是 `ui_invoke` 的主要受益者。
+无 `ai_capabilities`（非测试序列页），有典型「无专用接口的页面按钮」，是 `ui_invoke` 的主要受益者。
+构造已透传 `ui_action_registry`（见 [main_window.py](../../../ui/main_window.py#L1365)）。
 
-**建议登记 UI 动作**
+**已登记 UI 动作**（[n6705c_analyser_ui.py](../../../ui/pages/n6705c_power_analyzer/n6705c_analyser_ui.py#L101)，已落地 ☑）
 
-| action_id | label | risk | enabled_when |
-|---|---|---|---|
-| `power_analyser.auto_set` | Auto Set（自动量程/挡位） | medium | 已连接仪器 |
-| `power_analyser.zero` | Zero（清零） | medium | 已连接仪器 |
-| `power_analyser.calibrate` | Calibrate（校准） | high | 已连接仪器 |
+| action_id | label | handler | risk | enabled_when |
+|---|---|---|---|---|
+| `power_analyser.auto_set` | Auto Set（自动量程/挡位） | `_on_batch_auto_set` | high（confirm） | 任一设备已连接 |
+| `power_analyser.auto_set_20mv` | Auto Set (+20mV) | `_on_batch_auto_20mv` | high（confirm） | 任一设备已连接 |
 
-> N6705C 的 Analyser UI 构造已透传 `ui_action_registry`（见 [main_window.py](../../../ui/main_window.py#L1365)），页面侧补 `register_ui_action(...)` 即可。
+> 现状仅这两项（无 Zero / Calibrate 槽）；如后续新增对应批量槽再登记。
 
 ### 3.2 `datalog`（N6705C DataLog）
 
-**建议登记 UI 动作**：`datalog.auto_fit`（Auto Fit 自适应缩放，low）、导出（low）。
+无 `ai_capabilities`（已有 `export_combined_csv_to_path` 等 AI 受控导出接口走 export 类动作）。
+页面侧另有图表/导出按钮可纳入 `ui_invoke`。构造需补透传 `ui_action_registry`（见 [main_window.py](../../../ui/main_window.py#L1379)，当前未透传）。
+
+**建议登记 UI 动作**
+
+| action_id | label | handler | risk | enabled_when |
+|---|---|---|---|---|
+| `datalog.auto_fit` | Auto Fit 自适应视图 | `_reset_view` | low | 恒可用 |
+| `datalog.export` | 导出 Datalog | `_on_export` | low | 有数据 |
+| `datalog.import` | 导入 Datalog | `_on_import` | low | 恒可用 |
 
 ### 3.3 `orchestrator`（测试编排）
 
@@ -195,10 +282,12 @@ if self._ui_action_registry is not None:
 
 | # | 任务 | 文件 | 状态 |
 |---|---|---|---|
-| 5.1 | 汇总各页参数键 + UI 动作（本文档） | 本文件 | ☑ |
+| 5.1 | 汇总各页参数键 + UI 动作（本文档，含 PMU/Charger/仪器页全量） | 本文件 | ☑ |
 | 5.2 | 各 PMU 子页 Profile 写入可写参数词表 | `core/ai/profiles.py` | ☐ |
 | 5.3 | `pmu_dcdc_efficiency` 登记导出/导入/图表自适应 UI 动作 | `ui/pages/pmu_test/pmu_dcdc_efficiency.py` | ☑ |
 | 5.4 | 其余 PMU 子页登记（`pmu_is_gain` 导出 / `pmu_gpadc` 导出，含 registry 透传 `pmu_test_ui.py`） | 各页面 | ☑ |
-| 5.5 | `power_analyser` 登记 Auto Set / Zero / Calibrate | `ui/pages/n6705c_power_analyzer/*` | ◐ (Auto Set 已登记) |
-| 5.6 | `datalog` 登记 Auto Fit / 导出 | `ui/pages/n6705c_power_analyzer/*` | ☐ |
-| 5.7 | 端到端：dcdc 改参数 + `ui_invoke` 触发 Auto Set 验证 | — | ☐ |
+| 5.5 | `power_analyser` 登记 Auto Set / Auto Set (+20mV) | `ui/pages/n6705c_power_analyzer/*` | ☑ |
+| 5.6 | `datalog` 登记 Auto Fit / 导出 / 导入（含 registry 透传） | `ui/pages/n6705c_power_analyzer/*` | ☑ |
+| 5.7 | Charger 4 子页登记导出 CSV（含 registry 透传 `charger_test_ui.py`） | `ui/pages/charger_test/*` | ☑ |
+| 5.8 | 各 Charger 子页 Profile 写入可写参数词表 | `core/ai/profiles.py` | ☑ |
+| 5.9 | 端到端：dcdc 改参数 + `ui_invoke` 触发 Auto Set 验证 | — | ◐ (py_compile + diagnostics 全过；仪器/交互验证待人工) |
