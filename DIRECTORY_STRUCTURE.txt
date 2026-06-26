@@ -503,16 +503,18 @@ docs/
 │   │   └── cross_page_lessons.md # 跨页面共性经验（仪器连接/日志分析/串口共性问题）
 │   ├── automation/               # 伞目录：跨页面业务簇总记忆（见 conventions.md §2.1）
 │   │   └── pmu_test/             # PMU 整套常规测试总记忆：通用测试项 + 跨芯片差异 + 共性经验（5 类文件）
+│   │       ├── pmu_dcdc_efficiency/  # page_key=pmu_dcdc_efficiency 页面记忆（物理归类于此）：quick_actions + test_items
+│   │       ├── pmu_output_voltage/   # page_key=pmu_output_voltage：quick_actions + test_items
+│   │       ├── pmu_is_gain/          # page_key=pmu_is_gain：quick_actions + test_items
+│   │       ├── pmu_oscp/             # page_key=pmu_oscp：quick_actions + test_items
+│   │       ├── pmu_gpadc/            # page_key=pmu_gpadc：quick_actions + test_items
+│   │       └── pmu_clk/              # page_key=pmu_clk：quick_actions + test_items
+│   #   page_key 对外不变（UI 动作/裁剪/profiles 仍用 pmu_*），仅磁盘目录经
+│   #   kk_lab_memory._DIR_OVERRIDE 归入 automation/pmu_test/<page_key>/
 │   ├── kk_serials/               # 串口工具（P0）：memory/lessons/test_items/test_cases/quick_actions
 │   ├── datalog/                  # N6705C Datalog（P0）：同上 5 类文件
 │   ├── orchestrator/             # Orchestrator（P0）：同上 5 类文件
 │   ├── power_analyser/           # N6705C 电源分析仪（P1）：quick_actions 已迁移，其余按需追加
-│   ├── pmu_dcdc_efficiency/      # PMU DCDC 效率（P1）：quick_actions + test_items
-│   ├── pmu_output_voltage/       # PMU 输出电压（P1）：quick_actions + test_items
-│   ├── pmu_is_gain/              # PMU Is Gain（P1）：quick_actions + test_items
-│   ├── pmu_oscp/                 # PMU OSCP（P1）：quick_actions + test_items
-│   ├── pmu_gpadc/                # PMU GPADC（P1）：quick_actions + test_items
-│   ├── pmu_clk/                  # PMU CLK（P1）：quick_actions + test_items
 │   ├── charger_config_traverse/  # Charger 配置遍历（P1）：quick_actions 已迁移
 │   ├── charger_status_register/  # Charger 状态寄存器（P1）：quick_actions 已迁移
 │   ├── charger_iterm/            # Charger Iterm（P1）：quick_actions 已迁移

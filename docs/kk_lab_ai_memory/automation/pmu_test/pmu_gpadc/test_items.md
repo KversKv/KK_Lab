@@ -1,7 +1,7 @@
 # pmu_gpadc 页面测试项（test_items）
 
-> 总记忆见伞目录 [../automation/pmu_test/test_items.md](../automation/pmu_test/test_items.md)
-> 条目格式见 [../_shared/conventions.md §5.3](../_shared/conventions.md#53-test_itemsmd)
+> 总记忆见伞目录 [../test_items.md](../test_items.md)
+> 条目格式见 [../../../_shared/conventions.md §5.3](../../../_shared/conventions.md#53-test_itemsmd)
 
 ## T-20260626-151201 - GPADC 精度/稳定性/高低温
 

@@ -92,6 +92,24 @@ _UMBRELLA_KEYS: frozenset[str] = frozenset({
 # 合法目录键 = 页面键 + 伞目录键。
 PAGE_KEYS: frozenset[str] = _PAGE_KEYS | _UMBRELLA_KEYS
 
+# 页面键 → 记忆目录相对路径映射（仅用于物理归类，不影响 page_key 本身）。
+# page_key 对外保持不变（仍是 UI 动作命名空间 / AI 裁剪 / profiles 的键），
+# 仅记忆目录在磁盘上归入伞目录 automation/pmu_test/ 下，使结构更规范。
+# 未登记的 page_key 默认目录名 == page_key。
+_DIR_OVERRIDE: dict[str, str] = {
+    "pmu_dcdc_efficiency": "automation/pmu_test/pmu_dcdc_efficiency",
+    "pmu_output_voltage": "automation/pmu_test/pmu_output_voltage",
+    "pmu_is_gain": "automation/pmu_test/pmu_is_gain",
+    "pmu_oscp": "automation/pmu_test/pmu_oscp",
+    "pmu_gpadc": "automation/pmu_test/pmu_gpadc",
+    "pmu_clk": "automation/pmu_test/pmu_clk",
+}
+
+
+def _dir_rel(page_key: str) -> str:
+    """page_key 对应的记忆目录相对路径（相对各 base）。"""
+    return _DIR_OVERRIDE.get(page_key, page_key)
+
 _PROJECT_DIR_NAME = "kk_lab_ai_memory"
 _LOCAL_SUBDIR = ("ai", "kk_lab_ai_memory")
 _SHARED_DIR = "_shared"
@@ -124,14 +142,14 @@ def project_dir(page_key: str) -> str | None:
     """项目级页面目录路径；非法 page_key 返回 None。"""
     if not is_valid_page_key(page_key):
         return None
-    return os.path.join(project_base(), page_key)
+    return os.path.join(project_base(), _dir_rel(page_key))
 
 
 def local_dir(page_key: str) -> str | None:
     """本机私有页面目录路径；非法 page_key 返回 None。"""
     if not is_valid_page_key(page_key):
         return None
-    return os.path.join(local_base(), page_key)
+    return os.path.join(local_base(), _dir_rel(page_key))
 
 
 def project_file(page_key: str, kind: str) -> str | None:

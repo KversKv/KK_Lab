@@ -23,7 +23,14 @@ docs/kk_lab_ai_memory/
 │   └── cross_page_lessons.md  # 跨页面共性经验
 ├── automation/                # 伞目录：跨页面业务簇总记忆
 │   └── pmu_test/              # PMU 整套常规测试总记忆（通用测试项 + 跨芯片差异 + 共性经验）
-└── <page_key>/                # 每个页面一个目录，固定 5 个核心文件
+│       ├── memory.md / lessons.md / test_items.md / test_cases.md / quick_actions.md
+│       ├── pmu_dcdc_efficiency/  # page_key=pmu_dcdc_efficiency 的页面记忆（物理归类于此）
+│       ├── pmu_output_voltage/
+│       ├── pmu_is_gain/
+│       ├── pmu_oscp/
+│       ├── pmu_gpadc/
+│       └── pmu_clk/
+└── <page_key>/                # 其余页面，每个一个目录，固定 5 个核心文件
     ├── memory.md              # 页面长期背景、稳定约定
     ├── lessons.md             # 踩坑、排障结论、经验
     ├── test_items.md          # 常用测试项、前置条件、检查项

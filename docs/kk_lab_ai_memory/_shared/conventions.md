@@ -56,6 +56,25 @@
 - 单个页面目录（`pmu_*`）写**该页面专属**的测试项与经验（分记忆）。
 - 二者通过条目 `关联项` 字段互相引用，避免重复堆砌。
 
+### 物理目录归类（page_key 不变，仅磁盘归类）
+
+`page_key` 是 UI 动作命名空间 / AI 能力裁剪 / profiles 的键，**对外保持不变**
+（仍是 `pmu_dcdc_efficiency` 等，来源 `_get_current_help_key()`）。为让磁盘结构更规范，
+PMU 系页面的记忆目录在物理上归入 `automation/pmu_test/<page_key>/`，由
+`kk_lab_memory.py` 的 `_DIR_OVERRIDE`（page_key → 记忆目录相对路径）映射，
+读写函数 `project_dir` / `local_dir` 经 `_dir_rel()` 解析。未登记的 page_key 目录名仍等于 page_key。
+
+```
+automation/pmu_test/
+├── memory.md / lessons.md / test_items.md / test_cases.md / quick_actions.md  # 伞目录总记忆
+├── pmu_dcdc_efficiency/   # page_key=pmu_dcdc_efficiency 的页面记忆
+├── pmu_output_voltage/
+├── pmu_is_gain/
+├── pmu_oscp/
+├── pmu_gpadc/
+└── pmu_clk/
+```
+
 ## 3. 单页面文件职责
 
 每个页面目录固定 5 个核心文件，第一版只维护这 5 类：
