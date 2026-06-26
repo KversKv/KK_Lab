@@ -16,7 +16,7 @@
 ## 2. 页面键白名单
 
 页面目录名**唯一来源**为 `MainWindow._get_current_help_key()`，禁止另造命名体系。
-以下 18 个页面键为合法白名单，未知页面写入 `_shared/pending.md` 或拒绝。
+以下 19 个页面键为合法白名单，未知页面写入 `_shared/pending.md` 或拒绝。
 
 | 页面 / 子页面 | 目录键 |
 |---|---|
@@ -25,6 +25,7 @@
 | 示波器 | `oscilloscope` |
 | 温箱 | `thermal_chamber` |
 | 串口工具 | `kk_serials` |
+| 采集集合 | `collection` |
 | Orchestrator | `orchestrator` |
 | VminHunter | `vmin_hunter` |
 | 功耗测试 | `consumption_test` |
@@ -58,35 +59,53 @@
 - 单个页面目录写**该页面专属**的测试项与经验（分记忆）。
 - 二者通过条目 `关联项` 字段互相引用，避免重复堆砌。
 
-### 物理目录归类（page_key 不变，仅磁盘归类）
+### 物理目录归类（page_key 不变，按左侧导航 4 大组归类）
 
 `page_key` 是 UI 动作命名空间 / AI 能力裁剪 / profiles 的键，**对外保持不变**
 （仍是 `pmu_dcdc_efficiency` / `charger_iterm` / `power_analyser` 等，来源 `_get_current_help_key()`）。
-为让磁盘结构更规范，按业务簇把页面记忆目录在物理上归入对应伞目录下，由
-`kk_lab_memory.py` 的 `_DIR_OVERRIDE`（page_key → 记忆目录相对路径）映射，
-读写函数 `project_dir` / `local_dir` 经 `_dir_rel()` 解析。未登记的 page_key（单页面独立工具，
-如 `oscilloscope` / `thermal_chamber` / `kk_serials` / `orchestrator` / `vmin_hunter` /
-`consumption_test`）目录名仍等于 page_key、保持顶层。
+为让磁盘结构与左侧导航栏一一对应，所有页面记忆目录在物理上按导航 4 大组归入对应一级父目录，
+由 `kk_lab_memory.py` 的 `_DIR_OVERRIDE`（page_key → 记忆目录相对路径）映射，
+读写函数 `project_dir` / `local_dir` 经 `_dir_rel()` 解析。一级父目录与导航分组对应关系：
+
+| 导航分组 | 一级父目录 | 归入页面键 |
+|---|---|---|
+| INSTRUMENTS | `instrument/` | `power_analyser`、`datalog`（同属 N6705C 簇 `instrument/power_analyser/`）、`oscilloscope`、`thermal_chamber` |
+| AUTOMATION | `automation/` | `pmu_*`（PMU 簇 `automation/pmu_test/`）、`charger_*`（Charger 簇 `automation/charger_test/`）、`consumption_test`、`vmin_hunter` |
+| TOOLS | `tools/` | `kk_serials`、`collection` |
+| ORCHESTRATION | `orchestration/` | `orchestrator` |
+
+有子菜单的业务簇（PMU / Charger / N6705C）保留二级伞目录承载总记忆；其余页面直接放在一级父目录下。
 
 ```
-automation/pmu_test/
-├── memory.md / lessons.md / test_items.md / test_cases.md / quick_actions.md  # 伞目录总记忆
-├── pmu_dcdc_efficiency/   # page_key=pmu_dcdc_efficiency 的页面记忆
-├── pmu_output_voltage/
-├── pmu_is_gain/
-├── pmu_oscp/
-├── pmu_gpadc/
-└── pmu_clk/
+instrument/                       # 导航 INSTRUMENTS
+├── power_analyser/               # N6705C 簇伞目录（总记忆）
+│   ├── power_analyser/           # page_key=power_analyser
+│   └── datalog/                  # page_key=datalog
+├── oscilloscope/                 # page_key=oscilloscope
+└── thermal_chamber/              # page_key=thermal_chamber
 
-automation/charger_test/
-├── charger_config_traverse/   # page_key=charger_config_traverse 的页面记忆
-├── charger_status_register/
-├── charger_iterm/
-└── charger_regulation_voltage/
+automation/                       # 导航 AUTOMATION
+├── pmu_test/                     # PMU 簇伞目录（总记忆）
+│   ├── pmu_dcdc_efficiency/
+│   ├── pmu_output_voltage/
+│   ├── pmu_is_gain/
+│   ├── pmu_oscp/
+│   ├── pmu_gpadc/
+│   └── pmu_clk/
+├── charger_test/                 # Charger 簇伞目录（总记忆）
+│   ├── charger_config_traverse/
+│   ├── charger_status_register/
+│   ├── charger_iterm/
+│   └── charger_regulation_voltage/
+├── consumption_test/             # page_key=consumption_test
+└── vmin_hunter/                  # page_key=vmin_hunter
 
-instrument/power_analyser/
-├── power_analyser/   # page_key=power_analyser 的页面记忆
-└── datalog/          # page_key=datalog 的页面记忆
+tools/                            # 导航 TOOLS
+├── kk_serials/                   # page_key=kk_serials
+└── collection/                   # page_key=collection
+
+orchestration/                    # 导航 ORCHESTRATION
+└── orchestrator/                 # page_key=orchestrator
 ```
 
 ## 3. 单页面文件职责

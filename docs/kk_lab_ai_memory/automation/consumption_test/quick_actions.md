@@ -1,7 +1,7 @@
-# 功耗测试 - 快捷指令
+﻿# 功耗测试 - 快捷指令
 
 > 页面：consumption_test
-> 模板格式见 [../_shared/conventions.md §5.5](../_shared/conventions.md#55-quick_actionsmd)
+> 模板格式见 [../_shared/conventions.md §5.5](../../_shared/conventions.md#55-quick_actionsmd)
 > 以下条目从 `core/ai/profiles.py` 中 `AI_PROFILES["consumption_test"].quick_actions` 迁移而来。
 
 ## QA-20260625-001 - 生成一份功耗测试配置草案

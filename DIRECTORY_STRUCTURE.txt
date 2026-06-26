@@ -496,39 +496,42 @@ helps/
 ================================================================================
 
 docs/
-├── kk_lab_ai_memory/             # KK Lab AI 记忆体系：页面经验、常用测试项与测试用例归档
+├── kk_lab_ai_memory/             # KK Lab AI 记忆体系：页面经验、常用测试项与测试用例归档（按导航栏 4 大组归类）
 │   ├── _shared/                  # 跨页面共性规则、经验与写入规范
 │   │   ├── README.md             # 体系总览：与 docs/ai 边界、目录结构、文件职责
 │   │   ├── conventions.md        # 写入规范：页面键白名单、5 类模板、ID 规则、安全规则
 │   │   └── cross_page_lessons.md # 跨页面共性经验（仪器连接/日志分析/串口共性问题）
-│   ├── automation/               # 伞目录：跨页面业务簇总记忆（见 conventions.md §2.1）
-│   │   ├── pmu_test/             # PMU 整套常规测试总记忆：通用测试项 + 跨芯片差异 + 共性经验（5 类文件）
-│   │   │   ├── pmu_dcdc_efficiency/  # page_key=pmu_dcdc_efficiency 页面记忆（物理归类于此）：quick_actions + test_items
+│   ├── instrument/               # 导航 INSTRUMENTS 组
+│   │   ├── power_analyser/       # N6705C 簇伞目录（总记忆，见 conventions.md §2.1）
+│   │   │   ├── power_analyser/   # page_key=power_analyser：quick_actions 已迁移
+│   │   │   └── datalog/          # page_key=datalog：memory/lessons/test_items/test_cases/quick_actions
+│   │   ├── oscilloscope/         # page_key=oscilloscope：quick_actions 已迁移
+│   │   └── thermal_chamber/      # page_key=thermal_chamber：quick_actions 已迁移
+│   ├── automation/               # 导航 AUTOMATION 组
+│   │   ├── pmu_test/             # PMU 簇伞目录（总记忆：通用测试项 + 跨芯片差异 + 共性经验，5 类文件）
+│   │   │   ├── pmu_dcdc_efficiency/  # page_key=pmu_dcdc_efficiency：quick_actions + test_items
 │   │   │   ├── pmu_output_voltage/   # page_key=pmu_output_voltage：quick_actions + test_items
 │   │   │   ├── pmu_is_gain/          # page_key=pmu_is_gain：quick_actions + test_items
 │   │   │   ├── pmu_oscp/             # page_key=pmu_oscp：quick_actions + test_items
 │   │   │   ├── pmu_gpadc/            # page_key=pmu_gpadc：quick_actions + test_items
 │   │   │   └── pmu_clk/              # page_key=pmu_clk：quick_actions + test_items
-│   │   └── charger_test/         # Charger 整套测试总记忆（伞目录）
-│   │       ├── charger_config_traverse/  # page_key=charger_config_traverse：quick_actions 已迁移
-│   │       ├── charger_status_register/  # page_key=charger_status_register：quick_actions 已迁移
-│   │       ├── charger_iterm/            # page_key=charger_iterm：quick_actions 已迁移
-│   │       └── charger_regulation_voltage/ # page_key=charger_regulation_voltage：quick_actions 已迁移
-│   ├── instrument/               # 伞目录：仪器业务簇总记忆
-│   │   └── power_analyser/       # 电源分析仪簇（N6705C）伞目录
-│   │       ├── power_analyser/   # page_key=power_analyser：quick_actions 已迁移
-│   │       └── datalog/          # page_key=datalog：memory/lessons/test_items/test_cases/quick_actions
+│   │   ├── charger_test/         # Charger 簇伞目录（总记忆）
+│   │   │   ├── charger_config_traverse/  # page_key=charger_config_traverse：quick_actions 已迁移
+│   │   │   ├── charger_status_register/  # page_key=charger_status_register：quick_actions 已迁移
+│   │   │   ├── charger_iterm/            # page_key=charger_iterm：quick_actions 已迁移
+│   │   │   └── charger_regulation_voltage/ # page_key=charger_regulation_voltage：quick_actions 已迁移
+│   │   ├── consumption_test/     # page_key=consumption_test：quick_actions 已迁移
+│   │   └── vmin_hunter/          # page_key=vmin_hunter：quick_actions 已迁移
+│   ├── tools/                    # 导航 TOOLS 组
+│   │   ├── kk_serials/           # page_key=kk_serials：5 类文件
+│   │   └── collection/           # page_key=collection（采集集合）：5 类文件
+│   └── orchestration/            # 导航 ORCHESTRATION 组
+│       └── orchestrator/         # page_key=orchestrator：5 类文件
 │   #   page_key 对外不变（UI 动作/裁剪/profiles 仍用原键），仅磁盘目录经
-│   #   kk_lab_memory._DIR_OVERRIDE 按业务簇归入对应伞目录下
-│   ├── kk_serials/               # 串口工具（P0，单页面独立工具，顶层）：5 类文件
-│   ├── orchestrator/             # Orchestrator（P0，单页面独立工具，顶层）：5 类文件
-│   ├── oscilloscope/             # 示波器（P2，单页面）：quick_actions 已迁移
-│   ├── thermal_chamber/          # 温箱（P2，单页面）：quick_actions 已迁移
-│   ├── vmin_hunter/              # VminHunter（P2，单页面）：quick_actions 已迁移
-│   └── consumption_test/         # 功耗测试（P2，单页面）：quick_actions 已迁移
+│   #   kk_lab_memory._DIR_OVERRIDE 按导航 4 大组归入对应一级父目录下
 │   # 每个页面目录固定 5 个核心文件：memory.md / lessons.md / test_items.md /
 │   # test_cases.md / quick_actions.md；本机私有层镜像在 user_data/ai/kk_lab_ai_memory/
-│   # <page_key>/*.local.md。页面键唯一来源：MainWindow._get_current_help_key()
+│   # <dir_rel>/*.local.md。页面键唯一来源：MainWindow._get_current_help_key()
 ├── ai/
 │   ├── 00_OVERVIEW.md           # 项目概述与分层架构
 │   ├── 01_CONVENTIONS.md        # 代码规范与风格

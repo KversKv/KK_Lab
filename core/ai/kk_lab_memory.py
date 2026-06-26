@@ -67,6 +67,7 @@ _PAGE_KEYS: frozenset[str] = frozenset({
     "oscilloscope",
     "thermal_chamber",
     "kk_serials",
+    "collection",
     "orchestrator",
     "vmin_hunter",
     "consumption_test",
@@ -96,24 +97,35 @@ PAGE_KEYS: frozenset[str] = _PAGE_KEYS | _UMBRELLA_KEYS
 
 # 页面键 → 记忆目录相对路径映射（仅用于物理归类，不影响 page_key 本身）。
 # page_key 对外保持不变（仍是 UI 动作命名空间 / AI 裁剪 / profiles 的键），
-# 仅记忆目录在磁盘上按业务簇归入对应伞目录下，使结构更规范。
-# 未登记的 page_key 默认目录名 == page_key（单页面独立工具保持顶层）。
+# 仅记忆目录在磁盘上按导航栏 4 大组（INSTRUMENTS / AUTOMATION / TOOLS /
+# ORCHESTRATION）归入对应一级父目录下，使结构与左侧导航一一对应。
+# 未登记的 page_key 默认目录名 == page_key。
 _DIR_OVERRIDE: dict[str, str] = {
-    # PMU 测试簇
+    # INSTRUMENTS 组
+    "power_analyser": "instrument/power_analyser/power_analyser",
+    "datalog": "instrument/power_analyser/datalog",
+    "oscilloscope": "instrument/oscilloscope",
+    "thermal_chamber": "instrument/thermal_chamber",
+    # AUTOMATION 组 —— PMU 测试簇
     "pmu_dcdc_efficiency": "automation/pmu_test/pmu_dcdc_efficiency",
     "pmu_output_voltage": "automation/pmu_test/pmu_output_voltage",
     "pmu_is_gain": "automation/pmu_test/pmu_is_gain",
     "pmu_oscp": "automation/pmu_test/pmu_oscp",
     "pmu_gpadc": "automation/pmu_test/pmu_gpadc",
     "pmu_clk": "automation/pmu_test/pmu_clk",
-    # Charger 测试簇
+    # AUTOMATION 组 —— Charger 测试簇
     "charger_config_traverse": "automation/charger_test/charger_config_traverse",
     "charger_status_register": "automation/charger_test/charger_status_register",
     "charger_iterm": "automation/charger_test/charger_iterm",
     "charger_regulation_voltage": "automation/charger_test/charger_regulation_voltage",
-    # 电源分析仪簇（N6705C）
-    "power_analyser": "instrument/power_analyser/power_analyser",
-    "datalog": "instrument/power_analyser/datalog",
+    # AUTOMATION 组 —— 其余自动化页面
+    "consumption_test": "automation/consumption_test",
+    "vmin_hunter": "automation/vmin_hunter",
+    # TOOLS 组
+    "kk_serials": "tools/kk_serials",
+    "collection": "tools/collection",
+    # ORCHESTRATION 组
+    "orchestrator": "orchestration/orchestrator",
 }
 
 

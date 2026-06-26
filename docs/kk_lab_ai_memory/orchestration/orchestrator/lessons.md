@@ -1,8 +1,8 @@
-# Orchestrator - 经验与排障
+﻿# Orchestrator - 经验与排障
 
 > 页面：orchestrator
 > 记录踩坑、经验、排障结论、异常现象与处理办法。
-> 条目格式见 [../_shared/conventions.md §5.2](../_shared/conventions.md#52-lessonsmd)
+> 条目格式见 [../_shared/conventions.md §5.2](../../_shared/conventions.md#52-lessonsmd)
 > 默认为空，由 AI 沉淀或人工追加。新条目按模板追加在下方。
 
 <!-- 模板：

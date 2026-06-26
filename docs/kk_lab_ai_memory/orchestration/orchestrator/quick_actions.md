@@ -1,7 +1,7 @@
-# Orchestrator - 快捷指令
+﻿# Orchestrator - 快捷指令
 
 > 页面：orchestrator
-> 模板格式见 [../_shared/conventions.md §5.5](../_shared/conventions.md#55-quick_actionsmd)
+> 模板格式见 [../_shared/conventions.md §5.5](../../_shared/conventions.md#55-quick_actionsmd)
 > 以下条目从 `core/ai/profiles.py` 中 `AI_PROFILES["orchestrator"].quick_actions` 迁移而来。
 
 ## QA-20260625-001 - 生成一个简单的测试序列草案

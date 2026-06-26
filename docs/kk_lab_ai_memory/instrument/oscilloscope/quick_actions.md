@@ -1,7 +1,7 @@
-# 示波器 - 快捷指令
+﻿# 示波器 - 快捷指令
 
 > 页面：oscilloscope
-> 模板格式见 [../_shared/conventions.md §5.5](../_shared/conventions.md#55-quick_actionsmd)
+> 模板格式见 [../_shared/conventions.md §5.5](../../_shared/conventions.md#55-quick_actionsmd)
 > 以下条目从 `core/ai/profiles.py` 中 `AI_PROFILES["oscilloscope"].quick_actions` 迁移而来。
 
 ## QA-20260625-001 - 解读当前波形测量结果

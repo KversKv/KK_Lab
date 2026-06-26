@@ -1,8 +1,8 @@
-# 串口工具 - 页面长期记忆
+﻿# 串口工具 - 页面长期记忆
 
 > 页面：kk_serials
 > 记录页面长期背景、稳定约定、参数含义、常见上下文。
-> 条目格式见 [../_shared/conventions.md §5.1](../_shared/conventions.md#51-memorymd)
+> 条目格式见 [../_shared/conventions.md §5.1](../../_shared/conventions.md#51-memorymd)
 > 默认为空，由人工确认后追加或整理。新条目按模板追加在下方。
 
 <!-- 模板：

@@ -1,7 +1,7 @@
-# VminHunter - 快捷指令
+﻿# VminHunter - 快捷指令
 
 > 页面：vmin_hunter
-> 模板格式见 [../_shared/conventions.md §5.5](../_shared/conventions.md#55-quick_actionsmd)
+> 模板格式见 [../_shared/conventions.md §5.5](../../_shared/conventions.md#55-quick_actionsmd)
 > 以下条目从 `core/ai/profiles.py` 中 `AI_PROFILES["vmin_hunter"].quick_actions` 迁移而来。
 
 ## QA-20260625-001 - 解读最近一次 Vmin 搜索结果
