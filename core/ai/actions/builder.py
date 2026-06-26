@@ -11,6 +11,7 @@ from core.ai.actions.handlers import deps as _deps_mod
 from core.ai.actions.handlers import (
     chamber as _chamber,
     export as _export,
+    i2c as _i2c,
     instrument as _instrument,
     kk_lab_memory as _kk_lab_memory,
     query as _query,
@@ -28,7 +29,7 @@ from log_config import get_logger
 logger = get_logger(__name__)
 
 _HANDLER_MODULES = (
-    _query, _ui, _serial, _instrument, _scope, _chamber,
+    _query, _ui, _serial, _instrument, _i2c, _scope, _chamber,
     _test, _export, _schedule, _kk_lab_memory,
 )
 

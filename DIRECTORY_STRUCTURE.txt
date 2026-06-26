@@ -168,6 +168,7 @@ core/
 │           ├── ui.py        # UI 类：open_page/toggle_ai_panel（low）/list_ui_actions（low，列当前页可触发 UI 动作）/ui_invoke（medium+确认，触发具名 UI 动作）
 │           ├── serial.py    # 串口类：clear（low）/send（high+确认）经 SerialSessionManager
 │           ├── instrument.py # 仪器类：query（low）/disconnect（medium）/set_output（critical 默认禁）
+│           ├── i2c.py       # I2C 类：i2c_read（low）/i2c_write（high+确认）/bes_chip_check（low）经 lib/i2c 临时接口
 │           ├── test.py      # 测试类：start/pause（high+确认）/stop（high）经 orchestrator runner
 │           ├── scope.py     # 示波器类：scope 操作经 InstrumentManager
 │           ├── chamber.py   # 温箱类：chamber wait_stable 等经受控回调
