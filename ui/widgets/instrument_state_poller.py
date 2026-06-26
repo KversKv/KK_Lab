@@ -82,12 +82,14 @@ class _StatePollWorker(QObject):
         busy_check_fn: Optional[Callable[[], bool]] = None,
         io_lock: Optional[threading.RLock] = None,
         write_guard: Optional[_WriteGuard] = None,
+        io_lock_provider: Optional[Callable[[], threading.RLock]] = None,
     ):
         super().__init__()
         self._read_state_fn = read_state_fn
         self._interval_s = max(0.05, float(interval_s))
         self._busy_check_fn = busy_check_fn
         self._io_lock = io_lock
+        self._io_lock_provider = io_lock_provider
         self._write_guard = write_guard
         self._running = False
         self._paused = True
@@ -133,8 +135,16 @@ class _StatePollWorker(QObject):
                 else 0
             )
             try:
-                if self._io_lock is not None:
-                    with self._io_lock:
+                io_lock = self._io_lock
+                if self._io_lock_provider is not None:
+                    try:
+                        provided = self._io_lock_provider()
+                        if provided is not None:
+                            io_lock = provided
+                    except Exception:
+                        logger.debug("io_lock_provider raised, using default lock", exc_info=True)
+                if io_lock is not None:
+                    with io_lock:
                         snapshot = self._read_state_fn()
                 else:
                     snapshot = self._read_state_fn()
@@ -178,19 +188,36 @@ class InstrumentStatePoller(QObject):
         busy_check_fn: Optional[Callable[[], bool]] = None,
         parent: Optional[QObject] = None,
         quiet_window_s: Optional[float] = None,
+        io_lock: Optional[threading.RLock] = None,
+        io_lock_provider: Optional[Callable[[], threading.RLock]] = None,
     ):
         super().__init__(parent)
         self._read_state_fn = read_state_fn
         self._apply_state_fn = apply_state_fn
         self._interval_s = interval_s
         self._busy_check_fn = busy_check_fn
-        self._io_lock = threading.RLock()
+        self._io_lock = io_lock if io_lock is not None else threading.RLock()
+        self._io_lock_provider = io_lock_provider
         self._write_guard = _WriteGuard()
         self._quiet_window_s = (
             quiet_window_s if quiet_window_s is not None else max(0.3, interval_s * 1.5)
         )
         self._thread: Optional[QThread] = None
         self._worker: Optional[_StatePollWorker] = None
+
+    def _resolve_io_lock(self) -> threading.RLock:
+        """解析当前应使用的 IO 锁：优先 provider（按当前目标会话动态返回）。
+
+        provider 为空或抛错时回退到固定锁，保证 UI 写入始终有锁可持。
+        """
+        if self._io_lock_provider is not None:
+            try:
+                provided = self._io_lock_provider()
+                if provided is not None:
+                    return provided
+            except Exception:
+                logger.debug("io_lock_provider raised, using default lock", exc_info=True)
+        return self._io_lock
 
     @property
     def io_lock(self) -> threading.RLock:
@@ -203,7 +230,7 @@ class InstrumentStatePoller(QObject):
         Prefer the :meth:`writing` context manager, which also opens a quiet
         window so a stale in-flight snapshot cannot rebound onto the UI.
         """
-        return self._io_lock
+        return self._resolve_io_lock()
 
     def begin_write(self) -> None:
         """Signal that the UI is about to issue a manual write.
@@ -228,11 +255,12 @@ class InstrumentStatePoller(QObject):
         class _WritingCtx:
             def __enter__(self_inner):
                 poller.begin_write()
-                poller._io_lock.acquire()
+                self_inner._lock = poller._resolve_io_lock()
+                self_inner._lock.acquire()
                 return self_inner
 
             def __exit__(self_inner, exc_type, exc, tb):
-                poller._io_lock.release()
+                self_inner._lock.release()
                 poller._write_guard.begin_write(poller._quiet_window_s)
                 return False
 
@@ -247,6 +275,7 @@ class InstrumentStatePoller(QObject):
             self._busy_check_fn,
             self._io_lock,
             self._write_guard,
+            self._io_lock_provider,
         )
         self._thread = QThread()
         self._worker.moveToThread(self._thread)

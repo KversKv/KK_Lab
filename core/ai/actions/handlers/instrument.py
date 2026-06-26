@@ -2,7 +2,7 @@
 
 一律经 InstrumentManager，AI 无法绕过 instruments/：
   query_instrument            : low，对已连接会话发只读 SCPI 查询（query 接口）；
-  connect_instrument          : medium，按 instrument_type 触发异步连接（受确认）；
+  connect_instrument          : medium，连接仪器（受确认）；已连接则复用既有会话；
   scan_instruments            : low，异步扫描 + 回灌上次缓存候选；
   disconnect_instrument       : medium，断开指定会话；
   disconnect_all_instruments  : medium，断开所有已连接会话（受确认）；
@@ -24,6 +24,7 @@
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from typing import Any
 
 from core.ai.actions.handlers.deps import ActionDeps
@@ -109,10 +110,13 @@ SPECS: list[ActionSpec] = [
     ActionSpec(
         name="connect_instrument",
         description=(
-            "按仪器类型发起异步连接（经 InstrumentManager.connect_async）。"
+            "连接一台仪器（经 InstrumentManager）。"
+            "调用前应先用 get_instrument_status / find_instrument_sessions 查看既有会话："
+            "若目标仪器已连接，直接复用其 session_id 操作，不要重复连接。"
+            "仅当没有可复用的已连接会话时才调用本动作。"
             "resource 为 VISA 地址（如 'TCPIP0::192.168.1.5::inst0::INSTR'）或串口名；"
             "slot 用于区分同类型多台仪器（缺省 'default'）。"
-            "连接结果异步返回，可稍后用 get_instrument_status 确认。"
+            "若目标会话已连接，将直接返回其 session_id。"
         ),
         parameters_schema={
             "type": "object",
@@ -319,6 +323,22 @@ def _candidate_to_dict(candidate: Any) -> dict:
 _LEASE_OWNER = "AIAssist"
 
 
+@contextmanager
+def _session_io_lock(manager: Any, session_id: str):
+    """持有会话级共享 IO 锁的上下文，串行化对同一会话的总线访问。
+
+    与后台轮询、UI 手动写共用 InstrumentManager.io_lock(session_id)，避免 query
+    交叠触发 SCPI -410 Query INTERRUPTED。manager 未提供该接口时降级为无锁直通。
+    """
+    lock_getter = getattr(manager, "io_lock", None)
+    if not callable(lock_getter):
+        yield
+        return
+    lock = lock_getter(session_id)
+    with lock:
+        yield
+
+
 def _run_write_action(
     manager: Any,
     session_id: str,
@@ -349,7 +369,8 @@ def _run_write_action(
     if not manager.try_set_busy(session_id, True, owner=_LEASE_OWNER):
         return {"ok": False, "_message": "无法取得仪器租约（可能已被占用）。"}
     try:
-        result = apply_fn(instance)
+        with _session_io_lock(manager, session_id):
+            result = apply_fn(instance)
     except (ValueError, AttributeError) as exc:
         logger.error("仪器写动作失败：%s", exc, exc_info=True)
         return {"ok": False, "_message": f"执行失败：{exc}"}
@@ -393,13 +414,17 @@ def _run_read_action(
     if instance is None:
         return {"ok": False, "_message": f"无法获取仪器实例：{session_id}"}
     try:
-        result = apply_fn(instance)
+        with _session_io_lock(manager, session_id):
+            result = apply_fn(instance)
     except (ValueError, AttributeError) as exc:
         logger.error("仪器读动作失败：%s", exc, exc_info=True)
         return {"ok": False, "_message": f"执行失败：{exc}"}
-    except Exception:  # noqa: BLE001 - 兜底防止异常逃逸破坏会话状态
+    except Exception as exc:  # noqa: BLE001 - 兜底防止异常逃逸破坏会话状态
         logger.error("仪器读动作发生未预期异常", exc_info=True)
-        return {"ok": False, "_message": "执行失败：仪器通信异常，详见日志。"}
+        return {
+            "ok": False,
+            "_message": f"执行失败：仪器通信异常（{type(exc).__name__}），详见日志。",
+        }
     payload = {"ok": True, "session_id": session_id, "_message": success_message}
     if isinstance(result, dict):
         payload.update(result)
@@ -424,7 +449,8 @@ def build_handlers(deps: ActionDeps) -> dict[str, Any]:
         query_fn = _resolve_query_fn(instance)
         if query_fn is None:
             return {"ok": False, "_message": "该仪器不支持 query 接口。"}
-        value = query_fn(command)
+        with _session_io_lock(manager, session_id):
+            value = query_fn(command)
         return {
             "ok": True,
             "session_id": session_id,
@@ -517,6 +543,24 @@ def build_handlers(deps: ActionDeps) -> dict[str, Any]:
             return {"ok": False, "_message": f"未注册的仪器类型：{instrument_type}"}
         role = str(args.get("role", "")).strip()
         slot = str(args.get("slot", "")).strip() or "default"
+
+        # 优先复用既有已连接会话：同类型 + （同 resource 或同 slot）即视为同一实体，
+        # 避免对同一台物理仪器另开一条 VISA 会话（-410 / 通信异常的根因）。
+        for snap in manager.sessions(instrument_type=instrument_type):
+            if not snap.connected:
+                continue
+            same_resource = bool(resource) and snap.resource == resource
+            same_slot = slot not in ("", "default") and snap.slot == slot
+            if same_resource or same_slot:
+                return {
+                    "ok": True,
+                    "session_id": snap.session_id,
+                    "_message": (
+                        f"已存在已连接会话 {snap.session_id}（{snap.resource}），"
+                        "直接复用，未重复连接。"
+                    ),
+                }
+
         from core.instruments.instrument_session import InstrumentSpec
 
         spec = InstrumentSpec(
@@ -532,9 +576,9 @@ def build_handlers(deps: ActionDeps) -> dict[str, Any]:
         session = manager.get_session(session_id)
         already = session is not None and session.connected
         message = (
-            "会话已连接。"
+            f"会话 {session_id} 已连接，可直接操作。"
             if already
-            else "已发起连接（异步），可稍后用 get_instrument_status 确认。"
+            else f"正在连接 {session_id}，连接完成后即可操作。"
         )
         return {"ok": True, "session_id": session_id, "_message": message}
 
@@ -607,7 +651,11 @@ def build_handlers(deps: ActionDeps) -> dict[str, Any]:
                 "session_id": s.session_id,
                 "instrument_type": s.instrument_type,
                 "role": s.role,
+                "slot": s.slot,
                 "model": s.model,
+                "serial": s.serial,
+                "display_name": s.display_name,
+                "resource": s.resource,
             }
             for s in snaps
         ]
@@ -615,7 +663,12 @@ def build_handlers(deps: ActionDeps) -> dict[str, Any]:
             "ok": True,
             "count": len(items),
             "sessions": items,
-            "_message": f"找到 {len(items)} 个匹配会话。",
+            "_message": (
+                f"找到 {len(items)} 个匹配会话。"
+                "可直接用其 session_id 操作，无需重新扫描或连接。"
+                if items
+                else "未找到匹配的已连接会话。"
+            ),
         }
 
     def get_instrument_capabilities(args: dict) -> dict:

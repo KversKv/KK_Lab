@@ -300,15 +300,28 @@ def build_handlers(deps: ActionDeps) -> dict[str, Any]:
                     "session_id": snap.session_id,
                     "instrument_type": snap.instrument_type,
                     "role": snap.role,
+                    "slot": snap.slot,
                     "model": snap.model,
+                    "serial": snap.serial,
+                    "display_name": snap.display_name,
+                    "resource": snap.resource,
                     "connected": bool(snap.connected),
                     "busy": bool(snap.busy),
                 }
             )
+        connected = [it for it in items if it["connected"]]
+        if connected:
+            msg = (
+                f"共 {len(items)} 个仪器会话，其中 {len(connected)} 个已连接。"
+                "已连接会话可直接用其 session_id 操作（测量/查询/设置），"
+                "无需重新扫描或连接。"
+            )
+        else:
+            msg = f"共 {len(items)} 个仪器会话，暂无已连接会话。"
         return {
             "count": len(items),
             "instruments": items,
-            "_message": f"共 {len(items)} 个仪器会话。",
+            "_message": msg,
         }
 
     def get_test_sequence_status(_args: dict) -> dict:

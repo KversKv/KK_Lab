@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 
 from PySide6.QtCore import QObject, QThread, Signal
@@ -40,6 +41,22 @@ class InstrumentManager(QObject):
         self._scan_workers: dict[str, QObject] = {}
         self._pending_removal: set[str] = set()
         self._last_scan: dict[str, tuple[float, list[InstrumentCandidate]]] = {}
+        self._io_locks: dict[str, threading.RLock] = {}
+        self._io_locks_guard = threading.Lock()
+
+    def io_lock(self, session_id: str) -> threading.RLock:
+        """返回某会话的共享 IO 互斥锁（按 session_id 复用，可重入）。
+
+        同一会话的所有 VISA/串口访问（后台轮询、AI 读/写动作、UI 手动写）都应
+        持此锁，以串行化总线访问，避免 query 交叠触发 SCPI -410 Query INTERRUPTED。
+        锁与会话生命周期解耦：按 session_id 缓存，重连后仍是同一把锁。
+        """
+        with self._io_locks_guard:
+            lock = self._io_locks.get(session_id)
+            if lock is None:
+                lock = threading.RLock()
+                self._io_locks[session_id] = lock
+            return lock
 
     @property
     def registry(self) -> ProfileRegistry:

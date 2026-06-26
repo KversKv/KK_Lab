@@ -74,6 +74,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
             apply_state_fn=self._apply_channel_snapshot,
             interval_s=1.0,
             busy_check_fn=self._is_active_session_busy,
+            io_lock_provider=self._active_session_io_lock,
             parent=self,
         )
 
@@ -262,6 +263,18 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         if session and session.connected:
             return bool(session.busy)
         return False
+
+    def _active_session_io_lock(self):
+        """返回当前设备会话的共享 IO 锁，与 AI 读/写动作串行化同一会话的总线访问。
+
+        无 manager（页面独立运行）时返回 None，poller 回退到自带的本地锁。
+        """
+        if not self._instrument_manager:
+            return None
+        getter = getattr(self._instrument_manager, "io_lock", None)
+        if not callable(getter):
+            return None
+        return getter(f"n6705c:{self.current_device}")
 
     def _start_channel_sync(self):
         dev = self.devices[self.current_device]
