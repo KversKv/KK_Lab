@@ -21,6 +21,8 @@ docs/kk_lab_ai_memory/
 │   ├── README.md              # 本文件：体系总览
 │   ├── conventions.md         # 写入规范、模板、ID 规则、字段规范、白名单
 │   └── cross_page_lessons.md  # 跨页面共性经验
+├── automation/                # 伞目录：跨页面业务簇总记忆
+│   └── pmu_test/              # PMU 整套常规测试总记忆（通用测试项 + 跨芯片差异 + 共性经验）
 └── <page_key>/                # 每个页面一个目录，固定 5 个核心文件
     ├── memory.md              # 页面长期背景、稳定约定
     ├── lessons.md             # 踩坑、排障结论、经验
@@ -28,6 +30,9 @@ docs/kk_lab_ai_memory/
     ├── test_cases.md          # 结构化测试用例
     └── quick_actions.md       # AI Assistant 页面快捷指令模板
 ```
+
+> 伞目录（umbrella）概念见 [conventions.md §2.1](./conventions.md#21-伞目录键umbrella)：
+> 承载跨页面的同一业务簇总记忆，如 PMU 整套常规测试 `automation/pmu_test`。
 
 ## 3. 页面键来源
 

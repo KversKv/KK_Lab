@@ -61,7 +61,7 @@ _FILE_NAME: dict[str, str] = {
 }
 
 # 页面键白名单（来源：conventions.md §2，唯一来源 MainWindow._get_current_help_key）
-PAGE_KEYS: frozenset[str] = frozenset({
+_PAGE_KEYS: frozenset[str] = frozenset({
     "power_analyser",
     "datalog",
     "oscilloscope",
@@ -81,6 +81,16 @@ PAGE_KEYS: frozenset[str] = frozenset({
     "charger_iterm",
     "charger_regulation_voltage",
 })
+
+# 伞目录键（来源：conventions.md §2.1）。非页面键，不来自 _get_current_help_key，
+# 用于承载跨页面的同一业务簇总记忆（如 PMU 整套常规测试），目录名小写 + 下划线，
+# 可含一级 / 分隔。读写路径映射、白名单校验与页面键一致。
+_UMBRELLA_KEYS: frozenset[str] = frozenset({
+    "automation/pmu_test",
+})
+
+# 合法目录键 = 页面键 + 伞目录键。
+PAGE_KEYS: frozenset[str] = _PAGE_KEYS | _UMBRELLA_KEYS
 
 _PROJECT_DIR_NAME = "kk_lab_ai_memory"
 _LOCAL_SUBDIR = ("ai", "kk_lab_ai_memory")

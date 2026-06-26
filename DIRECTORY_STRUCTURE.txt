@@ -501,16 +501,18 @@ docs/
 │   │   ├── README.md             # 体系总览：与 docs/ai 边界、目录结构、文件职责
 │   │   ├── conventions.md        # 写入规范：页面键白名单、5 类模板、ID 规则、安全规则
 │   │   └── cross_page_lessons.md # 跨页面共性经验（仪器连接/日志分析/串口共性问题）
+│   ├── automation/               # 伞目录：跨页面业务簇总记忆（见 conventions.md §2.1）
+│   │   └── pmu_test/             # PMU 整套常规测试总记忆：通用测试项 + 跨芯片差异 + 共性经验（5 类文件）
 │   ├── kk_serials/               # 串口工具（P0）：memory/lessons/test_items/test_cases/quick_actions
 │   ├── datalog/                  # N6705C Datalog（P0）：同上 5 类文件
 │   ├── orchestrator/             # Orchestrator（P0）：同上 5 类文件
 │   ├── power_analyser/           # N6705C 电源分析仪（P1）：quick_actions 已迁移，其余按需追加
-│   ├── pmu_dcdc_efficiency/      # PMU DCDC 效率（P1）：quick_actions 已迁移
-│   ├── pmu_output_voltage/       # PMU 输出电压（P1）：quick_actions 已迁移
-│   ├── pmu_is_gain/              # PMU Is Gain（P1）：quick_actions 已迁移
-│   ├── pmu_oscp/                 # PMU OSCP（P1）：quick_actions 已迁移
-│   ├── pmu_gpadc/                # PMU GPADC（P1）：quick_actions 已迁移
-│   ├── pmu_clk/                  # PMU CLK（P1）：quick_actions 已迁移
+│   ├── pmu_dcdc_efficiency/      # PMU DCDC 效率（P1）：quick_actions + test_items
+│   ├── pmu_output_voltage/       # PMU 输出电压（P1）：quick_actions + test_items
+│   ├── pmu_is_gain/              # PMU Is Gain（P1）：quick_actions + test_items
+│   ├── pmu_oscp/                 # PMU OSCP（P1）：quick_actions + test_items
+│   ├── pmu_gpadc/                # PMU GPADC（P1）：quick_actions + test_items
+│   ├── pmu_clk/                  # PMU CLK（P1）：quick_actions + test_items
 │   ├── charger_config_traverse/  # Charger 配置遍历（P1）：quick_actions 已迁移
 │   ├── charger_status_register/  # Charger 状态寄存器（P1）：quick_actions 已迁移
 │   ├── charger_iterm/            # Charger Iterm（P1）：quick_actions 已迁移
@@ -569,7 +571,10 @@ docs/
 │       └── 002-oscilloscope-auto-detect.md
 └── user/
     ├── OrchestratorStructure.md   # Orchestrator 架构、工作流程与 UI 流程说明
-    └── OrchestratorStructureOP.md # Orchestrator 优化方案与实施优先级
+    ├── OrchestratorStructureOP.md # Orchestrator 优化方案与实施优先级
+    └── pmu_test_reports/          # 历史 PMU 测试报告（各芯片）与汇总分析
+        ├── 00_PMU测试用例与方法汇总.md        # 通用测试项矩阵 + 测试方法 + 跨芯片差异
+        └── 01_PMU测试项优缺点与完整度分析.md  # 测试项优缺点、完整度评估与改进建议
 
 ================================================================================
   hooks/ - PyInstaller 自定义 Hook

@@ -39,6 +39,23 @@
 | Charger Iterm | `charger_iterm` |
 | Charger 调节电压 | `charger_regulation_voltage` |
 
+## 2.1 伞目录键（umbrella）
+
+除页面键外，允许少量**伞目录键**承载跨页面的同一业务簇总记忆（例如 PMU 整套常规测试
+横跨 `pmu_output_voltage` / `pmu_dcdc_efficiency` / `pmu_gpadc` / `pmu_oscp` / `pmu_clk` /
+`pmu_is_gain` 等多个页面）。伞目录键不来自 `_get_current_help_key()`，仅由维护者在
+`kk_lab_memory.py` 的 `_UMBRELLA_KEYS` 中登记，命名规则同页面键（小写 + 下划线，允许一级
+`/` 分隔表达归类层级）。
+
+| 伞目录（业务簇） | 目录键 | 说明 |
+|---|---|---|
+| PMU 整套常规测试总记忆 | `automation/pmu_test` | PMU 常规测试通用测试项、跨芯片差异、共性经验的总入口 |
+
+伞目录与页面目录的关系：
+- 伞目录写**通用 / 跨芯片 / 跨页面**的测试项与经验（总记忆）。
+- 单个页面目录（`pmu_*`）写**该页面专属**的测试项与经验（分记忆）。
+- 二者通过条目 `关联项` 字段互相引用，避免重复堆砌。
+
 ## 3. 单页面文件职责
 
 每个页面目录固定 5 个核心文件，第一版只维护这 5 类：
