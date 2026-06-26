@@ -10,10 +10,11 @@ import html as _html_mod
 import os
 import re
 
-from PySide6.QtCore import QEvent, QSize, QTimer, QUrl, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QSize, QTimer, QUrl, Qt, Signal
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QMenu,
@@ -28,7 +29,7 @@ from PySide6.QtWidgets import (
 
 from log_config import get_logger
 from ui.resource_path import get_resource_base
-from ui.utils.icon_utils import tinted_svg_icon
+from ui.utils.icon_utils import tinted_svg_icon, tinted_svg_pixmap
 from ui.widgets.scrollbar import SCROLLBAR_STYLE
 
 logger = get_logger(__name__)
@@ -37,6 +38,10 @@ _ICONS_DIR = os.path.join(get_resource_base(), "resources", "icons")
 _THUMBS_UP_ICON = os.path.join(_ICONS_DIR, "thumbs-up.svg")
 _THUMBS_DOWN_ICON = os.path.join(_ICONS_DIR, "thumbs-down.svg")
 _MORE_ICON = os.path.join(_ICONS_DIR, "more-horizontal.svg")
+_BOT_ICON = os.path.join(
+    get_resource_base(), "resources", "icons_svg", "ai", "ai_panel.svg"
+)
+_CHECK_ICON = os.path.join(_ICONS_DIR, "check.svg")
 
 _BUBBLE_STYLE_USER = """
 QLabel#aiBubbleUser {
@@ -44,36 +49,67 @@ QLabel#aiBubbleUser {
     color: #eff6ff;
     border: none;
     border-radius: 16px;
-    border-bottom-right-radius: 2px;
+    border-top-right-radius: 4px;
     padding: 12px 16px;
     font-size: 13px;
     font-weight: 400;
 }
 """
 
+# AI 正文（全新无气泡设计）：透明底、无边框、无圆角，左侧对齐自由展开。
 _BUBBLE_STYLE_AI = """
 QTextBrowser#aiBubbleAI {
-    background-color: #121629;
+    background-color: transparent;
     color: #cbd5e1;
-    border: 1px solid #1e293b;
-    border-radius: 16px;
-    border-bottom-left-radius: 2px;
-    padding: 12px 16px;
+    border: none;
+    border-radius: 0px;
+    padding: 0px;
     font-size: 13px;
     font-weight: 400;
 }
 """
 
-_BUBBLE_PAD_V = 28
-_BUBBLE_PAD_H = 36
-_BUBBLE_MIN_H = 40
+# AI 头像（28x28，圆角 8）+ 身份名。
+_AI_HEADER_STYLE = """
+QLabel#aiAvatar {
+    background-color: #121629;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+}
+QLabel#aiName {
+    background: transparent;
+    color: #e2e8f0;
+    font-size: 13px;
+    font-weight: 500;
+}
+"""
+
+# AI 正文无横向内边距；保留少量竖向安全余量吸收 CJK 行高浮点误差。
+_BUBBLE_PAD_V = 4
+_BUBBLE_PAD_H = 0
+_BUBBLE_MIN_H = 20
+
+# AI 内容左缩进 40px（28 头像 + 12 间距），系统日志与此对齐成一条参考线。
+_AI_CONTENT_INDENT = 40
+
+_AI_FOOTER_BTN_STYLE = """
+QPushButton#aiFooterBtn {
+    border: none;
+    border-radius: 6px;
+    background-color: transparent;
+    padding: 2px 6px;
+}
+QPushButton#aiFooterBtn:hover {
+    background-color: #1e293b;
+}
+"""
 
 _BUBBLE_STYLE_SYS = """
 QLabel#aiBubbleSys {
     background-color: transparent;
-    color: #64748b;
-    font-size: 11px;
-    padding: 2px 4px;
+    color: #94a3b8;
+    font-size: 12px;
+    padding: 1px 0px;
 }
 """
 
@@ -170,28 +206,28 @@ QPlainTextEdit#aiConfirmArgs {
 QPushButton#aiConfirmRun {
     min-height: 28px; padding: 4px 14px;
     border: none; border-radius: 6px;
-    background-color: #16a34a; color: #ffffff; font-weight: 700; font-size: 12px;
+    background-color: #16a34a; color: #ffffff; font-weight: 500; font-size: 12px;
 }
 QPushButton#aiConfirmRun:hover { background-color: #15803d; }
 QPushButton#aiConfirmRun:disabled { background-color: #0f172a; color: #475569; }
 QPushButton#aiConfirmReject {
     min-height: 28px; padding: 4px 14px;
     border: none; border-radius: 6px;
-    background-color: #2a1414; color: #fca5a5; font-weight: 700; font-size: 12px;
+    background-color: #2a1414; color: #fca5a5; font-weight: 500; font-size: 12px;
 }
 QPushButton#aiConfirmReject:hover { background-color: #3f1d1d; }
 QPushButton#aiConfirmReject:disabled { background-color: #0f172a; color: #475569; border: 1px solid #1e293b; }
 QPushButton#aiConfirmSession {
     min-height: 28px; padding: 4px 14px;
     border: 1px solid #1e3a2e; border-radius: 6px;
-    background-color: #0d1f17; color: #4ade80; font-weight: 700; font-size: 12px;
+    background-color: #0d1f17; color: #4ade80; font-weight: 500; font-size: 12px;
 }
 QPushButton#aiConfirmSession:hover { background-color: #142b20; }
 QPushButton#aiConfirmSession:disabled { background-color: #0f172a; color: #475569; border: 1px solid #1e293b; }
 QPushButton#aiConfirmAllow {
     min-height: 28px; padding: 4px 14px;
     border: none; border-radius: 6px;
-    background-color: #0e1b33; color: #3b82f6; font-weight: 700; font-size: 12px;
+    background-color: #0e1b33; color: #3b82f6; font-weight: 500; font-size: 12px;
 }
 QPushButton#aiConfirmAllow:hover { background-color: #172a4f; }
 QPushButton#aiConfirmAllow:disabled { background-color: #0f172a; color: #475569; border: 1px solid #1e293b; }
@@ -321,6 +357,39 @@ class ActionConfirmCard(QFrame):
 
 _FENCE_RE = re.compile(r"```([^\n`]*)\n(.*?)```", re.DOTALL)
 
+# GFM 表格：表头行 + 分隔行（含 - 与可选 :）+ 至少一行表体。整段单独抽出走原生
+# QWidget 表格渲染（QTextBrowser 富文本子集无法做斑马纹与逐值语义着色）。
+_TABLE_RE = re.compile(
+    r"(?:^|\n)([ \t]*\|.+\|[ \t]*\n[ \t]*\|[ \t]*:?-{1,}.*\|[ \t]*\n"
+    r"(?:[ \t]*\|.*\|[ \t]*\n?)+)",
+    re.MULTILINE,
+)
+
+
+def _parse_md_table(block: str) -> tuple[list[str], list[list[str]]]:
+    """把一段 GFM 表格文本解析为 (表头列, 表体行)。"""
+    lines = [ln.strip() for ln in block.strip().splitlines() if ln.strip()]
+
+    def _cells(line: str) -> list[str]:
+        line = line.strip()
+        if line.startswith("|"):
+            line = line[1:]
+        if line.endswith("|"):
+            line = line[:-1]
+        return [_strip_inline_md(c.strip()) for c in line.split("|")]
+
+    header = _cells(lines[0]) if lines else []
+    rows = [_cells(ln) for ln in lines[2:]]
+    return header, rows
+
+
+def _strip_inline_md(text: str) -> str:
+    """去除单元格内联 Markdown 标记（**粗体** / *斜体* / `代码`），QLabel 显示纯文本。"""
+    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+    text = re.sub(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", r"\1", text)
+    text = re.sub(r"`(.+?)`", r"\1", text)
+    return text.strip()
+
 
 def _esc(text) -> str:
     return _html_mod.escape(str(text))
@@ -340,7 +409,8 @@ def _html_list(title: str, items) -> str:
 def _split_markdown_blocks(text: str) -> list[tuple[str, str, str]]:
     """把 Markdown 拆为 (kind, lang, content) 序列。
 
-    kind ∈ {"md", "code"}；code 块附带语言名（可能为空）。
+    kind ∈ {"md", "code", "table"}；code 块附带语言名（可能为空）；table 块
+    content 为原始 GFM 表格文本，交由原生表格控件渲染。
     """
     blocks: list[tuple[str, str, str]] = []
     last = 0
@@ -348,17 +418,149 @@ def _split_markdown_blocks(text: str) -> list[tuple[str, str, str]]:
         if match.start() > last:
             md = text[last:match.start()].strip("\n")
             if md.strip():
-                blocks.append(("md", "", md))
+                blocks.extend(_split_md_tables(md))
         lang = (match.group(1) or "").strip()
         code = match.group(2)
         blocks.append(("code", lang, code))
         last = match.end()
     tail = text[last:].strip("\n")
     if tail.strip():
-        blocks.append(("md", "", tail))
+        blocks.extend(_split_md_tables(tail))
     if not blocks:
         blocks.append(("md", "", text))
     return blocks
+
+
+def _split_md_tables(md_text: str) -> list[tuple[str, str, str]]:
+    """把一段非代码的 Markdown 进一步拆为 md / table 段。"""
+    segments: list[tuple[str, str, str]] = []
+    last = 0
+    for match in _TABLE_RE.finditer(md_text):
+        before = md_text[last:match.start()].strip("\n")
+        if before.strip():
+            segments.append(("md", "", before))
+        segments.append(("table", "", match.group(1).strip("\n")))
+        last = match.end()
+    tail = md_text[last:].strip("\n")
+    if tail.strip():
+        segments.append(("md", "", tail))
+    if not segments:
+        segments.append(("md", "", md_text))
+    return segments
+
+
+_MD_DOC_STYLE = (
+    "code { font-family: Consolas, 'Courier New', monospace; color: #cbd5e1; }"
+    "a { color: #3b82f6; }"
+)
+
+# 数值语义化着色（结构化表格读数）：正常绿 / 活动·警告橙 / 零值灰。
+_TABLE_VAL_OK = "#34d399"
+_TABLE_VAL_WARN = "#fbbf77"
+_TABLE_VAL_ZERO = "#cbd5e1"
+_NUM_RE = re.compile(r"[-+]?\d*\.?\d+")
+
+
+def _value_color(text: str) -> str:
+    """按读数语义返回着色：零值灰，否则正常绿（含负值/电流等活动读数判橙）。"""
+    raw = (text or "").strip()
+    m = _NUM_RE.search(raw)
+    if m is None:
+        return _TABLE_VAL_ZERO
+    try:
+        value = float(m.group(0))
+    except ValueError:
+        return _TABLE_VAL_ZERO
+    if value == 0:
+        return _TABLE_VAL_ZERO
+    # 负号读数或带告警语义（≈/约/warn）的活动值用橙色区分。
+    lowered = raw.lower()
+    if value < 0 or "≈" in raw or "~" in raw or "warn" in lowered:
+        return _TABLE_VAL_WARN
+    return _TABLE_VAL_OK
+
+
+_TABLE_CONTAINER_STYLE = """
+QFrame#aiTableFrame {
+    background-color: #070709;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+}
+"""
+
+
+class _DataTable(QFrame):
+    """结构化数据表（图二风格）：圆角细边框容器、表头底色、斑马纹行、逐值语义着色。
+
+    QTextBrowser 富文本子集无法实现斑马纹与逐单元格着色，故用原生 QGridLayout 渲染。
+    """
+
+    _HEADER_BG = "#121629"
+    _ROW_ODD = "#070709"
+    _ROW_EVEN = "#0b1428"
+    _BORDER = "#1e293b"
+
+    def __init__(self, header: list[str], rows: list[list[str]], parent=None):
+        super().__init__(parent)
+        self.setObjectName("aiTableFrame")
+        self.setStyleSheet(_TABLE_CONTAINER_STYLE)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+
+        grid = QGridLayout(self)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(0)
+        grid.setVerticalSpacing(0)
+
+        ncols = max([len(header)] + [len(r) for r in rows]) if rows else len(header)
+
+        # 表头
+        for col in range(ncols):
+            text = header[col] if col < len(header) else ""
+            cell = self._make_cell(text, self._HEADER_BG, is_header=True)
+            grid.addWidget(cell, 0, col)
+
+        # 表体（斑马纹）
+        last_idx = len(rows) - 1
+        for ridx, row in enumerate(rows):
+            bg = self._ROW_EVEN if ridx % 2 == 1 else self._ROW_ODD
+            for col in range(ncols):
+                text = row[col] if col < len(row) else ""
+                # 首列为表项主键：medium + 亮色；其余列为读数：等宽 + 语义着色。
+                cell = self._make_cell(
+                    text, bg, is_header=False, is_key=(col == 0),
+                    bottom_border=(ridx != last_idx),
+                )
+                grid.addWidget(cell, ridx + 1, col)
+
+        for col in range(ncols):
+            grid.setColumnStretch(col, 1 if col == ncols - 1 else 0)
+
+    def _make_cell(
+        self, text: str, bg: str, *, is_header: bool, is_key: bool = False,
+        bottom_border: bool = True,
+    ) -> QLabel:
+        label = QLabel(text)
+        label.setWordWrap(True)
+        label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        label.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+        if is_header:
+            color, weight, mono = "#94a3b8", 500, False
+        elif is_key:
+            color, weight, mono = "#e2e8f0", 500, False
+        else:
+            color, weight, mono = _value_color(text), 400, True
+        family = (
+            "font-family: Consolas, 'Courier New', monospace;" if mono else ""
+        )
+        border = (
+            f"border-bottom: 1px solid {self._BORDER};" if bottom_border else ""
+        )
+        label.setStyleSheet(
+            f"QLabel {{ background-color: {bg}; color: {color};"
+            f" font-size: 12px; font-weight: {weight};"
+            f" padding: 6px 12px; border: none; {border} {family} }}"
+        )
+        return label
 
 
 class _MarkdownBubble(QWidget):
@@ -384,6 +586,8 @@ class _MarkdownBubble(QWidget):
         for kind, lang, content in _split_markdown_blocks(self._raw_text):
             if kind == "code":
                 self._layout.addWidget(self._make_code_block(lang, content))
+            elif kind == "table":
+                self._layout.addWidget(self._make_table_block(content))
             else:
                 self._layout.addWidget(self._make_md_block(content))
 
@@ -407,6 +611,7 @@ class _MarkdownBubble(QWidget):
         view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         view.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         view.document().setDocumentMargin(0)
+        view.document().setDefaultStyleSheet(_MD_DOC_STYLE)
         view.setMarkdown(md_text)
         # 吞掉气泡内的滚轮事件并转交外层 ChatView 滚动：即便高度估算偶有 1px 偏差，
         # 用户滚轮也直接滚动整个会话区，而非在气泡内部滚动看内容（问题1的体验诉求）。
@@ -416,6 +621,12 @@ class _MarkdownBubble(QWidget):
         self._fit_height(view)
         self._md_views.append(view)
         return view
+
+    @staticmethod
+    def _make_table_block(raw_table: str) -> QWidget:
+        """把 GFM 表格文本渲染为原生数据表（图二风格）。"""
+        header, rows = _parse_md_table(raw_table)
+        return _DataTable(header, rows)
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.Wheel:
@@ -464,8 +675,8 @@ class _MarkdownBubble(QWidget):
             node = node.parent()
         if node is None:
             return 0
-        # 减去 ChatView 容器左右内边距（16+16）与气泡水平内边距，估算文本可用宽。
-        return max(0, node.viewport().width() - 32 - _BUBBLE_PAD_H)
+        # 减去 ChatView 容器左右内边距（16+16）、AI 正文左缩进与气泡水平内边距，估算文本可用宽。
+        return max(0, node.viewport().width() - 32 - _AI_CONTENT_INDENT - _BUBBLE_PAD_H)
 
     def _make_code_block(self, lang: str, code: str) -> QFrame:
         frame = QFrame()
@@ -524,6 +735,23 @@ class _MarkdownBubble(QWidget):
                 self._fit_height(widget)
 
 
+class _FooterIconFilter(QObject):
+    """footer 按钮 hover 图标切换过滤器：进入高亮、离开还原。"""
+
+    def __init__(self, btn, idle_icon, hover_icon):
+        super().__init__(btn)
+        self._btn = btn
+        self._idle = idle_icon
+        self._hover = hover_icon
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Enter:
+            self._btn.setIcon(self._hover)
+        elif event.type() == QEvent.Leave:
+            self._btn.setIcon(self._idle)
+        return False
+
+
 _CHAT_VIEW_RESET_STYLE = """
 QScrollArea { background: transparent; border: none; }
 QFrame { border: none; background: transparent; }
@@ -578,27 +806,27 @@ class ChatView(QScrollArea):
         self._task_cards = {}
 
     def _make_ai_footer(self, msg_id: str) -> QWidget:
-        """AI 气泡下方动作条：👍/👎 反馈 + ⋯ 沉淀菜单。"""
+        """AI 正文下方动作条：👍/👎 反馈 + ⋯ 沉淀菜单（静默色，hover 高亮）。"""
         bar = QWidget()
-        bar.setStyleSheet("background: transparent;")
+        bar.setStyleSheet(_AI_FOOTER_BTN_STYLE + "QWidget{background: transparent;}")
         layout = QHBoxLayout(bar)
-        layout.setContentsMargins(2, 0, 0, 0)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
         up = QPushButton()
         down = QPushButton()
         more = QPushButton()
-        for btn, icon_path, size in (
-            (up, _THUMBS_UP_ICON, 12),
-            (down, _THUMBS_DOWN_ICON, 12),
-            (more, _MORE_ICON, 14),
+        for btn, icon_path in (
+            (up, _THUMBS_UP_ICON),
+            (down, _THUMBS_DOWN_ICON),
+            (more, _MORE_ICON),
         ):
-            btn.setObjectName("aiCopyBtn")
+            btn.setObjectName("aiFooterBtn")
             btn.setCursor(Qt.PointingHandCursor)
             btn.setFixedHeight(22)
+            btn.setIconSize(QSize(13, 13))
             if os.path.isfile(icon_path):
-                btn.setIcon(tinted_svg_icon(icon_path, "#cbd5e1", size))
-                btn.setIconSize(QSize(size, size))
+                self._bind_footer_icon(btn, icon_path)
             layout.addWidget(btn)
         layout.addStretch(1)
 
@@ -606,6 +834,16 @@ class ChatView(QScrollArea):
         down.clicked.connect(lambda _=False: self.feedback_submitted.emit(msg_id, "down"))
         more.clicked.connect(lambda _=False, b=more: self._show_curate_menu(b))
         return bar
+
+    @staticmethod
+    def _bind_footer_icon(btn: QPushButton, icon_path: str) -> None:
+        """绑定 footer 按钮静默/高亮双态图标：idle #64748b，hover #cbd5e1。"""
+        idle = tinted_svg_icon(icon_path, "#64748b", 13)
+        hover = tinted_svg_icon(icon_path, "#cbd5e1", 13)
+        btn.setIcon(idle)
+        filt = _FooterIconFilter(btn, idle, hover)
+        btn._icon_filter = filt  # 持有引用，防止被 GC 回收
+        btn.installEventFilter(filt)
 
     def _show_curate_menu(self, anchor: QPushButton) -> None:
         menu = QMenu(self)
@@ -665,21 +903,6 @@ class ChatView(QScrollArea):
         self._scroll_to_bottom()
         return row
 
-    def _append_bubble(self, text: str, object_name: str, style: str, align) -> QLabel:
-        label = QLabel(text)
-        label.setObjectName(object_name)
-        label.setWordWrap(True)
-        label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        label.setStyleSheet(style)
-        if align == Qt.AlignHCenter:
-            label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-            label.setAlignment(Qt.AlignHCenter)
-            self._insert_row(label)
-        else:
-            label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
-            self._insert_row(label, align)
-        return label
-
     def _append_html_bubble(self, html: str) -> QTextBrowser:
         view = QTextBrowser()
         view.setObjectName("aiBubbleAI")
@@ -700,7 +923,43 @@ class ChatView(QScrollArea):
         bubble = _MarkdownBubble()
         bubble.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         bubble.set_markdown(text)
-        bubble._row = self._insert_row(bubble)
+
+        # 全新无气泡 AI 消息：左侧固定头像 + "AI Assistant" 身份名，下方正文与
+        # 底部动作栏统一左缩进 40px，与系统日志对齐成一条参考线。
+        block = QWidget()
+        block.setStyleSheet("background: transparent;")
+        block_layout = QVBoxLayout(block)
+        block_layout.setContentsMargins(0, 0, 0, 0)
+        block_layout.setSpacing(4)
+
+        header = QWidget()
+        header.setStyleSheet(_AI_HEADER_STYLE)
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(12)
+        avatar = QLabel()
+        avatar.setObjectName("aiAvatar")
+        avatar.setFixedSize(28, 28)
+        avatar.setAlignment(Qt.AlignCenter)
+        if os.path.isfile(_BOT_ICON):
+            avatar.setPixmap(tinted_svg_pixmap(_BOT_ICON, "#3b82f6", 16))
+        header_layout.addWidget(avatar, 0, Qt.AlignTop)
+        name = QLabel("AI Assistant")
+        name.setObjectName("aiName")
+        header_layout.addWidget(name, 0, Qt.AlignVCenter)
+        header_layout.addStretch(1)
+        block_layout.addWidget(header)
+
+        content = QWidget()
+        content.setStyleSheet("background: transparent;")
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(_AI_CONTENT_INDENT, 0, 0, 0)
+        content_layout.setSpacing(4)
+        content_layout.addWidget(bubble)
+        block_layout.addWidget(content)
+
+        bubble._content_layout = content_layout
+        bubble._row = self._insert_row(block)
         return bubble
 
     def _remove_bubble(self, bubble) -> None:
@@ -737,8 +996,16 @@ class ChatView(QScrollArea):
         if not (text or "").strip():
             return None
         bubble = self._append_markdown_bubble(text)
-        self._insert_row(self._make_ai_footer(self._next_msg_id()))
+        self._attach_ai_footer(bubble)
         return bubble
+
+    def _attach_ai_footer(self, bubble: _MarkdownBubble) -> None:
+        """把动作栏挂到 AI 正文底部（与正文同样左缩进），紧贴文本。"""
+        layout = getattr(bubble, "_content_layout", None)
+        if layout is None:
+            return
+        layout.addWidget(self._make_ai_footer(self._next_msg_id()))
+        self._scroll_to_bottom()
 
     def begin_stream_message(self) -> _MarkdownBubble:
         """开始一条流式 AI 气泡，返回气泡供增量更新。"""
@@ -781,7 +1048,7 @@ class ChatView(QScrollArea):
             self._remove_bubble(bubble)
             return
         bubble.set_markdown(text)
-        self._insert_row(self._make_ai_footer(self._next_msg_id()))
+        self._attach_ai_footer(bubble)
         self._scroll_to_bottom()
 
     def add_analysis_message(self, result) -> QTextBrowser:
@@ -803,7 +1070,40 @@ class ChatView(QScrollArea):
         return self._append_html_bubble(html)
 
     def add_system_message(self, text: str) -> None:
-        self._append_bubble(text, "aiBubbleSys", _BUBBLE_STYLE_SYS, Qt.AlignHCenter)
+        # 系统/动作流消息：配合 AI 头像布局左缩进 40px，与 AI 正文对齐成一条参考线；
+        # 执行成功状态行首带绿色勾号（#34d399）。
+        row = QWidget()
+        row.setStyleSheet("background: transparent;")
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(_AI_CONTENT_INDENT, 0, 0, 0)
+        row_layout.setSpacing(6)
+
+        if self._is_success_text(text) and os.path.isfile(_CHECK_ICON):
+            check = QLabel()
+            check.setFixedSize(14, 14)
+            check.setAlignment(Qt.AlignCenter)
+            check.setStyleSheet("background: transparent;")
+            check.setPixmap(tinted_svg_pixmap(_CHECK_ICON, "#34d399", 14))
+            row_layout.addWidget(check, 0, Qt.AlignTop)
+
+        label = QLabel(text)
+        label.setObjectName("aiBubbleSys")
+        label.setWordWrap(True)
+        label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        label.setStyleSheet(_BUBBLE_STYLE_SYS)
+        label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        row_layout.addWidget(label, 1)
+
+        self._layout.insertWidget(self._layout.count() - 1, row)
+        self._scroll_to_bottom()
+
+    @staticmethod
+    def _is_success_text(text: str) -> bool:
+        """判断系统消息是否为执行成功态（用于行首绿色勾号）。"""
+        lowered = (text or "").lower()
+        cues = ("applied", "ready", "exported", "switched", "cleared", "immediately")
+        cn_cues = ("已应用", "已停止", "已发送", "已", "成功", "完成")
+        return any(c in lowered for c in cues) or any(c in text for c in cn_cues)
 
     def add_system_action(self, text: str, button_text: str, callback) -> QPushButton:
         """系统消息 + 内联动作按钮（F5.5：应用后提供"撤销"入口）。
