@@ -2,7 +2,7 @@
 
 > 页面：datalog
 > 记录结构化测试用例：输入、步骤、期望、判定标准。
-> 条目格式见 [../_shared/conventions.md §5.4](../_shared/conventions.md#54-test_casesmd)
+> 条目格式见 [../../../_shared/conventions.md §5.4](../../../_shared/conventions.md#54-test_casesmd)
 > 默认为空，由 AI 归档或人工追加。新条目按模板追加在下方。
 
 <!-- 模板：

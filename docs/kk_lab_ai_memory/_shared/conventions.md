@@ -50,19 +50,23 @@
 | 伞目录（业务簇） | 目录键 | 说明 |
 |---|---|---|
 | PMU 整套常规测试总记忆 | `automation/pmu_test` | PMU 常规测试通用测试项、跨芯片差异、共性经验的总入口 |
+| Charger 整套测试总记忆 | `automation/charger_test` | Charger 配置遍历 / 状态寄存器 / Iterm / 调节电压的总入口 |
+| 电源分析仪簇总记忆 | `instrument/power_analyser` | N6705C 电源分析仪与 Datalog 子页面的总入口 |
 
 伞目录与页面目录的关系：
 - 伞目录写**通用 / 跨芯片 / 跨页面**的测试项与经验（总记忆）。
-- 单个页面目录（`pmu_*`）写**该页面专属**的测试项与经验（分记忆）。
+- 单个页面目录写**该页面专属**的测试项与经验（分记忆）。
 - 二者通过条目 `关联项` 字段互相引用，避免重复堆砌。
 
 ### 物理目录归类（page_key 不变，仅磁盘归类）
 
 `page_key` 是 UI 动作命名空间 / AI 能力裁剪 / profiles 的键，**对外保持不变**
-（仍是 `pmu_dcdc_efficiency` 等，来源 `_get_current_help_key()`）。为让磁盘结构更规范，
-PMU 系页面的记忆目录在物理上归入 `automation/pmu_test/<page_key>/`，由
+（仍是 `pmu_dcdc_efficiency` / `charger_iterm` / `power_analyser` 等，来源 `_get_current_help_key()`）。
+为让磁盘结构更规范，按业务簇把页面记忆目录在物理上归入对应伞目录下，由
 `kk_lab_memory.py` 的 `_DIR_OVERRIDE`（page_key → 记忆目录相对路径）映射，
-读写函数 `project_dir` / `local_dir` 经 `_dir_rel()` 解析。未登记的 page_key 目录名仍等于 page_key。
+读写函数 `project_dir` / `local_dir` 经 `_dir_rel()` 解析。未登记的 page_key（单页面独立工具，
+如 `oscilloscope` / `thermal_chamber` / `kk_serials` / `orchestrator` / `vmin_hunter` /
+`consumption_test`）目录名仍等于 page_key、保持顶层。
 
 ```
 automation/pmu_test/
@@ -73,6 +77,16 @@ automation/pmu_test/
 ├── pmu_oscp/
 ├── pmu_gpadc/
 └── pmu_clk/
+
+automation/charger_test/
+├── charger_config_traverse/   # page_key=charger_config_traverse 的页面记忆
+├── charger_status_register/
+├── charger_iterm/
+└── charger_regulation_voltage/
+
+instrument/power_analyser/
+├── power_analyser/   # page_key=power_analyser 的页面记忆
+└── datalog/          # page_key=datalog 的页面记忆
 ```
 
 ## 3. 单页面文件职责

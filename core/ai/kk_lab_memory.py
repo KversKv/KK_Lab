@@ -87,6 +87,8 @@ _PAGE_KEYS: frozenset[str] = frozenset({
 # 可含一级 / 分隔。读写路径映射、白名单校验与页面键一致。
 _UMBRELLA_KEYS: frozenset[str] = frozenset({
     "automation/pmu_test",
+    "automation/charger_test",
+    "instrument/power_analyser",
 })
 
 # 合法目录键 = 页面键 + 伞目录键。
@@ -94,15 +96,24 @@ PAGE_KEYS: frozenset[str] = _PAGE_KEYS | _UMBRELLA_KEYS
 
 # 页面键 → 记忆目录相对路径映射（仅用于物理归类，不影响 page_key 本身）。
 # page_key 对外保持不变（仍是 UI 动作命名空间 / AI 裁剪 / profiles 的键），
-# 仅记忆目录在磁盘上归入伞目录 automation/pmu_test/ 下，使结构更规范。
-# 未登记的 page_key 默认目录名 == page_key。
+# 仅记忆目录在磁盘上按业务簇归入对应伞目录下，使结构更规范。
+# 未登记的 page_key 默认目录名 == page_key（单页面独立工具保持顶层）。
 _DIR_OVERRIDE: dict[str, str] = {
+    # PMU 测试簇
     "pmu_dcdc_efficiency": "automation/pmu_test/pmu_dcdc_efficiency",
     "pmu_output_voltage": "automation/pmu_test/pmu_output_voltage",
     "pmu_is_gain": "automation/pmu_test/pmu_is_gain",
     "pmu_oscp": "automation/pmu_test/pmu_oscp",
     "pmu_gpadc": "automation/pmu_test/pmu_gpadc",
     "pmu_clk": "automation/pmu_test/pmu_clk",
+    # Charger 测试簇
+    "charger_config_traverse": "automation/charger_test/charger_config_traverse",
+    "charger_status_register": "automation/charger_test/charger_status_register",
+    "charger_iterm": "automation/charger_test/charger_iterm",
+    "charger_regulation_voltage": "automation/charger_test/charger_regulation_voltage",
+    # 电源分析仪簇（N6705C）
+    "power_analyser": "instrument/power_analyser/power_analyser",
+    "datalog": "instrument/power_analyser/datalog",
 }
 
 

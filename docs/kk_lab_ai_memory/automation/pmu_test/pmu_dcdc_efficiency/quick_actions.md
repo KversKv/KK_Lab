@@ -1,7 +1,7 @@
 # PMU DCDC 效率 - 快捷指令
 
 > 页面：pmu_dcdc_efficiency
-> 模板格式见 [../_shared/conventions.md §5.5](../_shared/conventions.md#55-quick_actionsmd)
+> 模板格式见 [../../../_shared/conventions.md §5.5](../../../_shared/conventions.md#55-quick_actionsmd)
 > 以下条目从 `core/ai/profiles.py` 中 `AI_PROFILES["pmu_test"].quick_actions` 按子页面相关性迁移而来。
 
 ## QA-20260625-001 - 生成一份 DCDC 效率测试配置草案

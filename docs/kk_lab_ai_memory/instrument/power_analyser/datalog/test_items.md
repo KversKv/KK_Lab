@@ -2,7 +2,7 @@
 
 > 页面：datalog
 > 记录常用测试项、测试前置条件、检查项、人工操作清单。
-> 条目格式见 [../_shared/conventions.md §5.3](../_shared/conventions.md#53-test_itemsmd)
+> 条目格式见 [../../../_shared/conventions.md §5.3](../../../_shared/conventions.md#53-test_itemsmd)
 > 默认为空，由 AI 归档或人工追加。新条目按模板追加在下方。
 
 <!-- 模板：

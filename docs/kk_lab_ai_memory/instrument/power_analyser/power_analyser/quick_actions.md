@@ -1,7 +1,7 @@
 # N6705C 电源分析仪 - 快捷指令
 
 > 页面：power_analyser
-> 模板格式见 [../_shared/conventions.md §5.5](../_shared/conventions.md#55-quick_actionsmd)
+> 模板格式见 [../../../_shared/conventions.md §5.5](../../../_shared/conventions.md#55-quick_actionsmd)
 > 以下条目从 `core/ai/profiles.py` 中 `AI_PROFILES["power_analyser"].quick_actions` 迁移而来。
 
 ## QA-20260625-001 - 查询当前各通道电压电流
