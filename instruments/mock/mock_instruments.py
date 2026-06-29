@@ -1121,3 +1121,381 @@ class MockKeysight53230A:
             return f"{current_A*1e6:.3f} µA"
         else:
             return f"{current_A:.3e} A"
+
+
+class MockKeysight34461A:
+
+    def __init__(self):
+        self._rng = random.Random(0)
+        self._function = "VOLT"
+        self._range = {}
+        self._auto_range = {}
+        self._nplc = {}
+        self._trigger_source = "IMM"
+        self._trigger_count = 1
+        self._sample_count = 1
+        self._stat_enabled = False
+        self._last_values = []
+        self.instr = MockInstr()
+
+    def _sim_value(self):
+        func = self._function.upper()
+        if func.startswith("VOLT") and not func.endswith("AC"):
+            return 3.3 + self._rng.gauss(0, 1e-4)
+        if func.startswith("VOLT"):
+            return 0.5 + self._rng.gauss(0, 1e-4)
+        if func.startswith("CURR") and not func.endswith("AC"):
+            return 0.012 + self._rng.gauss(0, 1e-6)
+        if func.startswith("CURR"):
+            return 0.001 + self._rng.gauss(0, 1e-6)
+        if func.startswith("FRES"):
+            return 100.05 + self._rng.gauss(0, 1e-3)
+        if func.startswith("RES"):
+            return 1000.0 + self._rng.gauss(0, 0.1)
+        if func.startswith("FREQ"):
+            return 1000.0 + self._rng.gauss(0, 0.01)
+        if func.startswith("PER"):
+            return 1e-3 + self._rng.gauss(0, 1e-9)
+        if func.startswith("CAP"):
+            return 1e-7 + self._rng.gauss(0, 1e-10)
+        if func.startswith("TEMP"):
+            return 25.0 + self._rng.gauss(0, 0.05)
+        return 0.0 + self._rng.gauss(0, 1e-4)
+
+    def _sim_batch(self, n):
+        return [self._sim_value() for _ in range(max(1, int(n)))]
+
+    # —— IEEE 488 ——
+    def identify(self):
+        return "Keysight Technologies,34461A,MOCK000,A.02.17-02.40-02.17-00.52-04-01"
+
+    def reset(self):
+        self._function = "VOLT"
+
+    def clear_status(self):
+        pass
+
+    def self_test(self):
+        return "+0"
+
+    def query_opc(self, timeout_s=5.0):
+        return True
+
+    def get_errors(self, max_count=20):
+        return ['+0,"No error"']
+
+    # —— 显示 / 系统 ——
+    def display_enable(self, enabled=True):
+        pass
+
+    def display_text(self, text):
+        pass
+
+    def display_text_clear(self):
+        pass
+
+    def beep(self):
+        pass
+
+    def set_beeper(self, enabled=True):
+        pass
+
+    def go_local(self):
+        pass
+
+    def go_remote(self):
+        pass
+
+    # —— SENSe ——
+    def set_function(self, function):
+        self._function = str(function).upper()
+
+    def get_function(self):
+        return self._function
+
+    def set_range(self, function, range_value, auto=False):
+        self._auto_range[str(function).upper()] = bool(auto)
+        if not auto:
+            self._range[str(function).upper()] = float(range_value)
+
+    def get_range(self, function):
+        return self._range.get(str(function).upper(), 10.0)
+
+    def set_auto_range(self, function, enabled=True):
+        self._auto_range[str(function).upper()] = bool(enabled)
+
+    def set_nplc(self, function, nplc):
+        self._nplc[str(function).upper()] = float(nplc)
+
+    def get_nplc(self, function):
+        return self._nplc.get(str(function).upper(), 10.0)
+
+    def set_aperture(self, function, aperture_s):
+        pass
+
+    def set_autozero(self, function, enabled=True):
+        pass
+
+    def set_input_impedance_auto(self, enabled=True):
+        pass
+
+    # —— MEASure ——
+    def _measure(self, func, range_value=None, resolution=None):
+        self._function = func.upper()
+        return self._sim_value()
+
+    def measure_voltage_dc(self, range_value=None, resolution=None):
+        return self._measure("VOLT", range_value, resolution)
+
+    def measure_voltage_ac(self, range_value=None, resolution=None):
+        return self._measure("VOLT:AC", range_value, resolution)
+
+    def measure_current_dc(self, range_value=None, resolution=None):
+        return self._measure("CURR", range_value, resolution)
+
+    def measure_current_ac(self, range_value=None, resolution=None):
+        return self._measure("CURR:AC", range_value, resolution)
+
+    def measure_resistance(self, range_value=None, resolution=None):
+        return self._measure("RES", range_value, resolution)
+
+    def measure_resistance_4w(self, range_value=None, resolution=None):
+        return self._measure("FRES", range_value, resolution)
+
+    def measure_frequency(self, range_value=None, resolution=None):
+        return self._measure("FREQ", range_value, resolution)
+
+    def measure_period(self, range_value=None, resolution=None):
+        return self._measure("PER", range_value, resolution)
+
+    def measure_capacitance(self, range_value=None, resolution=None):
+        return self._measure("CAP", range_value, resolution)
+
+    def measure_temperature(self):
+        return self._measure("TEMP")
+
+    def measure_diode(self):
+        return 0.65 + self._rng.gauss(0, 1e-3)
+
+    def measure_continuity(self):
+        return 5.0 + self._rng.gauss(0, 0.1)
+
+    # —— CONFigure + READ?/FETCh? ——
+    def _configure(self, func, range_value=None, resolution=None):
+        self._function = func.upper()
+
+    def configure_voltage_dc(self, range_value=None, resolution=None):
+        self._configure("VOLT", range_value, resolution)
+
+    def configure_voltage_ac(self, range_value=None, resolution=None):
+        self._configure("VOLT:AC", range_value, resolution)
+
+    def configure_current_dc(self, range_value=None, resolution=None):
+        self._configure("CURR", range_value, resolution)
+
+    def configure_current_ac(self, range_value=None, resolution=None):
+        self._configure("CURR:AC", range_value, resolution)
+
+    def configure_resistance(self, range_value=None, resolution=None):
+        self._configure("RES", range_value, resolution)
+
+    def configure_resistance_4w(self, range_value=None, resolution=None):
+        self._configure("FRES", range_value, resolution)
+
+    def configure_frequency(self, range_value=None, resolution=None):
+        self._configure("FREQ", range_value, resolution)
+
+    def configure_period(self, range_value=None, resolution=None):
+        self._configure("PER", range_value, resolution)
+
+    def configure_capacitance(self, range_value=None, resolution=None):
+        self._configure("CAP", range_value, resolution)
+
+    def configure_temperature(self):
+        self._configure("TEMP")
+
+    def get_configuration(self):
+        return self._function
+
+    def read_value(self):
+        return self._sim_value()
+
+    def read_values(self):
+        self._last_values = self._sim_batch(self._sample_count)
+        return list(self._last_values)
+
+    def fetch_value(self):
+        return self._sim_value()
+
+    def fetch_values(self):
+        if not self._last_values:
+            self._last_values = self._sim_batch(self._sample_count)
+        return list(self._last_values)
+
+    # —— 触发 / 采样 ——
+    def set_trigger_source(self, source="IMM"):
+        self._trigger_source = str(source).upper()
+
+    def get_trigger_source(self):
+        return self._trigger_source
+
+    def set_trigger_count(self, count):
+        self._trigger_count = int(count)
+
+    def get_trigger_count(self):
+        return self._trigger_count
+
+    def set_trigger_delay(self, delay_s):
+        pass
+
+    def set_trigger_delay_auto(self, enabled=True):
+        pass
+
+    def set_trigger_slope(self, slope="NEG"):
+        pass
+
+    def set_sample_count(self, count):
+        self._sample_count = int(count)
+
+    def get_sample_count(self):
+        return self._sample_count
+
+    def set_sample_source(self, source="IMM"):
+        pass
+
+    def set_sample_timer(self, interval_s):
+        pass
+
+    def initiate(self):
+        self._last_values = self._sim_batch(self._sample_count)
+
+    def abort(self):
+        pass
+
+    def trigger_bus(self):
+        pass
+
+    # —— 数据缓冲 ——
+    def data_points(self):
+        return len(self._last_values)
+
+    def data_remove(self, count):
+        n = min(int(count), len(self._last_values))
+        taken = self._last_values[:n]
+        self._last_values = self._last_values[n:]
+        return taken
+
+    # —— 统计 ——
+    def enable_statistics(self, enabled=True):
+        self._stat_enabled = bool(enabled)
+
+    def clear_statistics(self):
+        self._last_values = []
+
+    def _stats(self):
+        vals = self._last_values or self._sim_batch(self._sample_count)
+        n = len(vals)
+        avg = sum(vals) / n
+        mn = min(vals)
+        mx = max(vals)
+        sd = (sum((v - avg) ** 2 for v in vals) / n) ** 0.5 if n > 1 else 0.0
+        return avg, sd, mn, mx, n
+
+    def stat_average(self):
+        return self._stats()[0]
+
+    def stat_min(self):
+        return self._stats()[2]
+
+    def stat_max(self):
+        return self._stats()[3]
+
+    def stat_stddev(self):
+        return self._stats()[1]
+
+    def stat_count(self):
+        return self._stats()[4]
+
+    def stat_peak_to_peak(self):
+        _, _, mn, mx, _ = self._stats()
+        return mx - mn
+
+    def enable_null(self, enabled=True, offset=None):
+        pass
+
+    def set_limit_test(self, lower, upper, enabled=True):
+        pass
+
+    # —— 温度 ——
+    def set_temperature_transducer(self, transducer="FRTD", value=None):
+        pass
+
+    def set_temperature_unit(self, unit="C"):
+        pass
+
+    # —— 高层便捷 ——
+    def measure_average(self, function="VOLTage:DC", sample_count=10,
+                        range_value=None, resolution=None):
+        self._configure(function.upper(), range_value, resolution)
+        self.set_sample_count(sample_count)
+        values = self.read_values()
+        avg, sd, mn, mx, n = self._stats()
+        return {
+            "values": values,
+            "average": avg,
+            "min": mn,
+            "max": mx,
+            "stddev": sd,
+            "ptp": mx - mn,
+            "count": n,
+        }
+
+    def measure_burst(self, function="VOLTage:DC", sample_count=100,
+                      sample_interval_s=None, range_value=None, resolution=None):
+        self._configure(function.upper(), range_value, resolution)
+        self.set_sample_count(sample_count)
+        return self.read_values()
+
+    def identify_instrument(self):
+        return self.identify()
+
+    def disconnect(self):
+        pass
+
+    def close(self):
+        pass
+
+    def format_voltage(self, voltage_V):
+        abs_v = abs(voltage_V)
+        if abs_v >= 1:
+            return f"{voltage_V:.6f} V"
+        elif abs_v >= 1e-3:
+            return f"{voltage_V*1e3:.4f} mV"
+        elif abs_v >= 1e-6:
+            return f"{voltage_V*1e6:.3f} µV"
+        else:
+            return f"{voltage_V:.3e} V"
+
+    def format_current(self, current_A):
+        abs_i = abs(current_A)
+        if abs_i >= 1:
+            return f"{current_A:.4f} A"
+        elif abs_i >= 1e-3:
+            return f"{current_A*1e3:.4f} mA"
+        elif abs_i >= 1e-6:
+            return f"{current_A*1e6:.3f} µA"
+        elif abs_i >= 1e-9:
+            return f"{current_A*1e9:.3f} nA"
+        else:
+            return f"{current_A:.3e} A"
+
+    def format_resistance(self, resistance_ohm):
+        abs_r = abs(resistance_ohm)
+        if abs_r >= 1e9:
+            return f"{resistance_ohm/1e9:.4f} GΩ"
+        elif abs_r >= 1e6:
+            return f"{resistance_ohm/1e6:.4f} MΩ"
+        elif abs_r >= 1e3:
+            return f"{resistance_ohm/1e3:.4f} kΩ"
+        else:
+            return f"{resistance_ohm:.4f} Ω"

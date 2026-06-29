@@ -228,6 +228,14 @@ instruments/
 │                            # 通道配置、SENSe 门限、CONFigure/READ?/FETCh?
 │                            # 流程、CALCulate 统计、ROSCillator 参考时基)
 │
+├── digitMultimeter/         # 数字万用表驱动
+│   └── keysight/
+│       ├── __init__.py      # 导出 Keysight34461A
+│       └── keysight_34461A.py  # Keysight 34461A 6½位数字万用表 SCPI 驱动
+│                            # (DCV/ACV/DCI/ACI/2W&4W电阻/频率/周期/电容/
+│                            # 温度/二极管/通断、MEASure 与 CONFigure+READ?/
+│                            # FETCh? 流程、触发采样、CALCulate 统计)
+│
 ├── MCU_IO/                  # MCU GPIO 控制器驱动
 │   ├── __init__.py          # 导出 PicoGPIO / CH9114F
 │   ├── YD_RP2040.py         # YD RP2040 串口 Raw REPL GPIO 控制驱动

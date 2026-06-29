@@ -1137,6 +1137,8 @@ class N6705CDatalogUI(QWidget):
         self.marker_b_pos = None
         self.marker_a_line = None
         self.marker_b_line = None
+        self.marker_a_frozen = False
+        self.marker_b_frozen = False
         self.marker_region = None
         self._extra_markers = []
         self._extra_marker_regions = []
@@ -1253,6 +1255,9 @@ class N6705CDatalogUI(QWidget):
                 description="从文件导入历史 Datalog 数据用于查看/对比。",
             ),
         ])
+
+    def _on_manager_sessions_changed(self):
+        """仪器管理器 sessions 变化时同步本页连接状态与设备卡片。"""
         if not self._instrument_manager:
             return
         sessions = self._instrument_manager.sessions(instrument_type="n6705c")
@@ -1976,12 +1981,14 @@ class N6705CDatalogUI(QWidget):
         self.marker_a_btn.setObjectName("chartIconBtn")
         self.marker_a_btn.setIcon(self._make_svg_icon("marker-a.svg", "#d4a514", 16))
         self.marker_a_btn.setToolTip("Set Marker A")
+        self.marker_a_btn.setContextMenuPolicy(Qt.CustomContextMenu)
         chart_header.addWidget(self.marker_a_btn)
 
         self.marker_b_btn = QPushButton()
         self.marker_b_btn.setObjectName("chartIconBtn")
         self.marker_b_btn.setIcon(self._make_svg_icon("marker-b.svg", "#4cc9f0", 16))
         self.marker_b_btn.setToolTip("Set Marker B")
+        self.marker_b_btn.setContextMenuPolicy(Qt.CustomContextMenu)
         chart_header.addWidget(self.marker_b_btn)
 
         self.add_markers_btn = QPushButton()
@@ -4809,6 +4816,12 @@ class N6705CDatalogUI(QWidget):
         self.reset_view_btn.clicked.connect(self._reset_view)
         self.marker_a_btn.clicked.connect(lambda: self._set_marker_mode("A"))
         self.marker_b_btn.clicked.connect(lambda: self._set_marker_mode("B"))
+        self.marker_a_btn.customContextMenuRequested.connect(
+            lambda pos: self._show_marker_btn_menu("A", pos)
+        )
+        self.marker_b_btn.customContextMenuRequested.connect(
+            lambda pos: self._show_marker_btn_menu("B", pos)
+        )
         self.add_markers_btn.clicked.connect(self._on_add_markers)
         self.clear_markers_btn.clicked.connect(self._clear_markers)
         self.time_offset_btn.clicked.connect(self._on_time_offset)
@@ -5832,6 +5845,141 @@ class N6705CDatalogUI(QWidget):
     def _set_marker_mode(self, marker):
         self._pending_marker = marker
 
+    def _show_marker_btn_menu(self, which, pos):
+        """右键 Set Marker A/B 按钮：设置坐标位置 或 冻结/解冻 该 marker。"""
+        btn = self.marker_a_btn if which == "A" else self.marker_b_btn
+        frozen = self.marker_a_frozen if which == "A" else self.marker_b_frozen
+
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #0c1a35;
+                border: 1px solid #1e3460;
+                border-radius: 6px;
+                color: #c8daf5;
+                padding: 4px;
+            }
+            QMenu::item {
+                padding: 6px 20px;
+                border-radius: 4px;
+            }
+            QMenu::item:selected {
+                background-color: #1e3460;
+            }
+        """)
+        set_pos_action = menu.addAction(f"设置 Marker {which} 位置…")
+        freeze_action = menu.addAction(
+            f"解冻 Marker {which}" if frozen else f"冻结 Marker {which}"
+        )
+
+        chosen = menu.exec(btn.mapToGlobal(pos))
+        if chosen is None:
+            return
+        if chosen == set_pos_action:
+            self._set_marker_position_dialog(which)
+        elif chosen == freeze_action:
+            self._toggle_marker_freeze(which)
+
+    def _set_marker_position_dialog(self, which):
+        """弹窗直接输入横坐标（单位 s）来设置 Marker 位置。"""
+        cur = self.marker_a_pos if which == "A" else self.marker_b_pos
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Set Marker {which} Position")
+        dialog.setFixedWidth(320)
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: #0a1628;
+                color: #c8daf5;
+            }
+            QLabel {
+                color: #8eb0e3;
+                font-size: 12px;
+            }
+            QLineEdit {
+                background-color: #0c1a35;
+                border: 1px solid #1e3460;
+                border-radius: 6px;
+                color: #eaf2ff;
+                padding: 6px 10px;
+                font-size: 12px;
+            }
+            QLineEdit:focus {
+                border-color: #3a6fd4;
+            }
+            QPushButton {
+                background-color: #162d55;
+                border: 1px solid #1e3460;
+                border-radius: 6px;
+                color: #c8daf5;
+                padding: 6px 18px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #1e3460;
+                border-color: #3a6fd4;
+            }
+        """)
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        title = QLabel(f"Set Marker {which} Position")
+        title.setStyleSheet("font-size: 14px; font-weight: bold; color: #eaf2ff;")
+        layout.addWidget(title)
+
+        x_label = QLabel("X 坐标 (s)")
+        layout.addWidget(x_label)
+        x_edit = QLineEdit()
+        x_edit.setPlaceholderText("e.g. 1.25")
+        if cur is not None:
+            x_edit.setText(f"{cur:.6f}".rstrip('0').rstrip('.'))
+        layout.addWidget(x_edit)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(8)
+        btn_layout.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setAutoDefault(False)
+        cancel_btn.setDefault(False)
+        ok_btn = QPushButton("OK")
+        ok_btn.setAutoDefault(True)
+        ok_btn.setDefault(True)
+        cancel_btn.clicked.connect(dialog.reject)
+        ok_btn.clicked.connect(dialog.accept)
+        btn_layout.addWidget(cancel_btn)
+        btn_layout.addWidget(ok_btn)
+        layout.addLayout(btn_layout)
+
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        text = x_edit.text().strip()
+        try:
+            x_val = float(text)
+        except ValueError:
+            QMessageBox.warning(self, "无效输入", f"无法解析 X 坐标：{text!r}")
+            return
+
+        if which == "A":
+            self._place_marker_a(x_val)
+        else:
+            self._place_marker_b(x_val)
+        self._update_marker_region()
+        self._update_marker_analysis()
+
+    def _toggle_marker_freeze(self, which):
+        """切换 Marker A/B 的冻结状态（冻结后不可拖动）。"""
+        if which == "A":
+            self.marker_a_frozen = not self.marker_a_frozen
+            if self.marker_a_line is not None:
+                self.marker_a_line.setMovable(not self.marker_a_frozen)
+        else:
+            self.marker_b_frozen = not self.marker_b_frozen
+            if self.marker_b_line is not None:
+                self.marker_b_line.setMovable(not self.marker_b_frozen)
+
     def _on_chart_clicked(self, event):
         if event.button() == Qt.RightButton:
             scene_pos = event.scenePos()
@@ -5863,7 +6011,7 @@ class N6705CDatalogUI(QWidget):
             self.plot_widget.removeItem(self.marker_a_line)
         self.marker_a_pos = x
         self.marker_a_line = pg.InfiniteLine(
-            pos=x, angle=90, movable=True,
+            pos=x, angle=90, movable=not self.marker_a_frozen,
             pen=pg.mkPen(color="#d4a514", width=2, style=Qt.DashLine),
             label=f"A",
             labelOpts={"color": "#d4a514", "position": 0.98}
@@ -5882,7 +6030,7 @@ class N6705CDatalogUI(QWidget):
             self.plot_widget.removeItem(self.marker_b_line)
         self.marker_b_pos = x
         self.marker_b_line = pg.InfiniteLine(
-            pos=x, angle=90, movable=True,
+            pos=x, angle=90, movable=not self.marker_b_frozen,
             pen=pg.mkPen(color="#4cc9f0", width=2, style=Qt.DashLine),
             label=f"B",
             labelOpts={"color": "#4cc9f0", "position": 0.98}

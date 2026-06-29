@@ -5,6 +5,7 @@ from instruments.chambers.mt3065 import MT3065
 from instruments.chambers.vt6002_chamber import VT6002
 from instruments.chambers.wt2040_chamber import WT2040
 from instruments.frequencyCounter.keysight_53230A import Keysight53230A
+from instruments.digitMultimeter.keysight.keysight_34461A import Keysight34461A
 from instruments.MCU_IO.YD_RP2040 import PicoGPIO
 from instruments.MCU_IO.ch9114f import CH9114F
 from instruments.base.visa_instrument import VisaInstrument
@@ -25,6 +26,7 @@ _INSTRUMENT_CREATORS = {
         timeout=kw.get("timeout", 5.0),
     ),
     "keysight53230a": lambda **kw: Keysight53230A(kw["resource"]),
+    "keysight34461a": lambda **kw: Keysight34461A(kw["resource"]),
     "yd_rp2040": lambda **kw: PicoGPIO(
         kw.get("port", kw.get("resource", "")),
         kw.get("baudrate", kw.get("baud", 921600)),
@@ -88,6 +90,19 @@ def create_frequency_counter(counter_type: str, resource: str):
         return Keysight53230A(resource)
     else:
         raise ValueError(f"Unknown frequency counter type: {counter_type}")
+
+
+def create_digital_multimeter(dmm_type: str, resource: str):
+    from debug_config import DEBUG_MOCK
+    logger.debug("create_digital_multimeter: type=%s, resource=%s", dmm_type, resource)
+    key = str(dmm_type).strip().lower()
+    if key in ("34461a", "keysight_34461a", "keysight34461a"):
+        if DEBUG_MOCK:
+            from instruments.mock.mock_instruments import MockKeysight34461A
+            return MockKeysight34461A()
+        return Keysight34461A(resource)
+    else:
+        raise ValueError(f"Unknown digital multimeter type: {dmm_type}")
 
 
 def create_mcu_io(mcu_type: str = "yd_rp2040", port: str = "", baudrate: int = 921600):
