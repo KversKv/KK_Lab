@@ -236,6 +236,17 @@ instruments/
 │                            # 温度/二极管/通断、MEASure 与 CONFigure+READ?/
 │                            # FETCh? 流程、触发采样、CALCulate 统计)
 │
+├── wirelessConnectivityTester/  # 无线连接综测仪驱动
+│   └── rohde_schwarz/       # 罗德与施瓦茨 CMW 系列 (默认 TCPIP hislip0)
+│       ├── __init__.py      # 导出 CMW270 / CMW500
+│       ├── base.py          # CMWBase: VISA 通信 + IEEE488.2 + 通用测量控制
+│       ├── bt.py            # BluetoothMixin: BT BR/EDR 测量与信令指令
+│       ├── ble.py           # BluetoothLEMixin: BLE LE1M/2M/Coded 测量与 PER
+│       ├── lte.py           # LTEMixin: LTE FDD/TDD 信令小区与上行测量
+│       ├── wifi.py          # WifiMixin: WLAN 11a/b/g/n/ac/ax TX/RX 测量
+│       ├── cmw270/          # CMW270 型号 (base/bt/ble/lte/wifi + 组合类__init__ + __main__测试用例)
+│       └── cmw500/          # CMW500 型号 (base/bt/ble/lte/wifi + 组合类__init__ + __main__测试用例)
+│
 ├── MCU_IO/                  # MCU GPIO 控制器驱动
 │   ├── __init__.py          # 导出 PicoGPIO / CH9114F
 │   ├── YD_RP2040.py         # YD RP2040 串口 Raw REPL GPIO 控制驱动

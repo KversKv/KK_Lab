@@ -8,6 +8,7 @@ from instruments.frequencyCounter.keysight_53230A import Keysight53230A
 from instruments.digitMultimeter.keysight.keysight_34461A import Keysight34461A
 from instruments.MCU_IO.YD_RP2040 import PicoGPIO
 from instruments.MCU_IO.ch9114f import CH9114F
+from instruments.wirelessConnectivityTester.rohde_schwarz import CMW270, CMW500
 from instruments.base.visa_instrument import VisaInstrument
 from log_config import get_logger
 
@@ -35,6 +36,8 @@ _INSTRUMENT_CREATORS = {
     "ch9114f": lambda **kw: CH9114F(
         kw.get("port", kw.get("resource", "auto")),
     ),
+    "cmw270": lambda **kw: CMW270(kw.get("resource") or kw.get("address")),
+    "cmw500": lambda **kw: CMW500(kw.get("resource") or kw.get("address")),
 }
 
 
@@ -103,6 +106,24 @@ def create_digital_multimeter(dmm_type: str, resource: str):
         return Keysight34461A(resource)
     else:
         raise ValueError(f"Unknown digital multimeter type: {dmm_type}")
+
+
+def create_wireless_tester(tester_type: str = "cmw270", resource: str = ""):
+    from debug_config import DEBUG_MOCK
+    logger.debug("create_wireless_tester: type=%s, resource=%s", tester_type, resource)
+    key = str(tester_type).strip().lower()
+    addr = resource or "TCPIP0::10.31.31.236::hislip0::INSTR"
+    if key in ("cmw270", "cmw-270"):
+        if DEBUG_MOCK:
+            from instruments.mock.mock_instruments import MockCMW270
+            return MockCMW270(addr)
+        return CMW270(addr)
+    if key in ("cmw500", "cmw-500"):
+        if DEBUG_MOCK:
+            from instruments.mock.mock_instruments import MockCMW500
+            return MockCMW500(addr)
+        return CMW500(addr)
+    raise ValueError(f"Unknown wireless tester type: {tester_type}")
 
 
 def create_mcu_io(mcu_type: str = "yd_rp2040", port: str = "", baudrate: int = 921600):

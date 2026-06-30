@@ -1499,3 +1499,398 @@ class MockKeysight34461A:
             return f"{resistance_ohm/1e3:.4f} kΩ"
         else:
             return f"{resistance_ohm:.4f} Ω"
+
+
+class _MockCMWBase:
+    """R&S CMW 系列 (CMW270 / CMW500) 无线综测仪 Mock 基类。"""
+
+    MODEL = "MOCK CMW"
+    DEFAULT_RESOURCE = "TCPIP0::10.31.31.236::hislip0::INSTR"
+
+    BT_MEAS = "BLUetooth:MEASurement"
+    BT_SIGN = "BLUetooth:SIGNaling"
+    BLE_MEAS = "BLUetooth:MEASurement"
+    BLE_SIGN = "BLUetooth:SIGNaling"
+    LTE_SIGN = "LTE:SIGNaling"
+    LTE_MEAS = "LTE:MEASurement"
+    WIFI_MEAS = "WLAN:MEASurement"
+    WIFI_SIGN = "WLAN:SIGNaling"
+
+    def __init__(self, resource=None, visa_library=None, timeout_ms=10000):
+        self.resource = resource or self.DEFAULT_RESOURCE
+        self._rng = random.Random(0)
+        self._connected = True
+        self.instr = MockInstr()
+
+    # —— 基础 IO ——
+    def write(self, cmd):
+        pass
+
+    def query(self, cmd):
+        return "0"
+
+    def query_float(self, cmd):
+        return 0.0
+
+    def query_int(self, cmd):
+        return 0
+
+    def query_values(self, cmd):
+        return [0.0]
+
+    # —— IEEE 488.2 ——
+    def identify(self):
+        return f"Rohde&Schwarz,{self.MODEL.replace('MOCK ', '')},MOCK000,3.8.10"
+
+    def reset(self):
+        pass
+
+    def clear_status(self):
+        pass
+
+    def self_test(self):
+        return "0"
+
+    def wait(self):
+        pass
+
+    def operation_complete(self):
+        pass
+
+    def query_opc(self, timeout_s=10.0):
+        return True
+
+    def get_errors(self, max_count=50):
+        return ['0,"No error"']
+
+    def get_options(self):
+        return ["CMW-KM010", "CMW-KM050", "CMW-KM500", "CMW-KW500"]
+
+    def get_firmware_version(self):
+        return "3.8.10"
+
+    def set_remote(self):
+        pass
+
+    def go_to_local(self):
+        pass
+
+    def set_timeout(self, timeout_ms):
+        pass
+
+    # —— 通用测量控制 ——
+    def init_measurement(self, application):
+        pass
+
+    def stop_measurement(self, application):
+        pass
+
+    def abort_measurement(self, application):
+        pass
+
+    def fetch(self, application_path):
+        return [self._rng.uniform(-5, 5)]
+
+    def read(self, application_path):
+        return [self._rng.uniform(-5, 5)]
+
+    def get_measurement_state(self, application):
+        return "RDY"
+
+    def wait_for_ready(self, application, timeout_s=30.0, poll_s=0.5):
+        return True
+
+    def disconnect(self):
+        self._connected = False
+
+    def is_connected(self):
+        return self._connected
+
+    # —— BT ——
+    def bt_reset(self): pass
+    def bt_set_demod_mode(self, mode="BRATe"): pass
+    def bt_get_demod_mode(self): return "BRATe"
+    def bt_set_burst_type(self, burst_type="BR"): pass
+    def bt_set_packet_type(self, packet_type="DH1"): pass
+    def bt_get_packet_type(self): return "DH1"
+    def bt_set_payload_length(self, length): pass
+    def bt_get_payload_length(self): return 37
+    def bt_set_pattern(self, pattern="PRBS9"): pass
+    def bt_get_pattern(self): return "PRBS9"
+    def bt_set_trigger(self, source="IFPower"): pass
+    def bt_set_trigger_level(self, level_dbm=-20): pass
+    def bt_set_rf_input(self, connector="RF1C", attenuation_db=0.0): pass
+    def bt_get_rf_connector(self): return "RF1C"
+    def bt_set_frequency(self, freq_hz): pass
+    def bt_get_frequency(self): return 2402e6
+    def bt_channel_to_freq_hz(self, channel): return (2402 + int(channel)) * 1_000_000
+    def bt_set_channel(self, channel): pass
+    def bt_set_expected_power(self, power_dbm): pass
+    def bt_get_expected_power(self): return 0.0
+    def bt_set_expected_power_auto(self, auto=True): pass
+    def bt_set_user_margin(self, margin_db=0.0): pass
+    def bt_get_user_margin(self): return 0.0
+    def bt_set_repetition(self, mode="SINGleshot"): pass
+    def bt_get_repetition(self): return "SINGleshot"
+    def bt_set_meas_count(self, count): pass
+    def bt_get_meas_count(self): return 10
+    def bt_init_meval(self): pass
+    def bt_abort_meval(self): pass
+    def bt_stop_meval(self): pass
+    def bt_meval_state(self): return "RDY"
+    def bt_fetch_power(self): return [0.5 + self._rng.gauss(0, 0.1)]
+    def bt_read_power(self): return [0.5 + self._rng.gauss(0, 0.1)]
+    def bt_fetch_peak_power(self): return [1.5 + self._rng.gauss(0, 0.1)]
+    def bt_fetch_modulation(self): return [150e3, 130e3, 0.9]
+    def bt_fetch_edr_modulation(self): return [0.05, 0.12, 0.10]
+    def bt_fetch_freq_offset(self): return [-30.0, -32.0]
+    def bt_fetch_spectrum_acp(self): return [-40.0, -42.0]
+    def bt_fetch_20db_bandwidth(self): return [950e3]
+    def bt_get_average_power_dbm(self): return 0.5 + self._rng.gauss(0, 0.1)
+    def bt_signaling_on(self): pass
+    def bt_signaling_off(self): pass
+    def bt_signaling_state(self): return "ON"
+    def bt_set_tx_power(self, power_dbm): pass
+    def bt_get_tx_power(self): return -40.0
+    def bt_set_test_mode(self, mode="LOOPback"): pass
+    def bt_get_test_mode(self): return "LOOPback"
+    def bt_set_dut_bd_address(self, bd_address): pass
+    def bt_get_dut_bd_address(self): return "00:11:22:33:44:55"
+    def bt_connect_dut(self, bd_address=None): pass
+    def bt_disconnect_dut(self): pass
+    def bt_get_connection_state(self): return "CONN"
+    def bt_inquiry(self): pass
+    def bt_page(self): pass
+    def bt_abort_call(self): pass
+    def bt_set_page_scan(self, enabled=True): pass
+    def bt_set_inquiry_scan(self, enabled=True): pass
+    def bt_set_per_packets(self, packet_count): pass
+    def bt_get_per_packets(self): return 1000
+    def bt_set_per_payload_length(self, length): pass
+    def bt_init_per(self): pass
+    def bt_abort_per(self): pass
+    def bt_fetch_per(self): return [0.0, 1000]
+    def bt_get_per_percent(self): return 0.0
+
+    # —— BLE ——
+    def ble_reset(self): pass
+    def ble_set_phy(self, phy="LE1M"): pass
+    def ble_get_phy(self): return "LE1M"
+    def ble_set_packet_type(self, packet_type="RFPHytest"): pass
+    def ble_get_packet_type(self): return "RFPHytest"
+    def ble_set_payload_length(self, length): pass
+    def ble_get_payload_length(self): return 37
+    def ble_set_pattern(self, pattern="ALL1"): pass
+    def ble_get_pattern(self): return "ALL1"
+    def ble_set_trigger(self, source="IFPower"): pass
+    def ble_set_trigger_level(self, level_dbm=-20): pass
+    def ble_set_rf_input(self, connector="RF1C", attenuation_db=0.0): pass
+    def ble_get_rf_connector(self): return "RF1C"
+    def ble_set_frequency(self, freq_hz): pass
+    def ble_get_frequency(self): return 2402e6
+    def ble_channel_to_freq_hz(self, channel): return 2402e6
+    def ble_set_channel(self, channel): pass
+    def ble_get_channel(self): return 0
+    def ble_set_expected_power(self, power_dbm): pass
+    def ble_get_expected_power(self): return 0.0
+    def ble_set_expected_power_auto(self, auto=True): pass
+    def ble_set_user_margin(self, margin_db=0.0): pass
+    def ble_get_user_margin(self): return 0.0
+    def ble_set_repetition(self, mode="SINGleshot"): pass
+    def ble_get_repetition(self): return "SINGleshot"
+    def ble_set_meas_count(self, count): pass
+    def ble_get_meas_count(self): return 10
+    def ble_init_meval(self): pass
+    def ble_abort_meval(self): pass
+    def ble_stop_meval(self): pass
+    def ble_meval_state(self): return "RDY"
+    def ble_fetch_power(self): return [0.0 + self._rng.gauss(0, 0.1)]
+    def ble_read_power(self): return [0.0 + self._rng.gauss(0, 0.1)]
+    def ble_fetch_peak_power(self): return [1.0 + self._rng.gauss(0, 0.1)]
+    def ble_fetch_modulation(self): return [250e3, 230e3, 0.92]
+    def ble_fetch_freq_accuracy(self): return [-10.0, 5.0, 8.0]
+    def ble_fetch_spectrum_acp(self): return [-35.0, -37.0]
+    def ble_fetch_20db_bandwidth(self): return [850e3]
+    def ble_get_average_power_dbm(self): return 0.0 + self._rng.gauss(0, 0.1)
+    def ble_signaling_on(self): pass
+    def ble_signaling_off(self): pass
+    def ble_signaling_state(self): return "ON"
+    def ble_set_tx_power(self, power_dbm): pass
+    def ble_get_tx_power(self): return -40.0
+    def ble_set_dut_address(self, address): pass
+    def ble_get_dut_address(self): return "00:11:22:33:44:55"
+    def ble_connect_dut(self, address=None): pass
+    def ble_disconnect_dut(self): pass
+    def ble_get_connection_state(self): return "CONN"
+    def ble_abort_call(self): pass
+    def ble_set_connection_interval(self, interval_ms): pass
+    def ble_get_connection_interval(self): return 30.0
+    def ble_set_connection_latency(self, latency): pass
+    def ble_get_connection_latency(self): return 0
+    def ble_set_connection_timeout(self, timeout_ms): pass
+    def ble_get_connection_timeout(self): return 1000.0
+    def ble_set_phy_update(self, phy="LE1M"): pass
+    def ble_get_phy_update(self): return "LE1M"
+    def ble_set_advertising_type(self, adv_type="ADVIND"): pass
+    def ble_set_advertising_interval(self, interval_ms): pass
+    def ble_set_advertising_channel(self, channels="37,38,39"): pass
+    def ble_set_per_packets(self, packet_count): pass
+    def ble_get_per_packets(self): return 1500
+    def ble_set_per_phy(self, phy="LE1M"): pass
+    def ble_init_per(self): pass
+    def ble_abort_per(self): pass
+    def ble_fetch_per(self): return [0.0, 1500]
+    def ble_get_per_percent(self): return 0.0
+
+    # —— LTE ——
+    def lte_reset(self): pass
+    def lte_set_duplex_mode(self, mode="FDD"): pass
+    def lte_get_duplex_mode(self): return "FDD"
+    def lte_set_band(self, band): pass
+    def lte_get_band(self): return "OB1"
+    def lte_set_dl_channel(self, earfcn): pass
+    def lte_get_dl_channel(self): return 100
+    def lte_set_ul_channel(self, earfcn): pass
+    def lte_get_ul_channel(self): return 18100
+    def lte_set_bandwidth(self, bw="B100"): pass
+    def lte_get_dl_bandwidth(self): return "B100"
+    def lte_get_ul_bandwidth(self): return "B100"
+    def lte_set_tdd_uldl_config(self, config=0): pass
+    def lte_set_tdd_special_subframe(self, ss_config=7): pass
+    def lte_set_rf_connector(self, output="RF1C", input_conn="RF1C"): pass
+    def lte_set_dl_power(self, power_dbm): pass
+    def lte_get_dl_power(self): return -80.0
+    def lte_set_expected_ul_power(self, power_dbm): pass
+    def lte_get_expected_ul_power(self): return 23.0
+    def lte_set_external_attenuation(self, output_db=0.0, input_db=0.0): pass
+    def lte_cell_on(self): pass
+    def lte_cell_off(self): pass
+    def lte_cell_state(self): return "ON,ADJ"
+    def lte_get_connection_state(self): return "CEST"
+    def lte_connect_ue(self): pass
+    def lte_disconnect_ue(self): pass
+    def lte_attach_ue(self): pass
+    def lte_detach_ue(self): pass
+    def lte_abort_call(self): pass
+    def lte_get_cell_id(self): return 100
+    def lte_set_cell_id(self, pci): pass
+    def lte_set_imsi(self, imsi): pass
+    def lte_get_imsi(self): return "001010000000000"
+    def lte_set_imei(self, imei): pass
+    def lte_get_imei(self): return "000000000000000"
+    def lte_set_scheduling_type(self, sched="RMC"): pass
+    def lte_set_ul_rb(self, num_rb, start_rb=0): pass
+    def lte_set_dl_rb(self, num_rb, start_rb=0): pass
+    def lte_set_ul_modulation(self, modulation="QPSK"): pass
+    def lte_set_dl_modulation(self, modulation="QPSK"): pass
+    def lte_set_transmission_mode(self, tm=1): pass
+    def lte_get_transmission_mode(self): return 1
+    def lte_set_mimo(self, antenna_config="1x1"): pass
+    def lte_set_ul_tpc(self, tpc_step_db=0): pass
+    def lte_set_meas_connector(self, connector="RF1C"): pass
+    def lte_set_meas_frequency(self, freq_hz): pass
+    def lte_set_meas_bandwidth(self, bw="B100"): pass
+    def lte_set_meas_expected_power(self, power_dbm): pass
+    def lte_init_meval(self): pass
+    def lte_abort_meval(self): pass
+    def lte_stop_meval(self): pass
+    def lte_meval_state(self): return "RDY"
+    def lte_fetch_tx_power(self): return [23.0 + self._rng.gauss(0, 0.2)]
+    def lte_fetch_modulation(self): return [1.5, 0.02, 0.01]
+    def lte_fetch_evm(self): return [1.5, 1.8]
+    def lte_fetch_spectrum(self): return [-40.0, -42.0]
+    def lte_fetch_spectrum_emask(self): return [-40.0, -42.0]
+    def lte_fetch_iq_offset(self): return [-30.0]
+    def lte_fetch_freq_error(self): return [50.0]
+    def lte_init_throughput(self): pass
+    def lte_abort_throughput(self): pass
+    def lte_fetch_bler(self): return [0.0, 100.0]
+    def lte_fetch_ul_throughput(self): return [5.0]
+    def lte_fetch_dl_throughput(self): return [50.0]
+    def lte_set_ping_target(self, target="127.0.0.1"): pass
+    def lte_set_ping_count(self, count=4): pass
+    def lte_init_ping(self): pass
+    def lte_fetch_ping(self): return [4, 4, 0, 10.0]
+
+    # —— WIFI ——
+    def wifi_reset(self): pass
+    def wifi_set_standard(self, standard="NSTD"): pass
+    def wifi_get_standard(self): return "NSTD"
+    def wifi_set_bandwidth(self, bandwidth="BW20"): pass
+    def wifi_get_bandwidth(self): return "BW20"
+    def wifi_set_mcs(self, mcs): pass
+    def wifi_get_mcs(self): return 0
+    def wifi_set_spatial_streams(self, streams=1): pass
+    def wifi_set_guard_interval(self, gi="GI400"): pass
+    def wifi_set_bursts_count(self, count): pass
+    def wifi_set_power_count(self, count): pass
+    def wifi_set_trigger(self, source="IFPower"): pass
+    def wifi_set_trigger_level(self, level_dbm=-20): pass
+    def wifi_set_rf_input(self, connector="RF1C", attenuation_db=0.0): pass
+    def wifi_get_rf_connector(self): return "RF1C"
+    def wifi_set_frequency(self, freq_hz): pass
+    def wifi_get_frequency(self): return 2437e6
+    def wifi_channel_to_freq_hz(self, channel, band="B24G"): return 2437e6
+    def wifi_set_channel(self, channel, band="B24G"): pass
+    def wifi_get_channel(self): return "6,B24G"
+    def wifi_set_expected_power(self, power_dbm): pass
+    def wifi_get_expected_power(self): return 0.0
+    def wifi_set_expected_power_auto(self, auto=True): pass
+    def wifi_set_user_margin(self, margin_db=0.0): pass
+    def wifi_get_user_margin(self): return 0.0
+    def wifi_set_repetition(self, mode="SINGleshot"): pass
+    def wifi_get_repetition(self): return "SINGleshot"
+    def wifi_init_meval(self): pass
+    def wifi_abort_meval(self): pass
+    def wifi_stop_meval(self): pass
+    def wifi_meval_state(self): return "RDY"
+    def wifi_fetch_power(self): return [10.0 + self._rng.gauss(0, 0.2)]
+    def wifi_read_power(self): return [10.0 + self._rng.gauss(0, 0.2)]
+    def wifi_fetch_peak_power(self): return [15.0 + self._rng.gauss(0, 0.2)]
+    def wifi_fetch_modulation(self): return [-35.0, 1.0, 2.0]
+    def wifi_fetch_evm(self): return [-35.0, -33.0]
+    def wifi_fetch_center_freq_error(self): return [100.0]
+    def wifi_fetch_clock_error(self): return [5.0]
+    def wifi_fetch_iq_offset(self): return [-30.0]
+    def wifi_fetch_spectrum(self): return [-45.0, -47.0]
+    def wifi_fetch_spectrum_flatness(self): return [-2.0, 2.0]
+    def wifi_get_average_power_dbm(self): return 10.0 + self._rng.gauss(0, 0.2)
+    def wifi_signaling_on(self): pass
+    def wifi_signaling_off(self): pass
+    def wifi_signaling_state(self): return "ON"
+    def wifi_set_operation_mode(self, mode="AP"): pass
+    def wifi_get_operation_mode(self): return "AP"
+    def wifi_set_ssid(self, ssid): pass
+    def wifi_get_ssid(self): return "CMW_AP"
+    def wifi_set_signaling_standard(self, standard="NSTD"): pass
+    def wifi_set_signaling_channel(self, channel, band="B24G"): pass
+    def wifi_set_signaling_bandwidth(self, bw="BW20"): pass
+    def wifi_set_tx_power(self, power_dbm): pass
+    def wifi_get_tx_power(self): return -50.0
+    def wifi_set_security(self, security="OPEN"): pass
+    def wifi_set_passphrase(self, passphrase): pass
+    def wifi_connect_dut(self): pass
+    def wifi_disconnect_dut(self): pass
+    def wifi_abort_call(self): pass
+    def wifi_get_connection_state(self): return "ASSociated"
+    def wifi_set_per_packets(self, packet_count): pass
+    def wifi_get_per_packets(self): return 1000
+    def wifi_init_per(self): pass
+    def wifi_abort_per(self): pass
+    def wifi_fetch_per(self): return [0.0, 1000]
+    def wifi_get_per_percent(self): return 0.0
+    def wifi_init_throughput(self): pass
+    def wifi_abort_throughput(self): pass
+    def wifi_fetch_throughput(self): return [50.0, 5.0]
+    def wifi_set_ping_target(self, target="127.0.0.1"): pass
+    def wifi_set_ping_count(self, count=4): pass
+    def wifi_init_ping(self): pass
+    def wifi_fetch_ping(self): return [4, 4, 0, 10.0]
+
+
+class MockCMW270(_MockCMWBase):
+    MODEL = "MOCK CMW270"
+
+
+class MockCMW500(_MockCMWBase):
+    MODEL = "MOCK CMW500"

@@ -84,3 +84,22 @@ python -m PyInstaller spec/n6705c_datalog.spec --clean --noconfirm
 2. 找不到匹配 → 默认读 [09_WORKFLOW](./docs/ai/09_WORKFLOW.md) + [03_GOTCHAS](./docs/ai/03_GOTCHAS.md)。
 3. 跨层改动（ui ↔ core ↔ instruments）必加读 [04_ARCHITECTURE](./docs/ai/04_ARCHITECTURE.md)。
 4. 改动完成前必须核对 [08_CHECKLISTS](./docs/ai/08_CHECKLISTS.md) 的同步矩阵。
+
+---
+
+## 🔴 编辑铁律：向文件追加 / 定位 EOF（高频坑，必读）
+
+> **背景**：`SearchReplace` 只替换**首个**匹配。当 `old_str` 选用了在文件中**多处重复**的模板片段（典型：各 Mock 类共有的 `format_current` / `def close(self): pass` / `return f"{...:.3e} A"`），就会误命中**靠前**的那处，把新类**插进别的类中间**，劈裂已有类，导致反复回退重写。**严禁再犯。**
+
+### 必须遵守
+1. **追加到文件末尾 ≠ 凭印象找 EOF**。动手前先用 `Grep -n "^class "` 或 `Read`（带 offset）**确认真实最后一行**，记下真正末尾类。
+2. **`old_str` 必须全局唯一**。先 `Grep` 统计候选锚点出现次数：
+   - 出现 1 次 → 可直接用；
+   - 出现 ≥ 2 次 → **禁止**直接用该片段，须向上扩展锚点（叠加上文若干**唯一**行，如该类特有的 `def identify_instrument` + 紧邻几行）直到整段唯一。
+3. **不要用各类通用的尾部模板**（`format_current` / `format_voltage` / `def close` / `def disconnect` 等）单独做锚点——它们几乎必然重复。
+4. 每次编辑后**立即复核结构**：`Grep -n "^class |def <已有类的特征方法>"`，确认①目标类落在 EOF、②被参考的相邻类未被劈裂（特征方法行号连续、仍在本类内）。
+5. 误插入后**先精确删除误插块、恢复原类**，再以唯一锚点重新追加；不要在错误结构上叠加二次编辑。
+
+### 反例（本仓库真实事故）
+- 用 `MockN6705C` 末尾的 `format_current` 片段当锚点追加 `MockKeysight34461A`，因该片段在 `MockN6705C` / `MockKeysight53230A` 等多处重复，首个匹配落在 `MockN6705C` 内，新类被插进 N6705C 中间，`arb_on` 等方法被孤立 → 反复重写。
+
