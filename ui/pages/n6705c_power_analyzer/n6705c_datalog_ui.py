@@ -1315,6 +1315,17 @@ class N6705CDatalogUI(QWidget):
             parts = visa_resource.split("::")
             if len(parts) >= 2:
                 display_ip = parts[1]
+        # 同一 VISA 资源已存在卡片（如手动/默认添加时 serial 回退为资源串），
+        # 连接后拿到真实序列号，应就地替换该卡片而非新增，避免出现重复卡片。
+        for idx, existing_card in enumerate(self.device_cards):
+            if existing_card.property("visa_resource") == visa_resource:
+                new_card = self._create_device_card(serial, model, display_ip, visa_resource)
+                layout_idx = self.device_list_layout.indexOf(existing_card)
+                self.device_list_layout.removeWidget(existing_card)
+                existing_card.deleteLater()
+                self.device_list_layout.insertWidget(layout_idx, new_card)
+                self.device_cards[idx] = new_card
+                return
         card = self._create_device_card(serial, model, display_ip, visa_resource)
         self.device_list_layout.insertWidget(
             self.device_list_layout.count() - 1, card
@@ -4388,6 +4399,113 @@ class N6705CDatalogUI(QWidget):
     def _default_devices_path(self):
         from ui.resource_path import get_user_data_dir
         return os.path.join(get_user_data_dir("n6705c"), "default_devices.json")
+
+    # ---- 窗口位置记忆（仅独立窗口态生效）----
+    _WINDOW_DEFAULT_SIZE = (800, 600)
+    _WINDOW_MARGIN = 40
+
+    def _window_geometry_path(self):
+        from ui.resource_path import get_user_data_dir
+        return os.path.join(get_user_data_dir("n6705c"), "window_geometry.json")
+
+    def _screen_available_geometry_for(self, point=None):
+        app = QApplication.instance()
+        screen = None
+        if app is not None and point is not None:
+            screen = app.screenAt(point)
+        if screen is None and app is not None:
+            screen = app.primaryScreen()
+        if screen is not None:
+            return screen.availableGeometry()
+        return QRect(0, 0, 1280, 720)
+
+    def _default_window_geometry(self):
+        available = self._screen_available_geometry_for()
+        target_w, target_h = self._WINDOW_DEFAULT_SIZE
+        margin = self._WINDOW_MARGIN
+        width = min(target_w, max(640, available.width() - margin))
+        height = min(target_h, max(480, available.height() - margin))
+        x = available.x() + max(0, (available.width() - width) // 2)
+        y = available.y() + max(0, (available.height() - height) // 2)
+        return QRect(x, y, width, height)
+
+    def _clamped_window_geometry(self, window_cfg):
+        saved = QRect(
+            int(window_cfg.get("x", 0)),
+            int(window_cfg.get("y", 0)),
+            int(window_cfg.get("width", 0)),
+            int(window_cfg.get("height", 0)),
+        )
+        if saved.width() <= 0 or saved.height() <= 0:
+            return self._default_window_geometry()
+
+        available = self._screen_available_geometry_for(saved.center())
+        margin = self._WINDOW_MARGIN
+        max_w = max(1, available.width() - margin)
+        max_h = max(1, available.height() - margin)
+        width = min(saved.width(), max_w)
+        height = min(saved.height(), max_h)
+
+        x = min(max(saved.x(), available.x()), available.right() - width + 1)
+        y = min(max(saved.y(), available.y()), available.bottom() - height + 1)
+        return QRect(x, y, width, height)
+
+    def _load_window_geometry(self):
+        import json
+        path = self._window_geometry_path()
+        if not os.path.exists(path):
+            return None
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else None
+        except Exception:
+            logger.debug("Load window_geometry.json failed", exc_info=True)
+            return None
+
+    def _collect_window_state(self):
+        if not self.isWindow() or not self.isVisible() or self.isMinimized():
+            return {}
+        geom = self.normalGeometry() if self.isMaximized() else self.geometry()
+        if geom.width() <= 0 or geom.height() <= 0:
+            return {}
+        return {
+            "x": int(geom.x()),
+            "y": int(geom.y()),
+            "width": int(geom.width()),
+            "height": int(geom.height()),
+            "maximized": bool(self.isMaximized()),
+        }
+
+    def _save_window_geometry(self):
+        import json
+        state = self._collect_window_state()
+        if not state:
+            return
+        path = self._window_geometry_path()
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(state, f, ensure_ascii=False, indent=2)
+        except Exception:
+            logger.warning("Save window_geometry.json failed", exc_info=True)
+
+    def apply_window_geometry(self):
+        """独立窗口态下应用记忆的位置/大小；首次打开则用 800x600 居中。"""
+        window_cfg = self._load_window_geometry()
+        if isinstance(window_cfg, dict):
+            self.setGeometry(self._clamped_window_geometry(window_cfg))
+            self._restore_maximized = bool(window_cfg.get("maximized", False))
+            return
+        self.setGeometry(self._default_window_geometry())
+        self._restore_maximized = False
+
+    def closeEvent(self, event):
+        try:
+            self._save_window_geometry()
+        except Exception:
+            logger.debug("Save window geometry on close failed", exc_info=True)
+        super().closeEvent(event)
 
     def _load_default_devices(self):
         import json
@@ -8484,7 +8602,6 @@ class N6705CDatalogUI(QWidget):
 
 if __name__ == "__main__":
     from PySide6.QtWidgets import QApplication
-    from ui.standalone import resize_and_center_window
     from PySide6.QtCore import qInstallMessageHandler, QtMsgType
     from PySide6.QtGui import QIcon
 
@@ -8552,8 +8669,11 @@ if __name__ == "__main__":
     _standalone_manager = InstrumentManager()
     w = N6705CDatalogUI(instrument_manager=_standalone_manager)
     w.setWindowTitle("N6705C Datalog - Debug")
-    resize_and_center_window(w)
     if os.path.exists(_icon_path):
         w.setWindowIcon(QIcon(_icon_path))
-    w.show()
+    w.apply_window_geometry()
+    if getattr(w, "_restore_maximized", False):
+        w.showMaximized()
+    else:
+        w.show()
     sys.exit(app.exec())
