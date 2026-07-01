@@ -89,6 +89,7 @@ from ui.pages.pmu_test.pmu_test_ui import PMUTestUI
 from ui.pages.chamber.chamber_control_ui import ChamberControlUI
 from ui.pages.consumption_test.consumption_test_wrapper import ConsumptionTestWrapper
 from ui.pages.charger_test.charger_test_ui import ChargerTestUI
+from ui.pages.module_test.module_test_ui import ModuleTestUI
 from ui.pages.orchestrator.orchestrator_ui import OrchestratorUI
 from ui.pages.vmin_hunter.vmin_hunter_ui import VminHunterUI
 from ui.modules.serialCom_module.serialCom_module_frame import SerialComMixin
@@ -326,6 +327,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.chamber_ui = None
         self.consumption_test_ui = None
         self.charger_test_ui = None
+        self.module_test_ui = None
         self.orchestrator_ui = None
         self.vmin_hunter_ui = None
         self.kk_serials_ui = None
@@ -1294,7 +1296,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         if page_key == "orchestrator":
             return getattr(self, "orchestrator_ui", None)
         # Tab 容器页：下钻到当前子页
-        if page_key in ("pmu_test", "charger_test"):
+        if page_key in ("pmu_test", "charger_test", "module_test"):
             attr = f"{page_key}_ui"
             container = getattr(self, attr, None)
             if container is None:
@@ -1316,6 +1318,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             "orchestrator": getattr(self, "orchestrator_ui", None),
             "pmu_test": getattr(self, "pmu_test_ui", None),
             "charger_test": getattr(self, "charger_test_ui", None),
+            "module_test": getattr(self, "module_test_ui", None),
             "consumption_test": getattr(self, "consumption_test_ui", None),
         }
         return mapping.get(self.current_instrument_ui)
@@ -1326,6 +1329,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.nav.chamber_btn.clicked.connect(self._on_nav_button_clicked)
         self.nav.pmu_test_btn.clicked.connect(self._on_nav_button_clicked)
         self.nav.charger_test_btn.clicked.connect(self._on_nav_button_clicked)
+        self.nav.module_test_btn.clicked.connect(self._on_nav_button_clicked)
         self.nav.consumption_test_btn.clicked.connect(self._on_nav_button_clicked)
         self.nav.vmin_hunter_btn.clicked.connect(self._on_nav_button_clicked)
         self.nav.orchestrator_btn.clicked.connect(self._on_nav_button_clicked)
@@ -1483,6 +1487,28 @@ class MainWindow(CleanupMixin, QMainWindow):
                 self.charger_test_ui.set_current_test(selected_test)
         self._fade_in_widget(self.charger_test_ui)
 
+    def _create_module_test_ui(self, selected_test=None):
+        logger.debug("Switching to Module Test UI: selected_test=%s", selected_test)
+        self._hide_all_instrument_uis()
+        if self.module_test_ui is None:
+            self.module_test_ui = ModuleTestUI(
+                n6705c_top=self.n6705c_top,
+                mso64b_top=self.mso64b_top,
+                chamber_ui=self.chamber_ui,
+                instrument_manager=self.instrument_manager,
+                ui_action_registry=getattr(self, "_ui_action_registry", None),
+            )
+            self.instrument_ui_container_layout.addWidget(self.module_test_ui)
+        else:
+            self.module_test_ui._sync_from_top()
+            self.module_test_ui.show()
+        self.current_instrument_ui = "module_test"
+        if selected_test in self.nav.module_test_tab_map:
+            self.nav.current_module_test_key = selected_test
+            if hasattr(self.module_test_ui, "set_current_test"):
+                self.module_test_ui.set_current_test(selected_test)
+        self._fade_in_widget(self.module_test_ui)
+
     def _create_orchestrator_ui(self):
         logger.debug("Switching to Orchestrator UI")
         self._hide_all_instrument_uis()
@@ -1555,7 +1581,8 @@ class MainWindow(CleanupMixin, QMainWindow):
         for widget in [
             self.n6705c_analyser_ui, self.n6705c_datalog_ui,
             self.oscilloscope_ui, self.pmu_test_ui, self.chamber_ui,
-            self.consumption_test_ui, self.charger_test_ui, self.orchestrator_ui,
+            self.consumption_test_ui, self.charger_test_ui, self.module_test_ui,
+            self.orchestrator_ui,
             self.vmin_hunter_ui, self.kk_serials_ui, self.collection_ui,
         ]:
             if widget is not None:
@@ -1614,6 +1641,9 @@ class MainWindow(CleanupMixin, QMainWindow):
                 "regulation_voltage": "charger_regulation_voltage",
             }
             return key_map.get(self.nav.current_charger_test_key, "charger_config_traverse")
+        elif self.current_instrument_ui == "module_test":
+            key_map = {"ldo": "module_test_ldo", "dcdc": "module_test_dcdc"}
+            return key_map.get(self.nav.current_module_test_key, "module_test_ldo")
         elif self.current_instrument_ui == "power_analyser":
             if self.nav.current_pa_mode == "datalog":
                 return "datalog"
@@ -1628,6 +1658,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         module_map = {
             "pmu_test": "ui.pages.pmu_test",
             "charger_test": "ui.pages.charger_test",
+            "module_test": "ui.pages.module_test",
             "power_analyser": "ui.pages.n6705c_power_analyzer",
             "datalog": "ui.pages.n6705c_power_analyzer",
             "oscilloscope": "ui.pages.oscilloscope",

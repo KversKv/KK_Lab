@@ -17,6 +17,7 @@ _PAGE_LABELS: dict[str, str] = {
     "thermal_chamber": "VT6002 温箱",
     "pmu_test": "PMU 测试",
     "charger_test": "充电测试",
+    "module_test": "Module 测试（LDO/DCDC）",
     "consumption_test": "功耗测试",
     "orchestrator": "Orchestrator 自定义测试",
     "vmin_hunter": "VminHunter",

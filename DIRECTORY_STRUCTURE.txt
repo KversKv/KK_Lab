@@ -185,9 +185,18 @@ core/
 │   ├── search_worker.py     # 仪器搜索线程（VISA 资源发现）
 │   ├── channel_sync_worker.py # 通道状态周期同步 Worker（电压/电流/模式回读）
 │   └── consumption_worker.py # 功耗采集 Worker（按通道定时采样求均值）
-└── serial_script/           # 串口脚本执行引擎纯逻辑（无 Qt / 无 IO，可单测）
-    ├── __init__.py          # 导出 ordered_steps / match_wait_keyword / decide_loop_next
-    └── script_engine.py     # 步骤排序 / 等待关键字匹配 / 循环与下一步判定
+├── serial_script/           # 串口脚本执行引擎纯逻辑（无 Qt / 无 IO，可单测）
+│   ├── __init__.py          # 导出 ordered_steps / match_wait_keyword / decide_loop_next
+│   └── script_engine.py     # 步骤排序 / 等待关键字匹配 / 循环与下一步判定
+│
+└── module_test/             # Module Test（LDO/DCDC）编排内核（QThread runner + items + 报告）
+    ├── __init__.py
+    ├── result_model.py      # ItemResult / ModuleTestResult 统一数据结构
+    ├── _common.py           # ItemContext / CSV 落盘 / Mock 抖动 / 通道解析
+    ├── _runner_base.py      # ModuleTestRunner(QThread)：串行调度 items + 生成 HTML 报告
+    ├── report.py            # HTML 报告生成（元信息 + 逐项 PASS/FAIL 表 + 内嵌波形）
+    ├── ldo/                 # LDO 子包（ldo_runner + items：vout_scan/load_reg/line_reg/iq/ripple/psrr/transient）
+    └── dcdc/                # DCDC 子包（dcdc_runner + items：vout_scan/efficiency/load_reg/line_reg/iq/ripple/psrr/transient/inductor_current）
 
 ================================================================================
   instruments/ - 仪器驱动层
@@ -379,6 +388,12 @@ ui/
 │   │   ├── iterm_test.py             # Iterm 终止电流测试界面
 │   │   └── regulation_voltage_ui.py  # 调节电压测试界面
 │   │
+│   ├── module_test/             # Module Test（LDO/DCDC 完整可测测试项）页面
+│   │   ├── module_test_ui.py         # 顶层容器（隐藏 tab，切换 LDO/DCDC）
+│   │   ├── ldo_test_ui.py            # LDO 子页面
+│   │   ├── dcdc_test_ui.py           # DCDC 子页面
+│   │   └── _base_subpage.py          # 子页面基类（UI + AI 契约 + UIActionSpec）
+│   │
 │   ├── chamber/                 # 温箱相关页面
 │   │   └── chamber_control_ui.py     # 通用温箱控制界面
 │   │
@@ -508,7 +523,9 @@ helps/
 ├── charger_config_traverse.html     # 充电配置遍历测试操作说明
 ├── charger_status_register.html     # 充电状态寄存器测试操作说明
 ├── charger_iterm.html               # Iterm 终止电流测试操作说明
-└── charger_regulation_voltage.html  # 调节电压测试操作说明
+├── charger_regulation_voltage.html  # 调节电压测试操作说明
+├── module_test_ldo.html             # Module Test LDO 子页面操作说明
+└── module_test_dcdc.html            # Module Test DCDC 子页面操作说明
 
 ================================================================================
   docs/ - 项目文档、运行期知识库与 AI 协作资料
