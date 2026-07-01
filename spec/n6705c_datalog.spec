@@ -7,10 +7,15 @@
 
 import os
 
+from PyInstaller.utils.hooks import collect_submodules
+
 block_cipher = None
 
 # Project root (spec file is in spec/ subdirectory)
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(SPEC)))
+
+# zeroconf 含大量 Cython 编译子模块，需全部收集用于 mDNS 仪器发现
+_zeroconf_hiddenimports = collect_submodules('zeroconf') + ['ifaddr']
 
 a = Analysis(
     [os.path.join(PROJECT_ROOT, 'ui', 'pages', 'n6705c_power_analyzer', 'n6705c_datalog_ui.py')],
@@ -51,7 +56,7 @@ a = Analysis(
         'log_config',
         'debug_config',
         'openpyxl',
-    ],
+    ] + _zeroconf_hiddenimports,
     hookspath=[os.path.join(PROJECT_ROOT, 'hooks')],
     hooksconfig={},
     runtime_hooks=[],

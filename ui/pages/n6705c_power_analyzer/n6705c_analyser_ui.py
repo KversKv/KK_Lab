@@ -13,7 +13,7 @@ from ui.modules.n6705c_module_frame import build_n6705c_inline_row
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit,
-    QFrame, QApplication,
+    QFrame, QApplication, QMessageBox,
 )
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QPainter, QColor, QPixmap
@@ -1031,6 +1031,19 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
             w["status"].setStyleSheet("color: #e53935; font-weight:bold;")
         w["search_btn"].stop_spinning()
         w["search_btn"].setEnabled(True)
+        if not DEBUG_MOCK:
+            self._maybe_show_scope_hint()
+
+    def _maybe_show_scope_hint(self):
+        """搜索完成后提示搜索作用域（每次运行仅弹一次，未配置跨网段时才弹）。"""
+        if getattr(self, "_scope_hint_shown", False):
+            return
+        from core.n6705c.search_worker import discovery_scope_hint
+        hint = discovery_scope_hint()
+        if not hint:
+            return
+        self._scope_hint_shown = True
+        QMessageBox.information(self, "搜索范围提示", hint)
 
     def _on_toggle_connection(self, label):
         if self.devices[label]["is_connected"]:

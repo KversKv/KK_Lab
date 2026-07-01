@@ -10,10 +10,15 @@
 
 import os
 
+from PyInstaller.utils.hooks import collect_submodules
+
 block_cipher = None
 
 # Project root (spec file is in spec/ subdirectory)
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(SPEC)))
+
+# zeroconf 含大量 Cython 编译子模块，需全部收集用于 mDNS 仪器发现
+_zeroconf_hiddenimports = collect_submodules('zeroconf') + ['ifaddr']
 
 a = Analysis(
     [os.path.join(PROJECT_ROOT, 'main.py')],
@@ -212,7 +217,7 @@ a = Analysis(
         'lib.i2c.i2c_demo_x64',
         'lib.i2c.efuse_script_caller',
         'lib.download_tools.download_script',
-    ],
+    ] + _zeroconf_hiddenimports,
     hookspath=[os.path.join(PROJECT_ROOT, 'hooks')],
     hooksconfig={},
     runtime_hooks=[],

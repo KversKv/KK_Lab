@@ -15,12 +15,11 @@ from ui.resource_path import get_resource_base
 from ui.resource_path import get_resource_base
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QLabel, QFrame, QSizePolicy
+    QLabel, QFrame, QSizePolicy, QMessageBox
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QThread, QObject, QRectF
 from PySide6.QtGui import QIcon, QPainter
 from PySide6.QtSvg import QSvgRenderer
-import pyvisa
 
 from instruments.power.keysight.n6705c import N6705C
 from ui.widgets.dark_combobox import DarkComboBox
@@ -213,35 +212,11 @@ class _SearchN6705CWorker(QObject):
     error = Signal(str)
 
     def run(self):
-        rm = None
         try:
-            rm = pyvisa.ResourceManager()
-            resources = list(rm.list_resources()) or []
-            n6705c_devices = []
-            for dev in resources:
-                instr = None
-                try:
-                    instr = rm.open_resource(dev, timeout=1000)
-                    idn = instr.query('*IDN?').strip()
-                    if "N6705C" in idn:
-                        n6705c_devices.append(dev)
-                except Exception:
-                    pass
-                finally:
-                    if instr is not None:
-                        try:
-                            instr.close()
-                        except Exception:
-                            pass
-            self.finished.emit(n6705c_devices)
+            from core.n6705c.search_worker import discover_n6705c
+            self.finished.emit(discover_n6705c())
         except Exception as e:
             self.error.emit(str(e))
-        finally:
-            if rm is not None:
-                try:
-                    rm.close()
-                except Exception:
-                    pass
 
 
 _INLINE_ROW_TAG_COLORS = {
@@ -489,6 +464,21 @@ class N6705CConnectionMixin:
 
         self.search_btn.setEnabled(True)
         self.connect_btn.setEnabled(True)
+        self._maybe_show_scope_hint()
+
+    def _maybe_show_scope_hint(self):
+        """搜索完成后提示搜索作用域（每次运行仅弹一次，未配置跨网段时才弹）。"""
+        if getattr(self, "_scope_hint_shown", False):
+            return
+        try:
+            from core.n6705c.search_worker import discovery_scope_hint
+            hint = discovery_scope_hint()
+        except Exception:
+            hint = None
+        if not hint:
+            return
+        self._scope_hint_shown = True
+        QMessageBox.information(self, "搜索范围提示", hint)
 
     def _on_n6705c_search_error(self, err):
         self.set_system_status("● Search failed", is_error=True)

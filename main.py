@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-功耗测试工具主入口
+KK LAB工具主入口
 """
 
 import sys
@@ -32,7 +32,7 @@ WITH_AI_ASSISTANT = os.environ.get("KK_LAB_WITH_AI", "1").strip().lower() not in
     "no",
 )
 
-setup_logging(level=logging.INFO)
+setup_logging(level=logging.DEBUG)
 if WITH_AI_ASSISTANT:
     from core.ai.log_ring import install_log_ring
 

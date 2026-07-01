@@ -90,43 +90,22 @@ def _scan_n6705c() -> list[InstrumentCandidate]:
                 display_name="Mock N6705C B",
             ),
         ]
-    import pyvisa
+    from core.n6705c.search_worker import discover_n6705c_details
     candidates = []
-    rm = None
     try:
-        rm = pyvisa.ResourceManager()
-        resources = list(rm.list_resources()) or []
-        for dev in resources:
-            instr = None
-            try:
-                instr = rm.open_resource(dev, timeout=2000)
-                idn = instr.query("*IDN?").strip()
-                if "N6705C" in idn.upper():
-                    parts = idn.split(",")
-                    candidates.append(InstrumentCandidate(
-                        instrument_type="n6705c",
-                        connection_kind="visa",
-                        resource=dev,
-                        model_hint=parts[1].strip() if len(parts) > 1 else "",
-                        serial_hint=parts[2].strip() if len(parts) > 2 else "",
-                        display_name=idn,
-                    ))
-            except Exception:
-                pass
-            finally:
-                if instr is not None:
-                    try:
-                        instr.close()
-                    except Exception:
-                        pass
+        for detail in discover_n6705c_details():
+            idn = detail.get("idn", "")
+            parts = idn.split(",")
+            candidates.append(InstrumentCandidate(
+                instrument_type="n6705c",
+                connection_kind="visa",
+                resource=detail["resource"],
+                model_hint=parts[1].strip() if len(parts) > 1 else "N6705C",
+                serial_hint=detail.get("serial", ""),
+                display_name=idn or detail["resource"],
+            ))
     except Exception as e:
         logger.warning("N6705C scan failed: %s", e)
-    finally:
-        if rm is not None:
-            try:
-                rm.close()
-            except Exception:
-                pass
     return candidates
 
 

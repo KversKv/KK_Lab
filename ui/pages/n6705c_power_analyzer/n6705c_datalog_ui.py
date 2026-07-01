@@ -42,7 +42,6 @@ from PySide6.QtCore import Qt, QTimer, Signal, QThread, QObject, QByteArray, QSi
 from PySide6.QtGui import QFont, QColor, QBrush, QPen, QPainter, QPixmap, QIcon
 from PySide6.QtSvg import QSvgRenderer
 import pyqtgraph as pg
-import pyvisa
 import os
 
 from instruments.power.keysight.n6705c import N6705C
@@ -371,32 +370,14 @@ class _ScanWorker(QObject):
 
     def run(self):
         try:
-            if self._rm is None:
-                try:
-                    self._rm = pyvisa.ResourceManager()
-                except Exception:
-                    self._rm = pyvisa.ResourceManager("@py")
-
-            resources = list(self._rm.list_resources()) or []
-            seen = {}
-            for res in resources:
-                try:
-                    instr = self._rm.open_resource(res, timeout=2000)
-                    idn = instr.query("*IDN?").strip()
-                    instr.close()
-                    if "N6705C" in idn:
-                        parts = idn.split(",")
-                        model = parts[1].strip() if len(parts) > 1 else "N6705C"
-                        serial = parts[2].strip() if len(parts) > 2 else "Unknown"
-                        ip = res.split("::")[1] if "::" in res else res
-                        if serial in seen:
-                            if "hislip" in res and "hislip" not in seen[serial][3]:
-                                seen[serial] = (serial, model, ip, res)
-                        else:
-                            seen[serial] = (serial, model, ip, res)
-                except Exception:
-                    pass
-            for serial, model, ip, res in seen.values():
+            from core.n6705c.search_worker import discover_n6705c_details
+            for detail in discover_n6705c_details():
+                res = detail["resource"]
+                idn = detail.get("idn", "")
+                parts = idn.split(",")
+                model = parts[1].strip() if len(parts) > 1 else "N6705C"
+                serial = detail.get("serial") or "Unknown"
+                ip = res.split("::")[1] if "::" in res else res
                 self.device_found.emit(serial, model, ip, res)
         except Exception as e:
             self.error.emit(str(e))
@@ -1192,6 +1173,9 @@ class N6705CDatalogUI(QWidget):
             self._add_default_debug_device()
             self._sync_device_card_states()
             self._update_time_offset_btn_visibility()
+        else:
+            self._add_default_saved_devices()
+            self._sync_device_card_states()
 
         if self._top:
             self._sync_from_top()
@@ -2378,6 +2362,8 @@ class N6705CDatalogUI(QWidget):
 
         if DEBUG_MOCK:
             self._add_default_debug_device()
+        else:
+            self._add_default_saved_devices()
 
         self.refresh_search_btn.setEnabled(False)
         self.refresh_search_btn.start_spinning()
@@ -2397,6 +2383,10 @@ class N6705CDatalogUI(QWidget):
         self._scan_thread.start()
 
     def _on_scan_device_found(self, serial, model, ip, visa_resource):
+        existing = {c.property("serial") for c in self.device_cards}
+        existing |= {c.property("visa_resource") for c in self.device_cards}
+        if serial in existing or visa_resource in existing:
+            return
         card = self._create_device_card(serial, model, ip, visa_resource)
         self.device_list_layout.insertWidget(
             self.device_list_layout.count() - 1, card
@@ -2409,6 +2399,21 @@ class N6705CDatalogUI(QWidget):
         self.refresh_search_btn.stop_spinning()
         self.refresh_search_btn.setEnabled(True)
         self._sync_device_card_states()
+        self._maybe_show_scope_hint()
+
+    def _maybe_show_scope_hint(self):
+        """搜索完成后提示搜索作用域（每次运行仅弹一次，未配置跨网段时才弹）。"""
+        if getattr(self, "_scope_hint_shown", False):
+            return
+        try:
+            from core.n6705c.search_worker import discovery_scope_hint
+            hint = discovery_scope_hint()
+        except Exception:
+            hint = None
+        if not hint:
+            return
+        self._scope_hint_shown = True
+        QMessageBox.information(self, "搜索范围提示", hint)
 
     def _on_scan_thread_done(self):
         self._scan_thread = None
@@ -4268,6 +4273,30 @@ class N6705CDatalogUI(QWidget):
         serial_edit.setPlaceholderText("e.g. MY56006098")
         form_layout.addWidget(serial_edit)
 
+        save_default_check = QCheckBox("Save to Default")
+        save_default_check.setToolTip(
+            "勾选后保存当前地址为默认仪器，下次打开时自动加载常用仪器。"
+        )
+        save_default_check.setStyleSheet("""
+            QCheckBox {
+                color: #8eb0e3;
+                font-size: 12px;
+                spacing: 6px;
+            }
+            QCheckBox::indicator {
+                width: 15px;
+                height: 15px;
+                border: 1px solid #1e3460;
+                border-radius: 3px;
+                background-color: #0c1a35;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #1a4b8c;
+                border-color: #3a6fd4;
+            }
+        """)
+        form_layout.addWidget(save_default_check)
+
         def _on_conn_type_changed(index):
             if index == 0:
                 ip_label.show()
@@ -4342,6 +4371,9 @@ class N6705CDatalogUI(QWidget):
         self.device_cards.append(card)
         self._sync_device_card_states()
 
+        if save_default_check.isChecked():
+            self._save_default_device(serial, "N6705C", display_ip, visa_resource)
+
     def _add_default_debug_device(self):
         existing_serials = {c.property("serial") for c in self.device_cards}
         if "MY56006098" not in existing_serials:
@@ -4351,6 +4383,61 @@ class N6705CDatalogUI(QWidget):
             )
             self.device_list_layout.insertWidget(self.device_list_layout.count() - 1, card)
             self.device_cards.append(card)
+
+    # ---- 默认设备持久化（Save to Default）----
+    def _default_devices_path(self):
+        from ui.resource_path import get_user_data_dir
+        return os.path.join(get_user_data_dir("n6705c"), "default_devices.json")
+
+    def _load_default_devices(self):
+        import json
+        path = self._default_devices_path()
+        if not os.path.exists(path):
+            return []
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            devices = data.get("devices", []) if isinstance(data, dict) else []
+            return [d for d in devices if isinstance(d, dict) and d.get("visa_resource")]
+        except Exception:
+            logger.debug("Load default_devices.json failed", exc_info=True)
+            return []
+
+    def _save_default_device(self, serial, model, display_ip, visa_resource):
+        import json
+        path = self._default_devices_path()
+        devices = self._load_default_devices()
+        if any(d.get("visa_resource") == visa_resource for d in devices):
+            return
+        devices.append({
+            "serial": serial,
+            "model": model,
+            "display_ip": display_ip,
+            "visa_resource": visa_resource,
+        })
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({"devices": devices}, f, ensure_ascii=False, indent=2)
+            logger.debug("Saved default device: %s", visa_resource)
+        except Exception:
+            logger.warning("Save default_devices.json failed", exc_info=True)
+
+    def _add_default_saved_devices(self):
+        existing_serials = {c.property("serial") for c in self.device_cards}
+        for d in self._load_default_devices():
+            serial = d.get("serial") or d.get("visa_resource")
+            if serial in existing_serials:
+                continue
+            card = self._create_device_card(
+                serial, d.get("model", "N6705C"),
+                d.get("display_ip", ""), d["visa_resource"],
+            )
+            self.device_list_layout.insertWidget(
+                self.device_list_layout.count() - 1, card
+            )
+            self.device_cards.append(card)
+            existing_serials.add(serial)
 
     def _setup_plot(self):
         self.plot_widget.setBackground("#071127")

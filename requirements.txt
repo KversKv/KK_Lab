@@ -12,6 +12,9 @@ pyvisa-py>=0.7.2,<0.8
 pyusb>=1.3.1,<2
 libusb-package>=1.0.26.3,<2
 
+# mDNS / DNS-SD 仪器发现 (跨子网发现 N6705C 等 LXI 仪器)
+zeroconf>=0.130,<1
+
 # 串口通信 (VT6002温箱 / CLK测试)
 pyserial>=3.5,<4
 
