@@ -15,8 +15,8 @@ from typing import Any
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QGridLayout, QGroupBox, QHBoxLayout, QHeaderView,
-    QLabel, QLineEdit, QPushButton, QScrollArea, QSpinBox,
+    QGridLayout, QHBoxLayout, QHeaderView,
+    QLabel, QLineEdit, QPushButton, QScrollArea, QSizePolicy, QSpinBox,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -24,12 +24,12 @@ from core.ai.page_contract import (
     CAP_APPLY_CONFIG, CAP_GET_CONFIG, CAP_GET_RESULT, CAP_START_TEST, CAP_STOP_TEST,
 )
 from core.ai.ui_action_registry import UIActionSpec
-from core.module_test._common import parse_channel
 from debug_config import DEBUG_MOCK
 from log_config import get_logger
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.oscilloscope_module_frame import OscilloscopeConnectionMixin
+from ui.pages.module_test.widgets import CollapsibleGroupBox
 from ui.styles import START_BTN_STYLE, SCROLLBAR_STYLE
 from ui.widgets.dark_combobox import DarkComboBox
 
@@ -79,15 +79,10 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
             QWidget #{self.__class__.__name__} {{
                 background-color: #020618; color: #c8c8c8; border: none;
             }}
-            QGroupBox {{
-                border: 1px solid #333; border-radius: 6px; margin-top: 8px;
-                background-color: #0a0f1f;
-            }}
-            QGroupBox::title {{
-                subcontrol-origin: margin; left: 10px; padding: 0 4px;
-                color: #8eb0e3;
-            }}
             QLabel {{ color: #c8c8c8; }}
+            QLabel#statusOk {{ color: #15d1a3; font-weight: 600; background-color: transparent; }}
+            QLabel#statusWarn {{ color: #ffb84d; font-weight: 600; background-color: transparent; }}
+            QLabel#statusErr {{ color: #ff5e7a; font-weight: 600; background-color: transparent; }}
             QLineEdit, QSpinBox {{
                 border: 1px solid #444; border-radius: 4px; padding: 3px 6px;
                 background-color: #161b2e; color: #c8c8c8;
@@ -148,19 +143,19 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         root.setContentsMargins(0, 0, 0, 0)
         root.addWidget(self._splitter)
 
-    def _build_connection_group(self) -> QGroupBox:
-        grp = QGroupBox("仪器连接")
-        lay = QVBoxLayout(grp)
+    def _build_connection_group(self) -> "CollapsibleGroupBox":
+        box = CollapsibleGroupBox("仪器连接", expanded=True)
+        lay = box.content_layout
         lay.setSpacing(4)
         self.build_n6705c_connection_widgets(lay)
         self.build_oscilloscope_connection_widgets(lay)
         self.bind_n6705c_signals()
         self.bind_oscilloscope_signals()
-        return grp
+        return box
 
-    def _build_config_group(self) -> QGroupBox:
-        grp = QGroupBox("被测配置")
-        grid = QGridLayout(grp)
+    def _build_config_group(self) -> "CollapsibleGroupBox":
+        box = CollapsibleGroupBox("被测配置", expanded=True)
+        grid = QGridLayout()
         grid.setSpacing(6)
         grid.setColumnStretch(1, 1)
 
@@ -217,11 +212,12 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         self.temperature_edit = QLineEdit()
         self.temperature_edit.setPlaceholderText("常温留空")
         grid.addWidget(self.temperature_edit, 4, 3)
-        return grp
+        box.content_layout.addLayout(grid)
+        return box
 
-    def _build_items_group(self) -> QGroupBox:
-        grp = QGroupBox("测试项清单（勾选要执行的项）")
-        lay = QVBoxLayout(grp)
+    def _build_items_group(self) -> "CollapsibleGroupBox":
+        box = CollapsibleGroupBox("测试项清单（勾选要执行的项）", expanded=True)
+        lay = box.content_layout
         self.items_table = QTableWidget(0, 4)
         self.items_table.setHorizontalHeaderLabels(["选", "测试项", "主要仪器", "判定/记录"])
         self.items_table.verticalHeader().setVisible(False)
@@ -231,13 +227,20 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         header.setSectionResizeMode(1, QHeaderView.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.Stretch)
+        # 给清单足够高度显示全部行（表头 + 各测试项行），避免被 stretch 压扁导致内容截断
+        self.items_table.setMinimumHeight(
+            self.items_table.horizontalHeader().sizeHint().height()
+            + len(self.ITEMS_REGISTRY) * 30 + 8
+        )
+        self.items_table.setSizePolicy(self.items_table.sizePolicy().horizontalPolicy(),
+                                       QSizePolicy.Expanding)
         self.items_table.itemChanged.connect(self._on_item_changed)
         lay.addWidget(self.items_table)
-        return grp
+        return box
 
-    def _build_params_group(self) -> QGroupBox:
-        grp = QGroupBox("统一参数")
-        grid = QGridLayout(grp)
+    def _build_params_group(self) -> "CollapsibleGroupBox":
+        box = CollapsibleGroupBox("统一参数", expanded=False)
+        grid = QGridLayout()
         grid.setSpacing(6)
         grid.setColumnStretch(1, 1)
 
@@ -284,7 +287,8 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         grid.addWidget(QLabel("瞬态频率"), 3, 2)
         self.transient_freqs_edit = QLineEdit("10Hz, 100Hz, 1kHz")
         grid.addWidget(self.transient_freqs_edit, 3, 3)
-        return grp
+        box.content_layout.addLayout(grid)
+        return box
 
     def _build_action_row(self) -> QWidget:
         row = QWidget()
@@ -535,8 +539,19 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
 
     def set_system_status(self, status: str, is_error: bool = False):
         if hasattr(self, "system_status_label"):
-            self.system_status_label.setText(f"● {status}")
-            self.system_status_label.setObjectName("statusError" if is_error else "statusOk")
+            # 兼容 mixin 调用（已带 ● 前缀，如 "● Ready"）与本页调用（如 "就绪"），
+            # 避免重复叠加导致 "● ● Ready"
+            text = status if status.startswith("●") else f"● {status}"
+            self.system_status_label.setText(text)
+            # objectName 与全项目标准对齐：statusOk（绿）/statusWarn（黄）/statusErr（红）
+            if is_error:
+                obj_name = "statusErr"
+            elif any(kw in status for kw in ("Searching", "Connecting", "Disconnecting",
+                                              "Running", "进行中")):
+                obj_name = "statusWarn"
+            else:
+                obj_name = "statusOk"
+            self.system_status_label.setObjectName(obj_name)
             self.system_status_label.style().unpolish(self.system_status_label)
             self.system_status_label.style().polish(self.system_status_label)
 
