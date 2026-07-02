@@ -13,7 +13,7 @@ import os
 from typing import Any
 
 from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QColor, QDesktopServices
 from PySide6.QtWidgets import (
     QGridLayout, QHBoxLayout, QHeaderView,
     QLabel, QLineEdit, QPushButton, QScrollArea, QSizePolicy, QSpinBox,
@@ -30,6 +30,7 @@ from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.oscilloscope_module_frame import OscilloscopeConnectionMixin
 from ui.pages.module_test.widgets import CollapsibleGroupBox
+from ui.resource_path import get_resource_base
 from ui.styles import START_BTN_STYLE, SCROLLBAR_STYLE
 from ui.widgets.dark_combobox import DarkComboBox
 
@@ -77,27 +78,35 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
 
     # ------------------------------------------------------------------ style
     def _setup_style(self):
+        icons_dir = os.path.join(get_resource_base(), "resources", "icons")
+        cb_checked = os.path.join(icons_dir, "checked_4f46e5.svg").replace("\\", "/")
+        cb_unchecked = os.path.join(icons_dir, "unchecked_4f46e5.svg").replace("\\", "/")
         self.setStyleSheet(f"""
             QWidget #{self.__class__.__name__} {{
                 background-color: #020618; color: #c8c8c8; border: none;
             }}
             QLabel {{ color: #c8c8c8; }}
+            QLabel#fieldLabel {{ color: #9aa4bd; }}
             QLabel#cardTitle {{ color: #8eb0e3; font-weight: 700; background-color: transparent; }}
             QLabel#statusOk {{ color: #15d1a3; font-weight: 600; background-color: transparent; }}
             QLabel#statusWarn {{ color: #ffb84d; font-weight: 600; background-color: transparent; }}
             QLabel#statusErr {{ color: #ff5e7a; font-weight: 600; background-color: transparent; }}
             QLineEdit, QSpinBox {{
-                border: 1px solid #444; border-radius: 4px; padding: 3px 6px;
-                background-color: #161b2e; color: #c8c8c8;
+                border: 1px solid #2f374d; border-radius: 4px; padding: 3px 8px;
+                background-color: #161b2e; color: #c8c8c8; min-height: 22px;
             }}
+            QLineEdit:focus, QSpinBox:focus {{ border: 1px solid #4a6c9b; }}
+            QLineEdit::placeholder {{ color: #5a6377; }}
+            #actionRow {{ border-top: 1px solid #1c2438; }}
             #start_test_btn {{ {START_BTN_STYLE} }}
             #stop_test_btn {{
                 border: 1px solid #555; border-radius: 4px; padding: 6px 14px;
                 background-color: #3a2230; color: #e0a0b0; min-height: 22px;
             }}
+            #stop_test_btn:hover {{ background-color: #4a2a3c; }}
             #stop_test_btn:disabled {{ background-color: #2a2d32; color: #666; }}
             #open_report_btn, #select_all_btn, #clear_results_btn {{
-                border: 1px solid #555; border-radius: 4px; padding: 5px 12px;
+                border: 1px solid #3a4260; border-radius: 4px; padding: 5px 12px;
                 background-color: #32353a; color: #c8c8c8; min-height: 22px;
             }}
             #open_report_btn:hover, #select_all_btn:hover, #clear_results_btn:hover {{
@@ -106,11 +115,21 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
             #open_report_btn:disabled {{ background-color: #2a2d32; color: #666; }}
             QTableWidget {{
                 background-color: #0a0f1f; color: #c8c8c8;
-                gridline-color: #2a3148; border: 1px solid #333;
+                gridline-color: transparent; border: 1px solid #26304a;
+                border-radius: 4px; alternate-background-color: #0e1526;
+            }}
+            QTableWidget::item {{ padding: 2px 6px; border: none; }}
+            QTableWidget::item:hover {{ background-color: #14203a; }}
+            QTableWidget::indicator {{
+                width: 16px; height: 16px;
+                image: url("{cb_unchecked}");
+            }}
+            QTableWidget::indicator:checked {{
+                image: url("{cb_checked}");
             }}
             QHeaderView::section {{
-                background-color: #161b2e; color: #8eb0e3; padding: 4px;
-                border: none; border-right: 1px solid #2a3148;
+                background-color: #161b2e; color: #8eb0e3; padding: 5px 6px;
+                border: none; border-bottom: 1px solid #2a3148; font-weight: 600;
             }}
             QScrollBar:vertical {{ background: #0a0f1f; width: 10px; }}
             {SCROLLBAR_STYLE}
@@ -173,83 +192,92 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         self.bind_oscilloscope_signals()
         return box
 
+    def _field_label(self, text: str) -> QLabel:
+        lbl = QLabel(text)
+        lbl.setObjectName("fieldLabel")
+        lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        lbl.setMinimumWidth(84)
+        return lbl
+
     def _build_config_group(self) -> "CollapsibleGroupBox":
         box = CollapsibleGroupBox("被测配置", expanded=True)
         grid = QGridLayout()
-        grid.setSpacing(6)
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(8)
         grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(3, 1)
 
-        grid.addWidget(QLabel("芯片名称"), 0, 0)
+        grid.addWidget(self._field_label("芯片名称"), 0, 0)
         self.chip_name_edit = QLineEdit()
         self.chip_name_edit.setPlaceholderText("如 BES1307")
         grid.addWidget(self.chip_name_edit, 0, 1)
 
-        grid.addWidget(QLabel("操作员"), 0, 2)
+        grid.addWidget(self._field_label("操作员"), 0, 2)
         self.operator_edit = QLineEdit()
         grid.addWidget(self.operator_edit, 0, 3)
 
-        grid.addWidget(QLabel("Vin 通道"), 1, 0)
+        grid.addWidget(self._field_label("Vin 通道"), 1, 0)
         self.vin_ch_combo = DarkComboBox()
         self.vin_ch_combo.addItems([f"CH {i}" for i in range(1, 5)])
         grid.addWidget(self.vin_ch_combo, 1, 1)
 
-        grid.addWidget(QLabel("Vout 通道"), 1, 2)
+        grid.addWidget(self._field_label("Vout 通道"), 1, 2)
         self.vout_ch_combo = DarkComboBox()
         self.vout_ch_combo.addItems([f"CH {i}" for i in range(1, 5)])
         self.vout_ch_combo.setCurrentIndex(1)
         grid.addWidget(self.vout_ch_combo, 1, 3)
 
-        grid.addWidget(QLabel("Iload 通道"), 2, 0)
+        grid.addWidget(self._field_label("Iload 通道"), 2, 0)
         self.iload_ch_combo = DarkComboBox()
         self.iload_ch_combo.addItems([f"CH {i}" for i in range(1, 5)])
         self.iload_ch_combo.setCurrentIndex(2)
         grid.addWidget(self.iload_ch_combo, 2, 1)
 
-        grid.addWidget(QLabel("Vout 标称 (mV)"), 2, 2)
+        grid.addWidget(self._field_label("Vout 标称 (mV)"), 2, 2)
         self.vout_nominal_spin = QSpinBox()
         self.vout_nominal_spin.setRange(0, 6000)
         self.vout_nominal_spin.setValue(1800 if self.MODULE_TYPE == "ldo" else 1200)
         grid.addWidget(self.vout_nominal_spin, 2, 3)
 
-        grid.addWidget(QLabel("Code 起始"), 3, 0)
+        grid.addWidget(self._field_label("Code 起始"), 3, 0)
         self.min_code_spin = QSpinBox()
         self.min_code_spin.setRange(0, 65535)
         grid.addWidget(self.min_code_spin, 3, 1)
 
-        grid.addWidget(QLabel("Code 结束"), 3, 2)
+        grid.addWidget(self._field_label("Code 结束"), 3, 2)
         self.max_code_spin = QSpinBox()
         self.max_code_spin.setRange(0, 65535)
         self.max_code_spin.setValue(255)
         grid.addWidget(self.max_code_spin, 3, 3)
 
-        grid.addWidget(QLabel("温度点 (°C)"), 4, 0)
+        grid.addWidget(self._field_label("温度点 (°C)"), 4, 0)
         self.temperature_edit = QLineEdit()
         self.temperature_edit.setPlaceholderText("常温留空")
         grid.addWidget(self.temperature_edit, 4, 1)
 
-        grid.addWidget(QLabel("Device 地址"), 5, 0)
+        grid.addWidget(self._field_label("Device 地址"), 5, 0)
         self.device_addr_edit = QLineEdit("0x00")
         self.device_addr_edit.setPlaceholderText("如 0x62")
         grid.addWidget(self.device_addr_edit, 5, 1)
 
-        grid.addWidget(QLabel("寄存器地址"), 5, 2)
+        grid.addWidget(self._field_label("寄存器地址"), 5, 2)
         self.reg_addr_edit = QLineEdit("0x00")
         self.reg_addr_edit.setPlaceholderText("如 0x0132")
         grid.addWidget(self.reg_addr_edit, 5, 3)
 
-        grid.addWidget(QLabel("MSB"), 6, 0)
+        grid.addWidget(self._field_label("MSB"), 6, 0)
         self.msb_spin = QSpinBox()
         self.msb_spin.setRange(0, 31)
         self.msb_spin.setValue(7)
         grid.addWidget(self.msb_spin, 6, 1)
 
-        grid.addWidget(QLabel("LSB"), 6, 2)
+        grid.addWidget(self._field_label("LSB"), 6, 2)
         self.lsb_spin = QSpinBox()
         self.lsb_spin.setRange(0, 31)
         self.lsb_spin.setValue(0)
         grid.addWidget(self.lsb_spin, 6, 3)
 
-        grid.addWidget(QLabel("Width Flag"), 7, 0)
+        grid.addWidget(self._field_label("Width Flag"), 7, 0)
         self.width_flag_spin = QSpinBox()
         self.width_flag_spin.setRange(1, 4)
         self.width_flag_spin.setValue(1)
@@ -263,12 +291,19 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         self.items_table = QTableWidget(0, 4)
         self.items_table.setHorizontalHeaderLabels(["选", "测试项", "主要仪器", "判定/记录"])
         self.items_table.verticalHeader().setVisible(False)
+        self.items_table.verticalHeader().setDefaultSectionSize(30)
         self.items_table.setSelectionMode(QTableWidget.NoSelection)
+        self.items_table.setShowGrid(False)
+        self.items_table.setAlternatingRowColors(True)
+        self.items_table.setFocusPolicy(Qt.NoFocus)
         header = self.items_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setHighlightSections(False)
+        header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        header.setSectionResizeMode(0, QHeaderView.Fixed)
         header.setSectionResizeMode(1, QHeaderView.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self.items_table.setColumnWidth(0, 44)
         # 给清单足够高度显示全部行（表头 + 各测试项行），避免被 stretch 压扁导致内容截断
         self.items_table.setMinimumHeight(
             self.items_table.horizontalHeader().sizeHint().height()
@@ -283,50 +318,52 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
     def _build_params_group(self) -> "CollapsibleGroupBox":
         box = CollapsibleGroupBox("统一参数", expanded=False)
         grid = QGridLayout()
-        grid.setSpacing(6)
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(8)
         grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(3, 1)
 
-        grid.addWidget(QLabel("负载起始 (mA)"), 0, 0)
+        grid.addWidget(self._field_label("负载起始 (mA)"), 0, 0)
         self.iload_start_spin = QSpinBox()
         self.iload_start_spin.setRange(0, 100000)
         self.iload_start_spin.setValue(1)
         grid.addWidget(self.iload_start_spin, 0, 1)
 
-        grid.addWidget(QLabel("负载结束 (mA)"), 0, 2)
+        grid.addWidget(self._field_label("负载结束 (mA)"), 0, 2)
         self.iload_end_spin = QSpinBox()
         self.iload_end_spin.setRange(0, 100000)
         self.iload_end_spin.setValue(200)
         grid.addWidget(self.iload_end_spin, 0, 3)
 
-        grid.addWidget(QLabel("负载步进 (mA)"), 1, 0)
+        grid.addWidget(self._field_label("负载步进 (mA)"), 1, 0)
         self.iload_step_spin = QSpinBox()
         self.iload_step_spin.setRange(1, 100000)
         self.iload_step_spin.setValue(20)
         grid.addWidget(self.iload_step_spin, 1, 1)
 
-        grid.addWidget(QLabel("Vin 起始 (V)"), 1, 2)
+        grid.addWidget(self._field_label("Vin 起始 (V)"), 1, 2)
         self.vin_start_spin = QSpinBox()
         self.vin_start_spin.setRange(0, 60)
         self.vin_start_spin.setValue(3)
         grid.addWidget(self.vin_start_spin, 1, 3)
 
-        grid.addWidget(QLabel("Vin 结束 (V)"), 2, 0)
+        grid.addWidget(self._field_label("Vin 结束 (V)"), 2, 0)
         self.vin_end_spin = QSpinBox()
         self.vin_end_spin.setRange(0, 60)
         self.vin_end_spin.setValue(4)
         grid.addWidget(self.vin_end_spin, 2, 1)
 
-        grid.addWidget(QLabel("Vin 步进 (V)"), 2, 2)
+        grid.addWidget(self._field_label("Vin 步进 (V)"), 2, 2)
         self.vin_step_spin = QSpinBox()
         self.vin_step_spin.setRange(1, 60)
         self.vin_step_spin.setValue(2)
         grid.addWidget(self.vin_step_spin, 2, 3)
 
-        grid.addWidget(QLabel("PSRR 频点"), 3, 0)
+        grid.addWidget(self._field_label("PSRR 频点"), 3, 0)
         self.psrr_freqs_edit = QLineEdit("1kHz, 10kHz, 100kHz")
         grid.addWidget(self.psrr_freqs_edit, 3, 1)
 
-        grid.addWidget(QLabel("瞬态频率"), 3, 2)
+        grid.addWidget(self._field_label("瞬态频率"), 3, 2)
         self.transient_freqs_edit = QLineEdit("10Hz, 100Hz, 1kHz")
         grid.addWidget(self.transient_freqs_edit, 3, 3)
         box.content_layout.addLayout(grid)
@@ -334,12 +371,14 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
 
     def _build_action_row(self) -> QWidget:
         row = QWidget()
+        row.setObjectName("actionRow")
         lay = QHBoxLayout(row)
-        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setContentsMargins(0, 8, 0, 0)
         lay.setSpacing(8)
 
         self.start_test_btn = QPushButton("▶ 开始测试")
         self.start_test_btn.setObjectName("start_test_btn")
+        self.start_test_btn.setCursor(Qt.PointingHandCursor)
         self.stop_test_btn = QPushButton("■ 停止")
         self.stop_test_btn.setObjectName("stop_test_btn")
         self.stop_test_btn.setEnabled(False)
@@ -350,6 +389,9 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         self.open_report_btn = QPushButton("打开报告")
         self.open_report_btn.setObjectName("open_report_btn")
         self.open_report_btn.setEnabled(False)
+        for _btn in (self.select_all_btn, self.clear_results_btn, self.open_report_btn):
+            _btn.setMinimumWidth(88)
+            _btn.setCursor(Qt.PointingHandCursor)
 
         self.start_test_btn.clicked.connect(self._on_start_test)
         self.stop_test_btn.clicked.connect(self._on_stop_test)
@@ -374,6 +416,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
             self.items_table.insertRow(row)
             chk = QTableWidgetItem()
             chk.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
+            chk.setTextAlignment(Qt.AlignCenter)
             chk.setCheckState(Qt.Checked if item_checked else Qt.Unchecked)
             self.items_table.setItem(row, 0, chk)
             name_item = QTableWidgetItem(name)
@@ -383,9 +426,14 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
             inst = "示波器" if needs_scope else "N6705C"
             inst_item = QTableWidgetItem(inst)
             inst_item.setFlags(Qt.ItemIsEnabled)
+            inst_item.setTextAlignment(Qt.AlignCenter)
+            inst_item.setForeground(QColor("#c99b5a" if needs_scope else "#6f9bd6"))
             inst_item.setData(Qt.UserRole, needs_scope)
             self.items_table.setItem(row, 2, inst_item)
-            self.items_table.setItem(row, 3, QTableWidgetItem("记录"))
+            rec_item = QTableWidgetItem("记录")
+            rec_item.setFlags(Qt.ItemIsEnabled)
+            rec_item.setForeground(QColor("#7f889c"))
+            self.items_table.setItem(row, 3, rec_item)
 
     def _on_item_changed(self, _item: QTableWidgetItem):
         pass
@@ -411,11 +459,15 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
             if needs_scope and not scope_ok:
                 chk.setCheckState(Qt.Unchecked)
                 chk.setFlags(Qt.ItemIsEnabled)
-                self.items_table.item(row, 3).setText("未接示波器，跳过")
+                rec = self.items_table.item(row, 3)
+                rec.setText("未接示波器，跳过")
+                rec.setForeground(QColor("#b0684f"))
             else:
                 chk.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
-                if self.items_table.item(row, 3).text().startswith("未接示波器"):
-                    self.items_table.item(row, 3).setText("记录")
+                rec = self.items_table.item(row, 3)
+                if rec.text().startswith("未接示波器"):
+                    rec.setText("记录")
+                    rec.setForeground(QColor("#7f889c"))
 
     # ------------------------------------------------------------------ config IO
     def get_test_config(self) -> dict[str, Any]:
