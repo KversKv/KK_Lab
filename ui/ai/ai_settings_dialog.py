@@ -117,6 +117,7 @@ class AISettingsDialog(QDialog):
         root.addLayout(self._build_button_bar())
 
         self._service.connection_tested.connect(self._on_connection_tested)
+        self._service.models_probed.connect(self._on_models_probed)
 
     def _build_general_tab(self) -> QWidget:
         tab = QWidget()
@@ -579,6 +580,15 @@ class AISettingsDialog(QDialog):
         self._test_btn.clicked.connect(self._on_test_clicked)
         bar.addWidget(self._test_btn)
 
+        self._probe_btn = QPushButton("探测模型")
+        self._probe_btn.setAutoDefault(False)
+        self._probe_btn.setDefault(False)
+        self._probe_btn.setToolTip(
+            "列出网关真实模型，并逐个实测流式/非流式下能否正常调用工具（tool_calls）"
+        )
+        self._probe_btn.clicked.connect(self._on_probe_clicked)
+        bar.addWidget(self._probe_btn)
+
         bar.addStretch(1)
 
         cancel = QPushButton("取消")
@@ -657,12 +667,74 @@ class AISettingsDialog(QDialog):
 
     def _on_connection_tested(self, ok: bool, message: str) -> None:
         self._test_btn.setEnabled(True)
+        self._probe_btn.setEnabled(True)
         if ok:
             self._test_result.setText(f"✓ {message}")
             self._test_result.setStyleSheet("color: #7ee0a0;")
         else:
             self._test_result.setText(f"✗ {message}")
             self._test_result.setStyleSheet("color: #ff8a8a;")
+
+    def _on_probe_clicked(self) -> None:
+        self._apply_to_settings()
+        self._test_btn.setEnabled(False)
+        self._probe_btn.setEnabled(False)
+        self._test_result.setText("正在探测模型（逐个实测工具调用，稍候）…")
+        self._test_result.setStyleSheet("color: #c8d4ee;")
+        self._service.probe_models()
+
+    def _on_models_probed(self, report: list) -> None:
+        """展示探测结果：模型 → 非流式/流式 tool_calls 支持，并给出建议。
+
+        同时把探测到的真实模型 id 回填「可选模型」清单，纠正别名不匹配问题。
+        """
+        self._test_btn.setEnabled(True)
+        self._probe_btn.setEnabled(True)
+        report = report or []
+        models = [str(e.get("model", "")) for e in report if e.get("model")]
+        if models:
+            self._models_edit.setText(", ".join(models))
+            cur = self._model_combo.currentText().strip()
+            self._model_combo.clear()
+            self._model_combo.addItems(models)
+            self._model_combo.setCurrentText(cur or models[0])
+
+        def mark(value) -> str:
+            if value is True:
+                return "✓"
+            if value is False:
+                return "✗"
+            return "—"
+
+        stream_on = self._stream_chk.isChecked()
+        lines: list[str] = []
+        recommended: list[str] = []
+        for entry in report:
+            model = str(entry.get("model", ""))
+            ns = entry.get("tools_nostream")
+            st = entry.get("tools_stream")
+            err = entry.get("error") or ""
+            line = f"{model}: 工具(非流式) {mark(ns)} · 工具(流式) {mark(st)}"
+            if err:
+                line += f" · {err}"
+            lines.append(line)
+            if (st if stream_on else ns) is True:
+                recommended.append(model)
+
+        text = "模型探测结果（当前流式=%s）：\n%s" % (
+            "开" if stream_on else "关",
+            "\n".join(lines) if lines else "（无模型）",
+        )
+        if recommended:
+            text += "\n建议：当前流式设置下可正常调用工具的模型 → " + "、".join(recommended)
+            self._test_result.setStyleSheet("color: #7ee0a0;")
+        else:
+            text += (
+                "\n⚠ 当前流式设置下没有模型能正常返回 tool_calls，"
+                "AI 将「只说不做」。请关闭流式，或改用上表「工具(流式) ✓」的模型。"
+            )
+            self._test_result.setStyleSheet("color: #ffcc66;")
+        self._test_result.setText(text)
 
     def _on_save(self) -> None:
         self._apply_to_settings()

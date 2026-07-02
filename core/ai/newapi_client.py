@@ -322,3 +322,68 @@ class NewAPIClient:
             temperature=0.0,
             max_tokens=_MIN_MAX_TOKENS,
         )
+
+    def list_models(self) -> list[str]:
+        """GET /models：列出网关真实暴露的模型 id（用于探测/纠正别名）。"""
+        if not self._base_url:
+            raise AIClientError("未配置 base_url")
+        if not self._api_key:
+            raise AIClientError("未配置 API Key")
+        url = f"{self._base_url}/models"
+        try:
+            with httpx.Client(
+                trust_env=False, timeout=self._timeout_config(stream=False)
+            ) as client:
+                resp = client.get(url, headers=self._headers())
+        except httpx.HTTPError as exc:
+            logger.error("New API 列模型网络错误: %s", url, exc_info=True)
+            raise AIClientError(f"网络错误：{exc}") from exc
+        if resp.status_code != 200:
+            snippet = resp.text[:300] if resp.text else ""
+            raise AIClientError(f"HTTP {resp.status_code}: {snippet}")
+        try:
+            data = (resp.json() or {}).get("data") or []
+        except ValueError as exc:
+            raise AIClientError("响应解析失败（非 JSON）") from exc
+        return [str(m.get("id", "")) for m in data if isinstance(m, dict) and m.get("id")]
+
+    def probe_tool_support(self, model: str, *, stream: bool) -> bool:
+        """探测某模型在指定 stream 模式下是否真的回传 tool_calls。
+
+        背景：部分网关模型（如 glm-5.2-fp8）非流式支持 function calling，
+        但流式模式下静默丢弃 tool_calls，导致 AI「只说不做」。本方法用一个
+        必然应触发工具调用的最小请求实测该组合是否可用。
+        """
+        probe_tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_current_time",
+                    "description": "获取当前时间；用户问时间时必须调用本工具。",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ]
+        messages = [
+            {"role": "system", "content": "需要时间时必须调用 get_current_time 工具，不要用文字回答。"},
+            {"role": "user", "content": "现在几点？请调用工具查询。"},
+        ]
+        if stream:
+            result = self.chat_stream(
+                model=model,
+                messages=messages,
+                temperature=0.0,
+                max_tokens=_MIN_MAX_TOKENS,
+                tools=probe_tools,
+                tool_choice="auto",
+            )
+        else:
+            result = self.chat(
+                model=model,
+                messages=messages,
+                temperature=0.0,
+                max_tokens=_MIN_MAX_TOKENS,
+                tools=probe_tools,
+                tool_choice="auto",
+            )
+        return bool(result.tool_calls)

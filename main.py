@@ -32,7 +32,7 @@ WITH_AI_ASSISTANT = os.environ.get("KK_LAB_WITH_AI", "1").strip().lower() not in
     "no",
 )
 
-setup_logging(level=logging.DEBUG)
+setup_logging(level=logging.INFO)
 if WITH_AI_ASSISTANT:
     from core.ai.log_ring import install_log_ring
 

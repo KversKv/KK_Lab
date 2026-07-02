@@ -174,6 +174,63 @@ class _SummaryWorker(QObject):
         self.finished.emit((result.content or "").strip())
 
 
+class _ProbeWorker(QObject):
+    """模型探测 worker：列网关模型 + 逐个实测流式/非流式的 tool_calls 支持。
+
+    结果为 list[dict]，每项含 model / tools_nostream / tools_stream / error，
+    经 finished 信号回报，供设置页展示并提示「哪个模型+哪种流式能正常调工具」。
+    """
+
+    finished = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, client: NewAPIClient):
+        super().__init__()
+        self._client = client
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
+
+    def run(self) -> None:
+        try:
+            models = self._client.list_models()
+        except AIClientError as exc:
+            self.failed.emit(str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001 - 兜底转可读错误
+            logger.error("列模型未预期异常", exc_info=True)
+            self.failed.emit(f"未预期错误：{exc}")
+            return
+        if not models:
+            self.failed.emit("网关未返回任何模型。")
+            return
+
+        report: list[dict] = []
+        for model in models:
+            if self._cancelled:
+                return
+            entry: dict = {
+                "model": model,
+                "tools_nostream": None,
+                "tools_stream": None,
+                "error": "",
+            }
+            for stream in (False, True):
+                if self._cancelled:
+                    return
+                try:
+                    ok = self._client.probe_tool_support(model, stream=stream)
+                    entry["tools_stream" if stream else "tools_nostream"] = ok
+                except AIClientError as exc:
+                    entry["error"] = str(exc)
+                except Exception as exc:  # noqa: BLE001 - 单模型失败不影响其余
+                    logger.error("探测模型 %s(stream=%s) 失败", model, stream, exc_info=True)
+                    entry["error"] = f"未预期错误：{exc}"
+            report.append(entry)
+        self.finished.emit(report)
+
+
 _SUMMARY_INSTRUCTION = (
     "你是对话压缩助手。请把下面这段实验室仪器控制对话压缩成简洁的「前情提要」，"
     "保留：用户目标、已确认的关键参数（通道/电压/电流/序列名等）、已执行过的操作与结论、"
@@ -249,6 +306,7 @@ class AIService(QObject):
     # 用户主动停止生成（§停止AI生成）：UI 据此收尾未完成的流式气泡
     generation_cancelled = Signal()
     connection_tested = Signal(bool, str)
+    models_probed = Signal(object)
     action_requested = Signal(object)
     action_result = Signal(object)
     usage_updated = Signal(object, object)
@@ -266,6 +324,8 @@ class AIService(QObject):
         self._summary: str = _load_persisted_summary(self._session_key)
         self._summary_thread: QThread | None = None
         self._summary_worker: _SummaryWorker | None = None
+        self._probe_thread: QThread | None = None
+        self._probe_worker: _ProbeWorker | None = None
         self._telemetry_uploader = None
         self._busy = False
         self._pending_mode = _MODE_CHAT
@@ -1607,6 +1667,39 @@ class AIService(QObject):
             return
         self.connection_tested.emit(True, "连接成功")
 
+    def probe_models(self) -> None:
+        """一键探测：列网关模型并实测各模型流式/非流式 tool_calls 支持。
+
+        在独立 QThread 中跑（UI 禁阻塞 IO），完成经 models_probed(list) 回报，
+        失败经 connection_tested(False, msg) 复用同一提示通道。
+        """
+        if not self._settings.is_configured():
+            self.connection_tested.emit(False, "未配置 base_url 或 API Key")
+            return
+        if self._probe_thread is not None and self._probe_thread.isRunning():
+            self.connection_tested.emit(False, "正在探测中，请稍候。")
+            return
+        self._probe_thread = QThread()
+        self._probe_worker = _ProbeWorker(self._make_client())
+        self._probe_worker.moveToThread(self._probe_thread)
+        self._probe_thread.started.connect(self._probe_worker.run)
+        self._probe_worker.finished.connect(self.models_probed)
+        self._probe_worker.failed.connect(
+            lambda msg: self.connection_tested.emit(False, msg)
+        )
+        self._probe_worker.finished.connect(self._probe_thread.quit)
+        self._probe_worker.failed.connect(self._probe_thread.quit)
+        self._probe_thread.finished.connect(self._cleanup_probe_thread)
+        self._probe_thread.start()
+
+    def _cleanup_probe_thread(self) -> None:
+        if self._probe_worker is not None:
+            self._probe_worker.deleteLater()
+            self._probe_worker = None
+        if self._probe_thread is not None:
+            self._probe_thread.deleteLater()
+            self._probe_thread = None
+
     def shutdown(self) -> None:
         self._pending_mode = _MODE_CHAT
         self.cancel()
@@ -1614,6 +1707,11 @@ class AIService(QObject):
             self._thread.quit()
             self._thread.wait(2000)
         self._cleanup_thread()
+        if self._probe_worker is not None:
+            self._probe_worker.cancel()
+        if self._probe_thread is not None and self._probe_thread.isRunning():
+            self._probe_thread.quit()
+            self._probe_thread.wait(2000)
         for thread, worker in list(self._orphans):
             try:
                 if worker is not None:

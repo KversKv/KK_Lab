@@ -10,7 +10,9 @@ from __future__ import annotations
 import os
 
 from core.module_test._common import (
-    ItemContext, linspace, mock_jitter, parse_channel, safe_measure, write_csv,
+    ItemContext, linspace, measure_avg, mock_jitter, parse_channel,
+    set_load_current, settle, setup_load_channel, setup_meter_channel,
+    setup_source_channel, teardown_load, write_csv,
 )
 from core.module_test.result_model import ItemResult
 from log_config import get_logger
@@ -35,6 +37,12 @@ def vout_scan(ctx: ItemContext) -> ItemResult:
 
     codes = list(range(dac_start, dac_end + 1, dac_step))
     rows: list[list[float]] = []
+    vin_v = float(cfg.get("vin_v", 3.7))
+    settle_s = float(cfg.get("settle_time_s", 0.05))
+    avg_cnt = int(cfg.get("average_cnt", 3))
+    if not ctx.is_mock:
+        setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
+        setup_meter_channel(ctx, vout_ch)
     for i, code in enumerate(codes):
         if ctx.stop_flag_fn():
             break
@@ -43,7 +51,10 @@ def vout_scan(ctx: ItemContext) -> ItemResult:
             v = nominal_mv * (code / max(dac_end, 1)) * (1.0 + (i % 3 - 1) * 0.001)
             v = mock_jitter(v, 0.003)
         else:
-            v = safe_measure(ctx.n6705c, "measure_voltage", vout_ch, nominal_mv) * 1000.0
+            # 注：DAC 挡位由寄存器外部设置，此处逐挡位稳定后测 Vout
+            settle(ctx, settle_s)
+            v = measure_avg(ctx, "measure_voltage", vout_ch,
+                            count=avg_cnt, settle_s=settle_s, default=nominal_mv / 1000.0) * 1000.0
         rows.append([code, round(v, 3)])
         ctx.progress_fn(int((i + 1) / len(codes) * 100), f"Vout scan {code}")
         ctx.log_fn(f"[{item_key}] DAC={code} -> Vout={v:.3f} mV")
@@ -65,37 +76,36 @@ def load_line_reg(ctx: ItemContext) -> ItemResult:
     i_end = float(cfg.get("iload_end_ma", 200))
     i_step = float(cfg.get("iload_step_ma", 20))
     vout_ch = parse_channel(cfg.get("vout_channel", 1))
+    vin_ch = parse_channel(cfg.get("vin_channel", 2))
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
     nominal_mv = float(cfg.get("vout_nominal_mv", 1800))
+    vin_v = float(cfg.get("vin_v", 3.7))
+    settle_s = float(cfg.get("settle_time_s", 0.05))
+    avg_cnt = int(cfg.get("average_cnt", 3))
 
     points = linspace(i_start, i_end, i_step)
     rows: list[list[float]] = []
-    try:
-        ctx.n6705c.set_mode(iload_ch, "CCLoad")
-        ctx.n6705c.channel_on(iload_ch)
-    except Exception:  # noqa: BLE001
-        logger.debug("set CCLoad failed (mock may ignore)", exc_info=True)
+    if not ctx.is_mock:
+        setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
+        setup_meter_channel(ctx, vout_ch)
+        setup_load_channel(ctx, iload_ch)
 
     for i, il in enumerate(points):
         if ctx.stop_flag_fn():
             break
-        try:
-            ctx.n6705c.set_current(iload_ch, il / 1000.0)
-        except Exception:  # noqa: BLE001
-            pass
         if ctx.is_mock:
             v = nominal_mv - il * 0.02  # 轻微跌落
             v = mock_jitter(v, 0.002)
         else:
-            v = safe_measure(ctx.n6705c, "measure_voltage", vout_ch, nominal_mv) * 1000.0
+            set_load_current(ctx, iload_ch, il / 1000.0)
+            settle(ctx, settle_s)
+            v = measure_avg(ctx, "measure_voltage", vout_ch,
+                            count=avg_cnt, settle_s=settle_s, default=nominal_mv / 1000.0) * 1000.0
         rows.append([il, round(v, 4)])
         ctx.progress_fn(int((i + 1) / len(points) * 100), f"Load reg {il}mA")
         ctx.log_fn(f"[{item_key}] Iload={il}mA -> Vout={v:.4f} mV")
-    try:
-        ctx.n6705c.set_current(iload_ch, 0)
-        ctx.n6705c.channel_off(iload_ch)
-    except Exception:  # noqa: BLE001
-        pass
+    if not ctx.is_mock:
+        teardown_load(ctx, iload_ch)
 
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Iload (mA)", "Vout (mV)"], rows)
@@ -116,27 +126,29 @@ def line_reg(ctx: ItemContext) -> ItemResult:
     vout_ch = parse_channel(cfg.get("vout_channel", 1))
     vin_ch = parse_channel(cfg.get("vin_channel", 2))
     nominal_mv = float(cfg.get("vout_nominal_mv", 1800))
+    settle_s = float(cfg.get("settle_time_s", 0.05))
+    avg_cnt = int(cfg.get("average_cnt", 3))
 
     points = linspace(vin_start, vin_end, vin_step)
     rows: list[list[float]] = []
-    try:
-        ctx.n6705c.set_mode(vin_ch, "PS2Q")
-        ctx.n6705c.channel_on(vin_ch)
-    except Exception:  # noqa: BLE001
-        logger.debug("set PS2Q failed (mock may ignore)", exc_info=True)
+    if not ctx.is_mock:
+        setup_source_channel(ctx, vin_ch, vin_start, current_limit=0.5)
+        setup_meter_channel(ctx, vout_ch)
 
     for i, vin in enumerate(points):
         if ctx.stop_flag_fn():
             break
-        try:
-            ctx.n6705c.set_voltage(vin_ch, vin)
-        except Exception:  # noqa: BLE001
-            pass
         if ctx.is_mock:
             v = nominal_mv + (vin - 3.7) * 0.5  # 微弱跟随
             v = mock_jitter(v, 0.001)
         else:
-            v = safe_measure(ctx.n6705c, "measure_voltage", vout_ch, nominal_mv) * 1000.0
+            try:
+                ctx.n6705c.set_voltage(vin_ch, vin)
+            except Exception:  # noqa: BLE001
+                logger.error("set Vin failed", exc_info=True)
+            settle(ctx, settle_s)
+            v = measure_avg(ctx, "measure_voltage", vout_ch,
+                            count=avg_cnt, settle_s=settle_s, default=nominal_mv / 1000.0) * 1000.0
         rows.append([vin, round(v, 4)])
         ctx.progress_fn(int((i + 1) / len(points) * 100), f"Line reg {vin}V")
         ctx.log_fn(f"[{item_key}] Vin={vin}V -> Vout={v:.4f} mV")
@@ -154,8 +166,13 @@ def quiescent(ctx: ItemContext) -> ItemResult:
     item_key = "ldo_quiescent"
     cfg = ctx.config
     vin_ch = parse_channel(cfg.get("vin_channel", 1))
+    vin_v = float(cfg.get("vin_v", 3.7))
+    settle_s = float(cfg.get("settle_time_s", 0.05))
     modes = cfg.get("iq_modes", ["NORMAL", "SLEEP"])
     rows: list[list] = []
+    if not ctx.is_mock:
+        # 空载测静态电流：源上电、不接负载
+        setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
     for i, mode in enumerate(modes):
         if ctx.stop_flag_fn():
             break
@@ -163,7 +180,10 @@ def quiescent(ctx: ItemContext) -> ItemResult:
             iq = 5.0 if mode == "SLEEP" else 80.0
             iq = mock_jitter(iq, 0.05)
         else:
-            iq = safe_measure(ctx.n6705c, "measure_current", vin_ch, 0.0) * 1e6  # A -> uA
+            # 注：工作模式切换由寄存器外部设置，此处稳定后测源侧输入电流
+            settle(ctx, max(settle_s * 4, 0.2))
+            iq = measure_avg(ctx, "measure_current", vin_ch,
+                             count=5, settle_s=settle_s, default=0.0) * 1e6  # A -> uA
         rows.append([mode, round(iq, 3)])
         ctx.progress_fn(int((i + 1) / len(modes) * 100), f"Iq {mode}")
         ctx.log_fn(f"[{item_key}] mode={mode} -> Iq={iq:.3f} uA")
@@ -176,13 +196,40 @@ def quiescent(ctx: ItemContext) -> ItemResult:
 
 
 def ripple(ctx: ItemContext) -> ItemResult:
-    """输出纹波（依赖示波器）。"""
+    """输出纹波（依赖示波器）。
+
+    流程：Vin=PS2Q 源上电、带额定负载，示波器 AC 耦合测 Vout 纹波，
+    调用 set_AutoRipple_test 自动优化档位后读 Vpp / RMS。
+    """
     item_key = "ldo_ripple"
     if ctx.scope is None:
         return _skipped(item_key, "输出纹波", "未连接示波器，跳过")
     cfg = ctx.config
-    vpp = mock_jitter(2.5, 0.1) if ctx.is_mock else 0.0
-    rms = mock_jitter(0.4, 0.1) if ctx.is_mock else 0.0
+    scope_ch = int(cfg.get("scope_vout_channel", 1))
+    vin_ch = parse_channel(cfg.get("vin_channel", 2))
+    iload_ch = parse_channel(cfg.get("iload_channel", 3))
+    vin_v = float(cfg.get("vin_v", 3.7))
+    load_ma = float(cfg.get("ripple_load_ma", 100))
+    settle_s = float(cfg.get("settle_time_s", 0.05))
+
+    if ctx.is_mock:
+        vpp = mock_jitter(2.5, 0.1)
+        rms = mock_jitter(0.4, 0.1)
+    else:
+        setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
+        setup_load_channel(ctx, iload_ch)
+        set_load_current(ctx, iload_ch, load_ma / 1000.0)
+        settle(ctx, max(settle_s * 8, 0.5))
+        try:
+            ctx.scope.set_AutoRipple_test(scope_ch)
+            settle(ctx, 0.3)
+            vpp = float(ctx.scope.get_channel_pk2pk(scope_ch)) * 1000.0  # V->mV
+            rms = float(ctx.scope.get_channel_rms(scope_ch)) * 1000.0
+        except Exception:  # noqa: BLE001
+            logger.error("scope ripple read failed", exc_info=True)
+            vpp = 0.0
+            rms = 0.0
+        teardown_load(ctx, iload_ch)
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Vpp (mV)", "RMS (mV)"], [[round(vpp, 4), round(rms, 4)]])
     ctx.log_fn(f"[{item_key}] Vpp={vpp:.3f} mV, RMS={rms:.3f} mV")
@@ -234,18 +281,51 @@ def load_transient(ctx: ItemContext) -> ItemResult:
 def dropout(ctx: ItemContext) -> ItemResult:
     """压差电压 Dropout（维持稳压所需最小 Vin-Vout）。
 
-    大框架占位：Mock 生成合理数据；真机逐步降低 Vin 直至 Vout 跌出容差，
-    记录临界 Vin-Vout。具体扫描与判定后续迭代。
+    流程：Vin=PS2Q 源、带固定负载，从 Vin 上限逐步降低，
+    当 Vout 跌出容差（低于 nominal*(1-tol)）时，记录此时的 Vin-Vout 即为压差。
     """
     item_key = "ldo_dropout"
     cfg = ctx.config
     nominal_mv = float(cfg.get("vout_nominal_mv", 1800))
     iload_ma = float(cfg.get("dropout_iload_ma", 100))
+    vin_ch = parse_channel(cfg.get("vin_channel", 2))
+    vout_ch = parse_channel(cfg.get("vout_channel", 1))
+    iload_ch = parse_channel(cfg.get("iload_channel", 3))
+    vin_hi = float(cfg.get("dropout_vin_hi_v", nominal_mv / 1000.0 + 1.0))
+    vin_lo = float(cfg.get("dropout_vin_lo_v", nominal_mv / 1000.0))
+    vin_step = float(cfg.get("dropout_vin_step_v", 0.02))
+    tol = float(cfg.get("vout_tol", 0.02))
+    settle_s = float(cfg.get("settle_time_s", 0.05))
+    avg_cnt = int(cfg.get("average_cnt", 3))
+
     if ctx.is_mock:
         dropout_mv = mock_jitter(180.0, 0.05)
     else:
-        # TODO(迭代): 逐步降低 Vin，检测 Vout 跌落 2% 临界点
+        setup_source_channel(ctx, vin_ch, vin_hi, current_limit=0.5)
+        setup_meter_channel(ctx, vout_ch)
+        setup_load_channel(ctx, iload_ch)
+        set_load_current(ctx, iload_ch, iload_ma / 1000.0)
+        settle(ctx, max(settle_s * 4, 0.2))
+        # 从高到低扫描 Vin
+        vin = vin_hi
+        threshold_mv = nominal_mv * (1.0 - tol)
         dropout_mv = 0.0
+        while vin >= vin_lo - 1e-9:
+            if ctx.stop_flag_fn():
+                break
+            try:
+                ctx.n6705c.set_voltage(vin_ch, vin)
+            except Exception:  # noqa: BLE001
+                logger.error("set Vin failed", exc_info=True)
+            settle(ctx, settle_s)
+            v = measure_avg(ctx, "measure_voltage", vout_ch,
+                            count=avg_cnt, settle_s=settle_s, default=nominal_mv / 1000.0) * 1000.0
+            ctx.log_fn(f"[{item_key}] Vin={vin:.3f}V -> Vout={v:.3f} mV")
+            if v < threshold_mv:
+                dropout_mv = max(vin * 1000.0 - v, 0.0)
+                break
+            vin -= vin_step
+        teardown_load(ctx, iload_ch)
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Iload (mA)", "Dropout (mV)"], [[iload_ma, round(dropout_mv, 3)]])
     ctx.log_fn(f"[{item_key}] Iload={iload_ma}mA -> Dropout={dropout_mv:.3f} mV")
@@ -258,55 +338,121 @@ def dropout(ctx: ItemContext) -> ItemResult:
 def vout_accuracy(ctx: ItemContext) -> ItemResult:
     """输出电压精度（初始精度 / 温漂 / 全范围精度）。
 
-    大框架占位：Mock 生成合理数据；接温箱时按温度点采样计算温漂，
-    未接温箱仅测常温初始精度。全范围精度与温漂系数后续迭代。
+    流程：Vin=PS2Q 源、Vout 电压表。接温箱时逐温度点 set_temperature 并等待稳定，
+    每点测 Vout 与偏差；多温度点线性拟合温漂系数 (ppm/C)。未接温箱仅测常温初始精度。
     """
     item_key = "ldo_vout_accuracy"
     cfg = ctx.config
     nominal_mv = float(cfg.get("vout_nominal_mv", 1800))
     vout_ch = parse_channel(cfg.get("vout_channel", 1))
-    temps = cfg.get("accuracy_temps", ["25"]) if ctx.chamber is not None else ["25"]
+    vin_ch = parse_channel(cfg.get("vin_channel", 2))
+    vin_v = float(cfg.get("vin_v", 3.7))
+    settle_s = float(cfg.get("settle_time_s", 0.05))
+    avg_cnt = int(cfg.get("average_cnt", 3))
+    temp_soak_s = float(cfg.get("temp_soak_s", 60.0))
+    temps = cfg.get("accuracy_temps", ["-40", "25", "85"]) if ctx.chamber is not None else ["25"]
+    if not ctx.is_mock:
+        setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
+        setup_meter_channel(ctx, vout_ch)
     rows: list[list] = []
     for i, t in enumerate(temps):
         if ctx.stop_flag_fn():
             break
-        # TODO(迭代): 接温箱时 set_temperature(t) 并等待稳定
+        if not ctx.is_mock and ctx.chamber is not None:
+            try:
+                ctx.chamber.set_temperature(float(t))
+            except Exception:  # noqa: BLE001
+                logger.error("set_temperature failed", exc_info=True)
+            settle(ctx, temp_soak_s)  # 等待温度稳定
         if ctx.is_mock:
             v = mock_jitter(nominal_mv, 0.005)
         else:
-            v = safe_measure(ctx.n6705c, "measure_voltage", vout_ch, nominal_mv) * 1000.0
+            settle(ctx, settle_s)
+            v = measure_avg(ctx, "measure_voltage", vout_ch,
+                            count=avg_cnt, settle_s=settle_s, default=nominal_mv / 1000.0) * 1000.0
         err_pct = (v - nominal_mv) / nominal_mv * 100.0
         rows.append([t, round(v, 3), round(err_pct, 4)])
         ctx.progress_fn(int((i + 1) / len(temps) * 100), f"Accuracy {t}C")
         ctx.log_fn(f"[{item_key}] T={t}C -> Vout={v:.3f} mV, err={err_pct:.4f}%")
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Temp (C)", "Vout (mV)", "Error (%)"], rows)
-    init_err = rows[0][2] if rows else 0.0
-    tempco = 0.0  # TODO(迭代): 多温度点拟合温漂 ppm/C
+    # 找常温（25C）作为初始精度基准
+    init_err = next((r[2] for r in rows if str(r[0]) == "25"), rows[0][2] if rows else 0.0)
+    # 多温度点线性拟合温漂：ppm/C = (dVout/dT)/nominal * 1e6
+    tempco = 0.0
+    if len(rows) >= 2:
+        try:
+            xs = [float(r[0]) for r in rows]
+            ys = [float(r[1]) for r in rows]
+            n = len(xs)
+            mx = sum(xs) / n
+            my = sum(ys) / n
+            denom = sum((x - mx) ** 2 for x in xs)
+            if denom > 1e-12:
+                slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / denom  # mV/C
+                tempco = slope / nominal_mv * 1e6  # ppm/C
+        except Exception:  # noqa: BLE001
+            logger.error("tempco fit failed", exc_info=True)
     return ItemResult(item_key=item_key, name="输出电压精度", unit="%",
-                      passed=None, measured={"init_error_pct": init_err, "tempco_ppm_c": tempco,
+                      passed=None, measured={"init_error_pct": round(init_err, 4),
+                                             "tempco_ppm_c": round(tempco, 3),
                                              "rows": rows}, raw_csv_path=csv_path)
 
 
 def current_limit(ctx: ItemContext) -> ItemResult:
     """输出电流能力 / 限流点（最大负载电流）。
 
-    大框架占位：Mock 生成合理数据；真机逐步加大负载直至 Vout 跌落，
-    记录限流触发电流。具体扫描步进与判定后续迭代。
+    流程：Vin=PS2Q 源、Vout 电压表、CCLoad 负载从起始电流递增拉载，
+    当 Vout 首次跌出容差（低于 nominal*(1-tol)）时记录该电流为限流点，同时追踪峰值电流。
     """
     item_key = "ldo_current_limit"
     cfg = ctx.config
     nominal_mv = float(cfg.get("vout_nominal_mv", 1800))
+    vin_ch = parse_channel(cfg.get("vin_channel", 2))
+    vout_ch = parse_channel(cfg.get("vout_channel", 1))
+    iload_ch = parse_channel(cfg.get("iload_channel", 3))
+    vin_v = float(cfg.get("vin_v", 3.7))
+    ilim_start = float(cfg.get("ilim_start_ma", 50))
+    ilim_end = float(cfg.get("ilim_end_ma", 500))
+    ilim_step = float(cfg.get("ilim_step_ma", 20))
+    tol = float(cfg.get("vout_tol", 0.02))
+    settle_s = float(cfg.get("settle_time_s", 0.05))
+    avg_cnt = int(cfg.get("average_cnt", 3))
+
     if ctx.is_mock:
         ilim_ma = mock_jitter(300.0, 0.05)
+        ipk_ma = ilim_ma
     else:
-        # TODO(迭代): 递增负载电流，检测 Vout 跌出容差的临界电流
+        setup_source_channel(ctx, vin_ch, vin_v, current_limit=1.0)
+        setup_meter_channel(ctx, vout_ch)
+        setup_load_channel(ctx, iload_ch)
+        threshold_mv = nominal_mv * (1.0 - tol)
         ilim_ma = 0.0
+        ipk_ma = 0.0
+        iset = ilim_start
+        while iset <= ilim_end + 1e-9:
+            if ctx.stop_flag_fn():
+                break
+            set_load_current(ctx, iload_ch, iset / 1000.0)
+            settle(ctx, settle_s)
+            v = measure_avg(ctx, "measure_voltage", vout_ch,
+                            count=avg_cnt, settle_s=settle_s, default=nominal_mv / 1000.0) * 1000.0
+            iout = abs(measure_avg(ctx, "measure_current", iload_ch,
+                                   count=avg_cnt, settle_s=settle_s, default=0.0)) * 1000.0
+            ipk_ma = max(ipk_ma, iout)
+            ctx.log_fn(f"[{item_key}] Iset={iset:.1f}mA -> Vout={v:.3f}mV, Iout={iout:.3f}mA")
+            if v < threshold_mv:
+                ilim_ma = iout
+                break
+            iset += ilim_step
+        teardown_load(ctx, iload_ch)
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
-    write_csv(csv_path, ["Current limit (mA)"], [[round(ilim_ma, 3)]])
+    write_csv(csv_path, ["Current limit (mA)", "Peak current (mA)"],
+              [[round(ilim_ma, 3), round(ipk_ma, 3)]])
     ctx.log_fn(f"[{item_key}] Current limit={ilim_ma:.3f} mA")
     return ItemResult(item_key=item_key, name="输出电流能力", unit="mA",
                       passed=None, measured={"current_limit_ma": round(ilim_ma, 3),
+                                             "peak_current_ma": round(ipk_ma, 3),
                                              "vout_nominal_mv": nominal_mv},
                       raw_csv_path=csv_path)
 
