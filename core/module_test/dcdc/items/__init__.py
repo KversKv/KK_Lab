@@ -15,6 +15,9 @@ from core.module_test._common import (
     setup_meter_channel, setup_source_channel, teardown_load, write_csv,
 )
 from core.module_test.result_model import ItemResult
+from core.module_test.param_spec import (
+    ParamSpec, average_cnt, load_sweep, settle_time, vin_bias, vin_sweep, vout_tol,
+)
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -721,24 +724,79 @@ def stability(ctx: ItemContext) -> ItemResult:
                       raw_csv_path=csv_path)
 
 
-# 测试项注册表：item_key -> (name, run_fn, needs_scope, default_checked)
-DCDC_ITEMS: dict[str, tuple[str, object, bool, bool]] = {
-    "dcdc_vin_range": ("输入电压范围", vin_range, False, True),
-    "dcdc_vout_scan": ("输出电压扫描", vout_scan, False, True),
-    "dcdc_output_power": ("输出功率", output_power, False, True),
-    "dcdc_efficiency": ("效率", efficiency, False, True),
-    "dcdc_load_reg": ("负载调整率", load_line_reg, False, True),
-    "dcdc_line_reg": ("线性调整率", line_reg, False, True),
-    "dcdc_quiescent": ("静态电流", quiescent, False, True),
-    "dcdc_shutdown_current": ("待机/关断电流", shutdown_current, False, True),
-    "dcdc_ripple": ("BUCK 纹波", ripple, True, True),
-    "dcdc_psrr": ("DCDC PSRR", psrr, True, True),
-    "dcdc_switching_freq": ("开关频率", switching_freq, True, True),
-    "dcdc_load_transient": ("负载瞬态响应", load_transient, True, True),
-    "dcdc_inductor_current": ("电感电流", inductor_current, True, True),
-    "dcdc_current_limit": ("限流能力", current_limit, False, True),
-    "dcdc_startup": ("启动特性", startup, True, True),
-    "dcdc_protection": ("保护功能", protection, False, True),
-    "dcdc_topology": ("拓扑类型", topology, False, True),
-    "dcdc_stability": ("稳定性与补偿", stability, True, True),
+# 测试项注册表：item_key -> (name, run_fn, needs_scope, default_checked, params)
+DCDC_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
+    "dcdc_vin_range": ("输入电压范围", vin_range, False, True, (
+        *vin_sweep(2.5, 5.5, 0.1),
+        ParamSpec("vout_tol_ratio", "输出容差", "float", 0.05, "", maximum=1.0, decimals=4,
+                  hint="如 0.05 表示 ±5%"),
+        ParamSpec("vin_range_load_ma", "轻载电流", "float", 10.0, "mA", maximum=100000.0),
+        average_cnt(), settle_time(),
+    )),
+    "dcdc_vout_scan": ("输出电压扫描", vout_scan, False, True, (
+        settle_time(), average_cnt(),
+    )),
+    "dcdc_output_power": ("输出功率", output_power, False, True, (
+        *load_sweep(1.0, 200.0, 20.0),
+        vin_bias(), average_cnt(), settle_time(),
+    )),
+    "dcdc_efficiency": ("效率", efficiency, False, True, (
+        *load_sweep(1.0, 200.0, 20.0),
+        vin_bias(), average_cnt(), settle_time(),
+    )),
+    "dcdc_load_reg": ("负载调整率", load_line_reg, False, True, (
+        *load_sweep(1.0, 200.0, 20.0),
+        vin_bias(), average_cnt(), settle_time(),
+    )),
+    "dcdc_line_reg": ("线性调整率", line_reg, False, True, (
+        *vin_sweep(3.2, 4.2, 0.2),
+        average_cnt(), settle_time(),
+    )),
+    "dcdc_quiescent": ("静态电流", quiescent, False, True, (
+        vin_bias(), average_cnt(5), settle_time(),
+        ParamSpec("iq_modes", "工作模式", "text", "PWM, BURST, ULP", "", hint="逗号分隔"),
+    )),
+    "dcdc_shutdown_current": ("待机/关断电流", shutdown_current, False, True, (
+        vin_bias(), average_cnt(5), settle_time(),
+    )),
+    "dcdc_ripple": ("BUCK 纹波", ripple, True, True, (
+        ParamSpec("scope_vout_channel", "示波器通道", "int", 1, "", minimum=1, maximum=4),
+        vin_bias(),
+        ParamSpec("ripple_load_ma", "纹波负载", "float", 100.0, "mA", maximum=100000.0),
+        settle_time(),
+    )),
+    "dcdc_psrr": ("DCDC PSRR", psrr, True, True, (
+        ParamSpec("psrr_freqs", "PSRR 频点", "text", "1kHz, 10kHz, 100kHz", "",
+                  base_key="psrr_freqs", hint="逗号分隔"),
+    )),
+    "dcdc_switching_freq": ("开关频率", switching_freq, True, True, (
+        ParamSpec("scope_sw_channel", "SW 通道", "int", 2, "", minimum=1, maximum=4),
+        vin_bias(),
+        ParamSpec("fsw_load_ma", "测试负载", "float", 100.0, "mA", maximum=100000.0),
+        settle_time(),
+    )),
+    "dcdc_load_transient": ("负载瞬态响应", load_transient, True, True, (
+        ParamSpec("transient_freqs", "瞬态频率", "text", "10Hz, 100Hz, 1kHz", "",
+                  base_key="transient_freqs", hint="逗号分隔"),
+    )),
+    "dcdc_inductor_current": ("电感电流", inductor_current, True, True, (
+        *load_sweep(10.0, 200.0, 50.0),
+    )),
+    "dcdc_current_limit": ("限流能力", current_limit, False, True, (
+        vout_tol("vout_tol_ratio", 0.05),
+        ParamSpec("ilim_start_ma", "限流起始", "float", 100.0, "mA", maximum=100000.0),
+        ParamSpec("ilim_end_ma", "限流结束", "float", 800.0, "mA", maximum=100000.0),
+        ParamSpec("ilim_step_ma", "限流步进", "float", 20.0, "mA", minimum=0.1, maximum=100000.0),
+        vin_bias(), average_cnt(), settle_time(),
+    )),
+    "dcdc_startup": ("启动特性", startup, True, True, ()),
+    "dcdc_protection": ("保护功能", protection, False, True, (
+        ParamSpec("protection_checks", "检查项", "text", "OCP, SCP, OVP, UVP, OTP", "",
+                  hint="逗号分隔"),
+    )),
+    "dcdc_topology": ("拓扑类型", topology, False, True, (
+        ParamSpec("topology", "拓扑", "text", "Buck", "", hint="如 Buck / Boost / Buck-Boost"),
+        vin_bias(), settle_time(),
+    )),
+    "dcdc_stability": ("稳定性与补偿", stability, True, True, ()),
 }

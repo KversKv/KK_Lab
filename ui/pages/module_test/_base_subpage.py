@@ -29,7 +29,7 @@ from log_config import get_logger
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.oscilloscope_module_frame import OscilloscopeConnectionMixin
-from ui.pages.module_test.widgets import CollapsibleGroupBox
+from ui.pages.module_test.widgets import CollapsibleGroupBox, ItemParamsDialog
 from ui.resource_path import get_resource_base
 from ui.styles import START_BTN_STYLE, SCROLLBAR_STYLE
 from ui.widgets.dark_combobox import DarkComboBox
@@ -67,6 +67,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         self.is_test_running = False
         self._last_result = None
         self._last_report_path: str | None = None
+        self._item_overrides: dict[str, dict] = {}
 
         self._setup_style()
         self._build_ui()
@@ -97,7 +98,13 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
             }}
             QLineEdit:focus, QSpinBox:focus {{ border: 1px solid #4a6c9b; }}
             QLineEdit::placeholder {{ color: #5a6377; }}
-            #actionRow {{ border-top: 1px solid #1c2438; }}
+            #actionRow {{ border-top: 1px solid #1c2438; background-color: #0a0f1f; }}
+            #itemSettingsBtn {{
+                border: 1px solid #3a4260; border-radius: 4px; padding: 1px 10px;
+                background-color: #1a2138; color: #9aa4bd; font-size: 11px; min-height: 22px;
+            }}
+            #itemSettingsBtn:hover {{ background-color: #232c48; color: #d8dce8; }}
+            #itemSettingsBtn:disabled {{ background-color: #171b28; color: #4a5166; border-color: #262c3e; }}
             #start_test_btn {{ {START_BTN_STYLE} }}
             #stop_test_btn {{
                 border: 1px solid #555; border-radius: 4px; padding: 6px 14px;
@@ -148,7 +155,6 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         content_layout.addWidget(self._build_config_group())
         content_layout.addWidget(self._build_items_group())
         content_layout.addWidget(self._build_params_group())
-        content_layout.addWidget(self._build_action_row())
         content_layout.addStretch()
 
         scroll = QScrollArea()
@@ -157,8 +163,16 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         scroll.setFrameShape(QScrollArea.NoFrame)
         scroll.setStyleSheet("QScrollArea{background:transparent;border:none;}")
 
+        # 顶部 = 可滚动配置区 + 始终可见的操作按钮排（固定在滚动区下方，不随内容滚动）
+        top_pane = QWidget()
+        top_layout = QVBoxLayout(top_pane)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(0)
+        top_layout.addWidget(scroll, 1)
+        top_layout.addWidget(self._build_action_row(), 0)
+
         self._splitter, self.execution_logs = ExecutionLogsFrame.wrap_with(
-            scroll, title=f"{self.MODULE_TYPE.upper()} Module Test 执行日志", stretch=(5, 2),
+            top_pane, title=f"{self.MODULE_TYPE.upper()} Module Test 执行日志", stretch=(5, 2),
         )
 
         root = QVBoxLayout(self)
@@ -288,8 +302,8 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
     def _build_items_group(self) -> "CollapsibleGroupBox":
         box = CollapsibleGroupBox("测试项清单（勾选要执行的项）", expanded=True)
         lay = box.content_layout
-        self.items_table = QTableWidget(0, 4)
-        self.items_table.setHorizontalHeaderLabels(["选", "测试项", "主要仪器", "判定/记录"])
+        self.items_table = QTableWidget(0, 5)
+        self.items_table.setHorizontalHeaderLabels(["选", "测试项", "主要仪器", "判定/记录", "参数"])
         self.items_table.verticalHeader().setVisible(False)
         self.items_table.verticalHeader().setDefaultSectionSize(30)
         self.items_table.setSelectionMode(QTableWidget.NoSelection)
@@ -303,7 +317,9 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         header.setSectionResizeMode(1, QHeaderView.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.Fixed)
         self.items_table.setColumnWidth(0, 44)
+        self.items_table.setColumnWidth(4, 64)
         # 给清单足够高度显示全部行（表头 + 各测试项行），避免被 stretch 压扁导致内容截断
         self.items_table.setMinimumHeight(
             self.items_table.horizontalHeader().sizeHint().height()
@@ -373,7 +389,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         row = QWidget()
         row.setObjectName("actionRow")
         lay = QHBoxLayout(row)
-        lay.setContentsMargins(0, 8, 0, 0)
+        lay.setContentsMargins(8, 8, 8, 8)
         lay.setSpacing(8)
 
         self.start_test_btn = QPushButton("▶ 开始测试")
@@ -411,7 +427,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
     def _populate_item_table(self):
         self.items_table.setRowCount(0)
         for item_key, spec in self.ITEMS_REGISTRY.items():
-            name, _run_fn, needs_scope, item_checked = spec
+            name, _run_fn, needs_scope, item_checked, _params = spec
             row = self.items_table.rowCount()
             self.items_table.insertRow(row)
             chk = QTableWidgetItem()
@@ -434,6 +450,64 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
             rec_item.setFlags(Qt.ItemIsEnabled)
             rec_item.setForeground(QColor("#7f889c"))
             self.items_table.setItem(row, 3, rec_item)
+            self.items_table.setCellWidget(row, 4, self._make_settings_cell(item_key, _params))
+
+    def _make_settings_cell(self, item_key: str, params) -> QWidget:
+        cell = QWidget()
+        cell.setStyleSheet("background: transparent;")
+        h = QHBoxLayout(cell)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.setSpacing(0)
+        btn = QPushButton("设置")
+        btn.setObjectName("itemSettingsBtn")
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setFixedHeight(22)
+        if not params:
+            btn.setEnabled(False)
+            btn.setToolTip("该测试项暂无可设置参数")
+        else:
+            btn.clicked.connect(lambda _=False, k=item_key: self._open_item_params(k))
+        h.addWidget(btn, alignment=Qt.AlignCenter)
+        return cell
+
+    def _open_item_params(self, item_key: str):
+        spec = self.ITEMS_REGISTRY.get(item_key)
+        if not spec:
+            return
+        name, _run_fn, _needs_scope, _checked, params = spec
+        dlg = ItemParamsDialog(
+            title=f"参数设置 - {name}",
+            specs=params,
+            current_override=self._item_overrides.get(item_key, {}),
+            base_value_fn=self._base_param_value,
+            parent=self,
+        )
+        if dlg.exec():
+            override = dlg.get_override()
+            if override:
+                self._item_overrides[item_key] = override
+            else:
+                self._item_overrides.pop(item_key, None)
+            self._mark_item_customized(item_key)
+
+    def _mark_item_customized(self, item_key: str):
+        """在测试项名后打标，直观区分已自定义参数的项。"""
+        for row in range(self.items_table.rowCount()):
+            name_item = self.items_table.item(row, 1)
+            if name_item and name_item.data(Qt.UserRole) == item_key:
+                base_name = self.ITEMS_REGISTRY[item_key][0]
+                if item_key in self._item_overrides:
+                    name_item.setText(f"{base_name}  ●")
+                    name_item.setForeground(QColor("#8eb0e3"))
+                else:
+                    name_item.setText(base_name)
+                    name_item.setForeground(QColor("#c8c8c8"))
+                break
+
+    def _base_param_value(self, base_key: str):
+        """按 ParamSpec.base_key 从被测配置界面取当前值作弹窗预填。"""
+        cfg = self.get_test_config()
+        return cfg.get(base_key)
 
     def _on_item_changed(self, _item: QTableWidgetItem):
         pass
@@ -496,6 +570,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
             "vin_v": self.vin_start_spin.value(),
             "psrr_freqs": [s.strip() for s in self.psrr_freqs_edit.text().split(",") if s.strip()],
             "transient_freqs": [s.strip() for s in self.transient_freqs_edit.text().split(",") if s.strip()],
+            "item_overrides": {k: dict(v) for k, v in self._item_overrides.items()},
         }
 
     def apply_config_to_controls(self, cfg: dict) -> tuple[bool, str]:

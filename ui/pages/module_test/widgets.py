@@ -10,7 +10,8 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
+    QDialog, QDialogButtonBox, QDoubleSpinBox, QFrame, QGridLayout, QHBoxLayout,
+    QLabel, QLineEdit, QPushButton, QSpinBox, QVBoxLayout, QWidget,
 )
 
 _ARROW_EXPANDED = "▼"
@@ -89,3 +90,139 @@ class CollapsibleGroupBox(QFrame):
     def set_expanded(self, expanded: bool) -> None:
         if self._expanded != expanded:
             self.toggle()
+
+
+_DIALOG_QSS = """
+    QDialog { background-color: #0a0f1f; color: #c8c8c8; }
+    QLabel { color: #c8c8c8; background: transparent; }
+    QLabel#dlgFieldLabel { color: #9aa4bd; }
+    QLabel#dlgHint { color: #6f7688; }
+    QLineEdit, QSpinBox, QDoubleSpinBox {
+        border: 1px solid #2f374d; border-radius: 4px; padding: 3px 8px;
+        background-color: #0e1526; color: #d8dce8; min-height: 22px;
+    }
+    QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus { border: 1px solid #4a6c9b; }
+    QLineEdit::placeholder { color: #5a6377; }
+    QPushButton {
+        border: 1px solid #3a4260; border-radius: 4px; padding: 5px 16px;
+        background-color: #1a2138; color: #d8dce8; min-height: 22px;
+    }
+    QPushButton:hover { background-color: #232c48; }
+    QPushButton:default { border: 1px solid #4a6c9b; }
+"""
+
+
+class ItemParamsDialog(QDialog):
+    """测试项参数设置弹窗（依 ParamSpec 序列自动生成表单）。
+
+    基类参数经 ``base_value_fn(base_key)`` 预填且可编辑；OK 返回仅"与预填值不同"
+    的键值 override，未改动项运行时回退基类 cfg。
+    """
+
+    def __init__(self, *, title: str, specs, current_override: dict,
+                 base_value_fn, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setModal(True)
+        self.setMinimumWidth(360)
+        self.setStyleSheet(_DIALOG_QSS)
+        self._specs = specs
+        self._editors: dict[str, QWidget] = {}
+        self._prefill: dict[str, object] = {}
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 14, 16, 12)
+        root.setSpacing(10)
+
+        if not specs:
+            root.addWidget(QLabel("该测试项暂无可设置的参数。"))
+        else:
+            grid = QGridLayout()
+            grid.setHorizontalSpacing(10)
+            grid.setVerticalSpacing(8)
+            grid.setColumnStretch(1, 1)
+            for r, spec in enumerate(specs):
+                label_txt = f"{spec.label} ({spec.unit})" if spec.unit else spec.label
+                lbl = QLabel(label_txt)
+                lbl.setObjectName("dlgFieldLabel")
+                lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                grid.addWidget(lbl, r, 0)
+
+                prefill = self._resolve_prefill(spec, current_override, base_value_fn)
+                self._prefill[spec.key] = prefill
+                editor = self._make_editor(spec, prefill)
+                self._editors[spec.key] = editor
+                grid.addWidget(editor, r, 1)
+            root.addLayout(grid)
+
+        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=self)
+        ok_btn = btns.button(QDialogButtonBox.Ok)
+        ok_btn.setDefault(True)
+        ok_btn.setAutoDefault(True)
+        cancel_btn = btns.button(QDialogButtonBox.Cancel)
+        cancel_btn.setDefault(False)
+        cancel_btn.setAutoDefault(False)
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+        root.addWidget(btns)
+
+    @staticmethod
+    def _resolve_prefill(spec, current_override, base_value_fn):
+        if spec.key in current_override:
+            return current_override[spec.key]
+        if spec.base_key:
+            v = base_value_fn(spec.base_key)
+            if v is not None:
+                return v
+        return spec.default
+
+    def _make_editor(self, spec, prefill) -> QWidget:
+        if spec.ptype == "int":
+            w = QSpinBox()
+            w.setRange(int(spec.minimum), int(spec.maximum))
+            try:
+                w.setValue(int(prefill))
+            except (TypeError, ValueError):
+                w.setValue(int(spec.default))
+            return w
+        if spec.ptype == "float":
+            w = QDoubleSpinBox()
+            w.setDecimals(spec.decimals)
+            w.setRange(float(spec.minimum), float(spec.maximum))
+            w.setSingleStep(10 ** (-spec.decimals))
+            try:
+                w.setValue(float(prefill))
+            except (TypeError, ValueError):
+                w.setValue(float(spec.default))
+            return w
+        w = QLineEdit()
+        if isinstance(prefill, (list, tuple)):
+            w.setText(", ".join(str(x) for x in prefill))
+        else:
+            w.setText(str(prefill))
+        if spec.hint:
+            w.setPlaceholderText(spec.hint)
+        return w
+
+    def _editor_value(self, spec):
+        w = self._editors[spec.key]
+        if spec.ptype == "int":
+            return w.value()
+        if spec.ptype == "float":
+            return round(w.value(), spec.decimals)
+        return w.text().strip()
+
+    def get_override(self) -> dict:
+        """仅返回与预填值不同的键值（未改动项回退基类 cfg）。"""
+        out: dict = {}
+        for spec in self._specs:
+            val = self._editor_value(spec)
+            prefill = self._prefill.get(spec.key)
+            base = ", ".join(str(x) for x in prefill) if isinstance(prefill, (list, tuple)) else prefill
+            if spec.ptype in ("int", "float"):
+                if val != prefill:
+                    out[spec.key] = val
+            else:
+                if val != (base if base is not None else ""):
+                    out[spec.key] = val
+        return out

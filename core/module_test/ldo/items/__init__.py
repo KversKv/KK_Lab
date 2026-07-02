@@ -15,6 +15,9 @@ from core.module_test._common import (
     setup_meter_channel, setup_source_channel, teardown_load, write_csv,
 )
 from core.module_test.result_model import ItemResult
+from core.module_test.param_spec import (
+    ParamSpec, average_cnt, load_sweep, settle_time, vin_bias, vin_sweep, vout_tol,
+)
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -513,20 +516,69 @@ def protection(ctx: ItemContext) -> ItemResult:
                       passed=None, measured={"rows": rows}, raw_csv_path=csv_path)
 
 
-# 测试项注册表：item_key -> (name, run_fn, needs_scope, default_checked)
-LDO_ITEMS: dict[str, tuple[str, object, bool, bool]] = {
-    "ldo_vout_scan": ("输出电压扫描", vout_scan, False, False),
-    "ldo_vout_accuracy": ("输出电压精度", vout_accuracy, False, False),
-    "ldo_load_reg": ("负载调整率", load_line_reg, False, False),
-    "ldo_line_reg": ("线性调整率", line_reg, False, False),
-    "ldo_dropout": ("压差电压", dropout, False, False),
-    "ldo_current_limit": ("输出电流能力", current_limit, False, False),
-    "ldo_quiescent": ("静态电流", quiescent, False, False),
-    "ldo_ripple": ("输出纹波", ripple, True, False),
-    "ldo_psrr": ("电源抑制比", psrr, True, False),
-    "ldo_output_noise": ("输出噪声", output_noise, True, False),
-    "ldo_load_transient": ("负载瞬态响应", load_transient, True, False),
-    "ldo_line_transient": ("输入瞬态响应", line_transient, True, False),
-    "ldo_stability": ("稳定性", stability, True, False),
-    "ldo_protection": ("保护功能", protection, False, False),
+# 测试项注册表：item_key -> (name, run_fn, needs_scope, default_checked, params)
+LDO_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
+    "ldo_vout_scan": ("输出电压扫描", vout_scan, False, False, (
+        settle_time(), average_cnt(),
+    )),
+    "ldo_load_reg": ("负载调整率", load_line_reg, False, False, (
+        *load_sweep(1.0, 200.0, 20.0),
+        vin_bias(), settle_time(), average_cnt(),
+    )),
+    "ldo_line_reg": ("线性调整率", line_reg, False, False, (
+        *vin_sweep(3.2, 4.2, 0.2),
+        settle_time(), average_cnt(),
+    )),
+    "ldo_dropout": ("压差电压", dropout, False, False, (
+        ParamSpec("dropout_iload_ma", "压差负载", "float", 100.0, "mA", maximum=100000.0),
+        ParamSpec("dropout_vin_hi_v", "Vin 上限", "float", 3.0, "V", maximum=60.0),
+        ParamSpec("dropout_vin_lo_v", "Vin 下限", "float", 1.8, "V", maximum=60.0),
+        ParamSpec("dropout_vin_step_v", "Vin 步进", "float", 0.02, "V", minimum=0.001, maximum=60.0),
+        vout_tol(), settle_time(), average_cnt(),
+    )),
+    "ldo_current_limit": ("输出电流能力", current_limit, False, False, (
+        vin_bias(),
+        ParamSpec("ilim_start_ma", "限流起始", "float", 50.0, "mA", maximum=100000.0),
+        ParamSpec("ilim_end_ma", "限流结束", "float", 500.0, "mA", maximum=100000.0),
+        ParamSpec("ilim_step_ma", "限流步进", "float", 20.0, "mA", minimum=0.1, maximum=100000.0),
+        vout_tol(), settle_time(), average_cnt(),
+    )),
+    "ldo_quiescent": ("静态电流", quiescent, False, False, (
+        vin_bias(), settle_time(),
+        ParamSpec("iq_modes", "工作模式", "text", "NORMAL, SLEEP", "",
+                  hint="逗号分隔，如 NORMAL, SLEEP"),
+    )),
+    "ldo_ripple": ("输出纹波", ripple, True, False, (
+        ParamSpec("scope_vout_channel", "示波器通道", "int", 1, "", minimum=1, maximum=4),
+        vin_bias(),
+        ParamSpec("ripple_load_ma", "纹波负载", "float", 100.0, "mA", maximum=100000.0),
+        settle_time(),
+    )),
+    "ldo_psrr": ("电源抑制比", psrr, True, False, (
+        ParamSpec("psrr_freqs", "PSRR 频点", "text", "1kHz, 10kHz, 100kHz", "",
+                  base_key="psrr_freqs", hint="逗号分隔"),
+    )),
+    "ldo_output_noise": ("输出噪声", output_noise, True, False, ()),
+    "ldo_load_transient": ("负载瞬态响应", load_transient, True, False, (
+        ParamSpec("transient_freqs", "瞬态频率", "text", "10Hz, 100Hz, 1kHz", "",
+                  base_key="transient_freqs", hint="逗号分隔"),
+    )),
+    "ldo_line_transient": ("输入瞬态响应", line_transient, True, False, (
+        ParamSpec("line_transient_steps", "阶跃序列", "text", "3.2->4.2V, 4.2->3.2V", "",
+                  hint="逗号分隔，如 3.2->4.2V"),
+    )),
+    "ldo_stability": ("稳定性", stability, True, False, (
+        ParamSpec("stability_cout_uf", "输出电容", "float", 1.0, "uF", maximum=10000.0),
+        ParamSpec("stability_esr_mohm", "ESR", "float", 50.0, "mΩ", maximum=100000.0),
+    )),
+    "ldo_protection": ("保护功能", protection, False, False, (
+        ParamSpec("protection_checks", "检查项", "text", "OCP, SCP, OTP, REVERSE", "",
+                  hint="逗号分隔"),
+    )),
+    "ldo_vout_accuracy": ("输出电压精度", vout_accuracy, False, False, (
+        vin_bias(), settle_time(), average_cnt(),
+        ParamSpec("temp_soak_s", "温度稳定时间", "float", 60.0, "s", maximum=3600.0),
+        ParamSpec("accuracy_temps", "温度点", "text", "-40, 25, 85", "",
+                  hint="逗号分隔，接温箱生效"),
+    )),
 }

@@ -44,7 +44,7 @@ class ModuleTestRunner(QThread):
         self,
         *,
         module_type: str,
-        items_registry: dict[str, tuple[str, Any, bool, bool]],
+        items_registry: dict[str, tuple[str, Any, bool, bool, tuple]],
         config: dict,
         n6705c: Any,
         scope: Any | None = None,
@@ -56,6 +56,7 @@ class ModuleTestRunner(QThread):
         self._module_type = module_type
         self._items_registry = items_registry
         self._cfg = dict(config)
+        self._item_overrides = dict(self._cfg.get("item_overrides", {}) or {})
         self._n6705c = n6705c
         self._scope = scope
         self._chamber = chamber
@@ -95,15 +96,21 @@ class ModuleTestRunner(QThread):
             if self._stop_flag:
                 self._log("[STOP] 收到停止请求，终止后续项。")
                 break
-            name, run_fn, needs_scope, _default_checked = self._items_registry[item_key]
+            name, run_fn, needs_scope, _default_checked, _params = self._items_registry[item_key]
             self._log(f"[{idx + 1}/{total}] 执行 {name}（{item_key}）...")
             self._progress(int(idx / total * 100), name)
+
+            # per-item 参数覆盖：弹窗设置的 override 浅合并进该项专用 cfg（仅本项生效）
+            item_cfg = dict(self._cfg)
+            override = self._item_overrides.get(item_key)
+            if override:
+                item_cfg.update(override)
 
             ctx = ItemContext(
                 n6705c=self._n6705c,
                 scope=self._scope,
                 chamber=self._chamber,
-                config=self._cfg,
+                config=item_cfg,
                 out_dir=self._out_dir,
                 is_mock=bool(DEBUG_MOCK) or self._n6705c is None,
                 stop_flag_fn=lambda: self._stop_flag,
