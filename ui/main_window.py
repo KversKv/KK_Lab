@@ -1403,6 +1403,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             self.oscilloscope_ui.connection_changed.connect(self._update_instrument_status)
             self.instrument_ui_container_layout.addWidget(self.oscilloscope_ui)
         else:
+            self.oscilloscope_ui._sync_from_top()
             self.oscilloscope_ui.show()
         self.current_instrument_ui = "oscilloscope"
         self._fade_in_widget(self.oscilloscope_ui)

@@ -557,7 +557,7 @@ class DSOX4034A:
 def main():
     import os
 
-    resource_addr = 'USB0::0x0957::0x17A4::MY61500152::INSTR'
+    resource_addr = 'TCPIP0::10.31.30.181::inst0::INSTR'
     visa_lib = None
     output_dir = os.path.join(os.path.dirname(__file__), 'screenshot_test')
     os.makedirs(output_dir, exist_ok=True)

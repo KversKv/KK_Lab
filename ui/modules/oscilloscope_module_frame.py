@@ -256,10 +256,16 @@ class OscilloscopeConnectionMixin:
         if self._mso64b_top is not None and hasattr(self._mso64b_top, 'connection_changed'):
             self._mso64b_top.connection_changed.connect(self._on_mso64b_top_changed)
 
-    def build_oscilloscope_connection_widgets(self, layout):
-        scope_label = QLabel("Oscilloscope")
-        scope_label.setObjectName("fieldLabel")
-        layout.addWidget(scope_label)
+    def build_oscilloscope_connection_widgets(self, layout, title_row=None):
+        self.scope_system_status_label = QLabel("● Ready")
+        self.scope_system_status_label.setObjectName("statusOk")
+        if title_row is not None:
+            title_row.addWidget(self.scope_system_status_label)
+        else:
+            scope_label = QLabel("Oscilloscope")
+            scope_label.setObjectName("fieldLabel")
+            layout.addWidget(scope_label)
+            layout.addWidget(self.scope_system_status_label)
 
         self.scope_type_combo = DarkComboBox()
         self.scope_type_combo.setSizeAdjustPolicy(
@@ -277,7 +283,7 @@ class OscilloscopeConnectionMixin:
         self.scope_resource_combo.setMinimumContentsLength(10)
         self.scope_resource_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.scope_resource_combo.setEditable(True)
-        self.scope_resource_combo.addItem("USB0::0x0957::0x17A4::MY61500152::INSTR")
+        self.scope_resource_combo.addItem("TCPIP0::10.31.30.181::inst0::INSTR")
         self.scope_resource_combo.lineEdit().setCursorPosition(0)
         self.scope_resource_combo.currentIndexChanged.connect(
             lambda: QTimer.singleShot(0, lambda: self.scope_resource_combo.lineEdit().setCursorPosition(0))
@@ -301,6 +307,23 @@ class OscilloscopeConnectionMixin:
         self.scope_search_btn.clicked.connect(self._on_scope_search)
         self.scope_connect_btn.clicked.connect(self._on_connect_or_disconnect_scope)
 
+    def set_scope_status(self, status, is_error=False):
+        label = getattr(self, "scope_system_status_label", None)
+        if label is not None:
+            text = status if status.startswith("●") else f"● {status}"
+            label.setText(text)
+            if is_error:
+                label.setObjectName("statusErr")
+            elif any(kw in status for kw in ["Running", "Searching", "Connecting", "Disconnecting"]):
+                label.setObjectName("statusWarn")
+            else:
+                label.setObjectName("statusOk")
+            label.style().unpolish(label)
+            label.style().polish(label)
+            label.update()
+        if hasattr(self, 'set_page_status'):
+            self.set_page_status(status, is_error=is_error)
+
     def sync_oscilloscope_from_top(self):
         if not self._mso64b_top:
             return
@@ -318,8 +341,10 @@ class OscilloscopeConnectionMixin:
             if self._mso64b_top.visa_resource:
                 self.scope_resource_combo.clear()
                 self.scope_resource_combo.addItem(self._mso64b_top.visa_resource)
+            self.set_scope_status(f"{scope_type} connected")
         elif not self.scope_connected:
             _update_scope_btn_state(self.scope_connect_btn, False)
+            self.set_scope_status("Ready")
 
     def _on_mso64b_top_changed(self):
         if self._mso64b_top is None:
@@ -344,6 +369,7 @@ class OscilloscopeConnectionMixin:
                 self.scope_resource_combo.addItem(self._mso64b_top.visa_resource)
             if hasattr(self, 'append_log'):
                 self.append_log(f"[SYSTEM] {scope_type} synced from external connection.")
+            self.set_scope_status(f"{scope_type} connected")
         else:
             if not self.scope_connected:
                 return
@@ -355,12 +381,12 @@ class OscilloscopeConnectionMixin:
             self.scope_search_btn.setEnabled(True)
             if hasattr(self, 'append_log'):
                 self.append_log("[SYSTEM] Oscilloscope disconnected externally.")
+            self.set_scope_status("Ready")
 
     def _on_scope_search(self):
         if self._mso64b_top and self._mso64b_top.is_connected:
             return
-        if hasattr(self, 'set_page_status'):
-            self.set_page_status("Searching scope resources...")
+        self.set_scope_status("Searching scope resources...")
         if hasattr(self, 'append_log'):
             self.append_log("[SYSTEM] Scanning for oscilloscope resources (LAN & USB)...")
         self.scope_search_btn.setEnabled(False)
@@ -400,12 +426,10 @@ class OscilloscopeConnectionMixin:
                 self.scope_resource_combo.addItem(dev)
             if hasattr(self, 'append_log'):
                 self.append_log(f"[SYSTEM] Found {len(scope_devices)} oscilloscope(s).")
-            if hasattr(self, 'set_page_status'):
-                self.set_page_status(f"Found {len(scope_devices)} scope(s)")
+            self.set_scope_status(f"Found {len(scope_devices)} scope(s)")
         else:
-            self.scope_resource_combo.addItem("USB0::0x0957::0x17A4::MY61500152::INSTR")
-            if hasattr(self, 'set_page_status'):
-                self.set_page_status("No oscilloscope found", is_error=True)
+            self.scope_resource_combo.addItem("TCPIP0::10.31.30.181::inst0::INSTR")
+            self.set_scope_status("No oscilloscope found", is_error=True)
             if hasattr(self, 'append_log'):
                 self.append_log("[SYSTEM] No oscilloscope found. Default resource restored.")
 
@@ -419,8 +443,7 @@ class OscilloscopeConnectionMixin:
         scope_type = self.scope_type_combo.currentText()
         resource = self.scope_resource_combo.currentText().strip()
         if not resource:
-            if hasattr(self, 'set_page_status'):
-                self.set_page_status("Invalid scope resource", is_error=True)
+            self.set_scope_status("Invalid scope resource", is_error=True)
             if hasattr(self, 'append_log'):
                 self.append_log("[ERROR] Invalid scope resource.")
             return
@@ -432,8 +455,7 @@ class OscilloscopeConnectionMixin:
             self.scope_search_btn.setEnabled(False)
             if hasattr(self, 'append_log'):
                 self.append_log("[DEBUG] Mock scope connected.")
-            if hasattr(self, 'set_page_status'):
-                self.set_page_status("Scope connected (Mock)")
+            self.set_scope_status("Scope connected (Mock)")
             if self._mso64b_top:
                 self._mso64b_top.connect_instrument(resource, self.Osc_ins, scope_type="MSO64B")
             elif self._scope_instrument_manager:
@@ -448,8 +470,7 @@ class OscilloscopeConnectionMixin:
         if self._scope_instrument_manager:
             from core.instruments import InstrumentSpec
             inst_type = "dsox4034a" if "DSOX" in scope_type.upper() else "mso64b"
-            if hasattr(self, 'set_page_status'):
-                self.set_page_status(f"Connecting {scope_type}...")
+            self.set_scope_status(f"Connecting {scope_type}...")
             self.scope_connect_btn.setEnabled(False)
             self._scope_instrument_manager.connect_async(InstrumentSpec(
                 instrument_type=inst_type,
@@ -460,8 +481,7 @@ class OscilloscopeConnectionMixin:
             ))
             return
 
-        if hasattr(self, 'set_page_status'):
-            self.set_page_status(f"Connecting {scope_type}...")
+        self.set_scope_status(f"Connecting {scope_type}...")
         if hasattr(self, 'append_log'):
             self.append_log(f"[SYSTEM] Attempting {scope_type} connection...")
         self.scope_connect_btn.setEnabled(False)
@@ -489,8 +509,7 @@ class OscilloscopeConnectionMixin:
         if "error" in result:
             scope_type = result.get("scope_type", self.scope_type_combo.currentText())
             self.Osc_ins = None
-            if hasattr(self, 'set_page_status'):
-                self.set_page_status(f"{scope_type} connection failed", is_error=True)
+            self.set_scope_status(f"{scope_type} connection failed", is_error=True)
             if hasattr(self, 'append_log'):
                 self.append_log(f"[ERROR] {scope_type} connection failed: {result['error']}")
             return
@@ -505,8 +524,7 @@ class OscilloscopeConnectionMixin:
         if hasattr(self, 'append_log'):
             self.append_log(f"[SYSTEM] {scope_type} connected.")
             self.append_log(f"[IDN] {result['idn']}")
-        if hasattr(self, 'set_page_status'):
-            self.set_page_status(f"{scope_type} connected")
+        self.set_scope_status(f"{scope_type} connected")
 
         if self._mso64b_top:
             self._mso64b_top.connect_instrument(result["resource"], self.Osc_ins, scope_type=scope_type)
@@ -520,8 +538,7 @@ class OscilloscopeConnectionMixin:
 
     def _on_disconnect_scope(self):
         scope_type = self.scope_type_combo.currentText()
-        if hasattr(self, 'set_page_status'):
-            self.set_page_status(f"Disconnecting {scope_type}...")
+        self.set_scope_status(f"Disconnecting {scope_type}...")
         if hasattr(self, 'append_log'):
             self.append_log(f"[SYSTEM] Disconnecting {scope_type}...")
         self.scope_connect_btn.setEnabled(False)
@@ -560,8 +577,7 @@ class OscilloscopeConnectionMixin:
         self.scope_connect_btn.setEnabled(True)
         scope_type = result.get("scope_type", self.scope_type_combo.currentText())
         if "error" in result:
-            if hasattr(self, 'set_page_status'):
-                self.set_page_status(f"{scope_type} disconnect failed", is_error=True)
+            self.set_scope_status(f"{scope_type} disconnect failed", is_error=True)
             if hasattr(self, 'append_log'):
                 self.append_log(f"[ERROR] {scope_type} disconnect failed: {result['error']}")
             return
@@ -573,8 +589,7 @@ class OscilloscopeConnectionMixin:
         self.scope_search_btn.setEnabled(True)
         if hasattr(self, 'append_log'):
             self.append_log(f"[SYSTEM] {scope_type} disconnected.")
-        if hasattr(self, 'set_page_status'):
-            self.set_page_status(f"{scope_type} disconnected")
+        self.set_scope_status(f"{scope_type} disconnected")
 
     def _run_scope_instrument_task(self, task_func, on_finished, kwargs=None):
         if self._scope_instr_thread is not None and self._scope_instr_thread.isRunning():

@@ -6,7 +6,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-#USB0::0x0957::0x17A4::MY61500152::INSTR
+#TCPIP0::10.31.30.181::inst0::INSTR
 
 # Global variables
 input_channel = "CHANnel2"
@@ -106,7 +106,7 @@ def check_instrument_errors(command):
 def main():
     rm = pyvisa.ResourceManager()
     global InfiniiVision
-    InfiniiVision = rm.open_resource("USB0::0x0957::0x17A4::MY61500152::INSTR")
+    InfiniiVision = rm.open_resource("TCPIP0::10.31.30.181::inst0::INSTR")
     InfiniiVision.timeout = 15000
     InfiniiVision.clear()
 

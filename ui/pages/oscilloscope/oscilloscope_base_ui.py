@@ -213,9 +213,11 @@ class OscilloscopeBaseUI(QWidget):
 
         if self.mso64b_top is not None:
             self.mso64b_top.connection_changed.connect(self._on_mso64b_top_changed)
+            self._sync_from_top()
         if self._instrument_manager is not None:
             self._instrument_manager.sessions_changed.connect(self._on_manager_sessions_changed)
             self._instrument_manager.connection_failed.connect(self._on_manager_connection_failed)
+            self._on_manager_sessions_changed()
 
     def _setup_fonts(self):
         self.base_font = QFont("Segoe UI", 10)
@@ -656,7 +658,7 @@ class OscilloscopeBaseUI(QWidget):
         if DEBUG_MSO64B_FLAG:
             self.visa_resource_combo.addItem("192.168.3.27")
         if DEBUG_DSOX4034A_FLAG:
-            self.visa_resource_combo.addItem("USB0::0x0957::0x17A4::MY61500152::INSTR")
+            self.visa_resource_combo.addItem("TCPIP0::10.31.30.181::inst0::INSTR")
         if self.visa_resource_combo.isEditable() and self.visa_resource_combo.lineEdit():
             self.visa_resource_combo.lineEdit().setToolTip(self.visa_resource_combo.currentText())
             self.visa_resource_combo.currentTextChanged.connect(
@@ -1877,8 +1879,6 @@ class OscilloscopeBaseUI(QWidget):
 
     def _on_manager_sessions_changed(self):
         if not self._instrument_manager:
-            return
-        if self.mso64b_top is not None:
             return
         found_scope = None
         for scope_type in ("mso64b", "dsox4034a"):

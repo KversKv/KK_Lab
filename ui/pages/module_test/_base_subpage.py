@@ -70,6 +70,8 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         self._setup_style()
         self._build_ui()
         self._populate_item_table()
+        self.sync_n6705c_from_top()
+        self.sync_oscilloscope_from_top()
         self._refresh_scope_item_state()
         self._register_ai_ui_actions()
 
@@ -80,6 +82,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
                 background-color: #020618; color: #c8c8c8; border: none;
             }}
             QLabel {{ color: #c8c8c8; }}
+            QLabel#cardTitle {{ color: #8eb0e3; font-weight: 700; background-color: transparent; }}
             QLabel#statusOk {{ color: #15d1a3; font-weight: 600; background-color: transparent; }}
             QLabel#statusWarn {{ color: #ffb84d; font-weight: 600; background-color: transparent; }}
             QLabel#statusErr {{ color: #ff5e7a; font-weight: 600; background-color: transparent; }}
@@ -147,8 +150,25 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         box = CollapsibleGroupBox("仪器连接", expanded=True)
         lay = box.content_layout
         lay.setSpacing(4)
-        self.build_n6705c_connection_widgets(lay)
-        self.build_oscilloscope_connection_widgets(lay)
+
+        n6705c_title_row = QHBoxLayout()
+        n6705c_title_row.setSpacing(8)
+        n6705c_title = QLabel("N6705C")
+        n6705c_title.setObjectName("cardTitle")
+        n6705c_title_row.addWidget(n6705c_title)
+        n6705c_title_row.addStretch()
+        lay.addLayout(n6705c_title_row)
+        self.build_n6705c_connection_widgets(lay, title_row=n6705c_title_row)
+
+        scope_title_row = QHBoxLayout()
+        scope_title_row.setSpacing(8)
+        scope_title = QLabel("Oscilloscope")
+        scope_title.setObjectName("cardTitle")
+        scope_title_row.addWidget(scope_title)
+        scope_title_row.addStretch()
+        lay.addLayout(scope_title_row)
+        self.build_oscilloscope_connection_widgets(lay, title_row=scope_title_row)
+
         self.bind_n6705c_signals()
         self.bind_oscilloscope_signals()
         return box
