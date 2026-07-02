@@ -19,14 +19,18 @@ from PySide6.QtWidgets import (
     QDialog,
     QDoubleSpinBox,
     QFormLayout,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QSpinBox,
     QTabWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -102,6 +106,7 @@ class AISettingsDialog(QDialog):
 
         tabs = QTabWidget()
         tabs.addTab(self._build_general_tab(), "常规")
+        tabs.addTab(self._build_models_tab(), "模型")
         tabs.addTab(self._build_waveform_tab(), "波形算法")
         tabs.addTab(self._build_whitelist_tab(), "白名单")
         tabs.addTab(self._build_experience_tab(), "本机经验")
@@ -160,11 +165,6 @@ class AISettingsDialog(QDialog):
         self._mode_combo.currentIndexChanged.connect(self._on_mode_changed)
         self._on_mode_changed()
 
-        self._models_edit = QLineEdit(", ".join(self._settings.available_models))
-        self._models_edit.setPlaceholderText("deepseekv4flash, glm-5.1-fp8")
-        self._models_edit.setToolTip("可选模型清单（逗号分隔），用于面板手动切换")
-        form.addRow("可选模型", self._models_edit)
-
         self._stream_chk = QCheckBox("流式输出（逐字返回）")
         self._stream_chk.setChecked(self._settings.stream)
         form.addRow("", self._stream_chk)
@@ -198,6 +198,132 @@ class AISettingsDialog(QDialog):
         layout.addLayout(form)
         layout.addStretch(1)
         return tab
+
+    def _build_models_tab(self) -> QWidget:
+        """模型管理：每个模型单独一张可折叠卡片，展开后编辑上下文窗口等参数。"""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        hint = QLabel(
+            "每个模型单独一列，点击标题可展开/折叠详细参数。"
+            "上下文窗口按模型生效，用于估算 token 预算与历史裁剪。"
+        )
+        hint.setObjectName("aiHint")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        container = QWidget()
+        self._models_list_layout = QVBoxLayout(container)
+        self._models_list_layout.setContentsMargins(0, 0, 0, 0)
+        self._models_list_layout.setSpacing(8)
+        self._models_list_layout.addStretch(1)
+        scroll.setWidget(container)
+        layout.addWidget(scroll, 1)
+
+        # name -> 该卡片的上下文窗口 QSpinBox；卡片自身存 name 供收集/删除
+        self._model_cards: list[dict] = []
+        saved_windows = self._settings.model_context_windows or {}
+        for name in self._settings.available_models:
+            # 精确匹配已保存值；未保存过的模型用默认窗口（不用 context_window_for
+            # 的「最小已知窗口」回退，那是运行时防溢出逻辑，会掩盖 key 不匹配）
+            window = saved_windows.get(name, self._settings.default_context_window)
+            self._add_model_card(name, int(window))
+
+        add_row = QHBoxLayout()
+        self._new_model_edit = QLineEdit()
+        self._new_model_edit.setPlaceholderText("输入模型名，如 glm-5.1-fp8")
+        add_row.addWidget(self._new_model_edit, 1)
+        add_btn = QPushButton("新增模型")
+        add_btn.setAutoDefault(False)
+        add_btn.setDefault(False)
+        add_btn.clicked.connect(self._on_add_model)
+        add_row.addWidget(add_btn)
+        layout.addLayout(add_row)
+        return tab
+
+    def _add_model_card(self, name: str, window: int) -> None:
+        """插入一张可折叠模型卡片（标题=模型名，展开体=详细参数）。"""
+        card = QFrame()
+        card.setObjectName("aiModelCard")
+        card.setStyleSheet(
+            "#aiModelCard{background:#0f172a;border:1px solid #1e293b;border-radius:8px;}"
+        )
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(10, 8, 10, 8)
+        card_layout.setSpacing(6)
+
+        header = QHBoxLayout()
+        toggle = QToolButton()
+        toggle.setObjectName("aiModelToggle")
+        toggle.setStyleSheet(
+            "#aiModelToggle{border:none;background:transparent;color:#e2e8f0;"
+            "font-size:12px;font-weight:700;padding:0;}"
+        )
+        toggle.setCheckable(True)
+        toggle.setChecked(False)
+        toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        toggle.setArrowType(Qt.RightArrow)
+        toggle.setText(name)
+        toggle.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        header.addWidget(toggle, 1)
+
+        del_btn = QPushButton("删除")
+        del_btn.setAutoDefault(False)
+        del_btn.setDefault(False)
+        del_btn.setFixedHeight(22)
+        header.addWidget(del_btn)
+        card_layout.addLayout(header)
+
+        body = QWidget()
+        body.setVisible(False)
+        body_form = QFormLayout(body)
+        body_form.setContentsMargins(18, 4, 0, 0)
+        body_form.setSpacing(8)
+        window_spin = QSpinBox()
+        window_spin.setRange(1024, 8388608)
+        window_spin.setSingleStep(1024)
+        window_spin.setSuffix(" tokens")
+        window_spin.setValue(int(window))
+        window_spin.setToolTip("该模型的上下文窗口（token 上限）")
+        body_form.addRow("上下文窗口", window_spin)
+        card_layout.addWidget(body)
+
+        def _on_toggled(checked: bool) -> None:
+            body.setVisible(checked)
+            toggle.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
+
+        toggle.toggled.connect(_on_toggled)
+
+        entry = {"name": name, "card": card, "window_spin": window_spin}
+        del_btn.clicked.connect(lambda: self._on_remove_model(entry))
+        self._model_cards.append(entry)
+        # 插到 stretch 之前
+        self._models_list_layout.insertWidget(
+            self._models_list_layout.count() - 1, card
+        )
+
+    def _on_add_model(self) -> None:
+        name = self._new_model_edit.text().strip()
+        if not name:
+            return
+        if any(e["name"] == name for e in self._model_cards):
+            self._test_result.setText(f"模型「{name}」已存在")
+            return
+        self._add_model_card(name, int(self._settings.default_context_window))
+        self._new_model_edit.clear()
+
+    def _on_remove_model(self, entry: dict) -> None:
+        if len(self._model_cards) <= 1:
+            self._test_result.setText("至少保留一个模型")
+            return
+        entry["card"].setParent(None)
+        entry["card"].deleteLater()
+        self._model_cards.remove(entry)
 
     def _build_waveform_tab(self) -> QWidget:
         """波形事件检测算法选择 + 随算法动态切换的常用参数（落盘 AISettings）。"""
@@ -617,8 +743,13 @@ class AISettingsDialog(QDialog):
         self._settings.default_model = (
             self._model_combo.currentText().strip() or "deepseekv4flash"
         )
-        models = [m.strip() for m in self._models_edit.text().split(",") if m.strip()]
+        models = [e["name"] for e in self._model_cards if e["name"].strip()]
         self._settings.available_models = models or ["deepseekv4flash", "glm-5.1-fp8"]
+        self._settings.model_context_windows = {
+            e["name"]: int(e["window_spin"].value())
+            for e in self._model_cards
+            if e["name"].strip()
+        }
         self._settings.stream = self._stream_chk.isChecked()
         self._settings.timeout_seconds = int(self._timeout_spin.value())
         self._settings.max_recent_log_lines = int(self._log_lines_spin.value())
@@ -693,7 +824,12 @@ class AISettingsDialog(QDialog):
         report = report or []
         models = [str(e.get("model", "")) for e in report if e.get("model")]
         if models:
-            self._models_edit.setText(", ".join(models))
+            existing = {e["name"] for e in self._model_cards}
+            for name in models:
+                if name not in existing:
+                    self._add_model_card(
+                        name, int(self._settings.default_context_window)
+                    )
             cur = self._model_combo.currentText().strip()
             self._model_combo.clear()
             self._model_combo.addItems(models)
