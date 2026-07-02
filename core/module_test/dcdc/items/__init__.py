@@ -29,7 +29,7 @@ def _skipped(item_key: str, name: str, reason: str) -> ItemResult:
 
 def vout_scan(ctx: ItemContext) -> ItemResult:
     """各挡位输出电压扫描（寄存器驱动，逻辑见 _common.run_vout_scan）。"""
-    return run_vout_scan(ctx, "dcdc_vout_scan", "输出电压扫描")
+    return run_vout_scan(ctx, "dcdc_vout_scan", "Output Voltage Scan")
 
 
 def efficiency(ctx: ItemContext) -> ItemResult:
@@ -104,7 +104,7 @@ def efficiency(ctx: ItemContext) -> ItemResult:
     effs = [r[2] for r in rows]
     measured = {"points": len(rows), "max_eff": round(max(effs), 3) if effs else 0,
                 "avg_eff": round(sum(effs) / len(effs), 3) if effs else 0}
-    return ItemResult(item_key=item_key, name="效率", unit="%",
+    return ItemResult(item_key=item_key, name="Efficiency", unit="%",
                       passed=None, measured=measured, raw_csv_path=csv_path)
 
 
@@ -150,7 +150,7 @@ def load_line_reg(ctx: ItemContext) -> ItemResult:
     write_csv(csv_path, ["Iload (mA)", "Vout (mV)"], rows)
     delta = (rows[-1][1] - rows[0][1]) if len(rows) >= 2 else 0.0
     measured = {"points": len(rows), "vout_drop_mv": round(delta, 4)}
-    return ItemResult(item_key=item_key, name="负载调整率", unit="mV",
+    return ItemResult(item_key=item_key, name="Load Regulation", unit="mV",
                       passed=None, measured=measured, raw_csv_path=csv_path)
 
 
@@ -193,7 +193,7 @@ def line_reg(ctx: ItemContext) -> ItemResult:
     write_csv(csv_path, ["Vin (V)", "Vout (mV)"], rows)
     delta = (max(r[1] for r in rows) - min(r[1] for r in rows)) if rows else 0.0
     measured = {"points": len(rows), "vout_span_mv": round(delta, 4)}
-    return ItemResult(item_key=item_key, name="线性调整率", unit="mV",
+    return ItemResult(item_key=item_key, name="Line Regulation", unit="mV",
                       passed=None, measured=measured, raw_csv_path=csv_path)
 
 
@@ -235,7 +235,7 @@ def quiescent(ctx: ItemContext) -> ItemResult:
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Mode", "Iq (uA)"], rows)
     measured = {"rows": rows}
-    return ItemResult(item_key=item_key, name="静态电流", unit="uA",
+    return ItemResult(item_key=item_key, name="Quiescent Current", unit="uA",
                       passed=None, measured=measured, raw_csv_path=csv_path)
 
 
@@ -247,7 +247,7 @@ def ripple(ctx: ItemContext) -> ItemResult:
     """
     item_key = "dcdc_ripple"
     if ctx.scope is None:
-        return _skipped(item_key, "BUCK 纹波", "未连接示波器，跳过")
+        return _skipped(item_key, "Buck Ripple", "未连接示波器，跳过")
     cfg = ctx.config
     scope_ch = int(cfg.get("scope_vout_channel", 1))
     vin_ch = parse_channel(cfg.get("vin_channel", 1))
@@ -277,7 +277,7 @@ def ripple(ctx: ItemContext) -> ItemResult:
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Vpp (mV)", "RMS (mV)"], [[round(vpp, 4), round(rms, 4)]])
     ctx.log_fn(f"[{item_key}] Vpp={vpp:.3f} mV, RMS={rms:.3f} mV")
-    return ItemResult(item_key=item_key, name="BUCK 纹波", unit="mV",
+    return ItemResult(item_key=item_key, name="Buck Ripple", unit="mV",
                       passed=None, measured={"vpp_mv": round(vpp, 4), "rms_mv": round(rms, 4)},
                       raw_csv_path=csv_path)
 
@@ -286,7 +286,7 @@ def psrr(ctx: ItemContext) -> ItemResult:
     """DCDC PSRR（依赖示波器）。"""
     item_key = "dcdc_psrr"
     if ctx.scope is None:
-        return _skipped(item_key, "DCDC PSRR", "未连接示波器，跳过")
+        return _skipped(item_key, "PSRR", "未连接示波器，跳过")
     freqs = ctx.config.get("psrr_freqs", ["1kHz", "10kHz", "100kHz"])
     rows: list[list] = []
     for i, f in enumerate(freqs):
@@ -297,7 +297,7 @@ def psrr(ctx: ItemContext) -> ItemResult:
         ctx.progress_fn(int((i + 1) / len(freqs) * 100), f"PSRR {f}")
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Freq", "PSRR (dB)"], rows)
-    return ItemResult(item_key=item_key, name="DCDC PSRR", unit="dB",
+    return ItemResult(item_key=item_key, name="PSRR", unit="dB",
                       passed=None, measured={"rows": rows}, raw_csv_path=csv_path)
 
 
@@ -305,7 +305,7 @@ def load_transient(ctx: ItemContext) -> ItemResult:
     """负载瞬态响应（依赖示波器）。"""
     item_key = "dcdc_load_transient"
     if ctx.scope is None:
-        return _skipped(item_key, "负载瞬态响应", "未连接示波器，跳过")
+        return _skipped(item_key, "Load Transient Response", "未连接示波器，跳过")
     freqs = ctx.config.get("transient_freqs", ["10Hz", "100Hz", "1kHz"])
     rows: list[list] = []
     for i, f in enumerate(freqs):
@@ -318,7 +318,7 @@ def load_transient(ctx: ItemContext) -> ItemResult:
         ctx.progress_fn(int((i + 1) / len(freqs) * 100), f"Transient {f}")
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Freq", "Overshoot (mV)", "Undershoot (mV)", "Recover (us)"], rows)
-    return ItemResult(item_key=item_key, name="负载瞬态响应", unit="mV",
+    return ItemResult(item_key=item_key, name="Load Transient Response", unit="mV",
                       passed=None, measured={"rows": rows}, raw_csv_path=csv_path)
 
 
@@ -326,7 +326,7 @@ def inductor_current(ctx: ItemContext) -> ItemResult:
     """不同负载下电感电流（依赖示波器）。"""
     item_key = "dcdc_inductor_current"
     if ctx.scope is None:
-        return _skipped(item_key, "电感电流", "未连接示波器，跳过")
+        return _skipped(item_key, "Inductor Current", "未连接示波器，跳过")
     i_start = float(ctx.config.get("iload_start_ma", 10))
     i_end = float(ctx.config.get("iload_end_ma", 200))
     i_step = float(ctx.config.get("iload_step_ma", 50))
@@ -341,7 +341,7 @@ def inductor_current(ctx: ItemContext) -> ItemResult:
         ctx.progress_fn(int((i + 1) / len(points) * 100), f"IL {il}mA")
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Iload (mA)", "Ipeak (mA)", "Ivalley (mA)"], rows)
-    return ItemResult(item_key=item_key, name="电感电流", unit="mA",
+    return ItemResult(item_key=item_key, name="Inductor Current", unit="mA",
                       passed=None, measured={"rows": rows}, raw_csv_path=csv_path)
 
 
@@ -407,7 +407,7 @@ def vin_range(ctx: ItemContext) -> ItemResult:
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Vin (V)", "Vout (mV)", "Regulated"], rows)
     ctx.log_fn(f"[{item_key}] Vin range = {lo_edge:.4f} ~ {hi_edge:.4f} V")
-    return ItemResult(item_key=item_key, name="输入电压范围", unit="V",
+    return ItemResult(item_key=item_key, name="Input Voltage Range", unit="V",
                       passed=None, measured={"vin_min_v": round(lo_edge, 4),
                                              "vin_max_v": round(hi_edge, 4),
                                              "sweep_range_v": [vin_lo, vin_hi]},
@@ -462,7 +462,7 @@ def output_power(ctx: ItemContext) -> ItemResult:
     write_csv(csv_path, ["Iout (mA)", "Vout (mV)", "Pout (mW)"], rows)
     pmax = max((r[2] for r in rows), default=0.0)
     iout_max = max((r[0] for r in rows), default=0.0)
-    return ItemResult(item_key=item_key, name="输出功率", unit="mW",
+    return ItemResult(item_key=item_key, name="Output Power", unit="mW",
                       passed=None, measured={"points": len(rows), "pout_max_mw": round(pmax, 4),
                                              "iout_max_ma": round(iout_max, 4)},
                       raw_csv_path=csv_path)
@@ -475,7 +475,7 @@ def switching_freq(ctx: ItemContext) -> ItemResult:
     """
     item_key = "dcdc_switching_freq"
     if ctx.scope is None:
-        return _skipped(item_key, "开关频率", "未连接示波器，跳过")
+        return _skipped(item_key, "Switching Frequency", "未连接示波器，跳过")
     cfg = ctx.config
     scope_sw_ch = int(cfg.get("scope_sw_channel", 2))
     vin_ch = parse_channel(cfg.get("vin_channel", 1))
@@ -500,7 +500,7 @@ def switching_freq(ctx: ItemContext) -> ItemResult:
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Fsw (kHz)"], [[round(fsw_khz, 3)]])
     ctx.log_fn(f"[{item_key}] Fsw = {fsw_khz:.3f} kHz")
-    return ItemResult(item_key=item_key, name="开关频率", unit="kHz",
+    return ItemResult(item_key=item_key, name="Switching Frequency", unit="kHz",
                       passed=None, measured={"fsw_khz": round(fsw_khz, 3)},
                       raw_csv_path=csv_path)
 
@@ -527,7 +527,7 @@ def shutdown_current(ctx: ItemContext) -> ItemResult:
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Shutdown current (uA)"], [[round(ish_ua, 4)]])
     ctx.log_fn(f"[{item_key}] Shutdown current = {ish_ua:.4f} uA")
-    return ItemResult(item_key=item_key, name="待机/关断电流", unit="uA",
+    return ItemResult(item_key=item_key, name="Standby/Shutdown Current", unit="uA",
                       passed=None, measured={"shutdown_current_ua": round(ish_ua, 4)},
                       raw_csv_path=csv_path)
 
@@ -593,7 +593,7 @@ def current_limit(ctx: ItemContext) -> ItemResult:
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Iset (mA)", "Vout (mV)", "Iout (mA)"], rows)
     ctx.log_fn(f"[{item_key}] Ilimit={ilim_ma:.3f} mA, Ipeak={ipk_ma:.3f} mA")
-    return ItemResult(item_key=item_key, name="限流能力", unit="mA",
+    return ItemResult(item_key=item_key, name="Current Limit", unit="mA",
                       passed=None, measured={"current_limit_ma": round(ilim_ma, 3),
                                              "peak_current_ma": round(ipk_ma, 3),
                                              "vout_nominal_mv": nominal_mv},
@@ -608,7 +608,7 @@ def startup(ctx: ItemContext) -> ItemResult:
     """
     item_key = "dcdc_startup"
     if ctx.scope is None:
-        return _skipped(item_key, "启动特性", "未连接示波器，跳过")
+        return _skipped(item_key, "Startup Behavior", "未连接示波器，跳过")
     if ctx.is_mock:
         soft_start_ms = mock_jitter(1.5, 0.1)
         rise_time_ms = mock_jitter(1.2, 0.1)
@@ -622,7 +622,7 @@ def startup(ctx: ItemContext) -> ItemResult:
               [[round(soft_start_ms, 4), round(rise_time_ms, 4), round(inrush_ma, 3)]])
     ctx.log_fn(f"[{item_key}] soft_start={soft_start_ms:.4f}ms rise={rise_time_ms:.4f}ms "
                f"inrush={inrush_ma:.3f}mA")
-    return ItemResult(item_key=item_key, name="启动特性", unit="ms",
+    return ItemResult(item_key=item_key, name="Startup Behavior", unit="ms",
                       passed=None, measured={"soft_start_ms": round(soft_start_ms, 4),
                                              "rise_time_ms": round(rise_time_ms, 4),
                                              "inrush_ma": round(inrush_ma, 3)},
@@ -648,7 +648,7 @@ def protection(ctx: ItemContext) -> ItemResult:
         ctx.log_fn(f"[{item_key}] {c} -> {triggered}")
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Protection", "Triggered"], rows)
-    return ItemResult(item_key=item_key, name="保护功能", unit="",
+    return ItemResult(item_key=item_key, name="Protection", unit="",
                       passed=None, measured={"rows": rows}, raw_csv_path=csv_path)
 
 
@@ -693,7 +693,7 @@ def topology(ctx: ItemContext) -> ItemResult:
               [[topo, "YES" if isolated else "NO", detected, round(ratio, 4)]])
     ctx.log_fn(f"[{item_key}] cfg={topo} isolated={isolated} detected={detected} "
                f"(Vout/Vin={ratio:.4f})")
-    return ItemResult(item_key=item_key, name="拓扑类型", unit="",
+    return ItemResult(item_key=item_key, name="Topology", unit="",
                       passed=None, measured={"topology": topo, "isolated": isolated,
                                              "detected": detected, "vout_vin_ratio": round(ratio, 4)},
                       raw_csv_path=csv_path)
@@ -707,7 +707,7 @@ def stability(ctx: ItemContext) -> ItemResult:
     """
     item_key = "dcdc_stability"
     if ctx.scope is None:
-        return _skipped(item_key, "稳定性与补偿", "未连接示波器，跳过")
+        return _skipped(item_key, "Stability & Compensation", "未连接示波器，跳过")
     if ctx.is_mock:
         phase_margin_deg = mock_jitter(55.0, 0.05)
         gain_margin_db = mock_jitter(12.0, 0.05)
@@ -718,7 +718,7 @@ def stability(ctx: ItemContext) -> ItemResult:
     write_csv(csv_path, ["Phase margin (deg)", "Gain margin (dB)"],
               [[round(phase_margin_deg, 3), round(gain_margin_db, 3)]])
     ctx.log_fn(f"[{item_key}] PM={phase_margin_deg:.3f}deg GM={gain_margin_db:.3f}dB")
-    return ItemResult(item_key=item_key, name="稳定性与补偿", unit="deg",
+    return ItemResult(item_key=item_key, name="Stability & Compensation", unit="deg",
                       passed=None, measured={"phase_margin_deg": round(phase_margin_deg, 3),
                                              "gain_margin_db": round(gain_margin_db, 3)},
                       raw_csv_path=csv_path)
@@ -726,77 +726,77 @@ def stability(ctx: ItemContext) -> ItemResult:
 
 # 测试项注册表：item_key -> (name, run_fn, needs_scope, default_checked, params)
 DCDC_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
-    "dcdc_vin_range": ("输入电压范围", vin_range, False, True, (
+    "dcdc_vin_range": ("Input Voltage Range", vin_range, False, True, (
         *vin_sweep(2.5, 5.5, 0.1),
         ParamSpec("vout_tol_ratio", "输出容差", "float", 0.05, "", maximum=1.0, decimals=4,
                   hint="如 0.05 表示 ±5%"),
         ParamSpec("vin_range_load_ma", "轻载电流", "float", 10.0, "mA", maximum=100000.0),
         average_cnt(), settle_time(),
     )),
-    "dcdc_vout_scan": ("输出电压扫描", vout_scan, False, True, (
+    "dcdc_vout_scan": ("Output Voltage Scan", vout_scan, False, True, (
         settle_time(), average_cnt(),
     )),
-    "dcdc_output_power": ("输出功率", output_power, False, True, (
+    "dcdc_output_power": ("Output Power", output_power, False, True, (
         *load_sweep(1.0, 200.0, 20.0),
         vin_bias(), average_cnt(), settle_time(),
     )),
-    "dcdc_efficiency": ("效率", efficiency, False, True, (
+    "dcdc_efficiency": ("Efficiency", efficiency, False, True, (
         *load_sweep(1.0, 200.0, 20.0),
         vin_bias(), average_cnt(), settle_time(),
     )),
-    "dcdc_load_reg": ("负载调整率", load_line_reg, False, True, (
+    "dcdc_load_reg": ("Load Regulation", load_line_reg, False, True, (
         *load_sweep(1.0, 200.0, 20.0),
         vin_bias(), average_cnt(), settle_time(),
     )),
-    "dcdc_line_reg": ("线性调整率", line_reg, False, True, (
+    "dcdc_line_reg": ("Line Regulation", line_reg, False, True, (
         *vin_sweep(3.2, 4.2, 0.2),
         average_cnt(), settle_time(),
     )),
-    "dcdc_quiescent": ("静态电流", quiescent, False, True, (
+    "dcdc_quiescent": ("Quiescent Current", quiescent, False, True, (
         vin_bias(), average_cnt(5), settle_time(),
         ParamSpec("iq_modes", "工作模式", "text", "PWM, BURST, ULP", "", hint="逗号分隔"),
     )),
-    "dcdc_shutdown_current": ("待机/关断电流", shutdown_current, False, True, (
+    "dcdc_shutdown_current": ("Standby/Shutdown Current", shutdown_current, False, True, (
         vin_bias(), average_cnt(5), settle_time(),
     )),
-    "dcdc_ripple": ("BUCK 纹波", ripple, True, True, (
+    "dcdc_ripple": ("Buck Ripple", ripple, True, True, (
         ParamSpec("scope_vout_channel", "示波器通道", "int", 1, "", minimum=1, maximum=4),
         vin_bias(),
         ParamSpec("ripple_load_ma", "纹波负载", "float", 100.0, "mA", maximum=100000.0),
         settle_time(),
     )),
-    "dcdc_psrr": ("DCDC PSRR", psrr, True, True, (
+    "dcdc_psrr": ("PSRR", psrr, True, True, (
         ParamSpec("psrr_freqs", "PSRR 频点", "text", "1kHz, 10kHz, 100kHz", "",
                   base_key="psrr_freqs", hint="逗号分隔"),
     )),
-    "dcdc_switching_freq": ("开关频率", switching_freq, True, True, (
+    "dcdc_switching_freq": ("Switching Frequency", switching_freq, True, True, (
         ParamSpec("scope_sw_channel", "SW 通道", "int", 2, "", minimum=1, maximum=4),
         vin_bias(),
         ParamSpec("fsw_load_ma", "测试负载", "float", 100.0, "mA", maximum=100000.0),
         settle_time(),
     )),
-    "dcdc_load_transient": ("负载瞬态响应", load_transient, True, True, (
+    "dcdc_load_transient": ("Load Transient Response", load_transient, True, True, (
         ParamSpec("transient_freqs", "瞬态频率", "text", "10Hz, 100Hz, 1kHz", "",
                   base_key="transient_freqs", hint="逗号分隔"),
     )),
-    "dcdc_inductor_current": ("电感电流", inductor_current, True, True, (
+    "dcdc_inductor_current": ("Inductor Current", inductor_current, True, True, (
         *load_sweep(10.0, 200.0, 50.0),
     )),
-    "dcdc_current_limit": ("限流能力", current_limit, False, True, (
+    "dcdc_current_limit": ("Current Limit", current_limit, False, True, (
         vout_tol("vout_tol_ratio", 0.05),
         ParamSpec("ilim_start_ma", "限流起始", "float", 100.0, "mA", maximum=100000.0),
         ParamSpec("ilim_end_ma", "限流结束", "float", 800.0, "mA", maximum=100000.0),
         ParamSpec("ilim_step_ma", "限流步进", "float", 20.0, "mA", minimum=0.1, maximum=100000.0),
         vin_bias(), average_cnt(), settle_time(),
     )),
-    "dcdc_startup": ("启动特性", startup, True, True, ()),
-    "dcdc_protection": ("保护功能", protection, False, True, (
+    "dcdc_startup": ("Startup Behavior", startup, True, True, ()),
+    "dcdc_protection": ("Protection", protection, False, True, (
         ParamSpec("protection_checks", "检查项", "text", "OCP, SCP, OVP, UVP, OTP", "",
                   hint="逗号分隔"),
     )),
-    "dcdc_topology": ("拓扑类型", topology, False, True, (
+    "dcdc_topology": ("Topology", topology, False, True, (
         ParamSpec("topology", "拓扑", "text", "Buck", "", hint="如 Buck / Boost / Buck-Boost"),
         vin_bias(), settle_time(),
     )),
-    "dcdc_stability": ("稳定性与补偿", stability, True, True, ()),
+    "dcdc_stability": ("Stability & Compensation", stability, True, True, ()),
 }

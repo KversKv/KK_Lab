@@ -29,7 +29,7 @@ def _skipped(item_key: str, name: str, reason: str) -> ItemResult:
 
 def vout_scan(ctx: ItemContext) -> ItemResult:
     """各挡位输出电压扫描（寄存器驱动，逻辑见 _common.run_vout_scan）。"""
-    return run_vout_scan(ctx, "ldo_vout_scan", "输出电压扫描")
+    return run_vout_scan(ctx, "ldo_vout_scan", "Output Voltage Scan")
 
 
 def load_line_reg(ctx: ItemContext) -> ItemResult:
@@ -76,7 +76,7 @@ def load_line_reg(ctx: ItemContext) -> ItemResult:
     delta = (rows[-1][1] - rows[0][1]) if len(rows) >= 2 else 0.0
     measured = {"points": len(rows), "vout_drop_mv": round(delta, 4),
                 "load_reg_mv_per_a": round(delta / max((i_end - i_start) / 1000.0, 1e-6), 4)}
-    return ItemResult(item_key=item_key, name="负载调整率", unit="mV",
+    return ItemResult(item_key=item_key, name="Load Regulation", unit="mV",
                       passed=None, measured=measured, raw_csv_path=csv_path)
 
 
@@ -121,7 +121,7 @@ def line_reg(ctx: ItemContext) -> ItemResult:
     write_csv(csv_path, ["Vin (V)", "Vout (mV)"], rows)
     delta = (max(r[1] for r in rows) - min(r[1] for r in rows)) if rows else 0.0
     measured = {"points": len(rows), "vout_span_mv": round(delta, 4)}
-    return ItemResult(item_key=item_key, name="线性调整率", unit="mV",
+    return ItemResult(item_key=item_key, name="Line Regulation", unit="mV",
                       passed=None, measured=measured, raw_csv_path=csv_path)
 
 
@@ -155,7 +155,7 @@ def quiescent(ctx: ItemContext) -> ItemResult:
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Mode", "Iq (uA)"], rows)
     measured = {"rows": rows}
-    return ItemResult(item_key=item_key, name="静态电流", unit="uA",
+    return ItemResult(item_key=item_key, name="Quiescent Current", unit="uA",
                       passed=None, measured=measured, raw_csv_path=csv_path)
 
 
@@ -167,7 +167,7 @@ def ripple(ctx: ItemContext) -> ItemResult:
     """
     item_key = "ldo_ripple"
     if ctx.scope is None:
-        return _skipped(item_key, "输出纹波", "未连接示波器，跳过")
+        return _skipped(item_key, "Output Ripple", "未连接示波器，跳过")
     cfg = ctx.config
     scope_ch = int(cfg.get("scope_vout_channel", 1))
     vin_ch = parse_channel(cfg.get("vin_channel", 2))
@@ -197,7 +197,7 @@ def ripple(ctx: ItemContext) -> ItemResult:
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Vpp (mV)", "RMS (mV)"], [[round(vpp, 4), round(rms, 4)]])
     ctx.log_fn(f"[{item_key}] Vpp={vpp:.3f} mV, RMS={rms:.3f} mV")
-    return ItemResult(item_key=item_key, name="输出纹波", unit="mV",
+    return ItemResult(item_key=item_key, name="Output Ripple", unit="mV",
                       passed=None, measured={"vpp_mv": round(vpp, 4), "rms_mv": round(rms, 4)},
                       raw_csv_path=csv_path)
 
@@ -206,7 +206,7 @@ def psrr(ctx: ItemContext) -> ItemResult:
     """电源抑制比（依赖示波器）。"""
     item_key = "ldo_psrr"
     if ctx.scope is None:
-        return _skipped(item_key, "电源抑制比", "未连接示波器，跳过")
+        return _skipped(item_key, "PSRR", "未连接示波器，跳过")
     freqs = ctx.config.get("psrr_freqs", ["1kHz", "10kHz", "100kHz"])
     rows: list[list] = []
     for i, f in enumerate(freqs):
@@ -217,7 +217,7 @@ def psrr(ctx: ItemContext) -> ItemResult:
         ctx.progress_fn(int((i + 1) / len(freqs) * 100), f"PSRR {f}")
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Freq", "PSRR (dB)"], rows)
-    return ItemResult(item_key=item_key, name="电源抑制比", unit="dB",
+    return ItemResult(item_key=item_key, name="PSRR", unit="dB",
                       passed=None, measured={"rows": rows}, raw_csv_path=csv_path)
 
 
@@ -225,7 +225,7 @@ def load_transient(ctx: ItemContext) -> ItemResult:
     """负载瞬态响应（依赖示波器）。"""
     item_key = "ldo_load_transient"
     if ctx.scope is None:
-        return _skipped(item_key, "负载瞬态响应", "未连接示波器，跳过")
+        return _skipped(item_key, "Load Transient Response", "未连接示波器，跳过")
     freqs = ctx.config.get("transient_freqs", ["10Hz", "100Hz", "1kHz"])
     rows: list[list] = []
     for i, f in enumerate(freqs):
@@ -238,15 +238,15 @@ def load_transient(ctx: ItemContext) -> ItemResult:
         ctx.progress_fn(int((i + 1) / len(freqs) * 100), f"Transient {f}")
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Freq", "Overshoot (mV)", "Undershoot (mV)", "Recover (us)"], rows)
-    return ItemResult(item_key=item_key, name="负载瞬态响应", unit="mV",
+    return ItemResult(item_key=item_key, name="Load Transient Response", unit="mV",
                       passed=None, measured={"rows": rows}, raw_csv_path=csv_path)
 
 
 def dropout(ctx: ItemContext) -> ItemResult:
     """压差电压 Dropout（维持稳压所需最小 Vin-Vout）。
 
-    流程：Vin=PS2Q 源、带固定负载，从 Vin 上限逐步降低，
-    当 Vout 跌出容差（低于 nominal*(1-tol)）时，记录此时的 Vin-Vout 即为压差。
+    流程：Vin=PS2Q 源、带固定负载，先在 Vin 上限、加载稳定后实测 Vout 作为基准 V0，
+    再从 Vin 上限逐步降低，当 Vout 跌出容差（低于 V0*(1-tol)）时，记录此时的 Vin-Vout 即为压差。
     """
     item_key = "ldo_dropout"
     cfg = ctx.config
@@ -263,6 +263,7 @@ def dropout(ctx: ItemContext) -> ItemResult:
     avg_cnt = int(cfg.get("average_cnt", 3))
 
     if ctx.is_mock:
+        v0_mv = mock_jitter(nominal_mv, 0.01)
         dropout_mv = mock_jitter(180.0, 0.05)
     else:
         setup_source_channel(ctx, vin_ch, vin_hi, current_limit=0.5)
@@ -270,9 +271,13 @@ def dropout(ctx: ItemContext) -> ItemResult:
         setup_load_channel(ctx, iload_ch)
         set_load_current(ctx, iload_ch, iload_ma / 1000.0)
         settle(ctx, max(settle_s * 4, 0.2))
+        # 在 Vin 上限、加载稳定后实测一次 Vout 作为基准 V0
+        v0_mv = measure_avg(ctx, "measure_voltage", vout_ch,
+                            count=avg_cnt, settle_s=settle_s, default=nominal_mv / 1000.0) * 1000.0
+        ctx.log_fn(f"[{item_key}] V0(基准)={v0_mv:.3f} mV @ Vin={vin_hi:.3f}V")
         # 从高到低扫描 Vin
         vin = vin_hi
-        threshold_mv = nominal_mv * (1.0 - tol)
+        threshold_mv = v0_mv * (1.0 - tol)
         dropout_mv = 0.0
         while vin >= vin_lo - 1e-9:
             if ctx.stop_flag_fn():
@@ -291,10 +296,12 @@ def dropout(ctx: ItemContext) -> ItemResult:
             vin -= vin_step
         teardown_load(ctx, iload_ch)
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
-    write_csv(csv_path, ["Iload (mA)", "Dropout (mV)"], [[iload_ma, round(dropout_mv, 3)]])
-    ctx.log_fn(f"[{item_key}] Iload={iload_ma}mA -> Dropout={dropout_mv:.3f} mV")
-    return ItemResult(item_key=item_key, name="压差电压", unit="mV",
+    write_csv(csv_path, ["Iload (mA)", "V0 (mV)", "Dropout (mV)"],
+              [[iload_ma, round(v0_mv, 3), round(dropout_mv, 3)]])
+    ctx.log_fn(f"[{item_key}] Iload={iload_ma}mA V0={v0_mv:.3f}mV -> Dropout={dropout_mv:.3f} mV")
+    return ItemResult(item_key=item_key, name="Dropout Voltage", unit="mV",
                       passed=None, measured={"dropout_mv": round(dropout_mv, 3),
+                                             "v0_mv": round(v0_mv, 3),
                                              "iload_ma": iload_ma, "vout_nominal_mv": nominal_mv},
                       raw_csv_path=csv_path)
 
@@ -357,7 +364,7 @@ def vout_accuracy(ctx: ItemContext) -> ItemResult:
                 tempco = slope / nominal_mv * 1e6  # ppm/C
         except Exception:  # noqa: BLE001
             logger.error("tempco fit failed", exc_info=True)
-    return ItemResult(item_key=item_key, name="输出电压精度", unit="%",
+    return ItemResult(item_key=item_key, name="Output Voltage Accuracy", unit="%",
                       passed=None, measured={"init_error_pct": round(init_err, 4),
                                              "tempco_ppm_c": round(tempco, 3),
                                              "rows": rows}, raw_csv_path=csv_path)
@@ -414,7 +421,7 @@ def current_limit(ctx: ItemContext) -> ItemResult:
     write_csv(csv_path, ["Current limit (mA)", "Peak current (mA)"],
               [[round(ilim_ma, 3), round(ipk_ma, 3)]])
     ctx.log_fn(f"[{item_key}] Current limit={ilim_ma:.3f} mA")
-    return ItemResult(item_key=item_key, name="输出电流能力", unit="mA",
+    return ItemResult(item_key=item_key, name="Current Limit", unit="mA",
                       passed=None, measured={"current_limit_ma": round(ilim_ma, 3),
                                              "peak_current_ma": round(ipk_ma, 3),
                                              "vout_nominal_mv": nominal_mv},
@@ -429,7 +436,7 @@ def output_noise(ctx: ItemContext) -> ItemResult:
     """
     item_key = "ldo_output_noise"
     if ctx.scope is None:
-        return _skipped(item_key, "输出噪声", "未连接示波器，跳过")
+        return _skipped(item_key, "Output Noise", "未连接示波器，跳过")
     if ctx.is_mock:
         noise_uv_rms = mock_jitter(30.0, 0.1)
     else:
@@ -437,7 +444,7 @@ def output_noise(ctx: ItemContext) -> ItemResult:
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Noise (uVrms)"], [[round(noise_uv_rms, 3)]])
     ctx.log_fn(f"[{item_key}] Output noise={noise_uv_rms:.3f} uVrms")
-    return ItemResult(item_key=item_key, name="输出噪声", unit="uVrms",
+    return ItemResult(item_key=item_key, name="Output Noise", unit="uVrms",
                       passed=None, measured={"noise_uv_rms": round(noise_uv_rms, 3)},
                       raw_csv_path=csv_path)
 
@@ -450,7 +457,7 @@ def line_transient(ctx: ItemContext) -> ItemResult:
     """
     item_key = "ldo_line_transient"
     if ctx.scope is None:
-        return _skipped(item_key, "输入瞬态响应", "未连接示波器，跳过")
+        return _skipped(item_key, "Line Transient Response", "未连接示波器，跳过")
     steps = ctx.config.get("line_transient_steps", ["3.2->4.2V", "4.2->3.2V"])
     rows: list[list] = []
     for i, s in enumerate(steps):
@@ -463,7 +470,7 @@ def line_transient(ctx: ItemContext) -> ItemResult:
         ctx.progress_fn(int((i + 1) / len(steps) * 100), f"Line transient {s}")
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Step", "Overshoot (mV)", "Undershoot (mV)", "Recover (us)"], rows)
-    return ItemResult(item_key=item_key, name="输入瞬态响应", unit="mV",
+    return ItemResult(item_key=item_key, name="Line Transient Response", unit="mV",
                       passed=None, measured={"rows": rows}, raw_csv_path=csv_path)
 
 
@@ -475,7 +482,7 @@ def stability(ctx: ItemContext) -> ItemResult:
     """
     item_key = "ldo_stability"
     if ctx.scope is None:
-        return _skipped(item_key, "稳定性", "未连接示波器，跳过")
+        return _skipped(item_key, "Stability", "未连接示波器，跳过")
     cfg = ctx.config
     cout_uf = float(cfg.get("stability_cout_uf", 1.0))
     esr_mohm = float(cfg.get("stability_esr_mohm", 50.0))
@@ -487,7 +494,7 @@ def stability(ctx: ItemContext) -> ItemResult:
     write_csv(csv_path, ["Cout (uF)", "ESR (mohm)", "Phase margin (deg)"],
               [[cout_uf, esr_mohm, round(phase_margin_deg, 3)]])
     ctx.log_fn(f"[{item_key}] Cout={cout_uf}uF ESR={esr_mohm}mohm -> PM={phase_margin_deg:.3f} deg")
-    return ItemResult(item_key=item_key, name="稳定性", unit="deg",
+    return ItemResult(item_key=item_key, name="Stability", unit="deg",
                       passed=None, measured={"cout_uf": cout_uf, "esr_mohm": esr_mohm,
                                              "phase_margin_deg": round(phase_margin_deg, 3)},
                       raw_csv_path=csv_path)
@@ -512,70 +519,70 @@ def protection(ctx: ItemContext) -> ItemResult:
         ctx.log_fn(f"[{item_key}] {c} -> {triggered}")
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Protection", "Triggered"], rows)
-    return ItemResult(item_key=item_key, name="保护功能", unit="",
+    return ItemResult(item_key=item_key, name="Protection", unit="",
                       passed=None, measured={"rows": rows}, raw_csv_path=csv_path)
 
 
 # 测试项注册表：item_key -> (name, run_fn, needs_scope, default_checked, params)
 LDO_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
-    "ldo_vout_scan": ("输出电压扫描", vout_scan, False, False, (
+    "ldo_vout_scan": ("Output Voltage Scan", vout_scan, False, False, (
         settle_time(), average_cnt(),
     )),
-    "ldo_load_reg": ("负载调整率", load_line_reg, False, False, (
+    "ldo_load_reg": ("Load Regulation", load_line_reg, False, False, (
         *load_sweep(1.0, 200.0, 20.0),
         vin_bias(), settle_time(), average_cnt(),
     )),
-    "ldo_line_reg": ("线性调整率", line_reg, False, False, (
+    "ldo_line_reg": ("Line Regulation", line_reg, False, False, (
         *vin_sweep(3.2, 4.2, 0.2),
         settle_time(), average_cnt(),
     )),
-    "ldo_dropout": ("压差电压", dropout, False, False, (
+    "ldo_dropout": ("Dropout Voltage", dropout, False, False, (
         ParamSpec("dropout_iload_ma", "压差负载", "float", 100.0, "mA", maximum=100000.0),
         ParamSpec("dropout_vin_hi_v", "Vin 上限", "float", 3.0, "V", maximum=60.0),
         ParamSpec("dropout_vin_lo_v", "Vin 下限", "float", 1.8, "V", maximum=60.0),
         ParamSpec("dropout_vin_step_v", "Vin 步进", "float", 0.02, "V", minimum=0.001, maximum=60.0),
         vout_tol(), settle_time(), average_cnt(),
     )),
-    "ldo_current_limit": ("输出电流能力", current_limit, False, False, (
+    "ldo_current_limit": ("Current Limit", current_limit, False, False, (
         vin_bias(),
         ParamSpec("ilim_start_ma", "限流起始", "float", 50.0, "mA", maximum=100000.0),
         ParamSpec("ilim_end_ma", "限流结束", "float", 500.0, "mA", maximum=100000.0),
         ParamSpec("ilim_step_ma", "限流步进", "float", 20.0, "mA", minimum=0.1, maximum=100000.0),
         vout_tol(), settle_time(), average_cnt(),
     )),
-    "ldo_quiescent": ("静态电流", quiescent, False, False, (
+    "ldo_quiescent": ("Quiescent Current", quiescent, False, False, (
         vin_bias(), settle_time(),
         ParamSpec("iq_modes", "工作模式", "text", "NORMAL, SLEEP", "",
                   hint="逗号分隔，如 NORMAL, SLEEP"),
     )),
-    "ldo_ripple": ("输出纹波", ripple, True, False, (
+    "ldo_ripple": ("Output Ripple", ripple, True, False, (
         ParamSpec("scope_vout_channel", "示波器通道", "int", 1, "", minimum=1, maximum=4),
         vin_bias(),
         ParamSpec("ripple_load_ma", "纹波负载", "float", 100.0, "mA", maximum=100000.0),
         settle_time(),
     )),
-    "ldo_psrr": ("电源抑制比", psrr, True, False, (
+    "ldo_psrr": ("PSRR", psrr, True, False, (
         ParamSpec("psrr_freqs", "PSRR 频点", "text", "1kHz, 10kHz, 100kHz", "",
                   base_key="psrr_freqs", hint="逗号分隔"),
     )),
-    "ldo_output_noise": ("输出噪声", output_noise, True, False, ()),
-    "ldo_load_transient": ("负载瞬态响应", load_transient, True, False, (
+    "ldo_output_noise": ("Output Noise", output_noise, True, False, ()),
+    "ldo_load_transient": ("Load Transient Response", load_transient, True, False, (
         ParamSpec("transient_freqs", "瞬态频率", "text", "10Hz, 100Hz, 1kHz", "",
                   base_key="transient_freqs", hint="逗号分隔"),
     )),
-    "ldo_line_transient": ("输入瞬态响应", line_transient, True, False, (
+    "ldo_line_transient": ("Line Transient Response", line_transient, True, False, (
         ParamSpec("line_transient_steps", "阶跃序列", "text", "3.2->4.2V, 4.2->3.2V", "",
                   hint="逗号分隔，如 3.2->4.2V"),
     )),
-    "ldo_stability": ("稳定性", stability, True, False, (
+    "ldo_stability": ("Stability", stability, True, False, (
         ParamSpec("stability_cout_uf", "输出电容", "float", 1.0, "uF", maximum=10000.0),
         ParamSpec("stability_esr_mohm", "ESR", "float", 50.0, "mΩ", maximum=100000.0),
     )),
-    "ldo_protection": ("保护功能", protection, False, False, (
+    "ldo_protection": ("Protection", protection, False, False, (
         ParamSpec("protection_checks", "检查项", "text", "OCP, SCP, OTP, REVERSE", "",
                   hint="逗号分隔"),
     )),
-    "ldo_vout_accuracy": ("输出电压精度", vout_accuracy, False, False, (
+    "ldo_vout_accuracy": ("Output Voltage Accuracy", vout_accuracy, False, False, (
         vin_bias(), settle_time(), average_cnt(),
         ParamSpec("temp_soak_s", "温度稳定时间", "float", 60.0, "s", maximum=3600.0),
         ParamSpec("accuracy_temps", "温度点", "text", "-40, 25, 85", "",
