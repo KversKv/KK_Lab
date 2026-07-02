@@ -231,13 +231,195 @@ def load_transient(ctx: ItemContext) -> ItemResult:
                       passed=None, measured={"rows": rows}, raw_csv_path=csv_path)
 
 
+def dropout(ctx: ItemContext) -> ItemResult:
+    """压差电压 Dropout（维持稳压所需最小 Vin-Vout）。
+
+    大框架占位：Mock 生成合理数据；真机逐步降低 Vin 直至 Vout 跌出容差，
+    记录临界 Vin-Vout。具体扫描与判定后续迭代。
+    """
+    item_key = "ldo_dropout"
+    cfg = ctx.config
+    nominal_mv = float(cfg.get("vout_nominal_mv", 1800))
+    iload_ma = float(cfg.get("dropout_iload_ma", 100))
+    if ctx.is_mock:
+        dropout_mv = mock_jitter(180.0, 0.05)
+    else:
+        # TODO(迭代): 逐步降低 Vin，检测 Vout 跌落 2% 临界点
+        dropout_mv = 0.0
+    csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
+    write_csv(csv_path, ["Iload (mA)", "Dropout (mV)"], [[iload_ma, round(dropout_mv, 3)]])
+    ctx.log_fn(f"[{item_key}] Iload={iload_ma}mA -> Dropout={dropout_mv:.3f} mV")
+    return ItemResult(item_key=item_key, name="压差电压", unit="mV",
+                      passed=None, measured={"dropout_mv": round(dropout_mv, 3),
+                                             "iload_ma": iload_ma, "vout_nominal_mv": nominal_mv},
+                      raw_csv_path=csv_path)
+
+
+def vout_accuracy(ctx: ItemContext) -> ItemResult:
+    """输出电压精度（初始精度 / 温漂 / 全范围精度）。
+
+    大框架占位：Mock 生成合理数据；接温箱时按温度点采样计算温漂，
+    未接温箱仅测常温初始精度。全范围精度与温漂系数后续迭代。
+    """
+    item_key = "ldo_vout_accuracy"
+    cfg = ctx.config
+    nominal_mv = float(cfg.get("vout_nominal_mv", 1800))
+    vout_ch = parse_channel(cfg.get("vout_channel", 1))
+    temps = cfg.get("accuracy_temps", ["25"]) if ctx.chamber is not None else ["25"]
+    rows: list[list] = []
+    for i, t in enumerate(temps):
+        if ctx.stop_flag_fn():
+            break
+        # TODO(迭代): 接温箱时 set_temperature(t) 并等待稳定
+        if ctx.is_mock:
+            v = mock_jitter(nominal_mv, 0.005)
+        else:
+            v = safe_measure(ctx.n6705c, "measure_voltage", vout_ch, nominal_mv) * 1000.0
+        err_pct = (v - nominal_mv) / nominal_mv * 100.0
+        rows.append([t, round(v, 3), round(err_pct, 4)])
+        ctx.progress_fn(int((i + 1) / len(temps) * 100), f"Accuracy {t}C")
+        ctx.log_fn(f"[{item_key}] T={t}C -> Vout={v:.3f} mV, err={err_pct:.4f}%")
+    csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
+    write_csv(csv_path, ["Temp (C)", "Vout (mV)", "Error (%)"], rows)
+    init_err = rows[0][2] if rows else 0.0
+    tempco = 0.0  # TODO(迭代): 多温度点拟合温漂 ppm/C
+    return ItemResult(item_key=item_key, name="输出电压精度", unit="%",
+                      passed=None, measured={"init_error_pct": init_err, "tempco_ppm_c": tempco,
+                                             "rows": rows}, raw_csv_path=csv_path)
+
+
+def current_limit(ctx: ItemContext) -> ItemResult:
+    """输出电流能力 / 限流点（最大负载电流）。
+
+    大框架占位：Mock 生成合理数据；真机逐步加大负载直至 Vout 跌落，
+    记录限流触发电流。具体扫描步进与判定后续迭代。
+    """
+    item_key = "ldo_current_limit"
+    cfg = ctx.config
+    nominal_mv = float(cfg.get("vout_nominal_mv", 1800))
+    if ctx.is_mock:
+        ilim_ma = mock_jitter(300.0, 0.05)
+    else:
+        # TODO(迭代): 递增负载电流，检测 Vout 跌出容差的临界电流
+        ilim_ma = 0.0
+    csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
+    write_csv(csv_path, ["Current limit (mA)"], [[round(ilim_ma, 3)]])
+    ctx.log_fn(f"[{item_key}] Current limit={ilim_ma:.3f} mA")
+    return ItemResult(item_key=item_key, name="输出电流能力", unit="mA",
+                      passed=None, measured={"current_limit_ma": round(ilim_ma, 3),
+                                             "vout_nominal_mv": nominal_mv},
+                      raw_csv_path=csv_path)
+
+
+def output_noise(ctx: ItemContext) -> ItemResult:
+    """输出噪声（LDO 自身噪声，依赖示波器/频谱）。
+
+    大框架占位：Mock 生成合理数据；真机通过示波器/频谱在带宽内积分噪声。
+    积分带宽与 RMS 计算后续迭代。
+    """
+    item_key = "ldo_output_noise"
+    if ctx.scope is None:
+        return _skipped(item_key, "输出噪声", "未连接示波器，跳过")
+    if ctx.is_mock:
+        noise_uv_rms = mock_jitter(30.0, 0.1)
+    else:
+        noise_uv_rms = 0.0  # TODO(迭代): 10Hz~100kHz 带宽积分噪声
+    csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
+    write_csv(csv_path, ["Noise (uVrms)"], [[round(noise_uv_rms, 3)]])
+    ctx.log_fn(f"[{item_key}] Output noise={noise_uv_rms:.3f} uVrms")
+    return ItemResult(item_key=item_key, name="输出噪声", unit="uVrms",
+                      passed=None, measured={"noise_uv_rms": round(noise_uv_rms, 3)},
+                      raw_csv_path=csv_path)
+
+
+def line_transient(ctx: ItemContext) -> ItemResult:
+    """输入瞬态响应（Vin 突变时的恢复能力，依赖示波器）。
+
+    大框架占位：Mock 生成合理数据；真机在 Vin 阶跃下捕获 Vout 过冲/恢复时间。
+    阶跃幅度与斜率后续迭代。
+    """
+    item_key = "ldo_line_transient"
+    if ctx.scope is None:
+        return _skipped(item_key, "输入瞬态响应", "未连接示波器，跳过")
+    steps = ctx.config.get("line_transient_steps", ["3.2->4.2V", "4.2->3.2V"])
+    rows: list[list] = []
+    for i, s in enumerate(steps):
+        if ctx.stop_flag_fn():
+            break
+        overshoot = mock_jitter(20.0, 0.05) if ctx.is_mock else 0.0
+        undershoot = mock_jitter(-18.0, 0.05) if ctx.is_mock else 0.0
+        recover_us = mock_jitter(40.0, 0.1) if ctx.is_mock else 0.0
+        rows.append([s, round(overshoot, 3), round(undershoot, 3), round(recover_us, 3)])
+        ctx.progress_fn(int((i + 1) / len(steps) * 100), f"Line transient {s}")
+    csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
+    write_csv(csv_path, ["Step", "Overshoot (mV)", "Undershoot (mV)", "Recover (us)"], rows)
+    return ItemResult(item_key=item_key, name="输入瞬态响应", unit="mV",
+                      passed=None, measured={"rows": rows}, raw_csv_path=csv_path)
+
+
+def stability(ctx: ItemContext) -> ItemResult:
+    """稳定性要求（输出电容容量 / ESR / 类型，依赖示波器）。
+
+    大框架占位：Mock 生成合理数据；真机在不同 Cout/ESR 下测相位裕度或瞬态振铃。
+    相位裕度测量方法后续迭代。
+    """
+    item_key = "ldo_stability"
+    if ctx.scope is None:
+        return _skipped(item_key, "稳定性", "未连接示波器，跳过")
+    cfg = ctx.config
+    cout_uf = float(cfg.get("stability_cout_uf", 1.0))
+    esr_mohm = float(cfg.get("stability_esr_mohm", 50.0))
+    if ctx.is_mock:
+        phase_margin_deg = mock_jitter(60.0, 0.05)
+    else:
+        phase_margin_deg = 0.0  # TODO(迭代): 环路相位裕度 / 瞬态振铃评估
+    csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
+    write_csv(csv_path, ["Cout (uF)", "ESR (mohm)", "Phase margin (deg)"],
+              [[cout_uf, esr_mohm, round(phase_margin_deg, 3)]])
+    ctx.log_fn(f"[{item_key}] Cout={cout_uf}uF ESR={esr_mohm}mohm -> PM={phase_margin_deg:.3f} deg")
+    return ItemResult(item_key=item_key, name="稳定性", unit="deg",
+                      passed=None, measured={"cout_uf": cout_uf, "esr_mohm": esr_mohm,
+                                             "phase_margin_deg": round(phase_margin_deg, 3)},
+                      raw_csv_path=csv_path)
+
+
+def protection(ctx: ItemContext) -> ItemResult:
+    """保护功能（限流 / 短路 / 过温 / 反灌保护）。
+
+    大框架占位：Mock 生成合理数据；真机逐项触发保护并记录动作与恢复。
+    各保护触发条件与安全边界后续迭代。
+    """
+    item_key = "ldo_protection"
+    checks = ctx.config.get("protection_checks", ["OCP", "SCP", "OTP", "REVERSE"])
+    rows: list[list] = []
+    for i, c in enumerate(checks):
+        if ctx.stop_flag_fn():
+            break
+        # TODO(迭代): 真机逐项触发对应保护，判定动作是否符合预期
+        triggered = "YES" if ctx.is_mock else "N/A"
+        rows.append([c, triggered])
+        ctx.progress_fn(int((i + 1) / len(checks) * 100), f"Protection {c}")
+        ctx.log_fn(f"[{item_key}] {c} -> {triggered}")
+    csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
+    write_csv(csv_path, ["Protection", "Triggered"], rows)
+    return ItemResult(item_key=item_key, name="保护功能", unit="",
+                      passed=None, measured={"rows": rows}, raw_csv_path=csv_path)
+
+
 # 测试项注册表：item_key -> (name, run_fn, needs_scope)
 LDO_ITEMS: dict[str, tuple[str, object, bool]] = {
     "ldo_vout_scan": ("输出电压扫描", vout_scan, False),
+    "ldo_vout_accuracy": ("输出电压精度", vout_accuracy, False),
     "ldo_load_reg": ("负载调整率", load_line_reg, False),
     "ldo_line_reg": ("线性调整率", line_reg, False),
+    "ldo_dropout": ("压差电压", dropout, False),
+    "ldo_current_limit": ("输出电流能力", current_limit, False),
     "ldo_quiescent": ("静态电流", quiescent, False),
     "ldo_ripple": ("输出纹波", ripple, True),
     "ldo_psrr": ("电源抑制比", psrr, True),
+    "ldo_output_noise": ("输出噪声", output_noise, True),
     "ldo_load_transient": ("负载瞬态响应", load_transient, True),
+    "ldo_line_transient": ("输入瞬态响应", line_transient, True),
+    "ldo_stability": ("稳定性", stability, True),
+    "ldo_protection": ("保护功能", protection, False),
 }
