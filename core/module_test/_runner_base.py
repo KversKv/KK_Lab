@@ -44,7 +44,7 @@ class ModuleTestRunner(QThread):
         self,
         *,
         module_type: str,
-        items_registry: dict[str, tuple[str, Any, bool]],
+        items_registry: dict[str, tuple[str, Any, bool, bool]],
         config: dict,
         n6705c: Any,
         scope: Any | None = None,
@@ -95,7 +95,7 @@ class ModuleTestRunner(QThread):
             if self._stop_flag:
                 self._log("[STOP] 收到停止请求，终止后续项。")
                 break
-            name, run_fn, needs_scope = self._items_registry[item_key]
+            name, run_fn, needs_scope, _default_checked = self._items_registry[item_key]
             self._log(f"[{idx + 1}/{total}] 执行 {name}（{item_key}）...")
             self._progress(int(idx / total * 100), name)
 

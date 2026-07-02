@@ -47,7 +47,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
 
     MODULE_TYPE: str = ""
     PAGE_KEY: str = ""
-    ITEMS_REGISTRY: dict[str, tuple[str, Any, bool]] = {}
+    ITEMS_REGISTRY: dict[str, tuple[str, Any, bool, bool]] = {}
     RUNNER_CLS: type = None  # type: ignore[assignment]
 
     def __init__(self, *, n6705c_top=None, mso64b_top=None, chamber_ui=None,
@@ -211,27 +211,49 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         self.vout_nominal_spin.setValue(1800 if self.MODULE_TYPE == "ldo" else 1200)
         grid.addWidget(self.vout_nominal_spin, 2, 3)
 
-        grid.addWidget(QLabel("DAC 起始"), 3, 0)
-        self.dac_start_spin = QSpinBox()
-        self.dac_start_spin.setRange(0, 65535)
-        grid.addWidget(self.dac_start_spin, 3, 1)
+        grid.addWidget(QLabel("Code 起始"), 3, 0)
+        self.min_code_spin = QSpinBox()
+        self.min_code_spin.setRange(0, 65535)
+        grid.addWidget(self.min_code_spin, 3, 1)
 
-        grid.addWidget(QLabel("DAC 结束"), 3, 2)
-        self.dac_end_spin = QSpinBox()
-        self.dac_end_spin.setRange(0, 65535)
-        self.dac_end_spin.setValue(255)
-        grid.addWidget(self.dac_end_spin, 3, 3)
+        grid.addWidget(QLabel("Code 结束"), 3, 2)
+        self.max_code_spin = QSpinBox()
+        self.max_code_spin.setRange(0, 65535)
+        self.max_code_spin.setValue(255)
+        grid.addWidget(self.max_code_spin, 3, 3)
 
-        grid.addWidget(QLabel("DAC 步进"), 4, 0)
-        self.dac_step_spin = QSpinBox()
-        self.dac_step_spin.setRange(1, 65535)
-        self.dac_step_spin.setValue(16)
-        grid.addWidget(self.dac_step_spin, 4, 1)
-
-        grid.addWidget(QLabel("温度点 (°C)"), 4, 2)
+        grid.addWidget(QLabel("温度点 (°C)"), 4, 0)
         self.temperature_edit = QLineEdit()
         self.temperature_edit.setPlaceholderText("常温留空")
-        grid.addWidget(self.temperature_edit, 4, 3)
+        grid.addWidget(self.temperature_edit, 4, 1)
+
+        grid.addWidget(QLabel("Device 地址"), 5, 0)
+        self.device_addr_edit = QLineEdit("0x00")
+        self.device_addr_edit.setPlaceholderText("如 0x62")
+        grid.addWidget(self.device_addr_edit, 5, 1)
+
+        grid.addWidget(QLabel("寄存器地址"), 5, 2)
+        self.reg_addr_edit = QLineEdit("0x00")
+        self.reg_addr_edit.setPlaceholderText("如 0x0132")
+        grid.addWidget(self.reg_addr_edit, 5, 3)
+
+        grid.addWidget(QLabel("MSB"), 6, 0)
+        self.msb_spin = QSpinBox()
+        self.msb_spin.setRange(0, 31)
+        self.msb_spin.setValue(7)
+        grid.addWidget(self.msb_spin, 6, 1)
+
+        grid.addWidget(QLabel("LSB"), 6, 2)
+        self.lsb_spin = QSpinBox()
+        self.lsb_spin.setRange(0, 31)
+        self.lsb_spin.setValue(0)
+        grid.addWidget(self.lsb_spin, 6, 3)
+
+        grid.addWidget(QLabel("Width Flag"), 7, 0)
+        self.width_flag_spin = QSpinBox()
+        self.width_flag_spin.setRange(1, 4)
+        self.width_flag_spin.setValue(1)
+        grid.addWidget(self.width_flag_spin, 7, 1)
         box.content_layout.addLayout(grid)
         return box
 
@@ -346,12 +368,13 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
     # ------------------------------------------------------------------ items table
     def _populate_item_table(self):
         self.items_table.setRowCount(0)
-        for item_key, (name, _run_fn, needs_scope) in self.ITEMS_REGISTRY.items():
+        for item_key, spec in self.ITEMS_REGISTRY.items():
+            name, _run_fn, needs_scope, item_checked = spec
             row = self.items_table.rowCount()
             self.items_table.insertRow(row)
             chk = QTableWidgetItem()
             chk.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
-            chk.setCheckState(Qt.Checked)
+            chk.setCheckState(Qt.Checked if item_checked else Qt.Unchecked)
             self.items_table.setItem(row, 0, chk)
             name_item = QTableWidgetItem(name)
             name_item.setFlags(Qt.ItemIsEnabled)
@@ -405,9 +428,13 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
             "vout_channel": self.vout_ch_combo.currentText(),
             "iload_channel": self.iload_ch_combo.currentText(),
             "vout_nominal_mv": self.vout_nominal_spin.value(),
-            "dac_start": self.dac_start_spin.value(),
-            "dac_end": self.dac_end_spin.value(),
-            "dac_step": self.dac_step_spin.value(),
+            "min_code": self.min_code_spin.value(),
+            "max_code": self.max_code_spin.value(),
+            "device_addr": self.device_addr_edit.text().strip(),
+            "reg_addr": self.reg_addr_edit.text().strip(),
+            "msb": self.msb_spin.value(),
+            "lsb": self.lsb_spin.value(),
+            "width_flag": self.width_flag_spin.value(),
             "iload_start_ma": self.iload_start_spin.value(),
             "iload_end_ma": self.iload_end_spin.value(),
             "iload_step_ma": self.iload_step_spin.value(),
@@ -618,7 +645,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         if not cfg.get("selected_items"):
             return False, "未勾选任何测试项，请先勾选。"
         scope_items = [k for k in cfg["selected_items"]
-                       if self.ITEMS_REGISTRY.get(k, (None, None, False))[2]]
+                       if self.ITEMS_REGISTRY.get(k, (None, None, False, False))[2]]
         if scope_items and not self.scope_connected:
             self.execution_logs.append_log(
                 f"[AI] 注意：勾选了示波器项 {scope_items}，但未连接示波器，这些项将跳过。"

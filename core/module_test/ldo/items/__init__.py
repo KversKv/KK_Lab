@@ -11,8 +11,8 @@ import os
 
 from core.module_test._common import (
     ItemContext, linspace, measure_avg, mock_jitter, parse_channel,
-    set_load_current, settle, setup_load_channel, setup_meter_channel,
-    setup_source_channel, teardown_load, write_csv,
+    run_vout_scan, set_load_current, settle, setup_load_channel,
+    setup_meter_channel, setup_source_channel, teardown_load, write_csv,
 )
 from core.module_test.result_model import ItemResult
 from log_config import get_logger
@@ -25,47 +25,8 @@ def _skipped(item_key: str, name: str, reason: str) -> ItemResult:
 
 
 def vout_scan(ctx: ItemContext) -> ItemResult:
-    """各挡位输出电压扫描（遍历寄存器全挡位）。"""
-    item_key = "ldo_vout_scan"
-    cfg = ctx.config
-    dac_start = int(cfg.get("dac_start", 0))
-    dac_end = int(cfg.get("dac_end", 255))
-    dac_step = max(1, int(cfg.get("dac_step", 16)))
-    vout_ch = parse_channel(cfg.get("vout_channel", 1))
-    vin_ch = parse_channel(cfg.get("vin_channel", 1))
-    nominal_mv = float(cfg.get("vout_nominal_mv", 1800))
-
-    codes = list(range(dac_start, dac_end + 1, dac_step))
-    rows: list[list[float]] = []
-    vin_v = float(cfg.get("vin_v", 3.7))
-    settle_s = float(cfg.get("settle_time_s", 0.05))
-    avg_cnt = int(cfg.get("average_cnt", 3))
-    if not ctx.is_mock:
-        setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
-        setup_meter_channel(ctx, vout_ch)
-    for i, code in enumerate(codes):
-        if ctx.stop_flag_fn():
-            break
-        if ctx.is_mock:
-            # 线性：code 满量程对应 nominal_mv
-            v = nominal_mv * (code / max(dac_end, 1)) * (1.0 + (i % 3 - 1) * 0.001)
-            v = mock_jitter(v, 0.003)
-        else:
-            # 注：DAC 挡位由寄存器外部设置，此处逐挡位稳定后测 Vout
-            settle(ctx, settle_s)
-            v = measure_avg(ctx, "measure_voltage", vout_ch,
-                            count=avg_cnt, settle_s=settle_s, default=nominal_mv / 1000.0) * 1000.0
-        rows.append([code, round(v, 3)])
-        ctx.progress_fn(int((i + 1) / len(codes) * 100), f"Vout scan {code}")
-        ctx.log_fn(f"[{item_key}] DAC={code} -> Vout={v:.3f} mV")
-
-    csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
-    write_csv(csv_path, ["DAC_code", "Vout (mV)"], rows)
-    measured = {"points": len(rows), "vout_min_mv": min((r[1] for r in rows), default=0),
-                "vout_max_mv": max((r[1] for r in rows), default=0)}
-    return ItemResult(item_key=item_key, name="输出电压扫描", unit="mV",
-                      passed=None, measured=measured, raw_csv_path=csv_path,
-                      notes=f"扫描 {len(rows)} 个 DAC 挡位")
+    """各挡位输出电压扫描（寄存器驱动，逻辑见 _common.run_vout_scan）。"""
+    return run_vout_scan(ctx, "ldo_vout_scan", "输出电压扫描")
 
 
 def load_line_reg(ctx: ItemContext) -> ItemResult:
@@ -552,20 +513,20 @@ def protection(ctx: ItemContext) -> ItemResult:
                       passed=None, measured={"rows": rows}, raw_csv_path=csv_path)
 
 
-# 测试项注册表：item_key -> (name, run_fn, needs_scope)
-LDO_ITEMS: dict[str, tuple[str, object, bool]] = {
-    "ldo_vout_scan": ("输出电压扫描", vout_scan, False),
-    "ldo_vout_accuracy": ("输出电压精度", vout_accuracy, False),
-    "ldo_load_reg": ("负载调整率", load_line_reg, False),
-    "ldo_line_reg": ("线性调整率", line_reg, False),
-    "ldo_dropout": ("压差电压", dropout, False),
-    "ldo_current_limit": ("输出电流能力", current_limit, False),
-    "ldo_quiescent": ("静态电流", quiescent, False),
-    "ldo_ripple": ("输出纹波", ripple, True),
-    "ldo_psrr": ("电源抑制比", psrr, True),
-    "ldo_output_noise": ("输出噪声", output_noise, True),
-    "ldo_load_transient": ("负载瞬态响应", load_transient, True),
-    "ldo_line_transient": ("输入瞬态响应", line_transient, True),
-    "ldo_stability": ("稳定性", stability, True),
-    "ldo_protection": ("保护功能", protection, False),
+# 测试项注册表：item_key -> (name, run_fn, needs_scope, default_checked)
+LDO_ITEMS: dict[str, tuple[str, object, bool, bool]] = {
+    "ldo_vout_scan": ("输出电压扫描", vout_scan, False, False),
+    "ldo_vout_accuracy": ("输出电压精度", vout_accuracy, False, False),
+    "ldo_load_reg": ("负载调整率", load_line_reg, False, False),
+    "ldo_line_reg": ("线性调整率", line_reg, False, False),
+    "ldo_dropout": ("压差电压", dropout, False, False),
+    "ldo_current_limit": ("输出电流能力", current_limit, False, False),
+    "ldo_quiescent": ("静态电流", quiescent, False, False),
+    "ldo_ripple": ("输出纹波", ripple, True, False),
+    "ldo_psrr": ("电源抑制比", psrr, True, False),
+    "ldo_output_noise": ("输出噪声", output_noise, True, False),
+    "ldo_load_transient": ("负载瞬态响应", load_transient, True, False),
+    "ldo_line_transient": ("输入瞬态响应", line_transient, True, False),
+    "ldo_stability": ("稳定性", stability, True, False),
+    "ldo_protection": ("保护功能", protection, False, False),
 }

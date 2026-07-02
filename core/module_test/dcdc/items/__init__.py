@@ -11,8 +11,8 @@ import os
 
 from core.module_test._common import (
     ItemContext, linspace, measure_avg, mock_jitter, parse_channel,
-    set_load_current, settle, setup_load_channel, setup_meter_channel,
-    setup_source_channel, teardown_load, write_csv,
+    run_vout_scan, set_load_current, settle, setup_load_channel,
+    setup_meter_channel, setup_source_channel, teardown_load, write_csv,
 )
 from core.module_test.result_model import ItemResult
 from log_config import get_logger
@@ -25,48 +25,8 @@ def _skipped(item_key: str, name: str, reason: str) -> ItemResult:
 
 
 def vout_scan(ctx: ItemContext) -> ItemResult:
-    """各挡位输出电压扫描。
-
-    流程：Vin=PS2Q 源上电、Vout=VMETer，逐 DAC 挡位（挡位切换须外部配置
-    芯片寄存器）settle + 多次采样均值读取 Vout。
-    """
-    item_key = "dcdc_vout_scan"
-    cfg = ctx.config
-    dac_start = int(cfg.get("dac_start", 0))
-    dac_end = int(cfg.get("dac_end", 255))
-    dac_step = max(1, int(cfg.get("dac_step", 16)))
-    vin_ch = parse_channel(cfg.get("vin_channel", 1))
-    vout_ch = parse_channel(cfg.get("vout_channel", 2))
-    vin_v = float(cfg.get("vin_v", 3.7))
-    nominal_mv = float(cfg.get("vout_nominal_mv", 1200))
-    avg_cnt = int(cfg.get("average_cnt", 3))
-    settle_s = float(cfg.get("settle_time_s", 0.05))
-
-    codes = list(range(dac_start, dac_end + 1, dac_step))
-    rows: list[list] = []
-    if not ctx.is_mock:
-        setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
-        setup_meter_channel(ctx, vout_ch)
-    for i, code in enumerate(codes):
-        if ctx.stop_flag_fn():
-            break
-        if ctx.is_mock:
-            v = nominal_mv * (code / max(dac_end, 1))
-            v = mock_jitter(v, 0.003)
-        else:
-            settle(ctx, settle_s)
-            v = measure_avg(ctx, "measure_voltage", vout_ch, count=avg_cnt, settle_s=settle_s,
-                            default=nominal_mv / 1000.0) * 1000.0
-        rows.append([code, round(v, 3)])
-        ctx.progress_fn(int((i + 1) / len(codes) * 100), f"Vout scan {code}")
-        ctx.log_fn(f"[{item_key}] DAC={code} -> Vout={v:.3f} mV")
-
-    csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
-    write_csv(csv_path, ["DAC_code", "Vout (mV)"], rows)
-    measured = {"points": len(rows), "vout_min_mv": min((r[1] for r in rows), default=0),
-                "vout_max_mv": max((r[1] for r in rows), default=0)}
-    return ItemResult(item_key=item_key, name="输出电压扫描", unit="mV",
-                      passed=None, measured=measured, raw_csv_path=csv_path)
+    """各挡位输出电压扫描（寄存器驱动，逻辑见 _common.run_vout_scan）。"""
+    return run_vout_scan(ctx, "dcdc_vout_scan", "输出电压扫描")
 
 
 def efficiency(ctx: ItemContext) -> ItemResult:
@@ -761,24 +721,24 @@ def stability(ctx: ItemContext) -> ItemResult:
                       raw_csv_path=csv_path)
 
 
-# 测试项注册表：item_key -> (name, run_fn, needs_scope)
-DCDC_ITEMS: dict[str, tuple[str, object, bool]] = {
-    "dcdc_vin_range": ("输入电压范围", vin_range, False),
-    "dcdc_vout_scan": ("输出电压扫描", vout_scan, False),
-    "dcdc_output_power": ("输出功率", output_power, False),
-    "dcdc_efficiency": ("效率", efficiency, False),
-    "dcdc_load_reg": ("负载调整率", load_line_reg, False),
-    "dcdc_line_reg": ("线性调整率", line_reg, False),
-    "dcdc_quiescent": ("静态电流", quiescent, False),
-    "dcdc_shutdown_current": ("待机/关断电流", shutdown_current, False),
-    "dcdc_ripple": ("BUCK 纹波", ripple, True),
-    "dcdc_psrr": ("DCDC PSRR", psrr, True),
-    "dcdc_switching_freq": ("开关频率", switching_freq, True),
-    "dcdc_load_transient": ("负载瞬态响应", load_transient, True),
-    "dcdc_inductor_current": ("电感电流", inductor_current, True),
-    "dcdc_current_limit": ("限流能力", current_limit, False),
-    "dcdc_startup": ("启动特性", startup, True),
-    "dcdc_protection": ("保护功能", protection, False),
-    "dcdc_topology": ("拓扑类型", topology, False),
-    "dcdc_stability": ("稳定性与补偿", stability, True),
+# 测试项注册表：item_key -> (name, run_fn, needs_scope, default_checked)
+DCDC_ITEMS: dict[str, tuple[str, object, bool, bool]] = {
+    "dcdc_vin_range": ("输入电压范围", vin_range, False, True),
+    "dcdc_vout_scan": ("输出电压扫描", vout_scan, False, True),
+    "dcdc_output_power": ("输出功率", output_power, False, True),
+    "dcdc_efficiency": ("效率", efficiency, False, True),
+    "dcdc_load_reg": ("负载调整率", load_line_reg, False, True),
+    "dcdc_line_reg": ("线性调整率", line_reg, False, True),
+    "dcdc_quiescent": ("静态电流", quiescent, False, True),
+    "dcdc_shutdown_current": ("待机/关断电流", shutdown_current, False, True),
+    "dcdc_ripple": ("BUCK 纹波", ripple, True, True),
+    "dcdc_psrr": ("DCDC PSRR", psrr, True, True),
+    "dcdc_switching_freq": ("开关频率", switching_freq, True, True),
+    "dcdc_load_transient": ("负载瞬态响应", load_transient, True, True),
+    "dcdc_inductor_current": ("电感电流", inductor_current, True, True),
+    "dcdc_current_limit": ("限流能力", current_limit, False, True),
+    "dcdc_startup": ("启动特性", startup, True, True),
+    "dcdc_protection": ("保护功能", protection, False, True),
+    "dcdc_topology": ("拓扑类型", topology, False, True),
+    "dcdc_stability": ("稳定性与补偿", stability, True, True),
 }
