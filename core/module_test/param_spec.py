@@ -114,3 +114,30 @@ def reg_scan_params() -> tuple[ParamSpec, ...]:
         ParamSpec("min_code", "Code 起始", "int", 0, "", minimum=0, maximum=65535),
         ParamSpec("max_code", "Code 结束", "int", 255, "", minimum=0, maximum=65535),
     )
+
+
+# —— 静态电流差分测量：ENABLE 双寄存器 + VOUT 外供参数 ——
+def quiescent_params() -> tuple[ParamSpec, ...]:
+    """静态电流差分测法参数。
+
+    SOC 场景下不能把 Vin 电流直接当静态电流。正确做法：外供 Vout 通道到
+    (实测 Vout + 偏置)，分别在被测 LDO/DCDC 使能 / 关断两态下测 Vin+Vout 电流，
+    做差得净静态电流。使能 / 关断各由两个寄存器（dr + en）控制：
+    使能=1/1，关断=1/0（值随芯片而定，可在弹窗改）。
+    """
+    return (
+        ParamSpec("iq_en_dr_addr", "使能DR寄存器", "text", "0x00", "",
+                  hint="如 reg_pu_ldo_01_dr 的地址 0x30"),
+        ParamSpec("iq_en_addr", "使能寄存器", "text", "0x00", "",
+                  hint="如 reg_pu_ldo_01 的地址 0x31"),
+        ParamSpec("iq_en_dr_msb", "DR MSB", "int", 0, "", minimum=0, maximum=31),
+        ParamSpec("iq_en_dr_lsb", "DR LSB", "int", 0, "", minimum=0, maximum=31),
+        ParamSpec("iq_en_msb", "EN MSB", "int", 0, "", minimum=0, maximum=31),
+        ParamSpec("iq_en_lsb", "EN LSB", "int", 0, "", minimum=0, maximum=31),
+        ParamSpec("iq_on_dr_val", "使能态 DR 值", "int", 1, "", minimum=0, maximum=65535),
+        ParamSpec("iq_on_en_val", "使能态 EN 值", "int", 1, "", minimum=0, maximum=65535),
+        ParamSpec("iq_off_dr_val", "关断态 DR 值", "int", 1, "", minimum=0, maximum=65535),
+        ParamSpec("iq_off_en_val", "关断态 EN 值", "int", 0, "", minimum=0, maximum=65535),
+        ParamSpec("iq_vout_offset_mv", "Vout 外供偏置", "float", 20.0, "mV",
+                  minimum=0.0, maximum=1000.0, decimals=1),
+    )

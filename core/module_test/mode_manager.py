@@ -173,3 +173,153 @@ def enter_mode(ctx: ItemContext, mode: ModeSpec) -> ModeEntryResult:
     except Exception:  # noqa: BLE001 - 进入模式异常降级，不中断整体流程
         logger.error("进入模式 %s 异常", mode.name, exc_info=True)
         return ModeEntryResult(ok=False, actual_mode=mode.name, note="进入模式异常")
+
+
+# ============================================================================
+# 静态电流差分测量：ENABLE 双寄存器位段写 + 使能/关断做差
+# ============================================================================
+@dataclass
+class EnableRegSpec:
+    """ENABLE 双寄存器（dr + en）位段声明，从 cfg 的 iq_* 参数解析而来。"""
+
+    dr_addr: int
+    en_addr: int
+    dr_msb: int
+    dr_lsb: int
+    en_msb: int
+    en_lsb: int
+    on_dr_val: int
+    on_en_val: int
+    off_dr_val: int
+    off_en_val: int
+
+
+def parse_enable_regs(cfg: dict) -> EnableRegSpec | None:
+    """解析 cfg 中的 ENABLE 双寄存器参数；地址均为 0 视为未配置返回 None。"""
+    dr_addr = _to_int(cfg.get("iq_en_dr_addr"), 0)
+    en_addr = _to_int(cfg.get("iq_en_addr"), 0)
+    if dr_addr == 0 and en_addr == 0:
+        return None
+    return EnableRegSpec(
+        dr_addr=dr_addr,
+        en_addr=en_addr,
+        dr_msb=_to_int(cfg.get("iq_en_dr_msb"), 0),
+        dr_lsb=_to_int(cfg.get("iq_en_dr_lsb"), 0),
+        en_msb=_to_int(cfg.get("iq_en_msb"), 0),
+        en_lsb=_to_int(cfg.get("iq_en_lsb"), 0),
+        on_dr_val=_to_int(cfg.get("iq_on_dr_val"), 1),
+        on_en_val=_to_int(cfg.get("iq_on_en_val"), 1),
+        off_dr_val=_to_int(cfg.get("iq_off_dr_val"), 1),
+        off_en_val=_to_int(cfg.get("iq_off_en_val"), 0),
+    )
+
+
+def _write_field(i2c: Any, device_addr: int, width_flag: int,
+                 addr: int, msb: int, lsb: int, value: int) -> None:
+    """读改写单个寄存器位段（保留其余位），对齐 vout_scan 位段约定。"""
+    reg = i2c.read(device_addr, addr, width_flag)
+    mask = ((1 << (msb - lsb + 1)) - 1) << lsb
+    reg = (reg & ~mask) | ((value << lsb) & mask)
+    i2c.write(device_addr, addr, reg, width_flag)
+
+
+def set_dut_enable(ctx: ItemContext, regs: EnableRegSpec, *, on: bool) -> bool:
+    """写 ENABLE 双寄存器，使被测 LDO/DCDC 使能(on)或关断(off)。
+
+    Mock 模式为 no-op 返回 True；真机按 dr → en 顺序位段写，失败降级 False。
+    仅改被测本路的 dr/en 位段，不动 SOC 其余部分。
+    """
+    if ctx.is_mock:
+        return True
+    device_addr = cfg_int(ctx.config, "device_addr", 0x00)
+    width_flag = cfg_int(ctx.config, "width_flag", 1)
+    dr_val = regs.on_dr_val if on else regs.off_dr_val
+    en_val = regs.on_en_val if on else regs.off_en_val
+    try:
+        i2c = create_i2c(ctx)
+        _write_field(i2c, device_addr, width_flag,
+                     regs.dr_addr, regs.dr_msb, regs.dr_lsb, dr_val)
+        _write_field(i2c, device_addr, width_flag,
+                     regs.en_addr, regs.en_msb, regs.en_lsb, en_val)
+        ctx.log_fn(f"[enable] {'ON' if on else 'OFF'} "
+                   f"dr=0x{regs.dr_addr:X}<-{dr_val} en=0x{regs.en_addr:X}<-{en_val}")
+        return True
+    except Exception:  # noqa: BLE001 - 写使能寄存器失败降级，不中断整体
+        logger.error("写 ENABLE 寄存器失败 (on=%s)", on, exc_info=True)
+        return False
+
+
+def iq_diff_measure(ctx: ItemContext, item_key: str, vin_ch: int, vout_src_ch: int,
+                    vout_supply_v: float, en_regs: EnableRegSpec,
+                    settle_s: float, avg_cnt: int,
+                    mode_settle_s: float | None = None,
+                    mock_base_ua: float = 80.0) -> tuple:
+    """静态电流差分测量核心（LDO/DCDC 共用）。
+
+    外供 Vout 源到 vout_supply_v，分别在使能 / 关断两态测 Vin+Vout 电流做差。
+    返回 (dIvin_uA, dIvout_uA, Iq_uA)，均已四舍五入到 3 位。
+    """
+    from core.module_test._common import (
+        measure_avg, mock_jitter, setup_source_channel,
+    )
+
+    st = mode_settle_s if mode_settle_s is not None else max(settle_s * 4, 0.2)
+    if ctx.is_mock:
+        ivin_on = mock_jitter(mock_base_ua * 0.6, 0.05)
+        ivout_on = mock_jitter(mock_base_ua * 0.4, 0.05)
+        ivin_off = mock_jitter(mock_base_ua * 0.05, 0.1)
+        ivout_off = mock_jitter(mock_base_ua * 0.02, 0.1)
+    else:
+        # 外供 Vout 源（双象限，可吸可灌），限流兜底
+        setup_source_channel(ctx, vout_src_ch, vout_supply_v, current_limit=0.5)
+        # 使能态
+        set_dut_enable(ctx, en_regs, on=True)
+        settle(ctx, st)
+        ivin_on = measure_avg(ctx, "measure_current", vin_ch,
+                              count=avg_cnt, settle_s=settle_s) * 1e6
+        ivout_on = measure_avg(ctx, "measure_current", vout_src_ch,
+                               count=avg_cnt, settle_s=settle_s) * 1e6
+        # 关断态
+        set_dut_enable(ctx, en_regs, on=False)
+        settle(ctx, st)
+        ivin_off = measure_avg(ctx, "measure_current", vin_ch,
+                               count=avg_cnt, settle_s=settle_s) * 1e6
+        ivout_off = measure_avg(ctx, "measure_current", vout_src_ch,
+                                count=avg_cnt, settle_s=settle_s) * 1e6
+    d_ivin = ivin_on - ivin_off
+    d_ivout = ivout_on - ivout_off
+    iq = d_ivin + d_ivout
+    return (round(d_ivin, 3), round(d_ivout, 3), round(iq, 3))
+
+
+def iq_direct_fallback(ctx: ItemContext, item_key: str, vin_ch: int,
+                       modes: list, settle_s: float, avg_cnt: int,
+                       rows: list, mock_base_ua: float = 80.0) -> None:
+    """未配 ENABLE 寄存器时的退化路径：直接测 Vin 电流（仅参考）。
+
+    填充 rows，列对齐差分表：[Mode, ActualMode, EnterBy, dIvin, dIvout, Iq]，
+    其中 dIvin=Iq=测得 Vin 电流、dIvout 留空。
+    """
+    from core.module_test._common import measure_avg, mock_jitter
+
+    seq = modes if modes else [None]
+    for i, mode in enumerate(seq):
+        if ctx.stop_flag_fn():
+            break
+        mode_name, actual, enter_by = "DEFAULT", "DEFAULT", "n/a"
+        if mode is not None:
+            entry = enter_mode(ctx, mode)
+            mode_name, actual, enter_by = mode.name, entry.actual_mode, mode.enter
+            if not entry.ok:
+                rows.append([mode_name, actual, enter_by, "", "", ""])
+                continue
+        if ctx.is_mock:
+            iq = mock_jitter(mock_base_ua, 0.05)
+        else:
+            settle(ctx, mode.settle_s if mode is not None and mode.settle_s is not None
+                   else max(settle_s * 4, 0.2))
+            iq = measure_avg(ctx, "measure_current", vin_ch,
+                             count=avg_cnt, settle_s=settle_s) * 1e6
+        rows.append([mode_name, actual, enter_by, round(iq, 3), "", round(iq, 3)])
+        ctx.progress_fn(int((i + 1) / len(seq) * 100), f"Iq {mode_name}")
+        ctx.log_fn(f"[{item_key}] (fallback) mode={mode_name} -> Ivin={iq:.3f} uA")

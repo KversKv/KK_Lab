@@ -16,7 +16,8 @@ from core.module_test._common import (
 )
 from core.module_test.result_model import ItemResult
 from core.module_test.param_spec import (
-    ParamSpec, average_cnt, load_sweep, reg_scan_params, settle_time, vin_bias, vin_sweep, vout_tol,
+    ParamSpec, average_cnt, load_sweep, quiescent_params, reg_scan_params,
+    settle_time, vin_bias, vin_sweep, vout_tol,
 )
 from log_config import get_logger
 
@@ -126,61 +127,73 @@ def line_reg(ctx: ItemContext) -> ItemResult:
 
 
 def quiescent(ctx: ItemContext) -> ItemResult:
-    """静态电流（Iq），逐 DUT 工作模式遍历。
+    """静态电流（Iq），差分测法，逐 DUT 工作模式遍历。
 
-    模式来自 cfg['dut_modes']（被测配置区声明），每模式先 enter_mode（写寄存器 /
-    设负载自动切换 / 手动暂停确认）再空载测源侧输入电流。无声明时兜底单次测量。
+    SOC 场景下不能把 Vin 电流直接当静态电流。测法（每模式内）：
+      1. 外供 Vout 源通道 = 实测 Vout + 偏置（默认 +20mV）；
+      2. 使能被测 LDO（写 ENABLE 双寄存器 on），记 Vin/Vout 两通道电流；
+      3. 关断被测 LDO（写 ENABLE 双寄存器 off），再记 Vin/Vout 两通道电流；
+      4. ΔI_vin、ΔI_vout 分列，Iq = ΔI_vin + ΔI_vout。
+    模式来自 cfg['dut_modes']；未配 ENABLE 寄存器时退化为直接测 Vin 电流。
     """
-    from core.module_test.mode_manager import enter_mode, parse_dut_modes
+    from core.module_test.mode_manager import (
+        enter_mode, iq_diff_measure, iq_direct_fallback,
+        parse_dut_modes, parse_enable_regs,
+    )
 
     item_key = "ldo_quiescent"
     cfg = ctx.config
     vin_ch = parse_channel(cfg.get("vin_channel", 1))
+    vout_src_ch = parse_channel(cfg.get("vout_source_channel",
+                                        cfg.get("vout_channel", 2)))
     vin_v = float(cfg.get("vin_v", 3.7))
+    vout_nom = float(cfg.get("vout_nominal_mv", 1800)) / 1000.0
+    vout_offset = float(cfg.get("iq_vout_offset_mv", 20.0)) / 1000.0
     settle_s = float(cfg.get("settle_time_s", 0.05))
     avg_cnt = int(cfg.get("average_cnt", 5))
     modes = parse_dut_modes(cfg)
+    en_regs = parse_enable_regs(cfg)
     rows: list[list] = []
+
     if not ctx.is_mock:
-        # 空载测静态电流：源上电、不接负载
         setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
 
-    if not modes:
-        # 无模式声明：兜底单次测量，保持向后可用
-        if ctx.is_mock:
-            iq = mock_jitter(80.0, 0.05)
-        else:
-            settle(ctx, max(settle_s * 4, 0.2))
-            iq = measure_avg(ctx, "measure_current", vin_ch,
-                             count=avg_cnt, settle_s=settle_s, default=0.0) * 1e6
-        rows.append(["DEFAULT", "DEFAULT", "n/a", round(iq, 3)])
-        ctx.progress_fn(100, "Iq DEFAULT")
-        ctx.log_fn(f"[{item_key}] mode=DEFAULT -> Iq={iq:.3f} uA")
+    if en_regs is None:
+        # 未配 ENABLE 寄存器：退化为直接测 Vin 电流（旧行为，仅参考）
+        ctx.log_fn(f"[{item_key}] 未配置 ENABLE 寄存器，退化为直接测 Vin 电流")
+        iq_direct_fallback(ctx, item_key, vin_ch, modes, settle_s, avg_cnt,
+                           rows, mock_base_ua=80.0)
     else:
-        for i, mode in enumerate(modes):
+        seq = modes if modes else [None]
+        for i, mode in enumerate(seq):
             if ctx.stop_flag_fn():
                 break
-            entry = enter_mode(ctx, mode)
-            if not entry.ok:
-                ctx.log_fn(f"[{item_key}] 进入模式 {mode.name} 失败：{entry.note}，跳过")
-                rows.append([mode.name, entry.actual_mode, mode.enter, ""])
-                continue
-            if ctx.is_mock:
-                iq = mock_jitter(5.0 if "LP" in mode.name.upper() else 80.0, 0.05)
-            else:
-                settle(ctx, mode.settle_s if mode.settle_s is not None
-                       else max(settle_s * 4, 0.2))
-                iq = measure_avg(ctx, "measure_current", vin_ch,
-                                 count=avg_cnt, settle_s=settle_s, default=0.0) * 1e6
-            rows.append([mode.name, entry.actual_mode, mode.enter, round(iq, 3)])
-            ctx.progress_fn(int((i + 1) / len(modes) * 100), f"Iq {mode.name}")
-            ctx.log_fn(f"[{item_key}] mode={mode.name} (actual={entry.actual_mode}) "
-                       f"-> Iq={iq:.3f} uA")
+            mode_name, actual, enter_by = "DEFAULT", "DEFAULT", "n/a"
+            if mode is not None:
+                entry = enter_mode(ctx, mode)
+                mode_name, actual, enter_by = mode.name, entry.actual_mode, mode.enter
+                if not entry.ok:
+                    ctx.log_fn(f"[{item_key}] 进入模式 {mode.name} 失败：{entry.note}，跳过")
+                    rows.append([mode_name, actual, enter_by, "", "", ""])
+                    continue
+            iq_base = 5.0 if "LP" in mode_name.upper() else 80.0
+            d = iq_diff_measure(ctx, item_key, vin_ch, vout_src_ch,
+                                vout_nom + vout_offset, en_regs,
+                                settle_s, avg_cnt,
+                                mode.settle_s if mode is not None else None,
+                                mock_base_ua=iq_base)
+            rows.append([mode_name, actual, enter_by, d[0], d[1], d[2]])
+            ctx.progress_fn(int((i + 1) / len(seq) * 100), f"Iq {mode_name}")
+            ctx.log_fn(f"[{item_key}] mode={mode_name} (actual={actual}) "
+                       f"-> dIvin={d[0]} dIvout={d[1]} Iq={d[2]} uA")
 
+    if not ctx.is_mock:
+        setup_source_channel(ctx, vout_src_ch, 0.0)  # 收尾归零外供
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
-    write_csv(csv_path, ["Mode", "ActualMode", "EnterBy", "Iq (uA)"], rows)
-    measured = [{"Mode": r[0], "ActualMode": r[1], "EnterBy": r[2], "Iq (uA)": r[3]}
-                for r in rows]
+    header = ["Mode", "ActualMode", "EnterBy",
+              "dIvin (uA)", "dIvout (uA)", "Iq (uA)"]
+    write_csv(csv_path, header, rows)
+    measured = [dict(zip(header, r)) for r in rows]
     return ItemResult(item_key=item_key, name="Quiescent Current", unit="uA",
                       passed=None, measured=measured, raw_csv_path=csv_path)
 
@@ -578,7 +591,7 @@ LDO_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
         vout_tol(), settle_time(), average_cnt(),
     )),
     "ldo_quiescent": ("Quiescent Current", quiescent, False, False, (
-        vin_bias(), average_cnt(5), settle_time(),
+        vin_bias(), average_cnt(5), settle_time(), *quiescent_params(),
     )),
     "ldo_ripple": ("Output Ripple", ripple, True, False, (
         ParamSpec("scope_vout_channel", "示波器通道", "int", 1, "", minimum=1, maximum=4),

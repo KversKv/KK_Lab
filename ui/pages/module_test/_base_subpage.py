@@ -292,38 +292,45 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         self.width_flag_combo.setCurrentIndex(1)
         grid.addWidget(self.width_flag_combo, 4, 3)
 
+        # —— Vout 外供源通道（静态电流差分测法用，供 Vout+偏置）——
+        grid.addWidget(self._field_label("Vout 源通道"), 5, 0)
+        self.vout_src_ch_combo = DarkComboBox()
+        self.vout_src_ch_combo.addItems([f"CH {i}" for i in range(1, 5)])
+        self.vout_src_ch_combo.setCurrentIndex(1)
+        grid.addWidget(self.vout_src_ch_combo, 5, 1)
+
         # —— 高低温测试（勾选后展开温度相关设置）——
         self.temp_test_check = QCheckBox("高低温测试")
         self.temp_test_check.setChecked(False)
         self.temp_test_check.toggled.connect(self._on_temp_test_toggled)
-        grid.addWidget(self.temp_test_check, 5, 0, 1, 4)
+        grid.addWidget(self.temp_test_check, 6, 0, 1, 4)
 
         self._temp_label = self._field_label("温度点 (°C)")
-        grid.addWidget(self._temp_label, 6, 0)
+        grid.addWidget(self._temp_label, 7, 0)
         self.temperature_edit = QLineEdit()
         self.temperature_edit.setPlaceholderText("逗号分隔，如 -40, 25, 85")
-        grid.addWidget(self.temperature_edit, 6, 1)
+        grid.addWidget(self.temperature_edit, 7, 1)
 
         self._temp_soak_label = self._field_label("等待时间 (s)")
-        grid.addWidget(self._temp_soak_label, 6, 2)
+        grid.addWidget(self._temp_soak_label, 7, 2)
         self.temp_soak_spin = QSpinBox()
         self.temp_soak_spin.setRange(0, 36000)
         self.temp_soak_spin.setValue(300)
-        grid.addWidget(self.temp_soak_spin, 6, 3)
+        grid.addWidget(self.temp_soak_spin, 7, 3)
 
         self._temp_tol_label = self._field_label("稳定条件 (°C)")
-        grid.addWidget(self._temp_tol_label, 7, 0)
+        grid.addWidget(self._temp_tol_label, 8, 0)
         self.temp_tolerance_spin = QSpinBox()
         self.temp_tolerance_spin.setRange(1, 20)
         self.temp_tolerance_spin.setValue(2)
-        grid.addWidget(self.temp_tolerance_spin, 7, 1)
+        grid.addWidget(self.temp_tolerance_spin, 8, 1)
 
         self._temp_wait_label = self._field_label("稳定超时 (s)")
-        grid.addWidget(self._temp_wait_label, 7, 2)
+        grid.addWidget(self._temp_wait_label, 8, 2)
         self.temp_wait_spin = QSpinBox()
         self.temp_wait_spin.setRange(0, 36000)
         self.temp_wait_spin.setValue(1800)
-        grid.addWidget(self.temp_wait_spin, 7, 3)
+        grid.addWidget(self.temp_wait_spin, 8, 3)
 
         self._temp_widgets = [
             self._temp_label, self.temperature_edit,
@@ -695,6 +702,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
             "temp_wait_s": self.temp_wait_spin.value(),
             "vin_channel": self.vin_ch_combo.currentText(),
             "vout_channel": self.vout_ch_combo.currentText(),
+            "vout_source_channel": self.vout_src_ch_combo.currentText(),
             "iload_channel": self.iload_ch_combo.currentText(),
             "vout_nominal_mv": self.vout_nominal_spin.value(),
             "device_addr": self.device_addr_edit.text().strip(),
@@ -768,6 +776,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
             self.operator_edit.setText(str(cfg["operator"]))
         _set_combo(self.vin_ch_combo, cfg.get("vin_channel"))
         _set_combo(self.vout_ch_combo, cfg.get("vout_channel"))
+        _set_combo(self.vout_src_ch_combo, cfg.get("vout_source_channel"))
         _set_combo(self.iload_ch_combo, cfg.get("iload_channel"))
         if "vout_nominal_mv" in cfg:
             self.vout_nominal_spin.setValue(int(cfg["vout_nominal_mv"]))
