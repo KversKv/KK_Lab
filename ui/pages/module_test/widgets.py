@@ -155,6 +155,8 @@ class ItemParamsDialog(QDialog):
                 grid.addWidget(editor, r, 1)
             root.addLayout(grid)
 
+        self._wire_code_range_autocalc()
+
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=self)
         ok_btn = btns.button(QDialogButtonBox.Ok)
         ok_btn.setDefault(True)
@@ -203,6 +205,29 @@ class ItemParamsDialog(QDialog):
         if spec.hint:
             w.setPlaceholderText(spec.hint)
         return w
+
+    def _wire_code_range_autocalc(self) -> None:
+        """当同时存在 msb/lsb 与 max_code 整数字段时，随 MSB/LSB 自动算出 Code 结束。
+
+        取满量程 max_code = (1 << (msb - lsb + 1)) - 1，与 PMU Output Voltage 页面一致。
+        """
+        msb_w = self._editors.get("msb")
+        lsb_w = self._editors.get("lsb")
+        max_w = self._editors.get("max_code")
+        if not (isinstance(msb_w, QSpinBox) and isinstance(lsb_w, QSpinBox)
+                and isinstance(max_w, QSpinBox)):
+            return
+
+        def _update() -> None:
+            msb = msb_w.value()
+            lsb = lsb_w.value()
+            if msb < lsb:
+                return
+            max_val = (1 << (msb - lsb + 1)) - 1
+            max_w.setValue(min(max_val, max_w.maximum()))
+
+        msb_w.valueChanged.connect(_update)
+        lsb_w.valueChanged.connect(_update)
 
     def _editor_value(self, spec):
         w = self._editors[spec.key]

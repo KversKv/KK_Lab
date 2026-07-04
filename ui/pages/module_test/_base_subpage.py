@@ -176,7 +176,6 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         content_layout.addWidget(self._build_connection_group())
         content_layout.addWidget(self._build_config_group())
         content_layout.addWidget(self._build_items_group())
-        content_layout.addWidget(self._build_params_group())
         content_layout.addStretch()
 
         scroll = QScrollArea()
@@ -373,60 +372,6 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         lay.addWidget(self.items_table)
         return box
 
-    def _build_params_group(self) -> "CollapsibleGroupBox":
-        box = CollapsibleGroupBox("统一参数", expanded=False)
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(8)
-        grid.setColumnStretch(1, 1)
-        grid.setColumnStretch(3, 1)
-
-        grid.addWidget(self._field_label("负载起始 (mA)"), 0, 0)
-        self.iload_start_spin = QSpinBox()
-        self.iload_start_spin.setRange(0, 100000)
-        self.iload_start_spin.setValue(1)
-        grid.addWidget(self.iload_start_spin, 0, 1)
-
-        grid.addWidget(self._field_label("负载结束 (mA)"), 0, 2)
-        self.iload_end_spin = QSpinBox()
-        self.iload_end_spin.setRange(0, 100000)
-        self.iload_end_spin.setValue(200)
-        grid.addWidget(self.iload_end_spin, 0, 3)
-
-        grid.addWidget(self._field_label("负载步进 (mA)"), 1, 0)
-        self.iload_step_spin = QSpinBox()
-        self.iload_step_spin.setRange(1, 100000)
-        self.iload_step_spin.setValue(20)
-        grid.addWidget(self.iload_step_spin, 1, 1)
-
-        grid.addWidget(self._field_label("Vin 起始 (V)"), 1, 2)
-        self.vin_start_spin = QSpinBox()
-        self.vin_start_spin.setRange(0, 60)
-        self.vin_start_spin.setValue(3)
-        grid.addWidget(self.vin_start_spin, 1, 3)
-
-        grid.addWidget(self._field_label("Vin 结束 (V)"), 2, 0)
-        self.vin_end_spin = QSpinBox()
-        self.vin_end_spin.setRange(0, 60)
-        self.vin_end_spin.setValue(4)
-        grid.addWidget(self.vin_end_spin, 2, 1)
-
-        grid.addWidget(self._field_label("Vin 步进 (V)"), 2, 2)
-        self.vin_step_spin = QSpinBox()
-        self.vin_step_spin.setRange(1, 60)
-        self.vin_step_spin.setValue(2)
-        grid.addWidget(self.vin_step_spin, 2, 3)
-
-        grid.addWidget(self._field_label("PSRR 频点"), 3, 0)
-        self.psrr_freqs_edit = QLineEdit("1kHz, 10kHz, 100kHz")
-        grid.addWidget(self.psrr_freqs_edit, 3, 1)
-
-        grid.addWidget(self._field_label("瞬态频率"), 3, 2)
-        self.transient_freqs_edit = QLineEdit("10Hz, 100Hz, 1kHz")
-        grid.addWidget(self.transient_freqs_edit, 3, 3)
-        box.content_layout.addLayout(grid)
-        return box
-
     def _build_action_row(self) -> QWidget:
         row = QWidget()
         row.setObjectName("actionRow")
@@ -620,15 +565,6 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
             "vout_nominal_mv": self.vout_nominal_spin.value(),
             "device_addr": self.device_addr_edit.text().strip(),
             "width_flag": self.width_flag_combo.currentData(),
-            "iload_start_ma": self.iload_start_spin.value(),
-            "iload_end_ma": self.iload_end_spin.value(),
-            "iload_step_ma": self.iload_step_spin.value(),
-            "vin_start_v": self.vin_start_spin.value(),
-            "vin_end_v": self.vin_end_spin.value(),
-            "vin_step_v": self.vin_step_spin.value() / 10.0,
-            "vin_v": self.vin_start_spin.value(),
-            "psrr_freqs": [s.strip() for s in self.psrr_freqs_edit.text().split(",") if s.strip()],
-            "transient_freqs": [s.strip() for s in self.transient_freqs_edit.text().split(",") if s.strip()],
             "item_overrides": {k: dict(v) for k, v in self._item_overrides.items()},
         }
 
@@ -645,16 +581,6 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
                 self.operator_edit.setText(str(cfg["operator"])); changed.append("operator")
             if "vout_nominal_mv" in cfg:
                 self.vout_nominal_spin.setValue(int(cfg["vout_nominal_mv"])); changed.append("vout_nominal_mv")
-            if "iload_start_ma" in cfg:
-                self.iload_start_spin.setValue(int(cfg["iload_start_ma"])); changed.append("iload_start_ma")
-            if "iload_end_ma" in cfg:
-                self.iload_end_spin.setValue(int(cfg["iload_end_ma"])); changed.append("iload_end_ma")
-            if "iload_step_ma" in cfg:
-                self.iload_step_spin.setValue(int(cfg["iload_step_ma"])); changed.append("iload_step_ma")
-            if "vin_start_v" in cfg:
-                self.vin_start_spin.setValue(int(cfg["vin_start_v"])); changed.append("vin_start_v")
-            if "vin_end_v" in cfg:
-                self.vin_end_spin.setValue(int(cfg["vin_end_v"])); changed.append("vin_end_v")
         except Exception:  # noqa: BLE001
             _logger.error("apply_config 落地失败", exc_info=True)
             return False, "配置落地异常，见日志。"
@@ -665,9 +591,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         widget_map = {
             "chip_name": self.chip_name_edit, "module_name": self.module_name_edit,
             "operator": self.operator_edit,
-            "vout_nominal_mv": self.vout_nominal_spin, "iload_start_ma": self.iload_start_spin,
-            "iload_end_ma": self.iload_end_spin, "iload_step_ma": self.iload_step_spin,
-            "vin_start_v": self.vin_start_spin, "vin_end_v": self.vin_end_spin,
+            "vout_nominal_mv": self.vout_nominal_spin,
         }
         for f in fields:
             w = widget_map.get(f)
@@ -725,27 +649,6 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
             self.temp_tolerance_spin.setValue(int(cfg["temp_tolerance_c"]))
         if "temp_wait_s" in cfg:
             self.temp_wait_spin.setValue(int(cfg["temp_wait_s"]))
-
-        if "iload_start_ma" in cfg:
-            self.iload_start_spin.setValue(int(cfg["iload_start_ma"]))
-        if "iload_end_ma" in cfg:
-            self.iload_end_spin.setValue(int(cfg["iload_end_ma"]))
-        if "iload_step_ma" in cfg:
-            self.iload_step_spin.setValue(int(cfg["iload_step_ma"]))
-        if "vin_start_v" in cfg:
-            self.vin_start_spin.setValue(int(cfg["vin_start_v"]))
-        if "vin_end_v" in cfg:
-            self.vin_end_spin.setValue(int(cfg["vin_end_v"]))
-        if "vin_step_v" in cfg:
-            self.vin_step_spin.setValue(int(round(float(cfg["vin_step_v"]) * 10)))
-        if isinstance(cfg.get("psrr_freqs"), list):
-            self.psrr_freqs_edit.setText(", ".join(str(x) for x in cfg["psrr_freqs"]))
-        elif "psrr_freqs" in cfg:
-            self.psrr_freqs_edit.setText(str(cfg["psrr_freqs"]))
-        if isinstance(cfg.get("transient_freqs"), list):
-            self.transient_freqs_edit.setText(", ".join(str(x) for x in cfg["transient_freqs"]))
-        elif "transient_freqs" in cfg:
-            self.transient_freqs_edit.setText(str(cfg["transient_freqs"]))
 
         # 测试项勾选
         selected = cfg.get("selected_items")

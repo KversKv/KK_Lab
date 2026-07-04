@@ -564,12 +564,12 @@ LDO_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
     )),
     "ldo_psrr": ("PSRR", psrr, True, False, (
         ParamSpec("psrr_freqs", "PSRR 频点", "text", "1kHz, 10kHz, 100kHz", "",
-                  base_key="psrr_freqs", hint="逗号分隔"),
+                  hint="逗号分隔"),
     )),
     "ldo_output_noise": ("Output Noise", output_noise, True, False, ()),
     "ldo_load_transient": ("Load Transient Response", load_transient, True, False, (
         ParamSpec("transient_freqs", "瞬态频率", "text", "10Hz, 100Hz, 1kHz", "",
-                  base_key="transient_freqs", hint="逗号分隔"),
+                  hint="逗号分隔"),
     )),
     "ldo_line_transient": ("Line Transient Response", line_transient, True, False, (
         ParamSpec("line_transient_steps", "阶跃序列", "text", "3.2->4.2V, 4.2->3.2V", "",

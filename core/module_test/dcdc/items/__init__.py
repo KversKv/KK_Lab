@@ -768,7 +768,7 @@ DCDC_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
     )),
     "dcdc_psrr": ("PSRR", psrr, True, True, (
         ParamSpec("psrr_freqs", "PSRR 频点", "text", "1kHz, 10kHz, 100kHz", "",
-                  base_key="psrr_freqs", hint="逗号分隔"),
+                  hint="逗号分隔"),
     )),
     "dcdc_switching_freq": ("Switching Frequency", switching_freq, True, True, (
         ParamSpec("scope_sw_channel", "SW 通道", "int", 2, "", minimum=1, maximum=4),
@@ -778,7 +778,7 @@ DCDC_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
     )),
     "dcdc_load_transient": ("Load Transient Response", load_transient, True, True, (
         ParamSpec("transient_freqs", "瞬态频率", "text", "10Hz, 100Hz, 1kHz", "",
-                  base_key="transient_freqs", hint="逗号分隔"),
+                  hint="逗号分隔"),
     )),
     "dcdc_inductor_current": ("Inductor Current", inductor_current, True, True, (
         *load_sweep(10.0, 200.0, 50.0),
