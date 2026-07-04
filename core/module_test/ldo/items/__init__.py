@@ -126,35 +126,61 @@ def line_reg(ctx: ItemContext) -> ItemResult:
 
 
 def quiescent(ctx: ItemContext) -> ItemResult:
-    """静态电流（Iq）。"""
+    """静态电流（Iq），逐 DUT 工作模式遍历。
+
+    模式来自 cfg['dut_modes']（被测配置区声明），每模式先 enter_mode（写寄存器 /
+    设负载自动切换 / 手动暂停确认）再空载测源侧输入电流。无声明时兜底单次测量。
+    """
+    from core.module_test.mode_manager import enter_mode, parse_dut_modes
+
     item_key = "ldo_quiescent"
     cfg = ctx.config
     vin_ch = parse_channel(cfg.get("vin_channel", 1))
     vin_v = float(cfg.get("vin_v", 3.7))
     settle_s = float(cfg.get("settle_time_s", 0.05))
-    modes = cfg.get("iq_modes", ["NORMAL", "SLEEP"])
+    avg_cnt = int(cfg.get("average_cnt", 5))
+    modes = parse_dut_modes(cfg)
     rows: list[list] = []
     if not ctx.is_mock:
         # 空载测静态电流：源上电、不接负载
         setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
-    for i, mode in enumerate(modes):
-        if ctx.stop_flag_fn():
-            break
+
+    if not modes:
+        # 无模式声明：兜底单次测量，保持向后可用
         if ctx.is_mock:
-            iq = 5.0 if mode == "SLEEP" else 80.0
-            iq = mock_jitter(iq, 0.05)
+            iq = mock_jitter(80.0, 0.05)
         else:
-            # 注：工作模式切换由寄存器外部设置，此处稳定后测源侧输入电流
             settle(ctx, max(settle_s * 4, 0.2))
             iq = measure_avg(ctx, "measure_current", vin_ch,
-                             count=5, settle_s=settle_s, default=0.0) * 1e6  # A -> uA
-        rows.append([mode, round(iq, 3)])
-        ctx.progress_fn(int((i + 1) / len(modes) * 100), f"Iq {mode}")
-        ctx.log_fn(f"[{item_key}] mode={mode} -> Iq={iq:.3f} uA")
+                             count=avg_cnt, settle_s=settle_s, default=0.0) * 1e6
+        rows.append(["DEFAULT", "DEFAULT", "n/a", round(iq, 3)])
+        ctx.progress_fn(100, "Iq DEFAULT")
+        ctx.log_fn(f"[{item_key}] mode=DEFAULT -> Iq={iq:.3f} uA")
+    else:
+        for i, mode in enumerate(modes):
+            if ctx.stop_flag_fn():
+                break
+            entry = enter_mode(ctx, mode)
+            if not entry.ok:
+                ctx.log_fn(f"[{item_key}] 进入模式 {mode.name} 失败：{entry.note}，跳过")
+                rows.append([mode.name, entry.actual_mode, mode.enter, ""])
+                continue
+            if ctx.is_mock:
+                iq = mock_jitter(5.0 if "LP" in mode.name.upper() else 80.0, 0.05)
+            else:
+                settle(ctx, mode.settle_s if mode.settle_s is not None
+                       else max(settle_s * 4, 0.2))
+                iq = measure_avg(ctx, "measure_current", vin_ch,
+                                 count=avg_cnt, settle_s=settle_s, default=0.0) * 1e6
+            rows.append([mode.name, entry.actual_mode, mode.enter, round(iq, 3)])
+            ctx.progress_fn(int((i + 1) / len(modes) * 100), f"Iq {mode.name}")
+            ctx.log_fn(f"[{item_key}] mode={mode.name} (actual={entry.actual_mode}) "
+                       f"-> Iq={iq:.3f} uA")
 
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
-    write_csv(csv_path, ["Mode", "Iq (uA)"], rows)
-    measured = {"rows": rows}
+    write_csv(csv_path, ["Mode", "ActualMode", "EnterBy", "Iq (uA)"], rows)
+    measured = [{"Mode": r[0], "ActualMode": r[1], "EnterBy": r[2], "Iq (uA)": r[3]}
+                for r in rows]
     return ItemResult(item_key=item_key, name="Quiescent Current", unit="uA",
                       passed=None, measured=measured, raw_csv_path=csv_path)
 
@@ -552,9 +578,7 @@ LDO_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
         vout_tol(), settle_time(), average_cnt(),
     )),
     "ldo_quiescent": ("Quiescent Current", quiescent, False, False, (
-        vin_bias(), settle_time(),
-        ParamSpec("iq_modes", "工作模式", "text", "NORMAL, SLEEP", "",
-                  hint="逗号分隔，如 NORMAL, SLEEP"),
+        vin_bias(), average_cnt(5), settle_time(),
     )),
     "ldo_ripple": ("Output Ripple", ripple, True, False, (
         ParamSpec("scope_vout_channel", "示波器通道", "int", 1, "", minimum=1, maximum=4),

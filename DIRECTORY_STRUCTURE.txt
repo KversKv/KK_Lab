@@ -193,7 +193,8 @@ core/
     ├── __init__.py
     ├── result_model.py      # ItemResult / ModuleTestResult 统一数据结构
     ├── _common.py           # ItemContext / CSV 落盘 / Mock 抖动 / 通道解析
-    ├── _runner_base.py      # ModuleTestRunner(QThread)：串行调度 items + 生成 HTML 报告
+    ├── _runner_base.py      # ModuleTestRunner(QThread)：串行调度 items + 生成 HTML 报告 + 手动模式暂停通道
+    ├── mode_manager.py      # DUT 工作模式解析 + 进入（reg 写寄存器 / load 负载切换回读 / manual 手动暂停）
     ├── report.py            # HTML 报告生成（元信息 + 逐项 PASS/FAIL 表 + 内嵌波形）
     ├── ldo/                 # LDO 子包（ldo_runner + items：vout_scan/load_reg/line_reg/iq/ripple/psrr/transient）
     └── dcdc/                # DCDC 子包（dcdc_runner + items：vout_scan/efficiency/load_reg/line_reg/iq/ripple/psrr/transient/inductor_current）

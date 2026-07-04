@@ -12,7 +12,7 @@ import os
 from datetime import datetime
 from typing import Any, Callable
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QMutex, QThread, QWaitCondition, Signal
 
 from core.module_test._common import ItemContext
 from core.module_test.report import save_html_report
@@ -32,6 +32,7 @@ class ModuleTestRunner(QThread):
         log(str): 日志行。
         finished_result(object): 全部完成，传 ModuleTestResult。
         failed(str): 致命错误。
+        mode_confirm_required(str): 手动模式请求 UI 弹确认框（线程阻塞等待 confirm_mode）。
     """
 
     progress = Signal(int, str)
@@ -39,6 +40,7 @@ class ModuleTestRunner(QThread):
     log = Signal(str)
     finished_result = Signal(object)
     failed = Signal(str)
+    mode_confirm_required = Signal(str)
 
     def __init__(
         self,
@@ -63,6 +65,11 @@ class ModuleTestRunner(QThread):
         self._out_dir = out_dir or os.path.join("Results", "module_test", module_type,
                                                 datetime.now().strftime("%Y%m%d_%H%M%S"))
         self._stop_flag = False
+        # 手动模式暂停协作：mutex + wait condition，UI 线程 confirm_mode 唤醒
+        self._pause_mutex = QMutex()
+        self._pause_cond = QWaitCondition()
+        self._pause_pending = False
+        self._pause_confirmed = False
         self._result = ModuleTestResult(
             module_type=module_type,
             chip_name=str(self._cfg.get("chip_name", "")),
@@ -74,6 +81,37 @@ class ModuleTestRunner(QThread):
     def request_stop(self):
         """协作式中断（检查标志位，禁强杀线程）。"""
         self._stop_flag = True
+        # 唤醒可能正在等待手动确认的线程，使其能及时退出
+        self._pause_mutex.lock()
+        if self._pause_pending:
+            self._pause_confirmed = False
+            self._pause_pending = False
+            self._pause_cond.wakeAll()
+        self._pause_mutex.unlock()
+
+    def confirm_mode(self, confirmed: bool = True):
+        """UI 线程回调：用户在手动模式确认框点了确定/取消，唤醒工作线程。"""
+        self._pause_mutex.lock()
+        if self._pause_pending:
+            self._pause_confirmed = bool(confirmed)
+            self._pause_pending = False
+            self._pause_cond.wakeAll()
+        self._pause_mutex.unlock()
+
+    def _pause_fn(self, prompt: str) -> bool:
+        """工作线程内阻塞等待 UI 确认；被停止时立即返回 False。"""
+        if self._stop_flag:
+            return False
+        self._pause_mutex.lock()
+        self._pause_pending = True
+        self._pause_confirmed = False
+        self.mode_confirm_required.emit(prompt)
+        while self._pause_pending and not self._stop_flag:
+            self._pause_cond.wait(self._pause_mutex, 200)  # 200ms 轮询兼顾 stop
+        confirmed = self._pause_confirmed and not self._stop_flag
+        self._pause_pending = False
+        self._pause_mutex.unlock()
+        return confirmed
 
     def _log(self, msg: str) -> None:
         self.log.emit(msg)
@@ -116,6 +154,7 @@ class ModuleTestRunner(QThread):
                 stop_flag_fn=lambda: self._stop_flag,
                 log_fn=self._log,
                 progress_fn=self._progress,
+                pause_fn=self._pause_fn,
             )
             try:
                 result: ItemResult = run_fn(ctx)

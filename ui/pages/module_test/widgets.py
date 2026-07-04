@@ -10,8 +10,9 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog, QDialogButtonBox, QDoubleSpinBox, QFrame, QGridLayout, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QSpinBox, QVBoxLayout, QWidget,
+    QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFrame, QGridLayout,
+    QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QPushButton, QSpinBox,
+    QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 _ARROW_EXPANDED = "▼"
@@ -251,3 +252,212 @@ class ItemParamsDialog(QDialog):
                 if val != (base if base is not None else ""):
                     out[spec.key] = val
         return out
+
+
+class DutModeDialog(QDialog):
+    """DUT 工作模式编辑弹窗：按进入方式（reg/load/manual）动态显示字段。
+
+    结构对齐方案 §4 的 ``dut_modes`` 元素：name / enter / reg_writes / load_ma /
+    mode_readback / prompt / settle_s。OK 返回一份纯 dict。
+    """
+
+    _ENTER_LABELS = (("寄存器 (reg)", "reg"), ("负载自动切换 (load)", "load"),
+                     ("手动台架 (manual)", "manual"))
+
+    def __init__(self, *, existing_names, mode: dict | None = None,
+                 parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setWindowTitle("编辑 DUT 工作模式" if mode else "添加 DUT 工作模式")
+        self.setModal(True)
+        self.setMinimumWidth(440)
+        self.setStyleSheet(_DIALOG_QSS)
+        self._existing = {str(n).strip() for n in (existing_names or []) if n}
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 14, 16, 12)
+        root.setSpacing(10)
+
+        head = QGridLayout()
+        head.setHorizontalSpacing(10)
+        head.setVerticalSpacing(8)
+        head.setColumnStretch(1, 1)
+        head.addWidget(self._flabel("模式名"), 0, 0)
+        self.name_edit = QLineEdit()
+        self.name_edit.setPlaceholderText("唯一名，如 Normal_biasH")
+        head.addWidget(self.name_edit, 0, 1)
+        head.addWidget(self._flabel("进入方式"), 1, 0)
+        self.enter_combo = QComboBox()
+        for text, _ in self._ENTER_LABELS:
+            self.enter_combo.addItem(text)
+        head.addWidget(self.enter_combo, 1, 1)
+        head.addWidget(self._flabel("稳定时间 (s)"), 2, 0)
+        self.settle_spin = QDoubleSpinBox()
+        self.settle_spin.setDecimals(3)
+        self.settle_spin.setRange(0.0, 600.0)
+        self.settle_spin.setSingleStep(0.05)
+        head.addWidget(self.settle_spin, 2, 1)
+        root.addLayout(head)
+
+        self._stack = QStackedWidget()
+        self._stack.addWidget(self._build_reg_page())
+        self._stack.addWidget(self._build_load_page())
+        self._stack.addWidget(self._build_manual_page())
+        root.addWidget(self._stack)
+        self.enter_combo.currentIndexChanged.connect(self._stack.setCurrentIndex)
+
+        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=self)
+        ok_btn = btns.button(QDialogButtonBox.Ok)
+        ok_btn.setDefault(True)
+        ok_btn.setAutoDefault(True)
+        cancel_btn = btns.button(QDialogButtonBox.Cancel)
+        cancel_btn.setDefault(False)
+        cancel_btn.setAutoDefault(False)
+        btns.accepted.connect(self._on_accept)
+        btns.rejected.connect(self.reject)
+        root.addWidget(btns)
+
+        if mode:
+            self._load_mode(mode)
+
+    @staticmethod
+    def _flabel(text: str) -> QLabel:
+        lbl = QLabel(text)
+        lbl.setObjectName("dlgFieldLabel")
+        lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        return lbl
+
+    def _build_reg_page(self) -> QWidget:
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+        self.reg_table = QTableWidget(0, 2)
+        self.reg_table.setHorizontalHeaderLabels(["寄存器地址", "写入值"])
+        self.reg_table.verticalHeader().setVisible(False)
+        self.reg_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.reg_table.setMaximumHeight(140)
+        lay.addWidget(self.reg_table)
+        row = QHBoxLayout()
+        add_btn = QPushButton("+ 行")
+        add_btn.clicked.connect(lambda: self._reg_add_row("0x00", "0x00"))
+        del_btn = QPushButton("- 行")
+        del_btn.clicked.connect(self._reg_del_row)
+        row.addWidget(add_btn)
+        row.addWidget(del_btn)
+        row.addStretch(1)
+        lay.addLayout(row)
+        return page
+
+    def _reg_add_row(self, addr: str, value: str) -> None:
+        r = self.reg_table.rowCount()
+        self.reg_table.insertRow(r)
+        self.reg_table.setItem(r, 0, QTableWidgetItem(str(addr)))
+        self.reg_table.setItem(r, 1, QTableWidgetItem(str(value)))
+
+    def _reg_del_row(self) -> None:
+        r = self.reg_table.currentRow()
+        if r >= 0:
+            self.reg_table.removeRow(r)
+
+    def _build_load_page(self) -> QWidget:
+        page = QWidget()
+        grid = QGridLayout(page)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(8)
+        grid.setColumnStretch(1, 1)
+        grid.addWidget(self._flabel("负载电流 (mA)"), 0, 0)
+        self.load_ma_spin = QDoubleSpinBox()
+        self.load_ma_spin.setDecimals(3)
+        self.load_ma_spin.setRange(0.0, 100000.0)
+        grid.addWidget(self.load_ma_spin, 0, 1)
+        grid.addWidget(self._flabel("回读地址"), 1, 0)
+        self.rb_addr_edit = QLineEdit()
+        self.rb_addr_edit.setPlaceholderText("留空则不回读，如 0x40")
+        grid.addWidget(self.rb_addr_edit, 1, 1)
+        grid.addWidget(self._flabel("MSB"), 2, 0)
+        self.rb_msb_spin = QSpinBox()
+        self.rb_msb_spin.setRange(0, 31)
+        grid.addWidget(self.rb_msb_spin, 2, 1)
+        grid.addWidget(self._flabel("LSB"), 3, 0)
+        self.rb_lsb_spin = QSpinBox()
+        self.rb_lsb_spin.setRange(0, 31)
+        grid.addWidget(self.rb_lsb_spin, 3, 1)
+        grid.addWidget(self._flabel("期望值"), 4, 0)
+        self.rb_expect_spin = QSpinBox()
+        self.rb_expect_spin.setRange(0, 65535)
+        grid.addWidget(self.rb_expect_spin, 4, 1)
+        return page
+
+    def _build_manual_page(self) -> QWidget:
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+        lay.addWidget(self._flabel("暂停提示语"))
+        self.prompt_edit = QLineEdit()
+        self.prompt_edit.setPlaceholderText("如 请手动将 DUT 切到 PWM 模式后点击确认")
+        lay.addWidget(self.prompt_edit)
+        return page
+
+    def _load_mode(self, mode: dict) -> None:
+        self.name_edit.setText(str(mode.get("name", "")))
+        enter = str(mode.get("enter", "reg"))
+        idx = {"reg": 0, "load": 1, "manual": 2}.get(enter, 0)
+        self.enter_combo.setCurrentIndex(idx)
+        self._stack.setCurrentIndex(idx)
+        settle_s = mode.get("settle_s")
+        if isinstance(settle_s, (int, float)):
+            self.settle_spin.setValue(float(settle_s))
+        for w in (mode.get("reg_writes") or []):
+            if isinstance(w, dict):
+                self._reg_add_row(w.get("addr", "0x00"), w.get("value", "0x00"))
+        self.load_ma_spin.setValue(float(mode.get("load_ma", 0.0) or 0.0))
+        rb = mode.get("mode_readback")
+        if isinstance(rb, dict):
+            self.rb_addr_edit.setText(str(rb.get("addr", "")))
+            self.rb_msb_spin.setValue(int(rb.get("msb", 0)))
+            self.rb_lsb_spin.setValue(int(rb.get("lsb", 0)))
+            self.rb_expect_spin.setValue(int(rb.get("expect", 0)))
+        self.prompt_edit.setText(str(mode.get("prompt", "")))
+
+    def _on_accept(self) -> None:
+        name = self.name_edit.text().strip()
+        if not name:
+            QMessageBox.warning(self, "校验失败", "模式名不能为空。")
+            return
+        if name in self._existing:
+            QMessageBox.warning(self, "校验失败", f"模式名「{name}」已存在，请改用唯一名。")
+            return
+        self.accept()
+
+    def get_mode(self) -> dict:
+        enter = self._ENTER_LABELS[self.enter_combo.currentIndex()][1]
+        mode: dict = {
+            "name": self.name_edit.text().strip(),
+            "enter": enter,
+            "settle_s": round(self.settle_spin.value(), 3),
+        }
+        if enter == "reg":
+            writes = []
+            for r in range(self.reg_table.rowCount()):
+                addr_item = self.reg_table.item(r, 0)
+                val_item = self.reg_table.item(r, 1)
+                addr = addr_item.text().strip() if addr_item else ""
+                value = val_item.text().strip() if val_item else ""
+                if addr:
+                    writes.append({"addr": addr, "value": value or "0x00"})
+            mode["reg_writes"] = writes
+        elif enter == "load":
+            mode["load_ma"] = round(self.load_ma_spin.value(), 3)
+            rb_addr = self.rb_addr_edit.text().strip()
+            if rb_addr:
+                mode["mode_readback"] = {
+                    "addr": rb_addr,
+                    "msb": self.rb_msb_spin.value(),
+                    "lsb": self.rb_lsb_spin.value(),
+                    "expect": self.rb_expect_spin.value(),
+                }
+        else:
+            mode["prompt"] = self.prompt_edit.text().strip()
+        return mode

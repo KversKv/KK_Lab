@@ -32,7 +32,7 @@ from log_config import get_logger
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.oscilloscope_module_frame import OscilloscopeConnectionMixin
-from ui.pages.module_test.widgets import CollapsibleGroupBox, ItemParamsDialog
+from ui.pages.module_test.widgets import CollapsibleGroupBox, DutModeDialog, ItemParamsDialog
 from ui.resource_path import get_resource_base, get_user_data_dir
 from ui.styles import START_BTN_STYLE, SCROLLBAR_STYLE
 from ui.widgets.dark_combobox import DarkComboBox
@@ -333,7 +333,141 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         ]
         self._on_temp_test_toggled(False)
         box.content_layout.addLayout(grid)
+        box.content_layout.addWidget(self._build_dut_modes_area())
         return box
+
+    def _build_dut_modes_area(self) -> "CollapsibleGroupBox":
+        """DUT 工作模式管理区（跨测试项共享的模式声明源）。"""
+        self._dut_modes: list[dict] = []
+        area = CollapsibleGroupBox("DUT 工作模式管理", expanded=False)
+        lay = area.content_layout
+
+        self.dut_modes_table = QTableWidget(0, 4)
+        self.dut_modes_table.setObjectName("dutModesTable")
+        self.dut_modes_table.setHorizontalHeaderLabels(["模式名", "进入方式", "关键参数摘要", ""])
+        self.dut_modes_table.verticalHeader().setVisible(False)
+        self.dut_modes_table.verticalHeader().setDefaultSectionSize(26)
+        self.dut_modes_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.dut_modes_table.setSelectionMode(QTableWidget.SingleSelection)
+        self.dut_modes_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.dut_modes_table.setShowGrid(False)
+        self.dut_modes_table.setAlternatingRowColors(True)
+        self.dut_modes_table.setMaximumHeight(150)
+        mh = self.dut_modes_table.horizontalHeader()
+        mh.setHighlightSections(False)
+        mh.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        mh.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        mh.setSectionResizeMode(2, QHeaderView.Stretch)
+        mh.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self.dut_modes_table.doubleClicked.connect(lambda _idx: self._on_edit_dut_mode())
+        lay.addWidget(self.dut_modes_table)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+        self.dut_mode_add_btn = QPushButton("+ 添加模式")
+        self.dut_mode_add_btn.setObjectName("dutModeBtn")
+        self.dut_mode_add_btn.clicked.connect(self._on_add_dut_mode)
+        self.dut_mode_edit_btn = QPushButton("编辑")
+        self.dut_mode_edit_btn.setObjectName("dutModeBtn")
+        self.dut_mode_edit_btn.clicked.connect(self._on_edit_dut_mode)
+        self.dut_mode_del_btn = QPushButton("删除")
+        self.dut_mode_del_btn.setObjectName("dutModeBtn")
+        self.dut_mode_del_btn.clicked.connect(self._on_delete_dut_mode)
+        btn_row.addWidget(self.dut_mode_add_btn)
+        btn_row.addWidget(self.dut_mode_edit_btn)
+        btn_row.addWidget(self.dut_mode_del_btn)
+        btn_row.addStretch(1)
+        btn_row.addWidget(self._field_label("默认基准模式"))
+        self.default_mode_combo = DarkComboBox()
+        self.default_mode_combo.setObjectName("defaultModeCombo")
+        self.default_mode_combo.setMinimumWidth(140)
+        btn_row.addWidget(self.default_mode_combo)
+        lay.addLayout(btn_row)
+
+        area.setStyleSheet(area.styleSheet() + """
+            QPushButton#dutModeBtn { min-height: 22px; padding: 2px 10px; }
+            QComboBox#defaultModeCombo { min-height: 22px; padding: 1px 6px; }
+            QTableWidget#dutModesTable { background-color: #0e1526; border: 1px solid #2f374d; }
+        """)
+        return area
+
+    # ------------------------------------------------------------------ DUT modes
+    @staticmethod
+    def _dut_mode_summary(mode: dict) -> str:
+        """生成模式关键参数摘要文本（表格第 3 列）。"""
+        enter = str(mode.get("enter", "reg"))
+        if enter == "reg":
+            writes = mode.get("reg_writes") or []
+            parts = [f"{w.get('addr', '?')}={w.get('value', '?')}" for w in writes
+                     if isinstance(w, dict)]
+            return "; ".join(parts) if parts else "无寄存器写入"
+        if enter == "load":
+            txt = f"{float(mode.get('load_ma', 0.0)):g} mA"
+            rb = mode.get("mode_readback")
+            if isinstance(rb, dict):
+                txt += f"  回读 {rb.get('addr', '?')}[{rb.get('msb', '?')}:{rb.get('lsb', '?')}]=={rb.get('expect', '?')}"
+            return txt
+        return f"提示: {mode.get('prompt', '') or '手动切换后确认'}"
+
+    def _refresh_dut_modes_table(self) -> None:
+        self.dut_modes_table.setRowCount(0)
+        for mode in self._dut_modes:
+            row = self.dut_modes_table.rowCount()
+            self.dut_modes_table.insertRow(row)
+            self.dut_modes_table.setItem(row, 0, QTableWidgetItem(str(mode.get("name", ""))))
+            self.dut_modes_table.setItem(row, 1, QTableWidgetItem(str(mode.get("enter", "reg"))))
+            self.dut_modes_table.setItem(row, 2, QTableWidgetItem(self._dut_mode_summary(mode)))
+            self.dut_modes_table.setItem(row, 3, QTableWidgetItem(""))
+        # 刷新默认基准模式下拉，尽量保留原选择
+        prev = self.default_mode_combo.currentText()
+        self.default_mode_combo.blockSignals(True)
+        self.default_mode_combo.clear()
+        names = [str(m.get("name", "")) for m in self._dut_modes]
+        self.default_mode_combo.addItems(names)
+        if prev in names:
+            self.default_mode_combo.setCurrentText(prev)
+        self.default_mode_combo.blockSignals(False)
+
+    def _selected_dut_mode_row(self) -> int:
+        rows = self.dut_modes_table.selectionModel().selectedRows()
+        return rows[0].row() if rows else -1
+
+    def _on_add_dut_mode(self) -> None:
+        dlg = DutModeDialog(existing_names=[m.get("name") for m in self._dut_modes], parent=self)
+        if dlg.exec() == QDialog.Accepted:
+            self._dut_modes.append(dlg.get_mode())
+            self._refresh_dut_modes_table()
+
+    def _on_edit_dut_mode(self) -> None:
+        row = self._selected_dut_mode_row()
+        if row < 0:
+            self.execution_logs.append_log("[WARN] 请先选中要编辑的模式。")
+            return
+        others = [m.get("name") for i, m in enumerate(self._dut_modes) if i != row]
+        dlg = DutModeDialog(existing_names=others, mode=self._dut_modes[row], parent=self)
+        if dlg.exec() == QDialog.Accepted:
+            self._dut_modes[row] = dlg.get_mode()
+            self._refresh_dut_modes_table()
+
+    def _on_delete_dut_mode(self) -> None:
+        row = self._selected_dut_mode_row()
+        if row < 0:
+            self.execution_logs.append_log("[WARN] 请先选中要删除的模式。")
+            return
+        del self._dut_modes[row]
+        self._refresh_dut_modes_table()
+
+    def _apply_dut_modes(self, cfg: dict) -> None:
+        """把配置里的 dut_modes / default_mode 回填到控件（配置加载 & AI 共用）。"""
+        modes = cfg.get("dut_modes")
+        if isinstance(modes, list):
+            self._dut_modes = [dict(m) for m in modes if isinstance(m, dict)]
+            self._refresh_dut_modes_table()
+        default_mode = cfg.get("default_mode")
+        if isinstance(default_mode, str) and default_mode:
+            idx = self.default_mode_combo.findText(default_mode)
+            if idx >= 0:
+                self.default_mode_combo.setCurrentIndex(idx)
 
     def _on_temp_test_toggled(self, checked: bool) -> None:
         """高低温测试勾选联动：勾选后才显示温度相关设置。"""
@@ -565,6 +699,8 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
             "vout_nominal_mv": self.vout_nominal_spin.value(),
             "device_addr": self.device_addr_edit.text().strip(),
             "width_flag": self.width_flag_combo.currentData(),
+            "dut_modes": [dict(m) for m in self._dut_modes],
+            "default_mode": self.default_mode_combo.currentText(),
             "item_overrides": {k: dict(v) for k, v in self._item_overrides.items()},
         }
 
@@ -581,6 +717,8 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
                 self.operator_edit.setText(str(cfg["operator"])); changed.append("operator")
             if "vout_nominal_mv" in cfg:
                 self.vout_nominal_spin.setValue(int(cfg["vout_nominal_mv"])); changed.append("vout_nominal_mv")
+            if "dut_modes" in cfg or "default_mode" in cfg:
+                self._apply_dut_modes(cfg); changed.append("dut_modes")
         except Exception:  # noqa: BLE001
             _logger.error("apply_config 落地失败", exc_info=True)
             return False, "配置落地异常，见日志。"
@@ -592,6 +730,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
             "chip_name": self.chip_name_edit, "module_name": self.module_name_edit,
             "operator": self.operator_edit,
             "vout_nominal_mv": self.vout_nominal_spin,
+            "dut_modes": self.dut_modes_table,
         }
         for f in fields:
             w = widget_map.get(f)
@@ -639,6 +778,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
             if idx >= 0:
                 self.width_flag_combo.setCurrentIndex(idx)
 
+        self._apply_dut_modes(cfg)
         if "temp_test_enabled" in cfg:
             self.temp_test_check.setChecked(bool(cfg["temp_test_enabled"]))
         if "temperature" in cfg:
@@ -779,6 +919,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         self._runner.log.connect(self.execution_logs.append_log)
         self._runner.finished_result.connect(self._on_finished)
         self._runner.failed.connect(self._on_failed)
+        self._runner.mode_confirm_required.connect(self._on_mode_confirm_required)
         self.is_test_running = True
         self.start_test_btn.setEnabled(False)
         self.stop_test_btn.setEnabled(True)
@@ -791,6 +932,19 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         if self._runner is not None and self.is_test_running:
             self.execution_logs.append_log("[STOP] 请求停止测试...")
             self._runner.request_stop()
+
+    def _on_mode_confirm_required(self, prompt: str):
+        """手动模式暂停：弹确认框，用户确认/取消后唤醒测试线程。"""
+        if self._runner is None:
+            return
+        self.execution_logs.append_log(f"[PAUSE] {prompt}")
+        resp = QMessageBox.question(
+            self, "手动切换 DUT 模式", prompt,
+            QMessageBox.Ok | QMessageBox.Cancel, QMessageBox.Ok)
+        confirmed = resp == QMessageBox.Ok
+        self.execution_logs.append_log(
+            "[RESUME] 已确认，继续测试" if confirmed else "[RESUME] 已取消该模式")
+        self._runner.confirm_mode(confirmed)
 
     def _on_progress(self, percent: int, label: str):
         self.execution_logs.set_progress(percent)
@@ -895,6 +1049,9 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
             sel = set(cfg.get("selected_items", []))
             if any(k.endswith("_line_reg") for k in sel):
                 cfg["sweep_dimensions"].append("vin")
+            # 仅当勾选了 quiescent（会遍历 dut_modes）时才计入模式维度，避免误导 AI 臆造组合
+            if any(k.endswith("_quiescent") for k in sel) and cfg.get("dut_modes"):
+                cfg["sweep_dimensions"].append("dut_modes")
             return cfg
         except Exception:  # noqa: BLE001
             _logger.error("AI 读取 %s 配置失败", self.PAGE_KEY, exc_info=True)

@@ -198,17 +198,22 @@ def line_reg(ctx: ItemContext) -> ItemResult:
 
 
 def quiescent(ctx: ItemContext) -> ItemResult:
-    """静态电流（PWM/BURST/ULP 分模式）。
+    """静态电流（Iq），逐 DUT 工作模式遍历。
 
-    流程：Vin=PS2Q 源上电、输出空载（负载归零），逐模式测 Vin 端电流均值。
-    模式切换需外部配置芯片寄存器（真机由测试台完成），此处仅逐模式采集 Iin。
+    模式来自 cfg['dut_modes']（被测配置区声明），覆盖三类进入方式：
+      - reg    : 工具写寄存器切模式（如可寄存器控的 DCDC）；
+      - load   : 设负载点触发自动切换（ULP/BURST/PWM 按电流自切），可回读实际模式；
+      - manual : 手动台架逐模式暂停确认。
+    每模式 enter 后测 Vin 端电流均值。无声明时兜底空载单次测量。
     """
+    from core.module_test.mode_manager import enter_mode, parse_dut_modes
+
     item_key = "dcdc_quiescent"
     cfg = ctx.config
     vin_ch = parse_channel(cfg.get("vin_channel", 1))
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
     vin_v = float(cfg.get("vin_v", 3.7))
-    modes = cfg.get("iq_modes", ["PWM", "BURST", "ULP"])
+    modes = parse_dut_modes(cfg)
     avg_cnt = int(cfg.get("average_cnt", 5))
     settle_s = float(cfg.get("settle_time_s", 0.05))
     rows: list[list] = []
@@ -216,25 +221,48 @@ def quiescent(ctx: ItemContext) -> ItemResult:
     if not ctx.is_mock:
         setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
         setup_load_channel(ctx, iload_ch)
-        set_load_current(ctx, iload_ch, 0.0)  # 空载
+        set_load_current(ctx, iload_ch, 0.0)  # 默认空载，load 模式会各自改写
         settle(ctx, max(settle_s * 4, 0.2))
-    for i, mode in enumerate(modes):
-        if ctx.stop_flag_fn():
-            break
+
+    if not modes:
+        # 无模式声明：兜底空载单次测量
         if ctx.is_mock:
-            iq = {"PWM": 200.0, "BURST": 60.0, "ULP": 8.0}.get(mode, 100.0)
-            iq = mock_jitter(iq, 0.05)
+            iq = mock_jitter(60.0, 0.05)
         else:
             settle(ctx, settle_s)
-            iq = measure_avg(ctx, "measure_current", vin_ch, count=avg_cnt, settle_s=settle_s) * 1e6
-        rows.append([mode, round(iq, 3)])
-        ctx.progress_fn(int((i + 1) / len(modes) * 100), f"Iq {mode}")
-        ctx.log_fn(f"[{item_key}] mode={mode} -> Iq={iq:.3f} uA")
+            iq = measure_avg(ctx, "measure_current", vin_ch,
+                             count=avg_cnt, settle_s=settle_s) * 1e6
+        rows.append(["DEFAULT", "DEFAULT", "n/a", round(iq, 3)])
+        ctx.progress_fn(100, "Iq DEFAULT")
+        ctx.log_fn(f"[{item_key}] mode=DEFAULT -> Iq={iq:.3f} uA")
+    else:
+        for i, mode in enumerate(modes):
+            if ctx.stop_flag_fn():
+                break
+            entry = enter_mode(ctx, mode)
+            if not entry.ok:
+                ctx.log_fn(f"[{item_key}] 进入模式 {mode.name} 失败：{entry.note}，跳过")
+                rows.append([mode.name, entry.actual_mode, mode.enter, ""])
+                continue
+            if ctx.is_mock:
+                name_u = mode.name.upper()
+                base = 8.0 if "ULP" in name_u else (200.0 if "PWM" in name_u else 60.0)
+                iq = mock_jitter(base, 0.05)
+            else:
+                settle(ctx, mode.settle_s if mode.settle_s is not None else settle_s)
+                iq = measure_avg(ctx, "measure_current", vin_ch,
+                                 count=avg_cnt, settle_s=settle_s) * 1e6
+            rows.append([mode.name, entry.actual_mode, mode.enter, round(iq, 3)])
+            ctx.progress_fn(int((i + 1) / len(modes) * 100), f"Iq {mode.name}")
+            ctx.log_fn(f"[{item_key}] mode={mode.name} (actual={entry.actual_mode}) "
+                       f"-> Iq={iq:.3f} uA")
+
     if not ctx.is_mock:
         teardown_load(ctx, iload_ch)
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
-    write_csv(csv_path, ["Mode", "Iq (uA)"], rows)
-    measured = {"rows": rows}
+    write_csv(csv_path, ["Mode", "ActualMode", "EnterBy", "Iq (uA)"], rows)
+    measured = [{"Mode": r[0], "ActualMode": r[1], "EnterBy": r[2], "Iq (uA)": r[3]}
+                for r in rows]
     return ItemResult(item_key=item_key, name="Quiescent Current", unit="uA",
                       passed=None, measured=measured, raw_csv_path=csv_path)
 
@@ -755,7 +783,6 @@ DCDC_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
     )),
     "dcdc_quiescent": ("Quiescent Current", quiescent, False, True, (
         vin_bias(), average_cnt(5), settle_time(),
-        ParamSpec("iq_modes", "工作模式", "text", "PWM, BURST, ULP", "", hint="逗号分隔"),
     )),
     "dcdc_shutdown_current": ("Standby/Shutdown Current", shutdown_current, False, True, (
         vin_bias(), average_cnt(5), settle_time(),

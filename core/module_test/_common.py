@@ -29,6 +29,8 @@ class ItemContext:
     stop_flag_fn: Callable[[], bool]  # 协作式中断检查
     log_fn: Callable[[str], None]    # 日志回调（已切回 UI 线程）
     progress_fn: Callable[[int, str], None]  # 进度回调 (percent, label)
+    # 手动模式暂停：请求 UI 弹确认框并阻塞等待，返回是否确认（停止/取消返回 False）
+    pause_fn: Callable[[str], bool] = lambda _prompt: True
 
 
 def parse_channel(value: Any) -> int:
