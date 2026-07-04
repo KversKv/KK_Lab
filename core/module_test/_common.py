@@ -211,7 +211,7 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
     reg_addr = cfg_int(cfg, "reg_addr", 0x00)
     msb = cfg_int(cfg, "msb", 7)
     lsb = cfg_int(cfg, "lsb", 0)
-    width_flag = cfg_int(cfg, "width_flag", 1)
+    width_flag = cfg_int(cfg, "width_flag", 1)  # I2CWidthFlag.BIT_10
     min_code = cfg_int(cfg, "min_code", 0)
     max_code = cfg_int(cfg, "max_code", 255)
     vmeter_ch = parse_channel(cfg.get("vout_channel", 1))
