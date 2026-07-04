@@ -101,3 +101,16 @@ def vin_step(default: float = 0.2) -> ParamSpec:
 
 def vin_sweep(start: float = 3.2, end: float = 4.2, step: float = 0.2) -> tuple[ParamSpec, ...]:
     return (vin_start(start), vin_end(end), vin_step(step))
+
+
+# —— 寄存器扫描配置（原被测配置界面字段，现随 Output Voltage Scan 项设置）——
+def reg_scan_params() -> tuple[ParamSpec, ...]:
+    """挡位寄存器扫描所需参数：Code 起始/结束 + 寄存器地址 + MSB/LSB。"""
+    return (
+        ParamSpec("reg_addr", "寄存器地址", "text", "0x00", "",
+                  hint="如 0x0132"),
+        ParamSpec("msb", "MSB", "int", 7, "", minimum=0, maximum=31),
+        ParamSpec("lsb", "LSB", "int", 0, "", minimum=0, maximum=31),
+        ParamSpec("min_code", "Code 起始", "int", 0, "", minimum=0, maximum=65535),
+        ParamSpec("max_code", "Code 结束", "int", 255, "", minimum=0, maximum=65535),
+    )

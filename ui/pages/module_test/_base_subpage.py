@@ -15,7 +15,7 @@ from typing import Any
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QColor, QDesktopServices
 from PySide6.QtWidgets import (
-    QGridLayout, QHBoxLayout, QHeaderView,
+    QCheckBox, QGridLayout, QHBoxLayout, QHeaderView,
     QLabel, QLineEdit, QPushButton, QScrollArea, QSizePolicy, QSpinBox,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
@@ -134,6 +134,14 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
             QTableWidget::indicator:checked {{
                 image: url("{cb_checked}");
             }}
+            QCheckBox {{ color: #c8c8c8; spacing: 6px; background: transparent; }}
+            QCheckBox::indicator {{
+                width: 16px; height: 16px;
+                image: url("{cb_unchecked}");
+            }}
+            QCheckBox::indicator:checked {{
+                image: url("{cb_checked}");
+            }}
             QHeaderView::section {{
                 background-color: #161b2e; color: #8eb0e3; padding: 5px 6px;
                 border: none; border-bottom: 1px solid #2a3148; font-weight: 600;
@@ -226,78 +234,96 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         self.chip_name_edit.setPlaceholderText("如 BES1307")
         grid.addWidget(self.chip_name_edit, 0, 1)
 
-        grid.addWidget(self._field_label("操作员"), 0, 2)
-        self.operator_edit = QLineEdit()
-        grid.addWidget(self.operator_edit, 0, 3)
+        grid.addWidget(self._field_label("模块名称"), 0, 2)
+        self.module_name_edit = QLineEdit()
+        self.module_name_edit.setPlaceholderText("如 LDO1 / DCDC_CORE")
+        grid.addWidget(self.module_name_edit, 0, 3)
 
-        grid.addWidget(self._field_label("Vin 通道"), 1, 0)
+        grid.addWidget(self._field_label("操作员"), 1, 0)
+        self.operator_edit = QLineEdit()
+        grid.addWidget(self.operator_edit, 1, 1)
+
+        grid.addWidget(self._field_label("Vin 通道"), 2, 0)
         self.vin_ch_combo = DarkComboBox()
         self.vin_ch_combo.addItems([f"CH {i}" for i in range(1, 5)])
-        grid.addWidget(self.vin_ch_combo, 1, 1)
+        grid.addWidget(self.vin_ch_combo, 2, 1)
 
-        grid.addWidget(self._field_label("Vout 通道"), 1, 2)
+        grid.addWidget(self._field_label("Vout 通道"), 2, 2)
         self.vout_ch_combo = DarkComboBox()
         self.vout_ch_combo.addItems([f"CH {i}" for i in range(1, 5)])
         self.vout_ch_combo.setCurrentIndex(1)
-        grid.addWidget(self.vout_ch_combo, 1, 3)
+        grid.addWidget(self.vout_ch_combo, 2, 3)
 
-        grid.addWidget(self._field_label("Iload 通道"), 2, 0)
+        grid.addWidget(self._field_label("Iload 通道"), 3, 0)
         self.iload_ch_combo = DarkComboBox()
         self.iload_ch_combo.addItems([f"CH {i}" for i in range(1, 5)])
         self.iload_ch_combo.setCurrentIndex(2)
-        grid.addWidget(self.iload_ch_combo, 2, 1)
+        grid.addWidget(self.iload_ch_combo, 3, 1)
 
-        grid.addWidget(self._field_label("Vout 标称 (mV)"), 2, 2)
+        grid.addWidget(self._field_label("Vout 标称 (mV)"), 3, 2)
         self.vout_nominal_spin = QSpinBox()
         self.vout_nominal_spin.setRange(0, 6000)
         self.vout_nominal_spin.setValue(1800 if self.MODULE_TYPE == "ldo" else 1200)
-        grid.addWidget(self.vout_nominal_spin, 2, 3)
+        grid.addWidget(self.vout_nominal_spin, 3, 3)
 
-        grid.addWidget(self._field_label("Code 起始"), 3, 0)
-        self.min_code_spin = QSpinBox()
-        self.min_code_spin.setRange(0, 65535)
-        grid.addWidget(self.min_code_spin, 3, 1)
-
-        grid.addWidget(self._field_label("Code 结束"), 3, 2)
-        self.max_code_spin = QSpinBox()
-        self.max_code_spin.setRange(0, 65535)
-        self.max_code_spin.setValue(255)
-        grid.addWidget(self.max_code_spin, 3, 3)
-
-        grid.addWidget(self._field_label("温度点 (°C)"), 4, 0)
-        self.temperature_edit = QLineEdit()
-        self.temperature_edit.setPlaceholderText("常温留空")
-        grid.addWidget(self.temperature_edit, 4, 1)
-
-        grid.addWidget(self._field_label("Device 地址"), 5, 0)
+        grid.addWidget(self._field_label("Device 地址"), 4, 0)
         self.device_addr_edit = QLineEdit("0x00")
         self.device_addr_edit.setPlaceholderText("如 0x62")
-        grid.addWidget(self.device_addr_edit, 5, 1)
+        grid.addWidget(self.device_addr_edit, 4, 1)
 
-        grid.addWidget(self._field_label("寄存器地址"), 5, 2)
-        self.reg_addr_edit = QLineEdit("0x00")
-        self.reg_addr_edit.setPlaceholderText("如 0x0132")
-        grid.addWidget(self.reg_addr_edit, 5, 3)
-
-        grid.addWidget(self._field_label("MSB"), 6, 0)
-        self.msb_spin = QSpinBox()
-        self.msb_spin.setRange(0, 31)
-        self.msb_spin.setValue(7)
-        grid.addWidget(self.msb_spin, 6, 1)
-
-        grid.addWidget(self._field_label("LSB"), 6, 2)
-        self.lsb_spin = QSpinBox()
-        self.lsb_spin.setRange(0, 31)
-        self.lsb_spin.setValue(0)
-        grid.addWidget(self.lsb_spin, 6, 3)
-
-        grid.addWidget(self._field_label("Width Flag"), 7, 0)
+        grid.addWidget(self._field_label("Width Flag"), 4, 2)
         self.width_flag_spin = QSpinBox()
         self.width_flag_spin.setRange(1, 4)
         self.width_flag_spin.setValue(1)
-        grid.addWidget(self.width_flag_spin, 7, 1)
+        grid.addWidget(self.width_flag_spin, 4, 3)
+
+        # —— 高低温测试（勾选后展开温度相关设置）——
+        self.temp_test_check = QCheckBox("高低温测试")
+        self.temp_test_check.setChecked(False)
+        self.temp_test_check.toggled.connect(self._on_temp_test_toggled)
+        grid.addWidget(self.temp_test_check, 5, 0, 1, 4)
+
+        self._temp_label = self._field_label("温度点 (°C)")
+        grid.addWidget(self._temp_label, 6, 0)
+        self.temperature_edit = QLineEdit()
+        self.temperature_edit.setPlaceholderText("逗号分隔，如 -40, 25, 85")
+        grid.addWidget(self.temperature_edit, 6, 1)
+
+        self._temp_soak_label = self._field_label("等待时间 (s)")
+        grid.addWidget(self._temp_soak_label, 6, 2)
+        self.temp_soak_spin = QSpinBox()
+        self.temp_soak_spin.setRange(0, 36000)
+        self.temp_soak_spin.setValue(300)
+        grid.addWidget(self.temp_soak_spin, 6, 3)
+
+        self._temp_tol_label = self._field_label("稳定条件 (°C)")
+        grid.addWidget(self._temp_tol_label, 7, 0)
+        self.temp_tolerance_spin = QSpinBox()
+        self.temp_tolerance_spin.setRange(1, 20)
+        self.temp_tolerance_spin.setValue(2)
+        grid.addWidget(self.temp_tolerance_spin, 7, 1)
+
+        self._temp_wait_label = self._field_label("稳定超时 (s)")
+        grid.addWidget(self._temp_wait_label, 7, 2)
+        self.temp_wait_spin = QSpinBox()
+        self.temp_wait_spin.setRange(0, 36000)
+        self.temp_wait_spin.setValue(1800)
+        grid.addWidget(self.temp_wait_spin, 7, 3)
+
+        self._temp_widgets = [
+            self._temp_label, self.temperature_edit,
+            self._temp_soak_label, self.temp_soak_spin,
+            self._temp_tol_label, self.temp_tolerance_spin,
+            self._temp_wait_label, self.temp_wait_spin,
+        ]
+        self._on_temp_test_toggled(False)
         box.content_layout.addLayout(grid)
         return box
+
+    def _on_temp_test_toggled(self, checked: bool) -> None:
+        """高低温测试勾选联动：勾选后才显示温度相关设置。"""
+        for w in self._temp_widgets:
+            w.setVisible(checked)
 
     def _build_items_group(self) -> "CollapsibleGroupBox":
         box = CollapsibleGroupBox("测试项清单（勾选要执行的项）", expanded=True)
@@ -545,21 +571,22 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
 
     # ------------------------------------------------------------------ config IO
     def get_test_config(self) -> dict[str, Any]:
+        temp_enabled = self.temp_test_check.isChecked()
         return {
             "selected_items": self._selected_item_keys(),
             "chip_name": self.chip_name_edit.text().strip(),
+            "module_name": self.module_name_edit.text().strip(),
             "operator": self.operator_edit.text().strip(),
-            "temperature": self.temperature_edit.text().strip(),
+            "temp_test_enabled": temp_enabled,
+            "temperature": self.temperature_edit.text().strip() if temp_enabled else "",
+            "temp_soak_s": self.temp_soak_spin.value(),
+            "temp_tolerance_c": self.temp_tolerance_spin.value(),
+            "temp_wait_s": self.temp_wait_spin.value(),
             "vin_channel": self.vin_ch_combo.currentText(),
             "vout_channel": self.vout_ch_combo.currentText(),
             "iload_channel": self.iload_ch_combo.currentText(),
             "vout_nominal_mv": self.vout_nominal_spin.value(),
-            "min_code": self.min_code_spin.value(),
-            "max_code": self.max_code_spin.value(),
             "device_addr": self.device_addr_edit.text().strip(),
-            "reg_addr": self.reg_addr_edit.text().strip(),
-            "msb": self.msb_spin.value(),
-            "lsb": self.lsb_spin.value(),
             "width_flag": self.width_flag_spin.value(),
             "iload_start_ma": self.iload_start_spin.value(),
             "iload_end_ma": self.iload_end_spin.value(),
@@ -580,6 +607,8 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         try:
             if "chip_name" in cfg:
                 self.chip_name_edit.setText(str(cfg["chip_name"])); changed.append("chip_name")
+            if "module_name" in cfg:
+                self.module_name_edit.setText(str(cfg["module_name"])); changed.append("module_name")
             if "operator" in cfg:
                 self.operator_edit.setText(str(cfg["operator"])); changed.append("operator")
             if "vout_nominal_mv" in cfg:
@@ -602,7 +631,8 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
 
     def _highlight_fields(self, fields: list[str]):
         widget_map = {
-            "chip_name": self.chip_name_edit, "operator": self.operator_edit,
+            "chip_name": self.chip_name_edit, "module_name": self.module_name_edit,
+            "operator": self.operator_edit,
             "vout_nominal_mv": self.vout_nominal_spin, "iload_start_ma": self.iload_start_spin,
             "iload_end_ma": self.iload_end_spin, "iload_step_ma": self.iload_step_spin,
             "vin_start_v": self.vin_start_spin, "vin_end_v": self.vin_end_spin,

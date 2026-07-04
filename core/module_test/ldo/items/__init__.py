@@ -16,7 +16,7 @@ from core.module_test._common import (
 )
 from core.module_test.result_model import ItemResult
 from core.module_test.param_spec import (
-    ParamSpec, average_cnt, load_sweep, settle_time, vin_bias, vin_sweep, vout_tol,
+    ParamSpec, average_cnt, load_sweep, reg_scan_params, settle_time, vin_bias, vin_sweep, vout_tol,
 )
 from log_config import get_logger
 
@@ -526,6 +526,7 @@ def protection(ctx: ItemContext) -> ItemResult:
 # 测试项注册表：item_key -> (name, run_fn, needs_scope, default_checked, params)
 LDO_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
     "ldo_vout_scan": ("Output Voltage Scan", vout_scan, False, False, (
+        *reg_scan_params(),
         settle_time(), average_cnt(),
     )),
     "ldo_load_reg": ("Load Regulation", load_line_reg, False, False, (
