@@ -27,7 +27,7 @@ from log_config import get_logger
 from ui.theme import FONT_MONO
 from core.n6705c import SearchThread as _SearchThread
 from ui.pages.n6705c_power_analyzer.widgets import (
-    ChannelTabBar, _ZAP_ICON_PATH,
+    ChannelTabBar, SlideToggle, _ZAP_ICON_PATH,
     CHANNEL_THEMES, CONTENT_BG, ROOT_BG, PANEL_BG, PANEL_BORDER,
     INPUT_BG, INPUT_BORDER,
     DISABLED_BG, DISABLED_BORDER, DISABLED_TEXT,
@@ -68,6 +68,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         self._dirty_current = False
         self.channels = []
         self._prev_dual_mode = None
+        self._polling_enabled = True
 
         self._state_poller = InstrumentStatePoller(
             read_state_fn=self._read_channel_snapshot,
@@ -201,6 +202,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
             self._start_channel_sync()
         else:
             self._state_poller.pause()
+        self._update_polling_switch_state()
 
     def _connected_device_labels(self):
         return [label for label, dev in self.devices.items() if dev["is_connected"]]
@@ -255,6 +257,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
             self._start_channel_sync()
         else:
             self._state_poller.pause()
+        self._update_polling_switch_state()
 
     def _is_active_session_busy(self):
         if not self._instrument_manager:
@@ -278,10 +281,38 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
 
     def _start_channel_sync(self):
         dev = self.devices[self.current_device]
-        if not dev["is_connected"] or not dev["n6705c"]:
+        if not dev["is_connected"] or not dev["n6705c"] or not self._polling_enabled:
+            self._state_poller.pause()
+            self._update_polling_switch_state()
             return
         if self.isVisible():
             self._state_poller.resume()
+        self._update_polling_switch_state()
+
+    def _set_polling_enabled(self, enabled):
+        self._polling_enabled = enabled
+        if enabled:
+            self._start_channel_sync()
+        else:
+            self._state_poller.pause()
+        self._update_polling_switch_state()
+
+    def _on_polling_toggle_clicked(self, checked):
+        self._set_polling_enabled(checked)
+        logger.info("N6705C 状态轮询%s", "已启用" if checked else "已暂停")
+
+    def _update_polling_switch_state(self):
+        if not hasattr(self, "polling_switch"):
+            return
+        has_connected = bool(
+            self.devices[self.current_device]["is_connected"] and self.devices[self.current_device]["n6705c"]
+        )
+        switch_checked = self._polling_enabled and has_connected
+        if self.polling_switch.isChecked() != switch_checked:
+            self.polling_switch.blockSignals(True)
+            self.polling_switch.setChecked(switch_checked)
+            self.polling_switch.blockSignals(False)
+        self.polling_switch.setEnabled(has_connected)
 
     def _read_channel_snapshot(self):
         dev = self.devices.get(self.current_device)
@@ -346,7 +377,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
     def showEvent(self, event):
         super().showEvent(event)
         if self.devices[self.current_device]["is_connected"]:
-            self._state_poller.resume()
+            self._start_channel_sync()
 
     def hideEvent(self, event):
         super().hideEvent(event)
@@ -470,6 +501,18 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
         title_label.setStyleSheet("QLabel { color: #ffffff; font-size: 18px; font-weight: 800; }")
         header_layout.addWidget(title_label)
         header_layout.addStretch()
+
+        polling_label = QLabel("轮询")
+        polling_label.setStyleSheet("QLabel { color: #8ea6cf; font-size: 12px; font-weight: 700; background: transparent; border: none; }")
+        header_layout.addWidget(polling_label)
+
+        self.polling_switch = SlideToggle(self)
+        self.polling_switch.setFixedSize(52, 22)
+        self.polling_switch.setChecked(True)
+        self.polling_switch.setToolTip("启用后轮询当前 N6705C 通道状态；关闭可避免窗口切换时的状态读取竞态")
+        self.polling_switch.clicked.connect(self._on_polling_toggle_clicked)
+        header_layout.addWidget(self.polling_switch)
+        self._update_polling_switch_state()
         outer_layout.addWidget(header_widget)
 
         header_sep = QFrame()
@@ -1101,6 +1144,8 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
 
                 if label == self.current_device:
                     self._start_channel_sync()
+                else:
+                    self._update_polling_switch_state()
             else:
                 w["status"].setText("Device mismatch")
                 w["status"].setStyleSheet("color: #e53935; font-weight:bold;")
@@ -1136,6 +1181,7 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
             update_connect_button_state(w["connect_btn"], connected=False)
             self._update_ui_connection_state(label, False)
             self._rebuild_dynamic_sections()
+            self._update_polling_switch_state()
             self.connection_status_changed.emit(False)
         except Exception as e:
             w["status"].setText("Disconnect failed")
