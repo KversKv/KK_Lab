@@ -118,21 +118,28 @@ class ConsumptionTestViewConfigMixin:
 
         label_style_sm = "font-size: 10px; color: #7e96bf;"
 
-        mcu_label = QLabel("MCU")
-        mcu_label.setStyleSheet(label_style_sm)
-        mcu_label.setFixedWidth(label_width)
         mcu_block = QVBoxLayout()
         mcu_block.setContentsMargins(0, 0, 0, 0)
         mcu_block.setSpacing(4)
-        mcu_select_row = QHBoxLayout()
-        mcu_select_row.setContentsMargins(0, 0, 0, 0)
-        mcu_select_row.setSpacing(4)
+        mcu_type_row = QHBoxLayout()
+        mcu_type_row.setContentsMargins(0, 0, 0, 0)
+        mcu_type_row.setSpacing(4)
+        mcu_port_row = QHBoxLayout()
+        mcu_port_row.setContentsMargins(0, 0, 0, 0)
+        mcu_port_row.setSpacing(4)
         mcu_status_row = QHBoxLayout()
         mcu_status_row.setContentsMargins(0, 0, 0, 0)
         mcu_status_row.setSpacing(4)
 
+        self.mcu_type_label = QLabel("MCU")
+        self.mcu_type_label.setStyleSheet(label_style)
+        self.mcu_type_label.setFixedWidth(label_width)
+        self.mcu_com_label = QLabel("COM")
+        self.mcu_com_label.setStyleSheet(label_style)
+        self.mcu_com_label.setFixedWidth(label_width)
+
         self.mcu_status_label = QLabel("● Disconnected")
-        self.mcu_status_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.mcu_status_label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.mcu_status_label.setStyleSheet(
             "color: #8ea6cf; font-size: 10px; font-weight: bold; background: transparent; border: none;"
         )
@@ -151,7 +158,11 @@ class ConsumptionTestViewConfigMixin:
         self.mcu_search_btn.setFixedSize(24, 24)
         self.mcu_type_combo = DarkComboBox(bg="#091426", border="#17345f")
         self.mcu_type_combo.setFixedHeight(24)
-        self.mcu_type_combo.setFixedWidth(120)
+        self.mcu_type_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.mcu_type_combo.setMinimumContentsLength(8)
+        self.mcu_type_combo.setSizeAdjustPolicy(
+            DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
         self.mcu_type_combo.addItem("YD-RP2040", userData="yd_rp2040")
         self.mcu_type_combo.addItem("CH9114F", userData="ch9114f")
         font = self.mcu_type_combo.font()
@@ -177,15 +188,18 @@ class ConsumptionTestViewConfigMixin:
                 border: 1px solid #18264A;
             }
         """)
-        mcu_select_row.addWidget(self.mcu_port_combo, 1)
-        mcu_select_row.addWidget(self.mcu_search_btn, 0, Qt.AlignVCenter)
-        mcu_status_row.addWidget(self.mcu_status_label, 1, Qt.AlignVCenter)
-        mcu_status_row.addWidget(self.mcu_type_combo, 0, Qt.AlignVCenter)
+        mcu_type_row.addWidget(self.mcu_type_combo, 1)
+        mcu_type_row.addSpacing(28)
+        mcu_port_row.addWidget(self.mcu_port_combo, 1)
+        mcu_port_row.addWidget(self.mcu_search_btn, 0, Qt.AlignVCenter)
+        mcu_status_row.addWidget(self.mcu_status_label, 0, Qt.AlignVCenter)
+        mcu_status_row.addStretch()
         mcu_status_row.addWidget(self.mcu_connect_btn, 0, Qt.AlignVCenter)
-        mcu_block.addLayout(mcu_select_row)
-        mcu_block.addLayout(mcu_status_row)
-        grid.addWidget(mcu_label, 2, 0, Qt.AlignTop)
-        grid.addLayout(mcu_block, 2, 1)
+        grid.addWidget(self.mcu_type_label, 2, 0, Qt.AlignVCenter)
+        grid.addLayout(mcu_type_row, 2, 1)
+        grid.addWidget(self.mcu_com_label, 3, 0, Qt.AlignVCenter)
+        grid.addLayout(mcu_port_row, 3, 1)
+        grid.addLayout(mcu_status_row, 4, 1)
 
         poweron_label = QLabel("PwrON")
         poweron_label.setStyleSheet(label_style_sm)
@@ -253,17 +267,18 @@ class ConsumptionTestViewConfigMixin:
         self._n6705c_reset_label = reset_label
         self._n6705c_reset_label_container = reset_label_container
         self._mcu_row_widgets = [
-            mcu_label,
-            self.mcu_status_label,
+            self.mcu_type_label,
+            self.mcu_type_combo,
+            self.mcu_com_label,
             self.mcu_port_combo,
             self.mcu_search_btn,
-            self.mcu_type_combo,
+            self.mcu_status_label,
             self.mcu_connect_btn,
         ]
-        grid.addWidget(poweron_label, 3, 0, Qt.AlignVCenter)
-        grid.addLayout(poweron_row, 3, 1)
-        grid.addWidget(reset_label_container, 4, 0, Qt.AlignVCenter)
-        grid.addLayout(reset_row, 4, 1)
+        grid.addWidget(poweron_label, 5, 0, Qt.AlignVCenter)
+        grid.addLayout(poweron_row, 5, 1)
+        grid.addWidget(reset_label_container, 6, 0, Qt.AlignVCenter)
+        grid.addLayout(reset_row, 6, 1)
 
         self.reset_enable_cb.toggled.connect(self._on_reset_enable_toggled)
         self._on_reset_enable_toggled(self.reset_enable_cb.isChecked())
