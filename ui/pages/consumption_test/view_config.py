@@ -149,6 +149,14 @@ class ConsumptionTestViewConfigMixin:
         self.mcu_port_combo.setFont(font)
         self.mcu_search_btn = SpinningSearchButton(parent=config_frame)
         self.mcu_search_btn.setFixedSize(24, 24)
+        self.mcu_type_combo = DarkComboBox(bg="#091426", border="#17345f")
+        self.mcu_type_combo.setFixedHeight(24)
+        self.mcu_type_combo.setFixedWidth(120)
+        self.mcu_type_combo.addItem("YD-RP2040", userData="yd_rp2040")
+        self.mcu_type_combo.addItem("CH9114F", userData="ch9114f")
+        font = self.mcu_type_combo.font()
+        font.setPixelSize(11)
+        self.mcu_type_combo.setFont(font)
         self.mcu_connect_btn = QPushButton("Connect")
         self.mcu_connect_btn.setFixedHeight(24)
         self.mcu_connect_btn.setFixedWidth(88)
@@ -172,6 +180,7 @@ class ConsumptionTestViewConfigMixin:
         mcu_select_row.addWidget(self.mcu_port_combo, 1)
         mcu_select_row.addWidget(self.mcu_search_btn, 0, Qt.AlignVCenter)
         mcu_status_row.addWidget(self.mcu_status_label, 1, Qt.AlignVCenter)
+        mcu_status_row.addWidget(self.mcu_type_combo, 0, Qt.AlignVCenter)
         mcu_status_row.addWidget(self.mcu_connect_btn, 0, Qt.AlignVCenter)
         mcu_block.addLayout(mcu_select_row)
         mcu_block.addLayout(mcu_status_row)
@@ -248,6 +257,7 @@ class ConsumptionTestViewConfigMixin:
             self.mcu_status_label,
             self.mcu_port_combo,
             self.mcu_search_btn,
+            self.mcu_type_combo,
             self.mcu_connect_btn,
         ]
         grid.addWidget(poweron_label, 3, 0, Qt.AlignVCenter)
@@ -271,6 +281,7 @@ class ConsumptionTestViewConfigMixin:
 
         self.mcu_search_btn.clicked.connect(self._on_mcu_search)
         self.mcu_connect_btn.clicked.connect(self._on_mcu_connect_or_disconnect)
+        self.mcu_type_combo.currentIndexChanged.connect(self._on_mcu_type_changed)
         self.control_method_toggle.toggled.connect(self._on_control_method_changed)
         self._on_control_method_changed(self.control_method_toggle.value())
 
@@ -292,23 +303,44 @@ class ConsumptionTestViewConfigMixin:
             for w in self._mcu_row_widgets:
                 w.setVisible(method == "MCU")
 
-        options = self._get_control_channel_options(method)
-        defaults = self._saved_control_channels.get(method, {})
-        self._set_combo_options(
-            self.poweron_channel_combo,
-            options,
-            defaults.get("poweron", "GPIO0" if method == "MCU" else "B-CH1"),
-        )
-        self._set_combo_options(
-            self.reset_channel_combo,
-            options,
-            defaults.get("reset", "GPIO1" if method == "MCU" else "B-CH2"),
-        )
+        self._refresh_mcu_gpio_options()
 
         visible = True
         if hasattr(self, "_control_channel_row_widgets"):
             for w in self._control_channel_row_widgets:
                 w.setVisible(visible)
+
+    def _on_mcu_type_changed(self, _idx=None):
+        if getattr(self, "is_mcu_connected", False):
+            self.append_log(
+                "[MCU] Type changed while connected. Please reconnect to apply."
+            )
+        self._refresh_mcu_gpio_options()
+        if hasattr(self, "mcu_port_combo") and self.mcu_port_combo is not None:
+            self.mcu_port_combo.clear()
+            if self._current_mcu_type() == "ch9114f":
+                self.mcu_port_combo.addItem("Select CH9114F COM...")
+            else:
+                self.mcu_port_combo.addItem("Select MCU COM...")
+
+    def _refresh_mcu_gpio_options(self):
+        if getattr(self, "control_method_toggle", None) is None:
+            return
+        method = self.control_method_toggle.value()
+        if method != "MCU":
+            return
+        options = self._get_control_channel_options(method)
+        defaults = self._saved_control_channels.get(method, {})
+        self._set_combo_options(
+            self.poweron_channel_combo,
+            options,
+            defaults.get("poweron", "GPIO0"),
+        )
+        self._set_combo_options(
+            self.reset_channel_combo,
+            options,
+            defaults.get("reset", "GPIO1"),
+        )
 
     def _on_reset_enable_toggled(self, checked):
         if hasattr(self, "reset_channel_combo") and self.reset_channel_combo is not None:

@@ -392,8 +392,12 @@ class MockCH9114F:
 
     def out(self, pin, value):
         pin = int(pin)
-        self._pin_dirs[pin] = self.DIR_OUTPUT
+        self.set_output(pin)
         self._pin_values[pin] = 1 if int(value) else 0
+
+    def in_pull(self, pin, pull="none"):
+        pin = int(pin)
+        self.set_input(pin, gpio_func=True)
 
     def high(self, pin):
         self.out(pin, 1)

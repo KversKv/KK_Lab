@@ -265,6 +265,7 @@ class CH9114F(InstrumentBase):
 
     def out(self, pin, value):
         self._ensure_connected()
+        self.set_output(pin)
         mask = self._pin_mask(pin)
         data_out = mask if int(value) else 0
         ret = self._dll.CH910x_GpioSet(
@@ -274,6 +275,10 @@ class CH9114F(InstrumentBase):
             ctypes.c_ulong(data_out),
         )
         self._check(ret, "CH910x_GpioSet")
+
+    def in_pull(self, pin, pull="none"):
+        self._ensure_connected()
+        self.set_input(pin, gpio_func=True)
 
     def high(self, pin):
         self.out(pin, LEVEL_HIGH)

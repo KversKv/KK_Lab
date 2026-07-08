@@ -70,12 +70,22 @@ class _SearchMcuPortWorker(QObject):
     finished = Signal(list)
     error = Signal(str)
 
+    def __init__(self, mcu_type="yd_rp2040"):
+        super().__init__()
+        self._mcu_type = mcu_type
+
     def run(self):
         try:
-            import serial.tools.list_ports
-            ports = serial.tools.list_ports.comports()
-            self.finished.emit([f"{p.device} - {p.description}" for p in ports])
+            if self._mcu_type == "ch9114f":
+                from instruments.MCU_IO.ch9114f import list_ch9114f_ports
+                ports = list_ch9114f_ports() or []
+                self.finished.emit(ports)
+            else:
+                import serial.tools.list_ports
+                ports = serial.tools.list_ports.comports()
+                self.finished.emit([f"{p.device} - {p.description}" for p in ports])
         except Exception as e:
+            logger.error("MCU port scan failed: %s", e, exc_info=True)
             self.error.emit(str(e))
 
 
@@ -83,15 +93,19 @@ class _ConnectMcuWorker(QObject):
     finished = Signal(object, str)
     error = Signal(str)
 
-    def __init__(self, port, baudrate=921600):
+    def __init__(self, port, mcu_type="yd_rp2040", baudrate=921600):
         super().__init__()
         self._port = port
+        self._mcu_type = mcu_type
         self._baudrate = baudrate
 
     def run(self):
         try:
             from instruments.factory import create_mcu_io
-            inst = create_mcu_io("yd_rp2040", port=self._port, baudrate=self._baudrate)
+            if self._mcu_type == "ch9114f":
+                inst = create_mcu_io("ch9114f", port=self._port)
+            else:
+                inst = create_mcu_io("yd_rp2040", port=self._port, baudrate=self._baudrate)
             ok = inst.connect()
             if not ok:
                 self.error.emit(f"Failed to connect {self._port}")
@@ -171,6 +185,7 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
         self._mcu_search_worker = None
         self._mcu_connect_thread = None
         self._mcu_connect_worker = None
+        self._current_mcu_type = "yd_rp2040"
 
         self.init_n6705c_connection(n6705c_top, instrument_manager=instrument_manager)
         self.init_serial_connection(mode=MODE_INLINE, prefix="DUT Serial")
@@ -1230,7 +1245,16 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
                 force_voltages[(device_label, hw_ch)] = voltage
         return force_voltages
 
+    def _current_mcu_type(self):
+        if hasattr(self, "mcu_type_combo") and self.mcu_type_combo is not None:
+            data = self.mcu_type_combo.currentData()
+            if data in ("yd_rp2040", "ch9114f"):
+                return data
+        return getattr(self, "_current_mcu_type", "yd_rp2040")
+
     def _get_mcu_gpio_options(self):
+        if self._current_mcu_type() == "ch9114f":
+            return [f"GPIO{i}" for i in (0, 1, 6, 7, 2, 8, 14, 20)]
         return [f"GPIO{i}" for i in range(0, 30)]
 
     def _get_control_channel_options(self, method=None):
@@ -1266,21 +1290,30 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
 
     def _selected_mcu_port(self):
         text = self.mcu_port_combo.currentText() if getattr(self, "mcu_port_combo", None) else ""
-        if not text or text in ("No serial ports found",):
+        if not text or text in (
+            "No serial ports found",
+            "No CH9114F ports found",
+            "Select MCU COM...",
+            "Select CH9114F COM...",
+        ):
             return None
         return text.split()[0]
 
     def _on_mcu_search(self):
         from debug_config import DEBUG_MOCK
+        mcu_type = self._current_mcu_type()
         if DEBUG_MOCK:
             self.mcu_port_combo.clear()
-            self.mcu_port_combo.addItem("[MOCK] COM98 - Mock YD RP2040")
+            if mcu_type == "ch9114f":
+                self.mcu_port_combo.addItem("[MOCK] COM99 - Mock CH9114F")
+            else:
+                self.mcu_port_combo.addItem("[MOCK] COM98 - Mock YD RP2040")
             self.mcu_status_label.setText("● Mock Ready")
             self.mcu_status_label.setStyleSheet(
                 "color: #ff9800; font-size: 10px; font-weight: bold; background: transparent; border: none;"
             )
             self.mcu_connect_btn.setEnabled(True)
-            self.append_log("[DEBUG] Mock MCU IO port loaded.")
+            self.append_log(f"[DEBUG] Mock {mcu_type} port loaded.")
             return
 
         if self._mcu_search_thread is not None and self._mcu_search_thread.isRunning():
@@ -1291,9 +1324,12 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
         )
         self.mcu_search_btn.setEnabled(False)
         self.mcu_connect_btn.setEnabled(False)
-        self.append_log("[MCU] Scanning serial ports for YD RP2040...")
+        if mcu_type == "ch9114f":
+            self.append_log("[MCU] Scanning for CH9114F ports...")
+        else:
+            self.append_log("[MCU] Scanning serial ports for YD RP2040...")
 
-        worker = _SearchMcuPortWorker()
+        worker = _SearchMcuPortWorker(mcu_type)
         thread = QThread()
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
@@ -1309,6 +1345,7 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
         thread.start()
 
     def _on_mcu_search_done(self, ports):
+        mcu_type = self._current_mcu_type()
         self.mcu_port_combo.clear()
         self.mcu_port_combo.setEnabled(True)
         if ports:
@@ -1318,9 +1355,13 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             self.mcu_status_label.setStyleSheet(
                 "color: #00a859; font-size: 10px; font-weight: bold; background: transparent; border: none;"
             )
-            self.append_log(f"[MCU] Found {len(ports)} serial port(s).")
+            label = "CH9114F port(s)" if mcu_type == "ch9114f" else "serial port(s)"
+            self.append_log(f"[MCU] Found {len(ports)} {label}.")
         else:
-            self.mcu_port_combo.addItem("No serial ports found")
+            if mcu_type == "ch9114f":
+                self.mcu_port_combo.addItem("No CH9114F ports found")
+            else:
+                self.mcu_port_combo.addItem("No serial ports found")
             self.mcu_port_combo.setEnabled(False)
             self.mcu_status_label.setText("● Not Found")
             self.mcu_status_label.setStyleSheet(
@@ -1353,6 +1394,7 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
         if not port:
             self.append_log("[MCU] No valid MCU port selected.")
             return
+        mcu_type = self._current_mcu_type()
         if self._mcu_connect_thread is not None and self._mcu_connect_thread.isRunning():
             return
         self.mcu_status_label.setText("● Connecting")
@@ -1361,9 +1403,10 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
         )
         self.mcu_search_btn.setEnabled(False)
         self.mcu_connect_btn.setEnabled(False)
-        self.append_log(f"[MCU] Connecting YD RP2040 on {port}...")
+        type_label = "CH9114F" if mcu_type == "ch9114f" else "YD RP2040"
+        self.append_log(f"[MCU] Connecting {type_label} on {port}...")
 
-        worker = _ConnectMcuWorker(port, 921600)
+        worker = _ConnectMcuWorker(port, mcu_type=mcu_type)
         thread = QThread()
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
@@ -1454,6 +1497,7 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
                 if getattr(self, "mcu_port_combo", None) is not None else ""
             ),
             "connected": bool(getattr(self, "is_mcu_connected", False)),
+            "type": self._current_mcu_type(),
         }
 
         # 通道配置(_channel_configs 内容已能描述每个通道)
@@ -1640,6 +1684,18 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
         mcu_cfg = snapshot.get("mcu_io", {}) or {}
         mcu_port = mcu_cfg.get("port", "") or ""
         pending_mcu_connect = bool(mcu_cfg.get("connected"))
+        mcu_type = mcu_cfg.get("type", "yd_rp2040")
+        if mcu_type in ("yd_rp2040", "ch9114f") and getattr(self, "mcu_type_combo", None) is not None:
+            for i in range(self.mcu_type_combo.count()):
+                if self.mcu_type_combo.itemData(i) == mcu_type:
+                    self.mcu_type_combo.setCurrentIndex(i)
+                    break
+        # 切换 mcu_type 会重置 port_combo 的占位符,先确保占位符匹配当前类型
+        if getattr(self, "mcu_port_combo", None) is not None:
+            self.mcu_port_combo.clear()
+            self.mcu_port_combo.addItem(
+                "Select CH9114F COM..." if mcu_type == "ch9114f" else "Select MCU COM..."
+            )
         if mcu_port and getattr(self, "mcu_port_combo", None) is not None:
             found_idx = -1
             for i in range(self.mcu_port_combo.count()):

@@ -113,7 +113,7 @@ class AutoTestWorker(QObject):
         return best
 
     def _toggle_signal(self, inst, hw_ch, polarity):
-        if self.control_method == "MCU":
+        if self.control_method in ("MCU", "CH9114F"):
             active_level, inactive_level = (1, 0) if polarity == "rising" else (0, 1)
             inst.out(hw_ch, active_level)
             _time.sleep(0.1)
@@ -121,7 +121,7 @@ class AutoTestWorker(QObject):
             try:
                 inst.in_pull(hw_ch, "none")
             except Exception as e:
-                self._log(f"[WARNING] MCU GPIO high-Z after toggle failed (GPIO{hw_ch}): {e}")
+                self._log(f"[WARNING] GPIO high-Z after toggle failed (GPIO{hw_ch}): {e}")
             return
 
         active_v, inactive_v = (2.3, 0.1) if polarity == "rising" else (0.1, 2.3)
@@ -140,7 +140,7 @@ class AutoTestWorker(QObject):
             self._log(f"[WARNING] channel_off after toggle failed (CH{hw_ch}): {e}")
 
     def _setup_control_channel(self, inst, hw_ch, polarity):
-        if self.control_method == "MCU":
+        if self.control_method in ("MCU", "CH9114F"):
             inactive_level = 0 if polarity == "rising" else 1
             inst.out(hw_ch, inactive_level)
             return
@@ -192,7 +192,7 @@ class AutoTestWorker(QObject):
                 for ch in hw_channels:
                     _add(device_label, n6705c_inst, ch)
         _add(self.vbat_device_label, self.vbat_inst, self.vbat_hw_ch)
-        if self.control_method == "MCU":
+        if self.control_method in ("MCU", "CH9114F"):
             for label, inst, ch in (
                 (self.poweron_device_label, self.poweron_inst, self.poweron_hw_ch),
                 (self.reset_device_label, self.reset_inst, self.reset_hw_ch),
@@ -202,7 +202,7 @@ class AutoTestWorker(QObject):
                 try:
                     inst.in_pull(ch, "none")
                 except Exception as e:
-                    self._log(f"[WARNING] MCU GPIO pre-config high-Z {label}-GPIO{ch} failed: {e}")
+                    self._log(f"[WARNING] GPIO pre-config high-Z {label}-GPIO{ch} failed: {e}")
         else:
             _add(self.poweron_device_label, self.poweron_inst, self.poweron_hw_ch)
             _add(self.reset_device_label, self.reset_inst, self.reset_hw_ch)
