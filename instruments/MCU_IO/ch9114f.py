@@ -280,6 +280,18 @@ class CH9114F(InstrumentBase):
         self._ensure_connected()
         self.set_input(pin, gpio_func=True)
 
+    def pulse(self, pin, width_ms=10, active=1, release_high_z=True):
+        # 对齐 PicoGPIO.pulse 接口；CH9114F 通过 out+sleep+out 实现
+        self._ensure_connected()
+        self.set_output(pin)
+        idle = 0 if int(active) else 1
+        self.out(pin, idle)
+        self.out(pin, 1 if int(active) else 0)
+        time.sleep(max(0, int(width_ms)) / 1000.0)
+        self.out(pin, idle)
+        if release_high_z:
+            self.set_input(pin, gpio_func=True)
+
     def high(self, pin):
         self.out(pin, LEVEL_HIGH)
 

@@ -41,6 +41,17 @@ MCU_IO_DEFAULT_BAUDRATE = 921600
 MCU_IO_GPIO_PINS = (0, 1)
 MCU_IO_GPIO_OPTIONS = tuple(f"GPIO{i}" for i in range(0, 30))
 
+# CH9114F 可用 GPIO 引脚（与 instruments/MCU_IO/ch9114f.py / ch9114f_gpio_module_frame.py 保持一致）
+CH9114F_GPIO_PINS = (0, 1, 6, 7, 2, 8, 14, 20)
+CH9114F_GPIO_OPTIONS = tuple(f"GPIO{i}" for i in CH9114F_GPIO_PINS)
+
+MCU_TYPE_YD_RP2040 = "yd_rp2040"
+MCU_TYPE_CH9114F = "ch9114f"
+MCU_TYPE_LABELS = {
+    MCU_TYPE_YD_RP2040: "YD-RP2040",
+    MCU_TYPE_CH9114F: "CH9114F",
+}
+
 GPIO_STATE_HIGH = "High"
 GPIO_STATE_LOW = "Low"
 GPIO_STATE_HIGHZ = "HighZ"
@@ -255,11 +266,22 @@ class _SearchMcuIoWorker(QObject):
     finished = Signal(list)
     error = Signal(str)
 
+    def __init__(self, mcu_type=MCU_TYPE_YD_RP2040):
+        super().__init__()
+        self._mcu_type = mcu_type
+
     def run(self):
         try:
-            import serial.tools.list_ports
-            ports = serial.tools.list_ports.comports()
-            self.finished.emit([f"{p.device} - {p.description}" for p in ports])
+            if self._mcu_type == MCU_TYPE_CH9114F:
+                from instruments.MCU_IO.ch9114f import list_ch9114f_ports
+                ports = list_ch9114f_ports() or []
+                self.finished.emit(list(ports))
+            else:
+                import serial.tools.list_ports
+                ports = serial.tools.list_ports.comports()
+                self.finished.emit(
+                    [f"{p.device} - {p.description}" for p in ports]
+                )
         except Exception as e:
             logger.error("MCU IO port scan failed: %s", e, exc_info=True)
             self.error.emit(str(e))
@@ -269,15 +291,19 @@ class _ConnectMcuIoWorker(QObject):
     finished = Signal(object, str)
     error = Signal(str)
 
-    def __init__(self, port, baudrate=MCU_IO_DEFAULT_BAUDRATE):
+    def __init__(self, port, mcu_type=MCU_TYPE_YD_RP2040,
+                 baudrate=MCU_IO_DEFAULT_BAUDRATE):
         super().__init__()
         self._port = port
+        self._mcu_type = mcu_type
         self._baudrate = baudrate
 
     def run(self):
         try:
             from instruments.factory import create_mcu_io
-            inst = create_mcu_io("yd_rp2040", port=self._port, baudrate=self._baudrate)
+            inst = create_mcu_io(
+                self._mcu_type, port=self._port, baudrate=self._baudrate
+            )
             ok = inst.connect()
             if ok is False:
                 self.error.emit(f"Failed to connect {self._port}")
@@ -439,8 +465,67 @@ class McuIoConnectionMixin:
         self._mcu_io_pulse_worker = None
         self._mcu_io_default_thread = None
         self._mcu_io_default_worker = None
+        # MCU 类型默认 YD-RP2040；切换由 mcu_type_combo 触发
+        self._mcu_io_type = MCU_TYPE_YD_RP2040
+
+    def _current_mcu_io_type(self):
+        """返回当前 MCU IO 类型 (yd_rp2040 / ch9114f)。
+
+        优先读取 mcu_type_combo 的 currentData()，回退到 _mcu_io_type。
+        """
+        combo = getattr(self, "mcu_io_type_combo", None)
+        if combo is not None:
+            data = combo.currentData()
+            if data in (MCU_TYPE_YD_RP2040, MCU_TYPE_CH9114F):
+                return data
+        return getattr(self, "_mcu_io_type", MCU_TYPE_YD_RP2040)
+
+    def _get_mcu_io_gpio_pins(self):
+        if self._current_mcu_io_type() == MCU_TYPE_CH9114F:
+            return CH9114F_GPIO_PINS
+        return MCU_IO_GPIO_PINS
+
+    def _get_mcu_io_gpio_options(self):
+        if self._current_mcu_io_type() == MCU_TYPE_CH9114F:
+            return CH9114F_GPIO_OPTIONS
+        return MCU_IO_GPIO_OPTIONS
+
+    def _get_mcu_io_port_placeholder(self):
+        return (
+            "Select CH9114F COM..."
+            if self._current_mcu_io_type() == MCU_TYPE_CH9114F
+            else "Select MCU COM..."
+        )
+
+    def _get_mcu_io_not_found_text(self):
+        return (
+            "No CH9114F ports found"
+            if self._current_mcu_io_type() == MCU_TYPE_CH9114F
+            else "No serial ports found"
+        )
 
     def build_mcu_io_connection_widgets(self, layout, title_row=None, with_gpio=True):
+        # MCU Type 下拉（YD-RP2040 / CH9114F）
+        type_row = QHBoxLayout()
+        type_row.setSpacing(6)
+        type_row.setContentsMargins(0, 2, 0, 0)
+        type_label = QLabel("MCU Type")
+        type_label.setStyleSheet("font-size: 11px; color: #7e96bf;")
+        type_label.setFixedWidth(64)
+        self.mcu_io_type_combo = DarkComboBox(bg="#091426", border="#17345f")
+        self.mcu_io_type_combo.setFixedHeight(MCU_IO_BTN_HEIGHT)
+        self.mcu_io_type_combo.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Fixed
+        )
+        self.mcu_io_type_combo.addItem("YD-RP2040", userData=MCU_TYPE_YD_RP2040)
+        self.mcu_io_type_combo.addItem("CH9114F", userData=MCU_TYPE_CH9114F)
+        font = self.mcu_io_type_combo.font()
+        font.setPixelSize(11)
+        self.mcu_io_type_combo.setFont(font)
+        type_row.addWidget(type_label, 0, Qt.AlignVCenter)
+        type_row.addWidget(self.mcu_io_type_combo, 1)
+        layout.addLayout(type_row)
+
         self.mcu_io_status_label = QLabel("● Disconnected")
         self.mcu_io_status_label.setObjectName("statusErr")
         if title_row is not None:
@@ -454,7 +539,7 @@ class McuIoConnectionMixin:
         )
         self.mcu_io_port_combo.setMinimumContentsLength(10)
         self.mcu_io_port_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.mcu_io_port_combo.addItem("Select MCU COM...")
+        self.mcu_io_port_combo.addItem(self._get_mcu_io_port_placeholder())
         layout.addWidget(self.mcu_io_port_combo)
 
         conn_row = QHBoxLayout()
@@ -476,9 +561,23 @@ class McuIoConnectionMixin:
             self._build_mcu_io_gpio_widgets(layout)
 
     def _build_mcu_io_gpio_widgets(self, layout):
+        # GPIO 行放进容器，便于切换 MCU 类型时整体重建
+        self._mcu_io_gpio_parent_layout = layout
+        self.mcu_io_gpio_container = QWidget()
+        self.mcu_io_gpio_container.setStyleSheet("background: transparent; border: none;")
+        container_layout = QVBoxLayout(self.mcu_io_gpio_container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(0)
+        self._populate_mcu_io_gpio_widgets(container_layout)
+        layout.addWidget(self.mcu_io_gpio_container)
+        self._set_mcu_io_gpio_controls_enabled(False)
+
+    def _populate_mcu_io_gpio_widgets(self, container_layout):
+        pins = self._get_mcu_io_gpio_pins()
+        options = self._get_mcu_io_gpio_options()
         self.mcu_io_output_toggles = {}
         self.mcu_io_pulse_buttons = {}
-        for pin in MCU_IO_GPIO_PINS:
+        for pin in pins:
             row = QHBoxLayout()
             row.setSpacing(6)
             row.setContentsMargins(0, 2, 0, 0)
@@ -506,7 +605,7 @@ class McuIoConnectionMixin:
 
             row.addStretch(1)
 
-            layout.addLayout(row)
+            container_layout.addLayout(row)
             self.mcu_io_output_toggles[pin] = state_toggle
             self.mcu_io_pulse_buttons[pin] = pulse_btn
 
@@ -556,7 +655,7 @@ class McuIoConnectionMixin:
             }}
         """)
         pulse_width_row.addWidget(self.mcu_io_pulse_width_spin, 1, Qt.AlignVCenter)
-        layout.addLayout(pulse_width_row)
+        container_layout.addLayout(pulse_width_row)
 
         read_row = QHBoxLayout()
         read_row.setSpacing(6)
@@ -565,7 +664,7 @@ class McuIoConnectionMixin:
         self.mcu_io_read_combo = DarkComboBox(bg="#091426", border="#17345f")
         self.mcu_io_read_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.mcu_io_read_combo.setFixedHeight(MCU_IO_BTN_HEIGHT)
-        for opt in MCU_IO_GPIO_OPTIONS:
+        for opt in options:
             self.mcu_io_read_combo.addItem(opt)
         read_row.addWidget(self.mcu_io_read_combo, 1, Qt.AlignVCenter)
 
@@ -580,9 +679,27 @@ class McuIoConnectionMixin:
         self.mcu_io_read_value_label.setObjectName("statusOk")
         read_row.addWidget(self.mcu_io_read_value_label, 0, Qt.AlignVCenter)
 
-        layout.addLayout(read_row)
+        container_layout.addLayout(read_row)
 
-        self._set_mcu_io_gpio_controls_enabled(False)
+    def _rebuild_mcu_io_gpio_widgets(self):
+        """切换 MCU 类型后重建 GPIO 行：删除旧容器，新建容器加到原父 layout。"""
+        parent_layout = getattr(self, "_mcu_io_gpio_parent_layout", None)
+        if parent_layout is None:
+            return
+        old_container = getattr(self, "mcu_io_gpio_container", None)
+        if old_container is not None:
+            parent_layout.removeWidget(old_container)
+            old_container.deleteLater()
+        self.mcu_io_gpio_container = QWidget()
+        self.mcu_io_gpio_container.setStyleSheet(
+            "background: transparent; border: none;"
+        )
+        container_layout = QVBoxLayout(self.mcu_io_gpio_container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(0)
+        self._populate_mcu_io_gpio_widgets(container_layout)
+        parent_layout.addWidget(self.mcu_io_gpio_container)
+        self._set_mcu_io_gpio_controls_enabled(self.is_mcu_io_connected)
 
     def set_mcu_io_instrument_manager(self, instrument_manager):
         self._mcu_io_manager = instrument_manager
@@ -607,10 +724,33 @@ class McuIoConnectionMixin:
         self.mcu_io_connect_btn.clicked.connect(
             self._on_mcu_io_connect_or_disconnect
         )
+        if getattr(self, "mcu_io_type_combo", None) is not None:
+            self.mcu_io_type_combo.currentIndexChanged.connect(
+                self._on_mcu_io_type_changed
+            )
         if getattr(self, "mcu_io_read_btn", None) is not None:
             self.mcu_io_read_btn.clicked.connect(self._on_mcu_io_read)
         self._bind_mcu_io_manager_signals()
         self._sync_mcu_io_from_manager()
+
+    def _on_mcu_io_type_changed(self, _idx=None):
+        """切换 MCU 类型（YD-RP2040 / CH9114F）。"""
+        if getattr(self, "is_mcu_io_connected", False) and self.mcu_io is not None:
+            self._mcu_io_log(
+                "[MCU] Type changed while connected. Please reconnect to apply."
+            )
+        # 刷新端口下拉占位符
+        if hasattr(self, "mcu_io_port_combo") and self.mcu_io_port_combo is not None:
+            self.mcu_io_port_combo.clear()
+            self.mcu_io_port_combo.setEnabled(True)
+            self.mcu_io_port_combo.addItem(self._get_mcu_io_port_placeholder())
+            self.mcu_io_connect_btn.setEnabled(False)
+        # 重建 GPIO 行
+        self._rebuild_mcu_io_gpio_widgets()
+        # 子类（McuPwrResetConfigMixin）可覆盖此钩子刷新 PwrON/Reset/Status
+        hook = getattr(self, "_on_mcu_io_type_changed_extra", None)
+        if callable(hook):
+            hook()
 
     def _set_mcu_io_gpio_controls_enabled(self, enabled: bool):
         for toggle in getattr(self, "mcu_io_output_toggles", {}).values():
@@ -646,22 +786,44 @@ class McuIoConnectionMixin:
             self.mcu_io_port_combo.currentText()
             if getattr(self, "mcu_io_port_combo", None) else ""
         )
-        if not text or text in ("Select MCU COM...", "No serial ports found"):
+        if not text:
+            return None
+        # 兼容占位符 / 未找到提示 / YD-RP2040 "COMxx - desc" / CH9114F "COMxx"
+        placeholders = (
+            "Select MCU COM...",
+            "Select CH9114F COM...",
+            "No serial ports found",
+            "No CH9114F ports found",
+        )
+        if text in placeholders:
             return None
         return text.split()[0]
 
     def _on_mcu_io_search(self):
+        mcu_type = self._current_mcu_io_type()
+        type_label = MCU_TYPE_LABELS.get(mcu_type, mcu_type)
+        is_ch9114f = mcu_type == MCU_TYPE_CH9114F
+
         if getattr(self, "_mcu_io_manager", None) is not None:
             self.set_mcu_io_status("● Searching")
-            self._mcu_io_log("[MCU] Scanning serial ports for YD RP2040...")
+            self._mcu_io_log(
+                f"[MCU] Scanning for {type_label} ports..."
+            )
             self.mcu_io_search_btn.setEnabled(False)
             self.mcu_io_connect_btn.setEnabled(False)
-            self._mcu_io_manager.scan_async("mcu_io")
-            return
+            # 走 InstrumentManager 时仅支持 YD-RP2040（serial_raw_repl）；
+            # CH9114F 走本地 worker 扫描
+            if not is_ch9114f:
+                self._mcu_io_manager.scan_async("mcu_io")
+                return
 
         if DEBUG_MOCK:
             self.mcu_io_port_combo.clear()
-            self.mcu_io_port_combo.addItem("[MOCK] COM98 - Mock YD RP2040")
+            mock_label = (
+                "[MOCK] COM99 - Mock CH9114F"
+                if is_ch9114f else "[MOCK] COM98 - Mock YD RP2040"
+            )
+            self.mcu_io_port_combo.addItem(mock_label)
             self.mcu_io_port_combo.setEnabled(True)
             self.set_mcu_io_status("● Mock Ready")
             self.mcu_io_connect_btn.setEnabled(True)
@@ -672,11 +834,11 @@ class McuIoConnectionMixin:
             return
 
         self.set_mcu_io_status("● Searching")
-        self._mcu_io_log("[MCU] Scanning serial ports for YD RP2040...")
+        self._mcu_io_log(f"[MCU] Scanning for {type_label} ports...")
         self.mcu_io_search_btn.setEnabled(False)
         self.mcu_io_connect_btn.setEnabled(False)
 
-        worker = _SearchMcuIoWorker()
+        worker = _SearchMcuIoWorker(mcu_type=mcu_type)
         thread = QThread()
         worker.moveToThread(thread)
 
@@ -698,18 +860,20 @@ class McuIoConnectionMixin:
         self._mcu_io_search_worker = None
 
     def _on_mcu_io_search_done(self, ports):
+        mcu_type = self._current_mcu_io_type()
+        type_label = MCU_TYPE_LABELS.get(mcu_type, mcu_type)
         self.mcu_io_port_combo.clear()
         self.mcu_io_port_combo.setEnabled(True)
         if ports:
             for port in ports:
                 self.mcu_io_port_combo.addItem(port)
             self.set_mcu_io_status(f"● Found {len(ports)}")
-            self._mcu_io_log(f"[MCU] Found {len(ports)} serial port(s).")
+            self._mcu_io_log(f"[MCU] Found {len(ports)} {type_label} port(s).")
         else:
-            self.mcu_io_port_combo.addItem("No serial ports found")
+            self.mcu_io_port_combo.addItem(self._get_mcu_io_not_found_text())
             self.mcu_io_port_combo.setEnabled(False)
             self.set_mcu_io_status("● Not Found", is_error=True)
-            self._mcu_io_log("[MCU] No serial ports found.")
+            self._mcu_io_log(f"[MCU] No {type_label} ports found.")
         self.mcu_io_search_btn.setEnabled(True)
         self.mcu_io_connect_btn.setEnabled(bool(ports))
 
@@ -732,8 +896,13 @@ class McuIoConnectionMixin:
             self.set_mcu_io_status("● Select port first", is_error=True)
             return
 
+        mcu_type = self._current_mcu_io_type()
+        type_label = MCU_TYPE_LABELS.get(mcu_type, mcu_type)
+
         manager = getattr(self, "_mcu_io_manager", None)
-        if manager is not None:
+        if manager is not None and mcu_type == MCU_TYPE_YD_RP2040:
+            # 走 InstrumentManager 仅支持 YD-RP2040（serial_raw_repl）；
+            # CH9114F 走本地 worker
             existing = manager.get_session(self._mcu_io_session_id)
             if existing and existing.connected:
                 self._sync_mcu_io_from_manager()
@@ -741,7 +910,7 @@ class McuIoConnectionMixin:
             self.set_mcu_io_status("● Connecting")
             self.mcu_io_search_btn.setEnabled(False)
             self.mcu_io_connect_btn.setEnabled(False)
-            self._mcu_io_log(f"[MCU] Connecting YD RP2040 on {port}...")
+            self._mcu_io_log(f"[MCU] Connecting {type_label} on {port}...")
             from core.instruments import InstrumentSpec
             manager.connect_async(InstrumentSpec(
                 instrument_type="mcu_io",
@@ -758,9 +927,11 @@ class McuIoConnectionMixin:
         self.set_mcu_io_status("● Connecting")
         self.mcu_io_search_btn.setEnabled(False)
         self.mcu_io_connect_btn.setEnabled(False)
-        self._mcu_io_log(f"[MCU] Connecting YD RP2040 on {port}...")
+        self._mcu_io_log(f"[MCU] Connecting {type_label} on {port}...")
 
-        worker = _ConnectMcuIoWorker(port, self._mcu_io_baudrate)
+        worker = _ConnectMcuIoWorker(
+            port, mcu_type=mcu_type, baudrate=self._mcu_io_baudrate
+        )
         thread = QThread()
         worker.moveToThread(thread)
 
@@ -808,13 +979,14 @@ class McuIoConnectionMixin:
     def _apply_default_gpio_highz(self):
         if not self.is_mcu_io_connected or self.mcu_io is None:
             return
-        for pin in MCU_IO_GPIO_PINS:
+        pins = self._get_mcu_io_gpio_pins()
+        for pin in pins:
             toggle = getattr(self, "mcu_io_output_toggles", {}).get(pin)
             if toggle is not None:
                 toggle.setValue(GPIO_STATE_HIGHZ)
         if self._mcu_io_default_thread is not None and self._mcu_io_default_thread.isRunning():
             return
-        worker = _GpioDefaultHighZWorker(self.mcu_io, MCU_IO_GPIO_PINS)
+        worker = _GpioDefaultHighZWorker(self.mcu_io, pins)
         thread = QThread()
         worker.moveToThread(thread)
 
@@ -829,7 +1001,8 @@ class McuIoConnectionMixin:
 
         self._mcu_io_default_worker = worker
         self._mcu_io_default_thread = thread
-        self._mcu_io_log("[MCU] Setting GPIO0/GPIO1 to High-Z (default)...")
+        pin_label = ", ".join(f"GPIO{p}" for p in pins)
+        self._mcu_io_log(f"[MCU] Setting {pin_label} to High-Z (default)...")
         thread.start()
 
     def _on_mcu_io_default_thread_cleanup(self):
@@ -852,6 +1025,9 @@ class McuIoConnectionMixin:
         self._mcu_io_log(f"[MCU] Connection failed: {err}")
 
     def _sync_mcu_io_from_manager(self):
+        # CH9114F 不走 InstrumentManager，直接跳过避免误清空本地连接状态
+        if self._current_mcu_io_type() == MCU_TYPE_CH9114F:
+            return
         manager = getattr(self, "_mcu_io_manager", None)
         if manager is None or not hasattr(self, "mcu_io_connect_btn"):
             return
@@ -874,6 +1050,8 @@ class McuIoConnectionMixin:
     def _on_mcu_io_manager_session_connected(self, session_id):
         if session_id != self._mcu_io_session_id:
             return
+        if self._current_mcu_io_type() == MCU_TYPE_CH9114F:
+            return
         was_connected = self.is_mcu_io_connected
         self._sync_mcu_io_from_manager()
         if not was_connected and self.is_mcu_io_connected:
@@ -883,16 +1061,22 @@ class McuIoConnectionMixin:
     def _on_mcu_io_manager_session_disconnected(self, session_id):
         if session_id != self._mcu_io_session_id:
             return
+        if self._current_mcu_io_type() == MCU_TYPE_CH9114F:
+            return
         self._sync_mcu_io_from_manager()
         self._mcu_io_log("[MCU] Disconnected (shared session).")
 
     def _on_mcu_io_manager_connect_failed(self, session_id, error):
         if session_id != self._mcu_io_session_id:
             return
+        if self._current_mcu_io_type() == MCU_TYPE_CH9114F:
+            return
         self._on_mcu_io_connect_error(error)
 
     def _on_mcu_io_manager_scan_finished(self, instrument_type, candidates):
         if instrument_type != "mcu_io" or not hasattr(self, "mcu_io_port_combo"):
+            return
+        if self._current_mcu_io_type() == MCU_TYPE_CH9114F:
             return
         self.mcu_io_port_combo.clear()
         self.mcu_io_port_combo.setEnabled(True)
@@ -913,6 +1097,8 @@ class McuIoConnectionMixin:
     def _on_mcu_io_manager_scan_failed(self, instrument_type, error):
         if instrument_type != "mcu_io":
             return
+        if self._current_mcu_io_type() == MCU_TYPE_CH9114F:
+            return
         self.set_mcu_io_status("● Search Failed", is_error=True)
         self._mcu_io_log(f"[MCU] Search failed: {error}")
         self.mcu_io_search_btn.setEnabled(True)
@@ -922,13 +1108,15 @@ class McuIoConnectionMixin:
         inst = self.mcu_io
         if inst is None:
             return
+        pins = self._get_mcu_io_gpio_pins()
         try:
-            for pin in MCU_IO_GPIO_PINS:
+            for pin in pins:
                 inst.in_pull(pin, "none")
+            pin_label = ", ".join(f"GPIO{p}" for p in pins)
             self._mcu_io_log(
-                "[MCU] Restored GPIO0/GPIO1 to High-Z before disconnect."
+                f"[MCU] Restored {pin_label} to High-Z before disconnect."
             )
-            for pin in MCU_IO_GPIO_PINS:
+            for pin in pins:
                 toggle = getattr(self, "mcu_io_output_toggles", {}).get(pin)
                 if toggle is not None:
                     toggle.setValue(GPIO_STATE_HIGHZ)
@@ -940,8 +1128,10 @@ class McuIoConnectionMixin:
             self._mcu_io_log(f"[MCU] Restore High-Z failed: {e}")
 
     def _disconnect_mcu_io(self):
+        mcu_type = self._current_mcu_io_type()
         manager = getattr(self, "_mcu_io_manager", None)
-        if manager is not None:
+        # 仅 YD-RP2040 走 InstrumentManager；CH9114F 走本地断开
+        if manager is not None and mcu_type == MCU_TYPE_YD_RP2040:
             session = manager.get_session(self._mcu_io_session_id)
             if session and session.connected:
                 self.set_mcu_io_status("● Disconnecting")
@@ -1417,7 +1607,7 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
         font = self.mcu_pr_poweron_combo.font()
         font.setPixelSize(11)
         self.mcu_pr_poweron_combo.setFont(font)
-        for opt in MCU_PWR_RESET_GPIO_OPTIONS:
+        for opt in self._get_mcu_io_gpio_options():
             self.mcu_pr_poweron_combo.addItem(opt)
         self._mcu_pr_select_combo(
             self.mcu_pr_poweron_combo, MCU_PWR_RESET_DEFAULTS["poweron"]
@@ -1477,7 +1667,7 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
         font = self.mcu_pr_reset_combo.font()
         font.setPixelSize(11)
         self.mcu_pr_reset_combo.setFont(font)
-        for opt in MCU_PWR_RESET_GPIO_OPTIONS:
+        for opt in self._get_mcu_io_gpio_options():
             self.mcu_pr_reset_combo.addItem(opt)
         self._mcu_pr_select_combo(
             self.mcu_pr_reset_combo, MCU_PWR_RESET_DEFAULTS["reset"]
@@ -1531,7 +1721,7 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
         font = self.mcu_pr_status_combo.font()
         font.setPixelSize(11)
         self.mcu_pr_status_combo.setFont(font)
-        for opt in MCU_PWR_RESET_GPIO_OPTIONS:
+        for opt in self._get_mcu_io_gpio_options():
             self.mcu_pr_status_combo.addItem(opt)
         self._mcu_pr_select_combo(
             self.mcu_pr_status_combo, MCU_PWR_RESET_DEFAULTS["status"]
@@ -1641,6 +1831,41 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
             self.mcu_pr_status_polarity_toggle.setEnabled(checked)
         if getattr(self, "mcu_pr_status_mode_toggle", None) is not None:
             self.mcu_pr_status_mode_toggle.setEnabled(checked)
+
+    def _refresh_mcu_pr_gpio_options(self):
+        """根据当前 MCU 类型刷新 PwrON/Reset/Status 三个 GPIO 下拉选项。
+
+        尽量保留用户之前的选择；若旧选择在新类型中不存在则回退到默认。
+        """
+        options = self._get_mcu_io_gpio_options()
+        defaults = MCU_PWR_RESET_DEFAULTS
+        for name, combo, default_key in (
+            ("poweron", "mcu_pr_poweron_combo", "poweron"),
+            ("reset", "mcu_pr_reset_combo", "reset"),
+            ("status", "mcu_pr_status_combo", "status"),
+        ):
+            widget = getattr(self, combo, None)
+            if widget is None:
+                continue
+            prev = widget.currentText()
+            widget.blockSignals(True)
+            widget.clear()
+            for opt in options:
+                widget.addItem(opt)
+            desired = prev if prev in options else defaults.get(default_key)
+            self._mcu_pr_select_combo(widget, desired)
+            widget.blockSignals(False)
+        # 切换后 reset/status 的使能状态保持一致
+        self._on_mcu_pr_reset_enable_toggled(
+            self.mcu_pr_reset_enable_cb.isChecked()
+        )
+        self._on_mcu_pr_status_enable_toggled(
+            self.mcu_pr_status_enable_cb.isChecked()
+        )
+
+    def _on_mcu_io_type_changed_extra(self):
+        """McuIoConnectionMixin 在切换 MCU 类型时回调，刷新 Pwr/Reset/Status 选项。"""
+        self._refresh_mcu_pr_gpio_options()
 
     def get_mcu_pwr_reset_config(self):
         reset_enabled = self.mcu_pr_reset_enable_cb.isChecked()

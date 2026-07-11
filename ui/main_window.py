@@ -224,9 +224,9 @@ class _CollectionPage(McuIoConnectionMixin, QWidget):
 
         title_row = QHBoxLayout()
         title_row.setSpacing(8)
-        title_label = QLabel("MCU IO (YD RP2040)")
-        title_label.setStyleSheet("font-size: 15px; font-weight: 700;")
-        title_row.addWidget(title_label)
+        self.mcu_io_title_label = QLabel("MCU IO (YD-RP2040)")
+        self.mcu_io_title_label.setStyleSheet("font-size: 15px; font-weight: 700;")
+        title_row.addWidget(self.mcu_io_title_label)
         title_row.addStretch(1)
         body_layout.addLayout(title_row)
 
@@ -276,6 +276,13 @@ class _CollectionPage(McuIoConnectionMixin, QWidget):
 
     def append_log(self, msg):
         self.execution_logs.append_log(msg)
+
+    def _on_mcu_io_type_changed_extra(self):
+        # MCU 类型切换时同步页面标题
+        mcu_type = self._current_mcu_io_type()
+        label = "YD-RP2040" if mcu_type == "yd_rp2040" else "CH9114F"
+        if hasattr(self, "mcu_io_title_label"):
+            self.mcu_io_title_label.setText(f"MCU IO ({label})")
 
 
 class MainWindow(CleanupMixin, QMainWindow):
