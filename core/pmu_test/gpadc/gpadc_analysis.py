@@ -30,11 +30,21 @@ def compute_calibration(adc_raw_data, adc_mean, adc_min, adc_max):
 
     v_low, m_low = adc_raw_data[idx_low], adc_mean[idx_low]
     v_high, m_high = adc_raw_data[idx_high], adc_mean[idx_high]
-    k = (m_high - m_low) / (v_high - v_low)
-    b = m_low - k * v_low
 
-    mean_cali = [(adc - b) / k for adc in adc_mean]
-    adc_min_cali = [(adc - b) / k for adc in adc_min]
-    adc_max_cali = [(adc - b) / k for adc in adc_max]
+    # 退化场景保护：两点电压相同或 ADC 读数无变化时，斜率不可解，
+    # 跳过标定，返回原始数据避免 ZeroDivisionError。
+    if v_high == v_low or m_high == m_low:
+        k = 0.0
+        b = 0.0
+        mean_cali = list(adc_mean)
+        adc_min_cali = list(adc_min)
+        adc_max_cali = list(adc_max)
+    else:
+        k = (m_high - m_low) / (v_high - v_low)
+        b = m_low - k * v_low
+
+        mean_cali = [(adc - b) / k for adc in adc_mean]
+        adc_min_cali = [(adc - b) / k for adc in adc_min]
+        adc_max_cali = [(adc - b) / k for adc in adc_max]
 
     return k, b, mean_cali, adc_min_cali, adc_max_cali, v_low, m_low, v_high, m_high

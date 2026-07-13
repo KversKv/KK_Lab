@@ -1524,11 +1524,16 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         k, b, mean_cali, adc_min_cali, adc_max_cali, v_low, m_low, v_high, m_high = \
             compute_calibration(adc_raw_data, adc_mean, adc_min, adc_max)
 
+        if k == 0.0:
+            self._append_log(
+                "[WARN] 标定斜率 k=0（ADC 读数无变化或采样点电压相同），跳过标定，使用原始数据"
+            )
         self._append_log(f"[INFO] Calibration: k={k:.6f} (LSB/V), b={b:.6f} (LSB)")
 
         self._append_log(
             'Voltage,RawMean,mean_cali,Δmean(mV),RawMin,RawMax,min_cali,max_cali,Δmin(mV),Δmax(mV)'
         )
+        n = len(adc_raw_data)
         for i in range(n):
             v_in = adc_raw_data[i]
             delta_mean_mv = (mean_cali[i] - v_in) * 1000
