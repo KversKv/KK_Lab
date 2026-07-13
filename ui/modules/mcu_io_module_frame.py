@@ -65,7 +65,12 @@ _GPIO_LEVEL_OPTIONS = [
 
 MCU_PWR_RESET_GPIO_OPTIONS = tuple(f"GPIO{i}" for i in range(0, 30))
 
-MCU_PWR_RESET_DEFAULTS = {"poweron": "GPIO0", "reset": "GPIO1", "status": "GPIO2"}
+MCU_PWR_RESET_DEFAULTS = {
+    "poweron": "GPIO0",
+    "reset": "GPIO1",
+    "status": "GPIO2",
+    "ctrl": "GPIO3",
+}
 
 _POLARITY_OPTIONS = [
     {"key": "rising", "label": "Rising Edge", "svg": os.path.join(_PAGE_SVGS_DIR, "polarity_rising.svg")},
@@ -1741,6 +1746,66 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
         grid.addWidget(status_label_container, 2, 0, Qt.AlignVCenter)
         grid.addLayout(status_row, 2, 1)
 
+        # ---- Ctrl IO（通用控制 GPIO，行为同 Status：使能+极性+Pulse/Level）----
+        ctrl_label_row = QHBoxLayout()
+        ctrl_label_row.setContentsMargins(0, 0, 0, 0)
+        ctrl_label_row.setSpacing(4)
+        ctrl_label = QLabel("Ctrl")
+        ctrl_label.setStyleSheet(label_style_sm)
+        self.mcu_pr_ctrl_enable_cb = QCheckBox()
+        self.mcu_pr_ctrl_enable_cb.setChecked(False)
+        self.mcu_pr_ctrl_enable_cb.setToolTip(
+            "Enable Ctrl GPIO for generic IO control (e.g. DUT mode switch). "
+            "When unchecked, Ctrl step is skipped."
+        )
+        self.mcu_pr_ctrl_enable_cb.setStyleSheet("""
+            QCheckBox {
+                spacing: 0px;
+                background: transparent;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                image: url("%s");
+            }
+            QCheckBox::indicator:checked {
+                image: url("%s");
+            }
+        """ % (_cb_unchecked, _cb_checked))
+        ctrl_label_row.addWidget(ctrl_label)
+        ctrl_label_row.addWidget(self.mcu_pr_ctrl_enable_cb)
+        ctrl_label_row.addStretch()
+        ctrl_label_container = QWidget()
+        ctrl_label_container.setFixedWidth(label_width)
+        ctrl_label_container.setStyleSheet("background: transparent;")
+        ctrl_label_container.setLayout(ctrl_label_row)
+
+        self.mcu_pr_ctrl_combo = DarkComboBox(bg="#091426", border="#17345f")
+        self.mcu_pr_ctrl_combo.setFixedHeight(MCU_IO_BTN_HEIGHT)
+        self.mcu_pr_ctrl_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        font = self.mcu_pr_ctrl_combo.font()
+        font.setPixelSize(11)
+        self.mcu_pr_ctrl_combo.setFont(font)
+        for opt in self._get_mcu_io_gpio_options():
+            self.mcu_pr_ctrl_combo.addItem(opt)
+        self._mcu_pr_select_combo(
+            self.mcu_pr_ctrl_combo, MCU_PWR_RESET_DEFAULTS["ctrl"]
+        )
+        self.mcu_pr_ctrl_combo.setMinimumWidth(56)
+        self.mcu_pr_ctrl_polarity_toggle = PolarityToggle()
+        self.mcu_pr_ctrl_mode_toggle = ModeToggle()
+        self.mcu_pr_ctrl_mode_toggle.setToolTip(
+            "Pulse: send a single pulse. Level: hold the active level until changed."
+        )
+        ctrl_row = QHBoxLayout()
+        ctrl_row.setContentsMargins(0, 0, 0, 0)
+        ctrl_row.setSpacing(3)
+        ctrl_row.addWidget(self.mcu_pr_ctrl_combo, 1)
+        ctrl_row.addWidget(self.mcu_pr_ctrl_polarity_toggle, 0, Qt.AlignVCenter)
+        ctrl_row.addWidget(self.mcu_pr_ctrl_mode_toggle, 0, Qt.AlignVCenter)
+        grid.addWidget(ctrl_label_container, 3, 0, Qt.AlignVCenter)
+        grid.addLayout(ctrl_row, 3, 1)
+
         pulse_width_label = QLabel("Pulse (ms)")
         pulse_width_label.setStyleSheet(label_style_sm)
         pulse_width_label.setFixedWidth(label_width)
@@ -1791,8 +1856,8 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
         pulse_width_row.setContentsMargins(0, 0, 0, 0)
         pulse_width_row.setSpacing(3)
         pulse_width_row.addWidget(self.mcu_pr_pulse_width_spin, 1)
-        grid.addWidget(pulse_width_label, 3, 0, Qt.AlignVCenter)
-        grid.addLayout(pulse_width_row, 3, 1)
+        grid.addWidget(pulse_width_label, 4, 0, Qt.AlignVCenter)
+        grid.addLayout(pulse_width_row, 4, 1)
 
         layout.addLayout(grid)
 
@@ -1805,6 +1870,12 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
         )
         self._on_mcu_pr_status_enable_toggled(
             self.mcu_pr_status_enable_cb.isChecked()
+        )
+        self.mcu_pr_ctrl_enable_cb.toggled.connect(
+            self._on_mcu_pr_ctrl_enable_toggled
+        )
+        self._on_mcu_pr_ctrl_enable_toggled(
+            self.mcu_pr_ctrl_enable_cb.isChecked()
         )
 
         self.bind_mcu_io_signals()
@@ -1832,8 +1903,16 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
         if getattr(self, "mcu_pr_status_mode_toggle", None) is not None:
             self.mcu_pr_status_mode_toggle.setEnabled(checked)
 
+    def _on_mcu_pr_ctrl_enable_toggled(self, checked):
+        if getattr(self, "mcu_pr_ctrl_combo", None) is not None:
+            self.mcu_pr_ctrl_combo.setEnabled(checked)
+        if getattr(self, "mcu_pr_ctrl_polarity_toggle", None) is not None:
+            self.mcu_pr_ctrl_polarity_toggle.setEnabled(checked)
+        if getattr(self, "mcu_pr_ctrl_mode_toggle", None) is not None:
+            self.mcu_pr_ctrl_mode_toggle.setEnabled(checked)
+
     def _refresh_mcu_pr_gpio_options(self):
-        """根据当前 MCU 类型刷新 PwrON/Reset/Status 三个 GPIO 下拉选项。
+        """根据当前 MCU 类型刷新 PwrON/Reset/Status/Ctrl 四个 GPIO 下拉选项。
 
         尽量保留用户之前的选择；若旧选择在新类型中不存在则回退到默认。
         """
@@ -1843,6 +1922,7 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
             ("poweron", "mcu_pr_poweron_combo", "poweron"),
             ("reset", "mcu_pr_reset_combo", "reset"),
             ("status", "mcu_pr_status_combo", "status"),
+            ("ctrl", "mcu_pr_ctrl_combo", "ctrl"),
         ):
             widget = getattr(self, combo, None)
             if widget is None:
@@ -1855,12 +1935,15 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
             desired = prev if prev in options else defaults.get(default_key)
             self._mcu_pr_select_combo(widget, desired)
             widget.blockSignals(False)
-        # 切换后 reset/status 的使能状态保持一致
+        # 切换后 reset/status/ctrl 的使能状态保持一致
         self._on_mcu_pr_reset_enable_toggled(
             self.mcu_pr_reset_enable_cb.isChecked()
         )
         self._on_mcu_pr_status_enable_toggled(
             self.mcu_pr_status_enable_cb.isChecked()
+        )
+        self._on_mcu_pr_ctrl_enable_toggled(
+            self.mcu_pr_ctrl_enable_cb.isChecked()
         )
 
     def _on_mcu_io_type_changed_extra(self):
@@ -1870,6 +1953,7 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
     def get_mcu_pwr_reset_config(self):
         reset_enabled = self.mcu_pr_reset_enable_cb.isChecked()
         status_enabled = self.mcu_pr_status_enable_cb.isChecked()
+        ctrl_enabled = self.mcu_pr_ctrl_enable_cb.isChecked()
         return {
             "poweron_channel": self.mcu_pr_poweron_combo.currentText(),
             "poweron_polarity": self.mcu_pr_poweron_polarity_toggle.value(),
@@ -1889,6 +1973,16 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
             ),
             "status_mode": (
                 self.mcu_pr_status_mode_toggle.value() if status_enabled else None
+            ),
+            "ctrl_enabled": ctrl_enabled,
+            "ctrl_channel": (
+                self.mcu_pr_ctrl_combo.currentText() if ctrl_enabled else None
+            ),
+            "ctrl_polarity": (
+                self.mcu_pr_ctrl_polarity_toggle.value() if ctrl_enabled else None
+            ),
+            "ctrl_mode": (
+                self.mcu_pr_ctrl_mode_toggle.value() if ctrl_enabled else None
             ),
             "pulse_width": self.get_mcu_pr_pulse_width(),
         }
@@ -2055,6 +2149,45 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
         level = active_level if active else (1 - active_level)
         return self._mcu_pr_run_level(
             "Status", pin, level, on_done=on_done
+        )
+
+    def mcu_ctrl_toggle(self, pulse_width=None, on_done=None):
+        """Ctrl IO 脉冲触发（仅在 Pulse 模式下生效）。"""
+        cfg = self.get_mcu_pwr_reset_config()
+        if pulse_width is None:
+            pulse_width = cfg["pulse_width"]
+        if not cfg["ctrl_enabled"]:
+            self._mcu_io_log("[MCU] Ctrl disabled, skipped.")
+            return False
+        pin = self._mcu_pr_pin_index(cfg["ctrl_channel"])
+        if pin is None:
+            self._mcu_io_log("[MCU] Invalid Ctrl channel.")
+            return False
+        if cfg["ctrl_mode"] == MCU_DRIVE_MODE_LEVEL:
+            self._mcu_io_log(
+                "[MCU] Ctrl is in Level mode; use mcu_set_ctrl(active=...) instead."
+            )
+            return False
+        return self._mcu_pr_run_pulses(
+            [("Ctrl", pin, cfg["ctrl_polarity"])],
+            pulse_width=pulse_width,
+            on_done=on_done,
+        )
+
+    def mcu_set_ctrl(self, active=True, on_done=None):
+        """Ctrl IO 电平保持（Level 模式）。"""
+        cfg = self.get_mcu_pwr_reset_config()
+        if not cfg["ctrl_enabled"]:
+            self._mcu_io_log("[MCU] Ctrl disabled, skipped.")
+            return False
+        pin = self._mcu_pr_pin_index(cfg["ctrl_channel"])
+        if pin is None:
+            self._mcu_io_log("[MCU] Invalid Ctrl channel.")
+            return False
+        active_level = 1 if cfg["ctrl_polarity"] == "rising" else 0
+        level = active_level if active else (1 - active_level)
+        return self._mcu_pr_run_level(
+            "Ctrl", pin, level, on_done=on_done
         )
 
     def mcu_power_on_reset_sequence(self, pulse_width=None, on_done=None):
