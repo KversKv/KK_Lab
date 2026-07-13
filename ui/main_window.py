@@ -366,6 +366,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(0)
 
         self._create_main_content()
         self.nav.create_submenus()

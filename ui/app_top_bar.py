@@ -21,12 +21,11 @@ from PySide6.QtWidgets import (
 
 from ui.ai.ai_panel_button import AIPanelButton
 from ui.resource_path import get_resource_base
-from ui.utils.icon_utils import tinted_svg_icon, tinted_svg_pixmap
+from ui.utils.icon_utils import tinted_svg_pixmap
 
-_TITLE_BAR_HEIGHT = 36
+_TITLE_BAR_HEIGHT = 32
 
 _APP_ICON_SVG = os.path.join(get_resource_base(), "resources", "icons", "kk_lab.svg")
-_CLOSE_ICON_SVG = os.path.join(get_resource_base(), "resources", "icons", "x-close.svg")
 
 _BAR_STYLE = """
 QWidget#appTopBar {
@@ -48,8 +47,8 @@ QPushButton#winCtrlBtn,
 QPushButton#winCloseBtn {
     min-width: 46px;
     max-width: 46px;
-    min-height: 36px;
-    max-height: 36px;
+    min-height: 32px;
+    max-height: 32px;
     padding: 0px;
     border: none;
     border-radius: 0px;
@@ -122,7 +121,7 @@ class AppTopBar(QWidget):
         self._window = self.window()
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 0, 0, 0)
+        layout.setContentsMargins(16, 0, 0, 0)
         layout.setSpacing(8)
 
         self._icon_label = QLabel()
@@ -161,12 +160,8 @@ class AppTopBar(QWidget):
     def _make_caption_button(self, object_name, kind, tooltip, slot):
         btn = QPushButton(self)
         btn.setObjectName(object_name)
-        if kind == "close" and os.path.isfile(_CLOSE_ICON_SVG):
-            btn.setIcon(tinted_svg_icon(_CLOSE_ICON_SVG, "#c6d4f2", 14))
-            btn.setIconSize(QSize(14, 14))
-        else:
-            btn.setIcon(_caption_icon(kind))
-            btn.setIconSize(QSize(10, 10))
+        btn.setIcon(_caption_icon(kind))
+        btn.setIconSize(QSize(12, 12))
         btn.setCursor(QCursor(Qt.ArrowCursor))
         btn.setToolTip(tooltip)
         btn.setFocusPolicy(Qt.NoFocus)
