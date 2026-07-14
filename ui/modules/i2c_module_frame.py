@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QLabel, QFrame, QSizePolicy, QLineEdit,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
     QFileDialog, QMessageBox, QMenu, QScrollArea, QStackedWidget,
-    QButtonGroup
+    QButtonGroup, QPlainTextEdit
 )
 from PySide6.QtCore import (
     Qt, QThread, Signal, QObject, QTimer, QDateTime, QRegularExpression
@@ -121,6 +121,14 @@ def _parse_hex_int(text):
         return None
     val = int(t, 16) if t else 0
     return -val if neg else val
+
+
+def _parse_int_safe(text):
+    """安全解析十进制整数（用于位索引、延时等），失败返回 0。"""
+    try:
+        return int((text or "").strip())
+    except (ValueError, TypeError):
+        return 0
 
 
 def _i2c_template_dir():
@@ -403,6 +411,508 @@ class _I2cChipCheckWorker(QObject):
                 pass
 
 
+class _I2cSequenceWorker(QObject):
+    """按需初始化 I2C → 解析 DSL → 执行（支持变量/循环/条件）。
+
+    commands 为字符串列表，每条是一行 DSL 指令。
+    """
+    progress = Signal(str)   # 执行日志
+    finished = Signal()       # 正常结束
+    error = Signal(str)       # 致命异常
+
+    def __init__(self, dll_path, speed_mode, device_addr, width_flag,
+                 commands, script_name=""):
+        super().__init__()
+        self._dll = dll_path
+        self._speed = speed_mode
+        self._dev = device_addr
+        self._width = width_flag
+        self._commands = commands or []
+        self._name = script_name
+        self._stop = False
+        self._vars = {}
+
+    def request_stop(self):
+        self._stop = True
+
+    def run(self):
+        from lib.i2c.i2c_interface_x64 import I2CInterface
+        i2c = I2CInterface(dll_path=self._dll, speed_mode=self._speed)
+        try:
+            if not i2c.initialize():
+                self.error.emit("I2C 接口初始化失败 (DLL 加载或设备打开失败)")
+                return
+            ast_nodes, err = _build_ast(self._commands)
+            if err:
+                self.error.emit(err)
+                return
+            total = len(self._commands)
+            if self._name:
+                self.progress.emit("--- {0} ({1} 行) ---".format(
+                    self._name, total))
+            else:
+                self.progress.emit("序列开始: {0} 行".format(total))
+            self._exec_block(i2c, ast_nodes, "")
+            if self._stop:
+                self.progress.emit("已用户停止")
+            else:
+                self.progress.emit("序列执行完成")
+            self.finished.emit()
+        except Exception as e:
+            logger.error("I2C sequence failed: %s", e, exc_info=True)
+            self.error.emit(str(e))
+        finally:
+            try:
+                i2c.close()
+            except Exception:
+                pass
+
+    def _exec_block(self, i2c, nodes, prefix):
+        for node in nodes:
+            if self._stop:
+                return
+            kind = node[0]
+            if kind == "CMD":
+                self._exec_cmd(i2c, node[1], prefix)
+            elif kind == "LOOP":
+                _, count_expr, body = node
+                count = _resolve_token(count_expr, 10, self._vars)
+                self.progress.emit("{0}LOOP x{1}".format(prefix, count))
+                for it in range(count):
+                    if self._stop:
+                        return
+                    self._exec_block(i2c, body,
+                                     "{0}[{1}/{2}] ".format(prefix, it + 1, count))
+            elif kind == "IF":
+                _, cond, body = node
+                try:
+                    result = _eval_condition(i2c, self._dev, self._width,
+                                             cond, self._vars,
+                                             self.progress.emit)
+                except Exception as e:
+                    self.progress.emit("{0}IF 条件求值失败: {1}".format(prefix, e))
+                    raise
+                if result:
+                    self._exec_block(i2c, body, prefix)
+
+    def _exec_cmd(self, i2c, cmd, prefix):
+        op = str(cmd.get("type", "")).upper()
+        reg_bits = _reg_addr_bits(self._width)
+        data_bits = _data_bits(self._width)
+        if op == "DELAY":
+            ms = _resolve_token(cmd.get("ms", "0"), 10, self._vars)
+            self.progress.emit("{0}DELAY {1} ms".format(prefix, ms))
+            QThread.msleep(max(0, ms))
+            return
+        if op == "WRITE_BITS":
+            addr = _resolve_token(cmd["addr"], 16, self._vars)
+            high = _resolve_token(cmd["high"], 10, self._vars)
+            low = _resolve_token(cmd["low"], 10, self._vars)
+            value = _resolve_token(cmd["value"], 16, self._vars)
+            self.progress.emit(
+                "{0}WRITE_BITS addr={1} [{2}:{3}] = {4}".format(
+                    prefix, _fmt_hex(addr, reg_bits), high, low,
+                    _fmt_hex(value, data_bits)))
+            i2c.write(self._dev, addr, value, self._width, high, low)
+            return
+        if op == "WRITE":
+            addr = _resolve_token(cmd["addr"], 16, self._vars)
+            value = _resolve_token(cmd["value"], 16, self._vars)
+            self.progress.emit(
+                "{0}WRITE addr={1} = {2}".format(
+                    prefix, _fmt_hex(addr, reg_bits),
+                    _fmt_hex(value, data_bits)))
+            i2c.write(self._dev, addr, value, self._width, -1, -1)
+            return
+        if op == "READ":
+            addr = _resolve_token(cmd["addr"], 16, self._vars)
+            val = i2c.read(self._dev, addr, self._width)
+            to_var = cmd.get("to")
+            if to_var:
+                self._vars[to_var] = val
+                self.progress.emit(
+                    "{0}READ addr={1} => {2} ({3}) -> ${4}".format(
+                        prefix, _fmt_hex(addr, reg_bits),
+                        _fmt_hex(val, data_bits), val, to_var))
+            else:
+                self.progress.emit(
+                    "{0}READ addr={1} => {2} ({3})".format(
+                        prefix, _fmt_hex(addr, reg_bits),
+                        _fmt_hex(val, data_bits), val))
+            return
+        if op == "READ_RANGE":
+            start = _resolve_token(cmd["start"], 16, self._vars)
+            stop = _resolve_token(cmd["stop"], 16, self._vars)
+            step = _resolve_token(cmd.get("step", "1"), 10, self._vars) or 1
+            delay = _resolve_token(cmd.get("delay", "0"), 10, self._vars)
+            self.progress.emit(
+                "{0}READ_RANGE {1}..{2} step={3} delay={4}ms".format(
+                    prefix, _fmt_hex(start, reg_bits),
+                    _fmt_hex(stop, reg_bits), step, delay))
+            addr = start
+            while addr <= stop:
+                if self._stop:
+                    return
+                val = i2c.read(self._dev, addr, self._width)
+                self.progress.emit(
+                    "  {0} => {1} ({2})".format(
+                        _fmt_hex(addr, reg_bits),
+                        _fmt_hex(val, data_bits), val))
+                addr += step
+                if delay > 0 and addr <= stop:
+                    QThread.msleep(delay)
+            return
+        self.progress.emit("{0}未知指令(跳过): {1}".format(prefix, op))
+
+
+# ---------------------------------------------------------------------------
+# 序列脚本 DSL 解析（变量 / 循环 / 条件 / 批量读取）
+# ---------------------------------------------------------------------------
+
+
+def _strip_dsl_line(raw):
+    """剥离注释与列表标记，返回净指令文本；空行返回 ''。"""
+    # 行内注释 // 或 # （# 必须在行首或前面是空白才视为整行注释，行内 # 也剥）
+    line = raw
+    # 整行注释
+    stripped = line.strip()
+    if stripped.startswith("#") or stripped.startswith("//"):
+        return ""
+    # 行内 // 注释
+    if "//" in line:
+        line = line.split("//", 1)[0]
+    line = line.strip()
+    # 去掉前导 "- " 列表标记
+    if line.startswith("-"):
+        line = line[1:].strip()
+    return line
+
+
+def _parse_dsl_line(raw):
+    """解析一行 DSL，返回指令 dict；空行/注释返回 None。
+
+    数值解析规则（在执行时按 default_base 解析，这里只保留 token 字符串）：
+      地址/寄存器相关参数 → 默认十六进制
+      步长/延时/循环次数/位号 → 默认十进制
+      0x 前缀 → 强制十六进制
+      $ 前缀 → 变量
+    """
+    line = _strip_dsl_line(raw)
+    if not line:
+        return None
+    parts = line.split()
+    op = parts[0].upper()
+    if op == "WRITE" and len(parts) >= 3:
+        return {"type": "WRITE", "addr": parts[1], "value": parts[2]}
+    if op == "READ":
+        # READ addr  或  READ addr TO $var
+        if len(parts) >= 4 and parts[2].upper() == "TO":
+            var = parts[3]
+            if var.startswith("$"):
+                var = var[1:]
+            return {"type": "READ", "addr": parts[1], "to": var}
+        if len(parts) >= 2:
+            return {"type": "READ", "addr": parts[1], "to": None}
+        return None
+    if op == "WRITE_BITS" and len(parts) >= 5:
+        return {"type": "WRITE_BITS", "addr": parts[1],
+                "high": parts[2], "low": parts[3], "value": parts[4]}
+    if op == "DELAY" and len(parts) >= 2:
+        return {"type": "DELAY", "ms": parts[1]}
+    if op == "READ_RANGE" and len(parts) >= 3:
+        cmd = {"type": "READ_RANGE", "start": parts[1], "stop": parts[2]}
+        if len(parts) >= 4:
+            cmd["step"] = parts[3]
+        if len(parts) >= 5:
+            cmd["delay"] = parts[4]
+        return cmd
+    if op == "LOOP" and len(parts) >= 2:
+        return {"type": "LOOP", "count_expr": parts[1]}
+    if op == "END_LOOP":
+        return {"type": "END_LOOP"}
+    if op == "IF" and len(parts) >= 2:
+        # IF 后面全部为条件表达式
+        cond = line[len(parts[0]):].strip()
+        return {"type": "IF", "condition": cond}
+    if op == "END_IF":
+        return {"type": "END_IF"}
+    # 无法识别 → 原样保留为注释型指令
+    return {"type": "UNKNOWN", "raw": line}
+
+
+def _build_ast(command_lines):
+    """将 DSL 字符串列表解析为嵌套 AST。
+
+    返回 (nodes, error_msg)。error_msg 非空表示语法错误。
+    节点类型：
+      ("CMD", parsed_dict)
+      ("LOOP", count_expr, [body_nodes])
+      ("IF", condition_str, [body_nodes])
+    """
+    parsed = []
+    for raw in command_lines:
+        p = _parse_dsl_line(raw)
+        if p is not None:
+            parsed.append(p)
+
+    def parse_block(start, end_tokens):
+        """返回 (nodes, end_index, error_msg)。"""
+        nodes = []
+        i = start
+        while i < len(parsed):
+            p = parsed[i]
+            op = p["type"]
+            if op in end_tokens:
+                return nodes, i, None
+            if op == "LOOP":
+                body, end_i, err = parse_block(i + 1, {"END_LOOP"})
+                if err:
+                    return nodes, end_i, err
+                if end_i >= len(parsed):
+                    return nodes, len(parsed), "LOOP 缺少 END_LOOP"
+                nodes.append(("LOOP", p["count_expr"], body))
+                i = end_i + 1
+            elif op == "IF":
+                body, end_i, err = parse_block(i + 1, {"END_IF"})
+                if err:
+                    return nodes, end_i, err
+                if end_i >= len(parsed):
+                    return nodes, len(parsed), "IF 缺少 END_IF"
+                nodes.append(("IF", p["condition"], body))
+                i = end_i + 1
+            elif op in ("END_LOOP", "END_IF"):
+                # 多余的结束符
+                return nodes, i, None
+            else:
+                nodes.append(("CMD", p))
+                i += 1
+        return nodes, i, None
+
+    nodes, _end, err = parse_block(0, set())
+    return nodes, err
+
+
+# ---- 表达式 / 条件求值 ----
+
+_SEQ_COND_OPS = ["==", "!=", ">=", "<=", ">", "<", "&", "|", "^"]
+
+
+def _resolve_token(token, default_base, variables):
+    """解析单个 token 为 int。
+
+    - $var → 变量值（不存在为 0）
+    - 0x 前缀 → 十六进制
+    - 否则按 default_base 解析（16=十六进制默认, 10=十进制默认）
+    """
+    if token is None:
+        return 0
+    t = str(token).strip()
+    if not t:
+        return 0
+    if t.startswith("$"):
+        return int(variables.get(t[1:], 0))
+    if t.lower().startswith("0x"):
+        return int(t, 16)
+    return int(t, default_base)
+
+
+def _eval_expr(i2c, dev, width, expr, variables, emit):
+    """求值表达式，返回 int。
+
+    支持：
+      $var              → 变量值
+      READ <addr>       → 执行读取，返回结果
+      <number>          → 字面量（默认十六进制）
+    """
+    e = expr.strip()
+    if not e:
+        return 0
+    if e.startswith("$"):
+        return int(variables.get(e[1:], 0))
+    up = e.upper()
+    if up.startswith("READ "):
+        # READ <addr>
+        sub = _parse_dsl_line(e)
+        if sub and sub.get("type") == "READ":
+            addr = _resolve_token(sub["addr"], 16, variables)
+            val = i2c.read(dev, addr, width)
+            data_bits = _data_bits(width)
+            emit("    (IF-READ addr={0} => {1})".format(
+                _fmt_hex(addr, _reg_addr_bits(width)),
+                _fmt_hex(val, data_bits)))
+            return val
+        return 0
+    # 字面量，默认十六进制
+    return _resolve_token(e, 16, variables)
+
+
+def _eval_condition(i2c, dev, width, cond_str, variables, emit):
+    """求值 IF 条件，返回 bool。"""
+    cond = cond_str.strip()
+    # 查找操作符（先查双字符）
+    op_found = None
+    left_str = cond
+    right_str = ""
+    for op in _SEQ_COND_OPS:
+        # 用空格或直接连接都要匹配，找最早出现
+        idx = _find_operator(cond, op)
+        if idx >= 0:
+            op_found = op
+            left_str = cond[:idx].strip()
+            right_str = cond[idx + len(op):].strip()
+            break
+    if op_found is None:
+        # 无操作符：非零即真
+        val = _eval_expr(i2c, dev, width, cond, variables, emit)
+        return val != 0
+    left = _eval_expr(i2c, dev, width, left_str, variables, emit)
+    right = _eval_expr(i2c, dev, width, right_str, variables, emit)
+    if op_found == "==":
+        return left == right
+    if op_found == "!=":
+        return left != right
+    if op_found == ">":
+        return left > right
+    if op_found == "<":
+        return left < right
+    if op_found == ">=":
+        return left >= right
+    if op_found == "<=":
+        return left <= right
+    if op_found == "&":
+        return (left & right) != 0
+    if op_found == "|":
+        return (left | right) != 0
+    if op_found == "^":
+        return (left ^ right) != 0
+    return False
+
+
+def _find_operator(text, op):
+    """在 text 中查找操作符 op 的位置，避免拆散 0x 等；返回 -1 表示未找到。
+
+    优先匹配带空格包围的形式；若无空格也接受。需保证双字符操作符先于单字符。
+    """
+    # 先找带空格的 " op "
+    spaced = " {0} ".format(op)
+    idx = text.find(spaced)
+    if idx >= 0:
+        return idx + 1
+    # 再找无空格的（但避免匹配到 0x 中的字符等：& | ^ 不会出现在数字里，> < 也安全）
+    idx = text.find(op)
+    if idx >= 0:
+        return idx
+    return -1
+
+
+# ---------------------------------------------------------------------------
+# 序列脚本序列化 / 持久化（YAML，commands 为字符串列表）
+# ---------------------------------------------------------------------------
+
+_SEQ_CMD_TYPES = ["WRITE", "READ", "WRITE_BITS", "DELAY", "READ_RANGE",
+                  "LOOP", "END_LOOP", "IF", "END_IF"]
+
+
+def _i2c_sequence_dir():
+    return get_user_data_dir("i2c_sequences")
+
+
+try:
+    import yaml as _yaml
+except Exception:
+    _yaml = None
+
+
+def _seq_filename_for(name):
+    """根据脚本名称生成安全的文件名（不含扩展名）。"""
+    safe = re.sub(r'[^\w\-.]', '_', name or "sequence").strip('_')
+    if not safe:
+        safe = "sequence"
+    return safe
+
+
+def _load_all_sequences():
+    """扫描序列目录，返回 [(filepath, script_dict), ...]，按名称排序。"""
+    if _yaml is None:
+        return []
+    result = []
+    seq_dir = _i2c_sequence_dir()
+    if not os.path.isdir(seq_dir):
+        return result
+    for fn in os.listdir(seq_dir):
+        if not (fn.endswith(".yaml") or fn.endswith(".yml")):
+            continue
+        path = os.path.join(seq_dir, fn)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = _yaml.safe_load(f)
+            if isinstance(data, dict):
+                data.setdefault("name", "")
+                data.setdefault("description", "")
+                cmds = data.get("commands", []) or []
+                data["commands"] = [str(c) for c in cmds]
+                result.append((path, data))
+        except Exception as e:
+            logger.error("Load sequence %s failed: %s", fn, e, exc_info=True)
+    result.sort(key=lambda x: str(x[1].get("name", x[0])))
+    return result
+
+
+def _save_sequence_file(script_dict):
+    """将脚本 dict 写入 YAML 文件，返回文件路径。"""
+    if _yaml is None:
+        return None
+    name = script_dict.get("name", "sequence")
+    seq_dir = _i2c_sequence_dir()
+    os.makedirs(seq_dir, exist_ok=True)
+    filename = _seq_filename_for(name) + ".yaml"
+    path = os.path.join(seq_dir, filename)
+    out = {
+        "name": str(script_dict.get("name", "")),
+        "description": str(script_dict.get("description", "")),
+        "commands": [str(c) for c in script_dict.get("commands", [])],
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        _yaml.dump(out, f, allow_unicode=True, default_flow_style=False,
+                   sort_keys=False)
+    return path
+
+
+def _delete_sequence_file(path):
+    try:
+        if path and os.path.isfile(path):
+            os.remove(path)
+    except Exception as e:
+        logger.error("Delete sequence %s failed: %s", path, e, exc_info=True)
+
+
+def _serialize_script_yaml(script_dict):
+    """脚本 dict → YAML 字符串。"""
+    if _yaml is None:
+        return ""
+    out = {
+        "name": str(script_dict.get("name", "")),
+        "description": str(script_dict.get("description", "")),
+        "commands": [str(c) for c in script_dict.get("commands", [])],
+    }
+    return _yaml.dump(out, allow_unicode=True, default_flow_style=False,
+                      sort_keys=False)
+
+
+def _parse_script_yaml(text):
+    """YAML 字符串 → 脚本 dict，失败抛异常。"""
+    if _yaml is None:
+        raise RuntimeError("PyYAML 未安装")
+    data = _yaml.safe_load(text)
+    if not isinstance(data, dict):
+        raise ValueError("YAML 顶层必须为字典")
+    data.setdefault("name", "")
+    data.setdefault("description", "")
+    cmds = data.get("commands", []) or []
+    data["commands"] = [str(c) for c in cmds]
+    return data
+
+
 # ---------------------------------------------------------------------------
 # 自定义控件：十六进制输入框（设备地址等）
 # ---------------------------------------------------------------------------
@@ -447,6 +957,22 @@ class HexLineEdit(QLineEdit):
         self._updating = False
         if emit:
             self.value_changed.emit(v)
+
+    def wheelEvent(self, event):
+        """滚轮调整数值：默认 ±1，Ctrl=±16，Shift=±0x100。"""
+        delta = event.angleDelta().y()
+        if delta == 0:
+            return
+        step = 1
+        if event.modifiers() & Qt.ControlModifier:
+            step = 16
+        elif event.modifiers() & Qt.ShiftModifier:
+            step = 0x100
+        if delta < 0:
+            step = -step
+        new_val = (self.value() + step) & self._mask()
+        self.set_value(new_val, emit=True)
+        event.accept()
 
 
 # ---------------------------------------------------------------------------
@@ -503,6 +1029,22 @@ class RegAddrInput(QLineEdit):
         self._updating = False
         if emit:
             self.value_changed.emit(v)
+
+    def wheelEvent(self, event):
+        """滚轮调整数值：默认 ±1，Ctrl=±16，Shift=±0x100。"""
+        delta = event.angleDelta().y()
+        if delta == 0:
+            return
+        step = 1
+        if event.modifiers() & Qt.ControlModifier:
+            step = 16
+        elif event.modifiers() & Qt.ShiftModifier:
+            step = 0x100
+        if delta < 0:
+            step = -step
+        new_val = (self.value() + step) & self._mask()
+        self.set_value(new_val, emit=True)
+        event.accept()
 
 
 # ---------------------------------------------------------------------------
@@ -608,6 +1150,22 @@ class DataValueInput(QWidget):
         self._updating = False
         if emit:
             self.value_changed.emit(v)
+
+    def wheelEvent(self, event):
+        """滚轮调整数值：默认 ±1，Ctrl=±16，Shift=±0x100。"""
+        delta = event.angleDelta().y()
+        if delta == 0:
+            return
+        step = 1
+        if event.modifiers() & Qt.ControlModifier:
+            step = 16
+        elif event.modifiers() & Qt.ShiftModifier:
+            step = 0x100
+        if delta < 0:
+            step = -step
+        new_val = (self.value() + step) & self._mask()
+        self.set_value(new_val, emit=True)
+        event.accept()
 
 
 # ---------------------------------------------------------------------------
@@ -822,7 +1380,14 @@ class I2cMixin:
         self._i2c_write_worker = None
         self._i2c_chipcheck_thread = None
         self._i2c_chipcheck_worker = None
+        self._i2c_script_thread = None
+        self._i2c_script_worker = None
         self._i2c_custom_dll = None
+
+        # 序列脚本管理器状态
+        self._i2c_sequences = []          # [(filepath, script_dict), ...]
+        self._i2c_seq_current_index = None  # 当前选中的列表项索引
+        self._i2c_seq_suppress_sync = False  # 防止表/YAML 互相同步时递归
 
         self._i2c_width = _ui_width_to_flag(16)
         self._i2c_data_bits = 16
@@ -912,6 +1477,7 @@ class I2cMixin:
 
         self._build_i2c_top_cards(root)
         self._build_i2c_workspace(root)
+        self._build_i2c_script_card(root)
         root.addStretch(0)
         return page
 
@@ -940,7 +1506,8 @@ class I2cMixin:
         dev_lbl.setObjectName("muted")
         dev_lbl.setFixedWidth(80)
         dev_row.addWidget(dev_lbl)
-        self.i2c_dev_edit = HexLineEdit(_reg_addr_bits(self._i2c_width))
+        # I2C 设备地址固定为 7-bit（2 位十六进制）
+        self.i2c_dev_edit = HexLineEdit(7)
         self.i2c_dev_edit.setStyleSheet(_i2c_input_style())
         self.i2c_dev_edit.set_value(0x27)
         dev_row.addWidget(self.i2c_dev_edit, 1)
@@ -1086,6 +1653,179 @@ class I2cMixin:
         v.addWidget(footer)
 
         layout.addWidget(ws, 1)
+
+    # ---- 脚本管理器卡片（Payload Data Bits 下方） ----
+
+    def _build_i2c_script_card(self, layout):
+        card = QFrame()
+        card.setObjectName("card")
+        v = QVBoxLayout(card)
+        v.setContentsMargins(14, 12, 14, 12)
+        v.setSpacing(8)
+
+        t = QLabel("Sequence Script Manager")
+        t.setObjectName("cardTitle")
+        v.addWidget(t)
+
+        hint = QLabel(
+            "寄存器操作序列脚本管理 · 双击列表项执行 · 支持 GUI 表格 / YAML 双模式编辑 · "
+            "指令: WRITE/READ/WRITE_BITS/DELAY/READ_RANGE/LOOP/END_LOOP/IF/END_IF · "
+            "变量: READ 0x40 TO $status · 条件: IF $status & 0x01")
+        hint.setObjectName("muted")
+        hint.setWordWrap(True)
+        v.addWidget(hint)
+
+        # 主区域：左列表 + 右编辑器
+        main_row = QHBoxLayout()
+        main_row.setSpacing(8)
+
+        # ---- 左侧：脚本列表 ----
+        left = QVBoxLayout()
+        left.setSpacing(6)
+        list_title = QLabel("Scripts")
+        list_title.setObjectName("sectionTitle")
+        left.addWidget(list_title)
+        list_btn_row = QHBoxLayout()
+        list_btn_row.setSpacing(4)
+        self.i2c_seq_new_btn = QPushButton("New")
+        self.i2c_seq_dup_btn = QPushButton("Dup")
+        self.i2c_seq_del_btn = QPushButton("Del")
+        for btn in (self.i2c_seq_new_btn, self.i2c_seq_dup_btn,
+                    self.i2c_seq_del_btn):
+            btn.setFixedHeight(I2C_BTN_HEIGHT)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet(_i2c_subtle_btn_style())
+            list_btn_row.addWidget(btn)
+        left.addLayout(list_btn_row)
+        self.i2c_seq_list = QTableWidget(0, 2)
+        self.i2c_seq_list.setHorizontalHeaderLabels(["Name", "Cmds"])
+        self.i2c_seq_list.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.i2c_seq_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.i2c_seq_list.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.i2c_seq_list.verticalHeader().setVisible(False)
+        self.i2c_seq_list.setStyleSheet(_i2c_table_qss())
+        lh = self.i2c_seq_list.horizontalHeader()
+        lh.setSectionResizeMode(0, QHeaderView.Stretch)
+        lh.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.i2c_seq_list.setMinimumWidth(200)
+        left.addWidget(self.i2c_seq_list, 1)
+        main_row.addLayout(left, 0)
+
+        # ---- 右侧：编辑器（Tab: GUI 表格 / YAML） ----
+        right = QVBoxLayout()
+        right.setSpacing(6)
+
+        # 名称 / 描述行
+        meta_row = QHBoxLayout()
+        meta_row.setSpacing(8)
+        name_lbl = QLabel("Name")
+        name_lbl.setObjectName("muted")
+        name_lbl.setFixedWidth(50)
+        meta_row.addWidget(name_lbl)
+        self.i2c_seq_name_edit = QLineEdit()
+        self.i2c_seq_name_edit.setFixedHeight(I2C_BTN_HEIGHT)
+        self.i2c_seq_name_edit.setStyleSheet(_i2c_input_style())
+        self.i2c_seq_name_edit.setPlaceholderText("脚本名称")
+        meta_row.addWidget(self.i2c_seq_name_edit, 1)
+        desc_lbl = QLabel("Desc")
+        desc_lbl.setObjectName("muted")
+        desc_lbl.setFixedWidth(40)
+        meta_row.addWidget(desc_lbl)
+        self.i2c_seq_desc_edit = QLineEdit()
+        self.i2c_seq_desc_edit.setFixedHeight(I2C_BTN_HEIGHT)
+        self.i2c_seq_desc_edit.setStyleSheet(_i2c_input_style())
+        self.i2c_seq_desc_edit.setPlaceholderText("描述（可选）")
+        meta_row.addWidget(self.i2c_seq_desc_edit, 1)
+        right.addLayout(meta_row)
+
+        # Tab 切换
+        self.i2c_seq_tabs = QStackedWidget()
+        # -- 表格编辑器 --
+        table_page = QWidget()
+        table_page.setStyleSheet("background:transparent;")
+        tv = QVBoxLayout(table_page)
+        tv.setContentsMargins(0, 0, 0, 0)
+        tv.setSpacing(4)
+        # 单列可编辑命令表（支持 WRITE/READ/WRITE_BITS/DELAY/READ_RANGE/LOOP/END_LOOP/IF/END_IF）
+        self.i2c_seq_cmd_table = QTableWidget(0, 2)
+        self.i2c_seq_cmd_table.setHorizontalHeaderLabels(["#", "Command"])
+        self.i2c_seq_cmd_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.i2c_seq_cmd_table.setEditTriggers(
+            QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed
+            | QAbstractItemView.AnyKeyPressed)
+        self.i2c_seq_cmd_table.verticalHeader().setVisible(False)
+        self.i2c_seq_cmd_table.setStyleSheet(_i2c_table_qss())
+        ch = self.i2c_seq_cmd_table.horizontalHeader()
+        ch.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        ch.setSectionResizeMode(1, QHeaderView.Stretch)
+        tv.addWidget(self.i2c_seq_cmd_table, 1)
+        cmd_btn_row = QHBoxLayout()
+        cmd_btn_row.setSpacing(4)
+        self.i2c_seq_add_cmd_btn = QPushButton("+ Cmd")
+        self.i2c_seq_del_cmd_btn = QPushButton("- Cmd")
+        for btn in (self.i2c_seq_add_cmd_btn, self.i2c_seq_del_cmd_btn):
+            btn.setFixedHeight(I2C_BTN_HEIGHT)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet(_i2c_subtle_btn_style())
+            cmd_btn_row.addWidget(btn)
+        cmd_btn_row.addStretch()
+        tv.addLayout(cmd_btn_row)
+        self.i2c_seq_tabs.addWidget(table_page)
+        # -- YAML 编辑器 --
+        yaml_page = QWidget()
+        yaml_page.setStyleSheet("background:transparent;")
+        yv = QVBoxLayout(yaml_page)
+        yv.setContentsMargins(0, 0, 0, 0)
+        self.i2c_seq_yaml_edit = QPlainTextEdit()
+        self.i2c_seq_yaml_edit.setObjectName("i2cSeqYamlEdit")
+        self.i2c_seq_yaml_edit.setStyleSheet(
+            "QPlainTextEdit#i2cSeqYamlEdit {"
+            f" background-color:{SLATE_950}; border:1px solid {SLATE_800};"
+            " border-radius:6px; color:#e2e8f0;"
+            " font-family:Consolas,'Cascadia Mono',monospace;"
+            " font-size:12px; padding:6px;"
+            " selection-background-color:#4f46e5;"
+            "}"
+            f" QPlainTextEdit#i2cSeqYamlEdit:focus"
+            f" {{ border:1px solid {INDIGO}; }}"
+        )
+        yv.addWidget(self.i2c_seq_yaml_edit)
+        self.i2c_seq_tabs.addWidget(yaml_page)
+        right.addWidget(self.i2c_seq_tabs, 1)
+
+        # 模式切换按钮 + 执行按钮
+        bottom_row = QHBoxLayout()
+        bottom_row.setSpacing(6)
+        self.i2c_seq_mode_btn = QPushButton("YAML")
+        self.i2c_seq_mode_btn.setFixedHeight(I2C_BTN_HEIGHT)
+        self.i2c_seq_mode_btn.setCursor(Qt.PointingHandCursor)
+        self.i2c_seq_mode_btn.setStyleSheet(_i2c_subtle_btn_style())
+        bottom_row.addWidget(self.i2c_seq_mode_btn)
+        bottom_row.addStretch()
+        self.i2c_seq_save_btn = QPushButton("Save")
+        self.i2c_seq_save_btn.setFixedHeight(I2C_BTN_HEIGHT)
+        self.i2c_seq_save_btn.setCursor(Qt.PointingHandCursor)
+        self.i2c_seq_save_btn.setStyleSheet(_i2c_subtle_btn_style())
+        bottom_row.addWidget(self.i2c_seq_save_btn)
+        self.i2c_seq_stop_btn = QPushButton("Stop")
+        self.i2c_seq_stop_btn.setFixedHeight(I2C_BTN_HEIGHT)
+        self.i2c_seq_stop_btn.setCursor(Qt.PointingHandCursor)
+        self.i2c_seq_stop_btn.setStyleSheet(_i2c_subtle_btn_style())
+        self.i2c_seq_stop_btn.setEnabled(False)
+        bottom_row.addWidget(self.i2c_seq_stop_btn)
+        self.i2c_seq_run_btn = QPushButton("Run")
+        self.i2c_seq_run_btn.setFixedHeight(I2C_BTN_HEIGHT)
+        self.i2c_seq_run_btn.setCursor(Qt.PointingHandCursor)
+        self.i2c_seq_run_btn.setStyleSheet(_i2c_write_btn_style())
+        bottom_row.addWidget(self.i2c_seq_run_btn)
+        right.addLayout(bottom_row)
+
+        main_row.addLayout(right, 1)
+        v.addLayout(main_row)
+
+        # 加载已存脚本
+        self._i2c_seq_reload_list()
+        layout.addWidget(card)
 
     # ---- 模板页：寄存器映射 + 位字段编辑 ----
 
@@ -1285,6 +2025,21 @@ class I2cMixin:
         self.i2c_reg_table.cellDoubleClicked.connect(self._on_i2c_reg_double_clicked)
         self.i2c_reg_table.customContextMenuRequested.connect(
             self._on_i2c_reg_context_menu)
+        self.i2c_seq_new_btn.clicked.connect(self._on_i2c_seq_new)
+        self.i2c_seq_dup_btn.clicked.connect(self._on_i2c_seq_duplicate)
+        self.i2c_seq_del_btn.clicked.connect(self._on_i2c_seq_delete)
+        self.i2c_seq_list.itemSelectionChanged.connect(
+            self._on_i2c_seq_list_selected)
+        self.i2c_seq_list.doubleClicked.connect(
+            self._on_i2c_seq_list_double_clicked)
+        self.i2c_seq_add_cmd_btn.clicked.connect(self._on_i2c_seq_add_cmd)
+        self.i2c_seq_del_cmd_btn.clicked.connect(self._on_i2c_seq_del_cmd)
+        self.i2c_seq_cmd_table.cellChanged.connect(
+            self._on_i2c_seq_cmd_cell_changed)
+        self.i2c_seq_mode_btn.clicked.connect(self._on_i2c_seq_toggle_mode)
+        self.i2c_seq_save_btn.clicked.connect(self._on_i2c_seq_save)
+        self.i2c_seq_run_btn.clicked.connect(self._on_i2c_seq_run)
+        self.i2c_seq_stop_btn.clicked.connect(self._on_i2c_seq_stop)
 
     # ---- 状态反馈 ----
 
@@ -1299,10 +2054,14 @@ class I2cMixin:
 
     def _i2c_set_busy(self, busy):
         for attr in ("i2c_read_btn", "i2c_write_btn", "i2c_chipcheck_btn",
-                     "i2c_readall_btn"):
+                     "i2c_readall_btn", "i2c_seq_run_btn"):
             w = getattr(self, attr, None)
             if w is not None:
                 w.setEnabled(not busy)
+        # Stop 按钮只在序列执行中可用
+        stop_btn = getattr(self, "i2c_seq_stop_btn", None)
+        if stop_btn is not None:
+            stop_btn.setEnabled(busy and self._i2c_script_thread is not None)
 
     def _i2c_set_activity(self, op, value=None, ok=True):
         self.i2c_activity_op.setText(op)
@@ -1362,7 +2121,7 @@ class I2cMixin:
 
     def _i2c_sync_width_ui(self):
         reg_bits = _reg_addr_bits(self._i2c_width)
-        self.i2c_dev_edit.set_bit_count(reg_bits)
+        # Device Addr 固定 7-bit，不随位宽切换
         self.i2c_reg_edit.set_bit_count(reg_bits)
         self.i2c_data_edit.set_bit_count(self._i2c_data_bits)
         self.i2c_bits.set_bit_count(self._i2c_data_bits)
@@ -1825,6 +2584,316 @@ class I2cMixin:
         self._i2c_set_result(f"Chip check failed: {err}", ok=False)
         self._i2c_set_busy(False)
         self.append_log(f"[I2C] 芯片检测失败: {err}")
+
+    # ---- 序列脚本管理器（列表 + GUI 表格 / YAML 双模式编辑 + 执行） ----
+
+    def _i2c_seq_reload_list(self):
+        """重新扫描序列目录并刷新左侧列表。"""
+        self._i2c_sequences = _load_all_sequences()
+        self.i2c_seq_list.setRowCount(0)
+        for _path, script in self._i2c_sequences:
+            row = self.i2c_seq_list.rowCount()
+            self.i2c_seq_list.insertRow(row)
+            name_item = QTableWidgetItem(str(script.get("name", "")))
+            cmds = script.get("commands", []) or []
+            cnt_item = QTableWidgetItem(str(len(cmds)))
+            cnt_item.setTextAlignment(Qt.AlignCenter)
+            self.i2c_seq_list.setItem(row, 0, name_item)
+            self.i2c_seq_list.setItem(row, 1, cnt_item)
+        self._i2c_seq_current_index = None
+        self._i2c_seq_clear_editor()
+
+    def _i2c_seq_clear_editor(self):
+        self._i2c_seq_suppress_sync = True
+        self.i2c_seq_name_edit.setText("")
+        self.i2c_seq_desc_edit.setText("")
+        self.i2c_seq_cmd_table.setRowCount(0)
+        self.i2c_seq_yaml_edit.setPlainText("")
+        self._i2c_seq_suppress_sync = False
+
+    def _on_i2c_seq_list_selected(self):
+        """列表选中 → 加载到右侧编辑器。"""
+        rows = self.i2c_seq_list.selectionModel().selectedRows()
+        if not rows:
+            return
+        row = rows[0].row()
+        if row < 0 or row >= len(self._i2c_sequences):
+            return
+        self._i2c_seq_current_index = row
+        _path, script = self._i2c_sequences[row]
+        self._i2c_seq_load_to_editor(script)
+
+    def _on_i2c_seq_list_double_clicked(self, _index):
+        """双击列表项 → 直接执行该脚本。"""
+        rows = self.i2c_seq_list.selectionModel().selectedRows()
+        if not rows:
+            return
+        row = rows[0].row()
+        if row < 0 or row >= len(self._i2c_sequences):
+            return
+        _path, script = self._i2c_sequences[row]
+        self._i2c_seq_execute(script)
+
+    def _i2c_seq_load_to_editor(self, script):
+        """将脚本 dict 载入右侧编辑器（表格 + YAML 同步）。"""
+        self._i2c_seq_suppress_sync = True
+        self.i2c_seq_name_edit.setText(str(script.get("name", "")))
+        self.i2c_seq_desc_edit.setText(str(script.get("description", "")))
+        # 表格：每行是一条 DSL 指令字符串
+        cmds = script.get("commands", []) or []
+        self.i2c_seq_cmd_table.setRowCount(0)
+        for cmd_line in cmds:
+            self._i2c_seq_append_cmd_row(str(cmd_line))
+        self._i2c_seq_renumber_rows()
+        # YAML
+        self.i2c_seq_yaml_edit.setPlainText(_serialize_script_yaml(script))
+        self._i2c_seq_suppress_sync = False
+
+    def _i2c_seq_append_cmd_row(self, cmd_line=""):
+        """在命令表格末尾追加一行（cmd_line 为 DSL 文本）。"""
+        row = self.i2c_seq_cmd_table.rowCount()
+        self.i2c_seq_cmd_table.insertRow(row)
+        idx_item = QTableWidgetItem(str(row + 1))
+        idx_item.setTextAlignment(Qt.AlignCenter)
+        idx_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+        cmd_item = QTableWidgetItem(str(cmd_line))
+        self.i2c_seq_cmd_table.setItem(row, 0, idx_item)
+        self.i2c_seq_cmd_table.setItem(row, 1, cmd_item)
+
+    def _i2c_seq_renumber_rows(self):
+        """重新编号 # 列。"""
+        for row in range(self.i2c_seq_cmd_table.rowCount()):
+            item = self.i2c_seq_cmd_table.item(row, 0)
+            if item is not None:
+                item.setText(str(row + 1))
+
+    def _i2c_seq_collect_from_table(self):
+        """从右侧 Name/Desc/表格收集出脚本 dict（commands 为字符串列表）。"""
+        commands = []
+        for row in range(self.i2c_seq_cmd_table.rowCount()):
+            item = self.i2c_seq_cmd_table.item(row, 1)
+            if item is None:
+                continue
+            text = item.text().strip()
+            if text:
+                commands.append(text)
+        return {
+            "name": self.i2c_seq_name_edit.text().strip(),
+            "description": self.i2c_seq_desc_edit.text().strip(),
+            "commands": commands,
+        }
+
+    def _on_i2c_seq_cmd_cell_changed(self, _row, _col):
+        """表格编辑 → 同步到 YAML（当前处于表格模式时）。"""
+        if self._i2c_seq_suppress_sync:
+            return
+        if self.i2c_seq_tabs.currentIndex() != 0:
+            return
+        script = self._i2c_seq_collect_from_table()
+        self._i2c_seq_suppress_sync = True
+        self.i2c_seq_yaml_edit.setPlainText(_serialize_script_yaml(script))
+        self._i2c_seq_suppress_sync = False
+
+    def _on_i2c_seq_toggle_mode(self):
+        """切换 表格 ↔ YAML 模式。"""
+        if self.i2c_seq_tabs.currentIndex() == 0:
+            # 表格 → YAML：先把表格内容同步到 YAML
+            script = self._i2c_seq_collect_from_table()
+            self._i2c_seq_suppress_sync = True
+            self.i2c_seq_yaml_edit.setPlainText(_serialize_script_yaml(script))
+            self._i2c_seq_suppress_sync = False
+            self.i2c_seq_tabs.setCurrentIndex(1)
+            self.i2c_seq_mode_btn.setText("Table")
+        else:
+            # YAML → 表格：先尝试解析 YAML 并回填表格
+            try:
+                script = _parse_script_yaml(self.i2c_seq_yaml_edit.toPlainText())
+            except Exception as e:
+                QMessageBox.warning(self, "YAML 解析失败", str(e))
+                return
+            self._i2c_seq_suppress_sync = True
+            self.i2c_seq_name_edit.setText(str(script.get("name", "")))
+            self.i2c_seq_desc_edit.setText(str(script.get("description", "")))
+            self.i2c_seq_cmd_table.setRowCount(0)
+            for cmd_line in script.get("commands", []) or []:
+                self._i2c_seq_append_cmd_row(str(cmd_line))
+            self._i2c_seq_renumber_rows()
+            self._i2c_seq_suppress_sync = False
+            self.i2c_seq_tabs.setCurrentIndex(0)
+            self.i2c_seq_mode_btn.setText("YAML")
+
+    def _on_i2c_seq_new(self):
+        """新建空脚本。"""
+        self.i2c_seq_list.clearSelection()
+        self._i2c_seq_current_index = None
+        self._i2c_seq_clear_editor()
+        self.i2c_seq_name_edit.setText("NewSequence")
+        self.i2c_seq_name_edit.setFocus()
+        self.i2c_seq_name_edit.selectAll()
+        self.append_log("[I2C] 新建序列脚本（未保存）")
+
+    def _on_i2c_seq_duplicate(self):
+        """复制当前选中脚本。"""
+        if self._i2c_seq_current_index is None:
+            QMessageBox.information(self, "提示", "请先在列表中选择一个脚本")
+            return
+        _path, script = self._i2c_sequences[self._i2c_seq_current_index]
+        new_script = copy.deepcopy(script)
+        new_script["name"] = str(script.get("name", "")) + "_copy"
+        self.i2c_seq_list.clearSelection()
+        self._i2c_seq_current_index = None
+        self._i2c_seq_load_to_editor(new_script)
+        self.append_log("[I2C] 已复制脚本，请修改名称后保存")
+
+    def _on_i2c_seq_delete(self):
+        """删除当前选中脚本文件。"""
+        if self._i2c_seq_current_index is None:
+            QMessageBox.information(self, "提示", "请先在列表中选择一个脚本")
+            return
+        path, script = self._i2c_sequences[self._i2c_seq_current_index]
+        name = script.get("name", "")
+        ret = QMessageBox.question(
+            self, "删除确认", "确定删除脚本 '{0}'?".format(name))
+        if ret != QMessageBox.Yes:
+            return
+        _delete_sequence_file(path)
+        self.append_log(f"[I2C] 已删除脚本: {name}")
+        self._i2c_seq_reload_list()
+
+    def _on_i2c_seq_add_cmd(self):
+        """在表格末尾新增一行指令。"""
+        if self.i2c_seq_tabs.currentIndex() != 0:
+            QMessageBox.information(self, "提示", "请切换到 Table 模式编辑指令")
+            return
+        self._i2c_seq_append_cmd_row("WRITE 0x00 0x00")
+        self._i2c_seq_renumber_rows()
+        # 选中并进入编辑
+        new_row = self.i2c_seq_cmd_table.rowCount() - 1
+        self.i2c_seq_cmd_table.selectRow(new_row)
+        self.i2c_seq_cmd_table.editItem(self.i2c_seq_cmd_table.item(new_row, 1))
+
+    def _on_i2c_seq_del_cmd(self):
+        """删除表格中选中的指令行。"""
+        if self.i2c_seq_tabs.currentIndex() != 0:
+            return
+        rows = self.i2c_seq_cmd_table.selectionModel().selectedRows()
+        if not rows:
+            return
+        # 从后往前删，避免索引错位
+        for idx in sorted([r.row() for r in rows], reverse=True):
+            self.i2c_seq_cmd_table.removeRow(idx)
+        self._i2c_seq_renumber_rows()
+        # 触发同步
+        self._on_i2c_seq_cmd_cell_changed(0, 0)
+
+    def _on_i2c_seq_save(self):
+        """保存当前编辑器内容到 YAML 文件。"""
+        # 如果当前在 YAML 模式，先尝试解析
+        if self.i2c_seq_tabs.currentIndex() == 1:
+            try:
+                script = _parse_script_yaml(self.i2c_seq_yaml_edit.toPlainText())
+            except Exception as e:
+                QMessageBox.warning(self, "YAML 解析失败", str(e))
+                return
+        else:
+            script = self._i2c_seq_collect_from_table()
+        name = script.get("name", "").strip()
+        if not name:
+            QMessageBox.warning(self, "名称无效", "请填写脚本名称")
+            return
+        try:
+            path = _save_sequence_file(script)
+            self.append_log(f"[I2C] 序列脚本已保存: {path}")
+            # 保存后刷新列表并选中新保存的项
+            self._i2c_seq_reload_list()
+            for i, (_p, s) in enumerate(self._i2c_sequences):
+                if s.get("name") == name:
+                    self.i2c_seq_list.selectRow(i)
+                    break
+        except Exception as e:
+            logger.error("I2C save sequence failed: %s", e, exc_info=True)
+            QMessageBox.critical(self, "保存失败", str(e))
+
+    def _i2c_seq_execute(self, script):
+        """执行指定脚本 dict。"""
+        if (self._i2c_script_thread is not None
+                and self._i2c_script_thread.isRunning()):
+            QMessageBox.information(self, "正在执行", "请等待当前序列执行结束")
+            return
+        # 如果在 YAML 模式，先解析确保最新
+        if self.i2c_seq_tabs.currentIndex() == 1:
+            try:
+                script = _parse_script_yaml(self.i2c_seq_yaml_edit.toPlainText())
+            except Exception as e:
+                QMessageBox.warning(self, "YAML 解析失败", str(e))
+                return
+        commands = script.get("commands", []) or []
+        if not commands:
+            QMessageBox.information(self, "脚本为空", "该脚本没有可执行指令")
+            return
+        dev = self._i2c_current_dev()
+        name = script.get("name", "")
+        self._i2c_set_busy(True)
+        self._i2c_set_activity("Sequence…", ok=True)
+        self.append_log(
+            f"[I2C] Sequence '{name}' 开始 dev=0x{dev:02X} "
+            f"width={_width_label(self._i2c_width)} 指令数={len(commands)}")
+        worker = _I2cSequenceWorker(
+            self._i2c_dll_path(), self._i2c_speed_mode, dev,
+            self._i2c_width, commands, script_name=name)
+        thread = QThread()
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.progress.connect(self._on_i2c_seq_progress)
+        worker.finished.connect(self._on_i2c_seq_finished)
+        worker.error.connect(self._on_i2c_seq_error)
+        worker.finished.connect(thread.quit)
+        worker.error.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._on_i2c_seq_thread_cleanup)
+        self._i2c_script_worker = worker
+        self._i2c_script_thread = thread
+        self.i2c_seq_stop_btn.setEnabled(True)
+        thread.start()
+
+    def _on_i2c_seq_run(self):
+        """Run 按钮：执行当前编辑器中的脚本。"""
+        if self.i2c_seq_tabs.currentIndex() == 1:
+            try:
+                script = _parse_script_yaml(self.i2c_seq_yaml_edit.toPlainText())
+            except Exception as e:
+                QMessageBox.warning(self, "YAML 解析失败", str(e))
+                return
+        else:
+            script = self._i2c_seq_collect_from_table()
+        self._i2c_seq_execute(script)
+
+    def _on_i2c_seq_stop(self):
+        worker = getattr(self, "_i2c_script_worker", None)
+        if worker is not None:
+            worker.request_stop()
+            self.append_log("[I2C] 已请求停止序列执行")
+        self.i2c_seq_stop_btn.setEnabled(False)
+
+    def _on_i2c_seq_progress(self, text):
+        self.append_log(f"[I2C] {text}")
+
+    def _on_i2c_seq_thread_cleanup(self):
+        self._i2c_script_thread = None
+        self._i2c_script_worker = None
+
+    def _on_i2c_seq_finished(self):
+        self._i2c_set_activity("Sequence", ok=True)
+        self._i2c_set_result("Sequence Done", ok=True)
+        self._i2c_set_busy(False)
+        self.append_log("[I2C] 序列执行结束")
+
+    def _on_i2c_seq_error(self, err):
+        self._i2c_set_activity("Sequence", ok=False)
+        self._i2c_set_result(f"Sequence Failed: {err}", ok=False)
+        self._i2c_set_busy(False)
+        self.append_log(f"[I2C] 序列执行失败: {err}")
 
     # ---- 模板保存 / 加载 ----
 
