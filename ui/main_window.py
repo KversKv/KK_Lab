@@ -75,6 +75,9 @@ if sys.platform == "win32":
             ("ptMaxTrackSize", ctypes.wintypes.POINT),
         ]
 
+    class _NCCALCSIZE_PARAMS(ctypes.Structure):
+        _fields_ = [("rgrc", _RECT * 3)]
+
     _DWMWA_WINDOW_CORNER_PREFERENCE = 33
     _DWMWA_BORDER_COLOR = 34
     _DWMWCP_ROUND = 2
@@ -1911,6 +1914,18 @@ class MainWindow(CleanupMixin, QMainWindow):
                 return False, 0
             if msg.message == _WM_NCCALCSIZE:
                 if msg.wParam:
+                    if self.isMaximized():
+                        # 最大化时 Windows 会将窗口向外扩展 resize border 厚度以隐藏边框，
+                        # 由于此处返回 0（client = window rect），client 顶部会超出可视工作区，
+                        # 导致标题栏顶部被裁切。把 proposed client rect 向内收缩 border，
+                        # 保证标题栏完整可见。
+                        params = _NCCALCSIZE_PARAMS.from_address(int(msg.lParam))
+                        dpr = self.devicePixelRatioF() or 1.0
+                        border = int(round(self._resize_border * dpr))
+                        params.rgrc[0].left += border
+                        params.rgrc[0].top += border
+                        params.rgrc[0].right -= border
+                        params.rgrc[0].bottom -= border
                     return True, 0
                 return False, 0
             if msg.message == _WM_GETMINMAXINFO:
