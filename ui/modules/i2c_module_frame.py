@@ -14,24 +14,25 @@ if __name__ == "__main__" and __package__ in (None, ""):
     if _PROJECT_ROOT not in sys.path:
         sys.path.insert(0, _PROJECT_ROOT)
 
-from ui.resource_path import get_resource_base, get_user_data_dir
+from ui.resource_path import get_user_data_dir
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QLabel, QFrame, QSizePolicy, QToolTip, QLineEdit,
+    QLabel, QFrame, QSizePolicy, QLineEdit,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QFileDialog, QMessageBox, QMenu, QScrollArea, QTabWidget
+    QFileDialog, QMessageBox, QMenu, QScrollArea, QStackedWidget,
+    QButtonGroup
 )
 from PySide6.QtCore import (
-    Qt, QThread, Signal, QObject, QSize, QRect, QRectF, QTimer
+    Qt, QThread, Signal, QObject, QTimer, QDateTime, QRegularExpression
 )
-from PySide6.QtGui import QColor, QPainter, QPen, QFont, QAction
+from PySide6.QtGui import (
+    QColor, QAction, QRegularExpressionValidator
+)
 
 from ui.widgets.dark_combobox import DarkComboBox
-from debug_config import DEBUG_MOCK
 from log_config import get_logger
 
 logger = get_logger(__name__)
-
 
 # ---------------------------------------------------------------------------
 # 常量
@@ -39,29 +40,15 @@ logger = get_logger(__name__)
 
 I2C_BTN_HEIGHT = 22
 
-I2C_OP_READ = "read"
-I2C_OP_WRITE = "write"
-I2C_OP_BIT_WRITE = "bit_write"
-I2C_OP_READ_DATA = "read_data"
-I2C_OP_WRITE_DATA = "write_data"
-
-_I2C_OP_OPTIONS = [
-    (I2C_OP_READ, "Read"),
-    (I2C_OP_WRITE, "Write (Full)"),
-    (I2C_OP_BIT_WRITE, "Write (Bit)"),
-    (I2C_OP_READ_DATA, "ReadData (Raw)"),
-    (I2C_OP_WRITE_DATA, "WriteData (Raw)"),
-]
-
 _I2C_WIDTH_META = {}
 
 
 def _load_width_meta():
     from lib.i2c.Bes_I2CIO_Interface import I2CWidthFlag
     return {
-        I2CWidthFlag.BIT_8: ("8-bit  (8b addr / 16b data)", 8, 16),
-        I2CWidthFlag.BIT_10: ("10-bit (16b addr / 16b data)", 16, 16),
-        I2CWidthFlag.BIT_32: ("32-bit (32b addr / 32b data)", 32, 32),
+        I2CWidthFlag.BIT_8: ("8-bit", 8, 16),
+        I2CWidthFlag.BIT_10: ("16-bit", 16, 16),
+        I2CWidthFlag.BIT_32: ("32-bit", 32, 32),
     }
 
 
@@ -73,6 +60,19 @@ def _load_speed_options():
         (I2CSpeedMode.SPEED_400K, "400 kHz"),
         (I2CSpeedMode.SPEED_750K, "750 kHz"),
     ]
+
+
+# UI 数据位宽（8 / 16 / 32）→ I2CWidthFlag
+_I2C_UI_WIDTHS = [(8, "8-bit"), (16, "16-bit"), (32, "32-bit")]
+
+
+def _ui_width_to_flag(bits):
+    from lib.i2c.Bes_I2CIO_Interface import I2CWidthFlag
+    if bits == 8:
+        return I2CWidthFlag.BIT_8
+    if bits == 32:
+        return I2CWidthFlag.BIT_32
+    return I2CWidthFlag.BIT_10
 
 
 def _width_label(flag):
@@ -127,113 +127,168 @@ def _i2c_template_dir():
     return get_user_data_dir("i2c_templates")
 
 
-def _i2c_action_style(h=I2C_BTN_HEIGHT):
-    return f"""
-        QPushButton {{
-            background-color: #13254b;
-            border: 1px solid #22376A;
-            border-radius: 6px;
-            color: #dce7ff;
-            font-weight: 600;
-            min-height: {h}px;
-            max-height: {h}px;
-            padding: 2px 8px;
-        }}
-        QPushButton:hover {{
-            background-color: #1C2D55;
-            border: 1px solid #3A5A9F;
-        }}
-        QPushButton:pressed {{
-            background-color: #102040;
-        }}
-        QPushButton:disabled {{
-            background-color: #0b1430;
-            color: #5c7096;
-            border: 1px solid #1a2850;
-        }}
-    """
+# ---------------------------------------------------------------------------
+# 主题色（Tailwind Slate / Indigo / Emerald）
+# ---------------------------------------------------------------------------
+
+SLATE_950 = "#020617"
+SLATE_900 = "#0f172a"
+SLATE_800 = "#1e293b"
+SLATE_700 = "#334155"
+INDIGO = "#6366f1"
+INDIGO_LIGHT = "#c7d2fe"
+EMERALD = "#10b981"
+EMERALD_LIGHT = "#34d399"
+TEXT_MAIN = "#e2e8f0"
+TEXT_MUTED = "#94a3b8"
 
 
-def _i2c_accent_style(h=I2C_BTN_HEIGHT):
-    return f"""
-        QPushButton {{
-            background-color: #053b38;
-            border: 1px solid #08c9a5;
-            border-radius: 6px;
-            color: #10e7bc;
-            font-weight: 700;
-            min-height: {h}px;
-            max-height: {h}px;
-            padding: 2px 10px;
-        }}
-        QPushButton:hover {{
-            background-color: #064744;
-            border: 1px solid #19f0c5;
-            color: #43f3d0;
-        }}
-        QPushButton:pressed {{
-            background-color: #042f2d;
-        }}
-        QPushButton:disabled {{
-            background-color: #0D1734;
-            color: #3a4a6a;
-            border: 1px solid #18264A;
-        }}
-    """
+# ---------------------------------------------------------------------------
+# 样式
+# ---------------------------------------------------------------------------
+
+def _i2c_input_style():
+    return (
+        "QLineEdit {"
+        f" background-color:{SLATE_950}; border:1px solid {SLATE_800};"
+        " border-radius:6px; color:#e2e8f0;"
+        " min-height:22px; max-height:22px; padding:0 8px;"
+        " selection-background-color:#4f46e5;"
+        " font-family:Consolas,'Cascadia Mono',monospace;"
+        "}"
+        f" QLineEdit:focus {{ border:1px solid {INDIGO}; }}"
+        " QLineEdit:disabled { background-color:#0b1120; color:#475569;"
+        " border:1px solid #1e293b; }"
+    )
 
 
-def _i2c_input_style(h=I2C_BTN_HEIGHT):
-    return f"""
-        QLineEdit {{
-            background-color: #091426;
-            border: 1px solid #17345f;
-            border-radius: 6px;
-            color: #dce7ff;
-            min-height: {h}px;
-            max-height: {h}px;
-            padding: 0px 6px;
-            selection-background-color: #1f4a8a;
-        }}
-        QLineEdit:focus {{
-            border: 1px solid #3A5A9F;
-        }}
-        QLineEdit:disabled {{
-            background-color: #0b1430;
-            color: #5c7096;
-            border: 1px solid #1a2850;
-        }}
-    """
+def _i2c_read_btn_style():
+    return (
+        "QPushButton {"
+        f" background-color: rgba(16,185,129,0.12); border:1px solid {EMERALD};"
+        " border-radius:6px; color:#34d399; font-weight:bold;"
+        " min-height:22px; max-height:22px; padding:0 16px;"
+        "}"
+        " QPushButton:hover { background-color: rgba(16,185,129,0.22); }"
+        " QPushButton:pressed { background-color: rgba(16,185,129,0.08); }"
+        " QPushButton:disabled { background-color:#0b1120; color:#334155;"
+        " border:1px solid #1e293b; }"
+    )
 
 
-def _i2c_tab_style():
-    return """
-        QTabWidget::pane {
-            border: 1px solid #1a2b52;
-            border-radius: 8px;
-            background-color: #071127;
-            top: -1px;
-        }
-        QTabBar::tab {
-            background-color: #0b1430;
-            color: #7e96bf;
-            border: 1px solid #1a2b52;
-            border-bottom: none;
-            border-top-left-radius: 6px;
-            border-top-right-radius: 6px;
-            padding: 6px 16px;
-            margin-right: 2px;
-            font-weight: 600;
-        }
-        QTabBar::tab:selected {
-            background-color: #13254b;
-            color: #dce7ff;
-            border-color: #3A5A9F;
-        }
-        QTabBar::tab:hover:!selected {
-            background-color: #112040;
-            color: #b8c8e8;
-        }
-    """
+def _i2c_write_btn_style():
+    return (
+        "QPushButton {"
+        f" background-color: rgba(99,102,241,0.15); border:1px solid {INDIGO};"
+        " border-radius:6px; color:#c7d2fe; font-weight:bold;"
+        " min-height:22px; max-height:22px; padding:0 16px;"
+        "}"
+        " QPushButton:hover { background-color: rgba(99,102,241,0.28); }"
+        " QPushButton:pressed { background-color: rgba(99,102,241,0.08); }"
+        " QPushButton:disabled { background-color:#0b1120; color:#334155;"
+        " border:1px solid #1e293b; }"
+    )
+
+
+def _i2c_subtle_btn_style():
+    return (
+        "QPushButton {"
+        f" background-color:{SLATE_900}; border:1px solid {SLATE_800};"
+        " border-radius:6px; color:#cbd5e1; font-weight:bold;"
+        " min-height:22px; max-height:22px; padding:0 12px;"
+        "}"
+        f" QPushButton:hover {{ background-color:#1b2840; border:1px solid {INDIGO};"
+        " color:#e2e8f0; }"
+        " QPushButton:disabled { background-color:#0b1120; color:#475569;"
+        " border:1px solid #1e293b; }"
+    )
+
+
+def _bit_val_style(on):
+    if on:
+        return (
+            "QPushButton {"
+            " background-color: rgba(16,185,129,0.20); border:1px solid #10b981;"
+            " border-radius:4px; color:#34d399; font-weight:bold;"
+            " min-height:22px; max-height:22px;"
+            "}"
+            " QPushButton:hover { background-color: rgba(16,185,129,0.34); }"
+        )
+    return (
+        "QPushButton {"
+        f" background-color:{SLATE_950}; border:1px solid {SLATE_800};"
+        " border-radius:4px; color:#64748b; font-weight:bold;"
+        " min-height:22px; max-height:22px;"
+        "}"
+        f" QPushButton:hover {{ background-color:{SLATE_900}; color:{TEXT_MUTED}; }}"
+    )
+
+
+def _i2c_table_qss():
+    return (
+        f"QTableWidget {{ background-color:{SLATE_950}; border:1px solid {SLATE_800};"
+        " border-radius:8px; gridline-color:#1e293b; color:#e2e8f0; }"
+        f"QHeaderView::section {{ background-color:{SLATE_900}; color:{TEXT_MUTED};"
+        " border:0; border-right:1px solid #1e293b; padding:6px;"
+        " font-weight:bold; font-size:11px; }"
+        "QTableWidget::item { padding:2px 6px; }"
+        "QTableWidget::item:selected { background-color: rgba(99,102,241,0.25); }"
+        "QTableCornerButton::section { background:#0f172a; border:0; }"
+    )
+
+
+def _i2c_scrollbar_qss():
+    return (
+        "QScrollBar:vertical { background:transparent; width:8px; margin:0; }"
+        "QScrollBar::handle:vertical { background:#334155; border-radius:4px;"
+        " min-height:24px; }"
+        "QScrollBar::handle:vertical:hover { background:#475569; }"
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height:0; }"
+        "QScrollBar:horizontal { background:transparent; height:8px; margin:0; }"
+        "QScrollBar::handle:horizontal { background:#334155; border-radius:4px;"
+        " min-width:24px; }"
+        "QScrollBar::handle:horizontal:hover { background:#475569; }"
+        "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width:0; }"
+    )
+
+
+def _nav_tab_style():
+    return (
+        "QPushButton#navTab { background:transparent; border:none;"
+        " border-bottom:2px solid transparent; color:#94a3b8;"
+        " padding:8px 18px; font-size:11px; font-weight:bold; letter-spacing:1px;"
+        "}"
+        "QPushButton#navTab:hover { color:#e2e8f0; }"
+        "QPushButton#navTab:checked { color:#c7d2fe;"
+        " border-bottom:2px solid #6366f1; background: rgba(99,102,241,0.08); }"
+    )
+
+
+_I2C_DARK_STYLE = (
+    f"QWidget {{ background-color:{SLATE_950}; color:{TEXT_MAIN}; }}"
+    f"QLabel {{ background:transparent; color:{TEXT_MAIN}; border:none; }}"
+    "QLabel#cardTitle { font-size:11px; font-weight:bold; color:#f8fafc;"
+    " letter-spacing:1px; background:transparent; }"
+    "QLabel#sectionTitle { font-size:10px; font-weight:bold; color:#94a3b8;"
+    " letter-spacing:1px; background:transparent; }"
+    "QLabel#appTitle { font-size:14px; font-weight:bold; color:#f8fafc;"
+    " letter-spacing:1px; background:transparent; }"
+    "QLabel#appBadge { background-color:#6366f1; color:#ffffff; border-radius:6px;"
+    " font-weight:bold; font-size:10px; letter-spacing:1px; }"
+    "QLabel#muted { color:#64748b; background:transparent; }"
+    "QLabel#mono { font-family:Consolas,'Cascadia Mono',monospace;"
+    f" background:transparent; color:{INDIGO_LIGHT}; }}"
+    "QLabel#activityVal { font-family:Consolas,'Cascadia Mono',monospace;"
+    " font-weight:bold; background:transparent; }"
+    f"QFrame#card {{ background-color:{SLATE_900}; border:1px solid {SLATE_800};"
+    " border-radius:12px; }"
+    f"QFrame#navBar {{ background-color:{SLATE_900}; border:1px solid {SLATE_800};"
+    " border-radius:12px; }"
+    f"QFrame#workspace {{ background-color:{SLATE_900}; border:1px solid {SLATE_800};"
+    " border-radius:12px; }"
+    f"QFrame#footer {{ background-color:{SLATE_950}; border:1px solid {SLATE_800};"
+    " border-radius:10px; }"
+) + _i2c_scrollbar_qss()
 
 
 # ---------------------------------------------------------------------------
@@ -349,7 +404,7 @@ class _I2cChipCheckWorker(QObject):
 
 
 # ---------------------------------------------------------------------------
-# 自定义控件：十六进制输入框
+# 自定义控件：十六进制输入框（设备地址等）
 # ---------------------------------------------------------------------------
 
 class HexLineEdit(QLineEdit):
@@ -395,165 +450,356 @@ class HexLineEdit(QLineEdit):
 
 
 # ---------------------------------------------------------------------------
-# 自定义控件：位网格视图（自适应宽度，水平居中）
+# 自定义控件：寄存器地址输入框（智能 0x 前缀 / 大写 / 剥离非法字符）
 # ---------------------------------------------------------------------------
 
-class BitGridView(QWidget):
-    """将寄存器值以 bit 网格可视化，MSB 在左；单元格宽度随窗口宽度自适应，
-    整体水平居中，点击切换 bit 值。"""
+class RegAddrInput(QLineEdit):
+    """寄存器地址输入：自动剥离非法字符、固定 0x 前缀、自动大写。"""
     value_changed = Signal(int)
 
     def __init__(self, bit_count=16, parent=None):
         super().__init__(parent)
         self._bit_count = bit_count
-        self._value = 0
-        self._cell_h = 42
-        self._row_gap = 6
-        self._min_cell_w = 20.0
-        self._max_cell_w = 44.0
-        self._one_bg = QColor("#0c4a42")
-        self._one_fg = QColor("#19f0c5")
-        self._zero_bg = QColor("#091426")
-        self._zero_fg = QColor("#5F77AE")
-        self._border = QColor("#22376A")
-        self._idx_fg = QColor("#7e96bf")
-        self.setCursor(Qt.PointingHandCursor)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.setMinimumHeight(self._compute_height())
-
-    def _compute_height(self):
-        rows = (self._bit_count + 15) // 16
-        return rows * self._cell_h + (rows - 1) * self._row_gap
-
-    def _cell_w(self):
-        """按当前控件宽度计算单元格宽度（每行 16 列），并居中钳位。"""
-        cols = min(16, self._bit_count)
-        if cols <= 0:
-            return self._min_cell_w
-        w = float(self.width()) / cols
-        if w < self._min_cell_w:
-            return self._min_cell_w
-        if w > self._max_cell_w:
-            return self._max_cell_w
-        return w
-
-    def _grid_origin_x(self):
-        cols = min(16, self._bit_count)
-        grid_w = cols * self._cell_w()
-        return (self.width() - grid_w) / 2.0
+        self._updating = False
+        self.setAlignment(Qt.AlignCenter)
+        self.setStyleSheet(_i2c_input_style())
+        self.set_value(0)
+        self.textChanged.connect(self._on_text_changed)
 
     def set_bit_count(self, bit_count):
         self._bit_count = bit_count
-        self._value &= (1 << bit_count) - 1
-        self.setMinimumHeight(self._compute_height())
-        self.update()
+        self.set_value(self.value())
+
+    def _mask(self):
+        return (1 << self._bit_count) - 1
+
+    def _on_text_changed(self, text):
+        if self._updating:
+            return
+        clean = re.sub(r"[^0-9a-fA-F]", "", text)
+        up = clean.upper()
+        # 限定长度，避免超出位宽
+        max_len = _hex_digits(self._bit_count)
+        if len(up) > max_len:
+            up = up[-max_len:]
+        self._updating = True
+        self.setText("0x" + up if up else "0x")
+        self._updating = False
+        val = int(up, 16) if up else 0
+        self.value_changed.emit(val & self._mask())
 
     def value(self):
-        return self._value
+        t = self.text()
+        if t.lower().startswith("0x"):
+            t = t[2:]
+        v = _parse_hex_int(t)
+        return (v or 0) & self._mask()
 
     def set_value(self, v, emit=False):
-        self._value = int(v) & ((1 << self._bit_count) - 1)
-        self.update()
+        v = int(v) & self._mask()
+        digits = _hex_digits(self._bit_count)
+        self._updating = True
+        self.setText("0x" + format(v, "0{0}X".format(digits)))
+        self._updating = False
         if emit:
-            self.value_changed.emit(self._value)
+            self.value_changed.emit(v)
 
-    def _bit_rect(self, i):
-        cw = self._cell_w()
-        row = (self._bit_count - 1 - i) // 16
-        col = (self._bit_count - 1 - i) % 16
-        x = self._grid_origin_x() + col * cw
-        y = row * (self._cell_h + self._row_gap)
-        return QRectF(x, y, cw, self._cell_h)
 
-    def _bit_at(self, x, y):
-        rows = (self._bit_count + 15) // 16
-        row = y // (self._cell_h + self._row_gap)
-        if row < 0 or row >= rows:
-            return None
-        origin_x = self._grid_origin_x()
-        rel_x = x - origin_x
-        cw = self._cell_w()
-        if rel_x < 0 or rel_x >= 16 * cw:
-            return None
-        col = int(rel_x // cw)
-        if col < 0 or col >= 16:
-            return None
-        idx = (self._bit_count - 1) - (row * 16 + col)
-        if idx < 0 or idx >= self._bit_count:
-            return None
-        return idx
+# ---------------------------------------------------------------------------
+# 自定义控件：多进制数据值输入框（0x Hex / Dec / 0o Oct + 字符过滤）
+# ---------------------------------------------------------------------------
 
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self.update()
+_BASE_ITEMS = [("hex", "0x  Hex"), ("dec", "Dec"), ("oct", "0o  Oct")]
+_BASE_VALIDATORS = {
+    "hex": QRegularExpressionValidator(QRegularExpression("[0-9a-fA-F]{0,8}")),
+    "dec": QRegularExpressionValidator(QRegularExpression("[0-9]{0,10}")),
+    "oct": QRegularExpressionValidator(QRegularExpression("[0-7]{0,11}")),
+}
 
-    def mousePressEvent(self, event):
-        if not self.isEnabled():
-            super().mousePressEvent(event)
+
+class DataValueInput(QWidget):
+    """数据总值输入：左侧进制切换下拉，右侧数值输入（按进制过滤字符）。"""
+    value_changed = Signal(int)
+
+    def __init__(self, bit_count=16, parent=None):
+        super().__init__(parent)
+        self._bit_count = bit_count
+        self._base = "hex"
+        self._updating = False
+
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+
+        self.base_combo = DarkComboBox(bg=SLATE_950, border=SLATE_800,
+                                       hover_color=INDIGO)
+        self.base_combo.setObjectName("dataBaseCombo")
+        self.base_combo.setFixedHeight(I2C_BTN_HEIGHT)
+        self.base_combo.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        for key, text in _BASE_ITEMS:
+            self.base_combo.addItem(text, userData=key)
+        self.base_combo.setCurrentIndex(0)
+        row.addWidget(self.base_combo)
+
+        self.edit = QLineEdit()
+        self.edit.setObjectName("dataValueEdit")
+        self.edit.setFixedHeight(I2C_BTN_HEIGHT)
+        self.edit.setAlignment(Qt.AlignCenter)
+        self.edit.setStyleSheet(_i2c_input_style())
+        self.edit.setValidator(_BASE_VALIDATORS["hex"])
+        row.addWidget(self.edit, 1)
+
+        self.base_combo.currentIndexChanged.connect(self._on_base_changed)
+        self.edit.textChanged.connect(self._on_text_changed)
+        self.set_value(0)
+
+    def set_bit_count(self, bit_count):
+        self._bit_count = bit_count
+        self.set_value(self.value())
+
+    def _mask(self):
+        return (1 << self._bit_count) - 1
+
+    def _format(self, v):
+        v = int(v) & self._mask()
+        if self._base == "hex":
+            return format(v, "0{0}X".format(_hex_digits(self._bit_count)))
+        if self._base == "oct":
+            return format(v, "o")
+        return str(v)
+
+    def _parse(self, text):
+        t = (text or "").strip()
+        if not t:
+            return 0
+        try:
+            if self._base == "hex":
+                return int(t, 16) & self._mask()
+            if self._base == "oct":
+                return int(t, 8) & self._mask()
+            return int(t, 10) & self._mask()
+        except ValueError:
+            return None
+
+    def _on_base_changed(self, _idx):
+        new_base = self.base_combo.currentData() or "hex"
+        old_val = self.value()  # 用旧进制解析当前值
+        self._base = new_base
+        self.edit.setValidator(_BASE_VALIDATORS[new_base])
+        self._updating = True
+        self.edit.setText(self._format(old_val))
+        self._updating = False
+
+    def _on_text_changed(self, text):
+        if self._updating:
             return
-        if event.button() == Qt.LeftButton:
-            idx = self._bit_at(int(event.position().x()), int(event.position().y()))
-            if idx is not None:
-                self._value ^= (1 << idx)
-                self.update()
-                self.value_changed.emit(self._value)
-        super().mousePressEvent(event)
+        v = self._parse(text)
+        if v is None:
+            return
+        self.value_changed.emit(v)
 
-    def paintEvent(self, event):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        if not self.isEnabled():
-            p.setOpacity(0.45)
+    def value(self):
+        return self._parse(self.edit.text()) or 0
 
-        font_idx = QFont()
-        font_idx.setPixelSize(9)
-        font_val = QFont()
-        font_val.setPixelSize(13)
-        font_val.setBold(True)
+    def set_value(self, v, emit=False):
+        v = int(v) & self._mask()
+        self._updating = True
+        self.edit.setText(self._format(v))
+        self._updating = False
+        if emit:
+            self.value_changed.emit(v)
 
-        for i in range(self._bit_count):
-            rect = self._bit_rect(i)
-            bit_on = bool((self._value >> i) & 1)
 
-            p.setPen(QPen(self._border, 1))
-            p.setBrush(self._one_bg if bit_on else self._zero_bg)
-            p.drawRoundedRect(rect, 4, 4)
+# ---------------------------------------------------------------------------
+# 自定义控件：位操作表格（Bit / Val / Field / Description / Hex + 字段合并）
+# ---------------------------------------------------------------------------
 
-            p.setPen(self._idx_fg)
-            p.setFont(font_idx)
-            p.drawText(
-                QRectF(rect.x(), rect.y() + 2, rect.width(), 12),
-                Qt.AlignCenter, str(i),
-            )
-            p.setPen(self._one_fg if bit_on else self._zero_fg)
-            p.setFont(font_val)
-            p.drawText(
-                QRectF(rect.x(), rect.y() + 14, rect.width(), rect.height() - 14),
-                Qt.AlignCenter, "1" if bit_on else "0",
-            )
+class BitsTable(QTableWidget):
+    """单段位表格。bit_offset/bit_count 决定显示区间（MSB 在上）。
+    同一字段的多个 Bit 自动合并 Field/Description/Hex 单元格（rowSpan）。"""
+    bit_toggled = Signal(int)  # 绝对位索引
 
-            col = (self._bit_count - 1 - i) % 16
-            if col % 4 == 3 and col != 15:
-                sep_x = rect.right() + 1
-                p.setPen(QPen(QColor("#2a3f6e"), 1))
-                p.drawLine(sep_x, rect.y(), sep_x, rect.bottom())
+    def __init__(self, bit_offset, bit_count, parent=None):
+        super().__init__(0, 5, parent)
+        self._offset = bit_offset
+        self._count = bit_count
+        self._fields = []
+        self.setObjectName("bitsTable")
+        self.setHorizontalHeaderLabels(["Bit", "Val", "Field", "Desc", "Hex"])
+        self.verticalHeader().setVisible(False)
+        self.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.setFocusPolicy(Qt.NoFocus)
+        self.setStyleSheet(_i2c_table_qss())
+        hdr = self.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(2, QHeaderView.Stretch)
+        hdr.setSectionResizeMode(3, QHeaderView.Stretch)
+        hdr.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        self._build_rows()
 
-        p.end()
+    def _abs_bit(self, row):
+        # row 0 = 本表最高位
+        return self._offset + self._count - 1 - row
 
-    def sizeHint(self):
-        rows = (self._bit_count + 15) // 16
-        return QSize(16 * int(self._cell_w()),
-                     rows * self._cell_h + (rows - 1) * self._row_gap)
+    def _row_of(self, abs_bit):
+        return self._count - 1 - (abs_bit - self._offset)
 
-    def event(self, ev):
-        if ev.type() == ev.Type.ToolTip:
-            idx = self._bit_at(int(ev.pos().x()), int(ev.pos().y()))
-            if idx is not None:
-                bit_on = bool((self._value >> idx) & 1)
-                QToolTip.showText(
-                    ev.globalPos(), f"bit[{idx}] = {1 if bit_on else 0}", self)
-                return True
-        return super().event(ev)
+    def _build_rows(self):
+        self.setRowCount(0)
+        for i in range(self._count):
+            self.insertRow(i)
+            bit = self._abs_bit(i)
+            bi = QTableWidgetItem(str(bit))
+            bi.setTextAlignment(Qt.AlignCenter)
+            bi.setForeground(QColor(TEXT_MUTED))
+            self.setItem(i, 0, bi)
+            btn = QPushButton("0")
+            btn.setObjectName("bitValBtn")
+            btn.setFixedHeight(I2C_BTN_HEIGHT)
+            btn.setStyleSheet(_bit_val_style(False))
+            btn.clicked.connect(lambda _=False, b=bit: self.bit_toggled.emit(b))
+            self.setCellWidget(i, 1, btn)
+            for c in (2, 3, 4):
+                it = QTableWidgetItem("")
+                if c == 4:
+                    it.setTextAlignment(Qt.AlignCenter)
+                    it.setForeground(QColor(EMERALD_LIGHT))
+                self.setItem(i, c, it)
+
+    def set_bit_range(self, offset, count):
+        self._offset = offset
+        self._count = count
+        self._build_rows()
+        self._apply_fields()
+
+    def set_value(self, full_value):
+        for i in range(self._count):
+            bit = self._abs_bit(i)
+            on = bool((full_value >> bit) & 1)
+            btn = self.cellWidget(i, 1)
+            if btn is not None:
+                btn.setText("1" if on else "0")
+                btn.setStyleSheet(_bit_val_style(on))
+        self._refresh_field_hex(full_value)
+
+    def set_fields(self, all_fields):
+        hi = self._offset + self._count - 1
+        lo = self._offset
+        self._fields = [f for f in all_fields
+                        if int(f["high_bit"]) >= lo and int(f["low_bit"]) <= hi]
+        self._apply_fields()
+
+    def _apply_fields(self):
+        self.clearSpans()
+        tint = QColor(INDIGO)
+        tint.setAlpha(38)
+        base_bg = QColor(SLATE_900)
+        base_bg.setAlpha(120)
+        for i in range(self._count):
+            for c in (2, 3, 4):
+                it = self.item(i, c)
+                if it is not None:
+                    it.setText("")
+                    it.setBackground(base_bg)
+        hi = self._offset + self._count - 1
+        lo = self._offset
+        for f in self._fields:
+            fhi = int(f["high_bit"])
+            flo = int(f["low_bit"])
+            if fhi < flo:
+                fhi, flo = flo, fhi
+            c_hi = min(fhi, hi)
+            c_lo = max(flo, lo)
+            row_top = self._row_of(c_hi)
+            row_bot = self._row_of(c_lo)
+            if row_top > row_bot:
+                row_top, row_bot = row_bot, row_top
+            span = row_bot - row_top + 1
+            name_it = self.item(row_top, 2)
+            desc_it = self.item(row_top, 3)
+            if name_it is not None:
+                name_it.setText(f["name"])
+                name_it.setForeground(QColor(INDIGO_LIGHT))
+            if desc_it is not None:
+                desc_it.setText(f.get("description", ""))
+                desc_it.setForeground(QColor(TEXT_MUTED))
+            for r in range(row_top, row_bot + 1):
+                for c in (2, 3, 4):
+                    it = self.item(r, c)
+                    if it is not None:
+                        it.setBackground(tint)
+            for c in (2, 3, 4):
+                self.setSpan(row_top, c, span, 1)
+
+    def _refresh_field_hex(self, full_value):
+        for f in self._fields:
+            fhi = int(f["high_bit"])
+            flo = int(f["low_bit"])
+            if fhi < flo:
+                fhi, flo = flo, fhi
+            width = fhi - flo + 1
+            mask = (1 << width) - 1
+            val = (full_value >> flo) & mask
+            c_hi = min(fhi, self._offset + self._count - 1)
+            row_top = self._row_of(c_hi)
+            it = self.item(row_top, 4)
+            if it is not None:
+                it.setText(_fmt_hex(val, width))
+
+
+# ---------------------------------------------------------------------------
+# 自定义控件：位表容器（8/16-bit 单栏，32-bit 双栏并排）
+# ---------------------------------------------------------------------------
+
+class BitsTableContainer(QWidget):
+    """位表容器：n<=16 单栏，n>16 自动拆分为双栏（高位左、低位右）。"""
+    bit_toggled = Signal(int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._tables = []
+        self._layout = QHBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(10)
+
+    def set_bit_count(self, n):
+        for t in self._tables:
+            t.bit_toggled.disconnect()
+            self._layout.removeWidget(t)
+            t.deleteLater()
+        self._tables = []
+        if n <= 16:
+            t = BitsTable(0, n)
+            t.bit_toggled.connect(self.bit_toggled)
+            self._layout.addWidget(t, 1)
+            self._tables.append(t)
+        else:
+            half = (n + 1) // 2  # 高位段位数
+            hi_t = BitsTable(half, n - half)
+            lo_t = BitsTable(0, half)
+            for t in (hi_t, lo_t):
+                t.bit_toggled.connect(self.bit_toggled)
+            self._layout.addWidget(hi_t, 1)
+            sep = QFrame()
+            sep.setFrameShape(QFrame.VLine)
+            sep.setStyleSheet(f"color:{SLATE_800}; background:transparent;")
+            self._layout.addWidget(sep, 0)
+            self._layout.addWidget(lo_t, 1)
+            self._tables = [hi_t, lo_t]
+
+    def set_value(self, full_value):
+        for t in self._tables:
+            t.set_value(full_value)
+
+    def set_fields(self, fields):
+        for t in self._tables:
+            t.set_fields(fields)
+
+    def refresh_fields(self, fields):
+        for t in self._tables:
+            t.set_fields(fields)
 
 
 # ---------------------------------------------------------------------------
@@ -562,7 +808,7 @@ class BitGridView(QWidget):
 
 class I2cMixin:
     """通用 I2C 控制 Mixin：按需初始化 I2C / 寄存器读写 / 位宽切换 /
-    按位写 / 位域解释 / 寄存器映射 / 模板持久化 / 标签页布局。"""
+    位域合并 / 寄存器映射 / 模板持久化 / 顶部导航 + 工作区布局。"""
 
     def init_i2c(self):
         global _I2C_WIDTH_META
@@ -578,9 +824,10 @@ class I2cMixin:
         self._i2c_chipcheck_worker = None
         self._i2c_custom_dll = None
 
-        from lib.i2c.Bes_I2CIO_Interface import I2CWidthFlag
-        self._i2c_width = I2CWidthFlag.BIT_10
+        self._i2c_width = _ui_width_to_flag(16)
+        self._i2c_data_bits = 16
         self._i2c_speed_mode = self._i2c_speed_options[1][0]  # 100K
+        self._i2c_data_value = 0
 
         self._i2c_registers = []
         self._i2c_active_reg_index = None
@@ -590,313 +837,282 @@ class I2cMixin:
         self._i2c_readall_results = {}
         self._i2c_pending_readall_idx = None
 
-    # ---- 当前 DLL 路径（每次操作传入 worker） ----
-
     def _i2c_dll_path(self):
         return getattr(self, "_i2c_custom_dll", None)
 
-    # ---- UI 构建：标签页 ----
+    # ---- UI 构建：整体框架（顶部导航 + 配置卡片 + 工作区） ----
 
     def build_i2c_widgets(self, layout, title_row=None):
-        self.i2c_tab_widget = QTabWidget()
-        self.i2c_tab_widget.setStyleSheet(_i2c_tab_style())
-        self.i2c_tab_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-
-        ctrl_tab = self._build_i2c_control_tab()
-        self.i2c_tab_widget.addTab(ctrl_tab, "控制")
-
-        tpl_tab = self._build_i2c_template_tab()
-        self.i2c_tab_widget.addTab(tpl_tab, "模板")
-
-        settings_tab = self._build_i2c_settings_tab()
-        self.i2c_tab_widget.addTab(settings_tab, "设置")
-
-        layout.addWidget(self.i2c_tab_widget)
-        self._i2c_sync_width_ui()
-
-    def _build_i2c_control_tab(self):
-        page = QWidget()
-        page.setStyleSheet("background: transparent;")
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
-
-        inner = QWidget()
-        inner.setStyleSheet("background: transparent;")
-        root = QVBoxLayout(inner)
-        root.setContentsMargins(8, 8, 8, 8)
+        root = QVBoxLayout()
+        root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(10)
 
-        self._build_i2c_access_card(root)
-        self._build_i2c_bitview_card(root)
-        root.addStretch()
+        self._build_i2c_nav_bar(root)
 
-        scroll.setWidget(inner)
-        wrap = QVBoxLayout(page)
-        wrap.setContentsMargins(0, 0, 0, 0)
-        wrap.addWidget(scroll)
-        return page
+        self.i2c_stack = QStackedWidget()
+        self.i2c_stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.i2c_ctrl_page = self._build_i2c_control_page()
+        self.i2c_tpl_page = self._build_i2c_template_page()
+        self.i2c_set_page = self._build_i2c_settings_page()
+        self.i2c_stack.addWidget(self.i2c_ctrl_page)
+        self.i2c_stack.addWidget(self.i2c_tpl_page)
+        self.i2c_stack.addWidget(self.i2c_set_page)
+        root.addWidget(self.i2c_stack, 1)
 
-    def _build_i2c_template_tab(self):
+        layout.addLayout(root)
+        self._i2c_sync_width_ui()
+
+    def _build_i2c_nav_bar(self, layout):
+        bar = QFrame()
+        bar.setObjectName("navBar")
+        bar.setFixedHeight(48)
+        row = QHBoxLayout(bar)
+        row.setContentsMargins(16, 6, 10, 6)
+        row.setSpacing(12)
+
+        badge = QLabel("I2C")
+        badge.setObjectName("appBadge")
+        badge.setAlignment(Qt.AlignCenter)
+        badge.setFixedHeight(26)
+        badge.setFixedWidth(40)
+        row.addWidget(badge)
+
+        title = QLabel("I2C Console")
+        title.setObjectName("appTitle")
+        row.addWidget(title)
+        row.addStretch()
+
+        self.i2c_nav_group = QButtonGroup(self)
+        self.i2c_nav_group.setExclusive(True)
+        self.i2c_nav_tabs = []
+        for text, idx in (("Control", 0), ("Templates", 1), ("Settings", 2)):
+            btn = QPushButton(text)
+            btn.setObjectName("navTab")
+            btn.setCheckable(True)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet(_nav_tab_style())
+            btn.clicked.connect(lambda _=False, i=idx: self._on_i2c_nav_tab(i))
+            self.i2c_nav_group.addButton(btn, idx)
+            row.addWidget(btn)
+            self.i2c_nav_tabs.append(btn)
+        self.i2c_nav_tabs[0].setChecked(True)
+        layout.addWidget(bar)
+
+    def _on_i2c_nav_tab(self, idx):
+        self.i2c_stack.setCurrentIndex(idx)
+
+    # ---- 控制页：顶部配置卡片组 + 主工作区 ----
+
+    def _build_i2c_control_page(self):
         page = QWidget()
-        page.setStyleSheet("background: transparent;")
+        page.setStyleSheet("background:transparent;")
         root = QVBoxLayout(page)
-        root.setContentsMargins(8, 8, 8, 8)
-        root.setSpacing(8)
-        self._build_i2c_register_map_card(root)
-        root.addStretch()
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(10)
+
+        self._build_i2c_top_cards(root)
+        self._build_i2c_workspace(root)
+        root.addStretch(0)
         return page
 
-    def _build_i2c_settings_tab(self):
-        page = QWidget()
-        page.setStyleSheet("background: transparent;")
-        root = QVBoxLayout(page)
-        root.setContentsMargins(8, 8, 8, 8)
-        root.setSpacing(8)
+    def _build_i2c_top_cards(self, layout):
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        row.setContentsMargins(0, 0, 0, 0)
+        self._build_i2c_device_config_card(row)
+        self._build_i2c_activity_card(row)
+        layout.addLayout(row)
 
-        # DLL 路径
-        dll_title = QLabel("DLL")
-        dll_title.setObjectName("cardTitle")
-        root.addWidget(dll_title)
-        dll_row = QHBoxLayout()
-        dll_row.setSpacing(6)
-        self.i2c_dll_edit = QLineEdit()
-        self.i2c_dll_edit.setReadOnly(True)
-        self.i2c_dll_edit.setPlaceholderText("Auto resolve DLL path")
-        self.i2c_dll_edit.setStyleSheet(_i2c_input_style())
-        self._i2c_refresh_dll_display()
-        dll_row.addWidget(self.i2c_dll_edit, 1)
-        self.i2c_dll_browse_btn = QPushButton("Browse")
-        self.i2c_dll_browse_btn.setFixedHeight(I2C_BTN_HEIGHT)
-        self.i2c_dll_browse_btn.setStyleSheet(_i2c_action_style())
-        self.i2c_dll_browse_btn.setToolTip("选择自定义 I2C DLL 路径")
-        dll_row.addWidget(self.i2c_dll_browse_btn)
-        self.i2c_dll_reset_btn = QPushButton("Reset")
-        self.i2c_dll_reset_btn.setFixedHeight(I2C_BTN_HEIGHT)
-        self.i2c_dll_reset_btn.setStyleSheet(_i2c_action_style())
-        self.i2c_dll_reset_btn.setToolTip("恢复自动查找 DLL 路径")
-        dll_row.addWidget(self.i2c_dll_reset_btn)
-        root.addLayout(dll_row)
+    def _build_i2c_device_config_card(self, layout):
+        card = QFrame()
+        card.setObjectName("card")
+        v = QVBoxLayout(card)
+        v.setContentsMargins(14, 12, 14, 12)
+        v.setSpacing(8)
 
-        # 默认速率
-        speed_title = QLabel("Default Speed")
-        speed_title.setObjectName("cardTitle")
-        root.addWidget(speed_title)
-        self.i2c_speed_combo = DarkComboBox(bg="#091426", border="#17345f")
-        self.i2c_speed_combo.setFixedHeight(I2C_BTN_HEIGHT)
-        self.i2c_speed_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        for mode, text in self._i2c_speed_options:
-            self.i2c_speed_combo.addItem(text, userData=mode)
-        self.i2c_speed_combo.setCurrentIndex(1)
-        root.addWidget(self.i2c_speed_combo)
+        t = QLabel("Device Config")
+        t.setObjectName("cardTitle")
+        v.addWidget(t)
 
-        # 默认位宽
-        width_title = QLabel("Default Width")
-        width_title.setObjectName("cardTitle")
-        root.addWidget(width_title)
-        self.i2c_width_combo = DarkComboBox(bg="#091426", border="#17345f")
-        self.i2c_width_combo.setFixedHeight(I2C_BTN_HEIGHT)
-        self.i2c_width_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        for flag, (text, _a, _d) in _I2C_WIDTH_META.items():
-            self.i2c_width_combo.addItem(text, userData=flag)
-        self.i2c_width_combo.setCurrentIndex(1)
-        root.addWidget(self.i2c_width_combo)
-
-        # 芯片检测
-        cc_title = QLabel("Chip Check")
-        cc_title.setObjectName("cardTitle")
-        root.addWidget(cc_title)
-        self.i2c_chipcheck_btn = QPushButton("BES Chip Check")
-        self.i2c_chipcheck_btn.setFixedHeight(I2C_BTN_HEIGHT)
-        self.i2c_chipcheck_btn.setStyleSheet(_i2c_accent_style())
-        self.i2c_chipcheck_btn.setToolTip("BES 芯片检测 (mainDie / PMU)")
-        root.addWidget(self.i2c_chipcheck_btn)
-
-        root.addStretch()
-        return page
-
-    def _build_i2c_access_card(self, layout):
-        access_title = QLabel("Register Access")
-        access_title.setObjectName("cardTitle")
-        layout.addWidget(access_title)
-
-        row1 = QHBoxLayout()
-        row1.setSpacing(6)
-        row1.setContentsMargins(0, 2, 0, 0)
-        dev_lbl = QLabel("Dev Addr")
-        dev_lbl.setFixedWidth(64)
-        row1.addWidget(dev_lbl, 0, Qt.AlignVCenter)
+        dev_row = QHBoxLayout()
+        dev_row.setSpacing(8)
+        dev_lbl = QLabel("Device Addr")
+        dev_lbl.setObjectName("muted")
+        dev_lbl.setFixedWidth(80)
+        dev_row.addWidget(dev_lbl)
         self.i2c_dev_edit = HexLineEdit(_reg_addr_bits(self._i2c_width))
         self.i2c_dev_edit.setStyleSheet(_i2c_input_style())
         self.i2c_dev_edit.set_value(0x27)
-        row1.addWidget(self.i2c_dev_edit, 1)
-        reg_lbl = QLabel("Reg Addr")
-        reg_lbl.setFixedWidth(64)
-        row1.addWidget(reg_lbl, 0, Qt.AlignVCenter)
-        self.i2c_reg_edit = HexLineEdit(_reg_addr_bits(self._i2c_width))
-        self.i2c_reg_edit.setStyleSheet(_i2c_input_style())
-        self.i2c_reg_edit.set_value(0x0000)
-        row1.addWidget(self.i2c_reg_edit, 1)
-        width_lbl = QLabel("Width")
-        width_lbl.setFixedWidth(48)
-        row1.addWidget(width_lbl, 0, Qt.AlignVCenter)
-        self.i2c_access_width_combo = DarkComboBox(bg="#091426", border="#17345f")
-        self.i2c_access_width_combo.setFixedHeight(I2C_BTN_HEIGHT)
-        self.i2c_access_width_combo.setSizePolicy(
-            QSizePolicy.Expanding, QSizePolicy.Fixed)
-        for flag, (text, _a, _d) in _I2C_WIDTH_META.items():
-            self.i2c_access_width_combo.addItem(text, userData=flag)
-        self.i2c_access_width_combo.setCurrentIndex(1)
-        row1.addWidget(self.i2c_access_width_combo, 1)
-        layout.addLayout(row1)
+        dev_row.addWidget(self.i2c_dev_edit, 1)
+        v.addLayout(dev_row)
 
-        row2 = QHBoxLayout()
-        row2.setSpacing(6)
-        row2.setContentsMargins(0, 2, 0, 0)
-        op_lbl = QLabel("Op")
-        op_lbl.setFixedWidth(64)
-        row2.addWidget(op_lbl, 0, Qt.AlignVCenter)
-        self.i2c_op_combo = DarkComboBox(bg="#091426", border="#17345f")
-        self.i2c_op_combo.setFixedHeight(I2C_BTN_HEIGHT)
-        self.i2c_op_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        for key, text in _I2C_OP_OPTIONS:
-            self.i2c_op_combo.addItem(text, userData=key)
-        self.i2c_op_combo.setCurrentIndex(0)
-        row2.addWidget(self.i2c_op_combo, 1)
-        data_lbl = QLabel("Data")
-        data_lbl.setFixedWidth(48)
-        row2.addWidget(data_lbl, 0, Qt.AlignVCenter)
-        self.i2c_data_edit = HexLineEdit(_data_bits(self._i2c_width))
-        self.i2c_data_edit.setStyleSheet(_i2c_input_style())
-        row2.addWidget(self.i2c_data_edit, 1)
-        layout.addLayout(row2)
+        w_row = QHBoxLayout()
+        w_row.setSpacing(8)
+        w_lbl = QLabel("Data Width")
+        w_lbl.setObjectName("muted")
+        w_lbl.setFixedWidth(80)
+        w_row.addWidget(w_lbl)
+        self.i2c_width_combo = DarkComboBox(bg=SLATE_950, border=SLATE_800,
+                                            hover_color=INDIGO)
+        self.i2c_width_combo.setFixedHeight(I2C_BTN_HEIGHT)
+        self.i2c_width_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        for bits, text in _I2C_UI_WIDTHS:
+            self.i2c_width_combo.addItem(text, userData=bits)
+        self.i2c_width_combo.setCurrentIndex(1)
+        w_row.addWidget(self.i2c_width_combo, 1)
+        v.addLayout(w_row)
 
-        row3 = QHBoxLayout()
-        row3.setSpacing(6)
-        row3.setContentsMargins(0, 2, 0, 0)
-        self.i2c_bitrange_lbl = QLabel("Bit Range")
-        self.i2c_bitrange_lbl.setFixedWidth(64)
-        row3.addWidget(self.i2c_bitrange_lbl, 0, Qt.AlignVCenter)
-        self.i2c_high_edit = HexLineEdit(6)
-        self.i2c_high_edit.setStyleSheet(_i2c_input_style())
-        self.i2c_high_edit.set_value(7)
-        sep_lbl = QLabel(":")
-        sep_lbl.setFixedWidth(8)
-        sep_lbl.setAlignment(Qt.AlignCenter)
-        self.i2c_low_edit = HexLineEdit(6)
-        self.i2c_low_edit.setStyleSheet(_i2c_input_style())
-        self.i2c_low_edit.set_value(0)
-        row3.addWidget(self.i2c_high_edit, 1)
-        row3.addWidget(sep_lbl, 0, Qt.AlignVCenter)
-        row3.addWidget(self.i2c_low_edit, 1)
-        layout.addLayout(row3)
+        layout.addWidget(card, 1)
 
-        action_row = QHBoxLayout()
-        action_row.setSpacing(6)
-        action_row.setContentsMargins(0, 4, 0, 0)
-        self.i2c_read_btn = QPushButton("Read")
-        self.i2c_read_btn.setFixedHeight(I2C_BTN_HEIGHT)
-        self.i2c_read_btn.setStyleSheet(_i2c_accent_style())
-        self.i2c_write_btn = QPushButton("Write")
-        self.i2c_write_btn.setFixedHeight(I2C_BTN_HEIGHT)
-        self.i2c_write_btn.setStyleSheet(_i2c_accent_style())
-        action_row.addWidget(self.i2c_read_btn, 1)
-        action_row.addWidget(self.i2c_write_btn, 1)
-        layout.addLayout(action_row)
+    def _build_i2c_activity_card(self, layout):
+        card = QFrame()
+        card.setObjectName("card")
+        v = QVBoxLayout(card)
+        v.setContentsMargins(14, 12, 14, 12)
+        v.setSpacing(8)
 
-        result_row = QHBoxLayout()
-        result_row.setSpacing(6)
-        result_row.setContentsMargins(0, 2, 0, 0)
-        result_lbl = QLabel("Last Op")
-        result_lbl.setFixedWidth(64)
-        result_row.addWidget(result_lbl, 0, Qt.AlignVCenter)
-        self.i2c_result_label = QLabel("—")
-        self.i2c_result_label.setObjectName("statusOk")
-        self.i2c_result_label.setStyleSheet(
-            "color:#15d1a3; font-weight:600; background:transparent;")
-        self.i2c_result_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        result_row.addWidget(self.i2c_result_label, 1)
-        layout.addLayout(result_row)
+        t = QLabel("Activity")
+        t.setObjectName("cardTitle")
+        v.addWidget(t)
 
-    def _build_i2c_bitview_card(self, layout):
-        bv_title = QLabel("Bit Field View")
-        bv_title.setObjectName("cardTitle")
-        layout.addWidget(bv_title)
+        op_row = QHBoxLayout()
+        op_row.setSpacing(8)
+        op_lbl = QLabel("Last Op")
+        op_lbl.setObjectName("muted")
+        op_lbl.setFixedWidth(80)
+        op_row.addWidget(op_lbl)
+        self.i2c_activity_op = QLabel("—")
+        self.i2c_activity_op.setObjectName("mono")
+        op_row.addWidget(self.i2c_activity_op, 1)
+        v.addLayout(op_row)
+
+        time_row = QHBoxLayout()
+        time_row.setSpacing(8)
+        time_lbl = QLabel("Timestamp")
+        time_lbl.setObjectName("muted")
+        time_lbl.setFixedWidth(80)
+        time_row.addWidget(time_lbl)
+        self.i2c_activity_time = QLabel("—")
+        self.i2c_activity_time.setObjectName("muted")
+        time_row.addWidget(self.i2c_activity_time, 1)
+        v.addLayout(time_row)
 
         val_row = QHBoxLayout()
-        val_row.setSpacing(6)
-        val_row.setContentsMargins(0, 2, 0, 0)
-        val_lbl = QLabel("Value")
-        val_lbl.setFixedWidth(64)
-        val_row.addWidget(val_lbl, 0, Qt.AlignVCenter)
-        self.i2c_value_edit = HexLineEdit(_data_bits(self._i2c_width))
-        self.i2c_value_edit.setStyleSheet(_i2c_input_style())
-        val_row.addWidget(self.i2c_value_edit, 1)
-        self.i2c_value_read_btn = QPushButton("Read")
-        self.i2c_value_read_btn.setFixedHeight(I2C_BTN_HEIGHT)
-        self.i2c_value_read_btn.setStyleSheet(_i2c_action_style())
-        self.i2c_value_write_btn = QPushButton("Write")
-        self.i2c_value_write_btn.setFixedHeight(I2C_BTN_HEIGHT)
-        self.i2c_value_write_btn.setStyleSheet(_i2c_action_style())
-        val_row.addWidget(self.i2c_value_read_btn)
-        val_row.addWidget(self.i2c_value_write_btn)
-        layout.addLayout(val_row)
+        val_row.setSpacing(8)
+        val_lbl = QLabel("Data Value")
+        val_lbl.setObjectName("muted")
+        val_lbl.setFixedWidth(80)
+        val_row.addWidget(val_lbl)
+        self.i2c_result_label = QLabel("—")
+        self.i2c_result_label.setObjectName("activityVal")
+        self.i2c_result_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.i2c_result_label.setStyleSheet("color:#34d399;")
+        val_row.addWidget(self.i2c_result_label, 1)
+        v.addLayout(val_row)
 
-        self.i2c_bit_grid = BitGridView(_data_bits(self._i2c_width))
-        grid_container = QWidget()
-        grid_container.setStyleSheet("background:transparent;")
-        gl = QHBoxLayout(grid_container)
-        gl.setContentsMargins(0, 4, 0, 4)
-        gl.addWidget(self.i2c_bit_grid, 1)
-        layout.addWidget(grid_container)
+        layout.addWidget(card, 1)
 
+    # ---- 主工作区：Header（标题 + 二进制预览） + Body（位表） + Footer（操作栏） ----
+
+    def _build_i2c_workspace(self, layout):
+        ws = QFrame()
+        ws.setObjectName("workspace")
+        ws.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        v = QVBoxLayout(ws)
+        v.setContentsMargins(14, 12, 14, 12)
+        v.setSpacing(10)
+
+        # Header
+        header = QHBoxLayout()
+        header.setSpacing(10)
+        h_title = QLabel("Payload Data Bits")
+        h_title.setObjectName("cardTitle")
+        header.addWidget(h_title)
+        header.addStretch()
+        bin_lbl = QLabel("BIN")
+        bin_lbl.setObjectName("muted")
+        bin_lbl.setFixedWidth(30)
+        header.addWidget(bin_lbl, 0, Qt.AlignVCenter)
         self.i2c_bin_label = QLabel("")
-        self.i2c_bin_label.setAlignment(Qt.AlignCenter)
-        self.i2c_bin_label.setStyleSheet(
-            "color:#7e96bf; font-family:Consolas,monospace; background:transparent;")
-        self.i2c_bin_label.setWordWrap(False)
-        layout.addWidget(self.i2c_bin_label)
+        self.i2c_bin_label.setObjectName("mono")
+        self.i2c_bin_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.i2c_bin_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        header.addWidget(self.i2c_bin_label, 1)
+        v.addLayout(header)
 
-        fields_title_row = QHBoxLayout()
-        fields_title_row.setSpacing(6)
-        fields_title = QLabel("Bit Fields")
-        fields_title.setStyleSheet(
-            "color:#7e96bf; font-size:11px; background:transparent;")
-        fields_title_row.addWidget(fields_title)
-        fields_title_row.addStretch()
-        self.i2c_add_field_btn = QPushButton("+ Field")
-        self.i2c_add_field_btn.setFixedHeight(I2C_BTN_HEIGHT)
-        self.i2c_add_field_btn.setStyleSheet(_i2c_action_style())
-        fields_title_row.addWidget(self.i2c_add_field_btn)
-        layout.addLayout(fields_title_row)
+        # Body：位操作表格
+        body_wrap = QWidget()
+        body_wrap.setStyleSheet("background:transparent;")
+        bv = QVBoxLayout(body_wrap)
+        bv.setContentsMargins(0, 0, 0, 0)
+        bv.setSpacing(6)
+        self.i2c_bits = BitsTableContainer()
+        self.i2c_bits.set_bit_count(self._i2c_data_bits)
+        bv.addWidget(self.i2c_bits, 1)
+        v.addWidget(body_wrap, 1)
 
-        self.i2c_fields_table = QTableWidget(0, 5)
-        self.i2c_fields_table.setHorizontalHeaderLabels(
-            ["Field", "High", "Low", "Value", "Description"])
-        self.i2c_fields_table.setEditTriggers(
-            QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
-        self.i2c_fields_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.i2c_fields_table.verticalHeader().setVisible(False)
-        self.i2c_fields_table.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.i2c_fields_table.setStyleSheet(self._i2c_table_qss())
-        header = self.i2c_fields_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.Stretch)
-        self.i2c_fields_table.setMinimumHeight(120)
-        layout.addWidget(self.i2c_fields_table)
+        # Footer：Register Addr + Data Value + Read/Write
+        footer = QFrame()
+        footer.setObjectName("footer")
+        f_row = QHBoxLayout(footer)
+        f_row.setContentsMargins(12, 8, 12, 8)
+        f_row.setSpacing(10)
 
-    def _build_i2c_register_map_card(self, layout):
-        map_title = QLabel("Register Map (Template)")
-        map_title.setObjectName("cardTitle")
-        layout.addWidget(map_title)
+        reg_lbl = QLabel("Reg Addr")
+        reg_lbl.setObjectName("muted")
+        f_row.addWidget(reg_lbl)
+        self.i2c_reg_edit = RegAddrInput(_reg_addr_bits(self._i2c_width))
+        self.i2c_reg_edit.set_value(0x0000)
+        self.i2c_reg_edit.setMinimumWidth(110)
+        self.i2c_reg_edit.setMaximumWidth(160)
+        f_row.addWidget(self.i2c_reg_edit)
 
+        dv_lbl = QLabel("Data Value")
+        dv_lbl.setObjectName("muted")
+        f_row.addWidget(dv_lbl)
+        self.i2c_data_edit = DataValueInput(self._i2c_data_bits)
+        f_row.addWidget(self.i2c_data_edit, 1)
+
+        self.i2c_read_btn = QPushButton("Read")
+        self.i2c_read_btn.setFixedHeight(I2C_BTN_HEIGHT)
+        self.i2c_read_btn.setCursor(Qt.PointingHandCursor)
+        self.i2c_read_btn.setStyleSheet(_i2c_read_btn_style())
+        self.i2c_write_btn = QPushButton("Write")
+        self.i2c_write_btn.setFixedHeight(I2C_BTN_HEIGHT)
+        self.i2c_write_btn.setCursor(Qt.PointingHandCursor)
+        self.i2c_write_btn.setStyleSheet(_i2c_write_btn_style())
+        f_row.addWidget(self.i2c_read_btn)
+        f_row.addWidget(self.i2c_write_btn)
+        v.addWidget(footer)
+
+        layout.addWidget(ws, 1)
+
+    # ---- 模板页：寄存器映射 + 位字段编辑 ----
+
+    def _build_i2c_template_page(self):
+        page = QWidget()
+        page.setStyleSheet("background:transparent;")
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setStyleSheet("QScrollArea{background:transparent;border:none;}")
+        inner = QWidget()
+        inner.setStyleSheet("background:transparent;")
+        root = QVBoxLayout(inner)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(10)
+
+        # Register Map
+        map_card = QFrame()
+        map_card.setObjectName("card")
+        mv = QVBoxLayout(map_card)
+        mv.setContentsMargins(14, 12, 14, 12)
+        mv.setSpacing(8)
+        mt = QLabel("Register Map")
+        mt.setObjectName("cardTitle")
+        mv.addWidget(mt)
         map_btn_row = QHBoxLayout()
         map_btn_row.setSpacing(6)
-        map_btn_row.setContentsMargins(0, 2, 0, 0)
         self.i2c_save_tpl_btn = QPushButton("Save")
         self.i2c_load_tpl_btn = QPushButton("Load")
         self.i2c_add_reg_btn = QPushButton("+ Reg")
@@ -904,10 +1120,11 @@ class I2cMixin:
         for btn in (self.i2c_save_tpl_btn, self.i2c_load_tpl_btn,
                     self.i2c_add_reg_btn, self.i2c_readall_btn):
             btn.setFixedHeight(I2C_BTN_HEIGHT)
-            btn.setStyleSheet(_i2c_action_style())
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet(_i2c_subtle_btn_style())
             map_btn_row.addWidget(btn)
-        layout.addLayout(map_btn_row)
-
+        map_btn_row.addStretch()
+        mv.addLayout(map_btn_row)
         self.i2c_reg_table = QTableWidget(0, 5)
         self.i2c_reg_table.setHorizontalHeaderLabels(
             ["Name", "Reg Addr", "Width", "Fields", "Description"])
@@ -916,26 +1133,132 @@ class I2cMixin:
         self.i2c_reg_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.i2c_reg_table.verticalHeader().setVisible(False)
         self.i2c_reg_table.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.i2c_reg_table.setStyleSheet(self._i2c_table_qss())
-        rheader = self.i2c_reg_table.horizontalHeader()
-        rheader.setSectionResizeMode(0, QHeaderView.Stretch)
-        rheader.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        rheader.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        rheader.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        rheader.setSectionResizeMode(4, QHeaderView.Stretch)
-        self.i2c_reg_table.setMinimumHeight(140)
-        layout.addWidget(self.i2c_reg_table)
+        self.i2c_reg_table.setStyleSheet(_i2c_table_qss())
+        rh = self.i2c_reg_table.horizontalHeader()
+        rh.setSectionResizeMode(0, QHeaderView.Stretch)
+        rh.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        rh.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        rh.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        rh.setSectionResizeMode(4, QHeaderView.Stretch)
+        self.i2c_reg_table.setMinimumHeight(160)
+        mv.addWidget(self.i2c_reg_table)
+        root.addWidget(map_card)
 
-    @staticmethod
-    def _i2c_table_qss():
-        return (
-            "QTableWidget { background-color:#091426; border:1px solid #17345f;"
-            " border-radius:6px; gridline-color:#1a2850; color:#dce7ff; }"
-            "QHeaderView::section { background-color:#0b1430; color:#7e96bf;"
-            " border:0; padding:4px; font-weight:600; }"
-            "QTableWidget::item { padding:2px 4px; }"
-            "QTableWidget::item:selected { background-color:#1f4a8a; }"
-        )
+        # Bit Fields
+        f_card = QFrame()
+        f_card.setObjectName("card")
+        fv = QVBoxLayout(f_card)
+        fv.setContentsMargins(14, 12, 14, 12)
+        fv.setSpacing(8)
+        ft_row = QHBoxLayout()
+        ft_row.setSpacing(6)
+        ft = QLabel("Bit Fields")
+        ft.setObjectName("cardTitle")
+        ft_row.addWidget(ft)
+        ft_row.addStretch()
+        self.i2c_add_field_btn = QPushButton("+ Field")
+        self.i2c_add_field_btn.setFixedHeight(I2C_BTN_HEIGHT)
+        self.i2c_add_field_btn.setCursor(Qt.PointingHandCursor)
+        self.i2c_add_field_btn.setStyleSheet(_i2c_subtle_btn_style())
+        ft_row.addWidget(self.i2c_add_field_btn)
+        fv.addLayout(ft_row)
+        self.i2c_fields_table = QTableWidget(0, 5)
+        self.i2c_fields_table.setHorizontalHeaderLabels(
+            ["Field", "High", "Low", "Value", "Description"])
+        self.i2c_fields_table.setEditTriggers(
+            QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
+        self.i2c_fields_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.i2c_fields_table.verticalHeader().setVisible(False)
+        self.i2c_fields_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.i2c_fields_table.setStyleSheet(_i2c_table_qss())
+        fh = self.i2c_fields_table.horizontalHeader()
+        fh.setSectionResizeMode(0, QHeaderView.Stretch)
+        fh.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        fh.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        fh.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        fh.setSectionResizeMode(4, QHeaderView.Stretch)
+        self.i2c_fields_table.setMinimumHeight(140)
+        fv.addWidget(self.i2c_fields_table)
+        root.addWidget(f_card)
+        root.addStretch()
+
+        scroll.setWidget(inner)
+        wrap = QVBoxLayout(page)
+        wrap.setContentsMargins(0, 0, 0, 0)
+        wrap.addWidget(scroll)
+        return page
+
+    # ---- 设置页：DLL + 速率 + 芯片检测 ----
+
+    def _build_i2c_settings_page(self):
+        page = QWidget()
+        page.setStyleSheet("background:transparent;")
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setStyleSheet("QScrollArea{background:transparent;border:none;}")
+        inner = QWidget()
+        inner.setStyleSheet("background:transparent;")
+        root = QVBoxLayout(inner)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(10)
+
+        card = QFrame()
+        card.setObjectName("card")
+        cv = QVBoxLayout(card)
+        cv.setContentsMargins(14, 12, 14, 12)
+        cv.setSpacing(8)
+
+        dt = QLabel("DLL Path")
+        dt.setObjectName("cardTitle")
+        cv.addWidget(dt)
+        dll_row = QHBoxLayout()
+        dll_row.setSpacing(6)
+        self.i2c_dll_edit = QLineEdit()
+        self.i2c_dll_edit.setReadOnly(True)
+        self.i2c_dll_edit.setFixedHeight(I2C_BTN_HEIGHT)
+        self.i2c_dll_edit.setStyleSheet(_i2c_input_style())
+        self.i2c_dll_edit.setPlaceholderText("Auto resolve DLL path")
+        self._i2c_refresh_dll_display()
+        dll_row.addWidget(self.i2c_dll_edit, 1)
+        self.i2c_dll_browse_btn = QPushButton("Browse")
+        self.i2c_dll_browse_btn.setFixedHeight(I2C_BTN_HEIGHT)
+        self.i2c_dll_browse_btn.setStyleSheet(_i2c_subtle_btn_style())
+        dll_row.addWidget(self.i2c_dll_browse_btn)
+        self.i2c_dll_reset_btn = QPushButton("Reset")
+        self.i2c_dll_reset_btn.setFixedHeight(I2C_BTN_HEIGHT)
+        self.i2c_dll_reset_btn.setStyleSheet(_i2c_subtle_btn_style())
+        dll_row.addWidget(self.i2c_dll_reset_btn)
+        cv.addLayout(dll_row)
+
+        st = QLabel("Default Speed")
+        st.setObjectName("cardTitle")
+        cv.addWidget(st)
+        self.i2c_speed_combo = DarkComboBox(bg=SLATE_950, border=SLATE_800,
+                                            hover_color=INDIGO)
+        self.i2c_speed_combo.setFixedHeight(I2C_BTN_HEIGHT)
+        self.i2c_speed_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        for mode, text in self._i2c_speed_options:
+            self.i2c_speed_combo.addItem(text, userData=mode)
+        self.i2c_speed_combo.setCurrentIndex(1)
+        cv.addWidget(self.i2c_speed_combo)
+
+        ct = QLabel("Chip Check")
+        ct.setObjectName("cardTitle")
+        cv.addWidget(ct)
+        self.i2c_chipcheck_btn = QPushButton("BES Chip Check")
+        self.i2c_chipcheck_btn.setFixedHeight(I2C_BTN_HEIGHT)
+        self.i2c_chipcheck_btn.setCursor(Qt.PointingHandCursor)
+        self.i2c_chipcheck_btn.setStyleSheet(_i2c_read_btn_style())
+        cv.addWidget(self.i2c_chipcheck_btn)
+
+        root.addWidget(card)
+        root.addStretch()
+        scroll.setWidget(inner)
+        wrap = QVBoxLayout(page)
+        wrap.setContentsMargins(0, 0, 0, 0)
+        wrap.addWidget(scroll)
+        return page
 
     # ---- 信号绑定 ----
 
@@ -945,20 +1268,16 @@ class I2cMixin:
         self.i2c_chipcheck_btn.clicked.connect(self._on_i2c_chip_check)
         self.i2c_read_btn.clicked.connect(self._on_i2c_read)
         self.i2c_write_btn.clicked.connect(self._on_i2c_write)
-        self.i2c_value_read_btn.clicked.connect(self._on_i2c_value_read)
-        self.i2c_value_write_btn.clicked.connect(self._on_i2c_value_write)
-        self.i2c_value_edit.value_changed.connect(self._on_i2c_value_edited)
-        self.i2c_bit_grid.value_changed.connect(self._on_i2c_bit_toggled)
+        self.i2c_data_edit.value_changed.connect(self._on_i2c_data_edited)
+        self.i2c_bits.bit_toggled.connect(self._on_i2c_bit_toggled)
+        self.i2c_width_combo.currentIndexChanged.connect(
+            self._on_i2c_width_changed)
+        self.i2c_speed_combo.currentIndexChanged.connect(
+            self._on_i2c_default_speed_changed)
         self.i2c_add_field_btn.clicked.connect(self._on_i2c_add_field)
         self.i2c_fields_table.cellChanged.connect(self._on_i2c_field_cell_changed)
         self.i2c_fields_table.customContextMenuRequested.connect(
             self._on_i2c_field_context_menu)
-        self.i2c_access_width_combo.currentIndexChanged.connect(
-            self._on_i2c_access_width_changed)
-        self.i2c_width_combo.currentIndexChanged.connect(
-            self._on_i2c_default_width_changed)
-        self.i2c_speed_combo.currentIndexChanged.connect(
-            self._on_i2c_default_speed_changed)
         self.i2c_save_tpl_btn.clicked.connect(self._on_i2c_save_template)
         self.i2c_load_tpl_btn.clicked.connect(self._on_i2c_load_template)
         self.i2c_add_reg_btn.clicked.connect(self._on_i2c_add_register)
@@ -972,21 +1291,29 @@ class I2cMixin:
     def _i2c_set_result(self, text, ok=True):
         self.i2c_result_label.setText(text)
         self.i2c_result_label.setStyleSheet(
-            "color:#15d1a3; font-weight:600; background:transparent;"
-            if ok else
-            "color:#ff5e7a; font-weight:600; background:transparent;")
+            "color:#34d399;" if ok else "color:#ff5e7a;")
 
     def append_log(self, msg):
         """供页面覆写：默认转发到 logger。"""
         logger.info(msg)
 
     def _i2c_set_busy(self, busy):
-        for attr in ("i2c_read_btn", "i2c_write_btn", "i2c_value_read_btn",
-                     "i2c_value_write_btn", "i2c_chipcheck_btn",
+        for attr in ("i2c_read_btn", "i2c_write_btn", "i2c_chipcheck_btn",
                      "i2c_readall_btn"):
             w = getattr(self, attr, None)
             if w is not None:
                 w.setEnabled(not busy)
+
+    def _i2c_set_activity(self, op, value=None, ok=True):
+        self.i2c_activity_op.setText(op)
+        self.i2c_activity_op.setStyleSheet(
+            "color:#34d399;" if ok else "color:#ff5e7a;")
+        self.i2c_activity_time.setText(
+            QDateTime.currentDateTime().toString("HH:mm:ss"))
+        if value is not None:
+            bits = self._i2c_data_bits
+            self._i2c_set_result(
+                f"{_fmt_hex(value, bits)}   ({value})", ok=ok)
 
     # ---- DLL 路径 ----
 
@@ -1024,48 +1351,48 @@ class I2cMixin:
         self._i2c_speed_mode = mode
         self.append_log(f"[I2C] 默认速率切换为 {self.i2c_speed_combo.currentText()}")
 
-    def _on_i2c_default_width_changed(self, _idx):
-        from lib.i2c.Bes_I2CIO_Interface import I2CWidthFlag
-        flag = self.i2c_width_combo.currentData()
-        if flag is None:
+    def _on_i2c_width_changed(self, _idx):
+        bits = self.i2c_width_combo.currentData()
+        if bits is None:
             return
-        self._i2c_width = flag
-        # 同步控制页的位宽下拉
-        for i in range(self.i2c_access_width_combo.count()):
-            if self.i2c_access_width_combo.itemData(i) == flag:
-                self.i2c_access_width_combo.blockSignals(True)
-                self.i2c_access_width_combo.setCurrentIndex(i)
-                self.i2c_access_width_combo.blockSignals(False)
-                break
+        self._i2c_data_bits = int(bits)
+        self._i2c_width = _ui_width_to_flag(int(bits))
         self._i2c_sync_width_ui()
-        self.append_log(f"[I2C] 默认位宽切换为 {_width_label(flag)}")
-
-    def _on_i2c_access_width_changed(self, _idx):
-        from lib.i2c.Bes_I2CIO_Interface import I2CWidthFlag
-        flag = self.i2c_access_width_combo.currentData()
-        if flag is None:
-            return
-        self._i2c_width = flag
-        for i in range(self.i2c_width_combo.count()):
-            if self.i2c_width_combo.itemData(i) == flag:
-                self.i2c_width_combo.blockSignals(True)
-                self.i2c_width_combo.setCurrentIndex(i)
-                self.i2c_width_combo.blockSignals(False)
-                break
-        self._i2c_sync_width_ui()
+        self.append_log(f"[I2C] 数据位宽切换为 {bits}-bit")
 
     def _i2c_sync_width_ui(self):
         reg_bits = _reg_addr_bits(self._i2c_width)
-        data_bits = _data_bits(self._i2c_width)
         self.i2c_dev_edit.set_bit_count(reg_bits)
         self.i2c_reg_edit.set_bit_count(reg_bits)
-        self.i2c_data_edit.set_bit_count(data_bits)
-        self.i2c_value_edit.set_bit_count(data_bits)
-        self.i2c_bit_grid.set_bit_count(data_bits)
-        self.i2c_value_edit.set_value(self.i2c_value_edit.value())
-        self.i2c_bit_grid.set_value(self.i2c_value_edit.value())
+        self.i2c_data_edit.set_bit_count(self._i2c_data_bits)
+        self.i2c_bits.set_bit_count(self._i2c_data_bits)
+        self._i2c_data_value &= (1 << self._i2c_data_bits) - 1
+        self.i2c_data_edit.set_value(self._i2c_data_value)
+        self.i2c_bits.set_value(self._i2c_data_value)
+        self.i2c_bits.set_fields(self._i2c_fields)
         self._i2c_refresh_bin_label()
         self._i2c_refresh_field_values()
+
+    # ---- 双向数据绑定 ----
+
+    def _on_i2c_data_edited(self, value):
+        self._i2c_data_value = int(value) & ((1 << self._i2c_data_bits) - 1)
+        self.i2c_bits.set_value(self._i2c_data_value)
+        self._i2c_refresh_bin_label()
+        self._i2c_refresh_field_values()
+
+    def _on_i2c_bit_toggled(self, bit_idx):
+        mask = (1 << self._i2c_data_bits) - 1
+        self._i2c_data_value = (self._i2c_data_value ^ (1 << bit_idx)) & mask
+        self.i2c_data_edit.set_value(self._i2c_data_value)
+        self.i2c_bits.set_value(self._i2c_data_value)
+        self._i2c_refresh_bin_label()
+        self._i2c_refresh_field_values()
+
+    def _i2c_refresh_bin_label(self):
+        v = self._i2c_data_value
+        self.i2c_bin_label.setText(
+            f"{_fmt_bin_grouped(v, self._i2c_data_bits)}    ({v})")
 
     # ---- 读写操作（按需初始化 I2C） ----
 
@@ -1075,15 +1402,12 @@ class I2cMixin:
     def _i2c_current_reg(self):
         return self.i2c_reg_edit.value()
 
-    def _i2c_current_op(self):
-        return self.i2c_op_combo.currentData() or I2C_OP_READ
-
     def _start_i2c_read(self, dev, reg, use_raw, tag=""):
         if (self._i2c_read_thread is not None
                 and self._i2c_read_thread.isRunning()):
             return
         self._i2c_set_busy(True)
-        self._i2c_set_result(f"Reading 0x{dev:02X} @ 0x{reg:X}...", ok=True)
+        self._i2c_set_activity("Reading…", ok=True)
         self.append_log(
             f"[I2C] Read{tag} dev=0x{dev:02X} reg=0x{reg:X} "
             f"width={_width_label(self._i2c_width)} raw={use_raw}")
@@ -1108,27 +1432,22 @@ class I2cMixin:
         if (self._i2c_read_thread is not None
                 and self._i2c_read_thread.isRunning()):
             return
-        op = self._i2c_current_op()
-        if op in (I2C_OP_WRITE, I2C_OP_BIT_WRITE, I2C_OP_WRITE_DATA):
-            self._on_i2c_write()
-            return
-        use_raw = op == I2C_OP_READ_DATA
         self._start_i2c_read(self._i2c_current_dev(),
-                             self._i2c_current_reg(), use_raw)
+                             self._i2c_current_reg(), False)
 
     def _on_i2c_read_thread_cleanup(self):
         self._i2c_read_thread = None
         self._i2c_read_worker = None
 
     def _on_i2c_read_done(self, value):
-        bits = _data_bits(self._i2c_width)
-        self._i2c_set_result(
-            f"{_fmt_hex(value, bits)}  ({value})  bin {_fmt_bin_grouped(value, bits)}",
-            ok=True)
-        self.i2c_value_edit.set_value(value)
-        self.i2c_bit_grid.set_value(value)
+        bits = self._i2c_data_bits
+        value = int(value) & ((1 << bits) - 1)
+        self._i2c_data_value = value
+        self.i2c_data_edit.set_value(value)
+        self.i2c_bits.set_value(value)
         self._i2c_refresh_bin_label()
         self._i2c_refresh_field_values()
+        self._i2c_set_activity("Read", value=value, ok=True)
         self._i2c_set_busy(False)
         self.append_log(f"[I2C] Read => {_fmt_hex(value, bits)} ({value})")
         idx = getattr(self, "_i2c_pending_readall_idx", None)
@@ -1139,6 +1458,7 @@ class I2cMixin:
                 QTimer.singleShot(10, self._i2c_readall_next)
 
     def _on_i2c_read_error(self, err):
+        self._i2c_set_activity("Read", ok=False)
         self._i2c_set_result(f"Read Failed: {err}", ok=False)
         self._i2c_set_busy(False)
         self.append_log(f"[I2C] Read 失败: {err}")
@@ -1152,11 +1472,10 @@ class I2cMixin:
             return
         self._i2c_set_busy(True)
         bit_desc = "full" if high < 0 else f"[{high}:{low}]"
-        self._i2c_set_result(
-            f"Writing 0x{dev:02X} @ 0x{reg:X} bits={bit_desc}...", ok=True)
+        self._i2c_set_activity("Writing…", ok=True)
         self.append_log(
             f"[I2C] Write{tag} dev=0x{dev:02X} reg=0x{reg:X} "
-            f"data={_fmt_hex(data, _data_bits(self._i2c_width))} "
+            f"data={_fmt_hex(data, self._i2c_data_bits)} "
             f"width={_width_label(self._i2c_width)} bits={bit_desc} raw={use_raw}")
         worker = _I2cWriteWorker(
             self._i2c_dll_path(), self._i2c_speed_mode, dev, reg, data,
@@ -1183,72 +1502,26 @@ class I2cMixin:
         if (self._i2c_write_thread is not None
                 and self._i2c_write_thread.isRunning()):
             return
-        op = self._i2c_current_op()
-        if op in (I2C_OP_READ, I2C_OP_READ_DATA):
-            self._on_i2c_read()
-            return
         dev = self._i2c_current_dev()
         reg = self._i2c_current_reg()
-        data = self.i2c_data_edit.value()
-        use_raw = op == I2C_OP_WRITE_DATA
-        if op == I2C_OP_BIT_WRITE:
-            high = self.i2c_high_edit.value()
-            low = self.i2c_low_edit.value()
-            if high < low:
-                high, low = low, high
-            width = max(high - low + 1, 1)
-            field_mask = (1 << width) - 1
-            data = data & field_mask
-            self._start_i2c_write(dev, reg, data, high, low, use_raw)
-        else:
-            self._start_i2c_write(dev, reg, data, -1, -1, use_raw)
+        data = self._i2c_data_value
+        self._start_i2c_write(dev, reg, data, -1, -1, False)
 
     def _on_i2c_write_done(self):
-        self._i2c_set_result("Write OK", ok=True)
+        self._i2c_set_activity("Write", value=self._i2c_data_value, ok=True)
         self._i2c_set_busy(False)
         self.append_log("[I2C] Write 完成")
 
     def _on_i2c_write_error(self, err):
+        self._i2c_set_activity("Write", ok=False)
         self._i2c_set_result(f"Write Failed: {err}", ok=False)
         self._i2c_set_busy(False)
         self.append_log(f"[I2C] Write 失败: {err}")
 
-    # ---- Bit Field View 交互 ----
-
-    def _on_i2c_value_read(self):
-        self._start_i2c_read(self._i2c_current_dev(),
-                             self._i2c_current_reg(), False, tag=" (BitView)")
-
-    def _on_i2c_value_write(self):
-        if (self._i2c_write_thread is not None
-                and self._i2c_write_thread.isRunning()):
-            return
-        dev = self._i2c_current_dev()
-        reg = self._i2c_current_reg()
-        data = self.i2c_bit_grid.value()
-        self.i2c_data_edit.set_value(data)
-        self._start_i2c_write(dev, reg, data, -1, -1, False, tag=" (BitView)")
-
-    def _on_i2c_value_edited(self, value):
-        self.i2c_bit_grid.set_value(value)
-        self._i2c_refresh_bin_label()
-        self._i2c_refresh_field_values()
-
-    def _on_i2c_bit_toggled(self, value):
-        self.i2c_value_edit.set_value(value)
-        self._i2c_refresh_bin_label()
-        self._i2c_refresh_field_values()
-
-    def _i2c_refresh_bin_label(self):
-        bits = _data_bits(self._i2c_width)
-        v = self.i2c_bit_grid.value()
-        self.i2c_bin_label.setText(
-            f"bin: {_fmt_bin_grouped(v, bits)}    ({v})")
-
-    # ---- 位域表 ----
+    # ---- 位字段表 ----
 
     def _on_i2c_add_field(self):
-        bits = _data_bits(self._i2c_width)
+        bits = self._i2c_data_bits
         self._i2c_fields.append({
             "name": f"FIELD{len(self._i2c_fields)}",
             "high_bit": min(7, bits - 1),
@@ -1257,6 +1530,8 @@ class I2cMixin:
         })
         self._i2c_rebuild_fields_table()
         self._i2c_sync_active_register_fields()
+        self.i2c_bits.set_fields(self._i2c_fields)
+        self._i2c_refresh_field_values()
 
     def _i2c_rebuild_fields_table(self):
         self._i2c_suppress_field_refresh = True
@@ -1269,6 +1544,7 @@ class I2cMixin:
             self.i2c_fields_table.setItem(row, 2, QTableWidgetItem(str(f["low_bit"])))
             val_item = QTableWidgetItem("")
             val_item.setFlags(val_item.flags() & ~Qt.ItemIsEditable)
+            val_item.setForeground(QColor(EMERALD_LIGHT))
             self.i2c_fields_table.setItem(row, 3, val_item)
             self.i2c_fields_table.setItem(row, 4, QTableWidgetItem(f["description"]))
         self._i2c_suppress_field_refresh = False
@@ -1293,12 +1569,13 @@ class I2cMixin:
         elif col == 4:
             self._i2c_fields[row]["description"] = item.text()
         self._i2c_sync_active_register_fields()
+        self.i2c_bits.set_fields(self._i2c_fields)
         self._i2c_refresh_field_values()
 
     def _i2c_refresh_field_values(self):
         if not hasattr(self, "i2c_fields_table"):
             return
-        value = self.i2c_bit_grid.value()
+        value = self._i2c_data_value
         self._i2c_suppress_field_refresh = True
         for row, f in enumerate(self._i2c_fields):
             if row >= self.i2c_fields_table.rowCount():
@@ -1314,14 +1591,15 @@ class I2cMixin:
             if item is not None:
                 item.setText(f"{_fmt_hex(field_val, width)}  ({field_val})")
         self._i2c_suppress_field_refresh = False
+        self.i2c_bits.set_value(value)
 
     def _on_i2c_field_context_menu(self, pos):
         row = self.i2c_fields_table.rowAt(pos.y())
         menu = QMenu(self.i2c_fields_table)
         menu.setStyleSheet(
-            "QMenu { background-color:#091426; color:#dce7ff;"
-            " border:1px solid #17345f; }"
-            "QMenu::item:selected { background-color:#1f4a8a; }")
+            f"QMenu {{ background-color:{SLATE_950}; color:{TEXT_MAIN};"
+            f" border:1px solid {SLATE_800}; }}"
+            "QMenu::item:selected { background-color: rgba(99,102,241,0.35); }")
         act_del = QAction("Delete Field", self.i2c_fields_table)
         act_del.triggered.connect(lambda: self._i2c_delete_field(row))
         menu.addAction(act_del)
@@ -1335,6 +1613,8 @@ class I2cMixin:
         self._i2c_fields.pop(row)
         self._i2c_rebuild_fields_table()
         self._i2c_sync_active_register_fields()
+        self.i2c_bits.set_fields(self._i2c_fields)
+        self._i2c_refresh_field_values()
 
     def _i2c_sync_active_register_fields(self):
         if (self._i2c_active_reg_index is not None
@@ -1349,7 +1629,7 @@ class I2cMixin:
             "name": f"REG{len(self._i2c_registers)}",
             "reg_addr": _fmt_hex(self._i2c_current_reg(),
                                  _reg_addr_bits(self._i2c_width)),
-            "width": int(self._i2c_width),
+            "data_bits": self._i2c_data_bits,
             "description": "",
             "bit_fields": copy.deepcopy(self._i2c_fields),
         }
@@ -1365,7 +1645,7 @@ class I2cMixin:
             self.i2c_reg_table.insertRow(row)
             self.i2c_reg_table.setItem(row, 0, QTableWidgetItem(reg["name"]))
             self.i2c_reg_table.setItem(row, 1, QTableWidgetItem(reg["reg_addr"]))
-            self.i2c_reg_table.setItem(row, 2, QTableWidgetItem(str(reg["width"])))
+            self.i2c_reg_table.setItem(row, 2, QTableWidgetItem(str(reg.get("data_bits", 16))))
             nf = len(reg.get("bit_fields", []))
             self.i2c_reg_table.setItem(row, 3, QTableWidgetItem(str(nf)))
             self.i2c_reg_table.setItem(row, 4, QTableWidgetItem(reg["description"]))
@@ -1374,46 +1654,40 @@ class I2cMixin:
         self._i2c_load_register(row)
 
     def _i2c_load_register(self, row):
-        from lib.i2c.Bes_I2CIO_Interface import I2CWidthFlag
         if row < 0 or row >= len(self._i2c_registers):
             return
         reg = self._i2c_registers[row]
         self._i2c_active_reg_index = row
-        try:
-            width = I2CWidthFlag(int(reg.get("width", 1)))
-        except Exception:
-            width = I2CWidthFlag.BIT_10
-        self._i2c_set_width_combo(width)
+        bits = int(reg.get("data_bits", 16))
+        if bits not in (8, 16, 32):
+            bits = 16
+        self._i2c_set_data_bits(bits)
         self.i2c_reg_edit.set_value(_parse_hex_int(reg["reg_addr"]) or 0)
         self._i2c_fields = copy.deepcopy(reg.get("bit_fields", []))
         self._i2c_rebuild_fields_table()
+        self.i2c_bits.set_fields(self._i2c_fields)
         self.append_log(
             f"[I2C] 加载寄存器 {reg['name']} (addr={reg['reg_addr']}, "
             f"fields={len(self._i2c_fields)})")
 
-    def _i2c_set_width_combo(self, width_flag):
+    def _i2c_set_data_bits(self, bits):
         for i in range(self.i2c_width_combo.count()):
-            if self.i2c_width_combo.itemData(i) == width_flag:
+            if self.i2c_width_combo.itemData(i) == bits:
                 self.i2c_width_combo.blockSignals(True)
                 self.i2c_width_combo.setCurrentIndex(i)
                 self.i2c_width_combo.blockSignals(False)
                 break
-        for i in range(self.i2c_access_width_combo.count()):
-            if self.i2c_access_width_combo.itemData(i) == width_flag:
-                self.i2c_access_width_combo.blockSignals(True)
-                self.i2c_access_width_combo.setCurrentIndex(i)
-                self.i2c_access_width_combo.blockSignals(False)
-                break
-        self._i2c_width = width_flag
+        self._i2c_data_bits = bits
+        self._i2c_width = _ui_width_to_flag(bits)
         self._i2c_sync_width_ui()
 
     def _on_i2c_reg_context_menu(self, pos):
         row = self.i2c_reg_table.rowAt(pos.y())
         menu = QMenu(self.i2c_reg_table)
         menu.setStyleSheet(
-            "QMenu { background-color:#091426; color:#dce7ff;"
-            " border:1px solid #17345f; }"
-            "QMenu::item:selected { background-color:#1f4a8a; }")
+            f"QMenu {{ background-color:{SLATE_950}; color:{TEXT_MAIN};"
+            f" border:1px solid {SLATE_800}; }}"
+            "QMenu::item:selected { background-color: rgba(99,102,241,0.35); }")
         act_load = QAction("Load (edit fields)", self.i2c_reg_table)
         act_read = QAction("Read", self.i2c_reg_table)
         act_write = QAction("Write current value", self.i2c_reg_table)
@@ -1436,12 +1710,10 @@ class I2cMixin:
         if row < 0 or row >= len(self._i2c_registers):
             return
         reg = self._i2c_registers[row]
-        from lib.i2c.Bes_I2CIO_Interface import I2CWidthFlag
-        try:
-            width = I2CWidthFlag(int(reg.get("width", 1)))
-        except Exception:
-            width = I2CWidthFlag.BIT_10
-        self._i2c_set_width_combo(width)
+        bits = int(reg.get("data_bits", 16))
+        if bits not in (8, 16, 32):
+            bits = 16
+        self._i2c_set_data_bits(bits)
         dev = self._i2c_current_dev()
         reg_addr = _parse_hex_int(reg["reg_addr"]) or 0
         self.i2c_reg_edit.set_value(reg_addr)
@@ -1454,17 +1726,14 @@ class I2cMixin:
         if row < 0 or row >= len(self._i2c_registers):
             return
         reg = self._i2c_registers[row]
-        from lib.i2c.Bes_I2CIO_Interface import I2CWidthFlag
-        try:
-            width = I2CWidthFlag(int(reg.get("width", 1)))
-        except Exception:
-            width = I2CWidthFlag.BIT_10
-        self._i2c_set_width_combo(width)
+        bits = int(reg.get("data_bits", 16))
+        if bits not in (8, 16, 32):
+            bits = 16
+        self._i2c_set_data_bits(bits)
         dev = self._i2c_current_dev()
         reg_addr = _parse_hex_int(reg["reg_addr"]) or 0
         self.i2c_reg_edit.set_value(reg_addr)
-        data = self.i2c_bit_grid.value()
-        self.i2c_data_edit.set_value(data)
+        data = self._i2c_data_value
         self._start_i2c_write(dev, reg_addr, data, -1, -1, False,
                               tag=f" ({reg['name']})")
 
@@ -1494,21 +1763,20 @@ class I2cMixin:
         if not getattr(self, "_i2c_readall_queue", None):
             summary = "\n".join(
                 f"  {reg['name']} @ {reg['reg_addr']} = "
-                f"{_fmt_hex(self._i2c_readall_results.get(i, 0), _data_bits(self._i2c_width))}"
+                f"{_fmt_hex(self._i2c_readall_results.get(i, 0), self._i2c_data_bits)}"
                 for i, reg in enumerate(self._i2c_registers)
             ) if self._i2c_registers else "(空)"
             self.append_log(f"[I2C] Read All 完成:\n{summary}")
             self._i2c_set_busy(False)
             return
         idx, reg = self._i2c_readall_queue.pop(0)
-        from lib.i2c.Bes_I2CIO_Interface import I2CWidthFlag
-        try:
-            width = I2CWidthFlag(int(reg.get("width", 1)))
-        except Exception:
-            width = I2CWidthFlag.BIT_10
-        self._i2c_set_width_combo(width)
+        bits = int(reg.get("data_bits", 16))
+        if bits not in (8, 16, 32):
+            bits = 16
+        self._i2c_set_data_bits(bits)
         dev = self._i2c_current_dev()
         reg_addr = _parse_hex_int(reg["reg_addr"]) or 0
+        self.i2c_reg_edit.set_value(reg_addr)
         self._i2c_pending_readall_idx = idx
         self._start_i2c_read(dev, reg_addr, False, tag=f" ({reg['name']})")
 
@@ -1519,7 +1787,7 @@ class I2cMixin:
                 and self._i2c_chipcheck_thread.isRunning()):
             return
         self._i2c_set_busy(True)
-        self._i2c_set_result("Chip checking...", ok=True)
+        self._i2c_set_activity("Chip check…", ok=True)
         self.append_log("[I2C] BES 芯片检测中...")
         worker = _I2cChipCheckWorker(self._i2c_dll_path(), self._i2c_speed_mode)
         thread = QThread()
@@ -1541,6 +1809,7 @@ class I2cMixin:
         self._i2c_chipcheck_worker = None
 
     def _on_i2c_chipcheck_done(self, result):
+        self._i2c_set_activity("Chip check", ok=True)
         self._i2c_set_result("Chip check OK", ok=True)
         self._i2c_set_busy(False)
         lines = ["[I2C] 芯片检测结果:"]
@@ -1552,6 +1821,7 @@ class I2cMixin:
             "\n".join(f"{k}: {v}" for k, v in result.items()))
 
     def _on_i2c_chipcheck_error(self, err):
+        self._i2c_set_activity("Chip check", ok=False)
         self._i2c_set_result(f"Chip check failed: {err}", ok=False)
         self._i2c_set_busy(False)
         self.append_log(f"[I2C] 芯片检测失败: {err}")
@@ -1564,7 +1834,7 @@ class I2cMixin:
             "device_addr": _fmt_hex(self._i2c_current_dev(),
                                     _reg_addr_bits(self._i2c_width)),
             "speed_mode": int(self._i2c_speed_mode),
-            "default_width": int(self._i2c_width),
+            "data_bits": self._i2c_data_bits,
             "registers": copy.deepcopy(self._i2c_registers),
         }
 
@@ -1597,7 +1867,7 @@ class I2cMixin:
             QMessageBox.critical(self, "加载失败", str(e))
             return
 
-        from lib.i2c.Bes_I2CIO_Interface import I2CWidthFlag, I2CSpeedMode
+        from lib.i2c.Bes_I2CIO_Interface import I2CSpeedMode
         self._i2c_registers = copy.deepcopy(data.get("registers", []))
         self._i2c_active_reg_index = None
         self._i2c_rebuild_reg_table()
@@ -1613,11 +1883,10 @@ class I2cMixin:
             self._i2c_speed_mode = speed
         except Exception:
             pass
-        try:
-            width = I2CWidthFlag(int(data.get("default_width", 1)))
-            self._i2c_set_width_combo(width)
-        except Exception:
-            pass
+        bits = int(data.get("data_bits", 16))
+        if bits not in (8, 16, 32):
+            bits = 16
+        self._i2c_set_data_bits(bits)
         dev = data.get("device_addr")
         if dev is not None:
             self.i2c_dev_edit.set_value(_parse_hex_int(dev) or 0)
@@ -1636,34 +1905,14 @@ class I2cMixin:
 # 独立运行 Demo
 # ---------------------------------------------------------------------------
 
-_I2C_DARK_STYLE = """
-    QWidget {
-        background-color: #020817;
-        color: #dbe7ff;
-    }
-    QLabel {
-        background-color: transparent;
-        color: #dbe7ff;
-        border: none;
-    }
-    QLabel#cardTitle {
-        font-size: 11px;
-        font-weight: 700;
-        color: #f4f7ff;
-        letter-spacing: 0.5px;
-        background-color: transparent;
-    }
-"""
-
-
 class _DemoI2cWidget(I2cMixin, QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.init_i2c()
         self.setStyleSheet(_I2C_DARK_STYLE)
         root = QVBoxLayout(self)
-        root.setContentsMargins(8, 8, 8, 8)
-        root.setSpacing(8)
+        root.setContentsMargins(10, 10, 10, 10)
+        root.setSpacing(10)
         self.build_i2c_widgets(root)
         self.bind_i2c_signals()
 
@@ -1679,6 +1928,6 @@ if __name__ == "__main__":
     app.setStyle("Fusion")
     w = _DemoI2cWidget()
     w.setWindowTitle("I2C 控制台")
-    resize_and_center_window(w, size=(720, 760))
+    resize_and_center_window(w, size=(960, 760))
     w.show()
     sys.exit(app.exec())
