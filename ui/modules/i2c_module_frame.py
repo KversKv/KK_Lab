@@ -951,6 +951,7 @@ def _load_all_sequences():
             if isinstance(data, dict):
                 data.setdefault("name", "")
                 data.setdefault("description", "")
+                data.setdefault("template", "")
                 cmds = data.get("commands", []) or []
                 data["commands"] = [str(c) for c in cmds]
                 result.append((path, data))
@@ -972,6 +973,7 @@ def _save_sequence_file(script_dict):
     out = {
         "name": str(script_dict.get("name", "")),
         "description": str(script_dict.get("description", "")),
+        "template": str(script_dict.get("template", "")),
         "commands": [str(c) for c in script_dict.get("commands", [])],
     }
     with open(path, "w", encoding="utf-8") as f:
@@ -995,6 +997,7 @@ def _serialize_script_yaml(script_dict):
     out = {
         "name": str(script_dict.get("name", "")),
         "description": str(script_dict.get("description", "")),
+        "template": str(script_dict.get("template", "")),
         "commands": [str(c) for c in script_dict.get("commands", [])],
     }
     return _yaml.dump(out, allow_unicode=True, default_flow_style=False,
@@ -1010,9 +1013,106 @@ def _parse_script_yaml(text):
         raise ValueError("YAML 顶层必须为字典")
     data.setdefault("name", "")
     data.setdefault("description", "")
+    data.setdefault("template", "")
     cmds = data.get("commands", []) or []
     data["commands"] = [str(c) for c in cmds]
     return data
+
+
+# ---------------------------------------------------------------------------
+# 模板（Register Map）持久化（JSON，每文件一模板） + I2C 状态持久化
+# ---------------------------------------------------------------------------
+
+def _tpl_filename_for(name):
+    """根据模板名称生成安全的文件名（不含扩展名）。"""
+    safe = re.sub(r'[^\w\-.]', '_', name or "template").strip('_')
+    if not safe:
+        safe = "template"
+    return safe
+
+
+def _load_all_templates():
+    """扫描模板目录，返回 [(filepath, template_dict), ...]，按名称排序。"""
+    result = []
+    tpl_dir = _i2c_template_dir()
+    if not os.path.isdir(tpl_dir):
+        return result
+    for fn in os.listdir(tpl_dir):
+        if not fn.endswith(".json"):
+            continue
+        path = os.path.join(tpl_dir, fn)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, dict):
+                continue
+            data.setdefault("name", "")
+            data.setdefault("device_addr", "0x00")
+            data.setdefault("speed_mode", 1)
+            data.setdefault("data_bits", 16)
+            data.setdefault("registers", [])
+            result.append((path, data))
+        except Exception as e:
+            logger.error("Load template %s failed: %s", fn, e, exc_info=True)
+    result.sort(key=lambda x: str(x[1].get("name", x[0])))
+    return result
+
+
+def _save_template_file(template_dict):
+    """将模板 dict 写入 JSON 文件，返回文件路径。"""
+    name = template_dict.get("name", "template")
+    tpl_dir = _i2c_template_dir()
+    os.makedirs(tpl_dir, exist_ok=True)
+    filename = _tpl_filename_for(name) + ".json"
+    path = os.path.join(tpl_dir, filename)
+    out = {
+        "name": str(template_dict.get("name", "")),
+        "device_addr": str(template_dict.get("device_addr", "0x00")),
+        "speed_mode": int(template_dict.get("speed_mode", 1)),
+        "data_bits": int(template_dict.get("data_bits", 16)),
+        "registers": copy.deepcopy(template_dict.get("registers", [])),
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False, indent=2)
+    return path
+
+
+def _delete_template_file(path):
+    try:
+        if path and os.path.isfile(path):
+            os.remove(path)
+    except Exception as e:
+        logger.error("Delete template %s failed: %s", path, e, exc_info=True)
+
+
+def _i2c_state_path():
+    return os.path.join(get_user_data_dir("i2c_state"), "i2c_state.json")
+
+
+def _load_i2c_state():
+    """加载 I2C 模块持久化状态。返回 dict；不存在或损坏时返回空 dict。"""
+    path = _i2c_state_path()
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return data
+    except Exception as e:
+        logger.error("Load i2c state failed: %s", e, exc_info=True)
+    return {}
+
+
+def _save_i2c_state(state):
+    """保存 I2C 模块持久化状态到 JSON。"""
+    try:
+        path = _i2c_state_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error("Save i2c state failed: %s", e, exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1491,6 +1591,15 @@ class I2cMixin:
         self._i2c_seq_current_index = None  # 当前选中的列表项索引
         self._i2c_seq_suppress_sync = False  # 防止表/YAML 互相同步时递归
 
+        # 模板（Register Map）持久化状态
+        self._i2c_templates = []             # [(filepath, template_dict), ...]
+        self._i2c_tpl_combo_index = None     # 当前模板 combo 索引
+        self._i2c_active_template_name = ""  # 当前活动模板名称
+        self._i2c_filter_scripts_by_template = True  # 脚本列表是否按模板过滤
+
+        # 持久化状态（尚未应用到 UI）
+        self._i2c_pending_state = _load_i2c_state()
+
         self._i2c_width = _ui_width_to_flag(16)
         self._i2c_data_bits = 16
         self._i2c_speed_mode = self._i2c_speed_options[1][0]  # 100K
@@ -1783,9 +1892,20 @@ class I2cMixin:
         # ---- 左侧：脚本列表 ----
         left = QVBoxLayout()
         left.setSpacing(6)
+        list_title_row = QHBoxLayout()
+        list_title_row.setSpacing(6)
         list_title = QLabel("Scripts")
         list_title.setObjectName("sectionTitle")
-        left.addWidget(list_title)
+        list_title_row.addWidget(list_title)
+        list_title_row.addStretch()
+        self.i2c_seq_filter_btn = QPushButton("Linked Only")
+        self.i2c_seq_filter_btn.setFixedHeight(I2C_BTN_HEIGHT)
+        self.i2c_seq_filter_btn.setCursor(Qt.PointingHandCursor)
+        self.i2c_seq_filter_btn.setCheckable(True)
+        self.i2c_seq_filter_btn.setChecked(True)
+        self.i2c_seq_filter_btn.setStyleSheet(_i2c_subtle_btn_style())
+        list_title_row.addWidget(self.i2c_seq_filter_btn)
+        left.addLayout(list_title_row)
         list_btn_row = QHBoxLayout()
         list_btn_row.setSpacing(4)
         self.i2c_seq_new_btn = QPushButton("New")
@@ -1798,8 +1918,8 @@ class I2cMixin:
             btn.setStyleSheet(_i2c_subtle_btn_style())
             list_btn_row.addWidget(btn)
         left.addLayout(list_btn_row)
-        self.i2c_seq_list = QTableWidget(0, 2)
-        self.i2c_seq_list.setHorizontalHeaderLabels(["Name", "Cmds"])
+        self.i2c_seq_list = QTableWidget(0, 3)
+        self.i2c_seq_list.setHorizontalHeaderLabels(["Name", "Tpl", "Cmds"])
         self.i2c_seq_list.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.i2c_seq_list.setSelectionMode(QAbstractItemView.SingleSelection)
         self.i2c_seq_list.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -1808,6 +1928,7 @@ class I2cMixin:
         lh = self.i2c_seq_list.horizontalHeader()
         lh.setSectionResizeMode(0, QHeaderView.Stretch)
         lh.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        lh.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         self.i2c_seq_list.setMinimumWidth(200)
         left.addWidget(self.i2c_seq_list, 1)
         main_row.addLayout(left, 0)
@@ -1816,7 +1937,7 @@ class I2cMixin:
         right = QVBoxLayout()
         right.setSpacing(6)
 
-        # 名称 / 描述行
+        # 名称 / 模板 / 描述行
         meta_row = QHBoxLayout()
         meta_row.setSpacing(8)
         name_lbl = QLabel("Name")
@@ -1828,6 +1949,16 @@ class I2cMixin:
         self.i2c_seq_name_edit.setStyleSheet(_i2c_input_style())
         self.i2c_seq_name_edit.setPlaceholderText("脚本名称")
         meta_row.addWidget(self.i2c_seq_name_edit, 1)
+        tpl_lbl = QLabel("Tpl")
+        tpl_lbl.setObjectName("muted")
+        tpl_lbl.setFixedWidth(28)
+        meta_row.addWidget(tpl_lbl)
+        self.i2c_seq_tpl_combo = DarkComboBox(
+            bg=SLATE_950, border=SLATE_800, hover_color=INDIGO)
+        self.i2c_seq_tpl_combo.setFixedHeight(I2C_BTN_HEIGHT)
+        self.i2c_seq_tpl_combo.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Fixed)
+        meta_row.addWidget(self.i2c_seq_tpl_combo, 1)
         desc_lbl = QLabel("Desc")
         desc_lbl.setObjectName("muted")
         desc_lbl.setFixedWidth(40)
@@ -1931,7 +2062,7 @@ class I2cMixin:
         self._i2c_seq_reload_list()
         layout.addWidget(card)
 
-    # ---- 模板页：寄存器映射 + 位字段编辑 ----
+    # ---- 模板页：模板选择器 + 寄存器映射 + 位字段编辑 ----
 
     def _build_i2c_template_page(self):
         page = QWidget()
@@ -1946,6 +2077,39 @@ class I2cMixin:
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(10)
 
+        # Template Selector（模板列表，自动持久化）
+        tpl_card = QFrame()
+        tpl_card.setObjectName("card")
+        tv = QVBoxLayout(tpl_card)
+        tv.setContentsMargins(14, 12, 14, 12)
+        tv.setSpacing(8)
+        tt = QLabel("Template Selector")
+        tt.setObjectName("cardTitle")
+        tv.addWidget(tt)
+        tpl_row = QHBoxLayout()
+        tpl_row.setSpacing(6)
+        tpl_hint = QLabel("Active")
+        tpl_hint.setObjectName("muted")
+        tpl_hint.setFixedWidth(50)
+        tpl_row.addWidget(tpl_hint)
+        self.i2c_tpl_combo = DarkComboBox(
+            bg=SLATE_950, border=SLATE_800, hover_color=INDIGO)
+        self.i2c_tpl_combo.setFixedHeight(I2C_BTN_HEIGHT)
+        self.i2c_tpl_combo.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Fixed)
+        tpl_row.addWidget(self.i2c_tpl_combo, 1)
+        self.i2c_tpl_new_btn = QPushButton("New")
+        self.i2c_tpl_save_btn = QPushButton("Save")
+        self.i2c_tpl_del_btn = QPushButton("Delete")
+        for btn in (self.i2c_tpl_new_btn, self.i2c_tpl_save_btn,
+                    self.i2c_tpl_del_btn):
+            btn.setFixedHeight(I2C_BTN_HEIGHT)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet(_i2c_subtle_btn_style())
+            tpl_row.addWidget(btn)
+        tv.addLayout(tpl_row)
+        root.addWidget(tpl_card)
+
         # Register Map
         map_card = QFrame()
         map_card.setObjectName("card")
@@ -1957,12 +2121,9 @@ class I2cMixin:
         mv.addWidget(mt)
         map_btn_row = QHBoxLayout()
         map_btn_row.setSpacing(6)
-        self.i2c_save_tpl_btn = QPushButton("Save")
-        self.i2c_load_tpl_btn = QPushButton("Load")
         self.i2c_add_reg_btn = QPushButton("+ Reg")
         self.i2c_readall_btn = QPushButton("Read All")
-        for btn in (self.i2c_save_tpl_btn, self.i2c_load_tpl_btn,
-                    self.i2c_add_reg_btn, self.i2c_readall_btn):
+        for btn in (self.i2c_add_reg_btn, self.i2c_readall_btn):
             btn.setFixedHeight(I2C_BTN_HEIGHT)
             btn.setCursor(Qt.PointingHandCursor)
             btn.setStyleSheet(_i2c_subtle_btn_style())
@@ -2122,8 +2283,12 @@ class I2cMixin:
         self.i2c_fields_table.cellChanged.connect(self._on_i2c_field_cell_changed)
         self.i2c_fields_table.customContextMenuRequested.connect(
             self._on_i2c_field_context_menu)
-        self.i2c_save_tpl_btn.clicked.connect(self._on_i2c_save_template)
-        self.i2c_load_tpl_btn.clicked.connect(self._on_i2c_load_template)
+        # 模板管理信号
+        self.i2c_tpl_combo.currentIndexChanged.connect(
+            self._on_i2c_tpl_combo_changed)
+        self.i2c_tpl_new_btn.clicked.connect(self._on_i2c_tpl_new)
+        self.i2c_tpl_save_btn.clicked.connect(self._on_i2c_tpl_save)
+        self.i2c_tpl_del_btn.clicked.connect(self._on_i2c_tpl_delete)
         self.i2c_add_reg_btn.clicked.connect(self._on_i2c_add_register)
         self.i2c_readall_btn.clicked.connect(self._on_i2c_read_all)
         self.i2c_reg_table.cellDoubleClicked.connect(self._on_i2c_reg_double_clicked)
@@ -2142,6 +2307,13 @@ class I2cMixin:
         self.i2c_seq_save_btn.clicked.connect(self._on_i2c_seq_save)
         self.i2c_seq_run_btn.clicked.connect(self._on_i2c_seq_run)
         self.i2c_seq_stop_btn.clicked.connect(self._on_i2c_seq_stop)
+        # 脚本编辑器中的模板 combo + 过滤按钮
+        self.i2c_seq_tpl_combo.currentIndexChanged.connect(
+            self._on_i2c_seq_tpl_combo_changed)
+        self.i2c_seq_filter_btn.toggled.connect(
+            self._on_i2c_seq_filter_toggled)
+        # 应用持久化状态（必须在所有信号绑定完成后调用）
+        self._i2c_restore_state()
 
     # ---- 状态反馈 ----
 
@@ -2197,11 +2369,13 @@ class I2cMixin:
             self._i2c_custom_dll = path
             self.i2c_dll_edit.setText(path)
             self.append_log(f"[I2C] DLL 路径已设为: {path}")
+            self._i2c_save_state()
 
     def _on_i2c_reset_dll(self):
         self._i2c_custom_dll = None
         self._i2c_refresh_dll_display()
         self.append_log("[I2C] DLL 路径已重置为自动查找")
+        self._i2c_save_state()
 
     # ---- 速率 / 位宽 ----
 
@@ -2211,6 +2385,7 @@ class I2cMixin:
             return
         self._i2c_speed_mode = mode
         self.append_log(f"[I2C] 默认速率切换为 {self.i2c_speed_combo.currentText()}")
+        self._i2c_save_state()
 
     def _on_i2c_width_changed(self, _idx):
         bits = self.i2c_width_combo.currentData()
@@ -2220,6 +2395,7 @@ class I2cMixin:
         self._i2c_width = _ui_width_to_flag(int(bits))
         self._i2c_sync_width_ui()
         self.append_log(f"[I2C] 数据位宽切换为 {bits}-bit")
+        self._i2c_save_state()
 
     def _i2c_sync_width_ui(self):
         reg_bits = _reg_addr_bits(self._i2c_width)
@@ -2689,19 +2865,37 @@ class I2cMixin:
 
     # ---- 序列脚本管理器（列表 + GUI 表格 / YAML 双模式编辑 + 执行） ----
 
-    def _i2c_seq_reload_list(self):
-        """重新扫描序列目录并刷新左侧列表。"""
-        self._i2c_sequences = _load_all_sequences()
+    def _i2c_seq_reload_list(self, template_name=None):
+        """重新扫描序列目录并刷新左侧列表。
+
+        template_name: 若提供且 _i2c_filter_scripts_by_template 为真，仅显示
+                       匹配该模板名的脚本；为 None 或空时显示全部。
+        """
+        all_seqs = _load_all_sequences()
+        active_tpl = template_name if template_name is not None \
+            else self._i2c_active_template_name
+        if (active_tpl and getattr(self, "_i2c_filter_scripts_by_template", True)
+                and self.i2c_seq_filter_btn.isChecked()):
+            self._i2c_sequences = [
+                (p, s) for p, s in all_seqs
+                if str(s.get("template", "")) == active_tpl
+            ]
+        else:
+            self._i2c_sequences = all_seqs
         self.i2c_seq_list.setRowCount(0)
         for _path, script in self._i2c_sequences:
             row = self.i2c_seq_list.rowCount()
             self.i2c_seq_list.insertRow(row)
             name_item = QTableWidgetItem(str(script.get("name", "")))
+            tpl_item = QTableWidgetItem(str(script.get("template", "")))
+            tpl_item.setTextAlignment(Qt.AlignCenter)
+            tpl_item.setForeground(QColor(TEXT_MUTED))
             cmds = script.get("commands", []) or []
             cnt_item = QTableWidgetItem(str(len(cmds)))
             cnt_item.setTextAlignment(Qt.AlignCenter)
             self.i2c_seq_list.setItem(row, 0, name_item)
-            self.i2c_seq_list.setItem(row, 1, cnt_item)
+            self.i2c_seq_list.setItem(row, 1, tpl_item)
+            self.i2c_seq_list.setItem(row, 2, cnt_item)
         self._i2c_seq_current_index = None
         self._i2c_seq_clear_editor()
 
@@ -2711,10 +2905,13 @@ class I2cMixin:
         self.i2c_seq_desc_edit.setText("")
         self.i2c_seq_cmd_table.setRowCount(0)
         self.i2c_seq_yaml_edit.setPlainText("")
+        # 重置脚本模板 combo 到当前活动模板
+        if hasattr(self, "i2c_seq_tpl_combo"):
+            self._i2c_seq_set_tpl_combo(self._i2c_active_template_name)
         self._i2c_seq_suppress_sync = False
 
     def _on_i2c_seq_list_selected(self):
-        """列表选中 → 加载到右侧编辑器。"""
+        """列表选中 → 加载到右侧编辑器 + 保存状态。"""
         rows = self.i2c_seq_list.selectionModel().selectedRows()
         if not rows:
             return
@@ -2724,6 +2921,7 @@ class I2cMixin:
         self._i2c_seq_current_index = row
         _path, script = self._i2c_sequences[row]
         self._i2c_seq_load_to_editor(script)
+        self._i2c_save_state()
 
     def _on_i2c_seq_list_double_clicked(self, _index):
         """双击列表项 → 直接执行该脚本。"""
@@ -2741,6 +2939,7 @@ class I2cMixin:
         self._i2c_seq_suppress_sync = True
         self.i2c_seq_name_edit.setText(str(script.get("name", "")))
         self.i2c_seq_desc_edit.setText(str(script.get("description", "")))
+        self._i2c_seq_set_tpl_combo(str(script.get("template", "")))
         cmds = [str(c) for c in (script.get("commands", []) or [])]
         self._i2c_seq_refresh_table(cmds)
         self.i2c_seq_yaml_edit.setPlainText(_serialize_script_yaml(script))
@@ -2823,7 +3022,7 @@ class I2cMixin:
             }
 
     def _i2c_seq_sync_from_yaml(self):
-        """从 YAML 解析并刷新表格 + Name/Desc 输入框。"""
+        """从 YAML 解析并刷新表格 + Name/Desc/Tpl 输入框。"""
         try:
             script = _parse_script_yaml(self.i2c_seq_yaml_edit.toPlainText())
         except Exception as e:
@@ -2832,16 +3031,18 @@ class I2cMixin:
         self._i2c_seq_suppress_sync = True
         self.i2c_seq_name_edit.setText(str(script.get("name", "")))
         self.i2c_seq_desc_edit.setText(str(script.get("description", "")))
+        self._i2c_seq_set_tpl_combo(str(script.get("template", "")))
         cmds = [str(c) for c in (script.get("commands", []) or [])]
         self._i2c_seq_refresh_table(cmds)
         self._i2c_seq_suppress_sync = False
         return True
 
     def _i2c_seq_sync_to_yaml(self):
-        """将 Name/Desc + 当前 commands 刷回 YAML 编辑器。"""
+        """将 Name/Desc/Tpl + 当前 commands 刷回 YAML 编辑器。"""
         script = self._i2c_seq_current_script()
         script["name"] = self.i2c_seq_name_edit.text().strip()
         script["description"] = self.i2c_seq_desc_edit.text().strip()
+        script["template"] = self._i2c_seq_tpl_combo_current()
         self._i2c_seq_suppress_sync = True
         self.i2c_seq_yaml_edit.setPlainText(_serialize_script_yaml(script))
         self._i2c_seq_suppress_sync = False
@@ -2858,14 +3059,25 @@ class I2cMixin:
             self.i2c_seq_mode_btn.setText("YAML")
 
     def _on_i2c_seq_new(self):
-        """新建空脚本。"""
+        """新建空脚本（默认关联当前活动模板）。"""
         self.i2c_seq_list.clearSelection()
         self._i2c_seq_current_index = None
         self._i2c_seq_clear_editor()
         self.i2c_seq_name_edit.setText("NewSequence")
+        # 默认关联当前活动模板
+        self._i2c_seq_set_tpl_combo(self._i2c_active_template_name)
+        # 同步到 YAML
+        script = self._i2c_seq_current_script()
+        script["name"] = "NewSequence"
+        script["template"] = self._i2c_active_template_name
+        self._i2c_seq_suppress_sync = True
+        self.i2c_seq_yaml_edit.setPlainText(_serialize_script_yaml(script))
+        self._i2c_seq_suppress_sync = False
         self.i2c_seq_name_edit.setFocus()
         self.i2c_seq_name_edit.selectAll()
-        self.append_log("[I2C] 新建序列脚本（未保存）")
+        self.append_log(
+            f"[I2C] 新建序列脚本（未保存，关联模板: "
+            f"{self._i2c_active_template_name or '(none)'}）")
 
     def _on_i2c_seq_duplicate(self):
         """复制当前选中脚本。"""
@@ -2893,13 +3105,16 @@ class I2cMixin:
             return
         _delete_sequence_file(path)
         self.append_log(f"[I2C] 已删除脚本: {name}")
+        self._i2c_seq_current_index = None
         self._i2c_seq_reload_list()
+        self._i2c_save_state()
 
     def _on_i2c_seq_add_cmd(self):
         """新增一行指令（修改 YAML 并刷新表格）。"""
         script = self._i2c_seq_current_script()
         script["name"] = self.i2c_seq_name_edit.text().strip()
         script["description"] = self.i2c_seq_desc_edit.text().strip()
+        script["template"] = self._i2c_seq_tpl_combo_current()
         script.setdefault("commands", []).append("WRITE 0x00 0x00")
         self._i2c_seq_suppress_sync = True
         self.i2c_seq_yaml_edit.setPlainText(_serialize_script_yaml(script))
@@ -2917,6 +3132,7 @@ class I2cMixin:
         script = self._i2c_seq_current_script()
         script["name"] = self.i2c_seq_name_edit.text().strip()
         script["description"] = self.i2c_seq_desc_edit.text().strip()
+        script["template"] = self._i2c_seq_tpl_combo_current()
         cmds = script.get("commands", []) or []
         indices = sorted([r.row() for r in rows], reverse=True)
         for idx in indices:
@@ -2937,6 +3153,7 @@ class I2cMixin:
             return
         script["name"] = self.i2c_seq_name_edit.text().strip()
         script["description"] = self.i2c_seq_desc_edit.text().strip()
+        script["template"] = self._i2c_seq_tpl_combo_current()
         name = script.get("name", "").strip()
         if not name:
             QMessageBox.warning(self, "名称无效", "请填写脚本名称")
@@ -2950,6 +3167,7 @@ class I2cMixin:
                 if s.get("name") == name:
                     self.i2c_seq_list.selectRow(i)
                     break
+            self._i2c_save_state()
         except Exception as e:
             logger.error("I2C save sequence failed: %s", e, exc_info=True)
             QMessageBox.critical(self, "保存失败", str(e))
@@ -3025,11 +3243,12 @@ class I2cMixin:
         self._i2c_set_busy(False)
         self.append_log(f"[I2C] 序列执行失败: {err}")
 
-    # ---- 模板保存 / 加载 ----
+    # ---- 模板管理（列表 + 持久化 + 与脚本联动） ----
 
     def _i2c_serialize_template(self):
+        """将当前 UI 状态序列化为模板 dict。"""
         return {
-            "name": "I2C Template",
+            "name": self._i2c_active_template_name or "I2C Template",
             "device_addr": _fmt_hex(self._i2c_current_dev(),
                                     _reg_addr_bits(self._i2c_width)),
             "speed_mode": int(self._i2c_speed_mode),
@@ -3037,42 +3256,56 @@ class I2cMixin:
             "registers": copy.deepcopy(self._i2c_registers),
         }
 
-    def _on_i2c_save_template(self):
-        data = self._i2c_serialize_template()
-        default_path = os.path.join(_i2c_template_dir(), "i2c_template.json")
-        path, _ = QFileDialog.getSaveFileName(
-            self, "保存 I2C 模板", default_path, "JSON (*.json);;All (*.*)")
-        if not path:
-            return
-        try:
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            self.append_log(f"[I2C] 模板已保存: {path}")
-        except Exception as e:
-            logger.error("I2C save template failed: %s", e, exc_info=True)
-            QMessageBox.critical(self, "保存失败", str(e))
+    def _i2c_tpl_reload_combo(self):
+        """重新扫描模板目录并刷新模板 combo。"""
+        self._i2c_templates = _load_all_templates()
+        combo = self.i2c_tpl_combo
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem("(none)", userData="")
+        for _path, tpl in self._i2c_templates:
+            combo.addItem(str(tpl.get("name", "")), userData=str(tpl.get("name", "")))
+        combo.blockSignals(False)
+        # 同步刷新脚本编辑器中的模板 combo
+        if hasattr(self, "i2c_seq_tpl_combo"):
+            sc = self.i2c_seq_tpl_combo
+            sc.blockSignals(True)
+            sc.clear()
+            sc.addItem("(none)", userData="")
+            for _path, tpl in self._i2c_templates:
+                sc.addItem(str(tpl.get("name", "")),
+                           userData=str(tpl.get("name", "")))
+            sc.blockSignals(False)
 
-    def _on_i2c_load_template(self):
-        start_dir = _i2c_template_dir()
-        path, _ = QFileDialog.getOpenFileName(
-            self, "加载 I2C 模板", start_dir, "JSON (*.json);;All (*.*)")
-        if not path:
-            return
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except Exception as e:
-            logger.error("I2C load template failed: %s", e, exc_info=True)
-            QMessageBox.critical(self, "加载失败", str(e))
-            return
+    def _i2c_tpl_combo_current_name(self):
+        """获取模板 combo 当前选中的模板名称。"""
+        idx = self.i2c_tpl_combo.currentIndex()
+        if idx <= 0:
+            return ""
+        name = self.i2c_tpl_combo.currentData()
+        return str(name) if name else ""
 
+    def _i2c_select_template_by_name(self, name):
+        """在模板 combo 中按名称选中模板（不触发信号副作用）。"""
+        combo = self.i2c_tpl_combo
+        combo.blockSignals(True)
+        target_idx = 0
+        for i in range(combo.count()):
+            if str(combo.itemData(i)) == str(name):
+                target_idx = i
+                break
+        combo.setCurrentIndex(target_idx)
+        combo.blockSignals(False)
+
+    def _i2c_apply_template_to_ui(self, template_dict):
+        """将模板 dict 应用到 UI（寄存器表 + 速率 + 位宽 + 设备地址）。"""
         from lib.i2c.Bes_I2CIO_Interface import I2CSpeedMode
-        self._i2c_registers = copy.deepcopy(data.get("registers", []))
+        self._i2c_registers = copy.deepcopy(template_dict.get("registers", []))
         self._i2c_active_reg_index = None
         self._i2c_rebuild_reg_table()
 
         try:
-            speed = I2CSpeedMode(int(data.get("speed_mode", 1)))
+            speed = I2CSpeedMode(int(template_dict.get("speed_mode", 1)))
             for i in range(self.i2c_speed_combo.count()):
                 if self.i2c_speed_combo.itemData(i) == speed:
                     self.i2c_speed_combo.blockSignals(True)
@@ -3082,22 +3315,282 @@ class I2cMixin:
             self._i2c_speed_mode = speed
         except Exception:
             pass
-        bits = int(data.get("data_bits", 16))
+        bits = int(template_dict.get("data_bits", 16))
         if bits not in (8, 16, 32):
             bits = 16
         self._i2c_set_data_bits(bits)
-        dev = data.get("device_addr")
+        dev = template_dict.get("device_addr")
         if dev is not None:
             self.i2c_dev_edit.set_value(_parse_hex_int(dev) or 0)
+
+    def _on_i2c_tpl_combo_changed(self, _idx):
+        """模板 combo 选择变化 → 加载模板 + 刷新脚本列表。"""
+        name = self._i2c_tpl_combo_current_name()
+        self._i2c_active_template_name = name
+        if not name:
+            # 切到 (none)：清空寄存器表
+            self._i2c_registers = []
+            self._i2c_active_reg_index = None
+            self._i2c_rebuild_reg_table()
+        else:
+            for _path, tpl in self._i2c_templates:
+                if str(tpl.get("name", "")) == name:
+                    self._i2c_apply_template_to_ui(tpl)
+                    break
+        # 刷新脚本列表（按新模板过滤）
+        if hasattr(self, "i2c_seq_list"):
+            self._i2c_seq_reload_list()
+        self.append_log(f"[I2C] 切换模板: {name or '(none)'}")
+        self._i2c_save_state()
+
+    def _on_i2c_tpl_new(self):
+        """新建空模板（清空当前寄存器，提示输入名称）。"""
+        from PySide6.QtWidgets import QInputDialog
+        name, ok = QInputDialog.getText(
+            self, "新建模板", "模板名称:", text="NewTemplate")
+        if not ok or not name.strip():
+            return
+        name = name.strip()
+        self._i2c_active_template_name = name
+        self._i2c_registers = []
+        self._i2c_active_reg_index = None
+        self._i2c_rebuild_reg_table()
+        # 选到 (none)，但不触发加载
+        self.i2c_tpl_combo.blockSignals(True)
+        self.i2c_tpl_combo.setCurrentIndex(0)
+        self.i2c_tpl_combo.blockSignals(False)
+        self.append_log(f"[I2C] 新建模板: {name}（未保存）")
+
+    def _on_i2c_tpl_save(self):
+        """保存当前 UI 状态到模板文件（按名称）。"""
+        name = self._i2c_active_template_name.strip()
+        if not name:
+            from PySide6.QtWidgets import QInputDialog
+            name, ok = QInputDialog.getText(
+                self, "保存模板", "模板名称:", text="NewTemplate")
+            if not ok or not name.strip():
+                return
+            name = name.strip()
+            self._i2c_active_template_name = name
+        data = self._i2c_serialize_template()
+        data["name"] = name
+        try:
+            path = _save_template_file(data)
+            self.append_log(f"[I2C] 模板已保存: {path}")
+            self._i2c_tpl_reload_combo()
+            self._i2c_select_template_by_name(name)
+            # 模板列表变化后，刷新脚本编辑器中的模板 combo
+            if hasattr(self, "i2c_seq_tpl_combo"):
+                self._i2c_seq_set_tpl_combo(name)
+            self._i2c_save_state()
+        except Exception as e:
+            logger.error("I2C save template failed: %s", e, exc_info=True)
+            QMessageBox.critical(self, "保存失败", str(e))
+
+    def _on_i2c_tpl_delete(self):
+        """删除当前选中的模板文件。"""
+        name = self._i2c_tpl_combo_current_name()
+        if not name:
+            QMessageBox.information(self, "提示", "请先在模板列表中选择一个模板")
+            return
+        ret = QMessageBox.question(
+            self, "删除确认", "确定删除模板 '{0}'?".format(name))
+        if ret != QMessageBox.Yes:
+            return
+        for path, tpl in self._i2c_templates:
+            if str(tpl.get("name", "")) == name:
+                _delete_template_file(path)
+                break
+        self._i2c_active_template_name = ""
+        self._i2c_tpl_reload_combo()
+        # 删除模板后，刷新脚本列表（脚本 template 字段引用变为孤儿）
+        if hasattr(self, "i2c_seq_list"):
+            self._i2c_seq_reload_list()
+        self.append_log(f"[I2C] 已删除模板: {name}")
+        self._i2c_save_state()
+
+    def _on_i2c_tpl_export(self):
+        """通过 FileDialog 导出到任意 JSON 文件（备用）。"""
+        data = self._i2c_serialize_template()
+        default_path = os.path.join(_i2c_template_dir(),
+                                   _tpl_filename_for(data["name"]) + ".json")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "导出 I2C 模板", default_path, "JSON (*.json);;All (*.*)")
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            self.append_log(f"[I2C] 模板已导出: {path}")
+        except Exception as e:
+            logger.error("I2C export template failed: %s", e, exc_info=True)
+            QMessageBox.critical(self, "导出失败", str(e))
+
+    def _on_i2c_tpl_import(self):
+        """通过 FileDialog 从任意 JSON 文件导入模板。"""
+        start_dir = _i2c_template_dir()
+        path, _ = QFileDialog.getOpenFileName(
+            self, "导入 I2C 模板", start_dir, "JSON (*.json);;All (*.*)")
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            logger.error("I2C import template failed: %s", e, exc_info=True)
+            QMessageBox.critical(self, "导入失败", str(e))
+            return
+        if not isinstance(data, dict):
+            QMessageBox.critical(self, "导入失败", "JSON 顶层必须为字典")
+            return
+        # 保存到模板目录
+        name = str(data.get("name", "")).strip()
+        if not name:
+            name = "ImportedTemplate"
+            data["name"] = name
+        try:
+            _save_template_file(data)
+            self._i2c_tpl_reload_combo()
+            self._i2c_select_template_by_name(name)
+            self._i2c_active_template_name = name
+            self._i2c_apply_template_to_ui(data)
+            self.append_log(f"[I2C] 模板已导入: {name}")
+            self._i2c_save_state()
+        except Exception as e:
+            logger.error("I2C import template save failed: %s", e, exc_info=True)
+            QMessageBox.critical(self, "导入失败", str(e))
+
+    # ---- 脚本编辑器中的模板 combo 辅助 ----
+
+    def _i2c_seq_tpl_combo_current(self):
+        """获取脚本编辑器中模板 combo 的当前值。"""
+        idx = self.i2c_seq_tpl_combo.currentIndex()
+        if idx <= 0:
+            return ""
+        data = self.i2c_seq_tpl_combo.currentData()
+        return str(data) if data else ""
+
+    def _i2c_seq_set_tpl_combo(self, name):
+        """设置脚本编辑器中的模板 combo（不触发信号副作用）。"""
+        sc = self.i2c_seq_tpl_combo
+        sc.blockSignals(True)
+        target_idx = 0
+        for i in range(sc.count()):
+            if str(sc.itemData(i)) == str(name):
+                target_idx = i
+                break
+        sc.setCurrentIndex(target_idx)
+        sc.blockSignals(False)
+
+    def _on_i2c_seq_tpl_combo_changed(self, _idx):
+        """脚本编辑器中的模板 combo 变化 → 刷新 YAML。"""
+        if self._i2c_seq_suppress_sync:
+            return
+        self._i2c_seq_sync_to_yaml()
+
+    def _on_i2c_seq_filter_toggled(self, _checked):
+        """脚本列表过滤按钮切换 → 刷新列表。"""
+        self._i2c_filter_scripts_by_template = \
+            self.i2c_seq_filter_btn.isChecked()
+        self._i2c_seq_reload_list()
+        self._i2c_save_state()
+
+    # ---- I2C 模块状态持久化 ----
+
+    def _i2c_save_state(self):
+        """保存当前状态到 i2c_state.json。"""
+        state = {
+            "version": "1.0",
+            "last_template": self._i2c_active_template_name,
+            "last_script": "",
+            "filter_scripts_by_template": bool(
+                self._i2c_filter_scripts_by_template),
+            "settings": {
+                "dll_path": getattr(self, "_i2c_custom_dll", None) or "",
+                "default_speed_mode": int(self._i2c_speed_mode),
+                "default_data_bits": int(self._i2c_data_bits),
+            },
+        }
+        # 记录当前选中的脚本名
+        if getattr(self, "_i2c_seq_current_index", None) is not None:
+            idx = self._i2c_seq_current_index
+            if 0 <= idx < len(self._i2c_sequences):
+                _p, s = self._i2c_sequences[idx]
+                state["last_script"] = str(s.get("name", ""))
+        _save_i2c_state(state)
+
+    def _i2c_restore_state(self):
+        """应用持久化状态到 UI（在 UI 构建完成后调用）。"""
+        state = getattr(self, "_i2c_pending_state", None) or {}
+        if not state:
+            # 无状态文件：仅刷新模板列表与脚本列表
+            self._i2c_tpl_reload_combo()
+            self._i2c_seq_reload_list()
+            return
+        # 1. 应用设置（DLL / 默认速率 / 默认位宽）
+        settings = state.get("settings", {}) or {}
+        dll = settings.get("dll_path", "")
+        if dll:
+            self._i2c_custom_dll = dll
+            if hasattr(self, "i2c_dll_edit"):
+                self._i2c_refresh_dll_display()
+        speed_mode = settings.get("default_speed_mode")
+        if speed_mode is not None and hasattr(self, "i2c_speed_combo"):
+            try:
+                from lib.i2c.Bes_I2CIO_Interface import I2CSpeedMode
+                speed = I2CSpeedMode(int(speed_mode))
+                for i in range(self.i2c_speed_combo.count()):
+                    if self.i2c_speed_combo.itemData(i) == speed:
+                        self.i2c_speed_combo.blockSignals(True)
+                        self.i2c_speed_combo.setCurrentIndex(i)
+                        self.i2c_speed_combo.blockSignals(False)
+                        break
+                self._i2c_speed_mode = speed
+            except Exception:
+                pass
+        bits = settings.get("default_data_bits", 16)
+        if bits in (8, 16, 32):
+            self._i2c_set_data_bits(int(bits))
+        # 2. 应用过滤开关
+        filter_flag = state.get("filter_scripts_by_template", True)
+        if hasattr(self, "i2c_seq_filter_btn"):
+            self.i2c_seq_filter_btn.blockSignals(True)
+            self.i2c_seq_filter_btn.setChecked(bool(filter_flag))
+            self.i2c_seq_filter_btn.blockSignals(False)
+            self._i2c_filter_scripts_by_template = bool(filter_flag)
+        # 3. 刷新模板 combo
+        self._i2c_tpl_reload_combo()
+        # 4. 应用上次活动模板
+        last_tpl = str(state.get("last_template", ""))
+        if last_tpl:
+            self._i2c_select_template_by_name(last_tpl)
+            self._i2c_active_template_name = last_tpl
+            # 加载模板数据到 UI
+            for _path, tpl in self._i2c_templates:
+                if str(tpl.get("name", "")) == last_tpl:
+                    self._i2c_apply_template_to_ui(tpl)
+                    break
+        # 5. 刷新脚本列表（按模板过滤）
+        self._i2c_seq_reload_list()
+        # 6. 应用上次选中的脚本
+        last_script = str(state.get("last_script", ""))
+        if last_script:
+            for i, (_p, s) in enumerate(self._i2c_sequences):
+                if str(s.get("name", "")) == last_script:
+                    self.i2c_seq_list.selectRow(i)
+                    break
         self.append_log(
-            f"[I2C] 模板已加载: {path} "
-            f"({len(self._i2c_registers)} 个寄存器)")
+            f"[I2C] 状态已恢复: 模板={last_tpl or '(none)'} "
+            f"脚本={last_script or '(none)'}")
 
     # ---- 资源释放 ----
 
     def close_i2c(self):
-        """I2C 按需初始化/销毁，无需持久资源释放；保留接口供页面统一调用。"""
-        pass
+        """关闭 I2C 模块时保存持久化状态。"""
+        try:
+            self._i2c_save_state()
+        except Exception:
+            logger.error("I2C save state on close failed", exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -3117,6 +3610,13 @@ class _DemoI2cWidget(I2cMixin, QWidget):
 
     def append_log(self, msg):
         logger.info(msg)
+
+    def closeEvent(self, event):
+        try:
+            self.close_i2c()
+        except Exception:
+            logger.error("I2C close failed", exc_info=True)
+        super().closeEvent(event)
 
 
 if __name__ == "__main__":
