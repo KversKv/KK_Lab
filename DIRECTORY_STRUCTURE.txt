@@ -343,6 +343,17 @@ ui/
 │       ├── serialCom_apple_gpt5p5_style.py  # 串口通信 Apple 浅色 UI 样式 (消费 ui/styles/serial_tokens)
 │       └── serialCom_dark_style.py          # 串口通信深色 UI 样式 (消费 ui/styles/serial_tokens)
 │
+├── IIC_Module/              # I2C 控制模块 (I2cMixin 职责拆分)
+│   ├── __init__.py                      # 导出 I2cMixin
+│   ├── i2c_mixin.py                     # I2cMixin 核心：init_i2c/build_i2c_widgets/bind_i2c_signals
+│   ├── i2c_module_frame.py              # 独立运行 Demo 薄壳
+│   ├── i2c_constants.py                 # I2C 位宽元数据/速率选项/格式化工具
+│   ├── i2c_styles.py                    # I2C 控件 QSS 样式
+│   ├── i2c_widgets.py                   # 自定义控件 (HexLineEdit/BitTableView/...)
+│   ├── i2c_workers.py                   # QThread 异步 Worker (Read/Write/ChipCheck/Sequence)
+│   ├── i2c_dsl.py                       # 序列脚本 DSL 解析 (AST/格式化/执行)
+│   └── i2c_persistence.py               # 模板/序列/状态持久化 (JSON/YAML)
+│
 ├── styles/                  # 样式聚合入口
 │   ├── __init__.py              # 从 ui/widgets 与 ui/modules 重新导出常用样式/组件
 │   │                            # (SCROLLBAR_STYLE / START_BTN_STYLE /

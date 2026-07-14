@@ -31,7 +31,7 @@ except ImportError:
     pass
 
 try:
-    from ui.modules.i2c_module_frame import I2cMixin
+    from ui.modules.IIC_Module.i2c_mixin import I2cMixin
 except ImportError:
     pass
 
