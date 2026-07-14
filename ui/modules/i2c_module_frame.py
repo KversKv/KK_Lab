@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QLabel, QFrame, QSizePolicy, QLineEdit,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
     QFileDialog, QMessageBox, QMenu, QScrollArea, QStackedWidget,
-    QButtonGroup, QPlainTextEdit
+    QButtonGroup, QPlainTextEdit, QSplitter
 )
 from PySide6.QtCore import (
     Qt, QThread, Signal, QObject, QTimer, QDateTime, QRegularExpression
@@ -30,6 +30,7 @@ from PySide6.QtGui import (
 )
 
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -1633,7 +1634,12 @@ class I2cMixin:
         self.i2c_stack.addWidget(self.i2c_ctrl_page)
         self.i2c_stack.addWidget(self.i2c_tpl_page)
         self.i2c_stack.addWidget(self.i2c_set_page)
-        root.addWidget(self.i2c_stack, 1)
+        # 用 ExecutionLogsFrame 包裹 stack：日志固定在窗口底部
+        self.i2c_splitter, self.i2c_logs = ExecutionLogsFrame.wrap_with(
+            self.i2c_stack, title="Activity Logs", show_progress=False,
+            stretch=(4, 1)
+        )
+        root.addWidget(self.i2c_splitter, 1)
 
         layout.addLayout(root)
         self._i2c_sync_width_ui()
@@ -1697,7 +1703,8 @@ class I2cMixin:
         row.setSpacing(10)
         row.setContentsMargins(0, 0, 0, 0)
         self._build_i2c_device_config_card(row)
-        self._build_i2c_activity_card(row)
+        # Activity 卡片已迁移至窗口底部的 ExecutionLogsFrame
+        row.addStretch(1)
         layout.addLayout(row)
 
     def _build_i2c_device_config_card(self, layout):
@@ -1740,55 +1747,7 @@ class I2cMixin:
         w_row.addWidget(self.i2c_width_combo, 1)
         v.addLayout(w_row)
 
-        layout.addWidget(card, 1)
-
-    def _build_i2c_activity_card(self, layout):
-        card = QFrame()
-        card.setObjectName("card")
-        v = QVBoxLayout(card)
-        v.setContentsMargins(14, 12, 14, 12)
-        v.setSpacing(8)
-
-        t = QLabel("Activity")
-        t.setObjectName("cardTitle")
-        v.addWidget(t)
-
-        op_row = QHBoxLayout()
-        op_row.setSpacing(8)
-        op_lbl = QLabel("Last Op")
-        op_lbl.setObjectName("muted")
-        op_lbl.setFixedWidth(80)
-        op_row.addWidget(op_lbl)
-        self.i2c_activity_op = QLabel("—")
-        self.i2c_activity_op.setObjectName("mono")
-        op_row.addWidget(self.i2c_activity_op, 1)
-        v.addLayout(op_row)
-
-        time_row = QHBoxLayout()
-        time_row.setSpacing(8)
-        time_lbl = QLabel("Timestamp")
-        time_lbl.setObjectName("muted")
-        time_lbl.setFixedWidth(80)
-        time_row.addWidget(time_lbl)
-        self.i2c_activity_time = QLabel("—")
-        self.i2c_activity_time.setObjectName("muted")
-        time_row.addWidget(self.i2c_activity_time, 1)
-        v.addLayout(time_row)
-
-        val_row = QHBoxLayout()
-        val_row.setSpacing(8)
-        val_lbl = QLabel("Data Value")
-        val_lbl.setObjectName("muted")
-        val_lbl.setFixedWidth(80)
-        val_row.addWidget(val_lbl)
-        self.i2c_result_label = QLabel("—")
-        self.i2c_result_label.setObjectName("activityVal")
-        self.i2c_result_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.i2c_result_label.setStyleSheet("color:#34d399;")
-        val_row.addWidget(self.i2c_result_label, 1)
-        v.addLayout(val_row)
-
-        layout.addWidget(card, 1)
+        layout.addWidget(card, 0)
 
     # ---- 主工作区：Header（标题 + 二进制预览） + Body（位表） + Footer（操作栏） ----
 
@@ -2318,13 +2277,15 @@ class I2cMixin:
     # ---- 状态反馈 ----
 
     def _i2c_set_result(self, text, ok=True):
-        self.i2c_result_label.setText(text)
-        self.i2c_result_label.setStyleSheet(
-            "color:#34d399;" if ok else "color:#ff5e7a;")
+        level = "DONE" if ok else "ERROR"
+        self.append_log(f"[{level}] {text}")
 
     def append_log(self, msg):
-        """供页面覆写：默认转发到 logger。"""
+        """供页面覆写：默认转发到 logger 与底部 ExecutionLogsFrame。"""
         logger.info(msg)
+        logs = getattr(self, "i2c_logs", None)
+        if logs is not None:
+            logs.append_log(msg)
 
     def _i2c_set_busy(self, busy):
         for attr in ("i2c_read_btn", "i2c_write_btn", "i2c_chipcheck_btn",
@@ -2338,15 +2299,16 @@ class I2cMixin:
             stop_btn.setEnabled(busy and self._i2c_script_thread is not None)
 
     def _i2c_set_activity(self, op, value=None, ok=True):
-        self.i2c_activity_op.setText(op)
-        self.i2c_activity_op.setStyleSheet(
-            "color:#34d399;" if ok else "color:#ff5e7a;")
-        self.i2c_activity_time.setText(
-            QDateTime.currentDateTime().toString("HH:mm:ss"))
         if value is not None:
             bits = self._i2c_data_bits
-            self._i2c_set_result(
-                f"{_fmt_hex(value, bits)}   ({value})", ok=ok)
+            level = "DONE" if ok else "ERROR"
+            self.append_log(
+                f"[{level}] {op}: {_fmt_hex(value, bits)} ({value})")
+        elif op.endswith("…"):
+            self.append_log(f"[INFO] {op}")
+        else:
+            level = "DONE" if ok else "ERROR"
+            self.append_log(f"[{level}] {op}")
 
     # ---- DLL 路径 ----
 
@@ -3607,9 +3569,6 @@ class _DemoI2cWidget(I2cMixin, QWidget):
         root.setSpacing(10)
         self.build_i2c_widgets(root)
         self.bind_i2c_signals()
-
-    def append_log(self, msg):
-        logger.info(msg)
 
     def closeEvent(self, event):
         try:
