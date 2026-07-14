@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer, QRectF, Signal, Property, QEasingCurve
 from PySide6.QtGui import (
     QIcon, QPixmap, QPainter, QColor, QAction, QBrush, QPen, QFont, QFontMetrics,
+    QTransform,
 )
 from PySide6.QtCore import QPropertyAnimation
 from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
@@ -455,6 +456,8 @@ class ExecutionLogsFrame(QFrame):
         self._current_step_text = ""
         self._total_steps = 0
         self._current_step_index = 0
+        self._collapsed = False
+        self._saved_splitter_sizes = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -549,6 +552,9 @@ class ExecutionLogsFrame(QFrame):
         self.clear_btn.clicked.connect(self.clear_log)
         toolbar.addWidget(self.clear_btn)
 
+        self.collapse_btn = self._make_collapse_btn()
+        toolbar.addWidget(self.collapse_btn)
+
         self._toolbar_layout = toolbar
         header_layout.addLayout(toolbar)
 
@@ -635,6 +641,44 @@ class ExecutionLogsFrame(QFrame):
             btn.setIcon(icon)
         btn._expanded_width = btn.sizeHint().width()
         return btn
+
+    def _make_collapse_btn(self) -> QPushButton:
+        btn = QPushButton()
+        btn.setObjectName("iconOnlyBtn")
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setCheckable(True)
+        btn.setToolTip("Collapse / Expand")
+        icon = _tinted_svg_icon(
+            os.path.join(_SVG_DIR, "chevron-down.svg"), "#8eb0e3", 12)
+        if not icon.isNull():
+            btn.setIcon(icon)
+        btn.clicked.connect(self._toggle_collapse)
+        return btn
+
+    def _toggle_collapse(self):
+        self._collapsed = self.collapse_btn.isChecked()
+        self.log_edit.setVisible(not self._collapsed)
+        if self._show_progress and hasattr(self, "_status_row"):
+            self._status_row.setVisible(not self._collapsed)
+        # 切换箭头方向：展开 ▼ / 折叠 ▲
+        icon = _tinted_svg_icon(
+            os.path.join(_SVG_DIR, "chevron-down.svg"), "#8eb0e3", 12)
+        if self._collapsed and not icon.isNull():
+            pm = icon.pixmap(12, 12)
+            self.collapse_btn.setIcon(
+                QIcon(pm.transformed(QTransform().rotate(180))))
+        elif not icon.isNull():
+            self.collapse_btn.setIcon(icon)
+        # 调整父级 QSplitter，折叠时将空间让给上方内容
+        splitter = self.parentWidget()
+        if isinstance(splitter, QSplitter):
+            if self._collapsed:
+                self._saved_splitter_sizes = splitter.sizes()
+                total = sum(self._saved_splitter_sizes)
+                header_h = self._header_widget.sizeHint().height() + 4
+                splitter.setSizes([max(0, total - header_h), header_h])
+            elif self._saved_splitter_sizes:
+                splitter.setSizes(self._saved_splitter_sizes)
 
     def _set_btn_compact(self, btn: QPushButton, compact: bool):
         if getattr(btn, "_compact_state", None) == compact:

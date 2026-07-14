@@ -213,6 +213,16 @@ def _i2c_subtle_btn_style():
     )
 
 
+def _i2c_collapse_arrow_style():
+    return (
+        "QPushButton#i2cCollapseArrow {"
+        " background:transparent; border:none; color:#f8fafc;"
+        " font-size:11px; font-weight:bold; padding:0px;"
+        "}"
+        f" QPushButton#i2cCollapseArrow:hover {{ color:{INDIGO_LIGHT}; }}"
+    )
+
+
 def _bit_val_style(on):
     if on:
         return (
@@ -1833,16 +1843,34 @@ class I2cMixin:
         v.setContentsMargins(14, 12, 14, 12)
         v.setSpacing(8)
 
+        title_row = QHBoxLayout()
+        title_row.setSpacing(4)
+        title_row.setContentsMargins(0, 0, 0, 0)
+        self._i2c_seq_collapse_btn = QPushButton("▼")
+        self._i2c_seq_collapse_btn.setObjectName("i2cCollapseArrow")
+        self._i2c_seq_collapse_btn.setCursor(Qt.PointingHandCursor)
+        self._i2c_seq_collapse_btn.setFixedWidth(16)
+        self._i2c_seq_collapse_btn.setStyleSheet(_i2c_collapse_arrow_style())
+        self._i2c_seq_collapse_btn.clicked.connect(self._i2c_toggle_seq_card)
+        title_row.addWidget(self._i2c_seq_collapse_btn)
         t = QLabel("Sequence Script Manager")
         t.setObjectName("cardTitle")
-        v.addWidget(t)
+        title_row.addWidget(t)
+        title_row.addStretch()
+        v.addLayout(title_row)
+
+        self._i2c_seq_content = QWidget()
+        self._i2c_seq_content.setStyleSheet("background:transparent;")
+        content_v = QVBoxLayout(self._i2c_seq_content)
+        content_v.setContentsMargins(0, 0, 0, 0)
+        content_v.setSpacing(8)
 
         hint = QLabel(
             "寄存器操作序列脚本管理 · 双击列表项执行 · Table 只读展示 / YAML 编辑 · "
             "Action: W/R/WR · 指令: WRITE/READ/WRITE_BITS/DELAY/READ_RANGE/LOOP/IF")
         hint.setObjectName("muted")
         hint.setWordWrap(True)
-        v.addWidget(hint)
+        content_v.addWidget(hint)
 
         # 主区域：左列表 + 右编辑器
         main_row = QHBoxLayout()
@@ -2015,7 +2043,9 @@ class I2cMixin:
         right.addLayout(bottom_row)
 
         main_row.addLayout(right, 1)
-        v.addLayout(main_row)
+        content_v.addLayout(main_row)
+
+        v.addWidget(self._i2c_seq_content)
 
         # 加载已存脚本
         self._i2c_seq_reload_list()
@@ -2309,6 +2339,11 @@ class I2cMixin:
         else:
             level = "DONE" if ok else "ERROR"
             self.append_log(f"[{level}] {op}")
+
+    def _i2c_toggle_seq_card(self):
+        visible = self._i2c_seq_content.isVisible()
+        self._i2c_seq_content.setVisible(not visible)
+        self._i2c_seq_collapse_btn.setText("▶" if visible else "▼")
 
     # ---- DLL 路径 ----
 
