@@ -284,12 +284,14 @@ class BitsTable(QTableWidget):
     """单段位表格。bit_offset/bit_count 决定显示区间（MSB 在上）。
     同一字段的多个 Bit 自动合并 Field/Description/Hex 单元格（rowSpan）。"""
     bit_toggled = Signal(int)  # 绝对位索引
+    field_edited = Signal(int, int, str)  # (field_index, column, text) col: 2=name 3=desc
 
     def __init__(self, bit_offset, bit_count, parent=None):
         super().__init__(0, 5, parent)
         self._offset = bit_offset
         self._count = bit_count
         self._fields = []
+        self._edit_mode = False
         self.setObjectName("bitsTable")
         self.setHorizontalHeaderLabels(["Bit", "Val", "Field", "Desc", "Hex"])
         self.verticalHeader().setVisible(False)
@@ -306,6 +308,70 @@ class BitsTable(QTableWidget):
         hdr.setSectionResizeMode(3, QHeaderView.Stretch)
         hdr.setSectionResizeMode(4, QHeaderView.ResizeToContents)
         self._build_rows()
+        self.cellChanged.connect(self._on_cell_changed)
+
+    def set_edit_mode(self, enabled):
+        """开启/关闭 Field/Desc 列的内联编辑。"""
+        self._edit_mode = enabled
+        if enabled:
+            self.setEditTriggers(
+                QAbstractItemView.DoubleClicked
+                | QAbstractItemView.EditKeyPressed)
+        else:
+            self.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._apply_field_edit_flags()
+
+    def _apply_field_edit_flags(self):
+        """根据编辑模式设置 Field/Desc 单元格的可编辑标志。"""
+        editable = self._edit_mode
+        for i in range(self._count):
+            for c in (2, 3):
+                it = self.item(i, c)
+                if it is not None:
+                    flags = it.flags()
+                    if editable:
+                        flags |= Qt.ItemIsEditable
+                    else:
+                        flags &= ~Qt.ItemIsEditable
+                    it.setFlags(flags)
+
+    def _on_cell_changed(self, row, col):
+        """Field(col 2) / Desc(col 3) 内联编辑 → 通知 mixin 更新字段数据。"""
+        if not self._edit_mode:
+            return
+        if col not in (2, 3):
+            return
+        fidx = self._field_index_at_row(row)
+        if fidx is None:
+            return
+        it = self.item(row, col)
+        text = it.text() if it is not None else ""
+        self.field_edited.emit(fidx, col, text)
+
+    def _field_index_at_row(self, row):
+        """返回该行所属 field 在 self._fields 中的索引，无则 None。"""
+        bit = self._abs_bit(row)
+        for i, f in enumerate(self._fields):
+            fhi = int(f["high_bit"])
+            flo = int(f["low_bit"])
+            if fhi < flo:
+                fhi, flo = flo, fhi
+            if flo <= bit <= fhi:
+                return i
+        return None
+
+    def field_at_row(self, row):
+        """返回该行所属 field 的 (index, dict)，无则 (None, None)。"""
+        idx = self._field_index_at_row(row)
+        if idx is None:
+            return None, None
+        return idx, self._fields[idx]
+
+    def abs_bit_at_row(self, row):
+        """返回该行对应的绝对位索引。"""
+        if 0 <= row < self._count:
+            return self._abs_bit(row)
+        return None
 
     def _abs_bit(self, row):
         # row 0 = 本表最高位
@@ -400,6 +466,7 @@ class BitsTable(QTableWidget):
                         it.setBackground(tint)
             for c in (2, 3, 4):
                 self.setSpan(row_top, c, span, 1)
+        self._apply_field_edit_flags()
 
     def _refresh_field_hex(self, full_value):
         for f in self._fields:
@@ -424,6 +491,8 @@ class BitsTable(QTableWidget):
 class BitsTableContainer(QWidget):
     """位表容器：n<=16 单栏，n>16 自动拆分为双栏（高位左、低位右）。"""
     bit_toggled = Signal(int)
+    field_edited = Signal(int, int, str)  # (field_index, column, text)
+    field_context_menu = Signal(object, int)  # (bits_table, row)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -431,6 +500,18 @@ class BitsTableContainer(QWidget):
         self._layout = QHBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(10)
+
+    def _connect_table(self, t):
+        t.bit_toggled.connect(self.bit_toggled)
+        t.field_edited.connect(self.field_edited)
+        t.setContextMenuPolicy(Qt.CustomContextMenu)
+        t.customContextMenuRequested.connect(
+            lambda pos, tbl=t: self._on_context_menu(tbl, pos))
+
+    def _on_context_menu(self, tbl, pos):
+        row = tbl.rowAt(pos.y())
+        if row >= 0:
+            self.field_context_menu.emit(tbl, row)
 
     def set_bit_count(self, n):
         for t in self._tables:
@@ -440,7 +521,7 @@ class BitsTableContainer(QWidget):
         self._tables = []
         if n <= 16:
             t = BitsTable(0, n)
-            t.bit_toggled.connect(self.bit_toggled)
+            self._connect_table(t)
             self._layout.addWidget(t, 1)
             self._tables.append(t)
         else:
@@ -448,7 +529,7 @@ class BitsTableContainer(QWidget):
             hi_t = BitsTable(half, n - half)
             lo_t = BitsTable(0, half)
             for t in (hi_t, lo_t):
-                t.bit_toggled.connect(self.bit_toggled)
+                self._connect_table(t)
             self._layout.addWidget(hi_t, 1)
             sep = QFrame()
             sep.setFrameShape(QFrame.VLine)
@@ -456,6 +537,10 @@ class BitsTableContainer(QWidget):
             self._layout.addWidget(sep, 0)
             self._layout.addWidget(lo_t, 1)
             self._tables = [hi_t, lo_t]
+
+    def set_edit_mode(self, enabled):
+        for t in self._tables:
+            t.set_edit_mode(enabled)
 
     def set_value(self, full_value):
         for t in self._tables:

@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QMessageBox, QMenu, QScrollArea, QStackedWidget,
     QButtonGroup, QPlainTextEdit, QSplitter,
 )
-from PySide6.QtCore import Qt, QThread, QTimer
+from PySide6.QtCore import Qt, QThread
 from PySide6.QtGui import QColor, QAction
 
 from ui.widgets.dark_combobox import DarkComboBox
@@ -22,7 +22,7 @@ from log_config import get_logger
 from ui.modules.IIC_Module import i2c_constants as _i2c_const
 from ui.modules.IIC_Module.i2c_constants import (
     I2C_BTN_HEIGHT, SLATE_950, SLATE_900, SLATE_800,
-    INDIGO, INDIGO_LIGHT, EMERALD_LIGHT, TEXT_MAIN, TEXT_MUTED,
+    INDIGO, INDIGO_LIGHT, TEXT_MAIN, TEXT_MUTED,
     _I2C_UI_WIDTHS, _ui_width_to_flag, _infer_reg_bits, _width_label,
     _fmt_hex, _fmt_bin_grouped, _parse_hex_int, _i2c_template_dir,
 )
@@ -92,10 +92,6 @@ class I2cMixin:
         self._i2c_registers = []
         self._i2c_active_reg_index = None
         self._i2c_fields = []
-        self._i2c_suppress_field_refresh = False
-        self._i2c_readall_queue = []
-        self._i2c_readall_results = {}
-        self._i2c_pending_readall_idx = None
 
     def _i2c_dll_path(self):
         return getattr(self, "_i2c_custom_dll", None)
@@ -175,7 +171,6 @@ class I2cMixin:
 
         self._build_i2c_top_cards(root)
         self._build_i2c_workspace(root)
-        self._build_i2c_template_editor(root)
         self._build_i2c_script_card(root)
         root.addStretch(0)
         return page
@@ -295,6 +290,13 @@ class I2cMixin:
         h_title = QLabel("Payload Data Bits")
         h_title.setObjectName("cardTitle")
         header.addWidget(h_title)
+        # + Field 按钮（仅 Edit 模式可见）
+        self.i2c_add_field_btn = QPushButton("+ Field")
+        self.i2c_add_field_btn.setFixedHeight(I2C_BTN_HEIGHT)
+        self.i2c_add_field_btn.setCursor(Qt.PointingHandCursor)
+        self.i2c_add_field_btn.setStyleSheet(_i2c_subtle_btn_style())
+        self.i2c_add_field_btn.setVisible(False)
+        header.addWidget(self.i2c_add_field_btn)
         header.addStretch()
         bin_lbl = QLabel("BIN")
         bin_lbl.setObjectName("muted")
@@ -569,96 +571,6 @@ class I2cMixin:
         self._i2c_seq_reload_list()
         layout.addWidget(card)
 
-    # ---- 模板编辑器（Payload Data Bits 下方的 Register Map + Bit Fields） ----
-    # 通过 Template 卡片的 Edit 滑动开关控制可见性：ON 时展开，OFF 时收起。
-
-    def _build_i2c_template_editor(self, layout):
-        self._i2c_tpl_editor = QWidget()
-        self._i2c_tpl_editor.setStyleSheet("background:transparent;")
-        v = QVBoxLayout(self._i2c_tpl_editor)
-        v.setContentsMargins(0, 0, 0, 0)
-        v.setSpacing(10)
-
-        # Register Map
-        map_card = QFrame()
-        map_card.setObjectName("card")
-        mv = QVBoxLayout(map_card)
-        mv.setContentsMargins(14, 12, 14, 12)
-        mv.setSpacing(8)
-        mt_row = QHBoxLayout()
-        mt_row.setSpacing(6)
-        mt = QLabel("Register Map")
-        mt.setObjectName("cardTitle")
-        mt_row.addWidget(mt)
-        mt_row.addStretch()
-        self.i2c_add_reg_btn = QPushButton("+ Reg")
-        self.i2c_readall_btn = QPushButton("Read All")
-        for btn in (self.i2c_add_reg_btn, self.i2c_readall_btn):
-            btn.setFixedHeight(I2C_BTN_HEIGHT)
-            btn.setCursor(Qt.PointingHandCursor)
-            btn.setStyleSheet(_i2c_subtle_btn_style())
-            mt_row.addWidget(btn)
-        mv.addLayout(mt_row)
-        self.i2c_reg_table = QTableWidget(0, 5)
-        self.i2c_reg_table.setHorizontalHeaderLabels(
-            ["Name", "Reg Addr", "Width", "Fields", "Description"])
-        self.i2c_reg_table.setEditTriggers(
-            QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
-        self.i2c_reg_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.i2c_reg_table.verticalHeader().setVisible(False)
-        self.i2c_reg_table.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.i2c_reg_table.setStyleSheet(_i2c_table_qss())
-        rh = self.i2c_reg_table.horizontalHeader()
-        rh.setSectionResizeMode(0, QHeaderView.Stretch)
-        rh.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        rh.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        rh.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        rh.setSectionResizeMode(4, QHeaderView.Stretch)
-        self.i2c_reg_table.setMinimumHeight(160)
-        mv.addWidget(self.i2c_reg_table)
-        v.addWidget(map_card)
-
-        # Bit Fields
-        f_card = QFrame()
-        f_card.setObjectName("card")
-        fv = QVBoxLayout(f_card)
-        fv.setContentsMargins(14, 12, 14, 12)
-        fv.setSpacing(8)
-        ft_row = QHBoxLayout()
-        ft_row.setSpacing(6)
-        ft = QLabel("Bit Fields")
-        ft.setObjectName("cardTitle")
-        ft_row.addWidget(ft)
-        ft_row.addStretch()
-        self.i2c_add_field_btn = QPushButton("+ Field")
-        self.i2c_add_field_btn.setFixedHeight(I2C_BTN_HEIGHT)
-        self.i2c_add_field_btn.setCursor(Qt.PointingHandCursor)
-        self.i2c_add_field_btn.setStyleSheet(_i2c_subtle_btn_style())
-        ft_row.addWidget(self.i2c_add_field_btn)
-        fv.addLayout(ft_row)
-        self.i2c_fields_table = QTableWidget(0, 5)
-        self.i2c_fields_table.setHorizontalHeaderLabels(
-            ["Field", "High", "Low", "Value", "Description"])
-        self.i2c_fields_table.setEditTriggers(
-            QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
-        self.i2c_fields_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.i2c_fields_table.verticalHeader().setVisible(False)
-        self.i2c_fields_table.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.i2c_fields_table.setStyleSheet(_i2c_table_qss())
-        fh = self.i2c_fields_table.horizontalHeader()
-        fh.setSectionResizeMode(0, QHeaderView.Stretch)
-        fh.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        fh.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        fh.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        fh.setSectionResizeMode(4, QHeaderView.Stretch)
-        self.i2c_fields_table.setMinimumHeight(140)
-        fv.addWidget(self.i2c_fields_table)
-        v.addWidget(f_card)
-
-        # 默认收起（Edit 开关 OFF）
-        self._i2c_tpl_editor.setVisible(False)
-        layout.addWidget(self._i2c_tpl_editor)
-
     # ---- 设置页：DLL + 速率 + 芯片检测 ----
 
     def _build_i2c_settings_page(self):
@@ -741,14 +653,13 @@ class I2cMixin:
         self.i2c_write_btn.clicked.connect(self._on_i2c_write)
         self.i2c_data_edit.value_changed.connect(self._on_i2c_data_edited)
         self.i2c_bits.bit_toggled.connect(self._on_i2c_bit_toggled)
+        self.i2c_bits.field_edited.connect(self._on_i2c_field_edited)
+        self.i2c_bits.field_context_menu.connect(self._on_i2c_bits_context_menu)
         self.i2c_width_combo.currentIndexChanged.connect(
             self._on_i2c_width_changed)
         self.i2c_speed_combo.currentIndexChanged.connect(
             self._on_i2c_default_speed_changed)
         self.i2c_add_field_btn.clicked.connect(self._on_i2c_add_field)
-        self.i2c_fields_table.cellChanged.connect(self._on_i2c_field_cell_changed)
-        self.i2c_fields_table.customContextMenuRequested.connect(
-            self._on_i2c_field_context_menu)
         # 模板管理信号
         self.i2c_tpl_combo.currentIndexChanged.connect(
             self._on_i2c_tpl_combo_changed)
@@ -756,11 +667,6 @@ class I2cMixin:
         self.i2c_tpl_open_btn.clicked.connect(self._on_i2c_tpl_import)
         self.i2c_tpl_export_btn.clicked.connect(self._on_i2c_tpl_export)
         self.i2c_edit_toggle.toggled.connect(self._on_i2c_edit_toggled)
-        self.i2c_add_reg_btn.clicked.connect(self._on_i2c_add_register)
-        self.i2c_readall_btn.clicked.connect(self._on_i2c_read_all)
-        self.i2c_reg_table.cellDoubleClicked.connect(self._on_i2c_reg_double_clicked)
-        self.i2c_reg_table.customContextMenuRequested.connect(
-            self._on_i2c_reg_context_menu)
         self.i2c_seq_new_btn.clicked.connect(self._on_i2c_seq_new)
         self.i2c_seq_dup_btn.clicked.connect(self._on_i2c_seq_duplicate)
         self.i2c_seq_del_btn.clicked.connect(self._on_i2c_seq_delete)
@@ -797,7 +703,7 @@ class I2cMixin:
 
     def _i2c_set_busy(self, busy):
         for attr in ("i2c_read_btn", "i2c_write_btn", "i2c_chipcheck_btn",
-                     "i2c_readall_btn", "i2c_seq_run_btn"):
+                     "i2c_seq_run_btn"):
             w = getattr(self, attr, None)
             if w is not None:
                 w.setEnabled(not busy)
@@ -964,21 +870,12 @@ class I2cMixin:
         self._i2c_set_activity("Read", value=value, ok=True)
         self._i2c_set_busy(False)
         self.append_log(f"[I2C] Read => {_fmt_hex(value, bits)} ({value})")
-        idx = getattr(self, "_i2c_pending_readall_idx", None)
-        if idx is not None:
-            self._i2c_readall_results[idx] = value
-            self._i2c_pending_readall_idx = None
-            if getattr(self, "_i2c_readall_queue", None):
-                QTimer.singleShot(10, self._i2c_readall_next)
 
     def _on_i2c_read_error(self, err):
         self._i2c_set_activity("Read", ok=False)
         self._i2c_set_result(f"Read Failed: {err}", ok=False)
         self._i2c_set_busy(False)
         self.append_log(f"[I2C] Read 失败: {err}")
-        if getattr(self, "_i2c_readall_queue", None):
-            self._i2c_pending_readall_idx = None
-            QTimer.singleShot(10, self._i2c_readall_next)
 
     def _start_i2c_write(self, dev, reg, data, high, low, use_raw, tag=""):
         if (self._i2c_write_thread is not None
@@ -1032,9 +929,10 @@ class I2cMixin:
         self._i2c_set_busy(False)
         self.append_log(f"[I2C] Write 失败: {err}")
 
-    # ---- 位字段表 ----
+    # ---- 位字段管理（直接在 Payload Data Bits 位表上编辑） ----
 
     def _on_i2c_add_field(self):
+        """在位表上新增一个默认字段（覆盖 [7:0] 或剩余可用范围）。"""
         bits = self._i2c_data_bits
         self._i2c_fields.append({
             "name": f"FIELD{len(self._i2c_fields)}",
@@ -1042,149 +940,110 @@ class I2cMixin:
             "low_bit": 0,
             "description": "",
         })
-        self._i2c_rebuild_fields_table()
-        self._i2c_sync_active_register_fields()
         self.i2c_bits.set_fields(self._i2c_fields)
-        self._i2c_refresh_field_values()
-
-    def _i2c_rebuild_fields_table(self):
-        self._i2c_suppress_field_refresh = True
-        self.i2c_fields_table.setRowCount(0)
-        for f in self._i2c_fields:
-            row = self.i2c_fields_table.rowCount()
-            self.i2c_fields_table.insertRow(row)
-            self.i2c_fields_table.setItem(row, 0, QTableWidgetItem(f["name"]))
-            self.i2c_fields_table.setItem(row, 1, QTableWidgetItem(str(f["high_bit"])))
-            self.i2c_fields_table.setItem(row, 2, QTableWidgetItem(str(f["low_bit"])))
-            val_item = QTableWidgetItem("")
-            val_item.setFlags(val_item.flags() & ~Qt.ItemIsEditable)
-            val_item.setForeground(QColor(EMERALD_LIGHT))
-            self.i2c_fields_table.setItem(row, 3, val_item)
-            self.i2c_fields_table.setItem(row, 4, QTableWidgetItem(f["description"]))
-        self._i2c_suppress_field_refresh = False
-        self._i2c_refresh_field_values()
-
-    def _on_i2c_field_cell_changed(self, row, col):
-        if self._i2c_suppress_field_refresh:
-            return
-        if row >= len(self._i2c_fields):
-            return
-        item = self.i2c_fields_table.item(row, col)
-        if item is None:
-            return
-        if col == 0:
-            self._i2c_fields[row]["name"] = item.text()
-        elif col == 1:
-            v = _parse_hex_int(item.text())
-            self._i2c_fields[row]["high_bit"] = max(0, v or 0)
-        elif col == 2:
-            v = _parse_hex_int(item.text())
-            self._i2c_fields[row]["low_bit"] = max(0, v or 0)
-        elif col == 4:
-            self._i2c_fields[row]["description"] = item.text()
+        self.i2c_bits.set_value(self._i2c_data_value)
         self._i2c_sync_active_register_fields()
-        self.i2c_bits.set_fields(self._i2c_fields)
-        self._i2c_refresh_field_values()
 
-    def _i2c_refresh_field_values(self):
-        if not hasattr(self, "i2c_fields_table"):
+    def _on_i2c_field_edited(self, field_idx, col, text):
+        """位表 Field(col 2) / Desc(col 3) 内联编辑 → 更新字段数据。"""
+        if field_idx is None or field_idx >= len(self._i2c_fields):
             return
-        value = self._i2c_data_value
-        self._i2c_suppress_field_refresh = True
-        for row, f in enumerate(self._i2c_fields):
-            if row >= self.i2c_fields_table.rowCount():
-                break
-            high = int(f["high_bit"])
-            low = int(f["low_bit"])
-            if high < low:
-                high, low = low, high
-            width = max(high - low + 1, 1)
-            field_mask = (1 << width) - 1
-            field_val = (value >> low) & field_mask
-            item = self.i2c_fields_table.item(row, 3)
-            if item is not None:
-                item.setText(f"{_fmt_hex(field_val, width)}  ({field_val})")
-        self._i2c_suppress_field_refresh = False
-        self.i2c_bits.set_value(value)
+        if col == 2:
+            self._i2c_fields[field_idx]["name"] = text
+        elif col == 3:
+            self._i2c_fields[field_idx]["description"] = text
+        self._i2c_sync_active_register_fields()
 
-    def _on_i2c_field_context_menu(self, pos):
-        row = self.i2c_fields_table.rowAt(pos.y())
-        menu = QMenu(self.i2c_fields_table)
+    def _on_i2c_bits_context_menu(self, bits_table, row):
+        """位表右键菜单：Edit 模式下可创建/编辑/删除字段。"""
+        if not self.i2c_edit_toggle.isChecked():
+            return
+        abs_bit = bits_table.abs_bit_at_row(row)
+        if abs_bit is None:
+            return
+        fidx, field = bits_table.field_at_row(row)
+        menu = QMenu(self)
         menu.setStyleSheet(
             f"QMenu {{ background-color:{SLATE_950}; color:{TEXT_MAIN};"
             f" border:1px solid {SLATE_800}; }}"
             "QMenu::item:selected { background-color: rgba(99,102,241,0.35); }")
-        act_del = QAction("Delete Field", self.i2c_fields_table)
-        act_del.triggered.connect(lambda: self._i2c_delete_field(row))
-        menu.addAction(act_del)
-        if row < 0:
-            act_del.setEnabled(False)
-        menu.exec(self.i2c_fields_table.viewport().mapToGlobal(pos))
+        if field is not None:
+            act_edit_range = QAction(
+                f"Edit Range [{field['high_bit']}:{field['low_bit']}]", self)
+            act_edit_range.triggered.connect(
+                lambda _=False, i=fidx: self._i2c_edit_field_range(i))
+            menu.addAction(act_edit_range)
+            act_del = QAction("Delete Field", self)
+            act_del.triggered.connect(
+                lambda _=False, i=fidx: self._i2c_delete_field(i))
+            menu.addAction(act_del)
+        else:
+            act_create = QAction(f"Create Field [bit {abs_bit}]", self)
+            act_create.triggered.connect(
+                lambda _=False, b=abs_bit: self._i2c_create_field_at(b))
+            menu.addAction(act_create)
+        menu.exec(bits_table.viewport().mapToGlobal(
+            bits_table.visualItemRect(bits_table.item(row, 0)).center()))
 
-    def _i2c_delete_field(self, row):
-        if row < 0 or row >= len(self._i2c_fields):
-            return
-        self._i2c_fields.pop(row)
-        self._i2c_rebuild_fields_table()
-        self._i2c_sync_active_register_fields()
+    def _i2c_create_field_at(self, bit):
+        """在指定位上创建单 bit 字段。"""
+        self._i2c_fields.append({
+            "name": f"FIELD{len(self._i2c_fields)}",
+            "high_bit": bit,
+            "low_bit": bit,
+            "description": "",
+        })
         self.i2c_bits.set_fields(self._i2c_fields)
-        self._i2c_refresh_field_values()
+        self.i2c_bits.set_value(self._i2c_data_value)
+        self._i2c_sync_active_register_fields()
+        self.append_log(f"[I2C] 新建字段 @ bit {bit}")
+
+    def _i2c_edit_field_range(self, fidx):
+        """通过对话框编辑字段的高/低位。"""
+        if fidx < 0 or fidx >= len(self._i2c_fields):
+            return
+        from PySide6.QtWidgets import QInputDialog
+        f = self._i2c_fields[fidx]
+        hi, ok = QInputDialog.getInt(
+            self, "编辑字段高位", f"High Bit (0-{self._i2c_data_bits - 1}):",
+            int(f["high_bit"]), 0, self._i2c_data_bits - 1)
+        if not ok:
+            return
+        lo, ok = QInputDialog.getInt(
+            self, "编辑字段低位", f"Low Bit (0-{self._i2c_data_bits - 1}):",
+            int(f["low_bit"]), 0, self._i2c_data_bits - 1)
+        if not ok:
+            return
+        f["high_bit"] = hi
+        f["low_bit"] = lo
+        self.i2c_bits.set_fields(self._i2c_fields)
+        self.i2c_bits.set_value(self._i2c_data_value)
+        self._i2c_sync_active_register_fields()
+        self.append_log(f"[I2C] 字段 {f['name']} 范围改为 [{hi}:{lo}]")
+
+    def _i2c_delete_field(self, fidx):
+        """删除指定字段。"""
+        if fidx < 0 or fidx >= len(self._i2c_fields):
+            return
+        name = self._i2c_fields[fidx]["name"]
+        self._i2c_fields.pop(fidx)
+        self.i2c_bits.set_fields(self._i2c_fields)
+        self.i2c_bits.set_value(self._i2c_data_value)
+        self._i2c_sync_active_register_fields()
+        self.append_log(f"[I2C] 删除字段 {name}")
+
+    def _i2c_refresh_field_values(self):
+        """数据值变化后刷新位表上的字段 Hex 显示。"""
+        if not hasattr(self, "i2c_bits"):
+            return
+        self.i2c_bits.set_value(self._i2c_data_value)
 
     def _i2c_sync_active_register_fields(self):
+        """将当前字段同步到活动寄存器（若有）。"""
         if (self._i2c_active_reg_index is not None
                 and 0 <= self._i2c_active_reg_index < len(self._i2c_registers)):
             self._i2c_registers[self._i2c_active_reg_index]["bit_fields"] = \
                 copy.deepcopy(self._i2c_fields)
-
-    # ---- 寄存器映射 / 模板 ----
-
-    def _on_i2c_add_register(self):
-        reg = {
-            "name": f"REG{len(self._i2c_registers)}",
-            "reg_addr": _fmt_hex(self._i2c_current_reg(),
-                                 self._i2c_reg_bits),
-            "data_bits": self._i2c_data_bits,
-            "reg_bits": self._i2c_reg_bits,
-            "description": "",
-            "bit_fields": copy.deepcopy(self._i2c_fields),
-        }
-        self._i2c_registers.append(reg)
-        self._i2c_active_reg_index = len(self._i2c_registers) - 1
-        self._i2c_rebuild_reg_table()
-        self.append_log(f"[I2C] 添加寄存器 {reg['name']} @ {reg['reg_addr']}")
-
-    def _i2c_rebuild_reg_table(self):
-        self.i2c_reg_table.setRowCount(0)
-        for reg in self._i2c_registers:
-            row = self.i2c_reg_table.rowCount()
-            self.i2c_reg_table.insertRow(row)
-            self.i2c_reg_table.setItem(row, 0, QTableWidgetItem(reg["name"]))
-            self.i2c_reg_table.setItem(row, 1, QTableWidgetItem(reg["reg_addr"]))
-            d_bits = int(reg.get("data_bits", 16))
-            r_bits = int(reg.get("reg_bits", _infer_reg_bits(d_bits)))
-            self.i2c_reg_table.setItem(row, 2, QTableWidgetItem(f"{r_bits}R/{d_bits}D"))
-            nf = len(reg.get("bit_fields", []))
-            self.i2c_reg_table.setItem(row, 3, QTableWidgetItem(str(nf)))
-            self.i2c_reg_table.setItem(row, 4, QTableWidgetItem(reg["description"]))
-
-    def _on_i2c_reg_double_clicked(self, row, _col):
-        self._i2c_load_register(row)
-
-    def _i2c_load_register(self, row):
-        if row < 0 or row >= len(self._i2c_registers):
-            return
-        reg = self._i2c_registers[row]
-        self._i2c_active_reg_index = row
-        data_bits = int(reg.get("data_bits", 16))
-        reg_bits = int(reg.get("reg_bits", _infer_reg_bits(data_bits)))
-        self._i2c_set_width(reg_bits, data_bits)
-        self.i2c_reg_edit.set_value(_parse_hex_int(reg["reg_addr"]) or 0)
-        self._i2c_fields = copy.deepcopy(reg.get("bit_fields", []))
-        self._i2c_rebuild_fields_table()
-        self.i2c_bits.set_fields(self._i2c_fields)
-        self.append_log(
-            f"[I2C] 加载寄存器 {reg['name']} (addr={reg['reg_addr']}, "
-            f"fields={len(self._i2c_fields)})")
 
     def _i2c_set_width(self, reg_bits, data_bits):
         target = (int(reg_bits), int(data_bits))
@@ -1198,102 +1057,6 @@ class I2cMixin:
         self._i2c_data_bits = int(data_bits)
         self._i2c_width = _ui_width_to_flag(int(reg_bits))
         self._i2c_sync_width_ui()
-
-    def _on_i2c_reg_context_menu(self, pos):
-        row = self.i2c_reg_table.rowAt(pos.y())
-        menu = QMenu(self.i2c_reg_table)
-        menu.setStyleSheet(
-            f"QMenu {{ background-color:{SLATE_950}; color:{TEXT_MAIN};"
-            f" border:1px solid {SLATE_800}; }}"
-            "QMenu::item:selected { background-color: rgba(99,102,241,0.35); }")
-        act_load = QAction("Load (edit fields)", self.i2c_reg_table)
-        act_read = QAction("Read", self.i2c_reg_table)
-        act_write = QAction("Write current value", self.i2c_reg_table)
-        act_del = QAction("Delete", self.i2c_reg_table)
-        act_load.triggered.connect(lambda: self._i2c_load_register(row))
-        act_read.triggered.connect(lambda: self._i2c_read_register(row))
-        act_write.triggered.connect(lambda: self._i2c_write_register(row))
-        act_del.triggered.connect(lambda: self._i2c_delete_register(row))
-        menu.addAction(act_load)
-        menu.addAction(act_read)
-        menu.addAction(act_write)
-        menu.addSeparator()
-        menu.addAction(act_del)
-        if row < 0:
-            for a in (act_load, act_read, act_write, act_del):
-                a.setEnabled(False)
-        menu.exec(self.i2c_reg_table.viewport().mapToGlobal(pos))
-
-    def _i2c_read_register(self, row):
-        if row < 0 or row >= len(self._i2c_registers):
-            return
-        reg = self._i2c_registers[row]
-        data_bits = int(reg.get("data_bits", 16))
-        reg_bits = int(reg.get("reg_bits", _infer_reg_bits(data_bits)))
-        self._i2c_set_width(reg_bits, data_bits)
-        dev = self._i2c_current_dev()
-        reg_addr = _parse_hex_int(reg["reg_addr"]) or 0
-        self.i2c_reg_edit.set_value(reg_addr)
-        self._start_i2c_read(dev, reg_addr, False, tag=f" ({reg['name']})")
-
-    def _i2c_write_register(self, row):
-        if (self._i2c_write_thread is not None
-                and self._i2c_write_thread.isRunning()):
-            return
-        if row < 0 or row >= len(self._i2c_registers):
-            return
-        reg = self._i2c_registers[row]
-        data_bits = int(reg.get("data_bits", 16))
-        reg_bits = int(reg.get("reg_bits", _infer_reg_bits(data_bits)))
-        self._i2c_set_width(reg_bits, data_bits)
-        dev = self._i2c_current_dev()
-        reg_addr = _parse_hex_int(reg["reg_addr"]) or 0
-        self.i2c_reg_edit.set_value(reg_addr)
-        data = self._i2c_data_value
-        self._start_i2c_write(dev, reg_addr, data, -1, -1, False,
-                              tag=f" ({reg['name']})")
-
-    def _i2c_delete_register(self, row):
-        if row < 0 or row >= len(self._i2c_registers):
-            return
-        name = self._i2c_registers[row]["name"]
-        self._i2c_registers.pop(row)
-        if self._i2c_active_reg_index == row:
-            self._i2c_active_reg_index = None
-        elif (self._i2c_active_reg_index is not None
-              and self._i2c_active_reg_index > row):
-            self._i2c_active_reg_index -= 1
-        self._i2c_rebuild_reg_table()
-        self.append_log(f"[I2C] 删除寄存器 {name}")
-
-    def _on_i2c_read_all(self):
-        if not self._i2c_registers:
-            self.append_log("[I2C] 寄存器映射为空，无法 Read All")
-            return
-        self._i2c_readall_queue = list(enumerate(self._i2c_registers))
-        self._i2c_readall_results = {}
-        self.append_log(f"[I2C] Read All: {len(self._i2c_readall_queue)} 个寄存器")
-        self._i2c_readall_next()
-
-    def _i2c_readall_next(self):
-        if not getattr(self, "_i2c_readall_queue", None):
-            summary = "\n".join(
-                f"  {reg['name']} @ {reg['reg_addr']} = "
-                f"{_fmt_hex(self._i2c_readall_results.get(i, 0), self._i2c_data_bits)}"
-                for i, reg in enumerate(self._i2c_registers)
-            ) if self._i2c_registers else "(空)"
-            self.append_log(f"[I2C] Read All 完成:\n{summary}")
-            self._i2c_set_busy(False)
-            return
-        idx, reg = self._i2c_readall_queue.pop(0)
-        data_bits = int(reg.get("data_bits", 16))
-        reg_bits = int(reg.get("reg_bits", _infer_reg_bits(data_bits)))
-        self._i2c_set_width(reg_bits, data_bits)
-        dev = self._i2c_current_dev()
-        reg_addr = _parse_hex_int(reg["reg_addr"]) or 0
-        self.i2c_reg_edit.set_value(reg_addr)
-        self._i2c_pending_readall_idx = idx
-        self._start_i2c_read(dev, reg_addr, False, tag=f" ({reg['name']})")
 
     # ---- 芯片检测 ----
 
@@ -1725,7 +1488,22 @@ class I2cMixin:
     # ---- 模板管理（列表 + 持久化 + 与脚本联动） ----
 
     def _i2c_serialize_template(self):
-        """将当前 UI 状态序列化为模板 dict。"""
+        """将当前 UI 状态序列化为模板 dict。
+
+        当 _i2c_registers 非空时保留原有寄存器列表；否则将当前工作区状态
+        序列化为单个寄存器，保证模板始终有至少一条寄存器。
+        """
+        registers = copy.deepcopy(self._i2c_registers)
+        if not registers:
+            registers = [{
+                "name": "REG0",
+                "reg_addr": _fmt_hex(self._i2c_current_reg(),
+                                     self._i2c_reg_bits),
+                "data_bits": self._i2c_data_bits,
+                "reg_bits": self._i2c_reg_bits,
+                "description": "",
+                "bit_fields": copy.deepcopy(self._i2c_fields),
+            }]
         return {
             "name": self._i2c_active_template_name or "I2C Template",
             "device_addr": _fmt_hex(self._i2c_current_dev(),
@@ -1733,7 +1511,7 @@ class I2cMixin:
             "speed_mode": int(self._i2c_speed_mode),
             "data_bits": self._i2c_data_bits,
             "reg_bits": self._i2c_reg_bits,
-            "registers": copy.deepcopy(self._i2c_registers),
+            "registers": registers,
         }
 
     def _i2c_tpl_reload_combo(self):
@@ -1778,11 +1556,10 @@ class I2cMixin:
         combo.blockSignals(False)
 
     def _i2c_apply_template_to_ui(self, template_dict):
-        """将模板 dict 应用到 UI（寄存器表 + 速率 + 位宽 + 设备地址）。"""
+        """将模板 dict 应用到 UI（位宽 + 速率 + 设备地址 + 第一个寄存器的字段）。"""
         from lib.i2c.Bes_I2CIO_Interface import I2CSpeedMode
         self._i2c_registers = copy.deepcopy(template_dict.get("registers", []))
         self._i2c_active_reg_index = None
-        self._i2c_rebuild_reg_table()
 
         try:
             speed = I2CSpeedMode(int(template_dict.get("speed_mode", 1)))
@@ -1802,15 +1579,30 @@ class I2cMixin:
         if dev is not None:
             self.i2c_dev_edit.set_value(_parse_hex_int(dev) or 0)
 
+        # 加载第一个寄存器的地址与字段到工作区
+        if self._i2c_registers:
+            reg = self._i2c_registers[0]
+            self._i2c_active_reg_index = 0
+            reg_addr = _parse_hex_int(reg.get("reg_addr", "0x0")) or 0
+            self.i2c_reg_edit.set_value(reg_addr)
+            self._i2c_fields = copy.deepcopy(reg.get("bit_fields", []))
+            self.i2c_bits.set_fields(self._i2c_fields)
+            self.i2c_bits.set_value(self._i2c_data_value)
+        else:
+            self._i2c_fields = []
+            self.i2c_bits.set_fields([])
+
     def _on_i2c_tpl_combo_changed(self, _idx):
         """模板 combo 选择变化 → 加载模板 + 刷新脚本列表。"""
         name = self._i2c_tpl_combo_current_name()
         self._i2c_active_template_name = name
         if not name:
-            # 切到 (none)：清空寄存器表
+            # 切到 (none)：清空当前字段
             self._i2c_registers = []
             self._i2c_active_reg_index = None
-            self._i2c_rebuild_reg_table()
+            self._i2c_fields = []
+            self.i2c_bits.set_fields([])
+            self.i2c_bits.set_value(self._i2c_data_value)
         else:
             for _path, tpl in self._i2c_templates:
                 if str(tpl.get("name", "")) == name:
@@ -1823,9 +1615,14 @@ class I2cMixin:
         self._i2c_save_state()
 
     def _on_i2c_edit_toggled(self, checked):
-        """Template 卡片的 Edit 滑动开关：展开/收起 Payload Data Bits 下方的
-        Register Map + Bit Fields 编辑区。"""
-        self._i2c_tpl_editor.setVisible(checked)
+        """Edit 滑动开关：开启/关闭 Payload Data Bits 位表的内联编辑模式。
+
+        ON  → 位表的 Field/Desc 列可双击编辑，+ Field 按钮可见，
+              右键可创建/编辑/删除字段。
+        OFF → 位表只读，+ Field 按钮隐藏，右键无效。
+        """
+        self.i2c_bits.set_edit_mode(checked)
+        self.i2c_add_field_btn.setVisible(checked)
         self.append_log(
             f"[I2C] 模板编辑模式: {'ON' if checked else 'OFF'}")
 
