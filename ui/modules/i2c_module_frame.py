@@ -47,9 +47,9 @@ _I2C_WIDTH_META = {}
 def _load_width_meta():
     from lib.i2c.Bes_I2CIO_Interface import I2CWidthFlag
     return {
-        I2CWidthFlag.BIT_8: ("8-bit", 8, 16),
-        I2CWidthFlag.BIT_10: ("16-bit", 16, 16),
-        I2CWidthFlag.BIT_32: ("32-bit", 32, 32),
+        I2CWidthFlag.BIT_8: ("8R/16D", 8, 16),
+        I2CWidthFlag.BIT_10: ("16R/16D", 16, 16),
+        I2CWidthFlag.BIT_32: ("32R/32D", 32, 32),
     }
 
 
@@ -63,17 +63,35 @@ def _load_speed_options():
     ]
 
 
-# UI 数据位宽（8 / 16 / 32）→ I2CWidthFlag
-_I2C_UI_WIDTHS = [(8, "8-bit"), (16, "16-bit"), (32, "32-bit")]
+# UI 位宽选项：(reg_bits, data_bits) → 显示文本
+# BIT_8  = 8位寄存器地址, 16位数据（DLL 原生）
+# BIT_10 = 16位寄存器地址, 16位数据
+# BIT_32 = 32位寄存器地址, 32位数据
+# 8R/8D: 使用 BIT_8（8位寄存器地址）读取后掩码到 8 位实现
+_I2C_UI_WIDTHS = [
+    ((8, 8), "8R / 8D"),
+    ((8, 16), "8R / 16D"),
+    ((16, 16), "16R / 16D"),
+    ((32, 32), "32R / 32D"),
+]
 
 
-def _ui_width_to_flag(bits):
+def _ui_width_to_flag(reg_bits):
     from lib.i2c.Bes_I2CIO_Interface import I2CWidthFlag
-    if bits == 8:
+    if reg_bits == 8:
         return I2CWidthFlag.BIT_8
-    if bits == 32:
+    if reg_bits == 32:
         return I2CWidthFlag.BIT_32
     return I2CWidthFlag.BIT_10
+
+
+def _infer_reg_bits(data_bits):
+    """从 data_bits 推断 reg_bits（向后兼容旧模板/状态）。"""
+    if data_bits == 8:
+        return 8
+    if data_bits == 32:
+        return 32
+    return 16
 
 
 def _width_label(flag):
@@ -432,12 +450,13 @@ class _I2cSequenceWorker(QObject):
     error = Signal(str)       # 致命异常
 
     def __init__(self, dll_path, speed_mode, device_addr, width_flag,
-                 commands, script_name=""):
+                 commands, script_name="", data_bits=16):
         super().__init__()
         self._dll = dll_path
         self._speed = speed_mode
         self._dev = device_addr
         self._width = width_flag
+        self._data_bits = data_bits
         self._commands = commands or []
         self._name = script_name
         self._stop = False
@@ -499,7 +518,8 @@ class _I2cSequenceWorker(QObject):
                 try:
                     result = _eval_condition(i2c, self._dev, self._width,
                                              cond, self._vars,
-                                             self.progress.emit)
+                                             self.progress.emit,
+                                             self._data_bits)
                 except Exception as e:
                     self.progress.emit("{0}IF 条件求值失败: {1}".format(prefix, e))
                     raise
@@ -509,7 +529,7 @@ class _I2cSequenceWorker(QObject):
     def _exec_cmd(self, i2c, cmd, prefix):
         op = str(cmd.get("type", "")).upper()
         reg_bits = _reg_addr_bits(self._width)
-        data_bits = _data_bits(self._width)
+        data_bits = self._data_bits
         if op == "DELAY":
             ms = _resolve_token(cmd.get("ms", "0"), 10, self._vars)
             self.progress.emit("{0}DELAY {1} ms".format(prefix, ms))
@@ -727,7 +747,7 @@ def _resolve_token(token, default_base, variables):
     return int(t, default_base)
 
 
-def _eval_expr(i2c, dev, width, expr, variables, emit):
+def _eval_expr(i2c, dev, width, expr, variables, emit, data_bits=16):
     """求值表达式，返回 int。
 
     支持：
@@ -747,7 +767,6 @@ def _eval_expr(i2c, dev, width, expr, variables, emit):
         if sub and sub.get("type") == "READ":
             addr = _resolve_token(sub["addr"], 16, variables)
             val = i2c.read(dev, addr, width)
-            data_bits = _data_bits(width)
             emit("    (IF-READ addr={0} => {1})".format(
                 _fmt_hex(addr, _reg_addr_bits(width)),
                 _fmt_hex(val, data_bits)))
@@ -757,7 +776,7 @@ def _eval_expr(i2c, dev, width, expr, variables, emit):
     return _resolve_token(e, 16, variables)
 
 
-def _eval_condition(i2c, dev, width, cond_str, variables, emit):
+def _eval_condition(i2c, dev, width, cond_str, variables, emit, data_bits=16):
     """求值 IF 条件，返回 bool。"""
     cond = cond_str.strip()
     # 查找操作符（先查双字符）
@@ -774,10 +793,10 @@ def _eval_condition(i2c, dev, width, cond_str, variables, emit):
             break
     if op_found is None:
         # 无操作符：非零即真
-        val = _eval_expr(i2c, dev, width, cond, variables, emit)
+        val = _eval_expr(i2c, dev, width, cond, variables, emit, data_bits)
         return val != 0
-    left = _eval_expr(i2c, dev, width, left_str, variables, emit)
-    right = _eval_expr(i2c, dev, width, right_str, variables, emit)
+    left = _eval_expr(i2c, dev, width, left_str, variables, emit, data_bits)
+    right = _eval_expr(i2c, dev, width, right_str, variables, emit, data_bits)
     if op_found == "==":
         return left == right
     if op_found == "!=":
@@ -1061,6 +1080,7 @@ def _load_all_templates():
             data.setdefault("device_addr", "0x00")
             data.setdefault("speed_mode", 1)
             data.setdefault("data_bits", 16)
+            data.setdefault("reg_bits", _infer_reg_bits(data["data_bits"]))
             data.setdefault("registers", [])
             result.append((path, data))
         except Exception as e:
@@ -1081,6 +1101,7 @@ def _save_template_file(template_dict):
         "device_addr": str(template_dict.get("device_addr", "0x00")),
         "speed_mode": int(template_dict.get("speed_mode", 1)),
         "data_bits": int(template_dict.get("data_bits", 16)),
+        "reg_bits": int(template_dict.get("reg_bits", 16)),
         "registers": copy.deepcopy(template_dict.get("registers", [])),
     }
     with open(path, "w", encoding="utf-8") as f:
@@ -1613,6 +1634,7 @@ class I2cMixin:
 
         self._i2c_width = _ui_width_to_flag(16)
         self._i2c_data_bits = 16
+        self._i2c_reg_bits = 16
         self._i2c_speed_mode = self._i2c_speed_options[1][0]  # 100K
         self._i2c_data_value = 0
 
@@ -1751,9 +1773,9 @@ class I2cMixin:
                                             hover_color=INDIGO)
         self.i2c_width_combo.setFixedHeight(I2C_BTN_HEIGHT)
         self.i2c_width_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        for bits, text in _I2C_UI_WIDTHS:
-            self.i2c_width_combo.addItem(text, userData=bits)
-        self.i2c_width_combo.setCurrentIndex(1)
+        for (reg_bits, data_bits), text in _I2C_UI_WIDTHS:
+            self.i2c_width_combo.addItem(text, userData=(reg_bits, data_bits))
+        self.i2c_width_combo.setCurrentIndex(2)
         w_row.addWidget(self.i2c_width_combo, 1)
         v.addLayout(w_row)
 
@@ -1808,7 +1830,7 @@ class I2cMixin:
         reg_lbl = QLabel("Reg Addr")
         reg_lbl.setObjectName("muted")
         f_row.addWidget(reg_lbl)
-        self.i2c_reg_edit = RegAddrInput(_reg_addr_bits(self._i2c_width))
+        self.i2c_reg_edit = RegAddrInput(self._i2c_reg_bits)
         self.i2c_reg_edit.set_value(0x0000)
         self.i2c_reg_edit.setMinimumWidth(110)
         self.i2c_reg_edit.setMaximumWidth(160)
@@ -2385,17 +2407,19 @@ class I2cMixin:
         self._i2c_save_state()
 
     def _on_i2c_width_changed(self, _idx):
-        bits = self.i2c_width_combo.currentData()
-        if bits is None:
+        data = self.i2c_width_combo.currentData()
+        if data is None:
             return
-        self._i2c_data_bits = int(bits)
-        self._i2c_width = _ui_width_to_flag(int(bits))
+        reg_bits, data_bits = data
+        self._i2c_reg_bits = int(reg_bits)
+        self._i2c_data_bits = int(data_bits)
+        self._i2c_width = _ui_width_to_flag(int(reg_bits))
         self._i2c_sync_width_ui()
-        self.append_log(f"[I2C] 数据位宽切换为 {bits}-bit")
+        self.append_log(f"[I2C] 位宽切换为 {reg_bits}R / {data_bits}D")
         self._i2c_save_state()
 
     def _i2c_sync_width_ui(self):
-        reg_bits = _reg_addr_bits(self._i2c_width)
+        reg_bits = self._i2c_reg_bits
         # Device Addr 固定 7-bit，不随位宽切换
         self.i2c_reg_edit.set_bit_count(reg_bits)
         self.i2c_data_edit.set_bit_count(self._i2c_data_bits)
@@ -2662,8 +2686,9 @@ class I2cMixin:
         reg = {
             "name": f"REG{len(self._i2c_registers)}",
             "reg_addr": _fmt_hex(self._i2c_current_reg(),
-                                 _reg_addr_bits(self._i2c_width)),
+                                 self._i2c_reg_bits),
             "data_bits": self._i2c_data_bits,
+            "reg_bits": self._i2c_reg_bits,
             "description": "",
             "bit_fields": copy.deepcopy(self._i2c_fields),
         }
@@ -2679,7 +2704,9 @@ class I2cMixin:
             self.i2c_reg_table.insertRow(row)
             self.i2c_reg_table.setItem(row, 0, QTableWidgetItem(reg["name"]))
             self.i2c_reg_table.setItem(row, 1, QTableWidgetItem(reg["reg_addr"]))
-            self.i2c_reg_table.setItem(row, 2, QTableWidgetItem(str(reg.get("data_bits", 16))))
+            d_bits = int(reg.get("data_bits", 16))
+            r_bits = int(reg.get("reg_bits", _infer_reg_bits(d_bits)))
+            self.i2c_reg_table.setItem(row, 2, QTableWidgetItem(f"{r_bits}R/{d_bits}D"))
             nf = len(reg.get("bit_fields", []))
             self.i2c_reg_table.setItem(row, 3, QTableWidgetItem(str(nf)))
             self.i2c_reg_table.setItem(row, 4, QTableWidgetItem(reg["description"]))
@@ -2692,10 +2719,9 @@ class I2cMixin:
             return
         reg = self._i2c_registers[row]
         self._i2c_active_reg_index = row
-        bits = int(reg.get("data_bits", 16))
-        if bits not in (8, 16, 32):
-            bits = 16
-        self._i2c_set_data_bits(bits)
+        data_bits = int(reg.get("data_bits", 16))
+        reg_bits = int(reg.get("reg_bits", _infer_reg_bits(data_bits)))
+        self._i2c_set_width(reg_bits, data_bits)
         self.i2c_reg_edit.set_value(_parse_hex_int(reg["reg_addr"]) or 0)
         self._i2c_fields = copy.deepcopy(reg.get("bit_fields", []))
         self._i2c_rebuild_fields_table()
@@ -2704,15 +2730,17 @@ class I2cMixin:
             f"[I2C] 加载寄存器 {reg['name']} (addr={reg['reg_addr']}, "
             f"fields={len(self._i2c_fields)})")
 
-    def _i2c_set_data_bits(self, bits):
+    def _i2c_set_width(self, reg_bits, data_bits):
+        target = (int(reg_bits), int(data_bits))
         for i in range(self.i2c_width_combo.count()):
-            if self.i2c_width_combo.itemData(i) == bits:
+            if self.i2c_width_combo.itemData(i) == target:
                 self.i2c_width_combo.blockSignals(True)
                 self.i2c_width_combo.setCurrentIndex(i)
                 self.i2c_width_combo.blockSignals(False)
                 break
-        self._i2c_data_bits = bits
-        self._i2c_width = _ui_width_to_flag(bits)
+        self._i2c_reg_bits = int(reg_bits)
+        self._i2c_data_bits = int(data_bits)
+        self._i2c_width = _ui_width_to_flag(int(reg_bits))
         self._i2c_sync_width_ui()
 
     def _on_i2c_reg_context_menu(self, pos):
@@ -2744,10 +2772,9 @@ class I2cMixin:
         if row < 0 or row >= len(self._i2c_registers):
             return
         reg = self._i2c_registers[row]
-        bits = int(reg.get("data_bits", 16))
-        if bits not in (8, 16, 32):
-            bits = 16
-        self._i2c_set_data_bits(bits)
+        data_bits = int(reg.get("data_bits", 16))
+        reg_bits = int(reg.get("reg_bits", _infer_reg_bits(data_bits)))
+        self._i2c_set_width(reg_bits, data_bits)
         dev = self._i2c_current_dev()
         reg_addr = _parse_hex_int(reg["reg_addr"]) or 0
         self.i2c_reg_edit.set_value(reg_addr)
@@ -2760,10 +2787,9 @@ class I2cMixin:
         if row < 0 or row >= len(self._i2c_registers):
             return
         reg = self._i2c_registers[row]
-        bits = int(reg.get("data_bits", 16))
-        if bits not in (8, 16, 32):
-            bits = 16
-        self._i2c_set_data_bits(bits)
+        data_bits = int(reg.get("data_bits", 16))
+        reg_bits = int(reg.get("reg_bits", _infer_reg_bits(data_bits)))
+        self._i2c_set_width(reg_bits, data_bits)
         dev = self._i2c_current_dev()
         reg_addr = _parse_hex_int(reg["reg_addr"]) or 0
         self.i2c_reg_edit.set_value(reg_addr)
@@ -2804,10 +2830,9 @@ class I2cMixin:
             self._i2c_set_busy(False)
             return
         idx, reg = self._i2c_readall_queue.pop(0)
-        bits = int(reg.get("data_bits", 16))
-        if bits not in (8, 16, 32):
-            bits = 16
-        self._i2c_set_data_bits(bits)
+        data_bits = int(reg.get("data_bits", 16))
+        reg_bits = int(reg.get("reg_bits", _infer_reg_bits(data_bits)))
+        self._i2c_set_width(reg_bits, data_bits)
         dev = self._i2c_current_dev()
         reg_addr = _parse_hex_int(reg["reg_addr"]) or 0
         self.i2c_reg_edit.set_value(reg_addr)
@@ -3188,7 +3213,8 @@ class I2cMixin:
             f"width={_width_label(self._i2c_width)} 指令数={len(commands)}")
         worker = _I2cSequenceWorker(
             self._i2c_dll_path(), self._i2c_speed_mode, dev,
-            self._i2c_width, commands, script_name=name)
+            self._i2c_width, commands, script_name=name,
+            data_bits=self._i2c_data_bits)
         thread = QThread()
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
@@ -3247,9 +3273,10 @@ class I2cMixin:
         return {
             "name": self._i2c_active_template_name or "I2C Template",
             "device_addr": _fmt_hex(self._i2c_current_dev(),
-                                    _reg_addr_bits(self._i2c_width)),
+                                    self._i2c_reg_bits),
             "speed_mode": int(self._i2c_speed_mode),
             "data_bits": self._i2c_data_bits,
+            "reg_bits": self._i2c_reg_bits,
             "registers": copy.deepcopy(self._i2c_registers),
         }
 
@@ -3312,10 +3339,9 @@ class I2cMixin:
             self._i2c_speed_mode = speed
         except Exception:
             pass
-        bits = int(template_dict.get("data_bits", 16))
-        if bits not in (8, 16, 32):
-            bits = 16
-        self._i2c_set_data_bits(bits)
+        data_bits = int(template_dict.get("data_bits", 16))
+        reg_bits = int(template_dict.get("reg_bits", _infer_reg_bits(data_bits)))
+        self._i2c_set_width(reg_bits, data_bits)
         dev = template_dict.get("device_addr")
         if dev is not None:
             self.i2c_dev_edit.set_value(_parse_hex_int(dev) or 0)
@@ -3506,6 +3532,7 @@ class I2cMixin:
                 "dll_path": getattr(self, "_i2c_custom_dll", None) or "",
                 "default_speed_mode": int(self._i2c_speed_mode),
                 "default_data_bits": int(self._i2c_data_bits),
+                "default_reg_bits": int(self._i2c_reg_bits),
             },
         }
         # 记录当前选中的脚本名
@@ -3546,8 +3573,8 @@ class I2cMixin:
             except Exception:
                 pass
         bits = settings.get("default_data_bits", 16)
-        if bits in (8, 16, 32):
-            self._i2c_set_data_bits(int(bits))
+        reg_bits = settings.get("default_reg_bits", _infer_reg_bits(bits))
+        self._i2c_set_width(int(reg_bits), int(bits))
         # 2. 应用过滤开关
         filter_flag = state.get("filter_scripts_by_template", True)
         if hasattr(self, "i2c_seq_filter_btn"):
