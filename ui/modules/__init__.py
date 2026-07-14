@@ -30,6 +30,11 @@ try:
 except ImportError:
     pass
 
+try:
+    from ui.modules.i2c_module_frame import I2cMixin
+except ImportError:
+    pass
+
 __all__ = [
     "ExecutionLogsFrame",
     "N6705CConnectionMixin",
@@ -37,4 +42,5 @@ __all__ = [
     "ChamberConnectionMixin",
     "SerialComMixin",
     "McuIoConnectionMixin",
+    "I2cMixin",
 ]
