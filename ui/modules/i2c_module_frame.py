@@ -20,13 +20,13 @@ from PySide6.QtWidgets import (
     QLabel, QFrame, QSizePolicy, QLineEdit,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
     QFileDialog, QMessageBox, QMenu, QScrollArea, QStackedWidget,
-    QButtonGroup, QPlainTextEdit, QSplitter
+    QButtonGroup, QPlainTextEdit, QSplitter, QCheckBox
 )
 from PySide6.QtCore import (
     Qt, QThread, Signal, QObject, QTimer, QDateTime, QRegularExpression
 )
 from PySide6.QtGui import (
-    QColor, QAction, QRegularExpressionValidator, QFont
+    QColor, QAction, QRegularExpressionValidator, QFont, QPainter
 )
 
 from ui.widgets.dark_combobox import DarkComboBox
@@ -1109,14 +1109,6 @@ def _save_template_file(template_dict):
     return path
 
 
-def _delete_template_file(path):
-    try:
-        if path and os.path.isfile(path):
-            os.remove(path)
-    except Exception as e:
-        logger.error("Delete template %s failed: %s", path, e, exc_info=True)
-
-
 def _i2c_state_path():
     return os.path.join(get_user_data_dir("i2c_state"), "i2c_state.json")
 
@@ -1419,7 +1411,9 @@ class BitsTable(QTableWidget):
         self.setObjectName("bitsTable")
         self.setHorizontalHeaderLabels(["Bit", "Val", "Field", "Desc", "Hex"])
         self.verticalHeader().setVisible(False)
+        # Val 列是 bit 切换按钮,点击只应切换该 bit,不应选中整行
         self.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.setSelectionMode(QAbstractItemView.NoSelection)
         self.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.setFocusPolicy(Qt.NoFocus)
         self.setStyleSheet(_i2c_table_qss())
@@ -1594,6 +1588,35 @@ class BitsTableContainer(QWidget):
             t.set_fields(fields)
 
 
+class _ToggleSwitch(QCheckBox):
+    """滑动开关：基于 QCheckBox 自绘，左侧 OFF / 右侧 ON 时滑块位移。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFixedSize(40, 22)
+        self.setText("")
+
+    def paintEvent(self, _event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setPen(Qt.NoPen)
+        h = self.height()
+        w = self.width()
+        track_r = h / 2
+        knob_d = h - 6
+        # Track
+        if self.isChecked():
+            p.setBrush(QColor(INDIGO))
+        else:
+            p.setBrush(QColor(SLATE_800))
+        p.drawRoundedRect(0, 0, w, h, track_r, track_r)
+        # Knob
+        knob_x = w - knob_d - 3 if self.isChecked() else 3
+        p.setBrush(QColor("#e2e8f0"))
+        p.drawEllipse(int(knob_x), 3, int(knob_d), int(knob_d))
+
+
 # ---------------------------------------------------------------------------
 # 主 Mixin
 # ---------------------------------------------------------------------------
@@ -1661,10 +1684,8 @@ class I2cMixin:
         self.i2c_stack = QStackedWidget()
         self.i2c_stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.i2c_ctrl_page = self._build_i2c_control_page()
-        self.i2c_tpl_page = self._build_i2c_template_page()
         self.i2c_set_page = self._build_i2c_settings_page()
         self.i2c_stack.addWidget(self.i2c_ctrl_page)
-        self.i2c_stack.addWidget(self.i2c_tpl_page)
         self.i2c_stack.addWidget(self.i2c_set_page)
         # 用 ExecutionLogsFrame 包裹 stack：日志固定在窗口底部
         self.i2c_splitter, self.i2c_logs = ExecutionLogsFrame.wrap_with(
@@ -1699,7 +1720,7 @@ class I2cMixin:
         self.i2c_nav_group = QButtonGroup(self)
         self.i2c_nav_group.setExclusive(True)
         self.i2c_nav_tabs = []
-        for text, idx in (("Control", 0), ("Templates", 1), ("Settings", 2)):
+        for text, idx in (("Control", 0), ("Settings", 1)):
             btn = QPushButton(text)
             btn.setObjectName("navTab")
             btn.setCheckable(True)
@@ -1726,6 +1747,7 @@ class I2cMixin:
 
         self._build_i2c_top_cards(root)
         self._build_i2c_workspace(root)
+        self._build_i2c_template_editor(root)
         self._build_i2c_script_card(root)
         root.addStretch(0)
         return page
@@ -1735,8 +1757,7 @@ class I2cMixin:
         row.setSpacing(10)
         row.setContentsMargins(0, 0, 0, 0)
         self._build_i2c_device_config_card(row)
-        # Activity 卡片已迁移至窗口底部的 ExecutionLogsFrame
-        row.addStretch(1)
+        self._build_i2c_template_card(row)
         layout.addLayout(row)
 
     def _build_i2c_device_config_card(self, layout):
@@ -1779,7 +1800,56 @@ class I2cMixin:
         w_row.addWidget(self.i2c_width_combo, 1)
         v.addLayout(w_row)
 
-        layout.addWidget(card, 0)
+        layout.addWidget(card, 1)
+
+    # ---- Template 卡片（位于 Device Config 右侧） ----
+
+    def _build_i2c_template_card(self, layout):
+        card = QFrame()
+        card.setObjectName("card")
+        v = QVBoxLayout(card)
+        v.setContentsMargins(14, 12, 14, 12)
+        v.setSpacing(8)
+
+        # 标题行：Template + Edit 滑动开关（右对齐）
+        title_row = QHBoxLayout()
+        title_row.setSpacing(8)
+        title_row.setContentsMargins(0, 0, 0, 0)
+        t = QLabel("Template")
+        t.setObjectName("cardTitle")
+        title_row.addWidget(t)
+        title_row.addStretch()
+        edit_lbl = QLabel("Edit")
+        edit_lbl.setObjectName("muted")
+        title_row.addWidget(edit_lbl)
+        self.i2c_edit_toggle = _ToggleSwitch()
+        title_row.addWidget(self.i2c_edit_toggle)
+        v.addLayout(title_row)
+
+        # 模板下拉菜单：直接选中已保存的 Template
+        self.i2c_tpl_combo = DarkComboBox(
+            bg=SLATE_950, border=SLATE_800, hover_color=INDIGO)
+        self.i2c_tpl_combo.setFixedHeight(I2C_BTN_HEIGHT)
+        self.i2c_tpl_combo.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Fixed)
+        v.addWidget(self.i2c_tpl_combo)
+
+        # 按钮行：Save / Open / Export
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(6)
+        btn_row.setContentsMargins(0, 0, 0, 0)
+        self.i2c_tpl_save_btn = QPushButton("Save")
+        self.i2c_tpl_open_btn = QPushButton("Open")
+        self.i2c_tpl_export_btn = QPushButton("Export")
+        for btn in (self.i2c_tpl_save_btn, self.i2c_tpl_open_btn,
+                    self.i2c_tpl_export_btn):
+            btn.setFixedHeight(I2C_BTN_HEIGHT)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet(_i2c_subtle_btn_style())
+            btn_row.addWidget(btn)
+        v.addLayout(btn_row)
+
+        layout.addWidget(card, 1)
 
     # ---- 主工作区：Header（标题 + 二进制预览） + Body（位表） + Footer（操作栏） ----
 
@@ -2073,53 +2143,15 @@ class I2cMixin:
         self._i2c_seq_reload_list()
         layout.addWidget(card)
 
-    # ---- 模板页：模板选择器 + 寄存器映射 + 位字段编辑 ----
+    # ---- 模板编辑器（Payload Data Bits 下方的 Register Map + Bit Fields） ----
+    # 通过 Template 卡片的 Edit 滑动开关控制可见性：ON 时展开，OFF 时收起。
 
-    def _build_i2c_template_page(self):
-        page = QWidget()
-        page.setStyleSheet("background:transparent;")
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setStyleSheet("QScrollArea{background:transparent;border:none;}")
-        inner = QWidget()
-        inner.setStyleSheet("background:transparent;")
-        root = QVBoxLayout(inner)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(10)
-
-        # Template Selector（模板列表，自动持久化）
-        tpl_card = QFrame()
-        tpl_card.setObjectName("card")
-        tv = QVBoxLayout(tpl_card)
-        tv.setContentsMargins(14, 12, 14, 12)
-        tv.setSpacing(8)
-        tt = QLabel("Template Selector")
-        tt.setObjectName("cardTitle")
-        tv.addWidget(tt)
-        tpl_row = QHBoxLayout()
-        tpl_row.setSpacing(6)
-        tpl_hint = QLabel("Active")
-        tpl_hint.setObjectName("muted")
-        tpl_hint.setFixedWidth(50)
-        tpl_row.addWidget(tpl_hint)
-        self.i2c_tpl_combo = DarkComboBox(
-            bg=SLATE_950, border=SLATE_800, hover_color=INDIGO)
-        self.i2c_tpl_combo.setFixedHeight(I2C_BTN_HEIGHT)
-        self.i2c_tpl_combo.setSizePolicy(
-            QSizePolicy.Expanding, QSizePolicy.Fixed)
-        tpl_row.addWidget(self.i2c_tpl_combo, 1)
-        self.i2c_tpl_new_btn = QPushButton("New")
-        self.i2c_tpl_save_btn = QPushButton("Save")
-        self.i2c_tpl_del_btn = QPushButton("Delete")
-        for btn in (self.i2c_tpl_new_btn, self.i2c_tpl_save_btn,
-                    self.i2c_tpl_del_btn):
-            btn.setFixedHeight(I2C_BTN_HEIGHT)
-            btn.setCursor(Qt.PointingHandCursor)
-            btn.setStyleSheet(_i2c_subtle_btn_style())
-            tpl_row.addWidget(btn)
-        tv.addLayout(tpl_row)
-        root.addWidget(tpl_card)
+    def _build_i2c_template_editor(self, layout):
+        self._i2c_tpl_editor = QWidget()
+        self._i2c_tpl_editor.setStyleSheet("background:transparent;")
+        v = QVBoxLayout(self._i2c_tpl_editor)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(10)
 
         # Register Map
         map_card = QFrame()
@@ -2127,20 +2159,20 @@ class I2cMixin:
         mv = QVBoxLayout(map_card)
         mv.setContentsMargins(14, 12, 14, 12)
         mv.setSpacing(8)
+        mt_row = QHBoxLayout()
+        mt_row.setSpacing(6)
         mt = QLabel("Register Map")
         mt.setObjectName("cardTitle")
-        mv.addWidget(mt)
-        map_btn_row = QHBoxLayout()
-        map_btn_row.setSpacing(6)
+        mt_row.addWidget(mt)
+        mt_row.addStretch()
         self.i2c_add_reg_btn = QPushButton("+ Reg")
         self.i2c_readall_btn = QPushButton("Read All")
         for btn in (self.i2c_add_reg_btn, self.i2c_readall_btn):
             btn.setFixedHeight(I2C_BTN_HEIGHT)
             btn.setCursor(Qt.PointingHandCursor)
             btn.setStyleSheet(_i2c_subtle_btn_style())
-            map_btn_row.addWidget(btn)
-        map_btn_row.addStretch()
-        mv.addLayout(map_btn_row)
+            mt_row.addWidget(btn)
+        mv.addLayout(mt_row)
         self.i2c_reg_table = QTableWidget(0, 5)
         self.i2c_reg_table.setHorizontalHeaderLabels(
             ["Name", "Reg Addr", "Width", "Fields", "Description"])
@@ -2158,7 +2190,7 @@ class I2cMixin:
         rh.setSectionResizeMode(4, QHeaderView.Stretch)
         self.i2c_reg_table.setMinimumHeight(160)
         mv.addWidget(self.i2c_reg_table)
-        root.addWidget(map_card)
+        v.addWidget(map_card)
 
         # Bit Fields
         f_card = QFrame()
@@ -2195,14 +2227,11 @@ class I2cMixin:
         fh.setSectionResizeMode(4, QHeaderView.Stretch)
         self.i2c_fields_table.setMinimumHeight(140)
         fv.addWidget(self.i2c_fields_table)
-        root.addWidget(f_card)
-        root.addStretch()
+        v.addWidget(f_card)
 
-        scroll.setWidget(inner)
-        wrap = QVBoxLayout(page)
-        wrap.setContentsMargins(0, 0, 0, 0)
-        wrap.addWidget(scroll)
-        return page
+        # 默认收起（Edit 开关 OFF）
+        self._i2c_tpl_editor.setVisible(False)
+        layout.addWidget(self._i2c_tpl_editor)
 
     # ---- 设置页：DLL + 速率 + 芯片检测 ----
 
@@ -2297,9 +2326,10 @@ class I2cMixin:
         # 模板管理信号
         self.i2c_tpl_combo.currentIndexChanged.connect(
             self._on_i2c_tpl_combo_changed)
-        self.i2c_tpl_new_btn.clicked.connect(self._on_i2c_tpl_new)
         self.i2c_tpl_save_btn.clicked.connect(self._on_i2c_tpl_save)
-        self.i2c_tpl_del_btn.clicked.connect(self._on_i2c_tpl_delete)
+        self.i2c_tpl_open_btn.clicked.connect(self._on_i2c_tpl_import)
+        self.i2c_tpl_export_btn.clicked.connect(self._on_i2c_tpl_export)
+        self.i2c_edit_toggle.toggled.connect(self._on_i2c_edit_toggled)
         self.i2c_add_reg_btn.clicked.connect(self._on_i2c_add_register)
         self.i2c_readall_btn.clicked.connect(self._on_i2c_read_all)
         self.i2c_reg_table.cellDoubleClicked.connect(self._on_i2c_reg_double_clicked)
@@ -3366,23 +3396,12 @@ class I2cMixin:
         self.append_log(f"[I2C] 切换模板: {name or '(none)'}")
         self._i2c_save_state()
 
-    def _on_i2c_tpl_new(self):
-        """新建空模板（清空当前寄存器，提示输入名称）。"""
-        from PySide6.QtWidgets import QInputDialog
-        name, ok = QInputDialog.getText(
-            self, "新建模板", "模板名称:", text="NewTemplate")
-        if not ok or not name.strip():
-            return
-        name = name.strip()
-        self._i2c_active_template_name = name
-        self._i2c_registers = []
-        self._i2c_active_reg_index = None
-        self._i2c_rebuild_reg_table()
-        # 选到 (none)，但不触发加载
-        self.i2c_tpl_combo.blockSignals(True)
-        self.i2c_tpl_combo.setCurrentIndex(0)
-        self.i2c_tpl_combo.blockSignals(False)
-        self.append_log(f"[I2C] 新建模板: {name}（未保存）")
+    def _on_i2c_edit_toggled(self, checked):
+        """Template 卡片的 Edit 滑动开关：展开/收起 Payload Data Bits 下方的
+        Register Map + Bit Fields 编辑区。"""
+        self._i2c_tpl_editor.setVisible(checked)
+        self.append_log(
+            f"[I2C] 模板编辑模式: {'ON' if checked else 'OFF'}")
 
     def _on_i2c_tpl_save(self):
         """保存当前 UI 状态到模板文件（按名称）。"""
@@ -3409,28 +3428,6 @@ class I2cMixin:
         except Exception as e:
             logger.error("I2C save template failed: %s", e, exc_info=True)
             QMessageBox.critical(self, "保存失败", str(e))
-
-    def _on_i2c_tpl_delete(self):
-        """删除当前选中的模板文件。"""
-        name = self._i2c_tpl_combo_current_name()
-        if not name:
-            QMessageBox.information(self, "提示", "请先在模板列表中选择一个模板")
-            return
-        ret = QMessageBox.question(
-            self, "删除确认", "确定删除模板 '{0}'?".format(name))
-        if ret != QMessageBox.Yes:
-            return
-        for path, tpl in self._i2c_templates:
-            if str(tpl.get("name", "")) == name:
-                _delete_template_file(path)
-                break
-        self._i2c_active_template_name = ""
-        self._i2c_tpl_reload_combo()
-        # 删除模板后，刷新脚本列表（脚本 template 字段引用变为孤儿）
-        if hasattr(self, "i2c_seq_list"):
-            self._i2c_seq_reload_list()
-        self.append_log(f"[I2C] 已删除模板: {name}")
-        self._i2c_save_state()
 
     def _on_i2c_tpl_export(self):
         """通过 FileDialog 导出到任意 JSON 文件（备用）。"""
