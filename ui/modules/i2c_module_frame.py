@@ -26,7 +26,7 @@ from PySide6.QtCore import (
     Qt, QThread, Signal, QObject, QTimer, QDateTime, QRegularExpression
 )
 from PySide6.QtGui import (
-    QColor, QAction, QRegularExpressionValidator
+    QColor, QAction, QRegularExpressionValidator, QFont
 )
 
 from ui.widgets.dark_combobox import DarkComboBox
@@ -803,6 +803,108 @@ def _find_operator(text, op):
     if idx >= 0:
         return idx
     return -1
+
+
+# ---------------------------------------------------------------------------
+# 序列脚本表格显示解析
+# ---------------------------------------------------------------------------
+
+_SEQ_ACTION_COLORS = {
+    "W":  "#60a5fa",
+    "R":  "#34d399",
+    "WR": "#f59e0b",
+    "LOOP":      "#a78bfa",
+    "END_LOOP":  "#64748b",
+    "IF":        "#a78bfa",
+    "END_IF":    "#64748b",
+    "DELAY":     "#2dd4bf",
+    "READ_RANGE":"#22d3ee",
+    "UNKNOWN":   "#94a3b8",
+}
+
+
+def _seq_action_color(action):
+    return QColor(_SEQ_ACTION_COLORS.get(action, "#94a3b8"))
+
+
+def _seq_bold_font():
+    f = QFont()
+    f.setBold(True)
+    return f
+
+
+def _seq_italic_font():
+    f = QFont()
+    f.setItalic(True)
+    return f
+
+
+def _parse_dsl_for_display(raw_line):
+    """解析一行 DSL 用于表格显示，返回 display dict。
+
+    返回字段：
+      action: "W"/"R"/"WR" 或控制指令名 或 None
+      addr, msb, lsb, value: 各列文本
+      desc: 行内注释文本
+      is_comment: True 表示整行注释（需跨全部列显示）
+      is_control: True 表示逻辑/控制指令（需跨前4列显示）
+      full_text: 跨列显示时的完整文本
+    """
+    line = raw_line or ""
+    desc = ""
+    code = line
+    if "//" in code:
+        code, desc = code.split("//", 1)
+        desc = desc.strip()
+    code = code.strip()
+    if code.startswith("-"):
+        code = code[1:].strip()
+    if code.startswith("#"):
+        code = ""
+
+    if not code:
+        return {
+            "action": None, "addr": "", "msb": "", "lsb": "",
+            "value": "", "desc": "",
+            "is_comment": True, "is_control": False,
+            "full_text": line.strip(),
+        }
+
+    parts = code.split()
+    op = parts[0].upper() if parts else ""
+
+    if op == "WRITE" and len(parts) >= 3:
+        return {
+            "action": "W", "addr": parts[1], "msb": "", "lsb": "",
+            "value": parts[2], "desc": desc,
+            "is_comment": False, "is_control": False, "full_text": "",
+        }
+    if op == "READ":
+        addr = parts[1] if len(parts) >= 2 else ""
+        return {
+            "action": "R", "addr": addr, "msb": "", "lsb": "",
+            "value": "", "desc": desc,
+            "is_comment": False, "is_control": False, "full_text": "",
+        }
+    if op == "WRITE_BITS" and len(parts) >= 5:
+        return {
+            "action": "WR", "addr": parts[1], "msb": parts[2],
+            "lsb": parts[3], "value": parts[4], "desc": desc,
+            "is_comment": False, "is_control": False, "full_text": "",
+        }
+    if op in ("DELAY", "LOOP", "END_LOOP", "IF", "END_IF", "READ_RANGE"):
+        return {
+            "action": op, "addr": "", "msb": "", "lsb": "",
+            "value": "", "desc": desc,
+            "is_comment": False, "is_control": True,
+            "full_text": code,
+        }
+    return {
+        "action": "UNKNOWN", "addr": "", "msb": "", "lsb": "",
+        "value": "", "desc": desc,
+        "is_comment": False, "is_control": True,
+        "full_text": code,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1668,9 +1770,8 @@ class I2cMixin:
         v.addWidget(t)
 
         hint = QLabel(
-            "寄存器操作序列脚本管理 · 双击列表项执行 · 支持 GUI 表格 / YAML 双模式编辑 · "
-            "指令: WRITE/READ/WRITE_BITS/DELAY/READ_RANGE/LOOP/END_LOOP/IF/END_IF · "
-            "变量: READ 0x40 TO $status · 条件: IF $status & 0x01")
+            "寄存器操作序列脚本管理 · 双击列表项执行 · Table 只读展示 / YAML 编辑 · "
+            "Action: W/R/WR · 指令: WRITE/READ/WRITE_BITS/DELAY/READ_RANGE/LOOP/IF")
         hint.setObjectName("muted")
         hint.setWordWrap(True)
         v.addWidget(hint)
@@ -1746,18 +1847,21 @@ class I2cMixin:
         tv = QVBoxLayout(table_page)
         tv.setContentsMargins(0, 0, 0, 0)
         tv.setSpacing(4)
-        # 单列可编辑命令表（支持 WRITE/READ/WRITE_BITS/DELAY/READ_RANGE/LOOP/END_LOOP/IF/END_IF）
-        self.i2c_seq_cmd_table = QTableWidget(0, 2)
-        self.i2c_seq_cmd_table.setHorizontalHeaderLabels(["#", "Command"])
+        self.i2c_seq_cmd_table = QTableWidget(0, 7)
+        self.i2c_seq_cmd_table.setHorizontalHeaderLabels(
+            ["#", "Action", "Addr", "MSB", "LSB", "Value", "Desc"])
         self.i2c_seq_cmd_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.i2c_seq_cmd_table.setEditTriggers(
-            QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed
-            | QAbstractItemView.AnyKeyPressed)
+        self.i2c_seq_cmd_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.i2c_seq_cmd_table.verticalHeader().setVisible(False)
         self.i2c_seq_cmd_table.setStyleSheet(_i2c_table_qss())
         ch = self.i2c_seq_cmd_table.horizontalHeader()
         ch.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        ch.setSectionResizeMode(1, QHeaderView.Stretch)
+        ch.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        ch.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        ch.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        ch.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        ch.setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        ch.setSectionResizeMode(6, QHeaderView.Stretch)
         tv.addWidget(self.i2c_seq_cmd_table, 1)
         cmd_btn_row = QHBoxLayout()
         cmd_btn_row.setSpacing(4)
@@ -2034,8 +2138,6 @@ class I2cMixin:
             self._on_i2c_seq_list_double_clicked)
         self.i2c_seq_add_cmd_btn.clicked.connect(self._on_i2c_seq_add_cmd)
         self.i2c_seq_del_cmd_btn.clicked.connect(self._on_i2c_seq_del_cmd)
-        self.i2c_seq_cmd_table.cellChanged.connect(
-            self._on_i2c_seq_cmd_cell_changed)
         self.i2c_seq_mode_btn.clicked.connect(self._on_i2c_seq_toggle_mode)
         self.i2c_seq_save_btn.clicked.connect(self._on_i2c_seq_save)
         self.i2c_seq_run_btn.clicked.connect(self._on_i2c_seq_run)
@@ -2639,57 +2741,107 @@ class I2cMixin:
         self._i2c_seq_suppress_sync = True
         self.i2c_seq_name_edit.setText(str(script.get("name", "")))
         self.i2c_seq_desc_edit.setText(str(script.get("description", "")))
-        # 表格：每行是一条 DSL 指令字符串
-        cmds = script.get("commands", []) or []
-        self.i2c_seq_cmd_table.setRowCount(0)
-        for cmd_line in cmds:
-            self._i2c_seq_append_cmd_row(str(cmd_line))
-        self._i2c_seq_renumber_rows()
-        # YAML
+        cmds = [str(c) for c in (script.get("commands", []) or [])]
+        self._i2c_seq_refresh_table(cmds)
         self.i2c_seq_yaml_edit.setPlainText(_serialize_script_yaml(script))
         self._i2c_seq_suppress_sync = False
 
-    def _i2c_seq_append_cmd_row(self, cmd_line=""):
-        """在命令表格末尾追加一行（cmd_line 为 DSL 文本）。"""
-        row = self.i2c_seq_cmd_table.rowCount()
-        self.i2c_seq_cmd_table.insertRow(row)
-        idx_item = QTableWidgetItem(str(row + 1))
-        idx_item.setTextAlignment(Qt.AlignCenter)
-        idx_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
-        cmd_item = QTableWidgetItem(str(cmd_line))
-        self.i2c_seq_cmd_table.setItem(row, 0, idx_item)
-        self.i2c_seq_cmd_table.setItem(row, 1, cmd_item)
+    def _i2c_seq_refresh_table(self, command_lines):
+        """根据 DSL 指令字符串列表刷新表格显示。"""
+        self._i2c_seq_suppress_sync = True
+        table = self.i2c_seq_cmd_table
+        table.setRowCount(0)
+        table.clearSpans()
+        bold = _seq_bold_font()
+        italic = _seq_italic_font()
+        muted = QColor(TEXT_MUTED)
+        for i, raw in enumerate(command_lines):
+            parsed = _parse_dsl_for_display(raw)
+            row = table.rowCount()
+            table.insertRow(row)
 
-    def _i2c_seq_renumber_rows(self):
-        """重新编号 # 列。"""
-        for row in range(self.i2c_seq_cmd_table.rowCount()):
-            item = self.i2c_seq_cmd_table.item(row, 0)
-            if item is not None:
-                item.setText(str(row + 1))
+            idx_item = QTableWidgetItem(str(row + 1))
+            idx_item.setTextAlignment(Qt.AlignCenter)
+            idx_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            table.setItem(row, 0, idx_item)
 
-    def _i2c_seq_collect_from_table(self):
-        """从右侧 Name/Desc/表格收集出脚本 dict（commands 为字符串列表）。"""
-        commands = []
-        for row in range(self.i2c_seq_cmd_table.rowCount()):
-            item = self.i2c_seq_cmd_table.item(row, 1)
-            if item is None:
+            if parsed["is_comment"]:
+                item = QTableWidgetItem(parsed["full_text"])
+                item.setForeground(muted)
+                item.setFont(italic)
+                item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                table.setItem(row, 1, item)
+                table.setSpan(row, 1, 1, 6)
                 continue
-            text = item.text().strip()
-            if text:
-                commands.append(text)
-        return {
-            "name": self.i2c_seq_name_edit.text().strip(),
-            "description": self.i2c_seq_desc_edit.text().strip(),
-            "commands": commands,
-        }
 
-    def _on_i2c_seq_cmd_cell_changed(self, _row, _col):
-        """表格编辑 → 同步到 YAML（当前处于表格模式时）。"""
-        if self._i2c_seq_suppress_sync:
-            return
-        if self.i2c_seq_tabs.currentIndex() != 0:
-            return
-        script = self._i2c_seq_collect_from_table()
+            if parsed["is_control"]:
+                action = parsed["action"]
+                item = QTableWidgetItem(parsed["full_text"])
+                item.setForeground(_seq_action_color(action))
+                item.setFont(bold)
+                item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                table.setItem(row, 1, item)
+                table.setSpan(row, 1, 1, 4)
+                val_item = QTableWidgetItem("")
+                val_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                table.setItem(row, 5, val_item)
+                desc_item = QTableWidgetItem(parsed.get("desc", ""))
+                desc_item.setForeground(muted)
+                desc_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                table.setItem(row, 6, desc_item)
+                continue
+
+            action = parsed["action"]
+            action_item = QTableWidgetItem(action if action else "")
+            action_item.setTextAlignment(Qt.AlignCenter)
+            action_item.setForeground(_seq_action_color(action))
+            action_item.setFont(bold)
+            action_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            table.setItem(row, 1, action_item)
+
+            for col, key in [(2, "addr"), (3, "msb"), (4, "lsb"), (5, "value")]:
+                cell = QTableWidgetItem(parsed.get(key, ""))
+                cell.setTextAlignment(Qt.AlignCenter)
+                cell.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                table.setItem(row, col, cell)
+
+            desc_item = QTableWidgetItem(parsed.get("desc", ""))
+            desc_item.setForeground(muted)
+            desc_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            table.setItem(row, 6, desc_item)
+        self._i2c_seq_suppress_sync = False
+
+    def _i2c_seq_current_script(self):
+        """从 YAML 编辑器获取当前脚本 dict。"""
+        try:
+            return _parse_script_yaml(self.i2c_seq_yaml_edit.toPlainText())
+        except Exception:
+            return {
+                "name": self.i2c_seq_name_edit.text().strip(),
+                "description": self.i2c_seq_desc_edit.text().strip(),
+                "commands": [],
+            }
+
+    def _i2c_seq_sync_from_yaml(self):
+        """从 YAML 解析并刷新表格 + Name/Desc 输入框。"""
+        try:
+            script = _parse_script_yaml(self.i2c_seq_yaml_edit.toPlainText())
+        except Exception as e:
+            QMessageBox.warning(self, "YAML 解析失败", str(e))
+            return False
+        self._i2c_seq_suppress_sync = True
+        self.i2c_seq_name_edit.setText(str(script.get("name", "")))
+        self.i2c_seq_desc_edit.setText(str(script.get("description", "")))
+        cmds = [str(c) for c in (script.get("commands", []) or [])]
+        self._i2c_seq_refresh_table(cmds)
+        self._i2c_seq_suppress_sync = False
+        return True
+
+    def _i2c_seq_sync_to_yaml(self):
+        """将 Name/Desc + 当前 commands 刷回 YAML 编辑器。"""
+        script = self._i2c_seq_current_script()
+        script["name"] = self.i2c_seq_name_edit.text().strip()
+        script["description"] = self.i2c_seq_desc_edit.text().strip()
         self._i2c_seq_suppress_sync = True
         self.i2c_seq_yaml_edit.setPlainText(_serialize_script_yaml(script))
         self._i2c_seq_suppress_sync = False
@@ -2697,28 +2849,11 @@ class I2cMixin:
     def _on_i2c_seq_toggle_mode(self):
         """切换 表格 ↔ YAML 模式。"""
         if self.i2c_seq_tabs.currentIndex() == 0:
-            # 表格 → YAML：先把表格内容同步到 YAML
-            script = self._i2c_seq_collect_from_table()
-            self._i2c_seq_suppress_sync = True
-            self.i2c_seq_yaml_edit.setPlainText(_serialize_script_yaml(script))
-            self._i2c_seq_suppress_sync = False
             self.i2c_seq_tabs.setCurrentIndex(1)
             self.i2c_seq_mode_btn.setText("Table")
         else:
-            # YAML → 表格：先尝试解析 YAML 并回填表格
-            try:
-                script = _parse_script_yaml(self.i2c_seq_yaml_edit.toPlainText())
-            except Exception as e:
-                QMessageBox.warning(self, "YAML 解析失败", str(e))
+            if not self._i2c_seq_sync_from_yaml():
                 return
-            self._i2c_seq_suppress_sync = True
-            self.i2c_seq_name_edit.setText(str(script.get("name", "")))
-            self.i2c_seq_desc_edit.setText(str(script.get("description", "")))
-            self.i2c_seq_cmd_table.setRowCount(0)
-            for cmd_line in script.get("commands", []) or []:
-                self._i2c_seq_append_cmd_row(str(cmd_line))
-            self._i2c_seq_renumber_rows()
-            self._i2c_seq_suppress_sync = False
             self.i2c_seq_tabs.setCurrentIndex(0)
             self.i2c_seq_mode_btn.setText("YAML")
 
@@ -2761,42 +2896,47 @@ class I2cMixin:
         self._i2c_seq_reload_list()
 
     def _on_i2c_seq_add_cmd(self):
-        """在表格末尾新增一行指令。"""
-        if self.i2c_seq_tabs.currentIndex() != 0:
-            QMessageBox.information(self, "提示", "请切换到 Table 模式编辑指令")
-            return
-        self._i2c_seq_append_cmd_row("WRITE 0x00 0x00")
-        self._i2c_seq_renumber_rows()
-        # 选中并进入编辑
+        """新增一行指令（修改 YAML 并刷新表格）。"""
+        script = self._i2c_seq_current_script()
+        script["name"] = self.i2c_seq_name_edit.text().strip()
+        script["description"] = self.i2c_seq_desc_edit.text().strip()
+        script.setdefault("commands", []).append("WRITE 0x00 0x00")
+        self._i2c_seq_suppress_sync = True
+        self.i2c_seq_yaml_edit.setPlainText(_serialize_script_yaml(script))
+        self._i2c_seq_refresh_table(script.get("commands", []))
+        self._i2c_seq_suppress_sync = False
         new_row = self.i2c_seq_cmd_table.rowCount() - 1
-        self.i2c_seq_cmd_table.selectRow(new_row)
-        self.i2c_seq_cmd_table.editItem(self.i2c_seq_cmd_table.item(new_row, 1))
+        if new_row >= 0:
+            self.i2c_seq_cmd_table.selectRow(new_row)
 
     def _on_i2c_seq_del_cmd(self):
-        """删除表格中选中的指令行。"""
-        if self.i2c_seq_tabs.currentIndex() != 0:
-            return
+        """删除选中的指令行（修改 YAML 并刷新表格）。"""
         rows = self.i2c_seq_cmd_table.selectionModel().selectedRows()
         if not rows:
             return
-        # 从后往前删，避免索引错位
-        for idx in sorted([r.row() for r in rows], reverse=True):
-            self.i2c_seq_cmd_table.removeRow(idx)
-        self._i2c_seq_renumber_rows()
-        # 触发同步
-        self._on_i2c_seq_cmd_cell_changed(0, 0)
+        script = self._i2c_seq_current_script()
+        script["name"] = self.i2c_seq_name_edit.text().strip()
+        script["description"] = self.i2c_seq_desc_edit.text().strip()
+        cmds = script.get("commands", []) or []
+        indices = sorted([r.row() for r in rows], reverse=True)
+        for idx in indices:
+            if 0 <= idx < len(cmds):
+                del cmds[idx]
+        script["commands"] = cmds
+        self._i2c_seq_suppress_sync = True
+        self.i2c_seq_yaml_edit.setPlainText(_serialize_script_yaml(script))
+        self._i2c_seq_refresh_table(cmds)
+        self._i2c_seq_suppress_sync = False
 
     def _on_i2c_seq_save(self):
         """保存当前编辑器内容到 YAML 文件。"""
-        # 如果当前在 YAML 模式，先尝试解析
-        if self.i2c_seq_tabs.currentIndex() == 1:
-            try:
-                script = _parse_script_yaml(self.i2c_seq_yaml_edit.toPlainText())
-            except Exception as e:
-                QMessageBox.warning(self, "YAML 解析失败", str(e))
-                return
-        else:
-            script = self._i2c_seq_collect_from_table()
+        try:
+            script = _parse_script_yaml(self.i2c_seq_yaml_edit.toPlainText())
+        except Exception as e:
+            QMessageBox.warning(self, "YAML 解析失败", str(e))
+            return
+        script["name"] = self.i2c_seq_name_edit.text().strip()
+        script["description"] = self.i2c_seq_desc_edit.text().strip()
         name = script.get("name", "").strip()
         if not name:
             QMessageBox.warning(self, "名称无效", "请填写脚本名称")
@@ -2820,13 +2960,6 @@ class I2cMixin:
                 and self._i2c_script_thread.isRunning()):
             QMessageBox.information(self, "正在执行", "请等待当前序列执行结束")
             return
-        # 如果在 YAML 模式，先解析确保最新
-        if self.i2c_seq_tabs.currentIndex() == 1:
-            try:
-                script = _parse_script_yaml(self.i2c_seq_yaml_edit.toPlainText())
-            except Exception as e:
-                QMessageBox.warning(self, "YAML 解析失败", str(e))
-                return
         commands = script.get("commands", []) or []
         if not commands:
             QMessageBox.information(self, "脚本为空", "该脚本没有可执行指令")
@@ -2859,14 +2992,11 @@ class I2cMixin:
 
     def _on_i2c_seq_run(self):
         """Run 按钮：执行当前编辑器中的脚本。"""
-        if self.i2c_seq_tabs.currentIndex() == 1:
-            try:
-                script = _parse_script_yaml(self.i2c_seq_yaml_edit.toPlainText())
-            except Exception as e:
-                QMessageBox.warning(self, "YAML 解析失败", str(e))
-                return
-        else:
-            script = self._i2c_seq_collect_from_table()
+        try:
+            script = _parse_script_yaml(self.i2c_seq_yaml_edit.toPlainText())
+        except Exception as e:
+            QMessageBox.warning(self, "YAML 解析失败", str(e))
+            return
         self._i2c_seq_execute(script)
 
     def _on_i2c_seq_stop(self):
