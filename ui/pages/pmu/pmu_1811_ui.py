@@ -5,8 +5,7 @@
 图形化配置 1811 PMIC：通过 USB 转 I2C（设备地址 0x17，10 位寄存器地址，16 位数据）
 控制各 LDO / BUCK 的使能、模式与输出电压。
 
-本文件仅实现 UI 布局、样式与本地交互（选中 / 切换 / 电压调节 / 右键菜单），
-暂不接入真实 I2C 读写。
+已接入真实 I2C 读写: 连接后 UI 操作经 QThread 异步下发到硬件。
 """
 
 import os
@@ -21,7 +20,7 @@ if not getattr(sys, "frozen", False):
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import Qt, Signal, QPoint, QRect
+from PySide6.QtCore import Qt, Signal, QPoint, QRect, QThread
 from PySide6.QtGui import QPainter, QColor, QPen, QFont
 from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QPushButton, QHBoxLayout, QVBoxLayout,
@@ -29,6 +28,10 @@ from PySide6.QtWidgets import (
     QGraphicsDropShadowEffect,
 )
 from log_config import get_logger
+
+from chips.bes1811_pmu import (
+    get_voltage_range, get_reg_map, is_ldo_controllable, LDO_REG_MAPS,
+)
 
 logger = get_logger(__name__)
 
@@ -72,18 +75,16 @@ class PmuModule:
     max_voltage: float = 3.3
     step: float = 0.05
     input: str = "VSYS"
-    reg_addr: int = 0x100
+    controllable: bool = True   # 是否支持 I2C 寄存器控制
 
     @property
     def modes(self):
         return ["Normal", "LP", "ULP"] if self.type == "BUCK" else ["Normal", "LP"]
 
     @property
-    def sim_value(self) -> int:
-        mode_bits = {"Normal": 0, "LP": 1, "ULP": 2}.get(self.mode, 0)
-        vcode = int(round((self.voltage - self.min_voltage) / self.step)) & 0x3FF
-        base = 0x8000 if self.enabled else 0x0000
-        return base | (mode_bits << 12) | vcode
+    def reg_map(self):
+        """返回芯片寄存器映射 (LdoRegMap 或 None)。"""
+        return get_reg_map(self.id) if self.controllable else None
 
 
 # 布局行：id / level(1=主轨,2=二级) / input / bus(虚拟母线名)
@@ -126,26 +127,39 @@ _LAYOUT_ROWS = [
 
 def _default_modules() -> dict:
     mods = {}
-    addr = 0x1A0
     buck_ids = {"BUCK_01", "BUCK_02", "BUCK_03", "BUCK_04", "BUCK_05", "BUCK_06"}
     for row in _LAYOUT_ROWS:
         if row.kind != "module":
             continue
         is_buck = row.id in buck_ids
+        controllable = is_ldo_controllable(row.id)
+        # 从芯片数据获取实际电压范围
+        v_min, v_max = (None, None)
+        if controllable:
+            v_min, v_max = get_voltage_range(row.id)
+        if v_min is None:
+            v_min = 0.5
+            v_max = 1.5 if is_buck else 3.3
+        # 默认电压: BUCK 1.0V, LDO 取范围中点偏下
+        if is_buck:
+            default_v = 1.0
+        elif controllable:
+            default_v = v_min + (v_max - v_min) * 0.3
+        else:
+            default_v = 1.8
         mods[row.id] = PmuModule(
             id=row.id,
             name=row.id.replace("_", " "),
             type="BUCK" if is_buck else "LDO",
             enabled=True,
             mode="Normal",
-            voltage=1.0 if is_buck else 1.8,
-            min_voltage=0.5,
-            max_voltage=1.5 if is_buck else 3.3,
-            step=0.05,
+            voltage=round(default_v, 4),
+            min_voltage=v_min,
+            max_voltage=v_max,
+            step=0.01,
             input=row.input,
-            reg_addr=addr,
+            controllable=controllable,
         )
-        addr += 4
     return mods
 
 
@@ -715,8 +729,18 @@ class PropertyPanel(QFrame):
     def _refresh_i2c(self):
         if self._mod is None:
             return
-        self.addr_lbl.setText(f"Address: 0x{self._mod.reg_addr:03X}")
-        self.value_lbl.setText(f"Value: 0x{self._mod.sim_value:04X}")
+        rm = self._mod.reg_map
+        if rm is not None:
+            self.addr_lbl.setText(
+                f"Ctrl: 0x{rm.pu.reg_addr:03X}  Vbit: 0x{rm.vbit_normal.reg_addr:03X}"
+            )
+            self.value_lbl.setText(
+                f"pu={int(self._mod.enabled)}  mode={self._mod.mode}  "
+                f"vbit_n=?  (需读取)"
+            )
+        else:
+            self.addr_lbl.setText("Address: — (无寄存器映射)")
+            self.value_lbl.setText("Value: —")
 
     def _on_toggle(self, checked: bool):
         if self._mod is None or self._syncing:
@@ -894,6 +918,13 @@ class Pmu1811UI(QWidget):
 
         self.menu = ContextMenu(self)
 
+        # I2C 连接状态与 Worker 线程
+        self._i2c_connected = False
+        self._dll_path = None       # None → 使用默认 DLL
+        self._speed_mode = None     # None → 默认 100K
+        self._worker_thread = None
+        self._worker = None
+
         # 信号连接
         self.canvas.module_selected.connect(self._on_select)
         self.canvas.module_right_clicked.connect(self._on_context)
@@ -941,7 +972,81 @@ class Pmu1811UI(QWidget):
         return header
 
     def _on_check(self):
-        logger.info("1811 PMU Check 触发（占位，未接入 I2C）")
+        """Check 按钮: 读取所有 LDO 状态并刷新 UI。"""
+        if self._worker_thread is not None:
+            logger.warning("1811 PMU: 上一次操作尚未完成")
+            return
+        self.check_btn.setEnabled(False)
+        self.check_btn.setText("Reading...")
+        from ui.pages.pmu.pmu_1811_workers import LdoReadAllWorker
+        self._worker = LdoReadAllWorker(
+            dll_path=self._dll_path, speed_mode=self._speed_mode)
+        self._worker_thread = QThread()
+        self._worker.moveToThread(self._worker_thread)
+        self._worker.finished.connect(self._on_read_all_done)
+        self._worker.error.connect(self._on_i2c_error)
+        self._worker_thread.started.connect(self._worker.run)
+        self._worker_thread.start()
+
+    def _on_read_all_done(self, states: dict):
+        """读取全部 LDO 完成, 刷新 UI。"""
+        self._cleanup_worker()
+        self._i2c_connected = True
+        for ldo_id, st in states.items():
+            mod = self._modules.get(ldo_id)
+            if mod is None:
+                continue
+            mod.enabled = st.enabled
+            mod.mode = st.mode if st.mode in ("Normal", "LP") else "Normal"
+            if st.voltage is not None:
+                mod.voltage = st.voltage
+            self.canvas.refresh_card(ldo_id)
+        if self._selected_id and self._selected_id in self._modules:
+            self.panel.load(self._modules[self._selected_id])
+        logger.info("1811 PMU: 读取完成, %d 个 LDO", len(states))
+
+    def _on_i2c_error(self, msg: str):
+        """I2C 操作出错。"""
+        self._cleanup_worker()
+        self._i2c_connected = False
+        logger.error("1811 PMU I2C 错误: %s", msg)
+
+    def _cleanup_worker(self):
+        """清理 Worker 线程。"""
+        if self._worker_thread is not None:
+            self._worker_thread.quit()
+            self._worker_thread.wait()
+            self._worker_thread = None
+            self._worker = None
+        self.check_btn.setEnabled(True)
+        self.check_btn.setText("Check")
+
+    # ---- 异步写入 ----
+    def _start_write(self, ldo_id: str, action: str, value):
+        """启动异步写入 (若已连接)。"""
+        if not self._modules[ldo_id].controllable:
+            return
+        if not self._i2c_connected:
+            logger.debug("1811 PMU: 未连接, 仅本地更新 %s", ldo_id)
+            return
+        if self._worker_thread is not None:
+            logger.warning("1811 PMU:忙碌, 丢弃 %s/%s", ldo_id, action)
+            return
+        from ui.pages.pmu.pmu_1811_workers import LdoWriteWorker
+        self._worker = LdoWriteWorker(
+            ldo_id, action, value,
+            dll_path=self._dll_path, speed_mode=self._speed_mode,
+        )
+        self._worker_thread = QThread()
+        self._worker.moveToThread(self._worker_thread)
+        self._worker.finished.connect(self._on_write_done)
+        self._worker.error.connect(self._on_i2c_error)
+        self._worker_thread.started.connect(self._worker.run)
+        self._worker_thread.start()
+
+    def _on_write_done(self, ldo_id: str):
+        """单次写入完成。"""
+        self._cleanup_worker()
 
     # ---- 选择 ----
     def _on_select(self, mod_id: str):
@@ -967,12 +1072,15 @@ class Pmu1811UI(QWidget):
         self.canvas.refresh_card(mod_id)
         if mod_id == self._selected_id:
             self.panel._refresh_i2c()
+        self._start_write(mod_id, "enable", enabled)
 
-    def _on_panel_mode(self, mod_id: str, _mode: str):
+    def _on_panel_mode(self, mod_id: str, mode: str):
         self.canvas.refresh_card(mod_id)
+        self._start_write(mod_id, "mode", mode)
 
-    def _on_panel_voltage(self, mod_id: str, _v: float):
+    def _on_panel_voltage(self, mod_id: str, v: float):
         self.canvas.refresh_card(mod_id)
+        self._start_write(mod_id, "voltage", v)
 
     def _on_menu_enable(self, mod_id: str):
         mod = self._modules[mod_id]
@@ -980,6 +1088,7 @@ class Pmu1811UI(QWidget):
         self.canvas.refresh_card(mod_id)
         if mod_id == self._selected_id:
             self.panel.load(mod)
+        self._start_write(mod_id, "enable", mod.enabled)
 
     def _on_menu_mode(self, mod_id: str, mode: str):
         mod = self._modules[mod_id]
@@ -987,6 +1096,7 @@ class Pmu1811UI(QWidget):
         self.canvas.refresh_card(mod_id)
         if mod_id == self._selected_id:
             self.panel.load(mod)
+        self._start_write(mod_id, "mode", mode)
 
 
 if __name__ == "__main__":
