@@ -225,6 +225,7 @@ class ModuleCard(QFrame):
         self._selected = False
         self.setFixedSize(CARD_W, CARD_H)
         self.setCursor(Qt.PointingHandCursor)
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.setObjectName("moduleCard")
 
         self._shadow = QGraphicsDropShadowEffect(self)
@@ -358,8 +359,12 @@ class ModuleCard(QFrame):
     def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton:
             self.clicked.emit(self._mod.id)
+            e.accept()
+            return
         elif e.button() == Qt.RightButton:
             self.right_clicked.emit(self._mod.id, e.globalPosition().toPoint())
+            e.accept()
+            return
         super().mousePressEvent(e)
 
 
@@ -517,6 +522,7 @@ class PropertyPanel(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("propertyPanel")
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.setFixedWidth(320)
         self.setStyleSheet(
             f"QFrame#propertyPanel {{ background:{COL_PANEL_BG};"
@@ -644,6 +650,9 @@ class PropertyPanel(QFrame):
         root.addWidget(self.conn_lbl)
 
         root.addStretch(1)
+
+        for child in self.findChildren(QFrame):
+            child.setAttribute(Qt.WA_StyledBackground, True)
 
     @staticmethod
     def _section_label(text: str) -> QLabel:
@@ -824,6 +833,7 @@ class Pmu1811UI(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("pmu1811Page")
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet(
             f"QWidget#pmu1811Page {{ background:{COL_CANVAS_BG}; }}"
             f"QLabel {{ background:transparent; border:none; color:{COL_TEXT}; }}"
@@ -870,6 +880,10 @@ class Pmu1811UI(QWidget):
         self.scroll.setFrameShape(QFrame.NoFrame)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.scroll.setStyleSheet(
+            f"QScrollArea {{ background:{COL_CANVAS_BG}; border:none; }}"
+            f"QScrollArea > QWidget > QWidget {{ background:{COL_CANVAS_BG}; }}"
+        )
         body.addWidget(self.scroll, 1)
 
         self.panel = PropertyPanel(self)
