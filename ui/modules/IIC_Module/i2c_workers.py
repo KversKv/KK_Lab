@@ -130,6 +130,7 @@ class _I2cSequenceWorker(QObject):
     progress = Signal(str)   # 执行日志
     finished = Signal()       # 正常结束
     error = Signal(str)       # 致命异常
+    cmd_read = Signal(str, int)  # (addr_token, value) READ 指令结果
 
     def __init__(self, dll_path, speed_mode, device_addr, width_flag,
                  commands, script_name="", data_bits=16):
@@ -241,6 +242,7 @@ class _I2cSequenceWorker(QObject):
         if op == "READ":
             addr = _resolve_token(cmd["addr"], 16, self._vars)
             val = i2c.read(self._dev, addr, self._width)
+            self.cmd_read.emit(str(cmd.get("addr", "")), int(val))
             to_var = cmd.get("to")
             if to_var:
                 self._vars[to_var] = val

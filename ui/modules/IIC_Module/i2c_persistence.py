@@ -120,8 +120,6 @@ def _load_all_sequences():
             s["_collection"] = coll_name
             s["_collection_path"] = path
             result.append((path, s))
-    result.sort(key=lambda x: (str(x[1].get("_collection", "")),
-                               str(x[1].get("name", ""))))
     return result
 
 

@@ -281,10 +281,11 @@ def _parse_dsl_for_display(raw_line):
     返回字段：
       action: "W"/"R"/"WR" 或控制指令名 或 None
       addr, msb, lsb, value: 各列文本
-      desc: 行内注释文本
+      desc: 行内注释文本（仅支持 // 注释符；# 是 YAML 原生注释，
+            PyYAML 加载时已丢弃，不会到达此处）
       is_comment: True 表示整行注释（需跨全部列显示）
       is_control: True 表示逻辑/控制指令（需跨前4列显示）
-      full_text: 跨列显示时的完整文本
+      full_text: 跨列显示时的完整文本（已剥除前导 "- " 列表标记）
     """
     line = raw_line or ""
     desc = ""
@@ -295,8 +296,23 @@ def _parse_dsl_for_display(raw_line):
     code = code.strip()
     if code.startswith("-"):
         code = code[1:].strip()
-    if code.startswith("#"):
-        code = ""
+    # 整行 // 注释（剥后已空）：full_text 只显示注释内容，剥掉前导 "- //"
+    if not code and "//" in line:
+        full = line.strip()
+        # 剥掉前导 "- " 列表标记
+        if full.startswith("- "):
+            full = full[2:].strip()
+        elif full.startswith("-"):
+            full = full[1:].strip()
+        # 剥掉行首 "// " 注释符，只保留描述文本
+        if full.startswith("//"):
+            full = full[2:].lstrip()
+        return {
+            "action": None, "addr": "", "msb": "", "lsb": "",
+            "value": "", "desc": "",
+            "is_comment": True, "is_control": False,
+            "full_text": full,
+        }
 
     if not code:
         return {

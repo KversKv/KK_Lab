@@ -22,7 +22,7 @@ from log_config import get_logger
 from ui.modules.IIC_Module import i2c_constants as _i2c_const
 from ui.modules.IIC_Module.i2c_constants import (
     I2C_BTN_HEIGHT, SLATE_950, SLATE_900, SLATE_800,
-    INDIGO, INDIGO_LIGHT, TEXT_MAIN, TEXT_MUTED,
+    INDIGO, INDIGO_LIGHT, EMERALD_LIGHT, TEXT_MAIN, TEXT_MUTED,
     _I2C_UI_WIDTHS, _ui_width_to_flag, _infer_reg_bits, _width_label,
     _fmt_hex, _fmt_bin_grouped, _parse_hex_int, _i2c_template_dir,
 )
@@ -73,6 +73,7 @@ class I2cMixin:
         self._i2c_sequences = []          # [(filepath, script_dict), ...]
         self._i2c_seq_current_index = None  # 当前选中的列表项索引
         self._i2c_seq_suppress_sync = False  # 防止表/YAML 互相同步时递归
+        self._i2c_seq_row_commands = []  # 表格每行对应的原始指令字符串（None=不可单独执行）
 
         # 模板（Register Map）持久化状态
         self._i2c_templates = []             # [(filepath, template_dict), ...]
@@ -425,9 +426,9 @@ class I2cMixin:
             btn.setStyleSheet(_i2c_subtle_btn_style())
             list_btn_row.addWidget(btn)
         left.addLayout(list_btn_row)
-        self.i2c_seq_list = QTableWidget(0, 4)
+        self.i2c_seq_list = QTableWidget(0, 3)
         self.i2c_seq_list.setHorizontalHeaderLabels(
-            ["Collection", "Name", "Tpl", "Cmds"])
+            ["Collection", "Name", "Cmds"])
         self.i2c_seq_list.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.i2c_seq_list.setSelectionMode(QAbstractItemView.SingleSelection)
         self.i2c_seq_list.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -437,7 +438,6 @@ class I2cMixin:
         lh.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         lh.setSectionResizeMode(1, QHeaderView.Stretch)
         lh.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        lh.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.i2c_seq_list.setMinimumWidth(240)
         left.addWidget(self.i2c_seq_list, 1)
         main_row.addLayout(left, 0)
@@ -446,7 +446,7 @@ class I2cMixin:
         right = QVBoxLayout()
         right.setSpacing(6)
 
-        # 名称 / 模板 / 描述行
+        # 名称 / 模板行
         meta_row = QHBoxLayout()
         meta_row.setSpacing(8)
         name_lbl = QLabel("Name")
@@ -468,16 +468,20 @@ class I2cMixin:
         self.i2c_seq_tpl_combo.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Fixed)
         meta_row.addWidget(self.i2c_seq_tpl_combo, 1)
+        right.addLayout(meta_row)
+        # 描述行（第二排）
+        desc_row = QHBoxLayout()
+        desc_row.setSpacing(8)
         desc_lbl = QLabel("Desc")
         desc_lbl.setObjectName("muted")
-        desc_lbl.setFixedWidth(40)
-        meta_row.addWidget(desc_lbl)
+        desc_lbl.setFixedWidth(50)
+        desc_row.addWidget(desc_lbl)
         self.i2c_seq_desc_edit = QLineEdit()
         self.i2c_seq_desc_edit.setFixedHeight(I2C_BTN_HEIGHT)
         self.i2c_seq_desc_edit.setStyleSheet(_i2c_input_style())
         self.i2c_seq_desc_edit.setPlaceholderText("描述（可选）")
-        meta_row.addWidget(self.i2c_seq_desc_edit, 1)
-        right.addLayout(meta_row)
+        desc_row.addWidget(self.i2c_seq_desc_edit, 1)
+        right.addLayout(desc_row)
 
         # Tab 切换
         self.i2c_seq_tabs = QStackedWidget()
@@ -503,17 +507,6 @@ class I2cMixin:
         ch.setSectionResizeMode(5, QHeaderView.ResizeToContents)
         ch.setSectionResizeMode(6, QHeaderView.Stretch)
         tv.addWidget(self.i2c_seq_cmd_table, 1)
-        cmd_btn_row = QHBoxLayout()
-        cmd_btn_row.setSpacing(4)
-        self.i2c_seq_add_cmd_btn = QPushButton("+ Cmd")
-        self.i2c_seq_del_cmd_btn = QPushButton("- Cmd")
-        for btn in (self.i2c_seq_add_cmd_btn, self.i2c_seq_del_cmd_btn):
-            btn.setFixedHeight(I2C_BTN_HEIGHT)
-            btn.setCursor(Qt.PointingHandCursor)
-            btn.setStyleSheet(_i2c_subtle_btn_style())
-            cmd_btn_row.addWidget(btn)
-        cmd_btn_row.addStretch()
-        tv.addLayout(cmd_btn_row)
         self.i2c_seq_tabs.addWidget(table_page)
         # -- YAML 编辑器 --
         yaml_page = QWidget()
@@ -537,8 +530,16 @@ class I2cMixin:
         self.i2c_seq_tabs.addWidget(yaml_page)
         right.addWidget(self.i2c_seq_tabs, 1)
 
-        # 模式切换按钮 + 执行按钮
+        # 命令操作 + 模式切换 + 执行按钮（单排）
         bottom_row = QHBoxLayout()
+        bottom_row.setSpacing(4)
+        self.i2c_seq_add_cmd_btn = QPushButton("+ Cmd")
+        self.i2c_seq_del_cmd_btn = QPushButton("- Cmd")
+        for btn in (self.i2c_seq_add_cmd_btn, self.i2c_seq_del_cmd_btn):
+            btn.setFixedHeight(I2C_BTN_HEIGHT)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet(_i2c_subtle_btn_style())
+            bottom_row.addWidget(btn)
         bottom_row.setSpacing(6)
         self.i2c_seq_mode_btn = QPushButton("YAML")
         self.i2c_seq_mode_btn.setFixedHeight(I2C_BTN_HEIGHT)
@@ -679,6 +680,8 @@ class I2cMixin:
             self._on_i2c_seq_list_double_clicked)
         self.i2c_seq_add_cmd_btn.clicked.connect(self._on_i2c_seq_add_cmd)
         self.i2c_seq_del_cmd_btn.clicked.connect(self._on_i2c_seq_del_cmd)
+        self.i2c_seq_cmd_table.doubleClicked.connect(
+            self._on_i2c_seq_cmd_double_clicked)
         self.i2c_seq_mode_btn.clicked.connect(self._on_i2c_seq_toggle_mode)
         self.i2c_seq_save_btn.clicked.connect(self._on_i2c_seq_save)
         self.i2c_seq_run_btn.clicked.connect(self._on_i2c_seq_run)
@@ -1153,16 +1156,12 @@ class I2cMixin:
             coll_item = QTableWidgetItem(str(script.get("_collection", "")))
             coll_item.setForeground(QColor(TEXT_MUTED))
             name_item = QTableWidgetItem(str(script.get("name", "")))
-            tpl_item = QTableWidgetItem(str(script.get("template", "")))
-            tpl_item.setTextAlignment(Qt.AlignCenter)
-            tpl_item.setForeground(QColor(TEXT_MUTED))
             cmds = script.get("commands", []) or []
             cnt_item = QTableWidgetItem(str(len(cmds)))
             cnt_item.setTextAlignment(Qt.AlignCenter)
             self.i2c_seq_list.setItem(row, 0, coll_item)
             self.i2c_seq_list.setItem(row, 1, name_item)
-            self.i2c_seq_list.setItem(row, 2, tpl_item)
-            self.i2c_seq_list.setItem(row, 3, cnt_item)
+            self.i2c_seq_list.setItem(row, 2, cnt_item)
         self._i2c_seq_current_index = None
         self._i2c_seq_clear_editor()
 
@@ -1201,6 +1200,36 @@ class I2cMixin:
         _path, script = self._i2c_sequences[row]
         self._i2c_seq_execute(script)
 
+    def _on_i2c_seq_cmd_double_clicked(self, index):
+        """双击指令表格某行 → 单独执行该步骤（仅 Table 模式）。
+
+        - YAML 模式下不响应（此时表格不可见，但信号可能仍触发）。
+        - 注释行 / 控制指令行（LOOP/IF/END_*）不可单独执行，跳过。
+        - 其余指令（READ/WRITE/WRITE_BITS/DELAY）作为单指令脚本执行。
+        """
+        # 仅在 Table 模式（非 YAML 编辑模式）下生效
+        if self.i2c_seq_tabs.currentIndex() != 0:
+            return
+        row = index.row() if index is not None else -1
+        if row < 0 or row >= len(self._i2c_seq_row_commands):
+            return
+        cmd = self._i2c_seq_row_commands[row]
+        if not cmd:
+            self.append_log("[I2C] 该步骤不可单独执行（注释/控制指令）")
+            return
+        # 执行中则忽略
+        if (self._i2c_script_thread is not None
+                and self._i2c_script_thread.isRunning()):
+            QMessageBox.information(self, "正在执行", "请等待当前序列执行结束")
+            return
+        script = {
+            "name": "SingleStep",
+            "description": "单步执行: {0}".format(cmd.strip()),
+            "template": self._i2c_active_template_name,
+            "commands": [cmd],
+        }
+        self._i2c_seq_execute(script)
+
     def _i2c_seq_load_to_editor(self, script):
         """将脚本 dict 载入右侧编辑器（表格 + YAML 同步）。"""
         self._i2c_seq_suppress_sync = True
@@ -1218,6 +1247,7 @@ class I2cMixin:
         table = self.i2c_seq_cmd_table
         table.setRowCount(0)
         table.clearSpans()
+        self._i2c_seq_row_commands = []
         bold = _seq_bold_font()
         italic = _seq_italic_font()
         muted = QColor(TEXT_MUTED)
@@ -1232,6 +1262,7 @@ class I2cMixin:
             table.setItem(row, 0, idx_item)
 
             if parsed["is_comment"]:
+                self._i2c_seq_row_commands.append(None)
                 item = QTableWidgetItem(parsed["full_text"])
                 item.setForeground(muted)
                 item.setFont(italic)
@@ -1241,6 +1272,8 @@ class I2cMixin:
                 continue
 
             if parsed["is_control"]:
+                # 控制指令（LOOP/IF/END_*）不可单独执行
+                self._i2c_seq_row_commands.append(None)
                 action = parsed["action"]
                 item = QTableWidgetItem(parsed["full_text"])
                 item.setForeground(_seq_action_color(action))
@@ -1258,6 +1291,8 @@ class I2cMixin:
                 continue
 
             action = parsed["action"]
+            # 可单独执行的指令：记录原始字符串
+            self._i2c_seq_row_commands.append(str(raw))
             action_item = QTableWidgetItem(action if action else "")
             action_item.setTextAlignment(Qt.AlignCenter)
             action_item.setForeground(_seq_action_color(action))
@@ -1319,11 +1354,15 @@ class I2cMixin:
         if self.i2c_seq_tabs.currentIndex() == 0:
             self.i2c_seq_tabs.setCurrentIndex(1)
             self.i2c_seq_mode_btn.setText("Table")
+            self.i2c_seq_add_cmd_btn.setEnabled(False)
+            self.i2c_seq_del_cmd_btn.setEnabled(False)
         else:
             if not self._i2c_seq_sync_from_yaml():
                 return
             self.i2c_seq_tabs.setCurrentIndex(0)
             self.i2c_seq_mode_btn.setText("YAML")
+            self.i2c_seq_add_cmd_btn.setEnabled(True)
+            self.i2c_seq_del_cmd_btn.setEnabled(True)
 
     def _on_i2c_seq_new(self):
         """新建空脚本（默认关联当前活动模板）。"""
@@ -1480,6 +1519,7 @@ class I2cMixin:
         worker.progress.connect(self._on_i2c_seq_progress)
         worker.finished.connect(self._on_i2c_seq_finished)
         worker.error.connect(self._on_i2c_seq_error)
+        worker.cmd_read.connect(self._on_i2c_seq_cmd_read)
         worker.finished.connect(thread.quit)
         worker.error.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
@@ -1508,6 +1548,37 @@ class I2cMixin:
 
     def _on_i2c_seq_progress(self, text):
         self.append_log(f"[I2C] {text}")
+
+    def _on_i2c_seq_cmd_read(self, addr_token, value):
+        """READ 指令完成：在表格 Value 列用绿色显示读取结果。
+
+        按 addr token 匹配表格中的 READ 行（Action == "R"），
+        循环内重复读取同一寄存器时，最终显示最后一次的值。
+        """
+        target = str(addr_token or "").strip()
+        if not target:
+            return
+        table = self.i2c_seq_cmd_table
+        if table is None or table.rowCount() == 0:
+            return
+        val_text = _fmt_hex(int(value), self._i2c_data_bits)
+        green = QColor(EMERALD_LIGHT)
+        for row in range(table.rowCount()):
+            action_item = table.item(row, 1)
+            if action_item is None or action_item.text() != "R":
+                continue
+            addr_item = table.item(row, 2)
+            if addr_item is None or addr_item.text().strip() != target:
+                continue
+            val_item = table.item(row, 5)
+            if val_item is None:
+                val_item = QTableWidgetItem(val_text)
+                val_item.setTextAlignment(Qt.AlignCenter)
+                val_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                table.setItem(row, 5, val_item)
+            else:
+                val_item.setText(val_text)
+            val_item.setForeground(green)
 
     def _on_i2c_seq_thread_cleanup(self):
         self._i2c_script_thread = None
