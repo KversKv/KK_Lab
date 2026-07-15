@@ -95,8 +95,12 @@ from ui.pages.charger_test.charger_test_ui import ChargerTestUI
 from ui.pages.module_test.module_test_ui import ModuleTestUI
 from ui.pages.orchestrator.orchestrator_ui import OrchestratorUI
 from ui.pages.vmin_hunter.vmin_hunter_ui import VminHunterUI
+from ui.pages.pmu.pmu_1811_ui import Pmu1811UI
+from ui.pages.pmu.pmu_1860_ui import Pmu1860UI
 from ui.modules.serialCom_module.serialCom_module_frame import SerialComMixin
 from ui.modules.mcu_io_module_frame import McuIoConnectionMixin
+from ui.modules.IIC_Module.i2c_mixin import I2cMixin
+from ui.modules.IIC_Module.i2c_styles import _I2C_DARK_STYLE
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from core.test_manager import TestManager
 from core.instruments import InstrumentManager, InstrumentSpec, ConnectionHub
@@ -184,6 +188,25 @@ class _KKSerialsPage(SerialComMixin, QWidget):
 
     def append_log(self, msg):
         self._sc_append_system(msg)
+
+
+class _I2cControlPage(I2cMixin, QWidget):
+    def __init__(self, parent=None):
+        QWidget.__init__(self, parent)
+        self.init_i2c()
+        self.setStyleSheet(_I2C_DARK_STYLE)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        self.build_i2c_widgets(root)
+        self.bind_i2c_signals()
+
+    def closeEvent(self, event):
+        try:
+            self.close_i2c()
+        except Exception:
+            logger.error("I2C close failed", exc_info=True)
+        super().closeEvent(event)
 
 
 class _CollectionPage(McuIoConnectionMixin, QWidget):
@@ -342,6 +365,9 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.vmin_hunter_ui = None
         self.kk_serials_ui = None
         self.collection_ui = None
+        self.i2c_control_ui = None
+        self.pmu_1811_ui = None
+        self.pmu_1860_ui = None
         self.current_instrument_ui = None
         self._page_switch_geometry = None
         self.channels = []
@@ -878,9 +904,27 @@ class MainWindow(CleanupMixin, QMainWindow):
             "consumption_test": self.nav.consumption_test_btn,
             "vmin_hunter": self.nav.vmin_hunter_btn,
             "orchestrator": self.nav.orchestrator_btn,
-            "kk_serials": self.nav.kk_serials_btn,
+            "kk_serials": self.nav.collection_btn,
+            "i2c_control": self.nav.collection_btn,
             "collection": self.nav.collection_btn,
+            "pmu_1811": self.nav.pmu_btn,
+            "pmu_1860": self.nav.pmu_btn,
         }
+        # Collection 子项：先选定子项再点击父按钮，确保跳转到目标子页
+        _collection_subkeys = {
+            "kk_serials": "kk_serials",
+            "i2c_control": "i2c_control",
+            "collection": "mcu_io",
+        }
+        # PMU 工具子项：先选定子项再点击父按钮
+        _pmu_tool_subkeys = {
+            "pmu_1811": "1811",
+            "pmu_1860": "1860",
+        }
+        if page in _collection_subkeys:
+            self.nav.current_collection_key = _collection_subkeys[page]
+        if page in _pmu_tool_subkeys:
+            self.nav.current_pmu_tool_key = _pmu_tool_subkeys[page]
         button = button_map.get(page)
         if button is None:
             return False, f"未知页面：{page}"
@@ -1326,6 +1370,9 @@ class MainWindow(CleanupMixin, QMainWindow):
     def _current_active_page(self):
         mapping = {
             "kk_serials": getattr(self, "kk_serials_ui", None),
+            "i2c_control": getattr(self, "i2c_control_ui", None),
+            "pmu_1811": getattr(self, "pmu_1811_ui", None),
+            "pmu_1860": getattr(self, "pmu_1860_ui", None),
             "orchestrator": getattr(self, "orchestrator_ui", None),
             "pmu_test": getattr(self, "pmu_test_ui", None),
             "charger_test": getattr(self, "charger_test_ui", None),
@@ -1344,7 +1391,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.nav.consumption_test_btn.clicked.connect(self._on_nav_button_clicked)
         self.nav.vmin_hunter_btn.clicked.connect(self._on_nav_button_clicked)
         self.nav.orchestrator_btn.clicked.connect(self._on_nav_button_clicked)
-        self.nav.kk_serials_btn.clicked.connect(self._on_nav_button_clicked)
+        self.nav.pmu_btn.clicked.connect(self._on_nav_button_clicked)
         self.nav.collection_btn.clicked.connect(self._on_nav_button_clicked)
 
         self.status_panel.help_btn.clicked.connect(self._on_help)
@@ -1575,8 +1622,16 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.current_instrument_ui = "kk_serials"
         self._fade_in_widget(self.kk_serials_ui)
 
-    def _create_collection_ui(self):
-        logger.debug("Switching to Collection UI")
+    def _create_collection_ui(self, selected_key=None):
+        if selected_key is None:
+            selected_key = self.nav.current_collection_key
+        if selected_key == "kk_serials":
+            self._create_kk_serials_ui()
+            return
+        if selected_key == "i2c_control":
+            self._create_i2c_control_ui()
+            return
+        logger.debug("Switching to Collection (MCU IO) UI")
         self._hide_all_instrument_uis()
         if self.collection_ui is None:
             self.collection_ui = _CollectionPage(
@@ -1588,6 +1643,41 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.current_instrument_ui = "collection"
         self._fade_in_widget(self.collection_ui)
 
+    def _create_i2c_control_ui(self):
+        logger.debug("Switching to IIC Control UI")
+        self._hide_all_instrument_uis()
+        if self.i2c_control_ui is None:
+            self.i2c_control_ui = _I2cControlPage()
+            self.instrument_ui_container_layout.addWidget(self.i2c_control_ui)
+        else:
+            self.i2c_control_ui.show()
+        self.current_instrument_ui = "i2c_control"
+        self._fade_in_widget(self.i2c_control_ui)
+
+    def _create_pmu_ui(self, selected_key=None):
+        if selected_key is None:
+            selected_key = self.nav.current_pmu_tool_key
+        if selected_key == "1860":
+            logger.debug("Switching to PMU 1860 UI")
+            self._hide_all_instrument_uis()
+            if self.pmu_1860_ui is None:
+                self.pmu_1860_ui = Pmu1860UI()
+                self.instrument_ui_container_layout.addWidget(self.pmu_1860_ui)
+            else:
+                self.pmu_1860_ui.show()
+            self.current_instrument_ui = "pmu_1860"
+            self._fade_in_widget(self.pmu_1860_ui)
+            return
+        logger.debug("Switching to PMU 1811 UI")
+        self._hide_all_instrument_uis()
+        if self.pmu_1811_ui is None:
+            self.pmu_1811_ui = Pmu1811UI()
+            self.instrument_ui_container_layout.addWidget(self.pmu_1811_ui)
+        else:
+            self.pmu_1811_ui.show()
+        self.current_instrument_ui = "pmu_1811"
+        self._fade_in_widget(self.pmu_1811_ui)
+
     def _hide_all_instrument_uis(self):
         self._page_switch_geometry = self.geometry()
         for widget in [
@@ -1596,6 +1686,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             self.consumption_test_ui, self.charger_test_ui, self.module_test_ui,
             self.orchestrator_ui,
             self.vmin_hunter_ui, self.kk_serials_ui, self.collection_ui,
+            self.i2c_control_ui, self.pmu_1811_ui, self.pmu_1860_ui,
         ]:
             if widget is not None:
                 widget.setGraphicsEffect(None)
@@ -1678,6 +1769,9 @@ class MainWindow(CleanupMixin, QMainWindow):
             "orchestrator": "ui.pages.orchestrator",
             "chamber": "ui.pages.chamber",
             "vmin_hunter": "ui.pages.vmin_hunter",
+            "i2c_control": "ui.modules.IIC_Module",
+            "pmu_1811": "ui.pages.pmu",
+            "pmu_1860": "ui.pages.pmu",
         }
         module_path = module_map.get(self.current_instrument_ui)
         if not module_path:

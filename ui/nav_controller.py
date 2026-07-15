@@ -32,12 +32,16 @@ class NavController:
         self._charger_btn_hovered = False
         self._consumption_btn_hovered = False
         self._module_test_btn_hovered = False
+        self._collection_btn_hovered = False
+        self._pmu_tool_btn_hovered = False
 
         self.current_pa_mode = "analyser"
         self.current_pmu_test_key = None
         self.current_charger_test_key = None
         self.current_consumption_test_key = "auto_test"
         self.current_module_test_key = "ldo"
+        self.current_collection_key = "mcu_io"
+        self.current_pmu_tool_key = "1811"
 
         self.module_test_tab_map = {"ldo": 0, "dcdc": 1}
 
@@ -175,10 +179,10 @@ class NavController:
         """)
         left_nav_layout.addWidget(tools_title)
 
-        self.kk_serials_btn = SidebarNavButton(
-            "KK Serials", "", os.path.join(_PAGE_SVGS_DIR, "terminal.svg")
+        self.pmu_btn = SidebarNavButton(
+            "PMU", "", os.path.join(_PAGE_SVGS_DIR, "zap.svg")
         )
-        left_nav_layout.addWidget(self.kk_serials_btn)
+        left_nav_layout.addWidget(self.pmu_btn)
 
         self.collection_btn = SidebarNavButton(
             "Collection", "", os.path.join(_PAGE_SVGS_DIR, "settings.svg")
@@ -215,7 +219,7 @@ class NavController:
         self.nav_button_group.addButton(self.consumption_test_btn)
         self.nav_button_group.addButton(self.vmin_hunter_btn)
         self.nav_button_group.addButton(self.orchestrator_btn)
-        self.nav_button_group.addButton(self.kk_serials_btn)
+        self.nav_button_group.addButton(self.pmu_btn)
         self.nav_button_group.addButton(self.collection_btn)
 
         self._refresh_nav_arrow_state()
@@ -236,7 +240,7 @@ class NavController:
             self.module_test_btn,
             self.vmin_hunter_btn,
             self.orchestrator_btn,
-            self.kk_serials_btn,
+            self.pmu_btn,
             self.collection_btn,
         ]
         for btn in nav_buttons:
@@ -294,9 +298,27 @@ class NavController:
         self.module_test_btn.installEventFilter(self._host)
         self.module_test_submenu.installEventFilter(self._host)
 
+        self.collection_submenu = SidebarSubMenu([
+            ("mcu_io", "MCU IO"),
+            ("kk_serials", "KK Serials"),
+            ("i2c_control", "IIC Control"),
+        ], parent=self._host)
+        self.collection_submenu.item_clicked.connect(self._on_collection_submenu_clicked)
+        self.collection_btn.installEventFilter(self._host)
+        self.collection_submenu.installEventFilter(self._host)
+
+        self.pmu_tool_submenu = SidebarSubMenu([
+            ("1811", "1811"),
+            ("1860", "1860"),
+        ], parent=self._host)
+        self.pmu_tool_submenu.item_clicked.connect(self._on_pmu_tool_submenu_clicked)
+        self.pmu_btn.installEventFilter(self._host)
+        self.pmu_tool_submenu.installEventFilter(self._host)
+
     def _hide_other_submenus(self, except_submenu):
         for submenu in (self.pa_submenu, self.pmu_submenu, self.charger_submenu,
-                        self.consumption_submenu, self.module_test_submenu):
+                        self.consumption_submenu, self.module_test_submenu,
+                        self.collection_submenu, self.pmu_tool_submenu):
             if submenu and submenu is not except_submenu and submenu.isVisible():
                 submenu.force_hide()
 
@@ -445,6 +467,64 @@ class NavController:
         self._host._create_module_test_ui(selected_test=test_key)
         self.module_test_submenu.hide()
 
+    def _show_collection_submenu(self):
+        if not self.collection_submenu:
+            return
+        self._hide_other_submenus(self.collection_submenu)
+        btn_global_pos = self.collection_btn.mapToGlobal(QPoint(0, 0))
+        x = btn_global_pos.x() + self.collection_btn.width() + 8
+        y = btn_global_pos.y()
+        self.collection_submenu.set_current_item(self.current_collection_key)
+        self.collection_submenu.move(x, y)
+        self.collection_submenu.show()
+        self.collection_submenu.raise_()
+
+    def _hide_collection_submenu_if_needed(self):
+        if self._collection_btn_hovered:
+            return
+        if self.collection_submenu and self.collection_submenu.is_hovered():
+            return
+        if self.collection_submenu:
+            self.collection_submenu.hide()
+
+    def _on_collection_submenu_clicked(self, sub_key):
+        logger.debug("Collection submenu clicked: %s", sub_key)
+        self.current_collection_key = sub_key
+        self.collection_submenu.set_current_item(sub_key)
+        self.collection_btn.setChecked(True)
+        self._refresh_nav_arrow_state()
+        self._host._create_collection_ui(selected_key=sub_key)
+        self.collection_submenu.hide()
+
+    def _show_pmu_tool_submenu(self):
+        if not self.pmu_tool_submenu:
+            return
+        self._hide_other_submenus(self.pmu_tool_submenu)
+        btn_global_pos = self.pmu_btn.mapToGlobal(QPoint(0, 0))
+        x = btn_global_pos.x() + self.pmu_btn.width() + 8
+        y = btn_global_pos.y()
+        self.pmu_tool_submenu.set_current_item(self.current_pmu_tool_key)
+        self.pmu_tool_submenu.move(x, y)
+        self.pmu_tool_submenu.show()
+        self.pmu_tool_submenu.raise_()
+
+    def _hide_pmu_tool_submenu_if_needed(self):
+        if self._pmu_tool_btn_hovered:
+            return
+        if self.pmu_tool_submenu and self.pmu_tool_submenu.is_hovered():
+            return
+        if self.pmu_tool_submenu:
+            self.pmu_tool_submenu.hide()
+
+    def _on_pmu_tool_submenu_clicked(self, sub_key):
+        logger.debug("PMU tool submenu clicked: %s", sub_key)
+        self.current_pmu_tool_key = sub_key
+        self.pmu_tool_submenu.set_current_item(sub_key)
+        self.pmu_btn.setChecked(True)
+        self._refresh_nav_arrow_state()
+        self._host._create_pmu_ui(selected_key=sub_key)
+        self.pmu_tool_submenu.hide()
+
     def handle_event_filter(self, obj, event):
         if obj == self.pmu_test_btn:
             if event.type() == QEvent.Enter:
@@ -526,6 +606,38 @@ class NavController:
                 QTimer.singleShot(_SUBMENU_HIDE_DELAY, self._hide_module_test_submenu_if_needed)
             return True
 
+        elif obj == self.collection_btn:
+            if event.type() == QEvent.Enter:
+                self._collection_btn_hovered = True
+                self._show_collection_submenu()
+            elif event.type() == QEvent.Leave:
+                self._collection_btn_hovered = False
+                QTimer.singleShot(_SUBMENU_HIDE_DELAY, self._hide_collection_submenu_if_needed)
+            return True
+
+        elif obj == self.collection_submenu:
+            if event.type() == QEvent.Enter:
+                self._show_collection_submenu()
+            elif event.type() == QEvent.Leave:
+                QTimer.singleShot(_SUBMENU_HIDE_DELAY, self._hide_collection_submenu_if_needed)
+            return True
+
+        elif obj == self.pmu_btn:
+            if event.type() == QEvent.Enter:
+                self._pmu_tool_btn_hovered = True
+                self._show_pmu_tool_submenu()
+            elif event.type() == QEvent.Leave:
+                self._pmu_tool_btn_hovered = False
+                QTimer.singleShot(_SUBMENU_HIDE_DELAY, self._hide_pmu_tool_submenu_if_needed)
+            return True
+
+        elif obj == self.pmu_tool_submenu:
+            if event.type() == QEvent.Enter:
+                self._show_pmu_tool_submenu()
+            elif event.type() == QEvent.Leave:
+                QTimer.singleShot(_SUBMENU_HIDE_DELAY, self._hide_pmu_tool_submenu_if_needed)
+            return True
+
         return False
 
     def handle_nav_button_clicked(self, sender):
@@ -534,6 +646,8 @@ class NavController:
             self.charger_submenu.hide()
             self.consumption_submenu.hide()
             self.module_test_submenu.hide()
+            self.collection_submenu.hide()
+            self.pmu_tool_submenu.hide()
             self._show_pa_submenu()
             self._host._switch_pa_mode(self.current_pa_mode)
 
@@ -543,6 +657,8 @@ class NavController:
             self.charger_submenu.hide()
             self.consumption_submenu.hide()
             self.module_test_submenu.hide()
+            self.collection_submenu.hide()
+            self.pmu_tool_submenu.hide()
             self._host._create_oscilloscope_ui()
 
         elif sender == self.chamber_btn:
@@ -551,6 +667,8 @@ class NavController:
             self.charger_submenu.hide()
             self.consumption_submenu.hide()
             self.module_test_submenu.hide()
+            self.collection_submenu.hide()
+            self.pmu_tool_submenu.hide()
             self._host._create_thermal_chamber_ui()
 
         elif sender == self.pmu_test_btn:
@@ -558,6 +676,8 @@ class NavController:
             self.charger_submenu.hide()
             self.consumption_submenu.hide()
             self.module_test_submenu.hide()
+            self.collection_submenu.hide()
+            self.pmu_tool_submenu.hide()
             self._host._create_pmu_test_ui(selected_test=self.current_pmu_test_key)
             self._show_pmu_submenu()
 
@@ -566,6 +686,8 @@ class NavController:
             self.pa_submenu.hide()
             self.consumption_submenu.hide()
             self.module_test_submenu.hide()
+            self.collection_submenu.hide()
+            self.pmu_tool_submenu.hide()
             self._host._create_charger_test_ui(selected_test=self.current_charger_test_key)
             self._show_charger_submenu()
 
@@ -574,7 +696,8 @@ class NavController:
             self.pa_submenu.hide()
             self.charger_submenu.hide()
             self.consumption_submenu.hide()
-            self.module_test_submenu.hide()
+            self.collection_submenu.hide()
+            self.pmu_tool_submenu.hide()
             self._host._create_module_test_ui(selected_test=self.current_module_test_key)
             self._show_module_test_submenu()
 
@@ -583,6 +706,8 @@ class NavController:
             self.pa_submenu.hide()
             self.charger_submenu.hide()
             self.module_test_submenu.hide()
+            self.collection_submenu.hide()
+            self.pmu_tool_submenu.hide()
             self._host._create_consumption_test_ui(selected_test=self.current_consumption_test_key)
             self._show_consumption_submenu()
 
@@ -592,6 +717,8 @@ class NavController:
             self.charger_submenu.hide()
             self.consumption_submenu.hide()
             self.module_test_submenu.hide()
+            self.collection_submenu.hide()
+            self.pmu_tool_submenu.hide()
             self._host._create_vmin_hunter_ui()
 
         elif sender == self.orchestrator_btn:
@@ -600,15 +727,19 @@ class NavController:
             self.charger_submenu.hide()
             self.consumption_submenu.hide()
             self.module_test_submenu.hide()
+            self.collection_submenu.hide()
+            self.pmu_tool_submenu.hide()
             self._host._create_orchestrator_ui()
 
-        elif sender == self.kk_serials_btn:
+        elif sender == self.pmu_btn:
             self.pmu_submenu.hide()
             self.pa_submenu.hide()
             self.charger_submenu.hide()
             self.consumption_submenu.hide()
             self.module_test_submenu.hide()
-            self._host._create_kk_serials_ui()
+            self.collection_submenu.hide()
+            self._host._create_pmu_ui(selected_key=self.current_pmu_tool_key)
+            self._show_pmu_tool_submenu()
 
         elif sender == self.collection_btn:
             self.pmu_submenu.hide()
@@ -616,7 +747,9 @@ class NavController:
             self.charger_submenu.hide()
             self.consumption_submenu.hide()
             self.module_test_submenu.hide()
-            self._host._create_collection_ui()
+            self.pmu_tool_submenu.hide()
+            self._host._create_collection_ui(selected_key=self.current_collection_key)
+            self._show_collection_submenu()
 
         self._refresh_nav_arrow_state()
 
@@ -630,7 +763,6 @@ class NavController:
             ("Ctrl+6", self.consumption_test_btn),
             ("Ctrl+7", self.vmin_hunter_btn),
             ("Ctrl+8", self.orchestrator_btn),
-            ("Ctrl+9", self.kk_serials_btn),
             ("Ctrl+0", self.collection_btn),
         ]
         for key_seq, btn in shortcuts:
@@ -643,6 +775,7 @@ class NavController:
 
     def hide_all_submenus(self):
         for submenu in (self.pa_submenu, self.pmu_submenu, self.charger_submenu,
-                        self.consumption_submenu, self.module_test_submenu):
+                        self.consumption_submenu, self.module_test_submenu,
+                        self.collection_submenu, self.pmu_tool_submenu):
             if submenu and submenu.isVisible():
                 submenu.hide()
