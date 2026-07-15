@@ -493,8 +493,9 @@ class BitsTable(QTableWidget):
                     it = self.item(r, c)
                     if it is not None:
                         it.setBackground(tint)
-            for c in (2, 3, 4):
-                self.setSpan(row_top, c, span, 1)
+            if span > 1:
+                for c in (2, 3, 4):
+                    self.setSpan(row_top, c, span, 1)
         self._apply_field_edit_flags()
 
     def _refresh_field_hex(self, full_value):
