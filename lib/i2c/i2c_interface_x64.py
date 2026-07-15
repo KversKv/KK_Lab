@@ -54,6 +54,10 @@ _INT_TO_WIDTH_FLAG = {
     32: I2CWidthFlag.BIT_32,
 }
 
+# 8位地址 + 8位数据：底层用 BIT_8（8位地址+16位数据）实现，
+# 读取时取高8bit作为结果，写入时将8位数据左移到16位高字节
+WIDTH_8X8 = 88
+
 
 class I2CInterface:
     """I2C接口封装类，提供简洁的I2C操作API"""
@@ -159,7 +163,7 @@ class I2CInterface:
         参数:
         device_addr: 设备地址
         reg_addr: 寄存器地址
-        width_flag: 位宽标志（I2CWidthFlag 或 整数 8/10/32）
+        width_flag: 位宽标志（I2CWidthFlag 或 整数 8/10/32，或 WIDTH_8X8 表示8位地址+8位数据）
 
         返回:
         读取到的数据
@@ -171,6 +175,12 @@ class I2CInterface:
         ValueError: width_flag 值非法
         """
         self._ensure_initialized()
+        # 8位地址+8位数据：用 BIT_8 读16位，取高8bit作为结果
+        if width_flag == WIDTH_8X8:
+            val = self._i2c.read(
+                self._speed_mode, device_addr, reg_addr, I2CWidthFlag.BIT_8
+            )
+            return (val >> 8) & 0xFF
         width_flag = self._normalize_width_flag(width_flag)
         return self._i2c.read(
             self._speed_mode,
@@ -188,7 +198,7 @@ class I2CInterface:
         device_addr: 设备地址
         reg_addr: 寄存器地址
         write_data: 要写入的数据
-        width_flag: 位宽标志（I2CWidthFlag 或 整数 8/10/32）
+        width_flag: 位宽标志（I2CWidthFlag 或 整数 8/10/32，或 WIDTH_8X8 表示8位地址+8位数据）
         high_bit: 位操作的高位位置，-1表示整寄存器写（不按位写）
         low_bit: 位操作的低位位置，-1表示整寄存器写（不按位写）
 
@@ -199,6 +209,23 @@ class I2CInterface:
         ValueError: width_flag 值非法
         """
         self._ensure_initialized()
+        # 8位地址+8位数据：整寄存器写时8位数据左移到16位高字节；
+        # 位域写时位位置偏移+8，数据值不变
+        if width_flag == WIDTH_8X8:
+            if high_bit < 0 and low_bit < 0:
+                shifted_data = (write_data & 0xFF) << 8
+                self._i2c.write(
+                    self._speed_mode, device_addr, reg_addr,
+                    shifted_data, I2CWidthFlag.BIT_8, -1, -1,
+                )
+            else:
+                h_bit = high_bit + 8 if high_bit >= 0 else -1
+                l_bit = low_bit + 8 if low_bit >= 0 else -1
+                self._i2c.write(
+                    self._speed_mode, device_addr, reg_addr,
+                    write_data, I2CWidthFlag.BIT_8, h_bit, l_bit,
+                )
+            return True
         width_flag = self._normalize_width_flag(width_flag)
         self._i2c.write(
             self._speed_mode,

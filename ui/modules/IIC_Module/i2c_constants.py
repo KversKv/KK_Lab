@@ -16,7 +16,9 @@ _I2C_WIDTH_META = {}
 
 def _load_width_meta():
     from lib.i2c.Bes_I2CIO_Interface import I2CWidthFlag
+    from lib.i2c.i2c_interface_x64 import WIDTH_8X8
     return {
+        WIDTH_8X8: ("8R/8D", 8, 8),
         I2CWidthFlag.BIT_8: ("8R/16D", 8, 16),
         I2CWidthFlag.BIT_10: ("16R/16D", 16, 16),
         I2CWidthFlag.BIT_32: ("32R/32D", 32, 32),
@@ -46,8 +48,12 @@ _I2C_UI_WIDTHS = [
 ]
 
 
-def _ui_width_to_flag(reg_bits):
+def _ui_width_to_flag(reg_bits, data_bits=None):
     from lib.i2c.Bes_I2CIO_Interface import I2CWidthFlag
+    # 8位地址 + 8位数据：走 WIDTH_8X8（底层用 BIT_8 读16位取高8bit）
+    if reg_bits == 8 and data_bits == 8:
+        from lib.i2c.i2c_interface_x64 import WIDTH_8X8
+        return WIDTH_8X8
     if reg_bits == 8:
         return I2CWidthFlag.BIT_8
     if reg_bits == 32:

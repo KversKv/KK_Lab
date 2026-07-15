@@ -425,18 +425,20 @@ class I2cMixin:
             btn.setStyleSheet(_i2c_subtle_btn_style())
             list_btn_row.addWidget(btn)
         left.addLayout(list_btn_row)
-        self.i2c_seq_list = QTableWidget(0, 3)
-        self.i2c_seq_list.setHorizontalHeaderLabels(["Name", "Tpl", "Cmds"])
+        self.i2c_seq_list = QTableWidget(0, 4)
+        self.i2c_seq_list.setHorizontalHeaderLabels(
+            ["Collection", "Name", "Tpl", "Cmds"])
         self.i2c_seq_list.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.i2c_seq_list.setSelectionMode(QAbstractItemView.SingleSelection)
         self.i2c_seq_list.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.i2c_seq_list.verticalHeader().setVisible(False)
         self.i2c_seq_list.setStyleSheet(_i2c_table_qss())
         lh = self.i2c_seq_list.horizontalHeader()
-        lh.setSectionResizeMode(0, QHeaderView.Stretch)
-        lh.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        lh.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        lh.setSectionResizeMode(1, QHeaderView.Stretch)
         lh.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        self.i2c_seq_list.setMinimumWidth(200)
+        lh.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self.i2c_seq_list.setMinimumWidth(240)
         left.addWidget(self.i2c_seq_list, 1)
         main_row.addLayout(left, 0)
 
@@ -652,6 +654,7 @@ class I2cMixin:
         self.i2c_read_btn.clicked.connect(self._on_i2c_read)
         self.i2c_write_btn.clicked.connect(self._on_i2c_write)
         self.i2c_data_edit.value_changed.connect(self._on_i2c_data_edited)
+        self.i2c_reg_edit.value_changed.connect(self._on_i2c_reg_addr_edited)
         self.i2c_bits.bit_toggled.connect(self._on_i2c_bit_toggled)
         self.i2c_bits.field_edited.connect(self._on_i2c_field_edited)
         self.i2c_bits.field_context_menu.connect(self._on_i2c_bits_context_menu)
@@ -775,7 +778,7 @@ class I2cMixin:
         reg_bits, data_bits = data
         self._i2c_reg_bits = int(reg_bits)
         self._i2c_data_bits = int(data_bits)
-        self._i2c_width = _ui_width_to_flag(int(reg_bits))
+        self._i2c_width = _ui_width_to_flag(int(reg_bits), int(data_bits))
         self._i2c_sync_width_ui()
         self.append_log(f"[I2C] 位宽切换为 {reg_bits}R / {data_bits}D")
         self._i2c_save_state()
@@ -800,6 +803,26 @@ class I2cMixin:
         self.i2c_bits.set_value(self._i2c_data_value)
         self._i2c_refresh_bin_label()
         self._i2c_refresh_field_values()
+
+    def _on_i2c_reg_addr_edited(self, _value):
+        """Reg Addr 变化 → 按 reg_addr 在模板寄存器列表中查找并切换字段预览。"""
+        if not getattr(self, "_i2c_registers", None):
+            return
+        # 先把当前编辑的字段回写到活动寄存器，避免切换后丢失
+        self._i2c_sync_active_register_fields()
+        addr = self._i2c_current_reg()
+        for i, reg in enumerate(self._i2c_registers):
+            ra = _parse_hex_int(reg.get("reg_addr", "")) or 0
+            if ra == addr:
+                self._i2c_active_reg_index = i
+                self._i2c_fields = copy.deepcopy(reg.get("bit_fields", []))
+                self.i2c_bits.set_fields(self._i2c_fields)
+                self.i2c_bits.set_value(self._i2c_data_value)
+                return
+        # 未匹配：清空字段，标记无活动寄存器
+        self._i2c_active_reg_index = None
+        self._i2c_fields = []
+        self.i2c_bits.set_fields([])
 
     def _on_i2c_bit_toggled(self, bit_idx):
         mask = (1 << self._i2c_data_bits) - 1
@@ -1055,7 +1078,7 @@ class I2cMixin:
                 break
         self._i2c_reg_bits = int(reg_bits)
         self._i2c_data_bits = int(data_bits)
-        self._i2c_width = _ui_width_to_flag(int(reg_bits))
+        self._i2c_width = _ui_width_to_flag(int(reg_bits), int(data_bits))
         self._i2c_sync_width_ui()
 
     # ---- 芯片检测 ----
@@ -1127,6 +1150,8 @@ class I2cMixin:
         for _path, script in self._i2c_sequences:
             row = self.i2c_seq_list.rowCount()
             self.i2c_seq_list.insertRow(row)
+            coll_item = QTableWidgetItem(str(script.get("_collection", "")))
+            coll_item.setForeground(QColor(TEXT_MUTED))
             name_item = QTableWidgetItem(str(script.get("name", "")))
             tpl_item = QTableWidgetItem(str(script.get("template", "")))
             tpl_item.setTextAlignment(Qt.AlignCenter)
@@ -1134,9 +1159,10 @@ class I2cMixin:
             cmds = script.get("commands", []) or []
             cnt_item = QTableWidgetItem(str(len(cmds)))
             cnt_item.setTextAlignment(Qt.AlignCenter)
-            self.i2c_seq_list.setItem(row, 0, name_item)
-            self.i2c_seq_list.setItem(row, 1, tpl_item)
-            self.i2c_seq_list.setItem(row, 2, cnt_item)
+            self.i2c_seq_list.setItem(row, 0, coll_item)
+            self.i2c_seq_list.setItem(row, 1, name_item)
+            self.i2c_seq_list.setItem(row, 2, tpl_item)
+            self.i2c_seq_list.setItem(row, 3, cnt_item)
         self._i2c_seq_current_index = None
         self._i2c_seq_clear_editor()
 
@@ -1334,7 +1360,7 @@ class I2cMixin:
         self.append_log("[I2C] 已复制脚本，请修改名称后保存")
 
     def _on_i2c_seq_delete(self):
-        """删除当前选中脚本文件。"""
+        """删除当前选中脚本（从所属集合移除；集合空则删文件）。"""
         if self._i2c_seq_current_index is None:
             QMessageBox.information(self, "提示", "请先在列表中选择一个脚本")
             return
@@ -1344,7 +1370,7 @@ class I2cMixin:
             self, "删除确认", "确定删除脚本 '{0}'?".format(name))
         if ret != QMessageBox.Yes:
             return
-        _delete_sequence_file(path)
+        _delete_sequence_file(path, script_name=name)
         self.append_log(f"[I2C] 已删除脚本: {name}")
         self._i2c_seq_current_index = None
         self._i2c_seq_reload_list()
@@ -1386,7 +1412,11 @@ class I2cMixin:
         self._i2c_seq_suppress_sync = False
 
     def _on_i2c_seq_save(self):
-        """保存当前编辑器内容到 YAML 文件。"""
+        """保存当前编辑器内容到所属集合 YAML 文件。
+
+        collection 名优先取当前编辑脚本的来源集合 _collection；
+        新建脚本无来源时，默认用 template 名作集合名。
+        """
         try:
             script = _parse_script_yaml(self.i2c_seq_yaml_edit.toPlainText())
         except Exception as e:
@@ -1399,13 +1429,23 @@ class I2cMixin:
         if not name:
             QMessageBox.warning(self, "名称无效", "请填写脚本名称")
             return
+        # 确定 collection 名：优先沿用来源集合，否则用 template
+        coll_name = None
+        if (self._i2c_seq_current_index is not None
+                and self._i2c_seq_current_index < len(self._i2c_sequences)):
+            _p, cur = self._i2c_sequences[self._i2c_seq_current_index]
+            coll_name = cur.get("_collection")
+        if not coll_name:
+            coll_name = script.get("template", "") or name
         try:
-            path = _save_sequence_file(script)
-            self.append_log(f"[I2C] 序列脚本已保存: {path}")
-            # 保存后刷新列表并选中新保存的项
+            path = _save_sequence_file(script, collection_name=coll_name)
+            self.append_log(
+                f"[I2C] 序列脚本已保存到集合 '{coll_name}': {path}")
+            # 保存后刷新列表并选中刚保存的项（按 collection + name 匹配）
             self._i2c_seq_reload_list()
             for i, (_p, s) in enumerate(self._i2c_sequences):
-                if s.get("name") == name:
+                if (str(s.get("_collection", "")) == coll_name
+                        and s.get("name") == name):
                     self.i2c_seq_list.selectRow(i)
                     break
             self._i2c_save_state()
@@ -1746,6 +1786,7 @@ class I2cMixin:
             "version": "1.0",
             "last_template": self._i2c_active_template_name,
             "last_script": "",
+            "last_script_collection": "",
             "filter_scripts_by_template": bool(
                 self._i2c_filter_scripts_by_template),
             "settings": {
@@ -1755,12 +1796,14 @@ class I2cMixin:
                 "default_reg_bits": int(self._i2c_reg_bits),
             },
         }
-        # 记录当前选中的脚本名
+        # 记录当前选中的脚本名 + 所属集合（避免跨集合重名误选）
         if getattr(self, "_i2c_seq_current_index", None) is not None:
             idx = self._i2c_seq_current_index
             if 0 <= idx < len(self._i2c_sequences):
                 _p, s = self._i2c_sequences[idx]
                 state["last_script"] = str(s.get("name", ""))
+                state["last_script_collection"] = str(
+                    s.get("_collection", ""))
         _save_i2c_state(state)
 
     def _i2c_restore_state(self):
@@ -1816,11 +1859,14 @@ class I2cMixin:
                     break
         # 5. 刷新脚本列表（按模板过滤）
         self._i2c_seq_reload_list()
-        # 6. 应用上次选中的脚本
+        # 6. 应用上次选中的脚本（按 collection + name 匹配，兼容旧状态仅 name）
         last_script = str(state.get("last_script", ""))
+        last_coll = str(state.get("last_script_collection", ""))
         if last_script:
             for i, (_p, s) in enumerate(self._i2c_sequences):
-                if str(s.get("name", "")) == last_script:
+                if (str(s.get("name", "")) == last_script
+                        and (not last_coll
+                             or str(s.get("_collection", "")) == last_coll)):
                     self.i2c_seq_list.selectRow(i)
                     break
         self.append_log(
