@@ -6,7 +6,7 @@
 """
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 from log_config import get_logger
 
@@ -21,14 +21,21 @@ logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# 日志回调类型: (level, message) -> None
+# ---------------------------------------------------------------------------
+LogCallback = Callable[[str, str], None]
+
+
+# ---------------------------------------------------------------------------
 # LDO 状态快照
 # ---------------------------------------------------------------------------
 @dataclass
 class LdoState:
     """读取到的 LDO 实时状态。"""
     ldo_id: str
-    enabled: bool               # pu 位 (驱动位=1 时有效)
-    pu_dr: int                  # pu 驱动位
+    enabled: bool               # 实际使能状态 (dig_ldo_XX_pu 状态位, 1=打开)
+    pu_status: int              # dig_ldo_XX_pu 状态位 (0/1)
+    pu_dr: int                  # pu 驱动位 (reg_pu_ldo_XX_dr)
     mode: str                   # "Normal" / "LP" / "Unknown"
     lp_dr: int                  # lp 驱动位
     vbit_normal: int            # 唤醒电压控制字
@@ -54,10 +61,19 @@ class Bes1811PmuController:
         ctrl.disconnect()
     """
 
-    def __init__(self, dll_path=None, speed_mode=None):
+    def __init__(self, dll_path=None, speed_mode=None, log_callback: Optional[LogCallback] = None):
         self._dll_path = dll_path
         self._speed_mode = speed_mode
         self._i2c = None
+        self._log_cb = log_callback
+
+    def _emit_log(self, level: str, msg: str):
+        """向 UI 推送一条操作日志 (不依赖 Qt)。"""
+        if self._log_cb is not None:
+            try:
+                self._log_cb(level, msg)
+            except Exception:
+                logger.debug("1811 PMU: log_callback 异常", exc_info=True)
 
     # ---- 连接管理 ----
     def connect(self) -> bool:
@@ -69,9 +85,14 @@ class Bes1811PmuController:
         self._i2c = I2CInterface(dll_path=self._dll_path, speed_mode=speed)
         if not self._i2c.initialize():
             logger.error("1811 PMU: I2C 接口初始化失败")
+            self._emit_log("ERROR", "I2C 接口初始化失败 (DLL 加载或设备打开失败)")
             self._i2c = None
             return False
         logger.info("1811 PMU: I2C 已连接 (addr=0x%02X, %d-bit)", I2C_DEVICE_ADDR, I2C_WIDTH)
+        self._emit_log(
+            "INFO",
+            f"I2C 已连接: dev=0x{I2C_DEVICE_ADDR:02X}, addr_width={I2C_WIDTH}-bit",
+        )
         return True
 
     def disconnect(self):
@@ -83,6 +104,7 @@ class Bes1811PmuController:
                 pass
             self._i2c = None
             logger.info("1811 PMU: I2C 已断开")
+            self._emit_log("INFO", "I2C 已断开")
 
     @property
     def is_connected(self) -> bool:
@@ -92,17 +114,32 @@ class Bes1811PmuController:
     def read_register(self, addr: int) -> int:
         """读取 16 位寄存器。"""
         self._ensure_connected()
-        return int(self._i2c.read(I2C_DEVICE_ADDR, addr, I2C_WIDTH))
+        val = int(self._i2c.read(I2C_DEVICE_ADDR, addr, I2C_WIDTH))
+        self._emit_log(
+            "INFO",
+            f"I2C 读  dev=0x{I2C_DEVICE_ADDR:02X}  @0x{addr:03X} → 0x{val:04X}",
+        )
+        return val
 
     def write_register(self, addr: int, value: int):
         """整寄存器写。"""
         self._ensure_connected()
         self._i2c.write(I2C_DEVICE_ADDR, addr, value, I2C_WIDTH)
+        self._emit_log(
+            "INFO",
+            f"I2C 写  dev=0x{I2C_DEVICE_ADDR:02X}  @0x{addr:03X} ← 0x{value:04X}  bits[15:0]",
+        )
 
     def write_field(self, addr: int, high: int, low: int, value: int):
         """位域写 (底层 RMW, 仅修改 [high:low] 位)。"""
         self._ensure_connected()
         self._i2c.write(I2C_DEVICE_ADDR, addr, value, I2C_WIDTH, high, low)
+        width = high - low + 1
+        self._emit_log(
+            "INFO",
+            f"I2C 写  dev=0x{I2C_DEVICE_ADDR:02X}  @0x{addr:03X} ← 0x{value:0{width}X}"
+            f"  bits[{high}:{low}]",
+        )
 
     def _ensure_connected(self):
         if not self.is_connected:
@@ -110,11 +147,22 @@ class Bes1811PmuController:
 
     # ---- LDO 读取 ----
     def read_ldo(self, ldo_id: str) -> Optional[LdoState]:
-        """读取单个 LDO 的完整状态。"""
+        """读取单个 LDO 的完整状态。
+
+        使能判定依据: dig_ldo_XX_pu 状态寄存器 (R, 1=打开, 0=关闭)。
+        """
         rm = get_reg_map(ldo_id)
         if rm is None:
             logger.warning("1811 PMU: %s 无寄存器映射", ldo_id)
             return None
+        self._emit_log(
+            "STEP",
+            f"读取 {ldo_id} 状态  "
+            f"(pu_status@0x{rm.pu_status.reg_addr:03X}[{rm.pu_status.high_bit}:{rm.pu_status.low_bit}], "
+            f"vbit@0x{rm.vbit_normal.reg_addr:03X})",
+        )
+        # 优先读取状态位 (dig_ldo_XX_pu), 它反映硬件实际使能状态
+        pu_status = self._read_field(rm.pu_status)
         pu = self._read_field(rm.pu)
         pu_dr = self._read_field(rm.pu_dr)
         lp = self._read_field(rm.lp)
@@ -124,7 +172,8 @@ class Bes1811PmuController:
         vbit_r = self._read_field(rm.vbit_rc)
         res_sel = self._read_field(rm.res_sel_dr)
 
-        enabled = bool(pu) if pu_dr else False
+        # 真实使能状态: dig_ldo_XX_pu 状态位 (1=打开, 0=关闭)
+        enabled = bool(pu_status)
         if lp_dr and lp:
             mode = "LP"
         elif lp_dr and not lp:
@@ -133,8 +182,13 @@ class Bes1811PmuController:
             mode = "Unknown"
 
         volt = vbit_to_voltage(ldo_id, vbit_n)
+        self._emit_log(
+            "INFO",
+            f"{ldo_id} 状态: en={'On' if enabled else 'Off'} (dig_pu={pu_status}, cfg_pu={pu}, pu_dr={pu_dr}, {mode}), "
+            f"vbit_n=0x{vbit_n:X}, voltage={volt if volt is not None else 'N/A'}",
+        )
         return LdoState(
-            ldo_id=ldo_id, enabled=enabled, pu_dr=pu_dr,
+            ldo_id=ldo_id, enabled=enabled, pu_status=pu_status, pu_dr=pu_dr,
             mode=mode, lp_dr=lp_dr,
             vbit_normal=vbit_n, vbit_dsleep=vbit_d, vbit_rc=vbit_r,
             res_sel_dr=res_sel, voltage=volt,
@@ -158,6 +212,12 @@ class Bes1811PmuController:
         rm = get_reg_map(ldo_id)
         if rm is None:
             raise ValueError(f"{ldo_id} 无寄存器映射")
+        self._emit_log(
+            "STEP",
+            f"{ldo_id} {'使能' if enabled else '禁用'}  "
+            f"(pu_dr@0x{rm.pu_dr.reg_addr:03X}[{rm.pu_dr.high_bit}:{rm.pu_dr.low_bit}]=1, "
+            f"pu@0x{rm.pu.reg_addr:03X}[{rm.pu.high_bit}:{rm.pu.low_bit}]={1 if enabled else 0})",
+        )
         self.write_field(rm.pu_dr.reg_addr, rm.pu_dr.high_bit, rm.pu_dr.low_bit, 1)
         self.write_field(rm.pu.reg_addr, rm.pu.high_bit, rm.pu.low_bit, 1 if enabled else 0)
         logger.info("1811 PMU: %s %s", ldo_id, "使能" if enabled else "禁用")
@@ -171,6 +231,13 @@ class Bes1811PmuController:
         if mode not in ("Normal", "Lp", "LP"):
             raise ValueError(f"不支持的模式: {mode}")
         lp_val = 1 if mode in ("Lp", "LP") else 0
+        mode_text = "LP" if lp_val else "Normal"
+        self._emit_log(
+            "STEP",
+            f"{ldo_id} 模式 → {mode_text}  "
+            f"(lp_dr@0x{rm.lp_dr.reg_addr:03X}[{rm.lp_dr.high_bit}:{rm.lp_dr.low_bit}]=1, "
+            f"lp@0x{rm.lp.reg_addr:03X}[{rm.lp.high_bit}:{rm.lp.low_bit}]={lp_val})",
+        )
         self.write_field(rm.lp_dr.reg_addr, rm.lp_dr.high_bit, rm.lp_dr.low_bit, 1)
         self.write_field(rm.lp.reg_addr, rm.lp.high_bit, rm.lp.low_bit, lp_val)
         logger.info("1811 PMU: %s 模式 → %s", ldo_id, "LP" if lp_val else "Normal")
@@ -188,6 +255,12 @@ class Bes1811PmuController:
         if vbit is None:
             raise ValueError(f"{ldo_id} 无电压查找表")
         actual_v = vbit_to_voltage(ldo_id, vbit)
+        self._emit_log(
+            "STEP",
+            f"{ldo_id} 电压 → {actual_v:.4f} V (target={voltage:.4f} V, vbit=0x{vbit:X})  "
+            f"(vbit_normal@0x{rm.vbit_normal.reg_addr:03X}"
+            f"[{rm.vbit_normal.high_bit}:{rm.vbit_normal.low_bit}])",
+        )
         self.write_field(
             rm.vbit_normal.reg_addr, rm.vbit_normal.high_bit,
             rm.vbit_normal.low_bit, vbit,

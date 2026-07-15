@@ -20,7 +20,7 @@ if not getattr(sys, "frozen", False):
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import Qt, Signal, QPoint, QRect, QThread
+from PySide6.QtCore import Qt, Signal, QPoint, QRect, QThread, QTimer
 from PySide6.QtGui import QPainter, QColor, QPen, QFont
 from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QPushButton, QHBoxLayout, QVBoxLayout,
@@ -31,7 +31,9 @@ from log_config import get_logger
 
 from chips.bes1811_pmu import (
     get_voltage_range, get_reg_map, is_ldo_controllable, LDO_REG_MAPS,
+    get_ldo_step, align_to_step, snap_range_to_step,
 )
+from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 
 logger = get_logger(__name__)
 
@@ -140,11 +142,20 @@ def _default_modules() -> dict:
         if v_min is None:
             v_min = 0.5
             v_max = 1.5 if is_buck else 3.3
-        # 默认电压: BUCK 1.0V, LDO 取范围中点偏下
+        # 取真实平均 step; 无表回退 0.01
+        step = 0.01
+        if controllable:
+            s = get_ldo_step(row.id)
+            if s is not None and s > 0:
+                step = s
+                # 把 [v_min, v_max] 对齐到 step 整数倍 (min 向下, max 向上)
+                v_min, v_max = snap_range_to_step(v_min, v_max, step)
+        # 默认电压: BUCK 1.0V, LDO 取范围中点偏下, 并吸附到 step
         if is_buck:
             default_v = 1.0
         elif controllable:
             default_v = v_min + (v_max - v_min) * 0.3
+            default_v = align_to_step(default_v, step)
         else:
             default_v = 1.8
         mods[row.id] = PmuModule(
@@ -156,7 +167,7 @@ def _default_modules() -> dict:
             voltage=round(default_v, 4),
             min_voltage=v_min,
             max_voltage=v_max,
-            step=0.01,
+            step=step,
             input=row.input,
             controllable=controllable,
         )
@@ -327,7 +338,7 @@ class ModuleCard(QFrame):
         self.refresh()
 
     def refresh(self):
-        self.volt_lbl.setText(f"{self._mod.voltage:.2f} V")
+        self.volt_lbl.setText(f"{self._mod.voltage:.3f} V")
         led_col = COL_EMERALD if self._mod.enabled else COL_LED_OFF
         self.led.setStyleSheet(
             f"background:{led_col}; border-radius:5px; border:none;"
@@ -613,7 +624,7 @@ class PropertyPanel(QFrame):
         top.addWidget(self._muted_label("Target (V)"))
         top.addStretch(1)
         self.spin = QDoubleSpinBox(self)
-        self.spin.setDecimals(2)
+        self.spin.setDecimals(3)
         self.spin.setSingleStep(0.05)
         self.spin.setMinimumWidth(90)
         self.spin.setAlignment(Qt.AlignRight)
@@ -712,6 +723,7 @@ class PropertyPanel(QFrame):
 
         self.spin.setRange(mod.min_voltage, mod.max_voltage)
         self.spin.setSingleStep(mod.step)
+        self.spin.setDecimals(3)
         self.spin.setValue(mod.voltage)
 
         smin = int(round(mod.min_voltage / mod.step))
@@ -720,8 +732,8 @@ class PropertyPanel(QFrame):
         self.slider.setRange(smin, smax)
         self.slider.setValue(sval)
 
-        self.min_lbl.setText(f"{mod.min_voltage:.2f} V")
-        self.max_lbl.setText(f"{mod.max_voltage:.2f} V")
+        self.min_lbl.setText(f"{mod.min_voltage:.3f} V")
+        self.max_lbl.setText(f"{mod.max_voltage:.3f} V")
         self.conn_lbl.setText(f"Input Source: {mod.input}")
         self._syncing = False
         self._refresh_i2c()
@@ -732,7 +744,8 @@ class PropertyPanel(QFrame):
         rm = self._mod.reg_map
         if rm is not None:
             self.addr_lbl.setText(
-                f"Ctrl: 0x{rm.pu.reg_addr:03X}  Vbit: 0x{rm.vbit_normal.reg_addr:03X}"
+                f"Ctrl: 0x{rm.pu.reg_addr:03X}  Vbit: 0x{rm.vbit_normal.reg_addr:03X}  "
+                f"PU_Status: 0x{rm.pu_status.reg_addr:03X}[{rm.pu_status.high_bit}:{rm.pu_status.low_bit}]"
             )
             self.value_lbl.setText(
                 f"pu={int(self._mod.enabled)}  mode={self._mod.mode}  "
@@ -761,6 +774,13 @@ class PropertyPanel(QFrame):
     def _on_spin(self, v: float):
         if self._mod is None or self._syncing:
             return
+        # 临近吸附: 把输入值对齐到最近 step 档位
+        snapped = align_to_step(v, self._mod.step)
+        if abs(snapped - v) > 1e-9 and abs(snapped - self._mod.voltage) > 1e-9:
+            self._syncing = True
+            self.spin.setValue(snapped)
+            self._syncing = False
+            v = snapped
         self._syncing = True
         self.slider.setValue(int(round(v / self._mod.step)))
         self._syncing = False
@@ -893,7 +913,8 @@ class Pmu1811UI(QWidget):
 
         root.addWidget(self._build_header())
 
-        body = QHBoxLayout()
+        body_container = QWidget(self)
+        body = QHBoxLayout(body_container)
         body.setContentsMargins(0, 0, 0, 0)
         body.setSpacing(0)
 
@@ -914,7 +935,11 @@ class Pmu1811UI(QWidget):
         self.panel.setVisible(False)
         body.addWidget(self.panel)
 
-        root.addLayout(body, 1)
+        self.splitter, self.execution_logs = ExecutionLogsFrame.wrap_with(
+            body_container, title="1811 PMU Logs", show_progress=False,
+            stretch=(5, 1),
+        )
+        root.addWidget(self.splitter, 1)
 
         self.menu = ContextMenu(self)
 
@@ -934,6 +959,16 @@ class Pmu1811UI(QWidget):
         self.panel.voltage_changed.connect(self._on_panel_voltage)
         self.menu.enable_toggled.connect(self._on_menu_enable)
         self.menu.mode_changed.connect(self._on_menu_mode)
+
+        # 首次显示后自动触发一次状态同步 (读取 DUT 实际使能/电压)
+        self._first_shown = False
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._first_shown:
+            self._first_shown = True
+            # 延迟到事件循环下一轮, 确保 UI 完全布局后再发起 I2C 读取
+            QTimer.singleShot(0, self._on_check)
 
     # ---- 头部 ----
     def _build_header(self) -> QFrame:
@@ -971,11 +1006,17 @@ class Pmu1811UI(QWidget):
         h.addWidget(self.check_btn)
         return header
 
+    def _log(self, level: str, message: str):
+        """追加一条 LOG 到执行日志面板 (level 用于上色, 如 STEP/INFO/WARN/ERROR/PASS)。"""
+        self.execution_logs.append_log(f"[{level}] {message}")
+
     def _on_check(self):
         """Check 按钮: 读取所有 LDO 状态并刷新 UI。"""
         if self._worker_thread is not None:
             logger.warning("1811 PMU: 上一次操作尚未完成")
+            self._log("WARN", "上一次操作尚未完成, 请稍候")
             return
+        self._log("STEP", "开始读取全部 LDO 状态 (I2C 0x17)...")
         self.check_btn.setEnabled(False)
         self.check_btn.setText("Reading...")
         from ui.pages.pmu.pmu_1811_workers import LdoReadAllWorker
@@ -985,6 +1026,7 @@ class Pmu1811UI(QWidget):
         self._worker.moveToThread(self._worker_thread)
         self._worker.finished.connect(self._on_read_all_done)
         self._worker.error.connect(self._on_i2c_error)
+        self._worker.log.connect(self.execution_logs.append_log)
         self._worker_thread.started.connect(self._worker.run)
         self._worker_thread.start()
 
@@ -1004,12 +1046,15 @@ class Pmu1811UI(QWidget):
         if self._selected_id and self._selected_id in self._modules:
             self.panel.load(self._modules[self._selected_id])
         logger.info("1811 PMU: 读取完成, %d 个 LDO", len(states))
+        on_cnt = sum(1 for s in states.values() if s.enabled)
+        self._log("PASS", f"读取完成: {len(states)} 个 LDO, {on_cnt} 个已开启")
 
     def _on_i2c_error(self, msg: str):
         """I2C 操作出错。"""
         self._cleanup_worker()
         self._i2c_connected = False
         logger.error("1811 PMU I2C 错误: %s", msg)
+        self._log("ERROR", f"I2C 错误: {msg}")
 
     def _cleanup_worker(self):
         """清理 Worker 线程。"""
@@ -1031,7 +1076,9 @@ class Pmu1811UI(QWidget):
             return
         if self._worker_thread is not None:
             logger.warning("1811 PMU:忙碌, 丢弃 %s/%s", ldo_id, action)
+            self._log("WARN", f"忙碌, 丢弃写入 {ldo_id}/{action}")
             return
+        self._log("STEP", f"写入 {ldo_id} {action}={value}")
         from ui.pages.pmu.pmu_1811_workers import LdoWriteWorker
         self._worker = LdoWriteWorker(
             ldo_id, action, value,
@@ -1041,12 +1088,14 @@ class Pmu1811UI(QWidget):
         self._worker.moveToThread(self._worker_thread)
         self._worker.finished.connect(self._on_write_done)
         self._worker.error.connect(self._on_i2c_error)
+        self._worker.log.connect(self.execution_logs.append_log)
         self._worker_thread.started.connect(self._worker.run)
         self._worker_thread.start()
 
     def _on_write_done(self, ldo_id: str):
         """单次写入完成。"""
         self._cleanup_worker()
+        self._log("PASS", f"{ldo_id} 写入完成")
 
     # ---- 选择 ----
     def _on_select(self, mod_id: str):
@@ -1064,9 +1113,11 @@ class Pmu1811UI(QWidget):
         self.menu.popup(self._modules[mod_id], pos)
 
     # ---- 状态联动 ----
-    def _on_card_voltage(self, mod_id: str, _v: float):
+    def _on_card_voltage(self, mod_id: str, v: float):
+        # 卡片 +/- 按钮调整电压: 同步刷新属性面板并写入 DUT
         if mod_id == self._selected_id:
             self.panel.load(self._modules[mod_id])
+        self._start_write(mod_id, "voltage", v)
 
     def _on_panel_enable(self, mod_id: str, enabled: bool):
         self.canvas.refresh_card(mod_id)

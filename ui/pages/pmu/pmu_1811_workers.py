@@ -18,15 +18,24 @@ logger = get_logger(__name__)
 class LdoReadAllWorker(QObject):
     finished = Signal(dict)   # {ldo_id: LdoState}
     error = Signal(str)
+    log = Signal(str)         # (level, message) 已格式化为 "[LEVEL] msg"
 
     def __init__(self, dll_path=None, speed_mode=None):
         super().__init__()
         self._dll = dll_path
         self._speed = speed_mode
 
+    def _make_log_cb(self):
+        def _cb(level: str, msg: str):
+            self.log.emit(f"[{level}] {msg}")
+        return _cb
+
     def run(self):
         from core.bes1811_pmu_controller import Bes1811PmuController
-        ctrl = Bes1811PmuController(dll_path=self._dll, speed_mode=self._speed)
+        ctrl = Bes1811PmuController(
+            dll_path=self._dll, speed_mode=self._speed,
+            log_callback=self._make_log_cb(),
+        )
         try:
             if not ctrl.connect():
                 self.error.emit("I2C 接口初始化失败 (DLL 加载或设备打开失败)")
@@ -46,6 +55,7 @@ class LdoReadAllWorker(QObject):
 class LdoReadOneWorker(QObject):
     finished = Signal(object)  # LdoState
     error = Signal(str)
+    log = Signal(str)
 
     def __init__(self, ldo_id, dll_path=None, speed_mode=None):
         super().__init__()
@@ -53,9 +63,17 @@ class LdoReadOneWorker(QObject):
         self._dll = dll_path
         self._speed = speed_mode
 
+    def _make_log_cb(self):
+        def _cb(level: str, msg: str):
+            self.log.emit(f"[{level}] {msg}")
+        return _cb
+
     def run(self):
         from core.bes1811_pmu_controller import Bes1811PmuController
-        ctrl = Bes1811PmuController(dll_path=self._dll, speed_mode=self._speed)
+        ctrl = Bes1811PmuController(
+            dll_path=self._dll, speed_mode=self._speed,
+            log_callback=self._make_log_cb(),
+        )
         try:
             if not ctrl.connect():
                 self.error.emit("I2C 接口初始化失败")
@@ -75,6 +93,7 @@ class LdoReadOneWorker(QObject):
 class LdoWriteWorker(QObject):
     finished = Signal(str)    # ldo_id
     error = Signal(str)
+    log = Signal(str)
 
     def __init__(self, ldo_id, action, value, dll_path=None, speed_mode=None):
         """
@@ -89,9 +108,17 @@ class LdoWriteWorker(QObject):
         self._dll = dll_path
         self._speed = speed_mode
 
+    def _make_log_cb(self):
+        def _cb(level: str, msg: str):
+            self.log.emit(f"[{level}] {msg}")
+        return _cb
+
     def run(self):
         from core.bes1811_pmu_controller import Bes1811PmuController
-        ctrl = Bes1811PmuController(dll_path=self._dll, speed_mode=self._speed)
+        ctrl = Bes1811PmuController(
+            dll_path=self._dll, speed_mode=self._speed,
+            log_callback=self._make_log_cb(),
+        )
         try:
             if not ctrl.connect():
                 self.error.emit("I2C 接口初始化失败")
