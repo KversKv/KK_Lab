@@ -5,20 +5,22 @@ import re
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QLabel, QFrame, QSizePolicy, QTableWidget, QTableWidgetItem,
-    QHeaderView, QAbstractItemView, QCheckBox,
+    QHeaderView, QAbstractItemView, QCheckBox, QMenu,
 )
 from PySide6.QtCore import Qt, Signal, QRegularExpression
-from PySide6.QtGui import QColor, QRegularExpressionValidator, QPainter
+from PySide6.QtGui import QColor, QRegularExpressionValidator, QPainter, QCursor
 
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.modules.IIC_Module.i2c_constants import (
     I2C_BTN_HEIGHT, SLATE_950, SLATE_900, SLATE_800,
     INDIGO, INDIGO_LIGHT, EMERALD_LIGHT, TEXT_MUTED,
-    _fmt_hex, _hex_digits, _parse_hex_int,
+    _fmt_hex, _hex_digits, _parse_hex_int, _fmt_field_value, _FIELD_BASES,
 )
 from ui.modules.IIC_Module.i2c_styles import (
     _i2c_input_style, _bit_val_style, _i2c_table_qss,
 )
+
+_FIELD_BASE_LABELS = dict(_FIELD_BASES)
 
 
 # ---------------------------------------------------------------------------
@@ -292,8 +294,10 @@ class BitsTable(QTableWidget):
         self._count = bit_count
         self._fields = []
         self._edit_mode = False
+        self._field_base = "hex"
+        self._full_value = 0
         self.setObjectName("bitsTable")
-        self.setHorizontalHeaderLabels(["Bit", "Val", "Field", "Desc", "Hex"])
+        self.setHorizontalHeaderLabels(["Bit", "Val", "Field", "Desc", "Hex ▾"])
         self.verticalHeader().setVisible(False)
         # Val 列是 bit 切换按钮,点击只应切换该 bit,不应选中整行
         self.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -307,8 +311,24 @@ class BitsTable(QTableWidget):
         hdr.setSectionResizeMode(2, QHeaderView.Stretch)
         hdr.setSectionResizeMode(3, QHeaderView.Stretch)
         hdr.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        hdr.setSectionsClickable(True)
+        hdr.sectionClicked.connect(self._on_header_clicked)
         self._build_rows()
         self.cellChanged.connect(self._on_cell_changed)
+
+    def _on_header_clicked(self, logical_index):
+        """点击 Hex 列表头弹出进制切换菜单。"""
+        if logical_index != 4:
+            return
+        menu = QMenu(self)
+        for key, _text in _FIELD_BASES:
+            act = menu.addAction(_FIELD_BASE_LABELS[key])
+            act.setData(key)
+            act.setCheckable(True)
+            act.setChecked(key == self._field_base)
+        chosen = menu.exec(QCursor.pos())
+        if chosen is not None:
+            self.set_field_base(chosen.data())
 
     def set_edit_mode(self, enabled):
         """开启/关闭 Field/Desc 列的内联编辑。"""
@@ -320,6 +340,15 @@ class BitsTable(QTableWidget):
         else:
             self.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._apply_field_edit_flags()
+
+    def set_field_base(self, base):
+        """切换 Hex 列的显示进制（hex/dec/oct/bin），同步更新表头文案。"""
+        if base not in _FIELD_BASE_LABELS:
+            return
+        self._field_base = base
+        self.setHorizontalHeaderItem(
+            4, QTableWidgetItem(_FIELD_BASE_LABELS[base] + " ▾"))
+        self._refresh_field_hex(self._full_value)
 
     def _apply_field_edit_flags(self):
         """根据编辑模式设置 Field/Desc 单元格的可编辑标志。"""
@@ -469,6 +498,7 @@ class BitsTable(QTableWidget):
         self._apply_field_edit_flags()
 
     def _refresh_field_hex(self, full_value):
+        self._full_value = full_value
         for f in self._fields:
             fhi = int(f["high_bit"])
             flo = int(f["low_bit"])
@@ -481,7 +511,7 @@ class BitsTable(QTableWidget):
             row_top = self._row_of(c_hi)
             it = self.item(row_top, 4)
             if it is not None:
-                it.setText(_fmt_hex(val, width))
+                it.setText(_fmt_field_value(val, width, self._field_base))
 
 
 # ---------------------------------------------------------------------------
@@ -497,6 +527,7 @@ class BitsTableContainer(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._tables = []
+        self._field_base = "hex"
         self._layout = QHBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(10)
@@ -537,6 +568,15 @@ class BitsTableContainer(QWidget):
             self._layout.addWidget(sep, 0)
             self._layout.addWidget(lo_t, 1)
             self._tables = [hi_t, lo_t]
+        # 位宽切换重建表格后，恢复当前进制
+        for t in self._tables:
+            t.set_field_base(self._field_base)
+
+    def set_field_base(self, base):
+        """切换所有子表 Hex 列的显示进制。"""
+        self._field_base = base
+        for t in self._tables:
+            t.set_field_base(base)
 
     def set_edit_mode(self, enabled):
         for t in self._tables:

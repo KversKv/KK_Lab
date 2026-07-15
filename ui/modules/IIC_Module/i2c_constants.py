@@ -96,6 +96,25 @@ def _fmt_bin_grouped(value, bits):
     return " ".join(raw[i:i + 4] for i in range(0, len(raw), 4))
 
 
+# 位表 Hex 列支持的进制 → 表头文案
+_FIELD_BASES = [("hex", "Hex"), ("dec", "Dec"), ("oct", "Oct"), ("bin", "Bin")]
+
+
+def _fmt_field_value(value, width, base):
+    """按进制格式化位字段值（用于 BitsTable 的 Hex 列多进制显示）。"""
+    if width > 0:
+        v = int(value) & ((1 << width) - 1)
+    else:
+        v = int(value)
+    if base == "dec":
+        return str(v)
+    if base == "oct":
+        return "0o" + format(v, "o")
+    if base == "bin":
+        return format(v, "0{0}b".format(width)) if width > 0 else format(v, "b")
+    return "0x" + format(v, "0{0}X".format(_hex_digits(width)))
+
+
 def _parse_hex_int(text):
     t = (text or "").strip()
     if not t:
