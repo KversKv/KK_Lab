@@ -29,7 +29,7 @@ from ui.pages.pmu.pmu_1811.constants import (
     COL_CANVAS_BG, COL_PANEL_BG, COL_CARD_BG, COL_BORDER, COL_BORDER_HOVER, COL_EMERALD,
     COL_EMERALD_SOFT, COL_TEXT, COL_TEXT_MUTED, FONT_MONO,
 )
-from ui.pages.pmu.pmu_1811.models import _default_modules
+from ui.pages.pmu.pmu_1811.models import _default_modules, get_pair_partner
 from ui.pages.pmu.pmu_1811.widgets import DiagramCanvas, PropertyPanel, ContextMenu
 
 logger = get_logger(__name__)
@@ -77,6 +77,7 @@ class Pmu1811UI(QWidget):
         root.setSpacing(0)
 
         root.addWidget(self._build_header())
+        root.addWidget(self._build_chip_config())
 
         body_container = QWidget(self)
         body = QHBoxLayout(body_container)
@@ -172,6 +173,49 @@ class Pmu1811UI(QWidget):
         self.check_btn.clicked.connect(self._on_check)
         h.addWidget(self.check_btn)
         return header
+
+    def _build_chip_config(self) -> QFrame:
+        """顶部 Chip Config 操作区: Auto / Force Normal / Force RC / Force Sleep。
+
+        功能留空, 后续实现; 当前点击仅记录一条 WARN 日志。
+        """
+        frame = QFrame(self)
+        frame.setStyleSheet(
+            f"QFrame {{ background:{COL_PANEL_BG}; border-bottom:1px solid {COL_BORDER}; }}"
+        )
+        lay = QHBoxLayout(frame)
+        lay.setContentsMargins(20, 8, 20, 8)
+        lay.setSpacing(8)
+
+        title = QLabel("Chip Config", frame)
+        title.setStyleSheet(
+            f"color:{COL_TEXT_MUTED}; font-size:11px; font-weight:700;"
+            f" letter-spacing:0.5px;"
+        )
+        lay.addWidget(title)
+        lay.addSpacing(8)
+
+        for name in ("Auto", "Force Normal", "Force RC", "Force Sleep"):
+            btn = QPushButton(name, frame)
+            btn.setObjectName("chipCfgBtn")
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setFocusPolicy(Qt.NoFocus)
+            btn.setStyleSheet(
+                f"QPushButton#chipCfgBtn {{ background:{COL_CARD_BG}; color:{COL_TEXT_MUTED};"
+                f" border:1px solid {COL_BORDER}; border-radius:6px;"
+                f" padding:5px 12px; font-size:11px; }}"
+                f"QPushButton#chipCfgBtn:hover {{ border:1px solid {COL_BORDER_HOVER};"
+                f" color:{COL_TEXT}; }}"
+            )
+            btn.clicked.connect(lambda _=False, n=name: self._on_chip_config(n))
+            lay.addWidget(btn)
+        lay.addStretch(1)
+        return frame
+
+    def _on_chip_config(self, name: str):
+        """Chip Config 按钮占位: 功能后续实现。"""
+        logger.debug("1811 PMU: Chip Config '%s' (未实现)", name)
+        self._log("WARN", f"Chip Config '{name}' 暂未实现")
 
     def _log(self, level: str, message: str):
         """追加一条 LOG 到执行日志面板 (level 用于上色, 如 STEP/INFO/WARN/ERROR/PASS)。"""
@@ -272,6 +316,61 @@ class Pmu1811UI(QWidget):
         self._cleanup_worker()
         self._log("PASS", f"{ldo_id} 写入完成")
 
+    # ---- 并联对偶使能互锁 ----
+    def _start_enable_write(self, mod_id: str, enabled: bool):
+        """使能写入入口: 处理 BUCK↔LDO 并联对偶的互斥使能。
+
+        开启某模块时, 若存在对偶伙伴, 则在同一 I2C 会话内先开自己再关对偶;
+        关闭某模块时不影响对偶 (用户可自由关闭)。
+        """
+        partner = get_pair_partner(mod_id)
+        if enabled and partner:
+            self._start_pair_write(mod_id, partner)
+        else:
+            self._start_write(mod_id, "enable", enabled)
+
+    def _start_pair_write(self, primary_id: str, partner_id: str):
+        """启动对偶互锁写入 (开主模块 + 关对偶), 一次 I2C 会话完成。"""
+        if not self._i2c_connected:
+            logger.debug("1811 PMU: 未连接, 仅本地更新 %s (含对偶 %s)",
+                         primary_id, partner_id)
+            self._apply_local_disable(partner_id)
+            return
+        if self._worker_thread is not None:
+            logger.warning("1811 PMU: 忙碌, 丢弃 %s/enable (对偶 %s)",
+                           primary_id, partner_id)
+            self._log("WARN", f"忙碌, 丢弃写入 {primary_id}/enable")
+            return
+        self._log("STEP", f"开启 {primary_id} 并关闭对偶 {partner_id} (互锁)")
+        from ui.pages.pmu.pmu_1811.workers import PairWriteWorker
+        self._worker = PairWriteWorker(
+            primary_id, partner_id, True,
+            dll_path=self._dll_path, speed_mode=self._speed_mode,
+        )
+        self._worker_thread = QThread()
+        self._worker.moveToThread(self._worker_thread)
+        self._worker.finished.connect(self._on_pair_write_done)
+        self._worker.error.connect(self._on_i2c_error)
+        self._worker.log.connect(self.execution_logs.append_log)
+        self._worker_thread.started.connect(self._worker.run)
+        self._worker_thread.start()
+
+    def _on_pair_write_done(self, primary_id: str, partner_id: str):
+        """对偶互锁写入完成: 同步本地状态 (关闭对偶) 并刷新 UI。"""
+        self._cleanup_worker()
+        self._apply_local_disable(partner_id)
+        self._log("PASS", f"{primary_id} 开启完成, 对偶 {partner_id} 已关闭 (互锁)")
+
+    def _apply_local_disable(self, mod_id: str):
+        """本地关闭某模块 (对偶互锁的副效果), 并刷新卡片与属性面板。"""
+        mod = self._modules.get(mod_id)
+        if mod is None:
+            return
+        mod.enabled = False
+        self.canvas.refresh_card(mod_id)
+        if mod_id == self._selected_id:
+            self.panel.load(mod)
+
     # ---- 选择 ----
     def _on_select(self, mod_id: str):
         if not mod_id:
@@ -298,7 +397,7 @@ class Pmu1811UI(QWidget):
         self.canvas.refresh_card(mod_id)
         if mod_id == self._selected_id:
             self.panel._refresh_i2c()
-        self._start_write(mod_id, "enable", enabled)
+        self._start_enable_write(mod_id, enabled)
 
     def _on_panel_mode(self, mod_id: str, mode: str):
         self.canvas.refresh_card(mod_id)
@@ -321,7 +420,7 @@ class Pmu1811UI(QWidget):
         self.canvas.refresh_card(mod_id)
         if mod_id == self._selected_id:
             self.panel.load(mod)
-        self._start_write(mod_id, "enable", mod.enabled)
+        self._start_enable_write(mod_id, mod.enabled)
 
     def _on_menu_mode(self, mod_id: str, mode: str):
         mod = self._modules[mod_id]

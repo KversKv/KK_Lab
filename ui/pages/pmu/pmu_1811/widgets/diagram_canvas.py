@@ -6,11 +6,12 @@ from PySide6.QtGui import QPainter, QColor, QPen, QFont
 from PySide6.QtWidgets import QWidget
 
 from ui.pages.pmu.pmu_1811.constants import (
-    COL_CANVAS_BG, COL_AMBER, COL_AMBER_LINE, COL_BLUE, COL_BLUE_LINE, FONT_MONO,
+    COL_CANVAS_BG, COL_AMBER, COL_AMBER_LINE, COL_BLUE, COL_BLUE_LINE, COL_PAIR_LINE,
+    FONT_MONO,
     VSYS_X, CARD_X_L1, CARD_X_L2, CARD_W, CARD_H, ROW_H, TOP_PAD,
     SUB_BUS_X, BUS_PILL_W, BUS_PILL_H, BUS_PILL_X,
 )
-from ui.pages.pmu.pmu_1811.models import _LAYOUT_ROWS
+from ui.pages.pmu.pmu_1811.models import _LAYOUT_ROWS, get_pair_partner
 from ui.pages.pmu.pmu_1811.widgets.module_card import ModuleCard
 
 
@@ -31,11 +32,6 @@ class DiagramCanvas(QWidget):
         self.setPalette(pal)
 
         self._build()
-        n = len(_LAYOUT_ROWS)
-        self.setFixedSize(
-            CARD_X_L2 + CARD_W + 36,
-            TOP_PAD * 2 + n * ROW_H,
-        )
 
     def _build(self):
         for i, row in enumerate(_LAYOUT_ROWS):
@@ -51,6 +47,12 @@ class DiagramCanvas(QWidget):
                 card.gear_clicked.connect(self.module_right_clicked.emit)
                 card.voltage_stepped.connect(self.voltage_stepped.emit)
                 self._cards[row.id] = card
+
+        n = len(_LAYOUT_ROWS)
+        self.setFixedSize(
+            CARD_X_L2 + CARD_W + 36,
+            TOP_PAD * 2 + n * ROW_H,
+        )
 
     def get_card(self, mod_id: str):
         return self._cards.get(mod_id)
@@ -75,6 +77,13 @@ class DiagramCanvas(QWidget):
             if pred(r):
                 return i
         return -1
+
+    def _find_row(self, mod_id: str):
+        """按模块 id 查找 (LayoutRow, y_center), 无则返回 (None, None)。"""
+        for r, yc in self._rows:
+            if r.kind == "module" and r.id == mod_id:
+                return r, yc
+        return None, None
 
     def paintEvent(self, e):
         p = QPainter(self)
@@ -107,6 +116,9 @@ class DiagramCanvas(QWidget):
         self._draw_subtree(p, "vdd_l5")
         self._draw_subtree(p, "BUCK_01")
 
+        # 并联对偶输出短接线（紫色）
+        self._draw_pairs(p)
+
         # 母线药丸
         p.setFont(QFont(FONT_MONO, 9, QFont.Bold))
         for r, yc in self._rows:
@@ -117,6 +129,33 @@ class DiagramCanvas(QWidget):
                 p.drawRoundedRect(rect, 8, 8)
                 p.setPen(QColor(COL_BLUE))
                 p.drawText(rect, Qt.AlignCenter, r.bus_name)
+
+    def _draw_pairs(self, p):
+        """绘制 BUCK↔LDO 并联对偶的输出短接线 (紫色)。
+
+        两个对偶卡片同列 (CARD_X_L1), 输出端用 bracket 短接:
+        各自从卡片右边引出一段短横线, 再用竖线连接, 表示两路并联到同一轨。
+        两卡片各自从 VSYS 取电 (琥珀横线)。
+        """
+        drawn = set()
+        pen = QPen(QColor(COL_PAIR_LINE), 2)
+        pen.setCapStyle(Qt.RoundCap)
+        p.setPen(pen)
+        bx = CARD_X_L1 + CARD_W + 14   # 短接竖线 x (卡片右边留 14px 间距)
+        for r, yc in self._rows:
+            if r.kind != "module" or not r.pair:
+                continue
+            key = tuple(sorted((r.id, r.pair)))
+            if key in drawn:
+                continue
+            drawn.add(key)
+            _, partner_yc = self._find_row(r.pair)
+            if partner_yc is None:
+                continue
+            # 两卡片右边各引短横线 → 竖线短接
+            p.drawLine(CARD_X_L1 + CARD_W, yc, bx, yc)
+            p.drawLine(bx, yc, bx, partner_yc)
+            p.drawLine(bx, partner_yc, CARD_X_L1 + CARD_W, partner_yc)
 
     def _draw_subtree(self, p, parent_id: str):
         parent_idx = self._row_index(lambda r: (r.kind == "bus" and r.bus_name == parent_id) or
@@ -129,6 +168,7 @@ class DiagramCanvas(QWidget):
             return
         _, p_yc = self._rows[parent_idx]
         last_yc = children[-1][2]
+        start_yc = p_yc   # 子母线竖线起点 y (有对偶时取两卡片中点)
 
         pen = QPen(QColor(COL_BLUE_LINE), 2)
         pen.setCapStyle(Qt.RoundCap)
@@ -138,11 +178,19 @@ class DiagramCanvas(QWidget):
         if parent_id in ("vdd_l14_15", "vdd_l5"):
             p.drawLine(BUS_PILL_X + BUS_PILL_W, p_yc, SUB_BUS_X, p_yc)
         else:
-            # 级联：从父卡片右边引出
-            p.drawLine(CARD_X_L1 + CARD_W, p_yc, SUB_BUS_X, p_yc)
+            # 级联：从父卡片右边引出; 若父有对偶, 从对偶短接竖线中点引出
+            # (避免与对偶短接横线重叠在卡片右边)
+            start_x = CARD_X_L1 + CARD_W
+            partner_id = get_pair_partner(parent_id)
+            if partner_id:
+                _, partner_yc = self._find_row(partner_id)
+                if partner_yc is not None:
+                    start_x = CARD_X_L1 + CARD_W + 14
+                    start_yc = (p_yc + partner_yc) // 2
+            p.drawLine(start_x, start_yc, SUB_BUS_X, start_yc)
 
         # 子母线竖线
-        p.drawLine(SUB_BUS_X, p_yc, SUB_BUS_X, last_yc)
+        p.drawLine(SUB_BUS_X, start_yc, SUB_BUS_X, last_yc)
         # 各子节点横线
         for _, r, yc in children:
             p.drawLine(SUB_BUS_X, yc, CARD_X_L2, yc)

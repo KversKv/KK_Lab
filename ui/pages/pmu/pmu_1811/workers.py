@@ -166,3 +166,63 @@ class LdoWriteWorker(QObject):
             self.error.emit(str(e))
         finally:
             ctrl.disconnect()
+
+
+# ---------------------------------------------------------------------------
+# 并联对偶使能写入 (BUCK↔LDO 输出短接, 互斥使能)
+# ---------------------------------------------------------------------------
+class PairWriteWorker(QObject):
+    """一次 I2C 会话内完成"开启主模块 + 关闭对偶模块"的互锁写入。
+
+    用于 BUCK↔LDO 输出短接轨: 用户开启其中一路时, 必须关闭另一路,
+    避免两路同时驱动同一轨造成 contention。先开主模块, 再关对偶。
+    """
+
+    finished = Signal(str, str)   # (primary_id, partner_id)
+    error = Signal(str)
+    log = Signal(str)
+
+    def __init__(self, primary_id: str, partner_id: str, primary_enable: bool,
+                 dll_path=None, speed_mode=None):
+        super().__init__()
+        self._primary = primary_id
+        self._partner = partner_id
+        self._enable = primary_enable
+        self._dll = dll_path
+        self._speed = speed_mode
+
+    def _make_log_cb(self):
+        def _cb(level: str, msg: str):
+            self.log.emit(f"[{level}] {msg}")
+        return _cb
+
+    def run(self):
+        from core.bes1811_pmu_controller import Bes1811PmuController
+        from chips.bes1811_pmu import is_buck
+        ctrl = Bes1811PmuController(
+            dll_path=self._dll, speed_mode=self._speed,
+            log_callback=self._make_log_cb(),
+        )
+        try:
+            if not ctrl.connect():
+                self.error.emit("I2C 接口初始化失败")
+                return
+            # 1) 先操作主模块 (按 is_buck 派发)
+            self._apply(ctrl, self._primary, self._enable, is_buck)
+            # 2) 若是"开启"主模块, 则关闭对偶 (互锁); 关闭主模块时不动对偶
+            if self._enable and self._partner:
+                self._apply(ctrl, self._partner, False, is_buck)
+            self.finished.emit(self._primary, self._partner)
+        except Exception as e:
+            logger.error("1811 PMU 对偶写入 %s 失败: %s",
+                         self._primary, e, exc_info=True)
+            self.error.emit(str(e))
+        finally:
+            ctrl.disconnect()
+
+    @staticmethod
+    def _apply(ctrl, mod_id: str, enable: bool, is_buck_fn):
+        if is_buck_fn(mod_id):
+            ctrl.set_buck_enabled(mod_id, enable)
+        else:
+            ctrl.set_ldo_enabled(mod_id, enable)

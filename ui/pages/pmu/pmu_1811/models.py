@@ -52,21 +52,40 @@ class LayoutRow:
     level: int
     input: str
     bus_name: str = ""
+    pair: str = ""           # 并联对偶的伙伴模块 ID (输出短接, 互斥使能)
+    pair_layout: str = ""    # "vertical" (相邻行上下, 输出端短接)
+
+
+# 输出并联对偶表: BUCK ↔ LDO 同一轨冗余, 使能互斥 (开一个则关另一个)
+_PAIRS = {
+    "BUCK_01": "LDO_01", "LDO_01": "BUCK_01",
+    "BUCK_02": "LDO_02", "LDO_02": "BUCK_02",
+    "BUCK_03": "LDO_03", "LDO_03": "BUCK_03",
+    "BUCK_06": "LDO_06", "LDO_06": "BUCK_06",
+}
+
+
+def get_pair_partner(mod_id: str) -> str:
+    """返回模块的并联对偶伙伴 ID, 无则返回空串。"""
+    return _PAIRS.get(mod_id, "")
 
 
 _LAYOUT_ROWS = [
-    # Column 1: 直连 VSYS (按数字顺序: BUCK_01-06, LDO_01/02/03/06/07/08/09/10/11)
+    # 并联对偶组 1: BUCK_01 / LDO_01 (上下相邻并联, 输出短接)
     LayoutRow("module", "BUCK_01", 1, "VSYS"),
+    LayoutRow("module", "LDO_01", 1, "VSYS", pair="BUCK_01", pair_layout="vertical"),
     LayoutRow("module", "LDO_12", 2, "BUCK_01"),
+    # 并联对偶组 2: BUCK_02 / LDO_02 (上下相邻并联)
     LayoutRow("module", "BUCK_02", 1, "VSYS"),
+    LayoutRow("module", "LDO_02", 1, "VSYS", pair="BUCK_02", pair_layout="vertical"),
+    # 并联对偶组 3: BUCK_03 / LDO_03 (上下相邻并联)
     LayoutRow("module", "BUCK_03", 1, "VSYS"),
+    LayoutRow("module", "LDO_03", 1, "VSYS", pair="BUCK_03", pair_layout="vertical"),
     LayoutRow("module", "BUCK_04", 1, "VSYS"),
     LayoutRow("module", "BUCK_05", 1, "VSYS"),
+    # 并联对偶组 6: BUCK_06 / LDO_06 (相邻行垂直靠近, 输出短接)
     LayoutRow("module", "BUCK_06", 1, "VSYS"),
-    LayoutRow("module", "LDO_01", 1, "VSYS"),
-    LayoutRow("module", "LDO_02", 1, "VSYS"),
-    LayoutRow("module", "LDO_03", 1, "VSYS"),
-    LayoutRow("module", "LDO_06", 1, "VSYS"),
+    LayoutRow("module", "LDO_06", 1, "VSYS", pair="BUCK_06", pair_layout="vertical"),
     LayoutRow("module", "LDO_07", 1, "VSYS"),
     LayoutRow("module", "LDO_08", 1, "VSYS"),
     LayoutRow("module", "LDO_09", 1, "VSYS"),
