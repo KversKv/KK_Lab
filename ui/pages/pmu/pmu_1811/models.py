@@ -25,12 +25,14 @@ class PmuModule:
     type: str  # "LDO" / "BUCK"
     enabled: bool = True
     mode: str = "Normal"
-    voltage: float = 1.8
+    voltage: float = 1.8                # 唤醒模式电压 (vbit_normal)
     min_voltage: float = 0.5
     max_voltage: float = 3.3
     step: float = 0.05
     input: str = "VSYS"
     controllable: bool = True   # 是否支持 I2C 寄存器控制
+    voltage_dsleep: float = 1.8         # 睡眠模式电压 (vbit_dsleep)
+    voltage_rc: float = 1.8             # RC 模式电压 (vbit_rc)
 
     @property
     def modes(self):
@@ -126,5 +128,8 @@ def _default_modules() -> dict:
             step=step,
             input=row.input,
             controllable=controllable,
+            # dsleep / rc 默认与 normal 一致 (UI 初始未读 DUT 时显示)
+            voltage_dsleep=round(default_v, 4),
+            voltage_rc=round(default_v, 4),
         )
     return mods

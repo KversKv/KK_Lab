@@ -122,6 +122,8 @@ class Pmu1811UI(QWidget):
         self.panel.enable_changed.connect(self._on_panel_enable)
         self.panel.mode_changed.connect(self._on_panel_mode)
         self.panel.voltage_changed.connect(self._on_panel_voltage)
+        self.panel.voltage_dsleep_changed.connect(self._on_panel_voltage_dsleep)
+        self.panel.voltage_rc_changed.connect(self._on_panel_voltage_rc)
         self.menu.enable_toggled.connect(self._on_menu_enable)
         self.menu.mode_changed.connect(self._on_menu_mode)
 
@@ -199,7 +201,7 @@ class Pmu1811UI(QWidget):
         """读取全部 LDO + BUCK 完成, 刷新 UI。
 
         ``states`` 的值可能是 ``LdoState`` (含 lp_dr/res_sel_dr) 或 ``BuckState``,
-        两者都有 ``enabled`` / ``mode`` / ``voltage`` 字段, 这里只取这三个。
+        两者都有 ``enabled`` / ``mode`` / ``voltage*`` 字段。
         """
         self._cleanup_worker()
         self._i2c_connected = True
@@ -211,6 +213,10 @@ class Pmu1811UI(QWidget):
             mod.mode = st.mode if st.mode in ("Normal", "LP") else "Normal"
             if st.voltage is not None:
                 mod.voltage = st.voltage
+            if getattr(st, "voltage_dsleep", None) is not None:
+                mod.voltage_dsleep = st.voltage_dsleep
+            if getattr(st, "voltage_rc", None) is not None:
+                mod.voltage_rc = st.voltage_rc
             self.canvas.refresh_card(ldo_id)
         if self._selected_id and self._selected_id in self._modules:
             self.panel.load(self._modules[self._selected_id])
@@ -301,6 +307,13 @@ class Pmu1811UI(QWidget):
     def _on_panel_voltage(self, mod_id: str, v: float):
         self.canvas.refresh_card(mod_id)
         self._start_write(mod_id, "voltage", v)
+
+    def _on_panel_voltage_dsleep(self, mod_id: str, v: float):
+        # dsleep / rc 电压不影响卡片显示 (卡片只显示 normal), 仅写入 DUT
+        self._start_write(mod_id, "voltage_dsleep", v)
+
+    def _on_panel_voltage_rc(self, mod_id: str, v: float):
+        self._start_write(mod_id, "voltage_rc", v)
 
     def _on_menu_enable(self, mod_id: str):
         mod = self._modules[mod_id]

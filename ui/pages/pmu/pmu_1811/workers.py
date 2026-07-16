@@ -104,7 +104,7 @@ class LdoWriteWorker(QObject):
     def __init__(self, ldo_id, action, value, dll_path=None, speed_mode=None):
         """
         Args:
-            action: "enable" / "mode" / "voltage"
+            action: "enable" / "mode" / "voltage" / "voltage_dsleep" / "voltage_rc"
             value:  bool / str / float
         """
         super().__init__()
@@ -136,6 +136,10 @@ class LdoWriteWorker(QObject):
                     ctrl.set_buck_enabled(self._ldo_id, bool(self._value))
                 elif self._action == "voltage":
                     ctrl.set_buck_voltage(self._ldo_id, float(self._value))
+                elif self._action == "voltage_dsleep":
+                    ctrl.set_buck_vbit_dsleep(self._ldo_id, float(self._value))
+                elif self._action == "voltage_rc":
+                    ctrl.set_buck_vbit_rc(self._ldo_id, float(self._value))
                 elif self._action == "mode":
                     # BUCK 模式控制 (Normal/LP/ULP) 后续补全, 当前忽略
                     logger.warning("1811 PMU: BUCK 模式切换尚未实现, 忽略 %s/mode",
@@ -149,6 +153,10 @@ class LdoWriteWorker(QObject):
                     ctrl.set_ldo_mode(self._ldo_id, str(self._value))
                 elif self._action == "voltage":
                     ctrl.set_ldo_voltage(self._ldo_id, float(self._value))
+                elif self._action == "voltage_dsleep":
+                    ctrl.set_ldo_vbit_dsleep(self._ldo_id, float(self._value))
+                elif self._action == "voltage_rc":
+                    ctrl.set_ldo_vbit_rc(self._ldo_id, float(self._value))
                 else:
                     raise ValueError(f"未知操作: {self._action}")
             self.finished.emit(self._ldo_id)

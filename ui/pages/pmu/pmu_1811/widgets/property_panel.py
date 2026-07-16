@@ -21,6 +21,8 @@ class PropertyPanel(QFrame):
     enable_changed = Signal(str, bool)
     mode_changed = Signal(str, str)
     voltage_changed = Signal(str, float)
+    voltage_dsleep_changed = Signal(str, float)
+    voltage_rc_changed = Signal(str, float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -90,40 +92,26 @@ class PropertyPanel(QFrame):
         self.mode_layout.setSpacing(6)
         root.addWidget(self.mode_row)
 
-        # Voltage
-        root.addWidget(self._section_label("Voltage (V)"))
-        v_card = QFrame(self)
-        v_card.setObjectName("sectionCard")
-        vl = QVBoxLayout(v_card)
-        vl.setContentsMargins(12, 10, 12, 12)
-        vl.setSpacing(8)
+        # Voltage - Normal (唤醒模式)
+        root.addWidget(self._section_label("Voltage - Normal (V)"))
+        (
+            self.spin, self.slider,
+            self.min_lbl, self.max_lbl,
+        ) = self._build_voltage_card(root, self._on_spin, self._on_slider)
 
-        top = QHBoxLayout()
-        top.addWidget(self._muted_label("Target (V)"))
-        top.addStretch(1)
-        self.spin = QDoubleSpinBox(self)
-        self.spin.setDecimals(3)
-        self.spin.setSingleStep(0.05)
-        self.spin.setMinimumWidth(90)
-        self.spin.setAlignment(Qt.AlignRight)
-        self.spin.valueChanged.connect(self._on_spin)
-        top.addWidget(self.spin)
-        vl.addLayout(top)
+        # Voltage - Deep Sleep (睡眠模式)
+        root.addWidget(self._section_label("Voltage - Deep Sleep (V)"))
+        (
+            self.spin_dsleep, self.slider_dsleep,
+            self.min_lbl_dsleep, self.max_lbl_dsleep,
+        ) = self._build_voltage_card(root, self._on_spin_dsleep, self._on_slider_dsleep)
 
-        self.slider = QSlider(Qt.Horizontal, self)
-        self.slider.setFocusPolicy(Qt.NoFocus)
-        self.slider.valueChanged.connect(self._on_slider)
-        vl.addWidget(self.slider)
-
-        rng = QHBoxLayout()
-        self.min_lbl = self._muted_label("—")
-        self.max_lbl = self._muted_label("—")
-        self.max_lbl.setAlignment(Qt.AlignRight)
-        rng.addWidget(self.min_lbl)
-        rng.addStretch(1)
-        rng.addWidget(self.max_lbl)
-        vl.addLayout(rng)
-        root.addWidget(v_card)
+        # Voltage - RC (RC 模式)
+        root.addWidget(self._section_label("Voltage - RC (V)"))
+        (
+            self.spin_rc, self.slider_rc,
+            self.min_lbl_rc, self.max_lbl_rc,
+        ) = self._build_voltage_card(root, self._on_spin_rc, self._on_slider_rc)
 
         # I2C
         root.addWidget(self._section_label("I2C Registers"))
@@ -172,6 +160,49 @@ class PropertyPanel(QFrame):
         lbl.setStyleSheet(f"color:{COL_TEXT_MUTED}; font-size:12px;")
         return lbl
 
+    def _build_voltage_card(self, root_layout, spin_cb, slider_cb):
+        """构造一个电压调节卡片 (Normal / Deep Sleep / RC 通用)。
+
+        Returns:
+            (spin, slider, min_lbl, max_lbl) — 调用方持有引用以便 load() 时同步状态。
+        """
+        v_card = QFrame(self)
+        v_card.setObjectName("sectionCard")
+        vl = QVBoxLayout(v_card)
+        vl.setContentsMargins(12, 10, 12, 12)
+        vl.setSpacing(8)
+
+        top = QHBoxLayout()
+        top.addWidget(self._muted_label("Target (V)"))
+        top.addStretch(1)
+        spin = QDoubleSpinBox(self)
+        spin.setDecimals(3)
+        spin.setSingleStep(0.05)
+        spin.setMinimumWidth(90)
+        spin.setAlignment(Qt.AlignRight)
+        spin.valueChanged.connect(spin_cb)
+        top.addWidget(spin)
+        vl.addLayout(top)
+
+        slider = QSlider(Qt.Horizontal, self)
+        slider.setFocusPolicy(Qt.NoFocus)
+        slider.valueChanged.connect(slider_cb)
+        vl.addWidget(slider)
+
+        rng = QHBoxLayout()
+        min_lbl = self._muted_label("—")
+        max_lbl = self._muted_label("—")
+        max_lbl.setAlignment(Qt.AlignRight)
+        rng.addWidget(min_lbl)
+        rng.addStretch(1)
+        rng.addWidget(max_lbl)
+        vl.addLayout(rng)
+        root_layout.addWidget(v_card)
+
+        for child in v_card.findChildren(QFrame):
+            child.setAttribute(Qt.WA_StyledBackground, True)
+        return spin, slider, min_lbl, max_lbl
+
     def _rebuild_mode_buttons(self):
         for btn in list(self.mode_group.buttons()):
             self.mode_group.removeButton(btn)
@@ -199,22 +230,35 @@ class PropertyPanel(QFrame):
         self.toggle.set_checked(mod.enabled)
         self._rebuild_mode_buttons()
 
-        self.spin.setRange(mod.min_voltage, mod.max_voltage)
-        self.spin.setSingleStep(mod.step)
-        self.spin.setDecimals(3)
-        self.spin.setValue(mod.voltage)
+        # 三套电压控件共用同一 range/step (来自 vbit 查找表, 三档位完全一致)
+        self._sync_voltage_widgets(self.spin, self.slider, self.min_lbl, self.max_lbl,
+                                   mod.voltage, mod)
+        self._sync_voltage_widgets(self.spin_dsleep, self.slider_dsleep,
+                                   self.min_lbl_dsleep, self.max_lbl_dsleep,
+                                   mod.voltage_dsleep, mod)
+        self._sync_voltage_widgets(self.spin_rc, self.slider_rc,
+                                   self.min_lbl_rc, self.max_lbl_rc,
+                                   mod.voltage_rc, mod)
 
-        smin = int(round(mod.min_voltage / mod.step))
-        smax = int(round(mod.max_voltage / mod.step))
-        sval = int(round(mod.voltage / mod.step))
-        self.slider.setRange(smin, smax)
-        self.slider.setValue(sval)
-
-        self.min_lbl.setText(f"{mod.min_voltage:.3f} V")
-        self.max_lbl.setText(f"{mod.max_voltage:.3f} V")
         self.conn_lbl.setText(f"Input Source: {mod.input}")
         self._syncing = False
         self._refresh_i2c()
+
+    def _sync_voltage_widgets(self, spin, slider, min_lbl, max_lbl, voltage, mod):
+        """把 PmuModule 的某档电压同步到对应的 spin/slider/label。"""
+        spin.setRange(mod.min_voltage, mod.max_voltage)
+        spin.setSingleStep(mod.step)
+        spin.setDecimals(3)
+        spin.setValue(voltage)
+
+        smin = int(round(mod.min_voltage / mod.step))
+        smax = int(round(mod.max_voltage / mod.step))
+        sval = int(round(voltage / mod.step))
+        slider.setRange(smin, smax)
+        slider.setValue(sval)
+
+        min_lbl.setText(f"{mod.min_voltage:.3f} V")
+        max_lbl.setText(f"{mod.max_voltage:.3f} V")
 
     def _refresh_i2c(self):
         if self._mod is None:
@@ -222,12 +266,13 @@ class PropertyPanel(QFrame):
         rm = self._mod.reg_map
         if rm is not None:
             self.addr_lbl.setText(
-                f"Ctrl: 0x{rm.pu.reg_addr:03X}  Vbit: 0x{rm.vbit_normal.reg_addr:03X}  "
-                f"PU_Status: 0x{rm.pu_status.reg_addr:03X}[{rm.pu_status.high_bit}:{rm.pu_status.low_bit}]"
+                f"Ctrl: 0x{rm.pu.reg_addr:03X}  PU_Status: 0x{rm.pu_status.reg_addr:03X}"
+                f"[{rm.pu_status.high_bit}:{rm.pu_status.low_bit}]"
             )
             self.value_lbl.setText(
-                f"pu={int(self._mod.enabled)}  mode={self._mod.mode}  "
-                f"vbit_n=?  (需读取)"
+                f"vbit_n@0x{rm.vbit_normal.reg_addr:03X}  "
+                f"vbit_d@0x{rm.vbit_dsleep.reg_addr:03X}  "
+                f"vbit_rc@0x{rm.vbit_rc.reg_addr:03X}"
             )
         else:
             self.addr_lbl.setText("Address: — (无寄存器映射)")
@@ -250,29 +295,55 @@ class PropertyPanel(QFrame):
         self.mode_changed.emit(self._mod.id, mode)
 
     def _on_spin(self, v: float):
+        self._handle_spin(self.spin, self.slider, v, "voltage",
+                          self._mod.voltage, self.voltage_changed)
+
+    def _on_slider(self, val: int):
+        self._handle_slider(self.spin, self.slider, val, "voltage",
+                            self.voltage_changed)
+
+    def _on_spin_dsleep(self, v: float):
+        self._handle_spin(self.spin_dsleep, self.slider_dsleep, v, "voltage_dsleep",
+                          self._mod.voltage_dsleep, self.voltage_dsleep_changed)
+
+    def _on_slider_dsleep(self, val: int):
+        self._handle_slider(self.spin_dsleep, self.slider_dsleep, val, "voltage_dsleep",
+                            self.voltage_dsleep_changed)
+
+    def _on_spin_rc(self, v: float):
+        self._handle_spin(self.spin_rc, self.slider_rc, v, "voltage_rc",
+                          self._mod.voltage_rc, self.voltage_rc_changed)
+
+    def _on_slider_rc(self, val: int):
+        self._handle_slider(self.spin_rc, self.slider_rc, val, "voltage_rc",
+                            self.voltage_rc_changed)
+
+    def _handle_spin(self, spin, slider, v: float, attr: str, current: float, signal):
+        """通用 spin 处理: 临近吸附 + 同步 slider + 更新 mod + emit 信号。"""
         if self._mod is None or self._syncing:
             return
         # 临近吸附: 把输入值对齐到最近 step 档位
         snapped = align_to_step(v, self._mod.step)
-        if abs(snapped - v) > 1e-9 and abs(snapped - self._mod.voltage) > 1e-9:
+        if abs(snapped - v) > 1e-9 and abs(snapped - current) > 1e-9:
             self._syncing = True
-            self.spin.setValue(snapped)
+            spin.setValue(snapped)
             self._syncing = False
             v = snapped
         self._syncing = True
-        self.slider.setValue(int(round(v / self._mod.step)))
+        slider.setValue(int(round(v / self._mod.step)))
         self._syncing = False
-        self._mod.voltage = v
+        setattr(self._mod, attr, v)
         self._refresh_i2c()
-        self.voltage_changed.emit(self._mod.id, v)
+        signal.emit(self._mod.id, v)
 
-    def _on_slider(self, val: int):
+    def _handle_slider(self, spin, slider, val: int, attr: str, signal):
+        """通用 slider 处理: 同步 spin + 更新 mod + emit 信号。"""
         if self._mod is None or self._syncing:
             return
         v = val * self._mod.step
         self._syncing = True
-        self.spin.setValue(v)
+        spin.setValue(v)
         self._syncing = False
-        self._mod.voltage = v
+        setattr(self._mod, attr, v)
         self._refresh_i2c()
-        self.voltage_changed.emit(self._mod.id, v)
+        signal.emit(self._mod.id, v)
