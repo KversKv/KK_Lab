@@ -40,7 +40,8 @@ class LdoReadAllWorker(QObject):
             if not ctrl.connect():
                 self.error.emit("I2C 接口初始化失败 (DLL 加载或设备打开失败)")
                 return
-            states = ctrl.read_all_ldos()
+            # 同时读取全部 LDO + BUCK 状态, 合并返回 {id: LdoState|BuckState}
+            states = ctrl.read_all_modules()
             self.finished.emit(states)
         except Exception as e:
             logger.error("1811 PMU 读取失败: %s", e, exc_info=True)
@@ -70,6 +71,7 @@ class LdoReadOneWorker(QObject):
 
     def run(self):
         from core.bes1811_pmu_controller import Bes1811PmuController
+        from chips.bes1811_pmu import is_buck
         ctrl = Bes1811PmuController(
             dll_path=self._dll, speed_mode=self._speed,
             log_callback=self._make_log_cb(),
@@ -78,7 +80,11 @@ class LdoReadOneWorker(QObject):
             if not ctrl.connect():
                 self.error.emit("I2C 接口初始化失败")
                 return
-            st = ctrl.read_ldo(self._ldo_id)
+            # 按 ID 类型派发: BUCK 走 read_buck, LDO 走 read_ldo
+            if is_buck(self._ldo_id):
+                st = ctrl.read_buck(self._ldo_id)
+            else:
+                st = ctrl.read_ldo(self._ldo_id)
             self.finished.emit(st)
         except Exception as e:
             logger.error("1811 PMU 读取 %s 失败: %s", self._ldo_id, e, exc_info=True)
@@ -115,6 +121,7 @@ class LdoWriteWorker(QObject):
 
     def run(self):
         from core.bes1811_pmu_controller import Bes1811PmuController
+        from chips.bes1811_pmu import is_buck
         ctrl = Bes1811PmuController(
             dll_path=self._dll, speed_mode=self._speed,
             log_callback=self._make_log_cb(),
@@ -123,14 +130,27 @@ class LdoWriteWorker(QObject):
             if not ctrl.connect():
                 self.error.emit("I2C 接口初始化失败")
                 return
-            if self._action == "enable":
-                ctrl.set_ldo_enabled(self._ldo_id, bool(self._value))
-            elif self._action == "mode":
-                ctrl.set_ldo_mode(self._ldo_id, str(self._value))
-            elif self._action == "voltage":
-                ctrl.set_ldo_voltage(self._ldo_id, float(self._value))
+            # 按 ID 类型派发: BUCK 走 set_buck_*, LDO 走 set_ldo_*
+            if is_buck(self._ldo_id):
+                if self._action == "enable":
+                    ctrl.set_buck_enabled(self._ldo_id, bool(self._value))
+                elif self._action == "voltage":
+                    ctrl.set_buck_voltage(self._ldo_id, float(self._value))
+                elif self._action == "mode":
+                    # BUCK 模式控制 (Normal/LP/ULP) 后续补全, 当前忽略
+                    logger.warning("1811 PMU: BUCK 模式切换尚未实现, 忽略 %s/mode",
+                                   self._ldo_id)
+                else:
+                    raise ValueError(f"未知操作: {self._action}")
             else:
-                raise ValueError(f"未知操作: {self._action}")
+                if self._action == "enable":
+                    ctrl.set_ldo_enabled(self._ldo_id, bool(self._value))
+                elif self._action == "mode":
+                    ctrl.set_ldo_mode(self._ldo_id, str(self._value))
+                elif self._action == "voltage":
+                    ctrl.set_ldo_voltage(self._ldo_id, float(self._value))
+                else:
+                    raise ValueError(f"未知操作: {self._action}")
             self.finished.emit(self._ldo_id)
         except Exception as e:
             logger.error("1811 PMU 写入 %s/%s 失败: %s",

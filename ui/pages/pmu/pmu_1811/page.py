@@ -176,12 +176,12 @@ class Pmu1811UI(QWidget):
         self.execution_logs.append_log(f"[{level}] {message}")
 
     def _on_check(self):
-        """Check 按钮: 读取所有 LDO 状态并刷新 UI。"""
+        """Check 按钮: 读取所有 LDO + BUCK 状态并刷新 UI。"""
         if self._worker_thread is not None:
             logger.warning("1811 PMU: 上一次操作尚未完成")
             self._log("WARN", "上一次操作尚未完成, 请稍候")
             return
-        self._log("STEP", "开始读取全部 LDO 状态 (I2C 0x17)...")
+        self._log("STEP", "开始读取全部 LDO + BUCK 状态 (I2C 0x17)...")
         self.check_btn.setEnabled(False)
         self.check_btn.setText("Reading...")
         from ui.pages.pmu.pmu_1811.workers import LdoReadAllWorker
@@ -196,7 +196,11 @@ class Pmu1811UI(QWidget):
         self._worker_thread.start()
 
     def _on_read_all_done(self, states: dict):
-        """读取全部 LDO 完成, 刷新 UI。"""
+        """读取全部 LDO + BUCK 完成, 刷新 UI。
+
+        ``states`` 的值可能是 ``LdoState`` (含 lp_dr/res_sel_dr) 或 ``BuckState``,
+        两者都有 ``enabled`` / ``mode`` / ``voltage`` 字段, 这里只取这三个。
+        """
         self._cleanup_worker()
         self._i2c_connected = True
         for ldo_id, st in states.items():
@@ -210,9 +214,9 @@ class Pmu1811UI(QWidget):
             self.canvas.refresh_card(ldo_id)
         if self._selected_id and self._selected_id in self._modules:
             self.panel.load(self._modules[self._selected_id])
-        logger.info("1811 PMU: 读取完成, %d 个 LDO", len(states))
+        logger.info("1811 PMU: 读取完成, %d 个模块", len(states))
         on_cnt = sum(1 for s in states.values() if s.enabled)
-        self._log("PASS", f"读取完成: {len(states)} 个 LDO, {on_cnt} 个已开启")
+        self._log("PASS", f"读取完成: {len(states)} 个模块, {on_cnt} 个已开启")
 
     def _on_i2c_error(self, msg: str):
         """I2C 操作出错。"""

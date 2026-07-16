@@ -10,8 +10,8 @@
 from dataclasses import dataclass
 
 from chips.bes1811_pmu import (
-    get_voltage_range, get_reg_map, is_ldo_controllable,
-    get_ldo_step, align_to_step, snap_range_to_step,
+    get_voltage_range, get_reg_map, is_module_controllable,
+    get_module_step, align_to_step, snap_range_to_step,
 )
 
 
@@ -89,7 +89,8 @@ def _default_modules() -> dict:
         if row.kind != "module":
             continue
         is_buck = row.id in buck_ids
-        controllable = is_ldo_controllable(row.id)
+        # 统一通过 is_module_controllable 同时识别 LDO 和 BUCK
+        controllable = is_module_controllable(row.id)
         # 从芯片数据获取实际电压范围
         v_min, v_max = (None, None)
         if controllable:
@@ -100,7 +101,7 @@ def _default_modules() -> dict:
         # 取真实平均 step; 无表回退 0.01
         step = 0.01
         if controllable:
-            s = get_ldo_step(row.id)
+            s = get_module_step(row.id)
             if s is not None and s > 0:
                 step = s
                 # 把 [v_min, v_max] 对齐到 step 整数倍 (min 向下, max 向上)

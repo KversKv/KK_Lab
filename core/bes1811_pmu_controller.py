@@ -13,8 +13,10 @@ from log_config import get_logger
 from chips.bes1811_pmu import (
     BitField, LdoRegMap,
     LDO_REG_MAPS, LDO_IDS,
+    BUCK_REG_MAPS, BUCK_IDS,
     I2C_DEVICE_ADDR, I2C_WIDTH,
     vbit_to_voltage, voltage_to_vbit, get_voltage_range, get_reg_map,
+    is_buck,
 )
 
 logger = get_logger(__name__)
@@ -42,6 +44,27 @@ class LdoState:
     vbit_dsleep: int            # 睡眠电压控制字
     vbit_rc: int                # RC 电压控制字
     res_sel_dr: int             # 电压调整生效位
+    voltage: Optional[float]    # 当前唤醒模式电压 (V), 由 vbit_normal 查表得到
+
+
+@dataclass
+class BuckState:
+    """读取到的 BUCK 实时状态。
+
+    与 ``LdoState`` 的差异: 无 ``lp_dr`` (BUCK 寄存器无 lp/lp_dr 字段);
+    ``res_sel_dr`` 与 LDO 一样存在 (BUCK_01~06 在 0x2F0[0..5]), 但此处未单独读出
+    (UI 不展示); ``mode`` 当前固定为 ``"Normal"`` (BUCK 模式切换 Normal/LP/ULP 后续补全)。
+    UI 侧 (``page.py._on_read_all_done``) 仅访问 ``enabled`` / ``mode`` / ``voltage``
+    三个字段, 因此 ``LdoState`` 与 ``BuckState`` 可互换使用。
+    """
+    ldo_id: str                 # 沿用 ldo_id 字段名, 实际存 BUCK_XX, 兼容 UI dict[id]
+    enabled: bool               # 实际使能状态 (dig_buck_XX_pu 状态位, 1=打开)
+    pu_status: int              # dig_buck_XX_pu 状态位 (0/1)
+    pu_dr: int                  # pu 驱动位 (reg_pu_buck_XX_dr)
+    mode: str                   # 当前固定 "Normal" (BUCK 模式控制后续补全)
+    vbit_normal: int            # 唤醒电压控制字
+    vbit_dsleep: int            # 睡眠电压控制字
+    vbit_rc: int                # RC 电压控制字
     voltage: Optional[float]    # 当前唤醒模式电压 (V), 由 vbit_normal 查表得到
 
 
@@ -308,6 +331,141 @@ class Bes1811PmuController:
         self.write_field(
             rm.res_sel_dr.reg_addr, rm.res_sel_dr.high_bit,
             rm.res_sel_dr.low_bit, 1 if enabled else 0,
+        )
+
+    # ---- BUCK 读取 ----
+    def read_buck(self, buck_id: str) -> Optional[BuckState]:
+        """读取单个 BUCK 的完整状态。
+
+        使能判定依据: dig_buck_XX_pu 状态位 (与 LDO 同, 1=打开)。
+        模式当前固定 "Normal" (BUCK 模式控制后续补全)。
+        """
+        rm = BUCK_REG_MAPS.get(buck_id)
+        if rm is None:
+            logger.warning("1811 PMU: %s 无 BUCK 寄存器映射", buck_id)
+            return None
+        self._emit_log(
+            "STEP",
+            f"读取 {buck_id} 状态  "
+            f"(pu_status@0x{rm.pu_status.reg_addr:03X}[{rm.pu_status.high_bit}:{rm.pu_status.low_bit}], "
+            f"vbit@0x{rm.vbit_normal.reg_addr:03X})",
+        )
+        pu_status = self._read_field(rm.pu_status)
+        pu = self._read_field(rm.pu)
+        pu_dr = self._read_field(rm.pu_dr)
+        vbit_n = self._read_field(rm.vbit_normal)
+        vbit_d = self._read_field(rm.vbit_dsleep)
+        vbit_r = self._read_field(rm.vbit_rc)
+
+        enabled = bool(pu_status)
+        # BUCK 模式控制 (Normal/LP/ULP) 后续补全, 当前固定 Normal
+        mode = "Normal"
+        volt = vbit_to_voltage(buck_id, vbit_n)
+        self._emit_log(
+            "INFO",
+            f"{buck_id} 状态: en={'On' if enabled else 'Off'} (dig_pu={pu_status}, cfg_pu={pu}, pu_dr={pu_dr}), "
+            f"vbit_n=0x{vbit_n:X}, voltage={volt if volt is not None else 'N/A'}",
+        )
+        return BuckState(
+            ldo_id=buck_id, enabled=enabled, pu_status=pu_status, pu_dr=pu_dr,
+            mode=mode,
+            vbit_normal=vbit_n, vbit_dsleep=vbit_d, vbit_rc=vbit_r,
+            voltage=volt,
+        )
+
+    def read_all_bucks(self) -> dict[str, BuckState]:
+        """读取所有 BUCK 状态。"""
+        result = {}
+        for buck_id in BUCK_IDS:
+            try:
+                st = self.read_buck(buck_id)
+                if st is not None:
+                    result[buck_id] = st
+            except Exception as e:
+                logger.error("1811 PMU: 读取 %s 失败: %s", buck_id, e, exc_info=True)
+        return result
+
+    def read_all_modules(self) -> dict:
+        """读取全部 LDO + BUCK 状态, 合并为 {id: LdoState|BuckState}。"""
+        result: dict = {}
+        result.update(self.read_all_ldos())
+        result.update(self.read_all_bucks())
+        return result
+
+    # ---- BUCK 控制 ----
+    def set_buck_enabled(self, buck_id: str, enabled: bool):
+        """使能/禁用 BUCK (同时置驱动位=1)。
+
+        与 LDO 写入流程完全一致 (pu_dr=1 → pu=val); BUCK 无 res_sel_dr。
+        """
+        rm = BUCK_REG_MAPS.get(buck_id)
+        if rm is None:
+            raise ValueError(f"{buck_id} 无 BUCK 寄存器映射")
+        self._emit_log(
+            "STEP",
+            f"{buck_id} {'使能' if enabled else '禁用'}  "
+            f"(pu_dr@0x{rm.pu_dr.reg_addr:03X}[{rm.pu_dr.high_bit}:{rm.pu_dr.low_bit}]=1, "
+            f"pu@0x{rm.pu.reg_addr:03X}[{rm.pu.high_bit}:{rm.pu.low_bit}]={1 if enabled else 0})",
+        )
+        self.write_field(rm.pu_dr.reg_addr, rm.pu_dr.high_bit, rm.pu_dr.low_bit, 1)
+        self.write_field(rm.pu.reg_addr, rm.pu.high_bit, rm.pu.low_bit, 1 if enabled else 0)
+        logger.info("1811 PMU: %s %s", buck_id, "使能" if enabled else "禁用")
+
+    def set_buck_voltage(self, buck_id: str, voltage: float):
+        """设置 BUCK 唤醒模式电压 (V)。
+
+        与 LDO 一致: 写 vbit_normal 后, 若 res_sel_dr=0 则置 1 使电压调整生效。
+        """
+        rm = BUCK_REG_MAPS.get(buck_id)
+        if rm is None:
+            raise ValueError(f"{buck_id} 无 BUCK 寄存器映射")
+        vbit = voltage_to_vbit(buck_id, voltage)
+        if vbit is None:
+            raise ValueError(f"{buck_id} 无电压查找表")
+        actual_v = vbit_to_voltage(buck_id, vbit)
+        self._emit_log(
+            "STEP",
+            f"{buck_id} 电压 → {actual_v:.4f} V (target={voltage:.4f} V, vbit=0x{vbit:X})  "
+            f"(vbit_normal@0x{rm.vbit_normal.reg_addr:03X}"
+            f"[{rm.vbit_normal.high_bit}:{rm.vbit_normal.low_bit}])",
+        )
+        self.write_field(
+            rm.vbit_normal.reg_addr, rm.vbit_normal.high_bit,
+            rm.vbit_normal.low_bit, vbit,
+        )
+        # 确保 res_sel_dr=1 使电压调整生效 (与 LDO 一致)
+        if rm.res_sel_dr is not None and self._read_field(rm.res_sel_dr) == 0:
+            self.write_field(
+                rm.res_sel_dr.reg_addr, rm.res_sel_dr.high_bit,
+                rm.res_sel_dr.low_bit, 1,
+            )
+            logger.info("1811 PMU: %s res_sel_dr → 1", buck_id)
+        logger.info("1811 PMU: %s 电压 → %.4f V (vbit=0x%X)", buck_id, actual_v, vbit)
+
+    def set_buck_vbit_dsleep(self, buck_id: str, voltage: float):
+        """设置 BUCK 睡眠模式电压 (V)。"""
+        rm = BUCK_REG_MAPS.get(buck_id)
+        if rm is None:
+            raise ValueError(f"{buck_id} 无 BUCK 寄存器映射")
+        vbit = voltage_to_vbit(buck_id, voltage)
+        if vbit is None:
+            raise ValueError(f"{buck_id} 无电压查找表")
+        self.write_field(
+            rm.vbit_dsleep.reg_addr, rm.vbit_dsleep.high_bit,
+            rm.vbit_dsleep.low_bit, vbit,
+        )
+
+    def set_buck_vbit_rc(self, buck_id: str, voltage: float):
+        """设置 BUCK RC 模式电压 (V)。"""
+        rm = BUCK_REG_MAPS.get(buck_id)
+        if rm is None:
+            raise ValueError(f"{buck_id} 无 BUCK 寄存器映射")
+        vbit = voltage_to_vbit(buck_id, voltage)
+        if vbit is None:
+            raise ValueError(f"{buck_id} 无电压查找表")
+        self.write_field(
+            rm.vbit_rc.reg_addr, rm.vbit_rc.high_bit,
+            rm.vbit_rc.low_bit, vbit,
         )
 
     # ---- 内部工具 ----
