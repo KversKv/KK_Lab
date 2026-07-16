@@ -100,30 +100,32 @@ class LayoutRow:
 
 
 _LAYOUT_ROWS = [
-    LayoutRow("module", "BUCK_04", 1, "VSYS"),
-    LayoutRow("module", "BUCK_05", 1, "VSYS"),
+    # Column 1: 直连 VSYS (按数字顺序: BUCK_01-06, LDO_01/02/03/06/07/08/09/10/11)
     LayoutRow("module", "BUCK_01", 1, "VSYS"),
     LayoutRow("module", "LDO_12", 2, "BUCK_01"),
     LayoutRow("module", "BUCK_02", 1, "VSYS"),
-    LayoutRow("module", "BUCK_06", 1, "VSYS"),
     LayoutRow("module", "BUCK_03", 1, "VSYS"),
+    LayoutRow("module", "BUCK_04", 1, "VSYS"),
+    LayoutRow("module", "BUCK_05", 1, "VSYS"),
+    LayoutRow("module", "BUCK_06", 1, "VSYS"),
     LayoutRow("module", "LDO_01", 1, "VSYS"),
     LayoutRow("module", "LDO_02", 1, "VSYS"),
+    LayoutRow("module", "LDO_03", 1, "VSYS"),
     LayoutRow("module", "LDO_06", 1, "VSYS"),
     LayoutRow("module", "LDO_07", 1, "VSYS"),
     LayoutRow("module", "LDO_08", 1, "VSYS"),
     LayoutRow("module", "LDO_09", 1, "VSYS"),
     LayoutRow("module", "LDO_10", 1, "VSYS"),
     LayoutRow("module", "LDO_11", 1, "VSYS"),
-    LayoutRow("module", "LDO_03", 1, "VSYS"),
+    # Column 2: 二级支路 (按数字顺序: LDO_12 → LDO_14/15 → LDO_05/13)
     LayoutRow("bus", "vdd_l14_15", 1, "VSYS", "vdd_l14_15"),
-    LayoutRow("module", "LDO_VMIC1", 2, "vdd_l14_15"),
-    LayoutRow("module", "LDO_VMIC2", 2, "vdd_l14_15"),
     LayoutRow("module", "LDO_14", 2, "vdd_l14_15"),
     LayoutRow("module", "LDO_15", 2, "vdd_l14_15"),
+    LayoutRow("module", "LDO_VMIC1", 2, "vdd_l14_15"),
+    LayoutRow("module", "LDO_VMIC2", 2, "vdd_l14_15"),
     LayoutRow("bus", "vdd_l5", 1, "VSYS", "vdd_l5"),
-    LayoutRow("module", "LDO_13", 2, "vdd_l5"),
     LayoutRow("module", "LDO_05", 2, "vdd_l5"),
+    LayoutRow("module", "LDO_13", 2, "vdd_l5"),
 ]
 
 
