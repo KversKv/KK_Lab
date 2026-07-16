@@ -95,7 +95,7 @@ from ui.pages.charger_test.charger_test_ui import ChargerTestUI
 from ui.pages.module_test.module_test_ui import ModuleTestUI
 from ui.pages.orchestrator.orchestrator_ui import OrchestratorUI
 from ui.pages.vmin_hunter.vmin_hunter_ui import VminHunterUI
-from ui.pages.pmu.pmu_1811_ui import Pmu1811UI
+from ui.pages.pmu.pmu_1811 import Pmu1811UI
 from ui.pages.pmu.pmu_1860_ui import Pmu1860UI
 from ui.modules.serialCom_module.serialCom_module_frame import SerialComMixin
 from ui.modules.mcu_io_module_frame import McuIoConnectionMixin

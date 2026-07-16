@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""1811 PMU 异步 I2C Worker (每次操作自建/销毁控制器)。
+"""1811 PMU 驱动中间层: 异步 I2C Worker (每次操作自建/销毁控制器)。
 
 遵循 ui/modules/IIC_Module/i2c_workers.py 的模式:
 每个 Worker 在 QThread 内创建独立的 I2CInterface, 避免跨线程共享。
