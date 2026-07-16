@@ -7,6 +7,7 @@
 
 from dataclasses import dataclass
 from typing import Callable, Optional
+import time
 
 from log_config import get_logger
 
@@ -447,7 +448,12 @@ class Bes1811PmuController:
     def set_buck_voltage(self, buck_id: str, voltage: float):
         """设置 BUCK 唤醒模式电压 (V)。
 
-        与 LDO 一致: 写 vbit_normal 后, 若 res_sel_dr=0 则置 1 使电压调整生效。
+        完整流程 (5 步):
+        1. bg_en_dr=1, bg_en=1; delay 1ms
+        2. sw_en_dr=1, sw_en=1
+        3. 调整 vbit_normal (含 res_sel_dr=1 生效位)
+        4. sw_en_dr=0, sw_en=0; delay 1ms
+        5. bg_en_dr=0, bg_en=0
         """
         rm = BUCK_REG_MAPS.get(buck_id)
         if rm is None:
@@ -462,18 +468,23 @@ class Bes1811PmuController:
             f"(vbit_normal@0x{rm.vbit_normal.reg_addr:03X}"
             f"[{rm.vbit_normal.high_bit}:{rm.vbit_normal.low_bit}])",
         )
+        # BUCK 调压前置序列 (bg_en / sw_en)
+        self._buck_voltage_pre_seq(buck_id, rm)
+        # 调整 vbit_normal
         self.write_field(
             rm.vbit_normal.reg_addr, rm.vbit_normal.high_bit,
             rm.vbit_normal.low_bit, vbit,
         )
         # 确保 res_sel_dr=1 使电压调整生效 (与 LDO 一致)
         self._ensure_res_sel_dr(buck_id, rm)
+        # BUCK 调压后置序列 (sw_en / bg_en 复位)
+        self._buck_voltage_post_seq(buck_id, rm)
         logger.info("1811 PMU: %s 电压 → %.4f V (vbit=0x%X)", buck_id, actual_v, vbit)
 
     def set_buck_vbit_dsleep(self, buck_id: str, voltage: float):
         """设置 BUCK 睡眠模式电压 (V)。
 
-        流程与 set_buck_voltage 一致: 写 vbit_dsleep 后, 若 res_sel_dr=0 则置 1 生效。
+        完整流程与 set_buck_voltage 一致 (5 步 bg_en/sw_en 序列 + 写 vbit_dsleep + res_sel_dr)。
         """
         rm = BUCK_REG_MAPS.get(buck_id)
         if rm is None:
@@ -488,17 +499,19 @@ class Bes1811PmuController:
             f"(vbit_dsleep@0x{rm.vbit_dsleep.reg_addr:03X}"
             f"[{rm.vbit_dsleep.high_bit}:{rm.vbit_dsleep.low_bit}])",
         )
+        self._buck_voltage_pre_seq(buck_id, rm)
         self.write_field(
             rm.vbit_dsleep.reg_addr, rm.vbit_dsleep.high_bit,
             rm.vbit_dsleep.low_bit, vbit,
         )
         self._ensure_res_sel_dr(buck_id, rm)
+        self._buck_voltage_post_seq(buck_id, rm)
         logger.info("1811 PMU: %s dsleep 电压 → %.4f V (vbit=0x%X)", buck_id, actual_v, vbit)
 
     def set_buck_vbit_rc(self, buck_id: str, voltage: float):
         """设置 BUCK RC 模式电压 (V)。
 
-        流程与 set_buck_voltage 一致: 写 vbit_rc 后, 若 res_sel_dr=0 则置 1 生效。
+        完整流程与 set_buck_voltage 一致 (5 步 bg_en/sw_en 序列 + 写 vbit_rc + res_sel_dr)。
         """
         rm = BUCK_REG_MAPS.get(buck_id)
         if rm is None:
@@ -513,12 +526,72 @@ class Bes1811PmuController:
             f"(vbit_rc@0x{rm.vbit_rc.reg_addr:03X}"
             f"[{rm.vbit_rc.high_bit}:{rm.vbit_rc.low_bit}])",
         )
+        self._buck_voltage_pre_seq(buck_id, rm)
         self.write_field(
             rm.vbit_rc.reg_addr, rm.vbit_rc.high_bit,
             rm.vbit_rc.low_bit, vbit,
         )
         self._ensure_res_sel_dr(buck_id, rm)
+        self._buck_voltage_post_seq(buck_id, rm)
         logger.info("1811 PMU: %s RC 电压 → %.4f V (vbit=0x%X)", buck_id, actual_v, vbit)
+
+    # ---- BUCK 调压 bg_en / sw_en 前置/后置序列 ----
+    # 完整逻辑 (以 BUCK_01 为例):
+    #   1. bg_en_dr=1, bg_en=1; delay 1ms
+    #   2. sw_en_dr=1, sw_en=1
+    #   (中间: 调整 vbit + res_sel_dr)
+    #   4. sw_en_dr=0, sw_en=0; delay 1ms
+    #   5. bg_en_dr=0, bg_en=0
+    # 若 rm 无 bg_en / sw_en 字段 (例如 LDO 误调用), 则跳过序列。
+    _BUCK_SEQ_DELAY_SEC = 0.001  # 1 ms
+
+    def _buck_voltage_pre_seq(self, buck_id: str, rm: LdoRegMap):
+        """BUCK 调压前置序列: 步骤 1~2 (bg_en → delay → sw_en)。"""
+        if rm.bg_en is None or rm.sw_en is None:
+            return
+        # Step 1: bg_en_dr=1, bg_en=1
+        self._emit_log(
+            "STEP",
+            f"{buck_id} 调压前置 [1/2] bg_en_dr=1, bg_en=1  "
+            f"(@0x{rm.bg_en.reg_addr:03X}[{rm.bg_en_dr.high_bit}:{rm.bg_en_dr.low_bit},"
+            f"{rm.bg_en.high_bit}:{rm.bg_en.low_bit}])",
+        )
+        self.write_field(rm.bg_en_dr.reg_addr, rm.bg_en_dr.high_bit, rm.bg_en_dr.low_bit, 1)
+        self.write_field(rm.bg_en.reg_addr, rm.bg_en.high_bit, rm.bg_en.low_bit, 1)
+        # delay 1ms
+        time.sleep(self._BUCK_SEQ_DELAY_SEC)
+        # Step 2: sw_en_dr=1, sw_en=1
+        self._emit_log(
+            "STEP",
+            f"{buck_id} 调压前置 [2/2] sw_en_dr=1, sw_en=1  "
+            f"(@0x{rm.sw_en.reg_addr:03X}[{rm.sw_en_dr.high_bit}:{rm.sw_en_dr.low_bit},"
+            f"{rm.sw_en.high_bit}:{rm.sw_en.low_bit}])",
+        )
+        self.write_field(rm.sw_en_dr.reg_addr, rm.sw_en_dr.high_bit, rm.sw_en_dr.low_bit, 1)
+        self.write_field(rm.sw_en.reg_addr, rm.sw_en.high_bit, rm.sw_en.low_bit, 1)
+
+    def _buck_voltage_post_seq(self, buck_id: str, rm: LdoRegMap):
+        """BUCK 调压后置序列: 步骤 4~5 (sw_en=0 → delay → bg_en=0)。"""
+        if rm.bg_en is None or rm.sw_en is None:
+            return
+        # Step 4: sw_en_dr=0, sw_en=0
+        self._emit_log(
+            "STEP",
+            f"{buck_id} 调压后置 [1/2] sw_en_dr=0, sw_en=0  "
+            f"(@0x{rm.sw_en.reg_addr:03X})",
+        )
+        self.write_field(rm.sw_en_dr.reg_addr, rm.sw_en_dr.high_bit, rm.sw_en_dr.low_bit, 0)
+        self.write_field(rm.sw_en.reg_addr, rm.sw_en.high_bit, rm.sw_en.low_bit, 0)
+        # delay 1ms
+        time.sleep(self._BUCK_SEQ_DELAY_SEC)
+        # Step 5: bg_en_dr=0, bg_en=0
+        self._emit_log(
+            "STEP",
+            f"{buck_id} 调压后置 [2/2] bg_en_dr=0, bg_en=0  "
+            f"(@0x{rm.bg_en.reg_addr:03X})",
+        )
+        self.write_field(rm.bg_en_dr.reg_addr, rm.bg_en_dr.high_bit, rm.bg_en_dr.low_bit, 0)
+        self.write_field(rm.bg_en.reg_addr, rm.bg_en.high_bit, rm.bg_en.low_bit, 0)
 
     # ---- 内部工具 ----
     def _read_field(self, bf: BitField) -> int:

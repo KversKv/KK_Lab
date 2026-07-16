@@ -39,6 +39,8 @@ class LdoRegMap:
 
     注: 类名保留 ``LdoRegMap`` 出于历史原因, 实际同时用于 LDO 与 BUCK。
     BUCK 不使用 ``lp`` / ``lp_dr`` 字段 (默认 None); ``res_sel_dr`` 与 LDO 一样使用 (BUCK_01~06 占 0x2F0[0..5])。
+    BUCK 专用 ``bg_en`` / ``bg_en_dr`` / ``sw_en`` / ``sw_en_dr`` (默认 None): 调压前置/后置流程使用,
+    LDO 不涉及。
     """
     ldo_id: str
     pu: BitField              # reg_pu_ldo_XX / reg_pu_buck_XX — 使能 (配置位)
@@ -50,6 +52,11 @@ class LdoRegMap:
     lp: Optional[BitField] = None         # LDO 专用: reg_lp_en_ldo_XX — LP 模式
     lp_dr: Optional[BitField] = None      # LDO 专用: reg_lp_en_ldo_XX_dr — LP 驱动位
     res_sel_dr: Optional[BitField] = None  # 电压调整生效位 (=1 生效); LDO 与 BUCK 均使用, BUCK_01~06 在 0x2F0[0..5]
+    # BUCK 专用: 调压前置 bg_en / sw_en 流程 (LDO 不使用)
+    bg_en: Optional[BitField] = None       # reg_buck_XX_bg_en — bandgap 使能
+    bg_en_dr: Optional[BitField] = None    # reg_buck_XX_bg_en_dr — bandgap 使能驱动位
+    sw_en: Optional[BitField] = None       # reg_buck_XX_sw_en — 开关使能
+    sw_en_dr: Optional[BitField] = None    # reg_buck_XX_sw_en_dr — 开关使能驱动位
 
 
 # ---------------------------------------------------------------------------
@@ -425,6 +432,8 @@ BUCK_REG_MAPS: dict[str, LdoRegMap] = {
         vbit_normal=_bf(0x046, 7, 0, 0x86), vbit_dsleep=_bf(0x046, 15, 8, 0x86),
         vbit_rc=_bf(0x074, 7, 0, 0x86),
         res_sel_dr=_bf(0x2F0, 0, 0),
+        bg_en=_bf(0x322, 14, 14, 1), bg_en_dr=_bf(0x322, 15, 15, 0),
+        sw_en=_bf(0x323, 14, 14, 1), sw_en_dr=_bf(0x323, 15, 15, 0),
         # BUCK_01 特例: vbit_normal[7:0] 与 vbit_dsleep[15:8] 共用 0x046; vbit_rc 在 0x074 (RWS)
     ),
     "BUCK_02": LdoRegMap(
@@ -434,6 +443,8 @@ BUCK_REG_MAPS: dict[str, LdoRegMap] = {
         vbit_normal=_bf(0x146, 7, 0, 0x50), vbit_dsleep=_bf(0x147, 7, 0, 0x50),
         vbit_rc=_bf(0x148, 7, 0, 0x50),
         res_sel_dr=_bf(0x2F0, 1, 1),
+        bg_en=_bf(0x14D, 14, 14, 1), bg_en_dr=_bf(0x14D, 15, 15, 0),
+        sw_en=_bf(0x14E, 14, 14, 1), sw_en_dr=_bf(0x14E, 15, 15, 0),
     ),
     "BUCK_03": LdoRegMap(
         "BUCK_03",
@@ -442,6 +453,8 @@ BUCK_REG_MAPS: dict[str, LdoRegMap] = {
         vbit_normal=_bf(0x1E6, 7, 0, 0xA0), vbit_dsleep=_bf(0x1E7, 7, 0, 0xA0),
         vbit_rc=_bf(0x1E8, 7, 0, 0xA0),
         res_sel_dr=_bf(0x2F0, 2, 2),
+        bg_en=_bf(0x1ED, 14, 14, 1), bg_en_dr=_bf(0x1ED, 15, 15, 0),
+        sw_en=_bf(0x1EE, 14, 14, 1), sw_en_dr=_bf(0x1EE, 15, 15, 0),
     ),
     "BUCK_04": LdoRegMap(
         "BUCK_04",
@@ -450,6 +463,8 @@ BUCK_REG_MAPS: dict[str, LdoRegMap] = {
         vbit_normal=_bf(0x156, 7, 0, 0x93), vbit_dsleep=_bf(0x157, 7, 0, 0x93),
         vbit_rc=_bf(0x158, 7, 0, 0x93),
         res_sel_dr=_bf(0x2F0, 3, 3),
+        bg_en=_bf(0x15D, 14, 14, 1), bg_en_dr=_bf(0x15D, 15, 15, 0),
+        sw_en=_bf(0x15E, 14, 14, 1), sw_en_dr=_bf(0x15E, 15, 15, 0),
     ),
     "BUCK_05": LdoRegMap(
         "BUCK_05",
@@ -458,6 +473,8 @@ BUCK_REG_MAPS: dict[str, LdoRegMap] = {
         vbit_normal=_bf(0x1D6, 7, 0, 0x93), vbit_dsleep=_bf(0x1D7, 7, 0, 0x93),
         vbit_rc=_bf(0x1D8, 7, 0, 0x93),
         res_sel_dr=_bf(0x2F0, 4, 4),
+        bg_en=_bf(0x1DD, 14, 14, 1), bg_en_dr=_bf(0x1DD, 15, 15, 0),
+        sw_en=_bf(0x1DE, 14, 14, 1), sw_en_dr=_bf(0x1DE, 15, 15, 0),
     ),
     "BUCK_06": LdoRegMap(
         "BUCK_06",
@@ -466,6 +483,8 @@ BUCK_REG_MAPS: dict[str, LdoRegMap] = {
         vbit_normal=_bf(0x35A, 7, 0, 0xBB), vbit_dsleep=_bf(0x35C, 7, 0, 0xBB),
         vbit_rc=_bf(0x35D, 7, 0, 0xBB),
         res_sel_dr=_bf(0x2F0, 5, 5),
+        bg_en=_bf(0x31D, 14, 14, 1), bg_en_dr=_bf(0x31D, 15, 15, 0),
+        sw_en=_bf(0x31E, 14, 14, 1), sw_en_dr=_bf(0x31E, 15, 15, 0),
         # BUCK_06 特例: vbit_dsleep 地址 0x35C 跳过了 0x35B
     ),
 }
