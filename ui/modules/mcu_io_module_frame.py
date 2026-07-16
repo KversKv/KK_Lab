@@ -14,7 +14,8 @@ if __name__ == "__main__" and __package__ in (None, ""):
 from ui.resource_path import get_resource_base
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton,
-    QLabel, QFrame, QSizePolicy, QToolTip, QCheckBox, QDoubleSpinBox
+    QLabel, QFrame, QSizePolicy, QToolTip, QCheckBox, QDoubleSpinBox,
+    QScrollArea
 )
 from PySide6.QtCore import (
     Qt, QThread, Signal, QObject, QSize, QRect, QRectF,
@@ -58,9 +59,9 @@ GPIO_STATE_HIGHZ = "HighZ"
 GPIO_OUTPUT_STATES = (GPIO_STATE_HIGH, GPIO_STATE_LOW, GPIO_STATE_HIGHZ)
 
 _GPIO_LEVEL_OPTIONS = [
-    {"key": GPIO_STATE_HIGH, "label": "High", "svg": os.path.join(_PAGE_SVGS_DIR, "polarity_rising.svg")},
-    {"key": GPIO_STATE_LOW, "label": "Low", "svg": os.path.join(_PAGE_SVGS_DIR, "polarity_falling.svg")},
-    {"key": GPIO_STATE_HIGHZ, "label": "High-Z", "svg": os.path.join(_PAGE_SVGS_DIR, "x-circle.svg")},
+    {"key": GPIO_STATE_HIGH, "label": "High", "svg": os.path.join(_PAGE_SVGS_DIR, "level_high.svg"), "active_color": "#34d399"},
+    {"key": GPIO_STATE_LOW, "label": "Low", "svg": os.path.join(_PAGE_SVGS_DIR, "level_low.svg"), "active_color": "#fb7185"},
+    {"key": GPIO_STATE_HIGHZ, "label": "High-Z", "svg": os.path.join(_PAGE_SVGS_DIR, "x-circle.svg"), "active_color": "#e2e8f0"},
 ]
 
 MCU_PWR_RESET_GPIO_OPTIONS = tuple(f"GPIO{i}" for i in range(0, 30))
@@ -108,11 +109,11 @@ class GpioLevelToggle(QWidget):
         self.setFixedWidth(self._n * 34)
         self.setCursor(Qt.PointingHandCursor)
 
-        self._bg_color = QColor("#1A2750")
-        self._knob_color = QColor("#243760")
+        self._bg_color = QColor("#020817")
+        self._knob_color = QColor("#334155")
         self._icon_active_color = QColor("#F3F6FF")
-        self._icon_inactive_color = QColor("#5F77AE")
-        self._border_color = QColor("#22376A")
+        self._icon_inactive_color = QColor("#64748b")
+        self._border_color = QColor("#1e293b")
 
         self._anim = QPropertyAnimation(self, b"animProgress")
         self._anim.setDuration(180)
@@ -212,7 +213,10 @@ class GpioLevelToggle(QWidget):
             cy = h / 2
             dist = abs(self._anim_progress - i)
             is_active = dist < 0.5
-            color = self._icon_active_color if is_active else self._icon_inactive_color
+            if is_active:
+                color = QColor(opt.get("active_color", "#e2e8f0"))
+            else:
+                color = self._icon_inactive_color
             pixmap = self._render_icon(opt["svg"], color, icon_size)
             ix = int(cx - icon_size / 2)
             iy = int(cy - icon_size / 2)
@@ -241,23 +245,55 @@ class GpioLevelToggle(QWidget):
 
 
 def _mcu_io_action_style(h=MCU_IO_BTN_HEIGHT):
+    # Qt QSS box model: total = content(min-height) + padding(v)*2 + border*2
+    # 想要 total = h, border=1px*2=2, padding(v)=0 => content = h - 2
+    content_h = h - 2
     return f"""
         QPushButton {{
-            background-color: #13254b;
-            border: 1px solid #22376A;
+            background-color: #1e293b;
+            border: 1px solid #334155;
             border-radius: 6px;
-            color: #dce7ff;
+            color: #e2e8f0;
             font-weight: 600;
-            min-height: {h}px;
-            max-height: {h}px;
-            padding: 2px 8px;
+            min-height: {content_h}px;
+            max-height: {content_h}px;
+            padding: 0px 8px;
         }}
         QPushButton:hover {{
-            background-color: #1C2D55;
-            border: 1px solid #3A5A9F;
+            background-color: #334155;
+            border: 1px solid #475569;
         }}
         QPushButton:pressed {{
-            background-color: #102040;
+            background-color: #0f172a;
+        }}
+        QPushButton:disabled {{
+            background-color: #0b1430;
+            color: #5c7096;
+            border: 1px solid #1a2850;
+        }}
+    """
+
+
+def _mcu_io_toggle_style(h=MCU_IO_BTN_HEIGHT):
+    content_h = h - 2
+    return f"""
+        QPushButton {{
+            background-color: rgba(99, 102, 241, 0.10);
+            border: 1px solid rgba(99, 102, 241, 0.25);
+            border-radius: 6px;
+            color: #818cf8;
+            font-weight: 600;
+            min-height: {content_h}px;
+            max-height: {content_h}px;
+            padding: 0px 8px;
+        }}
+        QPushButton:hover {{
+            background-color: rgba(99, 102, 241, 0.20);
+            border: 1px solid rgba(99, 102, 241, 0.45);
+            color: #a5b4fc;
+        }}
+        QPushButton:pressed {{
+            background-color: rgba(99, 102, 241, 0.08);
         }}
         QPushButton:disabled {{
             background-color: #0b1430;
@@ -515,9 +551,9 @@ class McuIoConnectionMixin:
         type_row.setSpacing(6)
         type_row.setContentsMargins(0, 2, 0, 0)
         type_label = QLabel("MCU Type")
-        type_label.setStyleSheet("font-size: 11px; color: #7e96bf;")
+        type_label.setStyleSheet("font-size: 11px; color: #94a3b8;")
         type_label.setFixedWidth(64)
-        self.mcu_io_type_combo = DarkComboBox(bg="#091426", border="#17345f")
+        self.mcu_io_type_combo = DarkComboBox(bg="#020817", border="#1e293b")
         self.mcu_io_type_combo.setFixedHeight(MCU_IO_BTN_HEIGHT)
         self.mcu_io_type_combo.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Fixed
@@ -538,7 +574,7 @@ class McuIoConnectionMixin:
         else:
             layout.addWidget(self.mcu_io_status_label)
 
-        self.mcu_io_port_combo = DarkComboBox(bg="#091426", border="#17345f")
+        self.mcu_io_port_combo = DarkComboBox(bg="#020817", border="#1e293b")
         self.mcu_io_port_combo.setSizeAdjustPolicy(
             DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
@@ -563,6 +599,13 @@ class McuIoConnectionMixin:
         layout.addLayout(conn_row)
 
         if with_gpio:
+            sep = QFrame()
+            sep.setFrameShape(QFrame.HLine)
+            sep.setStyleSheet(
+                "QFrame { border: none; border-top: 1px solid #1e293b; "
+                "background: transparent; max-height: 1px; }"
+            )
+            layout.addWidget(sep)
             self._build_mcu_io_gpio_widgets(layout)
 
     def _build_mcu_io_gpio_widgets(self, layout):
@@ -570,6 +613,9 @@ class McuIoConnectionMixin:
         self._mcu_io_gpio_parent_layout = layout
         self.mcu_io_gpio_container = QWidget()
         self.mcu_io_gpio_container.setStyleSheet("background: transparent; border: none;")
+        self.mcu_io_gpio_container.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Expanding
+        )
         container_layout = QVBoxLayout(self.mcu_io_gpio_container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(0)
@@ -582,41 +628,12 @@ class McuIoConnectionMixin:
         options = self._get_mcu_io_gpio_options()
         self.mcu_io_output_toggles = {}
         self.mcu_io_pulse_buttons = {}
-        for pin in pins:
-            row = QHBoxLayout()
-            row.setSpacing(6)
-            row.setContentsMargins(0, 2, 0, 0)
+        self.mcu_io_toggle_buttons = {}
 
-            name_label = QLabel(f"GPIO{pin}")
-            name_label.setFixedWidth(56)
-            row.addWidget(name_label, 0, Qt.AlignVCenter)
-
-            state_toggle = GpioLevelToggle()
-            state_toggle.level_changed.connect(
-                lambda state, p=pin: self._on_mcu_io_set_output(p, state)
-            )
-            row.addWidget(state_toggle, 0, Qt.AlignVCenter)
-
-            pulse_btn = QPushButton("Pulse")
-            pulse_btn.setFixedHeight(MCU_IO_BTN_HEIGHT)
-            pulse_btn.setFixedWidth(56)
-            pulse_btn.setStyleSheet(_mcu_io_action_style())
-            pulse_btn.setToolTip(
-                "Send a single pulse on this GPIO. Active level follows the level "
-                "toggle (High/Low); width uses the Pulse (ms) value below."
-            )
-            pulse_btn.clicked.connect(lambda _=False, p=pin: self._on_mcu_io_pulse(p))
-            row.addWidget(pulse_btn, 0, Qt.AlignVCenter)
-
-            row.addStretch(1)
-
-            container_layout.addLayout(row)
-            self.mcu_io_output_toggles[pin] = state_toggle
-            self.mcu_io_pulse_buttons[pin] = pulse_btn
-
+        # ---- Pulse 宽度全局设置（置于 GPIO 列表上方）----
         pulse_width_row = QHBoxLayout()
         pulse_width_row.setSpacing(6)
-        pulse_width_row.setContentsMargins(0, 2, 0, 0)
+        pulse_width_row.setContentsMargins(0, 2, 0, 4)
         pulse_width_label = QLabel("Pulse (ms)")
         pulse_width_label.setFixedWidth(56)
         pulse_width_row.addWidget(pulse_width_label, 0, Qt.AlignVCenter)
@@ -636,16 +653,16 @@ class McuIoConnectionMixin:
         )
         self.mcu_io_pulse_width_spin.setStyleSheet(f"""
             QDoubleSpinBox#mcuIoPulseWidthSpin {{
-                background-color: #091426;
-                border: 1.5px solid #17345f;
+                background-color: #020817;
+                border: 1px solid #1e293b;
                 border-radius: 6px;
-                color: #c8d5e2;
-                padding: 2px 8px;
-                min-height: {MCU_IO_BTN_HEIGHT}px;
-                max-height: {MCU_IO_BTN_HEIGHT}px;
+                color: #e2e8f0;
+                padding: 0px 8px;
+                min-height: {MCU_IO_BTN_HEIGHT - 2}px;
+                max-height: {MCU_IO_BTN_HEIGHT - 2}px;
             }}
             QDoubleSpinBox#mcuIoPulseWidthSpin:focus {{
-                border: 1.5px solid #2dd4ff;
+                border: 1px solid #34d399;
             }}
             QDoubleSpinBox#mcuIoPulseWidthSpin::up-button,
             QDoubleSpinBox#mcuIoPulseWidthSpin::down-button {{
@@ -656,17 +673,91 @@ class McuIoConnectionMixin:
             QDoubleSpinBox#mcuIoPulseWidthSpin:disabled {{
                 background-color: #0b1430;
                 color: #5c7096;
-                border: 1.5px solid #1a2850;
+                border: 1px solid #1a2850;
             }}
         """)
         pulse_width_row.addWidget(self.mcu_io_pulse_width_spin, 1, Qt.AlignVCenter)
         container_layout.addLayout(pulse_width_row)
 
+        # ---- GPIO 列表（可滚动区域）----
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setStyleSheet(
+            "QScrollArea { background: transparent; border: none; }"
+            "QScrollBar:vertical { background: #020817; width: 6px; border: none; }"
+            "QScrollBar::handle:vertical { background: #334155; border-radius: 3px; }"
+            "QScrollBar::handle:vertical:hover { background: #475569; }"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+        )
+        list_widget = QWidget()
+        list_widget.setStyleSheet("background: transparent;")
+        list_layout = QVBoxLayout(list_widget)
+        list_layout.setContentsMargins(0, 0, 0, 0)
+        list_layout.setSpacing(0)
+
+        for pin in pins:
+            row = QHBoxLayout()
+            row.setSpacing(6)
+            row.setContentsMargins(0, 2, 0, 2)
+
+            name_label = QLabel(f"GPIO{pin}")
+            name_label.setFixedWidth(56)
+            row.addWidget(name_label, 0, Qt.AlignVCenter)
+
+            state_toggle = GpioLevelToggle()
+            state_toggle.level_changed.connect(
+                lambda state, p=pin: self._on_mcu_io_set_output(p, state)
+            )
+            row.addWidget(state_toggle, 0, Qt.AlignVCenter)
+
+            pulse_btn = QPushButton("Pulse")
+            pulse_btn.setFixedHeight(MCU_IO_BTN_HEIGHT)
+            pulse_btn.setFixedWidth(56)
+            pulse_btn.setStyleSheet(_mcu_io_action_style())
+            pulse_btn.setToolTip(
+                "Send a single pulse on this GPIO. Active level follows the level "
+                "toggle (High/Low); width uses the Pulse (ms) value above."
+            )
+            pulse_btn.clicked.connect(lambda _=False, p=pin: self._on_mcu_io_pulse(p))
+            row.addWidget(pulse_btn, 0, Qt.AlignVCenter)
+
+            toggle_btn = QPushButton("Toggle")
+            toggle_btn.setFixedHeight(MCU_IO_BTN_HEIGHT)
+            toggle_btn.setFixedWidth(60)
+            toggle_btn.setStyleSheet(_mcu_io_toggle_style())
+            toggle_btn.setToolTip(
+                "Toggle the GPIO output level between High and Low. "
+                "If currently High, switches to Low; otherwise switches to High."
+            )
+            toggle_btn.clicked.connect(lambda _=False, p=pin: self._on_mcu_io_toggle(p))
+            row.addWidget(toggle_btn, 0, Qt.AlignVCenter)
+
+            row.addStretch(1)
+
+            list_layout.addLayout(row)
+            self.mcu_io_output_toggles[pin] = state_toggle
+            self.mcu_io_pulse_buttons[pin] = pulse_btn
+            self.mcu_io_toggle_buttons[pin] = toggle_btn
+
+        scroll.setWidget(list_widget)
+        container_layout.addWidget(scroll, 1)
+
+        # ---- Footer 分隔线 ----
+        footer_sep = QFrame()
+        footer_sep.setFrameShape(QFrame.HLine)
+        footer_sep.setStyleSheet(
+            "QFrame { border: none; border-top: 1px solid #1e293b; "
+            "background: transparent; max-height: 1px; }"
+        )
+        container_layout.addWidget(footer_sep)
+
+        # ---- Footer: 读取区域 ----
         read_row = QHBoxLayout()
         read_row.setSpacing(6)
-        read_row.setContentsMargins(0, 2, 0, 0)
+        read_row.setContentsMargins(0, 4, 0, 2)
 
-        self.mcu_io_read_combo = DarkComboBox(bg="#091426", border="#17345f")
+        self.mcu_io_read_combo = DarkComboBox(bg="#020817", border="#1e293b")
         self.mcu_io_read_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.mcu_io_read_combo.setFixedHeight(MCU_IO_BTN_HEIGHT)
         for opt in options:
@@ -679,9 +770,13 @@ class McuIoConnectionMixin:
         self.mcu_io_read_btn.setStyleSheet(_mcu_io_action_style())
         read_row.addWidget(self.mcu_io_read_btn, 0, Qt.AlignVCenter)
 
-        self.mcu_io_read_value_label = QLabel("Level: —")
+        self.mcu_io_read_value_label = QLabel("—")
         self.mcu_io_read_value_label.setFixedWidth(80)
-        self.mcu_io_read_value_label.setObjectName("statusOk")
+        self.mcu_io_read_value_label.setObjectName("mcuReadDefault")
+        self.mcu_io_read_value_label.setAlignment(Qt.AlignCenter)
+        self.mcu_io_read_value_label.setStyleSheet(
+            "color: #64748b; font-weight: 700; background: transparent;"
+        )
         read_row.addWidget(self.mcu_io_read_value_label, 0, Qt.AlignVCenter)
 
         container_layout.addLayout(read_row)
@@ -761,6 +856,8 @@ class McuIoConnectionMixin:
         for toggle in getattr(self, "mcu_io_output_toggles", {}).values():
             toggle.setEnabled(enabled)
         for btn in getattr(self, "mcu_io_pulse_buttons", {}).values():
+            btn.setEnabled(enabled)
+        for btn in getattr(self, "mcu_io_toggle_buttons", {}).values():
             btn.setEnabled(enabled)
         if getattr(self, "mcu_io_pulse_width_spin", None) is not None:
             self.mcu_io_pulse_width_spin.setEnabled(enabled)
@@ -1200,6 +1297,16 @@ class McuIoConnectionMixin:
         self.set_mcu_io_status("● Connected")
         self._mcu_io_log(f"[MCU] GPIO{pin} set to {state}.")
 
+    def _on_mcu_io_toggle(self, pin):
+        """Toggle 按钮：翻转 GPIO 电平。High -> Low，其余 -> High。"""
+        toggle = self.mcu_io_output_toggles.get(pin)
+        if toggle is None:
+            return
+        current = toggle.value()
+        new_state = GPIO_STATE_LOW if current == GPIO_STATE_HIGH else GPIO_STATE_HIGH
+        toggle.setValue(new_state)
+        self._on_mcu_io_set_output(pin, new_state)
+
     def _on_mcu_io_output_error(self, err):
         self.set_mcu_io_status("● Set Failed", is_error=True)
         self._mcu_io_log(f"[MCU] Set GPIO output failed: {err}")
@@ -1279,6 +1386,10 @@ class McuIoConnectionMixin:
 
         self.set_mcu_io_status(f"● Reading GPIO{pin}")
         self._set_mcu_io_gpio_controls_enabled(False)
+        self.mcu_io_read_value_label.setText("...")
+        self.mcu_io_read_value_label.setStyleSheet(
+            "color: #94a3b8; font-weight: 700; background: transparent;"
+        )
         self._mcu_io_log(f"[MCU] Reading GPIO{pin}...")
 
         worker = _GpioReadWorker(self.mcu_io, pin, "none")
@@ -1304,7 +1415,17 @@ class McuIoConnectionMixin:
 
     def _on_mcu_io_read_done(self, pin, value):
         level = "High" if value else "Low"
-        self.mcu_io_read_value_label.setText(f"Level: {value} ({level})")
+        self.mcu_io_read_value_label.setText(level)
+        if value:
+            self.mcu_io_read_value_label.setObjectName("mcuReadHigh")
+            self.mcu_io_read_value_label.setStyleSheet(
+                "color: #34d399; font-weight: 700; background: transparent;"
+            )
+        else:
+            self.mcu_io_read_value_label.setObjectName("mcuReadLow")
+            self.mcu_io_read_value_label.setStyleSheet(
+                "color: #fb7185; font-weight: 700; background: transparent;"
+            )
         self.set_mcu_io_status("● Connected")
         self._set_mcu_io_gpio_controls_enabled(True)
         self._mcu_io_log(f"[MCU] GPIO{pin} read = {value} ({level}).")
@@ -1312,6 +1433,10 @@ class McuIoConnectionMixin:
     def _on_mcu_io_read_error(self, err):
         self.set_mcu_io_status("● Read Failed", is_error=True)
         self._set_mcu_io_gpio_controls_enabled(True)
+        self.mcu_io_read_value_label.setText("—")
+        self.mcu_io_read_value_label.setStyleSheet(
+            "color: #64748b; font-weight: 700; background: transparent;"
+        )
         self._mcu_io_log(f"[MCU] Read GPIO failed: {err}")
 
     def get_mcu_io_instance(self):
@@ -1595,7 +1720,7 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
             layout, title_row=title_row, with_gpio=False
         )
 
-        label_style_sm = "font-size: 10px; color: #7e96bf;"
+        label_style_sm = "font-size: 10px; color: #94a3b8;"
         label_width = 48
 
         grid = QGridLayout()
@@ -1606,7 +1731,7 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
         poweron_label = QLabel("PwrON")
         poweron_label.setStyleSheet(label_style_sm)
         poweron_label.setFixedWidth(label_width)
-        self.mcu_pr_poweron_combo = DarkComboBox(bg="#091426", border="#17345f")
+        self.mcu_pr_poweron_combo = DarkComboBox(bg="#020817", border="#1e293b")
         self.mcu_pr_poweron_combo.setFixedHeight(MCU_IO_BTN_HEIGHT)
         self.mcu_pr_poweron_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         font = self.mcu_pr_poweron_combo.font()
@@ -1666,7 +1791,7 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
         reset_label_container.setStyleSheet("background: transparent;")
         reset_label_container.setLayout(reset_label_row)
 
-        self.mcu_pr_reset_combo = DarkComboBox(bg="#091426", border="#17345f")
+        self.mcu_pr_reset_combo = DarkComboBox(bg="#020817", border="#1e293b")
         self.mcu_pr_reset_combo.setFixedHeight(MCU_IO_BTN_HEIGHT)
         self.mcu_pr_reset_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         font = self.mcu_pr_reset_combo.font()
@@ -1720,7 +1845,7 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
         status_label_container.setStyleSheet("background: transparent;")
         status_label_container.setLayout(status_label_row)
 
-        self.mcu_pr_status_combo = DarkComboBox(bg="#091426", border="#17345f")
+        self.mcu_pr_status_combo = DarkComboBox(bg="#020817", border="#1e293b")
         self.mcu_pr_status_combo.setFixedHeight(MCU_IO_BTN_HEIGHT)
         self.mcu_pr_status_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         font = self.mcu_pr_status_combo.font()
@@ -1780,7 +1905,7 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
         ctrl_label_container.setStyleSheet("background: transparent;")
         ctrl_label_container.setLayout(ctrl_label_row)
 
-        self.mcu_pr_ctrl_combo = DarkComboBox(bg="#091426", border="#17345f")
+        self.mcu_pr_ctrl_combo = DarkComboBox(bg="#020817", border="#1e293b")
         self.mcu_pr_ctrl_combo.setFixedHeight(MCU_IO_BTN_HEIGHT)
         self.mcu_pr_ctrl_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         font = self.mcu_pr_ctrl_combo.font()
@@ -2215,50 +2340,51 @@ if __name__ == "__main__":
     DARK_CARD_STYLE = """
         QWidget {
             background-color: #020817;
-            color: #dbe7ff;
+            color: #e2e8f0;
         }
         QLabel {
             background-color: transparent;
-            color: #dbe7ff;
+            color: #e2e8f0;
             border: none;
         }
         QLabel#cardTitle {
-            font-size: 11px;
+            font-size: 12px;
             font-weight: 700;
-            color: #f4f7ff;
+            color: #f1f5f9;
             letter-spacing: 0.5px;
             background-color: transparent;
         }
         QLabel#statusOk {
-            color: #15d1a3;
+            color: #34d399;
             font-weight: 600;
             background-color: transparent;
         }
         QLabel#statusWarn {
-            color: #ffb84d;
+            color: #fbbf24;
             font-weight: 600;
             background-color: transparent;
         }
         QLabel#statusErr {
-            color: #ff5e7a;
+            color: #fb7185;
             font-weight: 600;
             background-color: transparent;
         }
         QFrame#cardFrame {
-            background-color: #071127;
-            border: 1px solid #1a2b52;
-            border-radius: 12px;
+            background-color: #0f172a;
+            border: 1px solid #1e293b;
+            border-radius: 16px;
         }
     """
 
     class _CardFrame(QFrame):
-        def __init__(self, title="", parent=None):
+        def __init__(self, title="", parent=None, max_w=560):
             super().__init__(parent)
             self.setObjectName("cardFrame")
-            self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            self.setMaximumWidth(max_w)
+            self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             self.main_layout = QVBoxLayout(self)
-            self.main_layout.setContentsMargins(12, 10, 12, 12)
-            self.main_layout.setSpacing(8)
+            self.main_layout.setContentsMargins(16, 14, 16, 16)
+            self.main_layout.setSpacing(10)
             if title:
                 self.title_row = QHBoxLayout()
                 self.title_row.setSpacing(8)
@@ -2279,36 +2405,16 @@ if __name__ == "__main__":
             self.init_mcu_io_connection()
             self.setStyleSheet(DARK_CARD_STYLE)
 
-            root = QVBoxLayout(self)
-            root.setContentsMargins(0, 0, 0, 0)
-            root.setSpacing(0)
+            outer = QVBoxLayout(self)
+            outer.setContentsMargins(24, 24, 24, 24)
+            outer.setAlignment(Qt.AlignCenter)
 
             card = _CardFrame("MCU IO")
             self.build_mcu_io_connection_widgets(
                 card.main_layout, title_row=card.title_row)
-            root.addWidget(card)
+            outer.addWidget(card)
 
             self.bind_mcu_io_signals()
-
-        def append_log(self, msg):
-            logger.info(msg)
-
-    class _DemoPwrResetWidget(McuPwrResetConfigMixin, QWidget):
-        mcu_io_connection_status_changed = Signal(bool)
-
-        def __init__(self, parent=None):
-            super().__init__(parent)
-            self.init_mcu_pwr_reset_config()
-            self.setStyleSheet(DARK_CARD_STYLE)
-
-            root = QVBoxLayout(self)
-            root.setContentsMargins(0, 0, 0, 0)
-            root.setSpacing(0)
-
-            card = _CardFrame("MCU PWR / RESET")
-            self.build_mcu_pwr_reset_config_widgets(
-                card.main_layout, title_row=card.title_row)
-            root.addWidget(card)
 
         def append_log(self, msg):
             logger.info(msg)
@@ -2318,17 +2424,17 @@ if __name__ == "__main__":
             super().__init__(parent)
             self.setStyleSheet(DARK_CARD_STYLE)
             root = QVBoxLayout(self)
-            root.setContentsMargins(12, 12, 12, 12)
-            root.setSpacing(12)
-            root.addWidget(_DemoIoWidget())
-            root.addWidget(_DemoPwrResetWidget())
-            root.addStretch()
+            root.setContentsMargins(0, 0, 0, 0)
+            root.setSpacing(0)
+            root.addWidget(_DemoIoWidget(), 1)
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
     w = _DemoWindow()
-    w.setWindowTitle("MCU IO Mixin Card")
+    w.setWindowTitle("MCU IO Module")
+    w.setFixedWidth(620)
+    w.setFixedHeight(720)
     resize_and_center_window(w)
     w.show()
 

@@ -194,6 +194,16 @@ def build_summary_payload(device_map, channel_names,
     prefix = f"[{bin_name}] " if bin_name else ""
     log_fn(f"[RESULT] {prefix}{' | '.join(parts)}")
 
+    # 制表符分隔的纯数值行,便于整行复制粘贴到 Excel 相邻单元格
+    cfg = _UNIT_CONFIG.get(CURRENT_UNIT, _UNIT_CONFIG["uA"])
+    scale = cfg["scale"]
+    values = [f"{vbat_current * scale:.4f}"]
+    for key in ordered_keys:
+        values.append(f"{results.get(key, 0.0) * scale:.4f}")
+    if vbat_remain is not None:
+        values.append(f"{vbat_remain * scale:.4f}")
+    log_fn(f"[DATA] {prefix}{'\t'.join(values)}")
+
     voltage_parts = []
     vbat_v = channel_voltages.get((vbat_label, vbat_ch))
     if vbat_v is not None:

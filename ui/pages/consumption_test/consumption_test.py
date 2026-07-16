@@ -185,7 +185,7 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
         self._mcu_search_worker = None
         self._mcu_connect_thread = None
         self._mcu_connect_worker = None
-        self._current_mcu_type = "yd_rp2040"
+        self._default_mcu_type = "yd_rp2040"
 
         self.init_n6705c_connection(n6705c_top, instrument_manager=instrument_manager)
         self.init_serial_connection(mode=MODE_INLINE, prefix="DUT Serial")
@@ -1250,7 +1250,7 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             data = self.mcu_type_combo.currentData()
             if data in ("yd_rp2040", "ch9114f"):
                 return data
-        return getattr(self, "_current_mcu_type", "yd_rp2040")
+        return getattr(self, "_default_mcu_type", "yd_rp2040")
 
     def _get_mcu_gpio_options(self):
         if self._current_mcu_type() == "ch9114f":
