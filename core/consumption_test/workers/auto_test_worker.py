@@ -336,12 +336,16 @@ class AutoTestWorker(QObject):
                 if i2c is None:
                     config_commands = None  # 保持原行为:I2C 失败则跳过
 
-                # 勾选"强制配置":在 Vbat 测量之前先对 DUT 下发一次配置,
-                # 以便测 Vbat 时 DUT 已处于目标配置状态。
-                if self.force_config_enabled and config_commands and i2c:
-                    self._log("[AUTO_TEST] Force-config: executing config BEFORE Vbat measurement...")
-                    self._step_execute_config_commands(i2c, chip_info, config_commands)
-            elif self.test_mode != "high_voltage":
+            # Step 8: 记录子通道默认电压。必须在任何 I2C 配置下发之前执行,
+            # 否则 force_config 会改写芯片内部 Vcore 等电源轨配置(例如把
+            # Vcore 从自然输出 0.655V 拉到 0.3735V),导致 default_voltages
+            # 捕获到"配置后"电压,进而污染 Step 10 增压(+20mV)和 Step 12 对齐。
+            default_voltages = self._step_record_default_voltages()
+            self.progress.emit(base + 0.50 * span)
+            if self._is_stopped:
+                return
+
+            if not should_config and self.test_mode != "high_voltage":
                 self._log(
                     "[AUTO_TEST] Only Vbat channel is enabled and Force-config is OFF: "
                     "skipping config lookup/execution."
@@ -351,12 +355,13 @@ class AutoTestWorker(QObject):
             if vbat_current is None:
                 return
 
-            default_voltages = self._step_record_default_voltages()
-
             self.progress.emit(base + 0.55 * span)
             if self._is_stopped:
                 return
 
+            # Step 10: 在任何 I2C 配置下发之前,先把通道切到 source 模式并供
+            # 自然电压 + 20mV,保证后续配置下发的瞬间 DUT 各电源轨已被外部
+            # 驱动到稳定电压,避免芯片内部配置改写但通道未供压导致的中间异常。
             self._step_force_plus20(default_voltages)
             _time.sleep(0.4)
             self.progress.emit(base + 0.58 * span)
@@ -369,9 +374,10 @@ class AutoTestWorker(QObject):
                 if self._is_stopped:
                     return
 
-                # Step 11 仅在与 Step 10(I2C 配置下发)联动时执行:
-                # 没有 I2C 配置时,Step 9 设定的增压电压已经足够,
-                # 这里再 align 反而会把电压拉回 default,丢失增压。
+                # Step 12 仅在与 Step 11(I2C 配置下发)联动时执行:
+                # 配置下发完成后,把通道电压从 Step 10 的增压值拉回 Step 8 记录的
+                # 自然电压(default_voltages),避免长期 +20mV 偏置影响测量精度。
+                # 没有 I2C 配置时,Step 10 设定的增压电压保持到 Step 13 测量。
                 self._step_auto_set_voltages(default_voltages)
                 _time.sleep(0.4)
             self.progress.emit(base + 0.65 * span)
@@ -540,7 +546,7 @@ class AutoTestWorker(QObject):
         self._toggle_signal(self.poweron_inst, self.poweron_hw_ch, self.poweron_polarity)
 
     def _step_measure_vbat_total(self, base, span):
-        self._log("[AUTO_TEST] Step 7: Measuring Vbat total current...")
+        self._log("[AUTO_TEST] Step 9: Measuring Vbat total current...")
         # 在采集 Vbat 之前,确保其它 enabled 子通道处于 VMeter(只测量)状态,
         # 防止它们以 source 模式干扰 Vbat 主路电流。
         self._set_force_channels_to_vmeter(reason="pre-Vbat")
@@ -567,7 +573,9 @@ class AutoTestWorker(QObject):
 
     def _step_record_default_voltages(self):
         self._log("[AUTO_TEST] Step 8: Recording default sub-channel voltages...")
-        # Step 7 已经把子通道切到 VMeter;这里兜底一次,避免某些异常路径跳过。
+        # 首次把子通道切到 VMeter(只测量),确保 measure_voltage 读到的是
+        # DUT 自然输出电压,而不是 N6705C 通道以 source 模式拉出的电压。
+        # Step 9(Vbat 测量)前会再切一次,这里兜底避免顺序调整后漏切。
         self._set_force_channels_to_vmeter(reason="pre-measure")
         default_voltages = {}
         for device_label, (n6705c_inst, hw_channels) in self.force_map.items():
@@ -616,7 +624,7 @@ class AutoTestWorker(QObject):
         if not config_commands:
             return None, None, {}
 
-        self._log("[AUTO_TEST] Step 8 (cont.): Recording original register values...")
+        self._log("[AUTO_TEST] Step 7: Recording original register values...")
         original_registers = {}
         try:
             from lib.i2c.i2c_interface_x64 import I2CInterface
@@ -657,7 +665,7 @@ class AutoTestWorker(QObject):
 
     def _step_force_plus20(self, default_voltages):
         self._log(
-            "[AUTO_TEST] Step 9: Setting sub-channels to force/auto voltages "
+            "[AUTO_TEST] Step 10: Setting sub-channels to force/auto voltages "
             "(per-channel config)..."
         )
         for device_label, (n6705c_inst, hw_channels) in self.force_map.items():
@@ -694,7 +702,7 @@ class AutoTestWorker(QObject):
                     self._log(f"[ERROR] Failed to set {device_label}-CH{ch}: {e}")
 
     def _step_execute_config_commands(self, i2c, chip_info, config_commands):
-        self._log("[AUTO_TEST] Step 10: Executing configuration commands...")
+        self._log("[AUTO_TEST] Step 11: Executing configuration commands...")
         try:
             for idx_cmd, cmd in enumerate(config_commands):
                 op = cmd["op"]
@@ -736,7 +744,7 @@ class AutoTestWorker(QObject):
 
     def _step_auto_set_voltages(self, default_voltages):
         self._log(
-            "[AUTO_TEST] Step 11: Adjusting sub-channels with Auto Set logic "
+            "[AUTO_TEST] Step 12: Adjusting sub-channels with Auto Set logic "
             "(in-place, keep PS2Q alive)..."
         )
         for device_label, (n6705c_inst, hw_channels) in self.force_map.items():
@@ -768,7 +776,7 @@ class AutoTestWorker(QObject):
                     self._log(f"[ERROR] Auto set failed {device_label}-CH{ch}: {e}")
 
     def _step_sub_channel_consumption(self, vbat_current, base, span):
-        self._log("[AUTO_TEST] Step 12: Running sub-channel consumption test...")
+        self._log("[AUTO_TEST] Step 13: Running sub-channel consumption test...")
         results = {(self.vbat_device_label, self.vbat_hw_ch): float(vbat_current)}
         vbat_remain = None
 
@@ -812,7 +820,7 @@ class AutoTestWorker(QObject):
         return results, vbat_remain
 
     def _step_restore_registers(self, i2c, original_registers):
-        self._log("[AUTO_TEST] Step 13: Restoring original register values...")
+        self._log("[AUTO_TEST] Step 14: Restoring original register values...")
         for (device_addr, reg_addr, width), orig_val in original_registers.items():
             try:
                 i2c.write(device_addr, reg_addr, orig_val, width)
@@ -826,7 +834,7 @@ class AutoTestWorker(QObject):
                 )
 
     def _step_restore_vmeter(self):
-        self._log("[AUTO_TEST] Step 14: Restoring sub-channels to VMeter mode...")
+        self._log("[AUTO_TEST] Step 15: Restoring sub-channels to VMeter mode...")
         for _device_label, (n6705c_inst, hw_channels) in self.force_map.items():
             n6705c_inst.restore_channels_to_vmeter(hw_channels)
 
@@ -999,7 +1007,8 @@ class AutoTestWorker(QObject):
 
         unit_label = f"(Unit: {suffix})"
 
-        sep = " | "
+        # 使用制表符分隔,方便直接复制粘贴到 Excel 相邻单元格。
+        sep = "\t"
         header_cells = [f"{'BIN':<{bin_col_width}}", voltage_col_header_padded]
         for i, hdr in enumerate(col_headers):
             header_cells.append(f"{hdr:>{val_col_widths[i]}}")
@@ -1021,7 +1030,7 @@ class AutoTestWorker(QObject):
         self._log("[SUMMARY] " + sep_line)
         for idx, (bin_name, vals) in enumerate(rows):
             _, v_vals = voltage_rows[idx]
-            voltage_cell = " | ".join(
+            voltage_cell = "\t".join(
                 f"{v:>{voltage_sub_widths[i]}}" for i, v in enumerate(v_vals)
             )
             cells = [f"{bin_name:<{bin_col_width}}",

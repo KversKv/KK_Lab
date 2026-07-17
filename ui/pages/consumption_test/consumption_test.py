@@ -755,7 +755,7 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
 
         yaml_path = os.path.join(_MAIN_CHIP_CONFIGS_DIR, f"{chip_name}.yaml")
         if not os.path.isfile(yaml_path):
-            self.append_log(f"[SYSTEM] No YAML config file for {chip_name}, rail edits left empty.")
+            self.append_log(f"[CONFIG] No saved YAML for {chip_name} (file not found: {chip_name}.yaml).")
             return
 
         if yaml is None:
@@ -771,12 +771,12 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             return
 
         if not isinstance(parsed, dict):
-            self.append_log(f"[SYSTEM] Chip YAML for {chip_name} has no top-level dict, rail edits left empty.")
+            self.append_log(f"[CONFIG] {chip_name}.yaml has no top-level dict, rail edits left empty.")
             return
 
         # 构造大小写不敏感的 key → rail 映射
         lower_to_rail = {rail.lower(): rail for rail in self._RAIL_NAMES}
-        loaded_count = 0
+        loaded_rails = []
         for key, val in parsed.items():
             rail = lower_to_rail.get(str(key).strip().lower())
             if rail is None:
@@ -788,12 +788,24 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             else:
                 text = str(val)
             edits[rail].setPlainText(text)
-            loaded_count += 1
+            loaded_rails.append(rail)
 
-        self.append_log(
-            f"[SYSTEM] Loaded {loaded_count}/{len(self._RAIL_NAMES)} rail configs "
-            f"for {chip_name} from YAML."
-        )
+        total = len(self._RAIL_NAMES)
+        loaded_count = len(loaded_rails)
+        if loaded_count > 0:
+            self.append_log(
+                f"[CONFIG] Auto-loaded {loaded_count}/{total} rail configs from {chip_name}.yaml: "
+                f"{', '.join(loaded_rails)}"
+            )
+        else:
+            # 没有匹配到任何 rail key, 列出 yaml 中的实际 key 供用户判断
+            available_keys = list(parsed.keys())
+            keys_str = ", ".join(str(k) for k in available_keys) if available_keys else "(empty)"
+            self.append_log(
+                f"[CONFIG] {chip_name}.yaml exists but has no rail-name keys "
+                f"(expected: {', '.join(self._RAIL_NAMES)}; found: {keys_str}). "
+                f"Rail edits left empty."
+            )
 
     def _get_rail_config_text(self, rail_name):
         """获取指定电源轨的 YAML 配置文本。"""
@@ -811,15 +823,6 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             if text:
                 parts.append(text)
         return "\n".join(parts)
-
-    def _get_rail_configs_dict(self):
-        """返回 {rail_name: config_text} 字典(仅包含非空项)。"""
-        result = {}
-        for rail in self._RAIL_NAMES:
-            text = self._get_rail_config_text(rail)
-            if text:
-                result[rail] = text
-        return result
 
     def _build_config_text_for_standard_mode(self, enabled_configs):
         """标准电压模式: 根据启用的通道 Name 匹配电源配置, 合并成 config_text。
@@ -912,31 +915,64 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
         self._chip_check_worker = None
         self._chip_check_thread = None
 
-    def _import_rail_configuration(self, rail_name):
-        """将单个电源轨的 YAML 配置保存到 <chip>.yaml 文件中对应 rail 的 key 下。
+    def _on_chip_save(self):
+        """把当前 5 个 YAML 文本框内容一次性写入 <chip>.yaml 文件。
 
-        YAML 文件结构(顶层 key 与 rail 名称一一对应):
-            Vcore:
-              - WRITE 0x100 0x1
-              - WRITE_BITS 0x110 7 0 0x3
-            VANA:
-              - WRITE 0x200 0x2
+        会保留文件中已有的非 rail-name 顶层 key(例如 voltage_low/voltage_default
+        等模板配置),仅按 _RAIL_NAMES 逐轨覆盖/新增对应的 rail key。
+        空 YAML 文本框也会写入空列表,等效于清空对应 rail key。
         """
-        if rail_name not in self._RAIL_NAMES:
-            logger.warning("Unknown rail name: %s", rail_name)
-            return
-
-        chip_name = self.chip_combo.currentText()
         if self.chip_combo.currentIndex() <= 0:
-            self.append_log(f"[WARNING] No chip selected for {rail_name} import.")
+            self.append_log("[WARNING] No chip selected. Please select a chip before saving.")
+            return
+        chip_name = self.chip_combo.currentText()
+
+        if yaml is None:
+            self.append_log("[WARNING] PyYAML not installed; cannot save rail configs.")
             return
 
-        config_text = self._get_rail_config_text(rail_name)
-        if not config_text:
-            self.append_log(f"[WARNING] {rail_name} config is empty, nothing to import.")
-            return
+        yaml_path = os.path.join(_MAIN_CHIP_CONFIGS_DIR, f"{chip_name}.yaml")
 
-        self._update_chip_rail_yaml(chip_name, rail_name, config_text)
+        # 读取已有内容(保留非 rail key)
+        try:
+            if os.path.isfile(yaml_path):
+                with open(yaml_path, "r", encoding="utf-8") as f:
+                    existing_text = f.read()
+                parsed = yaml.safe_load(existing_text) or {}
+                if not isinstance(parsed, dict):
+                    parsed = {}
+            else:
+                parsed = {}
+        except Exception as e:
+            logger.warning("Failed to read existing YAML %s, will overwrite: %s", yaml_path, e)
+            parsed = {}
+
+        # 逐轨写入(空文本写入空列表)
+        saved_rails = []
+        for rail in self._RAIL_NAMES:
+            text = self._get_rail_config_text(rail)
+            config_lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+            parsed[rail] = config_lines
+            if config_lines:
+                saved_rails.append(f"{rail}({len(config_lines)})")
+
+        try:
+            os.makedirs(os.path.dirname(yaml_path), exist_ok=True)
+            with open(yaml_path, "w", encoding="utf-8") as f:
+                yaml.safe_dump(
+                    parsed, f,
+                    default_flow_style=False,
+                    allow_unicode=True,
+                    sort_keys=False,
+                )
+            saved_summary = ", ".join(saved_rails) if saved_rails else "(all empty)"
+            logger.info("All rail configs saved to %s", yaml_path)
+            self.append_log(
+                f"[CONFIG] Saved 5 rail configs to {chip_name}.yaml: {saved_summary}"
+            )
+        except Exception as e:
+            logger.error("Failed to write chip YAML %s: %s", yaml_path, e)
+            self.append_log(f"[ERROR] Failed to save chip config: {e}")
 
     def _execute_rail_configuration(self, rail_name):
         """执行单个电源轨的 I2C 配置(跳过其它 rail)。
@@ -1598,414 +1634,6 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             self.mcu_connect_btn.setEnabled(True)
             self.mcu_connect_btn.setText("Connect")
             self.append_log("[MCU] Disconnected.")
-
-    # =====================================================================
-    # 导入 / 导出 测试配置
-    # =====================================================================
-    CONFIG_SCHEMA_VERSION = 2
-
-    def _collect_config_snapshot(self):
-        """把当前 UI 上所有测试相关的参数序列化成一个可 JSON 化的 dict。"""
-        # 仪器:N6705C-A / N6705C-B 的 VISA resource 与连接状态
-        n6705c = {}
-        for label in ("A", "B"):
-            attr = label.lower()
-            visa = ""
-            if label in getattr(self, "_n6705c_conn_widgets", {}):
-                visa = self._n6705c_conn_widgets[label]["combo"].currentText()
-            n6705c[label] = {
-                "visa": visa,
-                "connected": bool(getattr(self, f"is_connected_{attr}", False)),
-            }
-
-        # 串口
-        serial_port = ""
-        if hasattr(self, "serial_combo") and self.serial_combo is not None:
-            serial_port = self.serial_combo.currentText() or ""
-
-        mcu_io = {
-            "port": (
-                self.mcu_port_combo.currentText()
-                if getattr(self, "mcu_port_combo", None) is not None else ""
-            ),
-            "connected": bool(getattr(self, "is_mcu_connected", False)),
-            "type": self._current_mcu_type(),
-        }
-
-        # 通道配置(_channel_configs 内容已能描述每个通道)
-        channel_configs = [dict(cfg) for cfg in self._channel_configs]
-
-        # 固件下载相关
-        download = {
-            "mode": self.download_mode_toggle.value() if hasattr(self, "download_mode_toggle") and self.download_mode_toggle else "FLASH",
-            "firmware_path": getattr(self, "firmware_path", "") or "",
-            "firmware_paths": list(getattr(self, "firmware_paths", []) or []),
-        }
-
-        # Chip 与 5 个电源 YAML config
-        chip_selected = ""
-        if hasattr(self, "chip_combo") and self.chip_combo is not None:
-            chip_selected = self.chip_combo.currentText()
-        rail_configs = self._get_rail_configs_dict()
-
-        # 测试模式: high_voltage(外供高压) / standard(标准电压)
-        test_mode = (
-            self.test_mode_toggle.value()
-            if getattr(self, "test_mode_toggle", None) is not None else "high_voltage"
-        )
-
-        # 测试参数
-        try:
-            test_time = float(self.test_time_input.text())
-        except Exception:
-            test_time = 10.0
-        control_method = (
-            self.control_method_toggle.value()
-            if hasattr(self, "control_method_toggle") and self.control_method_toggle
-            else "N6705C"
-        )
-        poweron_ch = (
-            self.poweron_channel_combo.currentText()
-            if getattr(self, "poweron_channel_combo", None) else ""
-        )
-        reset_ch = (
-            self.reset_channel_combo.currentText()
-            if getattr(self, "reset_channel_combo", None) else ""
-        )
-        poweron_pol = (
-            self.poweron_polarity_toggle.value()
-            if getattr(self, "poweron_polarity_toggle", None) else "rising"
-        )
-        reset_pol = (
-            self.reset_polarity_toggle.value()
-            if getattr(self, "reset_polarity_toggle", None) else "rising"
-        )
-        reset_enabled = (
-            self.reset_enable_cb.isChecked()
-            if getattr(self, "reset_enable_cb", None) else False
-        )
-
-        return {
-            "schema_version": self.CONFIG_SCHEMA_VERSION,
-            "page": "consumption_test",
-            "n6705c": n6705c,
-            "serial_port": serial_port,
-            "mcu_io": mcu_io,
-            "channel_configs": channel_configs,
-            "download": download,
-            "chip_selected": chip_selected,
-            "rail_configs": rail_configs,
-            "test_mode": test_mode,
-            "test": {
-                "test_time": test_time,
-                "control_method": control_method,
-                "poweron_channel": poweron_ch,
-                "poweron_polarity": poweron_pol,
-                "reset_channel": reset_ch,
-                "reset_polarity": reset_pol,
-                "reset_enabled": reset_enabled,
-            },
-        }
-
-    def _export_config(self):
-        """把当前 UI 配置导出到 JSON 文件。"""
-        try:
-            default_dir = os.getcwd()
-            default_name = os.path.join(default_dir, "consumption_test_config.json")
-            file_path, _ = QFileDialog.getSaveFileName(
-                self, "Export Consumption Test Config",
-                default_name, "JSON Files (*.json);;All Files (*)"
-            )
-            if not file_path:
-                return
-            snapshot = self._collect_config_snapshot()
-            with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(snapshot, f, indent=2, ensure_ascii=False)
-            self.append_log(f"[CONFIG] Exported to: {file_path}")
-        except Exception as e:
-            self.append_log(f"[ERROR] Export config failed: {e}")
-            QMessageBox.critical(self, "Export Failed", f"Failed to export config:\n{e}")
-
-    def _import_config(self):
-        """从 JSON 文件加载配置,应用到 UI,并尝试自动连接仪器。"""
-        if getattr(self, "is_testing", False):
-            QMessageBox.warning(self, "Cannot Import",
-                                "A test is running. Please stop it before importing config.")
-            return
-        try:
-            file_path, _ = QFileDialog.getOpenFileName(
-                self, "Import Consumption Test Config",
-                os.getcwd(), "JSON Files (*.json);;All Files (*)"
-            )
-            if not file_path:
-                return
-            with open(file_path, "r", encoding="utf-8") as f:
-                snapshot = json.load(f)
-        except Exception as e:
-            self.append_log(f"[ERROR] Import config failed: {e}")
-            QMessageBox.critical(self, "Import Failed", f"Failed to read config:\n{e}")
-            return
-
-        if not isinstance(snapshot, dict):
-            QMessageBox.critical(self, "Import Failed", "Config file format is invalid.")
-            return
-        if snapshot.get("page") and snapshot.get("page") != "consumption_test":
-            ret = QMessageBox.question(
-                self, "Page Mismatch",
-                f"This config was exported from page '{snapshot.get('page')}'.\n"
-                f"Apply it to Consumption Test anyway?",
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
-            )
-            if ret != QMessageBox.Yes:
-                return
-
-        try:
-            self._apply_imported_config(snapshot)
-            self.append_log(f"[CONFIG] Imported from: {file_path}")
-        except Exception as e:
-            # 异常时确保 preset 屏蔽标志被恢复,避免卡在抑制状态
-            self._suppress_preset_channels = False
-            self.append_log(f"[ERROR] Apply imported config failed: {e}")
-            QMessageBox.critical(self, "Import Failed", f"Failed to apply config:\n{e}")
-
-    def _apply_imported_config(self, snapshot):
-        """将 snapshot 中的设置应用到 UI。仪器连接使用 QTimer 异步触发。"""
-        # 整个导入流程中屏蔽 preset 通道覆盖逻辑(仪器连接时会触发)
-        self._suppress_preset_channels = True
-        # ---- 1. N6705C 仪器的 VISA 地址 ----
-        n6705c_cfg = snapshot.get("n6705c", {}) or {}
-        pending_connects = []
-        for label in ("A", "B"):
-            item = n6705c_cfg.get(label, {}) or {}
-            visa = item.get("visa", "") or ""
-            want_connect = bool(item.get("connected"))
-            widgets = getattr(self, "_n6705c_conn_widgets", {}).get(label)
-            if widgets is None:
-                continue
-            combo = widgets["combo"]
-            if visa:
-                # 加入下拉选项(若不存在)并选中
-                found_idx = -1
-                for i in range(combo.count()):
-                    if combo.itemText(i) == visa:
-                        found_idx = i
-                        break
-                if found_idx < 0:
-                    combo.addItem(visa)
-                    found_idx = combo.count() - 1
-                combo.setCurrentIndex(found_idx)
-            # 记录是否需要自动连接
-            if want_connect:
-                pending_connects.append(label)
-
-        # ---- 2. 串口 ----
-        serial_port = snapshot.get("serial_port", "") or ""
-        if serial_port and hasattr(self, "serial_combo") and self.serial_combo is not None:
-            found_idx = -1
-            for i in range(self.serial_combo.count()):
-                if self.serial_combo.itemText(i) == serial_port:
-                    found_idx = i
-                    break
-            if found_idx < 0:
-                self.serial_combo.addItem(serial_port)
-                found_idx = self.serial_combo.count() - 1
-            self.serial_combo.setEnabled(True)
-            self.serial_combo.setCurrentIndex(found_idx)
-
-        # ---- 2.1 MCU IO ----
-        mcu_cfg = snapshot.get("mcu_io", {}) or {}
-        mcu_port = mcu_cfg.get("port", "") or ""
-        pending_mcu_connect = bool(mcu_cfg.get("connected"))
-        mcu_type = mcu_cfg.get("type", "yd_rp2040")
-        if mcu_type in ("yd_rp2040", "ch9114f") and getattr(self, "mcu_type_combo", None) is not None:
-            for i in range(self.mcu_type_combo.count()):
-                if self.mcu_type_combo.itemData(i) == mcu_type:
-                    self.mcu_type_combo.setCurrentIndex(i)
-                    break
-        # 切换 mcu_type 会重置 port_combo 的占位符,先确保占位符匹配当前类型
-        if getattr(self, "mcu_port_combo", None) is not None:
-            self.mcu_port_combo.clear()
-            self.mcu_port_combo.addItem(
-                "Select CH9114F COM..." if mcu_type == "ch9114f" else "Select MCU COM..."
-            )
-        if mcu_port and getattr(self, "mcu_port_combo", None) is not None:
-            found_idx = -1
-            for i in range(self.mcu_port_combo.count()):
-                if self.mcu_port_combo.itemText(i) == mcu_port:
-                    found_idx = i
-                    break
-            if found_idx < 0:
-                self.mcu_port_combo.addItem(mcu_port)
-                found_idx = self.mcu_port_combo.count() - 1
-            self.mcu_port_combo.setEnabled(True)
-            self.mcu_port_combo.setCurrentIndex(found_idx)
-
-        # ---- 3. 通道配置(重建所有 channel 卡片) ----
-        channel_configs = snapshot.get("channel_configs", []) or []
-        if channel_configs:
-            self._clear_all_channel_configs()
-            # 预先把通道期望值记到 pending,供后续 _update_available_channels 使用
-            self._pending_channel_selections = {}
-            for i, cfg in enumerate(channel_configs):
-                name = cfg.get("name", "")
-                ch = cfg.get("channel", "")
-                enabled = bool(cfg.get("enabled", False))
-                self._add_channel_config_card(name, ch, enabled)
-                idx = len(self._channel_configs) - 1
-                # 强制把通道值写回(即使当前 combo 选项里没有该项)
-                self._channel_configs[idx]["channel"] = ch
-                if ch:
-                    self._pending_channel_selections[idx] = ch
-                fv_mode = cfg.get("force_mode", "auto")
-                fv_val = cfg.get("force_value", "") or ""
-                bm = cfg.get("boost_mode", "constant")
-                bv = cfg.get("boost_value", "0.02") or "0.02"
-                self._channel_configs[idx]["force_mode"] = fv_mode
-                self._channel_configs[idx]["force_value"] = fv_val
-                self._channel_configs[idx]["boost_mode"] = bm
-                self._channel_configs[idx]["boost_value"] = bv
-                wdata = self._channel_config_widgets[idx]
-                wdata["force_mode_toggle"].setValue(fv_mode)
-                wdata["force_value_input"].setText(fv_val)
-                wdata["boost_mode_toggle"].setValue(bm)
-                wdata["boost_value_input"].setText(bv)
-                is_force = (fv_mode == "force")
-                wdata["force_value_input"].setEnabled(enabled and is_force)
-                wdata["boost_mode_label"].setEnabled(enabled and not is_force)
-                wdata["boost_mode_toggle"].setEnabled(enabled and not is_force)
-                wdata["boost_value_input"].setEnabled(enabled and not is_force)
-            # 立即尝试应用一次(若仪器已连接,通道就能匹配;否则等仪器连接后再应用)
-            self._update_available_channels()
-
-        # ---- 4. 固件下载 ----
-        dl = snapshot.get("download", {}) or {}
-        dl_mode = dl.get("mode", "FLASH")
-        if hasattr(self, "download_mode_toggle") and self.download_mode_toggle:
-            self.download_mode_toggle.setValue(dl_mode)
-        fw_paths = dl.get("firmware_paths") or []
-        fw_single = dl.get("firmware_path", "") or ""
-        if fw_paths:
-            self.firmware_paths = list(fw_paths)
-            self.firmware_path = fw_paths[0]
-        elif fw_single:
-            self.firmware_paths = [fw_single]
-            self.firmware_path = fw_single
-        else:
-            self.firmware_paths = []
-            self.firmware_path = ""
-        # 同步显示到 UI 的 QLineEdit(实际控件名是 firmware_file_input)
-        if hasattr(self, "firmware_file_input") and self.firmware_file_input is not None:
-            if self.firmware_paths:
-                names = [os.path.basename(p) for p in self.firmware_paths]
-                self.firmware_file_input.setText("; ".join(names))
-            else:
-                self.firmware_file_input.setText("")
-
-        # ---- 5. Chip 选择与 config_text ----
-        chip_name = snapshot.get("chip_selected", "") or ""
-        if chip_name and hasattr(self, "chip_combo") and self.chip_combo is not None:
-            for i in range(self.chip_combo.count()):
-                if self.chip_combo.itemText(i) == chip_name:
-                    self.chip_combo.setCurrentIndex(i)
-                    break
-
-        # 5 个电源 YAML 文本框(rail_configs dict); 兼容旧版 config_text 单字符串
-        edits = getattr(self, "_rail_config_edits", {}) or {}
-        rail_configs = snapshot.get("rail_configs", {}) or {}
-        legacy_cfg_text = snapshot.get("config_text", "") or ""
-        if rail_configs and edits:
-            for rail, edit in edits.items():
-                edit.setPlainText(str(rail_configs.get(rail, "") or ""))
-        elif legacy_cfg_text and edits:
-            # 旧版单字符串配置: 全量填入所有非空 rail(向后兼容)
-            for edit in edits.values():
-                edit.setPlainText(legacy_cfg_text)
-
-        # 测试模式: high_voltage / standard
-        test_mode = snapshot.get("test_mode", "high_voltage") or "high_voltage"
-        if getattr(self, "test_mode_toggle", None) is not None:
-            if test_mode in ("high_voltage", "standard"):
-                self.test_mode_toggle.setValue(test_mode)
-
-        # ---- 6. 测试参数 ----
-        test_cfg = snapshot.get("test", {}) or {}
-        if "test_time" in test_cfg and hasattr(self, "test_time_input"):
-            try:
-                self.test_time_input.setText(str(test_cfg["test_time"]))
-            except Exception:
-                pass
-        if hasattr(self, "control_method_toggle") and self.control_method_toggle:
-            cm = test_cfg.get("control_method", "N6705C")
-            if cm in ("N6705C", "MCU"):
-                self.control_method_toggle.setValue(cm)
-
-        def _select_combo_text(combo, text):
-            if combo is None or not text:
-                return False
-            for i in range(combo.count()):
-                if combo.itemText(i) == text:
-                    combo.setCurrentIndex(i)
-                    return True
-            return False
-
-        # poweron / reset 通道:若当前选项还没有,记到 pending,等仪器连接后应用
-        self._pending_aux_selections = {}
-        poweron_txt = test_cfg.get("poweron_channel", "") or ""
-        reset_txt = test_cfg.get("reset_channel", "") or ""
-        if poweron_txt and not _select_combo_text(
-                getattr(self, "poweron_channel_combo", None), poweron_txt):
-            self._pending_aux_selections["poweron"] = poweron_txt
-        if reset_txt and not _select_combo_text(
-                getattr(self, "reset_channel_combo", None), reset_txt):
-            self._pending_aux_selections["reset"] = reset_txt
-        if not self._pending_aux_selections:
-            self._pending_aux_selections = None
-
-        if getattr(self, "poweron_polarity_toggle", None):
-            self.poweron_polarity_toggle.setValue(test_cfg.get("poweron_polarity", "rising"))
-        if getattr(self, "reset_polarity_toggle", None):
-            self.reset_polarity_toggle.setValue(test_cfg.get("reset_polarity", "rising"))
-        if getattr(self, "reset_enable_cb", None) is not None and "reset_enabled" in test_cfg:
-            try:
-                self.reset_enable_cb.setChecked(bool(test_cfg.get("reset_enabled", False)))
-            except Exception:
-                pass
-
-        # ---- 7. 自动连接仪器(延迟到事件循环,避免阻塞 UI) ----
-        if pending_connects:
-            self.append_log(
-                f"[CONFIG] Auto-connecting N6705C: {', '.join(pending_connects)} ..."
-            )
-            QTimer.singleShot(100, lambda labels=list(pending_connects):
-                              self._auto_connect_instruments(labels))
-        if pending_mcu_connect and not getattr(self, "is_mcu_connected", False):
-            self.append_log("[CONFIG] Auto-connecting MCU IO ...")
-            QTimer.singleShot(150, self._connect_mcu)
-        if pending_connects or pending_mcu_connect:
-            return
-        else:
-            # 没有需要自动连接的仪器,立即恢复 preset 机制
-            self._suppress_preset_channels = False
-
-    def _auto_connect_instruments(self, labels):
-        """按列表顺序自动连接 N6705C 仪器。已连接的跳过。"""
-        try:
-            for label in labels:
-                attr = label.lower()
-                if getattr(self, f"is_connected_{attr}", False):
-                    continue
-                try:
-                    self._connect_device(label)
-                except Exception as e:
-                    self.append_log(f"[WARNING] Auto-connect N6705C-{label} failed: {e}")
-        finally:
-            # 仪器连接完成后恢复 preset 机制,并再跑一次通道刷新,
-            # 使得此时仪器上线带来的可用通道列表能应用到导入的配置上
-            self._suppress_preset_channels = False
-            try:
-                self._update_available_channels()
-            except Exception as e:
-                self.append_log(f"[WARNING] Post-connect channel refresh failed: {e}")
 
     def _on_start_test(self):
         self._start_test()

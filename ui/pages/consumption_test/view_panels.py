@@ -86,35 +86,6 @@ class ConsumptionTestViewPanelsMixin:
         header_layout.addLayout(title_col)
         header_layout.addStretch()
 
-        # ---- 导入 / 导出 配置按钮(右上角) ----
-        self.import_config_btn = QPushButton("Import Config")
-        self.export_config_btn = QPushButton("Export Config")
-        _io_btn_style = """
-            QPushButton {
-                background-color: #1a2750;
-                color: #c8d8f8;
-                border: 1px solid #22376a;
-                border-radius: 6px;
-                padding: 4px 14px;
-                font-size: 12px;
-                font-weight: 600;
-                min-height: 24px;
-                max-height: 28px;
-            }
-            QPushButton:hover { background-color: #243760; border: 1px solid #2f4a80; }
-            QPushButton:pressed { background-color: #14203f; }
-        """
-        self.import_config_btn.setStyleSheet(_io_btn_style)
-        self.export_config_btn.setStyleSheet(_io_btn_style)
-        self.import_config_btn.setCursor(Qt.PointingHandCursor)
-        self.export_config_btn.setCursor(Qt.PointingHandCursor)
-        self.import_config_btn.setToolTip("Import test configuration from JSON file")
-        self.export_config_btn.setToolTip("Export current test configuration to JSON file")
-        self.import_config_btn.clicked.connect(self._import_config)
-        self.export_config_btn.clicked.connect(self._export_config)
-        header_layout.addWidget(self.import_config_btn, 0, Qt.AlignVCenter)
-        header_layout.addWidget(self.export_config_btn, 0, Qt.AlignVCenter)
-
         main_layout.addLayout(header_layout)
 
         # ---- Config Import 面板(横跨顶部整个界面) ----
@@ -420,6 +391,9 @@ class ConsumptionTestViewPanelsMixin:
         chip_label.setStyleSheet(
             "font-size: 10px; color: #7e96bf; background: transparent; border: none;"
         )
+        # 固定高度与对齐, 使 Chip 文本与右侧下拉框/Check 按钮同高水平居中
+        chip_label.setFixedHeight(24)
+        chip_label.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
         top_row.addWidget(chip_label)
 
         self.chip_combo = DarkComboBox()
@@ -428,7 +402,7 @@ class ConsumptionTestViewPanelsMixin:
         )
         self.chip_combo.setMinimumContentsLength(12)
         self.chip_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
-        self.chip_combo.setFixedHeight(22)
+        self.chip_combo.setFixedHeight(24)
         font = self.chip_combo.font()
         font.setPixelSize(11)
         self.chip_combo.setFont(font)
@@ -436,10 +410,12 @@ class ConsumptionTestViewPanelsMixin:
         for chip_name in SUPPORTED_CHIPS:
             self.chip_combo.addItem(chip_name)
         top_row.addWidget(self.chip_combo, 1)
+        # 尾部弹簧(stretch=1)与 combo(stretch=1)平分剩余空间, 使下拉框宽度约为原来 1/2
+        top_row.addStretch(1)
 
         self.chip_check_btn = QPushButton("Check")
         self.chip_check_btn.setFixedWidth(60)
-        self.chip_check_btn.setFixedHeight(22)
+        self.chip_check_btn.setFixedHeight(24)
         font_btn = self.chip_check_btn.font()
         font_btn.setPixelSize(11)
         self.chip_check_btn.setFont(font_btn)
@@ -462,16 +438,40 @@ class ConsumptionTestViewPanelsMixin:
         """)
         top_row.addWidget(self.chip_check_btn)
 
+        # Save 按钮: 把当前 5 个 YAML 文本框内容一次性写入 <chip>.yaml
+        self.chip_save_btn = QPushButton("Save")
+        self.chip_save_btn.setFixedWidth(60)
+        self.chip_save_btn.setFixedHeight(24)
+        font_save = self.chip_save_btn.font()
+        font_save.setPixelSize(11)
+        self.chip_save_btn.setFont(font_save)
+        self.chip_save_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #0d6b4f;
+                color: #ffffff;
+                border: none;
+                border-radius: 6px;
+                font-weight: 600;
+                min-height: 0px;
+                padding: 2px 8px;
+            }
+            QPushButton:hover { background-color: #18a87a; }
+            QPushButton:disabled {
+                background-color: #0f1930;
+                color: #5a6b8e;
+                border: 1px solid #1b2847;
+            }
+        """)
+        top_row.addWidget(self.chip_save_btn)
+
         layout.addLayout(top_row)
 
         # ---- 中部: 5 个电源轨列(横向排列), 每列含 YAML 文本框 + Import/Exec 按钮 ----
         rails_row = QHBoxLayout()
         rails_row.setSpacing(6)
         self._rail_config_edits = {}
-        self._rail_import_btns = {}
         self._rail_exec_btns = {}
 
-        _upload_svg = os.path.join(_PAGE_SVGS_DIR, "upload.svg")
         _exec_svg = os.path.join(_PAGE_SVGS_DIR, "settings.svg")
 
         for rail in self._RAIL_NAMES:
@@ -505,35 +505,10 @@ class ConsumptionTestViewPanelsMixin:
             col.addWidget(edit, 1)
             self._rail_config_edits[rail] = edit
 
-            # 每轨独立的 Import / Exec 按钮
+            # 每轨独立的 Exec 按钮(已移除 Import)
             rail_btn_row = QHBoxLayout()
             rail_btn_row.setSpacing(3)
             rail_btn_row.setContentsMargins(0, 0, 0, 0)
-
-            import_btn = QPushButton("Import")
-            if os.path.isfile(_upload_svg):
-                import_btn.setIcon(_tinted_svg_icon(_upload_svg, "#dbe7ff", 12))
-                import_btn.setIconSize(QSize(12, 12))
-            import_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #162544;
-                    color: #dbe7ff;
-                    border: 1px solid #25355c;
-                    border-radius: 6px;
-                    font-weight: 600;
-                    min-height: 22px;
-                    font-size: 10px;
-                    padding: 2px 4px;
-                }
-                QPushButton:hover { background-color: #1c315b; }
-                QPushButton:disabled {
-                    background-color: #0f1930;
-                    color: #5a6b8e;
-                    border: 1px solid #1b2847;
-                }
-            """)
-            rail_btn_row.addWidget(import_btn, 1)
-            self._rail_import_btns[rail] = import_btn
 
             exec_btn = QPushButton("Exec")
             if os.path.isfile(_exec_svg):
@@ -570,11 +545,9 @@ class ConsumptionTestViewPanelsMixin:
         # 信号连接
         self.chip_combo.currentIndexChanged.connect(self._on_chip_selected)
         self.chip_check_btn.clicked.connect(self._on_chip_check)
-        # 每轨的 Import / Exec 连接到带 rail 参数的处理函数
+        self.chip_save_btn.clicked.connect(self._on_chip_save)
+        # 每轨的 Exec 连接到带 rail 参数的处理函数
         for rail in self._RAIL_NAMES:
-            self._rail_import_btns[rail].clicked.connect(
-                lambda _checked=False, r=rail: self._import_rail_configuration(r)
-            )
             self._rail_exec_btns[rail].clicked.connect(
                 lambda _checked=False, r=rail: self._execute_rail_configuration(r)
             )
