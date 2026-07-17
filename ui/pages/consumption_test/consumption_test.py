@@ -556,15 +556,9 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
         w["status"].setStyleSheet("color: #00a859; font-weight: bold; background: transparent; border: none;")
         self.append_log(f"[SYSTEM] N6705C-{label} connected via manager.")
 
-        # 与非 manager 路径保持一致: 同步到 top 并刷新通道预设
-        self._syncing = True
-        try:
-            if self._n6705c_top:
-                getattr(self._n6705c_top, f"connect_{attr}")(
-                    session.resource, session.instance, session.serial
-                )
-        finally:
-            self._syncing = False
+        # N6705CTop 已通过自身 _on_session_connected 订阅同一 manager 的
+        # session_connected 信号完成状态同步; 此处不可再调用 connect_a/connect_b,
+        # 否则会触发 attach_external -> 重复 emit session_connected -> 无限递归。
         new_count = self._connected_device_count()
         self._apply_preset_channels(prev_count, new_count)
         self._update_available_channels()
