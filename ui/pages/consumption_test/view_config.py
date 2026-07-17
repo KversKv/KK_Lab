@@ -105,6 +105,33 @@ class ConsumptionTestViewConfigMixin:
         grid.setHorizontalSpacing(8)
         grid.setVerticalSpacing(6)
 
+        # Stable Delay (s): 下载成功后、开始测试功耗前的芯片稳定等待时间
+        stable_delay_label = QLabel("Stable Delay (s)")
+        stable_delay_label.setStyleSheet(label_style)
+        stable_delay_label.setFixedWidth(label_width)
+        self.stable_delay_input = QLineEdit("4.0")
+        self.stable_delay_input.setFixedHeight(24)
+        self.stable_delay_input.setAlignment(Qt.AlignCenter)
+        self.stable_delay_input.setToolTip(
+            "Stabilization delay (seconds) between successful download and "
+            "starting power consumption test."
+        )
+        self.stable_delay_input.setStyleSheet("""
+            QLineEdit {
+                background-color: #020816;
+                border: 1px solid #1c2f54;
+                border-radius: 6px;
+                padding: 2px 8px;
+                color: #d7e3ff;
+                font-size: 11px;
+            }
+            QLineEdit:focus {
+                border: 1px solid #5b7cff;
+            }
+        """)
+        grid.addWidget(stable_delay_label, 0, 0, Qt.AlignVCenter)
+        grid.addWidget(self.stable_delay_input, 0, 1, Qt.AlignVCenter)
+
         time_label = QLabel("Test Time (s)")
         time_label.setStyleSheet(label_style)
         time_label.setFixedWidth(label_width)
@@ -124,8 +151,8 @@ class ConsumptionTestViewConfigMixin:
                 border: 1px solid #5b7cff;
             }
         """)
-        grid.addWidget(time_label, 0, 0, Qt.AlignVCenter)
-        grid.addWidget(self.test_time_input, 0, 1, Qt.AlignVCenter)
+        grid.addWidget(time_label, 1, 0, Qt.AlignVCenter)
+        grid.addWidget(self.test_time_input, 1, 1, Qt.AlignVCenter)
 
         method_label = QLabel("Control")
         method_label.setStyleSheet(label_style)
@@ -136,8 +163,8 @@ class ConsumptionTestViewConfigMixin:
         method_ctrl_row.setSpacing(0)
         method_ctrl_row.addWidget(self.control_method_toggle)
         method_ctrl_row.addStretch()
-        grid.addWidget(method_label, 1, 0, Qt.AlignVCenter)
-        grid.addLayout(method_ctrl_row, 1, 1)
+        grid.addWidget(method_label, 2, 0, Qt.AlignVCenter)
+        grid.addLayout(method_ctrl_row, 2, 1)
 
         label_style_sm = "font-size: 10px; color: #7e96bf;"
 
@@ -220,11 +247,11 @@ class ConsumptionTestViewConfigMixin:
         mcu_status_row.addWidget(self.mcu_status_label, 0, Qt.AlignVCenter)
         mcu_status_row.addStretch()
         mcu_status_row.addWidget(self.mcu_connect_btn, 0, Qt.AlignVCenter)
-        grid.addWidget(self.mcu_type_label, 2, 0, Qt.AlignVCenter)
-        grid.addLayout(mcu_type_row, 2, 1)
-        grid.addWidget(self.mcu_com_label, 3, 0, Qt.AlignVCenter)
-        grid.addLayout(mcu_port_row, 3, 1)
-        grid.addLayout(mcu_status_row, 4, 1)
+        grid.addWidget(self.mcu_type_label, 3, 0, Qt.AlignVCenter)
+        grid.addLayout(mcu_type_row, 3, 1)
+        grid.addWidget(self.mcu_com_label, 4, 0, Qt.AlignVCenter)
+        grid.addLayout(mcu_port_row, 4, 1)
+        grid.addLayout(mcu_status_row, 5, 1)
 
         poweron_label = QLabel("PwrON")
         poweron_label.setStyleSheet(label_style_sm)
@@ -300,10 +327,10 @@ class ConsumptionTestViewConfigMixin:
             self.mcu_status_label,
             self.mcu_connect_btn,
         ]
-        grid.addWidget(poweron_label, 5, 0, Qt.AlignVCenter)
-        grid.addLayout(poweron_row, 5, 1)
-        grid.addWidget(reset_label_container, 6, 0, Qt.AlignVCenter)
-        grid.addLayout(reset_row, 6, 1)
+        grid.addWidget(poweron_label, 6, 0, Qt.AlignVCenter)
+        grid.addLayout(poweron_row, 6, 1)
+        grid.addWidget(reset_label_container, 7, 0, Qt.AlignVCenter)
+        grid.addLayout(reset_row, 7, 1)
 
         self.reset_enable_cb.toggled.connect(self._on_reset_enable_toggled)
         self._on_reset_enable_toggled(self.reset_enable_cb.isChecked())

@@ -292,6 +292,36 @@ class ConsumptionTestViewPanelsMixin:
         mode_row.addStretch()
         fw_layout.addLayout(mode_row)
 
+        # Baudrate: 下载波特率(对应 dldtool 的 --pgm-rate 参数)
+        baudrate_row = QHBoxLayout()
+        baudrate_row.setSpacing(6)
+        baudrate_label = QLabel("Baudrate")
+        baudrate_label.setStyleSheet("font-size: 11px; color: #7e96bf;")
+        self.download_baudrate_input = QLineEdit("921600")
+        self.download_baudrate_input.setFixedHeight(24)
+        self.download_baudrate_input.setFixedWidth(140)
+        self.download_baudrate_input.setAlignment(Qt.AlignCenter)
+        self.download_baudrate_input.setToolTip(
+            "Download baudrate (dldtool --pgm-rate). Default 921600."
+        )
+        self.download_baudrate_input.setStyleSheet("""
+            QLineEdit {
+                background-color: #020816;
+                border: 1px solid #1c2f54;
+                border-radius: 6px;
+                padding: 2px 8px;
+                color: #d7e3ff;
+                font-size: 11px;
+            }
+            QLineEdit:focus {
+                border: 1px solid #5b7cff;
+            }
+        """)
+        baudrate_row.addWidget(baudrate_label)
+        baudrate_row.addWidget(self.download_baudrate_input)
+        baudrate_row.addStretch()
+        fw_layout.addLayout(baudrate_row)
+
         fw_file_row = QHBoxLayout()
         fw_file_row.setSpacing(4)
         self.firmware_file_input = QLineEdit("No file selected...")

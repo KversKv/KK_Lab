@@ -61,7 +61,9 @@ class AutoTestWorker(QObject):
                  resolve_device_fn=None, channel_force_configs=None,
                  force_config_enabled=False,
                  control_method="N6705C",
-                 test_mode="high_voltage"):
+                 test_mode="high_voltage",
+                 stabilization_delay_sec=_CHIP_STABILIZATION_DELAY_SEC,
+                 download_pgm_rate=_DOWNLOAD_PGM_RATE):
         super().__init__()
         self.com_port = com_port
         self.firmware_paths = list(firmware_paths)
@@ -91,6 +93,10 @@ class AutoTestWorker(QObject):
         self.control_method = control_method
         # 测试模式: high_voltage(外供高压, 跳过 I2C 配置) / standard(标准电压, 走 I2C 配置)
         self.test_mode = test_mode
+        # 下载成功后、开始测试功耗前的芯片稳定等待时间(秒)
+        self.stabilization_delay_sec = float(stabilization_delay_sec)
+        # 下载波特率(对应 dldtool 的 --pgm-rate 参数)
+        self.download_pgm_rate = int(download_pgm_rate)
         self._is_stopped = False
         self._current_download_state = None
 
@@ -493,8 +499,8 @@ class AutoTestWorker(QObject):
             self._toggle_signal(self.reset_inst, self.reset_hw_ch, self.reset_polarity)
         else:
             self._log("[AUTO_TEST] RESET disabled, skipping RESET pulse after POWERON.")
-        self._log(f"[AUTO_TEST] Waiting {_CHIP_STABILIZATION_DELAY_SEC:.1f}s for chip stabilization...")
-        _time.sleep(_CHIP_STABILIZATION_DELAY_SEC)
+        self._log(f"[AUTO_TEST] Waiting {self.stabilization_delay_sec:.1f}s for chip stabilization...")
+        _time.sleep(self.stabilization_delay_sec)
         self.progress.emit(base + 0.35 * span)
         return not self._is_stopped
 
@@ -872,7 +878,7 @@ class AutoTestWorker(QObject):
                     mode=self.download_mode,
                     timeout=120,
                     on_state_change=_on_state,
-                    pgm_rate=_DOWNLOAD_PGM_RATE,
+                    pgm_rate=self.download_pgm_rate,
                 )
                 result_queue.put(result)
             except Exception as e:
@@ -897,7 +903,7 @@ class AutoTestWorker(QObject):
                     mode=self.download_mode,
                     timeout=120,
                     on_state_change=_on_state,
-                    pgm_rate=_DOWNLOAD_PGM_RATE,
+                    pgm_rate=self.download_pgm_rate,
                 )
                 result_queue.put(result)
             except Exception as e:

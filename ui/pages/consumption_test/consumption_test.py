@@ -2037,6 +2037,16 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
         except ValueError:
             self.append_log("[ERROR] Invalid test time.")
             return
+        try:
+            stabilization_delay_sec = float(self.stable_delay_input.text())
+        except ValueError:
+            self.append_log("[ERROR] Invalid stable delay.")
+            return
+        try:
+            download_pgm_rate = int(self.download_baudrate_input.text())
+        except ValueError:
+            self.append_log("[ERROR] Invalid baudrate.")
+            return
         sample_period = 20.0 / 1_000_000
 
         channel_names = {}
@@ -2080,7 +2090,9 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             f"Vbat={vbat_cfg['name']}({vbat_cfg['channel']}), "
             f"Control={control_method}, "
             f"PowerON={poweron_key}({poweron_polarity}), "
-            f"RESET={reset_desc}"
+            f"RESET={reset_desc}, "
+            f"StableDelay={stabilization_delay_sec:.1f}s, "
+            f"Baudrate={download_pgm_rate}"
         )
 
         worker_kwargs = dict(
@@ -2111,6 +2123,8 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             force_config_enabled=(test_mode == "standard"),
             test_mode=test_mode,
             control_method=control_method,
+            stabilization_delay_sec=stabilization_delay_sec,
+            download_pgm_rate=download_pgm_rate,
         )
         self._controller.start_auto_test(worker_kwargs)
         self.auto_test_btn.setStateProgramming()
