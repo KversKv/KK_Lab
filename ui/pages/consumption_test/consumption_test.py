@@ -77,9 +77,18 @@ class _SearchMcuPortWorker(QObject):
     def run(self):
         try:
             if self._mcu_type == "ch9114f":
-                from instruments.MCU_IO.ch9114f import list_ch9114f_ports
+                from instruments.MCU_IO.ch9114f import (
+                    list_ch9114f_ports, CH9114_USB_VID, CH9114_USB_PID,
+                )
+                import serial.tools.list_ports
                 ports = list_ch9114f_ports() or []
-                self.finished.emit(ports)
+                # 构建 device -> description 映射，补全下拉显示的完整端口名
+                desc_map = {}
+                for info in serial.tools.list_ports.comports():
+                    if info.vid == CH9114_USB_VID and info.pid == CH9114_USB_PID:
+                        desc_map[info.device] = info.description or info.device
+                labels = [f"{p} - {desc_map.get(p, p)}" for p in ports]
+                self.finished.emit(labels)
             else:
                 import serial.tools.list_ports
                 ports = serial.tools.list_ports.comports()
@@ -185,7 +194,7 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
         self._mcu_search_worker = None
         self._mcu_connect_thread = None
         self._mcu_connect_worker = None
-        self._default_mcu_type = "yd_rp2040"
+        self._default_mcu_type = "ch9114f"
 
         self.init_n6705c_connection(n6705c_top, instrument_manager=instrument_manager)
         self.init_serial_connection(mode=MODE_INLINE, prefix="DUT Serial")
@@ -221,7 +230,7 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             "N6705C": {"poweron": "B-CH1", "reset": "B-CH2"},
             "MCU": {"poweron": "GPIO0", "reset": "GPIO1"},
         }
-        self._current_control_method = "N6705C"
+        self._current_control_method = "MCU"
 
         self._controller = ConsumptionController(parent=self)
         self._controller.log_message.connect(self.append_log)
@@ -1250,7 +1259,7 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             data = self.mcu_type_combo.currentData()
             if data in ("yd_rp2040", "ch9114f"):
                 return data
-        return getattr(self, "_default_mcu_type", "yd_rp2040")
+        return getattr(self, "_default_mcu_type", "ch9114f")
 
     def _get_mcu_gpio_options(self):
         if self._current_mcu_type() == "ch9114f":

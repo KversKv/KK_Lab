@@ -34,7 +34,7 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QCheckBox, QPlainTextEdit,
     QScrollArea, QSizePolicy, QTableWidget, QTableWidgetItem, QHeaderView,
 )
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QSize, QTimer
 from PySide6.QtGui import QColor
 
 
@@ -155,6 +155,9 @@ class ConsumptionTestViewPanelsMixin:
         self.clear_log_btn = self.execution_logs.clear_log_btn
 
         main_layout.addWidget(splitter, 1)
+
+        # 首次打开自动搜索一次 MCU 串口
+        QTimer.singleShot(0, self._on_mcu_search)
 
     def _create_connection_panel(self):
         panel = QFrame()

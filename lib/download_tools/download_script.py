@@ -660,6 +660,7 @@ def download_bin(
     programmer: Optional[Union[str, Path]] = None,
     timeout: Optional[float] = 120,
     on_state_change: Optional[Callable[[DownloadState], None]] = None,
+    pgm_rate: Optional[int] = None,
 ) -> DownloadResult:
     """
     一键下载接口 —— 整个下载流程只需调用此函数
@@ -671,6 +672,7 @@ def download_bin(
         programmer:     Programmer文件路径, 为None时根据BIN文件自动识别
         timeout:        超时时间(秒), 默认120
         on_state_change: 下载状态变更回调(可选)
+        pgm_rate:       Programmer UART波特率(对应 dldtool 的 --pgm-rate), None 时不传
 
     返回:
         DownloadResult  包含 success / state / output_lines 等信息
@@ -680,7 +682,7 @@ def download_bin(
 
     programmer_str: Optional[str] = str(programmer) if programmer else None
 
-    dld = DldTool(com_port=com_port, programmer_bin=programmer_str)
+    dld = DldTool(com_port=com_port, programmer_bin=programmer_str, pgm_rate=pgm_rate)
 
     if mode == DownloadMode.FLASH:
         return dld.flash(

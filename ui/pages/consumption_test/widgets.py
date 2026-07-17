@@ -130,8 +130,8 @@ class ControlMethodToggle(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedHeight(32)
-        self._value = "N6705C"
-        self._anim_progress = 0.0
+        self._value = "MCU"
+        self._anim_progress = 1.0
 
         self._bg_color = QColor("#1A2750")
         self._knob_color = QColor("#243760")

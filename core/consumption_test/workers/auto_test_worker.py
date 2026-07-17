@@ -33,6 +33,16 @@ from .common import (
 # 下载成功后、开始测试功耗前的芯片稳定等待时间(秒)
 _CHIP_STABILIZATION_DELAY_SEC = 4.0
 
+# 外供电增压方式: "constant" = 加固定电压(V); "percent" = 按默认电压百分比加压
+_FORCE_VOLTAGE_BOOST_MODE = "percent"
+# 增压数值:
+#   - constant 模式: 单位 V, 0.02 = +20mV
+#   - percent 模式:  比例, 0.035 = +3.5%
+_FORCE_VOLTAGE_BOOST_VALUE = 0.035
+
+# 下载波特率(对应 dldtool 的 --pgm-rate 参数)
+_DOWNLOAD_PGM_RATE = 2000000
+
 
 class AutoTestWorker(QObject):
     log_message = Signal(str)
@@ -114,6 +124,20 @@ class AutoTestWorker(QObject):
                 best = sv
                 best_dist = dist
         return best
+
+    @staticmethod
+    def _compute_boosted_voltage(v_default):
+        """根据 _FORCE_VOLTAGE_BOOST_MODE / _FORCE_VOLTAGE_BOOST_VALUE 计算增压后电压。"""
+        if _FORCE_VOLTAGE_BOOST_MODE == "percent":
+            return v_default * (1.0 + _FORCE_VOLTAGE_BOOST_VALUE)
+        return v_default + _FORCE_VOLTAGE_BOOST_VALUE
+
+    @staticmethod
+    def _format_boost_desc():
+        """生成可读的增压描述,如 '+20mV' 或 '+3.50%'。"""
+        if _FORCE_VOLTAGE_BOOST_MODE == "percent":
+            return f"+{_FORCE_VOLTAGE_BOOST_VALUE * 100:.2f}%"
+        return f"+{_FORCE_VOLTAGE_BOOST_VALUE * 1000:.0f}mV"
 
     def _toggle_signal(self, inst, hw_ch, polarity):
         if self.control_method in ("MCU", "CH9114F"):
@@ -321,12 +345,15 @@ class AutoTestWorker(QObject):
 
             if config_commands and i2c:
                 self._step_execute_config_commands(i2c, chip_info, config_commands)
-            self.progress.emit(base + 0.62 * span)
-            if self._is_stopped:
-                return
+                self.progress.emit(base + 0.62 * span)
+                if self._is_stopped:
+                    return
 
-            self._step_auto_set_voltages(default_voltages)
-            _time.sleep(0.4)
+                # Step 11 仅在与 Step 10(I2C 配置下发)联动时执行:
+                # 没有 I2C 配置时,Step 9 设定的增压电压已经足够,
+                # 这里再 align 反而会把电压拉回 default,丢失增压。
+                self._step_auto_set_voltages(default_voltages)
+                _time.sleep(0.4)
             self.progress.emit(base + 0.65 * span)
             if self._is_stopped:
                 return
@@ -609,7 +636,11 @@ class AutoTestWorker(QObject):
             return None, None, {}
 
     def _step_force_plus20(self, default_voltages):
-        self._log("[AUTO_TEST] Step 9: Setting sub-channels to default voltage + 20mV...")
+        boost_desc = self._format_boost_desc()
+        self._log(
+            f"[AUTO_TEST] Step 9: Setting sub-channels to default voltage + {boost_desc} "
+            f"(mode={_FORCE_VOLTAGE_BOOST_MODE}, value={_FORCE_VOLTAGE_BOOST_VALUE})..."
+        )
         for device_label, (n6705c_inst, hw_channels) in self.force_map.items():
             for ch in hw_channels:
                 try:
@@ -627,13 +658,13 @@ class AutoTestWorker(QObject):
                         )
                     else:
                         v_default = default_voltages.get((device_label, ch), 0.0)
-                        v_plus20 = v_default + 0.02
+                        v_boosted = self._compute_boosted_voltage(v_default)
                         n6705c_inst.set_mode(ch, "PS2Q")
-                        n6705c_inst.set_voltage(ch, v_plus20)
+                        n6705c_inst.set_voltage(ch, v_boosted)
                         n6705c_inst.set_current_limit(ch, 1.0)
                         n6705c_inst.channel_on(ch)
                         self._log(
-                            f"[AUTO_TEST]   {ch_name}: {v_default:.4f}V -> {v_plus20:.4f}V (+20mV)"
+                            f"[AUTO_TEST]   {ch_name}: {v_default:.4f}V -> {v_boosted:.4f}V ({boost_desc})"
                         )
                 except Exception as e:
                     self._log(f"[ERROR] Failed to set {device_label}-CH{ch}: {e}")
@@ -803,6 +834,7 @@ class AutoTestWorker(QObject):
                     mode=self.download_mode,
                     timeout=120,
                     on_state_change=_on_state,
+                    pgm_rate=_DOWNLOAD_PGM_RATE,
                 )
                 result_queue.put(result)
             except Exception as e:
@@ -827,6 +859,7 @@ class AutoTestWorker(QObject):
                     mode=self.download_mode,
                     timeout=120,
                     on_state_change=_on_state,
+                    pgm_rate=_DOWNLOAD_PGM_RATE,
                 )
                 result_queue.put(result)
             except Exception as e:

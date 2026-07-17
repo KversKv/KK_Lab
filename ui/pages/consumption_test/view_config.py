@@ -165,6 +165,8 @@ class ConsumptionTestViewConfigMixin:
         )
         self.mcu_type_combo.addItem("YD-RP2040", userData="yd_rp2040")
         self.mcu_type_combo.addItem("CH9114F", userData="ch9114f")
+        # 默认选中 CH9114F
+        self.mcu_type_combo.setCurrentIndex(1)
         font = self.mcu_type_combo.font()
         font.setPixelSize(11)
         self.mcu_type_combo.setFont(font)
