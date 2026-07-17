@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
     QWidget, QFrame, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QPushButton, QCheckBox, QPlainTextEdit,
     QScrollArea, QSizePolicy, QTableWidget, QTableWidgetItem, QHeaderView,
+    QSplitter,
 )
 from PySide6.QtCore import Qt, QSize, QTimer
 from PySide6.QtGui import QColor
@@ -43,6 +44,19 @@ _PAGE_SVGS_DIR = os.path.join(
     get_resource_base(),
     "resources", "pages", "consumption_test_SVGs"
 )
+
+# Channel Config 与下方 Start 按钮之间 QSplitter 的隐式手柄样式
+_RIGHT_SPLITTER_STYLE = """
+    QSplitter::handle {
+        background-color: transparent;
+    }
+    QSplitter::handle:hover {
+        background-color: #18284d;
+    }
+    QSplitter::handle:pressed {
+        background-color: #5b7cff;
+    }
+"""
 
 
 class ConsumptionTestViewPanelsMixin:
@@ -132,19 +146,31 @@ class ConsumptionTestViewPanelsMixin:
         """ + SCROLLBAR_STYLE)
         left_scroll.setWidget(left_inner)
 
-        right_column = QVBoxLayout()
-        right_column.setContentsMargins(0, 0, 0, 0)
-        right_column.setSpacing(10)
-        right_column.addWidget(self._create_channel_config_section())
-        right_column.addWidget(self._create_test_buttons_row())
-        right_column.addWidget(self._create_consumption_test_panel(), 1)
+        # 右栏使用 QSplitter(Qt.Vertical)：上半为 Channel Config（可拖拽改变高度），
+        # 下半为 Start 按钮行 + 功耗测试结果面板。手柄采用隐式样式，与 ExecutionLogsFrame 一致。
+        right_splitter = QSplitter(Qt.Vertical)
+        right_splitter.setHandleWidth(6)
+        right_splitter.setContentsMargins(0, 0, 0, 0)
+        right_splitter.setStyleSheet(_RIGHT_SPLITTER_STYLE)
+        right_splitter.setChildrenCollapsible(False)
 
-        right_widget = QWidget()
-        right_widget.setStyleSheet("background: transparent; border: none;")
-        right_widget.setLayout(right_column)
+        right_splitter.addWidget(self._create_channel_config_section())
+
+        right_bottom_widget = QWidget()
+        right_bottom_widget.setStyleSheet("background: transparent; border: none;")
+        right_bottom_layout = QVBoxLayout(right_bottom_widget)
+        right_bottom_layout.setContentsMargins(0, 0, 0, 0)
+        right_bottom_layout.setSpacing(10)
+        right_bottom_layout.addWidget(self._create_test_buttons_row())
+        right_bottom_layout.addWidget(self._create_consumption_test_panel(), 1)
+        right_splitter.addWidget(right_bottom_widget)
+
+        right_splitter.setStretchFactor(0, 0)
+        right_splitter.setStretchFactor(1, 1)
+        right_splitter.setSizes([240, 400])
 
         body_layout.addWidget(left_scroll)
-        body_layout.addWidget(right_widget, 1)
+        body_layout.addWidget(right_splitter, 1)
 
         body_widget = QWidget()
         body_widget.setStyleSheet("background: transparent; border: none;")
@@ -460,8 +486,8 @@ class ConsumptionTestViewPanelsMixin:
 
             edit = QPlainTextEdit()
             edit.setPlaceholderText(f"{rail} config...")
-            edit.setMinimumHeight(70)
-            edit.setMaximumHeight(110)
+            edit.setMinimumHeight(35)
+            edit.setMaximumHeight(55)
             edit.setStyleSheet("""
                 QPlainTextEdit {
                     background-color: #0d1b3e;

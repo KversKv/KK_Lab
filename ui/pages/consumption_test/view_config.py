@@ -45,6 +45,27 @@ _PAGE_SVGS_DIR = os.path.join(
 )
 
 
+def _apply_compact_combo_padding(combo):
+    """收紧 DarkComboBox 的右侧 padding, 扩大文本可绘制宽度。
+
+    DarkComboBox 默认 QSS 为 `padding: 2px 28px 2px 10px` + `::drop-down { width: 22px }`。
+    由于 drop-down 箭头被摆放在 content 区域(padding 内部)的右边缘,
+    padding-right=28 实际让箭头向左退 28px, 而箭头自身仅 22px,
+    导致箭头右侧有约 6px 空白、文本区被压缩约 22px,
+    在窄宽度(如 Channel Config 卡片 ~102px)下长名称(VHPPA / VcoreM)
+    会被 paintEvent 的 elidedText 中段省略为 V...A。
+
+    此处附加一条同优先级的 QSS 规则将 padding-right 改为 6px(保留小间隙),
+    把多出的 22px 让给文本, 下拉框整体宽度不变。
+    """
+    oid = combo.objectName()
+    combo.setStyleSheet(combo.styleSheet() + f"""
+        QComboBox#{oid} {{
+            padding: 2px 6px 2px 10px;
+        }}
+    """)
+
+
 class ConsumptionTestViewConfigMixin:
 
     def _create_test_config_panel(self):
@@ -87,7 +108,7 @@ class ConsumptionTestViewConfigMixin:
         time_label = QLabel("Test Time (s)")
         time_label.setStyleSheet(label_style)
         time_label.setFixedWidth(label_width)
-        self.test_time_input = QLineEdit("10")
+        self.test_time_input = QLineEdit("5")
         self.test_time_input.setFixedHeight(24)
         self.test_time_input.setAlignment(Qt.AlignCenter)
         self.test_time_input.setStyleSheet("""
@@ -400,7 +421,8 @@ class ConsumptionTestViewConfigMixin:
         scroll_area.setWidgetResizable(True)
         scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll_area.setFixedHeight(200)
+        # 由外层 QSplitter 控制高度，设置最小高度避免被拖到过小
+        scroll_area.setMinimumHeight(150)
         scroll_area.setStyleSheet("""
             QScrollArea {
                 background: transparent;
@@ -433,7 +455,7 @@ class ConsumptionTestViewConfigMixin:
         self._channel_config_row.addStretch()
 
         scroll_area.setWidget(self._channel_config_container)
-        config_layout.addWidget(scroll_area)
+        config_layout.addWidget(scroll_area, 1)
 
         return config_frame
 
@@ -465,7 +487,13 @@ class ConsumptionTestViewConfigMixin:
         card_layout.setContentsMargins(10, 8, 10, 8)
         card_layout.setSpacing(5)
 
-        top_row = QHBoxLayout()
+        # top_row 用独立容器包裹, 便于在 Vbat 场景下隐藏内部控件而保留占位高度
+        top_row_container = QWidget()
+        top_row_container.setStyleSheet("background: transparent; border: none;")
+        # 设最小高度, Vbat 隐藏 Enable/Remove 后仍保留行高, 使 Name/CH 与其它卡片对齐
+        top_row_container.setMinimumHeight(24)
+        top_row = QHBoxLayout(top_row_container)
+        top_row.setContentsMargins(0, 0, 0, 0)
         top_row.setSpacing(4)
 
         enable_cb = QCheckBox("Enable")
@@ -495,7 +523,7 @@ class ConsumptionTestViewConfigMixin:
             QPushButton:hover { color: #ff5a5a; }
         """)
         top_row.addWidget(remove_btn)
-        card_layout.addLayout(top_row)
+        card_layout.addWidget(top_row_container)
 
         # Name 行: 标签 + 下拉菜单同一行
         name_row = QHBoxLayout()
@@ -520,6 +548,7 @@ class ConsumptionTestViewConfigMixin:
             name_input.setEditable(True)
             name_input.setCurrentText(name)
             name_input.setEditable(False)
+        _apply_compact_combo_padding(name_input)
         name_row.addWidget(name_input, 1)
         card_layout.addLayout(name_row)
 
@@ -543,6 +572,7 @@ class ConsumptionTestViewConfigMixin:
             if channel_combo.itemText(i) == channel_key:
                 channel_combo.setCurrentIndex(i)
                 break
+        _apply_compact_combo_padding(channel_combo)
         ch_row.addWidget(channel_combo, 1)
         card_layout.addLayout(ch_row)
 
@@ -556,7 +586,10 @@ class ConsumptionTestViewConfigMixin:
         card_layout.addWidget(force_mode_toggle)
 
         # Force/Auto 互斥内容区: index 0 = Force 输入框, index 1 = Auto 三件套
-        force_auto_stack = QStackedLayout()
+        # 用独立容器 widget 包裹 QStackedLayout, 便于按需显隐而不影响整张卡片
+        force_auto_container = QWidget()
+        force_auto_container.setStyleSheet("background: transparent; border: none;")
+        force_auto_stack = QStackedLayout(force_auto_container)
         force_auto_stack.setContentsMargins(0, 0, 0, 0)
         force_auto_stack.setSpacing(0)
 
@@ -580,7 +613,6 @@ class ConsumptionTestViewConfigMixin:
                 border: 1.5px solid #27406f;
                 border-radius: 6px;
                 padding: 0px 10px;
-                max-height: 18px;
             }
             QLineEdit:disabled {
                 background-color: #060d1f;
@@ -623,7 +655,6 @@ class ConsumptionTestViewConfigMixin:
                 border: 1.5px solid #27406f;
                 border-radius: 6px;
                 padding: 0px 10px;
-                max-height: 18px;
             }
             QLineEdit:disabled {
                 background-color: #060d1f;
@@ -636,7 +667,9 @@ class ConsumptionTestViewConfigMixin:
 
         # 初始 page:force_mode == "force" -> 0, 否则 "auto" -> 1
         force_auto_stack.setCurrentIndex(0 if config["force_mode"] == "force" else 1)
-        card_layout.addLayout(force_auto_stack)
+        card_layout.addWidget(force_auto_container)
+        # 尾部弹簧: Vbat 仅显示 Name/CH 时, 弹簧吃掉剩余高度, 防止两行被均匀拉伸
+        card_layout.addStretch(1)
 
         stretch_idx = self._channel_config_row.count() - 1
         self._channel_config_row.insertWidget(stretch_idx, card)
@@ -650,8 +683,10 @@ class ConsumptionTestViewConfigMixin:
             "remove_btn": remove_btn,
             "name_label": name_label,
             "ch_label": ch_label,
+            "top_row_container": top_row_container,
             "force_mode_toggle": force_mode_toggle,
             "force_auto_stack": force_auto_stack,
+            "force_auto_container": force_auto_container,
             "force_value_input": force_value_input,
             "boost_mode_label": boost_mode_label,
             "boost_mode_toggle": boost_mode_toggle,
@@ -757,6 +792,8 @@ class ConsumptionTestViewConfigMixin:
     def _on_config_name_changed(self, idx, text):
         if idx < len(self._channel_configs):
             self._channel_configs[idx]["name"] = text
+            # Name 变化可能触发 Vbat 简化布局: 只显示 Name + CH
+            self._update_card_extras_visibility(self._channel_config_widgets[idx])
             self._refresh_result_cards()
 
     def _on_config_channel_changed(self, idx):
@@ -796,15 +833,32 @@ class ConsumptionTestViewConfigMixin:
         self._update_channel_cards_force_visibility()
 
     def _update_channel_cards_force_visibility(self):
-        """根据当前测试模式, 显隐所有通道卡片的 Force/Auto 控件。"""
-        mode = getattr(self, "_test_mode", "high_voltage")
-        show_force = (mode == "high_voltage")
+        """根据当前测试模式 + 通道 Name, 显隐所有通道卡片的 Force/Auto 控件。
+
+        规则:
+          - Name == "Vbat": 只显示 Name + CH, 隐藏 Enable/Remove 行 + Force/Auto 全部
+          - 其它 Name: 显示 Enable/Remove 行; Force/Auto 控件按测试模式显隐
+            (high_voltage → 显示, standard → 隐藏)
+        """
         for wdata in getattr(self, "_channel_config_widgets", []):
-            wdata["force_mode_toggle"].setVisible(show_force)
-            # force_auto_stack 是 QStackedLayout, 需通过其容器 widget 控制显隐
-            stack_container = wdata["force_auto_stack"].parentWidget()
-            if stack_container is not None:
-                stack_container.setVisible(show_force)
+            self._update_card_extras_visibility(wdata)
+
+    def _update_card_extras_visibility(self, wdata):
+        """单个卡片: 综合 Vbat 判定 + 测试模式, 决定 Force/Auto 区域与 top_row 内控件显隐。"""
+        mode = getattr(self, "_test_mode", "high_voltage")
+        name = wdata["name_input"].currentText().strip()
+        is_vbat = (name == "Vbat")
+
+        # top_row_container 始终保留(维持高度), Vbat 时只隐藏内部 Enable/Remove
+        wdata["enable_cb"].setVisible(not is_vbat)
+        wdata["remove_btn"].setVisible(not is_vbat)
+
+        # Force/Auto 区域: Vbat 强制隐藏; 否则按测试模式
+        show_force = (not is_vbat) and (mode == "high_voltage")
+        wdata["force_mode_toggle"].setVisible(show_force)
+        container = wdata.get("force_auto_container")
+        if container is not None:
+            container.setVisible(show_force)
 
     def _on_force_value_changed(self, idx, text):
         if idx < len(self._channel_configs):
