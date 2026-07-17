@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import (
     Qt, QThread, Signal, QObject, QSize, QRect, QRectF,
-    QPropertyAnimation, QEasingCurve, Property
+    QPropertyAnimation, QEasingCurve, Property, QTimer
 )
 from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
 from PySide6.QtSvg import QSvgRenderer
@@ -314,9 +314,18 @@ class _SearchMcuIoWorker(QObject):
     def run(self):
         try:
             if self._mcu_type == MCU_TYPE_CH9114F:
-                from instruments.MCU_IO.ch9114f import list_ch9114f_ports
+                from instruments.MCU_IO.ch9114f import (
+                    list_ch9114f_ports, CH9114_USB_VID, CH9114_USB_PID,
+                )
+                import serial.tools.list_ports
                 ports = list_ch9114f_ports() or []
-                self.finished.emit(list(ports))
+                # 构建 device -> description 映射，补全下拉显示的完整端口名
+                desc_map = {}
+                for info in serial.tools.list_ports.comports():
+                    if info.vid == CH9114_USB_VID and info.pid == CH9114_USB_PID:
+                        desc_map[info.device] = info.description or info.device
+                labels = [f"{p} - {desc_map.get(p, p)}" for p in ports]
+                self.finished.emit(labels)
             else:
                 import serial.tools.list_ports
                 ports = serial.tools.list_ports.comports()
@@ -402,18 +411,29 @@ class _GpioPulseWorker(QObject):
     finished = Signal(int)
     error = Signal(str)
 
-    def __init__(self, inst, pin, active, width_ms):
+    def __init__(self, inst, pin, active, width_ms, prev_state=None):
         super().__init__()
         self._inst = inst
         self._pin = pin
         self._active = active
         self._width_ms = width_ms
+        self._prev_state = prev_state
 
     def run(self):
         try:
+            # release_high_z=False：pulse 结束后停留在 idle 电平（输出模式），
+            # 由本 worker 显式恢复 pulse 之前的状态，避免强制回到 High-Z。
             self._inst.pulse(
-                self._pin, width_ms=self._width_ms, active=self._active
+                self._pin, width_ms=self._width_ms, active=self._active,
+                release_high_z=False,
             )
+            # 恢复 pulse 执行前的状态
+            if self._prev_state == GPIO_STATE_HIGHZ:
+                self._inst.in_pull(self._pin, "none")
+            elif self._prev_state == GPIO_STATE_HIGH:
+                self._inst.out(self._pin, 1)
+            elif self._prev_state == GPIO_STATE_LOW:
+                self._inst.out(self._pin, 0)
             self.finished.emit(self._pin)
         except Exception as e:
             logger.error("MCU IO GPIO pulse failed: %s", e, exc_info=True)
@@ -506,8 +526,8 @@ class McuIoConnectionMixin:
         self._mcu_io_pulse_worker = None
         self._mcu_io_default_thread = None
         self._mcu_io_default_worker = None
-        # MCU 类型默认 YD-RP2040；切换由 mcu_type_combo 触发
-        self._mcu_io_type = MCU_TYPE_YD_RP2040
+        # MCU 类型默认 CH9114F；切换由 mcu_type_combo 触发
+        self._mcu_io_type = MCU_TYPE_CH9114F
 
     def _current_mcu_io_type(self):
         """返回当前 MCU IO 类型 (yd_rp2040 / ch9114f)。
@@ -560,6 +580,8 @@ class McuIoConnectionMixin:
         )
         self.mcu_io_type_combo.addItem("YD-RP2040", userData=MCU_TYPE_YD_RP2040)
         self.mcu_io_type_combo.addItem("CH9114F", userData=MCU_TYPE_CH9114F)
+        # 默认选中 CH9114F
+        self.mcu_io_type_combo.setCurrentIndex(1)
         font = self.mcu_io_type_combo.font()
         font.setPixelSize(11)
         self.mcu_io_type_combo.setFont(font)
@@ -716,8 +738,9 @@ class McuIoConnectionMixin:
             pulse_btn.setFixedWidth(56)
             pulse_btn.setStyleSheet(_mcu_io_action_style())
             pulse_btn.setToolTip(
-                "Send a single pulse on this GPIO. Active level follows the level "
-                "toggle (High/Low); width uses the Pulse (ms) value above."
+                "Send a single pulse on this GPIO. Drives the pin to the opposite "
+                "of the current level for the Pulse (ms) duration, then restores "
+                "the previous state (High/Low/High-Z)."
             )
             pulse_btn.clicked.connect(lambda _=False, p=pin: self._on_mcu_io_pulse(p))
             row.addWidget(pulse_btn, 0, Qt.AlignVCenter)
@@ -832,6 +855,8 @@ class McuIoConnectionMixin:
             self.mcu_io_read_btn.clicked.connect(self._on_mcu_io_read)
         self._bind_mcu_io_manager_signals()
         self._sync_mcu_io_from_manager()
+        # 首次打开自动搜索串口
+        QTimer.singleShot(0, self._on_mcu_io_search)
 
     def _on_mcu_io_type_changed(self, _idx=None):
         """切换 MCU 类型（YD-RP2040 / CH9114F）。"""
@@ -1319,8 +1344,17 @@ class McuIoConnectionMixin:
             return
 
         toggle = self.mcu_io_output_toggles.get(pin)
-        state = toggle.value() if toggle else GPIO_STATE_HIGH
-        active = 0 if state == GPIO_STATE_LOW else 1
+        state = toggle.value() if toggle else GPIO_STATE_HIGHZ
+        # Pulse 为"反向脉冲"：active 取当前电平的反向，确保产生可见的电平变化。
+        #   当前 Low  -> pulse High，结束后回到 Low
+        #   当前 High -> pulse Low，结束后回到 High
+        #   当前 HighZ -> 默认 pulse High，结束后回到 HighZ
+        if state == GPIO_STATE_LOW:
+            active = 1
+        elif state == GPIO_STATE_HIGH:
+            active = 0
+        else:
+            active = 1
 
         spin = getattr(self, "mcu_io_pulse_width_spin", None)
         width_ms = int(round(
@@ -1332,7 +1366,9 @@ class McuIoConnectionMixin:
             f"[MCU] Pulsing GPIO{pin} active={active} width={width_ms}ms..."
         )
 
-        worker = _GpioPulseWorker(self.mcu_io, pin, active, width_ms)
+        worker = _GpioPulseWorker(
+            self.mcu_io, pin, active, width_ms, prev_state=state
+        )
         thread = QThread()
         worker.moveToThread(thread)
 

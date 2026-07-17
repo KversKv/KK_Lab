@@ -250,7 +250,7 @@ class _CollectionPage(McuIoConnectionMixin, QWidget):
 
         title_row = QHBoxLayout()
         title_row.setSpacing(8)
-        self.mcu_io_title_label = QLabel("MCU IO (YD-RP2040)")
+        self.mcu_io_title_label = QLabel("MCU IO (CH9114F)")
         self.mcu_io_title_label.setStyleSheet("font-size: 15px; font-weight: 700;")
         title_row.addWidget(self.mcu_io_title_label)
         title_row.addStretch(1)

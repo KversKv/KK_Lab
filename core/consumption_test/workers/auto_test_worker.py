@@ -30,6 +30,9 @@ from .common import (
     wait_datalog_with_progress,
 )
 
+# 下载成功后、开始测试功耗前的芯片稳定等待时间(秒)
+_CHIP_STABILIZATION_DELAY_SEC = 4.0
+
 
 class AutoTestWorker(QObject):
     log_message = Signal(str)
@@ -437,8 +440,8 @@ class AutoTestWorker(QObject):
             self._toggle_signal(self.reset_inst, self.reset_hw_ch, self.reset_polarity)
         else:
             self._log("[AUTO_TEST] RESET disabled, skipping RESET pulse after POWERON.")
-        self._log("[AUTO_TEST] Waiting 2s for chip stabilization...")
-        _time.sleep(2.0)
+        self._log(f"[AUTO_TEST] Waiting {_CHIP_STABILIZATION_DELAY_SEC:.1f}s for chip stabilization...")
+        _time.sleep(_CHIP_STABILIZATION_DELAY_SEC)
         self.progress.emit(base + 0.35 * span)
         return not self._is_stopped
 
