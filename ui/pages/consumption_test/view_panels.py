@@ -4,9 +4,10 @@
 Consumption Test 主面板视图构建（Mixin）。
 
 从 consumption_test.py 平移而来，行为零变更：
-  - _create_layout                   : 顶层布局（标题栏 / 主体 splitter / 执行日志）
+  - _create_layout                   : 顶层布局（标题栏 / Config Import / 主体 splitter / 执行日志）
   - _create_connection_panel         : N6705C / Charger 连接面板
-  - _create_firmware_and_config_panels: 固件下载 + 芯片配置面板
+  - _create_firmware_panel           : 固件下载面板
+  - _create_config_import_panel      : Config Import 面板（测试模式 + Chip + 5 电源 YAML）
   - _build_firmware_serial_widgets   : 固件串口控件组
   - _create_consumption_test_panel   : 功耗测试结果面板（结果卡片 + BIN 表 + Save DataLog）
   - _create_test_buttons_row         : Start / Auto 测试按钮行
@@ -25,7 +26,7 @@ from ui.widgets.button import SpinningSearchButton, update_connect_button_state
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.widgets.progress_button import ProgressButton
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
-from ui.pages.consumption_test.widgets import DownloadModeToggle
+from ui.pages.consumption_test.widgets import DownloadModeToggle, BinaryTextToggle
 from ui.theme import Colors, FontSizes, Radius, Spacing, FONT_FAMILY, FONT_MONO
 from chips.bes_chip_configs.bes_chip_configs import SUPPORTED_CHIPS
 from ui.styles import SCROLLBAR_STYLE
@@ -102,6 +103,9 @@ class ConsumptionTestViewPanelsMixin:
 
         main_layout.addLayout(header_layout)
 
+        # ---- Config Import 面板(横跨顶部整个界面) ----
+        main_layout.addWidget(self._create_config_import_panel())
+
         body_layout = QHBoxLayout()
         body_layout.setContentsMargins(0, 0, 0, 0)
         body_layout.setSpacing(10)
@@ -109,9 +113,8 @@ class ConsumptionTestViewPanelsMixin:
         left_column = QVBoxLayout()
         left_column.setSpacing(10)
         left_column.addWidget(self._create_connection_panel())
-        fw_panel, config_panel = self._create_firmware_and_config_panels()
+        fw_panel = self._create_firmware_panel()
         left_column.addWidget(fw_panel)
-        left_column.addWidget(config_panel)
         left_column.addWidget(self._create_test_config_panel())
         left_column.addStretch()
 
@@ -260,7 +263,7 @@ class ConsumptionTestViewPanelsMixin:
 
         return panel
 
-    def _create_firmware_and_config_panels(self):
+    def _create_firmware_panel(self):
         fw_panel = QFrame()
         fw_panel.setObjectName("fwPanel")
         fw_panel.setStyleSheet("""
@@ -327,21 +330,38 @@ class ConsumptionTestViewPanelsMixin:
         self.download_btn = ProgressButton()
         fw_layout.addWidget(self.download_btn)
 
-        config_panel = QFrame()
-        config_panel.setObjectName("configPanel")
-        config_panel.setStyleSheet("""
+        self.firmware_browse_btn.clicked.connect(self._browse_firmware)
+        self.download_btn.clicked.connect(self._download_to_dut)
+        self.download_btn.stop_clicked.connect(self._stop_download)
+
+        return fw_panel
+
+    # 5 个电源轨名称(顺序决定 UI 从左到右排列)
+    _RAIL_NAMES = ["Vcore", "VcoreM", "VcoreL", "VANA", "VHPPA"]
+
+    def _create_config_import_panel(self):
+        """Config Import 面板(横跨顶部整个界面)。
+
+        顶行: 测试模式切换(外供高压/标准电压) + Chip 下拉 + Check 按钮
+        中部: 5 个独立电源轨列(Vcore/VcoreM/VcoreL/VANA/VHPPA)
+              每列含 YAML 文本框 + 该轨独立的 Import/Exec 按钮
+        """
+        panel = QFrame()
+        panel.setObjectName("configPanel")
+        panel.setStyleSheet("""
             QFrame#configPanel {
                 background-color: #0b1630;
                 border: 1px solid #18284d;
                 border-radius: 12px;
             }
         """)
-        config_layout = QVBoxLayout(config_panel)
-        config_layout.setContentsMargins(12, 10, 12, 10)
-        config_layout.setSpacing(6)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(6)
 
-        config_title_row = QHBoxLayout()
-        config_title_row.setSpacing(4)
+        # ---- 顶行: 标题 + 测试模式 + Chip + Check ----
+        top_row = QHBoxLayout()
+        top_row.setSpacing(8)
         config_icon_label = QLabel()
         config_icon_label.setPixmap(
             _tinted_svg_icon(os.path.join(_PAGE_SVGS_DIR, "file-json.svg"), "#94a3b8", 16).pixmap(16, 16)
@@ -349,44 +369,38 @@ class ConsumptionTestViewPanelsMixin:
         config_icon_label.setFixedSize(16, 16)
         config_title = QLabel("Config Import")
         config_title.setStyleSheet("font-size: 12px; font-weight: 700; color: #ffffff;")
-        config_title_row.addWidget(config_icon_label)
-        config_title_row.addWidget(config_title)
-        config_title_row.addStretch()
+        top_row.addWidget(config_icon_label)
+        top_row.addWidget(config_title)
 
-        self.force_config_cb = QCheckBox("Force")
-        self.force_config_cb.setChecked(False)
-        self.force_config_cb.setToolTip(
-            "强制配置:\n"
-            "  · 未勾选:仅当存在 Vbat 之外的通道时才下发配置(先用 Config Content,\n"
-            "            为空则用所选 Chip Conf 中的配置);若只有 Vbat 一个通道则跳过配置查找。\n"
-            "  · 勾选:不管通道数量,都进行配置查找和下发,\n"
-            "            并在 Vbat 测试前也对 DUT 执行一次配置。"
+        # 测试模式切换: 外供高压(high_voltage) / 标准电压(standard)
+        # 外供高压 → Channel Config 显示 Force Vol 控件, 跳过 I2C 配置
+        # 标准电压 → 隐藏 Force Vol 控件, 走 I2C 配置流程
+        self.test_mode_toggle = BinaryTextToggle(
+            left_key="high_voltage", left_label="High V",
+            right_key="standard", right_label="Std V",
+            initial="high_voltage",
+            fixed_height=24, fixed_width=150,
         )
-        self.force_config_cb.setStyleSheet("""
-            QCheckBox {
-                color: #dbe7ff;
-                background: transparent;
-                font-size: 11px;
-                spacing: 4px;
-            }
-        """)
-        config_title_row.addWidget(self.force_config_cb)
+        self.test_mode_toggle.setToolTip(
+            "Test Mode:\n"
+            "  · High V (外供高压): Channel Config 显示 Force Vol 控件;\n"
+            "    Auto Test 跳过 I2C 配置, 直接走 Force Vol 参数。\n"
+            "  · Std V (标准电压): 隐藏 Force Vol 控件;\n"
+            "    Auto Test 走 I2C 配置流程, 按通道 Name 匹配对应电源配置。"
+        )
+        top_row.addWidget(self.test_mode_toggle)
 
-        config_layout.addLayout(config_title_row)
-
-        chip_row = QHBoxLayout()
-        chip_row.setSpacing(4)
-        chip_select_label = QLabel("Chip")
-        chip_select_label.setStyleSheet(
+        chip_label = QLabel("Chip")
+        chip_label.setStyleSheet(
             "font-size: 10px; color: #7e96bf; background: transparent; border: none;"
         )
-        chip_row.addWidget(chip_select_label)
+        top_row.addWidget(chip_label)
 
         self.chip_combo = DarkComboBox()
         self.chip_combo.setSizeAdjustPolicy(
             DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
-        self.chip_combo.setMinimumContentsLength(10)
+        self.chip_combo.setMinimumContentsLength(12)
         self.chip_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         self.chip_combo.setFixedHeight(22)
         font = self.chip_combo.font()
@@ -395,7 +409,7 @@ class ConsumptionTestViewPanelsMixin:
         self.chip_combo.addItem("-- Select Chip --")
         for chip_name in SUPPORTED_CHIPS:
             self.chip_combo.addItem(chip_name)
-        chip_row.addWidget(self.chip_combo, 1)
+        top_row.addWidget(self.chip_combo, 1)
 
         self.chip_check_btn = QPushButton("Check")
         self.chip_check_btn.setFixedWidth(60)
@@ -420,123 +434,131 @@ class ConsumptionTestViewPanelsMixin:
                 border: 1px solid #1b2847;
             }
         """)
-        chip_row.addWidget(self.chip_check_btn)
+        top_row.addWidget(self.chip_check_btn)
 
-        config_layout.addLayout(chip_row)
+        layout.addLayout(top_row)
 
-        saved_config_row = QHBoxLayout()
-        saved_config_row.setSpacing(4)
-        saved_config_label = QLabel("Config")
-        saved_config_label.setStyleSheet(
-            "font-size: 10px; color: #7e96bf; background: transparent; border: none;"
-        )
-        saved_config_label.setFixedWidth(chip_select_label.sizeHint().width())
-        saved_config_row.addWidget(saved_config_label)
+        # ---- 中部: 5 个电源轨列(横向排列), 每列含 YAML 文本框 + Import/Exec 按钮 ----
+        rails_row = QHBoxLayout()
+        rails_row.setSpacing(6)
+        self._rail_config_edits = {}
+        self._rail_import_btns = {}
+        self._rail_exec_btns = {}
 
-        self.saved_config_combo = DarkComboBox()
-        self.saved_config_combo.setSizeAdjustPolicy(
-            DarkComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
-        )
-        self.saved_config_combo.setMinimumContentsLength(10)
-        self.saved_config_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
-        self.saved_config_combo.setFixedHeight(22)
-        font_sc = self.saved_config_combo.font()
-        font_sc.setPixelSize(11)
-        self.saved_config_combo.setFont(font_sc)
-        self.saved_config_combo.addItem("-- Select Config --")
-        self.saved_config_combo.setEnabled(False)
-        self.saved_config_combo.setToolTip(
-            "Saved configs for the selected chip "
-            f"(from chips/bes_chip_configs/main_chip_configs/<chip>.yaml)"
-        )
-        saved_config_row.addWidget(self.saved_config_combo, 1)
-
-        self._saved_config_current_chip = None
-        self._saved_config_yaml_text = ""
-        self._saved_config_entries = []
-
-        config_layout.addLayout(saved_config_row)
-
-        config_file_label = QLabel("Config Content")
-        config_file_label.setStyleSheet("font-size: 10px; color: #7e96bf;")
-        config_layout.addWidget(config_file_label)
-
-        self.config_text_edit = QPlainTextEdit()
-        self.config_text_edit.setPlaceholderText("Paste YAML config here...")
-        self.config_text_edit.setMinimumHeight(60)
-        self.config_text_edit.setMaximumHeight(120)
-        self.config_text_edit.setStyleSheet("""
-            QPlainTextEdit {
-                background-color: #0d1b3e;
-                color: #dbe7ff;
-                border: 1px solid #25355c;
-                border-radius: 6px;
-                font-family: Consolas, monospace;
-                font-size: 10px;
-                padding: 4px;
-            }
-            QPlainTextEdit:focus {
-                border: 1px solid #5d45ff;
-            }
-        """)
-        config_layout.addWidget(self.config_text_edit)
-
-        config_btn_row = QHBoxLayout()
-        config_btn_row.setSpacing(4)
-
-        self.import_config_btn = QPushButton("Import")
-        self.import_config_btn.setIcon(_tinted_svg_icon(os.path.join(_PAGE_SVGS_DIR, "upload.svg"), "#dbe7ff"))
-        self.import_config_btn.setIconSize(QSize(14, 14))
-        self.import_config_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #162544;
-                color: #dbe7ff;
-                border: 1px solid #25355c;
-                border-radius: 6px;
-                font-weight: 600;
-                min-height: 30px;
-                font-size: 11px;
-            }
-            QPushButton:hover { background-color: #1c315b; }
-        """)
-        config_btn_row.addWidget(self.import_config_btn, 1)
-
-        self.execute_config_btn = QPushButton("Exec")
+        _upload_svg = os.path.join(_PAGE_SVGS_DIR, "upload.svg")
         _exec_svg = os.path.join(_PAGE_SVGS_DIR, "settings.svg")
-        if os.path.isfile(_exec_svg):
-            self.execute_config_btn.setIcon(_tinted_svg_icon(_exec_svg, "#ffffff", 14))
-            self.execute_config_btn.setIconSize(QSize(14, 14))
-        self.execute_config_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #5d45ff;
-                color: #ffffff;
-                border: none;
-                border-radius: 6px;
-                font-weight: 600;
-                min-height: 30px;
-                font-size: 11px;
-            }
-            QPushButton:hover { background-color: #6d55ff; }
-            QPushButton:disabled {
-                background-color: #0f1930;
-                color: #5a6b8e;
-                border: 1px solid #1b2847;
-            }
-        """)
-        config_btn_row.addWidget(self.execute_config_btn, 1)
 
-        config_layout.addLayout(config_btn_row)
+        for rail in self._RAIL_NAMES:
+            col = QVBoxLayout()
+            col.setSpacing(2)
 
-        self.firmware_browse_btn.clicked.connect(self._browse_firmware)
-        self.download_btn.clicked.connect(self._download_to_dut)
-        self.download_btn.stop_clicked.connect(self._stop_download)
+            rail_label = QLabel(rail)
+            rail_label.setStyleSheet(
+                "font-size: 10px; color: #7e96bf; background: transparent; border: none;"
+            )
+            col.addWidget(rail_label)
+
+            edit = QPlainTextEdit()
+            edit.setPlaceholderText(f"{rail} config...")
+            edit.setMinimumHeight(70)
+            edit.setMaximumHeight(110)
+            edit.setStyleSheet("""
+                QPlainTextEdit {
+                    background-color: #0d1b3e;
+                    color: #dbe7ff;
+                    border: 1px solid #25355c;
+                    border-radius: 6px;
+                    font-family: Consolas, monospace;
+                    font-size: 10px;
+                    padding: 4px;
+                }
+                QPlainTextEdit:focus {
+                    border: 1px solid #5d45ff;
+                }
+            """)
+            col.addWidget(edit, 1)
+            self._rail_config_edits[rail] = edit
+
+            # 每轨独立的 Import / Exec 按钮
+            rail_btn_row = QHBoxLayout()
+            rail_btn_row.setSpacing(3)
+            rail_btn_row.setContentsMargins(0, 0, 0, 0)
+
+            import_btn = QPushButton("Import")
+            if os.path.isfile(_upload_svg):
+                import_btn.setIcon(_tinted_svg_icon(_upload_svg, "#dbe7ff", 12))
+                import_btn.setIconSize(QSize(12, 12))
+            import_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #162544;
+                    color: #dbe7ff;
+                    border: 1px solid #25355c;
+                    border-radius: 6px;
+                    font-weight: 600;
+                    min-height: 22px;
+                    font-size: 10px;
+                    padding: 2px 4px;
+                }
+                QPushButton:hover { background-color: #1c315b; }
+                QPushButton:disabled {
+                    background-color: #0f1930;
+                    color: #5a6b8e;
+                    border: 1px solid #1b2847;
+                }
+            """)
+            rail_btn_row.addWidget(import_btn, 1)
+            self._rail_import_btns[rail] = import_btn
+
+            exec_btn = QPushButton("Exec")
+            if os.path.isfile(_exec_svg):
+                exec_btn.setIcon(_tinted_svg_icon(_exec_svg, "#ffffff", 12))
+                exec_btn.setIconSize(QSize(12, 12))
+            exec_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #5d45ff;
+                    color: #ffffff;
+                    border: none;
+                    border-radius: 6px;
+                    font-weight: 600;
+                    min-height: 22px;
+                    font-size: 10px;
+                    padding: 2px 4px;
+                }
+                QPushButton:hover { background-color: #6d55ff; }
+                QPushButton:disabled {
+                    background-color: #0f1930;
+                    color: #5a6b8e;
+                    border: 1px solid #1b2847;
+                }
+            """)
+            rail_btn_row.addWidget(exec_btn, 1)
+            self._rail_exec_btns[rail] = exec_btn
+
+            col.addLayout(rail_btn_row)
+
+            col_w = QWidget()
+            col_w.setLayout(col)
+            rails_row.addWidget(col_w, 1)
+        layout.addLayout(rails_row)
+
+        # 信号连接
         self.chip_combo.currentIndexChanged.connect(self._on_chip_selected)
         self.chip_check_btn.clicked.connect(self._on_chip_check)
-        self.import_config_btn.clicked.connect(self._import_configuration)
-        self.execute_config_btn.clicked.connect(self._execute_configuration)
-        self.saved_config_combo.currentIndexChanged.connect(self._on_saved_config_selected)
+        # 每轨的 Import / Exec 连接到带 rail 参数的处理函数
+        for rail in self._RAIL_NAMES:
+            self._rail_import_btns[rail].clicked.connect(
+                lambda _checked=False, r=rail: self._import_rail_configuration(r)
+            )
+            self._rail_exec_btns[rail].clicked.connect(
+                lambda _checked=False, r=rail: self._execute_rail_configuration(r)
+            )
+        self.test_mode_toggle.toggled.connect(self._on_test_mode_changed)
 
-        return fw_panel, config_panel
+        # 初始化测试模式状态(外供高压为默认)
+        self._test_mode = "high_voltage"
+        self._on_test_mode_changed(self._test_mode)
+
+        return panel
 
     def _build_firmware_serial_widgets(self, layout):
         row = QHBoxLayout()

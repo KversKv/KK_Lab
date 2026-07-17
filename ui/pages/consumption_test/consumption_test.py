@@ -717,7 +717,7 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
     def _on_chip_selected(self, index):
         if index <= 0:
             self.selected_chip_config = None
-            self._refresh_saved_config_combo(None)
+            self._clear_rail_config_edits()
             return
         chip_name = self.chip_combo.currentText()
         cfg = get_chip_config(chip_name)
@@ -728,84 +728,119 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
         else:
             logger.warning("No config found for chip: %s", chip_name)
             self.append_log(f"[WARNING] No config found for chip: {chip_name}")
-        self._refresh_saved_config_combo(chip_name)
+        self._load_rail_configs_from_chip(chip_name)
 
-    def _refresh_saved_config_combo(self, chip_name):
-        """根据所选芯片,扫描 main_chip_configs/<chip>.yaml 并刷新 Config 下拉。"""
-        combo = getattr(self, "saved_config_combo", None)
-        if combo is None:
+    def _clear_rail_config_edits(self):
+        """清空所有电源 YAML 文本框。"""
+        edits = getattr(self, "_rail_config_edits", {}) or {}
+        for rail, edit in edits.items():
+            edit.clear()
+
+    def _load_rail_configs_from_chip(self, chip_name):
+        """根据所选芯片, 从 main_chip_configs/<chip>.yaml 加载 5 个电源轨配置。
+
+        YAML 文件顶层 key 与 _RAIL_NAMES(Vcore/VcoreM/VcoreL/VANA/VHPPA)
+        大小写不敏感匹配; 每个 key 的值应为命令字符串列表, 会用换行拼接后
+        填入对应的电源 YAML 文本框。
+        """
+        edits = getattr(self, "_rail_config_edits", {}) or {}
+        if not edits:
             return
-
-        combo.blockSignals(True)
-        combo.clear()
-        combo.addItem("-- Select Config --")
-        self._saved_config_current_chip = chip_name
-        self._saved_config_yaml_text = ""
-        self._saved_config_entries = []
+        # 先清空
+        for edit in edits.values():
+            edit.clear()
 
         if not chip_name:
-            combo.setEnabled(False)
-            combo.blockSignals(False)
             return
 
         yaml_path = os.path.join(_MAIN_CHIP_CONFIGS_DIR, f"{chip_name}.yaml")
         if not os.path.isfile(yaml_path):
-            combo.addItem("(No saved config)")
-            combo.setEnabled(False)
-            combo.blockSignals(False)
+            self.append_log(f"[SYSTEM] No YAML config file for {chip_name}, rail edits left empty.")
             return
 
         if yaml is None:
-            combo.addItem("(PyYAML not installed)")
-            combo.setEnabled(False)
-            combo.blockSignals(False)
-            self.append_log("[WARNING] PyYAML not installed; cannot parse saved configs.")
+            self.append_log("[WARNING] PyYAML not installed; cannot parse chip rail configs.")
             return
 
         try:
             with open(yaml_path, "r", encoding="utf-8") as f:
-                yaml_text = f.read()
-            parsed = yaml.safe_load(yaml_text) or {}
+                parsed = yaml.safe_load(f.read()) or {}
         except Exception as e:
-            combo.addItem("(Parse error)")
-            combo.setEnabled(False)
-            combo.blockSignals(False)
-            logger.warning("Failed to parse saved configs %s: %s", yaml_path, e)
-            self.append_log(f"[WARNING] Failed to parse saved configs for {chip_name}: {e}")
+            logger.warning("Failed to parse chip YAML %s: %s", yaml_path, e)
+            self.append_log(f"[WARNING] Failed to parse chip YAML for {chip_name}: {e}")
             return
 
-        self._saved_config_yaml_text = yaml_text
-        if isinstance(parsed, dict) and parsed:
-            for key in parsed.keys():
-                key_str = str(key)
-                self._saved_config_entries.append(key_str)
-                combo.addItem(key_str)
-            combo.setEnabled(True)
-        else:
-            combo.addItem("(Empty)")
-            combo.setEnabled(False)
-
-        combo.blockSignals(False)
-
-    def _on_saved_config_selected(self, index):
-        """选中 Config 下拉项后,将整个 YAML 文件内容填入 Config Content 编辑框。"""
-        if index <= 0:
-            return
-        if not self._saved_config_entries:
-            return
-        entry_index = index - 1
-        if entry_index >= len(self._saved_config_entries):
-            return
-        if not hasattr(self, "config_text_edit") or self.config_text_edit is None:
+        if not isinstance(parsed, dict):
+            self.append_log(f"[SYSTEM] Chip YAML for {chip_name} has no top-level dict, rail edits left empty.")
             return
 
-        chip_name = self._saved_config_current_chip or ""
-        entry_name = self._saved_config_entries[entry_index]
+        # 构造大小写不敏感的 key → rail 映射
+        lower_to_rail = {rail.lower(): rail for rail in self._RAIL_NAMES}
+        loaded_count = 0
+        for key, val in parsed.items():
+            rail = lower_to_rail.get(str(key).strip().lower())
+            if rail is None:
+                continue
+            if isinstance(val, list):
+                text = "\n".join(str(line) for line in val)
+            elif isinstance(val, str):
+                text = val
+            else:
+                text = str(val)
+            edits[rail].setPlainText(text)
+            loaded_count += 1
 
-        self.config_text_edit.setPlainText(self._saved_config_yaml_text)
         self.append_log(
-            f"[SYSTEM] Loaded saved config '{entry_name}' for {chip_name} into Config Content."
+            f"[SYSTEM] Loaded {loaded_count}/{len(self._RAIL_NAMES)} rail configs "
+            f"for {chip_name} from YAML."
         )
+
+    def _get_rail_config_text(self, rail_name):
+        """获取指定电源轨的 YAML 配置文本。"""
+        edits = getattr(self, "_rail_config_edits", {}) or {}
+        edit = edits.get(rail_name)
+        if edit is None:
+            return ""
+        return edit.toPlainText().strip()
+
+    def _get_combined_rail_config_text(self):
+        """合并所有非空电源轨配置(用换行分隔),用于 Exec 立即执行。"""
+        parts = []
+        for rail in self._RAIL_NAMES:
+            text = self._get_rail_config_text(rail)
+            if text:
+                parts.append(text)
+        return "\n".join(parts)
+
+    def _get_rail_configs_dict(self):
+        """返回 {rail_name: config_text} 字典(仅包含非空项)。"""
+        result = {}
+        for rail in self._RAIL_NAMES:
+            text = self._get_rail_config_text(rail)
+            if text:
+                result[rail] = text
+        return result
+
+    def _build_config_text_for_standard_mode(self, enabled_configs):
+        """标准电压模式: 根据启用的通道 Name 匹配电源配置, 合并成 config_text。
+
+        仅包含与启用通道 Name 匹配的电源轨配置(Vcore 通道 → Vcore 配置)。
+        匹配规则: 通道 Name 与电源轨名称大小写不敏感完全匹配。
+        """
+        matched_rails = set()
+        for _i, cfg in enabled_configs:
+            name = cfg.get("name", "").strip().lower()
+            for rail in self._RAIL_NAMES:
+                if rail.lower() == name:
+                    matched_rails.add(rail)
+                    break
+        parts = []
+        for rail in self._RAIL_NAMES:
+            if rail in matched_rails:
+                text = self._get_rail_config_text(rail)
+                if text:
+                    parts.append(text)
+        return "\n".join(parts)
 
     def _on_chip_check(self):
         if self._chip_check_thread is not None and self._chip_check_thread.isRunning():
@@ -877,28 +912,66 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
         self._chip_check_worker = None
         self._chip_check_thread = None
 
-    def _import_configuration(self):
-        config_text = self.config_text_edit.toPlainText().strip()
-        if not config_text:
-            logger.warning("No configuration content provided")
-            self.append_log("[WARNING] No configuration content provided.")
-            return
-        self.config_content = config_text
-        logger.info("Configuration imported from text input (%d chars)", len(config_text))
-        self.append_log(f"[SYSTEM] Configuration imported from text input ({len(config_text)} chars)")
+    def _import_rail_configuration(self, rail_name):
+        """将单个电源轨的 YAML 配置保存到 <chip>.yaml 文件中对应 rail 的 key 下。
 
-    def _execute_configuration(self):
+        YAML 文件结构(顶层 key 与 rail 名称一一对应):
+            Vcore:
+              - WRITE 0x100 0x1
+              - WRITE_BITS 0x110 7 0 0x3
+            VANA:
+              - WRITE 0x200 0x2
+        """
+        if rail_name not in self._RAIL_NAMES:
+            logger.warning("Unknown rail name: %s", rail_name)
+            return
+
+        chip_name = self.chip_combo.currentText()
+        if self.chip_combo.currentIndex() <= 0:
+            self.append_log(f"[WARNING] No chip selected for {rail_name} import.")
+            return
+
+        config_text = self._get_rail_config_text(rail_name)
+        if not config_text:
+            self.append_log(f"[WARNING] {rail_name} config is empty, nothing to import.")
+            return
+
+        self._update_chip_rail_yaml(chip_name, rail_name, config_text)
+
+    def _execute_rail_configuration(self, rail_name):
+        """执行单个电源轨的 I2C 配置(跳过其它 rail)。
+
+        仅根据指定 rail 的 YAML 文本框内容解析命令并下发 I2C,
+        不会触碰其它 rail 的配置,也不会修改 N6705C 通道设置。
+        """
+        if rail_name not in self._RAIL_NAMES:
+            logger.warning("Unknown rail name: %s", rail_name)
+            return
+
         chip_name = self.chip_combo.currentText()
         if self.chip_combo.currentIndex() <= 0 or self.selected_chip_config is None:
-            logger.warning("No chip selected for configuration execution")
-            self.append_log("[WARNING] No chip selected. Please select a chip first.")
+            logger.warning("No chip selected for %s execution", rail_name)
+            self.append_log(f"[WARNING] No chip selected. Please select a chip first for {rail_name}.")
             return
 
         refreshed = get_chip_config(chip_name, force_reload=True)
         if refreshed:
             self.selected_chip_config = refreshed
 
-        self.append_log(f"[EXECUTE] Starting configuration for chip: {chip_name}")
+        config_text = self._get_rail_config_text(rail_name)
+        if not config_text:
+            self.append_log(f"[WARNING] {rail_name} config is empty, nothing to execute.")
+            return
+
+        config_commands = self._parse_config_commands(config_text)
+        if not config_commands:
+            self.append_log(f"[WARNING] {rail_name} config has no valid commands.")
+            return
+
+        self.append_log(
+            f"[EXECUTE] Starting {rail_name} configuration for chip: {chip_name} "
+            f"({len(config_commands)} commands)"
+        )
 
         try:
             from lib.i2c.i2c_interface_x64 import I2CInterface
@@ -921,43 +994,62 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             return
 
         self._compare_chip_info(chip_info, self.selected_chip_config)
-
-        config_text = self.config_text_edit.toPlainText().strip()
-        config_commands = None
-        config_source = None
-
-        if config_text:
-            config_commands = self._parse_config_commands(config_text)
-            config_source = "user_paste"
-            self.append_log(f"[EXECUTE] Using pasted configuration ({len(config_commands)} commands)")
-        else:
-            pd = self.selected_chip_config.get("power_distribution")
-            if pd and isinstance(pd, dict) and len(pd) > 0:
-                raw_lines = []
-                for section, cmds in pd.items():
-                    if isinstance(cmds, list):
-                        raw_lines.extend(cmds)
-                config_commands = self._parse_config_commands("\n".join(raw_lines))
-                config_source = "chip_config"
-                self.append_log(f"[EXECUTE] Using chip config power_distribution ({len(config_commands)} commands)")
-            else:
-                logger.warning("No configuration available: neither pasted text nor chip power_distribution found")
-                self.append_log("[WARNING] No configuration available. Please paste configuration or ensure chip config has power_distribution.")
-                return
-
-        if config_source == "user_paste":
-            reply = QMessageBox.question(
-                self,
-                "Import Configuration",
-                f"Do you want to save the pasted configuration to chip config '{chip_name}'?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
-            )
-            if reply == QMessageBox.Yes:
-                self._update_chip_config_file(chip_name, config_text)
-
         self._run_config_commands(i2c, chip_info, config_commands)
-        self.append_log("[EXECUTE] Configuration execution completed.")
+        self.append_log(f"[EXECUTE] {rail_name} configuration execution completed.")
+
+    def _update_chip_rail_yaml(self, chip_name, rail_name, config_text):
+        """将单轨配置写入 <chip>.yaml 文件中对应 rail 的 key 下。
+
+        若文件不存在则创建; 若存在则只更新该 rail key, 其它 rail key 保留。
+        """
+        if rail_name not in self._RAIL_NAMES:
+            return
+        if yaml is None:
+            self.append_log("[WARNING] PyYAML not installed; cannot save rail config.")
+            return
+
+        # 解析为命令行列表(过滤空行)
+        config_lines = []
+        for raw_line in config_text.strip().splitlines():
+            line = raw_line.strip()
+            if line:
+                config_lines.append(line)
+
+        yaml_path = os.path.join(_MAIN_CHIP_CONFIGS_DIR, f"{chip_name}.yaml")
+
+        # 读取已有内容(若文件存在)
+        try:
+            if os.path.isfile(yaml_path):
+                with open(yaml_path, "r", encoding="utf-8") as f:
+                    existing_text = f.read()
+                parsed = yaml.safe_load(existing_text) or {}
+                if not isinstance(parsed, dict):
+                    parsed = {}
+            else:
+                parsed = {}
+        except Exception as e:
+            logger.warning("Failed to read existing YAML %s, will overwrite: %s", yaml_path, e)
+            parsed = {}
+
+        # 仅更新该 rail 的 key
+        parsed[rail_name] = config_lines
+
+        try:
+            os.makedirs(os.path.dirname(yaml_path), exist_ok=True)
+            with open(yaml_path, "w", encoding="utf-8") as f:
+                yaml.safe_dump(
+                    parsed, f,
+                    default_flow_style=False,
+                    allow_unicode=True,
+                    sort_keys=False,
+                )
+            logger.info("Rail %s config saved to %s", rail_name, yaml_path)
+            self.append_log(
+                f"[SYSTEM] {rail_name} config saved to {chip_name}.yaml ({len(config_lines)} lines)"
+            )
+        except Exception as e:
+            logger.error("Failed to write rail YAML %s: %s", yaml_path, e)
+            self.append_log(f"[ERROR] Failed to save {rail_name} config: {e}")
 
     def _compare_chip_info(self, detected, config):
         compare_keys = [
@@ -1510,7 +1602,7 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
     # =====================================================================
     # 导入 / 导出 测试配置
     # =====================================================================
-    CONFIG_SCHEMA_VERSION = 1
+    CONFIG_SCHEMA_VERSION = 2
 
     def _collect_config_snapshot(self):
         """把当前 UI 上所有测试相关的参数序列化成一个可 JSON 化的 dict。"""
@@ -1550,13 +1642,17 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             "firmware_paths": list(getattr(self, "firmware_paths", []) or []),
         }
 
-        # Chip 与额外 YAML config
+        # Chip 与 5 个电源 YAML config
         chip_selected = ""
         if hasattr(self, "chip_combo") and self.chip_combo is not None:
             chip_selected = self.chip_combo.currentText()
-        config_text = ""
-        if hasattr(self, "config_text_edit") and self.config_text_edit is not None:
-            config_text = self.config_text_edit.toPlainText()
+        rail_configs = self._get_rail_configs_dict()
+
+        # 测试模式: high_voltage(外供高压) / standard(标准电压)
+        test_mode = (
+            self.test_mode_toggle.value()
+            if getattr(self, "test_mode_toggle", None) is not None else "high_voltage"
+        )
 
         # 测试参数
         try:
@@ -1588,10 +1684,6 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             self.reset_enable_cb.isChecked()
             if getattr(self, "reset_enable_cb", None) else False
         )
-        force_config_enabled = (
-            self.force_config_cb.isChecked()
-            if getattr(self, "force_config_cb", None) else False
-        )
 
         return {
             "schema_version": self.CONFIG_SCHEMA_VERSION,
@@ -1602,8 +1694,8 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             "channel_configs": channel_configs,
             "download": download,
             "chip_selected": chip_selected,
-            "config_text": config_text,
-            "force_config_enabled": force_config_enabled,
+            "rail_configs": rail_configs,
+            "test_mode": test_mode,
             "test": {
                 "test_time": test_time,
                 "control_method": control_method,
@@ -1816,14 +1908,24 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
                 if self.chip_combo.itemText(i) == chip_name:
                     self.chip_combo.setCurrentIndex(i)
                     break
-        cfg_text = snapshot.get("config_text", "") or ""
-        if hasattr(self, "config_text_edit") and self.config_text_edit is not None:
-            self.config_text_edit.setPlainText(cfg_text)
-        if getattr(self, "force_config_cb", None) is not None and "force_config_enabled" in snapshot:
-            try:
-                self.force_config_cb.setChecked(bool(snapshot.get("force_config_enabled", False)))
-            except Exception:
-                pass
+
+        # 5 个电源 YAML 文本框(rail_configs dict); 兼容旧版 config_text 单字符串
+        edits = getattr(self, "_rail_config_edits", {}) or {}
+        rail_configs = snapshot.get("rail_configs", {}) or {}
+        legacy_cfg_text = snapshot.get("config_text", "") or ""
+        if rail_configs and edits:
+            for rail, edit in edits.items():
+                edit.setPlainText(str(rail_configs.get(rail, "") or ""))
+        elif legacy_cfg_text and edits:
+            # 旧版单字符串配置: 全量填入所有非空 rail(向后兼容)
+            for edit in edits.values():
+                edit.setPlainText(legacy_cfg_text)
+
+        # 测试模式: high_voltage / standard
+        test_mode = snapshot.get("test_mode", "high_voltage") or "high_voltage"
+        if getattr(self, "test_mode_toggle", None) is not None:
+            if test_mode in ("high_voltage", "standard"):
+                self.test_mode_toggle.setValue(test_mode)
 
         # ---- 6. 测试参数 ----
         test_cfg = snapshot.get("test", {}) or {}
@@ -2316,7 +2418,15 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             if dl is not None and hw is not None:
                 channel_names[(dl, hw)] = cfg["name"]
 
-        config_text = self.config_text_edit.toPlainText().strip()
+        # 根据测试模式决定 config_text 来源:
+        #   standard(标准电压) → 按启用通道 Name 匹配电源轨配置合并
+        #   high_voltage(外供高压) → 不需要 I2C 配置, config_text 留空
+        test_mode = getattr(self, "_test_mode", "high_voltage")
+        if test_mode == "standard":
+            config_text = self._build_config_text_for_standard_mode(enabled_configs)
+        else:
+            config_text = ""
+
         chip_combo_text = self.chip_combo.currentText() if self.chip_combo.currentIndex() > 0 else None
 
         self.is_testing = True
@@ -2335,8 +2445,10 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             self.bin_result_table.hide()
 
         reset_desc = f"{reset_key}({reset_polarity})" if reset_enabled else "DISABLED"
+        mode_desc = "Std V (配置模式)" if test_mode == "standard" else "High V (外供高压)"
         self.append_log(
             f"[AUTO_TEST] Starting auto test: {len(firmware_paths)} BIN(s), "
+            f"Mode={mode_desc}, "
             f"Vbat={vbat_cfg['name']}({vbat_cfg['channel']}), "
             f"Control={control_method}, "
             f"PowerON={poweron_key}({poweron_polarity}), "
@@ -2368,10 +2480,8 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             parse_config_commands_fn=self._parse_config_commands,
             resolve_device_fn=self._resolve_device,
             channel_force_configs=self._build_channel_force_configs(),
-            force_config_enabled=(
-                self.force_config_cb.isChecked()
-                if getattr(self, "force_config_cb", None) is not None else False
-            ),
+            force_config_enabled=(test_mode == "standard"),
+            test_mode=test_mode,
             control_method=control_method,
         )
         self._controller.start_auto_test(worker_kwargs)

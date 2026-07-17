@@ -60,7 +60,8 @@ class AutoTestWorker(QObject):
                  config_text=None, parse_config_commands_fn=None,
                  resolve_device_fn=None, channel_force_configs=None,
                  force_config_enabled=False,
-                 control_method="N6705C"):
+                 control_method="N6705C",
+                 test_mode="high_voltage"):
         super().__init__()
         self.com_port = com_port
         self.firmware_paths = list(firmware_paths)
@@ -88,6 +89,8 @@ class AutoTestWorker(QObject):
         self.channel_force_configs = channel_force_configs or {}
         self.force_config_enabled = bool(force_config_enabled)
         self.control_method = control_method
+        # 测试模式: high_voltage(外供高压, 跳过 I2C 配置) / standard(标准电压, 走 I2C 配置)
+        self.test_mode = test_mode
         self._is_stopped = False
         self._current_download_state = None
 
@@ -306,11 +309,20 @@ class AutoTestWorker(QObject):
                 return
 
             # 判定是否需要查找/下发配置:
-            #   1) 勾选"强制配置"时,无论通道数都配置;
-            #   2) 未勾选时,仅当存在 Vbat 之外的子通道才配置,
-            #      若只有 Vbat 一个通道则跳过(节省 I2C/配置查找开销)。
-            only_vbat_channel = not bool(self.force_map)
-            should_config = self.force_config_enabled or (not only_vbat_channel)
+            #   - high_voltage(外供高压)模式: 完全跳过 I2C 配置, 直接走 Force Vol 参数;
+            #   - standard(标准电压)模式:
+            #       1) force_config_enabled=True 时,无论通道数都配置;
+            #       2) 否则,仅当存在 Vbat 之外的子通道才配置,
+            #          若只有 Vbat 一个通道则跳过(节省 I2C/配置查找开销)。
+            if self.test_mode == "high_voltage":
+                should_config = False
+                self._log(
+                    "[AUTO_TEST] High-voltage mode: skipping I2C config, "
+                    "using Force Vol parameters directly."
+                )
+            else:
+                only_vbat_channel = not bool(self.force_map)
+                should_config = self.force_config_enabled or (not only_vbat_channel)
 
             chip_config = None
             config_commands = None
@@ -329,7 +341,7 @@ class AutoTestWorker(QObject):
                 if self.force_config_enabled and config_commands and i2c:
                     self._log("[AUTO_TEST] Force-config: executing config BEFORE Vbat measurement...")
                     self._step_execute_config_commands(i2c, chip_info, config_commands)
-            else:
+            elif self.test_mode != "high_voltage":
                 self._log(
                     "[AUTO_TEST] Only Vbat channel is enabled and Force-config is OFF: "
                     "skipping config lookup/execution."

@@ -670,6 +670,8 @@ class ConsumptionTestViewConfigMixin:
         boost_value_input.textChanged.connect(lambda text, i=idx: self._on_boost_value_changed(i, text))
 
         self._update_card_disabled_state(wdata, enabled)
+        # 新增卡片时根据当前测试模式设置 Force 控件可见性
+        self._update_channel_cards_force_visibility()
         self._refresh_result_cards()
 
     def _on_config_enable_changed(self, idx, checked):
@@ -783,6 +785,26 @@ class ConsumptionTestViewConfigMixin:
                     wdata["boost_mode_label"].setEnabled(True)
                     wdata["boost_mode_toggle"].setEnabled(True)
                     wdata["boost_value_input"].setEnabled(True)
+
+    def _on_test_mode_changed(self, mode):
+        """测试模式切换: high_voltage(外供高压) / standard(标准电压)。
+
+        high_voltage → Channel Config 卡片显示 Force/Auto 控件
+        standard     → 隐藏 Force/Auto 控件(卡片只保留 Enable/Name/CH)
+        """
+        self._test_mode = mode
+        self._update_channel_cards_force_visibility()
+
+    def _update_channel_cards_force_visibility(self):
+        """根据当前测试模式, 显隐所有通道卡片的 Force/Auto 控件。"""
+        mode = getattr(self, "_test_mode", "high_voltage")
+        show_force = (mode == "high_voltage")
+        for wdata in getattr(self, "_channel_config_widgets", []):
+            wdata["force_mode_toggle"].setVisible(show_force)
+            # force_auto_stack 是 QStackedLayout, 需通过其容器 widget 控制显隐
+            stack_container = wdata["force_auto_stack"].parentWidget()
+            if stack_container is not None:
+                stack_container.setVisible(show_force)
 
     def _on_force_value_changed(self, idx, text):
         if idx < len(self._channel_configs):
