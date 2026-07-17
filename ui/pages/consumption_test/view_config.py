@@ -695,6 +695,60 @@ class ConsumptionTestViewConfigMixin:
         # 初始 page:force_mode == "force" -> 0, 否则 "auto" -> 1
         force_auto_stack.setCurrentIndex(0 if config["force_mode"] == "force" else 1)
         card_layout.addWidget(force_auto_container)
+
+        # ---- Std V 模式下的 Force 控件: Force 勾选框 + 电压输入框 ----
+        # 仅在 Test Mode == "standard" 时显示, 与 High V 的 force_mode_toggle/force_auto_container 互斥
+        # 勾选后将 force_mode 置为 "force", 强制使用用户输入的电压去测试
+        std_v_force_container = QWidget()
+        std_v_force_container.setStyleSheet("background: transparent; border: none;")
+        std_v_force_layout = QVBoxLayout(std_v_force_container)
+        std_v_force_layout.setContentsMargins(0, 0, 0, 0)
+        std_v_force_layout.setSpacing(5)
+
+        std_v_force_cb = QCheckBox("Force")
+        std_v_force_cb.setChecked(config["force_mode"] == "force")
+        std_v_force_cb.setToolTip(
+            "Force: use the user-specified voltage for this channel.\n"
+            "Unchecked: use default voltage (no override)."
+        )
+        std_v_force_cb.setStyleSheet("""
+            QCheckBox {
+                color: #ffffff;
+                font-size: 11px;
+                font-weight: 600;
+                spacing: 6px;
+            }
+            QCheckBox::indicator {
+                width: 14px;
+                height: 14px;
+            }
+        """)
+        std_v_force_layout.addWidget(std_v_force_cb)
+
+        std_v_force_input = QLineEdit()
+        std_v_force_input.setPlaceholderText("V (Force)")
+        std_v_force_input.setText(config["force_value"])
+        font = std_v_force_input.font()
+        font.setPixelSize(11)
+        std_v_force_input.setFont(font)
+        std_v_force_input.setMaximumHeight(26)
+        std_v_force_input.setStyleSheet("""
+            QLineEdit {
+                background-color: #0a1733;
+                color: #c8d8f8;
+                border: 1.5px solid #27406f;
+                border-radius: 6px;
+                padding: 0px 10px;
+            }
+            QLineEdit:disabled {
+                background-color: #060d1f;
+                color: #3a4a6a;
+                border: 1.5px solid #1a2a4a;
+            }
+        """)
+        std_v_force_layout.addWidget(std_v_force_input)
+        card_layout.addWidget(std_v_force_container)
+
         # 尾部弹簧: Vbat 仅显示 Name/CH 时, 弹簧吃掉剩余高度, 防止两行被均匀拉伸
         card_layout.addStretch(1)
 
@@ -718,6 +772,9 @@ class ConsumptionTestViewConfigMixin:
             "boost_mode_label": boost_mode_label,
             "boost_mode_toggle": boost_mode_toggle,
             "boost_value_input": boost_value_input,
+            "std_v_force_container": std_v_force_container,
+            "std_v_force_cb": std_v_force_cb,
+            "std_v_force_input": std_v_force_input,
             "config_index": idx,
         }
         self._channel_config_widgets.append(wdata)
@@ -730,6 +787,8 @@ class ConsumptionTestViewConfigMixin:
         force_value_input.textChanged.connect(lambda text, i=idx: self._on_force_value_changed(i, text))
         boost_mode_toggle.toggled.connect(lambda val, i=idx: self._on_boost_mode_changed(i, val))
         boost_value_input.textChanged.connect(lambda text, i=idx: self._on_boost_value_changed(i, text))
+        std_v_force_cb.toggled.connect(lambda checked, i=idx: self._on_std_v_force_cb_toggled(i, checked))
+        std_v_force_input.textChanged.connect(lambda text, i=idx: self._on_force_value_changed(i, text))
 
         self._update_card_disabled_state(wdata, enabled)
         # 新增卡片时根据当前测试模式设置 Force 控件可见性
@@ -769,6 +828,15 @@ class ConsumptionTestViewConfigMixin:
             wdata["boost_mode_label"].setEnabled(False)
             wdata["boost_mode_toggle"].setEnabled(False)
             wdata["boost_value_input"].setEnabled(False)
+
+        # Std V 模式下的 Force 勾选框 + 电压输入框:
+        # 勾选框跟随卡片 enabled; 电压输入框仅在 卡片 enabled 且 勾选 时启用
+        std_v_cb = wdata.get("std_v_force_cb")
+        std_v_input = wdata.get("std_v_force_input")
+        if std_v_cb is not None:
+            std_v_cb.setEnabled(enabled)
+            if std_v_input is not None:
+                std_v_input.setEnabled(enabled and bool(std_v_cb.isChecked()))
 
         card = wdata["card"]
         card_id = wdata["card_id"]
@@ -849,29 +917,54 @@ class ConsumptionTestViewConfigMixin:
                     wdata["boost_mode_label"].setEnabled(True)
                     wdata["boost_mode_toggle"].setEnabled(True)
                     wdata["boost_value_input"].setEnabled(True)
+            # 同步 Std V Force 勾选框状态(避免切换模式后两套控件不一致)
+            std_v_cb = wdata.get("std_v_force_cb")
+            if std_v_cb is not None and std_v_cb.isChecked() != is_force:
+                std_v_cb.blockSignals(True)
+                std_v_cb.setChecked(is_force)
+                std_v_cb.blockSignals(False)
+                # 同步电压输入框启用状态
+                std_v_input = wdata.get("std_v_force_input")
+                if std_v_input is not None:
+                    std_v_input.setEnabled(is_enabled and is_force)
+
+    def _on_std_v_force_cb_toggled(self, idx, checked):
+        """Std V 模式下的 Force 勾选框状态变化。
+
+        勾选 → force_mode = "force", 启用电压输入框, 强制使用用户输入电压
+        取消 → force_mode = "auto", 禁用电压输入框, 走默认配置流程
+        """
+        if idx < len(self._channel_configs):
+            self._channel_configs[idx]["force_mode"] = "force" if checked else "auto"
+            wdata = self._channel_config_widgets[idx]
+            is_enabled = wdata["enable_cb"].isChecked()
+            std_v_input = wdata.get("std_v_force_input")
+            if std_v_input is not None:
+                std_v_input.setEnabled(is_enabled and checked)
 
     def _on_test_mode_changed(self, mode):
         """测试模式切换: high_voltage(外供高压) / standard(标准电压)。
 
-        high_voltage → Channel Config 卡片显示 Force/Auto 控件
-        standard     → 隐藏 Force/Auto 控件(卡片只保留 Enable/Name/CH)
+        high_voltage → Channel Config 卡片显示 Force/Auto 切换控件(原逻辑不变)
+        standard     → 显示 Force 勾选框 + 电压输入框; 勾选后强制使用用户电压
         """
         self._test_mode = mode
         self._update_channel_cards_force_visibility()
 
     def _update_channel_cards_force_visibility(self):
-        """根据当前测试模式 + 通道 Name, 显隐所有通道卡片的 Force/Auto 控件。
+        """根据当前测试模式 + 通道 Name, 显隐所有通道卡片的 Force 控件。
 
         规则:
-          - Name == "Vbat": 只显示 Name + CH, 隐藏 Enable/Remove 行 + Force/Auto 全部
-          - 其它 Name: 显示 Enable/Remove 行; Force/Auto 控件按测试模式显隐
-            (high_voltage → 显示, standard → 隐藏)
+          - Name == "Vbat": 只显示 Name + CH, 隐藏 Enable/Remove 行 + Force 全部
+          - 其它 Name: 显示 Enable/Remove 行; Force 控件按测试模式显隐
+            high_voltage → 显示 Force/Auto 切换 + Stack(High V 控件, 原逻辑)
+            standard     → 显示 Force 勾选框 + 电压输入框(Std V 控件)
         """
         for wdata in getattr(self, "_channel_config_widgets", []):
             self._update_card_extras_visibility(wdata)
 
     def _update_card_extras_visibility(self, wdata):
-        """单个卡片: 综合 Vbat 判定 + 测试模式, 决定 Force/Auto 区域与 top_row 内控件显隐。"""
+        """单个卡片: 综合 Vbat 判定 + 测试模式, 决定 Force 控件区域与 top_row 内控件显隐。"""
         mode = getattr(self, "_test_mode", "high_voltage")
         name = wdata["name_input"].currentText().strip()
         is_vbat = (name == "Vbat")
@@ -880,12 +973,92 @@ class ConsumptionTestViewConfigMixin:
         wdata["enable_cb"].setVisible(not is_vbat)
         wdata["remove_btn"].setVisible(not is_vbat)
 
-        # Force/Auto 区域: Vbat 强制隐藏; 否则按测试模式
-        show_force = (not is_vbat) and (mode == "high_voltage")
-        wdata["force_mode_toggle"].setVisible(show_force)
-        container = wdata.get("force_auto_container")
-        if container is not None:
-            container.setVisible(show_force)
+        std_v_container = wdata.get("std_v_force_container")
+        hv_container = wdata.get("force_auto_container")
+        hv_toggle = wdata.get("force_mode_toggle")
+
+        # Vbat 强制隐藏所有 Force 控件
+        if is_vbat:
+            if hv_toggle is not None:
+                hv_toggle.setVisible(False)
+            if hv_container is not None:
+                hv_container.setVisible(False)
+            if std_v_container is not None:
+                std_v_container.setVisible(False)
+            return
+
+        # 非 Vbat: 按测试模式切换显示
+        if mode == "high_voltage":
+            # High V: 显示 Force/Auto 切换 + Stack, 隐藏 Std V Force 控件
+            if hv_toggle is not None:
+                hv_toggle.setVisible(True)
+            if hv_container is not None:
+                hv_container.setVisible(True)
+            if std_v_container is not None:
+                std_v_container.setVisible(False)
+            # 同步 force_mode_toggle 状态与当前 force_mode config
+            # (用户可能在 Std V 模式下勾选了 Force, 切回 High V 时需同步显示)
+            if hv_toggle is not None:
+                cfg_idx = wdata.get("config_index", -1)
+                if 0 <= cfg_idx < len(self._channel_configs):
+                    force_mode = self._channel_configs[cfg_idx].get("force_mode", "auto")
+                    if hv_toggle.value() != force_mode:
+                        hv_toggle.blockSignals(True)
+                        hv_toggle.setValue(force_mode)
+                        hv_toggle.blockSignals(False)
+                    # 切换 stack 显示页并同步子控件 enabled 状态
+                    is_force = (force_mode == "force")
+                    stack = wdata.get("force_auto_stack")
+                    if stack is not None:
+                        stack.setCurrentIndex(0 if is_force else 1)
+                    is_enabled = wdata["enable_cb"].isChecked()
+                    if is_enabled:
+                        wdata["force_value_input"].setEnabled(is_force)
+                        wdata["boost_mode_label"].setEnabled(not is_force)
+                        wdata["boost_mode_toggle"].setEnabled(not is_force)
+                        wdata["boost_value_input"].setEnabled(not is_force)
+            # 同步 force_value_input 文本与 force_value config(避免切换模式后文本不一致)
+            cfg_idx = wdata.get("config_index", -1)
+            if 0 <= cfg_idx < len(self._channel_configs):
+                force_value = self._channel_configs[cfg_idx].get("force_value", "")
+                if wdata["force_value_input"].text() != force_value:
+                    wdata["force_value_input"].blockSignals(True)
+                    wdata["force_value_input"].setText(force_value)
+                    wdata["force_value_input"].blockSignals(False)
+        else:
+            # Std V: 隐藏 Force/Auto 切换 + Stack, 显示 Force 勾选框 + 电压输入框
+            if hv_toggle is not None:
+                hv_toggle.setVisible(False)
+            if hv_container is not None:
+                hv_container.setVisible(False)
+            if std_v_container is not None:
+                std_v_container.setVisible(True)
+            # 同步 Std V Force 勾选框状态与当前 force_mode config
+            std_v_cb = wdata.get("std_v_force_cb")
+            if std_v_cb is not None:
+                cfg_idx = wdata.get("config_index", -1)
+                if 0 <= cfg_idx < len(self._channel_configs):
+                    force_mode = self._channel_configs[cfg_idx].get("force_mode", "auto")
+                    new_checked = (force_mode == "force")
+                    if std_v_cb.isChecked() != new_checked:
+                        std_v_cb.blockSignals(True)
+                        std_v_cb.setChecked(new_checked)
+                        std_v_cb.blockSignals(False)
+                    # 同步电压输入框启用状态
+                    std_v_input = wdata.get("std_v_force_input")
+                    if std_v_input is not None:
+                        is_enabled = wdata["enable_cb"].isChecked()
+                        std_v_input.setEnabled(is_enabled and new_checked)
+            # 同步 std_v_force_input 文本与 force_value config(避免切换模式后文本不一致)
+            std_v_input = wdata.get("std_v_force_input")
+            if std_v_input is not None:
+                cfg_idx = wdata.get("config_index", -1)
+                if 0 <= cfg_idx < len(self._channel_configs):
+                    force_value = self._channel_configs[cfg_idx].get("force_value", "")
+                    if std_v_input.text() != force_value:
+                        std_v_input.blockSignals(True)
+                        std_v_input.setText(force_value)
+                        std_v_input.blockSignals(False)
 
     def _on_force_value_changed(self, idx, text):
         if idx < len(self._channel_configs):
@@ -919,6 +1092,8 @@ class ConsumptionTestViewConfigMixin:
             w["force_value_input"].textChanged.disconnect()
             w["boost_mode_toggle"].toggled.disconnect()
             w["boost_value_input"].textChanged.disconnect()
+            w["std_v_force_cb"].toggled.disconnect()
+            w["std_v_force_input"].textChanged.disconnect()
             w["enable_cb"].toggled.connect(lambda checked, ci=i: self._on_config_enable_changed(ci, checked))
             w["name_input"].currentTextChanged.connect(lambda text, ci=i: self._on_config_name_changed(ci, text))
             w["channel_combo"].currentIndexChanged.connect(lambda cii, ci=i: self._on_config_channel_changed(ci))
@@ -927,5 +1102,7 @@ class ConsumptionTestViewConfigMixin:
             w["force_value_input"].textChanged.connect(lambda text, ci=i: self._on_force_value_changed(ci, text))
             w["boost_mode_toggle"].toggled.connect(lambda val, ci=i: self._on_boost_mode_changed(ci, val))
             w["boost_value_input"].textChanged.connect(lambda text, ci=i: self._on_boost_value_changed(ci, text))
+            w["std_v_force_cb"].toggled.connect(lambda checked, ci=i: self._on_std_v_force_cb_toggled(ci, checked))
+            w["std_v_force_input"].textChanged.connect(lambda text, ci=i: self._on_force_value_changed(ci, text))
 
         self._refresh_result_cards()
