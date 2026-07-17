@@ -520,6 +520,90 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
     def set_system_status(self, status, is_error=False):
         pass
 
+    @staticmethod
+    def _label_from_n6705c_session_id(session_id):
+        # session_id 格式: "n6705c:A" / "n6705c:B"
+        if not session_id or ":" not in session_id:
+            return None
+        prefix, slot = session_id.split(":", 1)
+        if prefix != "n6705c" or slot not in ("A", "B"):
+            return None
+        return slot
+
+    def _on_mixin_manager_connected(self, session_id: str):
+        # ConsumptionTestUI 使用 per-label 控件字典(self._n6705c_conn_widgets),
+        # 不使用基类的 self.connect_btn / self.search_btn, 故此处覆盖基类实现。
+        label = self._label_from_n6705c_session_id(session_id)
+        if label is None or label not in self._n6705c_conn_widgets:
+            return
+        if not self._n6705c_instrument_manager:
+            return
+        session = self._n6705c_instrument_manager.get_session(session_id)
+        if not session or not session.connected:
+            return
+
+        from ui.modules.n6705c_module_frame import _update_n6705c_btn_state
+        attr = label.lower()
+        prev_count = self._connected_device_count()
+
+        setattr(self, f"n6705c_{attr}", session.instance)
+        setattr(self, f"is_connected_{attr}", True)
+        w = self._n6705c_conn_widgets[label]
+        _update_n6705c_btn_state(w["connect_btn"], connected=True)
+        w["connect_btn"].setEnabled(True)
+        w["search_btn"].setEnabled(False)
+        w["status"].setText("● Connected")
+        w["status"].setStyleSheet("color: #00a859; font-weight: bold; background: transparent; border: none;")
+        self.append_log(f"[SYSTEM] N6705C-{label} connected via manager.")
+
+        # 与非 manager 路径保持一致: 同步到 top 并刷新通道预设
+        self._syncing = True
+        try:
+            if self._n6705c_top:
+                getattr(self._n6705c_top, f"connect_{attr}")(
+                    session.resource, session.instance, session.serial
+                )
+        finally:
+            self._syncing = False
+        new_count = self._connected_device_count()
+        self._apply_preset_channels(prev_count, new_count)
+        self._update_available_channels()
+        self.connection_status_changed.emit(True)
+
+    def _on_mixin_manager_connect_failed(self, session_id: str, error: str):
+        label = self._label_from_n6705c_session_id(session_id)
+        if label is None or label not in self._n6705c_conn_widgets:
+            return
+        w = self._n6705c_conn_widgets[label]
+        w["connect_btn"].setEnabled(True)
+        w["status"].setText("● Failed")
+        w["status"].setStyleSheet("color: #e53935; font-weight: bold; background: transparent; border: none;")
+        self.append_log(f"[ERROR] Connection failed for N6705C-{label}: {error}")
+
+    def _on_mixin_manager_disconnected(self, session_id: str):
+        label = self._label_from_n6705c_session_id(session_id)
+        if label is None or label not in self._n6705c_conn_widgets:
+            return
+
+        from ui.modules.n6705c_module_frame import _update_n6705c_btn_state
+        attr = label.lower()
+        prev_count = self._connected_device_count()
+
+        setattr(self, f"n6705c_{attr}", None)
+        setattr(self, f"is_connected_{attr}", False)
+        w = self._n6705c_conn_widgets[label]
+        _update_n6705c_btn_state(w["connect_btn"], connected=False)
+        w["connect_btn"].setEnabled(True)
+        w["search_btn"].setEnabled(True)
+        w["combo"].setEnabled(True)
+        w["status"].setText("● Disconnected")
+        w["status"].setStyleSheet("color: #8ea6cf; font-weight: bold; background: transparent; border: none;")
+        self.append_log(f"[SYSTEM] N6705C-{label} disconnected.")
+        new_count = self._connected_device_count()
+        self._apply_preset_channels(prev_count, new_count)
+        self._update_available_channels()
+        self.connection_status_changed.emit(False)
+
     def _get_available_channel_options(self):
         options = []
         for label in ["A", "B"]:
