@@ -33,15 +33,8 @@ from .common import (
 # 下载成功后、开始测试功耗前的芯片稳定等待时间(秒)
 _CHIP_STABILIZATION_DELAY_SEC = 4.0
 
-# 外供电增压方式: "constant" = 加固定电压(V); "percent" = 按默认电压百分比加压
-_FORCE_VOLTAGE_BOOST_MODE = "percent"
-# 增压数值:
-#   - constant 模式: 单位 V, 0.02 = +20mV
-#   - percent 模式:  比例, 0.035 = +3.5%
-_FORCE_VOLTAGE_BOOST_VALUE = 0.035
-
 # 下载波特率(对应 dldtool 的 --pgm-rate 参数)
-_DOWNLOAD_PGM_RATE = 2000000
+_DOWNLOAD_PGM_RATE = 921600
 
 
 class AutoTestWorker(QObject):
@@ -65,7 +58,7 @@ class AutoTestWorker(QObject):
                  channel_names=None,
                  chip_combo_text=None, selected_chip_config=None,
                  config_text=None, parse_config_commands_fn=None,
-                 resolve_device_fn=None, force_voltages=None,
+                 resolve_device_fn=None, channel_force_configs=None,
                  force_config_enabled=False,
                  control_method="N6705C"):
         super().__init__()
@@ -92,7 +85,7 @@ class AutoTestWorker(QObject):
         self.config_text = config_text or ""
         self._parse_config_commands_fn = parse_config_commands_fn
         self._resolve_device_fn = resolve_device_fn
-        self.force_voltages = force_voltages or {}
+        self.channel_force_configs = channel_force_configs or {}
         self.force_config_enabled = bool(force_config_enabled)
         self.control_method = control_method
         self._is_stopped = False
@@ -126,18 +119,33 @@ class AutoTestWorker(QObject):
         return best
 
     @staticmethod
-    def _compute_boosted_voltage(v_default):
-        """根据 _FORCE_VOLTAGE_BOOST_MODE / _FORCE_VOLTAGE_BOOST_VALUE 计算增压后电压。"""
-        if _FORCE_VOLTAGE_BOOST_MODE == "percent":
-            return v_default * (1.0 + _FORCE_VOLTAGE_BOOST_VALUE)
-        return v_default + _FORCE_VOLTAGE_BOOST_VALUE
+    def _compute_boosted_voltage(v_default, boost_mode, boost_value):
+        """根据 boost_mode / boost_value 计算增压后电压。"""
+        if boost_mode == "percent":
+            return v_default * (1.0 + boost_value)
+        return v_default + boost_value
 
     @staticmethod
-    def _format_boost_desc():
+    def _format_boost_desc(boost_mode, boost_value):
         """生成可读的增压描述,如 '+20mV' 或 '+3.50%'。"""
-        if _FORCE_VOLTAGE_BOOST_MODE == "percent":
-            return f"+{_FORCE_VOLTAGE_BOOST_VALUE * 100:.2f}%"
-        return f"+{_FORCE_VOLTAGE_BOOST_VALUE * 1000:.0f}mV"
+        if boost_mode == "percent":
+            return f"+{boost_value * 100:.2f}%"
+        return f"+{boost_value * 1000:.0f}mV"
+
+    def _resolve_channel_force_cfg(self, device_label, ch):
+        """获取通道的 force 配置;返回 (force_mode, force_value, boost_mode, boost_value)。
+
+        未配置的通道走 Auto 模式默认值 (constant, 0.02)。
+        """
+        cfg = self.channel_force_configs.get((device_label, ch))
+        if not cfg:
+            return "auto", None, "constant", 0.02
+        return (
+            cfg.get("force_mode", "auto"),
+            cfg.get("force_value"),
+            cfg.get("boost_mode", "constant"),
+            cfg.get("boost_value", 0.02),
+        )
 
     def _toggle_signal(self, inst, hw_ch, polarity):
         if self.control_method in ("MCU", "CH9114F"):
@@ -636,35 +644,39 @@ class AutoTestWorker(QObject):
             return None, None, {}
 
     def _step_force_plus20(self, default_voltages):
-        boost_desc = self._format_boost_desc()
         self._log(
-            f"[AUTO_TEST] Step 9: Setting sub-channels to default voltage + {boost_desc} "
-            f"(mode={_FORCE_VOLTAGE_BOOST_MODE}, value={_FORCE_VOLTAGE_BOOST_VALUE})..."
+            "[AUTO_TEST] Step 9: Setting sub-channels to force/auto voltages "
+            "(per-channel config)..."
         )
         for device_label, (n6705c_inst, hw_channels) in self.force_map.items():
             for ch in hw_channels:
                 try:
-                    fv = self.force_voltages.get((device_label, ch))
+                    force_mode, force_value, boost_mode, boost_value = \
+                        self._resolve_channel_force_cfg(device_label, ch)
                     ch_name = self.channel_names.get(
                         (device_label, ch), f"{device_label}-CH{ch}"
                     )
-                    if fv is not None:
+                    if force_mode == "force" and force_value is not None:
                         n6705c_inst.set_mode(ch, "PS2Q")
-                        n6705c_inst.set_voltage(ch, fv)
+                        n6705c_inst.set_voltage(ch, force_value)
                         n6705c_inst.set_current_limit(ch, 1.0)
                         n6705c_inst.channel_on(ch)
                         self._log(
-                            f"[AUTO_TEST]   {ch_name}: Force Vol -> {fv:.4f}V (user override)"
+                            f"[AUTO_TEST]   {ch_name}: Force -> {force_value:.4f}V (user override)"
                         )
                     else:
                         v_default = default_voltages.get((device_label, ch), 0.0)
-                        v_boosted = self._compute_boosted_voltage(v_default)
+                        v_boosted = self._compute_boosted_voltage(
+                            v_default, boost_mode, boost_value
+                        )
+                        boost_desc = self._format_boost_desc(boost_mode, boost_value)
                         n6705c_inst.set_mode(ch, "PS2Q")
                         n6705c_inst.set_voltage(ch, v_boosted)
                         n6705c_inst.set_current_limit(ch, 1.0)
                         n6705c_inst.channel_on(ch)
                         self._log(
-                            f"[AUTO_TEST]   {ch_name}: {v_default:.4f}V -> {v_boosted:.4f}V ({boost_desc})"
+                            f"[AUTO_TEST]   {ch_name}: {v_default:.4f}V -> {v_boosted:.4f}V "
+                            f"(Auto {boost_desc}, mode={boost_mode}, value={boost_value})"
                         )
                 except Exception as e:
                     self._log(f"[ERROR] Failed to set {device_label}-CH{ch}: {e}")
@@ -718,23 +730,26 @@ class AutoTestWorker(QObject):
         for device_label, (n6705c_inst, hw_channels) in self.force_map.items():
             for ch in hw_channels:
                 try:
-                    fv = self.force_voltages.get((device_label, ch))
+                    force_mode, force_value, boost_mode, boost_value = \
+                        self._resolve_channel_force_cfg(device_label, ch)
                     ch_name = self.channel_names.get(
                         (device_label, ch), f"{device_label}-CH{ch}"
                     )
-                    if fv is not None:
-                        n6705c_inst.set_voltage(ch, fv)
+                    if force_mode == "force" and force_value is not None:
+                        n6705c_inst.set_voltage(ch, force_value)
                         self._log(
-                            f"[AUTO_TEST]   {ch_name}: Force Vol -> {fv:.4f}V (user override)"
+                            f"[AUTO_TEST]   {ch_name}: Force -> {force_value:.4f}V (user override)"
                         )
                     else:
                         v_default = default_voltages.get((device_label, ch), 0.0)
                         aligned_v = self._align_voltage(v_default)
-                        v_plus20 = v_default + 0.02
+                        v_boosted = self._compute_boosted_voltage(
+                            v_default, boost_mode, boost_value
+                        )
                         new_v = max(aligned_v, v_default)
                         n6705c_inst.set_voltage(ch, new_v)
                         self._log(
-                            f"[AUTO_TEST]   {ch_name}: {v_plus20:.4f}V -> {new_v:.4f}V "
+                            f"[AUTO_TEST]   {ch_name}: {v_boosted:.4f}V -> {new_v:.4f}V "
                             f"(default={v_default:.4f}V, aligned={aligned_v:.4f}V)"
                         )
                 except Exception as e:
@@ -811,8 +826,11 @@ class AutoTestWorker(QObject):
             vbat_v = 3.8
         channel_voltages[(self.vbat_device_label, self.vbat_hw_ch)] = vbat_v
         for key, v in default_voltages.items():
-            fv = self.force_voltages.get(key)
-            channel_voltages[key] = fv if fv is not None else v
+            force_mode, force_value, _, _ = self._resolve_channel_force_cfg(*key)
+            if force_mode == "force" and force_value is not None:
+                channel_voltages[key] = force_value
+            else:
+                channel_voltages[key] = v
         return channel_voltages
 
     # ---- 下载异步 ----

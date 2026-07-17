@@ -11,7 +11,7 @@ Consumption Test 配置面板视图构建（Mixin）。
   - _add_channel_config_card      : 单个通道配置卡片
   - _on_config_enable_changed / _update_card_disabled_state
   - _on_config_name_changed / _on_config_channel_changed
-  - _on_force_vol_toggled / _on_force_vol_changed
+  - _on_force_mode_changed / _on_force_value_changed / _on_boost_mode_changed / _on_boost_value_changed
   - _remove_channel_config
 
 依赖宿主类（ConsumptionTestUI）提供：
@@ -26,13 +26,15 @@ import os
 
 from ui.resource_path import get_resource_base
 from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
-from ui.pages.consumption_test.widgets import ControlMethodToggle, PolarityToggle
+from ui.pages.consumption_test.widgets import (
+    ControlMethodToggle, PolarityToggle, BinaryTextToggle,
+)
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.widgets.button import SpinningSearchButton
 from PySide6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QPushButton, QCheckBox,
-    QScrollArea, QWidget, QSizePolicy,
+    QScrollArea, QWidget, QSizePolicy, QStackedLayout,
 )
 from PySide6.QtCore import Qt
 
@@ -437,8 +439,13 @@ class ConsumptionTestViewConfigMixin:
 
     def _add_channel_config_card(self, name, channel_key, enabled):
         idx = len(self._channel_configs)
-        config = {"name": name, "channel": channel_key, "enabled": enabled,
-                  "force_vol_enabled": False, "force_vol_value": ""}
+        config = {
+            "name": name, "channel": channel_key, "enabled": enabled,
+            "force_mode": "auto",        # "force" / "auto"
+            "force_value": "",           # Force 模式下用户输入电压(V)
+            "boost_mode": "constant",    # "constant" / "percent" (Auto 模式)
+            "boost_value": "0.02",       # Auto 模式下增压值
+        }
         self._channel_configs.append(config)
 
         card = QFrame()
@@ -451,8 +458,8 @@ class ConsumptionTestViewConfigMixin:
                 border-radius: 8px;
             }}
         """)
-        card.setFixedWidth(140)
-        card.setMinimumHeight(100)
+        card.setFixedWidth(160)
+        card.setMinimumHeight(220)
 
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(10, 8, 10, 8)
@@ -490,9 +497,13 @@ class ConsumptionTestViewConfigMixin:
         top_row.addWidget(remove_btn)
         card_layout.addLayout(top_row)
 
+        # Name 行: 标签 + 下拉菜单同一行
+        name_row = QHBoxLayout()
+        name_row.setSpacing(6)
         name_label = QLabel("Name")
         name_label.setStyleSheet("font-size: 10px; color: #7e96bf;")
-        card_layout.addWidget(name_label)
+        name_label.setFixedWidth(32)
+        name_row.addWidget(name_label)
 
         name_input = DarkComboBox()
         name_input.setFixedHeight(26)
@@ -509,11 +520,16 @@ class ConsumptionTestViewConfigMixin:
             name_input.setEditable(True)
             name_input.setCurrentText(name)
             name_input.setEditable(False)
-        card_layout.addWidget(name_input)
+        name_row.addWidget(name_input, 1)
+        card_layout.addLayout(name_row)
 
-        ch_label = QLabel("Channel (N6705C)")
+        # Channel 行: 标签 + 下拉菜单同一行
+        ch_row = QHBoxLayout()
+        ch_row.setSpacing(6)
+        ch_label = QLabel("CH")
         ch_label.setStyleSheet("font-size: 10px; color: #7e96bf;")
-        card_layout.addWidget(ch_label)
+        ch_label.setFixedWidth(32)
+        ch_row.addWidget(ch_label)
 
         channel_combo = DarkComboBox()
         channel_combo.setFixedHeight(26)
@@ -527,27 +543,37 @@ class ConsumptionTestViewConfigMixin:
             if channel_combo.itemText(i) == channel_key:
                 channel_combo.setCurrentIndex(i)
                 break
-        card_layout.addWidget(channel_combo)
+        ch_row.addWidget(channel_combo, 1)
+        card_layout.addLayout(ch_row)
 
-        force_vol_cb = QCheckBox("Force Vol")
-        force_vol_cb.setChecked(False)
-        force_vol_cb.setStyleSheet("""
-            QCheckBox {
-                color: #b0c4e8;
-                font-size: 10px;
-                font-weight: 600;
-            }
-        """)
-        card_layout.addWidget(force_vol_cb)
+        # Force 模式切换: Force (用户输入固定电压) / Auto (按 boost 增压)
+        force_mode_toggle = BinaryTextToggle(
+            left_key="force", left_label="Force",
+            right_key="auto", right_label="Auto",
+            initial=config["force_mode"],
+            fixed_height=22, fixed_width=140,
+        )
+        card_layout.addWidget(force_mode_toggle)
 
-        force_vol_input = QLineEdit()
-        force_vol_input.setPlaceholderText("V")
-        force_vol_input.setEnabled(False)
-        font = force_vol_input.font()
+        # Force/Auto 互斥内容区: index 0 = Force 输入框, index 1 = Auto 三件套
+        force_auto_stack = QStackedLayout()
+        force_auto_stack.setContentsMargins(0, 0, 0, 0)
+        force_auto_stack.setSpacing(0)
+
+        # ---- Page 0: Force 模式下显示 电压输入框 ----
+        force_page = QWidget()
+        force_page_layout = QVBoxLayout(force_page)
+        force_page_layout.setContentsMargins(0, 0, 0, 0)
+        force_page_layout.setSpacing(5)
+
+        force_value_input = QLineEdit()
+        force_value_input.setPlaceholderText("V (Force)")
+        force_value_input.setText(config["force_value"])
+        font = force_value_input.font()
         font.setPixelSize(11)
-        force_vol_input.setFont(font)
-        force_vol_input.setMaximumHeight(26)
-        force_vol_input.setStyleSheet("""
+        force_value_input.setFont(font)
+        force_value_input.setMaximumHeight(26)
+        force_value_input.setStyleSheet("""
             QLineEdit {
                 background-color: #0a1733;
                 color: #c8d8f8;
@@ -562,7 +588,55 @@ class ConsumptionTestViewConfigMixin:
                 border: 1.5px solid #1a2a4a;
             }
         """)
-        card_layout.addWidget(force_vol_input)
+        force_page_layout.addWidget(force_value_input)
+        force_auto_stack.addWidget(force_page)
+
+        # ---- Page 1: Auto 模式下显示 Boost Mode toggle + 增压值输入框 ----
+        auto_page = QWidget()
+        auto_page_layout = QVBoxLayout(auto_page)
+        auto_page_layout.setContentsMargins(0, 0, 0, 0)
+        auto_page_layout.setSpacing(5)
+
+        boost_mode_label = QLabel("Boost Mode")
+        boost_mode_label.setStyleSheet("font-size: 10px; color: #7e96bf;")
+        auto_page_layout.addWidget(boost_mode_label)
+
+        boost_mode_toggle = BinaryTextToggle(
+            left_key="constant", left_label="Const",
+            right_key="percent", right_label="Pct",
+            initial=config["boost_mode"],
+            fixed_height=22, fixed_width=140,
+        )
+        auto_page_layout.addWidget(boost_mode_toggle)
+
+        boost_value_input = QLineEdit()
+        boost_value_input.setPlaceholderText("boost value")
+        boost_value_input.setText(config["boost_value"])
+        font = boost_value_input.font()
+        font.setPixelSize(11)
+        boost_value_input.setFont(font)
+        boost_value_input.setMaximumHeight(26)
+        boost_value_input.setStyleSheet("""
+            QLineEdit {
+                background-color: #0a1733;
+                color: #c8d8f8;
+                border: 1.5px solid #27406f;
+                border-radius: 6px;
+                padding: 0px 10px;
+                max-height: 18px;
+            }
+            QLineEdit:disabled {
+                background-color: #060d1f;
+                color: #3a4a6a;
+                border: 1.5px solid #1a2a4a;
+            }
+        """)
+        auto_page_layout.addWidget(boost_value_input)
+        force_auto_stack.addWidget(auto_page)
+
+        # 初始 page:force_mode == "force" -> 0, 否则 "auto" -> 1
+        force_auto_stack.setCurrentIndex(0 if config["force_mode"] == "force" else 1)
+        card_layout.addLayout(force_auto_stack)
 
         stretch_idx = self._channel_config_row.count() - 1
         self._channel_config_row.insertWidget(stretch_idx, card)
@@ -576,8 +650,12 @@ class ConsumptionTestViewConfigMixin:
             "remove_btn": remove_btn,
             "name_label": name_label,
             "ch_label": ch_label,
-            "force_vol_cb": force_vol_cb,
-            "force_vol_input": force_vol_input,
+            "force_mode_toggle": force_mode_toggle,
+            "force_auto_stack": force_auto_stack,
+            "force_value_input": force_value_input,
+            "boost_mode_label": boost_mode_label,
+            "boost_mode_toggle": boost_mode_toggle,
+            "boost_value_input": boost_value_input,
             "config_index": idx,
         }
         self._channel_config_widgets.append(wdata)
@@ -586,8 +664,10 @@ class ConsumptionTestViewConfigMixin:
         name_input.currentTextChanged.connect(lambda text, i=idx: self._on_config_name_changed(i, text))
         channel_combo.currentIndexChanged.connect(lambda ci, i=idx: self._on_config_channel_changed(i))
         remove_btn.clicked.connect(lambda checked=False, i=idx: self._remove_channel_config(i))
-        force_vol_cb.toggled.connect(lambda checked, i=idx: self._on_force_vol_toggled(i, checked))
-        force_vol_input.textChanged.connect(lambda text, i=idx: self._on_force_vol_changed(i, text))
+        force_mode_toggle.toggled.connect(lambda val, i=idx: self._on_force_mode_changed(i, val))
+        force_value_input.textChanged.connect(lambda text, i=idx: self._on_force_value_changed(i, text))
+        boost_mode_toggle.toggled.connect(lambda val, i=idx: self._on_boost_mode_changed(i, val))
+        boost_value_input.textChanged.connect(lambda text, i=idx: self._on_boost_value_changed(i, text))
 
         self._update_card_disabled_state(wdata, enabled)
         self._refresh_result_cards()
@@ -602,11 +682,29 @@ class ConsumptionTestViewConfigMixin:
         wdata["name_input"].setEnabled(enabled)
         wdata["channel_combo"].setEnabled(enabled)
         wdata["remove_btn"].setEnabled(enabled)
-        wdata["force_vol_cb"].setEnabled(enabled)
+        wdata["force_mode_toggle"].setEnabled(enabled)
+        # Force/Auto 切换: 用 QStackedLayout 切换显示页,只显示对应模式的控件
+        is_force = wdata["force_mode_toggle"].value() == "force"
+        stack = wdata["force_auto_stack"]
+        stack.setCurrentIndex(0 if is_force else 1)
+        # 当前可见页的子控件跟随 enabled 状态;不可见页的控件也置 disabled
+        # 防止用户用 Tab 键聚焦到隐藏控件
         if enabled:
-            wdata["force_vol_input"].setEnabled(wdata["force_vol_cb"].isChecked())
+            if is_force:
+                wdata["force_value_input"].setEnabled(True)
+                wdata["boost_mode_label"].setEnabled(False)
+                wdata["boost_mode_toggle"].setEnabled(False)
+                wdata["boost_value_input"].setEnabled(False)
+            else:
+                wdata["force_value_input"].setEnabled(False)
+                wdata["boost_mode_label"].setEnabled(True)
+                wdata["boost_mode_toggle"].setEnabled(True)
+                wdata["boost_value_input"].setEnabled(True)
         else:
-            wdata["force_vol_input"].setEnabled(False)
+            wdata["force_value_input"].setEnabled(False)
+            wdata["boost_mode_label"].setEnabled(False)
+            wdata["boost_mode_toggle"].setEnabled(False)
+            wdata["boost_value_input"].setEnabled(False)
 
         card = wdata["card"]
         card_id = wdata["card_id"]
@@ -666,15 +764,37 @@ class ConsumptionTestViewConfigMixin:
             self._channel_configs[idx]["channel"] = raw
             self._refresh_result_cards()
 
-    def _on_force_vol_toggled(self, idx, checked):
+    def _on_force_mode_changed(self, idx, val):
         if idx < len(self._channel_configs):
-            self._channel_configs[idx]["force_vol_enabled"] = checked
+            self._channel_configs[idx]["force_mode"] = val
             wdata = self._channel_config_widgets[idx]
-            wdata["force_vol_input"].setEnabled(checked)
+            is_force = (val == "force")
+            # 切换 stack 显示页: Force -> page 0, Auto -> page 1
+            wdata["force_auto_stack"].setCurrentIndex(0 if is_force else 1)
+            is_enabled = wdata["enable_cb"].isChecked()
+            if is_enabled:
+                if is_force:
+                    wdata["force_value_input"].setEnabled(True)
+                    wdata["boost_mode_label"].setEnabled(False)
+                    wdata["boost_mode_toggle"].setEnabled(False)
+                    wdata["boost_value_input"].setEnabled(False)
+                else:
+                    wdata["force_value_input"].setEnabled(False)
+                    wdata["boost_mode_label"].setEnabled(True)
+                    wdata["boost_mode_toggle"].setEnabled(True)
+                    wdata["boost_value_input"].setEnabled(True)
 
-    def _on_force_vol_changed(self, idx, text):
+    def _on_force_value_changed(self, idx, text):
         if idx < len(self._channel_configs):
-            self._channel_configs[idx]["force_vol_value"] = text
+            self._channel_configs[idx]["force_value"] = text
+
+    def _on_boost_mode_changed(self, idx, val):
+        if idx < len(self._channel_configs):
+            self._channel_configs[idx]["boost_mode"] = val
+
+    def _on_boost_value_changed(self, idx, text):
+        if idx < len(self._channel_configs):
+            self._channel_configs[idx]["boost_value"] = text
 
     def _remove_channel_config(self, idx):
         if idx >= len(self._channel_configs):
@@ -692,13 +812,17 @@ class ConsumptionTestViewConfigMixin:
             w["name_input"].currentTextChanged.disconnect()
             w["channel_combo"].currentIndexChanged.disconnect()
             w["remove_btn"].clicked.disconnect()
-            w["force_vol_cb"].toggled.disconnect()
-            w["force_vol_input"].textChanged.disconnect()
+            w["force_mode_toggle"].toggled.disconnect()
+            w["force_value_input"].textChanged.disconnect()
+            w["boost_mode_toggle"].toggled.disconnect()
+            w["boost_value_input"].textChanged.disconnect()
             w["enable_cb"].toggled.connect(lambda checked, ci=i: self._on_config_enable_changed(ci, checked))
             w["name_input"].currentTextChanged.connect(lambda text, ci=i: self._on_config_name_changed(ci, text))
             w["channel_combo"].currentIndexChanged.connect(lambda cii, ci=i: self._on_config_channel_changed(ci))
             w["remove_btn"].clicked.connect(lambda checked=False, ci=i: self._remove_channel_config(ci))
-            w["force_vol_cb"].toggled.connect(lambda checked, ci=i: self._on_force_vol_toggled(ci, checked))
-            w["force_vol_input"].textChanged.connect(lambda text, ci=i: self._on_force_vol_changed(ci, text))
+            w["force_mode_toggle"].toggled.connect(lambda val, ci=i: self._on_force_mode_changed(ci, val))
+            w["force_value_input"].textChanged.connect(lambda text, ci=i: self._on_force_value_changed(ci, text))
+            w["boost_mode_toggle"].toggled.connect(lambda val, ci=i: self._on_boost_mode_changed(ci, val))
+            w["boost_value_input"].textChanged.connect(lambda text, ci=i: self._on_boost_value_changed(ci, text))
 
         self._refresh_result_cards()

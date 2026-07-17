@@ -374,8 +374,125 @@ class PolarityToggle(QWidget):
         return super().event(ev)
 
 
+class BinaryTextToggle(QWidget):
+    """通用二选一文本切换控件(如 Force/Auto、constant/percent)。
+
+    左右两个文本段,点击切换,带平滑动画。
+    """
+    toggled = Signal(str)
+
+    def __init__(self, left_key, left_label, right_key, right_label, parent=None,
+                 initial=None, fixed_height=24, fixed_width=120):
+        super().__init__(parent)
+        self._left_key = left_key
+        self._right_key = right_key
+        self._left_label = left_label
+        self._right_label = right_label
+        self._value = right_key if initial == right_key else left_key
+        self._anim_progress = 0.0 if self._value == left_key else 1.0
+
+        self.setFixedHeight(fixed_height)
+        self.setFixedWidth(fixed_width)
+
+        self._bg_color = QColor("#1A2750")
+        self._knob_color = QColor("#243760")
+        self._text_active = QColor("#F3F6FF")
+        self._text_inactive = QColor("#5F77AE")
+        self._border_color = QColor("#22376A")
+
+        self._anim = QPropertyAnimation(self, b"animProgress")
+        self._anim.setDuration(180)
+        self._anim.setEasingCurve(QEasingCurve.InOutCubic)
+
+        self.setCursor(Qt.PointingHandCursor)
+
+    def _get_anim_progress(self):
+        return self._anim_progress
+
+    def _set_anim_progress(self, val):
+        self._anim_progress = val
+        self.update()
+
+    animProgress = Property(float, _get_anim_progress, _set_anim_progress)
+
+    def value(self):
+        return self._value
+
+    def setValue(self, val):
+        if val not in (self._left_key, self._right_key):
+            return
+        if val == self._value:
+            return
+        self._value = val
+        target = 0.0 if val == self._left_key else 1.0
+        self._anim.stop()
+        self._anim.setStartValue(self._anim_progress)
+        self._anim.setEndValue(target)
+        self._anim.start()
+        self.toggled.emit(self._value)
+
+    def mousePressEvent(self, event):
+        if not self.isEnabled():
+            super().mousePressEvent(event)
+            return
+        if event.button() == Qt.LeftButton:
+            new_val = self._right_key if self._value == self._left_key else self._left_key
+            self.setValue(new_val)
+        super().mousePressEvent(event)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        if not self.isEnabled():
+            p.setOpacity(0.4)
+
+        w, h = self.width(), self.height()
+        radius = h / 2
+
+        p.setPen(QPen(self._border_color, 1))
+        p.setBrush(self._bg_color)
+        p.drawRoundedRect(QRect(0, 0, w, h), radius, radius)
+
+        knob_margin = 3
+        knob_h = h - knob_margin * 2
+        knob_w = w / 2 - knob_margin
+        knob_x = knob_margin + self._anim_progress * (w / 2)
+        knob_y = knob_margin
+
+        p.setPen(Qt.NoPen)
+        p.setBrush(self._knob_color)
+        p.drawRoundedRect(QRect(int(knob_x), int(knob_y), int(knob_w), int(knob_h)),
+                          knob_h / 2, knob_h / 2)
+
+        font = p.font()
+        font.setWeight(QFont.Bold)
+        font.setPointSize(8)
+        p.setFont(font)
+
+        left_rect = QRect(0, 0, w // 2, h)
+        right_rect = QRect(w // 2, 0, w // 2, h)
+
+        p.setPen(self._text_active if self._anim_progress < 0.5 else self._text_inactive)
+        p.drawText(left_rect, Qt.AlignCenter, self._left_label)
+
+        p.setPen(self._text_active if self._anim_progress >= 0.5 else self._text_inactive)
+        p.drawText(right_rect, Qt.AlignCenter, self._right_label)
+
+        p.end()
+
+    def sizeHint(self):
+        return QSize(120, 24)
+
+    def changeEvent(self, event):
+        if event.type() == event.Type.EnabledChange:
+            self.setCursor(Qt.PointingHandCursor if self.isEnabled() else Qt.ArrowCursor)
+            self.update()
+        super().changeEvent(event)
+
+
 __all__ = [
     "DownloadModeToggle",
     "ControlMethodToggle",
     "PolarityToggle",
+    "BinaryTextToggle",
 ]

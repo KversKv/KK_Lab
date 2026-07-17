@@ -1237,22 +1237,53 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             return "MCU", int(m.group(1))
         return None, None
 
-    def _build_force_voltages(self):
-        force_voltages = {}
+    def _build_channel_force_configs(self):
+        """构建每通道的 force 配置字典。
+
+        返回:
+            {(device_label, hw_ch): {
+                "force_mode": "force"/"auto",
+                "force_value": float,        # force 模式下的目标电压(V)
+                "boost_mode": "constant"/"percent",
+                "boost_value": float,        # auto 模式下的增压值
+            }}
+            Force 模式且 force_value 为空/非法时跳过该通道(走 Auto 默认值)。
+            Auto 模式下 boost_value 为空/非法时使用默认 0.02。
+        """
+        configs = {}
         for cfg in self._channel_configs:
-            if not cfg["enabled"] or not cfg.get("force_vol_enabled"):
-                continue
-            val_text = cfg.get("force_vol_value", "").strip()
-            if not val_text:
-                continue
-            try:
-                voltage = float(val_text)
-            except ValueError:
+            if not cfg["enabled"]:
                 continue
             device_label, hw_ch = self._parse_channel_key(cfg["channel"])
-            if device_label is not None and hw_ch is not None:
-                force_voltages[(device_label, hw_ch)] = voltage
-        return force_voltages
+            if device_label is None or hw_ch is None:
+                continue
+
+            force_mode = cfg.get("force_mode", "auto")
+            entry = {
+                "force_mode": force_mode,
+                "force_value": None,
+                "boost_mode": cfg.get("boost_mode", "constant"),
+                "boost_value": 0.02,
+            }
+
+            if force_mode == "force":
+                val_text = cfg.get("force_value", "").strip()
+                if not val_text:
+                    continue
+                try:
+                    entry["force_value"] = float(val_text)
+                except ValueError:
+                    continue
+            else:
+                val_text = cfg.get("boost_value", "").strip()
+                if val_text:
+                    try:
+                        entry["boost_value"] = float(val_text)
+                    except ValueError:
+                        pass
+
+            configs[(device_label, hw_ch)] = entry
+        return configs
 
     def _current_mcu_type(self):
         if hasattr(self, "mcu_type_combo") and self.mcu_type_combo is not None:
@@ -1733,14 +1764,24 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
                 self._channel_configs[idx]["channel"] = ch
                 if ch:
                     self._pending_channel_selections[idx] = ch
-                fv_en = bool(cfg.get("force_vol_enabled", False))
-                fv_val = cfg.get("force_vol_value", "") or ""
-                self._channel_configs[idx]["force_vol_enabled"] = fv_en
-                self._channel_configs[idx]["force_vol_value"] = fv_val
+                fv_mode = cfg.get("force_mode", "auto")
+                fv_val = cfg.get("force_value", "") or ""
+                bm = cfg.get("boost_mode", "constant")
+                bv = cfg.get("boost_value", "0.02") or "0.02"
+                self._channel_configs[idx]["force_mode"] = fv_mode
+                self._channel_configs[idx]["force_value"] = fv_val
+                self._channel_configs[idx]["boost_mode"] = bm
+                self._channel_configs[idx]["boost_value"] = bv
                 wdata = self._channel_config_widgets[idx]
-                wdata["force_vol_cb"].setChecked(fv_en)
-                wdata["force_vol_input"].setText(fv_val)
-                wdata["force_vol_input"].setEnabled(enabled and fv_en)
+                wdata["force_mode_toggle"].setValue(fv_mode)
+                wdata["force_value_input"].setText(fv_val)
+                wdata["boost_mode_toggle"].setValue(bm)
+                wdata["boost_value_input"].setText(bv)
+                is_force = (fv_mode == "force")
+                wdata["force_value_input"].setEnabled(enabled and is_force)
+                wdata["boost_mode_label"].setEnabled(enabled and not is_force)
+                wdata["boost_mode_toggle"].setEnabled(enabled and not is_force)
+                wdata["boost_value_input"].setEnabled(enabled and not is_force)
             # 立即尝试应用一次(若仪器已连接,通道就能匹配;否则等仪器连接后再应用)
             self._update_available_channels()
 
@@ -1955,7 +1996,7 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             vbat_device_label, vbat_inst, vbat_hw_ch,
             force_high_map, test_time, sample_period,
             channel_names=channel_names,
-            force_voltages=self._build_force_voltages(),
+            channel_force_configs=self._build_channel_force_configs(),
         )
         thread = QThread()
         worker.moveToThread(thread)
@@ -2066,7 +2107,7 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             vbat_device_label, vbat_inst, vbat_hw_ch,
             force_map, test_time, sample_period,
             channel_names=channel_names,
-            force_voltages=self._build_force_voltages(),
+            channel_force_configs=self._build_channel_force_configs(),
         )
         thread = QThread()
         worker.moveToThread(thread)
@@ -2326,7 +2367,7 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             config_text=config_text,
             parse_config_commands_fn=self._parse_config_commands,
             resolve_device_fn=self._resolve_device,
-            force_voltages=self._build_force_voltages(),
+            channel_force_configs=self._build_channel_force_configs(),
             force_config_enabled=(
                 self.force_config_cb.isChecked()
                 if getattr(self, "force_config_cb", None) is not None else False

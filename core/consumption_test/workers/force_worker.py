@@ -49,7 +49,7 @@ class BaseForceTestWorker(QObject):
 
     def __init__(self, vbat_device_label, vbat_inst, vbat_hw_ch,
                  device_map, test_time, sample_period,
-                 channel_names=None, force_voltages=None):
+                 channel_names=None, channel_force_configs=None):
         super().__init__()
         self.vbat_device_label = vbat_device_label
         self.vbat_inst = vbat_inst
@@ -58,7 +58,10 @@ class BaseForceTestWorker(QObject):
         self.test_time = test_time
         self.sample_period = sample_period
         self.channel_names = channel_names or {}
-        self.force_voltages = force_voltages or {}
+        # 每通道 force 配置:{(label, ch): {"force_mode": "force"/"auto",
+        #   "force_value": float|None, "boost_mode": ..., "boost_value": ...}}
+        # Force 模式且 force_value 不为 None 时,作为用户覆盖电压,其余走自动 prepare。
+        self.channel_force_configs = channel_force_configs or {}
         self._is_stopped = False
 
     def stop(self):
@@ -165,9 +168,10 @@ class BaseForceTestWorker(QObject):
         def _prepare_worker(idx, task):
             forced_chs, normal_chs = [], []
             for ch in task["force_channels"]:
-                fv = self.force_voltages.get((task["device_label"], ch))
-                if fv is not None:
-                    forced_chs.append((ch, fv))
+                cfg = self.channel_force_configs.get((task["device_label"], ch))
+                # 仅当 Force 模式且 force_value 有效时,作为用户覆盖电压
+                if cfg and cfg.get("force_mode") == "force" and cfg.get("force_value") is not None:
+                    forced_chs.append((ch, cfg["force_value"]))
                 else:
                     normal_chs.append(ch)
             task["measured_voltages"] = self._do_prepare(task, forced_chs, normal_chs)
@@ -279,11 +283,11 @@ class ConsumptionTestForceHighWorker(BaseForceTestWorker):
 
     def __init__(self, vbat_device_label, vbat_inst, vbat_hw_ch,
                  force_high_map, test_time, sample_period,
-                 channel_names=None, force_voltages=None):
+                 channel_names=None, channel_force_configs=None):
         super().__init__(
             vbat_device_label, vbat_inst, vbat_hw_ch,
             force_high_map, test_time, sample_period,
-            channel_names=channel_names, force_voltages=force_voltages,
+            channel_names=channel_names, channel_force_configs=channel_force_configs,
         )
 
     # 向后兼容的属性别名
@@ -326,11 +330,11 @@ class ConsumptionTestForceWorker(BaseForceTestWorker):
 
     def __init__(self, vbat_device_label, vbat_inst, vbat_hw_ch,
                  force_map, test_time, sample_period,
-                 channel_names=None, force_voltages=None):
+                 channel_names=None, channel_force_configs=None):
         super().__init__(
             vbat_device_label, vbat_inst, vbat_hw_ch,
             force_map, test_time, sample_period,
-            channel_names=channel_names, force_voltages=force_voltages,
+            channel_names=channel_names, channel_force_configs=channel_force_configs,
         )
 
     @property
