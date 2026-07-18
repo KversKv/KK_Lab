@@ -138,7 +138,9 @@ class ConsumptionTestViewPanelsMixin:
 
         right_splitter.setStretchFactor(0, 0)
         right_splitter.setStretchFactor(1, 1)
-        right_splitter.setSizes([240, 400])
+        # Channel Config 默认高度需容纳卡片(minHeight 220) + 标题/边距(~48) ≈ 268px,
+        # 故给 340px 余量, 避免卡片内容(尤其 Auto 页 Boost 三件套)被裁切
+        right_splitter.setSizes([340, 300])
 
         body_layout.addWidget(left_scroll)
         body_layout.addWidget(right_splitter, 1)
@@ -383,12 +385,33 @@ class ConsumptionTestViewPanelsMixin:
             }
         """)
         layout = QVBoxLayout(panel)
-        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setContentsMargins(12, 8, 12, 10)
         layout.setSpacing(6)
 
-        # ---- 顶行: 标题 + 测试模式 + Chip + Check ----
-        top_row = QHBoxLayout()
-        top_row.setSpacing(8)
+        # ---- 标题行(始终可见): chevron + 图标 + 标题, 点击 chevron 折叠/展开内容 ----
+        header_row = QHBoxLayout()
+        header_row.setSpacing(6)
+        header_row.setContentsMargins(0, 0, 0, 0)
+
+        self._config_import_chevron = QPushButton("▼")
+        self._config_import_chevron.setFixedSize(16, 16)
+        self._config_import_chevron.setCursor(Qt.PointingHandCursor)
+        self._config_import_chevron.setFlat(True)
+        self._config_import_chevron.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                border: none;
+                color: #94a3b8;
+                font-size: 10px;
+                font-weight: 700;
+                padding: 0px;
+                min-height: 0px;
+            }
+            QPushButton:hover { color: #ffffff; }
+        """)
+        self._config_import_chevron.clicked.connect(self._toggle_config_import_collapse)
+        header_row.addWidget(self._config_import_chevron)
+
         config_icon_label = QLabel()
         config_icon_label.setPixmap(
             _tinted_svg_icon(os.path.join(_PAGE_SVGS_DIR, "file-json.svg"), "#94a3b8", 16).pixmap(16, 16)
@@ -396,8 +419,21 @@ class ConsumptionTestViewPanelsMixin:
         config_icon_label.setFixedSize(16, 16)
         config_title = QLabel("Config Import")
         config_title.setStyleSheet("font-size: 12px; font-weight: 700; color: #ffffff;")
-        top_row.addWidget(config_icon_label)
-        top_row.addWidget(config_title)
+        header_row.addWidget(config_icon_label)
+        header_row.addWidget(config_title)
+        header_row.addStretch()
+        layout.addLayout(header_row)
+
+        # ---- 可折叠内容区: 测试模式 + Chip + 5 电源轨 ----
+        self._config_import_content = QWidget()
+        self._config_import_content.setStyleSheet("background: transparent; border: none;")
+        content_layout = QVBoxLayout(self._config_import_content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(6)
+
+        # 顶行: 测试模式 + Chip + Check + Save
+        top_row = QHBoxLayout()
+        top_row.setSpacing(8)
 
         # 测试模式切换: 外供高压(high_voltage) / 标准电压(standard)
         # 外供高压 → Channel Config 显示 Force Vol 控件, 跳过 I2C 配置
@@ -494,7 +530,7 @@ class ConsumptionTestViewPanelsMixin:
         """)
         top_row.addWidget(self.chip_save_btn)
 
-        layout.addLayout(top_row)
+        content_layout.addLayout(top_row)
 
         # ---- 中部: 5 个电源轨列(横向排列), 每列含 YAML 文本框 + Import/Exec 按钮 ----
         rails_row = QHBoxLayout()
@@ -570,7 +606,10 @@ class ConsumptionTestViewPanelsMixin:
             col_w = QWidget()
             col_w.setLayout(col)
             rails_row.addWidget(col_w, 1)
-        layout.addLayout(rails_row)
+        content_layout.addLayout(rails_row)
+
+        # 将可折叠内容区加入面板主布局
+        layout.addWidget(self._config_import_content)
 
         # 信号连接
         self.chip_combo.currentIndexChanged.connect(self._on_chip_selected)
@@ -588,6 +627,16 @@ class ConsumptionTestViewPanelsMixin:
         self._on_test_mode_changed(self._test_mode)
 
         return panel
+
+    def _toggle_config_import_collapse(self):
+        """切换 Config Import 内容区的折叠/展开状态。
+
+        折叠时仅保留标题行(chevron + 图标 + 标题), 隐藏测试模式/Chip/5 电源轨;
+        展开时恢复全部控件。chevron 图标随之切换: ▼(展开) / ▶(折叠)。
+        """
+        is_visible = self._config_import_content.isVisible()
+        self._config_import_content.setVisible(not is_visible)
+        self._config_import_chevron.setText("▶" if is_visible else "▼")
 
     def _build_firmware_serial_widgets(self, layout):
         row = QHBoxLayout()

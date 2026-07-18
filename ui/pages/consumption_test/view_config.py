@@ -449,7 +449,8 @@ class ConsumptionTestViewConfigMixin:
         scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         # 由外层 QSplitter 控制高度，设置最小高度避免被拖到过小
-        scroll_area.setMinimumHeight(150)
+        # 卡片自身 minHeight=220, 此处对齐以避免垂直滚动条被禁用时内容被裁切
+        scroll_area.setMinimumHeight(220)
         scroll_area.setStyleSheet("""
             QScrollArea {
                 background: transparent;
