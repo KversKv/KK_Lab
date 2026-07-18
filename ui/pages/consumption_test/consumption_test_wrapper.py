@@ -16,10 +16,11 @@ class ConsumptionTestWrapper(QWidget):
         "high_low_temp": 1,
     }
 
-    def __init__(self, n6705c_top=None, instrument_manager=None):
+    def __init__(self, n6705c_top=None, instrument_manager=None, ui_action_registry=None):
         super().__init__()
         self._n6705c_top = n6705c_top
         self._instrument_manager = instrument_manager
+        self._ui_action_registry = ui_action_registry
         self._setup_style()
         self._create_layout()
 
@@ -48,6 +49,7 @@ class ConsumptionTestWrapper(QWidget):
         self.auto_test_ui = ConsumptionTestUI(
             n6705c_top=self._n6705c_top,
             instrument_manager=self._instrument_manager,
+            ui_action_registry=self._ui_action_registry,
         )
         self.tab_widget.addTab(self.auto_test_ui, "Auto Test")
 
@@ -76,6 +78,36 @@ class ConsumptionTestWrapper(QWidget):
 
     def _sync_from_top(self):
         self.sync_n6705c_from_top()
+
+    def _current_ai_subpage(self):
+        """返回当前 Tab 的子页实例（供 AI 枢纽契约路由用）。"""
+        return self.tab_widget.currentWidget() if self.tab_widget else None
+
+    @property
+    def logs_frame(self):
+        """logs_frame 透传：把当前 Tab 子页的 execution_logs 暴露给 AI 枢纽。
+
+        枢纽 _get_ai_execution_logs 经 page.logs_frame._all_logs 读取日志；
+        wrapper 自身不持 logs 控件，按当前 Tab 下钻到子页。
+        """
+        sub = self._current_ai_subpage()
+        if sub is None:
+            return None
+        return getattr(sub, "logs_frame", None) or getattr(sub, "execution_logs", None)
+
+    def append_log(self, message):
+        """append_log 透传：让 AI 枢纽 _ai_ui_invoke 的 [AI] 日志回填能落到子页日志区。
+
+        枢纽 _current_active_page() 返回 wrapper（不下钻），它经 getattr(page,
+        'append_log', None) 找不到时静默失败。这里透传到当前 Tab 子页，
+        保证 [AI] 触发 XXX 日志条目能正确出现在 ExecutionLogsFrame。
+        """
+        sub = self._current_ai_subpage()
+        if sub is None:
+            return
+        appender = getattr(sub, "append_log", None)
+        if callable(appender):
+            appender(message)
 
 
 def main():

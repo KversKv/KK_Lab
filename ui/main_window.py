@@ -1351,7 +1351,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         if page_key == "orchestrator":
             return getattr(self, "orchestrator_ui", None)
         # Tab 容器页：下钻到当前子页
-        if page_key in ("pmu_test", "charger_test", "module_test"):
+        if page_key in ("pmu_test", "charger_test", "module_test", "consumption_test"):
             attr = f"{page_key}_ui"
             container = getattr(self, attr, None)
             if container is None:
@@ -1363,7 +1363,6 @@ class MainWindow(CleanupMixin, QMainWindow):
         # 其它页：返回页面实例本身
         mapping = {
             "vmin_hunter": getattr(self, "vmin_hunter_ui", None),
-            "consumption_test": getattr(self, "consumption_test_ui", None),
         }
         return mapping.get(page_key)
 
@@ -1510,6 +1509,7 @@ class MainWindow(CleanupMixin, QMainWindow):
                 self.consumption_test_ui = ConsumptionTestWrapper(
                     n6705c_top=self.n6705c_top,
                     instrument_manager=self.instrument_manager,
+                    ui_action_registry=getattr(self, "_ui_action_registry", None),
                 )
             except Exception:
                 logger.error("Failed to create ConsumptionTestWrapper", exc_info=True)
