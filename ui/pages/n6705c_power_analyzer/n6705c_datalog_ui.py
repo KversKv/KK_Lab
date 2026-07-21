@@ -16,8 +16,14 @@ if __name__ == "__main__" and __package__ in (None, ""):
         sys.path.insert(0, _PROJECT_ROOT)
 
 from ui.resource_path import get_resource_base
+import json
 import math
 import random
+import re
+import threading
+import time
+import traceback
+from bisect import bisect_left, bisect_right
 import numpy as np
 
 if sys.stdout is None:
@@ -38,8 +44,8 @@ from PySide6.QtWidgets import (
     QProgressBar, QStackedWidget, QMessageBox, QApplication,
     QStyle, QStyleOptionTab, QStylePainter,
 )
-from PySide6.QtCore import Qt, QTimer, Signal, QThread, QObject, QByteArray, QSize, QRect
-from PySide6.QtGui import QFont, QColor, QBrush, QPen, QPainter, QPixmap, QIcon
+from PySide6.QtCore import Qt, QTimer, Signal, QThread, QObject, QByteArray, QSize, QRect, QEvent, QPoint
+from PySide6.QtGui import QFont, QColor, QBrush, QPen, QPainter, QPixmap, QIcon, QTransform
 from PySide6.QtSvg import QSvgRenderer
 import pyqtgraph as pg
 import os
@@ -57,8 +63,23 @@ from core.ai.ui_action_registry import UIActionSpec
 from log_config import get_logger
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockN6705C
+from ui.pages.n6705c_power_analyzer import datalog_style as dss
 
 logger = get_logger(__name__)
+
+
+def _make_svg_icon(svg_file, color="#dfe8ff", size=18):
+    """加载 resources/pages/n6705c_power_analyzer_SVGs 下的 SVG 并渲染为 QIcon。"""
+    svg_path = os.path.join(get_resource_base(), "resources", "pages", "n6705c_power_analyzer_SVGs", svg_file)
+    with open(svg_path, "r", encoding="utf-8") as f:
+        svg_data = f.read().replace("currentColor", color)
+    renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))
+    pixmap = QPixmap(size, size)
+    pixmap.fill(QColor(0, 0, 0, 0))
+    painter = QPainter(pixmap)
+    renderer.render(painter)
+    painter.end()
+    return QIcon(pixmap)
 
 
 CHANNEL_COLORS = [
@@ -122,7 +143,6 @@ def _parse_ch_label(label):
 
 
 def _display_label(key):
-    import re
     raw = key.strip()
     file_prefix = ""
     fm = re.match(r'^(F\d+)-(.*)', raw)
@@ -151,7 +171,6 @@ def _color_for_label(label):
 
 
 def _sort_key_for_label(label):
-    import re
     raw = label.strip()
     file_order = 0
     fm = re.match(r'^F(\d+)-(.*)', raw)
@@ -165,7 +184,6 @@ def _sort_key_for_label(label):
 
 
 def _parse_value_with_unit(text, base_unit=None):
-    import re
     text = text.strip()
     m = re.match(r'^([+-]?\d*\.?\d+)\s*([a-zA-Z\u00B5\u03BC]*)\s*$', text)
     if not m:
@@ -449,295 +467,25 @@ class _DatalogWorker(QObject):
         self._is_stopped = True
 
     def run(self):
-        import time
         try:
             run_start = time.time()
             sample_period_s = self.sample_period_us / 1_000_000.0
 
             if self.debug:
-                self.progress_update.emit(5, "Generating mock data...")
-                logger.debug("[Datalog][Progress] Mock mode start at %.3fs", time.time() - run_start)
-                mock_start = time.time()
-                all_data = self._generate_mock_data(sample_period_s)
-                logger.debug("[Datalog][Progress] Mock data generated in %.3fs", time.time() - mock_start)
-                self.progress_update.emit(100, "Done")
+                all_data = self._run_mock(sample_period_s, run_start)
                 self.data_ready.emit(all_data)
                 self.finished.emit()
                 return
 
-            import threading
-
-            active_units = []
-            for unit_idx, n6705c in enumerate(self.n6705c_list):
-                curr_channels = self.channels_per_unit[unit_idx]
-                volt_channels = self.voltage_channels_per_unit[unit_idx]
-                if curr_channels or volt_channels:
-                    active_units.append((unit_idx, n6705c, curr_channels, volt_channels))
-
+            active_units = self._collect_active_units()
             if not active_units:
                 self.finished.emit()
                 return
 
-            self.progress_update.emit(2, "Configuring instruments...")
-            logger.debug("[Datalog][Progress] Configure start at %.3fs", time.time() - run_start)
-            config_start = time.time()
+            self._configure_units(active_units, sample_period_s, run_start)
+            self._wait_capture(active_units, run_start)
+            all_data, raw_dlog_list = self._download_units(sample_period_s, run_start)
 
-            barrier = threading.Barrier(len(active_units), timeout=30)
-            init_errors = [None] * len(active_units)
-
-            def configure_and_start(idx, unit_idx, n6705c, curr_channels, volt_channels):
-                try:
-                    import time as _time
-                    _time.sleep(0.3)
-                    try:
-                        n6705c.instr.query("*OPC?")
-                    except Exception:
-                        pass
-                    n6705c.instr.write("*CLS")
-                    try:
-                        n6705c.instr.write("ABOR:DLOG")
-                    except Exception:
-                        pass
-
-                    for ch in range(1, 5):
-                        n6705c.instr.write(f"SENS:DLOG:FUNC:CURR OFF,(@{ch})")
-                        n6705c.instr.write(f"SENS:DLOG:FUNC:VOLT OFF,(@{ch})")
-
-                    for ch in curr_channels:
-                        n6705c.instr.write(f"SENS:DLOG:FUNC:CURR ON,(@{ch})")
-                        n6705c.instr.write(f"SENS:DLOG:CURR:RANG:AUTO ON,(@{ch})")
-
-                    for ch in volt_channels:
-                        n6705c.instr.write(f"SENS:DLOG:FUNC:VOLT ON,(@{ch})")
-
-                    n6705c.instr.write(f"SENS:DLOG:TIME {self.monitoring_time_s}")
-                    n6705c.instr.write(f"SENS:DLOG:PER {sample_period_s}")
-                    n6705c.instr.write("TRIG:DLOG:SOUR IMM")
-
-                    dlog_file = f"internal:\\datalog_cap_{unit_idx}.dlog"
-
-                    barrier.wait()
-
-                    n6705c.instr.write(f'INIT:DLOG "{dlog_file}"')
-                    logger.debug("[Datalog] Unit %d INIT:DLOG sent at %.6f", unit_idx, time.time())
-                except Exception as e:
-                    init_errors[idx] = e
-
-            threads = []
-            for idx, (unit_idx, n6705c, curr_ch, volt_ch) in enumerate(active_units):
-                t = threading.Thread(
-                    target=configure_and_start,
-                    args=(idx, unit_idx, n6705c, curr_ch, volt_ch),
-                    daemon=True,
-                )
-                threads.append(t)
-
-            for t in threads:
-                t.start()
-            for t in threads:
-                t.join(timeout=60)
-
-            logger.debug("[Datalog][Progress] Configure done in %.3fs", time.time() - config_start)
-            self.progress_update.emit(2, "Capturing data...")
-            logger.debug("[Datalog][Progress] Capture wait start at %.3fs", time.time() - run_start)
-
-            all_data = {}
-            raw_dlog_list = []
-
-            safety_buffer = max(0.5, min(5.0, self.monitoring_time_s * 0.3))
-            capture_total = self.monitoring_time_s + safety_buffer
-            logger.info("[Datalog] Waiting up to %.2fs for capture (monitor=%.2fs + buffer=%.2fs)...",
-                        capture_total, self.monitoring_time_s, safety_buffer)
-            capture_start = time.time()
-            hard_deadline = capture_start + self.monitoring_time_s + max(safety_buffer, 5.0)
-            early_stop = False
-            keepalive_interval = 300
-            last_keepalive = time.time()
-            poll_sleep = 0.05 if self.monitoring_time_s <= 2.0 else 0.2
-            measuring_bit = 0x1000
-
-            probe_channels = []
-            for unit_idx, n6705c, curr_ch, volt_ch in active_units:
-                any_ch = None
-                if curr_ch:
-                    any_ch = curr_ch[0]
-                elif volt_ch:
-                    any_ch = volt_ch[0]
-                probe_channels.append(any_ch)
-
-            probe_enabled = all(ch is not None for ch in probe_channels)
-            probe_failures = 0
-            probe_max_failures = 2
-
-            def _is_unit_done(n6705c, channel):
-                try:
-                    resp = n6705c.instr.query(f"STAT:OPER:COND? (@{channel})")
-                    cond = int(float(resp.strip()))
-                    return (cond & measuring_bit) == 0
-                except Exception as e:
-                    raise e
-
-            while True:
-                now = time.time()
-                elapsed = now - capture_start
-
-                if self._is_stopped:
-                    logger.info("[Datalog] Stopped by user during capture wait, aborting datalog and fetching data...")
-                    early_stop = True
-                    self.progress_update.emit(90, "Stopping instruments...")
-                    for unit_idx, n6705c, _, _ in active_units:
-                        try:
-                            n6705c.instr.write("ABOR:DLOG")
-                            logger.debug("[Datalog] ABOR:DLOG sent to unit %d", unit_idx)
-                        except Exception as e:
-                            logger.error("[Datalog] Failed to abort dlog on unit %d: %s", unit_idx, e)
-                    time.sleep(0.3)
-                    break
-
-                if probe_enabled and elapsed >= self.monitoring_time_s:
-                    try:
-                        all_done = True
-                        for (unit_idx, n6705c, _, _), ch in zip(active_units, probe_channels):
-                            if not _is_unit_done(n6705c, ch):
-                                all_done = False
-                                break
-                        if all_done:
-                            logger.debug("[Datalog] All units reported capture complete at %.3fs", elapsed)
-                            break
-                    except Exception as e:
-                        probe_failures += 1
-                        logger.warning("[Datalog] STAT:OPER:COND probe failed (%d/%d): %s",
-                                       probe_failures, probe_max_failures, e)
-                        if probe_failures >= probe_max_failures:
-                            probe_enabled = False
-                            logger.warning("[Datalog] Disabling early-completion probe, falling back to fixed wait")
-
-                if elapsed >= capture_total:
-                    if not probe_enabled or now >= hard_deadline:
-                        logger.debug("[Datalog] Capture wait reached capture_total at %.3fs", elapsed)
-                        break
-
-                if now - last_keepalive >= keepalive_interval:
-                    for unit_idx, n6705c, _, _ in active_units:
-                        try:
-                            n6705c.instr.query("*IDN?")
-                            logger.debug("[Datalog] Keep-alive query sent to unit %d", unit_idx)
-                        except Exception as e:
-                            logger.warning("[Datalog] Keep-alive failed on unit %d: %s", unit_idx, e)
-                    last_keepalive = now
-
-                capture_pct = min(elapsed / capture_total, 1.0) if capture_total > 0 else 1.0
-                overall_pct = int(2 + capture_pct * 91)
-                self.progress_update.emit(overall_pct, "Capturing data...")
-                time.sleep(poll_sleep)
-
-            logger.debug("[Datalog][Progress] Capture wait done in %.3fs", time.time() - capture_start)
-            self.progress_update.emit(93, "Downloading data...")
-            logger.debug("[Datalog][Progress] Download start at %.3fs", time.time() - run_start)
-            download_start = time.time()
-
-            def _wait_flush_ready(n6705c, unit_idx, opc_timeout_ms=4000, settle_s=0.25):
-                saved = None
-                try:
-                    try:
-                        saved = n6705c.instr.timeout
-                        n6705c.instr.timeout = opc_timeout_ms
-                    except Exception:
-                        saved = None
-                    try:
-                        n6705c.instr.write("*CLS")
-                    except Exception:
-                        pass
-                    try:
-                        n6705c.instr.query("*OPC?")
-                        logger.debug("[Datalog] *OPC? returned for unit %d", unit_idx)
-                    except Exception as e:
-                        logger.warning("[Datalog] *OPC? wait failed on unit %d: %s", unit_idx, e)
-                finally:
-                    if saved is not None:
-                        try:
-                            n6705c.instr.timeout = saved
-                        except Exception:
-                            pass
-                time.sleep(settle_s)
-
-            for unit_idx, n6705c in enumerate(self.n6705c_list):
-                curr_channels = self.channels_per_unit[unit_idx]
-                volt_channels = self.voltage_channels_per_unit[unit_idx]
-                if not curr_channels and not volt_channels:
-                    continue
-
-                ulabel = self.unit_labels[unit_idx]
-                unit_data = None
-
-                dlog_file = f"internal:\\datalog_cap_{unit_idx}.dlog"
-                _wait_flush_ready(n6705c, unit_idx)
-
-                raw_dlog = None
-                read_attempts = 4
-                read_timeout_ms = 8000
-                for attempt in range(read_attempts):
-                    saved_to = None
-                    try:
-                        try:
-                            saved_to = n6705c.instr.timeout
-                            n6705c.instr.timeout = read_timeout_ms
-                        except Exception:
-                            saved_to = None
-                        try:
-                            n6705c.instr.write("*CLS")
-                        except Exception:
-                            pass
-                        t0 = time.time()
-                        raw_dlog = n6705c.read_mmem_data(dlog_file)
-                        t1 = time.time()
-                        if isinstance(raw_dlog, bytes) and len(raw_dlog) > 0:
-                            logger.info("[Datalog] dlog downloaded: %d bytes in %.1fs (attempt %d)",
-                                        len(raw_dlog), t1 - t0, attempt + 1)
-                            raw_dlog_list.append(raw_dlog)
-                            unit_data = parse_dlog_binary(
-                                raw_dlog, curr_channels, volt_channels,
-                                ulabel, sample_period_s
-                            )
-                            break
-                        else:
-                            logger.warning("[Datalog] dlog read returned empty on attempt %d", attempt + 1)
-                    except Exception as e:
-                        logger.warning("[Datalog] dlog download failed on attempt %d/%d: %s",
-                                       attempt + 1, read_attempts, e)
-                    finally:
-                        if saved_to is not None:
-                            try:
-                                n6705c.instr.timeout = saved_to
-                            except Exception:
-                                pass
-                    time.sleep(min(0.5 * (attempt + 1), 1.5))
-
-                if not unit_data:
-                    logger.info("[Datalog] Falling back to CSV export...")
-                    csv_file = f"internal:\\datalog_cap_{unit_idx}.csv"
-                    n6705c.instr.write(f'MMEM:EXP:DLOG "{csv_file}"')
-                    for _ in range(15):
-                        time.sleep(0.2)
-
-                    t0 = time.time()
-                    raw_csv = n6705c.read_mmem_data(csv_file)
-                    t1 = time.time()
-                    if isinstance(raw_csv, bytes):
-                        csv_text = raw_csv.decode('ascii', errors='replace')
-                    else:
-                        csv_text = raw_csv
-                    logger.info("[Datalog] CSV download: %d chars in %.1fs", len(csv_text), t1-t0)
-
-                    unit_data = parse_csv_text(
-                        csv_text, curr_channels, volt_channels,
-                        ulabel, sample_period_s
-                    )
-
-                if unit_data:
-                    all_data.update(unit_data)
-
-            logger.debug("[Datalog][Progress] Download done in %.3fs", time.time() - download_start)
             self.progress_update.emit(98, "Processing results...")
             logger.debug("[Datalog][Progress] Emitting results at %.3fs", time.time() - run_start)
             logger.info("[Datalog] Total channels with data: %d", len(all_data))
@@ -750,6 +498,303 @@ class _DatalogWorker(QObject):
             logger.error("[Datalog] ERROR: %s", e, exc_info=True)
             self.error.emit(str(e))
             self.finished.emit()
+
+    def _run_mock(self, sample_period_s, run_start):
+        """Mock 模式：生成假数据并推进进度条。"""
+        self.progress_update.emit(5, "Generating mock data...")
+        logger.debug("[Datalog][Progress] Mock mode start at %.3fs", time.time() - run_start)
+        mock_start = time.time()
+        all_data = self._generate_mock_data(sample_period_s)
+        logger.debug("[Datalog][Progress] Mock data generated in %.3fs", time.time() - mock_start)
+        self.progress_update.emit(100, "Done")
+        return all_data
+
+    def _collect_active_units(self):
+        """筛选出有勾选电流或电压通道的仪器单元。"""
+        active_units = []
+        for unit_idx, n6705c in enumerate(self.n6705c_list):
+            curr_channels = self.channels_per_unit[unit_idx]
+            volt_channels = self.voltage_channels_per_unit[unit_idx]
+            if curr_channels or volt_channels:
+                active_units.append((unit_idx, n6705c, curr_channels, volt_channels))
+        return active_units
+
+    def _configure_units(self, active_units, sample_period_s, run_start):
+        """多线程并行配置各仪器，并用 Barrier 对齐后再同时 INIT:DLOG。"""
+        self.progress_update.emit(2, "Configuring instruments...")
+        logger.debug("[Datalog][Progress] Configure start at %.3fs", time.time() - run_start)
+        config_start = time.time()
+
+        barrier = threading.Barrier(len(active_units), timeout=30)
+        init_errors = [None] * len(active_units)
+
+        def configure_and_start(idx, unit_idx, n6705c, curr_channels, volt_channels):
+            try:
+                time.sleep(0.3)
+                try:
+                    n6705c.instr.query("*OPC?")
+                except Exception:
+                    pass
+                n6705c.instr.write("*CLS")
+                try:
+                    n6705c.instr.write("ABOR:DLOG")
+                except Exception:
+                    pass
+
+                for ch in range(1, 5):
+                    n6705c.instr.write(f"SENS:DLOG:FUNC:CURR OFF,(@{ch})")
+                    n6705c.instr.write(f"SENS:DLOG:FUNC:VOLT OFF,(@{ch})")
+
+                for ch in curr_channels:
+                    n6705c.instr.write(f"SENS:DLOG:FUNC:CURR ON,(@{ch})")
+                    n6705c.instr.write(f"SENS:DLOG:CURR:RANG:AUTO ON,(@{ch})")
+
+                for ch in volt_channels:
+                    n6705c.instr.write(f"SENS:DLOG:FUNC:VOLT ON,(@{ch})")
+
+                n6705c.instr.write(f"SENS:DLOG:TIME {self.monitoring_time_s}")
+                n6705c.instr.write(f"SENS:DLOG:PER {sample_period_s}")
+                n6705c.instr.write("TRIG:DLOG:SOUR IMM")
+
+                dlog_file = f"internal:\\datalog_cap_{unit_idx}.dlog"
+
+                barrier.wait()
+
+                n6705c.instr.write(f'INIT:DLOG "{dlog_file}"')
+                logger.debug("[Datalog] Unit %d INIT:DLOG sent at %.6f", unit_idx, time.time())
+            except Exception as e:
+                init_errors[idx] = e
+
+        threads = []
+        for idx, (unit_idx, n6705c, curr_ch, volt_ch) in enumerate(active_units):
+            t = threading.Thread(
+                target=configure_and_start,
+                args=(idx, unit_idx, n6705c, curr_ch, volt_ch),
+                daemon=True,
+            )
+            threads.append(t)
+
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=60)
+
+        logger.debug("[Datalog][Progress] Configure done in %.3fs", time.time() - config_start)
+
+    def _wait_capture(self, active_units, run_start):
+        """等待仪器完成采集：优先 STAT:OPER:COND 探测，失败降级为固定时长等待。
+
+        期间处理用户停止（ABOR:DLOG）、长采集保活（*IDN?）与进度推进。
+        """
+        self.progress_update.emit(2, "Capturing data...")
+        logger.debug("[Datalog][Progress] Capture wait start at %.3fs", time.time() - run_start)
+
+        safety_buffer = max(0.5, min(5.0, self.monitoring_time_s * 0.3))
+        capture_total = self.monitoring_time_s + safety_buffer
+        logger.info("[Datalog] Waiting up to %.2fs for capture (monitor=%.2fs + buffer=%.2fs)...",
+                    capture_total, self.monitoring_time_s, safety_buffer)
+        capture_start = time.time()
+        hard_deadline = capture_start + self.monitoring_time_s + max(safety_buffer, 5.0)
+        keepalive_interval = 300
+        last_keepalive = time.time()
+        poll_sleep = 0.05 if self.monitoring_time_s <= 2.0 else 0.2
+        measuring_bit = 0x1000
+
+        probe_channels = []
+        for unit_idx, n6705c, curr_ch, volt_ch in active_units:
+            any_ch = None
+            if curr_ch:
+                any_ch = curr_ch[0]
+            elif volt_ch:
+                any_ch = volt_ch[0]
+            probe_channels.append(any_ch)
+
+        probe_enabled = all(ch is not None for ch in probe_channels)
+        probe_failures = 0
+        probe_max_failures = 2
+
+        def _is_unit_done(n6705c, channel):
+            resp = n6705c.instr.query(f"STAT:OPER:COND? (@{channel})")
+            cond = int(float(resp.strip()))
+            return (cond & measuring_bit) == 0
+
+        while True:
+            now = time.time()
+            elapsed = now - capture_start
+
+            if self._is_stopped:
+                logger.info("[Datalog] Stopped by user during capture wait, aborting datalog and fetching data...")
+                self.progress_update.emit(90, "Stopping instruments...")
+                for unit_idx, n6705c, _, _ in active_units:
+                    try:
+                        n6705c.instr.write("ABOR:DLOG")
+                        logger.debug("[Datalog] ABOR:DLOG sent to unit %d", unit_idx)
+                    except Exception as e:
+                        logger.error("[Datalog] Failed to abort dlog on unit %d: %s", unit_idx, e)
+                time.sleep(0.3)
+                break
+
+            if probe_enabled and elapsed >= self.monitoring_time_s:
+                try:
+                    all_done = True
+                    for (unit_idx, n6705c, _, _), ch in zip(active_units, probe_channels):
+                        if not _is_unit_done(n6705c, ch):
+                            all_done = False
+                            break
+                    if all_done:
+                        logger.debug("[Datalog] All units reported capture complete at %.3fs", elapsed)
+                        break
+                except Exception as e:
+                    probe_failures += 1
+                    logger.warning("[Datalog] STAT:OPER:COND probe failed (%d/%d): %s",
+                                   probe_failures, probe_max_failures, e)
+                    if probe_failures >= probe_max_failures:
+                        probe_enabled = False
+                        logger.warning("[Datalog] Disabling early-completion probe, falling back to fixed wait")
+
+            if elapsed >= capture_total:
+                if not probe_enabled or now >= hard_deadline:
+                    logger.debug("[Datalog] Capture wait reached capture_total at %.3fs", elapsed)
+                    break
+
+            if now - last_keepalive >= keepalive_interval:
+                for unit_idx, n6705c, _, _ in active_units:
+                    try:
+                        n6705c.instr.query("*IDN?")
+                        logger.debug("[Datalog] Keep-alive query sent to unit %d", unit_idx)
+                    except Exception as e:
+                        logger.warning("[Datalog] Keep-alive failed on unit %d: %s", unit_idx, e)
+                last_keepalive = now
+
+            capture_pct = min(elapsed / capture_total, 1.0) if capture_total > 0 else 1.0
+            overall_pct = int(2 + capture_pct * 91)
+            self.progress_update.emit(overall_pct, "Capturing data...")
+            time.sleep(poll_sleep)
+
+        logger.debug("[Datalog][Progress] Capture wait done in %.3fs", time.time() - capture_start)
+
+    def _download_units(self, sample_period_s, run_start):
+        """逐台下载 dlog 数据：优先二进制直读（重试4次），失败降级 CSV 导出。"""
+        self.progress_update.emit(93, "Downloading data...")
+        logger.debug("[Datalog][Progress] Download start at %.3fs", time.time() - run_start)
+        download_start = time.time()
+
+        all_data = {}
+        raw_dlog_list = []
+
+        for unit_idx, n6705c in enumerate(self.n6705c_list):
+            curr_channels = self.channels_per_unit[unit_idx]
+            volt_channels = self.voltage_channels_per_unit[unit_idx]
+            if not curr_channels and not volt_channels:
+                continue
+
+            ulabel = self.unit_labels[unit_idx]
+            unit_data = None
+
+            dlog_file = f"internal:\\datalog_cap_{unit_idx}.dlog"
+            self._wait_flush_ready(n6705c, unit_idx)
+
+            raw_dlog = None
+            read_attempts = 4
+            read_timeout_ms = 8000
+            for attempt in range(read_attempts):
+                saved_to = None
+                try:
+                    try:
+                        saved_to = n6705c.instr.timeout
+                        n6705c.instr.timeout = read_timeout_ms
+                    except Exception:
+                        saved_to = None
+                    try:
+                        n6705c.instr.write("*CLS")
+                    except Exception:
+                        pass
+                    t0 = time.time()
+                    raw_dlog = n6705c.read_mmem_data(dlog_file)
+                    t1 = time.time()
+                    if isinstance(raw_dlog, bytes) and len(raw_dlog) > 0:
+                        logger.info("[Datalog] dlog downloaded: %d bytes in %.1fs (attempt %d)",
+                                    len(raw_dlog), t1 - t0, attempt + 1)
+                        raw_dlog_list.append(raw_dlog)
+                        unit_data = parse_dlog_binary(
+                            raw_dlog, curr_channels, volt_channels,
+                            ulabel, sample_period_s
+                        )
+                        break
+                    else:
+                        logger.warning("[Datalog] dlog read returned empty on attempt %d", attempt + 1)
+                except Exception as e:
+                    logger.warning("[Datalog] dlog download failed on attempt %d/%d: %s",
+                                   attempt + 1, read_attempts, e)
+                finally:
+                    if saved_to is not None:
+                        try:
+                            n6705c.instr.timeout = saved_to
+                        except Exception:
+                            pass
+                time.sleep(min(0.5 * (attempt + 1), 1.5))
+
+            if not unit_data:
+                unit_data = self._download_csv_fallback(
+                    n6705c, unit_idx, curr_channels, volt_channels,
+                    ulabel, sample_period_s,
+                )
+
+            if unit_data:
+                all_data.update(unit_data)
+
+        logger.debug("[Datalog][Progress] Download done in %.3fs", time.time() - download_start)
+        return all_data, raw_dlog_list
+
+    @staticmethod
+    def _wait_flush_ready(n6705c, unit_idx, opc_timeout_ms=4000, settle_s=0.25):
+        """等待仪器把 dlog 缓存刷到内部文件系统（*OPC? + 短暂静置）。"""
+        saved = None
+        try:
+            try:
+                saved = n6705c.instr.timeout
+                n6705c.instr.timeout = opc_timeout_ms
+            except Exception:
+                saved = None
+            try:
+                n6705c.instr.write("*CLS")
+            except Exception:
+                pass
+            try:
+                n6705c.instr.query("*OPC?")
+                logger.debug("[Datalog] *OPC? returned for unit %d", unit_idx)
+            except Exception as e:
+                logger.warning("[Datalog] *OPC? wait failed on unit %d: %s", unit_idx, e)
+        finally:
+            if saved is not None:
+                try:
+                    n6705c.instr.timeout = saved
+                except Exception:
+                    pass
+        time.sleep(settle_s)
+
+    def _download_csv_fallback(self, n6705c, unit_idx, curr_channels,
+                               volt_channels, ulabel, sample_period_s):
+        """二进制 dlog 直读失败时，改为让仪器导出 CSV 再下载解析。"""
+        logger.info("[Datalog] Falling back to CSV export...")
+        csv_file = f"internal:\\datalog_cap_{unit_idx}.csv"
+        n6705c.instr.write(f'MMEM:EXP:DLOG "{csv_file}"')
+        for _ in range(15):
+            time.sleep(0.2)
+
+        t0 = time.time()
+        raw_csv = n6705c.read_mmem_data(csv_file)
+        t1 = time.time()
+        if isinstance(raw_csv, bytes):
+            csv_text = raw_csv.decode('ascii', errors='replace')
+        else:
+            csv_text = raw_csv
+        logger.info("[Datalog] CSV download: %d chars in %.1fs", len(csv_text), t1 - t0)
+
+        return parse_csv_text(
+            csv_text, curr_channels, volt_channels,
+            ulabel, sample_period_s
+        )
 
     def _generate_mock_data(self, sample_period_s):
         rng = random.Random(42)
@@ -1107,6 +1152,18 @@ class N6705CDatalogUI(QWidget):
         self._raw_dlog_list = []
         self._imported_tab_configs = []
         self._import_counter = 0
+
+        # 通道开关按钮列表：__init__ 即初始化为空列表，
+        # 后续由 _refresh_channel_config 重建填充，各处不再防御性 getattr。
+        self.ch_checkboxes_a = []
+        self.ch_voltage_cbs_a = []
+        self.ch_current_cbs_a = []
+        self.ch_power_cbs_a = []
+        self.ch_checkboxes_b = []
+        self.ch_voltage_cbs_b = []
+        self.ch_current_cbs_b = []
+        self.ch_power_cbs_b = []
+
         self._band_info = {}
         self._sep_lines = []
         self._selected_ch_key = None
@@ -1240,6 +1297,39 @@ class N6705CDatalogUI(QWidget):
             ),
         ])
 
+    def _apply_slot_state(self, label, connected, instance=None,
+                          serial="", visa_resource=""):
+        """把 A/B 槽位的连接态应用到本页（两个同步入口共用）。
+
+        connected=True 时登记实例、分配槽位并确保设备卡片存在；
+        connected=False 时仅在当前已连接的情况下清空槽位。
+        """
+        if connected:
+            if label == "A":
+                self.n6705c_a = instance
+                self.is_connected_a = True
+            elif label == "B":
+                self.n6705c_b = instance
+                self.is_connected_b = True
+            self._assign_slot(label, serial, "N6705C", visa_resource)
+            self._ensure_device_card_exists(serial, "N6705C", visa_resource)
+        else:
+            if label == "A" and self.is_connected_a:
+                self.n6705c_a = None
+                self.is_connected_a = False
+                self._clear_slot(label)
+            elif label == "B" and self.is_connected_b:
+                self.n6705c_b = None
+                self.is_connected_b = False
+                self._clear_slot(label)
+
+    def _after_slot_states_synced(self):
+        """槽位同步完成后的统一收尾（两个同步入口共用）。"""
+        self.connection_status_changed.emit(self.is_connected_a)
+        self._refresh_channel_config(force=True)
+        self._sync_device_card_states()
+        self._update_time_offset_btn_visibility()
+
     def _on_manager_sessions_changed(self):
         """仪器管理器 sessions 变化时同步本页连接状态与设备卡片。"""
         if not self._instrument_manager:
@@ -1251,28 +1341,14 @@ class N6705CDatalogUI(QWidget):
                 continue
             if snap.connected:
                 instance = self._instrument_manager.get_instance(snap.session_id)
-                if label == "A":
-                    self.n6705c_a = instance
-                    self.is_connected_a = True
-                elif label == "B":
-                    self.n6705c_b = instance
-                    self.is_connected_b = True
                 display_serial = snap.serial if snap.serial else snap.resource
-                self._assign_slot(label, display_serial, "N6705C", snap.resource)
-                self._ensure_device_card_exists(display_serial, "N6705C", snap.resource)
+                self._apply_slot_state(
+                    label, True, instance=instance,
+                    serial=display_serial, visa_resource=snap.resource,
+                )
             else:
-                if label == "A" and self.is_connected_a:
-                    self.n6705c_a = None
-                    self.is_connected_a = False
-                    self._clear_slot(label)
-                elif label == "B" and self.is_connected_b:
-                    self.n6705c_b = None
-                    self.is_connected_b = False
-                    self._clear_slot(label)
-        self.connection_status_changed.emit(self.is_connected_a)
-        self._refresh_channel_config(force=True)
-        self._sync_device_card_states()
-        self._update_time_offset_btn_visibility()
+                self._apply_slot_state(label, False)
+        self._after_slot_states_synced()
 
     def _sync_from_top(self):
         if not self._top:
@@ -1283,28 +1359,16 @@ class N6705CDatalogUI(QWidget):
             visa_res = getattr(self._top, f"visa_resource_{attr_suffix}", "")
             serial = getattr(self._top, f"serial_{attr_suffix}", "")
             if is_conn and n6705c:
-                if label == "A":
-                    self.n6705c_a = n6705c
-                    self.is_connected_a = True
-                elif label == "B":
-                    self.n6705c_b = n6705c
-                    self.is_connected_b = True
-                display_serial = serial if serial else (visa_res.split("::")[1] if "::" in visa_res else visa_res)
-                self._assign_slot(label, display_serial, "N6705C", visa_res)
-                self._ensure_device_card_exists(display_serial, "N6705C", visa_res)
+                display_serial = serial if serial else (
+                    visa_res.split("::")[1] if "::" in visa_res else visa_res
+                )
+                self._apply_slot_state(
+                    label, True, instance=n6705c,
+                    serial=display_serial, visa_resource=visa_res,
+                )
             else:
-                if label == "A" and self.is_connected_a:
-                    self.n6705c_a = None
-                    self.is_connected_a = False
-                    self._clear_slot(label)
-                elif label == "B" and self.is_connected_b:
-                    self.n6705c_b = None
-                    self.is_connected_b = False
-                    self._clear_slot(label)
-        self.connection_status_changed.emit(self.is_connected_a)
-        self._refresh_channel_config(force=True)
-        self._sync_device_card_states()
-        self._update_time_offset_btn_visibility()
+                self._apply_slot_state(label, False)
+        self._after_slot_states_synced()
 
     def _ensure_device_card_exists(self, serial, model, visa_resource):
         existing_serials = {c.property("serial") for c in self.device_cards}
@@ -1682,19 +1746,6 @@ class N6705CDatalogUI(QWidget):
         lbl.setStyleSheet("border: none; background: transparent;")
         return lbl
 
-    @staticmethod
-    def _make_svg_icon(svg_file, color="#ffffff", size=16):
-        svg_path = os.path.join(get_resource_base(), "resources", "pages", "n6705c_power_analyzer_SVGs", svg_file)
-        with open(svg_path, "r", encoding="utf-8") as f:
-            svg_data = f.read().replace("currentColor", color)
-        renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))
-        pixmap = QPixmap(size, size)
-        pixmap.fill(QColor(0, 0, 0, 0))
-        painter = QPainter(pixmap)
-        renderer.render(painter)
-        painter.end()
-        return QIcon(pixmap)
-
     def _create_layout(self):
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(8, 8, 8, 8)
@@ -1757,72 +1808,19 @@ class N6705CDatalogUI(QWidget):
         search_row.setSpacing(6)
         self.refresh_search_btn = SpinningSearchButton()
         self.refresh_search_btn.setFixedSize(40, 40)
-        self.refresh_search_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #13254b;
-                border: 1px solid #22376A;
-                border-radius: 8px;
-                color: #dce7ff;
-                font-weight: 600;
-                min-height: 0px;
-                max-height: 40px;
-                min-width: 0px;
-                max-width: 40px;
-                padding: 0px;
-            }
-            QPushButton:hover {
-                background-color: #1C2D55;
-                border: 1px solid #3A5A9F;
-            }
-            QPushButton:pressed {
-                background-color: #102040;
-            }
-        """)
+        self.refresh_search_btn.setStyleSheet(dss.SEARCH_BTN_STYLE)
         self.refresh_search_btn.clicked.connect(self._on_refresh_search)
         search_row.addWidget(self.refresh_search_btn)
         search_row.addStretch()
 
         self.instr_more_btn = QToolButton()
-        self.instr_more_btn.setIcon(self._make_svg_icon("more-horizontal.svg", "#8eb0e3", 18))
+        self.instr_more_btn.setIcon(_make_svg_icon("more-horizontal.svg", "#8eb0e3", 18))
         self.instr_more_btn.setFixedSize(40, 40)
         self.instr_more_btn.setPopupMode(QToolButton.InstantPopup)
-        self.instr_more_btn.setStyleSheet("""
-            QToolButton {
-                background-color: #13254b;
-                color: #8eb0e3;
-                font-size: 18px;
-                font-weight: bold;
-                border: 1px solid #22376A;
-                border-radius: 8px;
-                padding: 0px;
-                min-height: 0px;
-                max-height: 40px;
-                min-width: 0px;
-                max-width: 40px;
-            }
-            QToolButton:hover {
-                background-color: #1C2D55;
-                border: 1px solid #3A5A9F;
-            }
-            QToolButton::menu-indicator { image: none; }
-        """)
+        self.instr_more_btn.setStyleSheet(dss.MORE_BTN_STYLE)
         instr_more_menu = QMenu(self.instr_more_btn)
-        instr_more_menu.setStyleSheet("""
-            QMenu {
-                background-color: #0c1a35;
-                border: 1px solid #1e3460;
-                color: #c8daf5;
-                font-size: 11px;
-                padding: 4px;
-            }
-            QMenu::item {
-                padding: 6px 16px;
-            }
-            QMenu::item:selected {
-                background-color: #1e3460;
-            }
-        """)
-        add_manual_action = instr_more_menu.addAction(self._make_svg_icon("link-connect.svg", "#8eb0e3", 14), "Add Instrument Manually")
+        instr_more_menu.setStyleSheet(dss.INSTR_MENU_STYLE)
+        add_manual_action = instr_more_menu.addAction(_make_svg_icon("link-connect.svg", "#8eb0e3", 14), "Add Instrument Manually")
         add_manual_action.triggered.connect(self._on_add_instrument_manually)
         self.instr_more_btn.setMenu(instr_more_menu)
         search_row.addWidget(self.instr_more_btn)
@@ -1848,7 +1846,7 @@ class N6705CDatalogUI(QWidget):
 
         separator = QFrame()
         separator.setFixedHeight(1)
-        separator.setStyleSheet("background-color: #1b2c4f;")
+        separator.setStyleSheet(dss.SEPARATOR_LINE_STYLE)
         instr_inner.addWidget(separator)
 
         slot_title_row = QHBoxLayout()
@@ -1907,30 +1905,18 @@ class N6705CDatalogUI(QWidget):
         self.left_layout.addStretch()
 
         self.start_btn = QPushButton("Start Recording")
-        self.start_btn.setIcon(self._make_svg_icon("play.svg", "#ffffff", 16))
+        self.start_btn.setIcon(_make_svg_icon("play.svg", "#ffffff", 16))
         self.start_btn.setObjectName("primaryActionBtn")
         self.start_btn.setProperty("running", "false")
         self.left_layout.addWidget(self.start_btn)
 
-        def _svg_icon(svg_file, color="#dfe8ff", size=18):
-            svg_path = os.path.join(get_resource_base(), "resources", "pages", "n6705c_power_analyzer_SVGs", svg_file)
-            with open(svg_path, "r", encoding="utf-8") as f:
-                svg_data = f.read().replace("currentColor", color)
-            renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))
-            pixmap = QPixmap(size, size)
-            pixmap.fill(QColor(0, 0, 0, 0))
-            painter = QPainter(pixmap)
-            renderer.render(painter)
-            painter.end()
-            return QIcon(pixmap)
-
         self.export_btn = QPushButton("Export Datalog")
-        self.export_btn.setIcon(_svg_icon("download.svg"))
+        self.export_btn.setIcon(_make_svg_icon("download.svg"))
         self.export_btn.setObjectName("exportBtn")
         self.left_layout.addWidget(self.export_btn)
 
         self.import_btn = QPushButton("Import Datalog")
-        self.import_btn.setIcon(_svg_icon("upload.svg"))
+        self.import_btn.setIcon(_make_svg_icon("upload.svg"))
         self.import_btn.setObjectName("exportBtn")
         self.left_layout.addWidget(self.import_btn)
 
@@ -1952,55 +1938,53 @@ class N6705CDatalogUI(QWidget):
         chart_header = QHBoxLayout()
         chart_icon = self._svg_icon_label("sparkles.svg", "#d4a514", 16)
         chart_title = QLabel("Datalog Viewer")
-        chart_title.setStyleSheet(
-            "font-size: 16px; font-weight: 700; color: #f4f7ff;"
-        )
+        chart_title.setStyleSheet(dss.CHART_TITLE_STYLE)
         chart_header.addWidget(chart_icon)
         chart_header.addWidget(chart_title)
         chart_header.addStretch()
 
         self.box_zoom_btn = QPushButton()
         self.box_zoom_btn.setObjectName("chartIconBtn")
-        self.box_zoom_btn.setIcon(self._make_svg_icon("box-select.svg", "#dce7ff", 16))
+        self.box_zoom_btn.setIcon(_make_svg_icon("box-select.svg", "#dce7ff", 16))
         self.box_zoom_btn.setCheckable(True)
         self.box_zoom_btn.setToolTip("Box Zoom: OFF")
         chart_header.addWidget(self.box_zoom_btn)
 
         self.reset_view_btn = QPushButton()
         self.reset_view_btn.setObjectName("chartIconBtn")
-        self.reset_view_btn.setIcon(self._make_svg_icon("fit-view.svg", "#dce7ff", 16))
+        self.reset_view_btn.setIcon(_make_svg_icon("fit-view.svg", "#dce7ff", 16))
         self.reset_view_btn.setToolTip("Auto Fit View")
         chart_header.addWidget(self.reset_view_btn)
 
         self.marker_a_btn = QPushButton()
         self.marker_a_btn.setObjectName("chartIconBtn")
-        self.marker_a_btn.setIcon(self._make_svg_icon("marker-a.svg", "#d4a514", 16))
+        self.marker_a_btn.setIcon(_make_svg_icon("marker-a.svg", "#d4a514", 16))
         self.marker_a_btn.setToolTip("Set Marker A")
         self.marker_a_btn.setContextMenuPolicy(Qt.CustomContextMenu)
         chart_header.addWidget(self.marker_a_btn)
 
         self.marker_b_btn = QPushButton()
         self.marker_b_btn.setObjectName("chartIconBtn")
-        self.marker_b_btn.setIcon(self._make_svg_icon("marker-b.svg", "#4cc9f0", 16))
+        self.marker_b_btn.setIcon(_make_svg_icon("marker-b.svg", "#4cc9f0", 16))
         self.marker_b_btn.setToolTip("Set Marker B")
         self.marker_b_btn.setContextMenuPolicy(Qt.CustomContextMenu)
         chart_header.addWidget(self.marker_b_btn)
 
         self.add_markers_btn = QPushButton()
         self.add_markers_btn.setObjectName("chartIconBtn")
-        self.add_markers_btn.setIcon(self._make_svg_icon("markers-add.svg", "#dce7ff", 16))
+        self.add_markers_btn.setIcon(_make_svg_icon("markers-add.svg", "#dce7ff", 16))
         self.add_markers_btn.setToolTip("Add Markers")
         chart_header.addWidget(self.add_markers_btn)
 
         self.clear_markers_btn = QPushButton()
         self.clear_markers_btn.setObjectName("chartIconBtn")
-        self.clear_markers_btn.setIcon(self._make_svg_icon("markers-clear.svg", "#dce7ff", 16))
+        self.clear_markers_btn.setIcon(_make_svg_icon("markers-clear.svg", "#dce7ff", 16))
         self.clear_markers_btn.setToolTip("Clear Markers")
         chart_header.addWidget(self.clear_markers_btn)
 
         self.time_offset_btn = QPushButton()
         self.time_offset_btn.setObjectName("chartIconBtn")
-        self.time_offset_btn.setIcon(self._make_svg_icon("time-offset.svg", "#dce7ff", 16))
+        self.time_offset_btn.setIcon(_make_svg_icon("time-offset.svg", "#dce7ff", 16))
         self.time_offset_btn.setToolTip("Time Offset")
         self.time_offset_btn.hide()
         chart_header.addWidget(self.time_offset_btn)
@@ -2017,9 +2001,7 @@ class N6705CDatalogUI(QWidget):
         chart_outer.addWidget(self.plot_widget, 1)
 
         self._progress_overlay = QFrame(self.chart_frame)
-        self._progress_overlay.setStyleSheet(
-            "QFrame { background-color: rgba(2, 8, 23, 200); border: none; border-radius: 12px; }"
-        )
+        self._progress_overlay.setStyleSheet(dss.PROGRESS_OVERLAY_STYLE)
         self._progress_overlay.hide()
         overlay_layout = QVBoxLayout(self._progress_overlay)
         overlay_layout.setAlignment(Qt.AlignCenter)
@@ -2027,9 +2009,7 @@ class N6705CDatalogUI(QWidget):
 
         self._progress_stage_label = QLabel("Preparing...")
         self._progress_stage_label.setAlignment(Qt.AlignCenter)
-        self._progress_stage_label.setStyleSheet(
-            "color: #c8daf5; font-size: 13px; font-weight: 600; background: transparent;"
-        )
+        self._progress_stage_label.setStyleSheet(dss.PROGRESS_STAGE_STYLE)
         overlay_layout.addWidget(self._progress_stage_label)
 
         self._progress_bar = QProgressBar()
@@ -2038,28 +2018,12 @@ class N6705CDatalogUI(QWidget):
         self._progress_bar.setTextVisible(True)
         self._progress_bar.setFixedWidth(320)
         self._progress_bar.setFixedHeight(18)
-        self._progress_bar.setStyleSheet("""
-            QProgressBar {
-                background-color: #152749;
-                border: 1px solid #27406f;
-                border-radius: 9px;
-                text-align: center;
-                color: #b7c8ea;
-                font-size: 11px;
-            }
-            QProgressBar::chunk {
-                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #4f46e5, stop:1 #7c3aed);
-                border-radius: 8px;
-            }
-        """)
+        self._progress_bar.setStyleSheet(dss.PROGRESS_BAR_STYLE)
         overlay_layout.addWidget(self._progress_bar, 0, Qt.AlignCenter)
 
         self._progress_time_label = QLabel("")
         self._progress_time_label.setAlignment(Qt.AlignCenter)
-        self._progress_time_label.setStyleSheet(
-            "color: #5c7a9e; font-size: 11px; background: transparent;"
-        )
+        self._progress_time_label.setStyleSheet(dss.PROGRESS_TIME_STYLE)
         overlay_layout.addWidget(self._progress_time_label)
 
         chart_and_meas_layout.addWidget(self.chart_frame, 1)
@@ -2101,51 +2065,31 @@ class N6705CDatalogUI(QWidget):
 
         self.channel_config_outer = QWidget()
         self.channel_config_outer.setObjectName("chConfigOuter")
-        self.channel_config_outer.setStyleSheet("#chConfigOuter { background: transparent; border: none; }")
+        self.channel_config_outer.setStyleSheet(dss.CH_CFG_OUTER_STYLE)
         ch_outer_layout = QVBoxLayout(self.channel_config_outer)
         ch_outer_layout.setContentsMargins(0, 0, 0, 0)
         ch_outer_layout.setSpacing(0)
 
         self.channel_config_header_row = QWidget()
         self.channel_config_header_row.setObjectName("chConfigHeaderRow")
-        self.channel_config_header_row.setStyleSheet("#chConfigHeaderRow { background: transparent; border: none; }")
+        self.channel_config_header_row.setStyleSheet(dss.CH_CFG_HEADER_ROW_STYLE)
         self.channel_config_header_row.setFixedHeight(32)
         ch_header_layout = QHBoxLayout(self.channel_config_header_row)
         ch_header_layout.setContentsMargins(0, 0, 0, 0)
         ch_header_layout.setSpacing(0)
 
-        self._ch_config_icon_collapsed = self._make_svg_icon("panel-bottom.svg", "#8ea6cf", 20)
-        self._ch_config_icon_expanded = self._make_svg_icon("panel-bottom-close.svg", "#b8d0f0", 16)
+        self._ch_config_icon_collapsed = _make_svg_icon("panel-bottom.svg", "#8ea6cf", 20)
+        self._ch_config_icon_expanded = _make_svg_icon("panel-bottom-close.svg", "#b8d0f0", 16)
 
         self.channel_config_toggle_btn = QPushButton("Channel Config")
         self.channel_config_toggle_btn.setIcon(self._ch_config_icon_expanded)
-        self.channel_config_toggle_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0a1930; color: #b8d0f0;
-                border: 1px solid #132849;
-                border-top-left-radius: 8px;
-                border-top-right-radius: 0px;
-                border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;
-                padding: 0px 14px; font-size: 11px; font-weight: 700;
-                text-align: left;
-            }
-            QPushButton:hover { background-color: #0e1f3d; color: #d0e4ff; }
-        """)
+        self.channel_config_toggle_btn.setStyleSheet(dss.CH_CFG_TOGGLE_BTN_EXPANDED)
         self.channel_config_toggle_btn.clicked.connect(self._toggle_channel_config_panel)
         ch_header_layout.addWidget(self.channel_config_toggle_btn, 0)
 
         self.channel_config_tabbar_placeholder = QWidget()
         self.channel_config_tabbar_placeholder.setObjectName("chConfigTabbarHolder")
-        self.channel_config_tabbar_placeholder.setStyleSheet("""
-            #chConfigTabbarHolder {
-                background-color: #0a1930;
-                border-top: 1px solid #132849;
-                border-right: 1px solid #132849;
-                border-bottom: 1px solid #132849;
-                border-left: none;
-                border-top-right-radius: 8px;
-            }
-        """)
+        self.channel_config_tabbar_placeholder.setStyleSheet(dss.CH_CFG_TABBAR_HOLDER_STYLE)
         ch_tabbar_placeholder_layout = QHBoxLayout(self.channel_config_tabbar_placeholder)
         ch_tabbar_placeholder_layout.setContentsMargins(4, 0, 0, 0)
         ch_tabbar_placeholder_layout.setSpacing(0)
@@ -2156,17 +2100,7 @@ class N6705CDatalogUI(QWidget):
         self.channel_config_card = CardFrame("", "")
         self.channel_config_card.main_layout.setContentsMargins(0, 0, 0, 6)
         self.channel_config_card.main_layout.setSpacing(0)
-        self.channel_config_card.setStyleSheet("""
-            #cardFrame {
-                background-color: #0a1930;
-                border: 1px solid #132849;
-                border-top: none;
-                border-top-left-radius: 0px;
-                border-top-right-radius: 0px;
-                border-bottom-left-radius: 12px;
-                border-bottom-right-radius: 12px;
-            }
-        """)
+        self.channel_config_card.setStyleSheet(dss.CH_CFG_CARD_STYLE)
         self._build_channel_config_card()
         self.channel_config_card.setVisible(True)
         ch_outer_layout.addWidget(self.channel_config_card)
@@ -2174,9 +2108,7 @@ class N6705CDatalogUI(QWidget):
         main_area.addWidget(self.channel_config_outer)
 
         self._channel_config_overlay = QFrame(self.channel_config_card)
-        self._channel_config_overlay.setStyleSheet(
-            "QFrame { background-color: rgba(2, 8, 23, 180); border: none; border-radius: 12px; }"
-        )
+        self._channel_config_overlay.setStyleSheet(dss.CH_CFG_OVERLAY_STYLE)
         self._channel_config_overlay.hide()
         ch_overlay_layout = QVBoxLayout(self._channel_config_overlay)
         ch_overlay_layout.setAlignment(Qt.AlignCenter)
@@ -2187,9 +2119,7 @@ class N6705CDatalogUI(QWidget):
         ch_lock_row.addWidget(ch_lock_icon)
         ch_lock_label = QLabel("Recording in progress...")
         ch_lock_label.setAlignment(Qt.AlignCenter)
-        ch_lock_label.setStyleSheet(
-            "color: #5c7a9e; font-size: 12px; font-weight: 600; background: transparent;"
-        )
+        ch_lock_label.setStyleSheet(dss.CH_LOCK_LABEL_STYLE)
         ch_lock_row.addWidget(ch_lock_label)
         ch_overlay_layout.addLayout(ch_lock_row)
 
@@ -2198,46 +2128,7 @@ class N6705CDatalogUI(QWidget):
 
         self.meas_table = QTableWidget()
         self.meas_table.setObjectName("measTable")
-        self.meas_table.setStyleSheet("""
-            QTableWidget#measTable {
-                background-color: transparent;
-                border: none;
-                gridline-color: #152040;
-                color: #c8daf5;
-                font-size: 12px;
-                font-family: 'Consolas', 'Courier New', monospace;
-            }
-            QTableWidget#measTable::item {
-                padding: 2px 8px;
-            }
-            QTableWidget#measTable::item:selected {
-                background-color: transparent;
-                color: inherit;
-            }
-            QTableWidget#measTable QHeaderView::section {
-                background-color: #0b1528;
-                color: #5a7fad;
-                font-weight: 600;
-                font-size: 11px;
-                font-family: 'Segoe UI', sans-serif;
-                padding: 3px 8px;
-                border: none;
-                border-bottom: 2px solid #1a2b52;
-                border-right: 1px solid #12203a;
-            }
-            QTableWidget#measTable QHeaderView::section:last {
-                border-right: none;
-            }
-            QTableWidget#measTable QTableCornerButton::section {
-                background-color: #0b1528;
-                border: none;
-                border-bottom: 1px solid #1e3460;
-            }
-            QTableWidget#measTable QScrollBar {
-                width: 0px;
-                height: 0px;
-            }
-        """)
+        self.meas_table.setStyleSheet(dss.MEAS_TABLE_STYLE)
         self.meas_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.meas_table.setSelectionMode(QTableWidget.NoSelection)
         self.meas_table.setFocusPolicy(Qt.NoFocus)
@@ -2282,16 +2173,14 @@ class N6705CDatalogUI(QWidget):
         layout.setSpacing(8)
 
         letter = QLabel(label_char)
-        letter.setStyleSheet(
-            "font-size: 18px; font-weight: bold; color: #3a6fd4; border: none;"
-        )
+        letter.setStyleSheet(dss.SLOT_LETTER_DEFAULT_STYLE)
         letter.setFixedWidth(24)
         layout.addWidget(letter)
 
         info_layout = QVBoxLayout()
         info_layout.setSpacing(2)
         name_label = QLabel("Not Supported")
-        name_label.setStyleSheet("font-size: 11px; color: #667ba0; border: none;")
+        name_label.setStyleSheet(dss.SLOT_NAME_DEFAULT_STYLE)
         info_layout.addWidget(name_label)
         layout.addLayout(info_layout, 1)
 
@@ -2317,7 +2206,7 @@ class N6705CDatalogUI(QWidget):
         icon_layout = QVBoxLayout()
         icon_layout.setSpacing(2)
         thumb_label = QLabel()
-        thumb_label.setStyleSheet("border: none; border-radius: 4px;")
+        thumb_label.setStyleSheet(dss.CARD_THUMB_STYLE)
         thumb_label.setFixedSize(64, 38)
         svg_path = os.path.join(get_resource_base(), "resources", "pages", "n6705c_power_analyzer_SVGs", "n6705c_thumb.svg")
         if os.path.exists(svg_path):
@@ -2329,7 +2218,7 @@ class N6705CDatalogUI(QWidget):
             painter.end()
             thumb_label.setPixmap(pixmap)
         serial_label = QLabel(serial)
-        serial_label.setStyleSheet("font-size: 9px; color: #667ba0; border: none;")
+        serial_label.setStyleSheet(dss.CARD_SERIAL_STYLE)
         serial_label.setAlignment(Qt.AlignCenter)
         icon_layout.addWidget(thumb_label)
         icon_layout.addWidget(serial_label)
@@ -2338,9 +2227,9 @@ class N6705CDatalogUI(QWidget):
         info_layout = QVBoxLayout()
         info_layout.setSpacing(2)
         model_label = QLabel(model)
-        model_label.setStyleSheet("font-size: 13px; font-weight: bold; color: #eaf2ff; border: none;")
+        model_label.setStyleSheet(dss.CARD_MODEL_STYLE)
         ip_label = QLabel(ip_addr)
-        ip_label.setStyleSheet("font-size: 11px; color: #8eb0e3; border: none;")
+        ip_label.setStyleSheet(dss.CARD_IP_STYLE)
         info_layout.addWidget(model_label)
         info_layout.addWidget(ip_label)
         card_layout.addLayout(info_layout, 1)
@@ -2556,18 +2445,7 @@ class N6705CDatalogUI(QWidget):
             return
 
         menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background-color: #0c1a35;
-                border: 1px solid #1e3460;
-                color: #c8daf5;
-                font-size: 11px;
-                padding: 4px;
-            }
-            QMenu::item:selected {
-                background-color: #1e3460;
-            }
-        """)
+        menu.setStyleSheet(dss.INSTR_MENU_STYLE)
         disconnect_action = menu.addAction("Disconnect")
         action = menu.exec(frame.mapToGlobal(pos))
         if action == disconnect_action:
@@ -2610,7 +2488,6 @@ class N6705CDatalogUI(QWidget):
         self._update_time_offset_btn_visibility()
 
         if n6705c_to_close and should_close_locally:
-            import threading
             threading.Thread(
                 target=self._close_instrument, args=(n6705c_to_close,), daemon=True
             ).start()
@@ -2620,25 +2497,19 @@ class N6705CDatalogUI(QWidget):
         try:
             n6705c.disconnect()
         except Exception:
-            pass
+            logger.debug("Close instrument failed", exc_info=True)
 
     def _assign_slot(self, label_char, serial, model, visa_resource):
         slot = self.slot_frames[label_char]
         slot.setProperty("assigned_serial", serial)
         slot.setProperty("connected", True)
-        slot.setStyleSheet("""
-            QFrame#cardFrame {
-                background-color: #0c2254;
-                border: 1px solid #3a6fd4;
-                border-radius: 12px;
-            }
-        """)
+        slot.setStyleSheet(dss.SLOT_ASSIGNED_STYLE)
         name_label = slot.property("name_label")
         name_label.setText(f"{model}\n{serial}\n{visa_resource.split('::')[1] if '::' in visa_resource else ''}")
-        name_label.setStyleSheet("font-size: 10px; color: #8eb0e3; border: none;")
+        name_label.setStyleSheet(dss.SLOT_NAME_CONNECTED_STYLE)
 
         letter = slot.findChildren(QLabel)[0]
-        letter.setStyleSheet("font-size: 18px; font-weight: bold; color: #4ae68a; border: none;")
+        letter.setStyleSheet(dss.SLOT_LETTER_CONNECTED_STYLE)
 
     def _clear_slot(self, label_char):
         slot = self.slot_frames[label_char]
@@ -2647,10 +2518,10 @@ class N6705CDatalogUI(QWidget):
         slot.setStyleSheet("")
         name_label = slot.property("name_label")
         name_label.setText("Not Supported")
-        name_label.setStyleSheet("font-size: 11px; color: #667ba0; border: none;")
+        name_label.setStyleSheet(dss.SLOT_NAME_DEFAULT_STYLE)
 
         letter = slot.findChildren(QLabel)[0]
-        letter.setStyleSheet("font-size: 18px; font-weight: bold; color: #3a6fd4; border: none;")
+        letter.setStyleSheet(dss.SLOT_LETTER_DEFAULT_STYLE)
 
     def _build_config_card(self):
         layout = self.config_card.main_layout
@@ -2666,7 +2537,7 @@ class N6705CDatalogUI(QWidget):
 
         self.min_period_cb = QCheckBox("Minimum")
         self.min_period_cb.setChecked(True)
-        self.min_period_cb.setStyleSheet("font-size: 10px; color: #8eb0e3;")
+        self.min_period_cb.setStyleSheet(dss.MIN_PERIOD_CB_STYLE)
         self.min_period_cb.stateChanged.connect(self._on_min_period_toggled)
 
         sp_title_row = QHBoxLayout()
@@ -2689,20 +2560,13 @@ class N6705CDatalogUI(QWidget):
 
         time_edit_width = 36
 
-        time_edit_style = (
-            "QLineEdit { padding: 2px 4px; border-radius: 3px; "
-            "background-color: #0c1a35; border: 1px solid #1e3460; "
-            "color: #eaf2ff; font-size: 11px; }"
-            "QLineEdit:focus { border-color: #3a6fd4; }"
-        )
-
         def _make_time_edit(default_text):
             edit = QLineEdit(default_text)
             edit.setFixedWidth(time_edit_width)
             edit.setFixedHeight(24)
             edit.setAlignment(Qt.AlignCenter)
             edit.setValidator(QIntValidator(0, 999999, self))
-            edit.setStyleSheet(time_edit_style)
+            edit.setStyleSheet(dss.TIME_EDIT_STYLE)
             edit.editingFinished.connect(self._validate_monitor_time)
             return edit
 
@@ -2714,16 +2578,14 @@ class N6705CDatalogUI(QWidget):
         def _make_unit_label(text):
             lbl = QLabel(text)
             lbl.setAlignment(Qt.AlignCenter)
-            lbl.setStyleSheet(
-                "color: #8eb0e3; font-size: 10px; padding: 0px; border: none;"
-            )
+            lbl.setStyleSheet(dss.TIME_UNIT_LABEL_STYLE)
             lbl.setFixedWidth(time_edit_width)
             return lbl
 
         def _make_colon():
             lbl = QLabel(":")
             lbl.setAlignment(Qt.AlignCenter)
-            lbl.setStyleSheet("color: #8eb0e3; font-size: 11px;")
+            lbl.setStyleSheet(dss.TIME_COLON_STYLE)
             lbl.setFixedWidth(6)
             return lbl
 
@@ -2860,7 +2722,7 @@ class N6705CDatalogUI(QWidget):
         form_layout.addLayout(desc_row)
 
         self.add_label_btn = QPushButton()
-        self.add_label_btn.setIcon(self._make_svg_icon("plus.svg", "#ffffff", 14))
+        self.add_label_btn.setIcon(_make_svg_icon("plus.svg", "#ffffff", 14))
         self.add_label_btn.setObjectName("addLabelBtn")
         form_layout.addWidget(self.add_label_btn)
 
@@ -2893,43 +2755,7 @@ class N6705CDatalogUI(QWidget):
         self.channel_config_tabbar.setDrawBase(False)
         self.channel_config_tabbar.setExpanding(False)
         self.channel_config_tabbar.setIconSize(QSize(14, 14))
-        self.channel_config_tabbar.setStyleSheet("""
-            QTabBar {
-                background: transparent;
-                border: none;
-            }
-            QTabBar::tab {
-                background-color: #0b1630;
-                color: #4a6a96;
-                border: 1px solid #1a2b52;
-                border-bottom: none;
-                border-top-left-radius: 5px;
-                border-top-right-radius: 5px;
-                padding: 4px 14px;
-                margin-right: 1px;
-                margin-bottom: 0px;
-                font-size: 11px;
-                font-weight: 600;
-            }
-            QTabBar::tab:selected {
-                background-color: #071127;
-                color: #dce7ff;
-                border: 1px solid #1a2b52;
-                border-bottom: none;
-            }
-            QTabBar::tab:hover:!selected {
-                background-color: #0e1d40;
-                color: #8eb0e3;
-            }
-            QTabBar::tab:!selected {
-                margin-top: 2px;
-            }
-            QTabBar::close-button {
-                image: none;
-                border: none;
-                background: transparent;
-            }
-        """)
+        self.channel_config_tabbar.setStyleSheet(dss.CH_CFG_TABBAR_STYLE)
         self.channel_config_tabbar_placeholder.layout().addWidget(self.channel_config_tabbar, 1)
 
         self.channel_config_stack = QStackedWidget()
@@ -2947,7 +2773,7 @@ class N6705CDatalogUI(QWidget):
         self._instruments_tab_layout.setContentsMargins(0, 6, 0, 0)
         self._instruments_tab_layout.setSpacing(0)
         active_tab_idx = self.channel_config_tabbar.addTab("Active")
-        self.channel_config_tabbar.setTabIcon(active_tab_idx, self._make_svg_icon("zap.svg", "#8eb0e3", 14))
+        self.channel_config_tabbar.setTabIcon(active_tab_idx, _make_svg_icon("zap.svg", "#8eb0e3", 14))
         self.channel_config_tabbar.setTabData(active_tab_idx, "active")
         self.channel_config_stack.addWidget(self._instruments_tab)
         self._channel_config_last_tab_index = active_tab_idx
@@ -2959,15 +2785,6 @@ class N6705CDatalogUI(QWidget):
         self.channel_config_inner_layout.setContentsMargins(0, 0, 0, 0)
         self.channel_config_inner_layout.setSpacing(0)
         self._instruments_tab_layout.addWidget(self.channel_config_inner)
-
-        self.ch_checkboxes_a = []
-        self.ch_voltage_cbs_a = []
-        self.ch_current_cbs_a = []
-        self.ch_power_cbs_a = []
-        self.ch_checkboxes_b = []
-        self.ch_voltage_cbs_b = []
-        self.ch_current_cbs_b = []
-        self.ch_power_cbs_b = []
 
         self.unit_a_ch_label = QLabel()
         self.unit_a_ch_label.hide()
@@ -2983,7 +2800,7 @@ class N6705CDatalogUI(QWidget):
         self._instruments_tab_layout.addWidget(self.no_instrument_label)
 
     def _add_channel_config_import_tab(self):
-        tab_idx = self.channel_config_tabbar.addTab(self._make_svg_icon("plus.svg", "#8eb0e3", 16), "")
+        tab_idx = self.channel_config_tabbar.addTab(_make_svg_icon("plus.svg", "#8eb0e3", 16), "")
         self.channel_config_tabbar.setTabData(tab_idx, "import_plus")
         self.channel_config_tabbar.setTabToolTip(tab_idx, "Import Datalog")
         self._channel_config_import_tab_idx = tab_idx
@@ -3009,46 +2826,16 @@ class N6705CDatalogUI(QWidget):
             self.channel_config_stack.setCurrentIndex(index)
             self._channel_config_last_tab_index = index
 
-    def _make_svg_icon(self, svg_file, color="#dfe8ff", size=18):
-        svg_path = os.path.join(get_resource_base(), "resources", "pages", "n6705c_power_analyzer_SVGs", svg_file)
-        with open(svg_path, "r", encoding="utf-8") as f:
-            svg_data = f.read().replace("currentColor", color)
-        renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))
-        pixmap = QPixmap(size, size)
-        pixmap.fill(QColor(0, 0, 0, 0))
-        painter = QPainter(pixmap)
-        renderer.render(painter)
-        painter.end()
-        return QIcon(pixmap)
-
     def _toggle_channel_config_panel(self):
         self.channel_config_collapsed = not self.channel_config_collapsed
         self.channel_config_card.setVisible(not self.channel_config_collapsed)
         self.channel_config_tabbar_placeholder.setVisible(not self.channel_config_collapsed)
         if self.channel_config_collapsed:
             self.channel_config_toggle_btn.setIcon(self._ch_config_icon_collapsed)
-            self.channel_config_toggle_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #0a1930; color: #8ea6cf;
-                    border: 1px solid #132849; border-radius: 8px;
-                    padding: 0px 14px; font-size: 11px; font-weight: 700; text-align: left;
-                }
-                QPushButton:hover { background-color: #0e1f3d; color: #b8d0f0; }
-            """)
+            self.channel_config_toggle_btn.setStyleSheet(dss.CH_CFG_TOGGLE_BTN_COLLAPSED)
         else:
             self.channel_config_toggle_btn.setIcon(self._ch_config_icon_expanded)
-            self.channel_config_toggle_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #0a1930; color: #b8d0f0;
-                    border: 1px solid #132849;
-                    border-top-left-radius: 8px;
-                    border-top-right-radius: 0px;
-                    border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;
-                    padding: 0px 14px; font-size: 11px; font-weight: 700;
-                    text-align: left;
-                }
-                QPushButton:hover { background-color: #0e1f3d; color: #d0e4ff; }
-            """)
+            self.channel_config_toggle_btn.setStyleSheet(dss.CH_CFG_TOGGLE_BTN_EXPANDED)
 
     def _toggle_label_card_panel(self, checked):
         self.label_card.setVisible(checked)
@@ -3115,20 +2902,13 @@ class N6705CDatalogUI(QWidget):
             serial = slot.property("assigned_serial")
 
             slot_frame = QFrame()
-            slot_frame.setStyleSheet("""
-                QFrame {
-                    background-color: #071127;
-                    border: none;
-                }
-            """)
+            slot_frame.setStyleSheet(dss.SLOT_FRAME_STYLE)
             slot_layout = QVBoxLayout(slot_frame)
             slot_layout.setContentsMargins(6, 4, 6, 4)
             slot_layout.setSpacing(0)
 
             slot_title = QLabel(f"Slot {slot_char}  ─  {serial}")
-            slot_title.setStyleSheet(
-                "color: #667ba0; font-size: 10px; border: none; padding-bottom: 2px;"
-            )
+            slot_title.setStyleSheet(dss.SLOT_TITLE_STYLE)
             slot_layout.addWidget(slot_title)
 
             outputs_row = QHBoxLayout()
@@ -3140,30 +2920,21 @@ class N6705CDatalogUI(QWidget):
             current_cbs = []
             power_cbs = []
 
-            edit_style = (
-                "QLineEdit { background: #0c1a35; color: #8eb0e3; font-size: 10px; "
-                "border: 1px solid #1e3460; border-radius: 2px; }"
-                "QLineEdit:focus { border-color: #3a6aad; }"
-            )
+            edit_style = dss.SCALE_OFFSET_EDIT_STYLE
 
             for ch in range(4):
                 ch_color = CHANNEL_COLORS[ch % len(CHANNEL_COLORS)]
 
                 out_frame = QFrame()
                 out_frame.setMaximumWidth(260)
-                out_frame.setStyleSheet(
-                    "QFrame { background-color: #0a1430; border: 1px solid #152040; border-radius: 4px; }"
-                )
+                out_frame.setStyleSheet(dss.OUT_FRAME_STYLE)
                 out_vbox = QVBoxLayout(out_frame)
                 out_vbox.setContentsMargins(4, 3, 4, 3)
                 out_vbox.setSpacing(2)
 
                 title_lbl = QLabel(f"OUTPUT {ch + 1}")
                 title_lbl.setAlignment(Qt.AlignCenter)
-                title_lbl.setStyleSheet(
-                    f"color: {ch_color}; font-size: 10px; font-weight: 700; "
-                    f"border: none; padding: 1px 0;"
-                )
+                title_lbl.setStyleSheet(dss.out_title_style(ch_color))
                 out_vbox.addWidget(title_lbl)
 
                 for row_idx, (prefix, default_scale, default_offset, unit) in enumerate([
@@ -3193,7 +2964,7 @@ class N6705CDatalogUI(QWidget):
                     sep = QLabel("/")
                     sep.setFixedWidth(8)
                     sep.setAlignment(Qt.AlignCenter)
-                    sep.setStyleSheet("color: #3a5070; font-size: 10px; border: none;")
+                    sep.setStyleSheet(dss.SEP_LABEL_STYLE)
 
                     offset_edit = ScaleOffsetEdit(default_offset)
                     offset_edit.setMinimumWidth(38)
@@ -3213,7 +2984,7 @@ class N6705CDatalogUI(QWidget):
                     row_layout.addWidget(offset_edit)
 
                     container = QWidget()
-                    container.setStyleSheet("border: none;")
+                    container.setStyleSheet(dss.CONTAINER_NO_BORDER_STYLE)
                     container.setLayout(row_layout)
                     out_vbox.addWidget(container)
 
@@ -3270,12 +3041,12 @@ class N6705CDatalogUI(QWidget):
     def _snapshot_native_channel_state(self):
         snapshot = {}
         groups = [
-            ("A", "I", getattr(self, 'ch_current_cbs_a', [])),
-            ("A", "V", getattr(self, 'ch_voltage_cbs_a', [])),
-            ("A", "P", getattr(self, 'ch_power_cbs_a', [])),
-            ("B", "I", getattr(self, 'ch_current_cbs_b', [])),
-            ("B", "V", getattr(self, 'ch_voltage_cbs_b', [])),
-            ("B", "P", getattr(self, 'ch_power_cbs_b', [])),
+            ("A", "I", self.ch_current_cbs_a),
+            ("A", "V", self.ch_voltage_cbs_a),
+            ("A", "P", self.ch_power_cbs_a),
+            ("B", "I", self.ch_current_cbs_b),
+            ("B", "V", self.ch_voltage_cbs_b),
+            ("B", "P", self.ch_power_cbs_b),
         ]
         for slot_char, meas_type, buttons in groups:
             for idx, btn in enumerate(buttons):
@@ -3296,12 +3067,12 @@ class N6705CDatalogUI(QWidget):
         if not snapshot:
             return
         groups = [
-            ("A", "I", getattr(self, 'ch_current_cbs_a', [])),
-            ("A", "V", getattr(self, 'ch_voltage_cbs_a', [])),
-            ("A", "P", getattr(self, 'ch_power_cbs_a', [])),
-            ("B", "I", getattr(self, 'ch_current_cbs_b', [])),
-            ("B", "V", getattr(self, 'ch_voltage_cbs_b', [])),
-            ("B", "P", getattr(self, 'ch_power_cbs_b', [])),
+            ("A", "I", self.ch_current_cbs_a),
+            ("A", "V", self.ch_voltage_cbs_a),
+            ("A", "P", self.ch_power_cbs_a),
+            ("B", "I", self.ch_current_cbs_b),
+            ("B", "V", self.ch_voltage_cbs_b),
+            ("B", "P", self.ch_power_cbs_b),
         ]
         for slot_char, meas_type, buttons in groups:
             for idx, btn in enumerate(buttons):
@@ -3325,8 +3096,6 @@ class N6705CDatalogUI(QWidget):
                     btn.blockSignals(False)
 
     def _build_imported_channel_config(self, tab_name=None, data_keys=None, file_prefix=None):
-        import re
-
         if data_keys is None:
             data_keys = set(self.datalog_data.keys())
 
@@ -3381,28 +3150,20 @@ class N6705CDatalogUI(QWidget):
             "power_cbs_b": [],
         }
 
-        edit_style = (
-            "QLineEdit { background: #0c1a35; color: #8eb0e3; font-size: 10px; "
-            "border: 1px solid #1e3460; border-radius: 2px; }"
-            "QLineEdit:focus { border-color: #3a6aad; }"
-        )
+        edit_style = dss.SCALE_OFFSET_EDIT_STYLE
 
         for slot_char in sorted(groups.keys()):
             ch_map = groups[slot_char]
             max_ch = max(ch_map.keys())
 
             slot_frame = QFrame()
-            slot_frame.setStyleSheet(
-                "QFrame { background-color: #071127; border: none; }"
-            )
+            slot_frame.setStyleSheet(dss.SLOT_FRAME_STYLE)
             slot_layout = QVBoxLayout(slot_frame)
             slot_layout.setContentsMargins(6, 4, 6, 4)
             slot_layout.setSpacing(0)
 
             slot_title = QLabel(f"{tab_name}  ─  Slot {slot_char}")
-            slot_title.setStyleSheet(
-                "color: #667ba0; font-size: 10px; border: none; padding-bottom: 2px;"
-            )
+            slot_title.setStyleSheet(dss.SLOT_TITLE_STYLE)
             slot_layout.addWidget(slot_title)
 
             outputs_row = QHBoxLayout()
@@ -3420,19 +3181,14 @@ class N6705CDatalogUI(QWidget):
 
                 out_frame = QFrame()
                 out_frame.setMaximumWidth(260)
-                out_frame.setStyleSheet(
-                    "QFrame { background-color: #0a1430; border: 1px solid #152040; border-radius: 4px; }"
-                )
+                out_frame.setStyleSheet(dss.OUT_FRAME_STYLE)
                 out_vbox = QVBoxLayout(out_frame)
                 out_vbox.setContentsMargins(4, 3, 4, 3)
                 out_vbox.setSpacing(2)
 
                 title_lbl = QLabel(f"OUTPUT {ch}")
                 title_lbl.setAlignment(Qt.AlignCenter)
-                title_lbl.setStyleSheet(
-                    f"color: {ch_color}; font-size: 10px; font-weight: 700; "
-                    f"border: none; padding: 1px 0;"
-                )
+                title_lbl.setStyleSheet(dss.out_title_style(ch_color))
                 out_vbox.addWidget(title_lbl)
 
                 for prefix, default_scale, default_offset, unit in [
@@ -3448,11 +3204,7 @@ class N6705CDatalogUI(QWidget):
                         dummy.setProperty("meas_type", prefix)
                         dummy.setStyleSheet(self._ch_toggle_style(ch_color, False))
                         dummy.setEnabled(False)
-                        dummy.setStyleSheet(
-                            "background-color: #0a1020; color: #2a3a55; "
-                            "font-size: 10px; font-weight: 700; "
-                            "border: 1px solid #121e38; border-radius: 2px;"
-                        )
+                        dummy.setStyleSheet(dss.DUMMY_TOGGLE_STYLE)
                         dummy_scale = QLineEdit(default_scale)
                         dummy_scale.setMinimumWidth(38)
                         dummy_scale.setAlignment(Qt.AlignCenter)
@@ -3461,7 +3213,7 @@ class N6705CDatalogUI(QWidget):
                         dummy_sep = QLabel("/")
                         dummy_sep.setFixedWidth(8)
                         dummy_sep.setAlignment(Qt.AlignCenter)
-                        dummy_sep.setStyleSheet("color: #3a5070; font-size: 10px; border: none;")
+                        dummy_sep.setStyleSheet(dss.SEP_LABEL_STYLE)
                         dummy_offset = QLineEdit(default_offset)
                         dummy_offset.setMinimumWidth(38)
                         dummy_offset.setAlignment(Qt.AlignCenter)
@@ -3475,7 +3227,7 @@ class N6705CDatalogUI(QWidget):
                         row_layout.addWidget(dummy_sep)
                         row_layout.addWidget(dummy_offset)
                         container = QWidget()
-                        container.setStyleSheet("border: none;")
+                        container.setStyleSheet(dss.CONTAINER_NO_BORDER_STYLE)
                         container.setLayout(row_layout)
                         out_vbox.addWidget(container)
                         if prefix == "V":
@@ -3512,7 +3264,7 @@ class N6705CDatalogUI(QWidget):
                     sep = QLabel("/")
                     sep.setFixedWidth(8)
                     sep.setAlignment(Qt.AlignCenter)
-                    sep.setStyleSheet("color: #3a5070; font-size: 10px; border: none;")
+                    sep.setStyleSheet(dss.SEP_LABEL_STYLE)
 
                     offset_edit = ScaleOffsetEdit(default_offset)
                     offset_edit.setMinimumWidth(38)
@@ -3532,7 +3284,7 @@ class N6705CDatalogUI(QWidget):
                     row_layout.addWidget(offset_edit)
 
                     container = QWidget()
-                    container.setStyleSheet("border: none;")
+                    container.setStyleSheet(dss.CONTAINER_NO_BORDER_STYLE)
                     container.setLayout(row_layout)
                     out_vbox.addWidget(container)
 
@@ -3581,16 +3333,12 @@ class N6705CDatalogUI(QWidget):
             tab_idx -= 1
         tab_idx = self.channel_config_tabbar.insertTab(tab_idx, f"{tab_name}")
         self.channel_config_tabbar.setTabData(tab_idx, "imported")
-        self.channel_config_tabbar.setTabIcon(tab_idx, self._make_svg_icon("file-text.svg", "#8eb0e3", 14))
+        self.channel_config_tabbar.setTabIcon(tab_idx, _make_svg_icon("file-text.svg", "#8eb0e3", 14))
         self.channel_config_stack.insertWidget(tab_idx, tab_widget)
         close_btn = QPushButton()
-        close_btn.setIcon(self._make_svg_icon("x-close.svg", "#4a6a96", 12))
+        close_btn.setIcon(_make_svg_icon("x-close.svg", "#4a6a96", 12))
         close_btn.setFixedSize(20, 20)
-        close_btn.setStyleSheet(
-            "QPushButton { background: transparent; color: #4a6a96; font-size: 11px; "
-            "border: none; border-radius: 3px; padding: 0; margin: 0; min-height: 0; }"
-            "QPushButton:hover { background: #2a1525; color: #ff6b6b; }"
-        )
+        close_btn.setStyleSheet(dss.CH_CFG_TAB_CLOSE_BTN_STYLE)
         close_btn.clicked.connect(lambda _checked=False, w=tab_widget: self._on_config_tab_close(
             self.channel_config_stack.indexOf(w)))
         self.channel_config_tabbar.setTabButton(tab_idx, QTabBar.RightSide, close_btn)
@@ -3660,10 +3408,10 @@ class N6705CDatalogUI(QWidget):
             return (
                 list(self.ch_current_cbs_a)
                 + list(self.ch_voltage_cbs_a)
-                + list(getattr(self, 'ch_power_cbs_a', []))
-                + list(getattr(self, 'ch_current_cbs_b', []))
-                + list(getattr(self, 'ch_voltage_cbs_b', []))
-                + list(getattr(self, 'ch_power_cbs_b', []))
+                + list(self.ch_power_cbs_a)
+                + list(self.ch_current_cbs_b)
+                + list(self.ch_voltage_cbs_b)
+                + list(self.ch_power_cbs_b)
             )
         widget = self.channel_config_stack.widget(index)
         if widget is None:
@@ -3739,9 +3487,9 @@ class N6705CDatalogUI(QWidget):
 
     def _cb_is_b(self, cb):
         if cb in (
-            list(getattr(self, 'ch_current_cbs_b', []))
-            + list(getattr(self, 'ch_voltage_cbs_b', []))
-            + list(getattr(self, 'ch_power_cbs_b', []))
+            list(self.ch_current_cbs_b)
+            + list(self.ch_voltage_cbs_b)
+            + list(self.ch_power_cbs_b)
         ):
             return True
         for tc in self._imported_tab_configs:
@@ -3857,31 +3605,7 @@ class N6705CDatalogUI(QWidget):
         any_visible = self._is_tab_any_channel_visible(index)
 
         menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background-color: #0c1a35;
-                border: 1px solid #1e3460;
-                color: #c8daf5;
-                font-size: 11px;
-                padding: 4px;
-            }
-            QMenu::item {
-                padding: 6px 18px 6px 24px;
-                border-radius: 3px;
-            }
-            QMenu::item:selected {
-                background-color: #1e3460;
-                color: #eaf2ff;
-            }
-            QMenu::item:disabled {
-                color: #3a5070;
-            }
-            QMenu::separator {
-                height: 1px;
-                background-color: #1e3460;
-                margin: 4px 6px;
-            }
-        """)
+        menu.setStyleSheet(dss.menu_style(small=True))
 
         tab_text = self.channel_config_tabbar.tabText(index)
         title_action = menu.addAction(tab_text or "Tab")
@@ -3956,7 +3680,6 @@ class N6705CDatalogUI(QWidget):
             for key in list(self.datalog_data.keys()):
                 c_num, c_type, c_is_b = _parse_ch_label(key)
                 if c_num == ch and c_type == "V" and c_is_b == is_b_target:
-                    import re
                     pfx_m = re.match(r'^(F\d+-)?', key.strip())
                     pfx = pfx_m.group(1) if pfx_m and pfx_m.group(1) else ""
                     raw_part = key.strip()[len(pfx):]
@@ -4012,12 +3735,12 @@ class N6705CDatalogUI(QWidget):
 
         if data_key not in imported_keys:
             src = {
-                "voltage_a": getattr(self, 'ch_voltage_cbs_a', []),
-                "current_a": getattr(self, 'ch_current_cbs_a', []),
-                "power_a": getattr(self, 'ch_power_cbs_a', []),
-                "voltage_b": getattr(self, 'ch_voltage_cbs_b', []),
-                "current_b": getattr(self, 'ch_current_cbs_b', []),
-                "power_b": getattr(self, 'ch_power_cbs_b', []),
+                "voltage_a": self.ch_voltage_cbs_a,
+                "current_a": self.ch_current_cbs_a,
+                "power_a": self.ch_power_cbs_a,
+                "voltage_b": self.ch_voltage_cbs_b,
+                "current_b": self.ch_current_cbs_b,
+                "power_b": self.ch_power_cbs_b,
             }
             cbs = self._pick_cbs_from_src(src, slot_char, prefix)
             if 0 <= idx < len(cbs):
@@ -4088,12 +3811,12 @@ class N6705CDatalogUI(QWidget):
         field = edit_widget.property("field")
 
         all_btn_lists = [
-            getattr(self, 'ch_voltage_cbs_a', []),
-            getattr(self, 'ch_current_cbs_a', []),
-            getattr(self, 'ch_power_cbs_a', []),
-            getattr(self, 'ch_voltage_cbs_b', []),
-            getattr(self, 'ch_current_cbs_b', []),
-            getattr(self, 'ch_power_cbs_b', []),
+            self.ch_voltage_cbs_a,
+            self.ch_current_cbs_a,
+            self.ch_power_cbs_a,
+            self.ch_voltage_cbs_b,
+            self.ch_current_cbs_b,
+            self.ch_power_cbs_b,
         ]
         for tc in self._imported_tab_configs:
             for suffix in ["voltage_cbs_a", "current_cbs_a", "power_cbs_a",
@@ -4199,63 +3922,14 @@ class N6705CDatalogUI(QWidget):
         dialog = QDialog(self)
         dialog.setWindowTitle("Add Instrument Manually")
         dialog.setFixedWidth(400)
-        dialog.setStyleSheet("""
-            QDialog {
-                background-color: #0a1628;
-                color: #c8daf5;
-            }
-            QLabel {
-                color: #8eb0e3;
-                font-size: 12px;
-            }
-            QLineEdit {
-                background-color: #0c1a35;
-                border: 1px solid #1e3460;
-                border-radius: 6px;
-                color: #eaf2ff;
-                padding: 6px 10px;
-                font-size: 12px;
-            }
-            QLineEdit:focus {
-                border-color: #3a6fd4;
-            }
-            QComboBox {
-                background-color: #0c1a35;
-                border: 1px solid #1e3460;
-                border-radius: 6px;
-                color: #eaf2ff;
-                padding: 6px 10px;
-                font-size: 12px;
-            }
-            QComboBox:focus {
-                border-color: #3a6fd4;
-            }
-            QComboBox QAbstractItemView {
-                background-color: #0c1a35;
-                border: 1px solid #1e3460;
-                color: #eaf2ff;
-                selection-background-color: #1e3460;
-            }
-            QPushButton {
-                background-color: #162d55;
-                border: 1px solid #1e3460;
-                border-radius: 6px;
-                color: #c8daf5;
-                padding: 6px 18px;
-                font-size: 12px;
-            }
-            QPushButton:hover {
-                background-color: #1e3460;
-                border-color: #3a6fd4;
-            }
-        """)
+        dialog.setStyleSheet(dss.dlg_style(combo=True))
 
         form_layout = QVBoxLayout(dialog)
         form_layout.setContentsMargins(16, 16, 16, 16)
         form_layout.setSpacing(12)
 
         title = QLabel("Add Instrument Manually")
-        title.setStyleSheet("font-size: 14px; font-weight: bold; color: #eaf2ff;")
+        title.setStyleSheet(dss.DIALOG_TITLE_STYLE)
         form_layout.addWidget(title)
 
         conn_type_label = QLabel("Connection Type")
@@ -4288,24 +3962,7 @@ class N6705CDatalogUI(QWidget):
         save_default_check.setToolTip(
             "勾选后保存当前地址为默认仪器，下次打开时自动加载常用仪器。"
         )
-        save_default_check.setStyleSheet("""
-            QCheckBox {
-                color: #8eb0e3;
-                font-size: 12px;
-                spacing: 6px;
-            }
-            QCheckBox::indicator {
-                width: 15px;
-                height: 15px;
-                border: 1px solid #1e3460;
-                border-radius: 3px;
-                background-color: #0c1a35;
-            }
-            QCheckBox::indicator:checked {
-                background-color: #1a4b8c;
-                border-color: #3a6fd4;
-            }
-        """)
+        save_default_check.setStyleSheet(dss.SAVE_DEFAULT_CB_STYLE)
         form_layout.addWidget(save_default_check)
 
         def _on_conn_type_changed(index):
@@ -4328,21 +3985,8 @@ class N6705CDatalogUI(QWidget):
         cancel_btn = QPushButton("Cancel")
         cancel_btn.clicked.connect(dialog.reject)
         connect_btn = QPushButton("Connect")
-        connect_btn.setIcon(self._make_svg_icon("link-connect.svg", "#ffffff", 14))
-        connect_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #1a4b8c;
-                border: 1px solid #3a6fd4;
-                border-radius: 6px;
-                color: #eaf2ff;
-                padding: 6px 18px;
-                font-size: 12px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #245bb5;
-            }
-        """)
+        connect_btn.setIcon(_make_svg_icon("link-connect.svg", "#ffffff", 14))
+        connect_btn.setStyleSheet(dss.PRIMARY_BTN_STYLE)
         connect_btn.clicked.connect(dialog.accept)
         connect_btn.setDefault(True)
         btn_layout.addWidget(cancel_btn)
@@ -4451,7 +4095,6 @@ class N6705CDatalogUI(QWidget):
         return QRect(x, y, width, height)
 
     def _load_window_geometry(self):
-        import json
         path = self._window_geometry_path()
         if not os.path.exists(path):
             return None
@@ -4478,7 +4121,6 @@ class N6705CDatalogUI(QWidget):
         }
 
     def _save_window_geometry(self):
-        import json
         state = self._collect_window_state()
         if not state:
             return
@@ -4508,7 +4150,6 @@ class N6705CDatalogUI(QWidget):
         super().closeEvent(event)
 
     def _load_default_devices(self):
-        import json
         path = self._default_devices_path()
         if not os.path.exists(path):
             return []
@@ -4522,7 +4163,6 @@ class N6705CDatalogUI(QWidget):
             return []
 
     def _save_default_device(self, serial, model, display_ip, visa_resource):
-        import json
         path = self._default_devices_path()
         devices = self._load_default_devices()
         if any(d.get("visa_resource") == visa_resource for d in devices):
@@ -4653,7 +4293,6 @@ class N6705CDatalogUI(QWidget):
         return best
 
     def eventFilter(self, obj, event):
-        from PySide6.QtCore import QEvent
         if obj is self.plot_widget and event.type() == QEvent.Leave:
             self._hide_crosshair()
             return False
@@ -4663,7 +4302,6 @@ class N6705CDatalogUI(QWidget):
                 scene_pos = self.plot_widget.mapToScene(view_pos)
                 snap_marker = self._find_nearest_marker_at_scene(scene_pos)
                 if snap_marker:
-                    from PySide6.QtCore import QPoint
                     screen_pos = self.plot_widget.viewport().mapToGlobal(view_pos)
                     self._show_marker_context_menu_at(snap_marker, screen_pos)
                     return True
@@ -4745,7 +4383,6 @@ class N6705CDatalogUI(QWidget):
         return super().eventFilter(obj, event)
 
     def _find_band_at_y(self, y, x=None):
-        from bisect import bisect_left, bisect_right
         vb = self.plot_widget.getPlotItem().getViewBox()
         view_height_px = vb.screenGeometry().height() or 1
         view_width_px = vb.screenGeometry().width() or 1
@@ -4897,7 +4534,6 @@ class N6705CDatalogUI(QWidget):
         sy = init_range / raw_range
         ty = plot_bottom * (1.0 - sy) + (init_min - raw_min) * plot_range / raw_range
 
-        from PySide6.QtGui import QTransform
         curve.setTransform(QTransform(1.0, 0.0, 0.0, sy, 0.0, ty))
         self._update_ch_label_positions()
 
@@ -5008,9 +4644,7 @@ class N6705CDatalogUI(QWidget):
         self._update_recording_button_state(False)
         if self.min_period_cb.isChecked():
             self.sample_period_edit.setReadOnly(True)
-            self.sample_period_edit.setStyleSheet(
-                "QLineEdit { background: #1a2b52; color: #667ba0; }"
-            )
+            self.sample_period_edit.setStyleSheet(dss.SAMPLE_PERIOD_READONLY_STYLE)
 
     def _bind_signals(self):
         self.start_btn.clicked.connect(self._on_start_or_stop_recording)
@@ -5052,22 +4686,21 @@ class N6705CDatalogUI(QWidget):
         self.is_recording = recording
         self.start_btn.setProperty("running", "true" if recording else "false")
         if recording:
-            self.start_btn.setIcon(self._make_svg_icon("square.svg", "#ffd9e6", 14))
+            self.start_btn.setIcon(_make_svg_icon("square.svg", "#ffd9e6", 14))
             self.start_btn.setText("Stop Recording")
         else:
-            self.start_btn.setIcon(self._make_svg_icon("play.svg", "#ffffff", 16))
+            self.start_btn.setIcon(_make_svg_icon("play.svg", "#ffffff", 16))
             self.start_btn.setText("Start Recording")
         self.start_btn.style().unpolish(self.start_btn)
         self.start_btn.style().polish(self.start_btn)
         self.start_btn.update()
 
     def _show_progress_overlay(self, total_seconds):
-        import time as _time
         self._progress_bar.setValue(0)
         self._progress_stage_label.setText("Preparing...")
         self._progress_time_label.setText(f"Estimated total: {total_seconds:.0f}s")
         self._progress_total_s = total_seconds
-        self._progress_start_time = _time.time()
+        self._progress_start_time = time.time()
         self._progress_overlay.setGeometry(self.chart_frame.rect())
         self._progress_overlay.raise_()
         self._progress_overlay.show()
@@ -5085,8 +4718,7 @@ class N6705CDatalogUI(QWidget):
         self._progress_timer.start()
 
     def _update_progress_elapsed(self):
-        import time as _time
-        elapsed = _time.time() - self._progress_start_time
+        elapsed = time.time() - self._progress_start_time
         remaining = max(0, self._progress_total_s - elapsed)
         if remaining > 0:
             self._progress_time_label.setText(
@@ -5144,10 +4776,10 @@ class N6705CDatalogUI(QWidget):
         self._collect_visible_keys_from_cbs(
             visible_keys,
             self.ch_current_cbs_a, self.ch_voltage_cbs_a,
-            getattr(self, 'ch_power_cbs_a', []),
-            getattr(self, 'ch_current_cbs_b', []),
-            getattr(self, 'ch_voltage_cbs_b', []),
-            getattr(self, 'ch_power_cbs_b', []),
+            self.ch_power_cbs_a,
+            self.ch_current_cbs_b,
+            self.ch_voltage_cbs_b,
+            self.ch_power_cbs_b,
             active_data,
         )
         for tc in self._imported_tab_configs:
@@ -5261,14 +4893,13 @@ class N6705CDatalogUI(QWidget):
         self._update_marker_analysis()
 
     def _sync_checkboxes_to_data(self):
-        import re
         all_cbs = (
             list(self.ch_current_cbs_a) +
             list(self.ch_voltage_cbs_a) +
-            list(getattr(self, 'ch_power_cbs_a', [])) +
-            list(getattr(self, 'ch_current_cbs_b', [])) +
-            list(getattr(self, 'ch_voltage_cbs_b', [])) +
-            list(getattr(self, 'ch_power_cbs_b', []))
+            list(self.ch_power_cbs_a) +
+            list(self.ch_current_cbs_b) +
+            list(self.ch_voltage_cbs_b) +
+            list(self.ch_power_cbs_b)
         )
         for tc in self._imported_tab_configs:
             for suffix in ["current_cbs_a", "voltage_cbs_a", "power_cbs_a",
@@ -5287,10 +4918,10 @@ class N6705CDatalogUI(QWidget):
         self._sync_cbs_for_data(
             active_data,
             self.ch_current_cbs_a, self.ch_voltage_cbs_a,
-            getattr(self, 'ch_power_cbs_a', []),
-            getattr(self, 'ch_current_cbs_b', []),
-            getattr(self, 'ch_voltage_cbs_b', []),
-            getattr(self, 'ch_power_cbs_b', []),
+            self.ch_power_cbs_a,
+            self.ch_current_cbs_b,
+            self.ch_voltage_cbs_b,
+            self.ch_power_cbs_b,
             new_keys=active_new_keys,
         )
 
@@ -5311,12 +4942,12 @@ class N6705CDatalogUI(QWidget):
 
     def _iter_channel_toggle_buttons(self):
         groups = [
-            ("A", "I", getattr(self, 'ch_current_cbs_a', [])),
-            ("A", "V", getattr(self, 'ch_voltage_cbs_a', [])),
-            ("A", "P", getattr(self, 'ch_power_cbs_a', [])),
-            ("B", "I", getattr(self, 'ch_current_cbs_b', [])),
-            ("B", "V", getattr(self, 'ch_voltage_cbs_b', [])),
-            ("B", "P", getattr(self, 'ch_power_cbs_b', [])),
+            ("A", "I", self.ch_current_cbs_a),
+            ("A", "V", self.ch_voltage_cbs_a),
+            ("A", "P", self.ch_power_cbs_a),
+            ("B", "I", self.ch_current_cbs_b),
+            ("B", "V", self.ch_voltage_cbs_b),
+            ("B", "P", self.ch_power_cbs_b),
         ]
         for tab_idx, tc in enumerate(getattr(self, '_imported_tab_configs', [])):
             groups.extend([
@@ -5420,10 +5051,10 @@ class N6705CDatalogUI(QWidget):
                 count_a += 1
 
         count_b = 0
-        for cb in getattr(self, 'ch_current_cbs_b', []):
+        for cb in self.ch_current_cbs_b:
             if cb.isChecked():
                 count_b += 1
-        for cb in getattr(self, 'ch_voltage_cbs_b', []):
+        for cb in self.ch_voltage_cbs_b:
             if cb.isChecked():
                 count_b += 1
 
@@ -5439,10 +5070,10 @@ class N6705CDatalogUI(QWidget):
                 count_a += 1
 
         count_b = 0
-        for cb in getattr(self, 'ch_current_cbs_b', []):
+        for cb in self.ch_current_cbs_b:
             if cb.isChecked():
                 count_b += 1
-        for cb in getattr(self, 'ch_voltage_cbs_b', []):
+        for cb in self.ch_voltage_cbs_b:
             if cb.isChecked():
                 count_b += 1
 
@@ -5454,8 +5085,7 @@ class N6705CDatalogUI(QWidget):
         is_min = self.min_period_cb.isChecked()
         self.sample_period_edit.setReadOnly(is_min)
         self.sample_period_edit.setStyleSheet(
-            "QLineEdit { background: #1a2b52; color: #667ba0; }" if is_min
-            else ""
+            dss.SAMPLE_PERIOD_READONLY_STYLE if is_min else ""
         )
         if is_min:
             self._apply_minimum_period()
@@ -5562,7 +5192,7 @@ class N6705CDatalogUI(QWidget):
         if self.is_connected_a and self.n6705c_a:
             active_a = [i + 1 for i, cb in enumerate(self.ch_current_cbs_a) if cb.isChecked()]
             voltage_a = [i + 1 for i, cb in enumerate(self.ch_voltage_cbs_a) if cb.isChecked()]
-            power_a = [i + 1 for i, cb in enumerate(getattr(self, 'ch_power_cbs_a', [])) if cb.isChecked()]
+            power_a = [i + 1 for i, cb in enumerate(self.ch_power_cbs_a) if cb.isChecked()]
             for ch in power_a:
                 if ch not in voltage_a:
                     voltage_a.append(ch)
@@ -5579,7 +5209,7 @@ class N6705CDatalogUI(QWidget):
         if self.is_connected_b and self.n6705c_b:
             active_b = [i + 1 for i, cb in enumerate(self.ch_current_cbs_b) if cb.isChecked()]
             voltage_b = [i + 1 for i, cb in enumerate(self.ch_voltage_cbs_b) if cb.isChecked()]
-            power_b = [i + 1 for i, cb in enumerate(getattr(self, 'ch_power_cbs_b', [])) if cb.isChecked()]
+            power_b = [i + 1 for i, cb in enumerate(self.ch_power_cbs_b) if cb.isChecked()]
             for ch in power_b:
                 if ch not in voltage_b:
                     voltage_b.append(ch)
@@ -5819,8 +5449,8 @@ class N6705CDatalogUI(QWidget):
         return windowed
 
     def _on_data_ready(self, data):
-        power_chs_a = [cb.isChecked() for cb in getattr(self, 'ch_power_cbs_a', [])]
-        power_chs_b = [cb.isChecked() for cb in getattr(self, 'ch_power_cbs_b', [])]
+        power_chs_a = [cb.isChecked() for cb in self.ch_power_cbs_a]
+        power_chs_b = [cb.isChecked() for cb in self.ch_power_cbs_b]
         compute_power_channels(data, power_chs_a, power_chs_b)
         self.datalog_data.update(data)
         self._clear_analysis_card_cache()
@@ -6056,22 +5686,7 @@ class N6705CDatalogUI(QWidget):
         frozen = self.marker_a_frozen if which == "A" else self.marker_b_frozen
 
         menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background-color: #0c1a35;
-                border: 1px solid #1e3460;
-                border-radius: 6px;
-                color: #c8daf5;
-                padding: 4px;
-            }
-            QMenu::item {
-                padding: 6px 20px;
-                border-radius: 4px;
-            }
-            QMenu::item:selected {
-                background-color: #1e3460;
-            }
-        """)
+        menu.setStyleSheet(dss.menu_style())
         set_pos_action = menu.addAction(f"设置 Marker {which} 位置…")
         freeze_action = menu.addAction(
             f"解冻 Marker {which}" if frozen else f"冻结 Marker {which}"
@@ -6092,46 +5707,14 @@ class N6705CDatalogUI(QWidget):
         dialog = QDialog(self)
         dialog.setWindowTitle(f"Set Marker {which} Position")
         dialog.setFixedWidth(320)
-        dialog.setStyleSheet("""
-            QDialog {
-                background-color: #0a1628;
-                color: #c8daf5;
-            }
-            QLabel {
-                color: #8eb0e3;
-                font-size: 12px;
-            }
-            QLineEdit {
-                background-color: #0c1a35;
-                border: 1px solid #1e3460;
-                border-radius: 6px;
-                color: #eaf2ff;
-                padding: 6px 10px;
-                font-size: 12px;
-            }
-            QLineEdit:focus {
-                border-color: #3a6fd4;
-            }
-            QPushButton {
-                background-color: #162d55;
-                border: 1px solid #1e3460;
-                border-radius: 6px;
-                color: #c8daf5;
-                padding: 6px 18px;
-                font-size: 12px;
-            }
-            QPushButton:hover {
-                background-color: #1e3460;
-                border-color: #3a6fd4;
-            }
-        """)
+        dialog.setStyleSheet(dss.dlg_style())
 
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
         title = QLabel(f"Set Marker {which} Position")
-        title.setStyleSheet("font-size: 14px; font-weight: bold; color: #eaf2ff;")
+        title.setStyleSheet(dss.DIALOG_TITLE_STYLE)
         layout.addWidget(title)
 
         x_label = QLabel("X 坐标 (s)")
@@ -6336,7 +5919,6 @@ class N6705CDatalogUI(QWidget):
         return text_item
 
     def _compute_pair_avg_str(self, t1, t2):
-        from bisect import bisect_left, bisect_right
         if not self.datalog_data:
             return ""
         is_current = self.type_current.isChecked()
@@ -6633,28 +6215,12 @@ class N6705CDatalogUI(QWidget):
             self._place_extra_marker_line(em, "2")
 
     def _show_marker_context_menu(self, marker_tag, event):
-        from PySide6.QtCore import QPoint
         screen_pos = event.screenPos()
         self._show_marker_context_menu_at(marker_tag, QPoint(int(screen_pos.x()), int(screen_pos.y())))
 
     def _show_marker_context_menu_at(self, marker_tag, screen_pos):
         menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background-color: #0c1a35;
-                border: 1px solid #1e3460;
-                border-radius: 6px;
-                color: #c8daf5;
-                padding: 4px;
-            }
-            QMenu::item {
-                padding: 6px 20px;
-                border-radius: 4px;
-            }
-            QMenu::item:selected {
-                background-color: #1e3460;
-            }
-        """)
+        menu.setStyleSheet(dss.menu_style())
 
         delete_action = None
         pair_type = None
@@ -6685,7 +6251,6 @@ class N6705CDatalogUI(QWidget):
         return is_b
 
     def _get_file_prefix(self, label):
-        import re
         m = re.match(r'^(F\d+)-', str(label).strip())
         return m.group(1) if m else ""
 
@@ -6714,46 +6279,14 @@ class N6705CDatalogUI(QWidget):
         dialog = QDialog(self)
         dialog.setWindowTitle("Time Offset for Instrument B")
         dialog.setFixedWidth(380)
-        dialog.setStyleSheet("""
-            QDialog {
-                background-color: #0a1628;
-                color: #c8daf5;
-            }
-            QLabel {
-                color: #8eb0e3;
-                font-size: 12px;
-            }
-            QLineEdit {
-                background-color: #0c1a35;
-                border: 1px solid #1e3460;
-                border-radius: 6px;
-                color: #eaf2ff;
-                padding: 6px 10px;
-                font-size: 12px;
-            }
-            QLineEdit:focus {
-                border-color: #3a6fd4;
-            }
-            QPushButton {
-                background-color: #162d55;
-                border: 1px solid #1e3460;
-                border-radius: 6px;
-                color: #c8daf5;
-                padding: 6px 18px;
-                font-size: 12px;
-            }
-            QPushButton:hover {
-                background-color: #1e3460;
-                border-color: #3a6fd4;
-            }
-        """)
+        dialog.setStyleSheet(dss.dlg_style())
 
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
         title = QLabel("Time Offset for Instrument B")
-        title.setStyleSheet("font-size: 14px; font-weight: bold; color: #eaf2ff;")
+        title.setStyleSheet(dss.DIALOG_TITLE_STYLE)
         layout.addWidget(title)
 
         desc = QLabel("Shift all Instrument B waveforms along the time axis.\n"
@@ -6776,37 +6309,14 @@ class N6705CDatalogUI(QWidget):
         has_both_markers = self.marker_a_pos is not None and self.marker_b_pos is not None
 
         align_btn = QPushButton("Align From Markers")
-        align_btn.setIcon(self._make_svg_icon("map-pin.svg", "#ffffff", 14))
+        align_btn.setIcon(_make_svg_icon("map-pin.svg", "#ffffff", 14))
         align_btn.setToolTip("Auto-calculate offset from Marker A and Marker B positions.\n"
                              "Offset = Marker A - Marker B")
         align_btn.setEnabled(has_both_markers)
         if not has_both_markers:
-            align_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #0c1a35;
-                    border: 1px solid #1e3460;
-                    border-radius: 6px;
-                    color: #3a5070;
-                    padding: 6px 18px;
-                    font-size: 12px;
-                }
-            """)
+            align_btn.setStyleSheet(dss.ALIGN_BTN_DISABLED_STYLE)
         else:
-            align_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #1a3a2e;
-                    border: 1px solid #2a8c5a;
-                    border-radius: 6px;
-                    color: #7fffcf;
-                    padding: 6px 18px;
-                    font-size: 12px;
-                    font-weight: bold;
-                }
-                QPushButton:hover {
-                    background-color: #245b3e;
-                    border-color: #3abf7a;
-                }
-            """)
+            align_btn.setStyleSheet(dss.ALIGN_BTN_ENABLED_STYLE)
 
         if has_both_markers:
             marker_delta_ms = (self.marker_a_pos - self.marker_b_pos) * 1000.0
@@ -6814,11 +6324,11 @@ class N6705CDatalogUI(QWidget):
                 f"Marker A: {self.marker_a_pos:.6f}s    Marker B: {self.marker_b_pos:.6f}s\n"
                 f"Calculated offset: {marker_delta_ms:+.3f} ms"
             )
-            marker_info.setStyleSheet("color: #667ba0; font-size: 10px;")
+            marker_info.setStyleSheet(dss.MARKER_INFO_STYLE)
             layout.addWidget(marker_info)
         else:
             marker_info = QLabel("Set both Marker A and Marker B on the chart to enable auto-align.")
-            marker_info.setStyleSheet("color: #3a5070; font-size: 10px;")
+            marker_info.setStyleSheet(dss.MARKER_INFO_DISABLED_STYLE)
             marker_info.setWordWrap(True)
             layout.addWidget(marker_info)
 
@@ -6850,20 +6360,7 @@ class N6705CDatalogUI(QWidget):
         btn_layout.addWidget(cancel_btn)
 
         apply_btn = QPushButton("Apply")
-        apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #1a4b8c;
-                border: 1px solid #3a6fd4;
-                border-radius: 6px;
-                color: #eaf2ff;
-                padding: 6px 18px;
-                font-size: 12px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #245bb5;
-            }
-        """)
+        apply_btn.setStyleSheet(dss.PRIMARY_BTN_STYLE)
         apply_btn.clicked.connect(dialog.accept)
         apply_btn.setDefault(True)
         btn_layout.addWidget(apply_btn)
@@ -6899,46 +6396,14 @@ class N6705CDatalogUI(QWidget):
         dialog = QDialog(self)
         dialog.setWindowTitle(f"Time Offset for {tab_name}")
         dialog.setFixedWidth(380)
-        dialog.setStyleSheet("""
-            QDialog {
-                background-color: #0a1628;
-                color: #c8daf5;
-            }
-            QLabel {
-                color: #8eb0e3;
-                font-size: 12px;
-            }
-            QLineEdit {
-                background-color: #0c1a35;
-                border: 1px solid #1e3460;
-                border-radius: 6px;
-                color: #eaf2ff;
-                padding: 6px 10px;
-                font-size: 12px;
-            }
-            QLineEdit:focus {
-                border-color: #3a6fd4;
-            }
-            QPushButton {
-                background-color: #162d55;
-                border: 1px solid #1e3460;
-                border-radius: 6px;
-                color: #c8daf5;
-                padding: 6px 18px;
-                font-size: 12px;
-            }
-            QPushButton:hover {
-                background-color: #1e3460;
-                border-color: #3a6fd4;
-            }
-        """)
+        dialog.setStyleSheet(dss.dlg_style())
 
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
         title = QLabel(f"Time Offset for {tab_name}")
-        title.setStyleSheet("font-size: 14px; font-weight: bold; color: #eaf2ff;")
+        title.setStyleSheet(dss.DIALOG_TITLE_STYLE)
         layout.addWidget(title)
 
         desc = QLabel(f"Shift all waveforms of [{file_prefix}] along the time axis.\n"
@@ -6962,37 +6427,14 @@ class N6705CDatalogUI(QWidget):
         has_both_markers = self.marker_a_pos is not None and self.marker_b_pos is not None
 
         align_btn = QPushButton("Align From Markers")
-        align_btn.setIcon(self._make_svg_icon("map-pin.svg", "#ffffff", 14))
+        align_btn.setIcon(_make_svg_icon("map-pin.svg", "#ffffff", 14))
         align_btn.setToolTip("Auto-calculate offset from Marker A and Marker B positions.\n"
                              "Offset = Marker A - Marker B")
         align_btn.setEnabled(has_both_markers)
         if not has_both_markers:
-            align_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #0c1a35;
-                    border: 1px solid #1e3460;
-                    border-radius: 6px;
-                    color: #3a5070;
-                    padding: 6px 18px;
-                    font-size: 12px;
-                }
-            """)
+            align_btn.setStyleSheet(dss.ALIGN_BTN_DISABLED_STYLE)
         else:
-            align_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #1a3a2e;
-                    border: 1px solid #2a8c5a;
-                    border-radius: 6px;
-                    color: #7fffcf;
-                    padding: 6px 18px;
-                    font-size: 12px;
-                    font-weight: bold;
-                }
-                QPushButton:hover {
-                    background-color: #245b3e;
-                    border-color: #3abf7a;
-                }
-            """)
+            align_btn.setStyleSheet(dss.ALIGN_BTN_ENABLED_STYLE)
 
         if has_both_markers:
             marker_delta_ms = (self.marker_a_pos - self.marker_b_pos) * 1000.0
@@ -7000,11 +6442,11 @@ class N6705CDatalogUI(QWidget):
                 f"Marker A: {self.marker_a_pos:.6f}s    Marker B: {self.marker_b_pos:.6f}s\n"
                 f"Calculated offset: {marker_delta_ms:+.3f} ms"
             )
-            marker_info.setStyleSheet("color: #667ba0; font-size: 10px;")
+            marker_info.setStyleSheet(dss.MARKER_INFO_STYLE)
             layout.addWidget(marker_info)
         else:
             marker_info = QLabel("Set both Marker A and Marker B on the chart to enable auto-align.")
-            marker_info.setStyleSheet("color: #3a5070; font-size: 10px;")
+            marker_info.setStyleSheet(dss.MARKER_INFO_DISABLED_STYLE)
             marker_info.setWordWrap(True)
             layout.addWidget(marker_info)
 
@@ -7037,20 +6479,7 @@ class N6705CDatalogUI(QWidget):
         btn_layout.addWidget(cancel_btn)
 
         apply_btn = QPushButton("Apply")
-        apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #1a4b8c;
-                border: 1px solid #3a6fd4;
-                border-radius: 6px;
-                color: #eaf2ff;
-                padding: 6px 18px;
-                font-size: 12px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #245bb5;
-            }
-        """)
+        apply_btn.setStyleSheet(dss.PRIMARY_BTN_STYLE)
         apply_btn.clicked.connect(dialog.accept)
         apply_btn.setDefault(True)
         btn_layout.addWidget(apply_btn)
@@ -7240,8 +6669,6 @@ class N6705CDatalogUI(QWidget):
         for _, hdr in selected:
             headers.append(hdr)
         headers.append("Marker B")
-
-        from bisect import bisect_left, bisect_right
 
         num_rows = 1 + len(ch_list)
         num_cols = len(headers)
@@ -7446,8 +6873,7 @@ class N6705CDatalogUI(QWidget):
         self.label_text_edit.clear()
 
     def _parse_label_time_input(self, raw_text):
-        import re
-        s = (raw_text or "").strip().lower().replace("\u00b5", "u")
+        s = (raw_text or "").strip().lower().replace("µ", "u")
         if not s:
             return None
         m = re.fullmatch(r"\s*([+-]?\d+(?:\.\d+)?|[+-]?\.\d+)\s*([a-z]*)\s*", s)
@@ -7712,7 +7138,7 @@ class N6705CDatalogUI(QWidget):
             row_layout.addLayout(info_layout, 1)
 
             del_btn = QPushButton()
-            del_btn.setIcon(self._make_svg_icon("x-close.svg", "#3a5070", 12))
+            del_btn.setIcon(_make_svg_icon("x-close.svg", "#3a5070", 12))
             del_btn.setFixedSize(22, 22)
             del_btn.setStyleSheet(
                 "QPushButton { background: transparent; color: #3a5070; font-size: 12px; "
@@ -7749,7 +7175,6 @@ class N6705CDatalogUI(QWidget):
             else:
                 self._import_csv(path)
         except Exception as e:
-            import traceback
             tb = traceback.format_exc()
             logger.error(f"Import failed: {e}\n{tb}")
             QMessageBox.critical(
@@ -7797,9 +7222,6 @@ class N6705CDatalogUI(QWidget):
         self._refresh_plot()
 
     def _import_combined_csv(self, path, all_data, custom_labels, ch_name_renames, combined_meta):
-        import re
-        import traceback
-
         time_offsets = combined_meta.get("time_offsets", {}) or {}
         source_files = combined_meta.get("source_files", []) or []
 
@@ -7965,53 +7387,14 @@ class N6705CDatalogUI(QWidget):
         dialog = QDialog(self)
         dialog.setWindowTitle("Export Datalog")
         dialog.setFixedWidth(420)
-        dialog.setStyleSheet("""
-            QDialog {
-                background-color: #0a1628;
-                color: #c8daf5;
-            }
-            QLabel {
-                color: #8eb0e3;
-                font-size: 12px;
-            }
-            QRadioButton {
-                color: #c8daf5;
-                font-size: 12px;
-                padding: 4px 0;
-                spacing: 8px;
-            }
-            QRadioButton::indicator {
-                width: 14px;
-                height: 14px;
-            }
-            QRadioButton:disabled {
-                color: #3a5070;
-            }
-            QPushButton {
-                background-color: #162d55;
-                border: 1px solid #1e3460;
-                border-radius: 6px;
-                color: #c8daf5;
-                padding: 6px 18px;
-                font-size: 12px;
-            }
-            QPushButton:hover {
-                background-color: #1e3460;
-                border-color: #3a6fd4;
-            }
-            QPushButton:disabled {
-                background-color: #0c1a35;
-                color: #3a5070;
-                border-color: #142542;
-            }
-        """)
+        dialog.setStyleSheet(dss.dlg_style(radio=True))
 
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(10)
 
         title = QLabel("Export Datalog")
-        title.setStyleSheet("font-size: 14px; font-weight: bold; color: #eaf2ff;")
+        title.setStyleSheet(dss.DIALOG_TITLE_STYLE)
         layout.addWidget(title)
 
         desc = QLabel("Choose how to export the current dataset.")
@@ -8027,7 +7410,7 @@ class N6705CDatalogUI(QWidget):
 
         std_hint = QLabel("    Exports the full dataset in the original format.\n"
                           "    Supports .dlog (raw) and .csv (legacy layout).")
-        std_hint.setStyleSheet("color: #667ba0; font-size: 10px;")
+        std_hint.setStyleSheet(dss.HINT_TEXT_STYLE)
         layout.addWidget(std_hint)
 
         rb_combined = QRadioButton(
@@ -8039,13 +7422,13 @@ class N6705CDatalogUI(QWidget):
         cmb_hint = QLabel("    Merges all currently visible channels from different\n"
                           "    files into one CSV, sorted automatically. LABELS,\n"
                           "    rename map, time offsets and source files are kept.")
-        cmb_hint.setStyleSheet("color: #667ba0; font-size: 10px;")
+        cmb_hint.setStyleSheet(dss.HINT_TEXT_STYLE)
         layout.addWidget(cmb_hint)
 
         if visible_count == 0:
             rb_combined.setEnabled(False)
             cmb_hint.setText("    (No visible channels — enable at least one in Channel Config)")
-            cmb_hint.setStyleSheet("color: #8a3a3a; font-size: 10px;")
+            cmb_hint.setStyleSheet(dss.HINT_ERROR_STYLE)
 
         rb_marker = QRadioButton(
             f"Marker Export  (visible channels only: {visible_count})"
@@ -8055,17 +7438,17 @@ class N6705CDatalogUI(QWidget):
 
         mk_hint = QLabel("    Exports only the region between Marker A and Marker B\n"
                          "    for currently visible channels (.csv or .dlog).")
-        mk_hint.setStyleSheet("color: #667ba0; font-size: 10px;")
+        mk_hint.setStyleSheet(dss.HINT_TEXT_STYLE)
         layout.addWidget(mk_hint)
 
         if not has_markers:
             rb_marker.setEnabled(False)
             mk_hint.setText("    (Place both Marker A and Marker B to enable this option)")
-            mk_hint.setStyleSheet("color: #8a3a3a; font-size: 10px;")
+            mk_hint.setStyleSheet(dss.HINT_ERROR_STYLE)
         elif visible_count == 0:
             rb_marker.setEnabled(False)
             mk_hint.setText("    (No visible channels — enable at least one in Channel Config)")
-            mk_hint.setStyleSheet("color: #8a3a3a; font-size: 10px;")
+            mk_hint.setStyleSheet(dss.HINT_ERROR_STYLE)
         else:
             lo = min(marker_window["a"], marker_window["b"])
             hi = max(marker_window["a"], marker_window["b"])
@@ -8079,21 +7462,7 @@ class N6705CDatalogUI(QWidget):
         cancel_btn = QPushButton("Cancel")
         ok_btn = QPushButton("Continue")
         ok_btn.setDefault(True)
-        ok_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #1a3a6e;
-                border: 1px solid #3a6fd4;
-                border-radius: 6px;
-                color: #eaf2ff;
-                padding: 6px 18px;
-                font-size: 12px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #245b8e;
-                border-color: #5a8fee;
-            }
-        """)
+        ok_btn.setStyleSheet(dss.EXPORT_OK_BTN_STYLE)
         btn_layout.addWidget(cancel_btn)
         btn_layout.addWidget(ok_btn)
         layout.addLayout(btn_layout)
@@ -8130,7 +7499,6 @@ class N6705CDatalogUI(QWidget):
                     with open(path, 'wb') as f:
                         f.write(self._raw_dlog_list[0])
                     if len(self._raw_dlog_list) > 1:
-                        import os
                         base, ext = os.path.splitext(path)
                         for idx in range(1, len(self._raw_dlog_list)):
                             with open(f"{base}_unit{idx}{ext}", 'wb') as f:
@@ -8243,7 +7611,86 @@ class N6705CDatalogUI(QWidget):
                                 name_escaped = f'"{name_escaped}"'
                             f.write(f"{key_escaped},{name_escaped}\n")
         except Exception:
-            pass
+            logger.error("Standard datalog export failed", exc_info=True)
+
+    @staticmethod
+    def _csv_escape(s):
+        """CSV 字段转义：含逗号/引号/换行时加双引号包裹。"""
+        s = str(s)
+        if "," in s or '"' in s or "\n" in s:
+            return '"' + s.replace('"', '""') + '"'
+        return s
+
+    def _write_csv_meta_sections(self, f, sorted_keys, visible_keys, label_filter=None):
+        """写入 combined/marker CSV 共用的尾部元数据段。
+
+        依次输出 [TIME_OFFSETS] / [SOURCE_FILES] / [CUSTOM_LABELS] /
+        [CH_NAME_RENAMES] 四段；label_filter 可选，用于 marker 导出时
+        过滤掉落在标记区间外的自定义标签（签名为 (t_val)->bool）。
+        """
+        esc = self._csv_escape
+
+        prefixes_in_use = set()
+        for lbl in sorted_keys:
+            p = self._get_file_prefix(lbl)
+            if p:
+                prefixes_in_use.add(p)
+
+        has_b_visible = any(self._is_b_label(lbl) for lbl in sorted_keys)
+        time_offset_rows = []
+        if has_b_visible and self._b_time_offset:
+            time_offset_rows.append(("B_slot", f"{self._b_time_offset:.9f}"))
+        for prefix in sorted(prefixes_in_use):
+            off = self._file_time_offsets.get(prefix, 0.0)
+            if off:
+                time_offset_rows.append((prefix, f"{off:.9f}"))
+        if time_offset_rows:
+            f.write("\n[TIME_OFFSETS]\n")
+            f.write("scope,offset_s\n")
+            for scope, val in time_offset_rows:
+                f.write(f"{esc(scope)},{val}\n")
+
+        source_rows = []
+        for tc in self._imported_tab_configs:
+            prefix = tc.get("file_prefix", "")
+            if prefix and prefix in prefixes_in_use:
+                source_rows.append((prefix, tc.get("tab_name", "")))
+        if source_rows:
+            f.write("\n[SOURCE_FILES]\n")
+            f.write("file_prefix,source_name\n")
+            for prefix, name in source_rows:
+                f.write(f"{esc(prefix)},{esc(name)}\n")
+
+        if self.custom_labels:
+            label_rows = []
+            for lbl in self.custom_labels:
+                ch_raw = lbl.get("channel", "")
+                if ch_raw and ch_raw not in visible_keys:
+                    continue
+                t_val = lbl.get("time", 0.0)
+                if ch_raw:
+                    t_val = t_val + self._get_total_time_offset(ch_raw)
+                if label_filter is not None and not label_filter(t_val):
+                    continue
+                ch_display = _display_label(ch_raw) if ch_raw else ""
+                label_rows.append((t_val, lbl.get("text", ""), ch_display))
+            if label_rows:
+                f.write("\n[CUSTOM_LABELS]\n")
+                f.write("time,text,channel\n")
+                for t_val, text, ch_display in label_rows:
+                    f.write(f"{t_val:.6f},{esc(text)},{esc(ch_display)}\n")
+
+        if self.ch_name_renames:
+            rename_rows = []
+            for key, display_name in self.ch_name_renames.items():
+                if key not in visible_keys:
+                    continue
+                rename_rows.append((_display_label(key), display_name))
+            if rename_rows:
+                f.write("\n[CH_NAME_RENAMES]\n")
+                f.write("key,display_name\n")
+                for key_display, display_name in rename_rows:
+                    f.write(f"{esc(key_display)},{esc(display_name)}\n")
 
     def _write_combined_csv(self, path):
         """把当前可见通道数据写入 CSV（核心导出逻辑，非交互）。
@@ -8269,11 +7716,7 @@ class N6705CDatalogUI(QWidget):
                 disp = self.ch_name_renames.get(lbl) or _display_label(lbl)
                 display_names.append(disp)
 
-            def _csv_escape(s):
-                s = str(s)
-                if "," in s or '"' in s or "\n" in s:
-                    return '"' + s.replace('"', '""') + '"'
-                return s
+            esc = self._csv_escape
 
             with open(path, "w", newline="") as f:
                 f.write("[COMBINED_EXPORT]\n")
@@ -8281,8 +7724,8 @@ class N6705CDatalogUI(QWidget):
 
                 header_parts = []
                 for disp in display_names:
-                    header_parts.append(_csv_escape(f"Time_{disp}(s)"))
-                    header_parts.append(_csv_escape(disp))
+                    header_parts.append(esc(f"Time_{disp}(s)"))
+                    header_parts.append(esc(disp))
                 f.write(",".join(header_parts) + "\n")
 
                 for i in range(max_len):
@@ -8302,74 +7745,8 @@ class N6705CDatalogUI(QWidget):
                             row_parts.append("")
                     f.write(",".join(row_parts) + "\n")
 
-                prefixes_in_use = set()
-                for lbl in sorted_keys:
-                    p = self._get_file_prefix(lbl)
-                    if p:
-                        prefixes_in_use.add(p)
-
-                has_b_visible = any(self._is_b_label(lbl) for lbl in sorted_keys)
-                time_offset_rows = []
-                if has_b_visible and self._b_time_offset:
-                    time_offset_rows.append(("B_slot", f"{self._b_time_offset:.9f}"))
-                for prefix in sorted(prefixes_in_use):
-                    off = self._file_time_offsets.get(prefix, 0.0)
-                    if off:
-                        time_offset_rows.append((prefix, f"{off:.9f}"))
-                if time_offset_rows:
-                    f.write("\n[TIME_OFFSETS]\n")
-                    f.write("scope,offset_s\n")
-                    for scope, val in time_offset_rows:
-                        f.write(f"{_csv_escape(scope)},{val}\n")
-
-                source_rows = []
-                for tc in self._imported_tab_configs:
-                    prefix = tc.get("file_prefix", "")
-                    if prefix and prefix in prefixes_in_use:
-                        source_rows.append((prefix, tc.get("tab_name", "")))
-                if source_rows:
-                    f.write("\n[SOURCE_FILES]\n")
-                    f.write("file_prefix,source_name\n")
-                    for prefix, name in source_rows:
-                        f.write(f"{_csv_escape(prefix)},{_csv_escape(name)}\n")
-
-                if self.custom_labels:
-                    label_rows = []
-                    for lbl in self.custom_labels:
-                        ch_raw = lbl.get("channel", "")
-                        if ch_raw and ch_raw not in visible_keys:
-                            continue
-                        t_val = lbl.get("time", 0.0)
-                        if ch_raw:
-                            t_val = t_val + self._get_total_time_offset(ch_raw)
-                        ch_display = _display_label(ch_raw) if ch_raw else ""
-                        label_rows.append((t_val, lbl.get("text", ""), ch_display))
-                    if label_rows:
-                        f.write("\n[CUSTOM_LABELS]\n")
-                        f.write("time,text,channel\n")
-                        for t_val, text, ch_display in label_rows:
-                            f.write(
-                                f"{t_val:.6f},"
-                                f"{_csv_escape(text)},"
-                                f"{_csv_escape(ch_display)}\n"
-                            )
-
-                if self.ch_name_renames:
-                    rename_rows = []
-                    for key, display_name in self.ch_name_renames.items():
-                        if key not in visible_keys:
-                            continue
-                        rename_rows.append((_display_label(key), display_name))
-                    if rename_rows:
-                        f.write("\n[CH_NAME_RENAMES]\n")
-                        f.write("key,display_name\n")
-                        for key_display, display_name in rename_rows:
-                            f.write(
-                                f"{_csv_escape(key_display)},"
-                                f"{_csv_escape(display_name)}\n"
-                            )
+                self._write_csv_meta_sections(f, sorted_keys, visible_keys)
         except Exception:
-            import traceback
             logger.error("Combined CSV export failed:\n%s", traceback.format_exc())
             return {"ok": False, "message": "CSV 导出失败，请查看日志。"}
         bytes_written = os.path.getsize(path) if os.path.exists(path) else 0
@@ -8434,12 +7811,7 @@ class N6705CDatalogUI(QWidget):
 
         try:
             sorted_keys = sorted(visible_keys, key=_sort_key_for_label)
-
-            def _csv_escape(s):
-                s = str(s)
-                if "," in s or '"' in s or "\n" in s:
-                    return '"' + s.replace('"', '""') + '"'
-                return s
+            esc = self._csv_escape
 
             channel_rows = {}
             max_len = 0
@@ -8470,8 +7842,8 @@ class N6705CDatalogUI(QWidget):
 
                 header_parts = []
                 for disp in display_names:
-                    header_parts.append(_csv_escape(f"Time_{disp}(s)"))
-                    header_parts.append(_csv_escape(disp))
+                    header_parts.append(esc(f"Time_{disp}(s)"))
+                    header_parts.append(esc(disp))
                 f.write(",".join(header_parts) + "\n")
 
                 for i in range(max_len):
@@ -8487,76 +7859,11 @@ class N6705CDatalogUI(QWidget):
                             row_parts.append("")
                     f.write(",".join(row_parts) + "\n")
 
-                prefixes_in_use = set()
-                for lbl in sorted_keys:
-                    p = self._get_file_prefix(lbl)
-                    if p:
-                        prefixes_in_use.add(p)
-
-                has_b_visible = any(self._is_b_label(lbl) for lbl in sorted_keys)
-                time_offset_rows = []
-                if has_b_visible and self._b_time_offset:
-                    time_offset_rows.append(("B_slot", f"{self._b_time_offset:.9f}"))
-                for prefix in sorted(prefixes_in_use):
-                    off = self._file_time_offsets.get(prefix, 0.0)
-                    if off:
-                        time_offset_rows.append((prefix, f"{off:.9f}"))
-                if time_offset_rows:
-                    f.write("\n[TIME_OFFSETS]\n")
-                    f.write("scope,offset_s\n")
-                    for scope, val in time_offset_rows:
-                        f.write(f"{_csv_escape(scope)},{val}\n")
-
-                source_rows = []
-                for tc in self._imported_tab_configs:
-                    prefix = tc.get("file_prefix", "")
-                    if prefix and prefix in prefixes_in_use:
-                        source_rows.append((prefix, tc.get("tab_name", "")))
-                if source_rows:
-                    f.write("\n[SOURCE_FILES]\n")
-                    f.write("file_prefix,source_name\n")
-                    for prefix, name in source_rows:
-                        f.write(f"{_csv_escape(prefix)},{_csv_escape(name)}\n")
-
-                if self.custom_labels:
-                    label_rows = []
-                    for lbl in self.custom_labels:
-                        ch_raw = lbl.get("channel", "")
-                        if ch_raw and ch_raw not in visible_keys:
-                            continue
-                        t_val = lbl.get("time", 0.0)
-                        if ch_raw:
-                            t_val = t_val + self._get_total_time_offset(ch_raw)
-                        if not (lo <= t_val <= hi):
-                            continue
-                        ch_display = _display_label(ch_raw) if ch_raw else ""
-                        label_rows.append((t_val, lbl.get("text", ""), ch_display))
-                    if label_rows:
-                        f.write("\n[CUSTOM_LABELS]\n")
-                        f.write("time,text,channel\n")
-                        for t_val, text, ch_display in label_rows:
-                            f.write(
-                                f"{t_val:.6f},"
-                                f"{_csv_escape(text)},"
-                                f"{_csv_escape(ch_display)}\n"
-                            )
-
-                if self.ch_name_renames:
-                    rename_rows = []
-                    for key, display_name in self.ch_name_renames.items():
-                        if key not in visible_keys:
-                            continue
-                        rename_rows.append((_display_label(key), display_name))
-                    if rename_rows:
-                        f.write("\n[CH_NAME_RENAMES]\n")
-                        f.write("key,display_name\n")
-                        for key_display, display_name in rename_rows:
-                            f.write(
-                                f"{_csv_escape(key_display)},"
-                                f"{_csv_escape(display_name)}\n"
-                            )
+                self._write_csv_meta_sections(
+                    f, sorted_keys, visible_keys,
+                    label_filter=lambda t_val: lo <= t_val <= hi,
+                )
         except Exception:
-            import traceback
             logger.error("Marker region CSV export failed:\n%s", traceback.format_exc())
 
     def _export_marker_dlog(self, path, sorted_keys, lo, hi):
@@ -8590,13 +7897,11 @@ class N6705CDatalogUI(QWidget):
             with open(path, "wb") as f:
                 f.write(blobs[0])
             if len(blobs) > 1:
-                import os
                 base, ext = os.path.splitext(path)
                 for idx in range(1, len(blobs)):
                     with open(f"{base}_unit{idx}{ext}", "wb") as f:
                         f.write(blobs[idx])
         except Exception:
-            import traceback
             logger.error("Marker region dlog export failed:\n%s", traceback.format_exc())
 
 
