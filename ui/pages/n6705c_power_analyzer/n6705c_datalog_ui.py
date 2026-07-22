@@ -1242,6 +1242,9 @@ class N6705CDatalogUI(QWidget):
         if self._instrument_manager:
             self._instrument_manager.sessions_changed.connect(self._on_manager_sessions_changed)
 
+        if not (self.is_connected_a or self.is_connected_b):
+            self.instrument_toggle_btn.setChecked(True)
+            self._toggle_instrument_panel(True)
         # §5b：登记本页无专用接口的按钮（Auto Fit / 导出 / 导入）为具名 UI 动作
         self._register_ai_ui_actions()
 
