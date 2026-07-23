@@ -22,6 +22,15 @@ COL_BLUE = "#3b82f6"
 COL_BLUE_LINE = "#3b82f680"
 COL_PAIR = "#a855f7"        # 并联对偶 (BUCK↔LDO 输出短接) 连线
 COL_PAIR_LINE = "#a855f780"
+
+# 模块类型主题色: BUCK 琥珀 (与 VSYS 同色系, 直连取电); LDO 天蓝 (区别于子母线蓝)
+COL_BUCK = "#f59e0b"
+COL_BUCK_SOFT = "#f59e0b33"
+COL_BUCK_DIM = "#f59e0b59"   # disabled 时降饱和
+COL_LDO = "#38bdf8"
+COL_LDO_SOFT = "#38bdf833"
+COL_LDO_DIM = "#38bdf859"
+
 COL_TEXT = "#e5e7eb"
 COL_TEXT_MUTED = "#9ca3af"
 COL_TEXT_DIM = "#6b7280"

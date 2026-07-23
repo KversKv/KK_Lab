@@ -10,9 +10,20 @@ from PySide6.QtWidgets import (
 from ui.pages.pmu.pmu_1811.constants import (
     COL_TEXT, COL_TEXT_DIM, COL_TEXT_MUTED, COL_CARD_BG, COL_CARD_BG_SELECTED,
     COL_BORDER, COL_BORDER_HOVER, COL_BORDER_SELECTED, COL_EMERALD, COL_LED_OFF,
+    COL_BUCK, COL_BUCK_SOFT, COL_BUCK_DIM, COL_LDO, COL_LDO_SOFT, COL_LDO_DIM,
     FONT_MONO, CARD_W, CARD_H,
 )
 from ui.pages.pmu.pmu_1811.models import PmuModule
+
+
+def type_accent(mod: PmuModule) -> tuple[str, str, str]:
+    """返回模块类型主题色三元组 (accent, accent_soft, accent_dim)。
+
+    BUCK → 琥珀; LDO → 天蓝。用于 LED / 电压标签 / 选中边框 / 阴影。
+    """
+    if mod.type == "BUCK":
+        return COL_BUCK, COL_BUCK_SOFT, COL_BUCK_DIM
+    return COL_LDO, COL_LDO_SOFT, COL_LDO_DIM
 
 
 class ModuleCard(QFrame):
@@ -33,7 +44,8 @@ class ModuleCard(QFrame):
         self._shadow = QGraphicsDropShadowEffect(self)
         self._shadow.setBlurRadius(0)
         self._shadow.setOffset(0, 0)
-        self._shadow.setColor(QColor(COL_BORDER_SELECTED))
+        accent, _, _ = type_accent(mod)
+        self._shadow.setColor(QColor(accent))
         self._shadow.setEnabled(True)
         self.setGraphicsEffect(self._shadow)
 
@@ -108,28 +120,31 @@ class ModuleCard(QFrame):
 
     def set_selected(self, selected: bool):
         self._selected = selected
+        accent, _, _ = type_accent(self._mod)
         if selected:
             self._shadow.setBlurRadius(18)
+            self._shadow.setColor(QColor(accent))
         else:
             self._shadow.setBlurRadius(0)
         self.refresh()
 
     def refresh(self):
+        accent, _, accent_dim = type_accent(self._mod)
         self.volt_lbl.setText(f"{self._mod.voltage:.3f} V")
-        led_col = COL_EMERALD if self._mod.enabled else COL_LED_OFF
+        # LED: 使能 → 类型主色; 禁用 → 灰; 选中时使能 LED 略亮 (主色)
+        led_col = accent if self._mod.enabled else COL_LED_OFF
         self.led.setStyleSheet(
             f"background:{led_col}; border-radius:5px; border:none;"
         )
+        # 状态色: enabled → 类型色; disabled → 类型色降饱和 (保留类型识别)
         if self._mod.enabled:
-            fg, bg, border = COL_TEXT, COL_CARD_BG, COL_BORDER
-            if self._selected:
-                fg, bg, border = COL_TEXT, COL_CARD_BG_SELECTED, COL_BORDER_SELECTED
+            fg = COL_TEXT
+            border = accent if self._selected else COL_BORDER
+            bg = COL_CARD_BG_SELECTED if self._selected else COL_CARD_BG
         else:
-            base_bg = COL_CARD_BG_SELECTED if self._selected else COL_CARD_BG
-            base_border = COL_BORDER_SELECTED if self._selected else COL_BORDER
-            fg, bg, border = COL_TEXT_DIM, base_bg, base_border
-        # disabled 整体降透明度：用半透明背景模拟
-        if not self._mod.enabled:
+            fg = COL_TEXT_DIM
+            border = accent_dim if self._selected else COL_BORDER
+            # disabled 选中: 半透明底 + 类型色暗边; 未选中: 半透明底 + 灰边
             bg = "#11182799"
         self.setStyleSheet(
             f"QFrame#moduleCard {{ background:{bg}; border:1px solid {border};"
@@ -140,13 +155,15 @@ class ModuleCard(QFrame):
             f"QPushButton#cardStepBtn:hover {{ background:{COL_BORDER_HOVER}; }}"
             f"QPushButton#cardGearBtn {{ background:{COL_BORDER}; color:{COL_TEXT_MUTED};"
             f" border:none; border-radius:6px; font-size:13px; }}"
-            f"QPushButton#cardGearBtn:hover {{ background:{COL_BORDER_HOVER}; color:{COL_EMERALD}; }}"
+            f"QPushButton#cardGearBtn:hover {{ background:{COL_BORDER_HOVER}; color:{accent}; }}"
         )
         self.name_lbl.setStyleSheet(
             f"color:{fg}; font-family:{FONT_MONO}; font-size:12px; font-weight:600; background:transparent;"
         )
+        # 电压标签: 使能 → 类型主色; 禁用 → 类型色暗调 (区别于全灰, 保留类型信息)
+        volt_col = accent if self._mod.enabled else accent_dim
         self.volt_lbl.setStyleSheet(
-            f"color:{COL_EMERALD if self._mod.enabled else COL_TEXT_DIM};"
+            f"color:{volt_col};"
             f" font-family:{FONT_MONO}; font-size:12px; font-weight:700; background:transparent;"
         )
 

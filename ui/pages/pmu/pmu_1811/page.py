@@ -254,7 +254,8 @@ class Pmu1811UI(QWidget):
             if mod is None:
                 continue
             mod.enabled = st.enabled
-            mod.mode = st.mode if st.mode in ("Normal", "LP") else "Normal"
+            # 按模块允许的模式校验: BUCK 支持 Normal/LP/ULP, LDO 支持 Normal/LP
+            mod.mode = st.mode if st.mode in mod.modes else "Normal"
             if st.voltage is not None:
                 mod.voltage = st.voltage
             if getattr(st, "voltage_dsleep", None) is not None:

@@ -227,6 +227,9 @@ class PropertyPanel(QFrame):
         self._syncing = True
         self.title_lbl.setText(mod.name)
         self.type_lbl.setText(f"Type: {mod.type}")
+        self.type_lbl.setStyleSheet(
+            f"color:{COL_TEXT_MUTED}; font-family:{FONT_MONO}; font-size:11px;"
+        )
         self.toggle.set_checked(mod.enabled)
         self._rebuild_mode_buttons()
 
