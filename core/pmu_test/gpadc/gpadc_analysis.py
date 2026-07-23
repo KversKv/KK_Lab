@@ -5,6 +5,26 @@ GPADC 测试纯算法/解析函数（无 PySide6，可 pytest 直测）。
 从 ui/pages/pmu_test/gpadc_test_ui.py 平移而来，行为零变更。
 """
 
+import re
+
+# 匹配 UART 日志中的 GPADC raw/volt 行，如：
+#   gpadc_ch1_irq_cb: raw/volt=2844/1248 sample_time=575us
+_GPADC_RAW_VOLT_RE = re.compile(r"raw/volt=\s*(\d+)\s*/\s*(\d+)")
+
+
+def parse_uart_gpadc_raw(line, keyword=""):
+    """从一行 UART 日志提取 GPADC raw 值。
+
+    keyword 非空时，行内必须先包含该关键字；命中后按 ``raw/volt=<raw>/<volt>``
+    提取 raw 整数返回，未命中或格式不匹配返回 None。
+    """
+    if keyword and keyword not in line:
+        return None
+    m = _GPADC_RAW_VOLT_RE.search(line)
+    if m is None:
+        return None
+    return int(m.group(1))
+
 
 def compute_reg_stats(raw_data, return_raw=False):
     sorted_data = sorted(raw_data)
