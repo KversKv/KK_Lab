@@ -204,6 +204,12 @@ I2C_DEVICE_ADDR = 0x17
 #: I2C 位宽 (10 位寄存器地址 + 16 位数据)
 I2C_WIDTH = 10
 
+#: Chip ID 寄存器地址与期望值 (用于 Check 时校验 DUT 是否为 1811)
+CHIP_ID_REG_ADDR_0 = 0x0000
+CHIP_ID_REG_ADDR_1 = 0x0001
+CHIP_ID_EXPECTED_0 = 0x18F0
+CHIP_ID_EXPECTED_1 = 0x1100
+
 
 # ---------------------------------------------------------------------------
 # LDO 电压查找表 (从 BES1811 LDO输出电压范围.xlsx 提取)

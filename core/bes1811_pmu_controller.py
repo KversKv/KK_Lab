@@ -16,6 +16,8 @@ from chips.bes1811_pmu import (
     LDO_REG_MAPS, LDO_IDS,
     BUCK_REG_MAPS, BUCK_IDS,
     I2C_DEVICE_ADDR, I2C_WIDTH,
+    CHIP_ID_REG_ADDR_0, CHIP_ID_REG_ADDR_1,
+    CHIP_ID_EXPECTED_0, CHIP_ID_EXPECTED_1,
     vbit_to_voltage, voltage_to_vbit, get_voltage_range, get_reg_map,
     is_buck,
 )
@@ -131,21 +133,53 @@ class Bes1811PmuController:
             except Exception:
                 pass
             self._i2c = None
-            logger.info("1811 PMU: I2C 已断开")
-            self._emit_log("INFO", "I2C 已断开")
+            logger.debug("1811 PMU: I2C 已断开")
 
     @property
     def is_connected(self) -> bool:
         return self._i2c is not None and self._i2c.initialized
+
+    # ---- Chip ID 校验 ----
+    def verify_chip_id(self) -> bool:
+        """读取 Chip ID 寄存器 (0x0000 / 0x0001) 校验 DUT 是否为 1811。
+
+        期望值: 0x0000 == 0x18F0 且 0x0001 == 0x1100。
+        返回 True 表示校验通过; False 表示 I2C 不正确或 DUT 不是 1811。
+        """
+        self._emit_log(
+            "STEP",
+            f"校验 Chip ID  (@0x{CHIP_ID_REG_ADDR_0:04X}==0x{CHIP_ID_EXPECTED_0:04X}, "
+            f"@0x{CHIP_ID_REG_ADDR_1:04X}==0x{CHIP_ID_EXPECTED_1:04X})",
+        )
+        val0 = self.read_register(CHIP_ID_REG_ADDR_0)
+        val1 = self.read_register(CHIP_ID_REG_ADDR_1)
+        if val0 == CHIP_ID_EXPECTED_0 and val1 == CHIP_ID_EXPECTED_1:
+            self._emit_log(
+                "PASS",
+                f"Chip ID 校验通过: 0x{val0:04X} / 0x{val1:04X} (DUT = 1811)",
+            )
+            logger.info("1811 PMU: Chip ID 校验通过 (0x%04X/0x%04X)", val0, val1)
+            return True
+        self._emit_log(
+            "ERROR",
+            f"Chip ID 校验失败: 读 0x{val0:04X}/0x{val1:04X}, "
+            f"期望 0x{CHIP_ID_EXPECTED_0:04X}/0x{CHIP_ID_EXPECTED_1:04X}"
+            f" (I2C 不正确或 DUT 不是 1811)",
+        )
+        logger.error(
+            "1811 PMU: Chip ID 校验失败 (读 0x%04X/0x%04X, 期望 0x%04X/0x%04X)",
+            val0, val1, CHIP_ID_EXPECTED_0, CHIP_ID_EXPECTED_1,
+        )
+        return False
 
     # ---- 底层寄存器读写 ----
     def read_register(self, addr: int) -> int:
         """读取 16 位寄存器。"""
         self._ensure_connected()
         val = int(self._i2c.read(I2C_DEVICE_ADDR, addr, I2C_WIDTH))
-        self._emit_log(
-            "INFO",
-            f"I2C 读  dev=0x{I2C_DEVICE_ADDR:02X}  @0x{addr:03X} → 0x{val:04X}",
+        logger.debug(
+            "1811 PMU: I2C 读 dev=0x%02X @0x%03X → 0x%04X",
+            I2C_DEVICE_ADDR, addr, val,
         )
         return val
 
@@ -153,9 +187,9 @@ class Bes1811PmuController:
         """整寄存器写。"""
         self._ensure_connected()
         self._i2c.write(I2C_DEVICE_ADDR, addr, value, I2C_WIDTH)
-        self._emit_log(
-            "INFO",
-            f"I2C 写  dev=0x{I2C_DEVICE_ADDR:02X}  @0x{addr:03X} ← 0x{value:04X}  bits[15:0]",
+        logger.debug(
+            "1811 PMU: I2C 写 dev=0x%02X @0x%03X ← 0x%04X bits[15:0]",
+            I2C_DEVICE_ADDR, addr, value,
         )
 
     def write_field(self, addr: int, high: int, low: int, value: int):
@@ -163,10 +197,9 @@ class Bes1811PmuController:
         self._ensure_connected()
         self._i2c.write(I2C_DEVICE_ADDR, addr, value, I2C_WIDTH, high, low)
         width = high - low + 1
-        self._emit_log(
-            "INFO",
-            f"I2C 写  dev=0x{I2C_DEVICE_ADDR:02X}  @0x{addr:03X} ← 0x{value:0{width}X}"
-            f"  bits[{high}:{low}]",
+        logger.debug(
+            "1811 PMU: I2C 写 dev=0x%02X @0x%03X ← 0x%0*X bits[%d:%d]",
+            I2C_DEVICE_ADDR, addr, width, value, high, low,
         )
 
     def _ensure_connected(self):
@@ -592,6 +625,62 @@ class Bes1811PmuController:
         )
         self.write_field(rm.bg_en_dr.reg_addr, rm.bg_en_dr.high_bit, rm.bg_en_dr.low_bit, 0)
         self.write_field(rm.bg_en.reg_addr, rm.bg_en.high_bit, rm.bg_en.low_bit, 0)
+
+    # ---- PMU 初始化 ----
+    #: 初始化序列: ("W", addr, value) 整寄存器写 / ("B", addr, high, low, value) 位域写
+    _INIT_SEQUENCE = [
+        # //res_sel_dr=1
+        ("B", 0x0121, 15, 15, 0x1),
+        ("W", 0x02F0, 0xFDFF),
+        ("W", 0x02F1, 0x001F),
+        # //pulldown_dr=1
+        ("W", 0x02B3, 0x3FFF),
+        # //LDOs switch to LP_MODE
+        ("B", 0x000D, 15, 14, 0x3),   # LDO_01
+        ("B", 0x0007, 13, 11, 0x3),   # LDO_02
+        ("B", 0x000A, 14, 13, 0x3),   # LDO_03
+        ("B", 0x0008, 13, 12, 0x3),   # LDO_05
+        ("B", 0x0009, 14, 13, 0x3),   # LDO_06
+        ("B", 0x024E, 13, 12, 0x3),   # LDO_07
+        ("B", 0x011D, 1, 0, 0x3),     # LDO_08
+        ("B", 0x0067, 11, 10, 0x3),  # LDO_09
+        ("B", 0x0247, 13, 12, 0x3),  # LDO_10
+        ("B", 0x0066, 11, 10, 0x3),  # LDO_11
+        ("B", 0x0210, 13, 12, 0x3),  # LDO_12
+        ("B", 0x000C, 14, 13, 0x3),  # LDO_13
+        ("B", 0x0202, 13, 12, 0x3),  # LDO_14
+        ("B", 0x020A, 13, 12, 0x3),  # LDO_15
+        # //switch to small BG
+        ("B", 0x0003, 9, 8, 0x2),
+        ("B", 0x0094, 5, 4, 0x1),
+        ("B", 0x0003, 14, 12, 0x7),
+        ("B", 0x0003, 11, 10, 0x2),
+        ("B", 0x0003, 7, 6, 0x2),
+        ("B", 0x0050, 13, 12, 0x2),
+        ("B", 0x0003, 1, 0, 0x2),
+        ("B", 0x0003, 5, 4, 0x2),
+        # //lp_bias
+        ("B", 0x0120, 8, 6, 0x2),
+        ("B", 0x011F, 6, 4, 0x2),
+        ("B", 0x011F, 3, 1, 0x1),
+    ]
+
+    def init_pmu(self):
+        """执行 PMU 初始化序列 (Check 流程末尾调用)。
+
+        依次执行 _INIT_SEQUENCE 中的 WRITE / WRITE_BITS 操作:
+        res_sel_dr=1 → pulldown_dr=1 → LDOs 切 LP_MODE → 切 small BG → lp_bias。
+        """
+        self._emit_log("STEP", "开始 PMU 初始化序列")
+        for op in self._INIT_SEQUENCE:
+            if op[0] == "W":
+                _, addr, value = op
+                self.write_register(addr, value)
+            else:  # "B"
+                _, addr, high, low, value = op
+                self.write_field(addr, high, low, value)
+        self._emit_log("PASS", "PMU 初始化序列完成")
+        logger.info("1811 PMU: PMU 初始化序列完成")
 
     # ---- 内部工具 ----
     def _read_field(self, bf: BitField) -> int:

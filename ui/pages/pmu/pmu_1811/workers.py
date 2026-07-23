@@ -40,8 +40,14 @@ class LdoReadAllWorker(QObject):
             if not ctrl.connect():
                 self.error.emit("I2C 接口初始化失败 (DLL 加载或设备打开失败)")
                 return
-            # 同时读取全部 LDO + BUCK 状态, 合并返回 {id: LdoState|BuckState}
+            # 1) 校验 Chip ID: 0x0000==0x18F0 且 0x0001==0x1100 才认为是 1811
+            if not ctrl.verify_chip_id():
+                self.error.emit("I2C 不正确或 DUT 不是 1811")
+                return
+            # 2) 读取全部 LDO + BUCK 状态, 合并返回 {id: LdoState|BuckState}
             states = ctrl.read_all_modules()
+            # 3) PMU 初始化序列 (Check 流程末尾)
+            ctrl.init_pmu()
             self.finished.emit(states)
         except Exception as e:
             logger.error("1811 PMU 读取失败: %s", e, exc_info=True)
