@@ -1,0 +1,89 @@
+# ui/pages/pmu/pmu_1811 — 局部 AI 协作指引
+
+> 就近生效，继承根 [AGENTS.md](../../../../AGENTS.md) 与 [ui/pages/AGENTS.md](../../AGENTS.md) 硬红线。本文件由 README + RULES 整合而来，是 1811 PMU 页的单一事实源。
+
+## 加载指针（AI 按需拉取）
+
+- **Qt / UI 通用规范** → @see [docs/ai/01_CONVENTIONS.md §6](../../../../docs/ai/01_CONVENTIONS.md)
+- **I2C 底层 / DLL** → @see [docs/ai/03_GOTCHAS.md §11](../../../../docs/ai/03_GOTCHAS.md)
+- **寄存器数据源** → `ui/pages/pmu/pmu_1811/data/1811 pmu inf reg.csv`、`BES1811 LDO输出电压范围.csv`
+- **芯片寄存器表** → [chips/bes1811_pmu.py](../../../../chips/bes1811_pmu.py)
+- **UI 设计稿** → `docs/NewPlan/1811_Tool_UI.md`
+
+## 本模块职责与边界
+
+图形化配置 BES1811 PMIC：经 USB 转 I2C（**设备地址 0x17，10 位寄存器地址，16 位数据**）控制各 LDO / BUCK / SW 的使能、模式与输出电压。
+
+**三层分离**（取代早期单文件实现）：
+
+| 层 | 文件 | 职责 | 依赖方向 |
+|---|---|---|---|
+| 算法层 | `models.py` | `PmuModule` / `LayoutRow` / 拓扑布局 / 默认状态工厂（从 chips 寄存器表构建） | ← `chips/` |
+| 驱动中间层 | `workers.py` | QThread Worker，桥接 UI 与 `core/bes1811_pmu_controller.py`；**每次操作自建/销毁 I2C 接口**，避免跨线程共享 | ← `core/` |
+| UI 层 | `page.py` + `widgets/` | 纯 Qt 控件与页面编排，不直接访问硬件 | ← `models` / `workers` |
+
+铁律：UI 禁阻塞 IO 必须走 `workers.py` 的 QThread；`workers.py` 不持 Qt Widget 引用只发 Signal；`models.py` 不依赖 Qt。
+
+## 接口契约（对外不可破坏）
+
+- **对外导出**：`Pmu1811UI`（`__init__.py`）。主窗口 `Pmu1811UI()` 实例化嵌入；独立预览 `python -m ui.pages.pmu.pmu_1811.page`。
+- **Worker 四件套**（`workers.py`）：`LdoReadAllWorker` / `LdoReadOneWorker` / `LdoWriteWorker` / `PairWriteWorker`；信号统一 `finished/error/log`。
+- **三种写入动作**（`LdoWriteWorker.action`）：`"enable"` / `"mode"` / `"voltage"`。
+- **打包**：`spec/kk_lab.spec` 的 `hiddenimports` 已注册全部子模块（含 `widgets/*`）。
+
+## 核心数据模型
+
+- **`PmuModule`**：单模块运行时状态。字段 `id / type(LDO|BUCK|SW) / enabled / mode / voltage / min|max_voltage / step / input / controllable / rdson(SW) / output(SW)`。属性 `modes` / `reg_map` / `sw_reg_map`。
+- **`LayoutRow`**：画布布局行 `kind="module"|"bus"`，`level=1` 直连 VSYS（左列 `CARD_X_L1`）、`level=2` 二级支路（右列 `CARD_X_L2`）；`pair` 为并联对偶伙伴。
+- **`_LAYOUT_ROWS`**：22 模块 + 2 子母线（`vdd_l14_15` / `vdd_l5`）+ 7 个 SW；**4 组并联对偶**（输出短接、互斥使能）：`BUCK_01↔LDO_01`、`BUCK_02↔LDO_02`、`BUCK_03↔LDO_03`、`BUCK_06↔LDO_06`（跨列对偶）。对偶表 `models._PAIRS`，查询 `get_pair_partner(id)`。
+- **`_default_modules()`**：`is_ldo_controllable` → `get_voltage_range` → `get_ldo_step` + `snap_range_to_step` 对齐；默认电压 BUCK=1.0V、LDO=范围中点偏下并 `align_to_step`。
+
+## 局部约定
+
+### 使能/模式/电压语义（核心，勿踩坑）
+
+- **LDO/BUCK 使能判断读 `pu_status` 状态位**（`dig_ldo_XX_pu` / `dig_buck_XX_pu`），**不读配置位 `pu`**——`pu=1` 但 `pu_dr=0` 时硬件未必真开。`pu_status` 才是真实反馈。
+- **SW 无独立状态位**，直接读 `en` 配置位（`en_dr=0` 时 `en` 不生效，语义后续讨论）。
+- **写入两步固定顺序**：先置驱动位 `pu_dr=1`（或 `en_dr=1` / `lp_dr=1`）→ 再写配置位。
+- **LDO 电压 3 步**：查表取 vbit → 写 `vbit_normal` → 若 `res_sel_dr==0` 置 1。
+- **BUCK 电压 5 步**（专用）：`bg_en_dr=1,bg_en=1` + delay 1ms → `sw_en=1` → 写 vbit + `res_sel_dr=1` → `sw_en=0` + delay → `bg_en=0`。前后序列由 `_buck_voltage_pre_seq` / `_buck_voltage_post_seq` 实现，LDO 无此字段会自动跳过。
+- **三档电压**：Normal / Deep Sleep / RC 分别对应 `vbit_normal` / `vbit_dsleep` / `vbit_rc`，共用同一查找表，写入流程一致。
+- **vbit 索引进制**：LDO = **十六进制**（`LDO_VOLTAGE_TABLES` 索引为 hex，源 xlsx 含 A-F）；BUCK = **十进制**（`BUCK_VOLTAGE_TABLES` 索引为 dec，256 档连续）。
+- **写入后 UI 立即更新本地状态是"期望状态"**；真实状态需 Check 重读 `pu_status` 才反映。这是 `enabled` 在写入/读取两路径都被赋值的原因。
+
+### 并联对偶互锁
+
+开启某模块且存在对偶 → 走 `PairWriteWorker`，**一次 I2C 会话内先开自己、再关对偶**；关闭走普通 `LdoWriteWorker` 不影响对偶。未连接时仅本地更新（`_apply_local_disable`）。
+
+### 不支持 I2C 的模块
+
+- `LDO_VMIC1` / `LDO_VMIC2` 不在 `LDO_REG_MAPS`；`BUCK_01~06` 当前也未在映射表（`controllable=False`，controller 尚未实现 BUCK 读写）。
+- UI 仍渲染卡片但 `_start_write` 直接 return；属性面板显示 `Address: — (无寄存器映射)`。
+
+### BUCK 寄存器特例
+
+- `BUCK_01` 的 `vbit_normal` / `vbit_dsleep` 共用 0x046（低/高字节）；`vbit_rc` 在 0x074（RWS 写后自清）。
+- `BUCK_06` 的 `vbit_dsleep` 地址 0x35C 跳过 0x35B。
+- 状态位 0x05F 与 LDO 共用：bit[0..7]=LDO_01~08、bit[8..13]=BUCK_01~06；`res_sel_dr` 共用 0x2F0（BUCK 占 bit[0..5]）。
+- BUCK 模式切换（Normal/LP/ULP）**待补全**；DCDC **规划中**。
+
+### 画布绘制
+
+- 几何常量集中在 `constants.py`（`VSYS_X` / `CARD_X_L1|L2|L3` / `SUB_BUS_X` / `SW_BUS_X` / 卡片与药丸尺寸）。
+- 配色独立全局 theme：琥珀 `#f59e0b`(VSYS)、蓝 `#3b82f6`(子母线)、紫 `#a855f7`(对偶短接)、翡翠绿 `#10B981`(使能)、玫红 `#ec4899`(SW)。
+- SW 由 `SwitchWidget` 画拟物开关（非卡片）：输入引线、左右玫红端点、动态连杆（闭合=绿水平/开路=灰上倾28°），单击切换。
+
+## 局部坑点
+
+- **写入保护**（`_start_write`）：`controllable==False` 直接返回；`_i2c_connected==False` 仅本地更新；`_worker_thread is not None` 丢弃并 WARN（上次未完成）。Worker 完成 `_cleanup_worker` 必须 `thread.quit() + wait()`。
+- **每次操作自建/销毁 controller**：不持持久 I2C 连接；`finally` 保证 `ctrl.disconnect()`。
+- **首次显示自动 Check**：`showEvent` 用 `QTimer.singleShot(0, self._on_check)` 等 UI 布局完成后再起 `LdoReadAllWorker`。
+- **独立运行**：顶部已注入 `sys.path`（兼容 `python ui\pages\pmu\pmu_1811\page.py` 直接运行，见 03§22 同款模式）。
+
+## 扩展指引
+
+- **新增 LDO/BUCK**：`chips/bes1811_pmu.py` 加寄存器映射 → `models._LAYOUT_ROWS` 加 `LayoutRow` → `_default_modules()` 自动构建。
+- **新增操作动作**：`core/bes1811_pmu_controller.py` 实现底层 → `workers.py` 复用/新增 Worker → `page.py` 加触发点+回调。
+- **调整画布布局**：改 `models._LAYOUT_ROWS` 行序与 `level` / `pair`；几何改 `constants.py`。
+
+> 历史参考：原始 README.md / RULES.md 已整合进本文件；详细位域地址表（LDO 9 域 / BUCK 11 域 / SW 2 域一览）见 `data/` CSV 与 `chips/bes1811_pmu.py`。

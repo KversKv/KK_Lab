@@ -373,6 +373,7 @@ ui/
 ├── pages/                   # 功能页面 (按仪器/功能分包)
 │   ├── AGENTS.md                # ui/pages 局部 AI 协作指引（就近加载）
 │   ├── n6705c_power_analyzer/   # 电源分析仪相关页面
+│   │   ├── AGENTS.md                 # 页级局部 AI 协作指引
 │   │   ├── n6705c_top.py             # N6705C 连接状态管理 (支持双台仪器 A/B)
 │   │   ├── n6705c_analyser_ui.py     # N6705C 电源分析仪控制界面 (主壳：状态机/连接/通道切换/装配)
 │   │   ├── widgets.py                # 自定义控件与常量 (SlideToggle/ChannelTabBar/颜色 token/样式辅助)
@@ -384,11 +385,23 @@ ui/
 │   │   └── n6705c_datalog_ui_usage.md         # Datalog 功能使用说明
 │   │
 │   ├── oscilloscope/            # 示波器相关页面
+│   │   ├── AGENTS.md                 # 页级局部 AI 协作指引
 │   │   ├── mso64b_top.py             # MSO64B 连接状态管理
 │   │   └── oscilloscope_base_ui.py   # 示波器统一界面 (自动识别连接的仪器型号,
 │   │                                 # 支持截图/反相/测量/触发/通道设置等)
 │   │
+│   ├── pmu/                     # PMU 芯片控制页 (1811 / 1860)
+│   │   ├── AGENTS.md                 # pmu 容器局部 AI 协作指引
+│   │   ├── pmu_1860_ui.py            # PMU 1860 占位页面
+│   │   └── pmu_1811/                 # PMU 1811 图形化配置 (LDO/BUCK/SW 三层分离)
+│   │       ├── AGENTS.md             # pmu_1811 页级指引 (README+RULES 已整合)
+│   │       ├── models.py             # 算法层: 模块模型/拓扑布局/默认状态工厂
+│   │       ├── workers.py            # 驱动中间层: I2C 异步 Worker (QThread)
+│   │       ├── page.py               # UI 层入口 Pmu1811UI
+│   │       └── widgets/              # UI 层控件 (卡片/开关/画布/属性面板/右键菜单)
+│   │
 │   ├── pmu_test/                # PMU 测试相关页面
+│   │   ├── AGENTS.md                 # 页级局部 AI 协作指引
 │   │   ├── pmu_test_ui.py            # PMU 测试主入口界面 (Tab 页整合各子测试)
 │   │   ├── pmu_dcdc_efficiency.py    # DCDC 效率测试界面
 │   │   ├── pmu_isGain_ui.py          # Is Gain 测试界面
@@ -398,6 +411,7 @@ ui/
 │   │   └── clk_test_ui.py            # 时钟测试界面
 │   │
 │   ├── charger_test/            # Charger 充电器测试相关页面
+│   │   ├── AGENTS.md                 # 页级局部 AI 协作指引
 │   │   ├── charger_test_ui.py        # Charger 测试主入口界面 (Tab 页整合各子测试)
 │   │   ├── config_traverse_test.py   # 充电配置遍历测试界面
 │   │   ├── status_register_test.py   # 状态寄存器测试界面
@@ -405,15 +419,18 @@ ui/
 │   │   └── regulation_voltage_ui.py  # 调节电压测试界面
 │   │
 │   ├── module_test/             # Module Test（LDO/DCDC 完整可测测试项）页面
+│   │   ├── AGENTS.md                 # 页级局部 AI 协作指引
 │   │   ├── module_test_ui.py         # 顶层容器（隐藏 tab，切换 LDO/DCDC）
 │   │   ├── ldo_test_ui.py            # LDO 子页面
 │   │   ├── dcdc_test_ui.py           # DCDC 子页面
 │   │   └── _base_subpage.py          # 子页面基类（UI + AI 契约 + UIActionSpec）
 │   │
 │   ├── chamber/                 # 温箱相关页面
+│   │   ├── AGENTS.md                 # 页级局部 AI 协作指引
 │   │   └── chamber_control_ui.py     # 通用温箱控制界面
 │   │
 │   ├── consumption_test/        # 功耗测试页面
+│   │   ├── AGENTS.md                 # 页级局部 AI 协作指引
 │   │   ├── consumption_test.py       # 功耗测试主界面 (委托 controller + mixin)
 │   │   ├── consumption_test_wrapper.py # 功耗测试封装层 (对外统一入口)
 │   │   ├── high_low_temp_test_ui.py  # 高低温联动功耗测试界面
@@ -422,9 +439,11 @@ ui/
 │   │   └── view_results.py           # 结果卡片视图 mixin
 │   │
 │   ├── vmin_hunter/             # VminHunter 最低工作电压探底页面
+│   │   ├── AGENTS.md                 # 页级局部 AI 协作指引
 │   │   └── vmin_hunter_ui.py         # Vmin 探底主界面 (连接 / Test Config / Channel Config / 结果表)
 │   │
 │   └── orchestrator/             # 自定义测试序列（节点编辑器）
+│       ├── AGENTS.md                 # 页级局部 AI 协作指引
 │       ├── orchestrator_ui.py         # 三栏布局主界面 (节点面板 / 画布 / 属性面板)
 │       ├── instrument_connection_panel.py # 仪器连接区面板 (连接状态 / meta / MCU IO)
 │       ├── node_palette.py           # 左侧节点面板 (可折叠分组)

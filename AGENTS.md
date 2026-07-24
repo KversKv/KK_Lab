@@ -62,7 +62,7 @@ main.py → ui/ ←→ core/ → instruments/ → lib/
 
 | 子模块路径 | 职责 | 局部 AGENTS.md | 深度专题 @see |
 |---|---|---|---|
-| `ui/pages/` ✅ | 各功能页（PMU/Charger/功耗/波形…） | **有**（第一批）；页级下沉待第二批 | 06_PAGE_GUIDE · 01_CONVENTIONS§6 |
+| `ui/pages/` ✅ | 各功能页（PMU/Charger/功耗/波形…） | **有**；页级 AGENTS 已铺全部子页 | 06_PAGE_GUIDE · 01_CONVENTIONS§6 |
 | `ui/modules/` ✅ | 可复用 UI 控件/连接 Mixin | **有**（第一批） | 06_PAGE_GUIDE · 01_CONVENTIONS§6 |
 | `ui/widgets/` | 通用控件（combobox/sidebar/plot…） | 无 · 第二批 | 01_CONVENTIONS§6 · 03_GOTCHAS |
 | `core/` ✅ | 业务逻辑 / 测试流程编排 | **有**（第一批） | 07_TEST_GUIDE · 04_ARCHITECTURE |

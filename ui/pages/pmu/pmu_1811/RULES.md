@@ -1,5 +1,7 @@
 # 1811 PMU 操作规则集合
 
+> 📌 本文已整合迁移至 [AGENTS.md](./AGENTS.md)（单一事实源）。本文件保留详细位域地址表供人类查阅；AI 协作请读 AGENTS.md。
+
 本文件汇总 1811 PMIC 各类模块（LDO / DCDC / BUCK 等）的实际硬件操作语义：使能状态如何判断、如何打开/关闭一个模块、如何切换模式与电压。所有底层操作由 `core/bes1811_pmu_controller.py::Bes1811PmuController` 实现，配置位定义在 `chips/bes1811_pmu.py`。
 
 > 配套阅读：[README.md](./README.md) — 模块整体架构与分层。

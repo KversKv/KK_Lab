@@ -26,6 +26,8 @@
 ## 局部约定
 
 - **分包归属**：按仪器 / 功能放 `chamber/`、`charger_test/`、`consumption_test/`、`module_test/`、`n6705c_power_analyzer/`、`orchestrator/`、`oscilloscope/`、`pmu/`、`pmu_test/`、`vmin_hunter/`；新大类先建子包加 `__init__.py`。
+- **页级就近指引**：以下子页均有自己的 `AGENTS.md`（就近继承本文件，下层覆盖上层），改动前先读对应子页指引——
+  `pmu/pmu_1811`（独立完整模块，README+RULES 已整合）、`pmu/`（容器）、`pmu_test/`、`charger_test/`、`module_test/`、`n6705c_power_analyzer/`、`orchestrator/`、`oscilloscope/`、`consumption_test/`、`chamber/`、`vmin_hunter/`。
 - **样式**：复用 [ui/styles/](../styles/) 常量与 `get_page_base_qss()`；禁止在页面里散写大段 `setStyleSheet`。
 - **弹窗**：所有 `QDialog` / 静态对话框必须显式传 `parent=self`；OK/Cancel 显式二元化 `default/autoDefault`。
 - **数值控件 label**：物理量必须 `名称 (单位)`；多单位输入要维护"上次单位"记忆并动态更新 label。
