@@ -1,22 +1,16 @@
 # KK\_Lab - AI Agents 协作指引（通用入口）
-
-> 📎 本文件是 [CLAUDE.md](./CLAUDE.md) 的镜像入口，用于兼容非 Claude 系 AI 工具（例如 OpenAI Codex、Cursor、Continue、Cline、Aider 等）。
->
-> **所有内容以** **[CLAUDE.md](./CLAUDE.md)** **为准**。如果该文件与 CLAUDE.md 出现冲突，请优先阅读 CLAUDE.md。
-
 ***
 
 ## 快速阅读清单（Agent 必读）
 
-1. 🔴 [CLAUDE.md](./CLAUDE.md) —— 主入口与 CRITICAL 规则
-2. 🔴 [docs/ai/09\_WORKFLOW.md](./docs/ai/09_WORKFLOW.md) —— 任务 SOP（调用 / 执行 / 回归）
-3. 🔴 [docs/ai/03\_GOTCHAS.md](./docs/ai/03_GOTCHAS.md) —— 必看坑点
-4. 🔴 [docs/ai/08\_CHECKLISTS.md](./docs/ai/08_CHECKLISTS.md) —— 开发 Checklist
-5. [docs/ai/00\_OVERVIEW.md](./docs/ai/00_OVERVIEW.md) —— 项目概述
-6. [docs/ai/04\_ARCHITECTURE.md](./docs/ai/04_ARCHITECTURE.md) —— 架构分层
-7. [.trae/rules/project-rules.md](./.trae/rules/project-rules.md) —— TRAE IDE 规则
-8. [.ai/memory.md](./.ai/memory.md) —— 会话沉淀的长期记忆
-9. [docs/ai/10\_VERSIONING.md](./docs/ai/10_VERSIONING.md) —— 版本号管理规范
+1. 🔴 [docs/ai/09\_WORKFLOW.md](./docs/ai/09_WORKFLOW.md) —— 任务 SOP（调用 / 执行 / 回归）
+2. 🔴 [docs/ai/03\_GOTCHAS.md](./docs/ai/03_GOTCHAS.md) —— 必看坑点
+3. 🔴 [docs/ai/08\_CHECKLISTS.md](./docs/ai/08_CHECKLISTS.md) —— 开发 Checklist
+4. [docs/ai/00\_OVERVIEW.md](./docs/ai/00_OVERVIEW.md) —— 项目概述
+5. [docs/ai/04\_ARCHITECTURE.md](./docs/ai/04_ARCHITECTURE.md) —— 架构分层
+6. [.trae/rules/project-rules.md](./.trae/rules/project-rules.md) —— TRAE IDE 规则
+7. [.ai/memory.md](./.ai/memory.md) —— 会话沉淀的长期记忆
+8. [docs/ai/10\_VERSIONING.md](./docs/ai/10_VERSIONING.md) —— 版本号管理规范
 
 ***
 
