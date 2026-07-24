@@ -102,6 +102,12 @@ _LAYOUT_ROWS = [
     LayoutRow("module", "LDO_12", 2, "BUCK_02"),
     # SW2 (VIN: LDO_02&BUCK_02)
     LayoutRow("module", "SW2", 1, "LDO_02&BUCK_02"),
+    # 并联对偶组 6: BUCK_06 / LDO_06 (跨列输出并联)
+    # LDO_06 (L2, 由 LDO_02&BUCK_02 供电) 置于 BUCK_06 (L1, VSYS) 上方;
+    # BUCK_06 输出横跨第二列后与 LDO_06 输出紫色短接 (pair 关系保留)
+    # LDO_12/SW2 放 LDO_06 上方, 使 VIN 干线止于 LDO_06, BUCK_06 横线不跨干线
+    LayoutRow("module", "LDO_06", 2, "LDO_02&BUCK_02", pair="BUCK_06"),
+    LayoutRow("module", "BUCK_06", 1, "VSYS"),
     # 并联对偶组 3: BUCK_03 / LDO_03 (上下相邻并联)
     LayoutRow("module", "BUCK_03", 1, "VSYS"),
     LayoutRow("module", "LDO_03", 1, "VSYS", pair="BUCK_03", pair_layout="vertical"),
@@ -115,9 +121,6 @@ _LAYOUT_ROWS = [
     LayoutRow("module", "SW4", 1, "LDO_03&BUCK_03"),
     LayoutRow("module", "BUCK_04", 1, "VSYS"),
     LayoutRow("module", "BUCK_05", 1, "VSYS"),
-    # 并联对偶组 6: BUCK_06 / LDO_06 (相邻行垂直靠近, 输出短接)
-    LayoutRow("module", "BUCK_06", 1, "VSYS"),
-    LayoutRow("module", "LDO_06", 1, "VSYS", pair="BUCK_06", pair_layout="vertical"),
     # Column 2: 二级支路 (按数字顺序: LDO_12 → LDO_14/15 → LDO_05/13)
     LayoutRow("bus", "vdd_l14_15", 1, "VSYS", "vdd_l14_15"),
     LayoutRow("module", "LDO_14", 2, "vdd_l14_15"),

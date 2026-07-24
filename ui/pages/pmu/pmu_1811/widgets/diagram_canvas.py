@@ -222,11 +222,14 @@ class DiagramCanvas(QWidget):
             p.drawLine(bus_x, yc, tx, yc)
 
     def _draw_vin_tree(self, p):
-        """绘制对偶并联轨的统一 VIN 树: L2 (蓝) + SW (玫红) 共享同一干线。
+        """绘制对偶并联轨的统一 VIN 树: L2 (蓝) + SW (玫红) + L1 对偶成员共享干线。
 
         对每个有 SW 子模块的对偶源 (如 "LDO_01&BUCK_01"), 从对偶短接点
-        引出一条干线 (SUB_BUS_X), 所有子模块 (L2 + SW) 从干线分支。
-        干线为蓝色 (电源轨主色), 各分支段用模块类型颜色 (L2 蓝 / SW 玫红)。
+        引出一条干线 (SUB_BUS_X), 所有子模块 (L2 + SW + 由该轨供电的 L1 对偶成员)
+        从干线分支。干线为蓝色 (电源轨主色), 各分支段用模块类型颜色
+        (L2 蓝 / SW 玫红 / L1 对偶成员蓝)。
+        L1 对偶成员 (如 LDO_06 由 LDO_02&BUCK_02 供电) 置于 CARD_X_L1, 与另一
+        对偶伙伴 (如 BUCK_06) 同列垂直堆叠, 输出仍由 _draw_pairs 紫色短接。
         """
         # 收集有 SW 子模块的对偶源
         pair_vins = set()
@@ -248,6 +251,7 @@ class DiagramCanvas(QWidget):
             src_y = sum(ycs) // len(ycs)
 
             # 收集所有子模块: L2 (input ∈ ids) + SW (input == vin)
+            # + L1 对偶成员 (input == vin, 如 LDO_06 由 LDO_02&BUCK_02 供电)
             children = []  # (yc, target_x, color_str)
             for r, yc in self._rows:
                 if r.kind != "module":
@@ -258,20 +262,23 @@ class DiagramCanvas(QWidget):
                 else:
                     if r.input in ids:
                         children.append((yc, CARD_X_L2, COL_BLUE_LINE))
+                    elif r.input == vin:
+                        # 由对偶轨整体供电的模块 (如 LDO_06 由 LDO_02&BUCK_02 供电)
+                        target_x = CARD_X_L1 if r.level == 1 else CARD_X_L2
+                        children.append((yc, target_x, COL_BLUE_LINE))
             self._draw_wire_tree(p, src_x, src_y, SUB_BUS_X, children, COL_BLUE_LINE)
 
     def _draw_pairs(self, p):
         """绘制 BUCK↔LDO 并联对偶的输出短接线 (紫色)。
 
-        两个对偶卡片同列 (CARD_X_L1), 输出端用 bracket 短接:
-        各自从卡片右边引出一段短横线, 再用竖线连接, 表示两路并联到同一轨。
-        两卡片各自从 VSYS 取电 (琥珀横线)。
+        两卡片各自从卡片右边引出短横线 → 共用竖线短接, 表示两路并联到同一轨。
+        支持同列对偶 (均 CARD_X_L1) 与跨列对偶 (如 BUCK_06@L1 ↔ LDO_06@L2):
+        竖线 x 取两卡片右边最大值 + 14, 跨列时 L1 卡片的横线横跨第二列。
         """
         drawn = set()
         pen = QPen(QColor(COL_PAIR_LINE), 2)
         pen.setCapStyle(Qt.RoundCap)
         p.setPen(pen)
-        bx = CARD_X_L1 + CARD_W + 14   # 短接竖线 x (卡片右边留 14px 间距)
         for r, yc in self._rows:
             if r.kind != "module" or not r.pair:
                 continue
@@ -279,13 +286,21 @@ class DiagramCanvas(QWidget):
             if key in drawn:
                 continue
             drawn.add(key)
-            _, partner_yc = self._find_row(r.pair)
+            partner_id = r.pair
+            _, partner_yc = self._find_row(partner_id)
             if partner_yc is None:
                 continue
+            card = self._cards.get(r.id)
+            partner_card = self._cards.get(partner_id)
+            if card is None or partner_card is None:
+                continue
+            right_x = card.x() + CARD_W
+            partner_right_x = partner_card.x() + CARD_W
+            bx = max(right_x, partner_right_x) + 14   # 短接竖线 x
             # 两卡片右边各引短横线 → 竖线短接
-            p.drawLine(CARD_X_L1 + CARD_W, yc, bx, yc)
+            p.drawLine(right_x, yc, bx, yc)
             p.drawLine(bx, yc, bx, partner_yc)
-            p.drawLine(bx, partner_yc, CARD_X_L1 + CARD_W, partner_yc)
+            p.drawLine(bx, partner_yc, partner_right_x, partner_yc)
 
     def _draw_sw_connections(self, p):
         """绘制 SW 的 VIN 连线 (玫红): 仅处理单模块源 (如 LDO_13)。
