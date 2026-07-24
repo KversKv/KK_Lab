@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QWidget
 from ui.pages.pmu.pmu_1811.constants import (
     COL_CANVAS_BG, COL_AMBER, COL_AMBER_LINE, COL_BLUE, COL_BLUE_LINE, COL_PAIR_LINE,
     COL_SW_LINE, FONT_MONO,
-    VSYS_X, CARD_X_L1, CARD_X_L2, SW_VIN_X, SW_BUS_X,
+    VSYS_X, CARD_X_L1, CARD_X_L2, CARD_X_L3, SW_BUS_X,
     CARD_W, CARD_H, ROW_H, TOP_PAD,
     SUB_BUS_X, BUS_PILL_W, BUS_PILL_H, BUS_PILL_X,
 )
@@ -43,8 +43,7 @@ class DiagramCanvas(QWidget):
             if row.kind == "module":
                 mod = self._modules[row.id]
                 card = ModuleCard(mod, self)
-                # SW 与 L2 子模块同列 (CARD_X_L2), 紧跟 VIN 源模块
-                x = CARD_X_L1 if row.level == 1 and not is_sw(row.id) else CARD_X_L2
+                x = self._card_x(row)
                 card.move(x, TOP_PAD + i * ROW_H)
                 card.clicked.connect(self.module_selected.emit)
                 card.right_clicked.connect(self.module_right_clicked.emit)
@@ -55,9 +54,23 @@ class DiagramCanvas(QWidget):
 
         n = len(_LAYOUT_ROWS)
         self.setFixedSize(
-            SW_BUS_X + 36,
+            CARD_X_L3 + CARD_W + 36,
             TOP_PAD * 2 + n * ROW_H,
         )
+
+    @staticmethod
+    def _card_x(row) -> int:
+        """模块卡片 x 坐标。
+
+        L1 模块 → CARD_X_L1; L2 模块 / VIN 源为 L1 对偶的 SW → CARD_X_L2;
+        VIN 源为 L2 单模块的 SW (第三级) → CARD_X_L3。
+        """
+        if is_sw(row.id):
+            # SW 级别 = VIN 源级别 + 1; 源为 L2 (单模块) → SW 是 L3
+            if "&" not in row.input:
+                return CARD_X_L3
+            return CARD_X_L2
+        return CARD_X_L1 if row.level == 1 else CARD_X_L2
 
     def get_card(self, mod_id: str):
         return self._cards.get(mod_id)
@@ -118,15 +131,23 @@ class DiagramCanvas(QWidget):
                 p.drawLine(VSYS_X, yc, CARD_X_L1 if r.kind == "module" else BUS_PILL_X, yc)
 
         # 子母线（蓝色）：对每个 bus 与级联父节点，画竖线 + 子节点连线
+        # 有 SW 子模块的对偶源 (如 BUCK_01/BUCK_03) 由 _draw_vin_tree 统一渲染,
+        # 此处跳过避免重复绘制干线。
+        pair_with_sw = self._pair_ids_with_sw()
         self._draw_subtree(p, "vdd_l14_15")
         self._draw_subtree(p, "vdd_l5")
-        self._draw_subtree(p, "BUCK_01")
-        self._draw_subtree(p, "BUCK_03")
+        if "BUCK_01" not in pair_with_sw:
+            self._draw_subtree(p, "BUCK_01")
+        if "BUCK_03" not in pair_with_sw:
+            self._draw_subtree(p, "BUCK_03")
 
         # 并联对偶输出短接线（紫色）
         self._draw_pairs(p)
 
-        # SW VIN 连线 (玫红): 从父源 (L1 对偶短接点 / L2 卡片右边) → SW 卡片
+        # 对偶源统一 VIN 树: L2 (蓝) + SW (玫红) 共享同一干线
+        self._draw_vin_tree(p)
+
+        # SW VIN 连线 (玫红): 仅处理单模块源 (如 LDO_13), 对偶源由 _draw_vin_tree 处理
         self._draw_sw_connections(p)
 
         # 母线药丸
@@ -139,6 +160,76 @@ class DiagramCanvas(QWidget):
                 p.drawRoundedRect(rect, 8, 8)
                 p.setPen(QColor(COL_BLUE))
                 p.drawText(rect, Qt.AlignCenter, r.bus_name)
+
+    def _pair_ids_with_sw(self) -> set:
+        """返回有 SW 子模块的对偶源半 id 集合 (如 {"BUCK_01", "LDO_01"})。"""
+        result = set()
+        for r, _ in self._rows:
+            if r.kind == "module" and is_sw(r.id) and "&" in r.input:
+                for half in r.input.split("&"):
+                    result.add(half)
+        return result
+
+    def _draw_vin_tree(self, p):
+        """绘制对偶并联轨的统一 VIN 树: L2 (蓝) + SW (玫红) 共享同一干线。
+
+        对每个有 SW 子模块的对偶源 (如 "LDO_01&BUCK_01"), 从对偶短接点
+        引出一条干线 (SUB_BUS_X), 所有子模块 (L2 + SW) 从干线分支。
+        干线为蓝色 (电源轨主色), 各分支段用模块类型颜色 (L2 蓝 / SW 玫红)。
+        """
+        # 收集有 SW 子模块的对偶源
+        pair_vins = set()
+        for r, _ in self._rows:
+            if r.kind == "module" and is_sw(r.id) and "&" in r.input:
+                pair_vins.add(r.input)
+        if not pair_vins:
+            return
+
+        pen = QPen(QColor(COL_BLUE_LINE), 2)
+        pen.setCapStyle(Qt.RoundCap)
+        p.setPen(pen)
+
+        for vin in pair_vins:
+            ids = vin.split("&")
+            # 对偶中点 (短接竖线中点)
+            ycs = []
+            for mid in ids:
+                _, yc = self._find_row(mid)
+                if yc is not None:
+                    ycs.append(yc)
+            if not ycs:
+                continue
+            src_x = CARD_X_L1 + CARD_W + 14   # 对偶短接竖线 x
+            src_y = sum(ycs) // len(ycs)
+
+            # 收集所有子模块: L2 (input ∈ ids) + SW (input == vin)
+            children = []  # (yc, color_str)
+            for r, yc in self._rows:
+                if r.kind != "module":
+                    continue
+                if is_sw(r.id):
+                    if r.input == vin:
+                        children.append((yc, COL_SW_LINE))
+                else:
+                    if r.input in ids:
+                        children.append((yc, COL_BLUE_LINE))
+            if not children:
+                continue
+            children.sort()
+
+            # 干线: pair 中点 → SUB_BUS_X (水平, 蓝)
+            pen.setColor(QColor(COL_BLUE_LINE))
+            p.setPen(pen)
+            p.drawLine(src_x, src_y, SUB_BUS_X, src_y)
+            # 竖线: src_y → 最远子模块 (蓝)
+            last_yc = children[-1][0]
+            if last_yc != src_y:
+                p.drawLine(SUB_BUS_X, src_y, SUB_BUS_X, last_yc)
+            # 各分支: SUB_BUS_X → 卡片左边, 用各自类型颜色
+            for yc, color in children:
+                pen.setColor(QColor(color))
+                p.setPen(pen)
+                p.drawLine(SUB_BUS_X, yc, CARD_X_L2, yc)
 
     def _draw_pairs(self, p):
         """绘制 BUCK↔LDO 并联对偶的输出短接线 (紫色)。
@@ -168,14 +259,11 @@ class DiagramCanvas(QWidget):
             p.drawLine(bx, partner_yc, CARD_X_L1 + CARD_W, partner_yc)
 
     def _draw_sw_connections(self, p):
-        """绘制 SW 的 VIN 连线 (玫红): 从父源 → SW 卡片 (L2 列)。
+        """绘制 SW 的 VIN 连线 (玫红): 仅处理单模块源 (如 LDO_13)。
 
-        两类路由:
-        - 对偶并联轨 (input 含 "&", 如 "LDO_01&BUCK_01"):
-          从对偶短接竖线 (x=CARD_X_L1+CARD_W+14) 引出 → SW_VIN_X (432) 竖线
-          → 各 SW 卡片左边 (CARD_X_L2=452)。与 L2 子模块同列。
-        - 单模块输出 (如 "LDO_13"): 从 L2 卡片右边 (CARD_X_L2+CARD_W) 引出
-          → SW_BUS_X (730) 竖线 → 各 SW 卡片右边。右侧 U 形回流。
+        对偶源 (input 含 "&") 由 _draw_vin_tree 统一渲染, 此处跳过。
+        单 L2 模块输出: 从 L2 卡片右边 (CARD_X_L2+CARD_W) 引出
+        → SW_BUS_X 竖线 → L3 SW 卡片左边 (CARD_X_L3)。
         """
         # 按 VIN 源分组, 共享竖线段
         groups: dict[str, list[tuple[str, int]]] = {}
@@ -188,45 +276,24 @@ class DiagramCanvas(QWidget):
         p.setPen(pen)
 
         for vin, sw_list in groups.items():
-            sw_ys = [yc for _, yc in sw_list]
             if "&" in vin:
-                # 对偶并联轨: 从对偶短接竖线 → SW_VIN_X → L2 左边
-                ids = vin.split("&")
-                ycs = []
-                for mid in ids:
-                    _, yc = self._find_row(mid)
-                    if yc is not None:
-                        ycs.append(yc)
-                if not ycs:
-                    continue
-                src_x = CARD_X_L1 + CARD_W + 14   # 对偶短接竖线 x
-                src_y = sum(ycs) // len(ycs)       # 中点
-                # 对偶短接竖线 → SW_VIN_X (水平)
-                p.drawLine(src_x, src_y, SW_VIN_X, src_y)
-                # SW_VIN_X 竖线: src_y 到最远 SW 行
-                y_top = min(src_y, min(sw_ys))
-                y_bot = max(src_y, max(sw_ys))
-                if y_bot > y_top:
-                    p.drawLine(SW_VIN_X, y_top, SW_VIN_X, y_bot)
-                # 各 SW 行 → L2 卡片左边 (水平)
-                for sw_yc in sw_ys:
-                    p.drawLine(SW_VIN_X, sw_yc, CARD_X_L2, sw_yc)
-            else:
-                # 单 L2 模块输出: 从 L2 卡片右边 → SW_BUS_X → SW 卡片右边 (U 形)
-                _, src_y = self._find_row(vin)
-                if src_y is None:
-                    continue
-                src_x = CARD_X_L2 + CARD_W        # L2 卡片右边
-                # L2 右边 → SW_BUS_X (水平)
-                p.drawLine(src_x, src_y, SW_BUS_X, src_y)
-                # SW_BUS_X 竖线: src_y 到最远 SW 行
-                y_top = min(src_y, min(sw_ys))
-                y_bot = max(src_y, max(sw_ys))
-                if y_bot > y_top:
-                    p.drawLine(SW_BUS_X, y_top, SW_BUS_X, y_bot)
-                # 各 SW 行 → SW 卡片右边 (水平)
-                for sw_yc in sw_ys:
-                    p.drawLine(SW_BUS_X, sw_yc, CARD_X_L2 + CARD_W, sw_yc)
+                continue   # 对偶源由 _draw_vin_tree 处理
+            sw_ys = [yc for _, yc in sw_list]
+            # 单 L2 模块输出: 从 L2 卡片右边 → SW_BUS_X → L3 SW 卡片左边
+            _, src_y = self._find_row(vin)
+            if src_y is None:
+                continue
+            src_x = CARD_X_L2 + CARD_W        # L2 卡片右边
+            # L2 右边 → SW_BUS_X (水平)
+            p.drawLine(src_x, src_y, SW_BUS_X, src_y)
+            # SW_BUS_X 竖线: src_y 到最远 SW 行
+            y_top = min(src_y, min(sw_ys))
+            y_bot = max(src_y, max(sw_ys))
+            if y_bot > y_top:
+                p.drawLine(SW_BUS_X, y_top, SW_BUS_X, y_bot)
+            # 各 SW 行 → L3 卡片左边 (水平)
+            for sw_yc in sw_ys:
+                p.drawLine(SW_BUS_X, sw_yc, CARD_X_L3, sw_yc)
 
     def _draw_subtree(self, p, parent_id: str):
         parent_idx = self._row_index(lambda r: (r.kind == "bus" and r.bus_name == parent_id) or

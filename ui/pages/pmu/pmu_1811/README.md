@@ -98,10 +98,13 @@ LayoutRow(kind="module", id="LDO_01", level=1, input="VSYS",
 `BUCK_01↔LDO_01` / `BUCK_02↔LDO_02` / `BUCK_03↔LDO_03` / `BUCK_06↔LDO_06`。
 对偶表见 `models._PAIRS`，查询用 `get_pair_partner(id)`。
 
-SW（SW1~SW7）置于 L2 列（`CARD_X_L2`），紧跟各自 VIN 源模块块，与同源 L2 子模块同列。
-`input` 为 VIN 节点（如 `LDO_01&BUCK_01` / `LDO_13`），非 `VSYS`。
-画布以玫红连线从父源引至 SW 卡片：对偶并联轨经 `SW_VIN_X` 竖线引至 L2 左边，
-单 L2 模块输出经 `SW_BUS_X` 竖线右侧 U 形回流至 SW 右边。
+SW（SW1~SW7）按 VIN 源级别分列：源为 L1 对偶（如 `LDO_01&BUCK_01`）→ SW 是 L2，置于 `CARD_X_L2`；
+源为 L2 单模块（如 `LDO_13`）→ SW 是 L3，置于 `CARD_X_L3`。`input` 非 `VSYS`。
+画布连线分两类：
+- **对偶源**（input 含 `&`）：由 `_draw_vin_tree` 统一渲染，从对偶短接点引一条蓝色干线
+  （`SUB_BUS_X`），L2 + SW 子模块共享干线，各分支段用类型色（L2 蓝 / SW 玫红）。
+- **单模块源**（如 `LDO_13`）：由 `_draw_sw_connections` 渲染，从 L2 卡片右边经
+  `SW_BUS_X` 竖线引至 L3 SW 卡片左边。
 SW 卡片内嵌 `ToggleSwitch`（闭合=绿 / 开路=灰），可直接点击拨动。
 SW 元数据见 `models._SW_DEFS`，寄存器映射见 `chips.bes1811_pmu.SW_REG_MAPS`。
 
