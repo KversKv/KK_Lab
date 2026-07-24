@@ -81,16 +81,16 @@ _LAYOUT_ROWS = [
     # 并联对偶组 3: BUCK_03 / LDO_03 (上下相邻并联)
     LayoutRow("module", "BUCK_03", 1, "VSYS"),
     LayoutRow("module", "LDO_03", 1, "VSYS", pair="BUCK_03", pair_layout="vertical"),
+    LayoutRow("module", "LDO_07", 2, "BUCK_03"),
+    LayoutRow("module", "LDO_08", 2, "BUCK_03"),
+    LayoutRow("module", "LDO_09", 2, "BUCK_03"),
+    LayoutRow("module", "LDO_10", 2, "BUCK_03"),
+    LayoutRow("module", "LDO_11", 2, "BUCK_03"),
     LayoutRow("module", "BUCK_04", 1, "VSYS"),
     LayoutRow("module", "BUCK_05", 1, "VSYS"),
     # 并联对偶组 6: BUCK_06 / LDO_06 (相邻行垂直靠近, 输出短接)
     LayoutRow("module", "BUCK_06", 1, "VSYS"),
     LayoutRow("module", "LDO_06", 1, "VSYS", pair="BUCK_06", pair_layout="vertical"),
-    LayoutRow("module", "LDO_07", 1, "VSYS"),
-    LayoutRow("module", "LDO_08", 1, "VSYS"),
-    LayoutRow("module", "LDO_09", 1, "VSYS"),
-    LayoutRow("module", "LDO_10", 1, "VSYS"),
-    LayoutRow("module", "LDO_11", 1, "VSYS"),
     # Column 2: 二级支路 (按数字顺序: LDO_12 → LDO_14/15 → LDO_05/13)
     LayoutRow("bus", "vdd_l14_15", 1, "VSYS", "vdd_l14_15"),
     LayoutRow("module", "LDO_14", 2, "vdd_l14_15"),

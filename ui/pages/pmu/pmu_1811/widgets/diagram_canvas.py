@@ -115,6 +115,7 @@ class DiagramCanvas(QWidget):
         self._draw_subtree(p, "vdd_l14_15")
         self._draw_subtree(p, "vdd_l5")
         self._draw_subtree(p, "BUCK_01")
+        self._draw_subtree(p, "BUCK_03")
 
         # 并联对偶输出短接线（紫色）
         self._draw_pairs(p)
