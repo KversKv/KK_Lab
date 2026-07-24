@@ -9,6 +9,7 @@
 - [LDO](#ldo)
 - [DCDC](#dcdc)（规划中）
 - [BUCK](#buck)（使能 + 电压已补全；模式待补全）
+- [SW](#sw)（Power Switch，闭合/开路两态）
 
 ---
 
@@ -383,3 +384,91 @@ enabled = bool(pu_status)                  # 1 = 打开, 0 = 关闭
 ### 9. 模式切换（Normal / LP / ULP）
 
 > 规划中：BUCK 模式切换的寄存器映射与写入流程将在此补充。当前 BUCK 类型声明支持 `["Normal", "LP", "ULP"]` 三档，但 controller 仅实现 LDO 的 Normal/LP，BUCK 的模式控制尚未实现。
+
+---
+
+## SW
+
+本节描述 7 个 Power Switch（SW1~SW7）的操作语义。SW 是电源开关，仅有**闭合（导通）/ 开路（断开）**两态，无电压 / 模式控制。配置位定义在 `chips/bes1811_pmu.py::SW_REG_MAPS`（`SwRegMap`）。
+
+### 1. 寄存器模型
+
+每个 SW 只有 2 个关键位域（极简，区别于 LDO 9 个 / BUCK 11 个）：
+
+| 字段 | 含义 | 方向 |
+|---|---|---|
+| `en` | `reg_en_swXX_<domain>` — 使能配置位（1=导通 / 0=断开） | RW |
+| `en_dr` | `reg_en_swXX_<domain>_dr` — 使能驱动位（=1 才允许写 `en`） | RW |
+
+**无独立状态位**：区别于 LDO/BUCK 的 `pu_status`（`dig_ldo_XX_pu` / `dig_buck_XX_pu`），SW 没有专用的硬件状态寄存器，闭合/开路状态直接由配置位 `en` 决定。
+
+**7 个 SW 的位域一览**（10 位 I2C 寄存器地址）：
+
+| SW | 域 | en @addr[bit] | en_dr @addr[bit] | VIN 节点 | Rdson/mΩ |
+|---|---|---|---|---|---|
+| SW1 | 1p8 | 0x063[15] | 0x063[14] | LDO_01&BUCK_01 | 1994.553028 |
+| SW2 | 1p8 | 0x063[13] | 0x063[12] | LDO_02&BUCK_02 | 506.7093932 |
+| SW3 | 1p8 | 0x063[11] | 0x063[10] | LDO_03&BUCK_03 | 412.5445588 |
+| SW4 | 1p8 | 0x063[9] | 0x063[8] | LDO_03&BUCK_03 | 823.587135 |
+| SW5 | vusb33 | 0x06B[1] | 0x06B[0] | LDO_13 | 861.1453233 |
+| SW6 | vusb33 | 0x06B[9] | 0x06B[8] | LDO_13 | 1427.899106 |
+| SW7 | 1p8 | 0x06C[3] | 0x06C[2] | LDO_01&BUCK_01 | 1504.332478 |
+
+> **域说明**：`1p8` = 1.8V 域（SW1~SW4 / SW7，寄存器 0x063 / 0x06C）；`vusb33` = 3.3V 域（SW5~SW6，寄存器 0x06B）。源 CSV 中字段名为 `reg_en_sw5_vusb33` / `reg_en_sw6_vusb33`（`vusb33`，非 `vsub33`）。
+>
+> **地址分布特征**：SW1~SW4 共用寄存器 0x063（各占 2 bit，含 `en` + `en_dr` + `pull_down`）；SW5~SW6 共用 0x06B；SW7 单独在 0x06C。
+
+### 2. 闭合/开路状态判断
+
+UI 卡片 LED / 属性面板开关状态 = `PmuModule.enabled`（True=闭合 / False=开路），由 `read_sw()` 返回。
+
+判定依据（`core/bes1811_pmu_controller.py::read_sw`）：
+
+```python
+en = read_field(reg_en_swXX_<domain>)     # 读使能配置位
+enabled = bool(en)                          # 1 = 闭合, 0 = 开路
+```
+
+**与 LDO/BUCK 的关键差异**：LDO/BUCK 读 `pu_status` 状态位（硬件反馈真实使能），SW 直接读 `en` 配置位（无独立状态位）。`en_dr=0` 时 `en` 配置不生效（软件释放，由硬件默认/自动控制），当前按 `en` 值显示，其语义后续讨论。
+
+### 3. 强制闭合 / 强制开路
+
+`set_sw_enabled(sw_id, closed)` 两步写入（顺序固定，与 LDO 的 `pu_dr→pu` 模式一致）：
+
+```
+1. write_field(en_dr, 1)                      # 先置驱动位=1, 允许改 en
+2. write_field(en,    1 if closed else 0)     # 再写配置位 (闭合=1 / 开路=0)
+```
+
+例：强制闭合 SW1
+
+| 步骤 | 寄存器 | 位 | 写入值 |
+|---|---|---|---|
+| 1 | 0x063 | [14:14] | 1（en_dr） |
+| 2 | 0x063 | [15:15] | 1（en，闭合） |
+
+强制开路 SW1：步骤 2 写 `en=0`。
+
+### 4. 四种 (en_dr, en) 组合
+
+| en_dr | en | 语义 | 当前实现 |
+|---|---|---|---|
+| 1 | 1 | 强制导通（闭合） | ✅ `set_sw_enabled(True)` |
+| 1 | 0 | 强制开路（断开） | ✅ `set_sw_enabled(False)` |
+| 0 | 0 | 软件释放（硬件默认） | ⏳ 后续讨论 |
+| 0 | 1 | 软件释放（硬件默认） | ⏳ 后续讨论 |
+
+> `en_dr=0` 的两种组合表示软件不驱动，由硬件默认/自动控制；其具体语义与 UI 呈现方式后续讨论。
+
+### 5. SW 与 LDO/BUCK 的差异
+
+| 项 | LDO | BUCK | SW |
+|---|---|---|---|
+| 状态位 | `pu_status`（dig_ldo_XX_pu） | `pu_status`（dig_buck_XX_pu） | 无（直接读 `en` 配置位） |
+| 模式 | Normal/LP | Normal/LP/ULP（声明） | 无（仅闭合/开路两态） |
+| 电压 | vbit_normal/dsleep/rc | vbit_normal/dsleep/rc | 无（导通时直通输入轨） |
+| 寄存器字段数 | 9 | 11 | 2（en / en_dr） |
+| UI 卡片 | 显示电压 +/− 步进 | 显示电压 +/− 步进 | ToggleSwitch 开关 (闭合=绿/开路=灰) |
+| 属性面板 | 使能 + 模式 + 三档电压 | 使能 + 模式 + 三档电压 | 开关态 + Rdson + 输入/输出节点 |
+| 画布连线 | VSYS 琥珀 / 子母线蓝 | VSYS 琥珀 | VIN 玫红 (L2 列, 与同源子模块同列) |
+| 类型主题色 | 天蓝 `#38bdf8` | 琥珀 `#f59e0b` | 玫红 `#ec4899` |

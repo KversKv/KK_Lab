@@ -15,11 +15,12 @@ from chips.bes1811_pmu import (
     BitField, LdoRegMap,
     LDO_REG_MAPS, LDO_IDS,
     BUCK_REG_MAPS, BUCK_IDS,
+    SW_REG_MAPS, SW_IDS,
     I2C_DEVICE_ADDR, I2C_WIDTH,
     CHIP_ID_REG_ADDR_0, CHIP_ID_REG_ADDR_1,
     CHIP_ID_EXPECTED_0, CHIP_ID_EXPECTED_1,
     vbit_to_voltage, voltage_to_vbit, get_voltage_range, get_reg_map,
-    is_buck,
+    is_buck, is_sw,
 )
 
 logger = get_logger(__name__)
@@ -73,6 +74,25 @@ class BuckState:
     voltage: Optional[float]    # 当前唤醒模式电压 (V), 由 vbit_normal 查表得到
     voltage_dsleep: Optional[float] = None  # 睡眠模式电压 (V), 由 vbit_dsleep 查表得到
     voltage_rc: Optional[float] = None      # RC 模式电压 (V), 由 vbit_rc 查表得到
+
+
+@dataclass
+class SwState:
+    """读取到的 Power Switch (SW) 实时状态。
+
+    SW 只有闭合/开路两态, 无电压/模式。状态由配置位 ``en`` 决定
+    (无独立状态寄存器, 区别于 LDO/BUCK 的 ``pu_status``)。
+    字段与 ``LdoState`` / ``BuckState`` 保持兼容 (``enabled`` / ``mode`` / ``voltage*``),
+    以便 ``page.py._on_read_all_done`` 统一处理。
+    """
+    sw_id: str
+    enabled: bool               # 闭合=True / 开路=False (依据 en 配置位)
+    en: int                     # reg_en_swXX_<domain> 配置位 (1=导通)
+    en_dr: int                  # reg_en_swXX_<domain>_dr 驱动位
+    mode: str = "Normal"        # 占位 (SW 无模式), 兼容 UI dict[id]
+    voltage: Optional[float] = None        # 占位 None (SW 无电压)
+    voltage_dsleep: Optional[float] = None
+    voltage_rc: Optional[float] = None
 
 
 # ---------------------------------------------------------------------------
@@ -453,10 +473,50 @@ class Bes1811PmuController:
         return result
 
     def read_all_modules(self) -> dict:
-        """读取全部 LDO + BUCK 状态, 合并为 {id: LdoState|BuckState}。"""
+        """读取全部 LDO + BUCK + SW 状态, 合并为 {id: LdoState|BuckState|SwState}。"""
         result: dict = {}
         result.update(self.read_all_ldos())
         result.update(self.read_all_bucks())
+        result.update(self.read_all_sws())
+        return result
+
+    # ---- SW (Power Switch) 读取 ----
+    def read_sw(self, sw_id: str) -> Optional[SwState]:
+        """读取单个 SW 状态。
+
+        SW 无独立状态位, 闭合/开路由配置位 ``en`` 决定 (``en_dr=1`` 时生效)。
+        读取 ``en`` / ``en_dr`` 两位域, ``enabled = bool(en)``。
+        ``en_dr=0`` 的两种组合 (软件释放) 后续讨论, 当前按 ``en`` 值显示。
+        """
+        rm = SW_REG_MAPS.get(sw_id)
+        if rm is None:
+            logger.warning("1811 PMU: %s 无 SW 寄存器映射", sw_id)
+            return None
+        self._emit_log(
+            "STEP",
+            f"读取 {sw_id} 状态  "
+            f"(en@0x{rm.en.reg_addr:03X}[{rm.en.high_bit}:{rm.en.low_bit}], "
+            f"en_dr@0x{rm.en_dr.reg_addr:03X}[{rm.en_dr.high_bit}:{rm.en_dr.low_bit}])",
+        )
+        en = self._read_field(rm.en)
+        en_dr = self._read_field(rm.en_dr)
+        enabled = bool(en)
+        self._emit_log(
+            "INFO",
+            f"{sw_id} 状态: {'闭合' if enabled else '开路'} (en={en}, en_dr={en_dr}, domain={rm.domain})",
+        )
+        return SwState(sw_id=sw_id, enabled=enabled, en=en, en_dr=en_dr)
+
+    def read_all_sws(self) -> dict[str, SwState]:
+        """读取所有 SW 状态。"""
+        result = {}
+        for sw_id in SW_IDS:
+            try:
+                st = self.read_sw(sw_id)
+                if st is not None:
+                    result[sw_id] = st
+            except Exception as e:
+                logger.error("1811 PMU: 读取 %s 失败: %s", sw_id, e, exc_info=True)
         return result
 
     # ---- BUCK 控制 ----
@@ -625,6 +685,28 @@ class Bes1811PmuController:
         )
         self.write_field(rm.bg_en_dr.reg_addr, rm.bg_en_dr.high_bit, rm.bg_en_dr.low_bit, 0)
         self.write_field(rm.bg_en.reg_addr, rm.bg_en.high_bit, rm.bg_en.low_bit, 0)
+
+    # ---- SW (Power Switch) 控制 ----
+    def set_sw_enabled(self, sw_id: str, closed: bool):
+        """闭合/开路 SW (强制导通/开路, 同时置驱动位 en_dr=1)。
+
+        - 闭合 (强制导通): en_dr=1, en=1
+        - 开路 (强制开路): en_dr=1, en=0
+
+        en_dr=0 的两种组合 (软件释放, 由硬件默认/自动控制) 后续讨论。
+        """
+        rm = SW_REG_MAPS.get(sw_id)
+        if rm is None:
+            raise ValueError(f"{sw_id} 无 SW 寄存器映射")
+        self._emit_log(
+            "STEP",
+            f"{sw_id} {'闭合 (强制导通)' if closed else '开路 (强制开路)'}  "
+            f"(en_dr@0x{rm.en_dr.reg_addr:03X}[{rm.en_dr.high_bit}:{rm.en_dr.low_bit}]=1, "
+            f"en@0x{rm.en.reg_addr:03X}[{rm.en.high_bit}:{rm.en.low_bit}]={1 if closed else 0})",
+        )
+        self.write_field(rm.en_dr.reg_addr, rm.en_dr.high_bit, rm.en_dr.low_bit, 1)
+        self.write_field(rm.en.reg_addr, rm.en.high_bit, rm.en.low_bit, 1 if closed else 0)
+        logger.info("1811 PMU: %s %s", sw_id, "闭合" if closed else "开路")
 
     # ---- PMU 初始化 ----
     #: 初始化序列: ("W", addr, value) 整寄存器写 / ("B", addr, high, low, value) 位域写

@@ -77,7 +77,7 @@ class LdoReadOneWorker(QObject):
 
     def run(self):
         from core.bes1811_pmu_controller import Bes1811PmuController
-        from chips.bes1811_pmu import is_buck
+        from chips.bes1811_pmu import is_buck, is_sw
         ctrl = Bes1811PmuController(
             dll_path=self._dll, speed_mode=self._speed,
             log_callback=self._make_log_cb(),
@@ -86,14 +86,16 @@ class LdoReadOneWorker(QObject):
             if not ctrl.connect():
                 self.error.emit("I2C 接口初始化失败")
                 return
-            # 按 ID 类型派发: BUCK 走 read_buck, LDO 走 read_ldo
+            # 按 ID 类型派发: BUCK 走 read_buck, SW 走 read_sw, LDO 走 read_ldo
             if is_buck(self._ldo_id):
                 st = ctrl.read_buck(self._ldo_id)
+            elif is_sw(self._ldo_id):
+                st = ctrl.read_sw(self._ldo_id)
             else:
                 st = ctrl.read_ldo(self._ldo_id)
             self.finished.emit(st)
         except Exception as e:
-            logger.error("1811 PMU 读取 %s 失败: %s", self._ldo_id, e, exc_info=True)
+            logger.error("1811 PMU: 读取 %s 失败: %s", self._ldo_id, e, exc_info=True)
             self.error.emit(str(e))
         finally:
             ctrl.disconnect()
@@ -127,7 +129,7 @@ class LdoWriteWorker(QObject):
 
     def run(self):
         from core.bes1811_pmu_controller import Bes1811PmuController
-        from chips.bes1811_pmu import is_buck
+        from chips.bes1811_pmu import is_buck, is_sw
         ctrl = Bes1811PmuController(
             dll_path=self._dll, speed_mode=self._speed,
             log_callback=self._make_log_cb(),
@@ -136,8 +138,13 @@ class LdoWriteWorker(QObject):
             if not ctrl.connect():
                 self.error.emit("I2C 接口初始化失败")
                 return
-            # 按 ID 类型派发: BUCK 走 set_buck_*, LDO 走 set_ldo_*
-            if is_buck(self._ldo_id):
+            # 按 ID 类型派发: SW 走 set_sw_enabled, BUCK 走 set_buck_*, LDO 走 set_ldo_*
+            if is_sw(self._ldo_id):
+                if self._action == "enable":
+                    ctrl.set_sw_enabled(self._ldo_id, bool(self._value))
+                else:
+                    raise ValueError(f"SW 不支持的操作: {self._action}")
+            elif is_buck(self._ldo_id):
                 if self._action == "enable":
                     ctrl.set_buck_enabled(self._ldo_id, bool(self._value))
                 elif self._action == "voltage":

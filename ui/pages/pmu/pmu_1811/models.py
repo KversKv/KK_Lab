@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from chips.bes1811_pmu import (
     get_voltage_range, get_reg_map, is_module_controllable,
     get_module_step, align_to_step, snap_range_to_step,
+    is_sw, get_sw_reg_map,
 )
 
 
@@ -22,7 +23,7 @@ from chips.bes1811_pmu import (
 class PmuModule:
     id: str
     name: str
-    type: str  # "LDO" / "BUCK"
+    type: str  # "LDO" / "BUCK" / "SW"
     enabled: bool = True
     mode: str = "Normal"
     voltage: float = 1.8                # 唤醒模式电压 (vbit_normal)
@@ -33,15 +34,32 @@ class PmuModule:
     controllable: bool = True   # 是否支持 I2C 寄存器控制
     voltage_dsleep: float = 1.8         # 睡眠模式电压 (vbit_dsleep)
     voltage_rc: float = 1.8             # RC 模式电压 (vbit_rc)
+    # SW (Power Switch) 专用: 导通电阻 (mΩ) 与输出节点; 非 SW 模块留空
+    rdson: float = 0.0                  # 导通电阻 Rdson (mΩ)
+    output: str = ""                    # 输出节点 (SW 的负载侧)
 
     @property
     def modes(self):
-        return ["Normal", "LP", "ULP"] if self.type == "BUCK" else ["Normal", "LP"]
+        if self.type == "BUCK":
+            return ["Normal", "LP", "ULP"]
+        if self.type == "SW":
+            return []                   # SW 无模式 (仅有闭合/开路两态)
+        return ["Normal", "LP"]
 
     @property
     def reg_map(self):
-        """返回芯片寄存器映射 (LdoRegMap 或 None)。"""
-        return get_reg_map(self.id) if self.controllable else None
+        """返回芯片寄存器映射 (LdoRegMap 或 None)。
+
+        SW 类型无 LdoRegMap (走 ``get_sw_reg_map`` 单独查询)。
+        """
+        if self.type == "SW" or not self.controllable:
+            return None
+        return get_reg_map(self.id)
+
+    @property
+    def sw_reg_map(self):
+        """返回 SW 寄存器映射 (SwRegMap 或 None); 非 SW 返回 None。"""
+        return get_sw_reg_map(self.id) if self.type == "SW" else None
 
 
 # 布局行：id / level(1=主轨,2=二级) / input / bus(虚拟母线名)
@@ -75,9 +93,14 @@ _LAYOUT_ROWS = [
     LayoutRow("module", "BUCK_01", 1, "VSYS"),
     LayoutRow("module", "LDO_01", 1, "VSYS", pair="BUCK_01", pair_layout="vertical"),
     LayoutRow("module", "LDO_12", 2, "BUCK_01"),
+    # SW1, SW7 (VIN: LDO_01&BUCK_01) — 紧跟 VIN 源模块块
+    LayoutRow("module", "SW1", 1, "LDO_01&BUCK_01"),
+    LayoutRow("module", "SW7", 1, "LDO_01&BUCK_01"),
     # 并联对偶组 2: BUCK_02 / LDO_02 (上下相邻并联)
     LayoutRow("module", "BUCK_02", 1, "VSYS"),
     LayoutRow("module", "LDO_02", 1, "VSYS", pair="BUCK_02", pair_layout="vertical"),
+    # SW2 (VIN: LDO_02&BUCK_02)
+    LayoutRow("module", "SW2", 1, "LDO_02&BUCK_02"),
     # 并联对偶组 3: BUCK_03 / LDO_03 (上下相邻并联)
     LayoutRow("module", "BUCK_03", 1, "VSYS"),
     LayoutRow("module", "LDO_03", 1, "VSYS", pair="BUCK_03", pair_layout="vertical"),
@@ -86,6 +109,9 @@ _LAYOUT_ROWS = [
     LayoutRow("module", "LDO_09", 2, "BUCK_03"),
     LayoutRow("module", "LDO_10", 2, "BUCK_03"),
     LayoutRow("module", "LDO_11", 2, "BUCK_03"),
+    # SW3, SW4 (VIN: LDO_03&BUCK_03)
+    LayoutRow("module", "SW3", 1, "LDO_03&BUCK_03"),
+    LayoutRow("module", "SW4", 1, "LDO_03&BUCK_03"),
     LayoutRow("module", "BUCK_04", 1, "VSYS"),
     LayoutRow("module", "BUCK_05", 1, "VSYS"),
     # 并联对偶组 6: BUCK_06 / LDO_06 (相邻行垂直靠近, 输出短接)
@@ -100,6 +126,22 @@ _LAYOUT_ROWS = [
     LayoutRow("bus", "vdd_l5", 1, "VSYS", "vdd_l5"),
     LayoutRow("module", "LDO_05", 2, "vdd_l5"),
     LayoutRow("module", "LDO_13", 2, "vdd_l5"),
+    # SW5, SW6 (VIN: LDO_13) — 紧跟 LDO_13
+    LayoutRow("module", "SW5", 1, "LDO_13"),
+    LayoutRow("module", "SW6", 1, "LDO_13"),
+]
+
+
+# Power Switch 元数据: (id, 显示名, VIN 节点, Rdson mΩ, 域)
+# 寄存器映射见 chips.bes1811_pmu.SW_REG_MAPS; en/en_dr 两位域控制闭合/开路。
+_SW_DEFS = [
+    ("SW1", "LDO_01 SW1", "LDO_01&BUCK_01", 1994.553028, "1p8"),
+    ("SW7", "LDO_01 SW7", "LDO_01&BUCK_01", 1504.332478, "1p8"),
+    ("SW2", "LDO_02 SW2", "LDO_02&BUCK_02", 506.7093932, "1p8"),
+    ("SW3", "LDO_03 SW3", "LDO_03&BUCK_03", 412.5445588, "1p8"),
+    ("SW4", "LDO_03 SW4", "LDO_03&BUCK_03", 823.587135, "1p8"),
+    ("SW5", "3p3 SW5", "LDO_13", 861.1453233, "vusb33"),
+    ("SW6", "3p3 SW6", "LDO_13", 1427.899106, "vusb33"),
 ]
 
 
@@ -108,6 +150,9 @@ def _default_modules() -> dict:
     buck_ids = {"BUCK_01", "BUCK_02", "BUCK_03", "BUCK_04", "BUCK_05", "BUCK_06"}
     for row in _LAYOUT_ROWS:
         if row.kind != "module":
+            continue
+        # SW 由下方 _SW_DEFS 单独构建 (无电压/模式), 跳过 LDO/BUCK 逻辑
+        if is_sw(row.id):
             continue
         is_buck = row.id in buck_ids
         # 统一通过 is_module_controllable 同时识别 LDO 和 BUCK
@@ -150,5 +195,22 @@ def _default_modules() -> dict:
             # dsleep / rc 默认与 normal 一致 (UI 初始未读 DUT 时显示)
             voltage_dsleep=round(default_v, 4),
             voltage_rc=round(default_v, 4),
+        )
+    # Power Switch (SW): 无电压/模式, 仅闭合/开路两态 + Rdson + 输入输出节点
+    for sw_id, sw_name, sw_input, sw_rdson, _domain in _SW_DEFS:
+        mods[sw_id] = PmuModule(
+            id=sw_id,
+            name=sw_name,
+            type="SW",
+            enabled=False,          # 默认开路 (未驱动)
+            mode="Normal",          # 占位, SW 无模式 (modes 返回 [])
+            voltage=0.0,
+            min_voltage=0.0,
+            max_voltage=0.0,
+            step=0.0,
+            input=sw_input,
+            controllable=is_sw(sw_id),
+            rdson=sw_rdson,
+            output="",              # 输出节点未指定, 留空待用户配置
         )
     return mods

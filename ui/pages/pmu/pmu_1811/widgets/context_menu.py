@@ -48,7 +48,11 @@ class ContextMenu(QFrame):
     def popup(self, mod: PmuModule, pos: QPoint):
         self._mod = mod
         self.header.setText(mod.name)
-        self.toggle_btn.setText("Disable Output" if mod.enabled else "Enable Output")
+        # SW: 闭合/开路; LDO/BUCK: Enable/Disable Output
+        if mod.type == "SW":
+            self.toggle_btn.setText("开路 (强制断开)" if mod.enabled else "闭合 (强制导通)")
+        else:
+            self.toggle_btn.setText("Disable Output" if mod.enabled else "Enable Output")
         for b in self._mode_btns:
             self._layout.removeWidget(b)
             b.deleteLater()
@@ -62,6 +66,8 @@ class ContextMenu(QFrame):
             b.clicked.connect(lambda _=False, mm=m: self._on_mode(mm))
             self._layout.addWidget(b)
             self._mode_btns.append(b)
+        # 无模式 (SW) 时隐藏分隔线
+        self._sep.setVisible(bool(mod.modes))
         self.adjustSize()
         self.move(pos)
         self.show()

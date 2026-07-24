@@ -59,6 +59,24 @@ class LdoRegMap:
     sw_en_dr: Optional[BitField] = None    # reg_buck_XX_sw_en_dr — 开关使能驱动位
 
 
+@dataclass(frozen=True)
+class SwRegMap:
+    """单个 Power Switch (SW) 的寄存器位域映射。
+
+    SW 是电源开关, 只有闭合 (导通) / 开路 (断开) 两态, 无电压 / 模式控制。
+    寄存器模型极简: ``en`` (使能配置位) + ``en_dr`` (使能驱动位)。
+    无独立的状态位 (区别于 LDO/BUCK 的 ``pu_status``), 状态由配置位决定。
+
+    - 强制导通 (闭合): ``en_dr=1`` 且 ``en=1``
+    - 强制开路 (断开): ``en_dr=1`` 且 ``en=0``
+    - ``en_dr=0`` 的两种组合 (软件释放, 由硬件默认/自动控制) 后续讨论。
+    """
+    sw_id: str              # SW1 ~ SW7
+    en: BitField            # reg_en_swXX_<domain> — 使能配置位 (1=导通 / 0=断开)
+    en_dr: BitField         # reg_en_swXX_<domain>_dr — 使能驱动位 (=1 才允许写 en)
+    domain: str = ""        # 域标识: "1p8" / "vusb33" (仅用于显示)
+
+
 # ---------------------------------------------------------------------------
 # LDO 寄存器映射表 (从 1811 pmu inf reg.xlsx 提取)
 # ---------------------------------------------------------------------------
@@ -495,6 +513,53 @@ BUCK_REG_MAPS: dict[str, LdoRegMap] = {
     ),
 }
 
+
+# ---------------------------------------------------------------------------
+# SW (Power Switch) 寄存器映射表 (从 1811 pmu inf reg.csv 提取)
+# SW 只有 en / en_dr 两个位域, 无电压 / 模式 / 状态位。
+# SW1~SW4 / SW7 在 1p8 域 (0x063 / 0x06C); SW5~SW6 在 vusb33 域 (0x06B)。
+# ---------------------------------------------------------------------------
+SW_REG_MAPS: dict[str, SwRegMap] = {
+    "SW1": SwRegMap(
+        "SW1",
+        en=_bf(0x063, 15, 15), en_dr=_bf(0x063, 14, 14),
+        domain="1p8",
+    ),
+    "SW2": SwRegMap(
+        "SW2",
+        en=_bf(0x063, 13, 13), en_dr=_bf(0x063, 12, 12),
+        domain="1p8",
+    ),
+    "SW3": SwRegMap(
+        "SW3",
+        en=_bf(0x063, 11, 11), en_dr=_bf(0x063, 10, 10),
+        domain="1p8",
+    ),
+    "SW4": SwRegMap(
+        "SW4",
+        en=_bf(0x063, 9, 9), en_dr=_bf(0x063, 8, 8),
+        domain="1p8",
+    ),
+    "SW5": SwRegMap(
+        "SW5",
+        en=_bf(0x06B, 1, 1), en_dr=_bf(0x06B, 0, 0),
+        domain="vusb33",
+    ),
+    "SW6": SwRegMap(
+        "SW6",
+        en=_bf(0x06B, 9, 9), en_dr=_bf(0x06B, 8, 8),
+        domain="vusb33",
+    ),
+    "SW7": SwRegMap(
+        "SW7",
+        en=_bf(0x06C, 3, 3), en_dr=_bf(0x06C, 2, 2),
+        domain="1p8",
+    ),
+}
+
+#: 支持 I2C 控制的 SW ID 列表
+SW_IDS = list(SW_REG_MAPS.keys())
+
 #: 支持 I2C 控制的 BUCK ID 列表
 BUCK_IDS = list(BUCK_REG_MAPS.keys())
 
@@ -896,3 +961,13 @@ def is_module_controllable(module_id: str) -> bool:
 def is_buck(module_id: str) -> bool:
     """判断模块是否为 BUCK (区别于 LDO)。"""
     return module_id in BUCK_REG_MAPS
+
+
+def is_sw(module_id: str) -> bool:
+    """判断模块是否为 Power Switch (SW)。"""
+    return module_id in SW_REG_MAPS
+
+
+def get_sw_reg_map(sw_id: str) -> Optional[SwRegMap]:
+    """返回指定 SW 的寄存器映射; 无映射返回 None。"""
+    return SW_REG_MAPS.get(sw_id)

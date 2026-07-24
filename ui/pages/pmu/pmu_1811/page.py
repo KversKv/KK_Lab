@@ -120,6 +120,7 @@ class Pmu1811UI(QWidget):
         self.canvas.module_selected.connect(self._on_select)
         self.canvas.module_right_clicked.connect(self._on_context)
         self.canvas.voltage_stepped.connect(self._on_card_voltage)
+        self.canvas.enable_toggled.connect(self._on_card_enable)
         self.panel.enable_changed.connect(self._on_panel_enable)
         self.panel.mode_changed.connect(self._on_panel_mode)
         self.panel.voltage_changed.connect(self._on_panel_voltage)
@@ -393,6 +394,13 @@ class Pmu1811UI(QWidget):
         if mod_id == self._selected_id:
             self.panel.load(self._modules[mod_id])
         self._start_write(mod_id, "voltage", v)
+
+    def _on_card_enable(self, mod_id: str):
+        """SW 卡片内开关拨动: 同步属性面板并写入 DUT (闭合/开路)。"""
+        mod = self._modules[mod_id]
+        if mod_id == self._selected_id:
+            self.panel.load(mod)
+        self._start_enable_write(mod_id, mod.enabled)
 
     def _on_panel_enable(self, mod_id: str, enabled: bool):
         self.canvas.refresh_card(mod_id)

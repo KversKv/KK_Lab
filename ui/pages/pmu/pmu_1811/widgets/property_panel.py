@@ -74,44 +74,82 @@ class PropertyPanel(QFrame):
         status_card.setObjectName("sectionCard")
         sl = QHBoxLayout(status_card)
         sl.setContentsMargins(12, 8, 12, 8)
-        sl.addWidget(self._muted_label("Output Enable"))
+        self.status_name_lbl = self._muted_label("Output Enable")
+        sl.addWidget(self.status_name_lbl)
         sl.addStretch(1)
         self.toggle = ToggleSwitch(self)
         self.toggle.toggled.connect(self._on_toggle)
         sl.addWidget(self.toggle)
         root.addWidget(status_card)
 
-        # Mode
+        # Mode + Voltage 三档: 仅 LDO/BUCK 使用, SW 隐藏
+        self.ldo_buck_section = QFrame(self)
+        lb_layout = QVBoxLayout(self.ldo_buck_section)
+        lb_layout.setContentsMargins(0, 0, 0, 0)
+        lb_layout.setSpacing(12)
+
         self.mode_label = self._section_label("Mode")
-        root.addWidget(self.mode_label)
+        lb_layout.addWidget(self.mode_label)
         self.mode_group = QButtonGroup(self)
         self.mode_group.setExclusive(True)
         self.mode_row = QFrame(self)
         self.mode_layout = QHBoxLayout(self.mode_row)
         self.mode_layout.setContentsMargins(0, 0, 0, 0)
         self.mode_layout.setSpacing(6)
-        root.addWidget(self.mode_row)
+        lb_layout.addWidget(self.mode_row)
 
         # Voltage - Normal (唤醒模式)
-        root.addWidget(self._section_label("Voltage - Normal (V)"))
+        lb_layout.addWidget(self._section_label("Voltage - Normal (V)"))
         (
             self.spin, self.slider,
             self.min_lbl, self.max_lbl,
-        ) = self._build_voltage_card(root, self._on_spin, self._on_slider)
+        ) = self._build_voltage_card(lb_layout, self._on_spin, self._on_slider)
 
         # Voltage - Deep Sleep (睡眠模式)
-        root.addWidget(self._section_label("Voltage - Deep Sleep (V)"))
+        lb_layout.addWidget(self._section_label("Voltage - Deep Sleep (V)"))
         (
             self.spin_dsleep, self.slider_dsleep,
             self.min_lbl_dsleep, self.max_lbl_dsleep,
-        ) = self._build_voltage_card(root, self._on_spin_dsleep, self._on_slider_dsleep)
+        ) = self._build_voltage_card(lb_layout, self._on_spin_dsleep, self._on_slider_dsleep)
 
         # Voltage - RC (RC 模式)
-        root.addWidget(self._section_label("Voltage - RC (V)"))
+        lb_layout.addWidget(self._section_label("Voltage - RC (V)"))
         (
             self.spin_rc, self.slider_rc,
             self.min_lbl_rc, self.max_lbl_rc,
-        ) = self._build_voltage_card(root, self._on_spin_rc, self._on_slider_rc)
+        ) = self._build_voltage_card(lb_layout, self._on_spin_rc, self._on_slider_rc)
+        root.addWidget(self.ldo_buck_section)
+
+        # SW 专用: Rdson + 输入/输出节点 (LDO/BUCK 隐藏)
+        self.sw_section = QFrame(self)
+        sw_layout = QVBoxLayout(self.sw_section)
+        sw_layout.setContentsMargins(0, 0, 0, 0)
+        sw_layout.setSpacing(12)
+
+        sw_layout.addWidget(self._section_label("Switch Info"))
+        sw_card = QFrame(self)
+        sw_card.setObjectName("sectionCard")
+        sl2 = QVBoxLayout(sw_card)
+        sl2.setContentsMargins(12, 10, 12, 10)
+        sl2.setSpacing(6)
+        self.rdson_lbl = QLabel("Rdson: —")
+        self.rdson_lbl.setStyleSheet(
+            f"color:{COL_TEXT}; font-family:{FONT_MONO}; font-size:12px;"
+        )
+        self.sw_in_lbl = QLabel("Input: —")
+        self.sw_in_lbl.setStyleSheet(
+            f"color:{COL_TEXT}; font-family:{FONT_MONO}; font-size:12px;"
+        )
+        self.sw_out_lbl = QLabel("Output: —")
+        self.sw_out_lbl.setStyleSheet(
+            f"color:{COL_TEXT}; font-family:{FONT_MONO}; font-size:12px;"
+        )
+        sl2.addWidget(self.rdson_lbl)
+        sl2.addWidget(self.sw_in_lbl)
+        sl2.addWidget(self.sw_out_lbl)
+        sw_layout.addWidget(sw_card)
+        root.addWidget(self.sw_section)
+        self.sw_section.setVisible(False)
 
         # I2C
         root.addWidget(self._section_label("I2C Registers"))
@@ -230,20 +268,35 @@ class PropertyPanel(QFrame):
         self.type_lbl.setStyleSheet(
             f"color:{COL_TEXT_MUTED}; font-family:{FONT_MONO}; font-size:11px;"
         )
+        is_sw = mod.type == "SW"
+        # SW: 开关态 (闭合/开路); LDO/BUCK: 输出使能
+        self.status_name_lbl.setText("Switch State" if is_sw else "Output Enable")
         self.toggle.set_checked(mod.enabled)
-        self._rebuild_mode_buttons()
 
-        # 三套电压控件共用同一 range/step (来自 vbit 查找表, 三档位完全一致)
-        self._sync_voltage_widgets(self.spin, self.slider, self.min_lbl, self.max_lbl,
-                                   mod.voltage, mod)
-        self._sync_voltage_widgets(self.spin_dsleep, self.slider_dsleep,
-                                   self.min_lbl_dsleep, self.max_lbl_dsleep,
-                                   mod.voltage_dsleep, mod)
-        self._sync_voltage_widgets(self.spin_rc, self.slider_rc,
-                                   self.min_lbl_rc, self.max_lbl_rc,
-                                   mod.voltage_rc, mod)
+        # 按类型显隐: SW 无模式/电压; LDO/BUCK 无 Switch Info
+        self.ldo_buck_section.setVisible(not is_sw)
+        self.sw_section.setVisible(is_sw)
 
-        self.conn_lbl.setText(f"Input Source: {mod.input}")
+        if not is_sw:
+            self._rebuild_mode_buttons()
+            # 三套电压控件共用同一 range/step (来自 vbit 查找表, 三档位完全一致)
+            self._sync_voltage_widgets(self.spin, self.slider, self.min_lbl, self.max_lbl,
+                                       mod.voltage, mod)
+            self._sync_voltage_widgets(self.spin_dsleep, self.slider_dsleep,
+                                       self.min_lbl_dsleep, self.max_lbl_dsleep,
+                                       mod.voltage_dsleep, mod)
+            self._sync_voltage_widgets(self.spin_rc, self.slider_rc,
+                                       self.min_lbl_rc, self.max_lbl_rc,
+                                       mod.voltage_rc, mod)
+        else:
+            # SW 信息: Rdson / 输入节点 / 输出节点
+            self.rdson_lbl.setText(f"Rdson: {mod.rdson:.4f} mΩ")
+            self.sw_in_lbl.setText(f"Input:  {mod.input}")
+            self.sw_out_lbl.setText(f"Output: {mod.output or '—'}")
+
+        self.conn_lbl.setText(
+            f"Input Source: {mod.input}" if not is_sw else f"VIN Node: {mod.input}"
+        )
         self._syncing = False
         self._refresh_i2c()
 
@@ -277,6 +330,16 @@ class PropertyPanel(QFrame):
                 f"vbit_d@0x{rm.vbit_dsleep.reg_addr:03X}  "
                 f"vbit_rc@0x{rm.vbit_rc.reg_addr:03X}"
             )
+            return
+        # SW 寄存器: en / en_dr 两个位域, 无 pu_status / vbit
+        sw_rm = self._mod.sw_reg_map
+        if sw_rm is not None:
+            self.addr_lbl.setText(
+                f"EN: 0x{sw_rm.en.reg_addr:03X}[{sw_rm.en.high_bit}:{sw_rm.en.low_bit}]  "
+                f"EN_DR: 0x{sw_rm.en_dr.reg_addr:03X}[{sw_rm.en_dr.high_bit}:{sw_rm.en_dr.low_bit}]"
+            )
+            state = "闭合 (dr=1,en=1)" if self._mod.enabled else "开路 (dr=1,en=0)"
+            self.value_lbl.setText(f"Domain: {sw_rm.domain}  → {state}")
         else:
             self.addr_lbl.setText("Address: — (无寄存器映射)")
             self.value_lbl.setText("Value: —")
