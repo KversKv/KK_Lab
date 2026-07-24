@@ -48,12 +48,36 @@ class LdoReadAllWorker(QObject):
             states = ctrl.read_all_modules()
             # 3) PMU 初始化序列 (Check 流程末尾)
             ctrl.init_pmu()
+            # 4) SW 默认规则: 可控 SW 主动写 en_dr=1, en=1/0 强制到默认态
+            applied = self._apply_sw_defaults(ctrl)
+            if applied:
+                states.update(applied)
             self.finished.emit(states)
         except Exception as e:
             logger.error("1811 PMU 读取失败: %s", e, exc_info=True)
             self.error.emit(str(e))
         finally:
             ctrl.disconnect()
+
+    def _apply_sw_defaults(self, ctrl) -> dict:
+        """按 models._SW_DEFAULT_ENABLED 主动驱动可控 SW 到默认态。
+
+        "规则匹配" = SW 可控 (在 SW_REG_MAPS 中): 调 set_sw_enabled 写
+        en_dr=1, en=1/0 (强制闭合/开路)。返回 {sw_id: SwState} 用于 UI 刷新;
+        单个 SW 失败仅记录不中断, 返回 None 表示无可用项。
+        """
+        from ui.pages.pmu.pmu_1811.models import _SW_DEFAULT_ENABLED
+        applied = {}
+        for sw_id, closed in _SW_DEFAULT_ENABLED.items():
+            try:
+                ctrl.set_sw_enabled(sw_id, closed)
+                st = ctrl.read_sw(sw_id)
+                if st is not None:
+                    applied[sw_id] = st
+            except Exception:  # noqa: BLE001 - 单 SW 失败不影响其余
+                logger.warning("1811 PMU: SW 默认规则写入失败 %s", sw_id,
+                               exc_info=True)
+        return applied or None
 
 
 # ---------------------------------------------------------------------------

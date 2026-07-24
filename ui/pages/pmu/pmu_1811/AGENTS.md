@@ -51,6 +51,12 @@
 - **vbit 索引进制**：LDO = **十六进制**（`LDO_VOLTAGE_TABLES` 索引为 hex，源 xlsx 含 A-F）；BUCK = **十进制**（`BUCK_VOLTAGE_TABLES` 索引为 dec，256 档连续）。
 - **写入后 UI 立即更新本地状态是"期望状态"**；真实状态需 Check 重读 `pu_status` 才反映。这是 `enabled` 在写入/读取两路径都被赋值的原因。
 
+### SW 默认状态规则
+
+- 默认表 `models._SW_DEFAULT_ENABLED`：**SW1/3/5/6 闭合、SW7/2/4 开路**；查询 `sw_default_enabled(id)`，`_default_modules()` 据此设 `PmuModule.enabled`。
+- **"规则匹配" = SW 可控**（在 `SW_REG_MAPS` 中）：Check 成功后 `LdoReadAllWorker._apply_sw_defaults` 对每个可控 SW 调 `set_sw_enabled` 主动写 `en_dr=1, en=1/0`（强制闭合/开路，RULES §3），写后重读 `read_sw` 回灌 `states`；单个失败仅 WARN 不中断。
+- 不可控 SW 不主动写，仅用默认表作本地显示。page `_on_read_all_done` 末尾兜底刷新全部 SW 卡片。
+
 ### 并联对偶互锁
 
 开启某模块且存在对偶 → 走 `PairWriteWorker`，**一次 I2C 会话内先开自己、再关对偶**；关闭走普通 `LdoWriteWorker` 不影响对偶。未连接时仅本地更新（`_apply_local_disable`）。
@@ -77,6 +83,7 @@
 
 - **页面图标**：`resources/pages/pmu_1811_SVGs/pmu_1811.svg`（emerald 渐变芯片图）；渐变色图标必须走 `ui/utils/icon_utils.svg_pixmap()` **原色渲染**，禁用 tinted 版本（`SourceIn` 会把渐变染成单色）。spec 按 `resources/pages` 整目录打包，新增子目录无需改 spec。
 - **独立预览壳**（`page.py` `__main__`）：参考 main 窗口不用系统标题栏，`FramelessWindowHint | Qt.Window` + `_PreviewTitleBar` 自绘标题栏（1811 主题色）；拖动走 `windowHandle().startSystemMove()`，最大化手动切 `availableGeometry`（避免 frameless `showMaximized` 盖住任务栏）。
+- **frameless 无系统边框缩放**：壳需 `setMouseTracking(True)` + 事件过滤器 + `startSystemResize`。三个坑：① 过滤器要装到 **QApplication**（边缘处鼠标实际落在子控件上，shell 自身收不到）；② 坐标用 `obj.mapTo(shell, pos)` 换算；③ 光标用 `obj.setCursor()` 设在悬停控件上（override 光标会被各控件自身光标覆盖）；④ 边缘组合必须 `edges = Qt.Edge(0)` 起始再 `|=`（用 int `0` 起始在 PySide6 下 `int |= Edge` 直接 TypeError，这是过滤器静默崩溃、光标全没跑的根源）。过滤器内先做 `isinstance(obj, QWidget)` 防护（QApplication 会收到 QWindow/QStyle 等非 QWidget 对象，`isAncestorOf` 会 TypeError）。
 - **纯 QWidget 不绘 QSS 背景**：壳与 `_PreviewTitleBar` 这类直接继承 `QWidget` 的控件，必须 `setAttribute(Qt.WA_StyledBackground, True)` 才会按 QSS 绘制背景，否则露 Fusion 默认白底（QFrame 子类无此问题）。
 
 ## 局部坑点
@@ -84,6 +91,7 @@
 - **写入保护**（`_start_write`）：`controllable==False` 直接返回；`_i2c_connected==False` 仅本地更新；`_worker_thread is not None` 丢弃并 WARN（上次未完成）。Worker 完成 `_cleanup_worker` 必须 `thread.quit() + wait()`。
 - **每次操作自建/销毁 controller**：不持持久 I2C 连接；`finally` 保证 `ctrl.disconnect()`。
 - **首次显示自动 Check**：`showEvent` 用 `QTimer.singleShot(0, self._on_check)` 等 UI 布局完成后再起 `LdoReadAllWorker`。
+- **Check 失败锁定画布**：`_on_i2c_error` → `_set_body_blocked(True)`，用 `_BlockedOverlay`（半透明遮罩，父=`_body_container`）盖住画布+属性面板拦截交互；`_on_read_all_done` → `_set_body_blocked(False)` 解锁。遮罩几何在 `resizeEvent` 里跟随 `_body_container.rect()`。
 - **独立运行**：顶部已注入 `sys.path`（兼容 `python ui\pages\pmu\pmu_1811\page.py` 直接运行，见 03§22 同款模式）。
 
 ## 扩展指引

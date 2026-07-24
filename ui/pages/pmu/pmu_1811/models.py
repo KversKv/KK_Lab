@@ -149,6 +149,24 @@ _SW_DEFS = [
     ("SW6", "3p3 SW6", "LDO_13", 1427.899106, "vusb33"),
 ]
 
+# SW 默认闭合/开路 (规则不匹配时的 fallback): SW1/3/5/6 闭合, SW7/2/4 开路。
+# 可控 SW (在 SW_REG_MAPS 中, 即"规则匹配") 在 Check 成功后按此表主动写
+# en_dr=1, en=1/0; 不可控 SW 仅以此作本地默认显示。
+_SW_DEFAULT_ENABLED = {
+    "SW1": True,
+    "SW2": False,
+    "SW3": True,
+    "SW4": False,
+    "SW5": True,
+    "SW6": True,
+    "SW7": False,
+}
+
+
+def sw_default_enabled(sw_id: str) -> bool:
+    """返回 SW 默认闭合状态 (True=闭合 / False=开路); 未知 ID 默认开路。"""
+    return _SW_DEFAULT_ENABLED.get(sw_id, False)
+
 
 def _default_modules() -> dict:
     mods = {}
@@ -207,7 +225,7 @@ def _default_modules() -> dict:
             id=sw_id,
             name=sw_name,
             type="SW",
-            enabled=False,          # 默认开路 (未驱动)
+            enabled=sw_default_enabled(sw_id),
             mode="Normal",          # 占位, SW 无模式 (modes 返回 [])
             voltage=0.0,
             min_voltage=0.0,

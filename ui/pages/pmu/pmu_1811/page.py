@@ -44,6 +44,37 @@ _PMU_ICON_SVG = os.path.join(
 
 
 # ---------------------------------------------------------------------------
+# Check 失败时的画布禁用遮罩
+# ---------------------------------------------------------------------------
+class _BlockedOverlay(QWidget):
+    """半透明遮罩: 盖住画布+属性面板, 拦截全部交互, 中央提示未连接。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setCursor(Qt.ForbiddenCursor)
+        self.setStyleSheet(
+            "QWidget { background: rgba(3, 7, 18, 190); border:none; }"
+            "QLabel { background:transparent; border:none; }"
+        )
+        lay = QVBoxLayout(self)
+        lay.setAlignment(Qt.AlignCenter)
+        lay.setSpacing(6)
+        title = QLabel("DUT 未连接", self)
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet(f"color:{COL_TEXT}; font-size:15px; font-weight:700;")
+        hint = QLabel("画布已禁用, 请点击右上角 Check 重新连接", self)
+        hint.setAlignment(Qt.AlignCenter)
+        hint.setStyleSheet(f"color:{COL_TEXT_MUTED}; font-size:12px;")
+        lay.addWidget(title)
+        lay.addWidget(hint)
+
+    def mousePressEvent(self, event):
+        # 吞掉点击, 不穿透到画布
+        event.accept()
+
+
+# ---------------------------------------------------------------------------
 # 主页面
 # ---------------------------------------------------------------------------
 class Pmu1811UI(QWidget):
@@ -88,6 +119,7 @@ class Pmu1811UI(QWidget):
         root.addWidget(self._build_chip_config())
 
         body_container = QWidget(self)
+        self._body_container = body_container
         body = QHBoxLayout(body_container)
         body.setContentsMargins(0, 0, 0, 0)
         body.setSpacing(0)
@@ -139,6 +171,9 @@ class Pmu1811UI(QWidget):
 
         # 首次显示后自动触发一次状态同步 (读取 DUT 实际使能/电压)
         self._first_shown = False
+
+        # Check 失败时的"禁止使用"遮罩 (覆盖画布+属性面板, 阻止交互)
+        self._blocked_overlay = None
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -266,18 +301,45 @@ class Pmu1811UI(QWidget):
             if getattr(st, "voltage_rc", None) is not None:
                 mod.voltage_rc = st.voltage_rc
             self.canvas.refresh_card(ldo_id)
+        # SW 状态可能被上方主动写入改变, 兜底刷新全部 SW 卡片 (未读到的按本地默认)
+        for mod_id, mod in self._modules.items():
+            if mod.type == "SW":
+                self.canvas.refresh_card(mod_id)
         if self._selected_id and self._selected_id in self._modules:
             self.panel.load(self._modules[self._selected_id])
         logger.info("1811 PMU: Check 完成, %d 个模块", len(states))
         on_cnt = sum(1 for s in states.values() if s.enabled)
         self._log("PASS", f"Check 完成: 读取 {len(states)} 个模块 ({on_cnt} 个已开启), PMU 初始化完成")
+        self._set_body_blocked(False)
 
     def _on_i2c_error(self, msg: str):
-        """I2C 操作出错。"""
+        """I2C 操作出错 (含 Check 失败): 锁定画布, 禁止使用。"""
         self._cleanup_worker()
         self._i2c_connected = False
         logger.error("1811 PMU I2C 错误: %s", msg)
         self._log("ERROR", f"I2C 错误: {msg}")
+        self._set_body_blocked(True)
+
+    # ---- 画布禁用遮罩 (Check 失败后禁止使用) ----
+    def _set_body_blocked(self, blocked: bool):
+        """切换画布+属性面板的禁用遮罩。
+
+        blocked=True: 半透明遮罩盖住画布与属性面板并拦截交互 (提示未连接);
+        blocked=False: 移除遮罩恢复可操作。
+        """
+        if blocked:
+            if self._blocked_overlay is None:
+                self._blocked_overlay = _BlockedOverlay(self._body_container)
+            self._blocked_overlay.setGeometry(self._body_container.rect())
+            self._blocked_overlay.show()
+            self._blocked_overlay.raise_()
+        elif self._blocked_overlay is not None:
+            self._blocked_overlay.hide()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self._blocked_overlay is not None and self._blocked_overlay.isVisible():
+            self._blocked_overlay.setGeometry(self._body_container.rect())
 
     def _cleanup_worker(self):
         """清理 Worker 线程。"""
@@ -561,6 +623,24 @@ class _PreviewTitleBar(QWidget):
         super().mouseDoubleClickEvent(event)
 
 
+# 边缘缩放手柄宽度 (px)
+_RESIZE_MARGIN = 6
+
+
+def _resize_edges(widget, pos, margin=_RESIZE_MARGIN):
+    """按窗口内坐标命中缩放边缘, 返回 Qt.Edge 组合 (空 flag 表示不在边缘)。"""
+    edges = Qt.Edge(0)
+    if pos.x() <= margin:
+        edges |= Qt.LeftEdge
+    if pos.x() >= widget.width() - margin:
+        edges |= Qt.RightEdge
+    if pos.y() <= margin:
+        edges |= Qt.TopEdge
+    if pos.y() >= widget.height() - margin:
+        edges |= Qt.BottomEdge
+    return edges
+
+
 def _apply_dwm_round_corners(window):
     """Windows 11 下给窗口启用 DWM 原生微弱圆角 (与主窗口一致); 不支持则忽略。"""
     if sys.platform != "win32":
@@ -577,7 +657,44 @@ def _apply_dwm_round_corners(window):
 
 if __name__ == "__main__":
     """独立预览 1811 PMU 配置工具界面 (无边框 + 自绘标题栏)。"""
+    from PySide6.QtCore import QEvent
     from PySide6.QtWidgets import QApplication
+
+    # 缩放边缘 → 光标形状 (未命中为 None → 还原箭头)
+    _EDGE_CURSORS = {
+        Qt.LeftEdge: Qt.SizeHorCursor,
+        Qt.RightEdge: Qt.SizeHorCursor,
+        Qt.TopEdge: Qt.SizeVerCursor,
+        Qt.BottomEdge: Qt.SizeVerCursor,
+        Qt.LeftEdge | Qt.TopEdge: Qt.SizeFDiagCursor,
+        Qt.RightEdge | Qt.BottomEdge: Qt.SizeFDiagCursor,
+        Qt.LeftEdge | Qt.BottomEdge: Qt.SizeBDiagCursor,
+        Qt.RightEdge | Qt.TopEdge: Qt.SizeBDiagCursor,
+    }
+
+    def _shell_event_filter(obj, event):
+        """frameless 壳的边缘缩放 (装在 QApplication 上, 覆盖子控件边缘)。
+
+        鼠标在窗口边缘时实际落在子控件上, shell 自身收不到事件, 故过滤
+        QApplication; 用 mapTo 换算到壳坐标判定边缘, 移动改光标 / 左键启动缩放。
+        """
+        # 过滤非本窗口或非 QWidget 对象 (QApplication 会收到 QWindow/QStyle 等)
+        if not isinstance(obj, QWidget) or not (obj is shell or shell.isAncestorOf(obj)):
+            return False
+        et = event.type()
+        if et == QEvent.MouseMove:
+            pos = obj.mapTo(shell, event.position().toPoint())
+            cursor = _EDGE_CURSORS.get(_resize_edges(shell, pos))
+            # 光标直接设在悬停控件上 (override 光标会被各控件自身光标覆盖)
+            obj.setCursor(cursor if cursor is not None else Qt.ArrowCursor)
+        elif et == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
+            pos = obj.mapTo(shell, event.position().toPoint())
+            edges = _resize_edges(shell, pos)
+            handle = shell.windowHandle()
+            if edges and handle is not None:
+                handle.startSystemResize(edges)
+                return True
+        return False
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
@@ -585,6 +702,9 @@ if __name__ == "__main__":
     shell.setObjectName("pmu1811PreviewShell")
     shell.setWindowTitle("KK'1811 PMU Configuration Tool")
     shell.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
+    # frameless 无系统边框: 事件过滤器装到 QApplication 才能收到子控件上的边缘事件
+    shell.setMouseTracking(True)
+    app.installEventFilter(shell)
     # 壳本身也按暗色主题绘制, 避免重绘/留白处露默认白底
     shell.setAttribute(Qt.WA_StyledBackground, True)
     shell.setStyleSheet(
@@ -596,5 +716,6 @@ if __name__ == "__main__":
     shell_root.addWidget(Pmu1811UI(shell), 1)
     shell.resize(1080, 720)
     shell.show()
+    shell.eventFilter = _shell_event_filter
     _apply_dwm_round_corners(shell)
     sys.exit(app.exec())
