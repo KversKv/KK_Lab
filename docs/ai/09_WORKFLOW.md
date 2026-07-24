@@ -26,14 +26,13 @@ AI 就必须完整执行下列三阶段。
 | AI 环境 | 入口文件 | 说明 |
 |---|---|---|
 | TRAE IDE | [.trae/rules/project-rules.md](../../.trae/rules/project-rules.md) | 会话启动自动注入 |
-| Claude 系 | [CLAUDE.md](../../CLAUDE.md) | 主入口 |
-| 其他（Codex / Cursor / Continue / Cline / Aider …） | [AGENTS.md](../../AGENTS.md) | CLAUDE.md 镜像 |
+| 通用入口 | [AGENTS.md](../../AGENTS.md) | 主入口 |
 
 三者铁律对齐，任选其一即可覆盖 NEVER / ALWAYS。
 
 ### 1.2 长期记忆恢复
 
-阅读 [.ai/memory.md](../../.ai/memory.md)，快速恢复：
+阅读 [memory.md](./memory.md)，快速恢复：
 - 项目核心一句话；
 - 过往会话沉淀的偏好 / 约定 / 已解决的坑；
 - 变更履历中最近的改动点。
@@ -141,7 +140,7 @@ main.py → ui/ ←→ core/ → instruments/ → lib/
 - 项目当前未配置 `ruff` / `mypy`。
 - 若引入新 lint / typecheck / test 命令：
   1. 同步更新 [02_COMMANDS.md](./02_COMMANDS.md)；
-  2. 在 [CLAUDE.md](../../CLAUDE.md) 第 5 节追加；
+  2. 在 [AGENTS.md](../../AGENTS.md) 运行/打包章节追加；
   3. 在 [.trae/rules/project-rules.md](../../.trae/rules/project-rules.md) "5. 提交与确认" 提示本次要运行。
 
 ### 3.5 文档沉淀（按需，不强制）
@@ -150,7 +149,7 @@ main.py → ui/ ←→ core/ → instruments/ → lib/
 |---|---|
 | 架构级 / 方向性决策 | 新增 [docs/ai/decisions/NNN-xxx.md](./decisions/)（ADR 编号顺延） |
 | 新踩的坑 / 规避技巧 | 追加到 [03_GOTCHAS.md](./03_GOTCHAS.md) |
-| 长期有效的偏好 / 约定 | 写入 [.ai/memory.md](../../.ai/memory.md)，并在"变更履历"追加一行 |
+| 长期有效的偏好 / 约定 | 写入 [memory.md](./memory.md)，并在"变更履历"追加一行 |
 | 新增命令 / 工具 | 更新 [02_COMMANDS.md](./02_COMMANDS.md) |
 | 新功能分组 / 页面 | 按需更新 [00_OVERVIEW.md](./00_OVERVIEW.md) 目录速览 |
 
@@ -166,7 +165,7 @@ main.py → ui/ ←→ core/ → instruments/ → lib/
 | 新增 `resources/` 子目录 / `lib/` 下新 DLL / `chips/` 子目录 / 任何**运行时**进入安装包的资源 | [spec/kk_lab.spec](../../spec/kk_lab.spec) 的 `datas`（必要时 `hiddenimports`） |
 | 新增 / 重命名**功能页面**或顶层功能入口 | [helps/](../../helps/) 对应 HTML |
 | 源码 `import` 了**新第三方包**或锁定版本变动 | [requirements.txt](../../requirements.txt) |
-| 仅新增 / 修改 `docs/ai/*.md` / `.ai/memory.md` / `AGENTS.md` / `CLAUDE.md` / `.trae/rules/*` 等**纯文档** | 只同步 [DIRECTORY_STRUCTURE.txt](../../DIRECTORY_STRUCTURE.txt)；spec / helps / requirements **不改** |
+| 仅新增 / 修改 `docs/ai/*.md` / `AGENTS.md` / `.trae/rules/*` 等**纯文档** | 只同步 [DIRECTORY_STRUCTURE.txt](../../DIRECTORY_STRUCTURE.txt)；spec / helps / requirements **不改** |
 
 > ⚠️ `DIRECTORY_STRUCTURE.txt` 与 `requirements.txt` 是历史盲区，必须由 AI 在回归期主动核对，不要默认"自己没碰过就不用改"。
 
@@ -213,14 +212,14 @@ main.py → ui/ ←→ core/ → instruments/ → lib/
 | UI 页面里直接 `visa.open_resource(...)` | 通过 `core/` + QThread + `factory.create_xxx` |
 | 改完不测就说"完成" | Mock smoke / 真机 / 公共组件全回归 |
 | 任务完成主动 `git commit` | 等用户明确指令 |
-| 主动新建 `README.md` 解释改动 | 写进汇报摘要 + `.ai/memory.md` |
+| 主动新建 `README.md` 解释改动 | 写进汇报摘要 + `docs/ai/memory.md` |
 | 改了 spec 不验证打包 | `PyInstaller --clean --noconfirm` 走一遍 |
 
 ---
 
 ## 六、与其他文档的引用关系
 
-- 上游入口：[CLAUDE.md](../../CLAUDE.md)、[AGENTS.md](../../AGENTS.md)、[.trae/rules/project-rules.md](../../.trae/rules/project-rules.md)
-- 上游记忆：[.ai/memory.md](../../.ai/memory.md)
+- 上游入口：[AGENTS.md](../../AGENTS.md)、[.trae/rules/project-rules.md](../../.trae/rules/project-rules.md)
+- 上游记忆：[memory.md](./memory.md)
 - 平级专题：[00_OVERVIEW.md](./00_OVERVIEW.md) ~ [08_CHECKLISTS.md](./08_CHECKLISTS.md)
 - 下游沉淀：[decisions/](./decisions/)

@@ -48,4 +48,4 @@
 - 子页面切换：`nav_controller` 的 `pmu_test_tab_map` / `charger_test_tab_map` / `consumption_test_tab_map` / `module_test_tab_map` / `collection_submenu` / `pmu_tool_submenu` / `pa_submenu`
 - 每页源码：`ui/pages/<page>/` 下对应 UI 文件
 - 已有内部文档复用：`ui/pages/pmu/pmu_1811/README.md`、`ui/pages/n6705c_power_analyzer/n6705c_datalog_ui_usage.md`、`docs/user/IIC_Module/`、`docs/ai/VminHunter/`
-- 项目红线：`CLAUDE.md` + `.trae/rules/project-rules.md`（不硬编码地址、I2C 即用即销、统一日志、QSplitter 配 ExecutionLogsFrame 等）
+- 项目红线：`AGENTS.md` + `.trae/rules/project-rules.md`（不硬编码地址、I2C 即用即销、统一日志、QSplitter 配 ExecutionLogsFrame 等）

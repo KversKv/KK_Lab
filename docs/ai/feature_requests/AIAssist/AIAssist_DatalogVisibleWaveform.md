@@ -223,6 +223,6 @@ class WaveformDigest:
 |---|---|
 | `DIRECTORY_STRUCTURE.txt` | 无新增文件，免改（仅本 md + 现有源码改动） |
 | `helps/datalog.html` | 可补一句「可发送当前可见波形给 AI 助手」 |
-| `.ai/memory.md` | 记录「波形喂 AI 改为按可见窗口 + Marker」决策 |
+| `docs/ai/memory.md` | 记录「波形喂 AI 改为按可见窗口 + Marker」决策 |
 | `docs/ai/03_GOTCHAS.md` | 记「子线程禁读 Qt ViewBox；范围快照须 UI 线程取」坑点 |
 | `AIAssist_FeatureExtension_V1.md` | F1 表追加 F1.7 指向本文 |

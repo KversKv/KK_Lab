@@ -9,7 +9,7 @@
 4. [docs/ai/00\_OVERVIEW.md](./docs/ai/00_OVERVIEW.md) —— 项目概述
 5. [docs/ai/04\_ARCHITECTURE.md](./docs/ai/04_ARCHITECTURE.md) —— 架构分层
 6. [.trae/rules/project-rules.md](./.trae/rules/project-rules.md) —— TRAE IDE 规则
-7. [.ai/memory.md](./.ai/memory.md) —— 会话沉淀的长期记忆
+7. [docs/ai/memory.md](./docs/ai/memory.md) —— 会话沉淀的长期记忆
 8. [docs/ai/10\_VERSIONING.md](./docs/ai/10_VERSIONING.md) —— 版本号管理规范
 
 ***
@@ -58,7 +58,7 @@ python -m PyInstaller spec/n6705c_datalog.spec --clean --noconfirm
 ## 分发索引
 
 > 🔴 **强制要求**：开始任务前，先在下表定位任务类型，**必须通读对应"必读"文档**再动手；"可选"文档按需拉取。
-> 以 [CLAUDE.md §7](./CLAUDE.md#7-任务--docsai-分发索引critical--ai-必读) 为唯一事实源，本表同步其内容。
+> 以本文档 §7 为唯一事实源，本表同步其内容。
 
 | 任务类型（触发词）                        | 必读（Must-Read）                                                                                                                                         | 可选（On-Demand）                                    |
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
@@ -66,7 +66,7 @@ python -m PyInstaller spec/n6705c_datalog.spec --clean --noconfirm
 | **新增 / 修改 UI 页面 / 对话框 / 控件**     | [06\_PAGE\_GUIDE](./docs/ai/06_PAGE_GUIDE.md) · [01\_CONVENTIONS §6](./docs/ai/01_CONVENTIONS.md) · [03\_GOTCHAS](./docs/ai/03_GOTCHAS.md)            | [04\_ARCHITECTURE](./docs/ai/04_ARCHITECTURE.md) |
 | **新增 / 修改测试流程（PMU/Charger/...）** | [07\_TEST\_GUIDE](./docs/ai/07_TEST_GUIDE.md) · [04\_ARCHITECTURE](./docs/ai/04_ARCHITECTURE.md) · [08\_CHECKLISTS](./docs/ai/08_CHECKLISTS.md)       | [01\_CONVENTIONS](./docs/ai/01_CONVENTIONS.md)   |
 | **PyInstaller 打包 / spec 修改**     | [03\_GOTCHAS](./docs/ai/03_GOTCHAS.md) · [08\_CHECKLISTS](./docs/ai/08_CHECKLISTS.md) · [02\_COMMANDS](./docs/ai/02_COMMANDS.md)                      | —                                                |
-| **排查 Bug / 回归报错**                | [03\_GOTCHAS](./docs/ai/03_GOTCHAS.md) · [09\_WORKFLOW](./docs/ai/09_WORKFLOW.md) · [.ai/memory.md](./.ai/memory.md)                                  | [decisions/](./docs/ai/decisions/)               |
+| **排查 Bug / 回归报错**                | [03\_GOTCHAS](./docs/ai/03_GOTCHAS.md) · [09\_WORKFLOW](./docs/ai/09_WORKFLOW.md) · [memory.md](./docs/ai/memory.md)                                  | [decisions/](./docs/ai/decisions/)               |
 | **重构 / 架构调整 / 分层变动**             | [04\_ARCHITECTURE](./docs/ai/04_ARCHITECTURE.md) · [00\_OVERVIEW](./docs/ai/00_OVERVIEW.md) · [decisions/](./docs/ai/decisions/)                      | [01\_CONVENTIONS](./docs/ai/01_CONVENTIONS.md)   |
 | **新增依赖 / 环境配置**                  | [02\_COMMANDS](./docs/ai/02_COMMANDS.md) · [08\_CHECKLISTS](./docs/ai/08_CHECKLISTS.md)                                                               | —                                                |
 | **版本号 / 发版 / 改版本**               | [10\_VERSIONING](./docs/ai/10_VERSIONING.md)                                                                                                          | [08\_CHECKLISTS](./docs/ai/08_CHECKLISTS.md)     |

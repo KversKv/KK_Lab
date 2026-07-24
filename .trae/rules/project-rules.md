@@ -21,4 +21,4 @@ Win/PySide6·Py3.12+·pyvisa·pyqtgraph·Modbus·PyInstaller。分层 `main→ui
 仪器→05；页面→06+01§6；测试→07；打包→03+08；报错→03；开工→09。
 
 ## 4. 同步
-目录→`DIRECTORY_STRUCTURE.txt`；资源→`spec/kk_lab.spec`；页面→`helps/`；依赖→`requirements.txt`；决策→`decisions/`；上下文→`.ai/memory.md`；新坑→03。
+目录→`DIRECTORY_STRUCTURE.txt`；资源→`spec/kk_lab.spec`；页面→`helps/`；依赖→`requirements.txt`；决策→`decisions/`；上下文→`docs/ai/memory.md`；新坑→03。

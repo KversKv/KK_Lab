@@ -741,7 +741,7 @@ ResponseParser 双模式：
 | 新增 AI 页面/面板帮助 | `helps/`（如有帮助体系） |
 | 新增依赖（如 `httpx`/`requests`） | `requirements.txt` |
 | 架构决策（方案 A vs B、AI 能力边界） | `docs/ai/decisions/`（含参考图 `20260617-161442.jpg` 取舍说明） |
-| 会话沉淀/新坑 | `.ai/memory.md`、`docs/ai/03_GOTCHAS.md` |
+| 会话沉淀/新坑 | `docs/ai/memory.md`、`docs/ai/03_GOTCHAS.md` |
 | 模块版本 | `core/ai/__init__.py`、`ui/ai/__init__.py` 的 `MODULE_VERSION` |
 
 > 收尾务必跑 lint；中文一律简体；不新增无关 `*.md`；禁 `git commit`。

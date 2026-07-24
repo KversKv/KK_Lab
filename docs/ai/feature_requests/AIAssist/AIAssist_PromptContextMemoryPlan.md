@@ -498,7 +498,7 @@ user_data/ai/history/
 - 新资源(`resources/ai/*`) → `spec/kk_lab.spec`
 - 新依赖(如 `tiktoken` 可选) → `requirements.txt`
 - 决策记录 → `docs/ai/decisions/`
-- 上下文沉淀 → `.ai/memory.md`
+- 上下文沉淀 → `docs/ai/memory.md`
 - 新坑 → `docs/ai/03_GOTCHAS.md`
 
 ---

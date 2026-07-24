@@ -197,7 +197,7 @@
 
 | 项 | 说明 | 状态 |
 |---|---|---|
-| 同步矩阵 | 按 AIAssist_Architecture.md §18 同步 `DIRECTORY_STRUCTURE.txt`/`spec`/`requirements.txt`/`decisions/`/`.ai/memory.md` | ☑ 新增 `conversation_store.py`；无新增依赖（仍 httpx）；无新增 SVG；`history.json` gitignored |
+| 同步矩阵 | 按 AIAssist_Architecture.md §18 同步 `DIRECTORY_STRUCTURE.txt`/`spec`/`requirements.txt`/`decisions/`/`docs/ai/memory.md` | ☑ 新增 `conversation_store.py`；无新增依赖（仍 httpx）；无新增 SVG；`history.json` gitignored |
 | 分层 | `instruments/` 无 Qt；`ui/` 无阻塞 IO；仪器经 InstrumentManager | ☑ 流式 IO 走 `_StreamWorker`+QThread，UI 仅收信号增量渲染 |
 | 日志 | 无 `print`；异常 `exc_info=True`；无裸 `except` | ☑ 兜底 `# noqa: BLE001`；`conversation_store` 仅捕获 `OSError`/`JSONDecodeError` |
 | UI 规范 | QDialog 带 parent + OK/Cancel 二元化；控件高度 ID 选择器钉死；数值 QLabel 带单位 | ☑ 模型/快捷指令控件用 `#aiModelCombo`/`#aiQuickBtn` 钉 22px；设置对话框 parent + 二元化保留 |

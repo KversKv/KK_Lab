@@ -94,5 +94,5 @@ version.py  (__version__ / __build__ / APP_NAME / version_string())
 
 1. 改 [version.py](../../version.py) 的 `__version__`（必要时改 `__build__`）。
 2. 用 spec 打包出对应 exe。
-3. （可选）在 `.ai/memory.md` 记一句"发了 0.x.y，含哪些改动"。
+3. （可选）在 `docs/ai/memory.md` 记一句"发了 0.x.y，含哪些改动"。
 4. git commit / tag **不强制**，由你按需手动决定，不与版本号绑定。

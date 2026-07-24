@@ -27,7 +27,7 @@
 | 新增 `resources/` 子目录 / `lib/` 下新 DLL / `chips/` 子目录 / 任何**运行时**需要进入安装包的资源 | [spec/kk_lab.spec](../../spec/kk_lab.spec) 的 `datas`（必要时补 `hiddenimports`） |
 | 新增 / 重命名**功能页面**或顶层功能入口 | [helps/](../../helps/) 对应 HTML 帮助文件 |
 | 源码 `import` 了**新第三方包**或锁定版本变动 | [requirements.txt](../../requirements.txt) |
-| 仅新增 / 修改 `docs/ai/*.md` / `.ai/memory.md` / `AGENTS.md` / `CLAUDE.md` / `.trae/rules/*` 等**纯文档** | 只需同步 [DIRECTORY_STRUCTURE.txt](../../DIRECTORY_STRUCTURE.txt)；spec / helps / requirements **不改** |
+| 仅新增 / 修改 `docs/ai/*.md` / `AGENTS.md` / `.trae/rules/*` 等**纯文档** | 只需同步 [DIRECTORY_STRUCTURE.txt](../../DIRECTORY_STRUCTURE.txt)；spec / helps / requirements **不改** |
 
 > ⚠️ 盲区提醒：`DIRECTORY_STRUCTURE.txt` 与 `requirements.txt` 历来最易被 AI 遗漏，务必在回归期逐项复查。
 
@@ -112,6 +112,6 @@
 ## ✅ 文档沉淀
 
 - [ ] 重要架构决策写入 `docs/ai/decisions/NNN-xxx.md`
-- [ ] 会话关键上下文写入 `.ai/memory.md`
-- [ ] 若新增了 lint / test 命令，更新 `02_COMMANDS.md` + `CLAUDE.md`
+- [ ] 会话关键上下文写入 `docs/ai/memory.md`
+- [ ] 若新增了 lint / test 命令，更新 `02_COMMANDS.md` + `AGENTS.md`
 - [ ] 若踩坑可归纳，更新 `03_GOTCHAS.md`

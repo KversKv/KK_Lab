@@ -21,13 +21,12 @@ KK_Lab/
 ├── pyproject.toml           # 项目元数据与依赖声明 (PEP 621)
 ├── .gitignore               # Git 忽略规则
 ├── DIRECTORY_STRUCTURE.txt  # 本文件 - 工程目录结构说明
-├── CLAUDE.md                # Claude/TRAE AI 主入口文档 (CRITICAL 规则)
-├── AGENTS.md                # 通用 AI Agent 协作指引 (CLAUDE.md 的镜像入口)
+├── AGENTS.md                # 通用 AI Agent 协作指引 (主入口)
 │
 ├── .trae/                   # TRAE IDE 专用配置
 │   └── rules/
 │       └── project-rules.md # 项目级 AI 交互规则
-├── .ai/                     # AI 会话沉淀
+├── docs/ai/                 # AI 协作与项目架构文档
 │   └── memory.md            # 长期记忆 / 会话关键上下文
 │
 ├── chips/                   # BES 芯片配置与型号注册

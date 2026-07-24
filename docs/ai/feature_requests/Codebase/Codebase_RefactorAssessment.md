@@ -256,14 +256,14 @@ ui/modules/serialCom_module/
 |---|---|---|---|
 | 0-1 | 建 `tests/test_smoke_import.py` | ✅ | 遍历 import 不报错 |
 | 0-2 | 建 `tests/refactor/__init__.py` | ✅ | 重构期测试目录 |
-| 0-3 | 记录行数基线到 `.ai/memory.md` | ✅ | 19 个红区快照 |
+| 0-3 | 记录行数基线到 `docs/ai/memory.md` | ✅ | 19 个红区快照 |
 | 0-4 | 验收：`python main.py` 冒烟通过 | ✅ | smoke_import 绿（venv） |
 
 | 动作 | 文件 | 说明 |
 |---|---|---|
 | 🧪🆕 | `tests/test_smoke_import.py` | 遍历 import 所有页面/模块，确保拆分后不破导入 |
 | 🧪🆕 | `tests/refactor/__init__.py` | 重构期专用测试目录 |
-| 🗂️ | `.ai/memory.md` | 记录"重构进行中"上下文与基线行数 |
+| 🗂️ | `docs/ai/memory.md` | 记录"重构进行中"上下文与基线行数 |
 
 > 不动任何业务代码，仅织好安全网。
 
@@ -528,7 +528,7 @@ DIRECTORY_STRUCTURE.txt
 spec/kk_lab.spec
 helps/（涉及页面的帮助文档若 UI 文案变化）
 docs/ai/04_ARCHITECTURE.md
-.ai/memory.md
+docs/ai/memory.md
 requirements.txt（如引入 pytest 相关，需确认是否已有）
 ```
 

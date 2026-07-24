@@ -138,7 +138,7 @@ ruff check .
 mypy main.py
 ```
 
-若新增命令，请更新本文件 + [CLAUDE.md](../../CLAUDE.md)。
+若新增命令，请更新本文件 + [AGENTS.md](../../AGENTS.md)。
 
 ## 8. Git 常用
 

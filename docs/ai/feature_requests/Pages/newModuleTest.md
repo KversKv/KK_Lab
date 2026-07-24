@@ -383,7 +383,7 @@ Tab 容器页需支持 AI 下钻到当前子页，改动点：
 - [ ] `helps/`：新增 `module_test_ldo.html` / `module_test_dcdc.html`。
 - [ ] `requirements.txt`：若报告用 `openpyxl` 未在则补（当前已有则免）。
 - [ ] `docs/kk_lab_ai_memory/automation/module_test/`：新增记忆库伞目录 + `module_test_ldo/` / `module_test_dcdc/` 两个子页目录，各含 5 类 md（见 §3.1-D）。
-- [ ] `.ai/memory.md`：沉淀本次协作上下文与复用点（AI coding 侧，与运行期记忆库区分）。
+- [ ] `docs/ai/memory.md`：沉淀本次协作上下文与复用点（AI coding 侧，与运行期记忆库区分）。
 - [ ] `docs/ai/decisions/`：如做了取舍（如仅 HTML 不出 Excel）记录决策。
 - [ ] AI 侧（改现有文件，不新建）：`core/ai/providers/page_provider.py` 补 `_PAGE_LABELS`、`core/ai/profiles.py` 补两条 `AI_PROFILES`；`main_window.py` 补 page_key 下钻（§8.3）。
 - [ ] 各模块 `__init__.py` 的 `MODULE_VERSION` 初始 `0.0.0`。

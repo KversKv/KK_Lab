@@ -379,7 +379,7 @@ AI 默认输出 Markdown，对话 UI 必须渲染，否则代码/表格挤成一
 | 新增 SVG 图标（复制/发送/放大等） | `resources/` + `spec/kk_lab.spec` |
 | 新增依赖（如 Phase5 markdown/Pygments） | `requirements.txt` |
 | 白名单/护栏/critical 边界等安全决策 | `docs/ai/decisions/` |
-| 关键上下文沉淀 | `.ai/memory.md` |
+| 关键上下文沉淀 | `docs/ai/memory.md` |
 | 模块单独迭代 | 对应 `__init__.py` 的 `MODULE_VERSION` +1 |
 | 改完 | 跑 lint |
 

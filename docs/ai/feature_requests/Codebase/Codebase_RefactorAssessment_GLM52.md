@@ -4,7 +4,7 @@
 > 评估日期：2026-06-23
 > 评估方：GLM-5.2
 > 目的：独立盘点"巨石文件"，给出**该不该拆、拆成什么、按什么架构拆**的结论，并输出**逐文件、逐阶段、带进度看板**的可执行计划。
-> 阅读前置：[04_ARCHITECTURE.md](../../04_ARCHITECTURE.md) · [06_PAGE_GUIDE.md](../../06_PAGE_GUIDE.md) · [01_CONVENTIONS.md](../../01_CONVENTIONS.md) · [CLAUDE.md](../../../../CLAUDE.md)
+> 阅读前置：[04_ARCHITECTURE.md](../../04_ARCHITECTURE.md) · [06_PAGE_GUIDE.md](../../06_PAGE_GUIDE.md) · [01_CONVENTIONS.md](../../01_CONVENTIONS.md) · [AGENTS.md](../../../../AGENTS.md)
 >
 > ⚠️ 本文件与同目录 [Codebase_RefactorAssessment.md](./Codebase_RefactorAssessment.md) 互为独立视角；行数以本文件实测为准（已修正原文件的 n6705c_analyser/datalog 行数对调问题）。
 
@@ -342,7 +342,7 @@ core/instruments/
 | 0-3 | 🆕 建 `tests/refactor/__init__.py` | ⬜ | 重构期测试目录 |
 | 0-4 | 🧪🆕 建 `tests/refactor/test_smoke_import.py` | ⬜ | 遍历 import 所有页面/模块不报错 |
 | 0-5 | 🧪🆕 建 `tests/refactor/test_no_qt_in_core_analysis.py` | ⬜ | 占位：后续校验 core 下 analysis 不 import QtWidgets |
-| 0-6 | 🗂️ 记录行数基线到 `.ai/memory.md` | ⬜ | 28 个红区快照 |
+| 0-6 | 🗂️ 记录行数基线到 `docs/ai/memory.md` | ⬜ | 28 个红区快照 |
 | 0-7 | 验收：`python main.py` 冒烟 + `pytest tests/refactor/` 绿 | ⬜ | 退出 Phase 门禁 |
 
 | 动作 | 文件 | 说明 |
@@ -353,7 +353,7 @@ core/instruments/
 | 🧪🆕 | `tests/refactor/__init__.py` | 重构期测试包 |
 | 🧪🆕 | `tests/refactor/test_smoke_import.py` | 遍历 import 所有 `ui.pages.*` / `ui.modules.*`，确保拆分后不破导入 |
 | 🧪🆕 | `tests/refactor/test_no_qt_in_core_analysis.py` | 占位测试，后续 Phase 2 填充断言 |
-| 🗂️ | `.ai/memory.md` | 记录"重构进行中"上下文与基线行数 |
+| 🗂️ | `docs/ai/memory.md` | 记录"重构进行中"上下文与基线行数 |
 
 ---
 
@@ -585,7 +585,7 @@ core/instruments/
 | 7-5 | ♻️ serialCom_apple_gpt5p5_style / serialCom_dark_style 改用 token | ⬜ | 去重 |
 | 7-6 | ♻️ ai_assist_panel 拆子组件 | ⬜ | 已有 chat_view，继续拆 |
 | 7-7 | ♻️ mcu_io_module_frame 参照 serialCom 套路拆 mixins | ⬜ | 1705 行 |
-| 7-8 | 🗂️ 同步 `DIRECTORY_STRUCTURE.txt` + `.ai/memory.md` | ⬜ | 最终结构 |
+| 7-8 | 🗂️ 同步 `DIRECTORY_STRUCTURE.txt` + `docs/ai/memory.md` | ⬜ | 最终结构 |
 | 7-9 | 验收：全工程冒烟 + lint + 全部 pytest 绿 | ⬜ | 退出最终门禁 |
 
 | 动作 | 文件 | 内容 |
@@ -599,7 +599,7 @@ core/instruments/
 | ♻️✂️ | [ai_assist_panel.py](../../../ui/ai/ai_assist_panel.py) | 拆 panel 子组件到 `ui/ai/ai_assist_views/` |
 | ♻️✂️ | [mcu_io_module_frame.py](../../../ui/modules/mcu_io_module_frame.py) | 参照 serialCom 拆 `mcu_io_mixins/` |
 | 🗂️ | `DIRECTORY_STRUCTURE.txt` | 同步最终目录结构 |
-| 🗂️ | `.ai/memory.md` | 记录重构完成上下文 |
+| 🗂️ | `docs/ai/memory.md` | 记录重构完成上下文 |
 
 **验收**：main_window 1360 → < 800 行；serialCom 两套皮肤去重 ≥ 30%；全工程冒烟 + lint + pytest 全绿。
 
@@ -627,7 +627,7 @@ core/instruments/
 3. `pytest tests/refactor/` 全绿。
 4. 源文件行数达到该 Phase 目标（见各 Phase 验收）。
 5. `DIRECTORY_STRUCTURE.txt` 已同步（若有结构变动）。
-6. `.ai/memory.md` 更新该 Phase 完成状态。
+6. `docs/ai/memory.md` 更新该 Phase 完成状态。
 
 全工程 DoD（Phase 7 退出）：
 - 28 个红区文件降至 ≤ 8 个（仅保留职责单一的同质文件）。

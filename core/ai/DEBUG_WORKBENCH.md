@@ -250,7 +250,7 @@ python -m core.ai.eval_runner
 ## 8. 同步矩阵（改动后必做，项目铁律）
 
 - 目录变更 → `DIRECTORY_STRUCTURE.txt`（新增 `trace_store.py` / `replay.py` / 本文件）
-- 上下文沉淀 → `.ai/memory.md`
+- 上下文沉淀 → `docs/ai/memory.md`
 - 新坑 → `docs/ai/03_GOTCHAS.md`
 - 资源/依赖 → trace 写 `user_data`，非打包资源，`spec/kk_lab.spec` 无需改；未引入新第三方依赖。
 
