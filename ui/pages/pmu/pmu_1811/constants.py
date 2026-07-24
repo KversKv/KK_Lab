@@ -50,8 +50,10 @@ FONT_MONO = '"JetBrains Mono", "Consolas", "Courier New", monospace'
 VSYS_X = 48
 CARD_X_L1 = 96
 CARD_X_L2 = 452
-CARD_X_L3 = 760             # L3 列 (第三级 SW, VIN 源为 L2 模块)
-SW_BUS_X = 730              # SW VIN 右侧竖线 x (L2 源 → L3 SW)
+# L3 列 (第三级 SW, VIN 源为 L2 模块) 与 SW_BUS_X 间距需容纳 vin_sw5_6 母线药丸
+# (BUS_PILL_W=112), 避免与 LDO_13 卡片右边 / SW 卡片左边重叠
+CARD_X_L3 = 850
+SW_BUS_X = 780              # SW VIN 右侧竖线 x (L2 源 → L3 SW)
 SUB_BUS_X = 422
 CARD_W = 256
 CARD_H = 48

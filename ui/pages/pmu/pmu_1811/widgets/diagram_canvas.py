@@ -38,12 +38,14 @@ class DiagramCanvas(QWidget):
         self._build()
 
     def _build(self):
+        max_x = 0
         for i, row in enumerate(_LAYOUT_ROWS):
             y_center = TOP_PAD + i * ROW_H + CARD_H // 2
             self._rows.append((row, y_center))
             if row.kind == "module":
                 mod = self._modules[row.id]
                 x = self._card_x(row)
+                max_x = max(max_x, x + CARD_W)
                 if is_sw(row.id):
                     # SW: 物理开关模型 (无端电压步进/齿轮, 单击切换闭合/开路)
                     card = SwitchWidget(mod, self)
@@ -62,22 +64,24 @@ class DiagramCanvas(QWidget):
 
         n = len(_LAYOUT_ROWS)
         self.setFixedSize(
-            CARD_X_L3 + CARD_W + 36,
+            max_x + 36,
             TOP_PAD * 2 + n * ROW_H,
         )
 
-    @staticmethod
-    def _card_x(row) -> int:
+    def _card_x(self, row) -> int:
         """模块卡片 x 坐标。
 
-        L1 模块 → CARD_X_L1; L2 模块 / VIN 源为 L1 对偶的 SW → CARD_X_L2;
+        L1 模块 → CARD_X_L1; L2 模块 / VIN 源为 L1 的 SW → CARD_X_L2;
         VIN 源为 L2 单模块的 SW (第三级) → CARD_X_L3。
         """
         if is_sw(row.id):
-            # SW 级别 = VIN 源级别 + 1; 源为 L2 (单模块) → SW 是 L3
-            if "&" not in row.input:
-                return CARD_X_L3
-            return CARD_X_L2
+            # SW 级别 = VIN 源级别 + 1
+            if "&" in row.input:
+                return CARD_X_L2       # 对偶源 (L1) → SW 是 L2
+            src_row, _ = self._find_row(row.input)
+            if src_row is not None and src_row.level == 1:
+                return CARD_X_L2       # 单模块源 L1 → SW 是 L2
+            return CARD_X_L3           # 单模块源 L2 → SW 是 L3
         return CARD_X_L1 if row.level == 1 else CARD_X_L2
 
     def get_card(self, mod_id: str):
@@ -168,6 +172,21 @@ class DiagramCanvas(QWidget):
                 p.drawRoundedRect(rect, 8, 8)
                 p.setPen(QColor(COL_BLUE))
                 p.drawText(rect, Qt.AlignCenter, r.bus_name)
+
+        # vin_sw5_6 标签: SW5/SW6 共享输入总节点 (L1 单模块源 LDO_13 → SUB_BUS_X 干线)
+        # 样式与 vdd_l5 母线药丸一致, 标记 SW 输入母线节点
+        sw5_row, _ = self._find_row("SW5")
+        if sw5_row is not None:
+            src_mod, src_y = self._find_row(sw5_row.input)
+            if src_mod is not None and src_y is not None:
+                trunk_x = SUB_BUS_X if src_mod.level == 1 else SW_BUS_X
+                rect = QRect(trunk_x - BUS_PILL_W // 2, src_y - BUS_PILL_H // 2,
+                             BUS_PILL_W, BUS_PILL_H)
+                p.setPen(Qt.NoPen)
+                p.setBrush(QColor("#1f2937"))
+                p.drawRoundedRect(rect, 8, 8)
+                p.setPen(QColor(COL_BLUE))
+                p.drawText(rect, Qt.AlignCenter, "vin_sw5_6")
 
     def _pair_ids_with_sw(self) -> set:
         """返回有 SW 子模块的对偶源半 id 集合 (如 {"BUCK_01", "LDO_01"})。"""
@@ -272,21 +291,29 @@ class DiagramCanvas(QWidget):
         """绘制 SW 的 VIN 连线 (玫红): 仅处理单模块源 (如 LDO_13)。
 
         对偶源 (input 含 "&") 由 _draw_vin_tree 统一渲染, 此处跳过。
-        单 L2 模块输出: 从 L2 卡片右边 (CARD_X_L2+CARD_W) 引出
-        → SW_BUS_X 竖线 → L3 SW 开关模型左缘 (CARD_X_L3, 输入引线起点)。
+        单模块源: 从源卡片右边引出 (L1→CARD_X_L1+CARD_W / L2→CARD_X_L2+CARD_W)
+        → 干线 (L1 源→SUB_BUS_X / L2 源→SW_BUS_X) → SW 开关模型左缘
+        (L1 源→CARD_X_L2 / L2 源→CARD_X_L3)。
         """
         # 按 VIN 源分组, 共享同一干线 (树状分支)
         groups: dict[str, list[tuple[int, int, str]]] = {}
         for r, yc in self._rows:
             if r.kind == "module" and is_sw(r.id) and "&" not in r.input:
-                groups.setdefault(r.input, []).append((yc, CARD_X_L3, COL_SW_LINE))
+                src_row, _ = self._find_row(r.input)
+                if src_row is not None and src_row.level == 1:
+                    target_x = CARD_X_L2       # 源 L1 → SW L2
+                else:
+                    target_x = CARD_X_L3       # 源 L2 → SW L3
+                groups.setdefault(r.input, []).append((yc, target_x, COL_SW_LINE))
 
         for vin, children in groups.items():
-            _, src_y = self._find_row(vin)
+            src_row, src_y = self._find_row(vin)
             if src_y is None:
                 continue
-            self._draw_wire_tree(p, CARD_X_L2 + CARD_W, src_y,
-                                 SW_BUS_X, children, COL_SW_LINE)
+            src_x = (CARD_X_L1 if src_row.level == 1 else CARD_X_L2) + CARD_W
+            trunk_x = SUB_BUS_X if src_row.level == 1 else SW_BUS_X
+            self._draw_wire_tree(p, src_x, src_y,
+                                 trunk_x, children, COL_SW_LINE)
 
     def _draw_subtree(self, p, parent_id: str):
         parent_idx = self._row_index(lambda r: (r.kind == "bus" and r.bus_name == parent_id) or

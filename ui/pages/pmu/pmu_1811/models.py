@@ -92,13 +92,14 @@ _LAYOUT_ROWS = [
     # 并联对偶组 1: BUCK_01 / LDO_01 (上下相邻并联, 输出短接)
     LayoutRow("module", "BUCK_01", 1, "VSYS"),
     LayoutRow("module", "LDO_01", 1, "VSYS", pair="BUCK_01", pair_layout="vertical"),
-    LayoutRow("module", "LDO_12", 2, "BUCK_01"),
     # SW1, SW7 (VIN: LDO_01&BUCK_01) — 紧跟 VIN 源模块块
     LayoutRow("module", "SW1", 1, "LDO_01&BUCK_01"),
     LayoutRow("module", "SW7", 1, "LDO_01&BUCK_01"),
     # 并联对偶组 2: BUCK_02 / LDO_02 (上下相邻并联)
     LayoutRow("module", "BUCK_02", 1, "VSYS"),
     LayoutRow("module", "LDO_02", 1, "VSYS", pair="BUCK_02", pair_layout="vertical"),
+    # LDO_12 VIN: LDO_02&BUCK_02 对偶输出轨 (取 BUCK_02 半 id, 由 _draw_vin_tree 渲染)
+    LayoutRow("module", "LDO_12", 2, "BUCK_02"),
     # SW2 (VIN: LDO_02&BUCK_02)
     LayoutRow("module", "SW2", 1, "LDO_02&BUCK_02"),
     # 并联对偶组 3: BUCK_03 / LDO_03 (上下相邻并联)
@@ -125,7 +126,8 @@ _LAYOUT_ROWS = [
     LayoutRow("module", "LDO_VMIC2", 2, "vdd_l14_15"),
     LayoutRow("bus", "vdd_l5", 1, "VSYS", "vdd_l5"),
     LayoutRow("module", "LDO_05", 2, "vdd_l5"),
-    LayoutRow("module", "LDO_13", 2, "vdd_l5"),
+    # LDO_13 VIN: VSYS 直连 (level 1), 作为 SW5/SW6 单模块源
+    LayoutRow("module", "LDO_13", 1, "VSYS"),
     # SW5, SW6 (VIN: LDO_13) — 紧跟 LDO_13
     LayoutRow("module", "SW5", 1, "LDO_13"),
     LayoutRow("module", "SW6", 1, "LDO_13"),
