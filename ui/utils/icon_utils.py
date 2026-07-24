@@ -42,6 +42,24 @@ def tinted_svg_icon(svg_path: str, color: str, size: int = 16) -> QIcon:
     return _render_cached(svg_path, color, size)
 
 
+def svg_pixmap(svg_path: str, size: int = 16) -> QPixmap:
+    """原色渲染 SVG（不做单色染色），适用于渐变 / 多色图标。"""
+    renderer = _get_renderer(svg_path)
+    if renderer is None:
+        return QPixmap()
+
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setRenderHint(QPainter.SmoothPixmapTransform)
+    renderer.render(painter)
+    painter.end()
+
+    return pixmap
+
+
 def tinted_svg_pixmap(svg_path: str, color: str, size: int = 16) -> QPixmap:
     renderer = _get_renderer(svg_path)
     if renderer is None:

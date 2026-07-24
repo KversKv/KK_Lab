@@ -17,12 +17,16 @@ if not getattr(sys, "frozen", False):
     if _PROJECT_ROOT not in sys.path:
         sys.path.insert(0, _PROJECT_ROOT)
 
-from PySide6.QtCore import Qt, QPoint, QThread, QTimer
+from PySide6.QtCore import Qt, QPoint, QPointF, QSize, QRectF, QThread, QTimer
+from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QPushButton, QHBoxLayout, QVBoxLayout, QScrollArea,
 )
 
 from log_config import get_logger
+
+from ui.resource_path import get_resource_base
+from ui.utils.icon_utils import svg_pixmap
 
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.pages.pmu.pmu_1811.constants import (
@@ -33,6 +37,10 @@ from ui.pages.pmu.pmu_1811.models import _default_modules, get_pair_partner
 from ui.pages.pmu.pmu_1811.widgets import DiagramCanvas, PropertyPanel, ContextMenu
 
 logger = get_logger(__name__)
+
+_PMU_ICON_SVG = os.path.join(
+    get_resource_base(), "resources", "pages", "pmu_1811_SVGs", "pmu_1811.svg"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -150,12 +158,6 @@ class Pmu1811UI(QWidget):
         h.setContentsMargins(20, 0, 20, 0)
         h.setSpacing(12)
 
-        icon_lbl = QLabel("▣", header)
-        icon_lbl.setStyleSheet(f"color:{COL_EMERALD}; font-size:18px;")
-        title = QLabel("KK'1811 PMU Configuration Tool", header)
-        title.setStyleSheet(f"color:{COL_TEXT}; font-size:15px; font-weight:700;")
-        h.addWidget(icon_lbl)
-        h.addWidget(title)
         h.addStretch(1)
 
         info = QLabel("DUT: 1811  |  I2C: 0x17", header)
@@ -440,14 +442,159 @@ class Pmu1811UI(QWidget):
         self._start_write(mod_id, "mode", mode)
 
 
+# ---------------------------------------------------------------------------
+# 独立预览: 无边框壳 + 自绘标题栏 (参考 main 窗口, 替代系统标题栏以适配主题)
+# ---------------------------------------------------------------------------
+def _caption_icon(kind: str, color: str, size: int = 12) -> QIcon:
+    """绘制窗口控制图标 (细线条 1px 描边, 颜色随 1811 主题)。"""
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing, True)
+    pen = QPen(QColor(color))
+    pen.setWidthF(1.0)
+    pen.setCosmetic(True)
+    painter.setPen(pen)
+
+    pad = 1.5
+    x0, y0 = pad, pad
+    x1, y1 = size - pad, size - pad
+    cy = size / 2.0
+    if kind == "min":
+        painter.drawLine(QPointF(x0, cy), QPointF(x1, cy))
+    elif kind == "max":
+        painter.drawRect(QRectF(x0, y0, x1 - x0, y1 - y0))
+    elif kind == "restore":
+        off = 3.0
+        painter.drawRect(QRectF(x0, y0 + off, (x1 - x0) - off, (y1 - y0) - off))
+        painter.drawLine(QPointF(x0 + off, y0), QPointF(x1, y0))
+        painter.drawLine(QPointF(x1, y0), QPointF(x1, y1 - off))
+    elif kind == "close":
+        painter.drawLine(QPointF(x0, y0), QPointF(x1, y1))
+        painter.drawLine(QPointF(x1, y0), QPointF(x0, y1))
+    painter.end()
+    return QIcon(pixmap)
+
+
+class _PreviewTitleBar(QWidget):
+    """独立预览壳的自绘标题栏 (1811 主题色: 图标 + 标题 + min/max/close)。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("previewTitleBar")
+        # 纯 QWidget 默认不绘制 QSS 背景, 必须置此属性 (否则露 Fusion 白底)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setFixedHeight(32)
+        self.setStyleSheet(
+            f"QWidget#previewTitleBar {{ background:{COL_PANEL_BG};"
+            f" border-bottom:1px solid {COL_BORDER}; }}"
+            f"QWidget#previewTitleBar QLabel {{ background:transparent; border:none; }}"
+            f"QPushButton#pvCtrlBtn, QPushButton#pvCloseBtn {{"
+            f" min-width:40px; max-width:40px; min-height:32px; max-height:32px;"
+            f" padding:0; border:none; border-radius:0; background:transparent; }}"
+            f"QPushButton#pvCtrlBtn:hover {{ background:{COL_CARD_BG}; }}"
+            f"QPushButton#pvCloseBtn:hover {{ background:#e81123; }}"
+        )
+        self._maximized = False
+        self._normal_geom = None
+
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(12, 0, 0, 0)
+        lay.setSpacing(8)
+
+        icon = QLabel(self)
+        icon.setFixedSize(16, 16)
+        icon.setPixmap(svg_pixmap(_PMU_ICON_SVG, 16))
+        lay.addWidget(icon, 0, Qt.AlignVCenter)
+
+        title = QLabel("KK'1811 PMU Configuration Tool", self)
+        title.setStyleSheet(f"color:{COL_TEXT}; font-size:12px; font-weight:600;")
+        lay.addWidget(title, 0, Qt.AlignVCenter)
+        lay.addStretch(1)
+
+        self._add_btn(lay, "pvCtrlBtn", "min", "最小化", self._on_min)
+        self._max_btn = self._add_btn(lay, "pvCtrlBtn", "max", "最大化", self._on_toggle_max)
+        self._add_btn(lay, "pvCloseBtn", "close", "关闭", self._on_close)
+
+    def _add_btn(self, lay, obj_name, kind, tooltip, slot):
+        btn = QPushButton(self)
+        btn.setObjectName(obj_name)
+        btn.setIcon(_caption_icon(kind, COL_TEXT_MUTED))
+        btn.setIconSize(QSize(12, 12))
+        btn.setToolTip(tooltip)
+        btn.setFocusPolicy(Qt.NoFocus)
+        btn.clicked.connect(slot)
+        lay.addWidget(btn, 0, Qt.AlignVCenter)
+        return btn
+
+    def _on_min(self):
+        self.window().showMinimized()
+
+    def _on_close(self):
+        self.window().close()
+
+    def _on_toggle_max(self):
+        # frameless 窗口直接 showMaximized 会盖住任务栏, 改为在屏幕可用区几何间切换
+        w = self.window()
+        if self._maximized:
+            if self._normal_geom is not None:
+                w.setGeometry(self._normal_geom)
+            self._maximized = False
+        else:
+            self._normal_geom = w.geometry()
+            w.setGeometry(w.screen().availableGeometry())
+            self._maximized = True
+        self._max_btn.setIcon(
+            _caption_icon("restore" if self._maximized else "max", COL_TEXT_MUTED))
+        self._max_btn.setToolTip("还原" if self._maximized else "最大化")
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton and not self._maximized:
+            handle = self.window().windowHandle()
+            if handle is not None:
+                handle.startSystemMove()
+        super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._on_toggle_max()
+        super().mouseDoubleClickEvent(event)
+
+
+def _apply_dwm_round_corners(window):
+    """Windows 11 下给窗口启用 DWM 原生微弱圆角 (与主窗口一致); 不支持则忽略。"""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        # 33 = DWMWA_WINDOW_CORNER_PREFERENCE, 2 = DWMWCP_ROUND
+        pref = ctypes.c_int(2)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            int(window.winId()), 33, ctypes.byref(pref), ctypes.sizeof(pref))
+    except Exception:  # noqa: BLE001 - 老系统无 DWM 圆角, 忽略
+        logger.debug("DWM 圆角设置失败 (系统不支持, 忽略)", exc_info=True)
+
+
 if __name__ == "__main__":
-    """独立预览 1811 PMU 配置工具界面。"""
+    """独立预览 1811 PMU 配置工具界面 (无边框 + 自绘标题栏)。"""
     from PySide6.QtWidgets import QApplication
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-    window = Pmu1811UI()
-    window.setWindowTitle("KK'1811 PMU Configuration Tool")
-    window.resize(1080, 720)
-    window.show()
+    shell = QWidget()
+    shell.setObjectName("pmu1811PreviewShell")
+    shell.setWindowTitle("KK'1811 PMU Configuration Tool")
+    shell.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
+    # 壳本身也按暗色主题绘制, 避免重绘/留白处露默认白底
+    shell.setAttribute(Qt.WA_StyledBackground, True)
+    shell.setStyleSheet(
+        f"QWidget#pmu1811PreviewShell {{ background:{COL_CANVAS_BG}; }}")
+    shell_root = QVBoxLayout(shell)
+    shell_root.setContentsMargins(0, 0, 0, 0)
+    shell_root.setSpacing(0)
+    shell_root.addWidget(_PreviewTitleBar(shell))
+    shell_root.addWidget(Pmu1811UI(shell), 1)
+    shell.resize(1080, 720)
+    shell.show()
+    _apply_dwm_round_corners(shell)
     sys.exit(app.exec())

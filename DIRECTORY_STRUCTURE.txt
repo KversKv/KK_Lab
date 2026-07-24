@@ -529,6 +529,7 @@ resources/
     ├── n6705c_power_analyzer_SVGs/    # N6705C 页面专属
     ├── oscilloscope_SVGs/             # 示波器页面
     ├── pmu_test_SVGs/                 # PMU 测试页面
+    ├── pmu_1811_SVGs/                 # 1811 PMU 配置工具页面
     ├── charger_test_SVGs/             # Charger 测试页面
     ├── chamber_SVGs/                  # 温箱页面
     ├── consumption_test_SVGs/         # 功耗测试页面

@@ -73,6 +73,12 @@
 - 配色独立全局 theme：琥珀 `#f59e0b`(VSYS)、蓝 `#3b82f6`(子母线)、紫 `#a855f7`(对偶短接)、翡翠绿 `#10B981`(使能)、玫红 `#ec4899`(SW)。
 - SW 由 `SwitchWidget` 画拟物开关（非卡片）：输入引线、左右玫红端点、动态连杆（闭合=绿水平/开路=灰上倾28°），单击切换。
 
+### 图标与独立预览
+
+- **页面图标**：`resources/pages/pmu_1811_SVGs/pmu_1811.svg`（emerald 渐变芯片图）；渐变色图标必须走 `ui/utils/icon_utils.svg_pixmap()` **原色渲染**，禁用 tinted 版本（`SourceIn` 会把渐变染成单色）。spec 按 `resources/pages` 整目录打包，新增子目录无需改 spec。
+- **独立预览壳**（`page.py` `__main__`）：参考 main 窗口不用系统标题栏，`FramelessWindowHint | Qt.Window` + `_PreviewTitleBar` 自绘标题栏（1811 主题色）；拖动走 `windowHandle().startSystemMove()`，最大化手动切 `availableGeometry`（避免 frameless `showMaximized` 盖住任务栏）。
+- **纯 QWidget 不绘 QSS 背景**：壳与 `_PreviewTitleBar` 这类直接继承 `QWidget` 的控件，必须 `setAttribute(Qt.WA_StyledBackground, True)` 才会按 QSS 绘制背景，否则露 Fusion 默认白底（QFrame 子类无此问题）。
+
 ## 局部坑点
 
 - **写入保护**（`_start_write`）：`controllable==False` 直接返回；`_i2c_connected==False` 仅本地更新；`_worker_thread is not None` 丢弃并 WARN（上次未完成）。Worker 完成 `_cleanup_worker` 必须 `thread.quit() + wait()`。
