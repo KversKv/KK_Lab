@@ -15,13 +15,14 @@ from ui.pages.pmu.pmu_1811.constants import (
 from ui.pages.pmu.pmu_1811.models import _LAYOUT_ROWS, get_pair_partner
 from chips.bes1811_pmu import is_sw
 from ui.pages.pmu.pmu_1811.widgets.module_card import ModuleCard
+from ui.pages.pmu.pmu_1811.widgets.switch_widget import SwitchWidget
 
 
 class DiagramCanvas(QWidget):
     module_selected = Signal(str)
     module_right_clicked = Signal(str, QPoint)
     voltage_stepped = Signal(str, float)
-    enable_toggled = Signal(str)       # SW 卡片开关拨动
+    enable_toggled = Signal(str)       # SW 开关模型单击切换
 
     def __init__(self, modules: dict, parent=None):
         super().__init__(parent)
@@ -42,14 +43,21 @@ class DiagramCanvas(QWidget):
             self._rows.append((row, y_center))
             if row.kind == "module":
                 mod = self._modules[row.id]
-                card = ModuleCard(mod, self)
                 x = self._card_x(row)
-                card.move(x, TOP_PAD + i * ROW_H)
-                card.clicked.connect(self.module_selected.emit)
-                card.right_clicked.connect(self.module_right_clicked.emit)
-                card.gear_clicked.connect(self.module_right_clicked.emit)
-                card.voltage_stepped.connect(self.voltage_stepped.emit)
-                card.enable_toggled.connect(self.enable_toggled.emit)
+                if is_sw(row.id):
+                    # SW: 物理开关模型 (无端电压步进/齿轮, 单击切换闭合/开路)
+                    card = SwitchWidget(mod, self)
+                    card.move(x, TOP_PAD + i * ROW_H)
+                    card.clicked.connect(self.module_selected.emit)
+                    card.right_clicked.connect(self.module_right_clicked.emit)
+                    card.enable_toggled.connect(self.enable_toggled.emit)
+                else:
+                    card = ModuleCard(mod, self)
+                    card.move(x, TOP_PAD + i * ROW_H)
+                    card.clicked.connect(self.module_selected.emit)
+                    card.right_clicked.connect(self.module_right_clicked.emit)
+                    card.gear_clicked.connect(self.module_right_clicked.emit)
+                    card.voltage_stepped.connect(self.voltage_stepped.emit)
                 self._cards[row.id] = card
 
         n = len(_LAYOUT_ROWS)
@@ -170,6 +178,30 @@ class DiagramCanvas(QWidget):
                     result.add(half)
         return result
 
+    def _draw_wire_tree(self, p, src_x, src_y, bus_x, children, trunk_color):
+        """通用树状连线: 源点 → bus_x 水平干线 → 竖直干线 → 各分支水平到目标列。
+
+        children: [(yc, target_x, color), ...]。竖直干线覆盖 src_y 与所有分支
+        的 min/max 范围, 保证每个分支都挂在干线上 (无悬空端点); 分支终点即
+        子模块控件左缘 (卡片边 / 开关模型输入引线起点), 连线无缝衔接。
+        """
+        if not children:
+            return
+        children = sorted(children, key=lambda c: c[0])
+        pen = QPen(QColor(trunk_color), 2)
+        pen.setCapStyle(Qt.RoundCap)
+        p.setPen(pen)
+        if src_x != bus_x:
+            p.drawLine(src_x, src_y, bus_x, src_y)
+        y_top = min(src_y, children[0][0])
+        y_bot = max(src_y, children[-1][0])
+        if y_bot > y_top:
+            p.drawLine(bus_x, y_top, bus_x, y_bot)
+        for yc, tx, color in children:
+            pen.setColor(QColor(color))
+            p.setPen(pen)
+            p.drawLine(bus_x, yc, tx, yc)
+
     def _draw_vin_tree(self, p):
         """绘制对偶并联轨的统一 VIN 树: L2 (蓝) + SW (玫红) 共享同一干线。
 
@@ -182,12 +214,6 @@ class DiagramCanvas(QWidget):
         for r, _ in self._rows:
             if r.kind == "module" and is_sw(r.id) and "&" in r.input:
                 pair_vins.add(r.input)
-        if not pair_vins:
-            return
-
-        pen = QPen(QColor(COL_BLUE_LINE), 2)
-        pen.setCapStyle(Qt.RoundCap)
-        p.setPen(pen)
 
         for vin in pair_vins:
             ids = vin.split("&")
@@ -203,33 +229,17 @@ class DiagramCanvas(QWidget):
             src_y = sum(ycs) // len(ycs)
 
             # 收集所有子模块: L2 (input ∈ ids) + SW (input == vin)
-            children = []  # (yc, color_str)
+            children = []  # (yc, target_x, color_str)
             for r, yc in self._rows:
                 if r.kind != "module":
                     continue
                 if is_sw(r.id):
                     if r.input == vin:
-                        children.append((yc, COL_SW_LINE))
+                        children.append((yc, CARD_X_L2, COL_SW_LINE))
                 else:
                     if r.input in ids:
-                        children.append((yc, COL_BLUE_LINE))
-            if not children:
-                continue
-            children.sort()
-
-            # 干线: pair 中点 → SUB_BUS_X (水平, 蓝)
-            pen.setColor(QColor(COL_BLUE_LINE))
-            p.setPen(pen)
-            p.drawLine(src_x, src_y, SUB_BUS_X, src_y)
-            # 竖线: src_y → 最远子模块 (蓝)
-            last_yc = children[-1][0]
-            if last_yc != src_y:
-                p.drawLine(SUB_BUS_X, src_y, SUB_BUS_X, last_yc)
-            # 各分支: SUB_BUS_X → 卡片左边, 用各自类型颜色
-            for yc, color in children:
-                pen.setColor(QColor(color))
-                p.setPen(pen)
-                p.drawLine(SUB_BUS_X, yc, CARD_X_L2, yc)
+                        children.append((yc, CARD_X_L2, COL_BLUE_LINE))
+            self._draw_wire_tree(p, src_x, src_y, SUB_BUS_X, children, COL_BLUE_LINE)
 
     def _draw_pairs(self, p):
         """绘制 BUCK↔LDO 并联对偶的输出短接线 (紫色)。
@@ -263,75 +273,46 @@ class DiagramCanvas(QWidget):
 
         对偶源 (input 含 "&") 由 _draw_vin_tree 统一渲染, 此处跳过。
         单 L2 模块输出: 从 L2 卡片右边 (CARD_X_L2+CARD_W) 引出
-        → SW_BUS_X 竖线 → L3 SW 卡片左边 (CARD_X_L3)。
+        → SW_BUS_X 竖线 → L3 SW 开关模型左缘 (CARD_X_L3, 输入引线起点)。
         """
-        # 按 VIN 源分组, 共享竖线段
-        groups: dict[str, list[tuple[str, int]]] = {}
+        # 按 VIN 源分组, 共享同一干线 (树状分支)
+        groups: dict[str, list[tuple[int, int, str]]] = {}
         for r, yc in self._rows:
-            if r.kind == "module" and is_sw(r.id):
-                groups.setdefault(r.input, []).append((r.id, yc))
+            if r.kind == "module" and is_sw(r.id) and "&" not in r.input:
+                groups.setdefault(r.input, []).append((yc, CARD_X_L3, COL_SW_LINE))
 
-        pen = QPen(QColor(COL_SW_LINE), 2)
-        pen.setCapStyle(Qt.RoundCap)
-        p.setPen(pen)
-
-        for vin, sw_list in groups.items():
-            if "&" in vin:
-                continue   # 对偶源由 _draw_vin_tree 处理
-            sw_ys = [yc for _, yc in sw_list]
-            # 单 L2 模块输出: 从 L2 卡片右边 → SW_BUS_X → L3 SW 卡片左边
+        for vin, children in groups.items():
             _, src_y = self._find_row(vin)
             if src_y is None:
                 continue
-            src_x = CARD_X_L2 + CARD_W        # L2 卡片右边
-            # L2 右边 → SW_BUS_X (水平)
-            p.drawLine(src_x, src_y, SW_BUS_X, src_y)
-            # SW_BUS_X 竖线: src_y 到最远 SW 行
-            y_top = min(src_y, min(sw_ys))
-            y_bot = max(src_y, max(sw_ys))
-            if y_bot > y_top:
-                p.drawLine(SW_BUS_X, y_top, SW_BUS_X, y_bot)
-            # 各 SW 行 → L3 卡片左边 (水平)
-            for sw_yc in sw_ys:
-                p.drawLine(SW_BUS_X, sw_yc, CARD_X_L3, sw_yc)
+            self._draw_wire_tree(p, CARD_X_L2 + CARD_W, src_y,
+                                 SW_BUS_X, children, COL_SW_LINE)
 
     def _draw_subtree(self, p, parent_id: str):
         parent_idx = self._row_index(lambda r: (r.kind == "bus" and r.bus_name == parent_id) or
                                     (r.kind == "module" and r.id == parent_id))
         if parent_idx < 0:
             return
-        children = [(i, r, yc) for i, (r, yc) in enumerate(self._rows)
+        children = [(yc, CARD_X_L2, COL_BLUE_LINE)
+                    for r, yc in self._rows
                     if r.kind == "module" and r.input == parent_id]
         if not children:
             return
         _, p_yc = self._rows[parent_idx]
-        last_yc = children[-1][2]
-        start_yc = p_yc   # 子母线竖线起点 y (有对偶时取两卡片中点)
 
-        pen = QPen(QColor(COL_BLUE_LINE), 2)
-        pen.setCapStyle(Qt.RoundCap)
-        p.setPen(pen)
-
-        # 父节点 → 子母线竖线起点（短横）
+        # 干线起点: 母线药丸右边 / 父卡片右边; 若父有对偶, 从对偶短接竖线
+        # 中点引出 (避免与对偶短接横线重叠在卡片右边)
         if parent_id in ("vdd_l14_15", "vdd_l5"):
-            p.drawLine(BUS_PILL_X + BUS_PILL_W, p_yc, SUB_BUS_X, p_yc)
+            src_x, src_y = BUS_PILL_X + BUS_PILL_W, p_yc
         else:
-            # 级联：从父卡片右边引出; 若父有对偶, 从对偶短接竖线中点引出
-            # (避免与对偶短接横线重叠在卡片右边)
-            start_x = CARD_X_L1 + CARD_W
+            src_x, src_y = CARD_X_L1 + CARD_W, p_yc
             partner_id = get_pair_partner(parent_id)
             if partner_id:
                 _, partner_yc = self._find_row(partner_id)
                 if partner_yc is not None:
-                    start_x = CARD_X_L1 + CARD_W + 14
-                    start_yc = (p_yc + partner_yc) // 2
-            p.drawLine(start_x, start_yc, SUB_BUS_X, start_yc)
-
-        # 子母线竖线
-        p.drawLine(SUB_BUS_X, start_yc, SUB_BUS_X, last_yc)
-        # 各子节点横线
-        for _, r, yc in children:
-            p.drawLine(SUB_BUS_X, yc, CARD_X_L2, yc)
+                    src_x = CARD_X_L1 + CARD_W + 14
+                    src_y = (p_yc + partner_yc) // 2
+        self._draw_wire_tree(p, src_x, src_y, SUB_BUS_X, children, COL_BLUE_LINE)
 
     def mousePressEvent(self, e):
         # 点击空白处取消选择

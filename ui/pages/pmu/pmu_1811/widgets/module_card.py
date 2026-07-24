@@ -11,22 +11,19 @@ from ui.pages.pmu.pmu_1811.constants import (
     COL_TEXT, COL_TEXT_DIM, COL_TEXT_MUTED, COL_CARD_BG, COL_CARD_BG_SELECTED,
     COL_BORDER, COL_BORDER_HOVER, COL_BORDER_SELECTED, COL_EMERALD, COL_LED_OFF,
     COL_BUCK, COL_BUCK_SOFT, COL_BUCK_DIM, COL_LDO, COL_LDO_SOFT, COL_LDO_DIM,
-    COL_SW, COL_SW_SOFT, COL_SW_DIM,
     FONT_MONO, CARD_W, CARD_H,
 )
 from ui.pages.pmu.pmu_1811.models import PmuModule
-from ui.pages.pmu.pmu_1811.widgets.toggle_switch import ToggleSwitch
 
 
 def type_accent(mod: PmuModule) -> tuple[str, str, str]:
     """返回模块类型主题色三元组 (accent, accent_soft, accent_dim)。
 
-    BUCK → 琥珀; SW → 玫红; LDO → 天蓝。用于 LED / 电压标签 / 选中边框 / 阴影。
+    BUCK → 琥珀; LDO → 天蓝。用于 LED / 电压标签 / 选中边框 / 阴影。
+    (SW 不走卡片, 由 switch_widget.SwitchWidget 物理开关模型渲染)
     """
     if mod.type == "BUCK":
         return COL_BUCK, COL_BUCK_SOFT, COL_BUCK_DIM
-    if mod.type == "SW":
-        return COL_SW, COL_SW_SOFT, COL_SW_DIM
     return COL_LDO, COL_LDO_SOFT, COL_LDO_DIM
 
 
@@ -35,13 +32,11 @@ class ModuleCard(QFrame):
     right_clicked = Signal(str, QPoint)
     gear_clicked = Signal(str, QPoint)
     voltage_stepped = Signal(str, float)
-    enable_toggled = Signal(str)      # SW 开关拨动 (卡片内 ToggleSwitch)
 
     def __init__(self, mod: PmuModule, parent=None):
         super().__init__(parent)
         self._mod = mod
         self._selected = False
-        self._syncing = False          # refresh 时屏蔽 ToggleSwitch 回调
         self.setFixedSize(CARD_W, CARD_H)
         self.setCursor(Qt.PointingHandCursor)
         self.setAttribute(Qt.WA_StyledBackground, True)
@@ -95,25 +90,11 @@ class ModuleCard(QFrame):
         self.gear_btn.setFocusPolicy(Qt.NoFocus)
         self.gear_btn.setVisible(False)
 
-        # SW 无电压调节: 隐藏 +/− 步进按钮, 用 ToggleSwitch 显示闭合/开路
-        is_sw = mod.type == "SW"
-        self.sw_switch = None
-        if is_sw:
-            self.minus_btn.setVisible(False)
-            self.plus_btn.setVisible(False)
-            self.volt_lbl.setVisible(False)
-            # 卡片内嵌开关: 闭合 (绿, 滑块右) / 开路 (灰, 滑块左)
-            self.sw_switch = ToggleSwitch(self, checked=mod.enabled)
-            self.sw_switch.setFixedSize(40, 22)
-            self.sw_switch.toggled.connect(self._on_sw_toggled)
-
         lay.addWidget(self.led)
         lay.addWidget(self.name_lbl)
         lay.addStretch(1)
         lay.addWidget(self.minus_btn)
         lay.addWidget(self.volt_lbl)
-        if self.sw_switch is not None:
-            lay.addWidget(self.sw_switch)
         lay.addWidget(self.plus_btn)
         lay.addWidget(self.gear_btn)
 
@@ -138,13 +119,6 @@ class ModuleCard(QFrame):
         self.refresh()
         self.voltage_stepped.emit(self._mod.id, v)
 
-    def _on_sw_toggled(self, checked: bool):
-        """SW 卡片内开关拨动: 更新 mod 状态并通知 page 写入 DUT。"""
-        if self._syncing:
-            return
-        self._mod.enabled = checked
-        self.enable_toggled.emit(self._mod.id)
-
     def set_selected(self, selected: bool):
         self._selected = selected
         accent, _, _ = type_accent(self._mod)
@@ -157,13 +131,7 @@ class ModuleCard(QFrame):
 
     def refresh(self):
         accent, _, accent_dim = type_accent(self._mod)
-        self._syncing = True
-        # SW: 同步 ToggleSwitch 状态 (闭合=checked / 开路=unchecked)
-        if self.sw_switch is not None:
-            self.sw_switch.set_checked(self._mod.enabled)
-        else:
-            self.volt_lbl.setText(f"{self._mod.voltage:.3f} V")
-        self._syncing = False
+        self.volt_lbl.setText(f"{self._mod.voltage:.3f} V")
         # LED: 使能 → 类型主色; 禁用 → 灰; 选中时使能 LED 略亮 (主色)
         led_col = accent if self._mod.enabled else COL_LED_OFF
         self.led.setStyleSheet(

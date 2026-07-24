@@ -23,9 +23,10 @@ ui/pages/pmu/pmu_1811/
 └── widgets/                 # 【UI层】可复用控件
     ├── __init__.py
     ├── toggle_switch.py     # iOS 风格拨动开关
-    ├── module_card.py       # 模块卡片 (LED + 名称 + 电压步进 + 齿轮)
-    ├── diagram_canvas.py    # 拓扑画布 (VSYS / 子母线 / 卡片连线)
-    ├── property_panel.py    # 属性面板 (使能/模式/电压/I2C/连接信息)
+    ├── module_card.py       # 模块卡片 (LED + 名称 + 电压步进 + 齿轮; 仅 LDO/BUCK)
+    ├── switch_widget.py     # SW 物理开关模型 (左右端点 + 动态连杆, 单击切换闭合/开路)
+    ├── diagram_canvas.py    # 拓扑画布 (VSYS / 子母线 / 树状分支连线)
+    ├── property_panel.py    # 属性面板 (使能/模式/电压/I2C/连接信息; SW 专属 Switch Controls)
     └── context_menu.py      # 右键菜单 (使能切换 + 模式选择)
 ```
 
@@ -100,12 +101,18 @@ LayoutRow(kind="module", id="LDO_01", level=1, input="VSYS",
 
 SW（SW1~SW7）按 VIN 源级别分列：源为 L1 对偶（如 `LDO_01&BUCK_01`）→ SW 是 L2，置于 `CARD_X_L2`；
 源为 L2 单模块（如 `LDO_13`）→ SW 是 L3，置于 `CARD_X_L3`。`input` 非 `VSYS`。
-画布连线分两类：
-- **对偶源**（input 含 `&`）：由 `_draw_vin_tree` 统一渲染，从对偶短接点引一条蓝色干线
+画布连线统一由 `_draw_wire_tree` 树状渲染（源点 → 水平干线 → 竖直干线 → 各分支，
+竖直干线覆盖源与所有分支的 min/max 范围，无悬空端点），分两类调用：
+- **对偶源**（input 含 `&`）：`_draw_vin_tree`，从对偶短接点引一条蓝色干线
   （`SUB_BUS_X`），L2 + SW 子模块共享干线，各分支段用类型色（L2 蓝 / SW 玫红）。
-- **单模块源**（如 `LDO_13`）：由 `_draw_sw_connections` 渲染，从 L2 卡片右边经
-  `SW_BUS_X` 竖线引至 L3 SW 卡片左边。
-SW 卡片内嵌 `ToggleSwitch`（闭合=绿 / 开路=灰），可直接点击拨动。
+- **单模块源**（如 `LDO_13`）：`_draw_sw_connections`，从 L2 卡片右边经
+  `SW_BUS_X` 竖线引至 L3 SW 开关模型左缘。
+- 母线 / 级联子树（`_draw_subtree`）同样走 `_draw_wire_tree`（蓝色干线）。
+SW 不使用卡片，由 `SwitchWidget` 绘制拟物化开关符号：输入引线（左缘→左端子，玫红，
+与行中心对齐使上游连线零偏移衔接）、左右玫红端点、动态连杆（闭合=绿色水平 /
+开路=灰色上倾 28°）、输出短截线与 CLOSED/OPEN 状态文本；单击模型即切换闭合/开路，
+属性面板对应显示专属 "Switch Controls" 区（开关 + 状态）与 "Physical Parameters"
+（Rdson / Input / Output）。
 SW 元数据见 `models._SW_DEFS`，寄存器映射见 `chips.bes1811_pmu.SW_REG_MAPS`。
 
 ### 3.4 `_default_modules()`
@@ -169,6 +176,7 @@ Pmu1811UI.__init__
 | 触发源            | 信号                            | page.py 处理                      | 是否写 DUT                   |
 | -------------- | ----------------------------- | ------------------------------- | ------------------------- |
 | 卡片单击           | `canvas.module_selected`      | `_on_select`                    | 否                         |
+| SW 开关模型单击      | `canvas.enable_toggled`       | `_on_card_enable`               | **是** (`enable`)          |
 | 卡片右键           | `canvas.module_right_clicked` | `_on_context` → 弹 `ContextMenu` | 否                         |
 | 卡片 +/−         | `canvas.voltage_stepped`      | `_on_card_voltage`              | **是** (`voltage`)         |
 | 面板开关           | `panel.enable_changed`        | `_on_panel_enable`              | **是** (`enable`，对偶模块触发互锁) |

@@ -68,14 +68,22 @@ class PropertyPanel(QFrame):
         root.addWidget(self.title_lbl)
         root.addWidget(self.type_lbl)
 
-        # Status
-        root.addWidget(self._section_label("Status"))
+        # Status (SW 显示为 Switch Controls)
+        self.status_label = self._section_label("Status")
+        root.addWidget(self.status_label)
         status_card = QFrame(self)
         status_card.setObjectName("sectionCard")
         sl = QHBoxLayout(status_card)
         sl.setContentsMargins(12, 8, 12, 8)
         self.status_name_lbl = self._muted_label("Output Enable")
         sl.addWidget(self.status_name_lbl)
+        # SW 开关状态文本 (Closed/Open, 仅 SW 显示)
+        self.sw_state_lbl = QLabel("")
+        self.sw_state_lbl.setStyleSheet(
+            f"color:{COL_TEXT_DIM}; font-family:{FONT_MONO}; font-size:12px; font-weight:700;"
+        )
+        self.sw_state_lbl.setVisible(False)
+        sl.addWidget(self.sw_state_lbl)
         sl.addStretch(1)
         self.toggle = ToggleSwitch(self)
         self.toggle.toggled.connect(self._on_toggle)
@@ -120,13 +128,13 @@ class PropertyPanel(QFrame):
         ) = self._build_voltage_card(lb_layout, self._on_spin_rc, self._on_slider_rc)
         root.addWidget(self.ldo_buck_section)
 
-        # SW 专用: Rdson + 输入/输出节点 (LDO/BUCK 隐藏)
+        # SW 专用: 物理参数 (Rdson / 输入输出节点), LDO/BUCK 隐藏
         self.sw_section = QFrame(self)
         sw_layout = QVBoxLayout(self.sw_section)
         sw_layout.setContentsMargins(0, 0, 0, 0)
         sw_layout.setSpacing(12)
 
-        sw_layout.addWidget(self._section_label("Switch Info"))
+        sw_layout.addWidget(self._section_label("Physical Parameters"))
         sw_card = QFrame(self)
         sw_card.setObjectName("sectionCard")
         sl2 = QVBoxLayout(sw_card)
@@ -269,8 +277,10 @@ class PropertyPanel(QFrame):
             f"color:{COL_TEXT_MUTED}; font-family:{FONT_MONO}; font-size:11px;"
         )
         is_sw = mod.type == "SW"
-        # SW: 开关态 (闭合/开路); LDO/BUCK: 输出使能
+        # SW: 开关态 (闭合/开路), 专属 Switch Controls 区; LDO/BUCK: 输出使能
+        self.status_label.setText("Switch Controls" if is_sw else "Status")
         self.status_name_lbl.setText("Switch State" if is_sw else "Output Enable")
+        self.sw_state_lbl.setVisible(is_sw)
         self.toggle.set_checked(mod.enabled)
 
         # 按类型显隐: SW 无模式/电压; LDO/BUCK 无 Switch Info
@@ -333,6 +343,13 @@ class PropertyPanel(QFrame):
             return
         # SW 寄存器: en / en_dr 两个位域, 无 pu_status / vbit
         sw_rm = self._mod.sw_reg_map
+        # 同步 Switch Controls 状态文本 (Closed 绿 / Open 灰)
+        on = self._mod.enabled
+        self.sw_state_lbl.setText("Closed" if on else "Open")
+        self.sw_state_lbl.setStyleSheet(
+            f"color:{COL_EMERALD if on else COL_TEXT_DIM};"
+            f" font-family:{FONT_MONO}; font-size:12px; font-weight:700;"
+        )
         if sw_rm is not None:
             self.addr_lbl.setText(
                 f"EN: 0x{sw_rm.en.reg_addr:03X}[{sw_rm.en.high_bit}:{sw_rm.en.low_bit}]  "
