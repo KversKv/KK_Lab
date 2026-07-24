@@ -61,10 +61,14 @@
 
 开启某模块且存在对偶 → 走 `PairWriteWorker`，**一次 I2C 会话内先开自己、再关对偶**；关闭走普通 `LdoWriteWorker` 不影响对偶。未连接时仅本地更新（`_apply_local_disable`）。
 
-### 不支持 I2C 的模块
+### VMIC (LDO_VMIC1/2) 特例
 
-- `LDO_VMIC1` / `LDO_VMIC2` 不在 `LDO_REG_MAPS`；`BUCK_01~06` 当前也未在映射表（`controllable=False`，controller 尚未实现 BUCK 读写）。
-- UI 仍渲染卡片但 `_start_write` 直接 return；属性面板显示 `Address: — (无寄存器映射)`。
+- VMIC 走独立 `VMIC_REG_MAPS`（`VmicRegMap`），**不在** `LDO_REG_MAPS`；判定 `is_vmic(id)`，查询 `get_vmic_reg_map(id)`。
+- **无 pu_status / lp / res_sel_dr / vbit 三档**；使能 = `mic_ldoX_en`（0x039[11]/[10]）+ `mic_biasX_en`（0x03B/0x03C[13]）双配置位均 1（读配置位判定，同 SW 语义）。
+- **开启序列**（`set_vmic_enabled(True)`，与脚本 vmicX_on 一致）：EN VCM（共用：0x365[13]=0 → 0x365[12]=1 → 0x364[13]=1）→ EN MIC_LDO（0x122 lp_enable=1 → 0x06D dr=1 → 0x039 en=1）→ EN MIC_BIAS（0x03B/C[12:10]=0x4 → en=1）。**关闭**仅写 `mic_ldoX_en=0` + `mic_biasX_en=0`。
+- 电压仅一档：`reg_mic_biasX_vsel`（0x074/0x075[13:9]，5 bit），表在 `VMIC_VOLTAGE_TABLES`（VMEM=1.8V 工况；VMIC2 的 vsel 0x10/0x11 无数据为 None）。注意 **0x074[7:0] 与 BUCK_01 vbit_rc 同寄存器不同位**，RMW 不冲突。
+- UI：`modes=["Normal"]`；属性面板隐藏 dsleep/rc 电压卡（`_multi_volt_widgets`）；Worker 仅支持 `enable` / `voltage`，其余 action WARN 忽略。
+- `BUCK_01~06` 模式切换（Normal/LP/ULP）仍待补全（写入 WARN 忽略）。
 
 ### BUCK 寄存器特例
 

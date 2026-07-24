@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from chips.bes1811_pmu import (
     get_voltage_range, get_reg_map, is_module_controllable,
     get_module_step, align_to_step, snap_range_to_step,
-    is_sw, get_sw_reg_map,
+    is_sw, get_sw_reg_map, is_vmic, get_vmic_reg_map,
 )
 
 
@@ -44,6 +44,8 @@ class PmuModule:
             return ["Normal", "LP", "ULP"]
         if self.type == "SW":
             return []                   # SW 无模式 (仅有闭合/开路两态)
+        if is_vmic(self.id):
+            return ["Normal"]           # VMIC 无 LP 模式切换
         return ["Normal", "LP"]
 
     @property
@@ -60,6 +62,11 @@ class PmuModule:
     def sw_reg_map(self):
         """返回 SW 寄存器映射 (SwRegMap 或 None); 非 SW 返回 None。"""
         return get_sw_reg_map(self.id) if self.type == "SW" else None
+
+    @property
+    def vmic_reg_map(self):
+        """返回 VMIC 寄存器映射 (VmicRegMap 或 None); 非 VMIC 返回 None。"""
+        return get_vmic_reg_map(self.id)
 
 
 # 布局行：id / level(1=主轨,2=二级) / input / bus(虚拟母线名)

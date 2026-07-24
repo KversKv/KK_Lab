@@ -12,15 +12,17 @@ import time
 from log_config import get_logger
 
 from chips.bes1811_pmu import (
-    BitField, LdoRegMap,
+    BitField, LdoRegMap, VmicRegMap,
     LDO_REG_MAPS, LDO_IDS,
     BUCK_REG_MAPS, BUCK_IDS,
     SW_REG_MAPS, SW_IDS,
+    VMIC_REG_MAPS, VMIC_IDS,
+    VCM_PULL_DOWN, VCM_LP_EN, VCM_EN,
     I2C_DEVICE_ADDR, I2C_WIDTH,
     CHIP_ID_REG_ADDR_0, CHIP_ID_REG_ADDR_1,
     CHIP_ID_EXPECTED_0, CHIP_ID_EXPECTED_1,
     vbit_to_voltage, voltage_to_vbit, get_voltage_range, get_reg_map,
-    is_buck, is_sw,
+    is_buck, is_sw, is_vmic, get_vmic_reg_map,
 )
 
 logger = get_logger(__name__)
@@ -92,6 +94,27 @@ class SwState:
     mode: str = "Normal"        # 占位 (SW 无模式), 兼容 UI dict[id]
     voltage: Optional[float] = None        # 占位 None (SW 无电压)
     voltage_dsleep: Optional[float] = None
+    voltage_rc: Optional[float] = None
+
+
+@dataclass
+class VmicState:
+    """读取到的 VMIC (LDO_VMIC1/2) 实时状态。
+
+    VMIC 无 pu_status 状态位, 使能判定依据两个配置位:
+    ``ldo_en`` (reg_mic_ldoX_en) 与 ``bias_en`` (reg_mic_biasX_en) 均为 1 才算开启
+    (与关闭序列 ldo_en=0 + bias_en=0 对应)。
+    字段与 ``LdoState`` / ``BuckState`` / ``SwState`` 保持兼容
+    (``enabled`` / ``mode`` / ``voltage*``), 以便 ``page.py._on_read_all_done`` 统一处理。
+    """
+    vmic_id: str
+    enabled: bool               # ldo_en 与 bias_en 均为 1
+    ldo_en: int                 # reg_mic_ldoX_en 配置位
+    bias_en: int                # reg_mic_biasX_en 配置位
+    vsel: int                   # reg_mic_biasX_vsel 电压控制字
+    voltage: Optional[float]    # 当前输出电压 (V), 由 vsel 查表得到
+    mode: str = "Normal"        # 占位 (VMIC 无模式), 兼容 UI dict[id]
+    voltage_dsleep: Optional[float] = None   # 占位 None (VMIC 仅一档电压)
     voltage_rc: Optional[float] = None
 
 
@@ -473,11 +496,13 @@ class Bes1811PmuController:
         return result
 
     def read_all_modules(self) -> dict:
-        """读取全部 LDO + BUCK + SW 状态, 合并为 {id: LdoState|BuckState|SwState}。"""
+        """读取全部 LDO + BUCK + SW + VMIC 状态,
+        合并为 {id: LdoState|BuckState|SwState|VmicState}。"""
         result: dict = {}
         result.update(self.read_all_ldos())
         result.update(self.read_all_bucks())
         result.update(self.read_all_sws())
+        result.update(self.read_all_vmics())
         return result
 
     # ---- SW (Power Switch) 读取 ----
@@ -707,6 +732,147 @@ class Bes1811PmuController:
         self.write_field(rm.en_dr.reg_addr, rm.en_dr.high_bit, rm.en_dr.low_bit, 1)
         self.write_field(rm.en.reg_addr, rm.en.high_bit, rm.en.low_bit, 1 if closed else 0)
         logger.info("1811 PMU: %s %s", sw_id, "闭合" if closed else "开路")
+
+    # ---- VMIC (LDO_VMIC1/2) 读取 ----
+    def read_vmic(self, vmic_id: str) -> Optional[VmicState]:
+        """读取单个 VMIC 的完整状态。
+
+        使能判定依据: reg_mic_ldoX_en 与 reg_mic_biasX_en 配置位均为 1
+        (VMIC 无 pu_status 状态位, 与 SW 一样读配置位)。
+        """
+        rm = get_vmic_reg_map(vmic_id)
+        if rm is None:
+            logger.warning("1811 PMU: %s 无 VMIC 寄存器映射", vmic_id)
+            return None
+        self._emit_log(
+            "STEP",
+            f"读取 {vmic_id} 状态  "
+            f"(ldo_en@0x{rm.ldo_en.reg_addr:03X}[{rm.ldo_en.high_bit}:{rm.ldo_en.low_bit}], "
+            f"bias_en@0x{rm.bias_en.reg_addr:03X}[{rm.bias_en.high_bit}:{rm.bias_en.low_bit}], "
+            f"vsel@0x{rm.vsel.reg_addr:03X}[{rm.vsel.high_bit}:{rm.vsel.low_bit}])",
+        )
+        ldo_en = self._read_field(rm.ldo_en)
+        bias_en = self._read_field(rm.bias_en)
+        vsel = self._read_field(rm.vsel)
+        enabled = bool(ldo_en and bias_en)
+        volt = vbit_to_voltage(vmic_id, vsel)
+        self._emit_log(
+            "INFO",
+            f"{vmic_id} 状态: en={'On' if enabled else 'Off'} "
+            f"(mic_ldo_en={ldo_en}, mic_bias_en={bias_en}), "
+            f"vsel=0x{vsel:X}→{volt if volt is not None else 'N/A'} V",
+        )
+        return VmicState(
+            vmic_id=vmic_id, enabled=enabled,
+            ldo_en=ldo_en, bias_en=bias_en, vsel=vsel, voltage=volt,
+        )
+
+    def read_all_vmics(self) -> dict[str, "VmicState"]:
+        """读取所有 VMIC 状态。"""
+        result = {}
+        for vmic_id in VMIC_IDS:
+            try:
+                st = self.read_vmic(vmic_id)
+                if st is not None:
+                    result[vmic_id] = st
+            except Exception as e:
+                logger.error("1811 PMU: 读取 %s 失败: %s", vmic_id, e, exc_info=True)
+        return result
+
+    # ---- VMIC (LDO_VMIC1/2) 控制 ----
+    def set_vmic_enabled(self, vmic_id: str, enabled: bool):
+        """使能/禁用 VMIC。
+
+        开启序列 (与配置脚本 vmicX_on 一致):
+          1. EN VCM (VMIC1/2 共用): vcm_pull_down=0 → vcm_lp_en=1 → vcm_en=1
+          2. EN MIC_LDO_X: micbiasX_lp_enable=1 → pu_ldo_vmicX_dr=1 → mic_ldoX_en=1
+          3. EN MIC_BIAS_X: bias[12:10]=0x4 (enlpf=1, lpfsel=0) → mic_biasX_en=1
+        关闭序列: mic_ldoX_en=0 → mic_biasX_en=0 (VCM / dr / lp_enable 不动)。
+        """
+        rm = get_vmic_reg_map(vmic_id)
+        if rm is None:
+            raise ValueError(f"{vmic_id} 无 VMIC 寄存器映射")
+        if enabled:
+            self._emit_log(
+                "STEP",
+                f"{vmic_id} 使能 [1/3] EN VCM  "
+                f"(vcm_pull_down@0x{VCM_PULL_DOWN.reg_addr:03X}[13]=0, "
+                f"vcm_lp_en@0x{VCM_LP_EN.reg_addr:03X}[12]=1, "
+                f"vcm_en@0x{VCM_EN.reg_addr:03X}[13]=1)",
+            )
+            self.write_field(
+                VCM_PULL_DOWN.reg_addr, VCM_PULL_DOWN.high_bit,
+                VCM_PULL_DOWN.low_bit, 0)
+            self.write_field(
+                VCM_LP_EN.reg_addr, VCM_LP_EN.high_bit, VCM_LP_EN.low_bit, 1)
+            self.write_field(
+                VCM_EN.reg_addr, VCM_EN.high_bit, VCM_EN.low_bit, 1)
+            self._emit_log(
+                "STEP",
+                f"{vmic_id} 使能 [2/3] EN MIC_LDO  "
+                f"(lp_enable@0x{rm.bias_lp_enable.reg_addr:03X}"
+                f"[{rm.bias_lp_enable.high_bit}:{rm.bias_lp_enable.low_bit}]=1, "
+                f"dr@0x{rm.ldo_dr.reg_addr:03X}"
+                f"[{rm.ldo_dr.high_bit}:{rm.ldo_dr.low_bit}]=1, "
+                f"en@0x{rm.ldo_en.reg_addr:03X}"
+                f"[{rm.ldo_en.high_bit}:{rm.ldo_en.low_bit}]=1)",
+            )
+            self.write_field(
+                rm.bias_lp_enable.reg_addr, rm.bias_lp_enable.high_bit,
+                rm.bias_lp_enable.low_bit, 1)
+            self.write_field(
+                rm.ldo_dr.reg_addr, rm.ldo_dr.high_bit, rm.ldo_dr.low_bit, 1)
+            self.write_field(
+                rm.ldo_en.reg_addr, rm.ldo_en.high_bit, rm.ldo_en.low_bit, 1)
+            self._emit_log(
+                "STEP",
+                f"{vmic_id} 使能 [3/3] EN MIC_BIAS  "
+                f"(lpf@0x{rm.bias_lpf.reg_addr:03X}"
+                f"[{rm.bias_lpf.high_bit}:{rm.bias_lpf.low_bit}]=0x4, "
+                f"en@0x{rm.bias_en.reg_addr:03X}"
+                f"[{rm.bias_en.high_bit}:{rm.bias_en.low_bit}]=1)",
+            )
+            self.write_field(
+                rm.bias_lpf.reg_addr, rm.bias_lpf.high_bit,
+                rm.bias_lpf.low_bit, 0x4)
+            self.write_field(
+                rm.bias_en.reg_addr, rm.bias_en.high_bit, rm.bias_en.low_bit, 1)
+        else:
+            self._emit_log(
+                "STEP",
+                f"{vmic_id} 禁用  "
+                f"(mic_ldo_en@0x{rm.ldo_en.reg_addr:03X}"
+                f"[{rm.ldo_en.high_bit}:{rm.ldo_en.low_bit}]=0, "
+                f"mic_bias_en@0x{rm.bias_en.reg_addr:03X}"
+                f"[{rm.bias_en.high_bit}:{rm.bias_en.low_bit}]=0)",
+            )
+            self.write_field(
+                rm.ldo_en.reg_addr, rm.ldo_en.high_bit, rm.ldo_en.low_bit, 0)
+            self.write_field(
+                rm.bias_en.reg_addr, rm.bias_en.high_bit, rm.bias_en.low_bit, 0)
+        logger.info("1811 PMU: %s %s", vmic_id, "使能" if enabled else "禁用")
+
+    def set_vmic_voltage(self, vmic_id: str, voltage: float):
+        """设置 VMIC 输出电压 (V)。
+
+        自动将电压转换为最接近的 vsel, 写入 reg_mic_biasX_vsel[13:9]。
+        """
+        rm = get_vmic_reg_map(vmic_id)
+        if rm is None:
+            raise ValueError(f"{vmic_id} 无 VMIC 寄存器映射")
+        vsel = voltage_to_vbit(vmic_id, voltage)
+        if vsel is None:
+            raise ValueError(f"{vmic_id} 无电压查找表")
+        actual_v = vbit_to_voltage(vmic_id, vsel)
+        self._emit_log(
+            "STEP",
+            f"{vmic_id} 电压 → {actual_v:.4f} V (target={voltage:.4f} V, vsel=0x{vsel:X})  "
+            f"(vsel@0x{rm.vsel.reg_addr:03X}"
+            f"[{rm.vsel.high_bit}:{rm.vsel.low_bit}])",
+        )
+        self.write_field(
+            rm.vsel.reg_addr, rm.vsel.high_bit, rm.vsel.low_bit, vsel)
+        logger.info("1811 PMU: %s 电压 → %.4f V (vsel=0x%X)", vmic_id, actual_v, vsel)
 
     # ---- PMU 初始化 ----
     #: 初始化序列: ("W", addr, value) 整寄存器写 / ("B", addr, high, low, value) 位域写

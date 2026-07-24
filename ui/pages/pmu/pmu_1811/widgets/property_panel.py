@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QSlider, QDoubleSpinBox, QButtonGroup,
 )
 
-from chips.bes1811_pmu import align_to_step
+from chips.bes1811_pmu import align_to_step, is_vmic
 
 from ui.pages.pmu.pmu_1811.constants import (
     COL_PANEL_BG, COL_CARD_BG, COL_BORDER, COL_BORDER_HOVER, COL_BORDER_SELECTED,
@@ -114,18 +114,25 @@ class PropertyPanel(QFrame):
         ) = self._build_voltage_card(lb_layout, self._on_spin, self._on_slider)
 
         # Voltage - Deep Sleep (睡眠模式)
-        lb_layout.addWidget(self._section_label("Voltage - Deep Sleep (V)"))
+        self.dsleep_label = self._section_label("Voltage - Deep Sleep (V)")
+        lb_layout.addWidget(self.dsleep_label)
         (
             self.spin_dsleep, self.slider_dsleep,
             self.min_lbl_dsleep, self.max_lbl_dsleep,
         ) = self._build_voltage_card(lb_layout, self._on_spin_dsleep, self._on_slider_dsleep)
 
         # Voltage - RC (RC 模式)
-        lb_layout.addWidget(self._section_label("Voltage - RC (V)"))
+        self.rc_label = self._section_label("Voltage - RC (V)")
+        lb_layout.addWidget(self.rc_label)
         (
             self.spin_rc, self.slider_rc,
             self.min_lbl_rc, self.max_lbl_rc,
         ) = self._build_voltage_card(lb_layout, self._on_spin_rc, self._on_slider_rc)
+        # VMIC 仅一档电压 (无 dsleep / rc 控制字): load() 时隐藏这两组标签 + 卡片
+        self._multi_volt_widgets = [
+            self.dsleep_label, self.spin_dsleep.parentWidget(),
+            self.rc_label, self.spin_rc.parentWidget(),
+        ]
         root.addWidget(self.ldo_buck_section)
 
         # SW 专用: 物理参数 (Rdson / 输入输出节点), LDO/BUCK 隐藏
@@ -289,6 +296,9 @@ class PropertyPanel(QFrame):
 
         if not is_sw:
             self._rebuild_mode_buttons()
+            # VMIC 仅 Normal 一档电压 (无 dsleep / rc 控制字), 隐藏多余卡片
+            for w in self._multi_volt_widgets:
+                w.setVisible(not is_vmic(mod.id))
             # 三套电压控件共用同一 range/step (来自 vbit 查找表, 三档位完全一致)
             self._sync_voltage_widgets(self.spin, self.slider, self.min_lbl, self.max_lbl,
                                        mod.voltage, mod)
@@ -339,6 +349,20 @@ class PropertyPanel(QFrame):
                 f"vbit_n@0x{rm.vbit_normal.reg_addr:03X}  "
                 f"vbit_d@0x{rm.vbit_dsleep.reg_addr:03X}  "
                 f"vbit_rc@0x{rm.vbit_rc.reg_addr:03X}"
+            )
+            return
+        # VMIC 寄存器: mic_ldo_en / mic_bias_en 使能位 + vsel 电压控制字
+        vmic_rm = self._mod.vmic_reg_map
+        if vmic_rm is not None:
+            self.addr_lbl.setText(
+                f"EN: 0x{vmic_rm.ldo_en.reg_addr:03X}"
+                f"[{vmic_rm.ldo_en.high_bit}:{vmic_rm.ldo_en.low_bit}]  "
+                f"BIAS_EN: 0x{vmic_rm.bias_en.reg_addr:03X}"
+                f"[{vmic_rm.bias_en.high_bit}:{vmic_rm.bias_en.low_bit}]"
+            )
+            self.value_lbl.setText(
+                f"vsel@0x{vmic_rm.vsel.reg_addr:03X}"
+                f"[{vmic_rm.vsel.high_bit}:{vmic_rm.vsel.low_bit}]"
             )
             return
         # SW 寄存器: en / en_dr 两个位域, 无 pu_status / vbit

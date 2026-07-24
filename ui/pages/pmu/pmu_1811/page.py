@@ -714,7 +714,7 @@ if __name__ == "__main__":
     shell_root.setSpacing(0)
     shell_root.addWidget(_PreviewTitleBar(shell))
     shell_root.addWidget(Pmu1811UI(shell), 1)
-    shell.resize(1080, 720)
+    shell.resize(1600, 1000)
     shell.show()
     shell.eventFilter = _shell_event_filter
     _apply_dwm_round_corners(shell)

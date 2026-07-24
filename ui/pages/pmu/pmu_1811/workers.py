@@ -101,7 +101,7 @@ class LdoReadOneWorker(QObject):
 
     def run(self):
         from core.bes1811_pmu_controller import Bes1811PmuController
-        from chips.bes1811_pmu import is_buck, is_sw
+        from chips.bes1811_pmu import is_buck, is_sw, is_vmic
         ctrl = Bes1811PmuController(
             dll_path=self._dll, speed_mode=self._speed,
             log_callback=self._make_log_cb(),
@@ -110,11 +110,14 @@ class LdoReadOneWorker(QObject):
             if not ctrl.connect():
                 self.error.emit("I2C 接口初始化失败")
                 return
-            # 按 ID 类型派发: BUCK 走 read_buck, SW 走 read_sw, LDO 走 read_ldo
+            # 按 ID 类型派发: BUCK 走 read_buck, SW 走 read_sw,
+            # VMIC 走 read_vmic, LDO 走 read_ldo
             if is_buck(self._ldo_id):
                 st = ctrl.read_buck(self._ldo_id)
             elif is_sw(self._ldo_id):
                 st = ctrl.read_sw(self._ldo_id)
+            elif is_vmic(self._ldo_id):
+                st = ctrl.read_vmic(self._ldo_id)
             else:
                 st = ctrl.read_ldo(self._ldo_id)
             self.finished.emit(st)
@@ -153,7 +156,7 @@ class LdoWriteWorker(QObject):
 
     def run(self):
         from core.bes1811_pmu_controller import Bes1811PmuController
-        from chips.bes1811_pmu import is_buck, is_sw
+        from chips.bes1811_pmu import is_buck, is_sw, is_vmic
         ctrl = Bes1811PmuController(
             dll_path=self._dll, speed_mode=self._speed,
             log_callback=self._make_log_cb(),
@@ -162,12 +165,22 @@ class LdoWriteWorker(QObject):
             if not ctrl.connect():
                 self.error.emit("I2C 接口初始化失败")
                 return
-            # 按 ID 类型派发: SW 走 set_sw_enabled, BUCK 走 set_buck_*, LDO 走 set_ldo_*
+            # 按 ID 类型派发: SW 走 set_sw_enabled, BUCK 走 set_buck_*,
+            # VMIC 走 set_vmic_*, LDO 走 set_ldo_*
             if is_sw(self._ldo_id):
                 if self._action == "enable":
                     ctrl.set_sw_enabled(self._ldo_id, bool(self._value))
                 else:
                     raise ValueError(f"SW 不支持的操作: {self._action}")
+            elif is_vmic(self._ldo_id):
+                if self._action == "enable":
+                    ctrl.set_vmic_enabled(self._ldo_id, bool(self._value))
+                elif self._action == "voltage":
+                    ctrl.set_vmic_voltage(self._ldo_id, float(self._value))
+                else:
+                    # VMIC 无模式 / dsleep / rc 控制字 (UI 已隐藏入口), 忽略
+                    logger.warning("1811 PMU: VMIC 不支持的操作, 忽略 %s/%s",
+                                   self._ldo_id, self._action)
             elif is_buck(self._ldo_id):
                 if self._action == "enable":
                     ctrl.set_buck_enabled(self._ldo_id, bool(self._value))

@@ -77,6 +77,26 @@ class SwRegMap:
     domain: str = ""        # 域标识: "1p8" / "vusb33" (仅用于显示)
 
 
+@dataclass(frozen=True)
+class VmicRegMap:
+    """单个 VMIC (LDO_VMIC1/2, 麦克风偏置 LDO) 的寄存器位域映射。
+
+    VMIC = MIC_LDO + MIC_BIAS 组合, 与普通 LDO 模型不同:
+    无 pu / pu_status / lp / res_sel_dr / vbit 三档, 使能由
+    ``ldo_en`` (reg_mic_ldoX_en) 与 ``bias_en`` (reg_mic_biasX_en) 两位共同决定,
+    且开启前需先使能 VCM (mic 共模电压, VMIC1/2 共用, 见 ``VCM_*`` 位域)
+    与 ``bias_lp_enable`` (reg_micbiasX_lp_enable)。
+    输出电压仅一档, 由 ``vsel`` (reg_mic_biasX_vsel, 5 bit) 控制字调节。
+    """
+    vmic_id: str            # LDO_VMIC1 (A 侧) / LDO_VMIC2 (B 侧)
+    ldo_en: BitField        # reg_mic_ldoa/b_en — MIC_LDO 使能
+    ldo_dr: BitField        # reg_pu_ldo_vmica/b_dr — MIC_LDO 使能驱动位
+    bias_en: BitField       # reg_mic_biasa/b_en — MIC_BIAS 使能
+    bias_lpf: BitField      # reg_mic_biasa/b_enlpf+lpfsel [12:10] (开启时写 0x4)
+    bias_lp_enable: BitField  # reg_micbiasa/b_lp_enable
+    vsel: BitField          # reg_mic_biasa/b_vsel — 输出电压控制字
+
+
 # ---------------------------------------------------------------------------
 # LDO 寄存器映射表 (从 1811 pmu inf reg.xlsx 提取)
 # ---------------------------------------------------------------------------
@@ -565,6 +585,37 @@ BUCK_IDS = list(BUCK_REG_MAPS.keys())
 
 
 # ---------------------------------------------------------------------------
+# VMIC (LDO_VMIC1/2) 寄存器映射表 (从 1811 pmu inf reg.csv 提取)
+# 使能序列 (开启): EN VCM (共用) → EN MIC_LDO_X → EN MIC_BIAS_X;
+# 关闭: reg_mic_ldoX_en=0, reg_mic_biasX_en=0 (VCM / dr / lp_enable 不动)。
+# ---------------------------------------------------------------------------
+# VCM (mic 共模电压) 位域: VMIC1/2 共用, 开启任一 VMIC 前都需配置一次
+VCM_PULL_DOWN = _bf(0x365, 13, 13, 1)   # reg_vcm_pull_down (开启时写 0, 关闭下拉)
+VCM_LP_EN = _bf(0x365, 12, 12)          # reg_vcm_lp_en (开启时写 1)
+VCM_EN = _bf(0x364, 13, 13)             # reg_vcm_en (开启时写 1)
+
+VMIC_REG_MAPS: dict[str, VmicRegMap] = {
+    "LDO_VMIC1": VmicRegMap(
+        "LDO_VMIC1",
+        ldo_en=_bf(0x039, 11, 11), ldo_dr=_bf(0x06D, 0, 0),
+        bias_en=_bf(0x03B, 13, 13), bias_lpf=_bf(0x03B, 12, 10),
+        bias_lp_enable=_bf(0x122, 10, 10),
+        vsel=_bf(0x074, 13, 9, 0x09),
+    ),
+    "LDO_VMIC2": VmicRegMap(
+        "LDO_VMIC2",
+        ldo_en=_bf(0x039, 10, 10), ldo_dr=_bf(0x06D, 1, 1),
+        bias_en=_bf(0x03C, 13, 13), bias_lpf=_bf(0x03C, 12, 10),
+        bias_lp_enable=_bf(0x122, 11, 11),
+        vsel=_bf(0x075, 13, 9, 0x09),
+    ),
+}
+
+#: 支持 I2C 控制的 VMIC ID 列表
+VMIC_IDS = list(VMIC_REG_MAPS.keys())
+
+
+# ---------------------------------------------------------------------------
 # BUCK 电压查找表 (从 1811 DCDCVbit test.xlsx 的 buck*-小bg 子表提取)
 # 每个列表按 vbit (0~255) 索引, 共 256 档, 全部有效 (无 None 槽位)。
 # 与 LDO_VOLTAGE_TABLES 不同: 此处 vbit 索引为十进制 (源 xlsx 的 Register Value (Dec) 列)。
@@ -778,6 +829,26 @@ BUCK_VOLTAGE_TABLES: dict[str, list[Optional[float]]] = {
 
 
 # ---------------------------------------------------------------------------
+# VMIC 电压查找表 (从 BES1811 LDO输出电压范围.xlsx 的 LDO_VMIC1/2 子表提取)
+# 按 vsel (0x00~0x11, 5 bit) 索引, 值为输出电压 (V); None 表示该 vsel 无数据。
+# 取 VMEM=1.8V, ldo_res=4'b1010 (0x03B/0x03C[4:1] 默认值) 工况列;
+# VMEM=1.7V 工况列见 data CSV, 本表未收录。
+# ---------------------------------------------------------------------------
+VMIC_VOLTAGE_TABLES: dict[str, list[Optional[float]]] = {
+    "LDO_VMIC1": [
+        1.0719, 1.2153, 1.3572, 1.5003, 1.6445, 1.7876, 1.9296, 2.0723,
+        2.2175, 2.3604, 2.5022, 2.6441, 2.7879, 2.9302, 3.0713, 3.2135,
+        3.3608, 3.3138,
+    ],
+    "LDO_VMIC2": [
+        1.0712, 1.2145, 1.3624, 1.5054, 1.6446, 1.7876, 1.9355, 2.0781,
+        2.2217, 2.3647, 2.5122, 2.6541, 2.7928, 2.9350, 3.0819, 3.2242,
+        None, None,
+    ],
+}
+
+
+# ---------------------------------------------------------------------------
 # BUCK 平均步进 (Step)
 # 取自 1811 DCDCVbit test.xlsx 汇总页的 Delta平均值, 取整到 0.1 mV 量级。
 # BUCK_02 / 03 步进 ~7.3 mV (高输出档); 其余 ~3.6 mV (低输出档)。
@@ -796,8 +867,9 @@ BUCK_STEP_TABLES: dict[str, float] = {
 # 电压 ↔ vbit 转换工具
 # ---------------------------------------------------------------------------
 def get_voltage_table(ldo_id: str) -> list[Optional[float]]:
-    """返回指定模块 (LDO 或 BUCK) 的电压查找表 (按 vbit 索引)。"""
-    return LDO_VOLTAGE_TABLES.get(ldo_id) or BUCK_VOLTAGE_TABLES.get(ldo_id, [])
+    """返回指定模块 (LDO / BUCK / VMIC) 的电压查找表 (按 vbit/vsel 索引)。"""
+    return (LDO_VOLTAGE_TABLES.get(ldo_id) or BUCK_VOLTAGE_TABLES.get(ldo_id)
+            or VMIC_VOLTAGE_TABLES.get(ldo_id, []))
 
 
 # ---------------------------------------------------------------------------
@@ -821,6 +893,9 @@ LDO_STEP_TABLES: dict[str, float] = {
     "LDO_13": 0.100,   # 100 mV
     "LDO_14": 0.100,   # 100 mV
     "LDO_15": 0.100,   # 100 mV
+    # VMIC (VMEM=1.8V): 源表 step/mV 143.06 / 143.53, 取整 143 mV
+    "LDO_VMIC1": 0.143,   # 143 mV
+    "LDO_VMIC2": 0.143,   # 143 mV
 }
 
 
@@ -954,8 +1029,9 @@ def is_buck_controllable(buck_id: str) -> bool:
 
 
 def is_module_controllable(module_id: str) -> bool:
-    """判断任意模块 (LDO 或 BUCK) 是否支持 I2C 寄存器控制。"""
-    return module_id in LDO_REG_MAPS or module_id in BUCK_REG_MAPS
+    """判断任意模块 (LDO / BUCK / VMIC) 是否支持 I2C 寄存器控制。"""
+    return (module_id in LDO_REG_MAPS or module_id in BUCK_REG_MAPS
+            or module_id in VMIC_REG_MAPS)
 
 
 def is_buck(module_id: str) -> bool:
@@ -971,3 +1047,13 @@ def is_sw(module_id: str) -> bool:
 def get_sw_reg_map(sw_id: str) -> Optional[SwRegMap]:
     """返回指定 SW 的寄存器映射; 无映射返回 None。"""
     return SW_REG_MAPS.get(sw_id)
+
+
+def is_vmic(module_id: str) -> bool:
+    """判断模块是否为 VMIC (LDO_VMIC1/2, 麦克风偏置 LDO)。"""
+    return module_id in VMIC_REG_MAPS
+
+
+def get_vmic_reg_map(vmic_id: str) -> Optional[VmicRegMap]:
+    """返回指定 VMIC 的寄存器映射; 无映射返回 None。"""
+    return VMIC_REG_MAPS.get(vmic_id)
