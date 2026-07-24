@@ -68,6 +68,7 @@ chips/
 ================================================================================
 
 core/
+├── AGENTS.md                # core/ 局部 AI 协作指引（就近加载）
 ├── test_manager.py          # 测试管理器，协调数据采集流程，管理测试生命周期，
 │                            # 发出数据更新信号供 UI 层订阅
 ├── data_collector.py        # 数据采集器，基于 QTimer 定时从仪器读取电流/电压
@@ -114,6 +115,7 @@ core/
 │   ├── registry.py          # ProfileRegistry + 各仪器 profile 注册
 │   └── workers.py           # ConnectWorker/DisconnectWorker/ScanWorker (QThread)
 ├── ai/                      # AI Assist 内核（New API 接入 / Profile / Prompt，无 QtWidgets）
+│   ├── AGENTS.md            # core/ai 局部 AI 协作指引（就近加载）
 │   ├── __init__.py          # MODULE_VERSION
 │   ├── config.py            # AISettings：env 优先 + user_data/ai/config.json 读写
 │   ├── page_contract.py     # AIControllablePage Protocol + 能力常量（CAP_*）：专项页面向 AI 暴露的受控能力契约（鸭子类型，禁 Qt）
@@ -204,6 +206,7 @@ core/
 
 instruments/
 │
+├── AGENTS.md                # instruments/ 局部 AI 协作指引（就近加载）
 ├── base/                    # 仪器基类与公共定义
 │   ├── instrument_base.py   # 仪器抽象基类 (connect/disconnect/is_connected)
 │   ├── visa_instrument.py   # VISA 仪器通用控制类，封装设备扫描、连接、断开
@@ -315,6 +318,7 @@ ui/
 │   └── progress_button.py       # 带进度条的按钮组件
 │
 ├── modules/                 # 可复用 UI Mixin (连接区 / 日志区等区域模块)
+│   ├── AGENTS.md                     # ui/modules 局部 AI 协作指引（就近加载）
 │   ├── execution_logs_module_frame.py  # 执行日志区 Mixin (日志容器/进度条/清除)
 │   ├── n6705c_module_frame.py          # N6705C 连接区 Mixin (VISA 搜索/连接/断开)
 │   ├── oscilloscope_module_frame.py    # 示波器连接区 Mixin (VISA 搜索/连接/断开)
@@ -367,6 +371,7 @@ ui/
 ├── theme.py                 # 设计令牌系统 (Colors / FontSizes / Spacing / Radius)
 │
 ├── pages/                   # 功能页面 (按仪器/功能分包)
+│   ├── AGENTS.md                # ui/pages 局部 AI 协作指引（就近加载）
 │   ├── n6705c_power_analyzer/   # 电源分析仪相关页面
 │   │   ├── n6705c_top.py             # N6705C 连接状态管理 (支持双台仪器 A/B)
 │   │   ├── n6705c_analyser_ui.py     # N6705C 电源分析仪控制界面 (主壳：状态机/连接/通道切换/装配)

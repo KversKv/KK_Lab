@@ -1,5 +1,7 @@
 # 06 - 新增 UI 页面指南
 
+> 📌 何时读我：新增 / 修改 `ui/pages/` 页面，或 `ui/pages/AGENTS.md`、`ui/modules/AGENTS.md` 出现 @see 本文件时。
+
 本文档描述如何在 `ui/pages/` 下新增一个功能页面，并正确集成到主窗口和侧边栏。
 
 ---
@@ -12,9 +14,13 @@
 ui/pages/
 ├── n6705c_power_analyzer/   # 以 N6705C 为主的页面
 ├── oscilloscope/            # 示波器相关
+├── pmu/                     # PMU 芯片控制页（如 pmu_1811）
 ├── pmu_test/                # PMU 子测试
 ├── charger_test/            # Charger 子测试
 ├── chamber/                 # 温箱
+├── module_test/             # 模块测试（LDO / DCDC）
+├── orchestrator/            # 可视化编排
+├── vmin_hunter/             # Vmin 扫描
 └── consumption_test/        # 独立功能
 ```
 
@@ -34,21 +40,19 @@ ui/pages/pmu_test/freq_response_ui.py
 
 ### 步骤 2：复用 Mixin 与样式
 
-页面必须**多继承** `ui/styles/` 下对应的连接 Mixin：
+页面必须**多继承** `ui/modules/` 下对应的连接 Mixin：
 
 ```python
 from PySide6.QtWidgets import QWidget, QVBoxLayout
 from log_config import get_logger
-from ui.styles.n6705c_module_frame import N6705CModuleFrame
-from ui.styles.oscilloscope_module_frame import OscilloscopeModuleFrame
-from ui.styles.execution_logs_module_frame import ExecutionLogsModuleFrame
-from ui.styles.button import START_BTN_STYLE
-from ui.styles.scrollbar import SCROLLBAR_STYLE
+from ui.modules.n6705c_module_frame import N6705CConnectionMixin
+from ui.modules.oscilloscope_module_frame import OscilloscopeConnectionMixin
+from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 
 logger = get_logger(__name__)
 
 
-class FreqResponsePage(QWidget, N6705CModuleFrame, OscilloscopeModuleFrame, ExecutionLogsModuleFrame):
+class FreqResponsePage(QWidget, N6705CConnectionMixin, OscilloscopeConnectionMixin):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._init_ui()
@@ -58,8 +62,12 @@ class FreqResponsePage(QWidget, N6705CModuleFrame, OscilloscopeModuleFrame, Exec
         layout = QVBoxLayout(self)
         layout.addWidget(self._build_n6705c_frame())       # 来自 Mixin
         layout.addWidget(self._build_oscilloscope_frame()) # 来自 Mixin
-        layout.addWidget(self._build_parameters_frame())   # 业务参数
-        layout.addWidget(self._build_execution_logs())     # 来自 Mixin
+        # 主内容 + 日志区经工厂装配进 QSplitter（见 01_CONVENTIONS §6.4）
+        main_content = self._build_parameters_frame()      # 业务参数
+        splitter, self.execution_logs = ExecutionLogsFrame.wrap_with(
+            main_content, show_progress=True, stretch=(4, 1)
+        )
+        layout.addWidget(splitter, 1)
 
     def _build_parameters_frame(self):
         ...

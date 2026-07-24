@@ -1,5 +1,7 @@
 # 01 - 代码规范与风格
 
+> 📌 何时读我：任何编码任务涉及命名 / 日志 / 异常 / Qt 弹窗 / 单位 label / 图标 / 依赖规范时；或子模块 AGENTS.md 出现 @see 本文件时。
+
 本文件描述 KK_Lab 项目的编码约定，AI 修改代码必须严格遵守。
 
 ---
@@ -59,7 +61,7 @@ except Exception as e:
 - 所有耗时操作 **禁止**在主线程执行；使用 `QThread` 或 `QTimer` + 异步回调。
 - 跨线程更新 UI **必须**走 `Signal/Slot`。
 - 控件样式统一走 `ui/styles/`；禁止在页面里散写 `setStyleSheet`。
-- 共用布局用 `ui/modules/` / `ui/styles/*_module_frame.py` 提供的 Mixin。
+- 共用布局用 `ui/modules/*_module_frame.py` 提供的 Mixin。
 - Widgets 构造中不做 IO；IO 放到槽函数 / 控制器。
 
 ### 6.1 弹窗 / 对话框 parent（CRITICAL）

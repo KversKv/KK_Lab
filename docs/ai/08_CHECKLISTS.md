@@ -1,5 +1,7 @@
 # 08 - 新功能开发 Checklist ⭐
 
+> 📌 何时读我：任务收尾回归期逐项自检；「工程清单同步矩阵」的唯一事实源。
+
 > 在完成任务前，逐项过一遍对应 Checklist，防止漏项。
 
 ---
@@ -53,7 +55,7 @@
 ## ✅ 新增 UI 页面
 
 - [ ] 放在 `ui/pages/<分组>/`
-- [ ] `QWidget` + 对应 Mixin（`N6705CModuleFrame`、`OscilloscopeModuleFrame`、`ChamberModuleFrame` 等）
+- [ ] `QWidget` + 对应 Mixin（`ui/modules/` 下 `N6705CConnectionMixin`、`OscilloscopeConnectionMixin`、`ChamberConnectionMixin` 等）
 - [ ] 复用 `ui/styles/` 里的样式常量
 - [ ] 侧边栏按钮在 `main_window.py` 注册
 - [ ] `QStackedWidget` 插入索引正确

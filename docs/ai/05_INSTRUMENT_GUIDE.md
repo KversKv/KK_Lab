@@ -1,5 +1,7 @@
 # 05 - 新增仪器驱动指南
 
+> 📌 何时读我：新增 / 修改 `instruments/` 驱动，或 `instruments/AGENTS.md` 出现 @see 本文件时。
+
 本文档描述如何向 `instruments/` 添加一款新仪器（示波器、电源、温箱、适配器等）。
 
 ---

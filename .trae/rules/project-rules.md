@@ -2,6 +2,7 @@
 
 ## 0. 前置义务
 **开工前必读** [AGENTS.md](../../AGENTS.md)；按 docs/ai 分发表取细则。
+按 AGENTS.md「加载决策 SOP」就近读命中子模块的 `AGENTS.md`（`ui/pages` / `ui/modules` / `core` / `core/ai` / `instruments`），禁通读全量。
 
 ## 1. 栈
 Win/PySide6·Py3.12+·pyvisa·pyqtgraph·Modbus·PyInstaller。分层 `main→ui↔core→instruments→lib`。

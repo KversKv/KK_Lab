@@ -1,5 +1,7 @@
 # 04 - 架构细节与分层职责
 
+> 📌 何时读我：跨层改动（ui ↔ core ↔ instruments）、重构 / 分层变动、需理解层间依赖规则与数据流时。
+
 ## 1. 总体分层
 
 ```
@@ -9,13 +11,19 @@ main.py
   │   ├─ main_window.py
   │   ├─ pages/        (功能页面：按仪器/功能分组)
   │   ├─ widgets/      (通用控件：sidebar / 暗色下拉框 / pyqtgraph 图)
-  │   ├─ styles/       (QSS 样式 + 连接区域 Mixin)
-  │   └─ dialogs/      (预留)
+  │   ├─ styles/       (QSS 样式常量 / token)
+│   ├─ modules/      (连接区域 Mixin + 可复用面板)
+│   ├─ ai/           (AI 助手面板 / 对话框)
+│   └─ dialogs/      (预留)
   │
   ├─ core/             (业务编排 / 数据流)
   │   ├─ test_manager.py
-  │   ├─ data_collector.py
-  │   └─ controllers/  (如 oscilloscope_controller)
+│   ├─ data_collector.py
+│   ├─ controllers/  (如 oscilloscope_controller)
+│   ├─ instruments/  (InstrumentManager / ConnectionHub)
+│   ├─ pmu_test/ consumption_test/ module_test/ ...  (各测试域 controller/worker/analysis)
+│   ├─ ai/           (AI 助手子系统)
+│   └─ orchestrator/ (可视化编排引擎)
   │
   ├─ instruments/      (纯仪器驱动，无 UI 依赖)
   │   ├─ base/         (InstrumentBase / VisaInstrument / Exceptions)
@@ -70,15 +78,15 @@ main.py
 - 作为 Signal/Slot 的顶层宿主，把 `n6705c_top` / `mso64b_top` / `instrument_manager` 共享给各页面。
 
 ### 3.3 `ui/pages/`
-- 按仪器 / 功能分包：`n6705c_power_analyzer/`、`oscilloscope/`、`pmu_test/`、`charger_test/`、`chamber/`、`consumption_test/`。
+- 按仪器 / 功能分包：`n6705c_power_analyzer/`、`oscilloscope/`、`pmu/`、`pmu_test/`、`charger_test/`、`chamber/`、`consumption_test/`、`module_test/`、`orchestrator/`、`vmin_hunter/`。
 - 每个页面负责：UI 布局 + 用户交互 + 调用 `core/` 执行业务 + 订阅结果信号刷新图表/表格。
 
-### 3.4 `ui/styles/`
-- **样式常量**：`SCROLLBAR_STYLE`、`START_BTN_STYLE` 等。
-- **连接区域 Mixin**：`n6705c_module_frame.py`、`oscilloscope_module_frame.py`、`chamber_module_frame.py`、`serialCom_module/serialCom_module_frame.py`。
+### 3.4 `ui/styles/` 与 `ui/modules/`
+- **`ui/styles/` 样式常量**：`page_styles.py`（`get_page_base_qss()` 等）、`serial_tokens.py`；按钮 / 滚动条样式常量在 `ui/widgets/`（`START_BTN_STYLE`、`SCROLLBAR_STYLE`）。
+- **`ui/modules/` 连接区域 Mixin**：`n6705c_module_frame.py`（`N6705CConnectionMixin`）、`oscilloscope_module_frame.py`（`OscilloscopeConnectionMixin`）、`chamber_module_frame.py`（`ChamberConnectionMixin`）、`serialCom_module/serialCom_module_frame.py`。
   - 统一提供 "VISA/串口搜索 + 连接/断开 + 状态指示" 一套 UI；
   - 页面通过 **多继承** 混入，避免重复布局。
-- **执行日志 Mixin**：`execution_logs_module_frame.py` 提供日志显示区 + 进度条。
+- **执行日志组件**：`ui/modules/execution_logs_module_frame.py` 的 `ExecutionLogsFrame` 提供日志显示区 + 进度条，经 `ExecutionLogsFrame.wrap_with(...)` 工厂装配进 `QSplitter`。
 
 ### 3.5 `ui/widgets/`
 - `sidebar_nav_button.py`：带 checked/unchecked 状态的侧边栏按钮。
@@ -89,6 +97,10 @@ main.py
 - `test_manager.py`：测试生命周期编排，跨仪器的"开始/停止/暂停"总线。
 - `data_collector.py`：`QTimer` 周期从仪器读取电压/电流数据，发射 `data_updated` 信号供 UI 订阅。
 - `controllers/`：细分控制器（如示波器控制器），封装"连接/断开/测量/截图"等粗粒度操作。
+- `instruments/`：`InstrumentManager` / `InstrumentSession` / `ConnectionHub`（连接状态单点订阅）。
+- `pmu_test/`、`consumption_test/`、`module_test/`、`n6705c/`、`serial_io/`、`serial_script/`、`vmin_hunter/`：各测试域的 controller / worker / analysis（ADR 005 拆分范式）。
+- `ai/`：AI 助手子系统（对话 / 分析 / 草案 / 动作），局部知识见 `core/ai/AGENTS.md`。
+- `orchestrator/`：可视化编排引擎（compiler / executor / nodes）。
 
 ### 3.7 `instruments/`
 - `base/instrument_base.py` 抽象基类（`connect / disconnect / is_connected / identify`）。

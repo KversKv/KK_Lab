@@ -1,5 +1,7 @@
 # 10. 版本号管理规范
 
+> 📌 何时读我：改版本号、发版、新增模块声明 `MODULE_VERSION` 时。
+
 > 适用阶段：**研发初期（快速迭代）**。版本号与 git **完全解耦**。
 > 唯一事实源：[version.py](../../version.py)。
 
@@ -59,20 +61,29 @@ APP_NAME    = "KK_Lab"
 MODULE_VERSION = "0.0.0"
 ```
 
-**范围**：`ui/pages/` 下各功能页面目录 + `ui/modules/`（含子包 `serialCom_module/`）。
+**范围**：`ui/pages/` 下各功能页面目录 + `ui/modules/`（含子包）+ `ui/ai/` + `core/` 部分子包。
 
 | 模块 | 文件 |
 |---|---|
 | chamber | `ui/pages/chamber/__init__.py` |
 | charger_test | `ui/pages/charger_test/__init__.py` |
 | consumption_test | `ui/pages/consumption_test/__init__.py` |
-| custom_test | `ui/pages/custom_test/__init__.py` |
+| module_test | `ui/pages/module_test/__init__.py` |
 | n6705c_power_analyzer | `ui/pages/n6705c_power_analyzer/__init__.py` |
+| orchestrator | `ui/pages/orchestrator/__init__.py` |
 | oscilloscope | `ui/pages/oscilloscope/__init__.py` |
+| pmu | `ui/pages/pmu/__init__.py` |
 | pmu_test | `ui/pages/pmu_test/__init__.py` |
 | vmin_hunter | `ui/pages/vmin_hunter/__init__.py` |
 | modules（通用模块包） | `ui/modules/__init__.py` |
 | serialCom_module | `ui/modules/serialCom_module/__init__.py` |
+| IIC_Module | `ui/modules/IIC_Module/__init__.py` |
+| ui/ai（AI 面板） | `ui/ai/__init__.py` |
+| core/ai（AI 服务） | `core/ai/__init__.py` |
+| core/ai/actions | `core/ai/actions/__init__.py` |
+| core/pmu_test | `core/pmu_test/__init__.py` |
+| core/consumption_test | `core/consumption_test/__init__.py` |
+| core/serial_io | `core/serial_io/__init__.py` |
 
 **递增规则**：模块单独迭代（加功能 / 修 bug）时自行 +1，**不直接牵动主版本**；与 git 同样解耦。`ui/modules/` 下的单文件模块（`*_module_frame.py`）当前不纳入。
 
