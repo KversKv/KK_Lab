@@ -311,10 +311,19 @@ class ItemParamsDialog(QDialog):
         return w.text().strip()
 
     def get_override(self) -> dict:
-        """仅返回与预填值不同的键值（未改动项回退基类 cfg）。"""
+        """返回 override 键值。
+
+        无 base_key 的项级参数（如寄存器扫描的 reg_addr/msb/lsb/min/max_code）
+        直接全量返回——弹窗显示什么就生效什么，避免 diff 语义把它当"未改动"
+        静默丢弃（曾致 Output Voltage Scan 误用默认 reg_addr=0x0 扫错寄存器）。
+        有 base_key 的基类参数保持 diff：与预填值不同才计入，未改动回退基类 cfg。
+        """
         out: dict = {}
         for spec in self._specs:
             val = self._editor_value(spec)
+            if not spec.base_key:
+                out[spec.key] = val
+                continue
             prefill = self._prefill.get(spec.key)
             base = ", ".join(str(x) for x in prefill) if isinstance(prefill, (list, tuple)) else prefill
             if spec.ptype in ("int", "float"):
