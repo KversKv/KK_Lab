@@ -15,7 +15,7 @@ import re
 from typing import Any
 
 from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import QColor, QDesktopServices
+from PySide6.QtGui import QColor, QDesktopServices, QFont
 from PySide6.QtWidgets import (
     QCheckBox, QDialog, QDialogButtonBox, QGridLayout, QHBoxLayout,
     QHeaderView, QInputDialog, QLabel, QLineEdit,
@@ -32,9 +32,12 @@ from log_config import get_logger
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.oscilloscope_module_frame import OscilloscopeConnectionMixin
-from ui.pages.module_test.widgets import CollapsibleGroupBox, DutModeDialog, ItemParamsDialog
+from ui.pages.module_test.widgets import (
+    CollapsibleGroupBox, DIALOG_QSS, DutModeDialog, ItemParamsDialog,
+)
 from ui.resource_path import get_resource_base, get_user_data_dir
-from ui.styles import START_BTN_STYLE, SCROLLBAR_STYLE
+from ui.styles import START_BTN_STYLE, get_page_base_qss, get_table_qss
+from ui.theme import Colors, FontSizes, Radius
 from ui.widgets.dark_combobox import DarkComboBox
 
 from lib.i2c.Bes_I2CIO_Interface import I2CWidthFlag
@@ -86,84 +89,60 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
 
     # ------------------------------------------------------------------ style
     def _setup_style(self):
+        """页面样式 = 全局基础 QSS + 表格 QSS + START/STOP 按钮样式 + 本页增量。
+
+        与 GPADC / VminHunter 等页面保持一致：色板只取 ui.theme token，
+        控件高度只用 ID 选择器钉死（§24.1），不手写页面级色值。
+        """
+        self.setFont(QFont("Segoe UI", 9))
+        self.setObjectName("moduleTestRoot")
         icons_dir = os.path.join(get_resource_base(), "resources", "icons")
         cb_checked = os.path.join(icons_dir, "checked_4f46e5.svg").replace("\\", "/")
         cb_unchecked = os.path.join(icons_dir, "unchecked_4f46e5.svg").replace("\\", "/")
-        self.setStyleSheet(f"""
-            QWidget #{self.__class__.__name__} {{
-                background-color: #020618; color: #c8c8c8; border: none;
+        page_extra = f"""
+            QWidget#moduleTestRoot {{
+                background-color: {Colors.bg_secondary};
             }}
-            QLabel {{ color: #c8c8c8; }}
-            QLabel#fieldLabel {{ color: #9aa4bd; }}
-            QLabel#cardTitle {{ color: #8eb0e3; font-weight: 700; background-color: transparent; }}
-            QLabel#statusOk {{ color: #15d1a3; font-weight: 600; background-color: transparent; }}
-            QLabel#statusWarn {{ color: #ffb84d; font-weight: 600; background-color: transparent; }}
-            QLabel#statusErr {{ color: #ff5e7a; font-weight: 600; background-color: transparent; }}
-            QLineEdit, QSpinBox {{
-                border: 1px solid #2f374d; border-radius: 4px; padding: 3px 8px;
-                background-color: #161b2e; color: #c8c8c8; min-height: 22px;
+            QWidget#moduleTestContent {{
+                background: transparent;
             }}
-            QLineEdit:focus, QSpinBox:focus {{ border: 1px solid #4a6c9b; }}
-            QLineEdit::placeholder {{ color: #5a6377; }}
-            #actionRow {{ border-top: 1px solid #1c2438; background-color: #0a0f1f; }}
-            #itemSettingsBtn {{
-                border: 1px solid #3a4260; border-radius: 4px; padding: 1px 10px;
-                background-color: #1a2138; color: #9aa4bd; font-size: 11px; min-height: 22px;
+            QWidget#actionRow {{
+                background-color: {Colors.bg_panel};
+                border-top: 1px solid {Colors.border_primary};
             }}
-            #itemSettingsBtn:hover {{ background-color: #232c48; color: #d8dce8; }}
-            #itemSettingsBtn:disabled {{ background-color: #171b28; color: #4a5166; border-color: #262c3e; }}
-            #start_test_btn {{ {START_BTN_STYLE} }}
-            #stop_test_btn {{
-                border: 1px solid #555; border-radius: 4px; padding: 6px 14px;
-                background-color: #3a2230; color: #e0a0b0; min-height: 22px;
+            QCheckBox::indicator, QTableWidget::indicator {{
+                width: 16px;
+                height: 16px;
+                image: url("{cb_unchecked}");
             }}
-            #stop_test_btn:hover {{ background-color: #4a2a3c; }}
-            #stop_test_btn:disabled {{ background-color: #2a2d32; color: #666; }}
-            #open_report_btn, #select_all_btn, #clear_results_btn {{
-                border: 1px solid #3a4260; border-radius: 4px; padding: 5px 12px;
-                background-color: #32353a; color: #c8c8c8; min-height: 22px;
-            }}
-            #open_report_btn:hover, #select_all_btn:hover, #clear_results_btn:hover {{
-                background-color: #3a3d43;
-            }}
-            #open_report_btn:disabled {{ background-color: #2a2d32; color: #666; }}
-            #save_config_btn, #save_as_config_btn, #open_config_btn {{
-                border: 1px solid #35507a; border-radius: 4px; padding: 5px 12px;
-                background-color: #1a2942; color: #a9c4ef; min-height: 22px;
-            }}
-            #save_config_btn:hover, #save_as_config_btn:hover, #open_config_btn:hover {{
-                background-color: #223458; color: #d8e4f8;
+            QCheckBox::indicator:checked, QTableWidget::indicator:checked {{
+                image: url("{cb_checked}");
             }}
             QTableWidget {{
-                background-color: #0a0f1f; color: #c8c8c8;
-                gridline-color: transparent; border: 1px solid #26304a;
-                border-radius: 4px; alternate-background-color: #0e1526;
+                alternate-background-color: {Colors.bg_panel};
             }}
-            QTableWidget::item {{ padding: 2px 6px; border: none; }}
-            QTableWidget::item:hover {{ background-color: #14203a; }}
-            QTableWidget::indicator {{
-                width: 16px; height: 16px;
-                image: url("{cb_unchecked}");
+            QPushButton#stopBtn:disabled {{
+                background-color: {Colors.disabled_btn_bg};
+                color: {Colors.disabled_text};
+                border: 1px solid {Colors.disabled_btn_border};
             }}
-            QTableWidget::indicator:checked {{
-                image: url("{cb_checked}");
+            QPushButton#itemSettingsBtn {{
+                min-height: 22px;
+                padding: 1px 10px;
+                font-size: {FontSizes.caption};
             }}
-            QCheckBox {{ color: #c8c8c8; spacing: 6px; background: transparent; }}
-            QCheckBox::indicator {{
-                width: 16px; height: 16px;
-                image: url("{cb_unchecked}");
+            QPushButton#dutModeBtn {{
+                min-height: 22px;
+                padding: 2px 10px;
             }}
-            QCheckBox::indicator:checked {{
-                image: url("{cb_checked}");
+            QComboBox#defaultModeCombo {{
+                min-height: 22px;
+                padding: 1px 6px;
             }}
-            QHeaderView::section {{
-                background-color: #161b2e; color: #8eb0e3; padding: 5px 6px;
-                border: none; border-bottom: 1px solid #2a3148; font-weight: 600;
-            }}
-            QScrollBar:vertical {{ background: #0a0f1f; width: 10px; }}
-            {SCROLLBAR_STYLE}
-        """)
-        self.setObjectName(self.__class__.__name__)
+        """
+        self.setStyleSheet(
+            get_page_base_qss() + get_table_qss() + START_BTN_STYLE + page_extra
+        )
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self):
@@ -390,12 +369,6 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         self.default_mode_combo.setMinimumWidth(140)
         btn_row.addWidget(self.default_mode_combo)
         lay.addLayout(btn_row)
-
-        area.setStyleSheet(area.styleSheet() + """
-            QPushButton#dutModeBtn { min-height: 22px; padding: 2px 10px; }
-            QComboBox#defaultModeCombo { min-height: 22px; padding: 1px 6px; }
-            QTableWidget#dutModesTable { background-color: #0e1526; border: 1px solid #2f374d; }
-        """)
         return area
 
     # ------------------------------------------------------------------ DUT modes
@@ -521,10 +494,10 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         lay.setSpacing(8)
 
         self.start_test_btn = QPushButton("▶ 开始测试")
-        self.start_test_btn.setObjectName("start_test_btn")
+        self.start_test_btn.setObjectName("primaryStartBtn")
         self.start_test_btn.setCursor(Qt.PointingHandCursor)
         self.stop_test_btn = QPushButton("■ 停止")
-        self.stop_test_btn.setObjectName("stop_test_btn")
+        self.stop_test_btn.setObjectName("stopBtn")
         self.stop_test_btn.setEnabled(False)
         self.save_config_btn = QPushButton("保存")
         self.save_config_btn.setObjectName("save_config_btn")
@@ -587,12 +560,12 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
             inst_item = QTableWidgetItem(inst)
             inst_item.setFlags(Qt.ItemIsEnabled)
             inst_item.setTextAlignment(Qt.AlignCenter)
-            inst_item.setForeground(QColor("#c99b5a" if needs_scope else "#6f9bd6"))
+            inst_item.setForeground(QColor(Colors.warning if needs_scope else Colors.info))
             inst_item.setData(Qt.UserRole, needs_scope)
             self.items_table.setItem(row, 2, inst_item)
             rec_item = QTableWidgetItem("记录")
             rec_item.setFlags(Qt.ItemIsEnabled)
-            rec_item.setForeground(QColor("#7f889c"))
+            rec_item.setForeground(QColor(Colors.text_muted))
             self.items_table.setItem(row, 3, rec_item)
             self.items_table.setCellWidget(row, 4, self._make_settings_cell(item_key, _params))
 
@@ -642,10 +615,10 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
                 base_name = self.ITEMS_REGISTRY[item_key][0]
                 if item_key in self._item_overrides:
                     name_item.setText(f"{base_name}  ●")
-                    name_item.setForeground(QColor("#8eb0e3"))
+                    name_item.setForeground(QColor(Colors.text_accent))
                 else:
                     name_item.setText(base_name)
-                    name_item.setForeground(QColor("#c8c8c8"))
+                    name_item.setForeground(QColor(Colors.text_secondary))
                 break
 
     def _base_param_value(self, base_key: str):
@@ -679,13 +652,13 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
                 chk.setFlags(Qt.ItemIsEnabled)
                 rec = self.items_table.item(row, 3)
                 rec.setText("未接示波器，跳过")
-                rec.setForeground(QColor("#b0684f"))
+                rec.setForeground(QColor(Colors.warning))
             else:
                 chk.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
                 rec = self.items_table.item(row, 3)
                 if rec.text().startswith("未接示波器"):
                     rec.setText("记录")
-                    rec.setForeground(QColor("#7f889c"))
+                    rec.setForeground(QColor(Colors.text_muted))
 
     # ------------------------------------------------------------------ config IO
     def get_test_config(self) -> dict[str, Any]:
@@ -1162,6 +1135,7 @@ class _ConfigPickerDialog(QDialog):
         self._root = root
         self.setWindowTitle(f"打开 {module_type.upper()} 配置")
         self.setMinimumSize(420, 420)
+        self.setStyleSheet(DIALOG_QSS)
         self._selected_path: str | None = None
 
         layout = QVBoxLayout(self)

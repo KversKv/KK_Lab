@@ -13,6 +13,7 @@ from log_config import get_logger
 
 from ui.pages.module_test.dcdc_test_ui import DCDCTestUI
 from ui.pages.module_test.ldo_test_ui import LDOTestUI
+from ui.theme import Colors
 
 logger = get_logger(__name__)
 
@@ -36,16 +37,25 @@ class ModuleTestUI(QWidget):
 
     def _setup_style(self):
         self.setFont(QFont("Segoe UI", 9))
-        self.setStyleSheet("""
-            QWidget { background-color: #020618; color: #c8c8c8; border: none; }
-            QTabWidget::pane { border: none; background-color: #16181c; }
+        self.setStyleSheet(f"""
+            QWidget#moduleTestContainer {{
+                background-color: {Colors.bg_secondary};
+                color: {Colors.text_secondary};
+                border: none;
+            }}
+            QTabWidget#moduleTestTabs::pane {{
+                border: none;
+                background-color: transparent;
+            }}
         """)
+        self.setObjectName("moduleTestContainer")
 
     def _create_layout(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
         self.tab_widget = QTabWidget()
+        self.tab_widget.setObjectName("moduleTestTabs")
         self.tab_widget.tabBar().hide()
 
         self.ldo_test_ui = LDOTestUI(

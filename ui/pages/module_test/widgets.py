@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
     QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from ui.theme import Colors, FontSizes, Radius
+
 _ARROW_EXPANDED = "▼"
 _ARROW_COLLAPSED = "▶"
 
@@ -31,25 +33,26 @@ class CollapsibleGroupBox(QFrame):
         super().__init__(parent)
         self._expanded = expanded
         self.setObjectName("collapsibleGroupBox")
-        self.setStyleSheet("""
-            QFrame#collapsibleGroupBox {
-                border: 1px solid #333;
-                border-radius: 6px;
-                background-color: #0a0f1f;
-            }
-            QPushButton#collapseHeader {
+        self.setStyleSheet(f"""
+            QFrame#collapsibleGroupBox {{
+                background-color: {Colors.bg_card};
+                border: 1px solid {Colors.border_primary};
+                border-radius: {Radius.card}px;
+            }}
+            QPushButton#collapseHeader {{
                 background-color: transparent;
                 border: none;
-                border-radius: 6px;
-                color: #8eb0e3;
+                border-radius: {Radius.card}px;
+                color: {Colors.text_primary};
                 padding: 6px 10px;
-                font-size: 12px;
+                font-size: {FontSizes.caption};
                 font-weight: 700;
+                letter-spacing: 0.5px;
                 text-align: left;
-            }
-            QPushButton#collapseHeader:hover {
-                background-color: #161b2e;
-            }
+            }}
+            QPushButton#collapseHeader:hover {{
+                background-color: {Colors.submenu_item_hover_bg};
+            }}
         """)
 
         root = QVBoxLayout(self)
@@ -93,23 +96,92 @@ class CollapsibleGroupBox(QFrame):
             self.toggle()
 
 
-_DIALOG_QSS = """
-    QDialog { background-color: #0a0f1f; color: #c8c8c8; }
-    QLabel { color: #c8c8c8; background: transparent; }
-    QLabel#dlgFieldLabel { color: #9aa4bd; }
-    QLabel#dlgHint { color: #6f7688; }
-    QLineEdit, QSpinBox, QDoubleSpinBox {
-        border: 1px solid #2f374d; border-radius: 4px; padding: 3px 8px;
-        background-color: #0e1526; color: #d8dce8; min-height: 22px;
-    }
-    QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus { border: 1px solid #4a6c9b; }
-    QLineEdit::placeholder { color: #5a6377; }
-    QPushButton {
-        border: 1px solid #3a4260; border-radius: 4px; padding: 5px 16px;
-        background-color: #1a2138; color: #d8dce8; min-height: 22px;
-    }
-    QPushButton:hover { background-color: #232c48; }
-    QPushButton:default { border: 1px solid #4a6c9b; }
+DIALOG_QSS = f"""
+    QDialog {{
+        background-color: {Colors.bg_secondary};
+        color: {Colors.text_secondary};
+    }}
+    QLabel {{
+        color: {Colors.text_secondary};
+        background: transparent;
+    }}
+    QLabel#dlgFieldLabel {{
+        color: {Colors.text_muted};
+        font-size: {FontSizes.caption};
+    }}
+    QLabel#dlgHint {{
+        color: {Colors.text_dim};
+        font-size: {FontSizes.caption};
+    }}
+    QLineEdit, QSpinBox, QDoubleSpinBox {{
+        background-color: {Colors.bg_input};
+        border: 1px solid {Colors.border_input};
+        border-radius: {Radius.small}px;
+        padding: 4px 8px;
+        color: {Colors.text_secondary};
+        min-height: 22px;
+    }}
+    QLineEdit:hover, QSpinBox:hover, QDoubleSpinBox:hover {{
+        border: 1px solid {Colors.border_accent};
+    }}
+    QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
+        border: 1px solid {Colors.accent_primary};
+    }}
+    QLineEdit::placeholder {{
+        color: {Colors.text_disabled};
+    }}
+    QComboBox {{
+        background-color: {Colors.bg_input};
+        border: 1px solid {Colors.border_input};
+        border-radius: {Radius.small}px;
+        padding: 4px 8px;
+        color: {Colors.text_secondary};
+        min-height: 22px;
+    }}
+    QComboBox:hover {{
+        border: 1px solid {Colors.border_accent};
+    }}
+    QComboBox::drop-down {{
+        border: none;
+        width: 24px;
+    }}
+    QComboBox QAbstractItemView {{
+        background-color: {Colors.bg_input};
+        border: 1px solid {Colors.border_secondary};
+        color: {Colors.text_secondary};
+        selection-background-color: {Colors.submenu_item_hover_bg};
+    }}
+    QPushButton {{
+        background-color: {Colors.bg_card};
+        border: 1px solid {Colors.border_accent};
+        border-radius: {Radius.widget}px;
+        padding: 6px 14px;
+        color: {Colors.text_secondary};
+        min-height: 22px;
+    }}
+    QPushButton:hover {{
+        background-color: {Colors.submenu_item_hover_bg};
+    }}
+    QPushButton:default {{
+        border: 1px solid {Colors.accent_primary};
+    }}
+    QTableWidget, QTreeWidget {{
+        background-color: {Colors.bg_input};
+        border: 1px solid {Colors.border_secondary};
+        border-radius: {Radius.widget}px;
+        color: {Colors.text_secondary};
+        font-size: {FontSizes.caption};
+        gridline-color: {Colors.border_secondary};
+    }}
+    QHeaderView::section {{
+        background-color: {Colors.bg_input};
+        color: {Colors.text_dim};
+        border: none;
+        border-right: 1px solid {Colors.border_secondary};
+        padding: 4px 6px;
+        font-size: {FontSizes.caption};
+        font-weight: 700;
+    }}
 """
 
 
@@ -126,7 +198,7 @@ class ItemParamsDialog(QDialog):
         self.setWindowTitle(title)
         self.setModal(True)
         self.setMinimumWidth(360)
-        self.setStyleSheet(_DIALOG_QSS)
+        self.setStyleSheet(DIALOG_QSS)
         self._specs = specs
         self._editors: dict[str, QWidget] = {}
         self._prefill: dict[str, object] = {}
@@ -270,7 +342,7 @@ class DutModeDialog(QDialog):
         self.setWindowTitle("编辑 DUT 工作模式" if mode else "添加 DUT 工作模式")
         self.setModal(True)
         self.setMinimumWidth(440)
-        self.setStyleSheet(_DIALOG_QSS)
+        self.setStyleSheet(DIALOG_QSS)
         self._existing = {str(n).strip() for n in (existing_names or []) if n}
 
         root = QVBoxLayout(self)
