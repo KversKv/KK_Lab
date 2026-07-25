@@ -42,6 +42,7 @@ from core.pmu_test.gpadc import (
     TestWorker as _TestWorker,
     compute_reg_stats,
     compute_calibration,
+    compute_detailed_stats,
     parse_uart_gpadc_raw,
 )
 from core.ai.page_contract import (
@@ -658,6 +659,13 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         avg_card, self.avg_value = self._create_metric_card("AVG", "---", "metric_value_green")
         min_card, self.min_value = self._create_metric_card("MIN", "---", "metric_value_blue")
         max_card, self.max_value = self._create_metric_card("MAX", "---", "metric_value_yellow")
+        std_card, self.std_value = self._create_metric_card("STD (code)", "---", "metric_value_blue")
+        pp_card, self.pp_value = self._create_metric_card("P-P NOISE (code)", "---", "metric_value_yellow")
+        samples_card, self.samples_value = self._create_metric_card("SAMPLES", "---", "metric_value_green")
+
+        # 按测试项分组显隐：1000CNT 展示详细统计卡组，其余测试项展示线性度卡组
+        self._cnt_cards = [avg_card, min_card, max_card, std_card, pp_card, samples_card]
+        self._fv_cards = [inl_card, dnl_card, enob_card, offset_card, gain_card]
 
         self.linearity_value = QLabel("---")
         self.linearity_value.hide()
@@ -670,12 +678,16 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         metrics_layout.addWidget(avg_card)
         metrics_layout.addWidget(min_card)
         metrics_layout.addWidget(max_card)
+        metrics_layout.addWidget(std_card)
+        metrics_layout.addWidget(pp_card)
+        metrics_layout.addWidget(samples_card)
 
         right_col.addLayout(metrics_layout)
 
         chart_panel = QFrame()
         chart_panel.setObjectName("chart_panel")
         chart_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.chart_panel = chart_panel
 
         chart_layout = QVBoxLayout(chart_panel)
         chart_layout.setContentsMargins(14, 14, 14, 14)
@@ -910,6 +922,14 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self.n6705c_card.setVisible("n6705c" in required)
         self.chamber_card.setVisible("chamber" in required)
 
+        # 1000CNT 用不到 ADC Transfer Curve，隐藏图表面板，改显详细统计卡组
+        is_cnt_test = test_item == self.TEST_1000CNT
+        self.chart_panel.setVisible(not is_cnt_test)
+        for card in self._cnt_cards:
+            card.setVisible(is_cnt_test)
+        for card in self._fv_cards:
+            card.setVisible(not is_cnt_test)
+
         if test_item == self.TEST_1000CNT:
             self.params_mode_label.setText("1000 COUNT TEST")
             self.voltage_params_frame.hide()
@@ -937,9 +957,6 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self.voltage_channel.show()
             self.start_test_btn.setText("▶ START TEMP TEST")
             self._start_btn_text = "▶ START TEMP TEST"
-            self.avg_value.setText("---")
-            self.min_value.setText("---")
-            self.max_value.setText("---")
         else:
             self.params_mode_label.setText("VOLTAGE + TEMPERATURE")
             self.voltage_params_frame.show()
@@ -949,9 +966,6 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self.voltage_channel.show()
             self.start_test_btn.setText("▶ START CONSISTENCY TEST")
             self._start_btn_text = "▶ START CONSISTENCY TEST"
-            self.avg_value.setText("---")
-            self.min_value.setText("---")
-            self.max_value.setText("---")
 
     def _set_btn_connected(self, btn):
         update_connect_button_state(btn, connected=True)
@@ -1066,15 +1080,16 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self._test_worker.log.emit(f"[INFO] Starting 1000CNT TEST via UART Log, keyword='{self._uart_keyword_snapshot}', count={sample_cnt}")
         else:
             self._test_worker.log.emit(f"[INFO] Starting 1000CNT TEST with I2C address: 0x{device_addr:x} Register: 0x{reg_addr:x}, count={sample_cnt}")
-        avg, max_val, min_val = self._gpadc_read_by_cnts(
+        _, _, _, raw_data = self._gpadc_read_by_cnts(
             device_addr=device_addr,
             reg_addr=reg_addr,
             iic_weight=10,
             get_reg_cnt=sample_cnt,
+            return_raw=True,
             stop_check=stop_check,
             progress_callback=lambda v: self._test_worker.progress.emit(v),
         )
-        return ('1000cnt', {'avg': avg, 'max': max_val, 'min': min_val})
+        return ('1000cnt', compute_detailed_stats(raw_data))
 
     def _run_force_voltage_test(self, device_addr, reg_addr, voltage_min, voltage_max,
                                 voltage_step, voltage_channel, sample_cnt=1000, stop_check=None):
@@ -1142,7 +1157,11 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
 
         if kind == '1000cnt':
             self.update_test_result(result)
-            self._append_log(f"[RESULT] 1000CNT TEST: AVG={result.get('avg', '---'):.3f}, MIN={result.get('min', '---'):.3f}, MAX={result.get('max', '---'):.3f}")
+            self._append_log(
+                f"[RESULT] 1000CNT TEST: AVG={result.get('avg', 0):.3f}, MIN={result.get('min', 0):.3f}, "
+                f"MAX={result.get('max', 0):.3f}, STD={result.get('std', 0):.3f}, "
+                f"P-P={result.get('pp', 0):.0f} code, N={result.get('count', 0)}"
+            )
 
         elif kind == 'force_voltage':
             if result is not None:
@@ -1465,6 +1484,9 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self.avg_value.setText(f"{result['avg']:.3f}" if 'avg' in result else "---")
             self.min_value.setText(f"{result['min']:.3f}" if 'min' in result else "---")
             self.max_value.setText(f"{result['max']:.3f}" if 'max' in result else "---")
+            self.std_value.setText(f"{result['std']:.3f}" if 'std' in result else "---")
+            self.pp_value.setText(f"{result['pp']:.0f}" if 'pp' in result else "---")
+            self.samples_value.setText(str(result['count']) if 'count' in result else "---")
             self.linearity_value.setText("---")
             self.enob_value.setText("---")
             self.dnl_value.setText("---")
@@ -1475,6 +1497,9 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self.avg_value.setText("---")
             self.min_value.setText("---")
             self.max_value.setText("---")
+            self.std_value.setText("---")
+            self.pp_value.setText("---")
+            self.samples_value.setText("---")
             self.linearity_value.setText(f"{result['linearity']:.3f}" if 'linearity' in result else "---")
             self.enob_value.setText(f"{result['enob']:.3f}" if 'enob' in result else "---")
             self.dnl_value.setText(f"{result['dnl']:.3f}" if 'dnl' in result else "---")
@@ -1493,6 +1518,9 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self.avg_value.setText("---")
         self.min_value.setText("---")
         self.max_value.setText("---")
+        self.std_value.setText("---")
+        self.pp_value.setText("---")
+        self.samples_value.setText("---")
 
     def cleanup_threads(self):
         try:
@@ -2176,6 +2204,11 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             legend_row.addWidget(ideal_legend)
             legend_row.addSpacing(16)
             legend_row.addWidget(band_legend)
+            if not is_temp_mode:
+                err_legend = QLabel("● Error (Actual - Ideal)")
+                err_legend.setStyleSheet("color: #e05c5c; font-size: 12px;")
+                legend_row.addSpacing(16)
+                legend_row.addWidget(err_legend)
             legend_row.addStretch()
             layout.addLayout(legend_row)
 
@@ -2219,6 +2252,30 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             pw.plot(x, y, pen=pg.mkPen(color="#00d39a", width=2),
                     symbol="o", symbolSize=5,
                     symbolBrush="#00d39a", symbolPen=None)
+
+            if not is_temp_mode:
+                # 右 Y 轴：Actual - Ideal 差值曲线（校准电压 - 输入电压，单位 V）
+                pw.showAxis('right')
+                right_axis = pw.getAxis('right')
+                right_axis.setLabel("Error (V)", color="#e05c5c")
+                right_axis.setTextPen(pg.mkPen("#e05c5c"))
+                right_axis.setPen(pg.mkPen("#3a4f7a"))
+
+                right_view = pg.ViewBox()
+                right_view.setMouseEnabled(x=False, y=False)
+                pw.plotItem.scene().addItem(right_view)
+                right_axis.linkToView(right_view)
+                right_view.setXLink(pw.plotItem)
+                pw.plotItem.vb.sigResized.connect(
+                    lambda: right_view.setGeometry(pw.plotItem.vb.sceneBoundingRect()))
+                right_view.setGeometry(pw.plotItem.vb.sceneBoundingRect())
+
+                diff = y - x
+                right_view.addItem(pg.PlotDataItem(
+                    x, diff,
+                    pen=pg.mkPen(color="#e05c5c", width=2),
+                    symbol="o", symbolSize=4,
+                    symbolBrush="#e05c5c", symbolPen=None))
 
             layout.addWidget(pw, 1)
 

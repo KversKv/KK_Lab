@@ -5,6 +5,7 @@ GPADC 测试纯算法/解析函数（无 PySide6，可 pytest 直测）。
 从 ui/pages/pmu_test/gpadc_test_ui.py 平移而来，行为零变更。
 """
 
+import math
 import re
 
 # 匹配 UART 日志中的 GPADC raw/volt 行，如：
@@ -68,3 +69,32 @@ def compute_calibration(adc_raw_data, adc_mean, adc_min, adc_max):
         adc_max_cali = [(adc - b) / k for adc in adc_max]
 
     return k, b, mean_cali, adc_min_cali, adc_max_cali, v_low, m_low, v_high, m_high
+
+
+def compute_detailed_stats(raw_data):
+    """1000CNT 详细统计（纯算法，无 Qt）。
+
+    AVG / MIN / MAX 沿用 ``compute_reg_stats``（5% 截尾均值、全量极值），
+    另补充全量样本的 STD（样本标准差，code）、P-P（峰峰噪声，code）与
+    实际样本数 count。
+    """
+    if not raw_data:
+        raise ValueError("raw_data 为空，无法统计")
+
+    avg, reg_max, reg_min = compute_reg_stats(raw_data)
+
+    n = len(raw_data)
+    mean_full = sum(raw_data) / n
+    if n > 1:
+        std = math.sqrt(sum((v - mean_full) ** 2 for v in raw_data) / (n - 1))
+    else:
+        std = 0.0
+
+    return {
+        'avg': avg,
+        'min': reg_min,
+        'max': reg_max,
+        'std': std,
+        'pp': reg_max - reg_min,
+        'count': n,
+    }
