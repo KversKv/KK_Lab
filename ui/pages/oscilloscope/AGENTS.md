@@ -31,3 +31,4 @@
 - **§15 截图指令差异**：DSOX 用 `:DISP:DATA? PNG, COLor`；MSO64B 用 `HARDCopy` 系列。基类留 `capture_screen`，子类各自实现。
 - 截图加载用 `CaptureLoadingOverlay`；SVG 图标禁 `setDevicePixelRatio`（03§23）。
 - 新增型号：驱动继承 `OscilloscopeBase` + factory 注册 + 自动识别逻辑加关键字（三处同步，见 ADR 002）。
+- **§28 session_id 解析**：`mso64b_top.scope_type` 可能是 model 自由文本（`"DSO-X 4034A"`），`_resolve_scope_session_id` 禁止靠它匹配类型，必须按 slot 遍历真实 session（详见 03§28）。断开/连接按钮的 enable 必须在 manager 各完成信号里成对恢复。

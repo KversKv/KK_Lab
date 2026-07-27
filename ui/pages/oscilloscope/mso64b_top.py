@@ -25,8 +25,18 @@ class MSO64BTop(QObject):
             manager.session_disconnected.connect(self._on_session_disconnected)
 
     def _resolve_scope_session_id(self, scope_type=""):
+        # 优先按 slot 精确匹配已连接的 scope session，避免依赖 scope_type 文案
+        # （model 可能是 "DSO-X 4034A" 这类描述串，lower 后不在已知类型表会被错误回退）。
+        if self._manager:
+            for inst_type in ("dsox4034a", "mso64b"):
+                sid = f"{inst_type}:main_scope"
+                session = self._manager.get_session(sid)
+                if session and session.connected:
+                    return sid
         inst_type = scope_type.lower() if scope_type else "mso64b"
-        if inst_type not in ("mso64b", "dsox4034a"):
+        if "dsox" in inst_type or "dso" in inst_type:
+            inst_type = "dsox4034a"
+        elif inst_type not in ("mso64b", "dsox4034a"):
             inst_type = "mso64b"
         return f"{inst_type}:main_scope"
 

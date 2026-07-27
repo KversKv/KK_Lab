@@ -332,3 +332,23 @@ pixmap.setDevicePixelRatio(dpr)  # ← 禁止
 **规则**：
 - 凡运行时需写入的 AI 配置/经验，一律写 `get_user_data_dir()` 下的 `.local` 文件，禁止写 `resources/`。
 - 「随包出厂 + 本机覆盖」按稳定主键（`id` / `page_key`）合并，本机优先；删除/重置只作用于本机层。
+
+## 28. 示波器断开失灵 → 重连报 "Session already connected"（session_id 解析依赖 model 文案 + 异步断开时序）
+
+**现象**：示波器点 Disconnect 后立刻 Connect，报 `Session dsox4034a:main_scope already connected, disconnect first`；且 Connect 按钮在断开期间永久卡禁用，界面没有 `"Disconnecting"` 之后的任何 manager 断开日志。
+
+**根因（双坑叠加）**：
+
+1. **`MSO64BTop._resolve_scope_session_id` 用 `self.scope_type` 猜 instrument_type**。但 `scope_type` 在 manager 连接路径下被赋为 `session.model`（如 `"DSO-X 4034A"`），`.lower()` 后是 `"dso-x 4034a"`，不在已知类型表 `("mso64b","dsox4034a")`，被**静默回退成 `mso64b`** → 解析出 `mso64b:main_scope`，而真实 session 是 `dsox4034a:main_scope`。`get_session` 返回 None → 跳过 `manager.disconnect_async()`，只走 `self.mso64b.disconnect()` 关了 VISA，**manager 里 session 永远 `connected=True`**。重连必撞 already connected。
+2. **UI 在异步断开未完成时就同步复位按钮**（早期实现），或反过来等待永不到来的 `session_disconnected`（修复不当）导致按钮卡死。
+
+**修复**：
+
+- [mso64b_top.py `_resolve_scope_session_id`](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/pages/oscilloscope/mso64b_top.py#L27)：改为**优先按 slot 遍历 `("dsox4034a","mso64b")` 找 manager 里真实 `connected=True` 的 session**，文案解析仅作兜底，且兼容 `"dso-x"`/`"dsox"` 前缀。
+- [oscilloscope_module_frame.py `_on_disconnect_scope`](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/modules/oscilloscope_module_frame.py#L571) 与 [oscilloscope_base_ui.py `_disconnect_instrument`](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/pages/oscilloscope/oscilloscope_base_ui.py#L1840)：manager 异步路径调 `disconnect_async` 后**保持按钮禁用直接 return**，由 `session_disconnected` / `connection_changed` 信号在后台 VISA 真正关闭后复位；另订阅 `disconnect_failed` 兜底恢复按钮防卡死。
+
+**规则**：
+
+- **凡要把"仪器型号/类型"映射到 manager session_id，禁止用 `session.model` / 用户可读文案做匹配**——model 是自由文本（`"DSO-X 4034A"`），必须用稳定的 `instrument_type` 枚举或直接按 slot 遍历真实 session。
+- **`connect_async` 前 `setEnabled(False)` 后，所有状态同步出口（`sync_*_from_top` / `*_top_changed` / `session_disconnected` / `connect/disconnect_failed`）都必须成对 `setEnabled(True)`**；断开完成（`session_disconnected`）才是真正放行 Connect 的时机，不能 fire-and-forget 后立刻复位。
+- 排查"Disconnect 没反应"先确认 `disconnect_async` 是否真被调到：调了 manager 入口就有日志，没日志=断在更上层的 id 解析/分支判断。

@@ -256,8 +256,14 @@ class OscilloscopeConnectionMixin:
         if self._mso64b_top is not None and hasattr(self._mso64b_top, 'connection_changed'):
             self._mso64b_top.connection_changed.connect(self._on_mso64b_top_changed)
         if self._scope_instrument_manager is not None:
+            self._scope_instrument_manager.session_disconnected.connect(
+                self._on_scope_manager_disconnected
+            )
             self._scope_instrument_manager.connection_failed.connect(
                 self._on_scope_manager_connect_failed
+            )
+            self._scope_instrument_manager.disconnect_failed.connect(
+                self._on_scope_manager_disconnect_failed
             )
 
     def _on_scope_manager_connect_failed(self, session_id: str, error: str):
@@ -268,6 +274,15 @@ class OscilloscopeConnectionMixin:
         self.set_scope_status(f"{scope_type} connection failed", is_error=True)
         if hasattr(self, 'append_log'):
             self.append_log(f"[ERROR] {scope_type} connection failed: {error}")
+
+    def _on_scope_manager_disconnect_failed(self, session_id: str, error: str):
+        if not session_id.endswith(":main_scope"):
+            return
+        self.scope_connect_btn.setEnabled(True)
+        scope_type = self.scope_type_combo.currentText()
+        self.set_scope_status(f"{scope_type} disconnect failed", is_error=True)
+        if hasattr(self, 'append_log'):
+            self.append_log(f"[ERROR] {scope_type} disconnect failed: {error}")
 
     def build_oscilloscope_connection_widgets(self, layout, title_row=None):
         self.scope_system_status_label = QLabel("● Ready")
@@ -561,18 +576,23 @@ class OscilloscopeConnectionMixin:
         self.scope_connect_btn.setEnabled(False)
 
         if self._mso64b_top and self._mso64b_top.is_connected:
+            # top.disconnect 内部走 manager.disconnect_async（后台线程关闭 VISA）；
+            # UI 复位交由 connection_changed → _on_mso64b_top_changed 完成，
+            # 此处不可同步复位，否则断开后立刻重连会撞 "already connected"。
             self._mso64b_top.disconnect()
-            self.Osc_ins = None
-            self._on_disconnect_scope_finished({"scope_type": scope_type})
         elif self._scope_instrument_manager:
+            self.Osc_ins = None
+            handled = False
             for inst_type in ("mso64b", "dsox4034a"):
                 session_id = f"{inst_type}:main_scope"
                 session = self._scope_instrument_manager.get_session(session_id)
-                if session and session.connected:
+                if session and (session.connected or session.disconnecting):
                     self._scope_instrument_manager.disconnect_async(session_id)
+                    handled = True
                     break
-            self.Osc_ins = None
-            self._on_disconnect_scope_finished({"scope_type": scope_type})
+            if not handled:
+                self._on_disconnect_scope_finished({"scope_type": scope_type})
+            # handled 时 UI 复位交由 session_disconnected → _on_scope_manager_disconnected。
         else:
             osc_ref = self.Osc_ins
             self.Osc_ins = None
@@ -581,6 +601,23 @@ class OscilloscopeConnectionMixin:
                 self._on_disconnect_scope_finished,
                 kwargs={"osc_ref": osc_ref, "scope_type": scope_type},
             )
+
+    def _on_scope_manager_disconnected(self, session_id: str):
+        if not session_id.endswith(":main_scope"):
+            return
+        if not self.scope_connected and self.scope_connect_btn.isEnabled():
+            return
+        self.scope_resource = None
+        self.scope_connected = False
+        _update_scope_btn_state(self.scope_connect_btn, False)
+        self.scope_connect_btn.setEnabled(True)
+        self.scope_type_combo.setEnabled(True)
+        self.scope_search_btn.setEnabled(True)
+        scope_type = self.scope_type_combo.currentText()
+        if hasattr(self, 'append_log'):
+            self.append_log(f"[SYSTEM] {scope_type} disconnected.")
+        self.set_scope_status(f"{scope_type} disconnected")
+        self.scope_connection_changed.emit(False)
 
     def _disconnect_scope_task(self, osc_ref, scope_type):
         if osc_ref is not None:

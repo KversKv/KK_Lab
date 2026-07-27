@@ -217,6 +217,8 @@ class OscilloscopeBaseUI(QWidget):
         if self._instrument_manager is not None:
             self._instrument_manager.sessions_changed.connect(self._on_manager_sessions_changed)
             self._instrument_manager.connection_failed.connect(self._on_manager_connection_failed)
+            self._instrument_manager.session_disconnected.connect(self._on_manager_session_disconnected)
+            self._instrument_manager.disconnect_failed.connect(self._on_manager_disconnect_failed)
             self._on_manager_sessions_changed()
 
     def _setup_fonts(self):
@@ -1842,29 +1844,53 @@ class OscilloscopeBaseUI(QWidget):
 
         try:
             if self.mso64b_top is not None and self.mso64b_top.is_connected:
+                # top.disconnect 内部走 manager.disconnect_async（后台线程关闭 VISA）；
+                # 按钮复位交由 connection_changed → _on_mso64b_top_changed，
+                # 此处保持禁用，避免后台断开未完成就放行 Connect 撞 "already connected"。
                 self.mso64b_top.disconnect()
-            elif self._instrument_manager:
+                return
+            if self._instrument_manager:
                 for scope_type in ("mso64b", "dsox4034a"):
                     session_id = f"{scope_type}:main_scope"
                     session = self._instrument_manager.get_session(session_id)
-                    if session and session.connected:
+                    if session and (session.connected or session.disconnecting):
                         self._instrument_manager.disconnect_async(session_id)
+                        # 按钮复位交由 session_disconnected → _on_manager_session_disconnected。
                         return
-            else:
-                self.controller.disconnect_instrument()
-
-            self.controller._instrument = None
-            self.controller._instrument_info = ""
-            self.update_connection_status(False)
-            self.set_invert_enabled(True)
-            self._update_time_offset_mode("none")
-            self.connection_changed.emit()
+                # 无活动 session：直接复位
+                self._apply_disconnected_ui()
+                return
+            # 直连路径（无 top / 无 manager）：controller 同步断开，立即复位
+            self.controller.disconnect_instrument()
+            self._apply_disconnected_ui()
         except Exception as e:
             self.set_system_status("● Disconnect failed", is_error=True)
             self.append_log(f"[ERROR] Disconnect failed: {str(e)}")
             self.connection_changed.emit()
-        finally:
             self.connect_btn.setEnabled(True)
+
+    def _apply_disconnected_ui(self):
+        self.controller._instrument = None
+        self.controller._instrument_info = ""
+        self.update_connection_status(False)
+        self.set_invert_enabled(True)
+        self._update_time_offset_mode("none")
+        self.connect_btn.setEnabled(True)
+        self.connection_changed.emit()
+
+    def _on_manager_session_disconnected(self, session_id: str):
+        if not session_id.endswith(":main_scope"):
+            return
+        if not self.connect_btn.isEnabled():
+            self._apply_disconnected_ui()
+
+    def _on_manager_disconnect_failed(self, session_id: str, error: str):
+        if not session_id.endswith(":main_scope"):
+            return
+        self.set_system_status("● Disconnect failed", is_error=True)
+        self.append_log(f"[ERROR] Disconnect failed: {error}")
+        self.connect_btn.setEnabled(True)
+        self.connection_changed.emit()
 
     def _on_manager_connection_failed(self, session_id: str, error: str):
         if not session_id.endswith(":main_scope"):
@@ -1933,14 +1959,9 @@ class OscilloscopeBaseUI(QWidget):
                 return
             self._sync_from_top()
         else:
-            if not self.controller.is_connected:
+            if not self.controller.is_connected and self.connect_btn.isEnabled():
                 return
-            self.controller._instrument = None
-            self.controller._instrument_info = ""
-            self.update_connection_status(False)
-            self.set_invert_enabled(True)
-            self._update_time_offset_mode("none")
-            self.connection_changed.emit()
+            self._apply_disconnected_ui()
 
     def _sync_from_top(self):
         if self.mso64b_top is None:
