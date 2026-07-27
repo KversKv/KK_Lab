@@ -391,6 +391,12 @@ def build_module_html_report(result: ModuleTestResult) -> str:
                                   "Vout vs Vin")
             if svg:
                 chart = f"<h4>Vout-Vin 曲线</h4>{svg}"
+        elif it.item_key.endswith("current_limit") and csv_rows:
+            svg = _svg_line_chart(csv_rows, 0, 1,
+                                  "Iload (mA)", "Vout (mV)",
+                                  "Vout vs Iload")
+            if svg:
+                chart = f"<h4>Vout-Iload 曲线</h4>{svg}"
 
         img = _embed_image(it.waveform_png)
         csv_link = (

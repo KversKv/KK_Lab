@@ -51,7 +51,7 @@ def efficiency(ctx: ItemContext) -> ItemResult:
     vin_ch = parse_channel(cfg.get("vin_channel", 1))
     vout_ch = parse_channel(cfg.get("vout_channel", 2))
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
-    vin_v = float(cfg.get("vin_v", 3.7))
+    vin_v = float(cfg.get("vin_v", 3.8))
     vout_v_nom = float(cfg.get("vout_nominal_mv", 1200)) / 1000.0
     avg_cnt = int(cfg.get("average_cnt", 3))
     settle_s = float(cfg.get("settle_time_s", 0.05))
@@ -123,7 +123,7 @@ def load_line_reg(ctx: ItemContext) -> ItemResult:
     points = linspace(i_start, i_end, i_step)
     rows: list[list] = []
     vin_ch = parse_channel(cfg.get("vin_channel", 1))
-    vin_v = float(cfg.get("vin_v", 3.7))
+    vin_v = float(cfg.get("vin_v", 3.8))
     avg_cnt = int(cfg.get("average_cnt", 3))
     settle_s = float(cfg.get("settle_time_s", 0.05))
 
@@ -219,7 +219,7 @@ def quiescent(ctx: ItemContext) -> ItemResult:
     vout_src_ch = parse_channel(cfg.get("vout_source_channel",
                                         cfg.get("vout_channel", 2)))
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
-    vin_v = float(cfg.get("vin_v", 3.7))
+    vin_v = float(cfg.get("vin_v", 3.8))
     vout_nom = float(cfg.get("vout_nominal_mv", 1200)) / 1000.0
     vout_offset = float(cfg.get("iq_vout_offset_mv", 20.0)) / 1000.0
     modes = parse_dut_modes(cfg)
@@ -288,7 +288,7 @@ def ripple(ctx: ItemContext) -> ItemResult:
     scope_ch = int(cfg.get("scope_vout_channel", 1))
     vin_ch = parse_channel(cfg.get("vin_channel", 1))
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
-    vin_v = float(cfg.get("vin_v", 3.7))
+    vin_v = float(cfg.get("vin_v", 3.8))
     load_ma = float(cfg.get("ripple_load_ma", 100))
     settle_s = float(cfg.get("settle_time_s", 0.05))
 
@@ -464,7 +464,7 @@ def output_power(ctx: ItemContext) -> ItemResult:
     vin_ch = parse_channel(cfg.get("vin_channel", 1))
     vout_ch = parse_channel(cfg.get("vout_channel", 2))
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
-    vin_v = float(cfg.get("vin_v", 3.7))
+    vin_v = float(cfg.get("vin_v", 3.8))
     nominal_mv = float(cfg.get("vout_nominal_mv", 1200))
     avg_cnt = int(cfg.get("average_cnt", 3))
     settle_s = float(cfg.get("settle_time_s", 0.05))
@@ -516,7 +516,7 @@ def switching_freq(ctx: ItemContext) -> ItemResult:
     scope_sw_ch = int(cfg.get("scope_sw_channel", 2))
     vin_ch = parse_channel(cfg.get("vin_channel", 1))
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
-    vin_v = float(cfg.get("vin_v", 3.7))
+    vin_v = float(cfg.get("vin_v", 3.8))
     load_ma = float(cfg.get("fsw_load_ma", 100))
     settle_s = float(cfg.get("settle_time_s", 0.05))
 
@@ -550,7 +550,7 @@ def shutdown_current(ctx: ItemContext) -> ItemResult:
     item_key = "dcdc_shutdown_current"
     cfg = ctx.config
     vin_ch = parse_channel(cfg.get("vin_channel", 1))
-    vin_v = float(cfg.get("vin_v", 3.7))
+    vin_v = float(cfg.get("vin_v", 3.8))
     avg_cnt = int(cfg.get("average_cnt", 5))
     settle_s = float(cfg.get("settle_time_s", 0.05))
     if ctx.is_mock:
@@ -586,7 +586,7 @@ def current_limit(ctx: ItemContext) -> ItemResult:
     vin_ch = parse_channel(cfg.get("vin_channel", 1))
     vout_ch = parse_channel(cfg.get("vout_channel", 2))
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
-    vin_v = float(cfg.get("vin_v", 3.7))
+    vin_v = float(cfg.get("vin_v", 3.8))
     avg_cnt = int(cfg.get("average_cnt", 3))
     settle_s = float(cfg.get("settle_time_s", 0.05))
 
@@ -701,7 +701,7 @@ def topology(ctx: ItemContext) -> ItemResult:
     isolated = bool(cfg.get("isolated", False))
     vin_ch = parse_channel(cfg.get("vin_channel", 1))
     vout_ch = parse_channel(cfg.get("vout_channel", 2))
-    vin_v = float(cfg.get("vin_v", 3.7))
+    vin_v = float(cfg.get("vin_v", 3.8))
     nominal_v = float(cfg.get("vout_nominal_mv", 1200)) / 1000.0
     settle_s = float(cfg.get("settle_time_s", 0.05))
 

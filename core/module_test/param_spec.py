@@ -52,7 +52,7 @@ def average_cnt(default: int = 3) -> ParamSpec:
                      minimum=1, maximum=100)
 
 
-def vin_bias(default: float = 3.7) -> ParamSpec:
+def vin_bias(default: float = 3.8) -> ParamSpec:
     return ParamSpec("vin_v", "输入偏置", "float", default, "V",
                      minimum=0.0, maximum=60.0, decimals=3)
 
@@ -130,14 +130,12 @@ def quiescent_params() -> tuple[ParamSpec, ...]:
                   hint="如 reg_pu_ldo_01_dr 的地址 0x30"),
         ParamSpec("iq_en_addr", "使能寄存器", "text", "0x00", "",
                   hint="如 reg_pu_ldo_01 的地址 0x31"),
-        ParamSpec("iq_en_dr_msb", "DR MSB", "int", 0, "", minimum=0, maximum=31),
-        ParamSpec("iq_en_dr_lsb", "DR LSB", "int", 0, "", minimum=0, maximum=31),
-        ParamSpec("iq_en_msb", "EN MSB", "int", 0, "", minimum=0, maximum=31),
-        ParamSpec("iq_en_lsb", "EN LSB", "int", 0, "", minimum=0, maximum=31),
-        ParamSpec("iq_on_dr_val", "使能态 DR 值", "int", 1, "", minimum=0, maximum=65535),
-        ParamSpec("iq_on_en_val", "使能态 EN 值", "int", 1, "", minimum=0, maximum=65535),
-        ParamSpec("iq_off_dr_val", "关断态 DR 值", "int", 1, "", minimum=0, maximum=65535),
-        ParamSpec("iq_off_en_val", "关断态 EN 值", "int", 0, "", minimum=0, maximum=65535),
+        ParamSpec("iq_en_dr_bit", "DR BIT", "int", 0, "", minimum=0, maximum=31),
+        ParamSpec("iq_en_bit", "EN BIT", "int", 0, "", minimum=0, maximum=31),
+        ParamSpec("iq_on_dr_val", "使能态 DR 值", "int", 1, "", minimum=0, maximum=1),
+        ParamSpec("iq_on_en_val", "使能态 EN 值", "int", 1, "", minimum=0, maximum=1),
+        ParamSpec("iq_off_dr_val", "关断态 DR 值", "int", 1, "", minimum=0, maximum=1),
+        ParamSpec("iq_off_en_val", "关断态 EN 值", "int", 0, "", minimum=0, maximum=1),
         ParamSpec("iq_vout_offset_mv", "Vout 外供偏置", "float", 20.0, "mV",
                   minimum=0.0, maximum=1000.0, decimals=1),
     )

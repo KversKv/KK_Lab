@@ -184,10 +184,8 @@ class EnableRegSpec:
 
     dr_addr: int
     en_addr: int
-    dr_msb: int
-    dr_lsb: int
-    en_msb: int
-    en_lsb: int
+    dr_bit: int
+    en_bit: int
     on_dr_val: int
     on_en_val: int
     off_dr_val: int
@@ -203,10 +201,8 @@ def parse_enable_regs(cfg: dict) -> EnableRegSpec | None:
     return EnableRegSpec(
         dr_addr=dr_addr,
         en_addr=en_addr,
-        dr_msb=_to_int(cfg.get("iq_en_dr_msb"), 0),
-        dr_lsb=_to_int(cfg.get("iq_en_dr_lsb"), 0),
-        en_msb=_to_int(cfg.get("iq_en_msb"), 0),
-        en_lsb=_to_int(cfg.get("iq_en_lsb"), 0),
+        dr_bit=_to_int(cfg.get("iq_en_dr_bit"), 0),
+        en_bit=_to_int(cfg.get("iq_en_bit"), 0),
         on_dr_val=_to_int(cfg.get("iq_on_dr_val"), 1),
         on_en_val=_to_int(cfg.get("iq_on_en_val"), 1),
         off_dr_val=_to_int(cfg.get("iq_off_dr_val"), 1),
@@ -215,11 +211,11 @@ def parse_enable_regs(cfg: dict) -> EnableRegSpec | None:
 
 
 def _write_field(i2c: Any, device_addr: int, width_flag: int,
-                 addr: int, msb: int, lsb: int, value: int) -> None:
-    """读改写单个寄存器位段（保留其余位），对齐 vout_scan 位段约定。"""
+                 addr: int, bit: int, value: int) -> None:
+    """读改写寄存器单个 bit（保留其余位），value 须为 0/1。"""
     reg = i2c.read(device_addr, addr, width_flag)
-    mask = ((1 << (msb - lsb + 1)) - 1) << lsb
-    reg = (reg & ~mask) | ((value << lsb) & mask)
+    mask = 1 << bit
+    reg = (reg & ~mask) | ((value & 1) << bit)
     i2c.write(device_addr, addr, reg, width_flag)
 
 
@@ -238,9 +234,9 @@ def set_dut_enable(ctx: ItemContext, regs: EnableRegSpec, *, on: bool) -> bool:
     try:
         i2c = create_i2c(ctx)
         _write_field(i2c, device_addr, width_flag,
-                     regs.dr_addr, regs.dr_msb, regs.dr_lsb, dr_val)
+                     regs.dr_addr, regs.dr_bit, dr_val)
         _write_field(i2c, device_addr, width_flag,
-                     regs.en_addr, regs.en_msb, regs.en_lsb, en_val)
+                     regs.en_addr, regs.en_bit, en_val)
         ctx.log_fn(f"[enable] {'ON' if on else 'OFF'} "
                    f"dr=0x{regs.dr_addr:X}<-{dr_val} en=0x{regs.en_addr:X}<-{en_val}")
         return True

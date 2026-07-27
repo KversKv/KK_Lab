@@ -44,7 +44,7 @@ def load_line_reg(ctx: ItemContext) -> ItemResult:
     vin_ch = parse_channel(cfg.get("vin_channel", 2))
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
     nominal_mv = float(cfg.get("vout_nominal_mv", 1800))
-    vin_v = float(cfg.get("vin_v", 3.7))
+    vin_v = float(cfg.get("vin_v", 3.8))
     settle_s = float(cfg.get("settle_time_s", 0.05))
     avg_cnt = int(cfg.get("average_cnt", 3))
 
@@ -146,7 +146,7 @@ def quiescent(ctx: ItemContext) -> ItemResult:
     vin_ch = parse_channel(cfg.get("vin_channel", 1))
     vout_src_ch = parse_channel(cfg.get("vout_source_channel",
                                         cfg.get("vout_channel", 2)))
-    vin_v = float(cfg.get("vin_v", 3.7))
+    vin_v = float(cfg.get("vin_v", 3.8))
     vout_nom = float(cfg.get("vout_nominal_mv", 1800)) / 1000.0
     vout_offset = float(cfg.get("iq_vout_offset_mv", 20.0)) / 1000.0
     settle_s = float(cfg.get("settle_time_s", 0.05))
@@ -211,7 +211,7 @@ def ripple(ctx: ItemContext) -> ItemResult:
     scope_ch = int(cfg.get("scope_vout_channel", 1))
     vin_ch = parse_channel(cfg.get("vin_channel", 2))
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
-    vin_v = float(cfg.get("vin_v", 3.7))
+    vin_v = float(cfg.get("vin_v", 3.8))
     load_ma = float(cfg.get("ripple_load_ma", 100))
     settle_s = float(cfg.get("settle_time_s", 0.05))
 
@@ -371,7 +371,7 @@ def vout_accuracy(ctx: ItemContext) -> ItemResult:
     nominal_mv = float(cfg.get("vout_nominal_mv", 1800))
     vout_ch = parse_channel(cfg.get("vout_channel", 1))
     vin_ch = parse_channel(cfg.get("vin_channel", 2))
-    vin_v = float(cfg.get("vin_v", 3.7))
+    vin_v = float(cfg.get("vin_v", 3.8))
     settle_s = float(cfg.get("settle_time_s", 0.05))
     avg_cnt = int(cfg.get("average_cnt", 3))
     temp_soak_s = float(cfg.get("temp_soak_s", 60.0))
@@ -436,7 +436,7 @@ def current_limit(ctx: ItemContext) -> ItemResult:
     vin_ch = parse_channel(cfg.get("vin_channel", 2))
     vout_ch = parse_channel(cfg.get("vout_channel", 1))
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
-    vin_v = float(cfg.get("vin_v", 3.7))
+    vin_v = float(cfg.get("vin_v", 3.8))
     ilim_start = float(cfg.get("ilim_start_ma", 50))
     ilim_end = float(cfg.get("ilim_end_ma", 500))
     ilim_step = float(cfg.get("ilim_step_ma", 20))
@@ -444,9 +444,18 @@ def current_limit(ctx: ItemContext) -> ItemResult:
     settle_s = float(cfg.get("settle_time_s", 0.05))
     avg_cnt = int(cfg.get("average_cnt", 3))
 
+    rows: list[list] = []
     if ctx.is_mock:
-        ilim_ma = mock_jitter(300.0, 0.05)
-        ipk_ma = ilim_ma
+        iset = ilim_start
+        while iset <= ilim_end + 1e-9:
+            # 模拟 300mA 触发限流，之后 Vout 跌落
+            v = nominal_mv if iset < 300 else nominal_mv * (300.0 / iset)
+            v = mock_jitter(v, 0.003)
+            iout = mock_jitter(min(iset, 400.0), 0.02)
+            rows.append([round(iset, 3), round(v, 4), round(iout, 4)])
+            iset += ilim_step
+        ilim_ma = 300.0
+        ipk_ma = max(r[2] for r in rows) if rows else ilim_ma
     else:
         setup_source_channel(ctx, vin_ch, vin_v, current_limit=1.0)
         setup_meter_channel(ctx, vout_ch)
@@ -465,6 +474,7 @@ def current_limit(ctx: ItemContext) -> ItemResult:
             iout = abs(measure_avg(ctx, "measure_current", iload_ch,
                                    count=avg_cnt, settle_s=settle_s, default=0.0)) * 1000.0
             ipk_ma = max(ipk_ma, iout)
+            rows.append([round(iset, 3), round(v, 4), round(iout, 4)])
             ctx.log_fn(f"[{item_key}] Iset={iset:.1f}mA -> Vout={v:.3f}mV, Iout={iout:.3f}mA")
             if v < threshold_mv:
                 ilim_ma = iout
@@ -472,8 +482,7 @@ def current_limit(ctx: ItemContext) -> ItemResult:
             iset += ilim_step
         teardown_load(ctx, iload_ch)
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
-    write_csv(csv_path, ["Current limit (mA)", "Peak current (mA)"],
-              [[round(ilim_ma, 3), round(ipk_ma, 3)]])
+    write_csv(csv_path, ["Iset (mA)", "Vout (mV)", "Iout (mA)"], rows)
     ctx.log_fn(f"[{item_key}] Current limit={ilim_ma:.3f} mA")
     return ItemResult(item_key=item_key, name="Current Limit", unit="mA",
                       passed=None, measured={"current_limit_ma": round(ilim_ma, 3),
@@ -585,7 +594,7 @@ LDO_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
     )),
     "ldo_load_reg": ("Load Regulation", load_line_reg, False, False, (
         *load_sweep(1.0, 200.0, 10.0),
-        vin_bias(3.8), settle_time(), average_cnt(),
+        vin_bias(), settle_time(), average_cnt(),
     )),
     "ldo_line_reg": ("Line Regulation", line_reg, False, False, (
         *vin_sweep(3.2, 4.2, 0.2),
