@@ -296,8 +296,9 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
         codes.append(code)
         rows.append([code, round(measured_v * 1000.0, 3)])
 
+        diff_mv = "" if len(voltages) < 2 else (f"{(measured_v - voltages[-2]) * 1000.0:+.3f}mV")
         ctx.log_fn(f"[{item_key}] [MEAS] Code=0x{code:0{hex_width}X}  "
-                   f"Measured={measured_v:>8.4f}V")
+                   f"Measured={measured_v:>8.4f}V  Diff={diff_mv}")
         idx = code - min_code
         ctx.progress_fn(int((idx + 1) / total_points * 100), f"Vout scan 0x{code:X}")
         code += 1
@@ -357,7 +358,9 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
     ctx.log_fn(f"[{item_key}] [TEST] Register restored to default value.")
 
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
-    write_csv(csv_path, ["DAC_code", "Vout (mV)"], rows)
+    write_csv(csv_path, ["DAC_code", "Vout (mV)", "Diff (mV)"],
+              [row + ["" if i == 0 else round(row[1] - rows[i - 1][1], 3)]
+               for i, row in enumerate(rows)])
     measured = {
         "points": len(rows),
         "default_voltage_mv": round(default_voltage * 1000.0, 3),

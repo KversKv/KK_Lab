@@ -569,8 +569,8 @@ LDO_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
         settle_time(), average_cnt(),
     )),
     "ldo_load_reg": ("Load Regulation", load_line_reg, False, False, (
-        *load_sweep(1.0, 200.0, 20.0),
-        vin_bias(), settle_time(), average_cnt(),
+        *load_sweep(1.0, 200.0, 10.0),
+        vin_bias(3.8), settle_time(), average_cnt(),
     )),
     "ldo_line_reg": ("Line Regulation", line_reg, False, False, (
         *vin_sweep(3.2, 4.2, 0.2),
