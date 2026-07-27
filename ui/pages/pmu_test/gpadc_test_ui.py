@@ -2205,7 +2205,11 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             legend_row.addSpacing(16)
             legend_row.addWidget(band_legend)
             if not is_temp_mode:
-                err_legend = QLabel("● Error (Actual - Ideal)")
+                # 误差单位按量级自适应：<1V 显示 mV，否则 V（图例与轴标题共用）
+                err_arr = np.array(mean_cali, dtype=float) - np.array(voltage_data, dtype=float)
+                max_abs_err = float(np.max(np.abs(err_arr))) if err_arr.size else 0.0
+                err_unit = "mV" if max_abs_err < 1.0 else "V"
+                err_legend = QLabel(f"● Error (Actual - Ideal) ({err_unit})")
                 err_legend.setStyleSheet("color: #e05c5c; font-size: 12px;")
                 legend_row.addSpacing(16)
                 legend_row.addWidget(err_legend)
@@ -2254,10 +2258,15 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                     symbolBrush="#00d39a", symbolPen=None)
 
             if not is_temp_mode:
-                # 右 Y 轴：Actual - Ideal 差值曲线（校准电压 - 输入电压，单位 V）
+                # 右 Y 轴：Actual - Ideal 差值曲线（校准电压 - 输入电压）
+                # 单位与图例共用 err_unit（mV 时数据放大 1000 倍）
+                diff = y - x
+                if err_unit == "mV":
+                    diff = diff * 1000.0
+
                 pw.showAxis('right')
                 right_axis = pw.getAxis('right')
-                right_axis.setLabel("Error (V)", color="#e05c5c")
+                right_axis.setLabel(f"Error ({err_unit})", color="#e05c5c")
                 right_axis.setTextPen(pg.mkPen("#e05c5c"))
                 right_axis.setPen(pg.mkPen("#3a4f7a"))
 
@@ -2270,7 +2279,6 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                     lambda: right_view.setGeometry(pw.plotItem.vb.sceneBoundingRect()))
                 right_view.setGeometry(pw.plotItem.vb.sceneBoundingRect())
 
-                diff = y - x
                 right_view.addItem(pg.PlotDataItem(
                     x, diff,
                     pen=pg.mkPen(color="#e05c5c", width=2),
