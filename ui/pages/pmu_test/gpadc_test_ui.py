@@ -488,6 +488,14 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self.iic_data_address = QLineEdit("0x57")
         iic_layout.addWidget(self.iic_data_address, 3, 0)
 
+        iic_layout.addWidget(QLabel("IIC Width"), 4, 0)
+        self.iic_width_combo = DarkComboBox(bg="#0a1733", border="#24365e")
+        self.iic_width_combo.addItem("8-bit", 8)
+        self.iic_width_combo.addItem("10-bit", 10)
+        self.iic_width_combo.addItem("32-bit", 32)
+        self.iic_width_combo.setCurrentIndex(1)
+        iic_layout.addWidget(self.iic_width_combo, 5, 0)
+
         self.uart_group = QFrame()
         self.uart_group.setObjectName("config_inner_panel")
         uart_layout = QVBoxLayout(self.uart_group)
@@ -1006,6 +1014,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         test_item = self.current_test_item
         iic_device_addr = int(self.iic_device_address.text(), 16)
         iic_reg_addr = int(self.iic_data_address.text(), 16)
+        iic_width = self.iic_width_combo.currentData()
         sample_cnt = self.sample_count.value()
 
         if test_item == self.TEST_1000CNT:
@@ -1013,6 +1022,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             kwargs = dict(
                 device_addr=iic_device_addr,
                 reg_addr=iic_reg_addr,
+                iic_weight=iic_width,
                 sample_cnt=sample_cnt,
             )
         elif test_item == self.TEST_FORCE_VOLTAGE:
@@ -1020,6 +1030,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             kwargs = dict(
                 device_addr=iic_device_addr,
                 reg_addr=iic_reg_addr,
+                iic_weight=iic_width,
                 voltage_min=self.voltage_min.value(),
                 voltage_max=self.voltage_max.value(),
                 voltage_step=self.voltage_step.value(),
@@ -1031,6 +1042,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             kwargs = dict(
                 device_addr=iic_device_addr,
                 reg_addr=iic_reg_addr,
+                iic_weight=iic_width,
                 temp_min=self.temp_min.value(),
                 temp_max=self.temp_max.value(),
                 temp_step=self.temp_step.value(),
@@ -1043,6 +1055,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             kwargs = dict(
                 device_addr=iic_device_addr,
                 reg_addr=iic_reg_addr,
+                iic_weight=iic_width,
                 temp_min=self.temp_min.value(),
                 temp_max=self.temp_max.value(),
                 temp_step=self.temp_step.value(),
@@ -1075,7 +1088,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self.test_thread = thread
         thread.start()
 
-    def _run_1000cnt_test(self, device_addr, reg_addr, sample_cnt=1000, stop_check=None):
+    def _run_1000cnt_test(self, device_addr, reg_addr, sample_cnt=1000, iic_weight=10, stop_check=None):
         if self._acq_mode_snapshot == 'UART':
             self._test_worker.log.emit(f"[INFO] Starting 1000CNT TEST via UART Log, keyword='{self._uart_keyword_snapshot}', count={sample_cnt}")
         else:
@@ -1083,7 +1096,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         _, _, _, raw_data = self._gpadc_read_by_cnts(
             device_addr=device_addr,
             reg_addr=reg_addr,
-            iic_weight=10,
+            iic_weight=iic_weight,
             get_reg_cnt=sample_cnt,
             return_raw=True,
             stop_check=stop_check,
@@ -1092,12 +1105,13 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         return ('1000cnt', compute_detailed_stats(raw_data))
 
     def _run_force_voltage_test(self, device_addr, reg_addr, voltage_min, voltage_max,
-                                voltage_step, voltage_channel, sample_cnt=1000, stop_check=None):
+                                voltage_step, voltage_channel, sample_cnt=1000, iic_weight=10,
+                                stop_check=None):
         result = self.gpadc_force_voltage_test(
             n6705c=self.n6705c,
             device_addr=device_addr,
             reg_addr=reg_addr,
-            iic_weight=10,
+            iic_weight=iic_weight,
             voltage_min=voltage_min,
             voltage_max=voltage_max,
             voltage_step=voltage_step,
@@ -1110,12 +1124,12 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
 
     def _run_high_low_temp_test(self, device_addr, reg_addr, temp_min, temp_max,
                                 temp_step, voltage_channel, sample_cnt=1000,
-                                stop_check=None, soak_time=180):
+                                iic_weight=10, stop_check=None, soak_time=180):
         self._test_worker.log.emit("[INFO] RUN TEST_HIGH_LOW_TEMP TEST")
         result = self.gpadc_high_low_temp_test(
             device_addr=device_addr,
             reg_addr=reg_addr,
-            iic_weight=10,
+            iic_weight=iic_weight,
             temp_min=temp_min,
             temp_max=temp_max,
             temp_step=temp_step,
@@ -1129,13 +1143,13 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
 
     def _run_temp_consistency_test(self, device_addr, reg_addr, temp_min, temp_max,
                                    temp_step, voltage_min, voltage_max, voltage_step,
-                                   voltage_channel, sample_cnt=1000, stop_check=None,
-                                   soak_time=180):
+                                   voltage_channel, sample_cnt=1000, iic_weight=10,
+                                   stop_check=None, soak_time=180):
         self._test_worker.log.emit("[INFO] RUN TEST_TEMP_CONSISTENCY TEST")
         result = self.gpadc_temp_consistency_test(
             device_addr=device_addr,
             reg_addr=reg_addr,
-            iic_weight=10,
+            iic_weight=iic_weight,
             temp_min=temp_min,
             temp_max=temp_max,
             temp_step=temp_step,
@@ -1445,7 +1459,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self.chamber_port_combo, self.chamber_search_btn, self.chamber_connect_btn,
             self.serial_combo, self.serial_search_btn, self.serial_connect_btn, self.uart_keyword,
             self.iic_radio, self.uart_radio,
-            self.iic_device_address, self.iic_data_address,
+            self.iic_device_address, self.iic_data_address, self.iic_width_combo,
             self.test_item_combo,
             self.voltage_channel,
             self.voltage_min, self.voltage_max, self.voltage_step,
@@ -1466,6 +1480,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             'data_acquisition_mode': acquisition_mode,
             'iic_device_address': self.iic_device_address.text(),
             'iic_data_address': self.iic_data_address.text(),
+            'iic_width': self.iic_width_combo.currentData(),
             'dut_port': dut_port,
             'uart_keyword': self.uart_keyword.text(),
             'voltage_channel': self.voltage_channel.currentData(),
@@ -2697,6 +2712,7 @@ Temperature (°C) | ADC Value
         # I2C 地址
         _set_text(self.iic_device_address, "iic_device_address")
         _set_text(self.iic_data_address, "iic_data_address")
+        _set_combo_data(self.iic_width_combo, "iic_width")
 
         # UART 配置
         _set_text(self.uart_keyword, "uart_keyword")
