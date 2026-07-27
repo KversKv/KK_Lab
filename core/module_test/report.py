@@ -64,6 +64,76 @@ def _rows_to_table(rows: list[list[str]], css_class: str = "data") -> str:
             f"<tbody>{body}</tbody></table>")
 
 
+def _svg_line_chart(csv_rows: list[list[str]], x_col: int, y_col: int,
+                    x_label: str, y_label: str, title: str,
+                    width: int = 640, height: int = 320) -> str:
+    """把 CSV 两列渲染为内嵌 SVG 折线图（无第三方依赖）。"""
+    if len(csv_rows) < 2:
+        return ""
+    pts: list[tuple[float, float]] = []
+    for r in csv_rows[1:]:
+        try:
+            pts.append((float(r[x_col]), float(r[y_col])))
+        except (TypeError, ValueError, IndexError):
+            continue
+    if len(pts) < 2:
+        return ""
+
+    pad_l, pad_r, pad_t, pad_b = 64, 16, 28, 40
+    pw = width - pad_l - pad_r
+    ph = height - pad_t - pad_b
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    x0, x1 = min(xs), max(xs)
+    y0, y1 = min(ys), max(ys)
+    if x1 - x0 < 1e-12:
+        x1 = x0 + 1.0
+    if y1 - y0 < 1e-12:
+        y1 = y0 + 1.0
+    y_pad = (y1 - y0) * 0.05
+    y0 -= y_pad
+    y1 += y_pad
+
+    def sx(v: float) -> float:
+        return pad_l + (v - x0) / (x1 - x0) * pw
+
+    def sy(v: float) -> float:
+        return pad_t + ph - (v - y0) / (y1 - y0) * ph
+
+    ticks: list[str] = []
+    for i in range(6):
+        xv = x0 + (x1 - x0) * i / 5
+        tx = sx(xv)
+        ticks.append(
+            f"<line x1='{tx:.1f}' y1='{pad_t + ph}' x2='{tx:.1f}' y2='{pad_t + ph + 4}' stroke='#888'/>"
+            f"<text x='{tx:.1f}' y='{pad_t + ph + 16}' font-size='10' text-anchor='middle' fill='#555'>{xv:g}</text>")
+    for i in range(6):
+        yv = y0 + (y1 - y0) * i / 5
+        ty = sy(yv)
+        ticks.append(
+            f"<line x1='{pad_l - 4}' y1='{ty:.1f}' x2='{pad_l}' y2='{ty:.1f}' stroke='#888'/>"
+            f"<text x='{pad_l - 6}' y='{ty + 3:.1f}' font-size='10' text-anchor='end' fill='#555'>{yv:g}</text>"
+            f"<line x1='{pad_l}' y1='{ty:.1f}' x2='{pad_l + pw}' y2='{ty:.1f}' stroke='#eef1f6'/>")
+
+    points = " ".join(f"{sx(x):.1f},{sy(y):.1f}" for x, y in pts)
+    circles = "".join(
+        f"<circle cx='{sx(x):.1f}' cy='{sy(y):.1f}' r='2.5' fill='#2c6fbb'/>" for x, y in pts)
+    mid_x = pad_l + pw / 2
+
+    return (
+        f"<svg class='chart' width='{width}' height='{height}' viewBox='0 0 {width} {height}' "
+        f"xmlns='http://www.w3.org/2000/svg' role='img' aria-label='{html.escape(title)}'>"
+        f"<rect x='0' y='0' width='{width}' height='{height}' fill='#fff' stroke='#d6deeb'/>"
+        f"<text x='{mid_x}' y='18' font-size='12' text-anchor='middle' fill='#172033'>{html.escape(title)}</text>"
+        + "".join(ticks) +
+        f"<polyline points='{points}' fill='none' stroke='#2c6fbb' stroke-width='1.5'/>"
+        + circles +
+        f"<text x='{mid_x}' y='{height - 6}' font-size='11' text-anchor='middle' fill='#172033'>{html.escape(x_label)}</text>"
+        f"<text x='14' y='{pad_t + ph / 2}' font-size='11' text-anchor='middle' fill='#172033' "
+        f"transform='rotate(-90 14 {pad_t + ph / 2})'>{html.escape(y_label)}</text>"
+        f"</svg>")
+
+
 def _embed_image(path: str | None) -> str:
     """把波形 PNG 内嵌为 base64（找不到文件则返回空）。"""
     if not path or not os.path.isfile(path):
@@ -207,6 +277,9 @@ def _summary_metrics(it: ItemResult) -> str:
         return f"Vpp={_in(m, 'vpp_mv')} mV; RMS={_in(m, 'rms_mv')} mV"
 
     if key.endswith("dropout"):
+        if m.get("ok_at_min_vin"):
+            return (f"最低 Vin={_in(m, 'vin_lo_v')} V 仍正常 "
+                    f"@ Iload={_in(m, 'iload_ma')} mA; V0={_in(m, 'v0_mv')} mV")
         return (f"Dropout={_in(m, 'dropout_mv')} mV "
                 f"@ Iload={_in(m, 'iload_ma')} mA; V0={_in(m, 'v0_mv')} mV")
 
@@ -305,6 +378,20 @@ def build_module_html_report(result: ModuleTestResult) -> str:
             csv_name = html.escape(os.path.basename(it.raw_csv_path or ""))
             full_table = f"<h4>完整测试数据（{csv_name}）</h4>{_rows_to_table(csv_rows)}"
 
+        chart = ""
+        if it.item_key.endswith("load_reg") and csv_rows:
+            svg = _svg_line_chart(csv_rows, 0, 1,
+                                  "Iload (mA)", "Vout (mV)",
+                                  "Vout vs Iload")
+            if svg:
+                chart = f"<h4>Vout-Iload 曲线</h4>{svg}"
+        elif it.item_key.endswith("line_reg") and csv_rows:
+            svg = _svg_line_chart(csv_rows, 0, 1,
+                                  "Vin (V)", "Vout (mV)",
+                                  "Vout vs Vin")
+            if svg:
+                chart = f"<h4>Vout-Vin 曲线</h4>{svg}"
+
         img = _embed_image(it.waveform_png)
         csv_link = (
             f"<div class='csv'>原始数据：{html.escape(os.path.basename(it.raw_csv_path))}</div>"
@@ -316,6 +403,7 @@ def build_module_html_report(result: ModuleTestResult) -> str:
   <div class='itemkey'>item_key: {html.escape(it.item_key)} | 单位: {html.escape(it.unit or '-')}</div>
   {table}
   {full_table}
+  {chart}
   {img}
   {csv_link}
   {f"<div class='notes'>备注：{html.escape(it.notes)}</div>" if it.notes else ""}
@@ -346,6 +434,7 @@ def build_module_html_report(result: ModuleTestResult) -> str:
     .item {{ border: 1px solid #e3e8f0; border-radius: 6px; padding: 10px 14px; margin: 12px 0; background: #fbfcfe; }}
     .itemkey {{ color: #6b7a99; font-size: 11px; margin-bottom: 6px; }}
     .wave {{ max-width: 100%; border: 1px solid #d6deeb; margin: 6px 0; }}
+    .chart {{ display: block; margin: 6px 0; background: #fff; }}
     .csv, .notes {{ font-size: 11px; color: #4a5a7a; margin-top: 4px; }}
     .empty {{ color: #6b7a99; font-size: 12px; }}
   </style>

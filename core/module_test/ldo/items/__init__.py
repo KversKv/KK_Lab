@@ -301,6 +301,9 @@ def dropout(ctx: ItemContext) -> ItemResult:
     settle_s = float(cfg.get("settle_time_s", 0.05))
     avg_cnt = int(cfg.get("average_cnt", 3))
 
+    # dropout_mv: None=到下限仍正常; 0.0=中止未判定; >0=实测压差
+    dropout_mv: float | None
+    ok_at_min_vin = False
     if ctx.is_mock:
         v0_mv = mock_jitter(nominal_mv, 0.01)
         dropout_mv = mock_jitter(180.0, 0.05)
@@ -317,9 +320,10 @@ def dropout(ctx: ItemContext) -> ItemResult:
         # 从高到低扫描 Vin
         vin = vin_hi
         threshold_mv = v0_mv * (1.0 - tol)
-        dropout_mv = 0.0
+        dropout_mv = None
         while vin >= vin_lo - 1e-9:
             if ctx.stop_flag_fn():
+                dropout_mv = 0.0  # 中止，标记为未判定
                 break
             try:
                 ctx.n6705c.set_voltage(vin_ch, vin)
@@ -332,17 +336,28 @@ def dropout(ctx: ItemContext) -> ItemResult:
             if v < threshold_mv:
                 dropout_mv = max(vin * 1000.0 - v, 0.0)
                 break
+            if vin <= vin_lo + 1e-9:  # 到下限仍正常
+                ok_at_min_vin = True
             vin -= vin_step
         teardown_load(ctx, iload_ch)
+    if ok_at_min_vin:
+        note = f"在最低 Vin={vin_lo:.3f}V 下仍正常输出（压差负载 {iload_ma:g}mA），未触发压差"
+    elif dropout_mv is not None and dropout_mv > 0:
+        note = f"Dropout={dropout_mv:.3f} mV @ Iload={iload_ma:g}mA"
+    else:
+        note = "未判定（中止）"
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
+    dropout_csv = round(dropout_mv, 3) if dropout_mv is not None else ""
     write_csv(csv_path, ["Iload (mA)", "V0 (mV)", "Dropout (mV)"],
-              [[iload_ma, round(v0_mv, 3), round(dropout_mv, 3)]])
-    ctx.log_fn(f"[{item_key}] Iload={iload_ma}mA V0={v0_mv:.3f}mV -> Dropout={dropout_mv:.3f} mV")
+              [[iload_ma, round(v0_mv, 3), dropout_csv]])
+    ctx.log_fn(f"[{item_key}] Iload={iload_ma}mA V0={v0_mv:.3f}mV -> {note}")
     return ItemResult(item_key=item_key, name="Dropout Voltage", unit="mV",
-                      passed=None, measured={"dropout_mv": round(dropout_mv, 3),
+                      passed=None, measured={"dropout_mv": dropout_csv,
+                                             "ok_at_min_vin": ok_at_min_vin,
+                                             "vin_lo_v": vin_lo,
                                              "v0_mv": round(v0_mv, 3),
                                              "iload_ma": iload_ma, "vout_nominal_mv": nominal_mv},
-                      raw_csv_path=csv_path)
+                      raw_csv_path=csv_path, notes=note)
 
 
 def vout_accuracy(ctx: ItemContext) -> ItemResult:
