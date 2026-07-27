@@ -38,3 +38,4 @@
 - **§24 高度级联**：嵌入页面时，父页面 QSS 的裸 `QComboBox { min-height }` 会穿透进模块内部；模块自身控件须用 ID 选择器自洽（见 §24.1）。
 - **§23 SVG 渲染**：模块内 SVG 图标禁止 `setDevicePixelRatio`，直接用逻辑大小渲染。
 - **§5 VISA 地址**：搜索按钮扫描 → 下拉框选择 → 传给 `factory.create_*`，禁止硬编码地址。
+- **连接按钮 enable 状态必须成对恢复**：manager 异步路径在 `connect_async` 前 `setEnabled(False)` 后，所有状态同步出口（`sync_*_from_top` / `*_top_changed` / `connection_failed` 处理器）都必须 `setEnabled(True)`；否则按钮停在 disabled，`_xxx_disconnect_style` 里的 `QPushButton:disabled` 规则生效，Disconnect 红底被灰底覆盖（示波器在 module_test 页曾因此不变红，N6705C 因有 `_on_mixin_manager_connected` 恢复而正常）。

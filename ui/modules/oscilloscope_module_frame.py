@@ -255,6 +255,19 @@ class OscilloscopeConnectionMixin:
 
         if self._mso64b_top is not None and hasattr(self._mso64b_top, 'connection_changed'):
             self._mso64b_top.connection_changed.connect(self._on_mso64b_top_changed)
+        if self._scope_instrument_manager is not None:
+            self._scope_instrument_manager.connection_failed.connect(
+                self._on_scope_manager_connect_failed
+            )
+
+    def _on_scope_manager_connect_failed(self, session_id: str, error: str):
+        if not session_id.endswith(":main_scope"):
+            return
+        self.scope_connect_btn.setEnabled(True)
+        scope_type = self.scope_type_combo.currentText()
+        self.set_scope_status(f"{scope_type} connection failed", is_error=True)
+        if hasattr(self, 'append_log'):
+            self.append_log(f"[ERROR] {scope_type} connection failed: {error}")
 
     def build_oscilloscope_connection_widgets(self, layout, title_row=None):
         self.scope_system_status_label = QLabel("● Ready")
@@ -332,6 +345,7 @@ class OscilloscopeConnectionMixin:
             self.scope_resource = self._mso64b_top.visa_resource
             self.scope_connected = True
             _update_scope_btn_state(self.scope_connect_btn, True)
+            self.scope_connect_btn.setEnabled(True)
             self.scope_search_btn.setEnabled(False)
             scope_type = getattr(self._mso64b_top, 'scope_type', 'MSO64B') or 'MSO64B'
             idx = self.scope_type_combo.findText(scope_type)
@@ -344,6 +358,7 @@ class OscilloscopeConnectionMixin:
             self.set_scope_status(f"{scope_type} connected")
         elif not self.scope_connected:
             _update_scope_btn_state(self.scope_connect_btn, False)
+            self.scope_connect_btn.setEnabled(True)
             self.set_scope_status("Ready")
 
     def _on_mso64b_top_changed(self):
@@ -358,6 +373,7 @@ class OscilloscopeConnectionMixin:
             self.scope_resource = self._mso64b_top.visa_resource
             self.scope_connected = True
             _update_scope_btn_state(self.scope_connect_btn, True)
+            self.scope_connect_btn.setEnabled(True)
             self.scope_search_btn.setEnabled(False)
             scope_type = getattr(self._mso64b_top, 'scope_type', 'MSO64B') or 'MSO64B'
             idx = self.scope_type_combo.findText(scope_type)
@@ -377,6 +393,7 @@ class OscilloscopeConnectionMixin:
             self.scope_resource = None
             self.scope_connected = False
             _update_scope_btn_state(self.scope_connect_btn, False)
+            self.scope_connect_btn.setEnabled(True)
             self.scope_type_combo.setEnabled(True)
             self.scope_search_btn.setEnabled(True)
             if hasattr(self, 'append_log'):
