@@ -260,8 +260,12 @@ class CH9114F(InstrumentBase):
     def set_output(self, pin):
         self.config(pin, direction=DIR_OUTPUT, gpio_func=True)
 
-    def set_input(self, pin, gpio_func=True):
+    def set_input(self, pin, gpio_func=False):
         self.config(pin, direction=DIR_INPUT, gpio_func=gpio_func)
+
+    def hiz(self, pin):
+        """释放引脚为高阻态：关闭 GPIO 功能使能并置为输入。"""
+        self.config(pin, direction=DIR_INPUT, gpio_func=False)
 
     def out(self, pin, value):
         self._ensure_connected()
@@ -278,7 +282,8 @@ class CH9114F(InstrumentBase):
 
     def in_pull(self, pin, pull="none"):
         self._ensure_connected()
-        self.set_input(pin, gpio_func=True)
+        # 释放为高阻输入：关闭 GPIO 功能使能，避免残留输出驱动
+        self.hiz(pin)
 
     def pulse(self, pin, width_ms=10, active=1, release_high_z=True):
         # 对齐 PicoGPIO.pulse 接口；CH9114F 通过 out+sleep+out 实现
@@ -290,7 +295,7 @@ class CH9114F(InstrumentBase):
         time.sleep(max(0, int(width_ms)) / 1000.0)
         self.out(pin, idle)
         if release_high_z:
-            self.set_input(pin, gpio_func=True)
+            self.hiz(pin)
 
     def high(self, pin):
         self.out(pin, LEVEL_HIGH)

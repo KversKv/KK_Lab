@@ -387,8 +387,11 @@ class MockCH9114F:
     def set_output(self, pin):
         self.config(pin, direction=self.DIR_OUTPUT, gpio_func=True)
 
-    def set_input(self, pin, gpio_func=True):
+    def set_input(self, pin, gpio_func=False):
         self.config(pin, direction=self.DIR_INPUT, gpio_func=gpio_func)
+
+    def hiz(self, pin):
+        self.set_input(pin, gpio_func=False)
 
     def out(self, pin, value):
         pin = int(pin)
@@ -397,7 +400,7 @@ class MockCH9114F:
 
     def in_pull(self, pin, pull="none"):
         pin = int(pin)
-        self.set_input(pin, gpio_func=True)
+        self.hiz(pin)
 
     def pulse(self, pin, width_ms=10, active=1, release_high_z=True):
         # 对齐 PicoGPIO.pulse / CH9114F.pulse 接口
@@ -408,7 +411,7 @@ class MockCH9114F:
         time.sleep(max(0, int(width_ms)) / 1000.0)
         self.out(pin, idle)
         if release_high_z:
-            self.set_input(pin, gpio_func=True)
+            self.hiz(pin)
 
     def high(self, pin):
         self.out(pin, 1)
