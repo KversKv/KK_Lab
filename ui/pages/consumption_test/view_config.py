@@ -30,7 +30,7 @@ from ui.pages.consumption_test.widgets import (
     ControlMethodToggle, PolarityToggle, BinaryTextToggle,
 )
 from ui.widgets.dark_combobox import DarkComboBox
-from ui.widgets.button import SpinningSearchButton
+from ui.widgets.button import SpinningSearchButton, update_connect_button_state
 from PySide6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QPushButton, QCheckBox,
@@ -223,23 +223,7 @@ class ConsumptionTestViewConfigMixin:
         self.mcu_connect_btn = QPushButton("Connect")
         self.mcu_connect_btn.setFixedHeight(24)
         self.mcu_connect_btn.setFixedWidth(88)
-        self.mcu_connect_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #053b38;
-                border: 1px solid #08c9a5;
-                border-radius: 6px;
-                color: #10e7bc;
-                font-size: 10px;
-                font-weight: 700;
-                padding: 2px 8px;
-            }
-            QPushButton:hover { background-color: #064744; }
-            QPushButton:disabled {
-                background-color: #0D1734;
-                color: #3a4a6a;
-                border: 1px solid #18264A;
-            }
-        """)
+        update_connect_button_state(self.mcu_connect_btn, False)
         mcu_type_row.addWidget(self.mcu_type_combo, 1)
         mcu_type_row.addSpacing(28)
         mcu_port_row.addWidget(self.mcu_port_combo, 1)

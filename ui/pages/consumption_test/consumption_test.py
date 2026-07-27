@@ -109,13 +109,15 @@ class _SearchMcuPortWorker(QObject):
 
 class _ConnectMcuWorker(QObject):
     finished = Signal(object, str)
+    gpio_init_done = Signal(list)
     error = Signal(str)
 
-    def __init__(self, port, mcu_type="yd_rp2040", baudrate=921600):
+    def __init__(self, port, mcu_type="yd_rp2040", baudrate=921600, hiz_pins=None):
         super().__init__()
         self._port = port
         self._mcu_type = mcu_type
         self._baudrate = baudrate
+        self._hiz_pins = list(hiz_pins) if hiz_pins else []
 
     def run(self):
         try:
@@ -128,10 +130,22 @@ class _ConnectMcuWorker(QObject):
             if not ok:
                 self.error.emit(f"Failed to connect {self._port}")
                 return
+            self.gpio_init_done.emit(self._init_pins_high_z(inst))
             self.finished.emit(inst, inst.identify())
         except Exception as e:
             logger.error("MCU IO connection failed: %s", e, exc_info=True)
             self.error.emit(str(e))
+
+    def _init_pins_high_z(self, inst):
+        """Set all available GPIO pins to high-impedance input; returns failed pins."""
+        failed = []
+        for pin in self._hiz_pins:
+            try:
+                inst.in_pull(pin, "none")
+            except Exception as e:  # noqa: BLE001
+                failed.append(pin)
+                logger.warning("MCU GPIO%d high-Z init failed: %s", pin, e)
+        return failed
 
 
 _ICONS_DIR = os.path.join(
@@ -1797,10 +1811,12 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
         type_label = "CH9114F" if mcu_type == "ch9114f" else "YD RP2040"
         self.append_log(f"[MCU] Connecting {type_label} on {port}...")
 
-        worker = _ConnectMcuWorker(port, mcu_type=mcu_type)
+        hiz_pins = [int(opt[4:]) for opt in self._get_mcu_gpio_options()]
+        worker = _ConnectMcuWorker(port, mcu_type=mcu_type, hiz_pins=hiz_pins)
         thread = QThread()
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
+        worker.gpio_init_done.connect(self._on_mcu_gpio_init_done)
         worker.finished.connect(self._on_mcu_connected)
         worker.error.connect(self._on_mcu_connect_error)
         worker.finished.connect(thread.quit)
@@ -1821,9 +1837,15 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
         )
         self.mcu_search_btn.setEnabled(False)
         self.mcu_connect_btn.setEnabled(True)
-        self.mcu_connect_btn.setText("Disconnect")
+        update_connect_button_state(self.mcu_connect_btn, True)
         self.append_log(f"[MCU] Connected: {idn}")
         self._suppress_preset_channels = False
+
+    def _on_mcu_gpio_init_done(self, failed_pins):
+        if failed_pins:
+            self.append_log(f"[MCU] GPIO high-Z init failed on pin(s): {failed_pins}")
+        else:
+            self.append_log("[MCU] All GPIO pins initialized to high-impedance (input).")
 
     def _on_mcu_connect_error(self, err):
         self.mcu_status_label.setText("● Failed")
@@ -1855,7 +1877,7 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             )
             self.mcu_search_btn.setEnabled(True)
             self.mcu_connect_btn.setEnabled(True)
-            self.mcu_connect_btn.setText("Connect")
+            update_connect_button_state(self.mcu_connect_btn, False)
             self.append_log("[MCU] Disconnected.")
 
     def _on_start_test(self):
