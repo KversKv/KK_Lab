@@ -11,14 +11,15 @@ import os
 
 from core.module_test._common import (
     ItemContext, linspace, measure_avg, mock_jitter, parse_channel,
-    run_load_capability_ripple, run_load_transient, run_vout_scan,
-    set_load_current, settle, setup_load_channel, setup_meter_channel,
-    setup_source_channel, teardown_load, write_csv,
+    run_line_transient, run_load_capability_ripple, run_load_transient,
+    run_vout_scan, set_load_current, settle, setup_load_channel,
+    setup_meter_channel, setup_source_channel, teardown_load, write_csv,
 )
 from core.module_test.result_model import ItemResult
 from core.module_test.param_spec import (
-    ParamSpec, average_cnt, load_sweep, quiescent_params, reg_scan_params,
-    settle_time, transient_groups, vin_bias, vin_sweep, vout_tol,
+    ParamSpec, average_cnt, line_transient_groups, load_sweep,
+    quiescent_params, reg_scan_params, settle_time, transient_groups,
+    vin_bias, vin_sweep, vout_tol,
 )
 from log_config import get_logger
 
@@ -294,70 +295,6 @@ def dropout(ctx: ItemContext) -> ItemResult:
                       raw_csv_path=csv_path, notes=note)
 
 
-def vout_accuracy(ctx: ItemContext) -> ItemResult:
-    """输出电压精度（初始精度 / 温漂 / 全范围精度）。
-
-    流程：Vin=PS2Q 源、Vout 电压表。接温箱时逐温度点 set_temperature 并等待稳定，
-    每点测 Vout 与偏差；多温度点线性拟合温漂系数 (ppm/C)。未接温箱仅测常温初始精度。
-    """
-    item_key = "ldo_vout_accuracy"
-    cfg = ctx.config
-    nominal_mv = float(cfg.get("vout_nominal_mv", 1800))
-    vout_ch = parse_channel(cfg.get("vout_channel", 1))
-    vin_ch = parse_channel(cfg.get("vin_channel", 2))
-    vin_v = float(cfg.get("vin_v", 3.8))
-    settle_s = float(cfg.get("settle_time_s", 0.05))
-    avg_cnt = int(cfg.get("average_cnt", 3))
-    temp_soak_s = float(cfg.get("temp_soak_s", 60.0))
-    temps = cfg.get("accuracy_temps", ["-40", "25", "85"]) if ctx.chamber is not None else ["25"]
-    if not ctx.is_mock:
-        setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
-        setup_meter_channel(ctx, vout_ch)
-    rows: list[list] = []
-    for i, t in enumerate(temps):
-        if ctx.stop_flag_fn():
-            break
-        if not ctx.is_mock and ctx.chamber is not None:
-            try:
-                ctx.chamber.set_temperature(float(t))
-            except Exception:  # noqa: BLE001
-                logger.error("set_temperature failed", exc_info=True)
-            settle(ctx, temp_soak_s)  # 等待温度稳定
-        if ctx.is_mock:
-            v = mock_jitter(nominal_mv, 0.005)
-        else:
-            settle(ctx, settle_s)
-            v = measure_avg(ctx, "measure_voltage", vout_ch,
-                            count=avg_cnt, settle_s=settle_s, default=nominal_mv / 1000.0) * 1000.0
-        err_pct = (v - nominal_mv) / nominal_mv * 100.0
-        rows.append([t, round(v, 3), round(err_pct, 4)])
-        ctx.progress_fn(int((i + 1) / len(temps) * 100), f"Accuracy {t}C")
-        ctx.log_fn(f"[{item_key}] T={t}C -> Vout={v:.3f} mV, err={err_pct:.4f}%")
-    csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
-    write_csv(csv_path, ["Temp (C)", "Vout (mV)", "Error (%)"], rows)
-    # 找常温（25C）作为初始精度基准
-    init_err = next((r[2] for r in rows if str(r[0]) == "25"), rows[0][2] if rows else 0.0)
-    # 多温度点线性拟合温漂：ppm/C = (dVout/dT)/nominal * 1e6
-    tempco = 0.0
-    if len(rows) >= 2:
-        try:
-            xs = [float(r[0]) for r in rows]
-            ys = [float(r[1]) for r in rows]
-            n = len(xs)
-            mx = sum(xs) / n
-            my = sum(ys) / n
-            denom = sum((x - mx) ** 2 for x in xs)
-            if denom > 1e-12:
-                slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / denom  # mV/C
-                tempco = slope / nominal_mv * 1e6  # ppm/C
-        except Exception:  # noqa: BLE001
-            logger.error("tempco fit failed", exc_info=True)
-    return ItemResult(item_key=item_key, name="Output Voltage Accuracy", unit="%",
-                      passed=None, measured={"init_error_pct": round(init_err, 4),
-                                             "tempco_ppm_c": round(tempco, 3),
-                                             "rows": rows}, raw_csv_path=csv_path)
-
-
 def current_limit(ctx: ItemContext) -> ItemResult:
     """输出电流能力 / 限流点（最大负载电流）。
 
@@ -491,54 +428,9 @@ def output_noise(ctx: ItemContext) -> ItemResult:
 
 
 def line_transient(ctx: ItemContext) -> ItemResult:
-    """输入瞬态响应（Vin 突变时的恢复能力，依赖示波器）。
-
-    大框架占位：Mock 生成合理数据；真机在 Vin 阶跃下捕获 Vout 过冲/恢复时间。
-    阶跃幅度与斜率后续迭代。
-    """
-    item_key = "ldo_line_transient"
-    if ctx.scope is None:
-        return _skipped(item_key, "Line Transient Response", "未连接示波器，跳过")
-    steps = ctx.config.get("line_transient_steps", ["3.2->4.2V", "4.2->3.2V"])
-    rows: list[list] = []
-    for i, s in enumerate(steps):
-        if ctx.stop_flag_fn():
-            break
-        overshoot = mock_jitter(20.0, 0.05) if ctx.is_mock else 0.0
-        undershoot = mock_jitter(-18.0, 0.05) if ctx.is_mock else 0.0
-        recover_us = mock_jitter(40.0, 0.1) if ctx.is_mock else 0.0
-        rows.append([s, round(overshoot, 3), round(undershoot, 3), round(recover_us, 3)])
-        ctx.progress_fn(int((i + 1) / len(steps) * 100), f"Line transient {s}")
-    csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
-    write_csv(csv_path, ["Step", "Overshoot (mV)", "Undershoot (mV)", "Recover (us)"], rows)
-    return ItemResult(item_key=item_key, name="Line Transient Response", unit="mV",
-                      passed=None, measured={"rows": rows}, raw_csv_path=csv_path)
-
-
-def stability(ctx: ItemContext) -> ItemResult:
-    """稳定性要求（输出电容容量 / ESR / 类型，依赖示波器）。
-
-    大框架占位：Mock 生成合理数据；真机在不同 Cout/ESR 下测相位裕度或瞬态振铃。
-    相位裕度测量方法后续迭代。
-    """
-    item_key = "ldo_stability"
-    if ctx.scope is None:
-        return _skipped(item_key, "Stability", "未连接示波器，跳过")
-    cfg = ctx.config
-    cout_uf = float(cfg.get("stability_cout_uf", 1.0))
-    esr_mohm = float(cfg.get("stability_esr_mohm", 50.0))
-    if ctx.is_mock:
-        phase_margin_deg = mock_jitter(60.0, 0.05)
-    else:
-        phase_margin_deg = 0.0  # TODO(迭代): 环路相位裕度 / 瞬态振铃评估
-    csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
-    write_csv(csv_path, ["Cout (uF)", "ESR (mohm)", "Phase margin (deg)"],
-              [[cout_uf, esr_mohm, round(phase_margin_deg, 3)]])
-    ctx.log_fn(f"[{item_key}] Cout={cout_uf}uF ESR={esr_mohm}mohm -> PM={phase_margin_deg:.3f} deg")
-    return ItemResult(item_key=item_key, name="Stability", unit="deg",
-                      passed=None, measured={"cout_uf": cout_uf, "esr_mohm": esr_mohm,
-                                             "phase_margin_deg": round(phase_margin_deg, 3)},
-                      raw_csv_path=csv_path)
+    """输入瞬态响应（Vin 电压脉冲下的恢复能力，逻辑见 _common.run_line_transient）。"""
+    return run_line_transient(ctx, "ldo_line_transient", "Line Transient Response",
+                              mock_over_mv=20.0, mock_under_mv=18.0)
 
 
 def protection(ctx: ItemContext) -> ItemResult:
@@ -622,21 +514,15 @@ LDO_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
         settle_time(),
     )),
     "ldo_line_transient": ("Line Transient Response", line_transient, True, False, (
-        ParamSpec("line_transient_steps", "阶跃序列", "text", "3.2->4.2V, 4.2->3.2V", "",
-                  hint="逗号分隔，如 3.2->4.2V"),
-    )),
-    "ldo_stability": ("Stability", stability, True, False, (
-        ParamSpec("stability_cout_uf", "输出电容", "float", 1.0, "uF", maximum=10000.0),
-        ParamSpec("stability_esr_mohm", "ESR", "float", 50.0, "mΩ", maximum=100000.0),
+        ParamSpec("scope_vout_channel", "示波器通道", "int", 1, "", minimum=1, maximum=4),
+        line_transient_groups(),
+        ParamSpec("transient_vspan_mv", "预期摆幅", "float", 200.0, "mV",
+                  minimum=1.0, maximum=10000.0, decimals=1,
+                  hint="示波器量程按此设置"),
+        settle_time(),
     )),
     "ldo_protection": ("Protection", protection, False, False, (
         ParamSpec("protection_checks", "检查项", "text", "OCP, SCP, OTP, REVERSE", "",
                   hint="逗号分隔"),
-    )),
-    "ldo_vout_accuracy": ("Output Voltage Accuracy", vout_accuracy, False, False, (
-        vin_bias(), settle_time(), average_cnt(),
-        ParamSpec("temp_soak_s", "温度稳定时间", "float", 60.0, "s", maximum=3600.0),
-        ParamSpec("accuracy_temps", "温度点", "text", "-40, 25, 85", "",
-                  hint="逗号分隔，接温箱生效"),
     )),
 }

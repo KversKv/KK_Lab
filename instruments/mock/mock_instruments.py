@@ -180,6 +180,9 @@ class MockN6705C:
     def exit_arb_current(self, channel):
         pass
 
+    def exit_arb_voltage(self, channel):
+        pass
+
     def set_arb_continuous(self, channel, flag=False):
         pass
 

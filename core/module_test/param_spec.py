@@ -164,3 +164,26 @@ def transient_groups() -> ParamSpec:
                       minimum=0.001, maximum=1_000_000.0, decimals=3),
         ),
     )
+
+
+# —— 输入瞬态分组参数：每组 Vin0 / Vin1 / 频率，默认三组，弹窗可增删 ——
+DEFAULT_LINE_TRANSIENT_GROUPS: list[dict] = [
+    {"vin0_v": 3.2, "vin1_v": 4.2, "freq_hz": 1.0},
+    {"vin0_v": 3.2, "vin1_v": 4.2, "freq_hz": 10.0},
+    {"vin0_v": 3.2, "vin1_v": 4.2, "freq_hz": 100.0},
+]
+
+
+def line_transient_groups() -> ParamSpec:
+    """Line Transient 分组参数（ptype="groups"，Vin 电压脉冲分组）。"""
+    return ParamSpec(
+        "line_transient_groups", "Vin 瞬态组", "groups", DEFAULT_LINE_TRANSIENT_GROUPS, "",
+        columns=(
+            ParamSpec("vin0_v", "Vin0", "float", 3.2, "V",
+                      minimum=0.0, maximum=60.0, decimals=3),
+            ParamSpec("vin1_v", "Vin1", "float", 4.2, "V",
+                      minimum=0.0, maximum=60.0, decimals=3),
+            ParamSpec("freq_hz", "频率", "float", 10.0, "Hz",
+                      minimum=0.001, maximum=1_000_000.0, decimals=3),
+        ),
+    )

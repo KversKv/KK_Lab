@@ -302,6 +302,10 @@ class N6705C:
         """退出电流 ARB 模式，恢复固定电流 (CURR:MODE FIX)。"""
         self.instr.write(f"CURR:MODE FIX,(@{channel})")
 
+    def exit_arb_voltage(self, channel):
+        """退出电压 ARB 模式，恢复固定电压 (VOLT:MODE FIX)。"""
+        self.instr.write(f"VOLT:MODE FIX,(@{channel})")
+
     def set_arb_continuous(self, channel, flag=False):
         if flag:
             self.instr.write(f"ARB:TERM:LAST ON,(@{channel})")
@@ -351,6 +355,34 @@ class N6705C:
         voltage = self.measure_voltage(channel)
         logger.info("  当前电压: %.4f V", voltage)
         logger.info("[测试] 完成")
+
+    def test_line_transient_arb(self, channel, v0=3.2, v1=4.2, freq_hz=10):
+        """真机验证：PS2Q 电压 ARB 脉冲（Line Transient Vin 阶跃流程）。"""
+        period = 1.0 / freq_hz
+        t0 = period / 2.0
+        t2 = period / 2.0
+        logger.info("[测试] set_arb_pulse on channel %s", channel)
+        logger.info("  参数: v0=%gV, v1=%gV, freq=%gHz (t0=%gs, t1=0, t2=%gs)",
+                    v0, v1, freq_hz, t0, t2)
+
+        self.arb_stop()
+        self.set_mode(channel, "PS2Q")
+        self.set_arb_pulse(channel, v0, v1, t0, 0.0, t2, freq_hz)
+        self.set_arb_continuous(channel, flag=False)
+        self.arb_on(channel)
+        self.channel_on(channel)
+        logger.info("  ARB配置完成, 正在触发...")
+        self.arb_run()
+        logger.info("  ARB已触发, Vin 脉冲运行中, 请在示波器上观察 Vout 瞬态波形")
+
+        time.sleep(3)
+        voltage = self.measure_voltage(channel)
+        logger.info("  当前电压: %.4f V", voltage)
+
+        self.arb_stop()
+        self.exit_arb_voltage(channel)
+        self.channel_off(channel)
+        logger.info("[测试] 完成, 已恢复固定电压模式并关断通道")
 
     def test_load_transient_arb(self, channel, i0_ma=10, i1_ma=100, freq_hz=100):
         """真机验证：CCLoad 电流 ARB 脉冲（Load Transient 拉载流程）。"""

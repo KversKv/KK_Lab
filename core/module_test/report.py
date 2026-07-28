@@ -352,10 +352,6 @@ def _summary_metrics(it: ItemResult) -> str:
         return (f"Limit={_in(m, 'current_limit_ma')} mA; "
                 f"Peak={_in(m, 'peak_current_ma')} mA")
 
-    if key.endswith("vout_accuracy"):
-        return (f"InitErr={_in(m, 'init_error_pct')} %; "
-                f"Tempco={_in(m, 'tempco_ppm_c')} ppm/°C")
-
     if key.endswith("output_noise"):
         return (f"Center={_in(m, 'center_freq_khz')} kHz; "
                 f"Span={_in(m, 'freq_span_khz')} kHz")
@@ -380,9 +376,6 @@ def _summary_metrics(it: ItemResult) -> str:
         topo = m.get("topology", "-")
         iso = m.get("isolated")
         return f"{topo} ({'隔离' if iso else '非隔离'})"
-
-    if key.endswith("stability"):
-        return f"PM={_in(m, 'phase_margin_deg')} °"
 
     if isinstance(it.measured, dict):  # 通用兜底
         parts = [f"{k}={v}" for k, v in list(it.measured.items())[:4]]

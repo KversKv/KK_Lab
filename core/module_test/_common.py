@@ -491,6 +491,135 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
     return result
 
 
+def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
+                       mock_over_mv: float, mock_under_mv: float) -> "ItemResult":
+    """Line Transient Response（LDO / DCDC 共用，依赖示波器）。
+
+    流程（对齐手动测试，逐组执行）：
+      1. Vin 通道置 PS2Q 源；
+      2. Arb Type=Voltage / Shape=Pulse，Vin0/Vin1 为电压（正），
+         t0=半周期、t1=0、t2=半周期（50% 占空；真机强制 t0+t1+t2=1/freq）；
+      3. INIT:TRAN + BUS 触发使能 ARB（连续 Vin 脉冲）；
+      4. 示波器按频率设 timebase（整屏约 2 周期），量程/偏置按预期摆幅与标称 Vout 设置；
+      5. 稳定后暂停采集，截图并测 Vmax/Vmin/Vmean/Vpp，
+         过冲=Vmax-Vmean、欠冲=Vmean-Vmin（mV）；
+      每组测完 ABOR:TRAN + VOLT:MODE FIX 复位 Vin 通道，再换下一组。
+    """
+    from core.module_test.param_spec import DEFAULT_LINE_TRANSIENT_GROUPS
+    from core.module_test.result_model import ItemResult
+
+    if ctx.scope is None:
+        return ItemResult(item_key=item_key, name=name, passed=None,
+                          notes="未连接示波器，跳过")
+
+    cfg = ctx.config
+    groups = cfg.get("line_transient_groups") or DEFAULT_LINE_TRANSIENT_GROUPS
+    vin_ch = parse_channel(cfg.get("vin_channel", 1))
+    scope_ch = int(cfg.get("scope_vout_channel", 1))
+    nominal_v = float(cfg.get("vout_nominal_mv", 1800)) / 1000.0
+    vspan_v = float(cfg.get("transient_vspan_mv", 200)) / 1000.0
+    settle_s = float(cfg.get("settle_time_s", 0.05))
+
+    rows: list[list[Any]] = []
+    screenshots: list[dict[str, Any]] = []
+    shot_dir = os.path.join(ctx.out_dir, "screenshots")
+
+    if not ctx.is_mock:
+        try:
+            ctx.n6705c.arb_stop()
+        except Exception:  # noqa: BLE001 - 复位失败降级记录，继续配置
+            logger.error("arb_stop failed before %s", item_key, exc_info=True)
+
+    for idx, g in enumerate(groups):
+        if ctx.stop_flag_fn():
+            break
+        vin0_v = float(g.get("vin0_v", 3.2))
+        vin1_v = float(g.get("vin1_v", 4.2))
+        freq = float(g.get("freq_hz", 10.0))
+        if freq <= 0:
+            ctx.log_fn(f"[{item_key}] 组{idx + 1} 频率无效（{freq:g}Hz），跳过")
+            continue
+        period = 1.0 / freq
+        label = f"组{idx + 1} {vin0_v:g}->{vin1_v:g}V @{freq:g}Hz"
+
+        if ctx.is_mock:
+            over = mock_jitter(mock_over_mv, 0.05)
+            under = mock_jitter(mock_under_mv, 0.05)
+            vpp = over + under
+            shot = None
+        else:
+            over = under = vpp = 0.0
+            shot = None
+            try:
+                ctx.n6705c.set_mode(vin_ch, "PS2Q")
+                ctx.n6705c.set_arb_pulse(vin_ch, vin0_v, vin1_v,
+                                         period / 2.0, 0.0, period / 2.0, freq)
+                ctx.n6705c.arb_on(vin_ch)
+                ctx.n6705c.channel_on(vin_ch)
+                ctx.n6705c.arb_run()
+
+                ctx.scope.set_channel_scale(scope_ch, vspan_v / 4.0)
+                ctx.scope.set_channel_offset(scope_ch, nominal_v)
+                ctx.scope.set_timebase_scale(period / 5.0)
+                settle(ctx, max(settle_s * 8, 0.5))
+
+                ctx.scope.stop()
+                vmax = float(ctx.scope.get_channel_max(scope_ch))
+                vmin = float(ctx.scope.get_channel_min(scope_ch))
+                vbase = float(ctx.scope.get_channel_mean(scope_ch))
+                vpp = float(ctx.scope.get_channel_pk2pk(scope_ch)) * 1000.0
+                over = (vmax - vbase) * 1000.0
+                under = (vbase - vmin) * 1000.0
+                shot = _capture_scope_png(ctx, item_key, vin1_v, shot_dir,
+                                          tag=f"g{idx + 1}_{freq:g}Hz")
+                ctx.scope.run()
+            except Exception:  # noqa: BLE001 - 单组失败降级，继续下一组
+                logger.error("line transient group %d failed", idx + 1, exc_info=True)
+                ctx.log_fn(f"[{item_key}] [ERROR] {label} 执行异常，记 0 继续")
+            finally:
+                try:
+                    ctx.n6705c.arb_stop()
+                    ctx.n6705c.exit_arb_voltage(vin_ch)
+                except Exception:  # noqa: BLE001
+                    logger.error("exit arb ch%d failed", vin_ch, exc_info=True)
+
+        rows.append([idx + 1, vin0_v, vin1_v, freq,
+                     round(over, 3), round(under, 3), round(vpp, 3)])
+        if shot:
+            screenshots.append({"Iload (mA)": str(idx + 1), "png": shot})
+        ctx.progress_fn(int((idx + 1) / len(groups) * 100), f"{name} {label}")
+        ctx.log_fn(f"[{item_key}] {label} -> Overshoot={over:.3f} mV, "
+                   f"Undershoot={under:.3f} mV, Vpp={vpp:.3f} mV")
+
+    if not ctx.is_mock:
+        try:
+            ctx.n6705c.channel_off(vin_ch)
+        except Exception:  # noqa: BLE001
+            logger.error("channel off vin ch%d failed", vin_ch, exc_info=True)
+
+    csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
+    write_csv(csv_path,
+              ["Group", "Vin0 (V)", "Vin1 (V)", "Freq (Hz)",
+               "Overshoot (mV)", "Undershoot (mV)", "Vpp (mV)"], rows)
+
+    max_over = max(rows, key=lambda r: r[4], default=None)
+    max_under = max(rows, key=lambda r: r[5], default=None)
+    measured: dict[str, Any] = {
+        "groups": len(rows),
+        "max_overshoot_mv": max_over[4] if max_over else "",
+        "max_overshoot_group": max_over[0] if max_over else "",
+        "max_undershoot_mv": max_under[5] if max_under else "",
+        "max_undershoot_group": max_under[0] if max_under else "",
+    }
+    if screenshots:
+        measured["screenshots"] = screenshots
+    result = ItemResult(item_key=item_key, name=name, unit="mV",
+                        passed=None, measured=measured, raw_csv_path=csv_path)
+    if screenshots:
+        result.waveform_png = screenshots[0]["png"]
+    return result
+
+
 def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
                        mock_over_mv: float, mock_under_mv: float) -> "ItemResult":
     """Load Transient Response（LDO / DCDC 共用，依赖示波器）。

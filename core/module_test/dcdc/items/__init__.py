@@ -11,14 +11,15 @@ import os
 
 from core.module_test._common import (
     ItemContext, linspace, measure_avg, mock_jitter, parse_channel,
-    run_load_capability_ripple, run_load_transient, run_vout_scan,
-    set_load_current, settle, setup_load_channel, setup_meter_channel,
-    setup_source_channel, teardown_load, write_csv,
+    run_line_transient, run_load_capability_ripple, run_load_transient,
+    run_vout_scan, set_load_current, settle, setup_load_channel,
+    setup_meter_channel, setup_source_channel, teardown_load, write_csv,
 )
 from core.module_test.result_model import ItemResult
 from core.module_test.param_spec import (
-    ParamSpec, average_cnt, load_sweep, quiescent_params, reg_scan_params,
-    settle_time, transient_groups, vin_bias, vin_sweep, vout_tol,
+    ParamSpec, average_cnt, line_transient_groups, load_sweep,
+    quiescent_params, reg_scan_params, settle_time, transient_groups,
+    vin_bias, vin_sweep, vout_tol,
 )
 from log_config import get_logger
 
@@ -290,6 +291,12 @@ def load_transient(ctx: ItemContext) -> ItemResult:
     """负载瞬态响应（依赖示波器，逻辑见 _common.run_load_transient）。"""
     return run_load_transient(ctx, "dcdc_load_transient", "Load Transient Response",
                               mock_over_mv=45.0, mock_under_mv=40.0)
+
+
+def line_transient(ctx: ItemContext) -> ItemResult:
+    """输入瞬态响应（Vin 电压脉冲下的恢复能力，逻辑见 _common.run_line_transient）。"""
+    return run_line_transient(ctx, "dcdc_line_transient", "Line Transient Response",
+                              mock_over_mv=30.0, mock_under_mv=28.0)
 
 
 def inductor_current(ctx: ItemContext) -> ItemResult:
@@ -669,31 +676,6 @@ def topology(ctx: ItemContext) -> ItemResult:
                       raw_csv_path=csv_path)
 
 
-def stability(ctx: ItemContext) -> ItemResult:
-    """稳定性与补偿要求（环路稳定 / 外部补偿，依赖示波器）。
-
-    大框架占位：Mock 生成合理数据；真机测环路相位/增益裕度或瞬态振铃评估。
-    环路测量方法与补偿参数后续迭代。
-    """
-    item_key = "dcdc_stability"
-    if ctx.scope is None:
-        return _skipped(item_key, "Stability & Compensation", "未连接示波器，跳过")
-    if ctx.is_mock:
-        phase_margin_deg = mock_jitter(55.0, 0.05)
-        gain_margin_db = mock_jitter(12.0, 0.05)
-    else:
-        phase_margin_deg = 0.0  # TODO(迭代): 环路相位裕度
-        gain_margin_db = 0.0    # TODO(迭代): 环路增益裕度
-    csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
-    write_csv(csv_path, ["Phase margin (deg)", "Gain margin (dB)"],
-              [[round(phase_margin_deg, 3), round(gain_margin_db, 3)]])
-    ctx.log_fn(f"[{item_key}] PM={phase_margin_deg:.3f}deg GM={gain_margin_db:.3f}dB")
-    return ItemResult(item_key=item_key, name="Stability & Compensation", unit="deg",
-                      passed=None, measured={"phase_margin_deg": round(phase_margin_deg, 3),
-                                             "gain_margin_db": round(gain_margin_db, 3)},
-                      raw_csv_path=csv_path)
-
-
 # 测试项注册表：item_key -> (name, run_fn, needs_scope, default_checked, params)
 DCDC_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
     "dcdc_vin_range": ("Input Voltage Range", vin_range, False, True, (
@@ -753,6 +735,14 @@ DCDC_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
                   hint="示波器量程按此设置"),
         settle_time(),
     )),
+    "dcdc_line_transient": ("Line Transient Response", line_transient, True, False, (
+        ParamSpec("scope_vout_channel", "示波器通道", "int", 1, "", minimum=1, maximum=4),
+        line_transient_groups(),
+        ParamSpec("transient_vspan_mv", "预期摆幅", "float", 200.0, "mV",
+                  minimum=1.0, maximum=10000.0, decimals=1,
+                  hint="示波器量程按此设置"),
+        settle_time(),
+    )),
     "dcdc_inductor_current": ("Inductor Current", inductor_current, True, True, (
         *load_sweep(10.0, 200.0, 50.0),
     )),
@@ -772,5 +762,4 @@ DCDC_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
         ParamSpec("topology", "拓扑", "text", "Buck", "", hint="如 Buck / Boost / Buck-Boost"),
         vin_bias(), settle_time(),
     )),
-    "dcdc_stability": ("Stability & Compensation", stability, True, True, ()),
 }

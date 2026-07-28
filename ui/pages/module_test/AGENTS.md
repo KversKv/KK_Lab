@@ -25,6 +25,7 @@
 - quiescent 项：单点差分测（`iq_diff_measure`），CSV 为 `["dIvin (uA)","dIvout (uA)","Iq (uA)"]`；ENABLE 用 DR BIT/EN BIT 单 bit 位写（`set_dut_enable`）。
 - 添加新测试项时, 对于非供电的电源仪器, 需要先重置仪器状态, 再去进行测试;
 - Load Transient Response（LDO/DCDC 共用 `_common.run_load_transient`）：真机流程=CCLoad + Slew MAX + 电流 ARB Pulse（I0/I1 取负，t0=T/2、t1=0、t2=T/2）→ `arb_on`+`arb_run` → 示波器设 scale/offset/timebase → `stop()` 暂停采集 → 截图 + Vmax/Vmin/Vmean 算过冲/欠冲 → 每组收尾 `arb_stop`+`exit_arb_current`；参数用 ptype="groups"（`transient_groups()`，默认 3 组 I0/I1/频率，弹窗 `_GroupsEditor` 可增删，无 base_key 全量返回）；CSV 第 0 列为组号，截图键 `{"Iload (mA)": str(组号)}` 借 `_shots_table_html` 的 iload 回退列（idx=0）并入报告。
+- Line Transient Response（LDO/DCDC 共用 `_common.run_line_transient`）：同 Load 流程，仅把拉载换为 Vin 电压脉冲——Vin 通道置 PS2Q + 电压 ARB Pulse（Vin0/Vin1 正电压，t0=T/2、t1=0、t2=T/2），收尾 `arb_stop`+`exit_arb_voltage`+`channel_off`；参数用 `line_transient_groups()`（默认 3 组 Vin0/Vin1/频率）；DCDC 侧为本次新增项（`dcdc_line_transient`，注册表默认不勾选）。
 
 ## 局部坑点
 
