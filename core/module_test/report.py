@@ -357,7 +357,8 @@ def _summary_metrics(it: ItemResult) -> str:
                 f"Tempco={_in(m, 'tempco_ppm_c')} ppm/°C")
 
     if key.endswith("output_noise"):
-        return f"Noise={_in(m, 'noise_uv_rms')} uVrms"
+        return (f"Center={_in(m, 'center_freq_khz')} kHz; "
+                f"Span={_in(m, 'freq_span_khz')} kHz")
 
     if key.endswith("vin_range"):
         return f"Vin={_in(m, 'vin_min_v')} ~ {_in(m, 'vin_max_v')} V"

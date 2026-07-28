@@ -441,24 +441,68 @@ def current_limit(ctx: ItemContext) -> ItemResult:
 
 
 def output_noise(ctx: ItemContext) -> ItemResult:
-    """输出噪声（LDO 自身噪声，依赖示波器/频谱）。
+    """输出噪声 FFT 频谱分析（LDO 自身噪声，依赖示波器 MATH FFT 通道）。
 
-    大框架占位：Mock 生成合理数据；真机通过示波器/频谱在带宽内积分噪声。
-    积分带宽与 RMS 计算后续迭代。
+    Vin=PS2Q 源上电后，示波器 MATH1 配成对 Vout 输入通道的 FFT 幅度分析
+    （中心频率 / 频率范围可在项参数设置），采集稳定后捕获整屏截图作为结果进报告。
     """
     item_key = "ldo_output_noise"
     if ctx.scope is None:
         return _skipped(item_key, "Output Noise", "未连接示波器，跳过")
+    cfg = ctx.config
+    scope_ch = int(cfg.get("scope_vout_channel", 1))
+    center_hz = float(cfg.get("noise_center_freq_khz", 50.0)) * 1e3
+    span_hz = float(cfg.get("noise_freq_span_khz", 100.0)) * 1e3
+    vin_ch = parse_channel(cfg.get("vin_channel", 2))
+    vin_v = float(cfg.get("vin_v", 3.8))
+
+    png_path = None
     if ctx.is_mock:
-        noise_uv_rms = mock_jitter(30.0, 0.1)
+        ctx.log_fn(f"[{item_key}] [MOCK] FFT center={center_hz / 1e3:g}kHz, "
+                   f"span={span_hz / 1e3:g}kHz")
     else:
-        noise_uv_rms = 0.0  # TODO(迭代): 10Hz~100kHz 带宽积分噪声
+        setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
+        try:
+            ctx.scope.set_channel_display(scope_ch, True)
+            # 先做 Auto Ripple 通道配置（时基/档位/偏移），FFT 才有正确输入信号
+            ctx.scope.set_AutoRipple_test(scope_ch)
+            settle(ctx, 0.5)
+            ctx.scope.setup_fft_display(scope_ch, center_hz, span_hz,
+                                        offset_db=-80.0, scale_db=20.0)
+        except Exception:  # noqa: BLE001 - FFT 配置失败降级为仅截图
+            logger.error("scope setup_fft_display failed", exc_info=True)
+            ctx.log_fn(f"[{item_key}] [WARN] FFT 通道配置失败，直接截取当前屏幕")
+        # FFT 频谱需多次采集积累才能算完整，等待足够长再截图
+        settle(ctx, 3.0)
+        try:
+            png = ctx.scope.capture_screen_png()
+            if png:
+                shot_dir = os.path.join(ctx.out_dir, "screenshots")
+                os.makedirs(shot_dir, exist_ok=True)
+                png_path = os.path.join(shot_dir, f"{item_key}_fft.png")
+                with open(png_path, "wb") as f:
+                    f.write(png)
+        except Exception:  # noqa: BLE001 - 截图失败不阻断
+            logger.error("scope fft capture failed", exc_info=True)
+        try:
+            ctx.scope.close_fft_display()
+        except Exception:  # noqa: BLE001 - 关显示失败不阻断
+            logger.error("scope close_fft_display failed", exc_info=True)
+
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
-    write_csv(csv_path, ["Noise (uVrms)"], [[round(noise_uv_rms, 3)]])
-    ctx.log_fn(f"[{item_key}] Output noise={noise_uv_rms:.3f} uVrms")
-    return ItemResult(item_key=item_key, name="Output Noise", unit="uVrms",
-                      passed=None, measured={"noise_uv_rms": round(noise_uv_rms, 3)},
-                      raw_csv_path=csv_path)
+    write_csv(csv_path, ["Center (kHz)", "Span (kHz)"],
+              [[round(center_hz / 1e3, 3), round(span_hz / 1e3, 3)]])
+    ctx.progress_fn(100, "Output Noise")
+    ctx.log_fn(f"[{item_key}] FFT center={center_hz / 1e3:g}kHz, span={span_hz / 1e3:g}kHz"
+               + (f", screenshot={png_path}" if png_path else ""))
+    measured = {"center_freq_khz": round(center_hz / 1e3, 3),
+                "freq_span_khz": round(span_hz / 1e3, 3),
+                "scope_channel": scope_ch}
+    result = ItemResult(item_key=item_key, name="Output Noise", unit="",
+                        passed=None, measured=measured, raw_csv_path=csv_path)
+    if png_path:
+        result.waveform_png = png_path
+    return result
 
 
 def line_transient(ctx: ItemContext) -> ItemResult:
@@ -576,7 +620,14 @@ LDO_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
         ParamSpec("psrr_freqs", "PSRR 频点", "text", "1kHz, 10kHz, 100kHz", "",
                   hint="逗号分隔"),
     )),
-    "ldo_output_noise": ("Output Noise", output_noise, True, False, ()),
+    "ldo_output_noise": ("Output Noise", output_noise, True, False, (
+        ParamSpec("scope_vout_channel", "示波器通道", "int", 1, "", minimum=1, maximum=4),
+        vin_bias(),
+        ParamSpec("noise_center_freq_khz", "中心频率", "float", 50.0, "kHz",
+                  minimum=0.001, maximum=1e6, decimals=3),
+        ParamSpec("noise_freq_span_khz", "频率范围", "float", 100.0, "kHz",
+                  minimum=0.01, maximum=1e6, decimals=3),
+    )),
     "ldo_load_transient": ("Load Transient Response", load_transient, True, False, (
         ParamSpec("transient_freqs", "瞬态频率", "text", "10Hz, 100Hz, 1kHz", "",
                   hint="逗号分隔"),

@@ -522,6 +522,35 @@ class DSOX4034A:
     # 其他
     # =========================
 
+    def setup_fft_display(self, source_channel: int, center_hz: float, span_hz: float,
+                          offset_db: float = -120.0, scale_db: float = 20.0):
+        """把 FFT 功能配成对指定输入通道的幅度谱分析（对数 dB 刻度，Hanning 窗）。
+
+        center_hz: 频谱中心频率；span_hz: 频率范围（DSOX 直接设 SPAN，非每格）。
+        offset_db: Y 轴参考电平偏移（dBV）；scale_db: Y 轴每格刻度（dB/div）。
+        """
+        self._ensure_connected()
+        self._validate_channel(source_channel)
+        logger.debug('DSOX4034A setup_fft_display: CH%d center=%sHz span=%sHz',
+                     source_channel, center_hz, span_hz)
+        self.write(':FUNCtion:OPERation FFT')
+        self.write(f':FUNCtion:SOURce1 CHANnel{source_channel}')
+        self.write(':FUNCtion:FFT:WINDow HANning')
+        self.write(':FUNCtion:FFT:VTYPe DECibel')
+        self.write(':FUNCtion:DISPlay ON')
+        # FFT 开启后仪器会自动定标，须等其稳定再设值，否则被覆盖
+        time.sleep(2.0)
+        self.write(f':FUNCtion:FFT:CENTer {center_hz:.0f}')
+        self.write(f':FUNCtion:FFT:SPAN {span_hz:.0f}')
+        self.write(f':FUNCtion:OFFSet {offset_db:.1f}')
+        self.write(f':FUNCtion:SCALe {scale_db:.1f}')
+
+    def close_fft_display(self):
+        """关闭 FFT 数学函数显示。"""
+        self._ensure_connected()
+        logger.debug('DSOX4034A close_fft_display')
+        self.write(':FUNCtion:DISPlay OFF')
+
     def ping(self) -> bool:
         try:
             _ = self.identify_instrument()

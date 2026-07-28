@@ -656,9 +656,9 @@ class OscilloscopeBaseUI(QWidget):
         self.visa_resource_combo.setFixedHeight(36)
         self.visa_resource_combo.setEditable(True)
         if DEBUG_MOCK:
-            self.visa_resource_combo.addItem("192.168.3.27")
+            self.visa_resource_combo.addItem("10.31.31.202")
         if DEBUG_MSO64B_FLAG:
-            self.visa_resource_combo.addItem("192.168.3.27")
+            self.visa_resource_combo.addItem("10.31.31.202")
         if DEBUG_DSOX4034A_FLAG:
             self.visa_resource_combo.addItem("TCPIP0::10.31.30.181::inst0::INSTR")
         if self.visa_resource_combo.isEditable() and self.visa_resource_combo.lineEdit():

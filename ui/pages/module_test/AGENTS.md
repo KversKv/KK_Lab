@@ -23,6 +23,7 @@
 
 - `measured` 用 `list[dict]`（非 `{"rows":[...]}`）才能被 `_measured_to_rows` 渲染成正表（quiescent 现为 dict，单列 `dIvin/dIvout/Iq`）。
 - quiescent 项：单点差分测（`iq_diff_measure`），CSV 为 `["dIvin (uA)","dIvout (uA)","Iq (uA)"]`；ENABLE 用 DR BIT/EN BIT 单 bit 位写（`set_dut_enable`）。
+- 添加新测试项时, 对于非供电的电源仪器, 需要先重置仪器状态, 再去进行测试;
 
 ## 局部坑点
 

@@ -804,6 +804,13 @@ class MockMSO64B:
     def capture_screen_png(self, **kwargs):
         return None
 
+    def setup_fft_display(self, source_channel, center_hz, span_hz,
+                          offset_db=-120.0, scale_db=20.0):
+        pass
+
+    def close_fft_display(self):
+        pass
+
     def get_channel_mean(self, channel):
         return 1.0 + random.gauss(0, 0.01)
 

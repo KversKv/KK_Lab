@@ -296,6 +296,31 @@ class MSO64B:
         self.set_channel_offset(channel, mean_vol - 0.02)
         time.sleep(0.1)
 
+    def setup_fft_display(self, source_channel, center_hz, span_hz,
+                          offset_db=-120.0, scale_db=20.0):
+        """把 MATH1 配成对指定输入通道的 FFT 幅度分析（dB 刻度，Hanning 窗）。
+
+        center_hz: 频谱中心频率；span_hz: 频率范围（换算为每格 span/10）。
+        offset_db: Y 轴参考电平偏移（dBV）；scale_db: Y 轴每格刻度（dB/div）。
+        """
+        logger.debug("MSO64B setup_fft_display: CH%s center=%sHz span=%sHz",
+                     source_channel, center_hz, span_hz)
+        self.instrument.write('MATH:MATH1:TYPe FFT')
+        self.instrument.write(f'MATH:MATH1:SOUrce CH{source_channel}')
+        self.instrument.write('MATH:MATH1:FFT:WINDow HANning')
+        self.instrument.write('MATH:MATH1:FFT:VERtical:UNIts DB')
+        self.instrument.write(f'MATH:MATH1:FFT:HORizontal:CENter {center_hz:.0f}')
+        self.instrument.write(f'MATH:MATH1:FFT:HORizontal:SCAle {span_hz / 10.0:.0f}')
+        self.instrument.write(f'MATH:MATH1:VERtical:OFFSet {offset_db:.1f}')
+        self.instrument.write(f'MATH:MATH1:VERtical:SCAle {scale_db:.1f}')
+        self.instrument.write('DISPlay:WAVEView1:MATH:MATH1:STATE ON')
+        time.sleep(0.5)
+
+    def close_fft_display(self):
+        """关闭 MATH1 FFT 显示。"""
+        logger.debug("MSO64B close_fft_display")
+        self.instrument.write('DISPlay:WAVEView1:MATH:MATH1:STATE OFF')
+
     def disconnect(self):
         logger.debug("MSO64B disconnect called")
         if self.instrument is not None:
@@ -343,7 +368,7 @@ class MSO64B:
 
 
 if __name__ == '__main__':
-    ip_address = '192.168.3.27'
+    ip_address = '10.31.31.202'
     mso64b = MSO64B(ip_address)
 
     try:
