@@ -24,6 +24,7 @@
 - `measured` 用 `list[dict]`（非 `{"rows":[...]}`）才能被 `_measured_to_rows` 渲染成正表（quiescent 现为 dict，单列 `dIvin/dIvout/Iq`）。
 - quiescent 项：单点差分测（`iq_diff_measure`），CSV 为 `["dIvin (uA)","dIvout (uA)","Iq (uA)"]`；ENABLE 用 DR BIT/EN BIT 单 bit 位写（`set_dut_enable`）。
 - 添加新测试项时, 对于非供电的电源仪器, 需要先重置仪器状态, 再去进行测试;
+- Load Transient Response（LDO/DCDC 共用 `_common.run_load_transient`）：真机流程=CCLoad + Slew MAX + 电流 ARB Pulse（I0/I1 取负，t0=T/2、t1=0、t2=T/2）→ `arb_on`+`arb_run` → 示波器设 scale/offset/timebase → `stop()` 暂停采集 → 截图 + Vmax/Vmin/Vmean 算过冲/欠冲 → 每组收尾 `arb_stop`+`exit_arb_current`；参数用 ptype="groups"（`transient_groups()`，默认 3 组 I0/I1/频率，弹窗 `_GroupsEditor` 可增删，无 base_key 全量返回）；CSV 第 0 列为组号，截图键 `{"Iload (mA)": str(组号)}` 借 `_shots_table_html` 的 iload 回退列（idx=0）并入报告。
 
 ## 局部坑点
 
@@ -33,3 +34,9 @@
 - **示波器连接联动**：mixin 的 `_on_mso64b_top_changed` 只更新 `scope_connected`，不刷新测试项表；子页基类必须覆盖它并追加 `_refresh_scope_item_state()`（running 时除外），否则连接示波器后 (scope) 项仍显示"未接示波器，跳过"且禁用，需切换页面才恢复。
 - **ItemParamsDialog override 语义**：无 `base_key` 的项级参数（reg_addr/msb/lsb/min/max_code 等）`get_override()` 必须全量返回（显示即生效）；曾用"与 prefill diff"语义，被 msb/lsb 联动改写的 max_code 会被误判"未改"而丢弃，致 Output Voltage Scan 误用默认 reg_addr=0x0 扫错寄存器。有 base_key 的基类参数才用 diff（未改回退基类 cfg）。
 - **按钮钉高（QSS 盒模型）**：钉死按钮高度用纯 QSS `min-height == max-height`，**不要**用 `setFixedHeight()`（会被 QSS min-height / sizeHint 以 min/max 约束盖住而失效）。总高 = content(min/max-height) + 上下padding + 2×border(1px)，故目标 35px 需 `min/max-height:33px; padding:0`（33+0+2=35）。在 `page_extra` 用 `#objectName` 覆盖（拼接在 `START_BTN_STYLE` 之后），可压过其 `min-height:36px` 与全局 `padding:6px`。
+
+
+## 开发环境
+- N6705C真机地址:TCPIP0::K-N6705C-06098.local::hislip0::INSTR
+- MSO64B真机地址:TCPIP0::10.31.31.202::inst0::INSTR
+- DSOX4034A真机地址:TCPIP0::10.31.30.181::inst0::INSTR

@@ -41,3 +41,4 @@
 - **§15 示波器截图差异**：DSOX4034A 用 `:DISP:DATA? PNG, COLor`；MSO64B 用 `HARDCopy` 系列。基类保留 `capture_screen(path)`，子类各自实现。
 - **§21 VISA 后端选择**：USBTMC 仪器在 Windows 上由 NI-VISA / Keysight IO 接管，`pyvisa-py` 会抛 `No device found.`。新增驱动自检：搜 `ResourceManager('@py')` 一律替换为"默认 + 可选 visa_library + 失败回退 @py"。
 - **§9 DEBUG_MOCK**：改值后必须重启应用；新增仪器忘加 Mock 会在 Mock 模式崩溃。
+- **N6705C ARB 电流脉冲（真机验证 2026-07）**：`ABOR:TRAN` 必须带通道列表（裸写报 `-109 Missing parameter`，故 `arb_stop(channel=None)` 默认 `(@1,2,3,4)`）；`ARB:CURR:PULS` 三段时序被仪器强制 `t0+t1+t2 == 1/freq`，不满足按比例自动压缩，`t2=0` 即零顶部宽度（无脉冲）；50% 占空取 `t0=T/2, t1=0, t2=T/2`（对应面板字段 t0=start / t1=top / t2=end）。

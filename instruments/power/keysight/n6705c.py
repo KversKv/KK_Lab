@@ -261,6 +261,47 @@ class N6705C:
         self.instr.write(f"ARB:VOLT:PULS:FREQ {frequency},(@{channel})")
         self.instr.write(f"VOLT:MODE ARB,(@{channel})")
 
+    def set_current_slew(self, channel, slew="MAX"):
+        """设置电流变化率 (Current Slew)，Load Transient 拉载需设为 MAX。
+
+        参数:
+            channel (int): 通道号
+            slew: "MAX" / "INF" 或数值 (A/s)
+        """
+        logger.debug("N6705C set_current_slew: CH%s = %s", channel, slew)
+        self.instr.write(f"CURR:SLEW {slew},(@{channel})")
+
+    def set_arb_current_pulse(self, channel, i0, i1, t0, t1, t2, frequency):
+        """
+        配置ARB电流脉冲波形 (Pulse Shape)，负载通道 (CCLoad) 做 Load Transient 用。
+
+        参数:
+            channel (int): 通道号
+            i0 (float): 基准电流(A)，负载拉载取负值
+            i1 (float): 脉冲顶部电流(A)，负载拉载取负值
+            t0 (float): 起始保持时间(s)
+            t1 (float): 终止保持时间(s)
+            t2 (float): 脉冲顶部持续时间(s)
+            frequency (float): 脉冲重复频率(Hz)
+
+        注意（真机验证）：仪器强制 t0+t1+t2 == 1/frequency，不满足会按比例
+        自动压缩各段；t2=0 时脉冲顶部宽度为 0（无瞬态）。50% 占空比取
+        t0=T/2, t1=0, t2=T/2。
+        """
+        self.instr.write(f"ARB:FUNC:TYPE CURR,(@{channel})")
+        self.instr.write(f"ARB:FUNC:SHAP PULS,(@{channel})")
+        self.instr.write(f"ARB:CURR:PULS:STAR {i0},(@{channel})")
+        self.instr.write(f"ARB:CURR:PULS:TOP {i1},(@{channel})")
+        self.instr.write(f"ARB:CURR:PULS:STAR:TIM {t0},(@{channel})")
+        self.instr.write(f"ARB:CURR:PULS:END:TIM {t1},(@{channel})")
+        self.instr.write(f"ARB:CURR:PULS:TOP:TIM {t2},(@{channel})")
+        self.instr.write(f"ARB:CURR:PULS:FREQ {frequency},(@{channel})")
+        self.instr.write(f"CURR:MODE ARB,(@{channel})")
+
+    def exit_arb_current(self, channel):
+        """退出电流 ARB 模式，恢复固定电流 (CURR:MODE FIX)。"""
+        self.instr.write(f"CURR:MODE FIX,(@{channel})")
+
     def set_arb_continuous(self, channel, flag=False):
         if flag:
             self.instr.write(f"ARB:TERM:LAST ON,(@{channel})")
@@ -284,8 +325,12 @@ class N6705C:
         self.instr.write("TRIG:ARB:SOUR BUS")
         self.instr.write("*TRG")
 
-    def arb_stop(self):
-        self.instr.write("ABOR:TRAN")
+    def arb_stop(self, channel=None):
+        # 裸 ABOR:TRAN 会报 -109 Missing parameter，必须带通道列表（真机验证）
+        if channel is None:
+            self.instr.write("ABOR:TRAN (@1,2,3,4)")
+        else:
+            self.instr.write(f"ABOR:TRAN (@{channel})")
 
     def test_arb_staircase(self, channel, v0=3, v1=4.3, t0=1, t1=10, t2=1, steps=500):
         logger.info("[测试] set_arb_staircase on channel %s", channel)
@@ -306,6 +351,38 @@ class N6705C:
         voltage = self.measure_voltage(channel)
         logger.info("  当前电压: %.4f V", voltage)
         logger.info("[测试] 完成")
+
+    def test_load_transient_arb(self, channel, i0_ma=10, i1_ma=100, freq_hz=100):
+        """真机验证：CCLoad 电流 ARB 脉冲（Load Transient 拉载流程）。"""
+        period = 1.0 / freq_hz
+        t0 = period / 2.0
+        t2 = period / 2.0
+        logger.info("[测试] set_arb_current_pulse on channel %s", channel)
+        logger.info("  参数: i0=%gmA, i1=%gmA, freq=%gHz (t0=%gs, t1=0, t2=%gs)",
+                    i0_ma, i1_ma, freq_hz, t0, t2)
+
+        self.arb_stop()
+        self.set_mode(channel, "CCLoad")
+        self.set_current_slew(channel, "MAX")
+        # CCLoad 拉载电流为负（与 set_load_current 一致）
+        self.set_arb_current_pulse(channel, -abs(i0_ma) / 1000.0,
+                                   -abs(i1_ma) / 1000.0, t0, 0.0, t2, freq_hz)
+        self.set_arb_continuous(channel, flag=False)
+        self.arb_on(channel)
+        self.channel_on(channel)
+        logger.info("  ARB配置完成, 正在触发...")
+        self.arb_run()
+        logger.info("  ARB已触发, 脉冲运行中, 请在示波器上观察负载瞬态波形")
+
+        time.sleep(3)
+        current = self.measure_current(channel)
+        logger.info("  当前电流: %s", self.format_current(current))
+
+        self.arb_stop()
+        self.exit_arb_current(channel)
+        self.set_current(channel, 0)
+        self.channel_off(channel)
+        logger.info("[测试] 完成, 已恢复固定电流模式并关断通道")
 
     def read_mmem_data(self, filepath):
         import struct
@@ -940,14 +1017,14 @@ class N6705C:
 
 
 if __name__ == "__main__":
-    IP = "192.168.3.99"
-    CHANNEL = 1
+    RESOURCE = "TCPIP0::K-N6705C-06098.local::hislip0::INSTR"
+    CHANNEL = 3
 
-    n6705c = N6705C(IP)
+    n6705c = N6705C(RESOURCE)
     try:
         idn = n6705c.instr.query("*IDN?").strip()
         logger.info("已连接: %s", idn)
-        n6705c.test_arb_staircase(CHANNEL)
+        n6705c.test_load_transient_arb(CHANNEL)
     finally:
         n6705c.disconnect()
         logger.info("已断开连接")

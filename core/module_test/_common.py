@@ -376,7 +376,7 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
 
 
 def _capture_scope_png(ctx: "ItemContext", item_key: str, load_ma: float,
-                       shot_dir: str) -> str | None:
+                       shot_dir: str, tag: str | None = None) -> str | None:
     """捕获当前负载点的示波器截图，落盘 PNG，返回路径（Mock/失败返回 None）。"""
     if ctx.is_mock or ctx.scope is None:
         return None
@@ -389,7 +389,8 @@ def _capture_scope_png(ctx: "ItemContext", item_key: str, load_ma: float,
         return None
     try:
         os.makedirs(shot_dir, exist_ok=True)
-        path = os.path.join(shot_dir, f"{item_key}_{load_ma:g}mA.png")
+        suffix = tag if tag else f"{load_ma:g}mA"
+        path = os.path.join(shot_dir, f"{item_key}_{suffix}.png")
         with open(path, "wb") as f:
             f.write(png)
         return path
@@ -480,6 +481,134 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
         "i_step_ma": i_step,
         "max_vpp_mv": max_row[2] if max_row else "",
         "max_vpp_at_ma": max_row[0] if max_row else "",
+    }
+    if screenshots:
+        measured["screenshots"] = screenshots
+    result = ItemResult(item_key=item_key, name=name, unit="mV",
+                        passed=None, measured=measured, raw_csv_path=csv_path)
+    if screenshots:
+        result.waveform_png = screenshots[0]["png"]
+    return result
+
+
+def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
+                       mock_over_mv: float, mock_under_mv: float) -> "ItemResult":
+    """Load Transient Response（LDO / DCDC 共用，依赖示波器）。
+
+    流程（对齐手动测试，逐组执行）：
+      1. 负载通道置 CCLoad，Current Slew=MAX；
+      2. Arb Type=Current / Shape=Pulse，I0/I1 取负（拉载），
+         t0=半周期、t1=0、t2=半周期（50% 占空；真机强制 t0+t1+t2=1/freq，
+         t2=0 会得到零顶部宽度，见 n6705c.set_arb_current_pulse docstring）；
+      3. INIT:TRAN + BUS 触发使能 ARB（连续脉冲）；
+      4. 示波器按频率设 timebase（整屏约 2 周期），量程/偏置按预期摆幅与标称 Vout 设置；
+      5. 稳定后暂停采集，截图并测 Vmax/Vmin/Vmean/Vpp，
+         过冲=Vmax-Vmean、欠冲=Vmean-Vmin（mV）；
+      每组测完 ABOR:TRAN + CURR:MODE FIX 复位负载通道，再换下一组。
+    """
+    from core.module_test.param_spec import DEFAULT_TRANSIENT_GROUPS
+    from core.module_test.result_model import ItemResult
+
+    if ctx.scope is None:
+        return ItemResult(item_key=item_key, name=name, passed=None,
+                          notes="未连接示波器，跳过")
+
+    cfg = ctx.config
+    groups = cfg.get("transient_groups") or DEFAULT_TRANSIENT_GROUPS
+    iload_ch = parse_channel(cfg.get("iload_channel", 3))
+    scope_ch = int(cfg.get("scope_vout_channel", 1))
+    nominal_v = float(cfg.get("vout_nominal_mv", 1800)) / 1000.0
+    vspan_v = float(cfg.get("transient_vspan_mv", 200)) / 1000.0
+    settle_s = float(cfg.get("settle_time_s", 0.05))
+
+    rows: list[list[Any]] = []
+    screenshots: list[dict[str, Any]] = []
+    shot_dir = os.path.join(ctx.out_dir, "screenshots")
+
+    if not ctx.is_mock:
+        try:
+            ctx.n6705c.arb_stop()
+        except Exception:  # noqa: BLE001 - 复位失败降级记录，继续配置
+            logger.error("arb_stop failed before %s", item_key, exc_info=True)
+        setup_load_channel(ctx, iload_ch)
+
+    for idx, g in enumerate(groups):
+        if ctx.stop_flag_fn():
+            break
+        i0_ma = float(g.get("i0_ma", 10.0))
+        i1_ma = float(g.get("i1_ma", 100.0))
+        freq = float(g.get("freq_hz", 100.0))
+        if freq <= 0:
+            ctx.log_fn(f"[{item_key}] 组{idx + 1} 频率无效（{freq:g}Hz），跳过")
+            continue
+        period = 1.0 / freq
+        label = f"组{idx + 1} {i0_ma:g}->{i1_ma:g}mA @{freq:g}Hz"
+
+        if ctx.is_mock:
+            over = mock_jitter(mock_over_mv, 0.05)
+            under = mock_jitter(mock_under_mv, 0.05)
+            vpp = over + under
+            shot = None
+        else:
+            over = under = vpp = 0.0
+            shot = None
+            try:
+                ctx.n6705c.set_current_slew(iload_ch, "MAX")
+                ctx.n6705c.set_arb_current_pulse(
+                    iload_ch, -abs(i0_ma) / 1000.0, -abs(i1_ma) / 1000.0,
+                    period / 2.0, 0.0, period / 2.0, freq)
+                ctx.n6705c.arb_on(iload_ch)
+                ctx.n6705c.arb_run()
+
+                ctx.scope.set_channel_scale(scope_ch, vspan_v / 4.0)
+                ctx.scope.set_channel_offset(scope_ch, nominal_v)
+                ctx.scope.set_timebase_scale(period / 5.0)
+                settle(ctx, max(settle_s * 8, 0.5))
+
+                ctx.scope.stop()
+                vmax = float(ctx.scope.get_channel_max(scope_ch))
+                vmin = float(ctx.scope.get_channel_min(scope_ch))
+                vbase = float(ctx.scope.get_channel_mean(scope_ch))
+                vpp = float(ctx.scope.get_channel_pk2pk(scope_ch)) * 1000.0
+                over = (vmax - vbase) * 1000.0
+                under = (vbase - vmin) * 1000.0
+                shot = _capture_scope_png(ctx, item_key, i1_ma, shot_dir,
+                                          tag=f"g{idx + 1}_{freq:g}Hz")
+                ctx.scope.run()
+            except Exception:  # noqa: BLE001 - 单组失败降级，继续下一组
+                logger.error("load transient group %d failed", idx + 1, exc_info=True)
+                ctx.log_fn(f"[{item_key}] [ERROR] {label} 执行异常，记 0 继续")
+            finally:
+                try:
+                    ctx.n6705c.arb_stop()
+                    ctx.n6705c.exit_arb_current(iload_ch)
+                except Exception:  # noqa: BLE001
+                    logger.error("exit arb ch%d failed", iload_ch, exc_info=True)
+
+        rows.append([idx + 1, i0_ma, i1_ma, freq,
+                     round(over, 3), round(under, 3), round(vpp, 3)])
+        if shot:
+            screenshots.append({"Iload (mA)": str(idx + 1), "png": shot})
+        ctx.progress_fn(int((idx + 1) / len(groups) * 100), f"{name} {label}")
+        ctx.log_fn(f"[{item_key}] {label} -> Overshoot={over:.3f} mV, "
+                   f"Undershoot={under:.3f} mV, Vpp={vpp:.3f} mV")
+
+    if not ctx.is_mock:
+        teardown_load(ctx, iload_ch)
+
+    csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
+    write_csv(csv_path,
+              ["Group", "I0 (mA)", "I1 (mA)", "Freq (Hz)",
+               "Overshoot (mV)", "Undershoot (mV)", "Vpp (mV)"], rows)
+
+    max_over = max(rows, key=lambda r: r[4], default=None)
+    max_under = max(rows, key=lambda r: r[5], default=None)
+    measured: dict[str, Any] = {
+        "groups": len(rows),
+        "max_overshoot_mv": max_over[4] if max_over else "",
+        "max_overshoot_group": max_over[0] if max_over else "",
+        "max_undershoot_mv": max_under[5] if max_under else "",
+        "max_undershoot_group": max_under[0] if max_under else "",
     }
     if screenshots:
         measured["screenshots"] = screenshots

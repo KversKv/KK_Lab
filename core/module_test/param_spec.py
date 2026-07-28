@@ -39,6 +39,8 @@ class ParamSpec:
     maximum: float = 1_000_000.0
     decimals: int = 3
     hint: str = ""
+    # ptype="groups" 时的子列定义（复用 ParamSpec 描述每列：key/label/unit/min/max/decimals）
+    columns: tuple = ()
 
 
 # 常用基类衍生字段的复用定义（避免各项重复书写）
@@ -138,4 +140,27 @@ def quiescent_params() -> tuple[ParamSpec, ...]:
         ParamSpec("iq_off_en_val", "关断态 EN 值", "int", 0, "", minimum=0, maximum=1),
         ParamSpec("iq_vout_offset_mv", "Vout 外供偏置", "float", 20.0, "mV",
                   minimum=0.0, maximum=1000.0, decimals=1),
+    )
+
+
+# —— 负载瞬态分组参数：每组 I0 / I1 / 频率，默认三组，弹窗可增删 ——
+DEFAULT_TRANSIENT_GROUPS: list[dict] = [
+    {"i0_ma": 10.0, "i1_ma": 100.0, "freq_hz": 10.0},
+    {"i0_ma": 10.0, "i1_ma": 100.0, "freq_hz": 100.0},
+    {"i0_ma": 10.0, "i1_ma": 100.0, "freq_hz": 1000.0},
+]
+
+
+def transient_groups() -> ParamSpec:
+    """Load Transient 分组参数（ptype="groups"，UI 渲染为可增删行的表格）。"""
+    return ParamSpec(
+        "transient_groups", "瞬态组", "groups", DEFAULT_TRANSIENT_GROUPS, "",
+        columns=(
+            ParamSpec("i0_ma", "I0", "float", 10.0, "mA",
+                      minimum=0.0, maximum=100_000.0, decimals=3),
+            ParamSpec("i1_ma", "I1", "float", 100.0, "mA",
+                      minimum=0.0, maximum=100_000.0, decimals=3),
+            ParamSpec("freq_hz", "频率", "float", 100.0, "Hz",
+                      minimum=0.001, maximum=1_000_000.0, decimals=3),
+        ),
     )

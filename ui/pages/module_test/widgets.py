@@ -185,6 +185,78 @@ DIALOG_QSS = f"""
 """
 
 
+class _GroupsEditor(QWidget):
+    """分组参数表格编辑器（ptype="groups"）：每组一行，支持添加 / 删除。
+
+    列由 ``ParamSpec.columns`` 描述；``value()`` 返回 ``list[dict]``，
+    单元格按列定义解析为 float，解析失败的行整行跳过。
+    """
+
+    def __init__(self, spec, prefill, parent: QWidget | None = None):
+        super().__init__(parent)
+        self._columns = spec.columns
+        self._defaults = {c.key: c.default for c in self._columns}
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(6)
+
+        self.table = QTableWidget(0, len(self._columns))
+        headers = [f"{c.label} ({c.unit})" if c.unit else c.label
+                   for c in self._columns]
+        self.table.setHorizontalHeaderLabels(headers)
+        self.table.verticalHeader().setVisible(False)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        root.addWidget(self.table)
+
+        btn_row = QHBoxLayout()
+        btn_row.setContentsMargins(0, 0, 0, 0)
+        add_btn = QPushButton("添加组")
+        del_btn = QPushButton("删除选中组")
+        add_btn.clicked.connect(lambda: self._append_row({}))
+        del_btn.clicked.connect(self._remove_selected)
+        btn_row.addWidget(add_btn)
+        btn_row.addWidget(del_btn)
+        btn_row.addStretch(1)
+        root.addLayout(btn_row)
+
+        rows = prefill if isinstance(prefill, list) and prefill else [dict(self._defaults)]
+        for row in rows:
+            self._append_row(row if isinstance(row, dict) else {})
+
+    def _append_row(self, values: dict):
+        r = self.table.rowCount()
+        self.table.insertRow(r)
+        for c, col in enumerate(self._columns):
+            v = values.get(col.key, self._defaults[col.key])
+            self.table.setItem(r, c, QTableWidgetItem(f"{float(v):g}"))
+
+    def _remove_selected(self):
+        rows = sorted({i.row() for i in self.table.selectedIndexes()},
+                      reverse=True)
+        if not rows and self.table.rowCount() > 0:
+            rows = [self.table.rowCount() - 1]
+        for r in rows:
+            self.table.removeRow(r)
+
+    def value(self) -> list[dict]:
+        out: list[dict] = []
+        for r in range(self.table.rowCount()):
+            row: dict = {}
+            valid = True
+            for c, col in enumerate(self._columns):
+                item = self.table.item(r, c)
+                text = item.text().strip() if item else ""
+                try:
+                    row[col.key] = float(text)
+                except ValueError:
+                    valid = False
+                    break
+            if valid:
+                out.append(row)
+        return out
+
+
 class ItemParamsDialog(QDialog):
     """测试项参数设置弹窗（依 ParamSpec 序列自动生成表单）。
 
@@ -214,18 +286,29 @@ class ItemParamsDialog(QDialog):
             grid.setHorizontalSpacing(10)
             grid.setVerticalSpacing(8)
             grid.setColumnStretch(1, 1)
-            for r, spec in enumerate(specs):
-                label_txt = f"{spec.label} ({spec.unit})" if spec.unit else spec.label
-                lbl = QLabel(label_txt)
-                lbl.setObjectName("dlgFieldLabel")
-                lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                grid.addWidget(lbl, r, 0)
-
+            row = 0
+            for spec in specs:
                 prefill = self._resolve_prefill(spec, current_override, base_value_fn)
                 self._prefill[spec.key] = prefill
                 editor = self._make_editor(spec, prefill)
                 self._editors[spec.key] = editor
-                grid.addWidget(editor, r, 1)
+
+                label_txt = f"{spec.label} ({spec.unit})" if spec.unit else spec.label
+                lbl = QLabel(label_txt)
+                lbl.setObjectName("dlgFieldLabel")
+
+                if spec.ptype == "groups":
+                    # 表格编辑器占整行（表头自带单位标签）
+                    grid.addWidget(lbl, row, 0, 1, 2)
+                    grid.addWidget(editor, row + 1, 0, 1, 2)
+                    self.setMinimumWidth(460)
+                    row += 2
+                    continue
+
+                lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                grid.addWidget(lbl, row, 0)
+                grid.addWidget(editor, row, 1)
+                row += 1
             root.addLayout(grid)
 
         self._wire_code_range_autocalc()
@@ -252,6 +335,8 @@ class ItemParamsDialog(QDialog):
         return spec.default
 
     def _make_editor(self, spec, prefill) -> QWidget:
+        if spec.ptype == "groups":
+            return _GroupsEditor(spec, prefill, parent=self)
         if spec.ptype == "int":
             w = QSpinBox()
             w.setRange(int(spec.minimum), int(spec.maximum))
@@ -304,6 +389,8 @@ class ItemParamsDialog(QDialog):
 
     def _editor_value(self, spec):
         w = self._editors[spec.key]
+        if spec.ptype == "groups":
+            return w.value()
         if spec.ptype == "int":
             return w.value()
         if spec.ptype == "float":

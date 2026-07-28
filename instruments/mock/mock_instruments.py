@@ -153,7 +153,7 @@ class MockN6705C:
     def arb_run(self):
         pass
 
-    def arb_stop(self):
+    def arb_stop(self, channel=None):
         pass
 
     def arb_status(self, channel):
@@ -169,6 +169,15 @@ class MockN6705C:
         pass
 
     def set_arb_pulse(self, channel, v0, v1, t0, t1, t2, frequency):
+        pass
+
+    def set_current_slew(self, channel, slew="MAX"):
+        pass
+
+    def set_arb_current_pulse(self, channel, i0, i1, t0, t1, t2, frequency):
+        pass
+
+    def exit_arb_current(self, channel):
         pass
 
     def set_arb_continuous(self, channel, flag=False):

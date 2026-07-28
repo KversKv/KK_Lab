@@ -11,14 +11,14 @@ import os
 
 from core.module_test._common import (
     ItemContext, linspace, measure_avg, mock_jitter, parse_channel,
-    run_load_capability_ripple, run_vout_scan, set_load_current, settle,
-    setup_load_channel, setup_meter_channel, setup_source_channel,
-    teardown_load, write_csv,
+    run_load_capability_ripple, run_load_transient, run_vout_scan,
+    set_load_current, settle, setup_load_channel, setup_meter_channel,
+    setup_source_channel, teardown_load, write_csv,
 )
 from core.module_test.result_model import ItemResult
 from core.module_test.param_spec import (
     ParamSpec, average_cnt, load_sweep, quiescent_params, reg_scan_params,
-    settle_time, vin_bias, vin_sweep, vout_tol,
+    settle_time, transient_groups, vin_bias, vin_sweep, vout_tol,
 )
 from log_config import get_logger
 
@@ -210,24 +210,9 @@ def psrr(ctx: ItemContext) -> ItemResult:
 
 
 def load_transient(ctx: ItemContext) -> ItemResult:
-    """负载瞬态响应（依赖示波器）。"""
-    item_key = "ldo_load_transient"
-    if ctx.scope is None:
-        return _skipped(item_key, "Load Transient Response", "未连接示波器，跳过")
-    freqs = ctx.config.get("transient_freqs", ["10Hz", "100Hz", "1kHz"])
-    rows: list[list] = []
-    for i, f in enumerate(freqs):
-        if ctx.stop_flag_fn():
-            break
-        overshoot = mock_jitter(30.0, 0.05) if ctx.is_mock else 0.0
-        undershoot = mock_jitter(-25.0, 0.05) if ctx.is_mock else 0.0
-        recover_us = mock_jitter(50.0, 0.1) if ctx.is_mock else 0.0
-        rows.append([f, round(overshoot, 3), round(undershoot, 3), round(recover_us, 3)])
-        ctx.progress_fn(int((i + 1) / len(freqs) * 100), f"Transient {f}")
-    csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
-    write_csv(csv_path, ["Freq", "Overshoot (mV)", "Undershoot (mV)", "Recover (us)"], rows)
-    return ItemResult(item_key=item_key, name="Load Transient Response", unit="mV",
-                      passed=None, measured={"rows": rows}, raw_csv_path=csv_path)
+    """负载瞬态响应（依赖示波器，逻辑见 _common.run_load_transient）。"""
+    return run_load_transient(ctx, "ldo_load_transient", "Load Transient Response",
+                              mock_over_mv=30.0, mock_under_mv=25.0)
 
 
 def dropout(ctx: ItemContext) -> ItemResult:
@@ -629,8 +614,12 @@ LDO_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
                   minimum=0.01, maximum=1e6, decimals=3),
     )),
     "ldo_load_transient": ("Load Transient Response", load_transient, True, False, (
-        ParamSpec("transient_freqs", "瞬态频率", "text", "10Hz, 100Hz, 1kHz", "",
-                  hint="逗号分隔"),
+        ParamSpec("scope_vout_channel", "示波器通道", "int", 1, "", minimum=1, maximum=4),
+        transient_groups(),
+        ParamSpec("transient_vspan_mv", "预期摆幅", "float", 200.0, "mV",
+                  minimum=1.0, maximum=10000.0, decimals=1,
+                  hint="示波器量程按此设置"),
+        settle_time(),
     )),
     "ldo_line_transient": ("Line Transient Response", line_transient, True, False, (
         ParamSpec("line_transient_steps", "阶跃序列", "text", "3.2->4.2V, 4.2->3.2V", "",
