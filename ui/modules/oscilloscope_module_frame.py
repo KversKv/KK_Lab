@@ -36,6 +36,8 @@ def _scope_search_style(h=_SCOPE_BTN_HEIGHT, r=_SCOPE_BTN_RADIUS):
             color: #dce7ff;
             font-weight: 600;
             min-height: {h}px;
+            max-height: {h}px;
+            padding: 2px 8px;
         }}
         QPushButton:hover {{
             background-color: #1C2D55;
@@ -61,6 +63,8 @@ def _scope_connect_style(h=_SCOPE_BTN_HEIGHT, r=_SCOPE_BTN_RADIUS):
             color: #10e7bc;
             font-weight: 700;
             min-height: {h}px;
+            max-height: {h}px;
+            padding: 2px 8px;
         }}
         QPushButton:hover {{
             background-color: #064744;
@@ -87,6 +91,8 @@ def _scope_disconnect_style(h=_SCOPE_BTN_HEIGHT, r=_SCOPE_BTN_RADIUS):
             color: #ffb7d3;
             font-weight: 700;
             min-height: {h}px;
+            max-height: {h}px;
+            padding: 2px 8px;
         }}
         QPushButton:hover {{
             background-color: #4a0b31;
@@ -323,8 +329,10 @@ class OscilloscopeConnectionMixin:
         scope_row.setContentsMargins(0, 2, 0, 0)
 
         self.scope_search_btn = _ScopeSearchButton()
+        self.scope_search_btn.setFixedHeight(_SCOPE_BTN_HEIGHT)
 
         self.scope_connect_btn = QPushButton()
+        self.scope_connect_btn.setFixedHeight(_SCOPE_BTN_HEIGHT)
         _update_scope_btn_state(self.scope_connect_btn, connected=False)
 
         scope_row.addWidget(self.scope_search_btn)

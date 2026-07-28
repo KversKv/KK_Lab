@@ -152,8 +152,12 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         content_layout.setContentsMargins(8, 8, 8, 8)
         content_layout.setSpacing(8)
 
-        content_layout.addWidget(self._build_connection_group())
-        content_layout.addWidget(self._build_config_group())
+        # 仪器连接 + 被测配置 并排一行，测试项清单整宽置于下方
+        top_row = QHBoxLayout()
+        top_row.setSpacing(8)
+        top_row.addWidget(self._build_connection_group(), 1)
+        top_row.addWidget(self._build_config_group(), 1)
+        content_layout.addLayout(top_row)
         content_layout.addWidget(self._build_items_group())
         content_layout.addStretch()
 
@@ -180,7 +184,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         root.addWidget(self._splitter)
 
     def _build_connection_group(self) -> "CollapsibleGroupBox":
-        box = CollapsibleGroupBox("仪器连接", expanded=True)
+        box = CollapsibleGroupBox("Instrument Connection", expanded=True)
         lay = box.content_layout
         lay.setSpacing(4)
 
@@ -214,7 +218,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         return lbl
 
     def _build_config_group(self) -> "CollapsibleGroupBox":
-        box = CollapsibleGroupBox("被测配置", expanded=True)
+        box = CollapsibleGroupBox("DUT Configuration", expanded=True)
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(8)
@@ -327,7 +331,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
             w.setVisible(checked)
 
     def _build_items_group(self) -> "CollapsibleGroupBox":
-        box = CollapsibleGroupBox("测试项清单（勾选要执行的项）", expanded=True)
+        box = CollapsibleGroupBox("Test Items (check to run)", expanded=True)
         lay = box.content_layout
         self.items_table = QTableWidget(0, 5)
         self.items_table.setHorizontalHeaderLabels(["选", "测试项", "主要仪器", "判定/记录", "参数"])
