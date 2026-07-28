@@ -373,3 +373,118 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
     return ItemResult(item_key=item_key, name=name, unit="mV",
                       passed=None, measured=measured, raw_csv_path=csv_path,
                       notes=f"有效段步进 {step_voltage_mv:.3f}mV，线性度 {linearity_pct:.3f}%")
+
+
+def _capture_scope_png(ctx: "ItemContext", item_key: str, load_ma: float,
+                       shot_dir: str) -> str | None:
+    """捕获当前负载点的示波器截图，落盘 PNG，返回路径（Mock/失败返回 None）。"""
+    if ctx.is_mock or ctx.scope is None:
+        return None
+    try:
+        png = ctx.scope.capture_screen_png()
+    except Exception:  # noqa: BLE001 - 截图失败不阻断扫描
+        logger.error("scope capture_screen_png failed @%gmA", load_ma, exc_info=True)
+        return None
+    if not png:
+        return None
+    try:
+        os.makedirs(shot_dir, exist_ok=True)
+        path = os.path.join(shot_dir, f"{item_key}_{load_ma:g}mA.png")
+        with open(path, "wb") as f:
+            f.write(png)
+        return path
+    except Exception:  # noqa: BLE001
+        logger.error("save scope png failed @%gmA", load_ma, exc_info=True)
+        return None
+
+
+def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
+                               mock_vpp_base: float,
+                               mock_rms_base: float) -> "ItemResult":
+    """Load Capability & Ripple（LDO / DCDC 共用，依赖示波器）。
+
+    流程：Vin=PS2Q 源上电，CCLoad 从起始负载按步进扫到结束负载；
+    每个负载点测输出电压（N6705C 电压表）与纹波（示波器 AC 耦合 Vpp/RMS，
+    set_AutoRipple_test 自动优化档位），并逐点捕获示波器截图进报告。
+    负载通道 / 输出（电压表）通道复用被测配置；示波器通道由项级参数设置。
+    """
+    from core.module_test.result_model import ItemResult
+
+    if ctx.scope is None:
+        return ItemResult(item_key=item_key, name=name, passed=None,
+                          notes="未连接示波器，跳过")
+
+    cfg = ctx.config
+    scope_ch = int(cfg.get("scope_vout_channel", 1))
+    vin_ch = parse_channel(cfg.get("vin_channel", 1))
+    vout_ch = parse_channel(cfg.get("vout_channel", 1))
+    iload_ch = parse_channel(cfg.get("iload_channel", 3))
+    vin_v = float(cfg.get("vin_v", 3.8))
+    i_start = float(cfg.get("iload_start_ma", 0))
+    i_end = float(cfg.get("iload_end_ma", 200))
+    i_step = float(cfg.get("iload_step_ma", 20))
+    settle_s = float(cfg.get("settle_time_s", 0.05))
+    nominal_mv = float(cfg.get("vout_nominal_mv", 1800))
+
+    points = linspace(i_start, i_end, i_step)
+    rows: list[list[Any]] = []
+    screenshots: list[dict[str, Any]] = []
+    shot_dir = os.path.join(ctx.out_dir, "screenshots")
+
+    if not ctx.is_mock:
+        setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
+        setup_meter_channel(ctx, vout_ch)
+        setup_load_channel(ctx, iload_ch)
+
+    for i, il in enumerate(points):
+        if ctx.stop_flag_fn():
+            break
+        if ctx.is_mock:
+            vout = mock_jitter(nominal_mv - il * 0.02, 0.002)
+            vpp = mock_jitter(mock_vpp_base + il * 0.005, 0.08)
+            rms = mock_jitter(mock_rms_base + il * 0.001, 0.08)
+            shot = None
+        else:
+            set_load_current(ctx, iload_ch, il / 1000.0)
+            settle(ctx, max(settle_s * 8, 0.4))
+            try:
+                ctx.scope.set_AutoRipple_test(scope_ch)
+                settle(ctx, 0.3)
+                vpp = float(ctx.scope.get_channel_pk2pk(scope_ch)) * 1000.0  # V->mV
+                rms = float(ctx.scope.get_channel_rms(scope_ch)) * 1000.0
+            except Exception:  # noqa: BLE001 - 单点读数失败降级，继续扫描
+                logger.error("scope ripple read failed @%gmA", il, exc_info=True)
+                vpp = 0.0
+                rms = 0.0
+            vout = measure_avg(ctx, "measure_voltage", vout_ch,
+                               count=1, settle_s=settle_s,
+                               default=nominal_mv / 1000.0) * 1000.0
+            shot = _capture_scope_png(ctx, item_key, il, shot_dir)
+        rows.append([il, round(vout, 4), round(vpp, 4), round(rms, 4)])
+        if shot:
+            screenshots.append({"Iload (mA)": il, "png": shot})
+        ctx.progress_fn(int((i + 1) / len(points) * 100), f"{name} {il:g}mA")
+        ctx.log_fn(f"[{item_key}] Iload={il:g}mA -> Vout={vout:.4f} mV, "
+                   f"Vpp={vpp:.3f} mV, RMS={rms:.3f} mV")
+    if not ctx.is_mock:
+        teardown_load(ctx, iload_ch)
+
+    csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
+    write_csv(csv_path, ["Iload (mA)", "Vout (mV)", "Vpp (mV)", "RMS (mV)"], rows)
+
+    max_row = max(rows, key=lambda r: r[2], default=None)
+    measured: dict[str, Any] = {
+        "points": len(rows),
+        "i_start_ma": i_start,
+        "i_end_ma": i_end,
+        "i_step_ma": i_step,
+        "max_vpp_mv": max_row[2] if max_row else "",
+        "max_vpp_at_ma": max_row[0] if max_row else "",
+    }
+    if screenshots:
+        measured["screenshots"] = screenshots
+    result = ItemResult(item_key=item_key, name=name, unit="mV",
+                        passed=None, measured=measured, raw_csv_path=csv_path)
+    if screenshots:
+        result.waveform_png = screenshots[0]["png"]
+    return result

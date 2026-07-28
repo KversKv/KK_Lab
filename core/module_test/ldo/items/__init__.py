@@ -11,8 +11,9 @@ import os
 
 from core.module_test._common import (
     ItemContext, linspace, measure_avg, mock_jitter, parse_channel,
-    run_vout_scan, set_load_current, settle, setup_load_channel,
-    setup_meter_channel, setup_source_channel, teardown_load, write_csv,
+    run_load_capability_ripple, run_vout_scan, set_load_current, settle,
+    setup_load_channel, setup_meter_channel, setup_source_channel,
+    teardown_load, write_csv,
 )
 from core.module_test.result_model import ItemResult
 from core.module_test.param_spec import (
@@ -181,46 +182,12 @@ def quiescent(ctx: ItemContext) -> ItemResult:
 
 
 def ripple(ctx: ItemContext) -> ItemResult:
-    """输出纹波（依赖示波器）。
+    """Load Capability & Ripple（依赖示波器，逻辑见 _common.run_load_capability_ripple）。
 
-    流程：Vin=PS2Q 源上电、带额定负载，示波器 AC 耦合测 Vout 纹波，
-    调用 set_AutoRipple_test 自动优化档位后读 Vpp / RMS。
+    从起始负载按步进扫到结束负载，逐点测输出电压与纹波并捕获示波器截图。
     """
-    item_key = "ldo_ripple"
-    if ctx.scope is None:
-        return _skipped(item_key, "Output Ripple", "未连接示波器，跳过")
-    cfg = ctx.config
-    scope_ch = int(cfg.get("scope_vout_channel", 1))
-    vin_ch = parse_channel(cfg.get("vin_channel", 2))
-    iload_ch = parse_channel(cfg.get("iload_channel", 3))
-    vin_v = float(cfg.get("vin_v", 3.8))
-    load_ma = float(cfg.get("ripple_load_ma", 100))
-    settle_s = float(cfg.get("settle_time_s", 0.05))
-
-    if ctx.is_mock:
-        vpp = mock_jitter(2.5, 0.1)
-        rms = mock_jitter(0.4, 0.1)
-    else:
-        setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
-        setup_load_channel(ctx, iload_ch)
-        set_load_current(ctx, iload_ch, load_ma / 1000.0)
-        settle(ctx, max(settle_s * 8, 0.5))
-        try:
-            ctx.scope.set_AutoRipple_test(scope_ch)
-            settle(ctx, 0.3)
-            vpp = float(ctx.scope.get_channel_pk2pk(scope_ch)) * 1000.0  # V->mV
-            rms = float(ctx.scope.get_channel_rms(scope_ch)) * 1000.0
-        except Exception:  # noqa: BLE001
-            logger.error("scope ripple read failed", exc_info=True)
-            vpp = 0.0
-            rms = 0.0
-        teardown_load(ctx, iload_ch)
-    csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
-    write_csv(csv_path, ["Vpp (mV)", "RMS (mV)"], [[round(vpp, 4), round(rms, 4)]])
-    ctx.log_fn(f"[{item_key}] Vpp={vpp:.3f} mV, RMS={rms:.3f} mV")
-    return ItemResult(item_key=item_key, name="Output Ripple", unit="mV",
-                      passed=None, measured={"vpp_mv": round(vpp, 4), "rms_mv": round(rms, 4)},
-                      raw_csv_path=csv_path)
+    return run_load_capability_ripple(ctx, "ldo_ripple", "Load Capability&Ripple",
+                                      mock_vpp_base=2.5, mock_rms_base=0.4)
 
 
 def psrr(ctx: ItemContext) -> ItemResult:
@@ -599,11 +566,11 @@ LDO_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
     "ldo_quiescent": ("Quiescent Current", quiescent, False, False, (
         vin_bias(), average_cnt(5), settle_time(), *quiescent_params(),
     )),
-    "ldo_ripple": ("Output Ripple", ripple, True, False, (
+    "ldo_ripple": ("Load Capability&Ripple", ripple, True, False, (
         ParamSpec("scope_vout_channel", "示波器通道", "int", 1, "", minimum=1, maximum=4),
         vin_bias(),
-        ParamSpec("ripple_load_ma", "纹波负载", "float", 100.0, "mA", maximum=100000.0),
-        settle_time(),
+        *load_sweep(0.0, 200.0, 20.0),
+        settle_time(), average_cnt(),
     )),
     "ldo_psrr": ("PSRR", psrr, True, False, (
         ParamSpec("psrr_freqs", "PSRR 频点", "text", "1kHz, 10kHz, 100kHz", "",

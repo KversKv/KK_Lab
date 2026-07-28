@@ -8,7 +8,7 @@
   <li><b>负载调整率</b> — 1~200mA 扫描，计算 ΔVout/ΔIload（N6705C）</li>
   <li><b>线性调整率</b> — Vin 3.2~4.2V 扫描，计算 ΔVout/ΔVin（N6705C）</li>
   <li><b>静态电流</b> — 各模式 Iq 测量（N6705C）</li>
-  <li><b>输出纹波</b> — Vpp / RMS（示波器，未接示波器自动跳过）</li>
+  <li><b>带载能力&amp;纹波</b> — 按起始/结束/步进扫负载，逐点测 Vout 与纹波 Vpp/RMS 并截示波器图（示波器，未接自动跳过）</li>
   <li><b>电源抑制比 PSRR</b> — dB @ 频点（示波器）</li>
   <li><b>负载瞬态响应</b> — 过冲/下冲/恢复时间（示波器）</li>
 </ul>
@@ -25,4 +25,4 @@
 </ol>
 
 <h3>结果与报告</h3>
-<p>结果落盘于 <code>Results/module_test/ldo/&lt;芯片&gt;_&lt;时间戳&gt;/</code>，每项一份 CSV，汇总为 <code>report.html</code>。</p>
+<p>结果落盘于 <code>Results/module_test/ldo/&lt;芯片&gt;_&lt;时间戳&gt;/</code>，每项一份 CSV，汇总为 <code>report.html</code>；带载能力&amp;纹波项的示波器逐点截图存于 <code>screenshots/</code> 子目录并内嵌进报告。</p>

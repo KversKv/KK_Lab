@@ -29,7 +29,8 @@ def _measured_to_rows(measured: Any) -> list[list[str]]:
     if measured is None:
         return []
     if isinstance(measured, dict):
-        return [[k, str(v)] for k, v in measured.items()]
+        # screenshots 为示波器逐点截图列表，单独渲染为多图，不进表格
+        return [[k, str(v)] for k, v in measured.items() if k != "screenshots"]
     if isinstance(measured, list) and measured and isinstance(measured[0], dict):
         keys: list[str] = []
         for row in measured:
@@ -144,6 +145,64 @@ def _embed_image(path: str | None) -> str:
         return f'<img class="wave" alt="waveform" src="data:image/png;base64,{data}"/>'
     except Exception:  # noqa: BLE001 - 内嵌失败不影响报告生成
         return ""
+
+
+def _img_data_uri(path: str | None) -> str:
+    """读取 PNG 返回 base64 data URI；失败返回空串。"""
+    if not path or not os.path.isfile(path):
+        return ""
+    try:
+        with open(path, "rb") as f:
+            data = base64.b64encode(f.read()).decode("ascii")
+        return f"data:image/png;base64,{data}"
+    except Exception:  # noqa: BLE001 - 内嵌失败不影响报告生成
+        return ""
+
+
+def _shots_table_html(csv_rows: list[list[str]], measured: Any) -> str:
+    """把逐负载点示波器截图作为最后一列并入数据表，缩略图可点击看原图。
+
+    按 'Iload (mA)' 列把 measured['screenshots'] 的 png 匹配到 CSV 行；
+    无截图列时退化为普通表格。
+    """
+    if not csv_rows:
+        return ""
+    shots: dict[str, str] = {}
+    if isinstance(measured, dict) and isinstance(measured.get("screenshots"), list):
+        for s in measured["screenshots"]:
+            if isinstance(s, dict):
+                uri = _img_data_uri(s.get("png"))
+                if uri:
+                    shots[str(s.get("Iload (mA)", "")).strip()] = uri
+
+    header = list(csv_rows[0])
+    try:
+        iload_idx = next(i for i, c in enumerate(header)
+                         if "iload" in str(c).lower())
+    except StopIteration:
+        iload_idx = 0
+    has_shot = bool(shots)
+    head = "".join(f"<th>{html.escape(str(c))}</th>" for c in header)
+    if has_shot:
+        head += "<th>示波器截图</th>"
+
+    body_rows: list[str] = []
+    for r in csv_rows[1:]:
+        cells = list(r) + [""] * (len(header) - len(r))
+        tds = "".join(f"<td>{html.escape(str(c))}</td>" for c in cells[:len(header)])
+        if has_shot:
+            key = str(cells[iload_idx]).strip()
+            uri = shots.get(key)
+            if uri:
+                cap = f"{header[iload_idx]} = {html.escape(key)}"
+                tds += (f"<td class='shotcell'><img class='shot-thumb' "
+                        f"src='{uri}' data-full='{uri}' data-cap='{cap}' "
+                        f"alt='shot {html.escape(key)}'/></td>")
+            else:
+                tds += "<td class='shotcell'>-</td>"
+        body_rows.append(f"<tr>{tds}</tr>")
+    return (f"<table class='data shots'><thead><tr>{head}</tr></thead>"
+            f"<tbody>{''.join(body_rows)}</tbody></table>")
 
 
 def _f(value: Any) -> str | None:
@@ -274,6 +333,12 @@ def _summary_metrics(it: ItemResult) -> str:
         return "; ".join(parts) if parts else "-"
 
     if key.endswith("ripple"):
+        # Load Capability & Ripple：负载扫描测纹波
+        if "max_vpp_mv" in m:
+            return (f"Max Vpp={_in(m, 'max_vpp_mv')} mV "
+                    f"@ {_in(m, 'max_vpp_at_ma')} mA; "
+                    f"Iload={_in(m, 'i_start_ma')}~{_in(m, 'i_end_ma')} mA "
+                    f"(step {_in(m, 'i_step_ma')} mA)")
         return f"Vpp={_in(m, 'vpp_mv')} mV; RMS={_in(m, 'rms_mv')} mV"
 
     if key.endswith("dropout"):
@@ -376,7 +441,9 @@ def build_module_html_report(result: ModuleTestResult) -> str:
         full_table = ""
         if csv_rows:
             csv_name = html.escape(os.path.basename(it.raw_csv_path or ""))
-            full_table = f"<h4>完整测试数据（{csv_name}）</h4>{_rows_to_table(csv_rows)}"
+            # 有逐点截图时把截图作为最后一列并入数据表
+            full_table = (f"<h4>完整测试数据（{csv_name}）</h4>"
+                          f"{_shots_table_html(csv_rows, it.measured)}")
 
         chart = ""
         if it.item_key.endswith("load_reg") and csv_rows:
@@ -397,8 +464,22 @@ def build_module_html_report(result: ModuleTestResult) -> str:
                                   "Vout vs Iload")
             if svg:
                 chart = f"<h4>Vout-Iload 曲线</h4>{svg}"
+        elif it.item_key.endswith("ripple") and csv_rows:
+            vout_svg = _svg_line_chart(csv_rows, 0, 1,
+                                       "Iload (mA)", "Vout (mV)",
+                                       "Vout vs Iload")
+            vpp_svg = _svg_line_chart(csv_rows, 0, 2,
+                                      "Iload (mA)", "Vpp (mV)",
+                                      "Ripple Vpp vs Iload")
+            chart = "".join(
+                f"<h4>{t}</h4>{s}" for t, s in
+                (("Vout-Iload 曲线", vout_svg), ("Ripple-Iload 曲线", vpp_svg)) if s
+            )
 
-        img = _embed_image(it.waveform_png)
+        # 截图已并入数据表；仅当无逐点截图时回退显示 waveform_png 单图
+        has_shots = (isinstance(it.measured, dict)
+                     and bool(it.measured.get("screenshots")))
+        img = "" if has_shots else _embed_image(it.waveform_png)
         csv_link = (
             f"<div class='csv'>原始数据：{html.escape(os.path.basename(it.raw_csv_path))}</div>"
             if it.raw_csv_path else ""
@@ -440,6 +521,12 @@ def build_module_html_report(result: ModuleTestResult) -> str:
     .item {{ border: 1px solid #e3e8f0; border-radius: 6px; padding: 10px 14px; margin: 12px 0; background: #fbfcfe; }}
     .itemkey {{ color: #6b7a99; font-size: 11px; margin-bottom: 6px; }}
     .wave {{ max-width: 100%; border: 1px solid #d6deeb; margin: 6px 0; }}
+    td.shotcell {{ text-align: center; }}
+    img.shot-thumb {{ max-width: 240px; border: 1px solid #d6deeb; border-radius: 4px; cursor: zoom-in; }}
+    img.shot-thumb:hover {{ border-color: #4f46e5; }}
+    #shotbox {{ display: none; position: fixed; inset: 0; background: rgba(10, 14, 24, 0.85); z-index: 999; cursor: zoom-out; }}
+    #shotbox img {{ position: absolute; inset: 0; margin: auto; max-width: 96vw; max-height: 96vh; box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6); }}
+    #shotbox .cap {{ position: absolute; top: 14px; left: 0; right: 0; text-align: center; color: #dce7ff; font-size: 14px; }}
     .chart {{ display: block; margin: 6px 0; background: #fff; }}
     .csv, .notes {{ font-size: 11px; color: #4a5a7a; margin-top: 4px; }}
     .empty {{ color: #6b7a99; font-size: 12px; }}
@@ -454,6 +541,26 @@ def build_module_html_report(result: ModuleTestResult) -> str:
   {summary_table}
   <h2>测试项明细（共 {len(result.items)} 项）</h2>
   {''.join(item_blocks) if item_blocks else '<p class="empty">无测试项。</p>'}
+  <div id="shotbox" onclick="this.style.display='none'">
+    <div class="cap"></div><img alt="scope shot"/>
+  </div>
+  <script>
+    (function () {{
+      var box = document.getElementById('shotbox');
+      var img = box.querySelector('img');
+      var cap = box.querySelector('.cap');
+      document.querySelectorAll('img.shot-thumb').forEach(function (t) {{
+        t.addEventListener('click', function () {{
+          img.src = t.getAttribute('data-full') || t.src;
+          cap.textContent = t.getAttribute('data-cap') || '';
+          box.style.display = 'block';
+        }});
+      }});
+      document.addEventListener('keydown', function (e) {{
+        if (e.key === 'Escape') {{ box.style.display = 'none'; }}
+      }});
+    }})();
+  </script>
 </body>
 </html>
 """
