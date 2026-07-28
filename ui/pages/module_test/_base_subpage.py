@@ -871,6 +871,17 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         super().sync_oscilloscope_from_top()
         self._refresh_scope_item_state()
 
+    def _on_mso64b_top_changed(self):
+        """顶层示波器连接状态变化时联动刷新 (scope) 项。
+
+        mixin 只更新 scope_connected，不触碰测试项表；不覆盖则连接示波器后
+        (scope) 项仍显示"未接示波器，跳过"且保持禁用（需切换页面才恢复）。
+        """
+        super()._on_mso64b_top_changed()
+        if getattr(self, "is_test_running", False):
+            return
+        self._refresh_scope_item_state()
+
     # ------------------------------------------------------------------ AI contract
     def ai_capabilities(self) -> set[str]:
         return {CAP_GET_CONFIG, CAP_APPLY_CONFIG, CAP_START_TEST, CAP_STOP_TEST, CAP_GET_RESULT}
