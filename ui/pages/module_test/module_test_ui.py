@@ -7,6 +7,7 @@ get_current_test / _sync_from_top 供 nav_controller 与枢纽调用。
 """
 from __future__ import annotations
 
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QTabWidget, QVBoxLayout, QWidget
 from log_config import get_logger
@@ -32,6 +33,7 @@ class ModuleTestUI(QWidget):
         self._instrument_manager = instrument_manager
         self._ui_action_registry = ui_action_registry
 
+        self._config_prompted = set()
         self._setup_style()
         self._create_layout()
 
@@ -77,6 +79,22 @@ class ModuleTestUI(QWidget):
         self.tab_widget.addTab(self.dcdc_test_ui, "DCDC")
 
         layout.addWidget(self.tab_widget)
+
+        # 首次进入模块测试时，对当前子页自动弹出一次配置管理器
+        QTimer.singleShot(0, self._auto_prompt_current_config)
+        self.tab_widget.currentChanged.connect(self._on_tab_changed)
+
+    def _on_tab_changed(self, _index: int):
+        self._auto_prompt_current_config()
+
+    def _auto_prompt_current_config(self):
+        sub = self.tab_widget.currentWidget()
+        test_key = self.get_current_test()
+        if sub is None or test_key in self._config_prompted:
+            return
+        self._config_prompted.add(test_key)
+        if hasattr(sub, "prompt_config_manager_once"):
+            sub.prompt_config_manager_once()
 
     def set_current_test(self, test_key: str):
         index = self.TEST_TAB_MAP.get(test_key, 0)

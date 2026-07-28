@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 from typing import Any
 
 from PySide6.QtCore import Qt, QTimer, QUrl
@@ -126,6 +127,15 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
                 color: {Colors.disabled_text};
                 border: 1px solid {Colors.disabled_btn_border};
             }}
+            /* 操作行按钮统一 35px：Qt QSS 盒模型 total = content(min/max-height) + 上下padding + 2×border(1px)。
+               目标 35 = content 33 + padding 0 + border 2，故 min/max-height 取 33 */
+            QPushButton#primaryStartBtn, QPushButton#stopBtn,
+            QPushButton#select_all_btn, QPushButton#clear_results_btn, QPushButton#open_report_btn {{
+                min-height: 33px;
+                max-height: 33px;
+                padding-top: 0px;
+                padding-bottom: 0px;
+            }}
             QPushButton#itemSettingsBtn {{
                 min-height: 22px;
                 padding: 1px 10px;
@@ -219,6 +229,31 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
 
     def _build_config_group(self) -> "CollapsibleGroupBox":
         box = CollapsibleGroupBox("DUT Configuration", expanded=True)
+
+        # 配置管理按钮行（打开 / 保存 / 另存为），置于配置区最上方
+        cfg_btn_row = QHBoxLayout()
+        cfg_btn_row.setSpacing(8)
+        self.open_config_btn = QPushButton("打开")
+        self.open_config_btn.setObjectName("open_config_btn")
+        self.open_config_btn.setToolTip("按芯片名称分类浏览并加载已保存的配置")
+        self.save_config_btn = QPushButton("保存")
+        self.save_config_btn.setObjectName("save_config_btn")
+        self.save_config_btn.setToolTip("保存当前完整配置（设置 + 测试项）；已加载的配置直接覆盖，否则等同另存为")
+        self.save_as_config_btn = QPushButton("另存为")
+        self.save_as_config_btn.setObjectName("save_as_config_btn")
+        self.save_as_config_btn.setToolTip("基于当前设置生成新的配置文件，便于快速派生相似但有区别的配置")
+        for _btn in (self.open_config_btn, self.save_config_btn, self.save_as_config_btn):
+            _btn.setMinimumWidth(64)
+            _btn.setCursor(Qt.PointingHandCursor)
+        self.open_config_btn.clicked.connect(self._on_open_config)
+        self.save_config_btn.clicked.connect(self._on_save_config)
+        self.save_as_config_btn.clicked.connect(self._on_save_config_as)
+        cfg_btn_row.addWidget(self.open_config_btn)
+        cfg_btn_row.addWidget(self.save_config_btn)
+        cfg_btn_row.addWidget(self.save_as_config_btn)
+        cfg_btn_row.addStretch()
+        box.content_layout.addLayout(cfg_btn_row)
+
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(8)
@@ -375,15 +410,6 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         self.stop_test_btn = QPushButton("■ 停止")
         self.stop_test_btn.setObjectName("stopBtn")
         self.stop_test_btn.setEnabled(False)
-        self.save_config_btn = QPushButton("保存")
-        self.save_config_btn.setObjectName("save_config_btn")
-        self.save_config_btn.setToolTip("保存当前完整配置（设置 + 测试项）；已加载的配置直接覆盖，否则等同另存为")
-        self.save_as_config_btn = QPushButton("另存为")
-        self.save_as_config_btn.setObjectName("save_as_config_btn")
-        self.save_as_config_btn.setToolTip("基于当前设置生成新的配置文件，便于快速派生相似但有区别的配置")
-        self.open_config_btn = QPushButton("打开")
-        self.open_config_btn.setObjectName("open_config_btn")
-        self.open_config_btn.setToolTip("按芯片名称分类浏览并加载已保存的配置")
         self.select_all_btn = QPushButton("全选测试项")
         self.select_all_btn.setObjectName("select_all_btn")
         self.clear_results_btn = QPushButton("清空结果")
@@ -391,16 +417,12 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         self.open_report_btn = QPushButton("打开报告")
         self.open_report_btn.setObjectName("open_report_btn")
         self.open_report_btn.setEnabled(False)
-        for _btn in (self.save_config_btn, self.save_as_config_btn, self.open_config_btn,
-                     self.select_all_btn, self.clear_results_btn, self.open_report_btn):
+        for _btn in (self.select_all_btn, self.clear_results_btn, self.open_report_btn):
             _btn.setMinimumWidth(64)
             _btn.setCursor(Qt.PointingHandCursor)
 
         self.start_test_btn.clicked.connect(self._on_start_test)
         self.stop_test_btn.clicked.connect(self._on_stop_test)
-        self.save_config_btn.clicked.connect(self._on_save_config)
-        self.save_as_config_btn.clicked.connect(self._on_save_config_as)
-        self.open_config_btn.clicked.connect(self._on_open_config)
         self.select_all_btn.clicked.connect(self._on_select_all_items)
         self.clear_results_btn.clicked.connect(self._on_clear_results)
         self.open_report_btn.clicked.connect(self._on_open_report)
@@ -408,9 +430,6 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         lay.addWidget(self.start_test_btn)
         lay.addWidget(self.stop_test_btn)
         lay.addStretch()
-        lay.addWidget(self.save_config_btn)
-        lay.addWidget(self.save_as_config_btn)
-        lay.addWidget(self.open_config_btn)
         lay.addWidget(self.select_all_btn)
         lay.addWidget(self.clear_results_btn)
         lay.addWidget(self.open_report_btn)
@@ -736,7 +755,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
             self._save_config_to(path)
 
     def _on_open_config(self) -> None:
-        dlg = _ConfigPickerDialog(self._configs_root(), self.MODULE_TYPE, parent=self)
+        dlg = _ConfigManagerDialog(self._configs_root(), self.MODULE_TYPE, parent=self)
         if dlg.exec() != QDialog.Accepted:
             return
         path = dlg.selected_path()
@@ -749,6 +768,13 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         self._restore_full_config(cfg)
         self._current_config_path = path
         self.execution_logs.append_log(f"[INFO] 已加载配置：{os.path.basename(path)}")
+
+    def prompt_config_manager_once(self) -> None:
+        """首次进入本模块测试页时自动弹出配置管理器（每子页一次）。"""
+        if getattr(self, "_config_prompted", False):
+            return
+        self._config_prompted = True
+        QTimer.singleShot(0, self._on_open_config)
 
     # ------------------------------------------------------------------ test flow
     def _on_start_test(self):
@@ -831,10 +857,22 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         self.execution_logs.append_log("[INFO] 已清空结果。")
 
     def _on_select_all_items(self):
-        for row in range(self.items_table.rowCount()):
-            chk = self.items_table.item(row, 0)
-            if chk and chk.flags() & Qt.ItemIsUserCheckable:
-                chk.setCheckState(Qt.Checked)
+        # 切换：存在未勾选项 → 全选；已全部勾选 → 取消全选
+        rows = [
+            self.items_table.item(r, 0)
+            for r in range(self.items_table.rowCount())
+        ]
+        checkable = [
+            c for c in rows
+            if c and (c.flags() & Qt.ItemIsUserCheckable) and (c.flags() & Qt.ItemIsEnabled)
+        ]
+        all_checked = bool(checkable) and all(
+            c.checkState() == Qt.Checked for c in checkable
+        )
+        target = Qt.Unchecked if all_checked else Qt.Checked
+        for c in checkable:
+            c.setCheckState(target)
+        self.select_all_btn.setText("取消全选" if not all_checked else "全选测试项")
 
     # ------------------------------------------------------------------ public API
     def update_test_result(self, result):
@@ -988,8 +1026,8 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         return True, "已清空结果。"
 
 
-class _ConfigPickerDialog(QDialog):
-    """按芯片名称分类展示已保存配置的选择对话框。
+class _ConfigManagerDialog(QDialog):
+    """配置管理器：按芯片分类管理（打开 / 新增 / 重命名 / 移动归属 / 删除）配置。
 
     目录结构：<root>/<芯片名>/<配置名>.json；顶层节点为芯片分类，子节点为配置。
     """
@@ -997,8 +1035,9 @@ class _ConfigPickerDialog(QDialog):
     def __init__(self, root: str, module_type: str, parent=None):
         super().__init__(parent)
         self._root = root
-        self.setWindowTitle(f"打开 {module_type.upper()} 配置")
-        self.setMinimumSize(420, 420)
+        self._module_type = module_type
+        self.setWindowTitle(f"{module_type.upper()} Config Manager")
+        self.setMinimumSize(520, 480)
         self.setStyleSheet(DIALOG_QSS)
         self._selected_path: str | None = None
 
@@ -1006,42 +1045,76 @@ class _ConfigPickerDialog(QDialog):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
 
-        layout.addWidget(QLabel("按芯片名称分类，双击或选中后点“打开”："))
+        layout.addWidget(QLabel("按芯片分类管理配置，双击打开；右侧按钮进行管理："))
+
+        body = QHBoxLayout()
+        body.setSpacing(8)
 
         self.tree = QTreeWidget()
-        self.tree.setHeaderHidden(True)
+        self.tree.setHeaderLabels(["名称", "归属芯片"])
+        self.tree.setColumnWidth(0, 220)
         self.tree.itemDoubleClicked.connect(self._on_item_double_clicked)
         self.tree.currentItemChanged.connect(self._on_current_changed)
-        layout.addWidget(self.tree, 1)
+        body.addWidget(self.tree, 1)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Open | QDialogButtonBox.Cancel, parent=self)
-        self._open_btn = buttons.button(QDialogButtonBox.Open)
-        self._open_btn.setText("打开")
-        self._open_btn.setDefault(True)
-        self._open_btn.setAutoDefault(True)
-        self._open_btn.setEnabled(False)
-        cancel_btn = buttons.button(QDialogButtonBox.Cancel)
-        cancel_btn.setText("取消")
-        cancel_btn.setDefault(False)
-        cancel_btn.setAutoDefault(False)
-        buttons.accepted.connect(self._accept_selection)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        btn_col = QVBoxLayout()
+        btn_col.setSpacing(6)
+        self.open_btn = QPushButton("打开")
+        self.open_btn.setDefault(True)
+        self.open_btn.setAutoDefault(True)
+        self.new_btn = QPushButton("新增配置…")
+        self.rename_btn = QPushButton("重命名…")
+        self.move_btn = QPushButton("移动归属…")
+        self.delete_btn = QPushButton("删除")
+        for _b in (self.open_btn, self.new_btn, self.rename_btn, self.move_btn, self.delete_btn):
+            _b.setMinimumWidth(88)
+            _b.setCursor(Qt.PointingHandCursor)
+        self.open_btn.clicked.connect(self._accept_selection)
+        self.new_btn.clicked.connect(self._on_new_config)
+        self.rename_btn.clicked.connect(self._on_rename)
+        self.move_btn.clicked.connect(self._on_move)
+        self.delete_btn.clicked.connect(self._on_delete)
+        btn_col.addWidget(self.open_btn)
+        btn_col.addWidget(self.new_btn)
+        btn_col.addWidget(self.rename_btn)
+        btn_col.addWidget(self.move_btn)
+        btn_col.addWidget(self.delete_btn)
+        btn_col.addStretch()
+        body.addLayout(btn_col)
+        layout.addLayout(body, 1)
+
+        close_btn = QPushButton("关闭")
+        close_btn.setDefault(False)
+        close_btn.setAutoDefault(False)
+        close_btn.setMinimumWidth(88)
+        close_btn.clicked.connect(self.reject)
+        close_row = QHBoxLayout()
+        close_row.addStretch()
+        close_row.addWidget(close_btn)
+        layout.addLayout(close_row)
 
         self._populate()
+        self._on_current_changed(self.tree.currentItem(), None)
 
-    def _populate(self) -> None:
-        self.tree.clear()
+    # ------------------------------------------------------------------ data
+    @staticmethod
+    def _safe(text: str, fallback: str) -> str:
+        cleaned = re.sub(r'[\\/:*?"<>|]+', "_", (text or "").strip()).strip(" .")
+        return cleaned or fallback
+
+    def _chip_names(self) -> list[str]:
         if not os.path.isdir(self._root):
-            placeholder = QTreeWidgetItem(["（暂无已保存的配置）"])
-            placeholder.setFlags(Qt.ItemIsEnabled)
-            self.tree.addTopLevelItem(placeholder)
-            return
-        chip_dirs = sorted(
+            return []
+        return sorted(
             d for d in os.listdir(self._root)
             if os.path.isdir(os.path.join(self._root, d))
         )
+
+    def _populate(self, select_path: str | None = None) -> None:
+        self.tree.clear()
+        chip_dirs = self._chip_names()
         has_any = False
+        select_item: QTreeWidgetItem | None = None
         for chip in chip_dirs:
             chip_path = os.path.join(self._root, chip)
             files = sorted(
@@ -1050,35 +1123,189 @@ class _ConfigPickerDialog(QDialog):
             )
             if not files:
                 continue
-            chip_node = QTreeWidgetItem([chip])
+            chip_node = QTreeWidgetItem([chip, ""])
             chip_node.setFlags(Qt.ItemIsEnabled)
+            chip_node.setData(0, Qt.UserRole, None)
+            chip_node.setData(1, Qt.UserRole, chip)
             self.tree.addTopLevelItem(chip_node)
             for f in files:
-                cfg_node = QTreeWidgetItem([os.path.splitext(f)[0]])
-                cfg_node.setData(0, Qt.UserRole, os.path.join(chip_path, f))
+                cfg_path = os.path.join(chip_path, f)
+                cfg_node = QTreeWidgetItem([os.path.splitext(f)[0], chip])
+                cfg_node.setData(0, Qt.UserRole, cfg_path)
+                cfg_node.setData(1, Qt.UserRole, chip)
                 chip_node.addChild(cfg_node)
+                if select_path and os.path.normpath(cfg_path) == os.path.normpath(select_path):
+                    select_item = cfg_node
             chip_node.setExpanded(True)
             has_any = True
         if not has_any:
-            placeholder = QTreeWidgetItem(["（暂无已保存的配置）"])
+            placeholder = QTreeWidgetItem(["（暂无已保存的配置）", ""])
             placeholder.setFlags(Qt.ItemIsEnabled)
+            placeholder.setData(0, Qt.UserRole, None)
             self.tree.addTopLevelItem(placeholder)
+        if select_item is not None:
+            self.tree.setCurrentItem(select_item)
+
+    def _current_cfg(self) -> tuple[str | None, str | None]:
+        """返回 (配置路径, 归属芯片)，未选中配置返回 (None, None)。"""
+        item = self.tree.currentItem()
+        if not item:
+            return None, None
+        path = item.data(0, Qt.UserRole)
+        chip = item.data(1, Qt.UserRole)
+        if not path:
+            return None, None
+        return path, chip
 
     def _on_current_changed(self, current: QTreeWidgetItem, _prev) -> None:
-        path = current.data(0, Qt.UserRole) if current else None
-        self._open_btn.setEnabled(bool(path))
+        is_cfg = bool(current and current.data(0, Qt.UserRole))
+        self.open_btn.setEnabled(is_cfg)
+        self.rename_btn.setEnabled(is_cfg)
+        self.move_btn.setEnabled(is_cfg)
+        self.delete_btn.setEnabled(is_cfg)
 
+    # ------------------------------------------------------------------ open
     def _on_item_double_clicked(self, item: QTreeWidgetItem, _col: int) -> None:
         if item and item.data(0, Qt.UserRole):
             self._selected_path = item.data(0, Qt.UserRole)
             self.accept()
 
     def _accept_selection(self) -> None:
-        item = self.tree.currentItem()
-        path = item.data(0, Qt.UserRole) if item else None
+        path, _chip = self._current_cfg()
         if path:
             self._selected_path = path
             self.accept()
 
     def selected_path(self) -> str | None:
         return self._selected_path
+
+    # ------------------------------------------------------------------ manage
+    def _on_new_config(self) -> None:
+        chips = self._chip_names()
+        chip, ok = QInputDialog.getItem(
+            self, "新增配置", "归属芯片（可输入新名称新建分类）：",
+            chips, 0, True)
+        if not ok or not chip.strip():
+            return
+        chip = self._safe(chip, "未分类芯片")
+        name, ok = QInputDialog.getText(
+            self, "新增配置", f"配置名称（归入芯片「{chip}」）：",
+            text=self._module_type)
+        if not ok:
+            return
+        name = self._safe(name, self._module_type)
+        target_dir = os.path.join(self._root, chip)
+        path = os.path.join(target_dir, f"{name}.json")
+        if os.path.exists(path):
+            QMessageBox.warning(self, "新增失败", f"配置「{name}」已存在。")
+            return
+        default_cfg = self._default_config(chip)
+        payload = {
+            "schema_version": _CONFIG_SCHEMA_VERSION,
+            "module_type": self._module_type,
+            "config": default_cfg,
+        }
+        try:
+            os.makedirs(target_dir, exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+        except OSError:
+            _logger.error("新增配置文件失败：%s", path, exc_info=True)
+            QMessageBox.warning(self, "新增失败", "配置写入失败，详见日志。")
+            return
+        self._populate(select_path=path)
+
+    def _default_config(self, chip: str) -> dict:
+        return {
+            "selected_items": [],
+            "chip_name": chip,
+            "module_name": "",
+            "operator": "",
+            "temp_test_enabled": False,
+            "temperature": "",
+            "temp_soak_s": 300,
+            "temp_tolerance_c": 2,
+            "temp_wait_s": 1800,
+            "vin_channel": "CH 1",
+            "vout_channel": "CH 2",
+            "vout_source_channel": "CH 2",
+            "iload_channel": "CH 3",
+            "vout_nominal_mv": 1800 if self._module_type == "ldo" else 1200,
+            "device_addr": "0x00",
+            "width_flag": int(I2CWidthFlag.BIT_10),
+            "item_overrides": {},
+        }
+
+    def _on_rename(self) -> None:
+        path, chip = self._current_cfg()
+        if not path:
+            return
+        old_name = os.path.splitext(os.path.basename(path))[0]
+        name, ok = QInputDialog.getText(
+            self, "重命名配置", "新的配置名称：", text=old_name)
+        if not ok:
+            return
+        name = self._safe(name, old_name)
+        if name == old_name:
+            return
+        new_path = os.path.join(os.path.dirname(path), f"{name}.json")
+        if os.path.exists(new_path):
+            QMessageBox.warning(self, "重命名失败", f"配置「{name}」已存在。")
+            return
+        try:
+            os.replace(path, new_path)
+        except OSError:
+            _logger.error("重命名配置失败：%s -> %s", path, new_path, exc_info=True)
+            QMessageBox.warning(self, "重命名失败", "无法重命名，详见日志。")
+            return
+        self._populate(select_path=new_path)
+
+    def _on_move(self) -> None:
+        path, chip = self._current_cfg()
+        if not path:
+            return
+        chips = self._chip_names()
+        current_idx = chips.index(chip) if chip in chips else 0
+        target, ok = QInputDialog.getItem(
+            self, "移动归属", f"将配置移到哪个芯片分类（可输入新名称）：",
+            chips, current_idx, True)
+        if not ok or not target.strip():
+            return
+        target = self._safe(target, chip)
+        if target == chip:
+            return
+        fname = os.path.basename(path)
+        target_dir = os.path.join(self._root, target)
+        new_path = os.path.join(target_dir, fname)
+        if os.path.exists(new_path):
+            QMessageBox.warning(
+                self, "移动失败",
+                f"芯片「{target}」下已存在同名配置「{os.path.splitext(fname)[0]}」。")
+            return
+        try:
+            os.makedirs(target_dir, exist_ok=True)
+            shutil.move(path, new_path)
+        except OSError:
+            _logger.error("移动配置失败：%s -> %s", path, new_path, exc_info=True)
+            QMessageBox.warning(self, "移动失败", "无法移动配置，详见日志。")
+            return
+        self._populate(select_path=new_path)
+
+    def _on_delete(self) -> None:
+        path, chip = self._current_cfg()
+        if not path:
+            return
+        name = os.path.splitext(os.path.basename(path))[0]
+        resp = QMessageBox.question(
+            self, "删除确认",
+            f"确定删除配置「{name}」（芯片「{chip}」）？此操作不可恢复。",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if resp != QMessageBox.Yes:
+            return
+        try:
+            os.remove(path)
+        except OSError:
+            _logger.error("删除配置失败：%s", path, exc_info=True)
+            QMessageBox.warning(self, "删除失败", "无法删除配置，详见日志。")
+            return
+        self._populate()

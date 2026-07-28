@@ -35,6 +35,9 @@
 6. 数值 QLabel 必含单位：`名称 (单位)`。
 7. `ExecutionLogsFrame` 必配 `QSplitter(Qt.Vertical)`。
 8. 控件高度单一权威：页面父 QSS 禁裸 `min-height`，控件用 `#objectName` 钉死。
+   - **钉死按钮高度用纯 QSS `min-height == max-height`，禁用 `setFixedHeight()`**：后者会被 QSS `min-height` / sizeHint 以 min/max 约束盖住而失效。
+   - **QSS 盒模型（易踩）**：控件总高 = content(`min/max-height`) + 上下 `padding` + 2×`border`。故目标 35px、border 1px、padding 0 时，`min/max-height` 要取 **33px**（33+0+2=35），不是 35。
+   - **样式继承叠加**：本页样式 = 全局 `get_page_base_qss()`（裸 `QPushButton { padding:6px 14px }` 等）+ `START_BTN_STYLE`（`min-height:36px` 等）+ `page_extra` 层层叠加；改高度/间距前先想清父级 QSS 已注入什么，再在 `page_extra` 末尾用 `#objectName` 覆盖（同优先级后声明者生效），勿改共享常量以免影响其它页面。
 9. 中文→简体；不增删无关注释；**不主动 `git commit`**。
 10. 版本号唯一事实源 = [version.py](./version.py)，禁止写死版本号字符串，与 git 解耦。
 
