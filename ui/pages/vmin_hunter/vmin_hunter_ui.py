@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QLabel, QLineEdit, QFrame, QCheckBox, QTabWidget,
     QScrollArea, QFileDialog, QDoubleSpinBox,
-    QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView,
+    QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView, QTextEdit,
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
@@ -43,6 +43,7 @@ from core.vmin_hunter import (
     EngineHooks,
     SleepVminEngine,
     SleepVminRunner,
+    SleepWakeLogStrategy,
 )
 from Bes_I2CIO_Interface import I2CWidthFlag
 from log_config import get_logger
@@ -90,6 +91,9 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         self._temp_enabled = False
         self._runner = None
         self._sweep_context = None
+        # 判活正则：匹配实际 DUT 日志 sleep_pin_irqhandler: ... sleep=<0/1>
+        self._wake_pattern = r"sleep_pin_irqhandler:.*\bsleep=0\b"
+        self._sleep_pattern = r"sleep_pin_irqhandler:.*\bsleep=1\b"
 
         self._setup_style()
         self._create_layout()
@@ -1098,7 +1102,14 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
             fixed_voltage=phase["fixed_voltage"],
         )
 
-        engine = SleepVminEngine(config, hooks)
+        # 判活正则：优先串口设置里的 alive_rule，回退到页面默认
+        rule = getattr(self, "_serial_alive_rule", None) or {}
+        strategy = SleepWakeLogStrategy(
+            wake_pattern=rule.get("wake_pattern") or self._wake_pattern,
+            sleep_pattern=rule.get("sleep_pattern") or self._sleep_pattern,
+            alive_pattern=rule.get("alive_pattern", ""),
+        )
+        engine = SleepVminEngine(config, hooks, strategy=strategy)
         self._runner = SleepVminRunner(engine)
         engine.log_message.connect(self.append_log)
         engine.result_row.connect(self.append_result_row)
@@ -1463,6 +1474,10 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
                 "port": self.get_selected_serial_port() or "",
                 "baudrate": int(self._serial_baudrate),
             },
+            "alive_rule": getattr(self, "_serial_alive_rule", None) or {
+                "wake_pattern": self._wake_pattern,
+                "sleep_pattern": self._sleep_pattern,
+            },
         }
         return params
 
@@ -1614,6 +1629,10 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
                     self._serial_baudrate = int(uart["baudrate"])
                 except (TypeError, ValueError):
                     pass
+
+            alive = data.get("alive_rule")
+            if isinstance(alive, dict) and (alive.get("wake_pattern") or alive.get("sleep_pattern")):
+                self._serial_alive_rule = dict(alive)
         except (TypeError, ValueError):
             logger.error("Failed to apply VminHunter config", exc_info=True)
             QMessageBox.warning(self, "Import Warning", "Config partially applied; some fields invalid.")

@@ -45,8 +45,10 @@ from core.vmin_hunter.alive_checker import (
 
 logger = get_logger(__name__)
 
-_WAKE_RE = re.compile(r"key_event_process:\s*sleep=0")
-_SLEEP_RE = re.compile(r"key_event_process:\s*sleep=1")
+# 默认日志格式（旧 DUT 固件）：与 alive_checker.SleepWakeLogStrategy 默认一致。
+# 实际匹配以注入的 strategy 为准（见 _read_sleep_state）。
+_DEFAULT_WAKE_RE = re.compile(r"key_event_process:\s*sleep=0")
+_DEFAULT_SLEEP_RE = re.compile(r"key_event_process:\s*sleep=1")
 
 
 @dataclass
@@ -314,9 +316,14 @@ class SleepVminEngine(QObject):
             except queue.Empty:
                 continue
             logger.debug("DUT UART: %s", line)
-            if _WAKE_RE.search(line):
+            wake_re = getattr(self._strategy, "_wake_re", _DEFAULT_WAKE_RE)
+            sleep_re = getattr(self._strategy, "_sleep_re", _DEFAULT_SLEEP_RE)
+            alive_re = getattr(self._strategy, "_alive_re", None)
+            if alive_re is not None and alive_re.search(line):
                 return 0
-            if _SLEEP_RE.search(line):
+            if wake_re.search(line):
+                return 0
+            if sleep_re.search(line):
                 return 1
         return None
 

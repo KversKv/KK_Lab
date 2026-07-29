@@ -118,6 +118,7 @@ class SleepWakeLogStrategy(AliveStrategy):
         self,
         wake_pattern: str = r"key_event_process:\s*sleep=0",
         sleep_pattern: str = r"key_event_process:\s*sleep=1",
+        alive_pattern: str = "",
         crash_keywords=DEFAULT_CRASH_KEYWORDS,
         no_log_timeout_s: float = DEFAULT_NO_LOG_TIMEOUT_S,
         sequence_timeout_s: float = DEFAULT_SEQUENCE_TIMEOUT_S,
@@ -125,6 +126,7 @@ class SleepWakeLogStrategy(AliveStrategy):
     ):
         self._wake_re = re.compile(wake_pattern)
         self._sleep_re = re.compile(sleep_pattern)
+        self._alive_re = re.compile(alive_pattern) if alive_pattern else None
         self._crash_keywords = tuple(crash_keywords)
         self._no_log_timeout_s = float(no_log_timeout_s)
         self._sequence_timeout_s = float(sequence_timeout_s)
@@ -161,7 +163,12 @@ class SleepWakeLogStrategy(AliveStrategy):
                 matched_lines=list(self._matched),
             )
 
-        if not self._woke and self._wake_re.search(line):
+        if self._alive_re is not None and self._alive_re.search(line):
+            # 判活成功标志（如 retention check success）：一轮睡/醒已完成
+            self._woke = True
+            self._slept_again = True
+            self._matched.append(line)
+        elif not self._woke and self._wake_re.search(line):
             self._woke = True
             self._matched.append(line)
         elif not self._slept_again and self._sleep_re.search(line):

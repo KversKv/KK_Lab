@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QPushButton, QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
     QFrame, QWidget, QLabel, QComboBox, QDialogButtonBox,
     QGraphicsDropShadowEffect, QGraphicsBlurEffect,
+    QTabWidget, QLineEdit, QTextEdit,
 )
 from PySide6.QtCore import Qt, QRectF, QTimer, QObject, Signal
 from PySide6.QtGui import QPixmap, QPainter, QIcon, QColor
@@ -306,12 +307,48 @@ class _MixinSerialSettingsDialog(_FramelessChromeDialog):
                  parity=serial.PARITY_NONE,
                  xonxoff=False,
                  rtscts=False,
-                 connected=False):
+                 connected=False,
+                 alive_rule=None):
         super().__init__(parent, title="SERIAL PORT SETTINGS", icon_name="settings.svg")
         try:
             self._apply_content_style(_DLG_STYLE)
         except Exception:
             pass
+
+        tabs = QTabWidget()
+        tabs.addTab(self._build_serial_tab(
+            baudrate, bytesize, stopbits, parity, xonxoff, rtscts, connected),
+            "Serial")
+        self._alive_rule = dict(alive_rule or {})
+        tabs.addTab(self._build_alive_rule_tab(), "Alive Rule")
+
+        btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        ok_btn = btn_box.button(QDialogButtonBox.Ok)
+        cancel_btn = btn_box.button(QDialogButtonBox.Cancel)
+        try:
+            ok_btn.setStyleSheet(dialog_ok_button_style())
+            cancel_btn.setStyleSheet(dialog_cancel_button_style())
+        except Exception:
+            pass
+        ok_btn.setDefault(True)
+        ok_btn.setAutoDefault(True)
+        cancel_btn.setDefault(False)
+        cancel_btn.setAutoDefault(False)
+        btn_box.accepted.connect(self.accept)
+        btn_box.rejected.connect(self.reject)
+
+        root = self._content
+        root.setSpacing(12)
+        root.addWidget(tabs)
+        root.addWidget(btn_box)
+
+        self.setFixedWidth(520)
+
+    def _build_serial_tab(self, baudrate, bytesize, stopbits, parity,
+                          xonxoff, rtscts, connected):
+        tab = QWidget()
+        outer = QVBoxLayout(tab)
+        outer.setContentsMargins(4, 10, 4, 4)
 
         form = QGridLayout()
         form.setHorizontalSpacing(10)
@@ -371,27 +408,121 @@ class _MixinSerialSettingsDialog(_FramelessChromeDialog):
             warn.setStyleSheet("color:#f2994a;font-size:11px;background:transparent;border:none;")
             form.addWidget(warn, 5, 0, 1, 2)
 
-        btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        ok_btn = btn_box.button(QDialogButtonBox.Ok)
-        cancel_btn = btn_box.button(QDialogButtonBox.Cancel)
-        try:
-            ok_btn.setStyleSheet(dialog_ok_button_style())
-            cancel_btn.setStyleSheet(dialog_cancel_button_style())
-        except Exception:
-            pass
-        ok_btn.setDefault(True)
-        ok_btn.setAutoDefault(True)
-        cancel_btn.setDefault(False)
-        cancel_btn.setAutoDefault(False)
-        btn_box.accepted.connect(self.accept)
-        btn_box.rejected.connect(self.reject)
+        outer.addLayout(form)
+        outer.addStretch(1)
+        return tab
 
-        root = self._content
-        root.setSpacing(12)
-        root.addLayout(form)
-        root.addWidget(btn_box)
+    def _build_alive_rule_tab(self):
+        import re as _re
+        self._alive_re = _re
 
-        self.setFixedWidth(488)
+        tab = QWidget()
+        lay = QVBoxLayout(tab)
+        lay.setContentsMargins(6, 10, 6, 6)
+        lay.setSpacing(6)
+
+        lbl_style = f"color:{_CLR_TEXT_BTN_LOG};font-size:11px;background:transparent;border:none;"
+        edit_style = (
+            "QLineEdit{background:#0a1733;color:#eaf2ff;border:1px solid #27406f;"
+            "border-radius:6px;padding:4px 8px;font-size:11px;}"
+        )
+        default_alive = "retention check success"
+        default_wake = r"sleep_pin_irqhandler:.*\bsleep=0\b"
+        default_sleep = r"sleep_pin_irqhandler:.*\bsleep=1\b"
+
+        alive_lab = QLabel("Alive pattern（判活成功标志）")
+        alive_lab.setStyleSheet(lbl_style)
+        lay.addWidget(alive_lab)
+        self._alive_pattern_edit = QLineEdit(
+            self._alive_rule.get("alive_pattern", default_alive))
+        self._alive_pattern_edit.setPlaceholderText(default_alive)
+        self._alive_pattern_edit.setStyleSheet(edit_style)
+        lay.addWidget(self._alive_pattern_edit)
+
+        wake_lab = QLabel("Wake regex（唤醒）")
+        wake_lab.setStyleSheet(lbl_style)
+        lay.addWidget(wake_lab)
+        self._wake_pattern_edit = QLineEdit(
+            self._alive_rule.get("wake_pattern", default_wake))
+        self._wake_pattern_edit.setPlaceholderText(default_wake)
+        self._wake_pattern_edit.setStyleSheet(edit_style)
+        lay.addWidget(self._wake_pattern_edit)
+
+        sleep_lab = QLabel("Sleep regex（进入休眠）")
+        sleep_lab.setStyleSheet(lbl_style)
+        lay.addWidget(sleep_lab)
+        self._sleep_pattern_edit = QLineEdit(
+            self._alive_rule.get("sleep_pattern", default_sleep))
+        self._sleep_pattern_edit.setPlaceholderText(default_sleep)
+        self._sleep_pattern_edit.setStyleSheet(edit_style)
+        lay.addWidget(self._sleep_pattern_edit)
+
+        hint = QLabel("Preview（粘贴 DUT 日志行，实时统计命中数）:")
+        hint.setStyleSheet(lbl_style)
+        lay.addWidget(hint)
+        self._alive_preview = QTextEdit()
+        self._alive_preview.setPlaceholderText(
+            "sleep_pin_irqhandler: pin=12 val=1 sleep=0 cnt=2\n"
+            "sleep_pin_irqhandler: pin=12 val=0 sleep=1 cnt=2\n"
+            "retention check success"
+        )
+        self._alive_preview.setFixedHeight(96)
+        self._alive_preview.setStyleSheet(
+            "QTextEdit{background:#0a1733;color:#eaf2ff;border:1px solid #27406f;"
+            "border-radius:6px;font-size:11px;padding:4px 8px;}"
+        )
+        lay.addWidget(self._alive_preview)
+
+        self._alive_match_label = QLabel("")
+        self._alive_match_label.setStyleSheet(
+            "font-size:11px;background:transparent;border:none;")
+        lay.addWidget(self._alive_match_label)
+        lay.addStretch(1)
+
+        self._alive_pattern_edit.textChanged.connect(self._refresh_alive_preview)
+        self._wake_pattern_edit.textChanged.connect(self._refresh_alive_preview)
+        self._sleep_pattern_edit.textChanged.connect(self._refresh_alive_preview)
+        self._alive_preview.textChanged.connect(self._refresh_alive_preview)
+        self._refresh_alive_preview()
+        return tab
+
+    def _refresh_alive_preview(self):
+        alive = self._alive_pattern_edit.text().strip()
+        wake = self._wake_pattern_edit.text().strip()
+        sleep = self._sleep_pattern_edit.text().strip()
+        err = ""
+        alive_re = wake_re = sleep_re = None
+        for name, pat, attr in (("Alive", alive, "alive_re"),
+                                ("Wake", wake, "wake_re"),
+                                ("Sleep", sleep, "sleep_re")):
+            try:
+                r = self._alive_re.compile(pat) if pat else None
+                if attr == "alive_re":
+                    alive_re = r
+                elif attr == "wake_re":
+                    wake_re = r
+                else:
+                    sleep_re = r
+            except self._alive_re.error as e:
+                err = (err + " | " if err else "") + f"{name} regex error: {e}"
+
+        if err:
+            self._alive_match_label.setText(err)
+            self._alive_match_label.setStyleSheet(
+                "color:#f87171;font-size:11px;background:transparent;border:none;")
+            return
+        alive_hits = wake_hits = sleep_hits = 0
+        for line in self._alive_preview.toPlainText().splitlines():
+            if alive_re and alive_re.search(line):
+                alive_hits += 1
+            if wake_re and wake_re.search(line):
+                wake_hits += 1
+            if sleep_re and sleep_re.search(line):
+                sleep_hits += 1
+        self._alive_match_label.setText(
+            f"alive hits={alive_hits}   wake hits={wake_hits}   sleep hits={sleep_hits}")
+        self._alive_match_label.setStyleSheet(
+            "color:#4ade80;font-size:11px;background:transparent;border:none;")
 
     @staticmethod
     def _select_by_data(combo, data):
@@ -416,4 +547,9 @@ class _MixinSerialSettingsDialog(_FramelessChromeDialog):
             "parity": self._parity_combo.currentData(),
             "xonxoff": bool(flow_val[0]),
             "rtscts": bool(flow_val[1]),
+            "alive_rule": {
+                "alive_pattern": self._alive_pattern_edit.text().strip(),
+                "wake_pattern": self._wake_pattern_edit.text().strip(),
+                "sleep_pattern": self._sleep_pattern_edit.text().strip(),
+            },
         }

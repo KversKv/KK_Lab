@@ -1,0 +1,67 @@
+{
+  "test_cnt": 1,
+  "test_mode": "external",
+  "test_items": {
+    "sleep_probe": true,
+    "wake_popup": false
+  },
+  "temperature": {
+    "enable": false,
+    "points": []
+  },
+  "monitor_channels": {
+    "VcoreM": true,
+    "VcoreL": false
+  },
+  "voltage_sweep": {
+    "default": 0.8,
+    "start": 0.8,
+    "end": 0.5,
+    "step": 0.05
+  },
+  "voltage_points": [
+    0.8,
+    0.75,
+    0.7,
+    0.65,
+    0.6,
+    0.55,
+    0.5
+  ],
+  "vcorel_voltage_sweep": null,
+  "vcorel_voltage_points": [],
+  "channel_config": {
+    "n6705c": {
+      "VcoreM_channel": 2,
+      "VcoreL_channel": 2,
+      "VcoreM_current_limit_ma": 20.0,
+      "VcoreL_current_limit_ma": 20.0
+    },
+    "iic": {
+      "VcoreM": {
+        "device_addr": "0x27",
+        "bit_width": 1,
+        "sleep_ctrl_addr": "0x133",
+        "sleep_msb": "7",
+        "sleep_lsb": "0",
+        "normal_ctrl_addr": "0x132",
+        "normal_msb": "7",
+        "normal_lsb": "0"
+      },
+      "VcoreL": {
+        "device_addr": "0x62",
+        "bit_width": 0,
+        "sleep_ctrl_addr": "0x24",
+        "sleep_msb": "7",
+        "sleep_lsb": "0",
+        "normal_ctrl_addr": "0x26",
+        "normal_msb": "7",
+        "normal_lsb": "0"
+      }
+    }
+  },
+  "uart": {
+    "port": "COM6",
+    "baudrate": 921600
+  }
+}

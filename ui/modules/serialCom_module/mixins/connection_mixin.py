@@ -408,10 +408,13 @@ class ConnectionMixin:
             xonxoff=self._serial_xonxoff,
             rtscts=self._serial_rtscts,
             connected=self._serial_connected,
+            alive_rule=getattr(self, "_serial_alive_rule", None),
         )
         if dlg.exec() != QDialog.Accepted:
             return
         cfg = dlg.result_config()
+        if cfg.get("alive_rule"):
+            self._serial_alive_rule = cfg["alive_rule"]
         self._serial_baudrate = cfg["baudrate"]
         self._serial_bytesize = cfg["bytesize"]
         self._serial_stopbits = cfg["stopbits"]
