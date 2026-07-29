@@ -307,10 +307,16 @@ class N6705C:
         self.instr.write(f"VOLT:MODE FIX,(@{channel})")
 
     def set_arb_continuous(self, channel, flag=False):
+        """勾选/取消面板 Arb Properties 的 "Continuous"（连续重复）复选框。
+
+        对应 SCPI：ARB:COUNt INFinity = 勾选 Continuous（连续重复）；
+        取消则恢复 ARB:COUNt 1（单次）。
+        须在 ARB 形状参数配置完成后、触发(arb_on)之前调用才生效。
+        """
         if flag:
-            self.instr.write(f"ARB:TERM:LAST ON,(@{channel})")
+            self.instr.write(f"ARB:COUN INF,(@{channel})")
         else:
-            self.instr.write(f"ARB:TERM:LAST OFF,(@{channel})")
+            self.instr.write(f"ARB:COUN 1,(@{channel})")
 
     def clear_arb_all_channels(self, total_channels=4):
         ch_list = ",".join(str(ch) for ch in range(1, total_channels + 1))

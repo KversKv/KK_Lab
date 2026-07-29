@@ -496,10 +496,13 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
     """Line Transient Response（LDO / DCDC 共用，依赖示波器）。
 
     流程（对齐手动测试，逐组执行）：
+      0. 开局 clear_arb_all_channels()：ABOR:TRAN + 全通道 VOLT/CURR:MODE FIX，
+         去掉其它通道遗留 ARB，避免 BUS 触发误带起旧通道脉冲；
       1. Vin 通道置 PS2Q 源；
       2. Arb Type=Voltage / Shape=Pulse，Vin0/Vin1 为电压（正），
          t0=半周期、t1=0、t2=半周期（50% 占空；真机强制 t0+t1+t2=1/freq）；
-      3. INIT:TRAN + BUS 触发使能 ARB（连续 Vin 脉冲）；
+      3. 勾选 Continuous（ARB:TERM:LAST ON）+ TRIG:ARB:SOUR IMM（须在 INIT:TRAN 之前写）
+         + INIT:TRAN 立即启动连续 Vin 脉冲（armed 后写源报 +308，BUS+*TRG 后置不触发）；
       4. 示波器按频率设 timebase（整屏约 2 周期），量程/偏置按预期摆幅与标称 Vout 设置；
       5. 稳定后暂停采集，截图并测 Vmax/Vmin/Vmean/Vpp，
          过冲=Vmax-Vmean、欠冲=Vmean-Vmin（mV）；
@@ -526,9 +529,10 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
 
     if not ctx.is_mock:
         try:
-            ctx.n6705c.arb_stop()
+            ctx.n6705c.clear_arb_all_channels()
         except Exception:  # noqa: BLE001 - 复位失败降级记录，继续配置
-            logger.error("arb_stop failed before %s", item_key, exc_info=True)
+            logger.error("clear_arb_all_channels failed before %s", item_key,
+                         exc_info=True)
 
     for idx, g in enumerate(groups):
         if ctx.stop_flag_fn():
@@ -552,16 +556,21 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
             shot = None
             try:
                 ctx.n6705c.set_mode(vin_ch, "PS2Q")
+                ctx.n6705c.channel_on(vin_ch)
                 ctx.n6705c.set_arb_pulse(vin_ch, vin0_v, vin1_v,
                                          period / 2.0, 0.0, period / 2.0, freq)
+                # 勾选 Continuous（ARB:TERM:LAST ON）：须在形状配置后、arb_on 前
+                ctx.n6705c.set_arb_continuous(vin_ch, True)
+                ctx.n6705c.restore_arb_trigger_source()
                 ctx.n6705c.arb_on(vin_ch)
-                ctx.n6705c.channel_on(vin_ch)
-                ctx.n6705c.arb_run()
 
-                ctx.scope.set_channel_scale(scope_ch, vspan_v / 4.0)
+                # scale=vspan/3 留余量防削波；时基=period/2，10 格整屏约 5 周期
+                ctx.scope.set_channel_scale(scope_ch, vspan_v / 3.0)
                 ctx.scope.set_channel_offset(scope_ch, nominal_v)
-                ctx.scope.set_timebase_scale(period / 5.0)
-                settle(ctx, max(settle_s * 8, 0.5))
+                ctx.scope.set_timebase_scale(period / 2.0)
+                ctx.scope.set_channel_display(scope_ch, True)
+                # 改时基/scale 后需足够时间让示波器重新采集稳定（真机≥1s）
+                settle(ctx, max(settle_s * 8, 1.0))
 
                 ctx.scope.stop()
                 vmax = float(ctx.scope.get_channel_max(scope_ch))
@@ -579,6 +588,7 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
             finally:
                 try:
                     ctx.n6705c.arb_stop()
+                    ctx.n6705c.set_arb_continuous(vin_ch, False)
                     ctx.n6705c.exit_arb_voltage(vin_ch)
                 except Exception:  # noqa: BLE001
                     logger.error("exit arb ch%d failed", vin_ch, exc_info=True)
@@ -625,11 +635,14 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
     """Load Transient Response（LDO / DCDC 共用，依赖示波器）。
 
     流程（对齐手动测试，逐组执行）：
+      0. 开局 clear_arb_all_channels()：ABOR:TRAN + 全通道 VOLT/CURR:MODE FIX，
+         去掉其它通道遗留 ARB，避免 BUS 触发误带起旧通道脉冲；
       1. 负载通道置 CCLoad，Current Slew=MAX；
       2. Arb Type=Current / Shape=Pulse，I0/I1 取负（拉载），
          t0=半周期、t1=0、t2=半周期（50% 占空；真机强制 t0+t1+t2=1/freq，
          t2=0 会得到零顶部宽度，见 n6705c.set_arb_current_pulse docstring）；
-      3. INIT:TRAN + BUS 触发使能 ARB（连续脉冲）；
+      3. 勾选 Continuous（ARB:TERM:LAST ON）+ TRIG:ARB:SOUR IMM（须在 INIT:TRAN 之前写）
+         + INIT:TRAN 立即启动连续脉冲（armed 后写源报 +308，BUS+*TRG 后置不触发）；
       4. 示波器按频率设 timebase（整屏约 2 周期），量程/偏置按预期摆幅与标称 Vout 设置；
       5. 稳定后暂停采集，截图并测 Vmax/Vmin/Vmean/Vpp，
          过冲=Vmax-Vmean、欠冲=Vmean-Vmin（mV）；
@@ -656,9 +669,10 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
 
     if not ctx.is_mock:
         try:
-            ctx.n6705c.arb_stop()
+            ctx.n6705c.clear_arb_all_channels()
         except Exception:  # noqa: BLE001 - 复位失败降级记录，继续配置
-            logger.error("arb_stop failed before %s", item_key, exc_info=True)
+            logger.error("clear_arb_all_channels failed before %s", item_key,
+                         exc_info=True)
         setup_load_channel(ctx, iload_ch)
 
     for idx, g in enumerate(groups):
@@ -686,13 +700,18 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
                 ctx.n6705c.set_arb_current_pulse(
                     iload_ch, -abs(i0_ma) / 1000.0, -abs(i1_ma) / 1000.0,
                     period / 2.0, 0.0, period / 2.0, freq)
+                # 勾选 Continuous（ARB:TERM:LAST ON）：须在形状配置后、arb_on 前
+                ctx.n6705c.set_arb_continuous(iload_ch, True)
+                ctx.n6705c.restore_arb_trigger_source()
                 ctx.n6705c.arb_on(iload_ch)
-                ctx.n6705c.arb_run()
 
-                ctx.scope.set_channel_scale(scope_ch, vspan_v / 4.0)
+                # scale=vspan/3 留余量防削波；时基=period/2，10 格整屏约 5 周期
+                ctx.scope.set_channel_scale(scope_ch, vspan_v / 3.0)
                 ctx.scope.set_channel_offset(scope_ch, nominal_v)
-                ctx.scope.set_timebase_scale(period / 5.0)
-                settle(ctx, max(settle_s * 8, 0.5))
+                ctx.scope.set_timebase_scale(period / 2.0)
+                ctx.scope.set_channel_display(scope_ch, True)
+                # 改时基/scale 后需足够时间让示波器重新采集稳定（真机≥1s）
+                settle(ctx, max(settle_s * 8, 1.0))
 
                 ctx.scope.stop()
                 vmax = float(ctx.scope.get_channel_max(scope_ch))
@@ -710,6 +729,7 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
             finally:
                 try:
                     ctx.n6705c.arb_stop()
+                    ctx.n6705c.set_arb_continuous(iload_ch, False)
                     ctx.n6705c.exit_arb_current(iload_ch)
                 except Exception:  # noqa: BLE001
                     logger.error("exit arb ch%d failed", iload_ch, exc_info=True)

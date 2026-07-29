@@ -40,7 +40,7 @@
    - **样式继承叠加**：本页样式 = 全局 `get_page_base_qss()`（裸 `QPushButton { padding:6px 14px }` 等）+ `START_BTN_STYLE`（`min-height:36px` 等）+ `page_extra` 层层叠加；改高度/间距前先想清父级 QSS 已注入什么，再在 `page_extra` 末尾用 `#objectName` 覆盖（同优先级后声明者生效），勿改共享常量以免影响其它页面。
 9. 中文→简体；不增删无关注释；**不主动 `git commit`**。
 10. 版本号唯一事实源 = [version.py](./version.py)，禁止写死版本号字符串，与 git 解耦。
-
+11. 新增的DEBUG用的临时文件禁止放在根目录, 放在./tests/里面.
 ---
 
 ## 项目一句话概述
