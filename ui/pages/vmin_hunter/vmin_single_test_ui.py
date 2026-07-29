@@ -60,6 +60,8 @@ class VminSingleTestUI(VminHunterUI):
         self.test_mode_combo = DarkComboBox(bg="#091426", border="#17345f")
         for key, label in _TEST_MODES:
             self.test_mode_combo.addItem(label, key)
+        # 同父类：吞掉滚轮，防止页面滚动误切换 Test Mode
+        self.test_mode_combo.installEventFilter(self)
         form.addWidget(self.test_mode_combo, 1, 1)
 
         layout.addLayout(form)

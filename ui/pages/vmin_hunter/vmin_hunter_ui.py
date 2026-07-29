@@ -499,6 +499,8 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         _ext_idx = self.test_mode_combo.findData("external")
         if _ext_idx >= 0:
             self.test_mode_combo.setCurrentIndex(_ext_idx)
+        # 避免滚轮在页面滚动时误改 Test Mode（程序 setCurrentIndex 不受影响）
+        self.test_mode_combo.installEventFilter(self)
         form.addWidget(self.test_mode_combo, 1, 1)
 
         layout.addLayout(form)
@@ -1336,6 +1338,13 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
             self.start_btn.setEnabled(True)
             self.stop_btn.setEnabled(False)
             self.execution_logs.append_log("[STOP] VminHunter sweep stopped")
+
+    def eventFilter(self, obj, event):
+        # 吞掉 Test Mode 下拉的滚轮事件，防止页面滚动时误切换；
+        # 用户点击展开后仍可正常选择，程序 setCurrentIndex 也不受影响
+        if obj is getattr(self, "test_mode_combo", None) and event.type() == event.Type.Wheel:
+            return True
+        return super().eventFilter(obj, event)
 
     # ------------------------------------------------------------------
     # UART 日志桥接（供 SerialComMixin 回调）

@@ -140,28 +140,29 @@ class SleepVminEngine(QObject):
         self._uart_queue.put(line)
         self._reassemble_and_collect(line)
 
-    # 匹配完整消息行起点："<num>/ <ts>/<level>/... | <msg>"
+    # 完整消息行起点："<num>/ <ts>/<level>/... | <msg>"（串口剥掉了 \n，
+    # 故按此起点正则重组，而非依赖换行符）
     _MSG_LINE_RE = re.compile(r"\d+/\s*\d+/[A-Z]/[^|]*\|\s*.+")
+    _MSG_START_RE = re.compile(r"(?=\d+/\s*\d+/[A-Z]/)")
 
     def _reassemble_and_collect(self, chunk: str) -> None:
-        """把字节块累积后按消息行边界切分，收集精简标志日志。
+        """累积字节块并按消息起点重组完整消息，收集精简标志日志。
 
-        串口按块喂入，retention/唤醒等完整消息常跨块；重组出含 "| " 的
-        完整行后，仅保留我们关心的语义主体（retention success/err、
-        sleep_pin_irqhandler 的 sleep=0/1），丢弃 ASSERT 转储等噪声。
+        UI 喂入的块已被剥掉换行符，故按 "数字/时间戳/级别/" 的消息起点
+        切分；含 "| " 的完整行命中后，仅保留关心的语义主体（retention
+        success/err、sleep_pin_irqhandler 的 sleep=0/1），丢弃噪声。
         """
         self._uart_reassembly += chunk
-        parts = self._uart_reassembly.split("\n")
+        segs = self._MSG_START_RE.split(self._uart_reassembly)
         # 最后一段可能不完整，留待下次拼接
-        self._uart_reassembly = parts.pop()
-        for raw in parts:
-            for line in raw.splitlines():
-                line = line.strip()
-                if not self._MSG_LINE_RE.match(line):
-                    continue
-                flag = self._extract_flag(line)
-                if flag is not None:
-                    self._point_flag_logs.append(flag)
+        self._uart_reassembly = segs.pop() if segs else ""
+        for seg in segs:
+            line = seg.strip()
+            if not self._MSG_LINE_RE.match(line):
+                continue
+            flag = self._extract_flag(line)
+            if flag is not None:
+                self._point_flag_logs.append(flag)
 
     @staticmethod
     def _extract_flag(line: str) -> Optional[str]:
