@@ -23,6 +23,7 @@
 
 - `measured` 用 `list[dict]`（非 `{"rows":[...]}`）才能被 `_measured_to_rows` 渲染成正表（quiescent 现为 dict，单列 `dIvin/dIvout/Iq`）。
 - quiescent 项：单点差分测（`iq_diff_measure`），CSV 为 `["dIvin (uA)","dIvout (uA)","Iq (uA)"]`；ENABLE 用 DR BIT/EN BIT 单 bit 位写（`set_dut_enable`）。
+- **示波器输出电压通道统一走 DUT Config**：基类 `_base_subpage` 的"示波器通道"下拉（`scope_vout_ch_combo`，存整数 `scope_vout_channel` 入全局 cfg），各 scope 测试项（ripple/output_noise/load_transient/line_transient）一律 `cfg.get("scope_vout_channel", 1)` 读取，**禁止**再在各测试项 ParamSpec 里加 `scope_vout_channel`（已收敛）。DCDC `switching_freq` 的 `scope_sw_channel`（SW 节点）属项级，不在此列。
 - 添加新测试项时, 对于非供电的电源仪器, 需要先重置仪器状态, 再去进行测试;
 - Load Transient Response（LDO/DCDC 共用 `_common.run_load_transient`）：真机流程=CCLoad + Slew MAX + 电流 ARB Pulse（I0/I1 取负，t0=T/2、t1=0、t2=T/2）→ `arb_on`+`arb_run` → 示波器设 scale/offset/timebase → `stop()` 暂停采集 → 截图 + Vmax/Vmin/Vmean 算过冲/欠冲 → 每组收尾 `arb_stop`+`exit_arb_current`；参数用 ptype="groups"（`transient_groups()`，默认 3 组 I0/I1/频率，弹窗 `_GroupsEditor` 可增删，无 base_key 全量返回）；CSV 第 0 列为组号，截图键 `{"Iload (mA)": str(组号)}` 借 `_shots_table_html` 的 iload 回退列（idx=0）并入报告。
 - Line Transient Response（LDO/DCDC 共用 `_common.run_line_transient`）：同 Load 流程，仅把拉载换为 Vin 电压脉冲——Vin 通道置 PS2Q + 电压 ARB Pulse（Vin0/Vin1 正电压，t0=T/2、t1=0、t2=T/2），收尾 `arb_stop`+`exit_arb_voltage`+`channel_off`；参数用 `line_transient_groups()`（默认 3 组 Vin0/Vin1/频率）；DCDC 侧为本次新增项（`dcdc_line_transient`，注册表默认不勾选）。

@@ -317,6 +317,13 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         self.vout_src_ch_combo.setCurrentIndex(1)
         grid.addWidget(self.vout_src_ch_combo, 5, 1)
 
+        # —— 示波器输出电压通道（各 scope 测试项共用的 Vout 测量通道）——
+        grid.addWidget(self._field_label("示波器通道"), 5, 2)
+        self.scope_vout_ch_combo = DarkComboBox()
+        self.scope_vout_ch_combo.addItems([f"CH {i}" for i in range(1, 5)])
+        self.scope_vout_ch_combo.setCurrentIndex(0)
+        grid.addWidget(self.scope_vout_ch_combo, 5, 3)
+
         # —— 高低温测试（勾选后展开温度相关设置）——
         self.temp_test_check = QCheckBox("高低温测试")
         self.temp_test_check.setChecked(False)
@@ -575,6 +582,8 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
             "vout_nominal_mv": self.vout_nominal_spin.value(),
             "device_addr": self.device_addr_edit.text().strip(),
             "width_flag": self.width_flag_combo.currentData(),
+            # 示波器输出电压通道：控件为 "CH n"，存整数 n 供 core cfg 直接 int 用
+            "scope_vout_channel": self.scope_vout_ch_combo.currentIndex() + 1,
             "item_overrides": {k: dict(v) for k, v in self._item_overrides.items()},
         }
 
@@ -641,6 +650,10 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         _set_combo(self.vout_ch_combo, cfg.get("vout_channel"))
         _set_combo(self.vout_src_ch_combo, cfg.get("vout_source_channel"))
         _set_combo(self.iload_ch_combo, cfg.get("iload_channel"))
+        if "scope_vout_channel" in cfg:
+            _idx = int(cfg["scope_vout_channel"]) - 1
+            if 0 <= _idx < self.scope_vout_ch_combo.count():
+                self.scope_vout_ch_combo.setCurrentIndex(_idx)
         if "vout_nominal_mv" in cfg:
             self.vout_nominal_spin.setValue(int(cfg["vout_nominal_mv"]))
         if "device_addr" in cfg:
@@ -1233,6 +1246,7 @@ class _ConfigManagerDialog(QDialog):
             "vout_nominal_mv": 1800 if self._module_type == "ldo" else 1200,
             "device_addr": "0x00",
             "width_flag": int(I2CWidthFlag.BIT_10),
+            "scope_vout_channel": 1,
             "item_overrides": {},
         }
 

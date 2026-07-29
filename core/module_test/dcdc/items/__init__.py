@@ -712,7 +712,6 @@ DCDC_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
         vin_bias(), average_cnt(5), settle_time(),
     )),
     "dcdc_ripple": ("Load Capability&Ripple", ripple, True, True, (
-        ParamSpec("scope_vout_channel", "示波器通道", "int", 1, "", minimum=1, maximum=4),
         vin_bias(),
         *load_sweep(0.0, 200.0, 20.0),
         settle_time(), average_cnt(),
@@ -728,7 +727,6 @@ DCDC_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
         settle_time(),
     )),
     "dcdc_load_transient": ("Load Transient Response", load_transient, True, True, (
-        ParamSpec("scope_vout_channel", "示波器通道", "int", 1, "", minimum=1, maximum=4),
         transient_groups(),
         ParamSpec("transient_vspan_mv", "预期摆幅", "float", 200.0, "mV",
                   minimum=1.0, maximum=10000.0, decimals=1,
@@ -736,7 +734,6 @@ DCDC_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
         settle_time(),
     )),
     "dcdc_line_transient": ("Line Transient Response", line_transient, True, False, (
-        ParamSpec("scope_vout_channel", "示波器通道", "int", 1, "", minimum=1, maximum=4),
         line_transient_groups(),
         ParamSpec("transient_vspan_mv", "预期摆幅", "float", 200.0, "mV",
                   minimum=1.0, maximum=10000.0, decimals=1,
