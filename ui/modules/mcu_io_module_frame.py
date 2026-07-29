@@ -69,13 +69,19 @@ MCU_PWR_RESET_GPIO_OPTIONS = tuple(f"GPIO{i}" for i in range(0, 30))
 MCU_PWR_RESET_DEFAULTS = {
     "poweron": "GPIO0",
     "reset": "GPIO1",
-    "status": "GPIO2",
-    "ctrl": "GPIO3",
+    "status": "GPIO6",
+    "ctrl": "GPIO7",
 }
 
 _POLARITY_OPTIONS = [
     {"key": "rising", "label": "Rising Edge", "svg": os.path.join(_PAGE_SVGS_DIR, "polarity_rising.svg")},
     {"key": "falling", "label": "Falling Edge", "svg": os.path.join(_PAGE_SVGS_DIR, "polarity_falling.svg")},
+]
+
+# Status 唤醒电平（High/Low）：key 与 rising/falling 对齐，active_level = 1 if High else 0
+_STATUS_WAKE_LEVEL_OPTIONS = [
+    {"key": "rising", "label": "High (wake on high level)", "svg": os.path.join(_PAGE_SVGS_DIR, "level_high.svg")},
+    {"key": "falling", "label": "Low (wake on low level)", "svg": os.path.join(_PAGE_SVGS_DIR, "level_low.svg")},
 ]
 
 MCU_DRIVE_MODE_PULSE = "pulse"
@@ -1485,9 +1491,9 @@ class McuIoConnectionMixin:
 class PolarityToggle(QWidget):
     polarity_changed = Signal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, options=None, parent=None):
         super().__init__(parent)
-        self._options = _POLARITY_OPTIONS
+        self._options = options or _POLARITY_OPTIONS
         self._index = 0
         self._anim_progress = 0.0
         self._n = len(self._options)
@@ -1893,17 +1899,21 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
             self.mcu_pr_status_combo, MCU_PWR_RESET_DEFAULTS["status"]
         )
         self.mcu_pr_status_combo.setMinimumWidth(56)
-        self.mcu_pr_status_polarity_toggle = PolarityToggle()
-        self.mcu_pr_status_mode_toggle = ModeToggle()
-        self.mcu_pr_status_mode_toggle.setToolTip(
-            "Pulse: send a single pulse. Level: hold the active level until changed."
+        self.mcu_pr_status_polarity_toggle = PolarityToggle(
+            options=_STATUS_WAKE_LEVEL_OPTIONS
         )
+        self.mcu_pr_status_polarity_toggle.setToolTip(
+            "唤醒电平：选 High 则唤醒=输出高电平、睡眠=输出低电平；"
+            "选 Low 则唤醒=输出低电平、睡眠=输出高电平。"
+        )
+        wake_level_label = QLabel("唤醒电平")
+        wake_level_label.setStyleSheet(label_style_sm)
         status_row = QHBoxLayout()
         status_row.setContentsMargins(0, 0, 0, 0)
         status_row.setSpacing(3)
         status_row.addWidget(self.mcu_pr_status_combo, 1)
+        status_row.addWidget(wake_level_label, 0, Qt.AlignVCenter)
         status_row.addWidget(self.mcu_pr_status_polarity_toggle, 0, Qt.AlignVCenter)
-        status_row.addWidget(self.mcu_pr_status_mode_toggle, 0, Qt.AlignVCenter)
         grid.addWidget(status_label_container, 2, 0, Qt.AlignVCenter)
         grid.addLayout(status_row, 2, 1)
 
@@ -2061,8 +2071,6 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
             self.mcu_pr_status_combo.setEnabled(checked)
         if getattr(self, "mcu_pr_status_polarity_toggle", None) is not None:
             self.mcu_pr_status_polarity_toggle.setEnabled(checked)
-        if getattr(self, "mcu_pr_status_mode_toggle", None) is not None:
-            self.mcu_pr_status_mode_toggle.setEnabled(checked)
 
     def _on_mcu_pr_ctrl_enable_toggled(self, checked):
         if getattr(self, "mcu_pr_ctrl_combo", None) is not None:
@@ -2131,9 +2139,6 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
             ),
             "status_polarity": (
                 self.mcu_pr_status_polarity_toggle.value() if status_enabled else None
-            ),
-            "status_mode": (
-                self.mcu_pr_status_mode_toggle.value() if status_enabled else None
             ),
             "ctrl_enabled": ctrl_enabled,
             "ctrl_channel": (
@@ -2275,29 +2280,12 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
             on_done=on_done,
         )
 
-    def mcu_status_toggle(self, pulse_width=None, on_done=None):
-        cfg = self.get_mcu_pwr_reset_config()
-        if pulse_width is None:
-            pulse_width = cfg["pulse_width"]
-        if not cfg["status_enabled"]:
-            self._mcu_io_log("[MCU] Status disabled, skipped.")
-            return False
-        pin = self._mcu_pr_pin_index(cfg["status_channel"])
-        if pin is None:
-            self._mcu_io_log("[MCU] Invalid Status channel.")
-            return False
-        if cfg["status_mode"] == MCU_DRIVE_MODE_LEVEL:
-            self._mcu_io_log(
-                "[MCU] Status is in Level mode; use mcu_set_status(active=...) instead."
-            )
-            return False
-        return self._mcu_pr_run_pulses(
-            [("Status", pin, cfg["status_polarity"])],
-            pulse_width=pulse_width,
-            on_done=on_done,
-        )
-
     def mcu_set_status(self, active=True, on_done=None):
+        """Status 电平输出：active=True 输出唤醒电平，active=False 输出相反电平。
+
+        status_polarity == "rising" (High) → 唤醒电平为高；
+        status_polarity == "falling" (Low) → 唤醒电平为低。
+        """
         cfg = self.get_mcu_pwr_reset_config()
         if not cfg["status_enabled"]:
             self._mcu_io_log("[MCU] Status disabled, skipped.")

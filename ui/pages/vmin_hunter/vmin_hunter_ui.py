@@ -495,6 +495,10 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         self.test_mode_combo = DarkComboBox(bg="#091426", border="#17345f")
         for key, label in _TEST_MODES:
             self.test_mode_combo.addItem(label, key)
+        # 默认 External Supply (N6705C)
+        _ext_idx = self.test_mode_combo.findData("external")
+        if _ext_idx >= 0:
+            self.test_mode_combo.setCurrentIndex(_ext_idx)
         form.addWidget(self.test_mode_combo, 1, 1)
 
         layout.addLayout(form)
@@ -832,9 +836,10 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
 
         layout.addLayout(self._section_title("crosshair.svg", "Sweep Results", "#fbbf24"))
 
-        self.result_table = QTableWidget(0, 6)
+        self.result_table = QTableWidget(0, 7)
         self.result_table.setHorizontalHeaderLabels([
-            "Voltage (V)", "Temp (°C)", "Channel", "Pass/CNT", "Status", "Note",
+            "Voltage (V)", "Temp (°C)", "Channel", "Pass/CNT", "Status",
+            "Flag Log", "Note",
         ])
         self.result_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.result_table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -1108,6 +1113,7 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
             wake_pattern=rule.get("wake_pattern") or self._wake_pattern,
             sleep_pattern=rule.get("sleep_pattern") or self._sleep_pattern,
             alive_pattern=rule.get("alive_pattern", ""),
+            require_full_cycle=False,
         )
         engine = SleepVminEngine(config, hooks, strategy=strategy)
         self._runner = SleepVminRunner(engine)
@@ -1171,10 +1177,11 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         def output_off(channel):
             n6705c.channel_off(channel)
 
-        def status_pulse():
-            self.mcu_io.pulse(
-                status_pin, width_ms=100, active=active, release_high_z=False
-            )
+        def status_wake():
+            self.mcu_io.out(status_pin, active)
+
+        def status_sleep():
+            self.mcu_io.out(status_pin, 1 - active)
 
         def reset_dut():
             self.mcu_io.pulse(
@@ -1243,8 +1250,8 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         hooks_kwargs = dict(
             set_voltage=set_voltage,
             output_on=output_on,
-            status_sleep=status_pulse,
-            status_wake=status_pulse,
+            status_sleep=status_sleep,
+            status_wake=status_wake,
             output_off=output_off,
         )
         if writes:
@@ -1348,8 +1355,8 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
             for line in text.splitlines():
                 if line:
                     self._runner.feed_uart_line(line)
-        else:
-            self.append_log(f"[DUT] {text}")
+        # 始终打印 DUT 原始日志到 Logs，便于 DEBUG（运行中喂引擎判活的同时不丢失）
+        self.append_log(f"[DUT] {text}")
 
     # ------------------------------------------------------------------
     # 参数读取 / 配置导入导出
@@ -1532,7 +1539,7 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
     def _apply_config(self, data):
         try:
             self.test_cnt_input.setText(str(data.get("test_cnt", 1)))
-            mode = data.get("test_mode", "internal")
+            mode = data.get("test_mode", "external")
             for i in range(self.test_mode_combo.count()):
                 if self.test_mode_combo.itemData(i) == mode:
                     self.test_mode_combo.setCurrentIndex(i)
@@ -1698,7 +1705,8 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
     # ------------------------------------------------------------------
     # 结果回填 (供 core 层通过 Signal/Slot 调用)
     # ------------------------------------------------------------------
-    def append_result_row(self, voltage, temp, channel, pass_cnt, status, note=""):
+    def append_result_row(self, voltage, temp, channel, pass_cnt, status,
+                          note="", flag_log=""):
         row = self.result_table.rowCount()
         self.result_table.insertRow(row)
         values = [
@@ -1707,6 +1715,7 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
             str(channel),
             str(pass_cnt),
             str(status),
+            str(flag_log),
             str(note),
         ]
         for col, value in enumerate(values):
@@ -1717,6 +1726,9 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
                     item.setForeground(Qt.red)
                 elif str(status).upper() == "PASS":
                     item.setForeground(Qt.green)
+            if col == 5 and value:
+                # Flag Log 内容可能很长受列宽截断，悬浮 Tooltip 显示完整内容
+                item.setToolTip(str(flag_log).replace(" | ", "\n"))
             self.result_table.setItem(row, col, item)
         self.result_table.scrollToBottom()
 

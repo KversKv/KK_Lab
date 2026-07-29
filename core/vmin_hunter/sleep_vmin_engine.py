@@ -103,7 +103,7 @@ class SleepVminEngine(QObject):
     """外供电睡眠 Vmin 探底引擎（运行于工作线程）。"""
 
     log_message = Signal(str)
-    result_row = Signal(float, object, str, str, str, str)
+    result_row = Signal(float, object, str, str, str, str, str)
     vmin_found = Signal(object)
     progress = Signal(int, int)
     finished = Signal(bool, str)
@@ -122,6 +122,11 @@ class SleepVminEngine(QObject):
         self._uart_queue: "queue.Queue[str]" = queue.Queue()
         self._stop_flag = False
         self._result = SleepVminResult()
+        # UART 重组缓冲：串口按字节块喂入，含 "| " 前缀的完整消息常跨多块，
+        # 先累积再按 "数字/时间戳...| " 边界切分出完整消息行
+        self._uart_reassembly = ""
+        # 当前电压点收集到的精简标志日志（retention success/err、wake/sleep）
+        self._point_flag_logs: List[str] = []
 
     # ------------------------------------------------------------------
     # 外部接口
@@ -130,8 +135,46 @@ class SleepVminEngine(QObject):
         self._stop_flag = True
 
     def feed_uart_line(self, line: str) -> None:
-        if line:
-            self._uart_queue.put(line)
+        if not line:
+            return
+        self._uart_queue.put(line)
+        self._reassemble_and_collect(line)
+
+    # 匹配完整消息行起点："<num>/ <ts>/<level>/... | <msg>"
+    _MSG_LINE_RE = re.compile(r"\d+/\s*\d+/[A-Z]/[^|]*\|\s*.+")
+
+    def _reassemble_and_collect(self, chunk: str) -> None:
+        """把字节块累积后按消息行边界切分，收集精简标志日志。
+
+        串口按块喂入，retention/唤醒等完整消息常跨块；重组出含 "| " 的
+        完整行后，仅保留我们关心的语义主体（retention success/err、
+        sleep_pin_irqhandler 的 sleep=0/1），丢弃 ASSERT 转储等噪声。
+        """
+        self._uart_reassembly += chunk
+        parts = self._uart_reassembly.split("\n")
+        # 最后一段可能不完整，留待下次拼接
+        self._uart_reassembly = parts.pop()
+        for raw in parts:
+            for line in raw.splitlines():
+                line = line.strip()
+                if not self._MSG_LINE_RE.match(line):
+                    continue
+                flag = self._extract_flag(line)
+                if flag is not None:
+                    self._point_flag_logs.append(flag)
+
+    @staticmethod
+    def _extract_flag(line: str) -> Optional[str]:
+        """从完整消息行提取精简标志主体，不关心的行返回 None。"""
+        body = line.split("|", 1)[-1].strip()
+        if "retention check success" in body:
+            return "retention check success"
+        if "retention_check_data err" in body or "retention check err" in body:
+            # 截断保留关键比对信息，丢弃后面冗长寄存器/栈转储
+            return body[:80]
+        if "sleep_pin_irqhandler" in body and ("sleep=0" in body or "sleep=1" in body):
+            return body
+        return None
 
     @property
     def result(self) -> SleepVminResult:
@@ -146,6 +189,13 @@ class SleepVminEngine(QObject):
         except Exception as exc:
             logger.error("SleepVminEngine crashed: %s", exc, exc_info=True)
             self.log_message.emit(f"[ERROR] Engine crashed: {exc}")
+            # 引擎异常崩溃也要把 CH 还原为 Default，避免停留在低压
+            try:
+                cfg = self._cfg
+                self._hooks.set_voltage(cfg.channel, cfg.restore_voltage)
+            except Exception:
+                logger.error("Restore default voltage on crash failed",
+                             exc_info=True)
             self.finished.emit(False, str(exc))
 
     def _run_sweep(self) -> None:
@@ -207,6 +257,7 @@ class SleepVminEngine(QObject):
 
             point_status = "PASS"
             point_note = ""
+            self._point_flag_logs = []
             pass_count = 0
             done = 0
             for it in range(1, cnt + 1):
@@ -225,11 +276,16 @@ class SleepVminEngine(QObject):
                         f"[ITER {it}/{cnt}] Sleep voltage = {sleep_v:.3f} V"
                     )
 
-                ok = self._run_one_sleep_point(sleep_v)
-                if not ok:
-                    status, note = "FAIL", "sleep/drop/restore sequence failed"
+                outcome = self._run_one_sleep_point(sleep_v)
+                if isinstance(outcome, AliveChecker):
+                    checker = outcome
+                    status, note = self._run_alive_check(sleep_v, checker)
+                elif isinstance(outcome, tuple):
+                    # ("FAIL", note) / ("FAIL", note, flag)：序列或崩溃失败
+                    status = outcome[0]
+                    note = outcome[1] if len(outcome) > 1 else ""
                 else:
-                    status, note = self._run_alive_check(sleep_v)
+                    status, note = "FAIL", "sleep/drop/restore sequence failed"
 
                 done += 1
                 if status == "PASS":
@@ -238,9 +294,11 @@ class SleepVminEngine(QObject):
                     point_status, point_note = status, note
                     break
 
+            # 去重保序：同一标志（如多次 retention success）只保留一条
+            seen_flags = list(dict.fromkeys(self._point_flag_logs))
             self._emit_row(
                 sleep_v, temp, ch, f"{pass_count}/{cnt}",
-                point_status, point_note,
+                point_status, point_note, " | ".join(seen_flags),
             )
 
             if point_status == "PASS":
@@ -273,7 +331,11 @@ class SleepVminEngine(QObject):
 
             self._drain_uart_queue()
             try:
-                self.log_message.emit("[INIT] STATUS toggle (ensure wake)")
+                # 先反向再正向：唤醒电平=High 时 Low→High，确保即使 DUT 本已唤醒
+                # 也能产生一次真实唤醒沿，从而等到 sleep=0 日志
+                self.log_message.emit("[INIT] STATUS toggle (ensure wake: sleep->wake)")
+                self._hooks.status_sleep()
+                time.sleep(cfg.alive_toggle_interval_s)
                 self._hooks.status_wake()
             except Exception as exc:
                 logger.error("Ensure-wake trigger failed: %s", exc, exc_info=True)
@@ -304,7 +366,14 @@ class SleepVminEngine(QObject):
         return False
 
     def _read_sleep_state(self, timeout_s: float) -> Optional[int]:
+        """在整个时间窗内监听 sleep 状态。
+
+        反向沿(sleep)的 sleep=1 会先于正向沿(wake)的 sleep=0 到达；
+        故见到 sleep=1 不立即返回，持续等到窗尾：优先确认 sleep=0，
+        仅当整窗只见 sleep=1 才返回 1，均无则返回 None。
+        """
         deadline = time.monotonic() + timeout_s
+        saw_sleep = False
         while time.monotonic() < deadline:
             if self._stop_flag:
                 return None
@@ -324,13 +393,15 @@ class SleepVminEngine(QObject):
             if wake_re.search(line):
                 return 0
             if sleep_re.search(line):
-                return 1
-        return None
+                saw_sleep = True
+        return 1 if saw_sleep else None
 
     # ------------------------------------------------------------------
     # 单个睡眠电压点的睡眠/降压/恢复/唤醒流程
+    # 返回: 成功 → 唤醒沿启动的 AliveChecker（供 _run_alive_check 续用）；
+    #       失败 → "FAIL" 字符串 / False
     # ------------------------------------------------------------------
-    def _run_one_sleep_point(self, sleep_v: float) -> bool:
+    def _run_one_sleep_point(self, sleep_v: float):
         cfg = self._cfg
         ch = cfg.channel
         restore_v = cfg.restore_voltage
@@ -344,43 +415,80 @@ class SleepVminEngine(QObject):
 
             self.log_message.emit(f"[SEQ] Drop Vcore -> {sleep_v:.3f} V (hold {cfg.sleep_hold_s:.1f}s)")
             self._hooks.set_voltage(ch, sleep_v)
-            if self._sleep_with_stop(cfg.sleep_hold_s):
+            # 睡眠保持期持续监听 UART：崩溃/retention 错误立即判该点失败，
+            # 避免崩溃日志滞留到判活阶段才被读出而无法归属到当前电压点
+            crash_line = self._watch_uart_crash(cfg.sleep_hold_s)
+            if crash_line is not None:
+                self.log_message.emit(
+                    f"[FAIL] DUT crash during sleep hold at {sleep_v:.3f} V: {crash_line}"
+                )
+                return "FAIL", f"crash during sleep hold: {crash_line}", crash_line
+            if self._stop_flag:
                 return False
 
             self.log_message.emit(f"[SEQ] Restore Vcore -> {restore_v:.3f} V")
             self._hooks.set_voltage(ch, restore_v)
-            time.sleep(cfg.wake_settle_s)
+            crash_line = self._watch_uart_crash(cfg.wake_settle_s)
+            if crash_line is not None:
+                self.log_message.emit(
+                    f"[FAIL] DUT crash after restore at {sleep_v:.3f} V: {crash_line}"
+                )
+                return "FAIL", f"crash after restore: {crash_line}", crash_line
+            if self._stop_flag:
+                return False
 
             self.log_message.emit("[SEQ] STATUS -> wake")
+            # 唤醒沿即判活起点：先启动判活会话再触发，避免漏掉紧随其后的 sleep=0 日志
+            checker = AliveChecker(self._strategy)
+            checker.start()
             self._hooks.status_wake()
-            time.sleep(cfg.status_settle_s)
-            return True
+            result = self._pump_uart_to_checker(checker, cfg.status_settle_s)
+            if result.state is AliveState.FAIL:
+                return "FAIL", f"{result.fail_reason.value}: {result.detail}"
+            return checker
         except Exception as exc:
             logger.error("Sleep point %.3fV sequence failed: %s", sleep_v, exc, exc_info=True)
             self.log_message.emit(f"[ERROR] Sequence failed at {sleep_v:.3f} V: {exc}")
             return False
 
-    # ------------------------------------------------------------------
-    # 判活：按键翻转状态，主动触发两次，凑齐 sleep=0 / sleep=1 一轮，喂 UART LOG 判定
-    # ------------------------------------------------------------------
-    def _run_alive_check(self, sleep_v: float):
+    def _pump_uart_to_checker(self, checker, duration_s: float):
+        """在 duration_s 内把 UART 队列逐条喂给 checker，返回最新判活结果。
+
+        用于唤醒沿之后的窗口期：既能把已到达/紧随的 sleep=0 日志计入判活，
+        又能在窗口内尽早检出崩溃关键字。返回 PENDING 表示窗口内未凑齐判定。
+        """
         cfg = self._cfg
-        checker = AliveChecker(self._strategy)
+        deadline = time.monotonic() + duration_s
+        result = checker.result
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or self._stop_flag:
+                return result
+            try:
+                line = self._uart_queue.get(
+                    timeout=min(cfg.alive_poll_interval_s, remaining)
+                )
+            except queue.Empty:
+                continue
+            logger.debug("DUT UART: %s", line)
+            result = checker.feed_line(line)
+            if result.state is not AliveState.PENDING:
+                return result
 
-        self._drain_uart_queue()
-        checker.start()
+    # ------------------------------------------------------------------
+    # 判活：沿用唤醒沿启动的判活会话，等待 DUT 上报唤醒事件（sleep=0）
+    # ------------------------------------------------------------------
+    def _run_alive_check(self, sleep_v: float, checker):
+        cfg = self._cfg
 
-        try:
-            self.log_message.emit("[ALIVE] STATUS toggle #1 (alive probe)")
-            self._hooks.status_wake()
-            if self._sleep_with_stop(cfg.alive_toggle_interval_s):
-                return "FAIL", "stopped during alive check"
-            self.log_message.emit("[ALIVE] STATUS toggle #2 (alive probe)")
-            self._hooks.status_sleep()
-        except Exception as exc:
-            logger.error("Alive probe trigger failed: %s", exc, exc_info=True)
-            return "FAIL", f"status trigger error: {exc}"
+        # 唤醒沿后的窗口期日志可能已使 checker 提前 PASS/FAIL
+        result = checker.result
+        if result.state is AliveState.PASS:
+            return "PASS", result.detail
+        if result.state is AliveState.FAIL:
+            return "FAIL", f"{result.fail_reason.value}: {result.detail}"
 
+        self.log_message.emit("[ALIVE] wait wake event (sleep=0)")
         while True:
             if self._stop_flag:
                 return "FAIL", "stopped during alive check"
@@ -416,6 +524,42 @@ class SleepVminEngine(QObject):
             time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
         return False
 
+    def _watch_uart_crash(self, duration_s: float) -> Optional[str]:
+        """在 duration_s 内监听 UART 队列，命中崩溃/retention 错误立即返回该行。
+
+        读到的非崩溃行先暂存，窗口结束（或命中崩溃）时一次性回吐到队列，
+        避免吞掉后续判活所需日志；用暂存而非即读即回，防止同一行在队尾
+        被反复读出造成的忙等。返回 None 表示窗口内无崩溃（或收到停止请求）。
+        """
+        deadline = time.monotonic() + duration_s
+        match_crash = getattr(self._strategy, "_match_crash", None)
+        stash = []
+        crash_line = None
+        while time.monotonic() < deadline:
+            if self._stop_flag:
+                break
+            try:
+                line = self._uart_queue.get(
+                    timeout=min(0.05, max(0.0, deadline - time.monotonic()))
+                )
+            except queue.Empty:
+                continue
+            logger.debug("DUT UART: %s", line)
+            if match_crash is not None and match_crash(line) is not None:
+                crash_line = line
+                break
+            stash.append(line)
+        for line in stash:
+            self._uart_queue.put(line)
+        if crash_line is not None:
+            # 崩溃行（含 ASSERT 的整条转储）按语义精简后纳入标志
+            flag = self._extract_flag(crash_line)
+            if flag is not None:
+                self._point_flag_logs.append(flag)
+            else:
+                self._point_flag_logs.append(crash_line[:80])
+        return crash_line
+
     def _safe_hook(self, name: str, fn: Callable[[], None]) -> None:
         try:
             fn()
@@ -424,7 +568,8 @@ class SleepVminEngine(QObject):
             self.log_message.emit(f"[ERROR] Hook '{name}' failed: {exc}")
             raise
 
-    def _emit_row(self, sleep_v, temp, ch, pass_cnt, status, note) -> None:
+    def _emit_row(self, sleep_v, temp, ch, pass_cnt, status, note,
+                  flag_log="") -> None:
         self._result.rows.append({
             "voltage": sleep_v,
             "temperature": temp,
@@ -432,10 +577,25 @@ class SleepVminEngine(QObject):
             "pass_cnt": pass_cnt,
             "status": status,
             "note": note,
+            "flag_log": flag_log,
         })
-        self.result_row.emit(sleep_v, temp, f"CH{ch}", str(pass_cnt), status, note)
+        self.result_row.emit(
+            sleep_v, temp, f"CH{ch}", str(pass_cnt), status, note, flag_log
+        )
 
     def _finalize(self, last_pass: Optional[float]) -> None:
+        # 收尾（PASS/FAIL/异常/停止）统一把该 CH 还原为 Default 电压，
+        # 避免停留在失败点低压导致 DUT 持续异常
+        cfg = self._cfg
+        try:
+            restore_v = cfg.restore_voltage
+            self._hooks.set_voltage(cfg.channel, restore_v)
+            self.log_message.emit(
+                f"[FINISH] Restore CH{cfg.channel} -> {restore_v:.3f} V (default)"
+            )
+        except Exception as exc:
+            logger.error("Restore default voltage failed: %s", exc, exc_info=True)
+            self.log_message.emit(f"[ERROR] Restore default voltage failed: {exc}")
         self._result.vmin = last_pass
         self.vmin_found.emit(last_pass)
         if last_pass is not None:

@@ -45,6 +45,9 @@ DEFAULT_CRASH_KEYWORDS = (
     "HardFault",
     "panic",
     "PANIC",
+    "retention check err",
+    "retention_check_data err",
+    "check err",
 )
 
 DEFAULT_NO_LOG_TIMEOUT_S = 3.0

@@ -28,6 +28,7 @@
 - **样式**：复用 [ui/styles/](../styles/) 常量；通用图标优先用 `resources/modules/SVG_Common/` 下 SVG，不新增位图。
 - **日志区**：使用 `ExecutionLogsFrame.wrap_with(main_content, show_progress=..., stretch=(4, 1))`；禁止直接 `layout.addWidget(self.execution_logs)`，禁止 `setMaximumHeight`。
 - **控件高度**：可复用控件（如 DarkComboBox）用自身 QSS ID 选择器钉死高度，不依赖父页面。
+- **McuPwrResetConfigMixin 的 Status 行**：仅保留 GPIO 下拉 + “唤醒电平” High/Low 切换（`PolarityToggle(options=_STATUS_WAKE_LEVEL_OPTIONS)`），不再有 Pulse/Level 模式；`status_mode`/`mcu_status_toggle` 已移除。唤醒=`mcu_io.out(pin, active)`，睡眠=`mcu_io.out(pin, 1-active)`（`active = 1 if status_polarity == "rising"(High) else 0`）。`mcu_set_status(active=True/False)` 即按此映射输出电平。`status_polarity` 键仍复用 `rising/falling`（High=rising、Low=falling）以兼容页面读取。Ctrl 行仍保留 Pulse/Level `ModeToggle`。
 
 ## 局部坑点
 
