@@ -88,6 +88,8 @@ class EngineHooks:
     output_off: Optional[Callable[[int], None]] = None
     init_internal_supply: Optional[Callable[[], None]] = None
     reset: Optional[Callable[[], None]] = None
+    # 收尾时把 PWR/RESET/Status 控制 IO 释放为高阻，避免一直驱动 DUT
+    release_pins: Optional[Callable[[], None]] = None
 
 
 @dataclass
@@ -197,6 +199,7 @@ class SleepVminEngine(QObject):
             except Exception:
                 logger.error("Restore default voltage on crash failed",
                              exc_info=True)
+            self._release_pins_safe()
             self.finished.emit(False, str(exc))
 
     def _run_sweep(self) -> None:
@@ -569,6 +572,18 @@ class SleepVminEngine(QObject):
             self.log_message.emit(f"[ERROR] Hook '{name}' failed: {exc}")
             raise
 
+    def _release_pins_safe(self) -> None:
+        """收尾把 PWR/RESET/Status IO 释放为高阻；未注入或失败仅记录，不阻断收尾。"""
+        hook = getattr(self._hooks, "release_pins", None)
+        if hook is None:
+            return
+        try:
+            hook()
+            self.log_message.emit("[FINISH] Release PWR/RESET/Status IO to High-Z")
+        except Exception as exc:
+            logger.error("Release pins to High-Z failed: %s", exc, exc_info=True)
+            self.log_message.emit(f"[ERROR] Release pins to High-Z failed: {exc}")
+
     def _emit_row(self, sleep_v, temp, ch, pass_cnt, status, note,
                   flag_log="") -> None:
         self._result.rows.append({
@@ -597,6 +612,7 @@ class SleepVminEngine(QObject):
         except Exception as exc:
             logger.error("Restore default voltage failed: %s", exc, exc_info=True)
             self.log_message.emit(f"[ERROR] Restore default voltage failed: {exc}")
+        self._release_pins_safe()
         self._result.vmin = last_pass
         self.vmin_found.emit(last_pass)
         if last_pass is not None:

@@ -1028,6 +1028,8 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
             if reset_pin is not None:
                 reset_active = 1 if mcu_cfg.get("reset_polarity") == "rising" else 0
 
+        poweron_pin = self._mcu_pr_pin_index(mcu_cfg.get("poweron_channel"))
+
         n6705c_cfg = params["channel_config"]["n6705c"]
         sweep_m = params["voltage_sweep"]
         phases = [{
@@ -1064,6 +1066,7 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
             "vcorel_enabled": vcorel_enabled,
             "reset_pin": reset_pin,
             "reset_active": reset_active,
+            "poweron_pin": poweron_pin,
             "test_cnt": params["test_cnt"],
             "phases": phases,
             "phase_index": 0,
@@ -1105,6 +1108,7 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
             ctx["iic_all"], current_limit_ma,
             vcorel_enabled=ctx["vcorel_enabled"],
             reset_pin=ctx["reset_pin"], reset_active=ctx["reset_active"],
+            poweron_pin=ctx.get("poweron_pin"),
             fixed_channel=phase["fixed_channel"],
             fixed_voltage=phase["fixed_voltage"],
         )
@@ -1154,8 +1158,8 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
     def _build_external_hooks(self, n6705c, status_pin, status_polarity, iic_all,
                               current_limit_ma=CURRENT_LIMIT_DEFAULT_MA,
                               vcorel_enabled=False, reset_pin=None,
-                              reset_active=None, fixed_channel=None,
-                              fixed_voltage=None):
+                              reset_active=None, poweron_pin=None,
+                              fixed_channel=None, fixed_voltage=None):
         active = 1 if status_polarity == "rising" else 0
         try:
             current_limit_ma = float(current_limit_ma)
@@ -1189,6 +1193,13 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
             self.mcu_io.pulse(
                 reset_pin, width_ms=100, active=reset_active, release_high_z=False
             )
+
+        def release_pins():
+            # 收尾把 PWR/RESET/Status 控制 IO 释放为高阻，避免一直驱动 DUT
+            pins = {status_pin, poweron_pin, reset_pin}
+            for p in pins:
+                if p is not None:
+                    self.mcu_io.in_pull(p, "none")
 
         def init_internal_supply():
             from i2c_interface_x64 import I2CInterface
@@ -1255,6 +1266,7 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
             status_sleep=status_sleep,
             status_wake=status_wake,
             output_off=output_off,
+            release_pins=release_pins,
         )
         if writes:
             hooks_kwargs["init_internal_supply"] = init_internal_supply
