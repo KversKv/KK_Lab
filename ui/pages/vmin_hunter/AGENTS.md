@@ -16,6 +16,7 @@
 
 ## 接口契约（对外不可破坏）
 
+- `VminHunterContainerUI`（`vmin_hunter_container.py`）：Tab 容器，`TEST_TAB_MAP = {"hunt": 0, "single_test": 1}`，`set_current_test()` + `sync_n6705c_from_top()` 透传子页；`main_window._create_vmin_hunter_ui(selected_test=...)` 经侧边栏悬停子菜单切换。
 - 复用 Mixin：`N6705CConnectionMixin` + `ChamberConnectionMixin` + `McuPwrResetConfigMixin` + `SerialComMixin(MODE_FULL)`。
 - 引擎 `SleepVminEngine`（core）：QThread 编排，硬件动作经 `EngineHooks` 注入（UI 提供）。
 - 判活策略可插拔（`alive_checker`：默认 sleep=0/1 翻转 + 崩溃关键字 + 超时）。
@@ -23,6 +24,7 @@
 ## 局部约定
 
 - 布局：左侧配置列（设备连接 / Test Config / Channel Config）+ 右侧监控区（电压点遍历结果表 + 死机记录）+ 底部 Execution Logs（UART 日志 / 死机检测）。
+- 子页 `VminSingleTestUI`（`vmin_single_test_ui.py`）继承 `VminHunterUI`：仅重写 `_create_test_config_panel`（单点 Default + Vmin 替代扫描参数）/`_on_vcorel_toggled`/`_read_params`/`_apply_config`；`voltage_points=[vmin]` 复用父类 `_start_external_sleep_sweep` 单点执行。父类 `_apply_config` 的通道/串口尾部已抽为 `_apply_channel_and_link_config` 供子类复用。
 - 结果落 `Results/` 带时间戳。
 
 ## 局部坑点

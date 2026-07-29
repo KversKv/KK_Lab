@@ -34,6 +34,7 @@ class NavController:
         self._module_test_btn_hovered = False
         self._collection_btn_hovered = False
         self._pmu_tool_btn_hovered = False
+        self._vmin_hunter_btn_hovered = False
 
         self.current_pa_mode = "analyser"
         self.current_pmu_test_key = None
@@ -42,8 +43,11 @@ class NavController:
         self.current_module_test_key = "ldo"
         self.current_collection_key = "mcu_io"
         self.current_pmu_tool_key = "1811"
+        self.current_vmin_hunter_key = "hunt"
 
         self.module_test_tab_map = {"ldo": 0, "dcdc": 1}
+
+        self.vmin_hunter_tab_map = {"hunt": 0, "single_test": 1}
 
         self.pmu_test_tab_map = {
             "dcdc_efficiency": 0,
@@ -315,10 +319,19 @@ class NavController:
         self.pmu_btn.installEventFilter(self._host)
         self.pmu_tool_submenu.installEventFilter(self._host)
 
+        self.vmin_hunter_submenu = SidebarSubMenu([
+            ("hunt", "Vmin Hunt"),
+            ("single_test", "Single Vmin Test"),
+        ], parent=self._host)
+        self.vmin_hunter_submenu.item_clicked.connect(self._on_vmin_hunter_submenu_clicked)
+        self.vmin_hunter_btn.installEventFilter(self._host)
+        self.vmin_hunter_submenu.installEventFilter(self._host)
+
     def _hide_other_submenus(self, except_submenu):
         for submenu in (self.pa_submenu, self.pmu_submenu, self.charger_submenu,
                         self.consumption_submenu, self.module_test_submenu,
-                        self.collection_submenu, self.pmu_tool_submenu):
+                        self.collection_submenu, self.pmu_tool_submenu,
+                        self.vmin_hunter_submenu):
             if submenu and submenu is not except_submenu and submenu.isVisible():
                 submenu.force_hide()
 
@@ -525,6 +538,35 @@ class NavController:
         self._host._create_pmu_ui(selected_key=sub_key)
         self.pmu_tool_submenu.hide()
 
+    def _show_vmin_hunter_submenu(self):
+        if not self.vmin_hunter_submenu:
+            return
+        self._hide_other_submenus(self.vmin_hunter_submenu)
+        btn_global_pos = self.vmin_hunter_btn.mapToGlobal(QPoint(0, 0))
+        x = btn_global_pos.x() + self.vmin_hunter_btn.width() + 8
+        y = btn_global_pos.y()
+        self.vmin_hunter_submenu.set_current_item(self.current_vmin_hunter_key)
+        self.vmin_hunter_submenu.move(x, y)
+        self.vmin_hunter_submenu.show()
+        self.vmin_hunter_submenu.raise_()
+
+    def _hide_vmin_hunter_submenu_if_needed(self):
+        if self._vmin_hunter_btn_hovered:
+            return
+        if self.vmin_hunter_submenu and self.vmin_hunter_submenu.is_hovered():
+            return
+        if self.vmin_hunter_submenu:
+            self.vmin_hunter_submenu.hide()
+
+    def _on_vmin_hunter_submenu_clicked(self, test_key):
+        logger.debug("VminHunter submenu clicked: %s", test_key)
+        self.current_vmin_hunter_key = test_key
+        self.vmin_hunter_submenu.set_current_item(test_key)
+        self.vmin_hunter_btn.setChecked(True)
+        self._refresh_nav_arrow_state()
+        self._host._create_vmin_hunter_ui(selected_test=test_key)
+        self.vmin_hunter_submenu.hide()
+
     def handle_event_filter(self, obj, event):
         if obj == self.pmu_test_btn:
             if event.type() == QEvent.Enter:
@@ -638,6 +680,22 @@ class NavController:
                 QTimer.singleShot(_SUBMENU_HIDE_DELAY, self._hide_pmu_tool_submenu_if_needed)
             return True
 
+        elif obj == self.vmin_hunter_btn:
+            if event.type() == QEvent.Enter:
+                self._vmin_hunter_btn_hovered = True
+                self._show_vmin_hunter_submenu()
+            elif event.type() == QEvent.Leave:
+                self._vmin_hunter_btn_hovered = False
+                QTimer.singleShot(_SUBMENU_HIDE_DELAY, self._hide_vmin_hunter_submenu_if_needed)
+            return True
+
+        elif obj == self.vmin_hunter_submenu:
+            if event.type() == QEvent.Enter:
+                self._show_vmin_hunter_submenu()
+            elif event.type() == QEvent.Leave:
+                QTimer.singleShot(_SUBMENU_HIDE_DELAY, self._hide_vmin_hunter_submenu_if_needed)
+            return True
+
         return False
 
     def handle_nav_button_clicked(self, sender):
@@ -648,6 +706,7 @@ class NavController:
             self.module_test_submenu.hide()
             self.collection_submenu.hide()
             self.pmu_tool_submenu.hide()
+            self.vmin_hunter_submenu.hide()
             self._show_pa_submenu()
             self._host._switch_pa_mode(self.current_pa_mode)
 
@@ -659,6 +718,7 @@ class NavController:
             self.module_test_submenu.hide()
             self.collection_submenu.hide()
             self.pmu_tool_submenu.hide()
+            self.vmin_hunter_submenu.hide()
             self._host._create_oscilloscope_ui()
 
         elif sender == self.chamber_btn:
@@ -669,6 +729,7 @@ class NavController:
             self.module_test_submenu.hide()
             self.collection_submenu.hide()
             self.pmu_tool_submenu.hide()
+            self.vmin_hunter_submenu.hide()
             self._host._create_thermal_chamber_ui()
 
         elif sender == self.pmu_test_btn:
@@ -678,6 +739,7 @@ class NavController:
             self.module_test_submenu.hide()
             self.collection_submenu.hide()
             self.pmu_tool_submenu.hide()
+            self.vmin_hunter_submenu.hide()
             self._host._create_pmu_test_ui(selected_test=self.current_pmu_test_key)
             self._show_pmu_submenu()
 
@@ -688,6 +750,7 @@ class NavController:
             self.module_test_submenu.hide()
             self.collection_submenu.hide()
             self.pmu_tool_submenu.hide()
+            self.vmin_hunter_submenu.hide()
             self._host._create_charger_test_ui(selected_test=self.current_charger_test_key)
             self._show_charger_submenu()
 
@@ -698,6 +761,7 @@ class NavController:
             self.consumption_submenu.hide()
             self.collection_submenu.hide()
             self.pmu_tool_submenu.hide()
+            self.vmin_hunter_submenu.hide()
             self._host._create_module_test_ui(selected_test=self.current_module_test_key)
             self._show_module_test_submenu()
 
@@ -708,6 +772,7 @@ class NavController:
             self.module_test_submenu.hide()
             self.collection_submenu.hide()
             self.pmu_tool_submenu.hide()
+            self.vmin_hunter_submenu.hide()
             self._host._create_consumption_test_ui(selected_test=self.current_consumption_test_key)
             self._show_consumption_submenu()
 
@@ -719,7 +784,8 @@ class NavController:
             self.module_test_submenu.hide()
             self.collection_submenu.hide()
             self.pmu_tool_submenu.hide()
-            self._host._create_vmin_hunter_ui()
+            self._host._create_vmin_hunter_ui(selected_test=self.current_vmin_hunter_key)
+            self._show_vmin_hunter_submenu()
 
         elif sender == self.orchestrator_btn:
             self.pmu_submenu.hide()
@@ -729,6 +795,7 @@ class NavController:
             self.module_test_submenu.hide()
             self.collection_submenu.hide()
             self.pmu_tool_submenu.hide()
+            self.vmin_hunter_submenu.hide()
             self._host._create_orchestrator_ui()
 
         elif sender == self.pmu_btn:
@@ -738,6 +805,7 @@ class NavController:
             self.consumption_submenu.hide()
             self.module_test_submenu.hide()
             self.collection_submenu.hide()
+            self.vmin_hunter_submenu.hide()
             self._host._create_pmu_ui(selected_key=self.current_pmu_tool_key)
             self._show_pmu_tool_submenu()
 
@@ -748,6 +816,7 @@ class NavController:
             self.consumption_submenu.hide()
             self.module_test_submenu.hide()
             self.pmu_tool_submenu.hide()
+            self.vmin_hunter_submenu.hide()
             self._host._create_collection_ui(selected_key=self.current_collection_key)
             self._show_collection_submenu()
 
@@ -776,6 +845,7 @@ class NavController:
     def hide_all_submenus(self):
         for submenu in (self.pa_submenu, self.pmu_submenu, self.charger_submenu,
                         self.consumption_submenu, self.module_test_submenu,
-                        self.collection_submenu, self.pmu_tool_submenu):
+                        self.collection_submenu, self.pmu_tool_submenu,
+                        self.vmin_hunter_submenu):
             if submenu and submenu.isVisible():
                 submenu.hide()

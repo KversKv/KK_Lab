@@ -1590,52 +1590,55 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
                 if "step" in vcorel_sweep:
                     self.vcorel_step_input.setText(str(vcorel_sweep["step"]))
 
-            ch_cfg = data.get("channel_config", {})
-            n6705c_cfg = ch_cfg.get("n6705c", {})
-            if n6705c_cfg.get("VcoreM_channel") is not None:
-                idx = self.vcorem_channel_combo.findText(str(n6705c_cfg["VcoreM_channel"]))
-                if idx >= 0:
-                    self.vcorem_channel_combo.setCurrentIndex(idx)
-            if n6705c_cfg.get("VcoreL_channel") is not None:
-                idx = self.vcorel_channel_combo.findText(str(n6705c_cfg["VcoreL_channel"]))
-                if idx >= 0:
-                    self.vcorel_channel_combo.setCurrentIndex(idx)
-            if n6705c_cfg.get("VcoreM_current_limit_ma") is not None:
-                try:
-                    self.vcorem_ilimit_spin.setValue(float(n6705c_cfg["VcoreM_current_limit_ma"]))
-                except (TypeError, ValueError):
-                    logger.warning("Invalid VcoreM current limit in config", exc_info=True)
-            if n6705c_cfg.get("VcoreL_current_limit_ma") is not None:
-                try:
-                    self.vcorel_ilimit_spin.setValue(float(n6705c_cfg["VcoreL_current_limit_ma"]))
-                except (TypeError, ValueError):
-                    logger.warning("Invalid VcoreL current limit in config", exc_info=True)
-
-            iic = ch_cfg.get("iic", {})
-            self._apply_iic_group(self._vcorem_iic, iic.get("VcoreM", {}))
-            self._apply_iic_group(self._vcorel_iic, iic.get("VcoreL", {}))
-
-            uart = data.get("uart", {})
-            if uart.get("port") and hasattr(self, "serial_combo"):
-                port_text = str(uart["port"])
-                idx = self.serial_combo.findText(port_text, Qt.MatchStartsWith)
-                if idx >= 0:
-                    self.serial_combo.setCurrentIndex(idx)
-                else:
-                    self.serial_combo.addItem(port_text)
-                    self.serial_combo.setCurrentText(port_text)
-            if uart.get("baudrate"):
-                try:
-                    self._serial_baudrate = int(uart["baudrate"])
-                except (TypeError, ValueError):
-                    pass
-
-            alive = data.get("alive_rule")
-            if isinstance(alive, dict) and (alive.get("wake_pattern") or alive.get("sleep_pattern")):
-                self._serial_alive_rule = dict(alive)
+            self._apply_channel_and_link_config(data)
         except (TypeError, ValueError):
             logger.error("Failed to apply VminHunter config", exc_info=True)
             QMessageBox.warning(self, "Import Warning", "Config partially applied; some fields invalid.")
+
+    def _apply_channel_and_link_config(self, data):
+        ch_cfg = data.get("channel_config", {})
+        n6705c_cfg = ch_cfg.get("n6705c", {})
+        if n6705c_cfg.get("VcoreM_channel") is not None:
+            idx = self.vcorem_channel_combo.findText(str(n6705c_cfg["VcoreM_channel"]))
+            if idx >= 0:
+                self.vcorem_channel_combo.setCurrentIndex(idx)
+        if n6705c_cfg.get("VcoreL_channel") is not None:
+            idx = self.vcorel_channel_combo.findText(str(n6705c_cfg["VcoreL_channel"]))
+            if idx >= 0:
+                self.vcorel_channel_combo.setCurrentIndex(idx)
+        if n6705c_cfg.get("VcoreM_current_limit_ma") is not None:
+            try:
+                self.vcorem_ilimit_spin.setValue(float(n6705c_cfg["VcoreM_current_limit_ma"]))
+            except (TypeError, ValueError):
+                logger.warning("Invalid VcoreM current limit in config", exc_info=True)
+        if n6705c_cfg.get("VcoreL_current_limit_ma") is not None:
+            try:
+                self.vcorel_ilimit_spin.setValue(float(n6705c_cfg["VcoreL_current_limit_ma"]))
+            except (TypeError, ValueError):
+                logger.warning("Invalid VcoreL current limit in config", exc_info=True)
+
+        iic = ch_cfg.get("iic", {})
+        self._apply_iic_group(self._vcorem_iic, iic.get("VcoreM", {}))
+        self._apply_iic_group(self._vcorel_iic, iic.get("VcoreL", {}))
+
+        uart = data.get("uart", {})
+        if uart.get("port") and hasattr(self, "serial_combo"):
+            port_text = str(uart["port"])
+            idx = self.serial_combo.findText(port_text, Qt.MatchStartsWith)
+            if idx >= 0:
+                self.serial_combo.setCurrentIndex(idx)
+            else:
+                self.serial_combo.addItem(port_text)
+                self.serial_combo.setCurrentText(port_text)
+        if uart.get("baudrate"):
+            try:
+                self._serial_baudrate = int(uart["baudrate"])
+            except (TypeError, ValueError):
+                pass
+
+        alive = data.get("alive_rule")
+        if isinstance(alive, dict) and (alive.get("wake_pattern") or alive.get("sleep_pattern")):
+            self._serial_alive_rule = dict(alive)
 
     def _apply_iic_group(self, group, data):
         if not isinstance(data, dict):

@@ -94,7 +94,7 @@ from ui.pages.consumption_test.consumption_test_wrapper import ConsumptionTestWr
 from ui.pages.charger_test.charger_test_ui import ChargerTestUI
 from ui.pages.module_test.module_test_ui import ModuleTestUI
 from ui.pages.orchestrator.orchestrator_ui import OrchestratorUI
-from ui.pages.vmin_hunter.vmin_hunter_ui import VminHunterUI
+from ui.pages.vmin_hunter.vmin_hunter_container import VminHunterContainerUI
 from ui.pages.pmu.pmu_1811 import Pmu1811UI
 from ui.pages.pmu.pmu_1860_ui import Pmu1860UI
 from ui.modules.serialCom_module.serialCom_module_frame import SerialComMixin
@@ -903,6 +903,7 @@ class MainWindow(CleanupMixin, QMainWindow):
             "charger_test": self.nav.charger_test_btn,
             "consumption_test": self.nav.consumption_test_btn,
             "vmin_hunter": self.nav.vmin_hunter_btn,
+            "vmin_single_test": self.nav.vmin_hunter_btn,
             "orchestrator": self.nav.orchestrator_btn,
             "kk_serials": self.nav.collection_btn,
             "i2c_control": self.nav.collection_btn,
@@ -921,10 +922,17 @@ class MainWindow(CleanupMixin, QMainWindow):
             "pmu_1811": "1811",
             "pmu_1860": "1860",
         }
+        # VminHunter 子项：先选定子项再点击父按钮
+        _vmin_hunter_subkeys = {
+            "vmin_hunter": "hunt",
+            "vmin_single_test": "single_test",
+        }
         if page in _collection_subkeys:
             self.nav.current_collection_key = _collection_subkeys[page]
         if page in _pmu_tool_subkeys:
             self.nav.current_pmu_tool_key = _pmu_tool_subkeys[page]
+        if page in _vmin_hunter_subkeys:
+            self.nav.current_vmin_hunter_key = _vmin_hunter_subkeys[page]
         button = button_map.get(page)
         if button is None:
             return False, f"未知页面：{page}"
@@ -1343,7 +1351,7 @@ class MainWindow(CleanupMixin, QMainWindow):
         """返回当前可被 AI 控制的页面对象（含 Tab 子页下钻），无则 None。
 
         - Orchestrator：返回 orchestrator_ui（契约实现者之一）；
-        - Tab 容器页（pmu_test / charger_test）：下钻到 tab_widget.currentWidget()，
+        - Tab 容器页（pmu_test / charger_test / vmin_hunter）：下钻到 tab_widget.currentWidget()，
           使 AI 能力裁剪与子页 page_key 对齐（如 pmu_dcdc_efficiency）；
         - 其它页：返回页面实例本身（若实现契约方法即可被 AI 控制）。
         """
@@ -1351,7 +1359,8 @@ class MainWindow(CleanupMixin, QMainWindow):
         if page_key == "orchestrator":
             return getattr(self, "orchestrator_ui", None)
         # Tab 容器页：下钻到当前子页
-        if page_key in ("pmu_test", "charger_test", "module_test", "consumption_test"):
+        if page_key in ("pmu_test", "charger_test", "module_test", "consumption_test",
+                        "vmin_hunter"):
             attr = f"{page_key}_ui"
             container = getattr(self, attr, None)
             if container is None:
@@ -1361,10 +1370,7 @@ class MainWindow(CleanupMixin, QMainWindow):
                 return tab_widget.currentWidget()
             return container
         # 其它页：返回页面实例本身
-        mapping = {
-            "vmin_hunter": getattr(self, "vmin_hunter_ui", None),
-        }
-        return mapping.get(page_key)
+        return None
 
     def _current_active_page(self):
         mapping = {
@@ -1595,11 +1601,11 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.current_instrument_ui = "orchestrator"
         self._fade_in_widget(self.orchestrator_ui)
 
-    def _create_vmin_hunter_ui(self):
-        logger.debug("Switching to VminHunter UI")
+    def _create_vmin_hunter_ui(self, selected_test=None):
+        logger.debug("Switching to VminHunter UI: selected_test=%s", selected_test)
         self._hide_all_instrument_uis()
         if self.vmin_hunter_ui is None:
-            self.vmin_hunter_ui = VminHunterUI(
+            self.vmin_hunter_ui = VminHunterContainerUI(
                 n6705c_top=self.n6705c_top,
                 instrument_manager=self.instrument_manager,
             )
@@ -1608,6 +1614,10 @@ class MainWindow(CleanupMixin, QMainWindow):
             self.vmin_hunter_ui.sync_n6705c_from_top()
             self.vmin_hunter_ui.show()
         self.current_instrument_ui = "vmin_hunter"
+        if selected_test in self.nav.vmin_hunter_tab_map:
+            self.nav.current_vmin_hunter_key = selected_test
+            if hasattr(self.vmin_hunter_ui, "set_current_test"):
+                self.vmin_hunter_ui.set_current_test(selected_test)
         self._fade_in_widget(self.vmin_hunter_ui)
 
     def _create_kk_serials_ui(self):
@@ -1747,6 +1757,9 @@ class MainWindow(CleanupMixin, QMainWindow):
         elif self.current_instrument_ui == "module_test":
             key_map = {"ldo": "module_test_ldo", "dcdc": "module_test_dcdc"}
             return key_map.get(self.nav.current_module_test_key, "module_test_ldo")
+        elif self.current_instrument_ui == "vmin_hunter":
+            key_map = {"hunt": "vmin_hunter", "single_test": "vmin_single_test"}
+            return key_map.get(self.nav.current_vmin_hunter_key, "vmin_hunter")
         elif self.current_instrument_ui == "power_analyser":
             if self.nav.current_pa_mode == "datalog":
                 return "datalog"

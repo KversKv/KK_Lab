@@ -440,7 +440,9 @@ ui/
 │   │
 │   ├── vmin_hunter/             # VminHunter 最低工作电压探底页面
 │   │   ├── AGENTS.md                 # 页级局部 AI 协作指引
-│   │   └── vmin_hunter_ui.py         # Vmin 探底主界面 (连接 / Test Config / Channel Config / 结果表)
+│   │   ├── vmin_hunter_container.py  # Tab 容器 (Vmin Hunt / Single Vmin Test)
+│   │   ├── vmin_hunter_ui.py         # Vmin 探底主界面 (连接 / Test Config / Channel Config / 结果表)
+│   │   └── vmin_single_test_ui.py    # 单次 Vmin 测试子页 (指定电压点单次执行测试序列)
 │   │
 │   └── orchestrator/             # 自定义测试序列（节点编辑器）
 │       ├── AGENTS.md                 # 页级局部 AI 协作指引
@@ -548,6 +550,7 @@ helps/
 ├── oscilloscope.html                # 示波器操作说明
 ├── consumption_test.html            # 功耗测试操作说明
 ├── vmin_hunter.html                 # VminHunter 最低工作电压探底操作说明
+├── vmin_single_test.html            # Single Vmin Test 单次 Vmin 测试操作说明
 ├── orchestrator.html                 # 自定义测试（节点编辑器）操作说明
 ├── thermal_chamber.html             # 温箱操作说明
 ├── pmu_dcdc_efficiency.html         # DCDC 效率测试操作说明
