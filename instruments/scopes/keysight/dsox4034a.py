@@ -233,6 +233,15 @@ class DSOX4034A:
         resp = self.query(f':CHANnel{channel}:DISPlay?').strip()
         return resp in ('1', 'ON')
 
+    def close_all_channels(self):
+        """关闭全部 4 个模拟通道显示（测试项配置前先清屏）。"""
+        for ch in (1, 2, 3, 4):
+            self.write(f':CHANnel{ch}:DISPlay OFF')
+
+    def set_waveform_intensity(self, percent: int = 100):
+        """设置波形余辉/强度百分比（100% 便于看清过冲/欠冲）。"""
+        self.write(f':DISPlay:INTensity:WAVeform {int(percent)}')
+
     def set_channel_scale(self, channel: int, volts_per_div: float):
         self._validate_channel(channel)
         self.write(f':CHANnel{channel}:SCALe {volts_per_div}')

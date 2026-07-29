@@ -564,6 +564,11 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
                 ctx.n6705c.restore_arb_trigger_source()
                 ctx.n6705c.arb_on(vin_ch)
 
+                # 先关闭其它通道、波形强度设 100%（便于看清过冲/欠冲）
+                if hasattr(ctx.scope, "close_all_channels"):
+                    ctx.scope.close_all_channels()
+                if hasattr(ctx.scope, "set_waveform_intensity"):
+                    ctx.scope.set_waveform_intensity(100)
                 # scale=vspan/3 留余量防削波；时基=period/2，10 格整屏约 5 周期
                 ctx.scope.set_channel_scale(scope_ch, vspan_v / 3.0)
                 ctx.scope.set_channel_offset(scope_ch, nominal_v)
@@ -705,6 +710,11 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
                 ctx.n6705c.restore_arb_trigger_source()
                 ctx.n6705c.arb_on(iload_ch)
 
+                # 先关闭其它通道、波形强度设 100%（便于看清过冲/欠冲）
+                if hasattr(ctx.scope, "close_all_channels"):
+                    ctx.scope.close_all_channels()
+                if hasattr(ctx.scope, "set_waveform_intensity"):
+                    ctx.scope.set_waveform_intensity(100)
                 # scale=vspan/3 留余量防削波；时基=period/2，10 格整屏约 5 周期
                 ctx.scope.set_channel_scale(scope_ch, vspan_v / 3.0)
                 ctx.scope.set_channel_offset(scope_ch, nominal_v)

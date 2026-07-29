@@ -214,6 +214,18 @@ class MSO64B:
         result = self.instrument.query('SEARCH:SEARCH1:TOTAL?').strip()
         return int(result)
 
+    def close_all_channels(self):
+        """关闭全部 4 个模拟通道显示（测试项配置前先清屏）。"""
+        for ch in (1, 2, 3, 4):
+            self.instrument.write(f'DISPlay:GLObal:CH{ch}:STATE OFF')
+
+    def set_waveform_intensity(self, percent=100):
+        """设置波形强度百分比（best-effort；部分固件不支持则忽略）。"""
+        try:
+            self.instrument.write(f'DISPlay:INTensity:WAVeform {int(percent)}')
+        except Exception:
+            logger.warning("MSO64B set_waveform_intensity not supported", exc_info=True)
+
     def set_channel_display(self, channel, on=True):
         value = 'ON' if on else 'OFF'
         self.instrument.write(f'DISPlay:GLObal:CH{channel}:STATE {value}')
