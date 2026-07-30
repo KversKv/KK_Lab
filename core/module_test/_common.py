@@ -133,19 +133,32 @@ def setup_source_channel(ctx: "ItemContext", channel: int, voltage: float, *,
 
 
 def setup_meter_channel(ctx: "ItemContext", channel: int) -> None:
-    """把通道配成电压表（VMETer），参考 PMU DCDC worker。"""
+    """把通道配成电压表（VMETer）并上电，参考 PMU DCDC worker。
+
+    全自动流程下通道可能是关闭状态，须显式 channel_on，
+    否则 measure_voltage 读不到值。
+    """
     try:
         ctx.n6705c.set_mode(channel, "VMETer")
         ctx.n6705c.set_channel_range(channel)
+        ctx.n6705c.channel_on(channel)
     except Exception:  # noqa: BLE001
         logger.error("setup meter ch%d failed", channel, exc_info=True)
 
 
-def setup_load_channel(ctx: "ItemContext", channel: int) -> None:
-    """把通道配成电子负载（CCLoad）并上电，参考 PMU DCDC worker。"""
+def setup_load_channel(ctx: "ItemContext", channel: int,
+                       initial_current_a: float | None = None) -> None:
+    """把通道配成电子负载（CCLoad）并上电，参考 PMU DCDC worker。
+
+    通道关闭状态下可先写电流再开启，避免 channel_on 瞬间沿用
+    上一项遗留的末点电流值。initial_current_a 为 None 时直接开启。
+    注意：CCLoad 开启状态下禁止设 0mA（硬红线 12）。
+    """
     try:
         ctx.n6705c.set_mode(channel, "CCLoad")
         ctx.n6705c.set_channel_range(channel)
+        if initial_current_a is not None and initial_current_a > 0:
+            set_load_current(ctx, channel, initial_current_a)
         ctx.n6705c.channel_on(channel)
     except Exception:  # noqa: BLE001
         logger.error("setup load ch%d failed", channel, exc_info=True)
@@ -160,9 +173,11 @@ def set_load_current(ctx: "ItemContext", channel: int, current_a: float) -> None
 
 
 def teardown_load(ctx: "ItemContext", channel: int) -> None:
-    """收尾：负载归零并关断（参考 PMU DCDC worker finally 块）。"""
+    """收尾：关断负载通道（参考 PMU DCDC worker finally 块）。
+
+    禁止在 CCLoad 开启状态下设 0mA（硬红线 12），故直接 channel_off。
+    """
     try:
-        ctx.n6705c.set_current(channel, 0)
         ctx.n6705c.channel_off(channel)
     except Exception:  # noqa: BLE001
         logger.error("teardown load ch%d failed", channel, exc_info=True)
@@ -220,10 +235,7 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
     if ctx.is_mock:
         ctx.log_fn(f"[{item_key}] [DEBUG] Using Mock I2C interface.")
 
-    try:
-        ctx.n6705c.set_mode(vmeter_ch, "VMETer")
-    except Exception:  # noqa: BLE001 - 配置失败降级记录，保证流程不中断
-        logger.error("set VMETer ch%d failed", vmeter_ch, exc_info=True)
+    setup_meter_channel(ctx, vmeter_ch)
 
     bit_count = msb - lsb + 1
     mask = (1 << bit_count) - 1
@@ -508,7 +520,9 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
     if not ctx.is_mock:
         setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
         setup_meter_channel(ctx, vout_ch)
-        setup_load_channel(ctx, iload_ch)
+        setup_load_channel(ctx, iload_ch, initial_current_a=max(i_start, 0.001) / 1000.0)
+        # 上一项可能调过 close_all_channels()（transient 流程），须显式开显示
+        ctx.scope.set_channel_display(scope_ch, True)
 
     for i, il in enumerate(points):
         if ctx.stop_flag_fn():
@@ -653,9 +667,14 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
                 ctx.scope.set_channel_display(scope_ch, True)
                 # 测量无效（削波 9.9e37）时量程自动翻倍重试直至波形完整入屏；
                 # timebase=period/2 传入，采集稳定等待取 max(1s, 6×时基)
-                vmax, vmin, vbase, vpp_v, used_scale = _measure_with_autoscale(
-                    ctx, scope_ch, nominal_v, vspan_v / 3.0, settle_s,
-                    timebase_s=period / 2.0)
+                try:
+                    vmax, vmin, vbase, vpp_v, used_scale = _measure_with_autoscale(
+                        ctx, scope_ch, nominal_v, vspan_v / 3.0, settle_s,
+                        timebase_s=period / 2.0)
+                except Exception:  # noqa: BLE001 - 量程耗尽仍削波，恢复采集再降级
+                    logger.error("autoscale exhausted, re-run acquisition", exc_info=True)
+                    ctx.scope.run()
+                    raise
                 if used_scale > vspan_v / 3.0:
                     ctx.log_fn(f"[{item_key}] {label} 量程自动扩至 "
                                f"{used_scale * 1000:g} mV/div")
@@ -689,9 +708,10 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
 
     if not ctx.is_mock:
         try:
-            ctx.n6705c.channel_off(vin_ch)
+            # 恢复 Vin 正常输出（全自动流程后续项默认 DUT 有电，VIN 通道不干预）
+            ctx.n6705c.set_voltage(vin_ch, float(cfg.get("vin_v", 3.8)))
         except Exception:  # noqa: BLE001
-            logger.error("channel off vin ch%d failed", vin_ch, exc_info=True)
+            logger.error("restore vin ch%d failed", vin_ch, exc_info=True)
 
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path,
@@ -813,9 +833,14 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
                 ctx.scope.set_channel_display(scope_ch, True)
                 # 测量无效（削波 9.9e37）时量程自动翻倍重试直至波形完整入屏；
                 # timebase=period/2 传入，采集稳定等待取 max(1s, 6×时基)
-                vmax, vmin, vbase, vpp_v, used_scale = _measure_with_autoscale(
-                    ctx, scope_ch, nominal_v, vspan_v / 3.0, settle_s,
-                    timebase_s=period / 2.0)
+                try:
+                    vmax, vmin, vbase, vpp_v, used_scale = _measure_with_autoscale(
+                        ctx, scope_ch, nominal_v, vspan_v / 3.0, settle_s,
+                        timebase_s=period / 2.0)
+                except Exception:  # noqa: BLE001 - 量程耗尽仍削波，恢复采集再降级
+                    logger.error("autoscale exhausted, re-run acquisition", exc_info=True)
+                    ctx.scope.run()
+                    raise
                 if used_scale > vspan_v / 3.0:
                     ctx.log_fn(f"[{item_key}] {label} 量程自动扩至 "
                                f"{used_scale * 1000:g} mV/div")

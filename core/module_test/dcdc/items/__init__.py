@@ -61,18 +61,16 @@ def efficiency(ctx: ItemContext) -> ItemResult:
     points = linspace(i_start, i_end, i_step)
     rows: list[list] = []
 
+    # 空载 baseline（扣除源侧自身电流），参考 PMU baseline 逻辑
+    # 注意：在负载通道开启前测，硬红线禁止 CCLoad 开启下设 0mA
     if not ctx.is_mock:
         setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
         setup_meter_channel(ctx, vout_ch)
-        setup_load_channel(ctx, iload_ch)
-
-    # 空载 baseline（扣除源侧自身电流），参考 PMU baseline 逻辑
-    if ctx.is_mock:
-        iin_base = 0.0
-    else:
-        set_load_current(ctx, iload_ch, 0.0)
         settle(ctx, max(settle_s * 4, 0.2))
         iin_base = measure_avg(ctx, "measure_current", vin_ch, count=5, settle_s=settle_s)
+        setup_load_channel(ctx, iload_ch, initial_current_a=i_start / 1000.0)
+    else:
+        iin_base = 0.0
     ctx.log_fn(f"[{item_key}] baseline Iin={iin_base * 1e6:.3f} uA")
 
     for i, il in enumerate(points):
@@ -132,7 +130,7 @@ def load_line_reg(ctx: ItemContext) -> ItemResult:
     if not ctx.is_mock:
         setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
         setup_meter_channel(ctx, vout_ch)
-        setup_load_channel(ctx, iload_ch)
+        setup_load_channel(ctx, iload_ch, initial_current_a=i_start / 1000.0)
     for i, il in enumerate(points):
         if ctx.stop_flag_fn():
             break
@@ -227,9 +225,6 @@ def quiescent(ctx: ItemContext) -> ItemResult:
 
     if not ctx.is_mock:
         setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
-        setup_load_channel(ctx, iload_ch)
-        set_load_current(ctx, iload_ch, 0.0)  # 默认空载
-        settle(ctx, max(settle_s * 4, 0.2))
 
     header = ["dIvin (uA)", "dIvout (uA)", "Iq (uA)"]
     if en_regs is None:
@@ -250,7 +245,6 @@ def quiescent(ctx: ItemContext) -> ItemResult:
         ctx.log_fn(f"[{item_key}] dIvin={d[0]} dIvout={d[1]} Iq={d[2]} uA")
 
     if not ctx.is_mock:
-        teardown_load(ctx, iload_ch)
         setup_source_channel(ctx, vout_src_ch, 0.0)  # 收尾归零外供
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, header, [row])
@@ -349,8 +343,7 @@ def vin_range(ctx: ItemContext) -> ItemResult:
     if not ctx.is_mock:
         setup_source_channel(ctx, vin_ch, vin_lo, current_limit=0.5)
         setup_meter_channel(ctx, vout_ch)
-        setup_load_channel(ctx, iload_ch)
-        set_load_current(ctx, iload_ch, light_load_ma / 1000.0)
+        setup_load_channel(ctx, iload_ch, initial_current_a=light_load_ma / 1000.0)
 
     lo_edge = 0.0
     hi_edge = 0.0
@@ -415,7 +408,7 @@ def output_power(ctx: ItemContext) -> ItemResult:
     if not ctx.is_mock:
         setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
         setup_meter_channel(ctx, vout_ch)
-        setup_load_channel(ctx, iload_ch)
+        setup_load_channel(ctx, iload_ch, initial_current_a=i_start / 1000.0)
     for i, il in enumerate(points):
         if ctx.stop_flag_fn():
             break
@@ -465,9 +458,14 @@ def switching_freq(ctx: ItemContext) -> ItemResult:
         fsw_khz = mock_jitter(1200.0, 0.02)
     else:
         setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
-        setup_load_channel(ctx, iload_ch)
-        set_load_current(ctx, iload_ch, load_ma / 1000.0)
+        setup_load_channel(ctx, iload_ch, initial_current_a=load_ma / 1000.0)
         settle(ctx, max(settle_s * 8, 0.5))
+        # SW 节点：开显示 + 时基按预期 fsw 配（整屏约 10 个周期）
+        fsw_khz_expected = float(cfg.get("fsw_expected_khz", 1200.0))
+        timebase_s = 10.0 / (fsw_khz_expected * 1000.0) if fsw_khz_expected > 0 else 1e-6
+        ctx.scope.set_timebase_scale(timebase_s)
+        ctx.scope.set_channel_display(scope_sw_ch, True)
+        settle(ctx, max(settle_s * 4, 0.2))
         try:
             fsw_khz = float(ctx.scope.get_channel_frequency(scope_sw_ch)) / 1000.0  # Hz->kHz
         except Exception:  # noqa: BLE001
@@ -536,7 +534,7 @@ def current_limit(ctx: ItemContext) -> ItemResult:
     if not ctx.is_mock:
         setup_source_channel(ctx, vin_ch, vin_v, current_limit=1.5)
         setup_meter_channel(ctx, vout_ch)
-        setup_load_channel(ctx, iload_ch)
+        setup_load_channel(ctx, iload_ch, initial_current_a=i_start / 1000.0)
 
     ilim_ma = 0.0
     ipk_ma = 0.0
@@ -724,6 +722,9 @@ DCDC_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
         ParamSpec("scope_sw_channel", "SW 通道", "int", 2, "", minimum=1, maximum=4),
         vin_bias(),
         ParamSpec("fsw_load_ma", "测试负载", "float", 100.0, "mA", maximum=100000.0),
+        ParamSpec("fsw_expected_khz", "预期频率", "float", 1200.0, "kHz",
+                  minimum=1.0, maximum=10000.0, decimals=1,
+                  hint="示波器时基按此设置"),
         settle_time(),
     )),
     "dcdc_load_transient": ("Load Transient Response", load_transient, True, True, (

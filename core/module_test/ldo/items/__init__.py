@@ -55,7 +55,7 @@ def load_line_reg(ctx: ItemContext) -> ItemResult:
     if not ctx.is_mock:
         setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
         setup_meter_channel(ctx, vout_ch)
-        setup_load_channel(ctx, iload_ch)
+        setup_load_channel(ctx, iload_ch, initial_current_a=max(i_start, 0.001) / 1000.0)
 
     for i, il in enumerate(points):
         if ctx.stop_flag_fn():
@@ -245,8 +245,7 @@ def dropout(ctx: ItemContext) -> ItemResult:
     else:
         setup_source_channel(ctx, vin_ch, vin_hi, current_limit=0.5)
         setup_meter_channel(ctx, vout_ch)
-        setup_load_channel(ctx, iload_ch)
-        set_load_current(ctx, iload_ch, iload_ma / 1000.0)
+        setup_load_channel(ctx, iload_ch, initial_current_a=iload_ma / 1000.0)
         settle(ctx, max(settle_s * 4, 0.2))
         # 在 Vin 上限、加载稳定后实测一次 Vout 作为基准 V0
         v0_mv = measure_avg(ctx, "measure_voltage", vout_ch,
@@ -330,7 +329,7 @@ def current_limit(ctx: ItemContext) -> ItemResult:
     else:
         setup_source_channel(ctx, vin_ch, vin_v, current_limit=1.0)
         setup_meter_channel(ctx, vout_ch)
-        setup_load_channel(ctx, iload_ch)
+        setup_load_channel(ctx, iload_ch, initial_current_a=ilim_start / 1000.0)
         threshold_mv = nominal_mv * (1.0 - tol)
         ilim_ma = 0.0
         ipk_ma = 0.0
