@@ -375,6 +375,79 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
                       notes=f"有效段步进 {step_voltage_mv:.3f}mV，线性度 {linearity_pct:.3f}%")
 
 
+def _arb_stop_and_wait(ctx: "ItemContext", channel: int) -> None:
+    """停 ARB 并轮询等 initiated 位真正清零（ABOR:TRAN 后状态非立即可改）。
+
+    Mock / 无 wait_arb_idle 接口时退化为固定 0.5s 等待。
+    """
+    ctx.n6705c.arb_stop()
+    if ctx.is_mock or not hasattr(ctx.n6705c, "wait_arb_idle"):
+        settle(ctx, 0.5)
+        return
+    if not ctx.n6705c.wait_arb_idle(channel, timeout_s=3.0):
+        ctx.log_fn(f"[N6705C] CH{channel} 等待 ARB 空闲超时，继续执行")
+
+
+def _n6705c_err_check(ctx: "ItemContext", tag: str) -> None:
+    """查询 N6705C 错误队列，非 +0 即经 log_fn 上抛 UI 日志（真机调试用）。
+
+    读取 SYST:ERR? 会弹出并清除队首错误；循环读到 +0 为止以清空队列。
+    任何查询异常都静默忽略，不阻断主流程。
+    """
+    if ctx.is_mock:
+        return
+    instr = getattr(ctx.n6705c, "instr", None)
+    if instr is None:
+        return
+    try:
+        for _ in range(8):
+            err = instr.query("SYST:ERR?").strip()
+            if err.startswith("+0") or err.startswith("0,"):
+                break
+            ctx.log_fn(f"[N6705C][{tag}] {err}")
+            logger.warning("N6705C err @%s: %s", tag, err)
+    except Exception:  # noqa: BLE001 - 查错失败不影响流程
+        logger.debug("SYST:ERR? query failed @%s", tag, exc_info=True)
+
+
+def _measure_with_autoscale(ctx: "ItemContext", scope_ch: int, nominal_v: float,
+                            scale_v: float, settle_s: float,
+                            timebase_s: float = 0.0,
+                            max_tries: int = 4) -> tuple[float, float, float, float, float]:
+    """设量程后测 Vmax/Vmin/Vmean/Vpp；波形削波（9.9e37 无效值）时量程翻倍重试。
+
+    返回 (vmax, vmin, vmean, vpp, 实际量程)。重试前须 run() 恢复采集再 settle，
+    否则停采状态下改量程拿不到新波形。全部尝试耗尽后抛最后一次异常。
+
+    timebase_s 为示波器时基（s/div），采集稳定等待取 max(1s, 6×时基)，
+    确保 stop 时屏幕已显示≥1 帧完整波形（低频大时基时 1s 不够）。
+    成功返回时屏幕处于 stop 态，调用方可直接用该帧截图。
+    """
+    # 每次改量程后统一等 6×时基（含 1s 下限），让示波器采满一整屏新波形
+    acq_settle = max(1.0, 6.0 * timebase_s)
+    last_err: Exception | None = None
+    for attempt in range(max_tries):
+        ctx.scope.set_channel_scale(scope_ch, scale_v)
+        ctx.scope.set_channel_offset(scope_ch, nominal_v)
+        settle(ctx, acq_settle)
+        ctx.scope.stop()
+        try:
+            vmax = float(ctx.scope.get_channel_max(scope_ch))
+            vmin = float(ctx.scope.get_channel_min(scope_ch))
+            vbase = float(ctx.scope.get_channel_mean(scope_ch))
+            vpp = float(ctx.scope.get_channel_pk2pk(scope_ch))
+            return vmax, vmin, vbase, vpp, scale_v
+        except Exception as e:  # noqa: BLE001 - 无效测量值，扩量程重试
+            last_err = e
+            logger.info("autoscale attempt %d failed (scale=%.4f V/div): %s",
+                        attempt + 1, scale_v, e)
+            scale_v *= 2.0
+            # 恢复采集并等满一整屏，否则下一轮改量程时波形尚未重建
+            ctx.scope.run()
+            settle(ctx, acq_settle)
+    raise last_err  # type: ignore[misc]
+
+
 def _capture_scope_png(ctx: "ItemContext", item_key: str, load_ma: float,
                        shot_dir: str, tag: str | None = None) -> str | None:
     """捕获当前负载点的示波器截图，落盘 PNG，返回路径（Mock/失败返回 None）。"""
@@ -555,6 +628,12 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
             over = under = vpp = 0.0
             shot = None
             try:
+                # 先停掉上一轮遗留 ARB 并等 initiated 清零，否则改参数报 +308
+                try:
+                    _arb_stop_and_wait(ctx, vin_ch)
+                except Exception:  # noqa: BLE001
+                    logger.error("arb_stop before group %d failed", idx + 1,
+                                 exc_info=True)
                 ctx.n6705c.set_mode(vin_ch, "PS2Q")
                 ctx.n6705c.channel_on(vin_ch)
                 ctx.n6705c.set_arb_pulse(vin_ch, vin0_v, vin1_v,
@@ -569,21 +648,21 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
                     ctx.scope.close_all_channels()
                 if hasattr(ctx.scope, "set_waveform_intensity"):
                     ctx.scope.set_waveform_intensity(100)
-                # scale=vspan/3 留余量防削波；时基=period/2，10 格整屏约 5 周期
-                ctx.scope.set_channel_scale(scope_ch, vspan_v / 3.0)
-                ctx.scope.set_channel_offset(scope_ch, nominal_v)
+                # 初始 scale=vspan/3 留余量；时基=period/2，10 格整屏约 5 周期
                 ctx.scope.set_timebase_scale(period / 2.0)
                 ctx.scope.set_channel_display(scope_ch, True)
-                # 改时基/scale 后需足够时间让示波器重新采集稳定（真机≥1s）
-                settle(ctx, max(settle_s * 8, 1.0))
-
-                ctx.scope.stop()
-                vmax = float(ctx.scope.get_channel_max(scope_ch))
-                vmin = float(ctx.scope.get_channel_min(scope_ch))
-                vbase = float(ctx.scope.get_channel_mean(scope_ch))
-                vpp = float(ctx.scope.get_channel_pk2pk(scope_ch)) * 1000.0
+                # 测量无效（削波 9.9e37）时量程自动翻倍重试直至波形完整入屏；
+                # timebase=period/2 传入，采集稳定等待取 max(1s, 6×时基)
+                vmax, vmin, vbase, vpp_v, used_scale = _measure_with_autoscale(
+                    ctx, scope_ch, nominal_v, vspan_v / 3.0, settle_s,
+                    timebase_s=period / 2.0)
+                if used_scale > vspan_v / 3.0:
+                    ctx.log_fn(f"[{item_key}] {label} 量程自动扩至 "
+                               f"{used_scale * 1000:g} mV/div")
+                vpp = vpp_v * 1000.0
                 over = (vmax - vbase) * 1000.0
                 under = (vbase - vmin) * 1000.0
+                # autoscale 返回时屏幕已定格在稳定 stop 帧，直接用该帧截图
                 shot = _capture_scope_png(ctx, item_key, vin1_v, shot_dir,
                                           tag=f"g{idx + 1}_{freq:g}Hz")
                 ctx.scope.run()
@@ -592,7 +671,9 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
                 ctx.log_fn(f"[{item_key}] [ERROR] {label} 执行异常，记 0 继续")
             finally:
                 try:
-                    ctx.n6705c.arb_stop()
+                    # 停 ARB 并轮询 initiated 清零，否则紧跟的
+                    # ARB:COUN/VOLT:MODE FIX 报 +308（连续脉冲时清除较慢）
+                    _arb_stop_and_wait(ctx, vin_ch)
                     ctx.n6705c.set_arb_continuous(vin_ch, False)
                     ctx.n6705c.exit_arb_voltage(vin_ch)
                 except Exception:  # noqa: BLE001
@@ -701,35 +782,47 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
             over = under = vpp = 0.0
             shot = None
             try:
+                # 先停掉上一轮遗留 ARB 并等 initiated 清零，否则改参数报 +308
+                try:
+                    _arb_stop_and_wait(ctx, iload_ch)
+                except Exception:  # noqa: BLE001
+                    logger.error("arb_stop before group %d failed", idx + 1,
+                                 exc_info=True)
+                _n6705c_err_check(ctx, f"g{idx + 1} arb_stop")
                 ctx.n6705c.set_current_slew(iload_ch, "MAX")
+                _n6705c_err_check(ctx, f"g{idx + 1} set_slew")
                 ctx.n6705c.set_arb_current_pulse(
                     iload_ch, -abs(i0_ma) / 1000.0, -abs(i1_ma) / 1000.0,
                     period / 2.0, 0.0, period / 2.0, freq)
+                _n6705c_err_check(ctx, f"g{idx + 1} set_arb_pulse")
                 # 勾选 Continuous（ARB:TERM:LAST ON）：须在形状配置后、arb_on 前
                 ctx.n6705c.set_arb_continuous(iload_ch, True)
+                _n6705c_err_check(ctx, f"g{idx + 1} set_continuous")
                 ctx.n6705c.restore_arb_trigger_source()
+                _n6705c_err_check(ctx, f"g{idx + 1} trig_src")
                 ctx.n6705c.arb_on(iload_ch)
+                _n6705c_err_check(ctx, f"g{idx + 1} arb_on")
 
                 # 先关闭其它通道、波形强度设 100%（便于看清过冲/欠冲）
                 if hasattr(ctx.scope, "close_all_channels"):
                     ctx.scope.close_all_channels()
                 if hasattr(ctx.scope, "set_waveform_intensity"):
                     ctx.scope.set_waveform_intensity(100)
-                # scale=vspan/3 留余量防削波；时基=period/2，10 格整屏约 5 周期
-                ctx.scope.set_channel_scale(scope_ch, vspan_v / 3.0)
-                ctx.scope.set_channel_offset(scope_ch, nominal_v)
+                # 初始 scale=vspan/3 留余量；时基=period/2，10 格整屏约 5 周期
                 ctx.scope.set_timebase_scale(period / 2.0)
                 ctx.scope.set_channel_display(scope_ch, True)
-                # 改时基/scale 后需足够时间让示波器重新采集稳定（真机≥1s）
-                settle(ctx, max(settle_s * 8, 1.0))
-
-                ctx.scope.stop()
-                vmax = float(ctx.scope.get_channel_max(scope_ch))
-                vmin = float(ctx.scope.get_channel_min(scope_ch))
-                vbase = float(ctx.scope.get_channel_mean(scope_ch))
-                vpp = float(ctx.scope.get_channel_pk2pk(scope_ch)) * 1000.0
+                # 测量无效（削波 9.9e37）时量程自动翻倍重试直至波形完整入屏；
+                # timebase=period/2 传入，采集稳定等待取 max(1s, 6×时基)
+                vmax, vmin, vbase, vpp_v, used_scale = _measure_with_autoscale(
+                    ctx, scope_ch, nominal_v, vspan_v / 3.0, settle_s,
+                    timebase_s=period / 2.0)
+                if used_scale > vspan_v / 3.0:
+                    ctx.log_fn(f"[{item_key}] {label} 量程自动扩至 "
+                               f"{used_scale * 1000:g} mV/div")
+                vpp = vpp_v * 1000.0
                 over = (vmax - vbase) * 1000.0
                 under = (vbase - vmin) * 1000.0
+                # autoscale 返回时屏幕已定格在稳定 stop 帧，直接用该帧截图
                 shot = _capture_scope_png(ctx, item_key, i1_ma, shot_dir,
                                           tag=f"g{idx + 1}_{freq:g}Hz")
                 ctx.scope.run()
@@ -738,9 +831,14 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
                 ctx.log_fn(f"[{item_key}] [ERROR] {label} 执行异常，记 0 继续")
             finally:
                 try:
-                    ctx.n6705c.arb_stop()
+                    # 停 ARB 并轮询 initiated 清零，否则紧跟的
+                    # ARB:COUN/CURR:MODE FIX 报 +308（连续脉冲时清除较慢）
+                    _arb_stop_and_wait(ctx, iload_ch)
+                    _n6705c_err_check(ctx, f"g{idx + 1} end arb_stop")
                     ctx.n6705c.set_arb_continuous(iload_ch, False)
+                    _n6705c_err_check(ctx, f"g{idx + 1} end set_continuous_off")
                     ctx.n6705c.exit_arb_current(iload_ch)
+                    _n6705c_err_check(ctx, f"g{idx + 1} end exit_arb_current")
                 except Exception:  # noqa: BLE001
                     logger.error("exit arb ch%d failed", iload_ch, exc_info=True)
 

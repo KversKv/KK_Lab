@@ -342,6 +342,25 @@ class N6705C:
         else:
             self.instr.write(f"ABOR:TRAN (@{channel})")
 
+    def wait_arb_idle(self, channel, timeout_s=3.0, poll_s=0.02):
+        """等待 transient initiated 态解除（STAT:OPER:COND 的 bit6=64 清零）。
+
+        ABOR:TRAN 后 initiated 位并非立即清零（连续脉冲时更慢），须轮询
+        确认清零后再改写 ARB 参数，否则报 +308。返回 True=已空闲，
+        False=超时（调用方自行决定是否继续）。
+        """
+        deadline = time.time() + timeout_s
+        while time.time() < deadline:
+            try:
+                cond = int(float(self.arb_status(channel)))
+            except Exception:  # noqa: BLE001 - 查询失败视为未空闲，继续等
+                cond = 64
+            if not (cond & 64):
+                return True
+            time.sleep(poll_s)
+        logger.warning("wait_arb_idle ch%d timeout after %.1fs", channel, timeout_s)
+        return False
+
     def test_arb_staircase(self, channel, v0=3, v1=4.3, t0=1, t1=10, t2=1, steps=500):
         logger.info("[测试] set_arb_staircase on channel %s", channel)
         logger.info("  参数: v0=%s, v1=%s, t0=%s, t1=%s, t2=%s, steps=%s", v0, v1, t0, t1, t2, steps)

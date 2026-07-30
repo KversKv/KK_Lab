@@ -27,6 +27,7 @@
 - 添加新测试项时, 对于非供电的电源仪器, 需要先重置仪器状态, 再去进行测试;
 - Load Transient Response（LDO/DCDC 共用 `_common.run_load_transient`）：真机流程=开局先 `clear_arb_all_channels()`（ABOR:TRAN + 全通道 VOLT/CURR:MODE FIX，去掉其它通道遗留 ARB）→ CCLoad + Slew MAX + 电流 ARB Pulse（I0/I1 取负，t0=T/2、t1=0、t2=T/2）→ `set_arb_continuous(ch, True)` 勾选 Continuous（**`ARB:COUN INF`，面板 Arb Properties 的 Continuous 复选框；须在形状配置后、arb_on 前写**）→ `restore_arb_trigger_source()`（TRIG:ARB:SOUR IMM，须在 INIT:TRAN 之前写源；armed 后写源报 +308，BUS+*TRG 后置不触发）→ `arb_on`（INIT 即启动连续脉冲）→ 示波器先 `close_all_channels()` 关掉其它通道 + `set_waveform_intensity(100)`（波形强度 100%，便于看清过冲/欠冲；两驱动均已加此方法，DSOX4034A=`:DISPlay:INTensity:WAVeform`，MSO64B 部分固件不支持则 best-effort 忽略）→ 设 scale/offset/timebase → **settle≥1s**（改时基/scale 后示波器需重新采集稳定，0.5s 会截到过渡帧致平线/单沿）→ `stop()` 暂停采集 → 截图 + Vmax/Vmin/Vmean 算过冲/欠冲 → 每组收尾 `arb_stop`+`set_arb_continuous(ch,False)`+`exit_arb_current`；参数用 ptype="groups"（`transient_groups()`，默认 3 组 I0/I1/频率，弹窗 `_GroupsEditor` 可增删，无 base_key 全量返回）；CSV 第 0 列为组号，截图键 `{"Iload (mA)": str(组号)}` 借 `_shots_table_html` 的 iload 回退列（idx=0）并入报告。示波器 scale=vspan/3 留余量防削波、时基=period/2（10 格整屏约 5 个完整周期）。
 - Line Transient Response（LDO/DCDC 共用 `_common.run_line_transient`）：同 Load 流程，仅把拉载换为 Vin 电压脉冲——Vin 通道置 PS2Q + 电压 ARB Pulse（Vin0/Vin1 正电压，t0=T/2、t1=0、t2=T/2），收尾 `arb_stop`+`exit_arb_voltage`+`channel_off`；参数用 `line_transient_groups()`（默认 3 组 Vin0/Vin1/频率）；DCDC 侧为本次新增项（`dcdc_line_transient`，注册表默认不勾选）。
+- **示波器测量自动扩量程**：Load/Line Transient 测 Vmax/Vmin/Vmean/Vpp 一律走 `_common._measure_with_autoscale`——波形削波时两驱动对无效值（9.9e37）都会抛异常（DSOX4034A=`MeasurementError`、MSO64B=`ValueError`），助手按量程×2 重试最多 4 次；**重试前必须 `run()` 恢复采集再 settle**（停采状态改量程拿不到新波形），成功返回实际量程，被扩大时 UI 日志提示。曾因此整组记 0 且无截图（异常发生在截图之前）。
 
 ## 局部坑点
 
@@ -42,3 +43,4 @@
 - N6705C真机地址:TCPIP0::K-N6705C-06098.local::hislip0::INSTR
 - MSO64B真机地址:TCPIP0::10.31.31.202::inst0::INSTR
 - DSOX4034A真机地址:TCPIP0::10.31.30.181::inst0::INSTR
+- 优先使用DSOX4034A进行真机测试
