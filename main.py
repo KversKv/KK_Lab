@@ -90,6 +90,16 @@ def main():
     
     app = QApplication(sys.argv)
     app.setStyle(HoverFixStyle("Fusion"))
+    # QToolTip 是顶级窗口，不继承 MainWindow 的 palette；Fusion 下会回落系统默认
+    # （Windows 深色模式为黑底），需显式 QSS 保证深底浅字可读。
+    app.setStyleSheet("""
+        QToolTip {
+            background-color: #282c30;
+            color: #d7dce2;
+            border: 1px solid #4a5568;
+            padding: 4px 6px;
+        }
+    """)
     
     _base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
     _icon_path = os.path.join(_base, "resources", "icons", "kk_lab.ico")

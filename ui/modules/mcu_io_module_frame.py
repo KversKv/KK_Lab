@@ -15,7 +15,7 @@ from ui.resource_path import get_resource_base
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton,
     QLabel, QFrame, QSizePolicy, QToolTip, QCheckBox, QDoubleSpinBox,
-    QScrollArea
+    QScrollArea, QToolButton, QMenu
 )
 from PySide6.QtCore import (
     Qt, QThread, Signal, QObject, QSize, QRect, QRectF,
@@ -503,7 +503,11 @@ class _LevelSetWorker(QObject):
 
     def run(self):
         try:
-            self._inst.out(self._pin, self._level)
+            if self._level is None:
+                # 高阻：切为输入、去上下拉
+                self._inst.in_pull(self._pin, "none")
+            else:
+                self._inst.out(self._pin, self._level)
             self.finished.emit("done")
         except Exception as e:
             logger.error("MCU level set failed: %s", e, exc_info=True)
@@ -1791,6 +1795,8 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
         poweron_row.setSpacing(3)
         poweron_row.addWidget(self.mcu_pr_poweron_combo, 1)
         poweron_row.addWidget(self.mcu_pr_poweron_polarity_toggle, 0, Qt.AlignVCenter)
+        self.mcu_pr_poweron_more_btn = self._make_mcu_pr_more_btn("poweron")
+        poweron_row.addWidget(self.mcu_pr_poweron_more_btn, 0, Qt.AlignVCenter)
         grid.addWidget(poweron_label, 0, 0, Qt.AlignVCenter)
         grid.addLayout(poweron_row, 0, 1)
 
@@ -1851,6 +1857,8 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
         reset_row.setSpacing(3)
         reset_row.addWidget(self.mcu_pr_reset_combo, 1)
         reset_row.addWidget(self.mcu_pr_reset_polarity_toggle, 0, Qt.AlignVCenter)
+        self.mcu_pr_reset_more_btn = self._make_mcu_pr_more_btn("reset")
+        reset_row.addWidget(self.mcu_pr_reset_more_btn, 0, Qt.AlignVCenter)
         grid.addWidget(reset_label_container, 1, 0, Qt.AlignVCenter)
         grid.addLayout(reset_row, 1, 1)
 
@@ -1889,6 +1897,11 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
 
         self.mcu_pr_status_combo = DarkComboBox(bg="#020817", border="#1e293b")
         self.mcu_pr_status_combo.setFixedHeight(MCU_IO_BTN_HEIGHT)
+        # 用 AdjustToContents 而非默认（AdjustToContentsOnFirstShow/WithIcon），
+        # 避免 sizeHint 预留 icon 宽度导致被 grid 压缩后文本被 elide 成 G...6
+        self.mcu_pr_status_combo.setSizeAdjustPolicy(
+            DarkComboBox.SizeAdjustPolicy.AdjustToContents
+        )
         self.mcu_pr_status_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         font = self.mcu_pr_status_combo.font()
         font.setPixelSize(11)
@@ -1906,14 +1919,13 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
             "唤醒电平：选 High 则唤醒=输出高电平、睡眠=输出低电平；"
             "选 Low 则唤醒=输出低电平、睡眠=输出高电平。"
         )
-        wake_level_label = QLabel("唤醒电平")
-        wake_level_label.setStyleSheet(label_style_sm)
         status_row = QHBoxLayout()
         status_row.setContentsMargins(0, 0, 0, 0)
         status_row.setSpacing(3)
         status_row.addWidget(self.mcu_pr_status_combo, 1)
-        status_row.addWidget(wake_level_label, 0, Qt.AlignVCenter)
         status_row.addWidget(self.mcu_pr_status_polarity_toggle, 0, Qt.AlignVCenter)
+        self.mcu_pr_status_more_btn = self._make_mcu_pr_more_btn("status")
+        status_row.addWidget(self.mcu_pr_status_more_btn, 0, Qt.AlignVCenter)
         grid.addWidget(status_label_container, 2, 0, Qt.AlignVCenter)
         grid.addLayout(status_row, 2, 1)
 
@@ -1974,6 +1986,8 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
         ctrl_row.addWidget(self.mcu_pr_ctrl_combo, 1)
         ctrl_row.addWidget(self.mcu_pr_ctrl_polarity_toggle, 0, Qt.AlignVCenter)
         ctrl_row.addWidget(self.mcu_pr_ctrl_mode_toggle, 0, Qt.AlignVCenter)
+        self.mcu_pr_ctrl_more_btn = self._make_mcu_pr_more_btn("ctrl")
+        ctrl_row.addWidget(self.mcu_pr_ctrl_more_btn, 0, Qt.AlignVCenter)
         grid.addWidget(ctrl_label_container, 3, 0, Qt.AlignVCenter)
         grid.addLayout(ctrl_row, 3, 1)
 
@@ -2051,6 +2065,91 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
 
         self.bind_mcu_io_signals()
 
+    def _make_mcu_pr_more_btn(self, name):
+        """构造指定 IO 行的 "⋯" 更多按钮：弹出菜单快捷设置 输出高/输出低/高阻。"""
+        btn = QToolButton(self)
+        btn.setText("⋯")
+        btn.setFixedSize(MCU_IO_BTN_HEIGHT, MCU_IO_BTN_HEIGHT)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setPopupMode(QToolButton.InstantPopup)
+        btn.setToolTip(f"快捷设置 {name} IO 状态：输出高 / 输出低 / 高阻")
+        btn.setStyleSheet("""
+            QToolButton {
+                background-color: #020817;
+                border: 1px solid #1e293b;
+                border-radius: 4px;
+                color: #94a3b8;
+                font-size: 12px;
+                font-weight: bold;
+                padding: 0px;
+            }
+            QToolButton:hover { border-color: #2dd4ff; color: #e2e8f0; }
+            QToolButton:pressed, QToolButton::menu-indicator { image: none; }
+            QToolButton:disabled { color: #475569; border-color: #1a2850; }
+        """)
+        menu = QMenu(btn)
+        for label, state in (
+            ("输出高", GPIO_STATE_HIGH),
+            ("输出低", GPIO_STATE_LOW),
+            ("高阻", GPIO_STATE_HIGHZ),
+        ):
+            menu.addAction(
+                label,
+                lambda _checked=False, s=state: self._mcu_pr_quick_set(name, s),
+            )
+        btn.setMenu(menu)
+        return btn
+
+    def _mcu_pr_quick_set(self, name, state):
+        """菜单回调：把指定行当前选中的 IO 快捷设为 输出高/输出低/高阻。"""
+        cfg = self.get_mcu_pwr_reset_config()
+        channel = cfg.get(f"{name}_channel")
+        pin = self._mcu_pr_pin_index(channel)
+        if pin is None:
+            self._mcu_io_log(f"[MCU] {name} channel invalid, quick set skipped.")
+            return
+        self._mcu_pr_run_state(name, pin, state)
+
+    def _mcu_pr_run_state(self, name, pin, state, on_done=None):
+        """起线程把 GPIO 设为指定状态（High/Low 输出电平，HighZ 输入去上下拉）。"""
+        if not self.is_mcu_io_connected or self.mcu_io is None:
+            self._mcu_io_log("[MCU] Not connected, cannot set IO state.")
+            return False
+        if (
+            self._mcu_pr_pulse_thread is not None
+            and self._mcu_pr_pulse_thread.isRunning()
+        ):
+            self._mcu_io_log("[MCU] PWR/RESET busy, ignored.")
+            return False
+
+        level = {
+            GPIO_STATE_HIGH: 1,
+            GPIO_STATE_LOW: 0,
+        }.get(state)  # HighZ -> None
+
+        self.set_mcu_io_status(f"● Setting {name}")
+        self._mcu_io_log(f"[MCU] {name} quick set GPIO{pin} -> {state}")
+
+        worker = _LevelSetWorker(self.mcu_io, name, pin, level)
+        thread = QThread()
+        worker.moveToThread(thread)
+
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._on_mcu_pr_pulse_done)
+        worker.error.connect(self._on_mcu_pr_pulse_error)
+        worker.finished.connect(thread.quit)
+        worker.error.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._on_mcu_pr_pulse_thread_cleanup)
+        if on_done is not None:
+            worker.finished.connect(lambda _result: on_done())
+
+        self._mcu_pr_pulse_worker = worker
+        self._mcu_pr_pulse_thread = thread
+        thread.start()
+        return True
+
     @staticmethod
     def _mcu_pr_select_combo(combo, desired):
         if combo is None or not desired:
@@ -2065,12 +2164,16 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
             self.mcu_pr_reset_combo.setEnabled(checked)
         if getattr(self, "mcu_pr_reset_polarity_toggle", None) is not None:
             self.mcu_pr_reset_polarity_toggle.setEnabled(checked)
+        if getattr(self, "mcu_pr_reset_more_btn", None) is not None:
+            self.mcu_pr_reset_more_btn.setEnabled(checked)
 
     def _on_mcu_pr_status_enable_toggled(self, checked):
         if getattr(self, "mcu_pr_status_combo", None) is not None:
             self.mcu_pr_status_combo.setEnabled(checked)
         if getattr(self, "mcu_pr_status_polarity_toggle", None) is not None:
             self.mcu_pr_status_polarity_toggle.setEnabled(checked)
+        if getattr(self, "mcu_pr_status_more_btn", None) is not None:
+            self.mcu_pr_status_more_btn.setEnabled(checked)
 
     def _on_mcu_pr_ctrl_enable_toggled(self, checked):
         if getattr(self, "mcu_pr_ctrl_combo", None) is not None:
@@ -2079,6 +2182,8 @@ class McuPwrResetConfigMixin(McuIoConnectionMixin):
             self.mcu_pr_ctrl_polarity_toggle.setEnabled(checked)
         if getattr(self, "mcu_pr_ctrl_mode_toggle", None) is not None:
             self.mcu_pr_ctrl_mode_toggle.setEnabled(checked)
+        if getattr(self, "mcu_pr_ctrl_more_btn", None) is not None:
+            self.mcu_pr_ctrl_more_btn.setEnabled(checked)
 
     def _refresh_mcu_pr_gpio_options(self):
         """根据当前 MCU 类型刷新 PwrON/Reset/Status/Ctrl 四个 GPIO 下拉选项。
