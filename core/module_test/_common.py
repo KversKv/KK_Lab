@@ -426,15 +426,18 @@ def _reset_arb_state(ctx: "ItemContext", channels: list[int]) -> None:
     clear_arb_all_channels 的 ABOR:TRAN 被裸 except 吞掉，且未等 initiated
     清零就写 VOLT/CURR:MODE FIX（连续脉冲时清除慢，此时写 FIX 报 +308 被忽略），
     导致上一项 Load Transient 的 CURR:MODE ARB 残留到下一项。本函数先等空闲
-    再显式逐通道退出两种 ARB 模式，保证通道回到固定输出态。
+    再显式逐通道退出两种 ARB 模式，保证通道回到固定输出态；
+    其余通道额外把 ARB 类型置 NONE（面板 "No Arb Configured"），清掉遗留的
+    形状配置，避免 BUS 触发误带起旧通道脉冲。
     """
     if ctx.is_mock:
         return
+    all_chs = [1, 2, 3, 4]
     try:
         ctx.n6705c.arb_stop()
     except Exception:  # noqa: BLE001 - 停止失败降级记录，继续清理
         logger.error("arb_stop failed in _reset_arb_state", exc_info=True)
-    for ch in channels:
+    for ch in all_chs:
         if hasattr(ctx.n6705c, "wait_arb_idle"):
             try:
                 ctx.n6705c.wait_arb_idle(ch, timeout_s=3.0)
@@ -449,6 +452,15 @@ def _reset_arb_state(ctx: "ItemContext", channels: list[int]) -> None:
             ctx.n6705c.exit_arb_current(ch)
         except Exception:  # noqa: BLE001
             logger.error("exit_arb_current ch%d failed", ch, exc_info=True)
+    # 其它通道（本项不用的）ARB 形状置 NONE（面板 "No Arb Configured"），
+    # 清掉遗留形状配置
+    for ch in all_chs:
+        if ch in channels:
+            continue
+        try:
+            ctx.n6705c.set_arb_shape(ch, "NONE")
+        except Exception:  # noqa: BLE001
+            logger.error("set arb shape NONE ch%d failed", ch, exc_info=True)
 
 
 def _n6705c_err_check(ctx: "ItemContext", tag: str) -> None:
@@ -656,10 +668,12 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
     cfg = ctx.config
     groups = cfg.get("line_transient_groups") or DEFAULT_LINE_TRANSIENT_GROUPS
     vin_ch = parse_channel(cfg.get("vin_channel", 1))
+    iload_ch = parse_channel(cfg.get("iload_channel", 3))
     scope_ch = int(cfg.get("scope_vout_channel", 1))
     nominal_v = float(cfg.get("vout_nominal_mv", 1800)) / 1000.0
-    vspan_v = float(cfg.get("transient_vspan_mv", 200)) / 1000.0
     settle_s = float(cfg.get("settle_time_s", 0.05))
+    # 初始 Y 轴量程固定 10 mV/div 起步（更精确），削波时 autoscale 翻倍重试（最多 5 次）
+    init_scale_v = 0.01
 
     rows: list[list[Any]] = []
     screenshots: list[dict[str, Any]] = []
@@ -667,6 +681,10 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
 
     if not ctx.is_mock:
         _reset_arb_state(ctx, [vin_ch])
+        # 清完 ARB 后给 DUT 输出挂 1mA 轻载（先写电流再 channel_on，
+        # 避免沿用上一项遗留电流；CCLoad 开启状态禁设 0mA，故用 1mA）
+        if iload_ch != vin_ch:
+            setup_load_channel(ctx, iload_ch, initial_current_a=0.001)
 
     for idx, g in enumerate(groups):
         if ctx.stop_flag_fn():
@@ -712,7 +730,7 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
                 # 先强制 run：示波器可能停在上一项的 stop 态，停采态下改
                 # 时基/量程只会重绘旧帧，settle 再久也采不到新波形
                 ctx.scope.run()
-                # 初始 scale=vspan/3 留余量；时基=period/2，10 格整屏约 5 周期
+                # 初始 scale 固定 10 mV/div；时基=period/2，10 格整屏约 5 周期
                 ctx.scope.set_timebase_scale(period / 2.0)
                 ctx.scope.set_channel_display(scope_ch, True)
                 # 改时基/通道后须先等示波器采满一屏新波形，否则后续测量/截图
@@ -720,17 +738,18 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
                 # 等待 60×时基（1s 下限保证高频组时基过小时仍有 ≥1s），
                 # 与 Load Transient 等待逻辑对齐
                 settle(ctx, max(1.0, 60.0 * (period / 2.0)))
-                # 测量无效（削波 9.9e37）时量程自动翻倍重试直至波形完整入屏；
+                # 测量无效（削波 9.9e37）时量程自动翻倍重试直至波形完整入屏，
+                # 最多 5 次（10→20→40→80→160 mV/div）；
                 # timebase=period/2 传入，采集稳定等待取 max(1s, 6×时基)
                 try:
                     vmax, vmin, vbase, vpp_v, used_scale = _measure_with_autoscale(
-                        ctx, scope_ch, nominal_v, vspan_v / 3.0, settle_s,
-                        timebase_s=period / 2.0)
+                        ctx, scope_ch, nominal_v, init_scale_v, settle_s,
+                        timebase_s=period / 2.0, max_tries=5)
                 except Exception:  # noqa: BLE001 - 量程耗尽仍削波，恢复采集再降级
                     logger.error("autoscale exhausted, re-run acquisition", exc_info=True)
                     ctx.scope.run()
                     raise
-                if used_scale > vspan_v / 3.0:
+                if used_scale > init_scale_v:
                     ctx.log_fn(f"[{item_key}] {label} 量程自动扩至 "
                                f"{used_scale * 1000:g} mV/div")
                 vpp = vpp_v * 1000.0

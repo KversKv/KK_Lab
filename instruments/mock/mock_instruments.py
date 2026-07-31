@@ -162,6 +162,9 @@ class MockN6705C:
     def set_arb_type(self, channel, arb_type="VOLT"):
         pass
 
+    def set_arb_shape(self, channel, shape="NONE"):
+        pass
+
     def set_arb_step(self, channel, v0, v1, t0, t1):
         pass
 

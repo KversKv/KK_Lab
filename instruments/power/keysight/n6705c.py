@@ -196,6 +196,10 @@ class N6705C:
     def set_arb_type(self, channel, arb_type="VOLT"):
         self.instr.write(f"ARB:FUNC:TYPE {arb_type},(@{channel})")
 
+    def set_arb_shape(self, channel, shape="NONE"):
+        """设置 ARB 形状；shape="NONE" 即面板 "No Arb Configured"（清除形状配置）。"""
+        self.instr.write(f"ARB:FUNC:SHAP {shape},(@{channel})")
+
     def set_arb_step(self, channel, v0, v1, t0, t1):
         """
         配置ARB阶跃波形 (Step Shape)
