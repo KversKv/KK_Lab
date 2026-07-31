@@ -838,10 +838,10 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
                 ctx.scope.set_channel_display(scope_ch, True)
                 # 改时基/通道后须先等示波器采满一屏新波形，否则后续测量/截图
                 # 抓到的是旧时基下的过渡帧（首组时基突变最明显）。
-                # 下限 2.5s：低频组（如 10Hz，6×半周期仅 0.3s）DSOX 在新时基下
-                # 采满一屏并刷新显示较慢，短 settle 会让 autoscale stop 定格在
-                # 未采满的帧上（调试 settle 截图 ~2.2s 延迟曾"碰巧"掩盖此问题）
-                settle(ctx, max(2.5, 6.0 * (period / 2.0)))
+                # 等待 60×时基：低频大时基（如 10Hz=50ms/div）需足够时长让 DSOX
+                # 在新时基下采满一屏并刷新显示，短 settle 会让 autoscale stop
+                # 定格在未采满的帧上（1s 下限保证高频组时基过小时仍有 ≥1s）
+                settle(ctx, max(1.0, 60.0 * (period / 2.0)))
                 # 测量无效（削波 9.9e37）时量程自动翻倍重试直至波形完整入屏；
                 # timebase=period/2 传入，采集稳定等待取 max(1s, 6×时基)
                 try:
