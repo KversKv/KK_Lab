@@ -11,9 +11,10 @@ import os
 
 from core.module_test._common import (
     ItemContext, linspace, measure_avg, mock_jitter, parse_channel,
-    run_line_transient, run_load_capability_ripple, run_load_transient,
-    run_vout_scan, set_load_current, settle, setup_load_channel,
-    setup_meter_channel, setup_source_channel, teardown_load, write_csv,
+    restore_vin, run_line_transient, run_load_capability_ripple,
+    run_load_transient, run_vout_scan, set_load_current, settle,
+    setup_load_channel, setup_meter_channel, setup_source_channel,
+    teardown_load, write_csv,
 )
 from core.module_test.result_model import ItemResult
 from core.module_test.param_spec import (
@@ -119,6 +120,9 @@ def line_reg(ctx: ItemContext) -> ItemResult:
         rows.append([vin, round(v, 4)])
         ctx.progress_fn(int((i + 1) / len(points) * 100), f"Line reg {vin}V")
         ctx.log_fn(f"[{item_key}] Vin={vin}V -> Vout={v:.4f} mV")
+
+    if not ctx.is_mock:
+        restore_vin(ctx, vin_ch, float(cfg.get("vin_v", 3.8)))
 
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Vin (V)", "Vout (mV)"], rows)
@@ -279,6 +283,7 @@ def dropout(ctx: ItemContext) -> ItemResult:
                 ok_at_min_vin = True
             vin -= vin_step
         teardown_load(ctx, iload_ch)
+        restore_vin(ctx, vin_ch, float(cfg.get("vin_v", 3.8)))
     if ok_at_min_vin:
         note = f"在最低 Vin={vin_lo:.3f}V 下仍正常输出（压差负载 {iload_ma:g}mA），未触发压差"
     elif dropout_mv is not None and dropout_mv > 0:

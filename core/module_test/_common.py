@@ -183,6 +183,18 @@ def teardown_load(ctx: "ItemContext", channel: int) -> None:
         logger.error("teardown load ch%d failed", channel, exc_info=True)
 
 
+def restore_vin(ctx: "ItemContext", channel: int, voltage: float) -> None:
+    """扫 Vin 类测试项收尾：把 VIN 通道还原回标称电压（DUT 供电态）。
+
+    line_reg / dropout 等项把 Vin 扫到非默认值后直接返回，通道停在末点电压
+    会污染后续测试项 / 让 DUT 掉电。仅回写电压，不关通道（VIN 是 DUT 电源）。
+    """
+    try:
+        ctx.n6705c.set_voltage(channel, voltage)
+    except Exception:  # noqa: BLE001
+        logger.error("restore vin ch%d failed", channel, exc_info=True)
+
+
 def create_i2c(ctx: "ItemContext"):
     """创建 I2C 接口（Mock 模式复用 n6705c 上挂载的 MockI2C，参考 oscp_worker）。"""
     if ctx.is_mock:
@@ -742,11 +754,8 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
                    f"Undershoot={under:.3f} mV, Vpp={vpp:.3f} mV")
 
     if not ctx.is_mock:
-        try:
-            # 恢复 Vin 正常输出（全自动流程后续项默认 DUT 有电，VIN 通道不干预）
-            ctx.n6705c.set_voltage(vin_ch, float(cfg.get("vin_v", 3.8)))
-        except Exception:  # noqa: BLE001
-            logger.error("restore vin ch%d failed", vin_ch, exc_info=True)
+        # 恢复 Vin 正常输出（全自动流程后续项默认 DUT 有电，VIN 通道不干预）
+        restore_vin(ctx, vin_ch, float(cfg.get("vin_v", 3.8)))
 
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path,

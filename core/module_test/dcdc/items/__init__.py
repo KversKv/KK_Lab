@@ -11,9 +11,10 @@ import os
 
 from core.module_test._common import (
     ItemContext, linspace, measure_avg, mock_jitter, parse_channel,
-    run_line_transient, run_load_capability_ripple, run_load_transient,
-    run_vout_scan, set_load_current, settle, setup_load_channel,
-    setup_meter_channel, setup_source_channel, teardown_load, write_csv,
+    restore_vin, run_line_transient, run_load_capability_ripple,
+    run_load_transient, run_vout_scan, set_load_current, settle,
+    setup_load_channel, setup_meter_channel, setup_source_channel,
+    teardown_load, write_csv,
 )
 from core.module_test.result_model import ItemResult
 from core.module_test.param_spec import (
@@ -190,6 +191,8 @@ def line_reg(ctx: ItemContext) -> ItemResult:
                             default=nominal_mv / 1000.0) * 1000.0
         rows.append([vin, round(v, 4)])
         ctx.progress_fn(int((i + 1) / len(points) * 100), f"Line reg {vin}V")
+    if not ctx.is_mock:
+        restore_vin(ctx, vin_ch, float(cfg.get("vin_v", 3.8)))
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Vin (V)", "Vout (mV)"], rows)
     delta = (max(r[1] for r in rows) - min(r[1] for r in rows)) if rows else 0.0

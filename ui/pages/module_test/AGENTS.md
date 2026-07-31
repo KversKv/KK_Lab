@@ -44,6 +44,7 @@
 - **ItemParamsDialog override 语义**：无 `base_key` 的项级参数（reg_addr/msb/lsb/min/max_code 等）`get_override()` 必须全量返回（显示即生效）；曾用"与 prefill diff"语义，被 msb/lsb 联动改写的 max_code 会被误判"未改"而丢弃，致 Output Voltage Scan 误用默认 reg_addr=0x0 扫错寄存器。有 base_key 的基类参数才用 diff（未改回退基类 cfg）。
 - **按钮钉高（QSS 盒模型）**：钉死按钮高度用纯 QSS `min-height == max-height`，**不要**用 `setFixedHeight()`（会被 QSS min-height / sizeHint 以 min/max 约束盖住而失效）。总高 = content(min/max-height) + 上下padding + 2×border(1px)，故目标 35px 需 `min/max-height:33px; padding:0`（33+0+2=35）。在 `page_extra` 用 `#objectName` 覆盖（拼接在 `START_BTN_STYLE` 之后），可压过其 `min-height:36px` 与全局 `padding:6px`。
 - 注意单个测试项的鲁棒性, 例如通道的设置顺序, 是否需要额外的等待时间, 测试前主动打开通道, 测试后是否需要关闭通道等. 注意Vbat通道不需要关闭, 因为它是DUT电源, 关闭会导致DUT电源异常.
+- N6075C禁止在CC Load模式下设置0mA负载电流输出, 在0mA的测试场景中, 应该是直接关闭CC Load的输出, 而不是设置0mA Load;并且也禁止从0mA的情况下开机CC Load通道; 需要先设置非0mA负载电流, 才能开启CC Load通道.
 
 ## 开发环境
 - N6705C真机地址:TCPIP0::K-N6705C-06098.local::hislip0::INSTR

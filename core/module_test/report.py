@@ -431,7 +431,13 @@ def build_module_html_report(result: ModuleTestResult) -> str:
                           f"{_shots_table_html(csv_rows, it.measured)}")
 
         chart = ""
-        if it.item_key.endswith("load_reg") and csv_rows:
+        if it.item_key.endswith("efficiency") and csv_rows:
+            svg = _svg_line_chart(csv_rows, 0, 2,
+                                  "Iload (mA)", "Efficiency (%)",
+                                  "Efficiency vs Iload")
+            if svg:
+                chart = f"<h4>效率曲线</h4>{svg}"
+        elif it.item_key.endswith("load_reg") and csv_rows:
             svg = _svg_line_chart(csv_rows, 0, 1,
                                   "Iload (mA)", "Vout (mV)",
                                   "Vout vs Iload")
