@@ -830,9 +830,18 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
                     ctx.scope.close_all_channels()
                 if hasattr(ctx.scope, "set_waveform_intensity"):
                     ctx.scope.set_waveform_intensity(100)
+                # 先强制 run：示波器可能停在上一项的 stop 态，停采态下改
+                # 时基/量程只会重绘旧帧，settle 再久也采不到新波形
+                ctx.scope.run()
                 # 初始 scale=vspan/3 留余量；时基=period/2，10 格整屏约 5 周期
                 ctx.scope.set_timebase_scale(period / 2.0)
                 ctx.scope.set_channel_display(scope_ch, True)
+                # 改时基/通道后须先等示波器采满一屏新波形，否则后续测量/截图
+                # 抓到的是旧时基下的过渡帧（首组时基突变最明显）。
+                # 下限 2.5s：低频组（如 10Hz，6×半周期仅 0.3s）DSOX 在新时基下
+                # 采满一屏并刷新显示较慢，短 settle 会让 autoscale stop 定格在
+                # 未采满的帧上（调试 settle 截图 ~2.2s 延迟曾"碰巧"掩盖此问题）
+                settle(ctx, max(2.5, 6.0 * (period / 2.0)))
                 # 测量无效（削波 9.9e37）时量程自动翻倍重试直至波形完整入屏；
                 # timebase=period/2 传入，采集稳定等待取 max(1s, 6×时基)
                 try:
@@ -849,13 +858,15 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
                 vpp = vpp_v * 1000.0
                 over = (vmax - vbase) * 1000.0
                 under = (vbase - vmin) * 1000.0
-                # autoscale 返回时屏幕已定格在稳定 stop 帧，直接用该帧截图
+                # autoscale 返回时屏幕定格在刚验证过测量值的稳定 stop 帧，
+                # 直接截图；不要再 run/stop，否则会把已验证帧冲掉重采
                 shot = _capture_scope_png(ctx, item_key, i1_ma, shot_dir,
                                           tag=f"g{idx + 1}_{freq:g}Hz")
                 ctx.scope.run()
-            except Exception:  # noqa: BLE001 - 单组失败降级，继续下一组
+            except Exception as e:  # noqa: BLE001 - 单组失败降级，继续下一组
                 logger.error("load transient group %d failed", idx + 1, exc_info=True)
-                ctx.log_fn(f"[{item_key}] [ERROR] {label} 执行异常，记 0 继续")
+                ctx.log_fn(f"[{item_key}] [ERROR] {label} 执行异常"
+                           f"（{type(e).__name__}: {e}），记 0 继续")
             finally:
                 try:
                     # 停 ARB 并轮询 initiated 清零，否则紧跟的
@@ -866,8 +877,10 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
                     _n6705c_err_check(ctx, f"g{idx + 1} end set_continuous_off")
                     ctx.n6705c.exit_arb_current(iload_ch)
                     _n6705c_err_check(ctx, f"g{idx + 1} end exit_arb_current")
-                except Exception:  # noqa: BLE001
+                except Exception as e:  # noqa: BLE001
                     logger.error("exit arb ch%d failed", iload_ch, exc_info=True)
+                    ctx.log_fn(f"[{item_key}] [ERROR] {label} 收尾异常"
+                               f"（{type(e).__name__}: {e}）")
 
         rows.append([idx + 1, i0_ma, i1_ma, freq,
                      round(over, 3), round(under, 3), round(vpp, 3)])
