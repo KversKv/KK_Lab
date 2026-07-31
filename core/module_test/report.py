@@ -455,6 +455,12 @@ def build_module_html_report(result: ModuleTestResult) -> str:
                                   "Vout vs Iload")
             if svg:
                 chart = f"<h4>Vout-Iload 曲线</h4>{svg}"
+        elif it.item_key.endswith("switching_freq") and csv_rows:
+            svg = _svg_line_chart(csv_rows, 0, 1,
+                                  "Iload (mA)", "Fsw (kHz)",
+                                  "Fsw vs Iload")
+            if svg:
+                chart = f"<h4>Fsw-Iload 曲线</h4>{svg}"
         elif it.item_key.endswith("ripple") and csv_rows:
             vout_svg = _svg_line_chart(csv_rows, 0, 1,
                                        "Iload (mA)", "Vout (mV)",

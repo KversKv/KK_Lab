@@ -793,7 +793,8 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
          t2=0 会得到零顶部宽度，见 n6705c.set_arb_current_pulse docstring）；
       3. 勾选 Continuous（ARB:TERM:LAST ON）+ TRIG:ARB:SOUR IMM（须在 INIT:TRAN 之前写）
          + INIT:TRAN 立即启动连续脉冲（armed 后写源报 +308，BUS+*TRG 后置不触发）；
-      4. 示波器按频率设 timebase（整屏约 2 周期），量程/偏置按预期摆幅与标称 Vout 设置；
+      4. 示波器按频率设 timebase（整屏约 2 周期），Y 轴量程固定从 10 mV/div
+         起步（削波自动翻倍、最多 5 次），偏置按标称 Vout 设置；
       5. 稳定后暂停采集，截图并测 Vmax/Vmin/Vmean/Vpp，
          过冲=Vmax-Vmean、欠冲=Vmean-Vmin（mV）；
       每组测完 ABOR:TRAN + CURR:MODE FIX 复位负载通道，再换下一组。
@@ -810,8 +811,9 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
     scope_ch = int(cfg.get("scope_vout_channel", 1))
     nominal_v = float(cfg.get("vout_nominal_mv", 1800)) / 1000.0
-    vspan_v = float(cfg.get("transient_vspan_mv", 200)) / 1000.0
     settle_s = float(cfg.get("settle_time_s", 0.05))
+    # 初始 Y 轴量程固定 10 mV/div，削波时 autoscale 翻倍重试（最多 5 次）
+    init_scale_v = 0.01
 
     rows: list[list[Any]] = []
     screenshots: list[dict[str, Any]] = []
@@ -873,7 +875,7 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
                 # 先强制 run：示波器可能停在上一项的 stop 态，停采态下改
                 # 时基/量程只会重绘旧帧，settle 再久也采不到新波形
                 ctx.scope.run()
-                # 初始 scale=vspan/3 留余量；时基=period/2，10 格整屏约 5 周期
+                # 初始 scale 固定 10 mV/div；时基=period/2，10 格整屏约 5 周期
                 ctx.scope.set_timebase_scale(period / 2.0)
                 ctx.scope.set_channel_display(scope_ch, True)
                 # 改时基/通道后须先等示波器采满一屏新波形，否则后续测量/截图
@@ -882,17 +884,18 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
                 # 在新时基下采满一屏并刷新显示，短 settle 会让 autoscale stop
                 # 定格在未采满的帧上（1s 下限保证高频组时基过小时仍有 ≥1s）
                 settle(ctx, max(1.0, 60.0 * (period / 2.0)))
-                # 测量无效（削波 9.9e37）时量程自动翻倍重试直至波形完整入屏；
+                # 测量无效（削波 9.9e37）时量程自动翻倍重试直至波形完整入屏，
+                # 最多 5 次（10→20→40→80→160 mV/div）；
                 # timebase=period/2 传入，采集稳定等待取 max(1s, 6×时基)
                 try:
                     vmax, vmin, vbase, vpp_v, used_scale = _measure_with_autoscale(
-                        ctx, scope_ch, nominal_v, vspan_v / 3.0, settle_s,
-                        timebase_s=period / 2.0)
+                        ctx, scope_ch, nominal_v, init_scale_v, settle_s,
+                        timebase_s=period / 2.0, max_tries=5)
                 except Exception:  # noqa: BLE001 - 量程耗尽仍削波，恢复采集再降级
                     logger.error("autoscale exhausted, re-run acquisition", exc_info=True)
                     ctx.scope.run()
                     raise
-                if used_scale > vspan_v / 3.0:
+                if used_scale > init_scale_v:
                     ctx.log_fn(f"[{item_key}] {label} 量程自动扩至 "
                                f"{used_scale * 1000:g} mV/div")
                 vpp = vpp_v * 1000.0

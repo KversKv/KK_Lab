@@ -325,45 +325,78 @@ def inductor_current(ctx: ItemContext) -> ItemResult:
 
 
 def switching_freq(ctx: ItemContext) -> ItemResult:
-    """开关频率（固定 / 可调，依赖示波器）。
+    """开关频率（扫负载，AC 耦合测输出纹波频率，依赖示波器）。
 
-    流程：Vin=PS2Q 源上电、带额定负载，示波器探 SW 节点，读开关频率。
+    流程：Vin=PS2Q 源上电，CCLoad 从起始负载按步进扫到结束负载；
+    示波器通道切 AC 耦合（隔直后纹波频率即开关频率），每个负载点
+    set_AutoRipple_test 自动优化档位后按平均次数多次测频取均值。
+    收尾恢复 DC 耦合，避免污染后续 transient 等 DC 测量项。
     """
     item_key = "dcdc_switching_freq"
     if ctx.scope is None:
         return _skipped(item_key, "Switching Frequency", "未连接示波器，跳过")
     cfg = ctx.config
-    scope_sw_ch = int(cfg.get("scope_sw_channel", 2))
+    scope_ch = int(cfg.get("scope_vout_channel", 1))
     vin_ch = parse_channel(cfg.get("vin_channel", 1))
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
     vin_v = float(cfg.get("vin_v", 3.8))
-    load_ma = float(cfg.get("fsw_load_ma", 100))
+    i_start = float(cfg.get("iload_start_ma", 1))
+    i_end = float(cfg.get("iload_end_ma", 200))
+    i_step = float(cfg.get("iload_step_ma", 20))
+    avg_cnt = max(1, int(cfg.get("average_cnt", 3)))
     settle_s = float(cfg.get("settle_time_s", 0.05))
 
-    if ctx.is_mock:
-        fsw_khz = mock_jitter(1200.0, 0.02)
-    else:
+    points = linspace(i_start, i_end, i_step)
+    rows: list[list] = []
+    measured_rows: list[dict] = []
+
+    if not ctx.is_mock:
         setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
-        setup_load_channel(ctx, iload_ch, initial_current_a=load_ma / 1000.0)
-        settle(ctx, max(settle_s * 8, 0.5))
-        # SW 节点：开显示 + 时基按预期 fsw 配（整屏约 10 个周期）
-        fsw_khz_expected = float(cfg.get("fsw_expected_khz", 1200.0))
-        timebase_s = 10.0 / (fsw_khz_expected * 1000.0) if fsw_khz_expected > 0 else 1e-6
-        ctx.scope.set_timebase_scale(timebase_s)
-        ctx.scope.set_channel_display(scope_sw_ch, True)
-        settle(ctx, max(settle_s * 4, 0.2))
-        try:
-            fsw_khz = float(ctx.scope.get_channel_frequency(scope_sw_ch)) / 1000.0  # Hz->kHz
-        except Exception:  # noqa: BLE001
-            logger.error("scope Fsw read failed", exc_info=True)
-            fsw_khz = 0.0
+        setup_load_channel(ctx, iload_ch, initial_current_a=i_start / 1000.0)
+        # 上一项可能调过 close_all_channels()（transient 流程），须显式开显示
+        ctx.scope.set_channel_display(scope_ch, True)
+        # AC 耦合：隔直后测纹波频率
+        if hasattr(ctx.scope, "set_channel_coupling"):
+            ctx.scope.set_channel_coupling(scope_ch, "AC")
+
+    for i, il in enumerate(points):
+        if ctx.stop_flag_fn():
+            break
+        if ctx.is_mock:
+            fsw_khz = mock_jitter(1200.0 - il * 0.2, 0.02)
+        else:
+            set_load_current(ctx, iload_ch, il / 1000.0)
+            settle(ctx, max(settle_s * 8, 0.4))
+            try:
+                ctx.scope.set_AutoRipple_test(scope_ch)
+                settle(ctx, max(settle_s * 4, 0.3))
+                samples: list[float] = []
+                for j in range(avg_cnt):
+                    samples.append(float(ctx.scope.get_channel_frequency(scope_ch)))
+                    if j < avg_cnt - 1:
+                        settle(ctx, settle_s)
+                fsw_khz = sum(samples) / len(samples) / 1000.0  # Hz->kHz
+            except Exception:  # noqa: BLE001 - 单点测频失败降级，继续扫描
+                logger.error("scope Fsw read failed @%gmA", il, exc_info=True)
+                fsw_khz = 0.0
+        rows.append([il, round(fsw_khz, 3)])
+        measured_rows.append({"Iload (mA)": il, "Fsw (kHz)": round(fsw_khz, 3)})
+        ctx.progress_fn(int((i + 1) / len(points) * 100), f"Fsw {il:g}mA")
+        ctx.log_fn(f"[{item_key}] Iload={il:g}mA -> Fsw={fsw_khz:.3f} kHz")
+
+    if not ctx.is_mock:
         teardown_load(ctx, iload_ch)
+        # 恢复 DC 耦合，避免后续 transient 等 DC 测量项测不到直流分量
+        if hasattr(ctx.scope, "set_channel_coupling"):
+            try:
+                ctx.scope.set_channel_coupling(scope_ch, "DC")
+            except Exception:  # noqa: BLE001
+                logger.error("restore DC coupling ch%d failed", scope_ch, exc_info=True)
+
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
-    write_csv(csv_path, ["Fsw (kHz)"], [[round(fsw_khz, 3)]])
-    ctx.log_fn(f"[{item_key}] Fsw = {fsw_khz:.3f} kHz")
+    write_csv(csv_path, ["Iload (mA)", "Fsw (kHz)"], rows)
     return ItemResult(item_key=item_key, name="Switching Frequency", unit="kHz",
-                      passed=None, measured={"fsw_khz": round(fsw_khz, 3)},
-                      raw_csv_path=csv_path)
+                      passed=None, measured=measured_rows, raw_csv_path=csv_path)
 
 
 def current_limit(ctx: ItemContext) -> ItemResult:
@@ -564,19 +597,12 @@ DCDC_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
                   hint="逗号分隔"),
     )),
     "dcdc_switching_freq": ("Switching Frequency", switching_freq, True, True, (
-        ParamSpec("scope_sw_channel", "SW 通道", "int", 2, "", minimum=1, maximum=4),
         vin_bias(),
-        ParamSpec("fsw_load_ma", "测试负载", "float", 100.0, "mA", maximum=100000.0),
-        ParamSpec("fsw_expected_khz", "预期频率", "float", 1200.0, "kHz",
-                  minimum=1.0, maximum=10000.0, decimals=1,
-                  hint="示波器时基按此设置"),
-        settle_time(),
+        *load_sweep(1.0, 200.0, 20.0),
+        average_cnt(), settle_time(),
     )),
     "dcdc_load_transient": ("Load Transient Response", load_transient, True, True, (
         transient_groups(),
-        ParamSpec("transient_vspan_mv", "预期摆幅", "float", 200.0, "mV",
-                  minimum=1.0, maximum=10000.0, decimals=1,
-                  hint="示波器量程按此设置"),
         settle_time(),
     )),
     "dcdc_line_transient": ("Line Transient Response", line_transient, True, False, (

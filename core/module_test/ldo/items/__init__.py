@@ -514,9 +514,6 @@ LDO_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
     )),
     "ldo_load_transient": ("Load Transient Response", load_transient, True, False, (
         transient_groups(),
-        ParamSpec("transient_vspan_mv", "预期摆幅", "float", 200.0, "mV",
-                  minimum=1.0, maximum=10000.0, decimals=1,
-                  hint="示波器量程按此设置"),
         settle_time(),
     )),
     "ldo_line_transient": ("Line Transient Response", line_transient, True, False, (

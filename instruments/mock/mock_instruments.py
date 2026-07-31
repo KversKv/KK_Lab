@@ -714,6 +714,7 @@ class MockMSO64B:
         self._timebase_scale = 1e-6
         self._timebase_position = 0.0
         self._channel_bandwidth = {1: 'FUL', 2: 'FUL', 3: 'FUL', 4: 'FUL'}
+        self._channel_coupling = {1: 'DC', 2: 'DC', 3: 'DC', 4: 'DC'}
         self._trigger_source = 'CH1'
         self._trigger_slope = 'POS'
         self._trigger_level = 1.25
@@ -846,6 +847,12 @@ class MockMSO64B:
 
     def get_channel_bandwidth(self, channel):
         return self._channel_bandwidth.get(channel, 'FUL')
+
+    def set_channel_coupling(self, channel, coupling='DC'):
+        self._channel_coupling[channel] = coupling
+
+    def get_channel_coupling(self, channel):
+        return self._channel_coupling.get(channel, 'DC')
 
     def set_timebase_position(self, position_pct):
         self._timebase_position = position_pct

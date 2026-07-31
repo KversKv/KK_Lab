@@ -762,6 +762,9 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         dlg = _ConfigManagerDialog(self._configs_root(), self.MODULE_TYPE, parent=self)
         if dlg.exec() != QDialog.Accepted:
             return
+        self._apply_selected_config(dlg)
+
+    def _apply_selected_config(self, dlg) -> None:
         path = dlg.selected_path()
         if not path:
             return
@@ -774,11 +777,18 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         self.execution_logs.append_log(f"[INFO] 已加载配置：{os.path.basename(path)}")
 
     def prompt_config_manager_once(self) -> None:
-        """首次进入本模块测试页时自动弹出配置管理器（每子页一次）。"""
+        """首次进入本模块测试页时自动弹出配置管理器（每子页一次，非模态不冻结侧边栏）。"""
         if getattr(self, "_config_prompted", False):
             return
         self._config_prompted = True
-        QTimer.singleShot(0, self._on_open_config)
+        QTimer.singleShot(0, self._show_config_manager_modeless)
+
+    def _show_config_manager_modeless(self) -> None:
+        dlg = _ConfigManagerDialog(self._configs_root(), self.MODULE_TYPE, parent=self)
+        dlg.setAttribute(Qt.WA_DeleteOnClose)
+        dlg.setModal(False)
+        dlg.accepted.connect(lambda: self._apply_selected_config(dlg))
+        dlg.show()
 
     # ------------------------------------------------------------------ test flow
     def _on_start_test(self):
