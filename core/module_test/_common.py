@@ -172,6 +172,29 @@ def set_load_current(ctx: "ItemContext", channel: int, current_a: float) -> None
         logger.error("set load current ch%d failed", channel, exc_info=True)
 
 
+def apply_load_current(ctx: "ItemContext", channel: int, current_a: float,
+                       state: dict) -> None:
+    """按目标电流驱动 CCLoad，0mA 走关断而非设 0mA（硬红线 12）。
+
+    CCLoad 开启状态禁设 0mA、也禁 0mA 开机，故 0mA 点 channel_off，
+    从 0mA 恢复时先写非 0 电流再 channel_on。state 记录通道开关态
+    （{"on": bool}），调用方在扫描循环外初始化 {"on": True}（setup 已开）。
+    """
+    try:
+        if current_a <= 0:
+            if state.get("on"):
+                ctx.n6705c.channel_off(channel)
+                state["on"] = False
+            return
+        # 目标为非 0：先写电流，再按需开启（避免 0mA 开机 / 沿用旧值）
+        ctx.n6705c.set_current(channel, -abs(current_a))
+        if not state.get("on"):
+            ctx.n6705c.channel_on(channel)
+            state["on"] = True
+    except Exception:  # noqa: BLE001
+        logger.error("apply load current ch%d failed", channel, exc_info=True)
+
+
 def teardown_load(ctx: "ItemContext", channel: int) -> None:
     """收尾：关断负载通道（参考 PMU DCDC worker finally 块）。
 
@@ -586,6 +609,7 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
         setup_load_channel(ctx, iload_ch, initial_current_a=max(i_start, 0.001) / 1000.0)
         # 上一项可能调过 close_all_channels()（transient 流程），须显式开显示
         ctx.scope.set_channel_display(scope_ch, True)
+    load_state = {"on": not ctx.is_mock}
 
     for i, il in enumerate(points):
         if ctx.stop_flag_fn():
@@ -596,7 +620,8 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
             rms = mock_jitter(mock_rms_base + il * 0.001, 0.08)
             shot = None
         else:
-            set_load_current(ctx, iload_ch, il / 1000.0)
+            # 0mA 点关断负载通道（CCLoad 开启禁设 0mA / 0mA 禁开机，红线 12）
+            apply_load_current(ctx, iload_ch, il / 1000.0, load_state)
             settle(ctx, max(settle_s * 8, 0.4))
             try:
                 ctx.scope.set_AutoRipple_test(scope_ch)
@@ -617,7 +642,8 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
         ctx.progress_fn(int((i + 1) / len(points) * 100), f"{name} {il:g}mA")
         ctx.log_fn(f"[{item_key}] Iload={il:g}mA -> Vout={vout:.4f} mV, "
                    f"Vpp={vpp:.3f} mV, RMS={rms:.3f} mV")
-    if not ctx.is_mock:
+    if not ctx.is_mock and load_state.get("on"):
+        # 仅在仍开启时关断（0mA 收尾点通道已被 apply_load_current 关掉）
         teardown_load(ctx, iload_ch)
 
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
