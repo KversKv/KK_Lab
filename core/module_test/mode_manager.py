@@ -65,30 +65,51 @@ def _write_field(i2c: Any, device_addr: int, width_flag: int,
     i2c.write(device_addr, addr, reg, width_flag)
 
 
-def set_dut_enable(ctx: ItemContext, regs: EnableRegSpec, *, on: bool) -> bool:
+def set_dut_enable(ctx: ItemContext, regs: EnableRegSpec, *, on: bool) -> tuple | None:
     """写 ENABLE 双寄存器，使被测 LDO/DCDC 使能(on)或关断(off)。
 
-    Mock 模式为 no-op 返回 True；真机按 dr → en 顺序位段写，失败降级 False。
+    Mock 模式为 no-op 返回 None；真机按 dr → en 顺序位段写，失败降级 None。
     仅改被测本路的 dr/en 位段，不动 SOC 其余部分。
+    成功时返回 (dr_orig, en_orig)——写入前两位段的原始值，供收尾还原。
     """
     if ctx.is_mock:
-        return True
+        return None
     device_addr = cfg_int(ctx.config, "device_addr", 0x00)
     width_flag = cfg_int(ctx.config, "width_flag", 1)
     dr_val = regs.on_dr_val if on else regs.off_dr_val
     en_val = regs.on_en_val if on else regs.off_en_val
     try:
         i2c = create_i2c(ctx)
+        dr_orig = (i2c.read(device_addr, regs.dr_addr, width_flag) >> regs.dr_bit) & 1
+        en_orig = (i2c.read(device_addr, regs.en_addr, width_flag) >> regs.en_bit) & 1
         _write_field(i2c, device_addr, width_flag,
                      regs.dr_addr, regs.dr_bit, dr_val)
         _write_field(i2c, device_addr, width_flag,
                      regs.en_addr, regs.en_bit, en_val)
         ctx.log_fn(f"[enable] {'ON' if on else 'OFF'} "
                    f"dr=0x{regs.dr_addr:X}<-{dr_val} en=0x{regs.en_addr:X}<-{en_val}")
-        return True
+        return (dr_orig, en_orig)
     except Exception:  # noqa: BLE001 - 写使能寄存器失败降级，不中断整体
         logger.error("写 ENABLE 寄存器失败 (on=%s)", on, exc_info=True)
-        return False
+        return None
+
+
+def restore_dut_enable(ctx: ItemContext, regs: EnableRegSpec, orig: tuple) -> None:
+    """把 ENABLE 双寄存器还原到 orig（set_dut_enable 返回的原始位值）。"""
+    if ctx.is_mock or orig is None:
+        return
+    device_addr = cfg_int(ctx.config, "device_addr", 0x00)
+    width_flag = cfg_int(ctx.config, "width_flag", 1)
+    try:
+        i2c = create_i2c(ctx)
+        _write_field(i2c, device_addr, width_flag,
+                     regs.dr_addr, regs.dr_bit, orig[0])
+        _write_field(i2c, device_addr, width_flag,
+                     regs.en_addr, regs.en_bit, orig[1])
+        ctx.log_fn(f"[enable] RESTORE dr=0x{regs.dr_addr:X}<-{orig[0]} "
+                   f"en=0x{regs.en_addr:X}<-{orig[1]}")
+    except Exception:  # noqa: BLE001
+        logger.error("还原 ENABLE 寄存器失败", exc_info=True)
 
 
 def iq_diff_measure(ctx: ItemContext, item_key: str, vin_ch: int, vout_src_ch: int,
@@ -98,13 +119,16 @@ def iq_diff_measure(ctx: ItemContext, item_key: str, vin_ch: int, vout_src_ch: i
     """静态电流差分测量核心（LDO/DCDC 共用）。
 
     外供 Vout 源到 vout_supply_v，分别在使能 / 关断两态测 Vin+Vout 电流做差。
-    返回 (dIvin_uA, dIvout_uA, Iq_uA)，均已四舍五入到 3 位。
+    返回 (dIvin_uA, dIvout_uA, Iq_uA, enable_orig)，前三者四舍五入到 3 位，
+    enable_orig 为使能态写入前的 (dr, en) 原始位值（Mock/未配置为 None），
+    供调用方在关断通道前还原寄存器。
     """
     from core.module_test._common import (
         measure_avg, mock_jitter, setup_source_channel,
     )
 
     st = max(settle_s * 4, 0.2)
+    enable_orig = None
     if ctx.is_mock:
         ivin_on = mock_jitter(mock_base_ua * 0.6, 0.05)
         ivout_on = mock_jitter(mock_base_ua * 0.4, 0.05)
@@ -114,7 +138,7 @@ def iq_diff_measure(ctx: ItemContext, item_key: str, vin_ch: int, vout_src_ch: i
         # 外供 Vout 源（双象限，可吸可灌），限流兜底
         setup_source_channel(ctx, vout_src_ch, vout_supply_v, current_limit=0.5)
         # 使能态
-        set_dut_enable(ctx, en_regs, on=True)
+        enable_orig = set_dut_enable(ctx, en_regs, on=True)
         settle(ctx, st)
         ivin_on = measure_avg(ctx, "measure_current", vin_ch,
                               count=avg_cnt, settle_s=settle_s) * 1e6
@@ -130,4 +154,4 @@ def iq_diff_measure(ctx: ItemContext, item_key: str, vin_ch: int, vout_src_ch: i
     d_ivin = ivin_on - ivin_off
     d_ivout = ivout_on - ivout_off
     iq = d_ivin + d_ivout
-    return (round(d_ivin, 3), round(d_ivout, 3), round(iq, 3))
+    return (round(d_ivin, 3), round(d_ivout, 3), round(iq, 3), enable_orig)

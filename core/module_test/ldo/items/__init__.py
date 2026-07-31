@@ -171,9 +171,15 @@ def quiescent(ctx: ItemContext) -> ItemResult:
                             mock_base_ua=80.0)
         row = [d[0], d[1], d[2]]
         ctx.log_fn(f"[{item_key}] dIvin={d[0]} dIvout={d[1]} Iq={d[2]} uA")
+        # 关断外供前先把 ENABLE 寄存器还原回测量前状态
+        from core.module_test.mode_manager import restore_dut_enable
+        restore_dut_enable(ctx, en_regs, d[3])
 
     if not ctx.is_mock:
-        setup_source_channel(ctx, vout_src_ch, 0.0)  # 收尾归零外供
+        try:
+            ctx.n6705c.channel_off(vout_src_ch)  # 关断外供，设 0V 会把 DUT VOUT 拉低
+        except Exception:  # noqa: BLE001
+            logger.error("channel off vout_src ch%d failed", vout_src_ch, exc_info=True)
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, header, [row])
     measured = dict(zip(header, row))

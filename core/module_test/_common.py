@@ -400,6 +400,37 @@ def _arb_stop_and_wait(ctx: "ItemContext", channel: int) -> None:
         ctx.log_fn(f"[N6705C] CH{channel} 等待 ARB 空闲超时，继续执行")
 
 
+def _reset_arb_state(ctx: "ItemContext", channels: list[int]) -> None:
+    """彻底清 ARB 残留：停 ARB + 等空闲 + 逐通道退出电压/电流 ARB 模式。
+
+    clear_arb_all_channels 的 ABOR:TRAN 被裸 except 吞掉，且未等 initiated
+    清零就写 VOLT/CURR:MODE FIX（连续脉冲时清除慢，此时写 FIX 报 +308 被忽略），
+    导致上一项 Load Transient 的 CURR:MODE ARB 残留到下一项。本函数先等空闲
+    再显式逐通道退出两种 ARB 模式，保证通道回到固定输出态。
+    """
+    if ctx.is_mock:
+        return
+    try:
+        ctx.n6705c.arb_stop()
+    except Exception:  # noqa: BLE001 - 停止失败降级记录，继续清理
+        logger.error("arb_stop failed in _reset_arb_state", exc_info=True)
+    for ch in channels:
+        if hasattr(ctx.n6705c, "wait_arb_idle"):
+            try:
+                ctx.n6705c.wait_arb_idle(ch, timeout_s=3.0)
+            except Exception:  # noqa: BLE001
+                logger.error("wait_arb_idle ch%d failed", ch, exc_info=True)
+    for ch in channels:
+        try:
+            ctx.n6705c.exit_arb_voltage(ch)
+        except Exception:  # noqa: BLE001
+            logger.error("exit_arb_voltage ch%d failed", ch, exc_info=True)
+        try:
+            ctx.n6705c.exit_arb_current(ch)
+        except Exception:  # noqa: BLE001
+            logger.error("exit_arb_current ch%d failed", ch, exc_info=True)
+
+
 def _n6705c_err_check(ctx: "ItemContext", tag: str) -> None:
     """查询 N6705C 错误队列，非 +0 即经 log_fn 上抛 UI 日志（真机调试用）。
 
@@ -615,11 +646,7 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
     shot_dir = os.path.join(ctx.out_dir, "screenshots")
 
     if not ctx.is_mock:
-        try:
-            ctx.n6705c.clear_arb_all_channels()
-        except Exception:  # noqa: BLE001 - 复位失败降级记录，继续配置
-            logger.error("clear_arb_all_channels failed before %s", item_key,
-                         exc_info=True)
+        _reset_arb_state(ctx, [vin_ch])
 
     for idx, g in enumerate(groups):
         if ctx.stop_flag_fn():
@@ -774,11 +801,7 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
     shot_dir = os.path.join(ctx.out_dir, "screenshots")
 
     if not ctx.is_mock:
-        try:
-            ctx.n6705c.clear_arb_all_channels()
-        except Exception:  # noqa: BLE001 - 复位失败降级记录，继续配置
-            logger.error("clear_arb_all_channels failed before %s", item_key,
-                         exc_info=True)
+        _reset_arb_state(ctx, [iload_ch])
         # 首组 i0 作为初始电流，避免 channel_on 瞬间沿用遗留值
         first_i0_ma = max(float(g.get("i0_ma", 10.0)) for g in groups) if groups else 10.0
         setup_load_channel(ctx, iload_ch, initial_current_a=first_i0_ma / 1000.0)
