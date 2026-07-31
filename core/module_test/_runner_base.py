@@ -28,6 +28,7 @@ class ModuleTestRunner(QThread):
 
     Signals:
         progress(int, str): 总进度百分比 + 当前项名。
+        item_started(str): 单项开始执行（item_key）。
         item_finished(str, dict): 单项完成（item_key, 摘要）。
         log(str): 日志行。
         finished_result(object): 全部完成，传 ModuleTestResult。
@@ -35,6 +36,7 @@ class ModuleTestRunner(QThread):
     """
 
     progress = Signal(int, str)
+    item_started = Signal(str)
     item_finished = Signal(str, dict)
     log = Signal(str)
     finished_result = Signal(object)
@@ -98,6 +100,7 @@ class ModuleTestRunner(QThread):
                 break
             name, run_fn, needs_scope, _default_checked, _params = self._items_registry[item_key]
             self._log(f"[{idx + 1}/{total}] 执行 {name}（{item_key}）...")
+            self.item_started.emit(item_key)
             self._progress(int(idx / total * 100), name)
 
             # per-item 参数覆盖：弹窗设置的 override 浅合并进该项专用 cfg（仅本项生效）

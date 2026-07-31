@@ -125,6 +125,10 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
             QTableWidget {{
                 alternate-background-color: {Colors.bg_panel};
             }}
+            /* 运行状态：整表文字压暗，由逐项前景色凸显 等待中/进行中/已完成 */
+            QTableWidget[runningMode="true"]::item {{
+                color: {Colors.text_muted};
+            }}
             QPushButton#stopBtn:disabled {{
                 background-color: {Colors.disabled_btn_bg};
                 color: {Colors.disabled_text};
@@ -420,6 +424,84 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
     def _iter_item_tables(self) -> list[QTableWidget]:
         return self._item_tables
 
+    # ------------------------------------------------------------------ run state
+    def _find_item_row(self, item_key: str) -> tuple[QTableWidget | None, int]:
+        """按 item_key 定位 (table, row)，找不到返回 (None, -1)。"""
+        for table in self._iter_item_tables():
+            for row in range(table.rowCount()):
+                name_item = table.item(row, 1)
+                if name_item and name_item.data(Qt.UserRole) == item_key:
+                    return table, row
+        return None, -1
+
+    def _enter_run_state(self, selected_keys: list[str]) -> None:
+        """开始测试：清单进入运行状态（锁定勾选，记录列显示 等待中/未选）。
+
+        颜色语义：等待中=warning，进行中=info，PASS=success，FAIL=error；
+        runningMode 属性让整表默认文字压暗，逐项前景色由此凸显状态。
+        """
+        self._run_selected_keys = list(selected_keys)
+        for table in self._iter_item_tables():
+            table.setProperty("runningMode", True)
+            table.style().unpolish(table)
+            table.style().polish(table)
+            for row in range(table.rowCount()):
+                chk = table.item(row, 0)
+                if chk:
+                    chk.setFlags(Qt.ItemIsEnabled)
+                name_item = table.item(row, 1)
+                rec = table.item(row, 3)
+                if name_item is None or rec is None:
+                    continue
+                if name_item.data(Qt.UserRole) in self._run_selected_keys:
+                    rec.setText("等待中")
+                    rec.setForeground(QColor(Colors.warning))
+                else:
+                    rec.setText("未选")
+                    rec.setForeground(QColor(Colors.text_muted))
+
+    def _mark_item_running(self, item_key: str) -> None:
+        table, row = self._find_item_row(item_key)
+        if table is None:
+            return
+        rec = table.item(row, 3)
+        if rec:
+            rec.setText("▶ 进行中")
+            rec.setForeground(QColor(Colors.info))
+
+    def _mark_item_done(self, item_key: str, verdict: str) -> None:
+        table, row = self._find_item_row(item_key)
+        if table is None:
+            return
+        rec = table.item(row, 3)
+        if rec is None:
+            return
+        if verdict == "PASS":
+            rec.setText("✓ PASS")
+            rec.setForeground(QColor(Colors.success))
+        elif verdict == "FAIL":
+            rec.setText("✗ FAIL")
+            rec.setForeground(QColor(Colors.error))
+        else:
+            rec.setText("✓ 完成")
+            rec.setForeground(QColor(Colors.info))
+
+    def _exit_run_state(self) -> None:
+        """完成/停止：清单恢复默认状态（恢复勾选交互 + 记录列复原）。"""
+        for table in self._iter_item_tables():
+            table.setProperty("runningMode", False)
+            table.style().unpolish(table)
+            table.style().polish(table)
+            for row in range(table.rowCount()):
+                chk = table.item(row, 0)
+                if chk:
+                    chk.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
+                rec = table.item(row, 3)
+                if rec:
+                    rec.setText("记录")
+                    rec.setForeground(QColor(Colors.text_muted))
+        self._refresh_scope_item_state()
+
     def _build_action_row(self) -> QWidget:
         row = QWidget()
         row.setObjectName("actionRow")
@@ -570,7 +652,10 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
 
         所有测试项始终可勾选；启动测试时统一校验所需仪器（见
         _missing_instruments），此处仅在记录列给出"未接示波器"提醒。
+        运行状态下记录列显示 等待中/进行中/结果，顶层连接同步不得覆盖。
         """
+        if getattr(self, "is_test_running", False):
+            return
         scope_ok = self.scope_connected
         for table in self._iter_item_tables():
             for row in range(table.rowCount()):
@@ -861,6 +946,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
             config=cfg, n6705c=self.n6705c, scope=scope, chamber=None,
         )
         self._runner.progress.connect(self._on_progress)
+        self._runner.item_started.connect(self._mark_item_running)
         self._runner.item_finished.connect(self._on_item_finished)
         self._runner.log.connect(self.execution_logs.append_log)
         self._runner.finished_result.connect(self._on_finished)
@@ -868,6 +954,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         self.is_test_running = True
         self.start_test_btn.setEnabled(False)
         self.stop_test_btn.setEnabled(True)
+        self._enter_run_state(cfg["selected_items"])
         self.set_system_status("测试进行中")
         self.execution_logs.start_timer(len(cfg["selected_items"]))
         self.execution_logs.append_log(f"[START] {self.MODULE_TYPE.upper()} Module Test 启动")
@@ -883,6 +970,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
 
     def _on_item_finished(self, item_key: str, summary: dict):
         verdict = summary.get("passed", "N/A")
+        self._mark_item_done(item_key, verdict)
         self.execution_logs.append_log(f"[ITEM] {item_key} -> {verdict}")
 
     def _on_finished(self, result):
@@ -890,6 +978,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         self.is_test_running = False
         self.start_test_btn.setEnabled(True)
         self.stop_test_btn.setEnabled(False)
+        self._exit_run_state()
         self.execution_logs.stop_timer()
         self._last_report_path = result.summary.get("report_path")
         self.open_report_btn.setEnabled(self._last_report_path is not None)
@@ -904,6 +993,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         self.is_test_running = False
         self.start_test_btn.setEnabled(True)
         self.stop_test_btn.setEnabled(False)
+        self._exit_run_state()
         self.execution_logs.stop_timer()
         self.set_system_status("测试失败", is_error=True)
         self.execution_logs.append_log(f"[ERROR] {msg}")
