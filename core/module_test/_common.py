@@ -230,6 +230,7 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
     min_code = cfg_int(cfg, "min_code", 0)
     max_code = cfg_int(cfg, "max_code", 255)
     vmeter_ch = parse_channel(cfg.get("vout_channel", 1))
+    iload_ch = parse_channel(cfg.get("iload_channel", 3))
 
     i2c = create_i2c(ctx)
     if ctx.is_mock:
@@ -250,6 +251,9 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
     if total_points <= 0:
         ctx.log_fn(f"[{item_key}] [ERROR] Invalid code range (min >= max).")
         return _skipped("无效的 code 范围（min >= max）")
+
+    # 扫描全程挂 1mA 轻载（先写电流再开通道，结束后关断）
+    setup_load_channel(ctx, iload_ch, initial_current_a=0.001)
 
     ctx.log_fn(f"[{item_key}] [TEST] Device=0x{device_addr:02X}, Reg=0x{reg_addr:04X}, "
                f"MSB={msb}, LSB={lsb}, WidthFlag={width_flag}")
@@ -277,6 +281,7 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
         if ctx.stop_flag_fn():
             ctx.log_fn(f"[{item_key}] [TEST] Stopped by user during stabilization.")
             i2c.write(device_addr, reg_addr, default_reg, width_flag)
+            teardown_load(ctx, iload_ch)
             return _skipped("稳定阶段被用户停止")
         v = float(ctx.n6705c.measure_voltage(vmeter_ch))
         recent_voltages.append(v)
@@ -366,6 +371,9 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
     # 恢复寄存器默认值
     i2c.write(device_addr, reg_addr, default_reg, width_flag)
     ctx.log_fn(f"[{item_key}] [TEST] Register restored to default value.")
+
+    # 收尾关断负载通道（CCLoad 开启态禁设 0mA，直接 channel_off）
+    teardown_load(ctx, iload_ch)
 
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["DAC_code", "Vout (mV)", "Diff (mV)"],

@@ -321,128 +321,6 @@ def inductor_current(ctx: ItemContext) -> ItemResult:
                       passed=None, measured={"rows": rows}, raw_csv_path=csv_path)
 
 
-def vin_range(ctx: ItemContext) -> ItemResult:
-    """输入电压范围（Vin min/max，能正常稳压的下限/上限）。
-
-    流程（参考 PMU VIN sweep 思路）：Vin=PS2Q 从低到高步进，带轻载，
-    逐点测 Vout；当 Vout 首次进入标称容差带记为下限 UVLO，最后一个仍在
-    容差带内的 Vin 记为上限。全程 settle + 多次采样均值。
-    """
-    item_key = "dcdc_vin_range"
-    cfg = ctx.config
-    vin_lo = float(cfg.get("vin_start_v", 2.5))
-    vin_hi = float(cfg.get("vin_end_v", 5.5))
-    vin_step = float(cfg.get("vin_step_v", 0.1))
-    vin_ch = parse_channel(cfg.get("vin_channel", 1))
-    vout_ch = parse_channel(cfg.get("vout_channel", 2))
-    iload_ch = parse_channel(cfg.get("iload_channel", 3))
-    nominal_v = float(cfg.get("vout_nominal_mv", 1200)) / 1000.0
-    tol = float(cfg.get("vout_tol_ratio", 0.05))  # ±5% 视为有效稳压
-    light_load_ma = float(cfg.get("vin_range_load_ma", 10))
-    avg_cnt = int(cfg.get("average_cnt", 3))
-    settle_s = float(cfg.get("settle_time_s", 0.05))
-
-    points = linspace(vin_lo, vin_hi, vin_step)
-    rows: list[list] = []
-
-    if not ctx.is_mock:
-        setup_source_channel(ctx, vin_ch, vin_lo, current_limit=0.5)
-        setup_meter_channel(ctx, vout_ch)
-        setup_load_channel(ctx, iload_ch, initial_current_a=light_load_ma / 1000.0)
-
-    lo_edge = 0.0
-    hi_edge = 0.0
-    for i, vin in enumerate(points):
-        if ctx.stop_flag_fn():
-            break
-        if ctx.is_mock:
-            # 假设 2.7V 起稳压、5.3V 仍正常
-            v = nominal_v if 2.7 <= vin <= 5.3 else nominal_v * (vin / 2.7) * 0.4
-            v = mock_jitter(v, 0.003)
-        else:
-            try:
-                ctx.n6705c.set_voltage(vin_ch, vin)
-            except Exception:  # noqa: BLE001
-                logger.error("set Vin failed", exc_info=True)
-            settle(ctx, settle_s)
-            v = measure_avg(ctx, "measure_voltage", vout_ch, count=avg_cnt, settle_s=settle_s,
-                            default=0.0)
-        in_band = abs(v - nominal_v) <= nominal_v * tol
-        if in_band:
-            if lo_edge == 0.0:
-                lo_edge = vin
-            hi_edge = vin
-        rows.append([round(vin, 4), round(v * 1000.0, 4), "IN" if in_band else "OUT"])
-        ctx.progress_fn(int((i + 1) / len(points) * 100), f"Vin {vin:.2f}V")
-        ctx.log_fn(f"[{item_key}] Vin={vin:.3f}V -> Vout={v * 1000:.3f}mV {'IN' if in_band else 'OUT'}")
-
-    if not ctx.is_mock:
-        teardown_load(ctx, iload_ch)
-
-    csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
-    write_csv(csv_path, ["Vin (V)", "Vout (mV)", "Regulated"], rows)
-    ctx.log_fn(f"[{item_key}] Vin range = {lo_edge:.4f} ~ {hi_edge:.4f} V")
-    return ItemResult(item_key=item_key, name="Input Voltage Range", unit="V",
-                      passed=None, measured={"vin_min_v": round(lo_edge, 4),
-                                             "vin_max_v": round(hi_edge, 4),
-                                             "sweep_range_v": [vin_lo, vin_hi]},
-                      raw_csv_path=csv_path)
-
-
-def output_power(ctx: ItemContext) -> ItemResult:
-    """输出电流 / 输出功率（Iout、Pout 随负载）。
-
-    流程参考 PMU DCDC worker：Vin=PS2Q 源、Vout=VMETer、Iload=CCLoad，
-    逐点拉载 + settle + 多次采样均值，同步测 Vout/Iout 计算 Pout=Vout·Iout。
-    """
-    item_key = "dcdc_output_power"
-    cfg = ctx.config
-    i_start = float(cfg.get("iload_start_ma", 1))
-    i_end = float(cfg.get("iload_end_ma", 200))
-    i_step = float(cfg.get("iload_step_ma", 20))
-    vin_ch = parse_channel(cfg.get("vin_channel", 1))
-    vout_ch = parse_channel(cfg.get("vout_channel", 2))
-    iload_ch = parse_channel(cfg.get("iload_channel", 3))
-    vin_v = float(cfg.get("vin_v", 3.8))
-    nominal_mv = float(cfg.get("vout_nominal_mv", 1200))
-    avg_cnt = int(cfg.get("average_cnt", 3))
-    settle_s = float(cfg.get("settle_time_s", 0.05))
-
-    points = linspace(i_start, i_end, i_step)
-    rows: list[list] = []
-    if not ctx.is_mock:
-        setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
-        setup_meter_channel(ctx, vout_ch)
-        setup_load_channel(ctx, iload_ch, initial_current_a=i_start / 1000.0)
-    for i, il in enumerate(points):
-        if ctx.stop_flag_fn():
-            break
-        if ctx.is_mock:
-            v = mock_jitter(nominal_mv - il * 0.01, 0.002)
-            iout = mock_jitter(il, 0.01)
-        else:
-            set_load_current(ctx, iload_ch, il / 1000.0)
-            settle(ctx, settle_s)
-            v = measure_avg(ctx, "measure_voltage", vout_ch, count=avg_cnt, settle_s=settle_s,
-                            default=nominal_mv / 1000.0) * 1000.0
-            iout = abs(measure_avg(ctx, "measure_current", iload_ch, count=avg_cnt,
-                                   settle_s=settle_s)) * 1000.0
-        pout_mw = v / 1000.0 * iout  # mV*mA/1000 -> mW
-        rows.append([round(iout, 4), round(v, 4), round(pout_mw, 4)])
-        ctx.progress_fn(int((i + 1) / len(points) * 100), f"Pout {il}mA")
-        ctx.log_fn(f"[{item_key}] Iout={iout:.3f}mA Vout={v:.3f}mV Pout={pout_mw:.3f}mW")
-    if not ctx.is_mock:
-        teardown_load(ctx, iload_ch)
-    csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
-    write_csv(csv_path, ["Iout (mA)", "Vout (mV)", "Pout (mW)"], rows)
-    pmax = max((r[2] for r in rows), default=0.0)
-    iout_max = max((r[0] for r in rows), default=0.0)
-    return ItemResult(item_key=item_key, name="Output Power", unit="mW",
-                      passed=None, measured={"points": len(rows), "pout_max_mw": round(pmax, 4),
-                                             "iout_max_ma": round(iout_max, 4)},
-                      raw_csv_path=csv_path)
-
-
 def switching_freq(ctx: ItemContext) -> ItemResult:
     """开关频率（固定 / 可调，依赖示波器）。
 
@@ -482,33 +360,6 @@ def switching_freq(ctx: ItemContext) -> ItemResult:
     ctx.log_fn(f"[{item_key}] Fsw = {fsw_khz:.3f} kHz")
     return ItemResult(item_key=item_key, name="Switching Frequency", unit="kHz",
                       passed=None, measured={"fsw_khz": round(fsw_khz, 3)},
-                      raw_csv_path=csv_path)
-
-
-def shutdown_current(ctx: ItemContext) -> ItemResult:
-    """待机 / 关断电流（Shutdown current）。
-
-    流程：Vin=PS2Q 源上电、EN 拉低（真机由测试台完成，芯片进入关断），
-    输出空载后测 Vin 端电流均值。EN 控制信号后续接入测试台时补自动化。
-    """
-    item_key = "dcdc_shutdown_current"
-    cfg = ctx.config
-    vin_ch = parse_channel(cfg.get("vin_channel", 1))
-    vin_v = float(cfg.get("vin_v", 3.8))
-    avg_cnt = int(cfg.get("average_cnt", 5))
-    settle_s = float(cfg.get("settle_time_s", 0.05))
-    if ctx.is_mock:
-        ish_ua = mock_jitter(1.5, 0.1)
-    else:
-        setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.1)
-        settle(ctx, max(settle_s * 4, 0.2))
-        # EN 拉低须外部完成，此处直接测关断态 Vin 端电流均值
-        ish_ua = measure_avg(ctx, "measure_current", vin_ch, count=avg_cnt, settle_s=settle_s) * 1e6
-    csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
-    write_csv(csv_path, ["Shutdown current (uA)"], [[round(ish_ua, 4)]])
-    ctx.log_fn(f"[{item_key}] Shutdown current = {ish_ua:.4f} uA")
-    return ItemResult(item_key=item_key, name="Standby/Shutdown Current", unit="uA",
-                      passed=None, measured={"shutdown_current_ua": round(ish_ua, 4)},
                       raw_csv_path=csv_path)
 
 
@@ -681,20 +532,9 @@ def topology(ctx: ItemContext) -> ItemResult:
 
 # 测试项注册表：item_key -> (name, run_fn, needs_scope, default_checked, params)
 DCDC_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
-    "dcdc_vin_range": ("Input Voltage Range", vin_range, False, True, (
-        *vin_sweep(2.5, 5.5, 0.1),
-        ParamSpec("vout_tol_ratio", "输出容差", "float", 0.05, "", maximum=1.0, decimals=4,
-                  hint="如 0.05 表示 ±5%"),
-        ParamSpec("vin_range_load_ma", "轻载电流", "float", 10.0, "mA", maximum=100000.0),
-        average_cnt(), settle_time(),
-    )),
     "dcdc_vout_scan": ("Output Voltage Scan", vout_scan, False, True, (
         *reg_scan_params(),
         settle_time(), average_cnt(),
-    )),
-    "dcdc_output_power": ("Output Power", output_power, False, True, (
-        *load_sweep(1.0, 200.0, 20.0),
-        vin_bias(), average_cnt(), settle_time(),
     )),
     "dcdc_efficiency": ("Efficiency", efficiency, False, True, (
         *load_sweep(1.0, 200.0, 20.0),
@@ -710,9 +550,6 @@ DCDC_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
     )),
     "dcdc_quiescent": ("Quiescent Current", quiescent, False, True, (
         vin_bias(), average_cnt(5), settle_time(), *quiescent_params(),
-    )),
-    "dcdc_shutdown_current": ("Standby/Shutdown Current", shutdown_current, False, True, (
-        vin_bias(), average_cnt(5), settle_time(),
     )),
     "dcdc_ripple": ("Load Capability&Ripple", ripple, True, True, (
         vin_bias(),

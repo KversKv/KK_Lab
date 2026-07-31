@@ -356,17 +356,8 @@ def _summary_metrics(it: ItemResult) -> str:
         return (f"Center={_in(m, 'center_freq_khz')} kHz; "
                 f"Span={_in(m, 'freq_span_khz')} kHz")
 
-    if key.endswith("vin_range"):
-        return f"Vin={_in(m, 'vin_min_v')} ~ {_in(m, 'vin_max_v')} V"
-
-    if key.endswith("output_power"):
-        return f"Pout_max={_in(m, 'pout_max_mw')} mW"
-
     if key.endswith("switching_freq"):
         return f"fsw={_in(m, 'fsw_khz')} kHz"
-
-    if key.endswith("shutdown_current"):
-        return f"Ish={_in(m, 'shutdown_current_ua')} uA"
 
     if key.endswith("startup"):
         return (f"SoftStart={_in(m, 'soft_start_ms')} ms; "
