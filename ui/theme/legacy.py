@@ -1,10 +1,14 @@
-"""应用级样式 token（app-wide design tokens）.
+"""旧版应用级样式 token（deprecated，仅作兼容保留）.
 
-本模块是主程序全局 chrome 的 token 单一事实源：``Colors`` / ``FontSizes`` /
-``Spacing`` / ``Radius`` / ``FONT_FAMILY`` / ``FONT_MONO``。serialCom 模块皮肤
-另有独立 token 层 ``ui.styles.serial_tokens``（``SerialColorTokens`` /
-``SerialFontSizes`` / ``SerialSpacing`` / ``SerialRadius``），两者边界清晰、互不重叠。
+本模块是原 ``ui/theme.py`` 单文件内容的原样迁移（色值/字号/间距 1:1 不变），
+供全项目存量 ``from ui.theme import Colors / FontSizes / Spacing / Radius /
+FONT_FAMILY / FONT_MONO / CHANNEL_COLORS / CHANNEL_THEMES`` 调用点继续工作。
+
+**新代码禁止引用本模块**，请使用 ``ui.theme.tokens``（语义 token）与
+``ui.theme.theme``（Theme/apply/dp/apply_qss）。本模块在 P5 阶段随调用点
+清理完毕后删除。
 """
+from __future__ import annotations
 
 
 class Colors:

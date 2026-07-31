@@ -1,0 +1,67 @@
+/* table.qss — 表格/树视图样式（TestPlanView、ResultTable、GroupsTableEditor）
+   注意：不在 QTableView/QTreeView 选择器上设 color（调色板由 delegate 的
+   ForegroundRole 逐项控制），避免重蹈"全局 QSS 盖掉逐项 setForeground"的坑。 */
+
+QTableView, QTreeView {
+    background-color: $surface_input;
+    alternate-background-color: $surface_raised;
+    border: 1px solid $border_default;
+    border-radius: $radius_md;
+    gridline-color: $border_subtle;
+    selection-background-color: $state_info_bg;
+    selection-color: $text_primary;
+    font-size: $font_body;
+    outline: none;
+}
+QTableView::item, QTreeView::item {
+    min-height: $table_row_h;
+    padding: 0 $space_1;
+    border: none;
+}
+QTableView::item:selected, QTreeView::item:selected {
+    background-color: $state_info_bg;
+    color: $text_primary;
+}
+QTableView::item:hover, QTreeView::item:hover {
+    background-color: $surface_raised;
+}
+
+QHeaderView::section {
+    background-color: $surface_raised;
+    color: $text_muted;
+    border: none;
+    border-right: 1px solid $border_subtle;
+    border-bottom: 1px solid $border_default;
+    padding: $space_1 $space_2;
+    font-size: $font_caption;
+    font-weight: 600;
+}
+QHeaderView::section:first {
+    border-left: none;
+}
+
+QTableCornerButton::section {
+    background-color: $surface_raised;
+    border: none;
+    border-bottom: 1px solid $border_default;
+}
+
+/* 参数列齿轮按钮（ParamButtonDelegate 内嵌控件时用） */
+QPushButton#paramBtn {
+    background-color: transparent;
+    border: 1px solid $border_default;
+    border-radius: $radius_sm;
+    color: $text_muted;
+    font-size: $font_caption;
+    padding: 0 $space_2;
+    min-height: $space_4;
+    max-height: $space_4;
+}
+QPushButton#paramBtn:hover {
+    color: $text_secondary;
+    border-color: $border_strong;
+}
+QPushButton#paramBtn[customized="true"] {
+    color: $state_info_fg;
+    border-color: $state_info_border;
+}

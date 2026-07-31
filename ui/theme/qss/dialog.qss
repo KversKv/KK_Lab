@@ -1,0 +1,96 @@
+/* dialog.qss — 弹窗样式（ItemParamsDialog / ConfigManagerDialog 等）
+   由 legacy DIALOG_QSS 迁移而来，选择器与视觉保持一致，裸色值全部 token 化。 */
+
+QDialog {
+    background-color: $surface_page;
+    color: $text_secondary;
+}
+QLabel {
+    color: $text_secondary;
+    background: transparent;
+}
+QLabel#dlgFieldLabel {
+    color: $text_muted;
+    font-size: $font_caption;
+}
+QLabel#dlgHint {
+    color: $text_disabled;
+    font-size: $font_caption;
+}
+QLineEdit, QSpinBox, QDoubleSpinBox {
+    background-color: $surface_input;
+    border: 1px solid $border_default;
+    border-radius: $radius_sm;
+    padding: $space_1 $space_2;
+    color: $text_secondary;
+    min-height: $control_h_compact_box;
+}
+QLineEdit:hover, QSpinBox:hover, QDoubleSpinBox:hover {
+    border-color: $border_strong;
+}
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {
+    border-color: $border_focus;
+}
+QLineEdit[invalid="true"], QSpinBox[invalid="true"], QDoubleSpinBox[invalid="true"] {
+    border-color: $state_error_fg;
+}
+QLineEdit::placeholder {
+    color: $text_disabled;
+}
+QComboBox {
+    background-color: $surface_input;
+    border: 1px solid $border_default;
+    border-radius: $radius_sm;
+    padding: $space_1 $space_2;
+    color: $text_secondary;
+    min-height: $control_h_compact_box;
+}
+QComboBox:hover {
+    border-color: $border_strong;
+}
+QComboBox::drop-down {
+    border: none;
+    width: $space_4;
+}
+QComboBox QAbstractItemView {
+    background-color: $surface_input;
+    border: 1px solid $border_default;
+    color: $text_secondary;
+    selection-background-color: $surface_raised;
+}
+QPushButton {
+    background-color: $surface_card;
+    border: 1px solid $border_strong;
+    border-radius: $radius_md;
+    padding: $space_1 $space_3;
+    color: $text_secondary;
+    min-height: $control_h_compact_box;
+}
+QPushButton:hover {
+    background-color: $surface_raised;
+}
+QPushButton:default {
+    border: 1px solid $border_focus;
+}
+QPushButton:disabled {
+    background-color: $surface_page;
+    color: $text_disabled;
+    border-color: $border_subtle;
+}
+QTableWidget, QTableView, QTreeWidget, QTreeView {
+    background-color: $surface_input;
+    border: 1px solid $border_default;
+    border-radius: $radius_md;
+    color: $text_secondary;
+    font-size: $font_caption;
+    gridline-color: $border_subtle;
+}
+QHeaderView::section {
+    background-color: $surface_input;
+    color: $text_disabled;
+    border: none;
+    border-right: 1px solid $border_subtle;
+    padding: $space_1 $space_1;
+    font-size: $font_caption;
+    font-weight: 700;
+}

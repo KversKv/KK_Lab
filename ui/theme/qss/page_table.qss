@@ -1,0 +1,45 @@
+/* page_table.qss — 存量 QTableWidget 样式（由 ui/styles/page_styles.py 迁移）
+   1:1 移植，同 page_base.qss 的 token/字面量约定。 */
+
+QTableWidget {
+    background-color: $surface_input;
+    border: 1px solid $border_default;
+    border-radius: 8px;
+    color: $text_secondary;
+    font-size: 11px;
+    gridline-color: $border_default;
+}
+
+QTableWidget::item {
+    padding: 2px 6px;
+}
+
+QTableWidget::item:selected {
+    background-color: $border_default;
+}
+
+QHeaderView::section {
+    background-color: $surface_input;
+    color: #6a8ab8;
+    border: none;
+    border-right: 1px solid $border_default;
+    padding: 4px 6px;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+QHeaderView::section:hover {
+    background-color: $surface_card;
+    color: $text_muted;
+}
+
+QHeaderView::section:pressed {
+    background-color: $border_default;
+}
+
+QTableCornerButton::section {
+    background-color: $surface_input;
+    border: none;
+    border-right: 1px solid $border_default;
+    border-bottom: 1px solid $border_default;
+}

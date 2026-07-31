@@ -1,0 +1,349 @@
+/* controls.qss — 控件样式（组件/页面经 apply_qss 注入到各自根节点）
+   变体化约定：
+   - QPushButton[variant="primary"|"ghost"|"danger"|"danger-ghost"]
+   - 输入控件[invalid="true"]（行内校验红边）
+   - QLabel[state="success"|"warning"|"error"|"info"|"muted"]
+           [role="caption"|"helper"|"helper-error"|"chip-pass"|"chip-fail"|"chip-skip"]
+   切换动态属性后必须调用 refresh_style(widget)。
+   盒模型红线：钉高 = min-height == max-height（content 高，padding:0，总高 = content + 2×border(1px)）。 */
+
+/* ---------- 按钮 ---------- */
+QPushButton {
+    background-color: $surface_card;
+    border: 1px solid $border_strong;
+    border-radius: $radius_md;
+    padding: 0 $space_3;
+    color: $text_secondary;
+    font-size: $font_body;
+    min-height: $control_h_compact_box;
+    max-height: $control_h_compact_box;
+}
+QPushButton:hover {
+    background-color: $surface_raised;
+    border-color: $border_focus;
+}
+QPushButton:pressed {
+    background-color: $surface_input;
+}
+QPushButton:disabled {
+    background-color: $surface_page;
+    color: $text_disabled;
+    border-color: $border_subtle;
+}
+
+QPushButton[variant="primary"] {
+    background-color: $accent_default;
+    border: 1px solid $accent_default;
+    color: $text_on_accent;
+    font-weight: 600;
+    min-height: $control_h_box;
+    max-height: $control_h_box;
+    padding: 0 $space_4;
+}
+QPushButton[variant="primary"]:hover {
+    background-color: $accent_hover;
+    border-color: $accent_hover;
+}
+QPushButton[variant="primary"]:pressed {
+    background-color: $accent_pressed;
+    border-color: $accent_pressed;
+}
+QPushButton[variant="primary"]:disabled {
+    background-color: $surface_page;
+    border-color: $border_subtle;
+    color: $text_disabled;
+}
+
+QPushButton[variant="ghost"] {
+    background-color: transparent;
+    border: 1px solid $border_default;
+    color: $text_secondary;
+}
+QPushButton[variant="ghost"]:hover {
+    background-color: $surface_raised;
+    border-color: $border_strong;
+}
+QPushButton[variant="ghost"]:disabled {
+    background-color: transparent;
+    color: $text_disabled;
+    border-color: $border_subtle;
+}
+
+QPushButton[variant="danger-ghost"] {
+    background-color: transparent;
+    border: 1px solid $state_error_border;
+    color: $state_error_fg;
+}
+QPushButton[variant="danger-ghost"]:hover {
+    background-color: $state_error_bg;
+}
+QPushButton[variant="danger-ghost"]:disabled {
+    background-color: transparent;
+    border-color: $border_subtle;
+    color: $text_disabled;
+}
+
+/* ---------- 输入控件 ---------- */
+QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
+    background-color: $surface_input;
+    border: 1px solid $border_default;
+    border-radius: $radius_sm;
+    padding: 0 $space_2;
+    color: $text_secondary;
+    font-size: $font_body;
+    min-height: $control_h_compact_box;
+    max-height: $control_h_compact_box;
+    selection-background-color: $accent_default;
+}
+QLineEdit:hover, QSpinBox:hover, QDoubleSpinBox:hover, QComboBox:hover {
+    border-color: $border_strong;
+}
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
+    border-color: $border_focus;
+}
+QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled {
+    background-color: $surface_page;
+    color: $text_disabled;
+    border-color: $border_subtle;
+}
+QLineEdit[invalid="true"], QSpinBox[invalid="true"],
+QDoubleSpinBox[invalid="true"], QComboBox[invalid="true"] {
+    border-color: $state_error_fg;
+}
+QLineEdit::placeholder {
+    color: $text_disabled;
+}
+QComboBox::drop-down {
+    border: none;
+    width: $space_4;
+}
+QComboBox QAbstractItemView {
+    background-color: $surface_input;
+    border: 1px solid $border_default;
+    color: $text_secondary;
+    selection-background-color: $surface_raised;
+    outline: none;
+}
+
+QCheckBox {
+    color: $text_secondary;
+    font-size: $font_body;
+    spacing: $space_1;
+    background: transparent;
+}
+
+/* ---------- 文本角色 ---------- */
+QLabel {
+    background: transparent;
+    color: $text_secondary;
+    border: none;
+}
+QLabel[state="success"] { color: $state_success_fg; }
+QLabel[state="warning"] { color: $state_warning_fg; }
+QLabel[state="error"]   { color: $state_error_fg; }
+QLabel[state="info"]    { color: $state_info_fg; }
+QLabel[state="muted"]   { color: $text_muted; }
+QLabel[role="caption"]      { color: $text_muted; font-size: $font_caption; }
+QLabel[role="helper"]       { color: $text_muted; font-size: $font_caption; }
+QLabel[role="helper-error"] { color: $state_error_fg; font-size: $font_caption; }
+QLabel[role="mono"] {
+    color: $text_secondary;
+    font-family: $font_mono;
+    font-size: $font_caption;
+}
+
+/* RunControlBar 计数 chips：✔/✘/⊘ */
+QLabel[role="chip-pass"] {
+    color: $state_success_fg;
+    background-color: $state_success_bg;
+    border: 1px solid $state_success_border;
+    border-radius: $radius_sm;
+    padding: 0 $space_2;
+    font-size: $font_caption;
+}
+QLabel[role="chip-fail"] {
+    color: $state_error_fg;
+    background-color: $state_error_bg;
+    border: 1px solid $state_error_border;
+    border-radius: $radius_sm;
+    padding: 0 $space_2;
+    font-size: $font_caption;
+}
+QLabel[role="chip-skip"] {
+    color: $state_skipped_fg;
+    background-color: $state_skipped_bg;
+    border: 1px solid $state_skipped_border;
+    border-radius: $radius_sm;
+    padding: 0 $space_2;
+    font-size: $font_caption;
+}
+
+/* ---------- 进度条 ---------- */
+QProgressBar {
+    background-color: $surface_input;
+    border: 1px solid $border_default;
+    border-radius: $radius_sm;
+    color: $text_muted;
+    text-align: center;
+    font-size: $font_caption;
+    min-height: $space_2;
+    max-height: $space_2;
+}
+QProgressBar::chunk {
+    background-color: $accent_default;
+    border-radius: $radius_sm;
+}
+QProgressBar[state="error"]::chunk { background-color: $state_error_fg; }
+QProgressBar[state="done"]::chunk  { background-color: $state_success_fg; }
+
+/* ---------- Segmented 分段控件（LDO/DCDC 切换） ---------- */
+QFrame#Segmented {
+    background-color: $surface_input;
+    border: 1px solid $border_default;
+    border-radius: $radius_md;
+}
+QPushButton#segmentItem {
+    background-color: transparent;
+    border: none;
+    border-radius: $radius_sm;
+    color: $text_muted;
+    font-size: $font_body;
+    padding: 0 $space_4;
+    min-height: $control_h_compact_box;
+    max-height: $control_h_compact_box;
+}
+QPushButton#segmentItem:hover {
+    color: $text_secondary;
+}
+QPushButton#segmentItem:checked {
+    background-color: $accent_default;
+    color: $text_on_accent;
+    font-weight: 600;
+}
+
+/* ---------- Card 卡片 ---------- */
+QFrame#Card {
+    background-color: $surface_card;
+    border: 1px solid $border_subtle;
+    border-radius: $radius_lg;
+}
+QPushButton#cardHeader {
+    background-color: transparent;
+    border: none;
+    border-radius: $radius_lg;
+    color: $text_primary;
+    font-size: $font_subtitle;
+    font-weight: 600;
+    text-align: left;
+    padding: 0 $space_3;
+    min-height: $control_h_box;
+    max-height: $control_h_box;
+}
+QPushButton#cardHeader:hover {
+    background-color: $surface_raised;
+}
+QLabel#cardSummary {
+    color: $text_muted;
+    font-size: $font_caption;
+}
+
+/* ---------- InfoBanner ---------- */
+QFrame#InfoBanner {
+    border: 1px solid $border_default;
+    border-radius: $radius_md;
+    background-color: $surface_raised;
+}
+QFrame#InfoBanner[severity="info"] {
+    border-color: $state_info_border;
+    background-color: $state_info_bg;
+}
+QFrame#InfoBanner[severity="warning"] {
+    border-color: $state_warning_border;
+    background-color: $state_warning_bg;
+}
+QFrame#InfoBanner[severity="error"] {
+    border-color: $state_error_border;
+    background-color: $state_error_bg;
+}
+QFrame#InfoBanner[severity="success"] {
+    border-color: $state_success_border;
+    background-color: $state_success_bg;
+}
+
+/* ---------- Toast ---------- */
+QFrame#Toast {
+    background-color: $surface_raised;
+    border: 1px solid $border_strong;
+    border-radius: $radius_md;
+}
+QFrame#Toast[severity="success"] { border-color: $state_success_border; }
+QFrame#Toast[severity="error"]   { border-color: $state_error_border; }
+
+/* ---------- RunControlBar ---------- */
+QFrame#RunControlBar {
+    background-color: $surface_raised;
+    border-top: 1px solid $border_subtle;
+}
+
+/* ---------- EmptyState ---------- */
+QLabel#emptyTitle {
+    color: $text_muted;
+    font-size: $font_subtitle;
+    font-weight: 600;
+}
+QLabel#emptyHint {
+    color: $text_disabled;
+    font-size: $font_caption;
+}
+QLabel#emptyIcon {
+    color: $text_disabled;
+    font-size: $font_display;
+}
+
+/* ---------- StatusPill ---------- */
+QWidget#StatusPill {
+    background: transparent;
+}
+QLabel#pillDot {
+    font-size: $font_caption;
+}
+QLabel#pillText {
+    color: $text_secondary;
+    font-size: $font_caption;
+}
+
+/* ---------- Card 内容区 ---------- */
+QFrame#cardContent {
+    background: transparent;
+    border-top: 1px solid $border_subtle;
+}
+
+/* ---------- Form ---------- */
+QLabel#formLabel {
+    color: $text_muted;
+    font-size: $font_body;
+}
+QLabel#formUnit {
+    color: $text_disabled;
+    font-size: $font_caption;
+}
+
+/* ---------- InfoBanner 内部 ---------- */
+QPushButton#bannerClose {
+    background: transparent;
+    border: none;
+    color: $text_muted;
+    padding: 0 $space_1;
+    min-height: $space_4;
+    max-height: $space_4;
+}
+QPushButton#bannerClose:hover {
+    color: $text_primary;
+    background: transparent;
+}
+QPushButton#bannerAction {
+    padding: 0 $space_2;
+    min-height: $space_5;
+    max-height: $space_5;
+    font-size: $font_caption;
+}

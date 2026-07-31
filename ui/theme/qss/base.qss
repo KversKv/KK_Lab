@@ -1,0 +1,16 @@
+/* base.qss — 全局基础样式（app 级注入的唯一文件）
+   只放真正全局安全的规则：字体族回退链、Tooltip。
+   页面/组件级样式一律走 apply_qss(widget, ...) 局部注入，不在此铺开。 */
+
+* {
+    font-family: $font_ui;
+}
+
+QToolTip {
+    background-color: $surface_raised;
+    color: $text_secondary;
+    border: 1px solid $border_default;
+    border-radius: $radius_sm;
+    padding: $space_1 $space_2;
+    font-size: $font_caption;
+}

@@ -1,0 +1,144 @@
+
+        QTableWidget {
+            background-color: #091426;
+            border: 1px solid #243a6e;
+            border-radius: 8px;
+            color: #dbe7ff;
+            font-size: 11px;
+            gridline-color: #243a6e;
+        }
+
+        QTableWidget::item {
+            padding: 2px 6px;
+        }
+
+        QTableWidget::item:selected {
+            background-color: #243a6e;
+        }
+
+        QHeaderView::section {
+            background-color: #091426;
+            color: #6a8ab8;
+            border: none;
+            border-right: 1px solid #243a6e;
+            padding: 4px 6px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        QHeaderView::section:hover {
+            background-color: #0b1630;
+            color: #8ea6cf;
+        }
+
+        QHeaderView::section:pressed {
+            background-color: #243a6e;
+        }
+
+        QTableCornerButton::section {
+            background-color: #091426;
+            border: none;
+            border-right: 1px solid #243a6e;
+            border-bottom: 1px solid #243a6e;
+        }
+    
+    QScrollBar:vertical {
+        background: #0C1017;
+        width: 7px;
+        margin: 14px 0px 14px 0px;
+        border-radius: 4px;
+    }
+    QScrollBar::handle:vertical {
+        background: #334155;
+        min-height: 30px;
+        border-radius: 4px;
+    }
+    QScrollBar::handle:vertical:hover {
+        background: #475569;
+    }
+    QScrollBar::sub-line:vertical {
+        height: 14px;
+        subcontrol-position: top;
+        subcontrol-origin: margin;
+        background: #141B24;
+        border-top-left-radius: 4px;
+        border-top-right-radius: 4px;
+    }
+    QScrollBar::sub-line:vertical:hover {
+        background: #1E293B;
+    }
+    QScrollBar::add-line:vertical {
+        height: 14px;
+        subcontrol-position: bottom;
+        subcontrol-origin: margin;
+        background: #141B24;
+        border-bottom-left-radius: 4px;
+        border-bottom-right-radius: 4px;
+    }
+    QScrollBar::add-line:vertical:hover {
+        background: #1E293B;
+    }
+    QScrollBar::up-arrow:vertical {
+        image: url("D:/CodeProject/TRAE_Projects/KK_Lab/resources/icons/scrollbar-arrow-up.svg");
+        width: 6px;
+        height: 6px;
+    }
+    QScrollBar::down-arrow:vertical {
+        image: url("D:/CodeProject/TRAE_Projects/KK_Lab/resources/icons/scrollbar-arrow-down.svg");
+        width: 6px;
+        height: 6px;
+    }
+    QScrollBar::add-page:vertical,
+    QScrollBar::sub-page:vertical {
+        background: transparent;
+    }
+    QScrollBar:horizontal {
+        background: #0C1017;
+        height: 7px;
+        margin: 0px 14px 0px 14px;
+        border-radius: 4px;
+    }
+    QScrollBar::handle:horizontal {
+        background: #334155;
+        min-width: 30px;
+        border-radius: 4px;
+    }
+    QScrollBar::handle:horizontal:hover {
+        background: #475569;
+    }
+    QScrollBar::sub-line:horizontal {
+        width: 14px;
+        subcontrol-position: left;
+        subcontrol-origin: margin;
+        background: #141B24;
+        border-top-left-radius: 4px;
+        border-bottom-left-radius: 4px;
+    }
+    QScrollBar::sub-line:horizontal:hover {
+        background: #1E293B;
+    }
+    QScrollBar::add-line:horizontal {
+        width: 14px;
+        subcontrol-position: right;
+        subcontrol-origin: margin;
+        background: #141B24;
+        border-top-right-radius: 4px;
+        border-bottom-right-radius: 4px;
+    }
+    QScrollBar::add-line:horizontal:hover {
+        background: #1E293B;
+    }
+    QScrollBar::left-arrow:horizontal {
+        image: url("D:/CodeProject/TRAE_Projects/KK_Lab/resources/icons/scrollbar-arrow-left.svg");
+        width: 6px;
+        height: 6px;
+    }
+    QScrollBar::right-arrow:horizontal {
+        image: url("D:/CodeProject/TRAE_Projects/KK_Lab/resources/icons/scrollbar-arrow-right.svg");
+        width: 6px;
+        height: 6px;
+    }
+    QScrollBar::add-page:horizontal,
+    QScrollBar::sub-page:horizontal {
+        background: transparent;
+    }

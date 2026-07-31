@@ -24,6 +24,7 @@ from log_config import setup_logging, get_logger
 from debug_config import DEBUG_MOCK
 from version import version_string
 from ui.main_window import MainWindow
+from ui.theme import configure_high_dpi
 
 WITH_AI_ASSISTANT = os.environ.get("KK_LAB_WITH_AI", "1").strip().lower() not in (
     "0",
@@ -87,7 +88,9 @@ def main():
     logger.info("%s starting", version_string())
     logger.debug("Application starting")
     qInstallMessageHandler(custom_message_handler)
-    
+
+    # 高 DPI 取整策略（须在 QApplication 创建前设置；Qt6 默认即 PassThrough，显式声明）
+    configure_high_dpi()
     app = QApplication(sys.argv)
     app.setStyle(HoverFixStyle("Fusion"))
     # QToolTip 是顶级窗口，不继承 MainWindow 的 palette；Fusion 下会回落系统默认

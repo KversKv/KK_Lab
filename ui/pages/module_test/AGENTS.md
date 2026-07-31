@@ -18,6 +18,7 @@
 - `ModuleTestUI` 构造透传：`n6705c_top / mso64b_top / chamber_ui / instrument_manager / ui_action_registry`。
 - `TEST_TAB_MAP`：`ldo=0 / dcdc=1`；暴露 `set_current_test / get_current_test / _sync_from_top` 供枢纽调用。
 - 共享基类 [_base_subpage.py](./_base_subpage.py)：两子页（LDO/DCDC）复用的被测配置区 / AI 契约。
+- **P3 重构（2026-07-31）**：顶层改 `CommandBar + QStackedWidget`（弃隐藏 tabBar 的 QTabWidget）；子页布局 = LeftRail(连接/DUT Card) + QSplitter(TestPlanPanel | DetailDock) + RunControlBar；运行态 `RunState` + `_apply_run_state()` 单一入口；旧控件入口 [widgets.py](./widgets.py) 仅作 re-export shim（CollapsibleGroupBox→Card / ItemParamsDialog→dialogs/ / _GroupsEditor→GroupsTableEditor），P5 删除；`prompt_config_manager_once()` 默认改为非模态 InfoBanner（`force_dialog=True` 兼容旧弹窗）。
 
 ## 局部约定
 

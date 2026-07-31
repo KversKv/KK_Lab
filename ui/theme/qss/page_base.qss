@@ -1,0 +1,200 @@
+/* page_base.qss — 存量页面基础样式（由 ui/styles/page_styles.py 迁移）
+   1:1 移植：语义已收敛的部分用 $token（dark 下与 legacy 同值）；
+   legacy 专属值（text_accent/text_dim/border_input/accent_soft/hover_bg/
+   disabled_* 与旧 Radius/FontSizes）以字面量保留，属主题数据，随存量页面
+   逐步替换后再收敛进 tokens。$accent 由 get_page_base_qss(accent_color) 注入。 */
+
+QWidget {
+    background-color: $surface_page;
+    color: $text_secondary;
+}
+
+QWidget#leftPanelInner {
+    background-color: transparent;
+}
+
+QLabel {
+    background-color: transparent;
+    color: $text_secondary;
+    border: none;
+}
+
+QLabel#pageTitle {
+    font-size: 18px;
+    font-weight: 700;
+    color: $text_primary;
+    background-color: transparent;
+}
+
+QLabel#pageSubtitle {
+    font-size: 12px;
+    color: #7da2d6;
+    background-color: transparent;
+}
+
+QFrame#panelFrame {
+    background-color: $surface_raised;
+    border: 1px solid $border_subtle;
+    border-radius: 16px;
+}
+
+QFrame#cardFrame {
+    background-color: $surface_card;
+    border: 1px solid $border_default;
+    border-radius: 12px;
+}
+
+QLabel#cardTitle {
+    font-size: 11px;
+    font-weight: 700;
+    color: $text_primary;
+    letter-spacing: 0.5px;
+    background-color: transparent;
+}
+
+QLabel#sectionTitle {
+    font-size: 12px;
+    font-weight: 700;
+    color: $text_primary;
+    background-color: transparent;
+}
+
+QLabel#fieldLabel {
+    color: $text_muted;
+    font-size: 11px;
+    background-color: transparent;
+}
+
+QLabel#statusOk {
+    color: $state_success_fg;
+    font-weight: 600;
+    background-color: transparent;
+}
+
+QLabel#statusWarn {
+    color: $state_warning_fg;
+    font-weight: 600;
+    background-color: transparent;
+}
+
+QLabel#statusErr {
+    color: $state_error_fg;
+    font-weight: 600;
+    background-color: transparent;
+}
+
+QLabel#mutedLabel {
+    color: $text_muted;
+    font-size: 11px;
+    background-color: transparent;
+}
+
+QLineEdit {
+    background-color: $surface_input;
+    border: 1px solid #2b466f;
+    border-radius: 6px;
+    padding: 5px 10px;
+    color: $text_secondary;
+    min-height: 22px;
+    selection-background-color: #3f3a8a;
+}
+
+QLineEdit:hover {
+    border: 1px solid $border_strong;
+}
+
+QLineEdit:focus {
+    border: 1px solid $accent;
+    background-color: $surface_raised;
+}
+
+QLineEdit:disabled {
+    background-color: #070f1e;
+    border: 1px solid #0d1a30;
+    color: #4a5a7a;
+}
+
+QPushButton {
+    background-color: $surface_card;
+    border: 1px solid $border_strong;
+    border-radius: 8px;
+    padding: 6px 14px;
+    color: $text_secondary;
+}
+
+QPushButton:hover {
+    background-color: #24314a;
+}
+
+QPushButton:pressed {
+    background-color: $surface_input;
+}
+
+QPushButton:disabled {
+    background-color: #0D1734;
+    color: #4a5a7a;
+    border: 1px solid #18264A;
+}
+
+QCheckBox {
+    color: $text_secondary;
+    spacing: 6px;
+    background: transparent;
+}
+
+QCheckBox::indicator {
+    width: 18px;
+    height: 18px;
+}
+
+QComboBox {
+    background-color: $surface_input;
+    border: 1px solid #2b466f;
+    border-radius: 6px;
+    padding: 4px 8px;
+    color: $text_secondary;
+    min-height: 22px;
+}
+
+QComboBox:hover {
+    border: 1px solid $border_strong;
+}
+
+QComboBox:focus {
+    border: 1px solid $accent;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 24px;
+}
+
+QComboBox QAbstractItemView {
+    background-color: $surface_input;
+    border: 1px solid $border_default;
+    color: $text_secondary;
+    selection-background-color: #24314a;
+}
+
+QDoubleSpinBox, QSpinBox {
+    background-color: $surface_input;
+    border: 1px solid #2b466f;
+    border-radius: 6px;
+    padding: 4px 8px;
+    color: $text_secondary;
+    min-height: 22px;
+}
+
+QDoubleSpinBox:hover, QSpinBox:hover {
+    border: 1px solid $border_strong;
+}
+
+QDoubleSpinBox:focus, QSpinBox:focus {
+    border: 1px solid $accent;
+}
+
+QDoubleSpinBox:disabled, QSpinBox:disabled {
+    background-color: #070f1e;
+    border: 1px solid #0d1a30;
+    color: #4a5a7a;
+}

@@ -1,67 +1,54 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""Module Test 子页面基类（LDO / DCDC 共用）。
+"""Module Test 子页面基类（LDO / DCDC 共用）——装配 + 对外契约 + run flow。
 
-规划 §5：仪器连接区 + 通道/被测配置区 + 测试项清单区 + 统一参数区 +
-执行/日志区（ExecutionLogsFrame + QSplitter）+ 报告区。
-AI 契约（§8.1）与 UIActionSpec 白名单（§8.2）亦在此实现，两个子类仅绑定
-module_type / page_key / items 注册表 / runner 类。
+布局（P3）：InfoBanner ×2 → LeftRail(连接/DUT Card) + QSplitter(TestPlanPanel
+| DetailDock 结果/日志) → RunControlBar。子类仅靠 5 个类属性差异化
+（MODULE_TYPE / PAGE_KEY / ITEMS_REGISTRY / RUNNER_CLS / STANDALONE_ITEMS，
+新增模块 ≤15 行）。运行态由 RunState + _apply_run_state() 单一入口驱动。
+对外契约（公共 API / AI 契约 / 构造透传）与重构前完全一致。
 """
 from __future__ import annotations
 
-import json
 import os
-import re
-import shutil
+import time
 from typing import Any
 
-from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import QColor, QDesktopServices, QFont
-from PySide6.QtWidgets import (
-    QCheckBox, QDialog, QDialogButtonBox, QGridLayout, QHBoxLayout,
-    QHeaderView, QInputDialog, QLabel, QLineEdit,
-    QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSpinBox,
-    QTableWidget, QTableWidgetItem, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
-)
+from PySide6.QtCore import Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
+from PySide6.QtWidgets import QHBoxLayout, QSplitter, QVBoxLayout, QWidget
 
-from core.ai.page_contract import (
-    CAP_APPLY_CONFIG, CAP_GET_CONFIG, CAP_GET_RESULT, CAP_START_TEST, CAP_STOP_TEST,
-)
-from core.ai.ui_action_registry import UIActionSpec
 from debug_config import DEBUG_MOCK
 from log_config import get_logger
-from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.oscilloscope_module_frame import OscilloscopeConnectionMixin
-from ui.pages.module_test.widgets import (
-    CollapsibleGroupBox, DIALOG_QSS, ItemParamsDialog,
-)
-from ui.resource_path import get_resource_base, get_user_data_dir
-from ui.styles import START_BTN_STYLE, get_page_base_qss, get_table_qss
-from ui.theme import Colors, FontSizes, Radius
-from ui.widgets.dark_combobox import DarkComboBox
-
-from lib.i2c.Bes_I2CIO_Interface import I2CWidthFlag
+from ui.pages.module_test._sections.ai_contract import ModuleTestAIContract
+from ui.pages.module_test._sections.config_store import ModuleConfigStore
+from ui.pages.module_test._sections.detail_dock import DetailDock
+from ui.pages.module_test._sections.left_rail import LeftRail
+from ui.pages.module_test._sections.test_plan_panel import TestPlanPanel
+from ui.pages.module_test.dialogs.config_manager_dialog import ConfigManagerDialog
+from ui.pages.module_test.dialogs.item_params_dialog import ItemParamsDialog
+from ui.theme import apply_qss
+from ui.widgets.banner import InfoBanner
+from ui.widgets.run_control_bar import RunControlBar, RunState
+from ui.widgets.toast import Toast
 
 _logger = get_logger(__name__)
 
-_AI_HIGHLIGHT_QSS = "border: 1px solid #15d1a3;"
-_AI_HIGHLIGHT_MS = 1500
-_CONFIG_SCHEMA_VERSION = 1
 
-
-class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnectionMixin):
-    """LDO/DCDC 子页面共用基类。
-
-    子类须设置类属性：MODULE_TYPE / PAGE_KEY / ITEMS_REGISTRY / RUNNER_CLS。
-    """
+class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
+                            OscilloscopeConnectionMixin, ModuleTestAIContract):
+    """LDO/DCDC 子页面共用基类（装配 + 契约 + run flow）。"""
 
     MODULE_TYPE: str = ""
     PAGE_KEY: str = ""
-    ITEMS_REGISTRY: dict[str, tuple[str, Any, bool, bool]] = {}
+    ITEMS_REGISTRY: dict[str, tuple[str, Any, bool, bool, Any]] = {}
     RUNNER_CLS: type = None  # type: ignore[assignment]
-    # 单独测试项（item_key 列表）：从自动测试区域拆出，归入"单独测试项"分组
     STANDALONE_ITEMS: tuple[str, ...] = ()
+
+    # 顶层 CommandBar / 枢纽监听用（附加信号，不破坏既有契约）
+    connectionStateChanged = Signal()
+    runStateChanged = Signal(object)      # RunState
+    configNameChanged = Signal()
 
     def __init__(self, *, n6705c_top=None, mso64b_top=None, chamber_ui=None,
                  instrument_manager=None, ui_action_registry=None):
@@ -77,514 +64,248 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
 
         self._runner = None
         self.is_test_running = False
+        self._run_state = RunState.IDLE
         self._last_result = None
         self._last_report_path: str | None = None
         self._item_overrides: dict[str, dict] = {}
         self._current_config_path: str | None = None
-        self._item_tables: list[QTableWidget] = []
-        self._run_selected_keys: list[str] = []
+        self._config_prompted = False
+        self._run_start_ts = 0.0
+        self._item_start_ts: dict[str, float] = {}
+        self._counts = {"pass": 0, "fail": 0, "na": 0}
 
-        self._setup_style()
         self._build_ui()
-        self._populate_item_table()
+        self._wire_shortcuts()
         self.sync_n6705c_from_top()
         self.sync_oscilloscope_from_top()
-        self._refresh_scope_item_state()
+        # 初始同步一次 scope 状态到测试项表（未连接时 (scope) 项显示"未接示波器"）
+        self.test_plan.set_scope_connected(bool(self.scope_connected))
         self._register_ai_ui_actions()
+        self._apply_run_state(RunState.IDLE)
 
-    # ------------------------------------------------------------------ style
-    def _setup_style(self):
-        """页面样式 = 全局基础 QSS + 表格 QSS + START/STOP 按钮样式 + 本页增量。
-
-        与 GPADC / VminHunter 等页面保持一致：色板只取 ui.theme token，
-        控件高度只用 ID 选择器钉死（§24.1），不手写页面级色值。
-        """
-        self.setFont(QFont("Segoe UI", 9))
-        self.setObjectName("moduleTestRoot")
-        icons_dir = os.path.join(get_resource_base(), "resources", "icons")
-        cb_checked = os.path.join(icons_dir, "checked_4f46e5.svg").replace("\\", "/")
-        cb_unchecked = os.path.join(icons_dir, "unchecked_4f46e5.svg").replace("\\", "/")
-        page_extra = f"""
-            QWidget#moduleTestRoot {{
-                background-color: {Colors.bg_secondary};
-            }}
-            QWidget#moduleTestContent {{
-                background: transparent;
-            }}
-            QWidget#actionRow {{
-                background-color: {Colors.bg_panel};
-                border-top: 1px solid {Colors.border_primary};
-            }}
-            QCheckBox::indicator, QTableWidget::indicator {{
-                width: 16px;
-                height: 16px;
-                image: url("{cb_unchecked}");
-            }}
-            QCheckBox::indicator:checked, QTableWidget::indicator:checked {{
-                image: url("{cb_checked}");
-            }}
-            QTableWidget {{
-                alternate-background-color: {Colors.bg_panel};
-            }}
-            QPushButton#stopBtn:disabled {{
-                background-color: {Colors.disabled_btn_bg};
-                color: {Colors.disabled_text};
-                border: 1px solid {Colors.disabled_btn_border};
-            }}
-            /* 操作行按钮统一 35px：Qt QSS 盒模型 total = content(min/max-height) + 上下padding + 2×border(1px)。
-               目标 35 = content 33 + padding 0 + border 2，故 min/max-height 取 33 */
-            QPushButton#primaryStartBtn, QPushButton#stopBtn,
-            QPushButton#select_all_btn, QPushButton#clear_results_btn, QPushButton#open_report_btn {{
-                min-height: 33px;
-                max-height: 33px;
-                padding-top: 0px;
-                padding-bottom: 0px;
-            }}
-            QPushButton#itemSettingsBtn {{
-                min-height: 22px;
-                padding: 1px 10px;
-                font-size: {FontSizes.caption};
-            }}
-            QPushButton#dutModeBtn {{
-                min-height: 22px;
-                padding: 2px 10px;
-            }}
-            QComboBox#defaultModeCombo {{
-                min-height: 22px;
-                padding: 1px 6px;
-            }}
-        """
-        self.setStyleSheet(
-            get_page_base_qss() + get_table_qss() + START_BTN_STYLE + page_extra
-        )
-
-    # ------------------------------------------------------------------ UI
-    def _build_ui(self):
-        content = QWidget()
-        content.setObjectName("moduleTestContent")
-        content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(8, 8, 8, 8)
-        content_layout.setSpacing(8)
-
-        # 仪器连接 + 被测配置 并排一行，测试项清单整宽置于下方
-        top_row = QHBoxLayout()
-        top_row.setSpacing(8)
-        top_row.addWidget(self._build_connection_group(), 1)
-        top_row.addWidget(self._build_config_group(), 1)
-        content_layout.addLayout(top_row)
-        content_layout.addWidget(self._build_items_group())
-        content_layout.addStretch()
-
-        scroll = QScrollArea()
-        scroll.setWidget(content)
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.NoFrame)
-        scroll.setStyleSheet("QScrollArea{background:transparent;border:none;}")
-
-        # 顶部 = 可滚动配置区 + 始终可见的操作按钮排（固定在滚动区下方，不随内容滚动）
-        top_pane = QWidget()
-        top_layout = QVBoxLayout(top_pane)
-        top_layout.setContentsMargins(0, 0, 0, 0)
-        top_layout.setSpacing(0)
-        top_layout.addWidget(scroll, 1)
-        top_layout.addWidget(self._build_action_row(), 0)
-
-        self._splitter, self.execution_logs = ExecutionLogsFrame.wrap_with(
-            top_pane, title=f"{self.MODULE_TYPE.upper()} Module Test 执行日志", stretch=(5, 2),
-        )
-
+    # ================================================================== UI 装配
+    def _build_ui(self) -> None:
+        apply_qss(self, "controls")
+        apply_qss(self, "table")
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.addWidget(self._splitter)
+        root.setContentsMargins(8, 8, 8, 8)
+        root.setSpacing(6)
 
-    def _build_connection_group(self) -> "CollapsibleGroupBox":
-        box = CollapsibleGroupBox("Instrument Connection", expanded=True)
-        lay = box.content_layout
-        lay.setSpacing(4)
+        self._config_banner = InfoBanner(
+            "尚未加载配置：可选择已有配置，或使用默认设置直接开始。",
+            actions=[("choose", "选择配置"), ("default", "使用默认")], severity="info")
+        self._config_banner.actionTriggered.connect(self._on_config_banner_action)
+        self._config_banner.hide()
+        root.addWidget(self._config_banner)
+        self._alert_banner = InfoBanner("", severity="warning")
+        self._alert_banner.hide()
+        root.addWidget(self._alert_banner)
 
-        n6705c_title_row = QHBoxLayout()
-        n6705c_title_row.setSpacing(8)
-        n6705c_title = QLabel("N6705C")
-        n6705c_title.setObjectName("cardTitle")
-        n6705c_title_row.addWidget(n6705c_title)
-        n6705c_title_row.addStretch()
-        lay.addLayout(n6705c_title_row)
-        self.build_n6705c_connection_widgets(lay, title_row=n6705c_title_row)
+        body = QHBoxLayout()
+        body.setSpacing(8)
+        self.left_rail = LeftRail(self, self.MODULE_TYPE)
+        body.addWidget(self.left_rail)
+        center = QVBoxLayout()
+        center.setSpacing(6)
+        self.test_plan = TestPlanPanel(self.ITEMS_REGISTRY, self.STANDALONE_ITEMS)
+        self.test_plan.paramsRequested.connect(self._open_item_params)
+        self.detail_dock = DetailDock()
+        self.detail_dock.openReportRequested.connect(self._on_open_report)
+        self.detail_dock.openOutputDirRequested.connect(self._on_open_output_dir)
+        self.detail_dock.clearResultsRequested.connect(self._on_clear_results)
+        self.detail_dock.locateLogRequested.connect(self._on_locate_log)
+        splitter = QSplitter(Qt.Vertical)
+        splitter.addWidget(self.test_plan)
+        splitter.addWidget(self.detail_dock)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 2)
+        center.addWidget(splitter, 1)
+        body.addLayout(center, 1)
+        root.addLayout(body, 1)
 
-        scope_title_row = QHBoxLayout()
-        scope_title_row.setSpacing(8)
-        scope_title = QLabel("Oscilloscope")
-        scope_title.setObjectName("cardTitle")
-        scope_title_row.addWidget(scope_title)
-        scope_title_row.addStretch()
-        lay.addLayout(scope_title_row)
-        self.build_oscilloscope_connection_widgets(lay, title_row=scope_title_row)
+        self.run_bar = RunControlBar()
+        self.run_bar.startRequested.connect(self._on_start_test)
+        self.run_bar.stopRequested.connect(self._on_stop_test)
+        root.addWidget(self.run_bar)
+        self._store = ModuleConfigStore(
+            module_type=self.MODULE_TYPE, dut_panel=self.left_rail.dut_panel,
+            test_plan=self.test_plan, item_overrides=self._item_overrides,
+            items_registry=self.ITEMS_REGISTRY)
 
-        self.bind_n6705c_signals()
-        self.bind_oscilloscope_signals()
-        return box
+    def _wire_shortcuts(self) -> None:
+        QShortcut(QKeySequence("F5"), self, activated=self._on_start_test)
+        QShortcut(QKeySequence(Qt.Key_Escape), self,
+                  activated=self.run_bar.stop_btn.click)
+        QShortcut(QKeySequence("Ctrl+S"), self, activated=self._on_save_config)
+        QShortcut(QKeySequence("Ctrl+O"), self, activated=self._on_open_config)
+        QShortcut(QKeySequence("Ctrl+F"), self, activated=self.test_plan.focus_search)
+        QShortcut(QKeySequence("Ctrl+L"), self,
+                  activated=self.detail_dock.log_panel.clear_log)
 
-    def _field_label(self, text: str) -> QLabel:
-        lbl = QLabel(text)
-        lbl.setObjectName("fieldLabel")
-        lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        lbl.setMinimumWidth(84)
-        return lbl
+    # ================================================================== 运行状态机
+    def _apply_run_state(self, state: RunState) -> None:
+        """单一入口：控件禁用矩阵 / 左栏折叠 / Tab 跳转 / 信号广播。"""
+        self._run_state = state
+        running = state in (RunState.PRECHECK, RunState.RUNNING,
+                            RunState.PAUSED, RunState.STOPPING)
+        self.is_test_running = running
+        self.run_bar.set_state(state)
+        self.left_rail.connection_card.setEnabled(not running)
+        self.left_rail.config_card.setEnabled(not running)
+        self.left_rail.set_running(running)
+        if state is RunState.RUNNING:
+            self.detail_dock.show_log_tab()
+        elif state is RunState.FINISHED:
+            self.detail_dock.show_result_tab()
+        self.runStateChanged.emit(state)
 
-    def _build_config_group(self) -> "CollapsibleGroupBox":
-        box = CollapsibleGroupBox("DUT Configuration", expanded=True)
+    # ================================================================== precheck
+    def _precheck(self, cfg: dict) -> bool:
+        """启动前校验：未勾选 / 必填字段 / 仪器缺失 → Banner + 高亮，不弹窗。"""
+        if not cfg["selected_items"]:
+            self._show_alert("未勾选任何测试项，请先在测试项清单中勾选。", "info")
+            return False
+        err_row = self.left_rail.dut_panel.validate()
+        if err_row is not None:
+            self._show_alert("必填字段缺失或无效，请检查 DUT 配置（红框标注）。", "error")
+            self.left_rail.config_card.set_expanded(True)
+            err_row.editor.setFocus()
+            return False
+        missing = self._missing_instruments(cfg)
+        if missing:
+            detail = "；".join(missing)
+            self._show_alert(f"仪器未连接，无法开始测试：{detail}", "error")
+            self.left_rail.show_connection()
+            return False
+        self._alert_banner.hide()
+        return True
 
-        # 配置管理按钮行（打开 / 保存 / 另存为），置于配置区最上方
-        cfg_btn_row = QHBoxLayout()
-        cfg_btn_row.setSpacing(8)
-        self.open_config_btn = QPushButton("打开")
-        self.open_config_btn.setObjectName("open_config_btn")
-        self.open_config_btn.setToolTip("按芯片名称分类浏览并加载已保存的配置")
-        self.save_config_btn = QPushButton("保存")
-        self.save_config_btn.setObjectName("save_config_btn")
-        self.save_config_btn.setToolTip("保存当前完整配置（设置 + 测试项）；已加载的配置直接覆盖，否则等同另存为")
-        self.save_as_config_btn = QPushButton("另存为")
-        self.save_as_config_btn.setObjectName("save_as_config_btn")
-        self.save_as_config_btn.setToolTip("基于当前设置生成新的配置文件，便于快速派生相似但有区别的配置")
-        for _btn in (self.open_config_btn, self.save_config_btn, self.save_as_config_btn):
-            _btn.setMinimumWidth(64)
-            _btn.setCursor(Qt.PointingHandCursor)
-        self.open_config_btn.clicked.connect(self._on_open_config)
-        self.save_config_btn.clicked.connect(self._on_save_config)
-        self.save_as_config_btn.clicked.connect(self._on_save_config_as)
-        cfg_btn_row.addWidget(self.open_config_btn)
-        cfg_btn_row.addWidget(self.save_config_btn)
-        cfg_btn_row.addWidget(self.save_as_config_btn)
-        cfg_btn_row.addStretch()
-        box.content_layout.addLayout(cfg_btn_row)
+    def _show_alert(self, text: str, severity: str = "warning") -> None:
+        self._alert_banner.set_text(text)
+        self._alert_banner.set_severity(severity)
+        self._alert_banner.show()
 
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(8)
-        grid.setColumnStretch(1, 1)
-        grid.setColumnStretch(3, 1)
+    def _missing_instruments(self, cfg: dict) -> list[str]:
+        """汇总本次勾选项全程所需但未连接的仪器（空列表=齐全，DEBUG_MOCK 放行）。"""
+        if DEBUG_MOCK:
+            return []
+        missing: list[str] = []
+        if not self.is_connected or self.n6705c is None:
+            missing.append("N6705C 电源分析仪")
+        scope_names = [self.ITEMS_REGISTRY[k][0] for k in cfg.get("selected_items", [])
+                       if k in self.ITEMS_REGISTRY and self.ITEMS_REGISTRY[k][2]]
+        if scope_names and not self.scope_connected:
+            missing.append(f"示波器（{len(scope_names)} 个勾选项需要：{'、'.join(scope_names)}）")
+        return missing
 
-        grid.addWidget(self._field_label("芯片名称"), 0, 0)
-        self.chip_name_edit = QLineEdit()
-        self.chip_name_edit.setPlaceholderText("如 BES1307")
-        grid.addWidget(self.chip_name_edit, 0, 1)
+    # ================================================================== run flow
+    def _on_start_test(self) -> None:
+        if self.is_test_running:
+            return
+        self._apply_run_state(RunState.PRECHECK)
+        cfg = self.get_test_config()
+        if not self._precheck(cfg):
+            self._apply_run_state(RunState.IDLE)
+            return
 
-        grid.addWidget(self._field_label("模块名称"), 0, 2)
-        self.module_name_edit = QLineEdit()
-        self.module_name_edit.setPlaceholderText("如 LDO1 / DCDC_CORE")
-        grid.addWidget(self.module_name_edit, 0, 3)
-
-        grid.addWidget(self._field_label("操作员"), 1, 0)
-        self.operator_edit = QLineEdit()
-        grid.addWidget(self.operator_edit, 1, 1)
-
-        grid.addWidget(self._field_label("Vin 通道"), 2, 0)
-        self.vin_ch_combo = DarkComboBox()
-        self.vin_ch_combo.addItems([f"CH {i}" for i in range(1, 5)])
-        grid.addWidget(self.vin_ch_combo, 2, 1)
-
-        grid.addWidget(self._field_label("Vout 通道"), 2, 2)
-        self.vout_ch_combo = DarkComboBox()
-        self.vout_ch_combo.addItems([f"CH {i}" for i in range(1, 5)])
-        self.vout_ch_combo.setCurrentIndex(1)
-        grid.addWidget(self.vout_ch_combo, 2, 3)
-
-        grid.addWidget(self._field_label("Iload 通道"), 3, 0)
-        self.iload_ch_combo = DarkComboBox()
-        self.iload_ch_combo.addItems([f"CH {i}" for i in range(1, 5)])
-        self.iload_ch_combo.setCurrentIndex(2)
-        grid.addWidget(self.iload_ch_combo, 3, 1)
-
-        grid.addWidget(self._field_label("Vout 标称 (mV)"), 3, 2)
-        self.vout_nominal_spin = QSpinBox()
-        self.vout_nominal_spin.setRange(0, 6000)
-        self.vout_nominal_spin.setValue(1800 if self.MODULE_TYPE == "ldo" else 1200)
-        grid.addWidget(self.vout_nominal_spin, 3, 3)
-
-        grid.addWidget(self._field_label("Device 地址"), 4, 0)
-        self.device_addr_edit = QLineEdit("0x00")
-        self.device_addr_edit.setPlaceholderText("如 0x62")
-        grid.addWidget(self.device_addr_edit, 4, 1)
-
-        grid.addWidget(self._field_label("Width Flag"), 4, 2)
-        self.width_flag_combo = DarkComboBox()
-        self.width_flag_combo.addItem("8-bit", int(I2CWidthFlag.BIT_8))
-        self.width_flag_combo.addItem("10-bit", int(I2CWidthFlag.BIT_10))
-        self.width_flag_combo.addItem("32-bit", int(I2CWidthFlag.BIT_32))
-        self.width_flag_combo.setCurrentIndex(1)
-        grid.addWidget(self.width_flag_combo, 4, 3)
-
-        # —— 示波器输出电压通道（各 scope 测试项共用的 Vout 测量通道）——
-        grid.addWidget(self._field_label("示波器通道"), 5, 0)
-        self.scope_vout_ch_combo = DarkComboBox()
-        self.scope_vout_ch_combo.addItems([f"CH {i}" for i in range(1, 5)])
-        self.scope_vout_ch_combo.setCurrentIndex(0)
-        grid.addWidget(self.scope_vout_ch_combo, 5, 3)
-
-        # —— 高低温测试（勾选后展开温度相关设置）——
-        self.temp_test_check = QCheckBox("高低温测试")
-        self.temp_test_check.setChecked(False)
-        self.temp_test_check.toggled.connect(self._on_temp_test_toggled)
-        grid.addWidget(self.temp_test_check, 6, 0, 1, 4)
-
-        self._temp_label = self._field_label("温度点 (°C)")
-        grid.addWidget(self._temp_label, 7, 0)
-        self.temperature_edit = QLineEdit()
-        self.temperature_edit.setPlaceholderText("逗号分隔，如 -40, 25, 85")
-        grid.addWidget(self.temperature_edit, 7, 1)
-
-        self._temp_soak_label = self._field_label("等待时间 (s)")
-        grid.addWidget(self._temp_soak_label, 7, 2)
-        self.temp_soak_spin = QSpinBox()
-        self.temp_soak_spin.setRange(0, 36000)
-        self.temp_soak_spin.setValue(300)
-        grid.addWidget(self.temp_soak_spin, 7, 3)
-
-        self._temp_tol_label = self._field_label("稳定条件 (°C)")
-        grid.addWidget(self._temp_tol_label, 8, 0)
-        self.temp_tolerance_spin = QSpinBox()
-        self.temp_tolerance_spin.setRange(1, 20)
-        self.temp_tolerance_spin.setValue(2)
-        grid.addWidget(self.temp_tolerance_spin, 8, 1)
-
-        self._temp_wait_label = self._field_label("稳定超时 (s)")
-        grid.addWidget(self._temp_wait_label, 8, 2)
-        self.temp_wait_spin = QSpinBox()
-        self.temp_wait_spin.setRange(0, 36000)
-        self.temp_wait_spin.setValue(1800)
-        grid.addWidget(self.temp_wait_spin, 8, 3)
-
-        self._temp_widgets = [
-            self._temp_label, self.temperature_edit,
-            self._temp_soak_label, self.temp_soak_spin,
-            self._temp_tol_label, self.temp_tolerance_spin,
-            self._temp_wait_label, self.temp_wait_spin,
-        ]
-        self._on_temp_test_toggled(False)
-        box.content_layout.addLayout(grid)
-        return box
-
-    def _on_temp_test_toggled(self, checked: bool) -> None:
-        """高低温测试勾选联动：勾选后才显示温度相关设置。"""
-        for w in self._temp_widgets:
-            w.setVisible(checked)
-
-    def _build_items_group(self) -> "CollapsibleGroupBox":
-        box = CollapsibleGroupBox("Test Items (check to run)", expanded=True)
-        lay = box.content_layout
-
-        standalone = [k for k in self.STANDALONE_ITEMS if k in self.ITEMS_REGISTRY]
-        auto = [k for k in self.ITEMS_REGISTRY if k not in self.STANDALONE_ITEMS]
-        self._item_groups: list[tuple[str, list[str]]] = [("自动测试区域", auto)]
-        if standalone:
-            self._item_groups.append(("单独测试项", standalone))
-
-        self._item_tables = []
-        for _group_idx, (title, _keys) in enumerate(self._item_groups):
-            lbl = QLabel(title)
-            lbl.setObjectName("cardTitle")
-            lay.addWidget(lbl)
-            table = self._make_items_table(_group_idx)
-            lay.addWidget(table)
-            self._item_tables.append(table)
-        return box
-
-    def _make_items_table(self, group_idx: int) -> QTableWidget:
-        table = QTableWidget(0, 5)
-        table.setHorizontalHeaderLabels(["选", "测试项", "主要仪器", "判定/记录", "参数"])
-        table.verticalHeader().setVisible(False)
-        table.verticalHeader().setDefaultSectionSize(30)
-        table.setSelectionMode(QTableWidget.NoSelection)
-        table.setShowGrid(False)
-        table.setAlternatingRowColors(True)
-        table.setFocusPolicy(Qt.NoFocus)
-        # 全局 table QSS 在 QTableWidget 选择器设了 color，会盖过逐项 setForeground；
-        # 关掉 QSS 调色板，运行状态色（等待中/进行中/PASS/FAIL）才能生效
-        table.setStyleSheet("QTableWidget { color: palette(text); }")
-        header = table.horizontalHeader()
-        header.setHighlightSections(False)
-        header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        header.setSectionResizeMode(0, QHeaderView.Fixed)
-        header.setSectionResizeMode(1, QHeaderView.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.Fixed)
-        table.setColumnWidth(0, 44)
-        table.setColumnWidth(4, 64)
-        # 给清单足够高度显示全部行（表头 + 各测试项行），避免被 stretch 压扁导致内容截断
-        table.setMinimumHeight(
-            table.horizontalHeader().sizeHint().height()
-            + len(self._item_groups[group_idx][1]) * 30 + 8
+        scope = self.Osc_ins if self.scope_connected else None
+        self._runner = self.RUNNER_CLS(
+            config=cfg, n6705c=self.n6705c, scope=scope, chamber=None,
         )
-        table.setSizePolicy(table.sizePolicy().horizontalPolicy(),
-                            QSizePolicy.Expanding)
-        table.itemChanged.connect(self._on_item_changed)
-        return table
+        self._runner.progress.connect(self._on_progress)
+        self._runner.item_started.connect(self._on_item_started)
+        self._runner.item_finished.connect(self._on_item_finished)
+        self._runner.log.connect(self.detail_dock.log_panel.append_log)
+        self._runner.finished_result.connect(self._on_finished)
+        self._runner.failed.connect(self._on_failed)
 
-    def _iter_item_tables(self) -> list[QTableWidget]:
-        return self._item_tables
+        selected = cfg["selected_items"]
+        self._counts = {"pass": 0, "fail": 0, "na": 0}
+        self._item_start_ts = {}
+        self._run_start_ts = time.monotonic()
+        self.run_bar.set_total_text(f"0/{len(selected)}")
+        self.run_bar.set_counts(0, 0, 0)
+        self.run_bar.set_current_item("准备中…")
+        self.test_plan.enter_run_state(selected)
+        self.detail_dock.log_panel.start_timer(len(selected))
+        self.detail_dock.log_panel.append_log(
+            f"[START] {self.MODULE_TYPE.upper()} Module Test 启动")
+        self.set_system_status("测试进行中")
+        self._apply_run_state(RunState.RUNNING)
+        self._runner.start()
 
-    # ------------------------------------------------------------------ run state
-    def _find_item_row(self, item_key: str) -> tuple[QTableWidget | None, int]:
-        """按 item_key 定位 (table, row)，找不到返回 (None, -1)。"""
-        for table in self._iter_item_tables():
-            for row in range(table.rowCount()):
-                name_item = table.item(row, 1)
-                if name_item and name_item.data(Qt.UserRole) == item_key:
-                    return table, row
-        return None, -1
+    def _on_stop_test(self) -> None:
+        if self._runner is not None and self.is_test_running:
+            self._apply_run_state(RunState.STOPPING)
+            self.detail_dock.log_panel.append_log("[STOP] 请求停止测试...")
+            self._runner.request_stop()
 
-    def _enter_run_state(self, selected_keys: list[str]) -> None:
-        """开始测试：清单进入运行状态（锁定勾选，记录列显示 等待中/未选）。
+    def _on_progress(self, percent: int, label: str) -> None:
+        self.run_bar.set_progress(percent)
+        self.detail_dock.log_panel.set_progress(percent)
 
-        颜色语义（逐项 setForeground 控制）：等待中=warning，进行中=info，
-        PASS=success，FAIL=error，N/A=info，未选=muted。
-        """
-        self._run_selected_keys = list(selected_keys)
-        for table in self._iter_item_tables():
-            for row in range(table.rowCount()):
-                chk = table.item(row, 0)
-                if chk:
-                    chk.setFlags(Qt.ItemIsEnabled)
-                name_item = table.item(row, 1)
-                rec = table.item(row, 3)
-                if name_item is None or rec is None:
-                    continue
-                if name_item.data(Qt.UserRole) in self._run_selected_keys:
-                    rec.setText("等待中")
-                    rec.setForeground(QColor(Colors.warning))
-                else:
-                    rec.setText("未选")
-                    rec.setForeground(QColor(Colors.text_muted))
+    def _on_item_started(self, item_key: str) -> None:
+        self._item_start_ts[item_key] = time.monotonic()
+        self.test_plan.mark_item_running(item_key)
+        name = self.ITEMS_REGISTRY.get(item_key, (item_key,))[0]
+        self.run_bar.set_current_item(f"当前: {name}")
+        done = self._counts["pass"] + self._counts["fail"] + self._counts["na"]
+        total = len(self._item_start_ts) and self.test_plan.selected_keys() or []
+        self.run_bar.set_total_text(f"{done}/{len(total) if total else '—'}")
 
-    def _mark_item_running(self, item_key: str) -> None:
-        table, row = self._find_item_row(item_key)
-        if table is None:
-            return
-        rec = table.item(row, 3)
-        if rec:
-            rec.setText("▶ 进行中")
-            rec.setForeground(QColor(Colors.info))
+    def _on_item_finished(self, item_key: str, summary: dict) -> None:
+        verdict = summary.get("passed", "N/A")
+        start = self._item_start_ts.pop(item_key, None)
+        if start is not None:
+            self.test_plan.set_item_duration(item_key, time.monotonic() - start)
+        self.test_plan.mark_item_done(item_key, verdict)
+        key = "pass" if verdict == "PASS" else ("fail" if verdict == "FAIL" else "na")
+        self._counts[key] += 1
+        done = sum(self._counts.values())
+        selected = self.test_plan.selected_keys()
+        self.run_bar.set_counts(self._counts["pass"], self._counts["fail"],
+                                self._counts["na"])
+        self.run_bar.set_total_text(f"{done}/{len(selected)}")
+        self.run_bar.set_timing(time.monotonic() - self._run_start_ts, None)
+        self.detail_dock.log_panel.update_step(done, item_key)
+        self.detail_dock.log_panel.append_log(f"[ITEM] {item_key} -> {verdict}")
 
-    def _mark_item_done(self, item_key: str, verdict: str) -> None:
-        table, row = self._find_item_row(item_key)
-        if table is None:
-            return
-        rec = table.item(row, 3)
-        if rec is None:
-            return
-        if verdict == "PASS":
-            rec.setText("✓ PASS")
-            rec.setForeground(QColor(Colors.success))
-        elif verdict == "FAIL":
-            rec.setText("✗ FAIL")
-            rec.setForeground(QColor(Colors.error))
-        else:
-            rec.setText("✓ 完成")
-            rec.setForeground(QColor(Colors.info))
+    def _on_finished(self, result) -> None:
+        self._last_result = result
+        self.detail_dock.log_panel.flush_now()
+        self.detail_dock.log_panel.stop_timer()
+        self.test_plan.exit_run_state()
+        self._last_report_path = result.summary.get("report_path")
+        self.detail_dock.set_report_available(self._last_report_path is not None)
+        self.set_system_status("就绪")
+        s = result.summary
+        self.detail_dock.log_panel.append_log(
+            f"[DONE] 总体 {s.get('overall', 'N/A')}（PASS {s.get('pass', 0)}/"
+            f"FAIL {s.get('fail', 0)}/N/A {s.get('norec', 0)}）"
+        )
+        elapsed = time.monotonic() - self._run_start_ts
+        self.detail_dock.set_result(result, elapsed)
+        self.run_bar.set_current_item("完成")
+        self.run_bar.set_timing(elapsed, None)
+        self._apply_run_state(RunState.FINISHED)
+        Toast.popup(self, f"测试完成：总体 {s.get('overall', 'N/A')}",
+                    severity="success" if s.get("overall") == "PASS" else "warning")
 
-    def _exit_run_state(self) -> None:
-        """完成/停止：清单恢复默认状态（恢复勾选交互 + 记录列复原）。"""
-        for table in self._iter_item_tables():
-            for row in range(table.rowCount()):
-                chk = table.item(row, 0)
-                if chk:
-                    chk.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
-                rec = table.item(row, 3)
-                if rec:
-                    rec.setText("记录")
-                    rec.setForeground(QColor(Colors.text_muted))
-        self._refresh_scope_item_state()
+    def _on_failed(self, msg: str) -> None:
+        self.detail_dock.log_panel.flush_now()
+        self.detail_dock.log_panel.stop_timer()
+        self.test_plan.exit_run_state()
+        self.set_system_status("测试失败", is_error=True)
+        self.detail_dock.log_panel.append_log(f"[ERROR] {msg}")
+        self._show_alert(f"测试失败：{msg}", "error")
+        self._apply_run_state(RunState.ERROR)
 
-    def _build_action_row(self) -> QWidget:
-        row = QWidget()
-        row.setObjectName("actionRow")
-        lay = QHBoxLayout(row)
-        lay.setContentsMargins(8, 8, 8, 8)
-        lay.setSpacing(8)
+    def _on_locate_log(self, keyword: str) -> None:
+        self.detail_dock.show_log_tab()
+        self.detail_dock.log_panel.locate(keyword)
 
-        self.start_test_btn = QPushButton("▶ 开始测试")
-        self.start_test_btn.setObjectName("primaryStartBtn")
-        self.start_test_btn.setCursor(Qt.PointingHandCursor)
-        self.stop_test_btn = QPushButton("■ 停止")
-        self.stop_test_btn.setObjectName("stopBtn")
-        self.stop_test_btn.setEnabled(False)
-        self.select_all_btn = QPushButton("全选测试项")
-        self.select_all_btn.setObjectName("select_all_btn")
-        self.clear_results_btn = QPushButton("清空结果")
-        self.clear_results_btn.setObjectName("clear_results_btn")
-        self.open_report_btn = QPushButton("打开报告")
-        self.open_report_btn.setObjectName("open_report_btn")
-        self.open_report_btn.setEnabled(False)
-        for _btn in (self.select_all_btn, self.clear_results_btn, self.open_report_btn):
-            _btn.setMinimumWidth(64)
-            _btn.setCursor(Qt.PointingHandCursor)
-
-        self.start_test_btn.clicked.connect(self._on_start_test)
-        self.stop_test_btn.clicked.connect(self._on_stop_test)
-        self.select_all_btn.clicked.connect(self._on_select_all_items)
-        self.clear_results_btn.clicked.connect(self._on_clear_results)
-        self.open_report_btn.clicked.connect(self._on_open_report)
-
-        lay.addWidget(self.start_test_btn)
-        lay.addWidget(self.stop_test_btn)
-        lay.addStretch()
-        lay.addWidget(self.select_all_btn)
-        lay.addWidget(self.clear_results_btn)
-        lay.addWidget(self.open_report_btn)
-        return row
-
-    # ------------------------------------------------------------------ items table
-    def _populate_item_table(self):
-        for group_idx, (_title, keys) in enumerate(self._item_groups):
-            table = self._item_tables[group_idx]
-            table.setRowCount(0)
-            for item_key in keys:
-                spec = self.ITEMS_REGISTRY[item_key]
-                name, _run_fn, needs_scope, item_checked, _params = spec
-                row = table.rowCount()
-                table.insertRow(row)
-                chk = QTableWidgetItem()
-                chk.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
-                chk.setTextAlignment(Qt.AlignCenter)
-                chk.setCheckState(Qt.Checked if item_checked else Qt.Unchecked)
-                table.setItem(row, 0, chk)
-                name_item = QTableWidgetItem(name)
-                name_item.setFlags(Qt.ItemIsEnabled)
-                name_item.setData(Qt.UserRole, item_key)
-                table.setItem(row, 1, name_item)
-                inst = "示波器" if needs_scope else "N6705C"
-                inst_item = QTableWidgetItem(inst)
-                inst_item.setFlags(Qt.ItemIsEnabled)
-                inst_item.setTextAlignment(Qt.AlignCenter)
-                inst_item.setForeground(QColor(Colors.warning if needs_scope else Colors.info))
-                inst_item.setData(Qt.UserRole, needs_scope)
-                table.setItem(row, 2, inst_item)
-                rec_item = QTableWidgetItem("记录")
-                rec_item.setFlags(Qt.ItemIsEnabled)
-                rec_item.setForeground(QColor(Colors.text_muted))
-                table.setItem(row, 3, rec_item)
-                table.setCellWidget(row, 4, self._make_settings_cell(item_key, _params))
-
-    def _make_settings_cell(self, item_key: str, params) -> QWidget:
-        cell = QWidget()
-        cell.setStyleSheet("background: transparent;")
-        h = QHBoxLayout(cell)
-        h.setContentsMargins(0, 0, 0, 0)
-        h.setSpacing(0)
-        btn = QPushButton("设置")
-        btn.setObjectName("itemSettingsBtn")
-        btn.setCursor(Qt.PointingHandCursor)
-        btn.setFixedHeight(22)
-        if not params:
-            btn.setEnabled(False)
-            btn.setToolTip("该测试项暂无可设置参数")
-        else:
-            btn.clicked.connect(lambda _=False, k=item_key: self._open_item_params(k))
-        h.addWidget(btn, alignment=Qt.AlignCenter)
-        return cell
-
-    def _open_item_params(self, item_key: str):
+    # ================================================================== 参数弹窗
+    def _open_item_params(self, item_key: str) -> None:
         spec = self.ITEMS_REGISTRY.get(item_key)
         if not spec:
             return
@@ -602,276 +323,50 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
                 self._item_overrides[item_key] = override
             else:
                 self._item_overrides.pop(item_key, None)
-            self._mark_item_customized(item_key)
-
-    def _mark_item_customized(self, item_key: str):
-        """在测试项名后打标，直观区分已自定义参数的项。"""
-        for table in self._iter_item_tables():
-            found = False
-            for row in range(table.rowCount()):
-                name_item = table.item(row, 1)
-                if name_item and name_item.data(Qt.UserRole) == item_key:
-                    base_name = self.ITEMS_REGISTRY[item_key][0]
-                    if item_key in self._item_overrides:
-                        name_item.setText(f"{base_name}  ●")
-                        name_item.setForeground(QColor(Colors.text_accent))
-                    else:
-                        name_item.setText(base_name)
-                        name_item.setForeground(QColor(Colors.text_secondary))
-                    found = True
-                    break
-            if found:
-                break
+            self.test_plan.set_item_customized(item_key, bool(override))
 
     def _base_param_value(self, base_key: str):
         """按 ParamSpec.base_key 从被测配置界面取当前值作弹窗预填。"""
-        cfg = self.get_test_config()
-        return cfg.get(base_key)
+        return self.get_test_config().get(base_key)
 
-    def _on_item_changed(self, _item: QTableWidgetItem):
-        pass
-
-    def _selected_item_keys(self) -> list[str]:
-        keys: list[str] = []
-        for table in self._iter_item_tables():
-            for row in range(table.rowCount()):
-                chk = table.item(row, 0)
-                name_item = table.item(row, 1)
-                if chk and chk.checkState() == Qt.Checked and name_item:
-                    keys.append(name_item.data(Qt.UserRole))
-        return keys
-
-    def _refresh_scope_item_state(self):
-        """示波器连接状态联动提示。
-
-        所有测试项始终可勾选；启动测试时统一校验所需仪器（见
-        _missing_instruments），此处仅在记录列给出"未接示波器"提醒。
-        运行状态下记录列显示 等待中/进行中/结果，顶层连接同步不得覆盖。
-        """
-        if getattr(self, "is_test_running", False):
-            return
-        scope_ok = self.scope_connected
-        for table in self._iter_item_tables():
-            for row in range(table.rowCount()):
-                inst_item = table.item(row, 2)
-                chk = table.item(row, 0)
-                if inst_item is None or chk is None:
-                    continue
-                needs_scope = bool(inst_item.data(Qt.UserRole))
-                chk.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
-                rec = table.item(row, 3)
-                if needs_scope and not scope_ok:
-                    rec.setText("未接示波器")
-                    rec.setForeground(QColor(Colors.warning))
-                elif rec.text().startswith("未接示波器"):
-                    rec.setText("记录")
-                    rec.setForeground(QColor(Colors.text_muted))
-
-    # ------------------------------------------------------------------ config IO
+    # ================================================================== 配置 IO（委托 ModuleConfigStore）
     def get_test_config(self) -> dict[str, Any]:
-        temp_enabled = self.temp_test_check.isChecked()
-        return {
-            "selected_items": self._selected_item_keys(),
-            "chip_name": self.chip_name_edit.text().strip(),
-            "module_name": self.module_name_edit.text().strip(),
-            "operator": self.operator_edit.text().strip(),
-            "temp_test_enabled": temp_enabled,
-            "temperature": self.temperature_edit.text().strip() if temp_enabled else "",
-            "temp_soak_s": self.temp_soak_spin.value(),
-            "temp_tolerance_c": self.temp_tolerance_spin.value(),
-            "temp_wait_s": self.temp_wait_spin.value(),
-            "vin_channel": self.vin_ch_combo.currentText(),
-            "vout_channel": self.vout_ch_combo.currentText(),
-            "iload_channel": self.iload_ch_combo.currentText(),
-            "vout_nominal_mv": self.vout_nominal_spin.value(),
-            "device_addr": self.device_addr_edit.text().strip(),
-            "width_flag": self.width_flag_combo.currentData(),
-            # 示波器输出电压通道：控件为 "CH n"，存整数 n 供 core cfg 直接 int 用
-            "scope_vout_channel": self.scope_vout_ch_combo.currentIndex() + 1,
-            "item_overrides": {k: dict(v) for k, v in self._item_overrides.items()},
-        }
+        return self._store.collect()
 
-    def apply_config_to_controls(self, cfg: dict) -> tuple[bool, str]:
-        if not isinstance(cfg, dict):
-            return False, "配置草案格式无效（期望 dict）。"
-        changed: list[str] = []
-        try:
-            if "chip_name" in cfg:
-                self.chip_name_edit.setText(str(cfg["chip_name"])); changed.append("chip_name")
-            if "module_name" in cfg:
-                self.module_name_edit.setText(str(cfg["module_name"])); changed.append("module_name")
-            if "operator" in cfg:
-                self.operator_edit.setText(str(cfg["operator"])); changed.append("operator")
-            if "vout_nominal_mv" in cfg:
-                self.vout_nominal_spin.setValue(int(cfg["vout_nominal_mv"])); changed.append("vout_nominal_mv")
-        except Exception:  # noqa: BLE001
-            _logger.error("apply_config 落地失败", exc_info=True)
-            return False, "配置落地异常，见日志。"
-        QTimer.singleShot(0, lambda: self._highlight_fields(changed))
-        return True, f"已应用配置：{', '.join(changed) if changed else '无变更'}"
+    def config_display_name(self) -> str:
+        return (os.path.basename(self._current_config_path)
+                if self._current_config_path else "")
 
-    def _highlight_fields(self, fields: list[str]):
-        widget_map = {
-            "chip_name": self.chip_name_edit, "module_name": self.module_name_edit,
-            "operator": self.operator_edit,
-            "vout_nominal_mv": self.vout_nominal_spin,
-        }
-        for f in fields:
-            w = widget_map.get(f)
-            if w is None:
-                continue
-            orig = w.styleSheet()
-            w.setStyleSheet(_AI_HIGHLIGHT_QSS)
-            QTimer.singleShot(_AI_HIGHLIGHT_MS, lambda _w=w, _o=orig: _w.setStyleSheet(_o))
-
-    # ------------------------------------------------------------------ config file IO
-    def _configs_root(self) -> str:
-        """配置文件根目录：user_data/module_test_configs/<module_type>。"""
-        return get_user_data_dir("module_test_configs", self.MODULE_TYPE)
-
-    @staticmethod
-    def _safe_name(text: str, fallback: str) -> str:
-        """把用户输入清洗成合法文件/目录名。"""
-        cleaned = re.sub(r'[\\/:*?"<>|]+', "_", (text or "").strip()).strip(" .")
-        return cleaned or fallback
-
-    def _restore_full_config(self, cfg: dict) -> None:
-        """把一份完整配置回填到所有控件（含通道 / 温度 / 频点 / 测试项勾选 / 参数覆写）。"""
-        def _set_combo(combo, value):
-            if value is None:
-                return
-            idx = combo.findText(str(value))
-            if idx >= 0:
-                combo.setCurrentIndex(idx)
-
-        if "chip_name" in cfg:
-            self.chip_name_edit.setText(str(cfg["chip_name"]))
-        if "module_name" in cfg:
-            self.module_name_edit.setText(str(cfg["module_name"]))
-        if "operator" in cfg:
-            self.operator_edit.setText(str(cfg["operator"]))
-        _set_combo(self.vin_ch_combo, cfg.get("vin_channel"))
-        _set_combo(self.vout_ch_combo, cfg.get("vout_channel"))
-        _set_combo(self.iload_ch_combo, cfg.get("iload_channel"))
-        if "scope_vout_channel" in cfg:
-            _idx = int(cfg["scope_vout_channel"]) - 1
-            if 0 <= _idx < self.scope_vout_ch_combo.count():
-                self.scope_vout_ch_combo.setCurrentIndex(_idx)
-        if "vout_nominal_mv" in cfg:
-            self.vout_nominal_spin.setValue(int(cfg["vout_nominal_mv"]))
-        if "device_addr" in cfg:
-            self.device_addr_edit.setText(str(cfg["device_addr"]))
-        if "width_flag" in cfg:
-            idx = self.width_flag_combo.findData(int(cfg["width_flag"]))
-            if idx >= 0:
-                self.width_flag_combo.setCurrentIndex(idx)
-
-        if "temp_test_enabled" in cfg:
-            self.temp_test_check.setChecked(bool(cfg["temp_test_enabled"]))
-        if "temperature" in cfg:
-            self.temperature_edit.setText(str(cfg["temperature"]))
-        if "temp_soak_s" in cfg:
-            self.temp_soak_spin.setValue(int(cfg["temp_soak_s"]))
-        if "temp_tolerance_c" in cfg:
-            self.temp_tolerance_spin.setValue(int(cfg["temp_tolerance_c"]))
-        if "temp_wait_s" in cfg:
-            self.temp_wait_spin.setValue(int(cfg["temp_wait_s"]))
-
-        # 测试项勾选
-        selected = cfg.get("selected_items")
-        if isinstance(selected, list):
-            sel_set = set(selected)
-            for table in self._iter_item_tables():
-                for row in range(table.rowCount()):
-                    chk = table.item(row, 0)
-                    name_item = table.item(row, 1)
-                    if chk is None or name_item is None:
-                        continue
-                    key = name_item.data(Qt.UserRole)
-                    chk.setCheckState(Qt.Checked if key in sel_set else Qt.Unchecked)
-
-        # 参数覆写
-        overrides = cfg.get("item_overrides")
-        if isinstance(overrides, dict):
-            self._item_overrides = {k: dict(v) for k, v in overrides.items()
-                                    if k in self.ITEMS_REGISTRY and isinstance(v, dict)}
-            for k in self.ITEMS_REGISTRY:
-                self._mark_item_customized(k)
-
-        self._refresh_scope_item_state()
-
-    def _write_config_file(self, path: str, cfg: dict) -> bool:
-        payload = {
-            "schema_version": _CONFIG_SCHEMA_VERSION,
-            "module_type": self.MODULE_TYPE,
-            "config": cfg,
-        }
-        try:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(payload, f, ensure_ascii=False, indent=2)
-            return True
-        except OSError:
-            _logger.error("写入配置文件失败：%s", path, exc_info=True)
-            return False
-
-    def _read_config_file(self, path: str) -> dict | None:
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                payload = json.load(f)
-        except (OSError, json.JSONDecodeError):
-            _logger.error("读取配置文件失败：%s", path, exc_info=True)
-            return None
-        if not isinstance(payload, dict):
-            return None
-        cfg = payload.get("config")
-        return cfg if isinstance(cfg, dict) else None
+    def _on_config_banner_action(self, key: str) -> None:
+        if key == "choose":
+            self._on_open_config()
+        self._config_banner.hide()
 
     def _save_config_to(self, path: str) -> None:
         cfg = self.get_test_config()
-        if self._write_config_file(path, cfg):
+        if self._store.write_file(path, cfg):
             self._current_config_path = path
-            self.execution_logs.append_log(f"[INFO] 配置已保存：{os.path.basename(path)}")
+            self.detail_dock.log_panel.append_log(
+                f"[INFO] 配置已保存：{os.path.basename(path)}")
+            Toast.popup(self, "配置已保存", severity="success")
+            self.configNameChanged.emit()
         else:
-            QMessageBox.warning(self, "保存失败", "配置写入失败，详见日志。")
-
-    def _prompt_save_path(self) -> str | None:
-        """弹出命名对话框，按芯片名分类到子目录，返回目标路径。"""
-        cfg = self.get_test_config()
-        chip = self._safe_name(cfg.get("chip_name", ""), "未分类芯片")
-        default_name = self._safe_name(
-            cfg.get("module_name", "") or self.MODULE_TYPE, self.MODULE_TYPE)
-        name, ok = QInputDialog.getText(
-            self, "另存配置", f"配置名称（将归入芯片「{chip}」分类）：", text=default_name)
-        if not ok:
-            return None
-        name = self._safe_name(name, default_name)
-        target_dir = os.path.join(self._configs_root(), chip)
-        path = os.path.join(target_dir, f"{name}.json")
-        if os.path.exists(path):
-            resp = QMessageBox.question(
-                self, "覆盖确认", f"配置「{name}」已存在，是否覆盖？",
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if resp != QMessageBox.Yes:
-                return None
-        return path
+            self._show_alert("配置写入失败，详见日志。", "error")
 
     def _on_save_config(self) -> None:
-        """保存：已加载/已保存过则直接覆盖当前文件；否则等同另存为。"""
         if self._current_config_path:
             self._save_config_to(self._current_config_path)
         else:
             self._on_save_config_as()
 
     def _on_save_config_as(self) -> None:
-        """另存为：基于当前设置生成新配置文件，便于派生相似配置。"""
-        path = self._prompt_save_path()
+        path = self._store.prompt_save_path(self)
         if path:
             self._save_config_to(path)
 
     def _on_open_config(self) -> None:
-        dlg = _ConfigManagerDialog(self._configs_root(), self.MODULE_TYPE, parent=self)
-        if dlg.exec() != QDialog.Accepted:
+        dlg = ConfigManagerDialog(self._store.configs_root(), self.MODULE_TYPE, parent=self)
+        if dlg.exec() != ConfigManagerDialog.Accepted:
             return
         self._apply_selected_config(dlg)
 
@@ -879,582 +374,126 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         path = dlg.selected_path()
         if not path:
             return
-        cfg = self._read_config_file(path)
+        cfg = self._store.read_file(path)
         if cfg is None:
-            QMessageBox.warning(self, "打开失败", "配置文件无效或损坏，详见日志。")
+            self._show_alert("配置文件无效或损坏，详见日志。", "error")
             return
-        self._restore_full_config(cfg)
+        self._store.restore(cfg)
         self._current_config_path = path
-        self.execution_logs.append_log(f"[INFO] 已加载配置：{os.path.basename(path)}")
+        self.detail_dock.log_panel.append_log(
+            f"[INFO] 已加载配置：{os.path.basename(path)}")
+        Toast.popup(self, f"已加载配置：{os.path.basename(path)}", severity="success")
+        self.configNameChanged.emit()
 
-    def prompt_config_manager_once(self) -> None:
-        """首次进入本模块测试页时自动弹出配置管理器（每子页一次，非模态不冻结侧边栏）。"""
-        if getattr(self, "_config_prompted", False):
+    def prompt_config_manager_once(self, *, force_dialog: bool = False) -> None:
+        """首次进入本模块测试页提示加载配置（每子页一次）。
+
+        默认改为非模态 InfoBanner；``force_dialog=True`` 兼容旧的弹窗行为。
+        """
+        if self._config_prompted:
             return
         self._config_prompted = True
-        QTimer.singleShot(0, self._show_config_manager_modeless)
+        if force_dialog:
+            QTimer.singleShot(0, self._show_config_manager_modeless)
+        elif self._current_config_path is None:
+            QTimer.singleShot(0, self._config_banner.show)
 
     def _show_config_manager_modeless(self) -> None:
-        dlg = _ConfigManagerDialog(self._configs_root(), self.MODULE_TYPE, parent=self)
+        dlg = ConfigManagerDialog(self._store.configs_root(), self.MODULE_TYPE, parent=self)
         dlg.setAttribute(Qt.WA_DeleteOnClose)
         dlg.setModal(False)
         dlg.accepted.connect(lambda: self._apply_selected_config(dlg))
         dlg.show()
 
-    # ------------------------------------------------------------------ test flow
-    def _missing_instruments(self, cfg: dict) -> list[str]:
-        """启动前校验：汇总本次勾选项全程所需但未连接的仪器（空列表=齐全）。
-
-        所有项依赖 N6705C；注册表 needs_scope 项额外依赖示波器。
-        DEBUG_MOCK 下全部放行（Mock 数据不依赖真实连接）。
-        """
-        if DEBUG_MOCK:
-            return []
-        missing: list[str] = []
-        if not self.is_connected or self.n6705c is None:
-            missing.append("N6705C 电源分析仪")
-        scope_names = [self.ITEMS_REGISTRY[k][0] for k in cfg.get("selected_items", [])
-                       if k in self.ITEMS_REGISTRY and self.ITEMS_REGISTRY[k][2]]
-        if scope_names and not self.scope_connected:
-            missing.append(f"示波器（{len(scope_names)} 个勾选项需要：{'、'.join(scope_names)}）")
-        return missing
-
-    def _on_start_test(self):
-        if self.is_test_running:
-            return
-        cfg = self.get_test_config()
-        if not cfg["selected_items"]:
-            self.execution_logs.append_log("[WARN] 未勾选任何测试项，无法启动。")
-            return
-        missing = self._missing_instruments(cfg)
-        if missing:
-            detail = "；".join(missing)
-            self.execution_logs.append_log(f"[ERROR] 仪器未连接，无法开始测试：{detail}")
-            QMessageBox.warning(
-                self, "无法开始测试",
-                "以下仪器未连接，请先连接后再开始测试：\n\n"
-                + "\n".join(f"· {m}" for m in missing))
-            return
-        scope = self.Osc_ins if self.scope_connected else None
-        self._runner = self.RUNNER_CLS(
-            config=cfg, n6705c=self.n6705c, scope=scope, chamber=None,
-        )
-        self._runner.progress.connect(self._on_progress)
-        self._runner.item_started.connect(self._mark_item_running)
-        self._runner.item_finished.connect(self._on_item_finished)
-        self._runner.log.connect(self.execution_logs.append_log)
-        self._runner.finished_result.connect(self._on_finished)
-        self._runner.failed.connect(self._on_failed)
-        self.is_test_running = True
-        self.start_test_btn.setEnabled(False)
-        self.stop_test_btn.setEnabled(True)
-        self._enter_run_state(cfg["selected_items"])
-        self.set_system_status("测试进行中")
-        self.execution_logs.start_timer(len(cfg["selected_items"]))
-        self.execution_logs.append_log(f"[START] {self.MODULE_TYPE.upper()} Module Test 启动")
-        self._runner.start()
-
-    def _on_stop_test(self):
-        if self._runner is not None and self.is_test_running:
-            self.execution_logs.append_log("[STOP] 请求停止测试...")
-            self._runner.request_stop()
-
-    def _on_progress(self, percent: int, label: str):
-        self.execution_logs.set_progress(percent)
-
-    def _on_item_finished(self, item_key: str, summary: dict):
-        verdict = summary.get("passed", "N/A")
-        self._mark_item_done(item_key, verdict)
-        self.execution_logs.append_log(f"[ITEM] {item_key} -> {verdict}")
-
-    def _on_finished(self, result):
-        self._last_result = result
-        self.is_test_running = False
-        self.start_test_btn.setEnabled(True)
-        self.stop_test_btn.setEnabled(False)
-        self._exit_run_state()
-        self.execution_logs.stop_timer()
-        self._last_report_path = result.summary.get("report_path")
-        self.open_report_btn.setEnabled(self._last_report_path is not None)
-        self.set_system_status("就绪")
-        s = result.summary
-        self.execution_logs.append_log(
-            f"[DONE] 总体 {s.get('overall', 'N/A')}（PASS {s.get('pass', 0)}/"
-            f"FAIL {s.get('fail', 0)}/N/A {s.get('norec', 0)}）"
-        )
-
-    def _on_failed(self, msg: str):
-        self.is_test_running = False
-        self.start_test_btn.setEnabled(True)
-        self.stop_test_btn.setEnabled(False)
-        self._exit_run_state()
-        self.execution_logs.stop_timer()
-        self.set_system_status("测试失败", is_error=True)
-        self.execution_logs.append_log(f"[ERROR] {msg}")
-
-    # ------------------------------------------------------------------ actions
-    def _on_open_report(self):
+    # ================================================================== 动作
+    def _on_open_report(self) -> None:
         path = self._last_report_path
         if path and os.path.isfile(path):
             QDesktopServices.openUrl(QUrl.fromLocalFile(path))
         else:
-            self.execution_logs.append_log("[WARN] 报告文件不存在。")
+            self.detail_dock.log_panel.append_log("[WARN] 报告文件不存在。")
 
-    def _on_clear_results(self):
+    def _on_open_output_dir(self) -> None:
+        path = self._last_report_path
+        directory = (os.path.dirname(path) if path else
+                     os.path.abspath("Results"))
+        if os.path.isdir(directory):
+            QDesktopServices.openUrl(QUrl.fromLocalFile(directory))
+
+    def _on_clear_results(self) -> None:
         self._last_result = None
         self._last_report_path = None
-        self.open_report_btn.setEnabled(False)
-        self.execution_logs.clear_log()
-        self.execution_logs.set_progress(0)
-        self.execution_logs.append_log("[INFO] 已清空结果。")
+        self.detail_dock.set_report_available(False)
+        self.detail_dock.clear_summary()
+        self.detail_dock.result_table.clear()
+        self.detail_dock.log_panel.clear_log()
+        self.detail_dock.log_panel.set_progress(0)
+        self.run_bar.set_counts(0, 0, 0)
+        self.run_bar.set_total_text("-/-")
+        self.run_bar.set_progress(0)
+        self.detail_dock.log_panel.append_log("[INFO] 已清空结果。")
 
-    def _on_select_all_items(self):
-        # 只作用于"自动测试区域"分组（_item_groups 第 0 组），不影响"单独测试项"
-        # 切换：存在未勾选项 → 全选；已全部勾选 → 取消全选
-        if not self._item_tables:
-            return
-        auto_table = self._item_tables[0]
-        rows = [auto_table.item(r, 0) for r in range(auto_table.rowCount())]
-        checkable = [
-            c for c in rows
-            if c and (c.flags() & Qt.ItemIsUserCheckable) and (c.flags() & Qt.ItemIsEnabled)
-        ]
-        all_checked = bool(checkable) and all(
-            c.checkState() == Qt.Checked for c in checkable
-        )
-        target = Qt.Unchecked if all_checked else Qt.Checked
-        for c in checkable:
-            c.setCheckState(target)
-        self.select_all_btn.setText("取消全选" if not all_checked else "全选测试项")
+    def _on_select_all_items(self) -> None:
+        self.test_plan.toggle_all()
 
-    # ------------------------------------------------------------------ public API
-    def update_test_result(self, result):
+    # ================================================================== 公共 API（契约，签名不变）
+    def update_test_result(self, result) -> None:
         self._last_result = result
         if result is not None and hasattr(result, "summary"):
             self._last_report_path = result.summary.get("report_path")
-            self.open_report_btn.setEnabled(self._last_report_path is not None)
+            self.detail_dock.set_result(result, None)
 
-    def clear_results(self):
+    def clear_results(self) -> None:
         self._on_clear_results()
 
-    def set_system_status(self, status: str, is_error: bool = False):
+    def set_system_status(self, status: str, is_error: bool = False) -> None:
         if hasattr(self, "system_status_label"):
-            # 兼容 mixin 调用（已带 ● 前缀，如 "● Ready"）与本页调用（如 "就绪"），
-            # 避免重复叠加导致 "● ● Ready"
             text = status if status.startswith("●") else f"● {status}"
             self.system_status_label.setText(text)
-            # objectName 与全项目标准对齐：statusOk（绿）/statusWarn（黄）/statusErr（红）
             if is_error:
-                obj_name = "statusErr"
-            elif any(kw in status for kw in ("Searching", "Connecting", "Disconnecting",
-                                              "Running", "进行中")):
-                obj_name = "statusWarn"
+                obj = "statusErr"
+            elif any(kw in status for kw in ("Searching", "Connecting",
+                                              "Disconnecting", "Running", "进行中")):
+                obj = "statusWarn"
             else:
-                obj_name = "statusOk"
-            self.system_status_label.setObjectName(obj_name)
+                obj = "statusOk"
+            self.system_status_label.setObjectName(obj)
             self.system_status_label.style().unpolish(self.system_status_label)
             self.system_status_label.style().polish(self.system_status_label)
+        self.connectionStateChanged.emit()
 
-    def update_instrument_info(self, instrument_info):
+    def set_scope_status(self, status, is_error: bool = False) -> None:
+        """示波器状态经此 funnel（mixin 各路径），顺带广播连接态。"""
+        super().set_scope_status(status, is_error)
+        self.connectionStateChanged.emit()
+
+    def _update_n6705c_connect_button_state(self, connected: bool) -> None:
+        super()._update_n6705c_connect_button_state(connected)
+        self.connectionStateChanged.emit()
+
+    def update_instrument_info(self, instrument_info) -> None:
         pass
 
-    def sync_n6705c_from_top(self):
+    def sync_n6705c_from_top(self) -> None:
         super().sync_n6705c_from_top()
-        self._refresh_scope_item_state()
+        self.connectionStateChanged.emit()
 
-    def sync_oscilloscope_from_top(self):
+    def sync_oscilloscope_from_top(self) -> None:
         super().sync_oscilloscope_from_top()
-        self._refresh_scope_item_state()
+        if hasattr(self, "test_plan"):
+            self.test_plan.set_scope_connected(self.scope_connected)
+        self.connectionStateChanged.emit()
 
-    def _on_mso64b_top_changed(self):
-        """顶层示波器连接状态变化时联动刷新 (scope) 项提示。
-
-        mixin 只更新 scope_connected，不触碰测试项表；不覆盖则连接示波器后
-        (scope) 项仍残留"未接示波器"提示（需切换页面才恢复）。
-        """
+    def _on_mso64b_top_changed(self) -> None:
+        """顶层示波器连接变化时联动刷新 (scope) 项提示（运行期除外）。"""
         super()._on_mso64b_top_changed()
         if getattr(self, "is_test_running", False):
             return
-        self._refresh_scope_item_state()
+        if hasattr(self, "test_plan"):
+            self.test_plan.set_scope_connected(self.scope_connected)
+        self.connectionStateChanged.emit()
 
-    # ------------------------------------------------------------------ AI contract
-    def ai_capabilities(self) -> set[str]:
-        return {CAP_GET_CONFIG, CAP_APPLY_CONFIG, CAP_START_TEST, CAP_STOP_TEST, CAP_GET_RESULT}
-
-    def ai_get_config(self) -> dict[str, Any] | None:
-        try:
-            cfg = self.get_test_config()
-            cfg["sweep_dimensions"] = ["load_current"]
-            # 仅暴露当前勾选项会遍历的维度
-            sel = set(cfg.get("selected_items", []))
-            if any(k.endswith("_line_reg") for k in sel):
-                cfg["sweep_dimensions"].append("vin")
-            return cfg
-        except Exception:  # noqa: BLE001
-            _logger.error("AI 读取 %s 配置失败", self.PAGE_KEY, exc_info=True)
-            return None
-
-    def ai_apply_config(self, payload: Any) -> tuple[bool, str]:
-        if self.is_test_running:
-            return False, "测试运行中，无法修改配置，请先停止测试。"
-        return self.apply_config_to_controls(payload if isinstance(payload, dict) else {})
-
-    def ai_start_test(self) -> tuple[bool, str]:
-        if self.is_test_running:
-            return False, "测试已在运行中。"
-        cfg = self.get_test_config()
-        if not cfg.get("selected_items"):
-            return False, "未勾选任何测试项，请先勾选。"
-        missing = self._missing_instruments(cfg)
-        if missing:
-            detail = "；".join(missing)
-            self.execution_logs.append_log(f"[AI] 启动被拒绝：仪器未连接：{detail}")
-            return False, f"仪器未连接，无法启动测试：{detail}。"
-        self.execution_logs.append_log(
-            f"[AI] 请求启动 {self.MODULE_TYPE.upper()} 测试，勾选 {len(cfg['selected_items'])} 项。"
-        )
-        try:
-            self._on_start_test()
-        except Exception:  # noqa: BLE001
-            _logger.error("AI 启动 %s 测试失败", self.PAGE_KEY, exc_info=True)
-            return False, "启动测试异常，请查看日志。"
-        return (True, "已请求启动测试。") if self.is_test_running else (False, "启动未成功，请查看执行日志。")
-
-    def ai_stop_test(self) -> tuple[bool, str]:
-        if not self.is_test_running:
-            return False, "当前未在运行测试。"
-        self.execution_logs.append_log("[AI] 请求停止测试。")
-        try:
-            self._on_stop_test()
-        except Exception:  # noqa: BLE001
-            _logger.error("AI 停止 %s 测试失败", self.PAGE_KEY, exc_info=True)
-            return False, "停止测试异常，请查看日志。"
-        return True, "已发送停止请求。"
-
-    def ai_get_result_summary(self) -> dict[str, Any] | None:
-        if self._last_result is None:
-            return None
-        s = dict(self._last_result.summary)
-        s["available"] = True
-        s["running"] = self.is_test_running
-        s["module_type"] = self._last_result.module_type
-        return s
-
-    # ------------------------------------------------------------------ UIActionSpec
-    def _register_ai_ui_actions(self):
-        if self._ui_action_registry is None:
-            return
-        self._ui_action_registry.register_many([
-            UIActionSpec(
-                id=f"{self.PAGE_KEY}.open_report", label="打开报告",
-                page_key=self.PAGE_KEY, handler=self._ai_open_report,
-                risk="low", confirm=False,
-                enabled_when=lambda: self._last_report_path is not None,
-                description="打开最近一次 Module Test 的 HTML 报告。",
-            ),
-            UIActionSpec(
-                id=f"{self.PAGE_KEY}.clear_results", label="清空结果",
-                page_key=self.PAGE_KEY, handler=self._ai_clear_results,
-                risk="low", confirm=False,
-            ),
-            UIActionSpec(
-                id=f"{self.PAGE_KEY}.select_all_items", label="全选测试项",
-                page_key=self.PAGE_KEY, handler=self._on_select_all_items,
-                risk="low", confirm=False,
-            ),
-        ])
-
-    def _ai_open_report(self) -> tuple[bool, str]:
-        if not self._last_report_path:
-            return False, "暂无报告，请先执行测试。"
-        self._on_open_report()
-        return True, "已打开报告。"
-
-    def _ai_clear_results(self) -> tuple[bool, str]:
-        self._on_clear_results()
-        return True, "已清空结果。"
-
-
-class _ConfigManagerDialog(QDialog):
-    """配置管理器：按芯片分类管理（打开 / 新增 / 重命名 / 移动归属 / 删除）配置。
-
-    目录结构：<root>/<芯片名>/<配置名>.json；顶层节点为芯片分类，子节点为配置。
-    """
-
-    def __init__(self, root: str, module_type: str, parent=None):
-        super().__init__(parent)
-        self._root = root
-        self._module_type = module_type
-        self.setWindowTitle(f"{module_type.upper()} Config Manager")
-        self.setMinimumSize(520, 480)
-        self.setStyleSheet(DIALOG_QSS)
-        self._selected_path: str | None = None
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
-
-        layout.addWidget(QLabel("按芯片分类管理配置，双击打开；右侧按钮进行管理："))
-
-        body = QHBoxLayout()
-        body.setSpacing(8)
-
-        self.tree = QTreeWidget()
-        self.tree.setHeaderLabels(["名称", "归属芯片"])
-        self.tree.setColumnWidth(0, 220)
-        self.tree.itemDoubleClicked.connect(self._on_item_double_clicked)
-        self.tree.currentItemChanged.connect(self._on_current_changed)
-        body.addWidget(self.tree, 1)
-
-        btn_col = QVBoxLayout()
-        btn_col.setSpacing(6)
-        self.open_btn = QPushButton("打开")
-        self.open_btn.setDefault(True)
-        self.open_btn.setAutoDefault(True)
-        self.new_btn = QPushButton("新增配置…")
-        self.rename_btn = QPushButton("重命名…")
-        self.move_btn = QPushButton("移动归属…")
-        self.delete_btn = QPushButton("删除")
-        for _b in (self.open_btn, self.new_btn, self.rename_btn, self.move_btn, self.delete_btn):
-            _b.setMinimumWidth(88)
-            _b.setCursor(Qt.PointingHandCursor)
-        self.open_btn.clicked.connect(self._accept_selection)
-        self.new_btn.clicked.connect(self._on_new_config)
-        self.rename_btn.clicked.connect(self._on_rename)
-        self.move_btn.clicked.connect(self._on_move)
-        self.delete_btn.clicked.connect(self._on_delete)
-        btn_col.addWidget(self.open_btn)
-        btn_col.addWidget(self.new_btn)
-        btn_col.addWidget(self.rename_btn)
-        btn_col.addWidget(self.move_btn)
-        btn_col.addWidget(self.delete_btn)
-        btn_col.addStretch()
-        body.addLayout(btn_col)
-        layout.addLayout(body, 1)
-
-        close_btn = QPushButton("关闭")
-        close_btn.setDefault(False)
-        close_btn.setAutoDefault(False)
-        close_btn.setMinimumWidth(88)
-        close_btn.clicked.connect(self.reject)
-        close_row = QHBoxLayout()
-        close_row.addStretch()
-        close_row.addWidget(close_btn)
-        layout.addLayout(close_row)
-
-        self._populate()
-        self._on_current_changed(self.tree.currentItem(), None)
-
-    # ------------------------------------------------------------------ data
-    @staticmethod
-    def _safe(text: str, fallback: str) -> str:
-        cleaned = re.sub(r'[\\/:*?"<>|]+', "_", (text or "").strip()).strip(" .")
-        return cleaned or fallback
-
-    def _chip_names(self) -> list[str]:
-        if not os.path.isdir(self._root):
-            return []
-        return sorted(
-            d for d in os.listdir(self._root)
-            if os.path.isdir(os.path.join(self._root, d))
-        )
-
-    def _populate(self, select_path: str | None = None) -> None:
-        self.tree.clear()
-        chip_dirs = self._chip_names()
-        has_any = False
-        select_item: QTreeWidgetItem | None = None
-        for chip in chip_dirs:
-            chip_path = os.path.join(self._root, chip)
-            files = sorted(
-                f for f in os.listdir(chip_path)
-                if f.lower().endswith(".json")
-            )
-            if not files:
-                continue
-            chip_node = QTreeWidgetItem([chip, ""])
-            chip_node.setFlags(Qt.ItemIsEnabled)
-            chip_node.setData(0, Qt.UserRole, None)
-            chip_node.setData(1, Qt.UserRole, chip)
-            self.tree.addTopLevelItem(chip_node)
-            for f in files:
-                cfg_path = os.path.join(chip_path, f)
-                cfg_node = QTreeWidgetItem([os.path.splitext(f)[0], chip])
-                cfg_node.setData(0, Qt.UserRole, cfg_path)
-                cfg_node.setData(1, Qt.UserRole, chip)
-                chip_node.addChild(cfg_node)
-                if select_path and os.path.normpath(cfg_path) == os.path.normpath(select_path):
-                    select_item = cfg_node
-            chip_node.setExpanded(True)
-            has_any = True
-        if not has_any:
-            placeholder = QTreeWidgetItem(["（暂无已保存的配置）", ""])
-            placeholder.setFlags(Qt.ItemIsEnabled)
-            placeholder.setData(0, Qt.UserRole, None)
-            self.tree.addTopLevelItem(placeholder)
-        if select_item is not None:
-            self.tree.setCurrentItem(select_item)
-
-    def _current_cfg(self) -> tuple[str | None, str | None]:
-        """返回 (配置路径, 归属芯片)，未选中配置返回 (None, None)。"""
-        item = self.tree.currentItem()
-        if not item:
-            return None, None
-        path = item.data(0, Qt.UserRole)
-        chip = item.data(1, Qt.UserRole)
-        if not path:
-            return None, None
-        return path, chip
-
-    def _on_current_changed(self, current: QTreeWidgetItem, _prev) -> None:
-        is_cfg = bool(current and current.data(0, Qt.UserRole))
-        self.open_btn.setEnabled(is_cfg)
-        self.rename_btn.setEnabled(is_cfg)
-        self.move_btn.setEnabled(is_cfg)
-        self.delete_btn.setEnabled(is_cfg)
-
-    # ------------------------------------------------------------------ open
-    def _on_item_double_clicked(self, item: QTreeWidgetItem, _col: int) -> None:
-        if item and item.data(0, Qt.UserRole):
-            self._selected_path = item.data(0, Qt.UserRole)
-            self.accept()
-
-    def _accept_selection(self) -> None:
-        path, _chip = self._current_cfg()
-        if path:
-            self._selected_path = path
-            self.accept()
-
-    def selected_path(self) -> str | None:
-        return self._selected_path
-
-    # ------------------------------------------------------------------ manage
-    def _on_new_config(self) -> None:
-        chips = self._chip_names()
-        chip, ok = QInputDialog.getItem(
-            self, "新增配置", "归属芯片（可输入新名称新建分类）：",
-            chips, 0, True)
-        if not ok or not chip.strip():
-            return
-        chip = self._safe(chip, "未分类芯片")
-        name, ok = QInputDialog.getText(
-            self, "新增配置", f"配置名称（归入芯片「{chip}」）：",
-            text=self._module_type)
-        if not ok:
-            return
-        name = self._safe(name, self._module_type)
-        target_dir = os.path.join(self._root, chip)
-        path = os.path.join(target_dir, f"{name}.json")
-        if os.path.exists(path):
-            QMessageBox.warning(self, "新增失败", f"配置「{name}」已存在。")
-            return
-        default_cfg = self._default_config(chip)
-        payload = {
-            "schema_version": _CONFIG_SCHEMA_VERSION,
-            "module_type": self._module_type,
-            "config": default_cfg,
-        }
-        try:
-            os.makedirs(target_dir, exist_ok=True)
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(payload, f, ensure_ascii=False, indent=2)
-        except OSError:
-            _logger.error("新增配置文件失败：%s", path, exc_info=True)
-            QMessageBox.warning(self, "新增失败", "配置写入失败，详见日志。")
-            return
-        self._populate(select_path=path)
-
-    def _default_config(self, chip: str) -> dict:
-        return {
-            "selected_items": [],
-            "chip_name": chip,
-            "module_name": "",
-            "operator": "",
-            "temp_test_enabled": False,
-            "temperature": "",
-            "temp_soak_s": 300,
-            "temp_tolerance_c": 2,
-            "temp_wait_s": 1800,
-            "vin_channel": "CH 1",
-            "vout_channel": "CH 2",
-            "iload_channel": "CH 3",
-            "vout_nominal_mv": 1800 if self._module_type == "ldo" else 1200,
-            "device_addr": "0x00",
-            "width_flag": int(I2CWidthFlag.BIT_10),
-            "scope_vout_channel": 1,
-            "item_overrides": {},
-        }
-
-    def _on_rename(self) -> None:
-        path, chip = self._current_cfg()
-        if not path:
-            return
-        old_name = os.path.splitext(os.path.basename(path))[0]
-        name, ok = QInputDialog.getText(
-            self, "重命名配置", "新的配置名称：", text=old_name)
-        if not ok:
-            return
-        name = self._safe(name, old_name)
-        if name == old_name:
-            return
-        new_path = os.path.join(os.path.dirname(path), f"{name}.json")
-        if os.path.exists(new_path):
-            QMessageBox.warning(self, "重命名失败", f"配置「{name}」已存在。")
-            return
-        try:
-            os.replace(path, new_path)
-        except OSError:
-            _logger.error("重命名配置失败：%s -> %s", path, new_path, exc_info=True)
-            QMessageBox.warning(self, "重命名失败", "无法重命名，详见日志。")
-            return
-        self._populate(select_path=new_path)
-
-    def _on_move(self) -> None:
-        path, chip = self._current_cfg()
-        if not path:
-            return
-        chips = self._chip_names()
-        current_idx = chips.index(chip) if chip in chips else 0
-        target, ok = QInputDialog.getItem(
-            self, "移动归属", f"将配置移到哪个芯片分类（可输入新名称）：",
-            chips, current_idx, True)
-        if not ok or not target.strip():
-            return
-        target = self._safe(target, chip)
-        if target == chip:
-            return
-        fname = os.path.basename(path)
-        target_dir = os.path.join(self._root, target)
-        new_path = os.path.join(target_dir, fname)
-        if os.path.exists(new_path):
-            QMessageBox.warning(
-                self, "移动失败",
-                f"芯片「{target}」下已存在同名配置「{os.path.splitext(fname)[0]}」。")
-            return
-        try:
-            os.makedirs(target_dir, exist_ok=True)
-            shutil.move(path, new_path)
-        except OSError:
-            _logger.error("移动配置失败：%s -> %s", path, new_path, exc_info=True)
-            QMessageBox.warning(self, "移动失败", "无法移动配置，详见日志。")
-            return
-        self._populate(select_path=new_path)
-
-    def _on_delete(self) -> None:
-        path, chip = self._current_cfg()
-        if not path:
-            return
-        name = os.path.splitext(os.path.basename(path))[0]
-        resp = QMessageBox.question(
-            self, "删除确认",
-            f"确定删除配置「{name}」（芯片「{chip}」）？此操作不可恢复。",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        if resp != QMessageBox.Yes:
-            return
-        try:
-            os.remove(path)
-        except OSError:
-            _logger.error("删除配置失败：%s", path, exc_info=True)
-            QMessageBox.warning(self, "删除失败", "无法删除配置，详见日志。")
-            return
-        self._populate()
+    def show_connection_panel(self) -> None:
+        self.left_rail.show_connection()
+    # AI 契约（ai_* / _register_ai_ui_actions）由 _sections/ai_contract.py 的
+    # ModuleTestAIContract mixin 提供。
