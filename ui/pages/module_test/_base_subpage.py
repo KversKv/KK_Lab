@@ -60,6 +60,8 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
     PAGE_KEY: str = ""
     ITEMS_REGISTRY: dict[str, tuple[str, Any, bool, bool]] = {}
     RUNNER_CLS: type = None  # type: ignore[assignment]
+    # 单独测试项（item_key 列表）：从自动测试区域拆出，归入"单独测试项"分组
+    STANDALONE_ITEMS: tuple[str, ...] = ()
 
     def __init__(self, *, n6705c_top=None, mso64b_top=None, chamber_ui=None,
                  instrument_manager=None, ui_action_registry=None):
@@ -79,6 +81,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         self._last_report_path: str | None = None
         self._item_overrides: dict[str, dict] = {}
         self._current_config_path: str | None = None
+        self._item_tables: list[QTableWidget] = []
 
         self._setup_style()
         self._build_ui()
@@ -368,15 +371,33 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
     def _build_items_group(self) -> "CollapsibleGroupBox":
         box = CollapsibleGroupBox("Test Items (check to run)", expanded=True)
         lay = box.content_layout
-        self.items_table = QTableWidget(0, 5)
-        self.items_table.setHorizontalHeaderLabels(["选", "测试项", "主要仪器", "判定/记录", "参数"])
-        self.items_table.verticalHeader().setVisible(False)
-        self.items_table.verticalHeader().setDefaultSectionSize(30)
-        self.items_table.setSelectionMode(QTableWidget.NoSelection)
-        self.items_table.setShowGrid(False)
-        self.items_table.setAlternatingRowColors(True)
-        self.items_table.setFocusPolicy(Qt.NoFocus)
-        header = self.items_table.horizontalHeader()
+
+        standalone = [k for k in self.STANDALONE_ITEMS if k in self.ITEMS_REGISTRY]
+        auto = [k for k in self.ITEMS_REGISTRY if k not in self.STANDALONE_ITEMS]
+        self._item_groups: list[tuple[str, list[str]]] = [("自动测试区域", auto)]
+        if standalone:
+            self._item_groups.append(("单独测试项", standalone))
+
+        self._item_tables = []
+        for _group_idx, (title, _keys) in enumerate(self._item_groups):
+            lbl = QLabel(title)
+            lbl.setObjectName("cardTitle")
+            lay.addWidget(lbl)
+            table = self._make_items_table(_group_idx)
+            lay.addWidget(table)
+            self._item_tables.append(table)
+        return box
+
+    def _make_items_table(self, group_idx: int) -> QTableWidget:
+        table = QTableWidget(0, 5)
+        table.setHorizontalHeaderLabels(["选", "测试项", "主要仪器", "判定/记录", "参数"])
+        table.verticalHeader().setVisible(False)
+        table.verticalHeader().setDefaultSectionSize(30)
+        table.setSelectionMode(QTableWidget.NoSelection)
+        table.setShowGrid(False)
+        table.setAlternatingRowColors(True)
+        table.setFocusPolicy(Qt.NoFocus)
+        header = table.horizontalHeader()
         header.setHighlightSections(False)
         header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         header.setSectionResizeMode(0, QHeaderView.Fixed)
@@ -384,18 +405,20 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(4, QHeaderView.Fixed)
-        self.items_table.setColumnWidth(0, 44)
-        self.items_table.setColumnWidth(4, 64)
+        table.setColumnWidth(0, 44)
+        table.setColumnWidth(4, 64)
         # 给清单足够高度显示全部行（表头 + 各测试项行），避免被 stretch 压扁导致内容截断
-        self.items_table.setMinimumHeight(
-            self.items_table.horizontalHeader().sizeHint().height()
-            + len(self.ITEMS_REGISTRY) * 30 + 8
+        table.setMinimumHeight(
+            table.horizontalHeader().sizeHint().height()
+            + len(self._item_groups[group_idx][1]) * 30 + 8
         )
-        self.items_table.setSizePolicy(self.items_table.sizePolicy().horizontalPolicy(),
-                                       QSizePolicy.Expanding)
-        self.items_table.itemChanged.connect(self._on_item_changed)
-        lay.addWidget(self.items_table)
-        return box
+        table.setSizePolicy(table.sizePolicy().horizontalPolicy(),
+                            QSizePolicy.Expanding)
+        table.itemChanged.connect(self._on_item_changed)
+        return table
+
+    def _iter_item_tables(self) -> list[QTableWidget]:
+        return self._item_tables
 
     def _build_action_row(self) -> QWidget:
         row = QWidget()
@@ -437,32 +460,35 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
 
     # ------------------------------------------------------------------ items table
     def _populate_item_table(self):
-        self.items_table.setRowCount(0)
-        for item_key, spec in self.ITEMS_REGISTRY.items():
-            name, _run_fn, needs_scope, item_checked, _params = spec
-            row = self.items_table.rowCount()
-            self.items_table.insertRow(row)
-            chk = QTableWidgetItem()
-            chk.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
-            chk.setTextAlignment(Qt.AlignCenter)
-            chk.setCheckState(Qt.Checked if item_checked else Qt.Unchecked)
-            self.items_table.setItem(row, 0, chk)
-            name_item = QTableWidgetItem(name)
-            name_item.setFlags(Qt.ItemIsEnabled)
-            name_item.setData(Qt.UserRole, item_key)
-            self.items_table.setItem(row, 1, name_item)
-            inst = "示波器" if needs_scope else "N6705C"
-            inst_item = QTableWidgetItem(inst)
-            inst_item.setFlags(Qt.ItemIsEnabled)
-            inst_item.setTextAlignment(Qt.AlignCenter)
-            inst_item.setForeground(QColor(Colors.warning if needs_scope else Colors.info))
-            inst_item.setData(Qt.UserRole, needs_scope)
-            self.items_table.setItem(row, 2, inst_item)
-            rec_item = QTableWidgetItem("记录")
-            rec_item.setFlags(Qt.ItemIsEnabled)
-            rec_item.setForeground(QColor(Colors.text_muted))
-            self.items_table.setItem(row, 3, rec_item)
-            self.items_table.setCellWidget(row, 4, self._make_settings_cell(item_key, _params))
+        for group_idx, (_title, keys) in enumerate(self._item_groups):
+            table = self._item_tables[group_idx]
+            table.setRowCount(0)
+            for item_key in keys:
+                spec = self.ITEMS_REGISTRY[item_key]
+                name, _run_fn, needs_scope, item_checked, _params = spec
+                row = table.rowCount()
+                table.insertRow(row)
+                chk = QTableWidgetItem()
+                chk.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
+                chk.setTextAlignment(Qt.AlignCenter)
+                chk.setCheckState(Qt.Checked if item_checked else Qt.Unchecked)
+                table.setItem(row, 0, chk)
+                name_item = QTableWidgetItem(name)
+                name_item.setFlags(Qt.ItemIsEnabled)
+                name_item.setData(Qt.UserRole, item_key)
+                table.setItem(row, 1, name_item)
+                inst = "示波器" if needs_scope else "N6705C"
+                inst_item = QTableWidgetItem(inst)
+                inst_item.setFlags(Qt.ItemIsEnabled)
+                inst_item.setTextAlignment(Qt.AlignCenter)
+                inst_item.setForeground(QColor(Colors.warning if needs_scope else Colors.info))
+                inst_item.setData(Qt.UserRole, needs_scope)
+                table.setItem(row, 2, inst_item)
+                rec_item = QTableWidgetItem("记录")
+                rec_item.setFlags(Qt.ItemIsEnabled)
+                rec_item.setForeground(QColor(Colors.text_muted))
+                table.setItem(row, 3, rec_item)
+                table.setCellWidget(row, 4, self._make_settings_cell(item_key, _params))
 
     def _make_settings_cell(self, item_key: str, params) -> QWidget:
         cell = QWidget()
@@ -504,16 +530,21 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
 
     def _mark_item_customized(self, item_key: str):
         """在测试项名后打标，直观区分已自定义参数的项。"""
-        for row in range(self.items_table.rowCount()):
-            name_item = self.items_table.item(row, 1)
-            if name_item and name_item.data(Qt.UserRole) == item_key:
-                base_name = self.ITEMS_REGISTRY[item_key][0]
-                if item_key in self._item_overrides:
-                    name_item.setText(f"{base_name}  ●")
-                    name_item.setForeground(QColor(Colors.text_accent))
-                else:
-                    name_item.setText(base_name)
-                    name_item.setForeground(QColor(Colors.text_secondary))
+        for table in self._iter_item_tables():
+            found = False
+            for row in range(table.rowCount()):
+                name_item = table.item(row, 1)
+                if name_item and name_item.data(Qt.UserRole) == item_key:
+                    base_name = self.ITEMS_REGISTRY[item_key][0]
+                    if item_key in self._item_overrides:
+                        name_item.setText(f"{base_name}  ●")
+                        name_item.setForeground(QColor(Colors.text_accent))
+                    else:
+                        name_item.setText(base_name)
+                        name_item.setForeground(QColor(Colors.text_secondary))
+                    found = True
+                    break
+            if found:
                 break
 
     def _base_param_value(self, base_key: str):
@@ -526,32 +557,34 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
 
     def _selected_item_keys(self) -> list[str]:
         keys: list[str] = []
-        for row in range(self.items_table.rowCount()):
-            chk = self.items_table.item(row, 0)
-            name_item = self.items_table.item(row, 1)
-            if chk and chk.checkState() == Qt.Checked and name_item:
-                keys.append(name_item.data(Qt.UserRole))
+        for table in self._iter_item_tables():
+            for row in range(table.rowCount()):
+                chk = table.item(row, 0)
+                name_item = table.item(row, 1)
+                if chk and chk.checkState() == Qt.Checked and name_item:
+                    keys.append(name_item.data(Qt.UserRole))
         return keys
 
     def _refresh_scope_item_state(self):
-        """未接示波器时灰化 (scope) 项并提示。"""
+        """示波器连接状态联动提示。
+
+        所有测试项始终可勾选；启动测试时统一校验所需仪器（见
+        _missing_instruments），此处仅在记录列给出"未接示波器"提醒。
+        """
         scope_ok = self.scope_connected
-        for row in range(self.items_table.rowCount()):
-            inst_item = self.items_table.item(row, 2)
-            chk = self.items_table.item(row, 0)
-            if inst_item is None or chk is None:
-                continue
-            needs_scope = bool(inst_item.data(Qt.UserRole))
-            if needs_scope and not scope_ok:
-                chk.setCheckState(Qt.Unchecked)
-                chk.setFlags(Qt.ItemIsEnabled)
-                rec = self.items_table.item(row, 3)
-                rec.setText("未接示波器，跳过")
-                rec.setForeground(QColor(Colors.warning))
-            else:
+        for table in self._iter_item_tables():
+            for row in range(table.rowCount()):
+                inst_item = table.item(row, 2)
+                chk = table.item(row, 0)
+                if inst_item is None or chk is None:
+                    continue
+                needs_scope = bool(inst_item.data(Qt.UserRole))
                 chk.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
-                rec = self.items_table.item(row, 3)
-                if rec.text().startswith("未接示波器"):
+                rec = table.item(row, 3)
+                if needs_scope and not scope_ok:
+                    rec.setText("未接示波器")
+                    rec.setForeground(QColor(Colors.warning))
+                elif rec.text().startswith("未接示波器"):
                     rec.setText("记录")
                     rec.setForeground(QColor(Colors.text_muted))
 
@@ -669,15 +702,14 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         selected = cfg.get("selected_items")
         if isinstance(selected, list):
             sel_set = set(selected)
-            for row in range(self.items_table.rowCount()):
-                chk = self.items_table.item(row, 0)
-                name_item = self.items_table.item(row, 1)
-                if chk is None or name_item is None:
-                    continue
-                if not (chk.flags() & Qt.ItemIsUserCheckable):
-                    continue  # 未接示波器等被禁用的项不强行勾选
-                key = name_item.data(Qt.UserRole)
-                chk.setCheckState(Qt.Checked if key in sel_set else Qt.Unchecked)
+            for table in self._iter_item_tables():
+                for row in range(table.rowCount()):
+                    chk = table.item(row, 0)
+                    name_item = table.item(row, 1)
+                    if chk is None or name_item is None:
+                        continue
+                    key = name_item.data(Qt.UserRole)
+                    chk.setCheckState(Qt.Checked if key in sel_set else Qt.Unchecked)
 
         # 参数覆写
         overrides = cfg.get("item_overrides")
@@ -791,6 +823,23 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         dlg.show()
 
     # ------------------------------------------------------------------ test flow
+    def _missing_instruments(self, cfg: dict) -> list[str]:
+        """启动前校验：汇总本次勾选项全程所需但未连接的仪器（空列表=齐全）。
+
+        所有项依赖 N6705C；注册表 needs_scope 项额外依赖示波器。
+        DEBUG_MOCK 下全部放行（Mock 数据不依赖真实连接）。
+        """
+        if DEBUG_MOCK:
+            return []
+        missing: list[str] = []
+        if not self.is_connected or self.n6705c is None:
+            missing.append("N6705C 电源分析仪")
+        scope_names = [self.ITEMS_REGISTRY[k][0] for k in cfg.get("selected_items", [])
+                       if k in self.ITEMS_REGISTRY and self.ITEMS_REGISTRY[k][2]]
+        if scope_names and not self.scope_connected:
+            missing.append(f"示波器（{len(scope_names)} 个勾选项需要：{'、'.join(scope_names)}）")
+        return missing
+
     def _on_start_test(self):
         if self.is_test_running:
             return
@@ -798,10 +847,15 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         if not cfg["selected_items"]:
             self.execution_logs.append_log("[WARN] 未勾选任何测试项，无法启动。")
             return
-        if not self.is_connected or self.n6705c is None:
-            if not DEBUG_MOCK:
-                self.execution_logs.append_log("[ERROR] 未连接 N6705C，请先连接。")
-                return
+        missing = self._missing_instruments(cfg)
+        if missing:
+            detail = "；".join(missing)
+            self.execution_logs.append_log(f"[ERROR] 仪器未连接，无法开始测试：{detail}")
+            QMessageBox.warning(
+                self, "无法开始测试",
+                "以下仪器未连接，请先连接后再开始测试：\n\n"
+                + "\n".join(f"· {m}" for m in missing))
+            return
         scope = self.Osc_ins if self.scope_connected else None
         self._runner = self.RUNNER_CLS(
             config=cfg, n6705c=self.n6705c, scope=scope, chamber=None,
@@ -872,10 +926,9 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
 
     def _on_select_all_items(self):
         # 切换：存在未勾选项 → 全选；已全部勾选 → 取消全选
-        rows = [
-            self.items_table.item(r, 0)
-            for r in range(self.items_table.rowCount())
-        ]
+        rows = []
+        for table in self._iter_item_tables():
+            rows.extend(table.item(r, 0) for r in range(table.rowCount()))
         checkable = [
             c for c in rows
             if c and (c.flags() & Qt.ItemIsUserCheckable) and (c.flags() & Qt.ItemIsEnabled)
@@ -928,10 +981,10 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         self._refresh_scope_item_state()
 
     def _on_mso64b_top_changed(self):
-        """顶层示波器连接状态变化时联动刷新 (scope) 项。
+        """顶层示波器连接状态变化时联动刷新 (scope) 项提示。
 
         mixin 只更新 scope_connected，不触碰测试项表；不覆盖则连接示波器后
-        (scope) 项仍显示"未接示波器，跳过"且保持禁用（需切换页面才恢复）。
+        (scope) 项仍残留"未接示波器"提示（需切换页面才恢复）。
         """
         super()._on_mso64b_top_changed()
         if getattr(self, "is_test_running", False):
@@ -961,20 +1014,16 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         return self.apply_config_to_controls(payload if isinstance(payload, dict) else {})
 
     def ai_start_test(self) -> tuple[bool, str]:
-        if not self.is_connected or self.n6705c is None:
-            if not DEBUG_MOCK:
-                return False, "未连接 N6705C 仪器，请先连接再启动测试。"
         if self.is_test_running:
             return False, "测试已在运行中。"
         cfg = self.get_test_config()
         if not cfg.get("selected_items"):
             return False, "未勾选任何测试项，请先勾选。"
-        scope_items = [k for k in cfg["selected_items"]
-                       if self.ITEMS_REGISTRY.get(k, (None, None, False, False))[2]]
-        if scope_items and not self.scope_connected:
-            self.execution_logs.append_log(
-                f"[AI] 注意：勾选了示波器项 {scope_items}，但未连接示波器，这些项将跳过。"
-            )
+        missing = self._missing_instruments(cfg)
+        if missing:
+            detail = "；".join(missing)
+            self.execution_logs.append_log(f"[AI] 启动被拒绝：仪器未连接：{detail}")
+            return False, f"仪器未连接，无法启动测试：{detail}。"
         self.execution_logs.append_log(
             f"[AI] 请求启动 {self.MODULE_TYPE.upper()} 测试，勾选 {len(cfg['selected_items'])} 项。"
         )

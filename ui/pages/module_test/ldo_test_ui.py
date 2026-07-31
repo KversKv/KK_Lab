@@ -15,3 +15,4 @@ class LDOTestUI(ModuleTestSubPageBase):
     PAGE_KEY = "module_test_ldo"
     ITEMS_REGISTRY = LDO_ITEMS
     RUNNER_CLS = LDOTestRunner
+    STANDALONE_ITEMS = ("ldo_psrr", "ldo_protection")

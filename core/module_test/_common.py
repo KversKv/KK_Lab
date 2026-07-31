@@ -709,9 +709,17 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
                     ctx.scope.close_all_channels()
                 if hasattr(ctx.scope, "set_waveform_intensity"):
                     ctx.scope.set_waveform_intensity(100)
+                # 先强制 run：示波器可能停在上一项的 stop 态，停采态下改
+                # 时基/量程只会重绘旧帧，settle 再久也采不到新波形
+                ctx.scope.run()
                 # 初始 scale=vspan/3 留余量；时基=period/2，10 格整屏约 5 周期
                 ctx.scope.set_timebase_scale(period / 2.0)
                 ctx.scope.set_channel_display(scope_ch, True)
+                # 改时基/通道后须先等示波器采满一屏新波形，否则后续测量/截图
+                # 抓到的是旧时基下的过渡帧（首组时基突变最明显）。
+                # 等待 60×时基（1s 下限保证高频组时基过小时仍有 ≥1s），
+                # 与 Load Transient 等待逻辑对齐
+                settle(ctx, max(1.0, 60.0 * (period / 2.0)))
                 # 测量无效（削波 9.9e37）时量程自动翻倍重试直至波形完整入屏；
                 # timebase=period/2 传入，采集稳定等待取 max(1s, 6×时基)
                 try:

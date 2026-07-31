@@ -15,3 +15,7 @@ class DCDCTestUI(ModuleTestSubPageBase):
     PAGE_KEY = "module_test_dcdc"
     ITEMS_REGISTRY = DCDC_ITEMS
     RUNNER_CLS = DCDCTestRunner
+    STANDALONE_ITEMS = (
+        "dcdc_psrr", "dcdc_inductor_current", "dcdc_startup",
+        "dcdc_protection", "dcdc_topology",
+    )
