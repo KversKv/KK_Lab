@@ -19,6 +19,7 @@
 - `TEST_TAB_MAP`：`ldo=0 / dcdc=1`；暴露 `set_current_test / get_current_test / _sync_from_top` 供枢纽调用。
 - 共享基类 [_base_subpage.py](./_base_subpage.py)：两子页（LDO/DCDC）复用的被测配置区 / AI 契约。
 - **P3 重构（2026-07-31）**：顶层改 `CommandBar + QStackedWidget`（弃隐藏 tabBar 的 QTabWidget）；子页布局 = LeftRail(连接/DUT Card) + QSplitter(TestPlanPanel | DetailDock) + RunControlBar；运行态 `RunState` + `_apply_run_state()` 单一入口；旧控件入口 [widgets.py](./widgets.py) 仅作 re-export shim（CollapsibleGroupBox→Card / ItemParamsDialog→dialogs/ / _GroupsEditor→GroupsTableEditor），P5 删除；`prompt_config_manager_once()` 默认改为非模态 InfoBanner（`force_dialog=True` 兼容旧弹窗）。
+- **样式/主题（P0/W1/W2，2026-07-31）**：色值/样式一律走 `ui/theme/`（tokens + `qss/*.qss`），组件经 `apply_qss(w, name)` 注入（全 ui/ 唯一 setStyleSheet 白名单点），禁止内联 `setStyleSheet` 与裸 `#RRGGBB`；`ui.theme.Colors/FontSizes/Radius` 为 deprecated 别名（DeprecationWarning）。日志面板用 `LogPanel`（包装 `ExecutionLogsFrame`：限批 flush/20000 行上限/右键菜单）；**等级过滤为多选 chips**（`_LevelChipsFilter`，All/Info/Warning/Error/Debug，`_active_levels` 空集=全显，`_set_level_filter` 兼容入口保留），`_PillSwitcher` 已 deprecated。
 
 ## 局部约定
 

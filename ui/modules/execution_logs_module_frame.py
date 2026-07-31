@@ -16,6 +16,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtCore import QPropertyAnimation
 from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
+from ui.theme import apply_qss, load_qss, refresh_style
 
 
 _SVG_DIR = os.path.join(
@@ -46,147 +47,87 @@ _DEFAULT_LOG_COLOR = "#c8d8f0"
 _COLLAPSED_HEIGHT = 30
 _DEFAULT_HEIGHT = 200
 
-_LOG_SPLITTER_STYLE = """
-    QSplitter::handle {
-        background-color: transparent;
-    }
-    QSplitter::handle:hover {
-        background-color: #18284d;
-    }
-    QSplitter::handle:pressed {
-        background-color: #5b7cff;
-    }
-"""
+# W2-a：样式文本迁 ui/theme/qss/（1:1，基准比对见 tests/_w2_baseline.py）。
+# 保留模块级常量名以免外部引用断裂（deprecated，P5 后清理）。
+_LOG_SPLITTER_STYLE = load_qss("log_splitter")
 
-_LOG_FRAME_STYLE = """
-    QFrame#logContainer {
-        background-color: #0a1628;
-        border: 1px solid #1a2d50;
-        border-radius: 12px;
-    }
-    QFrame#logContainer QLabel#sectionTitle {
-        font-size: 12px;
-        font-weight: 700;
-        color: #f4f7ff;
-        background-color: transparent;
-        padding: 0px;
-        margin: 0px;
-    }
-    QFrame#logContainer QLabel#fieldLabel {
-        color: #8eb0e3;
-        font-size: 11px;
-        background-color: transparent;
-    }
-    QFrame#logContainer QLabel#statusLabel {
-        color: #6b83b0;
-        font-size: 10px;
-        background-color: transparent;
-    }
-    QFrame#logContainer QLabel#autoScrollLabel {
-        color: #7b93bf;
-        font-size: 10px;
-        background-color: transparent;
-    }
-    QFrame#logContainer QPushButton#smallActionBtn {
-        min-height: 0px;
-        max-height: 22px;
-        padding: 2px 8px;
-        border-radius: 6px;
-        background-color: #111d35;
-        color: #dce7ff;
-        font-size: 10px;
-        border: 1px solid #1f315d;
-    }
-    QFrame#logContainer QPushButton#smallActionBtn:hover {
-        background-color: #1a2b4d;
-    }
-    QFrame#logContainer QPushButton#smallActionBtn:pressed {
-        background-color: #0c1830;
-    }
-    QFrame#logContainer QPushButton#smallActionBtn:checked {
-        background-color: #1e3a6d;
-        border: 1px solid #3b6bcf;
-    }
-    QFrame#logContainer QPushButton#iconOnlyBtn {
-        min-height: 0px;
-        max-height: 22px;
-        min-width: 22px;
-        max-width: 22px;
-        padding: 0px;
-        border-radius: 6px;
-        background-color: #111d35;
-        border: none;
-    }
-    QFrame#logContainer QPushButton#iconOnlyBtn:hover {
-        background-color: #1a2b4d;
-    }
-    QFrame#logContainer QPushButton#iconOnlyBtn:pressed {
-        background-color: #0c1830;
-    }
-    QFrame#logContainer QTextEdit#logEdit {
-        background-color: #050d1a;
-        border: none;
-        border-top: 1px solid #1a2d50;
-        border-top-left-radius: 0px;
-        border-top-right-radius: 0px;
-        border-bottom-left-radius: 14px;
-        border-bottom-right-radius: 14px;
-        color: #c8d8f0;
-        font-family: Consolas, "Courier New", monospace;
-        font-size: 13px;
-        padding: 10px 14px;
-        selection-background-color: #1e3a6d;
-    }
-    QFrame#logContainer QProgressBar {
-        background-color: #152749;
-        border: none;
-        border-radius: 4px;
-        text-align: center;
-        color: #b7c8ea;
-        min-height: 8px;
-        max-height: 8px;
-    }
-    QFrame#logContainer QProgressBar::chunk {
-        background-color: #5b5cf6;
-        border-radius: 4px;
-    }
-    QFrame#logContainer QLineEdit#searchInput {
-        background-color: #0c1a32;
-        border: 1px solid #1f315d;
-        border-radius: 6px;
-        color: #c8d8f0;
-        font-size: 10px;
-        padding: 2px 6px 2px 6px;
-        min-height: 20px;
-        max-height: 20px;
-    }
-    QFrame#logContainer QLineEdit#searchInput:focus {
-        border: 1px solid #3b6bcf;
-    }
-    QFrame#logContainer QMenu {
-        background-color: #0d1f42;
-        border: 1px solid #1f315d;
-        border-radius: 6px;
-        padding: 4px;
-        color: #c8d8f0;
-        font-size: 10px;
-    }
-    QFrame#logContainer QMenu::item {
-        padding: 4px 16px;
-        border-radius: 4px;
-    }
-    QFrame#logContainer QMenu::item:selected {
-        background-color: #1a2b4d;
-    }
-    QFrame#logContainer QMenu::separator {
-        height: 1px;
-        background: #1f315d;
-        margin: 2px 8px;
-    }
-"""
+_LOG_FRAME_STYLE = load_qss("log_frame")
+
+
+class _LevelChipsFilter(QWidget):
+    """等级多选 chips（W2-b）：All + Info/Warning/Error/Debug 可多选组合过滤。
+
+    - ``changed(set)``：当前选中的等级集合（空集 = 等同 All，显示全部）；
+    - All 是互斥快捷项：点 All 清空其它；点其它项自动取消 All；
+    - 样式走 ``QPushButton#levelChip[:checked]``（log_frame.qss）。
+    """
+
+    changed = Signal(set)
+
+    # (level_key, label, dot_color)
+    _ITEMS = [
+        ("INFO", "Info", "#38bdf8"),
+        ("WARNING", "Warning", "#f59e0b"),
+        ("ERROR", "Error", "#ef4444"),
+        ("DEBUG", "Debug", "#a78bfa"),
+    ]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(4)
+
+        self._all_btn = QPushButton("All")
+        self._all_btn.setObjectName("levelChip")
+        self._all_btn.setCheckable(True)
+        self._all_btn.setChecked(True)
+        self._all_btn.setCursor(Qt.PointingHandCursor)
+        self._all_btn.clicked.connect(self._on_all)
+        lay.addWidget(self._all_btn)
+
+        self._chips: dict[str, QPushButton] = {}
+        for key, label, _color in self._ITEMS:
+            btn = QPushButton(label)
+            btn.setObjectName("levelChip")
+            btn.setCheckable(True)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setToolTip(f"仅显示 {label} 级日志（可组合多选）")
+            btn.clicked.connect(lambda _c=False, k=key: self._on_chip(k))
+            self._chips[key] = btn
+            lay.addWidget(btn)
+
+    def _on_all(self) -> None:
+        for btn in self._chips.values():
+            btn.setChecked(False)
+        self._all_btn.setChecked(True)
+        self.changed.emit(set())
+
+    def _on_chip(self, _key: str) -> None:
+        # 有任一 chip 选中则取消 All；全不选回退 All（避免"什么都不显示"死态）
+        any_checked = any(b.isChecked() for b in self._chips.values())
+        self._all_btn.setChecked(not any_checked)
+        self.changed.emit(self.selected_levels())
+
+    def selected_levels(self) -> set:
+        """当前选中等级集合；All 选中或全不选时返回空集（= 显示全部）。"""
+        if self._all_btn.isChecked():
+            return set()
+        return {k for k, b in self._chips.items() if b.isChecked()}
+
+    def set_levels(self, levels) -> None:
+        levels = set(levels or [])
+        self._all_btn.setChecked(not levels)
+        for k, btn in self._chips.items():
+            btn.setChecked(k in levels)
+        self.changed.emit(self.selected_levels())
 
 
 class _PillSwitcher(QWidget):
+    """[deprecated] 单选 Pill 切换器（W2-b 起由 _LevelChipsFilter 多选 chips 替代）。
+
+    保留仅为兼容潜在外部引用，ExecutionLogsFrame 内部已不使用。
+    """
 
     changed = Signal(str)
 
@@ -445,12 +386,12 @@ class ExecutionLogsFrame(QFrame):
         super().__init__(parent)
         self.setObjectName("logContainer")
         self._show_progress = show_progress
-        self.setStyleSheet(_LOG_FRAME_STYLE)
+        apply_qss(self, "log_frame")
 
         self._all_logs = []
         self._auto_scroll = True
         self._programmatic_scroll = False
-        self._active_level_filter = "ALL"
+        self._active_levels = set()   # 空集 = 显示全部（W2-b 多选 chips）
         self._keyword_filter = ""
         self._start_time = None
         self._current_step_text = ""
@@ -464,7 +405,8 @@ class ExecutionLogsFrame(QFrame):
         root.setSpacing(0)
 
         self._header_widget = QWidget()
-        self._header_widget.setStyleSheet("background: transparent;")
+        self._header_widget.setObjectName("logHeader")
+        self._header_widget.setProperty("transparent", True)
         header_layout = QVBoxLayout(self._header_widget)
         header_layout.setContentsMargins(10, 6, 10, 6)
         header_layout.setSpacing(4)
@@ -479,7 +421,7 @@ class ExecutionLogsFrame(QFrame):
             icon_label = QLabel()
             icon_label.setPixmap(title_icon.pixmap(14, 14))
             icon_label.setFixedSize(16, 16)
-            icon_label.setStyleSheet("background: transparent;")
+            icon_label.setProperty("transparent", True)
             toolbar.addWidget(icon_label)
 
         self.log_title = QLabel(title)
@@ -488,9 +430,9 @@ class ExecutionLogsFrame(QFrame):
 
         toolbar.addSpacing(4)
 
-        self._pill_switcher = _PillSwitcher()
-        self._pill_switcher.changed.connect(self._on_pill_changed)
-        toolbar.addWidget(self._pill_switcher)
+        self._level_chips = _LevelChipsFilter()
+        self._level_chips.changed.connect(self._on_levels_changed)
+        toolbar.addWidget(self._level_chips)
 
         toolbar.addSpacing(4)
 
@@ -560,7 +502,8 @@ class ExecutionLogsFrame(QFrame):
 
         if show_progress:
             self._status_row = QWidget()
-            self._status_row.setStyleSheet("background: transparent;")
+            self._status_row.setObjectName("logStatusRow")
+            self._status_row.setProperty("transparent", True)
             self._status_row.setVisible(False)
             status_layout = QHBoxLayout(self._status_row)
             status_layout.setContentsMargins(0, 0, 0, 0)
@@ -618,7 +561,7 @@ class ExecutionLogsFrame(QFrame):
 
         splitter = QSplitter(Qt.Vertical)
         splitter.setHandleWidth(4)
-        splitter.setStyleSheet(_LOG_SPLITTER_STYLE)
+        apply_qss(splitter, "log_splitter")
         splitter.addWidget(content_widget)
         splitter.addWidget(logs)
         splitter.setStretchFactor(0, stretch[0])
@@ -708,9 +651,8 @@ class ExecutionLogsFrame(QFrame):
             item = lay.itemAt(i)
             w = item.widget()
             if w is not None:
-                if w is self._pill_switcher:
-                    # 始终按展开（带文字）宽度计算阈值
-                    total += self._pill_switcher._expanded_width()
+                if w is self._level_chips:
+                    total += w.sizeHint().width()
                     count += 1
                 elif w is self._search_input:
                     # 即使当前隐藏，也按其展开所需最小宽度计入阈值
@@ -754,19 +696,23 @@ class ExecutionLogsFrame(QFrame):
         self._responsive_inited = True
         self._responsive_compact = compact
 
-        self._pill_switcher.setCompact(compact)
         self._search_input.setVisible(not compact)
         for btn in (getattr(self, "export_btn", None), self.clear_btn):
             if btn is not None:
                 self._set_btn_compact(btn, compact)
 
-    def _on_pill_changed(self, key: str):
-        self._active_level_filter = key
+    def _on_levels_changed(self, levels: set):
+        self._active_levels = set(levels or set())
         self._apply_filter()
 
     def _set_level_filter(self, level: str):
-        self._active_level_filter = level
-        self._pill_switcher.setCurrentKey(level)
+        """兼容旧单选入口："ALL" 清空集合，否则单选该等级。"""
+        if level == "ALL":
+            self._active_levels = set()
+            self._level_chips.set_levels(set())
+        else:
+            self._active_levels = {level}
+            self._level_chips.set_levels({level})
         self._apply_filter()
 
     def _on_keyword_changed(self, text: str):
@@ -781,20 +727,22 @@ class ExecutionLogsFrame(QFrame):
         if self._auto_scroll:
             self._scroll_to_bottom()
 
+    # 等级 → 归一化关键词集合（与 _parse_level 输出匹配）
+    _LEVEL_GROUPS = {
+        "INFO": {"INFO", "STEP", "SYSTEM", "START", "DONE", "PASS", "USER",
+                 "EXPORT", "TEMPLATE", "SUMMARY", "DATA"},
+        "WARNING": {"WARN", "WARNING"},
+        "ERROR": {"ERROR", "FAIL", "STOP"},
+        "DEBUG": {"DEBUG"},
+    }
+
     def _matches_filter(self, raw_msg: str) -> bool:
-        if self._active_level_filter == "ALL":
-            pass
-        elif self._active_level_filter == "WARNING":
+        if self._active_levels:  # 空集 = 显示全部
             lvl = _parse_level(raw_msg)
-            if lvl not in ("WARN", "WARNING"):
-                return False
-        elif self._active_level_filter == "ERROR":
-            lvl = _parse_level(raw_msg)
-            if lvl not in ("ERROR", "FAIL", "STOP"):
-                return False
-        else:
-            lvl = _parse_level(raw_msg)
-            if lvl != self._active_level_filter:
+            allowed = set()
+            for lv in self._active_levels:
+                allowed |= self._LEVEL_GROUPS.get(lv, {lv})
+            if lvl not in allowed:
                 return False
         if self._keyword_filter:
             if self._keyword_filter.lower() not in raw_msg.lower():

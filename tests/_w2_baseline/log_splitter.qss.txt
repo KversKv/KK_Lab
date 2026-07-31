@@ -1,0 +1,10 @@
+
+    QSplitter::handle {
+        background-color: transparent;
+    }
+    QSplitter::handle:hover {
+        background-color: #18284d;
+    }
+    QSplitter::handle:pressed {
+        background-color: #5b7cff;
+    }

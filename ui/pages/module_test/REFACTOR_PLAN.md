@@ -211,11 +211,13 @@ stateDiagram-v2
 | 键盘全流程：F5/Esc/Ctrl+S/Ctrl+O/Ctrl+F/Ctrl+L | 快捷键生效 | ✅ QShortcut 接线 |
 | 兼容层 `widgets.py` shim（CollapsibleGroupBox=Card / ItemParamsDialog / _GroupsEditor / DIALOG_QSS） | 旧导入兼容 | ✅ re-export + DeprecationWarning |
 
-### W2 — module_test 依赖链接口收口
+### W2 — module_test 依赖链接口收口（部分完成，2026-07-31）
 
 | 任务 | 验收标准 | 结果 |
 |---|---|---|
-| n6705c/oscilloscope/chamber/mcu_io/keysight/ch9114f/i2c_*/ExecutionLogsFrame（~12 文件/~250 处）QSS 抽离 | 机械迁移、选择器与色值不改、视觉零变化 | ☐ |
+| **W2-a 静态样式迁移**：`_LOG_FRAME_STYLE`/`_LOG_SPLITTER_STYLE` → `ui/theme/qss/{log_frame,log_splitter}.qss`；ExecutionLogsFrame 内部 `setStyleSheet` → `apply_qss`（含 transparent 容器改动态属性） | 渲染 1:1（基准比对）、视觉零变化 | ✅ `tests/_w2_baseline.py`：log_frame 124 行 / log_splitter 9 行逐行一致（新增 transparent/chip 规则为 W2 扩展，不改原行）。其余 `DARK_CARD_STYLE` ×5 经查均在 `if __name__=="__main__"` Demo 块内（非生产路径），不迁 |
+| **W2-b 等级多选 chips**（P4 遗留）：`_PillSwitcher` 单选 → `_LevelChipsFilter` 多选（All/Info/Warning/Error/Debug），`_active_level_filter:str` → `_active_levels:set`，`_matches_filter` 集合语义 + `_LEVEL_GROUPS` 归一化 | 多选组合过滤正确；`_set_level_filter` 兼容入口保留 | ✅ 冒烟全过（多选/回退 All/ERROR 组含 FAIL+STOP/DEBUG 独立/兼容入口）；`_PillSwitcher` 标 deprecated 保留 |
+| ⏸ 动态样式函数（`_connect_style(h,r)`/`_disconnect_style` 等 ~50 处）与 mcu_io(30 处) | 重构为 qss 动态属性选择器 | ⏸ 移交专项——非静态文本，触碰活跃连接交互，需真机回归，按「静态迁移优先」决策不并入本次 |
 
 ### P4 — 日志/结果性能 ✅（2026-07-31 完成）
 

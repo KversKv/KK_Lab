@@ -1,0 +1,12 @@
+/* log_splitter.qss — ExecutionLogsFrame.wrap_with 的 QSplitter 手柄样式（迁移）
+   1:1 移植。 */
+
+QSplitter::handle {
+    background-color: transparent;
+}
+QSplitter::handle:hover {
+    background-color: #18284d;
+}
+QSplitter::handle:pressed {
+    background-color: #5b7cff;
+}
