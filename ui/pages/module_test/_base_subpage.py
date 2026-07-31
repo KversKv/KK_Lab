@@ -310,15 +310,8 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         self.width_flag_combo.setCurrentIndex(1)
         grid.addWidget(self.width_flag_combo, 4, 3)
 
-        # —— Vout 外供源通道（静态电流差分测法用，供 Vout+偏置）——
-        grid.addWidget(self._field_label("Vout 源通道"), 5, 0)
-        self.vout_src_ch_combo = DarkComboBox()
-        self.vout_src_ch_combo.addItems([f"CH {i}" for i in range(1, 5)])
-        self.vout_src_ch_combo.setCurrentIndex(1)
-        grid.addWidget(self.vout_src_ch_combo, 5, 1)
-
         # —— 示波器输出电压通道（各 scope 测试项共用的 Vout 测量通道）——
-        grid.addWidget(self._field_label("示波器通道"), 5, 2)
+        grid.addWidget(self._field_label("示波器通道"), 5, 0)
         self.scope_vout_ch_combo = DarkComboBox()
         self.scope_vout_ch_combo.addItems([f"CH {i}" for i in range(1, 5)])
         self.scope_vout_ch_combo.setCurrentIndex(0)
@@ -577,7 +570,6 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
             "temp_wait_s": self.temp_wait_spin.value(),
             "vin_channel": self.vin_ch_combo.currentText(),
             "vout_channel": self.vout_ch_combo.currentText(),
-            "vout_source_channel": self.vout_src_ch_combo.currentText(),
             "iload_channel": self.iload_ch_combo.currentText(),
             "vout_nominal_mv": self.vout_nominal_spin.value(),
             "device_addr": self.device_addr_edit.text().strip(),
@@ -648,7 +640,6 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
             self.operator_edit.setText(str(cfg["operator"]))
         _set_combo(self.vin_ch_combo, cfg.get("vin_channel"))
         _set_combo(self.vout_ch_combo, cfg.get("vout_channel"))
-        _set_combo(self.vout_src_ch_combo, cfg.get("vout_source_channel"))
         _set_combo(self.iload_ch_combo, cfg.get("iload_channel"))
         if "scope_vout_channel" in cfg:
             _idx = int(cfg["scope_vout_channel"]) - 1
@@ -1241,7 +1232,6 @@ class _ConfigManagerDialog(QDialog):
             "temp_wait_s": 1800,
             "vin_channel": "CH 1",
             "vout_channel": "CH 2",
-            "vout_source_channel": "CH 2",
             "iload_channel": "CH 3",
             "vout_nominal_mv": 1800 if self._module_type == "ldo" else 1200,
             "device_addr": "0x00",

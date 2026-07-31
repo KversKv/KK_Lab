@@ -143,8 +143,7 @@ def quiescent(ctx: ItemContext) -> ItemResult:
     item_key = "ldo_quiescent"
     cfg = ctx.config
     vin_ch = parse_channel(cfg.get("vin_channel", 1))
-    vout_src_ch = parse_channel(cfg.get("vout_source_channel",
-                                        cfg.get("vout_channel", 2)))
+    vout_src_ch = parse_channel(cfg.get("vout_channel", 2))
     vin_v = float(cfg.get("vin_v", 3.8))
     vout_nom = float(cfg.get("vout_nominal_mv", 1800)) / 1000.0
     vout_offset = float(cfg.get("iq_vout_offset_mv", 20.0)) / 1000.0
