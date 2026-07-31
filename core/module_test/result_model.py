@@ -58,6 +58,7 @@ class ModuleTestResult:
     temperature: str = ""
     started_at: str = ""
     finished_at: str = ""
+    instruments: list[dict[str, Any]] = field(default_factory=list)  # [{name, model, sn}]
     items: list[ItemResult] = field(default_factory=list)
     summary: dict[str, Any] = field(default_factory=dict)
 

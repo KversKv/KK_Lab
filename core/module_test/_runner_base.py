@@ -83,6 +83,44 @@ class ModuleTestRunner(QThread):
     def _progress(self, percent: int, label: str) -> None:
         self.progress.emit(percent, label)
 
+    @staticmethod
+    def _query_idn(inst: Any) -> str:
+        """取仪器 *IDN? 标识（N6705C 无 identify()，用 .instr.query；示波器有
+        identify_instrument()；其它退 identify()）。失败返回空串，不阻断流程。"""
+        if inst is None:
+            return ""
+        try:
+            if hasattr(inst, "identify_instrument"):
+                return str(inst.identify_instrument()).strip()
+            if hasattr(inst, "identify"):
+                return str(inst.identify()).strip()
+            instr = getattr(inst, "instr", None)
+            if instr is not None and hasattr(instr, "query"):
+                return str(instr.query("*IDN?")).strip()
+        except Exception:  # noqa: BLE001 - IDN 失败不影响测试
+            logger.error("查询 *IDN? 失败", exc_info=True)
+        return ""
+
+    def _collect_instruments(self) -> list[dict[str, Any]]:
+        """汇总本次用到的仪器标识（厂商,型号,序列号,固件 → name/model/sn）。"""
+        entries: list[dict[str, Any]] = []
+        for label, inst in (("N6705C 电源分析仪", self._n6705c),
+                            ("示波器", self._scope),
+                            ("温箱", self._chamber)):
+            if inst is None:
+                continue
+            idn = self._query_idn(inst)
+            if not idn:
+                continue
+            parts = [p.strip() for p in idn.split(",")]
+            entries.append({
+                "name": label,
+                "model": parts[1] if len(parts) > 1 else idn,
+                "sn": parts[2] if len(parts) > 2 else None,
+                "idn": idn,
+            })
+        return entries
+
     def run(self):  # noqa: D401 - QThread 入口
         selected: list[str] = [k for k in self._cfg.get("selected_items", []) if k in self._items_registry]
         if not selected:
@@ -91,6 +129,7 @@ class ModuleTestRunner(QThread):
             return
 
         os.makedirs(self._out_dir, exist_ok=True)
+        self._result.instruments = self._collect_instruments()
         total = len(selected)
         self._log(f"[RUN] {self._module_type.upper()} Module Test 开始，共 {total} 项，输出目录: {self._out_dir}")
 

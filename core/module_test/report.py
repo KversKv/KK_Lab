@@ -552,7 +552,7 @@ def build_report_data(result: ModuleTestResult) -> dict[str, Any]:
             "generated_at": generated,
             "sw_version": _SW_VERSION,
             "hw_setup": None,
-            "instruments": [],
+            "instruments": list(getattr(result, "instruments", []) or []),
             "environment": {"ta_c": temp_c, "humidity_pct": None},
         },
         "summary": {

@@ -935,8 +935,10 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
                 # 抓到的是旧时基下的过渡帧（首组时基突变最明显）。
                 # 等待 60×时基：低频大时基（如 10Hz=50ms/div）需足够时长让 DSOX
                 # 在新时基下采满一屏并刷新显示，短 settle 会让 autoscale stop
-                # 定格在未采满的帧上（1s 下限保证高频组时基过小时仍有 ≥1s）
-                settle(ctx, max(1.0, 60.0 * (period / 2.0)))
+                # 定格在未采满的帧上（1s 下限保证高频组时基过小时仍有 ≥1s）；
+                # 首组额外 +3s：示波器刚初始化（关通道/设强度/改时基量程）后
+                # 首次采集建立更慢，多等 3s 确保首帧稳定
+                settle(ctx, max(1.0, 60.0 * (period / 2.0)) + (3.0 if idx == 0 else 0.0))
                 # 测量无效（削波 9.9e37）时量程自动翻倍重试直至波形完整入屏，
                 # 最多 5 次（10→20→40→80→160 mV/div）；
                 # timebase=period/2 传入，采集稳定等待取 max(1s, 6×时基)

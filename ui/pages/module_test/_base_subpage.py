@@ -82,6 +82,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         self._item_overrides: dict[str, dict] = {}
         self._current_config_path: str | None = None
         self._item_tables: list[QTableWidget] = []
+        self._run_selected_keys: list[str] = []
 
         self._setup_style()
         self._build_ui()
@@ -124,10 +125,6 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
             }}
             QTableWidget {{
                 alternate-background-color: {Colors.bg_panel};
-            }}
-            /* 运行状态：整表文字压暗，由逐项前景色凸显 等待中/进行中/已完成 */
-            QTableWidget[runningMode="true"]::item {{
-                color: {Colors.text_muted};
             }}
             QPushButton#stopBtn:disabled {{
                 background-color: {Colors.disabled_btn_bg};
@@ -401,6 +398,9 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         table.setShowGrid(False)
         table.setAlternatingRowColors(True)
         table.setFocusPolicy(Qt.NoFocus)
+        # 全局 table QSS 在 QTableWidget 选择器设了 color，会盖过逐项 setForeground；
+        # 关掉 QSS 调色板，运行状态色（等待中/进行中/PASS/FAIL）才能生效
+        table.setStyleSheet("QTableWidget { color: palette(text); }")
         header = table.horizontalHeader()
         header.setHighlightSections(False)
         header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
@@ -437,14 +437,11 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
     def _enter_run_state(self, selected_keys: list[str]) -> None:
         """开始测试：清单进入运行状态（锁定勾选，记录列显示 等待中/未选）。
 
-        颜色语义：等待中=warning，进行中=info，PASS=success，FAIL=error；
-        runningMode 属性让整表默认文字压暗，逐项前景色由此凸显状态。
+        颜色语义（逐项 setForeground 控制）：等待中=warning，进行中=info，
+        PASS=success，FAIL=error，N/A=info，未选=muted。
         """
         self._run_selected_keys = list(selected_keys)
         for table in self._iter_item_tables():
-            table.setProperty("runningMode", True)
-            table.style().unpolish(table)
-            table.style().polish(table)
             for row in range(table.rowCount()):
                 chk = table.item(row, 0)
                 if chk:
@@ -489,9 +486,6 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
     def _exit_run_state(self) -> None:
         """完成/停止：清单恢复默认状态（恢复勾选交互 + 记录列复原）。"""
         for table in self._iter_item_tables():
-            table.setProperty("runningMode", False)
-            table.style().unpolish(table)
-            table.style().polish(table)
             for row in range(table.rowCount()):
                 chk = table.item(row, 0)
                 if chk:
@@ -1015,10 +1009,12 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin, OscilloscopeConnecti
         self.execution_logs.append_log("[INFO] 已清空结果。")
 
     def _on_select_all_items(self):
+        # 只作用于"自动测试区域"分组（_item_groups 第 0 组），不影响"单独测试项"
         # 切换：存在未勾选项 → 全选；已全部勾选 → 取消全选
-        rows = []
-        for table in self._iter_item_tables():
-            rows.extend(table.item(r, 0) for r in range(table.rowCount()))
+        if not self._item_tables:
+            return
+        auto_table = self._item_tables[0]
+        rows = [auto_table.item(r, 0) for r in range(auto_table.rowCount())]
         checkable = [
             c for c in rows
             if c and (c.flags() & Qt.ItemIsUserCheckable) and (c.flags() & Qt.ItemIsEnabled)
