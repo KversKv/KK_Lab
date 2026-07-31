@@ -779,7 +779,9 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
         except Exception:  # noqa: BLE001 - 复位失败降级记录，继续配置
             logger.error("clear_arb_all_channels failed before %s", item_key,
                          exc_info=True)
-        setup_load_channel(ctx, iload_ch)
+        # 首组 i0 作为初始电流，避免 channel_on 瞬间沿用遗留值
+        first_i0_ma = max(float(g.get("i0_ma", 10.0)) for g in groups) if groups else 10.0
+        setup_load_channel(ctx, iload_ch, initial_current_a=first_i0_ma / 1000.0)
 
     for idx, g in enumerate(groups):
         if ctx.stop_flag_fn():
