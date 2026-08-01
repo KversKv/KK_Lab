@@ -73,7 +73,10 @@ class HoverFixStyle(QProxyStyle):
     def polish(self, obj):
         super().polish(obj)
         from PySide6.QtWidgets import QWidget
-        if isinstance(obj, QWidget):
+        # 只给非顶层 widget 打 WA_Hover；顶层窗口（QComboBox popup 容器、
+        # SidebarSubMenu、ToastNotification 等）若被原生化为独立 Window，
+        # 会以空白"python 窗口"形式闪现。
+        if isinstance(obj, QWidget) and not obj.isWindow():
             obj.setAttribute(Qt.WA_Hover, True)
 
 

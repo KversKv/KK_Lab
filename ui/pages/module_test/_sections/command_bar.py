@@ -39,11 +39,15 @@ class CommandBar(QFrame):
 
         self.segmented = Segmented(items)
         self.segmented.currentChanged.connect(self._on_segment_changed)
+        # 顶部不再显示 LDO/DCDC 切换（模块切换由左侧边栏导航驱动），
+        # 保留 Segmented 实例以维持 current_module()/set_current_module() 契约。
+        self.segmented.hide()
         lay.addWidget(self.segmented)
 
         sep1 = QFrame()
         sep1.setFrameShape(QFrame.VLine)
         sep1.setObjectName("commandBarSep")
+        sep1.hide()
         lay.addWidget(sep1)
 
         lay.addWidget(self._make_caption("配置:"))

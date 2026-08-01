@@ -17,6 +17,9 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 
 from PySide6.QtCore import QAbstractItemModel, QModelIndex, Qt
+from PySide6.QtGui import QBrush, QColor
+
+from ui.theme import current_theme
 
 # —— 列 ——
 COL_CHECK = 0
@@ -183,6 +186,8 @@ class TestPlanModel(QAbstractItemModel):
             return True
         if role == GroupKeyRole:
             return group.key
+        if role == Qt.ForegroundRole and col == COL_NAME:
+            return QBrush(QColor(current_theme().text_secondary))
         if col == COL_CHECK and role == Qt.CheckStateRole:
             states = {i.checked for i in group.items}
             if len(states) == 1:
@@ -206,6 +211,12 @@ class TestPlanModel(QAbstractItemModel):
             return item.customized
         if role == HasParamsRole:
             return item.has_params
+        if role == Qt.ForegroundRole:
+            theme = current_theme()
+            if col == COL_NAME:
+                return QBrush(QColor(theme.text_primary))
+            if col in (COL_INSTRUMENT, COL_RESULT, COL_DURATION):
+                return QBrush(QColor(theme.text_secondary))
         if col == COL_CHECK and role == Qt.CheckStateRole:
             return Qt.Checked if item.checked else Qt.Unchecked
         if col == COL_NAME:

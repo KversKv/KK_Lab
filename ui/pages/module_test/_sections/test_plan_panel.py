@@ -14,12 +14,14 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from PySide6.QtCore import QModelIndex, QSortFilterProxyModel, Qt, QTimer, Signal
+from PySide6.QtCore import QModelIndex, QSize, QSortFilterProxyModel, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QAbstractItemView, QHBoxLayout, QHeaderView, QLineEdit, QPushButton,
     QStyledItemDelegate, QTreeView, QVBoxLayout, QWidget,
 )
+
+import os
 
 from ui.models.test_plan_model import (
     COL_CHECK, COL_DURATION, COL_INSTRUMENT, COL_NAME, COL_PARAMS, COL_RESULT,
@@ -27,7 +29,11 @@ from ui.models.test_plan_model import (
     ST_FAIL, ST_IDLE, ST_NA, ST_PASS, ST_RUNNING, ST_SCOPE_MISSING,
     ST_UNSELECTED, ST_WAITING, StatusRole, TestPlanModel,
 )
+from ui.resource_path import get_resource_base
 from ui.theme import current_theme
+from ui.utils.icon_utils import tinted_svg_icon
+
+_PARAM_ICON = os.path.join(get_resource_base(), "resources", "icons", "settings.svg")
 
 
 # ---------------------------------------------------------------------- 过滤代理
@@ -125,9 +131,16 @@ class _ParamDelegate(QStyledItemDelegate):
         else:
             customized = bool(index.data(CustomizedRole))
             color = theme.state_info.fg if customized else theme.text_muted
-            painter.setPen(QColor(color))
-            text = "⚙ 已改" if customized else "⚙"
-            painter.drawText(option.rect, Qt.AlignCenter, text)
+            rect = option.rect
+            side = min(rect.height() - 6, 16)
+            icon_rect = rect.adjusted(0, 0, 0, 0)
+            icon_rect.setSize(QSize(side, side))
+            icon_rect.moveCenter(rect.center())
+            tinted_svg_icon(_PARAM_ICON, color, side).paint(painter, icon_rect)
+            if customized:
+                painter.setPen(QColor(color))
+                text_rect = rect.adjusted(0, icon_rect.bottom() - rect.top() + 1, 0, 0)
+                painter.drawText(text_rect, Qt.AlignHCenter | Qt.AlignTop, "已改")
         painter.restore()
 
 

@@ -61,7 +61,11 @@ class DarkComboBox(QComboBox):
                 color: #3a4a6a;
             }}
         """)
-        self._setup_view(bg, border, hover_color)
+        # 延迟到首次 showPopup 才 setView：setView 会立即创建 popup 容器
+        # （QComboBoxPrivateContainer）；在 HoverFixStyle 等给容器打 WA_Hover 的
+        # 环境下，构造期创建的容器会被原生化为 Qt.Window 顶层"白框窗口"。
+        self._view_style_args = (bg, border, hover_color)
+        self._view_installed = False
         self.setMaxVisibleItems(30)
 
     _ITEM_PADDING_V = 4
@@ -152,6 +156,9 @@ class DarkComboBox(QComboBox):
         painter.end()
 
     def showPopup(self):
+        if not self._view_installed:
+            self._view_installed = True
+            self._setup_view(*self._view_style_args)
         view = self.view()
         fm = self.fontMetrics()
         max_w = self.width()

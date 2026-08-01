@@ -11,12 +11,24 @@
 """
 from __future__ import annotations
 
+import os
 from enum import Enum, auto
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QPushButton, QWidget
 
+from ui.resource_path import get_resource_base
 from ui.theme import refresh_style
+from ui.utils.icon_utils import tinted_svg_icon
+
+_ICONS_DIR = os.path.join(get_resource_base(), "resources", "icons")
+_ICON_PLAY = os.path.join(_ICONS_DIR, "play.svg")
+_ICON_STOP = os.path.join(_ICONS_DIR, "square.svg")
+_ICON_CHECK = os.path.join(_ICONS_DIR, "check.svg")
+_ICON_X = os.path.join(_ICONS_DIR, "x-close.svg")
+_ICON_MINUS = os.path.join(_ICONS_DIR, "more-horizontal.svg")
+_ICON_COLOR = "#dbe7ff"
+_ICON_SIZE = QSize(14, 14)
 
 
 class RunState(Enum):
@@ -51,25 +63,29 @@ class RunControlBar(QFrame):
         lay.setContentsMargins(12, 8, 12, 8)
         lay.setSpacing(10)
 
-        self.start_btn = QPushButton("▶ 开始测试")
+        self.start_btn = QPushButton("开始测试")
         self.start_btn.setProperty("variant", "primary")
         self.start_btn.setCursor(Qt.PointingHandCursor)
         self.start_btn.setToolTip("开始执行勾选的测试项（F5）")
+        self.start_btn.setIcon(tinted_svg_icon(_ICON_PLAY, _ICON_COLOR, 14))
+        self.start_btn.setIconSize(_ICON_SIZE)
         self.start_btn.clicked.connect(self.startRequested)
         lay.addWidget(self.start_btn)
 
-        self.pause_btn = QPushButton("⏸ 暂停")
+        self.pause_btn = QPushButton("暂停")
         self.pause_btn.setProperty("variant", "ghost")
         self.pause_btn.setEnabled(False)
         self.pause_btn.setToolTip("Runner 暂不支持暂停（预留）")
         self.pause_btn.clicked.connect(self.pauseRequested)
         lay.addWidget(self.pause_btn)
 
-        self.stop_btn = QPushButton("■ 停止")
+        self.stop_btn = QPushButton("停止")
         self.stop_btn.setProperty("variant", "danger-ghost")
         self.stop_btn.setCursor(Qt.PointingHandCursor)
         self.stop_btn.setEnabled(False)
         self.stop_btn.setToolTip("停止当前测试（Esc）")
+        self.stop_btn.setIcon(tinted_svg_icon(_ICON_STOP, _ICON_COLOR, 14))
+        self.stop_btn.setIconSize(_ICON_SIZE)
         self.stop_btn.clicked.connect(self._on_stop_clicked)
         lay.addWidget(self.stop_btn)
 
@@ -101,9 +117,9 @@ class RunControlBar(QFrame):
         self._eta_label.setProperty("role", "mono")
         lay.addWidget(self._eta_label)
 
-        self._pass_chip = self._make_chip("chip-pass", "✔ 0")
-        self._fail_chip = self._make_chip("chip-fail", "✘ 0")
-        self._skip_chip = self._make_chip("chip-skip", "⊘ 0")
+        self._pass_chip = self._make_chip("chip-pass", _ICON_CHECK, 0)
+        self._fail_chip = self._make_chip("chip-fail", _ICON_X, 0)
+        self._skip_chip = self._make_chip("chip-skip", _ICON_MINUS, 0)
         lay.addWidget(self._pass_chip)
         lay.addWidget(self._fail_chip)
         lay.addWidget(self._skip_chip)
@@ -112,10 +128,19 @@ class RunControlBar(QFrame):
 
     # ------------------------------------------------------------------ 构造
     @staticmethod
-    def _make_chip(role: str, text: str) -> QLabel:
-        lbl = QLabel(text)
-        lbl.setProperty("role", role)
-        return lbl
+    def _make_chip(role: str, icon_path: str, count: int) -> QWidget:
+        w = QWidget()
+        w.setProperty("role", role)
+        lay = QHBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(4)
+        icon_lbl = QLabel()
+        icon_lbl.setPixmap(tinted_svg_icon(icon_path, _ICON_COLOR, 13).pixmap(13, 13))
+        count_lbl = QLabel(str(count))
+        w._count_label = count_lbl
+        lay.addWidget(icon_lbl)
+        lay.addWidget(count_lbl)
+        return w
 
     # ------------------------------------------------------------------ 状态
     def state(self) -> RunState:
@@ -128,7 +153,7 @@ class RunControlBar(QFrame):
 
         if state is RunState.IDLE:
             self._set_buttons(start=True, pause=False, stop=False)
-            self.start_btn.setText("▶ 开始测试")
+            self.start_btn.setText("开始测试")
             self._set_progress_busy(False)
             self.progress.setValue(0)
             self._current_label.setText("就绪")
@@ -148,12 +173,12 @@ class RunControlBar(QFrame):
             self.stop_btn.setText("停止中…")
         elif state is RunState.FINISHED:
             self._set_buttons(start=True, pause=False, stop=False)
-            self.start_btn.setText("▶ 开始测试")
+            self.start_btn.setText("开始测试")
             self._set_progress_busy(False)
             self.progress.setProperty("state", "done")
         elif state is RunState.ERROR:
             self._set_buttons(start=True, pause=False, stop=False)
-            self.start_btn.setText("▶ 开始测试")
+            self.start_btn.setText("开始测试")
             self._set_progress_busy(False)
             self.progress.setProperty("state", "error")
 
@@ -165,7 +190,7 @@ class RunControlBar(QFrame):
         self.pause_btn.setEnabled(False)
         self.stop_btn.setEnabled(stop)
         if stop:
-            self.stop_btn.setText("■ 停止")
+            self.stop_btn.setText("停止")
 
     def _set_progress_busy(self, busy: bool) -> None:
         self.progress.setRange(0, 0 if busy else 100)
@@ -183,9 +208,9 @@ class RunControlBar(QFrame):
         self.progress.setValue(max(0, min(100, percent)))
 
     def set_counts(self, passed: int = 0, failed: int = 0, skipped: int = 0) -> None:
-        self._pass_chip.setText(f"✔ {passed}")
-        self._fail_chip.setText(f"✘ {failed}")
-        self._skip_chip.setText(f"⊘ {skipped}")
+        self._pass_chip._count_label.setText(str(passed))
+        self._fail_chip._count_label.setText(str(failed))
+        self._skip_chip._count_label.setText(str(skipped))
 
     def set_timing(self, elapsed_s: float | None = None,
                    eta_s: float | None = None) -> None:
@@ -219,7 +244,7 @@ class RunControlBar(QFrame):
         self._stop_armed = False
         self._confirm_timer.stop()
         if self._state is RunState.RUNNING:
-            self.stop_btn.setText("■ 停止")
+            self.stop_btn.setText("停止")
 
 
 if __name__ == "__main__":
