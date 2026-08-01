@@ -38,8 +38,8 @@ class FormRow(QWidget):
         text = f"{label} *" if required else label
         self._label = QLabel(text)
         self._label.setObjectName("formLabel")
-        self._label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self._label.setMinimumWidth(label_width)
+        self._label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self._label.setFixedWidth(label_width)
         line.addWidget(self._label)
 
         self._editor = editor

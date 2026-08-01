@@ -127,7 +127,37 @@ def token_map(theme: Tokens | None = None) -> dict[str, str]:
         m[f"state_{state}_fg"] = s.fg
         m[f"state_{state}_bg"] = s.bg
         m[f"state_{state}_border"] = s.border
+    # 勾选框 SVG（与当前 accent 同色系；资源命名 checked_<accent-hex>.svg）
+    m.update(_checkbox_icon_map(t))
     return m
+
+
+# accent hex（去 #）→ 已存在的勾选 SVG 资源后缀；未命中回退主色
+_CHECK_ICON_FILES = ("5d45ff", "4f46e5", "d14b72", "2f6fed", "18b67a", "d4a514")
+
+
+def _checkbox_icon_map(theme: Tokens) -> dict[str, str]:
+    """按主题 accent 匹配 resources/icons 下勾选 SVG（绝对路径，QSS url() 用）。"""
+    from ui.resource_path import get_resource_base
+    icons = Path(get_resource_base()) / "resources" / "icons"
+    accent = theme.accent_default.lstrip("#").lower()
+    # 就近取已知资源里与 accent 同色系者；无匹配用 accent 自身（约定命名）
+    name = accent if accent in _CHECK_ICON_FILES else _nearest_check_icon(accent)
+    checked = (icons / f"checked_{name}.svg").as_posix()
+    unchecked = (icons / f"unchecked_{name}.svg").as_posix()
+    return {"check_svg": checked, "uncheck_svg": unchecked}
+
+
+def _nearest_check_icon(accent: str) -> str:
+    """在已存在的资源后缀中挑与 accent 最接近的（简单 RGB 距离）。"""
+    def _rgb(h: str) -> tuple[int, int, int]:
+        return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    try:
+        target = _rgb(accent)
+    except (ValueError, IndexError):
+        return "5d45ff"
+    return min(_CHECK_ICON_FILES,
+               key=lambda c: sum((a - b) ** 2 for a, b in zip(_rgb(c), target)))
 
 
 def load_qss(name: str, theme: Tokens | None = None, **overrides: str) -> str:

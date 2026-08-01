@@ -318,6 +318,38 @@ QFrame#cardContent {
     border-top: 1px solid $border_subtle;
 }
 
+/* ---------- Tab（结果/执行日志 Dock） ---------- */
+QTabWidget::pane {
+    border: none;
+}
+QTabBar {
+    background: transparent;
+}
+QTabBar::tab {
+    background-color: transparent;
+    color: $text_muted;
+    font-size: $font_body;
+    padding: 0 $space_4;
+    min-height: $control_h_compact_box;
+    max-height: $control_h_compact_box;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-right: $space_1;
+}
+QTabBar::tab:hover:!selected {
+    color: $text_secondary;
+}
+QTabBar::tab:selected {
+    color: $text_primary;
+    font-weight: 600;
+    border-bottom: 2px solid $accent_default;
+}
+/* DetailDock 专用：pane 无边框（documentMode），内容边框归 ResultTable/LogPanel 单一权威 */
+QTabWidget#detailTabs::pane {
+    border: none;
+    background: transparent;
+}
+
 /* ---------- Form ---------- */
 QLabel#formLabel {
     color: $text_muted;

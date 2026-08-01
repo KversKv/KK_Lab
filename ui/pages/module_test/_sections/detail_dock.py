@@ -51,13 +51,14 @@ class DetailDock(QWidget):
         root.setSpacing(0)
 
         self.tabs = QTabWidget()
+        self.tabs.setObjectName("detailTabs")
         self.tabs.setDocumentMode(True)
         root.addWidget(self.tabs)
 
         # —— 结果页 ——
         result_page = QWidget()
         r_lay = QVBoxLayout(result_page)
-        r_lay.setContentsMargins(8, 8, 8, 8)
+        r_lay.setContentsMargins(0, 6, 0, 0)
         r_lay.setSpacing(6)
 
         summary_row = QHBoxLayout()

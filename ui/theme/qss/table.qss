@@ -18,6 +18,16 @@ QTableView::item, QTreeView::item {
     padding: 0 $space_1;
     border: none;
 }
+/* 测试项勾选框（参考 consumption_test Reset 勾选框 SVG 效果） */
+QTreeView::indicator {
+    image: url("$uncheck_svg");
+}
+QTreeView::indicator:checked {
+    image: url("$check_svg");
+}
+QTreeView::indicator:disabled {
+    opacity: 0.4;
+}
 QTableView::item:selected, QTreeView::item:selected {
     background-color: $state_info_bg;
     color: $text_primary;

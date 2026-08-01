@@ -177,6 +177,10 @@ class TestPlanModel(QAbstractItemModel):
             return None
         node = index.internalPointer()
         col = index.column()
+        # 勾选列内容尺寸提示：保证 checkbox（含分支缩进）完整显示，不被裁切
+        if col == COL_CHECK and role == Qt.SizeHintRole:
+            from PySide6.QtCore import QSize
+            return QSize(28, 24)
         if isinstance(node, _Group):
             return self._group_data(node, col, role)
         return self._item_data(node, col, role)

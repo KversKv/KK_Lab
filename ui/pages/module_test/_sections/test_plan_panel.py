@@ -247,11 +247,10 @@ class TestPlanPanel(QWidget):
         self.view.setItemDelegateForColumn(COL_STATUS, _StatusBadgeDelegate(self.view))
         self.view.setItemDelegateForColumn(COL_PARAMS, _ParamDelegate(self.view))
         header = self.view.header()
-        header.setSectionResizeMode(COL_CHECK, QHeaderView.Fixed)
+        header.setSectionResizeMode(COL_CHECK, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(COL_NAME, QHeaderView.Stretch)
         for col in (COL_INSTRUMENT, COL_STATUS, COL_RESULT, COL_DURATION, COL_PARAMS):
             header.setSectionResizeMode(col, QHeaderView.ResizeToContents)
-        self.view.setColumnWidth(COL_CHECK, 40)
         self.view.expandAll()
 
         self.view.paramsRequested.connect(self.paramsRequested)
