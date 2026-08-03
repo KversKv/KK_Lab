@@ -14,7 +14,8 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QCheckBox, QHBoxLayout, QLabel, QLineEdit, QSpinBox, QVBoxLayout, QWidget,
+    QCheckBox, QHBoxLayout, QLabel, QLineEdit, QSizePolicy, QSpinBox,
+    QVBoxLayout, QWidget,
 )
 
 from ui.theme import dp
@@ -53,32 +54,27 @@ class DutConfigPanel(QWidget):
         self.vout_nominal_spin = QSpinBox()
         self.vout_nominal_spin.setRange(0, 6000)
         self.vout_nominal_spin.setValue(1800 if module_type == "ldo" else 1200)
-        grid.add_row("Vout 标称", self.vout_nominal_spin, unit="mV")
+        grid.add_row("Vout 标称 (mV)", self.vout_nominal_spin)
 
-        self.vin_ch_combo = DarkComboBox()
-        self.vin_ch_combo.addItems([f"CH {i}" for i in range(1, 5)])
+        self.vin_ch_combo = self._make_combo([f"CH {i}" for i in range(1, 5)])
         grid.add_row("Vin 通道", self.vin_ch_combo)
 
-        self.vout_ch_combo = DarkComboBox()
-        self.vout_ch_combo.addItems([f"CH {i}" for i in range(1, 5)])
+        self.vout_ch_combo = self._make_combo([f"CH {i}" for i in range(1, 5)])
         self.vout_ch_combo.setCurrentIndex(1)
         grid.add_row("Vout 通道", self.vout_ch_combo)
 
-        self.iload_ch_combo = DarkComboBox()
-        self.iload_ch_combo.addItems([f"CH {i}" for i in range(1, 5)])
+        self.iload_ch_combo = self._make_combo([f"CH {i}" for i in range(1, 5)])
         self.iload_ch_combo.setCurrentIndex(2)
         grid.add_row("Iload 通道", self.iload_ch_combo)
 
-        self.scope_vout_ch_combo = DarkComboBox()
-        self.scope_vout_ch_combo.addItems([f"CH {i}" for i in range(1, 5)])
-        self.scope_vout_ch_combo.setCurrentIndex(0)
+        self.scope_vout_ch_combo = self._make_combo([f"CH {i}" for i in range(1, 5)])
         grid.add_row("示波器通道", self.scope_vout_ch_combo)
 
         self.device_addr_edit = QLineEdit("0x00")
         self.device_addr_edit.setPlaceholderText("如 0x62")
         grid.add_row("Device 地址", self.device_addr_edit)
 
-        self.width_flag_combo = DarkComboBox()
+        self.width_flag_combo = self._make_combo([])
         self.width_flag_combo.addItem("8-bit", int(I2CWidthFlag.BIT_8))
         self.width_flag_combo.addItem("10-bit", int(I2CWidthFlag.BIT_10))
         self.width_flag_combo.addItem("32-bit", int(I2CWidthFlag.BIT_32))
@@ -120,6 +116,16 @@ class DutConfigPanel(QWidget):
         temp_lay.addWidget(temp_grid)
         root.addWidget(self._temp_panel)
         self._on_temp_toggled(False)
+
+    # ------------------------------------------------------------------ 构造辅助
+    def _make_combo(self, items: list[str]) -> DarkComboBox:
+        """统一构造 DarkComboBox：设 Expanding 水平 sizePolicy，与 QLineEdit/QSpinBox
+        一致拉伸填满 FormGrid 列宽，避免下拉菜单比输入框窄。"""
+        combo = DarkComboBox()
+        combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        if items:
+            combo.addItems(items)
+        return combo
 
     # ------------------------------------------------------------------ 联动
     def _on_temp_toggled(self, checked: bool) -> None:

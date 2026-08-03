@@ -8,7 +8,7 @@ QTableView, QTreeView {
     border: 1px solid $border_default;
     border-radius: $radius_md;
     gridline-color: $border_subtle;
-    selection-background-color: $state_info_bg;
+    selection-background-color: $border_default;
     selection-color: $text_primary;
     font-size: $font_body;
     outline: none;
@@ -28,12 +28,25 @@ QTreeView::indicator:checked {
 QTreeView::indicator:disabled {
     opacity: 0.4;
 }
+/* 独立 QCheckBox（如 DUT 配置「高低温测试」）复用同一套 SVG，避免 Qt 默认勾选框
+   在暗色背景上显示异常。table.qss 经 apply_qss 注入子页根 widget 后作用于子树。 */
+QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+    image: url("$uncheck_svg");
+}
+QCheckBox::indicator:checked {
+    image: url("$check_svg");
+}
+QCheckBox::indicator:disabled {
+    opacity: 0.4;
+}
 QTableView::item:selected, QTreeView::item:selected {
-    background-color: $state_info_bg;
+    background-color: $border_default;
     color: $text_primary;
 }
 QTableView::item:hover, QTreeView::item:hover {
-    background-color: $surface_raised;
+    background-color: $border_subtle;
 }
 
 QHeaderView::section {

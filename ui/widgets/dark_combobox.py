@@ -125,9 +125,10 @@ class DarkComboBox(QComboBox):
         self.initStyleOption(opt)
 
         if not self.isEditable():
-            text_rect: QRect = self.style().subControlRect(
-                QStyle.CC_ComboBox, opt, QStyle.SC_ComboBoxEditField, self
-            )
+            # text_rect 用 contentsRect（已扣 QSS padding：左10 右28 含 drop-down 22px）。
+            # subControlRect(SC_ComboBoxEditField) 会重复扣除 drop-down 宽度（padding 已含
+            # drop-down 空间，subControlRect 再扣一次），导致 text_rect 过窄触发省略号。
+            text_rect: QRect = self.contentsRect()
             fm = QFontMetrics(self.font())
             elided = fm.elidedText(self.currentText(), Qt.ElideMiddle, text_rect.width())
             painter.setPen(QColor("#c8d5e2") if self.isEnabled() else QColor("#3a4a6a"))

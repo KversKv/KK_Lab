@@ -12,13 +12,15 @@
 """
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 
 from PySide6.QtCore import QModelIndex, QSize, QSortFilterProxyModel, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtGui import QColor, QIcon, QPainter, QPen
 from PySide6.QtWidgets import (
-    QAbstractItemView, QHBoxLayout, QHeaderView, QLineEdit, QPushButton,
-    QStyledItemDelegate, QTreeView, QVBoxLayout, QWidget,
+    QAbstractItemView, QApplication, QHBoxLayout, QHeaderView, QLineEdit,
+    QPushButton, QStyle, QStyleOptionViewItem, QStyledItemDelegate,
+    QTreeView, QVBoxLayout, QWidget,
 )
 
 import os
@@ -34,6 +36,36 @@ from ui.theme import current_theme
 from ui.utils.icon_utils import tinted_svg_icon
 
 _PARAM_ICON = os.path.join(get_resource_base(), "resources", "icons", "settings.svg")
+
+# PySide6 6.6 的 QColor 字符串构造不支持 'rgba(r,g,b,a)' 格式（返回 invalid → 默认纯黑），
+# tokens 中 state.bg/border 均为该格式，需手动解析为 QColor(r,g,b,a)。
+_RGBA_RE = re.compile(r'rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)')
+
+
+def _qcolor(color_str: str) -> QColor:
+    """从颜色字符串构造 QColor；兼容 ``rgba(r,g,b,a)`` 格式（alpha 为 0-255 整数）。"""
+    m = _RGBA_RE.match(color_str)
+    if m:
+        r, g, b, a = map(int, m.groups())
+        return QColor(r, g, b, a)
+    return QColor(color_str)
+
+
+def _paint_item_background(painter: QPainter, option) -> None:
+    """用 QStyle 绘制 item 背景面板（含选中/hover 态），与 QSS ``::item`` 选择器对齐。
+
+    自定义 delegate 完全覆盖 ``paint()`` 时会跳过 QStyle 的背景绘制，导致
+    ``::item:selected`` / ``::item:hover`` 的背景色在这几列不生效（其它列走
+    默认 delegate 正常高亮，视觉上出现"选中时状态/参数列没亮起"）。本函数
+    清空 option 的 text/icon 后交由 ``CE_ItemViewItem`` 绘制背景面板，再由
+    调用方叠加自定义内容。
+    """
+    opt = QStyleOptionViewItem(option)
+    opt.text = ""
+    opt.icon = QIcon()
+    opt.viewItemPosition = QStyleOptionViewItem.ViewItemPosition.OnlyOne
+    style = opt.widget.style() if opt.widget else QApplication.style()
+    style.drawControl(QStyle.CE_ItemViewItem, opt, painter, opt.widget)
 
 
 # ---------------------------------------------------------------------- 过滤代理
@@ -96,22 +128,25 @@ class _StatusBadgeDelegate(QStyledItemDelegate):
         theme = current_theme()
         state = getattr(theme, self._STATE_ATTR.get(status, "state_skipped"))
 
+        # 先由 QStyle 绘制选中/hover 背景（与其它列一致），再叠加徽章
+        _paint_item_background(painter, option)
+
         painter.save()
         painter.setRenderHint(QPainter.Antialiasing)
         rect = option.rect.adjusted(4, 3, -4, -3)
         metrics = option.fontMetrics
         w = min(metrics.horizontalAdvance(text) + 16, rect.width())
         badge = rect.adjusted(0, 0, w - rect.width(), 0)
-        painter.setPen(QPen(QColor(state.border)))
-        painter.setBrush(QColor(state.bg))
+        painter.setPen(QPen(_qcolor(state.border)))
+        painter.setBrush(_qcolor(state.bg))
         painter.drawRoundedRect(badge, 4, 4)
-        painter.setPen(QColor(state.fg))
+        painter.setPen(_qcolor(state.fg))
         painter.drawText(badge, Qt.AlignCenter, text)
         if status == ST_RUNNING and self.pulse:
             cx = badge.right() + 6
             if cx + 6 < option.rect.right():
                 painter.setPen(Qt.NoPen)
-                painter.setBrush(QColor(state.fg))
+                painter.setBrush(_qcolor(state.fg))
                 painter.drawEllipse(cx, badge.center().y() - 3, 6, 6)
         painter.restore()
 
@@ -124,6 +159,8 @@ class _ParamDelegate(QStyledItemDelegate):
             super().paint(painter, option, index)
             return
         theme = current_theme()
+        # 先由 QStyle 绘制选中/hover 背景（与其它列一致），再叠加齿轮图标
+        _paint_item_background(painter, option)
         painter.save()
         if not index.data(HasParamsRole):
             painter.setPen(QColor(theme.text_disabled))
@@ -142,6 +179,13 @@ class _ParamDelegate(QStyledItemDelegate):
                 text_rect = rect.adjusted(0, icon_rect.bottom() - rect.top() + 1, 0, 0)
                 painter.drawText(text_rect, Qt.AlignHCenter | Qt.AlignTop, "已改")
         painter.restore()
+
+    def sizeHint(self, option, index) -> QSize:
+        """列宽固定容纳齿轮图标 + 「已改」标记，避免 ResizeToContents 过窄。"""
+        if index.column() != COL_PARAMS or index.data(IsGroupRole):
+            return super().sizeHint(option, index)
+        # 图标 16px + 左右各 8px padding = 32px；「已改」两字约 22px，取较宽者
+        return QSize(36, max(26, super().sizeHint(option, index).height()))
 
 
 # ---------------------------------------------------------------------- 视图
@@ -251,6 +295,10 @@ class TestPlanPanel(QWidget):
         header.setSectionResizeMode(COL_NAME, QHeaderView.Stretch)
         for col in (COL_INSTRUMENT, COL_STATUS, COL_RESULT, COL_DURATION, COL_PARAMS):
             header.setSectionResizeMode(col, QHeaderView.ResizeToContents)
+        # 末列（COL_PARAMS）默认被 stretchLastSection 拉伸填满右侧，导致整列宽度过大、
+        # 任意位置点击都触发参数弹窗；关闭后由 COL_NAME(Stretch) 独占剩余空间，参数列按
+        # _ParamDelegate.sizeHint() 收窄为仅容齿轮图标。
+        header.setStretchLastSection(False)
         self.view.expandAll()
 
         self.view.paramsRequested.connect(self.paramsRequested)
