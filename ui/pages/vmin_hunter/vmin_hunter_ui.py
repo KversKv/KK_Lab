@@ -1003,6 +1003,27 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         except ValueError as exc:
             QMessageBox.warning(self, "Cannot Start", str(exc))
 
+    def _on_mcu_pr_reset_enable_toggled(self, checked):
+        # 勾选仅控制自动流程是否执行 RESET 步骤；未勾选时仍可切换 IO / 手动配置
+        pass
+
+    def _on_mcu_pr_status_enable_toggled(self, checked):
+        # 勾选仅控制自动流程是否执行 Status 步骤；未勾选时仍可切换 IO / 手动配置
+        pass
+
+    def _mcu_pr_quick_set(self, name, state):
+        """未勾选 enable 时回退直接读行内 combo，保证手动配置随时可用。"""
+        cfg = self.get_mcu_pwr_reset_config()
+        channel = cfg.get(f"{name}_channel")
+        if channel is None:
+            combo = getattr(self, f"mcu_pr_{name}_combo", None)
+            channel = combo.currentText() if combo is not None else None
+        pin = self._mcu_pr_pin_index(channel)
+        if pin is None:
+            self._mcu_io_log(f"[MCU] {name} channel invalid, quick set skipped.")
+            return
+        self._mcu_pr_run_state(name, pin, state)
+
     def _start_external_sleep_sweep(self, params):
         n6705c = self.get_n6705c_instance()
         if n6705c is None:

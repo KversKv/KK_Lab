@@ -26,6 +26,7 @@
 - 布局：左侧配置列（设备连接 / Test Config / Channel Config）+ 右侧监控区（电压点遍历结果表 + 死机记录）+ 底部 Execution Logs（UART 日志 / 死机检测）。
 - 子页 `VminSingleTestUI`（`vmin_single_test_ui.py`）继承 `VminHunterUI`：仅重写 `_create_test_config_panel`（单点 Default + Vmin 替代扫描参数）/`_on_vcorel_toggled`/`_read_params`/`_apply_config`；`voltage_points=[vmin]` 复用父类 `_start_external_sleep_sweep` 单点执行。父类 `_apply_config` 的通道/串口尾部已抽为 `_apply_channel_and_link_config` 供子类复用。
 - 结果落 `Results/` 带时间戳。
+- 本页重写 `McuPwrResetConfigMixin` 的 `_on_mcu_pr_reset_enable_toggled` / `_on_mcu_pr_status_enable_toggled`（空实现）与 `_mcu_pr_quick_set`（未勾选时回退读行内 combo）：Reset/Status 未勾选 enable 时仍可切换 IO 与"⋯"手动配置，勾选仅控制自动流程是否执行该步骤。
 
 ## 局部坑点
 
