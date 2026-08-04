@@ -52,8 +52,10 @@ class ResultModel(QAbstractTableModel):
             if isinstance(value, float):
                 return f"{value:g}"
             return str(value)
-        if role == Qt.ForegroundRole and key == STATUS_KEY:
-            return self._status_color(str(row.get(STATUS_KEY, "")))
+        if role == Qt.ForegroundRole:
+            if key == STATUS_KEY:
+                return self._status_color(str(row.get(STATUS_KEY, "")))
+            return QColor(current_theme().text_primary)
         if role == Qt.TextAlignmentRole and key == STATUS_KEY:
             return int(Qt.AlignCenter)
         return None

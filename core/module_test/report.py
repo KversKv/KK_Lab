@@ -14,10 +14,11 @@ UI 只拿路径打开，不做 IO——本模块纯字符串生成，禁依赖 Q
     index, item_key, title, verdict, unit, note,
     metrics: [{key,label,value,unit,precision,spec_min,spec_max,margin_pct,verdict}],
     charts:  [{id,kind:xy,title,x{key,label,unit,log},series[{key,name,
-              type:line|smooth|scatter|bar,axis:left|right}],mark_extrema,ref_y,
+              type:line|smooth|scatter|bar,axis:left|right}],mark_extrema,
               anomaly{key,op,value}}],
-    table:   {file,rows,columns:[{key,label,unit,align,precision,kind:image?}],
-              data[[...]],   # kind:image 列单元格 = attachments 下标（截图入表末列）
+    table:   {file,rows,columns:[{key,label,unit,align,precision,kind:image?,
+              fmt:vbit?}],   # kind:image 列单元格 = attachments 下标（截图入表末列）；
+              data[[...]],   # fmt:vbit 列单元格仍为十进制 int，前端按 Vbit 进制切换显示
               rules:[{column,op:gt|lt|abs_gt|eq|outlier,value,k,level:warn|fail,hint}
                      | {type:constant,level,hint}]},
     attachments: [{type:image,label,full(dataURI)}]
@@ -54,7 +55,17 @@ JSON 经 ``json.dumps`` 并把 ``</`` 转义为 ``<\\/`` 防 script 逃逸。
 14. 缺失字段全局优雅降级为 "—"，数值等宽对齐、单位独立小字、有效位统一；
 15. 版式修订（2026-08）：Load/Line Regulation 散点+拟合线 → Catmull-Rom 平滑折线；
     Load Capability&Ripple 示波器截图并入完整数据表末列（附件下标，不重复内嵌）；
-    Load/Line Transient 移除分组对比柱状图（数据表与截图网格保留）。
+    Load/Line Transient 移除分组对比柱状图（数据表与截图网格保留）；
+16. 版式修订（2026-08-04）：Output Voltage Scan 首列 DAC_code → Vbit 显示（列
+    fmt:vbit，数据仍为十进制 int），表格工具条 BIN/HEX/DEC chips 全局切换进制
+    （localStorage 记忆，联动表格/图表刻度/tooltip/图表数据）；Efficiency 移除
+    100% 参考虚线（ref_y 已删），图表值域/刻度自适应（log 模式按对数空间留白，
+    logTicks 窄域细分 1/2/5×10^e，手动切换 LOG X/Y 后自动贴合数据）；
+17. 版式修订（2026-08-04 b）：Vbit 进制切换改到列标题下拉（BIN/HEX/DEC）；行首
+    异常图标改固定槽位（未异常行补占位，不再顶错位宽对齐）；Vbit 与数值列统一
+    右对齐；Vout Scan 异常 diff 柱标红（bar_anomaly，5×MAD 与表格规则一致）；
+    右 Y 轴标题与图区留 26px 边距（左轴 16px）；移除无用的规格带
+    （spec_band/spec.spec_band 渲染与 chart_band 切换按钮一并删除）。
 
 ============================= 已知限制 =============================
 - Chrome 打印无法用 CSS 计数器输出"第 X/Y 页"，页脚仅含机密标识与生成时间；
@@ -402,19 +413,22 @@ def _build_charts(it: ItemResult, table: dict[str, Any] | None) -> list[dict[str
                 "type": kind, "axis": axis, "unit": un, "label": lb}
 
     if key.endswith("vout_scan"):
+        t["columns"][0]["fmt"] = "vbit"  # 首列 DAC_code → Vbit 字符串（前端进制切换）
         xk = t["columns"][0]["key"]
         yk = _pick_col(t, "vout", fallback=1)
         diff = _pick_col(t, "diff")
         series = [s for s in (ser(yk), ser(diff, "bar", "right")) if s]
-        charts.append(_xy(xk, series, t, "Vout vs Code",
-                          mark_extrema=True, zoom=True))
+        spec = _xy(xk, series, t, "Vout vs Vbit",
+                   mark_extrema=True, zoom=True)
+        if diff:  # 异常 diff 柱标红（与表格 outlier 规则一致的 5×MAD）
+            spec["bar_anomaly"] = {"key": diff, "op": "outlier", "k": 5}
+        charts.append(spec)
     elif key.endswith("efficiency"):
         xk = _pick_col(t, "iload", fallback=0)
         ek = _pick_col(t, "eff", "η", fallback=2)
         s = ser(ek)
         if s:
             charts.append(_xy(xk, [s], t, "Efficiency vs Iload",
-                              ref_y=100, logx=True,
                               anomaly={"key": ek, "op": "gt", "value": 100}))
     elif key.endswith("load_reg"):
         xk = _pick_col(t, "iload", fallback=0)
@@ -806,9 +820,14 @@ table.tbl{border-collapse:separate;border-spacing:0;width:100%;font-size:var(--f
 .tbl td.r,.tbl th.r{text-align:right}
 .tbl .flt input{width:100%;min-width:64px;padding:3px 6px;font-size:11px;
   border:1px solid var(--line);border-radius:5px;background:var(--bg-raised);color:var(--ink-1)}
+.vbit-th{display:inline-flex;align-items:center;gap:5px}
+.vbit-cap{font-weight:600}
+.vbit-sel{padding:1px 4px;font-size:10.5px;border:1px solid var(--line);border-radius:5px;
+  background:var(--bg-raised);color:var(--ink-2);font-family:var(--font-mono);cursor:pointer}
 td.cell-warn{background:var(--warn-bg)!important}
 td.cell-fail{background:var(--fail-bg)!important;color:var(--fail);font-weight:600}
-.rowflag{display:inline-block;width:16px;text-align:center}
+.rowflag{display:inline-block;width:1.35em;text-align:center}
+.rowflag--ph{visibility:hidden}
 .pager{display:flex;gap:var(--sp-2);align-items:center;justify-content:flex-end;
   padding:var(--sp-2) var(--sp-4);font-size:12px;color:var(--ink-3)}
 .pager button{padding:3px 9px;border:1px solid var(--line);border-radius:6px;color:var(--ink-2)}
@@ -1053,7 +1072,7 @@ const I18N = {
       sign_date:"日期",rev_a:"Rev A",rev_init:"初版发布",
       copy_link:"复制链接",copied:"链接已复制",chart_png:"导出 PNG",
       chart_reset:"重置缩放",chart_logx:"log X",chart_logy:"log Y",
-      chart_band:"规格带",chart_data:"图表数据",
+      chart_data:"图表数据",
       page:"页",of:"/",density:"紧凑",per_page:"每页",
       render_all:"渲染全部（便于查找）",virtual_on:"虚拟滚动",
       truncated:"仅打印前",rows_omitted:"行，其余省略（屏幕版可查看全部）",
@@ -1082,7 +1101,7 @@ const I18N = {
       sign_date:"Date",rev_a:"Rev A",rev_init:"Initial release",
       copy_link:"Copy link",copied:"Link copied",chart_png:"Export PNG",
       chart_reset:"Reset zoom",chart_logx:"log X",chart_logy:"log Y",
-      chart_band:"Spec band",chart_data:"Chart data",
+      chart_data:"Chart data",
       page:"Page",of:"/",density:"Compact",per_page:"Per page",
       render_all:"Render all (for find)",virtual_on:"Virtual scroll",
       truncated:"Prints first",rows_omitted:"rows; remainder omitted (see on-screen)",
@@ -1127,6 +1146,31 @@ function fmt(v, p) {
 }
 /* 自动量纲映射（mV↔V, uA↔mA） */
 const UNIT_MAP = {"mV":"V","uA":"mA","µA":"mA"};
+/* 电压位（Vbit）进制：全局 chips 状态 + 持久化，位宽取全局最大码位宽 */
+const VBIT = {fmt: localStorage.getItem("rpt.vbitfmt") || "hex"};
+function vbitCols() {
+  const out = [];
+  (REPORT_DATA.items || []).forEach(it => {
+    if (!it.table) return;
+    it.table.columns.forEach((c, i) => { if (c.fmt === "vbit") out.push({table:it.table, i}); });
+  });
+  return out;
+}
+function vbitWidth() {
+  let m = 0;
+  vbitCols().forEach(o => o.table.data.forEach(r => {
+    const v = r[o.i];
+    if (typeof v === "number" && Number.isInteger(v) && v >= 0) m = Math.max(m, v);
+  }));
+  return Math.max(1, m.toString(2).length);
+}
+function fmtVbit(v, width) {
+  if (typeof v !== "number" || !Number.isInteger(v) || v < 0) return null;
+  const f = VBIT.fmt;
+  if (f === "bin") return "0b" + v.toString(2).padStart(width, "0");
+  if (f === "dec") return String(v);
+  return "0x" + v.toString(16).toUpperCase().padStart(Math.ceil(width / 4), "0");
+}
 function scaleVal(v, unit) {
   if (!S.unitScaled || !UNIT_MAP[unit] || v === null || isNaN(Number(v))) return v;
   return Number(v) / 1000;
@@ -1357,8 +1401,7 @@ function renderItems() {
         (c.kind === "xy"
           ? '<button class="tbtn" data-cact="reset">' + esc(t.chart_reset) + "</button>" +
             '<button class="tbtn" data-cact="logx" aria-pressed="false">' + esc(t.chart_logx) + "</button>" +
-            '<button class="tbtn" data-cact="logy" aria-pressed="false">' + esc(t.chart_logy) + "</button>" +
-            '<button class="tbtn" data-cact="band" aria-pressed="true">' + esc(t.chart_band) + "</button>"
+            '<button class="tbtn" data-cact="logy" aria-pressed="false">' + esc(t.chart_logy) + "</button>"
           : "") +
         '</div><div class="chart-legend"></div>' +
         '<div class="chart-box" data-item="' + esc(it.item_key) + '" data-chart="' + i + '"></div>' +
@@ -1448,8 +1491,19 @@ function niceTicks(lo, hi, n) {
   return out.length ? out : [lo, hi];
 }
 function logTicks(lo, hi) {
+  /* 自适应 log 刻度：跨 ≤1.5 个数量级时细分 (1/2/5)×10^e，否则按 10^e 主刻度 */
+  lo = Math.max(lo, 1e-12); hi = Math.max(hi, lo * 1.0001);
   const out = [];
-  for (let e = Math.ceil(Math.log10(Math.max(lo, 1e-12))); e <= Math.floor(Math.log10(hi)); e++)
+  if (hi / lo <= 30) {
+    for (let e = Math.floor(Math.log10(lo)) - 1; e <= Math.ceil(Math.log10(hi)); e++) {
+      [1, 2, 5].forEach(m => {
+        const v = m * Math.pow(10, e);
+        if (v >= lo * 0.999 && v <= hi * 1.001) out.push(Number(v.toPrecision(12)));
+      });
+    }
+    return out.length ? out : [lo, hi];
+  }
+  for (let e = Math.ceil(Math.log10(lo)); e <= Math.floor(Math.log10(hi)); e++)
     out.push(Math.pow(10, e));
   return out.length ? out : [lo, hi];
 }
@@ -1497,26 +1551,29 @@ function drawChart(box) {
     return out;
   };
   const allPts = series.map(pairs);
-  /* 值域（含缩放状态） */
-  const domOf = (pts, pad) => {
+  /* 值域（含缩放状态）；log 模式下按对数空间留白，保证刻度/范围自适应 */
+  const domOf = (pts, pad, log) => {
     let lo = Infinity, hi = -Infinity;
     pts.flat().forEach(p => { lo = Math.min(lo, p); hi = Math.max(hi, p); });
     if (!isFinite(lo)) { lo = 0; hi = 1; }
     if (lo === hi) { lo -= 1; hi += 1; }
+    if (log) {
+      const eLo = Math.log10(Math.max(lo, 1e-12)), eHi = Math.log10(Math.max(hi, 1e-12));
+      if (eHi - eLo < 1e-9) return [lo / 1.12, hi * 1.12];
+      const d = (eHi - eLo) * (pad || 0.06);
+      return [Math.pow(10, eLo - d), Math.pow(10, eHi + d)];
+    }
     const d = (hi - lo) * (pad || 0.06);
     return [lo - d, hi + d];
   };
   const xAll = allPts.map(p => p.map(q => q[0]));
-  let xDom = st.dom ? st.dom.x : domOf(xAll, 0.04);
+  let xDom = st.dom ? st.dom.x : domOf(xAll, 0.04, st.logx);
   const yDomFor = ss => {
     const pts = allPts.filter((p, i) => ss.includes(series[i])).map(p => p.map(q => q[1]));
-    return domOf(pts, 0.1);
+    return domOf(pts, 0.1, st.logy);
   };
   let yL = st.dom ? st.dom.yL : yDomFor(leftS.length ? leftS : series);
   let yR = rightS.length ? (st.dom && st.dom.yR ? st.dom.yR : yDomFor(rightS)) : null;
-  if (spec.ref_y !== undefined && !st.dom) {
-    yL = [Math.min(yL[0], spec.ref_y * 0.9), Math.max(yL[1], spec.ref_y * 1.05)];
-  }
   const sx = v => {
     if (st.logx) v = Math.log10(Math.max(v, 1e-12));
     const lo = st.logx ? Math.log10(Math.max(xDom[0], 1e-12)) : xDom[0];
@@ -1542,12 +1599,18 @@ function drawChart(box) {
       tx.textContent = fmtTick(tv);
     });
     if (label) {
-      const lb = svgEl("text", {x:right ? W - 6 : 10, y:M.t + ih / 2,
+      /* 轴标题与图区留边距：右侧 26px / 左侧 16px（原右侧贴边太挤） */
+      const ax = right ? W - 26 : 16;
+      const lb = svgEl("text", {x:ax, y:M.t + ih / 2,
         "text-anchor":"middle", "font-size":11, fill:P.ink3,
-        transform:"rotate(" + (right ? 90 : -90) + " " + (right ? W - 6 : 10) + " " + (M.t + ih / 2) + ")"}, svg);
+        transform:"rotate(" + (right ? 90 : -90) + " " + ax + " " + (M.t + ih / 2) + ")"}, svg);
       lb.textContent = label;
     }
   };
+  /* X 轴：vbit 列按当前进制渲染刻度（仅整数），其余数值走 fmtTick */
+  const xIsVbit = table.columns.some(c => c.key === spec.x.key && c.fmt === "vbit");
+  const xTickTxt = v => (xIsVbit && Number.isInteger(v) && v >= 0)
+    ? (fmtVbit(v, vbitWidth()) || fmtTick(v)) : fmtTick(v);
   const xt = st.logx ? logTicks(xDom[0], xDom[1]) : niceTicks(xDom[0], xDom[1], 8);
   xt.forEach(tv => {
     const x = sx(tv);
@@ -1555,32 +1618,16 @@ function drawChart(box) {
     svgEl("line", {x1:x, x2:x, y1:M.t, y2:M.t + ih, stroke:P.grid}, svg);
     const tx = svgEl("text", {x:x, y:M.t + ih + 16, "text-anchor":"middle",
       "font-size":10, fill:P.ink3}, svg);
-    tx.textContent = fmtTick(tv);
+    tx.textContent = xTickTxt(tv);
   });
   const xlab = svgEl("text", {x:M.l + iw / 2, y:H - 6, "text-anchor":"middle",
     "font-size":11, fill:P.ink3}, svg);
-  xlab.textContent = spec.x.label + (spec.x.unit ? " (" + spec.x.unit + ")" : "");
+  xlab.textContent = (xIsVbit ? "Vbit" : spec.x.label) + (spec.x.unit ? " (" + spec.x.unit + ")" : "");
   drawAxis(yL, st.logy, syL, false,
     leftS[0] ? leftS[0].label + (leftS[0].unit ? " (" + leftS[0].unit + ")" : "") : "");
   if (yR) drawAxis(yR, st.logy, syR, true,
     rightS[0] ? rightS[0].label + (rightS[0].unit ? " (" + rightS[0].unit + ")" : "") : "");
   svgEl("rect", {x:M.l, y:M.t, width:iw, height:ih, fill:"none", stroke:P.line}, svg);
-  /* 规格带 */
-  if (st.band && spec.spec_band) {
-    const b = spec.spec_band;
-    const y1 = syL(b.y_max), y2 = syL(b.y_min);
-    svgEl("rect", {x:M.l, y:y1, width:iw, height:Math.max(y2 - y1, 0),
-      fill:P.pass, opacity:.08}, svg);
-  }
-  /* 参考线（如效率 100%） */
-  if (spec.ref_y !== undefined) {
-    const y = syL(spec.ref_y);
-    svgEl("line", {x1:M.l, x2:M.l + iw, y1:y, y2:y, stroke:P.warn,
-      "stroke-dasharray":"5 4", "stroke-width":1.2}, svg);
-    const tx = svgEl("text", {x:M.l + iw - 4, y:y - 5, "text-anchor":"end",
-      "font-size":10, fill:P.warn}, svg);
-    tx.textContent = fmtTick(spec.ref_y);
-  }
   /* 系列 */
   series.forEach((s, si) => {
     const pts = allPts[series.indexOf(s)];
@@ -1588,10 +1635,27 @@ function drawChart(box) {
     const yFn = s.axis === "right" && syR ? syR : syL;
     if (s.type === "bar") {
       const bw = Math.max(2, Math.min(18, iw / Math.max(pts.length, 1) * 0.5));
+      /* 异常柱标红：bar_anomaly 规则（outlier=k×MAD / gt） */
+      let barThresh = null;
+      const ba = spec.bar_anomaly;
+      if (ba && ba.key === s.key && pts.length > 3) {
+        if (ba.op === "outlier") {
+          const vals = pts.map(p => p[1]).sort((a, b) => a - b);
+          const med = vals[Math.floor(vals.length / 2)];
+          const mads = vals.map(v => Math.abs(v - med)).sort((a, b) => a - b);
+          const mad = mads[Math.floor(mads.length / 2)];
+          if (mad >= 1e-12) barThresh = {med, lim:(ba.k || 5) * mad, op:"outlier"};
+        } else if (ba.op === "gt") barThresh = {value:ba.value, op:"gt"};
+      }
+      const barBad = v => barThresh &&
+        (barThresh.op === "gt" ? v > barThresh.value
+         : Math.abs(v - barThresh.med) > barThresh.lim);
       pts.forEach(p => {
         const y0 = yFn(Math.max(0, yR ? yR[0] : yL[0])), y1 = yFn(p[1]);
+        const bad = barBad(p[1]);
         svgEl("rect", {x:sx(p[0]) - bw / 2, y:Math.min(y0, y1), width:bw,
-          height:Math.abs(y1 - y0), fill:color, opacity:.55}, svg);
+          height:Math.abs(y1 - y0), fill:bad ? P.fail : color,
+          opacity:bad ? .85 : .55}, svg);
       });
     } else {
       if (s.type === "line" || s.type === "smooth") {
@@ -1673,8 +1737,9 @@ function drawChart(box) {
       if (d < bd) { bd = d; best = p; }
     }));
     if (!best) return;
-    let h = '<div class="tt-x">' + esc(spec.x.label) + " = " +
-      fmtTick(best[0]) + (spec.x.unit ? " " + esc(spec.x.unit) : "") + "</div>";
+    const bxTxt = xIsVbit ? (fmtVbit(best[0], vbitWidth()) || fmtTick(best[0])) : fmtTick(best[0]);
+    let h = '<div class="tt-x">' + esc(xIsVbit ? "Vbit" : spec.x.label) + " = " +
+      bxTxt + (spec.x.unit ? " " + esc(spec.x.unit) : "") + "</div>";
     series.forEach((s, i) => {
       const p = allPts[i].reduce((a, q) =>
         Math.abs(q[0] - best[0]) < Math.abs((a || [Infinity])[0] - best[0]) ? q : a, null);
@@ -1726,12 +1791,19 @@ function drawChart(box) {
     alt.dataset.done = "1";
     const cols = [spec.x].concat(spec.series || []);
     const ixs = cols.map(c => table.columns.findIndex(cc => cc.key === c.key));
-    let h = "<table class='tbl compact'><thead><tr>" + cols.map(c =>
-      "<th scope='col'>" + esc(c.label || c.name || "") + "</th>").join("") +
-      "</tr></thead><tbody>";
+    const vbW = vbitWidth();
+    let h = "<table class='tbl compact'><thead><tr>" + cols.map((c, ci) => {
+      const col = table.columns[ixs[ci]];
+      const lab = col && col.fmt === "vbit" ? "Vbit" : (c.label || c.name || "");
+      return "<th scope='col'>" + esc(lab) + "</th>";
+    }).join("") + "</tr></thead><tbody>";
     table.data.slice(0, 50).forEach(row => {
-      h += "<tr>" + ixs.map(i => "<td class='num'>" +
-        (i >= 0 && row[i] !== null ? esc(row[i]) : DASH) + "</td>").join("") + "</tr>";
+      h += "<tr>" + ixs.map((i, ci) => {
+        const col = i >= 0 ? table.columns[i] : null;
+        const v = i >= 0 ? row[i] : null;
+        const vb = col && col.fmt === "vbit" ? fmtVbit(v, vbW) : null;
+        return "<td class='num'>" + (vb ? esc(vb) : (v !== null ? esc(v) : DASH)) + "</td>";
+      }).join("") + "</tr>";
     });
     alt.innerHTML = h + "</tbody></table>";
   }
@@ -1784,6 +1856,8 @@ function buildTable(host, item) {
   if (!table) return;
   const t = T();
   const flags = evalRules(table);
+  const vbW = vbitWidth();
+  const vbitCell = v => fmtVbit(v, vbW);
   (window._anom = window._anom || {})[item.item_key] = flags.count;
   const st = {sort:null, filters:{}, page:1, per:25, compact:false,
     onlyAnom:host.dataset.onlyAnom === "1", renderAll:false, showFlt:false};
@@ -1819,7 +1893,9 @@ function buildTable(host, item) {
     table.columns.forEach((c, ci) => {
       const v = row[ci];
       const fl = flags.cells[ri + ":" + ci];
-      const cls = [c.align === "right" ? "r num" : "",
+      const isVb = c.fmt === "vbit";
+      /* vbit 与数值列统一右对齐（vbit 补零等宽），异常不改对齐 */
+      const cls = [(c.align === "right" || isVb) ? "r num" : "",
         fl ? "cell-" + fl : "", ci === 0 ? "fcol" : ""].join(" ").trim();
       if (c.kind === "image") {  /* 截图列：单元格 = attachments 下标 → 缩略图 */
         const att = typeof v === "number" ? (item.attachments || [])[v] : null;
@@ -1832,11 +1908,13 @@ function buildTable(host, item) {
         return;
       }
       const full = typeof v === "number" ? ' title="' + v + '"' : "";
+      const vb = isVb ? vbitCell(v) : null;
       h += "<td class='" + cls + "'" + full + ">" +
-        (typeof v === "number"
-          ? esc(fmt(scaleVal(v, c.unit), S.unitScaled && UNIT_MAP[c.unit]
-              ? Math.min((c.precision ?? 3) + 3, 9) : c.precision))
-          : (v === null ? DASH : esc(v))) + "</td>";
+        (vb ? esc(vb)
+          : (typeof v === "number"
+            ? esc(fmt(scaleVal(v, c.unit), S.unitScaled && UNIT_MAP[c.unit]
+                ? Math.min((c.precision ?? 3) + 3, 9) : c.precision))
+            : (v === null ? DASH : esc(v)))) + "</td>";
     });
     return h;
   };
@@ -1844,8 +1922,16 @@ function buildTable(host, item) {
     let h = "<tr>";
     table.columns.forEach((c, ci) => {
       const sorted = st.sort && st.sort.col === ci;
-      h += "<th scope='col' class='" + (c.align === "right" ? "r" : "") +
-        (ci === 0 ? " fcol" : "") + "' data-col='" + ci + "'>" + esc(c.label) +
+      /* vbit 列：列标题 = 进制下拉（BIN/HEX/DEC），单元格与列均右对齐 */
+      const hlabel = c.fmt === "vbit"
+        ? "<span class='vbit-th'><span class='vbit-cap'>Vbit</span>" +
+          "<select class='vbit-sel' data-vbsel aria-label='Vbit radix'>" +
+          ["bin", "hex", "dec"].map(f =>
+            "<option value='" + f + "'" + (VBIT.fmt === f ? " selected" : "") + ">" +
+            f.toUpperCase() + "</option>").join("") + "</select></span>"
+        : esc(c.label);
+      h += "<th scope='col' class='r" + (ci === 0 ? " fcol" : "") + "' data-col='" + ci + "'>" +
+        hlabel +
         (c.unit ? " <span class='u'>(" + esc(scaleUnit(c.unit)) + ")</span>" : "") +
         (sorted ? "<span class='arrow'>" + (st.sort.dir > 0 ? "▲" : "▼") + "</span>" : "") +
         "</th>";
@@ -1945,6 +2031,17 @@ function buildTable(host, item) {
           const again = host.querySelector("input[data-fcol='" + inp.dataset.fcol + "']");
           if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); } }, 250); };
     });
+    /* Vbit 列标题下拉：切换进制（全局），重绘表格与图表 */
+    host.querySelectorAll("[data-vbsel]").forEach(sel => {
+      sel.onclick = ev => ev.stopPropagation();
+      sel.onchange = () => {
+        VBIT.fmt = sel.value;
+        localStorage.setItem("rpt.vbitfmt", VBIT.fmt);
+        $$(".tbl-host").forEach(h => { delete h.dataset.done; h.innerHTML = ""; });
+        armTables();
+        $$(".chart-box").forEach(bx => { if (bx.dataset.rendered) drawChart(bx); });
+      };
+    });
     host.querySelectorAll("[data-tact]").forEach(b => {
       const act = b.dataset.tact;
       if (act === "per") { b.onchange = () => { st.per = Number(b.value); st.page = 1; render(); }; return; }
@@ -1966,14 +2063,19 @@ function buildTable(host, item) {
       tr.onclick = () => { tbody.querySelectorAll("tr.sel")
         .forEach(x => x.classList.remove("sel")); tr.classList.add("sel"); };
     });
-    /* 异常标记：行首图标 */
-    tbody.querySelectorAll("tr[data-ri]").forEach(tr => {
+    /* 异常标记：行首图标（固定槽位，未异常行补占位，保证列宽/对齐一致） */
+    const anyFlag = Object.keys(flags.rows).length > 0;
+    if (anyFlag) tbody.querySelectorAll("tr[data-ri]").forEach(tr => {
       const ri = Number(tr.dataset.ri);
+      const td = tr.querySelector("td");
+      if (!td) return;
       if (flags.rows[ri]) {
-        const td = tr.querySelector("td");
-        if (td) td.insertAdjacentHTML("afterbegin",
+        td.insertAdjacentHTML("afterbegin",
           "<span class='rowflag' style='color:var(--" +
           (flags.rows[ri] === "fail" ? "fail'>✗" : "warn'>⚠") + ")</span>");
+      } else {
+        td.insertAdjacentHTML("afterbegin",
+          "<span class='rowflag rowflag--ph' aria-hidden='true'>⚠</span>");
       }
     });
   };
@@ -2215,8 +2317,6 @@ function bindGlobal() {
         cb.setAttribute("aria-pressed", String(st.logx)); drawChart(box); }
       if (act === "logy" && st) { st.logy = !st.logy; st.dom = null;
         cb.setAttribute("aria-pressed", String(st.logy)); drawChart(box); }
-      if (act === "band" && st) { st.band = !st.band;
-        cb.setAttribute("aria-pressed", String(st.band)); drawChart(box); }
       return;
     }
     const shot = e.target.closest(".shot");

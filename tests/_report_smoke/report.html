@@ -206,9 +206,14 @@ table.tbl{border-collapse:separate;border-spacing:0;width:100%;font-size:var(--f
 .tbl td.r,.tbl th.r{text-align:right}
 .tbl .flt input{width:100%;min-width:64px;padding:3px 6px;font-size:11px;
   border:1px solid var(--line);border-radius:5px;background:var(--bg-raised);color:var(--ink-1)}
+.vbit-th{display:inline-flex;align-items:center;gap:5px}
+.vbit-cap{font-weight:600}
+.vbit-sel{padding:1px 4px;font-size:10.5px;border:1px solid var(--line);border-radius:5px;
+  background:var(--bg-raised);color:var(--ink-2);font-family:var(--font-mono);cursor:pointer}
 td.cell-warn{background:var(--warn-bg)!important}
 td.cell-fail{background:var(--fail-bg)!important;color:var(--fail);font-weight:600}
-.rowflag{display:inline-block;width:16px;text-align:center}
+.rowflag{display:inline-block;width:1.35em;text-align:center}
+.rowflag--ph{visibility:hidden}
 .pager{display:flex;gap:var(--sp-2);align-items:center;justify-content:flex-end;
   padding:var(--sp-2) var(--sp-4);font-size:12px;color:var(--ink-3)}
 .pager button{padding:3px 9px;border:1px solid var(--line);border-radius:6px;color:var(--ink-2)}
@@ -429,7 +434,7 @@ mark{background:var(--warn-bg);color:inherit;border-radius:2px;padding:0 1px}
 /* ================================================================
  * 数据（后端注入，唯一事实源）
  * ================================================================ */
-const REPORT_DATA = {"meta": {"report_title": "Module Test Report — DCDC", "module_type": "DCDC", "chip": "BES1811", "sample_id": null, "operator": "KK", "temperature_c": 25.0, "vin_nominal_v": null, "vout_nominal_mv": null, "start_time": "2026-07-31 09:12:00", "end_time": "2026-07-31 09:31:24", "duration_s": 1164.0, "generated_at": "2026-08-04 19:43:20+08:00", "sw_version": "0.1.0", "hw_setup": null, "instruments": [], "environment": {"ta_c": 25.0, "humidity_pct": null}}, "summary": {"verdict": "FAIL", "pass": 7, "fail": 2, "warn": 0, "na": 1, "total": 10}, "items": [{"index": 1, "item_key": "dcdc_vout_scan", "title": "Output Voltage Scan", "verdict": "PASS", "unit": "mV", "ts": "2026-08-04 19:43:20", "metrics": [{"key": "default_mv", "label": "Default", "value": 800.0, "unit": "mV", "precision": 3, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "vout_min", "label": "Min", "value": 305.681, "unit": "mV", "precision": 3, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "vout_max", "label": "Max", "value": 761.2, "unit": "mV", "precision": 3, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "step_mv", "label": "Avg Step", "value": 3.575, "unit": "mV", "precision": 3, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}], "charts": [{"kind": "xy", "title": "Vout vs Code", "x": {"key": "c0", "label": "Code", "unit": ""}, "series": [{"key": "c1", "name": "Vout (mV)", "type": "line", "axis": "left", "unit": "mV", "label": "Vout"}, {"key": "c2", "name": "Diff (mV)", "type": "bar", "axis": "right", "unit": "mV", "label": "Diff"}], "mark_extrema": true, "zoom": true, "id": "dcdc_vout_scan_0"}], "table": {"file": "dcdc_vout_scan.csv", "rows": 126, "columns": [{"key": "c0", "label": "Code", "unit": "", "align": "right", "precision": 0}, {"key": "c1", "label": "Vout", "unit": "mV", "align": "right", "precision": 3}, {"key": "c2", "label": "Diff", "unit": "mV", "align": "right", "precision": 3}], "data": [[0.0, 312.859, 0.0], [1.0, 316.296, 3.437], [2.0, 320.271, 3.975], [3.0, 323.383, 3.112], [4.0, 327.329, 3.946], [5.0, 330.768, 3.439], [6.0, 334.096, 3.329], [7.0, 338.031, 3.935], [8.0, 341.23, 3.199], [9.0, 345.122, 3.892], [10.0, 348.406, 3.284], [11.0, 351.998, 3.592], [12.0, 355.84, 3.842], [13.0, 359.736, 3.897], [14.0, 362.749, 3.013], [15.0, 366.404, 3.655], [16.0, 370.302, 3.898], [17.0, 374.133, 3.831], [18.0, 377.412, 3.279], [19.0, 380.842, 3.431], [20.0, 384.881, 4.039], [21.0, 387.712, 2.831], [22.0, 391.937, 4.225], [23.0, 395.057, 3.12], [24.0, 398.515, 3.459], [25.0, 402.069, 3.554], [26.0, 405.797, 3.728], [27.0, 409.778, 3.981], [28.0, 412.845, 3.067], [29.0, 416.74, 3.896], [30.0, 420.361, 3.621], [31.0, 423.723, 3.362], [32.0, 427.438, 3.715], [33.0, 430.625, 3.187], [34.0, 434.198, 3.572], [35.0, 437.89, 3.692], [36.0, 441.844, 3.955], [37.0, 445.217, 3.373], [38.0, 448.701, 3.484], [39.0, 452.493, 3.792], [40.0, 455.963, 3.469], [41.0, 459.415, 3.452], [42.0, 463.386, 3.971], [43.0, 466.884, 3.499], [44.0, 470.095, 3.211], [45.0, 473.935, 3.839], [46.0, 477.47, 3.536], [47.0, 481.325, 3.855], [48.0, 484.784, 3.458], [49.0, 488.005, 3.222], [50.0, 492.134, 4.129], [51.0, 495.019, 2.885], [52.0, 498.834, 3.815], [53.0, 502.681, 3.846], [54.0, 505.772, 3.091], [55.0, 509.616, 3.845], [56.0, 512.831, 3.215], [57.0, 516.91, 4.078], [58.0, 520.562, 3.652], [59.0, 523.983, 3.422], [60.0, 527.8, 3.817], [61.0, 530.926, -18.4], [62.0, 534.806, 3.88], [63.0, 538.3, 3.494], [64.0, 541.864, 3.563], [65.0, 545.34, 3.476], [66.0, 549.222, 3.882], [67.0, 552.881, 3.659], [68.0, 556.079, 3.199], [69.0, 559.806, 3.727], [70.0, 562.899, 3.092], [71.0, 566.986, 4.088], [72.0, 570.518, 3.532], [73.0, 574.369, 3.852], [74.0, 577.808, 3.438], [75.0, 580.953, 3.145], [76.0, 584.609, 3.656], [77.0, 588.41, 3.801], [78.0, 591.468, 3.058], [79.0, 595.394, 3.926], [80.0, 598.734, 3.34], [81.0, 602.269, 3.534], [82.0, 605.797, 3.528], [83.0, 609.94, 4.142], [84.0, 613.003, 3.064], [85.0, 616.673, 3.67], [86.0, 620.363, 3.69], [87.0, 624.322, 3.959], [88.0, 627.264, 21.2], [89.0, 631.134, 3.87], [90.0, 634.79, 3.655], [91.0, 638.632, 3.842], [92.0, 642.155, 3.524], [93.0, 645.766, 3.611], [94.0, 648.873, 3.107], [95.0, 652.557, 3.685], [96.0, 656.087, 3.53], [97.0, 660.082, 3.995], [98.0, 663.716, 3.634], [99.0, 666.646, 2.93], [100.0, 670.241, 3.595], [101.0, 673.861, 3.62], [102.0, 677.437, 3.576], [103.0, 681.213, 3.776], [104.0, 684.871, 3.658], [105.0, 688.185, 3.314], [106.0, 691.553, 3.368], [107.0, 695.46, 3.907], [108.0, 698.995, 3.535], [109.0, 702.728, 3.733], [110.0, 706.612, 3.884], [111.0, 709.977, 3.365], [112.0, 713.412, 3.435], [113.0, 717.069, 3.657], [114.0, 720.691, 3.622], [115.0, 723.768, 3.077], [116.0, 728.02, 4.251], [117.0, 731.499, 3.479], [118.0, 735.15, 3.651], [119.0, 738.663, 3.514], [120.0, 741.914, 3.251], [121.0, 745.494, 3.58], [122.0, 748.833, 3.339], [123.0, 752.832, 4.0], [124.0, 755.95, 3.117], [125.0, 759.529, 3.579]], "rules": [{"column": "c2", "op": "outlier", "k": 5, "level": "warn", "hint": "步进异常跳变(>5×MAD)"}]}, "attachments": [], "note": "有效段步进 3.575mV，线性度 2.026%"}, {"index": 2, "item_key": "dcdc_efficiency", "title": "Efficiency", "verdict": "FAIL", "unit": "%", "ts": "2026-08-04 19:43:20", "metrics": [{"key": "max_eff", "label": "Max η", "value": 104.7, "unit": "%", "precision": 2, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "max_eff_at", "label": "Peak @ Iload", "value": 750.0, "unit": "mA", "precision": 0, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "avg_eff", "label": "Avg η", "value": 88.2, "unit": "%", "precision": 2, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}], "charts": [{"kind": "xy", "title": "Efficiency vs Iload", "x": {"key": "c0", "label": "Iload", "unit": "mA"}, "series": [{"key": "c2", "name": "Efficiency (%)", "type": "line", "axis": "left", "unit": "%", "label": "Efficiency"}], "ref_y": 100, "logx": true, "anomaly": {"key": "c2", "op": "gt", "value": 100}, "id": "dcdc_efficiency_0"}], "table": {"file": "dcdc_efficiency.csv", "rows": 36, "columns": [{"key": "c0", "label": "Iload", "unit": "mA", "align": "right", "precision": 0}, {"key": "c1", "label": "Vout", "unit": "mV", "align": "right", "precision": 2}, {"key": "c2", "label": "Efficiency", "unit": "%", "align": "right", "precision": 2}], "data": [[25.0, 795.95, 62.79], [50.0, 794.63, 64.85], [75.0, 795.82, 65.5], [100.0, 798.36, 67.47], [125.0, 804.49, 68.91], [150.0, 795.78, 72.34], [175.0, 798.17, 72.92], [200.0, 795.47, 74.93], [225.0, 805.92, 78.05], [250.0, 799.81, 78.56], [275.0, 795.23, 79.09], [300.0, 797.18, 81.53], [325.0, 795.94, 84.65], [350.0, 805.41, 83.9], [375.0, 795.76, 87.08], [400.0, 794.32, 88.8], [425.0, 805.74, 90.42], [450.0, 802.35, 93.09], [475.0, 798.4, 89.62], [500.0, 803.26, 87.67], [525.0, 803.35, 87.1], [550.0, 796.68, 84.82], [575.0, 805.82, 84.6], [600.0, 803.67, 83.06], [625.0, 802.88, 81.29], [650.0, 800.21, 77.85], [675.0, 794.35, 76.57], [700.0, 797.35, 73.92], [725.0, 802.31, 72.94], [750.0, 799.37, 104.7], [775.0, 805.86, 71.64], [800.0, 798.38, 70.03], [825.0, 796.72, 66.16], [850.0, 796.45, 64.42], [875.0, 804.8, 64.04], [900.0, 799.75, 63.02]], "rules": [{"column": "c2", "op": "gt", "value": 100, "level": "fail", "hint": "效率超过 100%"}]}, "attachments": [], "note": "存在 >100% 异常点"}, {"index": 3, "item_key": "dcdc_load_reg", "title": "Load Regulation", "verdict": "PASS", "unit": "%", "ts": "2026-08-04 19:43:20", "metrics": [{"key": "load_reg_pct", "label": "Load Reg", "value": -4.660678839343317, "unit": "%", "precision": 3, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "vout_drop", "label": "ΔV", "value": -38.1, "unit": "mV", "precision": 3, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}], "charts": [{"kind": "xy", "title": "Vout vs Iload", "x": {"key": "c0", "label": "Iload", "unit": "mA"}, "series": [{"key": "c1", "name": "Vout (mV)", "type": "smooth", "axis": "left", "unit": "mV", "label": "Vout"}], "id": "dcdc_load_reg_0"}], "table": {"file": "dcdc_load_reg.csv", "rows": 21, "columns": [{"key": "c0", "label": "Iload", "unit": "mA", "align": "right", "precision": 0}, {"key": "c1", "label": "Vout", "unit": "mV", "align": "right", "precision": 3}], "data": [[0.0, 812.092], [50.0, 810.28], [100.0, 807.951], [150.0, 806.396], [200.0, 804.646], [250.0, 802.669], [300.0, 800.75], [350.0, 798.687], [400.0, 796.607], [450.0, 795.073], [500.0, 792.9], [550.0, 791.28], [600.0, 789.483], [650.0, 787.238], [700.0, 785.341], [750.0, 783.768], [800.0, 781.735], [850.0, 779.502], [900.0, 777.576], [950.0, 775.691], [1000.0, 774.243]], "rules": []}, "attachments": [], "note": ""}, {"index": 4, "item_key": "dcdc_line_reg", "title": "Line Regulation", "verdict": "PASS", "unit": "%", "ts": "2026-08-04 19:43:20", "metrics": [{"key": "line_reg_pct", "label": "Line Reg", "value": 0.2896626669200616, "unit": "%", "precision": 3, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "vout_span", "label": "ΔV", "value": 2.4, "unit": "mV", "precision": 3, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}], "charts": [{"kind": "xy", "title": "Vout vs Vin", "x": {"key": "c0", "label": "Vin", "unit": "V"}, "series": [{"key": "c1", "name": "Vout (mV)", "type": "smooth", "axis": "left", "unit": "mV", "label": "Vout"}], "id": "dcdc_line_reg_0"}], "table": {"file": "dcdc_line_reg.csv", "rows": 21, "columns": [{"key": "c0", "label": "Vin", "unit": "V", "align": "right", "precision": 1}, {"key": "c1", "label": "Vout", "unit": "mV", "align": "right", "precision": 3}], "data": [[3.0, 801.236], [3.1, 799.651], [3.2, 801.284], [3.3, 801.653], [3.4, 800.877], [3.5, 800.141], [3.6, 800.617], [3.7, 799.614], [3.8, 799.334], [3.9, 801.63], [4.0, 800.859], [4.1, 800.564], [4.2, 801.541], [4.3, 800.341], [4.4, 801.392], [4.5, 801.283], [4.6, 799.807], [4.7, 799.904], [4.8, 800.003], [4.9, 799.877], [5.0, 800.707]], "rules": []}, "attachments": [], "note": ""}, {"index": 5, "item_key": "dcdc_quiescent", "title": "Quiescent Current", "verdict": "PASS", "unit": "uA", "ts": "2026-08-04 19:43:20", "metrics": [{"key": "iq", "label": "Iq", "value": 11.3, "unit": "uA", "precision": 3, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "divin", "label": "dIvin", "value": 12.4, "unit": "uA", "precision": 3, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "divout", "label": "dIvout", "value": 1.1, "unit": "uA", "precision": 3, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}], "charts": [], "table": null, "attachments": [], "note": "单点差分测"}, {"index": 6, "item_key": "dcdc_load_capability_ripple", "title": "Load Capability & Ripple", "verdict": "PASS", "unit": "mV", "ts": "2026-08-04 19:43:20", "metrics": [{"key": "max_vpp", "label": "Max Vpp", "value": 41.6, "unit": "mV", "precision": 2, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "max_vpp_at", "label": "@ Iload", "value": 1000.0, "unit": "mA", "precision": 0, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}], "charts": [{"kind": "xy", "title": "Vout & Ripple Vpp vs Iload", "x": {"key": "c0", "label": "Iload", "unit": "mA"}, "series": [{"key": "c1", "name": "Vout (mV)", "type": "line", "axis": "left", "unit": "mV", "label": "Vout"}, {"key": "c2", "name": "Vpp (mV)", "type": "bar", "axis": "right", "unit": "mV", "label": "Vpp"}], "id": "dcdc_load_capability_ripple_0"}], "table": {"file": "dcdc_ripple.csv", "rows": 11, "columns": [{"key": "c0", "label": "Iload", "unit": "mA", "align": "right", "precision": 0}, {"key": "c1", "label": "Vout", "unit": "mV", "align": "right", "precision": 1}, {"key": "c2", "label": "Vpp", "unit": "mV", "align": "right", "precision": 2}], "data": [[0.0, 805.0, 7.52], [100.0, 802.8, 11.24], [200.0, 800.6, 14.06], [300.0, 798.4, 19.02], [400.0, 796.2, 21.31], [500.0, 794.0, 24.92], [600.0, 791.8, 28.57], [700.0, 789.6, 32.61], [800.0, 787.4, 35.04], [900.0, 785.2, 39.44], [1000.0, 783.0, 42.0]], "rules": []}, "attachments": [], "note": ""}, {"index": 7, "item_key": "dcdc_switching_freq", "title": "Switching Frequency", "verdict": "PASS", "unit": "kHz", "ts": "2026-08-04 19:43:20", "metrics": [{"key": "fsw_min", "label": "Fsw Min", "value": 2200.0, "unit": "kHz", "precision": 3, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "fsw_max", "label": "Fsw Max", "value": 2200.0, "unit": "kHz", "precision": 3, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "fsw_pts", "label": "点数", "value": 3.0, "unit": "", "precision": 0, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}], "charts": [{"kind": "xy", "title": "Fsw vs Iload", "x": {"key": "c0", "label": "Iload", "unit": "mA"}, "series": [{"key": "c1", "name": "Fsw (kHz)", "type": "line", "axis": "left", "unit": "kHz", "label": "Fsw"}], "logx": true, "logy": true, "id": "dcdc_switching_freq_0"}], "table": {"file": "dcdc_switching_freq.csv", "rows": 12, "columns": [{"key": "c0", "label": "Iload", "unit": "mA", "align": "right", "precision": 0}, {"key": "c1", "label": "Fsw", "unit": "kHz", "align": "right", "precision": 2}], "data": [[0.0, 2201.91], [100.0, 2201.41], [200.0, 2171.12], [300.0, 2196.41], [400.0, 2180.99], [500.0, 2170.24], [600.0, 0.05], [700.0, 2180.34], [800.0, 2198.41], [900.0, 2213.51], [1000.0, 2203.39], [1100.0, 2189.56]], "rules": [{"column": "c1", "op": "outlier", "k": 5, "level": "warn", "hint": "开关频率异常突变"}]}, "attachments": [], "note": "变频模式"}, {"index": 8, "item_key": "dcdc_load_transient", "title": "Load Transient", "verdict": "PASS", "unit": "mV", "ts": "2026-08-04 19:43:20", "metrics": [{"key": "max_over", "label": "最大过冲", "value": 54.0, "unit": "mV", "precision": 1, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "max_under", "label": "最大欠冲", "value": 48.0, "unit": "mV", "precision": 1, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "groups", "label": "组数", "value": 3.0, "unit": "", "precision": 0, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}], "charts": [], "table": {"file": "dcdc_load_transient.csv", "rows": 3, "columns": [{"key": "c0", "label": "Group", "unit": "", "align": "right", "precision": 0}, {"key": "c1", "label": "Overshoot", "unit": "mV", "align": "right", "precision": 1}, {"key": "c2", "label": "Undershoot", "unit": "mV", "align": "right", "precision": 1}, {"key": "c3", "label": "Vpp", "unit": "mV", "align": "right", "precision": 1}], "data": [[1.0, 48.0, 43.0, 107.0], [2.0, 54.0, 48.0, 119.0], [3.0, 60.0, 53.0, 131.0]], "rules": []}, "attachments": [], "note": ""}, {"index": 9, "item_key": "dcdc_line_transient", "title": "Line Transient", "verdict": "N/A", "unit": "mV", "ts": "2026-08-04 19:43:20", "metrics": [{"key": "max_over", "label": "最大过冲", "value": 31.0, "unit": "mV", "precision": 1, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "max_under", "label": "最大欠冲", "value": 29.5, "unit": "mV", "precision": 1, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "groups", "label": "组数", "value": 3.0, "unit": "", "precision": 0, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}], "charts": [], "table": {"file": "dcdc_line_transient.csv", "rows": 3, "columns": [{"key": "c0", "label": "Group", "unit": "", "align": "right", "precision": 0}, {"key": "c1", "label": "Overshoot", "unit": "mV", "align": "right", "precision": 1}, {"key": "c2", "label": "Undershoot", "unit": "mV", "align": "right", "precision": 1}, {"key": "c3", "label": "Vpp", "unit": "mV", "align": "right", "precision": 1}], "data": [[1.0, 48.0, 43.0, 107.0], [2.0, 54.0, 48.0, 119.0], [3.0, 60.0, 53.0, 131.0]], "rules": []}, "attachments": [], "note": ""}, {"index": 10, "item_key": "dcdc_current_limit", "title": "Current Limit", "verdict": "FAIL", "unit": "mA", "ts": "2026-08-04 19:43:20", "metrics": [{"key": "limit", "label": "Current Limit", "value": 0.0, "unit": "mA", "precision": 1, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "peak", "label": "Peak", "value": 0.0, "unit": "mA", "precision": 1, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}], "charts": [{"kind": "xy", "title": "Vout vs Iload", "x": {"key": "c0", "label": "Iload", "unit": "mA"}, "series": [{"key": "c1", "name": "Vout (mV)", "type": "line", "axis": "left", "unit": "mV", "label": "Vout"}], "id": "dcdc_current_limit_0"}], "table": {"file": "dcdc_current_limit.csv", "rows": 36, "columns": [{"key": "c0", "label": "Iload", "unit": "mA", "align": "right", "precision": 0}, {"key": "c1", "label": "Vout", "unit": "mV", "align": "right", "precision": 1}], "data": [[100.0, 0.0], [200.0, 0.0], [300.0, 0.0], [400.0, 0.0], [500.0, 0.0], [600.0, 0.0], [700.0, 0.0], [800.0, 0.0], [900.0, 0.0], [1000.0, 0.0], [1100.0, 0.0], [1200.0, 0.0], [1300.0, 0.0], [1400.0, 0.0], [1500.0, 0.0], [1600.0, 0.0], [1700.0, 0.0], [1800.0, 0.0], [1900.0, 0.0], [2000.0, 0.0], [2100.0, 0.0], [2200.0, 0.0], [2300.0, 0.0], [2400.0, 0.0], [2500.0, 0.0], [2600.0, 0.0], [2700.0, 0.0], [2800.0, 0.0], [2900.0, 0.0], [3000.0, 0.0], [3100.0, 0.0], [3200.0, 0.0], [3300.0, 0.0], [3400.0, 0.0], [3500.0, 0.0], [3600.0, 0.0]], "rules": [{"type": "constant", "columns": ["c0", "c1"], "level": "warn", "hint": "列值恒定，疑似仪器/接线异常"}]}, "attachments": [], "note": "限流点未触发，恒 0"}]};
+const REPORT_DATA = {"meta": {"report_title": "Module Test Report — DCDC", "module_type": "DCDC", "chip": "BES1811", "sample_id": null, "operator": "KK", "temperature_c": 25.0, "vin_nominal_v": null, "vout_nominal_mv": null, "start_time": "2026-07-31 09:12:00", "end_time": "2026-07-31 09:31:24", "duration_s": 1164.0, "generated_at": "2026-08-04 20:36:09+08:00", "sw_version": "0.1.0", "hw_setup": null, "instruments": [], "environment": {"ta_c": 25.0, "humidity_pct": null}}, "summary": {"verdict": "FAIL", "pass": 7, "fail": 2, "warn": 0, "na": 1, "total": 10}, "items": [{"index": 1, "item_key": "dcdc_vout_scan", "title": "Output Voltage Scan", "verdict": "PASS", "unit": "mV", "ts": "2026-08-04 20:36:09", "metrics": [{"key": "default_mv", "label": "Default", "value": 800.0, "unit": "mV", "precision": 3, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "vout_min", "label": "Min", "value": 305.681, "unit": "mV", "precision": 3, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "vout_max", "label": "Max", "value": 761.2, "unit": "mV", "precision": 3, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "step_mv", "label": "Avg Step", "value": 3.575, "unit": "mV", "precision": 3, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}], "charts": [{"kind": "xy", "title": "Vout vs Vbit", "x": {"key": "c0", "label": "Code", "unit": ""}, "series": [{"key": "c1", "name": "Vout (mV)", "type": "line", "axis": "left", "unit": "mV", "label": "Vout"}, {"key": "c2", "name": "Diff (mV)", "type": "bar", "axis": "right", "unit": "mV", "label": "Diff"}], "mark_extrema": true, "zoom": true, "bar_anomaly": {"key": "c2", "op": "outlier", "k": 5}, "id": "dcdc_vout_scan_0"}], "table": {"file": "dcdc_vout_scan.csv", "rows": 126, "columns": [{"key": "c0", "label": "Code", "unit": "", "align": "right", "precision": 0, "fmt": "vbit"}, {"key": "c1", "label": "Vout", "unit": "mV", "align": "right", "precision": 3}, {"key": "c2", "label": "Diff", "unit": "mV", "align": "right", "precision": 3}], "data": [[0.0, 312.859, 0.0], [1.0, 316.296, 3.437], [2.0, 320.271, 3.975], [3.0, 323.383, 3.112], [4.0, 327.329, 3.946], [5.0, 330.768, 3.439], [6.0, 334.096, 3.329], [7.0, 338.031, 3.935], [8.0, 341.23, 3.199], [9.0, 345.122, 3.892], [10.0, 348.406, 3.284], [11.0, 351.998, 3.592], [12.0, 355.84, 3.842], [13.0, 359.736, 3.897], [14.0, 362.749, 3.013], [15.0, 366.404, 3.655], [16.0, 370.302, 3.898], [17.0, 374.133, 3.831], [18.0, 377.412, 3.279], [19.0, 380.842, 3.431], [20.0, 384.881, 4.039], [21.0, 387.712, 2.831], [22.0, 391.937, 4.225], [23.0, 395.057, 3.12], [24.0, 398.515, 3.459], [25.0, 402.069, 3.554], [26.0, 405.797, 3.728], [27.0, 409.778, 3.981], [28.0, 412.845, 3.067], [29.0, 416.74, 3.896], [30.0, 420.361, 3.621], [31.0, 423.723, 3.362], [32.0, 427.438, 3.715], [33.0, 430.625, 3.187], [34.0, 434.198, 3.572], [35.0, 437.89, 3.692], [36.0, 441.844, 3.955], [37.0, 445.217, 3.373], [38.0, 448.701, 3.484], [39.0, 452.493, 3.792], [40.0, 455.963, 3.469], [41.0, 459.415, 3.452], [42.0, 463.386, 3.971], [43.0, 466.884, 3.499], [44.0, 470.095, 3.211], [45.0, 473.935, 3.839], [46.0, 477.47, 3.536], [47.0, 481.325, 3.855], [48.0, 484.784, 3.458], [49.0, 488.005, 3.222], [50.0, 492.134, 4.129], [51.0, 495.019, 2.885], [52.0, 498.834, 3.815], [53.0, 502.681, 3.846], [54.0, 505.772, 3.091], [55.0, 509.616, 3.845], [56.0, 512.831, 3.215], [57.0, 516.91, 4.078], [58.0, 520.562, 3.652], [59.0, 523.983, 3.422], [60.0, 527.8, 3.817], [61.0, 530.926, -18.4], [62.0, 534.806, 3.88], [63.0, 538.3, 3.494], [64.0, 541.864, 3.563], [65.0, 545.34, 3.476], [66.0, 549.222, 3.882], [67.0, 552.881, 3.659], [68.0, 556.079, 3.199], [69.0, 559.806, 3.727], [70.0, 562.899, 3.092], [71.0, 566.986, 4.088], [72.0, 570.518, 3.532], [73.0, 574.369, 3.852], [74.0, 577.808, 3.438], [75.0, 580.953, 3.145], [76.0, 584.609, 3.656], [77.0, 588.41, 3.801], [78.0, 591.468, 3.058], [79.0, 595.394, 3.926], [80.0, 598.734, 3.34], [81.0, 602.269, 3.534], [82.0, 605.797, 3.528], [83.0, 609.94, 4.142], [84.0, 613.003, 3.064], [85.0, 616.673, 3.67], [86.0, 620.363, 3.69], [87.0, 624.322, 3.959], [88.0, 627.264, 21.2], [89.0, 631.134, 3.87], [90.0, 634.79, 3.655], [91.0, 638.632, 3.842], [92.0, 642.155, 3.524], [93.0, 645.766, 3.611], [94.0, 648.873, 3.107], [95.0, 652.557, 3.685], [96.0, 656.087, 3.53], [97.0, 660.082, 3.995], [98.0, 663.716, 3.634], [99.0, 666.646, 2.93], [100.0, 670.241, 3.595], [101.0, 673.861, 3.62], [102.0, 677.437, 3.576], [103.0, 681.213, 3.776], [104.0, 684.871, 3.658], [105.0, 688.185, 3.314], [106.0, 691.553, 3.368], [107.0, 695.46, 3.907], [108.0, 698.995, 3.535], [109.0, 702.728, 3.733], [110.0, 706.612, 3.884], [111.0, 709.977, 3.365], [112.0, 713.412, 3.435], [113.0, 717.069, 3.657], [114.0, 720.691, 3.622], [115.0, 723.768, 3.077], [116.0, 728.02, 4.251], [117.0, 731.499, 3.479], [118.0, 735.15, 3.651], [119.0, 738.663, 3.514], [120.0, 741.914, 3.251], [121.0, 745.494, 3.58], [122.0, 748.833, 3.339], [123.0, 752.832, 4.0], [124.0, 755.95, 3.117], [125.0, 759.529, 3.579]], "rules": [{"column": "c2", "op": "outlier", "k": 5, "level": "warn", "hint": "步进异常跳变(>5×MAD)"}]}, "attachments": [], "note": "有效段步进 3.575mV，线性度 2.026%"}, {"index": 2, "item_key": "dcdc_efficiency", "title": "Efficiency", "verdict": "FAIL", "unit": "%", "ts": "2026-08-04 20:36:09", "metrics": [{"key": "max_eff", "label": "Max η", "value": 104.7, "unit": "%", "precision": 2, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "max_eff_at", "label": "Peak @ Iload", "value": 750.0, "unit": "mA", "precision": 0, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "avg_eff", "label": "Avg η", "value": 88.2, "unit": "%", "precision": 2, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}], "charts": [{"kind": "xy", "title": "Efficiency vs Iload", "x": {"key": "c0", "label": "Iload", "unit": "mA"}, "series": [{"key": "c2", "name": "Efficiency (%)", "type": "line", "axis": "left", "unit": "%", "label": "Efficiency"}], "anomaly": {"key": "c2", "op": "gt", "value": 100}, "id": "dcdc_efficiency_0"}], "table": {"file": "dcdc_efficiency.csv", "rows": 36, "columns": [{"key": "c0", "label": "Iload", "unit": "mA", "align": "right", "precision": 0}, {"key": "c1", "label": "Vout", "unit": "mV", "align": "right", "precision": 2}, {"key": "c2", "label": "Efficiency", "unit": "%", "align": "right", "precision": 2}], "data": [[25.0, 795.95, 62.79], [50.0, 794.63, 64.85], [75.0, 795.82, 65.5], [100.0, 798.36, 67.47], [125.0, 804.49, 68.91], [150.0, 795.78, 72.34], [175.0, 798.17, 72.92], [200.0, 795.47, 74.93], [225.0, 805.92, 78.05], [250.0, 799.81, 78.56], [275.0, 795.23, 79.09], [300.0, 797.18, 81.53], [325.0, 795.94, 84.65], [350.0, 805.41, 83.9], [375.0, 795.76, 87.08], [400.0, 794.32, 88.8], [425.0, 805.74, 90.42], [450.0, 802.35, 93.09], [475.0, 798.4, 89.62], [500.0, 803.26, 87.67], [525.0, 803.35, 87.1], [550.0, 796.68, 84.82], [575.0, 805.82, 84.6], [600.0, 803.67, 83.06], [625.0, 802.88, 81.29], [650.0, 800.21, 77.85], [675.0, 794.35, 76.57], [700.0, 797.35, 73.92], [725.0, 802.31, 72.94], [750.0, 799.37, 104.7], [775.0, 805.86, 71.64], [800.0, 798.38, 70.03], [825.0, 796.72, 66.16], [850.0, 796.45, 64.42], [875.0, 804.8, 64.04], [900.0, 799.75, 63.02]], "rules": [{"column": "c2", "op": "gt", "value": 100, "level": "fail", "hint": "效率超过 100%"}]}, "attachments": [], "note": "存在 >100% 异常点"}, {"index": 3, "item_key": "dcdc_load_reg", "title": "Load Regulation", "verdict": "PASS", "unit": "%", "ts": "2026-08-04 20:36:09", "metrics": [{"key": "load_reg_pct", "label": "Load Reg", "value": -4.660678839343317, "unit": "%", "precision": 3, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "vout_drop", "label": "ΔV", "value": -38.1, "unit": "mV", "precision": 3, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}], "charts": [{"kind": "xy", "title": "Vout vs Iload", "x": {"key": "c0", "label": "Iload", "unit": "mA"}, "series": [{"key": "c1", "name": "Vout (mV)", "type": "smooth", "axis": "left", "unit": "mV", "label": "Vout"}], "id": "dcdc_load_reg_0"}], "table": {"file": "dcdc_load_reg.csv", "rows": 21, "columns": [{"key": "c0", "label": "Iload", "unit": "mA", "align": "right", "precision": 0}, {"key": "c1", "label": "Vout", "unit": "mV", "align": "right", "precision": 3}], "data": [[0.0, 812.092], [50.0, 810.28], [100.0, 807.951], [150.0, 806.396], [200.0, 804.646], [250.0, 802.669], [300.0, 800.75], [350.0, 798.687], [400.0, 796.607], [450.0, 795.073], [500.0, 792.9], [550.0, 791.28], [600.0, 789.483], [650.0, 787.238], [700.0, 785.341], [750.0, 783.768], [800.0, 781.735], [850.0, 779.502], [900.0, 777.576], [950.0, 775.691], [1000.0, 774.243]], "rules": []}, "attachments": [], "note": ""}, {"index": 4, "item_key": "dcdc_line_reg", "title": "Line Regulation", "verdict": "PASS", "unit": "%", "ts": "2026-08-04 20:36:09", "metrics": [{"key": "line_reg_pct", "label": "Line Reg", "value": 0.2896626669200616, "unit": "%", "precision": 3, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "vout_span", "label": "ΔV", "value": 2.4, "unit": "mV", "precision": 3, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}], "charts": [{"kind": "xy", "title": "Vout vs Vin", "x": {"key": "c0", "label": "Vin", "unit": "V"}, "series": [{"key": "c1", "name": "Vout (mV)", "type": "smooth", "axis": "left", "unit": "mV", "label": "Vout"}], "id": "dcdc_line_reg_0"}], "table": {"file": "dcdc_line_reg.csv", "rows": 21, "columns": [{"key": "c0", "label": "Vin", "unit": "V", "align": "right", "precision": 1}, {"key": "c1", "label": "Vout", "unit": "mV", "align": "right", "precision": 3}], "data": [[3.0, 801.236], [3.1, 799.651], [3.2, 801.284], [3.3, 801.653], [3.4, 800.877], [3.5, 800.141], [3.6, 800.617], [3.7, 799.614], [3.8, 799.334], [3.9, 801.63], [4.0, 800.859], [4.1, 800.564], [4.2, 801.541], [4.3, 800.341], [4.4, 801.392], [4.5, 801.283], [4.6, 799.807], [4.7, 799.904], [4.8, 800.003], [4.9, 799.877], [5.0, 800.707]], "rules": []}, "attachments": [], "note": ""}, {"index": 5, "item_key": "dcdc_quiescent", "title": "Quiescent Current", "verdict": "PASS", "unit": "uA", "ts": "2026-08-04 20:36:09", "metrics": [{"key": "iq", "label": "Iq", "value": 11.3, "unit": "uA", "precision": 3, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "divin", "label": "dIvin", "value": 12.4, "unit": "uA", "precision": 3, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "divout", "label": "dIvout", "value": 1.1, "unit": "uA", "precision": 3, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}], "charts": [], "table": null, "attachments": [], "note": "单点差分测"}, {"index": 6, "item_key": "dcdc_load_capability_ripple", "title": "Load Capability & Ripple", "verdict": "PASS", "unit": "mV", "ts": "2026-08-04 20:36:09", "metrics": [{"key": "max_vpp", "label": "Max Vpp", "value": 41.6, "unit": "mV", "precision": 2, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "max_vpp_at", "label": "@ Iload", "value": 1000.0, "unit": "mA", "precision": 0, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}], "charts": [{"kind": "xy", "title": "Vout & Ripple Vpp vs Iload", "x": {"key": "c0", "label": "Iload", "unit": "mA"}, "series": [{"key": "c1", "name": "Vout (mV)", "type": "line", "axis": "left", "unit": "mV", "label": "Vout"}, {"key": "c2", "name": "Vpp (mV)", "type": "bar", "axis": "right", "unit": "mV", "label": "Vpp"}], "id": "dcdc_load_capability_ripple_0"}], "table": {"file": "dcdc_ripple.csv", "rows": 11, "columns": [{"key": "c0", "label": "Iload", "unit": "mA", "align": "right", "precision": 0}, {"key": "c1", "label": "Vout", "unit": "mV", "align": "right", "precision": 1}, {"key": "c2", "label": "Vpp", "unit": "mV", "align": "right", "precision": 2}], "data": [[0.0, 805.0, 7.52], [100.0, 802.8, 11.24], [200.0, 800.6, 14.06], [300.0, 798.4, 19.02], [400.0, 796.2, 21.31], [500.0, 794.0, 24.92], [600.0, 791.8, 28.57], [700.0, 789.6, 32.61], [800.0, 787.4, 35.04], [900.0, 785.2, 39.44], [1000.0, 783.0, 42.0]], "rules": []}, "attachments": [], "note": ""}, {"index": 7, "item_key": "dcdc_switching_freq", "title": "Switching Frequency", "verdict": "PASS", "unit": "kHz", "ts": "2026-08-04 20:36:09", "metrics": [{"key": "fsw_min", "label": "Fsw Min", "value": 2200.0, "unit": "kHz", "precision": 3, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "fsw_max", "label": "Fsw Max", "value": 2200.0, "unit": "kHz", "precision": 3, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "fsw_pts", "label": "点数", "value": 3.0, "unit": "", "precision": 0, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}], "charts": [{"kind": "xy", "title": "Fsw vs Iload", "x": {"key": "c0", "label": "Iload", "unit": "mA"}, "series": [{"key": "c1", "name": "Fsw (kHz)", "type": "line", "axis": "left", "unit": "kHz", "label": "Fsw"}], "logx": true, "logy": true, "id": "dcdc_switching_freq_0"}], "table": {"file": "dcdc_switching_freq.csv", "rows": 12, "columns": [{"key": "c0", "label": "Iload", "unit": "mA", "align": "right", "precision": 0}, {"key": "c1", "label": "Fsw", "unit": "kHz", "align": "right", "precision": 2}], "data": [[0.0, 2201.91], [100.0, 2201.41], [200.0, 2171.12], [300.0, 2196.41], [400.0, 2180.99], [500.0, 2170.24], [600.0, 0.05], [700.0, 2180.34], [800.0, 2198.41], [900.0, 2213.51], [1000.0, 2203.39], [1100.0, 2189.56]], "rules": [{"column": "c1", "op": "outlier", "k": 5, "level": "warn", "hint": "开关频率异常突变"}]}, "attachments": [], "note": "变频模式"}, {"index": 8, "item_key": "dcdc_load_transient", "title": "Load Transient", "verdict": "PASS", "unit": "mV", "ts": "2026-08-04 20:36:09", "metrics": [{"key": "max_over", "label": "最大过冲", "value": 54.0, "unit": "mV", "precision": 1, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "max_under", "label": "最大欠冲", "value": 48.0, "unit": "mV", "precision": 1, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "groups", "label": "组数", "value": 3.0, "unit": "", "precision": 0, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}], "charts": [], "table": {"file": "dcdc_load_transient.csv", "rows": 3, "columns": [{"key": "c0", "label": "Group", "unit": "", "align": "right", "precision": 0}, {"key": "c1", "label": "Overshoot", "unit": "mV", "align": "right", "precision": 1}, {"key": "c2", "label": "Undershoot", "unit": "mV", "align": "right", "precision": 1}, {"key": "c3", "label": "Vpp", "unit": "mV", "align": "right", "precision": 1}], "data": [[1.0, 48.0, 43.0, 107.0], [2.0, 54.0, 48.0, 119.0], [3.0, 60.0, 53.0, 131.0]], "rules": []}, "attachments": [], "note": ""}, {"index": 9, "item_key": "dcdc_line_transient", "title": "Line Transient", "verdict": "N/A", "unit": "mV", "ts": "2026-08-04 20:36:09", "metrics": [{"key": "max_over", "label": "最大过冲", "value": 31.0, "unit": "mV", "precision": 1, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "max_under", "label": "最大欠冲", "value": 29.5, "unit": "mV", "precision": 1, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "groups", "label": "组数", "value": 3.0, "unit": "", "precision": 0, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}], "charts": [], "table": {"file": "dcdc_line_transient.csv", "rows": 3, "columns": [{"key": "c0", "label": "Group", "unit": "", "align": "right", "precision": 0}, {"key": "c1", "label": "Overshoot", "unit": "mV", "align": "right", "precision": 1}, {"key": "c2", "label": "Undershoot", "unit": "mV", "align": "right", "precision": 1}, {"key": "c3", "label": "Vpp", "unit": "mV", "align": "right", "precision": 1}], "data": [[1.0, 48.0, 43.0, 107.0], [2.0, 54.0, 48.0, 119.0], [3.0, 60.0, 53.0, 131.0]], "rules": []}, "attachments": [], "note": ""}, {"index": 10, "item_key": "dcdc_current_limit", "title": "Current Limit", "verdict": "FAIL", "unit": "mA", "ts": "2026-08-04 20:36:09", "metrics": [{"key": "limit", "label": "Current Limit", "value": 0.0, "unit": "mA", "precision": 1, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}, {"key": "peak", "label": "Peak", "value": 0.0, "unit": "mA", "precision": 1, "spec_min": null, "spec_max": null, "margin_pct": null, "verdict": null}], "charts": [{"kind": "xy", "title": "Vout vs Iload", "x": {"key": "c0", "label": "Iload", "unit": "mA"}, "series": [{"key": "c1", "name": "Vout (mV)", "type": "line", "axis": "left", "unit": "mV", "label": "Vout"}], "id": "dcdc_current_limit_0"}], "table": {"file": "dcdc_current_limit.csv", "rows": 36, "columns": [{"key": "c0", "label": "Iload", "unit": "mA", "align": "right", "precision": 0}, {"key": "c1", "label": "Vout", "unit": "mV", "align": "right", "precision": 1}], "data": [[100.0, 0.0], [200.0, 0.0], [300.0, 0.0], [400.0, 0.0], [500.0, 0.0], [600.0, 0.0], [700.0, 0.0], [800.0, 0.0], [900.0, 0.0], [1000.0, 0.0], [1100.0, 0.0], [1200.0, 0.0], [1300.0, 0.0], [1400.0, 0.0], [1500.0, 0.0], [1600.0, 0.0], [1700.0, 0.0], [1800.0, 0.0], [1900.0, 0.0], [2000.0, 0.0], [2100.0, 0.0], [2200.0, 0.0], [2300.0, 0.0], [2400.0, 0.0], [2500.0, 0.0], [2600.0, 0.0], [2700.0, 0.0], [2800.0, 0.0], [2900.0, 0.0], [3000.0, 0.0], [3100.0, 0.0], [3200.0, 0.0], [3300.0, 0.0], [3400.0, 0.0], [3500.0, 0.0], [3600.0, 0.0]], "rules": [{"type": "constant", "columns": ["c0", "c1"], "level": "warn", "hint": "列值恒定，疑似仪器/接线异常"}]}, "attachments": [], "note": "限流点未触发，恒 0"}]};
 
 /* ================================================================
  * i18n —— 中/英文案集中管理
@@ -453,7 +458,7 @@ const I18N = {
       sign_date:"日期",rev_a:"Rev A",rev_init:"初版发布",
       copy_link:"复制链接",copied:"链接已复制",chart_png:"导出 PNG",
       chart_reset:"重置缩放",chart_logx:"log X",chart_logy:"log Y",
-      chart_band:"规格带",chart_data:"图表数据",
+      chart_data:"图表数据",
       page:"页",of:"/",density:"紧凑",per_page:"每页",
       render_all:"渲染全部（便于查找）",virtual_on:"虚拟滚动",
       truncated:"仅打印前",rows_omitted:"行，其余省略（屏幕版可查看全部）",
@@ -482,7 +487,7 @@ const I18N = {
       sign_date:"Date",rev_a:"Rev A",rev_init:"Initial release",
       copy_link:"Copy link",copied:"Link copied",chart_png:"Export PNG",
       chart_reset:"Reset zoom",chart_logx:"log X",chart_logy:"log Y",
-      chart_band:"Spec band",chart_data:"Chart data",
+      chart_data:"Chart data",
       page:"Page",of:"/",density:"Compact",per_page:"Per page",
       render_all:"Render all (for find)",virtual_on:"Virtual scroll",
       truncated:"Prints first",rows_omitted:"rows; remainder omitted (see on-screen)",
@@ -527,6 +532,31 @@ function fmt(v, p) {
 }
 /* 自动量纲映射（mV↔V, uA↔mA） */
 const UNIT_MAP = {"mV":"V","uA":"mA","µA":"mA"};
+/* 电压位（Vbit）进制：全局 chips 状态 + 持久化，位宽取全局最大码位宽 */
+const VBIT = {fmt: localStorage.getItem("rpt.vbitfmt") || "hex"};
+function vbitCols() {
+  const out = [];
+  (REPORT_DATA.items || []).forEach(it => {
+    if (!it.table) return;
+    it.table.columns.forEach((c, i) => { if (c.fmt === "vbit") out.push({table:it.table, i}); });
+  });
+  return out;
+}
+function vbitWidth() {
+  let m = 0;
+  vbitCols().forEach(o => o.table.data.forEach(r => {
+    const v = r[o.i];
+    if (typeof v === "number" && Number.isInteger(v) && v >= 0) m = Math.max(m, v);
+  }));
+  return Math.max(1, m.toString(2).length);
+}
+function fmtVbit(v, width) {
+  if (typeof v !== "number" || !Number.isInteger(v) || v < 0) return null;
+  const f = VBIT.fmt;
+  if (f === "bin") return "0b" + v.toString(2).padStart(width, "0");
+  if (f === "dec") return String(v);
+  return "0x" + v.toString(16).toUpperCase().padStart(Math.ceil(width / 4), "0");
+}
 function scaleVal(v, unit) {
   if (!S.unitScaled || !UNIT_MAP[unit] || v === null || isNaN(Number(v))) return v;
   return Number(v) / 1000;
@@ -757,8 +787,7 @@ function renderItems() {
         (c.kind === "xy"
           ? '<button class="tbtn" data-cact="reset">' + esc(t.chart_reset) + "</button>" +
             '<button class="tbtn" data-cact="logx" aria-pressed="false">' + esc(t.chart_logx) + "</button>" +
-            '<button class="tbtn" data-cact="logy" aria-pressed="false">' + esc(t.chart_logy) + "</button>" +
-            '<button class="tbtn" data-cact="band" aria-pressed="true">' + esc(t.chart_band) + "</button>"
+            '<button class="tbtn" data-cact="logy" aria-pressed="false">' + esc(t.chart_logy) + "</button>"
           : "") +
         '</div><div class="chart-legend"></div>' +
         '<div class="chart-box" data-item="' + esc(it.item_key) + '" data-chart="' + i + '"></div>' +
@@ -848,8 +877,19 @@ function niceTicks(lo, hi, n) {
   return out.length ? out : [lo, hi];
 }
 function logTicks(lo, hi) {
+  /* 自适应 log 刻度：跨 ≤1.5 个数量级时细分 (1/2/5)×10^e，否则按 10^e 主刻度 */
+  lo = Math.max(lo, 1e-12); hi = Math.max(hi, lo * 1.0001);
   const out = [];
-  for (let e = Math.ceil(Math.log10(Math.max(lo, 1e-12))); e <= Math.floor(Math.log10(hi)); e++)
+  if (hi / lo <= 30) {
+    for (let e = Math.floor(Math.log10(lo)) - 1; e <= Math.ceil(Math.log10(hi)); e++) {
+      [1, 2, 5].forEach(m => {
+        const v = m * Math.pow(10, e);
+        if (v >= lo * 0.999 && v <= hi * 1.001) out.push(Number(v.toPrecision(12)));
+      });
+    }
+    return out.length ? out : [lo, hi];
+  }
+  for (let e = Math.ceil(Math.log10(lo)); e <= Math.floor(Math.log10(hi)); e++)
     out.push(Math.pow(10, e));
   return out.length ? out : [lo, hi];
 }
@@ -897,26 +937,29 @@ function drawChart(box) {
     return out;
   };
   const allPts = series.map(pairs);
-  /* 值域（含缩放状态） */
-  const domOf = (pts, pad) => {
+  /* 值域（含缩放状态）；log 模式下按对数空间留白，保证刻度/范围自适应 */
+  const domOf = (pts, pad, log) => {
     let lo = Infinity, hi = -Infinity;
     pts.flat().forEach(p => { lo = Math.min(lo, p); hi = Math.max(hi, p); });
     if (!isFinite(lo)) { lo = 0; hi = 1; }
     if (lo === hi) { lo -= 1; hi += 1; }
+    if (log) {
+      const eLo = Math.log10(Math.max(lo, 1e-12)), eHi = Math.log10(Math.max(hi, 1e-12));
+      if (eHi - eLo < 1e-9) return [lo / 1.12, hi * 1.12];
+      const d = (eHi - eLo) * (pad || 0.06);
+      return [Math.pow(10, eLo - d), Math.pow(10, eHi + d)];
+    }
     const d = (hi - lo) * (pad || 0.06);
     return [lo - d, hi + d];
   };
   const xAll = allPts.map(p => p.map(q => q[0]));
-  let xDom = st.dom ? st.dom.x : domOf(xAll, 0.04);
+  let xDom = st.dom ? st.dom.x : domOf(xAll, 0.04, st.logx);
   const yDomFor = ss => {
     const pts = allPts.filter((p, i) => ss.includes(series[i])).map(p => p.map(q => q[1]));
-    return domOf(pts, 0.1);
+    return domOf(pts, 0.1, st.logy);
   };
   let yL = st.dom ? st.dom.yL : yDomFor(leftS.length ? leftS : series);
   let yR = rightS.length ? (st.dom && st.dom.yR ? st.dom.yR : yDomFor(rightS)) : null;
-  if (spec.ref_y !== undefined && !st.dom) {
-    yL = [Math.min(yL[0], spec.ref_y * 0.9), Math.max(yL[1], spec.ref_y * 1.05)];
-  }
   const sx = v => {
     if (st.logx) v = Math.log10(Math.max(v, 1e-12));
     const lo = st.logx ? Math.log10(Math.max(xDom[0], 1e-12)) : xDom[0];
@@ -942,12 +985,18 @@ function drawChart(box) {
       tx.textContent = fmtTick(tv);
     });
     if (label) {
-      const lb = svgEl("text", {x:right ? W - 6 : 10, y:M.t + ih / 2,
+      /* 轴标题与图区留边距：右侧 26px / 左侧 16px（原右侧贴边太挤） */
+      const ax = right ? W - 26 : 16;
+      const lb = svgEl("text", {x:ax, y:M.t + ih / 2,
         "text-anchor":"middle", "font-size":11, fill:P.ink3,
-        transform:"rotate(" + (right ? 90 : -90) + " " + (right ? W - 6 : 10) + " " + (M.t + ih / 2) + ")"}, svg);
+        transform:"rotate(" + (right ? 90 : -90) + " " + ax + " " + (M.t + ih / 2) + ")"}, svg);
       lb.textContent = label;
     }
   };
+  /* X 轴：vbit 列按当前进制渲染刻度（仅整数），其余数值走 fmtTick */
+  const xIsVbit = table.columns.some(c => c.key === spec.x.key && c.fmt === "vbit");
+  const xTickTxt = v => (xIsVbit && Number.isInteger(v) && v >= 0)
+    ? (fmtVbit(v, vbitWidth()) || fmtTick(v)) : fmtTick(v);
   const xt = st.logx ? logTicks(xDom[0], xDom[1]) : niceTicks(xDom[0], xDom[1], 8);
   xt.forEach(tv => {
     const x = sx(tv);
@@ -955,32 +1004,16 @@ function drawChart(box) {
     svgEl("line", {x1:x, x2:x, y1:M.t, y2:M.t + ih, stroke:P.grid}, svg);
     const tx = svgEl("text", {x:x, y:M.t + ih + 16, "text-anchor":"middle",
       "font-size":10, fill:P.ink3}, svg);
-    tx.textContent = fmtTick(tv);
+    tx.textContent = xTickTxt(tv);
   });
   const xlab = svgEl("text", {x:M.l + iw / 2, y:H - 6, "text-anchor":"middle",
     "font-size":11, fill:P.ink3}, svg);
-  xlab.textContent = spec.x.label + (spec.x.unit ? " (" + spec.x.unit + ")" : "");
+  xlab.textContent = (xIsVbit ? "Vbit" : spec.x.label) + (spec.x.unit ? " (" + spec.x.unit + ")" : "");
   drawAxis(yL, st.logy, syL, false,
     leftS[0] ? leftS[0].label + (leftS[0].unit ? " (" + leftS[0].unit + ")" : "") : "");
   if (yR) drawAxis(yR, st.logy, syR, true,
     rightS[0] ? rightS[0].label + (rightS[0].unit ? " (" + rightS[0].unit + ")" : "") : "");
   svgEl("rect", {x:M.l, y:M.t, width:iw, height:ih, fill:"none", stroke:P.line}, svg);
-  /* 规格带 */
-  if (st.band && spec.spec_band) {
-    const b = spec.spec_band;
-    const y1 = syL(b.y_max), y2 = syL(b.y_min);
-    svgEl("rect", {x:M.l, y:y1, width:iw, height:Math.max(y2 - y1, 0),
-      fill:P.pass, opacity:.08}, svg);
-  }
-  /* 参考线（如效率 100%） */
-  if (spec.ref_y !== undefined) {
-    const y = syL(spec.ref_y);
-    svgEl("line", {x1:M.l, x2:M.l + iw, y1:y, y2:y, stroke:P.warn,
-      "stroke-dasharray":"5 4", "stroke-width":1.2}, svg);
-    const tx = svgEl("text", {x:M.l + iw - 4, y:y - 5, "text-anchor":"end",
-      "font-size":10, fill:P.warn}, svg);
-    tx.textContent = fmtTick(spec.ref_y);
-  }
   /* 系列 */
   series.forEach((s, si) => {
     const pts = allPts[series.indexOf(s)];
@@ -988,10 +1021,27 @@ function drawChart(box) {
     const yFn = s.axis === "right" && syR ? syR : syL;
     if (s.type === "bar") {
       const bw = Math.max(2, Math.min(18, iw / Math.max(pts.length, 1) * 0.5));
+      /* 异常柱标红：bar_anomaly 规则（outlier=k×MAD / gt） */
+      let barThresh = null;
+      const ba = spec.bar_anomaly;
+      if (ba && ba.key === s.key && pts.length > 3) {
+        if (ba.op === "outlier") {
+          const vals = pts.map(p => p[1]).sort((a, b) => a - b);
+          const med = vals[Math.floor(vals.length / 2)];
+          const mads = vals.map(v => Math.abs(v - med)).sort((a, b) => a - b);
+          const mad = mads[Math.floor(mads.length / 2)];
+          if (mad >= 1e-12) barThresh = {med, lim:(ba.k || 5) * mad, op:"outlier"};
+        } else if (ba.op === "gt") barThresh = {value:ba.value, op:"gt"};
+      }
+      const barBad = v => barThresh &&
+        (barThresh.op === "gt" ? v > barThresh.value
+         : Math.abs(v - barThresh.med) > barThresh.lim);
       pts.forEach(p => {
         const y0 = yFn(Math.max(0, yR ? yR[0] : yL[0])), y1 = yFn(p[1]);
+        const bad = barBad(p[1]);
         svgEl("rect", {x:sx(p[0]) - bw / 2, y:Math.min(y0, y1), width:bw,
-          height:Math.abs(y1 - y0), fill:color, opacity:.55}, svg);
+          height:Math.abs(y1 - y0), fill:bad ? P.fail : color,
+          opacity:bad ? .85 : .55}, svg);
       });
     } else {
       if (s.type === "line" || s.type === "smooth") {
@@ -1073,8 +1123,9 @@ function drawChart(box) {
       if (d < bd) { bd = d; best = p; }
     }));
     if (!best) return;
-    let h = '<div class="tt-x">' + esc(spec.x.label) + " = " +
-      fmtTick(best[0]) + (spec.x.unit ? " " + esc(spec.x.unit) : "") + "</div>";
+    const bxTxt = xIsVbit ? (fmtVbit(best[0], vbitWidth()) || fmtTick(best[0])) : fmtTick(best[0]);
+    let h = '<div class="tt-x">' + esc(xIsVbit ? "Vbit" : spec.x.label) + " = " +
+      bxTxt + (spec.x.unit ? " " + esc(spec.x.unit) : "") + "</div>";
     series.forEach((s, i) => {
       const p = allPts[i].reduce((a, q) =>
         Math.abs(q[0] - best[0]) < Math.abs((a || [Infinity])[0] - best[0]) ? q : a, null);
@@ -1126,12 +1177,19 @@ function drawChart(box) {
     alt.dataset.done = "1";
     const cols = [spec.x].concat(spec.series || []);
     const ixs = cols.map(c => table.columns.findIndex(cc => cc.key === c.key));
-    let h = "<table class='tbl compact'><thead><tr>" + cols.map(c =>
-      "<th scope='col'>" + esc(c.label || c.name || "") + "</th>").join("") +
-      "</tr></thead><tbody>";
+    const vbW = vbitWidth();
+    let h = "<table class='tbl compact'><thead><tr>" + cols.map((c, ci) => {
+      const col = table.columns[ixs[ci]];
+      const lab = col && col.fmt === "vbit" ? "Vbit" : (c.label || c.name || "");
+      return "<th scope='col'>" + esc(lab) + "</th>";
+    }).join("") + "</tr></thead><tbody>";
     table.data.slice(0, 50).forEach(row => {
-      h += "<tr>" + ixs.map(i => "<td class='num'>" +
-        (i >= 0 && row[i] !== null ? esc(row[i]) : DASH) + "</td>").join("") + "</tr>";
+      h += "<tr>" + ixs.map((i, ci) => {
+        const col = i >= 0 ? table.columns[i] : null;
+        const v = i >= 0 ? row[i] : null;
+        const vb = col && col.fmt === "vbit" ? fmtVbit(v, vbW) : null;
+        return "<td class='num'>" + (vb ? esc(vb) : (v !== null ? esc(v) : DASH)) + "</td>";
+      }).join("") + "</tr>";
     });
     alt.innerHTML = h + "</tbody></table>";
   }
@@ -1184,6 +1242,8 @@ function buildTable(host, item) {
   if (!table) return;
   const t = T();
   const flags = evalRules(table);
+  const vbW = vbitWidth();
+  const vbitCell = v => fmtVbit(v, vbW);
   (window._anom = window._anom || {})[item.item_key] = flags.count;
   const st = {sort:null, filters:{}, page:1, per:25, compact:false,
     onlyAnom:host.dataset.onlyAnom === "1", renderAll:false, showFlt:false};
@@ -1219,7 +1279,9 @@ function buildTable(host, item) {
     table.columns.forEach((c, ci) => {
       const v = row[ci];
       const fl = flags.cells[ri + ":" + ci];
-      const cls = [c.align === "right" ? "r num" : "",
+      const isVb = c.fmt === "vbit";
+      /* vbit 与数值列统一右对齐（vbit 补零等宽），异常不改对齐 */
+      const cls = [(c.align === "right" || isVb) ? "r num" : "",
         fl ? "cell-" + fl : "", ci === 0 ? "fcol" : ""].join(" ").trim();
       if (c.kind === "image") {  /* 截图列：单元格 = attachments 下标 → 缩略图 */
         const att = typeof v === "number" ? (item.attachments || [])[v] : null;
@@ -1232,11 +1294,13 @@ function buildTable(host, item) {
         return;
       }
       const full = typeof v === "number" ? ' title="' + v + '"' : "";
+      const vb = isVb ? vbitCell(v) : null;
       h += "<td class='" + cls + "'" + full + ">" +
-        (typeof v === "number"
-          ? esc(fmt(scaleVal(v, c.unit), S.unitScaled && UNIT_MAP[c.unit]
-              ? Math.min((c.precision ?? 3) + 3, 9) : c.precision))
-          : (v === null ? DASH : esc(v))) + "</td>";
+        (vb ? esc(vb)
+          : (typeof v === "number"
+            ? esc(fmt(scaleVal(v, c.unit), S.unitScaled && UNIT_MAP[c.unit]
+                ? Math.min((c.precision ?? 3) + 3, 9) : c.precision))
+            : (v === null ? DASH : esc(v)))) + "</td>";
     });
     return h;
   };
@@ -1244,8 +1308,16 @@ function buildTable(host, item) {
     let h = "<tr>";
     table.columns.forEach((c, ci) => {
       const sorted = st.sort && st.sort.col === ci;
-      h += "<th scope='col' class='" + (c.align === "right" ? "r" : "") +
-        (ci === 0 ? " fcol" : "") + "' data-col='" + ci + "'>" + esc(c.label) +
+      /* vbit 列：列标题 = 进制下拉（BIN/HEX/DEC），单元格与列均右对齐 */
+      const hlabel = c.fmt === "vbit"
+        ? "<span class='vbit-th'><span class='vbit-cap'>Vbit</span>" +
+          "<select class='vbit-sel' data-vbsel aria-label='Vbit radix'>" +
+          ["bin", "hex", "dec"].map(f =>
+            "<option value='" + f + "'" + (VBIT.fmt === f ? " selected" : "") + ">" +
+            f.toUpperCase() + "</option>").join("") + "</select></span>"
+        : esc(c.label);
+      h += "<th scope='col' class='r" + (ci === 0 ? " fcol" : "") + "' data-col='" + ci + "'>" +
+        hlabel +
         (c.unit ? " <span class='u'>(" + esc(scaleUnit(c.unit)) + ")</span>" : "") +
         (sorted ? "<span class='arrow'>" + (st.sort.dir > 0 ? "▲" : "▼") + "</span>" : "") +
         "</th>";
@@ -1345,6 +1417,17 @@ function buildTable(host, item) {
           const again = host.querySelector("input[data-fcol='" + inp.dataset.fcol + "']");
           if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); } }, 250); };
     });
+    /* Vbit 列标题下拉：切换进制（全局），重绘表格与图表 */
+    host.querySelectorAll("[data-vbsel]").forEach(sel => {
+      sel.onclick = ev => ev.stopPropagation();
+      sel.onchange = () => {
+        VBIT.fmt = sel.value;
+        localStorage.setItem("rpt.vbitfmt", VBIT.fmt);
+        $$(".tbl-host").forEach(h => { delete h.dataset.done; h.innerHTML = ""; });
+        armTables();
+        $$(".chart-box").forEach(bx => { if (bx.dataset.rendered) drawChart(bx); });
+      };
+    });
     host.querySelectorAll("[data-tact]").forEach(b => {
       const act = b.dataset.tact;
       if (act === "per") { b.onchange = () => { st.per = Number(b.value); st.page = 1; render(); }; return; }
@@ -1366,14 +1449,19 @@ function buildTable(host, item) {
       tr.onclick = () => { tbody.querySelectorAll("tr.sel")
         .forEach(x => x.classList.remove("sel")); tr.classList.add("sel"); };
     });
-    /* 异常标记：行首图标 */
-    tbody.querySelectorAll("tr[data-ri]").forEach(tr => {
+    /* 异常标记：行首图标（固定槽位，未异常行补占位，保证列宽/对齐一致） */
+    const anyFlag = Object.keys(flags.rows).length > 0;
+    if (anyFlag) tbody.querySelectorAll("tr[data-ri]").forEach(tr => {
       const ri = Number(tr.dataset.ri);
+      const td = tr.querySelector("td");
+      if (!td) return;
       if (flags.rows[ri]) {
-        const td = tr.querySelector("td");
-        if (td) td.insertAdjacentHTML("afterbegin",
+        td.insertAdjacentHTML("afterbegin",
           "<span class='rowflag' style='color:var(--" +
           (flags.rows[ri] === "fail" ? "fail'>✗" : "warn'>⚠") + ")</span>");
+      } else {
+        td.insertAdjacentHTML("afterbegin",
+          "<span class='rowflag rowflag--ph' aria-hidden='true'>⚠</span>");
       }
     });
   };
@@ -1615,8 +1703,6 @@ function bindGlobal() {
         cb.setAttribute("aria-pressed", String(st.logx)); drawChart(box); }
       if (act === "logy" && st) { st.logy = !st.logy; st.dom = null;
         cb.setAttribute("aria-pressed", String(st.logy)); drawChart(box); }
-      if (act === "band" && st) { st.band = !st.band;
-        cb.setAttribute("aria-pressed", String(st.band)); drawChart(box); }
       return;
     }
     const shot = e.target.closest(".shot");
