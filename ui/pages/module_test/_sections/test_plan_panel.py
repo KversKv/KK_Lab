@@ -152,7 +152,7 @@ class _StatusBadgeDelegate(QStyledItemDelegate):
 
 
 class _ParamDelegate(QStyledItemDelegate):
-    """Params 列：绘制 ⚙；已 override 显示「已改」标记；无可配参数显示 —。"""
+    """Params 列：绘制 ⚙（已 override 高亮着色）；无可配参数显示 —。"""
 
     def paint(self, painter: QPainter, option, index) -> None:
         if index.column() != COL_PARAMS or index.data(IsGroupRole):
@@ -174,18 +174,14 @@ class _ParamDelegate(QStyledItemDelegate):
             icon_rect.setSize(QSize(side, side))
             icon_rect.moveCenter(rect.center())
             tinted_svg_icon(_PARAM_ICON, color, side).paint(painter, icon_rect)
-            if customized:
-                painter.setPen(QColor(color))
-                text_rect = rect.adjusted(0, icon_rect.bottom() - rect.top() + 1, 0, 0)
-                painter.drawText(text_rect, Qt.AlignHCenter | Qt.AlignTop, "已改")
         painter.restore()
 
     def sizeHint(self, option, index) -> QSize:
-        """列宽固定容纳齿轮图标 + 「已改」标记，避免 ResizeToContents 过窄。"""
+        """列宽固定仅容纳齿轮图标，避免 ResizeToContents 过窄。"""
         if index.column() != COL_PARAMS or index.data(IsGroupRole):
             return super().sizeHint(option, index)
-        # 图标 16px + 左右各 8px padding = 32px；「已改」两字约 22px，取较宽者
-        return QSize(36, max(26, super().sizeHint(option, index).height()))
+        # 图标 16px + 左右各 8px padding = 32px
+        return QSize(32, max(26, super().sizeHint(option, index).height()))
 
 
 # ---------------------------------------------------------------------- 视图
