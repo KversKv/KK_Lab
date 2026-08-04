@@ -30,13 +30,15 @@ class ModuleConfigStore:
     """Module Test 配置存取助手（每子页一个实例）。"""
 
     def __init__(self, *, module_type: str, dut_panel, test_plan,
-                 item_overrides: dict, items_registry, module_config_panel=None):
+                 item_overrides: dict, items_registry, module_config_panel=None,
+                 judge_criteria: dict | None = None):
         self._module_type = module_type
         self._dut = dut_panel
         self._plan = test_plan
         self._overrides = item_overrides  # 子页持有的 dict（共享引用）
         self._registry = items_registry
         self._modcfg = module_config_panel
+        self._judge = judge_criteria  # 子页持有的 dict（共享引用，None=不持久化）
 
     # ------------------------------------------------------------------ 收集
     def collect(self) -> dict[str, Any]:
@@ -67,6 +69,11 @@ class ModuleConfigStore:
                 self._modcfg.is_enabled() if self._modcfg is not None else False),
             "module_config_yaml": (
                 self._modcfg.config_text() if self._modcfg is not None else ""),
+            # 判定标准（PASS/FAIL Criteria）随模块配置一并保存
+            "judge_criteria": (
+                {k: {"rules": [dict(r) for r in v.get("rules", ())]}
+                 for k, v in self._judge.items() if isinstance(v, dict)}
+                if self._judge is not None else {}),
         }
 
     # ------------------------------------------------------------------ 回填
@@ -135,6 +142,16 @@ class ModuleConfigStore:
                 self._modcfg.set_enabled(bool(cfg["module_config_enabled"]))
             if "module_config_yaml" in cfg:
                 self._modcfg.set_config_text(str(cfg["module_config_yaml"]))
+
+        # 判定标准（PASS/FAIL Criteria）
+        criteria = cfg.get("judge_criteria")
+        if self._judge is not None and isinstance(criteria, dict):
+            self._judge.clear()
+            self._judge.update(
+                {k: {"rules": [dict(r) for r in v.get("rules", ())
+                               if isinstance(r, dict)]}
+                 for k, v in criteria.items()
+                 if k in self._registry and isinstance(v, dict)})
 
     # ------------------------------------------------------------------ 文件
     def configs_root(self) -> str:

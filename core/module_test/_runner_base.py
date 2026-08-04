@@ -15,6 +15,7 @@ from typing import Any, Callable
 from PySide6.QtCore import QThread, Signal
 
 from core.module_test._common import ItemContext
+from core.module_test.judge import evaluate_item
 from core.module_test.report import save_html_report
 from core.module_test.result_model import ItemResult, ModuleTestResult
 from debug_config import DEBUG_MOCK
@@ -76,6 +77,27 @@ class ModuleTestRunner(QThread):
     def request_stop(self):
         """协作式中断（检查标志位，禁强杀线程）。"""
         self._stop_flag = True
+
+    def _apply_judge(self, item_key: str, result: ItemResult) -> None:
+        """按用户判定标准（cfg["judge_criteria"]）判定 PASS/FAIL。
+
+        仅对项本身未判定的结果（passed=None）生效；执行异常的 FAIL 不覆盖。
+        与报告异常点标红（table.rules）相互独立：此处决定项 verdict。
+        """
+        if result.passed is not None:
+            return
+        criteria = (self._cfg.get("judge_criteria") or {}).get(item_key)
+        if not criteria:
+            return
+        passed, note = evaluate_item(item_key, criteria, result.measured)
+        if passed is None:
+            if note:
+                self._log(f"[JUDGE] {item_key}: {note}")
+            return
+        result.passed = passed
+        result.notes = f"{result.notes}；{note}" if result.notes else note
+        verdict = "PASS" if passed else "FAIL"
+        self._log(f"[JUDGE] {item_key} → {verdict}（{note}）")
 
     def _log(self, msg: str) -> None:
         self.log.emit(msg)
@@ -166,6 +188,8 @@ class ModuleTestRunner(QThread):
                 self._log(f"[ERROR] {item_key} 执行异常，记为 FAIL。")
                 result = ItemResult(item_key=item_key, name=name, passed=False,
                                     notes="执行异常，见日志")
+            else:
+                self._apply_judge(item_key, result)
             self._result.items.append(result)
             self.item_finished.emit(item_key, result.to_summary())
             self._progress(int((idx + 1) / total * 100), name)

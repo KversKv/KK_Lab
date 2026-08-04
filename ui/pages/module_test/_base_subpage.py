@@ -29,6 +29,7 @@ from ui.pages.module_test._sections.left_rail import LeftRail
 from ui.pages.module_test._sections.test_plan_panel import TestPlanPanel
 from ui.pages.module_test.dialogs.config_manager_dialog import ConfigManagerDialog
 from ui.pages.module_test.dialogs.item_params_dialog import ItemParamsDialog
+from ui.pages.module_test.dialogs.judge_dialog import JudgeCriteriaDialog
 from ui.theme import apply_qss
 from ui.widgets.banner import InfoBanner
 from ui.widgets.run_control_bar import RunControlBar, RunState
@@ -70,6 +71,8 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
         self._last_result = None
         self._last_report_path: str | None = None
         self._item_overrides: dict[str, dict] = {}
+        # 判定标准（PASS/FAIL Criteria）：随模块配置保存/加载，runner 据此判项
+        self._judge_criteria: dict[str, dict] = {}
         self._current_config_path: str | None = None
         self._config_prompted = False
         self._run_start_ts = 0.0
@@ -139,7 +142,8 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
             module_type=self.MODULE_TYPE, dut_panel=self.left_rail.dut_panel,
             test_plan=self.test_plan, item_overrides=self._item_overrides,
             items_registry=self.ITEMS_REGISTRY,
-            module_config_panel=self.left_rail.module_config_panel)
+            module_config_panel=self.left_rail.module_config_panel,
+            judge_criteria=self._judge_criteria)
 
     def _wire_shortcuts(self) -> None:
         QShortcut(QKeySequence("F5"), self, activated=self._on_start_test)
@@ -411,6 +415,23 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
     def _base_param_value(self, base_key: str):
         """按 ParamSpec.base_key 从被测配置界面取当前值作弹窗预填。"""
         return self.get_test_config().get(base_key)
+
+    # ================================================================== 判定标准
+    def _on_open_judge_criteria(self) -> None:
+        """打开判定标准弹窗（CommandBar「判断标准」按钮，运行中禁止）。"""
+        if self.is_test_running:
+            return
+        dlg = JudgeCriteriaDialog(self.ITEMS_REGISTRY, self._judge_criteria,
+                                  parent=self)
+        if dlg.exec():
+            # 原地更新，保持与 ModuleConfigStore 共享的引用
+            self._judge_criteria.clear()
+            self._judge_criteria.update(dlg.get_criteria())
+            n_rules = sum(len(v.get("rules", ()))
+                          for v in self._judge_criteria.values())
+            self.detail_dock.log_panel.append_log(
+                f"[JUDGE] 判定标准已更新：{len(self._judge_criteria)} 个测试项 / "
+                f"{n_rules} 条规则" if n_rules else "[JUDGE] 判定标准已清空")
 
     # ================================================================== 配置 IO（委托 ModuleConfigStore）
     def get_test_config(self) -> dict[str, Any]:
