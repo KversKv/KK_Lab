@@ -13,10 +13,11 @@ UI 只拿路径打开，不做 IO——本模块纯字符串生成，禁依赖 Q
   "items": [{
     index, item_key, title, verdict, unit, note,
     metrics: [{key,label,value,unit,precision,spec_min,spec_max,margin_pct,verdict}],
-    charts:  [{id,kind:xy|grouped_bars,title,x{key,label,unit,log},series[{key,name,
-              type:line|scatter|bar,axis:left|right}],fit,mark_extrema,ref_y,
+    charts:  [{id,kind:xy,title,x{key,label,unit,log},series[{key,name,
+              type:line|smooth|scatter|bar,axis:left|right}],mark_extrema,ref_y,
               anomaly{key,op,value}}],
-    table:   {file,rows,columns:[{key,label,unit,align,precision}],data[[...]],
+    table:   {file,rows,columns:[{key,label,unit,align,precision,kind:image?}],
+              data[[...]],   # kind:image 列单元格 = attachments 下标（截图入表末列）
               rules:[{column,op:gt|lt|abs_gt|eq|outlier,value,k,level:warn|fail,hint}
                      | {type:constant,level,hint}]},
     attachments: [{type:image,label,full(dataURI)}]
@@ -43,14 +44,17 @@ JSON 经 ``json.dumps`` 并把 ``</`` 转义为 ``<\\/`` 防 script 逃逸。
  7. 高级数据表：sticky 表头+首列冻结、排序、列筛选、密度切换、分页、
     >500 行虚拟滚动、当前视图导出 CSV、异常行筛选；
  8. 图表能力：框选缩放/重置、log 轴切换、规格带、参考线、Min/Max 标注、
-    散点最小二乘拟合(斜率+R²)、十字准线 tooltip、图例点选、导出 PNG；
+    Catmull-Rom 平滑折线、十字准线 tooltip、图例点选、导出 PNG；
  9. 深浅双主题（跟随系统 + localStorage 记忆）、中/英一键切换；
 10. 左侧固定目录 scroll-spy + 阅读进度条，移动端折叠；
 11. 示波器截图缩略图网格 + 灯箱（←/→/Esc、滚轮缩放、测量条件 caption）；
 12. 专门 @media print：A4/15mm、强制浅色、自动展开折叠区、表头跨页重复、
     大表截断提示、页眉页脚(机密标识)、签核区；
 13. 键盘操作（/ j k e ?）、focus-visible 环、aria 语义、图表表格化替代数据；
-14. 缺失字段全局优雅降级为 "—"，数值等宽对齐、单位独立小字、有效位统一。
+14. 缺失字段全局优雅降级为 "—"，数值等宽对齐、单位独立小字、有效位统一；
+15. 版式修订（2026-08）：Load/Line Regulation 散点+拟合线 → Catmull-Rom 平滑折线；
+    Load Capability&Ripple 示波器截图并入完整数据表末列（附件下标，不重复内嵌）；
+    Load/Line Transient 移除分组对比柱状图（数据表与截图网格保留）。
 
 ============================= 已知限制 =============================
 - Chrome 打印无法用 CSS 计数器输出"第 X/Y 页"，页脚仅含机密标识与生成时间；
@@ -415,15 +419,15 @@ def _build_charts(it: ItemResult, table: dict[str, Any] | None) -> list[dict[str
     elif key.endswith("load_reg"):
         xk = _pick_col(t, "iload", fallback=0)
         yk = _pick_col(t, "vout", fallback=1)
-        s = ser(yk, "scatter")
+        s = ser(yk, "smooth")
         if s:
-            charts.append(_xy(xk, [s], t, "Vout vs Iload", fit=True))
+            charts.append(_xy(xk, [s], t, "Vout vs Iload"))
     elif key.endswith("line_reg"):
         xk = _pick_col(t, "vin", fallback=0)
         yk = _pick_col(t, "vout", fallback=1)
-        s = ser(yk, "scatter")
+        s = ser(yk, "smooth")
         if s:
-            charts.append(_xy(xk, [s], t, "Vout vs Vin", fit=True))
+            charts.append(_xy(xk, [s], t, "Vout vs Vin"))
     elif key.endswith("ripple"):
         xk = _pick_col(t, "iload", fallback=0)
         vout = ser(_pick_col(t, "vout", fallback=1))
@@ -444,21 +448,7 @@ def _build_charts(it: ItemResult, table: dict[str, Any] | None) -> list[dict[str
         if s:
             charts.append(_xy(xk, [s], t, "Vout vs Iload"))
     elif key.endswith("transient"):
-        # 分组柱状：第 0 列为组号类别，其余数值列（≤4）为系列
-        cat = t["columns"][0]
-        series = []
-        for c in t["columns"][1:5]:
-            if c["align"] == "right":
-                lb, un = c["label"], c["unit"]
-                series.append({"key": c["key"],
-                               "name": f"{lb} ({un})" if un else lb,
-                               "unit": un, "label": lb})
-        if series:
-            charts.append({"kind": "grouped_bars",
-                           "title": "Transient 分组对比",
-                           "x": {"key": cat["key"], "label": cat["label"],
-                                 "unit": cat["unit"]},
-                           "series": series})
+        pass  # 分组对比图已移除（2026-08 需求），瞬态项不生成图表，仅保留数据表+截图
     else:  # 通用兜底：前两列数值列折线
         numeric = [c for c in t["columns"] if c["align"] == "right"]
         if len(numeric) >= 2:
@@ -471,9 +461,15 @@ def _build_charts(it: ItemResult, table: dict[str, Any] | None) -> list[dict[str
     return charts
 
 
-def _build_attachments(it: ItemResult) -> list[dict[str, Any]]:
-    """示波器逐点截图（screenshots 优先）或单波形图 → dataURI 附件列表。"""
+def _build_attachments(it: ItemResult) -> tuple[list[dict[str, Any]],
+                                                list[float | None]]:
+    """示波器逐点截图（screenshots 优先）或单波形图 → (dataURI 附件列表, 各附件对应 Iload)。
+
+    返回的 keys 与附件同序：逐点截图为其 "Iload (mA)" 数值（缺失/单波形图为 None），
+    供 ``_embed_shots_column`` 把截图按 Iload 匹配进数据表末列。
+    """
     out: list[dict[str, Any]] = []
+    keys: list[float | None] = []
     m = it.measured if isinstance(it.measured, dict) else {}
     shots = m.get("screenshots") if isinstance(m.get("screenshots"), list) else []
     for s in shots:
@@ -484,11 +480,35 @@ def _build_attachments(it: ItemResult) -> list[dict[str, Any]]:
             iload = s.get("Iload (mA)", "")
             label = f"Iload={iload}mA" if str(iload).strip() else "scope shot"
             out.append({"type": "image", "label": label, "full": uri})
+            keys.append(_num(iload))
     if not out:
         uri = _img_data_uri(it.waveform_png)
         if uri:
             out.append({"type": "image", "label": "waveform", "full": uri})
-    return out
+            keys.append(None)
+    return out, keys
+
+
+def _embed_shots_column(it: ItemResult, table: dict[str, Any] | None,
+                        attachments: list[dict[str, Any]],
+                        shot_keys: list[float | None]) -> None:
+    """Ripple 项：把逐点示波器截图并入完整数据表最后一列。
+
+    新列 ``kind:image``，单元格存 attachments 下标（JS 侧渲染缩略图、点击进灯箱，
+    不重复内嵌 base64）；按首列 Iload 数值匹配，未匹配行补 None。
+    """
+    if table is None or not it.item_key.endswith("ripple") or not attachments:
+        return
+    by_iload = {k: i for i, k in enumerate(shot_keys) if k is not None}
+    if not by_iload:
+        return
+    iload_idx = next((i for i, c in enumerate(table["columns"])
+                      if "iload" in c["label"].lower()), 0)
+    table["columns"].append({"key": "shot", "label": "Scope Shot", "unit": "",
+                             "align": "left", "precision": None, "kind": "image"})
+    for row in table["data"]:
+        v = row[iload_idx] if iload_idx < len(row) else None
+        row.append(by_iload.get(v) if isinstance(v, (int, float)) else None)
 
 
 def _parse_dt(s: str) -> datetime | None:
@@ -515,6 +535,11 @@ def build_report_data(result: ModuleTestResult) -> dict[str, Any]:
         rules = _build_rules(it, table)
         if table:
             table.pop("_numeric_cols", None)
+        metrics = _build_metrics(it, table)
+        charts = _build_charts(it, table)
+        attachments, shot_keys = _build_attachments(it)
+        # 截图列最后并入（metrics/charts 按既有列构建，不受新列影响）
+        _embed_shots_column(it, table, attachments, shot_keys)
         items.append({
             "index": idx,
             "item_key": it.item_key,
@@ -523,10 +548,10 @@ def build_report_data(result: ModuleTestResult) -> dict[str, Any]:
                 "FAIL" if it.passed is False else "N/A"),
             "unit": it.unit or "",
             "ts": it.ts or "",
-            "metrics": _build_metrics(it, table),
-            "charts": _build_charts(it, table),
+            "metrics": metrics,
+            "charts": charts,
             "table": table,
-            "attachments": _build_attachments(it),
+            "attachments": attachments,
             "note": it.notes or "",
             "_rules": rules,  # 并入 table.rules，缺表时丢弃
         })
@@ -860,6 +885,8 @@ td.cell-fail{background:var(--fail-bg)!important;color:var(--fail);font-weight:6
 .shot span{display:block;font-size:11px;color:var(--ink-3);padding:4px 8px;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .shot:hover{border-color:var(--accent)}
+.tbl-shot{vertical-align:middle}
+.tbl-shot img{width:96px;height:auto;aspect-ratio:auto;object-fit:fill;border-radius:4px}
 .lightbox{position:fixed;inset:0;z-index:200;background:rgba(10,13,18,.92);
   display:none;align-items:center;justify-content:center;flex-direction:column}
 .lightbox.show{display:flex}
@@ -1026,7 +1053,7 @@ const I18N = {
       sign_date:"日期",rev_a:"Rev A",rev_init:"初版发布",
       copy_link:"复制链接",copied:"链接已复制",chart_png:"导出 PNG",
       chart_reset:"重置缩放",chart_logx:"log X",chart_logy:"log Y",
-      chart_band:"规格带",chart_data:"图表数据",fit:"拟合",
+      chart_band:"规格带",chart_data:"图表数据",
       page:"页",of:"/",density:"紧凑",per_page:"每页",
       render_all:"渲染全部（便于查找）",virtual_on:"虚拟滚动",
       truncated:"仅打印前",rows_omitted:"行，其余省略（屏幕版可查看全部）",
@@ -1055,7 +1082,7 @@ const I18N = {
       sign_date:"Date",rev_a:"Rev A",rev_init:"Initial release",
       copy_link:"Copy link",copied:"Link copied",chart_png:"Export PNG",
       chart_reset:"Reset zoom",chart_logx:"log X",chart_logy:"log Y",
-      chart_band:"Spec band",chart_data:"Chart data",fit:"fit",
+      chart_band:"Spec band",chart_data:"Chart data",
       page:"Page",of:"/",density:"Compact",per_page:"Per page",
       render_all:"Render all (for find)",virtual_on:"Virtual scroll",
       truncated:"Prints first",rows_omitted:"rows; remainder omitted (see on-screen)",
@@ -1458,7 +1485,6 @@ function drawChart(box) {
   const tip = el("div", "chart-tip"); box.appendChild(tip);
 
   const col = key => colArr(table, key);
-  if (spec.kind === "grouped_bars") return drawGrouped(svg, spec, table, P, M, iw, ih, st, box);
   const xs = col(spec.x.key);
   const series = (spec.series || []).filter(s => !st.hidden[s.key]);
   if (!series.length) { box.appendChild(emptyNode(T().no_chart)); return; }
@@ -1568,9 +1594,24 @@ function drawChart(box) {
           height:Math.abs(y1 - y0), fill:color, opacity:.55}, svg);
       });
     } else {
-      if (s.type === "line") {
+      if (s.type === "line" || s.type === "smooth") {
         let d = "";
-        pts.forEach((p, i) => { d += (i ? "L" : "M") + sx(p[0]).toFixed(1) + " " + yFn(p[1]).toFixed(1); });
+        if (s.type === "smooth" && pts.length > 2) {
+          /* Catmull-Rom → 三次贝塞尔平滑（过原数据点） */
+          const X = p => sx(p[0]), Y = p => yFn(p[1]);
+          d = "M" + X(pts[0]).toFixed(1) + " " + Y(pts[0]).toFixed(1);
+          for (let i = 0; i < pts.length - 1; i++) {
+            const p0 = pts[Math.max(0, i - 1)], p1 = pts[i],
+                  p2 = pts[i + 1], p3 = pts[Math.min(pts.length - 1, i + 2)];
+            d += "C" + (X(p1) + (X(p2) - X(p0)) / 6).toFixed(1) + " " +
+                       (Y(p1) + (Y(p2) - Y(p0)) / 6).toFixed(1) + " " +
+                       (X(p2) - (X(p3) - X(p1)) / 6).toFixed(1) + " " +
+                       (Y(p2) - (Y(p3) - Y(p1)) / 6).toFixed(1) + " " +
+                       X(p2).toFixed(1) + " " + Y(p2).toFixed(1);
+          }
+        } else {
+          pts.forEach((p, i) => { d += (i ? "L" : "M") + sx(p[0]).toFixed(1) + " " + yFn(p[1]).toFixed(1); });
+        }
         svgEl("path", {d:d, fill:"none", stroke:color, "stroke-width":2}, svg);
       }
       if (s.type === "scatter" || pts.length <= 80) {
@@ -1600,24 +1641,6 @@ function drawChart(box) {
           "font-size":10, fill:c2, "font-weight":600}, svg);
         tx.textContent = tag + " " + fmtTick(p[1]);
       });
-    }
-    /* 线性拟合（最小二乘）+ 斜率/R² */
-    if (spec.fit && pts.length > 2) {
-      const n = pts.length;
-      let sxv = 0, syv = 0, sxy = 0, sxx = 0;
-      pts.forEach(p => { sxv += p[0]; syv += p[1]; sxy += p[0] * p[1]; sxx += p[0] * p[0]; });
-      const k = (n * sxy - sxv * syv) / (n * sxx - sxv * sxv || 1);
-      const b = (syv - k * sxv) / n;
-      const mean = syv / n;
-      let ssRes = 0, ssTot = 0;
-      pts.forEach(p => { const f = k * p[0] + b;
-        ssRes += (p[1] - f) * (p[1] - f); ssTot += (p[1] - mean) * (p[1] - mean); });
-      const r2 = ssTot > 0 ? 1 - ssRes / ssTot : 0;
-      const x0 = xDom[0], x1 = xDom[1];
-      svgEl("line", {x1:sx(x0), y1:yFn(k * x0 + b), x2:sx(x1), y2:yFn(k * x1 + b),
-        stroke:P.ink3, "stroke-dasharray":"6 4", "stroke-width":1.5}, svg);
-      const tx = svgEl("text", {x:M.l + 8, y:M.t + 14, "font-size":11, fill:P.ink3}, svg);
-      tx.textContent = T().fit + ": k=" + k.toExponential(2) + "  R²=" + r2.toFixed(4);
     }
   });
   /* 图例 */
@@ -1713,51 +1736,6 @@ function drawChart(box) {
     alt.innerHTML = h + "</tbody></table>";
   }
 }
-function drawGrouped(svg, spec, table, P, M, iw, ih, st, box) {
-  const ci = table.columns.findIndex(c => c.key === spec.x.key);
-  const cats = table.data.map(r => String(r[ci] ?? ""));
-  const series = spec.series.filter(s => !st.hidden[s.key]);
-  const vals = series.map(s => colArr(table, s.key));
-  let hi = 0;
-  vals.flat().forEach(v => { if (typeof v === "number") hi = Math.max(hi, v); });
-  if (!isFinite(hi) || hi <= 0) hi = 1;
-  hi *= 1.15;
-  const ticks = niceTicks(0, hi, 5);
-  const yFn = v => M.t + ih - v / (ticks[ticks.length - 1] || 1) * ih;
-  ticks.forEach(tv => {
-    const y = yFn(tv);
-    svgEl("line", {x1:M.l, x2:M.l + iw, y1:y, y2:y, stroke:P.grid}, svg);
-    const tx = svgEl("text", {x:M.l - 8, y:y + 4, "text-anchor":"end",
-      "font-size":10, fill:P.ink3}, svg);
-    tx.textContent = fmtTick(tv);
-  });
-  const gw = iw / Math.max(cats.length, 1);
-  const bw = Math.min(20, gw / (series.length + 1));
-  cats.forEach((c, gi) => {
-    series.forEach((s, si) => {
-      const v = vals[si][gi];
-      if (typeof v !== "number") return;
-      const x = M.l + gi * gw + gw / 2 + (si - (series.length - 1) / 2) * (bw + 2);
-      svgEl("rect", {x:x - bw / 2, y:yFn(v), width:bw, height:yFn(0) - yFn(v),
-        fill:P.seq[si % P.seq.length], opacity:.85}, svg);
-    });
-    const tx = svgEl("text", {x:M.l + gi * gw + gw / 2, y:M.t + ih + 16,
-      "text-anchor":"middle", "font-size":10, fill:P.ink3}, svg);
-    tx.textContent = c.length > 8 ? c.slice(0, 8) + "…" : c;
-  });
-  svgEl("rect", {x:M.l, y:M.t, width:iw, height:ih, fill:"none", stroke:P.line}, svg);
-  const legend = box.parentElement.querySelector(".chart-legend");
-  if (legend) {
-    legend.innerHTML = "";
-    spec.series.forEach((s, i) => {
-      const b = el("button", st.hidden[s.key] ? "off" : "");
-      b.innerHTML = '<span class="sw" style="background:' +
-        P.seq[i % P.seq.length] + '"></span>' + esc(s.name);
-      b.onclick = () => { st.hidden[s.key] = !st.hidden[s.key]; drawChart(box); };
-      legend.appendChild(b);
-    });
-  }
-}
 function emptyNode(msg) { return el("div", "empty", msg); }
 /* 懒渲染：进入视口才实例化 */
 let _chartIO = null;
@@ -1843,6 +1821,16 @@ function buildTable(host, item) {
       const fl = flags.cells[ri + ":" + ci];
       const cls = [c.align === "right" ? "r num" : "",
         fl ? "cell-" + fl : "", ci === 0 ? "fcol" : ""].join(" ").trim();
+      if (c.kind === "image") {  /* 截图列：单元格 = attachments 下标 → 缩略图 */
+        const att = typeof v === "number" ? (item.attachments || [])[v] : null;
+        h += "<td class='" + cls + "'>" + (att
+          ? "<button class='shot tbl-shot' data-item='" + esc(item.item_key) +
+            "' data-shot='" + v + "' aria-label='" + esc(att.label || "shot") +
+            "'><img loading='lazy' src='" + att.full + "' alt='" +
+            esc(att.label || "shot") + "'></button>"
+          : DASH) + "</td>";
+        return;
+      }
       const full = typeof v === "number" ? ' title="' + v + '"' : "";
       h += "<td class='" + cls + "'" + full + ">" +
         (typeof v === "number"
@@ -1996,9 +1984,13 @@ function exportCSV(item, rows, fname) {
   const head = table.columns.map(c =>
     c.label + (c.unit ? " (" + c.unit + ")" : ""));
   const lines = [head.join(",")].concat(rows.map(o =>
-    o.r.map(v => {
+    o.r.map((v, ci) => {
       if (v === null || v === undefined) return "";
-      const s = String(v);
+      let s = String(v);
+      if (table.columns[ci] && table.columns[ci].kind === "image") {
+        const att = (item.attachments || [])[v];
+        s = att ? String(att.label || "") : "";
+      }
       return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
     }).join(",")));
   const blob = new Blob(["﻿" + lines.join("\r\n")], {type:"text/csv;charset=utf-8"});
