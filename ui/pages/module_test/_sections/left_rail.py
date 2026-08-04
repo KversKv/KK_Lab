@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+from ui.pages.module_test._sections.module_config_panel import ModuleConfigPanel
 from ui.theme import dp
 from ui.widgets.card import Card
 from ui.widgets.form import FormGrid, FormRow
@@ -190,6 +191,13 @@ class LeftRail(QWidget):
         self.dut_panel = DutConfigPanel(module_type)
         self.config_card.content_layout.addWidget(self.dut_panel)
         root.addWidget(self.config_card)
+
+        # —— Module Config Card（测试前模块 I2C 配置）——
+        self.module_config_card = Card("Module Config", collapsible=True,
+                                       settings_key=f"module_test/{module_type}/modcfg")
+        self.module_config_panel = ModuleConfigPanel()
+        self.module_config_card.content_layout.addWidget(self.module_config_panel)
+        root.addWidget(self.module_config_card)
 
         root.addStretch()
         self._saved_expansion: tuple[bool, bool] | None = None

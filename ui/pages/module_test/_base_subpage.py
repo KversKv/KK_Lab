@@ -12,10 +12,12 @@ import os
 import time
 from typing import Any
 
-from PySide6.QtCore import Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import Qt, QThread, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import QHBoxLayout, QSplitter, QVBoxLayout, QWidget
 
+from core.module_test._common import cfg_int
+from core.module_test.module_config import ModuleConfigWorker
 from debug_config import DEBUG_MOCK
 from log_config import get_logger
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
@@ -73,6 +75,10 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
         self._run_start_ts = 0.0
         self._item_start_ts: dict[str, float] = {}
         self._counts = {"pass": 0, "fail": 0, "na": 0}
+        # Module Config 后台执行线程（手动执行 / 测试前自动执行共用）
+        self._modcfg_thread: QThread | None = None
+        self._modcfg_worker: ModuleConfigWorker | None = None
+        self._modcfg_after = None  # 执行完成后的回调（如继续启动测试）
 
         self._build_ui()
         self._wire_shortcuts()
@@ -104,6 +110,8 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
         body = QHBoxLayout()
         body.setSpacing(8)
         self.left_rail = LeftRail(self, self.MODULE_TYPE)
+        self.left_rail.module_config_panel.execRequested.connect(
+            self._on_exec_module_config)
         body.addWidget(self.left_rail)
         center = QVBoxLayout()
         center.setSpacing(6)
@@ -130,7 +138,8 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
         self._store = ModuleConfigStore(
             module_type=self.MODULE_TYPE, dut_panel=self.left_rail.dut_panel,
             test_plan=self.test_plan, item_overrides=self._item_overrides,
-            items_registry=self.ITEMS_REGISTRY)
+            items_registry=self.ITEMS_REGISTRY,
+            module_config_panel=self.left_rail.module_config_panel)
 
     def _wire_shortcuts(self) -> None:
         QShortcut(QKeySequence("F5"), self, activated=self._on_start_test)
@@ -152,6 +161,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
         self.run_bar.set_state(state)
         self.left_rail.connection_card.setEnabled(not running)
         self.left_rail.config_card.setEnabled(not running)
+        self.left_rail.module_config_card.setEnabled(not running)
         self.left_rail.set_running(running)
         if state is RunState.RUNNING:
             self.detail_dock.show_log_tab()
@@ -198,6 +208,70 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
             missing.append(f"示波器（{len(scope_names)} 个勾选项需要：{'、'.join(scope_names)}）")
         return missing
 
+    # ================================================================== Module Config 执行
+    def _on_exec_module_config(self) -> None:
+        """手动执行：立即经 I2C 下发 Module Config（不启动测试）。"""
+        if self.is_test_running:
+            return
+        self._run_module_config(after=None)
+
+    def _run_module_config(self, after) -> None:
+        """后台执行 Module Config；``after`` 为成功/失败后都要调用的回调（可为 None）。
+
+        手动执行与测试前自动执行共用此链路：解析/下发在 QThread，UI 不阻塞。
+        """
+        if self._modcfg_thread is not None:
+            self.detail_dock.log_panel.append_log("[MODCFG] 上一次模块配置仍在执行中")
+            return
+        panel = self.left_rail.module_config_panel
+        text = panel.config_text()
+        if not text:
+            self.detail_dock.log_panel.append_log("[MODCFG] 配置为空，跳过执行")
+            if after is not None:
+                after(True)
+            return
+        cfg = self.get_test_config()
+        try:
+            device_addr = cfg_int(cfg, "device_addr", 0)
+            width_flag = int(cfg.get("width_flag", 0))
+        except (ValueError, TypeError):
+            self.detail_dock.log_panel.append_log(
+                "[MODCFG] [ERROR] Device 地址 / Width Flag 无效，无法执行")
+            if after is not None:
+                after(False)
+            return
+
+        panel.set_running(True)
+        self._modcfg_after = after
+        worker = ModuleConfigWorker(
+            config_text=text, device_addr=device_addr, width_flag=width_flag,
+            is_mock=DEBUG_MOCK, n6705c=self.n6705c)
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.log.connect(self.detail_dock.log_panel.append_log)
+        worker.finished.connect(self._on_modcfg_finished)
+        worker.finished.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._on_modcfg_thread_cleaned)
+        self._modcfg_thread = thread
+        self._modcfg_worker = worker
+        self.detail_dock.log_panel.append_log("[MODCFG] 模块配置后台执行开始")
+        thread.start()
+
+    def _on_modcfg_finished(self, ok: bool, msg: str) -> None:
+        self.left_rail.module_config_panel.set_running(False)
+        level = "" if ok else "[ERROR] "
+        self.detail_dock.log_panel.append_log(f"[MODCFG] {level}{msg}")
+        after, self._modcfg_after = self._modcfg_after, None
+        if after is not None:
+            after(ok)
+
+    def _on_modcfg_thread_cleaned(self) -> None:
+        self._modcfg_thread = None
+        self._modcfg_worker = None
+
     # ================================================================== run flow
     def _on_start_test(self) -> None:
         if self.is_test_running:
@@ -208,6 +282,15 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
             self._apply_run_state(RunState.IDLE)
             return
 
+        # 勾选「测试前执行模块配置」：先后台下发 Module Config，完成后再启动测试
+        if cfg.get("module_config_enabled") and cfg.get("module_config_yaml"):
+            self.detail_dock.log_panel.append_log(
+                "[MODCFG] 测试前执行模块配置（勾选启用）")
+            self._run_module_config(after=lambda _ok: self._proceed_start_test(cfg))
+            return
+        self._proceed_start_test(cfg)
+
+    def _proceed_start_test(self, cfg: dict) -> None:
         scope = self.Osc_ins if self.scope_connected else None
         self._runner = self.RUNNER_CLS(
             config=cfg, n6705c=self.n6705c, scope=scope, chamber=None,

@@ -125,6 +125,29 @@ QComboBox QAbstractItemView {
     outline: none;
 }
 
+/* Module Config 的 YAML 文本编辑（等宽字体，多行） */
+QPlainTextEdit#moduleConfigYaml {
+    background-color: $surface_input;
+    border: 1px solid $border_default;
+    border-radius: $radius_sm;
+    color: $text_secondary;
+    font-family: $font_mono;
+    font-size: $font_body;
+    padding: $space_2;
+    selection-background-color: $accent_default;
+}
+QPlainTextEdit#moduleConfigYaml:hover {
+    border-color: $border_strong;
+}
+QPlainTextEdit#moduleConfigYaml:focus {
+    border-color: $border_focus;
+}
+QPlainTextEdit#moduleConfigYaml:disabled {
+    background-color: $surface_page;
+    color: $text_disabled;
+    border-color: $border_subtle;
+}
+
 QCheckBox {
     color: $text_secondary;
     font-size: $font_body;

@@ -30,12 +30,13 @@ class ModuleConfigStore:
     """Module Test 配置存取助手（每子页一个实例）。"""
 
     def __init__(self, *, module_type: str, dut_panel, test_plan,
-                 item_overrides: dict, items_registry):
+                 item_overrides: dict, items_registry, module_config_panel=None):
         self._module_type = module_type
         self._dut = dut_panel
         self._plan = test_plan
         self._overrides = item_overrides  # 子页持有的 dict（共享引用）
         self._registry = items_registry
+        self._modcfg = module_config_panel
 
     # ------------------------------------------------------------------ 收集
     def collect(self) -> dict[str, Any]:
@@ -61,6 +62,11 @@ class ModuleConfigStore:
             # 示波器输出电压通道：控件为 "CH n"，存整数 n 供 core cfg 直接 int 用
             "scope_vout_channel": dut.scope_vout_ch_combo.currentIndex() + 1,
             "item_overrides": {k: dict(v) for k, v in self._overrides.items()},
+            # Module Config（测试前模块 I2C 配置）随模块配置一并保存
+            "module_config_enabled": (
+                self._modcfg.is_enabled() if self._modcfg is not None else False),
+            "module_config_yaml": (
+                self._modcfg.config_text() if self._modcfg is not None else ""),
         }
 
     # ------------------------------------------------------------------ 回填
@@ -122,6 +128,13 @@ class ModuleConfigStore:
                  if k in self._registry and isinstance(v, dict)})
             for key in self._registry:
                 self._plan.set_item_customized(key, key in self._overrides)
+
+        # Module Config（测试前模块 I2C 配置）
+        if self._modcfg is not None:
+            if "module_config_enabled" in cfg:
+                self._modcfg.set_enabled(bool(cfg["module_config_enabled"]))
+            if "module_config_yaml" in cfg:
+                self._modcfg.set_config_text(str(cfg["module_config_yaml"]))
 
     # ------------------------------------------------------------------ 文件
     def configs_root(self) -> str:
