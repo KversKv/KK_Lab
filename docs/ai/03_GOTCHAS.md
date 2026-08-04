@@ -352,3 +352,22 @@ pixmap.setDevicePixelRatio(dpr)  # ← 禁止
 - **凡要把"仪器型号/类型"映射到 manager session_id，禁止用 `session.model` / 用户可读文案做匹配**——model 是自由文本（`"DSO-X 4034A"`），必须用稳定的 `instrument_type` 枚举或直接按 slot 遍历真实 session。
 - **`connect_async` 前 `setEnabled(False)` 后，所有状态同步出口（`sync_*_from_top` / `*_top_changed` / `session_disconnected` / `connect/disconnect_failed`）都必须成对 `setEnabled(True)`**；断开完成（`session_disconnected`）才是真正放行 Connect 的时机，不能 fire-and-forget 后立刻复位。
 - 排查"Disconnect 没反应"先确认 `disconnect_async` 是否真被调到：调了 manager 入口就有日志，没日志=断在更上层的 id 解析/分支判断。
+
+## 29. Card `cardContent` 的 `border-top` 被 `border-radius` clip path 裁成圆角（高频视觉坑）
+
+**现象**：`Card`（`QFrame#Card`）设了 `border-radius: $radius_lg`，其内容区 `QFrame#cardContent` 用 `border-top: 1px solid $border_subtle` 画 header 下方分割线。预期分割线两端直角，实际两端呈渐变抗锯齿圆角（像素分析：左端 x=299~301、右端 x=1106~1108 颜色从 `card_bg` 渐变到 `border_subtle`），视觉上像"分割线两端被磨圆"。
+
+**根因**：Qt QStyleSheet 实现 `border-radius` 时，会把控件（含其子控件绘制区域）clip 成圆角矩形。`cardContent` 的 `border-top` 是 `cardContent` 自身边框，贯穿 `cardContent` 全宽（紧贴 `Card` 内宽），其两端落在 `Card` 圆角弧线的 clip path 边界上，被 clip path 裁剪 + 抗锯齿，产生渐变圆角效果。即便 `cardContent` 的 y 已在 `Card` 直边段（y > radius），`border-top` 作为 `cardContent` 自身边框仍会被父级 clip path 影响。
+
+**修复**：去掉 `cardContent` 的 `border-top`，改用独立的 separator widget 画分割线：
+
+- [card.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/widgets/card.py#L63-L82)：在 `content_layout` 顶部加 `QFrame#cardSeparator`（`setFixedHeight(1)`），`content_layout` margins `(10, 0, 10, 10)`，separator 后 `addSpacing(7)` 保持原视觉间距。
+- [controls.qss](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/theme/qss/controls.qss#L318-L329)：`QFrame#cardContent { border: none; }`；新增 `QFrame#cardSeparator { background-color: $border_subtle; border: none; margin: 0; }`。
+
+separator 是 `content_layout` 内的独立 widget，受其 margins 缩进（左右各 10px），两端悬空在 `Card` 圆角外框内侧的"直边段"区域，是纯净的 1px 直角横线（像素验证：左端 x=30→x=31 从 `card_bg` 直接切换到 `border_subtle`，无渐变）。
+
+**规则**：
+
+- **凡是在带 `border-radius` 的容器（`Card` / 圆角 `QFrame`）内部画贯穿宽度的横线/分割线，禁止用子控件的 `border-top` / `border-bottom`**——会被父级 clip path 裁成圆角。必须用独立的 separator widget（`QFrame` + `setFixedHeight(1)` + `background-color`），并让 separator 受容器内 layout 的 margins 缩进，两端不与圆角弧线相接。
+- **若需分割线横贯容器全宽（两端贴边框）**：separator 不能放在带 margins 的内层 layout 里，需用 `paintEvent` 自绘（`QPainter.drawLine` 从 `x=radius` 到 `x=width-radius`，跳过圆角弧线区域），或把 separator 直接挂在容器根 layout（margins=0）且 y 落在直边段（y > radius 且 y < height-radius）。单纯 `border-top` 方案不可行。
+- 排查"分割线两端圆角"先用 PIL 读渲染图像素，确认两端是否有颜色渐变（抗锯齿）——有渐变即是被 clip path 裁剪。

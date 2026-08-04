@@ -25,6 +25,7 @@ from PySide6.QtGui import QAction, QGuiApplication
 from PySide6.QtWidgets import QMenu, QVBoxLayout, QWidget
 
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
+from ui.theme import refresh_style
 
 _FLUSH_MS = 100
 _MAX_BLOCKS = 20000
@@ -36,7 +37,8 @@ _FLUSH_TIME_BUDGET_MS = 40.0
 class LogPanel(QWidget):
     """执行日志面板（批量 flush + 行数上限 + 右键菜单）。"""
 
-    def __init__(self, title: str = "执行日志", parent: QWidget | None = None):
+    def __init__(self, title: str = "执行日志", *, compact: bool = False,
+                 parent: QWidget | None = None):
         super().__init__(parent)
         self._queue: deque[str] = deque()
 
@@ -46,6 +48,11 @@ class LogPanel(QWidget):
 
         self.frame = ExecutionLogsFrame(title=title, show_progress=True, parent=self)
         root.addWidget(self.frame)
+
+        # compact 模式：去 logContainer 外框/圆角，融入 Tab pane 等无外框容器
+        if compact:
+            self.frame.setProperty("compact", True)
+            refresh_style(self.frame)
 
         doc = self.frame.log_edit.document()
         doc.setMaximumBlockCount(_MAX_BLOCKS)

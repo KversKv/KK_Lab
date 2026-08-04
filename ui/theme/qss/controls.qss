@@ -222,6 +222,8 @@ QPushButton#segmentItem:checked {
 }
 
 /* ---------- Card 卡片 ---------- */
+/* Card 大圆角外边框；header 下方靠 cardContent 的 border-top 直角分割线区分
+   （见下方 QFrame#cardContent 规则）。 */
 QFrame#Card {
     background-color: $surface_card;
     border: 1px solid $border_subtle;
@@ -313,9 +315,17 @@ QLabel#pillText {
 }
 
 /* ---------- Card 内容区 ---------- */
+/* cardContent 无 border-top：header 下方分割线由 Card 内部的 separator widget
+   （QFrame#cardSeparator）绘制，缩进在 content_layout margins 内，两端直角，
+   避免 cardContent border-top 被 Card border-radius clip path 裁成圆角。 */
 QFrame#cardContent {
     background: transparent;
-    border-top: 1px solid $border_subtle;
+    border: none;
+}
+QFrame#cardSeparator {
+    background-color: $border_subtle;
+    border: none;
+    margin: 0;
 }
 
 /* ---------- Tab（结果/执行日志 Dock） ---------- */

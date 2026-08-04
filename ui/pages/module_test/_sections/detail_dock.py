@@ -88,7 +88,8 @@ class DetailDock(QWidget):
         self.tabs.addTab(result_page, "结果")
 
         # —— 日志页 ——
-        self.log_panel = LogPanel(title="执行日志")
+        # compact=True：去 logContainer 外框/圆角，融入 Tab pane（减少边框层级）
+        self.log_panel = LogPanel(title="执行日志", compact=True)
         self.tabs.addTab(self.log_panel, "执行日志")
 
     # ------------------------------------------------------------------ API

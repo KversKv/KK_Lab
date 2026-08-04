@@ -148,3 +148,17 @@ QFrame#logContainer QPushButton#levelChip:checked {
     color: #ffffff;
     border: 1px solid #3b6bcf;
 }
+
+/* compact 模式：嵌入 Tab/无外框容器时去外框与圆角，log_edit 顶部分割线直角，
+   底部圆角去掉，整体融入父容器（DetailDock Tab pane 等）。
+   用法：LogPanel(compact=True) → frame.setProperty("compact", True) + refresh_style */
+QFrame#logContainer[compact="true"] {
+    border: none;
+    border-radius: 0;
+    background-color: transparent;
+}
+QFrame#logContainer[compact="true"] QTextEdit#logEdit {
+    border-top: 1px solid #1a2d50;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+}

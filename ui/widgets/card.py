@@ -63,11 +63,22 @@ class Card(QFrame):
         root.addWidget(header)
 
         # —— 内容区 ——
+        # cardContent 无 border-top：改用 separator widget（QFrame#cardSeparator）
+        # 画 header 下方分割线。separator 在 content_layout 内部，受其 margins
+        # (10,8,10,10) 缩进，两端悬空在 Card 圆角外框内侧，呈直角（避免
+        # cardContent border-top 被 Card border-radius clip path 裁成圆角）。
         self._content = QFrame()
         self._content.setObjectName("cardContent")
         self._content_layout = QVBoxLayout(self._content)
-        self._content_layout.setContentsMargins(10, 8, 10, 10)
+        self._content_layout.setContentsMargins(10, 0, 10, 10)
         self._content_layout.setSpacing(6)
+
+        self._separator = QFrame(self._content)
+        self._separator.setObjectName("cardSeparator")
+        self._separator.setFixedHeight(1)
+        self._content_layout.addWidget(self._separator)
+        self._content_layout.addSpacing(7)
+
         root.addWidget(self._content)
 
         self._anim = QPropertyAnimation(self._content, b"maximumHeight", self)
