@@ -40,3 +40,4 @@
 - **§26 强制重试闪退**：worker `finished` 槽链里用 `singleShot(0)` 再起新 worker，会与首轮 QThread `finished→deleteLater` 清理竞态 → 无声闪退（faulthandler 为空）。必须用 `singleShot(≥50ms)`。
 - **§27 AI 经验写盘**：`resources/` 打包后只读；纠偏片段 / 快捷指令 / 项目规则写 `user_data/ai/*.local.json` / `.local.md`，加载侧按 `id` / `page_key` 合并，本机优先。
 - **波形摘要时效**：`prompt_manager.build_messages` 的 `waveform_context` 放在**本轮 user 消息开头**并附时效声明，防止模型锚定历史 Marker 旧值。
+- **§28 推理模型空回复误报「无受控能力」**：datalog 等纯分析页（无 CAP_* 契约能力但注册了 UI 动作）仍进 agent 模式；推理模型（glm-5.2-fp8）若 `max_tokens` 过小（如 2048），推理耗尽全部 output token 导致 content 为空 → `_empty_response_fallback()` 误报「未声明任何 AI 受控能力」。修复四管齐下：① datalog profile `max_tokens` 提至 8192；② profile system_prompt 显式声明波形分析无需工具；③ `_empty_response_fallback` 检查 `_last_had_waveform` 标记，波形场景不报「无能力」而是引导重试；④ **超时同步放大**：`max_tokens` 提高后推理耗时翻倍，全局 `timeout_seconds=60` 不够——新增 `AISettings.model_timeouts` 按模型配置超时，glm-5.x-fp8 默认 180s，`_make_client(model)` 按 `timeout_for(model)` 解析。

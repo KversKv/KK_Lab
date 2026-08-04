@@ -371,6 +371,7 @@ class AIService(QObject):
         self._agent_max_tokens = 2048
         self._agent_forced_retry = False
         self._page_capabilities_getter = None  # UI 注入：返回当前页 AI 能力集（set[str]）
+        self._last_had_waveform = False  # 本轮 send 是否注入了波形上下文（空回复兜底用）
 
     def set_action_system(self, registry, dispatcher) -> None:
         """UI 注入受控动作系统（ActionRegistry + ActionDispatcher）。
@@ -589,11 +590,11 @@ class AIService(QObject):
             soft_budget_ratio=budget.soft_budget_ratio,
         )
 
-    def _make_client(self) -> NewAPIClient:
+    def _make_client(self, model: str = "") -> NewAPIClient:
         return NewAPIClient(
             base_url=self._settings.effective_base_url,
             api_key=self._settings.effective_api_key,
-            timeout_seconds=self._settings.timeout_seconds,
+            timeout_seconds=self._settings.timeout_for(model) if model else self._settings.timeout_seconds,
         )
 
     def _record_telemetry(self, event_type: str, payload: dict | None = None) -> None:
@@ -731,7 +732,7 @@ class AIService(QObject):
             {"role": "user", "content": transcript},
         ]
         try:
-            client = self._make_client()
+            client = self._make_client(summary_model)
         except Exception:
             logger.error("创建摘要 client 失败", exc_info=True)
             return
@@ -799,6 +800,8 @@ class AIService(QObject):
         if not self._settings.is_configured():
             self.error_occurred.emit("AI 未配置（缺少 base_url 或 API Key）。")
             return
+
+        self._last_had_waveform = bool(waveform_context)
 
         log_context = ""
         if include_recent_logs:
@@ -894,7 +897,7 @@ class AIService(QObject):
     def _start_worker(self, messages, model, temperature, max_tokens, tools=None) -> None:
         self._teardown_thread()
         self._set_busy(True)
-        client = self._make_client()
+        client = self._make_client(model)
         self._thread = QThread()
         self._worker = _ChatWorker(
             client, model, messages, temperature, max_tokens, tools=tools
@@ -915,7 +918,7 @@ class AIService(QObject):
         self._set_busy(True)
         self._stream_buffer = ""
         self._stream_started = False
-        client = self._make_client()
+        client = self._make_client(model)
         self._thread = QThread()
         self._worker = _StreamWorker(
             client, model, messages, temperature, max_tokens, tools=tools
@@ -1077,8 +1080,16 @@ class AIService(QObject):
         """空回复兜底文案：明示状态 + 给出可执行引导（Phase 4.3）。
 
         依据当前页 page_key 与能力集给出针对性提示，避免模型沉默退出。
+        当本轮注入了波形上下文时（波形分析场景），不报「无受控能力」——
+        波形分析是纯文本作答任务，空回复通常是推理模型 max_tokens 被推理耗尽，
+        应引导用户重试而非误导为「本页无能力」。
         """
         page_key = self._page_key or "当前页"
+        if self._last_had_waveform:
+            return (
+                f"本轮分析未能生成回复（通常是推理 token 被耗尽），请重试一次；"
+                "若仍失败，可在 AI 设置中切换为非推理模型或缩短问题后重试。"
+            )
         caps = self._current_page_capabilities()
         if not caps:
             return (
@@ -1656,7 +1667,7 @@ class AIService(QObject):
             self.connection_tested.emit(False, "未配置 base_url 或 API Key")
             return
         try:
-            client = self._make_client()
+            client = self._make_client(self.current_model())
             client.ping(self.current_model())
         except AIClientError as exc:
             self.connection_tested.emit(False, str(exc))

@@ -37,6 +37,10 @@ _DEFAULTS: dict[str, Any] = {
     "available_models": ["deepseekv4flash", "glm-5.1-fp8"],
     "stream": True,
     "timeout_seconds": 60,
+    "model_timeouts": {
+        "glm-5.1-fp8": 180,
+        "glm-5.2-fp8": 180,
+    },
     "max_recent_log_lines": 300,
     "enable_log_masking": True,
     "require_confirm_high_risk_action": True,
@@ -84,6 +88,12 @@ class AISettings:
     )
     stream: bool = True
     timeout_seconds: int = 60
+    model_timeouts: dict[str, int] = field(
+        default_factory=lambda: {
+            "glm-5.1-fp8": 180,
+            "glm-5.2-fp8": 180,
+        }
+    )
     max_recent_log_lines: int = 300
     enable_log_masking: bool = True
     require_confirm_high_risk_action: bool = True
@@ -128,6 +138,19 @@ class AISettings:
             except (TypeError, ValueError):
                 pass
         return int(self.default_context_window)
+
+    def timeout_for(self, model: str) -> int:
+        """按模型取请求超时秒数；推理模型（glm-5.x-fp8）默认更长。
+
+        未知模型回退全局 timeout_seconds（向后兼容）。
+        """
+        timeouts = self.model_timeouts or {}
+        if model and model in timeouts:
+            try:
+                return int(timeouts[model])
+            except (TypeError, ValueError):
+                pass
+        return int(self.timeout_seconds)
 
     @property
     def effective_api_key(self) -> str:
@@ -195,6 +218,19 @@ class AISettings:
             data["model_context_windows"] = (
                 clean_windows or dict(_DEFAULTS["model_context_windows"])
             )
+        mtimeouts = data.get("model_timeouts")
+        if not isinstance(mtimeouts, dict) or not mtimeouts:
+            data["model_timeouts"] = dict(_DEFAULTS["model_timeouts"])
+        else:
+            clean_mtimeouts: dict[str, int] = {}
+            for key, val in mtimeouts.items():
+                try:
+                    clean_mtimeouts[str(key)] = int(val)
+                except (TypeError, ValueError):
+                    continue
+            data["model_timeouts"] = (
+                clean_mtimeouts or dict(_DEFAULTS["model_timeouts"])
+            )
         algo = data.get("waveform_event_algo")
         if not isinstance(algo, str) or not algo.strip():
             data["waveform_event_algo"] = _DEFAULTS["waveform_event_algo"]
@@ -222,6 +258,7 @@ class AISettings:
                 "available_models": list(self.available_models),
                 "stream": self.stream,
                 "timeout_seconds": self.timeout_seconds,
+                "model_timeouts": dict(self.model_timeouts),
                 "max_recent_log_lines": self.max_recent_log_lines,
                 "enable_log_masking": self.enable_log_masking,
                 "require_confirm_high_risk_action": self.require_confirm_high_risk_action,
