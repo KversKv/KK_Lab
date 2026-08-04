@@ -21,3 +21,19 @@
   - lessons: L-...
   - test_items: T-...
 -->
+
+## M-20260804-100000 - BES RF SOC 电压域划分与供电对象
+
+- 页面：datalog
+- 来源：manual
+- 稳定性：stable
+- 摘要：给出本项目默认被测对象（BES RF SOC）的电压域划分与各域供电对象，供波形通道归因时定性参考
+- 内容：
+  - 本项目波形分析优先按 BES 芯片场景理解，通常为 RF SOC（BT / BLE / WIFI）
+  - SOC 按电压域分开供电，主要包括 Vcore、Vana、Vhppa 三域
+  - Vcore：数字电路供电，如 MCU、Interface 等数字逻辑
+  - Vana：RF RX / RF TX 前端电路供电，同时供时钟体系（XTAL、PLL、VCO）
+  - Vhppa：Codec、Memory、RF PA 供电
+- 适用条件：
+  - Datalog 通道名含 VCORE / VANA / VHPPA（含 BUCK_VCORE、BUCK_VHPPA 等派生名）时，按上述归属推断电流变化的功能来源, 要根据实际的电流波形或者用户指定来确认, 而不是随意推断;
+  - 仅作定性归因参考；所有电流 / 电压 / 时间读数仍必须取自本轮 [波形数据摘要]，禁止据此臆造或估算数值

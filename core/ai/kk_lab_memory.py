@@ -504,14 +504,30 @@ def read_summary(page_key: str | None, *, max_tokens: int = 1500) -> str:
     return context_budget.clip_context_block(raw, max_tokens)
 
 
+_SUMMARY_SKIP_FIELDS: frozenset[str] = frozenset({
+    "页面", "来源", "稳定性", "类型", "风险等级", "关联项", "验证方式",
+})
+
+
 def _entries_to_summary(label: str, entries: list[MemoryEntry]) -> str:
-    """把条目列表渲染为摘要文本（ID + 标题 + body 前 3 行）。"""
+    """把条目列表渲染为摘要文本（ID + 标题 + 正文要点）。
+
+    过滤 `页面/来源/稳定性` 等元数据字段行，保留 `摘要/内容/适用条件/现象/原因/
+    处理办法` 等实质要点（每条最多 12 行），避免真正的经验被元数据挤出预算。
+    """
     lines = [f"[KK Lab AI 记忆·{label}]"]
     for ent in entries[-12:]:
         lines.append(f"- {ent.entry_id} {ent.title}")
-        body_lines = [ln for ln in ent.body.splitlines() if ln.strip()][:3]
-        for bl in body_lines:
-            lines.append(f"    {bl.strip()}")
+        kept = 0
+        for raw_line in ent.body.splitlines():
+            text = raw_line.strip()
+            if not text or kept >= 12:
+                continue
+            match = _FIELD_RE.match(text)
+            if match and match.group(1).strip() in _SUMMARY_SKIP_FIELDS:
+                continue
+            lines.append(f"    {text}")
+            kept += 1
     return "\n".join(lines)
 
 

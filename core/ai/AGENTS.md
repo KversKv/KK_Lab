@@ -31,6 +31,7 @@
 - **模型选择优先级**：`set_model_override` > Profile > 默认。
 - **SerialSessionManager 是每页面实例**，非全局单例；解析当前活动页的 `_sc_session_manager`。
 - **历史污染防控**：凡"声称已执行控制类动作"的轮次必须强制真 `tool_call`，禁止文字假装完成（见 §26）。
+- **领域经验落点**：页面级长期经验（被测对象背景、电压域划分、典型波形形态等）写 `docs/kk_lab_ai_memory/<归类>/<page_key>/memory.md`（项目级）或 `.local.md`（本机），由 `read_summary()` 自动注入 system 段，**禁止**为此改 `profiles.py` 的 `system_prompt`（那里只写页面能力边界与铁律）。`_entries_to_summary` 会过滤 `页面/来源/稳定性/类型/风险等级/关联项/验证方式` 等元数据字段行，只送 `摘要/内容/适用条件/现象/原因/处理办法` 等要点（每条上限 12 行、每类取最近 12 条），故经验务必写进 `内容` / `适用条件` 而非塞在标题或元数据里。
 
 ## 局部坑点
 
