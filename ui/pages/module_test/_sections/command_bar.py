@@ -26,7 +26,6 @@ class CommandBar(QFrame):
     saveConfigRequested = Signal()
     saveAsConfigRequested = Signal()
     connectionSettingsRequested = Signal()
-    judgeCriteriaRequested = Signal()
 
     def __init__(self, items=(("ldo", "LDO"), ("dcdc", "DCDC")),
                  parent: QWidget | None = None):
@@ -78,11 +77,6 @@ class CommandBar(QFrame):
         self.conn_btn = self._make_btn("连接设置", "滚动到仪器连接区",
                                        self.connectionSettingsRequested)
         lay.addWidget(self.conn_btn)
-
-        self.judge_btn = self._make_btn(
-            "判断标准", "编辑各测试项的 PASS/FAIL 判定标准（规格上下限）",
-            self.judgeCriteriaRequested)
-        lay.addWidget(self.judge_btn)
 
         self._subpage = None
 
@@ -163,7 +157,7 @@ class CommandBar(QFrame):
         """运行中禁用模块切换与配置按钮（由子页 RunState 驱动）。"""
         self.segmented.setEnabled(not running)
         for btn in (self.open_btn, self.save_btn, self.save_as_btn,
-                    self.conn_btn, self.judge_btn):
+                    self.conn_btn):
             btn.setEnabled(not running)
 
     def emit_open_later(self) -> None:

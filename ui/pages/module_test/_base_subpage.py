@@ -29,7 +29,6 @@ from ui.pages.module_test._sections.left_rail import LeftRail
 from ui.pages.module_test._sections.test_plan_panel import TestPlanPanel
 from ui.pages.module_test.dialogs.config_manager_dialog import ConfigManagerDialog
 from ui.pages.module_test.dialogs.item_params_dialog import ItemParamsDialog
-from ui.pages.module_test.dialogs.judge_dialog import JudgeCriteriaDialog
 from ui.theme import apply_qss
 from ui.widgets.banner import InfoBanner
 from ui.widgets.run_control_bar import RunControlBar, RunState
@@ -403,6 +402,8 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
             current_override=self._item_overrides.get(item_key, {}),
             base_value_fn=self._base_param_value,
             parent=self,
+            item_key=item_key,
+            judge_payload=self._judge_criteria.get(item_key),
         )
         if dlg.exec():
             override = dlg.get_override()
@@ -411,27 +412,24 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
             else:
                 self._item_overrides.pop(item_key, None)
             self.test_plan.set_item_customized(item_key, bool(override))
+            self._apply_item_judge_rules(item_key, dlg.get_judge_rules())
 
     def _base_param_value(self, base_key: str):
         """按 ParamSpec.base_key 从被测配置界面取当前值作弹窗预填。"""
         return self.get_test_config().get(base_key)
 
     # ================================================================== 判定标准
-    def _on_open_judge_criteria(self) -> None:
-        """打开判定标准弹窗（CommandBar「判断标准」按钮，运行中禁止）。"""
-        if self.is_test_running:
-            return
-        dlg = JudgeCriteriaDialog(self.ITEMS_REGISTRY, self._judge_criteria,
-                                  parent=self)
-        if dlg.exec():
-            # 原地更新，保持与 ModuleConfigStore 共享的引用
-            self._judge_criteria.clear()
-            self._judge_criteria.update(dlg.get_criteria())
-            n_rules = sum(len(v.get("rules", ()))
-                          for v in self._judge_criteria.values())
-            self.detail_dock.log_panel.append_log(
-                f"[JUDGE] 判定标准已更新：{len(self._judge_criteria)} 个测试项 / "
-                f"{n_rules} 条规则" if n_rules else "[JUDGE] 判定标准已清空")
+    def _apply_item_judge_rules(self, item_key: str, rules: list[dict]) -> None:
+        """把单个测试项的判定规则原地写回共享 dict（ModuleConfigStore 引用不变）。"""
+        if rules:
+            self._judge_criteria[item_key] = {"rules": [dict(r) for r in rules]}
+        else:
+            self._judge_criteria.pop(item_key, None)
+        n_rules = sum(len(v.get("rules", ()))
+                      for v in self._judge_criteria.values())
+        self.detail_dock.log_panel.append_log(
+            f"[JUDGE] 判定标准已更新：{len(self._judge_criteria)} 个测试项 / "
+            f"{n_rules} 条规则" if n_rules else "[JUDGE] 判定标准已清空")
 
     # ================================================================== 配置 IO（委托 ModuleConfigStore）
     def get_test_config(self) -> dict[str, Any]:

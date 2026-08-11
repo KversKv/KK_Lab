@@ -61,8 +61,6 @@ class ModuleTestUI(QWidget):
             lambda: self._call_current("_on_save_config_as"))
         self.command_bar.connectionSettingsRequested.connect(
             self._on_connection_settings)
-        self.command_bar.judgeCriteriaRequested.connect(
-            lambda: self._call_current("_on_open_judge_criteria"))
         layout.addWidget(self.command_bar)
 
         self.stack = QStackedWidget()

@@ -10,15 +10,22 @@
 
 为什么这样拆：弹窗语义曾踩坑（diff 误丢 max_code），独立成文件 + 单测
 固化契约，groups 编辑器复用 P1 的 GroupsTableEditor（带校验高亮）。
+
+弹窗以 QTabWidget 分页：「参数」页放 ParamSpec 表单；``item_key`` 命中
+``JUDGE_METRICS`` 时追加「判断标准」页（JudgeCriteriaTab），编辑当前测试项
+的 PASS/FAIL 规则（``get_judge_rules()`` 导出，持久化回
+``judge_criteria[item_key]``，与全模块判定表同源）。
 """
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QDoubleSpinBox, QGridLayout, QLabel,
-    QLineEdit, QSpinBox, QVBoxLayout, QWidget,
+    QLineEdit, QSpinBox, QTabWidget, QVBoxLayout, QWidget,
 )
 
+from core.module_test.judge import JUDGE_METRICS
+from ui.pages.module_test.dialogs.judge_dialog import JudgeCriteriaTab
 from ui.theme import apply_qss
 from ui.widgets.groups_editor import GroupColumn, GroupsTableEditor
 
@@ -31,7 +38,8 @@ class ItemParamsDialog(QDialog):
     """
 
     def __init__(self, *, title: str, specs, current_override: dict,
-                 base_value_fn, parent: QWidget | None = None):
+                 base_value_fn, parent: QWidget | None = None,
+                 item_key: str = "", judge_payload: dict | None = None):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setModal(True)
@@ -45,8 +53,13 @@ class ItemParamsDialog(QDialog):
         root.setContentsMargins(16, 14, 16, 12)
         root.setSpacing(10)
 
+        params_page = QWidget()
+        params_lay = QVBoxLayout(params_page)
+        params_lay.setContentsMargins(0, 10, 0, 0)
+        params_lay.setSpacing(10)
+
         if not specs:
-            root.addWidget(QLabel("该测试项暂无可设置的参数。"))
+            params_lay.addWidget(QLabel("该测试项暂无可设置的参数。"))
         else:
             grid = QGridLayout()
             grid.setHorizontalSpacing(10)
@@ -75,7 +88,18 @@ class ItemParamsDialog(QDialog):
                 grid.addWidget(lbl, row, 0)
                 grid.addWidget(editor, row, 1)
                 row += 1
-            root.addLayout(grid)
+            params_lay.addLayout(grid)
+
+        self._judge_tab: JudgeCriteriaTab | None = None
+        if item_key and item_key in JUDGE_METRICS:
+            tabs = QTabWidget()
+            tabs.addTab(params_page, "参数")
+            self._judge_tab = JudgeCriteriaTab(item_key, judge_payload, parent=tabs)
+            tabs.addTab(self._judge_tab, "判断标准")
+            root.addWidget(tabs, 1)
+            self.setMinimumWidth(560)
+        else:
+            root.addWidget(params_page, 1)
 
         self._wire_code_range_autocalc()
 
@@ -195,3 +219,9 @@ class ItemParamsDialog(QDialog):
                 if val != (base if base is not None else ""):
                     out[spec.key] = val
         return out
+
+    def get_judge_rules(self) -> list[dict]:
+        """返回「判断标准」页编辑的规则列表（无该页时返回空）。"""
+        if self._judge_tab is None:
+            return []
+        return self._judge_tab.get_rules()

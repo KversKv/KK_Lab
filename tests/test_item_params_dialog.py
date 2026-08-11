@@ -18,6 +18,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QDoubleSpinBox, QLineEdit, QSpinBox
 
+from ui.pages.module_test.dialogs.judge_dialog import JudgeCriteriaTab
+
 from core.module_test.param_spec import ParamSpec
 from ui.pages.module_test.dialogs.item_params_dialog import ItemParamsDialog
 
@@ -108,6 +110,41 @@ def test_editor_types():
     assert isinstance(dlg._editors["a"], QSpinBox)
     assert isinstance(dlg._editors["b"], QDoubleSpinBox)
     assert isinstance(dlg._editors["c"], QLineEdit)
+
+
+# ------------------------------------------------------------------ 判断标准页
+def test_judge_tab_roundtrip():
+    specs = [ParamSpec("average_cnt", "平均次数", "int", 3, "",
+                       base_key="average_cnt", minimum=1, maximum=100)]
+    payload = {"rules": [
+        {"metric": "max_vpp_mv", "op": "<", "v1": 10.0, "v2": None},
+    ]}
+    dlg = _dlg(specs, base_fn=lambda _k: 3)
+    # 无 item_key → 无判断标准页
+    assert dlg._judge_tab is None
+    assert dlg.get_judge_rules() == []
+
+    dlg2 = ItemParamsDialog(
+        title="t", specs=specs, current_override={},
+        base_value_fn=lambda _k: 3, parent=None,
+        item_key="ldo_ripple", judge_payload=payload)
+    assert isinstance(dlg2._judge_tab, JudgeCriteriaTab)
+    rules = dlg2.get_judge_rules()
+    assert rules == [{"metric": "max_vpp_mv", "op": "<", "v1": 10.0,
+                      "v2": None}], rules
+    # 参数 override 语义不受判断标准页影响
+    assert dlg2.get_override() == {}
+
+    # 全部取消启用 → 空规则（外层据此清掉该项判定）
+    dlg2._judge_tab._editors[0]["check"].setChecked(False)
+    assert dlg2.get_judge_rules() == []
+
+    # 无指标项（JUDGE_METRICS 未注册）→ 无判断标准页
+    dlg3 = ItemParamsDialog(
+        title="t", specs=specs, current_override={},
+        base_value_fn=lambda _k: 3, parent=None,
+        item_key="ldo_protection", judge_payload=None)
+    assert dlg3._judge_tab is None
 
 
 if __name__ == "__main__":

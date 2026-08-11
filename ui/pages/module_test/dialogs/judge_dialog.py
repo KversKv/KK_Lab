@@ -1,99 +1,63 @@
-"""JudgeCriteriaDialog — Module Test 判定标准编辑弹窗。
+"""JudgeCriteriaTab — 单个测试项的判定标准编辑控件（内嵌 ItemParamsDialog 标签页）。
 
-按当前模块 ITEMS_REGISTRY 中有可判定指标（``core.module_test.judge``
-的 ``JUDGE_METRICS``）的测试项逐行生成：每个（测试项 × 指标）一行，
-勾选「启用」并设定条件即构成一条判定规则；``get_criteria()`` 返回可
-JSON 序列化的 dict，随模块配置保存 / 加载，runner 完成测试项时据此判
-PASS/FAIL（与报告异常点标红相互独立）。
+仅收录当前测试项在 ``core.module_test.judge`` 的 ``JUDGE_METRICS`` 中注册
+的指标，每个指标一行：勾选「启用」并设定条件即构成一条判定规则；
+``get_rules()`` 返回可 JSON 序列化的 list，随模块配置保存 / 加载，runner
+完成测试项时据此判 PASS/FAIL（与报告异常点标红相互独立）。
 
-行结构：测试项 | 指标 (单位) | 启用 | 条件 | 阈值/下限 | 上限（仅「介于」）。
+行结构：指标 (单位) | 启用 | 条件 | 阈值/下限 | 上限（仅「介于」）。
 """
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
-    QHBoxLayout, QHeaderView, QLabel, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QDoubleSpinBox, QHBoxLayout, QHeaderView,
+    QLabel, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from core.module_test.judge import JUDGE_METRICS, JUDGE_OPS
-from ui.theme import apply_qss
 
-_COL_ITEM, _COL_METRIC, _COL_ENABLE, _COL_OP, _COL_V1, _COL_V2 = range(6)
+_COL_METRIC, _COL_ENABLE, _COL_OP, _COL_V1, _COL_V2 = range(5)
 
 
-class JudgeCriteriaDialog(QDialog):
-    """判定标准编辑弹窗（按测试项 × 指标逐行启用/设条件）。"""
+class JudgeCriteriaTab(QWidget):
+    """单个测试项的判定标准编辑控件（按指标逐行启用/设条件）。"""
 
-    def __init__(self, items_registry: dict, criteria: dict,
+    def __init__(self, item_key: str, payload: dict | None = None,
                  parent: QWidget | None = None):
         super().__init__(parent)
-        self.setWindowTitle("判断标准（PASS/FAIL Criteria）")
-        self.setModal(True)
-        self.setMinimumWidth(760)
-        self.setMinimumHeight(420)
-        # 只用 dialog.qss：其表格段自带 color/表头色；再叠 table.qss 会顶掉
-        # 文字色（table.qss 防"盖掉逐项 setForeground"不设 color），致黑字叠深底看不清
-        apply_qss(self, "dialog")
-
-        # 展平为行：(item_key, item_name, MetricSpec)，仅收录有指标的项
-        self._rows: list[tuple[str, str, object]] = []
-        for item_key, entry in items_registry.items():
-            metrics = JUDGE_METRICS.get(item_key)
-            if not metrics:
-                continue
-            name = entry[0]
-            for metric in metrics:
-                self._rows.append((item_key, name, metric))
+        self._metrics = JUDGE_METRICS.get(item_key, ())
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(16, 14, 16, 12)
-        root.setSpacing(10)
+        root.setContentsMargins(0, 10, 0, 0)
+        root.setSpacing(8)
 
         hint = QLabel(
-            "勾选「启用」并设定条件后，测试项完成时按标准判定 PASS/FAIL；"
-            "未启用或无测量数据的项保持 N/A。与报告中的异常点标红互不影响。")
+            "勾选「启用」并设定条件后，本测试项完成时按标准判定 PASS/FAIL；"
+            "未启用或无测量数据的指标保持 N/A。与报告中的异常点标红互不影响。")
         hint.setProperty("role", "caption")
         hint.setWordWrap(True)
         root.addWidget(hint)
 
-        self._table = QTableWidget(len(self._rows), 6, self)
+        self._table = QTableWidget(len(self._metrics), 5, self)
         self._table.setHorizontalHeaderLabels(
-            ["测试项", "指标 (单位)", "启用", "条件", "阈值 / 下限", "上限"])
+            ["指标 (单位)", "启用", "条件", "阈值 / 下限", "上限"])
         self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self._table.verticalHeader().setVisible(False)
         self._editors: list[dict] = []
-        self._fill_rows(criteria or {})
+        self._fill_rows(payload or {})
         root.addWidget(self._table, 1)
 
-        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
-                                parent=self)
-        ok_btn = btns.button(QDialogButtonBox.Ok)
-        ok_btn.setDefault(True)
-        ok_btn.setAutoDefault(True)
-        cancel_btn = btns.button(QDialogButtonBox.Cancel)
-        cancel_btn.setDefault(False)
-        cancel_btn.setAutoDefault(False)
-        btns.accepted.connect(self.accept)
-        btns.rejected.connect(self.reject)
-        root.addWidget(btns)
-
     # ------------------------------------------------------------------ 行装配
-    def _fill_rows(self, criteria: dict) -> None:
-        # 索引现有规则：{(item_key, metric_key): rule}
-        existing: dict[tuple[str, str], dict] = {}
-        for item_key, payload in criteria.items():
-            for rule in (payload or {}).get("rules") or []:
-                existing[(item_key, str(rule.get("metric", "")))] = rule
+    def _fill_rows(self, payload: dict) -> None:
+        # 索引现有规则：{metric_key: rule}
+        existing: dict[str, dict] = {}
+        for rule in (payload or {}).get("rules") or []:
+            existing[str(rule.get("metric", ""))] = rule
 
-        for row, (item_key, name, metric) in enumerate(self._rows):
-            rule = existing.get((item_key, metric.key))
+        for row, metric in enumerate(self._metrics):
+            rule = existing.get(metric.key)
 
-            item_cell = QTableWidgetItem(name)
-            item_cell.setFlags(item_cell.flags() & ~Qt.ItemIsEditable)
-            self._table.setItem(row, _COL_ITEM, item_cell)
             metric_text = (f"{metric.label} ({metric.unit})"
                            if metric.unit else metric.label)
             metric_cell = QTableWidgetItem(metric_text)
@@ -129,7 +93,7 @@ class JudgeCriteriaDialog(QDialog):
             v2_spin.setEnabled(op_combo.currentData() == "range")
 
             self._editors.append({
-                "item_key": item_key, "metric": metric.key,
+                "metric": metric.key,
                 "check": check, "op": op_combo, "v1": v1_spin, "v2": v2_spin,
             })
         self._table.resizeRowsToContents()
@@ -146,18 +110,17 @@ class JudgeCriteriaDialog(QDialog):
         return spin
 
     # ------------------------------------------------------------------ 导出
-    def get_criteria(self) -> dict:
-        """导出判定标准：``{item_key: {"rules": [...]}}``（仅启用行）。"""
-        criteria: dict[str, dict] = {}
+    def get_rules(self) -> list[dict]:
+        """导出本测试项的判定规则列表（仅启用行）。"""
+        rules: list[dict] = []
         for ed in self._editors:
             if not ed["check"].isChecked():
                 continue
-            rule = {
+            rules.append({
                 "metric": ed["metric"],
                 "op": ed["op"].currentData(),
                 "v1": ed["v1"].value(),
                 "v2": (ed["v2"].value()
                        if ed["op"].currentData() == "range" else None),
-            }
-            criteria.setdefault(ed["item_key"], {"rules": []})["rules"].append(rule)
-        return criteria
+            })
+        return rules
