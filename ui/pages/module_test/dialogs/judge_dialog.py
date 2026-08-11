@@ -29,7 +29,8 @@ class JudgeCriteriaTab(QWidget):
         self._metrics = JUDGE_METRICS.get(item_key, ())
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 10, 0, 0)
+        # pane 卡片已提供外框，内容与边框留白保持一致
+        root.setContentsMargins(12, 10, 12, 12)
         root.setSpacing(8)
 
         hint = QLabel(
@@ -40,6 +41,8 @@ class JudgeCriteriaTab(QWidget):
         root.addWidget(hint)
 
         self._table = QTableWidget(len(self._metrics), 5, self)
+        # dialog.qss 专用段落：透底去框、单元格编辑器去框（防边框交叠）
+        self._table.setObjectName("judgeCriteriaTable")
         self._table.setHorizontalHeaderLabels(
             ["指标 (单位)", "启用", "条件", "阈值 / 下限", "上限"])
         self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
@@ -74,6 +77,7 @@ class JudgeCriteriaTab(QWidget):
             self._table.setCellWidget(row, _COL_ENABLE, check_wrap)
 
             op_combo = QComboBox()
+            op_combo.setObjectName("judgeCellEditor")
             for op_value, op_label in JUDGE_OPS:
                 op_combo.addItem(op_label, op_value)
             if rule is not None:
@@ -96,11 +100,14 @@ class JudgeCriteriaTab(QWidget):
                 "metric": metric.key,
                 "check": check, "op": op_combo, "v1": v1_spin, "v2": v2_spin,
             })
-        self._table.resizeRowsToContents()
+        # 行高钉 32px（紧凑、与编辑器对齐），避免默认行高把表格撑散
+        for row in range(self._table.rowCount()):
+            self._table.setRowHeight(row, 32)
 
     @staticmethod
     def _make_spin(value) -> QDoubleSpinBox:
         spin = QDoubleSpinBox()
+        spin.setObjectName("judgeCellEditor")
         spin.setRange(-1e12, 1e12)
         spin.setDecimals(4)
         try:

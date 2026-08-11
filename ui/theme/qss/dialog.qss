@@ -17,6 +17,10 @@ QLabel#dlgHint {
     color: $text_disabled;
     font-size: $font_caption;
 }
+QLabel[role="caption"] {
+    color: $text_muted;
+    font-size: $font_caption;
+}
 QLineEdit, QSpinBox, QDoubleSpinBox {
     background-color: $surface_input;
     border: 1px solid $border_default;
@@ -93,4 +97,76 @@ QHeaderView::section {
     padding: $space_1 $space_1;
     font-size: $font_caption;
     font-weight: 700;
+}
+
+/* ---------- 弹窗内 Tab（参数 / 判断标准分页） ----------
+   卡片式：选中 tab 与 pane 同色同边框，pane 上移 1px 与 tab 咬合 */
+QTabWidget::pane {
+    background-color: $surface_card;
+    border: 1px solid $border_default;
+    border-radius: $radius_md;
+    top: -1px;
+}
+QTabBar {
+    background: transparent;
+}
+QTabBar::tab {
+    background: transparent;
+    color: $text_muted;
+    font-size: $font_caption;
+    padding: $space_1 $space_3;
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-top-left-radius: $radius_sm;
+    border-top-right-radius: $radius_sm;
+    margin-right: $space_1;
+}
+QTabBar::tab:hover:!selected {
+    color: $text_secondary;
+}
+QTabBar::tab:selected {
+    background-color: $surface_card;
+    color: $text_primary;
+    font-weight: 600;
+    border: 1px solid $border_default;
+    border-bottom: 1px solid $surface_card;
+}
+
+/* ---------- 判断标准表（#judgeCriteriaTable） ----------
+   pane 卡片已提供外框：表体去边框透底，单元格编辑器去框防边框交叠 */
+QTableWidget#judgeCriteriaTable {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    gridline-color: transparent;
+}
+QTableWidget#judgeCriteriaTable::item {
+    border: none;
+    border-bottom: 1px solid $border_subtle;
+    padding-left: $space_2;
+}
+QTableWidget#judgeCriteriaTable QHeaderView::section {
+    background-color: $surface_card;
+    border: none;
+    border-bottom: 1px solid $border_default;
+    padding: $space_1 $space_2;
+}
+/* 单元格编辑器走 ID 选择器（cell widget 挂在 viewport 下，后代选择器不可靠）。
+   hover/focus 仅改颜色不动几何：基态即 1px 透明 border（避免 focus 加边框 +2px），
+   min/max-height 钉死（覆盖通用 QComboBox/QSpinBox 的 min-height，防 hover 时
+   sizeHint 重算把行撑高溢出单元格）。行高 32px = 28px 编辑器 + 2×1px 边框。 */
+#judgeCellEditor {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: $radius_sm;
+    padding: 0 $space_2;
+    min-height: $control_h_compact_box;
+    max-height: $control_h_compact_box;
+}
+#judgeCellEditor:hover {
+    background-color: $surface_raised;
+}
+#judgeCellEditor:focus {
+    background-color: $surface_input;
+    border-color: $border_focus;
 }

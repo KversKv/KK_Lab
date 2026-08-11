@@ -93,6 +93,8 @@ class ItemParamsDialog(QDialog):
         self._judge_tab: JudgeCriteriaTab | None = None
         if item_key and item_key in JUDGE_METRICS:
             tabs = QTabWidget()
+            # pane 卡片已提供外框，参数页内容与边框留白保持一致
+            params_lay.setContentsMargins(12, 10, 12, 12)
             tabs.addTab(params_page, "参数")
             self._judge_tab = JudgeCriteriaTab(item_key, judge_payload, parent=tabs)
             tabs.addTab(self._judge_tab, "判断标准")
