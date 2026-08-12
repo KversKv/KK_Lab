@@ -74,12 +74,14 @@ def _i2c_collapse_arrow_style():
 
 
 def _bit_val_style(on):
+    # 钉死 padding:0（§24.1 高度自洽）：否则嵌入页面时祖先裸 QPushButton 的
+    # padding 会被级联合并进来，把按钮撑高超出表格行高（如 MainWindow 的 6px 12px）。
     if on:
         return (
             "QPushButton {"
             " background-color: rgba(16,185,129,0.20); border:1px solid #10b981;"
             " border-radius:4px; color:#34d399; font-weight:bold;"
-            " min-height:22px; max-height:22px;"
+            " min-height:22px; max-height:22px; padding:0px;"
             "}"
             " QPushButton:hover { background-color: rgba(16,185,129,0.34); }"
         )
@@ -87,7 +89,7 @@ def _bit_val_style(on):
         "QPushButton {"
         f" background-color:{SLATE_950}; border:1px solid {SLATE_800};"
         " border-radius:4px; color:#64748b; font-weight:bold;"
-        " min-height:22px; max-height:22px;"
+        " min-height:22px; max-height:22px; padding:0px;"
         "}"
         f" QPushButton:hover {{ background-color:{SLATE_900}; color:{TEXT_MUTED}; }}"
     )

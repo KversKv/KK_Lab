@@ -371,3 +371,23 @@ separator 是 `content_layout` 内的独立 widget，受其 margins 缩进（左
 - **凡是在带 `border-radius` 的容器（`Card` / 圆角 `QFrame`）内部画贯穿宽度的横线/分割线，禁止用子控件的 `border-top` / `border-bottom`**——会被父级 clip path 裁成圆角。必须用独立的 separator widget（`QFrame` + `setFixedHeight(1)` + `background-color`），并让 separator 受容器内 layout 的 margins 缩进，两端不与圆角弧线相接。
 - **若需分割线横贯容器全宽（两端贴边框）**：separator 不能放在带 margins 的内层 layout 里，需用 `paintEvent` 自绘（`QPainter.drawLine` 从 `x=radius` 到 `x=width-radius`，跳过圆角弧线区域），或把 separator 直接挂在容器根 layout（margins=0）且 y 落在直边段（y > radius 且 y < height-radius）。单纯 `border-top` 方案不可行。
 - 排查"分割线两端圆角"先用 PIL 读渲染图像素，确认两端是否有颜色渐变（抗锯齿）——有渐变即是被 clip path 裁剪。
+
+## 30. 祖先裸选择器 QSS 级联"补全"控件 padding，撑高单元格内控件（表格行内控件变形）
+
+**现象**：模块/页面**独立运行**（自带 Demo 入口）时表格行内控件正常，**嵌入 MainWindow** 后同行控件被纵向拉伸、超出表格行高（如 IIC 模块 `BitsTable` 的 Val 列 bit 按钮圆角框上下顶破行边界，行高仍 30px 但按钮被撑成 36px 被裁切）。
+
+**根因**：Qt 样式表对**同优先级**选择器是**属性级合并（cascade）**，而非"谁近谁全赢"。当控件自身 QSS（如 `QPushButton { min-height:22px; max-height:22px }`，作用域=该按钮自身）只声明了 `min/max-height` 却没声明 `padding`，而祖先链上存在**同优先级**的裸选择器规则（如 MainWindow 的 `QPushButton { padding: 6px 12px }`，[main_window.py `_setup_style`](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/main_window.py#L445)），未声明的 `padding` 会被祖先规则**补全合并**进最终渲染属性。结果控件总高 = 自身 `max-height`(24) + 祖先 `padding`(上下 12) = 36px，撑破表格行。独立运行时无祖先 QSS，故正常。
+
+**实测**（`BitsTable` 8bit 行，Fusion）：
+- 独立：按钮 24px、行高 30px；
+- 嵌入 MainWindow：按钮 36px（24+6+6）、行高仍 30px → 裁切；
+- 控件自身 QSS 补 `padding:0` 后恢复 24px。
+
+**修复**：可复用控件的**自身 QSS 必须盒模型自洽**——凡钉了 `min/max-height` 的控件，同一条规则里**显式声明 `padding`**（紧凑控件用 `padding:0`），不要假设祖先不会注入 padding。参见 [i2c_styles.py `_bit_val_style`](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/modules/IIC_Module/i2c_styles.py#L76)（已补 `padding:0px`）。
+
+**规则**：
+
+- 这是 §24.1「控件高度自洽」的**具体机制**：问题不只是 `min-height` 被覆盖，更是 `padding` 等未声明属性被祖先**合并补全**。控件 QSS 里 `min/max-height` 与 `padding` 必须**成对写全**。
+- 排查"嵌入后表格行内控件变形/撑高"：先量控件 `sizeHint().height()`，若大于 `max-height` 即被祖先 padding 补全；在控件自身 QSS 补 `padding:0`（或目标值）即可。
+- **禁止**反过来在页面/MainWindow 侧加全局豁免或改共享常量——会影响其它页面；只在**出问题的控件自身 QSS** 内补全盒模型属性。
+- 易中招的控件：`QTableWidget.setCellWidget` 放进单元格的 `QPushButton` / `QComboBox` / `QSpinBox`（这类控件常以自身 `setStyleSheet` 钉高，且行高由 `verticalHeader` 钉死，padding 一多就破行）。

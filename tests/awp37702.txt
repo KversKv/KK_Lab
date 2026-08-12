@@ -1,0 +1,1638 @@
+
+===== PAGE 1 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       1       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+Low Quiescent, High Efficiency 1.5A Buck-Boost Converter 
+with I2C Interface 
+Features 
+⚫ Buck, Buck -Boost and Boost Operation with 
+Seamless Mode Transition 
+⚫ 2.2V to 5.5V Input Supply Voltage Range  
+⚫ 1.4V to 4.575V Output Voltage Range with 
+Digitally Programmable (25mV/steps) 
+⚫ 2.8uA Low Quiescent Current  
+⚫ 0.3uA Shutdown Current 
+⚫ Excellent Load Transient Response 
+⚫ Allows Dynamically-Voltage-Scaling Control 
+(SR:2V/ms, 5V/ms, 10V/ms, 20V/ms) 
+⚫ Allows Dynamically-Voltage-Scaling Control 
+⚫ Automatic PFM Mode and Forced PWM Mode 
+Selection 
+⚫ Up to 1MHz I2C Interface 
+(VSEL=H, ADDR=0X75; VSEL=L, ADDR=0X76) 
+⚫ Converter I2C Default EN = 0 
+⚫ Output Voltage Selection 
+(VSEL=H, VOUT=2.875V Default; VSEL=L, 
+VOUT=2.675V Default) 
+⚫ Maximum Continuous Output Current: 
+Up to 1A for VIN ≥ 2.5V, VOUT = 3.5V 
+Up to 1.2A for VIN ≥ 3V, VOUT = 4.5V 
+Up to 1.5A for VIN ≥ 4V, VOUT = 4.5V 
+⚫ WLCSP 1.3X1.3-9B Package 
+Applications 
+⚫ AF & OIS Driver 
+⚫ Wearable Devices 
+⚫ Portable Devices 
+⚫ TWS Earbud Chargers 
+⚫ Optical Heart Rate Monitor LED Bias 
+⚫ Battery Powerd Systems 
+⚫ Smartphones 
+ General Description 
+The AWP37702 is a high-efficiency, single inductor, 
+advanced COT synchronous Buck-Boost converter 
+with 2.2V to 5.5V wide input voltage range and well 
+regulate to the digitally programmable output 
+voltage from 1.4V to 4.575V. Which is suitable for 
+wide input supply range applications, regardless of 
+input voltage is lower, higher than or even equal to 
+the output voltage. The COT control architec ture 
+features outstanding line/load transient response, 
+seamless transition between buck and boost 
+modes, provides stable operation with small 
+ceramic output capacitors and without complicated 
+external compensation. 
+ 
+The AWP37702 features I2C interface, which allows 
+programmable output voltage, soft -start slew -rate 
+adjusted and device status monitoring. The target 
+output voltage can also be switched through 
+external VSEL pin to perform dynamically -voltage-
+scaling (DVS), and the ramp-up slew-rate and ramp 
+mode of DVS can also be set by setting the related 
+registers. 
+ 
+The AWP37702 has internal soft start module to 
+limits the inrush current. Full protection features 
+include over current protection(OCP), over voltage 
+protection(OVP), under voltage protection(UVP ) 
+and over temperature protection (OTP). The 
+AWP37702 is available in WLCSP 1.3X1.3 -9B 
+package. 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+Awinic Confidential
+
+===== PAGE 2 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       2       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+Typical Application Circuit 
+VIN
+EN
+SW1
+AWP37702
+GND
+VOUT
+SW2
+CIN
+10μF
+COUT1
+22μF
+VIN:2.2～5.5V
+L 
+0.47μH
+VOUT:1.4～4.575V
+VSEL
+SDA
+SCL
+VSCL
+VSDA
+COUT2(optional)
+22μF
+ 
+Figure 1  AWP37702 Typical Application Circuit  
+NOTE:  
+When the EN pin is held high, the chip's output voltage remains disabled. To enable the output voltage, the 
+ENABLE bit (Address 0x01[5]) must be configured to '0'.  
+When the IOUT is ≤1A, a 22 μF COUT is recommended. When  the IOUT is >1A, 2 × 22μF COUT capacitors 
+are recommended.  
+Awinic Confidential
+
+===== PAGE 3 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       3       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+Pin Configuration And Top Mark 
+AWP37702CSR
+(Top View)
+AWP37702CSR Marking
+(Top View)
+19LK - AWP37702CSR
+XXXX/XXXX/XXXX/XXXX - Production Tracing Code
+1 2 3
+B
+C
+A 19LK
+XXXX
+XXXX
+XXXX
+XXXX
+VSEL
+VIN
+SW1
+SCL
+EN
+GND
+SDA
+VOUT
+SW2
+ 
+Figure 2  Pin Configuration and Top Mark 
+Pin Definition 
+No. NAME DESCRIPTION 
+A1 SW1 Switching node 1. Connect to the inductor. 
+A2 GND Ground. All signals are referenced to this pin. 
+A3 SW2 Switching node 2. Connect to the inductor. 
+B1 VIN Power input. 
+B2 EN Enable control input. A logic-high enables the converter; a logic-low forces the 
+device into shutdown mode. Floating is prohibited. 
+B3 VOUT Power output. 
+C1 VSEL 
+Voltage select pin. When this pin is logic low, VOUT is set by the VOUT1 register; 
+This pin is logic high, VOUT is set by the VOUT2 register. The VSEL pin shall be 
+tied high or pulled to GND. Floating is prohibited.  
+C2 SCL I2C serial interface clock. 
+C3 SDA I2C serial interface data. 
+  
+Awinic Confidential
+
+===== PAGE 4 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       4       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+Functional Block Diagram 
+INTERFACE
+EN
+SCL
+SDA
+VSEL
+DIGITAL 
+CONTROL
+PROTECTION
+OVP
+UVP
+OCP
+OTP
+VOUT
+PROGRAMMER1VOUT REFERENCE1
+BU_DRV
+VIN SW1
+BO_DRV
+SW2 VOUT
+GNDREFERENCE2
+BO_AUTO_ZCD
+VOUT
+PROGRAMMER2
+LOW POWER OSC
+CONTROL
+LOGIC
+BU_AUTO_ZCD
+ON-TIMER
+GENERATOR
+OFF_TIMER
+GENERATOR
+HIGH 
+FREQUENCY OSC
+Q1
+Q2 Q3
+Q4
+RIPPLE
+GENERATOR
+SOFT
+START
+POR
+EA
+VMAX_GEN
+PWM_COMP
+PSM_COMP
+VIN_VOUT_DET
+ 
+Figure 3  Functional Block Diagram 
+Ordering Information 
+Part Number Temperatu
+re Package Marking 
+Moisture 
+Sensitivity 
+Level 
+Environmental 
+Information Delivery Form 
+AWP37702CSR -40℃～85℃ WLCSP 1.3X1.3-9B 19LK MSL1 ROHS+HF 4500 units/ 
+Tape and Reel 
+  
+Awinic Confidential
+
+===== PAGE 5 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       5       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+Absolute Maximum Ratings(NOTE1)  
+PARAMETERS RANGE 
+Supply voltage range VIN -0.3V to 6V 
+Power output voltage range VOUT -0.3V to 6V 
+SW1、SW2 -0.3V to 6.5V 
+IO voltage range EN、VSEL、SDA、SCL -0.3V to 6V 
+Junction-to-ambient thermal resistance θJA(NOTE2) 100.3°C /W 
+Maximum operating junction temperature TJMAX 150°C 
+Storage temperature TSTG -65°C to 150°C 
+Lead temperature (soldering 10 seconds) 260°C 
+ESD(Including CDM(NOTE 3) HBM(NOTE 4)) 
+CDM ±1.5kV 
+HBM ±2kV 
+Latch-Up 
+Test condition: JESD78F 
++IT：200mA 
+-IT：-200mA 
+NOTE1: Conditions out of those ranges listed in "absolute maximum ratings" may cause permanent damages 
+to the device. In spite of the limits above, functional operation conditions of the device should within the ranges 
+listed in "recommended operating conditions". Exposure to absolute-maximum-rated conditions for prolonged 
+periods may affect device reliability. 
+NOTE2: Based on simulations conducted with the device mounted on a JEDEC 4-layer PCB. 
+NOTE3: Test method: ESDA/JEDEC JS-002-2022； 
+NOTE4: The human body model is a 100pF capacitor discharged through a 1.5kΩ resistor into each pin. Test 
+method: ESDA/JEDEC JS-001-2023； 
+Recommended Operating Conditions 
+Symbol Parameter Condition Min. Typ. Max. Unit 
+VIN Input voltage  2.2  5.5 V 
+VOUT Output voltage  1.4  4.575 V 
+IOUT Output current 
+Vout=3.5V, VIN ≥ 2.5V 1   A 
+Vout=4.5V, VIN ≥ 3V 1.2   A 
+Vout=4.5V, VIN ≥ 4V 1.5   A 
+L Inductor  0.22 0.47 1 μH 
+CIN Input capacitor   10  μF 
+COUT Output capacitor   22  μF 
+TA Operating free-air 
+temperature range  -40  85 ℃ 
+Note: All the input and output capacitors are the suggested values, referring to the effective capacitances, 
+subject to any de-rating effect, like a DC bias. 
+  
+Awinic Confidential
+
+===== PAGE 6 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       6       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+Electrical Characteristics 
+VIN=3.8V, VOUT=3.5V, TA=25°C, COUT = 22μF, L = 0.47μH, for typical values (unless otherwise noted) 
+PARAMETER TEST CONDITION MIN TYP MAX UNIT 
+VIN Input Operating 
+Voltage  2.2  5.5 V 
+VUVLO 
+UVLO Threshold 
+Voltage VIN rising  1.92  V 
+Hysteresis For UVLO   80  mV 
+IQ_SW Quiescent Current VEN=3.8V,IOUT=0A  2.8 5 μA 
+IQ_NON SW Quiescent Current VEN=3.8V,VOUT=3.8V,no 
+switching  2.3 5 μA 
+ISD Shutdown Current VEN=0V  0.3 1 μA 
+VOUT Output Voltage Range  1.4  4.575 V 
+IOUT_MAX Maximum Continuous 
+Output Current 
+VIN≥2.5V, VOUT=3.5V 1   A 
+VIN≥3V, VOUT=4.5V 1.2   A 
+VIN≥4V, VOUT=4.5V 1.5   A 
+VOUTVSEL_L Default Output Voltage VSEL = low  2.675  V 
+VOUTVSEL_H Default Output Voltage VSEL = high  2.875  V 
+RDISCHG Output Discharge 
+Resistor VEN = 0V  200  Ω 
+ILIM_BUCK MOSFET Peak 
+Current Limit Buck operation  3.7  A 
+ILIM_BOOST MOSFET Peak 
+Current Limit Boost operation  3  A 
+FSW Switching Frequency Boost or Buck operation  1.6  MHz 
+VUVP 
+Positive-Going Under-
+Voltage Threshold 
+Voltage 
+  95  % 
+Negative-Going 
+Under-Voltage 
+Threshold Voltage 
+  85  % 
+tss Soft Start Time    1 ms 
+tEN Enable Delay Time   130  μs 
+DVS_SR 
+Output Voltage 
+Dynamic Voltage 
+Scaling Slew Rate 
+0x01, bit[1:0] = 00b  2  V/ms 
+0x01, bit[1:0] = 01b  5  V/ms 
+0x01, bit[1:0] = 10b  10  V/ms 
+0x01, bit[1:0] = 11b  20  V/ms 
+RDS(on) _Q1 Buck High-Side Switch 
+On Resistance(Q1)   50  mΩ 
+Awinic Confidential
+
+===== PAGE 7 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       7       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+RDS(on) _Q2 Buck Low-Side Switch 
+On Resistance(Q2)   50  mΩ 
+RDS(on) _Q3 Boost Low-Side Switch 
+On Resistance(Q3)   40  mΩ 
+RDS(on) _Q4 
+Boost High-Side 
+Switch On 
+Resistance(Q4) 
+  60  mΩ 
+IIH High-Level Input 
+Current 
+VSCL = VSDA = VSEL = 3.3V, no 
+pull-up resistor   1 μA 
+IB Input Bias Current VEN = 3.8V   1 μA 
+IHS_LK High-Side Switch 
+Leakage Current VEN = 0V, VSW = 0V   1 μA 
+VEN_H Enable Input High 
+Threshold VIN = 2.2V to 5.5V 1.2   V 
+VEN_L EN Falling Threshold VIN = 2.2V to 5.5V   0.4 V 
+VIH (SCL, SDA, VSEL) 
+Input High Threshold  0.84   V 
+VIL (SCL, SDA, VSEL) 
+Input Low Threshold    0.36 V 
+TOTP 
+Over Temperature 
+Protection   145  ℃ 
+Over Temperature 
+Hysteresis   20  ℃ 
+  
+Awinic Confidential
+
+===== PAGE 8 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       8       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+I2C Characteristics 
+PARAMETER TEST CONDITION MIN TYP MAX UNIT 
+VI2COL 
+Logic Output Threshold 
+Voltage (SCL, SDA, 
+VSEL) 
+   0.4 V 
+VI2Cint I2C Work Voltage   1.8  μA 
+IIN_I2C Input Current Each IO 
+Pin  -10  10 μA 
+tDS_I2C Data Set-Up Time  70   ns 
+fCLK SCL Clock Frequency  100 400 1000 kHz 
+tBUF 
+Bus Free Time between 
+Stop and Start 
+Condition 
+ 0.5   μs 
+tHD;STA Hold Time (Repeated) 
+START Condition  0.26   μs 
+tSU;STA 
+Set-Up Time for a 
+Repeated START 
+Condition 
+ 0.26   μs 
+tHD;DAT Data Hold Time  0.1   ns 
+tSU;STO Set-Up Time for STOP 
+Condition  0.26   μs 
+tVD;ACK Data Valid 
+Acknowledge Time    0.45 μs 
+tSU;DAT SDA Set-Up Time  50   ns 
+tLOW Low Period of the SCL 
+Clock  0.5   μs 
+tHIGH High Period of the SCL 
+Clock  0.26   μs 
+ 
+  
+Awinic Confidential
+
+===== PAGE 9 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       9       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+Typical Characteristics 
+TA=25°C , VIN=3.8V , COUT =22 µF, L=0.47μH, Auto PFM mode, unless otherwise noted . 
+  
+  
+  
+0
+0.5
+1
+1.5
+2
+2.5
+3
+3.5
+4
+4.5
+5
+2 3 4 5
+Input Current (μA)
+Input Voltage (V)
+Input Current vs Input Voltage
+VOUT=3.3V IQ_SW
+ISD
+80
+85
+90
+95
+100
+0.001 0.01 0.1 1
+Efficiency (%)
+Output Current(A)
+Efficiency vs Output Current
+VIN=3.8V
+VOUT=2.025V
+VOUT=3.5V
+70
+75
+80
+85
+90
+95
+100
+2.2 3.2 4.2 5.2
+Efficiency(%)
+Input Voltage(V)
+Efficiency vs Input Voltage
+IOUT=0.2A
+VOUT=2.025V
+VOUT=3.5V
+-1
+-0.5
+0
+0.5
+1
+1.5
+2
+2.5
+3
+2.2 3.2 4.2 5.2
+Output Voltage Regulation(%) 
+Input Voltage(V)
+Output Voltage Regulation  vs Input Voltage
+IOUT=0.2A
+Auto PFM Mode
+VOUT=2.025V
+VOUT=3.5V
+-1
+-0.5
+0
+0.5
+1
+1.5
+2
+2.5
+3
+0.001 0.01 0.1 1
+Output Voltage Regulation (%)
+Output Current(A)
+Output Voltage Regulation vs Output Current
+Auto PFM Mode
+VOUT=2.025V
+VOUT=3.5V
+-1
+-0.5
+0
+0.5
+1
+0.001 0.01 0.1 1
+Output Voltage Regulation (%)
+Output Current(A)
+Output Voltage Regulation vs Output Current
+Forced PWM Mode
+VOUT=2.025V
+VOUT=3.5V
+Awinic Confidential
+
+===== PAGE 10 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       10       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+VOUT (40mV/DIV)
+VSW1 (5V/DIV)
+IL (1A/DIV) TIME (4 μs/DIV)
+VIN = 2.2V                             VOUT = 3.5V               IOUT = 0.1A 
+VSW2 (5V/DIV)
+ 
+Boost operation 
+ 
+Output Ripple 
+VOUT (20mV/DIV)
+VSW1 (5V/DIV)
+IL (2A/DIV) TIME (1 μs/DIV)
+VIN = 2.2V                             VOUT = 3.5V               IOUT = 0.8A 
+VSW2 (5V/DIV)
+ 
+Boost operation 
+ 
+Output Ripple 
+VOUT (40mV/DIV)
+VSW1 (5V/DIV)
+IL (1A/DIV) TIME (4 μs/DIV)
+VIN = 3.5V                             VOUT = 3.5V               IOUT = 0.1A 
+VSW2 (5V/DIV)
+ 
+Buck-Boost operation 
+ 
+Output Ripple 
+VOUT (20mV/DIV)
+VSW1 (5V/DIV)
+IL (1A/DIV) TIME (1 μs/DIV)
+VIN = 3.5V                             VOUT = 3.5V               IOUT = 1A 
+VSW2 (5V/DIV)
+ 
+Buck-Boost operation 
+ 
+Output Ripple 
+VOUT (40mV/DIV)
+VSW1 (5V/DIV)
+IL (1A/DIV) TIME (4 μs/DIV)
+VIN = 5.5V                             VOUT = 3.5V               IOUT = 0.1A 
+VSW2 (5V/DIV)
+ 
+Buck operation 
+ 
+Output Ripple 
+VOUT (20mV/DIV)
+VSW1 (5V/DIV)
+IL (1A/DIV) TIME (1 μs/DIV)
+VIN = 5.5V                             VOUT = 3.5V               IOUT = 1A 
+VSW2 (5V/DIV)
+ 
+Buck operation 
+ 
+Output Ripple 
+Awinic Confidential
+
+===== PAGE 11 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       11       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+VOUT (50mV/DIV)
+IOUT (200mA/DIV)
+TIME (20 μs/DIV)
+VIN = 3V                            VOUT = 3.5V          IOUT = 0A to 0.2A
+ 
+ 
+Load Transient 
+VOUT (50mV/DIV)
+IOUT (1A/DIV)
+TIME (100 μs/DIV)
+VIN = 3V                            VOUT = 3.5V          IOUT = 0.1A to 1A
+ 
+ 
+Load Transient 
+VOUT (50mV/DIV)
+IOUT (200mA/DIV)
+TIME (20 μs/DIV)
+VIN = 3.5V                            VOUT = 3.5V             IOUT = 0A to 0.2A
+ 
+ 
+Load Transient 
+VOUT (50mV/DIV)
+IOUT (1A/DIV)
+TIME (100 μs/DIV)
+VIN = 3.5V                            VOUT = 3.5V             IOUT = 0.1A to 1A
+ 
+ 
+Load Transient 
+VOUT (50mV/DIV)
+IOUT (200mA/DIV)
+TIME (20 μs/DIV)
+VIN = 5.5V                            VOUT = 3.5V             IOUT = 0A to 0.2A
+ 
+ 
+Load Transient 
+VOUT (50mV/DIV)
+IOUT (1A/DIV)
+TIME (100 μs/DIV)
+VIN = 5.5V                            VOUT = 3.5V             IOUT = 0.1A to 1A
+ 
+ 
+Load Transient 
+Awinic Confidential
+
+===== PAGE 12 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       12       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+VOUT(2V/DIV)
+IL (2A/DIV)
+TIME (20 ms/DIV)
+VIN=3.8V                           VOUT = 3.5V                IOUT = 0A to short
+ 
+ 
+Short Circuit Protection 
+VOUT(2V/DIV)
+IL (2A/DIV)
+TIME (20 ms/DIV)
+VIN=3.8V                           VOUT = 3.5V                IOUT = short to 0A
+ 
+ 
+Short Circuit Protection 
+EN (5V/DIV)
+VOUT (2V/DIV)
+IOUT (1A/DIV)
+TIME (200 μs/DIV)
+VIN = 3.8V                             VOUT = 3.5V                         IOUT = 0A
+ 
+ 
+Startup from EN 
+EN (5V/DIV)
+VOUT (2V/DIV)
+IOUT (1A/DIV)
+TIME (5 ms/DIV)
+VIN = 3.8V                             VOUT = 3.5V                         IOUT = 0A
+ 
+ 
+Shutdown from EN 
+EN (5V/DIV)
+VOUT (2V/DIV)
+IOUT (1A/DIV)
+TIME (200 μs/DIV)
+VIN = 3.8V                             VOUT = 3.5V                         IOUT = 1A
+ 
+ 
+Startup from EN 
+EN (5V/DIV)
+VOUT (2V/DIV)
+IOUT (1A/DIV)
+TIME (50 μs/DIV)
+VIN = 3.8V                             VOUT = 3.5V                         IOUT = 1A
+ 
+ 
+Shutdown from EN 
+  
+Awinic Confidential
+
+===== PAGE 13 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       13       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+Detailed Functional Description 
+Control Scheme 
+AWP37702 uses emulated current ripple constant on-time control scheme where an outer voltage control loop 
+generates the demand signal for an inner emulated current control loop. During the off -time, the control loop 
+monitors the emulated current ripple signal with demand signal, and when the emulated current signal equals 
+the demand signal from the error amplifier, the off-time stops and the next on-time of the switching cycle starts. 
+The on-time is a function of VIN and VOUT. In this way, a pseudo -fixed switching frequency can be achieved 
+for different input and output voltages.  
+This control method results in excellent dynamic response for the chip. For instance, when VIN=3.8V, 
+VOUT=3.5V, and IOUT ranges from 0 to 0.3A, the chip maintains stable performance under repeated load 
+draws. Specifically, after applying the load for 10 μs, The difference between the output voltage's persistence 
+and ripple remains within 10 mV. This indicates the chip's ability to efficiently handle rapid changes in load 
+current and maintain voltage stab ility, which is crucial for many electronic applications requiring consistent 
+power supply performance. 
+Operation Mode 
+AWP37702 automatically switches between buck, boost, and buck-boost operation as required by the VIN and 
+VOUT operating conditions. The t ransition between different operating mode (buck, boost, or buck -boost) of 
+the converter is automatic and seamless.  AWP37702 operates as a true buck converter when VIN > VOUT. 
+AWP37702 operates as a true boost converter when VIN < VOUT. When VIN and VOUT gets closer the device 
+operates in buck-boost mode. 
+Soft-Start  
+An internal current source charges an internal capacitor to build the soft -start ramp voltage. During the soft -
+start period, PG is initially set to ‘0’. and when VOUT reaches 95% of its set voltage, the device sets PG to ‘1’ . 
+The rise time of the output voltage changes with the application circuit and the operating conditions. The Enable 
+Delay Time is set to 0.13mS, the soft-start time is set to 0.25mS. The output voltage rise time increases if the 
+load current is large or the output capacitance is large.  
+VSEL 
+VSEL = L output voltage default setting is 2.675V that can be programmed by Address 0x04[6:0] VOUT1.  
+VSEL = H output voltage default setting is 2.875V that can be programmed by Address 0x05[6:0] VOUT2. 
+VSEL = L the device address should be configured to 76h (1110110b). 
+VSEL = H the device address should be configured to 75h (1110101b). 
+The VSEL pin shall be tied high or pulled to GND. Floating is prohibited. 
+Auto PFM (Pulse Frequency Modulation) Mode   
+In order to save power and improve efficiency at low loads, the Buck/Boost operate in PFM (Pulse Frequency 
+Modulation) mode to save power. During PFM mode, the switching frequency is proportional to loading to 
+reach output voltage regulation. When load increases and inductor current becomes continuous again, the 
+Buck/Boost automatically goes back to PWM fixed frequency mode.  
+Additionally, AWP37702 will enter Deep Sleep Mode to achieve extremely low quiescent cur rent when there’s 
+no load. (see Deep Sleep Mode for more information). 
+Deep Sleep Mode 
+Awinic Confidential
+
+===== PAGE 14 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       14       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+AWP37702 is suitable for low quiescent current applications. When there’s no load, AWP37702 will automatic 
+enter Deep Sleep Mode to achieve extremely low quiescent curre nt. Once the load increases, it will go back 
+to normal operation at once. 
+FPWM (Forced Pulse Width Modulation) Mode  
+The switching frequency is forced into PWM mode operation. In this mode, the inductor current is in CCM 
+(Continuous Current Mode) and the voltage is regulated by PWM control.  
+To enable Forced-PWM operation, set the FPWM bit (Address 0X01[3]) to ‘1’. 
+VOUT Program 
+The AWP37702 supports programmable VOUT from 1.4V to 4.575V with 25mV resolution. The output voltage 
+can be set by register bit and the output voltage is given by the following equation:  
+VOUT = 1.4V + VOUTreg x 25mV  
+For example:  
+If VOUTreg = 110011 binary (51 decimal), then VOUT = 1.4V + 51 x 25mV = 1.4V + 1.275V = 2.675V.  
+AWP37702 also has external VSEL pin to select VOUT1 (Address 0X04[6:0]) or VOUT2 (Address 0X05[6:0]). 
+Pulling VSEL to high is for VOUT2 and pulling VSEL to low is for VOUT1. Upon POR, VOUT1 and VOUT2 are 
+reset to their default voltages. 
+Dynamically Voltage Scaling Control 
+The AWP37702 supports programmable slew -rate control feature when both increasing and decreasing the 
+output voltage, which is known as Dynamically Voltage Scaling (DVS). The ramp slew-rate can be set to 2V/mS, 
+5V/mS, 10V/mS or 20V/mS through bit1 and bit0 of control register. Moreover, the operation mode during DVS 
+region can be adjusted through control register RPWM bit. When Ramp-PWM function is activated, the device 
+will change to Forced PWM mode operation during DVS r egion and change back to auto PFM mode after 
+reaching target output(see the Ramp-PWM Function for more information). 
+Ramp-PWM Function 
+If Ramp-PWM function is enabled, the device operates in FPWM(Forced Pulse Width Modulation) when it 
+ramps from one output  voltage to another during dynamic voltage scaling. This function is useful when you 
+want to make sure that dynamic voltage scaling ramps the output voltage up and down in a controlled way. If 
+the device operates in Auto PFM Mode and Ramp -PWM is enabled, t he device allows both sink and source 
+current from device output. If the device operates in Auto PFM Mode and Ramp-PWM is disabled, the devices 
+cannot always control the ramp from a higher output voltage to a lower output voltage, because in Auto PFM 
+or PWM Mode the devices cannot sink current from device output. 
+To enable Ramp-PWM function, set the RPWM bit (Address 0X01[2]) to ‘1’. 
+To disable Ramp-PWM function, clear the RPWM bit (Address 0X01[2]) to ‘0’. 
+Enable 
+The AWP37702 provides an EN pin that functions as an external chip enable control. When the EN pin voltage 
+exceeds the logic -high threshold, the internal circuitry enters a low -power standby mode. The output stage 
+remains disabled until the ENABLE bit (Address 0x01[5]) is set to '0', at which point the output becomes active 
+immediately. The device is disabled when the EN pin voltage falls below the logic -low threshold. During 
+shutdown mode (when the EN pin is held low), the converter is disabled, all registers reset to their default 
+values, and the supply current reduces to ISD.  
+Awinic Confidential
+
+===== PAGE 15 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       15       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+A discharge event is triggered when either of the following conditions is met(Refer to the Discharge section for 
+detailed information.) :  
+a)  The EN pin is pulled from high to low level  
+b)  While the EN pin is held high, the ENABLE bit (Address 0x01[5]) transitions from '0' to '1'  
+The EN pin is compatible with both 1.8V and 3.3V logic levels. 
+Discharge 
+A discharge event is triggered under either of the following conditions: 
+a)  When the EN pin is pulled from high to low level 
+b)  While the EN pin is held high, the ENABLE bit (Address 0x01[5]) transitions from '0' to '1'  
+When a discharge event is initiated, a typical 200 Ω resistor is connected from the output to ground, and the 
+discharge process lasts for 20m seconds. 
+Over-Current Protection 
+The device features a cycle-by-cycle current limit circuit, which limits the peak inductor current in the event of 
+an overload. The exact value of the maximum inductor current during an overload is determined by the inductor 
+current rising rate (e.g., operating conditions) and the converter's response delay time (e.g., switching mode).  
+Input UVLO Protection 
+In addition to the EN pin, the AWP37702 also provides enable control through the VIN pin. If VEN rises above 
+VENH first, switching will still be inhibited until the VIN voltage rises above VUVLO. It is to ensure that the internal 
+regulator is ready so that operation with not-fully-enhanced internal MOSFET switches can be prevented. After 
+the device is powered up, if the VIN voltage goes below the UVLO falling threshold voltage (V UVLO - VUVLO), 
+this switching will be inhibited; if VIN voltage rises above the UVLO rising threshold (V UVLO), the device will 
+resume switching. During shutdown mode, the converter is disabled and all registers will reset to default value. 
+Over-Temperature Protection 
+When the junction temperature exceeds the OTP threshold value, the IC will shut down the switching operation. 
+Once the junction temperature cools down and is lower than the OTP lower threshold, the converter will 
+automatically resume switching. When the device detects an over -temperature condition, it asserts the 
+TSD_STATUS bit (Address 0X02[4]) and the TSD_FLAG bit (Address 0X02[1]) to '1'. The TSD_STATUS bit 
+(Address 0X02[4] ) is automatically set to '0' when the junction temperature of the device is below 130°C. 
+Similarly, the device clears the TSD_FLAG bit (Address 0X02[1]) to '0' upon reading the Status register. 
+Over-Voltage Protection 
+The AWP37702 integrates an Output Ove -Voltage Protection (OVP) circuit to protect the system and 
+downstream components from potential damage caused by excessive voltage levels. When the output voltage 
+exceeds 5.7V, the OVP circuit is triggered, disabling the power switch to prevent damage. Once the output 
+voltage drops below 5.4V, the OVP condition is cleared, and the power switch resumes normal operation. This 
+ensures reliable protection of the system during overvoltage events. 
+Under-Voltage Protection 
+The AWP37702 provides Hiccup Mode for Under -Voltage Protection (UVP). When the VOUT voltage drops 
+below 85% of Target VOUT, the UVP function will be trigg ered to shut down switching operation , During this 
+condition, the Power Good (PG) bit (Address 0X02[0]) is set to '0' . If the UVP condition remains for a period, 
+Awinic Confidential
+
+===== PAGE 16 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       16       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+the AWP37702 will retry to build up output voltage automatically. When the UVP condition is re moved, the 
+converter will soft-start to target voltage and resume normal operation. 
+Interface 
+The AWP37702 supports the I2C-Bus specification up to 1 MHz and operates in slave mode, supporting 7 -bit 
+addressing. 
+Register contents remain intact as long as VI N supply voltage remains above VIN undervoltage lockout 
+threshold and EN voltage above logic -high threshold voltage. To make sure that the I 2C transfer function is 
+correctly reset, it is recommended that the I2C master initiates a STOP condition on the I2C bus after the initial 
+power up of SDA and SCL pullup voltages. 
+I2C INTERFACE 
+The AWP37702 supports the I2C protocol. The maximum frequency supported by the I2C is 1MHz. The pull-up 
+resistor for the SDA and SCL can be selected from 1kΩ to 10kΩ. Usually, 4.7kΩ is recommended for 400 kHz 
+I2C, 1k Ω is recommended for 1MHz I 2C. The voltage from 1.2V to 3.3V is allowed for the I 2C interface.  
+Additionally, the I2C device supports continuous reading and writing operations. 
+DEVICE ADDRESS 
+The I2C device address is 7-bit (A7~A1), when the VSEL pin is connected to logic low, the device address 
+should be configured to 76h (1110110b) ; The VSEL pin is connected to logic high, the device address should 
+be configured to 75h (1110101b). Followed by the R/W bit A0 (Read=1/Write=0). Set A0 to “0” for writing and 
+“1” for reading. 
+For example, The VSEL pin is connected to logic low. 
+A7 A6 A5 A4 A3 A2 A1 A0
+1 1 1 0 1 1 0 R/W
+ 
+I2C START/STOP 
+I2C Start: SDA changes from high level to low level when SCL is high level. 
+I2C Stop: SDA changes from low level to high level when SCL is high level. 
+SCL
+SDA
+S/Sr
+S: Start condition
+Sr: Start Repeated condition
+P: Stop condition
+P
+ 
+DATA VALIDATION 
+When SCL is high level, SDA level must be constant. SDA can be changed only when SCL is low level. 
+Awinic Confidential
+
+===== PAGE 17 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       17       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+SCL
+SDA
+Data Line Stable
+Data Valid
+Change of Data 
+Allowed
+ 
+ACK (ACKNOWLEDGEMENT) 
+ACK means the successful transition of I2C bus data. After master sends an 8-bit data, SDA must be released; 
+SDA is pulled to GND by slave device when slave acknowledges.  
+When master reads, slave device sends 8 -bit data, releases the SDA and w aits for ACK from master. If ACK 
+is sent and I2C STOP is not sent by master, slave device sends the next data. If the master sends NACK, slave 
+device stops to send data and waits for I2C stop. 
+1 2 8 9
+Data Output
+by Transmiter
+Data Output
+by Receiver
+SCL From
+Master
+Start
+condition
+Not Acknowledge（NACK）
+Acknowledge（ACK）
+Clock Pulse for 
+Acknowledgement
+ 
+WRITE CYCLE 
+One data bit is transferred during each clock pulse. Data is sampled during the high state of the serial clock 
+(SCL). Consequently, throughout the clock’s high period, the data should remain stable. Any changes on the 
+SDA line during the high state of the SCL and in the middle of a transaction, aborts the current transaction. 
+New data should be sent during the low SCL state. This protocol allows a single data line to transfer both 
+command/control information and data using the synchronous serial clock.  
+Each data transaction is composed of a start condition, a number of byte transfers (set by the software) and a 
+stop condition to terminate the transaction. Every byte written to the SDA bus must be 8 bits long and is 
+transferred with the most significant bit first. After each byte, an Acknowledge signal must follow. 
+In a write process, the following steps should be followed: 
+a)  Master device generates Start condition. The “Start” signal is generated by lowering the 
+SDA signal while the SCL signal is high. 
+b)  Master device sends slave address (7-bit) and the data direction bit R/W = 0). 
+c)  Slave device sends acknowledge signal if the slave address is correct. 
+d)  Master sends control register address (8-bit). 
+e)  Slave sends acknowledge signal. 
+f)  Master sends data byte to be written to the addressed register. 
+g)  Slave sends acknowledge signal. 
+h)  If master will send further data bytes the control register address will be incremented by one after 
+acknowledge signal (repeat step f and g). 
+Awinic Confidential
+
+===== PAGE 18 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       18       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+i) Master generates Stop condition to indicate write cycle end. 
+0
+A2 A1 A0A6 A5 A3A4 A4 A3 A1A2A7 A5A6
+1 2 3 4 5 6 7 8 0 1 2 3 4 5 6
+D5 D4 D2D3A0 D6D7 D1 D0
+7 8 0 1 2 3 4 5 6 7 8SCL
+SDA AckAck
+Start
+R/W
+StopDevice Address Register Address Write Data
+Ack
+ 
+READ CYCLE 
+In a read cycle, the following steps should be followed: 
+a) Master device generates Start condition. 
+b)  Master device sends slave address (7-bit) and the data direction bit (R/W = 0). 
+c)  Slave device sends acknowledge signal if the slave address is correct. 
+d) Master sends control register address (8-bit). 
+e)  Slave sends acknowledge signal. 
+f)  Master generates Stop condition followed with Start condition or Repeat Start condition. 
+g)  Master device sends slave address (7-bit) and the data direction bit (R/W = 1). 
+h)  Slave device sends acknowledge signal if the slave address is correct. 
+i)  Slave sends data byte from addressed register. 
+j)  If the master device sends acknowledge signal, the slave device will increase the control register 
+address by one, then send the next data from the new addressed register. 
+k)  If the master device generates Stop condition, the read cycle ends. 
+0
+A2 A1 A0A6 A5 A3A4 A4 A3 A1A2A7 A5A6
+1 2 3 4 5 6 7 8 0 1 2 3 4 5 6
+A4 A3 A1A2
+A0
+A5A6 D6 D0D1A0 D7
+7
+0 1 2 3 4 5 6 7 8 0 1 ... 6
+SCL
+SDA AckAck
+Ack
+7 8
+Ack
+start
+R/W
+……
+stop
+Device Address Register Address
+Device Address Read Data
+8
+ 
+RS
+Using 
+Repeat start
+A4 A3 A1A2A5A6 D6 D0D1A0 D7
+0 1 2 3 4 5 6 7 8 0 1 ... 6
+Ack
+7 8
+Ack……
+stopRead DataS
+Separated 
+Read/write 
+transaction
+……
+……
+Device AddressP
+……
+…… R/W
+R/W
+ 
+  
+Awinic Confidential
+
+===== PAGE 19 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       19       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+Register Description 
+Addr Name Type Bit7 Bit6 Bit5 Bit4 Bit3 Bit2 Bit1 Bit0 Init 
+0x01 CONTROL R/W RESERVED ENABL
+E 
+RESER
+VED FPWM RPWM SLEW 0x20 
+0x02 STATUS R RESER
+VED 
+SCP_ST
+ATUS 
+OCP_S
+TATUS 
+TSD_ST
+ATUS 
+SCP_FL
+AG 
+OCP_F
+LAG 
+TSD_FL
+AG PG 0x00 
+0x03 DEVICE_IDEN
+TITY R DEVICE Manufacture ID 0x40 
+0x04 VOUT1 R/W RESER
+VED VOUT1 0x33 
+0x05 VOUT2 R/W RESER
+VED VOUT2 0x3B 
+Register Detailed Description 
+0x01: CONTROL 
+Bit Symbol Type Description Default 
+7:6 Reserved R Reserved 00 
+5 ENABLE R/W 
+Control Operation of the Converter 
+0 = Converter operation enabled  
+1 = Converter operation disabled (default) 
+1 
+4 Reserved R/W Reserved 0 
+3 FPWM R/W 
+Set Forced PWM Operation 
+0 = Disable (default) 
+1 = Enable 
+0 
+2 RPWM R/W 
+Set Ramp PWM Operation 
+0 = Disable (default) 
+1 = Enable 
+0 
+1:0 SLEW R/W 
+Set the Slew Rate. 
+Set the slew rate of the output voltage change to 
+a new value. 
+00 = 2V/ms (default) 
+01 = 5V/ms 
+10 = 10V/ms 
+11 = 20V/ms 
+00 
+ 
+0x02: STATUS 
+Bit Symbol Type Description Default 
+7 Reserved R Reserved 0 
+6 SCP_STATUS R 
+The status of the short circuit Function 
+0 = Normal operation (default) 
+1 = An short circuit  event is occurring  
+0 
+5 OCP_STATUS R 
+The status of the Over-Current Function 
+0 = Normal operation (default) 
+1 = An over-current event is occurring 
+0 
+4 TSD_STATUS R 
+The status of the Over-Temperature Function 
+0 = Normal operation (default) 
+1 = An over-temperature event is occurring 
+0 
+3 SCP_FLAG R/C 
+The status of the short circuit Function 
+It is cleared only if this register is read 0 
+Awinic Confidential
+
+===== PAGE 20 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       20       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+0 = Normal operation (default) 
+1 = An short circuit event was detected 
+2 OCP_FLAG R/C 
+The flag of the Over-Current Function 
+It is cleared only if this register is read 
+0 = Normal operation (default) 
+1 = An over-current event was detected 
+0 
+1 TSD_FLAG R/C 
+The flag of the Over-Temperature Function 
+It is cleared only if this register is read 
+0 = Normal operation (default) 
+1 = An over-temperature event was detected 
+0 
+0 PG R 
+Output Power-Good 
+if the power-not-good condition no longer exists. 
+0 = A power-not-good event was detected. The 
+output voltage is below the PG voltage threshold 
+with a 1ms deglitch time (default) 
+1 = Power-good. The output voltage exceeds the 
+PG voltage threshold with a 1ms deglitch time 
+0 
+ 
+0x03: DEVICE_IDENTITY 
+Bit Symbol Type Description Default 
+7:4 Device R Device ID 0100 
+3:0 Manufacture 
+ID R Device VERSION 0000 
+ 
+0x04: VOUT1 
+Bit Symbol Type Description Default 
+7 Reserved R Reserved 0 
+6:0 VOUT1 R/W 
+VOUT1 register determines the device output 
+voltage if the VSEL pin is logic low. 
+VOUT = 1.4 + (VOUT1[6:0] × 0.025)V (default 
+2.675V) 
+0110011 
+ 
+0x05: VOUT2 
+Bit Symbol Type Description Default 
+7 Reserved R Reserved 0 
+6:0 VOUT2 R/W 
+VOUT2 register determines the device output 
+voltage if the VSEL pin is logic high. 
+VOUT = 1.4 + (VOUT1[6:0] × 0.025)V (default 
+2.875V) 
+0111011 
+ 
+ 
+ 
+  
+Awinic Confidential
+
+===== PAGE 21 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       21       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+Application Information 
+Typical Application 
+VIN
+EN
+SW1
+AWP37702
+GND
+VOUT
+SW2
+CIN
+10μF
+COUT1
+22μF
+VIN:2.2～5.5V
+L 
+0.47μH
+VOUT:1.4～4.575V
+VSEL
+SDA
+SCL
+VSCL
+VSDA
+COUT2(optional)
+22μF
+ 
+Figure 4  AWP37702 Typical Application Circuit 
+NOTE: When the output current is ≤1A, a 22μF COUT is recommended. When the output current is >1A, 2 × 
+22μF COUT capacitors are recommended.  The recommended maximum  output current should not exceed 
+1.5A. 
+Inductor Selection 
+The AWP37702 recommended nominal inductance value is 0.47 H to achieve advantage performance. For 
+high efficiencies, use an inductor with a low DC resistance (DCR) and low core losses.  
+The saturation current of the inductor must be greater than t he maximum inductor current in your application. 
+To include sufficient margin for worst -case and transient operating conditions, The AWP37702 recommends 
+you use an inductor with saturation current that is at least 20% higher than the maximum inductor curre nt in 
+your application. The maximum current in the inductor occurs when the device operates in boost mode and 
+the following is true: 
+The input voltage is at its minimum value. 
+The output voltage is at its maximum value. 
+The output current is at its maximum value. 
+To calculate the maximum inductor current, first calculate the maximum duty cycle during boost operation 
+(which is when the maximum inductor current occurs). 
+𝐷𝑢𝑡𝑦𝑀𝑎𝑥 = (𝑉𝑂𝑈𝑇𝑀𝑎𝑥−𝑉𝐼𝑁𝑀𝑖𝑛)
+𝑉𝑂𝑈𝑇𝑀𝑎𝑥
+ 
+Next, calculate the maximum inductor current. 
+𝐼𝐿𝑀𝐴𝑋 = 𝐼𝑂𝑈𝑇𝑀𝑎𝑥
+𝜂 • (1 − 𝐷𝑢𝑡𝑦𝑀𝑎𝑥) • 𝐷𝑢𝑡𝑦𝑀𝑎𝑥 • 𝑉𝐼𝑁𝑀𝑖𝑛
+2 • 𝑓𝑆𝑊 • 𝐿  
+To include enough margin for transient conditions, The AWP37702 recommends you use an inductor with a 
+saturation current rating at least 20% higher than the calculated maximum current.  
+Input capacitor Selection 
+Steady state and transient response operation performance also depend on input voltage stability or not. The  
+Awinic Confidential
+
+===== PAGE 22 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       22       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+AWP37702 at least a 10F input capacitor is recommended to prevent input voltage instability with application 
+operation. And that suggest placed as close as possible to the VIN and GND pins of the IC is recommended. 
+If the input supply is more than a few centimeters from the device, we recommend you add some bulk 
+capacitance to the ceramic bypass capacitors. A 100F electrolytic capacitor is a typical selection for the bulk 
+capacitance.  
+Output capacitor Selection 
+The ripple voltage is an important index for choosing output capacitor. This portion consists of two parts. One 
+is the product of ripple current with the ESR of the output capacitor, while the other part is formed by the 
+charging and discharging process of the output capacitor. Ou tput capacitor is selected according to output 
+ripple which is calculated as below equation. 
+𝛥𝑉𝑂𝑈𝑇 = 𝛥𝑉𝐸𝑆𝑅 + 𝛥𝑉𝑂𝑈𝑇𝐶𝐴𝑃 
+𝛥𝑉𝐸𝑆𝑅 = 𝐼𝐶𝑅𝑀𝑆 • 𝑅𝐶𝐸𝑆𝑅 
+𝛥𝑉𝑂𝑈𝑇𝐶𝐴𝑃 = 𝐼𝑂𝑈𝑇 • 𝐷𝑢𝑡𝑦
+𝑓𝑆𝑊 • 𝐶𝑂𝑈𝑇𝑀𝐼𝑁
+ 
+User can use equation choose capacitor to meeting systems ripple specification.  When the IOUT is ≤1A,  at 
+least 22F/16V/X5R capacitors is recommended to matching application with VOUT ripple request and stability 
+performance. When the IOUT is >1A,  at least 2*22F/16V/X5R capacitors are recommended to matching 
+application with VOUT ripple request and stability performance.  
+Awinic Confidential
+
+===== PAGE 23 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       23       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+PCB Layout Consideration 
+The AWP37702 is a synchronous buck-boost converter, to obtain the optimal performance, PCB layout should 
+be considered carefully. Here are some guidelines: 
+1. CIN, COUT should be placed as close to chip as possible. 
+2. Wide and short traces should be used for main current path and the power ground paths.  
+3. Switching node (SW1 and SW2) are with high frequency voltage swing and should be kept at small area. 
+Keep analog components away from the SW1 and SW2 node to prevent stray capacitive noise pickup.  
+VSEL
+GND
+Top layer VIA
+Bottom layer
+SW2
+VOUT
+SDA
+EN
+SCL
+SW1
+VIN
+VSEL
+GND
+VOUTVIN
+CIN2 COUT1 COUT2
+L
+CIN1
+GND
+EN
+SCL SDA
+GND layer
+GND GND
+ 
+Awinic Confidential
+
+===== PAGE 24 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       24       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+Tape And Reel Information 
+P1
+Cavity
+B0
+W
+K0
+P0
+Q1 Q2
+Q3 Q4
+Q1 Q2
+Q3 Q4
+Q1 Q2
+Q3 Q4
+Q1 Q2
+Q3 Q4
+Sprocket Holes
+User Direction of Feed
+Pocket Quadrants
+DIMENSIONS AND PIN1 ORIENTATION 
+D1
+(mm)
+D0
+(mm)
+A0
+(mm)
+B0
+(mm)
+K0
+(mm)
+P0
+(mm)
+P1
+(mm)
+P2
+(mm)
+W
+(mm) Pin1 Quadrant
+180.00 8.60 1.50 1.46 0.68 2.00 4.00 4.00 8.00 Q1
+All dimensions are nominal 
+P2
+QUADRANT ASSIGNMENTS FOR PIN 1 ORIENTATION IN TAPE
+TAPE DIMENSIONS
+A0：Dimension designed to accommodate the component width
+B0：Dimension designed to accommodate the component length
+K0：Dimension designed to accommodate the component thickness
+W：Overall width of the carrier tape
+P0：Pitch between successive cavity centers and sprocket hole
+P1：Pitch between successive cavity centers
+P2：Pitch between sprocket hole
+D1：Reel Diameter
+D0：Reel Width
+REEL DIMENSIONS
+D1
+D0
+A0
+Pin 1
+Note：The above picture is for reference only.  Please refer to the value in the table below for the actual size
+ 
+  
+Awinic Confidential
+
+===== PAGE 25 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       25       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+Package Description 
+Top View
+Side View
+Bottom View Unit: mm
+SYMM
+SYMM
+ 
+ 
+1 2 3
+B
+A
+C
+PIN1 CORNER
+1.300± 0.025
+1.300± 0.025
+0.370± 0.017
+0.180± 0.020
+0.550± 0.037
+0.400 TYP
+0.400 TYP
+9X(Φ 0.243± 0.020)
+  
+Awinic Confidential
+
+===== PAGE 26 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       26       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+Land Pattern Data 
+SYMM
+SYMM 
+ 
+1 2 3
+B
+C
+A
+0.400 TYP
+0.400 TYP
+9X(Φ 0.220)
+Unit: mm
+METAL
+SOLDER MASK
+OPENING
+0.05 MAX
+All AROUND
+0.05 MIN
+All AROUND
+METAL UNDER
+SOLDER MASK
+OPENING
+SOLDER MASK
+NON-SOLDER MASK DEFINED  SOLDER MASK DEFINED
+ 
+ 
+  
+Awinic Confidential
+
+===== PAGE 27 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       27       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+Revision History 
+Version Date Change Record 
+V1.0 Aug. 2025 Officially released 
+V1.1 Jun. 2026 
+1. Update Typical Application Circuit. (P2) 
+2. Update VSEL and EN Pin Definition. (P3) 
+3. Update VSEL in Detailed Functional Description. (P13) 
+ 
+ 
+ 
+  
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+  
+Awinic Confidential
+
+===== PAGE 28 =====
+
+ 
+ 
+ 
+  
+AWP37702 
+Jun. 2026 V1.1 
+ 
+www.awinic.com                                       28       © 2026 Shanghai Awinic Technology Co., Ltd. All Rights Reserved 
+ 
+Disclaimer 
+All trademarks are the propert y of their respective owners. Information in this document is believed to be 
+accurate and reliable. However, Shanghai AWINIC Technology Co., Ltd (AWINIC Technology) does not give 
+any representations or  warranties, expressed or implied, as to the accuracy or completeness of such  
+information and shall have no liability for the consequences of use of such information. 
+AWINIC Technology reserves the right to make  changes to information published in this document, including 
+without limitation specifications and product descriptions, at any time and without  notice. Customers sh all 
+obtain the latest relevant information before placing orders and shall verify that such information is current and 
+complete. This document supersedes and replaces all information supplied prior to the publication hereof. 
+AWINIC Technology products are not designed , authorized or warranted to be suitable for use in medical, 
+military, aircraft, space or life support equipment, nor in applications where failure or malfunction of an AWINIC 
+Technology product can reasonably be expected  to result in personal injury, death or severe prop erty or 
+environmental damage. AWINIC Technology accepts no liability for inclusion and/or use of AWINIC Technology 
+products in such equipment or  applications and therefore such inclusion and/or use is at the customer’s own 
+risk. 
+Applications that are described herein for any of these  products are for illustrative purposes only.  AWINIC 
+Technology makes no representation or warranty that such applications will be suitable for the  specified use 
+without further testing or modification. 
+All products are sol d subject to the general terms and conditions of commercial sale  supplied at the time of 
+order acknowledgement. 
+Nothing in this document may be interpreted or  construed as an offer to sell products that is open for 
+acceptance or the grant,  conveyance or im plication of an y license under any copyrights,  patents or  other 
+industrial or intellectual property rights. 
+Reproduction of AWINIC information in AWINIC data books or data sheets is  permissible only if reproduction 
+is without alteration  and i s accompanied by all associated  warranties, conditions, limitations, and notices. 
+AWINIC is not responsible or liable for such altered documentation. Information of third parties may be subject 
+to additional restrictions. 
+Resale of AWINIC components or services with statements different from or beyond the parameters stated by 
+AWINIC for that component or service voids all express and any implied warranties for the associated AWINIC 
+component or service and is an unfair and deceptive business practice. AWINIC is not responsible or liable for 
+any such statements. 
+ 
+Awinic Confidential
