@@ -14,7 +14,9 @@ QTableView, QTreeView {
     outline: none;
 }
 QTableView::item, QTreeView::item {
+    /* min == max 钉死行高：hover/selected 态 sizeHint 重算时行不会被撑高溢出 */
     min-height: $table_row_h;
+    max-height: $table_row_h;
     padding: 0 $space_1;
     border: none;
 }
@@ -87,4 +89,14 @@ QPushButton#paramBtn:hover {
 QPushButton#paramBtn[customized="true"] {
     color: $state_info_fg;
     border-color: $state_info_border;
+}
+
+/* ---------- 测试项/结果面板内表格：去自身边框透底 ----------
+   面板外层（QSplitter 相邻卡片 / DetailDock Tab pane）已提供外框，
+   内嵌表格再去边框，消除"表格边框与容器边框重叠"的双线。 */
+#testPlanPanel QTreeView,
+#resultTablePanel QTableView {
+    background: transparent;
+    border: none;
+    border-radius: 0;
 }

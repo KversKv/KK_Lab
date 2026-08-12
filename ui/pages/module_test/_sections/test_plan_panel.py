@@ -180,8 +180,9 @@ class _ParamDelegate(QStyledItemDelegate):
         """列宽固定仅容纳齿轮图标，避免 ResizeToContents 过窄。"""
         if index.column() != COL_PARAMS or index.data(IsGroupRole):
             return super().sizeHint(option, index)
-        # 图标 16px + 左右各 8px padding = 32px
-        return QSize(32, max(26, super().sizeHint(option, index).height()))
+        # 图标 16px + 左右各 8px padding = 32px；高度钳到 26（同 $table_row_h），
+        # 配合 setUniformRowHeights 使 hover 重算 sizeHint 不再把行撑高溢出
+        return QSize(32, 26)
 
 
 # ---------------------------------------------------------------------- 视图
@@ -245,12 +246,15 @@ class TestPlanPanel(QWidget):
     def __init__(self, registry: Mapping, standalone: Sequence[str] = (),
                  parent: QWidget | None = None):
         super().__init__(parent)
+        # table.qss 专用段：面板内表格去自身边框透底（外层容器/相邻卡片已提供外框，
+        # 避免表格边框与其重叠），内容留白由 margins 提供
+        self.setObjectName("testPlanPanel")
         self._model = TestPlanModel(registry, standalone, self)
         self._proxy = _PlanFilterProxy(self)
         self._proxy.setSourceModel(self._model)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
+        root.setContentsMargins(10, 8, 10, 8)
         root.setSpacing(6)
 
         # —— 工具行 ——

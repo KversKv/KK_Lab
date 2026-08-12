@@ -35,8 +35,11 @@ class ResultTable(QWidget):
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
+        # table.qss 专用段：结果表去自身边框透底（外层 Tab/pane 已提供外框），
+        # 工具行/汇总与边框留白由 margins 提供（此前紧贴边框）
+        self.setObjectName("resultTablePanel")
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
+        root.setContentsMargins(10, 8, 10, 8)
         root.setSpacing(6)
 
         # —— 工具行 ——
@@ -67,6 +70,10 @@ class ResultTable(QWidget):
         self.view.setAlternatingRowColors(True)
         self.view.horizontalHeader().setStretchLastSection(True)
         self.view.verticalHeader().setVisible(False)
+        # 行高钉死 26px（同 table.qss $table_row_h）：hover 态 sizeHint 重算不撑高溢出
+        vh = self.view.verticalHeader()
+        vh.setDefaultSectionSize(26)
+        vh.setMinimumSectionSize(26)
         self.view.doubleClicked.connect(self._on_double_clicked)
         self._stack.addWidget(self.view)
 
