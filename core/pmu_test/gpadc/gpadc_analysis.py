@@ -44,13 +44,19 @@ def compute_reg_stats(raw_data, return_raw=False):
         return avg, reg_max, reg_min
 
 
-def compute_calibration(adc_raw_data, adc_mean, adc_min, adc_max):
+def compute_calibration(adc_raw_data, adc_mean, adc_min, adc_max, calib_points=None):
     n = len(adc_raw_data)
-    idx_low = n // 4
-    idx_high = (3 * n) // 4
-
-    v_low, m_low = adc_raw_data[idx_low], adc_mean[idx_low]
-    v_high, m_high = adc_raw_data[idx_high], adc_mean[idx_high]
+    if calib_points is not None:
+        # 用户手动指定两个校准点（x 轴物理量）：取扫描曲线上距其最近的实测点均值
+        v_low, v_high = calib_points
+        idx_low = min(range(n), key=lambda i: abs(adc_raw_data[i] - v_low))
+        idx_high = min(range(n), key=lambda i: abs(adc_raw_data[i] - v_high))
+        m_low, m_high = adc_mean[idx_low], adc_mean[idx_high]
+    else:
+        idx_low = n // 4
+        idx_high = (3 * n) // 4
+        v_low, m_low = adc_raw_data[idx_low], adc_mean[idx_low]
+        v_high, m_high = adc_raw_data[idx_high], adc_mean[idx_high]
 
     # 退化场景保护：两点电压相同或 ADC 读数无变化时，斜率不可解，
     # 跳过标定，返回原始数据避免 ZeroDivisionError。

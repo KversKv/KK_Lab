@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal, QThread, QTimer
 from PySide6.QtGui import QFont
+import math
 import queue
 import random
 import time
@@ -98,6 +99,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self._uart_rx_queue = queue.Queue()
         self._uart_keyword_snapshot = ""
         self._acq_mode_snapshot = 'IIC'
+        self._calib_points_snapshot = None
 
         self.is_test_running = False
         self._start_btn_text = "▶ START TEST"
@@ -609,6 +611,28 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         params_layout.addWidget(self.voltage_params_frame)
         params_layout.addWidget(self.temp_params_frame)
 
+        # 校准参数：默认留空 = 自动取 1/4、3/4 扫描点；两格都填写时作为手动校准两点
+        self.calib_params_frame = QFrame()
+        self.calib_params_frame.setStyleSheet("QFrame { background: transparent; border: none; }")
+        calib_layout = QGridLayout(self.calib_params_frame)
+        calib_layout.setContentsMargins(0, 0, 0, 0)
+        calib_layout.setHorizontalSpacing(6)
+        calib_layout.setVerticalSpacing(6)
+
+        self.calib_low_label = QLabel("Calib Low (V)")
+        self.calib_high_label = QLabel("Calib High (V)")
+        calib_layout.addWidget(self.calib_low_label, 0, 0)
+        calib_layout.addWidget(self.calib_high_label, 0, 1)
+
+        self.calib_low = QLineEdit()
+        self.calib_low.setPlaceholderText("Auto")
+        self.calib_high = QLineEdit()
+        self.calib_high.setPlaceholderText("Auto")
+        calib_layout.addWidget(self.calib_low, 1, 0)
+        calib_layout.addWidget(self.calib_high, 1, 1)
+
+        params_layout.addWidget(self.calib_params_frame)
+
         self.sample_count_label = QLabel("Sample Count")
         self.sample_count_label.setObjectName("muted_label")
         params_layout.addWidget(self.sample_count_label)
@@ -975,6 +999,12 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self.start_test_btn.setText("▶ START CONSISTENCY TEST")
             self._start_btn_text = "▶ START CONSISTENCY TEST"
 
+        # 校准点仅在线性度类测试项生效；温度扫描时 x 轴为温度，单位随动
+        self.calib_params_frame.setVisible(not is_cnt_test)
+        calib_unit = "°C" if test_item == self.TEST_HIGH_LOW_TEMP else "V"
+        self.calib_low_label.setText(f"Calib Low ({calib_unit})")
+        self.calib_high_label.setText(f"Calib High ({calib_unit})")
+
     def _set_btn_connected(self, btn):
         update_connect_button_state(btn, connected=True)
         btn.setEnabled(True)
@@ -995,6 +1025,10 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
 
         self._acq_mode_snapshot = 'UART' if self.uart_radio.isChecked() else 'IIC'
         self._uart_keyword_snapshot = self.uart_keyword.text().strip()
+        self._calib_points_snapshot = self._parse_calib_points()
+        if self._calib_points_snapshot is not None:
+            v_lo, v_hi = self._calib_points_snapshot
+            self._append_log(f"[INFO] 使用手动校准点: low={v_lo}, high={v_hi}")
         if self._acq_mode_snapshot == 'UART':
             if not DEBUG_MOCK and not self._serial_connected:
                 self._append_log("[ERROR] DUT 串口未连接，无法通过 UART Log 采集")
@@ -1464,7 +1498,8 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self.voltage_channel,
             self.voltage_min, self.voltage_max, self.voltage_step,
             self.temp_min, self.temp_max, self.temp_step,
-            self.soak_time, self.sample_count
+            self.soak_time, self.sample_count,
+            self.calib_low, self.calib_high
         ]
         for widget in widgets:
             widget.setEnabled(enabled)
@@ -1491,7 +1526,9 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             'temp_max': self.temp_max.value(),
             'temp_step': self.temp_step.value(),
             'soak_time': self.soak_time.value(),
-            'sample_count': self.sample_count.value()
+            'sample_count': self.sample_count.value(),
+            'calib_low': self.calib_low.text(),
+            'calib_high': self.calib_high.text()
         }
 
     def update_test_result(self, result):
@@ -1694,6 +1731,26 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         }
         return result
 
+    def _parse_calib_points(self):
+        """解析用户填写的两个校准点；均留空返回 None 表示自动选取。"""
+        low_text = self.calib_low.text().strip()
+        high_text = self.calib_high.text().strip()
+        if not low_text and not high_text:
+            return None
+        try:
+            v_low = float(low_text)
+            v_high = float(high_text)
+        except ValueError:
+            self._append_log("[WARN] 校准点格式无效（需填写两个数值），回退为自动选取")
+            return None
+        if not (math.isfinite(v_low) and math.isfinite(v_high)):
+            self._append_log("[WARN] 校准点需为有限数值，回退为自动选取")
+            return None
+        if v_low == v_high:
+            self._append_log("[WARN] 两个校准点相同，回退为自动选取")
+            return None
+        return (min(v_low, v_high), max(v_low, v_high))
+
     def _calibration_data(self, result):
         adc_raw_data = result["voltage"]
         adc_mean     = result["mean"]
@@ -1701,7 +1758,8 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         adc_max      = result["max"]
 
         k, b, mean_cali, adc_min_cali, adc_max_cali, v_low, m_low, v_high, m_high = \
-            compute_calibration(adc_raw_data, adc_mean, adc_min, adc_max)
+            compute_calibration(adc_raw_data, adc_mean, adc_min, adc_max,
+                                calib_points=self._calib_points_snapshot)
 
         if k == 0.0:
             self._append_log(
@@ -2731,6 +2789,10 @@ Temperature (°C) | ADC Value
 
         # 采样次数
         _set_int_spin(self.sample_count, "sample_count")
+
+        # 校准点（留空 = 自动选取）
+        _set_text(self.calib_low, "calib_low")
+        _set_text(self.calib_high, "calib_high")
 
         if not applied:
             return False, "配置草案未包含任何可识别的配置项。"
