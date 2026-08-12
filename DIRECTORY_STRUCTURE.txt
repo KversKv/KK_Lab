@@ -699,6 +699,8 @@ spec/
 ├── consumption_auto_test.spec        # Consumption Auto Test 独立窗口打包配置
 ├── consumption_high_low_temp.spec    # Consumption High-Low Temperature 独立窗口打包配置
 ├── orchestrator.spec         # Orchestrator 独立窗口打包配置
+├── i2c_module.spec           # I2C Console 独立窗口打包配置
+│                            # 打包命令: python -m PyInstaller spec/i2c_module.spec --clean --noconfirm
 └── serialcom_module.spec    # SerialCom 串口模块独立窗口打包配置
                              # 打包命令: python -m PyInstaller spec/serialcom_module.spec --clean --noconfirm
 
