@@ -20,7 +20,11 @@ from PySide6.QtWidgets import QApplication
 
 from ui.theme.tokens import Tokens, dark_tokens, light_tokens
 
-_QSS_DIR = Path(__file__).resolve().parent / "qss"
+
+def _qss_dir() -> Path:
+    """qss 资源目录：打包态走 sys._MEIPASS，开发态走包内路径。"""
+    from ui.resource_path import get_resource_base
+    return Path(get_resource_base()) / "ui" / "theme" / "qss"
 
 _current: Tokens = dark_tokens()
 
@@ -162,7 +166,7 @@ def _nearest_check_icon(accent: str) -> str:
 
 def load_qss(name: str, theme: Tokens | None = None, **overrides: str) -> str:
     """渲染 ``qss/<name>.qss``：token 注入 + 调用方局部覆盖（``$`` 占位）。"""
-    path = _QSS_DIR / f"{name}.qss"
+    path = _qss_dir() / f"{name}.qss"
     text = path.read_text(encoding="utf-8")
     mapping = token_map(theme)
     mapping.update(overrides)

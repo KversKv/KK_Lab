@@ -40,13 +40,10 @@ a = Analysis(
         (os.path.join(PROJECT_ROOT, 'lib', 'download_tools'), os.path.join('lib', 'download_tools')),
         (os.path.join(PROJECT_ROOT, 'chips'), 'chips'),
         (os.path.join(PROJECT_ROOT, 'helps'), 'helps'),
+        (os.path.join(PROJECT_ROOT, 'ui', 'theme', 'qss'), os.path.join('ui', 'theme', 'qss')),
         (
             os.path.join(PROJECT_ROOT, 'instruments', 'MCU_IO', 'CH343SER', 'Driver'),
             os.path.join('instruments', 'MCU_IO', 'CH343SER', 'Driver'),
-        ),
-        (
-            os.path.join(PROJECT_ROOT, 'ui', 'pages', 'orchestrator', 'templates'),
-            os.path.join('ui', 'pages', 'orchestrator', 'templates'),
         ),
     ],
     hiddenimports=[
