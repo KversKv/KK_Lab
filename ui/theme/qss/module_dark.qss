@@ -1,0 +1,505 @@
+/* module_dark.qss — Module Test 页面专属暗色主题（2026-08 视觉重构）。
+
+   作用范围：仅注入 Module Test 子页根节点（apply_qss(self, "module_dark",
+   theme=module_dark_tokens(), **overrides)），在共享 controls.qss / table.qss
+   之上**级联叠加**（不清空、不改共享 QSS，不影响其它页面）。
+
+   新增语义 token（本文件专用，经 overrides 注入，未进共享 Tokens）：
+     $surface_hover  $surface_selected  $text_data  $focus_glow
+     $progress_track  $progress_h  $progress_radius  $badge_h  $badge_radius
+   内嵌 SVG（经 overrides 注入）：$combo_chevron_svg $branch_open_svg
+     $branch_closed_svg  $clear_circle_svg  $switch_on_svg  $switch_off_svg */
+
+/* ======================= 页面底 ======================= */
+#ModuleTestSubPage {
+    background-color: $surface_page;
+}
+
+/* ======================= 按钮 ======================= */
+QPushButton {
+    background-color: $surface_raised;
+    border: 1px solid $border_default;
+    border-radius: $radius_md;
+    padding: 0 $space_3;
+    color: $text_secondary;
+    font-size: $font_body;
+    min-height: $control_h_compact_box;
+    max-height: $control_h_compact_box;
+}
+QPushButton:hover {
+    background-color: $surface_hover;
+    border-color: $border_strong;
+}
+QPushButton:pressed { background-color: $surface_input; }
+QPushButton:disabled {
+    background-color: $surface_page;
+    color: $text_disabled;
+    border-color: $border_subtle;
+}
+QPushButton[variant="primary"] {
+    background-color: $accent_default;
+    border: 1px solid $accent_default;
+    color: $text_on_accent;
+    font-weight: 600;
+    min-height: $control_h_box;
+    max-height: $control_h_box;
+    padding: 0 $space_4;
+}
+QPushButton[variant="primary"]:hover {
+    background-color: $accent_hover;
+    border-color: $accent_hover;
+}
+QPushButton[variant="primary"]:pressed {
+    background-color: $accent_pressed;
+    border-color: $accent_pressed;
+}
+QPushButton[variant="primary"]:disabled {
+    background-color: $surface_page;
+    border-color: $border_subtle;
+    color: $text_disabled;
+}
+QPushButton[variant="success"] {
+    background-color: $state_success_fg;
+    border: 1px solid $state_success_fg;
+    color: $text_on_accent;
+    font-weight: 600;
+    min-height: $control_h_box;
+    max-height: $control_h_box;
+    padding: 0 $space_4;
+}
+QPushButton[variant="success"]:hover {
+    background-color: $state_success_border;
+    border-color: $state_success_fg;
+}
+QPushButton[variant="success"]:pressed { background-color: $state_success_fg; }
+QPushButton[variant="success"]:disabled {
+    background-color: $surface_page;
+    border-color: $border_subtle;
+    color: $text_disabled;
+}
+QPushButton[variant="ghost"], QPushButton[variant="secondary"] {
+    background-color: transparent;
+    border: 1px solid $border_default;
+    color: $text_secondary;
+}
+QPushButton[variant="ghost"]:hover, QPushButton[variant="secondary"]:hover {
+    background-color: $surface_hover;
+    border-color: $border_strong;
+    color: $text_primary;
+}
+QPushButton[variant="ghost"]:disabled, QPushButton[variant="secondary"]:disabled {
+    background-color: transparent;
+    color: $text_disabled;
+    border-color: $border_subtle;
+}
+QPushButton[variant="text"] {
+    background-color: transparent;
+    border: none;
+    color: $text_secondary;
+}
+QPushButton[variant="text"]:hover {
+    background-color: $surface_hover;
+    color: $text_primary;
+}
+QPushButton[variant="text"]:disabled {
+    background-color: transparent;
+    color: $text_disabled;
+}
+QPushButton[variant="danger-ghost"] {
+    background-color: transparent;
+    border: 1px solid $state_error_border;
+    color: $state_error_fg;
+}
+QPushButton[variant="danger-ghost"]:hover {
+    background-color: $state_error_fg;
+    border-color: $state_error_fg;
+    color: $text_on_accent;
+}
+QPushButton[variant="danger-ghost"]:disabled {
+    background-color: transparent;
+    border-color: $border_subtle;
+    color: $text_disabled;
+}
+QPushButton[variant="danger-text"] {
+    background-color: transparent;
+    border: none;
+    color: $state_error_fg;
+}
+QPushButton[variant="danger-text"]:hover { background-color: $state_error_bg; }
+QPushButton[variant="danger-text"]:disabled {
+    background-color: transparent;
+    color: $text_disabled;
+}
+
+/* ======================= 输入控件 ======================= */
+QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
+    background-color: $surface_input;
+    border: 1px solid $border_default;
+    border-radius: $radius_md;
+    padding: 0 $space_2;
+    color: $text_primary;
+    font-size: $font_body;
+    min-height: $control_h_box;
+    max-height: $control_h_box;
+    selection-background-color: $accent_default;
+}
+QLineEdit:hover, QSpinBox:hover, QDoubleSpinBox:hover, QComboBox:hover {
+    border-color: $border_strong;
+}
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
+    border-color: $border_focus;
+}
+QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled {
+    background-color: $surface_page;
+    color: $text_disabled;
+    border-color: $border_subtle;
+}
+QLineEdit::placeholder { color: $text_muted; }
+QComboBox::drop-down { border: none; width: $space_5; }
+QComboBox::down-arrow {
+    image: url("$combo_chevron_svg");
+    width: 12px;
+    height: 12px;
+}
+QComboBox QAbstractItemView {
+    background-color: $surface_raised;
+    border: 1px solid $border_default;
+    border-radius: $radius_md;
+    padding: $space_1;
+    color: $text_secondary;
+    selection-background-color: $surface_selected;
+    selection-color: $text_primary;
+    outline: none;
+}
+/* 搜索框：左侧内嵌放大镜（addAction 注入），清除按钮 = 圆形 ghost 图标 */
+QLineEdit#searchEdit { padding-left: 26px; }
+QLineEdit QToolButton {
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    image: url("$clear_circle_svg");
+    width: 16px;
+    height: 16px;
+    margin-right: 2px;
+}
+QLineEdit QToolButton:hover { background-color: $surface_hover; }
+
+/* Module Config YAML 编辑（等宽，深底） */
+QPlainTextEdit#moduleConfigYaml {
+    background-color: $surface_page;
+    border: 1px solid $border_default;
+    border-radius: $radius_md;
+    color: $text_secondary;
+    font-family: $font_mono;
+    font-size: $font_body;
+    padding: $space_2;
+    selection-background-color: $accent_default;
+}
+QPlainTextEdit#moduleConfigYaml:focus { border-color: $border_focus; }
+
+/* Switch 外观（36x20 轨道；勾选框 SVG 见共享 table.qss） */
+QCheckBox[switch="true"] { spacing: $space_2; }
+QCheckBox[switch="true"]::indicator {
+    width: 36px;
+    height: 20px;
+    image: url("$switch_off_svg");
+}
+QCheckBox[switch="true"]::indicator:checked { image: url("$switch_on_svg"); }
+QCheckBox[switch="true"]::indicator:disabled { opacity: 0.4; }
+
+/* ======================= 文本角色 / 徽章 ======================= */
+QLabel[role="mono"] { color: $text_secondary; font-family: $font_mono; font-size: $font_caption; }
+QLabel[role="data"] { color: $text_data; font-family: $font_mono; font-size: $font_caption; }
+QLabel#commandBarTitle {
+    color: $text_primary;
+    font-size: $font_title;
+    font-weight: 600;
+    padding-right: $space_2;
+}
+QLabel#configNameChip {
+    background-color: $surface_raised;
+    border: 1px solid $border_default;
+    border-radius: $radius_md;
+    padding: 2px $space_2;
+    color: $text_secondary;
+    font-family: $font_mono;
+    font-size: $font_caption;
+}
+QLabel#statsBadge {
+    background-color: $surface_raised;
+    border: 1px solid $border_default;
+    border-radius: $badge_radius;
+    padding: 0 $space_2;
+    color: $text_muted;
+    font-family: $font_mono;
+    font-size: $font_caption;
+    min-height: $badge_h;
+    max-height: $badge_h;
+}
+QLabel#statsBadge[hasSelection="true"] {
+    background-color: $surface_selected;
+    border-color: $accent_default;
+    color: $accent_hover;
+}
+QLabel#runStateLabel {
+    background-color: $surface_raised;
+    border: 1px solid $border_default;
+    border-radius: $badge_radius;
+    padding: 0 $space_2;
+    color: $text_muted;
+    font-size: $font_caption;
+    min-height: $badge_h;
+    max-height: $badge_h;
+}
+
+/* RunControlBar 计数 chips：√/×/⊘（值 0 时 [zero] 降弱色） */
+QLabel[role="chip-pass"], QLabel[role="chip-fail"], QLabel[role="chip-skip"] {
+    border-radius: $radius_sm;
+    padding: 0 $space_2;
+    font-family: $font_mono;
+    font-size: $font_caption;
+}
+QLabel[role="chip-pass"] {
+    color: $state_success_fg; background-color: $state_success_bg;
+    border: 1px solid $state_success_border;
+}
+QLabel[role="chip-fail"] {
+    color: $state_error_fg; background-color: $state_error_bg;
+    border: 1px solid $state_error_border;
+}
+QLabel[role="chip-skip"] {
+    color: $state_skipped_fg; background-color: $state_skipped_bg;
+    border: 1px solid $state_skipped_border;
+}
+QLabel[role="chip-pass"][zero="true"],
+QLabel[role="chip-fail"][zero="true"],
+QLabel[role="chip-skip"][zero="true"] {
+    color: $text_muted; background-color: transparent; border-color: transparent;
+}
+
+/* ======================= 进度条（4px / 渐变） ======================= */
+QProgressBar {
+    background-color: $progress_track;
+    border: none;
+    border-radius: $progress_radius;
+    color: $text_muted;
+    text-align: center;
+    font-size: $font_caption;
+    min-height: $progress_h;
+    max-height: $progress_h;
+}
+QProgressBar::chunk {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                stop:0 $accent_default, stop:1 $text_data);
+    border-radius: $progress_radius;
+}
+QProgressBar[state="error"]::chunk { background-color: $state_error_fg; }
+QProgressBar[state="done"]::chunk  { background-color: $state_success_fg; }
+
+/* ======================= 顶栏 / 卡片 / 横幅 / 底栏 ======================= */
+QFrame#CommandBar {
+    background-color: $surface_card;
+    border: none;
+    border-bottom: 1px solid $border_subtle;
+}
+QFrame#Card {
+    background-color: $surface_card;
+    border: 1px solid $border_subtle;
+    border-radius: $radius_lg;
+}
+QPushButton#cardHeader {
+    background-color: transparent;
+    border: none;
+    border-radius: $radius_lg;
+    color: $text_primary;
+    font-size: $font_subtitle;
+    font-weight: 600;
+    text-align: left;
+    padding: 0 $space_3;
+    min-height: $control_h;
+    max-height: $control_h;
+}
+QPushButton#cardHeader:hover { background-color: $surface_hover; }
+QFrame#cardContent { background: transparent; border: none; }
+QFrame#cardSeparator { background-color: $border_subtle; border: none; margin: 0; }
+
+QFrame#InfoBanner {
+    border: none;
+    border-left: 2px solid $border_default;
+    border-radius: $radius_md;
+    background-color: $surface_raised;
+    min-height: 38px;
+}
+QFrame#InfoBanner[severity="info"] {
+    border-left-color: $state_info_fg; background-color: $state_info_bg;
+}
+QFrame#InfoBanner[severity="warning"] {
+    border-left-color: $state_warning_fg; background-color: $state_warning_bg;
+}
+QFrame#InfoBanner[severity="error"] {
+    border-left-color: $state_error_fg; background-color: $state_error_bg;
+}
+QFrame#InfoBanner[severity="success"] {
+    border-left-color: $state_success_fg; background-color: $state_success_bg;
+}
+QPushButton#bannerClose { background: transparent; border: none; color: $text_muted; }
+QPushButton#bannerClose:hover { color: $text_primary; background: transparent; }
+QPushButton#bannerAction {
+    background-color: transparent;
+    border: 1px solid $border_default;
+    border-radius: $radius_md;
+    color: $text_secondary;
+    padding: 0 $space_2;
+    min-height: $space_5;
+    max-height: $space_5;
+    font-size: $font_caption;
+}
+QPushButton#bannerAction:hover { background-color: $surface_hover; color: $text_primary; }
+
+QFrame#RunControlBar {
+    background-color: $surface_card;
+    border: none;
+    border-top: 1px solid $border_subtle;
+}
+
+/* ======================= StatusPill（圆点 + 光晕） ======================= */
+QWidget#StatusPill { background: transparent; }
+QLabel#pillDot { font-size: 8px; border-radius: 7px; padding: 3px; background: transparent; }
+QLabel#pillDot[state="success"] { background-color: $state_success_bg; }
+QLabel#pillDot[state="warning"] { background-color: $state_warning_bg; }
+QLabel#pillDot[state="error"] { background-color: $state_error_bg; }
+QLabel#pillText { color: $text_muted; font-size: $font_caption; }
+
+/* ======================= Tab（文本式 + 2px 指示条） ======================= */
+QTabWidget::pane { border: none; }
+QTabBar { background: transparent; }
+QTabBar::tab {
+    background-color: transparent;
+    color: $text_muted;
+    font-size: $font_body;
+    padding: 0 $space_4;
+    min-height: $control_h_box;
+    max-height: $control_h_box;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-right: $space_1;
+}
+QTabBar::tab:hover:!selected { color: $text_primary; }
+QTabBar::tab:selected {
+    color: $text_primary;
+    font-weight: 600;
+    border-bottom: 2px solid $accent_default;
+}
+QTabWidget#detailTabs::pane { border: none; background: transparent; }
+
+/* ======================= 表单标签 ======================= */
+QLabel#formLabel { color: $text_muted; font-size: $font_caption; }
+QLabel#formUnit { color: $text_disabled; font-size: $font_caption; }
+
+/* ======================= 树表（去竖网格/外边框，1px 横分隔，行高 34） ======================= */
+#testPlanPanel QTreeView {
+    background: transparent;
+    alternate-background-color: transparent;
+    border: none;
+    gridline-color: $border_subtle;
+    selection-background-color: $surface_selected;
+    selection-color: $text_primary;
+    font-size: $font_body;
+    outline: none;
+    show-decoration-selected: 0;
+}
+#testPlanPanel QTreeView::item {
+    min-height: $table_row_h;
+    max-height: $table_row_h;
+    padding: 0 $space_1;
+    border: none;
+    border-bottom: 1px solid $border_subtle;
+}
+#testPlanPanel QTreeView::item:hover { background-color: $surface_hover; }
+#testPlanPanel QTreeView::item:selected {
+    background-color: $surface_selected;
+    color: $text_primary;
+}
+#testPlanPanel QTreeView::indicator { width: 14px; height: 14px; }
+#testPlanPanel QTreeView::branch:has-children:closed { image: url("$branch_closed_svg"); }
+#testPlanPanel QTreeView::branch:has-children:open { image: url("$branch_open_svg"); }
+#testPlanPanel QHeaderView::section {
+    background-color: $surface_raised;
+    color: $text_muted;
+    border: none;
+    border-bottom: 1px solid $border_default;
+    padding: $space_1 $space_2;
+    font-size: $font_caption;
+    font-weight: 600;
+}
+/* 结果表（透明底融入 Tab pane） */
+#resultTablePanel QTableView {
+    background: transparent;
+    alternate-background-color: transparent;
+    border: none;
+    gridline-color: $border_subtle;
+    selection-background-color: $surface_selected;
+    selection-color: $text_primary;
+    outline: none;
+}
+#resultTablePanel QTableView::item {
+    min-height: $table_row_h;
+    max-height: $table_row_h;
+    border: none;
+    border-bottom: 1px solid $border_subtle;
+}
+
+/* ============================================================
+   LOG 区 —— 纯增量叠加段（**不重写**共享 log_frame.qss，仅按本页新
+   palette 增量覆盖 ExecutionLogsFrame 的颜色/字号规则）。
+   选择器沿用共享 log_frame.qss 的 objectName（#logContainer / #logEdit /
+   #levelChip / #smallActionBtn 等），层叠后置生效。
+   ============================================================ */
+#ModuleTestSubPage QFrame#logContainer {
+    background-color: #161B22;
+    border-color: #212934;
+}
+#ModuleTestSubPage QFrame#logContainer QLabel#sectionTitle { color: #E6EDF5; }
+#ModuleTestSubPage QFrame#logContainer QLabel#fieldLabel { color: #9AA7B6; }
+#ModuleTestSubPage QFrame#logContainer QLabel#statusLabel,
+#ModuleTestSubPage QFrame#logContainer QLabel#autoScrollLabel { color: #6B7683; }
+/* 日志正文区：底 #0C1015 + 等宽 12px + 次文本色（级别色由模块 _LEVEL_COLORS 输出，
+   其 INFO/WARN/ERROR/OK 语义与本页 palette 一致） */
+#ModuleTestSubPage QFrame#logContainer QTextEdit#logEdit {
+    background-color: #0C1015;
+    border-top-color: #212934;
+    color: #9AA7B6;
+    font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
+    font-size: 12px;
+    selection-background-color: #253650;
+}
+#ModuleTestSubPage QFrame#logContainer QProgressBar { background-color: #232B36; }
+#ModuleTestSubPage QFrame#logContainer QProgressBar::chunk { background-color: #5896FF; }
+#ModuleTestSubPage QFrame#logContainer QLineEdit#searchInput {
+    background-color: #1C232C;
+    border-color: #2A323D;
+    color: #E6EDF5;
+}
+#ModuleTestSubPage QFrame#logContainer QLineEdit#searchInput:focus { border-color: #5896FF; }
+#ModuleTestSubPage QFrame#logContainer QPushButton#smallActionBtn,
+#ModuleTestSubPage QFrame#logContainer QPushButton#iconOnlyBtn {
+    background-color: #1C232C;
+    border-color: #2A323D;
+    color: #C9D4E0;
+}
+#ModuleTestSubPage QFrame#logContainer QPushButton#smallActionBtn:hover,
+#ModuleTestSubPage QFrame#logContainer QPushButton#iconOnlyBtn:hover {
+    background-color: #232B36;
+}
+#ModuleTestSubPage QFrame#logContainer QPushButton#smallActionBtn:checked,
+#ModuleTestSubPage QFrame#logContainer QPushButton#levelChip:checked {
+    background-color: #253650;
+    border-color: #5896FF;
+    color: #E6EDF5;
+}
+#ModuleTestSubPage QFrame#logContainer QPushButton#levelChip {
+    background-color: #1C232C;
+    border-color: #2A323D;
+    color: #6B7683;
+}
+#ModuleTestSubPage QFrame#logContainer QPushButton#levelChip:hover { background-color: #232B36; }

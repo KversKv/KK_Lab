@@ -11,11 +11,18 @@
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer, Signal
+import os
+
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QWidget
 
+from ui.resource_path import get_resource_base
+from ui.theme import current_theme
+from ui.utils.icon_utils import tinted_svg_icon
 from ui.widgets.segmented import Segmented
 from ui.widgets.status_pill import StatusPill
+
+_ICONS_DIR = os.path.join(get_resource_base(), "resources", "icons")
 
 
 class CommandBar(QFrame):
@@ -44,6 +51,11 @@ class CommandBar(QFrame):
         self.segmented.hide()
         lay.addWidget(self.segmented)
 
+        # 页标题（纯展示；Segmented 隐藏后承担顶栏标识）
+        self._title_label = QLabel("Module Test")
+        self._title_label.setObjectName("commandBarTitle")
+        lay.addWidget(self._title_label)
+
         sep1 = QFrame()
         sep1.setFrameShape(QFrame.VLine)
         sep1.setObjectName("commandBarSep")
@@ -52,16 +64,19 @@ class CommandBar(QFrame):
 
         lay.addWidget(self._make_caption("配置:"))
         self.config_name_label = QLabel("（未加载）")
-        self.config_name_label.setProperty("role", "mono")
+        self.config_name_label.setObjectName("configNameChip")
         self.config_name_label.setToolTip("当前生效的完整配置（设置 + 测试项）")
         lay.addWidget(self.config_name_label)
 
         self.open_btn = self._make_btn("打开", "按芯片分类浏览并加载已保存的配置（Ctrl+O）",
-                                       self.openConfigRequested)
+                                       self.openConfigRequested,
+                                       icon="folder-open.svg")
         self.save_btn = self._make_btn("保存", "保存当前完整配置；已加载的配置直接覆盖（Ctrl+S）",
-                                       self.saveConfigRequested)
+                                       self.saveConfigRequested,
+                                       icon="save.svg")
         self.save_as_btn = self._make_btn("另存为", "基于当前设置生成新的配置文件",
-                                          self.saveAsConfigRequested)
+                                          self.saveAsConfigRequested,
+                                          icon="save-as.svg")
         lay.addWidget(self.open_btn)
         lay.addWidget(self.save_btn)
         lay.addWidget(self.save_as_btn)
@@ -75,7 +90,8 @@ class CommandBar(QFrame):
             lay.addWidget(pill)
 
         self.conn_btn = self._make_btn("连接设置", "滚动到仪器连接区",
-                                       self.connectionSettingsRequested)
+                                       self.connectionSettingsRequested,
+                                       icon="settings.svg")
         lay.addWidget(self.conn_btn)
 
         self._subpage = None
@@ -88,11 +104,18 @@ class CommandBar(QFrame):
         return lbl
 
     @staticmethod
-    def _make_btn(text: str, tooltip: str, signal) -> QPushButton:
+    def _make_btn(text: str, tooltip: str, signal,
+                  icon: str = "") -> QPushButton:
         btn = QPushButton(text)
         btn.setProperty("variant", "ghost")
         btn.setCursor(Qt.PointingHandCursor)
         btn.setToolTip(tooltip)
+        if icon:
+            # 16px 线性图标，染色跟随次文本色（token 化）
+            btn.setIcon(tinted_svg_icon(
+                os.path.join(_ICONS_DIR, icon),
+                current_theme().text_secondary, 16))
+            btn.setIconSize(QSize(16, 16))
         btn.clicked.connect(signal.emit)
         return btn
 

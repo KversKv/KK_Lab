@@ -42,10 +42,12 @@ class ModuleConfigPanel(QWidget):
         top.setSpacing(8)
         self.enable_check = QCheckBox("测试前执行模块配置")
         self.enable_check.setChecked(False)
+        # Switch 轨道外观（纯视觉属性，QSS QCheckBox[switch="true"]）
+        self.enable_check.setProperty("switch", "true")
         top.addWidget(self.enable_check, 1)
 
         self.exec_btn = QPushButton("手动执行")
-        self.exec_btn.setProperty("variant", "primary")
+        self.exec_btn.setProperty("variant", "ghost")
         self.exec_btn.setToolTip("立即经 I2C 下发下方配置（不启动测试）")
         self.exec_btn.clicked.connect(self.execRequested)
         top.addWidget(self.exec_btn)

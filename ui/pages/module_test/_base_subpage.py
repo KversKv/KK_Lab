@@ -25,6 +25,7 @@ from ui.modules.oscilloscope_module_frame import OscilloscopeConnectionMixin
 from ui.pages.module_test._sections.ai_contract import ModuleTestAIContract
 from ui.pages.module_test._sections.config_store import ModuleConfigStore
 from ui.pages.module_test._sections.detail_dock import DetailDock
+from ui.pages.module_test._sections import module_theme
 from ui.pages.module_test._sections.left_rail import LeftRail
 from ui.pages.module_test._sections.test_plan_panel import TestPlanPanel
 from ui.pages.module_test.dialogs.config_manager_dialog import ConfigManagerDialog
@@ -93,15 +94,20 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
 
     # ================================================================== UI 装配
     def _build_ui(self) -> None:
+        # Module Test 页面专属暗色主题：在共享 controls/table 上级联叠加
+        # module_dark（page 级 token + 本页 overrides，不影响其它页面）。
+        self.setObjectName("ModuleTestSubPage")
         apply_qss(self, "controls")
         apply_qss(self, "table")
+        module_theme.apply_qss_theme(self)
         root = QVBoxLayout(self)
-        root.setContentsMargins(8, 8, 8, 8)
-        root.setSpacing(6)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(8)
 
         self._config_banner = InfoBanner(
             "尚未加载配置：可选择已有配置，或使用默认设置直接开始。",
-            actions=[("choose", "选择配置"), ("default", "使用默认")], severity="info")
+            actions=[("choose", "选择配置"), ("default", "使用默认")],
+            severity="warning")
         self._config_banner.actionTriggered.connect(self._on_config_banner_action)
         self._config_banner.hide()
         root.addWidget(self._config_banner)
@@ -110,13 +116,13 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
         root.addWidget(self._alert_banner)
 
         body = QHBoxLayout()
-        body.setSpacing(8)
+        body.setSpacing(12)
         self.left_rail = LeftRail(self, self.MODULE_TYPE)
         self.left_rail.module_config_panel.execRequested.connect(
             self._on_exec_module_config)
         body.addWidget(self.left_rail)
         center = QVBoxLayout()
-        center.setSpacing(6)
+        center.setSpacing(8)
         self.test_plan = TestPlanPanel(self.ITEMS_REGISTRY, self.STANDALONE_ITEMS)
         self.test_plan.paramsRequested.connect(self._open_item_params)
         self.detail_dock = DetailDock()
@@ -143,6 +149,9 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
             items_registry=self.ITEMS_REGISTRY,
             module_config_panel=self.left_rail.module_config_panel,
             judge_criteria=self._judge_criteria)
+        # 视觉追加（不改共享控件源）：开始=success、进度条百分比徽章、
+        # chips 零值弱色、结果表行高、表单标签右对齐/必填红星
+        module_theme.apply_subpage_extras(self)
 
     def _wire_shortcuts(self) -> None:
         QShortcut(QKeySequence("F5"), self, activated=self._on_start_test)

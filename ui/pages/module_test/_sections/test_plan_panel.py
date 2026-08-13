@@ -12,15 +12,13 @@
 """
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping, Sequence
 
 from PySide6.QtCore import QModelIndex, QSize, QSortFilterProxyModel, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QIcon, QPainter, QPen
+from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
-    QAbstractItemView, QApplication, QHBoxLayout, QHeaderView, QLineEdit,
-    QPushButton, QStyle, QStyleOptionViewItem, QStyledItemDelegate,
-    QTreeView, QVBoxLayout, QWidget,
+    QAbstractItemView, QHBoxLayout, QHeaderView, QLineEdit,
+    QPushButton, QStyledItemDelegate, QTreeView, QVBoxLayout, QWidget,
 )
 
 import os
@@ -32,40 +30,13 @@ from ui.models.test_plan_model import (
     ST_UNSELECTED, ST_WAITING, StatusRole, TestPlanModel,
 )
 from ui.resource_path import get_resource_base
-from ui.theme import current_theme
+from ui.theme import current_theme, dp, refresh_style
+from ui.theme.tokens import module_dark_tokens
 from ui.utils.icon_utils import tinted_svg_icon
+from ui.widgets.badge_delegate import draw_pill_badge, paint_item_background
 
 _PARAM_ICON = os.path.join(get_resource_base(), "resources", "icons", "settings.svg")
-
-# PySide6 6.6 的 QColor 字符串构造不支持 'rgba(r,g,b,a)' 格式（返回 invalid → 默认纯黑），
-# tokens 中 state.bg/border 均为该格式，需手动解析为 QColor(r,g,b,a)。
-_RGBA_RE = re.compile(r'rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)')
-
-
-def _qcolor(color_str: str) -> QColor:
-    """从颜色字符串构造 QColor；兼容 ``rgba(r,g,b,a)`` 格式（alpha 为 0-255 整数）。"""
-    m = _RGBA_RE.match(color_str)
-    if m:
-        r, g, b, a = map(int, m.groups())
-        return QColor(r, g, b, a)
-    return QColor(color_str)
-
-
-def _paint_item_background(painter: QPainter, option) -> None:
-    """用 QStyle 绘制 item 背景面板（含选中/hover 态），与 QSS ``::item`` 选择器对齐。
-
-    自定义 delegate 完全覆盖 ``paint()`` 时会跳过 QStyle 的背景绘制，导致
-    ``::item:selected`` / ``::item:hover`` 的背景色在这几列不生效（其它列走
-    默认 delegate 正常高亮，视觉上出现"选中时状态/参数列没亮起"）。本函数
-    清空 option 的 text/icon 后交由 ``CE_ItemViewItem`` 绘制背景面板，再由
-    调用方叠加自定义内容。
-    """
-    opt = QStyleOptionViewItem(option)
-    opt.text = ""
-    opt.icon = QIcon()
-    opt.viewItemPosition = QStyleOptionViewItem.ViewItemPosition.OnlyOne
-    style = opt.widget.style() if opt.widget else QApplication.style()
-    style.drawControl(QStyle.CE_ItemViewItem, opt, painter, opt.widget)
+_SEARCH_ICON = os.path.join(get_resource_base(), "resources", "icons", "search.svg")
 
 
 # ---------------------------------------------------------------------- 过滤代理
@@ -125,30 +96,14 @@ class _StatusBadgeDelegate(QStyledItemDelegate):
             return
         status = index.data(StatusRole) or ST_IDLE
         text = index.data(Qt.DisplayRole) or ""
-        theme = current_theme()
+        # Module Test 专属 token（与全局 dark_tokens 解耦，本页用对新色板）
+        theme = module_dark_tokens()
         state = getattr(theme, self._STATE_ATTR.get(status, "state_skipped"))
 
         # 先由 QStyle 绘制选中/hover 背景（与其它列一致），再叠加徽章
-        _paint_item_background(painter, option)
-
-        painter.save()
-        painter.setRenderHint(QPainter.Antialiasing)
-        rect = option.rect.adjusted(4, 3, -4, -3)
-        metrics = option.fontMetrics
-        w = min(metrics.horizontalAdvance(text) + 16, rect.width())
-        badge = rect.adjusted(0, 0, w - rect.width(), 0)
-        painter.setPen(QPen(_qcolor(state.border)))
-        painter.setBrush(_qcolor(state.bg))
-        painter.drawRoundedRect(badge, 4, 4)
-        painter.setPen(_qcolor(state.fg))
-        painter.drawText(badge, Qt.AlignCenter, text)
-        if status == ST_RUNNING and self.pulse:
-            cx = badge.right() + 6
-            if cx + 6 < option.rect.right():
-                painter.setPen(Qt.NoPen)
-                painter.setBrush(_qcolor(state.fg))
-                painter.drawEllipse(cx, badge.center().y() - 3, 6, 6)
-        painter.restore()
+        paint_item_background(painter, option)
+        draw_pill_badge(painter, option.rect, text, state,
+                        pulse=status == ST_RUNNING and self.pulse)
 
 
 class _ParamDelegate(QStyledItemDelegate):
@@ -160,7 +115,7 @@ class _ParamDelegate(QStyledItemDelegate):
             return
         theme = current_theme()
         # 先由 QStyle 绘制选中/hover 背景（与其它列一致），再叠加齿轮图标
-        _paint_item_background(painter, option)
+        paint_item_background(painter, option)
         painter.save()
         if not index.data(HasParamsRole):
             painter.setPen(QColor(theme.text_disabled))
@@ -180,9 +135,9 @@ class _ParamDelegate(QStyledItemDelegate):
         """列宽固定仅容纳齿轮图标，避免 ResizeToContents 过窄。"""
         if index.column() != COL_PARAMS or index.data(IsGroupRole):
             return super().sizeHint(option, index)
-        # 图标 16px + 左右各 8px padding = 32px；高度钳到 26（同 $table_row_h），
+        # 图标 16px + 左右各 8px padding = 32px；高度钳到 34（同 $table_row_h），
         # 配合 setUniformRowHeights 使 hover 重算 sizeHint 不再把行撑高溢出
-        return QSize(32, 26)
+        return QSize(32, dp(34))
 
 
 # ---------------------------------------------------------------------- 视图
@@ -262,9 +217,14 @@ class TestPlanPanel(QWidget):
         bar.setContentsMargins(0, 0, 0, 0)
         bar.setSpacing(6)
         self.search_edit = QLineEdit()
+        self.search_edit.setObjectName("searchEdit")
         self.search_edit.setPlaceholderText("搜索测试项…（Ctrl+F）")
         self.search_edit.setClearButtonEnabled(True)
         self.search_edit.setMaximumWidth(240)
+        # 左侧内嵌放大镜图标（纯视觉，占位由 QSS #searchEdit padding-left 提供）
+        _muted = current_theme().text_muted
+        self.search_edit.addAction(tinted_svg_icon(_SEARCH_ICON, _muted, 14),
+                                   QLineEdit.LeadingPosition)
         self.search_edit.textChanged.connect(self._proxy.set_needle)
         bar.addWidget(self.search_edit)
 
@@ -318,7 +278,7 @@ class TestPlanPanel(QWidget):
     def _make_stats_label():
         from PySide6.QtWidgets import QLabel
         lbl = QLabel()
-        lbl.setProperty("role", "caption")
+        lbl.setObjectName("statsBadge")
         return lbl
 
     # ------------------------------------------------------------------ 内部
@@ -341,6 +301,9 @@ class TestPlanPanel(QWidget):
     def _refresh_stats(self) -> None:
         checked, total = self._model.stats()
         self._stats_label.setText(f"已选 {checked}/{total}")
+        # 选中数 > 0 时徽章转主色（纯视觉属性，QSS #statsBadge[hasSelection]）
+        self._stats_label.setProperty("hasSelection", "true" if checked > 0 else "false")
+        refresh_style(self._stats_label)
         self.select_all_btn.setText(
             "取消全选" if self._model.auto_all_checked() else "全选")
 

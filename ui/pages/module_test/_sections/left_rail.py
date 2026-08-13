@@ -38,7 +38,7 @@ class DutConfigPanel(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(8)
 
-        grid = FormGrid(columns=2, label_width=dp(84))
+        grid = FormGrid(columns=2, label_width=dp(72))
         self._grid = grid
 
         self.chip_name_edit = QLineEdit()
@@ -87,13 +87,16 @@ class DutConfigPanel(QWidget):
         # —— 高低温测试（勾选后展开温度相关设置，与旧联动一致）——
         self.temp_test_check = QCheckBox("高低温测试")
         self.temp_test_check.setChecked(False)
+        # Switch 轨道外观（纯视觉属性，QSS QCheckBox[switch="true"]）
+        self.temp_test_check.setProperty("switch", "true")
         self.temp_test_check.toggled.connect(self._on_temp_toggled)
         root.addWidget(self.temp_test_check)
 
         self._temp_panel = QWidget()
         temp_lay = QVBoxLayout(self._temp_panel)
         temp_lay.setContentsMargins(0, 0, 0, 0)
-        temp_grid = FormGrid(columns=2, label_width=dp(84))
+        temp_grid = FormGrid(columns=2, label_width=dp(72))
+        self._temp_grid = temp_grid
 
         self.temperature_edit = QLineEdit()
         self.temperature_edit.setPlaceholderText("逗号分隔，如 -40, 25, 85")

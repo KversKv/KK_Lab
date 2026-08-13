@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QPushButton, QTabWidget, QVBoxLayout, QWidget,
+    QFrame, QHBoxLayout, QLabel, QPushButton, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from ui.models.result_model import LOG_KEY, STATUS_KEY
@@ -63,22 +63,26 @@ class DetailDock(QWidget):
         r_lay.setSpacing(6)
 
         summary_row = QHBoxLayout()
-        summary_row.setSpacing(10)
+        summary_row.setSpacing(12)
         self._summary_label = QLabel("尚未执行测试")
         self._summary_label.setProperty("role", "caption")
         summary_row.addWidget(self._summary_label)
         summary_row.addStretch()
         self.open_report_btn = QPushButton("打开报告")
-        self.open_report_btn.setProperty("variant", "ghost")
+        self.open_report_btn.setProperty("variant", "secondary")
         self.open_report_btn.setEnabled(False)
         self.open_report_btn.clicked.connect(self.openReportRequested)
         summary_row.addWidget(self.open_report_btn)
+        # 功能组之间 1px 竖分隔线（纯装饰）
+        sep = QFrame()
+        sep.setFrameShape(QFrame.VLine)
+        summary_row.addWidget(sep)
         self.open_dir_btn = QPushButton("打开输出目录")
-        self.open_dir_btn.setProperty("variant", "ghost")
+        self.open_dir_btn.setProperty("variant", "text")
         self.open_dir_btn.clicked.connect(self.openOutputDirRequested)
         summary_row.addWidget(self.open_dir_btn)
         self.clear_btn = QPushButton("清空结果")
-        self.clear_btn.setProperty("variant", "ghost")
+        self.clear_btn.setProperty("variant", "danger-text")
         self.clear_btn.clicked.connect(self.clearResultsRequested)
         summary_row.addWidget(self.clear_btn)
         r_lay.addLayout(summary_row)
