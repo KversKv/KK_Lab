@@ -38,7 +38,8 @@ def _icon_overrides() -> dict[str, str]:
     from ui.resource_path import get_resource_base
     icons = os.path.join(get_resource_base(), "resources", "icons")
     names = ("combo_chevron", "branch_open", "branch_closed", "clear_circle",
-             "switch_on", "switch_off")
+             "switch_on", "switch_off", "module_check_on", "module_check_off",
+             "module_check_partial")
     return {f"{n}_svg": os.path.join(icons, f"{n}.svg").replace(os.sep, "/")
             for n in names}
 

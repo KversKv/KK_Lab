@@ -420,7 +420,19 @@ QLabel#formUnit { color: $text_disabled; font-size: $font_caption; }
     background-color: $surface_selected;
     color: $text_primary;
 }
-#testPlanPanel QTreeView::indicator { width: 14px; height: 14px; }
+/* 勾选框：本页专属 14px SVG（未选描边 / 选中主色实心白勾）。
+   用本页 SVG 而非共享 checked_<accent>（其 16px 与 accent 色不搭本页蓝主题）；
+   不设 width/height（Qt QSS image: 按 SVG 固有 14px 渲染，不缩放、无裁切）。 */
+#testPlanPanel QTreeView::indicator {
+    image: url("$module_check_off_svg");
+}
+#testPlanPanel QTreeView::indicator:checked {
+    image: url("$module_check_on_svg");
+}
+#testPlanPanel QTreeView::indicator:indeterminate {
+    image: url("$module_check_partial_svg");
+}
+#testPlanPanel QTreeView::indicator:disabled { opacity: 0.4; }
 #testPlanPanel QTreeView::branch:has-children:closed { image: url("$branch_closed_svg"); }
 #testPlanPanel QTreeView::branch:has-children:open { image: url("$branch_open_svg"); }
 #testPlanPanel QHeaderView::section {
