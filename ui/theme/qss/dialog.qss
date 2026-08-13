@@ -170,3 +170,15 @@ QTableWidget#judgeCriteriaTable QHeaderView::section {
     background-color: $surface_input;
     border-color: $border_focus;
 }
+
+/* ---------- 滑动开关（判定标准 master toggle） ----------
+   SVG 经 apply_qss **overrides 注入 $switch_on_svg / $switch_off_svg。
+   36x20 轨道，与 module_dark.qss 一致。 */
+QCheckBox[switch="true"] { spacing: $space_2; }
+QCheckBox[switch="true"]::indicator {
+    width: 36px;
+    height: 20px;
+    image: url("$switch_off_svg");
+}
+QCheckBox[switch="true"]::indicator:checked { image: url("$switch_on_svg"); }
+QCheckBox[switch="true"]::indicator:disabled { opacity: 0.4; }

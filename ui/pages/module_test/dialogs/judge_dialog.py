@@ -2,8 +2,11 @@
 
 仅收录当前测试项在 ``core.module_test.judge`` 的 ``JUDGE_METRICS`` 中注册
 的指标，每个指标一行：勾选「启用」并设定条件即构成一条判定规则；
-``get_rules()`` 返回可 JSON 序列化的 list，随模块配置保存 / 加载，runner
-完成测试项时据此判 PASS/FAIL（与报告异常点标红相互独立）。
+``get_payload()`` 返回 ``{"enabled": bool, "rules": list}``，随模块配置
+保存 / 加载，runner 完成测试项时据此判 PASS/FAIL（与报告异常点标红相互独立）。
+
+顶部 master 滑动开关控制「是否对本项执行判定」：关闭时保留已配置规则但
+跳过判定（结果保持 N/A），便于调试阈值时临时停用判定。
 
 行结构：指标 (单位) | 启用 | 条件 | 阈值/下限 | 上限（仅「介于」）。
 """
@@ -33,9 +36,25 @@ class JudgeCriteriaTab(QWidget):
         root.setContentsMargins(12, 10, 12, 12)
         root.setSpacing(8)
 
+        # —— master 滑动开关：是否对本项执行判定 ——
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(8)
+        self._master_switch = QCheckBox("启用判定标准")
+        # 缺省 True（向后兼容旧配置无 enabled 键时仍判定）；有规则时默认开
+        payload_dict = payload or {}
+        has_rules = bool(payload_dict.get("rules"))
+        default_on = payload_dict.get("enabled", has_rules)
+        self._master_switch.setChecked(bool(default_on))
+        self._master_switch.setProperty("switch", "true")
+        header.addWidget(self._master_switch)
+        header.addStretch(1)
+        root.addLayout(header)
+
         hint = QLabel(
             "勾选「启用」并设定条件后，本测试项完成时按标准判定 PASS/FAIL；"
-            "未启用或无测量数据的指标保持 N/A。与报告中的异常点标红互不影响。")
+            "未启用或无测量数据的指标保持 N/A。与报告中的异常点标红互不影响。"
+            "顶部开关关闭时保留规则但跳过判定。")
         hint.setProperty("role", "caption")
         hint.setWordWrap(True)
         root.addWidget(hint)
@@ -50,6 +69,14 @@ class JudgeCriteriaTab(QWidget):
         self._editors: list[dict] = []
         self._fill_rows(payload or {})
         root.addWidget(self._table, 1)
+
+        self._master_switch.toggled.connect(self._on_master_toggled)
+        self._on_master_toggled()
+
+    # ------------------------------------------------------------------ master 开关联动
+    def _on_master_toggled(self) -> None:
+        enabled = self._master_switch.isChecked()
+        self._table.setEnabled(enabled)
 
     # ------------------------------------------------------------------ 行装配
     def _fill_rows(self, payload: dict) -> None:
@@ -117,6 +144,10 @@ class JudgeCriteriaTab(QWidget):
         return spin
 
     # ------------------------------------------------------------------ 导出
+    def is_enabled(self) -> bool:
+        """master 开关是否开启（是否对本项执行判定）。"""
+        return self._master_switch.isChecked()
+
     def get_rules(self) -> list[dict]:
         """导出本测试项的判定规则列表（仅启用行）。"""
         rules: list[dict] = []
@@ -131,3 +162,7 @@ class JudgeCriteriaTab(QWidget):
                        if ed["op"].currentData() == "range" else None),
             })
         return rules
+
+    def get_payload(self) -> dict:
+        """导出完整判定配置：``{"enabled": bool, "rules": list}``。"""
+        return {"enabled": self.is_enabled(), "rules": self.get_rules()}

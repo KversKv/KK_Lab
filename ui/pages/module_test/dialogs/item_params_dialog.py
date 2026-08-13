@@ -13,10 +13,12 @@
 
 弹窗以 QTabWidget 分页：「参数」页放 ParamSpec 表单；``item_key`` 命中
 ``JUDGE_METRICS`` 时追加「判断标准」页（JudgeCriteriaTab），编辑当前测试项
-的 PASS/FAIL 规则（``get_judge_rules()`` 导出，持久化回
-``judge_criteria[item_key]``，与全模块判定表同源）。
+的 PASS/FAIL 规则（``get_judge_payload()`` 导出 ``{"enabled", "rules"}``，
+持久化回 ``judge_criteria[item_key]``，与全模块判定表同源）。
 """
 from __future__ import annotations
+
+import os
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -28,6 +30,14 @@ from core.module_test.judge import JUDGE_METRICS
 from ui.pages.module_test.dialogs.judge_dialog import JudgeCriteriaTab
 from ui.theme import apply_qss
 from ui.widgets.groups_editor import GroupColumn, GroupsTableEditor
+
+
+def _switch_icon_overrides() -> dict[str, str]:
+    """注入滑动开关 SVG 路径供 dialog.qss ``$switch_on_svg`` / ``$switch_off_svg``。"""
+    from ui.resource_path import get_resource_base
+    icons = os.path.join(get_resource_base(), "resources", "icons")
+    return {f"{n}_svg": os.path.join(icons, f"{n}.svg").replace(os.sep, "/")
+            for n in ("switch_on", "switch_off")}
 
 
 class ItemParamsDialog(QDialog):
@@ -44,7 +54,7 @@ class ItemParamsDialog(QDialog):
         self.setWindowTitle(title)
         self.setModal(True)
         self.setMinimumWidth(360)
-        apply_qss(self, "dialog")
+        apply_qss(self, "dialog", **_switch_icon_overrides())
         self._specs = specs
         self._editors: dict[str, QWidget] = {}
         self._prefill: dict[str, object] = {}
@@ -227,3 +237,9 @@ class ItemParamsDialog(QDialog):
         if self._judge_tab is None:
             return []
         return self._judge_tab.get_rules()
+
+    def get_judge_payload(self) -> dict:
+        """返回「判断标准」页完整配置 ``{"enabled": bool, "rules": list}``。"""
+        if self._judge_tab is None:
+            return {}
+        return self._judge_tab.get_payload()

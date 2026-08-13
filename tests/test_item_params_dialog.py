@@ -135,6 +135,16 @@ def test_judge_tab_roundtrip():
     # 参数 override 语义不受判断标准页影响
     assert dlg2.get_override() == {}
 
+    # master 开关缺省 ON（有规则时），payload 反映 enabled=True
+    assert dlg2.get_judge_payload()["enabled"] is True
+    assert dlg2.get_judge_payload()["rules"] == rules
+
+    # 关闭 master 开关 → enabled=False，规则仍保留
+    dlg2._judge_tab._master_switch.setChecked(False)
+    pl = dlg2.get_judge_payload()
+    assert pl["enabled"] is False
+    assert pl["rules"] == rules
+
     # 全部取消启用 → 空规则（外层据此清掉该项判定）
     dlg2._judge_tab._editors[0]["check"].setChecked(False)
     assert dlg2.get_judge_rules() == []

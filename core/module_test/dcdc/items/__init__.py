@@ -151,7 +151,10 @@ def load_line_reg(ctx: ItemContext) -> ItemResult:
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Iload (mA)", "Vout (mV)"], rows)
     delta = (rows[-1][1] - rows[0][1]) if len(rows) >= 2 else 0.0
-    measured = {"points": len(rows), "vout_drop_mv": round(delta, 4)}
+    v0 = rows[0][1] if rows else 0.0
+    load_reg_pct = (delta / v0 * 100.0) if abs(v0) > 1e-9 else 0.0
+    measured = {"points": len(rows), "vout_drop_mv": round(delta, 4),
+                "load_reg_pct": round(load_reg_pct, 4)}
     return ItemResult(item_key=item_key, name="Load Regulation", unit="mV",
                       passed=None, measured=measured, raw_csv_path=csv_path)
 
@@ -196,7 +199,10 @@ def line_reg(ctx: ItemContext) -> ItemResult:
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Vin (V)", "Vout (mV)"], rows)
     delta = (max(r[1] for r in rows) - min(r[1] for r in rows)) if rows else 0.0
-    measured = {"points": len(rows), "vout_span_mv": round(delta, 4)}
+    mean_v = (sum(r[1] for r in rows) / len(rows)) if rows else 0.0
+    line_reg_pct = (delta / mean_v * 100.0) if abs(mean_v) > 1e-9 else 0.0
+    measured = {"points": len(rows), "vout_span_mv": round(delta, 4),
+                "line_reg_pct": round(line_reg_pct, 4)}
     return ItemResult(item_key=item_key, name="Line Regulation", unit="mV",
                       passed=None, measured=measured, raw_csv_path=csv_path)
 

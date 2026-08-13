@@ -59,18 +59,26 @@ def _m(key: str, label: str, unit: str, col: int | None = None) -> MetricSpec:
 
 
 _VOUT_SCAN_METRICS = (
-    _m("vout_min_mv", "Vout Min", "mV"),
-    _m("vout_max_mv", "Vout Max", "mV"),
-    _m("step_mv", "Step", "mV"),
+    _m("step_error_mv", "Step Error", "mV"),
     _m("linearity_pct", "Linearity", "%"),
 )
-_LINE_REG_METRICS = (_m("vout_span_mv", "Vout Span", "mV"),)
+_LINE_REG_METRICS = (
+    _m("vout_span_mv", "Vout Span", "mV"),
+    _m("line_reg_pct", "Line Reg", "%"),
+)
+_LOAD_REG_METRICS = (
+    _m("vout_drop_mv", "Vout Drop", "mV"),
+    _m("load_reg_pct", "Load Reg", "%"),
+)
 _QUIESCENT_METRICS = (
     _m("Iq (uA)", "Iq", "uA"),
     _m("dIvin (uA)", "dIvin", "uA"),
     _m("dIvout (uA)", "dIvout", "uA"),
 )
-_RIPPLE_METRICS = (_m("max_vpp_mv", "Max Vpp", "mV"),)
+_RIPPLE_METRICS = (
+    _m("max_vpp_mv", "Max Vpp", "mV"),
+    _m("max_vout_drop_mv", "Max Vout Drop", "mV"),
+)
 _TRANSIENT_METRICS = (
     _m("max_overshoot_mv", "Max Overshoot", "mV"),
     _m("max_undershoot_mv", "Max Undershoot", "mV"),
@@ -88,8 +96,9 @@ JUDGE_METRICS: dict[str, tuple[MetricSpec, ...]] = {
     "ldo_load_reg": (
         _m("vout_drop_mv", "Vout Drop", "mV"),
         _m("load_reg_mv_per_a", "Load Reg", "mV/A"),
+        _m("load_reg_pct", "Load Reg", "%"),
     ),
-    "dcdc_load_reg": (_m("vout_drop_mv", "Vout Drop", "mV"),),
+    "dcdc_load_reg": _LOAD_REG_METRICS,
     "ldo_line_reg": _LINE_REG_METRICS,
     "dcdc_line_reg": _LINE_REG_METRICS,
     "ldo_quiescent": _QUIESCENT_METRICS,
@@ -197,7 +206,12 @@ def evaluate_item(item_key: str, item_criteria: dict,
         (passed, note)：passed=True/False 判定通过/失败；None 表示无法判定
         （无规则或规则全部无测量数据，保持 N/A）。note 为可读说明。
     """
-    rules = (item_criteria or {}).get("rules") or []
+    if not item_criteria:
+        return None, ""
+    # master 开关关闭时跳过判定（保持 N/A，规则仍保留在配置中）
+    if item_criteria.get("enabled", True) is False:
+        return None, "判定标准已关闭，跳过判定"
+    rules = item_criteria.get("rules") or []
     if not rules:
         return None, ""
     specs = {m.key: m for m in JUDGE_METRICS.get(item_key, ())}

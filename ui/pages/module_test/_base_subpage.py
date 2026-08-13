@@ -421,17 +421,21 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
             else:
                 self._item_overrides.pop(item_key, None)
             self.test_plan.set_item_customized(item_key, bool(override))
-            self._apply_item_judge_rules(item_key, dlg.get_judge_rules())
+            self._apply_item_judge_payload(item_key, dlg.get_judge_payload())
 
     def _base_param_value(self, base_key: str):
         """按 ParamSpec.base_key 从被测配置界面取当前值作弹窗预填。"""
         return self.get_test_config().get(base_key)
 
     # ================================================================== 判定标准
-    def _apply_item_judge_rules(self, item_key: str, rules: list[dict]) -> None:
-        """把单个测试项的判定规则原地写回共享 dict（ModuleConfigStore 引用不变）。"""
+    def _apply_item_judge_payload(self, item_key: str, payload: dict) -> None:
+        """把单个测试项的判定配置（``{"enabled", "rules"}``）原地写回共享 dict。"""
+        rules = payload.get("rules") if payload else None
         if rules:
-            self._judge_criteria[item_key] = {"rules": [dict(r) for r in rules]}
+            self._judge_criteria[item_key] = {
+                "enabled": payload.get("enabled", True),
+                "rules": [dict(r) for r in rules],
+            }
         else:
             self._judge_criteria.pop(item_key, None)
         n_rules = sum(len(v.get("rules", ()))

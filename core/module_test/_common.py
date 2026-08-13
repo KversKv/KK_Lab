@@ -358,6 +358,7 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
     min_voltage = max_voltage = 0.0
     valid_min_code = valid_max_code = 0
     step_voltage_mv = 0.0
+    step_error_mv = 0.0
     linearity_pct = 0.0
     if len(voltages) >= 2:
         low_valid = 0
@@ -388,6 +389,14 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
         valid_max_code = valid_codes[-1]
         if len(valid_voltages) >= 2:
             step_voltage_mv = (valid_voltages[-1] - valid_voltages[0]) / (len(valid_voltages) - 1) * 1000.0
+            # 单步与平均步进的最大偏差（mV）：Step Error 判定用，
+            # 例如平均步进 5mV、Step Error 设 1mV → 每步须落在 4~6mV。
+            step_diffs_mv = [
+                (valid_voltages[i] - valid_voltages[i - 1]) * 1000.0
+                for i in range(1, len(valid_voltages))
+            ]
+            step_error_mv = max(
+                (abs(d - step_voltage_mv) for d in step_diffs_mv), default=0.0)
             full_scale = valid_voltages[-1] - valid_voltages[0]
             if abs(full_scale) > 1e-9:
                 n = len(valid_voltages)
@@ -423,11 +432,12 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
         "valid_min_code": valid_min_code,
         "valid_max_code": valid_max_code,
         "step_mv": round(step_voltage_mv, 3),
+        "step_error_mv": round(step_error_mv, 3),
         "linearity_pct": round(linearity_pct, 3),
     }
     return ItemResult(item_key=item_key, name=name, unit="mV",
                       passed=None, measured=measured, raw_csv_path=csv_path,
-                      notes=f"有效段步进 {step_voltage_mv:.3f}mV，线性度 {linearity_pct:.3f}%")
+                      notes=f"有效段步进 {step_voltage_mv:.3f}mV，步进误差 {step_error_mv:.3f}mV，线性度 {linearity_pct:.3f}%")
 
 
 def _arb_stop_and_wait(ctx: "ItemContext", channel: int) -> None:
@@ -650,6 +660,9 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
     write_csv(csv_path, ["Iload (mA)", "Vout (mV)", "Vpp (mV)", "RMS (mV)"], rows)
 
     max_row = max(rows, key=lambda r: r[2], default=None)
+    # 输出电压最大 Drop：标称值 - 扫描中最小 Vout（负载加重导致跌落）
+    vout_values = [r[1] for r in rows if isinstance(r[1], (int, float))]
+    max_vout_drop_mv = (nominal_mv - min(vout_values)) if vout_values else 0.0
     measured: dict[str, Any] = {
         "points": len(rows),
         "i_start_ma": i_start,
@@ -657,6 +670,7 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
         "i_step_ma": i_step,
         "max_vpp_mv": max_row[2] if max_row else "",
         "max_vpp_at_ma": max_row[0] if max_row else "",
+        "max_vout_drop_mv": round(max_vout_drop_mv, 4),
     }
     if screenshots:
         measured["screenshots"] = screenshots
