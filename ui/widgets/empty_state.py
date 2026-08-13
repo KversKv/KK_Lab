@@ -38,8 +38,10 @@ class EmptyState(QWidget):
         self._hint.setObjectName("emptyHint")
         self._hint.setAlignment(Qt.AlignCenter)
         self._hint.setWordWrap(True)
-        self._hint.setVisible(bool(hint))
         lay.addWidget(self._hint)
+        # setVisible 必须在 addWidget（设 parent）之后，避免无 parent 的 QLabel
+        # 短暂成为独立顶层窗口闪现（见 form.py 同类注释）。
+        self._hint.setVisible(bool(hint))
 
         if action is not None:
             text, handler = action

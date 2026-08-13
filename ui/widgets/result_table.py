@@ -60,6 +60,10 @@ class ResultTable(QWidget):
 
         # —— 表 / 空态 ——
         self._stack = QStackedLayout()
+        # 先把 stack 布局挂到父 widget，再 addWidget：否则 addWidget 时 layout
+        # 无 parent widget，子控件 parent=None → isWindow=True，被 show 时
+        # 短暂成为独立顶层窗口闪现（setCurrentWidget 会触发 show）。
+        root.addLayout(self._stack, 1)
         self.view = QTableView()
         self.model = ResultModel(self)
         self._proxy = QSortFilterProxyModel(self)
@@ -80,7 +84,6 @@ class ResultTable(QWidget):
         self.empty = EmptyState(title="暂无测试结果",
                                 hint="执行测试后，各测试项的测量结果将显示在这里。")
         self._stack.addWidget(self.empty)
-        root.addLayout(self._stack, 1)
         self._stack.setCurrentWidget(self.empty)
 
     # ------------------------------------------------------------------ 数据

@@ -391,3 +391,65 @@ separator 是 `content_layout` 内的独立 widget，受其 margins 缩进（左
 - 排查"嵌入后表格行内控件变形/撑高"：先量控件 `sizeHint().height()`，若大于 `max-height` 即被祖先 padding 补全；在控件自身 QSS 补 `padding:0`（或目标值）即可。
 - **禁止**反过来在页面/MainWindow 侧加全局豁免或改共享常量——会影响其它页面；只在**出问题的控件自身 QSS** 内补全盒模型属性。
 - 易中招的控件：`QTableWidget.setCellWidget` 放进单元格的 `QPushButton` / `QComboBox` / `QSpinBox`（这类控件常以自身 `setStyleSheet` 钉高，且行高由 `verticalHeader` 钉死，padding 一多就破行）。
+
+## 31. 共享控件 `setVisible` 在 `addWidget` 前调用 → 构造期独立小窗闪现（standalone 运行高频坑）
+
+**现象**：页面 standalone 运行（`python ui\pages\xxx.py`）时，主窗弹出前会先闪过几个几乎全白的小窗口（尺寸常为 12×12 / 24×12 / 256×192），一闪即逝。嵌入 `MainWindow` 内运行时无此现象。
+
+**根因**：Qt 机制——**无 parent 的控件调 `setVisible(True)` 会立即成为独立顶层窗口（`isWindow()==True`）并 `Show`**。共享控件在构造期把 `setVisible(...)` 用在尚未挂到任何 layout（或 layout 本身无 parent widget）的子控件上，子控件 parent=None → 短暂成为独立顶层窗闪现，直到后续 `addWidget` 把它 reparent 进父 widget 才隐藏。
+
+典型错误顺序（[form.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/widgets/form.py) `FormRow.__init__` 修复前）：
+
+```python
+line = QHBoxLayout()              # ← layout 无 parent widget
+self._unit = QLabel(unit)
+self._unit.setVisible(bool(unit)) # ← QLabel parent=None → 独立顶层窗 Show！
+line.addWidget(self._unit)        # ← 此时才 reparent，但已闪过一次
+root.addLayout(line)              # ← line 才挂到 root（self）
+```
+
+**修复**：调换顺序——**先让子布局挂到父 widget（`root.addLayout(line)`），再 `addWidget`（设子控件 parent），最后 `setVisible`**：
+
+```python
+line = QHBoxLayout()
+root.addLayout(line)              # ← 先让 line 有 parent widget=self
+self._unit = QLabel(unit)
+line.addWidget(self._unit)        # ← addWidget 时 QLabel parent=self
+self._unit.setVisible(bool(unit)) # ← 此时已有 parent，不再独立成窗
+```
+
+**要点**：
+
+- `QHBoxLayout`/`QVBoxLayout` 本身**不是 widget**，`layout.addWidget(child)` 是否设 `child` 的 parent，取决于 layout 有没有 parent widget——没有时 `child.parent()==None`。故**先 `parent_layout.addLayout(child_layout)` 把子布局挂到有 parent widget 的祖先 layout，再在子布局上 `addWidget`**。
+- 同理 `QStackedLayout`：必须先 `root.addLayout(self._stack, 1)` 挂到父，再 `addWidget(view)`，否则 `setCurrentWidget` 触发的 `Show` 会让无 parent 的子控件独立成窗（[result_table.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/widgets/result_table.py)）。
+- `EmptyState` 的 `self._hint.setVisible(bool(hint))` 同坑（[empty_state.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/widgets/empty_state.py)）——`lay.addWidget(self._hint)` 须在 `setVisible` 之前。
+- 嵌入 `MainWindow` 运行时不闪，是因为主窗已 `show`，子控件 reparent 时 Qt 不会把它们当独立顶层窗单独 `Show`；standalone 下页面构造发生在 `app.exec()` 之前，无主窗兜底，每个无 parent 的 `setVisible(True)` 都会真正弹独立窗。
+
+**DEBUG 方式**（捕获短命窗口的标准手段，比 `topLevelWidgets()` 快照更准）：
+
+```python
+class _WinFilter(QObject):
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Show and obj.isWindow():
+            traceback.print_stack()  # 打印调用栈定位 setVisible 来源
+        return False
+app.installEventFilter(_WinFilter())
+```
+
+事件过滤器能捕获每个 `Show` 事件瞬间（含短命窗口），不会漏；`topLevelWidgets()` 快照受采样间隔限制，短命窗口易漏。
+
+### 31.1 standalone `__main__` 块须复刻 `MainWindow._setup_style()` 的深色 palette（页面发白）
+
+**现象**：页面 standalone 运行后样式异常——未设 QSS 的控件（含顶层 `QWidget` 背景）回落默认浅色，页面整体发白；而嵌入 `MainWindow` 内样式正常。
+
+**根因**：`MainWindow._setup_style()` 在构造时设了深色 `QPalette`（Window `#020618` / Text `#c8c8c8` / Button `#32353a` 等）+ `QFont("Segoe UI", 9)`，app 级兜底；页面/控件级 QSS 只覆盖部分属性，未覆盖的回落 app palette。standalone `__main__` 块若只 `app.setStyle("Fusion")` 而不设 palette，未覆盖 QSS 的控件就回落系统默认浅色 → 发白。
+
+**修复**：standalone `__main__` 块复刻 `main.py` + `MainWindow._setup_style()` 的 app 级初始化（[module_test_ui.py](file:///d:/CodeProject/TRAE_Projects/KK_Lab/ui/pages/module_test/module_test_ui.py#L184-L231)）：
+
+1. `configure_high_dpi()`（须在 `QApplication` 之前）
+2. `app.setStyle("Fusion")`
+3. `app.setPalette(深色 QPalette)`——色值逐字复刻 `MainWindow._setup_style`
+4. `app.setFont(QFont("Segoe UI", 9))`
+5. `app.setStyleSheet(QToolTip 深底 QSS)`——复刻 `main.py:101`（QToolTip 是顶级窗口，不继承 palette）
+
+**规则**：凡带 `__main__` 块的页面/模组 standalone 运行后样式异常（发白/控件变形），先检查是否复刻了 `MainWindow._setup_style` 的 app 级 palette + font；与 §30（祖先 QSS 补全）是两类不同机制——§30 是 QSS 级联问题，本节是 palette 缺失问题。

@@ -34,6 +34,11 @@ class FormRow(QWidget):
         line = QHBoxLayout()
         line.setContentsMargins(0, 0, 0, 0)
         line.setSpacing(6)
+        # 先把子布局挂到 root（parent widget=self），再 addWidget：否则
+        # 无 parent 的 layout 上 addWidget 不会设控件 parent，控件 isWindow=True，
+        # setVisible(True) 时短暂成为独立顶层窗口闪现（standalone 运行时
+        # 表现为多个小白框一闪而过）。
+        root.addLayout(line)
 
         text = f"{label} *" if required else label
         self._label = QLabel(text)
@@ -47,17 +52,16 @@ class FormRow(QWidget):
 
         self._unit = QLabel(unit)
         self._unit.setObjectName("formUnit")
-        self._unit.setVisible(bool(unit))
         line.addWidget(self._unit)
-        root.addLayout(line)
+        self._unit.setVisible(bool(unit))
 
         self._helper = QLabel(helper)
         self._helper.setProperty("role", "helper")
-        self._helper.setVisible(bool(helper))
         helper_lay = QHBoxLayout()
         helper_lay.setContentsMargins(label_width + 6, 0, 0, 0)
-        helper_lay.addWidget(self._helper, 1)
         root.addLayout(helper_lay)
+        helper_lay.addWidget(self._helper, 1)
+        self._helper.setVisible(bool(helper))
 
     # ------------------------------------------------------------------ API
     @property
