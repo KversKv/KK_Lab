@@ -152,12 +152,12 @@ QTableWidget#judgeCriteriaTable QHeaderView::section {
     padding: $space_1 $space_2;
 }
 /* 单元格编辑器走 ID 选择器（cell widget 挂在 viewport 下，后代选择器不可靠）。
-   hover/focus 仅改颜色不动几何：基态即 1px 透明 border（避免 focus 加边框 +2px），
-   min/max-height 钉死（覆盖通用 QComboBox/QSpinBox 的 min-height，防 hover 时
-   sizeHint 重算把行撑高溢出单元格）。行高 32px = 28px 编辑器 + 2×1px 边框。 */
+   基态保留可见背景与细边框（hover/focus 仅改色，不动几何：min/max-height 钉死
+   覆盖通用 QComboBox/QSpinBox 的 min-height，防 hover 时 sizeHint 重算把行撑高
+   溢出单元格）。行高 32px = 28px 编辑器 + 2×1px 边框。 */
 #judgeCellEditor {
-    background: transparent;
-    border: 1px solid transparent;
+    background-color: $surface_input;
+    border: 1px solid $border_subtle;
     border-radius: $radius_sm;
     padding: 0 $space_2;
     min-height: $control_h_compact_box;
@@ -165,6 +165,7 @@ QTableWidget#judgeCriteriaTable QHeaderView::section {
 }
 #judgeCellEditor:hover {
     background-color: $surface_raised;
+    border-color: $border_strong;
 }
 #judgeCellEditor:focus {
     background-color: $surface_input;
@@ -182,3 +183,19 @@ QCheckBox[switch="true"]::indicator {
 }
 QCheckBox[switch="true"]::indicator:checked { image: url("$switch_on_svg"); }
 QCheckBox[switch="true"]::indicator:disabled { opacity: 0.4; }
+
+/* ---------- 普通勾选框（判断标准表「启用」列等） ----------
+   复用 table.qss 的 check/uncheck SVG（token_map 已注入 $check_svg /
+   $uncheck_svg），避免 Qt 默认勾选框在暗色背景上几乎不可见。
+   switch 开关有 [switch="true"] 属性选择器，特异性更高，不受影响。 */
+QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+    image: url("$uncheck_svg");
+}
+QCheckBox::indicator:checked {
+    image: url("$check_svg");
+}
+QCheckBox::indicator:disabled {
+    opacity: 0.4;
+}

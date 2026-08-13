@@ -1,14 +1,14 @@
 """JudgeCriteriaTab — 单个测试项的判定标准编辑控件（内嵌 ItemParamsDialog 标签页）。
 
 仅收录当前测试项在 ``core.module_test.judge`` 的 ``JUDGE_METRICS`` 中注册
-的指标，每个指标一行：勾选「启用」并设定条件即构成一条判定规则；
+的指标，每个指标一行：勾选「启用」并设定「通过条件」即构成一条判定规则；
 ``get_payload()`` 返回 ``{"enabled": bool, "rules": list}``，随模块配置
 保存 / 加载，runner 完成测试项时据此判 PASS/FAIL（与报告异常点标红相互独立）。
 
 顶部 master 滑动开关控制「是否对本项执行判定」：关闭时保留已配置规则但
 跳过判定（结果保持 N/A），便于调试阈值时临时停用判定。
 
-行结构：指标 (单位) | 启用 | 条件 | 阈值/下限 | 上限（仅「介于」）。
+行结构：指标 (单位) | 启用 | 通过条件 | 下限/阈值 | 上限（仅 range 启用）。
 """
 from __future__ import annotations
 
@@ -52,9 +52,10 @@ class JudgeCriteriaTab(QWidget):
         root.addLayout(header)
 
         hint = QLabel(
-            "勾选「启用」并设定条件后，本测试项完成时按标准判定 PASS/FAIL；"
-            "未启用或无测量数据的指标保持 N/A。与报告中的异常点标红互不影响。"
-            "顶部开关关闭时保留规则但跳过判定。")
+            "勾选「启用」并设定「通过条件」后，本测试项完成时按标准判定 PASS/FAIL；"
+            "测量值满足「通过条件」即 PASS，否则 FAIL。未启用或无测量数据的指标"
+            "保持 N/A。与报告中的异常点标红互不影响。顶部开关关闭时保留规则但"
+            "跳过判定。")
         hint.setProperty("role", "caption")
         hint.setWordWrap(True)
         root.addWidget(hint)
@@ -62,8 +63,11 @@ class JudgeCriteriaTab(QWidget):
         self._table = QTableWidget(len(self._metrics), 5, self)
         # dialog.qss 专用段落：透底去框、单元格编辑器去框（防边框交叠）
         self._table.setObjectName("judgeCriteriaTable")
+        # 「通过条件」列表达：测量值满足该条件才算 PASS
+        # 「下限」列在 range 时填下限，其余操作符填阈值（上限/下限由操作符决定）
+        # 「上限」列仅 range 时启用
         self._table.setHorizontalHeaderLabels(
-            ["指标 (单位)", "启用", "条件", "阈值 / 下限", "上限"])
+            ["指标 (单位)", "启用", "通过条件", "下限 / 阈值", "上限"])
         self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self._table.verticalHeader().setVisible(False)
         self._editors: list[dict] = []

@@ -44,13 +44,19 @@ class MetricSpec:
     col: int | None = None
 
 
-# 判定条件操作符（存储值 → 显示文本）
+# 判定条件操作符（存储值 → 显示文本）。
+# 语义统一为「测量值满足什么条件才算 PASS」：
+#   "<"  → 测量值 < 阈值（如 Step Error < 1mV）
+#   "<=" → 测量值 ≤ 阈值
+#   ">"  → 测量值 > 阈值
+#   ">=" → 测量值 ≥ 阈值
+#   "range" → 测量值 ∈ [下限, 上限]（如 Step ∈ [4, 6]mV）
 JUDGE_OPS: tuple[tuple[str, str], ...] = (
-    ("<", "<"),
-    ("<=", "≤"),
-    (">", ">"),
-    (">=", "≥"),
-    ("range", "介于 [min, max]"),
+    ("<", "< 阈值（上限）"),
+    ("<=", "≤ 阈值（上限）"),
+    (">", "> 阈值（下限）"),
+    (">=", "≥ 阈值（下限）"),
+    ("range", "∈ [下限, 上限]"),
 )
 
 
@@ -193,8 +199,10 @@ def _check(op: str, value: float, v1: float, v2: float | None) -> bool:
 
 
 def _op_text(op: str, v1: float, v2: float | None) -> str:
+    """构造「通过条件」的可读说明（用于失败提示）。"""
     if op == "range":
-        return f"∈ [{v1:g}, {v2 if v2 is not None else v1:g}]"
+        lo, hi = v1, (v2 if v2 is not None else v1)
+        return f"∈ [{min(lo, hi):g}, {max(lo, hi):g}]"
     return f"{op} {v1:g}"
 
 
