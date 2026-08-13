@@ -12,6 +12,23 @@ instrument_manager / ui_action_registry；公共 API 同名同签名。
 """
 from __future__ import annotations
 
+if __name__ == "__main__" and __package__ in (None, ""):
+    # 直跑本文件时把项目根注入 sys.path，使 log_config 等根级模块可导入；
+    # 作为模块被 import 时本块不执行，不影响正常分层。
+    import os
+    import sys
+
+    sys.path.insert(
+        0,
+        os.path.dirname(
+            os.path.dirname(
+                os.path.dirname(
+                    os.path.dirname(os.path.abspath(__file__))
+                )
+            )
+        ),
+    )
+
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QStackedWidget, QVBoxLayout, QWidget
 from log_config import get_logger
@@ -163,3 +180,52 @@ class ModuleTestUI(QWidget):
     def set_system_status(self, status: str, is_error: bool = False) -> None:
         self.ldo_test_ui.set_system_status(status, is_error)
         self.dcdc_test_ui.set_system_status(status, is_error)
+
+
+if __name__ == "__main__":
+    import sys
+
+    from PySide6.QtGui import QColor, QFont, QPalette
+    from PySide6.QtWidgets import QApplication
+
+    from ui.standalone import resize_and_center_window
+    from ui.theme import configure_high_dpi
+
+    # 复刻 main.py / MainWindow._setup_style 的 app 级初始化，使本页 standalone
+    # 渲染环境与内嵌于 MainWindow 时一致：深色 palette + Segoe UI 字体 + QToolTip
+    # 深底 QSS。否则未设 QSS 的控件（含本顶层 QWidget 背景）回落默认浅色 →
+    # 页面发白、构造期多次 setStyleSheet 重绘时闪白框。
+    configure_high_dpi()
+    app = QApplication(sys.argv)
+    app.setStyle("Fusion")
+    palette = QPalette()
+    palette.setColor(QPalette.Window, QColor(2, 6, 24))
+    palette.setColor(QPalette.WindowText, QColor(200, 200, 200))
+    palette.setColor(QPalette.Base, QColor(32, 35, 40))
+    palette.setColor(QPalette.AlternateBase, QColor(40, 43, 48))
+    palette.setColor(QPalette.ToolTipBase, QColor(40, 43, 48))
+    palette.setColor(QPalette.ToolTipText, QColor(200, 200, 200))
+    palette.setColor(QPalette.Text, QColor(200, 200, 200))
+    palette.setColor(QPalette.Button, QColor(50, 53, 58))
+    palette.setColor(QPalette.ButtonText, QColor(200, 200, 200))
+    palette.setColor(QPalette.BrightText, QColor(255, 0, 0))
+    palette.setColor(QPalette.Link, QColor(42, 130, 218))
+    palette.setColor(QPalette.Highlight, QColor(42, 130, 218))
+    palette.setColor(QPalette.HighlightedText, QColor(30, 30, 30))
+    app.setPalette(palette)
+    app.setFont(QFont("Segoe UI", 9))
+    app.setStyleSheet("""
+        QToolTip {
+            background-color: #282c30;
+            color: #d7dce2;
+            border: 1px solid #4a5568;
+            padding: 4px 6px;
+        }
+    """)
+
+    window = ModuleTestUI()
+    window.setWindowTitle("Module Test")
+    resize_and_center_window(window)
+    window.show()
+
+    sys.exit(app.exec())
