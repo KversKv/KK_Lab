@@ -20,6 +20,7 @@ from PySide6.QtWidgets import QInputDialog, QMessageBox
 
 from log_config import get_logger
 from ui.resource_path import get_user_data_dir
+from ui.theme import apply_qss
 
 _logger = get_logger(__name__)
 
@@ -71,7 +72,8 @@ class ModuleConfigStore:
                 self._modcfg.config_text() if self._modcfg is not None else ""),
             # 判定标准（PASS/FAIL Criteria）随模块配置一并保存
             "judge_criteria": (
-                {k: {"rules": [dict(r) for r in v.get("rules", ())]}
+                {k: {"enabled": v.get("enabled", True),
+                     "rules": [dict(r) for r in v.get("rules", ())]}
                  for k, v in self._judge.items() if isinstance(v, dict)}
                 if self._judge is not None else {}),
         }
@@ -148,7 +150,8 @@ class ModuleConfigStore:
         if self._judge is not None and isinstance(criteria, dict):
             self._judge.clear()
             self._judge.update(
-                {k: {"rules": [dict(r) for r in v.get("rules", ())
+                {k: {"enabled": v.get("enabled", True),
+                     "rules": [dict(r) for r in v.get("rules", ())
                                if isinstance(r, dict)]}
                  for k, v in criteria.items()
                  if k in self._registry and isinstance(v, dict)})
@@ -197,17 +200,27 @@ class ModuleConfigStore:
         chip = self.safe_name(cfg.get("chip_name", ""), "未分类芯片")
         default_name = self.safe_name(
             cfg.get("module_name", "") or self._module_type, self._module_type)
-        name, ok = QInputDialog.getText(
-            parent, "另存配置", f"配置名称（将归入芯片「{chip}」分类）：", text=default_name)
-        if not ok:
+
+        # 用实例化 QInputDialog 而非静态 getText：静态弹窗不经 apply_qss 注入
+        # QSS，会回落系统浅色主题（与页面暗色不一致）。实例化后显式套 dialog.qss。
+        dlg = QInputDialog(parent)
+        dlg.setWindowTitle("另存配置")
+        dlg.setLabelText(f"配置名称（将归入芯片「{chip}」分类）：")
+        dlg.setTextValue(default_name)
+        apply_qss(dlg, "dialog")
+        if dlg.exec() != QInputDialog.Accepted:
             return None
-        name = self.safe_name(name, default_name)
+        name = self.safe_name(dlg.textValue(), default_name)
+
         target_dir = os.path.join(self.configs_root(), chip)
         path = os.path.join(target_dir, f"{name}.json")
         if os.path.exists(path):
-            resp = QMessageBox.question(
-                parent, "覆盖确认", f"配置「{name}」已存在，是否覆盖？",
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if resp != QMessageBox.Yes:
+            # 覆盖确认同样用实例化 QMessageBox + apply_qss，保持暗色一致
+            confirm = QMessageBox(
+                QMessageBox.Question, "覆盖确认",
+                f"配置「{name}」已存在，是否覆盖？",
+                QMessageBox.Yes | QMessageBox.No, parent)
+            apply_qss(confirm, "dialog")
+            if confirm.exec() != QMessageBox.Yes:
                 return None
         return path
