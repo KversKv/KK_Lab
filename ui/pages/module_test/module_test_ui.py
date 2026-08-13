@@ -181,6 +181,57 @@ class ModuleTestUI(QWidget):
         self.ldo_test_ui.set_system_status(status, is_error)
         self.dcdc_test_ui.set_system_status(status, is_error)
 
+    # ------------------------------------------------------------------ AI Assistant 透传
+    # 容器自身不实现 AI 契约（ai_capabilities / ai_get_config / ai_start_test /
+    # ai_stop_test / ai_get_result_summary 由子页基类 _sections/ai_contract.py 的
+    # ModuleTestAIContract mixin 提供）；此处仅透传枢纽路由所需的下钻入口与日志
+    # 读 / 回填接口，参考 ConsumptionTestWrapper 的同名实现。
+    def _current_ai_subpage(self):
+        """返回当前子页实例（供 AI 枢纽路由用）。"""
+        return self.stack.currentWidget() if self.stack is not None else None
+
+    @property
+    def tab_widget(self):
+        """tab_widget 别名：暴露 QStackedWidget 供 AI 枢纽下钻到当前子页。
+
+        枢纽 resolve_active_ai_page 对 Tab 容器页（pmu_test / charger_test /
+        module_test / consumption_test / vmin_hunter）按约定
+        ``getattr(container, "tab_widget", None).currentWidget()`` 取当前子页；
+        本页 P3 重构后用 ``QStackedWidget``（``self.stack``，非 QTabWidget），此处
+        透传以对齐路由契约，使子页的 AI 能力集 / 配置 / 启停 / 结果摘要可被命中。
+        """
+        return self.stack
+
+    @property
+    def logs_frame(self):
+        """logs_frame 透传：把当前子页的 ExecutionLogsFrame 暴露给 AI 枢纽。
+
+        枢纽 _get_ai_execution_logs 经 ``page.logs_frame._all_logs`` 读取日志；
+        wrapper 自身不持 logs 控件，按当前子页下钻到 ``detail_dock.log_panel.frame``
+        （ExecutionLogsFrame，持 ``_all_logs``；LogPanel 是其批量 flush 包装层）。
+        """
+        sub = self._current_ai_subpage()
+        if sub is None:
+            return None
+        log_panel = getattr(getattr(sub, "detail_dock", None), "log_panel", None)
+        if log_panel is None:
+            return None
+        return getattr(log_panel, "frame", None)
+
+    def append_log(self, message: str) -> None:
+        """append_log 透传：让 AI 枢纽 _ai_ui_invoke 的 [AI] 日志回填落到当前子页。
+
+        枢纽 _current_active_page 返回 wrapper（不下钻），经 getattr(page,
+        'append_log', None) 找不到时静默失败。此处透传到当前子页的 LogPanel，
+        保证 [AI] 触发 XXX 日志条目能正确出现在 ExecutionLogsFrame。
+        """
+        sub = self._current_ai_subpage()
+        if sub is None:
+            return
+        log_panel = getattr(getattr(sub, "detail_dock", None), "log_panel", None)
+        if log_panel is not None:
+            log_panel.append_log(message)
+
 
 if __name__ == "__main__":
     import sys
