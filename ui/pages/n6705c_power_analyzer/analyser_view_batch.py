@@ -45,7 +45,10 @@ class BatchViewMixin:
                 border-bottom-right-radius: {CONTAINER_RADIUS};
             }}
         """)
-        self.batch_content.setVisible(True)
+        # setVisible 推迟到 outer_layout.addWidget(self.batch_content) 之后
+        # （见本文件末尾，紧随 addWidget 的 setVisible(not self.batch_collapsed)）：
+        # 此处 batch_content 尚无 parent，setVisible(True) 会让它独立成顶层窗口
+        # 闪现（standalone / main.py 启动均可见，640×480 白框一闪而过）。见 03§31。
 
         content_layout = QVBoxLayout(self.batch_content)
         content_layout.setContentsMargins(16, 10, 16, 14)
