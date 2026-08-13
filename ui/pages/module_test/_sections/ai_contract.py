@@ -102,12 +102,37 @@ class ModuleTestAIContract:
         return True, "已发送停止请求。"
 
     def ai_get_result_summary(self) -> dict[str, Any] | None:
+        # 无结果时返回最小摘要（available=False），让 AI 能区分"未跑过"与
+        # "不支持"，避免枢纽拿到 None 后无法给用户可读反馈。
         if self._last_result is None:
-            return None
-        s = dict(self._last_result.summary)
+            return {
+                "available": False,
+                "running": self.is_test_running,
+                "module_type": self.MODULE_TYPE,
+            }
+        r = self._last_result
+        s = dict(r.summary)
         s["available"] = True
         s["running"] = self.is_test_running
-        s["module_type"] = self._last_result.module_type
+        s["module_type"] = r.module_type
+        # 元数据：让 AI 给出带上下文的结果解读（芯片 / 操作员 / 温度 / 起止时间）
+        s["chip_name"] = r.chip_name
+        s["operator"] = r.operator
+        s["temperature"] = r.temperature
+        s["started_at"] = r.started_at
+        s["finished_at"] = r.finished_at
+        # 逐项结果：仅凭汇总计数（pass/fail/norec）AI 无法定位失败项与原因，
+        # 补 item_key / name / unit / verdict / notes，使结果摘要可被准确解读。
+        s["items"] = [
+            {
+                "item_key": it.item_key,
+                "name": it.name,
+                "unit": it.unit,
+                "passed": "N/A" if it.passed is None else ("PASS" if it.passed else "FAIL"),
+                "notes": it.notes,
+            }
+            for it in r.items
+        ]
         return s
 
     # ------------------------------------------------------------------ UIActionSpec

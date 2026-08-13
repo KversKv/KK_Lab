@@ -76,7 +76,12 @@ def test_ai_contract_behaviour():
     # LDO 注册表默认全不勾选 → 未勾选拦截
     ok2, msg2 = sub.ai_start_test()
     assert ok2 is False and "勾选" in msg2
-    assert sub.ai_get_result_summary() is None
+    # 无结果时返回最小摘要（available=False），而非 None——让 AI 能区分"未跑过"
+    summary = sub.ai_get_result_summary()
+    assert summary is not None
+    assert summary["available"] is False
+    assert summary["module_type"] == "ldo"
+    assert summary["running"] is False
 
 
 def test_run_state_machine_toggle():
