@@ -459,6 +459,7 @@ CARD_SERIAL_STYLE = "font-size: 9px; color: #667ba0; border: none;"
 CARD_MODEL_STYLE = "font-size: 13px; font-weight: bold; color: #eaf2ff; border: none;"
 CARD_IP_STYLE = "font-size: 11px; color: #8eb0e3; border: none;"
 CARD_THUMB_STYLE = "border: none; border-radius: 4px;"
+CARD_VISA_STYLE = "font-size: 9px; color: #5a6f96; border: none; background: transparent; padding: 0px 2px;"
 
 # ---- 采样周期 / 监控时长 -------------------------------------------------------
 

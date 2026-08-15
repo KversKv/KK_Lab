@@ -1309,6 +1309,10 @@ class N6705CDatalogUI(QWidget):
         connected=False 时仅在当前已连接的情况下清空槽位。
         """
         if connected:
+            was_connected = (
+                (label == "A" and self.is_connected_a)
+                or (label == "B" and self.is_connected_b)
+            )
             if label == "A":
                 self.n6705c_a = instance
                 self.is_connected_a = True
@@ -1317,6 +1321,8 @@ class N6705CDatalogUI(QWidget):
                 self.is_connected_b = True
             self._assign_slot(label, serial, "N6705C", visa_resource)
             self._ensure_device_card_exists(serial, "N6705C", visa_resource)
+            if not was_connected and self.instrument_panel.isVisible():
+                self._collapse_instrument_panel()
         else:
             if label == "A" and self.is_connected_a:
                 self.n6705c_a = None
@@ -2228,54 +2234,80 @@ class N6705CDatalogUI(QWidget):
     def _create_device_card(self, serial, model, ip_addr, visa_resource):
         card = QFrame()
         card.setObjectName("cardFrame")
-        card.setFixedHeight(70)
-        card_layout = QHBoxLayout(card)
-        card_layout.setContentsMargins(10, 8, 10, 8)
-        card_layout.setSpacing(10)
+        card.setFixedHeight(72)
+        card_layout = QGridLayout(card)
+        card_layout.setContentsMargins(8, 6, 8, 6)
+        card_layout.setHorizontalSpacing(8)
+        card_layout.setVerticalSpacing(2)
 
-        icon_layout = QVBoxLayout()
-        icon_layout.setSpacing(2)
+        # 左侧图标列（跨第 0、1 行）：仅缩略图，垂直居中
+        icon_widget = QWidget()
+        icon_widget.setStyleSheet("background: transparent; border: none;")
+        icon_widget.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        icon_layout = QVBoxLayout(icon_widget)
+        icon_layout.setContentsMargins(0, 0, 0, 0)
+        icon_layout.setSpacing(0)
         thumb_label = QLabel()
         thumb_label.setStyleSheet(dss.CARD_THUMB_STYLE)
-        thumb_label.setFixedSize(64, 38)
+        thumb_label.setFixedSize(48, 30)
         svg_path = os.path.join(get_resource_base(), "resources", "pages", "n6705c_power_analyzer_SVGs", "n6705c_thumb.svg")
         if os.path.exists(svg_path):
-            pixmap = QPixmap(64, 38)
+            pixmap = QPixmap(48, 30)
             pixmap.fill(QColor(0, 0, 0, 0))
             renderer = QSvgRenderer(svg_path)
             painter = QPainter(pixmap)
             renderer.render(painter)
             painter.end()
             thumb_label.setPixmap(pixmap)
-        serial_label = QLabel(serial)
-        serial_label.setStyleSheet(dss.CARD_SERIAL_STYLE)
-        serial_label.setAlignment(Qt.AlignCenter)
+        icon_layout.addStretch()
         icon_layout.addWidget(thumb_label)
-        icon_layout.addWidget(serial_label)
-        card_layout.addLayout(icon_layout)
+        icon_layout.addStretch()
+        card_layout.addWidget(icon_widget, 0, 0, 2, 1)
 
-        info_layout = QVBoxLayout()
+        # 中间信息列（跨第 0、1 行）：型号 + IP
+        info_widget = QWidget()
+        info_widget.setStyleSheet("background: transparent; border: none;")
+        info_widget.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        info_layout = QVBoxLayout(info_widget)
+        info_layout.setContentsMargins(0, 0, 0, 0)
         info_layout.setSpacing(2)
+        # 上下 addStretch 让 model+ip 在跨两行的空间内垂直居中，与图标对齐
+        info_layout.addStretch()
         model_label = QLabel(model)
         model_label.setStyleSheet(dss.CARD_MODEL_STYLE)
         ip_label = QLabel(ip_addr)
         ip_label.setStyleSheet(dss.CARD_IP_STYLE)
         info_layout.addWidget(model_label)
         info_layout.addWidget(ip_label)
-        card_layout.addLayout(info_layout, 1)
+        info_layout.addStretch()
+        card_layout.addWidget(info_widget, 0, 1, 2, 1)
 
+        # 第 2 行：完整 VISA 地址（跨越图标列 + 信息列）。
+        # 用 QLineEdit(ReadOnly) 而非 QLabel：QLabel 的 minimumSizeHint 由文本宽度决定，
+        # 长 VISA 串会撑开 QGridLayout 列宽；QLineEdit 的 minimumSizeHint 很小，不会撑开。
+        visa_label = QLineEdit(visa_resource)
+        visa_label.setReadOnly(True)
+        visa_label.setStyleSheet(dss.CARD_VISA_STYLE)
+        visa_label.setToolTip(visa_resource)
+        visa_label.setCursor(Qt.IBeamCursor)
+        visa_label.setFrame(False)
+        card_layout.addWidget(visa_label, 2, 0, 1, 2)
+
+        # 右侧按钮列（跨全部 3 行）
         connect_btn = QPushButton()
         update_connect_button_state(connect_btn, connected=False)
-        connect_btn.setFixedWidth(120)
+        connect_btn.setFixedWidth(116)
         connect_btn.clicked.connect(lambda: self._on_device_connect(visa_resource, serial))
-        card_layout.addWidget(connect_btn)
+        card_layout.addWidget(connect_btn, 0, 2, 3, 1)
 
         disconnect_btn = QPushButton()
         update_connect_button_state(disconnect_btn, connected=True)
-        disconnect_btn.setFixedWidth(120)
+        disconnect_btn.setFixedWidth(116)
         disconnect_btn.clicked.connect(lambda: self._on_device_disconnect(serial))
         disconnect_btn.hide()
-        card_layout.addWidget(disconnect_btn)
+        card_layout.addWidget(disconnect_btn, 0, 2, 3, 1)
+
+        card_layout.setColumnStretch(1, 1)
 
         card.setProperty("visa_resource", visa_resource)
         card.setProperty("serial", serial)
@@ -2454,6 +2486,9 @@ class N6705CDatalogUI(QWidget):
         self._refresh_channel_config(force=True)
         self._sync_device_card_states()
         self._update_time_offset_btn_visibility()
+
+        if self.instrument_panel.isVisible():
+            self._collapse_instrument_panel()
 
     def _on_connect_error(self, serial, error_msg=None):
         logger.error("Datalog UI connect failed: serial=%s, error=%s", serial, error_msg)
