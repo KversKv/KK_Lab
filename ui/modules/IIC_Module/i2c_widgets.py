@@ -308,10 +308,18 @@ class BitsTable(QTableWidget):
         hdr = self.horizontalHeader()
         hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         hdr.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        hdr.setSectionResizeMode(2, QHeaderView.Stretch)
-        hdr.setSectionResizeMode(3, QHeaderView.Stretch)
+        # Field / Desc 改为 Interactive，允许用户拖拽分隔线改变列宽；
+        # 在用户首次拖拽前由 resizeEvent 按比例自动分配以保持原本 Stretch 的填满效果
+        hdr.setSectionResizeMode(2, QHeaderView.Interactive)
+        hdr.setSectionResizeMode(3, QHeaderView.Interactive)
         hdr.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        hdr.setStretchLastSection(False)
+        self.setColumnWidth(2, 140)
+        self.setColumnWidth(3, 240)
+        self._user_resized_field_desc = False
+        self._in_field_desc_layout = False
         hdr.setSectionsClickable(True)
+        hdr.sectionResized.connect(self._on_section_resized)
         hdr.sectionClicked.connect(self._on_header_clicked)
         self._build_rows()
         self.cellChanged.connect(self._on_cell_changed)
@@ -329,6 +337,37 @@ class BitsTable(QTableWidget):
         chosen = menu.exec(QCursor.pos())
         if chosen is not None:
             self.set_field_base(chosen.data())
+
+    def _on_section_resized(self, logical_index, _old_size, _new_size):
+        """用户拖拽 Field/Desc 列分隔线时，停止后续自动分配，尊重用户设定。"""
+        if logical_index in (2, 3) and not self._in_field_desc_layout:
+            self._user_resized_field_desc = True
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if not self._user_resized_field_desc:
+            self._distribute_field_desc_widths()
+
+    def _distribute_field_desc_widths(self):
+        """按 3:7 比例将视口剩余宽度分配给 Field / Desc，保持 Stretch 视觉。"""
+        viewport_w = self.viewport().width()
+        if viewport_w <= 0:
+            return
+        fixed_w = (self.columnWidth(0) + self.columnWidth(1)
+                   + self.columnWidth(4))
+        available = viewport_w - fixed_w
+        if available <= 0:
+            return
+        field_w = max(80, int(available * 0.3))
+        desc_w = max(100, available - field_w)
+        self._in_field_desc_layout = True
+        try:
+            if self.columnWidth(2) != field_w:
+                self.setColumnWidth(2, field_w)
+            if self.columnWidth(3) != desc_w:
+                self.setColumnWidth(3, desc_w)
+        finally:
+            self._in_field_desc_layout = False
 
     def set_edit_mode(self, enabled):
         """开启/关闭 Field/Desc 列的内联编辑。"""
