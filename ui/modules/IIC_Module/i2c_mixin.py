@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QButtonGroup, QPlainTextEdit, QSplitter,
 )
 from PySide6.QtCore import Qt, QThread
-from PySide6.QtGui import QColor, QAction
+from PySide6.QtGui import QColor
 
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
@@ -28,8 +28,8 @@ from ui.modules.IIC_Module.i2c_constants import (
 )
 from ui.modules.IIC_Module.i2c_styles import (
     _i2c_input_style, _i2c_read_btn_style, _i2c_write_btn_style,
-    _i2c_subtle_btn_style, _i2c_collapse_arrow_style, _i2c_table_qss,
-    _nav_tab_style,
+    _i2c_subtle_btn_style,
+    _i2c_collapse_arrow_style, _i2c_table_qss, _nav_tab_style,
 )
 from ui.modules.IIC_Module.i2c_workers import (
     _I2cReadWorker, _I2cWriteWorker, _I2cChipCheckWorker, _I2cSequenceWorker,
@@ -44,7 +44,8 @@ from ui.modules.IIC_Module.i2c_persistence import (
     _load_i2c_state, _save_i2c_state, _tpl_filename_for,
 )
 from ui.modules.IIC_Module.i2c_widgets import (
-    HexLineEdit, RegAddrInput, DataValueInput, BitsTableContainer, _ToggleSwitch,
+    HexLineEdit, RegAddrInput, DataValueInput, BitsTableContainer,
+    I2cSearchDialog, _ToggleSwitch,
 )
 
 logger = get_logger(__name__)
@@ -343,6 +344,13 @@ class I2cMixin:
         self.i2c_data_edit = DataValueInput(self._i2c_data_bits)
         f_row.addWidget(self.i2c_data_edit, 1)
 
+        # 搜索按钮：点击弹出搜索弹窗（Field / Desc 搜索 + 结果列表）
+        self.i2c_search_btn = QPushButton("Search")
+        self.i2c_search_btn.setFixedHeight(I2C_BTN_HEIGHT)
+        self.i2c_search_btn.setCursor(Qt.PointingHandCursor)
+        self.i2c_search_btn.setStyleSheet(_i2c_subtle_btn_style())
+        f_row.addWidget(self.i2c_search_btn)
+
         self.i2c_read_btn = QPushButton("Read")
         self.i2c_read_btn.setFixedHeight(I2C_BTN_HEIGHT)
         self.i2c_read_btn.setCursor(Qt.PointingHandCursor)
@@ -570,6 +578,10 @@ class I2cMixin:
 
         v.addWidget(self._i2c_seq_content)
 
+        # 默认折叠（用户可点击 ▶ 展开）
+        self._i2c_seq_content.setVisible(False)
+        self._i2c_seq_collapse_btn.setText("▶")
+
         # 加载已存脚本
         self._i2c_seq_reload_list()
         layout.addWidget(card)
@@ -656,6 +668,8 @@ class I2cMixin:
         self.i2c_write_btn.clicked.connect(self._on_i2c_write)
         self.i2c_data_edit.value_changed.connect(self._on_i2c_data_edited)
         self.i2c_reg_edit.value_changed.connect(self._on_i2c_reg_addr_edited)
+        # 搜索按钮：点击弹出搜索弹窗
+        self.i2c_search_btn.clicked.connect(self._on_i2c_search_btn_clicked)
         self.i2c_bits.bit_toggled.connect(self._on_i2c_bit_toggled)
         self.i2c_bits.field_edited.connect(self._on_i2c_field_edited)
         self.i2c_bits.field_context_menu.connect(self._on_i2c_bits_context_menu)
@@ -808,11 +822,18 @@ class I2cMixin:
         self._i2c_refresh_field_values()
 
     def _on_i2c_reg_addr_edited(self, _value):
-        """Reg Addr 变化 → 按 reg_addr 在模板寄存器列表中查找并切换字段预览。"""
+        """Reg Addr 变化 → 按 reg_addr 在模板寄存器列表中查找并切换字段预览。
+        切换后默认清空 Data Value，避免出现 Data Value 与新 Reg Addr 不匹配的情况。"""
+        # 切到新的 Reg Addr：先把当前编辑的字段回写到活动寄存器，避免丢失
+        self._i2c_sync_active_register_fields()
+        # 清空 Data Value（数据现在与旧 Reg Addr 关联，已"过期"）
+        self._i2c_data_value = 0
+        self.i2c_data_edit.set_value(0)
+        self.i2c_bits.set_value(0)
+        self._i2c_refresh_bin_label()
+        self._i2c_refresh_field_values()
         if not getattr(self, "_i2c_registers", None):
             return
-        # 先把当前编辑的字段回写到活动寄存器，避免切换后丢失
-        self._i2c_sync_active_register_fields()
         addr = self._i2c_current_reg()
         for i, reg in enumerate(self._i2c_registers):
             ra = _parse_hex_int(reg.get("reg_addr", "")) or 0
@@ -820,12 +841,34 @@ class I2cMixin:
                 self._i2c_active_reg_index = i
                 self._i2c_fields = copy.deepcopy(reg.get("bit_fields", []))
                 self.i2c_bits.set_fields(self._i2c_fields)
-                self.i2c_bits.set_value(self._i2c_data_value)
                 return
         # 未匹配：清空字段，标记无活动寄存器
         self._i2c_active_reg_index = None
         self._i2c_fields = []
         self.i2c_bits.set_fields([])
+
+    # ---- 字段搜索 ----
+
+    def _on_i2c_search_btn_clicked(self):
+        """点击 Search 按钮 → 打开字段搜索弹窗（搜索全部寄存器的字段）。"""
+        dlg = I2cSearchDialog(
+            self._i2c_registers, self.i2c_bits,
+            on_jump=self._i2c_jump_to_field, parent=self)
+        dlg.show()
+
+    def _i2c_jump_to_field(self, reg_addr_int, field_dict):
+        """双击搜索结果 → 跳转到对应 Reg Addr + 高亮指定位段。"""
+        # 先清除旧高亮（避免切换寄存器后旧索引命中新字段）
+        self.i2c_bits.clear_search_highlight()
+        # 切换 Reg Addr（同步触发 _on_i2c_reg_addr_edited → 加载该寄存器字段到位表）
+        self.i2c_reg_edit.set_value(reg_addr_int, emit=True)
+        # 在新位表中按位段范围找到对应字段并高亮
+        fhi = int(field_dict["high_bit"])
+        flo = int(field_dict["low_bit"])
+        found = self.i2c_bits.find_field_by_bit_range(fhi, flo)
+        if found is not None:
+            tidx, fidx = found
+            self.i2c_bits.highlight_single_match(tidx, fidx)
 
     def _on_i2c_bit_toggled(self, bit_idx):
         mask = (1 << self._i2c_data_bits) - 1

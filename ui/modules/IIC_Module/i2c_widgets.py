@@ -6,14 +6,16 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QLabel, QFrame, QSizePolicy, QTableWidget, QTableWidgetItem,
     QHeaderView, QAbstractItemView, QCheckBox, QMenu,
+    QDialog, QListWidget, QListWidgetItem,
 )
 from PySide6.QtCore import Qt, Signal, QRegularExpression
 from PySide6.QtGui import QColor, QRegularExpressionValidator, QPainter, QCursor
 
+from ui.theme import apply_qss
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.modules.IIC_Module.i2c_constants import (
     I2C_BTN_HEIGHT, SLATE_950, SLATE_900, SLATE_800,
-    INDIGO, INDIGO_LIGHT, EMERALD_LIGHT, TEXT_MUTED,
+    INDIGO, INDIGO_LIGHT, EMERALD_LIGHT, AMBER, AMBER_LIGHT, TEXT_MUTED,
     _fmt_hex, _hex_digits, _parse_hex_int, _fmt_field_value, _FIELD_BASES,
 )
 from ui.modules.IIC_Module.i2c_styles import (
@@ -323,6 +325,10 @@ class BitsTable(QTableWidget):
         hdr.sectionClicked.connect(self._on_header_clicked)
         self._build_rows()
         self.cellChanged.connect(self._on_cell_changed)
+        # 搜索高亮状态：_search_matched_fields = 命中的本地 field 索引集合；
+        # _search_current_field = 当前轮转到的命中 field 索引（None 表示无）
+        self._search_matched_fields = set()
+        self._search_current_field = None
 
     def _on_header_clicked(self, logical_index):
         """点击 Hex 列表头弹出进制切换菜单。"""
@@ -497,6 +503,11 @@ class BitsTable(QTableWidget):
         self.clearSpans()
         tint = QColor(INDIGO)
         tint.setAlpha(38)
+        # 搜索命中：琥珀色高亮；当前轮转命中：更亮的高亮
+        match_bg = QColor(AMBER)
+        match_bg.setAlpha(70)
+        current_bg = QColor(AMBER_LIGHT)
+        current_bg.setAlpha(110)
         base_bg = QColor(SLATE_900)
         base_bg.setAlpha(120)
         for i in range(self._count):
@@ -507,7 +518,7 @@ class BitsTable(QTableWidget):
                     it.setBackground(base_bg)
         hi = self._offset + self._count - 1
         lo = self._offset
-        for f in self._fields:
+        for fidx, f in enumerate(self._fields):
             fhi = int(f["high_bit"])
             flo = int(f["low_bit"])
             if fhi < flo:
@@ -527,11 +538,18 @@ class BitsTable(QTableWidget):
             if desc_it is not None:
                 desc_it.setText(f.get("description", ""))
                 desc_it.setForeground(QColor(TEXT_MUTED))
+            # 选择背景色：搜索命中优先于字段默认 tint
+            if fidx == self._search_current_field:
+                bg = current_bg
+            elif fidx in self._search_matched_fields:
+                bg = match_bg
+            else:
+                bg = tint
             for r in range(row_top, row_bot + 1):
                 for c in (2, 3, 4):
                     it = self.item(r, c)
                     if it is not None:
-                        it.setBackground(tint)
+                        it.setBackground(bg)
             if span > 1:
                 for c in (2, 3, 4):
                     self.setSpan(row_top, c, span, 1)
@@ -552,6 +570,37 @@ class BitsTable(QTableWidget):
             it = self.item(row_top, 4)
             if it is not None:
                 it.setText(_fmt_field_value(val, width, self._field_base))
+
+    # ---- 搜索高亮 ----
+
+    def set_search_highlight(self, matched_field_indices, current_field_idx):
+        """更新搜索高亮状态并重绘；current_field_idx 为 None 表示无当前命中。"""
+        self._search_matched_fields = set(matched_field_indices)
+        self._search_current_field = current_field_idx
+        self._apply_fields()
+        if current_field_idx is not None:
+            self._scroll_to_field(current_field_idx)
+
+    def clear_search_highlight(self):
+        self._search_matched_fields = set()
+        self._search_current_field = None
+        self._apply_fields()
+
+    def _scroll_to_field(self, field_idx):
+        if not (0 <= field_idx < len(self._fields)):
+            return
+        f = self._fields[field_idx]
+        fhi = int(f["high_bit"])
+        flo = int(f["low_bit"])
+        if fhi < flo:
+            fhi, flo = flo, fhi
+        c_hi = min(fhi, self._offset + self._count - 1)
+        row_top = self._row_of(c_hi)
+        if 0 <= row_top < self.rowCount():
+            self.scrollToItem(
+                self.item(row_top, 2),
+                QAbstractItemView.PositionAtCenter,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -633,6 +682,184 @@ class BitsTableContainer(QWidget):
     def refresh_fields(self, fields):
         for t in self._tables:
             t.set_fields(fields)
+
+    # ---- 搜索（供 I2cSearchDialog 调用） ----
+
+    def highlight_single_match(self, table_idx, local_field_idx):
+        """高亮单个字段（清除其他高亮）并滚动定位到该字段。"""
+        for tidx, t in enumerate(self._tables):
+            if tidx == table_idx:
+                t.set_search_highlight([local_field_idx], local_field_idx)
+            else:
+                t.clear_search_highlight()
+
+    def find_field_by_bit_range(self, high_bit, low_bit):
+        """在所有子表中查找匹配指定位范围的字段，返回 (table_idx, local_field_idx) 或 None。"""
+        if high_bit < low_bit:
+            high_bit, low_bit = low_bit, high_bit
+        for tidx, t in enumerate(self._tables):
+            for fidx, f in enumerate(t._fields):
+                fhi = int(f["high_bit"])
+                flo = int(f["low_bit"])
+                if fhi < flo:
+                    fhi, flo = flo, fhi
+                if fhi == high_bit and flo == low_bit:
+                    return (tidx, fidx)
+        return None
+
+    def clear_search_highlight(self):
+        """清空所有子表的搜索高亮。"""
+        for t in self._tables:
+            t.clear_search_highlight()
+
+
+# ---------------------------------------------------------------------------
+# 字段搜索弹窗
+# ---------------------------------------------------------------------------
+
+class I2cSearchDialog(QDialog):
+    """Field 搜索弹窗：搜索当前 Template 中所有寄存器的字段（非仅当前页）。
+
+    搜索范围默认仅 Field 名称；勾选 "Include Desc" 后同时搜索描述列。
+    双击结果项 → 跳转到对应 Reg Addr 并高亮位段。
+    关闭弹窗时自动清除位表上的搜索高亮。"""
+
+    def __init__(self, registers, bits_container, on_jump, parent=None):
+        super().__init__(parent)
+        self._registers = registers or []
+        self._bits = bits_container
+        self._on_jump = on_jump  # callback(reg_addr_int, field_dict)
+        self.setWindowTitle("Search Field")
+        self.setModal(False)
+        self.setMinimumSize(500, 400)
+        apply_qss(self, "dialog")
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 14, 16, 12)
+        root.setSpacing(10)
+
+        # 搜索行：输入框 + Include Desc 复选框
+        search_row = QHBoxLayout()
+        search_row.setSpacing(8)
+        self._query_edit = QLineEdit()
+        self._query_edit.setPlaceholderText("输入关键字搜索全部寄存器的 Field…")
+        self._query_edit.setStyleSheet(_i2c_input_style())
+        self._query_edit.setClearButtonEnabled(True)
+        search_row.addWidget(self._query_edit, 1)
+        self._desc_check = QCheckBox("Include Desc")
+        self._desc_check.setCursor(Qt.PointingHandCursor)
+        self._desc_check.setToolTip("勾选后同时搜索描述（Desc）列内容")
+        search_row.addWidget(self._desc_check)
+        root.addLayout(search_row)
+
+        # 结果计数标签
+        self._count_lbl = QLabel("")
+        self._count_lbl.setObjectName("muted")
+        root.addWidget(self._count_lbl)
+
+        # 结果列表
+        self._result_list = QListWidget()
+        self._result_list.setStyleSheet(_i2c_table_qss())
+        self._result_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._result_list.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self._result_list.setUniformItemSizes(True)
+        root.addWidget(self._result_list, 1)
+
+        # 提示行
+        hint = QLabel("双击结果项跳转到对应 Reg Addr 并高亮位段")
+        hint.setObjectName("muted")
+        root.addWidget(hint)
+
+        # 底部关闭按钮
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        close_btn = QPushButton("Close")
+        close_btn.setDefault(True)
+        close_btn.setAutoDefault(False)
+        close_btn.setCursor(Qt.PointingHandCursor)
+        close_btn.clicked.connect(self.accept)
+        btn_row.addWidget(close_btn)
+        root.addLayout(btn_row)
+
+        # 信号：输入框文本变化 / 复选框切换 → 重新搜索
+        self._query_edit.textChanged.connect(self._refresh_results)
+        self._desc_check.toggled.connect(self._refresh_results)
+        # 双击结果项 → 跳转
+        self._result_list.itemDoubleClicked.connect(self._on_result_double_clicked)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._query_edit.setFocus()
+        self._refresh_results()
+
+    def _refresh_results(self):
+        """搜索所有寄存器的 bit_fields，刷新结果列表。"""
+        query = self._query_edit.text()
+        include_desc = self._desc_check.isChecked()
+        q = (query or "").strip().lower()
+        self._result_list.blockSignals(True)
+        self._result_list.clear()
+        n = 0
+        if q:
+            for reg in self._registers:
+                reg_addr_str = reg.get("reg_addr", "0x0")
+                reg_addr_int = _parse_hex_int(reg_addr_str) or 0
+                reg_name = reg.get("name", "")
+                for f in reg.get("bit_fields", []):
+                    name = (f.get("name") or "").lower()
+                    matched = q in name
+                    if not matched and include_desc:
+                        desc = (f.get("description") or "").lower()
+                        matched = q in desc
+                    if matched:
+                        fhi = int(f["high_bit"])
+                        flo = int(f["low_bit"])
+                        if fhi < flo:
+                            fhi, flo = flo, fhi
+                        bit_range = f"[{fhi}:{flo}]" if fhi != flo else f"[{fhi}]"
+                        fname = f.get("name", "")
+                        fdesc = f.get("description", "")
+                        addr_fmt = _fmt_hex(reg_addr_int, _hex_digits(16))
+                        parts = [addr_fmt, reg_name, fname, bit_range]
+                        if fdesc:
+                            parts.append(f"— {fdesc}")
+                        display = "  ".join(p for p in parts if p)
+                        item = QListWidgetItem(display)
+                        item.setData(Qt.UserRole, (reg_addr_int, f))
+                        item.setToolTip(f"双击跳转到 {addr_fmt}")
+                        self._result_list.addItem(item)
+                        n += 1
+        self._result_list.blockSignals(False)
+        # 更新计数标签
+        if not q:
+            self._count_lbl.setText("")
+        elif n == 0:
+            self._count_lbl.setText(
+                f"无匹配结果（{'Field + Desc' if include_desc else 'Field only'}）")
+        else:
+            self._count_lbl.setText(
+                f"{n} 个匹配（{'Field + Desc' if include_desc else 'Field only'}）")
+
+    def _on_result_double_clicked(self, item):
+        """双击结果项 → 跳转到对应 Reg Addr 并高亮位段。"""
+        data = item.data(Qt.UserRole)
+        if data is None:
+            return
+        reg_addr_int, field_dict = data
+        if self._on_jump is not None:
+            self._on_jump(reg_addr_int, field_dict)
+
+    def closeEvent(self, event):
+        self._bits.clear_search_highlight()
+        super().closeEvent(event)
+
+    def accept(self):
+        self._bits.clear_search_highlight()
+        super().accept()
+
+    def reject(self):
+        self._bits.clear_search_highlight()
+        super().reject()
 
 
 class _ToggleSwitch(QCheckBox):
