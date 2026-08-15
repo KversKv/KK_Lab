@@ -42,7 +42,8 @@ KK_Lab/
 ├── tests/                   # 轻量回归测试
 ├── tools/                   # 开发辅助脚本 (SVG→ICO 转换等，不进打包产物)
 ├── Results/                 # 测试结果输出目录 (运行时生成，Git 不跟踪)
-└── userdata/                # 用户态数据（Orchestrator 模板 / 最近序列等）
+├── presets/                 # 入库的只读种子模板 (Orchestrator 示例序列等)
+└── Temp/                    # 临时文件收容 (调试产物/会话导出等，Git 不跟踪)
 
 ================================================================================
   chips/ - BES 芯片配置
@@ -84,7 +85,7 @@ core/
 │   ├── executor.py          # OrchestratorExecutor / ExecutorThread（QtCore 信号，无 QtWidgets）
 │   ├── history.py           # run folder artifact 写入（manifest / snapshot / report / logs）
 │   ├── macros.py            # Sub-sequence / macro 复用模型
-│   ├── paths.py             # userdata/orchestrator_templates 与 recent sequences 路径
+│   ├── paths.py             # presets/orchestrator_templates 与 recent sequences 路径
 │   ├── remote.py            # headless / remote run request 模型
 │   ├── reports.py           # report.html 生成器
 │   ├── resolver.py          # InstrumentResolver：节点 capability → runtime adapter / lease 解析
@@ -756,22 +757,24 @@ user_data/                   # 仅开发态存在; 打包后由 ui/resource_path
 │   ├── config.json             # AISettings 持久化
 │   ├── user_prompt.md          # 用户层 Prompt (本机, 拼装于项目层之后/动态层之前)
 │   └── history/                # 按 session_key 隔离的会话历史 (<page_key>.json / _default.json)
-└── SerialCom/               # SerialCom 模块的配置 / 快捷指令 (config.json / quick_commands.json)
+├── SerialCom/               # SerialCom 模块的配置 / 快捷指令 (config.json / quick_commands.json)
+└── orchestrator/            # Orchestrator 运行时数据 (orchestrator_recent.json 最近序列)
 
-userdata/
-├── orchestrator_templates/   # Orchestrator 用户态模板（v2 JSON）
-│   ├── GPADC_Vsys_Channel.json
-│   ├── bes1505Icore_test.json
-│   ├── case1_power_vs_temp.json
-│   ├── case2_gpadc_vs_temp_vout.json
-│   ├── case3_clk_vs_temp.json
-│   ├── case4.json
-│   ├── case5_clk_vs_vout.json
-│   ├── sample_chamber_n6705c_loop.json
-│   ├── sample_i2c_register_sweep.json
-│   ├── sample_n6705c_voltage_sweep.json
-│   └── sample_uart_send_receive.json
-└── orchestrator_recent.json  # 最近打开的 Orchestrator 序列（运行时生成）
+presets/
+└── orchestrator_templates/   # Orchestrator 示例模板（v2 JSON，入库只读种子）
+    ├── GPADC_Vsys_Channel.json
+    ├── bes1505Icore_test.json
+    ├── case1_power_vs_temp.json
+    ├── case2_gpadc_vs_temp_vout.json
+    ├── case3_clk_vs_temp.json
+    ├── case4.json
+    ├── case5_clk_vs_vout.json
+    ├── sample_chamber_n6705c_loop.json
+    ├── sample_i2c_register_sweep.json
+    ├── sample_n6705c_voltage_sweep.json
+    └── sample_uart_send_receive.json
+
+Temp/                         # 临时文件收容（Git 不跟踪）：调试产物 / 会话导出 / 数据手册提取等
 
 ================================================================================
   分层与规则速查

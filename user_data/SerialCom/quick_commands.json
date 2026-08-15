@@ -1,0 +1,49 @@
+{
+  "version": "1.0",
+  "last_project_id": "project_fbeb006a",
+  "last_group_id": "group_6a4e0f8e",
+  "projects": [
+    {
+      "id": "project_fbeb006a",
+      "name": "test",
+      "groups": [
+        {
+          "id": "group_6a4e0f8e",
+          "name": "默认分组",
+          "commands": []
+        }
+      ]
+    },
+    {
+      "id": "project_837b1d7f",
+      "name": "test2",
+      "groups": [
+        {
+          "id": "group_0ae453a3",
+          "name": "默认分组",
+          "commands": []
+        }
+      ]
+    },
+    {
+      "id": "project_default",
+      "name": "Ibrt",
+      "groups": [
+        {
+          "id": "group_default",
+          "name": "默认分组",
+          "commands": [
+            {
+              "id": "cmd_ee23899b",
+              "name": "test",
+              "content": "asds s",
+              "send_type": "text",
+              "line_ending": "\r\n",
+              "encoding": "ascii"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

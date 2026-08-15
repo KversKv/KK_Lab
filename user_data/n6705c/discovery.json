@@ -1,0 +1,4 @@
+{
+  "_comment": "extra_subnets 里填要主动扫描的跨网段(CIDR)，例如 10.31.40.0/24；mDNS 只能发现本广播域内仪器。",
+  "extra_subnets": []
+}

@@ -1,0 +1,16 @@
+{
+  "rx_display_hex": false,
+  "tx_display_hex": false,
+  "show_timestamp": true,
+  "auto_resend": false,
+  "resend_interval": 1000,
+  "line_ending": "\r\n",
+  "show_send": true,
+  "line_by_line": false,
+  "sidebar_visible": true,
+  "send_history": [
+    "test3",
+    "test2",
+    "test"
+  ]
+}

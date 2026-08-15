@@ -1,0 +1,206 @@
+{
+  "version": "2.0",
+  "serial": {
+    "port": "COM3 - Intel(R) Active Management Technology - SOL (COM3)",
+    "baudrate": "921600",
+    "auto_detect": false,
+    "databits": "8",
+    "stopbits": "1",
+    "parity": "None",
+    "flow_control": "None",
+    "auto_detect_config": {
+      "runtime_redetect_enabled": false,
+      "candidate_baudrates": [
+        921600,
+        1152000,
+        2000000,
+        3000000
+      ],
+      "lock_threshold": 80,
+      "bad_threshold": 55,
+      "bad_windows_to_suspect": 2,
+      "suspect_windows_to_scan": 1,
+      "monitor_window_max_time_ms": 100,
+      "switch_cooldown_ms": 3000,
+      "switch_score_margin": 25,
+      "confirm_scan_rounds": 2
+    }
+  },
+  "ui": {
+    "rx_display_hex": false,
+    "tx_display_hex": false,
+    "show_timestamp": true,
+    "use_ntp": false,
+    "line_ending": "\r\n",
+    "show_send": true,
+    "show_system_log": true,
+    "line_by_line": false,
+    "sidebar_visible": true,
+    "center_split_sizes": [
+      1083,
+      178
+    ],
+    "log_auto_save": false,
+    "log_save_path": ""
+  },
+  "send_history": [
+    "test2",
+    "test1"
+  ],
+  "quick_commands": {
+    "version": "1.0",
+    "last_project_id": "project_fbeb006a",
+    "last_group_id": "group_6a4e0f8e",
+    "projects": [
+      {
+        "id": "project_fbeb006a",
+        "name": "test",
+        "groups": [
+          {
+            "id": "group_6a4e0f8e",
+            "name": "默认分组",
+            "commands": [
+              {
+                "id": "cmd_7ef0ee04",
+                "name": "test1",
+                "content": "hihojh",
+                "send_type": "text",
+                "line_ending": "\r\n",
+                "encoding": "ascii"
+              },
+              {
+                "id": "cmd_1fe0c01c",
+                "name": "test2",
+                "content": "asfd",
+                "send_type": "text",
+                "line_ending": "\r\n",
+                "encoding": "ascii"
+              }
+            ]
+          },
+          {
+            "id": "group_ab9fd36a",
+            "name": "hdh",
+            "commands": [
+              {
+                "id": "cmd_77498d61",
+                "name": "dasd",
+                "content": "hasih",
+                "send_type": "text",
+                "line_ending": "\r\n",
+                "encoding": "ascii"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "project_default",
+        "name": "Ibrt",
+        "groups": [
+          {
+            "id": "group_default",
+            "name": "默认分组",
+            "commands": [
+              {
+                "id": "cmd_ee23899b",
+                "name": "test",
+                "content": "asds s",
+                "send_type": "text",
+                "line_ending": "\r\n",
+                "encoding": "ascii"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "project_837b1d7f",
+        "name": "test2",
+        "groups": [
+          {
+            "id": "group_0ae453a3",
+            "name": "默认分组",
+            "commands": []
+          }
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "version": "1.0",
+    "last_script_id": "",
+    "scripts": []
+  },
+  "chart": {
+    "enabled": true,
+    "capture_when_dialog_closed": false,
+    "max_points_default": 20000,
+    "stat_metrics": [
+      "count",
+      "mean",
+      "max",
+      "min",
+      "std"
+    ],
+    "rules": [
+      {
+        "rule_id": "rule_gpadcvolt",
+        "name": "gpadc_volt",
+        "enabled": true,
+        "source_session": "active",
+        "input_mode": "line",
+        "match_mode": "regex",
+        "keyword_before": "",
+        "keyword_after": "",
+        "regex": "ch=(?P<channel>\\d+)\\s+i=(?P<seq>\\d+)\\s+volt=(?P<volt>\\d+)",
+        "case_sensitive": false,
+        "field_specs": [
+          {
+            "name": "volt",
+            "type": "int",
+            "unit": "mV",
+            "group": "",
+            "enum_map": {},
+            "pass_fail_map": {}
+          }
+        ],
+        "emit_policy": "each_match",
+        "timestamp_mode": "sequence_index",
+        "frame_start": "",
+        "frame_end": ""
+      }
+    ],
+    "series": [
+      {
+        "series_id": "series_gpadcvolt",
+        "name": "volt",
+        "enabled": true,
+        "source_type": "field",
+        "rule_id": "rule_gpadcvolt",
+        "field_name": "volt",
+        "group_by": "channel",
+        "channels": "0, 1,2",
+        "channel_display": "split",
+        "chart_type": "line",
+        "axis": "left",
+        "color": "#15d1a3",
+        "max_points": 20000,
+        "time_window_s": 0.0,
+        "operation": "add",
+        "source_a": "",
+        "source_b": "",
+        "op_window": 100,
+        "op_value": 1.0,
+        "op_scale": 1.0
+      }
+    ]
+  },
+  "window": {
+    "x": 38,
+    "y": 325,
+    "width": 1592,
+    "height": 969,
+    "maximized": true
+  }
+}

@@ -1,0 +1,213 @@
+{
+  "name": "SY6105",
+  "device_addr": "0x07",
+  "speed_mode": 2,
+  "data_bits": 8,
+  "reg_bits": 8,
+  "registers": [
+    {
+      "name": "DPM_SET",
+      "reg_addr": "0x00",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "DPM 设置 (Reset:0x86)",
+      "bit_fields": [
+        {"name": "VINDPM_SET", "high_bit": 7, "low_bit": 6, "description": "00:dis 01:4.2V 10:4.6V 11:4.7V"},
+        {"name": "IPRE_SET",   "high_bit": 5, "low_bit": 2, "description": "预充电流 1m+2m*N"},
+        {"name": "IINDPM_SET", "high_bit": 1, "low_bit": 0, "description": "00:dis 01:300mA 10:500mA 11:1200mA"}
+      ]
+    },
+    {
+      "name": "SYS_CTRL0",
+      "reg_addr": "0x01",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "系统控制0 (Reset:0xA2)",
+      "bit_fields": [
+        {"name": "RSTLEVEL",   "high_bit": 7, "low_bit": 6, "description": "11:20s 10:16s 01:12s 00:8s"},
+        {"name": "TRST_DUR",   "high_bit": 5, "low_bit": 5, "description": "1:4s 0:2s"},
+        {"name": "EN_HiZ",     "high_bit": 4, "low_bit": 4, "description": "1:enable 0:disable"},
+        {"name": "CEB",        "high_bit": 3, "low_bit": 3, "description": "1:disable 0:enable 充电"},
+        {"name": "ICC_Offset", "high_bit": 2, "low_bit": 2, "description": "1:+248mA offset 0:+0mA"},
+        {"name": "VBAT_UVLO",  "high_bit": 1, "low_bit": 0, "description": "00:2.42V 01:2.64V 10:2.82V 11:2.9V"}
+      ]
+    },
+    {
+      "name": "SYS_CTRL1",
+      "reg_addr": "0x02",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "系统控制1 (Reset:0x00)",
+      "bit_fields": [
+        {"name": "REG_RST", "high_bit": 7, "low_bit": 7, "description": "1:寄存器复位 (W1C)"},
+        {"name": "WDT_RST", "high_bit": 6, "low_bit": 6, "description": "1:看门狗复位 (W1C)"},
+        {"name": "ICC_SET", "high_bit": 5, "low_bit": 0, "description": "CC快充电流 8m+8m*N"}
+      ]
+    },
+    {
+      "name": "IDSG_ITERM_SET",
+      "reg_addr": "0x03",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "放电/终止电流 (Reset:0x81)",
+      "bit_fields": [
+        {"name": "IBATFET_OCP",    "high_bit": 7, "low_bit": 6, "description": "00:dis 01:1000mA 10:2000mA 11:3200mA"},
+        {"name": "IPRE_Quadruple", "high_bit": 5, "low_bit": 5, "description": "1:预充4倍"},
+        {"name": "ITERM_Double",   "high_bit": 4, "low_bit": 4, "description": "1:终止电流2倍"},
+        {"name": "ITERM_SET",      "high_bit": 3, "low_bit": 0, "description": "终止电流 1m+2m*N"}
+      ]
+    },
+    {
+      "name": "BAT_VOL_SET",
+      "reg_addr": "0x04",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "电池电压设置 (Reset:0x23)",
+      "bit_fields": [
+        {"name": "VBAT_Target", "high_bit": 7, "low_bit": 3, "description": "CV目标电压 4.0-4.59V"},
+        {"name": "BAT_LOW",     "high_bit": 2, "low_bit": 2, "description": "0:3.3V 1:3.5V 低电告警"},
+        {"name": "VBAT_PRE",    "high_bit": 1, "low_bit": 1, "description": "1:3.0V 0:2.8V 预充阈值"},
+        {"name": "VRE_CHG",     "high_bit": 0, "low_bit": 0, "description": "1:200mV 0:100mV 复充"}
+      ]
+    },
+    {
+      "name": "SYS_CTRL2",
+      "reg_addr": "0x05",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "系统控制2 (Reset:0x78)",
+      "bit_fields": [
+        {"name": "EN_WDT_DSG",     "high_bit": 7, "low_bit": 7, "description": "放电看门狗 1:en 0:dis"},
+        {"name": "WDT_TIMER",      "high_bit": 6, "low_bit": 5, "description": "11:160s 10:80s 01:40s 00:dis"},
+        {"name": "EOC_EN",         "high_bit": 4, "low_bit": 4, "description": "1:允许终止 0:禁止"},
+        {"name": "EN_TIMER",       "high_bit": 3, "low_bit": 3, "description": "安全定时器 1:en 0:dis"},
+        {"name": "CHG_TIMER",      "high_bit": 2, "low_bit": 2, "description": "1:8h 0:5h"},
+        {"name": "Ultra_Low_Power","high_bit": 1, "low_bit": 1, "description": "超低功耗 1:en 0:dis"},
+        {"name": "VBUS_RESET_EN",  "high_bit": 0, "low_bit": 0, "description": "VBUS插入VSYS复位 1:en"}
+      ]
+    },
+    {
+      "name": "SYS_CTRL3",
+      "reg_addr": "0x06",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "系统控制3/中断掩码 (Reset:0x40)",
+      "bit_fields": [
+        {"name": "NTC_EN",           "high_bit": 7, "low_bit": 7, "description": "NTC使能 1:en 0:dis"},
+        {"name": "TMR2X_EN",         "high_bit": 6, "low_bit": 6, "description": "DPM/热 定时器2倍"},
+        {"name": "BATFET_DIS",       "high_bit": 5, "low_bit": 5, "description": "1:强制关BATFET 进船运模式"},
+        {"name": "PG_INT_CONTROL",   "high_bit": 4, "low_bit": 4, "description": "PG中断 1:off 0:on"},
+        {"name": "CHG_DONE_INT_EN",  "high_bit": 3, "low_bit": 3, "description": "充电完成中断 1:off 0:on"},
+        {"name": "CHG_STAT_INT_EN",  "high_bit": 2, "low_bit": 2, "description": "充电状态变化中断 1:off 0:on"},
+        {"name": "NTC_Transition_EN","high_bit": 1, "low_bit": 1, "description": "温区变化中断 1:off 0:on"},
+        {"name": "BATOVP_INT_EN",    "high_bit": 0, "low_bit": 0, "description": "电池OVP中断 1:off 0:on"}
+      ]
+    },
+    {
+      "name": "SYS_CTRL4",
+      "reg_addr": "0x07",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "系统控制4 (Reset:0x0A)",
+      "bit_fields": [
+        {"name": "COLD_RESET",  "high_bit": 7, "low_bit": 7, "description": "1:VSYS软复位 (W1C)"},
+        {"name": "NTC_HOT",     "high_bit": 6, "low_bit": 5, "description": "00:45 01:50 10:55 11:60℃"},
+        {"name": "THERMAL_REG", "high_bit": 4, "low_bit": 4, "description": "0:120℃ 1:disable"},
+        {"name": "WDT_VSYS_RST","high_bit": 3, "low_bit": 3, "description": "看门狗故障VSYS复位 1:en"},
+        {"name": "KEY_WK_SET",  "high_bit": 2, "low_bit": 2, "description": "1:125-187ms 0:2-3s"},
+        {"name": "VSYS_REG",    "high_bit": 1, "low_bit": 0, "description": "00:4.45 01:4.55 10:4.65 11:4.85V"}
+      ]
+    },
+    {
+      "name": "CHIP_STAT0",
+      "reg_addr": "0x08",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "芯片状态0 (RO, Reset:0x00)",
+      "bit_fields": [
+        {"name": "WDT_FAULT",    "high_bit": 7, "low_bit": 7, "description": "看门狗故障"},
+        {"name": "IINDPM_STAT",  "high_bit": 6, "low_bit": 6, "description": "1:in IINDPM"},
+        {"name": "CHG_STAT",     "high_bit": 5, "low_bit": 3, "description": "100:done 011:CV 010:CC 001:pre 000:not"},
+        {"name": "VINDPM_STAT",  "high_bit": 2, "low_bit": 2, "description": "1:in VINDPM"},
+        {"name": "VBUS_PG_STAT", "high_bit": 1, "low_bit": 1, "description": "1:Power Good"},
+        {"name": "THERM_STAT",   "high_bit": 0, "low_bit": 0, "description": "1:热调节中"}
+      ]
+    },
+    {
+      "name": "CHIP_STAT1",
+      "reg_addr": "0x09",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "芯片状态1/故障 (Reset:0x00)",
+      "bit_fields": [
+        {"name": "SHIP_DGL",   "high_bit": 7, "low_bit": 6, "description": "11:dis 10:4s 01:2s 00:1s"},
+        {"name": "VIN_Fault",  "high_bit": 5, "low_bit": 5, "description": "1:VIN OVP或拔出 (RC)"},
+        {"name": "TSHUT",      "high_bit": 4, "low_bit": 4, "description": "1:热关断 (RC)"},
+        {"name": "VBAT_OVP",   "high_bit": 3, "low_bit": 3, "description": "1:电池OVP (RC)"},
+        {"name": "Safety_mode","high_bit": 2, "low_bit": 2, "description": "1:安全定时器超时 (RC)"},
+        {"name": "NTC_HOT",    "high_bit": 1, "low_bit": 1, "description": "1:HOT"},
+        {"name": "NTC_COLD",   "high_bit": 0, "low_bit": 0, "description": "1:COLD"}
+      ]
+    },
+    {
+      "name": "CHIP_STAT2",
+      "reg_addr": "0x0B",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "芯片状态2 (Reset:0x00)",
+      "bit_fields": [
+        {"name": "VBUS_OVP",          "high_bit": 7, "low_bit": 7, "description": "1:VBUS OVP"},
+        {"name": "Ultra_low_pwr_stat","high_bit": 6, "low_bit": 6, "description": "1:进入超低功耗"},
+        {"name": "Hiccup_latch",      "high_bit": 5, "low_bit": 5, "description": "1:曾发生Hiccup (W1C)"},
+        {"name": "Working_Mode",      "high_bit": 2, "low_bit": 1, "description": "00:放电 01:充电 10:仅VBUS供电"},
+        {"name": "BAT_LOWV",          "high_bit": 0, "low_bit": 0, "description": "1:电池低压"}
+      ]
+    },
+    {
+      "name": "CHIP_ID_VER",
+      "reg_addr": "0x0C",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "芯片ID与版本 (RO, Reset:0x00)",
+      "bit_fields": [
+        {"name": "VERSION",  "high_bit": 7, "low_bit": 5, "description": "版本号"},
+        {"name": "ADDR_SET", "high_bit": 3, "low_bit": 3, "description": "1:01H 0:07H"},
+        {"name": "CHIP_ID",  "high_bit": 2, "low_bit": 0, "description": "芯片识别码"}
+      ]
+    },
+    {
+      "name": "SYS_CTRL5",
+      "reg_addr": "0x1B",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "系统控制5 (Reset:0x04)",
+      "bit_fields": [
+        {"name": "Charger_SLP_EN", "high_bit": 2, "low_bit": 2, "description": "输入电压睡眠检测 1:en"},
+        {"name": "VBUS_OVP_SEL",   "high_bit": 1, "low_bit": 1, "description": "1:6.5V 0:6.0V"},
+        {"name": "PWRKEY_WK_EN",   "high_bit": 0, "low_bit": 0, "description": "PWRKEY 2s唤醒 1:en 0:dis"}
+      ]
+    },
+    {
+      "name": "INT_Enable_0",
+      "reg_addr": "0x50",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "中断使能0 (Reset:0x40)",
+      "bit_fields": [
+        {"name": "Watch_Dog_INT_EN","high_bit": 7, "low_bit": 7, "description": "看门狗超时中断 1:off 0:on"},
+        {"name": "BAT_LOW_INT_EN",  "high_bit": 6, "low_bit": 6, "description": "电池低压中断 1:off 0:on"}
+      ]
+    },
+    {
+      "name": "INT_STAT0",
+      "reg_addr": "0x58",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "中断状态0 (Reset:0x00)",
+      "bit_fields": [
+        {"name": "Watch_Dog_INT","high_bit": 7, "low_bit": 7, "description": "看门狗超时IRQ (RC)"},
+        {"name": "BAT_LOW_INT",  "high_bit": 6, "low_bit": 6, "description": "电池低压IRQ (RC)"}
+      ]
+    }
+  ]
+}

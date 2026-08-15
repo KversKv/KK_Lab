@@ -1,0 +1,90 @@
+name: SY6105
+description: SY6105 智能充电器全部序列脚本集合
+scripts:
+  # ============================================================
+  # 1. 读取芯片ID及全部状态寄存器
+  # ============================================================
+  - name: ReadStatus
+    description: 读取 SY6105 芯片ID及全部状态寄存器
+    template: SY6105
+    commands:
+      - READ 0x0C TO $id          // CHIP_ID & Version
+      - READ 0x08 TO $stat0       // CHG_STAT / PG / DPM
+      - READ 0x09 TO $stat1       // 故障状态 (RC)
+      - READ 0x0B TO $stat2       // 工作模式 / OVP
+      - READ 0x58 TO $int0        // 中断状态 (RC)
+
+  # ============================================================
+  # 2. 充电基础初始化 (4.2V / 500mA IINDPM)
+  # ============================================================
+  - name: ChargeInit
+    description: SY6105 充电基础初始化 (4.2V / 500mA IINDPM)
+    template: SY6105
+    commands:
+      - "// 1) 复位所有寄存器，确保干净起点"
+      - WRITE_BITS 0x02 7 7 0x01      // REG_RST=1 复位
+      - DELAY 20
+      - "// 2) DPM: VINDPM=4.6V(10), IINDPM=500mA(10)"
+      - WRITE 0x00 0x86               // VINDPM=4.6V, IPRE=0001, IINDPM=500mA
+      - "// 3) 使能充电: CEB=0"
+      - WRITE_BITS 0x01 3 3 0x00      // CEB=0 使能充电
+      - "// 4) 设置快充电流 ICC (示例 code=001111 -> 128mA)"
+      - WRITE_BITS 0x02 5 0 0x0F      // ICC_SET=0x0F
+      - "// 5) 目标电压 VBAT_Target=4.2V(00100), VRE_CHG=200mV"
+      - WRITE 0x04 0x23               // 默认 4.2V 目标
+      - "// 6) 使能终止 EOC_EN=1, 安全定时器 EN_TIMER=1, 5h"
+      - WRITE 0x05 0x78               // WDT=160s, EOC=1, EN_TIMER=1, 5h
+      - DELAY 5
+      - READ 0x08 TO $stat0           // 回读充电状态确认
+
+  # ============================================================
+  # 3. 充电状态轮询 (观察 CC->CV->Done)
+  # ============================================================
+  - name: ChargePoll
+    description: 轮询 SY6105 充电状态 (读取 CHG_STAT)
+    template: SY6105
+    commands:
+      - LOOP 20
+      - READ 0x08 TO $stat0        // bit[5:3]=CHG_STAT, bit1=VBUS_PG
+      - IF $stat0 & 0x20           // CHG_STAT bit5 (=100b charge done)
+      - END_IF
+      - READ 0x09 TO $flt          // 同步检查故障寄存器
+      - DELAY 500
+      - END_LOOP
+
+  # ============================================================
+  # 4. 使能 NTC 温度检测 (热阈值 45℃)
+  # ============================================================
+  - name: EnableNTC
+    description: 使能 NTC 温度检测并设置热阈值 45℃
+    template: SY6105
+    commands:
+      - WRITE_BITS 0x06 7 7 0x01   // NTC_EN=1 使能NTC
+      - WRITE_BITS 0x07 6 5 0x00   // NTC_HOT=00 -> 45℃
+      - DELAY 10
+      - READ 0x09 TO $ntc          // bit1=NTC_HOT, bit0=NTC_COLD
+
+  # ============================================================
+  # 5. 进入 Ship 模式 (关闭 BATFET)
+  # ============================================================
+  - name: EnterShip
+    description: SY6105 进入 Ship 模式 (关闭 BATFET)
+    template: SY6105
+    commands:
+      - WRITE_BITS 0x09 7 6 0x00   // SHIP_DGL=00 -> 1s 去抖
+      - WRITE_BITS 0x1B 0 0 0x01   // PWRKEY_WK_EN=1 便于唤醒
+      - WRITE_BITS 0x06 5 5 0x01   // BATFET_DIS=1 进入 ship (需 VBUS 拔出生效)
+
+  # ============================================================
+  # 6. 软复位与故障清除
+  # ============================================================
+  - name: ResetClear
+    description: SY6105 寄存器复位 + 故障状态清读
+    template: SY6105
+    commands:
+      - WRITE_BITS 0x02 7 7 0x01   // REG_RST=1 全寄存器复位
+      - DELAY 20
+      - READ 0x09 TO $flt          // RC 故障位: 读操作清除
+      - READ 0x0B TO $stat2        // 读工作模式
+      - WRITE_BITS 0x0B 5 5 0x01   // 清 Hiccup_latch (W1C)
+      - READ 0x58 TO $int          // 清中断状态 (RC)

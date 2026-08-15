@@ -47,7 +47,7 @@ ui/pages/custom_test/
 ├── context.py                     # 兼容 shim
 └── nodes/                         # 兼容 shim
 
-userdata/custom_test_templates/     # Custom Test 模板目录，不放在 UI 包内
+presets/custom_test_templates/     # Custom Test 模板目录，不放在 UI 包内
 
 core/custom_test/
 ├── nodes/
@@ -132,7 +132,7 @@ Custom Test 中应继续保持：
 - 当前 `BaseNode.to_dict()` / `from_dict()`。
 - 当前 `ui/pages/custom_test/*` 兼容 shim。
 - 当前 `PARAM_SCHEMA` 的 dict 写法。
-- 模板目标目录为 `userdata/custom_test_templates/`，不再放入 `ui/pages/custom_test/`。
+- 模板目标目录为 `presets/custom_test_templates/`，不再放入 `ui/pages/custom_test/`。
 
 ## 3. 目标结构建议
 
@@ -181,7 +181,7 @@ ui/pages/custom_test/
 │   ├── template_gallery.py
 │   └── validation_dialog.py
 
-userdata/custom_test_templates/
+presets/custom_test_templates/
 └── *.json                     # 项目/用户可维护的 Custom Test 模板
 ```
 
@@ -198,7 +198,7 @@ userdata/custom_test_templates/
 1. 以 `core/custom_test/` 为执行内核唯一事实源。
 2. 保留 `ui/pages/custom_test/*` shim，不主动删除。
 3. 文档和代码注释统一说明 v2 当前序列格式。
-4. 将模板目录约定为 `userdata/custom_test_templates/`，UI 目录不再承载模板数据。
+4. 将模板目录约定为 `presets/custom_test_templates/`，UI 目录不再承载模板数据。
 5. 检查模板是否都能通过 `load_sequence_file()` 读取。
 6. 检查 RF Analyzer 等未接入节点在 palette、preflight、文档中的状态一致。
 
@@ -580,7 +580,7 @@ Results/custom_test/<run_id>/
 
 ### 8.1 不要破坏模板兼容
 
-模板目录约定为 `userdata/custom_test_templates/`。任何序列格式升级都必须通过 `load_sequence_file()` 兼容旧格式。
+模板目录约定为 `presets/custom_test_templates/`。任何序列格式升级都必须通过 `load_sequence_file()` 兼容旧格式。
 
 模板不应继续放在 `ui/pages/custom_test/` 内。UI 包只保留页面、控件和兼容 shim；模板属于项目/用户数据，应独立于 UI 实现目录。
 

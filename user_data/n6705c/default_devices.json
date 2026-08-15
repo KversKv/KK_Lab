@@ -1,0 +1,10 @@
+{
+  "devices": [
+    {
+      "serial": "TCPIP0::10.31.31.26::hislip0::INSTR",
+      "model": "N6705C",
+      "display_ip": "10.31.31.26",
+      "visa_resource": "TCPIP0::10.31.31.26::hislip0::INSTR"
+    }
+  ]
+}

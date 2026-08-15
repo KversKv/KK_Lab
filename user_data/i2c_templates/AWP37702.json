@@ -1,0 +1,74 @@
+{
+  "name": "AWP37702",
+  "device_addr": "0x76",
+  "speed_mode": 2,
+  "data_bits": 8,
+  "reg_bits": 8,
+  "registers": [
+    {
+      "name": "CONTROL",
+      "reg_addr": "0x01",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "控制寄存器 (Reset:0x20)",
+      "bit_fields": [
+        {"name": "RESERVED", "high_bit": 7, "low_bit": 6, "description": "保留位 (R)"},
+        {"name": "ENABLE",   "high_bit": 5, "low_bit": 5, "description": "0:使能 1:禁止(默认)"},
+        {"name": "RESERVED4","high_bit": 4, "low_bit": 4, "description": "保留位 (R/W)"},
+        {"name": "FPWM",     "high_bit": 3, "low_bit": 3, "description": "强制PWM 0:关(默认) 1:开"},
+        {"name": "RPWM",     "high_bit": 2, "low_bit": 2, "description": "Ramp PWM 0:关(默认) 1:开"},
+        {"name": "SLEW",     "high_bit": 1, "low_bit": 0, "description": "00:2V/ms 01:5V/ms 10:10V/ms 11:20V/ms"}
+      ]
+    },
+    {
+      "name": "STATUS",
+      "reg_addr": "0x02",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "状态寄存器 (Reset:0x00, 只读/读清)",
+      "bit_fields": [
+        {"name": "RESERVED",   "high_bit": 7, "low_bit": 7, "description": "保留位 (R)"},
+        {"name": "SCP_STATUS", "high_bit": 6, "low_bit": 6, "description": "短路状态 0:正常 1:短路中 (R)"},
+        {"name": "OCP_STATUS", "high_bit": 5, "low_bit": 5, "description": "过流状态 0:正常 1:过流中 (R)"},
+        {"name": "TSD_STATUS", "high_bit": 4, "low_bit": 4, "description": "过温状态 0:正常 1:过温中 (R)"},
+        {"name": "SCP_FLAG",   "high_bit": 3, "low_bit": 3, "description": "短路标志 读后清零 (R/C)"},
+        {"name": "OCP_FLAG",   "high_bit": 2, "low_bit": 2, "description": "过流标志 读后清零 (R/C)"},
+        {"name": "TSD_FLAG",   "high_bit": 1, "low_bit": 1, "description": "过温标志 读后清零 (R/C)"},
+        {"name": "PG",         "high_bit": 0, "low_bit": 0, "description": "电源良好 0:低于阈值 1:电源良好 (R)"}
+      ]
+    },
+    {
+      "name": "DEVICE_IDENTITY",
+      "reg_addr": "0x03",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "器件标识 (Reset:0x40, 只读)",
+      "bit_fields": [
+        {"name": "DEVICE",        "high_bit": 7, "low_bit": 4, "description": "Device ID = 0100 (R)"},
+        {"name": "MANUFACTURE_ID","high_bit": 3, "low_bit": 0, "description": "Device VERSION (R)"}
+      ]
+    },
+    {
+      "name": "VOUT1",
+      "reg_addr": "0x04",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "输出电压1 (VSEL=低时生效, Reset:0x33=2.675V)",
+      "bit_fields": [
+        {"name": "RESERVED", "high_bit": 7, "low_bit": 7, "description": "保留位 (R)"},
+        {"name": "VOUT1",    "high_bit": 6, "low_bit": 0, "description": "VOUT=1.4+N×0.025V (默认0110011=2.675V)"}
+      ]
+    },
+    {
+      "name": "VOUT2",
+      "reg_addr": "0x05",
+      "data_bits": 8,
+      "reg_bits": 8,
+      "description": "输出电压2 (VSEL=高时生效, Reset:0x3B=2.875V)",
+      "bit_fields": [
+        {"name": "RESERVED", "high_bit": 7, "low_bit": 7, "description": "保留位 (R)"},
+        {"name": "VOUT2",    "high_bit": 6, "low_bit": 0, "description": "VOUT=1.4+N×0.025V (默认0111011=2.875V)"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "auto_approve": [
+    {
+      "action": "set_instrument_output",
+      "when": {
+        "channel_max": 1
+      }
+    }
+  ],
+  "session_grants": [],
+  "blocked": []
+}

@@ -1,0 +1,13 @@
+{
+  "version": "1.0",
+  "last_template": "DA9168",
+  "last_script": "",
+  "last_script_collection": "",
+  "filter_scripts_by_template": true,
+  "settings": {
+    "dll_path": "",
+    "default_speed_mode": 2,
+    "default_data_bits": 8,
+    "default_reg_bits": 8
+  }
+}

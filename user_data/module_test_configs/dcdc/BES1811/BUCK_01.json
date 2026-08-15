@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "module_type": "dcdc",
+  "config": {
+    "selected_items": [
+      "dcdc_vout_scan",
+      "dcdc_efficiency",
+      "dcdc_load_reg",
+      "dcdc_line_reg"
+    ],
+    "chip_name": "BES1811",
+    "module_name": "BUCK_01",
+    "operator": "",
+    "temp_test_enabled": false,
+    "temperature": "",
+    "temp_soak_s": 300,
+    "temp_tolerance_c": 2,
+    "temp_wait_s": 1800,
+    "vin_channel": "CH 1",
+    "vout_channel": "CH 2",
+    "iload_channel": "CH 3",
+    "vout_nominal_mv": 800,
+    "device_addr": "0x17",
+    "width_flag": 1,
+    "scope_vout_channel": 1,
+    "item_overrides": {
+      "dcdc_vout_scan": {
+        "reg_addr": "0x46",
+        "msb": 7,
+        "lsb": 0,
+        "min_code": 0,
+        "max_code": 255,
+        "settle_time_s": 0.05,
+        "average_cnt": 3
+      },
+      "dcdc_quiescent": {
+        "vin_v": 3.8,
+        "average_cnt": 5,
+        "settle_time_s": 0.05,
+        "iq_en_dr_addr": "0x15",
+        "iq_en_addr": "0x15",
+        "iq_en_dr_bit": 1,
+        "iq_en_bit": 0,
+        "iq_on_dr_val": 1,
+        "iq_on_en_val": 1,
+        "iq_off_dr_val": 1,
+        "iq_off_en_val": 0,
+        "iq_vout_offset_mv": 20.0
+      },
+      "dcdc_load_reg": {
+        "iload_start_ma": 1.0,
+        "iload_end_ma": 200.0,
+        "iload_step_ma": 1.0,
+        "vin_v": 3.8,
+        "average_cnt": 3,
+        "settle_time_s": 0.05
+      },
+      "dcdc_efficiency": {
+        "iload_start_ma": 1.0,
+        "iload_end_ma": 200.0,
+        "iload_step_ma": 1.0,
+        "vin_v": 3.8,
+        "average_cnt": 3,
+        "settle_time_s": 0.05
+      },
+      "dcdc_line_reg": {
+        "vin_start_v": 2.5,
+        "vin_end_v": 5.0,
+        "vin_step_v": 0.1,
+        "average_cnt": 3,
+        "settle_time_s": 0.05
+      },
+      "dcdc_ripple": {
+        "vin_v": 3.8,
+        "iload_start_ma": 0.0,
+        "iload_end_ma": 200.0,
+        "iload_step_ma": 10.0,
+        "settle_time_s": 0.05,
+        "average_cnt": 3
+      },
+      "dcdc_load_transient": {
+        "transient_groups": [
+          {
+            "i0_ma": 10.0,
+            "i1_ma": 100.0,
+            "freq_hz": 10.0
+          },
+          {
+            "i0_ma": 10.0,
+            "i1_ma": 100.0,
+            "freq_hz": 100.0
+          },
+          {
+            "i0_ma": 10.0,
+            "i1_ma": 100.0,
+            "freq_hz": 800.0
+          }
+        ],
+        "settle_time_s": 0.05
+      },
+      "dcdc_line_transient": {
+        "line_transient_groups": [
+          {
+            "vin0_v": 3.2,
+            "vin1_v": 4.2,
+            "freq_hz": 10.0
+          },
+          {
+            "vin0_v": 3.2,
+            "vin1_v": 4.2,
+            "freq_hz": 100.0
+          },
+          {
+            "vin0_v": 3.2,
+            "vin1_v": 4.2,
+            "freq_hz": 800.0
+          }
+        ],
+        "transient_vspan_mv": 200.0,
+        "settle_time_s": 0.05
+      },
+      "dcdc_current_limit": {
+        "vout_tol_ratio": 0.05,
+        "ilim_start_ma": 100.0,
+        "ilim_end_ma": 800.0,
+        "ilim_step_ma": 20.0,
+        "vin_v": 3.8,
+        "average_cnt": 3,
+        "settle_time_s": 0.05
+      }
+    },
+    "module_config_enabled": true,
+    "module_config_yaml": "LDO1-3 switch to BUCK1-3:\n- // 2026.2.10\n- WRITE_BITS 0x22A 11 9  0x7\n- WRITE_BITS 0x13C 11 11 0x1\n- WRITE_BITS 0x13D 11 11 0x0\n- WRITE_BITS 0x13E 11 11 0x1\n- //buck1\n- WRITE_BITS 0x14A 14 12 0x7\n- WRITE_BITS 0x146 11 11 0x1\n- WRITE_BITS 0x147 11 11 0x0\n- WRITE_BITS 0x148 11 11 0x1\n- //buck2\n- WRITE_BITS 0x1EA 14 12 0x7\n- WRITE_BITS 0x1E6 11 11 0x1\n- WRITE_BITS 0x1E7 11 11 0x0\n- WRITE_BITS 0x1E8 11 11 0x1\n- //buck3\n- WRITE_BITS 0x15A 14 12 0x7\n- WRITE_BITS 0x156 11 11 0x1\n- WRITE_BITS 0x157 11 11 0x0\n- WRITE_BITS 0x158 11 11 0x1\n- //buck4\n- WRITE_BITS 0x1DA 14 12 0x7\n- WRITE_BITS 0x1D6 11 11 0x1\n- WRITE_BITS 0x1D7 11 11 0x0\n- WRITE_BITS 0x1D8 11 11 0x1\n- //buck5\n- WRITE_BITS 0x225 11 9  0x7\n- WRITE_BITS 0x359 11 11 0x1\n- WRITE_BITS 0x35B 11 11 0x0\n- WRITE_BITS 0x35D 11 11 0x1\n- //buck6\n- //force_vcomp_10u_normal=1,1u=1\n- //force_vcomp_10u_dsleep=1,1u=0\n- //force_vcomp_10u_normal=1,1u=1\n- // buck1-6存在ulp模式切换，导致VSYS电流波动\n- // 纹波偏大，noraml需要force到normal\n- WRITE_BITS 0x13C 15 14 0x0\n- WRITE_BITS 0x13D 15 14 0x0\n- WRITE_BITS 0x13E 15 14 0x0\n- // buck1_force_ulp_normal/dsleep/RC 0\n- WRITE_BITS 0x146 15 14 0x3\n- WRITE_BITS 0x147 15 14 0x3\n- WRITE_BITS 0x148 15 14 0x3\n- // buck2_force_ulp_normal/dsleep/RC 1\n- WRITE_BITS 0x1E6 15 14 0x3\n- WRITE_BITS 0x1E7 15 14 0x3\n- WRITE_BITS 0x1E8 15 14 0x3\n- // buck3_force_ulp_normal/dsleep/RC 1\n- WRITE_BITS 0x156 15 14 0x3\n- WRITE_BITS 0x157 15 14 0x3\n- WRITE_BITS 0x158 15 14 0x3\n- // buck4_force_ulp_normal/dsleep/RC 1\n- WRITE_BITS 0x1D6 15 14 0x3\n- WRITE_BITS 0x1D7 15 14 0x3\n- WRITE_BITS 0x1D8 15 14 0x3\n- // buck5_force_ulp_normal/dsleep/RC 1\n- WRITE_BITS 0x359 15 14 0x0\n- WRITE_BITS 0x35B 15 14 0x0\n- WRITE_BITS 0x35D 15 14 0x0\n- // buck1_force_ulp_normal/dsleep/RC 0\n- // buck2-5存在gm切换，导致VSYS电流波动\n- // 纹波偏大，需要force到gm off\n- // 仿真是在gm off条件下\n- WRITE_BITS 0x367  9 9 0x0\n- // buck_01_erramp_sel_200k\n- WRITE_BITS 0x36B  0 0 0x0\n- // buck_02_erramp_sel_200k\n- WRITE_BITS 0x36E  13 13 0x0\n- // buck_03_erramp_sel_200k\n- WRITE_BITS 0x372  7 7 0x0\n- // buck_04_erramp_sel_200k\n- WRITE_BITS 0x379  15 15 0x0\n- // buck_05_erramp_sel_200k\n- WRITE_BITS 0x37D  13 13 0x0\n- // buck_06_erramp_sel_200k\n- // 降低电阻,改善瞬态响应\n- // 2026.02.04\n- WRITE_BITS 0x13C 13 13 0x0\n- WRITE_BITS 0x13D 13 13 0x0\n- WRITE_BITS 0x13E 13 13 0x0\n- WRITE_BITS 0x146 13 13 0x0\n- WRITE_BITS 0x147 13 13 0x0\n- WRITE_BITS 0x148 13 13 0x0\n- WRITE_BITS 0x1E6 13 13 0x0\n- WRITE_BITS 0x1E7 13 13 0x0\n- WRITE_BITS 0x1E8 13 13 0x0\n- WRITE_BITS 0x156 13 13 0x0\n- WRITE_BITS 0x157 13 13 0x0\n- WRITE_BITS 0x158 13 13 0x0\n- WRITE_BITS 0x1D6 13 13 0x0\n- WRITE_BITS 0x1D7 13 13 0x0\n- WRITE_BITS 0x1D8 13 13 0x0\n- WRITE_BITS 0x359 13 13 0x0\n- WRITE_BITS 0x35B 13 13 0x0\n- WRITE_BITS 0x35D 13 13 0x0\n- // buck1-6_vcomp_vsel_normal/RC/sleep 0\n- WRITE_BITS 0x369 12 12 0x1\n- WRITE_BITS 0x36C 15 15 0x1\n- WRITE_BITS 0x370 12 12 0x1\n- WRITE_BITS 0x374  7  7 0x0\n- WRITE_BITS 0x37B 15 15 0x0\n- WRITE_BITS 0x37F 12 12 0x0\n- // buck1-6_vcomp_vsel_2P4\n- // vcomp_vsel使用2P4\n- // 以提高buck频率\n- // 2026.02.05\n- WRITE_BITS 0x325 11 0 0xAAA\n- // 关闭fast_charge, 避免休眠唤醒过冲\n- // 2026.02.10\n- WRITE_BITS 0x15  1 0 0x3\n- // buck1 on\n- WRITE_BITS 0x145 1 0 0x3\n- // buck2 on\n- WRITE_BITS 0x1E5 1 0 0x3\n- // buck3 on\n- // pull down off 1236\n- // LDO关闭后会自动pull down\n- // 导致VSYS电流增加，因此需要强制关闭此功能\n- WRITE_BITS 0xD 13 12 0x2\n- // LDO1 off\n- WRITE_BITS 0x3 3   2 0x2\n- // LDO2 off\n- WRITE_BITS 0xA 11 10 0x2\n- // LDO3 off\n- WRITE_BITS 0x02B3 2 0 0x7\n- // 2026.02.10_V3"
+  }
+}

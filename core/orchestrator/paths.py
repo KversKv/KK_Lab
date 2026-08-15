@@ -6,21 +6,19 @@ import json
 import os
 from typing import Any, Iterable, List
 
+from ui.resource_path import get_user_data_dir
+
 
 def project_root() -> str:
     return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def get_primary_template_dir() -> str:
-    return os.path.join(project_root(), "userdata", "orchestrator_templates")
-
-
-def get_legacy_template_dir() -> str:
-    return os.path.join(project_root(), "ui", "pages", "orchestrator", "templates")
+    return os.path.join(project_root(), "presets", "orchestrator_templates")
 
 
 def get_template_dirs() -> List[str]:
-    dirs = [get_primary_template_dir(), get_legacy_template_dir()]
+    dirs = [get_primary_template_dir()]
     seen: set[str] = set()
     result: List[str] = []
     for path in dirs:
@@ -54,7 +52,7 @@ def resolve_template_path(name_or_path: str) -> str:
 
 
 def get_recent_sequences_path() -> str:
-    return os.path.join(project_root(), "userdata", "orchestrator_recent.json")
+    return os.path.join(get_user_data_dir("orchestrator"), "orchestrator_recent.json")
 
 
 def load_recent_sequences(limit: int = 10) -> List[str]:

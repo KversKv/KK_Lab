@@ -1,0 +1,241 @@
+[17:27:21]  [STEP] 开始 Check: 校验 Chip ID → 读取状态 → PMU 初始化 (I2C 0x17)...
+[17:27:21]  [INFO] I2C 已连接: dev=0x17, addr_width=10-bit
+[17:27:21]  [STEP] 校验 Chip ID (@0x0000==0x18F0, @0x0001==0x1100)
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x000 → 0x18F0
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x001 → 0x1100
+[17:27:21]  [PASS] Chip ID 校验通过: 0x18F0 / 0x1100 (DUT = 1811)
+[17:27:21]  [STEP] 读取 LDO_01 状态 (pu_status@0x05F[0:0], vbit@0x00D)
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x05F → 0x0017
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x00D → 0xD314
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x00D → 0xD314
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x00D → 0xD314
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x00D → 0xD314
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x00D → 0xD314
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x00D → 0xD314
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x072 → 0x1200
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x2F0 → 0xFDFF
+[17:27:21]  [INFO] LDO_01 状态: en=On (dig_pu=1, cfg_pu=1, pu_dr=0, LP), vbit_n=0x14→0.8091 V, vbit_d=0xC→0.6095 V, vbit_rc=0x12→0.7575 V
+[17:27:21]  [STEP] 读取 LDO_02 状态 (pu_status@0x05F[1:1], vbit@0x007)
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x05F → 0x0017
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x003 → 0x7AA6
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x003 → 0x7AA6
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x007 → 0x1C63
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x007 → 0x1C63
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x007 → 0x1C63
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x007 → 0x1C63
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x071 → 0x0203
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x2F0 → 0xFDFF
+[17:27:21]  [INFO] LDO_02 状态: en=On (dig_pu=1, cfg_pu=1, pu_dr=0, LP), vbit_n=0x3→1.1124 V, vbit_d=0x3→1.1124 V, vbit_rc=0x3→1.1124 V
+[17:27:21]  [STEP] 读取 LDO_03 状态 (pu_status@0x05F[2:2], vbit@0x00A)
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x05F → 0x0017
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x00A → 0xF4C6
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x00A → 0xF4C6
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x00A → 0xF4C6
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x00A → 0xF4C6
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x00A → 0xF4C6
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x00A → 0xF4C6
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x073 → 0x1406
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x2F0 → 0xFDFF
+[17:27:21]  [INFO] LDO_03 状态: en=On (dig_pu=1, cfg_pu=1, pu_dr=0, LP), vbit_n=0x6→1.7969 V, vbit_d=0x6→1.7969 V, vbit_rc=0x6→1.7969 V
+[17:27:21]  [STEP] 读取 LDO_05 状态 (pu_status@0x05F[3:3], vbit@0x068)
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x05F → 0x0017
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x008 → 0x7811
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x008 → 0x7811
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x008 → 0x7811
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x008 → 0x7811
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x068 → 0x56B5
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x068 → 0x56B5
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x068 → 0x56B5
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x2F0 → 0xFDFF
+[17:27:21]  [INFO] LDO_05 状态: en=Off (dig_pu=0, cfg_pu=0, pu_dr=0, LP), vbit_n=0x15→3.307 V, vbit_d=0x15→3.307 V, vbit_rc=0x15→3.307 V
+[17:27:21]  [STEP] 读取 LDO_06 状态 (pu_status@0x05F[4:4], vbit@0x088)
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x05F → 0x0017
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x009 → 0xF411
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x009 → 0xF411
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x009 → 0xF411
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x009 → 0xF411
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x088 → 0x0010
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x089 → 0x0010
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x071 → 0x0203
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x2F0 → 0xFDFF
+[17:27:21]  [INFO] LDO_06 状态: en=On (dig_pu=1, cfg_pu=1, pu_dr=0, LP), vbit_n=0x10→0.9965 V, vbit_d=0x10→0.9965 V, vbit_rc=0x10→0.9965 V
+[17:27:21]  [STEP] 读取 LDO_07 状态 (pu_status@0x05F[5:5], vbit@0x250)
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x05F → 0x0017
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x24E → 0x7811
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x24E → 0x7811
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x24E → 0x7811
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x24E → 0x7811
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x250 → 0x0064
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x24F → 0x6464
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x24F → 0x6464
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x2F0 → 0xFDFF
+[17:27:21]  [INFO] LDO_07 状态: en=Off (dig_pu=0, cfg_pu=0, pu_dr=0, LP), vbit_n=0x64→1.0864 V, vbit_d=0x64→1.0864 V, vbit_rc=0x64→1.0864 V
+[17:27:21]  [STEP] 读取 LDO_08 状态 (pu_status@0x05F[6:6], vbit@0x11C)
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x05F → 0x0017
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x11D → 0x6427
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x11D → 0x6427
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x11D → 0x6427
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x11D → 0x6427
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x11C → 0x6464
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x11C → 0x6464
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x11D → 0x6427
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x2F0 → 0xFDFF
+[17:27:21]  [INFO] LDO_08 状态: en=Off (dig_pu=0, cfg_pu=0, pu_dr=0, LP), vbit_n=0x64→1.0894 V, vbit_d=0x64→1.0894 V, vbit_rc=0x64→1.0894 V
+[17:27:21]  [STEP] 读取 LDO_09 状态 (pu_status@0x05F[7:7], vbit@0x08A)
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x05F → 0x0017
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x067 → 0x9C00
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x067 → 0x9C00
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x067 → 0x9C00
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x067 → 0x9C00
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x08A → 0x00A0
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x08B → 0x0000
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x073 → 0x1406
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x2F0 → 0xFDFF
+[17:27:21]  [INFO] LDO_09 状态: en=Off (dig_pu=0, cfg_pu=0, pu_dr=0, LP), vbit_n=0xA0→1.7009 V, vbit_d=0x0→0.8993 V, vbit_rc=0xA0→1.7009 V
+[17:27:21]  [STEP] 读取 LDO_10 状态 (pu_status@0x060[0:0], vbit@0x248)
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x060 → 0x0000
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x247 → 0xF811
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x247 → 0xF811
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x247 → 0xF811
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x247 → 0xF811
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x248 → 0x0028
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x249 → 0x0028
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x24A → 0x0028
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x2F0 → 0xFDFF
+[17:27:21]  [INFO] LDO_10 状态: en=Off (dig_pu=0, cfg_pu=0, pu_dr=0, LP), vbit_n=0x28→1.1007 V, vbit_d=0x28→1.1007 V, vbit_rc=0x28→1.1007 V
+[17:27:21]  [STEP] 读取 LDO_11 状态 (pu_status@0x060[1:1], vbit@0x010)
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x060 → 0x0000
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x066 → 0x9D28
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x066 → 0x9D28
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x066 → 0x9D28
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x066 → 0x9D28
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x010 → 0x2828
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x010 → 0x2828
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x066 → 0x9D28
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x2F1 → 0x001F
+[17:27:21]  [INFO] LDO_11 状态: en=Off (dig_pu=0, cfg_pu=0, pu_dr=0, LP), vbit_n=0x28→1.1006 V, vbit_d=0x28→1.1006 V, vbit_rc=0x28→1.1006 V
+[17:27:21]  [STEP] 读取 LDO_12 状态 (pu_status@0x060[2:2], vbit@0x215)
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x060 → 0x0000
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x210 → 0x7803
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x210 → 0x7803
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x210 → 0x7803
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x210 → 0x7803
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x215 → 0x0180
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x211 → 0x000A
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x211 → 0x000A
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x2F1 → 0x001F
+[17:27:21]  [INFO] LDO_12 状态: en=Off (dig_pu=0, cfg_pu=0, pu_dr=0, LP), vbit_n=0xC→0.6141 V, vbit_d=0x0→0.3249 V, vbit_rc=0xA→0.5634 V
+[17:27:21]  [STEP] 读取 LDO_13 状态 (pu_status@0x060[3:3], vbit@0x085)
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x060 → 0x0000
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x00C → 0xF011
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x00C → 0xF011
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x00C → 0xF011
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x00C → 0xF011
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x085 → 0x0015
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x086 → 0x0015
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x087 → 0x0015
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x2F1 → 0x001F
+[17:27:21]  [INFO] LDO_13 状态: en=Off (dig_pu=0, cfg_pu=0, pu_dr=0, LP), vbit_n=0x15→3.2999 V, vbit_d=0x15→3.2999 V, vbit_rc=0x15→3.2999 V
+[17:27:21]  [STEP] 读取 LDO_14 状态 (pu_status@0x060[4:4], vbit@0x203)
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x060 → 0x0000
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x202 → 0x7811
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x202 → 0x7811
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x202 → 0x7811
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x202 → 0x7811
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x203 → 0x0006
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x204 → 0x0006
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x205 → 0x0006
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x2F1 → 0x001F
+[17:27:21]  [INFO] LDO_14 状态: en=Off (dig_pu=0, cfg_pu=0, pu_dr=0, LP), vbit_n=0x6→1.8034 V, vbit_d=0x6→1.8034 V, vbit_rc=0x6→1.8034 V
+[17:27:21]  [STEP] 读取 LDO_15 状态 (pu_status@0x060[5:5], vbit@0x20B)
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x060 → 0x0000
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x20A → 0x7811
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x20A → 0x7811
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x20A → 0x7811
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x20A → 0x7811
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x20B → 0x18C6
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x20B → 0x18C6
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x20B → 0x18C6
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x2F1 → 0x001F
+[17:27:21]  [INFO] LDO_15 状态: en=Off (dig_pu=0, cfg_pu=0, pu_dr=0, LP), vbit_n=0x6→1.7965 V, vbit_d=0x6→1.7965 V, vbit_rc=0x6→1.7965 V
+[17:27:21]  [STEP] 读取 BUCK_01 状态 (pu_status@0x05F[8:8], vbit@0x046)
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x05F → 0x0017
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x015 → 0x5000
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x015 → 0x5000
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x046 → 0x8686
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x046 → 0x8686
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x074 → 0x1386
+[17:27:21]  [INFO] BUCK_01 状态: en=Off (dig_pu=0, cfg_pu=0, pu_dr=0), vbit_n=0x86→0.7954 V, vbit_d=0x86→0.7954 V, vbit_rc=0x86→0.7954 V
+[17:27:21]  [STEP] 读取 BUCK_02 状态 (pu_status@0x05F[9:9], vbit@0x146)
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x05F → 0x0017
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x145 → 0x00FC
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x145 → 0x00FC
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x146 → 0x3050
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x147 → 0x2050
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x148 → 0x2050
+[17:27:21]  [INFO] BUCK_02 状态: en=Off (dig_pu=0, cfg_pu=0, pu_dr=0), vbit_n=0x50→1.1912 V, vbit_d=0x50→1.1912 V, vbit_rc=0x50→1.1912 V
+[17:27:21]  [STEP] 读取 BUCK_03 状态 (pu_status@0x05F[10:10], vbit@0x1E6)
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x05F → 0x0017
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x1E5 → 0x00FC
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x1E5 → 0x00FC
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x1E6 → 0x30A0
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x1E7 → 0x20A0
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x1E8 → 0x20A0
+[17:27:21]  [INFO] BUCK_03 状态: en=Off (dig_pu=0, cfg_pu=0, pu_dr=0), vbit_n=0xA0→1.7995 V, vbit_d=0xA0→1.7995 V, vbit_rc=0xA0→1.7995 V
+[17:27:21]  [STEP] 读取 BUCK_04 状态 (pu_status@0x05F[11:11], vbit@0x156)
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x05F → 0x0017
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x155 → 0x00FC
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x155 → 0x00FC
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x156 → 0x3093
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x157 → 0x2093
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x158 → 0x2093
+[17:27:21]  [INFO] BUCK_04 状态: en=Off (dig_pu=0, cfg_pu=0, pu_dr=0), vbit_n=0x93→0.8478 V, vbit_d=0x93→0.8478 V, vbit_rc=0x93→0.8478 V
+[17:27:21]  [STEP] 读取 BUCK_05 状态 (pu_status@0x05F[12:12], vbit@0x1D6)
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x05F → 0x0017
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x1D5 → 0x00FC
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x1D5 → 0x00FC
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x1D6 → 0x3093
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x1D7 → 0x2093
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x1D8 → 0x2093
+[17:27:21]  [INFO] BUCK_05 状态: en=Off (dig_pu=0, cfg_pu=0, pu_dr=0), vbit_n=0x93→0.8518 V, vbit_d=0x93→0.8518 V, vbit_rc=0x93→0.8518 V
+[17:27:21]  [STEP] 读取 BUCK_06 状态 (pu_status@0x05F[13:13], vbit@0x35A)
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x05F → 0x0017
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x35F → 0x0010
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x35F → 0x0010
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x35A → 0x00BB
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x35C → 0x00BB
+[17:27:21]  [INFO] I2C 读 dev=0x17 @0x35D → 0x20BB
+[17:27:21]  [INFO] BUCK_06 状态: en=Off (dig_pu=0, cfg_pu=0, pu_dr=0), vbit_n=0xBB→0.9818 V, vbit_d=0xBB→0.9818 V, vbit_rc=0xBB→0.9818 V
+[17:27:21]  [STEP] 开始 PMU 初始化序列
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x121 ← 0x1 bits[15:15]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x2F0 ← 0xFDFF bits[15:0]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x2F1 ← 0x001F bits[15:0]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x2B3 ← 0x3FFF bits[15:0]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x00D ← 0x03 bits[15:14]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x007 ← 0x003 bits[13:11]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x00A ← 0x03 bits[14:13]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x008 ← 0x03 bits[13:12]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x009 ← 0x03 bits[14:13]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x24E ← 0x03 bits[13:12]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x11D ← 0x03 bits[1:0]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x067 ← 0x03 bits[11:10]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x247 ← 0x03 bits[13:12]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x066 ← 0x03 bits[11:10]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x210 ← 0x03 bits[13:12]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x00C ← 0x03 bits[14:13]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x202 ← 0x03 bits[13:12]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x20A ← 0x03 bits[13:12]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x003 ← 0x02 bits[9:8]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x094 ← 0x01 bits[5:4]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x003 ← 0x007 bits[14:12]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x003 ← 0x02 bits[11:10]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x003 ← 0x02 bits[7:6]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x050 ← 0x02 bits[13:12]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x003 ← 0x02 bits[1:0]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x003 ← 0x02 bits[5:4]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x120 ← 0x002 bits[8:6]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x11F ← 0x002 bits[6:4]
+[17:27:21]  [INFO] I2C 写 dev=0x17 @0x11F ← 0x001 bits[3:1]
+[17:27:21]  [PASS] PMU 初始化序列完成
+[17:27:21]  [PASS] Check 完成: 读取 20 个模块 (4 个已开启), PMU 初始化完成
+[17:27:21]  [INFO] I2C 已断开

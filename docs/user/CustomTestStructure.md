@@ -502,7 +502,7 @@ Resolver 返回的对象不是裸仪器，而是 adapter：
 
 - Save
   - 调用 `save_sequence_file(filepath, nodes, instruments=...)`。
-  - 模板目录约定为 `userdata/custom_test_templates/`。
+  - 模板目录约定为 `presets/custom_test_templates/`。
   - `CustomTestUI` 会向 canvas 注入 `_collect_instrument_meta`，使保存包含连接 meta。
 
 - Load
@@ -516,7 +516,7 @@ Resolver 返回的对象不是裸仪器，而是 adapter：
 模板应放在项目数据目录，而不是 UI 包目录：
 
 ```text
-userdata/custom_test_templates/
+presets/custom_test_templates/
 ```
 
 这样可以避免把可编辑、可扩展的用户/项目模板混在 `ui/pages/custom_test/` 页面实现中，也更适合后续模板库、用户自定义模板、打包数据收集和版本迁移。
@@ -860,7 +860,7 @@ Chart：
 - RF Analyzer / CMW270 节点仍为 unsupported。
 - Stop 是协作式停止，长耗时仪器 IO 的响应速度取决于节点和 adapter 是否检查 `context.should_stop`。
 - 运行状态下画布编辑被部分禁用，但右侧属性面板并未整体冻结。
-- `Load` 是文件选择入口，不是模板库 UI；模板主要通过 `userdata/custom_test_templates/` 目录选择或 `load_template()` 调用。
+- `Load` 是文件选择入口，不是模板库 UI；模板主要通过 `presets/custom_test_templates/` 目录选择或 `load_template()` 调用。
 - Chart 当前是自动绘图，缺少字段手动选择、单位轴、阈值线和实时暂停控制。
 - 参数表单以通用 schema 动态生成，类型控件和即时字段校验仍有继续优化空间。
 
@@ -910,7 +910,7 @@ Chart：
 模板放在：
 
 ```text
-userdata/custom_test_templates/
+presets/custom_test_templates/
 ```
 
 建议使用当前 v2 格式保存，并包含：
@@ -920,7 +920,7 @@ userdata/custom_test_templates/
 - `instruments`
 - `metadata.required_capabilities`
 
-如果模板文件需要进入安装包，确认 `spec/kk_lab.spec` 后续同步包含 `userdata/custom_test_templates`。
+如果模板文件需要进入安装包，确认 `spec/kk_lab.spec` 后续同步包含 `presets/custom_test_templates`。
 
 ## 14. 关键文件索引
 
@@ -940,7 +940,7 @@ ui/pages/custom_test/validation_panel.py
 ui/pages/custom_test/node_metadata.py
 ui/pages/custom_test/sequence_io.py
 
-userdata/custom_test_templates/
+presets/custom_test_templates/
 
 core/custom_test/nodes/base.py
 core/custom_test/nodes/instrument_nodes.py

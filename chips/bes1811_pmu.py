@@ -2,8 +2,8 @@
 """BES1811 PMU 芯片寄存器映射与 LDO 电压查找表。
 
 数据来源:
-  - userdata/1811 pmu inf reg.xlsx        → 寄存器位域定义
-  - userdata/BES1811 LDO输出电压范围.xlsx  → vbit ↔ 输出电压对应关系
+  - docs/Development/1811 pmu inf reg.xlsx        → 寄存器位域定义
+  - docs/Development/BES1811 LDO输出电压范围.xlsx  → vbit ↔ 输出电压对应关系
 
 设备参数: I2C 地址 0x17, 10 位寄存器地址, 16 位数据宽度。
 """

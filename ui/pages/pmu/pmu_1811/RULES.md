@@ -201,8 +201,8 @@ BUCK 类型还声明支持 `ULP`，但 controller 当前只实现 Normal/LP；�
 本节描述 6 个 BUCK（BUCK_01~06）的使能与电压控制规则。**模式切换（Normal/LP/ULP）后续补全。**
 
 > **数据来源**:
-> - 寄存器位域定义: `userdata/1811 pmu inf reg.xlsx`
-> - vbit ↔ 输出电压对应关系: `userdata/1811 DCDCVbit test.xlsx`（每个 BUCK 一个 sheet：`buck1-小bg`~`buck6-小bg`，每个 sheet 256 行 = vbit 0~255 全扫）
+> - 寄存器位域定义: `docs/Development/1811 pmu inf reg.xlsx`
+> - vbit ↔ 输出电压对应关系: `docs/Development/1811 DCDCVbit test.xlsx`（每个 BUCK 一个 sheet：`buck1-小bg`~`buck6-小bg`，每个 sheet 256 行 = vbit 0~255 全扫）
 
 > **实现状态**：以下规则为目标语义。`chips/bes1811_pmu.py` 当前仅定义 `LDO_REG_MAPS` / `LDO_VOLTAGE_TABLES`，BUCK_01~06 未在映射表中（`is_ldo_controllable` 返回 `False`），controller 尚未实现 BUCK 读写方法。本节作为后续编码的规格说明。
 

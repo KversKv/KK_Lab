@@ -1,0 +1,51 @@
+{
+  "ai": {
+    "enabled": true,
+    "base_url": "http://172.16.10.94:3000/v1",
+    "api_key": "sk-hkfOA1_CnRo3GOthYZpUag",
+    "default_model": "glm-5.2-fp8",
+    "model_mode": "fixed",
+    "available_models": [
+      "glm5.2",
+      "glm-5.2-fp8",
+      "deepseek-v4-flash"
+    ],
+    "stream": true,
+    "timeout_seconds": 60,
+    "model_timeouts": {
+      "glm-5.1-fp8": 180,
+      "glm-5.2-fp8": 180
+    },
+    "max_recent_log_lines": 300,
+    "enable_log_masking": true,
+    "require_confirm_high_risk_action": true,
+    "panel_default_open": false,
+    "panel_width": 360,
+    "model_context_windows": {
+      "glm5.2": 131072,
+      "glm-5.2-fp8": 131072,
+      "deepseek-v4-flash": 131072
+    },
+    "default_context_window": 131072,
+    "waveform_event_algo": "stalta",
+    "waveform_algo_params": {
+      "swed": {
+        "T": 0.002
+      }
+    },
+    "reserve_output_tokens": 4096,
+    "soft_budget_ratio": 0.5,
+    "max_context_block_tokens": 8192,
+    "summary_trigger_ratio": 0.7,
+    "enable_history_summary": true,
+    "summary_model": "deepseekv4flash",
+    "curator_ai_assist_enabled": true,
+    "curator_draft_model": "deepseekv4flash",
+    "telemetry_enabled": true,
+    "telemetry_endpoint": "",
+    "telemetry_batch_size": 20,
+    "telemetry_flush_interval_s": 300,
+    "telemetry_client_id": "2ab8108fcc17435daaa21ffd5ba38fbf",
+    "trace_enabled": true
+  }
+}
