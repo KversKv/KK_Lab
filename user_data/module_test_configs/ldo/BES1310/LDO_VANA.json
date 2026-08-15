@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "module_type": "ldo",
+  "config": {
+    "selected_items": [
+      "ldo_vout_scan",
+      "ldo_load_reg",
+      "ldo_line_reg",
+      "ldo_quiescent",
+      "ldo_ripple",
+      "ldo_output_noise",
+      "ldo_load_transient",
+      "ldo_line_transient"
+    ],
+    "chip_name": "BES1310",
+    "module_name": "LDO_VANA",
+    "operator": "LMY",
+    "temp_test_enabled": false,
+    "temperature": "",
+    "temp_soak_s": 300,
+    "temp_tolerance_c": 2,
+    "temp_wait_s": 1800,
+    "vin_channel": "CH 1",
+    "vout_channel": "CH 2",
+    "iload_channel": "CH 3",
+    "vout_nominal_mv": 1200,
+    "device_addr": "0x27",
+    "width_flag": 1,
+    "scope_vout_channel": 1,
+    "item_overrides": {
+      "ldo_vout_scan": {
+        "reg_addr": "0x128",
+        "msb": 14,
+        "lsb": 10,
+        "min_code": 0,
+        "max_code": 31,
+        "settle_time_s": 0.05,
+        "average_cnt": 3
+      },
+      "ldo_line_reg": {
+        "vin_start_v": 3.0,
+        "vin_end_v": 5.0,
+        "vin_step_v": 0.1,
+        "settle_time_s": 0.05,
+        "average_cnt": 3
+      },
+      "ldo_load_reg": {
+        "iload_start_ma": 1.0,
+        "iload_end_ma": 200.0,
+        "iload_step_ma": 10.0,
+        "vin_v": 3.8,
+        "settle_time_s": 0.05,
+        "average_cnt": 3
+      },
+      "ldo_quiescent": {
+        "vin_v": 3.8,
+        "average_cnt": 5,
+        "settle_time_s": 0.05,
+        "iq_en_dr_addr": "0x126",
+        "iq_en_addr": "0x126",
+        "iq_en_dr_bit": 4,
+        "iq_en_bit": 3,
+        "iq_on_dr_val": 1,
+        "iq_on_en_val": 1,
+        "iq_off_dr_val": 1,
+        "iq_off_en_val": 0,
+        "iq_vout_offset_mv": 20.0
+      },
+      "ldo_ripple": {
+        "vin_v": 3.8,
+        "iload_start_ma": 0.0,
+        "iload_end_ma": 200.0,
+        "iload_step_ma": 10.0,
+        "settle_time_s": 0.05,
+        "average_cnt": 3
+      }
+    },
+    "module_config_enabled": false,
+    "module_config_yaml": "ldo_vana_config:\n  - \"//lp_bias_config\"\n  - \"WRITE_BITS 0x0189 8 8 0x1      //reg_res_lp_bias_sel_dr=1\"\n  - \"WRITE_BITS 0x012C 14 0 0x7C3F  //ldo_lp_bias_vbit\"\n  - \"WRITE_BITS 0x0003 14 12 0x7    //pu_lp_bias\"\n  - \"WRITE_BITS 0x0126 5 0 0x3F     //set LDO_VANA to LP_MODE\"\n  - \"WRITE_BITS 0x0189 7 7 0x1      //reg_ldo_vana_res_sel_dr=1\"",
+    "judge_criteria": {}
+  }
+}

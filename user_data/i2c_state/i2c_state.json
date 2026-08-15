@@ -1,8 +1,8 @@
 {
   "version": "1.0",
   "last_template": "DA9168",
-  "last_script": "",
-  "last_script_collection": "",
+  "last_script": "Charge200mA",
+  "last_script_collection": "DA9168",
   "filter_scripts_by_template": true,
   "settings": {
     "dll_path": "",

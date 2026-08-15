@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "module_type": "dcdc",
+  "config": {
+    "selected_items": [
+      "dcdc_vout_scan",
+      "dcdc_efficiency",
+      "dcdc_load_reg",
+      "dcdc_line_reg",
+      "dcdc_quiescent",
+      "dcdc_ripple",
+      "dcdc_load_transient",
+      "dcdc_line_transient",
+      "dcdc_psrr",
+      "dcdc_inductor_current",
+      "dcdc_startup",
+      "dcdc_protection",
+      "dcdc_topology"
+    ],
+    "chip_name": "BES1310",
+    "module_name": "BUCK_VCORE",
+    "operator": "LMY",
+    "temp_test_enabled": false,
+    "temperature": "",
+    "temp_soak_s": 300,
+    "temp_tolerance_c": 2,
+    "temp_wait_s": 1800,
+    "vin_channel": "CH 1",
+    "vout_channel": "CH 2",
+    "iload_channel": "CH 3",
+    "vout_nominal_mv": 1200,
+    "device_addr": "0x27",
+    "width_flag": 1,
+    "scope_vout_channel": 1,
+    "item_overrides": {
+      "dcdc_vout_scan": {
+        "reg_addr": "0x013F",
+        "msb": 8,
+        "lsb": 0,
+        "min_code": 0,
+        "max_code": 256,
+        "settle_time_s": 0.05,
+        "average_cnt": 3
+      },
+      "dcdc_efficiency": {
+        "iload_start_ma": 1.0,
+        "iload_end_ma": 200.0,
+        "iload_step_ma": 10.0,
+        "vin_v": 3.8,
+        "average_cnt": 3,
+        "settle_time_s": 0.05
+      },
+      "dcdc_load_reg": {
+        "iload_start_ma": 1.0,
+        "iload_end_ma": 200.0,
+        "iload_step_ma": 20.0,
+        "vin_v": 3.8,
+        "average_cnt": 3,
+        "settle_time_s": 0.05
+      },
+      "dcdc_line_reg": {
+        "vin_start_v": 3.0,
+        "vin_end_v": 5.0,
+        "vin_step_v": 0.1,
+        "average_cnt": 3,
+        "settle_time_s": 0.05
+      },
+      "dcdc_quiescent": {
+        "vin_v": 3.8,
+        "average_cnt": 5,
+        "settle_time_s": 0.05,
+        "iq_en_dr_addr": "0x131",
+        "iq_en_addr": "0x131",
+        "iq_en_dr_bit": 1,
+        "iq_en_bit": 0,
+        "iq_on_dr_val": 1,
+        "iq_on_en_val": 1,
+        "iq_off_dr_val": 1,
+        "iq_off_en_val": 0,
+        "iq_vout_offset_mv": 20.0
+      },
+      "dcdc_ripple": {
+        "vin_v": 3.8,
+        "iload_start_ma": 0.0,
+        "iload_end_ma": 200.0,
+        "iload_step_ma": 20.0,
+        "settle_time_s": 0.05,
+        "average_cnt": 3
+      },
+      "dcdc_switching_freq": {
+        "vin_v": 3.8,
+        "iload_start_ma": 1.0,
+        "iload_end_ma": 200.0,
+        "iload_step_ma": 20.0,
+        "average_cnt": 3,
+        "settle_time_s": 0.05
+      },
+      "dcdc_load_transient": {
+        "transient_groups": [
+          {
+            "i0_ma": 10.0,
+            "i1_ma": 100.0,
+            "freq_hz": 10.0
+          },
+          {
+            "i0_ma": 10.0,
+            "i1_ma": 100.0,
+            "freq_hz": 100.0
+          },
+          {
+            "i0_ma": 10.0,
+            "i1_ma": 100.0,
+            "freq_hz": 1000.0
+          }
+        ],
+        "settle_time_s": 0.05
+      },
+      "dcdc_line_transient": {
+        "line_transient_groups": [
+          {
+            "vin0_v": 3.2,
+            "vin1_v": 4.2,
+            "freq_hz": 1.0
+          },
+          {
+            "vin0_v": 3.2,
+            "vin1_v": 4.2,
+            "freq_hz": 10.0
+          },
+          {
+            "vin0_v": 3.2,
+            "vin1_v": 4.2,
+            "freq_hz": 100.0
+          }
+        ],
+        "transient_vspan_mv": 200.0,
+        "settle_time_s": 0.05
+      }
+    },
+    "module_config_enabled": false,
+    "module_config_yaml": "buck_vcore_config:\n  - \"WRITE_BITS 0x0189 5 5 0x1      //reg_buck_vcore_res_sel_dr=1\"",
+    "judge_criteria": {}
+  }
+}
