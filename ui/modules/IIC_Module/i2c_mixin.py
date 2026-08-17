@@ -1008,18 +1008,21 @@ class I2cMixin:
             "high_bit": min(7, bits - 1),
             "low_bit": 0,
             "description": "",
+            "access": "R/W",
         })
         self.i2c_bits.set_fields(self._i2c_fields)
         self.i2c_bits.set_value(self._i2c_data_value)
         self._i2c_sync_active_register_fields()
 
     def _on_i2c_field_edited(self, field_idx, col, text):
-        """位表 Field(col 2) / Desc(col 3) 内联编辑 → 更新字段数据。"""
+        """位表 Access(col 2) / Field(col 3) / Desc(col 4) 内联编辑 → 更新字段数据。"""
         if field_idx is None or field_idx >= len(self._i2c_fields):
             return
         if col == 2:
-            self._i2c_fields[field_idx]["name"] = text
+            self._i2c_fields[field_idx]["access"] = text
         elif col == 3:
+            self._i2c_fields[field_idx]["name"] = text
+        elif col == 4:
             self._i2c_fields[field_idx]["description"] = text
         self._i2c_sync_active_register_fields()
 
@@ -1061,6 +1064,7 @@ class I2cMixin:
             "high_bit": bit,
             "low_bit": bit,
             "description": "",
+            "access": "R/W",
         })
         self.i2c_bits.set_fields(self._i2c_fields)
         self.i2c_bits.set_value(self._i2c_data_value)
@@ -1200,7 +1204,14 @@ class I2cMixin:
             coll_item.setForeground(QColor(TEXT_MUTED))
             name_item = QTableWidgetItem(str(script.get("name", "")))
             cmds = script.get("commands", []) or []
-            cnt_item = QTableWidgetItem(str(len(cmds)))
+            # Cmds 统计：排除整行注释和 DELAY 控制指令
+            effective_cnt = 0
+            for c in cmds:
+                parsed = _parse_dsl_for_display(str(c))
+                if parsed["is_comment"] or parsed["action"] == "DELAY":
+                    continue
+                effective_cnt += 1
+            cnt_item = QTableWidgetItem(str(effective_cnt))
             cnt_item.setTextAlignment(Qt.AlignCenter)
             self.i2c_seq_list.setItem(row, 0, coll_item)
             self.i2c_seq_list.setItem(row, 1, name_item)
@@ -1555,7 +1566,9 @@ class I2cMixin:
         worker = _I2cSequenceWorker(
             self._i2c_dll_path(), self._i2c_speed_mode, dev,
             self._i2c_width, commands, script_name=name,
-            data_bits=self._i2c_data_bits)
+            data_bits=self._i2c_data_bits,
+            default_step=(4 if self._i2c_data_bits >= 32 else 1),
+            template_name=(self._i2c_active_template_name or "Unknown"))
         thread = QThread()
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
@@ -1563,6 +1576,7 @@ class I2cMixin:
         worker.finished.connect(self._on_i2c_seq_finished)
         worker.error.connect(self._on_i2c_seq_error)
         worker.cmd_read.connect(self._on_i2c_seq_cmd_read)
+        worker.batch_log.connect(self._on_i2c_seq_batch_log)
         worker.finished.connect(thread.quit)
         worker.error.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
@@ -1626,6 +1640,10 @@ class I2cMixin:
     def _on_i2c_seq_thread_cleanup(self):
         self._i2c_script_thread = None
         self._i2c_script_worker = None
+
+    def _on_i2c_seq_batch_log(self, log_path):
+        """READ_RANGE 完成：批量读日志已保存到单独文件。"""
+        self.append_log(f"[I2C] 批量读日志已保存: {log_path}")
 
     def _on_i2c_seq_finished(self):
         self._i2c_set_activity("Sequence", ok=True)

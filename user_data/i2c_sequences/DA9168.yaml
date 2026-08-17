@@ -1,123 +1,109 @@
 name: DA9168
 description: DA9168 充电脚本集合 (基于 Renesas DA9168 Datasheet Rev 2.2)
 scripts:
-  # ============================================================
-  # 1. 读取 OTP ID 与充电状态 (前置诊断)
-  # ============================================================
-  - name: ReadStatus
-    description: 读取 DA9168 OTP ID/Variant/Config 与充电状态寄存器
-    template: DA9168
-    commands:
-      - READ 0x0042 TO $dev_id        // OTP_DEVICE_ID (应 = 0xE7)
-      - READ 0x0043 TO $variant       // OTP_VARIANT_ID (MRC/VRC)
-      - READ 0x0044 TO $config        // OTP_CONFIG_ID
-      - READ 0x0000 TO $stat0         // VBUS/VMID/VSYS/VBAT OK 状态
-      - READ 0x0001 TO $stat1         // OV/UV 状态
-      - READ 0x0002 TO $stat2         // TSD/WD/TS 状态
-      - READ 0x0003 TO $stat3         // 充电状态: SLEEP/SPLMT/TIMER/TRICKLE/PRE/CC/CV/DONE
-      - READ 0x0004 TO $stat4         // VSYS_SHUTDOWN / LDO OC/IMON
-
-  # ============================================================
-  # 2. 100 mA 充电 (5 V USB / 4.20 V / 无 NTC)
-  # ============================================================
-  - name: Charge100mA
-    description: DA9168 100 mA 充电 (CHG_RANGE=0, ICHG=20, IINDPM=0.6A)
-    template: DA9168
-    commands:
-      - "// 1) 确认 I2C 通信: 读 OTP_DEVICE_ID 应为 0xE7"
-      - READ 0x0042 TO $dev_id
-      - "// 2) VBUS_OVSEL=6.2V(01), HIZ_MODE=0, 保持默认"
-      - WRITE 0x0015 0x56
-      - "// 3) VSYS_MIN=3.7V(011), VINDPM=4.2V(1000)"
-      - WRITE 0x000F 0x38
-      - "// 4) ILIMIT_EN=0, IINDPM=0x05=0.6A (100mA 充电留余量)"
-      - WRITE 0x0010 0x05
-      - "// 5) VBATREG = 4.20 V (0x17)"
-      - WRITE 0x001A 0x17
-      - "// 6) 充电电流: CHG_RANGE=0(5mA step), ICHG=0x14(20) -> 100 mA"
-      - DELAY 50                    // 等待前端寄存器稳定再写电流
-      - WRITE 0x0019 0x14
-      - "// 7) 预充/终止电流: 小量程示例 (IPRE=10mA, ITERM=15mA)"
-      - WRITE 0x0018 0x4F
-      - "// 8) 主安全定时器 10h, 预充 30min, TOPOFF 关"
-      - WRITE 0x0017 0x40
-      - "// 9) 无 NTC: BTS 关闭, VBUS_DEB 默认"
-      - WRITE 0x0011 0x01
-      - "// 10) ★ CHG_EN=1 (其余保持默认 0x0E) 启动充电"
-      - WRITE 0x0016 0x0F
-      - DELAY 20
-      - READ 0x0003 TO $stat3        // S_CHG_* 状态位
-
-  # ============================================================
-  # 3. 200 mA 充电 (5 V USB / 4.20 V / 无 NTC)
-  # ============================================================
-  - name: Charge200mA
-    description: DA9168 200 mA 充电 (CHG_RANGE=0, ICHG=40, IINDPM=0.8A)
-    template: DA9168
-    commands:
-      - "// 1) 确认 I2C 通信: 读 OTP_DEVICE_ID 应为 0xE7"
-      - READ 0x0042 TO $dev_id
-      - "// 2) VBUS_OVSEL=6.2V(01), HIZ_MODE=0, 保持默认"
-      - WRITE 0x0015 0x56
-      - "// 3) VSYS_MIN=3.7V(011), VINDPM=4.2V(1000)"
-      - WRITE 0x000F 0x38
-      - "// 4) ILIMIT_EN=0, IINDPM=0x07=0.8A (200mA 充电留余量)"
-      - WRITE 0x0010 0x07
-      - "// 5) VBATREG = 4.20 V (0x17)"
-      - WRITE 0x001A 0x17
-      - "// 6) 充电电流: CHG_RANGE=0(5mA step), ICHG=0x28(40) -> 200 mA"
-      - DELAY 50                    // 等待前端寄存器稳定再写电流
-      - WRITE 0x0019 0x28
-      - "// 7) 预充/终止电流: 小量程示例 (IPRE=10mA, ITERM=15mA)"
-      - WRITE 0x0018 0x4F
-      - "// 8) 主安全定时器 10h, 预充 30min, TOPOFF 关"
-      - WRITE 0x0017 0x40
-      - "// 9) 无 NTC: BTS 关闭, VBUS_DEB 默认"
-      - WRITE 0x0011 0x01
-      - "// 10) ★ CHG_EN=1 (其余保持默认 0x0E) 启动充电"
-      - WRITE 0x0016 0x0F
-      - DELAY 20
-      - READ 0x0003 TO $stat3        // S_CHG_* 状态位
-
-  # ============================================================
-  # 4. 500 mA 充电 (5 V USB / 4.20 V / 无 NTC)
-  # ============================================================
-  - name: Charge500mA
-    description: DA9168 500 mA 充电 (CHG_RANGE=1, ICHG=25, IINDPM=1.1A)
-    template: DA9168
-    commands:
-      - "// 1) 确认 I2C 通信: 读 OTP_DEVICE_ID 应为 0xE7"
-      - READ 0x0042 TO $dev_id
-      - "// 2) VBUS_OVSEL=6.2V(01), HIZ_MODE=0, 保持默认"
-      - WRITE 0x0015 0x56
-      - "// 3) VSYS_MIN=3.7V(011), VINDPM=4.2V(1000)"
-      - WRITE 0x000F 0x38
-      - "// 4) ILIMIT_EN=0, IINDPM=0x0A=1.1A (500mA 充电留余量)"
-      - WRITE 0x0010 0x0A
-      - "// 5) VBATREG = 4.20 V (0x17)"
-      - WRITE 0x001A 0x17
-      - "// 6) 充电电流: CHG_RANGE=1(20mA step), ICHG=0x19(25) -> 500 mA"
-      - DELAY 50                    // 等待前端寄存器稳定再写电流
-      - WRITE 0x0019 0x99
-      - "// 7) 预充/终止电流: 大量程示例 (IPRE=40mA, ITERM=60mA)"
-      - WRITE 0x0018 0x4F
-      - "// 8) 主安全定时器 10h, 预充 30min, TOPOFF 关"
-      - WRITE 0x0017 0x40
-      - "// 9) 无 NTC: BTS 关闭, VBUS_DEB 默认"
-      - WRITE 0x0011 0x01
-      - "// 10) ★ CHG_EN=1 (其余保持默认 0x0E) 启动充电"
-      - WRITE 0x0016 0x0F
-      - DELAY 20
-      - READ 0x0003 TO $stat3        // S_CHG_* 状态位
-
-  # ============================================================
-  # 5. 停止充电 (CHG_EN=0, 不修改其他配置)
-  # ============================================================
-  - name: ChargeStop
-    description: DA9168 停止充电 (CHG_EN=0)
-    template: DA9168
-    commands:
-      - "// 清 CHG_EN=0 停止充电, 其余位保持原值"
-      - WRITE_BITS 0x0016 0 0 0x00
-      - DELAY 10
-      - READ 0x0003 TO $stat3         // 确认充电状态变化
+- name: ReadStatus
+  description: 读取 DA9168 OTP ID/Variant/Config 与充电状态寄存器
+  template: DA9168
+  commands:
+  - READ 0x0042 TO $dev_id        // OTP_DEVICE_ID (应 = 0xE7)
+  - READ 0x0043 TO $variant       // OTP_VARIANT_ID (MRC/VRC)
+  - READ 0x0044 TO $config        // OTP_CONFIG_ID
+  - READ 0x0000 TO $stat0         // VBUS/VMID/VSYS/VBAT OK 状态
+  - READ 0x0001 TO $stat1         // OV/UV 状态
+  - READ 0x0002 TO $stat2         // TSD/WD/TS 状态
+  - '{''READ 0x0003 TO $stat3         // 充电状态'': ''SLEEP/SPLMT/TIMER/TRICKLE/PRE/CC/CV/DONE''}'
+  - READ 0x0004 TO $stat4         // VSYS_SHUTDOWN / LDO OC/IMON
+- name: Charge100mA
+  description: DA9168 100 mA 充电 (CHG_RANGE=0, ICHG=20, IINDPM=0.6A)
+  template: DA9168
+  commands:
+  - '// 1) 确认 I2C 通信: 读 OTP_DEVICE_ID 应为 0xE7'
+  - READ 0x0042 TO $dev_id
+  - // 2) VBUS_OVSEL=6.2V(01), HIZ_MODE=0, 保持默认
+  - WRITE 0x0015 0x56
+  - // 3) VSYS_MIN=3.7V(011), VINDPM=4.2V(1000)
+  - WRITE 0x000F 0x38
+  - // 4) ILIMIT_EN=0, IINDPM=0x05=0.6A (100mA 充电留余量)
+  - WRITE 0x0010 0x05
+  - // 5) VBATREG = 4.20 V (0x17)
+  - WRITE 0x001A 0x17
+  - '// 6) 充电电流: CHG_RANGE=0(5mA step), ICHG=0x14(20) -> 100 mA'
+  - DELAY 50                    // 等待前端寄存器稳定再写电流
+  - WRITE 0x0019 0x14
+  - '// 7) 预充/终止电流: 小量程示例 (IPRE=10mA, ITERM=15mA)'
+  - WRITE 0x0018 0x4F
+  - // 8) 主安全定时器 10h, 预充 30min, TOPOFF 关
+  - WRITE 0x0017 0x40
+  - '// 9) 无 NTC: BTS 关闭, VBUS_DEB 默认'
+  - WRITE 0x0011 0x01
+  - // 10) ★ CHG_EN=1 (其余保持默认 0x0E) 启动充电
+  - WRITE 0x0016 0x0F
+  - DELAY 20
+  - READ 0x0003 TO $stat3        // S_CHG_* 状态位
+- name: Charge200mA
+  description: DA9168 200 mA 充电 (CHG_RANGE=0, ICHG=40, IINDPM=0.8A)
+  template: DA9168
+  commands:
+  - '// 1) 确认 I2C 通信: 读 OTP_DEVICE_ID 应为 0xE7'
+  - READ 0x0042 TO $dev_id
+  - // 2) VBUS_OVSEL=6.2V(01), HIZ_MODE=0, 保持默认
+  - WRITE 0x0015 0x56
+  - // 3) VSYS_MIN=3.7V(011), VINDPM=4.2V(1000)
+  - WRITE 0x000F 0x38
+  - // 4) ILIMIT_EN=0, IINDPM=0x07=0.8A (200mA 充电留余量)
+  - WRITE 0x0010 0x07
+  - // 5) VBATREG = 4.20 V (0x17)
+  - WRITE 0x001A 0x17
+  - '// 6) 充电电流: CHG_RANGE=0(5mA step), ICHG=0x28(40) -> 200 mA'
+  - DELAY 50                    // 等待前端寄存器稳定再写电流
+  - WRITE 0x0019 0x28
+  - '// 7) 预充/终止电流: 小量程示例 (IPRE=10mA, ITERM=15mA)'
+  - WRITE 0x0018 0x4F
+  - // 8) 主安全定时器 10h, 预充 30min, TOPOFF 关
+  - WRITE 0x0017 0x40
+  - '// 9) 无 NTC: BTS 关闭, VBUS_DEB 默认'
+  - WRITE 0x0011 0x01
+  - // 10) ★ CHG_EN=1 (其余保持默认 0x0E) 启动充电
+  - WRITE 0x0016 0x0F
+  - DELAY 20
+  - READ 0x0003 TO $stat3        // S_CHG_* 状态位
+- name: Charge500mA
+  description: DA9168 500 mA 充电 (CHG_RANGE=1, ICHG=25, IINDPM=1.1A)
+  template: DA9168
+  commands:
+  - '// 1) 确认 I2C 通信: 读 OTP_DEVICE_ID 应为 0xE7'
+  - READ 0x0042 TO $dev_id
+  - // 2) VBUS_OVSEL=6.2V(01), HIZ_MODE=0, 保持默认
+  - WRITE 0x0015 0x56
+  - // 3) VSYS_MIN=3.7V(011), VINDPM=4.2V(1000)
+  - WRITE 0x000F 0x38
+  - // 4) ILIMIT_EN=0, IINDPM=0x0A=1.1A (500mA 充电留余量)
+  - WRITE 0x0010 0x0A
+  - // 5) VBATREG = 4.20 V (0x17)
+  - WRITE 0x001A 0x17
+  - '// 6) 充电电流: CHG_RANGE=1(20mA step), ICHG=0x19(25) -> 500 mA'
+  - DELAY 50                    // 等待前端寄存器稳定再写电流
+  - WRITE 0x0019 0x99
+  - '// 7) 预充/终止电流: 大量程示例 (IPRE=40mA, ITERM=60mA)'
+  - WRITE 0x0018 0x4F
+  - // 8) 主安全定时器 10h, 预充 30min, TOPOFF 关
+  - WRITE 0x0017 0x40
+  - '// 9) 无 NTC: BTS 关闭, VBUS_DEB 默认'
+  - WRITE 0x0011 0x01
+  - // 10) ★ CHG_EN=1 (其余保持默认 0x0E) 启动充电
+  - WRITE 0x0016 0x0F
+  - DELAY 20
+  - READ 0x0003 TO $stat3        // S_CHG_* 状态位
+- name: ChargeStop
+  description: DA9168 停止充电 (CHG_EN=0)
+  template: DA9168
+  commands:
+  - // 清 CHG_EN=0 停止充电, 其余位保持原值
+  - WRITE_BITS 0x0016 0 0 0x00
+  - DELAY 10
+  - READ 0x0003 TO $stat3         // 确认充电状态变化
+- name: Dump
+  description: ''
+  template: DA9168
+  commands:
+  - READ_RANGE 0x00 0x22

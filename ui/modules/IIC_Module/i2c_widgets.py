@@ -288,10 +288,10 @@ class BitsTable(QTableWidget):
     """单段位表格。bit_offset/bit_count 决定显示区间（MSB 在上）。
     同一字段的多个 Bit 自动合并 Field/Description/Hex 单元格（rowSpan）。"""
     bit_toggled = Signal(int)  # 绝对位索引
-    field_edited = Signal(int, int, str)  # (field_index, column, text) col: 2=name 3=desc
+    field_edited = Signal(int, int, str)  # (field_index, column, text) col: 2=access 3=name 4=desc
 
     def __init__(self, bit_offset, bit_count, parent=None):
-        super().__init__(0, 5, parent)
+        super().__init__(0, 6, parent)
         self._offset = bit_offset
         self._count = bit_count
         self._fields = []
@@ -299,7 +299,8 @@ class BitsTable(QTableWidget):
         self._field_base = "hex"
         self._full_value = 0
         self.setObjectName("bitsTable")
-        self.setHorizontalHeaderLabels(["Bit", "Val", "Field", "Desc", "Hex ▾"])
+        self.setHorizontalHeaderLabels(
+            ["Bit", "Val", "Access", "Field", "Desc", "Hex ▾"])
         self.verticalHeader().setVisible(False)
         # Val 列是 bit 切换按钮,点击只应切换该 bit,不应选中整行
         self.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -310,14 +311,15 @@ class BitsTable(QTableWidget):
         hdr = self.horizontalHeader()
         hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         hdr.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Access
         # Field / Desc 改为 Interactive，允许用户拖拽分隔线改变列宽；
         # 在用户首次拖拽前由 resizeEvent 按比例自动分配以保持原本 Stretch 的填满效果
-        hdr.setSectionResizeMode(2, QHeaderView.Interactive)
         hdr.setSectionResizeMode(3, QHeaderView.Interactive)
-        hdr.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(4, QHeaderView.Interactive)
+        hdr.setSectionResizeMode(5, QHeaderView.ResizeToContents)
         hdr.setStretchLastSection(False)
-        self.setColumnWidth(2, 140)
-        self.setColumnWidth(3, 240)
+        self.setColumnWidth(3, 140)
+        self.setColumnWidth(4, 240)
         self._user_resized_field_desc = False
         self._in_field_desc_layout = False
         hdr.setSectionsClickable(True)
@@ -332,7 +334,7 @@ class BitsTable(QTableWidget):
 
     def _on_header_clicked(self, logical_index):
         """点击 Hex 列表头弹出进制切换菜单。"""
-        if logical_index != 4:
+        if logical_index != 5:
             return
         menu = QMenu(self)
         for key, _text in _FIELD_BASES:
@@ -346,7 +348,7 @@ class BitsTable(QTableWidget):
 
     def _on_section_resized(self, logical_index, _old_size, _new_size):
         """用户拖拽 Field/Desc 列分隔线时，停止后续自动分配，尊重用户设定。"""
-        if logical_index in (2, 3) and not self._in_field_desc_layout:
+        if logical_index in (3, 4) and not self._in_field_desc_layout:
             self._user_resized_field_desc = True
 
     def resizeEvent(self, event):
@@ -360,7 +362,7 @@ class BitsTable(QTableWidget):
         if viewport_w <= 0:
             return
         fixed_w = (self.columnWidth(0) + self.columnWidth(1)
-                   + self.columnWidth(4))
+                   + self.columnWidth(2) + self.columnWidth(5))
         available = viewport_w - fixed_w
         if available <= 0:
             return
@@ -368,10 +370,10 @@ class BitsTable(QTableWidget):
         desc_w = max(100, available - field_w)
         self._in_field_desc_layout = True
         try:
-            if self.columnWidth(2) != field_w:
-                self.setColumnWidth(2, field_w)
-            if self.columnWidth(3) != desc_w:
-                self.setColumnWidth(3, desc_w)
+            if self.columnWidth(3) != field_w:
+                self.setColumnWidth(3, field_w)
+            if self.columnWidth(4) != desc_w:
+                self.setColumnWidth(4, desc_w)
         finally:
             self._in_field_desc_layout = False
 
@@ -392,14 +394,14 @@ class BitsTable(QTableWidget):
             return
         self._field_base = base
         self.setHorizontalHeaderItem(
-            4, QTableWidgetItem(_FIELD_BASE_LABELS[base] + " ▾"))
+            5, QTableWidgetItem(_FIELD_BASE_LABELS[base] + " ▾"))
         self._refresh_field_hex(self._full_value)
 
     def _apply_field_edit_flags(self):
-        """根据编辑模式设置 Field/Desc 单元格的可编辑标志。"""
+        """根据编辑模式设置 Access/Field/Desc 单元格的可编辑标志。"""
         editable = self._edit_mode
         for i in range(self._count):
-            for c in (2, 3):
+            for c in (2, 3, 4):
                 it = self.item(i, c)
                 if it is not None:
                     flags = it.flags()
@@ -410,10 +412,10 @@ class BitsTable(QTableWidget):
                     it.setFlags(flags)
 
     def _on_cell_changed(self, row, col):
-        """Field(col 2) / Desc(col 3) 内联编辑 → 通知 mixin 更新字段数据。"""
+        """Access(col 2) / Field(col 3) / Desc(col 4) 内联编辑 → 通知 mixin 更新字段数据。"""
         if not self._edit_mode:
             return
-        if col not in (2, 3):
+        if col not in (2, 3, 4):
             return
         fidx = self._field_index_at_row(row)
         if fidx is None:
@@ -469,9 +471,13 @@ class BitsTable(QTableWidget):
             btn.setStyleSheet(_bit_val_style(False))
             btn.clicked.connect(lambda _=False, b=bit: self.bit_toggled.emit(b))
             self.setCellWidget(i, 1, btn)
-            for c in (2, 3, 4):
+            for c in (2, 3, 4, 5):
                 it = QTableWidgetItem("")
-                if c == 4:
+                if c == 2:
+                    # Access 列：居中显示 R/W/RC 等可操作性标记
+                    it.setTextAlignment(Qt.AlignCenter)
+                    it.setForeground(QColor(TEXT_MUTED))
+                elif c == 5:
                     it.setTextAlignment(Qt.AlignCenter)
                     it.setForeground(QColor(EMERALD_LIGHT))
                 self.setItem(i, c, it)
@@ -511,7 +517,7 @@ class BitsTable(QTableWidget):
         base_bg = QColor(SLATE_900)
         base_bg.setAlpha(120)
         for i in range(self._count):
-            for c in (2, 3, 4):
+            for c in (2, 3, 4, 5):
                 it = self.item(i, c)
                 if it is not None:
                     it.setText("")
@@ -530,8 +536,12 @@ class BitsTable(QTableWidget):
             if row_top > row_bot:
                 row_top, row_bot = row_bot, row_top
             span = row_bot - row_top + 1
-            name_it = self.item(row_top, 2)
-            desc_it = self.item(row_top, 3)
+            access_it = self.item(row_top, 2)
+            name_it = self.item(row_top, 3)
+            desc_it = self.item(row_top, 4)
+            if access_it is not None:
+                access_it.setText(str(f.get("access", "R/W")))
+                access_it.setForeground(QColor(TEXT_MUTED))
             if name_it is not None:
                 name_it.setText(f["name"])
                 name_it.setForeground(QColor(INDIGO_LIGHT))
@@ -546,12 +556,12 @@ class BitsTable(QTableWidget):
             else:
                 bg = tint
             for r in range(row_top, row_bot + 1):
-                for c in (2, 3, 4):
+                for c in (2, 3, 4, 5):
                     it = self.item(r, c)
                     if it is not None:
                         it.setBackground(bg)
             if span > 1:
-                for c in (2, 3, 4):
+                for c in (2, 3, 4, 5):
                     self.setSpan(row_top, c, span, 1)
         self._apply_field_edit_flags()
 
@@ -567,7 +577,7 @@ class BitsTable(QTableWidget):
             val = (full_value >> flo) & mask
             c_hi = min(fhi, self._offset + self._count - 1)
             row_top = self._row_of(c_hi)
-            it = self.item(row_top, 4)
+            it = self.item(row_top, 5)
             if it is not None:
                 it.setText(_fmt_field_value(val, width, self._field_base))
 
@@ -598,7 +608,7 @@ class BitsTable(QTableWidget):
         row_top = self._row_of(c_hi)
         if 0 <= row_top < self.rowCount():
             self.scrollToItem(
-                self.item(row_top, 2),
+                self.item(row_top, 3),
                 QAbstractItemView.PositionAtCenter,
             )
 

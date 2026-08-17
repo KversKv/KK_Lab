@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "last_template": "DA9168",
-  "last_script": "Charge200mA",
+  "last_script": "Charge100mA",
   "last_script_collection": "DA9168",
   "filter_scripts_by_template": true,
   "settings": {

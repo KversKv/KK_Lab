@@ -16,49 +16,57 @@
           "name": "S_VBUS_VINDPM",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "[R] VBUS VINDPM Status | 0x0 VBUS not in VINDPM | 0x1 VBUS in VINDPM"
+          "description": "VBUS VINDPM Status | 0x0 VBUS not in VINDPM | 0x1 VBUS in VINDPM",
+          "access": "R"
         },
         {
           "name": "S_VBUS_IINDPM",
           "high_bit": 6,
           "low_bit": 6,
-          "description": "[R] VBUS IINDPM Status | 0x0 VBUS not in IINDPM | 0x1 VBUS in IINDPM"
+          "description": "VBUS IINDPM Status | 0x0 VBUS not in IINDPM | 0x1 VBUS in IINDPM",
+          "access": "R"
         },
         {
           "name": "S_VMID_OC",
           "high_bit": 5,
           "low_bit": 5,
-          "description": "[R] VMID OC Status during boost operation. | 0x0 VMID not in OC | 0x1 VMID in OC"
+          "description": "VMID OC Status during boost operation. | 0x0 VMID not in OC | 0x1 VMID in OC",
+          "access": "R"
         },
         {
           "name": "S_VBAT_OC",
           "high_bit": 4,
           "low_bit": 4,
-          "description": "[R] VBAT OC Status during battery operation | 0x0 VBAT not in OC | 0x1 VBAT in OC"
+          "description": "VBAT OC Status during battery operation | 0x0 VBAT not in OC | 0x1 VBAT in OC",
+          "access": "R"
         },
         {
           "name": "S_VBUS_OK",
           "high_bit": 3,
           "low_bit": 3,
-          "description": "[R] VBUS OK Status, above UV and below OV thresholds. | 0x0 VBUS not OK | 0x1 VBUS OK"
+          "description": "VBUS OK Status, above UV and below OV thresholds. | 0x0 VBUS not OK | 0x1 VBUS OK",
+          "access": "R"
         },
         {
           "name": "S_VMID_OK",
           "high_bit": 2,
           "low_bit": 2,
-          "description": "[R] VMID OK Status during boost operation. | 0x0 VMID not OK"
+          "description": "VMID OK Status during boost operation. | 0x0 VMID not OK",
+          "access": "R"
         },
         {
           "name": "S_VSYS_OK",
           "high_bit": 1,
           "low_bit": 1,
-          "description": "[R] VSYS OK Status, above UV and below OV thresholds | 0x0 VSYS not OK | 0x1 VSYS OK"
+          "description": "VSYS OK Status, above UV and below OV thresholds | 0x0 VSYS not OK | 0x1 VSYS OK",
+          "access": "R"
         },
         {
           "name": "S_VBAT_OK",
           "high_bit": 0,
           "low_bit": 0,
-          "description": "[R] VBAT OK Status, above UV and below OV thresholds. | 0x0 VBAT not OK | 0x1 VBAT OK"
+          "description": "VBAT OK Status, above UV and below OV thresholds. | 0x0 VBAT not OK | 0x1 VBAT OK",
+          "access": "R"
         }
       ]
     },
@@ -73,49 +81,57 @@
           "name": "S_VBUS_OV",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "[R] VBUS OV Status. | 0x0 VBUS not in OV | 0x1 VBUS in OV"
+          "description": "VBUS OV Status. | 0x0 VBUS not in OV | 0x1 VBUS in OV",
+          "access": "R"
         },
         {
           "name": "S_VMID_OV",
           "high_bit": 6,
           "low_bit": 6,
-          "description": "[R] VMID OV Status during boost operation | 0x0 VMID not in OV | 0x1 VMID in OV"
+          "description": "VMID OV Status during boost operation | 0x0 VMID not in OV | 0x1 VMID in OV",
+          "access": "R"
         },
         {
           "name": "S_VSYS_OV",
           "high_bit": 5,
           "low_bit": 5,
-          "description": "[R] VSYS OV Status | 0x0 VSYS not in OV | 0x1 VSYS in OV"
+          "description": "VSYS OV Status | 0x0 VSYS not in OV | 0x1 VSYS in OV",
+          "access": "R"
         },
         {
           "name": "S_VBAT_OV",
           "high_bit": 4,
           "low_bit": 4,
-          "description": "[R] VBAT OV Status | 0x0 VBAT not in OV | 0x1 VBAT in OV"
+          "description": "VBAT OV Status | 0x0 VBAT not in OV | 0x1 VBAT in OV",
+          "access": "R"
         },
         {
           "name": "S_VBUS_UV",
           "high_bit": 3,
           "low_bit": 3,
-          "description": "[R] VBUS UV Status | 0x0 VBUS not in UV | 0x1 VBUS in UV"
+          "description": "VBUS UV Status | 0x0 VBUS not in UV | 0x1 VBUS in UV",
+          "access": "R"
         },
         {
           "name": "S_VMID_UV",
           "high_bit": 2,
           "low_bit": 2,
-          "description": "[R] VMID UV Status during boost operation | 0x0 VMID not in UV | 0x1 VMID in UV"
+          "description": "VMID UV Status during boost operation | 0x0 VMID not in UV | 0x1 VMID in UV",
+          "access": "R"
         },
         {
           "name": "S_VSYS_UV",
           "high_bit": 1,
           "low_bit": 1,
-          "description": "[R] VSYS UV Status | 0x0 VSYS not in UV | 0x1 VSYS in UV"
+          "description": "VSYS UV Status | 0x0 VSYS not in UV | 0x1 VSYS in UV",
+          "access": "R"
         },
         {
           "name": "S_VBAT_UV",
           "high_bit": 0,
           "low_bit": 0,
-          "description": "[R] VBAT UV Status | 0x0 VBAT not in UV | 0x1 VBAT in UV"
+          "description": "VBAT UV Status | 0x0 VBAT not in UV | 0x1 VBAT in UV",
+          "access": "R"
         }
       ]
     },
@@ -130,49 +146,57 @@
           "name": "S_TSD_CRIT",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "[R] TSD CRIT Status | 0x0 Junction temperature below critical level. | 0x1 Junction temperature above critical level."
+          "description": "TSD CRIT Status | 0x0 Junction temperature below critical level. | 0x1 Junction temperature above critical level.",
+          "access": "R"
         },
         {
           "name": "S_TSD_WARN",
           "high_bit": 6,
           "low_bit": 6,
-          "description": "[R] TSD WARN Status | 0x0 Junction temperature below warning level. | 0x1 Junction temperature above warning level."
+          "description": "TSD WARN Status | 0x0 Junction temperature below warning level. | 0x1 Junction temperature above warning level.",
+          "access": "R"
         },
         {
           "name": "S_WD_TIMER",
           "high_bit": 5,
           "low_bit": 5,
-          "description": "[R] WD TIMER Status | 0x0 Watch-dog timer not expired | 0x1 Watch-dog timer expired"
+          "description": "WD TIMER Status | 0x0 Watch-dog timer not expired | 0x1 Watch-dog timer expired",
+          "access": "R"
         },
         {
           "name": "S_TS_HOT",
           "high_bit": 4,
           "low_bit": 4,
-          "description": "[R] TS HOT Status | 0x0 Battery temperature sense not in HOT State | 0x1 Battery temperature sense in HOT State"
+          "description": "TS HOT Status | 0x0 Battery temperature sense not in HOT State | 0x1 Battery temperature sense in HOT State",
+          "access": "R"
         },
         {
           "name": "S_TS_WARM",
           "high_bit": 3,
           "low_bit": 3,
-          "description": "[R] TS WARM Status | 0x0 Battery temperature sense not in WARM State | 0x1 Battery temperature sense in WARM State"
+          "description": "TS WARM Status | 0x0 Battery temperature sense not in WARM State | 0x1 Battery temperature sense in WARM State",
+          "access": "R"
         },
         {
           "name": "S_TS_COOL",
           "high_bit": 2,
           "low_bit": 2,
-          "description": "[R] TS COOL Status"
+          "description": "TS COOL Status",
+          "access": "R"
         },
         {
           "name": "S_TS_COLD",
           "high_bit": 1,
           "low_bit": 1,
-          "description": "[R] TS COLD Status | 0x0 Battery temperature sense not in COLD State | 0x1 Battery temperature sense in COLD State"
+          "description": "TS COLD Status | 0x0 Battery temperature sense not in COLD State | 0x1 Battery temperature sense in COLD State",
+          "access": "R"
         },
         {
           "name": "S_TS_OFF",
           "high_bit": 0,
           "low_bit": 0,
-          "description": "[R] TS OFF Status | 0x0 Battery temperature sense not in OFF State | 0x1 Battery temperature sense in OFF State"
+          "description": "TS OFF Status | 0x0 Battery temperature sense not in OFF State | 0x1 Battery temperature sense in OFF State",
+          "access": "R"
         }
       ]
     },
@@ -187,49 +211,57 @@
           "name": "S_CHG_SLEEP",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "[R] CHG SLEEP Status | 0x0 VBUS lower than SLEEP threshold | 0x1 VBUS higher than SLEEP threshold"
+          "description": "CHG SLEEP Status | 0x0 VBUS lower than SLEEP threshold | 0x1 VBUS higher than SLEEP threshold",
+          "access": "R"
         },
         {
           "name": "S_CHG_SPLMT",
           "high_bit": 6,
           "low_bit": 6,
-          "description": "[R] CHG SPLMT Status | 0x0 VBAT FET not in supplement mode. | 0x1 VBAT FET in supplement mode."
+          "description": "CHG SPLMT Status | 0x0 VBAT FET not in supplement mode. | 0x1 VBAT FET in supplement mode.",
+          "access": "R"
         },
         {
           "name": "S_CHG_TIMER",
           "high_bit": 5,
           "low_bit": 5,
-          "description": "[R] CHG TIMER Status | 0x0 Charge timer not expired | 0x1 Charge timer expired"
+          "description": "CHG TIMER Status | 0x0 Charge timer not expired | 0x1 Charge timer expired",
+          "access": "R"
         },
         {
           "name": "S_CHG_TRICKLE",
           "high_bit": 4,
           "low_bit": 4,
-          "description": "[R] CHG TRICKLE Status | 0x0 Charger not in trickle charging | 0x1 Charger in trickle charging"
+          "description": "CHG TRICKLE Status | 0x0 Charger not in trickle charging | 0x1 Charger in trickle charging",
+          "access": "R"
         },
         {
           "name": "S_CHG_PRE",
           "high_bit": 3,
           "low_bit": 3,
-          "description": "[R] CHG PRE Status | 0x0 Charger not in pre-charge | 0x1 Charger in pre-charge"
+          "description": "CHG PRE Status | 0x0 Charger not in pre-charge | 0x1 Charger in pre-charge",
+          "access": "R"
         },
         {
           "name": "S_CHG_CC",
           "high_bit": 2,
           "low_bit": 2,
-          "description": "[R] CHG CC Status 0x0 | 0x0 Charger not in constant-current state | 0x1 Charger in constant-current state"
+          "description": "CHG CC Status 0x0 | 0x0 Charger not in constant-current state | 0x1 Charger in constant-current state",
+          "access": "R"
         },
         {
           "name": "S_CHG_CV",
           "high_bit": 1,
           "low_bit": 1,
-          "description": "[R] CHG CV Status | 0x0 Charger not in constant-voltage state | 0x1 Charger in constant-voltage state"
+          "description": "CHG CV Status | 0x0 Charger not in constant-voltage state | 0x1 Charger in constant-voltage state",
+          "access": "R"
         },
         {
           "name": "S_CHG_DONE",
           "high_bit": 0,
           "low_bit": 0,
-          "description": "[R] CHG DONE Status | 0x0 Charge termination not completed | 0x1 Charge termination completed"
+          "description": "CHG DONE Status | 0x0 Charge termination not completed | 0x1 Charge termination completed",
+          "access": "R"
         }
       ]
     },
@@ -244,49 +276,57 @@
           "name": "S_VSYS_SHUTDOWN",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "[R] VSYS SHUTDOWN Status | 0x0 VSYS not in SHUTDOWN | 0x1 VSYS in SHUTDOWN"
+          "description": "VSYS SHUTDOWN Status | 0x0 VSYS not in SHUTDOWN | 0x1 VSYS in SHUTDOWN",
+          "access": "R"
         },
         {
           "name": "S_REF_OC",
           "high_bit": 6,
           "low_bit": 6,
-          "description": "[R] REF OC Status | 0x0 REF not in OC | 0x1 REF in OC"
+          "description": "REF OC Status | 0x0 REF not in OC | 0x1 REF in OC",
+          "access": "R"
         },
         {
           "name": "S_LDO2_IMON1",
           "high_bit": 5,
           "low_bit": 5,
-          "description": "[R] LDO2 IMON1 Status | 0x0 LDO2 not in IMON1 | 0x1 LDO2 in IMON1"
+          "description": "LDO2 IMON1 Status | 0x0 LDO2 not in IMON1 | 0x1 LDO2 in IMON1",
+          "access": "R"
         },
         {
           "name": "S_LDO2_IMON2",
           "high_bit": 4,
           "low_bit": 4,
-          "description": "[R] LDO2 IMON2 Status | 0x0 LDO2 not in IMON2 | 0x1 LDO2 in IMON2"
+          "description": "LDO2 IMON2 Status | 0x0 LDO2 not in IMON2 | 0x1 LDO2 in IMON2",
+          "access": "R"
         },
         {
           "name": "S_LDO2_OC",
           "high_bit": 3,
           "low_bit": 3,
-          "description": "[R] LDO2 OC Status | 0x0 LDO2 not in OC | 0x1 LDO2 in OC"
+          "description": "LDO2 OC Status | 0x0 LDO2 not in OC | 0x1 LDO2 in OC",
+          "access": "R"
         },
         {
           "name": "S_LDO1_IMON1",
           "high_bit": 2,
           "low_bit": 2,
-          "description": "[R] LDO1 IMON1 Status | 0x0 LDO1 not in IMON1"
+          "description": "LDO1 IMON1 Status | 0x0 LDO1 not in IMON1",
+          "access": "R"
         },
         {
           "name": "S_LDO1_IMON2",
           "high_bit": 1,
           "low_bit": 1,
-          "description": "[R] LDO1 IMON2 Status | 0x0 LDO1 not in IMON2 | 0x1 LDO1 in IMON2"
+          "description": "LDO1 IMON2 Status | 0x0 LDO1 not in IMON2 | 0x1 LDO1 in IMON2",
+          "access": "R"
         },
         {
           "name": "S_LDO1_OC",
           "high_bit": 0,
           "low_bit": 0,
-          "description": "[R] LDO1 OC Status | 0x0 LDO1 not in OC | 0x1 LDO1 in OC"
+          "description": "LDO1 OC Status | 0x0 LDO1 not in OC | 0x1 LDO1 in OC",
+          "access": "R"
         }
       ]
     },
@@ -301,49 +341,57 @@
           "name": "E_VBUS_VINDPM",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "[RC] VBUS VINDPM Event register. Clear on read. | 0x0 VBUS not in VINDPM | 0x1 VBUS in VINDPM"
+          "description": "VBUS VINDPM Event register. Clear on read. | 0x0 VBUS not in VINDPM | 0x1 VBUS in VINDPM",
+          "access": "RC"
         },
         {
           "name": "E_VBUS_IINDPM",
           "high_bit": 6,
           "low_bit": 6,
-          "description": "[RC] VBUS IINDPM Event register. Clear on read. | 0x0 VBUS not in IINDPM | 0x1 VBUS in IINDPM"
+          "description": "VBUS IINDPM Event register. Clear on read. | 0x0 VBUS not in IINDPM | 0x1 VBUS in IINDPM",
+          "access": "RC"
         },
         {
           "name": "E_VMID_OC",
           "high_bit": 5,
           "low_bit": 5,
-          "description": "[RC] VMID OC Event register. Clear on read. | 0x0 VMID not in OC | 0x1 VMID in OC"
+          "description": "VMID OC Event register. Clear on read. | 0x0 VMID not in OC | 0x1 VMID in OC",
+          "access": "RC"
         },
         {
           "name": "E_VBAT_OC",
           "high_bit": 4,
           "low_bit": 4,
-          "description": "[RC] VBAT OC Event register. Clear on read. | 0x0 VBAT not in OC | 0x1 VBAT in OC"
+          "description": "VBAT OC Event register. Clear on read. | 0x0 VBAT not in OC | 0x1 VBAT in OC",
+          "access": "RC"
         },
         {
           "name": "E_VBUS_OK",
           "high_bit": 3,
           "low_bit": 3,
-          "description": "[RC] VBUS OK Event register. Clear on read. | 0x0 VBUS not OK | 0x1 VBUS OK"
+          "description": "VBUS OK Event register. Clear on read. | 0x0 VBUS not OK | 0x1 VBUS OK",
+          "access": "RC"
         },
         {
           "name": "E_VMID_OK",
           "high_bit": 2,
           "low_bit": 2,
-          "description": "[RC] VMID OK Event register. Clear on read. | 0x0 VMID not OK | 0x1 VMID OK"
+          "description": "VMID OK Event register. Clear on read. | 0x0 VMID not OK | 0x1 VMID OK",
+          "access": "RC"
         },
         {
           "name": "E_VSYS_OK",
           "high_bit": 1,
           "low_bit": 1,
-          "description": "[RC] VSYS OK Event register. Clear on read. | 0x0 VSYS not OK | 0x1 VSYS OK"
+          "description": "VSYS OK Event register. Clear on read. | 0x0 VSYS not OK | 0x1 VSYS OK",
+          "access": "RC"
         },
         {
           "name": "E_VBAT_OK",
           "high_bit": 0,
           "low_bit": 0,
-          "description": "[RC] VBAT OK Event register. Clear on read. | 0x0 VBAT not OK | 0x1 VBAT OK"
+          "description": "VBAT OK Event register. Clear on read. | 0x0 VBAT not OK | 0x1 VBAT OK",
+          "access": "RC"
         }
       ]
     },
@@ -358,49 +406,57 @@
           "name": "E_VBUS_OV",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "[RC] VBUS OV Event register. Clear on read. | 0x0 VBUS not in OV | 0x1 VBUS in OV"
+          "description": "VBUS OV Event register. Clear on read. | 0x0 VBUS not in OV | 0x1 VBUS in OV",
+          "access": "RC"
         },
         {
           "name": "E_VMID_OV",
           "high_bit": 6,
           "low_bit": 6,
-          "description": "[RC] VMID OV Event register. Clear on read. | 0x0 VMID not in OV | 0x1 VMID in OV"
+          "description": "VMID OV Event register. Clear on read. | 0x0 VMID not in OV | 0x1 VMID in OV",
+          "access": "RC"
         },
         {
           "name": "E_VSYS_OV",
           "high_bit": 5,
           "low_bit": 5,
-          "description": "[RC] VSYS OV Event register. Clear on read. | 0x0 VSYS not in OV | 0x1 VSYS in OV"
+          "description": "VSYS OV Event register. Clear on read. | 0x0 VSYS not in OV | 0x1 VSYS in OV",
+          "access": "RC"
         },
         {
           "name": "E_VBAT_OV",
           "high_bit": 4,
           "low_bit": 4,
-          "description": "[RC] VBAT OV Event register. Clear on read. | 0x0 VBAT not in OV | 0x1 VBAT in OV"
+          "description": "VBAT OV Event register. Clear on read. | 0x0 VBAT not in OV | 0x1 VBAT in OV",
+          "access": "RC"
         },
         {
           "name": "E_VBUS_UV",
           "high_bit": 3,
           "low_bit": 3,
-          "description": "[RC] VBUS UV Event register. Clear on read. | 0x0 VBUS not in UV | 0x1 VBUS in UV"
+          "description": "VBUS UV Event register. Clear on read. | 0x0 VBUS not in UV | 0x1 VBUS in UV",
+          "access": "RC"
         },
         {
           "name": "E_VMID_UV",
           "high_bit": 2,
           "low_bit": 2,
-          "description": "[RC] VMID UV Event register. Clear on read. | 0x0 VMID not in UV | 0x1 VMID in UV"
+          "description": "VMID UV Event register. Clear on read. | 0x0 VMID not in UV | 0x1 VMID in UV",
+          "access": "RC"
         },
         {
           "name": "E_VSYS_UV",
           "high_bit": 1,
           "low_bit": 1,
-          "description": "[RC] VSYS UV Event register. Clear on read."
+          "description": "VSYS UV Event register. Clear on read.",
+          "access": "RC"
         },
         {
           "name": "E_VBAT_UV",
           "high_bit": 0,
           "low_bit": 0,
-          "description": "[RC] VBAT UV Event register. Clear on read. | 0x0 VBAT not in UV | 0x1 VBAT in UV"
+          "description": "VBAT UV Event register. Clear on read. | 0x0 VBAT not in UV | 0x1 VBAT in UV",
+          "access": "RC"
         }
       ]
     },
@@ -415,49 +471,57 @@
           "name": "E_TSD_CRIT",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "[RC] TSD CRIT Event register. Clear on read. | 0x0 Junction temperature below critical level. | 0x1 Junction temperature above critical level."
+          "description": "TSD CRIT Event register. Clear on read. | 0x0 Junction temperature below critical level. | 0x1 Junction temperature above critical level.",
+          "access": "RC"
         },
         {
           "name": "E_TSD_WARN",
           "high_bit": 6,
           "low_bit": 6,
-          "description": "[RC] TSD WARN Event register. Clear on read. | 0x0 Junction temperature below warning level. | 0x1 Junction temperature above warning level."
+          "description": "TSD WARN Event register. Clear on read. | 0x0 Junction temperature below warning level. | 0x1 Junction temperature above warning level.",
+          "access": "RC"
         },
         {
           "name": "E_WD_TIMER",
           "high_bit": 5,
           "low_bit": 5,
-          "description": "[RC] WD TIMER Event register. Clear on read. | 0x0 Watch-dog timer not expired | 0x1 Watch-dog timer expired"
+          "description": "WD TIMER Event register. Clear on read. | 0x0 Watch-dog timer not expired | 0x1 Watch-dog timer expired",
+          "access": "RC"
         },
         {
           "name": "E_TS_HOT",
           "high_bit": 4,
           "low_bit": 4,
-          "description": "[RC] TS HOT Event register. Clear on read. | 0x0 Battery temperature sense not in HOT State | 0x1 Battery temperature sense in HOT State"
+          "description": "TS HOT Event register. Clear on read. | 0x0 Battery temperature sense not in HOT State | 0x1 Battery temperature sense in HOT State",
+          "access": "RC"
         },
         {
           "name": "E_TS_WARM",
           "high_bit": 3,
           "low_bit": 3,
-          "description": "[RC] TS WARM Event register. Clear on read. | 0x0 Battery temperature sense not in WARM State | 0x1 Battery temperature sense in WARM State"
+          "description": "TS WARM Event register. Clear on read. | 0x0 Battery temperature sense not in WARM State | 0x1 Battery temperature sense in WARM State",
+          "access": "RC"
         },
         {
           "name": "E_TS_COOL",
           "high_bit": 2,
           "low_bit": 2,
-          "description": "[RC] TS COOL Event register. Clear on read. | 0x0 Battery temperature sense not in COOL State | 0x1 Battery temperature sense in COOL State"
+          "description": "TS COOL Event register. Clear on read. | 0x0 Battery temperature sense not in COOL State | 0x1 Battery temperature sense in COOL State",
+          "access": "RC"
         },
         {
           "name": "E_TS_COLD",
           "high_bit": 1,
           "low_bit": 1,
-          "description": "[RC] TS COLD Event register. Clear on read. | 0x0 Battery temperature sense not in COLD State | 0x1 Battery temperature sense in COLD State"
+          "description": "TS COLD Event register. Clear on read. | 0x0 Battery temperature sense not in COLD State | 0x1 Battery temperature sense in COLD State",
+          "access": "RC"
         },
         {
           "name": "E_TS_OFF",
           "high_bit": 0,
           "low_bit": 0,
-          "description": "[RC] TS OFF Event register. Clear on read. | 0x0 Battery temperature sense not in OFF State | 0x1 Battery temperature sense in OFF State"
+          "description": "TS OFF Event register. Clear on read. | 0x0 Battery temperature sense not in OFF State | 0x1 Battery temperature sense in OFF State",
+          "access": "RC"
         }
       ]
     },
@@ -472,49 +536,57 @@
           "name": "E_CHG_SLEEP",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "[RC] CHG SLEEP Event register. Clear on read. | 0x0 VBUS lower than SLEEP threshold | 0x1 VBUS higher than SLEEP threshold"
+          "description": "CHG SLEEP Event register. Clear on read. | 0x0 VBUS lower than SLEEP threshold | 0x1 VBUS higher than SLEEP threshold",
+          "access": "RC"
         },
         {
           "name": "E_CHG_SPLMT",
           "high_bit": 6,
           "low_bit": 6,
-          "description": "[RC] CHG SPLMT Event register. Clear on read. | 0x0 VBAT FET not in supplement mode. | 0x1 VBAT FET in supplement mode."
+          "description": "CHG SPLMT Event register. Clear on read. | 0x0 VBAT FET not in supplement mode. | 0x1 VBAT FET in supplement mode.",
+          "access": "RC"
         },
         {
           "name": "E_CHG_TIMER",
           "high_bit": 5,
           "low_bit": 5,
-          "description": "[RC] CHG TIMER Event register. Clear on read. | 0x0 Charge timer not expired | 0x1 Charge timer expired"
+          "description": "CHG TIMER Event register. Clear on read. | 0x0 Charge timer not expired | 0x1 Charge timer expired",
+          "access": "RC"
         },
         {
           "name": "E_CHG_TRICKLE",
           "high_bit": 4,
           "low_bit": 4,
-          "description": "[RC] CHG TRICKLE Event register. Clear on read. | 0x0 Charger not in trickle charging | 0x1 Charger in trickle charging"
+          "description": "CHG TRICKLE Event register. Clear on read. | 0x0 Charger not in trickle charging | 0x1 Charger in trickle charging",
+          "access": "RC"
         },
         {
           "name": "E_CHG_PRE",
           "high_bit": 3,
           "low_bit": 3,
-          "description": "[RC] CHG PRE Event register. Clear on read. | 0x0 Charger not in pre-charge | 0x1 Charger in pre-charge"
+          "description": "CHG PRE Event register. Clear on read. | 0x0 Charger not in pre-charge | 0x1 Charger in pre-charge",
+          "access": "RC"
         },
         {
           "name": "E_CHG_CC",
           "high_bit": 2,
           "low_bit": 2,
-          "description": "[RC] CHG CC Event register. Clear on read. | 0x0 Charger not in constant-current state | 0x1 Charger in constant-current state"
+          "description": "CHG CC Event register. Clear on read. | 0x0 Charger not in constant-current state | 0x1 Charger in constant-current state",
+          "access": "RC"
         },
         {
           "name": "E_CHG_CV",
           "high_bit": 1,
           "low_bit": 1,
-          "description": "[RC] CHG CV Event register. Clear on read. 0x0 | 0x0 Charger not in constant-voltage state | 0x1 Charger in constant-voltage state"
+          "description": "CHG CV Event register. Clear on read. 0x0 | 0x0 Charger not in constant-voltage state | 0x1 Charger in constant-voltage state",
+          "access": "RC"
         },
         {
           "name": "E_CHG_DONE",
           "high_bit": 0,
           "low_bit": 0,
-          "description": "[RC] CHG DONE Event register. Clear on read. | 0x0 Charge termination not completed | 0x1 Charge termination completed"
+          "description": "CHG DONE Event register. Clear on read. | 0x0 Charge termination not completed | 0x1 Charge termination completed",
+          "access": "RC"
         }
       ]
     },
@@ -529,49 +601,57 @@
           "name": "E_VSYS_SHUTDOWN",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "[RC] VSYS SHUTDOWN Event register. Clear on read. | 0x0 VSYS not in SHUTDOWN | 0x1 VSYS in SHUTDOWN"
+          "description": "VSYS SHUTDOWN Event register. Clear on read. | 0x0 VSYS not in SHUTDOWN | 0x1 VSYS in SHUTDOWN",
+          "access": "RC"
         },
         {
           "name": "E_REF_OC",
           "high_bit": 6,
           "low_bit": 6,
-          "description": "[RC] REF OC Event register. Clear on read. | 0x0 REF not in OC | 0x1 REF in OC"
+          "description": "REF OC Event register. Clear on read. | 0x0 REF not in OC | 0x1 REF in OC",
+          "access": "RC"
         },
         {
           "name": "E_LDO2_IMON1",
           "high_bit": 5,
           "low_bit": 5,
-          "description": "[RC] LDO2 IMON1 Event register. Clear on read. | 0x0 LDO2 not in IMON1 | 0x1 LDO2 in IMON1"
+          "description": "LDO2 IMON1 Event register. Clear on read. | 0x0 LDO2 not in IMON1 | 0x1 LDO2 in IMON1",
+          "access": "RC"
         },
         {
           "name": "E_LDO2_IMON2",
           "high_bit": 4,
           "low_bit": 4,
-          "description": "[RC] LDO2 IMON2 Event register. Clear on read. | 0x0 LDO2 not in IMON2 | 0x1 LDO2 in IMON2"
+          "description": "LDO2 IMON2 Event register. Clear on read. | 0x0 LDO2 not in IMON2 | 0x1 LDO2 in IMON2",
+          "access": "RC"
         },
         {
           "name": "E_LDO2_OC",
           "high_bit": 3,
           "low_bit": 3,
-          "description": "[RC] LDO2 OC Event register. Clear on read. | 0x0 LDO2 not in OC | 0x1 LDO2 in OC"
+          "description": "LDO2 OC Event register. Clear on read. | 0x0 LDO2 not in OC | 0x1 LDO2 in OC",
+          "access": "RC"
         },
         {
           "name": "E_LDO1_IMON1",
           "high_bit": 2,
           "low_bit": 2,
-          "description": "[RC] LDO1 IMON1 Event register. Clear on read. | 0x0 LDO1 not in IMON1 | 0x1 LDO1 in IMON1"
+          "description": "LDO1 IMON1 Event register. Clear on read. | 0x0 LDO1 not in IMON1 | 0x1 LDO1 in IMON1",
+          "access": "RC"
         },
         {
           "name": "E_LDO1_IMON2",
           "high_bit": 1,
           "low_bit": 1,
-          "description": "[RC] LDO1 IMON2 Event register. Clear on read. | 0x0 LDO1 not in IMON2"
+          "description": "LDO1 IMON2 Event register. Clear on read. | 0x0 LDO1 not in IMON2",
+          "access": "RC"
         },
         {
           "name": "E_LDO1_OC",
           "high_bit": 0,
           "low_bit": 0,
-          "description": "[RC] LDO1 OC Event register. Clear on read. | 0x0 LDO1 not in OC | 0x1 LDO1 in OC"
+          "description": "LDO1 OC Event register. Clear on read. | 0x0 LDO1 not in OC | 0x1 LDO1 in OC",
+          "access": "RC"
         }
       ]
     },
@@ -586,49 +666,57 @@
           "name": "M_VBUS_VINDPM",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "[RW] INT_N Mask bit for VBUS VINDPM Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for VBUS VINDPM Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_VBUS_IINDPM",
           "high_bit": 6,
           "low_bit": 6,
-          "description": "[RW] INT_N Mask bit for VBUS IINDPM Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for VBUS IINDPM Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_VMID_OC",
           "high_bit": 5,
           "low_bit": 5,
-          "description": "[RW] INT_N Mask bit for VMID OC Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for VMID OC Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_VBAT_OC",
           "high_bit": 4,
           "low_bit": 4,
-          "description": "[RW] INT_N Mask bit for VBAT OC Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for VBAT OC Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_VBUS_OK",
           "high_bit": 3,
           "low_bit": 3,
-          "description": "[RW] INT_N Mask bit for VBUS OK Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for VBUS OK Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_VMID_OK",
           "high_bit": 2,
           "low_bit": 2,
-          "description": "[RW] INT_N Mask bit for VMID OK Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for VMID OK Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_VSYS_OK",
           "high_bit": 1,
           "low_bit": 1,
-          "description": "[RW] INT_N Mask bit for VSYS OK Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for VSYS OK Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_VBAT_OK",
           "high_bit": 0,
           "low_bit": 0,
-          "description": "[RW] INT_N Mask bit for VBAT OK Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for VBAT OK Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         }
       ]
     },
@@ -643,49 +731,57 @@
           "name": "M_VBUS_OV",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "[RW] INT_N Mask bit for VBUS OV Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for VBUS OV Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_VMID_OV",
           "high_bit": 6,
           "low_bit": 6,
-          "description": "[RW] INT_N Mask bit for VMID OV Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for VMID OV Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_VSYS_OV",
           "high_bit": 5,
           "low_bit": 5,
-          "description": "[RW] INT_N Mask bit for VSYS OV Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for VSYS OV Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_VBAT_OV",
           "high_bit": 4,
           "low_bit": 4,
-          "description": "[RW] INT_N Mask bit for VBAT OV Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for VBAT OV Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_VBUS_UV",
           "high_bit": 3,
           "low_bit": 3,
-          "description": "[RW] INT_N Mask bit for VBUS UV Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for VBUS UV Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_VMID_UV",
           "high_bit": 2,
           "low_bit": 2,
-          "description": "[RW] INT_N Mask bit for VMID UV Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for VMID UV Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_VSYS_UV",
           "high_bit": 1,
           "low_bit": 1,
-          "description": "[RW] INT_N Mask bit for VSYS UV Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for VSYS UV Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_VBAT_UV",
           "high_bit": 0,
           "low_bit": 0,
-          "description": "[RW] INT_N Mask bit for VBAT UV Event"
+          "description": "INT_N Mask bit for VBAT UV Event",
+          "access": "RW"
         }
       ]
     },
@@ -700,49 +796,57 @@
           "name": "M_TSD_CRIT",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "[RW] INT_N Mask bit for TSD CRIT Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for TSD CRIT Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_TSD_WARN",
           "high_bit": 6,
           "low_bit": 6,
-          "description": "[RW] INT_N Mask bit for TSD WARN Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for TSD WARN Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_WD_TIMER",
           "high_bit": 5,
           "low_bit": 5,
-          "description": "[RW] INT_N Mask bit for WD TIMER Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for WD TIMER Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_TS_HOT",
           "high_bit": 4,
           "low_bit": 4,
-          "description": "[RW] INT_N Mask bit for TS HOT Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for TS HOT Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_TS_WARM",
           "high_bit": 3,
           "low_bit": 3,
-          "description": "[RW] INT_N Mask bit for TS WARM Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for TS WARM Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_TS_COOL",
           "high_bit": 2,
           "low_bit": 2,
-          "description": "[RW] INT_N Mask bit for TS COOL Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for TS COOL Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_TS_COLD",
           "high_bit": 1,
           "low_bit": 1,
-          "description": "[RW] INT_N Mask bit for TS COLD Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for TS COLD Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_TS_OFF",
           "high_bit": 0,
           "low_bit": 0,
-          "description": "[RW] INT_N Mask bit for TS OFF Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for TS OFF Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         }
       ]
     },
@@ -757,49 +861,57 @@
           "name": "M_CHG_SLEEP",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "[RW] INT_N Mask bit for CHG SLEEP Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for CHG SLEEP Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_CHG_SPLMT",
           "high_bit": 6,
           "low_bit": 6,
-          "description": "[RW] INT_N Mask bit for CHG SPLMT Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for CHG SPLMT Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_CHG_TIMER",
           "high_bit": 5,
           "low_bit": 5,
-          "description": "[RW] INT_N Mask bit for CHG TIMER Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for CHG TIMER Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_CHG_TRICKLE",
           "high_bit": 4,
           "low_bit": 4,
-          "description": "[RW] INT_N Mask bit for CHG TRICKLE Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for CHG TRICKLE Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_CHG_PRE",
           "high_bit": 3,
           "low_bit": 3,
-          "description": "[RW] INT_N Mask bit for CHG PRE Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for CHG PRE Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_CHG_CC",
           "high_bit": 2,
           "low_bit": 2,
-          "description": "[RW] INT_N Mask bit for CHG CC Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for CHG CC Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_CHG_CV",
           "high_bit": 1,
           "low_bit": 1,
-          "description": "[RW] INT_N Mask bit for CHG CV Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for CHG CV Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_CHG_DONE",
           "high_bit": 0,
           "low_bit": 0,
-          "description": "[RW] INT_N Mask bit for CHG DONE Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for CHG DONE Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         }
       ]
     },
@@ -814,49 +926,57 @@
           "name": "M_VSYS_SHUTDOWN",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "[RW] INT_N Mask bit for VSYS SHUTDOWN Event 0x1 | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for VSYS SHUTDOWN Event 0x1 | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_REF_OC",
           "high_bit": 6,
           "low_bit": 6,
-          "description": "[RW] INT_N Mask bit for REF OC Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for REF OC Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_LDO2_IMON1",
           "high_bit": 5,
           "low_bit": 5,
-          "description": "[RW] INT_N Mask bit for LDO2 IMON1 Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for LDO2 IMON1 Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_LDO2_IMON2",
           "high_bit": 4,
           "low_bit": 4,
-          "description": "[RW] INT_N Mask bit for LDO2 IMON2 Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for LDO2 IMON2 Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_LDO2_OC",
           "high_bit": 3,
           "low_bit": 3,
-          "description": "[RW] INT_N Mask bit for LDO2 OC Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for LDO2 OC Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_LDO1_IMON1",
           "high_bit": 2,
           "low_bit": 2,
-          "description": "[RW] INT_N Mask bit for LDO1 IMON1 Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for LDO1 IMON1 Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_LDO1_IMON2",
           "high_bit": 1,
           "low_bit": 1,
-          "description": "[RW] INT_N Mask bit for LDO1 IMON2 Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for LDO1 IMON2 Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         },
         {
           "name": "M_LDO1_OC",
           "high_bit": 0,
           "low_bit": 0,
-          "description": "[RW] INT_N Mask bit for LDO1 OC Event | 0x0 Not masked | 0x1 Masked"
+          "description": "INT_N Mask bit for LDO1 OC Event | 0x0 Not masked | 0x1 Masked",
+          "access": "RW"
         }
       ]
     },
@@ -871,19 +991,22 @@
           "name": "E_RD_CLR_DIS",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "[RW] Interrupt event register read-on-clear disable 0x0"
+          "description": "Interrupt event register read-on-clear disable 0x0",
+          "access": "RW"
         },
         {
           "name": "VSYS_MIN",
           "high_bit": 6,
           "low_bit": 4,
-          "description": "[RW] VSYS MIN settings (V) 0x3 | 0x4 Reserved | 0x5 Reserved | 0x6 Reserved | 0x7 Reserved | 0x0 3.4 | 0x1 3.5 | 0x2 3.6 | 0x3 3.7"
+          "description": "VSYS MIN settings (V) 0x3 | 0x4 Reserved | 0x5 Reserved | 0x6 Reserved | 0x7 Reserved | 0x0 3.4 | 0x1 3.5 | 0x2 3.6 | 0x3 3.7",
+          "access": "RW"
         },
         {
           "name": "VINDPM",
           "high_bit": 3,
           "low_bit": 0,
-          "description": "[RW] VINDPM threshold setting (V) | 0x00 Disable | 0x01 Reserved | 0x02 Reserved | 0x03 Reserved | 0x04 3.8 | 0x05 3.9 | 0x06 4.0 | 0x07 4.1 | 0x08 4.2 | 0x09 4.3 | 0x0A 4.4 | 0x0B 4.5 | 0x0C 4.6 | 0x0D 4.7 | 0x0E 4.8 | 0x0F Reserved"
+          "description": "VINDPM threshold setting (V) | 0x00 Disable | 0x01 Reserved | 0x02 Reserved | 0x03 Reserved | 0x04 3.8 | 0x05 3.9 | 0x06 4.0 | 0x07 4.1 | 0x08 4.2 | 0x09 4.3 | 0x0A 4.4 | 0x0B 4.5 | 0x0C 4.6 | 0x0D 4.7 | 0x0E 4.8 | 0x0F Reserved",
+          "access": "RW"
         }
       ]
     },
@@ -898,25 +1021,29 @@
           "name": "VSYS_OV_SHUTDOWN_DIS",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "[RW] Disable VSYS shut- down by VSYS_OV Value Description | 0x0 System shutdown by VSYS_OV | 0x1 No system shutdown by VSYS_OV"
+          "description": "Disable VSYS shut- down by VSYS_OV Value Description | 0x0 System shutdown by VSYS_OV | 0x1 No system shutdown by VSYS_OV",
+          "access": "RW"
         },
         {
           "name": "VSYS_UV_SHUTDOWN_DIS",
           "high_bit": 6,
           "low_bit": 6,
-          "description": "[RW] Disable VSYS shut-down by VSYS_UV 0x1 | 0x0 System shutdown by VSYS_UV | 0x1 No system shutdown by VSYS_UV"
+          "description": "Disable VSYS shut-down by VSYS_UV 0x1 | 0x0 System shutdown by VSYS_UV | 0x1 No system shutdown by VSYS_UV",
+          "access": "RW"
         },
         {
           "name": "ILIMIT_EN",
           "high_bit": 5,
           "low_bit": 5,
-          "description": "[RW] ILIMIT pin function enable | 0x0 No IINDPM update | 0x1 Set IINDPM by ILIMIT pin on VBUS plug-in."
+          "description": "ILIMIT pin function enable | 0x0 No IINDPM update | 0x1 Set IINDPM by ILIMIT pin on VBUS plug-in.",
+          "access": "RW"
         },
         {
           "name": "IINDPM",
           "high_bit": 4,
           "low_bit": 0,
-          "description": "[RW] Input current limit setting (A). | 0x00 0.1 | 0x01 0.2 | 0x02 0.3 | 0x03 0.4 | 0x04 0.5 | 0x05 0.6 | 0x06 0.7 | 0x07 0.8 | 0x08 0.9 | 0x09 1.0 | 0x0A 1.1 | 0x0B 1.2 | 0x0C 1.3 | 0x0D 1.4 | 0x0E 1.5 | 0x0F 1.6 | 0x10 1.7 | 0x11 1.8 | 0x12 1.9 | 0x13 2.0 | 0x14 2.1 | 0x15 2.2 | 0x16 2.3 | 0x17 2.4 | 0x18 2.5 | 0x19 Reserved | 0x1A Reserved"
+          "description": "Input current limit setting (A). | 0x00 0.1 | 0x01 0.2 | 0x02 0.3 | 0x03 0.4 | 0x04 0.5 | 0x05 0.6 | 0x06 0.7 | 0x07 0.8 | 0x08 0.9 | 0x09 1.0 | 0x0A 1.1 | 0x0B 1.2 | 0x0C 1.3 | 0x0D 1.4 | 0x0E 1.5 | 0x0F 1.6 | 0x10 1.7 | 0x11 1.8 | 0x12 1.9 | 0x13 2.0 | 0x14 2.1 | 0x15 2.2 | 0x16 2.3 | 0x17 2.4 | 0x18 2.5 | 0x19 Reserved | 0x1A Reserved",
+          "access": "RW"
         }
       ]
     },
@@ -931,37 +1058,43 @@
           "name": "BTS_VBAT_RATE",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "[RW] Battery temperature sense interval while in battery operation, must set BTS_VBAT_EN == BTS_VBUS_EN == 0 to update | 0x0 50 ms | 0x1 2 sec"
+          "description": "Battery temperature sense interval while in battery operation, must set BTS_VBAT_EN == BTS_VBUS_EN == 0 to update | 0x0 50 ms | 0x1 2 sec",
+          "access": "RW"
         },
         {
           "name": "BTS_VBAT_EN",
           "high_bit": 6,
           "low_bit": 6,
-          "description": "[RW] Battery temperature sense enable while in battery operation | 0x0 Disable | 0x1 Enable"
+          "description": "Battery temperature sense enable while in battery operation | 0x0 Disable | 0x1 Enable",
+          "access": "RW"
         },
         {
           "name": "BTS_VBUS_RATE",
           "high_bit": 5,
           "low_bit": 5,
-          "description": "[RW] Battery temperature sense interval while VBUS supply present, must set BTS_VBAT_EN == BTS_VBUS_EN == 0 to update | 0x0 50 ms | 0x1 2 sec"
+          "description": "Battery temperature sense interval while VBUS supply present, must set BTS_VBAT_EN == BTS_VBUS_EN == 0 to update | 0x0 50 ms | 0x1 2 sec",
+          "access": "RW"
         },
         {
           "name": "BTS_VBUS_EN",
           "high_bit": 4,
           "low_bit": 4,
-          "description": "[RW] Battery temperature sense enable while VBUS supply present | 0x0 Disable | 0x1 Enable"
+          "description": "Battery temperature sense enable while VBUS supply present | 0x0 Disable | 0x1 Enable",
+          "access": "RW"
         },
         {
           "name": "VBAT_DEB",
           "high_bit": 3,
           "low_bit": 2,
-          "description": "[RW] VBAT detection debounce time (ms) | 0x0 10 | 0x1 20 | 0x2 100 | 0x3 200"
+          "description": "VBAT detection debounce time (ms) | 0x0 10 | 0x1 20 | 0x2 100 | 0x3 200",
+          "access": "RW"
         },
         {
           "name": "VBUS_DEB",
           "high_bit": 1,
           "low_bit": 0,
-          "description": "[RW] VBUS detection debounce time (ms) | 0x0 10 | 0x1 20"
+          "description": "VBUS detection debounce time (ms) | 0x0 10 | 0x1 20",
+          "access": "RW"
         }
       ]
     },
@@ -976,31 +1109,36 @@
           "name": "SYS_WAIT",
           "high_bit": 7,
           "low_bit": 6,
-          "description": "[RW] VSYS power-off time for system power recovery cycle (s) | 0x0 1 | 0x1 2 | 0x2 3 | 0x3 4"
+          "description": "VSYS power-off time for system power recovery cycle (s) | 0x0 1 | 0x1 2 | 0x2 3 | 0x3 4",
+          "access": "RW"
         },
         {
           "name": "WD_TMR",
           "high_bit": 5,
           "low_bit": 4,
-          "description": "[RW] Watch-dog timer expire time (s). Write-blocked when WD_EN is High. | 0x0 OFF | 0x1 40 | 0x2 80 | 0x3 160"
+          "description": "Watch-dog timer expire time (s). Write-blocked when WD_EN is High. | 0x0 OFF | 0x1 40 | 0x2 80 | 0x3 160",
+          "access": "RW"
         },
         {
           "name": "WD_EN",
           "high_bit": 3,
           "low_bit": 3,
-          "description": "[RW] Watchdog enable | 0x0 No action | 0x1 Watchdog enabled"
+          "description": "Watchdog enable | 0x0 No action | 0x1 Watchdog enabled",
+          "access": "RW"
         },
         {
           "name": "RST_TMR",
           "high_bit": 2,
           "low_bit": 1,
-          "description": "[RW] RIN_N button press time (s) | 0x0 4 | 0x1 8 | 0x2 12 | 0x3 20"
+          "description": "RIN_N button press time (s) | 0x0 4 | 0x1 8 | 0x2 12 | 0x3 20",
+          "access": "RW"
         },
         {
           "name": "RST_REG",
           "high_bit": 0,
           "low_bit": 0,
-          "description": "[W1] Triggers register initialization. | 0x0 No action | 0x1 Register reset"
+          "description": "Triggers register initialization. | 0x0 No action | 0x1 Register reset",
+          "access": "W1"
         }
       ]
     },
@@ -1015,43 +1153,50 @@
           "name": "RESERVED",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "保留位"
+          "description": "保留位",
+          "access": "Reserved"
         },
         {
           "name": "BOOST_PWM",
           "high_bit": 6,
           "low_bit": 6,
-          "description": "[RW] BOOST force-PWM"
+          "description": "BOOST force-PWM",
+          "access": "RW"
         },
         {
           "name": "SEQ_BOOST",
           "high_bit": 5,
           "low_bit": 5,
-          "description": "[RW] BOOST_EN bit to be controlled by EN pin | 0x0 EN pin toggle has no effect on BOOST_EN"
+          "description": "BOOST_EN bit to be controlled by EN pin | 0x0 EN pin toggle has no effect on BOOST_EN",
+          "access": "RW"
         },
         {
           "name": "DLOAD_VMID_SEL",
           "high_bit": 4,
           "low_bit": 3,
-          "description": "[RW] Select dummy-load value on VMID (mA) | 0x0 5 | 0x1 10 | 0x2 20 | 0x3 30"
+          "description": "Select dummy-load value on VMID (mA) | 0x0 5 | 0x1 10 | 0x2 20 | 0x3 30",
+          "access": "RW"
         },
         {
           "name": "DLOAD_VMID_EN",
           "high_bit": 2,
           "low_bit": 2,
-          "description": "[RW] Enable dummy-load on VMID | 0x0 Disable | 0x1 Enable"
+          "description": "Enable dummy-load on VMID | 0x0 Disable | 0x1 Enable",
+          "access": "RW"
         },
         {
           "name": "REV_VBUS_EN",
           "high_bit": 1,
           "low_bit": 1,
-          "description": "[RW] Enable BOOST supply output from VBUS | 0x0 Disable | 0x1 Enable"
+          "description": "Enable BOOST supply output from VBUS | 0x0 Disable | 0x1 Enable",
+          "access": "RW"
         },
         {
           "name": "BOOST_EN",
           "high_bit": 0,
           "low_bit": 0,
-          "description": "[RW] Boost enable during battery operation | 0x0 Disable | 0x1 Enable"
+          "description": "Boost enable during battery operation | 0x0 Disable | 0x1 Enable",
+          "access": "RW"
         }
       ]
     },
@@ -1066,13 +1211,15 @@
           "name": "REV_VBUS_ILIM",
           "high_bit": 7,
           "low_bit": 4,
-          "description": "[RW] Boost current limit setting when REV_VBUS_EN = 1 (A) | 0x00 0.1 | 0x01 0.2 | 0x02 0.3 | 0x03 0.4 | 0x04 0.5 | 0x05 0.6"
+          "description": "Boost current limit setting when REV_VBUS_EN = 1 (A) | 0x00 0.1 | 0x01 0.2 | 0x02 0.3 | 0x03 0.4 | 0x04 0.5 | 0x05 0.6",
+          "access": "RW"
         },
         {
           "name": "BOOST_VOUT",
           "high_bit": 3,
           "low_bit": 0,
-          "description": "[RW] Boost output voltage settings (V) | 0x0 4.0 | 0x1 4.1 | 0x2 4.2 | 0x3 4.3 | 0x4 4.4 | 0x5 4.5 | 0x6 4.6 | 0x7 4.7 | 0x8 4.8 | 0x9 4.9 | 0xA 5.0 | 0xB 5.1 | 0xC 5.2 | 0xD 5.3 | 0xE 5.4 | 0xF 5.5"
+          "description": "Boost output voltage settings (V) | 0x0 4.0 | 0x1 4.1 | 0x2 4.2 | 0x3 4.3 | 0x4 4.4 | 0x5 4.5 | 0x6 4.6 | 0x7 4.7 | 0x8 4.8 | 0x9 4.9 | 0xA 5.0 | 0xB 5.1 | 0xC 5.2 | 0xD 5.3 | 0xE 5.4 | 0xF 5.5",
+          "access": "RW"
         }
       ]
     },
@@ -1087,37 +1234,43 @@
           "name": "RST_SYS",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "[W1] Triggers VSYS power-cycle | 0x0 No action | 0x1 Trigger VSYS power-cycle"
+          "description": "Triggers VSYS power-cycle | 0x0 No action | 0x1 Trigger VSYS power-cycle",
+          "access": "W1"
         },
         {
           "name": "RIN_N_SHIP_EXIT_TMR",
           "high_bit": 6,
           "low_bit": 6,
-          "description": "[RW] RIN_N debounce time to exit from SHIP_MODE"
+          "description": "RIN_N debounce time to exit from SHIP_MODE",
+          "access": "RW"
         },
         {
           "name": "VBUS_OVSEL",
           "high_bit": 5,
           "low_bit": 4,
-          "description": "[RW] VBUS OV settings (V) | 0x0 5.8 | 0x1 6.2 | 0x2 8.5 | 0x3 10.5"
+          "description": "VBUS OV settings (V) | 0x0 5.8 | 0x1 6.2 | 0x2 8.5 | 0x3 10.5",
+          "access": "RW"
         },
         {
           "name": "HIZ_MODE",
           "high_bit": 3,
           "low_bit": 3,
-          "description": "[RW] Hi-Z mode enable. | 0x0 Supply from VBUS when available | 0x1 Supply from battery, even when VBUS present"
+          "description": "Hi-Z mode enable. | 0x0 Supply from VBUS when available | 0x1 Supply from battery, even when VBUS present",
+          "access": "RW"
         },
         {
           "name": "SHIP_DLY",
           "high_bit": 2,
           "low_bit": 1,
-          "description": "[RW] Ship-mode entry delay time (s) | 0x0 2 | 0x1 4 | 0x2 7 | 0x3 10"
+          "description": "Ship-mode entry delay time (s) | 0x0 2 | 0x1 4 | 0x2 7 | 0x3 10",
+          "access": "RW"
         },
         {
           "name": "SHIP_MODE",
           "high_bit": 0,
           "low_bit": 0,
-          "description": "[RW] Ship-mode entry | 0x0 No action | 0x1 Enter ship-mode. VBATFET is off."
+          "description": "Ship-mode entry | 0x0 No action | 0x1 Enter ship-mode. VBATFET is off.",
+          "access": "RW"
         }
       ]
     },
@@ -1132,49 +1285,57 @@
           "name": "RESERVED",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "保留位"
+          "description": "保留位",
+          "access": "Reserved"
         },
         {
           "name": "RESERVED",
           "high_bit": 6,
           "low_bit": 6,
-          "description": "保留位"
+          "description": "保留位",
+          "access": "Reserved"
         },
         {
           "name": "BUCK_PWM",
           "high_bit": 5,
           "low_bit": 5,
-          "description": "[RW] BUCK PWM threshold reduction during charge | 0x0 PWM threshold unchanged while charging | 0x1 Lower PWM threshold while charging"
+          "description": "BUCK PWM threshold reduction during charge | 0x0 PWM threshold unchanged while charging | 0x1 Lower PWM threshold while charging",
+          "access": "RW"
         },
         {
           "name": "CHG_VRCHG",
           "high_bit": 4,
           "low_bit": 4,
-          "description": "[RW] Charger recharge threshold offset settings (mV) | 0x0 100 | 0x1 200"
+          "description": "Charger recharge threshold offset settings (mV) | 0x0 100 | 0x1 200",
+          "access": "RW"
         },
         {
           "name": "CHG_TMR_HALF_EN",
           "high_bit": 3,
           "low_bit": 3,
-          "description": "[RW] Charger safty timer rate reduced to half on selected events."
+          "description": "Charger safty timer rate reduced to half on selected events.",
+          "access": "RW"
         },
         {
           "name": "OTP",
           "high_bit": 2,
           "low_bit": 2,
-          "description": "[cfg] CHG_TMR_EN Charger safty timer enable. | 0x0 Disable | 0x1 Enable"
+          "description": "CHG_TMR_EN Charger safty timer enable. | 0x0 Disable | 0x1 Enable",
+          "access": "cfg"
         },
         {
           "name": "CHG_TERM_EN",
           "high_bit": 1,
           "low_bit": 1,
-          "description": "[RW] Charger enable termination. Charger state transition to DONE state is enabled. | 0x0 Disable | 0x1 Enable"
+          "description": "Charger enable termination. Charger state transition to DONE state is enabled. | 0x0 Disable | 0x1 Enable",
+          "access": "RW"
         },
         {
           "name": "CHG_EN",
           "high_bit": 0,
           "low_bit": 0,
-          "description": "[RW] Charger enable register. CHG_EN_N pin level also needs to be low for charging to be enabled. | 0x0 Disable | 0x1 Enable"
+          "description": "Charger enable register. CHG_EN_N pin level also needs to be low for charging to be enabled. | 0x0 Disable | 0x1 Enable",
+          "access": "RW"
         }
       ]
     },
@@ -1189,19 +1350,22 @@
           "name": "CHG_TMR_SAFE",
           "high_bit": 7,
           "low_bit": 6,
-          "description": "[RW] Charger safety timer setting (h) | 0x0 5 | 0x1 10 | 0x2 15 | 0x3 20"
+          "description": "Charger safety timer setting (h) | 0x0 5 | 0x1 10 | 0x2 15 | 0x3 20",
+          "access": "RW"
         },
         {
           "name": "CHG_TMR_PRE",
           "high_bit": 5,
           "low_bit": 4,
-          "description": "[RW] Pre-charge safety timer setting (min) | 0x0 30 | 0x1 60 | 0x2 90 | 0x3 120"
+          "description": "Pre-charge safety timer setting (min) | 0x0 30 | 0x1 60 | 0x2 90 | 0x3 120",
+          "access": "RW"
         },
         {
           "name": "CHG_TOPOFF",
           "high_bit": 3,
           "low_bit": 0,
-          "description": "[RW] Top off timer (min) | 0x0 Disable TOPOFF | 0x1 0.25 | 0x2 0.5 | 0x3 1"
+          "description": "Top off timer (min) | 0x0 Disable TOPOFF | 0x1 0.25 | 0x2 0.5 | 0x3 1",
+          "access": "RW"
         }
       ]
     },
@@ -1216,31 +1380,36 @@
           "name": "CHG_IPRE_MSB",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "[RW] Adds offset to pre-charge current setting (mA) | 0x0 +0 | 0x1 CHG_RANGE = 0 : +20, CHG_RANGE = 1 : +80"
+          "description": "Adds offset to pre-charge current setting (mA) | 0x0 +0 | 0x1 CHG_RANGE = 0 : +20, CHG_RANGE = 1 : +80",
+          "access": "RW"
         },
         {
           "name": "CHG_RANGE_TERM",
           "high_bit": 6,
           "low_bit": 6,
-          "description": "[RW] Charging current range settings for CHG_ITERM. Only effective when CHG_RANGE = 1. | 0x0 Termination 5-25 mA, in 5 mA steps | 0x1 Termination 20 mA to 100 mA, in 20 mA steps"
+          "description": "Charging current range settings for CHG_ITERM. Only effective when CHG_RANGE = 1. | 0x0 Termination 5-25 mA, in 5 mA steps | 0x1 Termination 20 mA to 100 mA, in 20 mA steps",
+          "access": "RW"
         },
         {
           "name": "CHG_RANGE_PRE",
           "high_bit": 5,
           "low_bit": 5,
-          "description": "[RW] Charging current range settings for CHG_IPRE. Only effective when CHG_RANGE = 1. | 0x0 Pre-charge 5-15 mA, in 5 mA steps | 0x1 Pre-charge 20 mA to 60 mA, in 20 mA steps"
+          "description": "Charging current range settings for CHG_IPRE. Only effective when CHG_RANGE = 1. | 0x0 Pre-charge 5-15 mA, in 5 mA steps | 0x1 Pre-charge 20 mA to 60 mA, in 20 mA steps",
+          "access": "RW"
         },
         {
           "name": "CHG_ITERM",
           "high_bit": 4,
           "low_bit": 2,
-          "description": "[RW] Termination charge current setting. (mA) | 0x0 Reserved | 0x1 CHG_RANGE = 0 : 5, CHG_RANGE = 1 : 20 | 0x2 CHG_RANGE = 0 : 10, CHG_RANGE = 1 : 40"
+          "description": "Termination charge current setting. (mA) | 0x0 Reserved | 0x1 CHG_RANGE = 0 : 5, CHG_RANGE = 1 : 20 | 0x2 CHG_RANGE = 0 : 10, CHG_RANGE = 1 : 40",
+          "access": "RW"
         },
         {
           "name": "CHG_IPRE",
           "high_bit": 1,
           "low_bit": 0,
-          "description": "[RW] Pre-charge current setting. (mA) | 0x0 0, Use only when CHG_IPRE_MSB=1 | 0x1 CHG_RANGE = 0 : 5, CHG_RANGE = 1 : 20 | 0x2 CHG_RANGE = 0 : 10, CHG_RANGE = 1 : 40 | 0x3 CHG_RANGE = 0 : 15, CHG_RANGE = 1 : 60"
+          "description": "Pre-charge current setting. (mA) | 0x0 0, Use only when CHG_IPRE_MSB=1 | 0x1 CHG_RANGE = 0 : 5, CHG_RANGE = 1 : 20 | 0x2 CHG_RANGE = 0 : 10, CHG_RANGE = 1 : 40 | 0x3 CHG_RANGE = 0 : 15, CHG_RANGE = 1 : 60",
+          "access": "RW"
         }
       ]
     },
@@ -1255,13 +1424,15 @@
           "name": "CHG_RANGE",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "[RW] Charging current range settings"
+          "description": "Charging current range settings",
+          "access": "RW"
         },
         {
           "name": "CHG_ICHG",
           "high_bit": 6,
           "low_bit": 0,
-          "description": "[RW] Fast charge current setting. (mA) | 0x00 Reserved | 0x01 CHG_RANGE = 0 : 5, CHG_RANGE = 1 : 20 | 0x02 CHG_RANGE = 0 : 10, CHG_RANGE = 1 : 40 | 0x03 CHG_RANGE = 0 : 15, CHG_RANGE = 1 : 60 | 0x04 CHG_RANGE = 0 : 20, CHG_RANGE = 1 : 80 | 0x05 CHG_RANGE = 0 : 25, CHG_RANGE = 1 : 100 | 0x06 CHG_RANGE = 0 : 30, CHG_RANGE = 1 : 120"
+          "description": "Fast charge current setting. (mA) | 0x00 Reserved | 0x01 CHG_RANGE = 0 : 5, CHG_RANGE = 1 : 20 | 0x02 CHG_RANGE = 0 : 10, CHG_RANGE = 1 : 40 | 0x03 CHG_RANGE = 0 : 15, CHG_RANGE = 1 : 60 | 0x04 CHG_RANGE = 0 : 20, CHG_RANGE = 1 : 80 | 0x05 CHG_RANGE = 0 : 25, CHG_RANGE = 1 : 100 | 0x06 CHG_RANGE = 0 : 30, CHG_RANGE = 1 : 120",
+          "access": "RW"
         }
       ]
     },
@@ -1276,19 +1447,22 @@
           "name": "RESERVED",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "保留位"
+          "description": "保留位",
+          "access": "Reserved"
         },
         {
           "name": "RESERVED",
           "high_bit": 6,
           "low_bit": 6,
-          "description": "保留位"
+          "description": "保留位",
+          "access": "Reserved"
         },
         {
           "name": "CHG_VBATREG",
           "high_bit": 5,
           "low_bit": 0,
-          "description": "[RW] Battery voltage regulation setting (V). 10 mV step. | 0x00 Reserved | 0x01 Reserved | 0x02 Reserved | 0x03 4.00 | 0x04 4.01 | 0x05 4.02 | 0x06 4.03 | 0x07 4.04 | 0x08 4.05 | 0x09 4.06 | 0x0A 4.07 | 0x0B 4.08 | 0x0C 4.09 | 0x0D 4.10 | 0x0E 4.11 | 0x0F 4.12 | 0x10 4.13 | 0x11 4.14 | 0x12 4.15 | 0x13 4.16 | 0x14 4.17 | 0x15 4.18 | 0x16 4.19 | 0x17 4.20 | 0x18 4.21 | 0x19 4.22 | 0x1A 4.23"
+          "description": "Battery voltage regulation setting (V). 10 mV step. | 0x00 Reserved | 0x01 Reserved | 0x02 Reserved | 0x03 4.00 | 0x04 4.01 | 0x05 4.02 | 0x06 4.03 | 0x07 4.04 | 0x08 4.05 | 0x09 4.06 | 0x0A 4.07 | 0x0B 4.08 | 0x0C 4.09 | 0x0D 4.10 | 0x0E 4.11 | 0x0F 4.12 | 0x10 4.13 | 0x11 4.14 | 0x12 4.15 | 0x13 4.16 | 0x14 4.17 | 0x15 4.18 | 0x16 4.19 | 0x17 4.20 | 0x18 4.21 | 0x19 4.22 | 0x1A 4.23",
+          "access": "RW"
         }
       ]
     },
@@ -1303,49 +1477,57 @@
           "name": "IO_INT_N_PU",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "[RW] INT_N pin internal pull-up | 0x0 Disable | 0x1 Enable"
+          "description": "INT_N pin internal pull-up | 0x0 Disable | 0x1 Enable",
+          "access": "RW"
         },
         {
           "name": "IO_EN_PD",
           "high_bit": 6,
           "low_bit": 6,
-          "description": "[RW] EN pin internal pull-down | 0x0 Disable | 0x1 Enable"
+          "description": "EN pin internal pull-down | 0x0 Disable | 0x1 Enable",
+          "access": "RW"
         },
         {
           "name": "IO_CHG_EN_N_PD",
           "high_bit": 5,
           "low_bit": 5,
-          "description": "[RW] CHG_EN_N pin internal pull-down | 0x0 Disable | 0x1 Enable"
+          "description": "CHG_EN_N pin internal pull-down | 0x0 Disable | 0x1 Enable",
+          "access": "RW"
         },
         {
           "name": "RESERVED",
           "high_bit": 4,
           "low_bit": 4,
-          "description": "保留位"
+          "description": "保留位",
+          "access": "Reserved"
         },
         {
           "name": "RESERVED",
           "high_bit": 3,
           "low_bit": 3,
-          "description": "保留位"
+          "description": "保留位",
+          "access": "Reserved"
         },
         {
           "name": "TS_VBATREG_SHIFT",
           "high_bit": 2,
           "low_bit": 2,
-          "description": "[RW] Battery voltage regulation setting down-shift during TS event (mV). | 0x0 100 | 0x1 200"
+          "description": "Battery voltage regulation setting down-shift during TS event (mV). | 0x0 100 | 0x1 200",
+          "access": "RW"
         },
         {
           "name": "CHG_TS_WARM_V",
           "high_bit": 1,
           "low_bit": 1,
-          "description": "[RW] Charger VBATREG is shifted by TS_VBATREG_SHIFT, and termination disabled during TS_WARM. | 0x0 Disable | 0x1 Enable"
+          "description": "Charger VBATREG is shifted by TS_VBATREG_SHIFT, and termination disabled during TS_WARM. | 0x0 Disable | 0x1 Enable",
+          "access": "RW"
         },
         {
           "name": "CHG_TS_COOL_I",
           "high_bit": 0,
           "low_bit": 0,
-          "description": "[RW] Charger ICHG is set to TS_ICHG on TS_COOL. Charge termination disabled during TS_COOL. | 0x0 Disable | 0x1 Enable"
+          "description": "Charger ICHG is set to TS_ICHG on TS_COOL. Charge termination disabled during TS_COOL. | 0x0 Disable | 0x1 Enable",
+          "access": "RW"
         }
       ]
     },
@@ -1360,13 +1542,15 @@
           "name": "RESERVED",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "保留位"
+          "description": "保留位",
+          "access": "Reserved"
         },
         {
           "name": "TS_ICHG",
           "high_bit": 6,
           "low_bit": 0,
-          "description": "[RW] Fast charge current setting during TS event. (mA) | 0x00 Reserved | 0x01 CHG_RANGE = 0 : 5, CHG_RANGE = 1 : 20"
+          "description": "Fast charge current setting during TS event. (mA) | 0x00 Reserved | 0x01 CHG_RANGE = 0 : 5, CHG_RANGE = 1 : 20",
+          "access": "RW"
         }
       ]
     },
@@ -1381,49 +1565,57 @@
           "name": "LDO2_OCP",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "[RW] LDO2 OCP mode. | 0x0 Disable | 0x1 Enable hiccup of 10 ms interval."
+          "description": "LDO2 OCP mode. | 0x0 Disable | 0x1 Enable hiccup of 10 ms interval.",
+          "access": "RW"
         },
         {
           "name": "LDO2_PD",
           "high_bit": 6,
           "low_bit": 6,
-          "description": "[RW] LDO2 pull-down enable | 0x0 Disable | 0x1 Enable"
+          "description": "LDO2 pull-down enable | 0x0 Disable | 0x1 Enable",
+          "access": "RW"
         },
         {
           "name": "LDO2_LSW",
           "high_bit": 5,
           "low_bit": 5,
-          "description": "[RW] LDO2 load-switch mode, write-blocked when LDO2 is High | 0x0 LDO mode | 0x1 Load-switch mode"
+          "description": "LDO2 load-switch mode, write-blocked when LDO2 is High | 0x0 LDO mode | 0x1 Load-switch mode",
+          "access": "RW"
         },
         {
           "name": "LDO2_EN",
           "high_bit": 4,
           "low_bit": 4,
-          "description": "[RW] LDO2 enable | 0x0 Disable | 0x1 Enable"
+          "description": "LDO2 enable | 0x0 Disable | 0x1 Enable",
+          "access": "RW"
         },
         {
           "name": "LDO1_OCP",
           "high_bit": 3,
           "low_bit": 3,
-          "description": "[RW] LDO1 OCP mode. | 0x0 Disable"
+          "description": "LDO1 OCP mode. | 0x0 Disable",
+          "access": "RW"
         },
         {
           "name": "LDO1_PD",
           "high_bit": 2,
           "low_bit": 2,
-          "description": "[RW] LDO1 pull-down enable | 0x0 Disable | 0x1 Enable"
+          "description": "LDO1 pull-down enable | 0x0 Disable | 0x1 Enable",
+          "access": "RW"
         },
         {
           "name": "LDO1_LSW",
           "high_bit": 1,
           "low_bit": 1,
-          "description": "[RW] LDO1 load-switch mode, write-blocked when LDO1 is High | 0x0 LDO mode | 0x1 Load-switch mode"
+          "description": "LDO1 load-switch mode, write-blocked when LDO1 is High | 0x0 LDO mode | 0x1 Load-switch mode",
+          "access": "RW"
         },
         {
           "name": "LDO1_EN",
           "high_bit": 0,
           "low_bit": 0,
-          "description": "[RW] LDO1 enable | 0x0 Disable | 0x1 Enable"
+          "description": "LDO1 enable | 0x0 Disable | 0x1 Enable",
+          "access": "RW"
         }
       ]
     },
@@ -1438,13 +1630,15 @@
           "name": "SEQ_LDO1",
           "high_bit": 7,
           "low_bit": 6,
-          "description": "[RW] LDO1 enable by EN pin. | 0x0 LDO1 not enabled by EN pin | 0x1 EnableLDO1 ASAP after EN pin rise. | 0x2 Enable LDO1 0.25 ms after EN pin rise. | 0x3 Enable LDO1 0.5 ms after EN pin rise."
+          "description": "LDO1 enable by EN pin. | 0x0 LDO1 not enabled by EN pin | 0x1 EnableLDO1 ASAP after EN pin rise. | 0x2 Enable LDO1 0.25 ms after EN pin rise. | 0x3 Enable LDO1 0.5 ms after EN pin rise.",
+          "access": "RW"
         },
         {
           "name": "LDO1_VOUT",
           "high_bit": 5,
           "low_bit": 0,
-          "description": "[RW] LDO1 output voltage setting (V), when LDO1_LSW is 0. | 0x00 1.6 | 0x01 1.7 | 0x02 1.8 | 0x03 1.9 | 0x04 2.0 | 0x05 2.1 | 0x06 2.2 | 0x07 2.3 | 0x08 2.4 | 0x09 2.5 | 0x0A 2.6 | 0x0B 2.7"
+          "description": "LDO1 output voltage setting (V), when LDO1_LSW is 0. | 0x00 1.6 | 0x01 1.7 | 0x02 1.8 | 0x03 1.9 | 0x04 2.0 | 0x05 2.1 | 0x06 2.2 | 0x07 2.3 | 0x08 2.4 | 0x09 2.5 | 0x0A 2.6 | 0x0B 2.7",
+          "access": "RW"
         }
       ]
     },
@@ -1459,13 +1653,15 @@
           "name": "SEQ_LDO2",
           "high_bit": 7,
           "low_bit": 6,
-          "description": "[RW] LDO2 enable by EN pin. | 0x0 LDO2 not enabled by EN pin | 0x1 EnableLDO2 ASAP after EN pin rise. | 0x2 Enable LDO2 0.25 ms after EN pin rise. | 0x3 Enable LDO2 0.5 ms after EN pin rise."
+          "description": "LDO2 enable by EN pin. | 0x0 LDO2 not enabled by EN pin | 0x1 EnableLDO2 ASAP after EN pin rise. | 0x2 Enable LDO2 0.25 ms after EN pin rise. | 0x3 Enable LDO2 0.5 ms after EN pin rise.",
+          "access": "RW"
         },
         {
           "name": "LDO2_VOUT",
           "high_bit": 5,
           "low_bit": 0,
-          "description": "[RW] LDO2 output voltage setting (V), when LDO2_LSW is 0. | 0x00 1.6 | 0x01 1.7 | 0x02 1.8 | 0x03 1.9 | 0x04 2.0 | 0x05 2.1 | 0x06 2.2 | 0x07 2.3 | 0x08 2.4 | 0x09 2.5 | 0x0A 2.6 | 0x0B 2.7 | 0x0C 2.8 | 0x0D 2.9 | 0x0E 3.0 | 0x0F 3.1 | 0x10 3.2 | 0x11 3.3 | 0x12 3.4 | 0x13 3.5 | 0x14 3.6 | 0x15 3.7 | 0x16 3.8 | 0x17 3.9 | 0x18 4.0 | 0x19 4.1 | 0x1A 4.2 | 0x1B 4.3 | 0x1C 4.4 | 0x1D 4.5 | 0x1E 4.6 | 0x1F 4.7 | 0x20 4.8 | 0x21 4.9"
+          "description": "LDO2 output voltage setting (V), when LDO2_LSW is 0. | 0x00 1.6 | 0x01 1.7 | 0x02 1.8 | 0x03 1.9 | 0x04 2.0 | 0x05 2.1 | 0x06 2.2 | 0x07 2.3 | 0x08 2.4 | 0x09 2.5 | 0x0A 2.6 | 0x0B 2.7 | 0x0C 2.8 | 0x0D 2.9 | 0x0E 3.0 | 0x0F 3.1 | 0x10 3.2 | 0x11 3.3 | 0x12 3.4 | 0x13 3.5 | 0x14 3.6 | 0x15 3.7 | 0x16 3.8 | 0x17 3.9 | 0x18 4.0 | 0x19 4.1 | 0x1A 4.2 | 0x1B 4.3 | 0x1C 4.4 | 0x1D 4.5 | 0x1E 4.6 | 0x1F 4.7 | 0x20 4.8 | 0x21 4.9",
+          "access": "RW"
         }
       ]
     },
@@ -1480,43 +1676,50 @@
           "name": "SYS_WAIT_CFG",
           "high_bit": 7,
           "low_bit": 7,
-          "description": "[RW] Configuration for SYS_WAIT | 0x0 Default setting | 0x1 Wait time is 1/10 of default values"
+          "description": "Configuration for SYS_WAIT | 0x0 Default setting | 0x1 Wait time is 1/10 of default values",
+          "access": "RW"
         },
         {
           "name": "RST_OPT_PWRCYC",
           "high_bit": 6,
           "low_bit": 6,
-          "description": "[RW] RIN_N long-press to trigger power-cycle (only when RST_OPT=0) | 0x0 RIN_N long-press does not trigger power-cycle when RST_OPT=0 | 0x1 RIN_N long-press triggers power- cycle"
+          "description": "RIN_N long-press to trigger power-cycle (only when RST_OPT=0) | 0x0 RIN_N long-press does not trigger power-cycle when RST_OPT=0 | 0x1 RIN_N long-press triggers power- cycle",
+          "access": "RW"
         },
         {
           "name": "SHIP_DLY_DIS",
           "high_bit": 5,
           "low_bit": 5,
-          "description": "[RW] Disable SHIP_MODE entry delay | 0x0 SHIP_MODE entry after SHIP_DLY | 0x1 SHIP_MODE entry with minimum delay"
+          "description": "Disable SHIP_MODE entry delay | 0x0 SHIP_MODE entry after SHIP_DLY | 0x1 SHIP_MODE entry with minimum delay",
+          "access": "RW"
         },
         {
           "name": "RST_OPT",
           "high_bit": 4,
           "low_bit": 4,
-          "description": "[RW] RIN_N operation options | 0x0 VSYS recovery after SYS_WAIT regardless of RIN_N state | 0x1 VSYS recovery after SYS_WAIT on RIN_N rise"
+          "description": "RIN_N operation options | 0x0 VSYS recovery after SYS_WAIT regardless of RIN_N state | 0x1 VSYS recovery after SYS_WAIT on RIN_N rise",
+          "access": "RW"
         },
         {
           "name": "VBAT_OV_CFG",
           "high_bit": 3,
           "low_bit": 3,
-          "description": "[RW] Disables system shutdown by VBAT_OV | 0x0 Shut-down VSYS on VBAT_OV | 0x1 Do not shut-down VSYS on VBAT_OV"
+          "description": "Disables system shutdown by VBAT_OV | 0x0 Shut-down VSYS on VBAT_OV | 0x1 Do not shut-down VSYS on VBAT_OV",
+          "access": "RW"
         },
         {
           "name": "CHG_TRICKLE_CYC",
           "high_bit": 2,
           "low_bit": 2,
-          "description": "[RW] Trickle charge 50% duty cyclic mode | 0x0 Cyclic mode disabled | 0x1 Cyclic mode enabled"
+          "description": "Trickle charge 50% duty cyclic mode | 0x0 Cyclic mode disabled | 0x1 Cyclic mode enabled",
+          "access": "RW"
         },
         {
           "name": "CHG_TRICKLE",
           "high_bit": 1,
           "low_bit": 0,
-          "description": "[RW] Trickle charge current (CHG_TRICKLE_CYC=0/CHG_TRICKLE_CYC=1) (mA)"
+          "description": "Trickle charge current (CHG_TRICKLE_CYC=0/CHG_TRICKLE_CYC=1) (mA)",
+          "access": "RW"
         }
       ]
     },
@@ -1531,13 +1734,15 @@
           "name": "LDO2_ILIM",
           "high_bit": 7,
           "low_bit": 4,
-          "description": "[RW] VOUT2 current limit (mA) | 0x0 37 | 0x1 82 | 0x2 127 | 0x3 172 | 0x4 217 | 0x5 262 | 0x6 307 | 0x7 352 | 0x8 397 | 0x9 442 | 0xA 487 | 0xB 532 | 0xC 577 | 0xD 622 | 0xE 667 | 0xF 712"
+          "description": "VOUT2 current limit (mA) | 0x0 37 | 0x1 82 | 0x2 127 | 0x3 172 | 0x4 217 | 0x5 262 | 0x6 307 | 0x7 352 | 0x8 397 | 0x9 442 | 0xA 487 | 0xB 532 | 0xC 577 | 0xD 622 | 0xE 667 | 0xF 712",
+          "access": "RW"
         },
         {
           "name": "LDO1_ILIM",
           "high_bit": 3,
           "low_bit": 0,
-          "description": "[RW] VOUT1 current limit (mA) | 0x0 37 | 0x1 82 | 0x2 127 | 0x3 172 | 0x4 217 | 0x5 262 | 0x6 307 | 0x7 352 | 0x8 397"
+          "description": "VOUT1 current limit (mA) | 0x0 37 | 0x1 82 | 0x2 127 | 0x3 172 | 0x4 217 | 0x5 262 | 0x6 307 | 0x7 352 | 0x8 397",
+          "access": "RW"
         }
       ]
     },
@@ -1552,7 +1757,8 @@
           "name": "DEV_ID",
           "high_bit": 7,
           "low_bit": 0,
-          "description": "[R] Device ID 0xE7"
+          "description": "Device ID 0xE7",
+          "access": "R"
         }
       ]
     },
@@ -1567,13 +1773,15 @@
           "name": "MRC",
           "high_bit": 7,
           "low_bit": 4,
-          "description": "[R] Mask revision code 0x3"
+          "description": "Mask revision code 0x3",
+          "access": "R"
         },
         {
           "name": "VRC",
           "high_bit": 3,
           "low_bit": 0,
-          "description": "[R] Chip variant code 0x0"
+          "description": "Chip variant code 0x0",
+          "access": "R"
         }
       ]
     },
@@ -1588,7 +1796,8 @@
           "name": "CONFIG_REV",
           "high_bit": 7,
           "low_bit": 0,
-          "description": "[R] OTP variant code 0xDC"
+          "description": "OTP variant code 0xDC",
+          "access": "R"
         }
       ]
     }

@@ -1,11 +1,15 @@
 # I2C 异步 Worker（每次操作自建/销毁 I2CInterface）
 
+import os
+from datetime import datetime
+
 from PySide6.QtCore import QThread, Signal, QObject
 
 from log_config import get_logger
 
+from ui.resource_path import get_user_data_dir
 from ui.modules.IIC_Module.i2c_constants import (
-    _fmt_hex, _reg_addr_bits, _data_bits,
+    _fmt_hex, _reg_addr_bits, _data_bits, _width_label,
 )
 from ui.modules.IIC_Module.i2c_dsl import (
     _build_ast, _resolve_token,
@@ -131,9 +135,11 @@ class _I2cSequenceWorker(QObject):
     finished = Signal()       # 正常结束
     error = Signal(str)       # 致命异常
     cmd_read = Signal(str, int)  # (addr_token, value) READ 指令结果
+    batch_log = Signal(str)  # READ_RANGE 批量读日志文件路径
 
     def __init__(self, dll_path, speed_mode, device_addr, width_flag,
-                 commands, script_name="", data_bits=16):
+                 commands, script_name="", data_bits=16,
+                 default_step=1, template_name=""):
         super().__init__()
         self._dll = dll_path
         self._speed = speed_mode
@@ -144,6 +150,10 @@ class _I2cSequenceWorker(QObject):
         self._name = script_name
         self._stop = False
         self._vars = {}
+        # READ_RANGE 步长省略时的默认值（32 位位宽 = 4，否则 = 1）
+        self._default_step = int(default_step) or 1
+        # 当前活动模板名（用作批量读日志文件名的一部分）
+        self._template_name = template_name or "Unknown"
 
     def request_stop(self):
         self._stop = True
@@ -259,14 +269,28 @@ class _I2cSequenceWorker(QObject):
         if op == "READ_RANGE":
             start = _resolve_token(cmd["start"], 16, self._vars)
             stop = _resolve_token(cmd["stop"], 16, self._vars)
-            step = _resolve_token(cmd.get("step", "1"), 10, self._vars) or 1
+            # 步长省略时使用 default_step（32 位位宽 = 4，否则 = 1）
+            if "step" in cmd:
+                step = _resolve_token(cmd["step"], 10, self._vars)
+            else:
+                step = self._default_step
+            if step == 0:
+                self.progress.emit(
+                    "{0}READ_RANGE 错误: 步长不能为 0".format(prefix))
+                return
             delay = _resolve_token(cmd.get("delay", "0"), 10, self._vars)
             self.progress.emit(
                 "{0}READ_RANGE {1}..{2} step={3} delay={4}ms".format(
                     prefix, _fmt_hex(start, reg_bits),
                     _fmt_hex(stop, reg_bits), step, delay))
+            # 支持正/负步长：正步长 → addr <= stop；负步长 → addr >= stop
+            if step > 0:
+                in_range = lambda a: a <= stop
+            else:
+                in_range = lambda a: a >= stop
+            batch_results = []
             addr = start
-            while addr <= stop:
+            while in_range(addr):
                 if self._stop:
                     return
                 val = i2c.read(self._dev, addr, self._width)
@@ -274,8 +298,68 @@ class _I2cSequenceWorker(QObject):
                     "  {0} => {1} ({2})".format(
                         _fmt_hex(addr, reg_bits),
                         _fmt_hex(val, data_bits), val))
-                addr += step
-                if delay > 0 and addr <= stop:
+                batch_results.append((int(addr), int(val)))
+                next_addr = addr + step
+                if not in_range(next_addr):
+                    break
+                addr = next_addr
+                if delay > 0:
                     QThread.msleep(delay)
+            # 批量读完成：写入单独日志文件
+            if batch_results:
+                log_path = self._save_batch_log(
+                    start, stop, step, delay, batch_results)
+                if log_path:
+                    self.batch_log.emit(log_path)
             return
         self.progress.emit("{0}未知指令(跳过): {1}".format(prefix, op))
+
+    def _save_batch_log(self, start, stop, step, delay, results):
+        """将一次 READ_RANGE 的全部结果写入单独日志文件。
+
+        路径: user_data/i2c_readRange/batch_read_log_<chip>_<YYYYMMDDHHMMSS>.log
+        返回文件路径；失败时返回 None。
+        """
+        try:
+            log_dir = get_user_data_dir("i2c_readRange")
+            chip = self._template_name or "Unknown"
+            # 文件名安全化：仅保留字母数字与 -_，其余替换为 _
+            safe_chip = "".join(
+                c if (c.isalnum() or c in "-_") else "_"
+                for c in str(chip)) or "Unknown"
+            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+            filename = "batch_read_log_{0}_{1}.log".format(
+                safe_chip, timestamp)
+            path = os.path.join(log_dir, filename)
+
+            reg_bits = _reg_addr_bits(self._width)
+            data_bits = self._data_bits
+            header_lines = [
+                "# I2C 批量读日志 (READ_RANGE)",
+                "# Chip: {0}".format(self._template_name or "Unknown"),
+                "# Device Addr: 0x{0:02X}".format(int(self._dev)),
+                "# Width: {0}".format(_width_label(self._width)),
+                "# Range: {0} .. {1}".format(
+                    _fmt_hex(start, reg_bits), _fmt_hex(stop, reg_bits)),
+                "# Step: {0}".format(step),
+                "# Delay: {0} ms".format(delay),
+                "# Timestamp: {0}".format(
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+                "# Total: {0} registers".format(len(results)),
+                "",
+                "# {0:<8} {1:<12} {2}".format("addr", "value(hex)", "value(dec)"),
+                "-" * 40,
+            ]
+            body_lines = [
+                "  {0:<8} {1:<12} {2}".format(
+                    _fmt_hex(addr, reg_bits),
+                    _fmt_hex(val, data_bits),
+                    int(val))
+                for addr, val in results
+            ]
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("\n".join(header_lines + body_lines) + "\n")
+            return path
+        except Exception:
+            logger.error("保存批量读日志失败", exc_info=True)
+            return None
