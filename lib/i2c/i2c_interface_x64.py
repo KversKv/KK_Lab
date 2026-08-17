@@ -209,11 +209,13 @@ class I2CInterface:
         ValueError: width_flag 值非法
         """
         self._ensure_initialized()
-        # 8位地址+8位数据：整寄存器写时8位数据左移到16位高字节；
-        # 位域写时位位置偏移+8，数据值不变
+        # 8位地址+8位数据：底层 8R/16D 一次写会同时覆盖 reg（高字节）与 reg+1（低字节）；
+        # 整寄存器写时先读 reg+1 当前值拼到低字节后写入，避免相邻寄存器被误清零；
+        # 位域写时位位置偏移+8，数据值不变（DLL 内部按位 read-modify-write）
         if width_flag == WIDTH_8X8:
             if high_bit < 0 and low_bit < 0:
-                shifted_data = (write_data & 0xFF) << 8
+                cur_next = self.read(device_addr, reg_addr + 1, WIDTH_8X8)
+                shifted_data = ((write_data & 0xFF) << 8) | (cur_next & 0xFF)
                 self._i2c.write(
                     self._speed_mode, device_addr, reg_addr,
                     shifted_data, I2CWidthFlag.BIT_8, -1, -1,
