@@ -1,0 +1,60 @@
+{
+  "version": 2,
+  "sequence": [
+    {
+      "node_type": "LoopRange",
+      "uid": "24999d0d-2fd9-4e07-8e83-6157d96cd9c2",
+      "params": {
+        "var_name": "i",
+        "start": -30.0,
+        "stop": 80.0,
+        "step": 10.0,
+        "export_var": true
+      },
+      "children": [
+        {
+          "node_type": "ChamberSetTemp",
+          "uid": "91ed5fae-e492-4a07-8689-0fb498474f6a",
+          "params": {
+            "temperature": "i",
+            "wait_stable": true,
+            "stable_time": 60.0,
+            "tolerance": 1.0
+          }
+        },
+        {
+          "node_type": "Delay",
+          "uid": "12d04496-38f3-401f-8b72-bfd4a4d7268b",
+          "params": {
+            "seconds": 180.0
+          }
+        },
+        {
+          "node_type": "N6705CMeasure",
+          "uid": "d5df0983-f142-4d02-9814-dc2a639d75a2",
+          "params": {
+            "channel": 3,
+            "measure_type": "voltage",
+            "result_var": "N6705C_result",
+            "export_var": true
+          }
+        }
+      ]
+    }
+  ],
+  "instruments": {
+    "n6705c": {
+      "visa": "TCPIP0::K-N6705C-06098.local::hislip0::INSTR"
+    },
+    "chamber": {
+      "type": "vt6002",
+      "port": "COM23 - USB-SERIAL CH340 (COM23)"
+    }
+  },
+  "metadata": {
+    "required_capabilities": [
+      "chamber.temperature",
+      "power_analyzer.measure"
+    ]
+  }
+}

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import ast
 from dataclasses import dataclass
-from typing import Any, List
+from typing import Any, List, Optional
 
 from core.orchestrator.nodes.base import BaseNode
 
@@ -15,7 +16,10 @@ class ParamIssue:
     message: str
 
 
-def validate_param_schema(node: BaseNode) -> List[ParamIssue]:
+def validate_param_schema(
+    node: BaseNode,
+    known_variables: Optional[set[str]] = None,
+) -> List[ParamIssue]:
     issues: List[ParamIssue] = []
     params = node.params
     for schema in getattr(node, "PARAM_SCHEMA", []):
@@ -28,7 +32,7 @@ def validate_param_schema(node: BaseNode) -> List[ParamIssue]:
                 issues.append(ParamIssue("error", key, f"{key} is required."))
             continue
         value = params.get(key)
-        if _is_runtime_expr(value):
+        if _is_runtime_expr(value, known_variables):
             continue
         expected_type = str(schema.get("type", "str")).lower()
         coerced, ok = _coerce_for_type(value, expected_type)
@@ -50,8 +54,34 @@ def validate_param_schema(node: BaseNode) -> List[ParamIssue]:
     return issues
 
 
-def _is_runtime_expr(value: Any) -> bool:
-    return isinstance(value, str) and "${" in value
+def _is_runtime_expr(value: Any, known_variables: Optional[set[str]] = None) -> bool:
+    if not isinstance(value, str):
+        return False
+    if "${" in value:
+        return True
+    return _references_known_variable(value, known_variables)
+
+
+def _references_known_variable(
+    text: str,
+    known_variables: Optional[set[str]],
+) -> bool:
+    """裸变量名/含变量的表达式（如 "i"、"j+1"）在运行期由 resolve_value 求值。
+
+    仅当其引用的名字都能在前序节点产生的变量（如循环变量）中找到时才放行，
+    跳过静态类型/选项校验；未知名字仍按字面值参与校验，避免误放行垃圾输入。
+    """
+    if not known_variables:
+        return False
+    stripped = text.strip()
+    if not stripped:
+        return False
+    try:
+        tree = ast.parse(stripped, mode="eval")
+    except (SyntaxError, ValueError):
+        return False
+    names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+    return bool(names) and names <= known_variables
 
 
 def _coerce_for_type(value: Any, expected_type: str) -> tuple[Any, bool]:

@@ -132,13 +132,13 @@ def _validate_params(
     params = node.params
     nt = node.node_type
 
-    for schema_issue in validate_param_schema(node):
+    for schema_issue in validate_param_schema(node, known_variables=produced_vars):
         issues.append(ValidationIssue(
             severity=schema_issue.severity,
             node_uid=node.uid,
             node_type=node.node_type,
             message=schema_issue.message,
-            fix_hint=f"Check PARAM_SCHEMA field: {schema_issue.key}",
+            fix_hint=f"请在属性面板检查参数 {schema_issue.key} 的取值；引用变量请用 ${{变量}} 或已由前序节点产生的裸变量名。",
         ))
 
     if nt == "LoopRange":
