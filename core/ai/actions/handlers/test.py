@@ -9,11 +9,15 @@ P5 测试编排进阶（category=test_config / test_sequence）：
   list_test_steps           : low，orchestrator 节点列表（只读，含 uid/node_type/display_name）；
   get_test_result_summary   : low，最近一次测试结果摘要（行数/字段/状态/耗时）；
   apply_test_config_draft   : high+确认，把 generate_draft 草案经预览确认后落地；
+  generate_config_draft     : low，基于当前页配置 + changes 生成 config_draft 草案句柄；
+  generate_sequence_draft   : low，把节点树生成为 script_draft 草案句柄（orchestrator，
+                              生成即本地校验，error 阻止登记并回显供模型修正）；
   set_test_variable         : high+确认，设置测试变量/参数（运行中写上下文，运行前写预设池）；
   run_single_step           : high+确认，单步执行指定节点（调试用，序列运行中拒绝）。
 
 草案落地链路：AIService.generate_draft → draft_ready → DraftRegistry 登记 draft_id →
 AI 调 apply_test_config_draft(draft_id) → ActionDispatcher 确认闭环 → apply 回调落地。
+agent 模式下模型亦可直接调 generate_config_draft / generate_sequence_draft 产出草案句柄。
 草案绝不自动应用。本模块禁 import Qt。
 """
 from __future__ import annotations
@@ -27,7 +31,7 @@ from core.ai.actions.registry import (
     CATEGORY_TEST_SEQUENCE,
     ActionSpec,
 )
-from core.ai.schemas import CONFIG_DRAFT, ConfigDraft
+from core.ai.schemas import CONFIG_DRAFT, SCRIPT_DRAFT, ConfigDraft, ScriptDraft
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -135,6 +139,52 @@ SPECS: list[ActionSpec] = [
                 },
             },
             "required": ["changes"],
+        },
+        risk_level="low",
+        category=CATEGORY_TEST_CONFIG,
+    ),
+    ActionSpec(
+        name="generate_sequence_draft",
+        description=(
+            "把设计的测试序列节点树生成为 Orchestrator 脚本草案（script_draft）并登记 draft_id："
+            "先做本地反序列化 + preflight 校验，error 会阻止登记并把错误回显（据此修正后重新生成），"
+            "warning 仅提示不拦截。本动作不落地、不改画布；生成后须调 "
+            "apply_test_config_draft(draft_id) 经用户确认后载入画布，草案绝不自动应用。"
+            "node_type 必须取自上下文[可用节点类型]清单（严禁臆造）；params 键名与清单一致；"
+            "容器节点（loop/if/group 等）用 children 挂子节点；条件分支用 IfBlock 包裹 "
+            "IfBranch/ElseIfBranch/ElseBranch（分支自身也是容器）。"
+            "用户要求构建/新增测试序列时用本动作；要求修改现有序列时，先 get_current_test_config "
+            "读当前序列，再输出修改后的完整序列（整体替换语义）。"
+        ),
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "sequence": {
+                    "type": "array",
+                    "description": (
+                        "顶层节点列表。节点结构 {node_type, params, children?}；"
+                        "params 为该节点类型的参数字典。"
+                    ),
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "node_type": {"type": "string"},
+                            "params": {"type": "object"},
+                            "children": {"type": "array"},
+                        },
+                        "required": ["node_type"],
+                    },
+                },
+                "title": {
+                    "type": "string",
+                    "description": "草案标题（可选，便于预览识别）。",
+                },
+                "notes": {
+                    "type": "string",
+                    "description": "草案说明（可选，设计意图/注意事项）。",
+                },
+            },
+            "required": ["sequence"],
         },
         risk_level="low",
         category=CATEGORY_TEST_CONFIG,
@@ -514,6 +564,60 @@ def build_handlers(deps: ActionDeps) -> dict[str, Any]:
             ),
         }
 
+    def generate_sequence_draft(args: dict) -> dict:
+        registry = deps.draft_registry
+        if registry is None:
+            return {"ok": False, "_message": "草案注册表不可用，无法生成序列草案。"}
+        if deps.script_apply_callback is None:
+            return {
+                "ok": False,
+                "_message": "当前页面不支持应用脚本草案，无法生成序列草案（请切到 Orchestrator）。",
+            }
+        sequence = args.get("sequence")
+        if not isinstance(sequence, list) or not sequence:
+            return {"ok": False, "_message": "缺少 sequence（顶层节点列表，不能为空）。"}
+        draft = ScriptDraft(
+            title=str(args.get("title", "")).strip(),
+            notes=str(args.get("notes", "")).strip(),
+            sequence=sequence,
+        )
+        from core.ai.draft_validation import validate_script_draft
+
+        try:
+            validation = validate_script_draft(draft)
+        except Exception:  # noqa: BLE001 - 校验异常转可读结果
+            logger.error("序列草案校验失败", exc_info=True)
+            return {"ok": False, "_message": "草案校验异常，请查看日志。"}
+        if validation.has_errors:
+            return {
+                "ok": False,
+                "errors": validation.errors,
+                "_message": (
+                    "草案本地校验未通过（error），未登记；请按错误修正节点树后重新"
+                    "generate_sequence_draft：" + "; ".join(validation.errors)
+                ),
+            }
+        parsed = SimpleNamespace(ok=True, payload=draft, kind=SCRIPT_DRAFT)
+        try:
+            draft_id = registry.register(parsed)
+        except Exception:  # noqa: BLE001 - 登记异常转可读结果
+            logger.error("登记序列草案失败", exc_info=True)
+            return {"ok": False, "_message": "登记草案异常，请查看日志。"}
+        if not draft_id:
+            return {"ok": False, "_message": "草案登记失败（无效 payload）。"}
+        return {
+            "ok": True,
+            "draft_id": draft_id,
+            "kind": SCRIPT_DRAFT,
+            "title": draft.title,
+            "warnings": validation.warnings,
+            "_message": (
+                f"已生成序列草案 {draft_id}（{len(sequence)} 个顶层节点）。"
+                f"请调用 apply_test_config_draft(draft_id=\"{draft_id}\") 经用户确认后载入画布；"
+                f"草案绝不自动应用。"
+            ),
+        }
+
     return {
         "start_test_sequence": start_test_sequence,
         "pause_test_sequence": pause_test_sequence,
@@ -523,6 +627,7 @@ def build_handlers(deps: ActionDeps) -> dict[str, Any]:
         "get_test_result_summary": get_test_result_summary,
         "apply_test_config_draft": apply_test_config_draft,
         "generate_config_draft": generate_config_draft,
+        "generate_sequence_draft": generate_sequence_draft,
         "set_test_variable": set_test_variable,
         "run_single_step": run_single_step,
     }

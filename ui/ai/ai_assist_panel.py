@@ -1715,11 +1715,20 @@ class AIAssistPanel(QFrame):
             reason=reason,
         )
 
+        # apply_test_config_draft：draft_id 句柄本身不可读，确认前把草案内容摘要
+        # 并入卡片参数区，用户点击「运行」前能看到将落地什么。
+        card_args = arguments
+        if spec.name == "apply_test_config_draft":
+            preview = self._draft_preview_text(str(arguments.get("draft_id", "")))
+            if preview:
+                card_args = dict(arguments)
+                card_args["draft_preview"] = preview
+
         card = self._chat.add_action_confirm(
             action_name=spec.name,
             description=description,
             risk_level=spec.risk_level,
-            arguments=arguments,
+            arguments=card_args,
         )
 
         loop = QEventLoop(self)
@@ -1762,6 +1771,62 @@ class AIAssistPanel(QFrame):
 
         loop.exec()
         return result
+
+    def _draft_preview_text(self, draft_id: str) -> str:
+        """把 apply_test_config_draft 目标草案摘要为确认卡片可读文本（找不到返回空）。"""
+        if not draft_id:
+            return ""
+        try:
+            entry = self._service.draft_registry.get(draft_id)
+        except Exception:  # noqa: BLE001 - 预览失败不阻断确认流程
+            logger.error("读取草案预览失败", exc_info=True)
+            return ""
+        if entry is None:
+            return ""
+        payload = entry.get("payload")
+        kind = entry.get("kind", "")
+        title = entry.get("title", "") or ""
+        lines: list[str] = []
+        if title:
+            lines.append(f"草案标题：{title}")
+        if kind == "script_draft":
+            sequence = getattr(payload, "sequence", None)
+            if not isinstance(sequence, list):
+                sequence = []
+            lines.append(
+                f"类型：测试序列草案（{len(sequence)} 个顶层节点，确认后整体替换当前画布）"
+            )
+            self._summarize_draft_nodes(sequence, lines, depth=1, budget=[40])
+        elif kind == "config_draft":
+            items = getattr(payload, "payload", None)
+            if isinstance(items, dict) and items:
+                lines.append("类型：配置草案（确认后应用以下字段）")
+                for key, value in list(items.items())[:30]:
+                    lines.append(f"  - {key} = {value}")
+        else:
+            lines.append(f"类型：{kind or '未知'}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _summarize_draft_nodes(nodes: list, lines: list, depth: int, budget: list) -> None:
+        """草案节点树摘要（缩进列表，超出预算截断）。"""
+        for item in nodes:
+            if budget[0] <= 0:
+                lines.append("  …（节点较多，已截断）")
+                return
+            if not isinstance(item, dict):
+                continue
+            budget[0] -= 1
+            node_type = str(item.get("node_type", "?"))
+            params = item.get("params")
+            param_text = ""
+            if isinstance(params, dict) and params:
+                pairs = ", ".join(f"{k}={v}" for k, v in list(params.items())[:6])
+                param_text = f"（{pairs}）"
+            lines.append(f"{'  ' * depth}- {node_type}{param_text}")
+            children = item.get("children")
+            if isinstance(children, list) and children:
+                AIAssistPanel._summarize_draft_nodes(children, lines, depth + 1, budget)
 
     def _on_action_result(self, outcome) -> None:
         if outcome is None:

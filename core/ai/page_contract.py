@@ -51,6 +51,9 @@ ACTION_CAPABILITY_MAP: dict[str, tuple[str, ...]] = {
     # generate_config_draft：基于当前页配置 + changes 生成可落地的配置草案（只读取当前值、
     # 登记 draft_id，不直接落地），随后由 apply_test_config_draft 经确认闭环应用。
     "generate_config_draft": (CAP_APPLY_CONFIG,),
+    # generate_sequence_draft：把节点树生成为 Orchestrator 脚本草案（script_draft）并登记
+    # draft_id（生成即本地校验，不落地），随后由 apply_test_config_draft 经确认闭环载入画布。
+    "generate_sequence_draft": (CAP_APPLY_SCRIPT,),
     "set_test_variable": (CAP_SET_VARIABLE,),
 }
 

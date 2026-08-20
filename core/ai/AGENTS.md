@@ -27,6 +27,7 @@
 
 - **传输层**：`newapi_client.py` 走内网 New API 网关；`httpx` 必须 `trust_env=False` 绕系统代理；`max_tokens` ≥ 1024（GLM 为推理模型）。
 - **草案仅草案**：生成 → 预览 → 本地校验 → 确认 → apply；`script` 草案 error 禁 apply、warning 二次确认。
+- **序列草案两步流（agent 模式，orchestrator）**：模型调 `generate_sequence_draft(sequence=…)` 生成 `script_draft` 句柄（生成即本地反序列化 + preflight 校验，error 阻止登记并回显供模型修正），再调 `apply_test_config_draft(draft_id)` 经确认闭环载入画布；可用节点类型目录由 `SequenceContextProvider` 自 `NODE_REGISTRY` 生成注入（过滤旧版 `IfElse/IfThenElse` 与 `unsupported_reason` 非空节点，调整节点可见性时同步 `sequence_provider.py` 的过滤规则）。
 - **流式仅 chat 模式**：`agent / analysis / draft` 仍走非流式。
 - **模型选择优先级**：`set_model_override` > Profile > 默认。
 - **SerialSessionManager 是每页面实例**，非全局单例；解析当前活动页的 `_sc_session_manager`。

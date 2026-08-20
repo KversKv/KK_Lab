@@ -726,6 +726,10 @@ tests/
 │   ├── test_n6705c_worker.py        # Phase 3: n6705c channel_sync / consumption worker 单测
 │   ├── test_consumption_controller.py # Phase 5: consumption_controller 信号/状态机单测
 │   └── test_phase7_connection_dlog.py # Phase 7: ConnectionHub 信号聚合 + dlog 导出纯函数单测
+├── core/ai/                         # core/ai 子系统单测 (__main__ 可独立运行)
+│   ├── test_task_registries.py      # S1 Pending/Scheduled 任务注册表单测
+│   ├── test_resume.py               # resume_with_task_result 续跑语义单测
+│   └── test_generate_sequence_draft.py # generate_sequence_draft 生成/校验/登记/两步闭环单测
 └── ai_eval/                         # AI eval 回归集 (防退化)
     ├── README.md                    # 用例格式说明 + 坑→用例转换约定
     └── cases/                       # 用例 *.json (输入→期望行为；本机沉淀 local_*.json)
