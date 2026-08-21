@@ -157,6 +157,18 @@ MODE_SEARCH_SELECT = "search_and_select"
 MODE_FULL = "full"
 MODE_INLINE = "inline"
 
+# 右键高亮多色调色板：(背景色, 前景色)
+_SC_HIGHLIGHT_PALETTE = [
+    ("#FFD60A", "#1d1d1f"),  # yellow
+    ("#FF9F0A", "#1d1d1f"),  # orange
+    ("#FF375F", "#ffffff"),  # pink
+    ("#BF5AF2", "#ffffff"),  # purple
+    ("#0A84FF", "#ffffff"),  # blue
+    ("#30D158", "#1d1d1f"),  # green
+    ("#64D2FF", "#1d1d1f"),  # cyan
+    ("#FF6482", "#ffffff"),  # rose
+]
+
 
 from ui.modules.serialCom_module.mixins.connection_mixin import ConnectionMixin
 from ui.modules.serialCom_module.mixins.toolbar_mixin import ToolbarMixin
@@ -179,6 +191,9 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
         self._sc_rx_line_buf = ""
         self._sc_rx_flush_timer = None
         self._sc_all_logs = []
+        self._sc_log_line_counter = 0
+        self._sc_show_line_num = False
+        self._sc_highlight_keywords = []  # [{"keyword": str, "bg": str, "fg": str}]
         self._sc_max_log_lines = self._SC_MAX_LOG_LINES_DEFAULT
         self._sc_log_auto_save = False
         self._sc_log_save_path = ''
@@ -224,6 +239,7 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
         self._sc_filter_applied_use_regex = False
         self._sc_filter_applied_case = False
         self._sc_filter_applied_invert = False
+        self._sc_filter_applied_highlight_only = False
         self._sc_filter_applied_before = 0
         self._sc_filter_applied_after = 0
 
@@ -355,6 +371,7 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
                 "show_system_log": False,
                 "line_by_line": False,
                 "sidebar_visible": True,
+                "show_line_num": False,
                 "center_split_sizes": [680, 185],
             },
             "send_history": [],
@@ -670,6 +687,7 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
             "show_system_log": getattr(self, "_sc_show_system_log", False),
             "line_by_line": getattr(self, "_sc_line_by_line", False),
             "sidebar_visible": getattr(self, "_sc_sidebar_visible", True),
+            "show_line_num": getattr(self, "_sc_show_line_num", False),
             "log_auto_save": getattr(self, "_sc_log_auto_save", False),
             "log_save_path": getattr(self, "_sc_log_save_path", ""),
             "center_split_sizes": (
@@ -767,6 +785,7 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
                     ("show_system_log", "_sc_show_system_log"),
                     ("line_by_line", "_sc_line_by_line"),
                     ("sidebar_visible", "_sc_sidebar_visible"),
+                    ("show_line_num", "_sc_show_line_num"),
                     ("log_auto_save", "_sc_log_auto_save"),
                     ("log_save_path", "_sc_log_save_path"),
                 ):
@@ -830,6 +849,7 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
                 ("show_system_log", "_sc_show_system_log"),
                 ("line_by_line", "_sc_line_by_line"),
                 ("sidebar_visible", "_sc_sidebar_visible"),
+                ("show_line_num", "_sc_show_line_num"),
             ):
                 if key in data:
                     setattr(self, attr, data[key])

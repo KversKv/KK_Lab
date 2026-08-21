@@ -26,7 +26,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QAction, QColor, QCursor, QFont, QIcon, QKeySequence, QPainter, QPen,
-    QPixmap, QShortcut,
+    QPixmap, QShortcut, QTextCursor,
 )
 from PySide6.QtSvg import QSvgRenderer
 
@@ -55,6 +55,7 @@ from ui.modules.serialCom_module.serialCom_module_frame import (
     MODE_SEARCH_SELECT,
     _LINK_ICON_PATH,
     _SEARCH_ICON_PATH,
+    _SC_HIGHLIGHT_PALETTE,
     _SERIAL_BTN_HEIGHT,
     _SERIAL_BTN_ICON_SIZE,
     _SERIAL_BTN_RADIUS,
@@ -351,6 +352,13 @@ class LogPanelMixin:
         self._sc_filter_invert_cb.setToolTip("Show non-matching lines")
         opts.addWidget(self._sc_filter_invert_cb)
 
+        self._sc_filter_highlight_only_cb = QCheckBox("Highlight Only")
+        self._sc_filter_highlight_only_cb.setStyleSheet(self._sc_checkbox_style())
+        self._sc_filter_highlight_only_cb.setToolTip(
+            "Keep all logs visible, highlight matching text instead of filtering lines"
+        )
+        opts.addWidget(self._sc_filter_highlight_only_cb)
+
         opts.addSpacing(8)
 
         sep = QFrame()
@@ -398,6 +406,7 @@ class LogPanelMixin:
 
         self._sc_log_edit = QTextEdit()
         self._sc_log_edit.setReadOnly(True)
+        self._sc_log_edit.setContextMenuPolicy(Qt.CustomContextMenu)
         self._sc_log_edit.setStyleSheet(log_edit_style() + SERIAL_SCROLLBAR_STYLE)
         self._sc_log_edit.document().setDefaultStyleSheet(log_document_style())
         self._sc_log_edit.document().setMaximumBlockCount(self._sc_max_log_lines)
@@ -1101,6 +1110,7 @@ class LogPanelMixin:
         dlg.display_font_size_spin.setValue(getattr(self, '_sc_display_font_size', 11))
         dlg.display_auto_scroll_cb.setChecked(self._sc_auto_scroll)
         dlg.display_word_wrap_cb.setChecked(getattr(self, '_sc_word_wrap', True))
+        dlg.display_show_line_num_cb.setChecked(getattr(self, '_sc_show_line_num', False))
 
         dlg.auto_detect_enable_cb.setChecked(self._sc_auto_detect_cb.isChecked())
         dlg.auto_detect_runtime_cb.setChecked(self._sc_auto_baud_monitor.runtime_redetect_enabled)
@@ -1174,6 +1184,11 @@ class LogPanelMixin:
             self._sc_log_edit.setLineWrapMode(
                 _QTE.WidgetWidth if self._sc_word_wrap else _QTE.NoWrap
             )
+
+            new_show_line_num = dlg.display_show_line_num_cb.isChecked()
+            if new_show_line_num != getattr(self, '_sc_show_line_num', False):
+                self._sc_show_line_num = new_show_line_num
+                self._sc_rebuild_log_view()
 
             self._sc_apply_auto_detect_settings(dlg)
 
@@ -1371,6 +1386,8 @@ class LogPanelMixin:
             self._sc_stop_ntp_sync()
 
     def _sc_append_log(self, message: str, color: str = _CLR_TEXT_BODY):
+        self._sc_log_line_counter += 1
+        line_no = self._sc_log_line_counter
         ts = datetime.now().strftime("%H:%M:%S.%f")[:-3] if self._sc_show_timestamp else ""
         ntp_ts = self._sc_ntp_timestamp()
         escaped = message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -1385,14 +1402,152 @@ class LogPanelMixin:
         if ntp_ts:
             prefix = f"{prefix} [NTP] {ntp_ts}" if prefix else f"[NTP] {ntp_ts}"
         raw = f"{prefix} {message}" if prefix else message
-        self._sc_all_logs.append((raw, html))
+        self._sc_all_logs.append((raw, html, line_no))
         if len(self._sc_all_logs) > self._sc_max_log_lines:
             self._sc_all_logs = self._sc_all_logs[-self._sc_max_log_lines:]
         self._sc_write_to_log_files(raw)
         if self._sc_is_filter_active():
             self._sc_filter_dirty = True
         else:
-            self._sc_pending_html.append(html)
+            rendered = self._sc_render_log_html(
+                html, line_no,
+                apply_filter_highlight=self._sc_is_filter_highlight_only_active()
+            )
+            self._sc_pending_html.append(rendered)
+
+    # --- 日志渲染：行号 + 右键高亮 + 过滤高亮 ---
+
+    def _sc_render_log_html(self, base_html, line_no, apply_filter_highlight=False):
+        """对基础 HTML 应用行号前缀、右键关键词高亮、过滤高亮（可选）。"""
+        html = base_html
+        if apply_filter_highlight and self._sc_filter_applied_pattern:
+            html = self._sc_html_with_filter_highlight(
+                html, self._sc_filter_applied_pattern,
+                self._sc_filter_applied_use_regex, self._sc_filter_applied_case
+            )
+        if self._sc_highlight_keywords:
+            html = self._sc_apply_keyword_highlights(html)
+        if self._sc_show_line_num:
+            lineno_html = f'<span style="color:{_CLR_TEXT_LINENO};">{line_no:>5} </span>'
+            html = lineno_html + html
+        return html
+
+    def _sc_apply_keyword_highlights(self, html):
+        """对所有右键高亮关键词着色，多关键词使用不同颜色。"""
+        if not self._sc_highlight_keywords:
+            return html
+        keywords = [kw["keyword"] for kw in self._sc_highlight_keywords]
+        try:
+            combined = re.compile(
+                '|'.join(re.escape(k) for k in keywords), re.IGNORECASE
+            )
+        except re.error:
+            return html
+        kw_lower_map = {}
+        for kw_info in self._sc_highlight_keywords:
+            kw_lower_map[kw_info["keyword"].lower()] = kw_info
+
+        parts = re.split(r'(<[^>]*>)', html)
+        for idx, seg in enumerate(parts):
+            if not seg or seg.startswith('<'):
+                continue
+            def _replace(m):
+                matched = m.group(0)
+                info = kw_lower_map.get(matched.lower())
+                if info is None:
+                    return matched
+                return (
+                    f'<span style="background-color:{info["bg"]};'
+                    f'color:{info["fg"]};'
+                    f'border-radius:2px;padding:0 1px;">{matched}</span>'
+                )
+            try:
+                parts[idx] = combined.sub(_replace, seg)
+            except re.error:
+                continue
+        return ''.join(parts)
+
+    def _sc_add_highlight_keyword(self, keyword):
+        """添加右键高亮关键词，自动分配调色板中的颜色。"""
+        keyword = keyword.strip()
+        if not keyword or len(keyword) > 200:
+            return
+        for kw_info in self._sc_highlight_keywords:
+            if kw_info["keyword"].lower() == keyword.lower():
+                return
+        idx = len(self._sc_highlight_keywords) % len(_SC_HIGHLIGHT_PALETTE)
+        bg, fg = _SC_HIGHLIGHT_PALETTE[idx]
+        self._sc_highlight_keywords.append({"keyword": keyword, "bg": bg, "fg": fg})
+        self._sc_rebuild_log_view()
+
+    def _sc_remove_highlight_keyword(self, keyword):
+        """移除指定右键高亮关键词。"""
+        self._sc_highlight_keywords = [
+            kw for kw in self._sc_highlight_keywords
+            if kw["keyword"].lower() != keyword.lower()
+        ]
+        self._sc_rebuild_log_view()
+
+    def _sc_clear_highlight_keywords(self):
+        """清除所有右键高亮关键词。"""
+        if not self._sc_highlight_keywords:
+            return
+        self._sc_highlight_keywords.clear()
+        self._sc_rebuild_log_view()
+
+    def _sc_on_log_context_menu(self, pos):
+        """日志区右键菜单：高亮选中词 / 管理已有高亮。"""
+        menu = QMenu(self)
+        menu.setStyleSheet(f"""
+            QMenu {{
+                background-color: {_CLR_BG_CARD}; border: 1px solid {_CLR_BORDER_HOVER};
+                border-radius: 6px; padding: 4px 0px;
+            }}
+            QMenu::item {{
+                padding: 6px 20px; color: {_CLR_INPUT_TEXT}; font-size: 12px; font-family: {_UI_FONT};
+            }}
+            QMenu::item:selected {{
+                background-color: {_CLR_BORDER}; color: #ffffff;
+            }}
+            QMenu::separator {{
+                height: 1px; background: {_CLR_BORDER}; margin: 4px 8px;
+            }}
+        """)
+        cursor = self._sc_log_edit.textCursor()
+        word = ""
+        if cursor.hasSelection():
+            word = cursor.selectedText().strip()
+        if not word:
+            try:
+                cursor = self._sc_log_edit.cursorForPosition(pos)
+                cursor.select(QTextCursor.WordUnderCursor)
+                word = cursor.selectedText().strip()
+            except Exception:
+                word = ""
+        if word:
+            display = word if len(word) <= 40 else word[:37] + "..."
+            act = QAction(f'Highlight "{display}"', self)
+            act.triggered.connect(lambda checked, w=word: self._sc_add_highlight_keyword(w))
+            menu.addAction(act)
+        if self._sc_highlight_keywords:
+            if word:
+                menu.addSeparator()
+            for kw_info in self._sc_highlight_keywords:
+                kw = kw_info["keyword"]
+                display = kw if len(kw) <= 40 else kw[:37] + "..."
+                label = f'Remove "{display}"'
+                act = QAction(label, self)
+                act.triggered.connect(
+                    lambda checked, k=kw: self._sc_remove_highlight_keyword(k)
+                )
+                menu.addAction(act)
+            menu.addSeparator()
+            clear_act = QAction("Clear All Highlights", self)
+            clear_act.triggered.connect(self._sc_clear_highlight_keywords)
+            menu.addAction(clear_act)
+        if not word and not self._sc_highlight_keywords:
+            return
+        menu.exec(self._sc_log_edit.mapToGlobal(pos))
 
     def _sc_flush_pending_logs(self):
         if self._sc_is_filter_active():
@@ -1451,11 +1606,12 @@ class LogPanelMixin:
             if hit:
                 new_match_count += 1
                 base_html = self._sc_all_logs[i][1]
-                if not invert:
-                    base_html = self._sc_html_with_filter_highlight(
-                        base_html, pattern, use_regex, case_sensitive
-                    )
-                new_html.append(base_html)
+                line_no = self._sc_all_logs[i][2]
+                rendered = self._sc_render_log_html(
+                    base_html, line_no,
+                    apply_filter_highlight=not invert
+                )
+                new_html.append(rendered)
 
         self._sc_filter_last_count = len(self._sc_all_logs)
         prev_text = self._sc_filter_match_label.text()

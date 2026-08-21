@@ -1,8 +1,8 @@
 {
   "version": "2.0",
   "serial": {
-    "port": "COM3 - Intel(R) Active Management Technology - SOL (COM3)",
-    "baudrate": "921600",
+    "port": "COM5 - USB Serial Port (COM5)",
+    "baudrate": "1152000",
     "auto_detect": false,
     "databits": "8",
     "stopbits": "1",
@@ -36,14 +36,16 @@
     "show_system_log": true,
     "line_by_line": false,
     "sidebar_visible": true,
+    "show_line_num": false,
     "center_split_sizes": [
-      1083,
+      683,
       178
     ],
     "log_auto_save": false,
     "log_save_path": ""
   },
   "send_history": [
+    "IBRT_UI:pairing_mode_test",
     "test2",
     "test1"
   ],
@@ -197,10 +199,10 @@
     ]
   },
   "window": {
-    "x": 38,
-    "y": 325,
+    "x": 1430,
+    "y": 298,
     "width": 1592,
     "height": 969,
-    "maximized": true
+    "maximized": false
   }
 }

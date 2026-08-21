@@ -243,6 +243,7 @@ class FilterSaveMixin:
         self._sc_filter_applied_invert = False
         self._sc_filter_applied_before = 0
         self._sc_filter_applied_after = 0
+        self._sc_filter_applied_highlight_only = False
 
     def _sc_filter_inputs_match_applied(self):
         return (
@@ -250,6 +251,7 @@ class FilterSaveMixin:
             and self._sc_filter_regex_cb.isChecked() == self._sc_filter_applied_use_regex
             and self._sc_filter_case_cb.isChecked() == self._sc_filter_applied_case
             and self._sc_filter_invert_cb.isChecked() == self._sc_filter_applied_invert
+            and self._sc_filter_highlight_only_cb.isChecked() == getattr(self, '_sc_filter_applied_highlight_only', False)
             and self._sc_filter_before_spin.value() == self._sc_filter_applied_before
             and self._sc_filter_after_spin.value() == self._sc_filter_applied_after
         )
@@ -274,6 +276,7 @@ class FilterSaveMixin:
         self._sc_filter_applied_use_regex = self._sc_filter_regex_cb.isChecked()
         self._sc_filter_applied_case = self._sc_filter_case_cb.isChecked()
         self._sc_filter_applied_invert = self._sc_filter_invert_cb.isChecked()
+        self._sc_filter_applied_highlight_only = self._sc_filter_highlight_only_cb.isChecked()
         self._sc_filter_applied_before = self._sc_filter_before_spin.value()
         self._sc_filter_applied_after = self._sc_filter_after_spin.value()
 
@@ -293,6 +296,13 @@ class FilterSaveMixin:
             pattern, use_regex, case_sensitive, invert
         )
         self._sc_filter_match_label.setText(f"Matched: {len(matched_indices)} lines")
+
+        if self._sc_filter_applied_highlight_only:
+            self._sc_filter_last_count = len(self._sc_all_logs)
+            self._sc_rebuild_log_view()
+            if self._sc_auto_scroll:
+                self._sc_scroll_to_bottom()
+            return
 
         matched_set = set(matched_indices)
         visible = set()
@@ -314,13 +324,16 @@ class FilterSaveMixin:
                         f'<span style="color:{_CLR_TEXT_LINENO};">  ───</span>'
                     )
             if i in matched_set and not invert:
-                self._sc_log_edit.append(
-                    self._sc_html_with_filter_highlight(
-                        self._sc_all_logs[i][1], pattern, use_regex, case_sensitive
-                    )
+                rendered = self._sc_render_log_html(
+                    self._sc_all_logs[i][1], self._sc_all_logs[i][2],
+                    apply_filter_highlight=True
                 )
+                self._sc_log_edit.append(rendered)
             else:
-                self._sc_log_edit.append(self._sc_all_logs[i][1])
+                rendered = self._sc_render_log_html(
+                    self._sc_all_logs[i][1], self._sc_all_logs[i][2]
+                )
+                self._sc_log_edit.append(rendered)
             prev_shown = i
         cursor.endEditBlock()
         self._sc_log_edit.setUpdatesEnabled(True)
@@ -333,16 +346,30 @@ class FilterSaveMixin:
         self._sc_log_edit.clear()
         cursor = self._sc_log_edit.textCursor()
         cursor.beginEditBlock()
-        for _raw, html in self._sc_all_logs:
-            self._sc_log_edit.append(html)
+        highlight_only = self._sc_is_filter_highlight_only_active()
+        for _raw, html, line_no in self._sc_all_logs:
+            rendered = self._sc_render_log_html(
+                html, line_no, apply_filter_highlight=highlight_only
+            )
+            self._sc_log_edit.append(rendered)
         cursor.endEditBlock()
         self._sc_log_edit.setUpdatesEnabled(True)
         if self._sc_auto_scroll:
             self._sc_scroll_to_bottom()
 
     def _sc_is_filter_active(self):
+        if not self._sc_filter_row.isVisible():
+            return False
+        if not self._sc_filter_applied_pattern:
+            return False
+        if getattr(self, '_sc_filter_applied_highlight_only', False):
+            return False
+        return True
+
+    def _sc_is_filter_highlight_only_active(self):
         return (self._sc_filter_row.isVisible()
-                and bool(self._sc_filter_applied_pattern))
+                and bool(self._sc_filter_applied_pattern)
+                and getattr(self, '_sc_filter_applied_highlight_only', False))
 
     def _sc_get_matched_indices(self, pattern, use_regex, case_sensitive, invert):
         matched = []
@@ -354,7 +381,7 @@ class FilterSaveMixin:
             except re.error:
                 return matched
 
-        for i, (raw, _html) in enumerate(self._sc_all_logs):
+        for i, (raw, _html, _no) in enumerate(self._sc_all_logs):
             if compiled is not None:
                 hit = bool(compiled.search(raw))
             elif case_sensitive:
@@ -435,7 +462,7 @@ class FilterSaveMixin:
                 lines.append(self._sc_all_logs[i][0])
                 prev_shown = i
         else:
-            for raw, _html in self._sc_all_logs:
+            for raw, _html, _no in self._sc_all_logs:
                 lines.append(raw)
         cb.setText("\n".join(lines))
 
@@ -460,7 +487,7 @@ class FilterSaveMixin:
             except OSError:
                 pass
         with open(path, "w", encoding="utf-8") as f:
-            for raw, _ in self._sc_all_logs:
+            for raw, _, _no in self._sc_all_logs:
                 f.write(raw + "\n")
 
     @staticmethod
@@ -557,7 +584,7 @@ class FilterSaveMixin:
             except OSError:
                 written = False
         if not written:
-            for raw, _ in self._sc_all_logs:
+            for raw, _, _no in self._sc_all_logs:
                 out = raw if keep_ts else self._sc_strip_timestamp(raw)
                 handle.write(out + "\n")
 
@@ -578,6 +605,7 @@ class FilterSaveMixin:
         self._sc_all_logs.clear()
         self._sc_pending_html.clear()
         self._sc_log_edit.clear()
+        self._sc_log_line_counter = 0
         self._sc_rx_bytes = 0
         self._sc_tx_bytes = 0
         self._sc_rx_line_buf = ""
