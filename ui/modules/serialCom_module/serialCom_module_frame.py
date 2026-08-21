@@ -842,6 +842,12 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
                     self._sc_history_combo.setCurrentIndex(-1)
                     self._sc_history_combo.blockSignals(False)
 
+        # 同步 RX/TX Format 滑动开关的视觉态，避免重启后 UI 显示与实际解析格式不一致
+        if hasattr(self, "_sc_rx_toggle"):
+            self._sc_rx_toggle.set_value("HEX" if getattr(self, "_sc_rx_display_hex", False) else "ASCII")
+        if hasattr(self, "_sc_tx_toggle"):
+            self._sc_tx_toggle.set_value("HEX" if getattr(self, "_sc_tx_display_hex", False) else "ASCII")
+
     def _sc_load_persisted_state(self) -> None:
         try:
             cfg_path = self._sc_persisted_path()
