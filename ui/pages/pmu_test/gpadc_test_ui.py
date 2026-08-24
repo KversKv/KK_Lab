@@ -17,10 +17,12 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QLineEdit, QGridLayout, QSpinBox, QDoubleSpinBox, QFrame, QRadioButton,
     QButtonGroup, QApplication, QSizePolicy, QStackedWidget, QScrollArea,
-    QTextEdit, QProgressBar
+    QTextEdit, QProgressBar, QListWidget, QListWidgetItem, QAbstractItemView,
+    QSplitter, QMenu, QInputDialog
 )
 from PySide6.QtCore import Qt, Signal, QThread, QTimer
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QColor, QBrush, QAction
+import datetime
 import math
 import queue
 import random
@@ -76,6 +78,16 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
     TEST_HIGH_LOW_TEMP = "High-Low Temp Test"
     TEST_TEMP_CONSISTENCY = "Temp Consistency Test"
 
+    # 最近测试记录上限（超出丢弃最旧）
+    RECENT_TEST_LIMIT = 10
+    # 支持曲线对比的测试类型
+    _CURVE_KINDS = ('force_voltage', 'high_low_temp', 'temp_consistency')
+    # 对比曲线调色板（与 temp_consistency 图共用色系）
+    _COMPARE_PALETTE = [
+        "#00d39a", "#f0a040", "#5b9cf5", "#e05c5c",
+        "#a78bfa", "#34d399", "#fb923c", "#60a5fa",
+    ]
+
     INSTRUMENT_MAP = {
         TEST_1000CNT: [],
         TEST_FORCE_VOLTAGE: ["n6705c"],
@@ -109,6 +121,16 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self._search_worker = None
         self._export_data = None
         self._chart_image_bytes = None
+
+        # 最近测试记录（本会话内，用于历史曲线对比与载入）
+        self._recent_test_records: list[dict] = []
+        self._recent_test_seq = 0
+        # 当前从 Recent 载入的记录（切换 Curve View 时据此重绘）
+        self._loaded_record = None
+        # Recent 管理栏折叠前的宽度记忆
+        self._recent_panel_sizes = [1200, 260]
+        # 列表当前选中（高亮目标）的记录 id，对比图中该记录加粗、其余淡化
+        self._highlight_record_id = None
 
         self._setup_style()
         self._create_layout()
@@ -243,6 +265,19 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 padding: 4px 10px;
             }}
 
+            QPushButton#tool_btn:checked {{
+                background-color: rgba(91, 156, 245, 0.18);
+                border: 1px solid {Colors.info};
+            }}
+
+            QSplitter#recent_curve_splitter::handle {{
+                background-color: {Colors.border_primary};
+            }}
+
+            QSplitter#recent_curve_splitter::handle:horizontal {{
+                width: 2px;
+            }}
+
             QRadioButton {{
                 background: transparent;
                 color: {Colors.text_secondary};
@@ -290,6 +325,36 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 background-color: {Colors.accent_primary};
                 border-radius: 4px;
             }}
+
+            QListWidget#recent_test_list {{
+                background-color: #050d1e;
+                border: 1px solid #0e1e40;
+                border-radius: {Radius.small}px;
+                color: #b7c8ea;
+                font-size: {FontSizes.caption};
+                padding: 4px;
+                outline: none;
+            }}
+
+            QListWidget#recent_test_list::item {{
+                background: transparent;
+                border: none;
+                padding: 3px 6px;
+                border-radius: 4px;
+            }}
+
+            QListWidget#recent_test_list::item:hover {{
+                background: rgba(91, 156, 245, 0.12);
+            }}
+
+            QListWidget#recent_test_list::item:selected {{
+                background: rgba(91, 156, 245, 0.22);
+            }}
+
+            QLabel#recent_hint_label {{
+                color: {Colors.text_muted};
+                font-size: {FontSizes.caption};
+            }}
         """ + SCROLL_AREA_STYLE
         self.setStyleSheet(get_page_base_qss() + page_extra)
 
@@ -314,6 +379,155 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         layout.addWidget(name_label)
         layout.addWidget(value_label)
         return card, value_label
+
+    def _create_recent_tests_panel(self):
+        """Curve 右侧最近测试管理栏：列表 + Curve View 选项 + 对比/载入/清空。"""
+        panel = QFrame()
+        panel.setObjectName("panel")
+        panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        panel.setMinimumWidth(220)
+
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(6)
+
+        title_row = QHBoxLayout()
+        title_row.setSpacing(6)
+        title = QLabel("Recent Tests")
+        title.setObjectName("section_title")
+        title.setStyleSheet("border: none;")
+        title_row.addWidget(title)
+        title_row.addStretch()
+
+        self.compare_recent_btn = QPushButton("Compare")
+        self.compare_recent_btn.setObjectName("tool_btn")
+        self.compare_recent_btn.setToolTip("对比勾选的多条测试记录曲线")
+        self.load_recent_btn = QPushButton("Load")
+        self.load_recent_btn.setObjectName("tool_btn")
+        self.load_recent_btn.setToolTip("载入勾选记录的曲线与指标")
+        self.clear_recent_btn = QPushButton("Clear")
+        self.clear_recent_btn.setObjectName("tool_btn")
+        self.clear_recent_btn.setToolTip("清空最近测试记录")
+
+        title_row.addWidget(self.compare_recent_btn)
+        title_row.addWidget(self.load_recent_btn)
+        title_row.addWidget(self.clear_recent_btn)
+        layout.addLayout(title_row)
+
+        self.recent_test_list = QListWidget()
+        self.recent_test_list.setObjectName("recent_test_list")
+        self.recent_test_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.recent_test_list.setToolTip(
+            "单击选中高亮对应曲线；勾选多条后 Compare 对比；双击载入曲线与指标；右键重命名/删除"
+        )
+        self.recent_test_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        layout.addWidget(self.recent_test_list, 1)
+
+        # Curve View：控制载入/对比图显示哪些曲线（Mean / Min-Max / Error 可组合）
+        view_title = QLabel("Curve View")
+        view_title.setObjectName("section_title")
+        view_title.setStyleSheet("border: none;")
+        layout.addWidget(view_title)
+
+        self.curve_view_group = QButtonGroup()
+        self.curve_view_group.setExclusive(False)
+        self.show_mean_btn = QPushButton("Mean")
+        self.show_band_btn = QPushButton("Min-Max")
+        self.show_error_btn = QPushButton("Error")
+        for btn, name, tip in (
+            (self.show_mean_btn, "Mean", "显示均值校准曲线"),
+            (self.show_band_btn, "Min-Max", "显示最大/最小值包络带"),
+            (self.show_error_btn, "Error", "仅显示误差曲线（Actual - Ideal，右轴）"),
+        ):
+            btn.setObjectName("tool_btn")
+            btn.setCheckable(True)
+            btn.setToolTip(tip)
+            self.curve_view_group.addButton(btn)
+
+        self.show_mean_btn.setChecked(True)
+
+        view_row = QHBoxLayout()
+        view_row.setSpacing(4)
+        view_row.addWidget(self.show_mean_btn)
+        view_row.addWidget(self.show_band_btn)
+        view_row.addWidget(self.show_error_btn)
+        layout.addLayout(view_row)
+
+        hint = QLabel("勾选记录进行对比；双击记录载入曲线与指标")
+        hint.setObjectName("recent_hint_label")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        return panel
+
+    def _is_curve_view_enabled(self, name: str) -> bool:
+        """Curve View 选项开关：mean / band / error。"""
+        mapping = {
+            'mean': self.show_mean_btn,
+            'band': self.show_band_btn,
+            'error': self.show_error_btn,
+        }
+        btn = mapping.get(name)
+        return btn is not None and btn.isChecked()
+
+    def _set_curve_view_all(self, enabled: bool = True):
+        """一次性设置全部 Curve View 选项（blockSignals 防止自动重绘副作用）。"""
+        for btn in (self.show_mean_btn, self.show_band_btn, self.show_error_btn):
+            btn.blockSignals(True)
+            btn.setChecked(enabled)
+            btn.blockSignals(False)
+
+    def _attach_curve_context_menu(self, pw):
+        """给 PlotWidget 挂 Curve View 右键菜单（同时禁用 pyqtgraph 自带菜单避免冲突）。"""
+        pw.setContextMenuPolicy(Qt.CustomContextMenu)
+        pw.customContextMenuRequested.connect(self._show_curve_view_menu)
+        try:
+            pw.plotItem.vb.setMenuEnabled(False)
+        except Exception:
+            pass
+
+    def _show_curve_view_menu(self, pos):
+        """图表右键菜单：勾选启用单次数据显示项（与 Curve View 按钮同步）。"""
+        sender = self.sender()
+        menu = QMenu("Curve View", self)
+        entries = (
+            ("Voltage / Mean", self.show_mean_btn),
+            ("Min-Max Band", self.show_band_btn),
+            ("Error", self.show_error_btn),
+        )
+        for text, btn in entries:
+            act = QAction(text, menu)
+            act.setCheckable(True)
+            act.setChecked(btn.isChecked())
+            # 勾选变化直接同步按钮状态（按钮 toggled 会触发自动重绘）
+            act.toggled.connect(btn.setChecked)
+            menu.addAction(act)
+        global_pos = sender.mapToGlobal(pos) if sender is not None else pos
+        menu.exec(global_pos)
+
+    def _on_curve_view_changed(self):
+        """Curve View 选项切换后按当前显示内容重绘（优先对比图，其次载入记录）。"""
+        checked = self._get_checked_records()
+        curve_records = [r for r in checked if r['kind'] in self._CURVE_KINDS]
+        if len(curve_records) >= 2:
+            self._plot_comparison_curves(curve_records)
+            return
+        if self._loaded_record is not None and self._loaded_record['kind'] in self._CURVE_KINDS:
+            self._load_recent_record(self._loaded_record)
+
+    def _on_toggle_recent_panel(self, checked: bool):
+        """折叠/展开 Curve 右侧 Recent 管理栏（记住展开宽度）。"""
+        panel = self.recent_curve_splitter.widget(1)
+        if panel is None:
+            return
+        if checked:
+            panel.setVisible(True)
+            self.recent_curve_splitter.setSizes(self._recent_panel_sizes)
+            self.toggle_recent_btn.setText("Recent ◀")
+        else:
+            self._recent_panel_sizes = self.recent_curve_splitter.sizes()
+            panel.setVisible(False)
+            self.toggle_recent_btn.setText("Recent ▶")
 
 
 
@@ -733,8 +947,16 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self.export_result_btn = QPushButton("Export Result")
         self.export_result_btn.setObjectName("tool_btn")
 
+        # Recent 管理栏折叠/展开开关（面板在 Curve 右侧）
+        self.toggle_recent_btn = QPushButton("Recent ◀")
+        self.toggle_recent_btn.setObjectName("tool_btn")
+        self.toggle_recent_btn.setCheckable(True)
+        self.toggle_recent_btn.setChecked(True)
+        self.toggle_recent_btn.setToolTip("显示/隐藏最近测试管理栏")
+
         chart_top.addWidget(chart_title)
         chart_top.addStretch()
+        chart_top.addWidget(self.toggle_recent_btn)
         chart_top.addWidget(self.export_result_btn)
         chart_layout.addLayout(chart_top)
 
@@ -748,42 +970,10 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 border-radius: 8px;
             }
         """)
-
-        chart_placeholder_layout = QVBoxLayout(self.chart_placeholder)
-        chart_placeholder_layout.setContentsMargins(22, 22, 22, 18)
-        chart_placeholder_layout.setSpacing(12)
-
-        legend_row = QHBoxLayout()
-        legend_row.addStretch()
-
-        actual_legend = QLabel("↔ Actual Code")
-        actual_legend.setStyleSheet("color: #00d39a; font-size: 12px;")
-        ideal_legend = QLabel("↔ Ideal Code")
-        ideal_legend.setStyleSheet("color: #7e96bf; font-size: 12px;")
-
-        legend_row.addWidget(actual_legend)
-        legend_row.addWidget(ideal_legend)
-        legend_row.addStretch()
-        chart_placeholder_layout.addLayout(legend_row)
-
-        plot_area = QFrame()
-        plot_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        plot_area.setStyleSheet("""
-            QFrame {
-                background-color: transparent;
-                border-left: 1px solid #6f7fa5;
-                border-bottom: 1px solid #6f7fa5;
-                border-top: 1px dashed rgba(126,150,191,0.18);
-                border-right: none;
-                border-radius: 0px;
-            }
-        """)
-        chart_placeholder_layout.addWidget(plot_area, 1)
-
-        x_label = QLabel("Input Voltage (V)")
-        x_label.setAlignment(Qt.AlignCenter)
-        x_label.setObjectName("muted_label")
-        chart_placeholder_layout.addWidget(x_label)
+        # 图表区右键：弹 Curve View 显示项菜单（空图状态下也可用）
+        self.chart_placeholder.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.chart_placeholder.customContextMenuRequested.connect(self._show_curve_view_menu)
+        self._build_default_chart_placeholder()
 
         chart_layout.addWidget(self.chart_placeholder, 1)
 
@@ -795,7 +985,16 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self.progress_text_label = self.execution_logs.progress_text_label
         self.clear_log_btn = self.execution_logs.clear_log_btn
 
-        right_col.addWidget(right_splitter, 1)
+        # Curve 右侧可折叠的最近测试管理栏：与图表区水平分栏
+        self.recent_curve_splitter = QSplitter(Qt.Horizontal)
+        self.recent_curve_splitter.setObjectName("recent_curve_splitter")
+        self.recent_curve_splitter.addWidget(right_splitter)
+        self.recent_curve_splitter.addWidget(self._create_recent_tests_panel())
+        self.recent_curve_splitter.setStretchFactor(0, 1)
+        self.recent_curve_splitter.setStretchFactor(1, 0)
+        self.recent_curve_splitter.setSizes([1200, 260])
+
+        right_col.addWidget(self.recent_curve_splitter, 1)
 
         self.export_params_btn = QPushButton("Export Parameters")
         self.export_params_btn.hide()
@@ -826,6 +1025,17 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self.start_test_btn.clicked.connect(self._on_start_or_stop)
         self.stop_test_btn.clicked.connect(self._stop_test)
         self.export_result_btn.clicked.connect(self.export_result)
+
+        self.compare_recent_btn.clicked.connect(self._on_compare_recent_tests)
+        self.load_recent_btn.clicked.connect(self._on_load_recent_test)
+        self.clear_recent_btn.clicked.connect(self._on_clear_recent_tests)
+        self.recent_test_list.itemDoubleClicked.connect(self._on_recent_item_double_clicked)
+        self.recent_test_list.itemSelectionChanged.connect(self._on_recent_selection_changed)
+        self.recent_test_list.customContextMenuRequested.connect(self._show_recent_item_menu)
+
+        self.toggle_recent_btn.toggled.connect(self._on_toggle_recent_panel)
+        for btn in (self.show_mean_btn, self.show_band_btn, self.show_error_btn):
+            btn.toggled.connect(self._on_curve_view_changed)
 
         self._update_data_acquisition_ui()
         self._set_test_item(self.TEST_1000CNT)
@@ -1036,6 +1246,9 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 return
             self._drain_uart_rx_queue()
 
+        # 新测试开始：清除上一次的曲线与结果指标，避免新旧数据混显
+        self._reset_result_display()
+
         self.is_test_running = True
         self.start_test_btn.setEnabled(True)
         self.stop_test_btn.setEnabled(True)
@@ -1213,6 +1426,8 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
 
         elif kind == 'force_voltage':
             if result is not None:
+                # 新测试完成：默认显示单次全部波形（Voltage / Min-Max / Error）
+                self._set_curve_view_all(True)
                 result_after_calibration = self._calibration_data(result)
                 voltage_data, mean_cali, adc_min_cali, adc_max_cali = result_after_calibration
                 params = self._calculate_gpadc_parameters(result)
@@ -1231,6 +1446,8 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
 
         elif kind == 'high_low_temp':
             if result is not None:
+                # 新测试完成：默认显示单次全部波形（Voltage / Min-Max / Error）
+                self._set_curve_view_all(True)
                 temp_data, mean_cali, adc_min_cali, adc_max_cali = self._calibration_data(result)
                 params = self._calculate_gpadc_parameters(result)
                 self._plot_voltage_adc_curve(temp_data, mean_cali, adc_min_cali, adc_max_cali, is_temp_mode=True)
@@ -1249,10 +1466,18 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
 
         elif kind == 'temp_consistency':
             if result is not None:
+                # 新测试完成：默认显示单次全部波形（Mean / Min-Max）
+                self._set_curve_view_all(True)
                 self._plot_temp_consistency_curves(result)
                 self._export_data = {'raw': result}
                 self._append_log("[RESULT] Temp Consistency Test completed")
                 self.set_system_status("GPADC温度一致性测试完成")
+
+        # 记入最近测试列表，供后续对比/载入
+        self._record_recent_test(kind, result)
+        # 曲线类测试完成后，当前图上显示的就是这条记录（右键切换 Curve View 时据此重绘）
+        if self._recent_test_records and self._recent_test_records[-1]['kind'] in self._CURVE_KINDS:
+            self._loaded_record = self._recent_test_records[-1]
 
     def _on_test_error(self, err):
         self._append_log(f"[ERROR] Test error: {err}")
@@ -1499,7 +1724,9 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self.voltage_min, self.voltage_max, self.voltage_step,
             self.temp_min, self.temp_max, self.temp_step,
             self.soak_time, self.sample_count,
-            self.calib_low, self.calib_high
+            self.calib_low, self.calib_high,
+            self.recent_test_list, self.compare_recent_btn,
+            self.load_recent_btn, self.clear_recent_btn,
         ]
         for widget in widgets:
             widget.setEnabled(enabled)
@@ -1573,6 +1800,436 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self.std_value.setText("---")
         self.pp_value.setText("---")
         self.samples_value.setText("---")
+
+    # ------------------------------------------------------------------
+    # 最近测试管理：记录 / 对比 / 载入 / 清空
+    # ------------------------------------------------------------------
+    def _record_recent_test(self, kind, result):
+        """测试完成后记入最近测试列表（result 为 None 时不记录）。"""
+        if result is None:
+            return
+        self._recent_test_seq += 1
+        record = {
+            'id': self._recent_test_seq,
+            'time': datetime.datetime.now(),
+            'test_item': self.current_test_item,
+            'kind': kind,
+            'label': '',
+            'params': None,
+            'raw': None,
+            'calibration': None,
+            'summary': "",
+        }
+        if kind == '1000cnt':
+            record['params'] = dict(result)
+            record['summary'] = (
+                f"AVG={result.get('avg', 0):.3f} STD={result.get('std', 0):.3f} "
+                f"P-P={result.get('pp', 0):.0f} N={result.get('count', 0)}"
+            )
+        elif kind in ('force_voltage', 'high_low_temp'):
+            export_data = self._export_data or {}
+            record['params'] = export_data.get('params')
+            record['raw'] = export_data.get('raw')
+            record['calibration'] = export_data.get('calibration')
+            params = record['params'] or {}
+            record['summary'] = (
+                f"INL={params.get('inl', 0.0):.3f} DNL={params.get('dnl', 0.0):.3f} "
+                f"ENOB={params.get('enob', 0.0):.3f} R²={params.get('linearity', 0.0):.4f}"
+            )
+        else:  # temp_consistency
+            record['raw'] = result
+            temps = result.get('temp') or []
+            if temps:
+                record['summary'] = f"T {temps[0]:.1f}~{temps[-1]:.1f}°C · {len(temps)} rows"
+            else:
+                record['summary'] = "no data"
+
+        self._recent_test_records.append(record)
+        while len(self._recent_test_records) > self.RECENT_TEST_LIMIT:
+            self._recent_test_records.pop(0)
+        self._refresh_recent_test_list()
+        self._append_log(f"[INFO] 已记录最近测试 #{record['id']}：{record['summary']}")
+
+    def _record_color(self, record_id: int) -> str:
+        """按记录 id 稳定分配专属曲线颜色（列表装饰、图例、曲线共用）。"""
+        return self._COMPARE_PALETTE[record_id % len(self._COMPARE_PALETTE)]
+
+    def _record_display_name(self, record) -> str:
+        """记录显示名：优先用户重命名的 label，否则测试项名。"""
+        return record.get('label') or record['test_item']
+
+    def _refresh_recent_test_list(self):
+        # 记忆勾选与选中状态（按 record id），重建列表后恢复
+        checked_ids = set()
+        for i in range(self.recent_test_list.count()):
+            item = self.recent_test_list.item(i)
+            if item.checkState() == Qt.Checked:
+                rec = item.data(Qt.UserRole)
+                if rec is not None:
+                    checked_ids.add(rec['id'])
+        current_id = self._highlight_record_id
+        self.recent_test_list.blockSignals(True)
+        self.recent_test_list.clear()
+        for record in self._recent_test_records:
+            ts = record['time'].strftime("%m-%d %H:%M:%S")
+            item = QListWidgetItem(
+                f"● #{record['id']} [{ts}] {self._record_display_name(record)} · {record['summary']}"
+            )
+            color = self._record_color(record['id'])
+            item.setForeground(QBrush(QColor(color)))
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked if record['id'] in checked_ids else Qt.Unchecked)
+            item.setData(Qt.UserRole, record)
+            self.recent_test_list.addItem(item)
+            if record['id'] == current_id:
+                self.recent_test_list.setCurrentItem(item)
+        self.recent_test_list.blockSignals(False)
+
+    def _on_recent_selection_changed(self):
+        """列表选中变化：同步高亮目标并重绘对比图（选中记录加粗、其余淡化）。"""
+        items = self.recent_test_list.selectedItems()
+        record = items[0].data(Qt.UserRole) if items else None
+        self._highlight_record_id = record['id'] if record is not None else None
+        checked = self._get_checked_records()
+        curve_records = [r for r in checked if r['kind'] in self._CURVE_KINDS]
+        if len(curve_records) >= 2:
+            self._plot_comparison_curves(curve_records)
+
+    def _show_recent_item_menu(self, pos):
+        """Recent 列表右键菜单：重命名 / 载入 / 勾选对比 / 删除 / 清空。"""
+        item = self.recent_test_list.itemAt(pos)
+        menu = QMenu(self)
+
+        if item is not None:
+            record = item.data(Qt.UserRole)
+            act_rename = QAction("Rename…", menu)
+            act_rename.triggered.connect(lambda: self._rename_recent_record(record))
+            menu.addAction(act_rename)
+
+            act_load = QAction("Load Curve", menu)
+            act_load.triggered.connect(lambda: self._load_recent_record(record))
+            menu.addAction(act_load)
+
+            act_check = QAction("Uncheck" if item.checkState() == Qt.Checked else "Check for Compare", menu)
+            act_check.triggered.connect(
+                lambda: item.setCheckState(
+                    Qt.Unchecked if item.checkState() == Qt.Checked else Qt.Checked)
+            )
+            menu.addAction(act_check)
+
+            menu.addSeparator()
+            act_remove = QAction("Remove", menu)
+            act_remove.triggered.connect(lambda: self._delete_recent_record(record))
+            menu.addAction(act_remove)
+            menu.addSeparator()
+
+        act_clear = QAction("Clear All", menu)
+        act_clear.triggered.connect(self._on_clear_recent_tests)
+        menu.addAction(act_clear)
+
+        menu.exec(self.recent_test_list.mapToGlobal(pos))
+
+    def _rename_recent_record(self, record):
+        """重命名记录显示名（列表、对比图图例、单次图图例同步）。"""
+        text, ok = QInputDialog.getText(
+            self, "Rename", "Display name:",
+            text=self._record_display_name(record),
+        )
+        if not ok:
+            return
+        record['label'] = text.strip()
+        self._refresh_recent_test_list()
+        self._append_log(f"[INFO] 记录 #{record['id']} 已重命名为「{record['label'] or record['test_item']}」")
+        # 该记录在当前对比图中时重绘更新图例
+        checked = self._get_checked_records()
+        curve_records = [r for r in checked if r['kind'] in self._CURVE_KINDS]
+        if len(curve_records) >= 2:
+            self._plot_comparison_curves(curve_records)
+        elif self._loaded_record is record:
+            self._load_recent_record(record)
+
+    def _delete_recent_record(self, record):
+        """删除单条最近测试记录。"""
+        try:
+            self._recent_test_records.remove(record)
+        except ValueError:
+            return
+        if self._loaded_record is record:
+            self._loaded_record = None
+        if self._highlight_record_id == record['id']:
+            self._highlight_record_id = None
+        self._refresh_recent_test_list()
+        self._append_log(f"[INFO] 已删除记录 #{record['id']}")
+
+    def _get_checked_records(self):
+        records = []
+        for i in range(self.recent_test_list.count()):
+            item = self.recent_test_list.item(i)
+            if item.checkState() == Qt.Checked:
+                record = item.data(Qt.UserRole)
+                if record is not None:
+                    records.append(record)
+        return records
+
+    def _on_compare_recent_tests(self):
+        records = self._get_checked_records()
+        if len(records) < 2:
+            self._append_log("[WARN] 对比至少需要勾选 2 条记录")
+            return
+        stat_records = [r for r in records if r['kind'] == '1000cnt']
+        curve_records = [r for r in records if r['kind'] in self._CURVE_KINDS]
+        if stat_records:
+            self._compare_stats_to_log(stat_records)
+        if not curve_records:
+            self._append_log("[INFO] 勾选记录无曲线数据，统计对比已输出到日志")
+            return
+        if not self.chart_panel.isVisible():
+            self._append_log(
+                "[WARN] 当前测试项不显示曲线面板，请切换到曲线类测试项（如 Force Voltage Test）后重试"
+            )
+            return
+        self._plot_comparison_curves(curve_records)
+
+    def _compare_stats_to_log(self, records):
+        self._append_log("===== 1000CNT 记录对比 =====")
+        self._append_log(
+            f"{'#':<4}{'Time':<14}{'AVG':>10}{'MIN':>10}{'MAX':>10}{'STD':>10}{'P-P':>8}{'N':>8}"
+        )
+        for r in records:
+            p = r.get('params') or {}
+            ts = r['time'].strftime("%m-%d %H:%M")
+            self._append_log(
+                f"#{r['id']:<3}{ts:<14}"
+                f"{p.get('avg', 0):>10.3f}{p.get('min', 0):>10.3f}{p.get('max', 0):>10.3f}"
+                f"{p.get('std', 0):>10.3f}{p.get('pp', 0):>8.0f}{p.get('count', 0):>8d}"
+            )
+
+    def _on_load_recent_test(self):
+        records = self._get_checked_records()
+        if not records:
+            self._append_log("[WARN] 请先勾选一条要载入的记录")
+            return
+        if len(records) > 1:
+            self._append_log("[WARN] 载入仅支持单条记录，已取勾选的第一条")
+        self._load_recent_record(records[0])
+
+    def _on_recent_item_double_clicked(self, item):
+        record = item.data(Qt.UserRole)
+        if record is not None:
+            self._load_recent_record(record)
+
+    def _load_recent_record(self, record):
+        """载入历史记录：恢复其曲线、指标卡与可导出数据。"""
+        kind = record['kind']
+        if kind == '1000cnt':
+            params = record.get('params') or {}
+            self._append_log(
+                f"[INFO] 已载入记录 #{record['id']}：AVG={params.get('avg', 0):.3f}, "
+                f"STD={params.get('std', 0):.3f}, P-P={params.get('pp', 0):.0f}, N={params.get('count', 0)}"
+            )
+            if self.current_test_item == self.TEST_1000CNT:
+                self.update_test_result(params)
+            else:
+                self._append_log("[INFO] 切换到 1000CNT TEST 测试项可在指标卡查看该记录统计")
+            return
+        if not self.chart_panel.isVisible():
+            self._append_log(
+                "[WARN] 当前测试项不显示曲线面板，请切换到曲线类测试项（如 Force Voltage Test）后重试"
+            )
+            return
+        self._export_data = None
+        self._chart_image_bytes = None
+        self._loaded_record = record
+        if kind in ('force_voltage', 'high_low_temp'):
+            calib = record.get('calibration') or {}
+            self._plot_voltage_adc_curve(
+                calib.get('voltage'), calib.get('mean_cali'),
+                calib.get('min_cali'), calib.get('max_cali'),
+                is_temp_mode=(kind == 'high_low_temp'),
+            )
+            params = record.get('params')
+            if params:
+                self.update_test_result(params)
+            self._export_data = {
+                'params': record.get('params'),
+                'raw': record.get('raw'),
+                'calibration': record.get('calibration'),
+            }
+        else:  # temp_consistency
+            raw = record.get('raw') or {}
+            self._plot_temp_consistency_curves(raw)
+            self._export_data = {'raw': raw}
+        self._append_log(f"[INFO] 已载入记录 #{record['id']} 的曲线与指标（{record['test_item']}）")
+
+    def _on_clear_recent_tests(self):
+        if not self._recent_test_records:
+            return
+        self._recent_test_records.clear()
+        self.recent_test_list.clear()
+        self._highlight_record_id = None
+        self._loaded_record = None
+        self._append_log("[INFO] 已清空最近测试记录")
+
+    def _plot_comparison_curves(self, records):
+        """把勾选的多条记录曲线画到同一张对比图上（按 Curve View 选项过滤）。"""
+        try:
+            import pyqtgraph as pg
+            import numpy as np
+
+            self._clear_chart_placeholder()
+            layout = self.chart_placeholder.layout()
+            if layout is None:
+                layout = QVBoxLayout(self.chart_placeholder)
+            layout.setContentsMargins(14, 14, 14, 10)
+            layout.setSpacing(8)
+
+            show_mean = self._is_curve_view_enabled('mean')
+            show_band = self._is_curve_view_enabled('band')
+            show_error = self._is_curve_view_enabled('error')
+            if not (show_mean or show_band or show_error):
+                self._append_log("[WARN] Curve View 未勾选任何曲线类型，请至少勾选 Mean / Min-Max / Error 之一")
+                return
+
+            first_kind = records[0]['kind']
+            if first_kind == 'high_low_temp':
+                x_title, y_title = "Input Temperature (°C)", "Calibrated Temperature (°C)"
+            elif first_kind == 'temp_consistency':
+                x_title, y_title = "Input Voltage (V)", "ADC Code"
+            else:
+                x_title, y_title = "Input Voltage (V)", "Calibrated Voltage (V)"
+            kinds = {r['kind'] for r in records}
+            if len(kinds) > 1:
+                self._append_log("[WARN] 所选记录测试类型不一致，坐标轴单位按首条记录显示，请谨慎解读")
+
+            # 选中高亮：目标记录加粗，其余淡化（未选中任何记录时全部正常显示）
+            highlight_id = self._highlight_record_id
+            dim_others = highlight_id is not None and any(r['id'] == highlight_id for r in records)
+
+            legend_row = QHBoxLayout()
+            legend_row.addStretch()
+            for r in records:
+                color = self._record_color(r['id'])
+                is_hl = dim_others and r['id'] == highlight_id
+                lbl = QLabel(
+                    f"● #{r['id']} {self._record_display_name(r)} {r['time'].strftime('%m-%d %H:%M')}"
+                )
+                style = f"color: {color}; font-size: 11px;"
+                if is_hl:
+                    style += " font-weight: bold;"
+                lbl.setStyleSheet(style)
+                legend_row.addWidget(lbl)
+                legend_row.addSpacing(12)
+            legend_row.addStretch()
+            layout.addLayout(legend_row)
+
+            pw = pg.PlotWidget()
+            pw.setBackground("#0a1735")
+            pw.showGrid(x=True, y=True, alpha=0.15)
+            pw.setLabel("left", y_title, color="#a0b4d8")
+            pw.setLabel("bottom", x_title, color="#a0b4d8")
+            for axis_name in ("left", "bottom"):
+                axis = pw.getAxis(axis_name)
+                axis.setTextPen(pg.mkPen("#a0b4d8"))
+                axis.setPen(pg.mkPen("#3a4f7a"))
+            self._attach_curve_context_menu(pw)
+
+            plotted = 0
+            for r in records:
+                plotted += self._plot_comparison_record(
+                    pw, r, self._record_color(r['id']),
+                    show_mean=show_mean, show_band=show_band, show_error=show_error,
+                    dimmed=dim_others and r['id'] != highlight_id,
+                )
+
+            layout.addWidget(pw, 1)
+
+            x_label = QLabel(x_title)
+            x_label.setAlignment(Qt.AlignCenter)
+            x_label.setObjectName("muted_label")
+            layout.addWidget(x_label)
+
+            self._append_log(f"[INFO] 对比图已绘制：{len(records)} 条记录共 {plotted} 条曲线")
+        except Exception as e:
+            self._append_log(f"[ERROR] 绘制对比曲线失败: {e}")
+            logger.error("绘制对比曲线失败: %s", e, exc_info=True)
+
+    def _plot_comparison_record(self, pw, record, color, show_mean=True, show_band=False, show_error=False, dimmed=False):
+        """把单条记录的曲线画到对比图上，返回绘制的曲线条数。
+
+        dimmed=True 时曲线/符号/包络带半透明（用于选中高亮时淡化其它记录）。
+        """
+        import pyqtgraph as pg
+        import numpy as np
+
+        line_color = QColor(color)
+        sym_color = QColor(color)
+        if dimmed:
+            line_color.setAlpha(90)
+            sym_color.setAlpha(90)
+
+        kind = record['kind']
+        if kind in ('force_voltage', 'high_low_temp'):
+            calib = record.get('calibration') or {}
+            raw = record.get('raw') or {}
+            x_data = calib.get('voltage')
+            y_mean = calib.get('mean_cali')
+            y_min = calib.get('min_cali')
+            y_max = calib.get('max_cali')
+            x_raw = raw.get('voltage')
+            y_raw_mean = raw.get('mean')
+            y_raw_min = raw.get('min')
+            y_raw_max = raw.get('max')
+            if not x_data or not y_mean:
+                x_data, y_mean, y_min, y_max = x_raw, y_raw_mean, y_raw_min, y_raw_max
+            if not x_data or not y_mean:
+                self._append_log(f"[WARN] 记录 #{record['id']} 缺少曲线数据，已跳过")
+                return 0
+            x = np.array(x_data, dtype=float)
+            y = np.array(y_mean, dtype=float)
+            n = min(len(x), len(y))
+            x, y = x[:n], y[:n]
+            count = 0
+            if show_band and y_min and y_max:
+                y_min_arr = np.array(y_min, dtype=float)[:n]
+                y_max_arr = np.array(y_max, dtype=float)[:n]
+                band_alpha = 15 if dimmed else 35
+                pw.addItem(pg.FillBetweenItem(
+                    pg.PlotDataItem(x, y_max_arr),
+                    pg.PlotDataItem(x, y_min_arr),
+                    brush=pg.mkBrush(240, 160, 64, band_alpha),
+                ))
+                pw.plot(x, y_max_arr, pen=pg.mkPen(line_color, width=1, style=pg.QtCore.Qt.DashLine))
+                pw.plot(x, y_min_arr, pen=pg.mkPen(line_color, width=1, style=pg.QtCore.Qt.DashLine))
+                count += 1
+            if show_mean:
+                pw.plot(x, y, pen=pg.mkPen(line_color, width=2),
+                        symbol="o", symbolSize=4, symbolBrush=sym_color, symbolPen=None)
+                count += 1
+            if show_error:
+                diff = y - x
+                pw.plot(x, diff, pen=pg.mkPen(line_color, width=2, style=pg.QtCore.Qt.DashLine),
+                        symbol="t", symbolSize=5, symbolBrush=sym_color, symbolPen=None)
+                count += 1
+            return count
+
+        # temp_consistency：每个温度一条线（同一记录统一用其专属色）
+        raw = record.get('raw') or {}
+        voltage_pts = raw.get('voltage')
+        mean_matrix = raw.get('mean')
+        if not voltage_pts or not mean_matrix:
+            self._append_log(f"[WARN] 记录 #{record['id']} 缺少曲线数据，已跳过")
+            return 0
+        x = np.array(voltage_pts, dtype=float)
+        count = 0
+        for row in mean_matrix:
+            y = np.array(row, dtype=float)
+            n = min(len(x), len(y))
+            if n == 0:
+                continue
+            pw.plot(x[:n], y[:n], pen=pg.mkPen(line_color, width=1),
+                    symbol="o", symbolSize=3, symbolBrush=sym_color, symbolPen=None)
+            count += 1
+        return count
 
     def cleanup_threads(self):
         try:
@@ -2228,6 +2885,55 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self._append_log(f"[RESULT] INL={params['inl']:.3f}, DNL={params['dnl']:.3f}, ENOB={params['enob']:.3f}, Gain Error: {params['gain_error']:.3f}%, Offset Error: {params['offset_error']:.3f} LSB")
         return params
     
+    def _build_default_chart_placeholder(self):
+        """构建/重置图表占位符为初始空坐标系（新测试开始时复用）。"""
+        self._clear_chart_placeholder()
+        layout = self.chart_placeholder.layout()
+        if layout is None:
+            layout = QVBoxLayout(self.chart_placeholder)
+        layout.setContentsMargins(22, 22, 22, 18)
+        layout.setSpacing(12)
+
+        legend_row = QHBoxLayout()
+        legend_row.addStretch()
+
+        actual_legend = QLabel("↔ Actual Code")
+        actual_legend.setStyleSheet("color: #00d39a; font-size: 12px;")
+        ideal_legend = QLabel("↔ Ideal Code")
+        ideal_legend.setStyleSheet("color: #7e96bf; font-size: 12px;")
+
+        legend_row.addWidget(actual_legend)
+        legend_row.addWidget(ideal_legend)
+        legend_row.addStretch()
+        layout.addLayout(legend_row)
+
+        plot_area = QFrame()
+        plot_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        plot_area.setStyleSheet("""
+            QFrame {
+                background-color: transparent;
+                border-left: 1px solid #6f7fa5;
+                border-bottom: 1px solid #6f7fa5;
+                border-top: 1px dashed rgba(126,150,191,0.18);
+                border-right: none;
+                border-radius: 0px;
+            }
+        """)
+        layout.addWidget(plot_area, 1)
+
+        x_label = QLabel("Input Voltage (V)")
+        x_label.setAlignment(Qt.AlignCenter)
+        x_label.setObjectName("muted_label")
+        layout.addWidget(x_label)
+
+    def _reset_result_display(self):
+        """新测试开始时清除上一次的曲线与结果，避免新旧数据混显。"""
+        self.clear_results()
+        self._export_data = None
+        self._chart_image_bytes = None
+        self._loaded_record = None
+        self._build_default_chart_placeholder()
+
     def _clear_chart_placeholder(self):
         existing = self.chart_placeholder.layout()
         if existing is not None:
@@ -2250,6 +2956,13 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             import pyqtgraph as pg
             import numpy as np
 
+            # Curve View 过滤（载入 Recent 记录时生效；刚完成测试时三项默认全开）
+            show_mean = self._is_curve_view_enabled('mean')
+            show_band = self._is_curve_view_enabled('band')
+            show_error = self._is_curve_view_enabled('error')
+            if not (show_mean or show_band or show_error):
+                show_mean = True
+
             self._clear_chart_placeholder()
             layout = self.chart_placeholder.layout()
             if layout is None:
@@ -2257,17 +2970,24 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             layout.setContentsMargins(14, 14, 14, 10)
             layout.setSpacing(8)
 
+            # 当前记录专属色（有载入记录时用其色，否则默认绿）
+            curve_color = "#00d39a"
+            record_name = ""
+            if self._loaded_record is not None:
+                curve_color = self._record_color(self._loaded_record['id'])
+                record_name = f" #{self._loaded_record['id']} {self._record_display_name(self._loaded_record)} · "
+
             legend_row = QHBoxLayout()
             legend_row.addStretch()
             if is_temp_mode:
-                cali_legend = QLabel("● Calibrated Temperature (°C)")
+                cali_legend = QLabel(f"● {record_name}Calibrated Temperature (°C)")
                 x_axis_title = "Input Temperature (°C)"
                 y_axis_title = "Calibrated Temperature (°C)"
             else:
-                cali_legend = QLabel("● Calibrated Voltage (V)")
+                cali_legend = QLabel(f"● {record_name}Calibrated Voltage (V)")
                 x_axis_title = "Input Voltage (V)"
                 y_axis_title = "Calibrated Voltage (V)"
-            cali_legend.setStyleSheet("color: #00d39a; font-size: 12px;")
+            cali_legend.setStyleSheet(f"color: {curve_color}; font-size: 12px;")
             ideal_legend = QLabel("● Ideal (y = x)")
             ideal_legend.setStyleSheet("color: #7e96bf; font-size: 12px;")
             band_legend = QLabel("▨ Max/Min Error Band")
@@ -2294,6 +3014,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             pw.showGrid(x=True, y=True, alpha=0.15)
             pw.setLabel("left",   y_axis_title, color="#a0b4d8")
             pw.setLabel("bottom", x_axis_title, color="#a0b4d8")
+            self._attach_curve_context_menu(pw)
 
             for axis_name in ("left", "bottom"):
                 axis = pw.getAxis(axis_name)
@@ -2303,14 +3024,14 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             x = np.array(voltage_data, dtype=float)
             y = np.array(mean_cali,    dtype=float)
 
-            if adc_min_cali is not None and adc_max_cali is not None:
+            if show_band and adc_min_cali is not None and adc_max_cali is not None:
                 y_min = np.array(adc_min_cali, dtype=float)
                 y_max = np.array(adc_max_cali, dtype=float)
 
-                x_band = np.concatenate([x, x[::-1]])
-                y_band = np.concatenate([y_max, y_min[::-1]])
-                fill = pg.PlotDataItem(x_band, y_band,
-                                       pen=pg.mkPen(color="#f0a040", width=1))
+                fill = pg.PlotDataItem(
+                    np.concatenate([x, x[::-1]]),
+                    np.concatenate([y_max, y_min[::-1]]),
+                    pen=pg.mkPen(color="#f0a040", width=1))
                 fill_under = pg.FillBetweenItem(
                     pg.PlotDataItem(x, y_max),
                     pg.PlotDataItem(x, y_min),
@@ -2323,14 +3044,15 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 pw.plot(x, y_min, pen=pg.mkPen(color="#f0a040", width=1,
                         style=pg.QtCore.Qt.DashLine))
 
-            pw.plot(x, x, pen=pg.mkPen(color="#7e96bf", width=1,
-                    style=pg.QtCore.Qt.DashLine))
+            if show_mean:
+                pw.plot(x, x, pen=pg.mkPen(color="#7e96bf", width=1,
+                        style=pg.QtCore.Qt.DashLine))
 
-            pw.plot(x, y, pen=pg.mkPen(color="#00d39a", width=2),
-                    symbol="o", symbolSize=5,
-                    symbolBrush="#00d39a", symbolPen=None)
+                pw.plot(x, y, pen=pg.mkPen(color=curve_color, width=2),
+                        symbol="o", symbolSize=5,
+                        symbolBrush=curve_color, symbolPen=None)
 
-            if not is_temp_mode:
+            if show_error and not is_temp_mode:
                 # 右 Y 轴：Actual - Ideal 差值曲线（校准电压 - 输入电压）
                 # 单位与图例共用 err_unit（mV 时数据放大 1000 倍）
                 diff = y - x
@@ -2403,6 +3125,8 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             min_matrix   = result["min"]
             max_matrix   = result["max"]
 
+            show_band = self._is_curve_view_enabled('band')
+
             self._clear_chart_placeholder()
             layout = self.chart_placeholder.layout()
             if layout is None:
@@ -2431,6 +3155,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             pw.showGrid(x=True, y=True, alpha=0.15)
             pw.setLabel("left",   "ADC Code",         color="#a0b4d8")
             pw.setLabel("bottom", "Input Voltage (V)", color="#a0b4d8")
+            self._attach_curve_context_menu(pw)
 
             for axis_name in ("left", "bottom"):
                 axis = pw.getAxis(axis_name)
@@ -2449,24 +3174,25 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
 
                 n = min(len(x), len(mean_row))
 
-                fill = pg.FillBetweenItem(
-                    pg.PlotDataItem(x[:n], max_row[:n]),
-                    pg.PlotDataItem(x[:n], min_row[:n]),
-                    brush=pg.mkBrush(
-                        int(color[1:3], 16),
-                        int(color[3:5], 16),
-                        int(color[5:7], 16),
-                        35,
+                if show_band:
+                    fill = pg.FillBetweenItem(
+                        pg.PlotDataItem(x[:n], max_row[:n]),
+                        pg.PlotDataItem(x[:n], min_row[:n]),
+                        brush=pg.mkBrush(
+                            int(color[1:3], 16),
+                            int(color[3:5], 16),
+                            int(color[5:7], 16),
+                            35,
+                        )
                     )
-                )
-                pw.addItem(fill)
+                    pw.addItem(fill)
 
-                pw.plot(x[:n], max_row[:n],
-                        pen=pg.mkPen(color=color, width=1,
-                                     style=pg.QtCore.Qt.DashLine))
-                pw.plot(x[:n], min_row[:n],
-                        pen=pg.mkPen(color=color, width=1,
-                                     style=pg.QtCore.Qt.DashLine))
+                    pw.plot(x[:n], max_row[:n],
+                            pen=pg.mkPen(color=color, width=1,
+                                         style=pg.QtCore.Qt.DashLine))
+                    pw.plot(x[:n], min_row[:n],
+                            pen=pg.mkPen(color=color, width=1,
+                                         style=pg.QtCore.Qt.DashLine))
                 pw.plot(x[:n], mean_row[:n],
                         pen=pg.mkPen(color=color, width=2),
                         symbol="o", symbolSize=4,

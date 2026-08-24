@@ -26,6 +26,18 @@
 - 通道在配置为 int、combo 文本为 "CH n"，apply 经 normalize 归一化匹配。
 - 结果落 `Results/`，文件名带时间戳 + 芯片型号。
 - 新增子测试：UI 在 `ui/pages/pmu_test/`、analysis+worker 在 `core/pmu_test/<name>/`，并注册进 `TEST_TAB_MAP`。
+- GPADC 最近测试管理（本会话内存记录，`_recent_test_records`，上限 `RECENT_TEST_LIMIT`）：
+  - 管理栏位于 Curve 右侧 `recent_curve_splitter`（水平 QSplitter），chart 头部 `toggle_recent_btn` 可折叠/展开（记住宽度）；
+  - 每条记录按 `id % 8` 稳定分配专属曲线色（`_record_color`），列表项前景色 / 图例 / 曲线三处一致；显示名经 `_record_display_name`（优先用户 Rename 的 label）贯通列表/对比图图例/单次图图例；
+  - 列表 SingleSelection：选中变化（`_on_recent_selection_changed`，用 `selectedItems()` 而非 `currentItem()`——clearSelection 后 currentItem 不清空）同步高亮对比图中对应记录（图例加粗），其余记录曲线/符号/包络带半透明（`_plot_comparison_record` 的 `dimmed`，alpha 90）；
+  - 列表右键菜单（`_show_recent_item_menu`）：Rename（QInputDialog 改 label）/ Load Curve / Check·Uncheck / Remove / Clear All；`_refresh_recent_test_list` 重建时按 record id 记忆并恢复勾选+选中状态（勿回退为全 Unchecked，Rename 后 Compare 依赖此行为）；
+  - Curve View 选项（Mean / Min-Max / Error，非互斥 checkable）过滤载入图与对比图的曲线；入口两处：面板按钮 + 图表右键菜单（`_show_curve_view_menu`，PlotWidget 经 `_attach_curve_context_menu` 挂 CustomContextMenu 并禁 pyqtgraph 自带菜单，状态双向同步）；切换经 `_on_curve_view_changed` 自动重绘（优先对比图，其次 `_loaded_record`）；
+  - 曲线类测试（force_voltage / high_low_temp / temp_consistency）完成时 `_set_curve_view_all(True)` 默认全开全部波形，并把 `_loaded_record` 指向最新记录（右键切换据此重绘单次数据）；1000CNT 不重置 Curve View；`_set_curve_view_all` 内 blockSignals 防自动重绘副作用；
+  - 每次测试完成在 `_on_test_done` 尾部统一 `_record_recent_test(kind, result)`（result 为 None 不记录）；
+  - Compare = 勾选 ≥2 条：曲线类记录画对比图（`_plot_comparison_curves`，遵循 Curve View），1000CNT 记录输出统计对比表到日志；
+  - Load/双击 = 单条恢复曲线+指标卡+`_export_data`（可继续 Export），并置 `_loaded_record`；
+  - 新测试开始 `_start_test` 调 `_reset_result_display()` 清旧曲线/指标/导出数据/`_loaded_record`；
+  - 默认空坐标系构建集中在 `_build_default_chart_placeholder()`，勿在 `_create_layout` 内散写。
 
 ## 局部坑点
 
