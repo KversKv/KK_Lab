@@ -3,19 +3,7 @@
   "module_type": "dcdc",
   "config": {
     "selected_items": [
-      "dcdc_vout_scan",
-      "dcdc_efficiency",
-      "dcdc_load_reg",
-      "dcdc_line_reg",
-      "dcdc_quiescent",
-      "dcdc_ripple",
-      "dcdc_load_transient",
-      "dcdc_line_transient",
-      "dcdc_psrr",
-      "dcdc_inductor_current",
-      "dcdc_startup",
-      "dcdc_protection",
-      "dcdc_topology"
+      "dcdc_ripple"
     ],
     "chip_name": "BES1310",
     "module_name": "BUCK_VCORE",

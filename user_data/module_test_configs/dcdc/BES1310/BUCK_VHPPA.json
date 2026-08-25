@@ -3,14 +3,7 @@
   "module_type": "dcdc",
   "config": {
     "selected_items": [
-      "dcdc_vout_scan",
-      "dcdc_efficiency",
-      "dcdc_load_reg",
-      "dcdc_line_reg",
-      "dcdc_quiescent",
       "dcdc_ripple",
-      "dcdc_load_transient",
-      "dcdc_line_transient",
       "dcdc_psrr",
       "dcdc_inductor_current",
       "dcdc_startup",
@@ -31,7 +24,7 @@
     "vout_nominal_mv": 1200,
     "device_addr": "0x27",
     "width_flag": 1,
-    "scope_vout_channel": 1,
+    "scope_vout_channel": 3,
     "item_overrides": {
       "dcdc_vout_scan": {
         "reg_addr": "0x0135",
@@ -83,7 +76,7 @@
         "vin_v": 3.8,
         "iload_start_ma": 0.0,
         "iload_end_ma": 200.0,
-        "iload_step_ma": 20.0,
+        "iload_step_ma": 10.0,
         "settle_time_s": 0.05,
         "average_cnt": 3
       },
