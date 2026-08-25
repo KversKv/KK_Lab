@@ -9,6 +9,7 @@ LDO/DCDC 各自的 runner 继承本类，仅绑定 module_type + items 注册表
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime
 from typing import Any, Callable
 
@@ -22,6 +23,14 @@ from debug_config import DEBUG_MOCK
 from log_config import get_logger
 
 logger = get_logger(__name__)
+
+_INVALID_DIR_CHARS = re.compile(r'[\\/:*?"<>|\r\n\t]+')
+
+
+def _safe_dir_part(text: str) -> str:
+    """清洗用户输入为合法目录名片段（非法字符→下划线，去首尾空格与点）。"""
+    cleaned = _INVALID_DIR_CHARS.sub("_", text.strip()).strip(" .")
+    return cleaned
 
 
 class ModuleTestRunner(QThread):
@@ -63,8 +72,16 @@ class ModuleTestRunner(QThread):
         self._n6705c = n6705c
         self._scope = scope
         self._chamber = chamber
-        self._out_dir = out_dir or os.path.join("Results", "module_test", module_type,
-                                                datetime.now().strftime("%Y%m%d_%H%M%S"))
+        # 结果目录名 = 芯片_模块_时间戳（芯片描述/模块描述取自 DUT 配置，
+        # 非法字符清洗，空段省略，全空回落纯时间戳），便于在 Results 下辨识报告归属
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        parts = [p for p in (
+            _safe_dir_part(str(self._cfg.get("chip_name") or "")),
+            _safe_dir_part(str(self._cfg.get("module_name") or "")),
+        ) if p]
+        parts.append(stamp)
+        self._out_dir = out_dir or os.path.join(
+            "Results", "module_test", module_type, "_".join(parts))
         self._stop_flag = False
         self._result = ModuleTestResult(
             module_type=module_type,
