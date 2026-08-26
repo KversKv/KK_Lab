@@ -4,12 +4,11 @@
   （元信息 + 仪器 + 逐项一览）+ 每个测试项一个数据 sheet（原始 CSV 表格
   + 末列 Scope Shot 截图锚定；截图按 Iload/组号数值匹配数据行，未匹配的
   逐张锚在数据区下方，每行一张）。
-- ``XlsxExportWorker``：QObject worker（仅 QtCore），UI 经 QThread +
-  moveToThread 后台调用（图片读取 + 写 zip 随截图数增长，不阻塞主线程），
-  线程编排模式与 ``ModuleConfigWorker`` 一致。
+- ``export_item_xlsx(item, out_path)``：单项独立 XLSX；由
+  ``export_items_xlsx_dir`` 在报告生成时批量落盘到报告目录 ``XLSX/`` 下。
 
 依赖：openpyxl + Pillow（openpyxl 嵌入图片必需），缺失时报
-RuntimeError 交由 UI 层提示，不静默丢图。
+RuntimeError 交由调用方提示，不静默丢图。
 """
 from __future__ import annotations
 
@@ -17,8 +16,6 @@ import csv
 import os
 import re
 from typing import Any, Callable
-
-from PySide6.QtCore import QObject, Signal
 
 from log_config import get_logger
 
@@ -196,8 +193,11 @@ def _item_sheet_names(result) -> list[str]:  # noqa: ANN001
     return [_sheet_title(it.name, used) for it in result.items]
 
 
-def _write_item_sheet(ws, item, log_fn: Callable[[str], None]) -> None:  # noqa: ANN001
-    """单个测试项数据 sheet：CSV 表格 + 截图（行内匹配 / 下方堆叠）。"""
+def _write_item_sheet(ws, item, log_fn: Callable[[str], None]) -> bool:  # noqa: ANN001
+    """单个测试项数据 sheet：CSV 表格 + 截图（行内匹配 / 下方堆叠）。
+
+    返回是否写入了实际内容（数据表或截图）；空 sheet 由调用方决定是否落盘。
+    """
     from openpyxl.drawing.image import Image as XLImage
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
@@ -244,8 +244,9 @@ def _write_item_sheet(ws, item, log_fn: Callable[[str], None]) -> None:  # noqa:
 
     # ---- 截图：优先按首列数值匹配数据行（Iload / 组号），否则堆叠在下方 ----
     shots = _collect_shots(item)
+    had_shots = bool(shots)
     if not shots:
-        return
+        return has_table
     if has_table:
         first_col = {_to_float(r[0]) for r in rows[1:] if r}
         matched: dict[float, tuple[str, str]] = {}
@@ -293,6 +294,7 @@ def _write_item_sheet(ws, item, log_fn: Callable[[str], None]) -> None:  # noqa:
             ws.row_dimensions[r + 1].height = h * _PX_TO_PT + 4
         except OSError:
             log_fn(f"[EXPORT] 截图读取失败，已跳过：{png}")
+    return has_table or had_shots
 
 
 def export_result_xlsx(result, out_path: str,
@@ -302,17 +304,8 @@ def export_result_xlsx(result, out_path: str,
     Summary sheet + 每项一个数据 sheet；缺 openpyxl/Pillow 抛 RuntimeError
     （不静默降级——截图入格是本导出的核心价值）。
     """
-    try:
-        import openpyxl
-        from openpyxl.drawing.image import Image as XLImage  # noqa: F401
-    except ImportError as exc:
-        raise RuntimeError("缺少 openpyxl 依赖，无法导出 XLSX。") from exc
-    try:
-        from PIL import Image as PILImage  # noqa: F401
-    except ImportError as exc:
-        raise RuntimeError(
-            "缺少 Pillow 依赖，无法在 XLSX 中嵌入截图。"
-            "请安装：pip install Pillow") from exc
+    _ensure_xlsx_deps()
+    import openpyxl
 
     log = log_fn or (lambda _msg: None)
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
@@ -330,23 +323,64 @@ def export_result_xlsx(result, out_path: str,
     return out_path
 
 
-# ---------------------------------------------------------------------- Worker
-class XlsxExportWorker(QObject):
-    """QThread Worker：后台导出 XLSX，日志/结果经 Signal 回 UI 线程。"""
+def _ensure_xlsx_deps() -> None:
+    """校验 openpyxl + Pillow 可用（openpyxl 嵌图必需），缺失抛 RuntimeError。"""
+    try:
+        import openpyxl  # noqa: F401
+        from openpyxl.drawing.image import Image as XLImage  # noqa: F401
+    except ImportError as exc:
+        raise RuntimeError("缺少 openpyxl 依赖，无法导出 XLSX。") from exc
+    try:
+        from PIL import Image as PILImage  # noqa: F401
+    except ImportError as exc:
+        raise RuntimeError(
+            "缺少 Pillow 依赖，无法在 XLSX 中嵌入截图。"
+            "请安装：pip install Pillow") from exc
 
-    log = Signal(str)
-    finished = Signal(bool, str)  # ok, path 或错误信息
 
-    def __init__(self, *, result, out_path: str, parent: QObject | None = None):
-        super().__init__(parent)
-        self._result = result
-        self._out_path = out_path
+def export_item_xlsx(item, out_path: str,
+                     log_fn: Callable[[str], None] | None = None) -> bool:
+    """单个测试项导出为独立 XLSX（数据表 + 截图），返回是否有实际内容。
 
-    def run(self) -> None:
+    无数据表且无截图的项返回 False 且不落盘（避免生成空文件）。
+    """
+    _ensure_xlsx_deps()
+    import openpyxl
+
+    log = log_fn or (lambda _msg: None)
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = _sheet_title(item.name, set())
+    if not _write_item_sheet(ws, item, log):
+        return False
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
+    wb.save(out_path)
+    return True
+
+
+def export_items_xlsx_dir(result, out_dir: str,
+                          log_fn: Callable[[str], None] | None = None
+                          ) -> dict[str, str]:
+    """在 ``out_dir/XLSX/`` 下为每个有内容的测试项生成独立 XLSX。
+
+    best-effort：缺依赖或单项失败仅记日志跳过（不阻断 HTML 报告生成），
+    返回 ``{item_key: 相对报告目录的路径}`` 供前端渲染下载按钮。
+    """
+    log = log_fn or (lambda _msg: None)
+    try:
+        _ensure_xlsx_deps()
+    except RuntimeError as exc:
+        logger.warning("跳过报告 XLSX 生成：%s", exc)
+        return {}
+    xlsx_dir = os.path.join(out_dir, "XLSX")
+    out: dict[str, str] = {}
+    for item in result.items:
+        path = os.path.join(xlsx_dir, f"{item.item_key}.xlsx")
         try:
-            path = export_result_xlsx(self._result, self._out_path,
-                                      log_fn=self.log.emit)
-            self.finished.emit(True, path)
-        except Exception as exc:  # noqa: BLE001 - 统一回 UI 层提示
-            logger.error("XLSX 导出失败: %s", exc, exc_info=True)
-            self.finished.emit(False, str(exc))
+            if export_item_xlsx(item, path, log_fn=log):
+                out[item.item_key] = f"XLSX/{item.item_key}.xlsx"
+        except Exception:  # noqa: BLE001 - 单项失败不影响其余项与报告
+            logger.error("单项 XLSX 导出失败: %s", item.item_key, exc_info=True)
+    if out:
+        logger.info("报告 XLSX 已生成 %d 项: %s", len(out), xlsx_dir)
+    return out

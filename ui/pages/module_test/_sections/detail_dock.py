@@ -37,7 +37,6 @@ class DetailDock(QWidget):
     """结果 / 日志 Tab 容器。"""
 
     openReportRequested = Signal()
-    exportXlsxRequested = Signal()
     openOutputDirRequested = Signal()
     clearResultsRequested = Signal()
     locateLogRequested = Signal(str)
@@ -74,12 +73,6 @@ class DetailDock(QWidget):
         self.open_report_btn.setEnabled(False)
         self.open_report_btn.clicked.connect(self.openReportRequested)
         summary_row.addWidget(self.open_report_btn)
-        # 导出 XLSX：数据表 + 波形/截图嵌入单元格（CSV 不支持单元格图片）
-        self.export_xlsx_btn = QPushButton("导出 XLSX")
-        self.export_xlsx_btn.setProperty("variant", "secondary")
-        self.export_xlsx_btn.setEnabled(False)
-        self.export_xlsx_btn.clicked.connect(self.exportXlsxRequested)
-        summary_row.addWidget(self.export_xlsx_btn)
         # 功能组之间 1px 竖分隔线（纯装饰）
         sep = QFrame()
         sep.setFrameShape(QFrame.VLine)
@@ -144,8 +137,6 @@ class DetailDock(QWidget):
 
     def set_report_available(self, available: bool) -> None:
         self.open_report_btn.setEnabled(available)
-        # XLSX 导出同样依赖"已有一次完整结果"（无报告路径则无结果）
-        self.export_xlsx_btn.setEnabled(available)
 
     # 兼容旧引用：`execution_logs` 等价于日志面板
     execution_logs = property(lambda self: self.log_panel)

@@ -14,12 +14,10 @@ from typing import Any
 
 from PySide6.QtCore import Qt, QThread, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
-from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QSplitter, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import QHBoxLayout, QSplitter, QVBoxLayout, QWidget
 
 from core.module_test._common import cfg_int
 from core.module_test.module_config import ModuleConfigWorker
-from core.module_test.xlsx_export import XlsxExportWorker
 from debug_config import DEBUG_MOCK
 from log_config import get_logger
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
@@ -84,9 +82,6 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
         self._modcfg_thread: QThread | None = None
         self._modcfg_worker: ModuleConfigWorker | None = None
         self._modcfg_after = None  # 执行完成后的回调（如继续启动测试）
-        # XLSX 导出后台线程（图片读取 + 写 zip 不阻塞 UI）
-        self._xlsx_thread: QThread | None = None
-        self._xlsx_worker: XlsxExportWorker | None = None
 
         self._build_ui()
         self._wire_shortcuts()
@@ -132,7 +127,6 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
         self.test_plan.paramsRequested.connect(self._open_item_params)
         self.detail_dock = DetailDock()
         self.detail_dock.openReportRequested.connect(self._on_open_report)
-        self.detail_dock.exportXlsxRequested.connect(self._on_export_xlsx)
         self.detail_dock.openOutputDirRequested.connect(self._on_open_output_dir)
         self.detail_dock.clearResultsRequested.connect(self._on_clear_results)
         self.detail_dock.locateLogRequested.connect(self._on_locate_log)
@@ -540,58 +534,6 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
                      os.path.abspath("Results"))
         if os.path.isdir(directory):
             QDesktopServices.openUrl(QUrl.fromLocalFile(directory))
-
-    # ================================================================== XLSX 导出
-    def _on_export_xlsx(self) -> None:
-        """导出当前结果为 XLSX（数据表 + 波形/截图嵌入单元格），后台线程执行。"""
-        result = self._last_result
-        if result is None:
-            self.detail_dock.log_panel.append_log("[WARN] 暂无可导出的测试结果。")
-            return
-        if self._xlsx_thread is not None:
-            self.detail_dock.log_panel.append_log(
-                "[EXPORT] 上一次导出仍在进行中")
-            return
-        default_dir = (os.path.dirname(self._last_report_path)
-                       if self._last_report_path else os.path.abspath("Results"))
-        stamp = (getattr(result, "started_at", "") or
-                 "").replace("-", "").replace(":", "").replace(" ", "_")
-        base = "_".join(p for p in (
-            getattr(result, "chip_name", ""), getattr(result, "module_name", ""))
-            if p) or f"{self.MODULE_TYPE}_module_test"
-        default_path = os.path.join(default_dir, f"{base}_{stamp}.xlsx")
-        path, _ = QFileDialog.getSaveFileName(
-            self, "导出 XLSX", default_path, "Excel 工作簿 (*.xlsx)")
-        if not path:
-            return
-        if not path.lower().endswith(".xlsx"):
-            path += ".xlsx"
-        self.detail_dock.log_panel.append_log(f"[EXPORT] 正在导出 XLSX: {path}")
-        worker = XlsxExportWorker(result=result, out_path=path)
-        thread = QThread(self)
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.log.connect(self.detail_dock.log_panel.append_log)
-        worker.finished.connect(self._on_xlsx_finished)
-        worker.finished.connect(thread.quit)
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(self._on_xlsx_thread_cleaned)
-        self._xlsx_thread = thread
-        self._xlsx_worker = worker
-        thread.start()
-
-    def _on_xlsx_finished(self, ok: bool, message: str) -> None:
-        if ok:
-            self.detail_dock.log_panel.append_log(f"[EXPORT] XLSX 导出完成: {message}")
-            Toast.popup(self, "XLSX 导出完成", severity="success")
-        else:
-            self.detail_dock.log_panel.append_log(f"[EXPORT] [ERROR] {message}")
-            self._show_alert("XLSX 导出失败，详见日志。", "error")
-
-    def _on_xlsx_thread_cleaned(self) -> None:
-        self._xlsx_thread = None
-        self._xlsx_worker = None
 
     def _on_clear_results(self) -> None:
         self._last_result = None

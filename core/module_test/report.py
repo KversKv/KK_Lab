@@ -88,6 +88,7 @@ from typing import Any
 from log_config import get_logger
 
 from core.module_test.result_model import ItemResult, ModuleTestResult
+from core.module_test.xlsx_export import export_items_xlsx_dir
 
 logger = get_logger(__name__)
 
@@ -534,8 +535,13 @@ def _parse_dt(s: str) -> datetime | None:
     return None
 
 
-def build_report_data(result: ModuleTestResult) -> dict[str, Any]:
-    """把 ModuleTestResult 序列化为 REPORT_DATA dict（唯一数据出口）。"""
+def build_report_data(result: ModuleTestResult,
+                      xlsx_map: dict[str, str] | None = None) -> dict[str, Any]:
+    """把 ModuleTestResult 序列化为 REPORT_DATA dict（唯一数据出口）。
+
+    ``xlsx_map``：``{item_key: 报告目录相对路径}``（``XLSX/xxx.xlsx``），
+    已生成单项 XLSX 的项在其工具条渲染「下载 XLSX」按钮；None = 全无。
+    """
     summary = result.build_summary()
     module = result.module_type.upper()
     started, finished = _parse_dt(result.started_at), _parse_dt(result.finished_at)
@@ -567,6 +573,8 @@ def build_report_data(result: ModuleTestResult) -> dict[str, Any]:
             "table": table,
             "attachments": attachments,
             "note": it.notes or "",
+            # 单项 XLSX 相对路径（报告目录 XLSX/ 下，有则前端出「下载 XLSX」）
+            "xlsx": (xlsx_map or {}).get(it.item_key) or None,
             "_rules": rules,  # 并入 table.rules，缺表时丢弃
         })
     for it_dict in items:  # rules 挂到 table 下（schema 约定）
@@ -1065,6 +1073,9 @@ const I18N = {
       col_note:"备注",col_anom:"异常",items_title:"测试项明细",
       nospec:"未定义规格",anomalies:"个异常点",only_anom:"只看异常行",
       all_rows:"全部行",full_data:"完整测试数据",rows:"行",download:"下载 CSV",
+      download_xlsx:"下载 XLSX",copy_rich:"复制表格（含截图）",
+      copied_tbl:"已复制：Excel 粘贴可保留截图；飞书请用「下载 XLSX」导入",
+      copy_fail:"复制失败，请用 Ctrl+C 手动复制",
       note:"备注",shots:"示波器截图",no_data:"无数据",no_chart:"无可绘制数据",
       no_shots:"无截图",appendix:"附录",files:"原始文件清单",conds:"测试条件",
       glossary:"术语与缩写",revision:"修订历史",signoff:"签核区",
@@ -1094,6 +1105,9 @@ const I18N = {
       col_note:"Note",col_anom:"Anom.",items_title:"Test Item Details",
       nospec:"No spec defined",anomalies:"anomalies",only_anom:"Anomalies only",
       all_rows:"All rows",full_data:"Full test data",rows:"rows",download:"Download CSV",
+      download_xlsx:"Download XLSX",copy_rich:"Copy table (with shots)",
+      copied_tbl:"Copied — Excel paste keeps shots; Feishu: use Download XLSX",
+      copy_fail:"Copy failed, use Ctrl+C instead",
       note:"Note",shots:"Scope shots",no_data:"No data",no_chart:"Nothing to plot",
       no_shots:"No shots",appendix:"Appendix",files:"Raw files",conds:"Test conditions",
       glossary:"Glossary",revision:"Revision history",signoff:"Sign-off",
@@ -1979,6 +1993,9 @@ function buildTable(host, item) {
         (n || esc(t.all_rows)) + "</option>").join("") + "</select></label>") +
       '<button class="tbtn btn" data-tact="csv">' + esc(t.export_view) + "</button>" +
       '<button class="tbtn btn" data-tact="csvfile">' + esc(t.download) + "</button>" +
+      (item.xlsx ? '<button class="tbtn btn" data-tact="xlsx">' + esc(t.download_xlsx) + "</button>" : "") +
+      (table.columns.some(c => c.kind === "image")
+        ? '<button class="tbtn btn" data-tact="copyrich">' + esc(t.copy_rich) + "</button>" : "") +
       "</div>" + toolsH +
       "<div class='tbl-wrap'><table class='tbl" + (st.compact ? " compact" : "") +
       "'><thead>" + headHTML() + "</thead><tbody></tbody></table></div>" +
@@ -2052,7 +2069,10 @@ function buildTable(host, item) {
         if (act === "all") st.renderAll = true;
         if (act === "csv") exportCSV(item, rows);
         if (act === "csvfile") exportCSV(item, table.data.map((r, i) => ({r, i})), table.file);
-        if (act !== "csv" && act !== "csvfile") render();
+        if (act === "xlsx") downloadXlsx(item);
+        if (act === "copyrich") copyTableRich(item, table, toast);
+        if (act !== "csv" && act !== "csvfile" && act !== "xlsx"
+            && act !== "copyrich") render();
       };
     });
     const pg = host.querySelector(".pager");
@@ -2100,6 +2120,72 @@ function exportCSV(item, rows, fname) {
   a.href = URL.createObjectURL(blob);
   a.download = fname || (item.item_key + "_view.csv");
   a.click(); URL.revokeObjectURL(a.href);
+}
+/* 下载该项的单项 XLSX（报告目录 XLSX/{item_key}.xlsx，报告生成时已备好） */
+function downloadXlsx(item) {
+  if (!item.xlsx) return;
+  const a = document.createElement("a");
+  a.href = encodeURI(item.xlsx);
+  a.download = item.item_key + ".xlsx";
+  a.click();
+}
+/* 复制完整表格（含截图列）为富文本 —— Excel 粘贴后图片按单元格锚定不重叠。
+   实测（2026-08-26）：
+   - Excel：HTML 粘贴图片必为浮动层（非"单元格内嵌图"），不给行高时全部
+     堆叠在粘贴处重叠；给 <tr style="height:px"> + 图片固定宽高后 Excel 按
+     行锚定、间距=行高，视觉对齐单元格（这是 HTML 粘贴能做到的最佳效果；
+     真正的"单元格内嵌图"需走「下载 XLSX」openpyxl 版本）。
+   - 飞书云文档：粘贴时剥离 <img>，只留文本 —— 平台限制无法从剪贴板绕过，
+     引导用户走「下载 XLSX」后导入飞书表格。 */
+async function copyTableRich(item, table, toast_fn) {
+  const IMG_W = 240, IMG_H = 135;  /* 16:9 缩略图，Excel 默认行高约 20px 需行高撑开 */
+  const val = (v, c) => {
+    if (v === null || v === undefined) return "";
+    if (c.kind === "image") return "";
+    if (typeof v !== "number") return esc(v);
+    return esc(fmt(scaleVal(v, c.unit), S.unitScaled && UNIT_MAP[c.unit]
+      ? Math.min((c.precision ?? 3) + 3, 9) : c.precision));
+  };
+  const th = "<tr>" + table.columns.map(c =>
+    "<th style='border:1px solid #ccc'>" +
+    esc(c.label + (c.unit ? " (" + scaleUnit(c.unit) + ")" : "")) +
+    "</th>").join("") + "</tr>";
+  const trs = table.data.map(row => {
+    const hasImg = table.columns.some((c, ci) =>
+      c.kind === "image" && typeof row[ci] === "number");
+    /* 图片行：行高按图高 + 6px 边距撑开，Excel 逐行锚定不重叠 */
+    const trStyle = hasImg
+      ? " style='height:" + (IMG_H + 6) + "px'"
+      : " style='height:20px'";
+    return "<tr" + trStyle + ">" + table.columns.map((c, ci) => {
+      let inner = val(row[ci], c);
+      if (c.kind === "image") {
+        const att = typeof row[ci] === "number" ? (item.attachments || [])[row[ci]] : null;
+        inner = att ? "<img src='" + att.full + "' width='" + IMG_W +
+          "' height='" + IMG_H + "' style='width:" + IMG_W + "px;height:" +
+          IMG_H + "px'>" : "";
+      }
+      return "<td style='border:1px solid #ccc" +
+        (c.kind === "image" ? ";width:" + (IMG_W + 8) + "px" : "") +
+        (typeof row[ci] === "number" ? ";text-align:right" : "") + "'>" +
+        inner + "</td>";
+    }).join("") + "</tr>";
+  }).join("");
+  const htmlDoc = "<meta charset='utf-8'><table style='border-collapse:collapse'>" +
+    th + trs + "</table>";
+  try {
+    await navigator.clipboard.write([new ClipboardItem({
+      "text/html": new Blob([htmlDoc], {type:"text/html"}),
+      "text/plain": new Blob([table.columns.map(c =>
+        c.label + (c.unit ? " (" + c.unit + ")" : "")).join("\t") + "\n" +
+        table.data.map(row => row.map(v =>
+          v === null || v === undefined ? "" : String(v)).join("\t")).join("\n")],
+        {type:"text/plain"})
+    })]);
+    toast_fn(T().copied_tbl);
+  } catch (e) {
+    toast_fn(T().copy_fail);
+  }
 }
 function armTables() {
   $$(".tbl-host").forEach(host => {
@@ -2412,9 +2498,10 @@ if (location.hash) {
 """
 
 
-def build_module_html_report(result: ModuleTestResult) -> str:
+def build_module_html_report(result: ModuleTestResult,
+                             xlsx_map: dict[str, str] | None = None) -> str:
     """生成工程级单文件 HTML 报告字符串（数据=REPORT_DATA JSON，视图=原生JS）。"""
-    data = build_report_data(result)
+    data = build_report_data(result, xlsx_map=xlsx_map)
     payload = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
     title = data["meta"]["report_title"]
     return (_TEMPLATE
@@ -2424,10 +2511,15 @@ def build_module_html_report(result: ModuleTestResult) -> str:
 
 
 def save_html_report(result: ModuleTestResult, out_dir: str) -> str:
-    """生成 HTML 报告并落盘，返回文件路径。"""
+    """生成 HTML 报告并落盘，返回文件路径。
+
+    同时在 ``out_dir/XLSX/`` 下为每个有内容的测试项生成独立 XLSX
+    （数据表 + 截图/波形入单元格；best-effort，失败不影响报告）。
+    """
     os.makedirs(out_dir, exist_ok=True)
+    xlsx_map = export_items_xlsx_dir(result, out_dir)
     path = os.path.join(out_dir, "report.html")
     with open(path, "w", encoding="utf-8") as f:
-        f.write(build_module_html_report(result))
+        f.write(build_module_html_report(result, xlsx_map=xlsx_map))
     logger.info("模块测试报告已生成: %s", path)
     return path
