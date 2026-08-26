@@ -6,7 +6,7 @@
 
 - **Qt / UI 通用规范** → @see [docs/ai/01_CONVENTIONS.md §6](../../../../docs/ai/01_CONVENTIONS.md)
 - **I2C 底层 / DLL** → @see [docs/ai/03_GOTCHAS.md §11](../../../../docs/ai/03_GOTCHAS.md)
-- **寄存器数据源** → `ui/pages/pmu/pmu_1811/data/1811 pmu inf reg.csv`、`BES1811 LDO输出电压范围.csv`
+- **寄存器数据源** → `Temp_Docs/ui/pages/pmu/pmu_1811/data/1811 pmu inf reg.csv`、`BES1811 LDO输出电压范围.csv`（DLP 加密环境，CSV 已移出 git 追踪路径，见根 AGENTS.md 硬红线 14）
 - **芯片寄存器表** → [chips/bes1811_pmu.py](../../../../chips/bes1811_pmu.py)
 - **UI 设计稿** → `docs/NewPlan/1811_Tool_UI.md`
 
@@ -104,4 +104,4 @@
 - **新增操作动作**：`core/bes1811_pmu_controller.py` 实现底层 → `workers.py` 复用/新增 Worker → `page.py` 加触发点+回调。
 - **调整画布布局**：改 `models._LAYOUT_ROWS` 行序与 `level` / `pair`；几何改 `constants.py`。
 
-> 历史参考：原始 README.md / RULES.md 已整合进本文件；详细位域地址表（LDO 9 域 / BUCK 11 域 / SW 2 域一览）见 `data/` CSV 与 `chips/bes1811_pmu.py`。
+> 历史参考：原始 README.md / RULES.md 已整合进本文件；详细位域地址表（LDO 9 域 / BUCK 11 域 / SW 2 域一览）见 `Temp_Docs/ui/pages/pmu/pmu_1811/data/` CSV 与 `chips/bes1811_pmu.py`。

@@ -43,6 +43,7 @@
 11. 新增的DEBUG用的临时文件禁止放在根目录, 放在./tests/里面.
 12. 对于N6705C的CCLoad模式, 禁止在开启状态下设置为0mA;
 13. 禁止使用Emoji表情符号, 需要使用SVG图标替代.
+14. **CSV / XLSX / PDT / PDF 禁止保存在任何 git 追踪路径**：开发环境 DLP 对这四类格式落盘即加密，入库即损坏。此类文件一律放 `Temp_Docs/`（已 gitignore，按原路径结构存放）；运行期数据产物输出到 `Results/` 等已忽略目录；`.gitignore` 已全局忽略 `*.csv / *.xlsx / *.pdt / *.pdf` 兜底。
 ---
 
 ## 项目一句话概述

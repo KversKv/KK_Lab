@@ -453,3 +453,19 @@ app.installEventFilter(_WinFilter())
 5. `app.setStyleSheet(QToolTip 深底 QSS)`——复刻 `main.py:101`（QToolTip 是顶级窗口，不继承 palette）
 
 **规则**：凡带 `__main__` 块的页面/模组 standalone 运行后样式异常（发白/控件变形），先检查是否复刻了 `MainWindow._setup_style` 的 app 级 palette + font；与 §30（祖先 QSS 补全）是两类不同机制——§30 是 QSS 级联问题，本节是 palette 缺失问题。
+
+## 32. 开发环境 DLP 加密 CSV/XLSX/PDT/PDF → 禁止入 git 追踪路径
+
+**现象**：本机开发环境（DLP 终端管控）对 `*.csv` / `*.xlsx` / `*.pdt` / `*.pdf` 四类格式**落盘即透明加密**；git 提交的是密文，无 DLP 环境的机器克隆后无法打开（Excel 报格式损坏等）。
+
+**处理（2026-08 已执行）**：
+
+- `.gitignore` 全局忽略 `*.csv / *.xlsx / *.pdt / *.pdf` 与 `Temp_Docs/`，从机制上拦截误提交（gitignore 不影响已追踪文件）。
+- git 追踪路径内的 14 个此类文件已迁至 `Temp_Docs/`（gitignored，按原相对路径结构存放：`docs/user/**`、`ui/pages/pmu/pmu_1811/data/**`、`tests/_report_smoke/**`）。
+- 根 [AGENTS.md](../../AGENTS.md) 硬红线 14：这四类格式禁止出现在任何 git 追踪路径；文档/参考资料放 `Temp_Docs/`，运行期产物写 `Results/` 等已忽略目录。
+
+**遗留与注意**：
+
+- `.trae/skills/` 与 `.agents/skills/` 下 60 个技能数据 CSV 仍被 git 追踪（**经确认保留现状**，避免破坏 ui-ux-pro-max 技能）；若未来被 DLP 重写加密，需评估 `git rm --cached` 停止追踪。
+- `tests/_report_smoke/` 每次跑 `tests/_smoke_report.py` 会重新生成 CSV——已被全局 `*.csv` 忽略兜底，不会再入库。
+- 需要给他人共享此类文件时走仓库外通道（网盘/IM），不要 `git add -f` 强推。
