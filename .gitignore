@@ -11,3 +11,10 @@ Results/*
 !Results/.gitkeep
 
 Temp/
+
+# DLP 加密环境：CSV/XLSX/PDT/PDF 落盘即加密，禁止入 git 追踪路径（详见 AGENTS.md 硬红线）
+*.csv
+*.xlsx
+*.pdt
+*.pdf
+Temp_Docs/
