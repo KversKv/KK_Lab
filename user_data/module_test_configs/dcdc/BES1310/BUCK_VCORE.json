@@ -70,8 +70,8 @@
       "dcdc_ripple": {
         "vin_v": 3.8,
         "iload_start_ma": 0.0,
-        "iload_end_ma": 200.0,
-        "iload_step_ma": 20.0,
+        "iload_end_ma": 50.0,
+        "iload_step_ma": 10.0,
         "settle_time_s": 0.05,
         "average_cnt": 3
       },
