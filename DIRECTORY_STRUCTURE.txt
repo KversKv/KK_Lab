@@ -199,6 +199,7 @@ core/
     ├── _runner_base.py      # ModuleTestRunner(QThread)：串行调度 items + 生成 HTML 报告 + 手动模式暂停通道
     ├── mode_manager.py      # DUT 工作模式解析 + 进入（reg 写寄存器 / load 负载切换回读 / manual 手动暂停）
     ├── report.py            # HTML 报告生成（元信息 + 逐项 PASS/FAIL 表 + 内嵌波形）
+    ├── xlsx_export.py       # XLSX 导出（数据表 + 波形/截图嵌入单元格；纯函数 + XlsxExportWorker）
     ├── ldo/                 # LDO 子包（ldo_runner + items：vout_scan/load_reg/line_reg/iq/ripple/psrr/transient）
     └── dcdc/                # DCDC 子包（dcdc_runner + items：vout_scan/efficiency/load_reg/line_reg/iq/ripple/psrr/transient/inductor_current）
 

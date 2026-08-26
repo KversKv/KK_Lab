@@ -21,6 +21,9 @@ pyserial>=3.5,<4
 # Excel 文件操作
 openpyxl>=3.1.5,<4
 
+# 图片处理（openpyxl 嵌入截图到 XLSX 单元格必需）
+Pillow>=10,<12
+
 # 科学计算
 numpy==2.4.4
 

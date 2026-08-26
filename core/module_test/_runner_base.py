@@ -86,6 +86,7 @@ class ModuleTestRunner(QThread):
         self._result = ModuleTestResult(
             module_type=module_type,
             chip_name=str(self._cfg.get("chip_name", "")),
+            module_name=str(self._cfg.get("module_name", "")),
             operator=str(self._cfg.get("operator", "")),
             temperature=str(self._cfg.get("temperature", "")),
             started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
