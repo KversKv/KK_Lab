@@ -3,7 +3,7 @@
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFrame,
-    QLabel, QLineEdit, QPushButton, QCheckBox, QSizePolicy, QFileDialog,
+    QLabel, QPushButton, QCheckBox, QSizePolicy, QFileDialog,
 )
 from PySide6.QtCore import Qt, QThread
 from log_config import get_logger
@@ -11,6 +11,7 @@ from ui.pages.n6705c_power_analyzer.widgets import (
     _get_checkmark_path,
     _format_current,
     collapsible_header_style,
+    SelectAllLineEdit,
     CHANNEL_COLORS,
     PANEL_BG, PANEL_BORDER, CONTAINER_RADIUS, WIDGET_RADIUS,
     CARD_BG, CARD_BORDER, MUTED_TEXT,
@@ -67,14 +68,16 @@ class ConsumptionViewMixin:
 
         time_label = QLabel("Test Time (s):")
         time_label.setStyleSheet(f"font-size: 11px; color: {MUTED_TEXT}; border: none;")
-        self.ct_test_time_input = QLineEdit("10")
+        self.ct_test_time_input = SelectAllLineEdit("10")
+        self.ct_test_time_input.set_wheel_step(1)
         self.ct_test_time_input.setFixedWidth(80)
         self.ct_test_time_input.setAlignment(Qt.AlignCenter)
         self.ct_test_time_input.setStyleSheet(_ct_input_style)
 
         period_label = QLabel("Sample Period (us):")
         period_label.setStyleSheet(f"font-size: 11px; color: {MUTED_TEXT}; border: none;")
-        self.ct_sample_period_input = QLineEdit("20")
+        self.ct_sample_period_input = SelectAllLineEdit("20")
+        self.ct_sample_period_input.set_wheel_step(1)
         self.ct_sample_period_input.setFixedWidth(80)
         self.ct_sample_period_input.setAlignment(Qt.AlignCenter)
         self.ct_sample_period_input.setStyleSheet(_ct_input_style)

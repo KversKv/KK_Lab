@@ -9,6 +9,7 @@ from PySide6.QtCore import Qt
 from ui.theme import FONT_MONO
 from ui.pages.n6705c_power_analyzer.widgets import (
     SlideToggle,
+    SelectAllLineEdit,
     INPUT_BG, INPUT_BORDER, WIDGET_RADIUS, PREFIX_TEXT, UNIT_TEXT,
     CONTENT_BG, CONTAINER_RADIUS, PANEL_BG, PANEL_BORDER,
     CARD_BG, CARD_BORDER, VALUE_OFF_COLOR,
@@ -36,7 +37,7 @@ class SettingViewMixin:
         prefix.setFixedWidth(32)
         h_layout.addWidget(prefix)
 
-        input_field = QLineEdit(default_value)
+        input_field = SelectAllLineEdit(default_value)
         input_field.setFrame(False)
         input_field.setStyleSheet("""
             QLineEdit {

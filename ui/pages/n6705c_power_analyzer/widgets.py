@@ -3,7 +3,7 @@
 
 import os
 from ui.resource_path import get_resource_base
-from PySide6.QtWidgets import QWidget, QHBoxLayout
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QLineEdit
 from PySide6.QtCore import Qt, Signal, QPropertyAnimation, Property, QRectF, QEasingCurve
 from PySide6.QtGui import QFont, QPainter, QColor, QPen
 
@@ -59,6 +59,61 @@ VALUE_OFF_COLOR = "#4a5a7a"
 MODE_INACTIVE_TEXT = "#8a9abb"
 CONTAINER_RADIUS = "12px"
 WIDGET_RADIUS = "8px"
+
+
+class SelectAllLineEdit(QLineEdit):
+    """双击全选 + 滚轮步进调值的输入框。
+
+    Qt 默认双击按"词"选择，小数点会被当作词分隔符（如 "3.8000" 双击只选中 "8000"），
+    数值输入场景重写为双击即全选整框内容。
+    滚轮默认以 0.01 步进调值（set_wheel_step 可改，置 None/0 禁用）；
+    仅控件聚焦时生效，未聚焦 / 禁用 / 只读时事件传回父级，不影响页面滚动。
+    """
+
+    _DEFAULT_WHEEL_STEP = 0.01
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._wheel_step = self._DEFAULT_WHEEL_STEP
+
+    def set_wheel_step(self, step):
+        """设置滚轮步进；整数字段传 1，纯文本字段传 None 禁用。"""
+        self._wheel_step = step
+
+    def wheel_step(self):
+        return self._wheel_step
+
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.selectAll()
+            event.accept()
+        else:
+            super().mouseDoubleClickEvent(event)
+
+    def wheelEvent(self, event):
+        if (not self.hasFocus() or not self.isEnabled()
+                or self.isReadOnly() or not self._wheel_step):
+            event.ignore()
+            return
+        delta = event.angleDelta().y()
+        if delta == 0:
+            event.accept()
+            return
+        text = self.text()
+        try:
+            value = float(text)
+        except ValueError:
+            event.accept()
+            return
+        step = self._wheel_step
+        new_value = round(value + step if delta > 0 else value - step, 6)
+        # 小数位取"原文本位数"与"步进位数"的较大者，保留既有显示精度
+        decimals = max(
+            len(text.partition(".")[2]),
+            len(f"{step:.6f}".rstrip("0").partition(".")[2]),
+        )
+        self.setText(f"{new_value:.{decimals}f}")
+        event.accept()
 
 
 class SlideToggle(QWidget):

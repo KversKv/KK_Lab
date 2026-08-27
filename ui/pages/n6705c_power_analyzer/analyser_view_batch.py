@@ -3,13 +3,14 @@
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFrame,
-    QLabel, QLineEdit, QPushButton,
+    QLabel, QPushButton,
 )
 from PySide6.QtCore import Qt
 from log_config import get_logger
 from ui.pages.n6705c_power_analyzer.widgets import (
     _batch_channel_button_style,
     collapsible_header_style,
+    SelectAllLineEdit,
     PANEL_BG, PANEL_BORDER, CONTAINER_RADIUS, WIDGET_RADIUS,
     CARD_BG, CARD_BORDER, LABEL_DIM,
     DISABLED_TEXT, DISABLED_BTN_BG, DISABLED_BTN_BORDER,
@@ -205,7 +206,7 @@ class BatchViewMixin:
             grid.addWidget(v_label, row, 0)
             self.batch_voltage_inputs[dev_label] = []
             for col_idx, v in enumerate([3.8, 0.8, 1.2, 1.8]):
-                inp = QLineEdit(f"{v:.4f}")
+                inp = SelectAllLineEdit(f"{v:.4f}")
                 inp.setAlignment(Qt.AlignCenter)
                 inp.setStyleSheet(_input_style)
                 self.batch_voltage_inputs[dev_label].append(inp)
@@ -218,7 +219,7 @@ class BatchViewMixin:
             grid.addWidget(c_label, row, 0)
             self.batch_current_inputs[dev_label] = []
             for col_idx, c in enumerate([0.2, 0.02, 0.02, 0.02]):
-                inp = QLineEdit(f"{c:.4f}")
+                inp = SelectAllLineEdit(f"{c:.4f}")
                 inp.setAlignment(Qt.AlignCenter)
                 inp.setStyleSheet(_input_style)
                 self.batch_current_inputs[dev_label].append(inp)
