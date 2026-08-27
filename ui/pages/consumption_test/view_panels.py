@@ -111,7 +111,9 @@ class ConsumptionTestViewPanelsMixin:
         left_scroll.setWidgetResizable(True)
         left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        left_scroll.setFixedWidth(320)
+        # 左栏宽度需容纳 Test Config 行内容(GPIO 下拉 + 极性切换 + ⋯ 快捷设置按钮)，
+        # 320px 时 MCU COM 描述与 PwrON/Reset 行会被截断，放大到 360px
+        left_scroll.setFixedWidth(360)
         left_scroll.setStyleSheet("""
             QScrollArea { background: transparent; border: none; }
         """ + SCROLLBAR_STYLE)

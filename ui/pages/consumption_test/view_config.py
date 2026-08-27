@@ -13,6 +13,8 @@ Consumption Test 配置面板视图构建（Mixin）。
   - _on_config_name_changed / _on_config_channel_changed
   - _on_force_mode_changed / _on_force_value_changed / _on_boost_mode_changed / _on_boost_value_changed
   - _remove_channel_config
+  - _make_io_state_more_btn / _build_io_state_menu / _refresh_io_state_menus
+    : PwrON/Reset 行 "⋯" IO 快捷设置按钮与菜单（手动指定 IO 状态）
 
 依赖宿主类（ConsumptionTestUI）提供：
   - self.NAME_OPTIONS / self._channel_configs / self._channel_config_widgets
@@ -20,6 +22,7 @@ Consumption Test 配置面板视图构建（Mixin）。
   - self._get_available_channel_options() / self._get_control_channel_options()
   - self._set_combo_options() / self._refresh_result_cards()
   - self._on_mcu_search() / self._on_mcu_connect_or_disconnect()
+  - self._on_io_state_quick_set(name, state)   # "⋯" 菜单动作的执行入口
 """
 
 import os
@@ -35,6 +38,7 @@ from PySide6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QPushButton, QCheckBox,
     QScrollArea, QWidget, QSizePolicy, QStackedLayout,
+    QToolButton, QMenu,
 )
 from PySide6.QtCore import Qt
 
@@ -258,6 +262,8 @@ class ConsumptionTestViewConfigMixin:
         poweron_row.setSpacing(4)
         poweron_row.addWidget(self.poweron_channel_combo, 1)
         poweron_row.addWidget(self.poweron_polarity_toggle, 0, Qt.AlignVCenter)
+        self.poweron_more_btn = self._make_io_state_more_btn("poweron")
+        poweron_row.addWidget(self.poweron_more_btn, 0, Qt.AlignVCenter)
 
         reset_label_row = QHBoxLayout()
         reset_label_row.setContentsMargins(0, 0, 0, 0)
@@ -298,6 +304,8 @@ class ConsumptionTestViewConfigMixin:
         reset_row.setSpacing(4)
         reset_row.addWidget(self.reset_channel_combo, 1)
         reset_row.addWidget(self.reset_polarity_toggle, 0, Qt.AlignVCenter)
+        self.reset_more_btn = self._make_io_state_more_btn("reset")
+        reset_row.addWidget(self.reset_more_btn, 0, Qt.AlignVCenter)
 
         self._n6705c_poweron_label = poweron_label
         self._n6705c_reset_label = reset_label
@@ -325,9 +333,11 @@ class ConsumptionTestViewConfigMixin:
             self._n6705c_poweron_label,
             self.poweron_channel_combo,
             self.poweron_polarity_toggle,
+            self.poweron_more_btn,
             self._n6705c_reset_label_container,
             self.reset_channel_combo,
             self.reset_polarity_toggle,
+            self.reset_more_btn,
         ]
 
         self.mcu_search_btn.clicked.connect(self._on_mcu_search)
@@ -355,6 +365,7 @@ class ConsumptionTestViewConfigMixin:
                 w.setVisible(method == "MCU")
 
         self._refresh_mcu_gpio_options()
+        self._refresh_io_state_menus()
 
         visible = True
         if hasattr(self, "_control_channel_row_widgets"):
@@ -398,6 +409,77 @@ class ConsumptionTestViewConfigMixin:
             self.reset_channel_combo.setEnabled(checked)
         if hasattr(self, "reset_polarity_toggle") and self.reset_polarity_toggle is not None:
             self.reset_polarity_toggle.setEnabled(checked)
+
+    def _make_io_state_more_btn(self, name):
+        """构造 PwrON/Reset 行的 "⋯" 按钮：弹出菜单快捷设置 IO 状态。
+
+        参考 vmin_hunter MCU PWR/RESET 模块的 more 按钮：
+        MCU 模式直接驱动 GPIO 电平；N6705C 模式输出 2.3V/0.1V 或关闭通道。
+        实际动作由宿主类的 _on_io_state_quick_set() 执行。
+        """
+        btn = QToolButton()
+        btn.setText("⋯")
+        btn.setFixedSize(24, 24)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setPopupMode(QToolButton.InstantPopup)
+        btn.setStyleSheet("""
+            QToolButton {
+                background-color: #020816;
+                border: 1px solid #1c2f54;
+                border-radius: 5px;
+                color: #7e96bf;
+                font-size: 12px;
+                font-weight: bold;
+                padding: 0px;
+            }
+            QToolButton:hover { border-color: #5b7cff; color: #d7e3ff; }
+            QToolButton:pressed, QToolButton::menu-indicator { image: none; }
+        """)
+        btn.setMenu(self._build_io_state_menu(name, btn))
+        return btn
+
+    def _build_io_state_menu(self, name, parent):
+        """按当前 Control 方式构建 IO 快捷设置菜单。
+
+        MCU: 输出高/输出低/高阻 (GPIO 电平);
+        N6705C: 输出高(2.3V)/输出低(0.1V)/关闭输出(High-Z), 与
+        Auto Test 中 POWERON/RESET 脉冲使用的电平保持一致。
+        """
+        method = (
+            self.control_method_toggle.value()
+            if getattr(self, "control_method_toggle", None) is not None
+            else "N6705C"
+        )
+        if method == "MCU":
+            items = (("输出高", "High"), ("输出低", "Low"), ("高阻", "HighZ"))
+            tip = "快捷设置 IO 状态：输出高 / 输出低 / 高阻 (MCU GPIO)"
+        else:
+            items = (
+                ("输出高 (2.3V)", "High"),
+                ("输出低 (0.1V)", "Low"),
+                ("关闭输出 (High-Z)", "HighZ"),
+            )
+            tip = "快捷设置 IO 状态：输出高 (2.3V) / 输出低 (0.1V) / 关闭输出 (N6705C 通道)"
+        label = "PwrON" if name == "poweron" else "Reset"
+        parent.setToolTip(f"{label}: {tip}")
+        menu = QMenu(parent)
+        for text, state in items:
+            menu.addAction(
+                text,
+                lambda _checked=False, n=name, s=state: self._on_io_state_quick_set(n, s),
+            )
+        return menu
+
+    def _refresh_io_state_menus(self):
+        """Control 方式切换后重建 PwrON/Reset "⋯" 菜单与提示。"""
+        for name, attr in (("poweron", "poweron_more_btn"), ("reset", "reset_more_btn")):
+            btn = getattr(self, attr, None)
+            if btn is None:
+                continue
+            old_menu = btn.menu()
+            if old_menu is not None:
+                old_menu.deleteLater()
+            btn.setMenu(self._build_io_state_menu(name, btn))
 
     def _create_channel_config_section(self):
         config_frame = QFrame()

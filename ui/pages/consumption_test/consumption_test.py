@@ -148,6 +148,54 @@ class _ConnectMcuWorker(QObject):
         return failed
 
 
+class _IoStateSetWorker(QObject):
+    """手动设置 PwrON/RESET IO 状态的后台 Worker（"⋯" 快捷设置菜单）。
+
+    MCU 通道 (GPIOx): 输出高/低电平, 或切高阻输入;
+    N6705C 通道 (A/B-CHx): PS2Q 模式输出 2.3V/0.1V (限流 0.2A),
+    高阻则先设 Output-Off-Mode=HIGHZ 再关闭通道, 与 Auto Test
+    中 POWERON/RESET 脉冲使用的电平/时序保持一致。
+    """
+
+    finished = Signal(str, str)  # label, state
+    error = Signal(str)
+
+    def __init__(self, inst, label, hw_ch, is_mcu, state):
+        super().__init__()
+        self._inst = inst
+        self._label = label
+        self._hw_ch = hw_ch
+        self._is_mcu = is_mcu
+        self._state = state
+
+    def run(self):
+        try:
+            if self._is_mcu:
+                if self._state == "High":
+                    self._inst.out(self._hw_ch, 1)
+                elif self._state == "Low":
+                    self._inst.out(self._hw_ch, 0)
+                else:
+                    self._inst.in_pull(self._hw_ch, "none")
+            elif self._state == "HighZ":
+                self._inst.set_mode(self._hw_ch, "PS2Q")
+                try:
+                    self._inst.set_output_off_mode(self._hw_ch, "HIGHZ")
+                except AttributeError:
+                    pass
+                self._inst.channel_off(self._hw_ch)
+            else:
+                voltage = 2.3 if self._state == "High" else 0.1
+                self._inst.set_mode(self._hw_ch, "PS2Q")
+                self._inst.set_voltage(self._hw_ch, voltage)
+                self._inst.set_current_limit(self._hw_ch, 0.2)
+                self._inst.channel_on(self._hw_ch)
+            self.finished.emit(self._label, self._state)
+        except Exception as e:
+            logger.error("IO state set failed: %s", e, exc_info=True)
+            self.error.emit(str(e))
+
+
 _ICONS_DIR = os.path.join(
     get_resource_base(),
     "resources", "icons"
@@ -218,6 +266,8 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
         self._mcu_search_worker = None
         self._mcu_connect_thread = None
         self._mcu_connect_worker = None
+        self._io_state_thread = None
+        self._io_state_worker = None
         self._default_mcu_type = "ch9114f"
 
         self.init_n6705c_connection(n6705c_top, instrument_manager=instrument_manager)
@@ -1879,6 +1929,81 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             self.mcu_connect_btn.setEnabled(True)
             update_connect_button_state(self.mcu_connect_btn, False)
             self.append_log("[MCU] Disconnected.")
+
+    # ---- PwrON/RESET IO 快捷设置（"⋯" 菜单, 参考 vmin_hunter MCU PWR/RESET）----
+
+    def _on_io_state_quick_set(self, name, state):
+        """菜单回调：把 PwrON/RESET 行当前选中的 IO 快捷设为 输出高/输出低/高阻。
+
+        Reset 未勾选 enable 时仍可手动设置（勾选仅控制自动流程是否执行该步骤）。
+        """
+        label = "PwrON" if name == "poweron" else "Reset"
+        if self.is_testing:
+            self.append_log(f"[IO] Test running, {label} manual set ignored.")
+            return
+        combo = (
+            self.poweron_channel_combo if name == "poweron"
+            else self.reset_channel_combo
+        )
+        channel_key = combo.currentText() if combo is not None else ""
+        if not channel_key:
+            self.append_log(f"[IO] {label} channel not configured, quick set skipped.")
+            return
+        device_label, hw_ch = self._parse_channel_key(channel_key)
+        if device_label is None or hw_ch is None:
+            self.append_log(f"[IO] Invalid {label} channel key: {channel_key}")
+            return
+
+        if device_label == "MCU":
+            if not self.is_mcu_connected or self.mcu_io is None:
+                self.append_log("[IO] MCU is not connected, cannot set IO state.")
+                return
+            inst = self.mcu_io
+        else:
+            attr = device_label.lower()
+            inst = getattr(self, f"n6705c_{attr}", None)
+            if not getattr(self, f"is_connected_{attr}", False) or inst is None:
+                self.append_log(f"[IO] N6705C-{device_label} is not connected.")
+                return
+        self._run_io_state_set(label, channel_key, inst, hw_ch,
+                               device_label == "MCU", state)
+
+    def _run_io_state_set(self, label, channel_key, inst, hw_ch, is_mcu, state):
+        """起后台线程把指定 IO 设为 High/Low/HighZ，避免阻塞 UI。"""
+        if self._io_state_thread is not None and self._io_state_thread.isRunning():
+            self.append_log("[IO] Another IO state set is running, ignored.")
+            return
+
+        if is_mcu:
+            self.append_log(f"[IO] {label} quick set {channel_key} -> {state}")
+        else:
+            level_desc = {"High": "2.3V", "Low": "0.1V", "HighZ": "OFF (High-Z)"}.get(state, state)
+            self.append_log(f"[IO] {label} quick set {channel_key} -> {state} ({level_desc})")
+
+        worker = _IoStateSetWorker(inst, label, hw_ch, is_mcu, state)
+        thread = QThread()
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._on_io_state_set_done)
+        worker.error.connect(self._on_io_state_set_error)
+        worker.finished.connect(thread.quit)
+        worker.error.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._on_io_state_thread_cleanup)
+        self._io_state_worker = worker
+        self._io_state_thread = thread
+        thread.start()
+
+    def _on_io_state_set_done(self, label, state):
+        self.append_log(f"[IO] {label} -> {state} done.")
+
+    def _on_io_state_set_error(self, err):
+        self.append_log(f"[IO] Set IO state failed: {err}")
+
+    def _on_io_state_thread_cleanup(self):
+        self._io_state_thread = None
+        self._io_state_worker = None
 
     def _on_start_test(self):
         self._start_test()
