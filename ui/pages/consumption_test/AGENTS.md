@@ -19,6 +19,9 @@
 - 复用 Mixin：`N6705CConnectionMixin` + `SerialComMixin(MODE_INLINE)` + `ExecutionLogsFrame`。
 - 视图拆分：`view_config / view_panels / view_results / widgets`；controller 在 `core/consumption_test/consumption_controller.py`。
 - 固件下载走 `lib/download_tools/`（dldtool.exe），禁在 UI 直接调。
+- **`<chip>.yaml` 顶层 key 契约**：5 个电源轨 key（Vcore/VcoreM/VcoreL/VANA/VHPPA，值为命令行列表）+ 2 个测试前配置 key（`vbat_pre_test` / `power_pre_distribution`，值为 `{enabled: bool, commands: [...]}`，键名常量在 `view_panels._PRE_CONFIG_AREAS`）。Save/加载/Exec 统一走 `_on_chip_save` / `_load_rail_configs_from_chip` / `_execute_config_area`。
+- **`AutoTestWorker` 新增 kwargs**：`vbat_pre_test_text` / `power_pre_distribution_text`（空文本=开关 OFF 跳过）；均为独立步骤——`vbat_pre_test` 在 Step 8.5（Vbat 总电流测量前）、`power_pre_distribution` 在 Step 10.5（Step 10 外供电压稳定后、Step 11 主配置下发前，芯片各轨已外部供电才写 I2C），失败仅记日志不中断；主 I2C 会话不可用时临时独立初始化并关闭。
+- **寄存器恢复差异**：`power_pre_distribution` 下发前经 `_snapshot_pre_config_registers` 快照被写寄存器原值（`self._pre_config_snapshots[stage]`），Step 14.5（分电测试完成后）经 `_step_restore_pre_config_registers` 恢复，主会话不可用时临时初始化 I2C；`vbat_pre_test` 不快照不恢复。多 BIN 循环内每 BIN 均执行"快照→下发→恢复"，结束即恢复故下一 BIN 快照仍是原值；中途停止不恢复（与主配置行为一致）。
 
 ## 局部约定
 

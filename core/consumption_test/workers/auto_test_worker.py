@@ -58,6 +58,7 @@ class AutoTestWorker(QObject):
                  channel_names=None,
                  chip_combo_text=None, selected_chip_config=None,
                  config_text=None, parse_config_commands_fn=None,
+                 vbat_pre_test_text="", power_pre_distribution_text="",
                  resolve_device_fn=None, channel_force_configs=None,
                  force_config_enabled=False,
                  control_method="N6705C",
@@ -87,6 +88,14 @@ class AutoTestWorker(QObject):
         self.selected_chip_config = selected_chip_config
         self.config_text = config_text or ""
         self._parse_config_commands_fn = parse_config_commands_fn
+        # 测试前配置(开关 ON 时作为独立步骤经 I2C 下发):
+        #   vbat_pre_test_text          → Step 8.5, Step 9(Vbat 总电流测量)前;
+        #                                 寄存器不恢复, 保持生效到测试结束
+        #   power_pre_distribution_text → Step 10.5, Step 10 外供电压稳定后、
+        #                                 Step 11 主配置下发前; 下发前快照原值,
+        #                                 Step 14.5(分电测试完成)后恢复
+        self.vbat_pre_test_text = vbat_pre_test_text or ""
+        self.power_pre_distribution_text = power_pre_distribution_text or ""
         self._resolve_device_fn = resolve_device_fn
         self.channel_force_configs = channel_force_configs or {}
         self.force_config_enabled = bool(force_config_enabled)
@@ -99,6 +108,9 @@ class AutoTestWorker(QObject):
         self.download_pgm_rate = int(download_pgm_rate)
         self._is_stopped = False
         self._current_download_state = None
+        # 测试前配置寄存器快照 {stage: {(device_addr, reg_addr, width): orig_val}}
+        # 仅 power_pre_distribution 使用; vbat_pre_test 不快照不恢复
+        self._pre_config_snapshots = {}
 
     # ---- 生命周期 ----
     def stop(self):
@@ -357,6 +369,12 @@ class AutoTestWorker(QObject):
                     "skipping config lookup/execution."
                 )
 
+            # Step 8.5: Vbat 测试前配置(开关 ON 时经 I2C 下发, 失败不中断)
+            self._step_execute_pre_config("vbat_pre_test", i2c, chip_info)
+            self.progress.emit(base + 0.51 * span)
+            if self._is_stopped:
+                return
+
             vbat_current = self._step_measure_vbat_total(base, span)
             if vbat_current is None:
                 return
@@ -371,6 +389,13 @@ class AutoTestWorker(QObject):
             self._step_force_plus20(default_voltages)
             _time.sleep(0.4)
             self.progress.emit(base + 0.58 * span)
+            if self._is_stopped:
+                return
+
+            # Step 10.5: 分电前配置 —— 外供电压(Step 10)稳定后、主配置(Step 11)
+            # 下发前执行, 作为独立步骤经 I2C 下发(开关 OFF 时跳过, 失败不中断)。
+            self._step_execute_pre_config("power_pre_distribution", i2c, chip_info)
+            self.progress.emit(base + 0.59 * span)
             if self._is_stopped:
                 return
 
@@ -402,6 +427,29 @@ class AutoTestWorker(QObject):
 
             if config_commands and original_registers and i2c:
                 self._step_restore_registers(i2c, original_registers)
+
+            # Step 14.5: 分电测试完成后, 恢复分电前配置写入的寄存器原值
+            # (Vbat 测试前配置不恢复)。快照在独立 I2C 会话下也会被记录,
+            # 但会话已关闭, 故仅在主会话可用时恢复; 否则记 WARNING。
+            if self.power_pre_distribution_text:
+                restore_i2c = i2c
+                if restore_i2c is None:
+                    try:
+                        from lib.i2c.i2c_interface_x64 import I2CInterface
+                        restore_i2c = I2CInterface()
+                        if not restore_i2c.initialize():
+                            restore_i2c = None
+                    except Exception as e:
+                        self._log(
+                            f"[WARNING] Pre-config register restore I2C "
+                            f"init failed: {e}"
+                        )
+                        restore_i2c = None
+                self._step_restore_pre_config_registers(
+                    restore_i2c, "power_pre_distribution"
+                )
+                if restore_i2c is not None and restore_i2c is not i2c:
+                    restore_i2c.close()
 
             self._step_restore_vmeter()
 
@@ -668,6 +716,163 @@ class AutoTestWorker(QObject):
         except Exception as e:
             self._log(f"[ERROR] I2C setup failed: {e}")
             return None, None, {}
+
+    def _step_execute_pre_config(self, stage, i2c, chip_info):
+        """以独立步骤下发测试前配置(vbat_pre_test / power_pre_distribution)。
+
+        两个独立步骤的执行时机:
+          - vbat_pre_test          → Step 8.5, Step 9(Vbat 总电流测量)前;
+          - power_pre_distribution → Step 10.5, Step 10 外供电压稳定后、
+            Step 11 主配置下发前(芯片各轨已被外部供电, 才可安全写 I2C)。
+        开关 OFF(UI 侧传空文本)时跳过; 执行失败仅记日志, 不中断主流程。
+        主流程已开启配置(should_config=True)时复用主 I2C 会话, 否则临时
+        独立初始化 I2C 会话并在执行后关闭。
+
+        寄存器恢复语义(Step 13 分电测试完成后):
+          - power_pre_distribution: 下发前快照被写寄存器原值到
+            self._pre_config_snapshots[stage], Step 14.5 统一恢复;
+          - vbat_pre_test: 不快照不恢复, 保持"测试前生效"直到测试结束。
+        返回: 寄存器快照 dict(无需恢复时为空 dict)。
+        """
+        if stage == "vbat_pre_test":
+            text = self.vbat_pre_test_text
+            step_no = "8.5"
+            stage_desc = "pre-Vbat-test"
+            snapshot_registers = False
+        elif stage == "power_pre_distribution":
+            text = self.power_pre_distribution_text
+            step_no = "10.5"
+            stage_desc = "pre-power-distribution"
+            snapshot_registers = True
+        else:
+            return {}
+        if not text:
+            return {}
+        if self._parse_config_commands_fn is None:
+            return {}
+
+        commands = self._parse_config_commands_fn(text)
+        if not commands:
+            self._log(
+                f"[WARNING] Step {step_no} pre-config ({stage_desc}) "
+                "has no valid commands, skipped."
+            )
+            return {}
+
+        self._log(
+            f"[AUTO_TEST] Step {step_no}: Executing pre-config ({stage_desc}): "
+            f"{len(commands)} commands"
+        )
+
+        if i2c is not None and chip_info is not None:
+            try:
+                if snapshot_registers:
+                    self._snapshot_pre_config_registers(
+                        i2c, chip_info, commands, step_no, stage
+                    )
+                self._step_execute_config_commands(i2c, chip_info, commands)
+            except Exception as e:
+                self._log(
+                    f"[WARNING] Step {step_no} pre-config ({stage_desc}) "
+                    f"execution failed: {e}"
+                )
+            return self._pre_config_snapshots.get(stage, {})
+
+        # 主 I2C 会话不可用(未开启配置查找)时, 临时独立初始化
+        self._log(
+            f"[AUTO_TEST] Step {step_no}: Main I2C session not available, "
+            f"initializing standalone session for pre-config ({stage_desc})..."
+        )
+        try:
+            from lib.i2c.i2c_interface_x64 import I2CInterface
+            standalone_i2c = I2CInterface()
+            if not standalone_i2c.initialize():
+                self._log(
+                    f"[WARNING] Step {step_no} pre-config ({stage_desc}) skipped: "
+                    "I2C interface initialization failed."
+                )
+                return {}
+            try:
+                standalone_chip_info = standalone_i2c.bes_chip_check()
+                if snapshot_registers:
+                    self._snapshot_pre_config_registers(
+                        standalone_i2c, standalone_chip_info, commands,
+                        step_no, stage,
+                    )
+                self._step_execute_config_commands(
+                    standalone_i2c, standalone_chip_info, commands
+                )
+            finally:
+                standalone_i2c.close()
+        except Exception as e:
+            self._log(
+                f"[WARNING] Step {step_no} pre-config ({stage_desc}) "
+                f"execution failed: {e}"
+            )
+        return self._pre_config_snapshots.get(stage, {})
+
+    def _snapshot_pre_config_registers(self, i2c, chip_info, commands, step_no, stage):
+        """分电前配置下发前, 快照将被 WRITE/WRITE_BITS 写入的寄存器原值。
+
+        快照存入 self._pre_config_snapshots[stage], 供 Step 13 分电测试
+        完成后恢复; 同一寄存器多次写入只保留首次读到的原值。
+        """
+        snapshot = {}
+        for cmd in commands:
+            if cmd["op"] not in ("WRITE", "WRITE_BITS"):
+                continue
+            target = cmd.get("target", "NO_PREFIX")
+            reg_addr = cmd["reg_addr"]
+            device_addr, width = self._resolve_device_fn(chip_info, target)
+            if device_addr is None or width is None:
+                continue
+            key = (device_addr, reg_addr, width)
+            if key in snapshot:
+                continue
+            try:
+                val = i2c.read(device_addr, reg_addr, width)
+                snapshot[key] = val
+                self._log(
+                    f"[AUTO_TEST]   Saved reg dev=0x{device_addr:02X} "
+                    f"addr=0x{reg_addr:08X} = 0x{val:X}"
+                )
+            except Exception as e:
+                self._log(
+                    f"[WARNING] Step {step_no} pre-config ({stage}) "
+                    f"failed to snapshot reg 0x{reg_addr:08X}: {e}"
+                )
+        self._pre_config_snapshots[stage] = snapshot
+        return snapshot
+
+    def _step_restore_pre_config_registers(self, i2c, stage):
+        """分电测试完成后, 恢复分电前配置(power_pre_distribution)写入的寄存器原值。
+
+        Vbat 测试前配置不参与恢复。快照为空或恢复失败仅记日志, 不中断主流程。
+        """
+        snapshot = self._pre_config_snapshots.pop(stage, None)
+        if not snapshot:
+            return
+        if i2c is None:
+            self._log(
+                f"[WARNING] Pre-config ({stage}) register restore skipped: "
+                "no available I2C session."
+            )
+            return
+        self._log(
+            f"[AUTO_TEST] Restoring pre-config ({stage}) registers: "
+            f"{len(snapshot)} regs"
+        )
+        for (device_addr, reg_addr, width), orig_val in snapshot.items():
+            try:
+                i2c.write(device_addr, reg_addr, orig_val, width)
+                self._log(
+                    f"[AUTO_TEST]   Restored dev=0x{device_addr:02X} "
+                    f"reg=0x{reg_addr:08X} = 0x{orig_val:X}"
+                )
+            except Exception as e:
+                self._log(
+                    f"[WARNING] Failed to restore pre-config reg 0x{reg_addr:08X}: {e}"
+                )
 
     def _step_force_plus20(self, default_voltages):
         self._log(

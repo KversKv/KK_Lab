@@ -1018,10 +1018,18 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
         self._load_rail_configs_from_chip(chip_name)
 
     def _clear_rail_config_edits(self):
-        """清空所有电源 YAML 文本框。"""
+        """清空所有电源 YAML 文本框, 并复位测试前配置区域(开关 ON + 空文本)。"""
         edits = getattr(self, "_rail_config_edits", {}) or {}
         for rail, edit in edits.items():
             edit.clear()
+        self._clear_pre_config_areas()
+
+    def _clear_pre_config_areas(self):
+        """清空 2 个测试前配置区域文本框, 开关复位为 ON。"""
+        for area_key, edit in (getattr(self, "_pre_config_edits", {}) or {}).items():
+            edit.clear()
+        for area_key, toggle in (getattr(self, "_pre_config_toggles", {}) or {}).items():
+            toggle.setChecked(True)
 
     def _load_rail_configs_from_chip(self, chip_name):
         """根据所选芯片, 从 main_chip_configs/<chip>.yaml 加载 5 个电源轨配置。
@@ -1029,13 +1037,16 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
         YAML 文件顶层 key 与 _RAIL_NAMES(Vcore/VcoreM/VcoreL/VANA/VHPPA)
         大小写不敏感匹配; 每个 key 的值应为命令字符串列表, 会用换行拼接后
         填入对应的电源 YAML 文本框。
+        另加载 2 个测试前配置区域 key(vbat_pre_test / power_pre_distribution),
+        值为 {enabled: bool, commands: [...]}, 同时回填开关与文本框。
         """
         edits = getattr(self, "_rail_config_edits", {}) or {}
         if not edits:
             return
-        # 先清空
+        # 先清空(含测试前配置区域, 开关复位 ON)
         for edit in edits.values():
             edit.clear()
+        self._clear_pre_config_areas()
 
         if not chip_name:
             return
@@ -1094,6 +1105,55 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
                 f"Rail edits left empty."
             )
 
+        # 加载 2 个测试前配置区域(vbat_pre_test / power_pre_distribution)
+        loaded_areas = self._load_pre_config_areas_from_parsed(parsed)
+        if loaded_areas:
+            self.append_log(
+                f"[CONFIG] Auto-loaded pre-config areas from {chip_name}.yaml: "
+                f"{', '.join(loaded_areas)}"
+            )
+
+    def _load_pre_config_areas_from_parsed(self, parsed):
+        """从已解析的 chip YAML dict 回填 2 个测试前配置区域(开关 + 文本框)。
+
+        支持的值格式:
+          - {enabled: bool, commands: [str...]}  (Save 按钮写入的标准格式)
+          - [str...] / "..."                      (裸命令列表, 开关默认 ON)
+        返回本次实际命中的区域描述列表(用于日志), 未命中返回空列表。
+        """
+        loaded_areas = []
+        pre_edits = getattr(self, "_pre_config_edits", {}) or {}
+        pre_toggles = getattr(self, "_pre_config_toggles", {}) or {}
+        for area_key, area_label in self._PRE_CONFIG_AREAS:
+            edit = pre_edits.get(area_key)
+            toggle = pre_toggles.get(area_key)
+            if edit is None or toggle is None:
+                continue
+            if area_key not in parsed:
+                continue
+            val = parsed.get(area_key)
+            enabled = True
+            if isinstance(val, dict):
+                enabled = bool(val.get("enabled", True))
+                commands = val.get("commands")
+                if isinstance(commands, list):
+                    text = "\n".join(str(line) for line in commands)
+                elif isinstance(commands, str):
+                    text = commands
+                else:
+                    text = ""
+            elif isinstance(val, list):
+                text = "\n".join(str(line) for line in val)
+            elif isinstance(val, str):
+                text = val
+            else:
+                text = str(val)
+            edit.setPlainText(text)
+            toggle.setChecked(enabled)
+            cmd_count = len([ln for ln in text.splitlines() if ln.strip()])
+            loaded_areas.append(f"{area_label}({'on' if enabled else 'off'},{cmd_count})")
+        return loaded_areas
+
     def _get_rail_config_text(self, rail_name):
         """获取指定电源轨的 YAML 配置文本。"""
         edits = getattr(self, "_rail_config_edits", {}) or {}
@@ -1101,6 +1161,29 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
         if edit is None:
             return ""
         return edit.toPlainText().strip()
+
+    def _get_pre_config_text(self, area_key):
+        """获取指定测试前配置区域的 YAML 配置文本。"""
+        edit = (getattr(self, "_pre_config_edits", {}) or {}).get(area_key)
+        if edit is None:
+            return ""
+        return edit.toPlainText().strip()
+
+    def _get_pre_config_enabled(self, area_key):
+        """获取指定测试前配置区域的开关状态(ON=参与配置)。"""
+        toggle = (getattr(self, "_pre_config_toggles", {}) or {}).get(area_key)
+        if toggle is None:
+            return False
+        return toggle.isChecked()
+
+    def _on_pre_config_toggled(self, area_key, checked):
+        """测试前配置区域开关切换: OFF 时禁用该区域文本框与 Exec 按钮。"""
+        edit = (getattr(self, "_pre_config_edits", {}) or {}).get(area_key)
+        exec_btn = (getattr(self, "_pre_config_exec_btns", {}) or {}).get(area_key)
+        if edit is not None:
+            edit.setEnabled(checked)
+        if exec_btn is not None:
+            exec_btn.setEnabled(checked)
 
     def _get_combined_rail_config_text(self):
         """合并所有非空电源轨配置(用换行分隔),用于 Exec 立即执行。"""
@@ -1208,6 +1291,8 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
         会保留文件中已有的非 rail-name 顶层 key(例如 voltage_low/voltage_default
         等模板配置),仅按 _RAIL_NAMES 逐轨覆盖/新增对应的 rail key。
         空 YAML 文本框也会写入空列表,等效于清空对应 rail key。
+        另写入 2 个测试前配置区域 key(vbat_pre_test / power_pre_distribution),
+        值为 {enabled, commands}, 开关状态一并持久化。
         """
         if self.chip_combo.currentIndex() <= 0:
             self.append_log("[WARNING] No chip selected. Please select a chip before saving.")
@@ -1243,6 +1328,16 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             if config_lines:
                 saved_rails.append(f"{rail}({len(config_lines)})")
 
+        # 测试前配置区域写入 {enabled, commands}
+        saved_areas = []
+        for area_key, area_label in self._PRE_CONFIG_AREAS:
+            enabled = self._get_pre_config_enabled(area_key)
+            text = self._get_pre_config_text(area_key)
+            config_lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+            parsed[area_key] = {"enabled": enabled, "commands": config_lines}
+            if config_lines:
+                saved_areas.append(f"{area_label}({'on' if enabled else 'off'},{len(config_lines)})")
+
         try:
             os.makedirs(os.path.dirname(yaml_path), exist_ok=True)
             with open(yaml_path, "w", encoding="utf-8") as f:
@@ -1257,42 +1352,50 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             self.append_log(
                 f"[CONFIG] Saved 5 rail configs to {chip_name}.yaml: {saved_summary}"
             )
+            if saved_areas:
+                self.append_log(
+                    f"[CONFIG] Saved pre-config areas to {chip_name}.yaml: {', '.join(saved_areas)}"
+                )
         except Exception as e:
             logger.error("Failed to write chip YAML %s: %s", yaml_path, e)
             self.append_log(f"[ERROR] Failed to save chip config: {e}")
 
-    def _execute_rail_configuration(self, rail_name):
-        """执行单个电源轨的 I2C 配置(跳过其它 rail)。
+    def _execute_config_area(self, area_key):
+        """执行单个配置区域的 I2C 配置(电源轨或测试前配置区域, 跳过其它区域)。
 
-        仅根据指定 rail 的 YAML 文本框内容解析命令并下发 I2C,
-        不会触碰其它 rail 的配置,也不会修改 N6705C 通道设置。
+        仅根据指定区域的 YAML 文本框内容解析命令并下发 I2C,
+        不会触碰其它区域的配置,也不会修改 N6705C 通道设置。
         """
-        if rail_name not in self._RAIL_NAMES:
-            logger.warning("Unknown rail name: %s", rail_name)
+        valid_keys = set(self._RAIL_NAMES) | {k for k, _ in self._PRE_CONFIG_AREAS}
+        if area_key not in valid_keys:
+            logger.warning("Unknown config area name: %s", area_key)
             return
 
         chip_name = self.chip_combo.currentText()
         if self.chip_combo.currentIndex() <= 0 or self.selected_chip_config is None:
-            logger.warning("No chip selected for %s execution", rail_name)
-            self.append_log(f"[WARNING] No chip selected. Please select a chip first for {rail_name}.")
+            logger.warning("No chip selected for %s execution", area_key)
+            self.append_log(f"[WARNING] No chip selected. Please select a chip first for {area_key}.")
             return
 
         refreshed = get_chip_config(chip_name, force_reload=True)
         if refreshed:
             self.selected_chip_config = refreshed
 
-        config_text = self._get_rail_config_text(rail_name)
+        if area_key in self._RAIL_NAMES:
+            config_text = self._get_rail_config_text(area_key)
+        else:
+            config_text = self._get_pre_config_text(area_key)
         if not config_text:
-            self.append_log(f"[WARNING] {rail_name} config is empty, nothing to execute.")
+            self.append_log(f"[WARNING] {area_key} config is empty, nothing to execute.")
             return
 
         config_commands = self._parse_config_commands(config_text)
         if not config_commands:
-            self.append_log(f"[WARNING] {rail_name} config has no valid commands.")
+            self.append_log(f"[WARNING] {area_key} config has no valid commands.")
             return
 
         self.append_log(
-            f"[EXECUTE] Starting {rail_name} configuration for chip: {chip_name} "
+            f"[EXECUTE] Starting {area_key} configuration for chip: {chip_name} "
             f"({len(config_commands)} commands)"
         )
 
@@ -1318,7 +1421,7 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
 
         self._compare_chip_info(chip_info, self.selected_chip_config)
         self._run_config_commands(i2c, chip_info, config_commands)
-        self.append_log(f"[EXECUTE] {rail_name} configuration execution completed.")
+        self.append_log(f"[EXECUTE] {area_key} configuration execution completed.")
 
     def _update_chip_rail_yaml(self, chip_name, rail_name, config_text):
         """将单轨配置写入 <chip>.yaml 文件中对应 rail 的 key 下。
@@ -2435,6 +2538,18 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
         else:
             config_text = ""
 
+        # 两个测试前配置区域: 开关 ON 且有内容时传入 worker, 作为独立步骤经 I2C 下发
+        #   vbat_pre_test          → Step 8.5, Step 9(Vbat 总电流测量)前
+        #   power_pre_distribution → Step 10.5, Step 10 外供电压稳定后、Step 11 主配置前
+        vbat_pre_test_text = (
+            self._get_pre_config_text("vbat_pre_test")
+            if self._get_pre_config_enabled("vbat_pre_test") else ""
+        )
+        power_pre_distribution_text = (
+            self._get_pre_config_text("power_pre_distribution")
+            if self._get_pre_config_enabled("power_pre_distribution") else ""
+        )
+
         chip_combo_text = self.chip_combo.currentText() if self.chip_combo.currentIndex() > 0 else None
 
         self.is_testing = True
@@ -2454,6 +2569,14 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
 
         reset_desc = f"{reset_key}({reset_polarity})" if reset_enabled else "DISABLED"
         mode_desc = "Std V (配置模式)" if test_mode == "standard" else "High V (外供高压)"
+        vbat_pre_desc = (
+            f"ON({len([ln for ln in vbat_pre_test_text.splitlines() if ln.strip()])} cmds)"
+            if vbat_pre_test_text else "OFF"
+        )
+        pre_dist_desc = (
+            f"ON({len([ln for ln in power_pre_distribution_text.splitlines() if ln.strip()])} cmds)"
+            if power_pre_distribution_text else "OFF"
+        )
         self.append_log(
             f"[AUTO_TEST] Starting auto test: {len(firmware_paths)} BIN(s), "
             f"Mode={mode_desc}, "
@@ -2461,6 +2584,8 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             f"Control={control_method}, "
             f"PowerON={poweron_key}({poweron_polarity}), "
             f"RESET={reset_desc}, "
+            f"VbatPreCfg={vbat_pre_desc}, "
+            f"PreDistCfg={pre_dist_desc}, "
             f"StableDelay={stabilization_delay_sec:.1f}s, "
             f"Baudrate={download_pgm_rate}"
         )
@@ -2487,6 +2612,8 @@ class ConsumptionTestUI(QWidget, ConsumptionTestViewConfigMixin, ConsumptionTest
             chip_combo_text=chip_combo_text,
             selected_chip_config=self.selected_chip_config,
             config_text=config_text,
+            vbat_pre_test_text=vbat_pre_test_text,
+            power_pre_distribution_text=power_pre_distribution_text,
             parse_config_commands_fn=self._parse_config_commands,
             resolve_device_fn=self._resolve_device,
             channel_force_configs=self._build_channel_force_configs(),

@@ -490,9 +490,100 @@ class BinaryTextToggle(QWidget):
         super().changeEvent(event)
 
 
+class SwitchToggle(QWidget):
+    """ON/OFF 滑动开关: 决定某配置区域是否参与配置/执行。
+
+    OFF → 滑块在左, 灰色轨道; ON → 滑块在右, 紫色轨道。
+    """
+
+    toggled = Signal(bool)
+
+    def __init__(self, parent=None, checked=False):
+        super().__init__(parent)
+        self.setFixedSize(40, 22)
+        self.setCursor(Qt.PointingHandCursor)
+        self._checked = bool(checked)
+        self._anim_progress = 1.0 if self._checked else 0.0
+
+        self._track_off = QColor("#1A2750")
+        self._track_on = QColor("#5d45ff")
+        self._border_color = QColor("#22376A")
+        self._knob_off = QColor("#5F77AE")
+        self._knob_on = QColor("#FFFFFF")
+
+        self._anim = QPropertyAnimation(self, b"animProgress")
+        self._anim.setDuration(140)
+        self._anim.setEasingCurve(QEasingCurve.InOutCubic)
+
+    def _get_anim_progress(self):
+        return self._anim_progress
+
+    def _set_anim_progress(self, val):
+        self._anim_progress = val
+        self.update()
+
+    animProgress = Property(float, _get_anim_progress, _set_anim_progress)
+
+    def isChecked(self):
+        return self._checked
+
+    def setChecked(self, checked):
+        checked = bool(checked)
+        if checked == self._checked:
+            return
+        self._checked = checked
+        target = 1.0 if checked else 0.0
+        self._anim.stop()
+        self._anim.setStartValue(self._anim_progress)
+        self._anim.setEndValue(target)
+        self._anim.start()
+        self.toggled.emit(self._checked)
+
+    def mousePressEvent(self, event):
+        if not self.isEnabled():
+            super().mousePressEvent(event)
+            return
+        if event.button() == Qt.LeftButton:
+            self.setChecked(not self._checked)
+        super().mousePressEvent(event)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        if not self.isEnabled():
+            p.setOpacity(0.4)
+
+        w, h = self.width(), self.height()
+        radius = h / 2
+
+        p.setPen(QPen(self._border_color, 1))
+        p.setBrush(self._track_on if self._checked else self._track_off)
+        p.drawRoundedRect(QRect(0, 0, w, h), radius, radius)
+
+        knob_margin = 3
+        knob_d = h - knob_margin * 2
+        knob_x = knob_margin + self._anim_progress * (w - knob_d - knob_margin * 2)
+
+        p.setPen(Qt.NoPen)
+        p.setBrush(self._knob_on if self._anim_progress > 0.5 else self._knob_off)
+        p.drawEllipse(QRect(int(knob_x), knob_margin, int(knob_d), int(knob_d)))
+
+        p.end()
+
+    def sizeHint(self):
+        return QSize(40, 22)
+
+    def changeEvent(self, event):
+        if event.type() == event.Type.EnabledChange:
+            self.setCursor(Qt.PointingHandCursor if self.isEnabled() else Qt.ArrowCursor)
+            self.update()
+        super().changeEvent(event)
+
+
 __all__ = [
     "DownloadModeToggle",
     "ControlMethodToggle",
     "PolarityToggle",
     "BinaryTextToggle",
+    "SwitchToggle",
 ]

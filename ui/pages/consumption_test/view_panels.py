@@ -7,7 +7,7 @@ Consumption Test 主面板视图构建（Mixin）。
   - _create_layout                   : 顶层布局（标题栏 / Config Import / 主体 splitter / 执行日志）
   - _create_connection_panel         : N6705C / Charger 连接面板
   - _create_firmware_panel           : 固件下载面板
-  - _create_config_import_panel      : Config Import 面板（测试模式 + Chip + 5 电源 YAML）
+  - _create_config_import_panel      : Config Import 面板（测试模式 + Chip + 5 电源 YAML + 2 测试前配置区域）
   - _build_firmware_serial_widgets   : 固件串口控件组
   - _create_consumption_test_panel   : 功耗测试结果面板（结果卡片 + BIN 表 + Save DataLog）
   - _create_test_buttons_row         : Start / Auto 测试按钮行
@@ -26,7 +26,9 @@ from ui.widgets.button import SpinningSearchButton, update_connect_button_state
 from ui.widgets.dark_combobox import DarkComboBox
 from ui.widgets.progress_button import ProgressButton
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
-from ui.pages.consumption_test.widgets import DownloadModeToggle, BinaryTextToggle
+from ui.pages.consumption_test.widgets import (
+    DownloadModeToggle, BinaryTextToggle, SwitchToggle,
+)
 from ui.theme import Colors, FontSizes, Radius, Spacing, FONT_FAMILY, FONT_MONO
 from chips.bes_chip_configs.bes_chip_configs import SUPPORTED_CHIPS
 from ui.styles import SCROLLBAR_STYLE
@@ -370,12 +372,24 @@ class ConsumptionTestViewPanelsMixin:
     # 5 个电源轨名称(顺序决定 UI 从左到右排列)
     _RAIL_NAMES = ["Vcore", "VcoreM", "VcoreL", "VANA", "VHPPA"]
 
+    # Config Import 下部两个测试前配置区域:
+    #   vbat_pre_test          → Vbat 测试前配置(Auto Test Step 8.5, Vbat 总电流测量前执行)
+    #   power_pre_distribution → 分电前配置(Auto Test Step 10.5, Step 10 外供电压稳定后、
+    #                             Step 11 主配置下发前作为独立步骤执行)
+    # key 同时作为 <chip>.yaml 的顶层 key(值为 {enabled, commands})。
+    _PRE_CONFIG_AREAS = [
+        ("vbat_pre_test", "Vbat Pre-Test Config"),
+        ("power_pre_distribution", "Pre-Power-Distribution Config"),
+    ]
+
     def _create_config_import_panel(self):
         """Config Import 面板(横跨顶部整个界面)。
 
         顶行: 测试模式切换(外供高压/标准电压) + Chip 下拉 + Check 按钮
         中部: 5 个独立电源轨列(Vcore/VcoreM/VcoreL/VANA/VHPPA)
               每列含 YAML 文本框 + 该轨独立的 Import/Exec 按钮
+        下部: 2 个测试前配置区域(Vbat 测试前 / 分电前)
+              每列含启用滑动开关 + YAML 文本框 + Exec 按钮
         """
         panel = QFrame()
         panel.setObjectName("configPanel")
@@ -610,6 +624,104 @@ class ConsumptionTestViewPanelsMixin:
             rails_row.addWidget(col_w, 1)
         content_layout.addLayout(rails_row)
 
+        # ---- 下部: 两个测试前配置区域(Vbat 测试前 / 分电前), 各带启用滑动开关 ----
+        # 开关 ON 时 Auto Test 在对应阶段经 I2C 下发该区域 YAML 命令;
+        # 内容随 Save 按钮一并写入 <chip>.yaml 对应顶层 key。
+        pre_row = QHBoxLayout()
+        pre_row.setSpacing(6)
+        self._pre_config_edits = {}
+        self._pre_config_toggles = {}
+        self._pre_config_exec_btns = {}
+
+        for area_key, area_label in self._PRE_CONFIG_AREAS:
+            col = QVBoxLayout()
+            col.setSpacing(2)
+
+            # 头行: 区域标题 + 启用滑动开关
+            head_row = QHBoxLayout()
+            head_row.setSpacing(4)
+            head_row.setContentsMargins(0, 0, 0, 0)
+            area_title = QLabel(area_label)
+            area_title.setStyleSheet(
+                "font-size: 10px; color: #7e96bf; background: transparent; border: none;"
+            )
+            head_row.addWidget(area_title)
+            head_row.addStretch()
+            switch = SwitchToggle(checked=True)
+            if area_key == "vbat_pre_test":
+                switch.setToolTip(
+                    "Vbat Pre-Test Config:\n"
+                    "  ON  → Auto Test 在 Step 8.5(Vbat 总电流测量前)经 I2C 下发此配置。\n"
+                    "  OFF → 跳过该阶段配置。\n"
+                    "  注: 写入的寄存器不恢复, 保持生效直到测试结束。"
+                )
+            else:
+                switch.setToolTip(
+                    "Pre-Power-Distribution Config:\n"
+                    "  ON  → Auto Test 在 Step 10.5(Step 10 外供电压稳定后、\n"
+                    "        Step 11 主配置下发前)作为独立步骤经 I2C 下发此配置;\n"
+                    "        下发前快照寄存器原值, 分电测试完成后(Step 14.5)恢复。\n"
+                    "  OFF → 跳过该阶段配置。"
+                )
+            head_row.addWidget(switch)
+            self._pre_config_toggles[area_key] = switch
+            col.addLayout(head_row)
+
+            pre_edit = QPlainTextEdit()
+            pre_edit.setPlaceholderText(f"{area_label}...")
+            pre_edit.setMinimumHeight(35)
+            pre_edit.setMaximumHeight(55)
+            pre_edit.setStyleSheet("""
+                QPlainTextEdit {
+                    background-color: #0d1b3e;
+                    color: #dbe7ff;
+                    border: 1px solid #25355c;
+                    border-radius: 6px;
+                    font-family: Consolas, monospace;
+                    font-size: 10px;
+                    padding: 4px;
+                }
+                QPlainTextEdit:focus {
+                    border: 1px solid #5d45ff;
+                }
+            """)
+            col.addWidget(pre_edit, 1)
+            self._pre_config_edits[area_key] = pre_edit
+
+            pre_btn_row = QHBoxLayout()
+            pre_btn_row.setSpacing(3)
+            pre_btn_row.setContentsMargins(0, 0, 0, 0)
+            pre_exec_btn = QPushButton("Exec")
+            if os.path.isfile(_exec_svg):
+                pre_exec_btn.setIcon(_tinted_svg_icon(_exec_svg, "#ffffff", 12))
+                pre_exec_btn.setIconSize(QSize(12, 12))
+            pre_exec_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #5d45ff;
+                    color: #ffffff;
+                    border: none;
+                    border-radius: 6px;
+                    font-weight: 600;
+                    min-height: 22px;
+                    font-size: 10px;
+                    padding: 2px 4px;
+                }
+                QPushButton:hover { background-color: #6d55ff; }
+                QPushButton:disabled {
+                    background-color: #0f1930;
+                    color: #5a6b8e;
+                    border: 1px solid #1b2847;
+                }
+            """)
+            pre_btn_row.addWidget(pre_exec_btn, 1)
+            self._pre_config_exec_btns[area_key] = pre_exec_btn
+            col.addLayout(pre_btn_row)
+
+            pre_col_w = QWidget()
+            pre_col_w.setLayout(col)
+            pre_row.addWidget(pre_col_w, 1)
+        content_layout.addLayout(pre_row)
+
         # 将可折叠内容区加入面板主布局
         layout.addWidget(self._config_import_content)
 
@@ -620,7 +732,15 @@ class ConsumptionTestViewPanelsMixin:
         # 每轨的 Exec 连接到带 rail 参数的处理函数
         for rail in self._RAIL_NAMES:
             self._rail_exec_btns[rail].clicked.connect(
-                lambda _checked=False, r=rail: self._execute_rail_configuration(r)
+                lambda _checked=False, r=rail: self._execute_config_area(r)
+            )
+        # 测试前配置区域: Exec 立即执行, 开关决定是否参与 Auto Test
+        for area_key, _label in self._PRE_CONFIG_AREAS:
+            self._pre_config_exec_btns[area_key].clicked.connect(
+                lambda _checked=False, k=area_key: self._execute_config_area(k)
+            )
+            self._pre_config_toggles[area_key].toggled.connect(
+                lambda checked, k=area_key: self._on_pre_config_toggled(k, checked)
             )
         self.test_mode_toggle.toggled.connect(self._on_test_mode_changed)
 
