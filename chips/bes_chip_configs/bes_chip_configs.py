@@ -13,6 +13,7 @@ SUPPORTED_CHIPS = [
     "bes1307p",
     "bes1307ph",
     "bes1307s",
+    "bes1310",
     "bes1400",
     "bes1501",
     "bes1501p",

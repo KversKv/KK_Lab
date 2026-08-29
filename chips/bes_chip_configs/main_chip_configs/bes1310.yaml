@@ -1,0 +1,27 @@
+voltage_low:
+- // 示例:降低所有电压轨
+- WRITE_BITS 0x0130 10 10 0x1
+- WRITE_BITS 0x0140 10 10 0x1
+- WRITE_BITS 0x0150 10 10 0x1
+voltage_default:
+- // 示例:恢复默认电压
+- WRITE_BITS 0x0130 10 10 0x0
+- WRITE_BITS 0x0140 10 10 0x0
+- WRITE_BITS 0x0150 10 10 0x0
+Vcore: []
+VcoreM: []
+VcoreL: []
+VANA: []
+VHPPA: []
+vbat_pre_test:
+  enabled: false
+  commands: []
+power_pre_distribution:
+  enabled: true
+  commands:
+  - 'vcore_Low:'
+  - '- WRITE_BITS 0x0124 15 0 0x0F0F'
+  - '- WRITE_BITS 0x013F 8 0 0x00F'
+  - '- WRITE_BITS 0x0140 8 0 0x00F'
+  - '- WRITE_BITS 0x0123 5 0 0x3F   //reg_ldo_vcore_l'
+  - '- WRITE_BITS 0x0123 15 14 0x1   //reg_ldo_vcore_l_bypass'
