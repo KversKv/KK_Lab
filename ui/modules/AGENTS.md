@@ -25,6 +25,7 @@
 ## 局部约定
 
 - **文件布局**：通用连接 Mixin 为 `*_module_frame.py`；串口模块在 `serialCom_module/` 子包；I2C 模块在 `IIC_Module/` 子包。
+- **串口热插拔**：`serialCom_module/serial_hotplug.py` 提供 `SerialPortHotplugMonitor` **模块级单例**（Windows `WM_DEVICECHANGE` 原生事件 + 600ms 去抖 + 后台 QThread 重扫，端口集合变化才广播 `ports_changed(list)`）。`SerialComMixin` 完整模式在 `complete_serialComWidget()` 尾部经 `_sc_start_port_hotplug()` 接入（`DEBUG_MOCK` 下不启用）；多页面共享同一单例，禁止各页面自建监控线程。串口列表条目格式统一 `"{device} - {description}"`，热插拔回调据此静默重建 `_sc_port_combo` 并保留当前选择。
 - **样式**：复用 [ui/styles/](../styles/) 常量；通用图标优先用 `resources/modules/SVG_Common/` 下 SVG，不新增位图。
 - **日志区**：使用 `ExecutionLogsFrame.wrap_with(main_content, show_progress=..., stretch=(4, 1))`；禁止直接 `layout.addWidget(self.execution_logs)`，禁止 `setMaximumHeight`。
 - **控件高度**：可复用控件（如 DarkComboBox）用自身 QSS ID 选择器钉死高度，不依赖父页面。

@@ -345,6 +345,7 @@ class SerialComMixin(ConnectionMixin, ToolbarMixin, LogPanelMixin, FilterSaveMix
 
         self._sc_load_persisted_state()
         self._sc_start_temp_log()
+        self._sc_start_port_hotplug()
 
     # --- toolbar ---
 

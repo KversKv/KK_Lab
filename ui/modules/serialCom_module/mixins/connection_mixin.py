@@ -26,6 +26,7 @@ from ui.modules.serialCom_module.widgets import (
     _SerialSearchButton,
     _update_serial_btn_state,
 )
+from ui.modules.serialCom_module.serial_hotplug import SerialPortHotplugMonitor
 from ui.modules.serialCom_module.serialCom_module_frame import (
     MODE_FULL,
     MODE_INLINE,
@@ -888,4 +889,61 @@ class ConnectionMixin:
             if last_port in self._sc_port_combo.itemText(i):
                 self._sc_port_combo.setCurrentIndex(i)
                 break
+
+    # --- 串口热插拔（Windows WM_DEVICECHANGE 自动感知） ---
+
+    @staticmethod
+    def _sc_port_name_of(text):
+        if not text or text.startswith("No serial"):
+            return ""
+        head = text.split(" - ")[0].strip()
+        return head.split()[0] if head else ""
+
+    def _sc_start_port_hotplug(self):
+        if DEBUG_MOCK:
+            return
+        if getattr(self, "_sc_hotplug_bound", False):
+            return
+        self._sc_hotplug_bound = True
+        monitor = SerialPortHotplugMonitor.instance()
+        monitor.ports_changed.connect(self._sc_on_hotplug_ports_changed)
+        monitor.start()
+
+    def _sc_on_hotplug_ports_changed(self, ports):
+        combo = getattr(self, "_sc_port_combo", None)
+        if combo is None:
+            return
+        ports = list(ports)
+        prev_texts = [combo.itemText(i) for i in range(combo.count())]
+        if prev_texts == ports:
+            return
+        current_port = self._sc_port_name_of(combo.currentText())
+        combo.clear()
+        if ports:
+            combo.addItems(ports)
+        else:
+            combo.addItem("No serial ports found")
+
+        restored = False
+        if current_port:
+            for i in range(combo.count()):
+                text = combo.itemText(i)
+                if text.startswith(current_port) or current_port in text:
+                    combo.setCurrentIndex(i)
+                    restored = True
+                    break
+        if not restored:
+            self._sc_try_restore_last_port()
+
+        prev_devices = {self._sc_port_name_of(t) for t in prev_texts} - {""}
+        new_devices = {self._sc_port_name_of(t) for t in ports} - {""}
+        for dev in sorted(new_devices - prev_devices):
+            self._sc_append_system(f"[INFO] Serial port added: {dev}", force_primary=True)
+        for dev in sorted(prev_devices - new_devices):
+            self._sc_append_system(f"[WARN] Serial port removed: {dev}", force_primary=True)
+            if dev == getattr(self, "_serial_port", None):
+                self._sc_append_system(
+                    f"[WARN] Connected port {dev} removed, connection may be broken",
+                    force_primary=True,
+                )
 

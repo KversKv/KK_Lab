@@ -343,6 +343,7 @@ ui/
 │       │   └── script_mixin.py         # 脚本编辑/运行/循环/超时/导入导出 (委托 core.serial_script)
 │       ├── serial_session.py           # 独立串口会话对象 (SerialSession)
 │       ├── serial_session_manager.py   # 多串口会话管理器 (SerialSessionManager)
+│       ├── serial_hotplug.py           # 串口热插拔监控单例 (WM_DEVICECHANGE 事件+后台重扫)
 │       ├── serial_chart_model.py       # RX 可视化数据模型 (ChartConfig/Rule/Series/FieldSpec)
 │       ├── serial_chart_parser.py      # RX 可视化规则引擎 (SerialChartParser/缓存)
 │       ├── serial_chart_controller.py  # RX 可视化控制器 (数据路由/派生曲线)
