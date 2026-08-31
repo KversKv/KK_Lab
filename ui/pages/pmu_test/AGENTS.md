@@ -44,3 +44,4 @@
 - 跨线程更新 UI 只走 Signal/Slot；Worker 禁 import QtWidgets。
 - 日志区用 `ExecutionLogsFrame.wrap_with`（见 ui/modules/AGENTS.md §6.4）。
 - 公共 Mixin / 样式改动需回归全部 6 个子页。
+- **GPADC 停止测试禁在 UI 线程 `thread.wait()`**（2026-08 实测卡死）：worker 收尾耗时不可控时主线程被无限期阻塞；且 UART 数据泵（`_on_uart_rx_data` 是主线程槽）随主线程一起断供，`_next_uart_log_line` 内层若不查 `stop_check` 会自旋到 deadline（120s）——两层叠加即"点停止无反应、窗口卡死"。修法：`_stop_test` 只 `request_stop()+quit()`，收尾交 `thread.finished → _on_test_thread_finished`（与 clk_test_ui 同范式）；所有 worker 侧等待循环（含内层 `_next_uart_log_line`、temp_consistency 的 30s 稳温 sleep）必须逐片检查 `stop_check`。

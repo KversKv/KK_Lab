@@ -1072,8 +1072,12 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             except queue.Empty:
                 break
 
-    def _next_uart_log_line(self, partial, deadline):
+    def _next_uart_log_line(self, partial, deadline, stop_check=None):
         while b"\n" not in partial:
+            # 停止请求必须穿透内层等待：主线程一旦阻塞，串口数据泵（主线程槽）即断供，
+            # 此循环会自旋到 deadline（默认 120s）且不查 stop_check，导致停止无响应、UI 卡死。
+            if stop_check and stop_check():
+                return partial, None
             remain = deadline - time.monotonic()
             if remain <= 0:
                 return partial, None
@@ -1113,7 +1117,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                     "请检查串口连接与 Search Keyword 是否匹配日志"
                 )
                 break
-            partial, line = self._next_uart_log_line(partial, deadline)
+            partial, line = self._next_uart_log_line(partial, deadline, stop_check=stop_check)
             if line is None:
                 continue
             value = parse_uart_gpadc_raw(line, keyword)
@@ -1508,7 +1512,8 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self._test_stop_requested = True
         if self.test_thread is not None and self.test_thread.isRunning():
             self.test_thread.quit()
-            self.test_thread.wait()
+        # 禁在 UI 线程 wait()：worker 收尾耗时不可控（UART 采集等待、仪器超时等），
+        # 无限期阻塞会卡死窗口；线程收尾由 thread.finished → _on_test_thread_finished 异步复位。
         self._append_log("[INFO] Stopping GPADC test...")
 
     def export_result(self):
@@ -2671,7 +2676,11 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                         if stable_count >= 3:
                             break
                     self._test_worker.log.emit(f"[INFO] Temp stabilizing: target={current_temp:.1f}, actual={actual_temp:.2f}")
-                    time.sleep(30)
+                    # 30s 轮询间隔切成 1s 片，保证停止请求可及时打断（日志节奏不变）
+                    for _ in range(30):
+                        if stop_check and stop_check():
+                            break
+                        time.sleep(1)
 
                 if stop_check and stop_check():
                     self._test_worker.log.emit("[INFO] Temp consistency test stopped by user.")
