@@ -125,6 +125,10 @@ a = Analysis(
     datas=[
         (os.path.join(PROJECT_ROOT, 'resources', 'icons'), os.path.join('resources', 'icons')),
         (os.path.join(PROJECT_ROOT, 'resources', 'modules'), os.path.join('resources', 'modules')),
+        # ui/modules/__init__.py 会连带 import execution_logs_module_frame,
+        # 其模块级 load_qss("log_splitter"/"log_frame") 依赖 ui/theme/qss/,
+        # 缺失则打包后启动即 FileNotFoundError (与 kk_lab.spec 保持一致)
+        (os.path.join(PROJECT_ROOT, 'ui', 'theme', 'qss'), os.path.join('ui', 'theme', 'qss')),
     ],
     hiddenimports=[
         'serial',

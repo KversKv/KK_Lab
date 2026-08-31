@@ -469,3 +469,15 @@ app.installEventFilter(_WinFilter())
 - `.trae/skills/` 与 `.agents/skills/` 下 60 个技能数据 CSV 仍被 git 追踪（**经确认保留现状**，避免破坏 ui-ux-pro-max 技能）；若未来被 DLP 重写加密，需评估 `git rm --cached` 停止追踪。
 - `tests/_report_smoke/` 每次跑 `tests/_smoke_report.py` 会重新生成 CSV——已被全局 `*.csv` 忽略兜底，不会再入库。
 - 需要给他人共享此类文件时走仓库外通道（网盘/IM），不要 `git add -f` 强推。
+
+## 33. 独立模块 spec 打包缺 `ui/theme/qss` → 启动即 `FileNotFoundError`
+
+**现象**：用 `spec/serialcom_module.spec` 打包独立串口窗口，EXE 启动即报 `FileNotFoundError: ...\_internal\ui\theme\qss\log_splitter.qss`，窗口打不开。
+
+**根因**：入口 `serialCom_module_frame.py` import `ui.modules.*` 时必先执行 [ui/modules/__init__.py](../../../ui/modules/__init__.py)，其顶部 `from ui.modules.execution_logs_module_frame import ExecutionLogsFrame`（try/except 只吞 `ImportError`）；该模块在**模块级**调 `load_qss("log_splitter") / load_qss("log_frame")` 读 `ui/theme/qss/`。qss 是数据文件，PyInstaller 不会自动收集；spec 的 `datas` 只打了 `resources/` 两目录，缺 `ui/theme/qss` 即崩。
+
+**规则**：
+
+- 任何独立模块 spec（入口落在 `ui/modules/**` 下）必须在 `datas` 打包整目录 `(ui/theme/qss → ui/theme/qss)`（覆盖 `log_splitter / log_frame / start_button` 等全部模块级 `load_qss`），与 [kk_lab.spec](../../../spec/kk_lab.spec) 保持一致。
+- `try/except ImportError` 防不住**模块级文件读取**的 `FileNotFoundError`——新增带模块级资源加载的模块时，独立 spec 同步核对 `datas`。
+- 参考修复：[serialcom_module.spec](../../../spec/serialcom_module.spec) `datas` 注释处（2026-08）。
