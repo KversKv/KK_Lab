@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox, QCheckBox, QFormLayout, QPlainTextEdit, QTableWidget,
     QTableWidgetItem, QHeaderView, QAbstractItemView, QColorDialog,
     QMessageBox, QFileDialog, QTabWidget, QWidget,
-    QStackedWidget, QToolButton,
+    QStackedWidget, QToolButton, QTextBrowser,
 )
 
 from log_config import get_logger
@@ -143,6 +143,10 @@ QTabBar::tab {
     border-top-left-radius: 5px; border-top-right-radius: 5px;
 }
 QTabBar::tab:selected { background-color: #1E293B; color: #E6EEF8; }
+QTextBrowser#chartHelpView {
+    background-color: #0F172A; border: 1px solid #1E293B; border-radius: 6px;
+    color: #C7D2E0; font-size: 12px; padding: 10px;
+}
 """
 
 
@@ -752,6 +756,153 @@ class _StatColumnsDialog(QDialog):
         return [m for m in STAT_METRICS if self._checks[m].isChecked()]
 
 
+_CHART_HELP_CSS = (
+    "h1 { color: #E6EEF8; font-size: 16px; }"
+    "h2 { color: #E6EEF8; font-size: 15px; }"
+    "h3 { color: #5EEAD4; font-size: 13px; }"
+    "p, li, td { color: #C7D2E0; }"
+    "th { background-color: #111c2e; color: #93A4BC; }"
+    "code { font-family: Consolas; color: #5EEAD4; }"
+    "pre { font-family: Consolas; color: #7DD3C0; background-color: #0B1220; }"
+)
+
+_CHART_HELP_HTML = r"""<h2>一、核心概念：Rule → Field → Series</h2>
+<p>数据从「串口 RX 文本」到「图上的一条曲线」要经过三层，本窗口左右两栏正对应其中两层：</p>
+<table border="1" cellspacing="0" cellpadding="4" style="border-color:#1E293B;">
+<tr><th>层</th><th>作用</th><th>一句话</th></tr>
+<tr><td><b>Rule（规则）</b></td><td>从每行 RX 文本里抓出数值</td><td>怎么取数据</td></tr>
+<tr><td><b>Field（字段）</b></td><td>规则里抓出的每个量</td><td>取到的是什么量</td></tr>
+<tr><td><b>Series（曲线）</b></td><td>把某个字段画成一条线</td><td>怎么画</td></tr>
+</table>
+<p>一条 Rule 可产出多个 Field；每个 Field 可被一条或多条 Series 引用。想画几条线，就建几个 Series（或用 Group by 自动拆线）。</p>
+
+<h2>二、快速上手（五步）</h2>
+<ol>
+<li>串口连接并收到日志后，从串口模块顶部工具栏打开 Chart 窗口；数据边收边画，无需重启采集。</li>
+<li>左侧 Rules 栏点 <b>+</b> 新建规则：Match mode 选 <code>regex</code>，在 Regex 框用<b>命名组</b> <code>(?P&lt;字段名&gt;...)</code> 写提取表达式。</li>
+<li>在 Preview 框粘贴一行真实日志，确认下方解析出期望字段后点 OK 保存。</li>
+<li>右侧 Series 栏点 <b>+</b> 新建曲线：选择 Rule 与 Field，按需设置 Group by / Channels / Color / Y axis。</li>
+<li>回到中间 Plot 页查看实时曲线；点 <b>Export CFG</b> 保存配置，下次 <b>Import CFG</b> 直接复用。</li>
+</ol>
+
+<h2>三、典型案例</h2>
+
+<h3>案例 1：单值监控（KEY=VALUE，最常见）</h3>
+<p>日志：</p>
+<pre>VBAT=3.812</pre>
+<p>Rule（或直接用 Preset → KEY=FLOAT → Apply）：</p>
+<pre>(?P&lt;key&gt;[A-Za-z_][\w-]*)\s*[=:]\s*(?P&lt;value&gt;[+-]?\d+(?:\.\d+)?)</pre>
+<p>Series：Field 选 <code>value</code>，Group by 选 <code>key</code>，即可让 VBAT、temperature 等各成一条线。</p>
+
+<h3>案例 2：多通道曲线（capsensor cap_data）</h3>
+<p>日志（每通道一行，含十六进制原始值与浮点值）：</p>
+<pre>     20/     1113/I/NONE  / 25E | cap_data:0     1175b0     4.903272</pre>
+<p>Rule（channel 是保留组名，自动作为通道）：</p>
+<pre>cap_data:(?P&lt;channel&gt;\d+)\s+(?P&lt;raw&gt;[0-9a-fA-F]+)\s+(?P&lt;value&gt;[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)</pre>
+<p>Fields：<code>channel</code>=int；<code>raw</code>=string（无 0x 前缀的十六进制，用 string 避免被当十进制截断）；<code>value</code>=float。</p>
+<p>Series：Field 选 <code>value</code>，Group by 选 <code>channel</code>，5 个通道自动拆成 5 条不同颜色的线（图例 cap_data 0 ~ cap_data 4）。</p>
+<p>要点：</p>
+<ul>
+<li><code>channel</code> 是「角色名」而非字面词：日志里写 ch=、channel:、case 均可，只要把代表通道的那段写成 <code>(?P&lt;channel&gt;...)</code>，引擎就按通道分组。</li>
+<li>通道间量纲差异大时：Channels 填白名单（如 <code>0,1</code>）只画关心的通道；Channel display 选 split_axis（左右双轴交替）或 split（每通道独立子图）。</li>
+<li>按固定周期采样、想以采样序号为 X 轴时，把 Rule 的 Timestamp 改为 sequence_index。</li>
+</ul>
+
+<h3>案例 3：一行提取多个字段</h3>
+<p>日志：</p>
+<pre>Exit gpadc_continue_get_volt(), ch=0, cnt=10000, Vmin/max=[947, 950]</pre>
+<p>Rule：</p>
+<pre>ch=(?P&lt;channel&gt;\d+),\s*cnt=\d+,\s*Vmin/max=\[(?P&lt;vmin&gt;\d+),\s*(?P&lt;vmax&gt;\d+)\]</pre>
+<p>Fields：vmin=int (mV)、vmax=int (mV)；建两条 Series 分别绑 vmin / vmax，Group by=channel，即可得到每通道的 Vmin、Vmax 两条线。</p>
+
+<h3>案例 4：PASS/FAIL 结果与枚举状态</h3>
+<p>日志：</p>
+<pre>result: PASS
+STATE=CHARGING</pre>
+<ul>
+<li>PASS/FAIL：Rule 用 Preset → PASS/FAIL；Field 类型选 <code>pass_fail</code>，PASS/OK 自动映射为 1、FAIL/NG 映射为 0，在图上看 0/1 跳变。</li>
+<li>枚举状态：Field 类型选 <code>enum</code>，Enum map 填 <code>IDLE=0, CHARGING=1, DONE=2</code>，字符串映射成数值绘制。</li>
+</ul>
+
+<h3>案例 5：派生曲线（差值 / 滑动平均 / 命中率）</h3>
+<p>Series 的 Source type 选 <code>derived</code>，对已有曲线做运算：</p>
+<ul>
+<li>电压抖动 Vmax - Vmin：Operation=subtract，Source A=Vmax，Source B=Vmin。</li>
+<li>滑动平均：Operation=rolling_avg，选 Source A 与 Window N。</li>
+<li>命中率：Operation=rolling_rate，统计最近 N 点中等于 Match value 的比例。</li>
+</ul>
+
+<h2>四、规则速查</h2>
+
+<h3>Match mode（匹配方式）</h3>
+<table border="1" cellspacing="0" cellpadding="4" style="border-color:#1E293B;">
+<tr><th>模式</th><th>用途</th></tr>
+<tr><td><code>regex</code></td><td>正则命名组提取，最常用、最灵活</td></tr>
+<tr><td><code>prefix_suffix</code></td><td>取 Keyword before / after 之间的内容作为 value</td></tr>
+<tr><td><code>contains</code></td><td>仅判断是否包含关键字</td></tr>
+<tr><td><code>frame</code></td><td>跨多行帧：帧起始 / 结束关键字内整帧文本再走 Regex（上限 64 行 / 64KB / 5s）</td></tr>
+<tr><td><code>custom_enum</code></td><td>正则提取 + enum 枚举映射</td></tr>
+</table>
+
+<h3>Group by（分组拆线）</h3>
+<table border="1" cellspacing="0" cellpadding="4" style="border-color:#1E293B;">
+<tr><th>选项</th><th>拆分依据</th></tr>
+<tr><td><code>none</code></td><td>不拆分，全部数据一条线</td></tr>
+<tr><td><code>channel</code></td><td>按命名组 channel 的值拆（每通道一线），配合 Channels 白名单与 Channel display</td></tr>
+<tr><td><code>key</code></td><td>按命名组 key 的值拆（适合 KEY=VALUE 多变量）</td></tr>
+<tr><td><code>session</code></td><td>按数据来源会话拆</td></tr>
+</table>
+
+<h3>其它常用项</h3>
+<ul>
+<li><b>Input mode</b>：line=按文本行（最常用）；bytes_hex / bytes_raw=按原始字节流匹配。</li>
+<li><b>Emit policy</b>：each_match=一行内每个匹配都出点；first_match / last_match_per_line=只取首个 / 最后一个。</li>
+<li><b>Timestamp</b>：rx_time=按接收时间；sequence_index=按命中序号递增。</li>
+<li><b>Chart type</b>：line / scatter / step；量纲差异大的曲线可分设 left / right 双 Y 轴。</li>
+<li><b>Max points / Time window</b>：限制每条线保留点数 / 时间窗，防内存膨胀（修改会重置该曲线缓冲）。</li>
+<li><b>统计面板</b>：图表区右上角可拖动悬浮面板，实时显示 Count / Mean / Max / Min / Std 等，顶部 Stats 按钮可隐藏。</li>
+</ul>
+
+<h2>五、小贴士</h2>
+<ul>
+<li>先在 Preview 粘贴真实日志验证解析，再保存规则。</li>
+<li>正则必须用命名组 (?P&lt;name&gt;...)，匿名组只会回退成 value 字段。</li>
+<li>Pause 仅暂停绘制刷新，缓冲仍继续接收不丢数据；Clear 清空全部缓冲与统计。</li>
+<li>完整文档见 ui/modules/serialCom_module/chartVisualization.md。</li>
+</ul>
+"""
+
+
+class _ChartHelpDialog(QDialog):
+    """Chart 实时绘图使用帮助：核心概念 / 快速上手 / 典型案例 / 规则速查。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("scChartEditor")
+        self.setWindowTitle("Chart Help")
+        self.setMinimumSize(780, 640)
+        _styled_dialog(self)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(10)
+
+        browser = QTextBrowser()
+        browser.setObjectName("chartHelpView")
+        browser.document().setDefaultStyleSheet(_CHART_HELP_CSS)
+        browser.setHtml(_CHART_HELP_HTML)
+        root.addWidget(browser, 1)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        close_btn = QPushButton("Close")
+        close_btn.setAutoDefault(False)
+        close_btn.setDefault(False)
+        close_btn.clicked.connect(self.accept)
+        btn_row.addWidget(close_btn)
+        root.addLayout(btn_row)
+
+
 class SerialChartDialog(QDialog):
     def __init__(self, parent=None, config: ChartConfig = None, on_config_changed=None):
         super().__init__(parent)
@@ -866,6 +1017,11 @@ class SerialChartDialog(QDialog):
         export_cfg.setAutoDefault(False)
         export_cfg.clicked.connect(self._on_export_config)
         row.addWidget(export_cfg)
+
+        help_btn = QPushButton("Help")
+        help_btn.setAutoDefault(False)
+        help_btn.clicked.connect(self._show_help)
+        row.addWidget(help_btn)
 
         return row
 
@@ -1601,6 +1757,10 @@ class SerialChartDialog(QDialog):
         self._config.max_points_default = new_cfg.max_points_default
         self._on_clear()
         self._commit_config()
+
+    def _show_help(self):
+        dlg = _ChartHelpDialog(self)
+        dlg.exec()
 
     def showEvent(self, event):
         super().showEvent(event)
