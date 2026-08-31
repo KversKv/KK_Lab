@@ -1,7 +1,7 @@
 {
   "version": "2.0",
   "serial": {
-    "port": "COM5 - USB Serial Port (COM5)",
+    "port": "COM6 - USB Serial Port (COM6)",
     "baudrate": "1152000",
     "auto_detect": false,
     "databits": "8",
@@ -136,8 +136,8 @@
   },
   "chart": {
     "enabled": true,
-    "capture_when_dialog_closed": false,
-    "max_points_default": 20000,
+    "capture_when_dialog_closed": true,
+    "max_points_default": 5000,
     "stat_metrics": [
       "count",
       "mean",
@@ -147,47 +147,63 @@
     ],
     "rules": [
       {
-        "rule_id": "rule_gpadcvolt",
-        "name": "gpadc_volt",
+        "rule_id": "rule_cap_data",
+        "name": "cap_data",
         "enabled": true,
         "source_session": "active",
         "input_mode": "line",
         "match_mode": "regex",
         "keyword_before": "",
         "keyword_after": "",
-        "regex": "ch=(?P<channel>\\d+)\\s+i=(?P<seq>\\d+)\\s+volt=(?P<volt>\\d+)",
+        "regex": "cap_data:(?P<channel>\\d+)\\s+(?P<raw>[0-9a-fA-F]+)\\s+(?P<value>[+-]?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?)",
         "case_sensitive": false,
         "field_specs": [
           {
-            "name": "volt",
+            "name": "channel",
             "type": "int",
-            "unit": "mV",
+            "unit": "",
+            "group": "",
+            "enum_map": {},
+            "pass_fail_map": {}
+          },
+          {
+            "name": "raw",
+            "type": "string",
+            "unit": "",
+            "group": "",
+            "enum_map": {},
+            "pass_fail_map": {}
+          },
+          {
+            "name": "value",
+            "type": "float",
+            "unit": "",
             "group": "",
             "enum_map": {},
             "pass_fail_map": {}
           }
         ],
         "emit_policy": "each_match",
-        "timestamp_mode": "sequence_index",
+        "timestamp_mode": "rx_time",
         "frame_start": "",
         "frame_end": ""
       }
     ],
     "series": [
       {
-        "series_id": "series_gpadcvolt",
-        "name": "volt",
+        "series_id": "series_cap_data",
+        "name": "cap_data",
         "enabled": true,
         "source_type": "field",
-        "rule_id": "rule_gpadcvolt",
-        "field_name": "volt",
+        "rule_id": "rule_cap_data",
+        "field_name": "value",
         "group_by": "channel",
-        "channels": "0, 1,2",
-        "channel_display": "split",
+        "channels": "",
+        "channel_display": "merged",
         "chart_type": "line",
         "axis": "left",
         "color": "#15d1a3",
-        "max_points": 20000,
+        "max_points": 5000,
         "time_window_s": 0.0,
         "operation": "add",
         "source_a": "",
@@ -199,8 +215,8 @@
     ]
   },
   "window": {
-    "x": 1430,
-    "y": 298,
+    "x": 71,
+    "y": 312,
     "width": 1592,
     "height": 969,
     "maximized": false
