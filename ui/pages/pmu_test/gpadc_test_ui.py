@@ -72,6 +72,8 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
     # 测试结束 → AI 异步动作回灌续跑（与 Orchestrator 同契约，§4 / S3-2）。
     # MainWindow._ai_on_sequence_finished_resume 监听本信号，回灌 pending 任务。
     sequence_execution_finished = Signal(bool, str)
+    # worker 线程 → 主线程的系统状态栏更新通道（见 set_system_status 重写）
+    system_status_requested = Signal(str, bool)
 
     TEST_1000CNT = "1000CNT TEST"
     TEST_FORCE_VOLTAGE = "Force Voltage Test"
@@ -88,6 +90,10 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         "#a78bfa", "#34d399", "#fb923c", "#60a5fa",
     ]
 
+    # 扫描响应保护：电压扫描前 N 点 Raw 均值极差（LSB）低于阈值或无净增量 → 判定 DUT 无响应
+    _SWEEP_GUARD_POINTS = 3
+    _SWEEP_GUARD_MIN_SPREAD_LSB = 2
+
     INSTRUMENT_MAP = {
         TEST_1000CNT: [],
         TEST_FORCE_VOLTAGE: ["n6705c"],
@@ -100,6 +106,9 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
 
         self._instrument_manager = instrument_manager
         self._ui_action_registry = ui_action_registry
+        # 状态栏跨线程更新通道：worker 线程的 set_system_status 经此队列化回主线程
+        self._gui_thread = QThread.currentThread()
+        self.system_status_requested.connect(self._apply_system_status)
         self.init_n6705c_connection(n6705c_top, instrument_manager=instrument_manager)
         self.init_chamber_connection(instrument_manager=instrument_manager)
         self.init_serial_connection(mode=MODE_FULL, prefix="DUT")
@@ -270,12 +279,21 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 border: 1px solid {Colors.info};
             }}
 
+            /* 手柄与 log_splitter.qss 同规范：默认透明，悬停/拖拽才显色反馈 */
             QSplitter#recent_curve_splitter::handle {{
-                background-color: {Colors.border_primary};
+                background-color: transparent;
             }}
 
             QSplitter#recent_curve_splitter::handle:horizontal {{
                 width: 2px;
+            }}
+
+            QSplitter#recent_curve_splitter::handle:horizontal:hover {{
+                background-color: #18284d;
+            }}
+
+            QSplitter#recent_curve_splitter::handle:horizontal:pressed {{
+                background-color: #5b7cff;
             }}
 
             QRadioButton {{
@@ -559,7 +577,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         page_layout.addLayout(header_layout)
 
         body_layout = QHBoxLayout()
-        body_layout.setSpacing(12)
+        body_layout.setSpacing(8)
 
         # 左侧滚动区
         left_wrapper = QVBoxLayout()
@@ -571,8 +589,8 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self.left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.left_scroll.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
-        self.left_scroll.setMinimumWidth(320)
-        self.left_scroll.setMaximumWidth(320)
+        self.left_scroll.setMinimumWidth(310)
+        self.left_scroll.setMaximumWidth(310)
 
         left_content = QFrame()
         left_content.setObjectName("left_scroll_content")
@@ -581,7 +599,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         left_content.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
 
         left_col = QVBoxLayout(left_content)
-        left_col.setContentsMargins(0, 0, 6, 0)
+        left_col.setContentsMargins(0, 0, 2, 0)
         left_col.setSpacing(12)
 
         # Test Item (下拉菜单)
@@ -881,6 +899,10 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
 
         self.start_test_btn = QPushButton("▶ START TEST")
         self.start_test_btn.setObjectName("primaryStartBtn")
+        # 宽度与上方面板可见宽对齐（左列内容宽 - 列右边距），防止长文本撑开左列
+        self.start_test_btn.setMaximumWidth(
+            left_content.maximumWidth() - left_col.contentsMargins().right()
+        )
         left_wrapper.addWidget(self.start_test_btn)
 
         self.stop_test_btn = QPushButton("■")
@@ -1183,8 +1205,8 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self.temp_hint_label.hide()
             self.voltage_channel_label.hide()
             self.voltage_channel.hide()
-            self.start_test_btn.setText("▶ START 1000CNT TEST")
-            self._start_btn_text = "▶ START 1000CNT TEST"
+            self.start_test_btn.setText("▶ START TEST")
+            self._start_btn_text = "▶ START TEST"
         elif test_item == self.TEST_FORCE_VOLTAGE:
             self.params_mode_label.setText("VOLTAGE SWEEP")
             self.voltage_params_frame.show()
@@ -1192,8 +1214,8 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self.temp_hint_label.hide()
             self.voltage_channel_label.show()
             self.voltage_channel.show()
-            self.start_test_btn.setText("▶ START VOLT TEST")
-            self._start_btn_text = "▶ START VOLT TEST"
+            self.start_test_btn.setText("▶ START TEST")
+            self._start_btn_text = "▶ START TEST"
         elif test_item == self.TEST_HIGH_LOW_TEMP:
             self.params_mode_label.setText("TEMPERATURE SWEEP")
             self.voltage_params_frame.hide()
@@ -1201,8 +1223,8 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self.temp_hint_label.show()
             self.voltage_channel_label.show()
             self.voltage_channel.show()
-            self.start_test_btn.setText("▶ START TEMP TEST")
-            self._start_btn_text = "▶ START TEMP TEST"
+            self.start_test_btn.setText("▶ START TEST")
+            self._start_btn_text = "▶ START TEST"
         else:
             self.params_mode_label.setText("VOLTAGE + TEMPERATURE")
             self.voltage_params_frame.show()
@@ -1210,8 +1232,8 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self.temp_hint_label.show()
             self.voltage_channel_label.show()
             self.voltage_channel.show()
-            self.start_test_btn.setText("▶ START CONSISTENCY TEST")
-            self._start_btn_text = "▶ START CONSISTENCY TEST"
+            self.start_test_btn.setText("▶ START TEST")
+            self._start_btn_text = "▶ START TEST"
 
         # 校准点仅在线性度类测试项生效；温度扫描时 x 轴为温度，单位随动
         self.calib_params_frame.setVisible(not is_cnt_test)
@@ -2265,6 +2287,22 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
     def set_progress(self, value: int):
         self.execution_logs.set_progress(value)
 
+    def set_system_status(self, status, is_error=False):
+        """线程安全重写：非 GUI 线程调用时经信号队列化回主线程再操作 QWidget。
+
+        Mixin 原实现直接 setText/setObjectName/unpolish/polish，从 worker 线程
+        调用会破坏 Qt 线程亲和性，实测触发 SIGABRT 使整个进程崩溃
+        （Force Voltage 响应保护路径即因此崩过）；主线程调用行为不变。
+        """
+        if QThread.currentThread() is not self._gui_thread:
+            self.system_status_requested.emit(status, bool(is_error))
+            return
+        super().set_system_status(status, is_error)
+
+    def _apply_system_status(self, status, is_error=False):
+        """system_status_requested 的主线程槽：直连 Mixin 原实现（不重入路由判断）。"""
+        super().set_system_status(status, is_error)
+
     def update_instrument_info(self, instrument_info):
         if self.is_connected:
             self.set_system_status("● Connected")
@@ -2313,6 +2351,32 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 progress_callback(int((i + 1) * 100 / get_reg_cnt))
 
         return compute_reg_stats(raw_data, return_raw=return_raw)
+
+    def _check_sweep_response(self, voltage_data, adc_mean):
+        """扫描响应保护：电压上升时前 N 点 Raw 均值应随之明显变化。
+
+        返回 None 表示响应正常；返回字符串为告警原因（调用方据此中止测试）：
+        - 极差 < 阈值：Raw 几乎不变（读数卡死 / 电压未施加 / 通道错误）
+        - 净变化 <= 0：电压上升但 Raw 无净增量（方向异常 / DUT 无响应）
+        """
+        n = self._SWEEP_GUARD_POINTS
+        if len(adc_mean) < n or len(voltage_data) < n:
+            # 扫描点数不足（极小范围配置），不做判定
+            return None
+        head_v = voltage_data[:n]
+        head_m = adc_mean[:n]
+        spread = max(head_m) - min(head_m)
+        net = head_m[-1] - head_m[0]
+        detail = (
+            f"前{n}点 V={[f'{v:.3f}' for v in head_v]}, "
+            f"RawMean={[f'{m:.1f}' for m in head_m]}, "
+            f"极差={spread:.1f} LSB, 净变化={net:+.1f} LSB"
+        )
+        if head_v[-1] > head_v[0] and net <= 0:
+            return f"电压上升但 Raw 均值无净增量（疑似通道/地址/接线错误）。{detail}"
+        if spread < self._SWEEP_GUARD_MIN_SPREAD_LSB:
+            return f"Raw 均值几乎不随电压变化（疑似 DUT 无响应或电压未施加）。{detail}"
+        return None
 
     def gpadc_force_voltage_test(
         self,
@@ -2377,6 +2441,15 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             adc_mean.append(avg)
             adc_min.append(min_val)
             adc_max.append(max_val)
+
+            # 响应保护：前 N 点 Raw 均值接近或方向异常 → 判定 DUT 无响应，中止测试
+            if len(adc_mean) == self._SWEEP_GUARD_POINTS:
+                guard_reason = self._check_sweep_response(voltage_data, adc_mean)
+                if guard_reason is not None:
+                    self._test_worker.log.emit(f"[WARN] GPADC response guard: {guard_reason}")
+                    self._test_worker.log.emit("[WARN] Force voltage test 已中止，请检查 DUT 供电/接线/通道与采集配置")
+                    self.set_system_status("警告: GPADC 无响应，测试已提前中止")
+                    return None
 
             current_voltage = round(current_voltage + voltage_step, 6)
             point_idx += 1

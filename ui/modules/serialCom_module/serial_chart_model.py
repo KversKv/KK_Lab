@@ -7,7 +7,7 @@ from log_config import get_logger
 logger = get_logger(__name__)
 
 
-CHART_MAX_POINTS_DEFAULT = 5000
+CHART_MAX_POINTS_DEFAULT = 50000
 CHART_LINE_MAX_LEN = 4096
 CHART_FRAME_MAX_LINES = 64
 CHART_FRAME_MAX_BYTES = 64 * 1024
