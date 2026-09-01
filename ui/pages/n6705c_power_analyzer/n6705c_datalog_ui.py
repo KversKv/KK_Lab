@@ -4149,11 +4149,8 @@ class N6705CDatalogUI(QWidget):
             return self._default_window_geometry()
 
         available = self._screen_available_geometry_for(saved.center())
-        margin = self._WINDOW_MARGIN
-        max_w = max(1, available.width() - margin)
-        max_h = max(1, available.height() - margin)
-        width = min(saved.width(), max_w)
-        height = min(saved.height(), max_h)
+        width = min(saved.width(), available.width())
+        height = min(saved.height(), available.height())
 
         x = min(max(saved.x(), available.x()), available.right() - width + 1)
         y = min(max(saved.y(), available.y()), available.bottom() - height + 1)

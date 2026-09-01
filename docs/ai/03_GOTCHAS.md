@@ -478,6 +478,6 @@ app.installEventFilter(_WinFilter())
 
 **规则**：
 
-- 任何独立模块 spec（入口落在 `ui/modules/**` 下）必须在 `datas` 打包整目录 `(ui/theme/qss → ui/theme/qss)`（覆盖 `log_splitter / log_frame / start_button` 等全部模块级 `load_qss`），与 [kk_lab.spec](../../../spec/kk_lab.spec) 保持一致。
+- 任何独立 spec（入口落在 `ui/modules/**` 或 `ui/pages/**` 下，如 `serialcom_module.spec` / `n6705c_datalog.spec`）必须在 `datas` 打包整目录 `(ui/theme/qss → ui/theme/qss)`（覆盖 `log_splitter / log_frame / start_button` 等全部模块级 `load_qss`），与 [kk_lab.spec](../../../spec/kk_lab.spec) 保持一致。`ui/pages/**` 入口经 `ui.styles` → `ui.widgets.start_sequence` 同样触发模块级 `load_qss("start_button")`（2026-09 n6705c_datalog 复发）。
 - `try/except ImportError` 防不住**模块级文件读取**的 `FileNotFoundError`——新增带模块级资源加载的模块时，独立 spec 同步核对 `datas`。
-- 参考修复：[serialcom_module.spec](../../../spec/serialcom_module.spec) `datas` 注释处（2026-08）。
+- 参考修复：[serialcom_module.spec](../../../spec/serialcom_module.spec) `datas` 注释处（2026-08）；[n6705c_datalog.spec](../../../spec/n6705c_datalog.spec)（2026-09）。

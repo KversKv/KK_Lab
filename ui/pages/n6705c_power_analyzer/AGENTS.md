@@ -30,5 +30,6 @@
 ## 局部坑点
 
 - **§25 Tab 盒模型坑**：见上"局部约定"第一条，是本页踩过的真实坑。
+- **窗口几何恢复禁按 margin 压尺寸**：`_clamped_window_geometry` 只允许"超出可用区域才截断"（`min(saved, available)`）；若按 `可用宽-40` 预留 margin，Windows 吸附 1/2 屏（宽=整屏）后重开会被压小，150% DPI 下右侧出现 60 物理 px 空白。`_WINDOW_MARGIN` 仅用于默认窗口尺寸。
 - Datalog 导出是二进制+CSV 混合，**不要重复造解析轮子**，用 instruments 层 datalog_process。
 - 波形单位事实源在 `n6705c_datalog_process.py`（`parse_channel_label` 等），勿在 UI 另写推断。

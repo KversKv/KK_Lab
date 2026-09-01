@@ -29,6 +29,10 @@ a = Analysis(
             os.path.join(PROJECT_ROOT, 'resources', 'pages', 'n6705c_power_analyzer_SVGs'),
             os.path.join('resources', 'pages', 'n6705c_power_analyzer_SVGs'),
         ),
+        # ui/styles/__init__.py 连带 import ui.widgets.start_sequence,
+        # 其模块级 load_qss("start_button") 依赖 ui/theme/qss/,
+        # 缺失则打包后启动即 FileNotFoundError (与 kk_lab.spec 保持一致)
+        (os.path.join(PROJECT_ROOT, 'ui', 'theme', 'qss'), os.path.join('ui', 'theme', 'qss')),
     ],
     hiddenimports=[
         'pyvisa',
