@@ -21,11 +21,14 @@ from PySide6.QtWidgets import (
 
 from ui.ai.ai_panel_button import AIPanelButton
 from ui.resource_path import get_resource_base
-from ui.utils.icon_utils import tinted_svg_pixmap
+from ui.utils.icon_utils import tinted_svg_icon, tinted_svg_pixmap
 
 _TITLE_BAR_HEIGHT = 32
 
 _APP_ICON_SVG = os.path.join(get_resource_base(), "resources", "icons", "kk_lab.svg")
+_COMPACT_ICON_SVG = os.path.join(
+    get_resource_base(), "resources", "icons_svg", "window", "compact_view.svg"
+)
 
 _BAR_STYLE = """
 QWidget#appTopBar {
@@ -42,6 +45,22 @@ QLabel#appTitleText {
     letter-spacing: 1px;
     background: transparent;
     border: none;
+}
+QPushButton#compactViewBtn {
+    min-width: 28px;
+    max-width: 28px;
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0px;
+    border: none;
+    border-radius: 6px;
+    background-color: transparent;
+}
+QPushButton#compactViewBtn:hover {
+    background-color: #1b2640;
+}
+QPushButton#compactViewBtn:checked {
+    background-color: #2563eb;
 }
 QPushButton#winCtrlBtn,
 QPushButton#winCloseBtn {
@@ -134,6 +153,11 @@ class AppTopBar(QWidget):
         self._title_label.setObjectName("appTitleText")
         layout.addWidget(self._title_label, 0, Qt.AlignVCenter)
 
+        # 紧凑视图切换按钮：仅 N6705C Analyser 页显示（MainWindow 控制可见性），
+        # 默认隐藏。checked = 最小视图（仅 Quick Setup）。
+        self.compact_view_button = self._make_compact_view_button()
+        layout.addWidget(self.compact_view_button, 0, Qt.AlignVCenter)
+
         layout.addStretch(1)
 
         self.ai_panel_button = AIPanelButton(self)
@@ -151,11 +175,25 @@ class AppTopBar(QWidget):
         layout.addWidget(self._close_btn, 0, Qt.AlignVCenter)
 
         self._interactive_widgets = [
+            self.compact_view_button,
             self.ai_panel_button,
             self._min_btn,
             self._max_btn,
             self._close_btn,
         ]
+
+    def _make_compact_view_button(self):
+        btn = QPushButton(self)
+        btn.setObjectName("compactViewBtn")
+        btn.setCheckable(True)
+        btn.setCursor(QCursor(Qt.PointingHandCursor))
+        btn.setFocusPolicy(Qt.NoFocus)
+        btn.setToolTip("最小视图（仅 Quick Setup）")
+        if os.path.isfile(_COMPACT_ICON_SVG):
+            btn.setIcon(tinted_svg_icon(_COMPACT_ICON_SVG, "#c6d4f2", 16))
+            btn.setIconSize(QSize(16, 16))
+        btn.setVisible(False)
+        return btn
 
     def _make_caption_button(self, object_name, kind, tooltip, slot):
         btn = QPushButton(self)

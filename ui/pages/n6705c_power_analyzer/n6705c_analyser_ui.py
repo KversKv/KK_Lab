@@ -458,6 +458,21 @@ class N6705CAnalyserUI(QWidget, SettingViewMixin, BatchViewMixin, ConsumptionVie
 
         main_layout.addStretch()
 
+    def set_compact_mode(self, compact: bool):
+        """紧凑（最小）视图：仅显示 Quick Setup 面板，隐藏其余区块。
+
+        由主窗口顶栏按钮触发；进入时若 Quick Setup 处于收起状态则自动展开。
+        """
+        for widget in (
+            self.top_bar,
+            self.channel_interaction_frame,
+            self.consumption_test_panel,
+        ):
+            if widget is not None:
+                widget.setVisible(not compact)
+        if compact and self.batch_collapsed:
+            self._toggle_batch_panel()
+
     def _create_top_bar(self):
         top_frame = QFrame()
         top_frame.setStyleSheet(f"""

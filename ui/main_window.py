@@ -130,6 +130,9 @@ from debug_config import DEBUG_MOCK
 
 logger = get_logger(__name__)
 
+# 紧凑（最小）视图窗口尺寸：仅容纳 Quick Setup 面板（双设备列宽 ~950 + 页边距）
+_COMPACT_VIEW_SIZE = (1000, 460)
+
 
 def _ai_caps(page) -> set[str]:
     """安全获取页面的 AI 能力集（未实现 ai_capabilities 返回空集）。
@@ -370,6 +373,10 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.pmu_1860_ui = None
         self.current_instrument_ui = None
         self._page_switch_geometry = None
+        # 紧凑（最小）视图状态：True = 仅 Quick Setup 小窗
+        self._compact_view = False
+        self._pre_compact_state = None
+        self._compact_ai_was_open = False
         self.channels = []
 
         self.nav = NavController(self)
@@ -566,7 +573,11 @@ class MainWindow(CleanupMixin, QMainWindow):
         self.main_splitter = main_splitter
 
         self.top_bar = AppTopBar(self)
+        self.top_bar.compact_view_button.toggled.connect(self._on_compact_view_toggled)
         self.main_layout.addWidget(self.top_bar)
+        # 默认首页（N6705C）装载早于 top_bar 创建，_fade_in_widget 时
+        # top_bar 尚不存在会跳过同步，此处补一次让缩略按钮正确显示
+        self._sync_compact_view_button()
 
         self._setup_ai_panel(main_splitter)
 
@@ -1711,6 +1722,7 @@ class MainWindow(CleanupMixin, QMainWindow):
                 self.ai_panel.on_page_changed()
         if widget is None:
             return
+        self._sync_compact_view_button()
         effect = QGraphicsOpacityEffect(widget)
         widget.setGraphicsEffect(effect)
         effect.setOpacity(0.0)
@@ -1731,6 +1743,77 @@ class MainWindow(CleanupMixin, QMainWindow):
         if self.isMaximized() or self.isFullScreen():
             return
         self.setGeometry(geometry)
+
+    def _sync_compact_view_button(self):
+        """紧凑视图按钮仅在 N6705C Analyser 页可见；切离该页时自动退出紧凑态。"""
+        top_bar = getattr(self, "top_bar", None)
+        if top_bar is None:
+            return
+        btn = top_bar.compact_view_button
+        btn.setVisible(self.current_instrument_ui == "power_analyser")
+        if not btn.isVisible() and btn.isChecked():
+            btn.setChecked(False)
+
+    def _on_compact_view_toggled(self, checked):
+        if checked == self._compact_view:
+            return
+        self._compact_view = checked
+        page = self.n6705c_analyser_ui
+        if checked:
+            # 记忆原窗口状态（是否最大化 + geometry），退出时还原
+            self._pre_compact_state = (self.isMaximized(), self.saveGeometry())
+            self.left_nav.setVisible(False)
+            self._compact_ai_was_open = False
+            ai_btn = getattr(self.top_bar, "ai_panel_button", None)
+            if ai_btn is not None and ai_btn.isChecked():
+                self._compact_ai_was_open = True
+                ai_btn.setChecked(False)
+            if page is not None:
+                page.set_compact_mode(True)
+            if self.isMaximized():
+                self.showNormal()
+            # 直接 resize 会被旧布局 minimum（≈原窗口高）顶回（缓存要等
+            # posted 布局事件才刷新），先 setFixedSize 钉住过渡尺寸；
+            # 布局缓存刷新后按内容 hint 二次自适应（_fit_compact_size），
+            # 消除固定高度多出的底部空白。
+            self.setFixedSize(*_COMPACT_VIEW_SIZE)
+            QTimer.singleShot(80, self._fit_compact_size)
+        else:
+            if page is not None:
+                page.set_compact_mode(False)
+            self.left_nav.setVisible(True)
+            # 解除紧凑视图的固定尺寸约束（QWIDGETSIZE_MAX = 16777215）
+            self.setMinimumSize(0, 0)
+            self.setMaximumSize(16777215, 16777215)
+            # 紧凑还原的 geometry 优先于切页时的 geometry 记忆
+            # （紧凑态下切页会在 _hide_all_instrument_uis 记录紧凑尺寸）
+            self._page_switch_geometry = None
+            maximized, geometry = self._pre_compact_state or (False, None)
+            if geometry is not None:
+                self.restoreGeometry(geometry)
+            if maximized:
+                self.showMaximized()
+            if self._compact_ai_was_open:
+                ai_btn = getattr(self.top_bar, "ai_panel_button", None)
+                if ai_btn is not None:
+                    ai_btn.setChecked(True)
+            self._compact_ai_was_open = False
+
+    def _fit_compact_size(self):
+        """紧凑视图尺寸自适应：按内容 hint 收缩高度，消除底部空白。
+
+        须在布局 minimum 缓存刷新后（posted LayoutRequest 已处理，进入
+        紧凑后 ≥80ms）调用；宽度保持过渡尺寸下限（双设备 Quick Setup 列
+        较宽，hint 宽度不足以无压缩显示）。
+        """
+        if not self._compact_view:
+            return
+        self.layout().activate()
+        hint = self.sizeHint()
+        min_hint = self.minimumSizeHint()
+        width = max(_COMPACT_VIEW_SIZE[0], hint.width(), min_hint.width())
+        height = max(hint.height(), min_hint.height())
+        self.setFixedSize(width, height)
 
     def _update_instrument_status(self):
         self.status_panel.update_instrument_status()

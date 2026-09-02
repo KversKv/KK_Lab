@@ -520,7 +520,8 @@ resources/
 │   └── activity / camera / download / gauge / link / search / settings / ... 等通用图标
 │
 ├── icons_svg/               # 新增 SVG 图标分组目录
-│   └── ai/                     # AI 助手图标 (ai_panel.svg / send.svg)
+│   ├── ai/                     # AI 助手图标 (ai_panel.svg / send.svg)
+│   └── window/                 # 窗口装饰图标 (compact_view.svg 紧凑视图切换)
 │
 ├── ai/                      # AI Prompt 项目层 (随包只读)
 │   ├── project_prompt.md       # 项目层 Prompt：KK_Lab 通用约定 (拼装于系统层之后、用户层之前)
@@ -722,6 +723,8 @@ tests/
 ├── test_orchestrator_phase3.py       # Orchestrator Phase 3 ResultStore / 导出统一 smoke
 ├── test_orchestrator_phase4.py       # Orchestrator Phase 4 PromptUser / preflight UI 状态 smoke
 ├── test_orchestrator_phase5.py       # Orchestrator Phase 5 cancellation / Mock adapters / v2 serialization smoke
+├── diag_titlebar_white_strip.py      # 诊断：自绘标题栏顶部白条（抓屏逐行像素分析，复现概率性问题时用）
+├── diag_compact_view.py              # 冒烟：N6705C 紧凑视图（最小视图）切换/还原/紧凑态切页
 ├── refactor/                        # 巨石重构期回归测试 (各文件 __main__ 可独立运行)
 │   ├── test_clk_analysis.py         # Phase 1: clk CSV 解析 / 频率分析纯函数单测
 │   ├── test_pmu_analysis.py         # Phase 1: gpadc/dcdc/isgain/oscp 算法纯函数单测

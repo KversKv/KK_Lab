@@ -19,6 +19,7 @@
 - `N6705CTop`（[n6705c_top.py](./n6705c_top.py)）：**双台仪器 A/B** 连接状态共享中枢，供多页注入。
 - 主壳 [n6705c_analyser_ui.py](./n6705c_analyser_ui.py)：状态机 / 连接 / 通道切换 / 装配；视图拆分为 `analyser_view_setting / analyser_view_batch / analyser_view_consumption` Mixin + `widgets.py`。
 - `N6705CDatalogUI`：可独立运行（`python n6705c_datalog_ui.py`）或 `N6705CDatalogUI(n6705c_top=...)` 嵌入同步连接。
+- `set_compact_mode(compact: bool)`（主壳对外方法）：主窗口顶栏「最小视图」按钮调用——True 时隐藏页面 top_bar / 通道区 / 功耗区，仅留 Quick Setup（`batch_tools_panel`，收起态自动展开）；False 恢复。命名与语义不可改（[main_window.py](../../main_window.py) `_on_compact_view_toggled` 依赖）。
 
 ## 局部约定
 

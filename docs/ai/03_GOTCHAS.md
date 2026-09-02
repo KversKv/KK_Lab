@@ -481,3 +481,20 @@ app.installEventFilter(_WinFilter())
 - 任何独立 spec（入口落在 `ui/modules/**` 或 `ui/pages/**` 下，如 `serialcom_module.spec` / `n6705c_datalog.spec`）必须在 `datas` 打包整目录 `(ui/theme/qss → ui/theme/qss)`（覆盖 `log_splitter / log_frame / start_button` 等全部模块级 `load_qss`），与 [kk_lab.spec](../../../spec/kk_lab.spec) 保持一致。`ui/pages/**` 入口经 `ui.styles` → `ui.widgets.start_sequence` 同样触发模块级 `load_qss("start_button")`（2026-09 n6705c_datalog 复发）。
 - `try/except ImportError` 防不住**模块级文件读取**的 `FileNotFoundError`——新增带模块级资源加载的模块时，独立 spec 同步核对 `datas`。
 - 参考修复：[serialcom_module.spec](../../../spec/serialcom_module.spec) `datas` 注释处（2026-08）；[n6705c_datalog.spec](../../../spec/n6705c_datalog.spec)（2026-09）。
+
+## 34. 隐藏子面板后 `resize()` 被旧布局 minimum 顶回（紧凑/小窗视图切换）
+
+**现象**：主窗口"紧凑视图"（隐藏大量子面板后把窗口 `resize` 到小尺寸）不生效——宽度正常变化，高度几乎保持原值（如 900 → 897），且 `QTimer.singleShot(0)` 里二次 `resize`、`layout().activate()`、`QApplication.processEvents()` 均救不回来。
+
+**根因**：`widget.hide()` 只把布局标脏，**`QLayout` 的 minimumSize 缓存要等下一轮 posted 布局事件（LayoutRequest）处理后才刷新**（实测 0ms 时 min 仍为旧值 ~897，30ms 后才变 331）。窗口 `resize()` 到低于旧 minimum 的尺寸时，Qt 同步把窗口顶回旧 minimum。`singleShot(0)` 与 `processEvents()` 都可能赶在缓存刷新之前执行，白干。
+
+**修复**：用 `setFixedSize(w, h)` **同步钉死**目标尺寸（显式 min/max 优先于布局计算值，立即生效）；退出紧凑视图时 `setMinimumSize(0, 0)` + `setMaximumSize(16777215, 16777215)`（`QWIDGETSIZE_MAX`）解除约束，再 `restoreGeometry`。
+
+**固定尺寸 → 自适应**：钉死的过渡尺寸若偏大（如固定 460 但内容只需 331）会留底部空白；在 posted LayoutRequest 处理完后再 `_fit_compact_size()`：`layout().activate()` 后取 `sizeHint()` / `minimumSizeHint()` 的 max 做高度、保持宽度下限，重新 `setFixedSize`（实测 80ms 延迟足够，冒烟 22 断言全绿）。
+
+**要点**：
+
+- 若需要保留用户拖拽调窗能力，退而求其次可用**两级延迟**（`singleShot(0)` + `singleShot(60)`，第二级在缓存刷新后必然生效）；代价是窗口先大后小跳一下。
+- 退出约束时注意**清掉同帧内其它 `setGeometry` 记忆**（如 `_restore_page_switch_geometry` 的切页 geometry 快照），否则切页恢复会用紧凑尺寸覆盖还原尺寸（紧凑态下程序切页场景，见 [main_window.py](../../../ui/main_window.py) `_on_compact_view_toggled`）。
+- 参考实现：[main_window.py](../../../ui/main_window.py) `_COMPACT_VIEW_SIZE` / `_on_compact_view_toggled` / `_fit_compact_size`（2026-09，N6705C Quick Setup 最小视图）；冒烟脚本 [tests/diag_compact_view.py](../../../tests/diag_compact_view.py)。
+- 相关坑：**默认首页（N6705C）装载早于 `top_bar` 创建**，挂在 `_fade_in_widget` 的按钮可见性同步会因 `top_bar is None` 跳过且再无触发——初始化序列里 `top_bar` 创建后须补一次显式同步（`_sync_compact_view_button`）。
