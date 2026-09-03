@@ -115,6 +115,65 @@ def measure_avg(ctx: "ItemContext", method: str, channel: int, *,
     return trimmed_mean(samples)
 
 
+# DUT 配置「电压测试方式」（cfg 键 volt_method）取值：
+#   n6705c = N6705C Vout 通道电压表（默认，旧配置无此键回落）
+#   scope  = 示波器输出电压通道平均值（get_channel_mean / VAVerage / MEAN）
+VOLT_METHOD_N6705C = "n6705c"
+VOLT_METHOD_SCOPE = "scope"
+
+
+def volt_method_is_scope(cfg: dict) -> bool:
+    """电压测试方式是否为示波器（缺省 / 非法值回落 N6705C）。"""
+    return str(cfg.get("volt_method", VOLT_METHOD_N6705C)) == VOLT_METHOD_SCOPE
+
+
+def _safe_scope_mean(ctx: "ItemContext", channel: int, default: float) -> float:
+    """示波器平均值读取的防御封装：异常返回 default 并记日志。"""
+    if ctx.scope is None:
+        logger.error("volt_method=scope but ctx.scope is None")
+        return default
+    try:
+        val = ctx.scope.get_channel_mean(channel)
+        return float(val) if val is not None else default
+    except Exception:  # noqa: BLE001 - 测量异常降级为默认值，保证流程不中断
+        logger.error("scope get_channel_mean ch%d failed", channel, exc_info=True)
+        return default
+
+
+def measure_vout(ctx: "ItemContext", *, count: int = 1, settle_s: float = 0.0,
+                 default: float = 0.0) -> float:
+    """按 DUT 配置的「电压测试方式」测 Vout（单位 V，多次采样去极值均值）。
+
+    - N6705C（默认）：Vout 通道 VMETer measure_voltage；
+    - 示波器：scope_vout_channel 通道平均值（get_channel_mean）。
+    """
+    cfg = ctx.config
+    use_scope = volt_method_is_scope(cfg)
+    n = max(1, int(count))
+    samples: list[float] = []
+    for i in range(n):
+        if use_scope:
+            ch = int(cfg.get("scope_vout_channel", 1))
+            samples.append(_safe_scope_mean(ctx, ch, default))
+        else:
+            ch = parse_channel(cfg.get("vout_channel", 1))
+            samples.append(safe_measure(ctx.n6705c, "measure_voltage", ch, default))
+        if i < n - 1:
+            settle(ctx, settle_s)
+    return trimmed_mean(samples)
+
+
+def setup_vout_meter(ctx: "ItemContext") -> None:
+    """按「电压测试方式」准备 Vout 测量通道。
+
+    N6705C 方式：Vout 通道置 VMETer 并 channel_on（同 setup_meter_channel）；
+    示波器方式：无需预配置（get_channel_mean 自带 ensure_display / stop）。
+    """
+    if volt_method_is_scope(ctx.config):
+        return
+    setup_meter_channel(ctx, parse_channel(ctx.config.get("vout_channel", 1)))
+
+
 def setup_source_channel(ctx: "ItemContext", channel: int, voltage: float, *,
                          current_limit: float | None = None) -> None:
     """把通道配成电压源（PS2Q）并上电，参考 PMU DCDC worker。
@@ -264,14 +323,13 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
     width_flag = cfg_int(cfg, "width_flag", 1)  # I2CWidthFlag.BIT_10
     min_code = cfg_int(cfg, "min_code", 0)
     max_code = cfg_int(cfg, "max_code", 255)
-    vmeter_ch = parse_channel(cfg.get("vout_channel", 1))
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
 
     i2c = create_i2c(ctx)
     if ctx.is_mock:
         ctx.log_fn(f"[{item_key}] [DEBUG] Using Mock I2C interface.")
 
-    setup_meter_channel(ctx, vmeter_ch)
+    setup_vout_meter(ctx)
 
     bit_count = msb - lsb + 1
     mask = (1 << bit_count) - 1
@@ -298,7 +356,7 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
     hex_width = len(f"{max_code:X}")
     sleep_time = 0.0 if ctx.is_mock else 0.05
 
-    default_voltage = float(ctx.n6705c.measure_voltage(vmeter_ch))
+    default_voltage = measure_vout(ctx)
     default_code = (default_reg >> lsb) & mask
     ctx.log_fn(f"[{item_key}] [TEST] Default voltage: {default_voltage:.4f}V (0x{default_code:X})")
 
@@ -318,7 +376,7 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
             i2c.write(device_addr, reg_addr, default_reg, width_flag)
             teardown_load(ctx, iload_ch)
             return _skipped("稳定阶段被用户停止")
-        v = float(ctx.n6705c.measure_voltage(vmeter_ch))
+        v = measure_vout(ctx)
         recent_voltages.append(v)
         if len(recent_voltages) >= 3:
             last3 = recent_voltages[-3:]
@@ -341,7 +399,7 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
         i2c.write(device_addr, reg_addr, write_reg, width_flag)
         time.sleep(sleep_time)
 
-        measured_v = float(ctx.n6705c.measure_voltage(vmeter_ch))
+        measured_v = measure_vout(ctx)
         voltages.append(measured_v)
         codes.append(code)
         rows.append([code, round(measured_v * 1000.0, 3)])
@@ -599,7 +657,6 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
     cfg = ctx.config
     scope_ch = int(cfg.get("scope_vout_channel", 1))
     vin_ch = parse_channel(cfg.get("vin_channel", 1))
-    vout_ch = parse_channel(cfg.get("vout_channel", 1))
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
     vin_v = float(cfg.get("vin_v", 3.8))
     i_start = float(cfg.get("iload_start_ma", 0))
@@ -615,7 +672,7 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
 
     if not ctx.is_mock:
         setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
-        setup_meter_channel(ctx, vout_ch)
+        setup_vout_meter(ctx)
         setup_load_channel(ctx, iload_ch, initial_current_a=max(i_start, 0.001) / 1000.0)
         # 上一项可能调过 close_all_channels()（transient 流程），须显式开显示
         ctx.scope.set_channel_display(scope_ch, True)
@@ -642,9 +699,8 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
                 logger.error("scope ripple read failed @%gmA", il, exc_info=True)
                 vpp = 0.0
                 rms = 0.0
-            vout = measure_avg(ctx, "measure_voltage", vout_ch,
-                               count=1, settle_s=settle_s,
-                               default=nominal_mv / 1000.0) * 1000.0
+            vout = measure_vout(ctx, count=1, settle_s=settle_s,
+                                default=nominal_mv / 1000.0) * 1000.0
             shot = _capture_scope_png(ctx, item_key, il, shot_dir)
         rows.append([il, round(vout, 4), round(vpp, 4), round(rms, 4)])
         if shot:

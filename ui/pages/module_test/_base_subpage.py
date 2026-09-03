@@ -16,7 +16,7 @@ from PySide6.QtCore import Qt, QThread, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import QHBoxLayout, QSplitter, QVBoxLayout, QWidget
 
-from core.module_test._common import cfg_int
+from core.module_test._common import VOLT_METHOD_SCOPE, cfg_int
 from core.module_test.module_config import ModuleConfigWorker
 from debug_config import DEBUG_MOCK
 from log_config import get_logger
@@ -216,8 +216,13 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
             missing.append("N6705C 电源分析仪")
         scope_names = [self.ITEMS_REGISTRY[k][0] for k in cfg.get("selected_items", [])
                        if k in self.ITEMS_REGISTRY and self.ITEMS_REGISTRY[k][2]]
-        if scope_names and not self.scope_connected:
-            missing.append(f"示波器（{len(scope_names)} 个勾选项需要：{'、'.join(scope_names)}）")
+        # 电压测试方式为示波器时，Vout 测量全程走示波器平均值，示波器必接
+        volt_by_scope = str(cfg.get("volt_method", "")) == VOLT_METHOD_SCOPE
+        if (scope_names or volt_by_scope) and not self.scope_connected:
+            if volt_by_scope:
+                missing.append("示波器（电压测试方式选择为示波器，全程需要）")
+            else:
+                missing.append(f"示波器（{len(scope_names)} 个勾选项需要：{'、'.join(scope_names)}）")
         return missing
 
     # ================================================================== Module Config 执行

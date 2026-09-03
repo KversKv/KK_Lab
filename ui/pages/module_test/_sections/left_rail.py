@@ -57,12 +57,21 @@ class DutConfigPanel(QWidget):
         self.vout_nominal_spin.setValue(1800 if module_type == "ldo" else 1200)
         grid.add_row("Vout 标称 (mV)", self.vout_nominal_spin)
 
+        # 电压测试方式：N6705C=Vout 通道电压表；scope=示波器输出通道平均值
+        self.volt_method_combo = self._make_combo([])
+        self.volt_method_combo.addItem("N6705C", "n6705c")
+        self.volt_method_combo.addItem("示波器", "scope")
+        self.volt_method_combo.currentIndexChanged.connect(self._on_volt_method_changed)
+        grid.add_row("电压测试方式", self.volt_method_combo)
+
         self.vin_ch_combo = self._make_combo([f"CH {i}" for i in range(1, 5)])
         grid.add_row("Vin 通道", self.vin_ch_combo)
 
         self.vout_ch_combo = self._make_combo([f"CH {i}" for i in range(1, 5)])
         self.vout_ch_combo.setCurrentIndex(1)
-        grid.add_row("Vout 通道", self.vout_ch_combo)
+        # 仅 N6705C 方式需要 Vout 通道（示波器方式走 DUT 配置的示波器通道）
+        self._row_vout = grid.add_row("Vout 通道", self.vout_ch_combo)
+        self._on_volt_method_changed(self.volt_method_combo.currentIndex())
 
         self.iload_ch_combo = self._make_combo([f"CH {i}" for i in range(1, 5)])
         self.iload_ch_combo.setCurrentIndex(2)
@@ -134,6 +143,10 @@ class DutConfigPanel(QWidget):
     # ------------------------------------------------------------------ 联动
     def _on_temp_toggled(self, checked: bool) -> None:
         self._temp_panel.setVisible(checked)
+
+    def _on_volt_method_changed(self, _index: int) -> None:
+        """电压测试方式联动：仅 N6705C 方式显示 Vout 通道行。"""
+        self._row_vout.setVisible(self.volt_method_combo.currentData() != "scope")
 
     # ------------------------------------------------------------------ 校验
     def validate(self) -> FormRow | None:
