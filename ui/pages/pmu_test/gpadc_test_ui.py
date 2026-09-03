@@ -47,6 +47,9 @@ from core.pmu_test.gpadc import (
     compute_calibration,
     compute_detailed_stats,
     parse_uart_gpadc_raw,
+    ALGORITHM_REGISTRY,
+    apply_algorithm,
+    describe_algorithm,
 )
 from core.ai.page_contract import (
     CAP_APPLY_CONFIG,
@@ -121,6 +124,8 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self._uart_keyword_snapshot = ""
         self._acq_mode_snapshot = 'IIC'
         self._calib_points_snapshot = None
+        # 本次测试启用的采样算法配置（None = 不处理，原始流程）
+        self._algorithm_snapshot = None
 
         self.is_test_running = False
         self._start_btn_text = "▶ START TEST"
@@ -134,6 +139,8 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         # 最近测试记录（本会话内，用于历史曲线对比与载入）
         self._recent_test_records: list[dict] = []
         self._recent_test_seq = 0
+        # 测试自动命名：芯片/通道/CASE 组合 → 组合内已用序号（自动递增）
+        self._naming_counters: dict[tuple, int] = {}
         # 当前从 Recent 载入的记录（切换 Curve View 时据此重绘）
         self._loaded_record = None
         # Recent 管理栏折叠前的宽度记忆
@@ -432,6 +439,53 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         title_row.addWidget(self.clear_recent_btn)
         layout.addLayout(title_row)
 
+        # 测试命名：芯片 / 通道 / CASE 组合 + 组合内自动递增序号
+        naming_title = QLabel("Test Naming")
+        naming_title.setObjectName("section_title")
+        naming_title.setStyleSheet("border: none;")
+        naming_title.setToolTip("测试完成后按 芯片_通道_CASE_序号 自动命名，序号在相同组合内自动递增")
+        layout.addWidget(naming_title)
+
+        naming_grid = QGridLayout()
+        naming_grid.setContentsMargins(0, 0, 0, 0)
+        naming_grid.setHorizontalSpacing(6)
+        naming_grid.setVerticalSpacing(4)
+
+        chip_label = QLabel("Chip")
+        chip_label.setObjectName("muted_label")
+        naming_grid.addWidget(chip_label, 0, 0, 1, 2)
+        self.naming_chip_edit = QLineEdit("BES")
+        self.naming_chip_edit.setPlaceholderText("芯片名")
+        self.naming_chip_edit.setToolTip("芯片名（用于自动命名）")
+        naming_grid.addWidget(self.naming_chip_edit, 1, 0, 1, 2)
+
+        channel_label = QLabel("Channel")
+        channel_label.setObjectName("muted_label")
+        naming_grid.addWidget(channel_label, 2, 0)
+        case_label = QLabel("CASE")
+        case_label.setObjectName("muted_label")
+        naming_grid.addWidget(case_label, 2, 1)
+        self.naming_channel_edit = QLineEdit("CH1")
+        self.naming_channel_edit.setPlaceholderText("通道名")
+        self.naming_channel_edit.setToolTip("通道名（用于自动命名）")
+        naming_grid.addWidget(self.naming_channel_edit, 3, 0)
+        self.naming_case_edit = QLineEdit("CASE1")
+        self.naming_case_edit.setPlaceholderText("用例名")
+        self.naming_case_edit.setToolTip("CASE 用例名（用于自动命名）")
+        naming_grid.addWidget(self.naming_case_edit, 3, 1)
+
+        layout.addLayout(naming_grid)
+
+        self.naming_preview_label = QLabel()
+        self.naming_preview_label.setObjectName("recent_hint_label")
+        self.naming_preview_label.setWordWrap(True)
+        self.naming_preview_label.setToolTip("下一次测试完成时将使用的自动命名（相同组合序号自动递增）")
+        layout.addWidget(self.naming_preview_label)
+        self._update_naming_preview()
+
+        for edit in (self.naming_chip_edit, self.naming_channel_edit, self.naming_case_edit):
+            edit.textEdited.connect(self._update_naming_preview)
+
         self.recent_test_list = QListWidget()
         self.recent_test_list.setObjectName("recent_test_list")
         self.recent_test_list.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -454,7 +508,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self.show_error_btn = QPushButton("Error")
         for btn, name, tip in (
             (self.show_mean_btn, "Mean", "显示均值校准曲线"),
-            (self.show_band_btn, "Min-Max", "显示最大/最小值包络带"),
+            (self.show_band_btn, "Min-Max", "在主图下方子图显示最大/最小值偏差带（Max/Min - Mean）"),
             (self.show_error_btn, "Error", "仅显示误差曲线（Actual - Ideal，右轴）"),
         ):
             btn.setObjectName("tool_btn")
@@ -885,6 +939,29 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         self.voltage_channel.setCurrentIndex(3)
         params_layout.addWidget(self.voltage_channel)
 
+        # 采样算法：默认 None（原始数据，与既有流程一致）；参数控件按注册表动态生成
+        algo_title = QLabel("Algorithm")
+        algo_title.setObjectName("muted_label")
+        params_layout.addWidget(algo_title)
+
+        self.algorithm_combo = DarkComboBox(bg="#0a1733", border="#24365e")
+        self.algorithm_combo.addItem("None (原始数据)", "")
+        for _algo_id, _algo_spec in ALGORITHM_REGISTRY.items():
+            self.algorithm_combo.addItem(_algo_spec['name'], _algo_id)
+        self.algorithm_combo.setToolTip("采样数据处理算法；None = 不处理，与原始测试流程一致")
+        params_layout.addWidget(self.algorithm_combo)
+
+        self.algo_params_frame = QFrame()
+        self.algo_params_frame.setStyleSheet("QFrame { background: transparent; border: none; }")
+        self.algo_params_layout = QGridLayout(self.algo_params_frame)
+        self.algo_params_layout.setContentsMargins(0, 0, 0, 0)
+        self.algo_params_layout.setHorizontalSpacing(6)
+        self.algo_params_layout.setVerticalSpacing(6)
+        params_layout.addWidget(self.algo_params_frame)
+        self._algo_param_widgets: dict[str, QDoubleSpinBox] = {}
+        self._rebuild_algorithm_params()
+        self.algorithm_combo.currentIndexChanged.connect(self._on_algorithm_changed)
+
         self.temp_hint_label = QLabel("Connect chamber to enable temperature testing.")
         self.temp_hint_label.setStyleSheet("color: #ff5a7a; font-size: 11px;")
         self.temp_hint_label.setWordWrap(True)
@@ -1125,6 +1202,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             raw_data = [max(0, int(rng.gauss(2844, 2.0))) for _ in range(get_reg_cnt)]
             if progress_callback:
                 progress_callback(100)
+            raw_data = apply_algorithm(raw_data, self._algorithm_snapshot)
             return compute_reg_stats(raw_data, return_raw=return_raw)
 
         raw_data = []
@@ -1151,6 +1229,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
 
         if not raw_data:
             raise RuntimeError("未从 UART 日志提取到任何 GPADC 样本，请确认 DUT 日志输出与 Search Keyword 匹配")
+        raw_data = apply_algorithm(raw_data, self._algorithm_snapshot)
         return compute_reg_stats(raw_data, return_raw=return_raw)
 
     def _gpadc_read_by_cnts(
@@ -1265,6 +1344,9 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         if self._calib_points_snapshot is not None:
             v_lo, v_hi = self._calib_points_snapshot
             self._append_log(f"[INFO] 使用手动校准点: low={v_lo}, high={v_hi}")
+        self._algorithm_snapshot = self._collect_algorithm_config()
+        if self._algorithm_snapshot is not None:
+            self._append_log(f"[INFO] 启用采样算法: {describe_algorithm(self._algorithm_snapshot)}")
         if self._acq_mode_snapshot == 'UART':
             if not DEBUG_MOCK and not self._serial_connected:
                 self._append_log("[ERROR] DUT 串口未连接，无法通过 UART Log 采集")
@@ -1752,11 +1834,15 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self.temp_min, self.temp_max, self.temp_step,
             self.soak_time, self.sample_count,
             self.calib_low, self.calib_high,
+            self.algorithm_combo,
+            self.naming_chip_edit, self.naming_channel_edit, self.naming_case_edit,
             self.recent_test_list, self.compare_recent_btn,
             self.load_recent_btn, self.clear_recent_btn,
         ]
         for widget in widgets:
             widget.setEnabled(enabled)
+        for spin in self._algo_param_widgets.values():
+            spin.setEnabled(enabled)
 
     def get_test_config(self):
         acquisition_mode = 'IIC' if self.iic_radio.isChecked() else 'UART'
@@ -1782,7 +1868,8 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             'soak_time': self.soak_time.value(),
             'sample_count': self.sample_count.value(),
             'calib_low': self.calib_low.text(),
-            'calib_high': self.calib_high.text()
+            'calib_high': self.calib_high.text(),
+            'algorithm': self._collect_algorithm_config(),
         }
 
     def update_test_result(self, result):
@@ -1831,17 +1918,60 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
     # ------------------------------------------------------------------
     # 最近测试管理：记录 / 对比 / 载入 / 清空
     # ------------------------------------------------------------------
+    def _naming_fields(self):
+        """读取命名三要素（空值回退占位），返回 (chip, channel, case)。"""
+        chip = self.naming_chip_edit.text().strip() or "CHIP"
+        channel = self.naming_channel_edit.text().strip() or "CH"
+        case = self.naming_case_edit.text().strip() or "CASE"
+        return chip, channel, case
+
+    def _compose_test_name(self, chip, channel, case, seq):
+        """自动命名规则：芯片_通道_CASE_序号（序号三位零填充）。"""
+        return f"{chip}_{channel}_{case}_{seq:03d}"
+
+    def _update_naming_preview(self):
+        """命名输入变化时刷新下一次测试的预览名。"""
+        key = self._naming_fields()
+        seq = self._naming_counters.get(key, 0) + 1
+        self.naming_preview_label.setText(f"Next: {self._compose_test_name(*key, seq)}")
+
+    def _generate_test_name(self):
+        """生成测试名：芯片/通道/CASE 组合内自动递增序号。"""
+        key = self._naming_fields()
+        self._naming_counters[key] = self._naming_counters.get(key, 0) + 1
+        name = self._compose_test_name(*key, self._naming_counters[key])
+        self._update_naming_preview()
+        return name
+
+    def _record_tooltip(self, record) -> str:
+        """记录悬浮提示：测试时间 / 性能参数 / 算法 / 命名信息。"""
+        lines = [
+            self._record_display_name(record),
+            f"测试时间: {record['time'].strftime('%Y-%m-%d %H:%M:%S')}",
+            f"测试项: {record['test_item']}",
+            f"性能参数: {record.get('summary') or '—'}",
+            f"算法: {describe_algorithm(record.get('algorithm'))}",
+        ]
+        naming = record.get('naming')
+        if naming:
+            lines.append(f"命名: {naming.get('chip')}/{naming.get('channel')}/{naming.get('case')}")
+        return "\n".join(lines)
+
     def _record_recent_test(self, kind, result):
         """测试完成后记入最近测试列表（result 为 None 时不记录）。"""
         if result is None:
             return
         self._recent_test_seq += 1
+        chip, channel, case = self._naming_fields()
         record = {
             'id': self._recent_test_seq,
             'time': datetime.datetime.now(),
             'test_item': self.current_test_item,
             'kind': kind,
             'label': '',
+            'name': self._generate_test_name(),
+            'naming': {'chip': chip, 'channel': channel, 'case': case},
+            'algorithm': self._algorithm_snapshot,
             'params': None,
             'raw': None,
             'calibration': None,
@@ -1875,15 +2005,15 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         while len(self._recent_test_records) > self.RECENT_TEST_LIMIT:
             self._recent_test_records.pop(0)
         self._refresh_recent_test_list()
-        self._append_log(f"[INFO] 已记录最近测试 #{record['id']}：{record['summary']}")
+        self._append_log(f"[INFO] 已记录最近测试 #{record['id']} {record['name']}：{record['summary']}")
 
     def _record_color(self, record_id: int) -> str:
         """按记录 id 稳定分配专属曲线颜色（列表装饰、图例、曲线共用）。"""
         return self._COMPARE_PALETTE[record_id % len(self._COMPARE_PALETTE)]
 
     def _record_display_name(self, record) -> str:
-        """记录显示名：优先用户重命名的 label，否则测试项名。"""
-        return record.get('label') or record['test_item']
+        """记录显示名：优先用户重命名的 label，其次自动命名，最后测试项名。"""
+        return record.get('label') or record.get('name') or record['test_item']
 
     def _refresh_recent_test_list(self):
         # 记忆勾选与选中状态（按 record id），重建列表后恢复
@@ -1907,6 +2037,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
             item.setCheckState(Qt.Checked if record['id'] in checked_ids else Qt.Unchecked)
             item.setData(Qt.UserRole, record)
+            item.setToolTip(self._record_tooltip(record))
             self.recent_test_list.addItem(item)
             if record['id'] == current_id:
                 self.recent_test_list.setCurrentItem(item)
@@ -2350,6 +2481,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             if progress_callback:
                 progress_callback(int((i + 1) * 100 / get_reg_cnt))
 
+        raw_data = apply_algorithm(raw_data, self._algorithm_snapshot)
         return compute_reg_stats(raw_data, return_raw=return_raw)
 
     def _check_sweep_response(self, voltage_data, adc_mean):
@@ -2485,6 +2617,55 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             self._append_log("[WARN] 两个校准点相同，回退为自动选取")
             return None
         return (min(v_low, v_high), max(v_low, v_high))
+
+    # ------------------------------------------------------------------
+    # 采样算法配置：注册表驱动，新增算法无需改动此处以外的 UI 代码
+    # ------------------------------------------------------------------
+    def _rebuild_algorithm_params(self):
+        """按当前选中算法重建参数行（参数元信息来自 ALGORITHM_REGISTRY）。"""
+        while self.algo_params_layout.count():
+            item = self.algo_params_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+        self._algo_param_widgets = {}
+        algo_id = self.algorithm_combo.currentData()
+        spec = ALGORITHM_REGISTRY.get(algo_id) if algo_id else None
+        if spec is None:
+            self.algo_params_frame.setVisible(False)
+            return
+        for row, (key, p) in enumerate(spec.get('params', {}).items()):
+            label = QLabel(p.get('label', key))
+            label.setObjectName("muted_label")
+            self.algo_params_layout.addWidget(label, row * 2, 0)
+            spin = QDoubleSpinBox()
+            spin.setRange(p.get('min', 0.0), p.get('max', 100.0))
+            spin.setValue(p.get('default', 0.0))
+            spin.setSingleStep(p.get('step', 1.0))
+            spin.setDecimals(p.get('decimals', 0))
+            self.algo_params_layout.addWidget(spin, row * 2 + 1, 0)
+            self._algo_param_widgets[key] = spin
+        self.algo_params_frame.setVisible(True)
+
+    def _on_algorithm_changed(self):
+        """切换算法后重建参数区并更新算法说明提示。"""
+        self._rebuild_algorithm_params()
+        algo_id = self.algorithm_combo.currentData()
+        spec = ALGORITHM_REGISTRY.get(algo_id) if algo_id else None
+        self.algorithm_combo.setToolTip(
+            spec['desc'] if spec else "采样数据处理算法；None = 不处理，与原始测试流程一致"
+        )
+
+    def _collect_algorithm_config(self):
+        """收集当前算法配置；未选用（None）时返回 None，等同原始流程。"""
+        algo_id = self.algorithm_combo.currentData()
+        if not algo_id or algo_id not in ALGORITHM_REGISTRY:
+            return None
+        params = {}
+        for key, spin in self._algo_param_widgets.items():
+            val = spin.value()
+            params[key] = int(round(val)) if spin.decimals() == 0 else float(val)
+        return {'id': algo_id, 'params': params}
 
     def _calibration_data(self, result):
         adc_raw_data = result["voltage"]
@@ -3106,25 +3287,47 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             x = np.array(voltage_data, dtype=float)
             y = np.array(mean_cali,    dtype=float)
 
+            # Min-Max Band 下沉为主图下方独立子图：画 Max/Min 相对 Mean 的偏差，
+            # Y 轴自适应 Band 宽度，测试范围宽时也能直观看出 Band 范围
+            pw_band = None
             if show_band and adc_min_cali is not None and adc_max_cali is not None:
-                y_min = np.array(adc_min_cali, dtype=float)
-                y_max = np.array(adc_max_cali, dtype=float)
+                n = min(len(x), len(y), len(adc_min_cali), len(adc_max_cali))
+                bx = x[:n]
+                dev_hi = np.array(adc_max_cali, dtype=float)[:n] - y[:n]
+                dev_lo = np.array(adc_min_cali, dtype=float)[:n] - y[:n]
 
-                fill = pg.PlotDataItem(
-                    np.concatenate([x, x[::-1]]),
-                    np.concatenate([y_max, y_min[::-1]]),
-                    pen=pg.mkPen(color="#f0a040", width=1))
-                fill_under = pg.FillBetweenItem(
-                    pg.PlotDataItem(x, y_max),
-                    pg.PlotDataItem(x, y_min),
-                    brush=pg.mkBrush(240, 160, 64, 50)
-                )
-                pw.addItem(fill_under)
+                if is_temp_mode:
+                    band_unit = "°C"
+                    band_scale = 1.0
+                else:
+                    spread = float(np.max(dev_hi - dev_lo)) if n > 0 else 0.0
+                    band_unit = "mV" if spread < 1.0 else "V"
+                    band_scale = 1000.0 if band_unit == "mV" else 1.0
+                dev_hi = dev_hi * band_scale
+                dev_lo = dev_lo * band_scale
 
-                pw.plot(x, y_max, pen=pg.mkPen(color="#f0a040", width=1,
-                        style=pg.QtCore.Qt.DashLine))
-                pw.plot(x, y_min, pen=pg.mkPen(color="#f0a040", width=1,
-                        style=pg.QtCore.Qt.DashLine))
+                pw_band = pg.PlotWidget()
+                pw_band.setBackground("#0a1735")
+                pw_band.showGrid(x=True, y=True, alpha=0.15)
+                pw_band.setLabel("left", f"Max/Min Deviation ({band_unit})", color="#f0a040")
+                pw_band.plotItem.setXLink(pw.plotItem)
+                self._attach_curve_context_menu(pw_band)
+                for axis_name in ("left", "bottom"):
+                    axis = pw_band.getAxis(axis_name)
+                    axis.setTextPen(pg.mkPen("#a0b4d8"))
+                    axis.setPen(pg.mkPen("#3a4f7a"))
+
+                pw_band.addLine(y=0, pen=pg.mkPen("#7e96bf", width=1,
+                                style=pg.QtCore.Qt.DashLine))
+                pw_band.addItem(pg.FillBetweenItem(
+                    pg.PlotDataItem(bx, dev_hi),
+                    pg.PlotDataItem(bx, dev_lo),
+                    brush=pg.mkBrush(240, 160, 64, 50),
+                ))
+                pw_band.plot(bx, dev_hi, pen=pg.mkPen(color="#f0a040", width=1,
+                             style=pg.QtCore.Qt.DashLine))
+                pw_band.plot(bx, dev_lo, pen=pg.mkPen(color="#f0a040", width=1,
+                             style=pg.QtCore.Qt.DashLine))
 
             if show_mean:
                 pw.plot(x, x, pen=pg.mkPen(color="#7e96bf", width=1,
@@ -3162,7 +3365,9 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                     symbol="o", symbolSize=4,
                     symbolBrush="#e05c5c", symbolPen=None))
 
-            layout.addWidget(pw, 1)
+            layout.addWidget(pw, 3 if pw_band is not None else 1)
+            if pw_band is not None:
+                layout.addWidget(pw_band, 1)
 
             x_label = QLabel(x_axis_title)
             x_label.setAlignment(Qt.AlignCenter)
@@ -3173,19 +3378,38 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
                 import io
                 from pyqtgraph.exporters import ImageExporter
                 from PySide6.QtCore import QBuffer, QIODevice
-                from PySide6.QtGui import QImage
-                exporter = ImageExporter(pw.plotItem)
-                exporter.parameters()['width'] = 1200
-                exporter.parameters()['height'] = 700
-                result = exporter.export(toBytes=True)
-                if isinstance(result, QImage):
-                    qbuf = QBuffer()
-                    qbuf.open(QIODevice.WriteOnly)
-                    result.save(qbuf, "PNG")
-                    raw = bytes(qbuf.data())
-                    qbuf.close()
+                from PySide6.QtGui import QImage, QPainter
+
+                def _snapshot(item, width=1200):
+                    # 仅指定宽度（同时指定 height 会按 cover 缩放导致宽度不精确）
+                    exporter = ImageExporter(item)
+                    exporter.parameters()['width'] = width
+                    snap = exporter.export(toBytes=True)
+                    if not isinstance(snap, QImage):
+                        snap = QImage.fromData(bytes(snap))
+                    return snap
+
+                if pw_band is not None:
+                    # 主图 + Band 子图纵向合成为一张快照（背景与图表底色一致）
+                    img_main = _snapshot(pw.plotItem)
+                    img_band = _snapshot(pw_band.plotItem)
+                    combined = QImage(img_main.width(),
+                                      img_main.height() + img_band.height(),
+                                      QImage.Format_ARGB32)
+                    combined.fill(QColor(10, 23, 53))
+                    painter = QPainter(combined)
+                    painter.drawImage(0, 0, img_main)
+                    painter.drawImage(0, img_main.height(), img_band)
+                    painter.end()
+                    result = combined
                 else:
-                    raw = bytes(result)
+                    result = _snapshot(pw.plotItem)
+
+                qbuf = QBuffer()
+                qbuf.open(QIODevice.WriteOnly)
+                result.save(qbuf, "PNG")
+                raw = bytes(qbuf.data())
+                qbuf.close()
                 buf = io.BytesIO(raw)
                 self._chart_image_bytes = buf
             except Exception as ex:
@@ -3601,6 +3825,25 @@ Temperature (°C) | ADC Value
         # 校准点（留空 = 自动选取）
         _set_text(self.calib_low, "calib_low")
         _set_text(self.calib_high, "calib_high")
+
+        # 采样算法（id + params，按注册表回填）
+        algo_cfg = cfg.get("algorithm")
+        if isinstance(algo_cfg, dict):
+            algo_id = algo_cfg.get("id") or ""
+            idx = self.algorithm_combo.findData(algo_id)
+            if idx >= 0:
+                self.algorithm_combo.setCurrentIndex(idx)
+                self._rebuild_algorithm_params()
+                for key, spin in self._algo_param_widgets.items():
+                    val = (algo_cfg.get("params") or {}).get(key)
+                    if val is None:
+                        continue
+                    try:
+                        spin.setValue(float(val))
+                    except (TypeError, ValueError):
+                        continue
+                applied.append("algorithm")
+                touched.append(self.algorithm_combo)
 
         if not applied:
             return False, "配置草案未包含任何可识别的配置项。"
