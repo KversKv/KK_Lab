@@ -521,7 +521,7 @@ resources/
 │
 ├── icons_svg/               # 新增 SVG 图标分组目录
 │   ├── ai/                     # AI 助手图标 (ai_panel.svg / send.svg)
-│   └── window/                 # 窗口装饰图标 (compact_view.svg 紧凑视图切换)
+│   └── window/                 # 窗口装饰图标 (compact_view.svg 紧凑视图切换 / capture.svg 图表截图)
 │
 ├── ai/                      # AI Prompt 项目层 (随包只读)
 │   ├── project_prompt.md       # 项目层 Prompt：KK_Lab 通用约定 (拼装于系统层之后、用户层之前)

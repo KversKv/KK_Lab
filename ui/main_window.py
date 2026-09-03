@@ -11,7 +11,8 @@ from ui.resource_path import get_resource_base
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QComboBox, QLabel, QLineEdit,
-    QSplitter, QFrame, QDialog, QTextBrowser, QGraphicsOpacityEffect
+    QSplitter, QFrame, QDialog, QTextBrowser, QGraphicsOpacityEffect,
+    QApplication
 )
 
 from PySide6.QtCore import (
@@ -109,6 +110,7 @@ from ui.styles import SCROLLBAR_STYLE
 from ui.nav_controller import NavController
 from ui.instrument_status import InstrumentStatusPanel
 from ui.app_top_bar import AppTopBar
+from ui.widgets.toast_notification import ToastNotification
 from ui.ai.ai_assist_panel import AIAssistPanel
 from ui.ai.panel_state import load_panel_state, save_panel_state, clamp_width
 from core.ai.config import AISettings
@@ -574,6 +576,7 @@ class MainWindow(CleanupMixin, QMainWindow):
 
         self.top_bar = AppTopBar(self)
         self.top_bar.compact_view_button.toggled.connect(self._on_compact_view_toggled)
+        self.top_bar.capture_chart_button.clicked.connect(self._on_capture_chart)
         self.main_layout.addWidget(self.top_bar)
         # 默认首页（N6705C）装载早于 top_bar 创建，_fade_in_widget 时
         # top_bar 尚不存在会跳过同步，此处补一次让缩略按钮正确显示
@@ -1396,6 +1399,72 @@ class MainWindow(CleanupMixin, QMainWindow):
             "consumption_test": getattr(self, "consumption_test_ui", None),
         }
         return mapping.get(self.current_instrument_ui)
+
+    # ------------------------------------------------------------------
+    # 一键截图：当前页图表区域 → 系统剪贴板（顶栏截图按钮）
+    #
+    # 截图目标按鸭子类型解析，页面无需注册即可接入：
+    #   1. 页面实现 get_capture_widget() → 显式返回截图控件（最高优先级）；
+    #   2. 页面持有 chart_frame 属性（QWidget）→ 图表卡片区域
+    #      （pmu_output_voltage / pmu_dcdc_efficiency / charger_test 各子页、
+    #        n6705c_datalog 等均为此约定）；
+    #   3. 兜底：整页截图。
+    # ------------------------------------------------------------------
+    def _resolve_capture_page(self):
+        """返回当前活动页面对象（含 Tab 子页下钻），供图表截图定位控件。"""
+        page = self.resolve_active_ai_page()
+        if page is not None:
+            return page
+        attr_map = {
+            "power_analyser": "n6705c_analyser_ui",
+            "datalog": "n6705c_datalog_ui",
+            "oscilloscope": "oscilloscope_ui",
+            "chamber": "chamber_ui",
+            "collection": "collection_ui",
+            "kk_serials": "kk_serials_ui",
+            "i2c_control": "i2c_control_ui",
+            "pmu_1811": "pmu_1811_ui",
+            "pmu_1860": "pmu_1860_ui",
+        }
+        key = self.current_instrument_ui
+        return getattr(self, attr_map.get(key, f"{key}_ui"), None)
+
+    def _on_capture_chart(self):
+        page = self._resolve_capture_page()
+        if page is None:
+            self._show_capture_toast("当前无活动页面可截图", ToastNotification.TYPE_ERROR)
+            return
+
+        target = None
+        getter = getattr(page, "get_capture_widget", None)
+        if callable(getter):
+            try:
+                target = getter()
+            except Exception:  # noqa: BLE001 - 页面自定义 getter 异常时降级
+                logger.error("get_capture_widget 执行失败", exc_info=True)
+        if not isinstance(target, QWidget):
+            target = getattr(page, "chart_frame", None)
+        if not isinstance(target, QWidget):
+            target = page
+
+        try:
+            pixmap = target.grab()
+            QApplication.clipboard().setPixmap(pixmap)
+        except Exception:  # noqa: BLE001 - 截图/剪贴板失败转用户可读提示
+            logger.error("图表截图复制到剪贴板失败", exc_info=True)
+            self._show_capture_toast("截图失败，请查看日志", ToastNotification.TYPE_ERROR)
+            return
+
+        logger.debug("Chart area captured: page=%s target=%s size=%dx%d",
+                     type(page).__name__, type(target).__name__,
+                     pixmap.width(), pixmap.height())
+        self._show_capture_toast(
+            "图表区域已复制到剪贴板", ToastNotification.TYPE_SUCCESS)
+
+    def _show_capture_toast(self, message, toast_type):
+        if not hasattr(self, "_capture_toast"):
+            self._capture_toast = ToastNotification()
+        self._capture_toast.show_toast(message, toast_type, self)
 
     def _connect_signals(self):
         self.nav.n6705c_power_analyzer_btn.clicked.connect(self._on_nav_button_clicked)

@@ -29,6 +29,9 @@ _APP_ICON_SVG = os.path.join(get_resource_base(), "resources", "icons", "kk_lab.
 _COMPACT_ICON_SVG = os.path.join(
     get_resource_base(), "resources", "icons_svg", "window", "compact_view.svg"
 )
+_CAPTURE_ICON_SVG = os.path.join(
+    get_resource_base(), "resources", "icons_svg", "window", "capture.svg"
+)
 
 _BAR_STYLE = """
 QWidget#appTopBar {
@@ -60,6 +63,22 @@ QPushButton#compactViewBtn:hover {
     background-color: #1b2640;
 }
 QPushButton#compactViewBtn:checked {
+    background-color: #2563eb;
+}
+QPushButton#captureChartBtn {
+    min-width: 28px;
+    max-width: 28px;
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0px;
+    border: none;
+    border-radius: 6px;
+    background-color: transparent;
+}
+QPushButton#captureChartBtn:hover {
+    background-color: #1b2640;
+}
+QPushButton#captureChartBtn:pressed {
     background-color: #2563eb;
 }
 QPushButton#winCtrlBtn,
@@ -160,6 +179,10 @@ class AppTopBar(QWidget):
 
         layout.addStretch(1)
 
+        # 一键截图按钮：当前页图表区域 → 系统剪贴板（MainWindow 连接处理槽）
+        self.capture_chart_button = self._make_capture_chart_button()
+        layout.addWidget(self.capture_chart_button, 0, Qt.AlignVCenter)
+
         self.ai_panel_button = AIPanelButton(self)
         layout.addWidget(self.ai_panel_button, 0, Qt.AlignVCenter)
 
@@ -176,11 +199,23 @@ class AppTopBar(QWidget):
 
         self._interactive_widgets = [
             self.compact_view_button,
+            self.capture_chart_button,
             self.ai_panel_button,
             self._min_btn,
             self._max_btn,
             self._close_btn,
         ]
+
+    def _make_capture_chart_button(self):
+        btn = QPushButton(self)
+        btn.setObjectName("captureChartBtn")
+        btn.setCursor(QCursor(Qt.PointingHandCursor))
+        btn.setFocusPolicy(Qt.NoFocus)
+        btn.setToolTip("截图当前页图表区域并复制到剪贴板")
+        if os.path.isfile(_CAPTURE_ICON_SVG):
+            btn.setIcon(tinted_svg_icon(_CAPTURE_ICON_SVG, "#c6d4f2", 16))
+            btn.setIconSize(QSize(16, 16))
+        return btn
 
     def _make_compact_view_button(self):
         btn = QPushButton(self)
