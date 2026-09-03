@@ -6,6 +6,9 @@ from .gpadc_analysis import (
     compute_calibration,
     compute_detailed_stats,
     parse_uart_gpadc_raw,
+    ALGORITHM_REGISTRY,
+    apply_algorithm,
+    describe_algorithm,
 )
 from .gpadc_worker import TestWorker
 
@@ -14,5 +17,8 @@ __all__ = [
     "compute_calibration",
     "compute_detailed_stats",
     "parse_uart_gpadc_raw",
+    "ALGORITHM_REGISTRY",
+    "apply_algorithm",
+    "describe_algorithm",
     "TestWorker",
 ]

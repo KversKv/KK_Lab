@@ -104,3 +104,140 @@ def compute_detailed_stats(raw_data):
         'pp': reg_max - reg_min,
         'count': n,
     }
+
+
+# ---------------------------------------------------------------------------
+# GPADC 采样数据处理算法（注册表驱动，无 Qt）
+#
+# 新增算法只需：
+#   1. 实现纯函数 ``def algo_xxx(samples, **params) -> list``；
+#   2. 在 ALGORITHM_REGISTRY 登记（含参数元信息）；
+#   3. UI 侧参数控件按注册表自动生成，无需改动界面代码。
+# ---------------------------------------------------------------------------
+
+def algo_moving_average(samples, window=8):
+    """滑动平均（长度保持）：居中窗口均值，抑制随机噪声。"""
+    n = len(samples)
+    if n == 0 or window <= 1:
+        return list(samples)
+    half = window // 2
+    result = []
+    for i in range(n):
+        lo = max(0, i - half)
+        hi = min(n, i + half + 1)
+        seg = samples[lo:hi]
+        result.append(sum(seg) / len(seg))
+    return result
+
+
+def algo_median_filter(samples, window=3):
+    """中值滤波（长度保持）：居中窗口中值，剔除脉冲型毛刺。"""
+    n = len(samples)
+    if n == 0 or window <= 1:
+        return list(samples)
+    half = window // 2
+    result = []
+    for i in range(n):
+        lo = max(0, i - half)
+        hi = min(n, i + half + 1)
+        result.append(sorted(samples[lo:hi])[(hi - lo) // 2])
+    return result
+
+
+def algo_debounce(samples, threshold=4):
+    """去抖：剔除相对前一保留样本跳变超过 threshold 的抖动样本（长度可能缩短）。"""
+    if not samples:
+        return list(samples)
+    kept = [samples[0]]
+    for v in samples[1:]:
+        if abs(v - kept[-1]) <= threshold:
+            kept.append(v)
+    return kept
+
+
+def algo_offset_compensation(samples, offset=0.0):
+    """偏移补偿：整体减去固定偏移（code）。"""
+    return [v - offset for v in samples]
+
+
+def algo_gain_compensation(samples, gain=1.0):
+    """增益补偿：整体乘以增益系数。"""
+    return [v * gain for v in samples]
+
+
+ALGORITHM_REGISTRY = {
+    'moving_average': {
+        'name': 'Moving Average (滑动平均)',
+        'desc': '滑动平均滤波，抑制随机噪声（保持样本长度）',
+        'func': algo_moving_average,
+        'params': {
+            'window': {'label': 'Window', 'default': 8, 'min': 2, 'max': 1024,
+                       'step': 1, 'decimals': 0},
+        },
+    },
+    'median_filter': {
+        'name': 'Median Filter (中值滤波)',
+        'desc': '中值滤波，剔除脉冲型毛刺（保持样本长度）',
+        'func': algo_median_filter,
+        'params': {
+            'window': {'label': 'Window', 'default': 3, 'min': 3, 'max': 21,
+                       'step': 2, 'decimals': 0},
+        },
+    },
+    'debounce': {
+        'name': 'Debounce (去抖)',
+        'desc': '剔除相对前一稳定样本跳变超阈值的抖动样本',
+        'func': algo_debounce,
+        'params': {
+            'threshold': {'label': 'Threshold (code)', 'default': 4, 'min': 0,
+                          'max': 1024, 'step': 1, 'decimals': 0},
+        },
+    },
+    'offset_compensation': {
+        'name': 'Offset Comp (偏移补偿)',
+        'desc': '整体减去固定偏移（code）',
+        'func': algo_offset_compensation,
+        'params': {
+            'offset': {'label': 'Offset (code)', 'default': 0.0, 'min': -4096.0,
+                       'max': 4096.0, 'step': 1.0, 'decimals': 3},
+        },
+    },
+    'gain_compensation': {
+        'name': 'Gain Comp (增益补偿)',
+        'desc': '整体乘以增益系数',
+        'func': algo_gain_compensation,
+        'params': {
+            'gain': {'label': 'Gain', 'default': 1.0, 'min': 0.001, 'max': 100.0,
+                     'step': 0.01, 'decimals': 4},
+        },
+    },
+}
+
+
+def apply_algorithm(samples, algo_config):
+    """按配置应用采样算法（当前单算法）。
+
+    algo_config 为 None / id 为空 / 未命中注册表时原样返回（等同未启用算法，
+    与原始测试流程一致）。
+    """
+    if not algo_config:
+        return samples
+    spec = ALGORITHM_REGISTRY.get(algo_config.get('id'))
+    if spec is None:
+        return samples
+    kwargs = algo_config.get('params') or {}
+    return spec['func'](samples, **kwargs)
+
+
+def describe_algorithm(algo_config):
+    """生成算法配置的可读描述（用于日志 / 悬浮提示）；未启用返回 None。"""
+    if not algo_config:
+        return "None"
+    spec = ALGORITHM_REGISTRY.get(algo_config.get('id'))
+    if spec is None:
+        return str(algo_config.get('id'))
+    params = algo_config.get('params') or {}
+    if params:
+        param_text = ", ".join(f"{k}={v}" for k, v in params.items())
+        return f"{spec['name']} ({param_text})"
+    return spec['name']
