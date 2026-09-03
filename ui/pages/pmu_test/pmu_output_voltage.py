@@ -20,7 +20,7 @@ sys.path.append(os.path.join(get_resource_base(), "lib", "i2c"))
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton,
     QLabel, QLineEdit, QSpinBox, QDoubleSpinBox, QFrame, QTextEdit,
-    QSizePolicy, QProgressBar, QScrollArea
+    QSizePolicy, QProgressBar, QScrollArea, QMessageBox
 )
 from ui.widgets.dark_combobox import DarkComboBox
 from PySide6.QtCore import Qt, QThread, QTimer, Signal, QMargins
@@ -82,6 +82,9 @@ class OutputVoltageTestThread(QThread):
     chart_clear = Signal()
     result_update = Signal(dict)
     test_finished = Signal()
+    # 前置校验失败 / 尾部饱和 → 请求 UI 弹窗让用户决定是否继续
+    # （部分场景前几 bit 固有异常 / 需要完整曲线确认全程平坦）
+    confirm_request = Signal(str, str)
 
     def __init__(self, n6705c, config, debug_flag=False):
         super().__init__()
@@ -89,9 +92,30 @@ class OutputVoltageTestThread(QThread):
         self._cfg = config
         self._debug = debug_flag
         self._stop_flag = False
+        self._confirm_reply = threading.Event()
+        self._confirm_continue = False
+        self._saturation_continue = False
 
     def request_stop(self):
         self._stop_flag = True
+
+    def respond_confirm(self, continue_test):
+        """UI 弹窗应答：是否继续扫描。"""
+        self._confirm_continue = bool(continue_test)
+        self._confirm_reply.set()
+
+    def _wait_user_confirm(self, title, message):
+        """请求 UI 弹窗确认并阻塞等待应答（期间可响应停止请求）。
+
+        返回 (是否已应答, 是否继续)：等待期间用户停止时返回 (False, False)。
+        """
+        self._confirm_reply.clear()
+        self._confirm_continue = False
+        self.confirm_request.emit(title, message)
+        while not self._confirm_reply.wait(0.1):
+            if self._stop_flag:
+                return False, False
+        return True, self._confirm_continue
 
     @staticmethod
     def _compute_valid_range(voltages):
@@ -173,14 +197,14 @@ class OutputVoltageTestThread(QThread):
         """前 N 点前置校验：首尾差值过小 / 步进不等差（波动>50%）/ 读数异常时返回 (False, 原因)。"""
         for v in voltages:
             if not math.isfinite(v):
-                return False, f"non-finite reading ({v})"
+                return False, f"读数异常（{v}）"
             if v < 0:
-                return False, f"negative voltage measured ({v:.4f}V)"
+                return False, f"测得负电压（{v:.4f}V）"
 
         span = voltages[-1] - voltages[0]
         if abs(span) <= _PRECHECK_MIN_SPAN:
             vals = ", ".join(f"{v:.4f}" for v in voltages)
-            return False, f"voltage did not change (span={span * 1000:.2f}mV, readings=[{vals}]V)"
+            return False, f"电压无变化（span={span * 1000:.2f}mV，读数=[{vals}]V）"
 
         # 等差校验：各相邻步进差值应接近均值（允许 ±50% 波动），偏离过大视为异常
         mean_diff = span / (len(voltages) - 1)
@@ -189,13 +213,14 @@ class OutputVoltageTestThread(QThread):
             if abs(d - mean_diff) > _PRECHECK_DIFF_TOL * abs(mean_diff):
                 diff_str = ", ".join(f"{d * 1000:.2f}" for d in diffs)
                 return False, (
-                    f"non-linear step at point {i + 1} "
-                    f"(diff={d * 1000:.2f}mV, expected≈{mean_diff * 1000:.2f}mV, "
-                    f"tolerance=±{_PRECHECK_DIFF_TOL * 100:.0f}%, diffs=[{diff_str}]mV)"
+                    f"第 {i + 1} 步步进不等差（diff={d * 1000:.2f}mV，"
+                    f"期望≈{mean_diff * 1000:.2f}mV，容差=±{_PRECHECK_DIFF_TOL * 100:.0f}%，"
+                    f"diffs=[{diff_str}]mV）"
                 )
         return True, ""
 
     def run(self):
+        restore_ctx = None  # (i2c, device_addr, reg_addr, default_reg, width_flag)
         try:
             device_addr = int(self._cfg["device_addr"], 16)
             reg_addr = int(self._cfg["reg_addr"], 16)
@@ -253,8 +278,11 @@ class OutputVoltageTestThread(QThread):
             voltages = []
             codes = []
             precheck_failed = False
+            precheck_asked = False
 
             settle_start = time.time()
+            # 首次改写寄存器前记录恢复上下文：停止/异常路径也在 finally 兜底恢复默认值
+            restore_ctx = (i2c, device_addr, reg_addr, default_reg, width_flag)
             write_reg = data_base | (min_code << lsb)
             i2c.write(device_addr, reg_addr, write_reg, width_flag)
             self.log_message.emit(f"[TEST] Setting min_code=0x{min_code:X}, waiting for output to stabilize...")
@@ -263,7 +291,6 @@ class OutputVoltageTestThread(QThread):
             while True:
                 if self._stop_flag:
                     self.log_message.emit("[TEST] Stopped by user during stabilization.")
-                    self.test_finished.emit()
                     return
                 v = self._n6705c.measure_voltage(vmeter_ch)
                 recent_voltages.append(v)
@@ -313,52 +340,109 @@ class OutputVoltageTestThread(QThread):
                     f"{measured_v:.4f}\t{delta_str}"
                 )
 
-                # 前置校验：前 N 点电压无变化或读数异常时中止，避免整程空扫
-                if precheck_n and len(voltages) == precheck_n:
+                # 前置校验：前 N 点电压无变化或读数异常时弹窗交由用户决定是否继续
+                # （部分场景前几 bit 固有异常）；仅询问一次，继续时剔除已测异常点
+                if precheck_n and len(voltages) == precheck_n and not precheck_asked:
+                    precheck_asked = True
                     ok, reason = self._precheck_first_points(voltages)
                     if not ok:
                         self.log_message.emit(
                             f"[WARN] Pre-check failed on first {precheck_n} points: {reason}"
                         )
-                        self.log_message.emit(
-                            "[WARN] Test aborted. Check device addr / reg / bit-field config "
-                            "and output enable, or raise Min Code above the dead-band region."
+                        _logger.warning("Output voltage pre-check failed: %s", reason)
+                        answered, do_continue = self._wait_user_confirm(
+                            "前置校验失败",
+                            f"前 {precheck_n} 个测量点校验失败：\n\n{reason}\n\n"
+                            "是否继续扫描？\n"
+                            "（继续时已测异常点将被剔除，不参与性能指标计算）",
                         )
-                        _logger.warning("Output voltage pre-check failed, test aborted: %s", reason)
-                        precheck_failed = True
-                        break
+                        if not answered:
+                            self.log_message.emit(
+                                "[TEST] Stopped by user during pre-check confirmation."
+                            )
+                            precheck_failed = True
+                            break
+                        if not do_continue:
+                            self.log_message.emit(
+                                "[WARN] Test aborted by user. Check device addr / reg / bit-field "
+                                "config and output enable, or raise Min Code above the dead-band region."
+                            )
+                            precheck_failed = True
+                            break
+                        # 用户选择继续：剔除已测异常前缀，性能指标计算自动排除
+                        prefix_voltages = list(voltages)
+                        prefix_codes = list(codes)
+                        voltages.clear()
+                        codes.clear()
+                        self.log_message.emit(
+                            f"[TEST] Continuing per user choice: first {precheck_n} abnormal "
+                            "points excluded from performance metrics."
+                        )
+                        # 弹窗日志打断了 MEAS 表格，重印表头并复述已测点，保证表格连续可解析
+                        self.log_message.emit(
+                            f"[TEST] Code(Dec)\tCode(Hex)\tVoltage (V)\tΔ (mV)"
+                        )
+                        for j, (p_code, p_v) in enumerate(zip(prefix_codes, prefix_voltages)):
+                            if j >= 1:
+                                p_delta = f"{(p_v - prefix_voltages[j - 1]) * 1000.0:+.1f}"
+                            else:
+                                p_delta = ""
+                            self.log_message.emit(
+                                f"[MEAS] {p_code}\t0x{p_code:0{hex_width}X}\t"
+                                f"{p_v:.4f}\t{p_delta}"
+                            )
 
-                # 尾部饱和检测：连续 N 点电压极差低于阈值（如受限于前级电压卡住）时提前结束
+                # 尾部饱和检测：连续 N 点电压极差低于阈值（如受限于前级电压卡住）时弹窗
+                # 交由用户决定是否继续；用户继续后本次运行不再触发
                 # DEBUG_MOCK 电压为常数+噪声，必然触发，跳过
                 if (not self._debug
+                        and not self._saturation_continue
                         and len(voltages) >= _TAIL_STOP_POINTS
                         and (max(voltages[-_TAIL_STOP_POINTS:]) - min(voltages[-_TAIL_STOP_POINTS:]))
                         <= _TAIL_STOP_SPAN):
                     sat_v = voltages[-1]
                     self.log_message.emit(
                         f"[WARN] Output saturated at ~{sat_v:.4f}V for {_TAIL_STOP_POINTS} consecutive "
-                        f"codes (code=0x{code:0{hex_width}X}), stopping scan early."
+                        f"codes (code=0x{code:0{hex_width}X})."
                     )
                     _logger.warning(
-                        "Output voltage saturated at %.4fV (code=0x%X), scan stopped early",
+                        "Output voltage saturated at %.4fV (code=0x%X)",
                         sat_v, code,
                     )
-
-                    # 截断饱和平台：丢弃触发的 N 点平坦窗口，最大值取饱和前一个点
-                    # （不回溯扩展——步进幅值接近阈值时回溯会误吞线性段末端点）
-                    p = len(voltages) - _TAIL_STOP_POINTS
-                    if p > 0:
-                        voltages = voltages[:p]
-                        codes = codes[:p]
+                    answered, do_continue = self._wait_user_confirm(
+                        "输出饱和确认",
+                        f"连续 {_TAIL_STOP_POINTS} 个代码点的电压极差 ≤ {_TAIL_STOP_SPAN * 1000:.0f}mV，"
+                        f"疑似输出饱和：\n\n当前电压 ≈ {sat_v:.4f}V（code=0x{code:0{hex_width}X}）\n\n"
+                        "是否继续扫描剩余代码点？\n"
+                        "（继续时本次运行不再触发饱和终止，平坦段不参与性能指标计算）",
+                    )
+                    if not answered:
                         self.log_message.emit(
-                            f"[TEST] Saturation plateau trimmed: max voltage taken from "
-                            f"code=0x{codes[-1]:0{hex_width}X} ({voltages[-1]:.4f}V), "
-                            f"{len(voltages)} effective points kept."
+                            "[TEST] Stopped by user during saturation confirmation."
                         )
-                        self.result_update.emit(
-                            self._build_result(voltages, codes, default_voltage, default_code, 100)
-                        )
-                    break
+                        break
+                    if not do_continue:
+                        # 截断饱和平台：丢弃触发的 N 点平坦窗口，最大值取饱和前一个点
+                        # （不回溯扩展——步进幅值接近阈值时回溯会误吞线性段末端点）
+                        p = len(voltages) - _TAIL_STOP_POINTS
+                        if p > 0:
+                            voltages = voltages[:p]
+                            codes = codes[:p]
+                            self.log_message.emit(
+                                f"[TEST] Saturation plateau trimmed: max voltage taken from "
+                                f"code=0x{codes[-1]:0{hex_width}X} ({voltages[-1]:.4f}V), "
+                                f"{len(voltages)} effective points kept."
+                            )
+                            self.result_update.emit(
+                                self._build_result(voltages, codes, default_voltage, default_code, 100)
+                            )
+                        break
+                    # 用户选择继续：本次运行不再触发饱和终止，保留平坦点（有效区间算法自动剔除）
+                    self._saturation_continue = True
+                    self.log_message.emit(
+                        "[TEST] Continuing per user choice: saturation early-stop disabled "
+                        "for this run."
+                    )
 
                 idx = code - min_code
                 progress = int((idx + 1) / total_points * 100)
@@ -384,10 +468,10 @@ class OutputVoltageTestThread(QThread):
                 self.log_message.emit(f"[TEST] {'MSB':<{sum_pad}} = {msb}")
                 self.log_message.emit(f"[TEST] {'LSB':<{sum_pad}} = {lsb}")
                 self.log_message.emit(
-                    f"[TEST] {f'Min(0x{codes[0]:0{hex_width}X})':<{sum_pad}} = {voltages[0]:.4f}V"
+                    f"[TEST] {f'Min(0x{codes[low_valid]:0{hex_width}X})':<{sum_pad}} = {voltages[low_valid]:.4f}V"
                 )
                 self.log_message.emit(
-                    f"[TEST] {f'Max(0x{codes[-1]:0{hex_width}X})':<{sum_pad}} = {voltages[-1]:.4f}V"
+                    f"[TEST] {f'Max(0x{codes[high_valid]:0{hex_width}X})':<{sum_pad}} = {voltages[high_valid]:.4f}V"
                 )
                 self.log_message.emit(
                     f"[TEST] {f'Default(0x{default_code:0{hex_width}X})':<{sum_pad}} = {default_voltage:.4f}V"
@@ -403,12 +487,18 @@ class OutputVoltageTestThread(QThread):
                         f"{len(valid_voltages)} points)"
                     )
 
-            i2c.write(device_addr, reg_addr, default_reg, width_flag)
-            self.log_message.emit("[TEST] Register restored to default value.")
-
         except Exception as e:
             self.log_message.emit(f"[ERROR] Test failed: {e}")
         finally:
+            # 兜底恢复寄存器默认值：覆盖正常完成 / 用户停止 / 异常全部路径
+            if restore_ctx is not None:
+                try:
+                    i2c, dev, reg, reg_default, wflag = restore_ctx
+                    i2c.write(dev, reg, reg_default, wflag)
+                    self.log_message.emit("[TEST] Register restored to default value.")
+                except Exception as e:
+                    self.log_message.emit(f"[ERROR] Failed to restore register default value: {e}")
+                    _logger.error("Failed to restore register default value", exc_info=True)
             self.test_finished.emit()
 
 
@@ -1215,6 +1305,7 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
         self.test_thread.chart_clear.connect(self._on_chart_clear)
         self.test_thread.result_update.connect(self.update_test_result)
         self.test_thread.test_finished.connect(self._on_test_finished)
+        self.test_thread.confirm_request.connect(self._on_confirm_request)
         self.test_thread.start()
 
     def _on_stop_test(self):
@@ -1222,6 +1313,23 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
             self.test_thread.request_stop()
         self._test_stop_requested = True
         self.append_log("[TEST] Stop requested...")
+
+    def _on_confirm_request(self, title: str, message: str):
+        """Worker 确认请求（前置校验失败 / 输出饱和）→ 弹窗让用户决定是否继续。
+
+        Worker 阻塞等待应答；选“继续”继续扫描，选“中止”或按 Esc 保持终止行为。
+        """
+        box = QMessageBox(self)
+        box.setWindowTitle(title)
+        box.setIcon(QMessageBox.Warning)
+        box.setText(message)
+        continue_btn = box.addButton("继续", QMessageBox.YesRole)
+        abort_btn = box.addButton("中止", QMessageBox.NoRole)
+        box.setDefaultButton(abort_btn)
+        box.setEscapeButton(abort_btn)
+        box.exec()
+        if self.test_thread is not None:
+            self.test_thread.respond_confirm(box.clickedButton() is continue_btn)
 
     def _on_test_finished(self):
         self.set_test_running(False)
