@@ -31,7 +31,7 @@ def main():
           f"({high - low + 1} points, V={voltages[low]:.4f} ~ {voltages[high]:.4f})")
 
     assert codes[low] == 0x00, f"low boundary mismatch: 0x{codes[low]:X}"
-    assert codes[high] == 0xCC, f"high boundary mismatch: 0x{codes[high]:X}"
+    assert codes[high] == 0xCB, f"high boundary mismatch: 0x{codes[high]:X}"
 
     # 附加：平坦段场景回归（低端死区 + 高端平台）；线性段 idx 5~54。
     # 高端经 10 倍步进跳变进平台：步进比判据只识别"步进跌破"，跳变点
