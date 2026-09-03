@@ -5,6 +5,8 @@ PMU Output Voltage测试UI组件
 暗色卡片式重构版本（PySide6）
 """
 
+import math
+import statistics
 import sys
 import os
 import threading
@@ -49,6 +51,21 @@ _logger = get_logger(__name__)
 _AI_HIGHLIGHT_QSS = "border: 1px solid #15d1a3;"
 _AI_HIGHLIGHT_MS = 1500
 
+# 前置校验（OutputVoltageTestThread）：前 N 点首尾差值低于阈值视为输出无响应；
+# 相邻步进差值偏离均值超过该比例视为非等差异常
+_PRECHECK_POINTS = 5
+_PRECHECK_MIN_SPAN = 0.002  # V
+_PRECHECK_DIFF_TOL = 0.5
+
+# 尾部饱和提前终止：连续 N 点电压极差低于阈值（如受限于前级电压卡住）时结束扫描
+_TAIL_STOP_POINTS = 5
+_TAIL_STOP_SPAN = 0.002  # V
+
+# 有效线性区间判据（OutputVoltageTestThread）：以相邻压差中位数为参考步进，
+# 连续 N 点压差低于参考步进的指定比例即判为死区/饱和段（软饱和缓变与平坦段同覆盖）
+_VALID_STEP_RATIO = 0.85
+_VALID_STEP_CONSEC = 2
+
 try:
     from PySide6.QtCharts import (
         QChart, QChartView, QLineSeries, QValueAxis
@@ -75,6 +92,108 @@ class OutputVoltageTestThread(QThread):
 
     def request_stop(self):
         self._stop_flag = True
+
+    @staticmethod
+    def _compute_valid_range(voltages):
+        """计算有效线性区间索引 (low_valid, high_valid)。
+
+        以相邻压差的中位数为参考步进（抗毛刺/饱和段污染），双向剔除死区/
+        饱和段：低端取首个连续 N 个正常步进段的前一保留点（基线值 = 线性段
+        起点），高端取首个连续 N 点跌破参考步进指定比例处的前一保留点
+        （线性段终点）。MSB 位加权不匹配等孤立毛刺（如 0x80 处约 2 倍步进
+        的单点跳变）不构成连续跌破而被保留；平坦段（压差≈0）同样低于阈值，
+        故本判据天然覆盖旧平坦检测。
+        """
+        n = len(voltages)
+        if n < 3:
+            return 0, n - 1
+
+        diffs = [abs(voltages[k + 1] - voltages[k]) for k in range(n - 1)]
+        ref = statistics.median(diffs)
+        if ref <= 0:
+            return 0, n - 1
+        threshold = ref * _VALID_STEP_RATIO
+        m = len(diffs)
+
+        # 低端：首个连续 N 个正常步进的起点即死区末点（其值 = 线性段起点）
+        low_valid = 0
+        run = 0
+        for i in range(m):
+            run = run + 1 if diffs[i] >= threshold else 0
+            if run >= _VALID_STEP_CONSEC:
+                low_valid = i - _VALID_STEP_CONSEC + 1
+                break
+
+        # 高端：low_valid 之后首个连续 N 点跌破处的前一保留点为线性段终点
+        high_valid = n - 1
+        run = 0
+        for i in range(low_valid, m):
+            run = run + 1 if diffs[i] < threshold else 0
+            if run >= _VALID_STEP_CONSEC:
+                high_valid = i - _VALID_STEP_CONSEC + 1
+                break
+
+        if high_valid < low_valid:
+            low_valid, high_valid = 0, n - 1
+        return low_valid, high_valid
+
+    @staticmethod
+    def _build_result(voltages, codes, default_voltage, default_code, progress):
+        """基于有效区间计算结果指标（min/max/步进/线性度）。"""
+        result = {"progress": progress, "default_voltage": default_voltage, "default_code": default_code}
+        low_valid, high_valid = OutputVoltageTestThread._compute_valid_range(voltages)
+        valid_voltages = voltages[low_valid:high_valid + 1]
+        valid_codes = codes[low_valid:high_valid + 1]
+        if len(valid_voltages) >= 1:
+            result["min_voltage"] = min(valid_voltages)
+            result["max_voltage"] = max(valid_voltages)
+            result["valid_min_code"] = valid_codes[0]
+            result["valid_max_code"] = valid_codes[-1]
+        if len(valid_voltages) >= 2:
+            avg_step = (valid_voltages[-1] - valid_voltages[0]) / (len(valid_voltages) - 1) * 1000.0
+            result["step_voltage"] = avg_step
+
+            full_scale = valid_voltages[-1] - valid_voltages[0]
+            if abs(full_scale) > 1e-9:
+                n = len(valid_voltages)
+                ideal_step = full_scale / (n - 1)
+                max_dev = 0.0
+                for j in range(n):
+                    ideal_v = valid_voltages[0] + ideal_step * j
+                    dev = abs(valid_voltages[j] - ideal_v)
+                    if dev > max_dev:
+                        max_dev = dev
+                result["linearity"] = max_dev / abs(full_scale) * 100.0
+            else:
+                result["linearity"] = 0.0
+        return result
+
+    @staticmethod
+    def _precheck_first_points(voltages):
+        """前 N 点前置校验：首尾差值过小 / 步进不等差（波动>50%）/ 读数异常时返回 (False, 原因)。"""
+        for v in voltages:
+            if not math.isfinite(v):
+                return False, f"non-finite reading ({v})"
+            if v < 0:
+                return False, f"negative voltage measured ({v:.4f}V)"
+
+        span = voltages[-1] - voltages[0]
+        if abs(span) <= _PRECHECK_MIN_SPAN:
+            vals = ", ".join(f"{v:.4f}" for v in voltages)
+            return False, f"voltage did not change (span={span * 1000:.2f}mV, readings=[{vals}]V)"
+
+        # 等差校验：各相邻步进差值应接近均值（允许 ±50% 波动），偏离过大视为异常
+        mean_diff = span / (len(voltages) - 1)
+        diffs = [voltages[i + 1] - voltages[i] for i in range(len(voltages) - 1)]
+        for i, d in enumerate(diffs):
+            if abs(d - mean_diff) > _PRECHECK_DIFF_TOL * abs(mean_diff):
+                diff_str = ", ".join(f"{d * 1000:.2f}" for d in diffs)
+                return False, (
+                    f"non-linear step at point {i + 1} "
+                    f"(diff={d * 1000:.2f}mV, expected≈{mean_diff * 1000:.2f}mV, "
+                    f"tolerance=±{_PRECHECK_DIFF_TOL * 100:.0f}%, diffs=[{diff_str}]mV)"
+                )
+        return True, ""
 
     def run(self):
         try:
@@ -109,11 +228,19 @@ class OutputVoltageTestThread(QThread):
                 self.log_message.emit("[ERROR] Invalid code range (min >= max).")
                 return
 
+            # 前置校验点数：DEBUG_MOCK 电压为常数+噪声、单点无法判断变化，均跳过
+            if self._debug or total_points < 2:
+                precheck_n = 0
+            else:
+                precheck_n = min(_PRECHECK_POINTS, total_points)
+
             self.log_message.emit(f"[TEST] Device=0x{device_addr:02X}, Reg=0x{reg_addr:04X}, "
                                   f"MSB={msb}, LSB={lsb}, WidthFlag={width_flag}")
             self.log_message.emit(f"[TEST] Code range: 0x{min_code:X} ~ 0x{max_code:X} ({total_points} points)")
 
             hex_width = len(f"{max_code:X}")
+            # 10进制位宽与16进制位宽均按 max_code 钉死，保证逐行对齐便于解析
+            dec_width = len(str(max_code))
 
             self.chart_clear.emit()
 
@@ -125,6 +252,7 @@ class OutputVoltageTestThread(QThread):
 
             voltages = []
             codes = []
+            precheck_failed = False
 
             settle_start = time.time()
             write_reg = data_base | (min_code << lsb)
@@ -149,6 +277,11 @@ class OutputVoltageTestThread(QThread):
             settle_elapsed_ms = (time.time() - settle_start) * 1000.0
             self.log_message.emit(f"[TEST] Wait for mincode output cose: {settle_elapsed_ms:.0f}ms")
 
+            # 表格化 MEAS 输出：Tab 分隔的 CSV 风格，方便复制后直接按列解析
+            self.log_message.emit(
+                f"[TEST] Code(Dec)\tCode(Hex)\tVoltage (V)\tΔ (mV)"
+            )
+
             code = min_code
             while code <= max_code:
                 if self._stop_flag:
@@ -169,85 +302,105 @@ class OutputVoltageTestThread(QThread):
 
                 self.chart_point.emit(float(code), measured_v)
 
+                # 首点无前值可差，差值列留空；注意 voltages 已含当前点，前值取 voltages[-2]
+                if len(voltages) >= 2:
+                    delta_mv = (measured_v - voltages[-2]) * 1000.0
+                    delta_str = f"{delta_mv:+.1f}"
+                else:
+                    delta_str = ""
                 self.log_message.emit(
-                    f"[MEAS] Code=0x{code:0{hex_width}X}  Measured={measured_v:>8.4f}V"
+                    f"[MEAS] {code}\t0x{code:0{hex_width}X}\t"
+                    f"{measured_v:.4f}\t{delta_str}"
                 )
+
+                # 前置校验：前 N 点电压无变化或读数异常时中止，避免整程空扫
+                if precheck_n and len(voltages) == precheck_n:
+                    ok, reason = self._precheck_first_points(voltages)
+                    if not ok:
+                        self.log_message.emit(
+                            f"[WARN] Pre-check failed on first {precheck_n} points: {reason}"
+                        )
+                        self.log_message.emit(
+                            "[WARN] Test aborted. Check device addr / reg / bit-field config "
+                            "and output enable, or raise Min Code above the dead-band region."
+                        )
+                        _logger.warning("Output voltage pre-check failed, test aborted: %s", reason)
+                        precheck_failed = True
+                        break
+
+                # 尾部饱和检测：连续 N 点电压极差低于阈值（如受限于前级电压卡住）时提前结束
+                # DEBUG_MOCK 电压为常数+噪声，必然触发，跳过
+                if (not self._debug
+                        and len(voltages) >= _TAIL_STOP_POINTS
+                        and (max(voltages[-_TAIL_STOP_POINTS:]) - min(voltages[-_TAIL_STOP_POINTS:]))
+                        <= _TAIL_STOP_SPAN):
+                    sat_v = voltages[-1]
+                    self.log_message.emit(
+                        f"[WARN] Output saturated at ~{sat_v:.4f}V for {_TAIL_STOP_POINTS} consecutive "
+                        f"codes (code=0x{code:0{hex_width}X}), stopping scan early."
+                    )
+                    _logger.warning(
+                        "Output voltage saturated at %.4fV (code=0x%X), scan stopped early",
+                        sat_v, code,
+                    )
+
+                    # 截断饱和平台：丢弃触发的 N 点平坦窗口，最大值取饱和前一个点
+                    # （不回溯扩展——步进幅值接近阈值时回溯会误吞线性段末端点）
+                    p = len(voltages) - _TAIL_STOP_POINTS
+                    if p > 0:
+                        voltages = voltages[:p]
+                        codes = codes[:p]
+                        self.log_message.emit(
+                            f"[TEST] Saturation plateau trimmed: max voltage taken from "
+                            f"code=0x{codes[-1]:0{hex_width}X} ({voltages[-1]:.4f}V), "
+                            f"{len(voltages)} effective points kept."
+                        )
+                        self.result_update.emit(
+                            self._build_result(voltages, codes, default_voltage, default_code, 100)
+                        )
+                    break
 
                 idx = code - min_code
                 progress = int((idx + 1) / total_points * 100)
 
-                sat_threshold = 0.001
-
-                low_valid = 0
-                for k in range(1, len(voltages)):
-                    if abs(voltages[k] - voltages[k - 1]) > sat_threshold:
-                        low_valid = k
-                        break
-                else:
-                    low_valid = len(voltages) - 1
-
-                high_valid = len(voltages) - 1
-                for k in range(len(voltages) - 1, 0, -1):
-                    if abs(voltages[k] - voltages[k - 1]) > sat_threshold:
-                        high_valid = k - 1
-                        break
-                else:
-                    high_valid = 0
-
-                if high_valid <= low_valid:
-                    high_valid = len(voltages) - 1
-                    low_valid = 0
-
-                valid_voltages = voltages[low_valid:high_valid + 1]
-                valid_codes = codes[low_valid:high_valid + 1]
-
-                result = {"progress": progress, "default_voltage": default_voltage, "default_code": default_code}
-                if len(valid_voltages) >= 1:
-                    result["min_voltage"] = min(valid_voltages)
-                    result["max_voltage"] = max(valid_voltages)
-                    result["valid_min_code"] = valid_codes[0]
-                    result["valid_max_code"] = valid_codes[-1]
-                if len(valid_voltages) >= 2:
-                    avg_step = (valid_voltages[-1] - valid_voltages[0]) / (len(valid_voltages) - 1) * 1000.0
-                    result["step_voltage"] = avg_step
-
-                    full_scale = valid_voltages[-1] - valid_voltages[0]
-                    if abs(full_scale) > 1e-9:
-                        n = len(valid_voltages)
-                        ideal_step = full_scale / (n - 1)
-                        max_dev = 0.0
-                        for j in range(n):
-                            ideal_v = valid_voltages[0] + ideal_step * j
-                            dev = abs(valid_voltages[j] - ideal_v)
-                            if dev > max_dev:
-                                max_dev = dev
-                        result["linearity"] = max_dev / abs(full_scale) * 100.0
-                    else:
-                        result["linearity"] = 0.0
-
-                self.result_update.emit(result)
+                self.result_update.emit(
+                    self._build_result(voltages, codes, default_voltage, default_code, progress)
+                )
                 code += 1
 
-            if len(voltages) >= 2 and not self._stop_flag:
-                sat_threshold = 0.001
-
-                low_valid = 0
-                for k in range(1, len(voltages)):
-                    if abs(voltages[k] - voltages[k - 1]) > sat_threshold:
-                        low_valid = k
-                        break
-
-                high_valid = len(voltages) - 1
-                for k in range(len(voltages) - 1, 0, -1):
-                    if abs(voltages[k] - voltages[k - 1]) > sat_threshold:
-                        high_valid = k - 1
-                        break
+            if len(voltages) >= 2 and not self._stop_flag and not precheck_failed:
+                low_valid, high_valid = self._compute_valid_range(voltages)
 
                 if high_valid > low_valid:
                     self.log_message.emit(
                         f"[TEST] Valid code range: 0x{codes[low_valid]:0{hex_width}X} ~ "
                         f"0x{codes[high_valid]:0{hex_width}X} "
                         f"({codes[high_valid] - codes[low_valid] + 1} effective points out of {len(voltages)} total)"
+                    )
+
+                # 汇总日志：键按最长的 Default(0x..) 对齐，Step 取有效区间平均步进（与结果卡片一致）
+                sum_pad = len(f"Default(0x{'F' * hex_width})")
+                self.log_message.emit(f"[TEST] {'Reg Addr':<{sum_pad}} = 0x{reg_addr:04X}")
+                self.log_message.emit(f"[TEST] {'MSB':<{sum_pad}} = {msb}")
+                self.log_message.emit(f"[TEST] {'LSB':<{sum_pad}} = {lsb}")
+                self.log_message.emit(
+                    f"[TEST] {f'Min(0x{codes[0]:0{hex_width}X})':<{sum_pad}} = {voltages[0]:.4f}V"
+                )
+                self.log_message.emit(
+                    f"[TEST] {f'Max(0x{codes[-1]:0{hex_width}X})':<{sum_pad}} = {voltages[-1]:.4f}V"
+                )
+                self.log_message.emit(
+                    f"[TEST] {f'Default(0x{default_code:0{hex_width}X})':<{sum_pad}} = {default_voltage:.4f}V"
+                )
+                valid_voltages = voltages[low_valid:high_valid + 1]
+                if len(valid_voltages) >= 2:
+                    step_mv = (valid_voltages[-1] - valid_voltages[0]) / (len(valid_voltages) - 1) * 1000.0
+                    self.log_message.emit(f"[TEST] {'Step':<{sum_pad}} = {step_mv:.4f}mV")
+                    self.log_message.emit(
+                        f"[TEST] {'Step Range':<{sum_pad}} = "
+                        f"0x{codes[low_valid]:0{hex_width}X} ~ 0x{codes[high_valid]:0{hex_width}X} "
+                        f"({valid_voltages[0]:.4f}V ~ {valid_voltages[-1]:.4f}V, "
+                        f"{len(valid_voltages)} points)"
                     )
 
             i2c.write(device_addr, reg_addr, default_reg, width_flag)
@@ -675,6 +828,7 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
 
         self.vmeter_channel_combo = DarkComboBox()
         self.vmeter_channel_combo.addItems(["CH 1", "CH 2", "CH 3", "CH 4"])
+        self.vmeter_channel_combo.setCurrentIndex(1)
 
         grid.addWidget(vmeter_label, 0, 0)
         grid.addWidget(self.vmeter_channel_combo, 0, 1)
