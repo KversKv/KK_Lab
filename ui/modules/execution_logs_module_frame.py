@@ -803,7 +803,9 @@ class ExecutionLogsFrame(QFrame):
             .replace("<", "&lt;")
             .replace(">", "&gt;")
         )
-        if "[SUMMARY]" in message or "[DATA]" in message:
+        # 表格类日志（对齐敏感）：HTML 富文本会折叠连续空格，须替换为 &nbsp; 逐字保宽
+        if ("[SUMMARY]" in message or "[DATA]" in message
+                or "[MEAS]" in message or "[TEST]" in message):
             escaped = escaped.replace(" ", "&nbsp;")
             return (
                 f'<span style="color:#5a6a8a;">[{ts}]</span>&nbsp;&nbsp;'
