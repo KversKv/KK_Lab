@@ -49,7 +49,8 @@ def test_subpage_public_api_present():
 def test_class_attr_differentiation():
     assert LDOTestUI.MODULE_TYPE == "ldo" and DCDCTestUI.MODULE_TYPE == "dcdc"
     assert LDOTestUI.PAGE_KEY == "module_test_ldo"
-    assert LDOTestUI.STANDALONE_ITEMS == ("ldo_psrr", "ldo_protection")
+    assert LDOTestUI.STANDALONE_ITEMS == (
+        "ldo_psrr", "ldo_protection", "ldo_dropout", "ldo_current_limit")
     assert LDOTestUI.RUNNER_CLS is not None and DCDCTestUI.RUNNER_CLS is not None
     assert LDOTestUI.ITEMS_REGISTRY and DCDCTestUI.ITEMS_REGISTRY
 

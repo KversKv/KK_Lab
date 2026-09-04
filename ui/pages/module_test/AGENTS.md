@@ -25,6 +25,7 @@
 ## 局部约定
 
 - **LDO / DCDC 同名测试项双向同步（硬规则）**：更改 LDO 或 DCDC 任一模块的测试项时，必须主动考虑另一模块同名测试项（共用 `_common.py` 助手的项尤其如此），评估其流程 / 步骤 / 参数 / 判定指标是否需要同步修改；若确认不同步，须说明理由。两侧任一改动都须在同一次变更内同步另一侧（或明确豁免），并同步更新本文件。
+- **单项测试分组（2026-09-04）**：LDO 的 `ldo_dropout` / `ldo_current_limit` 加入 `ldo_test_ui.STANDALONE_ITEMS`（测试计划「单项测试」分组，仅 UI 分组变化：「全选」只作用于「自动测试序列」组，runner 按 `selected_items` 执行不变）；DCDC 侧 `dcdc_current_limit` 明确豁免不同步——用户指令限定 LDO，且 DCDC 无 dropout 项。
 - `measured` 用 `list[dict]`（非 `{"rows":[...]}`）才能被 `_measured_to_rows` 渲染成正表（quiescent 现为 dict，单列 `dIvin/dIvout/Iq`）。
 - quiescent 项：单点差分测（`iq_diff_measure`），CSV 为 `["dIvin (uA)","dIvout (uA)","Iq (uA)"]`；ENABLE 用 DR BIT/EN BIT 单 bit 位写（`set_dut_enable`）。
 - **示波器输出电压通道统一走 DUT Config**：基类 `_base_subpage` 的"示波器通道"下拉（`scope_vout_ch_combo`，存整数 `scope_vout_channel` 入全局 cfg），各 scope 测试项（ripple/output_noise/load_transient/line_transient/switching_freq）一律 `cfg.get("scope_vout_channel", 1)` 读取，**禁止**再在各测试项 ParamSpec 里加 `scope_vout_channel`（已收敛）。
