@@ -751,12 +751,13 @@ def _measure_with_autoscale(ctx: "ItemContext", scope_ch: int, nominal_v: float,
     返回 (vmax, vmin, vmean, vpp, 实际量程)。重试前须 run() 恢复采集再 settle，
     否则停采状态下改量程拿不到新波形。全部尝试耗尽后抛最后一次异常。
 
-    timebase_s 为示波器时基（s/div），采集稳定等待取 max(1s, 6×时基)，
-    确保 stop 时屏幕已显示≥1 帧完整波形（低频大时基时 1s 不够）。
+    timebase_s 为示波器时基（s/div），采集稳定等待取 max(1s, 16×时基)，
+    一整屏 = 10×时基（500ms/div 即 5s），6×时基采不满一屏，stop 会定格在
+    残帧上致截图不完整（500ms 时基实测需 ≥8s = 16×时基）。
     成功返回时屏幕处于 stop 态，调用方可直接用该帧截图。
     """
-    # 每次改量程后统一等 6×时基（含 1s 下限），让示波器采满一整屏新波形
-    acq_settle = max(1.0, 6.0 * timebase_s)
+    # 每次改量程后统一等 16×时基（含 1s 下限），让示波器采满一整屏新波形
+    acq_settle = max(1.0, 16.0 * timebase_s)
     last_err: Exception | None = None
     for attempt in range(max_tries):
         ctx.scope.set_channel_scale(scope_ch, scale_v)
@@ -769,9 +770,9 @@ def _measure_with_autoscale(ctx: "ItemContext", scope_ch: int, nominal_v: float,
             vbase = float(ctx.scope.get_channel_mean(scope_ch))
             vpp = float(ctx.scope.get_channel_pk2pk(scope_ch))
             # DISPlay 测量（pre_cmd 添加测量项）会触发示波器重新刷新，stop
-            # 定格帧可能被冲掉；等刷新完成（≥1s 且至少一整屏）并确保 stop，
+            # 定格帧可能被冲掉；等刷新完成（16×时基且 ≥1s）并确保 stop，
             # 返回的才是调用方可直接截图的稳定定格帧
-            settle(ctx, max(1.0, 10.0 * timebase_s))
+            settle(ctx, max(1.0, 16.0 * timebase_s))
             _ensure_stop_for_capture(ctx)
             return vmax, vmin, vbase, vpp, scale_v
         except Exception as e:  # noqa: BLE001 - 无效测量值，扩量程重试
@@ -1061,21 +1062,23 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
                 # 先强制 run：示波器可能停在上一项的 stop 态，停采态下改
                 # 时基/量程只会重绘旧帧，settle 再久也采不到新波形
                 ctx.scope.run()
-                # 初始 scale 固定 10 mV/div；时基=period/2，10 格整屏约 5 周期
-                ctx.scope.set_timebase_scale(period / 2.0)
+                # 两阶段时基策略：改 Vertical Scale / 获取测量值都会触发示波器
+                # 重新捕获全屏，任一操作后都须等 16×时基才能拿到正确值/帧；
+                # 大时基下逐轮等待过慢，故先用预览时基（周期/10×1.1，如
+                # 100Hz→1.1ms、1000Hz→110us）完成量程搜索等参数调整，
+                # 最后才切最终时基做正式测量与截图（与 Load Transient 对齐）
+                preview_tb = period / 10.0 * 1.1
+                ctx.scope.set_timebase_scale(preview_tb)
                 ctx.scope.set_channel_display(scope_ch, True)
-                # 改时基/通道后须先等示波器采满一屏新波形，否则后续测量/截图
-                # 抓到的是旧时基下的过渡帧（首组时基突变最明显）。
-                # 等待 60×时基（1s 下限保证高频组时基过小时仍有 ≥1s），
-                # 与 Load Transient 等待逻辑对齐
-                settle(ctx, max(1.0, 60.0 * (period / 2.0)))
-                # 测量无效（削波 9.9e37）时量程自动翻倍重试直至波形完整入屏，
-                # 最多 5 次（10→20→40→80→160 mV/div）；
-                # timebase=period/2 传入，采集稳定等待取 max(1s, 6×时基)
+                # 改时基后等 16×预览时基（小时基快速建立；1s 下限兜底高频组）
+                settle(ctx, max(1.0, 16.0 * preview_tb))
+                # 阶段一（预览时基）：量程自动搜索——削波（9.9e37）时量程翻倍
+                # 重试，最多 5 次（10→20→40→80→160 mV/div）；每轮等待仅
+                # 16×预览时基，此阶段测量值仅供削波判定，正式值在阶段二测
                 try:
-                    vmax, vmin, vbase, vpp_v, used_scale = _measure_with_autoscale(
+                    _, _, _, _, used_scale = _measure_with_autoscale(
                         ctx, scope_ch, nominal_v, init_scale_v, settle_s,
-                        timebase_s=period / 2.0, max_tries=5)
+                        timebase_s=preview_tb, max_tries=5)
                 except Exception:  # noqa: BLE001 - 量程耗尽仍削波，恢复采集再降级
                     logger.error("autoscale exhausted, re-run acquisition", exc_info=True)
                     ctx.scope.run()
@@ -1083,6 +1086,21 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
                 if used_scale > init_scale_v:
                     ctx.log_fn(f"[{item_key}] {label} 量程自动扩至 "
                                f"{used_scale * 1000:g} mV/div")
+                # 阶段二（最终时基=period/2，10 格整屏约 5 周期）：autoscale 返回
+                # 为 stop 态，须先恢复采集再改时基（停采态下改只重绘旧帧）；
+                # 改时基后由内部 set scale + settle(16×最终时基) 统一稳定，
+                # 正式测量后内部同样等 16×最终时基并重新定格，返回即稳定
+                # stop 帧可直接截图
+                ctx.scope.run()
+                ctx.scope.set_timebase_scale(period / 2.0)
+                try:
+                    vmax, vmin, vbase, vpp_v, _ = _measure_with_autoscale(
+                        ctx, scope_ch, nominal_v, used_scale, settle_s,
+                        timebase_s=period / 2.0, max_tries=1)
+                except Exception:  # noqa: BLE001 - 正式测量失败，恢复采集再降级
+                    logger.error("final-timebase measure failed", exc_info=True)
+                    ctx.scope.run()
+                    raise
                 vpp = vpp_v * 1000.0
                 over = (vmax - vbase) * 1000.0
                 under = (vbase - vmin) * 1000.0
@@ -1233,24 +1251,25 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
                 # 先强制 run：示波器可能停在上一项的 stop 态，停采态下改
                 # 时基/量程只会重绘旧帧，settle 再久也采不到新波形
                 ctx.scope.run()
-                # 初始 scale 固定 10 mV/div；时基=period/2，10 格整屏约 5 周期
-                ctx.scope.set_timebase_scale(period / 2.0)
+                # 两阶段时基策略：改 Vertical Scale / 获取测量值都会触发示波器
+                # 重新捕获全屏，任一操作后都须等 16×时基才能拿到正确值/帧；
+                # 大时基下逐轮等待过慢，故先用预览时基（周期/10×1.1，如
+                # 100Hz→1.1ms、1000Hz→110us）完成量程搜索等参数调整，
+                # 最后才切最终时基做正式测量与截图
+                preview_tb = period / 10.0 * 1.1
+                ctx.scope.set_timebase_scale(preview_tb)
                 ctx.scope.set_channel_display(scope_ch, True)
-                # 改时基/通道后须先等示波器采满一屏新波形，否则后续测量/截图
-                # 抓到的是旧时基下的过渡帧（首组时基突变最明显）。
-                # 等待 60×时基：低频大时基（如 10Hz=50ms/div）需足够时长让 DSOX
-                # 在新时基下采满一屏并刷新显示，短 settle 会让 autoscale stop
-                # 定格在未采满的帧上（1s 下限保证高频组时基过小时仍有 ≥1s）；
+                # 改时基后等 16×预览时基（小时基快速建立；1s 下限兜底高频组）；
                 # 首组额外 +3s：示波器刚初始化（关通道/设强度/改时基量程）后
                 # 首次采集建立更慢，多等 3s 确保首帧稳定
-                settle(ctx, max(1.0, 60.0 * (period / 2.0)) + (3.0 if idx == 0 else 0.0))
-                # 测量无效（削波 9.9e37）时量程自动翻倍重试直至波形完整入屏，
-                # 最多 5 次（10→20→40→80→160 mV/div）；
-                # timebase=period/2 传入，采集稳定等待取 max(1s, 6×时基)
+                settle(ctx, max(1.0, 16.0 * preview_tb) + (3.0 if idx == 0 else 0.0))
+                # 阶段一（预览时基）：量程自动搜索——削波（9.9e37）时量程翻倍
+                # 重试，最多 5 次（10→20→40→80→160 mV/div）；每轮等待仅
+                # 16×预览时基，此阶段测量值仅供削波判定，正式值在阶段二测
                 try:
-                    vmax, vmin, vbase, vpp_v, used_scale = _measure_with_autoscale(
+                    _, _, _, _, used_scale = _measure_with_autoscale(
                         ctx, scope_ch, nominal_v, init_scale_v, settle_s,
-                        timebase_s=period / 2.0, max_tries=5)
+                        timebase_s=preview_tb, max_tries=5)
                 except Exception:  # noqa: BLE001 - 量程耗尽仍削波，恢复采集再降级
                     logger.error("autoscale exhausted, re-run acquisition", exc_info=True)
                     ctx.scope.run()
@@ -1258,6 +1277,20 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
                 if used_scale > init_scale_v:
                     ctx.log_fn(f"[{item_key}] {label} 量程自动扩至 "
                                f"{used_scale * 1000:g} mV/div")
+                # 阶段二（最终时基=period/2，10 格整屏约 5 周期）：autoscale 返回
+                # 为 stop 态，须先恢复采集再改时基（停采态下改只重绘旧帧）；
+                # 改时基后等 16×最终时基，正式测量后内部同样等 16×最终时基
+                # 并重新定格，返回即稳定 stop 帧可直接截图
+                ctx.scope.run()
+                ctx.scope.set_timebase_scale(period / 2.0)
+                try:
+                    vmax, vmin, vbase, vpp_v, _ = _measure_with_autoscale(
+                        ctx, scope_ch, nominal_v, used_scale, settle_s,
+                        timebase_s=period / 2.0, max_tries=1)
+                except Exception:  # noqa: BLE001 - 正式测量失败，恢复采集再降级
+                    logger.error("final-timebase measure failed", exc_info=True)
+                    ctx.scope.run()
+                    raise
                 vpp = vpp_v * 1000.0
                 over = (vmax - vbase) * 1000.0
                 under = (vbase - vmin) * 1000.0
