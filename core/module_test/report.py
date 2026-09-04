@@ -1082,6 +1082,8 @@ const I18N = {
       sign_test:"测试",sign_review:"复核",sign_approve:"批准",
       sign_date:"日期",rev_a:"Rev A",rev_init:"初版发布",
       copy_link:"复制链接",copied:"链接已复制",chart_png:"导出 PNG",
+      copy_shot:"复制截图",shot_copied:"测试项截图已复制到粘贴板",
+      shot_fail:"粘贴板写入失败，已下载 PNG 文件",
       chart_reset:"重置缩放",chart_logx:"log X",chart_logy:"log Y",
       chart_data:"图表数据",
       page:"页",of:"/",density:"紧凑",per_page:"每页",
@@ -1114,6 +1116,8 @@ const I18N = {
       sign_test:"Tested by",sign_review:"Reviewed by",sign_approve:"Approved by",
       sign_date:"Date",rev_a:"Rev A",rev_init:"Initial release",
       copy_link:"Copy link",copied:"Link copied",chart_png:"Export PNG",
+      copy_shot:"Copy image",shot_copied:"Item image copied to clipboard",
+      shot_fail:"Clipboard write failed; PNG downloaded",
       chart_reset:"Reset zoom",chart_logx:"log X",chart_logy:"log Y",
       chart_data:"Chart data",
       page:"Page",of:"/",density:"Compact",per_page:"Per page",
@@ -1210,7 +1214,7 @@ function pal() {
   const g = k => cs.getPropertyValue(k).trim();
   return {accent:g("--accent"),pass:g("--pass"),fail:g("--fail"),warn:g("--warn"),
     na:g("--na"),ink2:g("--ink-2"),ink3:g("--ink-3"),grid:g("--grid"),
-    raised:g("--bg-raised"),line:g("--line"),
+    base:g("--bg-base"),raised:g("--bg-raised"),line:g("--line"),
     seq:[g("--c1"),g("--c2"),g("--c3"),g("--c4"),g("--c5"),g("--c6"),g("--c7"),g("--c8")]};
 }
 const VERDICT_CLS = v => v === "PASS" ? "pass" : v === "FAIL" ? "fail" : v === "WARN" ? "warn" : "na";
@@ -1389,6 +1393,12 @@ function metricCard(mm) {
     '<div class="metric-card__value">' + numHTML(mm.value, mm.precision, mm.unit) + "</div>" +
     spec + bar + "</div>";
 }
+/* item 头部「复制截图」按钮内联 SVG 图标（硬红线：禁 Emoji，用 SVG 替代） */
+const ICON_SHOT =
+  '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" ' +
+  'stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">' +
+  '<path d="M5.6 4.2 6.4 3h3.2l.8 1.2"/><rect x="1.8" y="4.2" width="12.4" height="9" ' +
+  'rx="1.6"/><circle cx="8" cy="8.7" r="2.4"/></svg>';
 function renderItems() {
   const t = T();
   $("#items").innerHTML = (REPORT_DATA.items || []).map(it => {
@@ -1402,6 +1412,7 @@ function renderItems() {
       (it.unit ? '<span class="tag">' + esc(scaleUnit(it.unit)) + "</span>" : "") +
       '<span class="item__anom" data-anom="' + it.item_key + '"></span>' +
       '<span class="item__spacer"></span>' +
+      '<button class="icon-btn" data-act="shot" title="' + esc(t.copy_shot) + '" aria-label="' + esc(t.copy_shot) + '">' + ICON_SHOT + "</button>" +
       '<button class="icon-btn" data-act="link" title="' + esc(t.copy_link) + '" aria-label="' + esc(t.copy_link) + '">🔗</button>' +
       '<button class="icon-btn" data-act="fold" aria-label="collapse">▾</button></div>' +
       '<div class="item__body">' +
@@ -1859,6 +1870,68 @@ function exportChartPng(box, name) {
     a.href = cv.toDataURL("image/png"); a.click();
   };
   img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(xml);
+}
+
+/* ================================================================
+ * item 整卡截图 —— foreignObject 静态渲染为 PNG，优先写系统粘贴板
+ * ================================================================ */
+function copyItemShot(sec) {
+  const t = T();
+  if (!sec) return;
+  const rect = sec.getBoundingClientRect();
+  const pad = 8;  /* 四周留白，容纳卡片投影 */
+  const W = Math.ceil(Math.max(rect.width, sec.scrollWidth)) + pad * 2;
+  const H = Math.ceil(Math.max(rect.height, sec.scrollHeight)) + pad * 2;
+  if (W <= pad * 2 || H <= pad * 2) { toast(t.no_data); return; }
+  const clone = sec.cloneNode(true);
+  clone.classList.remove("flash");
+  /* 序列化外壳：注入全量页面 CSS；SVG 文档中 :root 即 <svg> 根，
+     把当前主题 data-theme 挂到 svg 上使 CSS 变量按主题生效；
+     body 等价的字体/底色在包装 div 上手工补齐（静态文档无 body） */
+  const cssTxt = $$("style").map(s2 => s2.textContent).join("\n");
+  const wrap = document.createElement("div");
+  wrap.setAttribute("class", "shot-root");
+  wrap.setAttribute("style", "padding:" + pad + "px;background:var(--bg-base);" +
+    "color:var(--ink-1);font:var(--fs-body)/var(--lh) var(--font-ui);");
+  const st2 = document.createElement("style");
+  st2.textContent = cssTxt + "\n.shot-root .item{margin:0}";
+  wrap.appendChild(st2);
+  wrap.appendChild(clone);
+  const xhtml = new XMLSerializer().serializeToString(wrap);
+  const svgStr = '<svg xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="' + H +
+    '" data-theme="' + esc(S.theme) + '"><foreignObject width="100%" height="100%">' +
+    xhtml + "</foreignObject></svg>";
+  const scale = 2;  /* 2x 光栅化，与 exportChartPng 一致 */
+  const blobUrl = URL.createObjectURL(
+    new Blob([svgStr], {type: "image/svg+xml;charset=utf-8"}));
+  const img = new Image();
+  /* 先确保卡内既有 <img>（截图均为 dataURI）解码完成再栅格化 */
+  const pre = Promise.all($$("img", sec).map(im =>
+    im.decode ? im.decode().catch(() => {}) : Promise.resolve()));
+  img.onload = () => { pre.then(() => {
+    const cv = document.createElement("canvas");
+    cv.width = W * scale; cv.height = H * scale;
+    const cx = cv.getContext("2d");
+    cx.fillStyle = pal().base; cx.fillRect(0, 0, cv.width, cv.height);
+    cx.drawImage(img, 0, 0, cv.width, cv.height);
+    URL.revokeObjectURL(blobUrl);
+    cv.toBlob(blob => {
+      if (!blob) { toast(t.copy_fail); return; }
+      const dl = () => {
+        const a = document.createElement("a");
+        a.download = (sec.dataset.key || "item") + ".png";
+        a.href = URL.createObjectURL(blob); a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      };
+      const tryClip = (navigator.clipboard && window.ClipboardItem)
+        ? navigator.clipboard.write([new ClipboardItem({"image/png": blob})])
+        : Promise.reject(new Error("clipboard unavailable"));
+      tryClip.then(() => toast(t.shot_copied))
+        .catch(() => { dl(); toast(t.shot_fail); });
+    }, "image/png");
+  }); };
+  img.onerror = () => { URL.revokeObjectURL(blobUrl); toast(t.copy_fail); };
+  img.src = blobUrl;
 }
 
 /* ================================================================
@@ -2389,6 +2462,11 @@ function bindGlobal() {
       (navigator.clipboard ? navigator.clipboard.writeText(url)
         : Promise.reject()).then(() => toast(T().copied),
         () => toast(url));
+      return;
+    }
+    const shotBtn = e.target.closest("[data-act='shot']");
+    if (shotBtn) {
+      copyItemShot(shotBtn.closest(".item"));
       return;
     }
     const cb = e.target.closest("[data-cact]");
