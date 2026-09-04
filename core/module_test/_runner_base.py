@@ -8,6 +8,7 @@ LDO/DCDC 各自的 runner 继承本类，仅绑定 module_type + items 注册表
 """
 from __future__ import annotations
 
+import math
 import os
 import re
 import threading
@@ -16,7 +17,15 @@ from typing import Any, Callable
 
 from PySide6.QtCore import QThread, Signal
 
-from core.module_test._common import ItemContext
+from core.module_test._common import (
+    ItemContext,
+    measure_vout,
+    parse_channel,
+    settle,
+    setup_load_channel,
+    setup_vout_meter,
+    teardown_load,
+)
 from core.module_test.judge import evaluate_item
 from core.module_test.report import save_html_report
 from core.module_test.result_model import ItemResult, ModuleTestResult
@@ -26,6 +35,11 @@ from log_config import get_logger
 logger = get_logger(__name__)
 
 _INVALID_DIR_CHARS = re.compile(r'[\\/:*?"<>|\r\n\t]+')
+
+# 逐项 Vout 偏差门禁：每项结束后 Vout 与首项前基准 V0 的允许偏差（±20 mV）
+_VOUT_GUARD_LIMIT_V = 0.020
+_VOUT_GUARD_SAMPLES = 3      # 门禁测量采样次数（多次采样去极值均值）
+_VOUT_GUARD_SETTLE_S = 0.05  # 门禁采样间隔稳定等待
 
 
 def _safe_dir_part(text: str) -> str:
@@ -186,6 +200,77 @@ class ModuleTestRunner(QThread):
             })
         return entries
 
+    def _make_ctx(self, config: dict) -> ItemContext:
+        """构造测试项执行上下文（config 为该项专用 cfg）。"""
+        return ItemContext(
+            n6705c=self._n6705c,
+            scope=self._scope,
+            chamber=self._chamber,
+            config=config,
+            out_dir=self._out_dir,
+            is_mock=bool(DEBUG_MOCK) or self._n6705c is None,
+            stop_flag_fn=lambda: self._stop_flag,
+            log_fn=self._log,
+            progress_fn=self._progress,
+            confirm_fn=self._wait_user_confirm,
+        )
+
+    def _preload_iload(self) -> None:
+        """配置完成后、第一项测试前的 Iload 通道预拉载步骤。
+
+        1mA 持续 1s 后关断：setup_load_channel 先写电流（非 0）再开启，
+        满足 CCLoad 禁 0mA 开机红线；收尾 teardown_load 仅 channel_off。
+        Mock 模式 settle 跳过（通道调用为安全 no-op）。
+        """
+        ctx = self._make_ctx(dict(self._cfg))
+        ch = parse_channel(ctx.config.get("iload_channel", 3))
+        self._log(f"[PRE] Iload 通道 ch{ch} 预拉载 1mA，持续 1s...")
+        setup_load_channel(ctx, ch, initial_current_a=0.001)
+        settle(ctx, 1.0)
+        teardown_load(ctx, ch)
+        self._log("[PRE] Iload 通道预拉载完成，通道已关断。")
+
+    def _record_vout_baseline(self) -> float | None:
+        """第一项测试开始前记录 Vout 基准电压 V0（逐项偏差门禁基准）。
+
+        读取失败返回 None：记 WARN 后门禁降级为跳过，不阻断测试启动。
+        """
+        ctx = self._make_ctx(dict(self._cfg))
+        setup_vout_meter(ctx)
+        v0 = measure_vout(ctx, count=_VOUT_GUARD_SAMPLES,
+                          settle_s=_VOUT_GUARD_SETTLE_S, default=float("nan"))
+        if math.isnan(v0):
+            self._log("[WARN] Vout 基准电压 V0 读取失败，跳过逐项电压偏差门禁。")
+            return None
+        self._log(f"[VOUT] 基准电压 V0 = {v0:.4f} V")
+        return v0
+
+    def _check_vout_deviation(self, ctx: ItemContext, baseline: float | None,
+                              item_key: str) -> bool:
+        """单项结束后 Vout 偏差门禁：与 V0 偏差超过 ±20 mV 返回 False。
+
+        baseline 为 None（基准读取失败）时跳过检查；本次读取失败仅记 WARN
+        不中断（测量异常不等于 DUT 输出异常，避免误停）。
+        """
+        if baseline is None:
+            return True
+        setup_vout_meter(ctx)
+        v = measure_vout(ctx, count=_VOUT_GUARD_SAMPLES,
+                         settle_s=_VOUT_GUARD_SETTLE_S, default=float("nan"))
+        if math.isnan(v):
+            self._log(f"[WARN] {item_key} 结束后 Vout 读取失败，跳过偏差检查。")
+            return True
+        dev_v = v - baseline
+        if abs(dev_v) > _VOUT_GUARD_LIMIT_V:
+            self._log(f"[ERROR] {item_key} 结束后 Vout = {v:.4f} V，与基准 "
+                      f"V0 = {baseline:.4f} V 偏差 {dev_v * 1000.0:+.1f} mV，"
+                      f"超过 ±{_VOUT_GUARD_LIMIT_V * 1000.0:.0f} mV，停止后续测试。")
+            return False
+        self._log(f"[VOUT] {item_key} 结束后 Vout = {v:.4f} V"
+                  f"（偏差 {dev_v * 1000.0:+.1f} mV，在 ±"
+                  f"{_VOUT_GUARD_LIMIT_V * 1000.0:.0f} mV 内）。")
+        return True
+
     def run(self):  # noqa: D401 - QThread 入口
         selected: list[str] = [k for k in self._cfg.get("selected_items", []) if k in self._items_registry]
         if not selected:
@@ -197,6 +282,13 @@ class ModuleTestRunner(QThread):
         self._result.instruments = self._collect_instruments()
         total = len(selected)
         self._log(f"[RUN] {self._module_type.upper()} Module Test 开始，共 {total} 项，输出目录: {self._out_dir}")
+
+        # 配置完成后、第一项测试前：Iload 通道 1mA 预拉载 1s 后关断
+        self._preload_iload()
+
+        # 第一项测试开始前：记录 Vout 基准电压 V0（逐项偏差门禁基准）
+        vout_baseline = self._record_vout_baseline()
+        aborted_reason = ""
 
         for idx, item_key in enumerate(selected):
             if self._stop_flag:
@@ -213,18 +305,7 @@ class ModuleTestRunner(QThread):
             if override:
                 item_cfg.update(override)
 
-            ctx = ItemContext(
-                n6705c=self._n6705c,
-                scope=self._scope,
-                chamber=self._chamber,
-                config=item_cfg,
-                out_dir=self._out_dir,
-                is_mock=bool(DEBUG_MOCK) or self._n6705c is None,
-                stop_flag_fn=lambda: self._stop_flag,
-                log_fn=self._log,
-                progress_fn=self._progress,
-                confirm_fn=self._wait_user_confirm,
-            )
+            ctx = self._make_ctx(item_cfg)
             try:
                 result: ItemResult = run_fn(ctx)
             except Exception:  # noqa: BLE001 - 单项异常不阻断整体
@@ -238,8 +319,15 @@ class ModuleTestRunner(QThread):
             self.item_finished.emit(item_key, result.to_summary())
             self._progress(int((idx + 1) / total * 100), name)
 
+            # 逐项 Vout 偏差门禁：与 V0 偏差超 ±20 mV 则停止后续项
+            if not self._check_vout_deviation(ctx, vout_baseline, item_key):
+                aborted_reason = f"{item_key} 结束后 Vout 与基准 V0 偏差超过 ±20 mV"
+                break
+
         self._result.finished_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self._result.build_summary()
+        if aborted_reason:
+            self._result.summary["aborted"] = aborted_reason
 
         try:
             report_path = save_html_report(self._result, self._out_dir)
