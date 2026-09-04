@@ -220,6 +220,7 @@ instruments/
 │   ├── base.py              # 示波器抽象基类 (identify/测量/设置/触发/截图等通用接口)
 │   ├── keysight/            # Keysight 品牌
 │   │   ├── dsox4034a.py     # DSOX4034A 示波器 SCPI 驱动
+│   │   ├── dsox_fast_capture.py  # DSOX4034A 强制触发时基扫描封装（SINGLE+FORCe+OPER 判据，禁固定 sleep）
 │   │   └── dsox_lib.py      # DSOX 底层通信函数库
 │   └── tektronix/           # Tektronix 品牌
 │       └── mso64b.py        # MSO64B 混合信号示波器驱动

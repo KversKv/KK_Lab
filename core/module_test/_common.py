@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from debug_config import SCOPE_DEBUG_SHOTS
+from debug_config import MODULE_TEST_DEBUG
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -90,6 +90,17 @@ def settle(ctx: "ItemContext", seconds: float) -> None:
     if ctx.is_mock or seconds <= 0:
         return
     time.sleep(seconds)
+
+
+def _acq_settle_s(timebase_s: float) -> float:
+    """示波器改时基/量程后的采集稳定等待：max(下限, 16×时基)。
+
+    下限：时基 >10ms/div 取 2.5s（大时基波形重建慢，1s 实测不足，
+    10Hz 组 50ms/div 最终时基 1s 后 stop 定格残帧、测量恒 9.9e37）；
+    ≤10ms/div 取 1s 兜底高频组。
+    """
+    floor = 2.5 if timebase_s > 0.010 else 1.0
+    return max(floor, 16.0 * timebase_s)
 
 
 def trimmed_mean(samples: list[float]) -> float:
@@ -745,40 +756,55 @@ def _ensure_stop_for_capture(ctx: "ItemContext") -> None:
 def _measure_with_autoscale(ctx: "ItemContext", scope_ch: int, nominal_v: float,
                             scale_v: float, settle_s: float,
                             timebase_s: float = 0.0,
-                            max_tries: int = 4) -> tuple[float, float, float, float, float]:
+                            max_tries: int = 4,
+                            debug_shot: Callable[[str], None] | None = None
+                            ) -> tuple[float, float, float, float, float]:
     """设量程后测 Vmax/Vmin/Vmean/Vpp；波形削波（9.9e37 无效值）时量程翻倍重试。
 
     返回 (vmax, vmin, vmean, vpp, 实际量程)。重试前须 run() 恢复采集再 settle，
     否则停采状态下改量程拿不到新波形。全部尝试耗尽后抛最后一次异常。
 
-    timebase_s 为示波器时基（s/div），采集稳定等待取 max(1s, 16×时基)，
+    timebase_s 为示波器时基（s/div），采集稳定等待取 16×时基（下限 1s，
+    时基 >10ms/div 时 2.5s，见 _acq_settle_s）。
     一整屏 = 10×时基（500ms/div 即 5s），6×时基采不满一屏，stop 会定格在
     残帧上致截图不完整（500ms 时基实测需 ≥8s = 16×时基）。
     成功返回时屏幕处于 stop 态，调用方可直接用该帧截图。
+    debug_shot（可选）：MODULE_TEST_DEBUG 逐节点截图钩子，在每次尝试的
+    量程设置并 stop 定格后（scaled，完整一屏帧）/ 测量定格后（measured）/
+    削波失败重试前（invalid）回调，tag 形如 att{n}_scaled，由调用方拼接前缀落盘。
     """
-    # 每次改量程后统一等 16×时基（含 1s 下限），让示波器采满一整屏新波形
-    acq_settle = max(1.0, 16.0 * timebase_s)
+    # 每次改量程后统一等 16×时基（下限见 _acq_settle_s），让示波器采满一整屏新波形
+    acq_settle = _acq_settle_s(timebase_s)
     last_err: Exception | None = None
     for attempt in range(max_tries):
         ctx.scope.set_channel_scale(scope_ch, scale_v)
         ctx.scope.set_channel_offset(scope_ch, nominal_v)
         settle(ctx, acq_settle)
         ctx.scope.stop()
+        # stop 后再截图：定格的是 settle 采满一整屏的完整新波形；若在 run 态
+        # 截图（内部会 stop/截图/run），重启采集后紧跟的流程 stop 会定格在
+        # 残帧上，MSO64B 即时测量读残帧会误判削波触发无谓的扩量程重试
+        if debug_shot:
+            debug_shot(f"att{attempt + 1}_scaled")
         try:
             vmax = float(ctx.scope.get_channel_max(scope_ch))
             vmin = float(ctx.scope.get_channel_min(scope_ch))
             vbase = float(ctx.scope.get_channel_mean(scope_ch))
             vpp = float(ctx.scope.get_channel_pk2pk(scope_ch))
             # DISPlay 测量（pre_cmd 添加测量项）会触发示波器重新刷新，stop
-            # 定格帧可能被冲掉；等刷新完成（16×时基且 ≥1s）并确保 stop，
-            # 返回的才是调用方可直接截图的稳定定格帧
-            settle(ctx, max(1.0, 16.0 * timebase_s))
+            # 定格帧可能被冲掉；等刷新完成（16×时基，下限见 _acq_settle_s）
+            # 并确保 stop，返回的才是调用方可直接截图的稳定定格帧
+            settle(ctx, _acq_settle_s(timebase_s))
             _ensure_stop_for_capture(ctx)
+            if debug_shot:
+                debug_shot(f"att{attempt + 1}_measured")
             return vmax, vmin, vbase, vpp, scale_v
         except Exception as e:  # noqa: BLE001 - 无效测量值，扩量程重试
             last_err = e
             logger.info("autoscale attempt %d failed (scale=%.4f V/div): %s",
                         attempt + 1, scale_v, e)
+            if debug_shot:
+                debug_shot(f"att{attempt + 1}_invalid")
             scale_v *= 2.0
             # 恢复采集并等满一整屏，否则下一轮改量程时波形尚未重建
             ctx.scope.run()
@@ -828,24 +854,73 @@ def _capture_scope_png(ctx: "ItemContext", item_key: str, load_ma: float,
         return None
 
 
+def _debug_event(ctx: "ItemContext", dbg_dir: str, event: str) -> None:
+    """MODULE_TEST_DEBUG 事件日志：详细事件带时间戳落盘到报告目录 debug/events.log。
+
+    每行含绝对时间戳（含毫秒）与相对耗时（每个测试项首条事件锚定 t0，
+    存于 ctx._debug_t0）；追加写入，跨项共用同一文件（同一次 run 的 out_dir）。
+    与调试截图同目录，便于逐节点对照定位；失败仅记 logger 不影响测试流程。
+    """
+    if not MODULE_TEST_DEBUG or ctx.is_mock:
+        return
+    try:
+        now = time.time()
+        t0 = getattr(ctx, "_debug_t0", 0.0)
+        if not t0:
+            t0 = now
+            ctx._debug_t0 = now  # type: ignore[attr-defined]
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now))
+        ms = int(now * 1000) % 1000
+        os.makedirs(dbg_dir, exist_ok=True)
+        with open(os.path.join(dbg_dir, "events.log"), "a", encoding="utf-8") as f:
+            f.write(f"[{stamp}.{ms:03d}] [+{now - t0:7.3f}s] {event}\n")
+    except Exception:  # noqa: BLE001 - 事件日志失败不阻断测试
+        logger.error("debug event log failed: %s", event, exc_info=True)
+
+
 def _debug_scope_shot(ctx: "ItemContext", dbg_dir: str, tag: str) -> None:
-    """DEBUG 截图（debug_config.SCOPE_DEBUG_SHOTS 开启）：落盘当前示波器屏幕到 debug/。
+    """DEBUG 截图（debug_config.MODULE_TEST_DEBUG 开启）：落盘当前示波器屏幕到 debug/。
 
     用于定位波形异常出现的流程节点；失败仅记日志，不影响测试流程。
+    截图前 stop() 定格（run 态刷新中会截到过渡帧/空帧），截图后恢复原状态：
+    原本在采集则 run() 恢复；原本已停则保持 stop 态不恢复（不冲掉调用方
+    已定格的测量帧，与 _capture_scope_png 同范式）。
+    每次截图（含成败与传输耗时）同步记入 debug/events.log 事件日志。
     """
     if ctx.is_mock or ctx.scope is None:
         return
+    was_stopped = False
+    try:
+        was_stopped = not ctx.scope.is_acquiring()
+        if not was_stopped:
+            ctx.scope.stop()
+            # 等一整屏定格（与 _capture_scope_png 同范式，0.2s 富余）
+            settle(ctx, 0.2)
+    except Exception:  # noqa: BLE001 - 状态查询/停止失败仍尝试截图
+        logger.error("debug scope stop before capture failed @%s", tag, exc_info=True)
+    t_shot = time.time()
     try:
         png = ctx.scope.capture_screen_png()
         if not png:
+            _debug_event(ctx, dbg_dir, f"[debug-shot] {tag} 截图返回空数据")
             return
         os.makedirs(dbg_dir, exist_ok=True)
         path = os.path.join(dbg_dir, f"{tag}.png")
         with open(path, "wb") as f:
             f.write(png)
         ctx.log_fn(f"[debug-shot] {tag}.png")
-    except Exception:  # noqa: BLE001
+        _debug_event(ctx, dbg_dir,
+                     f"[debug-shot] {tag}.png 落盘（传输耗时 {time.time() - t_shot:.2f}s）")
+    except Exception as e:  # noqa: BLE001
         logger.error("debug scope shot %s failed", tag, exc_info=True)
+        _debug_event(ctx, dbg_dir,
+                     f"[debug-shot] {tag} 失败（{type(e).__name__}: {e}）")
+    finally:
+        try:
+            if not was_stopped:
+                ctx.scope.run()
+        except Exception:  # noqa: BLE001
+            logger.error("debug scope run after capture failed @%s", tag, exc_info=True)
 
 
 def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
@@ -879,9 +954,13 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
     rows: list[list[Any]] = []
     screenshots: list[dict[str, Any]] = []
     shot_dir = os.path.join(ctx.out_dir, "screenshots")
-    # DEBUG：SCOPE_DEBUG_SHOTS 开启时逐节点落盘示波器屏幕，定位波形异常出现的步骤
-    dbg = SCOPE_DEBUG_SHOTS and not ctx.is_mock and ctx.scope is not None
+    # DEBUG：MODULE_TEST_DEBUG 开启时逐节点落盘示波器屏幕 + 记事件日志，
+    # 定位波形异常出现的步骤
+    dbg = MODULE_TEST_DEBUG and not ctx.is_mock and ctx.scope is not None
     dbg_dir = os.path.join(ctx.out_dir, "debug")
+    _debug_event(ctx, dbg_dir,
+                 f"item 开始: {name}（{item_key}），负载扫描 {len(points)} 点"
+                 f"（{i_start:g}~{i_end:g}mA 步进 {i_step:g}mA）")
     if dbg:
         _debug_scope_shot(ctx, dbg_dir, f"{item_key}_00_initial")
 
@@ -942,6 +1021,10 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
         if shot:
             screenshots.append({"Iload (mA)": il, "png": shot})
         ctx.progress_fn(int((i + 1) / len(points) * 100), f"{name} {il:g}mA")
+        _debug_event(ctx, dbg_dir,
+                     f"p{i:02d} {il:g}mA 测量: Vout={vout:.4f}mV "
+                     f"Vpp={vpp:.3f}mV RMS={rms:.3f}mV"
+                     + (f" 截图={os.path.basename(shot)}" if shot else " 截图=失败/未生成"))
         ctx.log_fn(f"[{item_key}] Iload={il:g}mA -> Vout={vout:.4f} mV, "
                    f"Vpp={vpp:.3f} mV, RMS={rms:.3f} mV")
     if not ctx.is_mock and load_state.get("on"):
@@ -950,6 +1033,9 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
 
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Iload (mA)", "Vout (mV)", "Vpp (mV)", "RMS (mV)"], rows)
+    _debug_event(ctx, dbg_dir,
+                 f"item 完成: {name}（{item_key}），有效点 {len(rows)}，"
+                 f"CSV={os.path.basename(csv_path)}")
 
     max_row = max(rows, key=lambda r: r[2], default=None)
     # 输出电压最大 Drop：标称值 - 扫描中最小 Vout（负载加重导致跌落）
@@ -1070,8 +1156,8 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
                 preview_tb = period / 10.0 * 1.1
                 ctx.scope.set_timebase_scale(preview_tb)
                 ctx.scope.set_channel_display(scope_ch, True)
-                # 改时基后等 16×预览时基（小时基快速建立；1s 下限兜底高频组）
-                settle(ctx, max(1.0, 16.0 * preview_tb))
+                # 改时基后等 16×预览时基（小时基快速建立；下限见 _acq_settle_s）
+                settle(ctx, _acq_settle_s(preview_tb))
                 # 阶段一（预览时基）：量程自动搜索——削波（9.9e37）时量程翻倍
                 # 重试，最多 5 次（10→20→40→80→160 mV/div）；每轮等待仅
                 # 16×预览时基，此阶段测量值仅供削波判定，正式值在阶段二测
@@ -1194,6 +1280,14 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
     rows: list[list[Any]] = []
     screenshots: list[dict[str, Any]] = []
     shot_dir = os.path.join(ctx.out_dir, "screenshots")
+    # DEBUG：MODULE_TEST_DEBUG 开启时逐节点落盘示波器屏幕 + 记事件日志，
+    # 定位截图异常出现的步骤
+    dbg = MODULE_TEST_DEBUG and not ctx.is_mock and ctx.scope is not None
+    dbg_dir = os.path.join(ctx.out_dir, "debug")
+    _debug_event(ctx, dbg_dir,
+                 f"item 开始: {name}（{item_key}），共 {len(groups)} 组")
+    if dbg:
+        _debug_scope_shot(ctx, dbg_dir, f"{item_key}_00_initial")
 
     if not ctx.is_mock:
         _reset_arb_state(ctx, [iload_ch])
@@ -1212,6 +1306,11 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
             continue
         period = 1.0 / freq
         label = f"组{idx + 1} {i0_ma:g}->{i1_ma:g}mA @{freq:g}Hz"
+        # DEBUG 截图与报告截图共用的组标签
+        grp_tag = f"g{idx + 1}_{freq:g}Hz"
+        _debug_event(ctx, dbg_dir,
+                     f"{grp_tag} 开始: I0={i0_ma:g}mA I1={i1_ma:g}mA "
+                     f"f={freq:g}Hz（周期 {period * 1000:.3f}ms）")
 
         if ctx.is_mock:
             over = mock_jitter(mock_over_mv, 0.05)
@@ -1242,6 +1341,9 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
                 _n6705c_err_check(ctx, f"g{idx + 1} trig_src")
                 ctx.n6705c.arb_on(iload_ch)
                 _n6705c_err_check(ctx, f"g{idx + 1} arb_on")
+                if dbg:
+                    _debug_scope_shot(ctx, dbg_dir,
+                                      f"{item_key}_{grp_tag}_10_arb_on")
 
                 # 先关闭其它通道、波形强度设 100%（便于看清过冲/欠冲）
                 if hasattr(ctx.scope, "close_all_channels"):
@@ -1259,17 +1361,34 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
                 preview_tb = period / 10.0 * 1.1
                 ctx.scope.set_timebase_scale(preview_tb)
                 ctx.scope.set_channel_display(scope_ch, True)
-                # 改时基后等 16×预览时基（小时基快速建立；1s 下限兜底高频组）；
+                _debug_event(ctx, dbg_dir,
+                             f"{grp_tag} 预览时基已设置: {preview_tb:.3e} s/div")
+                if dbg:
+                    _debug_scope_shot(ctx, dbg_dir,
+                                      f"{item_key}_{grp_tag}_15_preview_tb")
+                # 改时基后等 16×预览时基（小时基快速建立；下限见 _acq_settle_s）；
                 # 首组额外 +3s：示波器刚初始化（关通道/设强度/改时基量程）后
                 # 首次采集建立更慢，多等 3s 确保首帧稳定
-                settle(ctx, max(1.0, 16.0 * preview_tb) + (3.0 if idx == 0 else 0.0))
+                settle(ctx, _acq_settle_s(preview_tb) + (3.0 if idx == 0 else 0.0))
+                if dbg:
+                    _debug_scope_shot(ctx, dbg_dir,
+                                      f"{item_key}_{grp_tag}_20_preview_settled")
+                # DEBUG：_measure_with_autoscale 内部逐尝试截图钩子
+                # （a1=预览时基量程搜索，a2=最终时基正式测量）
+                def _dbg_a1(tag: str, _p=grp_tag) -> None:
+                    _debug_scope_shot(ctx, dbg_dir, f"{item_key}_{_p}_a1_{tag}")
+
+                def _dbg_a2(tag: str, _p=grp_tag) -> None:
+                    _debug_scope_shot(ctx, dbg_dir, f"{item_key}_{_p}_a2_{tag}")
+
                 # 阶段一（预览时基）：量程自动搜索——削波（9.9e37）时量程翻倍
                 # 重试，最多 5 次（10→20→40→80→160 mV/div）；每轮等待仅
                 # 16×预览时基，此阶段测量值仅供削波判定，正式值在阶段二测
                 try:
                     _, _, _, _, used_scale = _measure_with_autoscale(
                         ctx, scope_ch, nominal_v, init_scale_v, settle_s,
-                        timebase_s=preview_tb, max_tries=5)
+                        timebase_s=preview_tb, max_tries=5,
+                        debug_shot=_dbg_a1 if dbg else None)
                 except Exception:  # noqa: BLE001 - 量程耗尽仍削波，恢复采集再降级
                     logger.error("autoscale exhausted, re-run acquisition", exc_info=True)
                     ctx.scope.run()
@@ -1277,30 +1396,61 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
                 if used_scale > init_scale_v:
                     ctx.log_fn(f"[{item_key}] {label} 量程自动扩至 "
                                f"{used_scale * 1000:g} mV/div")
+                if dbg:
+                    _debug_scope_shot(ctx, dbg_dir,
+                                      f"{item_key}_{grp_tag}_30_autoscale_done")
+                _debug_event(ctx, dbg_dir,
+                             f"{grp_tag} 阶段一量程搜索完成: {used_scale * 1000:g} mV/div")
                 # 阶段二（最终时基=period/2，10 格整屏约 5 周期）：autoscale 返回
                 # 为 stop 态，须先恢复采集再改时基（停采态下改只重绘旧帧）；
                 # 改时基后等 16×最终时基，正式测量后内部同样等 16×最终时基
                 # 并重新定格，返回即稳定 stop 帧可直接截图
                 ctx.scope.run()
                 ctx.scope.set_timebase_scale(period / 2.0)
+                _debug_event(ctx, dbg_dir,
+                             f"{grp_tag} 切最终时基: {period / 2.0:.3e} s/div")
+                if dbg:
+                    _debug_scope_shot(ctx, dbg_dir,
+                                      f"{item_key}_{grp_tag}_35_final_tb")
                 try:
                     vmax, vmin, vbase, vpp_v, _ = _measure_with_autoscale(
                         ctx, scope_ch, nominal_v, used_scale, settle_s,
-                        timebase_s=period / 2.0, max_tries=1)
+                        timebase_s=period / 2.0, max_tries=1,
+                        debug_shot=_dbg_a2 if dbg else None)
                 except Exception:  # noqa: BLE001 - 正式测量失败，恢复采集再降级
                     logger.error("final-timebase measure failed", exc_info=True)
                     ctx.scope.run()
                     raise
+                if dbg:
+                    # 报告截图即将截取的这一帧：对比 screenshots/ 下正式图，
+                    # 可判断定格帧在截图前是否已被冲掉
+                    _debug_scope_shot(ctx, dbg_dir,
+                                      f"{item_key}_{grp_tag}_40_final_measured")
+                _debug_event(ctx, dbg_dir,
+                             f"{grp_tag} 正式测量: Vmax={vmax:.6f}V Vmin={vmin:.6f}V "
+                             f"Vmean={vbase:.6f}V Vpp={vpp_v:.6f}V"
+                             f"（量程 {used_scale * 1000:g} mV/div）")
                 vpp = vpp_v * 1000.0
                 over = (vmax - vbase) * 1000.0
                 under = (vbase - vmin) * 1000.0
                 # autoscale 返回时屏幕定格在刚验证过测量值的稳定 stop 帧，
                 # 直接截图；不要再 run/stop，否则会把已验证帧冲掉重采
                 shot = _capture_scope_png(ctx, item_key, i1_ma, shot_dir,
-                                          tag=f"g{idx + 1}_{freq:g}Hz")
+                                          tag=grp_tag)
+                _debug_event(ctx, dbg_dir,
+                             f"{grp_tag} 报告截图: "
+                             + (os.path.basename(shot) if shot else "失败/未生成"))
+                if dbg:
+                    _debug_scope_shot(ctx, dbg_dir,
+                                      f"{item_key}_{grp_tag}_50_after_shot")
                 ctx.scope.run()
             except Exception as e:  # noqa: BLE001 - 单组失败降级，继续下一组
                 logger.error("load transient group %d failed", idx + 1, exc_info=True)
+                _debug_event(ctx, dbg_dir,
+                             f"{grp_tag} 组执行异常: {type(e).__name__}: {e}")
+                if dbg:
+                    _debug_scope_shot(ctx, dbg_dir,
+                                      f"{item_key}_{grp_tag}_90_group_error")
                 ctx.log_fn(f"[{item_key}] [ERROR] {label} 执行异常"
                            f"（{type(e).__name__}: {e}），记 0 继续")
             finally:
@@ -1325,6 +1475,9 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
         ctx.progress_fn(int((idx + 1) / len(groups) * 100), f"{name} {label}")
         ctx.log_fn(f"[{item_key}] {label} -> Overshoot={over:.3f} mV, "
                    f"Undershoot={under:.3f} mV, Vpp={vpp:.3f} mV")
+        _debug_event(ctx, dbg_dir,
+                     f"{grp_tag} 完成: Overshoot={over:.3f}mV "
+                     f"Undershoot={under:.3f}mV Vpp={vpp:.3f}mV")
 
     if not ctx.is_mock:
         teardown_load(ctx, iload_ch)
@@ -1333,6 +1486,9 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
     write_csv(csv_path,
               ["Group", "I0 (mA)", "I1 (mA)", "Freq (Hz)",
                "Overshoot (mV)", "Undershoot (mV)", "Vpp (mV)"], rows)
+    _debug_event(ctx, dbg_dir,
+                 f"item 完成: {name}（{item_key}），有效组 {len(rows)}，"
+                 f"CSV={os.path.basename(csv_path)}")
 
     max_over = max(rows, key=lambda r: r[4], default=None)
     max_under = max(rows, key=lambda r: r[5], default=None)

@@ -3,13 +3,7 @@
   "module_type": "ldo",
   "config": {
     "selected_items": [
-      "ldo_load_reg",
-      "ldo_line_reg",
-      "ldo_quiescent",
-      "ldo_ripple",
-      "ldo_output_noise",
-      "ldo_load_transient",
-      "ldo_line_transient"
+      "ldo_load_transient"
     ],
     "chip_name": "BES1860",
     "module_name": "LDO_01",
@@ -85,16 +79,6 @@
             "i0_ma": 10.0,
             "i1_ma": 100.0,
             "freq_hz": 10.0
-          },
-          {
-            "i0_ma": 10.0,
-            "i1_ma": 100.0,
-            "freq_hz": 100.0
-          },
-          {
-            "i0_ma": 10.0,
-            "i1_ma": 100.0,
-            "freq_hz": 1000.0
           }
         ],
         "settle_time_s": 0.05
