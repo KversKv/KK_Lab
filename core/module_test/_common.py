@@ -12,6 +12,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from debug_config import SCOPE_DEBUG_SHOTS
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -770,14 +771,32 @@ def _measure_with_autoscale(ctx: "ItemContext", scope_ch: int, nominal_v: float,
 
 def _capture_scope_png(ctx: "ItemContext", item_key: str, load_ma: float,
                        shot_dir: str, tag: str | None = None) -> str | None:
-    """捕获当前负载点的示波器截图，落盘 PNG，返回路径（Mock/失败返回 None）。"""
+    """捕获当前负载点的示波器截图，落盘 PNG，返回路径（Mock/失败返回 None）。
+
+    截图前 stop() 定格波形（run 态下屏幕刷新中会截到过渡帧），截图后 run() 恢复采集。
+    """
     if ctx.is_mock or ctx.scope is None:
         return None
+    was_stopped = False
+    try:
+        was_stopped = not ctx.scope.is_acquiring()
+        if not was_stopped:
+            ctx.scope.stop()
+            # 等一整屏定格（时基 1ms/div 即 ~10ms，0.2s 富余）
+            settle(ctx, 0.2)
+    except Exception:  # noqa: BLE001 - stop 失败仍尝试截图
+        logger.error("scope stop before capture failed @%gmA", load_ma, exc_info=True)
+    png = None
     try:
         png = ctx.scope.capture_screen_png()
     except Exception:  # noqa: BLE001 - 截图失败不阻断扫描
         logger.error("scope capture_screen_png failed @%gmA", load_ma, exc_info=True)
-        return None
+    finally:
+        try:
+            if not was_stopped:
+                ctx.scope.run()
+        except Exception:  # noqa: BLE001
+            logger.error("scope run after capture failed @%gmA", load_ma, exc_info=True)
     if not png:
         return None
     try:
@@ -790,6 +809,26 @@ def _capture_scope_png(ctx: "ItemContext", item_key: str, load_ma: float,
     except Exception:  # noqa: BLE001
         logger.error("save scope png failed @%gmA", load_ma, exc_info=True)
         return None
+
+
+def _debug_scope_shot(ctx: "ItemContext", dbg_dir: str, tag: str) -> None:
+    """DEBUG 截图（debug_config.SCOPE_DEBUG_SHOTS 开启）：落盘当前示波器屏幕到 debug/。
+
+    用于定位波形异常出现的流程节点；失败仅记日志，不影响测试流程。
+    """
+    if ctx.is_mock or ctx.scope is None:
+        return
+    try:
+        png = ctx.scope.capture_screen_png()
+        if not png:
+            return
+        os.makedirs(dbg_dir, exist_ok=True)
+        path = os.path.join(dbg_dir, f"{tag}.png")
+        with open(path, "wb") as f:
+            f.write(png)
+        ctx.log_fn(f"[debug-shot] {tag}.png")
+    except Exception:  # noqa: BLE001
+        logger.error("debug scope shot %s failed", tag, exc_info=True)
 
 
 def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
@@ -823,6 +862,11 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
     rows: list[list[Any]] = []
     screenshots: list[dict[str, Any]] = []
     shot_dir = os.path.join(ctx.out_dir, "screenshots")
+    # DEBUG：SCOPE_DEBUG_SHOTS 开启时逐节点落盘示波器屏幕，定位波形异常出现的步骤
+    dbg = SCOPE_DEBUG_SHOTS and not ctx.is_mock and ctx.scope is not None
+    dbg_dir = os.path.join(ctx.out_dir, "debug")
+    if dbg:
+        _debug_scope_shot(ctx, dbg_dir, f"{item_key}_00_initial")
 
     if not ctx.is_mock:
         setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
@@ -830,6 +874,8 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
         setup_load_channel(ctx, iload_ch, initial_current_a=max(i_start, 0.001) / 1000.0)
         # 上一项可能调过 close_all_channels()（transient 流程），须显式开显示
         ctx.scope.set_channel_display(scope_ch, True)
+        if dbg:
+            _debug_scope_shot(ctx, dbg_dir, f"{item_key}_01_display_on")
     load_state = {"on": not ctx.is_mock}
 
     for i, il in enumerate(points):
@@ -844,6 +890,14 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
             # 0mA 点关断负载通道（CCLoad 开启禁设 0mA / 0mA 禁开机，红线 12）
             apply_load_current(ctx, iload_ch, il / 1000.0, load_state)
             settle(ctx, max(settle_s * 8, 0.4))
+            if dbg:
+                _debug_scope_shot(ctx, dbg_dir,
+                                  f"{item_key}_p{i:02d}_{il:g}mA_10_loaded")
+
+                def _auto_step_cb(tag: str, _p=f"p{i:02d}_{il:g}mA") -> None:
+                    # DSOX4034A set_AutoRipple_test 各内部步骤后回调截图
+                    _debug_scope_shot(ctx, dbg_dir, f"{item_key}_{_p}_auto_{tag}")
+                ctx.scope.debug_shot_cb = _auto_step_cb
             try:
                 ctx.scope.set_AutoRipple_test(scope_ch)
                 settle(ctx, 0.3)
@@ -853,8 +907,19 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
                 logger.error("scope ripple read failed @%gmA", il, exc_info=True)
                 vpp = 0.0
                 rms = 0.0
+            finally:
+                if dbg:
+                    ctx.scope.debug_shot_cb = None
+                    _debug_scope_shot(ctx, dbg_dir,
+                                      f"{item_key}_p{i:02d}_{il:g}mA_20_measured")
             vout = measure_vout(ctx, count=1, settle_s=settle_s,
                                 default=nominal_mv / 1000.0) * 1000.0
+            # Vpp/RMS 的 DISPlay 测量会触发示波器重新刷新，读数后波形需时间
+            # 恢复稳定，等待后再截图（否则定格在过渡帧，截图无波形）
+            settle(ctx, 1.0)
+            if dbg:
+                _debug_scope_shot(ctx, dbg_dir,
+                                  f"{item_key}_p{i:02d}_{il:g}mA_30_vout")
             shot = _capture_scope_png(ctx, item_key, il, shot_dir)
         rows.append([il, round(vout, 4), round(vpp, 4), round(rms, 4)])
         if shot:

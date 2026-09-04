@@ -407,7 +407,16 @@ def output_noise(ctx: ItemContext) -> ItemResult:
             ctx.log_fn(f"[{item_key}] [WARN] FFT 通道配置失败，直接截取当前屏幕")
         # FFT 频谱需多次采集积累才能算完整，等待足够长再截图
         settle(ctx, 3.0)
+        fft_was_stopped = False
         try:
+            # 截图前 stop 定格频谱帧（run 态刷新中会截到过渡帧），截图后恢复采集
+            try:
+                fft_was_stopped = not ctx.scope.is_acquiring()
+            except Exception:  # noqa: BLE001 - 状态查询失败按采集中处理
+                fft_was_stopped = False
+            if not fft_was_stopped:
+                ctx.scope.stop()
+                settle(ctx, 0.2)
             png = ctx.scope.capture_screen_png()
             if png:
                 shot_dir = os.path.join(ctx.out_dir, "screenshots")
@@ -417,6 +426,12 @@ def output_noise(ctx: ItemContext) -> ItemResult:
                     f.write(png)
         except Exception:  # noqa: BLE001 - 截图失败不阻断
             logger.error("scope fft capture failed", exc_info=True)
+        finally:
+            if not fft_was_stopped:
+                try:
+                    ctx.scope.run()
+                except Exception:  # noqa: BLE001
+                    logger.error("scope run after fft capture failed", exc_info=True)
         try:
             ctx.scope.close_fft_display()
         except Exception:  # noqa: BLE001 - 关显示失败不阻断
