@@ -3,7 +3,13 @@
   "module_type": "ldo",
   "config": {
     "selected_items": [
-      "ldo_line_reg"
+      "ldo_load_reg",
+      "ldo_line_reg",
+      "ldo_quiescent",
+      "ldo_ripple",
+      "ldo_output_noise",
+      "ldo_load_transient",
+      "ldo_line_transient"
     ],
     "chip_name": "BES1860",
     "module_name": "LDO_01",
@@ -56,7 +62,7 @@
       "ldo_line_reg": {
         "vin_start_v": 2.7,
         "vin_end_v": 5.0,
-        "vin_step_v": 0.1,
+        "vin_step_v": 0.2,
         "settle_time_s": 0.05,
         "average_cnt": 3
       },
@@ -115,8 +121,8 @@
         "settle_time_s": 0.05
       }
     },
-    "module_config_enabled": false,
-    "module_config_yaml": "",
+    "module_config_enabled": true,
+    "module_config_yaml": "Init_PMU:\n  - WRITE_BITS 0x0121 15 15 0x1         //reg_lp_bias_res_sel_dr\n  - WRITE_BITS 0x0120 8 6 0x4           //reg_lp_bias_sel_ldo_normal[8:6]\n  - WRITE_BITS 0x011F 6 3 0x4           //reg_lp_bias_sel_ldo_rc[3:1]\n  - WRITE_BITS 0x011F 3 1 0x4           //reg_lp_bias_sel_ldo_dsleep[6:4]\n  - WRITE_BITS 0x02F0 15 0 0xFFFF       //res_sel_dr\n  - WRITE_BITS 0x02F1 4 0 0xFFFF        //res_sel_dr\n  - //ldo_lp_mode\n  - WRITE_BITS 0x000D 15 14 0x3\n  - WRITE_BITS 0x0007 12 11 0x3\n  - WRITE_BITS 0x000A 14 13 0x3\n  - WRITE_BITS 0x0009 15 14 0x3\n  -   //switch to small BG\n  - WRITE_BITS 0x0003 09 08 0x2\n  - WRITE_BITS 0x0094 05 04 0x1\n  - WRITE_BITS 0x0003 14 12 0x7\n  - WRITE_BITS 0x0003 11 10 0x2\n  - WRITE_BITS 0x0003 07 06 0x2\n  - WRITE_BITS 0x0050 13 12 0x2\n  - WRITE_BITS 0x0003 01 00 0x2\n  - WRITE_BITS 0x0003 05 04 0x2",
     "judge_criteria": {}
   }
 }
