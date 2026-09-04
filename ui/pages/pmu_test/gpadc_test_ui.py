@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QSplitter, QMenu, QInputDialog
 )
 from PySide6.QtCore import Qt, Signal, QThread, QTimer
-from PySide6.QtGui import QFont, QColor, QBrush, QAction
+from PySide6.QtGui import QFont, QColor, QBrush, QAction, QPixmap, QPainter
 import datetime
 import math
 import queue
@@ -207,6 +207,10 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
             QFrame#left_scroll_content {{
                 background: transparent;
                 border: none;
+            }}
+
+            QWidget#metricsRow {{
+                background: transparent;
             }}
 
             QLabel#title_label {{
@@ -991,8 +995,14 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         right_col = QVBoxLayout()
         right_col.setSpacing(12)
 
-        metrics_layout = QHBoxLayout()
+        # 性能指标卡行：包进独立容器，供一键截图（get_capture_pixmap）整行抓取
+        metrics_row = QWidget()
+        metrics_row.setObjectName("metricsRow")
+        metrics_row.setAttribute(Qt.WA_StyledBackground, True)
+        metrics_layout = QHBoxLayout(metrics_row)
+        metrics_layout.setContentsMargins(0, 0, 0, 0)
         metrics_layout.setSpacing(8)
+        self.metrics_row = metrics_row
 
         inl_card, self.inl_value = self._create_metric_card("INL", "---", "metric_value_green")
         dnl_card, self.dnl_value = self._create_metric_card("DNL", "---", "metric_value_green")
@@ -1027,7 +1037,7 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         metrics_layout.addWidget(pp_card)
         metrics_layout.addWidget(samples_card)
 
-        right_col.addLayout(metrics_layout)
+        right_col.addWidget(metrics_row)
 
         chart_panel = QFrame()
         chart_panel.setObjectName("chart_panel")
@@ -1108,6 +1118,38 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
 
         page_layout.addLayout(body_layout, 1)
         root_layout.addWidget(self.page, 1)
+
+    def get_capture_pixmap(self):
+        """一键截图目标：性能指标卡行 + 图表卡片纵向合成（不含日志区与 Recent 管理栏）。
+
+        MainWindow 顶栏截图按钮的最高优先级钩子；返回 None 时降级为整页截图。
+        """
+        pieces = []
+        for widget in (self.metrics_row, self.chart_panel):
+            if not isinstance(widget, QWidget) or not widget.isVisibleTo(self):
+                continue
+            pm = widget.grab()
+            if not pm.isNull():
+                pieces.append(pm)
+        if not pieces:
+            return None
+        if len(pieces) == 1:
+            return pieces[0]
+
+        gap = 12  # 与 right_col 行间距一致
+        width = max(pm.width() for pm in pieces)
+        height = sum(pm.height() for pm in pieces) + gap * (len(pieces) - 1)
+        merged = QPixmap(width, height)
+        merged.fill(QColor(Colors.bg_secondary))
+        painter = QPainter(merged)
+        try:
+            y = 0
+            for pm in pieces:
+                painter.drawPixmap(0, y, pm)
+                y += pm.height() + gap
+        finally:
+            painter.end()
+        return merged
 
     def _init_ui_elements(self):
         self.current_test_item = self.TEST_1000CNT

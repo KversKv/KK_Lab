@@ -136,6 +136,10 @@ python -m PyInstaller spec/n6705c_datalog.spec --clean --noconfirm
 4. 每次编辑后**立即复核结构**：`Grep -n "^class |def <特征方法>"`，确认目标类落在 EOF 且相邻类未被劈裂。
 5. 误插入后先精确删除误插块、恢复原类，再以唯一锚点重新追加。
 
+### 附：PowerShell 命令注意
+
+- **PowerShell 不支持 heredoc**：禁用 `bash` 风格的 `$(cat <<'EOF' ... EOF)` 多行消息语法（`<` 为保留运算符，直接解析报错）。多行内容改用多个 `-m` 参数拼接（如 `git commit -m "标题" -m "正文段1" -m "正文段2"`），或临时消息文件。
+
 ### 反例（真实事故）
 
 - 用 `MockN6705C` 末尾的 `format_current` 当锚点追加 `MockKeysight34461A`，因该片段多处重复，首个匹配落在 `MockN6705C` 内，新类被插入其中间，`arb_on` 等方法被孤立 → 反复重写。

@@ -83,7 +83,7 @@ if sys.platform == "win32":
     _DWMWA_BORDER_COLOR = 34
     _DWMWCP_ROUND = 2
     _WINDOW_BORDER_COLOR = 0x00403420  # COLORREF 0x00BBGGRR -> 边框 #203440
-from PySide6.QtGui import QPalette, QColor, QFont
+from PySide6.QtGui import QPalette, QColor, QFont, QPixmap
 from ui.pages.oscilloscope.oscilloscope_base_ui import OscilloscopeBaseUI
 from ui.pages.n6705c_power_analyzer.n6705c_analyser_ui import N6705CAnalyserUI
 from ui.pages.n6705c_power_analyzer.n6705c_datalog_ui import N6705CDatalogUI
@@ -1404,7 +1404,9 @@ class MainWindow(CleanupMixin, QMainWindow):
     # 一键截图：当前页图表区域 → 系统剪贴板（顶栏截图按钮）
     #
     # 截图目标按鸭子类型解析，页面无需注册即可接入：
-    #   1. 页面实现 get_capture_widget() → 显式返回截图控件（最高优先级）；
+    #   0. 页面实现 get_capture_pixmap() → 返回页面自定义合成 QPixmap
+    #      （最高优先级，适合"多区域合成"场景，如 GPADC 页性能指标+图表）；
+    #   1. 页面实现 get_capture_widget() → 显式返回截图控件；
     #   2. 页面持有 chart_frame 属性（QWidget）→ 图表卡片区域
     #      （pmu_output_voltage / pmu_dcdc_efficiency / charger_test 各子页、
     #        n6705c_datalog 等均为此约定）；
@@ -1435,28 +1437,42 @@ class MainWindow(CleanupMixin, QMainWindow):
             self._show_capture_toast("当前无活动页面可截图", ToastNotification.TYPE_ERROR)
             return
 
-        target = None
-        getter = getattr(page, "get_capture_widget", None)
-        if callable(getter):
+        pixmap = None
+        pixmap_getter = getattr(page, "get_capture_pixmap", None)
+        if callable(pixmap_getter):
             try:
-                target = getter()
-            except Exception:  # noqa: BLE001 - 页面自定义 getter 异常时降级
-                logger.error("get_capture_widget 执行失败", exc_info=True)
-        if not isinstance(target, QWidget):
-            target = getattr(page, "chart_frame", None)
-        if not isinstance(target, QWidget):
-            target = page
+                pixmap = pixmap_getter()
+            except Exception:  # noqa: BLE001 - 页面自定义合成异常时降级
+                logger.error("get_capture_pixmap 执行失败", exc_info=True)
+        if not isinstance(pixmap, QPixmap) or pixmap.isNull():
+            pixmap = None
+            target = None
+            getter = getattr(page, "get_capture_widget", None)
+            if callable(getter):
+                try:
+                    target = getter()
+                except Exception:  # noqa: BLE001 - 页面自定义 getter 异常时降级
+                    logger.error("get_capture_widget 执行失败", exc_info=True)
+            if not isinstance(target, QWidget):
+                target = getattr(page, "chart_frame", None)
+            if not isinstance(target, QWidget):
+                target = page
+            try:
+                pixmap = target.grab()
+            except Exception:  # noqa: BLE001 - 截图/剪贴板失败转用户可读提示
+                logger.error("图表截图复制到剪贴板失败", exc_info=True)
+                self._show_capture_toast("截图失败，请查看日志", ToastNotification.TYPE_ERROR)
+                return
 
         try:
-            pixmap = target.grab()
             QApplication.clipboard().setPixmap(pixmap)
-        except Exception:  # noqa: BLE001 - 截图/剪贴板失败转用户可读提示
+        except Exception:  # noqa: BLE001 - 剪贴板失败转用户可读提示
             logger.error("图表截图复制到剪贴板失败", exc_info=True)
             self._show_capture_toast("截图失败，请查看日志", ToastNotification.TYPE_ERROR)
             return
 
-        logger.debug("Chart area captured: page=%s target=%s size=%dx%d",
-                     type(page).__name__, type(target).__name__,
+        logger.debug("Chart area captured: page=%s pixmap=%s size=%dx%d",
+                     type(page).__name__, type(pixmap).__name__,
                      pixmap.width(), pixmap.height())
         self._show_capture_toast(
             "图表区域已复制到剪贴板", ToastNotification.TYPE_SUCCESS)

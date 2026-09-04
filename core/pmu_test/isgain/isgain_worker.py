@@ -186,6 +186,20 @@ class IsGainTestWorker(QObject):
 
         return voltage, ripple
 
+    def _restop_after_measure(self):
+        """测量后的截图前置等待：DISPlay 测量会触发示波器刷新（stop 定格帧
+        可能被冲掉），等刷新完成，若回到 run 态则重新 stop 定格一整屏，
+        避免紧随其后的截图截到刷新过渡帧（同 module_test 截图铁律）。"""
+        self._interruptible_sleep(1.0)
+        if self._stop_flag:
+            return
+        try:
+            if self.scope.is_acquiring():
+                self.scope.stop()
+                self._interruptible_sleep(0.2)
+        except Exception as e:
+            self.log.emit(f"  [WARN] Re-stop after measure failed: {e}")
+
     def _run_single_sweep(self, load_ch, ripple_ch, current_steps, step_offset=0, total_override=None, reg_value=None):
         total = total_override if total_override else (len(current_steps) + 1)
         results = []
@@ -220,6 +234,8 @@ class IsGainTestWorker(QObject):
                     v0, r0 = self._measure_with_autoscale(ripple_ch, label="0-load ")
 
                 if save_screenshot and not self._stop_flag:
+                    # 测量的 DISPlay 查询会触发示波器刷新，等刷新稳定并确保 stop 定格
+                    self._restop_after_measure()
                     png_data = self.scope.capture_screen_png()
                     screenshot_b64 = base64.b64encode(png_data).decode("ascii")
                     self.log.emit("  Screenshot captured (0-load)")
@@ -276,6 +292,8 @@ class IsGainTestWorker(QObject):
                         voltage, ripple = self._measure_with_autoscale(ripple_ch)
 
                     if save_screenshot and not self._stop_flag:
+                        # 测量的 DISPlay 查询会触发示波器刷新，等刷新稳定并确保 stop 定格
+                        self._restop_after_measure()
                         png_data = self.scope.capture_screen_png()
                         sc_b64 = base64.b64encode(png_data).decode("ascii")
                         self.log.emit(f"  Screenshot captured (step {global_step})")

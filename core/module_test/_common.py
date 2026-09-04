@@ -731,6 +731,17 @@ def _n6705c_err_check(ctx: "ItemContext", tag: str) -> None:
         logger.debug("SYST:ERR? query failed @%s", tag, exc_info=True)
 
 
+def _ensure_stop_for_capture(ctx: "ItemContext") -> None:
+    """测量后确保示波器 stop 定格（DISPlay 测量可能触发刷新回 run 态）。"""
+    try:
+        if not ctx.scope.is_acquiring():
+            return
+        ctx.scope.stop()
+        settle(ctx, 0.2)
+    except Exception:  # noqa: BLE001 - 状态查询/停止失败不阻断，截图侧自行兜底
+        logger.error("re-stop after measure failed", exc_info=True)
+
+
 def _measure_with_autoscale(ctx: "ItemContext", scope_ch: int, nominal_v: float,
                             scale_v: float, settle_s: float,
                             timebase_s: float = 0.0,
@@ -757,6 +768,11 @@ def _measure_with_autoscale(ctx: "ItemContext", scope_ch: int, nominal_v: float,
             vmin = float(ctx.scope.get_channel_min(scope_ch))
             vbase = float(ctx.scope.get_channel_mean(scope_ch))
             vpp = float(ctx.scope.get_channel_pk2pk(scope_ch))
+            # DISPlay 测量（pre_cmd 添加测量项）会触发示波器重新刷新，stop
+            # 定格帧可能被冲掉；等刷新完成（≥1s 且至少一整屏）并确保 stop，
+            # 返回的才是调用方可直接截图的稳定定格帧
+            settle(ctx, max(1.0, 10.0 * timebase_s))
+            _ensure_stop_for_capture(ctx)
             return vmax, vmin, vbase, vpp, scale_v
         except Exception as e:  # noqa: BLE001 - 无效测量值，扩量程重试
             last_err = e

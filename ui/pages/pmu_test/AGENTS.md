@@ -44,6 +44,7 @@
   - 默认空坐标系构建集中在 `_build_default_chart_placeholder()`，勿在 `_create_layout` 内散写。
 - **GPADC 测试自动命名**（Recent 面板 Test Naming 区）：`芯片_通道_CASE_序号`，序号在相同 (chip, channel, case) 组合内经 `_naming_counters` 自动递增（三位零填充）；记录存 `name` / `naming` 字段，显示名优先级 label（用户 Rename）> name（自动）> test_item；列表项悬浮 tooltip（`_record_tooltip`）展示测试时间/测试项/性能参数/算法/命名。
 - **GPADC 采样算法**（Test Parameters Algorithm 区）：算法实现在 `core/pmu_test/gpadc/gpadc_analysis.py` 的 `ALGORITHM_REGISTRY`（纯函数注册表，含参数元信息），UI 参数控件经 `_rebuild_algorithm_params` 按注册表动态生成——**新增算法只写纯函数+注册表登记，零 UI 改动**；默认 None = 原始流程；`_start_test` 快照到 `_algorithm_snapshot`，在 `gpadc_uart_read_by_cnts` / `gpadc_reg_read_by_cnts` 的 raw_data 上应用（含 DEBUG_MOCK 路径）；算法配置进 `get_test_config()['algorithm']` 并支持 `apply_config_to_controls` 回填。
+- **GPADC 一键截图**（2026-09）：页面实现 `get_capture_pixmap()`（MainWindow `_on_capture_chart` 最高优先级钩子，降级链 `get_capture_pixmap → get_capture_widget → chart_frame → 整页`）：性能指标卡行（`metrics_row` 容器，替代裸 `addLayout`，布局参数原样 margin 0 / spacing 8）+ `chart_panel` 纵向合成一张 QPixmap（gap 12 与 right_col 行距一致，底色 `Colors.bg_secondary`），**不含 TEST LOG 与 Recent 管理栏**；`metrics_row` 须 `WA_StyledBackground` + QSS `#metricsRow` transparent，防 grab 时填 palette 灰底。
 
 ## 局部坑点
 
