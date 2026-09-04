@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 from datetime import datetime
 from typing import Any, Callable
 
@@ -43,6 +44,8 @@ class ModuleTestRunner(QThread):
         log(str): 日志行。
         finished_result(object): 全部完成，传 ModuleTestResult。
         failed(str): 致命错误。
+        confirm_request(str, str): 需用户确认的弹窗请求（标题, 正文），
+            UI 应答经 respond_confirm() 回传（item 内经 ctx.confirm_fn 调用）。
     """
 
     progress = Signal(int, str)
@@ -51,6 +54,7 @@ class ModuleTestRunner(QThread):
     log = Signal(str)
     finished_result = Signal(object)
     failed = Signal(str)
+    confirm_request = Signal(str, str)
 
     def __init__(
         self,
@@ -83,6 +87,9 @@ class ModuleTestRunner(QThread):
         self._out_dir = out_dir or os.path.join(
             "Results", "module_test", module_type, "_".join(parts))
         self._stop_flag = False
+        # 用户确认弹窗应答（confirm_request 信号 → UI 弹窗 → respond_confirm 回传）
+        self._confirm_reply = threading.Event()
+        self._confirm_continue = False
         self._result = ModuleTestResult(
             module_type=module_type,
             chip_name=str(self._cfg.get("chip_name", "")),
@@ -95,6 +102,24 @@ class ModuleTestRunner(QThread):
     def request_stop(self):
         """协作式中断（检查标志位，禁强杀线程）。"""
         self._stop_flag = True
+
+    def respond_confirm(self, continue_test: bool) -> None:
+        """UI 弹窗应答：是否继续（经 confirm_request 信号的回传出口）。"""
+        self._confirm_continue = bool(continue_test)
+        self._confirm_reply.set()
+
+    def _wait_user_confirm(self, title: str, message: str) -> tuple[bool, bool]:
+        """请求 UI 弹窗确认并阻塞等待应答（期间可响应停止请求）。
+
+        返回 (是否已应答, 是否继续)：等待期间用户停止时返回 (False, False)。
+        """
+        self._confirm_reply.clear()
+        self._confirm_continue = False
+        self.confirm_request.emit(title, message)
+        while not self._confirm_reply.wait(0.1):
+            if self._stop_flag:
+                return False, False
+        return True, self._confirm_continue
 
     def _apply_judge(self, item_key: str, result: ItemResult) -> None:
         """按用户判定标准（cfg["judge_criteria"]）判定 PASS/FAIL。
@@ -198,6 +223,7 @@ class ModuleTestRunner(QThread):
                 stop_flag_fn=lambda: self._stop_flag,
                 log_fn=self._log,
                 progress_fn=self._progress,
+                confirm_fn=self._wait_user_confirm,
             )
             try:
                 result: ItemResult = run_fn(ctx)

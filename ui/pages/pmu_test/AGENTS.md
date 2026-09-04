@@ -26,6 +26,7 @@
 - 通道在配置为 int、combo 文本为 "CH n"，apply 经 normalize 归一化匹配。
 - **Output Voltage 有效区间判据**（`pmu_output_voltage.py` `_compute_valid_range`，2026-09）：以相邻压差**中位数**为参考步进（抗毛刺/饱和段污染），连续 2 点跌破参考的 85%（`_VALID_STEP_RATIO`/`_VALID_STEP_CONSEC` 常量）判死区/饱和，双向剔除；软饱和缓变与平坦段同覆盖（替代旧 1mV 平坦检测）。MSB 位加权不匹配的单点跳变（如 0x80 处约 2 倍步进）是固有现象，靠"连续 N 点"保留勿当异常剔除。
 - **Output Voltage 前置校验失败 / 尾部饱和均改为用户确认弹窗**（2026-09）：不再直接中止，Worker 经统一 `confirm_request(title, message)` 信号 → UI 弹中文 QMessageBox（按钮"继续/中止"，默认+Esc=中止，`_on_confirm_request`）；Worker 用 `threading.Event` 阻塞等应答（`_wait_user_confirm`）且期间可响应 Stop。前置校验：仅问一次（`precheck_asked`），选继续时 `voltages/codes.clear()` 剔除已测异常前缀（性能指标自动排除，图表/日志保留原始数据）并重印表头+复述已测点（弹窗日志不打断 MEAS 表格，保证连续可解析），死区仍由 `_compute_valid_range` 兜底剔除；尾部饱和：选继续置 `_saturation_continue=True` 本次不再触发（保留平坦点，有效区间算法剔除），选中止则截断平台后 break。`_precheck_first_points` 原因文本为中文（嵌入弹窗）。
+- **Output Voltage 扫描逻辑与 Module Test 双向同步**（2026-09 起，硬规则）：本页 `pmu_output_voltage.py` 的扫描行为（前置校验/尾部饱和确认弹窗及文案、`_PRECHECK_*` / `_TAIL_STOP_*` 阈值常量、异常前缀剔除语义、寄存器 finally 兜底恢复）与 [core/module_test/_common.py](../../core/module_test/_common.py) 的 `run_vout_scan` 保持一致。任一侧改动上述逻辑，必须在同一次变更内同步另一侧（阈值/文案/判定语义对齐），并同步更新两侧 AGENTS.md（另一侧为 ui/pages/module_test/AGENTS.md）。
 - 结果落 `Results/`，文件名带时间戳 + 芯片型号。
 - 新增子测试：UI 在 `ui/pages/pmu_test/`、analysis+worker 在 `core/pmu_test/<name>/`，并注册进 `TEST_TAB_MAP`。
 - GPADC 最近测试管理（本会话内存记录，`_recent_test_records`，上限 `RECENT_TEST_LIMIT`）：

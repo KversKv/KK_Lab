@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import csv
+import math
 import os
 import random
 import time
@@ -29,6 +30,9 @@ class ItemContext:
     stop_flag_fn: Callable[[], bool]  # 协作式中断检查
     log_fn: Callable[[str], None]    # 日志回调（已切回 UI 线程）
     progress_fn: Callable[[int, str], None]  # 进度回调 (percent, label)
+    # 用户确认回调（标题, 正文）→ (是否已应答, 是否继续)：runner 注入，
+    # 经 confirm_request 信号弹窗等 UI 应答；None 时调用方按"中止"处理
+    confirm_fn: Callable[[str, str], tuple[bool, bool]] | None = None
 
 
 def parse_channel(value: Any) -> int:
@@ -299,6 +303,52 @@ def cfg_int(cfg: dict, key: str, default: int) -> int:
     return int(val)
 
 
+# ---- Output Voltage 扫描：前置校验 / 尾部饱和检测阈值 ----
+# 与 ui/pages/pmu_test/pmu_output_voltage.py 同名常量保持一致（双向同步）
+_PRECHECK_POINTS = 5
+_PRECHECK_MIN_SPAN = 0.002  # V
+_PRECHECK_DIFF_TOL = 0.5
+_TAIL_STOP_POINTS = 5
+_TAIL_STOP_SPAN = 0.002  # V
+
+
+def _precheck_first_points(voltages: list[float]) -> tuple[bool, str]:
+    """前 N 点前置校验：首尾差值过小 / 步进不等差（波动>50%）/ 读数异常时返回 (False, 原因)。
+
+    与 ui/pages/pmu_test/pmu_output_voltage.py 的同名方法保持一致（双向同步）。
+    """
+    for v in voltages:
+        if not math.isfinite(v):
+            return False, f"读数异常（{v}）"
+        if v < 0:
+            return False, f"测得负电压（{v:.4f}V）"
+
+    span = voltages[-1] - voltages[0]
+    if abs(span) <= _PRECHECK_MIN_SPAN:
+        vals = ", ".join(f"{v:.4f}" for v in voltages)
+        return False, f"电压无变化（span={span * 1000:.2f}mV，读数=[{vals}]V）"
+
+    # 等差校验：各相邻步进差值应接近均值（允许 ±50% 波动），偏离过大视为异常
+    mean_diff = span / (len(voltages) - 1)
+    diffs = [voltages[i + 1] - voltages[i] for i in range(len(voltages) - 1)]
+    for i, d in enumerate(diffs):
+        if abs(d - mean_diff) > _PRECHECK_DIFF_TOL * abs(mean_diff):
+            diff_str = ", ".join(f"{d * 1000:.2f}" for d in diffs)
+            return False, (
+                f"第 {i + 1} 步步进不等差（diff={d * 1000:.2f}mV，"
+                f"期望≈{mean_diff * 1000:.2f}mV，容差=±{_PRECHECK_DIFF_TOL * 100:.0f}%，"
+                f"diffs=[{diff_str}]mV）"
+            )
+    return True, ""
+
+
+def _ask_user_confirm(ctx: "ItemContext", title: str, message: str) -> tuple[bool, bool]:
+    """经 ctx.confirm_fn 请求用户确认；无确认通道时按中止处理（旧的直接终止行为）。"""
+    if ctx.confirm_fn is None:
+        return True, False
+    return ctx.confirm_fn(title, message)
+
+
 def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
     """各挡位输出电压扫描（LDO / DCDC 共用）。
 
@@ -306,9 +356,10 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
       1. N6705C 通道置 VMETer；
       2. 读默认寄存器，按 [msb:lsb] 位段计算掩码与 data_base；
       3. 写 min_code 后等待输出稳定（最近 3 次电压极差 ≤ 5mV）；
-      4. 逐挡（min_code..max_code，步进 1）写寄存器 → 测电压；
+      4. 逐挡（min_code..max_code，步进 1）写寄存器 → 测电压；前 N 点前置
+         校验失败 / 尾部饱和时经 confirm_fn 弹窗交由用户决定是否继续；
       5. 用饱和阈值 0.001V 剔除首尾平台，取有效段算范围/步进/线性度；
-      6. 结束恢复寄存器默认值。
+      6. 结束（含停止/异常路径）在 finally 兜底恢复寄存器默认值。
     """
     from core.module_test.result_model import ItemResult
 
@@ -362,125 +413,228 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
 
     voltages: list[float] = []
     codes: list[int] = []
+    precheck_failed = False
+    precheck_asked = False
+    saturation_continue = False
 
-    settle_start = time.time()
-    write_reg = data_base | (min_code << lsb)
-    i2c.write(device_addr, reg_addr, write_reg, width_flag)
-    ctx.log_fn(f"[{item_key}] [TEST] Setting min_code=0x{min_code:X}, "
-               f"waiting for output to stabilize...")
+    # 前置校验点数：Mock 电压为常数+噪声、单点无法判断变化，均跳过
+    if ctx.is_mock or total_points < 2:
+        precheck_n = 0
+    else:
+        precheck_n = min(_PRECHECK_POINTS, total_points)
 
-    recent_voltages: list[float] = []
-    while True:
-        if ctx.stop_flag_fn():
-            ctx.log_fn(f"[{item_key}] [TEST] Stopped by user during stabilization.")
-            i2c.write(device_addr, reg_addr, default_reg, width_flag)
-            teardown_load(ctx, iload_ch)
-            return _skipped("稳定阶段被用户停止")
-        v = measure_vout(ctx)
-        recent_voltages.append(v)
-        if len(recent_voltages) >= 3:
-            last3 = recent_voltages[-3:]
-            if (max(last3) - min(last3)) <= 0.005:
-                break
-        time.sleep(sleep_time)
-
-    time.sleep(0.1)
-    settle_elapsed_ms = (time.time() - settle_start) * 1000.0
-    ctx.log_fn(f"[{item_key}] [TEST] Wait for mincode output cose: {settle_elapsed_ms:.0f}ms")
-
-    rows: list[list[float]] = []
-    code = min_code
-    while code <= max_code:
-        if ctx.stop_flag_fn():
-            ctx.log_fn(f"[{item_key}] [TEST] Stopped by user.")
-            break
-
-        write_reg = data_base | (code << lsb)
+    restore_ctx = None  # (i2c, device_addr, reg_addr, default_reg, width_flag)
+    try:
+        settle_start = time.time()
+        # 首次改写寄存器前记录恢复上下文：停止/异常路径也在 finally 兜底恢复默认值
+        restore_ctx = (i2c, device_addr, reg_addr, default_reg, width_flag)
+        write_reg = data_base | (min_code << lsb)
         i2c.write(device_addr, reg_addr, write_reg, width_flag)
-        time.sleep(sleep_time)
+        ctx.log_fn(f"[{item_key}] [TEST] Setting min_code=0x{min_code:X}, "
+                   f"waiting for output to stabilize...")
 
-        measured_v = measure_vout(ctx)
-        voltages.append(measured_v)
-        codes.append(code)
-        rows.append([code, round(measured_v * 1000.0, 3)])
+        recent_voltages: list[float] = []
+        while True:
+            if ctx.stop_flag_fn():
+                ctx.log_fn(f"[{item_key}] [TEST] Stopped by user during stabilization.")
+                return _skipped("稳定阶段被用户停止")
+            v = measure_vout(ctx)
+            recent_voltages.append(v)
+            if len(recent_voltages) >= 3:
+                last3 = recent_voltages[-3:]
+                if (max(last3) - min(last3)) <= 0.005:
+                    break
+            time.sleep(sleep_time)
 
-        diff_mv = "" if len(voltages) < 2 else (f"{(measured_v - voltages[-2]) * 1000.0:+.3f}mV")
-        ctx.log_fn(f"[{item_key}] [MEAS] Code=0x{code:0{hex_width}X}  "
-                   f"Measured={measured_v:>8.4f}V  Diff={diff_mv}")
-        idx = code - min_code
-        ctx.progress_fn(int((idx + 1) / total_points * 100), f"Vout scan 0x{code:X}")
-        code += 1
+        time.sleep(0.1)
+        settle_elapsed_ms = (time.time() - settle_start) * 1000.0
+        ctx.log_fn(f"[{item_key}] [TEST] Wait for mincode output cose: {settle_elapsed_ms:.0f}ms")
 
-    # 饱和阈值剔除首尾平台，取有效段
-    sat_threshold = 0.001
-    min_voltage = max_voltage = 0.0
-    valid_min_code = valid_max_code = 0
-    step_voltage_mv = 0.0
-    step_error_mv = 0.0
-    linearity_pct = 0.0
-    if len(voltages) >= 2:
-        low_valid = 0
-        for k in range(1, len(voltages)):
-            if abs(voltages[k] - voltages[k - 1]) > sat_threshold:
-                low_valid = k
+        rows: list[list[float]] = []
+        code = min_code
+        while code <= max_code:
+            if ctx.stop_flag_fn():
+                ctx.log_fn(f"[{item_key}] [TEST] Stopped by user.")
                 break
-        else:
-            low_valid = len(voltages) - 1
 
-        high_valid = len(voltages) - 1
-        for k in range(len(voltages) - 1, 0, -1):
-            if abs(voltages[k] - voltages[k - 1]) > sat_threshold:
-                high_valid = k - 1
-                break
-        else:
-            high_valid = 0
+            write_reg = data_base | (code << lsb)
+            i2c.write(device_addr, reg_addr, write_reg, width_flag)
+            time.sleep(sleep_time)
 
-        if high_valid <= low_valid:
-            high_valid = len(voltages) - 1
+            measured_v = measure_vout(ctx)
+            voltages.append(measured_v)
+            codes.append(code)
+            rows.append([code, round(measured_v * 1000.0, 3)])
+
+            diff_mv = "" if len(voltages) < 2 else (f"{(measured_v - voltages[-2]) * 1000.0:+.3f}mV")
+            ctx.log_fn(f"[{item_key}] [MEAS] Code=0x{code:0{hex_width}X}  "
+                       f"Measured={measured_v:>8.4f}V  Diff={diff_mv}")
+
+            # 前置校验：前 N 点电压无变化或读数异常时弹窗交由用户决定是否继续
+            # （部分场景前几 bit 固有异常）；仅询问一次，继续时剔除已测异常点
+            if precheck_n and len(voltages) == precheck_n and not precheck_asked:
+                precheck_asked = True
+                ok, reason = _precheck_first_points(voltages)
+                if not ok:
+                    ctx.log_fn(f"[{item_key}] [WARN] Pre-check failed on first "
+                               f"{precheck_n} points: {reason}")
+                    logger.warning("Output voltage pre-check failed: %s", reason)
+                    answered, do_continue = _ask_user_confirm(
+                        ctx,
+                        "前置校验失败",
+                        f"前 {precheck_n} 个测量点校验失败：\n\n{reason}\n\n"
+                        "是否继续扫描？\n"
+                        "（继续时已测异常点将被剔除，不参与性能指标计算）",
+                    )
+                    if not answered:
+                        ctx.log_fn(f"[{item_key}] [TEST] Stopped by user during "
+                                   "pre-check confirmation.")
+                        precheck_failed = True
+                        break
+                    if not do_continue:
+                        ctx.log_fn(f"[{item_key}] [WARN] Test aborted by user. Check device "
+                                   "addr / reg / bit-field config and output enable, or "
+                                   "raise Min Code above the dead-band region.")
+                        precheck_failed = True
+                        break
+                    # 用户选择继续：剔除已测异常前缀，性能指标计算自动排除（CSV 保留原始数据）
+                    prefix_codes = list(codes)
+                    prefix_voltages = list(voltages)
+                    voltages.clear()
+                    codes.clear()
+                    ctx.log_fn(f"[{item_key}] [TEST] Continuing per user choice: first "
+                               f"{precheck_n} abnormal points excluded from performance metrics.")
+                    # 弹窗日志打断了 MEAS 输出，复述已测点，保证记录连续可读
+                    for j, (p_code, p_v) in enumerate(zip(prefix_codes, prefix_voltages)):
+                        p_delta = "" if j == 0 else f"{(p_v - prefix_voltages[j - 1]) * 1000.0:+.3f}mV"
+                        ctx.log_fn(f"[{item_key}] [MEAS] Code=0x{p_code:0{hex_width}X}  "
+                                   f"Measured={p_v:>8.4f}V  Diff={p_delta}")
+
+            # 尾部饱和检测：连续 N 点电压极差低于阈值（如受限于前级电压卡住）时弹窗
+            # 交由用户决定是否继续；用户继续后本次运行不再触发
+            # Mock 电压为常数+噪声，必然触发，跳过
+            if (not ctx.is_mock
+                    and not saturation_continue
+                    and len(voltages) >= _TAIL_STOP_POINTS
+                    and (max(voltages[-_TAIL_STOP_POINTS:]) - min(voltages[-_TAIL_STOP_POINTS:]))
+                    <= _TAIL_STOP_SPAN):
+                sat_v = voltages[-1]
+                ctx.log_fn(f"[{item_key}] [WARN] Output saturated at ~{sat_v:.4f}V for "
+                           f"{_TAIL_STOP_POINTS} consecutive codes "
+                           f"(code=0x{code:0{hex_width}X}).")
+                logger.warning("Output voltage saturated at %.4fV (code=0x%X)", sat_v, code)
+                answered, do_continue = _ask_user_confirm(
+                    ctx,
+                    "输出饱和确认",
+                    f"连续 {_TAIL_STOP_POINTS} 个代码点的电压极差 ≤ {_TAIL_STOP_SPAN * 1000:.0f}mV，"
+                    f"疑似输出饱和：\n\n当前电压 ≈ {sat_v:.4f}V（code=0x{code:0{hex_width}X}）\n\n"
+                    "是否继续扫描剩余代码点？\n"
+                    "（继续时本次运行不再触发饱和终止，平坦段不参与性能指标计算）",
+                )
+                if not answered:
+                    ctx.log_fn(f"[{item_key}] [TEST] Stopped by user during saturation "
+                               "confirmation.")
+                    break
+                if not do_continue:
+                    # 截断饱和平台：丢弃触发的 N 点平坦窗口，最大值取饱和前一个点
+                    # （不回溯扩展——步进幅值接近阈值时回溯会误吞线性段末端点）
+                    p = len(voltages) - _TAIL_STOP_POINTS
+                    if p > 0:
+                        voltages = voltages[:p]
+                        codes = codes[:p]
+                        ctx.log_fn(f"[{item_key}] [TEST] Saturation plateau trimmed: max voltage "
+                                   f"taken from code=0x{codes[-1]:0{hex_width}X} "
+                                   f"({voltages[-1]:.4f}V), {len(voltages)} effective points kept.")
+                    break
+                # 用户选择继续：本次运行不再触发饱和终止，保留平坦点（有效区间算法剔除）
+                saturation_continue = True
+                ctx.log_fn(f"[{item_key}] [TEST] Continuing per user choice: saturation "
+                           "early-stop disabled for this run.")
+
+            idx = code - min_code
+            ctx.progress_fn(int((idx + 1) / total_points * 100), f"Vout scan 0x{code:X}")
+            code += 1
+
+        # 饱和阈值剔除首尾平台，取有效段
+        sat_threshold = 0.001
+        min_voltage = max_voltage = 0.0
+        valid_min_code = valid_max_code = 0
+        step_voltage_mv = 0.0
+        step_error_mv = 0.0
+        linearity_pct = 0.0
+        if len(voltages) >= 2 and not precheck_failed:
             low_valid = 0
+            for k in range(1, len(voltages)):
+                if abs(voltages[k] - voltages[k - 1]) > sat_threshold:
+                    low_valid = k
+                    break
+            else:
+                low_valid = len(voltages) - 1
 
-        valid_voltages = voltages[low_valid:high_valid + 1]
-        valid_codes = codes[low_valid:high_valid + 1]
-        min_voltage = min(valid_voltages)
-        max_voltage = max(valid_voltages)
-        valid_min_code = valid_codes[0]
-        valid_max_code = valid_codes[-1]
-        if len(valid_voltages) >= 2:
-            step_voltage_mv = (valid_voltages[-1] - valid_voltages[0]) / (len(valid_voltages) - 1) * 1000.0
-            # 单步与平均步进的最大偏差（mV）：Step Error 判定用，
-            # 例如平均步进 5mV、Step Error 设 1mV → 每步须落在 4~6mV。
-            step_diffs_mv = [
-                (valid_voltages[i] - valid_voltages[i - 1]) * 1000.0
-                for i in range(1, len(valid_voltages))
-            ]
-            step_error_mv = max(
-                (abs(d - step_voltage_mv) for d in step_diffs_mv), default=0.0)
-            full_scale = valid_voltages[-1] - valid_voltages[0]
-            if abs(full_scale) > 1e-9:
-                n = len(valid_voltages)
-                ideal_step = full_scale / (n - 1)
-                max_dev = 0.0
-                for j in range(n):
-                    ideal_v = valid_voltages[0] + ideal_step * j
-                    max_dev = max(max_dev, abs(valid_voltages[j] - ideal_v))
-                linearity_pct = max_dev / abs(full_scale) * 100.0
-        if not ctx.stop_flag_fn():
-            ctx.log_fn(f"[{item_key}] [TEST] Valid code range: 0x{valid_min_code:0{hex_width}X} ~ "
-                       f"0x{valid_max_code:0{hex_width}X} "
-                       f"({valid_max_code - valid_min_code + 1} effective points out of "
-                       f"{len(voltages)} total)")
+            high_valid = len(voltages) - 1
+            for k in range(len(voltages) - 1, 0, -1):
+                if abs(voltages[k] - voltages[k - 1]) > sat_threshold:
+                    high_valid = k - 1
+                    break
+            else:
+                high_valid = 0
 
-    # 恢复寄存器默认值
-    i2c.write(device_addr, reg_addr, default_reg, width_flag)
-    ctx.log_fn(f"[{item_key}] [TEST] Register restored to default value.")
+            if high_valid <= low_valid:
+                high_valid = len(voltages) - 1
+                low_valid = 0
 
-    # 收尾关断负载通道（CCLoad 开启态禁设 0mA，直接 channel_off）
-    teardown_load(ctx, iload_ch)
+            valid_voltages = voltages[low_valid:high_valid + 1]
+            valid_codes = codes[low_valid:high_valid + 1]
+            min_voltage = min(valid_voltages)
+            max_voltage = max(valid_voltages)
+            valid_min_code = valid_codes[0]
+            valid_max_code = valid_codes[-1]
+            if len(valid_voltages) >= 2:
+                step_voltage_mv = (valid_voltages[-1] - valid_voltages[0]) / (len(valid_voltages) - 1) * 1000.0
+                # 单步与平均步进的最大偏差（mV）：Step Error 判定用，
+                # 例如平均步进 5mV、Step Error 设 1mV → 每步须落在 4~6mV。
+                step_diffs_mv = [
+                    (valid_voltages[i] - valid_voltages[i - 1]) * 1000.0
+                    for i in range(1, len(valid_voltages))
+                ]
+                step_error_mv = max(
+                    (abs(d - step_voltage_mv) for d in step_diffs_mv), default=0.0)
+                full_scale = valid_voltages[-1] - valid_voltages[0]
+                if abs(full_scale) > 1e-9:
+                    n = len(valid_voltages)
+                    ideal_step = full_scale / (n - 1)
+                    max_dev = 0.0
+                    for j in range(n):
+                        ideal_v = valid_voltages[0] + ideal_step * j
+                        max_dev = max(max_dev, abs(valid_voltages[j] - ideal_v))
+                    linearity_pct = max_dev / abs(full_scale) * 100.0
+            if not ctx.stop_flag_fn():
+                ctx.log_fn(f"[{item_key}] [TEST] Valid code range: 0x{valid_min_code:0{hex_width}X} ~ "
+                           f"0x{valid_max_code:0{hex_width}X} "
+                           f"({valid_max_code - valid_min_code + 1} effective points out of "
+                           f"{len(voltages)} total)")
+    finally:
+        # 兜底恢复寄存器默认值：覆盖正常完成 / 用户停止 / 异常全部路径
+        if restore_ctx is not None:
+            _i2c, _dev, _reg, _reg_default, _wflag = restore_ctx
+            try:
+                _i2c.write(_dev, _reg, _reg_default, _wflag)
+                ctx.log_fn(f"[{item_key}] [TEST] Register restored to default value.")
+            except Exception:  # noqa: BLE001 - 恢复失败记录日志，不掩盖原异常
+                ctx.log_fn(f"[{item_key}] [ERROR] Failed to restore register default value.")
+                logger.error("Failed to restore register default value", exc_info=True)
+        # 收尾关断负载通道（CCLoad 开启态禁设 0mA，直接 channel_off）
+        teardown_load(ctx, iload_ch)
 
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["DAC_code", "Vout (mV)", "Diff (mV)"],
               [row + ["" if i == 0 else round(row[1] - rows[i - 1][1], 3)]
                for i, row in enumerate(rows)])
+    if precheck_failed:
+        # 前置校验失败且用户选择中止：不作指标计算，原始数据仍落 CSV
+        return ItemResult(item_key=item_key, name=name, passed=None,
+                          raw_csv_path=csv_path,
+                          notes="前置校验失败，用户选择中止")
     measured = {
         "points": len(rows),
         "default_voltage_mv": round(default_voltage * 1000.0, 3),

@@ -14,7 +14,7 @@ from typing import Any
 
 from PySide6.QtCore import Qt, QThread, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
-from PySide6.QtWidgets import QHBoxLayout, QSplitter, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QMessageBox, QSplitter, QVBoxLayout, QWidget
 
 from core.module_test._common import VOLT_METHOD_SCOPE, cfg_int
 from core.module_test.module_config import ModuleConfigWorker
@@ -318,6 +318,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
         self._runner.log.connect(self.detail_dock.log_panel.append_log)
         self._runner.finished_result.connect(self._on_finished)
         self._runner.failed.connect(self._on_failed)
+        self._runner.confirm_request.connect(self._on_confirm_request)
 
         selected = cfg["selected_items"]
         self._counts = {"pass": 0, "fail": 0, "na": 0}
@@ -339,6 +340,24 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
             self._apply_run_state(RunState.STOPPING)
             self.detail_dock.log_panel.append_log("[STOP] 请求停止测试...")
             self._runner.request_stop()
+
+    def _on_confirm_request(self, title: str, message: str) -> None:
+        """Runner 确认请求（前置校验失败 / 输出饱和）：弹窗让用户决定是否继续。
+
+        Runner 阻塞等待应答；选“继续”继续扫描，选“中止”或按 Esc 保持终止行为。
+        """
+        box = QMessageBox(self)
+        box.setWindowTitle(title)
+        box.setIcon(QMessageBox.Warning)
+        box.setText(message)
+        continue_btn = box.addButton("继续", QMessageBox.YesRole)
+        abort_btn = box.addButton("中止", QMessageBox.NoRole)
+        box.setDefaultButton(abort_btn)
+        box.setEscapeButton(abort_btn)
+        apply_qss(box, "dialog")
+        box.exec()
+        if self._runner is not None:
+            self._runner.respond_confirm(box.clickedButton() is continue_btn)
 
     def _on_progress(self, percent: int, label: str) -> None:
         self.run_bar.set_progress(percent)
