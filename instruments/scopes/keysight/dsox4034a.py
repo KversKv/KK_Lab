@@ -481,21 +481,34 @@ class DSOX4034A:
         self.write(':MEASure:CLEar')
         time.sleep(0.2)
 
+    def _debug_shot(self, tag: str) -> None:
+        """DEBUG 截图钩子：外部设置 self.debug_shot_cb 后，各步骤落盘屏幕截图。"""
+        cb = getattr(self, 'debug_shot_cb', None)
+        if cb is None:
+            return
+        try:
+            cb(tag)
+        except Exception:  # noqa: BLE001
+            logger.error('debug shot cb %s failed', tag, exc_info=True)
+
     def set_AutoRipple_test(self, channel: int):
         self._validate_channel(channel)
 
         self.clear_all_measurements()
+        self._debug_shot('01_after_clear_meas')
 
         # 0. 触发设为 Auto 并保持采集，避免波形不刷新导致无测量值
         self.set_trigger_sweep('AUTO')
         self.run()
         time.sleep(0.1)
+        self._debug_shot('02_after_run')
 
         # 1. 基础设置
         self.set_timebase_scale(0.001)
         time.sleep(0.1)
         self.set_timebase_position(0.0)
         time.sleep(0.1)
+        self._debug_shot('03_after_timebase')
 
         # 2. 先用大刻度测平均值
         self.set_channel_scale(channel, 0.5)
@@ -505,22 +518,27 @@ class DSOX4034A:
 
         mean_vol = self.get_channel_mean(channel)
         logger.debug('Channel %d Mean: %.6f V', channel, mean_vol)
+        self._debug_shot('04_after_scale05_mean')
 
         # 3. 先切目标 scale
         self.set_channel_scale(channel, 0.02)
         time.sleep(0.1)
+        self._debug_shot('05_after_scale002')
 
         # 4. 再设置 offset 到均值附近
         self.set_channel_offset(channel, mean_vol - 0.02)
         time.sleep(0.1)
+        self._debug_shot('06_after_offset')
 
         # 5. 打开通道带宽限制，抑制高频噪声
         self.set_channel_bandwidth(channel, 'ON')
         time.sleep(0.1)
+        self._debug_shot('07_after_bwlimit')
 
         # 6. 触发电平设为该通道平均值，确保波形稳定刷新
         self.set_trigger_level(channel, mean_vol)
         time.sleep(0.1)
+        self._debug_shot('08_after_triglevel')
 
         # mean_vol = self.get_channel_mean(channel)
         # vpp = self.get_channel_pk2pk(channel)
