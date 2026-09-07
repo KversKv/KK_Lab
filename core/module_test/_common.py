@@ -34,6 +34,10 @@ class ItemContext:
     # 用户确认回调（标题, 正文）→ (是否已应答, 是否继续)：runner 注入，
     # 经 confirm_request 信号弹窗等 UI 应答；None 时调用方按"中止"处理
     confirm_fn: Callable[[str, str], tuple[bool, bool]] | None = None
+    # scope 方式 Vout 入位状态（setup_vout_meter 的 Step1~3 写入，
+    # measure_vout 越窗/无效复测判定用；None = 本 ctx 尚未入位）
+    _scope_vout_v0: float | None = None
+    _scope_vout_ch: int | None = None
 
 
 def parse_channel(value: Any) -> int:
@@ -137,23 +141,155 @@ def measure_avg(ctx: "ItemContext", method: str, channel: int, *,
 VOLT_METHOD_N6705C = "n6705c"
 VOLT_METHOD_SCOPE = "scope"
 
+# scope 方式 Vout 测量入位参数（Step1~3，2026-09 用户规则）：
+#   Step1: 500mV/div 粗量程读 V0 → Step2: offset = V0-50mV → Step3: 50mV/div
+_SCOPE_VOUT_COARSE_V = 0.5    # Step1 粗量程 500 mV/div（整屏 5V，防初始削波）
+_SCOPE_VOUT_FINE_V = 0.05     # Step3 精量程 50 mV/div
+_SCOPE_VOUT_OFFSET_V = 0.05   # Step2 offset = V0 - 50 mV（V0 位于中心上方 1 格）
+
 
 def volt_method_is_scope(cfg: dict) -> bool:
     """电压测试方式是否为示波器（缺省 / 非法值回落 N6705C）。"""
     return str(cfg.get("volt_method", VOLT_METHOD_N6705C)) == VOLT_METHOD_SCOPE
 
 
-def _safe_scope_mean(ctx: "ItemContext", channel: int, default: float) -> float:
-    """示波器平均值读取的防御封装：异常返回 default 并记日志。"""
+def _scope_mean_raw(ctx: "ItemContext", channel: int) -> float | None:
+    """示波器均值原始读取：异常 / None 返回 None（不吞成 default）。"""
     if ctx.scope is None:
         logger.error("volt_method=scope but ctx.scope is None")
-        return default
+        return None
     try:
         val = ctx.scope.get_channel_mean(channel)
-        return float(val) if val is not None else default
-    except Exception:  # noqa: BLE001 - 测量异常降级为默认值，保证流程不中断
+        return float(val) if val is not None else None
+    except Exception:  # noqa: BLE001 - 测量异常交调用方决定重试/降级
         logger.error("scope get_channel_mean ch%d failed", channel, exc_info=True)
-        return default
+        return None
+
+
+# scope 方式 Vout 入位缓存（模块级，跨测试项共享；2026-09-07 用户规则）：
+# 序列开头（runner 基准阶段）完整执行 Step1~3 并缓存 (V0, scale, offset)，
+# 后续测试项直接重放缓程参数（快路径）；仅读数越窗/无效（Step4）才
+# force 重走完整流程并刷新缓存
+_SCOPE_VOUT_CACHE: dict[str, dict[str, float]] = {}
+
+
+def _scope_vout_cache_key(cfg: dict, ch: int) -> str:
+    """缓存键：通道 + 标称 Vout（不同标称输出不互相继承）。"""
+    nominal_v = float(cfg.get("vout_nominal_mv", 1800)) / 1000.0
+    return f"ch{ch}@{nominal_v:.3f}"
+
+
+def _setup_scope_vout_meter(ctx: "ItemContext", *, force: bool = False) -> float | None:
+    """scope 方式 Vout 测量入位（Step1~3），返回 V0（失败返回 None）。
+
+    force=False 且缓存命中（同一通道+标称 Vout）：快路径——仅确保通道
+    显示 / DC 耦合 / RUN 采集后直接重放缓存的 scale/offset，不重读 V0
+    （多测试项序列中各项入位即毫秒级）；force=True 或无缓存：完整执行
+    Step1~3 并把 (V0, scale, offset) 写入模块级缓存。
+
+    Step1: 500mV/div 粗量程读 V0（offset 先置于标称 Vout，读不到依次
+           试 0V / 2.5V 中心档）；
+    Step2: offset = V0 - 50mV（V0 位于中心上方 1 格，下方留 6 格量程）；
+    Step3: 切 50mV/div 精量程（与 Step2 的 SCPI 写序为先 scale 后
+           offset：改 scale 会重算 offset，见函数内注释）。
+    附带入位：打开通道显示、强制 DC 耦合（防 AC 遗留读出 ~0V 假均值）、
+    触发 AUTO 扫描（DSOX；NORM 无沿时显示冻结，DISPlay 测量读旧帧）、
+    恢复 run 采集（上一项可能定格在 stop 态，读数是旧帧）。
+    成功后把 V0 / 通道记入 ctx，供 measure_vout 越窗复测判定。
+    """
+    if ctx.is_mock or ctx.scope is None:
+        return None
+    ch = int(ctx.config.get("scope_vout_channel", 1))
+    try:
+        ctx.scope.set_channel_display(ch, True)
+        if hasattr(ctx.scope, "set_channel_coupling"):
+            ctx.scope.set_channel_coupling(ch, "DC")
+        if hasattr(ctx.scope, "set_trigger_sweep"):
+            # MSO64B 无此方法（即时测量不受显示刷新影响），跳过
+            ctx.scope.set_trigger_sweep("AUTO")
+        if not ctx.scope.is_acquiring():
+            ctx.scope.run()
+            settle(ctx, 0.3)
+        key = _scope_vout_cache_key(ctx.config, ch)
+        cached = _SCOPE_VOUT_CACHE.get(key)
+        if cached is not None and not force:
+            # 快路径：重放缓存的量程/偏置（上一项可能被 ripple/transient
+            # 等项改过），写序同样先 scale 后 offset
+            ctx.scope.set_channel_scale(ch, cached["scale_v"])
+            ctx.scope.set_channel_offset(ch, cached["offset_v"])
+            ctx._scope_vout_v0 = cached["v0_v"]
+            ctx._scope_vout_ch = ch
+            return cached["v0_v"]
+        # Step1：粗量程 + 标称中心读 V0（读不到换中心档重试）
+        nominal_v = float(ctx.config.get("vout_nominal_mv", 1800)) / 1000.0
+        ctx.scope.set_channel_scale(ch, _SCOPE_VOUT_COARSE_V)
+        v0 = None
+        for center_v in (nominal_v, 0.0, 2.5):
+            ctx.scope.set_channel_offset(ch, center_v)
+            v0 = _scope_mean_raw(ctx, ch)
+            if v0 is not None:
+                break
+        if v0 is None:
+            ctx.log_fn(f"[scope] Vout 通道 ch{ch} Step1 读取 V0 失败，入位降级。")
+            return None
+        # Step2 / Step3：先切精量程再写 offset——写序与规则步骤相反：
+        # 改 scale 时示波器按地线标记屏幕位置守恒重算 offset
+        # （offset×新scale/旧scale），先写 offset 会被 0.05/0.5 缩成
+        # 1/10（实测写 1.1335V 后示波器实显 113.25mV）；两驱动
+        # set_AutoRipple_test 均为切目标 scale 后再设 offset 的写序。
+        # 最终态与规则一致：50mV/div + offset=V0-50mV（V0 位于中心上方 1 格）
+        ctx.scope.set_channel_scale(ch, _SCOPE_VOUT_FINE_V)
+        offset_v = v0 - _SCOPE_VOUT_OFFSET_V
+        ctx.scope.set_channel_offset(ch, offset_v)
+        ctx.log_fn(f"[scope] Vout 通道 ch{ch} Step1 读取 V0 = {v0:.4f} V，"
+                   f"Step2/3 入位 scale = {_SCOPE_VOUT_FINE_V * 1000:g} mV/div，"
+                   f"offset = {offset_v:.4f} V。")
+        _SCOPE_VOUT_CACHE[key] = {
+            "v0_v": v0,
+            "scale_v": _SCOPE_VOUT_FINE_V,
+            "offset_v": offset_v,
+        }
+        ctx._scope_vout_v0 = v0
+        ctx._scope_vout_ch = ch
+        return v0
+    except Exception:  # noqa: BLE001 - 入位失败降级，测量侧自行兜底
+        logger.error("setup scope vout meter ch%d failed", ch, exc_info=True)
+        return None
+
+
+def _scope_vout_in_window(v: float, v0: float) -> bool:
+    """Vout 读数是否在精量程有效窗内（越窗 = 过高/过低、疑似削波）。
+
+    50mV/div 整屏 10 格，offset=V0-50mV → 屏幕窗口 [V0-300mV, V0+200mV]；
+    留 1 格边距，读数超出中心±4 格（[V0-250mV, V0+150mV]）即越窗。
+    """
+    center_v = v0 - _SCOPE_VOUT_OFFSET_V
+    return center_v - 4.0 * _SCOPE_VOUT_FINE_V <= v <= center_v + 4.0 * _SCOPE_VOUT_FINE_V
+
+
+def _scope_vout_sample(ctx: "ItemContext", ch: int, default: float) -> float:
+    """scope 方式单次 Vout 采样（含 Step4 复测规则）。
+
+    读数无效（测量异常/无波形）或越窗（过高/过低、疑似削波）时，重做完整
+    Step1~3 入位后复测一次；仍失败返回 default。
+    """
+    v = _scope_mean_raw(ctx, ch)
+    v0, setup_ch = ctx._scope_vout_v0, ctx._scope_vout_ch
+    if v is not None:
+        if v0 is None or setup_ch != ch:
+            # 本 ctx 未做过 Step1~3 入位（如 ripple 项自管量程），直接采信
+            return v
+        if _scope_vout_in_window(v, v0):
+            return v
+        reason = f"读数 {v:.4f} V 越窗（V0={v0:.4f} V，过高或过低疑似削波）"
+    else:
+        reason = "读数无效（测量异常/无波形）"
+    ctx.log_fn(f"[scope] Vout {reason}，重走完整流程（Step1~3）后复测。")
+    if _setup_scope_vout_meter(ctx, force=True) is not None:
+        v = _scope_mean_raw(ctx, ch)
+        if v is not None:
+            return v
+    return default
 
 
 def measure_vout(ctx: "ItemContext", *, count: int = 1, settle_s: float = 0.0,
@@ -161,7 +297,8 @@ def measure_vout(ctx: "ItemContext", *, count: int = 1, settle_s: float = 0.0,
     """按 DUT 配置的「电压测试方式」测 Vout（单位 V，多次采样去极值均值）。
 
     - N6705C（默认）：Vout 通道 VMETer measure_voltage；
-    - 示波器：scope_vout_channel 通道平均值（get_channel_mean）。
+    - 示波器：scope_vout_channel 通道平均值（get_channel_mean），读数
+      无效 / 越窗时按 Step4 重做 Step1~3 入位后复测一次。
     """
     cfg = ctx.config
     use_scope = volt_method_is_scope(cfg)
@@ -170,7 +307,7 @@ def measure_vout(ctx: "ItemContext", *, count: int = 1, settle_s: float = 0.0,
     for i in range(n):
         if use_scope:
             ch = int(cfg.get("scope_vout_channel", 1))
-            samples.append(_safe_scope_mean(ctx, ch, default))
+            samples.append(_scope_vout_sample(ctx, ch, default))
         else:
             ch = parse_channel(cfg.get("vout_channel", 1))
             samples.append(safe_measure(ctx.n6705c, "measure_voltage", ch, default))
@@ -179,13 +316,19 @@ def measure_vout(ctx: "ItemContext", *, count: int = 1, settle_s: float = 0.0,
     return trimmed_mean(samples)
 
 
-def setup_vout_meter(ctx: "ItemContext") -> None:
+def setup_vout_meter(ctx: "ItemContext", *, force: bool = False) -> None:
     """按「电压测试方式」准备 Vout 测量通道。
 
     N6705C 方式：Vout 通道置 VMETer 并 channel_on（同 setup_meter_channel）；
-    示波器方式：无需预配置（get_channel_mean 自带 ensure_display / stop）。
+    示波器方式：执行 Step1~3 入位（500mV/div 读 V0 → offset=V0-50mV →
+    50mV/div，并强制 DC 耦合 / 触发 AUTO / 恢复 run 采集），详见
+    _setup_scope_vout_meter。force=False（默认）且缓存命中（同通道+标称
+    Vout）时走快路径：仅重放缓存的 scale/offset 不重读 V0（序列开头
+    runner 基准阶段以 force=True 做首次完整入位并缓存；读数越窗/无效
+    时 Step4 亦以 force=True 重走完整流程）。Mock / 未接示波器为 no-op。
     """
     if volt_method_is_scope(ctx.config):
+        _setup_scope_vout_meter(ctx, force=force)
         return
     setup_meter_channel(ctx, parse_channel(ctx.config.get("vout_channel", 1)))
 

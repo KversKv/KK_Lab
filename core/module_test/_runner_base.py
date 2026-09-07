@@ -236,7 +236,9 @@ class ModuleTestRunner(QThread):
         读取失败返回 None：记 WARN 后门禁降级为跳过，不阻断测试启动。
         """
         ctx = self._make_ctx(dict(self._cfg))
-        setup_vout_meter(ctx)
+        # force=True：序列开头做首次完整 Step1~3 入位并写模块级缓存，
+        # 后续各项 setup_vout_meter 走快路径仅重放缓存的 scale/offset
+        setup_vout_meter(ctx, force=True)
         v0 = measure_vout(ctx, count=_VOUT_GUARD_SAMPLES,
                           settle_s=_VOUT_GUARD_SETTLE_S, default=float("nan"))
         if math.isnan(v0):
