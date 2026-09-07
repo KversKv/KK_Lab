@@ -83,18 +83,25 @@ def _to_float(value: Any) -> float | None:
         return None
 
 
-def _collect_shots(item) -> list[tuple[str, str]]:
-    """收集截图 [(匹配键, png路径)]：measured["screenshots"] 优先，单波形图兜底。"""
+def _collect_shots(item) -> list[tuple[str, str, bool]]:
+    """收集截图 [(匹配键, png路径, 是否组号键)]：measured["screenshots"] 优先，单波形图兜底。
+
+    瞬态项截图键为 "Group"（组号），其余项为 "Iload (mA)"。
+    """
     measured = item.measured if isinstance(item.measured, dict) else {}
     raw = measured.get("screenshots")
-    shots: list[tuple[str, str]] = []
+    shots: list[tuple[str, str, bool]] = []
     if isinstance(raw, list):
         for s in raw:
             if isinstance(s, dict) and s.get("png"):
-                shots.append((str(s.get("Iload (mA)", "")), str(s["png"])))
+                group = str(s.get("Group", "")).strip()
+                if group:
+                    shots.append((group, str(s["png"]), True))
+                else:
+                    shots.append((str(s.get("Iload (mA)", "")), str(s["png"]), False))
     if not shots and item.waveform_png:
-        shots.append(("", str(item.waveform_png)))
-    return [(k, p) for k, p in shots if os.path.isfile(p)]
+        shots.append(("", str(item.waveform_png), False))
+    return [(k, p, g) for k, p, g in shots if os.path.isfile(p)]
 
 
 def _scaled_img(img: Any, target_w: int) -> tuple[Any, int]:
@@ -251,14 +258,14 @@ def _write_item_sheet(ws, item, log_fn: Callable[[str], None]) -> bool:  # noqa:
         first_col = {_to_float(r[0]) for r in rows[1:] if r}
         matched: dict[float, tuple[str, str]] = {}
         used_keys: set[float] = set()
-        unmatched: list[tuple[str, str]] = []
-        for key, png in shots:
+        unmatched: list[tuple[str, str, bool]] = []
+        for key, png, grp in shots:
             kv = _to_float(key)
             if kv is not None and kv in first_col and kv not in used_keys:
                 matched[kv] = (key, png)
                 used_keys.add(kv)
             else:
-                unmatched.append((key, png))
+                unmatched.append((key, png, grp))
         if matched:
             shot_col = n_cols + 1
             col_letter = get_column_letter(shot_col)
@@ -281,10 +288,12 @@ def _write_item_sheet(ws, item, log_fn: Callable[[str], None]) -> bool:  # noqa:
             shots = unmatched
 
     r = (start + len(rows) - 1) if has_table else start + 1
-    for key, png in shots:
+    for key, png, grp in shots:
         r += 2
         if key:
-            ws.cell(row=r, column=1, value=f"Scope shot — Iload={key} mA").font = \
+            label = (f"Scope shot — Group {key}" if grp
+                     else f"Scope shot — Iload={key} mA")
+            ws.cell(row=r, column=1, value=label).font = \
                 Font(bold=True)
         else:
             ws.cell(row=r, column=1, value="Waveform").font = Font(bold=True)

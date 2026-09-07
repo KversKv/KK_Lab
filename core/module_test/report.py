@@ -502,8 +502,8 @@ def _build_attachments(it: ItemResult) -> tuple[list[dict[str, Any]],
                                                 list[float | None]]:
     """示波器逐点截图（screenshots 优先）或单波形图 → (dataURI 附件列表, 各附件对应 Iload)。
 
-    返回的 keys 与附件同序：逐点截图为其 "Iload (mA)" 数值（缺失/单波形图为 None），
-    供 ``_embed_shots_column`` 把截图按 Iload 匹配进数据表末列。
+    返回的 keys 与附件同序：逐点截图为其 "Iload (mA)"（瞬态项为 "Group" 组号）
+    数值（缺失/单波形图为 None），供 ``_embed_shots_column`` 把截图按 Iload 匹配进数据表末列。
     """
     out: list[dict[str, Any]] = []
     keys: list[float | None] = []
@@ -514,10 +514,16 @@ def _build_attachments(it: ItemResult) -> tuple[list[dict[str, Any]],
             continue
         uri = _img_data_uri(s.get("png"))
         if uri:
+            group = s.get("Group", "")
             iload = s.get("Iload (mA)", "")
-            label = f"Iload={iload}mA" if str(iload).strip() else "scope shot"
+            if str(group).strip():
+                # Transient 项按组截图，键为组号（非 Iload 数值）
+                label = f"Group {group}"
+                keys.append(_num(group))
+            else:
+                label = f"Iload={iload}mA" if str(iload).strip() else "scope shot"
+                keys.append(_num(iload))
             out.append({"type": "image", "label": label, "full": uri})
-            keys.append(_num(iload))
     if not out:
         uri = _img_data_uri(it.waveform_png)
         if uri:

@@ -1501,7 +1501,7 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
         rows.append([idx + 1, vin0_v, vin1_v, freq,
                      round(over, 3), round(under, 3), round(vpp, 3)])
         if shot:
-            screenshots.append({"Iload (mA)": str(idx + 1), "png": shot})
+            screenshots.append({"Group": str(idx + 1), "png": shot})
         ctx.progress_fn(int((idx + 1) / len(groups) * 100), f"{name} {label}")
         ctx.log_fn(f"[{item_key}] {label} -> Overshoot={over:.3f} mV, "
                    f"Undershoot={under:.3f} mV, Vpp={vpp:.3f} mV")
@@ -1779,7 +1779,7 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
         rows.append([idx + 1, i0_ma, i1_ma, freq,
                      round(over, 3), round(under, 3), round(vpp, 3)])
         if shot:
-            screenshots.append({"Iload (mA)": str(idx + 1), "png": shot})
+            screenshots.append({"Group": str(idx + 1), "png": shot})
         ctx.progress_fn(int((idx + 1) / len(groups) * 100), f"{name} {label}")
         ctx.log_fn(f"[{item_key}] {label} -> Overshoot={over:.3f} mV, "
                    f"Undershoot={under:.3f} mV, Vpp={vpp:.3f} mV")
