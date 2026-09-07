@@ -86,6 +86,49 @@ def linspace(start: float, end: float, step: float) -> list[float]:
     return pts
 
 
+def load_reg_summary(rows: list[list[Any]], knee_ma: float = 0.0) -> dict:
+    """负载调整率双区间指标（线性区 + 全段）。
+
+    rows: [[iload_ma, vout_mv], ...]（按扫描顺序）。
+    knee_ma > 0 → 线性区上限取 ≤ knee_ma 的最大扫描点；
+    否则自动检测拐点：首个单步跌幅 > max(5×步进跌幅中位数, 0.5%×V(起始))
+    的前一个点（用于剔除电流限制区大幅跌落对全段指标的干扰）。
+    无跌落时拐点 = 末点（线性区与全段一致）。
+    """
+    n = len(rows)
+    if n == 0:
+        return {"knee_ma": 0.0, "vout_drop_mv": 0.0, "load_reg_pct": 0.0,
+                "vout_drop_linear_mv": 0.0, "load_reg_linear_pct": 0.0}
+    if n < 2:
+        return {"knee_ma": round(float(rows[0][0]), 6),
+                "vout_drop_mv": 0.0, "load_reg_pct": 0.0,
+                "vout_drop_linear_mv": 0.0, "load_reg_linear_pct": 0.0}
+    if knee_ma and knee_ma > 0:
+        cand = [i for i, r in enumerate(rows) if float(r[0]) <= knee_ma]
+        ki = cand[-1] if cand else 0
+    else:
+        drops = [float(rows[i][1]) - float(rows[i + 1][1]) for i in range(n - 1)]
+        med = sorted(abs(d) for d in drops)[len(drops) // 2]
+        thresh = max(5.0 * med, 0.005 * abs(float(rows[0][1])))
+        ki = n - 1
+        for i, d in enumerate(drops):
+            if d > thresh:
+                ki = i
+                break
+
+    def _seg(bound: int) -> tuple[float, float]:
+        delta = float(rows[bound][1]) - float(rows[0][1])
+        v0 = float(rows[0][1])
+        pct = (delta / v0 * 100.0) if abs(v0) > 1e-9 else 0.0
+        return round(delta, 4), round(pct, 4)
+
+    lin_d, lin_p = _seg(ki)
+    full_d, full_p = _seg(n - 1)
+    return {"knee_ma": round(float(rows[ki][0]), 6),
+            "vout_drop_linear_mv": lin_d, "load_reg_linear_pct": lin_p,
+            "vout_drop_mv": full_d, "load_reg_pct": full_p}
+
+
 def settle(ctx: "ItemContext", seconds: float) -> None:
     """稳定等待（Mock 模式跳过；真机 time.sleep，禁 QThread 依赖）。
 

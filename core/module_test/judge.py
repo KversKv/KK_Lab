@@ -73,8 +73,10 @@ _LINE_REG_METRICS = (
     _m("line_reg_pct", "Line Reg", "%"),
 )
 _LOAD_REG_METRICS = (
-    _m("vout_drop_mv", "Vout Drop", "mV"),
-    _m("load_reg_pct", "Load Reg", "%"),
+    _m("vout_drop_mv", "Vout Drop (全段)", "mV"),
+    _m("load_reg_pct", "Load Reg (全段)", "%"),
+    _m("vout_drop_linear_mv", "Vout Drop (线性区)", "mV"),
+    _m("load_reg_linear_pct", "Load Reg (线性区)", "%"),
 )
 _QUIESCENT_METRICS = (
     _m("Iq (uA)", "Iq", "uA"),
@@ -100,9 +102,11 @@ JUDGE_METRICS: dict[str, tuple[MetricSpec, ...]] = {
     "ldo_vout_scan": _VOUT_SCAN_METRICS,
     "dcdc_vout_scan": _VOUT_SCAN_METRICS,
     "ldo_load_reg": (
-        _m("vout_drop_mv", "Vout Drop", "mV"),
-        _m("load_reg_mv_per_a", "Load Reg", "mV/A"),
-        _m("load_reg_pct", "Load Reg", "%"),
+        _m("vout_drop_mv", "Vout Drop (全段)", "mV"),
+        _m("load_reg_mv_per_a", "Load Reg (全段)", "mV/A"),
+        _m("load_reg_pct", "Load Reg (全段)", "%"),
+        _m("vout_drop_linear_mv", "Vout Drop (线性区)", "mV"),
+        _m("load_reg_linear_pct", "Load Reg (线性区)", "%"),
     ),
     "dcdc_load_reg": _LOAD_REG_METRICS,
     "ldo_line_reg": _LINE_REG_METRICS,

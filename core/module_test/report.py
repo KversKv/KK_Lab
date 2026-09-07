@@ -88,6 +88,7 @@ from typing import Any
 from log_config import get_logger
 
 from core.module_test.result_model import ItemResult, ModuleTestResult
+from core.module_test._common import load_reg_summary
 from core.module_test.xlsx_export import export_items_xlsx_dir
 
 logger = get_logger(__name__)
@@ -298,16 +299,37 @@ def _build_metrics(it: ItemResult, table: dict[str, Any] | None) -> list[dict[st
             _mk("step_mv", "Avg Step", m.get("step_mv"), "mV"),
         ]
     elif key.endswith("load_reg"):
+        # 双区间指标：线性区（≤拐点）与全段，标签标明电流条件
+        knee = _num(m.get("knee_ma"))
+        lin_d = _num(m.get("vout_drop_linear_mv"))
+        lin_p = _num(m.get("load_reg_linear_pct"))
         drop = _num(m.get("vout_drop_mv"))
-        pct = None
+        pct = _num(m.get("load_reg_pct"))
+        i0 = i1 = None
         if len(cols) >= 2 and body:
-            v0, v1 = _num(body[0][1]), _num(body[-1][1])
-            if v0 is not None and v1 is not None and abs(v0) > 1e-9:
-                pct = (v1 - v0) / v0 * 100.0
-                if drop is None:
-                    drop = v1 - v0
-        out = [_mk("load_reg_pct", "Load Reg", pct, "%"),
-               _mk("vout_drop", "ΔV", drop, "mV")]
+            rows = [[_num(r[0]), _num(r[1])] for r in body
+                    if _num(r[0]) is not None and _num(r[1]) is not None]
+            if len(rows) >= 2:
+                i0, i1 = rows[0][0], rows[-1][0]
+                if knee is None or lin_d is None or lin_p is None \
+                        or drop is None or pct is None:
+                    s = load_reg_summary(rows)  # 旧结果兜底：从 CSV 重算
+                    knee = knee if knee is not None else s["knee_ma"]
+                    lin_d = lin_d if lin_d is not None else s["vout_drop_linear_mv"]
+                    lin_p = lin_p if lin_p is not None else s["load_reg_linear_pct"]
+                    drop = drop if drop is not None else s["vout_drop_mv"]
+                    pct = pct if pct is not None else s["load_reg_pct"]
+        rng = f"{i0:g}~{i1:g}mA" if (i0 is not None and i1 is not None) else "全段"
+        out = [
+            _mk("load_reg_linear_pct",
+                f"Load Reg (≤{knee:g}mA)" if knee is not None
+                else "Load Reg (线性区)", lin_p, "%"),
+            _mk("vout_drop_linear",
+                f"ΔV (≤{knee:g}mA)" if knee is not None
+                else "ΔV (线性区)", lin_d, "mV"),
+            _mk("load_reg_pct", f"Load Reg ({rng})", pct, "%"),
+            _mk("vout_drop", f"ΔV ({rng})", drop, "mV"),
+        ]
     elif key.endswith("line_reg"):
         span = _num(m.get("vout_span_mv"))
         pct = None

@@ -10,15 +10,15 @@ from __future__ import annotations
 import os
 
 from core.module_test._common import (
-    ItemContext, linspace, measure_avg, measure_vout, mock_jitter,
-    parse_channel, restore_vin, run_line_transient, run_load_capability_ripple,
-    run_load_transient, run_vout_scan, set_load_current, settle,
-    setup_load_channel, setup_source_channel, setup_vout_meter,
-    teardown_load, vin_current_limit_a, write_csv,
+    ItemContext, linspace, load_reg_summary, measure_avg, measure_vout,
+    mock_jitter, parse_channel, restore_vin, run_line_transient,
+    run_load_capability_ripple, run_load_transient, run_vout_scan,
+    set_load_current, settle, setup_load_channel, setup_source_channel,
+    setup_vout_meter, teardown_load, vin_current_limit_a, write_csv,
 )
 from core.module_test.result_model import ItemResult
 from core.module_test.param_spec import (
-    ParamSpec, average_cnt, line_transient_groups, load_sweep,
+    ParamSpec, average_cnt, line_transient_groups, load_knee, load_sweep,
     quiescent_params, reg_scan_params, settle_time, transient_groups,
     vin_bias, vin_sweep, vout_tol,
 )
@@ -125,6 +125,7 @@ def load_line_reg(ctx: ItemContext) -> ItemResult:
     vin_v = float(cfg.get("vin_v", 3.8))
     avg_cnt = int(cfg.get("average_cnt", 3))
     settle_s = float(cfg.get("settle_time_s", 0.05))
+    knee_ma = float(cfg.get("iload_knee_ma", 0) or 0)
 
     if not ctx.is_mock:
         setup_source_channel(ctx, vin_ch, vin_v, current_limit=vin_current_limit_a(cfg))
@@ -148,11 +149,12 @@ def load_line_reg(ctx: ItemContext) -> ItemResult:
 
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Iload (mA)", "Vout (mV)"], rows)
-    delta = (rows[-1][1] - rows[0][1]) if len(rows) >= 2 else 0.0
-    v0 = rows[0][1] if rows else 0.0
-    load_reg_pct = (delta / v0 * 100.0) if abs(v0) > 1e-9 else 0.0
-    measured = {"points": len(rows), "vout_drop_mv": round(delta, 4),
-                "load_reg_pct": round(load_reg_pct, 4)}
+    s = load_reg_summary(rows, knee_ma)
+    measured = {"points": len(rows), "knee_ma": s["knee_ma"],
+                "vout_drop_mv": s["vout_drop_mv"],
+                "load_reg_pct": s["load_reg_pct"],
+                "vout_drop_linear_mv": s["vout_drop_linear_mv"],
+                "load_reg_linear_pct": s["load_reg_linear_pct"]}
     return ItemResult(item_key=item_key, name="Load Regulation", unit="mV",
                       passed=None, measured=measured, raw_csv_path=csv_path)
 
@@ -579,6 +581,7 @@ DCDC_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
     )),
     "dcdc_load_reg": ("Load Regulation", load_line_reg, False, True, (
         *load_sweep(1.0, 200.0, 20.0),
+        load_knee(),
         vin_bias(), average_cnt(), settle_time(),
     )),
     "dcdc_line_reg": ("Line Regulation", line_reg, False, True, (

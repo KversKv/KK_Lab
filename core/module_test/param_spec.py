@@ -85,6 +85,12 @@ def load_sweep(start: float = 1.0, end: float = 200.0, step: float = 20.0) -> tu
     return (load_start(start), load_end(end), load_step(step))
 
 
+def load_knee(default: float = 0.0) -> ParamSpec:
+    return ParamSpec("iload_knee_ma", "线性区拐点", "float", default, "mA",
+                     minimum=0.0, maximum=100_000.0, decimals=3,
+                     hint="线性区负载上限；0 = 自动检测大幅跌落拐点")
+
+
 # —— Vin 扫描三件套（起始 / 结束 / 步进），随对应测试项设置 ——
 def vin_start(default: float = 3.2) -> ParamSpec:
     return ParamSpec("vin_start_v", "Vin 起始", "float", default, "V",
