@@ -374,12 +374,18 @@ class DSOX4034A:
     def _meas_refresh_s(self) -> float:
         """DISPlay 测量触发全屏重捕后取到有效值所需等待（16×当前时基）。
 
-        时基读取失败返回 0，退回调用方固定 settle，不阻断测量。
+        仅 RUN 态需要：添加测量项（pre_cmd）会触发 DSOX 全屏重捕；
+        STOP 态屏幕已定格，测量对冻结帧直接计算、无重捕，返回 0
+        （transient 流程逐组 stop 定格后连测 VMAX/VMIN/mean/VPP，
+        旧版不分状态逐查询各等 16×时基，500ms/div 时基单组白等
+        4×8s）。时基读取失败也返回 0，退回调用方固定 settle。
         """
         try:
+            if not self.is_acquiring():
+                return 0.0
             return 16.0 * self.get_timebase_scale()
-        except Exception:  # noqa: BLE001 - 时基读取失败退回固定 settle
-            logger.debug('read timebase for meas settle failed', exc_info=True)
+        except Exception:  # noqa: BLE001 - 状态/时基读取失败退回固定 settle
+            logger.debug('read acquire/timebase for meas settle failed', exc_info=True)
             return 0.0
 
     def _measure_query(

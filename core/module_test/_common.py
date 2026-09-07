@@ -753,6 +753,51 @@ def _ensure_stop_for_capture(ctx: "ItemContext") -> None:
         logger.error("re-stop after measure failed", exc_info=True)
 
 
+# Transient Vertical Scale 确认缓存（模块级，跨组 / 跨 transient 测试项共享；
+# 2026-09-07 用户规则：首个 transient 项首组执行完整确认流程，后续直接
+# 继承；确认失败（测量异常 / 削波）时清空，下次重做完整确认）
+_TRANSIENT_VDIV_CACHE: dict[str, float] = {}
+
+
+def _transient_vdiv_key(scope_ch: int, nominal_v: float) -> str:
+    """缓存键：测量通道 + 标称 Vout（不同标称输出的项不互相继承）。"""
+    return f"ch{scope_ch}@{nominal_v:.3f}"
+
+
+def _transient_confirm_vdiv(
+    ctx: "ItemContext", scope_ch: int, nominal_v: float, settle_s: float,
+    timebase_s: float, init_scale_v: float, *,
+    max_tries: int = 5,
+    debug_shot: Callable[[str], None] | None = None,
+) -> tuple[float, bool]:
+    """Transient Vertical Scale 确认，返回 (V/div, 是否继承缓存)。
+
+    无缓存（首个 transient 测试项首组）：执行完整确认流程——
+    _measure_with_autoscale 从 init_scale_v 起削波（9.9e37）翻倍搜索，
+    结果写入缓存；有缓存（后续组 / 另一 transient 项）：直接继承
+    跳过搜索（量程由阶段二的 _measure_with_autoscale 重新下发）。
+    确认流程异常向上传播（缓存不写入），由调用方降级处理。
+    """
+    key = _transient_vdiv_key(scope_ch, nominal_v)
+    cached = _TRANSIENT_VDIV_CACHE.get(key)
+    if cached is not None:
+        ctx.log_fn(f"[transient] 继承已确认 Vertical Scale "
+                   f"{cached * 1000:g} mV/div（ch{scope_ch}）")
+        return cached, True
+    _, _, _, _, used_scale = _measure_with_autoscale(
+        ctx, scope_ch, nominal_v, init_scale_v, settle_s,
+        timebase_s=timebase_s, max_tries=max_tries, debug_shot=debug_shot)
+    _TRANSIENT_VDIV_CACHE[key] = used_scale
+    ctx.log_fn(f"[transient] Vertical Scale 确认完成: "
+               f"{used_scale * 1000:g} mV/div（ch{scope_ch}）")
+    return used_scale, False
+
+
+def _transient_invalidate_vdiv(scope_ch: int, nominal_v: float) -> None:
+    """确认失效（无法正确获取数据 / 波形削波溢出）：清缓存待重确认。"""
+    _TRANSIENT_VDIV_CACHE.pop(_transient_vdiv_key(scope_ch, nominal_v), None)
+
+
 def _measure_with_autoscale(ctx: "ItemContext", scope_ch: int, nominal_v: float,
                             scale_v: float, settle_s: float,
                             timebase_s: float = 0.0,
@@ -791,10 +836,11 @@ def _measure_with_autoscale(ctx: "ItemContext", scope_ch: int, nominal_v: float,
             vmin = float(ctx.scope.get_channel_min(scope_ch))
             vbase = float(ctx.scope.get_channel_mean(scope_ch))
             vpp = float(ctx.scope.get_channel_pk2pk(scope_ch))
-            # DISPlay 测量（pre_cmd 添加测量项）会触发示波器重新刷新，stop
-            # 定格帧可能被冲掉；等刷新完成（16×时基，下限见 _acq_settle_s）
-            # 并确保 stop，返回的才是调用方可直接截图的稳定定格帧
-            settle(ctx, _acq_settle_s(timebase_s))
+            # 四个查询都在 STOP 定格帧上进行（DSOX _meas_refresh_s 对
+            # STOP 态返回 0，各仅 0.2s）；旧版此处再等 16×时基（500ms/div
+            # 即 8s）纯浪费。仅需给测量标注渲染留 0.3s 并确保 stop，
+            # 返回的即是调用方可直接截图的稳定定格帧
+            settle(ctx, 0.3)
             _ensure_stop_for_capture(ctx)
             if debug_shot:
                 debug_shot(f"att{attempt + 1}_measured")
@@ -1158,35 +1204,50 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
                 ctx.scope.set_channel_display(scope_ch, True)
                 # 改时基后等 16×预览时基（小时基快速建立；下限见 _acq_settle_s）
                 settle(ctx, _acq_settle_s(preview_tb))
-                # 阶段一（预览时基）：量程自动搜索——削波（9.9e37）时量程翻倍
-                # 重试，最多 5 次（10→20→40→80→160 mV/div）；每轮等待仅
-                # 16×预览时基，此阶段测量值仅供削波判定，正式值在阶段二测
+                # 阶段一（预览时基）：Vertical Scale 确认（2026-09-07 用户
+                # 规则）——首个 transient 测试项首组执行完整确认（削波
+                # 9.9e37 时量程翻倍重试，最多 5 次：10→20→40→80→160
+                # mV/div，每轮等待仅 16×预览时基，测量值仅供削波判定，
+                # 正式值在阶段二测）；后续组 / 另一 transient 项直接继承
+                # 已确认量程跳过搜索
                 try:
-                    _, _, _, _, used_scale = _measure_with_autoscale(
-                        ctx, scope_ch, nominal_v, init_scale_v, settle_s,
-                        timebase_s=preview_tb, max_tries=5)
+                    used_scale, inherited = _transient_confirm_vdiv(
+                        ctx, scope_ch, nominal_v, settle_s, preview_tb,
+                        init_scale_v, max_tries=5)
                 except Exception:  # noqa: BLE001 - 量程耗尽仍削波，恢复采集再降级
                     logger.error("autoscale exhausted, re-run acquisition", exc_info=True)
                     ctx.scope.run()
                     raise
-                if used_scale > init_scale_v:
+                if not inherited and used_scale > init_scale_v:
                     ctx.log_fn(f"[{item_key}] {label} 量程自动扩至 "
                                f"{used_scale * 1000:g} mV/div")
                 # 阶段二（最终时基=period/2，10 格整屏约 5 周期）：autoscale 返回
                 # 为 stop 态，须先恢复采集再改时基（停采态下改只重绘旧帧）；
-                # 改时基后由内部 set scale + settle(16×最终时基) 统一稳定，
-                # 正式测量后内部同样等 16×最终时基并重新定格，返回即稳定
-                # stop 帧可直接截图
+                # 改时基后由内部 set scale + settle(16×最终时基) 统一稳定并
+                # stop 定格，测量在定格帧上快速完成（各查询 0.2s + 0.3s 渲染），
+                # 返回即稳定 stop 帧可直接截图
                 ctx.scope.run()
                 ctx.scope.set_timebase_scale(period / 2.0)
                 try:
                     vmax, vmin, vbase, vpp_v, _ = _measure_with_autoscale(
                         ctx, scope_ch, nominal_v, used_scale, settle_s,
                         timebase_s=period / 2.0, max_tries=1)
-                except Exception:  # noqa: BLE001 - 正式测量失败，恢复采集再降级
+                except Exception:  # noqa: BLE001 - 正式测量失败：量程疑似失效
                     logger.error("final-timebase measure failed", exc_info=True)
+                    # 无法正确获取数据 / 波形溢出：失效量程缓存，恢复采集后
+                    # 重做完整确认流程并复测一次；复测仍失败交外层组降级
+                    _transient_invalidate_vdiv(scope_ch, nominal_v)
                     ctx.scope.run()
-                    raise
+                    try:
+                        used_scale, _ = _transient_confirm_vdiv(
+                            ctx, scope_ch, nominal_v, settle_s, period / 2.0,
+                            init_scale_v, max_tries=5)
+                        vmax, vmin, vbase, vpp_v, _ = _measure_with_autoscale(
+                            ctx, scope_ch, nominal_v, used_scale, settle_s,
+                            timebase_s=period / 2.0, max_tries=1)
+                    except Exception:  # noqa: BLE001
+                        ctx.scope.run()
+                        raise
                 vpp = vpp_v * 1000.0
                 over = (vmax - vbase) * 1000.0
                 under = (vbase - vmin) * 1000.0
@@ -1381,19 +1442,22 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
                 def _dbg_a2(tag: str, _p=grp_tag) -> None:
                     _debug_scope_shot(ctx, dbg_dir, f"{item_key}_{_p}_a2_{tag}")
 
-                # 阶段一（预览时基）：量程自动搜索——削波（9.9e37）时量程翻倍
-                # 重试，最多 5 次（10→20→40→80→160 mV/div）；每轮等待仅
-                # 16×预览时基，此阶段测量值仅供削波判定，正式值在阶段二测
+                # 阶段一（预览时基）：Vertical Scale 确认（2026-09-07 用户
+                # 规则）——首个 transient 测试项首组执行完整确认（削波
+                # 9.9e37 时量程翻倍重试，最多 5 次：10→20→40→80→160
+                # mV/div，每轮等待仅 16×预览时基，测量值仅供削波判定，
+                # 正式值在阶段二测）；后续组 / 另一 transient 项直接继承
+                # 已确认量程跳过搜索
                 try:
-                    _, _, _, _, used_scale = _measure_with_autoscale(
-                        ctx, scope_ch, nominal_v, init_scale_v, settle_s,
-                        timebase_s=preview_tb, max_tries=5,
+                    used_scale, inherited = _transient_confirm_vdiv(
+                        ctx, scope_ch, nominal_v, settle_s, preview_tb,
+                        init_scale_v, max_tries=5,
                         debug_shot=_dbg_a1 if dbg else None)
                 except Exception:  # noqa: BLE001 - 量程耗尽仍削波，恢复采集再降级
                     logger.error("autoscale exhausted, re-run acquisition", exc_info=True)
                     ctx.scope.run()
                     raise
-                if used_scale > init_scale_v:
+                if not inherited and used_scale > init_scale_v:
                     ctx.log_fn(f"[{item_key}] {label} 量程自动扩至 "
                                f"{used_scale * 1000:g} mV/div")
                 if dbg:
@@ -1403,8 +1467,8 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
                              f"{grp_tag} 阶段一量程搜索完成: {used_scale * 1000:g} mV/div")
                 # 阶段二（最终时基=period/2，10 格整屏约 5 周期）：autoscale 返回
                 # 为 stop 态，须先恢复采集再改时基（停采态下改只重绘旧帧）；
-                # 改时基后等 16×最终时基，正式测量后内部同样等 16×最终时基
-                # 并重新定格，返回即稳定 stop 帧可直接截图
+                # 改时基后等 16×最终时基并 stop 定格，测量在定格帧上快速完成
+                # （各查询 0.2s + 0.3s 渲染），返回即稳定 stop 帧可直接截图
                 ctx.scope.run()
                 ctx.scope.set_timebase_scale(period / 2.0)
                 _debug_event(ctx, dbg_dir,
@@ -1417,10 +1481,24 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
                         ctx, scope_ch, nominal_v, used_scale, settle_s,
                         timebase_s=period / 2.0, max_tries=1,
                         debug_shot=_dbg_a2 if dbg else None)
-                except Exception:  # noqa: BLE001 - 正式测量失败，恢复采集再降级
+                except Exception:  # noqa: BLE001 - 正式测量失败：量程疑似失效
                     logger.error("final-timebase measure failed", exc_info=True)
+                    # 无法正确获取数据 / 波形溢出：失效量程缓存，恢复采集后
+                    # 重做完整确认流程并复测一次；复测仍失败交外层组降级
+                    _transient_invalidate_vdiv(scope_ch, nominal_v)
                     ctx.scope.run()
-                    raise
+                    try:
+                        used_scale, _ = _transient_confirm_vdiv(
+                            ctx, scope_ch, nominal_v, settle_s, period / 2.0,
+                            init_scale_v, max_tries=5,
+                            debug_shot=_dbg_a2 if dbg else None)
+                        vmax, vmin, vbase, vpp_v, _ = _measure_with_autoscale(
+                            ctx, scope_ch, nominal_v, used_scale, settle_s,
+                            timebase_s=period / 2.0, max_tries=1,
+                            debug_shot=_dbg_a2 if dbg else None)
+                    except Exception:  # noqa: BLE001
+                        ctx.scope.run()
+                        raise
                 if dbg:
                     # 报告截图即将截取的这一帧：对比 screenshots/ 下正式图，
                     # 可判断定格帧在截图前是否已被冲掉
