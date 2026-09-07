@@ -1218,7 +1218,7 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
     i_start = float(cfg.get("iload_start_ma", 0))
     i_end = float(cfg.get("iload_end_ma", 200))
     i_step = float(cfg.get("iload_step_ma", 20))
-    settle_s = float(cfg.get("settle_time_s", 0.05))
+    settle_s = float(cfg.get("settle_time_s", 0.01))
     nominal_mv = float(cfg.get("vout_nominal_mv", 1800))
 
     points = linspace(i_start, i_end, i_step)
@@ -1360,7 +1360,7 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
     scope_ch = int(cfg.get("scope_vout_channel", 1))
     nominal_v = float(cfg.get("vout_nominal_mv", 1800)) / 1000.0
-    settle_s = float(cfg.get("settle_time_s", 0.05))
+    settle_s = float(cfg.get("settle_time_s", 0.01))
     # 初始 Y 轴量程固定 10 mV/div 起步（更精确），削波时 autoscale 翻倍重试（最多 5 次）
     init_scale_v = 0.01
 
@@ -1559,7 +1559,7 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
     scope_ch = int(cfg.get("scope_vout_channel", 1))
     nominal_v = float(cfg.get("vout_nominal_mv", 1800)) / 1000.0
-    settle_s = float(cfg.get("settle_time_s", 0.05))
+    settle_s = float(cfg.get("settle_time_s", 0.01))
     # 初始 Y 轴量程固定 10 mV/div，削波时 autoscale 翻倍重试（最多 6 次）
     init_scale_v = 0.01
 

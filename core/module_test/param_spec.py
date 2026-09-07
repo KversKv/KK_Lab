@@ -45,11 +45,11 @@ class ParamSpec:
 
 # 常用基类衍生字段的复用定义（避免各项重复书写）
 def settle_time() -> ParamSpec:
-    return ParamSpec("settle_time_s", "稳定时间", "float", 0.05, "s",
+    return ParamSpec("settle_time_s", "稳定时间", "float", 0.01, "s",
                      minimum=0.0, maximum=60.0, decimals=3)
 
 
-def average_cnt(default: int = 3) -> ParamSpec:
+def average_cnt(default: int = 1) -> ParamSpec:
     return ParamSpec("average_cnt", "平均次数", "int", default, "",
                      minimum=1, maximum=100)
 

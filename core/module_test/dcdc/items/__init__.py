@@ -55,8 +55,8 @@ def efficiency(ctx: ItemContext) -> ItemResult:
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
     vin_v = float(cfg.get("vin_v", 3.8))
     vout_v_nom = float(cfg.get("vout_nominal_mv", 1200)) / 1000.0
-    avg_cnt = int(cfg.get("average_cnt", 3))
-    settle_s = float(cfg.get("settle_time_s", 0.05))
+    avg_cnt = int(cfg.get("average_cnt", 1))
+    settle_s = float(cfg.get("settle_time_s", 0.01))
 
     points = linspace(i_start, i_end, i_step)
     rows: list[list] = []
@@ -123,8 +123,8 @@ def load_line_reg(ctx: ItemContext) -> ItemResult:
     rows: list[list] = []
     vin_ch = parse_channel(cfg.get("vin_channel", 1))
     vin_v = float(cfg.get("vin_v", 3.8))
-    avg_cnt = int(cfg.get("average_cnt", 3))
-    settle_s = float(cfg.get("settle_time_s", 0.05))
+    avg_cnt = int(cfg.get("average_cnt", 1))
+    settle_s = float(cfg.get("settle_time_s", 0.01))
     knee_ma = float(cfg.get("iload_knee_ma", 0) or 0)
 
     if not ctx.is_mock:
@@ -171,8 +171,8 @@ def line_reg(ctx: ItemContext) -> ItemResult:
 
     points = linspace(vin_start, vin_end, vin_step)
     rows: list[list] = []
-    avg_cnt = int(cfg.get("average_cnt", 3))
-    settle_s = float(cfg.get("settle_time_s", 0.05))
+    avg_cnt = int(cfg.get("average_cnt", 1))
+    settle_s = float(cfg.get("settle_time_s", 0.01))
 
     if not ctx.is_mock:
         setup_source_channel(ctx, vin_ch, vin_start, current_limit=vin_current_limit_a(cfg))
@@ -227,8 +227,8 @@ def quiescent(ctx: ItemContext) -> ItemResult:
     vout_nom = float(cfg.get("vout_nominal_mv", 1200)) / 1000.0
     vout_offset = float(cfg.get("iq_vout_offset_mv", 20.0)) / 1000.0
     en_regs = parse_enable_regs(cfg)
-    avg_cnt = int(cfg.get("average_cnt", 5))
-    settle_s = float(cfg.get("settle_time_s", 0.05))
+    avg_cnt = int(cfg.get("average_cnt", 1))
+    settle_s = float(cfg.get("settle_time_s", 0.01))
 
     if not ctx.is_mock:
         setup_source_channel(ctx, vin_ch, vin_v, current_limit=vin_current_limit_a(cfg))
@@ -348,8 +348,8 @@ def switching_freq(ctx: ItemContext) -> ItemResult:
     i_start = float(cfg.get("iload_start_ma", 1))
     i_end = float(cfg.get("iload_end_ma", 200))
     i_step = float(cfg.get("iload_step_ma", 20))
-    avg_cnt = max(1, int(cfg.get("average_cnt", 3)))
-    settle_s = float(cfg.get("settle_time_s", 0.05))
+    avg_cnt = max(1, int(cfg.get("average_cnt", 1)))
+    settle_s = float(cfg.get("settle_time_s", 0.01))
 
     points = linspace(i_start, i_end, i_step)
     rows: list[list] = []
@@ -422,8 +422,8 @@ def current_limit(ctx: ItemContext) -> ItemResult:
     vin_ch = parse_channel(cfg.get("vin_channel", 1))
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
     vin_v = float(cfg.get("vin_v", 3.8))
-    avg_cnt = int(cfg.get("average_cnt", 3))
-    settle_s = float(cfg.get("settle_time_s", 0.05))
+    avg_cnt = int(cfg.get("average_cnt", 1))
+    settle_s = float(cfg.get("settle_time_s", 0.01))
 
     points = linspace(i_start, i_end, i_step)
     rows: list[list] = []
@@ -537,7 +537,7 @@ def topology(ctx: ItemContext) -> ItemResult:
     vin_ch = parse_channel(cfg.get("vin_channel", 1))
     vin_v = float(cfg.get("vin_v", 3.8))
     nominal_v = float(cfg.get("vout_nominal_mv", 1200)) / 1000.0
-    settle_s = float(cfg.get("settle_time_s", 0.05))
+    settle_s = float(cfg.get("settle_time_s", 0.01))
 
     if ctx.is_mock:
         vin_meas = mock_jitter(vin_v, 0.005)
@@ -589,7 +589,7 @@ DCDC_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
         average_cnt(), settle_time(),
     )),
     "dcdc_quiescent": ("Quiescent Current", quiescent, False, True, (
-        vin_bias(), average_cnt(5), settle_time(), *quiescent_params(),
+        vin_bias(), average_cnt(1), settle_time(), *quiescent_params(),
     )),
     "dcdc_ripple": ("Load Capability&Ripple", ripple, True, True, (
         vin_bias(),

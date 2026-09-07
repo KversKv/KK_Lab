@@ -47,8 +47,8 @@ def load_line_reg(ctx: ItemContext) -> ItemResult:
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
     nominal_mv = float(cfg.get("vout_nominal_mv", 1800))
     vin_v = float(cfg.get("vin_v", 3.8))
-    settle_s = float(cfg.get("settle_time_s", 0.05))
-    avg_cnt = int(cfg.get("average_cnt", 3))
+    settle_s = float(cfg.get("settle_time_s", 0.01))
+    avg_cnt = int(cfg.get("average_cnt", 1))
     knee_ma = float(cfg.get("iload_knee_ma", 0) or 0)
 
     points = linspace(i_start, i_end, i_step)
@@ -97,8 +97,8 @@ def line_reg(ctx: ItemContext) -> ItemResult:
     vin_step = float(cfg.get("vin_step_v", 0.2))
     vin_ch = parse_channel(cfg.get("vin_channel", 2))
     nominal_mv = float(cfg.get("vout_nominal_mv", 1800))
-    settle_s = float(cfg.get("settle_time_s", 0.05))
-    avg_cnt = int(cfg.get("average_cnt", 3))
+    settle_s = float(cfg.get("settle_time_s", 0.01))
+    avg_cnt = int(cfg.get("average_cnt", 1))
 
     points = linspace(vin_start, vin_end, vin_step)
     rows: list[list[float]] = []
@@ -157,8 +157,8 @@ def quiescent(ctx: ItemContext) -> ItemResult:
     vin_v = float(cfg.get("vin_v", 3.8))
     vout_nom = float(cfg.get("vout_nominal_mv", 1800)) / 1000.0
     vout_offset = float(cfg.get("iq_vout_offset_mv", 20.0)) / 1000.0
-    settle_s = float(cfg.get("settle_time_s", 0.05))
-    avg_cnt = int(cfg.get("average_cnt", 5))
+    settle_s = float(cfg.get("settle_time_s", 0.01))
+    avg_cnt = int(cfg.get("average_cnt", 1))
     en_regs = parse_enable_regs(cfg)
 
     if not ctx.is_mock:
@@ -247,8 +247,8 @@ def dropout(ctx: ItemContext) -> ItemResult:
     vin_lo = float(cfg.get("dropout_vin_lo_v", nominal_mv / 1000.0))
     vin_step = float(cfg.get("dropout_vin_step_v", 0.02))
     tol = float(cfg.get("vout_tol", 0.02))
-    settle_s = float(cfg.get("settle_time_s", 0.05))
-    avg_cnt = int(cfg.get("average_cnt", 3))
+    settle_s = float(cfg.get("settle_time_s", 0.01))
+    avg_cnt = int(cfg.get("average_cnt", 1))
 
     # dropout_mv: None=到下限仍正常; 0.0=中止未判定; >0=实测压差
     dropout_mv: float | None
@@ -325,8 +325,8 @@ def current_limit(ctx: ItemContext) -> ItemResult:
     ilim_end = float(cfg.get("ilim_end_ma", 500))
     ilim_step = float(cfg.get("ilim_step_ma", 20))
     tol = float(cfg.get("vout_tol", 0.02))
-    settle_s = float(cfg.get("settle_time_s", 0.05))
-    avg_cnt = int(cfg.get("average_cnt", 3))
+    settle_s = float(cfg.get("settle_time_s", 0.01))
+    avg_cnt = int(cfg.get("average_cnt", 1))
 
     rows: list[list] = []
     if ctx.is_mock:
@@ -514,7 +514,7 @@ LDO_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
         vout_tol(), settle_time(), average_cnt(),
     )),
     "ldo_quiescent": ("Quiescent Current", quiescent, False, False, (
-        vin_bias(), average_cnt(5), settle_time(), *quiescent_params(),
+        vin_bias(), average_cnt(1), settle_time(), *quiescent_params(),
     )),
     "ldo_ripple": ("Load Capability&Ripple", ripple, True, False, (
         vin_bias(),
