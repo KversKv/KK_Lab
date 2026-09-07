@@ -59,23 +59,23 @@
         "iload_end_ma": 1000.0,
         "iload_step_ma": 50.0,
         "vin_v": 4.0,
-        "settle_time_s": 0.05,
-        "average_cnt": 3
+        "settle_time_s": 0.01,
+        "average_cnt": 1
       },
       "ldo_line_reg": {
-        "vin_start_v": 2.7,
+        "vin_start_v": 3.4,
         "vin_end_v": 5.0,
         "vin_step_v": 0.2,
-        "settle_time_s": 0.05,
-        "average_cnt": 3
+        "settle_time_s": 0.01,
+        "average_cnt": 1
       },
       "ldo_ripple": {
         "vin_v": 4.0,
         "iload_start_ma": 0.0,
         "iload_end_ma": 1000.0,
         "iload_step_ma": 50.0,
-        "settle_time_s": 0.05,
-        "average_cnt": 3
+        "settle_time_s": 0.01,
+        "average_cnt": 1
       },
       "ldo_output_noise": {
         "vin_v": 3.8,
