@@ -1499,7 +1499,7 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
       3. 勾选 Continuous（ARB:TERM:LAST ON）+ TRIG:ARB:SOUR IMM（须在 INIT:TRAN 之前写）
          + INIT:TRAN 立即启动连续脉冲（armed 后写源报 +308，BUS+*TRG 后置不触发）；
       4. 示波器按频率设 timebase（整屏约 2 周期），Y 轴量程固定从 10 mV/div
-         起步（削波自动翻倍、最多 5 次），偏置按标称 Vout 设置；
+         起步（削波自动翻倍、最多 6 次），偏置按标称 Vout 设置；
       5. 稳定后暂停采集，截图并测 Vmax/Vmin/Vmean/Vpp，
          过冲=Vmax-Vmean、欠冲=Vmean-Vmin（mV）；
       每组测完 ABOR:TRAN + CURR:MODE FIX 复位负载通道，再换下一组。
@@ -1517,7 +1517,7 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
     scope_ch = int(cfg.get("scope_vout_channel", 1))
     nominal_v = float(cfg.get("vout_nominal_mv", 1800)) / 1000.0
     settle_s = float(cfg.get("settle_time_s", 0.05))
-    # 初始 Y 轴量程固定 10 mV/div，削波时 autoscale 翻倍重试（最多 5 次）
+    # 初始 Y 轴量程固定 10 mV/div，削波时 autoscale 翻倍重试（最多 6 次）
     init_scale_v = 0.01
 
     rows: list[list[Any]] = []
@@ -1626,14 +1626,14 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
 
                 # 阶段一（预览时基）：Vertical Scale 确认（2026-09-07 用户
                 # 规则）——首个 transient 测试项首组执行完整确认（削波
-                # 9.9e37 时量程翻倍重试，最多 5 次：10→20→40→80→160
+                # 9.9e37 时量程翻倍重试，最多 6 次：10→20→40→80→160→320
                 # mV/div，每轮等待仅 16×预览时基，测量值仅供削波判定，
                 # 正式值在阶段二测）；后续组 / 另一 transient 项直接继承
                 # 已确认量程跳过搜索
                 try:
                     used_scale, inherited = _transient_confirm_vdiv(
                         ctx, scope_ch, nominal_v, settle_s, preview_tb,
-                        init_scale_v, max_tries=5,
+                        init_scale_v, max_tries=6,
                         debug_shot=_dbg_a1 if dbg else None)
                 except Exception:  # noqa: BLE001 - 量程耗尽仍削波，恢复采集再降级
                     logger.error("autoscale exhausted, re-run acquisition", exc_info=True)
@@ -1672,7 +1672,7 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
                     try:
                         used_scale, _ = _transient_confirm_vdiv(
                             ctx, scope_ch, nominal_v, settle_s, period / 2.0,
-                            init_scale_v, max_tries=5,
+                            init_scale_v, max_tries=6,
                             debug_shot=_dbg_a2 if dbg else None)
                         vmax, vmin, vbase, vpp_v, _ = _measure_with_autoscale(
                             ctx, scope_ch, nominal_v, used_scale, settle_s,
