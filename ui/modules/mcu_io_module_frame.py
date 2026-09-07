@@ -523,7 +523,6 @@ class McuIoConnectionMixin:
         self.is_mcu_io_connected = False
         self._mcu_io_baudrate = baudrate
         self._mcu_io_manager = instrument_manager
-        self._mcu_io_session_id = "mcu_io:default"
         self._mcu_io_search_thread = None
         self._mcu_io_search_worker = None
         self._mcu_io_connect_thread = None
@@ -550,6 +549,43 @@ class McuIoConnectionMixin:
             if data in (MCU_TYPE_YD_RP2040, MCU_TYPE_CH9114F):
                 return data
         return getattr(self, "_mcu_io_type", MCU_TYPE_YD_RP2040)
+
+    def _mcu_io_target_instrument_type(self):
+        """按当前 MCU 类型返回 InstrumentManager 的 instrument_type。"""
+        if self._current_mcu_io_type() == MCU_TYPE_CH9114F:
+            return "ch9114f"
+        return "mcu_io"
+
+    def _mcu_io_target_session_id(self):
+        """按当前 MCU 类型返回共享会话 id（ch9114f:default / mcu_io:default）。"""
+        if self._current_mcu_io_type() == MCU_TYPE_CH9114F:
+            return "ch9114f:default"
+        return "mcu_io:default"
+
+    def _is_mcu_io_family_session(self, session_id):
+        """CH9114F 与 YD-RP2040 共享会话均属 MCU 家族，状态变更需联动。"""
+        return session_id in ("mcu_io:default", "ch9114f:default")
+
+    def _resolve_mcu_io_session_id(self):
+        """解析断开时应操作的 MCU 共享会话 id。
+
+        默认取当前类型的目标会话；类型切换后目标会话与已持实例不符时，
+        按实例反查实际会话，确保断开的是当前持有的连接。
+        """
+        manager = getattr(self, "_mcu_io_manager", None)
+        if manager is None:
+            return None
+        target = self._mcu_io_target_session_id()
+        session = manager.get_session(target)
+        if session and session.connected:
+            if self.mcu_io is None or session.instance is self.mcu_io:
+                return target
+        inst = getattr(self, "mcu_io", None)
+        if inst is not None:
+            for snap in manager.sessions():
+                if manager.get_instance(snap.session_id) is inst:
+                    return snap.session_id
+        return target
 
     def _get_mcu_io_gpio_pins(self):
         if self._current_mcu_io_type() == MCU_TYPE_CH9114F:
@@ -850,6 +886,7 @@ class McuIoConnectionMixin:
         manager.connection_failed.connect(self._on_mcu_io_manager_connect_failed)
         manager.scan_finished.connect(self._on_mcu_io_manager_scan_finished)
         manager.scan_failed.connect(self._on_mcu_io_manager_scan_failed)
+        manager.disconnect_failed.connect(self._on_mcu_io_manager_disconnect_failed)
         self._mcu_io_manager_bound = True
 
     def bind_mcu_io_signals(self):
@@ -948,11 +985,10 @@ class McuIoConnectionMixin:
             )
             self.mcu_io_search_btn.setEnabled(False)
             self.mcu_io_connect_btn.setEnabled(False)
-            # 走 InstrumentManager 时仅支持 YD-RP2040（serial_raw_repl）；
-            # CH9114F 走本地 worker 扫描
-            if not is_ch9114f:
-                self._mcu_io_manager.scan_async("mcu_io")
-                return
+            # YD-RP2040 走 "mcu_io"、CH9114F 走 "ch9114f"，均经
+            # InstrumentManager 共享扫描结果
+            self._mcu_io_manager.scan_async(self._mcu_io_target_instrument_type())
+            return
 
         if DEBUG_MOCK:
             self.mcu_io_port_combo.clear()
@@ -1037,10 +1073,10 @@ class McuIoConnectionMixin:
         type_label = MCU_TYPE_LABELS.get(mcu_type, mcu_type)
 
         manager = getattr(self, "_mcu_io_manager", None)
-        if manager is not None and mcu_type == MCU_TYPE_YD_RP2040:
-            # 走 InstrumentManager 仅支持 YD-RP2040（serial_raw_repl）；
-            # CH9114F 走本地 worker
-            existing = manager.get_session(self._mcu_io_session_id)
+        if manager is not None:
+            # YD-RP2040 与 CH9114F 均经 InstrumentManager 建立共享会话
+            session_id = self._mcu_io_target_session_id()
+            existing = manager.get_session(session_id)
             if existing and existing.connected:
                 self._sync_mcu_io_from_manager()
                 return
@@ -1049,9 +1085,14 @@ class McuIoConnectionMixin:
             self.mcu_io_connect_btn.setEnabled(False)
             self._mcu_io_log(f"[MCU] Connecting {type_label} on {port}...")
             from core.instruments import InstrumentSpec
+            instrument_type = self._mcu_io_target_instrument_type()
+            if instrument_type == "ch9114f":
+                role = "ch9114f"
+            else:
+                role = "mcu_io"
             manager.connect_async(InstrumentSpec(
-                instrument_type="mcu_io",
-                role="mcu_io",
+                instrument_type=instrument_type,
+                role=role,
                 connection_kind="serial_raw_repl",
                 slot="default",
                 resource=port,
@@ -1162,13 +1203,10 @@ class McuIoConnectionMixin:
         self._mcu_io_log(f"[MCU] Connection failed: {err}")
 
     def _sync_mcu_io_from_manager(self):
-        # CH9114F 不走 InstrumentManager，直接跳过避免误清空本地连接状态
-        if self._current_mcu_io_type() == MCU_TYPE_CH9114F:
-            return
         manager = getattr(self, "_mcu_io_manager", None)
         if manager is None or not hasattr(self, "mcu_io_connect_btn"):
             return
-        session = manager.get_session(self._mcu_io_session_id)
+        session = manager.get_session(self._mcu_io_target_session_id())
         if session and session.connected and session.instance:
             already = self.is_mcu_io_connected and self.mcu_io is session.instance
             self.mcu_io = session.instance
@@ -1185,9 +1223,7 @@ class McuIoConnectionMixin:
                 self.mcu_io_connection_status_changed.emit(False)
 
     def _on_mcu_io_manager_session_connected(self, session_id):
-        if session_id != self._mcu_io_session_id:
-            return
-        if self._current_mcu_io_type() == MCU_TYPE_CH9114F:
+        if not self._is_mcu_io_family_session(session_id):
             return
         was_connected = self.is_mcu_io_connected
         self._sync_mcu_io_from_manager()
@@ -1196,25 +1232,31 @@ class McuIoConnectionMixin:
             self._apply_default_gpio_highz()
 
     def _on_mcu_io_manager_session_disconnected(self, session_id):
-        if session_id != self._mcu_io_session_id:
-            return
-        if self._current_mcu_io_type() == MCU_TYPE_CH9114F:
+        if not self._is_mcu_io_family_session(session_id):
             return
         self._sync_mcu_io_from_manager()
         self._mcu_io_log("[MCU] Disconnected (shared session).")
 
     def _on_mcu_io_manager_connect_failed(self, session_id, error):
-        if session_id != self._mcu_io_session_id:
-            return
-        if self._current_mcu_io_type() == MCU_TYPE_CH9114F:
+        if session_id != self._mcu_io_target_session_id():
             return
         self._on_mcu_io_connect_error(error)
 
+    def _on_mcu_io_manager_disconnect_failed(self, session_id, error):
+        if not self._is_mcu_io_family_session(session_id):
+            return
+        # 会话仍处于连接态，恢复为已连接 UI（search 禁用、connect 可点）
+        self.set_mcu_io_status("● Disconnect Failed", is_error=True)
+        self.mcu_io_search_btn.setEnabled(False)
+        self.mcu_io_connect_btn.setEnabled(True)
+        self._mcu_io_log(f"[MCU] Disconnect failed: {error}")
+
     def _on_mcu_io_manager_scan_finished(self, instrument_type, candidates):
-        if instrument_type != "mcu_io" or not hasattr(self, "mcu_io_port_combo"):
+        if instrument_type != self._mcu_io_target_instrument_type() \
+                or not hasattr(self, "mcu_io_port_combo"):
             return
-        if self._current_mcu_io_type() == MCU_TYPE_CH9114F:
-            return
+        mcu_type = self._current_mcu_io_type()
+        type_label = MCU_TYPE_LABELS.get(mcu_type, mcu_type)
         self.mcu_io_port_combo.clear()
         self.mcu_io_port_combo.setEnabled(True)
         if candidates:
@@ -1222,19 +1264,17 @@ class McuIoConnectionMixin:
                 label = cand.display_name or cand.resource
                 self.mcu_io_port_combo.addItem(label)
             self.set_mcu_io_status(f"● Found {len(candidates)}")
-            self._mcu_io_log(f"[MCU] Found {len(candidates)} serial port(s).")
+            self._mcu_io_log(f"[MCU] Found {len(candidates)} {type_label} port(s).")
         else:
-            self.mcu_io_port_combo.addItem("No serial ports found")
+            self.mcu_io_port_combo.addItem(self._get_mcu_io_not_found_text())
             self.mcu_io_port_combo.setEnabled(False)
             self.set_mcu_io_status("● Not Found", is_error=True)
-            self._mcu_io_log("[MCU] No serial ports found.")
+            self._mcu_io_log(f"[MCU] No {type_label} ports found.")
         self.mcu_io_search_btn.setEnabled(True)
         self.mcu_io_connect_btn.setEnabled(bool(candidates))
 
     def _on_mcu_io_manager_scan_failed(self, instrument_type, error):
-        if instrument_type != "mcu_io":
-            return
-        if self._current_mcu_io_type() == MCU_TYPE_CH9114F:
+        if instrument_type != self._mcu_io_target_instrument_type():
             return
         self.set_mcu_io_status("● Search Failed", is_error=True)
         self._mcu_io_log(f"[MCU] Search failed: {error}")
@@ -1265,16 +1305,16 @@ class McuIoConnectionMixin:
             self._mcu_io_log(f"[MCU] Restore High-Z failed: {e}")
 
     def _disconnect_mcu_io(self):
-        mcu_type = self._current_mcu_io_type()
         manager = getattr(self, "_mcu_io_manager", None)
-        # 仅 YD-RP2040 走 InstrumentManager；CH9114F 走本地断开
-        if manager is not None and mcu_type == MCU_TYPE_YD_RP2040:
-            session = manager.get_session(self._mcu_io_session_id)
+        # YD-RP2040 与 CH9114F 均经 InstrumentManager 断开共享会话
+        if manager is not None:
+            session_id = self._resolve_mcu_io_session_id()
+            session = manager.get_session(session_id)
             if session and session.connected:
                 self.set_mcu_io_status("● Disconnecting")
                 self.mcu_io_connect_btn.setEnabled(False)
                 self._reset_gpio_highz_before_disconnect()
-                manager.disconnect_async(self._mcu_io_session_id)
+                manager.disconnect_async(session_id)
                 return
             self._apply_mcu_io_disconnected_ui()
             self.mcu_io_connection_status_changed.emit(False)

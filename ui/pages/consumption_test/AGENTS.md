@@ -26,6 +26,7 @@
 ## 局部约定
 
 - **双 N6705C**（供电 + 测量）+ 温箱联动，高低温扫描经 `high_low_temp_test_ui.py`。
+- **MCU 共享会话**：本页 CH9114F / YD-RP2040 连接经 `self._instrument_manager`（MainWindow 注入）共享会话（`ch9114f:default` / `mcu_io:default`，`_mcu_target_session_id()` 解析）；`_bind_mcu_manager_signals()` 绑五信号 + `disconnect_failed`，manager 为 None 时回退本地 `_ConnectMcuWorker` 路径。跨页与 Collection / vmin_hunter / orchestrator 共享同一实例。
 - YAML 配置加载（`yaml` 可选导入，缺失降级）。
 - 结果落 `Results/` 带时间戳。
 

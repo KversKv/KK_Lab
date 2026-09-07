@@ -388,9 +388,11 @@ class _Ch9114fReadAllWorker(QObject):
 class Ch9114GpioMixin:
     ch9114f_connection_status_changed = Signal(bool)
 
-    def init_ch9114f_gpio(self):
+    def init_ch9114f_gpio(self, instrument_manager=None):
         self.ch9114f = None
         self.is_ch9114f_connected = False
+        self._ch9114f_manager = instrument_manager
+        self._ch9114f_manager_bound = False
         self._ch9114f_search_thread = None
         self._ch9114f_search_worker = None
         self._ch9114f_connect_thread = None
@@ -565,6 +567,121 @@ class Ch9114GpioMixin:
         self.ch9114f_connect_btn.clicked.connect(
             self._on_ch9114f_connect_or_disconnect
         )
+        self._bind_ch9114f_manager_signals()
+        self._sync_ch9114f_from_manager()
+
+    def set_ch9114f_instrument_manager(self, instrument_manager):
+        self._ch9114f_manager = instrument_manager
+        self._bind_ch9114f_manager_signals()
+        self._sync_ch9114f_from_manager()
+
+    def _bind_ch9114f_manager_signals(self):
+        manager = getattr(self, "_ch9114f_manager", None)
+        if manager is None or getattr(self, "_ch9114f_manager_bound", False):
+            return
+        manager.session_connected.connect(
+            self._on_ch9114f_manager_session_connected
+        )
+        manager.session_disconnected.connect(
+            self._on_ch9114f_manager_session_disconnected
+        )
+        manager.connection_failed.connect(self._on_ch9114f_manager_connect_failed)
+        manager.scan_finished.connect(self._on_ch9114f_manager_scan_finished)
+        manager.scan_failed.connect(self._on_ch9114f_manager_scan_failed)
+        manager.disconnect_failed.connect(self._on_ch9114f_manager_disconnect_failed)
+        self._ch9114f_manager_bound = True
+
+    def _sync_ch9114f_from_manager(self):
+        manager = getattr(self, "_ch9114f_manager", None)
+        if manager is None or not hasattr(self, "ch9114f_connect_btn"):
+            return
+        session = manager.get_session("ch9114f:default")
+        if session and session.connected and session.instance:
+            already = self.is_ch9114f_connected and self.ch9114f is session.instance
+            self.ch9114f = session.instance
+            self.is_ch9114f_connected = True
+            self.set_ch9114f_status("● Connected")
+            self.ch9114f_search_btn.setEnabled(False)
+            self.ch9114f_connect_btn.setEnabled(True)
+            update_connect_button_state(self.ch9114f_connect_btn, connected=True)
+            self._set_ch9114f_gpio_controls_enabled(True)
+            if session.resource and hasattr(self, "ch9114f_port_combo"):
+                if self.ch9114f_port_combo.findText(session.resource) < 0:
+                    self.ch9114f_port_combo.addItem(session.resource)
+                self.ch9114f_port_combo.setCurrentText(session.resource)
+            if not already:
+                self.ch9114f_connection_status_changed.emit(True)
+                self._refresh_ch9114f_all_states()
+        else:
+            if self.is_ch9114f_connected or self.ch9114f is not None:
+                self.ch9114f = None
+                self.is_ch9114f_connected = False
+                self.set_ch9114f_status("● Disconnected", is_error=True)
+                self.ch9114f_search_btn.setEnabled(True)
+                self.ch9114f_connect_btn.setEnabled(True)
+                update_connect_button_state(self.ch9114f_connect_btn, connected=False)
+                self._set_ch9114f_gpio_controls_enabled(False)
+                self.ch9114f_connection_status_changed.emit(False)
+
+    def _on_ch9114f_manager_session_connected(self, session_id):
+        if session_id != "ch9114f:default":
+            return
+        was_connected = self.is_ch9114f_connected
+        self._sync_ch9114f_from_manager()
+        if not was_connected and self.is_ch9114f_connected:
+            self._ch9114f_log("[CH9114F] Connected (shared session).")
+
+    def _on_ch9114f_manager_session_disconnected(self, session_id):
+        if session_id != "ch9114f:default":
+            return
+        self._sync_ch9114f_from_manager()
+        self._ch9114f_log("[CH9114F] Disconnected (shared session).")
+
+    def _on_ch9114f_manager_connect_failed(self, session_id, error):
+        if session_id != "ch9114f:default":
+            return
+        self.set_ch9114f_status("● Failed", is_error=True)
+        self.ch9114f_search_btn.setEnabled(True)
+        self.ch9114f_connect_btn.setEnabled(True)
+        self._ch9114f_log(f"[CH9114F] Connection failed: {error}")
+
+    def _on_ch9114f_manager_disconnect_failed(self, session_id, error):
+        if session_id != "ch9114f:default":
+            return
+        # 会话仍处于连接态，恢复为已连接 UI（search 禁用、connect 可点）
+        self.set_ch9114f_status("● Disconnect Failed", is_error=True)
+        self.ch9114f_search_btn.setEnabled(False)
+        self.ch9114f_connect_btn.setEnabled(True)
+        self._ch9114f_log(f"[CH9114F] Disconnect failed: {error}")
+
+    def _on_ch9114f_manager_scan_finished(self, instrument_type, candidates):
+        if instrument_type != "ch9114f" or not hasattr(self, "ch9114f_port_combo"):
+            return
+        self.ch9114f_port_combo.clear()
+        self.ch9114f_port_combo.setEnabled(True)
+        if candidates:
+            for cand in candidates:
+                self.ch9114f_port_combo.addItem(cand.display_name or cand.resource)
+            self.ch9114f_port_combo.setCurrentIndex(
+                self.ch9114f_port_combo.count() - 1
+            )
+            self.set_ch9114f_status(f"● Found {len(candidates)}")
+            self._ch9114f_log(f"[CH9114F] Found {len(candidates)} port(s).")
+        else:
+            self.ch9114f_port_combo.addItem("No CH9114F found")
+            self.ch9114f_port_combo.setEnabled(False)
+            self.set_ch9114f_status("● Not Found", is_error=True)
+            self._ch9114f_log("[CH9114F] No CH9114F ports found.")
+        self.ch9114f_search_btn.setEnabled(True)
+        self.ch9114f_connect_btn.setEnabled(bool(candidates))
+
+    def _on_ch9114f_manager_scan_failed(self, instrument_type, error):
+        if instrument_type != "ch9114f":
+            return
+        self.set_ch9114f_status("● Search Failed", is_error=True)
+        self._ch9114f_log(f"[CH9114F] Search failed: {error}")
+        self.ch9114f_search_btn.setEnabled(True)
+        self.ch9114f_connect_btn.setEnabled(True)
 
     def _set_ch9114f_gpio_controls_enabled(self, enabled: bool):
         for toggle in getattr(self, "ch9114f_output_toggles", {}).values():
@@ -614,6 +731,16 @@ class Ch9114GpioMixin:
             self.set_ch9114f_status("● Mock Ready")
             self.ch9114f_connect_btn.setEnabled(True)
             self._ch9114f_log("[DEBUG] Mock CH9114F port loaded, skip real scan.")
+            return
+
+        manager = getattr(self, "_ch9114f_manager", None)
+        if manager is not None:
+            self.set_ch9114f_status("● Searching")
+            self._ch9114f_log("[CH9114F] Scanning for CH9114F ports...")
+            self.ch9114f_search_btn.setEnabled(False)
+            self.ch9114f_connect_btn.setEnabled(False)
+            # 经 InstrumentManager 共享扫描结果（ch9114f profile）
+            manager.scan_async("ch9114f")
             return
 
         if (self._ch9114f_search_thread is not None
@@ -682,6 +809,27 @@ class Ch9114GpioMixin:
         if not port:
             self._ch9114f_log("[CH9114F] No valid port selected.")
             self.set_ch9114f_status("● Select port first", is_error=True)
+            return
+
+        manager = getattr(self, "_ch9114f_manager", None)
+        if manager is not None:
+            # 经 InstrumentManager 建立共享会话（ch9114f:default）
+            existing = manager.get_session("ch9114f:default")
+            if existing and existing.connected:
+                self._sync_ch9114f_from_manager()
+                return
+            self.set_ch9114f_status("● Connecting")
+            self.ch9114f_search_btn.setEnabled(False)
+            self.ch9114f_connect_btn.setEnabled(False)
+            self._ch9114f_log(f"[CH9114F] Connecting on {port}...")
+            from core.instruments import InstrumentSpec
+            manager.connect_async(InstrumentSpec(
+                instrument_type="ch9114f",
+                role="ch9114f",
+                connection_kind="serial_raw_repl",
+                slot="default",
+                resource=port,
+            ))
             return
 
         if (self._ch9114f_connect_thread is not None
@@ -788,6 +936,26 @@ class Ch9114GpioMixin:
         self._ch9114f_log(f"[CH9114F] Connection failed: {err}")
 
     def _disconnect_ch9114f(self):
+        manager = getattr(self, "_ch9114f_manager", None)
+        if manager is not None:
+            # 经 InstrumentManager 断开共享会话（ch9114f:default）
+            session = manager.get_session("ch9114f:default")
+            if session and session.connected:
+                self.set_ch9114f_status("● Disconnecting")
+                self.ch9114f_connect_btn.setEnabled(False)
+                manager.disconnect_async("ch9114f:default")
+                return
+            self.ch9114f = None
+            self.is_ch9114f_connected = False
+            self.set_ch9114f_status("● Disconnected", is_error=True)
+            self.ch9114f_search_btn.setEnabled(True)
+            self.ch9114f_connect_btn.setEnabled(True)
+            update_connect_button_state(self.ch9114f_connect_btn, connected=False)
+            self._set_ch9114f_gpio_controls_enabled(False)
+            self._ch9114f_log("[CH9114F] Disconnected.")
+            self.ch9114f_connection_status_changed.emit(False)
+            return
+
         self.set_ch9114f_status("● Disconnecting")
         self.ch9114f_connect_btn.setEnabled(False)
         try:

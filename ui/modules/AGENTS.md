@@ -30,6 +30,7 @@
 - **日志区**：使用 `ExecutionLogsFrame.wrap_with(main_content, show_progress=..., stretch=(4, 1))`；禁止直接 `layout.addWidget(self.execution_logs)`，禁止 `setMaximumHeight`。
 - **控件高度**：可复用控件（如 DarkComboBox）用自身 QSS ID 选择器钉死高度，不依赖父页面。
 - **McuPwrResetConfigMixin 的 Status 行**：仅保留 GPIO 下拉 + “唤醒电平” High/Low 切换（`PolarityToggle(options=_STATUS_WAKE_LEVEL_OPTIONS)`），不再有 Pulse/Level 模式；`status_mode`/`mcu_status_toggle` 已移除。唤醒=`mcu_io.out(pin, active)`，睡眠=`mcu_io.out(pin, 1-active)`（`active = 1 if status_polarity == "rising"(High) else 0`）。`mcu_set_status(active=True/False)` 即按此映射输出电平。`status_polarity` 键仍复用 `rising/falling`（High=rising、Low=falling）以兼容页面读取。Ctrl 行仍保留 Pulse/Level `ModeToggle`。
+- **MCU 家族共享会话**：`McuIoConnectionMixin`（含 `McuPwrResetConfigMixin`）与 `Ch9114GpioMixin` 接入 `InstrumentManager` 后，CH9114F 与 YD-RP2040 均走共享会话：CH9114F=`ch9114f:default`、YD-RP2040=`mcu_io:default`（`_mcu_io_target_session_id()` 按当前类型解析，`_is_mcu_io_family_session()` 判断家族联动）。搜索/连接/断开统一走 `manager.scan_async/connect_async/disconnect_async`；manager 为 None 时 Mixin 回退本地 worker 路径。断开时用 `_resolve_mcu_io_session_id()`（类型切换后按已持实例反查），防漏断旧会话。
 
 ## 局部坑点
 
@@ -41,3 +42,4 @@
 - **§23 SVG 渲染**：模块内 SVG 图标禁止 `setDevicePixelRatio`，直接用逻辑大小渲染。
 - **§5 VISA 地址**：搜索按钮扫描 → 下拉框选择 → 传给 `factory.create_*`，禁止硬编码地址。
 - **连接按钮 enable 状态必须成对恢复**：manager 异步路径在 `connect_async` 前 `setEnabled(False)` 后，所有状态同步出口（`sync_*_from_top` / `*_top_changed` / `connection_failed` 处理器）都必须 `setEnabled(True)`；否则按钮停在 disabled，`_xxx_disconnect_style` 里的 `QPushButton:disabled` 规则生效，Disconnect 红底被灰底覆盖（示波器在 module_test 页曾因此不变红，N6705C 因有 `_on_mixin_manager_connected` 恢复而正常）。
+- **manager 断开失败也要恢复按钮**：`disconnect_async` 失败时 manager 发 `disconnect_failed(session_id, error)` 而非 `session_disconnected`，会话仍 connected；MCU 家族 Mixin 的 `_on_*_manager_disconnect_failed` 需把按钮恢复为已连接态（search 禁用、connect 可点），否则按钮永久卡 disabled。
