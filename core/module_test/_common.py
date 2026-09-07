@@ -958,32 +958,36 @@ def _ensure_stop_for_capture(ctx: "ItemContext") -> None:
         logger.error("re-stop after measure failed", exc_info=True)
 
 
-# Transient Vertical Scale 确认缓存（模块级，跨组 / 跨 transient 测试项共享；
-# 2026-09-07 用户规则：首个 transient 项首组执行完整确认流程，后续直接
-# 继承；确认失败（测量异常 / 削波）时清空，下次重做完整确认）
+# Transient Vertical Scale 确认缓存（模块级，跨组共享；Load/Line 分桶，
+# 2026-09-07 用户规则：各种类（load/line）首个 transient 测试项首组执行
+# 完整确认流程，本种类后续组 / 同种类另一测试项直接继承（Line 不继承
+# Load 的确认结果）；确认失败（测量异常 / 削波）时清空，下次重做完整确认）
 _TRANSIENT_VDIV_CACHE: dict[str, float] = {}
 
 
-def _transient_vdiv_key(scope_ch: int, nominal_v: float) -> str:
-    """缓存键：测量通道 + 标称 Vout（不同标称输出的项不互相继承）。"""
-    return f"ch{scope_ch}@{nominal_v:.3f}"
+def _transient_vdiv_key(scope_ch: int, nominal_v: float, kind: str) -> str:
+    """缓存键：确认种类（load/line）+ 测量通道 + 标称 Vout（不同种类 /
+    不同标称输出的项不互相继承）。"""
+    return f"{kind}:ch{scope_ch}@{nominal_v:.3f}"
 
 
 def _transient_confirm_vdiv(
     ctx: "ItemContext", scope_ch: int, nominal_v: float, settle_s: float,
     timebase_s: float, init_scale_v: float, *,
+    kind: str = "load",
     max_tries: int = 5,
     debug_shot: Callable[[str], None] | None = None,
 ) -> tuple[float, bool]:
     """Transient Vertical Scale 确认，返回 (V/div, 是否继承缓存)。
 
-    无缓存（首个 transient 测试项首组）：执行完整确认流程——
-    _measure_with_autoscale 从 init_scale_v 起削波（9.9e37）翻倍搜索，
-    结果写入缓存；有缓存（后续组 / 另一 transient 项）：直接继承
-    跳过搜索（量程由阶段二的 _measure_with_autoscale 重新下发）。
+    kind 分桶（load/line）互不继承：本种类无缓存（首个 transient 测试项
+    首组）时执行完整确认流程——_measure_with_autoscale 从 init_scale_v 起
+    削波（9.9e37）翻倍搜索，结果写入缓存；有缓存（本种类后续组 / 同种类
+    另一 transient 项）：直接继承跳过搜索（量程由阶段二的
+    _measure_with_autoscale 重新下发）。
     确认流程异常向上传播（缓存不写入），由调用方降级处理。
     """
-    key = _transient_vdiv_key(scope_ch, nominal_v)
+    key = _transient_vdiv_key(scope_ch, nominal_v, kind)
     cached = _TRANSIENT_VDIV_CACHE.get(key)
     if cached is not None:
         ctx.log_fn(f"[transient] 继承已确认 Vertical Scale "
@@ -998,9 +1002,10 @@ def _transient_confirm_vdiv(
     return used_scale, False
 
 
-def _transient_invalidate_vdiv(scope_ch: int, nominal_v: float) -> None:
-    """确认失效（无法正确获取数据 / 波形削波溢出）：清缓存待重确认。"""
-    _TRANSIENT_VDIV_CACHE.pop(_transient_vdiv_key(scope_ch, nominal_v), None)
+def _transient_invalidate_vdiv(scope_ch: int, nominal_v: float,
+                               kind: str = "load") -> None:
+    """确认失效（无法正确获取数据 / 波形削波溢出）：清本种类缓存待重确认。"""
+    _TRANSIENT_VDIV_CACHE.pop(_transient_vdiv_key(scope_ch, nominal_v, kind), None)
 
 
 def _measure_with_autoscale(ctx: "ItemContext", scope_ch: int, nominal_v: float,
@@ -1430,15 +1435,15 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
                 # 改时基后等 16×预览时基（小时基快速建立；下限见 _acq_settle_s）
                 settle(ctx, _acq_settle_s(preview_tb))
                 # 阶段一（预览时基）：Vertical Scale 确认（2026-09-07 用户
-                # 规则）——首个 transient 测试项首组执行完整确认（削波
-                # 9.9e37 时量程翻倍重试，最多 5 次：10→20→40→80→160
-                # mV/div，每轮等待仅 16×预览时基，测量值仅供削波判定，
-                # 正式值在阶段二测）；后续组 / 另一 transient 项直接继承
-                # 已确认量程跳过搜索
+                # 规则，kind 分桶）——本种类（line）首个测试项首组执行完整
+                # 确认（削波 9.9e37 时量程翻倍重试，最多 5 次：10→20→40→80→
+                # 160 mV/div，每轮等待仅 16×预览时基，测量值仅供削波判定，
+                # 正式值在阶段二测）；Line 不继承 Load 的确认结果，本种类
+                # 后续组 / 同种类另一 transient 项才直接继承已确认量程跳过搜索
                 try:
                     used_scale, inherited = _transient_confirm_vdiv(
                         ctx, scope_ch, nominal_v, settle_s, preview_tb,
-                        init_scale_v, max_tries=5)
+                        init_scale_v, kind="line", max_tries=5)
                 except Exception:  # noqa: BLE001 - 量程耗尽仍削波，恢复采集再降级
                     logger.error("autoscale exhausted, re-run acquisition", exc_info=True)
                     ctx.scope.run()
@@ -1461,12 +1466,12 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
                     logger.error("final-timebase measure failed", exc_info=True)
                     # 无法正确获取数据 / 波形溢出：失效量程缓存，恢复采集后
                     # 重做完整确认流程并复测一次；复测仍失败交外层组降级
-                    _transient_invalidate_vdiv(scope_ch, nominal_v)
+                    _transient_invalidate_vdiv(scope_ch, nominal_v, kind="line")
                     ctx.scope.run()
                     try:
                         used_scale, _ = _transient_confirm_vdiv(
                             ctx, scope_ch, nominal_v, settle_s, period / 2.0,
-                            init_scale_v, max_tries=5)
+                            init_scale_v, kind="line", max_tries=5)
                         vmax, vmin, vbase, vpp_v, _ = _measure_with_autoscale(
                             ctx, scope_ch, nominal_v, used_scale, settle_s,
                             timebase_s=period / 2.0, max_tries=1)
@@ -1668,15 +1673,15 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
                     _debug_scope_shot(ctx, dbg_dir, f"{item_key}_{_p}_a2_{tag}")
 
                 # 阶段一（预览时基）：Vertical Scale 确认（2026-09-07 用户
-                # 规则）——首个 transient 测试项首组执行完整确认（削波
-                # 9.9e37 时量程翻倍重试，最多 6 次：10→20→40→80→160→320
-                # mV/div，每轮等待仅 16×预览时基，测量值仅供削波判定，
-                # 正式值在阶段二测）；后续组 / 另一 transient 项直接继承
-                # 已确认量程跳过搜索
+                # 规则，kind 分桶）——本种类（load）首个测试项首组执行完整
+                # 确认（削波 9.9e37 时量程翻倍重试，最多 6 次：10→20→40→80→
+                # 160→320 mV/div，每轮等待仅 16×预览时基，测量值仅供削波
+                # 判定，正式值在阶段二测）；本种类后续组 / 同种类另一
+                # transient 项（LDO↔DCDC 的 Load 之间）直接继承跳过搜索
                 try:
                     used_scale, inherited = _transient_confirm_vdiv(
                         ctx, scope_ch, nominal_v, settle_s, preview_tb,
-                        init_scale_v, max_tries=6,
+                        init_scale_v, kind="load", max_tries=6,
                         debug_shot=_dbg_a1 if dbg else None)
                 except Exception:  # noqa: BLE001 - 量程耗尽仍削波，恢复采集再降级
                     logger.error("autoscale exhausted, re-run acquisition", exc_info=True)
@@ -1710,12 +1715,12 @@ def run_load_transient(ctx: "ItemContext", item_key: str, name: str,
                     logger.error("final-timebase measure failed", exc_info=True)
                     # 无法正确获取数据 / 波形溢出：失效量程缓存，恢复采集后
                     # 重做完整确认流程并复测一次；复测仍失败交外层组降级
-                    _transient_invalidate_vdiv(scope_ch, nominal_v)
+                    _transient_invalidate_vdiv(scope_ch, nominal_v, kind="load")
                     ctx.scope.run()
                     try:
                         used_scale, _ = _transient_confirm_vdiv(
                             ctx, scope_ch, nominal_v, settle_s, period / 2.0,
-                            init_scale_v, max_tries=6,
+                            init_scale_v, kind="load", max_tries=6,
                             debug_shot=_dbg_a2 if dbg else None)
                         vmax, vmin, vbase, vpp_v, _ = _measure_with_autoscale(
                             ctx, scope_ch, nominal_v, used_scale, settle_s,
