@@ -62,6 +62,8 @@ class ModuleConfigStore:
             # 电压测试方式：n6705c=Vout 通道电压表 / scope=示波器平均值（旧配置无此键回落 n6705c）
             "volt_method": dut.volt_method_combo.currentData() or "n6705c",
             "vout_nominal_mv": dut.vout_nominal_spin.value(),
+            # 设计最大带载电流（mA）：测试开始前 Vin 限流 = max_iload_ma/1000 + 0.1 A
+            "max_iload_ma": dut.max_iload_spin.value(),
             "device_addr": dut.device_addr_edit.text().strip(),
             "width_flag": dut.width_flag_combo.currentData(),
             # 示波器输出电压通道：控件为 "CH n"，存整数 n 供 core cfg 直接 int 用
@@ -112,6 +114,8 @@ class ModuleConfigStore:
                 dut.scope_vout_ch_combo.setCurrentIndex(_idx)
         if "vout_nominal_mv" in cfg:
             dut.vout_nominal_spin.setValue(int(cfg["vout_nominal_mv"]))
+        if "max_iload_ma" in cfg:
+            dut.max_iload_spin.setValue(int(cfg["max_iload_ma"]))
         if "device_addr" in cfg:
             dut.device_addr_edit.setText(str(cfg["device_addr"]))
         if "width_flag" in cfg:

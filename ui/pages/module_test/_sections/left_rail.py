@@ -57,6 +57,12 @@ class DutConfigPanel(QWidget):
         self.vout_nominal_spin.setValue(1800 if module_type == "ldo" else 1200)
         grid.add_row("Vout 标称 (mV)", self.vout_nominal_spin)
 
+        # 设计的最大带载电流：测试开始前 Vin 通道限流设为 (Max Iload + 0.1) A
+        self.max_iload_spin = QSpinBox()
+        self.max_iload_spin.setRange(0, 10000)
+        self.max_iload_spin.setValue(400)
+        grid.add_row("Max Iload (mA)", self.max_iload_spin)
+
         # 电压测试方式：N6705C=Vout 通道电压表；scope=示波器输出通道平均值
         self.volt_method_combo = self._make_combo([])
         self.volt_method_combo.addItem("N6705C", "n6705c")
