@@ -333,6 +333,16 @@ def setup_vout_meter(ctx: "ItemContext", *, force: bool = False) -> None:
     setup_meter_channel(ctx, parse_channel(ctx.config.get("vout_channel", 1)))
 
 
+def vin_current_limit_a(cfg: dict) -> float:
+    """Vin 通道限流（A）= Max Iload（cfg["max_iload_ma"]，mA）+ 0.1 A 余量。
+
+    DUT 配置 Max Iload（设计最大带载电流，默认 400mA，旧配置无此键回落），
+    测试开始前由 runner 统一下发 Vin 通道限流；各测试项 setup_source_channel
+    重配 Vin 通道时经本函数保持同一限流（current_limit 测试项用更高限流除外）。
+    """
+    return max(float(cfg.get("max_iload_ma", 400)), 0.0) / 1000.0 + 0.1
+
+
 def setup_source_channel(ctx: "ItemContext", channel: int, voltage: float, *,
                          current_limit: float | None = None) -> None:
     """把通道配成电压源（PS2Q）并上电，参考 PMU DCDC worker。
@@ -509,8 +519,10 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
 
     严格对齐 ui/pages/pmu_test/pmu_output_voltage.py 的逻辑：
       1. Vin 通道按 ``vin_v`` 偏置上电（PS2Q，对齐其它项 Vin 偏置模式；
-         PMU 侧扫描线程不管 Vin 通道，此步为本侧特有，豁免双向同步），
-         N6705C 通道置 VMETer；
+         PMU 侧扫描线程不管 Vin 通道，此步为本侧特有，豁免双向同步）；
+         Vout 直接读 Iload 负载通道电压（2026-09-07 用户规则：CCLoad
+         通道并接 DUT 输出，MEAS:VOLT? 单次查询完成，免示波器入位/复测，
+         不走 measure_vout / setup_vout_meter）；
       2. 读默认寄存器，按 [msb:lsb] 位段计算掩码与 data_base；
       3. 写 min_code 后等待输出稳定（最近 3 次电压极差 ≤ 5mV）；
       4. 逐挡（min_code..max_code，步进 1）写寄存器 → 测电压；前 N 点前置
@@ -535,12 +547,15 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
     vin_ch = parse_channel(cfg.get("vin_channel", 1))
     vin_v = float(cfg.get("vin_v", 3.8))
 
+    def _scan_vout() -> float:
+        # 扫描全程 Vout 直接读 Iload 负载通道电压（CCLoad 通道并接 DUT 输出）
+        return safe_measure(ctx.n6705c, "measure_voltage", iload_ch, 0.0)
+
     i2c = create_i2c(ctx)
     if ctx.is_mock:
         ctx.log_fn(f"[{item_key}] [DEBUG] Using Mock I2C interface.")
 
-    setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
-    setup_vout_meter(ctx)
+    setup_source_channel(ctx, vin_ch, vin_v, current_limit=vin_current_limit_a(cfg))
 
     bit_count = msb - lsb + 1
     mask = (1 << bit_count) - 1
@@ -563,11 +578,12 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
                f"MSB={msb}, LSB={lsb}, WidthFlag={width_flag}")
     ctx.log_fn(f"[{item_key}] [TEST] Code range: 0x{min_code:X} ~ 0x{max_code:X} "
                f"({total_points} points)")
+    ctx.log_fn(f"[{item_key}] [TEST] Vout readback via Iload channel CH{iload_ch}.")
 
     hex_width = len(f"{max_code:X}")
     sleep_time = 0.0 if ctx.is_mock else 0.05
 
-    default_voltage = measure_vout(ctx)
+    default_voltage = _scan_vout()
     default_code = (default_reg >> lsb) & mask
     ctx.log_fn(f"[{item_key}] [TEST] Default voltage: {default_voltage:.4f}V (0x{default_code:X})")
 
@@ -598,7 +614,7 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
             if ctx.stop_flag_fn():
                 ctx.log_fn(f"[{item_key}] [TEST] Stopped by user during stabilization.")
                 return _skipped("稳定阶段被用户停止")
-            v = measure_vout(ctx)
+            v = _scan_vout()
             recent_voltages.append(v)
             if len(recent_voltages) >= 3:
                 last3 = recent_voltages[-3:]
@@ -621,7 +637,7 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
             i2c.write(device_addr, reg_addr, write_reg, width_flag)
             time.sleep(sleep_time)
 
-            measured_v = measure_vout(ctx)
+            measured_v = _scan_vout()
             voltages.append(measured_v)
             codes.append(code)
             rows.append([code, round(measured_v * 1000.0, 3)])
@@ -1159,7 +1175,7 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
         _debug_scope_shot(ctx, dbg_dir, f"{item_key}_00_initial")
 
     if not ctx.is_mock:
-        setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
+        setup_source_channel(ctx, vin_ch, vin_v, current_limit=vin_current_limit_a(cfg))
         setup_vout_meter(ctx)
         setup_load_channel(ctx, iload_ch, initial_current_a=max(i_start, 0.001) / 1000.0)
         # 上一项可能调过 close_all_channels()（transient 流程），须显式开显示

@@ -14,7 +14,7 @@ from core.module_test._common import (
     parse_channel, restore_vin, run_line_transient, run_load_capability_ripple,
     run_load_transient, run_vout_scan, set_load_current, settle,
     setup_load_channel, setup_source_channel, setup_vout_meter,
-    teardown_load, write_csv,
+    teardown_load, vin_current_limit_a, write_csv,
 )
 from core.module_test.result_model import ItemResult
 from core.module_test.param_spec import (
@@ -53,7 +53,7 @@ def load_line_reg(ctx: ItemContext) -> ItemResult:
     points = linspace(i_start, i_end, i_step)
     rows: list[list[float]] = []
     if not ctx.is_mock:
-        setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
+        setup_source_channel(ctx, vin_ch, vin_v, current_limit=vin_current_limit_a(cfg))
         setup_vout_meter(ctx)
         setup_load_channel(ctx, iload_ch, initial_current_a=max(i_start, 0.001) / 1000.0)
 
@@ -101,7 +101,7 @@ def line_reg(ctx: ItemContext) -> ItemResult:
     points = linspace(vin_start, vin_end, vin_step)
     rows: list[list[float]] = []
     if not ctx.is_mock:
-        setup_source_channel(ctx, vin_ch, vin_start, current_limit=0.5)
+        setup_source_channel(ctx, vin_ch, vin_start, current_limit=vin_current_limit_a(cfg))
         setup_vout_meter(ctx)
 
     for i, vin in enumerate(points):
@@ -160,7 +160,7 @@ def quiescent(ctx: ItemContext) -> ItemResult:
     en_regs = parse_enable_regs(cfg)
 
     if not ctx.is_mock:
-        setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
+        setup_source_channel(ctx, vin_ch, vin_v, current_limit=vin_current_limit_a(cfg))
 
     header = ["dIvin (uA)", "dIvout (uA)", "Iq (uA)"]
     if en_regs is None:
@@ -255,7 +255,7 @@ def dropout(ctx: ItemContext) -> ItemResult:
         v0_mv = mock_jitter(nominal_mv, 0.01)
         dropout_mv = mock_jitter(180.0, 0.05)
     else:
-        setup_source_channel(ctx, vin_ch, vin_hi, current_limit=0.5)
+        setup_source_channel(ctx, vin_ch, vin_hi, current_limit=vin_current_limit_a(cfg))
         setup_vout_meter(ctx)
         setup_load_channel(ctx, iload_ch, initial_current_a=iload_ma / 1000.0)
         settle(ctx, max(settle_s * 4, 0.2))
@@ -394,7 +394,7 @@ def output_noise(ctx: ItemContext) -> ItemResult:
         ctx.log_fn(f"[{item_key}] [MOCK] FFT center={center_hz / 1e3:g}kHz, "
                    f"span={span_hz / 1e3:g}kHz")
     else:
-        setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
+        setup_source_channel(ctx, vin_ch, vin_v, current_limit=vin_current_limit_a(cfg))
         try:
             ctx.scope.set_channel_display(scope_ch, True)
             # 先做 Auto Ripple 通道配置（时基/档位/偏移），FFT 才有正确输入信号

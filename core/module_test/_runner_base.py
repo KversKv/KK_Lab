@@ -25,6 +25,7 @@ from core.module_test._common import (
     setup_load_channel,
     setup_vout_meter,
     teardown_load,
+    vin_current_limit_a,
 )
 from core.module_test.judge import evaluate_item
 from core.module_test.report import save_html_report
@@ -215,6 +216,25 @@ class ModuleTestRunner(QThread):
             confirm_fn=self._wait_user_confirm,
         )
 
+    def _setup_vin_current_limit(self) -> None:
+        """第一项测试前把 Vin 通道限流设为 (Max Iload + 0.1) A。
+
+        Max Iload 为 DUT 配置的设计最大带载电流（cfg["max_iload_ma"]）；
+        各测试项重配 Vin 通道时经 vin_current_limit_a 保持同一限流。
+        设置失败降级记日志，不阻断测试启动。
+        """
+        ctx = self._make_ctx(dict(self._cfg))
+        ch = parse_channel(ctx.config.get("vin_channel", 1))
+        limit_a = vin_current_limit_a(ctx.config)
+        max_iload_ma = max(float(ctx.config.get("max_iload_ma", 400)), 0.0)
+        self._log(f"[PRE] Vin 通道 ch{ch} 限流设为 {limit_a:.3f} A"
+                  f"（Max Iload {max_iload_ma:g} mA + 0.1 A）。")
+        try:
+            self._n6705c.set_current_limit(ch, limit_a)
+        except Exception:  # noqa: BLE001 - 限流下发失败降级记录，不阻断流程
+            logger.error("set vin current limit ch%d failed", ch, exc_info=True)
+            self._log(f"[WARN] Vin 通道 ch{ch} 限流设置失败，继续测试。")
+
     def _preload_iload(self) -> None:
         """配置完成后、第一项测试前的 Iload 通道预拉载步骤。
 
@@ -284,6 +304,9 @@ class ModuleTestRunner(QThread):
         self._result.instruments = self._collect_instruments()
         total = len(selected)
         self._log(f"[RUN] {self._module_type.upper()} Module Test 开始，共 {total} 项，输出目录: {self._out_dir}")
+
+        # 配置完成后、第一项测试前：Vin 通道限流设为 (Max Iload + 0.1) A
+        self._setup_vin_current_limit()
 
         # 配置完成后、第一项测试前：Iload 通道 1mA 预拉载 1s 后关断
         self._preload_iload()
