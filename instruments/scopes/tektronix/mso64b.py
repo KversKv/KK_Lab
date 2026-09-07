@@ -305,7 +305,7 @@ class MSO64B:
         self.set_channel_scale(channel, 0.02)
         time.sleep(0.1)
 
-        self.set_channel_offset(channel, mean_vol - 0.02)
+        self.set_channel_offset(channel, mean_vol)
         time.sleep(0.1)
 
     def setup_fft_display(self, source_channel, center_hz, span_hz,

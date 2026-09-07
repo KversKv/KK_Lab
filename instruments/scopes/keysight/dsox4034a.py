@@ -547,8 +547,8 @@ class DSOX4034A:
         time.sleep(0.1)
         self._debug_shot('05_after_scale002')
 
-        # 4. 再设置 offset 到均值附近
-        self.set_channel_offset(channel, mean_vol - 0.02)
+        # 4. 再设置 offset 到均值，波形整体归中（无偏移）
+        self.set_channel_offset(channel, mean_vol)
         time.sleep(0.1)
         self._debug_shot('06_after_offset')
 

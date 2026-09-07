@@ -142,10 +142,9 @@ VOLT_METHOD_N6705C = "n6705c"
 VOLT_METHOD_SCOPE = "scope"
 
 # scope 方式 Vout 测量入位参数（Step1~3，2026-09 用户规则）：
-#   Step1: 500mV/div 粗量程读 V0 → Step2: offset = V0-50mV → Step3: 50mV/div
+#   Step1: 500mV/div 粗量程读 V0 → Step2: offset = V0（归中，无偏移）→ Step3: 50mV/div
 _SCOPE_VOUT_COARSE_V = 0.5    # Step1 粗量程 500 mV/div（整屏 5V，防初始削波）
 _SCOPE_VOUT_FINE_V = 0.05     # Step3 精量程 50 mV/div
-_SCOPE_VOUT_OFFSET_V = 0.05   # Step2 offset = V0 - 50 mV（V0 位于中心上方 1 格）
 
 
 def volt_method_is_scope(cfg: dict) -> bool:
@@ -189,7 +188,7 @@ def _setup_scope_vout_meter(ctx: "ItemContext", *, force: bool = False) -> float
 
     Step1: 500mV/div 粗量程读 V0（offset 先置于标称 Vout，读不到依次
            试 0V / 2.5V 中心档）；
-    Step2: offset = V0 - 50mV（V0 位于中心上方 1 格，下方留 6 格量程）；
+    Step2: offset = V0（波形整体归中，无偏移）；
     Step3: 切 50mV/div 精量程（与 Step2 的 SCPI 写序为先 scale 后
            offset：改 scale 会重算 offset，见函数内注释）。
     附带入位：打开通道显示、强制 DC 耦合（防 AC 遗留读出 ~0V 假均值）、
@@ -237,9 +236,9 @@ def _setup_scope_vout_meter(ctx: "ItemContext", *, force: bool = False) -> float
         # （offset×新scale/旧scale），先写 offset 会被 0.05/0.5 缩成
         # 1/10（实测写 1.1335V 后示波器实显 113.25mV）；两驱动
         # set_AutoRipple_test 均为切目标 scale 后再设 offset 的写序。
-        # 最终态与规则一致：50mV/div + offset=V0-50mV（V0 位于中心上方 1 格）
+        # 最终态：50mV/div + offset=V0（波形整体归中，无偏移）
         ctx.scope.set_channel_scale(ch, _SCOPE_VOUT_FINE_V)
-        offset_v = v0 - _SCOPE_VOUT_OFFSET_V
+        offset_v = v0
         ctx.scope.set_channel_offset(ch, offset_v)
         ctx.log_fn(f"[scope] Vout 通道 ch{ch} Step1 读取 V0 = {v0:.4f} V，"
                    f"Step2/3 入位 scale = {_SCOPE_VOUT_FINE_V * 1000:g} mV/div，"
@@ -260,11 +259,10 @@ def _setup_scope_vout_meter(ctx: "ItemContext", *, force: bool = False) -> float
 def _scope_vout_in_window(v: float, v0: float) -> bool:
     """Vout 读数是否在精量程有效窗内（越窗 = 过高/过低、疑似削波）。
 
-    50mV/div 整屏 10 格，offset=V0-50mV → 屏幕窗口 [V0-300mV, V0+200mV]；
-    留 1 格边距，读数超出中心±4 格（[V0-250mV, V0+150mV]）即越窗。
+    50mV/div 整屏 10 格，offset=V0（归中）→ 屏幕窗口 [V0-250mV, V0+250mV]；
+    留 1 格边距，读数超出中心±4 格（[V0-200mV, V0+200mV]）即越窗。
     """
-    center_v = v0 - _SCOPE_VOUT_OFFSET_V
-    return center_v - 4.0 * _SCOPE_VOUT_FINE_V <= v <= center_v + 4.0 * _SCOPE_VOUT_FINE_V
+    return v0 - 4.0 * _SCOPE_VOUT_FINE_V <= v <= v0 + 4.0 * _SCOPE_VOUT_FINE_V
 
 
 def _scope_vout_sample(ctx: "ItemContext", ch: int, default: float) -> float:
@@ -320,7 +318,7 @@ def setup_vout_meter(ctx: "ItemContext", *, force: bool = False) -> None:
     """按「电压测试方式」准备 Vout 测量通道。
 
     N6705C 方式：Vout 通道置 VMETer 并 channel_on（同 setup_meter_channel）；
-    示波器方式：执行 Step1~3 入位（500mV/div 读 V0 → offset=V0-50mV →
+    示波器方式：执行 Step1~3 入位（500mV/div 读 V0 → offset=V0（归中）→
     50mV/div，并强制 DC 耦合 / 触发 AUTO / 恢复 run 采集），详见
     _setup_scope_vout_meter。force=False（默认）且缓存命中（同通道+标称
     Vout）时走快路径：仅重放缓存的 scale/offset 不重读 V0（序列开头
@@ -970,6 +968,13 @@ def _measure_with_autoscale(ctx: "ItemContext", scope_ch: int, nominal_v: float,
                             ) -> tuple[float, float, float, float, float]:
     """设量程后测 Vmax/Vmin/Vmean/Vpp；波形削波（9.9e37 无效值）时量程翻倍重试。
 
+    offset 仅在 scale 实际变更（首次入位 / 重试翻倍 / 量程被其它流程改过）
+    时以标称 Vout 临时入位——scale 变更触发示波器守恒重算 offset，须重写
+    才能回屏；scale 不变时沿用当前 offset（上一组测量已归中），不再写
+    标称值把波形拉偏再拉回（2026-09-07 用户规则：入位只有第一次需要）。
+    四值测完后重写 offset 为实测均值使波形整体归中（无偏移）；STOP 态改
+    offset 仅重定位显示，不影响冻结帧测值，归中后的定格帧直接供调用方截图。
+
     返回 (vmax, vmin, vmean, vpp, 实际量程)。重试前须 run() 恢复采集再 settle，
     否则停采状态下改量程拿不到新波形。全部尝试耗尽后抛最后一次异常。
 
@@ -986,8 +991,18 @@ def _measure_with_autoscale(ctx: "ItemContext", scope_ch: int, nominal_v: float,
     acq_settle = _acq_settle_s(timebase_s)
     last_err: Exception | None = None
     for attempt in range(max_tries):
-        ctx.scope.set_channel_scale(scope_ch, scale_v)
-        ctx.scope.set_channel_offset(scope_ch, nominal_v)
+        # scale 实际不变时跳过重写（连带 offset）：写 scale 会触发守恒重算
+        # offset，同量程重发只会把已归中的波形拉偏再拉回（入位只有第一
+        # 次需要）；读回失败保守按变更处理（走完整写入路径）
+        try:
+            scale_same = abs(float(ctx.scope.get_channel_scale(scope_ch)) - scale_v) \
+                <= scale_v * 1e-6
+        except Exception:  # noqa: BLE001 - 读回失败按 scale 变更处理
+            scale_same = False
+        if not scale_same:
+            ctx.scope.set_channel_scale(scope_ch, scale_v)
+            # 标称 Vout 仅作临时入位（保证波形在屏），测得均值后再归中
+            ctx.scope.set_channel_offset(scope_ch, nominal_v)
         settle(ctx, acq_settle)
         ctx.scope.stop()
         # stop 后再截图：定格的是 settle 采满一整屏的完整新波形；若在 run 态
@@ -1000,6 +1015,9 @@ def _measure_with_autoscale(ctx: "ItemContext", scope_ch: int, nominal_v: float,
             vmin = float(ctx.scope.get_channel_min(scope_ch))
             vbase = float(ctx.scope.get_channel_mean(scope_ch))
             vpp = float(ctx.scope.get_channel_pk2pk(scope_ch))
+            # offset = 实测均值，波形整体归中（无偏移）；STOP 态改 offset
+            # 仅重定位显示，不影响冻结帧测值
+            ctx.scope.set_channel_offset(scope_ch, vbase)
             # 四个查询都在 STOP 定格帧上进行（DSOX _meas_refresh_s 对
             # STOP 态返回 0，各仅 0.2s）；旧版此处再等 16×时基（500ms/div
             # 即 8s）纯浪费。仅需给测量标注渲染留 0.3s 并确保 stop，
