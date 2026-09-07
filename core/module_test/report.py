@@ -1808,6 +1808,12 @@ function drawChart(box) {
     const bxTxt = xIsVbit ? (fmtVbit(best[0], vbitWidth()) || fmtTick(best[0])) : fmtTick(best[0]);
     let h = '<div class="tt-x">' + esc(xIsVbit ? "Vbit" : spec.x.label) + " = " +
       bxTxt + (spec.x.unit ? " " + esc(spec.x.unit) : "") + "</div>";
+    /* vbit 下方补一行 hex（当前进制已是 hex 时不重复） */
+    if (xIsVbit && Number.isInteger(best[0]) && best[0] >= 0 && VBIT.fmt !== "hex") {
+      const hx = "0x" + best[0].toString(16).toUpperCase()
+        .padStart(Math.ceil(vbitWidth() / 4), "0");
+      h += '<div class="tt-x">Vbit (hex) = ' + esc(hx) + "</div>";
+    }
     series.forEach((s, i) => {
       const p = allPts[i].reduce((a, q) =>
         Math.abs(q[0] - best[0]) < Math.abs((a || [Infinity])[0] - best[0]) ? q : a, null);
@@ -2219,18 +2225,36 @@ function buildTable(host, item) {
 }
 function exportCSV(item, rows, fname) {
   const table = item.table;
-  const head = table.columns.map(c =>
-    c.label + (c.unit ? " (" + c.unit + ")" : ""));
+  /* vbit 列导出为 DEC / BIN / HEX 三列（其余列原样） */
+  const vbW = vbitWidth();
+  const vb3 = v => (typeof v === "number" && Number.isInteger(v) && v >= 0)
+    ? [String(v),
+       "0b" + v.toString(2).padStart(vbW, "0"),
+       "0x" + v.toString(16).toUpperCase().padStart(Math.ceil(vbW / 4), "0")]
+    : ["", "", ""];
+  const head = [];
+  table.columns.forEach(c => {
+    if (c.fmt === "vbit") head.push("Vbit (DEC)", "Vbit (BIN)", "Vbit (HEX)");
+    else head.push(c.label + (c.unit ? " (" + c.unit + ")" : ""));
+  });
+  const esc_ = s => /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   const lines = [head.join(",")].concat(rows.map(o =>
-    o.r.map((v, ci) => {
-      if (v === null || v === undefined) return "";
-      let s = String(v);
-      if (table.columns[ci] && table.columns[ci].kind === "image") {
-        const att = (item.attachments || [])[v];
-        s = att ? String(att.label || "") : "";
+    o.r.reduce((acc, v, ci) => {
+      const c = table.columns[ci];
+      if (c && c.fmt === "vbit") {
+        acc.push(...vb3(v));
+      } else if (v === null || v === undefined) {
+        acc.push("");
+      } else {
+        let s = String(v);
+        if (c && c.kind === "image") {
+          const att = (item.attachments || [])[v];
+          s = att ? String(att.label || "") : "";
+        }
+        acc.push(esc_(s));
       }
-      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-    }).join(",")));
+      return acc;
+    }, []).join(",")));
   const blob = new Blob(["﻿" + lines.join("\r\n")], {type:"text/csv;charset=utf-8"});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
