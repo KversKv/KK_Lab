@@ -486,7 +486,7 @@ def protection(ctx: ItemContext) -> ItemResult:
 LDO_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
     "ldo_vout_scan": ("Output Voltage Scan", vout_scan, False, False, (
         *reg_scan_params(),
-        settle_time(), average_cnt(),
+        vin_bias(), settle_time(), average_cnt(),
     )),
     "ldo_load_reg": ("Load Regulation", load_line_reg, False, False, (
         *load_sweep(1.0, 200.0, 10.0),

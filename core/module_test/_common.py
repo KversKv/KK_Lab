@@ -508,7 +508,9 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
     """各挡位输出电压扫描（LDO / DCDC 共用）。
 
     严格对齐 ui/pages/pmu_test/pmu_output_voltage.py 的逻辑：
-      1. N6705C 通道置 VMETer；
+      1. Vin 通道按 ``vin_v`` 偏置上电（PS2Q，对齐其它项 Vin 偏置模式；
+         PMU 侧扫描线程不管 Vin 通道，此步为本侧特有，豁免双向同步），
+         N6705C 通道置 VMETer；
       2. 读默认寄存器，按 [msb:lsb] 位段计算掩码与 data_base；
       3. 写 min_code 后等待输出稳定（最近 3 次电压极差 ≤ 5mV）；
       4. 逐挡（min_code..max_code，步进 1）写寄存器 → 测电压；前 N 点前置
@@ -530,11 +532,14 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
     min_code = cfg_int(cfg, "min_code", 0)
     max_code = cfg_int(cfg, "max_code", 255)
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
+    vin_ch = parse_channel(cfg.get("vin_channel", 1))
+    vin_v = float(cfg.get("vin_v", 3.8))
 
     i2c = create_i2c(ctx)
     if ctx.is_mock:
         ctx.log_fn(f"[{item_key}] [DEBUG] Using Mock I2C interface.")
 
+    setup_source_channel(ctx, vin_ch, vin_v, current_limit=0.5)
     setup_vout_meter(ctx)
 
     bit_count = msb - lsb + 1

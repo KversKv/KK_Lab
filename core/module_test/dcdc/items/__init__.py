@@ -571,7 +571,7 @@ def topology(ctx: ItemContext) -> ItemResult:
 DCDC_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
     "dcdc_vout_scan": ("Output Voltage Scan", vout_scan, False, True, (
         *reg_scan_params(),
-        settle_time(), average_cnt(),
+        vin_bias(), settle_time(), average_cnt(),
     )),
     "dcdc_efficiency": ("Efficiency", efficiency, False, True, (
         *load_sweep(1.0, 200.0, 20.0),
