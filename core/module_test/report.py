@@ -19,7 +19,7 @@ UI 只拿路径打开，不做 IO——本模块纯字符串生成，禁依赖 Q
     table:   {file,rows,columns:[{key,label,unit,align,precision,kind:image?,
               fmt:vbit?}],   # kind:image 列单元格 = attachments 下标（截图入表末列）；
               data[[...]],   # fmt:vbit 列单元格仍为十进制 int，前端按 Vbit 进制切换显示
-              rules:[{column,op:gt|lt|abs_gt|eq|outlier,value,k,level:warn|fail,hint}
+              rules:[{column,op:gt|lt|abs_gt|eq|outlier|mean_pct,value,k,level:warn|fail,hint}
                      | {type:constant,level,hint}]},
     attachments: [{type:image,label,full(dataURI)}]
   }]
@@ -63,7 +63,7 @@ JSON 经 ``json.dumps`` 并把 ``</`` 转义为 ``<\\/`` 防 script 逃逸。
     logTicks 窄域细分 1/2/5×10^e，手动切换 LOG X/Y 后自动贴合数据）；
 17. 版式修订（2026-08-04 b）：Vbit 进制切换改到列标题下拉（BIN/HEX/DEC）；行首
     异常图标改固定槽位（未异常行补占位，不再顶错位宽对齐）；Vbit 与数值列统一
-    右对齐；Vout Scan 异常 diff 柱标红（bar_anomaly，5×MAD 与表格规则一致）；
+    右对齐；Vout Scan 异常 diff 柱标红（bar_anomaly，mean_pct 与表格规则一致）；
     右 Y 轴标题与图区留 26px 边距（左轴 16px）；移除无用的规格带
     （spec_band/spec.spec_band 渲染与 chart_band 切换按钮一并删除）。
 
@@ -246,8 +246,8 @@ def _build_rules(it: ItemResult, table: dict[str, Any] | None) -> list[dict[str,
     if key.endswith("vout_scan"):
         diff = _pick_col(table, "diff")
         if diff:
-            rules.append({"column": diff, "op": "outlier", "k": 5,
-                          "level": "warn", "hint": "步进异常跳变(>5×MAD)"})
+            rules.append({"column": diff, "op": "mean_pct", "value": 0.07,
+                          "level": "warn", "hint": "步进偏差超过有效数据均值的 7%"})
     elif key.endswith("efficiency"):
         eff = _pick_col(table, "eff", "η")
         if eff:
@@ -443,8 +443,8 @@ def _build_charts(it: ItemResult, table: dict[str, Any] | None) -> list[dict[str
         series = [s for s in (ser(yk), ser(diff, "bar", "right")) if s]
         spec = _xy(xk, series, t, "Vout vs Vbit",
                    mark_extrema=True, zoom=True)
-        if diff:  # 异常 diff 柱标红（与表格 outlier 规则一致的 5×MAD）
-            spec["bar_anomaly"] = {"key": diff, "op": "outlier", "k": 5}
+        if diff:  # 异常 diff 柱标红（与表格 mean_pct 规则一致：偏差 > 均值×7%）
+            spec["bar_anomaly"] = {"key": diff, "op": "mean_pct", "value": 0.07}
         charts.append(spec)
     elif key.endswith("efficiency"):
         xk = _pick_col(t, "iload", fallback=0)
@@ -1276,7 +1276,15 @@ function evalRules(table) {
     }
     const ci = colIdx[rule.column]; if (ci === undefined) continue;
     let thresh = rule.value;
-    if (rule.op === "outlier") {  /* k × MAD（中位数绝对偏差） */
+    if (rule.op === "mean_pct") {  /* 有效数据均值 × pct（比例容差） */
+      const vals = table.data.map(r => r[ci])
+        .filter(v => typeof v === "number");
+      if (vals.length < 4) continue;
+      const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+      if (Math.abs(mean) < 1e-12) continue;
+      thresh = {mean, lim: (rule.value ?? 0.07) * Math.abs(mean)};
+    }
+    else if (rule.op === "outlier") {  /* k × MAD（中位数绝对偏差） */
       const vals = table.data.map(r => r[ci])
         .filter(v => typeof v === "number").sort((a, b) => a - b);
       if (vals.length < 4) continue;
@@ -1294,6 +1302,7 @@ function evalRules(table) {
         case "lt": hit = v < thresh; break;
         case "abs_gt": hit = Math.abs(v) > thresh; break;
         case "eq": hit = v === thresh; break;
+        case "mean_pct": hit = Math.abs(v - thresh.mean) > thresh.lim; break;
         case "outlier": hit = Math.abs(v - thresh.med) > thresh.lim; break;
       }
       if (hit) flag(ri, ci, rule.level || "warn");
@@ -1688,11 +1697,16 @@ function drawChart(box) {
     const yFn = s.axis === "right" && syR ? syR : syL;
     if (s.type === "bar") {
       const bw = Math.max(2, Math.min(18, iw / Math.max(pts.length, 1) * 0.5));
-      /* 异常柱标红：bar_anomaly 规则（outlier=k×MAD / gt） */
+      /* 异常柱标红：bar_anomaly 规则（mean_pct=均值×pct / outlier=k×MAD / gt） */
       let barThresh = null;
       const ba = spec.bar_anomaly;
       if (ba && ba.key === s.key && pts.length > 3) {
-        if (ba.op === "outlier") {
+        if (ba.op === "mean_pct") {
+          const vals = pts.map(p => p[1]);
+          const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+          if (Math.abs(mean) >= 1e-12)
+            barThresh = {mean, lim:(ba.value ?? 0.07) * Math.abs(mean), op:"mean_pct"};
+        } else if (ba.op === "outlier") {
           const vals = pts.map(p => p[1]).sort((a, b) => a - b);
           const med = vals[Math.floor(vals.length / 2)];
           const mads = vals.map(v => Math.abs(v - med)).sort((a, b) => a - b);
@@ -1702,6 +1716,7 @@ function drawChart(box) {
       }
       const barBad = v => barThresh &&
         (barThresh.op === "gt" ? v > barThresh.value
+         : barThresh.op === "mean_pct" ? Math.abs(v - barThresh.mean) > barThresh.lim
          : Math.abs(v - barThresh.med) > barThresh.lim);
       pts.forEach(p => {
         const y0 = yFn(Math.max(0, yR ? yR[0] : yL[0])), y1 = yFn(p[1]);
