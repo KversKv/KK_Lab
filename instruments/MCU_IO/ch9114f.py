@@ -260,12 +260,12 @@ class CH9114F(InstrumentBase):
     def set_output(self, pin):
         self.config(pin, direction=DIR_OUTPUT, gpio_func=True)
 
-    def set_input(self, pin, gpio_func=False):
+    def set_input(self, pin, gpio_func=True):
         self.config(pin, direction=DIR_INPUT, gpio_func=gpio_func)
 
     def hiz(self, pin):
-        """释放引脚为高阻态：关闭 GPIO 功能使能并置为输入。"""
-        self.config(pin, direction=DIR_INPUT, gpio_func=False)
+        """释放引脚为高阻态：保持 GPIO 功能并置为输入，去掉输出驱动与上下拉。"""
+        self.config(pin, direction=DIR_INPUT, gpio_func=True)
 
     def out(self, pin, value):
         self._ensure_connected()
@@ -282,7 +282,7 @@ class CH9114F(InstrumentBase):
 
     def in_pull(self, pin, pull="none"):
         self._ensure_connected()
-        # 释放为高阻输入：关闭 GPIO 功能使能，避免残留输出驱动
+        # 释放为高阻输入：CH9114F 无独立上下拉 API，任意 pull 请求均按浮空输入处理
         self.hiz(pin)
 
     def pulse(self, pin, width_ms=10, active=1, release_high_z=True):

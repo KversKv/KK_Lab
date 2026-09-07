@@ -402,11 +402,11 @@ class MockCH9114F:
     def set_output(self, pin):
         self.config(pin, direction=self.DIR_OUTPUT, gpio_func=True)
 
-    def set_input(self, pin, gpio_func=False):
+    def set_input(self, pin, gpio_func=True):
         self.config(pin, direction=self.DIR_INPUT, gpio_func=gpio_func)
 
     def hiz(self, pin):
-        self.set_input(pin, gpio_func=False)
+        self.set_input(pin)
 
     def out(self, pin, value):
         pin = int(pin)
