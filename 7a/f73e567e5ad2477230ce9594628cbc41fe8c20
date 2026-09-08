@@ -1,0 +1,69 @@
+ui/pages/module_test/_base_subpage.py
+  s_da031b6e342157::t_ce7cdd9008a3b0 442-443
+core/module_test/_runner_base.py
+  s_da031b6e342157::t_c56ce4db122bad 403-459
+  s_da031b6e342157::t_05a7c1412c27c5 321-324,330-346,371-378
+  s_da031b6e342157::t_afac77ae0172dd 11,23,31
+  s_da031b6e342157::t_fff5c315d2be6e 379
+user_data/module_test_configs/ldo/BES1860/LDO_06.json
+  s_da031b6e342157::t_05dec9b3634d4f 64-65
+  s_a94775a7b37c22::t_13fe3dc5cd0b1d 68
+ui/pages/module_test/dialogs/item_params_dialog.py
+  s_da031b6e342157::t_aefba14be7ee2f 107,111-113,117,141-143
+  s_da031b6e342157::t_63cb44a96f15a2 20-24
+  s_da031b6e342157::t_b73f840b62c410 243-245,247
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "7af73e567e5ad2477230ce9594628cbc41fe8c20",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_a94775a7b37c22": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a9f7f31bcb44144ef216629",
+        "model": "glm-5.3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "external_session_id": "6a9f7f31bcb44144ef216629",
+        "source_scene": "agent",
+        "operation_id": "6a9fb126bcb44144ef2169ba",
+        "session_id": "6a9f7f31bcb44144ef216629",
+        "edit_kind": "file_edit",
+        "display_model_name": "GLM-5.3",
+        "tool_name": "Edit",
+        "tool_use_id": "6a9fb126bcb44144ef2169ba",
+        "runtime_client": "trae-tob-git-ai",
+        "client_type": "ide"
+      }
+    },
+    "s_da031b6e342157": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a9f72e6bcb44144ef216463",
+        "model": "glm-5.3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "edit_kind": "file_edit",
+        "source_scene": "unknown",
+        "tool_id": "Edit",
+        "operation_id": "6a9f79ffbcb44144ef216597",
+        "external_session_id": "6a9f72e6bcb44144ef216463",
+        "tool_use_id": "6a9f79ffbcb44144ef216597",
+        "dedupe_key": "6a9f72e6bcb44144ef216463:6a9f79ffbcb44144ef216597:afterEdit:3a530fda",
+        "client_type": "ide",
+        "tool_type": "agent",
+        "session_id": "6a9f72e6bcb44144ef216463",
+        "runtime_client": "trae-tob-git-ai"
+      }
+    }
+  }
+}
