@@ -151,9 +151,9 @@ def quiescent_params() -> tuple[ParamSpec, ...]:
 
 # —— 负载瞬态分组参数：每组 I0 / I1 / 频率，默认三组，弹窗可增删 ——
 DEFAULT_TRANSIENT_GROUPS: list[dict] = [
-    {"i0_ma": 10.0, "i1_ma": 100.0, "freq_hz": 10.0},
-    {"i0_ma": 10.0, "i1_ma": 100.0, "freq_hz": 100.0},
     {"i0_ma": 10.0, "i1_ma": 100.0, "freq_hz": 1000.0},
+    {"i0_ma": 10.0, "i1_ma": 100.0, "freq_hz": 100.0},
+    {"i0_ma": 10.0, "i1_ma": 100.0, "freq_hz": 10.0},
 ]
 
 
@@ -174,9 +174,9 @@ def transient_groups() -> ParamSpec:
 
 # —— 输入瞬态分组参数：每组 Vin0 / Vin1 / 频率，默认三组，弹窗可增删 ——
 DEFAULT_LINE_TRANSIENT_GROUPS: list[dict] = [
-    {"vin0_v": 3.2, "vin1_v": 4.2, "freq_hz": 1.0},
-    {"vin0_v": 3.2, "vin1_v": 4.2, "freq_hz": 10.0},
     {"vin0_v": 3.2, "vin1_v": 4.2, "freq_hz": 100.0},
+    {"vin0_v": 3.2, "vin1_v": 4.2, "freq_hz": 10.0},
+    {"vin0_v": 3.2, "vin1_v": 4.2, "freq_hz": 1.0},
 ]
 
 
