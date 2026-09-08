@@ -64,6 +64,7 @@ from log_config import get_logger
 from debug_config import DEBUG_MOCK
 from instruments.mock.mock_instruments import MockN6705C
 from ui.pages.n6705c_power_analyzer import datalog_style as dss
+from ui.pages.n6705c_power_analyzer.widgets import SelectAllLineEdit
 
 logger = get_logger(__name__)
 
@@ -860,7 +861,7 @@ class ChannelConfigTabBar(QTabBar):
         return size
 
     def mouseMoveEvent(self, event):
-        idx = self.tabAt(event.pos())
+        idx = self.tabAt(event.position().toPoint())
         if idx != self._hover_index:
             self._hover_index = idx
             self.update()
@@ -2033,6 +2034,7 @@ class N6705CDatalogUI(QWidget):
         self.ch_name_labels = []
         self.ch_name_renames = {}
         self._ch_label_items = []
+        self._ch_label_range_connected = False
 
         chart_outer.addWidget(self.plot_widget, 1)
 
@@ -5852,10 +5854,12 @@ class N6705CDatalogUI(QWidget):
 
         x_label = QLabel("X 坐标 (s)")
         layout.addWidget(x_label)
-        x_edit = QLineEdit()
+        x_edit = SelectAllLineEdit()
         x_edit.setPlaceholderText("e.g. 1.25")
         if cur is not None:
             x_edit.setText(f"{cur:.6f}".rstrip('0').rstrip('.'))
+        x_edit.setFocus(Qt.PopupFocusReason)
+        x_edit.selectAll()
         layout.addWidget(x_edit)
 
         btn_layout = QHBoxLayout()
@@ -5883,6 +5887,75 @@ class N6705CDatalogUI(QWidget):
             QMessageBox.warning(self, "无效输入", f"无法解析 X 坐标：{text!r}")
             return
 
+        if which == "A":
+            self._place_marker_a(x_val)
+        else:
+            self._place_marker_b(x_val)
+        self._update_marker_region()
+        self._update_marker_analysis()
+
+    def _move_marker_delta_dialog(self, which, other):
+        """弹窗输入相对另一 Marker 的时间距离（单位 ms）来移动 Marker。"""
+        other_pos = self.marker_a_pos if other == "A" else self.marker_b_pos
+        if other_pos is None:
+            QMessageBox.warning(self, "无法移动", f"Marker {other} 尚未放置，无法使用 Δ 定位。")
+            return
+        cur = self.marker_a_pos if which == "A" else self.marker_b_pos
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Move Marker {which} (Δ to {other})")
+        dialog.setFixedWidth(320)
+        dialog.setStyleSheet(dss.dlg_style())
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        title = QLabel(f"Move Marker {which} (Δ to {other})")
+        title.setStyleSheet(dss.DIALOG_TITLE_STYLE)
+        layout.addWidget(title)
+
+        ref_label = QLabel(f"Marker {other} 当前位置: {other_pos:.6f} s")
+        ref_label.setWordWrap(True)
+        layout.addWidget(ref_label)
+
+        delta_label = QLabel(f"Δ to {other} (ms)")
+        layout.addWidget(delta_label)
+        delta_edit = SelectAllLineEdit()
+        delta_edit.setPlaceholderText("e.g. 2.5")
+        if cur is not None:
+            default_ms = (cur - other_pos) * 1000.0
+            delta_edit.setText(f"{default_ms:.6f}".rstrip('0').rstrip('.'))
+        delta_edit.setFocus(Qt.PopupFocusReason)
+        delta_edit.selectAll()
+        layout.addWidget(delta_edit)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(8)
+        btn_layout.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setAutoDefault(False)
+        cancel_btn.setDefault(False)
+        ok_btn = QPushButton("OK")
+        ok_btn.setAutoDefault(True)
+        ok_btn.setDefault(True)
+        cancel_btn.clicked.connect(dialog.reject)
+        ok_btn.clicked.connect(dialog.accept)
+        btn_layout.addWidget(cancel_btn)
+        btn_layout.addWidget(ok_btn)
+        layout.addLayout(btn_layout)
+
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        text = delta_edit.text().strip()
+        try:
+            delta_ms = float(text)
+        except ValueError:
+            QMessageBox.warning(self, "无效输入", f"无法解析 Δ 值：{text!r}")
+            return
+
+        x_val = other_pos + delta_ms / 1000.0
         if which == "A":
             self._place_marker_a(x_val)
         else:
@@ -6369,8 +6442,17 @@ class N6705CDatalogUI(QWidget):
         delete_action = None
         pair_type = None
         pair_idx = -1
+        move_abs_action = None
+        move_delta_action = None
+        other = None
 
         if marker_tag in ("A", "B"):
+            other = "B" if marker_tag == "A" else "A"
+            other_pos = self.marker_b_pos if other == "B" else self.marker_a_pos
+            move_abs_action = menu.addAction(f"Move To (Abs : s)")
+            move_delta_action = menu.addAction(f"Move To (Δ to {other} : ms)")
+            move_delta_action.setEnabled(other_pos is not None)
+            menu.addSeparator()
             delete_action = menu.addAction("Delete Marker A && B")
             pair_type = "AB"
         elif marker_tag.startswith("X"):
@@ -6384,7 +6466,13 @@ class N6705CDatalogUI(QWidget):
 
         chosen = menu.exec(screen_pos)
 
-        if chosen is not None and chosen == delete_action:
+        if chosen is None:
+            return
+        if chosen == move_abs_action:
+            self._set_marker_position_dialog(marker_tag)
+        elif chosen == move_delta_action:
+            self._move_marker_delta_dialog(marker_tag, other)
+        elif chosen == delete_action:
             if pair_type == "AB":
                 self._delete_ab_markers()
             elif pair_type == "EXTRA" and pair_idx >= 0:
@@ -6685,11 +6773,16 @@ class N6705CDatalogUI(QWidget):
             self._ch_label_items.append(text_item)
 
         vb = self.plot_widget.getPlotItem().getViewBox()
-        try:
-            vb.sigRangeChanged.disconnect(self._update_ch_label_positions)
-        except Exception:
-            pass
+        # pyqtgraph 对未连接的 slot 调 disconnect 不抛异常而是 RuntimeWarning，
+        # 首次 rebuild 时 slot 尚未连接，用标志位跳过无效 disconnect。
+        if self._ch_label_range_connected:
+            try:
+                vb.sigRangeChanged.disconnect(self._update_ch_label_positions)
+            except Exception:
+                pass
+            self._ch_label_range_connected = False
         vb.sigRangeChanged.connect(self._update_ch_label_positions)
+        self._ch_label_range_connected = True
         self._update_ch_label_positions()
 
     def _update_ch_label_positions(self, *args):
