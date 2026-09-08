@@ -1,0 +1,80 @@
+ui/pages/module_test/AGENTS.md
+  s_da031b6e342157::t_78aad5343a5a3c 57
+  s_6b8993e8ac10a2::t_ac1586788a0788 37
+  s_6b8993e8ac10a2::t_1005e147b348e2 34
+  s_a94775a7b37c22::t_9923202f227427 48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "7d61cf83afe7c3df14f9a5da461bf557826698a7",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_6b8993e8ac10a2": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a9f9f70bcb44144ef216815",
+        "model": "glm-5.3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "operation_id": "6a9fb3aebcb44144ef216a72",
+        "tool_name": "Edit",
+        "tool_use_id": "6a9fb3aebcb44144ef216a72",
+        "runtime_client": "trae-tob-git-ai",
+        "session_id": "6a9f9f70bcb44144ef216815",
+        "source_scene": "agent",
+        "edit_kind": "file_edit",
+        "external_session_id": "6a9f9f70bcb44144ef216815",
+        "display_model_name": "GLM-5.3",
+        "client_type": "ide"
+      }
+    },
+    "s_a94775a7b37c22": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a9f7f31bcb44144ef216629",
+        "model": "glm-5.3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "external_session_id": "6a9f7f31bcb44144ef216629",
+        "tool_name": "Edit",
+        "tool_use_id": "6a9fb126bcb44144ef2169ba",
+        "operation_id": "6a9fb126bcb44144ef2169ba",
+        "session_id": "6a9f7f31bcb44144ef216629",
+        "source_scene": "agent",
+        "edit_kind": "file_edit",
+        "display_model_name": "GLM-5.3",
+        "runtime_client": "trae-tob-git-ai",
+        "client_type": "ide"
+      }
+    },
+    "s_da031b6e342157": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a9f72e6bcb44144ef216463",
+        "model": "glm-5.3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "edit_kind": "file_edit",
+        "tool_type": "agent",
+        "tool_id": "Edit",
+        "runtime_client": "trae-tob-git-ai",
+        "client_type": "ide",
+        "tool_use_id": "6a9f79ffbcb44144ef216597",
+        "dedupe_key": "6a9f72e6bcb44144ef216463:6a9f79ffbcb44144ef216597:afterEdit:3a530fda",
+        "operation_id": "6a9f79ffbcb44144ef216597",
+        "external_session_id": "6a9f72e6bcb44144ef216463",
+        "source_scene": "unknown",
+        "session_id": "6a9f72e6bcb44144ef216463"
+      }
+    }
+  }
+}
