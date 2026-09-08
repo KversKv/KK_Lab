@@ -1,0 +1,37 @@
+core/module_test/param_spec.py
+  s_a94775a7b37c22::t_4196b4f516fd21 155-156
+  s_a94775a7b37c22::t_99b332a000b124 178-179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "c855f946a1cd95cd38954a4fa8979ad7a8dc1444",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_a94775a7b37c22": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a9f7f31bcb44144ef216629",
+        "model": "glm-5.3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "source_scene": "agent",
+        "tool_use_id": "6a9f7f6cbcb44144ef216649",
+        "session_id": "6a9f7f31bcb44144ef216629",
+        "tool_name": "Edit",
+        "external_session_id": "6a9f7f31bcb44144ef216629",
+        "client_type": "ide",
+        "runtime_client": "trae-tob-git-ai",
+        "display_model_name": "GLM-5.3",
+        "operation_id": "6a9f7f6cbcb44144ef216649",
+        "edit_kind": "file_edit"
+      }
+    }
+  }
+}
