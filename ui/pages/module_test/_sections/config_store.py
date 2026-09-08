@@ -50,6 +50,7 @@ class ModuleConfigStore:
             "selected_items": self._plan.selected_keys(),
             "chip_name": dut.chip_name_edit.text().strip(),
             "module_name": dut.module_name_edit.text().strip(),
+            "test_condition": dut.test_condition_edit.text().strip(),
             "operator": dut.operator_edit.text().strip(),
             "temp_test_enabled": temp_enabled,
             "temperature": dut.temperature_edit.text().strip() if temp_enabled else "",
@@ -100,6 +101,8 @@ class ModuleConfigStore:
             dut.chip_name_edit.setText(str(cfg["chip_name"]))
         if "module_name" in cfg:
             dut.module_name_edit.setText(str(cfg["module_name"]))
+        if "test_condition" in cfg:
+            dut.test_condition_edit.setText(str(cfg["test_condition"]))
         if "operator" in cfg:
             dut.operator_edit.setText(str(cfg["operator"]))
         _set_combo(dut.vin_ch_combo, cfg.get("vin_channel"))

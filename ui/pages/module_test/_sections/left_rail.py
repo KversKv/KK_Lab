@@ -49,6 +49,10 @@ class DutConfigPanel(QWidget):
         self.module_name_edit.setPlaceholderText("如 LDO1 / DCDC_CORE")
         grid.add_row("模块名称", self.module_name_edit)
 
+        self.test_condition_edit = QLineEdit()
+        self.test_condition_edit.setPlaceholderText("如 常温正常供电 / 高温满载")
+        grid.add_row("测试条件", self.test_condition_edit, col_span=2)
+
         self.operator_edit = QLineEdit()
         grid.add_row("操作员", self.operator_edit)
 

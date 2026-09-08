@@ -95,12 +95,13 @@ class ModuleTestRunner(QThread):
         self._n6705c = n6705c
         self._scope = scope
         self._chamber = chamber
-        # 结果目录名 = 芯片_模块_时间戳（芯片描述/模块描述取自 DUT 配置，
+        # 结果目录名 = 芯片_模块_条件_时间戳（芯片/模块/条件取自 DUT 配置，
         # 非法字符清洗，空段省略，全空回落纯时间戳），便于在 Results 下辨识报告归属
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         parts = [p for p in (
             _safe_dir_part(str(self._cfg.get("chip_name") or "")),
             _safe_dir_part(str(self._cfg.get("module_name") or "")),
+            _safe_dir_part(str(self._cfg.get("test_condition") or "")),
         ) if p]
         parts.append(stamp)
         self._out_dir = out_dir or os.path.join(

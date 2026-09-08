@@ -114,21 +114,37 @@ class FormGrid(QWidget):
         for c in range(self._columns):
             self._grid.setColumnStretch(c, 1)
         self._rows: list[FormRow] = []
+        # 自动排位游标（跨列行会占多格，不能用 len(rows) 反推坐标）
+        self._cursor_r = 0
+        self._cursor_c = 0
 
-    def add(self, row: FormRow, *, column: int | None = None) -> FormRow:
-        """添加一行；column 为空则按序自动排位。"""
-        idx = len(self._rows)
-        r, c = divmod(idx, self._columns)
+    def add(self, row: FormRow, *, column: int | None = None,
+            col_span: int = 1) -> FormRow:
+        """添加一行；column 为空则按游标自动排位。
+
+        col_span>1 时跨多列（放不下自动换行首列）；跨满整行即"单独占一行"。
+        """
+        span = max(1, min(int(col_span), self._columns))
         if column is not None:
-            c = column % self._columns
-        self._grid.addWidget(row, r, c)
+            r, c = self._cursor_r, column % self._columns
+        else:
+            r, c = self._cursor_r, self._cursor_c
+            if span > 1 and c + span > self._columns:
+                r, c = r + 1, 0
+        self._grid.addWidget(row, r, c, 1, span)
         self._rows.append(row)
+        if column is None:
+            c += span
+            if c >= self._columns:
+                r, c = r + 1, 0
+            self._cursor_r, self._cursor_c = r, c
         return row
 
     def add_row(self, label: str, editor: QWidget, **kwargs) -> FormRow:
-        """便捷入口：构造 FormRow 并添加。"""
+        """便捷入口：构造 FormRow 并添加（col_span 透传给 add）。"""
         kwargs.setdefault("label_width", self._label_width)
-        return self.add(FormRow(label, editor, **kwargs))
+        col_span = kwargs.pop("col_span", 1)
+        return self.add(FormRow(label, editor, **kwargs), col_span=col_span)
 
     def rows(self) -> list[FormRow]:
         return list(self._rows)

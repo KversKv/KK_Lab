@@ -60,7 +60,7 @@
 ## 局部坑点
 
 - 样式：`_setup_style = get_page_base_qss() + get_table_qss() + START_BTN_STYLE + page_extra`，色值只取 `ui.theme` token；启停按钮 objectName 固定 `primaryStartBtn`/`stopBtn`。严禁把 `START_BTN_STYLE`（整段带选择器的 QSS）嵌进 `#xxx{...}` 声明块——无效 QSS，样式静默失效。
-- 结果落 `Results/module_test/{module_type}/{芯片}_{模块}_{时间戳}/`（`_runner_base._safe_dir_part` 清洗 Windows 非法字符、空段省略、全空回落纯时间戳）；新增测试项落 `core/module_test/{ldo,dcdc}/items/`。
+- 结果落 `Results/module_test/{module_type}/{芯片}_{模块}_{测试条件}_{时间戳}/`（`_runner_base._safe_dir_part` 清洗 Windows 非法字符、空段省略、全空回落纯时间戳；测试条件 = DUT 配置 `test_condition_edit`（cfg 键 `test_condition`），旧配置无此键回落空段省略）；新增测试项落 `core/module_test/{ldo,dcdc}/items/`。
 - **XLSX 导出**：[core/module_test/xlsx_export.py](../../../core/module_test/xlsx_export.py)（纯函数无 Qt）。截图锚定：`measured["screenshots"]` 的 `Iload (mA)` 键按 CSV 首列数值匹配数据行（行高 `px×0.75+4`），未匹配/单波形（`waveform_png`）堆叠数据区下方每行一张。依赖 openpyxl+Pillow（缺则 RuntimeError 不静默丢图；spec hiddenimports 已加）。入口仅两处：报告页「下载 XLSX」与报告目录 `XLSX/`。
 - **报告内单项 XLSX**：`save_html_report` 自动在报告目录 `XLSX/` 为每个有内容（数据表或截图）项生成 `{item_key}.xlsx`（`export_items_xlsx_dir`，best-effort 不阻断，空项跳过）；`build_report_data(xlsx_map)` 注入 `item.xlsx`，前端渲染「下载 XLSX」按钮与「下载 CSV」并列；单项与整报告导出共用 `_write_item_sheet` 锚定逻辑。
 - **复制表格（含截图）**：`copyTableRich`（`data-tact="copyrich"`，仅含 `kind:image` 列的表渲染按钮）写 `text/html`（`<table>`+`<td><img src=dataURI>`）+ `text/plain`（TSV）——浏览器原生复制会被 Excel/飞书丢弃 button 内图片。**限制**：Excel 粘贴图片必为浮动层（已加行高+图片固定 240×135+列宽锚定防重叠）；飞书云文档粘贴剥离 `<img>` 只留文本（平台限制剪贴板侧无法绕过，toast 已引导走「下载 XLSX」）。
