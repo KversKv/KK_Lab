@@ -17,10 +17,11 @@
 持久化回 ``judge_criteria[item_key]``，与全模块判定表同源）。
 
 ``follow_switch``（可选）：「参数」页顶部 master 滑动开关——「直接使用另一
-测试项的参数」（如 Load Regulation 直接取 Load Capability&Ripple 的扫描值）。
-开启时下方输入全部禁用，``get_override()`` 额外导出 ``follow_switch["key"] =
-True``（关闭时不导出该键，回退默认）；``available=False`` 时开关置灰不可开启
-（调用方据目标测试项是否勾选决定）。
+测试项的测试值」（如 Load Regulation 直接以 Load Capability&Ripple 的实测
+数据生成结果）。开启时下方参数区整块禁用（标签+输入统一置灰），
+``get_override()`` 额外导出 ``follow_switch["key"] = True``（关闭时不导出
+该键，回退默认）；``available=False`` 时开关置灰不可开启（调用方据目标
+测试项是否勾选决定）。
 """
 from __future__ import annotations
 
@@ -102,15 +103,18 @@ class ItemParamsDialog(QDialog):
                 hint.setProperty("role", "caption")
                 hint.setWordWrap(True)
                 params_lay.addWidget(hint)
-            self._on_follow_toggled()
 
+        self._params_host: QWidget | None = None
         if not specs:
             params_lay.addWidget(QLabel("该测试项暂无可设置的参数。"))
         else:
-            grid = QGridLayout()
+            # 参数区整体包一层 host：master 开关开启时整块禁用（标签+输入统一置灰）
+            self._params_host = QWidget()
+            grid = QGridLayout(self._params_host)
             grid.setHorizontalSpacing(10)
             grid.setVerticalSpacing(8)
             grid.setColumnStretch(1, 1)
+            grid.setContentsMargins(0, 0, 0, 0)
             row = 0
             for spec in specs:
                 prefill = self._resolve_prefill(spec, current_override, base_value_fn)
@@ -134,7 +138,9 @@ class ItemParamsDialog(QDialog):
                 grid.addWidget(lbl, row, 0)
                 grid.addWidget(editor, row, 1)
                 row += 1
-            params_lay.addLayout(grid)
+            params_lay.addWidget(self._params_host)
+        # 开关初始态同步须在参数区构建完成后执行（否则编辑器尚未创建）
+        self._on_follow_toggled()
 
         self._judge_tab: JudgeCriteriaTab | None = None
         if item_key and item_key in JUDGE_METRICS:
@@ -234,13 +240,11 @@ class ItemParamsDialog(QDialog):
         lsb_w.valueChanged.connect(_update)
 
     def _on_follow_toggled(self) -> None:
-        """master 开关联动：开启时禁用下方全部参数输入（值仍随 override 导出，
-        运行时由 runner 用目标测试项的生效值整组覆盖）。"""
-        if self._follow_switch is None:
+        """master 开关联动：开启时禁用下方全部参数输入（含标签整块置灰，
+        值仍随 override 导出，运行时由 runner 用目标测试项数据生成结果）。"""
+        if self._follow_switch is None or self._params_host is None:
             return
-        enabled = not self._follow_switch.isChecked()
-        for w in self._editors.values():
-            w.setEnabled(enabled)
+        self._params_host.setEnabled(not self._follow_switch.isChecked())
 
     # ------------------------------------------------------------------ 导出
     def _editor_value(self, spec):

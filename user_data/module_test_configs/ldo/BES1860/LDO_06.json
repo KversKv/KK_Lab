@@ -61,10 +61,11 @@
         "iload_knee_ma": 0.0,
         "vin_v": 4.0,
         "settle_time_s": 0.01,
-        "average_cnt": 1
+        "average_cnt": 1,
+        "use_ripple_sweep": true
       },
       "ldo_line_reg": {
-        "vin_start_v": 2.7,
+        "vin_start_v": 3.0,
         "vin_end_v": 5.0,
         "vin_step_v": 0.2,
         "settle_time_s": 0.01,

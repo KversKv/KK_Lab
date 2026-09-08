@@ -8,6 +8,7 @@ LDO/DCDC 各自的 runner 继承本类，仅绑定 module_type + items 注册表
 """
 from __future__ import annotations
 
+import csv
 import math
 import os
 import re
@@ -19,6 +20,7 @@ from PySide6.QtCore import QThread, Signal
 
 from core.module_test._common import (
     ItemContext,
+    load_reg_summary,
     measure_vout,
     parse_channel,
     settle,
@@ -26,6 +28,7 @@ from core.module_test._common import (
     setup_vout_meter,
     teardown_load,
     vin_current_limit_a,
+    write_csv,
 )
 from core.module_test.judge import evaluate_item
 from core.module_test.report import save_html_report
@@ -315,11 +318,32 @@ class ModuleTestRunner(QThread):
         vout_baseline = self._record_vout_baseline()
         aborted_reason = ""
 
+        # 待回填的 Load Regulation 项（ripple_key -> load_reg item_key）：
+        # 开关开启时跳过本项测量，待 ripple 完成后以其 CSV 数据生成结果
+        pending_follow: dict[str, str] = {}
+
         for idx, item_key in enumerate(selected):
             if self._stop_flag:
                 self._log("[STOP] 收到停止请求，终止后续项。")
                 break
             name, run_fn, needs_scope, _default_checked, _params = self._items_registry[item_key]
+
+            # Load Regulation「直接使用 Load Capability&Ripple 测试值」：
+            # 开关开启且 ripple 项已勾选时直接跳过本项（不进入运行态展示），
+            # 待 ripple 完成后以其实测数据回填本项结果；ripple 未勾选则回退自身参数
+            if (item_key.endswith("_load_reg")
+                    and (self._item_overrides.get(item_key) or {}).get("use_ripple_sweep")):
+                ripple_key = item_key.replace("_load_reg", "_ripple")
+                if ripple_key in selected:
+                    self._log(f"[{idx + 1}/{total}] [SKIP] {name} 已启用「直接使用 Load "
+                              "Capability&Ripple 测试值」，跳过本项测量，"
+                              "结果将在 Load Capability&Ripple 完成后生成。")
+                    pending_follow[ripple_key] = item_key
+                    continue
+                self._log("[WARN] Load Regulation 已开启「直接使用 Load "
+                          "Capability&Ripple 测试值」，但该测试项本次未勾选，"
+                          "回退使用本项自身参数。")
+
             self._log(f"[{idx + 1}/{total}] 执行 {name}（{item_key}）...")
             self.item_started.emit(item_key)
             self._progress(int(idx / total * 100), name)
@@ -329,27 +353,6 @@ class ModuleTestRunner(QThread):
             override = self._item_overrides.get(item_key)
             if override:
                 item_cfg.update(override)
-
-            # Load Regulation「直接使用 Load Capability&Ripple 测试值」：
-            # 开关开启且 ripple 项已勾选时，扫描参数整组改用 ripple 的生效值
-            # （ripple override → 基类 cfg → ParamSpec 默认），未勾选回退本项自身参数
-            if item_key.endswith("_load_reg") and item_cfg.get("use_ripple_sweep"):
-                ripple_key = item_key.replace("_load_reg", "_ripple")
-                if ripple_key in selected:
-                    ripple_override = self._item_overrides.get(ripple_key) or {}
-                    _rn, _rf, _rs, _rc, ripple_params = self._items_registry[ripple_key]
-                    for spec in ripple_params:
-                        item_cfg[spec.key] = ripple_override.get(
-                            spec.key, self._cfg.get(spec.key, spec.default))
-                    self._log(
-                        f"[CFG] {item_key} 直接使用 {ripple_key} 的参数："
-                        f"Iload {item_cfg.get('iload_start_ma', 0):g}~"
-                        f"{item_cfg.get('iload_end_ma', 0):g} mA，"
-                        f"步进 {item_cfg.get('iload_step_ma', 0):g} mA")
-                else:
-                    self._log("[WARN] Load Regulation 已开启「直接使用 Load "
-                              "Capability&Ripple 测试值」，但该测试项本次未勾选，"
-                              "回退使用本项自身参数。")
 
             ctx = self._make_ctx(item_cfg)
             try:
@@ -364,6 +367,15 @@ class ModuleTestRunner(QThread):
             self._result.items.append(result)
             self.item_finished.emit(item_key, result.to_summary())
             self._progress(int((idx + 1) / total * 100), name)
+
+            # 回填：Load Regulation 直接使用 Load Capability&Ripple 数据作为结果
+            if item_key in pending_follow:
+                lr_key = pending_follow.pop(item_key)
+                lr_result = self._build_follow_load_reg_result(lr_key, result)
+                self._apply_judge(lr_key, lr_result)
+                self._result.items.append(lr_result)
+                self.item_finished.emit(lr_key, lr_result.to_summary())
+                self._progress(int((idx + 1) / total * 100), name)
 
             # 逐项 Vout 偏差门禁：与 V0 偏差超 ±20 mV 则停止后续项
             if not self._check_vout_deviation(ctx, vout_baseline, item_key):
@@ -388,3 +400,60 @@ class ModuleTestRunner(QThread):
                   f"FAIL {self._result.summary.get('fail', 0)} / "
                   f"N/A {self._result.summary.get('norec', 0)}")
         self.finished_result.emit(self._result)
+
+    def _build_follow_load_reg_result(self, load_reg_key: str,
+                                      ripple_result: ItemResult) -> ItemResult:
+        """由 Load Capability&Ripple 的实测数据生成 Load Regulation 结果。
+
+        读取 ripple CSV 的 Iload/Vout 前两列重算 load_reg_summary，写独立
+        {load_reg_key}.csv（报告表格/曲线/判断标准照常渲染）；ripple 未产生
+        有效数据（跳过/异常/无 CSV）时回落 N/A 备注结果。
+        """
+        name = self._items_registry[load_reg_key][0]
+        lr_cfg = dict(self._cfg)
+        lr_cfg.update(self._item_overrides.get(load_reg_key) or {})
+        knee_ma = float(lr_cfg.get("iload_knee_ma", 0) or 0)
+
+        rows: list[list[float]] = []
+        csv_src = ripple_result.raw_csv_path
+        if csv_src and os.path.exists(csv_src):
+            try:
+                with open(csv_src, "r", encoding="utf-8", newline="") as f:
+                    for rec in csv.reader(f):
+                        if len(rec) < 2:
+                            continue
+                        try:
+                            rows.append([float(rec[0]), float(rec[1])])
+                        except ValueError:
+                            continue  # 跳过表头/非数值行
+            except OSError:
+                logger.error("读取 Load Capability&Ripple CSV 失败: %s",
+                            csv_src, exc_info=True)
+
+        if not rows:
+            reason = ripple_result.notes or "无 CSV 数据"
+            return ItemResult(item_key=load_reg_key, name=name, passed=None,
+                              notes=f"Load Capability&Ripple 未产生有效数据"
+                                    f"（{reason}），本项无结果")
+
+        csv_path = os.path.join(self._out_dir, f"{load_reg_key}.csv")
+        write_csv(csv_path, ["Iload (mA)", "Vout (mV)"], rows)
+        s = load_reg_summary(rows, knee_ma)
+        measured: dict[str, Any] = {
+            "points": len(rows),
+            "knee_ma": s["knee_ma"],
+            "vout_drop_mv": s["vout_drop_mv"],
+            "load_reg_pct": s["load_reg_pct"],
+            "vout_drop_linear_mv": s["vout_drop_linear_mv"],
+            "load_reg_linear_pct": s["load_reg_linear_pct"],
+        }
+        if self._module_type == "ldo":
+            # LDO 额外指标：全量程负载调整率（mV/A），与 load_line_reg 对齐
+            i_start, i_end = rows[0][0], rows[-1][0]
+            measured["load_reg_mv_per_a"] = round(
+                s["vout_drop_mv"] / max((i_end - i_start) / 1000.0, 1e-6), 4)
+        self._log(f"[FOLLOW] {load_reg_key} 已取 Load Capability&Ripple 实测数据："
+                  f"{len(rows)} 点，Vout 跌落 {s['vout_drop_mv']:.4f} mV")
+        return ItemResult(item_key=load_reg_key, name=name, unit="mV",
+                          passed=None, measured=measured, raw_csv_path=csv_path,
+                          notes="数据取自 Load Capability&Ripple 实测结果")

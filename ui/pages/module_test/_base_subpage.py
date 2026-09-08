@@ -439,9 +439,8 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
                 "label": "直接使用 Load Capability&Ripple 测试值",
                 "available": ripple_key in self.test_plan.selected_keys(),
                 "unavailable_tip": "需先勾选 Load Capability&Ripple 测试项后才能启用",
-                "note": "启用后本项的扫描参数（起始/结束/步进负载、输入偏置、"
-                        "稳定时间、平均次数）直接取 Load Capability&Ripple "
-                        "测试项的设置，下方输入禁用。",
+                "note": "启用后跳过本项测量，直接以 Load Capability&Ripple 的实测"
+                        "数据（Vout~Iload 扫描）生成本项结果；下方输入禁用。",
             }
         dlg = ItemParamsDialog(
             title=f"参数设置 - {name}",
