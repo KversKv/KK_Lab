@@ -1,0 +1,59 @@
+user_data/module_test_configs/ldo/BES1860/LDO_06.json
+  s_bbde46d174c515::t_a1078c088e41f1 52,91,101,111,116,121
+  s_da031b6e342157::t_7f7613ffa52240 1-27,29-33,35-51,53-58,60-66,68-73,75,77-88,90,92-93,95-98,100,102-110,112-115,117-120,122-132
+  s_da031b6e342157::t_14ff7ffa4e4984 28,34,59,67,74,76,89,94,99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "fd5a82e42d1c8fb41371950709feee559d3114fd",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_bbde46d174c515": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a9f7ba8bcb44144ef2165fb",
+        "model": "kimi/kimi-k3"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "display_model_name": "kimi-k3",
+        "runtime_client": "trae-tob-git-ai",
+        "operation_id": "6a9f7ed1bcb44144ef21660f",
+        "session_id": "6a9f7ba8bcb44144ef2165fb",
+        "client_type": "ide",
+        "source_scene": "agent",
+        "tool_use_id": "6a9f7ed1bcb44144ef21660f",
+        "external_session_id": "6a9f7ba8bcb44144ef2165fb",
+        "tool_name": "RunCommand",
+        "edit_kind": "bash"
+      }
+    },
+    "s_da031b6e342157": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a9f72e6bcb44144ef216463",
+        "model": "glm-5.3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "source_scene": "unknown",
+        "operation_id": "6a9f79ffbcb44144ef216597",
+        "tool_id": "Edit",
+        "edit_kind": "file_edit",
+        "session_id": "6a9f72e6bcb44144ef216463",
+        "dedupe_key": "6a9f72e6bcb44144ef216463:6a9f79ffbcb44144ef216597:afterEdit:3a530fda",
+        "tool_type": "agent",
+        "tool_use_id": "6a9f79ffbcb44144ef216597",
+        "client_type": "ide",
+        "external_session_id": "6a9f72e6bcb44144ef216463",
+        "runtime_client": "trae-tob-git-ai"
+      }
+    }
+  }
+}
