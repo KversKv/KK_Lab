@@ -200,6 +200,8 @@ def line_reg(ctx: ItemContext) -> ItemResult:
         setup_source_channel(ctx, vin_ch, vin_start, current_limit=vin_current_limit_a(cfg))
         # 本项全程挂 1mA 轻载（先写电流再开通道，结束后关断）
         setup_load_channel(ctx, iload_ch, initial_current_a=0.001)
+        # 轻载开启后等待建立稳态，再开始扫描
+        settle(ctx, 0.2)
         ctx.log_fn(f"[{item_key}] [TEST] Vout readback via Iload channel CH{iload_ch}.")
     for i, vin in enumerate(points):
         if ctx.stop_flag_fn():
