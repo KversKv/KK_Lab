@@ -1,0 +1,38 @@
+AGENTS.md
+  h_bab89651263f0f 20
+ui/pages/module_test/AGENTS.md
+  s_bbde46d174c515::t_9ba42608666362 21-23,27-30,32-57,61-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "46e3a1593fff2c7dea1fea923d4e6a2c6beaefd4",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_bbde46d174c515": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a9f7ba8bcb44144ef2165fb",
+        "model": "kimi/kimi-k3"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "tool_name": "RunCommand",
+        "session_id": "6a9f7ba8bcb44144ef2165fb",
+        "source_scene": "agent",
+        "edit_kind": "bash",
+        "runtime_client": "trae-tob-git-ai",
+        "client_type": "ide",
+        "external_session_id": "6a9f7ba8bcb44144ef2165fb",
+        "display_model_name": "kimi-k3",
+        "operation_id": "6a9f7ed1bcb44144ef21660f",
+        "tool_use_id": "6a9f7ed1bcb44144ef21660f"
+      }
+    }
+  }
+}
