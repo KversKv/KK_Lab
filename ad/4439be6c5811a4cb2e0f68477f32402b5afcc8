@@ -1,0 +1,92 @@
+debug_config.py
+  h_bab89651263f0f 12
+  s_a94775a7b37c22::t_30c16c7f4492c1 8-11
+core/module_test/report.py
+  s_9617bc39467ba1::t_df65d85220b3c4 672
+  s_9617bc39467ba1::t_890991b5887aaa 649-658
+  s_9617bc39467ba1::t_2edd957c5b394b 11-14
+  s_9617bc39467ba1::t_a16416895c68a5 1430-1453
+core/module_test/_runner_base.py
+  s_9617bc39467ba1::t_0c6abc0d975d3b 16
+  s_9617bc39467ba1::t_daeda5390e8bd3 37
+  s_9617bc39467ba1::t_c490ec942853d8 369-371
+  s_9617bc39467ba1::t_5bda65105a7baf 359
+tests/_report_smoke/report.html
+  s_6b8993e8ac10a2::t_b124484508ab2f 437
+  s_6b8993e8ac10a2::t_982488a9734e8e 605,647-650,661,734-757,1079,1094-1096,1102
+core/module_test/result_model.py
+  s_a94775a7b37c22::t_6306ec179ae8d3 26-27,39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "ad4439be6c5811a4cb2e0f68477f32402b5afcc8",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_6b8993e8ac10a2": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a9f9f70bcb44144ef216815",
+        "model": "glm-5.3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "tool_use_id": "6a9fb3aebcb44144ef216a72",
+        "runtime_client": "trae-tob-git-ai",
+        "edit_kind": "file_edit",
+        "client_type": "ide",
+        "source_scene": "agent",
+        "session_id": "6a9f9f70bcb44144ef216815",
+        "operation_id": "6a9fb3aebcb44144ef216a72",
+        "tool_name": "Edit",
+        "external_session_id": "6a9f9f70bcb44144ef216815",
+        "display_model_name": "GLM-5.3"
+      }
+    },
+    "s_9617bc39467ba1": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a9fb462bcb44144ef216a76",
+        "model": "glm-5.3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "runtime_client": "trae-tob-git-ai",
+        "operation_id": "6a9fb7efbcb44144ef216b98",
+        "session_id": "6a9fb462bcb44144ef216a76",
+        "source_scene": "agent",
+        "edit_kind": "bash",
+        "display_model_name": "GLM-5.3",
+        "client_type": "ide",
+        "tool_use_id": "6a9fb7efbcb44144ef216b98",
+        "tool_name": "RunCommand",
+        "external_session_id": "6a9fb462bcb44144ef216a76"
+      }
+    },
+    "s_a94775a7b37c22": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a9f7f31bcb44144ef216629",
+        "model": "glm-5.3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "operation_id": "6a9fb126bcb44144ef2169ba",
+        "session_id": "6a9f7f31bcb44144ef216629",
+        "source_scene": "agent",
+        "tool_name": "Edit",
+        "external_session_id": "6a9f7f31bcb44144ef216629",
+        "display_model_name": "GLM-5.3",
+        "runtime_client": "trae-tob-git-ai",
+        "edit_kind": "file_edit",
+        "client_type": "ide",
+        "tool_use_id": "6a9fb126bcb44144ef2169ba"
+      }
+    }
+  }
+}
