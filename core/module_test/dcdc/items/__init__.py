@@ -138,10 +138,17 @@ def load_line_reg(ctx: ItemContext) -> ItemResult:
             v = nominal_mv - il * 0.01
             v = mock_jitter(v, 0.002)
         else:
-            set_load_current(ctx, iload_ch, il / 1000.0)
+            apply_load_current(ctx, iload_ch, il / 1000.0, load_state)
             settle(ctx, settle_s)
             v = measure_vout(ctx, count=avg_cnt, settle_s=settle_s,
                              default=nominal_mv / 1000.0) * 1000.0
+            if v < vout_guard_mv:
+                rows.append([il, round(v, 4)])
+                ctx.log_fn(f"[ERROR] [{item_key}] Iload={il}mA 时 Vout={v:.4f} mV，"
+                           f"跌落超过 V0 的 {_LOAD_REG_VOUT_DROP_RATIO:.0%}"
+                           f"（阈值 {vout_guard_mv:.1f} mV），终止本项测试，继续后续测试项。")
+                guard_tripped = True
+                break
         rows.append([il, round(v, 4)])
         ctx.progress_fn(int((i + 1) / len(points) * 100), f"Load reg {il}mA")
     if not ctx.is_mock:
