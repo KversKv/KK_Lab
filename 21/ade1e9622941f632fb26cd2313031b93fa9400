@@ -1,0 +1,37 @@
+user_data/module_test_configs/ldo/BES1860/LDO_06.json
+  s_b9041774cfa75c::t_92a050b78ecfdd 27,80
+  s_b9041774cfa75c::t_e5491cd91391de 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "21ade1e9622941f632fb26cd2313031b93fa9400",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_b9041774cfa75c": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a9fc342bcb44144ef216cdf",
+        "model": "glm-5.3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "runtime_client": "trae-tob-git-ai",
+        "display_model_name": "GLM-5.3",
+        "operation_id": "6a9fc941bcb44144ef216db9",
+        "external_session_id": "6a9fc342bcb44144ef216cdf",
+        "edit_kind": "bash",
+        "session_id": "6a9fc342bcb44144ef216cdf",
+        "client_type": "ide",
+        "tool_use_id": "6a9fc941bcb44144ef216db9",
+        "tool_name": "RunCommand",
+        "source_scene": "agent"
+      }
+    }
+  }
+}
