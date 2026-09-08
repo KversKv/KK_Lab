@@ -1,0 +1,42 @@
+ui/pages/n6705c_power_analyzer/n6705c_datalog_ui.py
+  s_43d510c76946ea::t_1621b96cf479ea 5924,5929-5930
+  s_43d510c76946ea::t_0f9e59954ada09 67
+  s_43d510c76946ea::t_3821625d748259 864
+  s_43d510c76946ea::t_895b544cc91090 5897-5923,5925-5928,5931-5965
+  s_43d510c76946ea::t_21f89a795eb478 6445-6447,6450-6455,6469-6475
+  s_43d510c76946ea::t_a8dd3d6963f509 6776-6783,6785
+  s_43d510c76946ea::t_9a9ce6ccd8788a 2037
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "4946f4db787714a5a6bb3160111dfeeb35d94116",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_43d510c76946ea": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a9fb99dbcb44144ef216bc3",
+        "model": "glm-5.3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "runtime_client": "trae-tob-git-ai",
+        "edit_kind": "bash",
+        "session_id": "6a9fb99dbcb44144ef216bc3",
+        "source_scene": "agent",
+        "tool_use_id": "6a9fc062bcb44144ef216c9f",
+        "operation_id": "6a9fc062bcb44144ef216c9f",
+        "tool_name": "RunCommand",
+        "client_type": "ide",
+        "display_model_name": "GLM-5.3",
+        "external_session_id": "6a9fb99dbcb44144ef216bc3"
+      }
+    }
+  }
+}
