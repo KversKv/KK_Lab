@@ -1,0 +1,44 @@
+core/module_test/_runner_base.py
+  s_da031b6e342157::t_e935d9d52caa66 333-353
+ui/pages/module_test/_base_subpage.py
+  s_da031b6e342157::t_d1631e89ec3bc9 432-445,454
+ui/pages/module_test/dialogs/item_params_dialog.py
+  s_da031b6e342157::t_bbdecaa5ba6417 278-282
+  s_da031b6e342157::t_539cad01c5c475 18-23,31-32,106
+  s_da031b6e342157::t_2e4fb7dcdd53b5 58-59,68-69,80-105
+  s_da031b6e342157::t_364d3fb2faae74 236-244
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "82125d184547a4622658181a2e22296c837ea912",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_da031b6e342157": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a9f72e6bcb44144ef216463",
+        "model": "glm-5.3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "source_scene": "unknown",
+        "runtime_client": "trae-tob-git-ai",
+        "external_session_id": "6a9f72e6bcb44144ef216463",
+        "client_type": "ide",
+        "dedupe_key": "6a9f72e6bcb44144ef216463:6a9f79ffbcb44144ef216597:afterEdit:3a530fda",
+        "tool_type": "agent",
+        "operation_id": "6a9f79ffbcb44144ef216597",
+        "session_id": "6a9f72e6bcb44144ef216463",
+        "tool_use_id": "6a9f79ffbcb44144ef216597",
+        "edit_kind": "file_edit",
+        "tool_id": "Edit"
+      }
+    }
+  }
+}
