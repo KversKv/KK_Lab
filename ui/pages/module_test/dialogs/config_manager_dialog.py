@@ -231,6 +231,7 @@ class ConfigManagerDialog(QDialog):
             "vin_channel": "CH 1",
             "vout_channel": "CH 2",
             "iload_channel": "CH 3",
+            "force_channel": "CH 2",
             "vout_nominal_mv": 1800 if self._module_type == "ldo" else 1200,
             "device_addr": "0x00",
             "width_flag": int(I2CWidthFlag.BIT_10),

@@ -75,9 +75,14 @@ class DutConfigPanel(QWidget):
 
         self.vout_ch_combo = self._make_combo([f"CH {i}" for i in range(1, 5)])
         self.vout_ch_combo.setCurrentIndex(1)
-        # 仅 N6705C 方式需要 Vout 通道（示波器方式走 DUT 配置的示波器通道）
-        self._row_vout = grid.add_row("Vout 通道", self.vout_ch_combo)
+        # 仅 N6705C 方式需要 Vout 电压测量通道（scope 方式走示波器通道）
+        self._row_vout = grid.add_row("Vout CH", self.vout_ch_combo)
         self._on_volt_method_changed(self.volt_method_combo.currentIndex())
+
+        # quiescent 静态电流差分测量的 Vout 外供源通道（与测量方式无关）
+        self.force_ch_combo = self._make_combo([f"CH {i}" for i in range(1, 5)])
+        self.force_ch_combo.setCurrentIndex(1)
+        grid.add_row("Force CH", self.force_ch_combo)
 
         self.iload_ch_combo = self._make_combo([f"CH {i}" for i in range(1, 5)])
         self.iload_ch_combo.setCurrentIndex(2)
@@ -151,7 +156,7 @@ class DutConfigPanel(QWidget):
         self._temp_panel.setVisible(checked)
 
     def _on_volt_method_changed(self, _index: int) -> None:
-        """电压测试方式联动：仅 N6705C 方式显示 Vout 通道行。"""
+        """电压测试方式联动：仅 N6705C 方式显示 Vout CH 行。"""
         self._row_vout.setVisible(self.volt_method_combo.currentData() != "scope")
 
     # ------------------------------------------------------------------ 校验

@@ -245,7 +245,9 @@ def quiescent(ctx: ItemContext) -> ItemResult:
     item_key = "dcdc_quiescent"
     cfg = ctx.config
     vin_ch = parse_channel(cfg.get("vin_channel", 1))
-    vout_src_ch = parse_channel(cfg.get("vout_channel", 2))
+    # 外供源专用 force_channel（旧配置无此键回落 vout_channel）
+    vout_src_ch = parse_channel(cfg.get("force_channel",
+                                        cfg.get("vout_channel", 2)))
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
     vin_v = float(cfg.get("vin_v", 3.8))
     vout_nom = float(cfg.get("vout_nominal_mv", 1200)) / 1000.0
