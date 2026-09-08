@@ -345,6 +345,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
         """Runner 确认请求（前置校验失败 / 输出饱和）：弹窗让用户决定是否继续。
 
         Runner 阻塞等待应答；选“继续”继续扫描，选“中止”或按 Esc 保持终止行为。
+        倒计时 5s 未选择时默认选择“继续”。
         """
         box = QMessageBox(self)
         box.setWindowTitle(title)
@@ -355,6 +356,24 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
         box.setDefaultButton(abort_btn)
         box.setEscapeButton(abort_btn)
         apply_qss(box, "dialog")
+
+        # 倒计时 5s：未选择时自动点击“继续”；用户任意操作（含 Esc）即停表
+        countdown_left = 5
+
+        def _on_countdown_tick() -> None:
+            nonlocal countdown_left
+            countdown_left -= 1
+            if countdown_left <= 0:
+                continue_btn.click()
+                return
+            continue_btn.setText(f"继续 ({countdown_left}s)")
+
+        countdown_timer = QTimer(box)
+        countdown_timer.setInterval(1000)
+        countdown_timer.timeout.connect(_on_countdown_tick)
+        box.finished.connect(countdown_timer.stop)
+        continue_btn.setText(f"继续 ({countdown_left}s)")
+        countdown_timer.start()
         box.exec()
         if self._runner is not None:
             self._runner.respond_confirm(box.clickedButton() is continue_btn)
