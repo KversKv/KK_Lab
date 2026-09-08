@@ -10,11 +10,12 @@ from __future__ import annotations
 import os
 
 from core.module_test._common import (
-    ItemContext, linspace, load_reg_summary, measure_avg, measure_vout,
-    mock_jitter, parse_channel, restore_vin, run_line_transient,
+    ItemContext, apply_load_current, linspace, load_reg_summary, measure_avg,
+    measure_vout, mock_jitter, parse_channel, restore_vin, run_line_transient,
     run_load_capability_ripple, run_load_transient, run_vout_scan,
-    set_load_current, settle, setup_load_channel, setup_source_channel,
-    setup_vout_meter, teardown_load, vin_current_limit_a, write_csv,
+    safe_measure, set_load_current, settle, setup_load_channel,
+    setup_source_channel, setup_vout_meter, teardown_load, vin_current_limit_a,
+    write_csv,
 )
 from core.module_test.result_model import ItemResult
 from core.module_test.param_spec import (
@@ -25,6 +26,9 @@ from core.module_test.param_spec import (
 from log_config import get_logger
 
 logger = get_logger(__name__)
+
+# Load Regulation Vout 跌落保护比例：Vout 低于 V0×(1-比例) 时终止本项（继续后续项）
+_LOAD_REG_VOUT_DROP_RATIO = 0.30
 
 
 def _skipped(item_key: str, name: str, reason: str) -> ItemResult:
@@ -126,11 +130,15 @@ def load_line_reg(ctx: ItemContext) -> ItemResult:
     avg_cnt = int(cfg.get("average_cnt", 1))
     settle_s = float(cfg.get("settle_time_s", 0.01))
     knee_ma = float(cfg.get("iload_knee_ma", 0) or 0)
+    vout_guard_mv = nominal_mv * (1.0 - _LOAD_REG_VOUT_DROP_RATIO)
+    guard_tripped = False
 
     if not ctx.is_mock:
         setup_source_channel(ctx, vin_ch, vin_v, current_limit=vin_current_limit_a(cfg))
         setup_vout_meter(ctx)
-        setup_load_channel(ctx, iload_ch, initial_current_a=i_start / 1000.0)
+        setup_load_channel(ctx, iload_ch, initial_current_a=max(i_start, 0.001) / 1000.0)
+    # 0mA 点走关断而非设 0mA（硬红线 12）；复用 ripple 参数时起始可能为 0
+    load_state = {"on": not ctx.is_mock}
     for i, il in enumerate(points):
         if ctx.stop_flag_fn():
             break
@@ -163,7 +171,10 @@ def load_line_reg(ctx: ItemContext) -> ItemResult:
                 "vout_drop_linear_mv": s["vout_drop_linear_mv"],
                 "load_reg_linear_pct": s["load_reg_linear_pct"]}
     return ItemResult(item_key=item_key, name="Load Regulation", unit="mV",
-                      passed=None, measured=measured, raw_csv_path=csv_path)
+                      passed=False if guard_tripped else None,
+                      notes=(f"Vout 跌落超过 V0 的 {_LOAD_REG_VOUT_DROP_RATIO:.0%}，"
+                             f"提前终止扫描") if guard_tripped else None,
+                      measured=measured, raw_csv_path=csv_path)
 
 
 def line_reg(ctx: ItemContext) -> ItemResult:
@@ -174,16 +185,22 @@ def line_reg(ctx: ItemContext) -> ItemResult:
     vin_end = float(cfg.get("vin_end_v", 4.2))
     vin_step = float(cfg.get("vin_step_v", 0.2))
     vin_ch = parse_channel(cfg.get("vin_channel", 1))
+    iload_ch = parse_channel(cfg.get("iload_channel", 3))
     nominal_mv = float(cfg.get("vout_nominal_mv", 1200))
+
+    def _scan_vout() -> float:
+        # 与 Output Voltage Scan 一致：Vout 直接读 Iload 负载通道电压（CCLoad 通道并接 DUT 输出）
+        return safe_measure(ctx.n6705c, "measure_voltage", iload_ch, 0.0)
 
     points = linspace(vin_start, vin_end, vin_step)
     rows: list[list] = []
-    avg_cnt = int(cfg.get("average_cnt", 1))
     settle_s = float(cfg.get("settle_time_s", 0.01))
 
     if not ctx.is_mock:
         setup_source_channel(ctx, vin_ch, vin_start, current_limit=vin_current_limit_a(cfg))
-        setup_vout_meter(ctx)
+        # 本项全程挂 1mA 轻载（先写电流再开通道，结束后关断）
+        setup_load_channel(ctx, iload_ch, initial_current_a=0.001)
+        ctx.log_fn(f"[{item_key}] [TEST] Vout readback via Iload channel CH{iload_ch}.")
     for i, vin in enumerate(points):
         if ctx.stop_flag_fn():
             break
@@ -196,11 +213,11 @@ def line_reg(ctx: ItemContext) -> ItemResult:
             except Exception:  # noqa: BLE001
                 logger.error("set Vin failed", exc_info=True)
             settle(ctx, settle_s)
-            v = measure_vout(ctx, count=avg_cnt, settle_s=settle_s,
-                             default=nominal_mv / 1000.0) * 1000.0
+            v = _scan_vout() * 1000.0
         rows.append([vin, round(v, 4)])
         ctx.progress_fn(int((i + 1) / len(points) * 100), f"Line reg {vin}V")
     if not ctx.is_mock:
+        teardown_load(ctx, iload_ch)
         restore_vin(ctx, vin_ch, float(cfg.get("vin_v", 3.8)))
     csv_path = os.path.join(ctx.out_dir, f"{item_key}.csv")
     write_csv(csv_path, ["Vin (V)", "Vout (mV)"], rows)
