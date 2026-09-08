@@ -1,0 +1,36 @@
+user_data/n6705c/window_geometry.json
+  s_43d510c76946ea::t_1d6e3a3a0442ed 2-3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "b157639a05d20611e1f55796eaca11cf2b55b10d",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_43d510c76946ea": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a9fb99dbcb44144ef216bc3",
+        "model": "glm-5.3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "edit_kind": "bash",
+        "external_session_id": "6a9fb99dbcb44144ef216bc3",
+        "display_model_name": "GLM-5.3",
+        "source_scene": "agent",
+        "tool_use_id": "6a9fc062bcb44144ef216c9f",
+        "operation_id": "6a9fc062bcb44144ef216c9f",
+        "runtime_client": "trae-tob-git-ai",
+        "session_id": "6a9fb99dbcb44144ef216bc3",
+        "tool_name": "RunCommand",
+        "client_type": "ide"
+      }
+    }
+  }
+}
