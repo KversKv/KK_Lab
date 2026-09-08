@@ -8,6 +8,7 @@ import csv
 import math
 import os
 import random
+import statistics
 import time
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -517,6 +518,55 @@ _PRECHECK_DIFF_TOL = 0.5
 _TAIL_STOP_POINTS = 5
 _TAIL_STOP_SPAN = 0.002  # V
 
+# 有效线性区间判据（run_vout_scan）：同步自 PMU 的权威实现
+# ui/pages/pmu_test/pmu_output_voltage.py（以 PMU 为准，改动须自 PMU 同步）
+_VALID_STEP_RATIO = 0.85
+_VALID_STEP_CONSEC = 2
+
+
+def _compute_valid_range(voltages: list[float]) -> tuple[int, int]:
+    """计算有效线性区间索引 (low_valid, high_valid)。
+
+    算法与 PMU OutputVoltageTestThread._compute_valid_range 保持一致：
+    以相邻压差的中位数为参考步进（抗毛刺/饱和段污染），双向剔除死区/
+    饱和段：低端取首个连续 N 个正常步进段的前一保留点（基线值 = 线性段
+    起点），高端取首个连续 N 点跌破参考步进指定比例处的前一保留点
+    （线性段终点）。MSB 位加权不匹配等孤立毛刺（如 0x80 处约 2 倍步进
+    的单点跳变）不构成连续跌破而被保留；平坦段（压差≈0）同样低于阈值，
+    故本判据天然覆盖旧平坦检测。
+    """
+    n = len(voltages)
+    if n < 3:
+        return 0, n - 1
+    diffs = [abs(voltages[k + 1] - voltages[k]) for k in range(n - 1)]
+    ref = statistics.median(diffs)
+    if ref <= 0:
+        return 0, n - 1
+    threshold = ref * _VALID_STEP_RATIO
+    m = len(diffs)
+
+    # 低端：首个连续 N 个正常步进的起点即死区末点（其值 = 线性段起点）
+    low_valid = 0
+    run = 0
+    for i in range(m):
+        run = run + 1 if diffs[i] >= threshold else 0
+        if run >= _VALID_STEP_CONSEC:
+            low_valid = i - _VALID_STEP_CONSEC + 1
+            break
+
+    # 高端：low_valid 之后首个连续 N 点跌破处的前一保留点为线性段终点
+    high_valid = n - 1
+    run = 0
+    for i in range(low_valid, m):
+        run = run + 1 if diffs[i] < threshold else 0
+        if run >= _VALID_STEP_CONSEC:
+            high_valid = i - _VALID_STEP_CONSEC + 1
+            break
+
+    if high_valid < low_valid:
+        return 0, n - 1
+    return low_valid, high_valid
+
 
 def _precheck_first_points(voltages: list[float]) -> tuple[bool, str]:
     """前 N 点前置校验：首尾差值过小 / 步进不等差（波动>50%）/ 读数异常时返回 (False, 原因)。
@@ -568,7 +618,8 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
       3. 写 min_code 后等待输出稳定（最近 3 次电压极差 ≤ 5mV）；
       4. 逐挡（min_code..max_code，步进 1）写寄存器 → 测电压；前 N 点前置
          校验失败 / 尾部饱和时经 confirm_fn 弹窗交由用户决定是否继续；
-      5. 用饱和阈值 0.001V 剔除首尾平台，取有效段算范围/步进/线性度；
+      5. 以参考步进判据双向剔除死区/饱和段（_compute_valid_range），
+         取有效段算范围/步进/线性度；
       6. 结束（含停止/异常路径）在 finally 兜底恢复寄存器默认值。
     """
     from core.module_test.result_model import ItemResult
@@ -772,33 +823,14 @@ def run_vout_scan(ctx: "ItemContext", item_key: str, name: str) -> "ItemResult":
             ctx.progress_fn(int((idx + 1) / total_points * 100), f"Vout scan 0x{code:X}")
             code += 1
 
-        # 饱和阈值剔除首尾平台，取有效段
-        sat_threshold = 0.001
+        # 有效线性区间：参考步进判据双向剔除死区/饱和段（与 PMU 同步）
         min_voltage = max_voltage = 0.0
         valid_min_code = valid_max_code = 0
         step_voltage_mv = 0.0
         step_error_mv = 0.0
         linearity_pct = 0.0
         if len(voltages) >= 2 and not precheck_failed:
-            low_valid = 0
-            for k in range(1, len(voltages)):
-                if abs(voltages[k] - voltages[k - 1]) > sat_threshold:
-                    low_valid = k
-                    break
-            else:
-                low_valid = len(voltages) - 1
-
-            high_valid = len(voltages) - 1
-            for k in range(len(voltages) - 1, 0, -1):
-                if abs(voltages[k] - voltages[k - 1]) > sat_threshold:
-                    high_valid = k - 1
-                    break
-            else:
-                high_valid = 0
-
-            if high_valid <= low_valid:
-                high_valid = len(voltages) - 1
-                low_valid = 0
+            low_valid, high_valid = _compute_valid_range(voltages)
 
             valid_voltages = voltages[low_valid:high_valid + 1]
             valid_codes = codes[low_valid:high_valid + 1]

@@ -113,8 +113,8 @@ run_case(
     v_ramp,
     lambda n, r, calls, i2c, logs: (
         assert_eq(calls, [], "confirm 调用"),
-        assert_eq(r.measured["valid_min_code"], 1, "valid_min"),
-        assert_eq(r.measured["valid_max_code"], 29, "valid_max"),
+        assert_eq(r.measured["valid_min_code"], 0, "valid_min"),
+        assert_eq(r.measured["valid_max_code"], 30, "valid_max"),
         assert_eq(i2c.writes[-1][2], 0x1234, "恢复默认值"),
     ),
 )
@@ -126,8 +126,8 @@ run_case(
     v_prefix_flat,
     lambda n, r, calls, i2c, logs: (
         assert_eq(calls, ["前置校验失败"], "confirm 调用"),
-        assert_eq(r.measured["valid_min_code"], 6, "valid_min（剔除前缀）"),
-        assert_eq(r.measured["valid_max_code"], 29, "valid_max"),
+        assert_eq(r.measured["valid_min_code"], 5, "valid_min（剔除前缀）"),
+        assert_eq(r.measured["valid_max_code"], 30, "valid_max"),
         assert_eq(r.measured["points"], 31, "CSV 保留全部点"),
         assert_eq(i2c.writes[-1][2], 0x1234, "恢复默认值"),
     ),
@@ -154,7 +154,7 @@ run_case(
     v_tail_sat,
     lambda n, r, calls, i2c, logs: (
         assert_eq(calls, ["输出饱和确认"], "confirm 调用"),
-        assert_eq(r.measured["valid_max_code"], 14, "valid_max（截断平台）"),
+        assert_eq(r.measured["valid_max_code"], 15, "valid_max（截断平台）"),
         assert_eq(r.measured["points"], 21, "CSV 保留全部点"),
         assert_eq(i2c.writes[-1][2], 0x1234, "恢复默认值"),
     ),
@@ -167,7 +167,7 @@ run_case(
     v_tail_sat,
     lambda n, r, calls, i2c, logs: (
         assert_eq(calls, ["输出饱和确认"], "confirm 仅一次"),
-        assert_eq(r.measured["valid_max_code"], 15, "valid_max（后处理剔除平坦）"),
+        assert_eq(r.measured["valid_max_code"], 16, "valid_max（后处理剔除平坦）"),
         assert_eq(r.measured["points"], 31, "扫描完整"),
         assert_eq(i2c.writes[-1][2], 0x1234, "恢复默认值"),
     ),

@@ -19,7 +19,7 @@ UI 只拿路径打开，不做 IO——本模块纯字符串生成，禁依赖 Q
     table:   {file,rows,columns:[{key,label,unit,align,precision,kind:image?,
               fmt:vbit?}],   # kind:image 列单元格 = attachments 下标（截图入表末列）；
               data[[...]],   # fmt:vbit 列单元格仍为十进制 int，前端按 Vbit 进制切换显示
-              rules:[{column,op:gt|lt|abs_gt|eq|outlier|mean_pct,value,k,level:warn|fail,hint}
+              rules:[{column,op:gt|lt|abs_gt|eq|outlier|mean_pct|dev_gt,value,k,ref,level:warn|fail,hint}
                      | {type:constant,level,hint}]},
     attachments: [{type:image,label,full(dataURI)}]
   }]
@@ -66,6 +66,10 @@ JSON 经 ``json.dumps`` 并把 ``</`` 转义为 ``<\\/`` 防 script 逃逸。
     右对齐；Vout Scan 异常 diff 柱标红（bar_anomaly，mean_pct 与表格规则一致）；
     右 Y 轴标题与图区留 26px 边距（左轴 16px）；移除无用的规格带
     （spec_band/spec.spec_band 渲染与 chart_band 切换按钮一并删除）。
+18. 判定修订（2026-09-08）：Vout Scan 异常判定基线由全段 Diff 均值（mean_pct）
+    改为后端给定的有效段平均步进（新增 dev_gt 规则，容差 = 5% 平均步进）
+    ——死区/饱和平台会拉偏全段均值，曾致整列正常步进全部误报；Avg Step
+    指标标签注明计算范围（有效段 Vbit 区间）。
 
 ============================= 已知限制 =============================
 - Chrome 打印无法用 CSS 计数器输出"第 X/Y 页"，页脚仅含机密标识与生成时间；
@@ -237,6 +241,20 @@ def _col_label(table: dict[str, Any], key: str | None) -> tuple[str, str]:
     return "", ""
 
 
+def _vout_step_rule_params(it: ItemResult) -> tuple[float, float] | None:
+    """Vout Scan 异常判定参数 (参考步进, 容差)。
+
+    基线必须取有效段平均步进（step_mv）：全段算术均值会被死区/饱和平台
+    拉偏（曾致整列正常步进全部误报为异常）。容差 = 5% 平均步进（实测
+    线性段步进噪声约 ±1.5%，5% 兼顾抗噪与捕捉饱和起始点的步进压缩）。
+    """
+    m = it.measured if isinstance(it.measured, dict) else {}
+    step_mv = _num(m.get("step_mv"))
+    if step_mv is None or abs(step_mv) <= 1e-9:
+        return None
+    return step_mv, 0.05 * abs(step_mv)
+
+
 def _build_rules(it: ItemResult, table: dict[str, Any] | None) -> list[dict[str, Any]]:
     """按测试项生成异常检测规则（JS 侧求值，对缺失列容错）。"""
     if not table:
@@ -245,9 +263,13 @@ def _build_rules(it: ItemResult, table: dict[str, Any] | None) -> list[dict[str,
     rules: list[dict[str, Any]] = []
     if key.endswith("vout_scan"):
         diff = _pick_col(table, "diff")
-        if diff:
-            rules.append({"column": diff, "op": "mean_pct", "value": 0.07,
-                          "level": "warn", "hint": "步进偏差超过有效数据均值的 7%"})
+        params = _vout_step_rule_params(it)
+        if diff and params is not None:
+            step_mv, tol = params
+            rules.append({"column": diff, "op": "dev_gt",
+                          "ref": step_mv, "value": tol,
+                          "level": "warn",
+                          "hint": "步进偏离有效段平均步进超出容差（死区/饱和/孤立毛刺）"})
     elif key.endswith("efficiency"):
         eff = _pick_col(table, "eff", "η")
         if eff:
@@ -292,11 +314,15 @@ def _build_metrics(it: ItemResult, table: dict[str, Any] | None) -> list[dict[st
 
     if key.endswith("vout_scan"):
         vs = col_values(1)
+        # Avg Step 计算范围 = 有效线性段（与 step_mv 口径一致），标签注明 Vbit 区间
+        vmin, vmax = _num(m.get("valid_min_code")), _num(m.get("valid_max_code"))
+        step_label = ("Avg Step" if vmin is None or vmax is None
+                      else f"Avg Step (Vbit {int(vmin):#04x}~{int(vmax):#04x})")
         out = [
             _mk("default_mv", "Default", m.get("default_voltage_mv"), "mV"),
             _mk("vout_min", "Min", m.get("vout_min_mv") or (min(vs) if vs else None), "mV"),
             _mk("vout_max", "Max", m.get("vout_max_mv") or (max(vs) if vs else None), "mV"),
-            _mk("step_mv", "Avg Step", m.get("step_mv"), "mV"),
+            _mk("step_mv", step_label, m.get("step_mv"), "mV"),
         ]
     elif key.endswith("load_reg"):
         # 双区间指标：线性区（≤拐点）与全段，标签标明电流条件
@@ -443,8 +469,12 @@ def _build_charts(it: ItemResult, table: dict[str, Any] | None) -> list[dict[str
         series = [s for s in (ser(yk), ser(diff, "bar", "right")) if s]
         spec = _xy(xk, series, t, "Vout vs Vbit",
                    mark_extrema=True, zoom=True)
-        if diff:  # 异常 diff 柱标红（与表格 mean_pct 规则一致：偏差 > 均值×7%）
-            spec["bar_anomaly"] = {"key": diff, "op": "mean_pct", "value": 0.07}
+        if diff:  # 异常 diff 柱标红（与表格 dev_gt 规则一致：偏离有效段平均步进超容差）
+            params = _vout_step_rule_params(it)
+            if params is not None:
+                step_mv, tol = params
+                spec["bar_anomaly"] = {"key": diff, "op": "dev_gt",
+                                       "ref": step_mv, "value": tol}
         charts.append(spec)
     elif key.endswith("efficiency"):
         xk = _pick_col(t, "iload", fallback=0)
@@ -1252,7 +1282,7 @@ function badge(v, lg) {
 }
 
 /* ================================================================
- * 规则引擎 —— 表格异常检测（gt/lt/abs_gt/eq/outlier/constant）
+ * 规则引擎 —— 表格异常检测（gt/lt/abs_gt/eq/outlier/mean_pct/dev_gt/constant）
  * ================================================================ */
 function evalRules(table) {
   const res = {cells:{}, rows:{}, count:0, banners:[]};
@@ -1294,6 +1324,10 @@ function evalRules(table) {
       if (mad < 1e-12) continue;
       thresh = {med, lim: (rule.k || 5) * mad};
     }
+    else if (rule.op === "dev_gt") {  /* 偏离后端给定参考值超出容差 */
+      if (typeof rule.ref !== "number" || typeof rule.value !== "number") continue;
+      thresh = {ref: rule.ref, lim: rule.value};
+    }
     table.data.forEach((row, ri) => {
       const v = row[ci]; if (typeof v !== "number") return;
       let hit = false;
@@ -1304,6 +1338,7 @@ function evalRules(table) {
         case "eq": hit = v === thresh; break;
         case "mean_pct": hit = Math.abs(v - thresh.mean) > thresh.lim; break;
         case "outlier": hit = Math.abs(v - thresh.med) > thresh.lim; break;
+        case "dev_gt": hit = Math.abs(v - thresh.ref) > thresh.lim; break;
       }
       if (hit) flag(ri, ci, rule.level || "warn");
     });
@@ -1697,7 +1732,7 @@ function drawChart(box) {
     const yFn = s.axis === "right" && syR ? syR : syL;
     if (s.type === "bar") {
       const bw = Math.max(2, Math.min(18, iw / Math.max(pts.length, 1) * 0.5));
-      /* 异常柱标红：bar_anomaly 规则（mean_pct=均值×pct / outlier=k×MAD / gt） */
+      /* 异常柱标红：bar_anomaly 规则（mean_pct=均值×pct / outlier=k×MAD / dev_gt=偏离参考值 / gt） */
       let barThresh = null;
       const ba = spec.bar_anomaly;
       if (ba && ba.key === s.key && pts.length > 3) {
@@ -1712,11 +1747,15 @@ function drawChart(box) {
           const mads = vals.map(v => Math.abs(v - med)).sort((a, b) => a - b);
           const mad = mads[Math.floor(mads.length / 2)];
           if (mad >= 1e-12) barThresh = {med, lim:(ba.k || 5) * mad, op:"outlier"};
+        } else if (ba.op === "dev_gt") {
+          if (typeof ba.ref === "number" && typeof ba.value === "number")
+            barThresh = {ref: ba.ref, lim: ba.value, op:"dev_gt"};
         } else if (ba.op === "gt") barThresh = {value:ba.value, op:"gt"};
       }
       const barBad = v => barThresh &&
         (barThresh.op === "gt" ? v > barThresh.value
          : barThresh.op === "mean_pct" ? Math.abs(v - barThresh.mean) > barThresh.lim
+         : barThresh.op === "dev_gt" ? Math.abs(v - barThresh.ref) > barThresh.lim
          : Math.abs(v - barThresh.med) > barThresh.lim);
       pts.forEach(p => {
         const y0 = yFn(Math.max(0, yR ? yR[0] : yL[0])), y1 = yFn(p[1]);
