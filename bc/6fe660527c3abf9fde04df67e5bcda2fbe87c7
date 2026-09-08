@@ -1,0 +1,38 @@
+core/module_test/dcdc/items/__init__.py
+  s_5dd569d414cab2::t_db2d9ed0327882 141,145-151
+core/module_test/ldo/items/__init__.py
+  s_5dd569d414cab2::t_47f3dd54e6d1a7 68,72-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "bc6fe660527c3abf9fde04df67e5bcda2fbe87c7",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_5dd569d414cab2": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a9f7fd6bcb44144ef21666b",
+        "model": "glm-5.3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "operation_id": "6a9f8187bcb44144ef2166d9",
+        "runtime_client": "trae-tob-git-ai",
+        "external_session_id": "6a9f7fd6bcb44144ef21666b",
+        "session_id": "6a9f7fd6bcb44144ef21666b",
+        "tool_use_id": "6a9f8187bcb44144ef2166d9",
+        "tool_name": "Edit",
+        "display_model_name": "GLM-5.3",
+        "edit_kind": "file_edit",
+        "source_scene": "agent",
+        "client_type": "ide"
+      }
+    }
+  }
+}
