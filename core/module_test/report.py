@@ -8,7 +8,10 @@ UI 只拿路径打开，不做 IO——本模块纯字符串生成，禁依赖 Q
 {
   "meta":    {report_title, module_type, chip, operator, temperature_c,
               start_time, end_time, duration_s, generated_at(带时区), sw_version,
-              instruments[], environment{}},          # 缺字段一律 None → UI 显示 "—"
+              instruments[], environment{},
+              item_timing[{index,item_key,title,duration_s}]},
+              # item_timing 仅 debug_config.REPORT_ITEM_TIMING=True 时注入（性能调试）；
+              # 其余缺字段一律 None → UI 显示 "—"
   "summary": {verdict: PASS|FAIL|N/A, pass, fail, warn, na, total},
   "items": [{
     index, item_key, title, verdict, unit, note,
@@ -90,6 +93,8 @@ from datetime import datetime
 from typing import Any
 
 from log_config import get_logger
+
+import debug_config
 
 from core.module_test.result_model import ItemResult, ModuleTestResult
 from core.module_test._common import load_reg_summary
@@ -641,6 +646,16 @@ def build_report_data(result: ModuleTestResult,
             it_dict["table"]["rules"] = rules
 
     generated = datetime.now().astimezone().isoformat(sep=" ", timespec="seconds")
+    # 各测试项耗时汇总（仅 debug_config.REPORT_ITEM_TIMING 开启时注入；性能调试用）
+    item_timing = None
+    if debug_config.REPORT_ITEM_TIMING:
+        item_timing = [{
+            "index": i,
+            "item_key": it.item_key,
+            "title": it.name,
+            "duration_s": it.duration_s,
+        } for i, it in enumerate(result.items, 1)
+            if it.duration_s is not None] or None
     return {
         "meta": {
             "report_title": f"Module Test Report — {module}",
@@ -654,6 +669,7 @@ def build_report_data(result: ModuleTestResult,
             "start_time": result.started_at or None,
             "end_time": result.finished_at or None,
             "duration_s": duration,
+            "item_timing": item_timing,
             "generated_at": generated,
             "sw_version": _SW_VERSION,
             "hw_setup": None,
@@ -1411,6 +1427,30 @@ function renderMeta() {
       pair(esc(i.name || "Instrument"),
         [i.model, i.sn, i.cal_due].filter(Boolean).join(" · ") || DASH)).join("")
       : pair("Instruments", DASH)) + "</dl>";
+  // 各测试项耗时汇总（仅 REPORT_DATA.meta.item_timing 存在时渲染；开发者性能调试用）
+  const tm = m.item_timing;
+  if (tm && tm.length) {
+    const zh = S.lang === "zh";
+    const tot = tm.reduce((a, r) => a + (r.duration_s || 0), 0);
+    const rows = tm.map(r => "<tr><td class='num' style='color:var(--ink-3)'>" +
+        r.index + "</td><td>" + esc(r.title) +
+        "<div class='mono' style='font-size:10.5px;color:var(--ink-3)'>" +
+        esc(r.item_key) + "</div></td>" +
+        "<td class='num'>" + fmt(r.duration_s, 1) + "</td>" +
+        "<td class='num'>" + (tot > 0
+          ? (100 * (r.duration_s || 0) / tot).toFixed(1) + "%" : DASH) +
+        "</td></tr>").join("");
+    html += '<h3 class="block-title" style="margin:12px 0 6px">' +
+        (zh ? "各测试项耗时" : "Item Timing") + '</h3>' +
+        '<div class="tbl-wrap"><table class="tbl compact"><thead><tr>' +
+        ["#", zh ? "测试项" : "Item", zh ? "耗时 (s)" : "Duration (s)", "%"]
+          .map(h => "<th scope='col'>" + esc(h) + "</th>").join("") +
+        "</tr></thead><tbody>" + rows +
+        "<tr style='font-weight:600'><td></td><td>" + (zh ? "合计" : "Total") +
+        "</td><td class='num'>" + fmt(tot, 1) + "</td>" +
+        "<td class='num'>100.0%</td></tr>" +
+        "</tbody></table></div>";
+  }
   $("#metaBody").innerHTML = html;
 }
 function metricText(it) {

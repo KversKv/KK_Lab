@@ -23,6 +23,8 @@ class ItemResult:
         waveform_png: 波形截图 PNG 路径（None 表示无波形）。
         notes: 备注/异常说明。
         ts: 完成时间戳（ISO 字符串）。
+        duration_s: 单项执行耗时（秒，time.monotonic 计时）；
+            仅 debug_config.REPORT_ITEM_TIMING 开启时由 runner 填写，其余为 None。
     """
 
     item_key: str
@@ -34,6 +36,7 @@ class ItemResult:
     waveform_png: str | None = None
     notes: str = ""
     ts: str = field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    duration_s: float | None = None
 
     def to_summary(self) -> dict[str, Any]:
         verdict = "N/A" if self.passed is None else ("PASS" if self.passed else "FAIL")

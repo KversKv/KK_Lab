@@ -13,6 +13,7 @@ import math
 import os
 import re
 import threading
+import time
 from datetime import datetime
 from typing import Any, Callable
 
@@ -33,7 +34,7 @@ from core.module_test._common import (
 from core.module_test.judge import evaluate_item
 from core.module_test.report import save_html_report
 from core.module_test.result_model import ItemResult, ModuleTestResult
-from debug_config import DEBUG_MOCK
+from debug_config import DEBUG_MOCK, REPORT_ITEM_TIMING
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -355,6 +356,7 @@ class ModuleTestRunner(QThread):
                 item_cfg.update(override)
 
             ctx = self._make_ctx(item_cfg)
+            item_t0 = time.monotonic()
             try:
                 result: ItemResult = run_fn(ctx)
             except Exception:  # noqa: BLE001 - 单项异常不阻断整体
@@ -364,6 +366,9 @@ class ModuleTestRunner(QThread):
                                     notes="执行异常，见日志")
             else:
                 self._apply_judge(item_key, result)
+            if REPORT_ITEM_TIMING:
+                result.duration_s = time.monotonic() - item_t0
+                self._log(f"[TIME] {name} 耗时 {result.duration_s:.1f} s")
             self._result.items.append(result)
             self.item_finished.emit(item_key, result.to_summary())
             self._progress(int((idx + 1) / total * 100), name)
