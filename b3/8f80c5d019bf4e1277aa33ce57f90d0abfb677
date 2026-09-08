@@ -1,0 +1,46 @@
+ui/pages/module_test/_sections/left_rail.py
+  s_b9041774cfa75c::t_ab9fb11284e937 54
+  s_b9041774cfa75c::t_96117e2c0e5d62 52-53,55
+core/module_test/_runner_base.py
+  s_b9041774cfa75c::t_5f422eb626b1a1 98,104
+ui/pages/module_test/AGENTS.md
+  s_b9041774cfa75c::t_e97c656e26bbd5 63
+ui/widgets/form.py
+  s_b9041774cfa75c::t_755249635ad334 117-119,121-127,129-134,136-140,144,146-147
+ui/pages/module_test/_sections/config_store.py
+  s_b9041774cfa75c::t_ccfdf92ac0fc45 53
+  s_b9041774cfa75c::t_a5a15c37180844 104-105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "b38f80c5d019bf4e1277aa33ce57f90d0abfb677",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_b9041774cfa75c": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a9fc342bcb44144ef216cdf",
+        "model": "glm-5.3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "client_type": "ide",
+        "edit_kind": "bash",
+        "operation_id": "6a9fc8f8bcb44144ef216da7",
+        "tool_name": "RunCommand",
+        "external_session_id": "6a9fc342bcb44144ef216cdf",
+        "tool_use_id": "6a9fc8f8bcb44144ef216da7",
+        "source_scene": "agent",
+        "session_id": "6a9fc342bcb44144ef216cdf",
+        "display_model_name": "GLM-5.3",
+        "runtime_client": "trae-tob-git-ai"
+      }
+    }
+  }
+}
