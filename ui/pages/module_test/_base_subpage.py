@@ -429,6 +429,20 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
         if not spec:
             return
         name, _run_fn, _needs_scope, _checked, params = spec
+        # Load Regulation 支持「直接使用 Load Capability&Ripple 测试值」：
+        # 顶部 master 开关，仅当 ripple 项已勾选时才允许开启
+        follow = None
+        if item_key.endswith("_load_reg"):
+            ripple_key = item_key.replace("_load_reg", "_ripple")
+            follow = {
+                "key": "use_ripple_sweep",
+                "label": "直接使用 Load Capability&Ripple 测试值",
+                "available": ripple_key in self.test_plan.selected_keys(),
+                "unavailable_tip": "需先勾选 Load Capability&Ripple 测试项后才能启用",
+                "note": "启用后本项的扫描参数（起始/结束/步进负载、输入偏置、"
+                        "稳定时间、平均次数）直接取 Load Capability&Ripple "
+                        "测试项的设置，下方输入禁用。",
+            }
         dlg = ItemParamsDialog(
             title=f"参数设置 - {name}",
             specs=params,
@@ -437,6 +451,7 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
             parent=self,
             item_key=item_key,
             judge_payload=self._judge_criteria.get(item_key),
+            follow_switch=follow,
         )
         if dlg.exec():
             override = dlg.get_override()

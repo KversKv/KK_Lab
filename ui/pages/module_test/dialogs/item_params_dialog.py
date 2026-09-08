@@ -15,6 +15,12 @@
 ``JUDGE_METRICS`` 时追加「判断标准」页（JudgeCriteriaTab），编辑当前测试项
 的 PASS/FAIL 规则（``get_judge_payload()`` 导出 ``{"enabled", "rules"}``，
 持久化回 ``judge_criteria[item_key]``，与全模块判定表同源）。
+
+``follow_switch``（可选）：「参数」页顶部 master 滑动开关——「直接使用另一
+测试项的参数」（如 Load Regulation 直接取 Load Capability&Ripple 的扫描值）。
+开启时下方输入全部禁用，``get_override()`` 额外导出 ``follow_switch["key"] =
+True``（关闭时不导出该键，回退默认）；``available=False`` 时开关置灰不可开启
+（调用方据目标测试项是否勾选决定）。
 """
 from __future__ import annotations
 
@@ -22,8 +28,8 @@ import os
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog, QDialogButtonBox, QDoubleSpinBox, QGridLayout, QLabel,
-    QLineEdit, QSpinBox, QTabWidget, QVBoxLayout, QWidget,
+    QCheckBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QGridLayout,
+    QLabel, QLineEdit, QSpinBox, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from core.module_test.judge import JUDGE_METRICS
@@ -49,7 +55,8 @@ class ItemParamsDialog(QDialog):
 
     def __init__(self, *, title: str, specs, current_override: dict,
                  base_value_fn, parent: QWidget | None = None,
-                 item_key: str = "", judge_payload: dict | None = None):
+                 item_key: str = "", judge_payload: dict | None = None,
+                 follow_switch: dict | None = None):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setModal(True)
@@ -58,6 +65,8 @@ class ItemParamsDialog(QDialog):
         self._specs = specs
         self._editors: dict[str, QWidget] = {}
         self._prefill: dict[str, object] = {}
+        self._follow_key = ""
+        self._follow_switch: QCheckBox | None = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 14, 16, 12)
@@ -67,6 +76,33 @@ class ItemParamsDialog(QDialog):
         params_lay = QVBoxLayout(params_page)
         params_lay.setContentsMargins(0, 10, 0, 0)
         params_lay.setSpacing(10)
+
+        # —— master 滑动开关：直接使用另一测试项的参数（如 Load Regulation
+        # 直接取 Load Capability&Ripple 的扫描值）；开启时下方输入全部禁用 ——
+        if follow_switch:
+            self._follow_key = str(follow_switch.get("key", ""))
+            self._follow_switch = QCheckBox(str(follow_switch.get("label", "")))
+            self._follow_switch.setProperty("switch", "true")
+            available = bool(follow_switch.get("available", True))
+            self._follow_switch.setEnabled(available)
+            if not available:
+                # 目标测试项未勾选：开关置灰且强制关闭（清掉历史开启态）
+                self._follow_switch.setChecked(False)
+                self._follow_switch.setToolTip(
+                    str(follow_switch.get("unavailable_tip",
+                                          "需先勾选对应测试项后才能启用")))
+            else:
+                self._follow_switch.setChecked(
+                    bool(current_override.get(self._follow_key, False)))
+            self._follow_switch.toggled.connect(self._on_follow_toggled)
+            params_lay.addWidget(self._follow_switch)
+            note = follow_switch.get("note")
+            if note:
+                hint = QLabel(str(note))
+                hint.setProperty("role", "caption")
+                hint.setWordWrap(True)
+                params_lay.addWidget(hint)
+            self._on_follow_toggled()
 
         if not specs:
             params_lay.addWidget(QLabel("该测试项暂无可设置的参数。"))
@@ -197,6 +233,15 @@ class ItemParamsDialog(QDialog):
         msb_w.valueChanged.connect(_update)
         lsb_w.valueChanged.connect(_update)
 
+    def _on_follow_toggled(self) -> None:
+        """master 开关联动：开启时禁用下方全部参数输入（值仍随 override 导出，
+        运行时由 runner 用目标测试项的生效值整组覆盖）。"""
+        if self._follow_switch is None:
+            return
+        enabled = not self._follow_switch.isChecked()
+        for w in self._editors.values():
+            w.setEnabled(enabled)
+
     # ------------------------------------------------------------------ 导出
     def _editor_value(self, spec):
         w = self._editors[spec.key]
@@ -230,6 +275,11 @@ class ItemParamsDialog(QDialog):
             else:
                 if val != (base if base is not None else ""):
                     out[spec.key] = val
+        # master 开关：仅开启时导出（关闭不导出该键，回退默认 False）
+        if (self._follow_key and self._follow_switch is not None
+                and self._follow_switch.isEnabled()
+                and self._follow_switch.isChecked()):
+            out[self._follow_key] = True
         return out
 
     def get_judge_rules(self) -> list[dict]:

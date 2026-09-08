@@ -330,6 +330,27 @@ class ModuleTestRunner(QThread):
             if override:
                 item_cfg.update(override)
 
+            # Load Regulation「直接使用 Load Capability&Ripple 测试值」：
+            # 开关开启且 ripple 项已勾选时，扫描参数整组改用 ripple 的生效值
+            # （ripple override → 基类 cfg → ParamSpec 默认），未勾选回退本项自身参数
+            if item_key.endswith("_load_reg") and item_cfg.get("use_ripple_sweep"):
+                ripple_key = item_key.replace("_load_reg", "_ripple")
+                if ripple_key in selected:
+                    ripple_override = self._item_overrides.get(ripple_key) or {}
+                    _rn, _rf, _rs, _rc, ripple_params = self._items_registry[ripple_key]
+                    for spec in ripple_params:
+                        item_cfg[spec.key] = ripple_override.get(
+                            spec.key, self._cfg.get(spec.key, spec.default))
+                    self._log(
+                        f"[CFG] {item_key} 直接使用 {ripple_key} 的参数："
+                        f"Iload {item_cfg.get('iload_start_ma', 0):g}~"
+                        f"{item_cfg.get('iload_end_ma', 0):g} mA，"
+                        f"步进 {item_cfg.get('iload_step_ma', 0):g} mA")
+                else:
+                    self._log("[WARN] Load Regulation 已开启「直接使用 Load "
+                              "Capability&Ripple 测试值」，但该测试项本次未勾选，"
+                              "回退使用本项自身参数。")
+
             ctx = self._make_ctx(item_cfg)
             try:
                 result: ItemResult = run_fn(ctx)
