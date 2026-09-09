@@ -1400,6 +1400,7 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
     流程（对齐手动测试，逐组执行）：
       0. 开局 clear_arb_all_channels()：ABOR:TRAN + 全通道 VOLT/CURR:MODE FIX，
          去掉其它通道遗留 ARB，避免 BUS 触发误带起旧通道脉冲；
+         并显式关断 Iload 通道（输出不挂载）；
       1. Vin 通道置 PS2Q 源；
       2. Arb Type=Voltage / Shape=Pulse，Vin0/Vin1 为电压（正），
          t0=半周期、t1=0、t2=半周期（50% 占空；真机强制 t0+t1+t2=1/freq）；
@@ -1433,10 +1434,10 @@ def run_line_transient(ctx: "ItemContext", item_key: str, name: str,
 
     if not ctx.is_mock:
         _reset_arb_state(ctx, [vin_ch])
-        # 清完 ARB 后给 DUT 输出挂 1mA 轻载（先写电流再 channel_on，
-        # 避免沿用上一项遗留电流；CCLoad 开启状态禁设 0mA，故用 1mA）
+        # Line Transient 输出不挂载：显式关断 Iload 通道（可能沿用上一项
+        # 遗留的开启态），只 channel_off 不归零（CCLoad 禁设 0mA，硬红线 12）
         if iload_ch != vin_ch:
-            setup_load_channel(ctx, iload_ch, initial_current_a=0.001)
+            teardown_load(ctx, iload_ch)
 
     for idx, g in enumerate(groups):
         if ctx.stop_flag_fn():
