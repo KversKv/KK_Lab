@@ -4,7 +4,8 @@
 - 视图：``QTreeView`` + ``TestPlanModel`` + ``QSortFilterProxyModel``（名称过滤、
   仅失败过滤），分组默认展开；
 - 委托：``_StatusBadgeDelegate``（状态徽章着色 + running 呼吸点）、
-  ``_ParamDelegate``（⚙ + 「已改」标记，点击列发 ``paramsRequested``）；
+  ``_ParamDelegate``（⚙ + 「已改」标记，点击列发 ``paramsRequested``）、
+  ``_SaveDelegate``（保存结果图标，点击列发 ``saveResultRequested``）；
 - 键盘：空格切换勾选、Enter 打开参数、Ctrl+A 全选/取消全选。
 
 运行状态着色完全由 Model StatusRole 驱动（不再逐项 setForeground），
@@ -25,7 +26,7 @@ import os
 
 from ui.models.test_plan_model import (
     COL_CHECK, COL_DURATION, COL_INSTRUMENT, COL_NAME, COL_PARAMS, COL_RESULT,
-    COL_STATUS, CustomizedRole, HasParamsRole, IsGroupRole, KeyRole,
+    COL_SAVE, COL_STATUS, CustomizedRole, HasParamsRole, IsGroupRole, KeyRole,
     ST_FAIL, ST_IDLE, ST_NA, ST_PASS, ST_RUNNING, ST_SCOPE_MISSING,
     ST_UNSELECTED, ST_WAITING, StatusRole, TestPlanModel,
 )
@@ -36,6 +37,7 @@ from ui.utils.icon_utils import tinted_svg_icon
 from ui.widgets.badge_delegate import draw_pill_badge, paint_item_background
 
 _PARAM_ICON = os.path.join(get_resource_base(), "resources", "icons", "settings.svg")
+_SAVE_ICON = os.path.join(get_resource_base(), "resources", "icons", "save.svg")
 _SEARCH_ICON = os.path.join(get_resource_base(), "resources", "icons", "search.svg")
 
 
@@ -140,6 +142,32 @@ class _ParamDelegate(QStyledItemDelegate):
         return QSize(32, dp(34))
 
 
+class _SaveDelegate(QStyledItemDelegate):
+    """Save 列：绘制保存图标（点击把该项最近结果落盘，供聚合导出）。"""
+
+    def paint(self, painter: QPainter, option, index) -> None:
+        if index.column() != COL_SAVE or index.data(IsGroupRole):
+            super().paint(painter, option, index)
+            return
+        theme = current_theme()
+        # 先由 QStyle 绘制选中/hover 背景（与其它列一致），再叠加保存图标
+        paint_item_background(painter, option)
+        painter.save()
+        rect = option.rect
+        side = min(rect.height() - 6, 16)
+        icon_rect = rect.adjusted(0, 0, 0, 0)
+        icon_rect.setSize(QSize(side, side))
+        icon_rect.moveCenter(rect.center())
+        tinted_svg_icon(_SAVE_ICON, theme.text_muted, side).paint(painter, icon_rect)
+        painter.restore()
+
+    def sizeHint(self, option, index) -> QSize:
+        """与参数列同宽（仅容图标），避免 ResizeToContents 过窄。"""
+        if index.column() != COL_SAVE or index.data(IsGroupRole):
+            return super().sizeHint(option, index)
+        return QSize(32, dp(34))
+
+
 # ---------------------------------------------------------------------- 视图
 class TestPlanView(QTreeView):
     """测试项树视图（键盘：空格勾选 / Enter 参数 / Ctrl+A 全选）。"""
@@ -196,6 +224,7 @@ class TestPlanPanel(QWidget):
     """测试项面板（工具行 + 树视图）。"""
 
     paramsRequested = Signal(str)   # item_key
+    saveResultRequested = Signal(str)  # item_key（点击保存结果列图标）
     selectionChanged = Signal()
 
     def __init__(self, registry: Mapping, standalone: Sequence[str] = (),
@@ -250,14 +279,16 @@ class TestPlanPanel(QWidget):
         self.view.setModel(self._proxy)
         self.view.setItemDelegateForColumn(COL_STATUS, _StatusBadgeDelegate(self.view))
         self.view.setItemDelegateForColumn(COL_PARAMS, _ParamDelegate(self.view))
+        self.view.setItemDelegateForColumn(COL_SAVE, _SaveDelegate(self.view))
         header = self.view.header()
         header.setSectionResizeMode(COL_CHECK, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(COL_NAME, QHeaderView.Stretch)
-        for col in (COL_INSTRUMENT, COL_STATUS, COL_RESULT, COL_DURATION, COL_PARAMS):
+        for col in (COL_INSTRUMENT, COL_STATUS, COL_RESULT, COL_DURATION,
+                    COL_PARAMS, COL_SAVE):
             header.setSectionResizeMode(col, QHeaderView.ResizeToContents)
-        # 末列（COL_PARAMS）默认被 stretchLastSection 拉伸填满右侧，导致整列宽度过大、
-        # 任意位置点击都触发参数弹窗；关闭后由 COL_NAME(Stretch) 独占剩余空间，参数列按
-        # _ParamDelegate.sizeHint() 收窄为仅容齿轮图标。
+        # 末列默认被 stretchLastSection 拉伸填满右侧，导致参数/保存列宽度过大、
+        # 任意位置点击都触发弹窗/保存；关闭后由 COL_NAME(Stretch) 独占剩余空间，
+        # 参数/保存列按各自 Delegate.sizeHint() 收窄为仅容图标。
         header.setStretchLastSection(False)
         self.view.expandAll()
 
@@ -287,6 +318,10 @@ class TestPlanPanel(QWidget):
             key = proxy_index.data(KeyRole)
             if key and self._model.has_params(key):
                 self.paramsRequested.emit(key)
+        elif proxy_index.column() == COL_SAVE:
+            key = proxy_index.data(KeyRole)
+            if key:
+                self.saveResultRequested.emit(key)
 
     def _on_model_data_changed(self, *_args) -> None:
         self._refresh_stats()

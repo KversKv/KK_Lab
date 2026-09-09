@@ -39,6 +39,7 @@ class DetailDock(QWidget):
     openReportRequested = Signal()
     openOutputDirRequested = Signal()
     clearResultsRequested = Signal()
+    exportSavedRequested = Signal()
     locateLogRequested = Signal(str)
 
     TAB_RESULT = 0
@@ -68,6 +69,13 @@ class DetailDock(QWidget):
         self._summary_label.setProperty("role", "caption")
         summary_row.addWidget(self._summary_label)
         summary_row.addStretch()
+        self.export_saved_btn = QPushButton("导出已保存结果")
+        self.export_saved_btn.setProperty("variant", "secondary")
+        self.export_saved_btn.setToolTip(
+            "从各测试项「保存结果」落盘的结果中挑选若干项，聚合导出一份报告"
+            "（final 目录）")
+        self.export_saved_btn.clicked.connect(self.exportSavedRequested)
+        summary_row.addWidget(self.export_saved_btn)
         self.open_report_btn = QPushButton("打开报告")
         self.open_report_btn.setProperty("variant", "secondary")
         self.open_report_btn.setEnabled(False)

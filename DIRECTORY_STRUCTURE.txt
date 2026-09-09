@@ -202,6 +202,7 @@ core/
     ├── report.py            # HTML 报告生成（元信息 + 逐项 PASS/FAIL 表 + 内嵌波形）
     ├── pdf_export.py        # 报告 PDF 导出（系统 Edge/Chrome 无头打印，纯 subprocess 无 Qt）
     ├── xlsx_export.py       # XLSX 导出（数据表 + 波形/截图嵌入单元格；纯函数 + XlsxExportWorker）
+    ├── saved_results.py     # 单项结果保存（saved/ 落盘含资产拷贝）+ 勾选聚合导出 final/ 汇总报告（纯函数 + SavedResultsExportWorker）
     ├── ldo/                 # LDO 子包（ldo_runner + items：vout_scan/load_reg/line_reg/iq/ripple/psrr/transient）
     └── dcdc/                # DCDC 子包（dcdc_runner + items：vout_scan/efficiency/load_reg/line_reg/iq/ripple/psrr/transient/inductor_current）
 

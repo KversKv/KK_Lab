@@ -18,6 +18,10 @@ from PySide6.QtWidgets import QHBoxLayout, QMessageBox, QSplitter, QVBoxLayout, 
 
 from core.module_test._common import VOLT_METHOD_SCOPE, cfg_int
 from core.module_test.module_config import ModuleConfigWorker
+from core.module_test.result_model import ItemResult, ModuleTestResult
+from core.module_test.saved_results import (
+    SavedResultsExportWorker, list_saved_results, save_item_result,
+)
 from debug_config import DEBUG_MOCK
 from log_config import get_logger
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
@@ -30,6 +34,7 @@ from ui.pages.module_test._sections.left_rail import LeftRail
 from ui.pages.module_test._sections.test_plan_panel import TestPlanPanel
 from ui.pages.module_test.dialogs.config_manager_dialog import ConfigManagerDialog
 from ui.pages.module_test.dialogs.item_params_dialog import ItemParamsDialog
+from ui.pages.module_test.dialogs.saved_results_dialog import SavedResultsDialog
 from ui.theme import apply_qss
 from ui.widgets.banner import InfoBanner
 from ui.widgets.run_control_bar import RunControlBar, RunState
@@ -82,6 +87,12 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
         self._modcfg_thread: QThread | None = None
         self._modcfg_worker: ModuleConfigWorker | None = None
         self._modcfg_after = None  # 执行完成后的回调（如继续启动测试）
+        # 逐项结果累积（item_key -> (ItemResult, 所属运行 ModuleTestResult)）：
+        # 跨多次运行保留每项最新结果，供「保存结果」落盘后聚合导出
+        self._item_results: dict[str, tuple[ItemResult, ModuleTestResult]] = {}
+        # 已保存结果聚合导出后台线程
+        self._export_thread: QThread | None = None
+        self._export_worker: SavedResultsExportWorker | None = None
 
         self._build_ui()
         self._wire_shortcuts()
@@ -125,10 +136,12 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
         center.setSpacing(8)
         self.test_plan = TestPlanPanel(self.ITEMS_REGISTRY, self.STANDALONE_ITEMS)
         self.test_plan.paramsRequested.connect(self._open_item_params)
+        self.test_plan.saveResultRequested.connect(self._on_save_item_result)
         self.detail_dock = DetailDock()
         self.detail_dock.openReportRequested.connect(self._on_open_report)
         self.detail_dock.openOutputDirRequested.connect(self._on_open_output_dir)
         self.detail_dock.clearResultsRequested.connect(self._on_clear_results)
+        self.detail_dock.exportSavedRequested.connect(self._on_export_saved_results)
         self.detail_dock.locateLogRequested.connect(self._on_locate_log)
         splitter = QSplitter(Qt.Vertical)
         splitter.addWidget(self.test_plan)
@@ -410,6 +423,8 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
 
     def _on_finished(self, result) -> None:
         self._last_result = result
+        for _item in result.items:  # 累积每项最新结果（跨多次运行）
+            self._item_results[_item.item_key] = (_item, result)
         self.detail_dock.log_panel.flush_now()
         self.detail_dock.log_panel.stop_timer()
         self.test_plan.exit_run_state()
@@ -592,9 +607,82 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
         if os.path.isdir(directory):
             QDesktopServices.openUrl(QUrl.fromLocalFile(directory))
 
+    # ================================================================== 保存结果 / 聚合导出
+    def _on_save_item_result(self, item_key: str) -> None:
+        """测试项「保存结果」：把该项最近一次运行结果（含 CSV/截图）落盘。"""
+        pair = self._item_results.get(item_key)
+        if pair is None:
+            self.detail_dock.log_panel.append_log(
+                f"[SAVE] {item_key} 本次会话尚无测试结果，请先运行该项。")
+            Toast.popup(self, "该项本次会话尚无测试结果，请先运行",
+                        severity="warning")
+            return
+        item, source = pair
+        try:
+            entry_dir = save_item_result(self.MODULE_TYPE, item, source)
+        except Exception:  # noqa: BLE001 - 保存失败仅提示，不影响页面
+            _logger.error("保存测试项结果失败: %s", item_key, exc_info=True)
+            self.detail_dock.log_panel.append_log(
+                f"[SAVE] [ERROR] {item_key} 结果保存失败，详见日志。")
+            Toast.popup(self, "结果保存失败，详见日志", severity="error")
+            return
+        self.detail_dock.log_panel.append_log(
+            f"[SAVE] {item.name} 结果已保存：{entry_dir}")
+        Toast.popup(self, f"已保存：{item.name}", severity="success")
+
+    def _on_export_saved_results(self) -> None:
+        """导出已保存结果：弹窗勾选若干已保存项，后台聚合导出到 final 目录。"""
+        if self._export_thread is not None:
+            self.detail_dock.log_panel.append_log("[EXPORT] 上一次导出仍在进行中")
+            return
+        entries = list_saved_results(self.MODULE_TYPE)
+        if not entries:
+            Toast.popup(self, "暂无已保存的测试结果", severity="info")
+            return
+        dlg = SavedResultsDialog(
+            self.MODULE_TYPE, entries,
+            registry_order=list(self.ITEMS_REGISTRY), parent=self)
+        if dlg.exec() != SavedResultsDialog.Accepted:
+            return
+        dirs = dlg.selected_dirs()
+        if not dirs:
+            Toast.popup(self, "未勾选任何测试结果", severity="info")
+            return
+
+        worker = SavedResultsExportWorker(self.MODULE_TYPE, dirs)
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.log.connect(self.detail_dock.log_panel.append_log)
+        worker.finished.connect(self._on_export_finished)
+        worker.finished.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._on_export_thread_cleaned)
+        self._export_thread = thread
+        self._export_worker = worker
+        self.detail_dock.log_panel.append_log(
+            f"[EXPORT] 开始聚合导出 {len(dirs)} 项已保存结果...")
+        thread.start()
+
+    def _on_export_finished(self, ok: bool, message: str,
+                            report_path: str) -> None:
+        if ok:
+            Toast.popup(self, "汇总报告已导出", severity="success")
+            if report_path and os.path.isfile(report_path):
+                QDesktopServices.openUrl(QUrl.fromLocalFile(report_path))
+        else:
+            self.detail_dock.log_panel.append_log(f"[EXPORT] [ERROR] {message}")
+            Toast.popup(self, message, severity="error")
+
+    def _on_export_thread_cleaned(self) -> None:
+        self._export_thread = None
+        self._export_worker = None
+
     def _on_clear_results(self) -> None:
         self._last_result = None
         self._last_report_path = None
+        self._item_results.clear()
         self.detail_dock.set_report_available(False)
         self.detail_dock.clear_summary()
         self.detail_dock.result_table.clear()
@@ -612,6 +700,8 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
     def update_test_result(self, result) -> None:
         self._last_result = result
         if result is not None and hasattr(result, "summary"):
+            for _item in getattr(result, "items", []):
+                self._item_results[_item.item_key] = (_item, result)
             self._last_report_path = result.summary.get("report_path")
             self.detail_dock.set_result(result, None)
 

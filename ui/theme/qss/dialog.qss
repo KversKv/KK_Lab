@@ -211,3 +211,19 @@ QCheckBox::indicator:checked {
 QCheckBox::indicator:disabled {
     opacity: 0.4;
 }
+
+/* 弹窗内树/列表勾选框（导出已保存结果弹窗等）：QCheckBox 规则不覆盖
+   item-view indicator，缺省时 Qt 默认勾选框在暗色背景上几乎不可见。 */
+QTreeView::indicator, QListView::indicator, QTableView::indicator {
+    width: 16px;
+    height: 16px;
+    image: url("$uncheck_svg");
+}
+QTreeView::indicator:checked, QListView::indicator:checked,
+QTableView::indicator:checked {
+    image: url("$check_svg");
+}
+QTreeView::indicator:disabled, QListView::indicator:disabled,
+QTableView::indicator:disabled {
+    opacity: 0.4;
+}

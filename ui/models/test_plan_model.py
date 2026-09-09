@@ -4,9 +4,9 @@
 + ``STANDALONE_ITEMS``。模型只读注册表元数据（name/needs_scope/checked/params），
 不 import core（由调用方把注册表 dict 传入），保持 ui 层单向依赖。
 
-列（7）：
+列（8）：
     0 Enabled(勾选)  1 Name  2 Instrument  3 Status(徽章)  4 Result(摘要)
-    5 Duration  6 Params(⚙)
+    5 Duration  6 Params(⚙)  7 Save(保存结果图标)
 
 运行状态着色（替代旧"逐项 setForeground + QSS 盖色 hack"）：
 状态存 Model（``StatusRole``），由 StatusDelegate 绘制徽章；
@@ -29,7 +29,8 @@ COL_STATUS = 3
 COL_RESULT = 4
 COL_DURATION = 5
 COL_PARAMS = 6
-COL_COUNT = 7
+COL_SAVE = 7
+COL_COUNT = 8
 
 # —— 角色 ——
 KeyRole = Qt.UserRole + 1            # item_key（分组行返回 None）
@@ -156,7 +157,8 @@ class TestPlanModel(QAbstractItemModel):
     def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.DisplayRole):
         if role != Qt.DisplayRole or orientation != Qt.Horizontal:
             return None
-        return ("", "测试项", "主要仪器", "状态", "结果摘要", "耗时", "参数")[section]
+        return ("", "测试项", "主要仪器", "状态", "结果摘要", "耗时", "参数",
+                "保存结果")[section]
 
     def flags(self, index: QModelIndex) -> Qt.ItemFlags:
         if not index.isValid():
