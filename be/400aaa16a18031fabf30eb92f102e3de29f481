@@ -1,0 +1,45 @@
+tests/_smoke_report.py
+  s_ed46b2080709f0::t_e87f11ad8cb901 96-97
+core/module_test/mode_manager.py
+  s_ed46b2080709f0::t_d5ba6aa331ddab 156
+  s_ed46b2080709f0::t_32d041e42177b4 122
+core/module_test/dcdc/items/__init__.py
+  s_ed46b2080709f0::t_4f79ceb59d50f1 242
+  s_ed46b2080709f0::t_b84a7ff591f90c 264,268,271-274,279-281,284
+core/module_test/ldo/items/__init__.py
+  s_ed46b2080709f0::t_4729bc2a3f04b6 195,199,202-205,210-212,215
+  s_ed46b2080709f0::t_3845b8c9f47c71 174
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "be400aaa16a18031fabf30eb92f102e3de29f481",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_ed46b2080709f0": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa0f7e5bcb44144ef21712d",
+        "model": "kimi-k3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "tool_name": "RunCommand",
+        "operation_id": "6aa0fb31bcb44144ef2171a9",
+        "tool_use_id": "6aa0fb31bcb44144ef2171a9",
+        "runtime_client": "trae-tob-git-ai",
+        "edit_kind": "bash",
+        "display_model_name": "Kimi-K3",
+        "source_scene": "agent",
+        "client_type": "ide",
+        "session_id": "6aa0f7e5bcb44144ef21712d",
+        "external_session_id": "6aa0f7e5bcb44144ef21712d"
+      }
+    }
+  }
+}
