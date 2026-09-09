@@ -79,13 +79,13 @@ _LOAD_REG_METRICS = (
     _m("load_reg_linear_pct", "Load Reg (线性区)", "%"),
 )
 _QUIESCENT_METRICS = (
-    _m("Iq (uA)", "Iq", "uA"),
     _m("dIvin (uA)", "dIvin", "uA"),
     _m("dIvout (uA)", "dIvout", "uA"),
 )
 _RIPPLE_METRICS = (
     _m("max_vpp_mv", "Max Vpp", "mV"),
     _m("max_vout_drop_mv", "Max Vout Drop", "mV"),
+    _m("max_load_ma", "Max Load", "mA"),
 )
 _TRANSIENT_METRICS = (
     _m("max_overshoot_mv", "Max Overshoot", "mV"),

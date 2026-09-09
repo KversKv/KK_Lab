@@ -16,7 +16,7 @@ UI 只拿路径打开，不做 IO——本模块纯字符串生成，禁依赖 Q
   "summary": {verdict: PASS|FAIL|N/A, pass, fail, warn, na, total},
   "items": [{
     index, item_key, title, verdict, unit, note,
-    metrics: [{key,label,value,unit,precision,spec_min,spec_max,margin_pct,verdict}],
+    metrics: [{key,label,value,unit,precision}],
     charts:  [{id,kind:xy,title,x{key,label,unit,log},series[{key,name,
               type:line|smooth|scatter|bar,axis:left|right}],mark_extrema,
               anomaly{key,op,value}}],
@@ -86,9 +86,7 @@ JSON 经 ``json.dumps`` 并把 ``</`` 转义为 ``<\\/`` 防 script 逃逸。
 ============================= 已知限制 =============================
 - Chrome 打印无法用 CSS 计数器输出"第 X/Y 页"，页脚仅含机密标识与生成时间；
 - 图表为 SVG 原生打印（非 Canvas），无需位图转换；量纲开关作用于指标卡/表格，
-  图表轴单位保持原始量纲；
-- 当前 ItemResult 无规格上下限字段，metrics 的 spec_min/max 一律 None，
-  UI 显示"未定义规格"灰标并计入 N/A（schema 已预留，后续接入判定规格即生效）。
+  图表轴单位保持原始量纲。
 """
 from __future__ import annotations
 
@@ -300,6 +298,16 @@ def _build_rules(it: ItemResult, table: dict[str, Any] | None) -> list[dict[str,
         if numeric:
             rules.append({"type": "constant", "columns": numeric,
                           "level": "warn", "hint": "列值恒定，疑似仪器/接线异常"})
+    elif key.endswith("ripple"):
+        # 带载拐点后 Vout 崩溃的行整行标红（无效数据，已排除出性能计算）；
+        # 阈值 = 拐点前后 Vout 中点（core 侧已判定，前端仅按 lt 规则着色）
+        m = it.measured if isinstance(it.measured, dict) else {}
+        thr = _num(m.get("collapse_vout_threshold_mv"))
+        vout = _pick_col(table, "vout")
+        if thr is not None and vout:
+            rules.append({"column": vout, "op": "lt", "value": thr,
+                          "level": "fail",
+                          "hint": "超出 Max Load 带载拐点，Vout 崩溃，数据无效不参与性能计算"})
     return rules
 
 
@@ -310,12 +318,11 @@ def _mk(key: str, label: str, value: Any, unit: str = "",
     if v is None:
         return None
     return {"key": key, "label": label, "value": v, "unit": unit,
-            "precision": precision, "spec_min": None, "spec_max": None,
-            "margin_pct": None, "verdict": None}
+            "precision": precision}
 
 
 def _build_metrics(it: ItemResult, table: dict[str, Any] | None) -> list[dict[str, Any]]:
-    """按测试项语义生成结构化关键指标（规格字段预留为 None → UI 灰标）。"""
+    """按测试项语义生成结构化关键指标。"""
     key = it.item_key
     m = it.measured if isinstance(it.measured, dict) else {}
     out: list[dict[str, Any] | None] = []
@@ -333,11 +340,19 @@ def _build_metrics(it: ItemResult, table: dict[str, Any] | None) -> list[dict[st
         vmin, vmax = _num(m.get("valid_min_code")), _num(m.get("valid_max_code"))
         step_label = ("Avg Step" if vmin is None or vmax is None
                       else f"Avg Step (Vbit {int(vmin):#04x}~{int(vmax):#04x})")
+        def _hex(code: Any) -> str:
+            c = _num(code)
+            return f" (0x{int(c):02X})" if c is not None else ""
+        # 顺序即结论汇总表「关键指标」取舍依据（前端取前 2 条）：Default + 有效步进优先
         out = [
-            _mk("default_mv", "Default", m.get("default_voltage_mv"), "mV"),
-            _mk("vout_min", "Min", m.get("vout_min_mv") or (min(vs) if vs else None), "mV"),
-            _mk("vout_max", "Max", m.get("vout_max_mv") or (max(vs) if vs else None), "mV"),
+            _mk("default_mv", f"Default{_hex(m.get('default_code'))}",
+                m.get("default_voltage_mv"), "mV"),
             _mk("step_mv", step_label, m.get("step_mv"), "mV"),
+            _mk("vout_min", f"Min{_hex(m.get('valid_min_code'))}",
+                m.get("vout_min_mv") or (min(vs) if vs else None), "mV"),
+            _mk("vout_max", f"Max{_hex(m.get('valid_max_code'))}",
+                m.get("vout_max_mv") or (max(vs) if vs else None), "mV"),
+            _mk("linearity_pct", "Linearity", m.get("linearity_pct"), "%"),
         ]
     elif key.endswith("load_reg"):
         # 双区间指标：线性区（≤拐点）与全段，标签标明电流条件
@@ -397,13 +412,15 @@ def _build_metrics(it: ItemResult, table: dict[str, Any] | None) -> list[dict[st
                _mk("max_eff_at", "Peak @ Iload", at, "mA", 0),
                _mk("avg_eff", "Avg η", avg_eff, "%", 2)]
     elif key.endswith("quiescent"):
-        out = [_mk("iq", "Iq", _in(m, "Iq (uA)", "Iq (A)"), "uA"),
-               _mk("divin", "dIvin", m.get("dIvin (uA)"), "uA"),
-               _mk("divout", "dIvout", m.get("dIvout (uA)"), "uA")]
+        out = [_mk("divin", "dIvin", m.get("dIvin (uA)"), "uA"),
+               _mk("divout", "dIvout", m.get("dIvout (uA)"), "uA"),
+               _mk("vin", "Vin", m.get("Vin (V)"), "V"),
+               _mk("vout", "Vout", m.get("Vout (V)"), "V")]
     elif key.endswith("ripple"):
         if "max_vpp_mv" in m:
             out = [_mk("max_vpp", "Max Vpp", m.get("max_vpp_mv"), "mV", 2),
-                   _mk("max_vpp_at", "@ Iload", m.get("max_vpp_at_ma"), "mA", 0)]
+                   _mk("max_vpp_at", "@ Iload", m.get("max_vpp_at_ma"), "mA", 0),
+                   _mk("max_load", "Max Load", m.get("max_load_ma"), "mA", 0)]
         else:
             out = [_mk("vpp", "Vpp", m.get("vpp_mv"), "mV", 2),
                    _mk("rms", "RMS", m.get("rms_mv"), "mV", 2)]
@@ -951,20 +968,10 @@ td.cell-fail{background:var(--fail-bg)!important;color:var(--fail);font-weight:6
 .metrics{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));
   gap:var(--sp-3);margin-bottom:var(--sp-4)}
 .metric-card{border:1px solid var(--line);border-radius:var(--r-sm);
-  padding:var(--sp-3);background:var(--bg-raised);position:relative;
-  border-left:3px solid var(--na)}
-.metric-card--pass{border-left-color:var(--pass)}
-.metric-card--fail{border-left-color:var(--fail)}
-.metric-card--warn{border-left-color:var(--warn)}
+  padding:var(--sp-3);background:var(--bg-raised);position:relative}
 .metric-card__label{font-size:11px;color:var(--ink-3);letter-spacing:.4px}
 .metric-card__value{font-size:19px;font-weight:700;margin:2px 0}
 .metric-card__value .unit{font-size:11px;color:var(--ink-3);font-weight:500;margin-left:3px}
-.metric-card__spec{font-size:11px;color:var(--ink-3)}
-.metric-card__nospec{display:inline-block;font-size:10.5px;color:var(--na);
-  background:var(--na-bg);border-radius:4px;padding:1px 6px;margin-top:4px}
-.marginbar{height:4px;border-radius:3px;background:var(--bg-sunk);margin-top:8px;overflow:hidden}
-.marginbar i{display:block;height:100%;background:var(--pass);border-radius:3px}
-.marginbar.over i{background:var(--fail)}
 /* -------- ChartCard -------- */
 .chart-card{border:1px solid var(--line);border-radius:var(--r-sm);
   margin-bottom:var(--sp-3);overflow:hidden}
@@ -1161,9 +1168,9 @@ const I18N = {
       kpi_na:"WARN / N/A",kpi_dur:"测试总时长",kpi_anom:"异常点",
       sec:"秒",meta:"元信息（被测件 / 环境 / 仪器 / 软件）",
       matrix:"结论汇总表",col_idx:"#",col_item:"测试项",col_verdict:"结论",
-      col_metric:"关键指标（实测）",col_spec:"规格",col_margin:"余量",
+      col_metric:"关键指标（实测）",
       col_note:"备注",col_anom:"异常",items_title:"测试项明细",
-      nospec:"未定义规格",anomalies:"个异常点",only_anom:"只看异常行",
+      anomalies:"个异常点",only_anom:"只看异常行",
       all_rows:"全部行",full_data:"完整测试数据",rows:"行",download:"下载 CSV",
       download_xlsx:"下载 XLSX",copy_rich:"复制表格（含截图）",
       copied_tbl:"已复制：Excel 粘贴可保留截图；飞书请用「下载 XLSX」导入",
@@ -1194,9 +1201,9 @@ const I18N = {
       kpi_na:"WARN / N/A",kpi_dur:"Duration",kpi_anom:"Anomalies",
       sec:"s",meta:"Meta (DUT / Environment / Instruments / SW)",
       matrix:"Verdict Matrix",col_idx:"#",col_item:"Test Item",col_verdict:"Verdict",
-      col_metric:"Key Metrics",col_spec:"Spec",col_margin:"Margin",
+      col_metric:"Key Metrics",
       col_note:"Note",col_anom:"Anom.",items_title:"Test Item Details",
-      nospec:"No spec defined",anomalies:"anomalies",only_anom:"Anomalies only",
+      anomalies:"anomalies",only_anom:"Anomalies only",
       all_rows:"All rows",full_data:"Full test data",rows:"rows",download:"Download CSV",
       download_xlsx:"Download XLSX",copy_rich:"Copy table (with shots)",
       copied_tbl:"Copied — Excel paste keeps shots; Feishu: use Download XLSX",
@@ -1488,7 +1495,6 @@ function renderMatrix() {
       "<div class='mono' style='font-size:10.5px;color:var(--ink-3)'>" + esc(it.item_key) + "</div></td>" +
       "<td>" + badge(it.verdict) + "</td>" +
       "<td style='font-size:12px'>" + metricText(it) + "</td>" +
-      "<td class='tag'>" + t.nospec + "</td><td class='num'>" + DASH + "</td>" +
       "<td style='font-size:12px;color:var(--ink-3);max-width:220px;overflow:hidden;" +
       "text-overflow:ellipsis;white-space:nowrap'>" + esc(it.note || DASH) + "</td>" +
       "<td class='num'>" + (anom ? '<span style="color:var(--warn)">⚠ ' + anom + "</span>" : DASH) +
@@ -1497,7 +1503,7 @@ function renderMatrix() {
   $("#matrix").innerHTML =
     "<h2 class='block-title'>" + esc(t.matrix) + "</h2>" +
     "<div class='tbl-wrap'><table class='tbl compact'><thead><tr>" +
-    ["col_idx","col_item","col_verdict","col_metric","col_spec","col_margin","col_note","col_anom"]
+    ["col_idx","col_item","col_verdict","col_metric","col_note","col_anom"]
       .map(k => "<th scope='col'>" + esc(t[k]) + "</th>").join("") +
     "</tr></thead><tbody>" + rows + "</tbody></table></div>";
 }
@@ -1506,22 +1512,9 @@ function renderMatrix() {
  * render: items（四段式 section）
  * ================================================================ */
 function metricCard(mm) {
-  const t = T();
-  const hasSpec = mm.spec_min !== null && mm.spec_min !== undefined;
-  const cls = mm.verdict ? " metric-card--" + VERDICT_CLS(mm.verdict) : "";
-  let spec = '<span class="metric-card__nospec">' + esc(t.nospec) + "</span>";
-  let bar = "";
-  if (hasSpec) {
-    spec = '<div class="metric-card__spec num">' + fmt(mm.spec_min, mm.precision) +
-      " ~ " + fmt(mm.spec_max, mm.precision) + esc(scaleUnit(mm.unit)) + "</div>";
-    const over = mm.margin_pct !== null && (mm.margin_pct < 0 || mm.margin_pct > 100);
-    bar = '<div class="marginbar' + (over ? " over" : "") + '"><i style="width:' +
-      Math.max(0, Math.min(100, mm.margin_pct || 0)) + '%"></i></div>';
-  }
-  return '<div class="metric-card' + cls + '">' +
+  return '<div class="metric-card">' +
     '<div class="metric-card__label">' + esc(mm.label) + "</div>" +
-    '<div class="metric-card__value">' + numHTML(mm.value, mm.precision, mm.unit) + "</div>" +
-    spec + bar + "</div>";
+    '<div class="metric-card__value">' + numHTML(mm.value, mm.precision, mm.unit) + "</div></div>";
 }
 /* item 头部「复制截图」按钮内联 SVG 图标（硬红线：禁 Emoji，用 SVG 替代） */
 const ICON_SHOT =
