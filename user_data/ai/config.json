@@ -3,12 +3,16 @@
     "enabled": true,
     "base_url": "http://172.16.10.94:3000/v1",
     "api_key": "sk-hkfOA1_CnRo3GOthYZpUag",
-    "default_model": "glm-5.2-fp8",
+    "default_model": "deepseek-v4-flash",
     "model_mode": "fixed",
     "available_models": [
-      "glm5.2",
-      "glm-5.2-fp8",
-      "deepseek-v4-flash"
+      "deepseek-v4-flash",
+      "hs-glm5.3-flash-260826",
+      "aliy-glm5.3",
+      "aliy-qwen3.8max",
+      "aliy-ys-kimi3",
+      "hs-dsv4-flash-260731",
+      "aliy-dsv4pro-0813"
     ],
     "stream": true,
     "timeout_seconds": 60,
@@ -22,9 +26,13 @@
     "panel_default_open": false,
     "panel_width": 360,
     "model_context_windows": {
-      "glm5.2": 131072,
-      "glm-5.2-fp8": 131072,
-      "deepseek-v4-flash": 131072
+      "deepseek-v4-flash": 131072,
+      "hs-glm5.3-flash-260826": 131072,
+      "aliy-glm5.3": 131072,
+      "aliy-qwen3.8max": 131072,
+      "aliy-ys-kimi3": 131072,
+      "hs-dsv4-flash-260731": 131072,
+      "aliy-dsv4pro-0813": 131072
     },
     "default_context_window": 131072,
     "waveform_event_algo": "stalta",
