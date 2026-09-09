@@ -14,6 +14,7 @@
     ],
     "chip_name": "BES1860",
     "module_name": "LDO_05",
+    "test_condition": "LP_Mode",
     "operator": "KK",
     "temp_test_enabled": false,
     "temperature": "",
@@ -23,6 +24,7 @@
     "vin_channel": "CH 1",
     "vout_channel": "CH 2",
     "iload_channel": "CH 3",
+    "force_channel": "CH 3",
     "volt_method": "scope",
     "vout_nominal_mv": 3300,
     "max_iload_ma": 1000,
@@ -58,14 +60,16 @@
         "iload_start_ma": 1.0,
         "iload_end_ma": 1000.0,
         "iload_step_ma": 50.0,
+        "iload_knee_ma": 0.0,
         "vin_v": 4.0,
         "settle_time_s": 0.01,
-        "average_cnt": 1
+        "average_cnt": 1,
+        "use_ripple_sweep": true
       },
       "ldo_line_reg": {
         "vin_start_v": 3.4,
         "vin_end_v": 5.0,
-        "vin_step_v": 0.2,
+        "vin_step_v": 0.1,
         "settle_time_s": 0.01,
         "average_cnt": 1
       },
@@ -73,7 +77,7 @@
         "vin_v": 4.0,
         "iload_start_ma": 0.0,
         "iload_end_ma": 1000.0,
-        "iload_step_ma": 50.0,
+        "iload_step_ma": 100.0,
         "settle_time_s": 0.01,
         "average_cnt": 1
       },
@@ -85,34 +89,34 @@
       "ldo_load_transient": {
         "transient_groups": [
           {
-            "i0_ma": 10.0,
-            "i1_ma": 100.0,
-            "freq_hz": 10.0
-          },
-          {
-            "i0_ma": 10.0,
-            "i1_ma": 100.0,
-            "freq_hz": 100.0
-          },
-          {
-            "i0_ma": 10.0,
+            "i0_ma": 1.0,
             "i1_ma": 100.0,
             "freq_hz": 1000.0
           },
           {
-            "i0_ma": 100.0,
-            "i1_ma": 1000.0,
+            "i0_ma": 1.0,
+            "i1_ma": 100.0,
+            "freq_hz": 100.0
+          },
+          {
+            "i0_ma": 1.0,
+            "i1_ma": 100.0,
             "freq_hz": 10.0
           },
           {
             "i0_ma": 100.0,
             "i1_ma": 1000.0,
+            "freq_hz": 1000.0
+          },
+          {
+            "i0_ma": 100.0,
+            "i1_ma": 1000.0,
             "freq_hz": 100.0
           },
           {
             "i0_ma": 100.0,
             "i1_ma": 1000.0,
-            "freq_hz": 1000.0
+            "freq_hz": 10.0
           }
         ],
         "settle_time_s": 0.05
@@ -122,7 +126,7 @@
           {
             "vin0_v": 3.5,
             "vin1_v": 5.0,
-            "freq_hz": 1.0
+            "freq_hz": 100.0
           },
           {
             "vin0_v": 3.5,
@@ -132,7 +136,7 @@
           {
             "vin0_v": 3.5,
             "vin1_v": 5.0,
-            "freq_hz": 100.0
+            "freq_hz": 1.0
           }
         ],
         "transient_vspan_mv": 200.0,
@@ -140,7 +144,110 @@
       }
     },
     "module_config_enabled": true,
-    "module_config_yaml": "Init_PMU:\n  - WRITE_BITS 0x0121 15 15 0x1         //reg_lp_bias_res_sel_dr\n  - WRITE_BITS 0x0120 8 6 0x4           //reg_lp_bias_sel_ldo_normal[8:6]\n  - WRITE_BITS 0x011F 6 3 0x4           //reg_lp_bias_sel_ldo_rc[3:1]\n  - WRITE_BITS 0x011F 3 1 0x4           //reg_lp_bias_sel_ldo_dsleep[6:4]\n  - WRITE_BITS 0x02F0 15 0 0xFFFF       //res_sel_dr\n  - WRITE_BITS 0x02F1 4 0 0xFFFF        //res_sel_dr\n  - //ldo_lp_mode\n  - WRITE_BITS 0x000D 15 14 0x3\n  - WRITE_BITS 0x0007 12 11 0x3\n  - WRITE_BITS 0x000A 14 13 0x3\n  - WRITE_BITS 0x0009 15 14 0x3\n  -   //switch to small BG\n  - WRITE_BITS 0x0003 09 08 0x2\n  - WRITE_BITS 0x0094 05 04 0x1\n  - WRITE_BITS 0x0003 14 12 0x7\n  - WRITE_BITS 0x0003 11 10 0x2\n  - WRITE_BITS 0x0003 07 06 0x2\n  - WRITE_BITS 0x0050 13 12 0x2\n  - WRITE_BITS 0x0003 01 00 0x2\n  - WRITE_BITS 0x0003 05 04 0x2\n  - // LDO_05\n  - // LDO_05\n  - WRITE_BITS 0x0008 14 9 0x3F\n  - WRITE_BITS 0x00EF 2 0 0x2",
-    "judge_criteria": {}
+    "module_config_yaml": "LDO_Init_PMU: \n  - WRITE_BITS 0x02B3 13 0 0x3FFF       //pulldown_dr\n  - //ldo_lp_mode\n  - WRITE_BITS 0x0008 13 12 0x3         //reg_lp_en_ldo_05\n  - WRITE_BITS 0x024E 13 12 0x3         //reg_lp_en_ldo_07\n  - WRITE_BITS 0x011D 01 00 0x3         //reg_lp_en_ldo_08\n  - WRITE_BITS 0x0067 11 10 0x3         //reg_lp_en_ldo_09\n  - WRITE_BITS 0x0247 13 12 0x3         //reg_lp_en_ldo_10\n  - WRITE_BITS 0x0066 11 10 0x3         //reg_lp_en_ldo_11\n  - WRITE_BITS 0x000C 14 13 0x3         //reg_lp_en_ldo_13\n  - WRITE_BITS 0x0202 13 12 0x3         //reg_lp_en_ldo_14\n  - WRITE_BITS 0x020A 13 12 0x3         //reg_lp_en_ldo_15\n  - //ldo_bypass_remove\n  - WRITE_BITS 0x011A 05 05 0x0         //reg_ldo_06_bypass\n  - WRITE_BITS 0x011A 04 04 0x0         //reg_ldo_07_bypass\n  - WRITE_BITS 0x011A 03 03 0x0         //reg_ldo_08_bypass\n  - WRITE_BITS 0x011A 02 02 0x0         //reg_ldo_09_bypass\n  - WRITE_BITS 0x0247 15 15 0x0         //reg_ldo_10_bypass\n  - WRITE_BITS 0x0266 08 08 0x0         //reg_ldo_11_bypass\n  - WRITE_BITS 0x0210 15 15 0x0         //reg_ldo_12_bypass\n  \n  - //PMU\n  - WRITE_BITS 0x0121 15 15 0x1         //reg_lp_bias_res_sel_dr\n  - WRITE_BITS 0x0120 8 6 0x2           //reg_lp_bias_sel_ldo_normal[8:6]\n  - WRITE_BITS 0x011F 6 3 0x2           //reg_lp_bias_sel_ldo_rc[3:1]\n  - WRITE_BITS 0x011F 3 1 0x1           //reg_lp_bias_sel_ldo_dsleep[6:4]\n  - WRITE_BITS 0x02F0 15 0 0xFFFF       //res_sel_dr\n  - WRITE_BITS 0x02F1 4 0 0xFFFF        //res_sel_dr\n  - //ldo_lp_mode\n  - WRITE_BITS 0x000D 15 14 0x3\n  - WRITE_BITS 0x0007 12 11 0x3\n  - WRITE_BITS 0x000A 14 13 0x3\n  -   //switch to small BG\n  - WRITE_BITS 0x0003 09 08 0x2\n  - WRITE_BITS 0x0094 05 04 0x1\n  - WRITE_BITS 0x0003 14 12 0x7\n  - WRITE_BITS 0x0003 11 10 0x2\n  - WRITE_BITS 0x0003 07 06 0x2\n  - WRITE_BITS 0x0050 13 12 0x2\n  - WRITE_BITS 0x0003 01 00 0x2\n  - WRITE_BITS 0x0003 05 04 0x2\n  - WRITE_BITS 0x21 8 6 0x7             //lp_rtc\n  - WRITE_BITS 0x70 0 0 0x1             //rcsleep_allow\n  - WRITE_BITS 0x44 5 5 0x1             //sleep_allow\n  - WRITE_BITS 0x70 4 4 0x1             //ap_sleep_allow\n  - // LDO_05\n  - WRITE_BITS 0x0008 14 9 0x3F\n  - WRITE_BITS 0x00EF 2 0 0x2",
+    "judge_criteria": {
+      "ldo_vout_scan": {
+        "enabled": true,
+        "rules": [
+          {
+            "metric": "step_error_mv",
+            "op": "<",
+            "v1": 5.0,
+            "v2": null
+          },
+          {
+            "metric": "linearity_pct",
+            "op": "<",
+            "v1": 1.0,
+            "v2": null
+          }
+        ]
+      },
+      "ldo_load_reg": {
+        "enabled": true,
+        "rules": [
+          {
+            "metric": "vout_drop_linear_mv",
+            "op": "<",
+            "v1": 100.0,
+            "v2": null
+          },
+          {
+            "metric": "load_reg_linear_pct",
+            "op": "<",
+            "v1": 5.0,
+            "v2": null
+          }
+        ]
+      },
+      "ldo_line_reg": {
+        "enabled": true,
+        "rules": [
+          {
+            "metric": "vout_span_mv",
+            "op": "<",
+            "v1": 10.0,
+            "v2": null
+          },
+          {
+            "metric": "line_reg_pct",
+            "op": "<",
+            "v1": 1.0,
+            "v2": null
+          }
+        ]
+      },
+      "ldo_quiescent": {
+        "enabled": true,
+        "rules": [
+          {
+            "metric": "dIvin (uA)",
+            "op": "<",
+            "v1": 10.0,
+            "v2": null
+          },
+          {
+            "metric": "dIvout (uA)",
+            "op": "<",
+            "v1": 2.0,
+            "v2": null
+          }
+        ]
+      },
+      "ldo_load_transient": {
+        "enabled": true,
+        "rules": [
+          {
+            "metric": "max_overshoot_mv",
+            "op": "<",
+            "v1": 100.0,
+            "v2": null
+          },
+          {
+            "metric": "max_undershoot_mv",
+            "op": "<",
+            "v1": 100.0,
+            "v2": null
+          }
+        ]
+      },
+      "ldo_line_transient": {
+        "enabled": true,
+        "rules": [
+          {
+            "metric": "max_overshoot_mv",
+            "op": "<",
+            "v1": 3.0,
+            "v2": null
+          },
+          {
+            "metric": "max_undershoot_mv",
+            "op": "<",
+            "v1": 3.0,
+            "v2": null
+          }
+        ]
+      }
+    }
   }
 }
