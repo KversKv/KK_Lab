@@ -13,6 +13,9 @@ QLabel#dlgFieldLabel {
     color: $text_muted;
     font-size: $font_caption;
 }
+QLabel:disabled, QLabel#dlgFieldLabel:disabled {
+    color: $text_disabled;
+}
 QLabel#dlgHint {
     color: $text_disabled;
     font-size: $font_caption;
@@ -34,6 +37,11 @@ QLineEdit:hover, QSpinBox:hover, QDoubleSpinBox:hover {
 }
 QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {
     border-color: $border_focus;
+}
+QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled {
+    background-color: $surface_page;
+    color: $text_disabled;
+    border-color: $border_subtle;
 }
 QLineEdit[invalid="true"], QSpinBox[invalid="true"], QDoubleSpinBox[invalid="true"] {
     border-color: $state_error_fg;
@@ -88,6 +96,10 @@ QTableWidget, QTableView, QTreeWidget, QTreeView {
     color: $text_secondary;
     font-size: $font_caption;
     gridline-color: $border_subtle;
+}
+QTableWidget:disabled, QTableView:disabled, QTreeWidget:disabled, QTreeView:disabled {
+    color: $text_disabled;
+    border-color: $border_subtle;
 }
 QHeaderView::section {
     background-color: $surface_input;
