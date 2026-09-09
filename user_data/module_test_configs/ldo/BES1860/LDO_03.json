@@ -13,6 +13,7 @@
     ],
     "chip_name": "BES1860",
     "module_name": "LDO_03",
+    "test_condition": "",
     "operator": "KK",
     "temp_test_enabled": false,
     "temperature": "",
@@ -22,8 +23,10 @@
     "vin_channel": "CH 1",
     "vout_channel": "CH 2",
     "iload_channel": "CH 3",
+    "force_channel": "CH 2",
     "volt_method": "scope",
     "vout_nominal_mv": 1800,
+    "max_iload_ma": 400,
     "device_addr": "0x17",
     "width_flag": 1,
     "scope_vout_channel": 1,
@@ -122,7 +125,7 @@
       }
     },
     "module_config_enabled": true,
-    "module_config_yaml": "Init_PMU:\n  - WRITE_BITS 0x0121 15 15 0x1         //reg_lp_bias_res_sel_dr\n  - WRITE_BITS 0x0120 8 6 0x4           //reg_lp_bias_sel_ldo_normal[8:6]\n  - WRITE_BITS 0x011F 6 3 0x4           //reg_lp_bias_sel_ldo_rc[3:1]\n  - WRITE_BITS 0x011F 3 1 0x4           //reg_lp_bias_sel_ldo_dsleep[6:4]\n  - WRITE_BITS 0x02F0 15 0 0xFFFF       //res_sel_dr\n  - WRITE_BITS 0x02F1 4 0 0xFFFF        //res_sel_dr\n  - //ldo_lp_mode\n  - WRITE_BITS 0x000D 15 14 0x3\n  - WRITE_BITS 0x0007 12 11 0x3\n  - WRITE_BITS 0x000A 14 13 0x3\n  - WRITE_BITS 0x0009 15 14 0x3\n  -   //switch to small BG\n  - WRITE_BITS 0x0003 09 08 0x2\n  - WRITE_BITS 0x0094 05 04 0x1\n  - WRITE_BITS 0x0003 14 12 0x7\n  - WRITE_BITS 0x0003 11 10 0x2\n  - WRITE_BITS 0x0003 07 06 0x2\n  - WRITE_BITS 0x0050 13 12 0x2\n  - WRITE_BITS 0x0003 01 00 0x2\n  - WRITE_BITS 0x0003 05 04 0x2",
+    "module_config_yaml": "LDO_01_02_03_06_TEST_CONFIG:\n  - WRITE_BITS 0x02F0 15 0 0xFFFF       //res_sel_dr\n  - WRITE_BITS 0x02F1 4 0 0xFFFF        //res_sel_dr\n  - //ldo_lp_mode\n  - WRITE_BITS 0x000D 15 14 0x0\n  - WRITE_BITS 0x0007 12 11 0x0\n  - WRITE_BITS 0x000A 14 13 0x0\n  - WRITE_BITS 0x0009 14 13 0x0",
     "judge_criteria": {}
   }
 }
