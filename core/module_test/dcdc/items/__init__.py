@@ -14,8 +14,8 @@ from core.module_test._common import (
     measure_vout, mock_jitter, parse_channel, restore_vin, run_line_transient,
     run_load_capability_ripple, run_load_transient, run_vout_scan,
     safe_measure, set_load_current, settle, setup_load_channel,
-    setup_source_channel, setup_vout_meter, teardown_load, vin_current_limit_a,
-    write_csv,
+    setup_scope_timebase, setup_source_channel, setup_vout_meter, teardown_load,
+    vin_current_limit_a, write_csv,
 )
 from core.module_test.result_model import ItemResult
 from core.module_test.param_spec import (
@@ -389,6 +389,8 @@ def switching_freq(ctx: ItemContext) -> ItemResult:
         setup_load_channel(ctx, iload_ch, initial_current_a=i_start / 1000.0)
         # 上一项可能调过 close_all_channels()（transient 流程），须显式开显示
         ctx.scope.set_channel_display(scope_ch, True)
+        # 示波器项开局统一时基 5ms/div（2026-09 用户规则）
+        setup_scope_timebase(ctx)
         # AC 耦合：隔直后测纹波频率
         if hasattr(ctx.scope, "set_channel_coupling"):
             ctx.scope.set_channel_coupling(scope_ch, "AC")

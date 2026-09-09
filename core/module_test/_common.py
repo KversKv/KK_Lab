@@ -151,6 +151,22 @@ def _acq_settle_s(timebase_s: float) -> float:
     return max(floor, 16.0 * timebase_s)
 
 
+# 示波器测试项开局统一时基（2026-09 用户规则）：除 Output Noise /
+# Load / Line Transient（自管时基）外，用到示波器的测试项开局先设 5ms/div
+SCOPE_ITEM_TIMEBASE_S = 0.005
+
+
+def setup_scope_timebase(ctx: "ItemContext") -> None:
+    """示波器测试项开局统一设时基 5ms/div（Mock / 未接示波器跳过）。"""
+    if ctx.is_mock or ctx.scope is None:
+        return
+    try:
+        ctx.scope.set_timebase_scale(SCOPE_ITEM_TIMEBASE_S)
+    except Exception:  # noqa: BLE001
+        logger.error("set scope timebase %.3g s/div failed",
+                     SCOPE_ITEM_TIMEBASE_S, exc_info=True)
+
+
 def trimmed_mean(samples: list[float]) -> float:
     """去极值均值：样本 >=3 时剔除最大最小各一，参考 PMU baseline 逻辑。"""
     if not samples:
@@ -186,9 +202,11 @@ VOLT_METHOD_N6705C = "n6705c"
 VOLT_METHOD_SCOPE = "scope"
 
 # scope 方式 Vout 测量入位参数（Step1~3，2026-09 用户规则）：
-#   Step1: 500mV/div 粗量程读 V0 → Step2: offset = V0（归中，无偏移）→ Step3: 50mV/div
+#   Step1: 500mV/div 粗量程读 V0（时基固定 5ms/div）→ Step2: offset = V0
+#   （归中，无偏移）→ Step3: 50mV/div
 _SCOPE_VOUT_COARSE_V = 0.5    # Step1 粗量程 500 mV/div（整屏 5V，防初始削波）
 _SCOPE_VOUT_FINE_V = 0.05     # Step3 精量程 50 mV/div
+_SCOPE_VOUT_TIMEBASE_S = 0.005  # Step1 时基 5 ms/div
 
 
 def volt_method_is_scope(cfg: dict) -> bool:
@@ -230,8 +248,8 @@ def _setup_scope_vout_meter(ctx: "ItemContext", *, force: bool = False) -> float
     （多测试项序列中各项入位即毫秒级）；force=True 或无缓存：完整执行
     Step1~3 并把 (V0, scale, offset) 写入模块级缓存。
 
-    Step1: 500mV/div 粗量程读 V0（offset 先置于标称 Vout，读不到依次
-           试 0V / 2.5V 中心档）；
+    Step1: 500mV/div 粗量程读 V0（时基固定 5ms/div；offset 先置于标称
+           Vout，读不到依次试 0V / 2.5V 中心档）；
     Step2: offset = V0（波形整体归中，无偏移）；
     Step3: 切 50mV/div 精量程（与 Step2 的 SCPI 写序为先 scale 后
            offset：改 scale 会重算 offset，见函数内注释）。
@@ -263,9 +281,13 @@ def _setup_scope_vout_meter(ctx: "ItemContext", *, force: bool = False) -> float
             ctx._scope_vout_v0 = cached["v0_v"]
             ctx._scope_vout_ch = ch
             return cached["v0_v"]
-        # Step1：粗量程 + 标称中心读 V0（读不到换中心档重试）
+        # Step1：粗量程 + 标称中心读 V0（读不到换中心档重试）；
+        # 时基固定 5ms/div（2026-09 用户规则）——改时基/量程触发全屏
+        # 重捕，与粗量程一并下发后等 16×时基（下限 1s）再读
         nominal_v = float(ctx.config.get("vout_nominal_mv", 1800)) / 1000.0
+        ctx.scope.set_timebase_scale(_SCOPE_VOUT_TIMEBASE_S)
         ctx.scope.set_channel_scale(ch, _SCOPE_VOUT_COARSE_V)
+        settle(ctx, _acq_settle_s(_SCOPE_VOUT_TIMEBASE_S))
         v0 = None
         for center_v in (nominal_v, 0.0, 2.5):
             ctx.scope.set_channel_offset(ch, center_v)
@@ -1278,6 +1300,8 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
         setup_load_channel(ctx, iload_ch, initial_current_a=max(i_start, 0.001) / 1000.0)
         # 上一项可能调过 close_all_channels()（transient 流程），须显式开显示
         ctx.scope.set_channel_display(scope_ch, True)
+        # 示波器项开局统一时基 5ms/div（2026-09 用户规则）
+        setup_scope_timebase(ctx)
         if dbg:
             _debug_scope_shot(ctx, dbg_dir, f"{item_key}_01_display_on")
     load_state = {"on": not ctx.is_mock}
