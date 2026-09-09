@@ -1,0 +1,37 @@
+core/module_test/_common.py
+  s_b0108ed37c43fd::t_3825fd505f7fb2 1437-1438,1440
+  s_b0108ed37c43fd::t_97d2d4942b7eb3 1403
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "10b79e4f514812bb134f15c36e7d3fe8adcd6be1",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_b0108ed37c43fd": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa122edbcb44144ef2175bb",
+        "model": "kimi-k3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "source_scene": "agent",
+        "runtime_client": "trae-tob-git-ai",
+        "edit_kind": "file_edit",
+        "session_id": "6aa122edbcb44144ef2175bb",
+        "client_type": "ide",
+        "operation_id": "6aa1240ebcb44144ef2175f3",
+        "tool_use_id": "6aa1240ebcb44144ef2175f3",
+        "tool_name": "Edit",
+        "external_session_id": "6aa122edbcb44144ef2175bb",
+        "display_model_name": "Kimi-K3"
+      }
+    }
+  }
+}
