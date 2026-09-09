@@ -34,7 +34,7 @@ from core.module_test._common import (
 from core.module_test.judge import evaluate_item
 from core.module_test.report import save_html_report
 from core.module_test.result_model import ItemResult, ModuleTestResult
-from debug_config import DEBUG_MOCK, REPORT_ITEM_TIMING
+from debug_config import DEBUG_MOCK, REPORT_ITEM_TIMING, REPORT_PDF_EXPORT
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -394,9 +394,13 @@ class ModuleTestRunner(QThread):
             self._result.summary["aborted"] = aborted_reason
 
         try:
-            report_path = save_html_report(self._result, self._out_dir)
+            report_path, pdf_path = save_html_report(self._result, self._out_dir)
             self._result.summary["report_path"] = report_path
             self._log(f"[DONE] 报告已生成: {report_path}")
+            if pdf_path:
+                self._log(f"[DONE] PDF 报告已生成: {pdf_path}")
+            elif REPORT_PDF_EXPORT:
+                self._log("[WARN] PDF 报告导出失败，详见日志。")
         except Exception:  # noqa: BLE001 - 报告生成失败不影响结果返回
             logger.error("生成报告失败", exc_info=True)
             self._log("[ERROR] 生成报告失败，见日志。")

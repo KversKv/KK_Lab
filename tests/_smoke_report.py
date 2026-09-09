@@ -117,10 +117,11 @@ res = ModuleTestResult(
 )
 
 html_str = build_module_html_report(res)
-path = save_html_report(res, OUT)
+path, pdf_path = save_html_report(res, OUT)
 assert "__REPORT_DATA__" not in html_str and "__TITLE__" not in html_str
 assert "const REPORT_DATA = {" in html_str
 assert "https://" not in html_str.replace("https://", "https://", 0) or True
 import re as _re
 ext = _re.findall(r"(?:src|href)\s*=\s*['\"]https?://", html_str)
-print("OK size=%dKB path=%s external_links=%d" % (len(html_str) // 1024, path, len(ext)))
+print("OK size=%dKB path=%s pdf=%s external_links=%d"
+      % (len(html_str) // 1024, path, pdf_path, len(ext)))

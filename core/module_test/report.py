@@ -73,6 +73,14 @@ JSON 经 ``json.dumps`` 并把 ``</`` 转义为 ``<\\/`` 防 script 逃逸。
     改为后端给定的有效段平均步进（新增 dev_gt 规则，容差 = 5% 平均步进）
     ——死区/饱和平台会拉偏全段均值，曾致整列正常步进全部误报；Avg Step
     指标标签注明计算范围（有效段 Vbit 区间）。
+19. PDF 输出（2026-09-08）：debug_config.REPORT_PDF_EXPORT 开启时
+    save_html_report 经系统 Edge/Chrome 无头打印（pdf_export.py）追加
+    report.pdf，并返回 (html_path, pdf_path)；表格 printAll 全量重建
+    （取消 >200 行截断至 100 行，详细原始数据全量进 PDF），打印版截图
+    网格单列原比例全宽、表内截图 96px→320px。无头打印不依赖 beforeprint
+    （headless 下触发不可靠）：由 _to_print_variant 派生打印变体
+    （@media print→all 版式前置、版心锁 180mm、__KK_PRINT__ 令 boot
+    同步 preparePrint 全量渲染）。
 
 ============================= 已知限制 =============================
 - Chrome 打印无法用 CSS 计数器输出"第 X/Y 页"，页脚仅含机密标识与生成时间；
@@ -99,6 +107,7 @@ import debug_config
 from core.module_test.result_model import ItemResult, ModuleTestResult
 from core.module_test._common import load_reg_summary
 from core.module_test.xlsx_export import export_items_xlsx_dir
+from core.module_test.pdf_export import export_pdf_from_html
 
 logger = get_logger(__name__)
 
@@ -1042,9 +1051,15 @@ mark{background:var(--warn-bg);color:inherit;border-radius:2px;padding:0 1px}
   .card,section.card,.item{box-shadow:none;border:1px solid #ddd;break-inside:avoid}
   .item{page-break-inside:avoid}
   .chart-card{break-inside:avoid}
+  /* 图表 SVG 按屏幕宽画死像素，打印版心变窄时按比例收缩防裁切 */
+  .chart-box svg{max-width:100%;height:auto}
   details.panel>summary::before{display:none}
   .tbl-wrap{max-height:none;overflow:visible}
   .tbl thead{display:table-header-group}
+  /* 波形/截图按原始比例全宽打印（屏幕版 4/3 裁切缩略图不进 PDF） */
+  .shots{grid-template-columns:1fr}
+  .shot img{aspect-ratio:auto;object-fit:contain}
+  .tbl-shot img{width:320px}
   .print-only{display:block}
   .print-header{position:fixed;top:0;left:0;right:0;font-size:10px;color:#666;
     border-bottom:1px solid #ccc;padding-bottom:2mm}
@@ -1162,7 +1177,6 @@ const I18N = {
       chart_data:"图表数据",
       page:"页",of:"/",density:"紧凑",per_page:"每页",
       render_all:"渲染全部（便于查找）",virtual_on:"虚拟滚动",
-      truncated:"仅打印前",rows_omitted:"行，其余省略（屏幕版可查看全部）",
       filter:"列筛选",export_view:"导出当前视图 CSV",
       kbd:"快捷键",kbd_open:"显示快捷键面板",
       confidential:"机密 · Confidential",generated:"生成时间",
@@ -1196,7 +1210,6 @@ const I18N = {
       chart_data:"Chart data",
       page:"Page",of:"/",density:"Compact",per_page:"Per page",
       render_all:"Render all (for find)",virtual_on:"Virtual scroll",
-      truncated:"Prints first",rows_omitted:"rows; remainder omitted (see on-screen)",
       filter:"Column filters",export_view:"Export view CSV",
       kbd:"Keyboard shortcuts",kbd_open:"Show shortcuts",
       confidential:"Confidential",generated:"Generated",
@@ -2074,8 +2087,9 @@ function buildTable(host, item) {
   const vbW = vbitWidth();
   const vbitCell = v => fmtVbit(v, vbW);
   (window._anom = window._anom || {})[item.item_key] = flags.count;
-  const st = {sort:null, filters:{}, page:1, per:25, compact:false,
-    onlyAnom:host.dataset.onlyAnom === "1", renderAll:false, showFlt:false};
+  const printAll = host.dataset.printAll === "1";
+  const st = {sort:null, filters:{}, page:1, per:printAll ? 0 : 25, compact:false,
+    onlyAnom:host.dataset.onlyAnom === "1", renderAll:printAll, showFlt:false};
   _tblState.set(host, st);
 
   const view = () => {
@@ -2669,26 +2683,26 @@ function bindGlobal() {
   });
   $("#kbdModal").addEventListener("click", e => {
     if (e.target.id === "kbdModal") $("#kbdModal").classList.remove("show"); });
-  /* 打印前：强制浅色 + 展开全部 + 渲染全部图表；表格截断提示 */
-  window.addEventListener("beforeprint", () => {
+  /* 打印准备：强制浅色 + 展开全部 + 渲染全部图表；表格全量重建（详细原始数据进
+     PDF）。人工打印走 beforeprint；打印变体（无头打印，beforeprint 触发不可靠）
+     由 boot 检测到 __KK_PRINT__ 后同步调用。 */
+  function preparePrint() {
     document.documentElement.dataset.theme = "light";
     $$(".item").forEach(s2 => s2.classList.remove("collapsed"));
     $$("details").forEach(d => { d.dataset.wasOpen = d.open ? "1" : ""; d.open = true; });
-    renderAllCharts(); armTables();
-    $$(".tbl-wrap").forEach(w2 => {
-      const rows = w2.querySelectorAll("tbody tr[data-ri]");
-      if (rows.length > 200 && !w2.dataset.trimmed) {
-        w2.dataset.trimmed = "1";
-        rows.forEach((tr, i) => { if (i >= 100) tr.remove(); });
-        const note = el("div", "tbl-banner",
-          T().truncated + " 100 " + T().rows_omitted);
-        w2.after(note);
-      }
-    });
-  });
+    renderAllCharts();
+    $$(".tbl-host").forEach(h => { h.dataset.printAll = "1";
+      delete h.dataset.done; h.innerHTML = ""; });
+    armTables();
+  }
+  window.addEventListener("beforeprint", preparePrint);
+  if (window.__KK_PRINT__) preparePrint();
   window.addEventListener("afterprint", () => {
     document.documentElement.dataset.theme = S.theme;
     $$("details").forEach(d => { if (!d.dataset.wasOpen) d.open = false; });
+    $$(".tbl-host").forEach(h => { delete h.dataset.printAll;
+      delete h.dataset.done; h.innerHTML = ""; });
+    armTables();
   });
   window.addEventListener("resize", () => {
     $$(".chart-box").forEach(b => { if (b.dataset.rendered) drawChart(b); });
@@ -2734,16 +2748,48 @@ def build_module_html_report(result: ModuleTestResult,
             .replace("__REPORT_DATA__", payload))
 
 
-def save_html_report(result: ModuleTestResult, out_dir: str) -> str:
-    """生成 HTML 报告并落盘，返回文件路径。
+def _to_print_variant(html_text: str) -> str:
+    """由最终 HTML 派生打印专用变体（无头打印用，不写盘，见 pdf_export）。
+
+    - ``@media print{`` → ``@media all{``：打印版式提为基础版式，加载即按
+      打印布局排版，打印时同版式分页，无重排失真；
+    - 注入 ``body{width:180mm}``：锁版心宽 = A4 − 15mm×2 边距，drawChart
+      按 clientWidth 画死像素的 SVG 一次即按最终打印宽度绘制；
+    - 注入 ``window.__KK_PRINT__``：boot 同步 preparePrint 全量渲染（图表
+      懒渲染 + beforeprint 在 headless --print-to-pdf 下触发不可靠）。
+    模板中三个锚点均唯一（REPORT_DATA 内 "</" 已转义为 "<\\/"）。
+    """
+    out = html_text.replace("@media print{", "@media all{", 1)
+    out = out.replace("</style>",
+                      "</style>\n<style>body{width:180mm;margin:0 auto}</style>",
+                      1)
+    return out.replace(
+        "<script>", "<script>window.__KK_PRINT__=1;</script>\n<script>", 1)
+
+
+def save_html_report(result: ModuleTestResult,
+                     out_dir: str) -> tuple[str, str | None]:
+    """生成 HTML 报告并落盘，返回 ``(html_path, pdf_path)``。
 
     同时在 ``out_dir/XLSX/`` 下为每个有内容的测试项生成独立 XLSX
     （数据表 + 截图/波形入单元格；best-effort，失败不影响报告）。
+    ``debug_config.REPORT_PDF_EXPORT`` 开启时再经系统 Edge/Chrome 无头打印
+    打印变体（``_to_print_variant``）追加 ``report.pdf``（全量数据 +
+    原尺寸截图；best-effort，关闭或失败时 pdf_path 为 None）。
     """
     os.makedirs(out_dir, exist_ok=True)
     xlsx_map = export_items_xlsx_dir(result, out_dir)
     path = os.path.join(out_dir, "report.html")
+    html_text = build_module_html_report(result, xlsx_map=xlsx_map)
     with open(path, "w", encoding="utf-8") as f:
-        f.write(build_module_html_report(result, xlsx_map=xlsx_map))
+        f.write(html_text)
     logger.info("模块测试报告已生成: %s", path)
-    return path
+    pdf_path = None
+    if getattr(debug_config, "REPORT_PDF_EXPORT", False):
+        try:
+            pdf_path = export_pdf_from_html(
+                path, os.path.join(out_dir, "report.pdf"),
+                html_text=_to_print_variant(html_text))
+        except Exception:  # noqa: BLE001 - PDF 导出失败不影响 HTML/XLSX 报告
+            logger.warning("PDF 报告导出失败（不影响 HTML 报告）", exc_info=True)
+    return path, pdf_path

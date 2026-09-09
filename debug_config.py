@@ -10,3 +10,9 @@ MODULE_TEST_DEBUG = False
 # 开启后 runner 逐项记录耗时，报告 Meta 区追加各测试项耗时表（含占比）；
 # 关闭时数据不出现在 REPORT_DATA（正式报告无耗时表）；改值后须重启应用（同 DEBUG_MOCK）
 REPORT_ITEM_TIMING = True
+
+# Module Test 报告 PDF 输出开关：
+# 开启后 save_html_report 在生成 HTML 报告的同时，经系统 Edge/Chrome 无头打印
+# 输出 report.pdf（含全量原始数据表与原尺寸截图，见 core/module_test/pdf_export.py）；
+# 未找到浏览器或打印失败仅记 WARN 跳过，不影响 HTML/XLSX；改值后须重启应用（同 DEBUG_MOCK）
+REPORT_PDF_EXPORT = True
