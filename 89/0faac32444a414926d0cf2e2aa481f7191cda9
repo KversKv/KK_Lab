@@ -1,0 +1,121 @@
+core/module_test/report.py
+  s_45b9c812e0b457::t_e15a4592161bd4 1506
+  s_45b9c812e0b457::t_e1e1e8f3ba8ad4 1171
+  s_45b9c812e0b457::t_8cd12a7dce3f3e 1515,1517
+  s_45b9c812e0b457::t_d85c07faed926c 1204
+  s_19c2e2e9070ba6::t_3c422f25531c5d 343-345,348-349,351-355
+  s_45b9c812e0b457::t_d99b884bf1dedd 1206
+  s_45b9c812e0b457::t_9074804baeea69 19
+  s_45b9c812e0b457::t_287ee299306afb 89
+  s_6d6e7a33030232::t_cc7940428c6de0 301-310
+  s_45b9c812e0b457::t_b59f8ebf4e3f7e 321
+  s_19c2e2e9070ba6::t_d0145ba3c79217 346
+  s_ed46b2080709f0::t_6f4c7a549061f8 415-418
+  s_6d6e7a33030232::t_95e220f0ff6fbc 422-423
+  s_45b9c812e0b457::t_117a0f9c74554b 1173
+tests/_report_smoke/report.js
+  s_45b9c812e0b457::t_909b22bbe1879e 21
+  s_45b9c812e0b457::t_390476595c6359 19,281,290,292
+  s_45b9c812e0b457::t_0d78912da58b9d 6
+  s_45b9c812e0b457::t_f8809379820c79 48
+  s_45b9c812e0b457::t_539d5a3eed6b14 50
+tests/_report_smoke/report.html
+  s_6d6e7a33030232::t_8c68a8aeca8fe4 433
+  s_45b9c812e0b457::t_7061c7fa5c147c 246,446,448,479,481,716-717,781,790,792
+core/module_test/judge.py
+  s_6d6e7a33030232::t_94db44ff3ded10 88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "890faac32444a414926d0cf2e2aa481f7191cda9",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_19c2e2e9070ba6": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa10c79bcb44144ef21733f",
+        "model": "kimi-k3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "client_type": "ide",
+        "session_id": "6aa10c79bcb44144ef21733f",
+        "external_session_id": "6aa10c79bcb44144ef21733f",
+        "edit_kind": "file_edit",
+        "operation_id": "6aa10ed1bcb44144ef217385",
+        "source_scene": "agent",
+        "runtime_client": "trae-tob-git-ai",
+        "display_model_name": "Kimi-K3",
+        "tool_use_id": "6aa10ed1bcb44144ef217385",
+        "tool_name": "Edit"
+      }
+    },
+    "s_45b9c812e0b457": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa0fc65bcb44144ef2171c2",
+        "model": "kimi-k3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "client_type": "ide",
+        "runtime_client": "trae-tob-git-ai",
+        "tool_use_id": "6aa100e7bcb44144ef21728d",
+        "session_id": "6aa0fc65bcb44144ef2171c2",
+        "display_model_name": "Kimi-K3",
+        "source_scene": "agent",
+        "edit_kind": "file_edit",
+        "external_session_id": "6aa0fc65bcb44144ef2171c2",
+        "tool_name": "Edit",
+        "operation_id": "6aa100e7bcb44144ef21728d"
+      }
+    },
+    "s_6d6e7a33030232": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa1081abcb44144ef217294",
+        "model": "kimi-k3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "runtime_client": "trae-tob-git-ai",
+        "client_type": "ide",
+        "external_session_id": "6aa1081abcb44144ef217294",
+        "tool_type": "agent",
+        "session_id": "6aa1081abcb44144ef217294",
+        "tool_use_id": "6aa10c3bbcb44144ef217338",
+        "tool_id": "Edit",
+        "operation_id": "6aa10c3bbcb44144ef217338",
+        "dedupe_key": "6aa1081abcb44144ef217294:6aa10c3bbcb44144ef217338:afterEdit:3a530fda",
+        "source_scene": "unknown",
+        "edit_kind": "file_edit"
+      }
+    },
+    "s_ed46b2080709f0": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa0f7e5bcb44144ef21712d",
+        "model": "kimi-k3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "tool_use_id": "6aa0fb31bcb44144ef2171a9",
+        "tool_name": "RunCommand",
+        "display_model_name": "Kimi-K3",
+        "operation_id": "6aa0fb31bcb44144ef2171a9",
+        "runtime_client": "trae-tob-git-ai",
+        "session_id": "6aa0f7e5bcb44144ef21712d",
+        "edit_kind": "bash",
+        "source_scene": "agent",
+        "external_session_id": "6aa0f7e5bcb44144ef21712d",
+        "client_type": "ide"
+      }
+    }
+  }
+}
