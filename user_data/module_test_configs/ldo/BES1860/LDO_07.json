@@ -1,0 +1,266 @@
+{
+  "schema_version": 1,
+  "module_type": "ldo",
+  "config": {
+    "selected_items": [
+      "ldo_vout_scan",
+      "ldo_load_reg",
+      "ldo_line_reg",
+      "ldo_quiescent",
+      "ldo_ripple",
+      "ldo_output_noise",
+      "ldo_load_transient",
+      "ldo_line_transient"
+    ],
+    "chip_name": "BES1860",
+    "module_name": "LDO_07",
+    "test_condition": "LP_MODE_BIAS010",
+    "operator": "KK",
+    "temp_test_enabled": false,
+    "temperature": "",
+    "temp_soak_s": 300,
+    "temp_tolerance_c": 2,
+    "temp_wait_s": 1800,
+    "vin_channel": "CH 1",
+    "vout_channel": "CH 2",
+    "iload_channel": "CH 3",
+    "force_channel": "CH 3",
+    "volt_method": "scope",
+    "vout_nominal_mv": 1000,
+    "max_iload_ma": 200,
+    "device_addr": "0x17",
+    "width_flag": 1,
+    "scope_vout_channel": 1,
+    "item_overrides": {
+      "ldo_quiescent": {
+        "vin_v": 3.8,
+        "average_cnt": 5,
+        "settle_time_s": 0.05,
+        "iq_en_dr_addr": "0x09",
+        "iq_en_addr": "0x09",
+        "iq_en_dr_bit": 11,
+        "iq_en_bit": 10,
+        "iq_on_dr_val": 1,
+        "iq_on_en_val": 1,
+        "iq_off_dr_val": 1,
+        "iq_off_en_val": 0,
+        "iq_vout_offset_mv": 20.0
+      },
+      "ldo_vout_scan": {
+        "reg_addr": "0x88",
+        "msb": 5,
+        "lsb": 0,
+        "min_code": 0,
+        "max_code": 31,
+        "vin_v": 3.8,
+        "settle_time_s": 0.05,
+        "average_cnt": 3
+      },
+      "ldo_load_reg": {
+        "iload_start_ma": 1.0,
+        "iload_end_ma": 200.0,
+        "iload_step_ma": 10.0,
+        "iload_knee_ma": 0.0,
+        "vin_v": 4.0,
+        "settle_time_s": 0.01,
+        "average_cnt": 1,
+        "use_ripple_sweep": true
+      },
+      "ldo_line_reg": {
+        "vin_start_v": 3.0,
+        "vin_end_v": 5.0,
+        "vin_step_v": 0.2,
+        "settle_time_s": 0.01,
+        "average_cnt": 1
+      },
+      "ldo_ripple": {
+        "vin_v": 3.8,
+        "iload_start_ma": 0.0,
+        "iload_end_ma": 200.0,
+        "iload_step_ma": 20.0,
+        "settle_time_s": 0.01,
+        "average_cnt": 1
+      },
+      "ldo_output_noise": {
+        "vin_v": 3.8,
+        "noise_center_freq_khz": 15.0,
+        "noise_freq_span_khz": 30.0
+      },
+      "ldo_load_transient": {
+        "transient_groups": [
+          {
+            "i0_ma": 1.0,
+            "i1_ma": 100.0,
+            "freq_hz": 1000.0
+          },
+          {
+            "i0_ma": 10.0,
+            "i1_ma": 100.0,
+            "freq_hz": 500.0
+          },
+          {
+            "i0_ma": 1.0,
+            "i1_ma": 100.0,
+            "freq_hz": 100.0
+          },
+          {
+            "i0_ma": 1.0,
+            "i1_ma": 100.0,
+            "freq_hz": 10.0
+          }
+        ],
+        "settle_time_s": 0.05
+      },
+      "ldo_line_transient": {
+        "line_transient_groups": [
+          {
+            "vin0_v": 3.5,
+            "vin1_v": 5.0,
+            "freq_hz": 1000.0
+          },
+          {
+            "vin0_v": 3.5,
+            "vin1_v": 5.0,
+            "freq_hz": 100.0
+          },
+          {
+            "vin0_v": 3.5,
+            "vin1_v": 5.0,
+            "freq_hz": 10.0
+          }
+        ],
+        "transient_vspan_mv": 200.0,
+        "settle_time_s": 0.05
+      }
+    },
+    "module_config_enabled": true,
+    "module_config_yaml": "LDO_Others_TEST_CONFIG:\n  - // reserve寄存器,和比较器校准有关\n  - write 0x229 0x0\n  - write 0x144 0x0\n  - write 0x1E4 0x0\n  - write 0x154 0x0\n  - write 0x2DF 0x0\n  - write 0x224 0x0\n  - // 关闭soft_start\n  - write_bits 0x155 14 13  0x2\n  - write_bits 0x1D5 14 13  0x2\n  - // WRITE_BITS 0x367  9 9 0x1\n  - // buck_01_erramp_sel_200k\n  - //WRITE_BITS 0x36B  0 0 0x1\n  - // buck_02_erramp_sel_200k\n  - //WRITE_BITS 0x36E  13 13 0x1\n  - // buck_03_erramp_sel_200k\n  - //WRITE_BITS 0x372  7 7 0x1\n  - // buck_04_erramp_sel_200k\n  - //WRITE_BITS 0x379  15 15 0x1\n  - // buck_05_erramp_sel_200k\n  - //WRITE_BITS 0x37D  13 13 0x1\n  - // buck_06_erramp_sel_200k\n  - // 2026.09.02  1860 默认值为1,注释掉\n  - write_bits 0x372 5  5  0x1\n  - write_bits 0x379 13 13 0x1\n  - // buck4/5 无并联LDO，需要打开软启动\n  - // 2026.2.10\n  - WRITE_BITS 0x150 7 4  0x8\n  - WRITE_BITS 0x378 15 12  0x6\n  - // buck4/5 cap_bit调整，优化效率\n  - // 2026.4.8 V6\n  - WRITE_BITS 0x22A 11 9  0x7\n  - WRITE_BITS 0x13C 11 11 0x1\n  - WRITE_BITS 0x13D 11 11 0x0\n  - WRITE_BITS 0x13E 11 11 0x1\n  - //buck1\n  - WRITE_BITS 0x14A 14 12 0x7\n  - WRITE_BITS 0x146 11 11 0x1\n  - WRITE_BITS 0x147 11 11 0x0\n  - WRITE_BITS 0x148 11 11 0x1\n  - //buck2\n  - WRITE_BITS 0x1EA 14 12 0x7\n  - WRITE_BITS 0x1E6 11 11 0x1\n  - WRITE_BITS 0x1E7 11 11 0x0\n  - WRITE_BITS 0x1E8 11 11 0x1\n  - //buck3\n  - WRITE_BITS 0x15A 14 12 0x7\n  - WRITE_BITS 0x156 11 11 0x1\n  - WRITE_BITS 0x157 11 11 0x0\n  - WRITE_BITS 0x158 11 11 0x1\n  - //buck4\n  - WRITE_BITS 0x1DA 14 12 0x7\n  - WRITE_BITS 0x1D6 11 11 0x1\n  - WRITE_BITS 0x1D7 11 11 0x0\n  - WRITE_BITS 0x1D8 11 11 0x1\n  - //buck5\n  - WRITE_BITS 0x225 11 9  0x7\n  - WRITE_BITS 0x359 11 11 0x1\n  - WRITE_BITS 0x35B 11 11 0x0\n  - WRITE_BITS 0x35D 11 11 0x1\n  - //buck6\n  - //force_vcomp_10u_normal=1,1u=1\n  - //force_vcomp_10u_dsleep=1,1u=0\n  - //force_vcomp_10u_RC=1,1u=1\n  - // buck1-6存在ulp模式切换，导致VSYS电流波动\n  - // 纹波偏大，noraml需要force到normal\n  - WRITE_BITS 0x13C 15 14 0x0\n  - WRITE_BITS 0x13D 15 14 0x3\n  - WRITE_BITS 0x13E 15 14 0x0\n  - // buck1_force_ulp_normal/dsleep/RC 0\n  - WRITE_BITS 0x146 15 14 0x3\n  - WRITE_BITS 0x147 15 14 0x3\n  - WRITE_BITS 0x148 15 14 0x3\n  - // buck2_force_ulp_normal/dsleep/RC 1\n  - WRITE_BITS 0x1E6 15 14 0x3\n  - WRITE_BITS 0x1E7 15 14 0x3\n  - WRITE_BITS 0x1E8 15 14 0x3\n  - // buck3_force_ulp_normal/dsleep/RC 1\n  - WRITE_BITS 0x156 15 14 0x3\n  - WRITE_BITS 0x157 15 14 0x3\n  - WRITE_BITS 0x158 15 14 0x3\n  - // buck4_force_ulp_normal/dsleep/RC 1\n  - WRITE_BITS 0x1D6 15 14 0x3\n  - WRITE_BITS 0x1D7 15 14 0x3\n  - WRITE_BITS 0x1D8 15 14 0x3\n  - // buck5_force_ulp_normal/dsleep/RC 1\n  - WRITE_BITS 0x359 15 14 0x0\n  - WRITE_BITS 0x35B 15 14 0x3\n  - WRITE_BITS 0x35D 15 14 0x0\n  - // buck6_force_ulp_normal/dsleep/RC 0\n  - // buck2-5存在gm切换，导致VSYS电流波动\n  - // 纹波偏大，需要force到gm off\n  - // 仿真是在gm off条件下\n  - WRITE_BITS 0x13C 13 13 0x0\n  - WRITE_BITS 0x13D 13 13 0x0\n  - WRITE_BITS 0x13E 13 13 0x0\n  - WRITE_BITS 0x146 13 13 0x0\n  - WRITE_BITS 0x147 13 13 0x0\n  - WRITE_BITS 0x148 13 13 0x0\n  - WRITE_BITS 0x1E6 13 13 0x0\n  - WRITE_BITS 0x1E7 13 13 0x0\n  - WRITE_BITS 0x1E8 13 13 0x0\n  - WRITE_BITS 0x156 13 13 0x0\n  - WRITE_BITS 0x157 13 13 0x0\n  - WRITE_BITS 0x158 13 13 0x0\n  - WRITE_BITS 0x1D6 13 13 0x0\n  - WRITE_BITS 0x1D7 13 13 0x0\n  - WRITE_BITS 0x1D8 13 13 0x0\n  - WRITE_BITS 0x359 13 13 0x0\n  - WRITE_BITS 0x35B 13 13 0x0\n  - WRITE_BITS 0x35D 13 13 0x0\n  - // buck1-6_vcomp_vsel_normal/RC/sleep 0\n  - WRITE_BITS 0x369 12 12 0x1\n  - WRITE_BITS 0x36C 15 15 0x1\n  - WRITE_BITS 0x370 12 12 0x1\n  - WRITE_BITS 0x374  7  7 0x1\n  - WRITE_BITS 0x37B 15 15 0x1\n  - WRITE_BITS 0x37F 12 12 0x1\n  - // buck1-6_vcomp_vsel_2P4\n  - // vcomp_vsel使用2P4\n  - // 以提高buck频率\n  - // 2026.02.05\n  - WRITE_BITS 0x325 11 0 0xAAA\n  - // 关闭fast_charge, 避免休眠唤醒过冲\n  - // 2026.02.10\n  - WRITE_BITS 0x15  1 0 0x2\n  - // buck1 on\n  - WRITE_BITS 0x145 1 0 0x3\n  - // buck2 on\n  - WRITE_BITS 0x1E5 1 0 0x3\n  - // buck3 on\n  - WRITE_BITS 0x155 1 0 0x3\n  - //buck4 on\n  - WRITE_BITS 0x1D5 1 0 0x3\n  - // buck5 on\n  - WRITE_BITS 0x35f 1 0 0x2\n  - // buck6 on\n  - WRITE 0x2B3 0x0017\n  - // pull down off 1236\n  - // LDO关闭后会自动pull down\n  - // 导致VSYS电流增加，因此需要强制关闭此功能\n  - WRITE_BITS 0xD 15 12 0xF\n  - // LDO1 on\n  - WRITE_BITS 0x3 3   2 0x2\n  - // LDO2 off\n  - WRITE_BITS 0xA 11 10 0x2\n  - // LDO3 off\n  - WRITE_BITS 0x9 11 10 0x2\n  - // LDO6 off\n  - // 2026.02.10_V3\n  - write_bits 0x372 5  5  0x0\n  - write_bits 0x379 13 13 0x0\n  - // 关闭buck4/5 软启动，因为休眠到唤醒过程中存在drop\n  - // 2026.03.18_V4\n  \n  \n  \n  - WRITE_BITS 0x0121 15 15 0x1         //reg_lp_bias_res_sel_dr\n  - WRITE_BITS 0x0120 8 6 0x2           //reg_lp_bias_sel_ldo_normal[8:6]\n  - WRITE_BITS 0x011F 6 3 0x2           //reg_lp_bias_sel_ldo_rc[3:1]\n  - WRITE_BITS 0x011F 3 1 0x1           //reg_lp_bias_sel_ldo_dsleep[6:4]\n  - WRITE_BITS 0x02F0 15 0 0xFFFF       //res_sel_dr\n  - WRITE_BITS 0x02F1 4 0 0xFFFF        //res_sel_dr\n  - WRITE_BITS 0x02B3 13 0 0x3FFF       //pulldown_dr\n  - //ldo_lp_mode\n  - WRITE_BITS 0x0008 13 12 0x3         //reg_lp_en_ldo_05\n  - WRITE_BITS 0x024E 13 12 0x3         //reg_lp_en_ldo_07\n  - WRITE_BITS 0x011D 01 00 0x3         //reg_lp_en_ldo_08\n  - WRITE_BITS 0x0067 11 10 0x3         //reg_lp_en_ldo_09\n  - WRITE_BITS 0x0247 13 12 0x3         //reg_lp_en_ldo_10\n  - WRITE_BITS 0x0066 11 10 0x3         //reg_lp_en_ldo_11\n  - WRITE_BITS 0x000C 14 13 0x3         //reg_lp_en_ldo_13\n  - WRITE_BITS 0x0202 13 12 0x3         //reg_lp_en_ldo_14\n  - WRITE_BITS 0x020A 13 12 0x3         //reg_lp_en_ldo_15\n  - //ldo_bypass_remove\n  - WRITE_BITS 0x011A 05 05 0x0         //reg_ldo_06_bypass\n  - WRITE_BITS 0x011A 04 04 0x0         //reg_ldo_07_bypass\n  - WRITE_BITS 0x011A 03 03 0x0         //reg_ldo_08_bypass\n  - WRITE_BITS 0x011A 02 02 0x0         //reg_ldo_09_bypass\n  - WRITE_BITS 0x0247 15 15 0x0         //reg_ldo_10_bypass\n  - WRITE_BITS 0x0266 08 08 0x0         //reg_ldo_11_bypass\n  - WRITE_BITS 0x0210 15 15 0x0         //reg_ldo_12_bypass\n  \n  -   //switch to small BG\n  - WRITE_BITS 0x0003 09 08 0x2\n  - WRITE_BITS 0x0094 05 04 0x1\n  - WRITE_BITS 0x0003 14 12 0x7\n  - WRITE_BITS 0x0003 11 10 0x2\n  - WRITE_BITS 0x0003 07 06 0x2\n  - WRITE_BITS 0x0050 13 12 0x2\n  - WRITE_BITS 0x0003 01 00 0x2\n  - WRITE_BITS 0x0003 05 04 0x2\n  - // LDO_07\n  - WRITE_BITS 0x024E 14 9 0x3F \n  - WRITE_BITS 0x011A 4 4 0x0\n          //lp_rtc\n  - WRITE_BITS 0x014B 07 0 0x54     //reg_buck_03 1.8V\n  - WRITE_BITS 0x01EB 07 0 0xA8     //reg_buck_03 1.8V",
+    "judge_criteria": {
+      "ldo_vout_scan": {
+        "enabled": true,
+        "rules": [
+          {
+            "metric": "step_error_mv",
+            "op": "<",
+            "v1": 2.5,
+            "v2": null
+          },
+          {
+            "metric": "linearity_pct",
+            "op": "<",
+            "v1": 1.0,
+            "v2": null
+          }
+        ]
+      },
+      "ldo_load_reg": {
+        "enabled": true,
+        "rules": [
+          {
+            "metric": "vout_drop_linear_mv",
+            "op": "<",
+            "v1": 20.0,
+            "v2": null
+          },
+          {
+            "metric": "load_reg_linear_pct",
+            "op": "<",
+            "v1": 1.0,
+            "v2": null
+          }
+        ]
+      },
+      "ldo_line_reg": {
+        "enabled": true,
+        "rules": [
+          {
+            "metric": "vout_span_mv",
+            "op": "<",
+            "v1": 5.0,
+            "v2": null
+          },
+          {
+            "metric": "line_reg_pct",
+            "op": "<",
+            "v1": 1.0,
+            "v2": null
+          }
+        ]
+      },
+      "ldo_quiescent": {
+        "enabled": true,
+        "rules": [
+          {
+            "metric": "dIvin (uA)",
+            "op": "<",
+            "v1": 100.0,
+            "v2": null
+          },
+          {
+            "metric": "dIvout (uA)",
+            "op": "<",
+            "v1": 2.0,
+            "v2": null
+          }
+        ]
+      },
+      "ldo_ripple": {
+        "enabled": true,
+        "rules": [
+          {
+            "metric": "max_vpp_mv",
+            "op": "<",
+            "v1": 10.0,
+            "v2": null
+          },
+          {
+            "metric": "max_vout_drop_mv",
+            "op": "<",
+            "v1": 50.0,
+            "v2": null
+          },
+          {
+            "metric": "max_load_ma",
+            "op": ">",
+            "v1": 150.0,
+            "v2": null
+          }
+        ]
+      },
+      "ldo_load_transient": {
+        "enabled": true,
+        "rules": [
+          {
+            "metric": "max_overshoot_mv",
+            "op": "<",
+            "v1": 100.0,
+            "v2": null
+          },
+          {
+            "metric": "max_undershoot_mv",
+            "op": "<",
+            "v1": 100.0,
+            "v2": null
+          }
+        ]
+      },
+      "ldo_line_transient": {
+        "enabled": true,
+        "rules": [
+          {
+            "metric": "max_overshoot_mv",
+            "op": "<",
+            "v1": 20.0,
+            "v2": null
+          },
+          {
+            "metric": "max_undershoot_mv",
+            "op": "<",
+            "v1": 20.0,
+            "v2": null
+          }
+        ]
+      }
+    }
+  }
+}

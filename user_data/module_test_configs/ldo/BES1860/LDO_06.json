@@ -14,7 +14,7 @@
     ],
     "chip_name": "BES1860",
     "module_name": "LDO_06",
-    "test_condition": "LP_MODE_BIAS111",
+    "test_condition": "LP_MODE_BIAS010",
     "operator": "KK",
     "temp_test_enabled": false,
     "temperature": "",
@@ -134,7 +134,133 @@
       }
     },
     "module_config_enabled": true,
-    "module_config_yaml": "LDO_01_02_03_06_TEST_CONFIG:\n  - WRITE_BITS 0x02F0 15 0 0xFFFF       //res_sel_dr\n  - WRITE_BITS 0x02F1 4 0 0xFFFF        //res_sel_dr\n  - //ldo_lp_mode\n  - WRITE_BITS 0x000D 15 14 0x0\n  - WRITE_BITS 0x0007 12 11 0x0\n  - WRITE_BITS 0x000A 14 13 0x0\n  - WRITE_BITS 0x0009 14 13 0x0",
-    "judge_criteria": {}
+    "module_config_yaml": "LDO_01_02_03_06_TEST_CONFIG:\n  - WRITE_BITS 0x02B3 13 0 0x3FFF       //pulldown_dr\n  - WRITE_BITS 0x02F0 15 0 0xFFFF       //res_sel_dr\n  - WRITE_BITS 0x02F1 4 0 0xFFFF        //res_sel_dr\n  - //ldo_lp_mode\n  - WRITE_BITS 0x000D 15 14 0x0\n  - WRITE_BITS 0x0007 12 11 0x0\n  - WRITE_BITS 0x000A 14 13 0x0\n  - WRITE_BITS 0x0009 14 13 0x0\n  - //reg_ldo_oscp_func_en\n  - WRITE_BITS 0x00A9 2 0 0x2\n  - WRITE_BITS 0x00AD 2 0 0x2\n  - WRITE_BITS 0x00EB 2 0 0x2\n  - WRITE_BITS 0x00F2 2 0 0x2",
+    "judge_criteria": {
+      "ldo_vout_scan": {
+        "enabled": true,
+        "rules": [
+          {
+            "metric": "step_error_mv",
+            "op": "<",
+            "v1": 2.5,
+            "v2": null
+          },
+          {
+            "metric": "linearity_pct",
+            "op": "<",
+            "v1": 1.0,
+            "v2": null
+          }
+        ]
+      },
+      "ldo_load_reg": {
+        "enabled": true,
+        "rules": [
+          {
+            "metric": "vout_drop_linear_mv",
+            "op": "<",
+            "v1": 20.0,
+            "v2": null
+          },
+          {
+            "metric": "load_reg_linear_pct",
+            "op": "<",
+            "v1": 1.0,
+            "v2": null
+          }
+        ]
+      },
+      "ldo_line_reg": {
+        "enabled": true,
+        "rules": [
+          {
+            "metric": "vout_span_mv",
+            "op": "<",
+            "v1": 5.0,
+            "v2": null
+          },
+          {
+            "metric": "line_reg_pct",
+            "op": "<",
+            "v1": 1.0,
+            "v2": null
+          }
+        ]
+      },
+      "ldo_quiescent": {
+        "enabled": true,
+        "rules": [
+          {
+            "metric": "dIvin (uA)",
+            "op": "<",
+            "v1": 100.0,
+            "v2": null
+          },
+          {
+            "metric": "dIvout (uA)",
+            "op": "<",
+            "v1": 2.0,
+            "v2": null
+          }
+        ]
+      },
+      "ldo_ripple": {
+        "enabled": true,
+        "rules": [
+          {
+            "metric": "max_vpp_mv",
+            "op": "<",
+            "v1": 10.0,
+            "v2": null
+          },
+          {
+            "metric": "max_vout_drop_mv",
+            "op": "<",
+            "v1": 50.0,
+            "v2": null
+          },
+          {
+            "metric": "max_load_ma",
+            "op": ">",
+            "v1": 150.0,
+            "v2": null
+          }
+        ]
+      },
+      "ldo_load_transient": {
+        "enabled": true,
+        "rules": [
+          {
+            "metric": "max_overshoot_mv",
+            "op": "<",
+            "v1": 100.0,
+            "v2": null
+          },
+          {
+            "metric": "max_undershoot_mv",
+            "op": "<",
+            "v1": 100.0,
+            "v2": null
+          }
+        ]
+      },
+      "ldo_line_transient": {
+        "enabled": true,
+        "rules": [
+          {
+            "metric": "max_overshoot_mv",
+            "op": "<",
+            "v1": 20.0,
+            "v2": null
+          },
+          {
+            "metric": "max_undershoot_mv",
+            "op": "<",
+            "v1": 20.0,
+            "v2": null
+          }
+        ]
+      }
+    }
   }
 }
