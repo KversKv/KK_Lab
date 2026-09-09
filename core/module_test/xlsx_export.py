@@ -135,6 +135,7 @@ def _write_summary_sheet(ws, result) -> None:  # noqa: ANN001
         ("模块", result.module_type.upper()),
         ("芯片", result.chip_name or "—"),
         ("模块名称", result.module_name or "—"),
+        ("测试条件", getattr(result, "test_condition", "") or "—"),
         ("操作员", result.operator or "—"),
         ("温度 (°C)", result.temperature or "常温"),
         ("开始时间", result.started_at or "—"),

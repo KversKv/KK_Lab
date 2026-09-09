@@ -58,6 +58,7 @@ class ModuleTestResult:
     module_type: str  # "ldo" | "dcdc"
     chip_name: str = ""
     module_name: str = ""  # DUT 配置的模块描述（如 LDO1 / DCDC_CORE），供导出用
+    test_condition: str = ""  # DUT 配置的测试条件，供报告元信息展示
     operator: str = ""
     temperature: str = ""
     started_at: str = ""

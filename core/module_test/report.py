@@ -6,7 +6,8 @@ UI 只拿路径打开，不做 IO——本模块纯字符串生成，禁依赖 Q
 
 ============================= 数据 Schema（REPORT_DATA） =============================
 {
-  "meta":    {report_title, module_type, chip, operator, temperature_c,
+  "meta":    {report_title, module_type, chip, module_name, test_condition,
+              operator, temperature_c,
               start_time, end_time, duration_s, generated_at(带时区), sw_version,
               instruments[], environment{},
               item_timing[{index,item_key,title,duration_s}]},
@@ -670,6 +671,8 @@ def build_report_data(result: ModuleTestResult,
             "report_title": f"Module Test Report — {module}",
             "module_type": module,
             "chip": result.chip_name or None,
+            "module_name": result.module_name or None,
+            "test_condition": result.test_condition or None,
             "sample_id": None,
             "operator": result.operator or None,
             "temperature_c": temp_c,
@@ -1428,6 +1431,8 @@ function renderMeta() {
     (v === null || v === undefined || v === "" ? DASH : esc(v)) + "</dd></div>";
   let html = '<dl class="dl">' +
     pair("Chip", m.chip) + pair("Module", m.module_type) +
+    pair("Module Name", m.module_name) +
+    pair("Test Condition", m.test_condition) +
     pair("Sample ID", m.sample_id) + pair("Operator", m.operator) +
     pair("Temperature (°C)", m.temperature_c) +
     pair("Start", m.start_time) + pair("End", m.end_time) +
