@@ -119,7 +119,7 @@ def iq_diff_measure(ctx: ItemContext, item_key: str, vin_ch: int, vout_src_ch: i
     """静态电流差分测量核心（LDO/DCDC 共用）。
 
     外供 Vout 源到 vout_supply_v，分别在使能 / 关断两态测 Vin+Vout 电流做差。
-    返回 (dIvin_uA, dIvout_uA, Iq_uA, enable_orig)，前三者四舍五入到 3 位，
+    返回 (dIvin_uA, dIvout_uA, enable_orig)，前两者四舍五入到 3 位，
     enable_orig 为使能态写入前的 (dr, en) 原始位值（Mock/未配置为 None），
     供调用方在关断通道前还原寄存器。
     """
@@ -153,5 +153,4 @@ def iq_diff_measure(ctx: ItemContext, item_key: str, vin_ch: int, vout_src_ch: i
                                 count=avg_cnt, settle_s=settle_s) * 1e6
     d_ivin = ivin_on - ivin_off
     d_ivout = ivout_on - ivout_off
-    iq = d_ivin + d_ivout
-    return (round(d_ivin, 3), round(d_ivout, 3), round(iq, 3), enable_orig)
+    return (round(d_ivin, 3), round(d_ivout, 3), enable_orig)

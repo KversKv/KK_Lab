@@ -171,7 +171,7 @@ def quiescent(ctx: ItemContext) -> ItemResult:
       1. 外供 Vout 源通道 = 实测 Vout + 偏置（默认 +20mV）；
       2. 使能被测 LDO（写 ENABLE 双寄存器 on），记 Vin/Vout 两通道电流；
       3. 关断被测 LDO（写 ENABLE 双寄存器 off），再记 Vin/Vout 两通道电流；
-      4. ΔI_vin、ΔI_vout 分列，Iq = ΔI_vin + ΔI_vout。
+      4. ΔI_vin、ΔI_vout 分列显示，并注明 Vin/Vout 电压值（设定值）。
     未配 ENABLE 寄存器时退化为直接测 Vin 电流。
     """
     from core.module_test.mode_manager import iq_diff_measure, parse_enable_regs
@@ -192,26 +192,27 @@ def quiescent(ctx: ItemContext) -> ItemResult:
     if not ctx.is_mock:
         setup_source_channel(ctx, vin_ch, vin_v, current_limit=vin_current_limit_a(cfg))
 
-    header = ["dIvin (uA)", "dIvout (uA)", "Iq (uA)"]
+    header = ["Vin (V)", "Vout (V)", "dIvin (uA)", "dIvout (uA)"]
     if en_regs is None:
         ctx.log_fn(f"[{item_key}] 未配置 ENABLE 寄存器，退化为直接测 Vin 电流")
         if ctx.is_mock:
-            iq = mock_jitter(80.0, 0.05)
+            ivin = mock_jitter(80.0, 0.05)
         else:
             settle(ctx, max(settle_s * 4, 0.2))
-            iq = measure_avg(ctx, "measure_current", vin_ch,
-                             count=avg_cnt, settle_s=settle_s) * 1e6
-        row = [round(iq, 3), "", round(iq, 3)]
-        ctx.log_fn(f"[{item_key}] (fallback) Ivin={iq:.3f} uA")
+            ivin = measure_avg(ctx, "measure_current", vin_ch,
+                               count=avg_cnt, settle_s=settle_s) * 1e6
+        row = [vin_v, "", round(ivin, 3), ""]
+        ctx.log_fn(f"[{item_key}] (fallback) Ivin={ivin:.3f} uA")
     else:
         d = iq_diff_measure(ctx, item_key, vin_ch, vout_src_ch,
                             vout_nom + vout_offset, en_regs, settle_s, avg_cnt,
                             mock_base_ua=80.0)
-        row = [d[0], d[1], d[2]]
-        ctx.log_fn(f"[{item_key}] dIvin={d[0]} dIvout={d[1]} Iq={d[2]} uA")
+        row = [vin_v, round(vout_nom + vout_offset, 4), d[0], d[1]]
+        ctx.log_fn(f"[{item_key}] Vin={vin_v}V Vout={vout_nom + vout_offset:.4f}V "
+                   f"dIvin={d[0]} dIvout={d[1]} uA")
         # 关断外供前先把 ENABLE 寄存器还原回测量前状态
         from core.module_test.mode_manager import restore_dut_enable
-        restore_dut_enable(ctx, en_regs, d[3])
+        restore_dut_enable(ctx, en_regs, d[2])
 
     if not ctx.is_mock:
         try:
