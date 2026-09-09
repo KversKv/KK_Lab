@@ -1,8 +1,9 @@
 """ItemParamsDialog — 测试项参数设置弹窗（依 ParamSpec 序列自动生成表单）。
 
 **语义契约（不可破坏，附 tests/test_item_params_dialog.py 覆盖）**：
-1. ``ParamSpec.ptype ∈ {int, float, text(str), groups}``；``groups`` 用
-   ``ParamSpec.columns`` 渲染 ``GroupsTableEditor``；
+1. ``ParamSpec.ptype ∈ {int, float, text(str), groups, channel}``；``groups`` 用
+   ``ParamSpec.columns`` 渲染 ``GroupsTableEditor``；``channel`` 渲染 N6705C
+   通道下拉框（``"CH 1"``~``"CH 4"``，导出值为 ``currentText()`` 字符串）；
 2. ``get_override()``：**无 base_key 的项级参数全量返回**（显示即生效）；
    **有 base_key 的参数做 diff**（与预填值相同则不返回，运行时回退基类 cfg）；
 3. ``msb/lsb/max_code`` 三字段同时存在时，自动计算
@@ -29,8 +30,9 @@ import os
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QCheckBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QGridLayout,
-    QLabel, QLineEdit, QSpinBox, QTabWidget, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
+    QGridLayout, QLabel, QLineEdit, QSpinBox, QTabWidget, QVBoxLayout,
+    QWidget,
 )
 
 from core.module_test.judge import JUDGE_METRICS
@@ -207,6 +209,13 @@ class ItemParamsDialog(QDialog):
             except (TypeError, ValueError):
                 w.setValue(float(spec.default))
             return w
+        if spec.ptype == "channel":
+            w = QComboBox()
+            w.addItems([f"CH {i}" for i in range(1, 5)])
+            idx = w.findText(str(prefill))
+            if idx >= 0:
+                w.setCurrentIndex(idx)
+            return w
         w = QLineEdit()
         if isinstance(prefill, (list, tuple)):
             w.setText(", ".join(str(x) for x in prefill))
@@ -255,6 +264,8 @@ class ItemParamsDialog(QDialog):
             return w.value()
         if spec.ptype == "float":
             return round(w.value(), spec.decimals)
+        if spec.ptype == "channel":
+            return w.currentText()
         return w.text().strip()
 
     def get_override(self) -> dict:

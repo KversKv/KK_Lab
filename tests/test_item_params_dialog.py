@@ -16,7 +16,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QDoubleSpinBox, QLineEdit, QSpinBox
+from PySide6.QtWidgets import QApplication, QComboBox, QDoubleSpinBox, QLineEdit, QSpinBox
 
 from ui.pages.module_test.dialogs.judge_dialog import JudgeCriteriaTab
 
@@ -105,11 +105,34 @@ def test_editor_types():
         ParamSpec("a", "A", "int", 1, ""),
         ParamSpec("b", "B", "float", 0.5, "", decimals=2),
         ParamSpec("c", "C", "text", "x", ""),
+        ParamSpec("d", "D", "channel", "CH 2", ""),
     ]
     dlg = _dlg(specs)
     assert isinstance(dlg._editors["a"], QSpinBox)
     assert isinstance(dlg._editors["b"], QDoubleSpinBox)
     assert isinstance(dlg._editors["c"], QLineEdit)
+    assert isinstance(dlg._editors["d"], QComboBox)
+
+
+# ------------------------------------------------------------------ 通道下拉
+def test_channel_prefill_and_diff():
+    spec = ParamSpec("dropout_vin_channel", "Drop Vin 通道", "channel",
+                     "CH 2", "", base_key="vin_channel")
+    # base_key 预填 DUT Config 的 Vin 通道；不改 → 不导出（运行时回退基类）
+    dlg = _dlg([spec], base_fn=lambda _k: "CH 3")
+    editor = dlg._editors["dropout_vin_channel"]
+    assert isinstance(editor, QComboBox)
+    assert editor.currentText() == "CH 3"
+    assert dlg.get_override() == {}, dlg.get_override()
+    # 改成其它通道 → 导出 currentText 字符串
+    dlg2 = _dlg([spec], base_fn=lambda _k: "CH 3")
+    dlg2._editors["dropout_vin_channel"].setCurrentIndex(0)  # CH 1
+    assert dlg2.get_override() == {"dropout_vin_channel": "CH 1"}, \
+        dlg2.get_override()
+    # current_override 优先于 base_key 预填
+    dlg3 = _dlg([spec], override={"dropout_vin_channel": "CH 4"},
+                base_fn=lambda _k: "CH 3")
+    assert dlg3._editors["dropout_vin_channel"].currentText() == "CH 4"
 
 
 # ------------------------------------------------------------------ 判断标准页

@@ -19,9 +19,9 @@ from core.module_test._common import (
 )
 from core.module_test.result_model import ItemResult
 from core.module_test.param_spec import (
-    ParamSpec, average_cnt, line_transient_groups, load_knee, load_sweep,
-    quiescent_params, reg_scan_params, settle_time, transient_groups,
-    vin_bias, vin_sweep, vout_tol,
+    ParamSpec, average_cnt, channel_select, line_transient_groups, load_knee,
+    load_sweep, quiescent_params, reg_scan_params, settle_time,
+    transient_groups, vin_bias, vin_sweep, vout_tol,
 )
 from log_config import get_logger
 
@@ -270,7 +270,8 @@ def dropout(ctx: ItemContext) -> ItemResult:
     cfg = ctx.config
     nominal_mv = float(cfg.get("vout_nominal_mv", 1800))
     iload_ma = float(cfg.get("dropout_iload_ma", 100))
-    vin_ch = parse_channel(cfg.get("vin_channel", 2))
+    # Drop Vin 通道可单独覆盖（弹窗 dropout_vin_channel），缺省跟随 DUT Config 的 Vin 通道
+    vin_ch = parse_channel(cfg.get("dropout_vin_channel") or cfg.get("vin_channel", 2))
     iload_ch = parse_channel(cfg.get("iload_channel", 3))
     vin_hi = float(cfg.get("dropout_vin_hi_v", nominal_mv / 1000.0 + 1.0))
     vin_lo = float(cfg.get("dropout_vin_lo_v", nominal_mv / 1000.0))
@@ -530,6 +531,7 @@ LDO_ITEMS: dict[str, tuple[str, object, bool, bool, tuple[ParamSpec, ...]]] = {
     )),
     "ldo_dropout": ("Dropout Voltage", dropout, False, False, (
         ParamSpec("dropout_iload_ma", "压差负载", "float", 100.0, "mA", maximum=100000.0),
+        channel_select("dropout_vin_channel", "Drop Vin 通道", base_key="vin_channel"),
         ParamSpec("dropout_vin_hi_v", "Vin 上限", "float", 3.0, "V", maximum=60.0),
         ParamSpec("dropout_vin_lo_v", "Vin 下限", "float", 1.8, "V", maximum=60.0),
         ParamSpec("dropout_vin_step_v", "Vin 步进", "float", 0.02, "V", minimum=0.001, maximum=60.0),

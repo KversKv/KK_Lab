@@ -20,7 +20,8 @@ class ParamSpec:
     Attributes:
         key: 写入 override / cfg 的键名（如 ``settle_time_s``）。
         label: 弹窗内显示的中文标签。
-        ptype: 输入类型，取值 ``int`` / ``float`` / ``text``。
+        ptype: 输入类型，取值 ``int`` / ``float`` / ``text`` / ``channel``
+            （``channel`` 渲染为 N6705C 通道下拉框，值为 ``"CH n"`` 字符串）。
         default: 该项自身缺省值（当 base_key 也取不到时兜底）。
         unit: 单位（追加到标签，如 ``s`` / ``mA``）；无单位留空。
         base_key: 基类 cfg 中的取值来源键；非空则弹窗预填该全局值。
@@ -57,6 +58,16 @@ def average_cnt(default: int = 1) -> ParamSpec:
 def vin_bias(default: float = 3.8) -> ParamSpec:
     return ParamSpec("vin_v", "输入偏置", "float", default, "V",
                      minimum=0.0, maximum=60.0, decimals=3)
+
+
+def channel_select(key: str, label: str, default: str = "CH 2",
+                   base_key: str = "") -> ParamSpec:
+    """N6705C 通道下拉框（ptype="channel"，值 "CH n"，与 DUT Config 通道格式一致）。
+
+    配 ``base_key="vin_channel"`` 时预填 DUT Config 的 Vin 通道，未改动回退
+    基类 cfg（跟随全局 Vin 通道），改动后以 override 独立生效。
+    """
+    return ParamSpec(key, label, "channel", default, "", base_key=base_key)
 
 
 def vout_tol(key: str = "vout_tol", default: float = 0.02) -> ParamSpec:
