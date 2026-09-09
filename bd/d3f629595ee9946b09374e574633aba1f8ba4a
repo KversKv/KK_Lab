@@ -1,0 +1,50 @@
+core/module_test/ldo/items/__init__.py
+  s_ed74cd03d7951a::t_cadc16170aa3c0 22-24
+  s_ed74cd03d7951a::t_4055f6d46b2c3a 273-274
+  s_ed74cd03d7951a::t_9fd8e1f8084a36 534
+core/module_test/param_spec.py
+  s_ed74cd03d7951a::t_19caaf310c3bfa 23-24
+  s_ed74cd03d7951a::t_75daeaffd4d2fa 63-72
+tests/test_item_params_dialog.py
+  s_ed74cd03d7951a::t_8d7b23b634c791 108,114-135
+  s_ed74cd03d7951a::t_7f55b93d1ab9db 19
+ui/pages/module_test/dialogs/item_params_dialog.py
+  s_ed74cd03d7951a::t_b4fff1a9730918 212-218
+  s_ed74cd03d7951a::t_377cc18f57ff94 4-6
+  s_ed74cd03d7951a::t_fcbede7ec3e4e4 267-268
+  s_ed74cd03d7951a::t_968dda98905c82 33-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "bdd3f629595ee9946b09374e574633aba1f8ba4a",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_ed74cd03d7951a": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa12ac4bcb44144ef21769b",
+        "model": "kimi-k3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "external_session_id": "6aa12ac4bcb44144ef21769b",
+        "tool_use_id": "6aa15136bcb44144ef217833",
+        "source_scene": "unknown",
+        "runtime_client": "trae-tob-git-ai",
+        "tool_type": "agent",
+        "session_id": "6aa12ac4bcb44144ef21769b",
+        "operation_id": "6aa15136bcb44144ef217833",
+        "edit_kind": "file_edit",
+        "client_type": "ide",
+        "dedupe_key": "6aa12ac4bcb44144ef21769b:6aa15136bcb44144ef217833:afterEdit:3a530fda",
+        "tool_id": "Edit"
+      }
+    }
+  }
+}
