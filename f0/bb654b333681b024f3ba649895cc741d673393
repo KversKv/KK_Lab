@@ -1,0 +1,40 @@
+tests/check_ripple_collapse.py
+  s_6d6e7a33030232::t_9375d4154a209c 1-140
+core/module_test/_common.py
+  s_6d6e7a33030232::t_0dc3bc2320c2c6 1358
+  s_6d6e7a33030232::t_78020d96dc75a9 1348-1357,1359-1372,1376,1383,1385-1386
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "f0bb654b333681b024f3ba649895cc741d673393",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_6d6e7a33030232": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa1081abcb44144ef217294",
+        "model": "kimi-k3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "dedupe_key": "6aa1081abcb44144ef217294:6aa10c3bbcb44144ef217338:afterEdit:3a530fda",
+        "operation_id": "6aa10c3bbcb44144ef217338",
+        "client_type": "ide",
+        "source_scene": "unknown",
+        "external_session_id": "6aa1081abcb44144ef217294",
+        "tool_type": "agent",
+        "tool_use_id": "6aa10c3bbcb44144ef217338",
+        "edit_kind": "file_edit",
+        "runtime_client": "trae-tob-git-ai",
+        "tool_id": "Edit",
+        "session_id": "6aa1081abcb44144ef217294"
+      }
+    }
+  }
+}
