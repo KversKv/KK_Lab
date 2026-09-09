@@ -1,0 +1,67 @@
+ui/theme/qss/dialog.qss
+  s_8e699eaf69bcb3::t_3d01ed9ae8d708 214-229
+ui/pages/module_test/_base_subpage.py
+  s_8e699eaf69bcb3::t_448e421b0e146c 610-681
+  s_8e699eaf69bcb3::t_3832d15e5658da 21-24,37,90-95,139,144,426-427
+  s_8e699eaf69bcb3::t_848987de38804f 685
+  s_8e699eaf69bcb3::t_cd54ec1d6910ba 703-704
+ui/pages/module_test/dialogs/saved_results_dialog.py
+  s_8e699eaf69bcb3::t_c0b1df44f11f5d 78,81
+  s_8e699eaf69bcb3::t_e7189e1a303b19 1-77,79-80,82-113
+DIRECTORY_STRUCTURE.txt
+  s_8e699eaf69bcb3::t_74954813940f42 205
+ui/models/test_plan_model.py
+  s_8e699eaf69bcb3::t_747e33653eaf96 160-161
+  s_8e699eaf69bcb3::t_8200158baec9e1 32-33
+core/module_test/saved_results.py
+  s_8e699eaf69bcb3::t_a1fe340721cf57 247-299,304-305,308,315-316,320-333
+  s_8e699eaf69bcb3::t_ef0bfd5b920154 1-9,12,14-58,75,77-84,88,90-101,105-112,114,116-122,127-246,300-303,306-307,309-314,317-319,334-381
+  s_8e699eaf69bcb3::t_b4f8aac55d9dc9 10-11,13
+  s_8e699eaf69bcb3::t_2aa4c59fb77929 59-74,76,85-87,89,102-104,113,115,123-126
+ui/pages/module_test/_sections/test_plan_panel.py
+  s_8e699eaf69bcb3::t_b0ac5ec5bd002f 145-146,148-162,164-168
+  s_8e699eaf69bcb3::t_2c1856cb7dc2c0 227
+  s_8e699eaf69bcb3::t_2e16103c917415 29
+  s_8e699eaf69bcb3::t_2204286cf99954 289-291
+  s_8e699eaf69bcb3::t_f563d4355ec2d7 321-324
+  s_8e699eaf69bcb3::t_f4cf7d31a68c67 40
+  h_bab89651263f0f 147,163,169-170
+  s_8e699eaf69bcb3::t_4cf4278a3bb294 282,286-287
+ui/pages/module_test/_sections/detail_dock.py
+  s_8e699eaf69bcb3::t_dc2591d460bce3 72-78
+  s_8e699eaf69bcb3::t_32c34403fe5900 42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "b14ff9b2d4be10c025006bf068053182ed73ba6c",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_8e699eaf69bcb3": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa1133ebcb44144ef217446",
+        "model": "kimi-k3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "tool_use_id": "6aa1202abcb44144ef2175a0",
+        "edit_kind": "file_edit",
+        "tool_type": "agent",
+        "runtime_client": "trae-tob-git-ai",
+        "external_session_id": "6aa1133ebcb44144ef217446",
+        "session_id": "6aa1133ebcb44144ef217446",
+        "client_type": "ide",
+        "tool_id": "Edit",
+        "dedupe_key": "6aa1133ebcb44144ef217446:6aa1202abcb44144ef2175a0:afterEdit:3a530fda",
+        "operation_id": "6aa1202abcb44144ef2175a0",
+        "source_scene": "unknown"
+      }
+    }
+  }
+}
