@@ -1,0 +1,44 @@
+core/module_test/_common.py
+  s_b0108ed37c43fd::t_9735d5c1522c16 205-206,209
+  s_b0108ed37c43fd::t_bbfd118b0d3929 284-286,288,290
+  s_b0108ed37c43fd::t_42a96280eaff57 154-169
+  s_b0108ed37c43fd::t_f091322f0a7f0c 251-252
+  s_b0108ed37c43fd::t_36d1a1f39439ed 1303-1304
+core/module_test/dcdc/items/__init__.py
+  s_b0108ed37c43fd::t_99b784b012baae 17-18
+  s_b0108ed37c43fd::t_51052da010bf30 392-393
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "5d3772a2b30d8402ad778f2c56b9d6e8d8519b7a",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_b0108ed37c43fd": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa122edbcb44144ef2175bb",
+        "model": "kimi-k3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "source_scene": "unknown",
+        "session_id": "6aa122edbcb44144ef2175bb",
+        "runtime_client": "trae-tob-git-ai",
+        "tool_id": "Edit",
+        "dedupe_key": "6aa122edbcb44144ef2175bb:6aa1421dbcb44144ef217741:afterEdit:3a530fda",
+        "external_session_id": "6aa122edbcb44144ef2175bb",
+        "operation_id": "6aa1421dbcb44144ef217741",
+        "edit_kind": "file_edit",
+        "client_type": "ide",
+        "tool_type": "agent",
+        "tool_use_id": "6aa1421dbcb44144ef217741"
+      }
+    }
+  }
+}
