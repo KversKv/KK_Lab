@@ -1,0 +1,64 @@
+user_data/module_test_configs/ldo/BES1860/LDO_03_LP.json
+  s_8e699eaf69bcb3::t_32a5caa2737bff 1-261
+user_data/module_test_configs/ldo/BES1860/LDO_05.json
+  s_4276ac9b67070d::t_6b6b38359aed9b 155
+  s_4276ac9b67070d::t_4f5462e1c3d42c 80
+  s_4276ac9b67070d::t_c2dcc3188ff300 17,27,63,66-67,72,92,94,97,102,104,109,119,129,139,147-154,156-251
+user_data/module_test_configs/ldo/BES1860/LDO_03.json
+  s_8e699eaf69bcb3::t_ff2368c3b675cf 6,27,54-55,63,65-67,73-74,79,81-82,92,94,97,102,104,114,119,124,133-259
+  s_8e699eaf69bcb3::t_32a5caa2737bff 16-17,132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "f0d0f543b5a6a68ed5d3005c07eee730b743b109",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_4276ac9b67070d": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa12552bcb44144ef2175f7",
+        "model": "kimi-k3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "runtime_client": "trae-tob-git-ai",
+        "display_model_name": "Kimi-K3",
+        "client_type": "ide",
+        "tool_use_id": "6aa12697bcb44144ef217662",
+        "source_scene": "agent",
+        "external_session_id": "6aa12552bcb44144ef2175f7",
+        "edit_kind": "bash",
+        "session_id": "6aa12552bcb44144ef2175f7",
+        "operation_id": "6aa12697bcb44144ef217662",
+        "tool_name": "RunCommand"
+      }
+    },
+    "s_8e699eaf69bcb3": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa1133ebcb44144ef217446",
+        "model": "kimi-k3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "operation_id": "6aa1202abcb44144ef2175a0",
+        "tool_id": "Edit",
+        "tool_use_id": "6aa1202abcb44144ef2175a0",
+        "edit_kind": "file_edit",
+        "external_session_id": "6aa1133ebcb44144ef217446",
+        "dedupe_key": "6aa1133ebcb44144ef217446:6aa1202abcb44144ef2175a0:afterEdit:3a530fda",
+        "runtime_client": "trae-tob-git-ai",
+        "session_id": "6aa1133ebcb44144ef217446",
+        "tool_type": "agent",
+        "source_scene": "unknown",
+        "client_type": "ide"
+      }
+    }
+  }
+}
