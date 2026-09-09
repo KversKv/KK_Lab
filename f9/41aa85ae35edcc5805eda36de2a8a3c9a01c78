@@ -1,0 +1,44 @@
+user_data/ai/config.json
+  s_4276ac9b67070d::t_c2dcc3188ff300 6,9-15,29-35
+user_data/ai/audit.log
+  s_4276ac9b67070d::t_c2dcc3188ff300 2760-2765
+user_data/ai/history/power_analyser.json
+  s_4276ac9b67070d::t_c2dcc3188ff300 1-20
+user_data/ai/traces/2026-09-09.jsonl
+  s_4276ac9b67070d::t_c2dcc3188ff300 1
+user_data/ai/ui_state.json
+  s_4276ac9b67070d::t_c2dcc3188ff300 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "f941aa85ae35edcc5805eda36de2a8a3c9a01c78",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_4276ac9b67070d": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa12552bcb44144ef2175f7",
+        "model": "kimi-k3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "edit_kind": "bash",
+        "external_session_id": "6aa12552bcb44144ef2175f7",
+        "source_scene": "agent",
+        "client_type": "ide",
+        "tool_name": "RunCommand",
+        "display_model_name": "Kimi-K3",
+        "operation_id": "6aa126a6bcb44144ef217668",
+        "tool_use_id": "6aa126a6bcb44144ef217668",
+        "session_id": "6aa12552bcb44144ef2175f7",
+        "runtime_client": "trae-tob-git-ai"
+      }
+    }
+  }
+}
