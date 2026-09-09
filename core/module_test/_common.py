@@ -1345,19 +1345,45 @@ def run_load_capability_ripple(ctx: "ItemContext", item_key: str, name: str,
                  f"item 完成: {name}（{item_key}），有效点 {len(rows)}，"
                  f"CSV={os.path.basename(csv_path)}")
 
-    max_row = max(rows, key=lambda r: r[2], default=None)
-    # 输出电压最大 Drop：标称值 - 扫描中最小 Vout（负载加重导致跌落）
-    vout_values = [r[1] for r in rows if isinstance(r[1], (int, float))]
+    # 带载拐点检测（复用 Load Regulation 拐点算法，以其为权威实现）：
+    # 首个单步跌幅 > max(5×步进跌幅中位数, 0.5%×V(起始)) 的前一点为有效段末尾；
+    # 拐点后 Vout 崩溃（带载能力不足），该行及之后数据无效——保留进 CSV/报告，
+    # 但不参与 Max Vpp / Max Vout Drop 等性能计算，Max Load 取拐点前位置
+    knee_ma = load_reg_summary(
+        [[r[0], r[1]] for r in rows
+         if isinstance(r[0], (int, float)) and isinstance(r[1], (int, float))]
+    )["knee_ma"]
+    valid_rows = [r for r in rows
+                  if isinstance(r[0], (int, float)) and r[0] <= knee_ma + 1e-6]
+    collapsed = bool(valid_rows) and len(valid_rows) < len(rows)
+    if collapsed:
+        first_bad = rows[len(valid_rows)]
+        collapse_vout_threshold_mv = round((valid_rows[-1][1] + first_bad[1]) / 2.0, 4)
+        ctx.log_fn(f"[{item_key}] Max Load={knee_ma:g}mA，{first_bad[0]:g}mA 起 "
+                   f"Vout 崩溃（{valid_rows[-1][1]:.1f}→{first_bad[1]:.1f} mV），"
+                   f"{len(rows) - len(valid_rows)} 点无效，已排除出性能计算")
+        _debug_event(ctx, dbg_dir,
+                     f"带载拐点: Max Load={knee_ma:g}mA，{len(rows) - len(valid_rows)} 点崩溃无效")
+    else:
+        collapse_vout_threshold_mv = None
+
+    max_row = max(valid_rows, key=lambda r: r[2], default=None)
+    # 输出电压最大 Drop：标称值 - 有效段内最小 Vout（崩溃段不计入）
+    vout_values = [r[1] for r in valid_rows if isinstance(r[1], (int, float))]
     max_vout_drop_mv = (nominal_mv - min(vout_values)) if vout_values else 0.0
     measured: dict[str, Any] = {
         "points": len(rows),
+        "valid_points": len(valid_rows),
         "i_start_ma": i_start,
         "i_end_ma": i_end,
         "i_step_ma": i_step,
         "max_vpp_mv": max_row[2] if max_row else "",
         "max_vpp_at_ma": max_row[0] if max_row else "",
         "max_vout_drop_mv": round(max_vout_drop_mv, 4),
+        "max_load_ma": knee_ma,
     }
+    if collapse_vout_threshold_mv is not None:
+        measured["collapse_vout_threshold_mv"] = collapse_vout_threshold_mv
     if screenshots:
         measured["screenshots"] = screenshots
     result = ItemResult(item_key=item_key, name=name, unit="mV",
