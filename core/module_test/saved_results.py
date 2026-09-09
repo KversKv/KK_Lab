@@ -5,13 +5,16 @@
 
 目录约定（均在 ``Results/`` 下，已 gitignore）::
 
-    Results/module_test/{module_type}/saved/{item_key}/{YYYYMMDD_HHMMSS}/
+    Results/module_test/{module_type}/saved/{芯片}/{模块}/{item_key}/
         result.json     # 元信息 + ItemResult 序列化（资产路径相对本目录）
         {item_key}.csv  # 资产按「原运行输出目录相对路径」结构化落盘
         screenshots/... # （如 screenshots/foo.png），与正常输出目录布局一致
     Results/module_test/{module_type}/final/{芯片}_{模块}_{条件}_{时间戳}/
         {item_key}.csv / screenshots/...   # 原始文件按原布局聚合还原
         report.html / report.pdf / XLSX/...
+
+**覆盖保存**：同一「芯片 + 模块」下每个测试项只维护一套已保存结果，再次
+保存整目录覆盖重建；导出弹窗按当前 DUT 配置的芯片/模块过滤加载。
 
 聚合导出走与正常运行一致的 ``save_html_report``（含单项 XLSX、可选 PDF），
 保证汇总报告与单次运行报告版式完全一致。
@@ -53,6 +56,18 @@ def final_root(module_type: str) -> str:
 def _safe_dir_part(text: str) -> str:
     """清洗用户输入为合法目录名片段（与 _runner_base 同规则）。"""
     return _INVALID_DIR_CHARS.sub("_", text.strip()).strip(" .")
+
+
+def _safe_part(text: str) -> str:
+    """目录名片段清洗 + 空值兜底（芯片/模块未填时仍能定位）。"""
+    return _safe_dir_part(text) or "unknown"
+
+
+def saved_entry_dir(module_type: str, chip_name: str, module_name: str,
+                    item_key: str) -> str:
+    """单项已保存结果条目目录：``saved/{芯片}/{模块}/{item_key}``。"""
+    return os.path.join(saved_root(module_type), _safe_part(chip_name),
+                        _safe_part(module_name), _safe_part(item_key))
 
 
 # ---------------------------------------------------------------------- 保存
@@ -99,17 +114,18 @@ def save_item_result(module_type: str, item: ItemResult,
     """把单个测试项结果（含 CSV/截图等资产）落盘，返回条目目录。
 
     ``source`` 为产生该结果的本次运行汇总（提供芯片/模块/测试条件/仪器等
-    元信息）。资产按「原运行输出目录相对路径」结构化落盘（如
+    元信息）。**覆盖保存**：同一「芯片 + 模块」下该项只维护一套，再次保存
+    整目录覆盖重建。资产按「原运行输出目录相对路径」结构化落盘（如
     ``{item_key}.csv`` 在条目根、``screenshots/`` 逐点截图），JSON 中存
     相对条目目录路径，加载/导出时再解析还原。
     """
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    base = os.path.join(saved_root(module_type), _safe_dir_part(item.item_key))
-    entry_dir = os.path.join(base, stamp)
-    n = 2
-    while os.path.exists(entry_dir):  # 同秒重复保存兜底
-        entry_dir = os.path.join(base, f"{stamp}_{n}")
-        n += 1
+    entry_dir = saved_entry_dir(module_type, source.chip_name,
+                                source.module_name, item.item_key)
+    if os.path.isdir(entry_dir):
+        try:
+            shutil.rmtree(entry_dir)
+        except OSError:
+            logger.error("清理旧已保存结果失败: %s", entry_dir, exc_info=True)
     os.makedirs(entry_dir, exist_ok=True)
 
     out_dir_root = (source.summary or {}).get("output_dir") or None
@@ -203,22 +219,37 @@ def _entry_to_item(entry_dir: str, data: dict[str, Any]) -> ItemResult:
     )
 
 
-def list_saved_results(module_type: str) -> list[dict[str, Any]]:
+def list_saved_results(module_type: str, chip_name: str = "",
+                       module_name: str = "") -> list[dict[str, Any]]:
     """扫描已保存条目（按保存时间倒序），供导出选择弹窗展示。
 
-    每条：``{dir, item_key, name, passed, verdict, saved_at, chip_name,
-    module_name, test_condition}``；损坏条目跳过。
+    目录结构 ``saved/{芯片}/{模块}/{item_key}/``；``chip_name`` 或
+    ``module_name`` 非空时只扫该芯片/模块作用域（页面按当前 DUT 配置
+    加载），均为空则扫全部。每条：``{dir, item_key, name, passed, verdict,
+    saved_at, chip_name, module_name, test_condition}``；损坏条目跳过。
     """
     root = saved_root(module_type)
-    entries: list[dict[str, Any]] = []
     if not os.path.isdir(root):
-        return entries
-    for item_dir in sorted(os.listdir(root)):
-        item_path = os.path.join(root, item_dir)
-        if not os.path.isdir(item_path):
+        return []
+    # 全部 {芯片}/{模块} 作用域目录，再按非空条件过滤（页面传当前 DUT 配置）
+    scopes = [os.path.join(root, c, m)
+              for c in sorted(os.listdir(root))
+              if os.path.isdir(os.path.join(root, c))
+              for m in sorted(os.listdir(os.path.join(root, c)))
+              if os.path.isdir(os.path.join(root, c, m))]
+    if chip_name:
+        c = _safe_part(chip_name)
+        scopes = [s for s in scopes
+                  if os.path.basename(os.path.dirname(s)) == c]
+    if module_name:
+        m = _safe_part(module_name)
+        scopes = [s for s in scopes if os.path.basename(s) == m]
+    entries: list[dict[str, Any]] = []
+    for scope in scopes:
+        if not os.path.isdir(scope):
             continue
-        for stamp in sorted(os.listdir(item_path), reverse=True):
-            entry_dir = os.path.join(item_path, stamp)
+        for item_dir in sorted(os.listdir(scope)):
+            entry_dir = os.path.join(scope, item_dir)
             if not os.path.isdir(entry_dir):
                 continue
             data = _read_entry(entry_dir)
@@ -248,8 +279,8 @@ def _copy_into_out_dir(src: str | None, entry_dir: str, out_dir: str,
                        copied: dict[str, str]) -> str | None:
     """把条目内资产按原相对布局复制进聚合输出目录，返回新绝对路径。
 
-    同一测试项的多次保存被同时勾选时相对路径相同，后拷的加条目时间戳前缀
-    防覆盖；``copied`` 按源绝对路径去重。
+    不同条目相对路径同名时，后拷的加 item_key（条目目录名）前缀防覆盖；
+    ``copied`` 按源绝对路径去重。
     """
     if not src or not os.path.isfile(src):
         return None

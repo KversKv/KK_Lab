@@ -1,8 +1,9 @@
 """SavedResultsDialog — 导出已保存结果：勾选若干已保存测试项聚合导出报告。
 
 数据源为 ``core.module_test.saved_results.list_saved_results`` 扫描到的条目
-（每项可多次保存，逐条列出）；默认勾选每个测试项最新一条。OK 后由调用方
-取 ``selected_dirs()`` 交给 ``SavedResultsExportWorker`` 聚合导出。
+（同一「芯片 + 模块」下每项只维护一套，覆盖保存；由调用方按当前 DUT 配置
+过滤后传入）。OK 后由调用方取 ``selected_dirs()`` 交给
+``SavedResultsExportWorker`` 聚合导出。
 """
 from __future__ import annotations
 
@@ -22,7 +23,7 @@ _COL_SAVED_AT = 4
 
 
 class SavedResultsDialog(QDialog):
-    """已保存测试结果选择弹窗（复选 + 默认勾选每项最新）。"""
+    """已保存测试结果选择弹窗（复选，默认全勾）。"""
 
     def __init__(self, module_type: str, entries: list[dict],
                  registry_order: list[str] | None = None, parent=None):
@@ -35,8 +36,8 @@ class SavedResultsDialog(QDialog):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
         layout.addWidget(QLabel(
-            "勾选要聚合进报告的测试结果（同一测试项可多次保存，默认已勾选最新一条），"
-            "确认后导出到 final 目录："))
+            "勾选要聚合进报告的测试结果（已按当前芯片/模块加载，覆盖保存每项"
+            "仅一套），确认后导出到 final 目录："))
 
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels(["测试项", "判定", "芯片", "模块", "保存时间"])
@@ -75,20 +76,15 @@ class SavedResultsDialog(QDialog):
     # ------------------------------------------------------------------ data
     def _populate(self, entries: list[dict], registry_order: list[str]) -> None:
         order = {k: i for i, k in enumerate(registry_order)}
-        # entries 已按保存时间倒序；稳定排序到注册表顺序后，同项仍保持最新在前
         rows = sorted(
             entries,
             key=lambda e: (order.get(e["item_key"], len(order)), e["item_key"]))
-        latest_seen: set[str] = set()
         for e in rows:
             node = QTreeWidgetItem([e["name"], e["verdict"], e["chip_name"],
                                     e["module_name"], e["saved_at"]])
             node.setData(_COL_NAME, Qt.UserRole, e["dir"])
             node.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
-            # 每个测试项的最新一条默认勾选（同项后续旧条目不勾）
-            checked = (e["item_key"] not in latest_seen)
-            latest_seen.add(e["item_key"])
-            node.setCheckState(_COL_NAME, Qt.Checked if checked else Qt.Unchecked)
+            node.setCheckState(_COL_NAME, Qt.Checked)
             node.setToolTip(_COL_NAME, e["dir"])
             self.tree.addTopLevelItem(node)
         self.export_btn.setEnabled(bool(rows))

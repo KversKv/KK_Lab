@@ -46,7 +46,7 @@ def main() -> int:
     panel._on_clicked(proxy.mapFromSource(src_p))
     assert got == ["ldo_line_reg"], got
 
-    # —— SavedResultsDialog：默认勾选每项最新 + selected_dirs 顺序 ——
+    # —— SavedResultsDialog：默认全勾 + selected_dirs 按注册表顺序 ——
     from ui.pages.module_test.dialogs.saved_results_dialog import SavedResultsDialog
 
     entries = [
@@ -56,19 +56,20 @@ def main() -> int:
         {"dir": "D2", "item_key": "ldo_line_reg", "name": "Line Reg",
          "passed": False, "verdict": "FAIL", "saved_at": "2026-09-09 09:00:00",
          "chip_name": "BES2800", "module_name": "LDO1", "test_condition": ""},
-        {"dir": "D3", "item_key": "ldo_ripple", "name": "Ripple", "passed": False,
-         "verdict": "FAIL", "saved_at": "2026-09-08 08:00:00",
+        {"dir": "D3", "item_key": "ldo_psrr", "name": "PSRR", "passed": None,
+         "verdict": "N/A", "saved_at": "2026-09-08 08:00:00",
          "chip_name": "BES2800", "module_name": "LDO1", "test_condition": ""},
     ]
     dlg = SavedResultsDialog("ldo", entries,
-                             registry_order=["ldo_line_reg", "ldo_ripple"])
+                             registry_order=["ldo_line_reg", "ldo_ripple",
+                                             "ldo_psrr"])
     dirs = dlg.selected_dirs()
-    # 注册表顺序：line_reg(D2) 在前；ripple 最新(D1) 勾选、旧(D3) 不勾
-    assert dirs == ["D2", "D1"], dirs
-    dlg._set_all(__import__("PySide6.QtCore", fromlist=["Qt"]).Qt.Checked)
-    assert dlg.selected_dirs() == ["D2", "D1", "D3"], dlg.selected_dirs()
+    # 覆盖保存每项仅一套：默认全勾；顺序按注册表
+    assert dirs == ["D2", "D1", "D3"], dirs
+    dlg._set_all(__import__("PySide6.QtCore", fromlist=["Qt"]).Qt.Unchecked)
+    assert dlg.selected_dirs() == []
 
-    print("UI SMOKE OK: 保存列/信号/弹窗默认勾选与顺序全部通过")
+    print("UI SMOKE OK: 保存列/信号/弹窗默认全勾与顺序全部通过")
     return 0
 
 

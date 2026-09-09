@@ -635,7 +635,12 @@ class ModuleTestSubPageBase(QWidget, N6705CConnectionMixin,
         if self._export_thread is not None:
             self.detail_dock.log_panel.append_log("[EXPORT] 上一次导出仍在进行中")
             return
-        entries = list_saved_results(self.MODULE_TYPE)
+        # 按当前 DUT 配置（芯片/模块）加载对应的一套已保存结果；未填则列全部
+        dut = self._read_dut_fields()
+        entries = list_saved_results(
+            self.MODULE_TYPE,
+            chip_name=dut.get("chip_name", ""),
+            module_name=dut.get("module_name", ""))
         if not entries:
             Toast.popup(self, "暂无已保存的测试结果", severity="info")
             return
