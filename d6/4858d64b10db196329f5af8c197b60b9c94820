@@ -1,0 +1,38 @@
+ui/theme/qss/dialog.qss
+  s_f90eeff0fd1cf1::t_63370442773fe6 16-18
+  s_f90eeff0fd1cf1::t_b00130d5eefb94 100-103
+  s_f90eeff0fd1cf1::t_f94b7a8553de46 41-45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "d64858d64b10db196329f5af8c197b60b9c94820",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_f90eeff0fd1cf1": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa0086ebcb44144ef216dcc",
+        "model": "glm-5.3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "runtime_client": "trae-tob-git-ai",
+        "source_scene": "agent",
+        "client_type": "ide",
+        "edit_kind": "bash",
+        "external_session_id": "6aa0086ebcb44144ef216dcc",
+        "tool_name": "RunCommand",
+        "session_id": "6aa0086ebcb44144ef216dcc",
+        "display_model_name": "GLM-5.3",
+        "operation_id": "6aa00a25bcb44144ef216e1f",
+        "tool_use_id": "6aa00a25bcb44144ef216e1f"
+      }
+    }
+  }
+}
