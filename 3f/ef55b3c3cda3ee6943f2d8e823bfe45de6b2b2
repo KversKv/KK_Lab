@@ -1,0 +1,48 @@
+ui/pages/chamber/chamber_control_ui.py
+  s_3808c146dc37f7::t_e6fcffb72c3131 865-868
+ui/modules/AGENTS.md
+  s_3808c146dc37f7::t_7d2c5ee1e21723 21
+ui/modules/chamber_module_frame.py
+  s_3808c146dc37f7::t_22bdc0dbef4a42 431-480
+  s_3808c146dc37f7::t_9f4525c7faa06a 327-333
+  s_3808c146dc37f7::t_00535c1bab66a6 268,287-291
+ui/pages/pmu_test/pmu_test_ui.py
+  s_3808c146dc37f7::t_65fa69197f61f1 243-244
+ui/pages/pmu_test/gpadc_test_ui.py
+  s_3808c146dc37f7::t_275b537ac509ba 163
+tests/tmp_chamber_sync_check.py
+  s_3808c146dc37f7::t_ce5b0cae2f6539 1-105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "3fef55b3c3cda3ee6943f2d8e823bfe45de6b2b2",
+  "prompts": {},
+  "humans": {
+    "h_bab89651263f0f": {
+      "author": "kversk <kversk@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_3808c146dc37f7": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa24370526a29f7a17273ff",
+        "model": "kimi-k3__dev"
+      },
+      "human_author": "kversk <kversk@qq.com>",
+      "custom_attributes": {
+        "tool_use_id": "6aa27ec2526a29f7a1727960",
+        "client_type": "ide",
+        "edit_kind": "file_edit",
+        "tool_name": "Edit",
+        "operation_id": "6aa27ec2526a29f7a1727960",
+        "session_id": "6aa24370526a29f7a17273ff",
+        "external_session_id": "6aa24370526a29f7a17273ff",
+        "display_model_name": "Kimi-K3",
+        "source_scene": "agent",
+        "runtime_client": "trae-tob-git-ai"
+      }
+    }
+  }
+}
