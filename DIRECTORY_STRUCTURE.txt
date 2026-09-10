@@ -319,6 +319,7 @@ ui/
 │   ├── sidebar_submenu.py       # 通用侧边栏悬浮二级菜单组件 (SidebarSubMenu)
 │   ├── plot_widget.py           # 基于 pyqtgraph 的实时数据图表组件
 │   ├── dark_combobox.py         # 暗色主题下拉框组件
+│   ├── wheel_line_edit.py       # 滚轮调值输入框 (WheelLineEdit 十进制步进 / HexWheelLineEdit 十六进制 / UnitWheelLineEdit 带单位比例)
 │   ├── scrollbar.py             # 暗色滚动条样式 (SCROLLBAR_STYLE / SCROLL_AREA_STYLE)
 │   ├── button.py                # 搜索/连接/断开按钮样式与 SpinningSearchButton 组件
 │   ├── start_sequence.py        # 开始按钮样式 (START_BTN_STYLE) 与状态切换工具

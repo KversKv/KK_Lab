@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 
 from ui.pages.vmin_hunter.vmin_hunter_ui import VminHunterUI, _TEST_MODES
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.widgets.wheel_line_edit import WheelLineEdit
 from log_config import get_logger
 
 logger = get_logger(__name__)
@@ -52,7 +53,7 @@ class VminSingleTestUI(VminHunterUI):
         form.setVerticalSpacing(8)
 
         form.addWidget(self._field_label("Test CNT"), 0, 0)
-        self.test_cnt_input = QLineEdit("1")
+        self.test_cnt_input = WheelLineEdit("1", wheel_step=1)
         self.test_cnt_input.setToolTip("Number of test iterations at the Vmin voltage")
         form.addWidget(self.test_cnt_input, 0, 1)
 
@@ -103,9 +104,9 @@ class VminSingleTestUI(VminHunterUI):
         volt_title.setObjectName("vhSweepHeader")
         layout.addWidget(volt_title)
 
-        self.voltage_default_input = QLineEdit("0.80")
+        self.voltage_default_input = WheelLineEdit("0.80", wheel_step=0.01)
         self.voltage_default_input.setToolTip("Default voltage (V): wake/restore voltage around the sleep point")
-        self.vmin_voltage_input = QLineEdit("0.70")
+        self.vmin_voltage_input = WheelLineEdit("0.70", wheel_step=0.01)
         self.vmin_voltage_input.setToolTip("Vmin voltage (V): the sleep voltage point to confirm")
 
         volt_grid = QGridLayout()
@@ -117,9 +118,9 @@ class VminSingleTestUI(VminHunterUI):
         volt_grid.setColumnStretch(1, 1)
         layout.addLayout(volt_grid)
 
-        self.vcorel_default_input = QLineEdit("0.80")
+        self.vcorel_default_input = WheelLineEdit("0.80", wheel_step=0.01)
         self.vcorel_default_input.setToolTip("VcoreL default voltage (V)")
-        self.vcorel_vmin_input = QLineEdit("0.70")
+        self.vcorel_vmin_input = WheelLineEdit("0.70", wheel_step=0.01)
         self.vcorel_vmin_input.setToolTip("VcoreL Vmin voltage (V): the sleep voltage point to confirm")
 
         self._vcorel_volt_box = QWidget()

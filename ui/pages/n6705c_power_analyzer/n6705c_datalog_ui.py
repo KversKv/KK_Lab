@@ -2597,7 +2597,8 @@ class N6705CDatalogUI(QWidget):
 
         sp_label = QLabel("Sampling Period (\u00B5s) :")
         sp_label.setObjectName("fieldLabel")
-        self.sample_period_edit = QLineEdit("20")
+        self.sample_period_edit = SelectAllLineEdit("20")
+        self.sample_period_edit.set_wheel_step(1)
         self.sample_period_edit.setFixedWidth(56)
         self.sample_period_edit.setFixedHeight(24)
         self.sample_period_edit.editingFinished.connect(self._validate_sample_period)

@@ -26,6 +26,7 @@ from ui.widgets.button import SpinningSearchButton, update_connect_button_state
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
 from ui.modules.oscilloscope_module_frame import OscilloscopeConnectionMixin
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.widgets.wheel_line_edit import HexWheelLineEdit
 from ui.styles import SCROLLBAR_STYLE, START_BTN_STYLE, update_start_btn_state
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.theme import Colors, FontSizes, Radius, Spacing, FONT_MONO
@@ -476,11 +477,11 @@ class PMUIsGainUI(N6705CConnectionMixin, OscilloscopeConnectionMixin, QWidget):
 
         self.lbl_dev = QLabel("Device Addr")
         self.lbl_dev.setObjectName("fieldLabel")
-        self.is_gain_device_addr_edit = QLineEdit("0x60")
+        self.is_gain_device_addr_edit = HexWheelLineEdit("0x60")
 
         self.lbl_reg = QLabel("Reg Addr")
         self.lbl_reg.setObjectName("fieldLabel")
-        self.is_gain_reg_addr_edit = QLineEdit("0x01")
+        self.is_gain_reg_addr_edit = HexWheelLineEdit("0x01")
 
         self.lbl_msb = QLabel("MSB")
         self.lbl_msb.setObjectName("fieldLabel")

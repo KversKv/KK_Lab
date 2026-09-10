@@ -7,6 +7,7 @@ GPADC测试UI组件
 
 
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.widgets.wheel_line_edit import WheelLineEdit, HexWheelLineEdit
 from ui.styles import SCROLL_AREA_STYLE, START_BTN_STYLE, update_start_btn_state
 from ui.widgets.button import update_connect_button_state
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
@@ -773,11 +774,11 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         iic_layout.setVerticalSpacing(6)
 
         iic_layout.addWidget(QLabel("Device Address (Hex)"), 0, 0)
-        self.iic_device_address = QLineEdit("0x17")
+        self.iic_device_address = HexWheelLineEdit("0x17")
         iic_layout.addWidget(self.iic_device_address, 1, 0)
 
         iic_layout.addWidget(QLabel("Raw Data Register (Hex)"), 2, 0)
-        self.iic_data_address = QLineEdit("0x57")
+        self.iic_data_address = HexWheelLineEdit("0x57")
         iic_layout.addWidget(self.iic_data_address, 3, 0)
 
         iic_layout.addWidget(QLabel("IIC Width"), 4, 0)
@@ -914,9 +915,9 @@ class GPADCTestUI(N6705CConnectionMixin, ChamberConnectionMixin, SerialComMixin,
         calib_layout.addWidget(self.calib_low_label, 0, 0)
         calib_layout.addWidget(self.calib_high_label, 0, 1)
 
-        self.calib_low = QLineEdit()
+        self.calib_low = WheelLineEdit()
         self.calib_low.setPlaceholderText("Auto")
-        self.calib_high = QLineEdit()
+        self.calib_high = WheelLineEdit()
         self.calib_high.setPlaceholderText("Auto")
         calib_layout.addWidget(self.calib_low, 1, 0)
         calib_layout.addWidget(self.calib_high, 1, 1)

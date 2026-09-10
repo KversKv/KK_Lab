@@ -35,6 +35,7 @@ from ui.modules.serialCom_module.serialCom_module_frame import (
 )
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.widgets.wheel_line_edit import WheelLineEdit, HexWheelLineEdit
 from ui.styles import get_page_base_qss, SCROLLBAR_STYLE
 from ui.theme import Colors, Radius
 from ui.utils.icon_utils import tinted_svg_icon as _tinted_svg_icon
@@ -487,7 +488,7 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         form.setVerticalSpacing(8)
 
         form.addWidget(self._field_label("Test CNT"), 0, 0)
-        self.test_cnt_input = QLineEdit("1")
+        self.test_cnt_input = WheelLineEdit("1", wheel_step=1)
         self.test_cnt_input.setToolTip("Number of test iterations per condition")
         form.addWidget(self.test_cnt_input, 0, 1)
 
@@ -542,22 +543,22 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         sweep_title.setObjectName("vhSweepHeader")
         layout.addWidget(sweep_title)
 
-        self.voltage_default_input = QLineEdit("0.80")
+        self.voltage_default_input = WheelLineEdit("0.80", wheel_step=0.01)
         self.voltage_default_input.setToolTip("Default voltage (V): restore/wake voltage between sleep points")
-        self.voltage_start_input = QLineEdit("0.80")
+        self.voltage_start_input = WheelLineEdit("0.80", wheel_step=0.01)
         self.voltage_start_input.setToolTip("Sweep start voltage (V), typically the higher voltage")
-        self.voltage_end_input = QLineEdit("0.60")
+        self.voltage_end_input = WheelLineEdit("0.60", wheel_step=0.01)
         self.voltage_end_input.setToolTip("Sweep end voltage (V), typically the lower voltage")
-        self.voltage_step_input = QLineEdit("0.05")
+        self.voltage_step_input = WheelLineEdit("0.05", wheel_step=0.01)
         self.voltage_step_input.setToolTip("Sweep step (V), positive value; sweep direction is from Start to End")
 
-        self.vcorel_default_input = QLineEdit("0.80")
+        self.vcorel_default_input = WheelLineEdit("0.80", wheel_step=0.01)
         self.vcorel_default_input.setToolTip("VcoreL default voltage (V): restore/wake voltage between sleep points")
-        self.vcorel_start_input = QLineEdit("0.80")
+        self.vcorel_start_input = WheelLineEdit("0.80", wheel_step=0.01)
         self.vcorel_start_input.setToolTip("VcoreL sweep start voltage (V)")
-        self.vcorel_end_input = QLineEdit("0.60")
+        self.vcorel_end_input = WheelLineEdit("0.60", wheel_step=0.01)
         self.vcorel_end_input.setToolTip("VcoreL sweep end voltage (V)")
-        self.vcorel_step_input = QLineEdit("0.05")
+        self.vcorel_step_input = WheelLineEdit("0.05", wheel_step=0.01)
         self.vcorel_step_input.setToolTip("VcoreL sweep step (V), positive value")
 
         self.sweep_tabs = QTabWidget()
@@ -684,7 +685,7 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         grid.setHorizontalSpacing(6)
         grid.setVerticalSpacing(6)
 
-        device_input = QLineEdit(defaults["device"])
+        device_input = HexWheelLineEdit(defaults["device"])
         width_combo = DarkComboBox(bg="#091426", border="#17345f")
         width_combo.addItem("8 BIT", I2CWidthFlag.BIT_8)
         width_combo.addItem("10 BIT", I2CWidthFlag.BIT_10)
@@ -694,12 +695,12 @@ class VminHunterUI(N6705CConnectionMixin, ChamberConnectionMixin,
         if width_idx >= 0:
             width_combo.setCurrentIndex(width_idx)
 
-        sleep_input = QLineEdit(defaults["sleep"])
-        sleep_msb_input = QLineEdit(defaults["sleep_msb"])
-        sleep_lsb_input = QLineEdit(defaults["sleep_lsb"])
-        normal_input = QLineEdit(defaults["normal"])
-        normal_msb_input = QLineEdit(defaults["normal_msb"])
-        normal_lsb_input = QLineEdit(defaults["normal_lsb"])
+        sleep_input = HexWheelLineEdit(defaults["sleep"])
+        sleep_msb_input = WheelLineEdit(defaults["sleep_msb"], wheel_step=1)
+        sleep_lsb_input = WheelLineEdit(defaults["sleep_lsb"], wheel_step=1)
+        normal_input = HexWheelLineEdit(defaults["normal"])
+        normal_msb_input = WheelLineEdit(defaults["normal_msb"], wheel_step=1)
+        normal_lsb_input = WheelLineEdit(defaults["normal_lsb"], wheel_step=1)
 
         grid.addWidget(self._inline_field_label("Device Addr"), 0, 0)
         grid.addWidget(device_input, 0, 1)

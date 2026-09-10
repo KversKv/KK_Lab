@@ -6,6 +6,7 @@ PMU OSCP测试UI组件
 """
 
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.widgets.wheel_line_edit import HexWheelLineEdit
 from ui.styles import SCROLLBAR_STYLE, START_BTN_STYLE, update_start_btn_state
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.modules.n6705c_module_frame import N6705CConnectionMixin
@@ -13,7 +14,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QGridLayout,
     QSpinBox, QDoubleSpinBox, QFrame, QApplication,
-    QSizePolicy, QScrollArea, QLineEdit
+    QSizePolicy, QScrollArea
 )
 from PySide6.QtCore import Qt, Signal, QThread, QTimer
 from PySide6.QtGui import QFont
@@ -539,13 +540,13 @@ class PMUOSCPUI(N6705CConnectionMixin, QWidget):
 
         self.dev_addr_label = QLabel("Dev Addr (hex)")
         self.dev_addr_label.setObjectName("fieldLabel")
-        self.device_addr_edit = QLineEdit("0x17")
+        self.device_addr_edit = HexWheelLineEdit("0x17")
         self.device_addr_edit.setPlaceholderText("0x17")
         self.device_addr_edit.setMaxLength(5)
 
         self.reg_addr_label = QLabel("Reg Addr (hex)")
         self.reg_addr_label.setObjectName("fieldLabel")
-        self.reg_addr_edit = QLineEdit("0x033b")
+        self.reg_addr_edit = HexWheelLineEdit("0x033b")
         self.reg_addr_edit.setPlaceholderText("0x033b")
         self.reg_addr_edit.setMaxLength(6)
 

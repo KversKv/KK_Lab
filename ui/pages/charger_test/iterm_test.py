@@ -14,11 +14,12 @@ sys.path.append(os.path.join(get_resource_base(), "lib", "i2c"))
 from log_config import get_logger
 
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.widgets.wheel_line_edit import WheelLineEdit, HexWheelLineEdit
 from ui.styles import SCROLLBAR_STYLE, START_BTN_STYLE, update_start_btn_state
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-    QLineEdit, QGridLayout, QSpinBox, QDoubleSpinBox, QFrame,
+    QGridLayout, QSpinBox, QDoubleSpinBox, QFrame,
     QTextEdit, QProgressBar, QSizePolicy, QScrollArea,
     QApplication, QFileDialog
 )
@@ -1116,27 +1117,27 @@ class ItermTestUI(N6705CConnectionMixin, QWidget):
 
         lbl_dev = QLabel("Device Addr (Hex)")
         lbl_dev.setObjectName("fieldLabel")
-        self.device_addr_edit = QLineEdit("0x1A")
+        self.device_addr_edit = HexWheelLineEdit("0x1A")
 
         lbl_reg_addr = QLabel("Reg Addr (Hex)")
         lbl_reg_addr.setObjectName("fieldLabel")
-        self.reg_addr_edit = QLineEdit("0x0005")
+        self.reg_addr_edit = HexWheelLineEdit("0x0005")
 
         lbl_msb = QLabel("MSB")
         lbl_msb.setObjectName("fieldLabel")
-        self.msb_edit = QLineEdit("3")
+        self.msb_edit = WheelLineEdit("3", wheel_step=1)
 
         lbl_lsb = QLabel("LSB")
         lbl_lsb.setObjectName("fieldLabel")
-        self.lsb_edit = QLineEdit("2")
+        self.lsb_edit = WheelLineEdit("2", wheel_step=1)
 
         lbl_min_code = QLabel("Min Code")
         lbl_min_code.setObjectName("fieldLabel")
-        self.min_code_edit = QLineEdit("0x00")
+        self.min_code_edit = HexWheelLineEdit("0x00")
 
         lbl_max_code = QLabel("Max Code")
         lbl_max_code.setObjectName("fieldLabel")
-        self.max_code_edit = QLineEdit("0xFF")
+        self.max_code_edit = HexWheelLineEdit("0xFF")
 
         grid.addWidget(lbl_width, 0, 0)
         grid.addWidget(self.iic_width_combo, 0, 1)

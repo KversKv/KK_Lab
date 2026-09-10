@@ -11,12 +11,13 @@ sys.path.append(get_resource_base())
 sys.path.append(os.path.join(get_resource_base(), "lib", "i2c"))
 
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.widgets.wheel_line_edit import WheelLineEdit, HexWheelLineEdit
 from ui.styles import SCROLLBAR_STYLE, START_BTN_STYLE, update_start_btn_state
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.widgets.button import SpinningSearchButton, update_connect_button_state
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-    QLineEdit, QGridLayout, QFrame, QDoubleSpinBox, QSpinBox,
+    QGridLayout, QFrame, QDoubleSpinBox, QSpinBox,
     QTextEdit, QProgressBar, QSizePolicy, QScrollArea,
     QApplication
 )
@@ -776,7 +777,7 @@ class StatusRegisterTestUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidge
         r_grid.setVerticalSpacing(10)
         lbl_write_reg = QLabel("Write Reg Addr (Hex)")
         lbl_write_reg.setObjectName("fieldLabel")
-        self.write_reg_addr_edit = QLineEdit("0x00")
+        self.write_reg_addr_edit = HexWheelLineEdit("0x00")
         lbl_reg_start = QLabel("Start Value")
         lbl_reg_start.setObjectName("fieldLabel")
         self.reg_start_spin = QSpinBox()
@@ -824,13 +825,13 @@ class StatusRegisterTestUI(N6705CConnectionMixin, ChamberConnectionMixin, QWidge
         self.iic_width_combo.setCurrentIndex(1)
         lbl_dev = QLabel("Device Addr (Hex)")
         lbl_dev.setObjectName("fieldLabel")
-        self.device_addr_edit = QLineEdit("0x6A")
+        self.device_addr_edit = HexWheelLineEdit("0x6A")
         lbl_reg_addr = QLabel("Reg Addr (Hex)")
         lbl_reg_addr.setObjectName("fieldLabel")
-        self.reg_addr_edit = QLineEdit("0x0B")
+        self.reg_addr_edit = HexWheelLineEdit("0x0B")
         lbl_reg_bit = QLabel("Reg Bit")
         lbl_reg_bit.setObjectName("fieldLabel")
-        self.reg_bit_edit = QLineEdit("6")
+        self.reg_bit_edit = WheelLineEdit("6", wheel_step=1)
         grid.addWidget(lbl_width, 0, 0)
         grid.addWidget(self.iic_width_combo, 0, 1)
         grid.addWidget(lbl_dev, 1, 0)

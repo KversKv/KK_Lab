@@ -3,7 +3,7 @@
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QLabel, QLineEdit, QFrame, QSizePolicy,
+    QLabel, QFrame, QSizePolicy,
     QStackedWidget, QApplication, QMenu, QFileDialog,
     QScrollArea, QGridLayout, QGraphicsOpacityEffect, QLayout
 )
@@ -15,6 +15,7 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QFont, QPixmap, QImage, QPainter, QColor, QPen, QIcon, QPalette
 from PySide6.QtSvg import QSvgRenderer
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.widgets.wheel_line_edit import WheelLineEdit, UnitWheelLineEdit
 from ui.styles import SCROLL_AREA_STYLE
 from ui.widgets.button import SpinningSearchButton, update_connect_button_state
 from ui.widgets.instrument_state_poller import InstrumentStatePoller
@@ -1148,7 +1149,7 @@ class OscilloscopeBaseUI(QWidget):
         layout.addWidget(_ts_wrapper)
         self.timebase_edit.unitChanged.connect(self._on_timebase_unit_changed)
 
-        self.time_offset_edit = QLineEdit("")
+        self.time_offset_edit = UnitWheelLineEdit("")
         self.time_offset_edit.setEnabled(False)
         self._time_offset_last_mult = 1e-6
         self.time_offset_label = QLabel("Time Offset")
@@ -1291,7 +1292,7 @@ class OscilloscopeBaseUI(QWidget):
         return self.trigger_source_combo
 
     def _create_trigger_level(self):
-        self.trigger_level_edit = QLineEdit(self.TRIGGER_LEVEL_DEFAULT)
+        self.trigger_level_edit = WheelLineEdit(self.TRIGGER_LEVEL_DEFAULT, wheel_step=0.01)
         return self.trigger_level_edit
 
     def _labeled_widget(self, label_text, widget):
@@ -1345,8 +1346,8 @@ class OscilloscopeBaseUI(QWidget):
             'coupling_toggle': coupling_toggle,
         }
 
-        scale_widget = self._labeled_line_edit("Scale (V/div)", self.CHANNEL_SCALE_DEFAULT, horizontal=True)
-        offset_widget = self._labeled_line_edit(self.CHANNEL_OFFSET_LABEL, self.CHANNEL_OFFSET_DEFAULT, horizontal=True)
+        scale_widget = self._labeled_line_edit("Scale (V/div)", self.CHANNEL_SCALE_DEFAULT, horizontal=True, wheel_step=0.1)
+        offset_widget = self._labeled_line_edit(self.CHANNEL_OFFSET_LABEL, self.CHANNEL_OFFSET_DEFAULT, horizontal=True, wheel_step=0.01)
 
         layout.addWidget(scale_widget["widget"])
         layout.addWidget(offset_widget["widget"])
@@ -1358,7 +1359,7 @@ class OscilloscopeBaseUI(QWidget):
         self.channel_cards.append(frame)
         return frame
 
-    def _labeled_line_edit(self, label_text, default_text, horizontal=False, label_min_width=110):
+    def _labeled_line_edit(self, label_text, default_text, horizontal=False, label_min_width=110, wheel_step=None):
         wrapper = QWidget()
         if horizontal:
             layout = QHBoxLayout(wrapper)
@@ -1369,7 +1370,7 @@ class OscilloscopeBaseUI(QWidget):
             label.setStyleSheet("color:#AFC0E8; font-weight:600;")
             label.setMinimumWidth(label_min_width)
 
-            edit = QLineEdit(default_text)
+            edit = WheelLineEdit(default_text, wheel_step=wheel_step)
 
             layout.addWidget(label)
             layout.addWidget(edit, 1)
@@ -1381,7 +1382,7 @@ class OscilloscopeBaseUI(QWidget):
             label = QLabel(label_text)
             label.setStyleSheet("color:#AFC0E8; font-weight:600;")
 
-            edit = QLineEdit(default_text)
+            edit = WheelLineEdit(default_text, wheel_step=wheel_step)
 
             layout.addWidget(label)
             layout.addWidget(edit)

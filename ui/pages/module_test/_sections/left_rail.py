@@ -23,6 +23,7 @@ from ui.theme import dp
 from ui.widgets.card import Card
 from ui.widgets.form import FormGrid, FormRow
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.widgets.wheel_line_edit import HexWheelLineEdit
 
 from lib.i2c.Bes_I2CIO_Interface import I2CWidthFlag
 
@@ -95,7 +96,7 @@ class DutConfigPanel(QWidget):
         self.scope_vout_ch_combo = self._make_combo([f"CH {i}" for i in range(1, 5)])
         grid.add_row("示波器通道", self.scope_vout_ch_combo)
 
-        self.device_addr_edit = QLineEdit("0x00")
+        self.device_addr_edit = HexWheelLineEdit("0x00")
         self.device_addr_edit.setPlaceholderText("如 0x62")
         grid.add_row("Device 地址", self.device_addr_edit)
 

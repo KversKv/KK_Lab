@@ -19,6 +19,7 @@ from ui.resource_path import get_resource_base
 sys.path.append(get_resource_base())
 
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.widgets.wheel_line_edit import WheelLineEdit
 from ui.widgets.button import update_connect_button_state
 from ui.widgets.instrument_state_poller import InstrumentStatePoller
 from PySide6.QtWidgets import (
@@ -450,7 +451,7 @@ class ChamberControlUI(QWidget):
         temp_input_layout = QHBoxLayout()
         temp_input_layout.setSpacing(10)
 
-        self.temp_input = QLineEdit()
+        self.temp_input = WheelLineEdit(wheel_step=1)
         self.temp_input.setObjectName("tempInput")
         self.temp_input.setFixedHeight(36)
         self.temp_input.setText("25.0")
@@ -531,15 +532,15 @@ class ChamberControlUI(QWidget):
         cycles_label.setObjectName("fieldLabelSmall")
         cycles_label.setStyleSheet("border: none")
 
-        self.loop_dwell_input = QLineEdit()
+        self.loop_dwell_input = WheelLineEdit(wheel_step=1)
         self.loop_dwell_input.setObjectName("loopInput")
         self.loop_dwell_input.setFixedHeight(34)
         self.loop_dwell_input.setText("5")
-        self.loop_tolerance_input = QLineEdit()
+        self.loop_tolerance_input = WheelLineEdit(wheel_step=0.5)
         self.loop_tolerance_input.setObjectName("loopInput")
         self.loop_tolerance_input.setFixedHeight(34)
         self.loop_tolerance_input.setText("1.0")
-        self.loop_cycles_input = QLineEdit()
+        self.loop_cycles_input = WheelLineEdit(wheel_step=1)
         self.loop_cycles_input.setObjectName("loopInput")
         self.loop_cycles_input.setFixedHeight(34)
         self.loop_cycles_input.setText("1")

@@ -31,6 +31,7 @@
 - **样式**：复用 [ui/styles/](../styles/) 常量与 `get_page_base_qss()`；禁止在页面里散写大段 `setStyleSheet`。
 - **弹窗**：所有 `QDialog` / 静态对话框必须显式传 `parent=self`；OK/Cancel 显式二元化 `default/autoDefault`。
 - **数值控件 label**：物理量必须 `名称 (单位)`；多单位输入要维护"上次单位"记忆并动态更新 label。
+- **滚轮调值输入框**：数值 / 寄存器地址输入统一用 [ui/widgets/wheel_line_edit.py](../widgets/wheel_line_edit.py)——`WheelLineEdit`（十进制步进，构造传 `wheel_step=`，整数字段 1）、`HexWheelLineEdit`（十六进制 ±1/Ctrl±0x10/Shift±0x100，位宽回绕）、`UnitWheelLineEdit`（带单位后缀比例缩放）；均为**聚焦才滚**（未聚焦事件传父级），纯文本 / 逗号列表字段禁用滚轮。
 - **耗时操作**：一律走 `core/` + QThread；Worker 不 import QtWidgets。
 
 ## 局部坑点

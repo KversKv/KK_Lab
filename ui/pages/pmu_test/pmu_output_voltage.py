@@ -19,10 +19,11 @@ sys.path.append(os.path.join(get_resource_base(), "lib", "i2c"))
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton,
-    QLabel, QLineEdit, QSpinBox, QDoubleSpinBox, QFrame, QTextEdit,
+    QLabel, QSpinBox, QDoubleSpinBox, QFrame, QTextEdit,
     QSizePolicy, QProgressBar, QScrollArea, QMessageBox
 )
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.widgets.wheel_line_edit import HexWheelLineEdit
 from PySide6.QtCore import Qt, QThread, QTimer, Signal, QMargins
 from PySide6.QtGui import QFont
 import pyvisa
@@ -933,11 +934,11 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
 
         lbl_dev = QLabel("Device Addr")
         lbl_dev.setObjectName("fieldLabel")
-        self.device_addr_edit = QLineEdit("0x27")
+        self.device_addr_edit = HexWheelLineEdit("0x27")
 
         lbl_reg = QLabel("Reg Addr")
         lbl_reg.setObjectName("fieldLabel")
-        self.reg_addr_edit = QLineEdit("0x0135")
+        self.reg_addr_edit = HexWheelLineEdit("0x0135")
 
         lbl_msb = QLabel("MSB")
         lbl_msb.setObjectName("fieldLabel")
@@ -961,11 +962,11 @@ class PMUOutputVoltageUI(N6705CConnectionMixin, QWidget):
 
         lbl_min = QLabel("Min Code (Hex)")
         lbl_min.setObjectName("fieldLabel")
-        self.min_code_edit = QLineEdit("0x0")
+        self.min_code_edit = HexWheelLineEdit("0x0")
 
         lbl_max = QLabel("Max Code (Hex)")
         lbl_max.setObjectName("fieldLabel")
-        self.max_code_edit = QLineEdit("0xFF")
+        self.max_code_edit = HexWheelLineEdit("0xFF")
 
         grid.addWidget(lbl_dev, 0, 0)
         grid.addWidget(lbl_reg, 0, 1)

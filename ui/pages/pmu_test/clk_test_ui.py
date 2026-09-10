@@ -5,7 +5,7 @@ import csv
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QLabel, QLineEdit, QGridLayout, QFrame, QScrollArea,
+    QLabel, QGridLayout, QFrame, QScrollArea,
     QSizePolicy, QSpinBox, QDoubleSpinBox, QComboBox,
     QTextEdit, QFileDialog, QMessageBox, QProgressBar
 )
@@ -16,6 +16,7 @@ import pyqtgraph as pg
 from ui.styles import SCROLL_AREA_STYLE, START_BTN_STYLE, update_start_btn_state
 from ui.modules.execution_logs_module_frame import ExecutionLogsFrame
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.widgets.wheel_line_edit import HexWheelLineEdit
 from ui.modules.oscilloscope_module_frame import OscilloscopeConnectionMixin
 from ui.modules.chamber_module_frame import ChamberConnectionMixin
 from ui.modules.keysight_53230a_module_frame import Keysight53230AConnectionMixin
@@ -518,8 +519,8 @@ class CLKTestUI(OscilloscopeConnectionMixin, ChamberConnectionMixin, Keysight532
 
         cap_iic_layout.addWidget(QLabel("IIC Device Address"), 0, 0)
         cap_iic_layout.addWidget(QLabel("REG Address"), 0, 1)
-        self.iic_device_addr = QLineEdit("0x1A")
-        self.iic_reg_addr = QLineEdit("0xD3")
+        self.iic_device_addr = HexWheelLineEdit("0x1A")
+        self.iic_reg_addr = HexWheelLineEdit("0xD3")
         cap_iic_layout.addWidget(self.iic_device_addr, 1, 0)
         cap_iic_layout.addWidget(self.iic_reg_addr, 1, 1)
 

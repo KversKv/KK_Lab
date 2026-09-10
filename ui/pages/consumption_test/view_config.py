@@ -33,10 +33,11 @@ from ui.pages.consumption_test.widgets import (
     ControlMethodToggle, PolarityToggle, BinaryTextToggle,
 )
 from ui.widgets.dark_combobox import DarkComboBox
+from ui.widgets.wheel_line_edit import WheelLineEdit
 from ui.widgets.button import SpinningSearchButton, update_connect_button_state
 from PySide6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QLabel, QLineEdit, QPushButton, QCheckBox,
+    QLabel, QPushButton, QCheckBox,
     QScrollArea, QWidget, QSizePolicy, QStackedLayout,
     QToolButton, QMenu,
 )
@@ -113,7 +114,7 @@ class ConsumptionTestViewConfigMixin:
         stable_delay_label = QLabel("Stable Delay (s)")
         stable_delay_label.setStyleSheet(label_style)
         stable_delay_label.setFixedWidth(label_width)
-        self.stable_delay_input = QLineEdit("4.0")
+        self.stable_delay_input = WheelLineEdit("4.0", wheel_step=0.5)
         self.stable_delay_input.setFixedHeight(24)
         self.stable_delay_input.setAlignment(Qt.AlignCenter)
         self.stable_delay_input.setToolTip(
@@ -139,7 +140,7 @@ class ConsumptionTestViewConfigMixin:
         time_label = QLabel("Test Time (s)")
         time_label.setStyleSheet(label_style)
         time_label.setFixedWidth(label_width)
-        self.test_time_input = QLineEdit("5")
+        self.test_time_input = WheelLineEdit("5", wheel_step=1)
         self.test_time_input.setFixedHeight(24)
         self.test_time_input.setAlignment(Qt.AlignCenter)
         self.test_time_input.setStyleSheet("""
@@ -693,7 +694,7 @@ class ConsumptionTestViewConfigMixin:
         force_page_layout.setContentsMargins(0, 0, 0, 0)
         force_page_layout.setSpacing(5)
 
-        force_value_input = QLineEdit()
+        force_value_input = WheelLineEdit(wheel_step=0.01)
         force_value_input.setPlaceholderText("V (Force)")
         force_value_input.setText(config["force_value"])
         font = force_value_input.font()
@@ -735,7 +736,7 @@ class ConsumptionTestViewConfigMixin:
         )
         auto_page_layout.addWidget(boost_mode_toggle)
 
-        boost_value_input = QLineEdit()
+        boost_value_input = WheelLineEdit(wheel_step=0.01)
         boost_value_input.setPlaceholderText("boost value")
         boost_value_input.setText(config["boost_value"])
         font = boost_value_input.font()
@@ -792,7 +793,7 @@ class ConsumptionTestViewConfigMixin:
         """)
         std_v_force_layout.addWidget(std_v_force_cb)
 
-        std_v_force_input = QLineEdit()
+        std_v_force_input = WheelLineEdit(wheel_step=0.01)
         std_v_force_input.setPlaceholderText("V (Force)")
         std_v_force_input.setText(config["force_value"])
         font = std_v_force_input.font()
